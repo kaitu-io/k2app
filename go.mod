@@ -1,4 +1,4 @@
-module github.com/kaitu-io/k2tunnel
+module github.com/kaitu-io/k2
 
 go 1.25.0
 

@@ -8,9 +8,9 @@ import (
 	"net"
 
 	"github.com/kaitu-io/k2rule"
-	"github.com/kaitu-io/k2tunnel/core/packet"
-	"github.com/kaitu-io/k2tunnel/provider"
-	"github.com/kaitu-io/k2tunnel/wire"
+	"github.com/kaitu-io/k2/core/packet"
+	"github.com/kaitu-io/k2/provider"
+	"github.com/kaitu-io/k2/wire"
 )
 
 // DNSMiddleware defines the interface for DNS query handling

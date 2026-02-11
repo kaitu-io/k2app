@@ -7,7 +7,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/kaitu-io/k2tunnel/core/packet"
+	"github.com/kaitu-io/k2/core/packet"
 	"github.com/miekg/dns"
 )
 

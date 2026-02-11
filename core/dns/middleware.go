@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/kaitu-io/k2rule"
-	"github.com/kaitu-io/k2tunnel/core/packet"
-	"github.com/kaitu-io/k2tunnel/provider"
+	"github.com/kaitu-io/k2/core/packet"
+	"github.com/kaitu-io/k2/provider"
 	"github.com/miekg/dns"
 )
 

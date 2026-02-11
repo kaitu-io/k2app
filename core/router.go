@@ -4,8 +4,8 @@ import (
 	"net"
 
 	"github.com/kaitu-io/k2rule"
-	"github.com/kaitu-io/k2tunnel/core/dns"
-	"github.com/kaitu-io/k2tunnel/core/packet"
+	"github.com/kaitu-io/k2/core/dns"
+	"github.com/kaitu-io/k2/core/packet"
 )
 
 // Router implements routing decisions with DNS cache + k2rule
