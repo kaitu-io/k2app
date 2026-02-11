@@ -1,0 +1,34 @@
+# Binaries
+k2client
+k2server
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test coverage
+*.out
+coverage.txt
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config (local configs should not be committed)
+config.yml
+*.local.yml
+
+# Build artifacts
+dist/
+build/
+
+# Temporary files
+*.tmp
+*.log
