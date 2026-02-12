@@ -2,6 +2,8 @@ package config
 
 import (
 	"os"
+	"path/filepath"
+	"runtime"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -27,6 +29,7 @@ type ProxyConfig struct {
 // Loaded by `k2 run -s`.
 type ServerConfig struct {
 	Listen  string       `yaml:"listen"`
+	Host    string       `yaml:"host"`    // external hostname/IP for connect URL (auto-detected if empty)
 	TLS     TLSConfig    `yaml:"tls"`
 	ECH     ECHConfig    `yaml:"ech"`
 	CertDir string       `yaml:"cert_dir"` // directory for auto-generated dual keypair (RSA+EC)
@@ -136,9 +139,30 @@ func setClientDefaults(cfg *ClientConfig) {
 	}
 }
 
+// defaultCertDir returns the platform-appropriate default directory for
+// auto-generated server certificates and keys.
+func defaultCertDir() string {
+	if runtime.GOOS == "windows" {
+		return filepath.Join(os.Getenv("APPDATA"), "k2s")
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".k2s")
+}
+
+// DefaultServerConfig creates a ServerConfig with all defaults applied.
+// Used when k2s starts with no config file (zero-config mode).
+func DefaultServerConfig() *ServerConfig {
+	cfg := &ServerConfig{}
+	setServerDefaults(cfg)
+	return cfg
+}
+
 func setServerDefaults(cfg *ServerConfig) {
 	if cfg.Listen == "" {
 		cfg.Listen = ":443"
+	}
+	if cfg.CertDir == "" {
+		cfg.CertDir = defaultCertDir()
 	}
 	if cfg.ECH.Provider == "" {
 		cfg.ECH.Provider = "local"

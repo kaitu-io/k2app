@@ -5,12 +5,15 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -57,10 +60,9 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 		done:     make(chan struct{}),
 	}
 
-	// Certificate setup: dual cert pair (preferred) or static cert (legacy).
+	// Auto-provisioning: unified cert + ECH + auth setup when cert_dir is set.
 	if cfg.CertDir != "" {
-		// Dual keypair mode: auto-generate RSA+EC certs with optional padding.
-		if err := s.setupCertPair(cfg); err != nil {
+		if err := s.setupAutoProvision(cfg); err != nil {
 			return nil, err
 		}
 	} else if cfg.TLS.Cert != "" && cfg.TLS.Key != "" {
@@ -74,23 +76,16 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 			NextProtos:   []string{"h3"},
 			MinVersion:   tls.VersionTLS13,
 		}
-	}
 
-	// ECH setup: new rotation flow (cert_dir) or legacy (key_path).
-	if cfg.CertDir != "" {
-		if err := s.setupECHRotation(cfg); err != nil {
-			return nil, err
-		}
-	} else if cfg.ECH.KeyPath != "" {
-		// Legacy: single combined key+config file.
-		echKeys, echConfig, err := wire.EnsureECHKey(cfg.ECH.KeyPath, cfg.ECH.PublicName)
-		if err != nil {
-			return nil, fmt.Errorf("ECH key: %w", err)
-		}
-		if s.TLSConfig != nil {
+		// Legacy ECH: single combined key+config file.
+		if cfg.ECH.KeyPath != "" {
+			echKeys, echConfig, err := wire.EnsureECHKey(cfg.ECH.KeyPath, cfg.ECH.PublicName)
+			if err != nil {
+				return nil, fmt.Errorf("ECH key: %w", err)
+			}
 			s.TLSConfig.EncryptedClientHelloKeys = echKeys
+			s.echConfig = echConfig
 		}
-		s.echConfig = echConfig
 	}
 
 	// Auth handler — accept all non-empty credentials for now.
@@ -209,6 +204,158 @@ func (s *Server) setupECHRotation(cfg *config.ServerConfig) error {
 		len(allConfigs), allConfigs[0][4])
 
 	return nil
+}
+
+// setupAutoProvision performs unified auto-provisioning of certs, ECH, and auth.
+// This replaces the separate setupCertPair + setupECHRotation calls, because
+// in zero-config mode the ECH template's PublicName is needed for cert padding
+// probing, and there's no explicit cfg.ECH.PublicName.
+func (s *Server) setupAutoProvision(cfg *config.ServerConfig) error {
+	// 1. Ensure cert_dir exists.
+	if err := os.MkdirAll(cfg.CertDir, 0755); err != nil {
+		return fmt.Errorf("create cert dir: %w", err)
+	}
+
+	// 2. Ensure dual cert pair (RSA + EC).
+	pair, err := wire.EnsureCertPair(cfg.CertDir)
+	if err != nil {
+		return fmt.Errorf("cert pair: %w", err)
+	}
+
+	// 3. Ensure ECH private key.
+	keyPath := filepath.Join(cfg.CertDir, "ech.key")
+	privKey, err := wire.EnsureECHPrivateKey(keyPath)
+	if err != nil {
+		return fmt.Errorf("ECH private key: %w", err)
+	}
+
+	// 4. Fetch ECH template (Cloudflare DNS -> cache -> defaults).
+	var provider wire.ECHProvider = &wire.LocalECHProvider{}
+	cachePath := filepath.Join(cfg.CertDir, "ech_template.json")
+	tmpl, err := wire.FetchTemplateWithFallback(provider, cachePath)
+	if err != nil {
+		return fmt.Errorf("ECH template: %w", err)
+	}
+
+	// 5. Generate + save new ECH config.
+	echKey, _, err := wire.GenerateECHKeyFromTemplate(tmpl, privKey)
+	if err != nil {
+		return fmt.Errorf("ECH config generate: %w", err)
+	}
+	configsDir := filepath.Join(cfg.CertDir, "ech-configs")
+	if err := wire.SaveECHConfig(configsDir, echKey.Config); err != nil {
+		return fmt.Errorf("ECH config save: %w", err)
+	}
+
+	// 6. Load all ECH configs (supports rotation).
+	allConfigs, err := wire.LoadAllECHConfigs(configsDir)
+	if err != nil {
+		return fmt.Errorf("ECH configs load: %w", err)
+	}
+
+	// 7. Probe target for padding (use template.PublicName, NOT cfg.ECH.PublicName).
+	publicName := tmpl.PublicName
+	if cfg.ECH.PublicName != "" {
+		publicName = cfg.ECH.PublicName // explicit override
+	}
+	var profile *wire.TargetProfile
+	if publicName != "" {
+		profile, err = wire.ProbeTarget(publicName)
+		if err != nil {
+			log.Printf("server: probe %s failed (padding disabled): %v", publicName, err)
+			// Non-fatal: certs still work, just not padded.
+		}
+	}
+
+	// 8. Apply padding to certs if we got a profile.
+	if profile != nil && profile.CertChainLen > 0 {
+		targetLen := profile.CertChainLen
+
+		if tlspad.MeasureCertDERLen(&pair.RSA) < targetLen {
+			padded, padErr := tlspad.GeneratePaddedCert(pair.RSA.PrivateKey, targetLen)
+			if padErr != nil {
+				log.Printf("server: RSA cert padding failed: %v", padErr)
+			} else {
+				pair.RSA = padded
+			}
+		}
+
+		if tlspad.MeasureCertDERLen(&pair.EC) < targetLen {
+			padded, padErr := tlspad.GeneratePaddedCert(pair.EC.PrivateKey, targetLen)
+			if padErr != nil {
+				log.Printf("server: EC cert padding failed: %v", padErr)
+			} else {
+				pair.EC = padded
+			}
+		}
+
+		log.Printf("server: certs padded to ~%d bytes (target: %s, algo: %s)",
+			targetLen, publicName, profile.KeyAlgo)
+	}
+
+	// 9. Initialize TLS config.
+	s.TLSConfig = &tls.Config{
+		NextProtos: []string{"h3"},
+		MinVersion: tls.VersionTLS13,
+	}
+	s.SetCertPair(pair, profile)
+	s.TLSConfig.EncryptedClientHelloKeys = wire.BuildECHKeys(privKey, allConfigs)
+
+	// Latest config for client URL distribution.
+	if len(allConfigs) > 0 {
+		s.echConfig = wire.BuildECHConfigList(allConfigs[:1])
+	}
+
+	// 10. Generate auth token if needed.
+	authPath := filepath.Join(cfg.CertDir, "auth.json")
+	auth, err := wire.EnsureAuth(authPath)
+	if err != nil {
+		return fmt.Errorf("auth: %w", err)
+	}
+
+	// 11. Log connection info.
+	log.Printf("server: cert pins: %s", pair.FormatPins())
+	if len(allConfigs) > 0 {
+		log.Printf("server: ECH: %d config(s) loaded, latest config_id=%d",
+			len(allConfigs), allConfigs[0][4])
+	}
+	logConnectionURL(cfg, pair, s.echConfig, auth)
+
+	return nil
+}
+
+// logConnectionURL prints the k2v5:// connect URL for clients.
+func logConnectionURL(cfg *config.ServerConfig, pair *wire.CertPair, echConfigList []byte, auth *wire.AuthInfo) {
+	host := cfg.Host
+	if host == "" {
+		host = detectHost()
+	}
+
+	port := "443"
+	if cfg.Listen != "" && cfg.Listen != ":443" {
+		// Extract port from listen address (e.g. ":8443" or "0.0.0.0:8443")
+		if idx := strings.LastIndex(cfg.Listen, ":"); idx >= 0 {
+			port = cfg.Listen[idx+1:]
+		}
+	}
+
+	echB64 := base64.URLEncoding.EncodeToString(echConfigList)
+	pins := pair.FormatPins()
+
+	url := fmt.Sprintf("k2v5://%s:%s@%s:%s?ech=%s&pin=%s&insecure=1",
+		auth.UDID, auth.Token, host, port, echB64, pins)
+
+	log.Printf("Connect URL: %s", url)
+}
+
+// detectHost attempts to determine the server's external hostname or IP.
+// Best-effort: tries system hostname, falls back to "YOUR_IP".
+func detectHost() string {
+	hostname, err := os.Hostname()
+	if err == nil && hostname != "" && hostname != "localhost" {
+		return hostname
+	}
+	return "YOUR_IP"
 }
 
 // SetCertPair configures the server to use a dual cert pair with dynamic cert selection.
