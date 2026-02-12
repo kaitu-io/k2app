@@ -10,6 +10,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -75,8 +76,13 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 		}
 	}
 
-	// Load ECH keys if configured.
-	if cfg.ECH.KeyPath != "" {
+	// ECH setup: new rotation flow (cert_dir) or legacy (key_path).
+	if cfg.CertDir != "" {
+		if err := s.setupECHRotation(cfg); err != nil {
+			return nil, err
+		}
+	} else if cfg.ECH.KeyPath != "" {
+		// Legacy: single combined key+config file.
 		echKeys, echConfig, err := wire.EnsureECHKey(cfg.ECH.KeyPath, cfg.ECH.PublicName)
 		if err != nil {
 			return nil, fmt.Errorf("ECH key: %w", err)
@@ -149,6 +155,59 @@ func (s *Server) setupCertPair(cfg *config.ServerConfig) error {
 	s.SetCertPair(pair, profile)
 
 	log.Printf("server: cert pins: %s", pair.FormatPins())
+	return nil
+}
+
+// setupECHRotation initializes ECH with split key/config storage and rotation support.
+// Flow: EnsureECHPrivateKey -> FetchTemplateWithFallback -> GenerateECHKeyFromTemplate
+//       -> SaveECHConfig -> LoadAllECHConfigs -> BuildECHKeys + BuildECHConfigList
+func (s *Server) setupECHRotation(cfg *config.ServerConfig) error {
+	// 1. Ensure persistent HPKE private key.
+	keyPath := filepath.Join(cfg.CertDir, "ech.key")
+	privKey, err := wire.EnsureECHPrivateKey(keyPath)
+	if err != nil {
+		return fmt.Errorf("ECH private key: %w", err)
+	}
+
+	// 2. Fetch ECH template from provider with fallback.
+	var provider wire.ECHProvider = &wire.LocalECHProvider{}
+	cachePath := filepath.Join(cfg.CertDir, "ech_template.json")
+	tmpl, err := wire.FetchTemplateWithFallback(provider, cachePath)
+	if err != nil {
+		return fmt.Errorf("ECH template: %w", err)
+	}
+
+	// 3. Generate new config from template using our private key.
+	echKey, _, err := wire.GenerateECHKeyFromTemplate(tmpl, privKey)
+	if err != nil {
+		return fmt.Errorf("ECH config generate: %w", err)
+	}
+
+	// 4. Save the new config to ech-configs/.
+	configsDir := filepath.Join(cfg.CertDir, "ech-configs")
+	if err := wire.SaveECHConfig(configsDir, echKey.Config); err != nil {
+		return fmt.Errorf("ECH config save: %w", err)
+	}
+
+	// 5. Load all configs (supports rotation — multiple versions).
+	allConfigs, err := wire.LoadAllECHConfigs(configsDir)
+	if err != nil {
+		return fmt.Errorf("ECH configs load: %w", err)
+	}
+
+	// 6. Wire into TLS config.
+	if s.TLSConfig != nil {
+		s.TLSConfig.EncryptedClientHelloKeys = wire.BuildECHKeys(privKey, allConfigs)
+	}
+
+	// Latest config for client URL distribution.
+	if len(allConfigs) > 0 {
+		s.echConfig = wire.BuildECHConfigList(allConfigs[:1])
+	}
+
+	log.Printf("server: ECH rotation: %d config(s) loaded, latest config_id=%d",
+		len(allConfigs), allConfigs[0][4])
+
 	return nil
 }
 

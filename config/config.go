@@ -50,8 +50,9 @@ type TLSConfig struct {
 
 // ECHConfig contains Encrypted Client Hello configuration.
 type ECHConfig struct {
-	KeyPath    string `yaml:"key_path"`
-	PublicName string `yaml:"public_name"`
+	KeyPath    string `yaml:"key_path"`     // legacy: single file with key+config
+	PublicName string `yaml:"public_name"`  // legacy: explicit public name
+	Provider   string `yaml:"provider"`     // "local" (default) — ECH template provider
 }
 
 // AuthConfig contains server auth configuration.
@@ -138,6 +139,9 @@ func setClientDefaults(cfg *ClientConfig) {
 func setServerDefaults(cfg *ServerConfig) {
 	if cfg.Listen == "" {
 		cfg.Listen = ":443"
+	}
+	if cfg.ECH.Provider == "" {
+		cfg.ECH.Provider = "local"
 	}
 	if cfg.Auth.CacheTTL == 0 {
 		cfg.Auth.CacheTTL = 5 * time.Minute

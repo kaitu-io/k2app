@@ -14,6 +14,8 @@ import (
 	"log"
 	"net"
 	"os"
+	"path/filepath"
+	"sort"
 	"time"
 
 	utls "github.com/metacubex/utls"
@@ -462,4 +464,175 @@ func EnsureECHKey(keyPath, publicName string) ([]tls.EncryptedClientHelloKey, []
 	}
 
 	return []tls.EncryptedClientHelloKey{key}, echConfig, nil
+}
+
+// --- ECH key rotation: split storage ---
+
+// SaveECHPrivateKey saves a raw X25519 private key (32 bytes) to a file.
+func SaveECHPrivateKey(path string, privKey []byte) error {
+	if err := os.WriteFile(path, privKey, 0600); err != nil {
+		return fmt.Errorf("wire: save ECH private key: %w", err)
+	}
+	return nil
+}
+
+// LoadECHPrivateKey loads and parses an X25519 private key from a file.
+func LoadECHPrivateKey(path string) (*ecdh.PrivateKey, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("wire: load ECH private key: %w", err)
+	}
+	key, err := ecdh.X25519().NewPrivateKey(data)
+	if err != nil {
+		return nil, fmt.Errorf("wire: parse ECH private key: %w", err)
+	}
+	return key, nil
+}
+
+// EnsureECHPrivateKey loads an existing ECH private key or generates a new one.
+// If the file exists but is >40 bytes, it is treated as the old combined format
+// (key+config blob) and is migrated: the private key is extracted and saved in
+// the new 32-byte format, and the config is saved to ech-configs/ alongside it.
+func EnsureECHPrivateKey(path string) (*ecdh.PrivateKey, error) {
+	info, err := os.Stat(path)
+	if err == nil {
+		// File exists — check if old format (>40 bytes) or new format (32 bytes)
+		if info.Size() > 40 {
+			return migrateOldECHKey(path)
+		}
+		return LoadECHPrivateKey(path)
+	}
+
+	// File doesn't exist — generate new key and save
+	privKey, err := ecdh.X25519().GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, fmt.Errorf("wire: generate ECH private key: %w", err)
+	}
+	if err := SaveECHPrivateKey(path, privKey.Bytes()); err != nil {
+		return nil, err
+	}
+	return privKey, nil
+}
+
+// migrateOldECHKey reads the old combined format, extracts the private key
+// and ECH config, saves them in the new split format, and returns the key.
+func migrateOldECHKey(path string) (*ecdh.PrivateKey, error) {
+	key, echConfigList, err := LoadECHKey(path)
+	if err != nil {
+		return nil, fmt.Errorf("wire: migrate old ECH key: %w", err)
+	}
+
+	privKey, err := ecdh.X25519().NewPrivateKey(key.PrivateKey)
+	if err != nil {
+		return nil, fmt.Errorf("wire: parse migrated private key: %w", err)
+	}
+
+	// Save private key in new format (overwrite old file)
+	if err := SaveECHPrivateKey(path, privKey.Bytes()); err != nil {
+		return nil, err
+	}
+
+	// Extract raw ECHConfig from the ECHConfigList and save to ech-configs/
+	// LoadECHKey returns key.Config as the raw ECHConfig (without list prefix)
+	configsDir := filepath.Join(filepath.Dir(path), "ech-configs")
+	if err := SaveECHConfig(configsDir, key.Config); err != nil {
+		return nil, fmt.Errorf("wire: migrate ECH config: %w", err)
+	}
+
+	_ = echConfigList // not needed for migration
+	return privKey, nil
+}
+
+// SaveECHConfig saves a raw ECHConfig to ech-configs/config-{id}.bin.
+// The config_id is extracted from the raw bytes at position: version(2) + length(2) + config_id(1).
+// Creates the directory if it doesn't exist.
+func SaveECHConfig(dir string, config []byte) error {
+	if len(config) < 5 {
+		return fmt.Errorf("wire: ECH config too short to extract config_id (%d bytes)", len(config))
+	}
+
+	// Verify version
+	version := binary.BigEndian.Uint16(config[0:2])
+	if version != 0xfe0d {
+		return fmt.Errorf("wire: unexpected ECH config version 0x%04x", version)
+	}
+
+	configID := config[4] // version(2) + length(2) + config_id(1)
+
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("wire: create ech-configs dir: %w", err)
+	}
+
+	filename := fmt.Sprintf("config-%d.bin", configID)
+	path := filepath.Join(dir, filename)
+	if err := os.WriteFile(path, config, 0600); err != nil {
+		return fmt.Errorf("wire: save ECH config: %w", err)
+	}
+	return nil
+}
+
+// LoadAllECHConfigs loads all .bin files from the ech-configs directory.
+// Returns configs sorted by config_id descending (latest first).
+// Returns empty slice (no error) if the directory doesn't exist or is empty.
+func LoadAllECHConfigs(dir string) ([][]byte, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("wire: read ech-configs dir: %w", err)
+	}
+
+	var configs [][]byte
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".bin" {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			return nil, fmt.Errorf("wire: read ECH config %s: %w", entry.Name(), err)
+		}
+		if len(data) < 5 {
+			continue // skip invalid files
+		}
+		configs = append(configs, data)
+	}
+
+	// Sort by config_id descending (config_id is at byte offset 4)
+	sort.Slice(configs, func(i, j int) bool {
+		return configs[i][4] > configs[j][4]
+	})
+
+	return configs, nil
+}
+
+// BuildECHKeys converts a list of raw ECHConfig bytes into tls.EncryptedClientHelloKey entries.
+// All entries share the same HPKE private key but have different configs.
+func BuildECHKeys(privKey *ecdh.PrivateKey, configs [][]byte) []tls.EncryptedClientHelloKey {
+	keys := make([]tls.EncryptedClientHelloKey, 0, len(configs))
+	for _, cfg := range configs {
+		keys = append(keys, tls.EncryptedClientHelloKey{
+			Config:     cfg,
+			PrivateKey: privKey.Bytes(),
+		})
+	}
+	return keys
+}
+
+// BuildECHConfigList builds an ECHConfigList from multiple raw ECHConfig entries.
+// ECHConfigList format: [total_length:2][config1...][config2...]
+func BuildECHConfigList(configs [][]byte) []byte {
+	totalLen := 0
+	for _, cfg := range configs {
+		totalLen += len(cfg)
+	}
+
+	list := make([]byte, 2+totalLen)
+	binary.BigEndian.PutUint16(list[0:2], uint16(totalLen))
+	pos := 2
+	for _, cfg := range configs {
+		copy(list[pos:], cfg)
+		pos += len(cfg)
+	}
+	return list
 }
