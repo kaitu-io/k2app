@@ -197,22 +197,75 @@ func (c *QUICClient) DialTCP(ctx context.Context, addr string) (net.Conn, error)
 	}, nil
 }
 
-// DialUDP opens a UDP proxy session through QUIC datagrams.
+// DialUDP opens a UDP proxy session through QUIC datagrams or stream fallback.
 // Returns a PacketConn backed by QUIC datagrams with a unique session ID.
+// If datagrams are not supported, falls back to stream-based UDP.
 func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, error) {
 	conn, err := c.connect(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	sessionID := c.alloc.Next()
-	readCh := c.udpMux.register(sessionID)
+	// Try datagram path if supported
+	if c.datagramsSupported(conn) {
+		sessionID := c.alloc.Next()
+		readCh := c.udpMux.register(sessionID)
 
-	return &quicUDPConn{
-		qconn:      conn,
+		return &quicUDPConn{
+			qconn:      conn,
+			sessionID:  sessionID,
+			targetAddr: addr,
+			mux:        c.udpMux,
+			readCh:     readCh,
+			done:       make(chan struct{}),
+		}, nil
+	}
+
+	// Fallback: stream-based UDP
+	return c.dialUDPStream(ctx, conn, addr)
+}
+
+// datagramsSupported checks if QUIC datagrams are supported on the connection.
+func (c *QUICClient) datagramsSupported(conn *quic.Conn) bool {
+	// Check the connection's datagram support via connection state
+	// quic-go exposes this via ConnectionState().SupportsDatagrams
+	return conn.ConnectionState().SupportsDatagrams
+}
+
+// dialUDPStream opens a QUIC stream for UDP and returns a stream-based PacketConn.
+func (c *QUICClient) dialUDPStream(ctx context.Context, conn *quic.Conn, addr string) (net.PacketConn, error) {
+	// Ensure shared UDP stream and mux exist
+	c.mu.Lock()
+	if c.udpMux.streamMux == nil {
+		stream, err := conn.OpenStreamSync(ctx)
+		if err != nil {
+			c.mu.Unlock()
+			return nil, fmt.Errorf("wire: open UDP stream: %w", err)
+		}
+		// Write H3 frame type + UDP stream header
+		if err := WriteH3ProxyFrameType(stream); err != nil {
+			stream.Close()
+			c.mu.Unlock()
+			return nil, fmt.Errorf("wire: write H3 frame type: %w", err)
+		}
+		if err := WriteStreamHeader(stream, StreamTypeUDP, ""); err != nil {
+			stream.Close()
+			c.mu.Unlock()
+			return nil, fmt.Errorf("wire: write UDP stream header: %w", err)
+		}
+		c.udpMux.streamMux = newQuicStreamUDPMux(stream, conn)
+	}
+	mux := c.udpMux.streamMux
+	alloc := c.alloc
+	c.mu.Unlock()
+
+	sessionID := alloc.Next()
+	readCh := mux.register(sessionID)
+
+	return &quicStreamUDPConn{
+		mux:        mux,
 		sessionID:  sessionID,
 		targetAddr: addr,
-		mux:        c.udpMux,
 		readCh:     readCh,
 		done:       make(chan struct{}),
 	}, nil
@@ -336,18 +389,57 @@ func (s *QUICServer) handleStream(qconn *quic.Conn, stream *quic.Stream) {
 		return
 	}
 
-	if streamType != StreamTypeTCP {
+	switch streamType {
+	case StreamTypeTCP:
+		sc := &quicStreamConn{
+			Stream: stream,
+			local:  qconn.LocalAddr(),
+			remote: qconn.RemoteAddr(),
+			br:     br,
+		}
+		s.sendTCP(tcpAcceptResult{conn: sc, addr: addr})
+	case StreamTypeUDP:
+		s.handleUDPStream(qconn, stream, br)
+	default:
 		stream.Close()
-		return
 	}
+}
 
-	sc := &quicStreamConn{
-		Stream: stream,
-		local:  qconn.LocalAddr(),
-		remote: qconn.RemoteAddr(),
-		br:     br,
+func (s *QUICServer) handleUDPStream(qconn *quic.Conn, stream *quic.Stream, br *bufio.Reader) {
+	writer := &quicStreamWriter{stream: stream}
+	sessions := make(map[uint32]*quicStreamServerUDPConn)
+
+	for {
+		frame, err := ReadSmuxUDPFrame(br)
+		if err != nil {
+			// Close all sessions
+			for _, sess := range sessions {
+				sess.close()
+			}
+			return
+		}
+
+		sess, ok := sessions[frame.SessionID]
+		if !ok {
+			sess = &quicStreamServerUDPConn{
+				writer:    writer,
+				sessionID: frame.SessionID,
+				addr:      frame.Addr,
+				readCh:    make(chan []byte, 32),
+				done:      make(chan struct{}),
+			}
+			sessions[frame.SessionID] = sess
+
+			s.mu.Lock()
+			handler := s.udpH
+			s.mu.Unlock()
+			if handler != nil {
+				go handler.HandleUDP(sess, frame.Addr)
+			}
+		}
+
+		sess.deliver(frame.Payload)
 	}
-	s.sendTCP(tcpAcceptResult{conn: sc, addr: addr})
 }
 
 func (s *QUICServer) handleDatagrams(conn *quic.Conn) {
@@ -453,11 +545,12 @@ func (s *QUICServer) Close() error {
 // ============================================================================
 
 type quicUDPMux struct {
-	conn     *quic.Conn
-	mu       sync.Mutex
-	sessions map[uint32]chan *UDPFrame
-	done     chan struct{}
-	started  bool
+	conn      *quic.Conn
+	mu        sync.Mutex
+	sessions  map[uint32]chan *UDPFrame
+	done      chan struct{}
+	started   bool
+	streamMux *quicStreamUDPMux // stream-based UDP fallback
 }
 
 func newQuicUDPMux(conn *quic.Conn) *quicUDPMux {
@@ -521,6 +614,9 @@ func (m *quicUDPMux) close() {
 	case <-m.done:
 	default:
 		close(m.done)
+	}
+	if m.streamMux != nil {
+		m.streamMux.close()
 	}
 }
 
@@ -629,3 +725,203 @@ func (c *serverUDPConn) LocalAddr() net.Addr             { return c.qconn.LocalA
 func (c *serverUDPConn) SetDeadline(time.Time) error      { return nil }
 func (c *serverUDPConn) SetReadDeadline(time.Time) error   { return nil }
 func (c *serverUDPConn) SetWriteDeadline(time.Time) error  { return nil }
+
+// ============================================================================
+// Server-side QUIC stream writer (shared, mutex-protected)
+// ============================================================================
+
+type quicStreamWriter struct {
+	stream  *quic.Stream
+	writeMu sync.Mutex
+}
+
+func (w *quicStreamWriter) writeFrame(sessionID uint32, addr string, payload []byte) error {
+	w.writeMu.Lock()
+	defer w.writeMu.Unlock()
+	return WriteSmuxUDPFrame(w.stream, sessionID, addr, payload)
+}
+
+// ============================================================================
+// Server-side PacketConn for QUIC stream UDP sessions
+// ============================================================================
+
+type quicStreamServerUDPConn struct {
+	writer    *quicStreamWriter
+	sessionID uint32
+	addr      string
+	readCh    chan []byte
+	done      chan struct{}
+	closeOnce sync.Once
+}
+
+var _ net.PacketConn = (*quicStreamServerUDPConn)(nil)
+
+func (c *quicStreamServerUDPConn) deliver(payload []byte) {
+	select {
+	case c.readCh <- payload:
+	case <-c.done:
+	}
+}
+
+func (c *quicStreamServerUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
+	select {
+	case payload := <-c.readCh:
+		n := copy(b, payload)
+		addr, _ := net.ResolveUDPAddr("udp", c.addr)
+		return n, addr, nil
+	case <-c.done:
+		return 0, nil, net.ErrClosed
+	}
+}
+
+func (c *quicStreamServerUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
+	// Empty addr for responses
+	if err := c.writer.writeFrame(c.sessionID, "", b); err != nil {
+		return 0, err
+	}
+	return len(b), nil
+}
+
+func (c *quicStreamServerUDPConn) close() {
+	c.closeOnce.Do(func() { close(c.done) })
+}
+
+func (c *quicStreamServerUDPConn) Close() error {
+	c.close()
+	return nil
+}
+
+func (c *quicStreamServerUDPConn) LocalAddr() net.Addr             { return &net.UDPAddr{} }
+func (c *quicStreamServerUDPConn) SetDeadline(time.Time) error      { return nil }
+func (c *quicStreamServerUDPConn) SetReadDeadline(time.Time) error   { return nil }
+func (c *quicStreamServerUDPConn) SetWriteDeadline(time.Time) error  { return nil }
+
+// ============================================================================
+// Client-side stream-based UDP mux (fallback when datagrams not supported)
+// ============================================================================
+
+type quicStreamUDPMux struct {
+	stream    *quic.Stream
+	qconn     *quic.Conn
+	br        *bufio.Reader
+	writeMu   sync.Mutex
+	mu        sync.Mutex
+	sessions  map[uint32]chan *UDPFrame
+	done      chan struct{}
+	started   bool
+}
+
+func newQuicStreamUDPMux(stream *quic.Stream, qconn *quic.Conn) *quicStreamUDPMux {
+	return &quicStreamUDPMux{
+		stream:   stream,
+		qconn:    qconn,
+		br:       bufio.NewReader(stream),
+		sessions: make(map[uint32]chan *UDPFrame),
+		done:     make(chan struct{}),
+	}
+}
+
+func (m *quicStreamUDPMux) start() {
+	m.mu.Lock()
+	if m.started {
+		m.mu.Unlock()
+		return
+	}
+	m.started = true
+	m.mu.Unlock()
+	go m.readLoop()
+}
+
+func (m *quicStreamUDPMux) readLoop() {
+	for {
+		frame, err := ReadSmuxUDPFrame(m.br)
+		if err != nil {
+			return
+		}
+		m.mu.Lock()
+		ch, ok := m.sessions[frame.SessionID]
+		m.mu.Unlock()
+		if ok {
+			select {
+			case ch <- frame:
+			default:
+			}
+		}
+	}
+}
+
+func (m *quicStreamUDPMux) writeFrame(sessionID uint32, addr string, payload []byte) error {
+	m.writeMu.Lock()
+	defer m.writeMu.Unlock()
+	return WriteSmuxUDPFrame(m.stream, sessionID, addr, payload)
+}
+
+func (m *quicStreamUDPMux) register(sessionID uint32) chan *UDPFrame {
+	ch := make(chan *UDPFrame, 32)
+	m.mu.Lock()
+	m.sessions[sessionID] = ch
+	m.mu.Unlock()
+	m.start()
+	return ch
+}
+
+func (m *quicStreamUDPMux) unregister(sessionID uint32) {
+	m.mu.Lock()
+	delete(m.sessions, sessionID)
+	m.mu.Unlock()
+}
+
+func (m *quicStreamUDPMux) close() {
+	select {
+	case <-m.done:
+	default:
+		close(m.done)
+	}
+	m.stream.Close()
+}
+
+// ============================================================================
+// Client-side PacketConn over QUIC stream (fallback)
+// ============================================================================
+
+type quicStreamUDPConn struct {
+	mux        *quicStreamUDPMux
+	sessionID  uint32
+	targetAddr string
+	readCh     chan *UDPFrame
+	done       chan struct{}
+	closeOnce  sync.Once
+}
+
+var _ net.PacketConn = (*quicStreamUDPConn)(nil)
+
+func (c *quicStreamUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
+	select {
+	case frame := <-c.readCh:
+		n := copy(b, frame.Payload)
+		addr, _ := net.ResolveUDPAddr("udp", c.targetAddr)
+		return n, addr, nil
+	case <-c.done:
+		return 0, nil, net.ErrClosed
+	}
+}
+
+func (c *quicStreamUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
+	if err := c.mux.writeFrame(c.sessionID, c.targetAddr, b); err != nil {
+		return 0, err
+	}
+	return len(b), nil
+}
+
+func (c *quicStreamUDPConn) Close() error {
+	c.closeOnce.Do(func() {
+		close(c.done)
+		c.mux.unregister(c.sessionID)
+	})
+	return nil
+}
+
+func (c *quicStreamUDPConn) LocalAddr() net.Addr             { return c.mux.qconn.LocalAddr() }
+func (c *quicStreamUDPConn) SetDeadline(time.Time) error      { return nil }
+func (c *quicStreamUDPConn) SetReadDeadline(time.Time) error   { return nil }
+func (c *quicStreamUDPConn) SetWriteDeadline(time.Time) error  { return nil }
