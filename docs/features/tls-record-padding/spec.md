@@ -5,7 +5,7 @@
 | Field | Value |
 |-------|-------|
 | Feature | tls-record-padding |
-| Status | Planning |
+| Status | Implemented |
 | Created | 2026-02-12 |
 | Baseline | k2-baseline (wire/ layer, server/ layer) |
 | Spec ref | wire/k2v5-protocol-spec.md Section 3.3-3.4 |

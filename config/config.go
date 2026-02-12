@@ -26,13 +26,14 @@ type ProxyConfig struct {
 // ServerConfig is the server-side configuration.
 // Loaded by `k2 run -s`.
 type ServerConfig struct {
-	Listen string    `yaml:"listen"`
-	TLS    TLSConfig `yaml:"tls"`
-	ECH    ECHConfig `yaml:"ech"`
-	PCC    string    `yaml:"pcc"`
-	Rate   int64     `yaml:"rate"`
-	Auth   AuthConfig    `yaml:"auth"`
-	Log    LogConfig     `yaml:"log"`
+	Listen  string       `yaml:"listen"`
+	TLS     TLSConfig    `yaml:"tls"`
+	ECH     ECHConfig    `yaml:"ech"`
+	CertDir string       `yaml:"cert_dir"` // directory for auto-generated dual keypair (RSA+EC)
+	PCC     string       `yaml:"pcc"`
+	Rate    int64        `yaml:"rate"`
+	Auth    AuthConfig   `yaml:"auth"`
+	Log     LogConfig    `yaml:"log"`
 }
 
 // DNSConfig contains DNS resolver configuration.

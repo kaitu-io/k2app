@@ -16,6 +16,7 @@ import (
 	"github.com/apernet/quic-go"
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/wire"
+	"github.com/kaitu-io/k2/wire/tlspad"
 	smux "github.com/xtaci/smux/v2"
 	"nhooyr.io/websocket"
 )
@@ -55,8 +56,14 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 		done:     make(chan struct{}),
 	}
 
-	// Load TLS certificate.
-	if cfg.TLS.Cert != "" && cfg.TLS.Key != "" {
+	// Certificate setup: dual cert pair (preferred) or static cert (legacy).
+	if cfg.CertDir != "" {
+		// Dual keypair mode: auto-generate RSA+EC certs with optional padding.
+		if err := s.setupCertPair(cfg); err != nil {
+			return nil, err
+		}
+	} else if cfg.TLS.Cert != "" && cfg.TLS.Key != "" {
+		// Legacy mode: static certificate from file.
 		cert, err := tls.LoadX509KeyPair(cfg.TLS.Cert, cfg.TLS.Key)
 		if err != nil {
 			return nil, fmt.Errorf("load TLS: %w", err)
@@ -86,6 +93,63 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 	})
 
 	return s, nil
+}
+
+// setupCertPair initializes the server with dual RSA+EC certs and optional padding.
+// Chain: EnsureCertPair → ProbeTarget → GeneratePaddedCert → SetCertPair
+func (s *Server) setupCertPair(cfg *config.ServerConfig) error {
+	pair, err := wire.EnsureCertPair(cfg.CertDir)
+	if err != nil {
+		return fmt.Errorf("cert pair: %w", err)
+	}
+
+	// Probe target site to get cert characteristics for padding.
+	var profile *wire.TargetProfile
+	if cfg.ECH.PublicName != "" {
+		profile, err = wire.ProbeTarget(cfg.ECH.PublicName)
+		if err != nil {
+			log.Printf("server: probe %s failed (padding disabled): %v", cfg.ECH.PublicName, err)
+			// Continue without padding — certs still work, just not padded.
+		}
+	}
+
+	// Apply padding if we have a probe result.
+	if profile != nil && profile.CertChainLen > 0 {
+		targetLen := profile.CertChainLen
+
+		// Pad RSA cert.
+		if tlspad.MeasureCertDERLen(&pair.RSA) < targetLen {
+			padded, err := tlspad.GeneratePaddedCert(pair.RSA.PrivateKey, targetLen)
+			if err != nil {
+				log.Printf("server: RSA cert padding failed: %v", err)
+			} else {
+				pair.RSA = padded
+			}
+		}
+
+		// Pad EC cert.
+		if tlspad.MeasureCertDERLen(&pair.EC) < targetLen {
+			padded, err := tlspad.GeneratePaddedCert(pair.EC.PrivateKey, targetLen)
+			if err != nil {
+				log.Printf("server: EC cert padding failed: %v", err)
+			} else {
+				pair.EC = padded
+			}
+		}
+
+		log.Printf("server: certs padded to ~%d bytes (target: %s, algo: %s)",
+			targetLen, cfg.ECH.PublicName, profile.KeyAlgo)
+	}
+
+	// Initialize TLS config with GetCertificate callback.
+	s.TLSConfig = &tls.Config{
+		NextProtos: []string{"h3"},
+		MinVersion: tls.VersionTLS13,
+	}
+	s.SetCertPair(pair, profile)
+
+	log.Printf("server: cert pins: %s", pair.FormatPins())
+	return nil
 }
 
 // SetCertPair configures the server to use a dual cert pair with dynamic cert selection.

@@ -35,3 +35,4 @@ build/
 
 k2
 k2s
+.claude/agent-memory/
