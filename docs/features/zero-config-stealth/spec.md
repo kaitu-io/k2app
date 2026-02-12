@@ -1,5 +1,12 @@
 # Zero-Config Stealth: Spec
 
+## Meta
+
+| Field | Value |
+|-------|-------|
+| Status | implemented |
+| Implementation Date | 2026-02-12 |
+
 ## Goal
 
 Server `k2s run` with zero mandatory config. Auto-generates certs, ECH config (forged from Cloudflare), auth tokens. Logs a complete k2v5:// URL. Clients paste URL and connect.
@@ -20,7 +27,7 @@ Server `k2s run` with zero mandatory config. Auto-generates certs, ECH config (f
 
 ### AC3: Client CA Handling
 - Verification chain: pin > insecure > default CA pool
-- Default CA pool = system CA + embedded Kaitu CA (EC P-256, go:embed) - Chinese CA blacklist
+- Default CA pool = system CA + embedded Kaitu CA - Chinese CA blacklist
 - Chinese CA blacklist: CNNIC, WoSign, WoTrus, CFCA, GDCA, SHECA
 - Unit test: pool includes Kaitu CA, excludes CNNIC
 

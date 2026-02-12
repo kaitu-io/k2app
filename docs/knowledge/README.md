@@ -18,6 +18,11 @@ Entries:
 - Binary Split: k2 (Client) + k2s (Server)
 - TransportManager: QUIC Primary, TCP-WS Fallback
 - k2rule.Init(&Config{}) Unified API
+- ECH Config Forging from DNS Template
+- ECH Config Rotation with Shared HPKE Key
+- Chinese CA Blocklist via VerifyPeerCertificate
+- Server Zero-Config with Auto-Provisioning Flow
+- SNI Cleanup: Outer SNI = ECH Public Name
 
 ### [testing-strategies.md](testing-strategies.md)
 Proven testing patterns that worked across features.
@@ -30,6 +35,10 @@ Patterns:
 - Bidirectional Pipe Testing
 - Test Fixtures for Common Configs
 - Table-Driven Routing Tests
+- Binary Wire Format Testing with Builder Functions
+- DNS Query Testing with Conditional Skips
+- Fallback Chain Testing
+- Auto-Migration Testing
 
 ### [framework-gotchas.md](framework-gotchas.md)
 Dependency-specific issues and their solutions.
@@ -42,6 +51,9 @@ Gotchas:
 - bufio.Reader Required for Stream Protocol
 - k2rule GeoIP Path Requirement
 - sing-tun AutoRoute vs Manual Route
+- miekg/dns: Domain Name Must End with Dot
+- ECH Binary Format: Big-Endian Multi-Byte Fields
+- Go crypto/tls ECH: Must Use X25519, Not P-256
 
 ### [task-splitting.md](task-splitting.md)
 Patterns for breaking features into mergeable incremental tasks.

@@ -32,6 +32,7 @@ provider/AGENT.md              Provider interface (TUN, Proxy, iOS, Android)
 server/AGENT.md                Server listener orchestration, TCP/UDP handlers
 wire/AGENT.md                  k2v5 wire protocol, Dialer/Listener interfaces
 wire/k2v5-protocol-spec.md    k2v5 protocol specification (TLS, ECH, camouflage, framing)
+wire/tlspad/AGENT.md           TLS record padding for fingerprint mimicry
 wire/pcc/AGENT.md              PCC Vivace congestion control
 test/AGENT.md                  E2E integration tests
 ```
@@ -66,6 +67,9 @@ test/AGENT.md                  E2E integration tests
 - TUN device requires root (`sudo k2 run -c`). `k2 up` auto-installs daemon as root via launchd/systemd
 - QUIC datagrams may not be supported — wire.DialUDP falls back to stream-based UDP
 - smux needs buffer tuning for VPN traffic (default 4MB too small, use 16MB)
+- ECH requires X25519 keys (not P-256) — Go's crypto/tls only supports DHKEM(X25519)
+- DNS queries need trailing dot (FQDN) — `crypto.cloudflare.com.` not `crypto.cloudflare.com`
+- TLS wire formats are big-endian — always use `binary.BigEndian` for ECH/TLS parsing
 
 ## Dependencies
 
@@ -88,4 +92,4 @@ docs/todos/p2-*.md     Nice to have
 
 ## Status
 
-**Done**: Full L4 architecture, wire protocol (QUIC+TCP-WS), DNS middleware, auth, ECH, PCC, client tunnel, server handlers, e2e tests, k2/k2s binaries
+**Done**: Full L4 architecture, wire protocol (QUIC+TCP-WS), DNS middleware, auth, ECH (with DNS-based forging), TLS padding, PCC, client tunnel, server handlers, e2e tests, zero-config server startup, k2/k2s binaries

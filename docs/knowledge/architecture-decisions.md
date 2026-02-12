@@ -351,3 +351,187 @@ case wire.StreamTypeUDP:
 **Trade-offs**:
 - Pro: Universal UDP support, no datagram dependency
 - Con: Stream-based UDP adds latency vs unreliable datagrams
+
+---
+
+## ECH Config Forging from DNS Template (zero-config-stealth, 2026-02-12)
+
+**Decision**: Query real Cloudflare ECH config via DNS, extract template fields, forge config with config_id + 1.
+
+**Context**: ECH configs need to look plausible to censors. Random configs may stand out. Cloudflare has production ECH deployment, their configs provide realistic template.
+
+**Implementation**:
+```go
+// Query DNS HTTPS record (type 65)
+provider := &LocalECHProvider{
+    DNSServer: "1.1.1.1:53",
+    Domain:    "crypto.cloudflare.com",
+}
+tmpl, _ := provider.FetchTemplate()
+
+// Extract: config_id, kem_id, cipher_suites, public_name, max_name_len
+// Forge: config_id = template + 1 (mimics real traffic, avoids collision)
+key, configList, _ := GenerateECHKeyFromTemplate(tmpl, privKey)
+```
+
+**Outcome**: k2 ECH configs have same cipher_suites, kem_id, public_name as real Cloudflare. config_id incremented to avoid exact duplication while staying plausible.
+
+**Validation**:
+- Tests: `wire/ech_provider_test.go` (TestParseECHConfigBytes, TestGenerateECHKeyFromTemplate, TestLocalECHProvider_FetchTemplate)
+- Integration: Server auto-generates forged ECH config on first startup
+
+**3-Tier Fallback**:
+1. Live DNS query (preferred)
+2. Disk cache (`cert_dir/ech_template.json`) if DNS fails
+3. Hardcoded defaults (config_id=97, X25519, cloudflare-ech.com) as last resort
+
+**Pattern**: Template-based forgery provides plausible deniability. Censors see traffic matching known legitimate ECH deployments.
+
+---
+
+## ECH Config Rotation with Shared HPKE Key (zero-config-stealth, 2026-02-12)
+
+**Decision**: Server maintains multiple ECH configs (different config_ids) but shares single HPKE private key.
+
+**Context**: Clients cache ECH configs. When server rotates, old clients fail if old config rejected. Multi-config support allows graceful rotation.
+
+**Implementation**:
+```go
+// Split storage
+cert_dir/ech.key              // Single X25519 HPKE private key (persistent)
+cert_dir/ech-configs/          // Directory of configs
+  ├─ config-98.bin             // Old config
+  └─ config-99.bin             // New config (latest)
+
+// Server loads all configs with same key
+privKey := EnsureECHPrivateKey("cert_dir/ech.key")
+allConfigs := LoadAllECHConfigs("cert_dir/ech-configs/")
+tlsCfg.EncryptedClientHelloKeys = BuildECHKeys(privKey, allConfigs)
+```
+
+**Outcome**: Old clients with old ECH config continue working. New clients get latest config. Server accepts both.
+
+**Validation**:
+- Tests: `wire/ech_test.go` (TestEnsureECHPrivateKey, TestSaveLoadECHConfig, TestBuildECHKeys)
+- Integration: Server startup in `server/server.go` (setupECHRotation)
+
+**Trade-offs**:
+- Pro: Graceful rotation, no client breakage
+- Con: Multiple configs slightly increase server TLS handshake overhead (negligible)
+
+**Pattern**: Split key (persistent) from config (ephemeral) enables rotation without re-key.
+
+---
+
+## Chinese CA Blocklist via VerifyPeerCertificate (zero-config-stealth, 2026-02-12)
+
+**Decision**: Block Chinese CAs using `tls.Config.VerifyPeerCertificate` callback instead of modifying system cert pool.
+
+**Context**: Go's `x509.SystemCertPool()` returns opaque pool with no Remove API. Chinese CAs (CNNIC, WoSign, CFCA, etc.) have history of mis-issuance and state control.
+
+**Blocked Organizations**:
+```go
+blockedCAOrgs = []string{
+    "CNNIC", "WoSign", "WoTrus", "CFCA", "GDCA", "SHECA",
+    "China Financial Certification Authority",
+    "Shanghai Electronic Certification Authority",
+    "Guang Dong Certificate Authority",
+}
+```
+
+**Implementation**:
+```go
+tlsCfg.RootCAs = BuildDefaultCAPool() // system + Kaitu CA
+tlsCfg.VerifyPeerCertificate = func(rawCerts [][]byte, chains [][]*x509.Certificate) error {
+    // Runs AFTER standard CA chain validation
+    for _, chain := range chains {
+        for _, cert := range chain {
+            if IsBlockedCA(cert) {
+                return fmt.Errorf("blocked CA: %s", cert.Issuer.Organization)
+            }
+        }
+    }
+    return nil
+}
+```
+
+**Outcome**: Certificates issued by blocked CAs fail handshake even if chain validates against system pool.
+
+**Validation**:
+- Tests: `wire/ca_test.go` (TestIsBlockedCA, TestBuildDefaultCAPool)
+- Pattern: Post-validation rejection preserves standard TLS chain validation
+
+**Trade-offs**:
+- Pro: Clean blocklist implementation, no system pool mutation
+- Con: Blocked CAs still in system pool (cert validates before rejection callback)
+
+**Security Note**: VerifyPeerCertificate runs AFTER standard validation. Blocklist is defense-in-depth, not primary trust mechanism.
+
+---
+
+## Server Zero-Config with Auto-Provisioning Flow (zero-config-stealth, 2026-02-12)
+
+**Decision**: `k2s run` with no config file auto-generates all necessary credentials and logs connection URL.
+
+**Context**: Traditional VPN setup requires: TLS certs, ECH keys, auth tokens, URL construction. Manual setup error-prone and time-consuming.
+
+**6-Step Auto-Provision Flow** (`server/server.go:setupAutoProvision`):
+```go
+1. Ensure cert_dir exists (os.MkdirAll)
+2. EnsureDualCertPair(cert_dir) — generate RSA+EC TLS certs
+3. SetupECHRotation(certDir, provider) — fetch template, forge configs
+4. ProbeAndApplyPadding(certPair, echConfig) — TLS fingerprint mimicry
+5. EnsureAuth(cert_dir/auth.json) — generate UDID+token
+6. Log k2v5://UDID:TOKEN@HOST:PORT?ech=<b64>&pin=<dual_pins>
+```
+
+**Default Configuration**:
+```go
+cert_dir: ~/.k2s/ (Linux/macOS), %APPDATA%\k2s\ (Windows)
+listen:   :443
+ech.provider: local (Cloudflare DNS)
+```
+
+**Outcome**: User runs `k2s run`, waits 2 seconds, copies URL, pastes to client. Zero manual cert/key generation.
+
+**Validation**:
+- Tests: `server/server_test.go` (integration test with zero config)
+- Files: `wire/auth_info.go` (EnsureAuth), `config/config.go` (DefaultServerConfig)
+
+**Trade-offs**:
+- Pro: Instant setup, no expertise required
+- Con: Self-signed certs require `insecure=1` URL parameter (acceptable for personal VPN)
+
+**Pattern**: Auto-provisioning unifies cert, ECH, padding, and auth generation into single startup flow.
+
+---
+
+## SNI Cleanup: Outer SNI = ECH Public Name (zero-config-stealth, 2026-02-12)
+
+**Decision**: Remove `sni` URL parameter, `SNI` field from Config. Outer SNI always equals ECH config's `public_name`.
+
+**Context**: uTLS forces outer SNI = ECH config's public_name field. Independent SNI control impossible. Configurable SNI was misleading.
+
+**Old Behavior**:
+```go
+cfg.SNI = "www.microsoft.com" // Default fake SNI
+// URL parameter: k2v5://...?sni=custom.example.com
+```
+
+**New Behavior**:
+```go
+// No SNI field, no URL parameter
+// Outer SNI = echConfig.public_name (from template = "cloudflare-ech.com")
+```
+
+**Outcome**: Simplified configuration, removed misleading parameter. ECH handshake dictates outer SNI.
+
+**Validation**:
+- Tests: All existing tests updated to remove SNI assertions
+- Protocol spec: Updated sections 3.1, 3.2, 3.3, 12.4 to document new behavior
+
+**Trade-offs**:
+- Pro: No user confusion, matches uTLS reality
+- Con: Less flexibility (but flexibility was illusory — uTLS ignored custom SNI anyway)
+
+**Pattern**: Remove config knobs that don't actually control behavior.

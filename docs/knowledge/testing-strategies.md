@@ -204,3 +204,159 @@ func TestRouter_RouteAddr(t *testing.T) {
 **Validation**: Comprehensive coverage with minimal code.
 
 **Benefits**: Easy to add test cases, clear intent.
+
+---
+
+## Binary Wire Format Testing with Builder Functions (zero-config-stealth, 2026-02-12)
+
+**Pattern**: Create test builder functions for complex binary formats to enable round-trip testing.
+
+```go
+// Test helper constructs valid binary format
+func buildTestECHConfigList(configID uint8, kemID uint16, pubKey []byte, ...) []byte {
+    // ... construct binary format following spec
+    return data
+}
+
+func TestParseECHConfigBytes(t *testing.T) {
+    // Build known-good binary data
+    data := buildTestECHConfigList(42, 0x0020, pubKey, cipherSuites, 128, "example.com")
+
+    // Parse it back
+    tmpl, err := ParseECHConfigBytes(data)
+
+    // Assert fields match inputs
+    assert.Equal(t, 42, tmpl.ConfigID)
+    assert.Equal(t, 0x0020, tmpl.KemID)
+}
+```
+
+**Used in**:
+- `wire/ech_provider_test.go` — ECH config parsing round-trip
+- Similar pattern in stream protocol tests
+
+**Validation**: Round-trip parse → build → parse proves format correctness.
+
+**Benefits**:
+- Self-documenting (builder shows format structure)
+- Reusable across multiple test cases
+- Catches off-by-one errors in parsing logic
+- Independent of external data sources
+
+---
+
+## DNS Query Testing with Conditional Skips (zero-config-stealth, 2026-02-12)
+
+**Pattern**: Test live DNS queries but skip gracefully when network unavailable.
+
+```go
+func TestLocalECHProvider_FetchTemplate_Live(t *testing.T) {
+    if testing.Short() {
+        t.Skip("skipping live DNS query in short mode")
+    }
+
+    provider := &LocalECHProvider{}
+    tmpl, err := provider.FetchTemplate()
+
+    if err != nil {
+        // Network may be down — skip instead of fail
+        t.Skipf("DNS query failed (expected in offline/CI): %v", err)
+    }
+
+    // Assert template structure (not exact values — Cloudflare may update)
+    if tmpl.KemID != 0x0020 {
+        t.Errorf("unexpected kem_id (Cloudflare changed?): 0x%04x", tmpl.KemID)
+    }
+}
+```
+
+**Used in**: `wire/ech_provider_test.go` (TestLocalECHProvider_FetchTemplate)
+
+**Validation**: Test runs in online environments, skips in offline/CI.
+
+**Benefits**:
+- CI doesn't flake on network issues
+- Still validates live integration when possible
+- Detects upstream changes (Cloudflare ECH format)
+
+**Pattern**: Use `t.Skip()` for environmental dependencies, not `t.Error()`.
+
+---
+
+## Fallback Chain Testing (zero-config-stealth, 2026-02-12)
+
+**Pattern**: Test each tier of fallback independently, then test full chain.
+
+```go
+// Test tier 1: live fetch
+func TestFetchTemplate_Live(t *testing.T) { ... }
+
+// Test tier 2: cache loading
+func TestFetchTemplate_Cache(t *testing.T) {
+    // Write cache file
+    cacheTemplate("cache.json", &ECHTemplate{...})
+
+    // Simulate DNS failure (no network), verify cache used
+    tmpl, err := FetchTemplateWithFallback(failingProvider, "cache.json")
+    assert.NoError(t, err)
+}
+
+// Test tier 3: hardcoded defaults
+func TestFetchTemplate_Defaults(t *testing.T) {
+    // No cache, no network
+    tmpl, err := FetchTemplateWithFallback(failingProvider, "")
+    assert.NoError(t, err)
+    assert.Equal(t, "cloudflare-ech.com", tmpl.PublicName)
+}
+```
+
+**Used in**: `wire/ech_provider_test.go` (FetchTemplateWithFallback tests)
+
+**Validation**: Each fallback tier validated independently, full chain tested as integration.
+
+**Benefits**:
+- Clear failure isolation
+- Each tier testable without environment setup
+- Integration test proves chain works end-to-end
+
+**Pattern**: Unit test each fallback tier, integration test full chain.
+
+---
+
+## Auto-Migration Testing (zero-config-stealth, 2026-02-12)
+
+**Pattern**: Test backward-compatible format migrations with before/after file checks.
+
+```go
+func TestEnsureECHPrivateKey_Migration_OldFormat(t *testing.T) {
+    dir := t.TempDir()
+    keyPath := filepath.Join(dir, "ech.key")
+
+    // Write old format (key+config bundled)
+    oldData := append(privKeyBytes, configBytes...)
+    os.WriteFile(keyPath, oldData, 0600)
+
+    // Ensure key (triggers migration)
+    privKey, err := EnsureECHPrivateKey(keyPath)
+    assert.NoError(t, err)
+
+    // Verify new format (key only)
+    newData, _ := os.ReadFile(keyPath)
+    assert.Equal(t, 32, len(newData)) // X25519 key = 32 bytes
+
+    // Verify config moved to separate file
+    configs, _ := LoadAllECHConfigs(filepath.Join(dir, "ech-configs"))
+    assert.Len(t, configs, 1)
+}
+```
+
+**Used in**: `wire/ech_test.go` (TestEnsureECHPrivateKey with old format)
+
+**Validation**: Old format auto-migrates to new format, data preserved.
+
+**Benefits**:
+- Tests backward compatibility explicitly
+- Catches migration bugs before deployment
+- Documents migration path for operators
+
+**Pattern**: Simulate old format, trigger migration, assert new format correct.

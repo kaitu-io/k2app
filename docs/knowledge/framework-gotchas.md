@@ -342,3 +342,88 @@ sess, _ := smux.Client(netConn, wire.DefaultSmuxConfig())
 **Pattern**: Binary message type for all non-text protocols over WebSocket.
 
 **Source**: wire-protocol-compliance feature, T5 (WebSocket layer)
+
+---
+
+## miekg/dns: Domain Name Must End with Dot (zero-config-stealth, 2026-02-12)
+
+**Issue**: DNS queries fail silently or return NXDOMAIN if domain doesn't end with `.`
+
+**Symptom**: `crypto.cloudflare.com` query fails, `crypto.cloudflare.com.` succeeds.
+
+**Root Cause**: DNS wire protocol requires fully-qualified domain names (FQDN) to end with root label (empty string = `.`).
+
+**Solution**: Always append trailing dot to domains before DNS query:
+```go
+domain := "crypto.cloudflare.com"
+if domain[len(domain)-1] != '.' {
+    domain += "."
+}
+c := new(dns.Client)
+msg := new(dns.Msg)
+msg.SetQuestion(domain, dns.TypeHTTPS) // Now valid FQDN
+```
+
+**Validated in**: `wire/ech_provider.go` (FetchTemplate), `wire/ech_provider_test.go`
+
+**Pattern**: DNS libraries expect FQDNs, not relative names. Always normalize before query.
+
+**Source**: zero-config-stealth feature, T1 (ECH DNS fetching)
+
+---
+
+## ECH Binary Format: Big-Endian Multi-Byte Fields (zero-config-stealth, 2026-02-12)
+
+**Issue**: ECH config parsing fails with "truncated" errors when using native endianness.
+
+**Symptom**: `ParseECHConfigBytes` reads garbage lengths, overruns buffer.
+
+**Root Cause**: TLS wire formats use big-endian (network byte order) for all multi-byte integers. Go's native endianness is little-endian on most platforms.
+
+**Solution**: Always use `binary.BigEndian` for TLS/ECH parsing:
+```go
+// Read 2-byte length prefix
+listLen := int(binary.BigEndian.Uint16(data[0:2]))
+
+// Read version (2 bytes)
+version := binary.BigEndian.Uint16(data[0:2])
+
+// WRONG: binary.LittleEndian or manual bit shifting (unless you're sure of endianness)
+```
+
+**Validated in**: `wire/ech_provider.go` (ParseECHConfigBytes, GenerateECHKeyFromTemplate), `wire/ech_provider_test.go`
+
+**Pattern**: TLS/HTTPS/QUIC wire formats = always big-endian. Use `binary.BigEndian` for reads and writes.
+
+**Source**: zero-config-stealth feature, T1 (ECH config parsing)
+
+---
+
+## Go crypto/tls ECH: Must Use X25519, Not P-256 (zero-config-stealth, 2026-02-12)
+
+**Issue**: ECH handshake fails with "decryption error" when using P-256 ECDH keys.
+
+**Symptom**: Server accepts key at generation, but client handshake fails silently.
+
+**Root Cause**: Go's `crypto/tls` ECH implementation only supports X25519 DHKEM (kem_id=0x0020). Other curves defined in RFC 9180 but not implemented.
+
+**Solution**: Always generate X25519 keys for ECH:
+```go
+// RIGHT: X25519 for ECH
+privKey, _ := ecdh.X25519().GenerateKey(rand.Reader)
+echKey := tls.EncryptedClientHelloKey{
+    Config:     echConfig,
+    PrivateKey: privKey.Bytes(),
+}
+
+// WRONG: P-256 for ECH (will fail at handshake)
+privKey, _ := ecdh.P256().GenerateKey(rand.Reader)
+```
+
+**Note**: P-256/P-384 ECDSA certs for TLS certificates are fine. X25519 requirement is ECH-specific.
+
+**Validated in**: `wire/ech.go` (EnsureECHPrivateKey), `wire/ech_provider.go` (GenerateECHKeyFromTemplate), all ECH tests
+
+**Pattern**: X25519-only for ECH keys. Check kem_id in template must be 0x0020.
+
+**Source**: zero-config-stealth feature, T1/T2 (ECH key generation)
