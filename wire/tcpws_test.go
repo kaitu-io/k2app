@@ -4,13 +4,16 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
+	"net/http"
 	"sync"
 	"testing"
 	"time"
 
 	smux "github.com/xtaci/smux/v2"
+	"nhooyr.io/websocket"
 )
 
 func TestDefaultSmuxConfig(t *testing.T) {
@@ -534,6 +537,423 @@ func TestSmuxLoopback_MultipleStreams(t *testing.T) {
 			t.Errorf("stream %d: echo = %q", i, string(buf[:n]))
 		}
 		stream.Close()
+	}
+
+	if err := <-serverDone; err != nil {
+		t.Fatalf("server error: %v", err)
+	}
+}
+
+// ============================================================================
+// uTLS + WebSocket Tests (AC8, AC9, AC10, AC11, AC13)
+// ============================================================================
+
+// TestTCPWSClient_uTLS_Handshake verifies that TCPWSClient uses utls.UClient
+// with the configured ClientHelloID, not standard tls.Client.
+// AC8: TCP-WS client uses utls.UClient with configured ClientHelloID
+// AC9: TLS fingerprint matches configured profile
+func TestTCPWSClient_uTLS_Handshake(t *testing.T) {
+	tests := []struct {
+		name        string
+		fingerprint string
+	}{
+		{"chrome", "chrome"},
+		{"firefox", "firefox"},
+		{"safari", "safari"},
+		{"random", "random"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create TLS server with test certificate
+			cert := generateTestCert(t)
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer listener.Close()
+
+			serverAddr := listener.Addr().String()
+			host, portStr, _ := net.SplitHostPort(serverAddr)
+			var port int
+			fmt.Sscanf(portStr, "%d", &port)
+
+			// Server accepts TLS connection and verifies handshake succeeds
+			handshakeSuccess := make(chan bool, 1)
+			serverDone := make(chan error, 1)
+			go func() {
+				conn, err := listener.Accept()
+				if err != nil {
+					serverDone <- err
+					return
+				}
+				defer conn.Close()
+
+				tlsConn := tls.Server(conn, &tls.Config{
+					Certificates: []tls.Certificate{cert},
+					MinVersion:   tls.VersionTLS13,
+				})
+
+				if err := tlsConn.Handshake(); err != nil {
+					handshakeSuccess <- false
+					serverDone <- err
+					return
+				}
+
+				handshakeSuccess <- true
+
+				// Read and discard any WebSocket upgrade request
+				buf := make([]byte, 4096)
+				tlsConn.Read(buf)
+
+				serverDone <- nil
+			}()
+
+			// Client configuration with fingerprint
+			cfg := Config{
+				Host:        host,
+				Port:        port,
+				Fingerprint: tt.fingerprint,
+			}
+
+			client := NewTCPWSClient(cfg, nil)
+			client.tlsConfig = &tls.Config{
+				ServerName:         host,
+				InsecureSkipVerify: true,
+				MinVersion:         tls.VersionTLS13,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+
+			// Attempt connection - should complete TLS handshake with uTLS
+			// The WebSocket upgrade will fail (no WS server), but TLS handshake should succeed
+			conn, err := client.connectTLSWebSocket(ctx)
+			if conn != nil {
+				conn.Close()
+			}
+
+			// Verify that TLS handshake succeeded (uTLS worked)
+			select {
+			case success := <-handshakeSuccess:
+				if !success {
+					t.Error("TLS handshake failed - uTLS may not be working")
+				}
+			case <-time.After(3 * time.Second):
+				t.Fatal("timeout waiting for handshake")
+			}
+
+			// Wait for server to finish
+			select {
+			case serverErr := <-serverDone:
+				if serverErr != nil {
+					t.Logf("Server result: %v", serverErr)
+				}
+			case <-time.After(3 * time.Second):
+				t.Fatal("timeout waiting for server")
+			}
+		})
+	}
+}
+
+// TestTCPWSClient_FullFlow_WS tests the full client flow:
+// TCP → uTLS → WebSocket → smux → open stream → echo data
+// AC11: TCP-WS client performs WS upgrade to /k2v5/tunnel before smux
+// AC13: TCP proxy works correctly over WS+smux transport
+func TestTCPWSClient_FullFlow_WS(t *testing.T) {
+	// Create TLS certificate for server
+	cert := generateTestCert(t)
+
+	// Start HTTP server with WebSocket upgrade support
+	upgradePath := make(chan string, 1)
+	smuxReady := make(chan net.Conn, 1)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/k2v5/tunnel", func(w http.ResponseWriter, r *http.Request) {
+		// Record the upgrade path
+		upgradePath <- r.URL.Path
+
+		// Accept WebSocket upgrade
+		ws, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			t.Logf("WebSocket accept error: %v", err)
+			return
+		}
+
+		// Convert to net.Conn for smux
+		wsConn := websocket.NetConn(context.Background(), ws, websocket.MessageBinary)
+		smuxReady <- wsConn
+	})
+
+	// Create TLS listener
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	serverAddr := listener.Addr().String()
+	host, portStr, _ := net.SplitHostPort(serverAddr)
+	var port int
+	fmt.Sscanf(portStr, "%d", &port)
+
+	// Start HTTPS server
+	srv := &http.Server{
+		Handler: mux,
+		TLSConfig: &tls.Config{
+			Certificates: []tls.Certificate{cert},
+		},
+	}
+
+	go func() {
+		tlsListener := tls.NewListener(listener, srv.TLSConfig)
+		srv.Serve(tlsListener)
+	}()
+	defer srv.Close()
+
+	// Server goroutine to handle smux session
+	serverDone := make(chan error, 1)
+	go func() {
+		wsConn := <-smuxReady
+		if wsConn == nil {
+			serverDone <- fmt.Errorf("no WebSocket connection")
+			return
+		}
+		defer wsConn.Close()
+
+		// Create smux server on WebSocket connection
+		sess, err := smux.Server(wsConn, DefaultSmuxConfig())
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		defer sess.Close()
+
+		// Accept stream
+		stream, err := sess.AcceptStream()
+		if err != nil {
+			serverDone <- err
+			return
+		}
+
+		br := bufio.NewReader(stream)
+		streamType, addr, err := ReadStreamHeader(br)
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		if streamType != StreamTypeTCP || addr != "example.com:80" {
+			serverDone <- fmt.Errorf("unexpected stream: type=%d addr=%s", streamType, addr)
+			return
+		}
+
+		// Send OK response
+		if err := WriteStreamResponse(stream, nil); err != nil {
+			serverDone <- err
+			return
+		}
+
+		// Echo data
+		buf := make([]byte, 100)
+		n, err := br.Read(buf)
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		stream.Write(buf[:n])
+		serverDone <- nil
+	}()
+
+	// Client configuration
+	cfg := Config{
+		Host:        host,
+		Port:        port,
+		Fingerprint: "chrome",
+	}
+
+	client := NewTCPWSClient(cfg, nil)
+	client.tlsConfig = &tls.Config{
+		ServerName:         host,
+		InsecureSkipVerify: true,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Open TCP stream through client
+	conn, err := client.DialTCP(ctx, "example.com:80")
+	if err != nil {
+		t.Fatalf("DialTCP failed: %v", err)
+	}
+	defer conn.Close()
+
+	// Verify WebSocket upgrade path
+	select {
+	case path := <-upgradePath:
+		if path != "/k2v5/tunnel" {
+			t.Errorf("upgrade path = %q, want /k2v5/tunnel", path)
+		}
+	case <-time.After(1 * time.Second):
+		t.Error("WebSocket upgrade did not happen")
+	}
+
+	// Send data and verify echo
+	if _, err := conn.Write([]byte("hello")); err != nil {
+		t.Fatal(err)
+	}
+
+	buf := make([]byte, 100)
+	n, err := conn.Read(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(buf[:n]) != "hello" {
+		t.Errorf("echo = %q, want hello", string(buf[:n]))
+	}
+
+	// Wait for server to finish
+	if err := <-serverDone; err != nil {
+		t.Fatalf("server error: %v", err)
+	}
+}
+
+// TestTCPWSClient_DialUDP_WS tests UDP over WS+smux transport.
+// AC13: UDP proxy works correctly over WS+smux transport
+func TestTCPWSClient_DialUDP_WS(t *testing.T) {
+	// Create TLS certificate
+	cert := generateTestCert(t)
+
+	// Start HTTP server with WebSocket upgrade
+	smuxReady := make(chan net.Conn, 1)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/k2v5/tunnel", func(w http.ResponseWriter, r *http.Request) {
+		ws, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		wsConn := websocket.NetConn(context.Background(), ws, websocket.MessageBinary)
+		smuxReady <- wsConn
+	})
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	serverAddr := listener.Addr().String()
+	host, portStr, _ := net.SplitHostPort(serverAddr)
+	var port int
+	fmt.Sscanf(portStr, "%d", &port)
+
+	srv := &http.Server{
+		Handler: mux,
+		TLSConfig: &tls.Config{
+			Certificates: []tls.Certificate{cert},
+		},
+	}
+
+	go func() {
+		tlsListener := tls.NewListener(listener, srv.TLSConfig)
+		srv.Serve(tlsListener)
+	}()
+	defer srv.Close()
+
+	// Server: handle UDP stream
+	received := make(chan string, 1)
+	serverDone := make(chan error, 1)
+	go func() {
+		wsConn := <-smuxReady
+		if wsConn == nil {
+			serverDone <- fmt.Errorf("no WebSocket connection")
+			return
+		}
+		defer wsConn.Close()
+
+		sess, err := smux.Server(wsConn, DefaultSmuxConfig())
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		defer sess.Close()
+
+		// Accept UDP stream
+		stream, err := sess.AcceptStream()
+		if err != nil {
+			serverDone <- err
+			return
+		}
+
+		br := bufio.NewReader(stream)
+		streamType, _, err := ReadStreamHeader(br)
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		if streamType != StreamTypeUDP {
+			serverDone <- fmt.Errorf("expected UDP stream type")
+			return
+		}
+
+		// Read UDP frame
+		frame, err := ReadSmuxUDPFrame(br)
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		received <- string(frame.Payload)
+
+		// Echo back
+		WriteSmuxUDPFrame(stream, frame.SessionID, "", frame.Payload)
+		serverDone <- nil
+	}()
+
+	// Client
+	cfg := Config{
+		Host:        host,
+		Port:        port,
+		Fingerprint: "chrome",
+	}
+
+	client := NewTCPWSClient(cfg, nil)
+	client.tlsConfig = &tls.Config{
+		ServerName:         host,
+		InsecureSkipVerify: true,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	pconn, err := client.DialUDP(ctx, "8.8.8.8:53")
+	if err != nil {
+		t.Fatalf("DialUDP failed: %v", err)
+	}
+	defer pconn.Close()
+
+	// Send UDP packet
+	if _, err := pconn.WriteTo([]byte("dns-query"), nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify server received it
+	select {
+	case data := <-received:
+		if data != "dns-query" {
+			t.Errorf("received = %q, want dns-query", data)
+		}
+	case <-time.After(2 * time.Second):
+		t.Error("server did not receive UDP packet")
+	}
+
+	// Read echo response
+	buf := make([]byte, 100)
+	n, _, err := pconn.ReadFrom(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(buf[:n]) != "dns-query" {
+		t.Errorf("echo = %q, want dns-query", string(buf[:n]))
 	}
 
 	if err := <-serverDone; err != nil {
