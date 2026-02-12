@@ -216,3 +216,147 @@ func TestAuthHandler_InvalidTicket(t *testing.T) {
 		t.Errorf("status = %d, want 401", w.Code)
 	}
 }
+
+// TestAuthHandler_TicketRenewal_Fresh verifies AC15: ticket with > 50% TTL
+// remaining returns current ticket without re-issuing.
+func TestAuthHandler_TicketRenewal_Fresh(t *testing.T) {
+	store := NewTicketStore()
+	store.ticketTTL = 100 * time.Second // 100s total TTL
+	validator := func(jwt, udid string) bool { return true }
+	handler := NewAuthHandler(store, validator)
+
+	// Issue a ticket (it will have ~100s remaining = 100% TTL)
+	ticket, _ := store.Issue("device1", true)
+	originalToken := ticket.Token
+
+	// Sleep a small amount so remaining is ~90% (> 50% threshold)
+	time.Sleep(10 * time.Millisecond)
+
+	// Authenticate with the ticket
+	req := httptest.NewRequest("POST", "/k2v5/auth", nil)
+	req.Header.Set("X-K2-Ticket", originalToken)
+	req.Header.Set("X-K2-Device", "device1")
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", w.Code, w.Body.String())
+	}
+
+	var resp AuthResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json decode: %v", err)
+	}
+
+	// Should return the SAME token (no renewal)
+	if resp.Ticket != originalToken {
+		t.Errorf("ticket changed: got %q, want original %q", resp.Ticket, originalToken)
+	}
+}
+
+// TestAuthHandler_TicketRenewal_Expiring verifies AC16: ticket with < 50% TTL
+// remaining triggers renewal, issuing a new ticket and moving old to grace.
+func TestAuthHandler_TicketRenewal_Expiring(t *testing.T) {
+	store := NewTicketStore()
+	store.ticketTTL = 100 * time.Millisecond // 100ms total TTL
+	validator := func(jwt, udid string) bool { return true }
+	handler := NewAuthHandler(store, validator)
+
+	// Issue a ticket
+	ticket, _ := store.Issue("device1", true)
+	originalToken := ticket.Token
+
+	// Sleep until remaining TTL is < 50% (e.g., 60ms elapsed, 40ms remaining = 40%)
+	time.Sleep(65 * time.Millisecond)
+
+	// Authenticate with the ticket
+	req := httptest.NewRequest("POST", "/k2v5/auth", nil)
+	req.Header.Set("X-K2-Ticket", originalToken)
+	req.Header.Set("X-K2-Device", "device1")
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", w.Code, w.Body.String())
+	}
+
+	var resp AuthResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json decode: %v", err)
+	}
+
+	// Should return a NEW token (renewal triggered)
+	if resp.Ticket == originalToken {
+		t.Errorf("ticket not renewed: got same token %q", resp.Ticket)
+	}
+
+	// Old token should be in grace period
+	_, ok := store.Validate(originalToken)
+	if !ok {
+		t.Error("old ticket should still be valid during grace period")
+	}
+}
+
+// TestTicketStore_StartCleanup_Tickets verifies AC17: expired tickets are
+// removed by background cleanup goroutine.
+func TestTicketStore_StartCleanup_Tickets(t *testing.T) {
+	store := NewTicketStore()
+	store.ticketTTL = 50 * time.Millisecond
+
+	// Issue a ticket
+	ticket, _ := store.Issue("device1", true)
+
+	// Start cleanup with short interval
+	done := make(chan struct{})
+	defer close(done)
+	store.StartCleanup(30*time.Millisecond, done)
+
+	// Wait for ticket to expire
+	time.Sleep(60 * time.Millisecond)
+
+	// Wait for at least one cleanup cycle
+	time.Sleep(40 * time.Millisecond)
+
+	// Ticket should be removed from store
+	store.mu.RLock()
+	_, exists := store.byToken[ticket.Token]
+	store.mu.RUnlock()
+
+	if exists {
+		t.Error("expired ticket should be removed by cleanup")
+	}
+}
+
+// TestTicketStore_StartCleanup_GraceTokens verifies AC18: expired grace tokens
+// are removed by background cleanup goroutine.
+func TestTicketStore_StartCleanup_GraceTokens(t *testing.T) {
+	store := NewTicketStore()
+	store.gracePeriod = 50 * time.Millisecond
+
+	// Issue two tickets for same device (first enters grace)
+	t1, _ := store.Issue("device1", true)
+	oldToken := t1.Token
+	store.Issue("device1", true) // t1 enters grace period
+
+	// Start cleanup with short interval
+	done := make(chan struct{})
+	defer close(done)
+	store.StartCleanup(30*time.Millisecond, done)
+
+	// Wait for grace period to expire
+	time.Sleep(60 * time.Millisecond)
+
+	// Wait for at least one cleanup cycle
+	time.Sleep(40 * time.Millisecond)
+
+	// Grace token should be removed
+	store.mu.RLock()
+	_, exists := store.graceTokens[oldToken]
+	store.mu.RUnlock()
+
+	if exists {
+		t.Error("expired grace token should be removed by cleanup")
+	}
+}

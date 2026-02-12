@@ -10,6 +10,12 @@ import (
 	"time"
 )
 
+const (
+	// ticketRenewalThreshold is the fraction of TTL remaining below which
+	// a ticket is automatically renewed. 0.5 = 50% remaining.
+	ticketRenewalThreshold = 0.5
+)
+
 // AuthTicket represents a server-issued auth ticket.
 type AuthTicket struct {
 	Token      string
@@ -121,6 +127,49 @@ func (s *TicketStore) Remaining(token string) int {
 	return 0
 }
 
+// StartCleanup starts a background goroutine that periodically removes expired
+// tickets and grace tokens. The goroutine stops when done is closed.
+func (s *TicketStore) StartCleanup(interval time.Duration, done chan struct{}) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				s.cleanup()
+			case <-done:
+				return
+			}
+		}
+	}()
+}
+
+// cleanup removes expired tickets and grace tokens.
+func (s *TicketStore) cleanup() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now()
+
+	// Clean expired tickets
+	for token, ticket := range s.byToken {
+		if now.After(ticket.ExpiresAt) {
+			delete(s.byToken, token)
+			// Also clean byDevice if this was the current token
+			if currentToken, ok := s.byDevice[ticket.DeviceID]; ok && currentToken == token {
+				delete(s.byDevice, ticket.DeviceID)
+			}
+		}
+	}
+
+	// Clean expired grace tokens
+	for token, expiry := range s.graceTokens {
+		if now.After(expiry) {
+			delete(s.graceTokens, token)
+		}
+	}
+}
+
 // JWTValidator validates a JWT token and device UDID.
 type JWTValidator func(jwt, udid string) bool
 
@@ -184,11 +233,46 @@ func (h *AuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) respondTicket(w http.ResponseWriter, token, deviceID string) {
-	remaining := h.store.Remaining(token)
+	h.store.mu.RLock()
+	ticket, ok := h.store.byToken[token]
+	h.store.mu.RUnlock()
+
+	if !ok {
+		// Shouldn't happen (already validated), but handle gracefully
+		http.Error(w, `{"error":"invalid ticket"}`, http.StatusUnauthorized)
+		return
+	}
+
+	remaining := time.Until(ticket.ExpiresAt)
+	total := h.store.ticketTTL
+
+	// Check if renewal is needed (< 50% TTL remaining)
+	if remaining < time.Duration(float64(total)*ticketRenewalThreshold) {
+		// Auto-renew: issue new ticket, old enters grace
+		newTicket, err := h.store.Issue(deviceID, true)
+		if err != nil {
+			http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(AuthResponse{
+			Ticket:  newTicket.Token,
+			Expires: h.store.Remaining(newTicket.Token),
+			UDP:     newTicket.UDPEnabled,
+			Version: 1,
+		})
+		return
+	}
+
+	// Ticket fresh enough, return current info
+	remainingSecs := int(remaining.Seconds())
+	if remainingSecs < 0 {
+		remainingSecs = 0
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(AuthResponse{
 		Ticket:  token,
-		Expires: remaining,
+		Expires: remainingSecs,
 		UDP:     true,
 		Version: 1,
 	})
