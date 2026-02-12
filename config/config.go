@@ -28,6 +28,7 @@ type ProxyConfig struct {
 type ServerConfig struct {
 	Listen string    `yaml:"listen"`
 	TLS    TLSConfig `yaml:"tls"`
+	ECH    ECHConfig `yaml:"ech"`
 	PCC    string    `yaml:"pcc"`
 	Rate   int64     `yaml:"rate"`
 	Auth   AuthConfig    `yaml:"auth"`
@@ -44,6 +45,12 @@ type DNSConfig struct {
 type TLSConfig struct {
 	Cert string `yaml:"cert"`
 	Key  string `yaml:"key"`
+}
+
+// ECHConfig contains Encrypted Client Hello configuration.
+type ECHConfig struct {
+	KeyPath    string `yaml:"key_path"`
+	PublicName string `yaml:"public_name"`
 }
 
 // AuthConfig contains server auth configuration.
