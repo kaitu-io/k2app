@@ -333,6 +333,13 @@ func (s *TCPWSServer) HandleConn(conn net.Conn) {
 	go s.handleSession(sess)
 }
 
+// HandleSession processes streams from a smux session, blocking until it ends.
+// Used by handleHTTP for WebSocket connections where the caller must block
+// to keep the HTTP handler (and hijacked connection) alive.
+func (s *TCPWSServer) HandleSession(sess *smux.Session) {
+	s.handleSession(sess)
+}
+
 func (s *TCPWSServer) handleSession(sess *smux.Session) {
 	defer sess.Close()
 	for {
