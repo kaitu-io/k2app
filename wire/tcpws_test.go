@@ -42,7 +42,6 @@ func TestTCPWSClient_Create(t *testing.T) {
 	cfg := Config{
 		Host:        "1.2.3.4",
 		Port:        443,
-		SNI:         "www.microsoft.com",
 		ECH:         "dGVzdA==",
 		Fingerprint: "chrome",
 	}

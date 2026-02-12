@@ -25,20 +25,15 @@ Updated: 2026-02-12 (brainstorm session 2)
 - 自签名证书可设 10 年有效期，无需续期。
 - 私钥泄露时换服务器重新分发 URL 是必然的，证书轮换不是实际需求。
 
-### 2. Outer SNI 与 ECH public_name 解耦
+### 2. Outer SNI = ECH public_name（实际实现）
 
-**选择**: ECH config 的 public_name 固定为一个支持 ECH 的域名。客户端的 wire-level outer SNI 通过 uTLS 独立控制，从内置 Cloudflare 域名池随机选择。用户可通过 `sni` URL 参数覆盖。
+**选择**: outer SNI = ECH config 的 public_name（`cloudflare-ech.com`），由 uTLS 自动设置。不再有独立的 `sni` URL 参数。
 
-**否决方案**:
-- outer SNI = ECH public_name: 10000 个客户端全用同一个 outer SNI，流量集中度异常，可被检测。
-- 移除 sni 参数: 用户在特殊网络环境下可能需要指定特定域名。
+**原始设计 vs 实际实现**:
+- 原设计想通过 uTLS 独立控制 outer SNI，从 Cloudflare 域名池随机选择，但实际测试发现 uTLS 在 ECH 模式下强制将 outer SNI 设置为 ECH config 的 public_name。
+- 这其实是正确行为: Cloudflare 的所有 ECH 站点都使用同一个 `public_name`（`cloudflare-ech.com`），所以合法 ECH 流量本身就共享同一个 outer SNI。SNI 集中度不是问题，因为审查者观测到的所有 Cloudflare ECH 流量都是同一个 outer SNI。
 
-**技术可行性**:
-- uTLS BuildByUtls 模式下，`SNIExtension.ServerName` 控制 wire-level outer SNI，不被 ECH config 的 public_name 覆盖。
-- Go 服务端 ECH 解密时不校验 outer SNI 与 public_name 是否匹配（RFC spec 中为 MAY，Go 实现显式跳过）。
-- HPKE 密文绑定的是完整的 ECHConfig（含 public_name），解密不依赖 wire-level outer SNI。
-
-**理由**: 做戏全套。每个连接的 outer SNI 不同，审查者无法通过 SNI 集中度识别代理流量。
+**结果**: `sni` URL 参数已完全移除。outer SNI 由 ECH config 的 public_name 决定，无需用户配置。
 
 ### 3. 双密钥对 + TLS Record Padding（做戏全套）
 
@@ -90,29 +85,27 @@ TCP 连接 → Peek ClientHello (原始字节)
 层次          值                        可见性
 ──────────────────────────────────────────────────
 TCP 目标 IP   1.2.3.4                  明文
-Outer SNI     随机 Cloudflare 域名      明文（TLS ClientHello，每连接不同）
-ECH public_name  固定 ECH 域名          ECH config 内（客户端已知）
+Outer SNI     cloudflare-ech.com       明文（TLS ClientHello，= ECH public_name）
 Inner SNI     服务端主机名               ECH 加密
 TLS 证书      自签名（RSA 或 EC）        TLS 1.3 加密
-CertVerify    匹配 outer SNI 算法        TLS 1.3 加密
+CertVerify    匹配 public_name 算法     TLS 1.3 加密
 证书验证      pin=sha256:<公钥哈希>      客户端本地（不上网）
 ```
 
 ## k2v5 URL 格式（修订 v2）
 
 ```
-k2v5://UDID:TOKEN@HOST:PORT?ech=ECH_CONFIG&pin=PUBKEY_PINS&fp=FINGERPRINT&sni=OVERRIDE&hop=START-END
+k2v5://UDID:TOKEN@HOST:PORT?ech=ECH_CONFIG&pin=PUBKEY_PINS&fp=FINGERPRINT&hop=START-END
 ```
 
 | 参数 | 必需 | 默认 | 说明 |
 |------|------|------|------|
-| `ech` | 是 | - | URL-safe Base64 ECH config（含 public_name） |
+| `ech` | 是 | - | URL-safe Base64 ECH config（含 public_name，决定 outer SNI） |
 | `pin` | 是 | - | `sha256:<rsa公钥哈希>,sha256:<ec公钥哈希>` |
 | `fp` | 否 | `chrome` | uTLS 指纹 |
-| `sni` | 否 | 随机选择 | 覆盖 outer SNI（用户可指定特定域名） |
 | `hop` | 否 | 禁用 | UDP 端口跳跃范围 |
 
-**变化**: `pin` 基于公钥哈希（两个值），`sni` 保留为可选覆盖。
+**变化**: `pin` 基于公钥哈希（两个值），`sni` 参数已移除（outer SNI = ECH config 的 public_name）。
 
 ## 服务端运行时流程
 
@@ -177,6 +170,6 @@ tlsCfg := &tls.Config{
 | 双密钥对生成 | RSA-2048 + ECDSA P-256 自签名证书 | ✅ 已实现 (`wire/certgen.go`) |
 | TLS record padding | Go crypto/tls patch | ✅ 已实现 (`wire/tlspad`) |
 | outer SNI 探测 | 连接目标站点获取证书特征 | ✅ 已实现 (`ProbeTarget`) |
-| outer SNI 随机选择 | 内置 Cloudflare 域名池 + uTLS SNI 覆盖 | ❌ 不存在 |
+| outer SNI 随机选择 | ~~内置 Cloudflare 域名池 + uTLS SNI 覆盖~~ | ❌ 不需要 (uTLS forces outer SNI = ECH public_name, matches Cloudflare behavior) |
 | `pin` URL 参数 | 公钥哈希验证，双 pin 支持 | ✅ 已实现 (`ParsePins`) |
-| `sni` URL 参数 | 改为可选覆盖（非必需） | ⚠️ 存在但语义需调整 |
+| `sni` URL 参数 | ~~改为可选覆盖~~ | ✅ 已移除 (outer SNI = ECH config's public_name) |

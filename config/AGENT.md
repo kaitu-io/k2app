@@ -5,7 +5,7 @@ Single file: `config.go` — separate `ClientConfig` and `ServerConfig` types.
 ## Client (client.yaml)
 
 ```yaml
-server: "k2v5://udid:token@host:443?sni=www.microsoft.com&ech=AEX05..."
+server: "k2v5://udid:token@host:443?ech=AEX05...&pin=sha256:..."
 dns:
   direct: ["114.114.114.114:53", "223.5.5.5:53"]
   proxy: ["8.8.8.8:53", "1.1.1.1:53"]

@@ -75,7 +75,7 @@ tls:
   key: /etc/ssl/key.pem
 ech:
   key_path: /etc/k2/ech.key
-  public_name: www.microsoft.com
+  public_name: cloudflare-ech.com
 `
 	dir := t.TempDir()
 	path := filepath.Join(dir, "server.yaml")
@@ -89,8 +89,8 @@ ech:
 	if cfg.ECH.KeyPath != "/etc/k2/ech.key" {
 		t.Errorf("ECH.KeyPath = %q, want /etc/k2/ech.key", cfg.ECH.KeyPath)
 	}
-	if cfg.ECH.PublicName != "www.microsoft.com" {
-		t.Errorf("ECH.PublicName = %q, want www.microsoft.com", cfg.ECH.PublicName)
+	if cfg.ECH.PublicName != "cloudflare-ech.com" {
+		t.Errorf("ECH.PublicName = %q, want cloudflare-ech.com", cfg.ECH.PublicName)
 	}
 }
 

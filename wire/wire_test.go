@@ -42,13 +42,12 @@ func TestParseURL(t *testing.T) {
 	}{
 		{
 			name: "full URL with all params",
-			raw:  "k2v5://device123:eyJtoken@1.2.3.4:443?sni=www.microsoft.com&ech=AEX05&fp=chrome&hop=10000-20000",
+			raw:  "k2v5://device123:eyJtoken@1.2.3.4:443?ech=AEX05&fp=chrome&hop=10000-20000",
 			want: Config{
 				UDID:        "device123",
 				Token:       "eyJtoken",
 				Host:        "1.2.3.4",
 				Port:        443,
-				SNI:         "www.microsoft.com",
 				ECH:         "AEX05",
 				Fingerprint: "chrome",
 				HopStart:    10000,
@@ -63,7 +62,6 @@ func TestParseURL(t *testing.T) {
 				Token:       "tok",
 				Host:        "1.2.3.4",
 				Port:        443,
-				SNI:         "www.microsoft.com",
 				Fingerprint: "chrome",
 			},
 		},
@@ -75,7 +73,6 @@ func TestParseURL(t *testing.T) {
 				Token:       "tok",
 				Host:        "2001:db8::1",
 				Port:        443,
-				SNI:         "www.microsoft.com",
 				Fingerprint: "chrome",
 			},
 		},

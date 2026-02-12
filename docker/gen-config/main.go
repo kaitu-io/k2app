@@ -23,7 +23,7 @@ func main() {
 	outDir := flag.String("out", "/etc/k2", "output directory")
 	serverHost := flag.String("host", "k2s", "server hostname (for client wire URL)")
 	serverPort := flag.Int("port", 443, "server port")
-	publicName := flag.String("public-name", "www.microsoft.com", "ECH public name (outer SNI)")
+	publicName := flag.String("public-name", "cloudflare-ech.com", "ECH public name (outer SNI)")
 	flag.Parse()
 
 	if err := os.MkdirAll(*outDir, 0755); err != nil {
