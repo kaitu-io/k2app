@@ -1,0 +1,27 @@
+# k2s server configuration
+# Copy this file and edit for your VPS deployment.
+# Usage: k2s run -s server.yml
+
+# Listen address (QUIC + TCP share this port)
+listen: ":443"
+
+# TLS certificate (required for production)
+tls:
+  cert: "/etc/k2s/cert.pem"      # TLS certificate path
+  key: "/etc/k2s/key.pem"        # TLS private key path
+
+# PCC (Protocol Confusion Camouflage) — disguise traffic as normal HTTPS
+# pcc: "https://www.microsoft.com"
+
+# Per-client rate limit in bytes/sec (0 = unlimited)
+# rate: 0
+
+# Authentication
+auth:
+  remote_url: "https://api.example.com/k2/auth"   # Auth API endpoint
+  cache_ttl: 5m                                     # Auth cache duration
+
+# Logging
+log:
+  level: info                     # debug, info, warn, error
+  output: stderr                  # stderr, stdout, or file path

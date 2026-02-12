@@ -1,0 +1,44 @@
+# k2 client configuration
+# Copy this file and edit to match your server.
+# Usage: sudo k2 run -c client.yml
+
+# Server connection URL (required)
+# Format: k2v5://udid:token@host:port?sni=xxx&fp=chrome&hop=20000-50000
+server: "k2v5://my-device-id:my-token@your-server.com:443?sni=www.microsoft.com"
+
+# Traffic capture mode: "tun" (VPN, needs root) or "proxy" (SOCKS5/HTTP, no root)
+mode: tun
+
+# Proxy mode settings (only used when mode: proxy)
+proxy:
+  listen: "127.0.0.1:1080"       # SOCKS5 + HTTP proxy listen address
+  set_system_proxy: false         # Auto-configure OS proxy settings
+
+# DNS resolver configuration
+dns:
+  direct:                         # DNS servers for direct (China) domains
+    - "114.114.114.114:53"
+    - "223.5.5.5:53"
+  proxy:                          # DNS servers for proxied (foreign) domains
+    - "8.8.8.8:53"
+    - "1.1.1.1:53"
+
+# Routing rules
+router:
+  default: proxy                  # Default route: "direct", "proxy", or "reject"
+
+# k2rule routing engine (auto-downloads from CDN if URLs are empty)
+rule:
+  # rule_url: ""                  # Custom rule file URL
+  # rule_file: ""                 # Local rule file (overrides URL)
+  # geoip_url: ""                 # Custom GeoIP database URL
+  # geoip_file: ""                # Local .mmdb file (overrides URL)
+  # porn_url: ""                  # Custom porn list URL
+  # porn_file: ""                 # Local .fst.gz file (overrides URL)
+  # cache_dir: ""                 # Cache directory (default: ~/.cache/k2rule/)
+  global: false                   # true = global proxy (ignore rules, VPN-style)
+
+# Logging
+log:
+  level: info                     # debug, info, warn, error
+  output: stderr                  # stderr, stdout, or file path

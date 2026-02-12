@@ -1,9 +1,13 @@
 package main
 
 import (
+	_ "embed"
 	"fmt"
 	"os"
 )
+
+//go:embed client.demo.yml
+var demoConfig string
 
 // Version info (set by build flags)
 var (
@@ -33,6 +37,8 @@ func main() {
 		cmdRun(args)
 	case "version":
 		cmdVersion()
+	case "demo-config":
+		fmt.Print(demoConfig)
 	case "-h", "--help", "help":
 		printUsage()
 	default:
@@ -55,6 +61,7 @@ Usage:
   k2 run -c <config.yaml>      Client foreground mode (dev/debug, needs sudo)
 
   k2 version                   Show version info
+  k2 demo-config                Print example client config (YAML)
 
 Server: use k2s binary for server deployment.
 `)

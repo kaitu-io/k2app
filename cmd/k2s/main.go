@@ -1,9 +1,13 @@
 package main
 
 import (
+	_ "embed"
 	"fmt"
 	"os"
 )
+
+//go:embed server.demo.yml
+var demoConfig string
 
 // Version info (set by build flags).
 var (
@@ -25,6 +29,8 @@ func main() {
 		cmdRun(args)
 	case "version":
 		cmdVersion()
+	case "demo-config":
+		fmt.Print(demoConfig)
 	case "-h", "--help", "help":
 		printUsage()
 	default:
@@ -41,5 +47,6 @@ Usage:
   k2s run -s <server.yaml>     Start server (foreground)
   k2s run --install             Install as system service
   k2s version                   Show version info
+  k2s demo-config                Print example server config (YAML)
 `)
 }
