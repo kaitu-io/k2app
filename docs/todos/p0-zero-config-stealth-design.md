@@ -174,9 +174,9 @@ tlsCfg := &tls.Config{
 | 服务端 ECH 解密 | `tls.Config.EncryptedClientHelloKeys` | ✅ 已实现 |
 | SNI 路由 | ECH → k2v5, 无 ECH → ReverseProxy | ✅ 已实现 |
 | ECH config 生成 | 运行时自动生成 HPKE 密钥对 | ✅ 已实现 (`EnsureECHKey`) |
-| 双密钥对生成 | RSA-2048 + ECDSA P-256 自签名证书 | ❌ 不存在 |
-| TLS record padding | Go crypto/tls patch | ❌ 不存在（需调研） |
-| outer SNI 探测 | 连接目标站点获取证书特征 | ❌ 不存在 |
+| 双密钥对生成 | RSA-2048 + ECDSA P-256 自签名证书 | ✅ 已实现 (`wire/certgen.go`) |
+| TLS record padding | Go crypto/tls patch | ✅ 已实现 (`wire/tlspad`) |
+| outer SNI 探测 | 连接目标站点获取证书特征 | ✅ 已实现 (`ProbeTarget`) |
 | outer SNI 随机选择 | 内置 Cloudflare 域名池 + uTLS SNI 覆盖 | ❌ 不存在 |
-| `pin` URL 参数 | 公钥哈希验证，双 pin 支持 | ❌ 不存在 |
+| `pin` URL 参数 | 公钥哈希验证，双 pin 支持 | ✅ 已实现 (`ParsePins`) |
 | `sni` URL 参数 | 改为可选覆盖（非必需） | ⚠️ 存在但语义需调整 |
