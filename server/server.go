@@ -11,10 +11,13 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/apernet/quic-go"
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/wire"
+	smux "github.com/xtaci/smux/v2"
+	"nhooyr.io/websocket"
 )
 
 // Server is the k2s server daemon.
@@ -32,6 +35,9 @@ type Server struct {
 	// TLSConfig for incoming TCP connections.
 	// Set by New() from config, or directly for testing.
 	TLSConfig *tls.Config
+
+	// echConfig is the ECH config list bytes (for distribution to clients).
+	echConfig []byte
 
 	done chan struct{}
 }
@@ -62,6 +68,18 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 		}
 	}
 
+	// Load ECH keys if configured.
+	if cfg.ECH.KeyPath != "" {
+		echKeys, echConfig, err := wire.EnsureECHKey(cfg.ECH.KeyPath, cfg.ECH.PublicName)
+		if err != nil {
+			return nil, fmt.Errorf("ECH key: %w", err)
+		}
+		if s.TLSConfig != nil {
+			s.TLSConfig.EncryptedClientHelloKeys = echKeys
+		}
+		s.echConfig = echConfig
+	}
+
 	// Auth handler — accept all non-empty credentials for now.
 	s.authHandler = wire.NewAuthHandler(store, func(jwt, udid string) bool {
 		return jwt != "" && udid != ""
@@ -75,6 +93,9 @@ func (s *Server) Run(ctx context.Context) error {
 	if s.TLSConfig == nil {
 		return fmt.Errorf("TLS config required")
 	}
+
+	// Start background ticket cleanup.
+	s.store.StartCleanup(5*time.Minute, s.done)
 
 	log.Printf("k2s server starting on %s", s.cfg.Listen)
 
@@ -196,11 +217,10 @@ func (s *Server) tcpListenLoop(ctx context.Context, ln net.Listener) {
 	}
 }
 
-// handleRawTCP peeks the TLS ClientHello for SNI-based routing.
-// If the SNI matches our server -> TLS handshake -> k2v5 (auth or tunnel).
-// If not -> reverse proxy to the real website (camouflage).
+// handleRawTCP peeks the TLS ClientHello for ECH-based routing.
+// ECH connections -> TLS handshake with ECH decryption -> k2v5.
+// Non-ECH connections -> reverse proxy to the outer SNI website (camouflage).
 func (s *Server) handleRawTCP(conn net.Conn) {
-	// Peek TLS ClientHello for SNI.
 	br := bufio.NewReaderSize(conn, 4096)
 	peeked, err := br.Peek(5) // TLS record header
 	if err != nil {
@@ -219,21 +239,25 @@ func (s *Server) handleRawTCP(conn net.Conn) {
 		return
 	}
 
-	sni, err := wire.PeekClientHelloSNI(hello)
+	info, err := wire.PeekClientHello(hello)
 	if err != nil {
 		conn.Close()
 		return
 	}
 
-	// For now, treat all connections as k2v5 (dedicated server mode).
-	// Future: check SNI against camouflage list and reverse proxy if no match.
-	_ = sni
+	if !info.HasECH {
+		// Non-ECH -> reverse proxy to the real website (camouflage).
+		allData, _ := br.Peek(br.Buffered())
+		wire.ReverseProxy(conn, allData, info.SNI+":443")
+		return
+	}
 
+	// ECH -> TLS handshake with ECH decryption -> k2v5.
 	wrapped := &bufferedConn{Conn: conn, br: br}
 	s.handleK2V5(wrapped)
 }
 
-// handleK2V5 completes TLS and routes to auth (HTTP) or tunnel (smux).
+// handleK2V5 completes TLS and routes to auth (HTTP), WebSocket tunnel, or raw smux.
 func (s *Server) handleK2V5(conn net.Conn) {
 	tlsConn := tls.Server(conn, s.TLSConfig)
 	if err := tlsConn.Handshake(); err != nil {
@@ -242,7 +266,7 @@ func (s *Server) handleK2V5(conn net.Conn) {
 		return
 	}
 
-	// Peek first bytes to distinguish HTTP (auth) from smux (tunnel).
+	// Peek first bytes to distinguish HTTP (auth/WS) from smux (tunnel).
 	br := bufio.NewReaderSize(tlsConn, 512)
 	first, err := br.Peek(4)
 	if err != nil {
@@ -250,13 +274,54 @@ func (s *Server) handleK2V5(conn net.Conn) {
 		return
 	}
 
+	buffConn := &bufferedConn{Conn: tlsConn, br: br}
+
 	if isHTTPMethod(first) {
-		s.handleAuth(&bufferedConn{Conn: tlsConn, br: br})
+		if string(first[:3]) == "GET" {
+			// Potential WebSocket upgrade or other GET — serve via HTTP handler.
+			s.handleHTTP(buffConn)
+			return
+		}
+		// POST/PUT/etc — auth handler.
+		s.handleAuth(buffConn)
 		return
 	}
 
-	// smux tunnel connection.
-	s.tcpwsSrv.HandleConn(&bufferedConn{Conn: tlsConn, br: br})
+	// Raw smux frames (backward compat, non-WS clients).
+	s.tcpwsSrv.HandleConn(buffConn)
+}
+
+// handleHTTP serves a single HTTP request on a raw connection.
+// Routes WebSocket upgrades to /k2v5/tunnel and auth to /k2v5/auth.
+func (s *Server) handleHTTP(conn net.Conn) {
+	ln := newSingleConnListener(conn)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/k2v5/tunnel", func(w http.ResponseWriter, r *http.Request) {
+		ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+			InsecureSkipVerify: true,
+		})
+		if err != nil {
+			log.Printf("server: WS accept: %v", err)
+			return
+		}
+		// Use a context that lives until the connection is done (not the HTTP request context).
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		wsConn := websocket.NetConn(ctx, ws, websocket.MessageBinary)
+		// HandleConn creates the smux session and starts a goroutine to accept streams.
+		// We must block here to keep the HTTP handler alive (and the underlying
+		// hijacked connection open). Wait until the smux session ends.
+		sess, err := smux.Server(wsConn, wire.DefaultSmuxConfig())
+		if err != nil {
+			return
+		}
+		s.tcpwsSrv.HandleSession(sess)
+	})
+	mux.HandleFunc("/k2v5/auth", func(w http.ResponseWriter, r *http.Request) {
+		s.authHandler.ServeHTTP(w, r)
+	})
+	httpSrv := &http.Server{Handler: mux}
+	httpSrv.Serve(ln)
 }
 
 // handleAuth serves the /k2v5/auth HTTP endpoint on a single connection.
@@ -316,3 +381,38 @@ type responseRecorder struct {
 func (r *responseRecorder) Header() http.Header   { return r.header }
 func (r *responseRecorder) WriteHeader(code int)   { r.code = code }
 func (r *responseRecorder) Write(b []byte) (int, error) { return r.body.Write(b) }
+
+// singleConnListener serves exactly one connection through http.Server.Serve.
+// After the connection is returned once, Accept blocks until Close is called.
+type singleConnListener struct {
+	conn net.Conn
+	once sync.Once
+	done chan struct{}
+}
+
+func newSingleConnListener(conn net.Conn) *singleConnListener {
+	return &singleConnListener{conn: conn, done: make(chan struct{})}
+}
+
+func (l *singleConnListener) Accept() (net.Conn, error) {
+	var accepted bool
+	l.once.Do(func() { accepted = true })
+	if accepted {
+		return l.conn, nil
+	}
+	<-l.done
+	return nil, net.ErrClosed
+}
+
+func (l *singleConnListener) Close() error {
+	select {
+	case <-l.done:
+	default:
+		close(l.done)
+	}
+	return nil
+}
+
+func (l *singleConnListener) Addr() net.Addr {
+	return l.conn.LocalAddr()
+}
