@@ -56,12 +56,13 @@ func (c *quicStreamConn) Read(b []byte) (int, error) {
 
 // QUICClient is the QUIC/H3 client transport.
 type QUICClient struct {
-	cfg        Config
-	store      *TicketStore
-	serverAddr string
-	hopStart   int
-	hopEnd     int
-	tlsConfig  *tls.Config // override for testing (bypasses BuildClientTLSConfig)
+	cfg          Config
+	store        *TicketStore
+	serverAddr   string
+	hopStart     int
+	hopEnd       int
+	tlsConfig    *tls.Config // override for testing (bypasses BuildClientTLSConfig)
+	directDialer DirectDialer
 
 	mu        sync.Mutex
 	conn      *quic.Conn
@@ -85,6 +86,11 @@ func NewQUICClient(cfg Config, store *TicketStore) *QUICClient {
 // SetTLSConfig overrides the TLS config for testing (bypasses BuildClientTLSConfig).
 func (c *QUICClient) SetTLSConfig(cfg *tls.Config) {
 	c.tlsConfig = cfg
+}
+
+// SetDirectDialer sets a physical-interface-bound dialer for bypassing TUN.
+func (c *QUICClient) SetDirectDialer(d DirectDialer) {
+	c.directDialer = d
 }
 
 // hopEnabled returns true if port hopping is configured.
@@ -119,7 +125,12 @@ func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
 		return nil, fmt.Errorf("wire: resolve %s: %w", addr, err)
 	}
 
-	udpConn, err := net.ListenUDP("udp", &net.UDPAddr{})
+	var udpConn net.PacketConn
+	if c.directDialer != nil {
+		udpConn, err = c.directDialer.ListenPacket("udp", ":0")
+	} else {
+		udpConn, err = net.ListenUDP("udp", &net.UDPAddr{})
+	}
 	if err != nil {
 		return nil, fmt.Errorf("wire: listen UDP: %w", err)
 	}

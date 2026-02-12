@@ -17,10 +17,11 @@ import (
 // It routes each TCP/UDP connection through the Router, then either direct (net.Dial)
 // or proxy (wire.DialTCP/DialUDP).
 type ClientTunnel struct {
-	provider provider.Provider
-	dialer   wire.Dialer
-	router   *Router
-	ipCache  *dns.DynamicIPCache
+	provider     provider.Provider
+	dialer       wire.Dialer
+	router       *Router
+	ipCache      *dns.DynamicIPCache
+	directDialer wire.DirectDialer
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -31,19 +32,21 @@ var _ provider.ConnectionHandler = (*ClientTunnel)(nil)
 
 // ClientTunnelConfig holds dependencies for creating a ClientTunnel.
 type ClientTunnelConfig struct {
-	Provider provider.Provider
-	Dialer   wire.Dialer
-	Router   *Router
-	IPCache  *dns.DynamicIPCache
+	Provider     provider.Provider
+	Dialer       wire.Dialer
+	Router       *Router
+	IPCache      *dns.DynamicIPCache
+	DirectDialer wire.DirectDialer
 }
 
 // NewClientTunnel creates a new L4 client tunnel.
 func NewClientTunnel(cfg ClientTunnelConfig) *ClientTunnel {
 	return &ClientTunnel{
-		provider: cfg.Provider,
-		dialer:   cfg.Dialer,
-		router:   cfg.Router,
-		ipCache:  cfg.IPCache,
+		provider:     cfg.Provider,
+		dialer:       cfg.Dialer,
+		router:       cfg.Router,
+		ipCache:      cfg.IPCache,
+		directDialer: cfg.DirectDialer,
 	}
 }
 
@@ -116,7 +119,13 @@ func (t *ClientTunnel) route(dest string) k2rule.Target {
 }
 
 func (t *ClientTunnel) handleTCPDirect(local net.Conn, dest string) {
-	remote, err := net.Dial("tcp", dest)
+	var remote net.Conn
+	var err error
+	if t.directDialer != nil {
+		remote, err = t.directDialer.DialContext(context.Background(), "tcp", dest)
+	} else {
+		remote, err = net.Dial("tcp", dest)
+	}
 	if err != nil {
 		log.Printf("tunnel: direct TCP dial %s: %v", dest, err)
 		return
@@ -136,7 +145,13 @@ func (t *ClientTunnel) handleTCPProxy(local net.Conn, dest string) {
 }
 
 func (t *ClientTunnel) handleUDPDirect(local net.PacketConn, dest string) {
-	remote, err := net.ListenPacket("udp", "")
+	var remote net.PacketConn
+	var err error
+	if t.directDialer != nil {
+		remote, err = t.directDialer.ListenPacket("udp", "")
+	} else {
+		remote, err = net.ListenPacket("udp", "")
+	}
 	if err != nil {
 		log.Printf("tunnel: direct UDP listen: %v", err)
 		return

@@ -174,6 +174,28 @@ func TestParsePins_Empty(t *testing.T) {
 	}
 }
 
+func TestParseURL_IPv6(t *testing.T) {
+	raw := "k2v5://dev:tok@1.2.3.4:443?ip6=2001-db8--1.sslip.io"
+	cfg, err := ParseURL(raw)
+	if err != nil {
+		t.Fatalf("ParseURL error: %v", err)
+	}
+	if cfg.IPv6 != "2001-db8--1.sslip.io" {
+		t.Errorf("IPv6 = %q, want %q", cfg.IPv6, "2001-db8--1.sslip.io")
+	}
+}
+
+func TestParseURL_NoIPv6(t *testing.T) {
+	raw := "k2v5://dev:tok@1.2.3.4:443"
+	cfg, err := ParseURL(raw)
+	if err != nil {
+		t.Fatalf("ParseURL error: %v", err)
+	}
+	if cfg.IPv6 != "" {
+		t.Errorf("IPv6 = %q, want empty", cfg.IPv6)
+	}
+}
+
 func TestParseURL_Pin(t *testing.T) {
 	raw := "k2v5://dev:tok@1.2.3.4:443?pin=sha256:AAAA,sha256:BBBB"
 	cfg, err := ParseURL(raw)

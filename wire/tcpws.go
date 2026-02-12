@@ -63,11 +63,12 @@ func (c *smuxStreamConn) Read(b []byte) (int, error) {
 //
 // Test mode: SetTestConn bypasses TCP+TLS+WS and uses a direct net.Conn for smux.
 type TCPWSClient struct {
-	cfg        Config
-	store      *TicketStore
-	serverAddr string
-	tlsConfig  *tls.Config // override for testing
-	testConn   net.Conn    // override for testing (bypasses TCP+TLS+WS)
+	cfg          Config
+	store        *TicketStore
+	serverAddr   string
+	tlsConfig    *tls.Config // override for testing
+	testConn     net.Conn    // override for testing (bypasses TCP+TLS+WS)
+	directDialer DirectDialer
 
 	mu     sync.Mutex
 	sess   *smux.Session
@@ -88,6 +89,11 @@ func NewTCPWSClient(cfg Config, store *TicketStore) *TCPWSClient {
 // SetTestConn sets a test connection that bypasses TCP+TLS dial.
 func (c *TCPWSClient) SetTestConn(conn net.Conn) {
 	c.testConn = conn
+}
+
+// SetDirectDialer sets a physical-interface-bound dialer for bypassing TUN.
+func (c *TCPWSClient) SetDirectDialer(d DirectDialer) {
+	c.directDialer = d
 }
 
 // connect establishes a smux session if not already connected.
@@ -129,9 +135,15 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 // connectTLSWebSocket establishes TCP → uTLS → WebSocket connection.
 // Returns a net.Conn-compatible WebSocket connection ready for smux.
 func (c *TCPWSClient) connectTLSWebSocket(ctx context.Context) (net.Conn, error) {
-	// 1. TCP dial
-	var d net.Dialer
-	conn, err := d.DialContext(ctx, "tcp", c.serverAddr)
+	// 1. TCP dial (use DirectDialer if set, to bypass TUN)
+	var conn net.Conn
+	var err error
+	if c.directDialer != nil {
+		conn, err = c.directDialer.DialContext(ctx, "tcp", c.serverAddr)
+	} else {
+		var d net.Dialer
+		conn, err = d.DialContext(ctx, "tcp", c.serverAddr)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("wire: TCP dial %s: %w", c.serverAddr, err)
 	}

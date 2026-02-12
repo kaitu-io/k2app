@@ -17,6 +17,13 @@ var (
 	ErrUDPNotSupported = errors.New("wire: UDP not supported by server")
 )
 
+// DirectDialer is the interface for physical-interface-bound dialing.
+// Implemented by directdial.Dialer; nil means no binding (default net.Dial).
+type DirectDialer interface {
+	DialContext(ctx context.Context, network, addr string) (net.Conn, error)
+	ListenPacket(network, addr string) (net.PacketConn, error)
+}
+
 // Dialer is the k2v5 client transport interface.
 // It manages both QUIC and TCP-WS transports internally.
 // Transport selection is transparent to callers.
@@ -57,6 +64,8 @@ type Config struct {
 	HopEnd      int
 	Insecure    bool   // skip TLS certificate verification (for self-signed certs)
 	Pin         string // pin=sha256:<rsa>,sha256:<ec> — public key pin hashes
+	IPv6        string // ip6= parameter: IPv6 sslip.io domain (optional)
+	Transport   string // tp= parameter: "quic", "tcpws", or "" (auto, default)
 }
 
 // ParseURL parses a k2v5:// URL into Config.
@@ -110,6 +119,12 @@ func ParseURL(raw string) (Config, error) {
 	}
 	if v := q.Get("pin"); v != "" {
 		cfg.Pin = v
+	}
+	if v := q.Get("ip6"); v != "" {
+		cfg.IPv6 = v
+	}
+	if v := q.Get("tp"); v != "" {
+		cfg.Transport = v
 	}
 	if v := q.Get("hop"); v != "" {
 		start, end, err := parseHopRange(v)

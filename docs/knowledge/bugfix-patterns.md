@@ -2,6 +2,39 @@
 
 Recurring bugs and their solutions, extracted from git history and development experience.
 
+## TCP-WS ALPN Mismatch: uTLS Fingerprint vs Server NextProtos (verified, 2026-02-12)
+
+**Issue**: TCP-WS transport fails TLS handshake with `tls: no application protocol`. QUIC works fine. Bug never triggered before because TransportManager always tries QUIC first.
+
+**Symptom**: `wire: uTLS handshake: remote error: tls: no application protocol` only when forcing `tp=tcpws`.
+
+**Root Cause Chain**:
+1. Server `TLSConfig.NextProtos = []string{"h3"}` — only accepts H3
+2. QUIC path: `quic.go` explicitly sets `NextProtos = ["h3"]` on client → matches server → OK
+3. TCP-WS path: uTLS Chrome 120 PQ fingerprint hardcodes `ALPNExtension{AlpnProtocols: []string{"h2", "http/1.1"}}` (`u_parrots.go:777`)
+4. TCP-WS client never overrides fingerprint's ALPN → sends `["h2", "http/1.1"]` → no overlap with `["h3"]` → `alertNoApplicationProtocol`
+
+**Why never caught**:
+- TransportManager tries QUIC first, falls back to TCP-WS only on QUIC failure
+- QUIC always worked → TCP-WS path never exercised in production
+- Only exposed when `tp=tcpws` URL parameter forces TCP-WS-only mode
+
+**Fix**: Server-side — add `h2` and `http/1.1` to `NextProtos`:
+```go
+// server.go (3 locations)
+NextProtos: []string{"h3", "h2", "http/1.1"}
+```
+
+**Why server-side, not client-side**: uTLS fingerprints are designed to mimic real browsers. Overriding ALPN defeats fingerprint purpose and may make TLS handshake detectable by DPI. Server accepting more protocols is invisible to network observers.
+
+**ECH safety proof**: Go `crypto/tls` processes ECH decryption in `readClientHello()` (line 159: `processECHClientHello`) **before** returning clientHello to `processClientHello()` where ALPN negotiation happens (line 299: `negotiateALPN`). Comment in source: *"ECH processing has to be done before we do any other negotiation based on the contents of the client hello, since we may swap it out completely."* ALPN and ECH are orthogonal — changing `NextProtos` cannot affect ECH.
+
+**Validated in**: Manual test — `tp=tcpws` connects successfully after fix. `tp=quic` unaffected.
+
+**Pattern**: When using uTLS fingerprints, server must accept ALL protocols the fingerprint advertises. Don't assume server and client ALPN are independently configurable — fingerprints dictate client behavior.
+
+---
+
 ## Base64 URL-Safe Encoding in k2v5 URLs (adoption-scan, unverified)
 
 **Issue**: ECH config embedded in `k2v5://` URL as `?ech=...` corrupted during parsing.

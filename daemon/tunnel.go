@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"net/netip"
 
 	"github.com/kaitu-io/k2rule"
@@ -11,6 +12,7 @@ import (
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/core"
 	"github.com/kaitu-io/k2/core/dns"
+	"github.com/kaitu-io/k2/directdial"
 	"github.com/kaitu-io/k2/provider"
 	"github.com/kaitu-io/k2/wire"
 )
@@ -39,25 +41,58 @@ func BuildTunnel(ctx context.Context, cfg *config.ClientConfig) (*core.ClientTun
 		return nil, fmt.Errorf("parse wire URL: %w", err)
 	}
 
+	// Prefer IPv6 when both server and client support it.
+	if wireCfg.IPv6 != "" && wire.HasIPv6() {
+		log.Printf("tunnel: IPv6 available, using %s", wireCfg.IPv6)
+		wireCfg.Host = wireCfg.IPv6
+	}
+
+	// Create DirectDialer for physical interface binding (bypasses TUN).
+	dd := directdial.New()
+	if dd.InterfaceName() != "" {
+		log.Printf("tunnel: direct dialer bound to %s", dd.InterfaceName())
+	}
+
 	quicClient := wire.NewQUICClient(wireCfg, nil)
+	quicClient.SetDirectDialer(dd)
 	tcpwsClient := wire.NewTCPWSClient(wireCfg, nil)
+	tcpwsClient.SetDirectDialer(dd)
 	tm := wire.NewTransportManager()
-	tm.SetQUIC(quicClient)
-	tm.SetTCPWS(tcpwsClient)
+	switch wireCfg.Transport {
+	case "quic":
+		tm.SetQUIC(quicClient)
+		log.Println("tunnel: transport forced to QUIC only")
+	case "tcpws":
+		tm.SetTCPWS(tcpwsClient)
+		log.Println("tunnel: transport forced to TCP-WS only")
+	default:
+		tm.SetQUIC(quicClient)
+		tm.SetTCPWS(tcpwsClient)
+	}
 
 	// 2. Build DNS IP cache + router.
 	ipCache := dns.NewDynamicIPCache()
 	router := core.NewRouter(ipCache)
 
-	// 3. Parse DNS server IPs for route exclusion.
-	var dnsAddrs []netip.Addr
+	// 3. Parse DNS server IPs + server IPs for route exclusion.
+	var excludeAddrs []netip.Addr
 	for _, s := range cfg.DNS.Direct {
 		host, _, err := splitHostPort(s)
 		if err != nil {
 			continue
 		}
 		if addr, err := netip.ParseAddr(host); err == nil {
-			dnsAddrs = append(dnsAddrs, addr)
+			excludeAddrs = append(excludeAddrs, addr)
+		}
+	}
+
+	// Resolve server host to IPs for route exclusion (belt + suspenders with DirectDialer).
+	serverHost := wireCfg.Host
+	if ips, err := net.LookupHost(serverHost); err == nil {
+		for _, ip := range ips {
+			if addr, err := netip.ParseAddr(ip); err == nil {
+				excludeAddrs = append(excludeAddrs, addr)
+			}
 		}
 	}
 
@@ -72,16 +107,17 @@ func BuildTunnel(ctx context.Context, cfg *config.ClientConfig) (*core.ClientTun
 	default: // "tun"
 		prov = provider.NewTUNProvider(provider.ProviderConfig{
 			Mode:       "tun",
-			DNSServers: dnsAddrs,
+			DNSServers: excludeAddrs,
 		})
 	}
 
 	// 5. Create and start tunnel.
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{
-		Provider: prov,
-		Dialer:   tm,
-		Router:   router,
-		IPCache:  ipCache,
+		Provider:     prov,
+		Dialer:       tm,
+		Router:       router,
+		IPCache:      ipCache,
+		DirectDialer: dd,
 	})
 
 	if err := tunnel.Start(ctx); err != nil {

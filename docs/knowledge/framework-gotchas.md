@@ -2,6 +2,56 @@
 
 Lessons learned from dependency integration.
 
+## uTLS Fingerprint Hardcodes ALPN — Cannot Override (verified, 2026-02-12)
+
+**Issue**: uTLS browser fingerprints (e.g. `HelloChrome_120_PQ`) embed ALPN as part of the TLS fingerprint. Setting `NextProtos` on `utls.Config` does NOT override the fingerprint's ALPN.
+
+**Location**: `u_parrots.go:777` in `github.com/metacubex/utls`:
+```go
+// Inside HelloChrome_120_PQ spec
+&ALPNExtension{AlpnProtocols: []string{"h2", "http/1.1"}}
+```
+
+**Impact**: Server MUST accept whatever ALPN the fingerprint sends. For Chrome fingerprints, this means `h2` and `http/1.1`. A server with only `h3` in `NextProtos` will reject TCP-WS connections.
+
+**QUIC exception**: `quic.go` creates its own TLS config with `NextProtos = ["h3"]`. QUIC doesn't use uTLS fingerprinting (QUIC Initial packets are encrypted differently, less exposed to DPI).
+
+**Workaround options**:
+1. **Server accepts more protocols** (recommended) — add `h2`, `http/1.1` to server `NextProtos`
+2. **Client custom fingerprint** — fork fingerprint to include `h3` (breaks browser mimicry, defeats purpose)
+3. **Client removes ALPN extension** — dangerous, makes fingerprint detectable
+
+**Validated in**: TCP-WS ALPN mismatch bugfix (`server/server.go`)
+
+**Pattern**: Treat uTLS fingerprint as immutable black box. Adapt server to fingerprint, not vice versa.
+
+---
+
+## Go crypto/tls: ECH Decryption Independent of ALPN (verified, 2026-02-12)
+
+**Issue**: Concern that changing server `NextProtos` might break ECH encryption.
+
+**Finding**: ECH and ALPN are completely independent in Go's `crypto/tls`. Proven by source code trace:
+
+**Execution order** in `handshake_server.go`:
+1. `readClientHello()` line 159: `processECHClientHello()` — ECH decryption happens HERE, replaces outer ClientHello with inner
+2. Returns already-decrypted inner ClientHello
+3. `processClientHello()` line 299: `negotiateALPN()` — ALPN negotiation uses the inner (decrypted) ClientHello
+
+**Key comment** (`handshake_server.go:147-148`):
+```go
+// ECH processing has to be done before we do any other negotiation based on
+// the contents of the client hello, since we may swap it out completely.
+```
+
+**Conclusion**: Any change to `NextProtos` only affects ALPN negotiation, which runs AFTER ECH decryption. ECH uses HPKE keys (`EncryptedClientHelloKeys`), completely separate from `NextProtos`.
+
+**Validated in**: Source code trace of Go 1.25 `crypto/tls`, confirmed by successful ECH+TCP-WS connection after fix.
+
+**Pattern**: ECH is transport-layer encryption of ClientHello extensions. ALPN is application-layer protocol negotiation. They operate at different layers and cannot interfere with each other.
+
+---
+
 ## sing-tun gVisor Stack Connection Ownership (l4-architecture, 2026-02-12)
 
 **Issue**: sing-tun's gVisor stack owns TCP/UDP connections. Handler must not close them prematurely.

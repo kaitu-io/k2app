@@ -73,7 +73,7 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 		}
 		s.TLSConfig = &tls.Config{
 			Certificates: []tls.Certificate{cert},
-			NextProtos:   []string{"h3"},
+			NextProtos:   []string{"h3", "h2", "http/1.1"},
 			MinVersion:   tls.VersionTLS13,
 		}
 
@@ -144,7 +144,7 @@ func (s *Server) setupCertPair(cfg *config.ServerConfig) error {
 
 	// Initialize TLS config with GetCertificate callback.
 	s.TLSConfig = &tls.Config{
-		NextProtos: []string{"h3"},
+		NextProtos: []string{"h3", "h2", "http/1.1"},
 		MinVersion: tls.VersionTLS13,
 	}
 	s.SetCertPair(pair, profile)
@@ -295,7 +295,7 @@ func (s *Server) setupAutoProvision(cfg *config.ServerConfig) error {
 
 	// 9. Initialize TLS config.
 	s.TLSConfig = &tls.Config{
-		NextProtos: []string{"h3"},
+		NextProtos: []string{"h3", "h2", "http/1.1"},
 		MinVersion: tls.VersionTLS13,
 	}
 	s.SetCertPair(pair, profile)
@@ -345,6 +345,12 @@ func logConnectionURL(cfg *config.ServerConfig, pair *wire.CertPair, echConfigLi
 	connectURL := fmt.Sprintf("k2v5://%s:%s@%s:%s?ech=%s&pin=%s&insecure=1",
 		auth.UDID, auth.Token, host, port, echB64, pins)
 
+	// Detect IPv6 and append to URL if available.
+	if ip6Host := detectIPv6(); ip6Host != "" {
+		connectURL += "&ip6=" + ip6Host
+		log.Printf("server: IPv6 detected: %s", ip6Host)
+	}
+
 	log.Printf("Connect URL: %s", connectURL)
 
 	// Save connect URL to file for `k2s run` smart mode to read.
@@ -354,14 +360,25 @@ func logConnectionURL(cfg *config.ServerConfig, pair *wire.CertPair, echConfigLi
 	}
 }
 
-// detectHost attempts to determine the server's external hostname or IP.
-// Best-effort: tries system hostname, falls back to "YOUR_IP".
+// detectHost probes for the server's public IPv4 and returns it as a sslip.io domain.
+// Falls back to "YOUR_SERVER_IP.sslip.io" if probe fails.
 func detectHost() string {
-	hostname, err := os.Hostname()
-	if err == nil && hostname != "" && hostname != "localhost" {
-		return hostname
+	if ip := wire.ProbePublicIP("https://api4.ipify.org"); ip != "" {
+		return wire.FormatSslipHost(ip)
 	}
-	return "YOUR_IP"
+	if ip := wire.ProbePublicIP("https://api6.ipify.org"); ip != "" {
+		return wire.FormatSslipHost(ip)
+	}
+	return "YOUR_SERVER_IP.sslip.io"
+}
+
+// detectIPv6 probes for public IPv6 connectivity and returns the sslip.io domain.
+// Returns "" if IPv6 is not available.
+func detectIPv6() string {
+	if ip := wire.ProbePublicIP("https://api6.ipify.org"); ip != "" {
+		return wire.FormatSslipHost(ip)
+	}
+	return ""
 }
 
 // SetCertPair configures the server to use a dual cert pair with dynamic cert selection.

@@ -196,12 +196,19 @@ func (m *Middleware) HandleDNSQuery(pkt []byte, info packet.Info) error {
 		m.dnsCache.Add(domain, query.Question[0].Qtype, resp)
 	}
 
-	// 12. Update IP cache for packet routing
+	// 12. Update IP cache for packet routing.
+	// Skip caching when k2rule already gives the correct answer for an IP
+	// (e.g. Chinese IPs that k2rule routes "direct" via GeoIP). This reduces
+	// cache size significantly since most IPs fall into GeoIP ranges.
 	if resp != nil && resp.Rcode == dns.RcodeSuccess && m.ipCache != nil {
 		ips := extractIPsFromResponse(resp)
 		ttl := extractTTL(resp)
 
 		for _, ip := range ips {
+			parsedIP := net.ParseIP(ip)
+			if parsedIP != nil && k2rule.MatchIP(parsedIP) == action {
+				continue // k2rule agrees — no need to cache
+			}
 			rule := IPRule{
 				Domain:   domain,
 				Action:   action,
