@@ -13,16 +13,14 @@ type ClientConfig struct {
 	Server string       `yaml:"server"` // k2v5:// URL
 	Mode   string       `yaml:"mode"`   // "tun" or "proxy", default "tun"
 	Proxy  ProxyConfig  `yaml:"proxy"`
-	DNS    DNSConfig    `yaml:"dns"`
-	Router RouterConfig `yaml:"router"`
-	Rule   RuleConfig   `yaml:"rule"`
+	DNS  DNSConfig  `yaml:"dns"`
+	Rule RuleConfig `yaml:"rule"`
 	Log    LogConfig    `yaml:"log"`
 }
 
 // ProxyConfig contains proxy mode configuration.
 type ProxyConfig struct {
-	Listen         string `yaml:"listen"`           // default "127.0.0.1:1080"
-	SetSystemProxy bool   `yaml:"set_system_proxy"` // default false
+	Listen string `yaml:"listen"` // default "127.0.0.1:1080"
 }
 
 // ServerConfig is the server-side configuration.
@@ -54,21 +52,13 @@ type AuthConfig struct {
 	CacheTTL  time.Duration `yaml:"cache_ttl"`
 }
 
-// RouterConfig contains routing configuration.
-type RouterConfig struct {
-	Default string `yaml:"default"` // "direct", "proxy", or "reject"
-}
-
 // RuleConfig contains k2rule routing rule configuration.
 type RuleConfig struct {
-	RuleURL   string `yaml:"rule_url"`   // remote rule file URL ("" = CDN default)
-	RuleFile  string `yaml:"rule_file"`  // local rule file (takes precedence over URL)
-	GeoIPURL  string `yaml:"geoip_url"`  // remote GeoIP .mmdb URL ("" = CDN default)
-	GeoIPFile string `yaml:"geoip_file"` // local GeoIP .mmdb file
-	PornURL   string `yaml:"porn_url"`   // remote porn list URL ("" = CDN default)
-	PornFile  string `yaml:"porn_file"`  // local porn .fst.gz file
-	CacheDir  string `yaml:"cache_dir"`  // cache directory ("" = ~/.cache/k2rule/)
-	Global    bool   `yaml:"global"`     // true = global proxy mode (ignore rules)
+	RuleURL  string `yaml:"rule_url"`  // remote rule file URL ("" = CDN default)
+	GeoIPURL string `yaml:"geoip_url"` // remote GeoIP .mmdb URL ("" = CDN default)
+	PornURL  string `yaml:"porn_url"`  // remote porn list URL ("" = CDN default)
+	CacheDir string `yaml:"cache_dir"` // cache directory ("" = ~/.cache/k2rule/)
+	Global   bool   `yaml:"global"`    // true = global proxy mode (ignore rules)
 }
 
 // LogConfig contains logging configuration.
@@ -128,9 +118,6 @@ func setClientDefaults(cfg *ClientConfig) {
 	}
 	if len(cfg.DNS.Proxy) == 0 {
 		cfg.DNS.Proxy = []string{"8.8.8.8:53", "1.1.1.1:53"}
-	}
-	if cfg.Router.Default == "" {
-		cfg.Router.Default = "proxy"
 	}
 	if cfg.Log.Level == "" {
 		cfg.Log.Level = "info"

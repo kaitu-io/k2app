@@ -12,7 +12,6 @@ mode: tun
 # Proxy mode settings (only used when mode: proxy)
 proxy:
   listen: "127.0.0.1:1080"       # SOCKS5 + HTTP proxy listen address
-  set_system_proxy: false         # Auto-configure OS proxy settings
 
 # DNS resolver configuration
 dns:
@@ -23,18 +22,11 @@ dns:
     - "8.8.8.8:53"
     - "1.1.1.1:53"
 
-# Routing rules
-router:
-  default: proxy                  # Default route: "direct", "proxy", or "reject"
-
 # k2rule routing engine (auto-downloads from CDN if URLs are empty)
 rule:
   # rule_url: ""                  # Custom rule file URL
-  # rule_file: ""                 # Local rule file (overrides URL)
   # geoip_url: ""                 # Custom GeoIP database URL
-  # geoip_file: ""                # Local .mmdb file (overrides URL)
   # porn_url: ""                  # Custom porn list URL
-  # porn_file: ""                 # Local .fst.gz file (overrides URL)
   # cache_dir: ""                 # Cache directory (default: ~/.cache/k2rule/)
   global: false                   # true = global proxy (ignore rules, VPN-style)
 

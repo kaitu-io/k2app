@@ -15,9 +15,6 @@ func TestClientConfig_Defaults(t *testing.T) {
 	if cfg.Proxy.Listen != "127.0.0.1:1080" {
 		t.Errorf("Proxy.Listen = %q, want 127.0.0.1:1080", cfg.Proxy.Listen)
 	}
-	if cfg.Router.Default != "proxy" {
-		t.Errorf("Router.Default = %q, want proxy", cfg.Router.Default)
-	}
 }
 
 func TestClientConfig_ProxyMode(t *testing.T) {
@@ -26,7 +23,6 @@ server: "k2v5://udid:token@1.2.3.4:443"
 mode: proxy
 proxy:
   listen: "0.0.0.0:8080"
-  set_system_proxy: true
 `
 	dir := t.TempDir()
 	path := filepath.Join(dir, "client.yaml")
@@ -42,9 +38,6 @@ proxy:
 	}
 	if cfg.Proxy.Listen != "0.0.0.0:8080" {
 		t.Errorf("Proxy.Listen = %q, want 0.0.0.0:8080", cfg.Proxy.Listen)
-	}
-	if !cfg.Proxy.SetSystemProxy {
-		t.Error("SetSystemProxy = false, want true")
 	}
 }
 

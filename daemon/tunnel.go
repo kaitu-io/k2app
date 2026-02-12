@@ -20,14 +20,11 @@ import (
 func BuildTunnel(ctx context.Context, cfg *config.ClientConfig) (*core.ClientTunnel, error) {
 	// 0. Initialize k2rule routing engine.
 	ruleCfg := &k2rule.Config{
-		RuleURL:   cfg.Rule.RuleURL,
-		RuleFile:  cfg.Rule.RuleFile,
-		GeoIPURL:  cfg.Rule.GeoIPURL,
-		GeoIPFile: cfg.Rule.GeoIPFile,
-		PornURL:   cfg.Rule.PornURL,
-		PornFile:  cfg.Rule.PornFile,
-		CacheDir:  cfg.Rule.CacheDir,
-		IsGlobal:  cfg.Rule.Global,
+		RuleURL:  cfg.Rule.RuleURL,
+		GeoIPURL: cfg.Rule.GeoIPURL,
+		PornURL:  cfg.Rule.PornURL,
+		CacheDir: cfg.Rule.CacheDir,
+		IsGlobal: cfg.Rule.Global,
 	}
 	if cfg.Rule.Global {
 		ruleCfg.GlobalTarget = k2rule.TargetProxy
