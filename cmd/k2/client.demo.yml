@@ -22,12 +22,13 @@ dns:
     - "8.8.8.8:53"
     - "1.1.1.1:53"
 
-# k2rule routing engine (auto-downloads from CDN if URLs are empty)
+# k2rule routing engine
+# All URLs auto-download from CDN when not set. Override only if needed.
 rule:
-  # rule_url: ""                  # Custom rule file URL
-  # geoip_url: ""                 # Custom GeoIP database URL
-  # porn_url: ""                  # Custom porn list URL
-  # cache_dir: ""                 # Cache directory (default: ~/.cache/k2rule/)
+  # rule_url: "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz"
+  # geoip_url: "https://cdn.jsdelivr.net/npm/geolite2-country/GeoLite2-Country.mmdb.gz"
+  # porn_url: "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/porn_domains.fst.gz"
+  # cache_dir: "~/.cache/k2rule/"
   global: false                   # true = global proxy (ignore rules, VPN-style)
 
 # Logging
