@@ -44,10 +44,10 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, `k2s — Kaitu network tunnel server
 
 Usage:
-  k2s run                       Start server with zero-config (auto certs+ECH)
-  k2s run -s <server.yaml>     Start server with config file
-  k2s run --install             Install as system service
+  k2s run                       Install service, start, and print connect URL
+  k2s run -s <server.yaml>     Start server with config file (foreground)
+  k2s run --foreground          Run in foreground (for debugging)
   k2s version                   Show version info
-  k2s demo-config                Print example server config (YAML)
+  k2s demo-config               Print example server config (YAML)
 `)
 }

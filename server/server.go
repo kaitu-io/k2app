@@ -324,7 +324,7 @@ func (s *Server) setupAutoProvision(cfg *config.ServerConfig) error {
 	return nil
 }
 
-// logConnectionURL prints the k2v5:// connect URL for clients.
+// logConnectionURL prints and saves the k2v5:// connect URL for clients.
 func logConnectionURL(cfg *config.ServerConfig, pair *wire.CertPair, echConfigList []byte, auth *wire.AuthInfo) {
 	host := cfg.Host
 	if host == "" {
@@ -342,10 +342,16 @@ func logConnectionURL(cfg *config.ServerConfig, pair *wire.CertPair, echConfigLi
 	echB64 := base64.URLEncoding.EncodeToString(echConfigList)
 	pins := pair.FormatPins()
 
-	url := fmt.Sprintf("k2v5://%s:%s@%s:%s?ech=%s&pin=%s&insecure=1",
+	connectURL := fmt.Sprintf("k2v5://%s:%s@%s:%s?ech=%s&pin=%s&insecure=1",
 		auth.UDID, auth.Token, host, port, echB64, pins)
 
-	log.Printf("Connect URL: %s", url)
+	log.Printf("Connect URL: %s", connectURL)
+
+	// Save connect URL to file for `k2s run` smart mode to read.
+	urlPath := filepath.Join(cfg.CertDir, "connect-url.txt")
+	if err := os.WriteFile(urlPath, []byte(connectURL+"\n"), 0600); err != nil {
+		log.Printf("server: failed to save connect URL: %v", err)
+	}
 }
 
 // detectHost attempts to determine the server's external hostname or IP.

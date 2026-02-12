@@ -139,14 +139,22 @@ func setClientDefaults(cfg *ClientConfig) {
 	}
 }
 
-// defaultCertDir returns the platform-appropriate default directory for
-// auto-generated server certificates and keys.
-func defaultCertDir() string {
+// defaultServerDir returns the platform-appropriate default directory for
+// server state (certificates, ECH keys, auth, connect URL).
+func defaultServerDir() string {
 	if runtime.GOOS == "windows" {
-		return filepath.Join(os.Getenv("APPDATA"), "k2s")
+		return filepath.Join(os.Getenv("ProgramData"), "k2s")
 	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".k2s")
+	return "/etc/k2s"
+}
+
+// DefaultClientDir returns the platform-appropriate default directory for
+// client daemon state (saved config, reconnect state).
+func DefaultClientDir() string {
+	if runtime.GOOS == "windows" {
+		return filepath.Join(os.Getenv("ProgramData"), "k2")
+	}
+	return "/etc/k2"
 }
 
 // DefaultServerConfig creates a ServerConfig with all defaults applied.
@@ -162,7 +170,7 @@ func setServerDefaults(cfg *ServerConfig) {
 		cfg.Listen = ":443"
 	}
 	if cfg.CertDir == "" {
-		cfg.CertDir = defaultCertDir()
+		cfg.CertDir = defaultServerDir()
 	}
 	if cfg.ECH.Provider == "" {
 		cfg.ECH.Provider = "local"

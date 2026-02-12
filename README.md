@@ -1,236 +1,97 @@
-# k2tunnel
+# k2
 
-A minimalist VPN tunnel tool using HTTP/3 (WebTransport over QUIC). Inspired by qTunnel's "less is more" philosophy.
+A stealth network tunnel. QUIC+H3 primary, TCP-WebSocket fallback, Encrypted Client Hello (ECH), TLS fingerprint mimicry.
 
-## Features
-
-- **Simple**: ~900 lines of code total
-- **Modern**: HTTP/3 WebTransport protocol (hard to detect/block)
-- **Cross-platform**: macOS and Linux support
-- **Modular**: Clean architecture with Provider/Core/Wire layers
-
-## Architecture
-
-```
-Provider (TUN device) → Core (routing logic) → Wire (HTTP/3 transport)
-```
-
-## Quick Start
-
-### Prerequisites
-
-- Go 1.24 or later
-- Root/sudo privileges (required for TUN device)
-- TLS certificate (for server)
-
-### Build
+## Server (on your VPS)
 
 ```bash
-go build -o k2client ./cmd/k2client
-go build -o k2server ./cmd/k2server
+curl -fsSL https://dl.k2.52j.me/install.sh | sudo sh -s k2s
+sudo k2s run
 ```
 
-### Server Setup
+First run auto-generates certs + ECH keys, installs as a system service, and prints a connect URL:
 
-1. Generate TLS certificate:
+```
+k2s is running. Share this URL with clients:
+
+  k2v5://abc123:tok456@203.0.113.5:443?ech=AEX0...&pin=sha256:...
+```
+
+Run again anytime to see the URL. Service survives reboots.
+
+## Client (on your laptop)
 
 ```bash
-openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes
+curl -fsSL https://dl.k2.52j.me/install.sh | sudo sh -s k2
+sudo k2 up k2v5://...   # paste URL from server
 ```
 
-2. Start server:
+All traffic is now tunneled. Daily commands:
 
 ```bash
-sudo ./k2server \
-  -listen :443 \
-  -cert cert.pem \
-  -key key.pem \
-  -tun tun1 \
-  -ip 10.0.0.1
+k2 up        # reconnect (URL saved)
+k2 down      # disconnect
+k2 status    # check connection
 ```
 
-3. Configure routing and NAT:
+### Proxy mode (no root)
 
 ```bash
-# Enable IP forwarding
-sudo sysctl -w net.ipv4.ip_forward=1
-
-# Configure NAT (replace eth0 with your network interface)
-sudo iptables -t nat -A POSTROUTING -s 10.0.0.0/24 -o eth0 -j MASQUERADE
+k2 up --mode proxy k2v5://...
 ```
 
-### Client Setup
+Uses SOCKS5+HTTP proxy on `127.0.0.1:1080` instead of TUN device.
 
-1. Start client:
+## How it works
+
+```
+Client (k2)                          Server (k2s)
+─────────────                        ─────────────
+App traffic                          :443 (QUIC + TCP shared)
+  ↓                                    ↓
+TUN / SOCKS5 proxy                   TLS peek
+  ↓                                    ├─ ECH → k2v5 handler
+gVisor L4 stack                        └─ No ECH → looks like normal HTTPS
+  ↓                                    ↓
+Router (direct/proxy/reject)         Auth → TCP proxy + UDP forward
+  ↓                         k2v5://    ↓
+Wire (QUIC primary,        ───────→  Internet
+      TCP-WS fallback)
+```
+
+**Stealth features:**
+- ECH hides the real SNI inside encryption — outer SNI looks like `cloudflare-ech.com`
+- TLS fingerprint mimics Chrome via uTLS
+- TLS record sizes match real Cloudflare servers (padding)
+- Dual RSA+EC certificates for algorithm camouflage
+- Fallback to TCP-WebSocket when QUIC is blocked
+
+## Build from source
 
 ```bash
-sudo ./k2client \
-  -server your-server.com:443 \
-  -tun tun0 \
-  -ip 10.0.0.2 \
-  -insecure  # Only for self-signed certs
+# Requires Go 1.25+
+go build -o k2  ./cmd/k2
+go build -o k2s ./cmd/k2s
 ```
 
-2. Configure routing (route all traffic through tunnel):
+## Docker
 
 ```bash
-# macOS
-sudo route add default -interface tun0
-
-# Linux
-sudo ip route add default dev tun0
+cd docker/
+docker compose up --build
 ```
 
-### Testing
+Starts k2s (server, port 443) and k2 (client, proxy on port 1080).
 
 ```bash
-# Test connectivity
-ping 8.8.8.8
-
-# Test DNS
-nslookup google.com
-
-# Test HTTP
-curl http://httpbin.org/ip
+curl -x socks5h://127.0.0.1:1080 https://httpbin.org/ip
 ```
 
-## Configuration File
+## Documentation
 
-Instead of command-line flags, you can use a YAML configuration file:
-
-```bash
-# Client
-sudo ./k2client -config config.yml
-
-# Server
-sudo ./k2server -config config.yml
-```
-
-See `config.example.yml` for a template.
-
-## Command-Line Options
-
-### k2client
-
-```
-  -server string
-        Server address (e.g., server.com:443)
-  -tun string
-        TUN device name (default "tun0")
-  -ip string
-        TUN device IP address (default "10.0.0.2")
-  -netmask string
-        TUN device netmask (default "255.255.255.0")
-  -mtu int
-        TUN device MTU (default 1400)
-  -protocol string
-        Wire protocol (default "http3")
-  -insecure
-        Allow insecure TLS connections (development only)
-  -config string
-        Path to config file
-```
-
-### k2server
-
-```
-  -listen string
-        Listen address (default ":443")
-  -cert string
-        TLS certificate file
-  -key string
-        TLS key file
-  -tun string
-        TUN device name (default "tun1")
-  -ip string
-        TUN device IP address (default "10.0.0.1")
-  -netmask string
-        TUN device netmask (default "255.255.255.0")
-  -mtu int
-        TUN device MTU (default 1400)
-  -protocol string
-        Wire protocol (default "http3")
-  -config string
-        Path to config file
-```
-
-## Troubleshooting
-
-### "Failed to create TUN device: operation not permitted"
-
-You need root privileges:
-```bash
-sudo ./k2client ...
-```
-
-### "dial webtransport: ..."
-
-Check that:
-- Server is running and accessible
-- Firewall allows UDP port 443
-- DNS resolves correctly
-- Using `-insecure` flag with self-signed certs
-
-### No internet after connecting
-
-Make sure routing is configured:
-```bash
-# Check routes
-route -n       # Linux
-netstat -rn    # macOS
-
-# Verify IP forwarding (server)
-sysctl net.ipv4.ip_forward
-
-# Check NAT rules (server)
-sudo iptables -t nat -L -n -v
-```
-
-### High latency or packet loss
-
-Try adjusting MTU:
-```bash
--mtu 1300  # Or lower values
-```
-
-## Project Structure
-
-```
-k2tunnel/
-├── cmd/
-│   ├── k2client/     # Client entry point
-│   └── k2server/     # Server entry point
-├── config/           # Configuration file parsing
-├── core/             # Core tunnel logic
-│   ├── packet.go     # IP packet framing
-│   ├── router.go     # Routing decisions
-│   ├── direct.go     # Direct bypass
-│   └── tunnel.go     # Tunnel implementation
-├── provider/         # Platform-specific providers
-│   ├── provider.go   # Provider interface
-│   └── tun_unix.go   # TUN device (macOS/Linux)
-└── wire/             # Wire layer (transport)
-    └── wire.go       # HTTP/3 WebTransport
-```
-
-## Future Enhancements
-
-- [ ] Smart routing (GeoIP-based)
-- [ ] iOS PacketTunnelProvider support
-- [ ] Android VPN service support
-- [ ] Windows TAP adapter support
-- [ ] OpenWRT integration
-- [ ] Automatic reconnection
-- [ ] Traffic statistics
-- [ ] Web UI management
+- [Usage Guide](docs/guide.md) — detailed setup, config options, troubleshooting
+- [Protocol Spec](wire/k2v5-protocol-spec.md) — k2v5 wire protocol specification
 
 ## License
 
 MIT
-
-## Credits
-
-Inspired by:
-- [qTunnel](https://github.com/getqujing/qtunnel) - Minimalist design philosophy
-- [go-gost](https://github.com/go-gost/gost) - Network transport protocols
-- [WireGuard](https://www.wireguard.com/) - TUN device implementation

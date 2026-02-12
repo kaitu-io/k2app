@@ -94,18 +94,34 @@ ech:
 	}
 }
 
-func TestDefaultCertDir(t *testing.T) {
-	dir := defaultCertDir()
+func TestDefaultServerDir(t *testing.T) {
+	dir := defaultServerDir()
 	if dir == "" {
-		t.Fatal("defaultCertDir returned empty string")
+		t.Fatal("defaultServerDir returned empty string")
 	}
 	if runtime.GOOS == "windows" {
 		if !strings.Contains(dir, "k2s") {
-			t.Errorf("Windows cert dir should contain k2s, got %q", dir)
+			t.Errorf("Windows server dir should contain k2s, got %q", dir)
 		}
 	} else {
-		if !strings.HasSuffix(dir, ".k2s") {
-			t.Errorf("cert dir should end with .k2s, got %q", dir)
+		if dir != "/etc/k2s" {
+			t.Errorf("server dir should be /etc/k2s, got %q", dir)
+		}
+	}
+}
+
+func TestDefaultClientDir(t *testing.T) {
+	dir := DefaultClientDir()
+	if dir == "" {
+		t.Fatal("DefaultClientDir returned empty string")
+	}
+	if runtime.GOOS == "windows" {
+		if !strings.Contains(dir, "k2") {
+			t.Errorf("Windows client dir should contain k2, got %q", dir)
+		}
+	} else {
+		if dir != "/etc/k2" {
+			t.Errorf("client dir should be /etc/k2, got %q", dir)
 		}
 	}
 }

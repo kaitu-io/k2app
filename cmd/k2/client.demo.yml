@@ -1,12 +1,15 @@
 # k2 client configuration
-# Copy this file and edit to match your server.
-# Usage: sudo k2 run -c client.yml
+# Most users don't need this — just run: sudo k2 up <url>
+# Use this file for custom settings: sudo k2 run -c client.yml
 
 # Server connection URL (required)
-# Format: k2v5://udid:token@host:port?sni=xxx&fp=chrome&hop=20000-50000
-server: "k2v5://my-device-id:my-token@your-server.com:443?sni=www.microsoft.com"
+# Get this URL from your k2s server (printed on first run).
+# Format: k2v5://udid:token@host:port?ech=<config>&pin=sha256:<hash>
+server: "k2v5://my-device-id:my-token@your-server.com:443?ech=...&pin=sha256:..."
 
-# Traffic capture mode: "tun" (VPN, needs root) or "proxy" (SOCKS5/HTTP, no root)
+# Traffic capture mode
+#   tun   — VPN mode, captures all traffic (needs root/sudo)
+#   proxy — SOCKS5+HTTP proxy, no root needed
 mode: tun
 
 # Proxy mode settings (only used when mode: proxy)
@@ -15,21 +18,20 @@ proxy:
 
 # DNS resolver configuration
 dns:
-  direct:                         # DNS servers for direct (China) domains
+  direct:                         # DNS for direct (China) domains
     - "114.114.114.114:53"
     - "223.5.5.5:53"
-  proxy:                          # DNS servers for proxied (foreign) domains
+  proxy:                          # DNS for proxied (foreign) domains
     - "8.8.8.8:53"
     - "1.1.1.1:53"
 
 # k2rule routing engine
-# All URLs auto-download from CDN when not set. Override only if needed.
+# All URLs auto-download from CDN. Override only if needed.
 rule:
   # rule_url: "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/cn_blacklist.k2r.gz"
   # geoip_url: "https://cdn.jsdelivr.net/npm/geolite2-country/GeoLite2-Country.mmdb.gz"
-  # porn_url: "https://cdn.jsdelivr.net/gh/kaitu-io/k2rule@release/porn_domains.fst.gz"
   # cache_dir: "~/.cache/k2rule/"
-  global: false                   # true = global proxy (ignore rules, VPN-style)
+  global: false                   # true = global proxy (ignore rules, proxy everything)
 
 # Logging
 log:
