@@ -71,6 +71,11 @@ func NewTCPWSClient(cfg Config, store *TicketStore) *TCPWSClient {
 	}
 }
 
+// SetTestConn sets a test connection that bypasses TCP+TLS dial.
+func (c *TCPWSClient) SetTestConn(conn net.Conn) {
+	c.testConn = conn
+}
+
 // connect establishes a smux session if not already connected.
 func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 	c.mu.Lock()

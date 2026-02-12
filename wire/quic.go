@@ -82,6 +82,11 @@ func NewQUICClient(cfg Config, store *TicketStore) *QUICClient {
 	}
 }
 
+// SetTLSConfig overrides the TLS config for testing (bypasses BuildClientTLSConfig).
+func (c *QUICClient) SetTLSConfig(cfg *tls.Config) {
+	c.tlsConfig = cfg
+}
+
 // hopEnabled returns true if port hopping is configured.
 func (c *QUICClient) hopEnabled() bool {
 	return c.hopStart > 0 && c.hopEnd > 0 && c.hopStart < c.hopEnd
