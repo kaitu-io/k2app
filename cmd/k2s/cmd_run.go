@@ -26,8 +26,31 @@ func cmdRun(args []string) {
 	case *serverCfg != "":
 		runServer(*serverCfg)
 	default:
-		fmt.Fprintln(os.Stderr, "Usage: k2s run -s <server.yaml>")
-		os.Exit(1)
+		runServerDefault()
+	}
+}
+
+func runServerDefault() {
+	cfg := config.DefaultServerConfig()
+
+	srv, err := server.New(cfg)
+	if err != nil {
+		log.Fatalf("Failed to create server: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		log.Println("Shutting down...")
+		cancel()
+	}()
+
+	if err := srv.Run(ctx); err != nil && err != context.Canceled {
+		log.Fatalf("Server error: %v", err)
 	}
 }
 

@@ -15,6 +15,8 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -807,4 +809,111 @@ func TestServer_AuthViaHTTPHandler(t *testing.T) {
 	}
 
 	tlsConn.Close()
+}
+
+// TestSetupAutoProvision verifies that the unified auto-provisioning flow
+// generates certs, ECH keys, auth credentials, and configures TLS.
+func TestSetupAutoProvision(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.ServerConfig{
+		Listen:  ":0",
+		CertDir: dir,
+	}
+
+	srv, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New with CertDir: %v", err)
+	}
+
+	// TLSConfig should be set up
+	if srv.TLSConfig == nil {
+		t.Fatal("TLSConfig should be set after setupAutoProvision")
+	}
+
+	// GetCertificate callback should be set (not static certs)
+	if srv.TLSConfig.GetCertificate == nil {
+		t.Error("GetCertificate callback should be set")
+	}
+
+	// ECH keys should be configured
+	if len(srv.TLSConfig.EncryptedClientHelloKeys) == 0 {
+		t.Error("EncryptedClientHelloKeys should not be empty")
+	}
+
+	// echConfig should be set (for client URL distribution)
+	if len(srv.echConfig) == 0 {
+		t.Error("echConfig should not be empty")
+	}
+
+	// Cert files should exist
+	for _, name := range []string{"k2s-rsa.crt", "k2s-rsa.key", "k2s-ec.crt", "k2s-ec.key"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); os.IsNotExist(err) {
+			t.Errorf("cert file %s not created", name)
+		}
+	}
+
+	// ECH private key should exist
+	if _, err := os.Stat(filepath.Join(dir, "ech.key")); os.IsNotExist(err) {
+		t.Error("ech.key not created")
+	}
+
+	// ECH configs directory should exist with at least one config
+	configsDir := filepath.Join(dir, "ech-configs")
+	entries, err := os.ReadDir(configsDir)
+	if err != nil {
+		t.Fatalf("read ech-configs dir: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Error("ech-configs dir should have at least one config")
+	}
+
+	// Auth file should exist
+	authPath := filepath.Join(dir, "auth.json")
+	if _, err := os.Stat(authPath); os.IsNotExist(err) {
+		t.Error("auth.json not created")
+	}
+	var auth wire.AuthInfo
+	authData, _ := os.ReadFile(authPath)
+	if err := json.Unmarshal(authData, &auth); err != nil {
+		t.Fatalf("parse auth.json: %v", err)
+	}
+	if auth.UDID == "" || auth.Token == "" {
+		t.Error("auth credentials should not be empty")
+	}
+}
+
+// TestSetupAutoProvision_Idempotent verifies that calling New twice with the
+// same cert_dir reuses existing certs and keys.
+func TestSetupAutoProvision_Idempotent(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.ServerConfig{
+		Listen:  ":0",
+		CertDir: dir,
+	}
+
+	// First call
+	srv1, err := New(cfg)
+	if err != nil {
+		t.Fatalf("first New: %v", err)
+	}
+
+	// Read auth from first call
+	authData1, _ := os.ReadFile(filepath.Join(dir, "auth.json"))
+
+	// Second call
+	srv2, err := New(cfg)
+	if err != nil {
+		t.Fatalf("second New: %v", err)
+	}
+
+	// Auth should be the same
+	authData2, _ := os.ReadFile(filepath.Join(dir, "auth.json"))
+	if string(authData1) != string(authData2) {
+		t.Error("auth.json changed between calls")
+	}
+
+	// Both servers should have valid TLS configs
+	if srv1.TLSConfig == nil || srv2.TLSConfig == nil {
+		t.Fatal("both servers should have TLSConfig")
+	}
 }

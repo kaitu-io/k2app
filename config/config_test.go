@@ -3,6 +3,8 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -89,5 +91,61 @@ ech:
 	}
 	if cfg.ECH.PublicName != "www.microsoft.com" {
 		t.Errorf("ECH.PublicName = %q, want www.microsoft.com", cfg.ECH.PublicName)
+	}
+}
+
+func TestDefaultCertDir(t *testing.T) {
+	dir := defaultCertDir()
+	if dir == "" {
+		t.Fatal("defaultCertDir returned empty string")
+	}
+	if runtime.GOOS == "windows" {
+		if !strings.Contains(dir, "k2s") {
+			t.Errorf("Windows cert dir should contain k2s, got %q", dir)
+		}
+	} else {
+		if !strings.HasSuffix(dir, ".k2s") {
+			t.Errorf("cert dir should end with .k2s, got %q", dir)
+		}
+	}
+}
+
+func TestDefaultServerConfig(t *testing.T) {
+	cfg := DefaultServerConfig()
+
+	if cfg.Listen != ":443" {
+		t.Errorf("Listen = %q, want :443", cfg.Listen)
+	}
+	if cfg.CertDir == "" {
+		t.Error("CertDir should not be empty in default config")
+	}
+	if cfg.ECH.Provider != "local" {
+		t.Errorf("ECH.Provider = %q, want local", cfg.ECH.Provider)
+	}
+	if cfg.Log.Level != "info" {
+		t.Errorf("Log.Level = %q, want info", cfg.Log.Level)
+	}
+	if cfg.Log.Output != "stderr" {
+		t.Errorf("Log.Output = %q, want stderr", cfg.Log.Output)
+	}
+}
+
+func TestSetServerDefaults_CertDirDefault(t *testing.T) {
+	// When CertDir is empty, setServerDefaults should populate it
+	cfg := &ServerConfig{}
+	setServerDefaults(cfg)
+
+	if cfg.CertDir == "" {
+		t.Error("CertDir should be set by setServerDefaults")
+	}
+}
+
+func TestSetServerDefaults_CertDirPreserved(t *testing.T) {
+	// When CertDir is already set, it should not be overwritten
+	cfg := &ServerConfig{CertDir: "/custom/path"}
+	setServerDefaults(cfg)
+
+	if cfg.CertDir != "/custom/path" {
+		t.Errorf("CertDir = %q, want /custom/path", cfg.CertDir)
 	}
 }
