@@ -6,6 +6,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -675,6 +676,87 @@ func TestServer_AuthWithoutWS(t *testing.T) {
 
 // TestServer_AuthViaHTTPHandler verifies that GET /k2v5/auth works through
 // the HTTP handler path (for GET-based auth requests).
+func TestSetCertPair_RSA(t *testing.T) {
+	srv := newTestServer(t)
+	pair, err := wire.GenerateCertPair()
+	if err != nil {
+		t.Fatalf("GenerateCertPair: %v", err)
+	}
+
+	rsaProfile := &wire.TargetProfile{KeyAlgo: "rsa", CertChainLen: 3000}
+	srv.SetCertPair(pair, rsaProfile)
+
+	if srv.TLSConfig.Certificates != nil {
+		t.Error("Certificates should be nil after SetCertPair")
+	}
+	if srv.TLSConfig.GetCertificate == nil {
+		t.Fatal("GetCertificate should be set after SetCertPair")
+	}
+
+	cert, err := srv.TLSConfig.GetCertificate(&tls.ClientHelloInfo{})
+	if err != nil {
+		t.Fatalf("GetCertificate error: %v", err)
+	}
+
+	// Verify we got the RSA cert
+	leaf, err := x509.ParseCertificate(cert.Certificate[0])
+	if err != nil {
+		t.Fatalf("parse cert: %v", err)
+	}
+	if _, ok := leaf.PublicKey.(*rsa.PublicKey); !ok {
+		t.Errorf("expected RSA public key, got %T", leaf.PublicKey)
+	}
+}
+
+func TestSetCertPair_EC(t *testing.T) {
+	srv := newTestServer(t)
+	pair, err := wire.GenerateCertPair()
+	if err != nil {
+		t.Fatalf("GenerateCertPair: %v", err)
+	}
+
+	ecProfile := &wire.TargetProfile{KeyAlgo: "ec", CertChainLen: 2000}
+	srv.SetCertPair(pair, ecProfile)
+
+	cert, err := srv.TLSConfig.GetCertificate(&tls.ClientHelloInfo{})
+	if err != nil {
+		t.Fatalf("GetCertificate error: %v", err)
+	}
+
+	// Verify we got the EC cert
+	leaf, err := x509.ParseCertificate(cert.Certificate[0])
+	if err != nil {
+		t.Fatalf("parse cert: %v", err)
+	}
+	if _, ok := leaf.PublicKey.(*ecdsa.PublicKey); !ok {
+		t.Errorf("expected ECDSA public key, got %T", leaf.PublicKey)
+	}
+}
+
+func TestSetCertPair_NilProfile(t *testing.T) {
+	srv := newTestServer(t)
+	pair, err := wire.GenerateCertPair()
+	if err != nil {
+		t.Fatalf("GenerateCertPair: %v", err)
+	}
+
+	// nil profile should default to EC
+	srv.SetCertPair(pair, nil)
+
+	cert, err := srv.TLSConfig.GetCertificate(&tls.ClientHelloInfo{})
+	if err != nil {
+		t.Fatalf("GetCertificate error: %v", err)
+	}
+
+	leaf, err := x509.ParseCertificate(cert.Certificate[0])
+	if err != nil {
+		t.Fatalf("parse cert: %v", err)
+	}
+	if _, ok := leaf.PublicKey.(*ecdsa.PublicKey); !ok {
+		t.Errorf("expected ECDSA public key (default), got %T", leaf.PublicKey)
+	}
+}
+
 func TestServer_AuthViaHTTPHandler(t *testing.T) {
 	srv := newTestServer(t)
 

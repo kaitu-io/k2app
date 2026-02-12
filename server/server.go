@@ -88,6 +88,19 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 	return s, nil
 }
 
+// SetCertPair configures the server to use a dual cert pair with dynamic cert selection.
+// This replaces the static Certificates in TLSConfig with a GetCertificate callback
+// that selects RSA or EC cert based on the target profile's key algorithm.
+func (s *Server) SetCertPair(pair *wire.CertPair, defaultProfile *wire.TargetProfile) {
+	s.TLSConfig.Certificates = nil // clear static certs
+	s.TLSConfig.GetCertificate = func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+		if defaultProfile != nil && defaultProfile.KeyAlgo == "rsa" {
+			return &pair.RSA, nil
+		}
+		return &pair.EC, nil
+	}
+}
+
 // Run starts the server and blocks until ctx is cancelled.
 func (s *Server) Run(ctx context.Context) error {
 	if s.TLSConfig == nil {
