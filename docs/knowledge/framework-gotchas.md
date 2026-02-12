@@ -427,3 +427,68 @@ privKey, _ := ecdh.P256().GenerateKey(rand.Reader)
 **Pattern**: X25519-only for ECH keys. Check kem_id in template must be 0x0020.
 
 **Source**: zero-config-stealth feature, T1/T2 (ECH key generation)
+
+---
+
+## uTLS Outer SNI Binding to ECH public_name (adoption-scan, unverified)
+
+**Issue**: Cannot independently set outer SNI when ECH is enabled. uTLS forces `ClientHello.server_name = ECH config's public_name`.
+
+**Symptom**: `sni=custom.example.com` URL parameter ignored. Outer SNI always equals ECH public_name.
+
+**Root Cause**: uTLS strictly binds outer SNI to ECH config's public_name field. This is correct per ECH spec — outer SNI must match for camouflage.
+
+**Decision**: Removed `sni` URL parameter entirely. Outer SNI = `cloudflare-ech.com` (from ECH config), matching billions of real Cloudflare connections.
+
+**Validated in**: `wire/ech.go` (BuildClientTLSConfig), protocol spec section 3.1
+
+**Pattern**: ECH config structure dictates outer SNI. Don't fight it — use same public_name as real traffic.
+
+**Source**: zero-config-stealth feature, T5 (SNI cleanup)
+
+---
+
+## RSA + EC Dual Certificates for Algorithm Camouflage (adoption-scan, unverified)
+
+**Issue**: DPI can distinguish tunnels from real TLS by encrypted Certificate record length. Self-signed cert (500B) vs real cert chain (3-4KB) is obvious.
+
+**Solution**: Generate both RSA-2048 and EC P-256 certs. Server selects based on ClientHello preferences. Both padded to match target site's cert length.
+
+```go
+type CertPair struct {
+    RSA, EC      tls.Certificate
+    RSAPinHash   [32]byte  // sha256(PKIX RSA pubkey)
+    ECPinHash    [32]byte  // sha256(PKIX EC pubkey)
+}
+```
+
+**Client pin format**: `pin=sha256:<rsa_b64>,sha256:<ec_b64>` — both hashes in URL.
+
+**EC CA can sign both**: An ECDSA CA (like our DigiCert-mimicking Kaitu CA) signs both RSA and EC server certs. CA key type only determines signature algorithm, not subject key type.
+
+**Validated in**: `wire/certgen.go` (GenerateCertPair), `server/server.go` (SetCertPair, GetCertificate callback), `wire/tlspad/`
+
+**Pattern**: Maintain algorithm diversity. Server picks best match per connection. Pin both hashes.
+
+**Source**: tls-record-padding feature, T2 (Dual keypair generation)
+
+---
+
+## TLS Record Padding: Probe Target to Match Cert Length (adoption-scan, unverified)
+
+**Issue**: TLS 1.3 hides cert content but not record length. Short encrypted record = obvious tunnel.
+
+**Solution**: Probe target site (public_name), measure its Certificate message length, pad server cert to match via X.509 extensions.
+
+**Flow**:
+1. `ProbeTarget("cloudflare-ech.com")` → observe cert chain length (e.g., 3800B)
+2. `MeasureCertDERLen(&cert)` → server cert length (e.g., 500B)
+3. `GeneratePaddedCert(privKey, targetLen)` → padded cert ≈ 3800B
+
+**Fallback**: If probe fails (restricted network), server logs warning, continues with unpadded cert. Less stealth but functional.
+
+**Validated in**: `wire/tlspad/` (padding package), `server/server.go` (setupAutoProvision step 8-9)
+
+**Pattern**: Measure real-world observable metrics, match them. Padding disabled gracefully on failure.
+
+**Source**: tls-record-padding feature, T1 (TLS record padding)

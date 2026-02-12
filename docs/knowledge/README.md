@@ -8,6 +8,14 @@ This directory contains reusable patterns, decisions, and lessons learned from i
 
 ## Files
 
+### [bugfix-patterns.md](bugfix-patterns.md)
+Recurring bugs and their solutions, extracted from git history.
+
+Patterns:
+- Base64 URL-Safe Encoding in k2v5 URLs
+- TransportManager Error Swallowing
+- Self-Signed Cert Silent Failure
+
 ### [architecture-decisions.md](architecture-decisions.md)
 Key architectural choices made during implementation, with rationale and validation.
 
@@ -54,6 +62,9 @@ Gotchas:
 - miekg/dns: Domain Name Must End with Dot
 - ECH Binary Format: Big-Endian Multi-Byte Fields
 - Go crypto/tls ECH: Must Use X25519, Not P-256
+- uTLS Outer SNI Binding to ECH public_name
+- RSA + EC Dual Certificates for Algorithm Camouflage
+- TLS Record Padding: Probe Target to Match Cert Length
 
 ### [task-splitting.md](task-splitting.md)
 Patterns for breaking features into mergeable incremental tasks.

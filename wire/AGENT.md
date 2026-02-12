@@ -1,6 +1,6 @@
 # Wire Layer (wire/ — k2v5 composite protocol)
 
-91 tests. QUIC/H3 primary, TCP-WS/smux fallback.
+242 tests. QUIC/H3 primary, TCP-WS/smux fallback.
 
 ## Interfaces (wire.go)
 
@@ -34,20 +34,43 @@ Fields: UDID, Token, Host, Port, ECH, Fingerprint, HopStart, HopEnd, Insecure, P
 
 - `wire.go` — Dialer/Listener/UDPHandler interfaces, Config, `ParseURL()`
 - `auth.go` — `TicketStore` (1h TTL, 30s grace), `AuthHandler` (JWT full + ticket)
-- `ech.go` — ECH config parsing, utls fingerprint selection, SNI peek, reverse proxy
+- `auth_info.go` — `AuthInfo` (UDID+Token), `EnsureAuth()` (load or generate credentials)
+- `ech.go` — ECH key management (generate, save/load, rotation, migration), `BuildClientTLSConfig`, SNI peek, reverse proxy
+- `ech_provider.go` — `ECHProvider` interface, `LocalECHProvider` (Cloudflare DNS HTTPS fetch), `ParseECHConfigBytes`, `GenerateECHKeyFromTemplate`, 3-tier fallback
+- `ca.go` — `BuildDefaultCAPool` (system CA + embedded Kaitu CA - Chinese CA blocklist), `IsBlockedCA`
+- `kaitu_ca.pem` — Embedded Kaitu CA cert (EC P-256, disguised as DigiCert Global Root CA)
+- `certgen.go` — `GenerateCertPair` (RSA-2048 + EC P-256), `EnsureCertPair`, pin hash generation
 - `stream.go` — QUIC varint encoding, `StreamHeader` (type 0x4B32 H3 frame), request/response
 - `udp.go` — `UDPFrame` wire format, `SessionAllocator`, `SessionMap`, smux framing
 - `quic.go` — QUIC config, `StreamConn` adapter, `QUICClient`/`QUICServer`, port hopping
 - `tcpws.go` — smux config, `TCPWSClient`/`TCPWSServer`
 - `transport.go` — `TransportManager`: sets QUIC/TCP-WS, `DialTCP` prefers QUIC with TCP-WS fallback
+- `tlspad/` — TLS record padding (probe target cert length, pad server cert to match)
+- `pcc/` — PCC Vivace congestion control for QUIC
+
+## ECH Rotation Flow
+
+1. `EnsureECHPrivateKey(keyPath)` — load or generate X25519 HPKE key (auto-migrates old format)
+2. `ECHProvider.FetchTemplate()` → Cloudflare DNS HTTPS record → extract config_id, cipher_suites, public_name
+3. `GenerateECHKeyFromTemplate(tmpl, privKey)` → forged config (config_id = Cloudflare's + 1)
+4. `SaveECHConfig(dir, config)` / `LoadAllECHConfigs(dir)` → multi-config storage (sorted by config_id desc)
+5. `BuildECHKeys(privKey, configs)` → `[]tls.EncryptedClientHelloKey` for TLS config
+
+## Client TLS Verification Priority
+
+1. `pin=sha256:...` → InsecureSkipVerify + pin hash check (most secure)
+2. `insecure=1` → InsecureSkipVerify (dev/testing only)
+3. Default → system CA + Kaitu CA - Chinese CA blocklist (CNNIC, WoSign, WoTrus, CFCA, GDCA, SHECA)
 
 ## Gotchas
 
 - `ReadStreamHeader`/`ReadStreamResponse` need `io.ByteReader` — wrap conn with `bufio.NewReader(conn)`.
 - `net.Pipe()` is synchronous — structure goroutines carefully in tests.
+- ECH base64 in URLs must use `base64.URLEncoding` (standard `+` corrupted by `url.Query()`).
+- uTLS forces outer SNI = ECH config's `public_name` — cannot be set independently.
 
 ## Testing
 
 ```bash
-go test ./wire/...    # 91 tests (unit + integration)
+go test ./wire/...    # 242 tests (unit + integration + rotation + CA)
 ```

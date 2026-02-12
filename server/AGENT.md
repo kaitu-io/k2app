@@ -1,12 +1,12 @@
 # server — Server Daemon and Handlers
 
-Server-side listener orchestration and TCP/UDP proxy handlers.
+Server-side listener orchestration, auto-provisioning, and TCP/UDP proxy handlers.
 
 ## Files
 
-- `server.go` — Server struct, TLS listener, ECH routing, lifecycle
+- `server.go` — Server struct, TLS listener, ECH routing, auto-provisioning, lifecycle
 - `handler.go` — TCP/UDP proxy handlers (AcceptTCP → net.Dial → pipe)
-- `*_test.go` — unit tests for TLS peek, handlers
+- `*_test.go` — unit tests for TLS peek, handlers, auto-provisioning
 
 ## Architecture
 
@@ -33,42 +33,48 @@ bidirectional  forward
   pipe       packets
 ```
 
+## Auto-Provisioning (`setupAutoProvision`)
+
+When `CertDir` is set (always true in zero-config mode):
+
+1. `mkdir -p cert_dir`
+2. `EnsureCertPair` → RSA-2048 + EC P-256 dual keypair
+3. `EnsureECHPrivateKey` → X25519 HPKE key (persistent)
+4. `FetchTemplateWithFallback` → Cloudflare ECH template (DNS → cache → defaults)
+5. `GenerateECHKeyFromTemplate` → forged ECH config (config_id+1)
+6. `SaveECHConfig` + `LoadAllECHConfigs` → multi-config rotation
+7. `ProbeTarget(publicName)` → measure target cert length
+8. Apply TLS record padding to both RSA and EC certs
+9. Configure TLS: cert selection callback + all ECH keys
+10. `EnsureAuth` → load or generate UDID+token
+11. `logConnectionURL` → print `k2v5://` URL to stderr
+
 ## Key Types
 
 ```go
 type Server struct {
-    listener   net.Listener
+    listener    net.Listener
     ticketStore *wire.TicketStore
     quicServer  *wire.QUICServer
     tcpwsServer *wire.TCPWSServer
     reverseProxy *wire.ReverseProxy
+    certPair    *wire.CertPair       // RSA + EC dual keypair
 }
 ```
 
 ## Lifecycle
 
-1. `Listen()` — start TLS listener on configured port
-2. Accept TCP connections
-3. Peek ClientHello SNI:
+1. `New(cfg)` → create server, run `setupAutoProvision` if CertDir set
+2. `Listen()` → start TLS listener on configured port
+3. Accept TCP connections
+4. Peek ClientHello SNI:
    - ECH inner SNI match → k2v5 handler
    - No match → reverse proxy (camouflage)
-4. k2v5 handler:
-   - Auth: POST /k2v5/auth → issue ticket
-   - QUIC: handle QUIC connections (AcceptTCP/ServeUDP)
-   - TCP-WS: handle WebSocket+smux (AcceptTCP/ServeUDP)
-5. TCP handler: read stream header → net.Dial(target) → bidirectional pipe
-6. UDP handler: read frames → net.Dial("udp", target) → forward packets
-7. `Close()` — graceful shutdown with connection draining
-
-## Error Handling
-
-- TLS handshake failures → log + close (no panic)
-- Auth failures → 401 response
-- Dial failures → close stream (client sees broken pipe)
-- Forward errors → close both ends
+5. k2v5 handler: auth → QUIC/TCP-WS listeners → TCP/UDP proxy
+6. `Close()` → graceful shutdown with connection draining
 
 ## Testing
 
-- `server_test.go` — TLS peek routing, ECH vs non-ECH
+- `server_test.go` — TLS peek routing, ECH vs non-ECH, auto-provisioning
 - `handler_test.go` — TCP/UDP proxy with mock targets
 - `test/e2e_test.go` — full integration with real client

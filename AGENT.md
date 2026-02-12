@@ -8,9 +8,12 @@ Two binaries: `k2` (client) and `k2s` (server). Client has daemon architecture w
 ```bash
 go build -o k2 ./cmd/k2            # Build client
 go build -o k2s ./cmd/k2s          # Build server
-go test ./...                      # All tests (wire, core, dns, daemon, provider, server, e2e)
+go test ./...                      # All tests (242 wire + core + dns + daemon + server + e2e)
+go test -short ./...               # Fast: skip live DNS/network tests
 sudo k2 run -c client.yaml         # Client foreground (dev)
-k2s run -s server.yaml             # Server foreground (VPS)
+k2s run                            # Server zero-config (auto-generates certs, ECH, auth)
+k2s run -s server.yaml             # Server with explicit config
+docker compose up --build           # Docker: server + init container (docker/)
 ```
 
 ## Code Style
@@ -70,6 +73,10 @@ test/AGENT.md                  E2E integration tests
 - ECH requires X25519 keys (not P-256) — Go's crypto/tls only supports DHKEM(X25519)
 - DNS queries need trailing dot (FQDN) — `crypto.cloudflare.com.` not `crypto.cloudflare.com`
 - TLS wire formats are big-endian — always use `binary.BigEndian` for ECH/TLS parsing
+- Base64 in URLs must use `base64.URLEncoding` — standard `+` decoded to space by `url.Query()`
+- uTLS forces outer SNI = ECH config's `public_name` — cannot be overridden independently
+- Server generates dual certs (RSA+EC) — both padded to match target site's cert length
+- EC CA (`wire/kaitu_ca.pem`, disguised as DigiCert) can sign both RSA and EC server certs
 
 ## Dependencies
 
@@ -92,4 +99,4 @@ docs/todos/p2-*.md     Nice to have
 
 ## Status
 
-**Done**: Full L4 architecture, wire protocol (QUIC+TCP-WS), DNS middleware, auth, ECH (with DNS-based forging), TLS padding, PCC, client tunnel, server handlers, e2e tests, zero-config server startup, k2/k2s binaries
+**Done**: Full L4 architecture, wire protocol (QUIC+TCP-WS), DNS middleware, auth, ECH (DNS-based forging + config rotation), TLS record padding, dual certs (RSA+EC), client CA pool (system + Kaitu CA - Chinese CAs), PCC, client tunnel, server handlers, e2e tests, zero-config server startup, k2/k2s binaries
