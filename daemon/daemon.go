@@ -7,6 +7,9 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/kaitu-io/k2/config"
+	"github.com/kaitu-io/k2/core"
 )
 
 // DefaultAddr is the daemon HTTP listen address.
@@ -40,6 +43,14 @@ type Daemon struct {
 
 	// Process monitor PID.
 	monitorPID int
+
+	// Active tunnel.
+	tunnel    *core.ClientTunnel
+	tunnelCtx context.Context
+	tunnelCnl context.CancelFunc
+
+	// TunnelBuilder allows overriding tunnel creation for testing.
+	TunnelBuilder func(ctx context.Context, cfg *config.ClientConfig) (*core.ClientTunnel, error)
 
 	// Speedtest state.
 	speedtest *SpeedtestState
@@ -106,6 +117,14 @@ func (d *Daemon) setState(s string) {
 	d.state = s
 }
 
+func (d *Daemon) setError(msg string) {
+	d.mu.Lock()
+	d.lastError = msg
+	d.state = StateError
+	d.mu.Unlock()
+	log.Printf("Error: %s", msg)
+}
+
 // doUp connects the tunnel with the given wire URL or config path.
 func (d *Daemon) doUp(wireURL, configPath string, pid int) error {
 	d.mu.Lock()
@@ -135,13 +154,40 @@ func (d *Daemon) doUp(wireURL, configPath string, pid int) error {
 		Timestamp:  time.Now(),
 	})
 
-	// TODO: Actually start the tunnel here.
-	// This requires the L4 tunnel rewrite (core/tunnel.go).
-	// For now, we just set state to connected.
-	d.setState(StateConnected)
+	// Build config from wire URL or config file.
+	var cfg *config.ClientConfig
+	if configPath != "" {
+		var err error
+		cfg, err = config.LoadClient(configPath)
+		if err != nil {
+			d.setError(fmt.Sprintf("load config: %v", err))
+			return err
+		}
+	} else {
+		cfg = config.ClientFromURL(wireURL)
+	}
+
+	// Create and start tunnel.
+	builder := d.TunnelBuilder
+	if builder == nil {
+		builder = buildTunnel
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	tunnel, err := builder(ctx, cfg)
+	if err != nil {
+		cancel()
+		d.setError(fmt.Sprintf("build tunnel: %v", err))
+		return err
+	}
+
 	d.mu.Lock()
+	d.tunnel = tunnel
+	d.tunnelCtx = ctx
+	d.tunnelCnl = cancel
 	d.connectedAt = time.Now()
 	d.mu.Unlock()
+
+	d.setState(StateConnected)
 
 	// Start PID monitoring if requested.
 	if pid > 0 {
@@ -163,8 +209,20 @@ func (d *Daemon) doUp(wireURL, configPath string, pid int) error {
 func (d *Daemon) doDown() {
 	d.setState(StateDisconnecting)
 
-	// TODO: Actually stop the tunnel here.
-	// Requires L4 tunnel rewrite.
+	d.mu.Lock()
+	tunnel := d.tunnel
+	cancel := d.tunnelCnl
+	d.tunnel = nil
+	d.tunnelCnl = nil
+	d.tunnelCtx = nil
+	d.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+	if tunnel != nil {
+		tunnel.Close()
+	}
 
 	d.setState(StateStopped)
 

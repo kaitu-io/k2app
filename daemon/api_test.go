@@ -2,10 +2,16 @@ package daemon
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/kaitu-io/k2/config"
+	"github.com/kaitu-io/k2/core"
+	"github.com/kaitu-io/k2/provider"
 )
 
 func TestHandlePing(t *testing.T) {
@@ -73,8 +79,38 @@ func TestHandleCoreStatus(t *testing.T) {
 	}
 }
 
+// mockTunnelBuilder returns a mock tunnel for testing without root.
+func mockTunnelBuilder(ctx context.Context, cfg *config.ClientConfig) (*core.ClientTunnel, error) {
+	prov := &mockProvider{}
+	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{
+		Provider: prov,
+		Dialer:   &mockDialer{},
+	})
+	tunnel.Start(ctx)
+	return tunnel, nil
+}
+
+type mockProvider struct{}
+
+func (p *mockProvider) Start(ctx context.Context, handler provider.ConnectionHandler) error {
+	return nil
+}
+func (p *mockProvider) Close() error { return nil }
+func (p *mockProvider) Name() string { return "mock" }
+
+type mockDialer struct{}
+
+func (d *mockDialer) DialTCP(ctx context.Context, addr string) (net.Conn, error) {
+	return nil, nil
+}
+func (d *mockDialer) DialUDP(ctx context.Context, addr string) (net.PacketConn, error) {
+	return nil, nil
+}
+func (d *mockDialer) Close() error { return nil }
+
 func TestHandleCoreUpDown(t *testing.T) {
 	d := New()
+	d.TunnelBuilder = mockTunnelBuilder
 
 	// Up with URL.
 	upBody := `{"action":"up","params":{"wire_url":"k2v5://test:token@host:443"}}`
@@ -254,6 +290,7 @@ func TestHandleCoreReconnectNoConfig(t *testing.T) {
 
 func TestHandleCoreGetConfig(t *testing.T) {
 	d := New()
+	d.TunnelBuilder = mockTunnelBuilder
 
 	// Set some config via up.
 	upBody := `{"action":"up","params":{"wire_url":"k2v5://test:tok@host:443"}}`
