@@ -37,3 +37,16 @@ func (r *Router) Route(info packet.Info) k2rule.Target {
 
 	return k2rule.MatchIP(ip)
 }
+
+// RouteAddr makes a routing decision for a host address (IP or domain).
+func (r *Router) RouteAddr(host string) k2rule.Target {
+	// 1. Check dynamic cache first (from DNS middleware)
+	if r.dnsCache != nil {
+		if _, target, found := r.dnsCache.Get(host); found {
+			return target
+		}
+	}
+
+	// 2. Check k2rule (supports both domain and IP matching)
+	return k2rule.Match(host)
+}
