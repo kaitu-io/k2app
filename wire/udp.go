@@ -159,29 +159,42 @@ type udpSession struct {
 
 // UDPSessionMap manages server-side UDP session state.
 type UDPSessionMap struct {
-	mu       sync.RWMutex
-	sessions map[uint32]*udpSession
-	maxSize  int
-	idleTTL  time.Duration
+	mu         sync.RWMutex
+	sessions   map[uint32]*udpSession
+	maxSize    int
+	idleTTL    time.Duration
+	stopCleanup chan struct{}
 }
 
 // NewUDPSessionMap creates a session map with max size and idle timeout.
 func NewUDPSessionMap(maxSize int, idleTTL time.Duration) *UDPSessionMap {
 	return &UDPSessionMap{
-		sessions: make(map[uint32]*udpSession),
-		maxSize:  maxSize,
-		idleTTL:  idleTTL,
+		sessions:    make(map[uint32]*udpSession),
+		maxSize:     maxSize,
+		idleTTL:     idleTTL,
+		stopCleanup: make(chan struct{}),
 	}
 }
 
 // Store adds or updates a session.
-func (m *UDPSessionMap) Store(sessionID uint32, addr string) {
+// Returns false if at maxSize capacity and the session is new (not an update).
+func (m *UDPSessionMap) Store(sessionID uint32, addr string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	// Check if this is an update to existing session or a new one
+	_, exists := m.sessions[sessionID]
+
+	// Reject new sessions when at capacity
+	if !exists && len(m.sessions) >= m.maxSize {
+		return false
+	}
+
 	m.sessions[sessionID] = &udpSession{
 		addr:     addr,
 		lastSeen: time.Now(),
 	}
+	return true
 }
 
 // Load retrieves a session's address. Does not update last-seen time; use Touch for that.
@@ -216,6 +229,24 @@ func (m *UDPSessionMap) Cleanup() {
 	}
 }
 
+// StartCleanup launches a background goroutine that periodically removes idle sessions.
+// The cleanup goroutine stops when Close() is called.
+func (m *UDPSessionMap) StartCleanup(interval time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				m.Cleanup()
+			case <-m.stopCleanup:
+				return
+			}
+		}
+	}()
+}
+
 // Len returns the number of active sessions.
 func (m *UDPSessionMap) Len() int {
 	m.mu.RLock()
@@ -223,8 +254,17 @@ func (m *UDPSessionMap) Len() int {
 	return len(m.sessions)
 }
 
-// Close cleans up all sessions.
+// Close cleans up all sessions and stops the cleanup goroutine.
 func (m *UDPSessionMap) Close() {
+	// Stop cleanup goroutine
+	select {
+	case <-m.stopCleanup:
+		// Already closed
+	default:
+		close(m.stopCleanup)
+	}
+
+	// Clear all sessions
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.sessions = make(map[uint32]*udpSession)

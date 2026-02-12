@@ -172,7 +172,9 @@ func TestUDPSessionMap_AddAndGet(t *testing.T) {
 	m := NewUDPSessionMap(1024, 60*time.Second)
 	defer m.Close()
 
-	m.Store(1, "8.8.8.8:53")
+	if ok := m.Store(1, "8.8.8.8:53"); !ok {
+		t.Fatal("Store should succeed")
+	}
 	addr, ok := m.Load(1)
 	if !ok {
 		t.Fatal("session 1 should exist")
@@ -192,7 +194,9 @@ func TestUDPSessionMap_IdleCleanup(t *testing.T) {
 	m := NewUDPSessionMap(1024, 50*time.Millisecond)
 	defer m.Close()
 
-	m.Store(1, "8.8.8.8:53")
+	if ok := m.Store(1, "8.8.8.8:53"); !ok {
+		t.Fatal("Store should succeed")
+	}
 
 	// Should exist immediately
 	_, ok := m.Load(1)
@@ -213,7 +217,9 @@ func TestUDPSessionMap_Touch(t *testing.T) {
 	m := NewUDPSessionMap(1024, 80*time.Millisecond)
 	defer m.Close()
 
-	m.Store(1, "8.8.8.8:53")
+	if ok := m.Store(1, "8.8.8.8:53"); !ok {
+		t.Fatal("Store should succeed")
+	}
 
 	// Touch before idle timeout
 	time.Sleep(40 * time.Millisecond)
@@ -226,5 +232,103 @@ func TestUDPSessionMap_Touch(t *testing.T) {
 	_, ok := m.Load(1)
 	if !ok {
 		t.Error("session should still exist after touch")
+	}
+}
+
+// ============================================================================
+// MaxSize Enforcement (AC19)
+// ============================================================================
+
+func TestUDPSessionMap_MaxSize_Enforced(t *testing.T) {
+	m := NewUDPSessionMap(2, 60*time.Second)
+	defer m.Close()
+
+	// Store first two sessions - should succeed
+	ok1 := m.Store(1, "8.8.8.8:53")
+	ok2 := m.Store(2, "1.1.1.1:53")
+
+	if !ok1 {
+		t.Error("first Store should succeed")
+	}
+	if !ok2 {
+		t.Error("second Store should succeed")
+	}
+	if m.Len() != 2 {
+		t.Errorf("len = %d, want 2", m.Len())
+	}
+
+	// Third store should be rejected (at capacity)
+	ok3 := m.Store(3, "9.9.9.9:53")
+	if ok3 {
+		t.Error("third Store should fail (at maxSize)")
+	}
+	if m.Len() != 2 {
+		t.Errorf("len = %d, want 2 (third session should not be added)", m.Len())
+	}
+
+	// Verify session 3 was not added
+	_, exists := m.Load(3)
+	if exists {
+		t.Error("session 3 should not exist")
+	}
+}
+
+func TestUDPSessionMap_MaxSize_UpdateExisting(t *testing.T) {
+	m := NewUDPSessionMap(2, 60*time.Second)
+	defer m.Close()
+
+	// Fill to capacity
+	if ok := m.Store(1, "8.8.8.8:53"); !ok {
+		t.Fatal("first Store should succeed")
+	}
+	if ok := m.Store(2, "1.1.1.1:53"); !ok {
+		t.Fatal("second Store should succeed")
+	}
+
+	// Update existing session should succeed even at capacity
+	ok := m.Store(1, "8.8.4.4:53")
+	if !ok {
+		t.Error("updating existing session should succeed at capacity")
+	}
+
+	addr, _ := m.Load(1)
+	if addr != "8.8.4.4:53" {
+		t.Errorf("addr = %q, want %q", addr, "8.8.4.4:53")
+	}
+	if m.Len() != 2 {
+		t.Errorf("len = %d, want 2", m.Len())
+	}
+}
+
+// ============================================================================
+// Background Cleanup (AC20)
+// ============================================================================
+
+func TestUDPSessionMap_StartCleanup(t *testing.T) {
+	m := NewUDPSessionMap(1024, 50*time.Millisecond)
+	defer m.Close()
+
+	// Store session with short idle TTL
+	if ok := m.Store(1, "8.8.8.8:53"); !ok {
+		t.Fatal("Store should succeed")
+	}
+
+	// Start cleanup goroutine with short interval
+	m.StartCleanup(100 * time.Millisecond)
+
+	// Session should exist initially
+	_, ok := m.Load(1)
+	if !ok {
+		t.Fatal("session should exist initially")
+	}
+
+	// Wait for idle timeout + cleanup interval
+	// Session idle at t=0, idle TTL=50ms, cleanup runs at t=100ms
+	time.Sleep(200 * time.Millisecond)
+
+	// Session should be removed by background cleanup
+	_, ok = m.Load(1)
+	if ok {
+		t.Error("session should be cleaned up by background goroutine")
 	}
 }
