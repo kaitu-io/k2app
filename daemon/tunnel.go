@@ -12,9 +12,9 @@ import (
 	"github.com/kaitu-io/k2/wire"
 )
 
-// buildTunnel creates the full tunnel stack from a client config.
+// BuildTunnel creates the full tunnel stack from a client config.
 // Returns a started ClientTunnel ready for traffic.
-func buildTunnel(ctx context.Context, cfg *config.ClientConfig) (*core.ClientTunnel, error) {
+func BuildTunnel(ctx context.Context, cfg *config.ClientConfig) (*core.ClientTunnel, error) {
 	// 1. Parse wire URL → build transports.
 	wireCfg, err := wire.ParseURL(cfg.Server)
 	if err != nil {

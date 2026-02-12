@@ -170,7 +170,7 @@ func (d *Daemon) doUp(wireURL, configPath string, pid int) error {
 	// Create and start tunnel.
 	builder := d.TunnelBuilder
 	if builder == nil {
-		builder = buildTunnel
+		builder = BuildTunnel
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	tunnel, err := builder(ctx, cfg)

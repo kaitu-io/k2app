@@ -53,8 +53,9 @@ Usage:
 
   k2 run                       Start daemon (called by service manager)
   k2 run -c <config.yaml>      Client foreground mode (dev/debug, needs sudo)
-  k2 run -s <server.yaml>      Server foreground mode (VPS deployment)
 
   k2 version                   Show version info
+
+Server: use k2s binary for server deployment.
 `)
 }
