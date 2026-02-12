@@ -6,10 +6,13 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	"net/http"
 	"sync"
 	"time"
 
+	utls "github.com/metacubex/utls"
 	smux "github.com/xtaci/smux/v2"
+	"nhooyr.io/websocket"
 )
 
 // Compile-time interface checks.
@@ -48,12 +51,23 @@ func (c *smuxStreamConn) Read(b []byte) (int, error) {
 // ============================================================================
 
 // TCPWSClient is the TCP-WS + smux client transport.
+//
+// Connection flow (production mode):
+//   1. TCP dial to server:port
+//   2. uTLS handshake with fingerprint (chrome/firefox/safari/random)
+//   3. WebSocket upgrade to /k2v5/tunnel over TLS connection
+//   4. smux session multiplexing over WebSocket binary frames
+//
+// The uTLS library allows fingerprint customization to evade DPI detection.
+// ECH (Encrypted Client Hello) config is passed through to hide the real SNI.
+//
+// Test mode: SetTestConn bypasses TCP+TLS+WS and uses a direct net.Conn for smux.
 type TCPWSClient struct {
 	cfg        Config
 	store      *TicketStore
 	serverAddr string
 	tlsConfig  *tls.Config // override for testing
-	testConn   net.Conn    // override for testing (bypasses TCP+TLS)
+	testConn   net.Conn    // override for testing (bypasses TCP+TLS+WS)
 
 	mu     sync.Mutex
 	sess   *smux.Session
@@ -90,33 +104,15 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 
 	var conn net.Conn
 	if c.testConn != nil {
+		// Test mode: bypass TCP+TLS+WS, direct smux
 		conn = c.testConn
 	} else {
-		// TCP dial
-		var d net.Dialer
+		// Production mode: TCP → uTLS → WebSocket → smux
 		var err error
-		conn, err = d.DialContext(ctx, "tcp", c.serverAddr)
+		conn, err = c.connectTLSWebSocket(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("wire: TCP dial %s: %w", c.serverAddr, err)
+			return nil, err
 		}
-
-		// TLS handshake
-		var tlsCfg *tls.Config
-		if c.tlsConfig != nil {
-			tlsCfg = c.tlsConfig.Clone()
-		} else {
-			tlsCfg, _, err = BuildClientTLSConfig(c.cfg)
-			if err != nil {
-				conn.Close()
-				return nil, err
-			}
-		}
-		tlsConn := tls.Client(conn, tlsCfg)
-		if err := tlsConn.HandshakeContext(ctx); err != nil {
-			conn.Close()
-			return nil, fmt.Errorf("wire: TLS handshake: %w", err)
-		}
-		conn = tlsConn
 	}
 
 	sess, err := smux.Client(conn, DefaultSmuxConfig())
@@ -128,6 +124,90 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 	c.sess = sess
 	c.alloc = NewSessionIDAllocator()
 	return sess, nil
+}
+
+// connectTLSWebSocket establishes TCP → uTLS → WebSocket connection.
+// Returns a net.Conn-compatible WebSocket connection ready for smux.
+func (c *TCPWSClient) connectTLSWebSocket(ctx context.Context) (net.Conn, error) {
+	// 1. TCP dial
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, "tcp", c.serverAddr)
+	if err != nil {
+		return nil, fmt.Errorf("wire: TCP dial %s: %w", c.serverAddr, err)
+	}
+
+	// 2. uTLS handshake
+	var tlsCfg *tls.Config
+	var clientHelloID utls.ClientHelloID
+
+	if c.tlsConfig != nil {
+		// Test mode with override TLS config
+		tlsCfg = c.tlsConfig.Clone()
+		clientHelloID = utls.HelloChrome_120_PQ // Default for tests
+	} else {
+		// Production mode: build from Config
+		tlsCfg, clientHelloID, err = BuildClientTLSConfig(c.cfg)
+		if err != nil {
+			conn.Close()
+			return nil, err
+		}
+	}
+
+	// Create uTLS config (subset of standard tls.Config fields)
+	utlsCfg := &utls.Config{
+		ServerName:         tlsCfg.ServerName,
+		InsecureSkipVerify: tlsCfg.InsecureSkipVerify,
+		MinVersion:         tlsCfg.MinVersion,
+		MaxVersion:         tlsCfg.MaxVersion,
+	}
+
+	// Pass ECH config if available
+	if len(tlsCfg.EncryptedClientHelloConfigList) > 0 {
+		utlsCfg.EncryptedClientHelloConfigList = tlsCfg.EncryptedClientHelloConfigList
+	}
+
+	// Create uTLS connection with fingerprint
+	uconn := utls.UClient(conn, utlsCfg, clientHelloID)
+	if err := uconn.HandshakeContext(ctx); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("wire: uTLS handshake: %w", err)
+	}
+
+	// 3. WebSocket upgrade over TLS connection
+	wsConn, err := c.upgradeWebSocket(ctx, uconn)
+	if err != nil {
+		uconn.Close()
+		return nil, fmt.Errorf("wire: WebSocket upgrade: %w", err)
+	}
+
+	return wsConn, nil
+}
+
+// upgradeWebSocket performs WebSocket upgrade to /k2v5/tunnel over an existing TLS connection.
+// Returns a net.Conn-compatible wrapper around the WebSocket connection.
+func (c *TCPWSClient) upgradeWebSocket(ctx context.Context, tlsConn net.Conn) (net.Conn, error) {
+	// Create custom dialer that returns our existing TLS connection
+	// We need to use DialTLSContext to signal that TLS is already established
+	dialOpts := &websocket.DialOptions{
+		HTTPClient: &http.Client{
+			Transport: &http.Transport{
+				DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+					// Return our already-established TLS connection
+					return tlsConn, nil
+				},
+			},
+		},
+	}
+
+	wsURL := fmt.Sprintf("wss://%s/k2v5/tunnel", c.cfg.Host)
+	ws, _, err := websocket.Dial(ctx, wsURL, dialOpts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert WebSocket to net.Conn using nhooyr's NetConn wrapper
+	// MessageBinary mode: read/write binary frames transparently
+	return websocket.NetConn(ctx, ws, websocket.MessageBinary), nil
 }
 
 // DialTCP opens a TCP proxy stream through the smux session.
