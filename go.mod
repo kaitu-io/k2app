@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/apernet/quic-go v0.57.2-0.20260111184307-eec823306178
-	github.com/kaitu-io/k2rule v0.2.0-go
+	github.com/kaitu-io/k2rule v0.3.0-go
 	github.com/metacubex/utls v1.8.4
 	github.com/miekg/dns v1.1.72
 	github.com/sagernet/sing v0.7.6
@@ -25,6 +25,8 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/mdlayher/netlink v1.7.2 // indirect
 	github.com/mdlayher/socket v0.4.1 // indirect
+	github.com/oschwald/geoip2-golang v1.9.0 // indirect
+	github.com/oschwald/maxminddb-golang v1.11.0 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/sagernet/fswatch v0.1.1 // indirect
 	github.com/sagernet/gvisor v0.0.0-20241123041152-536d05261cff // indirect

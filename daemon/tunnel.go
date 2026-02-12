@@ -3,7 +3,10 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/netip"
+
+	"github.com/kaitu-io/k2rule"
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/core"
@@ -15,6 +18,24 @@ import (
 // BuildTunnel creates the full tunnel stack from a client config.
 // Returns a started ClientTunnel ready for traffic.
 func BuildTunnel(ctx context.Context, cfg *config.ClientConfig) (*core.ClientTunnel, error) {
+	// 0. Initialize k2rule routing engine.
+	ruleCfg := &k2rule.Config{
+		RuleURL:   cfg.Rule.RuleURL,
+		RuleFile:  cfg.Rule.RuleFile,
+		GeoIPURL:  cfg.Rule.GeoIPURL,
+		GeoIPFile: cfg.Rule.GeoIPFile,
+		PornURL:   cfg.Rule.PornURL,
+		PornFile:  cfg.Rule.PornFile,
+		CacheDir:  cfg.Rule.CacheDir,
+		IsGlobal:  cfg.Rule.Global,
+	}
+	if cfg.Rule.Global {
+		ruleCfg.GlobalTarget = k2rule.TargetProxy
+	}
+	if err := k2rule.Init(ruleCfg); err != nil {
+		log.Printf("k2rule init: %v (continuing with defaults)", err)
+	}
+
 	// 1. Parse wire URL → build transports.
 	wireCfg, err := wire.ParseURL(cfg.Server)
 	if err != nil {
