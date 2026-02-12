@@ -1,27 +1,64 @@
 # Core Layer (core/)
 
-Tunnel, router, and packet processing. DNS has its own doc at `core/dns/AGENT.md`.
+L4 client tunnel, router, and packet processing. DNS has its own doc at `core/dns/AGENT.md`.
 
-## Tunnel — TO BE IMPLEMENTED (T4)
+## Tunnel (tunnel.go)
 
-Deleted old L3 tunnel.go (used `Dial(ctx)` / `Accept()` model). New L4 tunnel will implement `ConnectionHandler`:
-- `HandleTCP(conn, dest)` — route via Router → wire.DialTCP or net.Dial
-- `HandleUDP(conn, dest)` — route via Router → wire.DialUDP or net.Dial; port 53 → DNS middleware
+L4 client tunnel connecting Provider (TUN/Proxy) to wire.Dialer (QUIC/TCP-WS).
+
+**Type**: `ClientTunnel` implements `provider.ConnectionHandler`
+
+**Architecture**:
+```
+Provider ──► ClientTunnel.HandleTCP/HandleUDP
+                  │
+              Router (k2rule)
+                  │
+          ┌───────┴────────┐
+       Direct           Proxy
+    net.Dial()      wire.DialTCP/UDP
+```
+
+**HandleTCP(conn, dest)**:
+1. Parse dest → get domain/IP
+2. Router.Route → Direct/Proxy/Reject
+3. Direct: `net.Dial("tcp", dest)` + bidirectional pipe
+4. Proxy: `wire.DialTCP(dest)` + bidirectional pipe
+5. Reject: close connection silently
+
+**HandleUDP(conn, dest)**:
+1. Port 53 → DNS middleware (intercepted)
+2. Non-DNS → Router.Route → Direct/Proxy
+3. Direct: `net.ListenPacket` + forward to dest
+4. Proxy: `wire.DialUDP(dest)` + forward packets
+
+**Files**: `tunnel.go`, `tunnel_test.go`
 
 ## Router (router.go)
 
-Routes traffic using k2rule: CN domains/IPs -> direct, foreign -> proxy.
+Routes traffic using k2rule (domain/IP → Direct/Proxy/Reject).
 
-- `k2rule.InitWithFallback(k2rule.TargetProxy)` — init in main.go
-- `k2rule.MatchIP(ip)` / `k2rule.MatchDomain(domain)` -> `k2rule.Target`
-- `k2rule.Target`: `TargetDirect` / `TargetProxy` / `TargetReject`
+**Initialization** (daemon/tunnel.go):
+```go
+k2rule.Init(&k2rule.Config{
+    Rules:     rulesYAML,
+    GeoIPPath: mmdbPath,
+})
+```
 
-## Direct — TO BE IMPLEMENTED (T4)
+**Usage**:
+```go
+router.RouteAddr("8.8.8.8") → k2rule.TargetDirect
+router.RouteAddr("example.com") → k2rule.TargetProxy
+router.RouteAddr("blocked.com") → k2rule.TargetReject
+```
 
-Old raw socket `DirectSender` deleted. New `DirectDialer` will use simple `net.Dial` (no raw socket needed in L4 model).
+**k2rule v0.3.0-go**: unified Init API, GeoIP validation at init (not runtime).
 
 ## Packet (packet/)
 
-`packet.go` — IP packet parsing: extracts protocol, src/dst IP, ports, DNS detection.
-`packet.Info` struct with `IsDNS()`, `Protocol`, `SrcIP`, `DstIP`, `SrcPort`, `DstPort`.
-Still needed for gVisor integration diagnostics.
+IP packet parsing for gVisor integration.
+
+- `packet.go` — Parse IPv4/IPv6 headers, extract protocol/IPs/ports
+- `packet.Info` struct with `IsDNS()`, `Protocol`, `SrcIP`, `DstIP`, `SrcPort`, `DstPort`
+- Used by Provider layer for diagnostics, not by tunnel (gVisor delivers L4 connections)

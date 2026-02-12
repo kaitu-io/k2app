@@ -1,6 +1,12 @@
 # L4 Architecture: k2/k2s Split + Full Stack Integration
 
-Date: 2026-02-12
+## Meta
+
+| Field | Value |
+|-------|-------|
+| Feature | l4-architecture |
+| Date | 2026-02-12 |
+| Status | implemented |
 
 ## 1. Problem
 
@@ -221,8 +227,8 @@ Client only (k2):
   daemon/        — daemon.go, api.go, state.go, process.go, service*.go, speedtest.go
 
 Server only (k2s):
-  cmd/k2s/       — server CLI (new)
-  server/        — server daemon, listener orchestration (new package)
+  cmd/k2s/       — server CLI
+  server/        — server daemon, listener orchestration
 ```
 
 ## 7. Implementation Priority
