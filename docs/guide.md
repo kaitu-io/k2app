@@ -58,7 +58,7 @@ tls:
 # ECH (Encrypted Client Hello) — required for k2v5 protocol
 ech:
   key_path: "/path/to/ech.key"         # Auto-generated on first run if missing
-  public_name: "www.microsoft.com"     # Outer SNI visible to network observers
+  public_name: "cloudflare-ech.com"    # Outer SNI (must be ECH-enabled domain)
 
 log:
   level: debug
@@ -106,7 +106,7 @@ This outputs a base64 string like `AEX05...` which goes into the client's wire U
 The k2v5 wire URL encodes all connection parameters:
 
 ```
-k2v5://UDID:TOKEN@HOST:PORT?sni=SNI&ech=ECH_CONFIG&fp=FINGERPRINT
+k2v5://UDID:TOKEN@HOST:PORT?ech=ECH_CONFIG&pin=CERT_PIN&fp=FINGERPRINT
 ```
 
 | Parameter | Required | Default | Description |
@@ -115,8 +115,8 @@ k2v5://UDID:TOKEN@HOST:PORT?sni=SNI&ech=ECH_CONFIG&fp=FINGERPRINT
 | TOKEN | Yes | — | Auth token (any non-empty string for dev server) |
 | HOST | Yes | — | Server IP or hostname |
 | PORT | Yes | — | Server port |
-| sni | No | www.microsoft.com | Outer SNI (camouflage) |
-| ech | Yes | — | URL-safe base64-encoded ECH config from server |
+| ech | Yes | — | URL-safe base64-encoded ECH config from server (contains public_name for outer SNI) |
+| pin | Yes | — | `sha256:<rsa_b64>,sha256:<ec_b64>` — server public key pins |
 | fp | No | chrome | TLS fingerprint: chrome, firefox, safari, random |
 | hop | No | disabled | UDP port hopping range: START-END |
 | insecure | No | false | Skip TLS cert verification (for self-signed certs) |

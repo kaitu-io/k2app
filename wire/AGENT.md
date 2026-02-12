@@ -26,9 +26,9 @@ type UDPHandler interface {
 
 ## Config (wire.go)
 
-`Config` parsed from `k2v5://udid:token@host:port?sni=...&ech=...&fp=...&hop_start=...&hop_end=...`
+`Config` parsed from `k2v5://udid:token@host:port?ech=...&pin=...&fp=...&hop=START-END`
 
-Fields: UDID, Token, Host, Port, SNI, ECH, Fingerprint, HopStart, HopEnd.
+Fields: UDID, Token, Host, Port, ECH, Fingerprint, HopStart, HopEnd, Insecure, Pin.
 
 ## Files
 

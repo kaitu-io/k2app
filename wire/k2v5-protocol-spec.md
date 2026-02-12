@@ -56,13 +56,13 @@ k2v5 uses three distinct layers of identity to achieve stealth:
 Layer           Value                    Visibility
 ────────────────────────────────────────────────────────
 TCP dest IP     203.0.113.1              Plaintext (network layer)
-Outer SNI       ech-enabled-site.com     Plaintext (TLS ClientHello)
+Outer SNI       cloudflare-ech.com       Plaintext (TLS ClientHello, from ECH config's public_name)
 Inner SNI       (arbitrary value)        ECH-encrypted (invisible)
 TLS cert        self-signed              TLS 1.3 encrypted (invisible)
 Cert verify     pin=sha256:...           Client-local (never on wire)
 ```
 
-The outer SNI is determined by the `public_name` inside the ECH config. It must be a domain that genuinely deploys ECH in production (e.g., a Cloudflare-hosted domain). Using a domain that does not support ECH (such as `www.microsoft.com`) is detectable — firewalls can observe that ECH is being sent to a domain that never uses it.
+The outer SNI is determined by the `public_name` inside the ECH config, forced by uTLS during the handshake. It must be a domain that genuinely deploys ECH in production (e.g., `cloudflare-ech.com`). Cloudflare uses a single `public_name` for all ECH-enabled sites, so all legitimate Cloudflare ECH traffic shares the same outer SNI — our traffic blends in naturally.
 
 The inner SNI can be any value since certificate verification uses fingerprint pinning, not domain name matching.
 
@@ -71,19 +71,32 @@ The inner SNI can be any value since certificate verification uses fingerprint p
 k2v5 mandates ECH for all connections. The ECH config contains:
 
 - **HPKE public key**: For encrypting the inner ClientHello
-- **public_name**: Becomes the outer SNI (camouflage domain)
+- **public_name**: Becomes the outer SNI (camouflage domain, e.g. `cloudflare-ech.com`)
 
 ECH config is provided as a base64-encoded config list in the `ech` URL parameter. Both standard and URL-safe base64 encodings are accepted.
 
 The server holds the corresponding HPKE private key (`tls.Config.EncryptedClientHelloKeys` in Go 1.24+) and decrypts the inner ClientHello during the TLS handshake.
 
+#### ECH Config Forging
+
+The server forges its ECH config to blend in with real Cloudflare ECH traffic:
+
+1. **Query Cloudflare DNS**: Fetch the real HTTPS DNS record for `cloudflare-ech.com` to obtain the genuine ECH config
+2. **Copy template fields**: Use the same `cipher_suites`, `kem_id`, and `public_name` from the real Cloudflare config
+3. **Increment config_id**: Set `config_id = Cloudflare's config_id + 1` to avoid collision while staying close to the real value
+4. **Substitute HPKE key**: Replace the public key with the server's own HPKE public key
+5. **Multiple configs**: The server supports multiple ECH config entries for key rotation; older configs remain active during transition
+
+This forging approach ensures that the ECH config structure and metadata (cipher suites, KEM, public_name) are indistinguishable from genuine Cloudflare ECH configs. Only the HPKE public key and config_id differ, which are not observable by passive censors since the ECH config is distributed out-of-band via the k2v5:// URL.
+
 ### 3.3 Certificate Pinning
 
-k2v5 uses self-signed certificates verified by SHA-256 fingerprint pinning:
+k2v5 uses self-signed certificates verified by public key SHA-256 pinning:
 
-- Server auto-generates a self-signed certificate on first startup (10-year validity)
-- The certificate SHA-256 fingerprint is embedded in the `pin` URL parameter
-- Client verification: `InsecureSkipVerify: true` + custom `VerifyPeerCertificate` that checks `sha256(cert) == pin`
+- Server auto-generates dual certificates on first startup: RSA-2048 + ECDSA P-256 (10-year validity)
+- The public key SHA-256 hashes are embedded in the `pin` URL parameter as a dual pin: `sha256:<rsa_urlsafe_b64>,sha256:<ec_urlsafe_b64>`
+- Client verification: `InsecureSkipVerify: true` + custom `VerifyPeerCertificate` that checks `sha256(publicKey) in pins`
+- Either pin matching is sufficient (server selects RSA or EC cert per-connection based on target site algorithm)
 - No dependency on system CA store, no domain name matching, no Certificate Transparency exposure
 
 **Why not Let's Encrypt / public CA:**
@@ -577,17 +590,17 @@ TCP connection to :443
 
 On first startup (no certificate files found), the server automatically:
 
-1. Connect to `public_name:443` — measure certificate chain length and leaf key algorithm
-2. Generate self-signed certificate using the same key algorithm (10-year validity)
-3. Generate HPKE key pair — produce ECH config with `public_name`
-4. Generate auth token
-5. Calculate TLS record padding amount
-6. Log the complete `k2v5://` URL (admin copies this to distribute)
-7. Persist cert, key, and ECH config to disk
+1. **Auto-generate dual certificates**: RSA-2048 + ECDSA P-256 self-signed certs (10-year validity)
+2. **Query Cloudflare DNS**: Fetch the real HTTPS DNS record for `cloudflare-ech.com` to obtain the ECH config template
+3. **Forge ECH config**: Copy cipher_suites, kem_id, public_name from Cloudflare; set config_id = Cloudflare's + 1; substitute own HPKE public key
+4. **Probe public_name for TLS record padding**: Connect to `public_name:443`, measure certificate chain length and leaf key algorithm, calculate padding amounts
+5. **Generate auth token**: Random token for initial client authentication
+6. **Log the complete `k2v5://` URL**: Including dual pin (`sha256:<rsa>,sha256:<ec>`), ECH config, and auth token — admin copies this to distribute to users
+7. **Persist to disk**: Save certs, HPKE private key, ECH configs, and auth token; reload on restart
 
 On subsequent startups:
 
-1. Load existing cert + ECH config from disk
+1. Load existing certs + HPKE key + ECH configs from disk
 2. Re-probe `public_name` — refresh padding value
 3. Start serving
 

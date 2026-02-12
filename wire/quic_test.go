@@ -47,7 +47,6 @@ func TestQUICClientConfig(t *testing.T) {
 	cfg := Config{
 		Host:        "1.2.3.4",
 		Port:        443,
-		SNI:         "www.microsoft.com",
 		ECH:         "dGVzdA==", // "test" in base64
 		Fingerprint: "chrome",
 		HopStart:    10000,
@@ -70,7 +69,6 @@ func TestQUICClientConfig_NoHop(t *testing.T) {
 	cfg := Config{
 		Host:        "1.2.3.4",
 		Port:        443,
-		SNI:         "www.microsoft.com",
 		ECH:         "dGVzdA==",
 		Fingerprint: "chrome",
 	}

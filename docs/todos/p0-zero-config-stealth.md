@@ -20,16 +20,16 @@ Server auto-provisioning and protocol camouflage.
 - [x] `VerifyPeerCertificate` 回调: 公钥哈希验证 (`wire/ech.go`)
 - [x] `BuildClientTLSConfig` 集成 pin 验证
 
-## 待实现
+## 已完成 (T1-T5)
 
-### Outer SNI 分散
+### Outer SNI — N/A (设计变更)
 
-- [ ] 内置 Cloudflare 域名池（支持 ECH 的域名列表）
-- [ ] 客户端每连接随机选择 outer SNI（uTLS SNIExtension 覆盖）
-- [ ] `sni` URL 参数改为可选覆盖（当前语义: 默认 www.microsoft.com → 改为: 默认随机）
+- [x] ~~内置 Cloudflare 域名池~~ → N/A: uTLS forces outer SNI = ECH config's public_name, no pool needed
+- [x] ~~客户端每连接随机选择 outer SNI~~ → N/A: uTLS binds outer SNI to ECH public_name (`cloudflare-ech.com`)
+- [x] ~~`sni` URL 参数改为可选覆盖~~ → ✅ Removed entirely: outer SNI = ECH config's public_name, forced by uTLS
 
 ### 服务端一键启动
 
-- [ ] 首次启动自动生成: 双密钥对 + ECH config + auth token
-- [ ] 日志输出完整 k2v5:// URL（含双 pin、ECH config）
-- [ ] Persist to disk, reload on restart
+- [x] 首次启动自动生成: 双密钥对 + ECH config + auth token
+- [x] 日志输出完整 k2v5:// URL（含双 pin、ECH config）
+- [x] Persist to disk, reload on restart

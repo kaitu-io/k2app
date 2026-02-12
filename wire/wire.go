@@ -51,7 +51,6 @@ type Config struct {
 	Token       string
 	Host        string
 	Port        int
-	SNI         string
 	ECH         string
 	Fingerprint string
 	HopStart    int
@@ -96,14 +95,10 @@ func ParseURL(raw string) (Config, error) {
 		Token:       token,
 		Host:        host,
 		Port:        port,
-		SNI:         "www.microsoft.com",
 		Fingerprint: "chrome",
 	}
 
 	q := u.Query()
-	if v := q.Get("sni"); v != "" {
-		cfg.SNI = v
-	}
 	if v := q.Get("ech"); v != "" {
 		cfg.ECH = v
 	}

@@ -569,7 +569,6 @@ func TestIntegration_ECHConfigPipeline(t *testing.T) {
 	cfg := Config{
 		Host:        "real-server.example.com",
 		Port:        443,
-		SNI:         "www.microsoft.com",
 		ECH:         "dGVzdGVjaGNvbmZpZw==", // "testechconfig" in base64
 		Fingerprint: "chrome",
 	}
@@ -607,7 +606,7 @@ func TestIntegration_ECHConfigPipeline(t *testing.T) {
 // ============================================================================
 
 func TestIntegration_URLToClient(t *testing.T) {
-	raw := "k2v5://mydevice:jwt-token-here@1.2.3.4:443?sni=www.microsoft.com&ech=dGVzdA==&fp=chrome&hop=10000-20000"
+	raw := "k2v5://mydevice:jwt-token-here@1.2.3.4:443?ech=dGVzdA==&fp=chrome&hop=10000-20000"
 
 	cfg, err := ParseURL(raw)
 	if err != nil {

@@ -77,7 +77,6 @@ func TestBuildClientTLSConfig(t *testing.T) {
 	cfg := Config{
 		Host:        "real.server.com",
 		Port:        443,
-		SNI:         "www.microsoft.com",
 		ECH:         base64.StdEncoding.EncodeToString(echRaw),
 		Fingerprint: "chrome",
 	}
@@ -106,7 +105,6 @@ func TestBuildClientTLSConfig(t *testing.T) {
 	cfgNoECH := Config{
 		Host:        "real.server.com",
 		Port:        443,
-		SNI:         "www.microsoft.com",
 		Fingerprint: "chrome",
 	}
 	_, _, err = BuildClientTLSConfig(cfgNoECH)
@@ -495,7 +493,7 @@ func buildTestClientHello(sni string, includeECH bool) []byte {
 
 func TestGenerateECHKey(t *testing.T) {
 	// AC3: Generate ECH key pair
-	key, echConfig, err := GenerateECHKey("www.microsoft.com")
+	key, echConfig, err := GenerateECHKey("cloudflare-ech.com")
 	if err != nil {
 		t.Fatalf("GenerateECHKey failed: %v", err)
 	}
