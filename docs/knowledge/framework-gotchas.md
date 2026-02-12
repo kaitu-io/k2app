@@ -193,3 +193,152 @@ tun.New(Options{
 **Pattern**: Each platform has different route management. sing-tun abstracts this.
 
 **Source**: l4-architecture feature, T3 (Provider cross-platform)
+
+---
+
+## Go 1.24+ ECH API: X25519 DHKEM Required (wire-protocol-compliance, 2026-02-12)
+
+**Issue**: Go's `crypto/tls` ECH implementation requires X25519 HPKE keys. Other curves fail at handshake.
+
+**Symptom**: Server accepts non-X25519 keys but ECH handshake fails with cryptic "decryption error".
+
+**Root Cause**: RFC 9180 (HPKE) defines multiple KEMs, but Go TLS only implements X25519 DHKEM (0x0020).
+
+**Solution**: Always generate X25519 keys for ECH:
+```go
+func GenerateECHKey(publicName string) (tls.EncryptedClientHelloKey, []byte, error) {
+    // MUST use X25519, not P-256 or P-384
+    privKey, _ := ecdh.X25519().GenerateKey(rand.Reader)
+    echKey := tls.EncryptedClientHelloKey{
+        Config:     publicName,
+        PrivateKey: privKey,
+    }
+    // Generate config list with X25519 public key
+    configList := echKey.GenerateConfig()
+    return echKey, configList, nil
+}
+```
+
+**Validated in**: `wire/ech_test.go` (TestGenerateECHKey), `server/server_test.go` (TestServer_ECHRouting_ECHConnection)
+
+**Pattern**: X25519-only for ECH keys. P-256/P-384 for regular TLS certs is fine.
+
+**Source**: wire-protocol-compliance feature, T1 (ECH key generation)
+
+---
+
+## uTLS + ECH: Config Must Match utls.Config Fields (wire-protocol-compliance, 2026-02-12)
+
+**Issue**: uTLS has its own `utls.Config` type (not `crypto/tls.Config`). Field names almost identical but not interchangeable.
+
+**Symptom**: Compilation error when passing `tls.Config` to `utls.UClient`, or ECH config silently ignored.
+
+**Solution**: Manually copy fields from `tls.Config` to `utls.Config`:
+```go
+tlsCfg, clientHelloID, _ := wire.BuildClientTLSConfig(cfg)
+
+// WRONG: utls.UClient(conn, tlsCfg, clientHelloID) — type mismatch
+
+// RIGHT: Construct utls.Config manually
+uconn := utls.UClient(conn, &utls.Config{
+    ServerName:                     tlsCfg.ServerName,
+    InsecureSkipVerify:             tlsCfg.InsecureSkipVerify,
+    EncryptedClientHelloConfigList: tlsCfg.EncryptedClientHelloConfigList,
+}, clientHelloID)
+```
+
+**Validated in**: `wire/tcpws.go` (connectTLSWebSocket), `wire/tcpws_test.go` (TestTCPWSClient_uTLS_WithECH)
+
+**Pattern**: Always construct `utls.Config` explicitly. Don't rely on automatic conversion.
+
+**Source**: wire-protocol-compliance feature, T5 (uTLS integration)
+
+---
+
+## nhooyr.io/websocket: NetConn Requires Context (wire-protocol-compliance, 2026-02-12)
+
+**Issue**: `websocket.NetConn(ctx, wsConn, messageType)` requires long-lived context. If ctx cancelled, NetConn dies.
+
+**Symptom**: WebSocket connection works initially, then dies when ctx cancelled (even if tunnel should stay up).
+
+**Root Cause**: NetConn uses ctx for internal read/write operations, not just for creation.
+
+**Solution**: Pass `context.Background()` or server's long-lived ctx, not per-request ctx:
+```go
+// Server accepts WebSocket
+wsConn, _ := websocket.Accept(tlsConn, nil)
+
+// WRONG: per-request ctx
+netConn := websocket.NetConn(ctx, wsConn, websocket.MessageBinary) // Dies when ctx cancelled
+
+// RIGHT: background or server ctx
+netConn := websocket.NetConn(context.Background(), wsConn, websocket.MessageBinary)
+s.tcpwsSrv.HandleConn(netConn) // Connection lives until explicitly closed
+```
+
+**Validated in**: `server/server.go` (handleK2V5), `wire/tcpws.go` (client dial)
+
+**Pattern**: Long-lived connections need long-lived context for websocket.NetConn.
+
+**Source**: wire-protocol-compliance feature, T5/T6 (WebSocket layer)
+
+---
+
+## WebSocket Over Existing TLS: Custom HTTP Transport (wire-protocol-compliance, 2026-02-12)
+
+**Issue**: Standard `websocket.Dial` wants to do its own TLS handshake. But we already have uTLS connection.
+
+**Symptom**: Can't inject existing TLS connection into WebSocket dial, or WS does second handshake (breaks uTLS fingerprint).
+
+**Solution**: Use custom `http.Transport` with `DialTLSContext` that returns existing connection:
+```go
+// Already have uTLS connection
+uconn := utls.UClient(rawConn, &utls.Config{...}, clientHelloID)
+uconn.HandshakeContext(ctx)
+
+// Dial WebSocket over existing TLS connection
+wsConn, _, err := websocket.Dial(ctx, "wss://"+host+"/k2v5/tunnel", &websocket.DialOptions{
+    HTTPClient: &http.Client{
+        Transport: &http.Transport{
+            DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+                return uconn, nil // Inject existing TLS connection
+            },
+        },
+    },
+})
+```
+
+**Validated in**: `wire/tcpws.go` (connectTLSWebSocket), `wire/tcpws_test.go` (TestTCPWSClient_FullFlow_WS)
+
+**Pattern**: Custom HTTP transport for WebSocket over existing TLS.
+
+**Source**: wire-protocol-compliance feature, T5 (WebSocket + uTLS integration)
+
+---
+
+## smux Over WebSocket: Binary Message Type Required (wire-protocol-compliance, 2026-02-12)
+
+**Issue**: WebSocket has text and binary message types. smux expects raw binary stream.
+
+**Symptom**: smux framing errors, "invalid magic number" panics.
+
+**Root Cause**: WebSocket text messages UTF-8 validate, corrupting binary smux frames.
+
+**Solution**: Always use `websocket.MessageBinary` for NetConn:
+```go
+// Server
+wsConn, _ := websocket.Accept(tlsConn, nil)
+netConn := websocket.NetConn(context.Background(), wsConn, websocket.MessageBinary)
+sess, _ := smux.Server(netConn, wire.DefaultSmuxConfig())
+
+// Client
+wsConn, _, _ := websocket.Dial(ctx, wsURL, nil)
+netConn := websocket.NetConn(context.Background(), wsConn, websocket.MessageBinary)
+sess, _ := smux.Client(netConn, wire.DefaultSmuxConfig())
+```
+
+**Validated in**: `wire/tcpws.go`, `wire/tcpws_test.go` (TestTCPWSClient_FullFlow_WS)
+
+**Pattern**: Binary message type for all non-text protocols over WebSocket.
+
+**Source**: wire-protocol-compliance feature, T5 (WebSocket layer)

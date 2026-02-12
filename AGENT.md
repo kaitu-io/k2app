@@ -22,17 +22,18 @@ k2s run -s server.yaml             # Server foreground (VPS)
 ## Layer Docs (read on demand)
 
 ```
-cmd/k2/AGENT.md        Client CLI subcommands + dispatch
-cmd/k2s/AGENT.md       Server CLI + foreground/service mode
-config/AGENT.md        ClientConfig + ServerConfig + YAML formats
-core/AGENT.md          L4 ClientTunnel, Router, ConnectionHandler
-core/dns/AGENT.md      DNS 13-step middleware pipeline
-daemon/AGENT.md        Daemon state machine, HTTP API, service management
-provider/AGENT.md      Provider interface (TUN, Proxy, iOS, Android)
-server/AGENT.md        Server listener orchestration, TCP/UDP handlers
-wire/AGENT.md          k2v5 wire protocol, Dialer/Listener interfaces
-wire/pcc/AGENT.md      PCC Vivace congestion control
-test/AGENT.md          E2E integration tests
+cmd/k2/AGENT.md                Client CLI subcommands + dispatch
+cmd/k2s/AGENT.md               Server CLI + foreground/service mode
+config/AGENT.md                ClientConfig + ServerConfig + YAML formats
+core/AGENT.md                  L4 ClientTunnel, Router, ConnectionHandler
+core/dns/AGENT.md              DNS 13-step middleware pipeline
+daemon/AGENT.md                Daemon state machine, HTTP API, service management
+provider/AGENT.md              Provider interface (TUN, Proxy, iOS, Android)
+server/AGENT.md                Server listener orchestration, TCP/UDP handlers
+wire/AGENT.md                  k2v5 wire protocol, Dialer/Listener interfaces
+wire/k2v5-protocol-spec.md    k2v5 protocol specification (TLS, ECH, camouflage, framing)
+wire/pcc/AGENT.md              PCC Vivace congestion control
+test/AGENT.md                  E2E integration tests
 ```
 
 ## Data Flow
@@ -75,7 +76,16 @@ test/AGENT.md          E2E integration tests
 - `github.com/metacubex/utls` — TLS fingerprinting + ECH
 - `github.com/xtaci/smux/v2` — TCP-WS stream multiplexing
 
+## TODOs
+
+Tracked in `docs/todos/` with priority prefixes:
+
+```
+docs/todos/p0-*.md     Critical / next up
+docs/todos/p1-*.md     Important
+docs/todos/p2-*.md     Nice to have
+```
+
 ## Status
 
 **Done**: Full L4 architecture, wire protocol (QUIC+TCP-WS), DNS middleware, auth, ECH, PCC, client tunnel, server handlers, e2e tests, k2/k2s binaries
-**TODO**: Speedtest, Windows provider, iOS/Android packaging, performance tuning

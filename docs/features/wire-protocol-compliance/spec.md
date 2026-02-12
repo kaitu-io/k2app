@@ -5,10 +5,11 @@
 | Field | Value |
 |-------|-------|
 | Feature | wire-protocol-compliance |
-| Status | Draft |
+| Status | Implemented |
 | Created | 2026-02-12 |
+| Completed | 2026-02-12 |
 | Baseline | k2-baseline (wire/ layer exists, 91 tests) |
-| Spec ref | docs/k2v5-protocol-spec.md |
+| Spec ref | wire/k2v5-protocol-spec.md |
 
 ## Problem Statement
 

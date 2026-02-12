@@ -1,7 +1,7 @@
 # k2v5 Protocol Specification
 
-Version: 1.0
-Date: 2025-02-11
+Version: 1.1
+Date: 2025-02-12
 
 ## 1. Overview
 
@@ -9,16 +9,18 @@ k2v5 is a composite tunnel protocol that combines QUIC/H3 (primary) and TCP-WebS
 
 ### Design Principles
 
+- **Zero-config stealth**: Server auto-generates certificates, ECH config, and padding on startup
 - **Composite transport**: QUIC preferred, TCP-WS automatic fallback
 - **Native multiplexing**: QUIC streams for TCP, QUIC datagrams for UDP (no custom mux layer)
 - **ECH mandatory**: Real SNI never exposed in plaintext
+- **Self-signed + pin**: No CA dependency, no Certificate Transparency exposure
 - **PCC congestion control**: Rate-based algorithm optimized for lossy/censored networks
 - **Single port**: QUIC and TCP-WS share the same server port via protocol detection
 
 ## 2. URL Format
 
 ```
-k2v5://UDID:TOKEN@HOST:PORT?sni=OUTER_SNI&ech=ECH_CONFIG&fp=FINGERPRINT&hop=START-END
+k2v5://UDID:TOKEN@HOST:PORT?ech=ECH_CONFIG&pin=CERT_PIN&fp=FINGERPRINT&hop=START-END
 ```
 
 ### Components
@@ -27,35 +29,85 @@ k2v5://UDID:TOKEN@HOST:PORT?sni=OUTER_SNI&ech=ECH_CONFIG&fp=FINGERPRINT&hop=STAR
 |-----------|----------|---------|-------------|
 | `UDID` | Yes | - | Device unique identifier |
 | `TOKEN` | Yes | - | JWT authentication token |
-| `HOST` | Yes | - | Server hostname (also used as inner SNI) |
+| `HOST` | Yes | - | Server IP or hostname |
 | `PORT` | Yes | - | Server port |
-| `sni` | No | `www.microsoft.com` | Outer SNI (camouflage, visible in plaintext) |
-| `ech` | Yes* | - | Base64-encoded ECH config list |
+| `ech` | Yes | - | Base64-encoded ECH config list (contains public_name for outer SNI) |
+| `pin` | Yes | - | `sha256:` + server certificate SHA-256 fingerprint (base64) |
 | `fp` | No | `chrome` | TLS fingerprint: `chrome`, `firefox`, `safari`, `random` |
 | `hop` | No | disabled | UDP port hopping range: `START-END` |
 
-*ECH is mandatory for connection establishment. Without it, the client refuses to connect.
+The `ech` parameter is mandatory. Without it, the client refuses to connect. The outer SNI (camouflage domain) is determined by the `public_name` field inside the ECH config — no separate `sni` parameter is needed.
+
+The `pin` parameter is mandatory. The client verifies the server certificate by SHA-256 fingerprint, not by domain name or CA chain. This eliminates the need for domain names and avoids Certificate Transparency log exposure.
 
 ### Example
 
 ```
-k2v5://device-abc:eyJhbGciOi...@tunnel.example.com:443?sni=www.microsoft.com&ech=AEX...&fp=chrome&hop=20000-30000
+k2v5://device-abc:eyJhbGci...@203.0.113.1:443?ech=AEX...&pin=sha256:7d2e91...&fp=chrome&hop=20000-30000
 ```
 
 ## 3. TLS Layer
 
-### 3.1 ECH (Encrypted Client Hello)
+### 3.1 Three-Layer Identity Model
 
-k2v5 mandates ECH for all connections. The outer SNI (visible to network observers) is a camouflage domain. The inner SNI (encrypted, carries the real server identity) is the `HOST` from the URL.
+k2v5 uses three distinct layers of identity to achieve stealth:
 
 ```
-Outer SNI (plaintext):  www.microsoft.com  (camouflage)
-Inner SNI (encrypted):  tunnel.example.com (real server)
+Layer           Value                    Visibility
+────────────────────────────────────────────────────────
+TCP dest IP     203.0.113.1              Plaintext (network layer)
+Outer SNI       ech-enabled-site.com     Plaintext (TLS ClientHello)
+Inner SNI       (arbitrary value)        ECH-encrypted (invisible)
+TLS cert        self-signed              TLS 1.3 encrypted (invisible)
+Cert verify     pin=sha256:...           Client-local (never on wire)
 ```
+
+The outer SNI is determined by the `public_name` inside the ECH config. It must be a domain that genuinely deploys ECH in production (e.g., a Cloudflare-hosted domain). Using a domain that does not support ECH (such as `www.microsoft.com`) is detectable — firewalls can observe that ECH is being sent to a domain that never uses it.
+
+The inner SNI can be any value since certificate verification uses fingerprint pinning, not domain name matching.
+
+### 3.2 ECH (Encrypted Client Hello)
+
+k2v5 mandates ECH for all connections. The ECH config contains:
+
+- **HPKE public key**: For encrypting the inner ClientHello
+- **public_name**: Becomes the outer SNI (camouflage domain)
 
 ECH config is provided as a base64-encoded config list in the `ech` URL parameter. Both standard and URL-safe base64 encodings are accepted.
 
-### 3.2 TLS Fingerprinting
+The server holds the corresponding HPKE private key (`tls.Config.EncryptedClientHelloKeys` in Go 1.24+) and decrypts the inner ClientHello during the TLS handshake.
+
+### 3.3 Certificate Pinning
+
+k2v5 uses self-signed certificates verified by SHA-256 fingerprint pinning:
+
+- Server auto-generates a self-signed certificate on first startup (10-year validity)
+- The certificate SHA-256 fingerprint is embedded in the `pin` URL parameter
+- Client verification: `InsecureSkipVerify: true` + custom `VerifyPeerCertificate` that checks `sha256(cert) == pin`
+- No dependency on system CA store, no domain name matching, no Certificate Transparency exposure
+
+**Why not Let's Encrypt / public CA:**
+- Certificate Transparency logs are public — any cert issuance creates a permanent record linking the domain to the server, discoverable via crt.sh
+- Self-signed certs have zero external footprint
+- TLS 1.3 encrypts the certificate in transit — passive observers cannot see it
+- Active probers are handled by ReverseProxy (Section 12) and never see the self-signed cert
+
+**Key algorithm matching**: The server generates its self-signed cert using the same key algorithm (ECDSA-P256 / RSA-2048) as the `public_name` domain's real certificate. This ensures the encrypted CertificateVerify message has the same length as a real connection to that domain.
+
+### 3.4 TLS Record Padding
+
+TLS 1.3 encrypts all handshake messages after ServerHello. While content is hidden, encrypted record **lengths** are observable. A single self-signed cert (~500B) produces shorter records than a real multi-level CA chain (~3.8KB).
+
+k2v5 uses TLS 1.3 record padding (RFC 8446 Section 5.4) to match the encrypted record lengths of the `public_name` domain:
+
+1. On startup, server connects to `public_name:443` and measures the real Certificate message length
+2. Server calculates `padding = real_cert_length - self_cert_length`
+3. During TLS handshake, server pads the Certificate record to match
+4. Padding is refreshed every 24 hours to track cert rotations on the target site
+
+Client-side requires no awareness of padding — TLS 1.3 record padding removal is automatic per the standard.
+
+### 3.5 TLS Fingerprinting
 
 Connections use uTLS to mimic real browser TLS fingerprints:
 
@@ -66,19 +118,23 @@ Connections use uTLS to mimic real browser TLS fingerprints:
 | `safari` | `HelloSafari_16_0` |
 | `random` | `HelloRandomizedALPN` |
 
-### 3.3 TLS Configuration
+### 3.6 TLS Configuration
 
 - Minimum version: TLS 1.3
-- Certificate verification: enabled (not skipped)
+- Certificate verification: fingerprint pinning (not CA chain)
+- ECH: mandatory on client, decrypted on server
 
-### 3.4 Server-Side SNI Routing
+### 3.7 Server-Side ECH Routing
 
-The server peeks at the outer SNI from incoming TLS ClientHello messages:
+The server inspects the raw TLS ClientHello **before** performing the TLS handshake:
 
-- **Matching ECH inner SNI**: Route to k2v5 tunnel handler
-- **Non-matching SNI**: Reverse-proxy transparently to the outer SNI website (camouflage)
+1. Peek the full ClientHello from the TCP stream (without consuming it)
+2. Check for ECH extension (type `0xfe0d`) in the extensions list
+3. **ECH present** → TLS handshake with ECH decryption → k2v5 handler
+4. **No ECH** → ReverseProxy the raw TCP bytes to the `public_name` website
+5. **ECH present but decryption fails** (forged ECH) → ReverseProxy (same as no ECH)
 
-This makes the server indistinguishable from a real web server hosting the camouflage domain.
+The routing decision happens at the TCP level, before any TLS state is established. This ensures that non-ECH connections (including active probes) are transparently forwarded and never see the server's self-signed certificate.
 
 ## 4. Authentication
 
@@ -467,27 +523,77 @@ PCC uses rate-based pacing:
 
 ## 12. Server Camouflage
 
-### 12.1 Reverse Proxy
+### 12.1 Threat Model
 
-Non-ECH connections (or connections with non-matching outer SNI) are transparently forwarded to the real website at the outer SNI address. This provides:
+| Adversary | Capability | Mitigation |
+|-----------|-----------|------------|
+| Passive observer | See TCP dest IP + outer SNI + encrypted record sizes | ECH hides inner SNI; TLS record padding matches real site; cert encrypted by TLS 1.3 |
+| Active prober (no ECH) | Connect to server, examine response | ReverseProxy serves the real `public_name` website |
+| Active prober (forged ECH) | Send fabricated ECH blob | ECH decryption fails → ReverseProxy (same as no-ECH) |
+| IP-SNI cross-checker | Verify outer SNI resolves to dest IP | ReverseProxy makes the server behave as a real proxy/CDN for the `public_name` site |
+| CT log scanner | Search crt.sh for certificates | Self-signed cert has no CT entry — zero footprint |
+| ECH-aware censor | Block all connections with ECH extension | Out of scope for protocol-level mitigation (requires transport obfuscation) |
 
-- **Active probing resistance**: Censors connecting to the server see a real website
-- **Traffic pattern camouflage**: The server serves real HTTP traffic alongside tunnel traffic
+### 12.2 Reverse Proxy
 
-The reverse proxy uses the qTunnel bidirectional pipe pattern with proper half-close:
+Non-ECH connections are transparently forwarded to the real `public_name` website at the TCP level. The server never performs a TLS handshake for these connections — it forwards the raw bytes including the original ClientHello:
 
 ```
-Client <---> Server <---> Real Website (outer SNI)
+Prober → TCP:443 → K2 Server → TCP → Real public_name Website
+         (raw bytes forwarded, including TLS ClientHello)
 ```
 
-### 12.2 Protocol Detection
+This provides:
 
-The server reads the initial TLS ClientHello to extract the outer SNI:
+- **Active probing resistance**: Censors see a real website with a valid certificate
+- **Certificate concealment**: The self-signed cert is never exposed to non-ECH clients
+- **Behavioral consistency**: The server appears to be a reverse proxy / CDN for the `public_name` domain
 
-1. Read first bytes of connection (TLS record header)
-2. Parse TLS Handshake → ClientHello → Extensions → SNI
-3. **ECH match**: Handle as k2v5 tunnel connection
-4. **No match**: Reverse proxy to the outer SNI website
+The reverse proxy uses the qTunnel bidirectional pipe pattern with proper half-close.
+
+### 12.3 ECH Routing Flow
+
+```
+TCP connection to :443
+  │
+  ├── Peek full ClientHello (before TLS)
+  │     ├── Parse extensions list
+  │     └── Check for ECH extension (0xfe0d)
+  │
+  ├── ECH extension present
+  │     └── TLS handshake with ECH decryption
+  │           ├── ECH decrypted OK → inner SNI revealed
+  │           │     └── k2v5 handler
+  │           │           ├── HTTP method → /k2v5/auth
+  │           │           └── smux header → tunnel
+  │           └── ECH decryption failed (forged)
+  │                 └── ReverseProxy to public_name
+  │
+  └── No ECH extension
+        └── ReverseProxy to public_name (raw TCP)
+```
+
+### 12.4 Server Auto-Provisioning
+
+On first startup (no certificate files found), the server automatically:
+
+1. Connect to `public_name:443` — measure certificate chain length and leaf key algorithm
+2. Generate self-signed certificate using the same key algorithm (10-year validity)
+3. Generate HPKE key pair — produce ECH config with `public_name`
+4. Generate auth token
+5. Calculate TLS record padding amount
+6. Log the complete `k2v5://` URL (admin copies this to distribute)
+7. Persist cert, key, and ECH config to disk
+
+On subsequent startups:
+
+1. Load existing cert + ECH config from disk
+2. Re-probe `public_name` — refresh padding value
+3. Start serving
+
+At runtime:
+
+- Every 24 hours, re-probe `public_name` to update padding if the target cert chain changes
 
 ## 13. IP Packet Framing (Core Layer)
 

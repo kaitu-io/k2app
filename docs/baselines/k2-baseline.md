@@ -7,7 +7,7 @@
 | Project | k2 — Kaitu Network Tunnel |
 | Purpose | Minimalist VPN tunnel with k2v5 composite wire protocol |
 | Updated | 2026-02-12 |
-| Features | l4-architecture |
+| Features | l4-architecture, wire-protocol-compliance |
 
 ## cmd/k2 — Client CLI
 
@@ -42,13 +42,14 @@ YAML configuration parsing for client and server.
 
 Capabilities:
 - Parse ClientConfig from YAML: server URL, mode (tun/proxy), DNS, router, log settings
-- Parse ServerConfig from YAML: listen address, auth, TLS, ECH, reverse proxy
-- Validate wire URL format (k2v5://udid:token@host:port?sni=...&ech=...)
+- Parse ServerConfig from YAML: listen address, auth, TLS, ECH (key_path, public_name), reverse proxy
+- Validate wire URL format (k2v5://udid:token@host:port?sni=...&ech=...&fp=...&hop=...)
 - Support mode switching: "tun" (default) or "proxy" (SOCKS5/HTTP)
 - Proxy config: listen address, set_system_proxy flag
 - DNS config: servers, DoH, cache settings
 - Router config: k2rule rules YAML, GeoIP path
 - Log config: level, file output
+- ECH config: key file path, public name for ECH config generation
 
 ## core — Client Tunnel Logic
 
@@ -130,13 +131,16 @@ Capabilities:
 Server-side listener orchestration and TCP/UDP proxy handlers.
 
 Capabilities:
-- TLS listener with ClientHello SNI peek
-- ECH routing: inner SNI match → k2v5 handler, no match → reverse proxy
-- Auth handler: POST /k2v5/auth, issue tickets via TicketStore
-- QUIC listener: AcceptTCP streams, ServeUDP datagrams/streams
-- TCP-WS listener: WebSocket upgrade, smux multiplexing
+- TLS listener with ClientHello peek (SNI + ECH presence detection)
+- ECH-based routing: HasECH=true → decrypt inner SNI → k2v5 handler, HasECH=false → reverse proxy to outer SNI
+- ECH key management: auto-generate X25519 HPKE keys on first start, load from key_path on subsequent starts
+- Auth handler: POST /k2v5/auth with hybrid ticket renewal (>50% TTL = return existing, <50% TTL = rotate)
+- Auth lifecycle: background cleanup of expired tickets and grace tokens (5min interval)
+- QUIC listener: AcceptTCP streams, ServeUDP datagrams/streams (with stream fallback)
+- TCP-WS listener: WebSocket upgrade to /k2v5/tunnel, smux multiplexing over binary WS frames
 - TCP handler: AcceptTCP → read stream header → net.Dial(target) → bidirectional pipe
 - UDP handler: ServeUDP → read frames → net.Dial("udp", target) → forward packets
+- UDP session management: maxSize enforcement, background cleanup of idle sessions
 - Connection tracking and metrics
 - Graceful shutdown with connection draining
 
@@ -147,19 +151,23 @@ L4 transport protocol with QUIC primary and TCP-WS fallback.
 Capabilities:
 - Dialer interface: DialTCP, DialUDP, Close
 - Listener interface: AcceptTCP, ServeUDP, Close
-- QUICClient: QUIC/H3 client with DialTCP (stream), DialUDP (datagram/stream fallback)
-- QUICServer: QUIC/H3 server with AcceptTCP (stream), ServeUDP (datagram/stream)
-- TCPWSClient: TCP+TLS+WebSocket+smux client with DialTCP/DialUDP
+- QUICClient: QUIC/H3 client with DialTCP (stream), DialUDP (datagram preferred, stream fallback when datagrams unsupported)
+- QUICServer: QUIC/H3 server with AcceptTCP (stream), ServeUDP (datagram/stream with StreamTypeUDP handling)
+- TCPWSClient: TCP+uTLS+WebSocket+smux client with DialTCP/DialUDP
 - TCPWSServer: TCP+TLS+WebSocket+smux server with AcceptTCP/ServeUDP
 - TransportManager: QUIC primary, TCP-WS automatic fallback
 - Stream protocol: HTTP/3 frame type + header (dest addr, flags) + response (status) + data
-- UDP protocol: datagrams (preferred) or stream-based frames with length prefix
-- Auth: ticket-based authentication, TicketStore, AuthHandler
-- ECH: Encrypted ClientHello with outer/inner SNI, TLS peek for routing
-- TLS fingerprinting: uTLS for browser-like handshakes (chrome, firefox, safari)
+- UDP protocol: datagrams (preferred) or stream-based frames with length prefix (QUIC/TCP-WS)
+- Auth: ticket-based authentication with hybrid renewal, TicketStore with background cleanup, AuthHandler
+- ECH core: X25519 HPKE key generation, PeekClientHello with HasECH detection, EnsureECHKey (auto-generate/load)
+- ECH client: BuildClientTLSConfig with ECH config list, mandates ECH (no fallback to plaintext SNI)
+- TLS fingerprinting: uTLS for TCP-WS with browser-like handshakes (chrome, firefox, safari, random)
+- WebSocket layer: client upgrade to /k2v5/tunnel after uTLS, server accept with binary message type
 - Port hopping: randomize client port within configured range
 - Parse k2v5:// URLs: udid:token@host:port?sni=&ech=&fp=&hop=
-- ReverseProxy: camouflage server as innocent HTTPS site
+- ReverseProxy: camouflage server as innocent HTTPS site (for non-ECH connections)
+- UDPSessionMap: maxSize enforcement, background cleanup with configurable interval
+- SessionIDAllocator: reusable session IDs for UDP multiplexing
 
 ## wire/pcc — PCC Vivace Congestion Control
 
