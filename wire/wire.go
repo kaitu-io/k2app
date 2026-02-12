@@ -55,6 +55,7 @@ type Config struct {
 	Fingerprint string
 	HopStart    int
 	HopEnd      int
+	Insecure    bool // skip TLS certificate verification (for self-signed certs)
 }
 
 // ParseURL parses a k2v5:// URL into Config.
@@ -106,6 +107,9 @@ func ParseURL(raw string) (Config, error) {
 	}
 	if v := q.Get("fp"); v != "" {
 		cfg.Fingerprint = v
+	}
+	if v := q.Get("insecure"); v == "1" || v == "true" {
+		cfg.Insecure = true
 	}
 	if v := q.Get("hop"); v != "" {
 		start, end, err := parseHopRange(v)

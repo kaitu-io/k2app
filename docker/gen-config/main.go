@@ -1,0 +1,137 @@
+// gen-config generates TLS certs, ECH keys, and config files for k2s/k2 Docker deployment.
+package main
+
+import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/pem"
+	"flag"
+	"fmt"
+	"log"
+	"math/big"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/kaitu-io/k2/wire"
+)
+
+func main() {
+	outDir := flag.String("out", "/etc/k2", "output directory")
+	serverHost := flag.String("host", "k2s", "server hostname (for client wire URL)")
+	serverPort := flag.Int("port", 443, "server port")
+	publicName := flag.String("public-name", "www.microsoft.com", "ECH public name (outer SNI)")
+	flag.Parse()
+
+	if err := os.MkdirAll(*outDir, 0755); err != nil {
+		log.Fatal(err)
+	}
+
+	// 1. Generate TLS certificate
+	certPath := filepath.Join(*outDir, "cert.pem")
+	keyPath := filepath.Join(*outDir, "key.pem")
+	if err := generateTLSCert(certPath, keyPath); err != nil {
+		log.Fatalf("generate TLS cert: %v", err)
+	}
+	fmt.Printf("TLS cert: %s, key: %s\n", certPath, keyPath)
+
+	// 2. Generate ECH key
+	echKeyPath := filepath.Join(*outDir, "ech.key")
+	echKey, echConfigList, err := wire.GenerateECHKey(*publicName)
+	if err != nil {
+		log.Fatalf("generate ECH key: %v", err)
+	}
+	if err := wire.SaveECHKey(echKeyPath, echKey.PrivateKey, echConfigList); err != nil {
+		log.Fatalf("save ECH key: %v", err)
+	}
+	echB64 := base64.URLEncoding.EncodeToString(echConfigList)
+	fmt.Printf("ECH key: %s\n", echKeyPath)
+	fmt.Printf("ECH config (base64): %s\n", echB64)
+
+	// 3. Write server config
+	serverCfg := fmt.Sprintf(`listen: ":%d"
+tls:
+  cert: "%s"
+  key: "%s"
+ech:
+  key_path: "%s"
+  public_name: "%s"
+log:
+  level: debug
+  output: stderr
+`, *serverPort, certPath, keyPath, echKeyPath, *publicName)
+
+	serverCfgPath := filepath.Join(*outDir, "server.yaml")
+	if err := os.WriteFile(serverCfgPath, []byte(serverCfg), 0644); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("Server config: %s\n", serverCfgPath)
+
+	// 4. Write client config
+	wireURL := fmt.Sprintf("k2v5://docker-device:docker-token@%s:%d?ech=%s&insecure=1",
+		*serverHost, *serverPort, echB64)
+
+	clientCfg := fmt.Sprintf(`server: "%s"
+mode: proxy
+proxy:
+  listen: "0.0.0.0:1080"
+dns:
+  direct:
+    - "8.8.8.8:53"
+  proxy:
+    - "8.8.8.8:53"
+rule:
+  global: true
+log:
+  level: debug
+  output: stderr
+`, wireURL)
+
+	clientCfgPath := filepath.Join(*outDir, "client.yaml")
+	if err := os.WriteFile(clientCfgPath, []byte(clientCfg), 0644); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("Client config: %s\n", clientCfgPath)
+}
+
+func generateTLSCert(certPath, keyPath string) error {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return err
+	}
+
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		NotBefore:    time.Now(),
+		NotAfter:     time.Now().Add(10 * 365 * 24 * time.Hour),
+		DNSNames:     []string{"k2s", "localhost"},
+	}
+
+	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		return err
+	}
+
+	certFile, err := os.Create(certPath)
+	if err != nil {
+		return err
+	}
+	defer certFile.Close()
+	pem.Encode(certFile, &pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		return err
+	}
+	keyFile, err := os.Create(keyPath)
+	if err != nil {
+		return err
+	}
+	defer keyFile.Close()
+	pem.Encode(keyFile, &pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+
+	return nil
+}

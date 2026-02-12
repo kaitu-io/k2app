@@ -2,6 +2,7 @@ package wire
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"sync"
 )
@@ -42,12 +43,15 @@ func (tm *TransportManager) DialTCP(ctx context.Context, addr string) (net.Conn,
 	tcpws := tm.tcpws
 	tm.mu.RUnlock()
 
+	var lastErr error
+
 	// Try QUIC first (preferred)
 	if quic != nil {
 		conn, err := quic.DialTCP(ctx, addr)
 		if err == nil {
 			return conn, nil
 		}
+		lastErr = fmt.Errorf("QUIC: %w", err)
 	}
 
 	// Fall back to TCP-WS
@@ -56,8 +60,12 @@ func (tm *TransportManager) DialTCP(ctx context.Context, addr string) (net.Conn,
 		if err == nil {
 			return conn, nil
 		}
+		lastErr = fmt.Errorf("TCP-WS: %w", err)
 	}
 
+	if lastErr != nil {
+		return nil, lastErr
+	}
 	return nil, ErrNotConnected
 }
 
@@ -69,11 +77,14 @@ func (tm *TransportManager) DialUDP(ctx context.Context, addr string) (net.Packe
 	tcpws := tm.tcpws
 	tm.mu.RUnlock()
 
+	var lastErr error
+
 	if quic != nil {
 		conn, err := quic.DialUDP(ctx, addr)
 		if err == nil {
 			return conn, nil
 		}
+		lastErr = fmt.Errorf("QUIC: %w", err)
 	}
 
 	if tcpws != nil {
@@ -81,8 +92,12 @@ func (tm *TransportManager) DialUDP(ctx context.Context, addr string) (net.Packe
 		if err == nil {
 			return conn, nil
 		}
+		lastErr = fmt.Errorf("TCP-WS: %w", err)
 	}
 
+	if lastErr != nil {
+		return nil, lastErr
+	}
 	return nil, ErrNotConnected
 }
 

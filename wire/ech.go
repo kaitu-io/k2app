@@ -65,7 +65,7 @@ func BuildClientTLSConfig(cfg Config) (*tls.Config, utls.ClientHelloID, error) {
 		MinVersion:                       tls.VersionTLS13,
 		ServerName:                       cfg.Host, // Inner SNI (real, encrypted by ECH)
 		EncryptedClientHelloConfigList:   echBytes, // Contains outer SNI
-		InsecureSkipVerify:               false,
+		InsecureSkipVerify:               cfg.Insecure,
 	}
 
 	clientHelloID := ParseFingerprint(cfg.Fingerprint)
