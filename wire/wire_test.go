@@ -123,3 +123,67 @@ func TestErrors(t *testing.T) {
 		t.Error("ErrUDPNotSupported should have a message")
 	}
 }
+
+func TestParsePins(t *testing.T) {
+	// Generate a real cert pair to get valid pin hashes
+	pair, err := GenerateCertPair()
+	if err != nil {
+		t.Fatalf("GenerateCertPair: %v", err)
+	}
+	pinStr := pair.FormatPins()
+
+	pins, err := ParsePins(pinStr)
+	if err != nil {
+		t.Fatalf("ParsePins(%q) error: %v", pinStr, err)
+	}
+	if len(pins) != 2 {
+		t.Fatalf("ParsePins returned %d hashes, want 2", len(pins))
+	}
+	if pins[0] != pair.RSAPinHash {
+		t.Errorf("pins[0] = %x, want %x", pins[0], pair.RSAPinHash)
+	}
+	if pins[1] != pair.ECPinHash {
+		t.Errorf("pins[1] = %x, want %x", pins[1], pair.ECPinHash)
+	}
+}
+
+func TestParsePins_Invalid(t *testing.T) {
+	tests := []struct {
+		name string
+		pin  string
+	}{
+		{"no prefix", "AAAA,BBBB"},
+		{"wrong prefix", "md5:AAAA,md5:BBBB"},
+		{"bad base64", "sha256:!!!invalid!!!"},
+		{"wrong hash length", "sha256:AAAA"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParsePins(tt.pin)
+			if err == nil {
+				t.Errorf("ParsePins(%q) should have returned error", tt.pin)
+			}
+		})
+	}
+}
+
+func TestParsePins_Empty(t *testing.T) {
+	pins, err := ParsePins("")
+	if err != nil {
+		t.Fatalf("ParsePins(\"\") error: %v", err)
+	}
+	if pins != nil {
+		t.Errorf("ParsePins(\"\") = %v, want nil", pins)
+	}
+}
+
+func TestParseURL_Pin(t *testing.T) {
+	raw := "k2v5://dev:tok@1.2.3.4:443?pin=sha256:AAAA,sha256:BBBB"
+	cfg, err := ParseURL(raw)
+	if err != nil {
+		t.Fatalf("ParseURL error: %v", err)
+	}
+	if cfg.Pin != "sha256:AAAA,sha256:BBBB" {
+		t.Errorf("Pin = %q, want %q", cfg.Pin, "sha256:AAAA,sha256:BBBB")
+	}
+}

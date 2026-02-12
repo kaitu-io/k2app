@@ -1,6 +1,7 @@
 package wire
 
 import (
+	"crypto/tls"
 	"encoding/base64"
 	"os"
 	"path/filepath"
@@ -112,6 +113,249 @@ func TestBuildClientTLSConfig(t *testing.T) {
 	if err == nil {
 		t.Error("should error when ECH is not configured (k2v5 mandates ECH)")
 	}
+}
+
+func TestBuildClientTLSConfigWithPin(t *testing.T) {
+	echRaw := []byte{0xfe, 0x0d, 0x00, 0x10}
+
+	// Generate a cert pair to get valid pins
+	pair, err := GenerateCertPair()
+	if err != nil {
+		t.Fatalf("GenerateCertPair: %v", err)
+	}
+
+	cfg := Config{
+		Host:        "real.server.com",
+		Port:        443,
+		ECH:         base64.StdEncoding.EncodeToString(echRaw),
+		Fingerprint: "chrome",
+		Pin:         pair.FormatPins(),
+	}
+
+	tlsCfg, _, err := BuildClientTLSConfig(cfg)
+	if err != nil {
+		t.Fatalf("BuildClientTLSConfig with Pin failed: %v", err)
+	}
+
+	// When Pin is set, InsecureSkipVerify should be true
+	if !tlsCfg.InsecureSkipVerify {
+		t.Error("InsecureSkipVerify should be true when Pin is set")
+	}
+
+	// VerifyPeerCertificate should be set
+	if tlsCfg.VerifyPeerCertificate == nil {
+		t.Error("VerifyPeerCertificate should be set when Pin is set")
+	}
+}
+
+func TestBuildClientTLSConfigPinOverridesInsecure(t *testing.T) {
+	echRaw := []byte{0xfe, 0x0d, 0x00, 0x10}
+
+	pair, err := GenerateCertPair()
+	if err != nil {
+		t.Fatalf("GenerateCertPair: %v", err)
+	}
+
+	cfg := Config{
+		Host:        "real.server.com",
+		Port:        443,
+		ECH:         base64.StdEncoding.EncodeToString(echRaw),
+		Fingerprint: "chrome",
+		Pin:         pair.FormatPins(),
+		Insecure:    true,
+	}
+
+	tlsCfg, _, err := BuildClientTLSConfig(cfg)
+	if err != nil {
+		t.Fatalf("BuildClientTLSConfig with Pin+Insecure failed: %v", err)
+	}
+
+	// Pin takes precedence: VerifyPeerCertificate should still be set
+	if tlsCfg.VerifyPeerCertificate == nil {
+		t.Error("VerifyPeerCertificate should be set when Pin is set (Pin takes precedence over Insecure)")
+	}
+}
+
+func TestPinVerificationSuccess(t *testing.T) {
+	// Generate cert pair and start a TLS server with EC cert
+	pair, err := GenerateCertPair()
+	if err != nil {
+		t.Fatalf("GenerateCertPair: %v", err)
+	}
+
+	ln, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{
+		Certificates: []tls.Certificate{pair.EC},
+	})
+	if err != nil {
+		t.Fatalf("tls.Listen: %v", err)
+	}
+	defer ln.Close()
+
+	errCh := make(chan error, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			errCh <- err
+			return
+		}
+		defer conn.Close()
+		if tlsConn, ok := conn.(*tls.Conn); ok {
+			errCh <- tlsConn.Handshake()
+		} else {
+			errCh <- nil
+		}
+	}()
+
+	// Client: connect with pin verification
+	pins, err := ParsePins(pair.FormatPins())
+	if err != nil {
+		t.Fatalf("ParsePins: %v", err)
+	}
+
+	clientCfg := &tls.Config{
+		InsecureSkipVerify: true,
+		VerifyPeerCertificate: buildPinVerifier(pins),
+	}
+
+	conn, err := tls.Dial("tcp", ln.Addr().String(), clientCfg)
+	if err != nil {
+		t.Fatalf("client dial with correct pin should succeed: %v", err)
+	}
+	conn.Close()
+
+	if err := <-errCh; err != nil {
+		t.Fatalf("server handshake error: %v", err)
+	}
+}
+
+func TestPinVerificationFailure(t *testing.T) {
+	// Generate cert pair and start a TLS server
+	pair, err := GenerateCertPair()
+	if err != nil {
+		t.Fatalf("GenerateCertPair: %v", err)
+	}
+
+	ln, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{
+		Certificates: []tls.Certificate{pair.EC},
+	})
+	if err != nil {
+		t.Fatalf("tls.Listen: %v", err)
+	}
+	defer ln.Close()
+
+	go func() {
+		conn, _ := ln.Accept()
+		if conn != nil {
+			conn.Close()
+		}
+	}()
+
+	// Create wrong pins (a different cert pair)
+	wrongPair, err := GenerateCertPair()
+	if err != nil {
+		t.Fatalf("GenerateCertPair: %v", err)
+	}
+	wrongPins, err := ParsePins(wrongPair.FormatPins())
+	if err != nil {
+		t.Fatalf("ParsePins: %v", err)
+	}
+
+	clientCfg := &tls.Config{
+		InsecureSkipVerify: true,
+		VerifyPeerCertificate: buildPinVerifier(wrongPins),
+	}
+
+	_, err = tls.Dial("tcp", ln.Addr().String(), clientCfg)
+	if err == nil {
+		t.Fatal("client dial with wrong pin should fail")
+	}
+}
+
+func TestPinVerificationBothAlgos(t *testing.T) {
+	pair, err := GenerateCertPair()
+	if err != nil {
+		t.Fatalf("GenerateCertPair: %v", err)
+	}
+	pins, err := ParsePins(pair.FormatPins())
+	if err != nil {
+		t.Fatalf("ParsePins: %v", err)
+	}
+
+	// Test RSA cert with dual pin
+	t.Run("RSA", func(t *testing.T) {
+		ln, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{
+			Certificates: []tls.Certificate{pair.RSA},
+		})
+		if err != nil {
+			t.Fatalf("tls.Listen: %v", err)
+		}
+		defer ln.Close()
+
+		errCh := make(chan error, 1)
+		go func() {
+			conn, err := ln.Accept()
+			if err != nil {
+				errCh <- err
+				return
+			}
+			defer conn.Close()
+			if tlsConn, ok := conn.(*tls.Conn); ok {
+				errCh <- tlsConn.Handshake()
+			} else {
+				errCh <- nil
+			}
+		}()
+
+		conn, err := tls.Dial("tcp", ln.Addr().String(), &tls.Config{
+			InsecureSkipVerify:    true,
+			VerifyPeerCertificate: buildPinVerifier(pins),
+		})
+		if err != nil {
+			t.Fatalf("RSA pin verification should succeed: %v", err)
+		}
+		conn.Close()
+		if err := <-errCh; err != nil {
+			t.Fatalf("server handshake error: %v", err)
+		}
+	})
+
+	// Test EC cert with dual pin
+	t.Run("EC", func(t *testing.T) {
+		ln, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{
+			Certificates: []tls.Certificate{pair.EC},
+		})
+		if err != nil {
+			t.Fatalf("tls.Listen: %v", err)
+		}
+		defer ln.Close()
+
+		errCh := make(chan error, 1)
+		go func() {
+			conn, err := ln.Accept()
+			if err != nil {
+				errCh <- err
+				return
+			}
+			defer conn.Close()
+			if tlsConn, ok := conn.(*tls.Conn); ok {
+				errCh <- tlsConn.Handshake()
+			} else {
+				errCh <- nil
+			}
+		}()
+
+		conn, err := tls.Dial("tcp", ln.Addr().String(), &tls.Config{
+			InsecureSkipVerify:    true,
+			VerifyPeerCertificate: buildPinVerifier(pins),
+		})
+		if err != nil {
+			t.Fatalf("EC pin verification should succeed: %v", err)
+		}
+		conn.Close()
+		if err := <-errCh; err != nil {
+			t.Fatalf("server handshake error: %v", err)
+		}
+	})
 }
 
 func TestPeekClientHelloSNI(t *testing.T) {

@@ -2,6 +2,7 @@ package wire
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net"
@@ -55,7 +56,8 @@ type Config struct {
 	Fingerprint string
 	HopStart    int
 	HopEnd      int
-	Insecure    bool // skip TLS certificate verification (for self-signed certs)
+	Insecure    bool   // skip TLS certificate verification (for self-signed certs)
+	Pin         string // pin=sha256:<rsa>,sha256:<ec> — public key pin hashes
 }
 
 // ParseURL parses a k2v5:// URL into Config.
@@ -111,6 +113,9 @@ func ParseURL(raw string) (Config, error) {
 	if v := q.Get("insecure"); v == "1" || v == "true" {
 		cfg.Insecure = true
 	}
+	if v := q.Get("pin"); v != "" {
+		cfg.Pin = v
+	}
 	if v := q.Get("hop"); v != "" {
 		start, end, err := parseHopRange(v)
 		if err != nil {
@@ -121,6 +126,35 @@ func ParseURL(raw string) (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// ParsePins parses the pin URL parameter into a list of SHA-256 hashes.
+// Format: "sha256:<urlsafe_b64>,sha256:<urlsafe_b64>"
+// Returns nil if pin is empty.
+func ParsePins(pin string) ([][32]byte, error) {
+	if pin == "" {
+		return nil, nil
+	}
+
+	parts := strings.Split(pin, ",")
+	hashes := make([][32]byte, 0, len(parts))
+	for _, part := range parts {
+		if !strings.HasPrefix(part, "sha256:") {
+			return nil, fmt.Errorf("wire: pin %q missing sha256: prefix", part)
+		}
+		b64 := strings.TrimPrefix(part, "sha256:")
+		decoded, err := base64.URLEncoding.DecodeString(b64)
+		if err != nil {
+			return nil, fmt.Errorf("wire: pin %q invalid base64: %w", part, err)
+		}
+		if len(decoded) != 32 {
+			return nil, fmt.Errorf("wire: pin %q hash length %d, want 32", part, len(decoded))
+		}
+		var h [32]byte
+		copy(h[:], decoded)
+		hashes = append(hashes, h)
+	}
+	return hashes, nil
 }
 
 func parseHopRange(s string) (int, int, error) {

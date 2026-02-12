@@ -3,7 +3,9 @@ package wire
 import (
 	"crypto/ecdh"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
@@ -68,8 +70,44 @@ func BuildClientTLSConfig(cfg Config) (*tls.Config, utls.ClientHelloID, error) {
 		InsecureSkipVerify:               cfg.Insecure,
 	}
 
+	// Pin takes precedence: if Pin is set, use pin verification
+	// (overrides Insecure behavior with actual public key check).
+	if cfg.Pin != "" {
+		pins, err := ParsePins(cfg.Pin)
+		if err != nil {
+			return nil, utls.ClientHelloID{}, err
+		}
+		tlsCfg.InsecureSkipVerify = true
+		tlsCfg.VerifyPeerCertificate = buildPinVerifier(pins)
+	}
+
 	clientHelloID := ParseFingerprint(cfg.Fingerprint)
 	return tlsCfg, clientHelloID, nil
+}
+
+// buildPinVerifier returns a VerifyPeerCertificate callback that checks
+// the leaf certificate's public key hash against the provided pin hashes.
+func buildPinVerifier(pins [][32]byte) func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+	return func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+		if len(rawCerts) == 0 {
+			return errors.New("wire: no certificate received")
+		}
+		cert, err := x509.ParseCertificate(rawCerts[0])
+		if err != nil {
+			return fmt.Errorf("wire: parse certificate: %w", err)
+		}
+		pubKeyDER, err := x509.MarshalPKIXPublicKey(cert.PublicKey)
+		if err != nil {
+			return fmt.Errorf("wire: marshal public key: %w", err)
+		}
+		hash := sha256.Sum256(pubKeyDER)
+		for _, pin := range pins {
+			if hash == pin {
+				return nil
+			}
+		}
+		return errors.New("wire: public key pin mismatch")
+	}
 }
 
 // ClientHelloInfo contains information extracted from a TLS ClientHello.
