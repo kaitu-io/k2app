@@ -365,6 +365,184 @@ func TestQUICClient_InterfaceCompliance(t *testing.T) {
 }
 
 // ============================================================================
+// T4: QUIC UDP Stream Fallback Tests
+// ============================================================================
+
+// TestQUICServer_HandleStream_UDP tests server handling of StreamTypeUDP (AC22).
+func TestQUICServer_HandleStream_UDP(t *testing.T) {
+	client, server, cleanup := setupQUICPair(t)
+	defer cleanup()
+
+	// Server: set up UDP handler
+	received := make(chan struct {
+		addr    string
+		payload string
+	}, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go server.ServeUDP(ctx, UDPHandlerFunc(func(conn net.PacketConn, addr string) {
+		buf := make([]byte, 100)
+		n, _, err := conn.ReadFrom(buf)
+		if err != nil {
+			return
+		}
+		received <- struct {
+			addr    string
+			payload string
+		}{addr: addr, payload: string(buf[:n])}
+		// Send response
+		conn.WriteTo([]byte("pong"), nil)
+	}))
+
+	// Small delay for handler registration
+	time.Sleep(50 * time.Millisecond)
+
+	// Client: manually open QUIC stream and send StreamTypeUDP header + smux-framed UDP
+	qconn, err := client.connect(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stream, err := qconn.OpenStreamSync(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+
+	// Write H3 frame type + UDP stream header
+	if err := WriteH3ProxyFrameType(stream); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteStreamHeader(stream, StreamTypeUDP, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write smux-framed UDP frame
+	if err := WriteSmuxUDPFrame(stream, 1, "1.1.1.1:53", []byte("ping")); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify server received
+	select {
+	case data := <-received:
+		if data.addr != "1.1.1.1:53" {
+			t.Errorf("addr = %q, want 1.1.1.1:53", data.addr)
+		}
+		if data.payload != "ping" {
+			t.Errorf("payload = %q, want ping", data.payload)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for server to receive")
+	}
+
+	// Read response
+	br := bufio.NewReader(stream)
+	frame, err := ReadSmuxUDPFrame(br)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(frame.Payload) != "pong" {
+		t.Errorf("response = %q, want pong", string(frame.Payload))
+	}
+}
+
+// TestQUICClient_DialUDP_StreamFallback tests stream-based UDP when datagrams disabled (AC21).
+func TestQUICClient_DialUDP_StreamFallback(t *testing.T) {
+	cert := generateTestCert(t)
+
+	// Server with datagrams DISABLED
+	serverUDP, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer serverUDP.Close()
+
+	serverTransport := &quic.Transport{Conn: serverUDP}
+	defer serverTransport.Close()
+
+	serverTLS := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		NextProtos:   []string{"h3"},
+	}
+	quicCfg := DefaultQUICConfig()
+	quicCfg.EnableDatagrams = false // Force stream fallback
+	ln, err := serverTransport.Listen(serverTLS, quicCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	store := NewTicketStore()
+	server := NewQUICServer(store)
+	server.Listen(ln)
+	defer server.Close()
+
+	// Server: set up UDP handler
+	received := make(chan string, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go server.ServeUDP(ctx, UDPHandlerFunc(func(conn net.PacketConn, addr string) {
+		buf := make([]byte, 100)
+		n, _, err := conn.ReadFrom(buf)
+		if err != nil {
+			return
+		}
+		received <- string(buf[:n])
+		// Send response
+		conn.WriteTo([]byte("echo"), nil)
+	}))
+
+	time.Sleep(50 * time.Millisecond)
+
+	// Client
+	serverAddr := serverUDP.LocalAddr().(*net.UDPAddr)
+	clientCfg := Config{
+		Host: "127.0.0.1",
+		Port: serverAddr.Port,
+	}
+	client := NewQUICClient(clientCfg, store)
+	defer client.Close()
+	client.tlsConfig = &tls.Config{
+		InsecureSkipVerify: true,
+		NextProtos:         []string{"h3"},
+	}
+
+	// Client: dial UDP (should use stream fallback)
+	pconn, err := client.DialUDP(context.Background(), "8.8.8.8:53")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pconn.Close()
+
+	// Send data
+	if _, err := pconn.WriteTo([]byte("query"), nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify server received
+	select {
+	case data := <-received:
+		if data != "query" {
+			t.Errorf("received = %q, want query", data)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for server to receive")
+	}
+
+	// Read response
+	buf := make([]byte, 100)
+	n, _, err := pconn.ReadFrom(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(buf[:n]) != "echo" {
+		t.Errorf("response = %q, want echo", string(buf[:n]))
+	}
+}
+
+// ============================================================================
 // Existing loopback tests (raw QUIC, no QUICClient/QUICServer)
 // ============================================================================
 
