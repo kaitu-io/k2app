@@ -11,9 +11,17 @@ import (
 // Loaded by `k2 run -c` or parsed from `k2 up` URL.
 type ClientConfig struct {
 	Server string       `yaml:"server"` // k2v5:// URL
+	Mode   string       `yaml:"mode"`   // "tun" or "proxy", default "tun"
+	Proxy  ProxyConfig  `yaml:"proxy"`
 	DNS    DNSConfig    `yaml:"dns"`
 	Router RouterConfig `yaml:"router"`
 	Log    LogConfig    `yaml:"log"`
+}
+
+// ProxyConfig contains proxy mode configuration.
+type ProxyConfig struct {
+	Listen         string `yaml:"listen"`           // default "127.0.0.1:1080"
+	SetSystemProxy bool   `yaml:"set_system_proxy"` // default false
 }
 
 // ServerConfig is the server-side configuration.
@@ -96,6 +104,12 @@ func ClientFromURL(wireURL string) *ClientConfig {
 }
 
 func setClientDefaults(cfg *ClientConfig) {
+	if cfg.Mode == "" {
+		cfg.Mode = "tun"
+	}
+	if cfg.Proxy.Listen == "" {
+		cfg.Proxy.Listen = "127.0.0.1:1080"
+	}
 	if len(cfg.DNS.Direct) == 0 {
 		cfg.DNS.Direct = []string{"114.114.114.114:53", "223.5.5.5:53"}
 	}

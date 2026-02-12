@@ -1,0 +1,81 @@
+package provider
+
+import (
+	"context"
+	"net"
+	"time"
+
+	"github.com/sagernet/sing/common/buf"
+	M "github.com/sagernet/sing/common/metadata"
+	N "github.com/sagernet/sing/common/network"
+
+	"github.com/sagernet/sing-tun"
+)
+
+// handlerAdapter wraps ConnectionHandler to implement sing-tun's Handler interface.
+type handlerAdapter struct {
+	handler ConnectionHandler
+}
+
+var _ tun.Handler = (*handlerAdapter)(nil)
+
+func (h *handlerAdapter) PrepareConnection(network string, source M.Socksaddr, destination M.Socksaddr) error {
+	return nil
+}
+
+func (h *handlerAdapter) NewConnectionEx(ctx context.Context, conn net.Conn, source M.Socksaddr, destination M.Socksaddr, onClose N.CloseHandlerFunc) {
+	dest := destination.String()
+	go func() {
+		h.handler.HandleTCP(conn, dest)
+		if onClose != nil {
+			onClose(nil)
+		}
+	}()
+}
+
+func (h *handlerAdapter) NewPacketConnectionEx(ctx context.Context, conn N.PacketConn, source M.Socksaddr, destination M.Socksaddr, onClose N.CloseHandlerFunc) {
+	dest := destination.String()
+	go func() {
+		h.handler.HandleUDP(&singPacketConn{conn: conn}, dest)
+		if onClose != nil {
+			onClose(nil)
+		}
+	}()
+}
+
+// singPacketConn wraps sing's N.PacketConn into standard net.PacketConn.
+type singPacketConn struct {
+	conn N.PacketConn
+}
+
+var _ net.PacketConn = (*singPacketConn)(nil)
+
+func (c *singPacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
+	buffer := buf.NewSize(len(b))
+	defer buffer.Release()
+	dest, err := c.conn.ReadPacket(buffer)
+	if err != nil {
+		return 0, nil, err
+	}
+	n := copy(b, buffer.Bytes())
+	return n, dest.UDPAddr(), nil
+}
+
+func (c *singPacketConn) WriteTo(b []byte, addr net.Addr) (int, error) {
+	var dest M.Socksaddr
+	if addr != nil {
+		dest = M.SocksaddrFromNet(addr)
+	}
+	buffer := buf.NewSize(len(b))
+	buffer.Write(b)
+	if err := c.conn.WritePacket(buffer, dest); err != nil {
+		return 0, err
+	}
+	return len(b), nil
+}
+
+func (c *singPacketConn) Close() error                       { return c.conn.Close() }
+func (c *singPacketConn) LocalAddr() net.Addr                { return c.conn.LocalAddr() }
+func (c *singPacketConn) SetDeadline(t time.Time) error      { return c.conn.SetDeadline(t) }
+func (c *singPacketConn) SetReadDeadline(t time.Time) error  { return c.conn.SetReadDeadline(t) }
+func (c *singPacketConn) SetWriteDeadline(t time.Time) error { return c.conn.SetWriteDeadline(t) }

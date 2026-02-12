@@ -2,6 +2,7 @@ package dns
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"strings"
@@ -9,7 +10,6 @@ import (
 
 	"github.com/kaitu-io/k2rule"
 	"github.com/kaitu-io/k2/core/packet"
-	"github.com/kaitu-io/k2/provider"
 	"github.com/miekg/dns"
 )
 
@@ -30,8 +30,8 @@ type Middleware struct {
 	// Metrics
 	metrics *Metrics
 
-	// Provider for sending responses
-	provider provider.Provider
+	// Writer for sending raw IP packet responses (L3 mode, will be replaced in T5)
+	writer io.Writer
 }
 
 // MiddlewareConfig contains configuration for DNS middleware
@@ -43,7 +43,7 @@ type MiddlewareConfig struct {
 	Hosts     *HostsFile
 	Filter    *Filter
 	Metrics   *Metrics
-	Provider  provider.Provider
+	Writer    io.Writer
 }
 
 // NewMiddleware creates a new DNS middleware
@@ -56,7 +56,7 @@ func NewMiddleware(cfg MiddlewareConfig) *Middleware {
 		hosts:     cfg.Hosts,
 		filter:    cfg.Filter,
 		metrics:   cfg.Metrics,
-		provider:  cfg.Provider,
+		writer:    cfg.Writer,
 	}
 }
 
@@ -240,7 +240,7 @@ func (m *Middleware) sendResponse(resp *dns.Msg, info packet.Info) error {
 	}
 
 	// Write response back to TUN device
-	if _, err := m.provider.Write(respPacket); err != nil {
+	if _, err := m.writer.Write(respPacket); err != nil {
 		return fmt.Errorf("write DNS response: %w", err)
 	}
 
