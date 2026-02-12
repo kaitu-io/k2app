@@ -86,9 +86,9 @@ func TestQUICConfigType(t *testing.T) {
 	cfg := DefaultQUICConfig()
 	// Verify it's the right type for quic-go
 	_ = &quic.Config{
-		EnableDatagrams:    cfg.EnableDatagrams,
-		MaxIdleTimeout:     cfg.MaxIdleTimeout,
-		KeepAlivePeriod:    cfg.KeepAlivePeriod,
+		EnableDatagrams:   cfg.EnableDatagrams,
+		MaxIdleTimeout:    cfg.MaxIdleTimeout,
+		KeepAlivePeriod:   cfg.KeepAlivePeriod,
 		MaxIncomingStreams: cfg.MaxIncomingStreams,
 	}
 }
@@ -144,6 +144,229 @@ func generateTestCert(t *testing.T) tls.Certificate {
 		PrivateKey:  key,
 	}
 }
+
+// setupQUICPair creates a connected QUICClient + QUICServer pair for testing.
+func setupQUICPair(t *testing.T) (*QUICClient, *QUICServer, func()) {
+	t.Helper()
+	cert := generateTestCert(t)
+
+	// Server QUIC listener
+	serverUDP, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverTransport := &quic.Transport{Conn: serverUDP}
+	serverTLS := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		NextProtos:   []string{"h3"},
+	}
+	ln, err := serverTransport.Listen(serverTLS, DefaultQUICConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	store := NewTicketStore()
+	server := NewQUICServer(store)
+	server.Listen(ln)
+
+	// Client
+	serverAddr := serverUDP.LocalAddr().(*net.UDPAddr)
+	clientCfg := Config{
+		Host: "127.0.0.1",
+		Port: serverAddr.Port,
+	}
+	client := NewQUICClient(clientCfg, store)
+	client.tlsConfig = &tls.Config{
+		InsecureSkipVerify: true,
+		NextProtos:         []string{"h3"},
+	}
+
+	cleanup := func() {
+		client.Close()
+		server.Close()
+		serverTransport.Close()
+	}
+
+	return client, server, cleanup
+}
+
+func TestQUICClient_DialTCP(t *testing.T) {
+	client, server, cleanup := setupQUICPair(t)
+	defer cleanup()
+
+	// Server: accept stream, write OK response, echo data
+	serverDone := make(chan error, 1)
+	go func() {
+		conn, addr, err := server.AcceptTCP(context.Background())
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		if addr != "example.com:80" {
+			serverDone <- fmt.Errorf("addr = %q, want example.com:80", addr)
+			return
+		}
+
+		// Write OK response
+		if err := WriteStreamResponse(conn, nil); err != nil {
+			serverDone <- err
+			return
+		}
+
+		// Echo data
+		buf := make([]byte, 100)
+		n, err := conn.Read(buf)
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		if _, err := conn.Write(buf[:n]); err != nil {
+			serverDone <- err
+			return
+		}
+		serverDone <- nil
+	}()
+
+	// Client: dial TCP
+	conn, err := client.DialTCP(context.Background(), "example.com:80")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	// Send data
+	if _, err := conn.Write([]byte("hello")); err != nil {
+		t.Fatal(err)
+	}
+
+	// Read echo
+	buf := make([]byte, 100)
+	n, err := conn.Read(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(buf[:n]) != "hello" {
+		t.Errorf("echo = %q, want %q", string(buf[:n]), "hello")
+	}
+
+	if err := <-serverDone; err != nil {
+		t.Fatalf("server error: %v", err)
+	}
+}
+
+func TestQUICClient_DialUDP(t *testing.T) {
+	client, server, cleanup := setupQUICPair(t)
+	defer cleanup()
+
+	// Server: set up UDP handler
+	received := make(chan string, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go server.ServeUDP(ctx, UDPHandlerFunc(func(conn net.PacketConn, addr string) {
+		buf := make([]byte, 100)
+		n, _, err := conn.ReadFrom(buf)
+		if err != nil {
+			return
+		}
+		received <- string(buf[:n])
+		// Send response
+		conn.WriteTo([]byte("response"), nil)
+	}))
+
+	// Small delay for handler registration
+	time.Sleep(50 * time.Millisecond)
+
+	// Client: dial UDP
+	pconn, err := client.DialUDP(context.Background(), "8.8.8.8:53")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pconn.Close()
+
+	// Send data
+	if _, err := pconn.WriteTo([]byte("dns-query"), nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify server received
+	select {
+	case data := <-received:
+		if data != "dns-query" {
+			t.Errorf("received = %q, want dns-query", data)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for server to receive")
+	}
+
+	// Read response
+	buf := make([]byte, 100)
+	n, _, err := pconn.ReadFrom(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(buf[:n]) != "response" {
+		t.Errorf("response = %q, want response", string(buf[:n]))
+	}
+}
+
+func TestQUICServer_AcceptTCP_MultipleStreams(t *testing.T) {
+	client, server, cleanup := setupQUICPair(t)
+	defer cleanup()
+
+	// Server: accept 2 streams
+	type accepted struct {
+		addr string
+		err  error
+	}
+	results := make(chan accepted, 2)
+	go func() {
+		for i := 0; i < 2; i++ {
+			conn, addr, err := server.AcceptTCP(context.Background())
+			if err != nil {
+				results <- accepted{err: err}
+				continue
+			}
+			WriteStreamResponse(conn, nil)
+			results <- accepted{addr: addr}
+		}
+	}()
+
+	// Client: open 2 TCP connections
+	for _, addr := range []string{"a.com:80", "b.com:443"} {
+		conn, err := client.DialTCP(context.Background(), addr)
+		if err != nil {
+			t.Fatalf("DialTCP(%s): %v", addr, err)
+		}
+		conn.Close()
+	}
+
+	// Verify both accepted
+	addrs := make(map[string]bool)
+	for i := 0; i < 2; i++ {
+		select {
+		case r := <-results:
+			if r.err != nil {
+				t.Fatalf("AcceptTCP: %v", r.err)
+			}
+			addrs[r.addr] = true
+		case <-time.After(5 * time.Second):
+			t.Fatal("timeout waiting for AcceptTCP")
+		}
+	}
+	if !addrs["a.com:80"] || !addrs["b.com:443"] {
+		t.Errorf("accepted addrs = %v, want a.com:80 and b.com:443", addrs)
+	}
+}
+
+func TestQUICClient_InterfaceCompliance(t *testing.T) {
+	var _ Dialer = (*QUICClient)(nil)
+	var _ Listener = (*QUICServer)(nil)
+}
+
+// ============================================================================
+// Existing loopback tests (raw QUIC, no QUICClient/QUICServer)
+// ============================================================================
 
 func TestQUICLoopback_ProxyStream(t *testing.T) {
 	cert := generateTestCert(t)

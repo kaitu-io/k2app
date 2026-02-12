@@ -38,6 +38,12 @@ type UDPHandler interface {
 	HandleUDP(conn net.PacketConn, addr string)
 }
 
+// UDPHandlerFunc is a convenience adapter for UDPHandler.
+type UDPHandlerFunc func(conn net.PacketConn, addr string)
+
+// HandleUDP implements UDPHandler.
+func (f UDPHandlerFunc) HandleUDP(conn net.PacketConn, addr string) { f(conn, addr) }
+
 // Config holds parsed k2v5 URL configuration.
 type Config struct {
 	UDID        string
