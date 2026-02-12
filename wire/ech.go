@@ -67,18 +67,24 @@ func BuildClientTLSConfig(cfg Config) (*tls.Config, utls.ClientHelloID, error) {
 		MinVersion:                       tls.VersionTLS13,
 		ServerName:                       cfg.Host, // Inner SNI (real, encrypted by ECH)
 		EncryptedClientHelloConfigList:   echBytes, // Contains outer SNI
-		InsecureSkipVerify:               cfg.Insecure,
 	}
 
-	// Pin takes precedence: if Pin is set, use pin verification
-	// (overrides Insecure behavior with actual public key check).
+	// Certificate verification priority: pin > insecure > default CA pool
 	if cfg.Pin != "" {
+		// Pin verification: check public key hash (overrides everything)
 		pins, err := ParsePins(cfg.Pin)
 		if err != nil {
 			return nil, utls.ClientHelloID{}, err
 		}
 		tlsCfg.InsecureSkipVerify = true
 		tlsCfg.VerifyPeerCertificate = buildPinVerifier(pins)
+	} else if cfg.Insecure {
+		// Skip all verification
+		tlsCfg.InsecureSkipVerify = true
+	} else {
+		// Default: system CA + Kaitu CA, reject Chinese CAs
+		tlsCfg.RootCAs = BuildDefaultCAPool()
+		tlsCfg.VerifyPeerCertificate = buildBlockedCAVerifier()
 	}
 
 	clientHelloID := ParseFingerprint(cfg.Fingerprint)
