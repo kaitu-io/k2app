@@ -2,6 +2,8 @@ package wire
 
 import (
 	"encoding/base64"
+	"os"
+	"path/filepath"
 	"testing"
 
 	utls "github.com/metacubex/utls"
@@ -114,7 +116,7 @@ func TestBuildClientTLSConfig(t *testing.T) {
 
 func TestPeekClientHelloSNI(t *testing.T) {
 	// Construct a minimal TLS ClientHello with SNI "example.com"
-	hello := buildTestClientHello("example.com")
+	hello := buildTestClientHello("example.com", false)
 
 	sni, err := PeekClientHelloSNI(hello)
 	if err != nil {
@@ -125,8 +127,64 @@ func TestPeekClientHelloSNI(t *testing.T) {
 	}
 }
 
+func TestPeekClientHello_WithECH(t *testing.T) {
+	// AC1: ClientHello with 0xfe0d extension → hasECH=true
+	hello := buildTestClientHello("microsoft.com", true)
+
+	info, err := PeekClientHello(hello)
+	if err != nil {
+		t.Fatalf("PeekClientHello failed: %v", err)
+	}
+	if info.SNI != "microsoft.com" {
+		t.Errorf("SNI = %q, want %q", info.SNI, "microsoft.com")
+	}
+	if !info.HasECH {
+		t.Error("HasECH = false, want true")
+	}
+}
+
+func TestPeekClientHello_WithoutECH(t *testing.T) {
+	// AC2: ClientHello without ECH extension → hasECH=false
+	hello := buildTestClientHello("example.org", false)
+
+	info, err := PeekClientHello(hello)
+	if err != nil {
+		t.Fatalf("PeekClientHello failed: %v", err)
+	}
+	if info.SNI != "example.org" {
+		t.Errorf("SNI = %q, want %q", info.SNI, "example.org")
+	}
+	if info.HasECH {
+		t.Error("HasECH = true, want false")
+	}
+}
+
+func TestPeekClientHello_BackwardCompat(t *testing.T) {
+	// Verify old PeekClientHelloSNI still works (as wrapper)
+	hello := buildTestClientHello("test.com", false)
+
+	sni, err := PeekClientHelloSNI(hello)
+	if err != nil {
+		t.Fatalf("PeekClientHelloSNI failed: %v", err)
+	}
+	if sni != "test.com" {
+		t.Errorf("SNI = %q, want %q", sni, "test.com")
+	}
+
+	// Should also work with ECH present (SNI still extracted)
+	helloWithECH := buildTestClientHello("ech.test.com", true)
+	sni2, err := PeekClientHelloSNI(helloWithECH)
+	if err != nil {
+		t.Fatalf("PeekClientHelloSNI with ECH failed: %v", err)
+	}
+	if sni2 != "ech.test.com" {
+		t.Errorf("SNI = %q, want %q", sni2, "ech.test.com")
+	}
+}
+
 // buildTestClientHello constructs a minimal TLS 1.3 ClientHello with the given SNI.
-func buildTestClientHello(sni string) []byte {
+// If includeECH is true, adds a placeholder ECH extension (0xfe0d).
+func buildTestClientHello(sni string, includeECH bool) []byte {
 	// SNI extension
 	sniBytes := []byte(sni)
 	sniExt := make([]byte, 0, 9+len(sniBytes))
@@ -143,8 +201,22 @@ func buildTestClientHello(sni string) []byte {
 	sniExt = append(sniExt, byte(len(sniBytes)>>8), byte(len(sniBytes)))
 	sniExt = append(sniExt, sniBytes...)
 
-	// Extensions total
-	extsLen := len(sniExt)
+	// All extensions
+	allExts := sniExt
+
+	// ECH extension (if requested)
+	if includeECH {
+		echExt := make([]byte, 0, 20)
+		// Extension type: encrypted_client_hello (0xfe0d)
+		echExt = append(echExt, 0xfe, 0x0d)
+		// Extension length (placeholder 10 bytes of data)
+		echExt = append(echExt, 0x00, 0x0a)
+		// Dummy ECH payload
+		echExt = append(echExt, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09)
+		allExts = append(allExts, echExt...)
+	}
+
+	extsLen := len(allExts)
 
 	// ClientHello body
 	body := make([]byte, 0, 256)
@@ -160,7 +232,7 @@ func buildTestClientHello(sni string) []byte {
 	body = append(body, 0x01, 0x00)
 	// Extensions length
 	body = append(body, byte(extsLen>>8), byte(extsLen))
-	body = append(body, sniExt...)
+	body = append(body, allExts...)
 
 	// Handshake header: type ClientHello (1) + length
 	handshake := make([]byte, 0, 4+len(body))
@@ -175,4 +247,103 @@ func buildTestClientHello(sni string) []byte {
 	record = append(record, handshake...)
 
 	return record
+}
+
+func TestGenerateECHKey(t *testing.T) {
+	// AC3: Generate ECH key pair
+	key, echConfig, err := GenerateECHKey("www.microsoft.com")
+	if err != nil {
+		t.Fatalf("GenerateECHKey failed: %v", err)
+	}
+	if len(key.PrivateKey) == 0 {
+		t.Error("PrivateKey is empty")
+	}
+	if len(key.Config) == 0 {
+		t.Error("Config is empty")
+	}
+	if len(echConfig) == 0 {
+		t.Error("echConfig bytes are empty")
+	}
+}
+
+func TestSaveLoadECHKey(t *testing.T) {
+	// AC4: Save and load ECH keys
+	tmpDir := t.TempDir()
+	keyPath := filepath.Join(tmpDir, "ech.key")
+
+	// Generate
+	origKey, origConfig, err := GenerateECHKey("public.example.com")
+	if err != nil {
+		t.Fatalf("GenerateECHKey failed: %v", err)
+	}
+
+	// Save
+	if err := SaveECHKey(keyPath, origKey.PrivateKey, origConfig); err != nil {
+		t.Fatalf("SaveECHKey failed: %v", err)
+	}
+
+	// Load
+	loadedKey, loadedConfig, err := LoadECHKey(keyPath)
+	if err != nil {
+		t.Fatalf("LoadECHKey failed: %v", err)
+	}
+
+	// Verify round-trip
+	if string(loadedKey.PrivateKey) != string(origKey.PrivateKey) {
+		t.Error("PrivateKey mismatch after round-trip")
+	}
+	if string(loadedKey.Config) != string(origKey.Config) {
+		t.Error("Config mismatch after round-trip")
+	}
+	if string(loadedConfig) != string(origConfig) {
+		t.Error("echConfig mismatch after round-trip")
+	}
+}
+
+func TestEnsureECHKey_AutoGenerate(t *testing.T) {
+	// AC3: Path doesn't exist → auto-generates
+	tmpDir := t.TempDir()
+	keyPath := filepath.Join(tmpDir, "new-ech.key")
+
+	keys, echConfig, err := EnsureECHKey(keyPath, "fronting.example.com")
+	if err != nil {
+		t.Fatalf("EnsureECHKey (auto-generate) failed: %v", err)
+	}
+	if len(keys) == 0 {
+		t.Error("keys slice is empty")
+	}
+	if len(echConfig) == 0 {
+		t.Error("echConfig is empty")
+	}
+
+	// Verify file was created
+	if _, err := os.Stat(keyPath); os.IsNotExist(err) {
+		t.Error("key file was not created")
+	}
+}
+
+func TestEnsureECHKey_LoadExisting(t *testing.T) {
+	// AC4: Path exists → loads
+	tmpDir := t.TempDir()
+	keyPath := filepath.Join(tmpDir, "existing-ech.key")
+
+	// First call: generate and save
+	keys1, echConfig1, err := EnsureECHKey(keyPath, "cdn.example.com")
+	if err != nil {
+		t.Fatalf("EnsureECHKey (first call) failed: %v", err)
+	}
+
+	// Second call: should load existing
+	keys2, echConfig2, err := EnsureECHKey(keyPath, "cdn.example.com")
+	if err != nil {
+		t.Fatalf("EnsureECHKey (second call) failed: %v", err)
+	}
+
+	// Verify same keys loaded
+	if string(keys1[0].PrivateKey) != string(keys2[0].PrivateKey) {
+		t.Error("PrivateKey mismatch between first and second call")
+	}
+	if string(echConfig1) != string(echConfig2) {
+		t.Error("echConfig mismatch between first and second call")
+	}
 }

@@ -63,3 +63,31 @@ tls:
 		t.Errorf("Log.Level = %q, want info", cfg.Log.Level)
 	}
 }
+
+func TestServerConfig_ECH(t *testing.T) {
+	// AC7: ServerConfig YAML supports ech.key_path and ech.public_name
+	yaml := `
+listen: ":8443"
+tls:
+  cert: /etc/ssl/cert.pem
+  key: /etc/ssl/key.pem
+ech:
+  key_path: /etc/k2/ech.key
+  public_name: www.microsoft.com
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "server.yaml")
+	os.WriteFile(path, []byte(yaml), 0644)
+
+	cfg, err := LoadServer(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.ECH.KeyPath != "/etc/k2/ech.key" {
+		t.Errorf("ECH.KeyPath = %q, want /etc/k2/ech.key", cfg.ECH.KeyPath)
+	}
+	if cfg.ECH.PublicName != "www.microsoft.com" {
+		t.Errorf("ECH.PublicName = %q, want www.microsoft.com", cfg.ECH.PublicName)
+	}
+}

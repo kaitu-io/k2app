@@ -1,13 +1,17 @@
 package wire
 
 import (
+	"crypto/ecdh"
+	"crypto/rand"
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net"
+	"os"
 	"time"
 
 	utls "github.com/metacubex/utls"
@@ -68,31 +72,37 @@ func BuildClientTLSConfig(cfg Config) (*tls.Config, utls.ClientHelloID, error) {
 	return tlsCfg, clientHelloID, nil
 }
 
-// PeekClientHelloSNI extracts the SNI (Server Name Indication) from a raw TLS ClientHello.
-// This reads the outer SNI (plaintext) from the TLS record without consuming the connection.
+// ClientHelloInfo contains information extracted from a TLS ClientHello.
+type ClientHelloInfo struct {
+	SNI    string
+	HasECH bool
+}
+
+// PeekClientHello extracts SNI and ECH presence from a raw TLS ClientHello.
+// Returns ClientHelloInfo with SNI (outer, plaintext) and whether ECH extension (0xfe0d) is present.
 // Used server-side to route ECH vs non-ECH connections.
-func PeekClientHelloSNI(data []byte) (string, error) {
+func PeekClientHello(data []byte) (ClientHelloInfo, error) {
 	if len(data) < 5 {
-		return "", errors.New("wire: data too short for TLS record")
+		return ClientHelloInfo{}, errors.New("wire: data too short for TLS record")
 	}
 
 	// TLS record: [type:1][version:2][length:2][handshake...]
 	if data[0] != 0x16 { // ContentType: Handshake
-		return "", errors.New("wire: not a TLS handshake record")
+		return ClientHelloInfo{}, errors.New("wire: not a TLS handshake record")
 	}
 	recordLen := int(data[3])<<8 | int(data[4])
 	if len(data) < 5+recordLen {
-		return "", errors.New("wire: TLS record truncated")
+		return ClientHelloInfo{}, errors.New("wire: TLS record truncated")
 	}
 	handshake := data[5 : 5+recordLen]
 
 	// Handshake: [type:1][length:3][body...]
 	if len(handshake) < 4 || handshake[0] != 0x01 { // ClientHello
-		return "", errors.New("wire: not a ClientHello")
+		return ClientHelloInfo{}, errors.New("wire: not a ClientHello")
 	}
 	bodyLen := int(handshake[1])<<16 | int(handshake[2])<<8 | int(handshake[3])
 	if len(handshake) < 4+bodyLen {
-		return "", errors.New("wire: ClientHello body truncated")
+		return ClientHelloInfo{}, errors.New("wire: ClientHello body truncated")
 	}
 	body := handshake[4 : 4+bodyLen]
 
@@ -100,7 +110,7 @@ func PeekClientHelloSNI(data []byte) (string, error) {
 	// [version:2][random:32][session_id_len:1][session_id][cipher_suites_len:2][...][compression_len:1][...][extensions_len:2][extensions...]
 	pos := 2 + 32 // version + random
 	if pos >= len(body) {
-		return "", errors.New("wire: ClientHello too short")
+		return ClientHelloInfo{}, errors.New("wire: ClientHello too short")
 	}
 
 	// Session ID
@@ -109,25 +119,28 @@ func PeekClientHelloSNI(data []byte) (string, error) {
 
 	// Cipher suites
 	if pos+2 > len(body) {
-		return "", errors.New("wire: cipher suites length missing")
+		return ClientHelloInfo{}, errors.New("wire: cipher suites length missing")
 	}
 	csLen := int(body[pos])<<8 | int(body[pos+1])
 	pos += 2 + csLen
 
 	// Compression methods
 	if pos >= len(body) {
-		return "", errors.New("wire: compression methods missing")
+		return ClientHelloInfo{}, errors.New("wire: compression methods missing")
 	}
 	cmLen := int(body[pos])
 	pos += 1 + cmLen
 
 	// Extensions
 	if pos+2 > len(body) {
-		return "", errors.New("wire: extensions length missing")
+		return ClientHelloInfo{}, errors.New("wire: extensions length missing")
 	}
 	extsLen := int(body[pos])<<8 | int(body[pos+1])
 	pos += 2
 	extsEnd := pos + extsLen
+
+	var sni string
+	var hasECH bool
 
 	for pos+4 <= extsEnd {
 		extType := int(body[pos])<<8 | int(body[pos+1])
@@ -135,12 +148,32 @@ func PeekClientHelloSNI(data []byte) (string, error) {
 		pos += 4
 
 		if extType == 0x0000 { // server_name
-			return parseSNIExtension(body[pos : pos+extLen])
+			var err error
+			sni, err = parseSNIExtension(body[pos : pos+extLen])
+			if err != nil {
+				return ClientHelloInfo{}, err
+			}
+		} else if extType == 0xfe0d { // encrypted_client_hello
+			hasECH = true
 		}
 		pos += extLen
 	}
 
-	return "", errors.New("wire: no SNI extension found")
+	if sni == "" {
+		return ClientHelloInfo{}, errors.New("wire: no SNI extension found")
+	}
+
+	return ClientHelloInfo{SNI: sni, HasECH: hasECH}, nil
+}
+
+// PeekClientHelloSNI extracts the SNI (Server Name Indication) from a raw TLS ClientHello.
+// This is a backward-compatible wrapper around PeekClientHello.
+func PeekClientHelloSNI(data []byte) (string, error) {
+	info, err := PeekClientHello(data)
+	if err != nil {
+		return "", err
+	}
+	return info.SNI, nil
 }
 
 func parseSNIExtension(data []byte) (string, error) {
@@ -198,4 +231,191 @@ func ReverseProxy(client net.Conn, clientData []byte, target string) {
 	io.Copy(client, remote)
 	client.(*net.TCPConn).CloseWrite()
 	<-done
+}
+
+// GenerateECHKey generates a new ECH key pair and config for the given public name.
+// Returns the EncryptedClientHelloKey and the ECH config bytes (to be distributed to clients).
+func GenerateECHKey(publicName string) (tls.EncryptedClientHelloKey, []byte, error) {
+	// Generate X25519 private key (DHKEM(X25519, HKDF-SHA256) = 0x0020)
+	privKey, err := ecdh.X25519().GenerateKey(rand.Reader)
+	if err != nil {
+		return tls.EncryptedClientHelloKey{}, nil, fmt.Errorf("wire: generate X25519 key: %w", err)
+	}
+
+	pubKeyBytes := privKey.PublicKey().Bytes()
+	privKeyBytes := privKey.Bytes()
+
+	// Build ECHConfig according to draft-ietf-tls-esni-18
+	// ECHConfig structure:
+	// - version (2 bytes): 0xfe0d
+	// - length (2 bytes)
+	// - config_id (1 byte): random ID
+	// - kem_id (2 bytes): X25519 = 0x0020
+	// - public_key length (2 bytes)
+	// - public_key (32 bytes for X25519)
+	// - cipher_suites length (2 bytes)
+	// - cipher_suites (list of KDF+AEAD pairs)
+	// - maximum_name_length (1 byte): 0
+	// - public_name length (1 byte)
+	// - public_name
+	// - extensions length (2 bytes): 0
+
+	configID := byte(1) // Use config ID 1
+
+	// Cipher suites: HKDF-SHA256 (0x0001) + AES-128-GCM (0x0001)
+	cipherSuites := []byte{
+		0x00, 0x01, // KDF: HKDF-SHA256
+		0x00, 0x01, // AEAD: AES-128-GCM
+	}
+
+	publicNameBytes := []byte(publicName)
+
+	// Calculate inner config length
+	// config_id(1) + kem_id(2) + pub_key_len(2) + pub_key(32) + cs_len(2) + cs(4) + max_name_len(1) + pub_name_len(1) + pub_name + ext_len(2)
+	innerLen := 1 + 2 + 2 + len(pubKeyBytes) + 2 + len(cipherSuites) + 1 + 1 + len(publicNameBytes) + 2
+
+	echConfig := make([]byte, 0, 4+innerLen)
+
+	// Version: 0xfe0d
+	echConfig = append(echConfig, 0xfe, 0x0d)
+
+	// Length of remaining config
+	echConfig = append(echConfig, byte(innerLen>>8), byte(innerLen))
+
+	// Config ID
+	echConfig = append(echConfig, configID)
+
+	// KEM ID: X25519 (0x0020)
+	echConfig = append(echConfig, 0x00, 0x20)
+
+	// Public key length
+	echConfig = append(echConfig, byte(len(pubKeyBytes)>>8), byte(len(pubKeyBytes)))
+	echConfig = append(echConfig, pubKeyBytes...)
+
+	// Cipher suites length
+	echConfig = append(echConfig, byte(len(cipherSuites)>>8), byte(len(cipherSuites)))
+	echConfig = append(echConfig, cipherSuites...)
+
+	// Maximum name length: 0 (no restriction)
+	echConfig = append(echConfig, 0x00)
+
+	// Public name length
+	echConfig = append(echConfig, byte(len(publicNameBytes)))
+	echConfig = append(echConfig, publicNameBytes...)
+
+	// Extensions length: 0
+	echConfig = append(echConfig, 0x00, 0x00)
+
+	// Build ECHConfigList (wraps the single config)
+	// ECHConfigList: [length:2][configs...]
+	echConfigList := make([]byte, 2+len(echConfig))
+	binary.BigEndian.PutUint16(echConfigList[0:2], uint16(len(echConfig)))
+	copy(echConfigList[2:], echConfig)
+
+	key := tls.EncryptedClientHelloKey{
+		Config:     echConfig,
+		PrivateKey: privKeyBytes,
+	}
+
+	return key, echConfigList, nil
+}
+
+// SaveECHKey saves an ECH private key and config to a file.
+// The file format is a simple concatenation:
+// - Private key length (4 bytes, big-endian)
+// - Private key bytes
+// - ECH config length (4 bytes, big-endian)
+// - ECH config bytes
+func SaveECHKey(path string, privKey []byte, echConfig []byte) error {
+	data := make([]byte, 0, 8+len(privKey)+len(echConfig))
+
+	// Private key length
+	buf := make([]byte, 4)
+	binary.BigEndian.PutUint32(buf, uint32(len(privKey)))
+	data = append(data, buf...)
+	data = append(data, privKey...)
+
+	// ECH config length
+	binary.BigEndian.PutUint32(buf, uint32(len(echConfig)))
+	data = append(data, buf...)
+	data = append(data, echConfig...)
+
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		return fmt.Errorf("wire: save ECH key: %w", err)
+	}
+
+	return nil
+}
+
+// LoadECHKey loads an ECH private key and config from a file.
+func LoadECHKey(path string) (tls.EncryptedClientHelloKey, []byte, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return tls.EncryptedClientHelloKey{}, nil, fmt.Errorf("wire: load ECH key: %w", err)
+	}
+
+	if len(data) < 8 {
+		return tls.EncryptedClientHelloKey{}, nil, errors.New("wire: ECH key file too short")
+	}
+
+	// Read private key
+	privKeyLen := binary.BigEndian.Uint32(data[0:4])
+	if len(data) < int(4+privKeyLen+4) {
+		return tls.EncryptedClientHelloKey{}, nil, errors.New("wire: ECH key file truncated")
+	}
+	privKey := data[4 : 4+privKeyLen]
+
+	// Read ECH config
+	pos := 4 + privKeyLen
+	echConfigLen := binary.BigEndian.Uint32(data[pos : pos+4])
+	pos += 4
+	if len(data) < int(pos+echConfigLen) {
+		return tls.EncryptedClientHelloKey{}, nil, errors.New("wire: ECH config truncated")
+	}
+	echConfig := data[pos : pos+echConfigLen]
+
+	// Extract single ECH config from config list
+	// ECHConfigList format: [length:2][config...]
+	if len(echConfig) < 2 {
+		return tls.EncryptedClientHelloKey{}, nil, errors.New("wire: ECH config list too short")
+	}
+	configLen := binary.BigEndian.Uint16(echConfig[0:2])
+	if len(echConfig) < int(2+configLen) {
+		return tls.EncryptedClientHelloKey{}, nil, errors.New("wire: ECH config list truncated")
+	}
+	singleConfig := echConfig[2 : 2+configLen]
+
+	key := tls.EncryptedClientHelloKey{
+		Config:     singleConfig,
+		PrivateKey: privKey,
+	}
+
+	return key, echConfig, nil
+}
+
+// EnsureECHKey loads or generates an ECH key.
+// If the key file exists, loads it. Otherwise, generates a new key and saves it.
+// Returns a slice of EncryptedClientHelloKey (Go TLS API expects a slice) and the ECH config list bytes.
+func EnsureECHKey(keyPath, publicName string) ([]tls.EncryptedClientHelloKey, []byte, error) {
+	// Try to load existing key
+	if _, err := os.Stat(keyPath); err == nil {
+		key, echConfig, err := LoadECHKey(keyPath)
+		if err != nil {
+			return nil, nil, err
+		}
+		return []tls.EncryptedClientHelloKey{key}, echConfig, nil
+	}
+
+	// Generate new key
+	key, echConfig, err := GenerateECHKey(publicName)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Save for future use
+	if err := SaveECHKey(keyPath, key.PrivateKey, echConfig); err != nil {
+		return nil, nil, err
+	}
+
+	return []tls.EncryptedClientHelloKey{key}, echConfig, nil
 }
