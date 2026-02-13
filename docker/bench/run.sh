@@ -3,7 +3,7 @@
 # k2 PCC vs Hysteria2 Brutal/BBR — Congestion Control Benchmark Suite
 # ============================================================================
 #
-# Compares three QUIC congestion control algorithms under 9 network scenarios:
+# Compares three QUIC congestion control algorithms under 14 network scenarios:
 #
 #   k2 PCC          Adaptive rate-based CC (gradient ascent on utility function)
 #   Hy2 Brutal      Fixed-rate CC (user-declared bandwidth, loss-compensating)
@@ -12,7 +12,7 @@
 # All traffic flows through Docker bridge + tc/netem for controlled conditions.
 #
 # Usage:
-#   ./run.sh                                     # All 9 scenarios (T0-T8)
+#   ./run.sh                                     # All 14 scenarios (T0-T8, C1-C5)
 #   ./run.sh T0_ideal T7_gfw_detected            # Specific scenarios
 #   ROUNDS=5 SIZE=100MB ./run.sh T0_ideal        # Override defaults
 #   BRUTAL_MBPS=500 ./run.sh T0_ideal            # Lower Brutal declared BW
@@ -27,6 +27,13 @@
 #   T6_gfw_normal   80ms RTT, 2% loss, 50Mbps (China cross-border)
 #   T7_gfw_detected 100ms RTT, 26% loss (GFW probabilistic blocking)
 #   T8_gfw_extreme  200ms RTT, 50% loss, 10Mbps (sensitive date)
+#
+# China ISP scenarios (APNIC 2020, CN2 benchmarks, community measurements):
+#   C1_cmcc_south   120ms RTT, 5% loss, 30Mbps (CMCC South → Japan)
+#   C2_cmcc_peak    200ms RTT, 15% loss, 8Mbps (CMCC 晚高峰)
+#   C3_ct_cn2       50ms RTT, 0.5% loss, 200Mbps (CT CN2 GIA premium)
+#   C4_ct_163_peak  100ms RTT, 8% loss, 30Mbps (CT 163 backbone peak)
+#   C5_cu_peak      120ms RTT, 6% loss, 20Mbps (CU congested → Japan)
 #
 # Environment variables:
 #   ROUNDS       Number of rounds per protocol (default: 3)
@@ -45,7 +52,7 @@
 set -e
 cd "$(dirname "$0")"
 
-ALL_SCENARIOS="T0_ideal T1_good T2_fair T3_poor T4_bad T5_hostile T6_gfw_normal T7_gfw_detected T8_gfw_extreme"
+ALL_SCENARIOS="T0_ideal T1_good T2_fair T3_poor T4_bad T5_hostile T6_gfw_normal T7_gfw_detected T8_gfw_extreme C1_cmcc_south C2_cmcc_peak C3_ct_cn2 C4_ct_163_peak C5_cu_peak"
 SCENARIOS="${@:-$ALL_SCENARIOS}"
 
 echo "=============================================="

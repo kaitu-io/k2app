@@ -24,6 +24,12 @@ SCENARIO_INFO = {
     "T6_gfw_normal":   {"rtt": "80ms",  "loss": "2%",   "bw": "50 Mbps",  "desc": "China cross-border baseline"},
     "T7_gfw_detected": {"rtt": "100ms", "loss": "26%",  "bw": "unlimited", "desc": "GFW probabilistic blocking"},
     "T8_gfw_extreme":  {"rtt": "200ms", "loss": "50%",  "bw": "10 Mbps",  "desc": "GFW extreme / sensitive date"},
+    # China ISP-specific scenarios (APNIC 2020, CN2 benchmarks, community measurements)
+    "C1_cmcc_south":   {"rtt": "120ms", "loss": "5%",   "bw": "30 Mbps",  "desc": "CMCC South off-peak → Japan"},
+    "C2_cmcc_peak":    {"rtt": "200ms", "loss": "15%",  "bw": "8 Mbps",   "desc": "CMCC South 晚高峰 (8-11PM)"},
+    "C3_ct_cn2":       {"rtt": "50ms",  "loss": "0.5%", "bw": "200 Mbps", "desc": "CT CN2 GIA premium → Japan"},
+    "C4_ct_163_peak":  {"rtt": "100ms", "loss": "8%",   "bw": "30 Mbps",  "desc": "CT 163 backbone 晚高峰"},
+    "C5_cu_peak":      {"rtt": "120ms", "loss": "6%",   "bw": "20 Mbps",  "desc": "CU congested → Japan"},
 }
 
 # Protocol display names and matching keys

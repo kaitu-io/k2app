@@ -75,6 +75,42 @@ apply_scenario() {
             ;;
 
         # ================================================================
+        # China ISP-specific scenarios
+        # Research: APNIC 2020 (79% inbound CN < 1Mbps), USENIX Security 2023/2025,
+        #           CN2 benchmarks (Simcentric), community loss measurements (6.9% US vs 0.04% domestic).
+        # Gilbert-Elliott model: "loss X% Y%" — X=loss rate, Y=correlation (higher=burstier).
+        # ================================================================
+        C1_cmcc_south)
+            echo "[C1] CMCC South off-peak — 120ms RTT, 5% loss (burst 33%), 30 Mbps (China Mobile → Japan, poor CMI)"
+            tc qdisc add dev eth0 root handle 1: netem delay 60ms 30ms distribution normal loss 5% 33%
+            tc qdisc add dev eth0 parent 1: handle 2: tbf rate 30mbit burst 64kb latency 300ms
+            ;;
+
+        C2_cmcc_peak)
+            echo "[C2] CMCC South peak — 200ms RTT, 15% loss (burst 50%), 8 Mbps (晚高峰 8-11PM)"
+            tc qdisc add dev eth0 root handle 1: netem delay 100ms 60ms distribution normal loss 15% 50%
+            tc qdisc add dev eth0 parent 1: handle 2: tbf rate 8mbit burst 32kb latency 500ms
+            ;;
+
+        C3_ct_cn2)
+            echo "[C3] CT CN2 GIA — 50ms RTT, 0.5% loss, 200 Mbps (China Telecom premium → Japan)"
+            tc qdisc add dev eth0 root handle 1: netem delay 25ms 5ms loss 0.5%
+            tc qdisc add dev eth0 parent 1: handle 2: tbf rate 200mbit burst 256kb latency 200ms
+            ;;
+
+        C4_ct_163_peak)
+            echo "[C4] CT 163 peak — 100ms RTT, 8% loss (burst 33%), 30 Mbps (163 backbone 晚高峰)"
+            tc qdisc add dev eth0 root handle 1: netem delay 50ms 20ms loss 8% 33%
+            tc qdisc add dev eth0 parent 1: handle 2: tbf rate 30mbit burst 64kb latency 300ms
+            ;;
+
+        C5_cu_peak)
+            echo "[C5] CU peak — 120ms RTT, 6% loss (burst 33%), 20 Mbps (China Unicom congested → Japan)"
+            tc qdisc add dev eth0 root handle 1: netem delay 60ms 30ms distribution normal loss 6% 33%
+            tc qdisc add dev eth0 parent 1: handle 2: tbf rate 20mbit burst 64kb latency 400ms
+            ;;
+
+        # ================================================================
         # Custom (pass NETEM_ARGS env var)
         # ================================================================
         custom)
@@ -84,7 +120,7 @@ apply_scenario() {
 
         *)
             echo "Unknown scenario: $scenario"
-            echo "Available: T0_ideal T1_good T2_fair T3_poor T4_bad T5_hostile T6_gfw_normal T7_gfw_detected T8_gfw_extreme custom"
+            echo "Available: T0_ideal T1_good T2_fair T3_poor T4_bad T5_hostile T6_gfw_normal T7_gfw_detected T8_gfw_extreme C1_cmcc_south C2_cmcc_peak C3_ct_cn2 C4_ct_163_peak C5_cu_peak custom"
             exit 1
             ;;
     esac
