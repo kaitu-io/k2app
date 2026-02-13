@@ -1,52 +1,24 @@
 package core
 
 import (
-	"net"
-
 	"github.com/kaitu-io/k2rule"
-	"github.com/kaitu-io/k2/core/dns"
 	"github.com/kaitu-io/k2/core/packet"
 )
 
-// Router implements routing decisions with DNS cache + k2rule
-type Router struct {
-	dnsCache *dns.DynamicIPCache
+// Router implements routing decisions via k2rule (static rules + tmp rules from DNS)
+type Router struct{}
+
+// NewRouter creates a new router.
+func NewRouter() *Router {
+	return &Router{}
 }
 
-// NewRouter creates a router with dynamic DNS cache support
-func NewRouter(dnsCache *dns.DynamicIPCache) *Router {
-	return &Router{
-		dnsCache: dnsCache,
-	}
-}
-
-// Route makes a routing decision for a packet
+// Route makes a routing decision for a packet.
 func (r *Router) Route(info packet.Info) k2rule.Target {
-	// 1. Check dynamic cache first (from DNS middleware)
-	if r.dnsCache != nil {
-		if _, target, found := r.dnsCache.Get(info.DstIP); found {
-			return target
-		}
-	}
-
-	// 2. Check k2rule (global, includes IP/CIDR matching + fallback)
-	ip := net.ParseIP(info.DstIP)
-	if ip == nil {
-		return k2rule.TargetProxy // Default if IP parse fails
-	}
-
-	return k2rule.MatchIP(ip)
+	return k2rule.Match(info.DstIP)
 }
 
 // RouteAddr makes a routing decision for a host address (IP or domain).
 func (r *Router) RouteAddr(host string) k2rule.Target {
-	// 1. Check dynamic cache first (from DNS middleware)
-	if r.dnsCache != nil {
-		if _, target, found := r.dnsCache.Get(host); found {
-			return target
-		}
-	}
-
-	// 2. Check k2rule (supports both domain and IP matching)
 	return k2rule.Match(host)
 }

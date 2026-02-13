@@ -4,13 +4,14 @@ go 1.25.0
 
 require (
 	github.com/apernet/quic-go v0.57.2-0.20260111184307-eec823306178
-	github.com/kaitu-io/k2rule v0.3.0-go
+	github.com/kaitu-io/k2rule v0.3.1-go
 	github.com/metacubex/utls v1.8.4
 	github.com/miekg/dns v1.1.72
 	github.com/sagernet/sing v0.7.6
 	github.com/sagernet/sing-tun v0.7.11
 	github.com/xtaci/smux/v2 v2.1.0
 	gopkg.in/yaml.v3 v3.0.1
+	nhooyr.io/websocket v1.8.17
 )
 
 require (
@@ -42,5 +43,4 @@ require (
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/time v0.12.0 // indirect
 	golang.org/x/tools v0.41.0 // indirect
-	nhooyr.io/websocket v1.8.17 // indirect
 )

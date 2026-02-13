@@ -20,7 +20,6 @@ type Metrics struct {
 
 	// Cache hits
 	MessageCacheHits uint64
-	IPCacheHits      uint64
 
 	// Errors
 	Errors uint64
@@ -69,11 +68,6 @@ func (m *Metrics) IncrNoiseFiltered() {
 // IncrMessageCacheHit increments DNS message cache hit count
 func (m *Metrics) IncrMessageCacheHit() {
 	atomic.AddUint64(&m.MessageCacheHits, 1)
-}
-
-// IncrIPCacheHit increments IP cache hit count (for router metrics)
-func (m *Metrics) IncrIPCacheHit() {
-	atomic.AddUint64(&m.IPCacheHits, 1)
 }
 
 // IncrError increments error count
@@ -154,6 +148,5 @@ func (m *Metrics) Reset() {
 	atomic.StoreUint64(&m.LocalDomainHits, 0)
 	atomic.StoreUint64(&m.NoiseFiltered, 0)
 	atomic.StoreUint64(&m.MessageCacheHits, 0)
-	atomic.StoreUint64(&m.IPCacheHits, 0)
 	atomic.StoreUint64(&m.Errors, 0)
 }

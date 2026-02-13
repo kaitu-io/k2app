@@ -11,7 +11,6 @@ import (
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/core"
-	"github.com/kaitu-io/k2/core/dns"
 	"github.com/kaitu-io/k2/directdial"
 	"github.com/kaitu-io/k2/provider"
 	"github.com/kaitu-io/k2/wire"
@@ -70,9 +69,8 @@ func BuildTunnel(ctx context.Context, cfg *config.ClientConfig) (*core.ClientTun
 		tm.SetTCPWS(tcpwsClient)
 	}
 
-	// 2. Build DNS IP cache + router.
-	ipCache := dns.NewDynamicIPCache()
-	router := core.NewRouter(ipCache)
+	// 2. Build router.
+	router := core.NewRouter()
 
 	// 3. Parse DNS server IPs + server IPs for route exclusion.
 	var excludeAddrs []netip.Addr
@@ -116,7 +114,6 @@ func BuildTunnel(ctx context.Context, cfg *config.ClientConfig) (*core.ClientTun
 		Provider:     prov,
 		Dialer:       tm,
 		Router:       router,
-		IPCache:      ipCache,
 		DirectDialer: dd,
 	})
 
