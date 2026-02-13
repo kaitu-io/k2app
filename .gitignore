@@ -35,4 +35,10 @@ build/
 
 k2
 k2s
+gen-bench-config
 .claude/agent-memory/
+
+# Bench artifacts
+docker/bench/sing-box
+docker/bench/results/
+docker/bench/__pycache__/

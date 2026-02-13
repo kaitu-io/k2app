@@ -1,0 +1,42 @@
+services:
+  init:
+    build:
+      context: ../..
+      dockerfile: docker/bench/Dockerfile
+    entrypoint: ["gen-bench-config", "-out", "/etc/bench", "-host", "server", "-brutal-mbps", "${BRUTAL_MBPS:-1000}"]
+    volumes:
+      - bench-config:/etc/bench
+
+  server:
+    build:
+      context: ../..
+      dockerfile: docker/bench/Dockerfile
+    entrypoint: ["/entrypoint-server.sh"]
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    volumes:
+      - bench-config:/etc/bench
+
+  client:
+    build:
+      context: ../..
+      dockerfile: docker/bench/Dockerfile
+    entrypoint: ["/entrypoint-client.sh"]
+    depends_on:
+      server:
+        condition: service_started
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - bench-config:/etc/bench
+      - ./results:/results
+    environment:
+      - SCENARIO=${SCENARIO:-T0_ideal}
+      - PROTOCOLS=${PROTOCOLS:-hy2_brutal:10003,hy2_bbr:10006,k2_pcc:10005}
+      - ROUNDS=${ROUNDS:-3}
+      - SIZE=${SIZE:-2000MB}
+      - TIMEOUT=${TIMEOUT:-600}
+
+volumes:
+  bench-config:

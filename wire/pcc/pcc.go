@@ -25,6 +25,9 @@ import (
 
 // Constants for PCC algorithm
 const (
+	// Default max rate for PCC (500 Mbps — generous upper bound)
+	DefaultMaxRate = int64(500_000_000)
+
 	// Minimum congestion window (10 packets worth)
 	pccMinWindow = congestion.ByteCount(14720) // 10 × 1472 (typical MTU)
 
@@ -51,8 +54,7 @@ const (
 	DefaultPCCEpsilon = 0.15
 
 	// Beta: latency penalty coefficient
-	// Old: 1.0 (latency-sensitive), New: 0.1 (throughput-prioritized)
-	// Low latency in local/quality networks, prioritize throughput
+	// Low: throughput-prioritized for tunnel use
 	DefaultPCCBeta = 0.1
 
 	// EWMA smoothing factor for rate updates
@@ -94,11 +96,12 @@ const (
 	// Default alpha (loss penalty) - standard mode
 	DefaultPCCAlpha = 10.0
 
-	// Alpha for GFW/aggressive mode (very low loss penalty)
+	// Alpha for GFW/aggressive mode (low loss penalty)
 	GFWPCCAlpha = 0.5
 
 	// Congestion window multiplier (for rate to cwnd conversion)
-	pccCwndMultiplier = 1.5
+	// 2.0× BDP matches BBR's cwnd gain, provides headroom for bursty ACK patterns
+	pccCwndMultiplier = 2.0
 
 	// ============================================================================
 	// Adaptive Alpha Constants
@@ -503,7 +506,7 @@ func NewPCCSenderAdaptive(maxRate int64) *PCCSender {
 
 // NewPCCSenderWithConfig creates a new PCC sender with custom config
 func NewPCCSenderWithConfig(maxRate int64, config *PCCConfig) *PCCSender {
-	// Start at 30% of max (faster start than old 10%)
+	// Start at 30% of max (fast ramp via slow start)
 	initialRate := float64(maxRate) * 0.3
 
 	state := &PCCState{
@@ -603,7 +606,6 @@ func (p *PCCSender) processCompletedMI(mi *MonitorInterval) {
 	// Check if app-limited (calculate throughput triggers detection)
 	_ = mi.Throughput()
 	if mi.IsAppLimited {
-		// Skip utility update for app-limited MIs
 		return
 	}
 

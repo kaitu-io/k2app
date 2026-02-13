@@ -6,12 +6,14 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"log"
 	"math/rand"
 	"net"
 	"sync"
 	"time"
 
 	"github.com/apernet/quic-go"
+	"github.com/kaitu-io/k2/wire/pcc"
 )
 
 // Compile-time interface checks.
@@ -20,13 +22,34 @@ var (
 	_ Listener = (*QUICServer)(nil)
 )
 
-// DefaultQUICConfig returns the QUIC configuration for k2v5 transport.
+// DefaultQUICConfig returns the QUIC configuration for servers and desktop clients.
+// Uses large receive windows (matching Hysteria2) for maximum throughput.
 func DefaultQUICConfig() *quic.Config {
 	return &quic.Config{
-		EnableDatagrams:   true,
-		MaxIdleTimeout:    30 * time.Second,
-		KeepAlivePeriod:   10 * time.Second,
-		MaxIncomingStreams: 256,
+		InitialStreamReceiveWindow:     8 << 20,  // 8 MB
+		MaxStreamReceiveWindow:         8 << 20,  // 8 MB
+		InitialConnectionReceiveWindow: 20 << 20, // 20 MB
+		MaxConnectionReceiveWindow:     20 << 20, // 20 MB
+		EnableDatagrams:                true,
+		MaxIdleTimeout:                 30 * time.Second,
+		KeepAlivePeriod:                10 * time.Second,
+		MaxIncomingStreams:              256,
+	}
+}
+
+// MobileQUICConfig returns QUIC configuration for memory-constrained platforms (iOS).
+// iOS Network Extension has ~50 MB memory limit; these windows keep QUIC overhead under ~8 MB
+// while still allowing ~320 Mbps at 100ms RTT.
+func MobileQUICConfig() *quic.Config {
+	return &quic.Config{
+		InitialStreamReceiveWindow:     4 << 20, // 4 MB
+		MaxStreamReceiveWindow:         4 << 20, // 4 MB
+		InitialConnectionReceiveWindow: 8 << 20, // 8 MB
+		MaxConnectionReceiveWindow:     8 << 20, // 8 MB
+		EnableDatagrams:                true,
+		MaxIdleTimeout:                 30 * time.Second,
+		KeepAlivePeriod:                10 * time.Second,
+		MaxIncomingStreams:              256,
 	}
 }
 
@@ -61,7 +84,8 @@ type QUICClient struct {
 	serverAddr   string
 	hopStart     int
 	hopEnd       int
-	tlsConfig    *tls.Config // override for testing (bypasses BuildClientTLSConfig)
+	tlsConfig    *tls.Config   // override for testing (bypasses BuildClientTLSConfig)
+	quicConfig   *quic.Config  // override for platform-specific tuning (e.g., iOS)
 	directDialer DirectDialer
 
 	mu        sync.Mutex
@@ -86,6 +110,12 @@ func NewQUICClient(cfg Config, store *TicketStore) *QUICClient {
 // SetTLSConfig overrides the TLS config for testing (bypasses BuildClientTLSConfig).
 func (c *QUICClient) SetTLSConfig(cfg *tls.Config) {
 	c.tlsConfig = cfg
+}
+
+// SetQUICConfig overrides the QUIC config for platform-specific tuning.
+// Use MobileQUICConfig() for iOS to stay within memory limits.
+func (c *QUICClient) SetQUICConfig(cfg *quic.Config) {
+	c.quicConfig = cfg
 }
 
 // SetDirectDialer sets a physical-interface-bound dialer for bypassing TUN.
@@ -151,11 +181,20 @@ func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
 		tlsCfg.NextProtos = []string{"h3"}
 	}
 
-	conn, err := transport.Dial(ctx, udpAddr, tlsCfg, DefaultQUICConfig())
+	qcfg := c.quicConfig
+	if qcfg == nil {
+		qcfg = DefaultQUICConfig()
+	}
+
+	conn, err := transport.Dial(ctx, udpAddr, tlsCfg, qcfg)
 	if err != nil {
 		transport.Close()
 		return nil, fmt.Errorf("wire: QUIC dial: %w", err)
 	}
+
+	// Set PCC congestion control (replaces default Cubic)
+	conn.SetCongestionControl(pcc.NewPCCSenderGFWMode(pcc.DefaultMaxRate))
+	log.Printf("wire: QUIC client PCC enabled (maxRate=%d Mbps)", pcc.DefaultMaxRate/1_000_000)
 
 	c.conn = conn
 	c.transport = transport
@@ -359,6 +398,8 @@ func (s *QUICServer) acceptLoop() {
 			s.sendTCP(tcpAcceptResult{err: fmt.Errorf("wire: accept: %w", err)})
 			return
 		}
+		// Set PCC congestion control for server-side sending (critical for download speed)
+		conn.SetCongestionControl(pcc.NewPCCSenderGFWMode(pcc.DefaultMaxRate))
 		go s.handleConn(conn)
 	}
 }
