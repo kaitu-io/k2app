@@ -8,8 +8,10 @@ Two binaries: `k2` (client) and `k2s` (server). Client has daemon architecture w
 ```bash
 go build -o k2 ./cmd/k2            # Build client
 go build -o k2s ./cmd/k2s          # Build server
-go test ./...                      # All tests (242 wire + core + dns + daemon + server + e2e)
+go test ./...                      # All tests (wire + core + dns + mobile + daemon + server + e2e)
 go test -short ./...               # Fast: skip live DNS/network tests
+make mobile-ios                    # iOS xcframework (gomobile bind)
+make mobile-android                # Android aar (gomobile bind)
 sudo k2 run -c client.yaml         # Client foreground (dev)
 k2s run                            # Server zero-config (auto-generates certs, ECH, auth)
 k2s run -s server.yaml             # Server with explicit config
@@ -37,12 +39,14 @@ wire/AGENT.md                  k2v5 wire protocol, Dialer/Listener interfaces
 wire/k2v5-protocol-spec.md    k2v5 protocol specification (TLS, ECH, camouflage, framing)
 wire/tlspad/AGENT.md           TLS record padding for fingerprint mimicry
 wire/pcc/AGENT.md              PCC Vivace congestion control
+mobile/                        Mobile SDK (Engine, EventHandler, dnsHandler)
 test/AGENT.md                  E2E integration tests
 ```
 
 ## Data Flow
 
-- DNS: App -> TUN -> DNS Middleware (13 steps) -> Cache/Filter/k2rule/TmpRule -> Upstream
+- DNS (L4/mobile): App -> TUN -> gVisor -> dnsHandler (port 53) -> Middleware.HandleQuery -> Cache/Filter/k2rule/TmpRule -> Upstream
+- DNS (L3/desktop): App -> TUN -> DNS Middleware.HandleDNSQuery (raw IP) -> HandleQuery -> same pipeline
 - Traffic: TUN -> gVisor stack -> ConnectionHandler -> Router -> Wire (QUIC/TCP-WS) -> Server
 - Server: Wire -> Auth -> AcceptTCP/ServeUDP -> net.Dial -> Target
 - Control: CLI -> HTTP 127.0.0.1:1777 -> Daemon -> Tunnel
@@ -55,11 +59,13 @@ test/AGENT.md                  E2E integration tests
 - `wire.Dialer`: DialTCP, DialUDP, Close (implemented by QUICClient, TCPWSClient, TransportManager)
 - `wire.Listener`: AcceptTCP, ServeUDP, Close (implemented by QUICServer, TCPWSServer)
 - `provider.Provider`: Start(ctx, ConnectionHandler), Close, Name (TUN/Proxy/iOS/Android)
-- `provider.ConnectionHandler`: HandleTCP(conn, dest), HandleUDP(conn, dest) (implemented by ClientTunnel)
+- `provider.ConnectionHandler`: HandleTCP(conn, dest), HandleUDP(conn, dest) (implemented by ClientTunnel, mobile.dnsHandler)
+- `dns.DNSQuerier`: Query(*dns.Msg) (*dns.Msg, error) (implemented by DirectDNSClient, ProxyDNSClient)
 
 **Binary Split**:
 - `k2`: client (CLI, daemon, provider, core, DNS middleware)
 - `k2s`: server (listener, auth, TCP/UDP handlers)
+- `mobile/`: gomobile SDK (Engine + EventHandler + dnsHandler composition)
 - Shared: wire/, config/, some daemon/ files
 
 ## Critical Gotchas
@@ -77,6 +83,7 @@ test/AGENT.md                  E2E integration tests
 - uTLS forces outer SNI = ECH config's `public_name` — cannot be overridden independently
 - Server generates dual certs (RSA+EC) — both padded to match target site's cert length
 - EC CA (`wire/kaitu_ca.pem`, disguised as DigiCert) can sign both RSA and EC server certs
+- `tun_desktop.go` build tag: `(darwin && !ios) || (linux && !android) || windows` — must exclude android/ios
 
 ## Dependencies
 
@@ -86,6 +93,7 @@ test/AGENT.md                  E2E integration tests
 - `github.com/apernet/quic-go` — QUIC with congestion control API
 - `github.com/metacubex/utls` — TLS fingerprinting + ECH
 - `github.com/xtaci/smux/v2` — TCP-WS stream multiplexing
+- `golang.org/x/mobile` — gomobile bind (iOS xcframework + Android aar)
 
 ## TODOs
 
@@ -99,4 +107,4 @@ docs/todos/p2-*.md     Nice to have
 
 ## Status
 
-**Done**: Full L4 architecture, wire protocol (QUIC+TCP-WS), DNS middleware, auth, ECH (DNS-based forging + config rotation), TLS record padding, dual certs (RSA+EC), client CA pool (system + Kaitu CA - Chinese CAs), PCC, client tunnel, server handlers, e2e tests, zero-config server startup, k2/k2s binaries
+**Done**: Full L4 architecture, wire protocol (QUIC+TCP-WS), DNS middleware (L3+L4), auth, ECH (DNS-based forging + config rotation), TLS record padding, dual certs (RSA+EC), client CA pool (system + Kaitu CA - Chinese CAs), PCC, client tunnel, server handlers, e2e tests, zero-config server startup, k2/k2s binaries, mobile SDK (gomobile, iOS+Android)
