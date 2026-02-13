@@ -6,7 +6,6 @@ import (
 	"log"
 	"net"
 	"strings"
-	"time"
 
 	"github.com/kaitu-io/k2rule"
 	"github.com/kaitu-io/k2/core/packet"
@@ -20,8 +19,7 @@ type Middleware struct {
 	proxyDNS  *ProxyDNSClient
 
 	// Caches
-	dnsCache *DNSCache       // DNS message cache (with negative caching)
-	ipCache  *DynamicIPCache // IP → Target mapping for routing
+	dnsCache *DNSCache // DNS message cache (with negative caching)
 
 	// Filters
 	hosts  *HostsFile // /etc/hosts lookup
@@ -38,9 +36,8 @@ type Middleware struct {
 type MiddlewareConfig struct {
 	DirectDNS *DirectDNSClient
 	ProxyDNS  *ProxyDNSClient
-	DNSCache  *DNSCache
-	IPCache   *DynamicIPCache
-	Hosts     *HostsFile
+	DNSCache *DNSCache
+	Hosts    *HostsFile
 	Filter    *Filter
 	Metrics   *Metrics
 	Writer    io.Writer
@@ -52,7 +49,6 @@ func NewMiddleware(cfg MiddlewareConfig) *Middleware {
 		directDNS: cfg.DirectDNS,
 		proxyDNS:  cfg.ProxyDNS,
 		dnsCache:  cfg.DNSCache,
-		ipCache:   cfg.IPCache,
 		hosts:     cfg.Hosts,
 		filter:    cfg.Filter,
 		metrics:   cfg.Metrics,
@@ -154,7 +150,7 @@ func (m *Middleware) HandleDNSQuery(pkt []byte, info packet.Info) error {
 	}
 
 	// 9. Domain-based routing (k2rule)
-	action := k2rule.MatchDomain(domain)
+	action := k2rule.Match(domain)
 
 	// 10. Query upstream DNS
 	switch action {
@@ -196,25 +192,12 @@ func (m *Middleware) HandleDNSQuery(pkt []byte, info packet.Info) error {
 		m.dnsCache.Add(domain, query.Question[0].Qtype, resp)
 	}
 
-	// 12. Update IP cache for packet routing.
-	// Skip caching when k2rule already gives the correct answer for an IP
-	// (e.g. Chinese IPs that k2rule routes "direct" via GeoIP). This reduces
-	// cache size significantly since most IPs fall into GeoIP ranges.
-	if resp != nil && resp.Rcode == dns.RcodeSuccess && m.ipCache != nil {
+	// 12. Store DNS-learned IP routes as temporary rules.
+	// SetTmpRule skips storage when static rules already agree (built-in optimization).
+	if resp != nil && resp.Rcode == dns.RcodeSuccess {
 		ips := extractIPsFromResponse(resp)
-		ttl := extractTTL(resp)
-
 		for _, ip := range ips {
-			parsedIP := net.ParseIP(ip)
-			if parsedIP != nil && k2rule.MatchIP(parsedIP) == action {
-				continue // k2rule agrees — no need to cache
-			}
-			rule := IPRule{
-				Domain:   domain,
-				Action:   action,
-				ExpireAt: time.Now().Add(time.Duration(ttl) * time.Second),
-			}
-			m.ipCache.Add(ip, rule)
+			k2rule.SetTmpRule(ip, action)
 		}
 	}
 

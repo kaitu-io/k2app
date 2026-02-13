@@ -8,7 +8,6 @@ import (
 	"sync"
 
 	"github.com/kaitu-io/k2rule"
-	"github.com/kaitu-io/k2/core/dns"
 	"github.com/kaitu-io/k2/provider"
 	"github.com/kaitu-io/k2/wire"
 )
@@ -20,7 +19,6 @@ type ClientTunnel struct {
 	provider     provider.Provider
 	dialer       wire.Dialer
 	router       *Router
-	ipCache      *dns.DynamicIPCache
 	directDialer wire.DirectDialer
 
 	ctx    context.Context
@@ -35,7 +33,6 @@ type ClientTunnelConfig struct {
 	Provider     provider.Provider
 	Dialer       wire.Dialer
 	Router       *Router
-	IPCache      *dns.DynamicIPCache
 	DirectDialer wire.DirectDialer
 }
 
@@ -45,7 +42,6 @@ func NewClientTunnel(cfg ClientTunnelConfig) *ClientTunnel {
 		provider:     cfg.Provider,
 		dialer:       cfg.Dialer,
 		router:       cfg.Router,
-		ipCache:      cfg.IPCache,
 		directDialer: cfg.DirectDialer,
 	}
 }

@@ -42,7 +42,7 @@ test/AGENT.md                  E2E integration tests
 
 ## Data Flow
 
-- DNS: App -> TUN -> DNS Middleware (13 steps) -> Cache/Filter/k2rule -> Upstream
+- DNS: App -> TUN -> DNS Middleware (13 steps) -> Cache/Filter/k2rule/TmpRule -> Upstream
 - Traffic: TUN -> gVisor stack -> ConnectionHandler -> Router -> Wire (QUIC/TCP-WS) -> Server
 - Server: Wire -> Auth -> AcceptTCP/ServeUDP -> net.Dial -> Target
 - Control: CLI -> HTTP 127.0.0.1:1777 -> Daemon -> Tunnel
@@ -80,7 +80,7 @@ test/AGENT.md                  E2E integration tests
 
 ## Dependencies
 
-- `github.com/kaitu-io/k2rule v0.3.0-go` — domain/IP routing rules with unified Init API
+- `github.com/kaitu-io/k2rule v0.3.1-go` — domain/IP routing rules with unified Init API + SetTmpRule
 - `github.com/miekg/dns` — DNS message handling
 - `github.com/sagernet/sing-tun` — TUN device with gVisor stack
 - `github.com/apernet/quic-go` — QUIC with congestion control API

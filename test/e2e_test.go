@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/kaitu-io/k2/core"
-	"github.com/kaitu-io/k2/core/dns"
 	"github.com/kaitu-io/k2/wire"
 )
 
@@ -23,12 +22,10 @@ func TestE2E_QUIC_TCPProxy(t *testing.T) {
 
 	// Create client tunnel with mock provider.
 	prov := &mockProvider{}
-	ipCache := dns.NewDynamicIPCache()
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{
 		Provider: prov,
 		Dialer:   env.quicClient,
-		Router:   core.NewRouter(ipCache),
-		IPCache:  ipCache,
+		Router:   core.NewRouter(),
 	})
 	if err := tunnel.Start(context.Background()); err != nil {
 		t.Fatal(err)
@@ -76,12 +73,10 @@ func TestE2E_QUIC_UDPProxy(t *testing.T) {
 
 	// Create client tunnel with mock provider.
 	prov := &mockProvider{}
-	ipCache := dns.NewDynamicIPCache()
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{
 		Provider: prov,
 		Dialer:   env.quicClient,
-		Router:   core.NewRouter(ipCache),
-		IPCache:  ipCache,
+		Router:   core.NewRouter(),
 	})
 	if err := tunnel.Start(context.Background()); err != nil {
 		t.Fatal(err)
@@ -123,12 +118,10 @@ func TestE2E_TCPWS_TCPProxy(t *testing.T) {
 
 	// Create client tunnel with mock provider.
 	prov := &mockProvider{}
-	ipCache := dns.NewDynamicIPCache()
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{
 		Provider: prov,
 		Dialer:   env.tcpwsClient,
-		Router:   core.NewRouter(ipCache),
-		IPCache:  ipCache,
+		Router:   core.NewRouter(),
 	})
 	if err := tunnel.Start(context.Background()); err != nil {
 		t.Fatal(err)
@@ -177,12 +170,10 @@ func TestE2E_TransportManager_Failover(t *testing.T) {
 	// No QUIC set → falls back to TCP-WS
 
 	prov := &mockProvider{}
-	ipCache := dns.NewDynamicIPCache()
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{
 		Provider: prov,
 		Dialer:   tm,
-		Router:   core.NewRouter(ipCache),
-		IPCache:  ipCache,
+		Router:   core.NewRouter(),
 	})
 	if err := tunnel.Start(context.Background()); err != nil {
 		t.Fatal(err)
