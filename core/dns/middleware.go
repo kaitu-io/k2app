@@ -12,11 +12,16 @@ import (
 	"github.com/miekg/dns"
 )
 
+// DNSQuerier is satisfied by DirectDNSClient and ProxyDNSClient.
+type DNSQuerier interface {
+	Query(query *dns.Msg) (*dns.Msg, error)
+}
+
 // Middleware handles DNS query interception and routing
 type Middleware struct {
 	// Upstream DNS clients
-	directDNS *DirectDNSClient
-	proxyDNS  *ProxyDNSClient
+	directDNS DNSQuerier
+	proxyDNS  DNSQuerier
 
 	// Caches
 	dnsCache *DNSCache // DNS message cache (with negative caching)
@@ -28,19 +33,19 @@ type Middleware struct {
 	// Metrics
 	metrics *Metrics
 
-	// Writer for sending raw IP packet responses (L3 mode, will be replaced in T5)
+	// Writer for sending raw IP packet responses (L3 mode, nil for L4)
 	writer io.Writer
 }
 
 // MiddlewareConfig contains configuration for DNS middleware
 type MiddlewareConfig struct {
-	DirectDNS *DirectDNSClient
-	ProxyDNS  *ProxyDNSClient
-	DNSCache *DNSCache
-	Hosts    *HostsFile
+	DirectDNS DNSQuerier
+	ProxyDNS  DNSQuerier
+	DNSCache  *DNSCache
+	Hosts     *HostsFile
 	Filter    *Filter
 	Metrics   *Metrics
-	Writer    io.Writer
+	Writer    io.Writer // nil for L4-only usage
 }
 
 // NewMiddleware creates a new DNS middleware
@@ -56,115 +61,122 @@ func NewMiddleware(cfg MiddlewareConfig) *Middleware {
 	}
 }
 
-// HandleDNSQuery processes a DNS query with comprehensive 10-step pipeline
-func (m *Middleware) HandleDNSQuery(pkt []byte, info packet.Info) error {
+// HandleQuery processes raw DNS query bytes through the full pipeline.
+// Returns raw DNS response bytes. This is the L4-friendly entry point.
+func (m *Middleware) HandleQuery(query []byte) ([]byte, error) {
 	// Track total queries
 	if m.metrics != nil {
 		m.metrics.IncrTotal()
 	}
 
-	// 1. Extract UDP payload
-	udpPayload, err := packet.ExtractUDPPayload(pkt)
+	// 1. Parse DNS query
+	var msg dns.Msg
+	if err := msg.Unpack(query); err != nil {
+		if m.metrics != nil {
+			m.metrics.IncrError()
+		}
+		return nil, fmt.Errorf("unpack DNS query: %w", err)
+	}
+
+	// 2-12. Full pipeline (hosts, filter, cache, k2rule, upstream, SetTmpRule)
+	resp, err := m.processQuery(&msg)
 	if err != nil {
-		if m.metrics != nil {
-			m.metrics.IncrError()
-		}
-		return fmt.Errorf("extract UDP payload: %w", err)
+		return nil, err
 	}
 
-	// 2. Parse DNS query
-	var query dns.Msg
-	if err := query.Unpack(udpPayload); err != nil {
-		if m.metrics != nil {
-			m.metrics.IncrError()
-		}
-		return fmt.Errorf("unpack DNS query: %w", err)
+	if resp == nil {
+		return nil, fmt.Errorf("no DNS response")
 	}
 
-	// 3. Extract domain from query
-	domain := extractQueryDomain(&query)
+	// 13. Pack response
+	return resp.Pack()
+}
+
+// processQuery runs the DNS pipeline on a parsed message.
+// Shared by both HandleQuery (L4) and HandleDNSQuery (L3).
+func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, error) {
+	// 1. Extract domain from query
+	domain := extractQueryDomain(query)
 	if domain == "" {
 		if m.metrics != nil {
 			m.metrics.IncrError()
 		}
-		return fmt.Errorf("no domain in DNS query")
+		return nil, fmt.Errorf("no domain in DNS query")
 	}
 
-	qtype := extractQueryType(&query)
+	qtype := extractQueryType(query)
 	log.Printf("DNS: %s %s", domain, qtype)
 
-	var resp *dns.Msg
-
-	// 4. Check hosts file first (OS behavior)
+	// 2. Check hosts file first (OS behavior)
 	if m.hosts != nil {
 		if ips, found := m.hosts.Lookup(domain); found {
 			if m.metrics != nil {
 				m.metrics.IncrHostsHit()
 			}
-			resp = m.createHostsResponse(&query, ips)
-			return m.sendResponse(resp, info)
+			return m.createHostsResponse(query, ips), nil
 		}
 	}
 
-	// 5. Check RFC 6761 special-use domains
+	// 3. Check RFC 6761 special-use domains
 	if m.filter != nil && m.filter.IsSpecialUse(domain) {
 		if m.metrics != nil {
 			m.metrics.IncrSpecialUseHit()
 		}
-		resp = m.filter.HandleSpecialUse(&query)
 		log.Printf("DNS: %s special-use → filtered", domain)
-		return m.sendResponse(resp, info)
+		return m.filter.HandleSpecialUse(query), nil
 	}
 
-	// 6. Check local domains (.local, .lan, etc.)
+	// 4. Check local domains (.local, .lan, etc.)
 	if m.filter != nil && m.filter.IsLocalDomain(domain) {
 		if m.metrics != nil {
 			m.metrics.IncrLocalDomainHit()
 		}
-		resp = m.filter.CreateNXDOMAIN(&query)
 		log.Printf("DNS: %s local domain → NXDOMAIN", domain)
-		return m.sendResponse(resp, info)
+		return m.filter.CreateNXDOMAIN(query), nil
 	}
 
-	// 7. Noise filtering (PTR, AAAA, WPAD)
+	// 5. Noise filtering (PTR, AAAA, WPAD)
 	if m.filter != nil {
-		if isNoise, noiseResp := m.filter.TryFilterNoise(&query); isNoise {
+		if isNoise, noiseResp := m.filter.TryFilterNoise(query); isNoise {
 			if m.metrics != nil {
 				m.metrics.IncrNoiseFiltered()
 			}
 			log.Printf("DNS: %s noise → filtered", domain)
-			return m.sendResponse(noiseResp, info)
+			return noiseResp, nil
 		}
 	}
 
-	// 8. Check DNS message cache
+	// 6. Check DNS message cache
 	if m.dnsCache != nil {
 		if cachedResp, found := m.dnsCache.Get(domain, query.Question[0].Qtype); found {
 			if m.metrics != nil {
 				m.metrics.IncrMessageCacheHit()
 			}
-			cachedResp.Id = query.Id // Update query ID
+			cachedResp.Id = query.Id
 			log.Printf("DNS: %s cache hit", domain)
-			return m.sendResponse(cachedResp, info)
+			return cachedResp, nil
 		}
 	}
 
-	// 9. Domain-based routing (k2rule)
+	// 7. Domain-based routing (k2rule)
 	action := k2rule.Match(domain)
 
-	// 10. Query upstream DNS
+	// 8. Query upstream DNS
+	var resp *dns.Msg
+	var err error
+
 	switch action {
 	case k2rule.TargetDirect:
 		if m.metrics != nil {
 			m.metrics.IncrDirect()
 		}
-		resp, err = m.directDNS.Query(&query)
+		resp, err = m.directDNS.Query(query)
 		if err != nil {
 			if m.metrics != nil {
 				m.metrics.IncrError()
 			}
 			log.Printf("DNS: direct query failed for %s: %v", domain, err)
-			return err
+			return nil, err
 		}
 		log.Printf("DNS: %s → direct", domain)
 
@@ -172,27 +184,27 @@ func (m *Middleware) HandleDNSQuery(pkt []byte, info packet.Info) error {
 		if m.metrics != nil {
 			m.metrics.IncrProxy()
 		}
-		resp, err = m.proxyDNS.Query(&query)
+		resp, err = m.proxyDNS.Query(query)
 		if err != nil {
 			if m.metrics != nil {
 				m.metrics.IncrError()
 			}
 			log.Printf("DNS: proxy query failed for %s: %v", domain, err)
-			return err
+			return nil, err
 		}
 		log.Printf("DNS: %s → proxy", domain)
 
 	case k2rule.TargetReject:
-		resp = createNXDOMAIN(&query)
+		resp = createNXDOMAIN(query)
 		log.Printf("DNS: %s → reject", domain)
 	}
 
-	// 11. Cache DNS message
+	// 9. Cache DNS message
 	if m.dnsCache != nil && resp != nil {
 		m.dnsCache.Add(domain, query.Question[0].Qtype, resp)
 	}
 
-	// 12. Store DNS-learned IP routes as temporary rules.
+	// 10. Store DNS-learned IP routes as temporary rules.
 	// SetTmpRule skips storage when static rules already agree (built-in optimization).
 	if resp != nil && resp.Rcode == dns.RcodeSuccess {
 		ips := extractIPsFromResponse(resp)
@@ -201,23 +213,29 @@ func (m *Middleware) HandleDNSQuery(pkt []byte, info packet.Info) error {
 		}
 	}
 
-	// 13. Send response
-	return m.sendResponse(resp, info)
+	return resp, nil
 }
 
-// sendResponse sends a DNS response back through the TUN device
-func (m *Middleware) sendResponse(resp *dns.Msg, info packet.Info) error {
-	if resp == nil {
-		return fmt.Errorf("no DNS response to send")
-	}
-
-	// Pack DNS response
-	respBytes, err := resp.Pack()
+// HandleDNSQuery processes a DNS query from L3 packets (TUN device).
+// Extracts UDP payload, runs the pipeline via HandleQuery, wraps response in IP packet.
+func (m *Middleware) HandleDNSQuery(pkt []byte, info packet.Info) error {
+	// 1. Extract UDP payload
+	udpPayload, err := packet.ExtractUDPPayload(pkt)
 	if err != nil {
-		return fmt.Errorf("pack DNS response: %w", err)
+		if m.metrics != nil {
+			m.metrics.IncrTotal()
+			m.metrics.IncrError()
+		}
+		return fmt.Errorf("extract UDP payload: %w", err)
 	}
 
-	// Build UDP/IP response packet (swap src/dst)
+	// 2-12. Run full pipeline via HandleQuery
+	respBytes, err := m.HandleQuery(udpPayload)
+	if err != nil {
+		return err
+	}
+
+	// 13. Build UDP/IP response packet (swap src/dst)
 	respPacket, err := packet.BuildUDPIP(
 		info.DstIP,   // DNS server IP becomes source
 		info.SrcIP,   // Client IP becomes destination
