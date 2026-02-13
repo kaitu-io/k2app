@@ -35,7 +35,7 @@ build/
 
 k2
 k2s
-gen-bench-config
+/gen-bench-config
 .claude/agent-memory/
 
 # Bench artifacts
