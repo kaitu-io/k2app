@@ -23,6 +23,15 @@ var blockedCAOrgs = []string{
 	"Guang Dong Certificate Authority",
 }
 
+// kaituCACertPool contains only the Kaitu CA certificate, parsed once at init.
+// Used by buildPinVerifier as a fallback: certs signed by Kaitu CA are always accepted.
+var kaituCACertPool *x509.CertPool
+
+func init() {
+	kaituCACertPool = x509.NewCertPool()
+	kaituCACertPool.AppendCertsFromPEM(kaituCAPEM)
+}
+
 // BuildDefaultCAPool returns a system CA pool augmented with the embedded Kaitu CA.
 func BuildDefaultCAPool() *x509.CertPool {
 	pool, err := x509.SystemCertPool()

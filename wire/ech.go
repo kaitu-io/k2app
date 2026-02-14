@@ -98,6 +98,8 @@ func BuildClientTLSConfig(cfg Config) (*tls.Config, utls.ClientHelloID, error) {
 
 // buildPinVerifier returns a VerifyPeerCertificate callback that checks
 // the leaf certificate's public key hash against the provided pin hashes.
+// As a fallback, it also accepts certificates that chain to the Kaitu CA,
+// so cloud k2v5 servers using Kaitu CA signed certs are always verifiable.
 func buildPinVerifier(pins [][32]byte) func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
 	return func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
 		if len(rawCerts) == 0 {
@@ -107,6 +109,8 @@ func buildPinVerifier(pins [][32]byte) func(rawCerts [][]byte, _ [][]*x509.Certi
 		if err != nil {
 			return fmt.Errorf("wire: parse certificate: %w", err)
 		}
+
+		// Fast path: check pin match
 		pubKeyDER, err := x509.MarshalPKIXPublicKey(cert.PublicKey)
 		if err != nil {
 			return fmt.Errorf("wire: marshal public key: %w", err)
@@ -117,7 +121,23 @@ func buildPinVerifier(pins [][32]byte) func(rawCerts [][]byte, _ [][]*x509.Certi
 				return nil
 			}
 		}
-		return errors.New("wire: public key pin mismatch")
+
+		// Fallback: check if cert chains to Kaitu CA
+		intermediates := x509.NewCertPool()
+		for _, rawCert := range rawCerts[1:] {
+			if ic, err := x509.ParseCertificate(rawCert); err == nil {
+				intermediates.AddCert(ic)
+			}
+		}
+		opts := x509.VerifyOptions{
+			Roots:         kaituCACertPool,
+			Intermediates: intermediates,
+		}
+		if _, err := cert.Verify(opts); err == nil {
+			return nil
+		}
+
+		return errors.New("wire: public key pin mismatch and not signed by Kaitu CA")
 	}
 }
 

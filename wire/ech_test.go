@@ -1,11 +1,19 @@
 package wire
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
+	"math/big"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	utls "github.com/metacubex/utls"
 )
@@ -587,5 +595,130 @@ func TestEnsureECHKey_LoadExisting(t *testing.T) {
 	}
 	if string(echConfig1) != string(echConfig2) {
 		t.Error("echConfig mismatch between first and second call")
+	}
+}
+
+// generateTestCA creates a test CA key pair and certificate for testing.
+func generateTestCA() (*x509.Certificate, *ecdsa.PrivateKey, error) {
+	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	caTemplate := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{Organization: []string{"Test CA"}},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(10 * 365 * 24 * time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		MaxPathLen:            2,
+	}
+
+	caDER, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caKey.PublicKey, caKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	caCert, err := x509.ParseCertificate(caDER)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return caCert, caKey, nil
+}
+
+// generateSignedCert creates a leaf certificate signed by the given CA.
+func generateSignedCert(caCert *x509.Certificate, caKey *ecdsa.PrivateKey) (tls.Certificate, error) {
+	leafKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+
+	leafTemplate := &x509.Certificate{
+		SerialNumber: big.NewInt(2),
+		Subject:      pkix.Name{Organization: []string{"Test Server"}},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(365 * 24 * time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		DNSNames:     []string{"test.example.com"},
+	}
+
+	leafDER, err := x509.CreateCertificate(rand.Reader, leafTemplate, caCert, &leafKey.PublicKey, caKey)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+
+	return tls.Certificate{
+		Certificate: [][]byte{leafDER, caCert.Raw},
+		PrivateKey:  leafKey,
+	}, nil
+}
+
+func TestBuildClientTLSConfig_PinWithKaituCA(t *testing.T) {
+	// Create a test CA to stand in for the Kaitu CA
+	caCert, caKey, err := generateTestCA()
+	if err != nil {
+		t.Fatalf("generateTestCA: %v", err)
+	}
+
+	// Override kaituCACertPool for this test
+	origPool := kaituCACertPool
+	testPool := x509.NewCertPool()
+	testPool.AddCert(caCert)
+	kaituCACertPool = testPool
+	defer func() { kaituCACertPool = origPool }()
+
+	// Generate a cert signed by the test CA
+	signedCert, err := generateSignedCert(caCert, caKey)
+	if err != nil {
+		t.Fatalf("generateSignedCert: %v", err)
+	}
+
+	// Create a dummy pin that does NOT match the signed cert
+	dummyPin := sha256.Sum256([]byte("not-a-real-public-key"))
+	dummyPinB64 := base64.URLEncoding.EncodeToString(dummyPin[:])
+	pinStr := "sha256:" + dummyPinB64
+
+	pins, err := ParsePins(pinStr)
+	if err != nil {
+		t.Fatalf("ParsePins: %v", err)
+	}
+
+	verifier := buildPinVerifier(pins)
+
+	// The verifier should ACCEPT this cert because it chains to Kaitu CA
+	// (even though the pin doesn't match)
+	err = verifier(signedCert.Certificate, nil)
+	if err != nil {
+		t.Fatalf("verifier should accept cert signed by Kaitu CA, got: %v", err)
+	}
+}
+
+func TestBuildClientTLSConfig_PinRejectsUnknown(t *testing.T) {
+	// Create a self-signed cert (NOT signed by Kaitu CA)
+	pair, err := GenerateCertPair()
+	if err != nil {
+		t.Fatalf("GenerateCertPair: %v", err)
+	}
+
+	// Create a dummy pin that does NOT match the self-signed cert
+	dummyPin := sha256.Sum256([]byte("not-a-real-public-key"))
+	dummyPinB64 := base64.URLEncoding.EncodeToString(dummyPin[:])
+	pinStr := "sha256:" + dummyPinB64
+
+	pins, err := ParsePins(pinStr)
+	if err != nil {
+		t.Fatalf("ParsePins: %v", err)
+	}
+
+	verifier := buildPinVerifier(pins)
+
+	// The verifier should REJECT this cert: pin doesn't match AND not signed by Kaitu CA
+	err = verifier(pair.EC.Certificate, nil)
+	if err == nil {
+		t.Fatal("verifier should reject cert that neither matches pin nor chains to Kaitu CA")
 	}
 }
