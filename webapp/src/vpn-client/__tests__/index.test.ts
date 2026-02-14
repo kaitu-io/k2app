@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createVpnClient, getVpnClient, resetVpnClient } from '../index';
+import { createVpnClient, getVpnClient, resetVpnClient, initVpnClient } from '../index';
 import { MockVpnClient } from '../mock-client';
 import { HttpVpnClient } from '../http-client';
 
@@ -39,5 +39,34 @@ describe('VpnClient factory', () => {
     createVpnClient();
     resetVpnClient();
     expect(() => getVpnClient()).toThrow('VpnClient not initialized');
+  });
+});
+
+describe('initVpnClient', () => {
+  beforeEach(() => {
+    resetVpnClient();
+  });
+
+  it('returns HttpVpnClient when not on native platform', async () => {
+    const result = await initVpnClient();
+    expect(result).toBeInstanceOf(HttpVpnClient);
+  });
+
+  it('uses the override client when provided', async () => {
+    const mock = new MockVpnClient();
+    const result = await initVpnClient(mock);
+    expect(result).toBe(mock);
+  });
+
+  it('returns same instance on subsequent calls', async () => {
+    const first = await initVpnClient();
+    const second = await initVpnClient();
+    expect(first).toBe(second);
+  });
+
+  it('makes instance available via getVpnClient', async () => {
+    const mock = new MockVpnClient();
+    await initVpnClient(mock);
+    expect(getVpnClient()).toBe(mock);
   });
 });
