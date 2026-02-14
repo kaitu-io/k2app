@@ -158,17 +158,30 @@ jobs:
         id: windows-sign
         shell: pwsh
         run: |
-          $signtool = "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe"
-          if (-not (Test-Path $signtool)) {
-            Write-Warning "signtool.exe not found at expected path"
+          # Dynamic signtool discovery — search all installed Windows SDK versions
+          $signtool = $null
+          $sdkRoot = "C:\Program Files (x86)\Windows Kits\10\bin"
+          if (Test-Path $sdkRoot) {
+            $signtool = Get-ChildItem -Path $sdkRoot -Recurse -Filter "signtool.exe" -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -like "*\x64\*" } |
+              Sort-Object { [version]($_.Directory.Parent.Name -replace '[^0-9.]','') } -Descending -ErrorAction SilentlyContinue |
+              Select-Object -First 1 -ExpandProperty FullName
+          }
+
+          if (-not $signtool) {
+            Write-Warning "signtool.exe not found in any Windows SDK version under $sdkRoot"
+            Write-Warning "Please install Windows SDK or ensure SimpliSign runner has SDK installed."
             echo "signed=false" >> $env:GITHUB_OUTPUT
+            echo "error=signtool_not_found" >> $env:GITHUB_OUTPUT
             exit 0
           }
+          Write-Host "Found signtool: $signtool"
 
           $installer = Get-ChildItem -Path "desktop\src-tauri\target\x86_64-pc-windows-msvc\release\bundle\nsis\*.exe" | Select-Object -First 1
           if (-not $installer) {
             Write-Warning "No installer found to sign"
             echo "signed=false" >> $env:GITHUB_OUTPUT
+            echo "error=no_installer" >> $env:GITHUB_OUTPUT
             exit 0
           }
 
@@ -178,6 +191,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             Write-Warning "Signing failed (exit code: $LASTEXITCODE)"
             echo "signed=false" >> $env:GITHUB_OUTPUT
+            echo "error=sign_failed" >> $env:GITHUB_OUTPUT
             exit 0
           }
 
@@ -190,17 +204,36 @@ jobs:
         if: matrix.os == 'windows-latest' && steps.windows-sign.outputs.signed != 'true'
         shell: bash
         run: |
+          ERROR_TYPE="${{ steps.windows-sign.outputs.error }}"
+          case "$ERROR_TYPE" in
+            signtool_not_found)
+              ERROR_MSG="signtool.exe not found on runner. Windows SDK is not installed.
+
+          Action required:
+          1. RDP into the Windows runner
+          2. Install Windows SDK: winget install Microsoft.WindowsSDK.10.0.22621
+          3. Ensure SimpliSign Desktop is installed and running
+          4. Re-run the workflow
+
+          See: scripts/ci/windows/README.md for full setup."
+              ;;
+            *)
+              ERROR_MSG="Windows code signing failed ($ERROR_TYPE). Possible causes:
+          1. SimpliSign Desktop not running or session expired
+          2. Certificate not available in SimpliSign
+          3. signtool command returned error
+
+          Action required:
+          1. RDP into the Windows runner
+          2. Ensure SimpliSign Desktop is running and authenticated
+          3. Re-run the workflow
+
+          See: scripts/ci/windows/README.md for setup."
+              ;;
+          esac
           ./scripts/ci/notify-slack.sh build-failure \
             --platform "Windows" \
-            --error "Windows code signing failed. Possible causes:
-          1. SimpliSign Desktop not running or session expired on the runner
-          2. signtool.exe not found (Windows SDK missing)
-          3. Certificate not available in SimpliSign
-
-          To fix: RDP into the Windows runner, ensure SimpliSign Desktop is
-          running and authenticated, then re-run the workflow.
-
-          See: scripts/ci/windows/README.md for setup instructions."
+            --error "$ERROR_MSG"
         env:
           SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_ALERT }}
         continue-on-error: true
