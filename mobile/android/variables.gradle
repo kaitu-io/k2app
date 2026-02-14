@@ -1,0 +1,6 @@
+ext {
+    minSdkVersion = 24
+    compileSdkVersion = 35
+    targetSdkVersion = 35
+    androidxAppCompatVersion = '1.7.0'
+}
