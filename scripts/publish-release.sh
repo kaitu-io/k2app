@@ -16,8 +16,8 @@ export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-ap-east-1}"
 
 VERSION=$(node -p "require('./package.json').version")
 PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
-S3_VER="s3://d.all7.cc/kaitu/desktop/${VERSION}"
-S3_ROOT="s3://d.all7.cc/kaitu/desktop"
+S3_VER="s3://d0.all7.cc/kaitu/desktop/${VERSION}"
+S3_ROOT="s3://d0.all7.cc/kaitu/desktop"
 REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 
 echo "Publishing Kaitu Desktop v${VERSION}"
