@@ -172,17 +172,27 @@ func (t *ClientTunnel) handleUDPProxy(local net.PacketConn, dest string) {
 	pipePacket(local, remote, nil)
 }
 
-// pipe does bidirectional copy between two connections.
+// Buffer pools to avoid per-connection allocations.
+var (
+	tcpBufPool = sync.Pool{New: func() any { b := make([]byte, 32*1024); return &b }}
+	udpBufPool = sync.Pool{New: func() any { b := make([]byte, 4096); return &b }}
+)
+
+// pipe copies data bidirectionally between two connections.
+// Each direction's completion closes the peer to unblock the other.
 func pipe(a, b net.Conn) {
-	done := make(chan struct{}, 2)
+	done := make(chan struct{})
 	go func() {
-		io.Copy(b, a)
-		done <- struct{}{}
+		bp := tcpBufPool.Get().(*[]byte)
+		io.CopyBuffer(b, a, *bp)
+		tcpBufPool.Put(bp)
+		b.Close()
+		close(done)
 	}()
-	go func() {
-		io.Copy(a, b)
-		done <- struct{}{}
-	}()
+	bp := tcpBufPool.Get().(*[]byte)
+	io.CopyBuffer(a, b, *bp)
+	tcpBufPool.Put(bp)
+	a.Close()
 	<-done
 }
 
@@ -193,7 +203,8 @@ func pipePacket(local, remote net.PacketConn, destAddr net.Addr) {
 
 	// local → remote
 	go func() {
-		buf := make([]byte, 4096)
+		bp := udpBufPool.Get().(*[]byte)
+		buf := *bp
 		for {
 			n, _, err := local.ReadFrom(buf)
 			if err != nil {
@@ -203,12 +214,14 @@ func pipePacket(local, remote net.PacketConn, destAddr net.Addr) {
 				break
 			}
 		}
+		udpBufPool.Put(bp)
 		done <- struct{}{}
 	}()
 
 	// remote → local
 	go func() {
-		buf := make([]byte, 4096)
+		bp := udpBufPool.Get().(*[]byte)
+		buf := *bp
 		for {
 			n, from, err := remote.ReadFrom(buf)
 			if err != nil {
@@ -218,6 +231,7 @@ func pipePacket(local, remote net.PacketConn, destAddr net.Addr) {
 				break
 			}
 		}
+		udpBufPool.Put(bp)
 		done <- struct{}{}
 	}()
 

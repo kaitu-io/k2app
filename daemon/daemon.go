@@ -79,7 +79,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	}
 
 	// Load persisted state and auto-reconnect if applicable.
-	d.tryAutoReconnect()
+	d.tryAutoReconnect(ctx)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -190,8 +190,9 @@ func (d *Daemon) doUp(wireURL, configPath string, pid int) error {
 	d.setState(StateConnected)
 
 	// Start PID monitoring if requested.
+	// Uses tunnelCtx so the goroutine stops when doDown() cancels the context.
 	if pid > 0 {
-		go d.monitorProcess(pid)
+		go d.monitorProcess(ctx, pid)
 	}
 
 	// Update persisted state.
@@ -234,7 +235,8 @@ func (d *Daemon) doDown() {
 }
 
 // tryAutoReconnect checks persisted state and reconnects if applicable.
-func (d *Daemon) tryAutoReconnect() {
+// ctx is the daemon's lifecycle context — reconnect is aborted if ctx is cancelled.
+func (d *Daemon) tryAutoReconnect(ctx context.Context) {
 	st, err := loadState()
 	if err != nil || st.State != StateConnected {
 		return
@@ -248,8 +250,13 @@ func (d *Daemon) tryAutoReconnect() {
 
 	log.Println("Auto-reconnect: reconnecting with saved config...")
 	go func() {
-		// Delay 5s to let daemon fully start.
-		time.Sleep(5 * time.Second)
+		// Delay 5s to let daemon fully start; abort if daemon shuts down.
+		select {
+		case <-time.After(5 * time.Second):
+		case <-ctx.Done():
+			log.Println("Auto-reconnect: cancelled during startup delay")
+			return
+		}
 		if err := d.doUp(st.WireURL, st.ConfigPath, 0); err != nil {
 			log.Printf("Auto-reconnect failed: %v", err)
 		}

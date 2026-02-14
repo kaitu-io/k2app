@@ -118,7 +118,7 @@ func BuildTunnel(ctx context.Context, cfg *config.ClientConfig) (*core.ClientTun
 	})
 
 	if err := tunnel.Start(ctx); err != nil {
-		tm.Close()
+		tunnel.Close()
 		return nil, fmt.Errorf("start tunnel: %w", err)
 	}
 

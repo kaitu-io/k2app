@@ -6,9 +6,16 @@ import (
 	"io"
 	"log"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/kaitu-io/k2/wire"
+)
+
+// Buffer pools to avoid per-connection allocations.
+var (
+	tcpBufPool = sync.Pool{New: func() any { b := make([]byte, 32*1024); return &b }}
+	udpBufPool = sync.Pool{New: func() any { b := make([]byte, 4096); return &b }}
 )
 
 // cgn is the Carrier-Grade NAT range (100.64.0.0/10), not covered by net.IP.IsPrivate().
@@ -121,20 +128,23 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 	// client -> target
 	go func() {
 		defer close(done)
-		buf := make([]byte, 4096)
+		bp := udpBufPool.Get().(*[]byte)
+		buf := *bp
 		for {
 			n, _, err := conn.ReadFrom(buf)
 			if err != nil {
-				return
+				break
 			}
 			if _, err := target.Write(buf[:n]); err != nil {
-				return
+				break
 			}
 		}
+		udpBufPool.Put(bp)
 	}()
 
 	// target -> client
-	buf := make([]byte, 4096)
+	bp := udpBufPool.Get().(*[]byte)
+	buf := *bp
 	for {
 		target.SetReadDeadline(time.Now().Add(30 * time.Second))
 		n, err := target.Read(buf)
@@ -145,6 +155,7 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 			break
 		}
 	}
+	udpBufPool.Put(bp)
 
 	conn.Close()
 	target.Close()
@@ -156,11 +167,15 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 func pipe(a, b net.Conn) {
 	done := make(chan struct{})
 	go func() {
-		io.Copy(b, a)
+		bp := tcpBufPool.Get().(*[]byte)
+		io.CopyBuffer(b, a, *bp)
+		tcpBufPool.Put(bp)
 		b.Close()
 		close(done)
 	}()
-	io.Copy(a, b)
+	bp := tcpBufPool.Get().(*[]byte)
+	io.CopyBuffer(a, b, *bp)
+	tcpBufPool.Put(bp)
 	a.Close()
 	<-done
 }

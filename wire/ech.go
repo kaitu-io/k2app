@@ -16,10 +16,13 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"time"
 
 	utls "github.com/metacubex/utls"
 )
+
+var copyBufPool = sync.Pool{New: func() any { b := make([]byte, 32*1024); return &b }}
 
 // ParseFingerprint maps the fp= URL parameter to a utls ClientHelloID.
 func ParseFingerprint(fp string) utls.ClientHelloID {
@@ -269,13 +272,21 @@ func ReverseProxy(client net.Conn, clientData []byte, target string) {
 	// Bidirectional forwarding (qTunnel pattern: two goroutines + channel + half-close)
 	done := make(chan struct{})
 	go func() {
-		io.Copy(remote, client)
-		remote.(*net.TCPConn).CloseWrite()
+		bp := copyBufPool.Get().(*[]byte)
+		io.CopyBuffer(remote, client, *bp)
+		copyBufPool.Put(bp)
+		if tc, ok := remote.(*net.TCPConn); ok {
+			tc.CloseWrite()
+		}
 		done <- struct{}{}
 	}()
 
-	io.Copy(client, remote)
-	client.(*net.TCPConn).CloseWrite()
+	bp := copyBufPool.Get().(*[]byte)
+	io.CopyBuffer(client, remote, *bp)
+	copyBufPool.Put(bp)
+	if tc, ok := client.(*net.TCPConn); ok {
+		tc.CloseWrite()
+	}
 	<-done
 }
 

@@ -340,6 +340,7 @@ func NewTCPWSServer(store *TicketStore) *TCPWSServer {
 func (s *TCPWSServer) HandleConn(conn net.Conn) {
 	sess, err := smux.Server(conn, DefaultSmuxConfig())
 	if err != nil {
+		conn.Close()
 		return
 	}
 	go s.handleSession(sess)
@@ -424,6 +425,9 @@ func (s *TCPWSServer) sendTCP(result tcpAcceptResult) {
 	select {
 	case s.tcpCh <- result:
 	case <-s.done:
+		if result.conn != nil {
+			result.conn.Close()
+		}
 	}
 }
 

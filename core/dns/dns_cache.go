@@ -28,6 +28,9 @@ type DNSCache struct {
 	minTTL     time.Duration // Minimum TTL (user requirement: 10 minutes)
 	maxTTL     time.Duration // Maximum TTL
 	maxEntries int           // Max cache entries (LRU eviction)
+
+	// Lifecycle
+	stopCleanup chan struct{}
 }
 
 // DNSCacheConfig contains DNS cache configuration
@@ -50,11 +53,12 @@ func NewDNSCache(cfg DNSCacheConfig) *DNSCache {
 	}
 
 	return &DNSCache{
-		messages:   make(map[string]CachedMessage),
-		negative:   make(map[string]time.Time),
-		minTTL:     cfg.MinTTL,
-		maxTTL:     cfg.MaxTTL,
-		maxEntries: cfg.MaxEntries,
+		messages:    make(map[string]CachedMessage),
+		negative:    make(map[string]time.Time),
+		minTTL:      cfg.MinTTL,
+		maxTTL:      cfg.MaxTTL,
+		maxEntries:  cfg.MaxEntries,
+		stopCleanup: make(chan struct{}),
 	}
 }
 
@@ -248,14 +252,35 @@ func (c *DNSCache) evictOldest() {
 	}
 }
 
-// StartCleanup starts background cleanup of expired entries
+// StartCleanup starts background cleanup of expired entries.
+// The goroutine stops when Close() is called.
 func (c *DNSCache) StartCleanup(interval time.Duration) {
-	ticker := time.NewTicker(interval)
 	go func() {
-		for range ticker.C {
-			c.cleanup()
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				c.cleanup()
+			case <-c.stopCleanup:
+				return
+			}
 		}
 	}()
+}
+
+// Close stops the cleanup goroutine and releases cached entries.
+func (c *DNSCache) Close() {
+	select {
+	case <-c.stopCleanup:
+	default:
+		close(c.stopCleanup)
+	}
+
+	c.mu.Lock()
+	clear(c.messages)
+	clear(c.negative)
+	c.mu.Unlock()
 }
 
 // cleanup removes all expired entries

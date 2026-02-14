@@ -543,6 +543,9 @@ func (s *QUICServer) sendTCP(result tcpAcceptResult) {
 	select {
 	case s.tcpCh <- result:
 	case <-s.done:
+		if result.conn != nil {
+			result.conn.Close()
+		}
 	}
 }
 

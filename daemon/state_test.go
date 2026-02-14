@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
@@ -54,7 +55,7 @@ func TestAutoReconnectSkipsStale(t *testing.T) {
 
 	d := New()
 	// tryAutoReconnect should skip because it's stale.
-	d.tryAutoReconnect()
+	d.tryAutoReconnect(context.Background())
 
 	// State should remain stopped.
 	if d.State() != StateStopped {
