@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/apernet/quic-go v0.57.2-0.20260111184307-eec823306178
 	github.com/coder/websocket v1.8.14
-	github.com/kaitu-io/k2rule v0.3.1-go
+	github.com/kaitu-io/k2rule v0.4.1-go
 	github.com/metacubex/utls v1.8.4
 	github.com/miekg/dns v1.1.72
 	github.com/sagernet/sing v0.7.6
@@ -18,6 +18,7 @@ require (
 require (
 	github.com/andybalholm/brotli v1.0.6 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
+	github.com/edsrzf/mmap-go v1.2.0 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/google/btree v1.1.3 // indirect

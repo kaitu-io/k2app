@@ -1,6 +1,6 @@
 .PHONY: build test generate build-windows build-linux build-nowebapp mobile-ios mobile-android mobile
 
-build:
+build: generate
 	go build -o build/k2 ./cmd/k2
 	go build -o build/k2s ./cmd/k2s
 
@@ -11,11 +11,11 @@ generate:
 	go generate ./wintun/
 	go generate ./cloud/
 
-build-windows:
+build-windows: generate
 	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o build/k2.exe ./cmd/k2
 	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o build/k2s.exe ./cmd/k2s
 
-build-linux:
+build-linux: generate
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o build/k2-linux ./cmd/k2
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o build/k2s-linux ./cmd/k2s
 
