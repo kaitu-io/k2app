@@ -2,6 +2,18 @@
 
 State machine + HTTP API on `127.0.0.1:1777`. Auto-installed as system service.
 
+## State Machine
+
+3 states: `stopped` → `connecting` → `connected` → `stopped`
+
+`lastError` is orthogonal — present in any state. API returns `{"state":"stopped", "error":"..."}` on failure.
+
+## Concurrency Model
+
+- `opMu sync.Mutex` — serializes doUp/doDown (coarse lifecycle lock)
+- `mu sync.RWMutex` — protects field access (fine-grained data lock)
+- `closeTunnel()` — idempotent teardown, caller must hold opMu
+
 ## API
 
 ### POST /api/core
@@ -12,8 +24,6 @@ State machine + HTTP API on `127.0.0.1:1777`. Auto-installed as system service.
 | `down` | — | Disconnect |
 | `reconnect` | — | Reconnect with saved config |
 | `status` | — | State + connection info |
-| `speedtest` | `server_id` | Start async speedtest |
-| `get_speedtest_status` | — | Speedtest progress |
 | `get_config` | — | Saved config |
 | `version` | — | Version info |
 
@@ -27,20 +37,20 @@ Request/Response: `daemon.Request{Action, Params}` / `daemon.Response{Code, Mess
 ## Tunnel Lifecycle (doUp/doDown)
 
 **doUp(wireURL or configPath)**:
-1. Parse wire URL: `wire.ParseURL("k2v5://...")`
-2. Build TLS config: `wire.BuildClientTLSConfig(cfg)` (ECH, fingerprint)
-3. Create transports: `QUICClient`, `TCPWSClient` → `TransportManager`
-4. Create Provider: `provider.NewProvider(providerCfg)` (TUN or Proxy mode)
-5. Create Router: `k2rule.Init(&Config{...})`
-6. Create ClientTunnel: `core.NewClientTunnel(provider, dialer, router)`
-7. Start tunnel: `tunnel.Start(ctx)` → Provider calls HandleTCP/HandleUDP
-8. Save state, transition to "connected"
+1. `opMu.Lock()` — serialize with other doUp/doDown
+2. `closeTunnel()` — unconditional teardown (idempotent)
+3. Set state to `connecting`, save config fields
+4. Build config from wire URL or config file
+5. Build tunnel via TunnelBuilder
+6. Set tunnel refs, state to `connected`
+7. Start PID monitor if requested
+8. Persist state for auto-reconnect
+
+Error path: set `lastError` + state to `stopped`.
 
 **doDown()**:
-1. Cancel tunnel context
-2. `tunnel.Close()` → Provider.Close() + Dialer.Close()
-3. Wait for goroutines (WaitGroup)
-4. Transition to "stopped"
+1. `opMu.Lock()` — serialize
+2. `closeTunnel()` — teardown + transition to `stopped`
 
 ## Files
 
@@ -49,7 +59,6 @@ Request/Response: `daemon.Request{Action, Params}` / `daemon.Response{Code, Mess
 - `api.go` — `handleCore`/`handlePing`/`handleMetrics` + CORS middleware
 - `client.go` — `Client` struct for IPC (used by CLI commands)
 - `state.go` — Persisted state: saved config + last connect time (auto-reconnect <1h)
-- `speedtest.go` — Async speedtest engine with polling
 - `process.go` / `process_unix.go` — PID monitoring (auto-disconnect on parent exit)
 - `recovery.go` / `recovery_unix.go` — Panic recovery + network restore
 - `rlimit.go` / `rlimit_unix.go` — `RLIMIT_NPROC=4000`, `RLIMIT_NOFILE=10240`

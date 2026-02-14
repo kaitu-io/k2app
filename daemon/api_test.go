@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/kaitu-io/k2/config"
@@ -248,33 +251,6 @@ func TestCORSMiddleware(t *testing.T) {
 	}
 }
 
-func TestSpeedtestLifecycle(t *testing.T) {
-	d := New()
-
-	// Start speedtest.
-	body := `{"action":"speedtest","params":{}}`
-	req := httptest.NewRequest("POST", "/api/core", bytes.NewReader([]byte(body)))
-	w := httptest.NewRecorder()
-	d.handleCore(w, req)
-
-	var resp Response
-	json.NewDecoder(w.Body).Decode(&resp)
-	if resp.Code != 0 {
-		t.Fatalf("expected code 0, got %d: %s", resp.Code, resp.Message)
-	}
-
-	// Get status (may be running or completed since it's a stub).
-	statusBody := `{"action":"get_speedtest_status"}`
-	req = httptest.NewRequest("POST", "/api/core", bytes.NewReader([]byte(statusBody)))
-	w = httptest.NewRecorder()
-	d.handleCore(w, req)
-
-	json.NewDecoder(w.Body).Decode(&resp)
-	if resp.Code != 0 {
-		t.Fatalf("expected code 0, got %d", resp.Code)
-	}
-}
-
 func TestHandleCoreGetConfig(t *testing.T) {
 	d := New()
 	d.TunnelBuilder = mockTunnelBuilder
@@ -413,3 +389,100 @@ func TestWebappServing_APIpriority(t *testing.T) {
 		t.Fatal("/api/device/udid: expected udid in data")
 	}
 }
+
+// failingTunnelBuilder always returns an error.
+func failingTunnelBuilder(ctx context.Context, cfg *config.ClientConfig) (*core.ClientTunnel, error) {
+	return nil, fmt.Errorf("simulated failure")
+}
+
+func TestDoUpFromError(t *testing.T) {
+	d := New()
+
+	// First attempt: fail to connect.
+	d.TunnelBuilder = failingTunnelBuilder
+	err := d.doUp("k2v5://test:tok@host:443", "", 0)
+	if err == nil {
+		t.Fatal("expected error from failing builder")
+	}
+
+	// State should be stopped with lastError set.
+	if d.State() != StateStopped {
+		t.Fatalf("expected stopped after failure, got %s", d.State())
+	}
+	info := d.statusInfo()
+	if info["error"] == nil || info["error"] == "" {
+		t.Fatal("expected lastError to be set after failure")
+	}
+
+	// Second attempt: succeed. Old error should be cleared.
+	d.TunnelBuilder = mockTunnelBuilder
+	err = d.doUp("k2v5://test:tok@host:443", "", 0)
+	if err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+
+	if d.State() != StateConnected {
+		t.Fatalf("expected connected, got %s", d.State())
+	}
+	info = d.statusInfo()
+	if info["error"] != nil {
+		t.Fatalf("expected lastError cleared, got %v", info["error"])
+	}
+}
+
+func TestConcurrentDoUp(t *testing.T) {
+	// Track how many tunnels are created vs closed to detect orphans.
+	var created atomic.Int32
+	var closed atomic.Int32
+
+	trackingBuilder := func(ctx context.Context, cfg *config.ClientConfig) (*core.ClientTunnel, error) {
+		created.Add(1)
+		prov := &trackingProvider{closed: &closed}
+		tunnel := core.NewClientTunnel(core.ClientTunnelConfig{
+			Provider: prov,
+			Dialer:   &mockDialer{},
+		})
+		tunnel.Start(ctx)
+		return tunnel, nil
+	}
+
+	d := New()
+	d.TunnelBuilder = trackingBuilder
+
+	// Launch 5 concurrent doUp calls.
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			d.doUp("k2v5://test:tok@host:443", "", 0)
+		}()
+	}
+	wg.Wait()
+
+	// Final state must be connected.
+	if d.State() != StateConnected {
+		t.Fatalf("expected connected, got %s", d.State())
+	}
+
+	// Exactly one tunnel should remain alive (created - closed == 1).
+	alive := created.Load() - closed.Load()
+	if alive != 1 {
+		t.Fatalf("expected 1 alive tunnel, got %d (created=%d, closed=%d)",
+			alive, created.Load(), closed.Load())
+	}
+}
+
+// trackingProvider counts Close calls for orphan detection.
+type trackingProvider struct {
+	closed *atomic.Int32
+}
+
+func (p *trackingProvider) Start(ctx context.Context, handler provider.ConnectionHandler) error {
+	return nil
+}
+func (p *trackingProvider) Close() error {
+	p.closed.Add(1)
+	return nil
+}
+func (p *trackingProvider) Name() string { return "tracking" }

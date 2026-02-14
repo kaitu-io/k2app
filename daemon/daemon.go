@@ -17,24 +17,28 @@ const DefaultAddr = "127.0.0.1:1777"
 
 // Connection states.
 const (
-	StateStopped       = "stopped"
-	StateConnecting    = "connecting"
-	StateConnected     = "connected"
-	StateDisconnecting = "disconnecting"
-	StateError         = "error"
+	StateStopped    = "stopped"
+	StateConnecting = "connecting"
+	StateConnected  = "connected"
 )
 
 // Daemon is the k2 background service.
 // It manages the VPN tunnel lifecycle and exposes an HTTP API.
+//
+// Concurrency model:
+//   - opMu serializes doUp/doDown (coarse lifecycle lock)
+//   - mu protects field reads/writes (fine-grained data lock)
 type Daemon struct {
-	mu    sync.RWMutex
+	opMu sync.Mutex   // serializes doUp/doDown operations
+	mu   sync.RWMutex // protects field access
+
 	state string
 
 	// Last config used for auto-reconnect.
 	lastWireURL    string
 	lastConfigPath string
 
-	// Error from last connection attempt.
+	// Error from last connection attempt (orthogonal to state).
 	lastError string
 
 	// Connected at timestamp.
@@ -50,16 +54,12 @@ type Daemon struct {
 
 	// TunnelBuilder allows overriding tunnel creation for testing.
 	TunnelBuilder func(ctx context.Context, cfg *config.ClientConfig) (*core.ClientTunnel, error)
-
-	// Speedtest state.
-	speedtest *SpeedtestState
 }
 
 // New creates a new daemon.
 func New() *Daemon {
 	return &Daemon{
-		state:     StateStopped,
-		speedtest: NewSpeedtestState(),
+		state: StateStopped,
 	}
 }
 
@@ -111,36 +111,48 @@ func (d *Daemon) State() string {
 	return d.state
 }
 
-func (d *Daemon) setState(s string) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
+// setStateLocked sets state. Caller must hold mu.
+func (d *Daemon) setStateLocked(s string) {
 	log.Printf("State: %s → %s", d.state, s)
 	d.state = s
 }
 
-func (d *Daemon) setError(msg string) {
+// closeTunnel tears down the active tunnel. Caller must hold opMu.
+// Idempotent: no-op if tunnel is nil.
+func (d *Daemon) closeTunnel() {
 	d.mu.Lock()
-	d.lastError = msg
-	d.state = StateError
+	tunnel := d.tunnel
+	cancel := d.tunnelCnl
+	d.tunnel = nil
+	d.tunnelCnl = nil
+	d.tunnelCtx = nil
+	d.monitorPID = 0
 	d.mu.Unlock()
-	log.Printf("Error: %s", msg)
+
+	if cancel != nil {
+		cancel()
+	}
+	if tunnel != nil {
+		tunnel.Close()
+	}
+
+	d.mu.Lock()
+	d.setStateLocked(StateStopped)
+	d.mu.Unlock()
+
+	saveState(persistedState{State: StateStopped, Timestamp: time.Now()})
 }
 
 // doUp connects the tunnel with the given wire URL or config path.
 func (d *Daemon) doUp(wireURL, configPath string, pid int) error {
+	d.opMu.Lock()
+	defer d.opMu.Unlock()
+
+	// Unconditionally tear down any existing tunnel (idempotent).
+	d.closeTunnel()
+
 	d.mu.Lock()
-	current := d.state
-	d.mu.Unlock()
-
-	// If already connected, disconnect first.
-	if current == StateConnected || current == StateConnecting {
-		d.doDown()
-	}
-
-	d.setState(StateConnecting)
-
-	// Save config for auto-reconnect.
-	d.mu.Lock()
+	d.setStateLocked(StateConnecting)
 	d.lastWireURL = wireURL
 	d.lastConfigPath = configPath
 	d.monitorPID = pid
@@ -161,7 +173,12 @@ func (d *Daemon) doUp(wireURL, configPath string, pid int) error {
 		var err error
 		cfg, err = config.LoadClient(configPath)
 		if err != nil {
-			d.setError(fmt.Sprintf("load config: %v", err))
+			msg := fmt.Sprintf("load config: %v", err)
+			d.mu.Lock()
+			d.lastError = msg
+			d.setStateLocked(StateStopped)
+			d.mu.Unlock()
+			log.Printf("Error: %s", msg)
 			return err
 		}
 	} else {
@@ -177,7 +194,12 @@ func (d *Daemon) doUp(wireURL, configPath string, pid int) error {
 	tunnel, err := builder(ctx, cfg)
 	if err != nil {
 		cancel()
-		d.setError(fmt.Sprintf("build tunnel: %v", err))
+		msg := fmt.Sprintf("build tunnel: %v", err)
+		d.mu.Lock()
+		d.lastError = msg
+		d.setStateLocked(StateStopped)
+		d.mu.Unlock()
+		log.Printf("Error: %s", msg)
 		return err
 	}
 
@@ -186,12 +208,11 @@ func (d *Daemon) doUp(wireURL, configPath string, pid int) error {
 	d.tunnelCtx = ctx
 	d.tunnelCnl = cancel
 	d.connectedAt = time.Now()
+	d.setStateLocked(StateConnected)
 	d.mu.Unlock()
 
-	d.setState(StateConnected)
-
 	// Start PID monitoring if requested.
-	// Uses tunnelCtx so the goroutine stops when doDown() cancels the context.
+	// Uses tunnelCtx so the goroutine stops when closeTunnel() cancels the context.
 	if pid > 0 {
 		go d.monitorProcess(ctx, pid)
 	}
@@ -209,30 +230,9 @@ func (d *Daemon) doUp(wireURL, configPath string, pid int) error {
 
 // doDown disconnects the tunnel.
 func (d *Daemon) doDown() {
-	d.setState(StateDisconnecting)
-
-	d.mu.Lock()
-	tunnel := d.tunnel
-	cancel := d.tunnelCnl
-	d.tunnel = nil
-	d.tunnelCnl = nil
-	d.tunnelCtx = nil
-	d.mu.Unlock()
-
-	if cancel != nil {
-		cancel()
-	}
-	if tunnel != nil {
-		tunnel.Close()
-	}
-
-	d.setState(StateStopped)
-
-	d.mu.Lock()
-	d.monitorPID = 0
-	d.mu.Unlock()
-
-	saveState(persistedState{State: StateStopped, Timestamp: time.Now()})
+	d.opMu.Lock()
+	defer d.opMu.Unlock()
+	d.closeTunnel()
 }
 
 // tryAutoReconnect checks persisted state and reconnects if applicable.
@@ -256,6 +256,10 @@ func (d *Daemon) tryAutoReconnect(ctx context.Context) {
 		case <-time.After(5 * time.Second):
 		case <-ctx.Done():
 			log.Println("Auto-reconnect: cancelled during startup delay")
+			return
+		}
+		// Skip if already connected (e.g. user called up during delay).
+		if d.State() == StateConnected {
 			return
 		}
 		if err := d.doUp(st.WireURL, st.ConfigPath, 0); err != nil {
