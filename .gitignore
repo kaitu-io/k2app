@@ -1,0 +1,8 @@
+node_modules/
+dist/
+target/
+build/
+desktop/src-tauri/binaries/
+webapp/public/version.json
+*.log
+.DS_Store
