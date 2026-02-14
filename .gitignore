@@ -7,3 +7,10 @@ webapp/public/version.json
 release/
 *.log
 .DS_Store
+
+# Mobile build artifacts
+mobile/ios/
+mobile/android/
+k2/build/
+*.xcframework
+*.aar

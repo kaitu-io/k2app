@@ -29,5 +29,32 @@ dev: pre-build
 publish-release:
 	bash scripts/publish-release.sh
 
+# Mobile builds
+mobile-ios:
+	cd k2 && gomobile bind -target=ios -o build/K2Mobile.xcframework ./mobile/
+
+mobile-android:
+	cd k2 && gomobile bind -target=android -o build/k2mobile.aar -androidapi 24 ./mobile/
+
+build-mobile-ios: pre-build build-webapp mobile-ios
+	cp -r k2/build/K2Mobile.xcframework mobile/ios/App/
+	cd mobile && npx cap sync ios
+	cd mobile/ios/App && xcodebuild -workspace App.xcworkspace \
+		-scheme App -configuration Release \
+		-destination 'generic/platform=iOS' \
+		-archivePath build/App.xcarchive archive
+
+build-mobile-android: pre-build build-webapp mobile-android
+	cp k2/build/k2mobile.aar mobile/android/k2-mobile/libs/
+	cd mobile && npx cap sync android
+	cd mobile/android && ./gradlew assembleRelease
+
+dev-ios: pre-build build-webapp
+	cd mobile && npx cap sync ios && npx cap run ios
+
+dev-android: pre-build build-webapp mobile-android
+	cp k2/build/k2mobile.aar mobile/android/k2-mobile/libs/
+	cd mobile && npx cap sync android && npx cap run android
+
 clean:
 	rm -rf webapp/dist desktop/src-tauri/target desktop/src-tauri/binaries/k2-*
