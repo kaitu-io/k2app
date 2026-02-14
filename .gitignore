@@ -33,8 +33,8 @@ config.yml
 *.tmp
 *.log
 
-k2
-k2s
+/k2
+/k2s
 /gen-bench-config
 .claude/agent-memory/
 
