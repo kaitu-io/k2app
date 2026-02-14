@@ -16,9 +16,13 @@ fn main() {
             }
         }))
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             service::admin_reinstall_service,
             service::ensure_service_running,
+            updater::check_update_now,
+            updater::apply_update_now,
+            updater::get_update_status,
         ])
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
@@ -40,6 +44,9 @@ fn main() {
                     log::error!("[startup] Service error: {}", e);
                 }
             });
+
+            // Start auto-updater
+            updater::start_auto_updater(app.handle().clone());
 
             Ok(())
         })
