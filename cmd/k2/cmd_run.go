@@ -41,6 +41,8 @@ func runInstall() {
 func runDaemon() {
 	daemon.ApplyResourceLimits()
 
+	go checkVersionAsync()
+
 	d := daemon.New()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
