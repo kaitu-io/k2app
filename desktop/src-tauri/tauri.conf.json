@@ -39,7 +39,7 @@
     ],
     "macOS": {
       "minimumSystemVersion": "12.0",
-      "signingIdentity": "Developer ID Application: Wordgate LLC (NJT954Q3RH)",
+      "signingIdentity": "Developer ID Application: ALL NATION CONNECT TECHNOLOGY PTE. LTD. (NJT954Q3RH)",
       "entitlements": "entitlements.plist",
       "hardenedRuntime": true
     },
