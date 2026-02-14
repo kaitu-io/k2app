@@ -228,7 +228,7 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           S3_BASE="s3://d0.all7.cc/kaitu/desktop/${VERSION}"
           NSIS_DIR="desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis"
-          aws s3 cp "${NSIS_DIR}/" "${S3_BASE}/" --recursive --acl public-read \
+          aws s3 cp "${NSIS_DIR}/" "${S3_BASE}/" --recursive \
             --exclude "*" \
             --include "*.exe" --include "*.nsis.zip" --include "*.nsis.zip.sig"
 
