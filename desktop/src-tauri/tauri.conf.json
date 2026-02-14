@@ -44,7 +44,6 @@
       "hardenedRuntime": true
     },
     "windows": {
-      "signCommand": "powershell -NoProfile -Command \"& { $signtool = 'C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.22621.0\\x64\\signtool.exe'; if (Test-Path $signtool) { & $signtool sign /fd SHA256 /tr http://time.certum.pl /td SHA256 /d 'Kaitu Desktop' '%1' } else { Write-Warning 'signtool not found, skipping signing' } }\"",
       "nsis": {
         "installMode": "perMachine",
         "languages": ["SimpChinese", "English"]
