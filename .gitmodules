@@ -1,0 +1,3 @@
+[submodule "k2"]
+	path = k2
+	url = ../k2
