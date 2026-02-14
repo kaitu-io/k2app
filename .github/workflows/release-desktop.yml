@@ -32,7 +32,9 @@ jobs:
           ssh-private-key: ${{ secrets.K2_DEPLOY_KEY }}
 
       - name: Init k2 submodule
-        run: git submodule update --init --recursive
+        run: |
+          git config --global url."git@github.com:".insteadOf "https://github.com/"
+          git submodule update --init --recursive
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
