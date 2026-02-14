@@ -4,5 +4,6 @@ target/
 build/
 desktop/src-tauri/binaries/
 webapp/public/version.json
+release/
 *.log
 .DS_Store

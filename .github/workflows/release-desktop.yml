@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -128,25 +129,31 @@ jobs:
 
       # --- Upload artifacts ---
 
-      - name: Upload macOS artifacts
+      - name: Upload macOS to S3
         if: matrix.os == 'macos-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: kaitu-macos
-          path: |
-            release/*/*.pkg
-            release/*/*.app.tar.gz
-            release/*/*.app.tar.gz.sig
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ap-east-1
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          S3_BASE="s3://d.all7.cc/kaitu/desktop/${VERSION}"
+          aws s3 cp release/${VERSION}/ "${S3_BASE}/" --recursive --acl public-read
 
-      - name: Upload Windows artifacts
+      - name: Upload Windows to S3
         if: matrix.os == 'windows-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: kaitu-windows
-          path: |
-            desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
-            desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.nsis.zip
-            desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.nsis.zip.sig
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ap-east-1
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          S3_BASE="s3://d.all7.cc/kaitu/desktop/${VERSION}"
+          NSIS_DIR="desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis"
+          aws s3 cp "${NSIS_DIR}/" "${S3_BASE}/" --recursive --acl public-read \
+            --exclude "*" \
+            --include "*.exe" --include "*.nsis.zip" --include "*.nsis.zip.sig"
 
       # --- Cleanup ---
 

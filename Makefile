@@ -26,5 +26,8 @@ build-windows: pre-build build-webapp
 dev: pre-build
 	./scripts/dev.sh
 
+publish-release:
+	bash scripts/publish-release.sh
+
 clean:
 	rm -rf webapp/dist desktop/src-tauri/target desktop/src-tauri/binaries/k2-*
