@@ -15,14 +15,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
+          - runner: macos-latest
             target: universal-apple-darwin
             platform: macOS
-          - os: windows-latest
+          - runner: [self-hosted, Windows, X64]
             target: x86_64-pc-windows-msvc
             platform: Windows
 
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
 
     steps:
@@ -54,7 +54,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || 'x86_64-pc-windows-msvc' }}
+          targets: ${{ matrix.platform == 'macOS' && 'aarch64-apple-darwin,x86_64-apple-darwin' || 'x86_64-pc-windows-msvc' }}
 
       - name: Cache Rust target directory
         uses: actions/cache@v4
@@ -71,17 +71,17 @@ jobs:
         run: yarn install --frozen-lockfile
 
       - name: Run pre-build (Windows)
-        if: matrix.os == 'windows-latest'
+        if: matrix.platform == 'Windows'
         run: make pre-build
 
       - name: Build webapp (Windows)
-        if: matrix.os == 'windows-latest'
+        if: matrix.platform == 'Windows'
         run: make build-webapp
 
       # --- macOS: code signing certificate import ---
 
       - name: Import Apple code signing certificate
-        if: matrix.os == 'macos-latest'
+        if: matrix.platform == 'macOS'
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -109,7 +109,7 @@ jobs:
       # --- macOS: full build via shared script ---
 
       - name: Build macOS (k2 + tauri + pkg)
-        if: matrix.os == 'macos-latest'
+        if: matrix.platform == 'macOS'
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
@@ -122,7 +122,7 @@ jobs:
       # --- Windows: SimpliSign authentication ---
 
       - name: Authenticate SimpliSign
-        if: matrix.os == 'windows-latest'
+        if: matrix.platform == 'Windows'
         shell: pwsh
         run: |
           pip install pyotp pywinauto -q
@@ -137,14 +137,14 @@ jobs:
       # --- Windows: build k2 + Tauri ---
 
       - name: Build k2 for Windows
-        if: matrix.os == 'windows-latest'
+        if: matrix.platform == 'Windows'
         run: make build-k2 TARGET=x86_64-pc-windows-msvc
         env:
           GOARCH: amd64
           GOOS: windows
 
       - name: Build Tauri for Windows
-        if: matrix.os == 'windows-latest'
+        if: matrix.platform == 'Windows'
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -154,7 +154,7 @@ jobs:
       # --- Windows: code signing with SimpliSign + signtool ---
 
       - name: Sign Windows installer
-        if: matrix.os == 'windows-latest'
+        if: matrix.platform == 'Windows'
         shell: pwsh
         run: |
           # Dynamic signtool discovery
@@ -195,7 +195,7 @@ jobs:
       # --- Upload artifacts to S3 ---
 
       - name: Upload macOS to S3
-        if: matrix.os == 'macos-latest'
+        if: matrix.platform == 'macOS'
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -205,7 +205,7 @@ jobs:
           S3_BASE="s3://d0.all7.cc/kaitu/desktop/${VERSION}"
           aws s3 cp release/${VERSION}/ "${S3_BASE}/" --recursive
       - name: Upload Windows to S3
-        if: matrix.os == 'windows-latest'
+        if: matrix.platform == 'Windows'
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -222,7 +222,7 @@ jobs:
       # --- Cleanup ---
 
       - name: Clean up keychain
-        if: matrix.os == 'macos-latest' && always()
+        if: matrix.platform == 'macOS' && always()
         run: security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" || true
 
       # --- Notifications ---
