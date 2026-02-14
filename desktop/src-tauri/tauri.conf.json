@@ -44,7 +44,7 @@
       "hardenedRuntime": true
     },
     "windows": {
-      "signCommand": "powershell -NoProfile -Command \"& { if ($env:KAITU_SIGN_SERVER_URL -and -not $env:SKIP_WINDOWS_SIGNING) { $resp = Invoke-WebRequest -Uri \\\"$env:KAITU_SIGN_SERVER_URL/sign\\\" -Method POST -InFile '%1' -ContentType 'application/octet-stream' -OutFile '%1'; if ($resp.StatusCode -ne 200) { exit 1 } } }\"",
+      "signCommand": "powershell -NoProfile -Command \"& { $signtool = 'C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.22621.0\\x64\\signtool.exe'; if (Test-Path $signtool) { & $signtool sign /fd SHA256 /tr http://time.certum.pl /td SHA256 /d 'Kaitu Desktop' '%1' } else { Write-Warning 'signtool not found, skipping signing' } }\"",
       "nsis": {
         "installMode": "perMachine",
         "languages": ["SimpChinese", "English"]

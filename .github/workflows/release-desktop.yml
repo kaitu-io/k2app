@@ -17,10 +17,13 @@ jobs:
         include:
           - os: macos-latest
             target: universal-apple-darwin
+            platform: macOS
           - os: windows-latest
             target: x86_64-pc-windows-msvc
+            platform: Windows
 
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
 
     steps:
       - name: Checkout repository
@@ -116,6 +119,21 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: bash scripts/build-macos.sh
 
+      # --- Windows: SimpliSign authentication ---
+
+      - name: Authenticate SimpliSign
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          pip install pyotp pywinauto -q
+          python C:\actions-runner\scripts\simplisign_auto_login.py `
+            --totp-uri "$env:SIMPLISIGN_TOTP_URI" `
+            --username "$env:SIMPLISIGN_USERNAME"
+        env:
+          SIMPLISIGN_TOTP_URI: ${{ secrets.SIMPLISIGN_TOTP_URI }}
+          SIMPLISIGN_USERNAME: ${{ secrets.SIMPLISIGN_USERNAME }}
+        continue-on-error: true
+
       # --- Windows: build k2 + Tauri ---
 
       - name: Build k2 for Windows
@@ -130,12 +148,64 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          KAITU_SIGN_SERVER_URL: ${{ secrets.KAITU_SIGN_SERVER_URL }}
-          SKIP_WINDOWS_SIGNING: ${{ secrets.KAITU_SIGN_SERVER_URL == '' && 'true' || '' }}
         run: yarn tauri build --target x86_64-pc-windows-msvc
         working-directory: desktop
 
-      # --- Upload artifacts ---
+      # --- Windows: code signing with SimpliSign + signtool ---
+
+      - name: Sign Windows installer with SimpliSign
+        if: matrix.os == 'windows-latest'
+        id: windows-sign
+        shell: pwsh
+        run: |
+          $signtool = "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe"
+          if (-not (Test-Path $signtool)) {
+            Write-Warning "signtool.exe not found at expected path"
+            echo "signed=false" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+
+          $installer = Get-ChildItem -Path "desktop\src-tauri\target\x86_64-pc-windows-msvc\release\bundle\nsis\*.exe" | Select-Object -First 1
+          if (-not $installer) {
+            Write-Warning "No installer found to sign"
+            echo "signed=false" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+
+          Write-Host "Signing: $($installer.FullName)"
+          & $signtool sign /fd SHA256 /tr http://time.certum.pl /td SHA256 /d "Kaitu Desktop" "$($installer.FullName)"
+
+          if ($LASTEXITCODE -ne 0) {
+            Write-Warning "Signing failed (exit code: $LASTEXITCODE)"
+            echo "signed=false" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+
+          & $signtool verify /pa "$($installer.FullName)"
+          Write-Host "Installer signed successfully"
+          echo "signed=true" >> $env:GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Notify Slack on signing failure
+        if: matrix.os == 'windows-latest' && steps.windows-sign.outputs.signed != 'true'
+        shell: bash
+        run: |
+          ./scripts/ci/notify-slack.sh build-failure \
+            --platform "Windows" \
+            --error "Windows code signing failed. Possible causes:
+          1. SimpliSign Desktop not running or session expired on the runner
+          2. signtool.exe not found (Windows SDK missing)
+          3. Certificate not available in SimpliSign
+
+          To fix: RDP into the Windows runner, ensure SimpliSign Desktop is
+          running and authenticated, then re-run the workflow.
+
+          See: scripts/ci/windows/README.md for setup instructions."
+        env:
+          SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_ALERT }}
+        continue-on-error: true
+
+      # --- Upload artifacts to S3 ---
 
       - name: Upload macOS to S3
         if: matrix.os == 'macos-latest'
@@ -168,3 +238,26 @@ jobs:
       - name: Clean up keychain
         if: matrix.os == 'macos-latest' && always()
         run: security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" || true
+
+      # --- Notifications ---
+
+      - name: Notify Slack on build success
+        if: success()
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          ./scripts/ci/notify-slack.sh deploy-success \
+            --version "${VERSION}" \
+            --platforms "${{ matrix.platform }}"
+        env:
+          SLACK_WEBHOOK_RELEASE: ${{ secrets.SLACK_WEBHOOK_RELEASE }}
+
+      - name: Notify Slack on build failure
+        if: failure()
+        shell: bash
+        run: |
+          ./scripts/ci/notify-slack.sh build-failure \
+            --platform "${{ matrix.platform }}" \
+            --error "Release build failed on ${{ matrix.platform }}. Check workflow run for details."
+        env:
+          SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_ALERT }}
