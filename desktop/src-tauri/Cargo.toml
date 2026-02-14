@@ -1,5 +1,5 @@
 [package]
-name = "k2app-desktop"
+name = "k2app"
 version = "0.4.0"
 edition = "2021"
 
