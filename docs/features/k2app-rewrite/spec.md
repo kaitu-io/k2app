@@ -1,7 +1,8 @@
 # Feature Spec: k2app Rewrite
 
-> **Status**: Draft v7
+> **Status**: Implemented
 > **Created**: 2026-02-14
+> **Implemented**: 2026-02-14
 > **Feature**: Rewrite kaitu app on top of k2 core
 
 ## Overview
@@ -710,30 +711,30 @@ are bundled in the app). If it fails, it indicates a native code bug.
 ## Acceptance Criteria
 
 ### Desktop
-- [ ] k2 submodule configured, `git clone --recursive` works
-- [ ] `make dev` starts k2 daemon + Vite + Tauri dev, HMR works
-- [ ] tauri-plugin-localhost configured, webapp served via HTTP
-- [ ] Webapp API calls to `http://127.0.0.1:1777` work on macOS (no mixed content)
-- [ ] Tauri IPC available: updater, tray, service management
-- [ ] k2 binary bundled as externalBin, built with `-tags nowebapp`
-- [ ] Service readiness: webapp shows loading state until daemon responds
-- [ ] Old kaitu-service cleanup on first launch after upgrade
-- [ ] System tray with connect/disconnect/quit
-- [ ] Auto-updater works with existing CDN endpoints
-- [ ] `make build-macos` produces signed DMG
-- [ ] `make build-windows` produces signed NSIS installer
-- [ ] Version 0.4.0 detected as upgrade from 0.3.22
-- [ ] Version propagation: single source from package.json
+- [x] k2 submodule configured, `git clone --recursive` works
+- [x] `make dev` starts k2 daemon + Vite + Tauri dev, HMR works
+- [x] tauri-plugin-localhost configured, webapp served via HTTP
+- [x] Webapp API calls to `http://127.0.0.1:1777` work on macOS (no mixed content)
+- [x] Tauri IPC available: updater, tray, service management
+- [x] k2 binary bundled as externalBin, built with `-tags nowebapp`
+- [x] Service readiness: webapp shows loading state until daemon responds
+- [x] Old kaitu-service cleanup on first launch after upgrade
+- [x] System tray with connect/disconnect/quit
+- [x] Auto-updater works with existing CDN endpoints
+- [x] `make build-macos` produces signed DMG
+- [x] `make build-windows` produces signed NSIS installer
+- [x] Version 0.4.0 detected as upgrade from 0.3.22
+- [x] Version propagation: single source from package.json
 
 ### Webapp VpnClient
-- [ ] VpnClient interface with HttpVpnClient and NativeVpnClient implementations
-- [ ] HttpVpnClient: HTTP calls + poll→event with deduplication
-- [ ] NativeVpnClient: Capacitor Plugin calls + native event push
-- [ ] MockVpnClient: injectable for unit tests
-- [ ] createVpnClient() factory auto-selects by platform
-- [ ] All UI code uses VpnClient, never direct HTTP or Capacitor calls
-- [ ] connect()/disconnect() resolve on "command accepted" (not operation complete)
-- [ ] subscribe() delivers VpnEvent for all state changes
+- [x] VpnClient interface with HttpVpnClient and MockVpnClient implementations
+- [x] HttpVpnClient: HTTP calls + poll→event with deduplication
+- [ ] NativeVpnClient: Capacitor Plugin calls + native event push (deferred to mobile phase)
+- [x] MockVpnClient: injectable for unit tests
+- [x] createVpnClient() factory auto-selects by platform
+- [x] All UI code uses VpnClient, never direct HTTP or Capacitor calls
+- [x] connect()/disconnect() resolve on "command accepted" (not operation complete)
+- [x] subscribe() delivers VpnEvent for all state changes
 
 ### Mobile (deferred)
 - [ ] Webapp loads from local assets (same build as desktop)
@@ -748,8 +749,8 @@ are bundled in the app). If it fails, it indicates a native code bug.
 - [ ] iOS: App Group UserDefaults for NE↔App shared state
 
 ### CI/CD
-- [ ] GitHub Actions pipeline builds and signs for macOS + Windows
-- [ ] Go build with `-tags nowebapp` in CI
+- [x] GitHub Actions pipeline builds and signs for macOS + Windows
+- [x] Go build with `-tags nowebapp` in CI
 
 ---
 
