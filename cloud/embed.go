@@ -1,3 +1,5 @@
+//go:build !nowebapp
+
 package cloud
 
 import (
