@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { useVpnStore } from '../vpn.store';
 import { createVpnClient, resetVpnClient } from '../../vpn-client';
 import { MockVpnClient } from '../../vpn-client/mock-client';

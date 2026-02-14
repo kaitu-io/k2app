@@ -55,7 +55,7 @@ export const useServersStore = create<ServersStore>((set, get) => ({
 
       // Auto-select first server if none selected
       if (!get().selectedServerId && servers.length > 0) {
-        set({ selectedServerId: servers[0].id });
+        set({ selectedServerId: servers[0]!.id });
       }
     } catch (e) {
       set({

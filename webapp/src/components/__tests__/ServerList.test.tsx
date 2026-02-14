@@ -76,10 +76,10 @@ describe('ServerList', () => {
 
     const buttons = screen.getAllByRole('button');
     // The selected button (sv-2, index 1) should have blue styling
-    expect(buttons[1].className).toContain('bg-blue-50');
+    expect(buttons[1]!.className).toContain('bg-blue-50');
     // Non-selected buttons should not
-    expect(buttons[0].className).not.toContain('bg-blue-50');
-    expect(buttons[2].className).not.toContain('bg-blue-50');
+    expect(buttons[0]!.className).not.toContain('bg-blue-50');
+    expect(buttons[2]!.className).not.toContain('bg-blue-50');
   });
 
   it('calls onSelect when clicked', async () => {
