@@ -52,4 +52,4 @@ export function resetVpnClient(): void {
   instance = null;
 }
 
-export type { VpnClient, VpnState, VpnStatus, VpnEvent, ReadyState, VersionInfo, VpnConfig } from './types';
+export type { VpnClient, VpnState, VpnStatus, VpnEvent, ReadyState, VersionInfo, VpnConfig, UpdateCheckResult } from './types';

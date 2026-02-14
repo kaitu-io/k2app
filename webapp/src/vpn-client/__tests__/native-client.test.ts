@@ -11,6 +11,11 @@ function createMockPlugin() {
     getConfig: vi.fn(),
     connect: vi.fn(),
     disconnect: vi.fn(),
+    checkWebUpdate: vi.fn(),
+    checkNativeUpdate: vi.fn(),
+    applyWebUpdate: vi.fn(),
+    downloadNativeUpdate: vi.fn(),
+    installNativeUpdate: vi.fn(),
     addListener: vi.fn(),
   };
 }
@@ -215,6 +220,80 @@ describe('NativeVpnClient', () => {
       stateChangeCall![1]({ state: 'connected' });
 
       expect(events).toHaveLength(0);
+    });
+  });
+
+  describe('checkForUpdates()', () => {
+    it('returns native update when available (priority over web)', async () => {
+      plugin.checkNativeUpdate.mockResolvedValue({
+        available: true,
+        version: '0.5.0',
+        size: 45000000,
+        url: 'https://d0.all7.cc/kaitu/android/0.5.0/Kaitu-0.5.0.apk',
+      });
+      plugin.checkWebUpdate.mockResolvedValue({
+        available: true,
+        version: '0.5.0',
+        size: 1500000,
+      });
+
+      const result = await client.checkForUpdates();
+      expect(result).toEqual({
+        type: 'native',
+        version: '0.5.0',
+        size: 45000000,
+        url: 'https://d0.all7.cc/kaitu/android/0.5.0/Kaitu-0.5.0.apk',
+      });
+      // Should not even check web when native is available
+      expect(plugin.checkWebUpdate).not.toHaveBeenCalled();
+    });
+
+    it('returns web update when no native update available', async () => {
+      plugin.checkNativeUpdate.mockResolvedValue({ available: false });
+      plugin.checkWebUpdate.mockResolvedValue({
+        available: true,
+        version: '0.4.1',
+        size: 1500000,
+      });
+
+      const result = await client.checkForUpdates();
+      expect(result).toEqual({
+        type: 'web',
+        version: '0.4.1',
+        size: 1500000,
+      });
+    });
+
+    it('returns none when no updates available', async () => {
+      plugin.checkNativeUpdate.mockResolvedValue({ available: false });
+      plugin.checkWebUpdate.mockResolvedValue({ available: false });
+
+      const result = await client.checkForUpdates();
+      expect(result).toEqual({ type: 'none' });
+    });
+
+    it('falls through to web check when native check throws', async () => {
+      plugin.checkNativeUpdate.mockRejectedValue(new Error('network error'));
+      plugin.checkWebUpdate.mockResolvedValue({
+        available: true,
+        version: '0.4.1',
+        size: 1200000,
+      });
+
+      const result = await client.checkForUpdates();
+      expect(result).toEqual({
+        type: 'web',
+        version: '0.4.1',
+        size: 1200000,
+      });
+    });
+
+    it('returns none when both checks throw', async () => {
+      plugin.checkNativeUpdate.mockRejectedValue(new Error('network error'));
+      plugin.checkWebUpdate.mockRejectedValue(new Error('network error'));
+
+      const result = await client.checkForUpdates();
+      expect(result).toEqual({ type: 'none' });
     });
   });
 });

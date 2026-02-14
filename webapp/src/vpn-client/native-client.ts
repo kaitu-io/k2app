@@ -1,6 +1,6 @@
-import type { VpnClient, VpnStatus, VersionInfo, VpnConfig, ReadyState, VpnEvent, VpnState } from './types';
+import type { VpnClient, VpnStatus, VersionInfo, VpnConfig, ReadyState, VpnEvent, VpnState, UpdateCheckResult, WebUpdateInfo, NativeUpdateInfo } from './types';
 
-// K2Plugin is imported dynamically. This type represents the plugin interface.
+// Keep in sync with mobile/plugins/k2-plugin/src/definitions.ts
 interface K2PluginType {
   checkReady(): Promise<{ ready: boolean; version?: string; reason?: string }>;
   getUDID(): Promise<{ udid: string }>;
@@ -9,6 +9,11 @@ interface K2PluginType {
   getConfig(): Promise<{ wireUrl?: string }>;
   connect(options: { wireUrl: string }): Promise<void>;
   disconnect(): Promise<void>;
+  checkWebUpdate(): Promise<WebUpdateInfo>;
+  checkNativeUpdate(): Promise<NativeUpdateInfo>;
+  applyWebUpdate(): Promise<void>;
+  downloadNativeUpdate(): Promise<{ path: string }>;
+  installNativeUpdate(options: { path: string }): Promise<void>;
   addListener(eventName: string, handler: (data: any) => void): Promise<{ remove: () => Promise<void> }>;
 }
 
@@ -95,6 +100,58 @@ export class NativeVpnClient implements VpnClient {
         this.pluginListenersInitialized = false;
       }
     };
+  }
+
+  async applyWebUpdate(): Promise<void> {
+    await this.plugin.applyWebUpdate();
+  }
+
+  async downloadNativeUpdate(): Promise<{ path: string }> {
+    return this.plugin.downloadNativeUpdate();
+  }
+
+  async installNativeUpdate(options: { path: string }): Promise<void> {
+    await this.plugin.installNativeUpdate(options);
+  }
+
+  onDownloadProgress(handler: (percent: number) => void): () => void {
+    let handle: { remove: () => Promise<void> } | null = null;
+    this.plugin.addListener('updateDownloadProgress', (data: { percent: number }) => {
+      handler(data.percent);
+    }).then(h => { handle = h; });
+    return () => { handle?.remove(); };
+  }
+
+  async checkForUpdates(): Promise<UpdateCheckResult> {
+    // Native update takes priority — may contain incompatible web changes
+    try {
+      const native = await this.plugin.checkNativeUpdate();
+      if (native.available) {
+        return {
+          type: 'native',
+          version: native.version,
+          size: native.size,
+          url: native.url,
+        };
+      }
+    } catch {
+      // Native check failed, continue to web check
+    }
+
+    try {
+      const web = await this.plugin.checkWebUpdate();
+      if (web.available) {
+        return {
+          type: 'web',
+          version: web.version,
+          size: web.size,
+        };
+      }
+    } catch {
+      // Web check failed
+    }
+
+    return { type: 'none' };
   }
 
   destroy(): void {

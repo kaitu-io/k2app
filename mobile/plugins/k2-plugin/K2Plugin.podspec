@@ -9,5 +9,6 @@ Pod::Spec.new do |s|
   s.source_files = 'ios/Plugin/**/*.{swift,h,m}'
   s.ios.deployment_target = '16.0'
   s.dependency 'Capacitor'
+  s.dependency 'SSZipArchive', '~> 2.5'
   s.swift_version = '5.9'
 end

@@ -1,5 +1,18 @@
 import type { PluginListenerHandle } from '@capacitor/core';
 
+export interface WebUpdateInfo {
+  available: boolean;
+  version?: string;
+  size?: number;
+}
+
+export interface NativeUpdateInfo {
+  available: boolean;
+  version?: string;
+  size?: number;
+  url?: string;
+}
+
 export interface K2PluginInterface {
   checkReady(): Promise<{ ready: boolean; version?: string; reason?: string }>;
   getUDID(): Promise<{ udid: string }>;
@@ -9,6 +22,13 @@ export interface K2PluginInterface {
   connect(options: { wireUrl: string }): Promise<void>;
   disconnect(): Promise<void>;
 
+  checkWebUpdate(): Promise<WebUpdateInfo>;
+  checkNativeUpdate(): Promise<NativeUpdateInfo>;
+  applyWebUpdate(): Promise<void>;
+  downloadNativeUpdate(): Promise<{ path: string }>;
+  installNativeUpdate(options: { path: string }): Promise<void>;
+
   addListener(eventName: 'vpnStateChange', handler: (data: { state: string }) => void): Promise<PluginListenerHandle>;
   addListener(eventName: 'vpnError', handler: (data: { message: string }) => void): Promise<PluginListenerHandle>;
+  addListener(eventName: 'updateDownloadProgress', handler: (data: { percent: number }) => void): Promise<PluginListenerHandle>;
 }

@@ -1,6 +1,6 @@
 import { WebPlugin } from '@capacitor/core';
 
-import type { K2PluginInterface } from './definitions';
+import type { K2PluginInterface, WebUpdateInfo, NativeUpdateInfo } from './definitions';
 
 export class K2PluginWeb extends WebPlugin implements K2PluginInterface {
   async checkReady(): Promise<{ ready: boolean; version?: string; reason?: string }> {
@@ -28,6 +28,26 @@ export class K2PluginWeb extends WebPlugin implements K2PluginInterface {
   }
 
   async disconnect(): Promise<void> {
+    throw this.unavailable('K2Plugin is not available on web');
+  }
+
+  async checkWebUpdate(): Promise<WebUpdateInfo> {
+    throw this.unavailable('K2Plugin is not available on web');
+  }
+
+  async checkNativeUpdate(): Promise<NativeUpdateInfo> {
+    throw this.unavailable('K2Plugin is not available on web');
+  }
+
+  async applyWebUpdate(): Promise<void> {
+    throw this.unavailable('K2Plugin is not available on web');
+  }
+
+  async downloadNativeUpdate(): Promise<{ path: string }> {
+    throw this.unavailable('K2Plugin is not available on web');
+  }
+
+  async installNativeUpdate(_options: { path: string }): Promise<void> {
     throw this.unavailable('K2Plugin is not available on web');
   }
 }

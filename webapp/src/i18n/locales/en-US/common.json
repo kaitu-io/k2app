@@ -7,5 +7,14 @@
   "save": "Save",
   "error": "Error",
   "success": "Success",
-  "servers": "Servers"
+  "servers": "Servers",
+  "updateAvailable": "Update Available",
+  "updateVersion": "Version {{version}}",
+  "updateSize": "Size {{size}}",
+  "updateNow": "Update Now",
+  "updateGoToAppStore": "Go to App Store",
+  "updateDownloading": "Downloading...",
+  "updateLater": "Later",
+  "updateRestartToApply": "Update downloaded. Restart the app to apply.",
+  "updateFailed": "Update failed: {{message}}"
 }

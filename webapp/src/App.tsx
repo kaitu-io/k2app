@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useEffect } from 'react';
 import { Layout } from './components/Layout';
 import { ServiceReadiness } from './components/ServiceReadiness';
+import { UpdatePrompt } from './components/UpdatePrompt';
 import { Settings } from './pages/Settings';
 import { Dashboard } from './pages/Dashboard';
 import { Login } from './pages/Login';
@@ -26,6 +27,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <ServiceReadiness>
+        <UpdatePrompt />
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route element={<AuthGuard><Layout /></AuthGuard>}>

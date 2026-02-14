@@ -24,9 +24,30 @@ export type ReadyState =
   | { ready: true; version: string }
   | { ready: false; reason: 'not_running' | 'version_mismatch' | 'not_installed' };
 
+export interface WebUpdateInfo {
+  available: boolean;
+  version?: string;
+  size?: number;
+}
+
+export interface NativeUpdateInfo {
+  available: boolean;
+  version?: string;
+  size?: number;
+  url?: string;
+}
+
+export interface UpdateCheckResult {
+  type: 'native' | 'web' | 'none';
+  version?: string;
+  size?: number;
+  url?: string;
+}
+
 export type VpnEvent =
   | { type: 'state_change'; state: VpnState }
-  | { type: 'error'; message: string };
+  | { type: 'error'; message: string }
+  | { type: 'download_progress'; percent: number };
 
 export interface VpnClient {
   connect(wireUrl: string): Promise<void>;
@@ -38,4 +59,9 @@ export interface VpnClient {
   getConfig(): Promise<VpnConfig>;
   subscribe(listener: (event: VpnEvent) => void): () => void;
   destroy(): void;
+  checkForUpdates?(): Promise<UpdateCheckResult>;
+  applyWebUpdate?(): Promise<void>;
+  downloadNativeUpdate?(): Promise<{ path: string }>;
+  installNativeUpdate?(options: { path: string }): Promise<void>;
+  onDownloadProgress?(handler: (percent: number) => void): () => void;
 }
