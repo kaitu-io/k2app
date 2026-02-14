@@ -153,12 +153,11 @@ jobs:
 
       # --- Windows: code signing with SimpliSign + signtool ---
 
-      - name: Sign Windows installer with SimpliSign
+      - name: Sign Windows installer
         if: matrix.os == 'windows-latest'
-        id: windows-sign
         shell: pwsh
         run: |
-          # Dynamic signtool discovery — search all installed Windows SDK versions
+          # Dynamic signtool discovery
           $signtool = $null
           $sdkRoot = "C:\Program Files (x86)\Windows Kits\10\bin"
           if (Test-Path $sdkRoot) {
@@ -167,76 +166,31 @@ jobs:
               Sort-Object { [version]($_.Directory.Parent.Name -replace '[^0-9.]','') } -Descending -ErrorAction SilentlyContinue |
               Select-Object -First 1 -ExpandProperty FullName
           }
-
           if (-not $signtool) {
-            Write-Warning "signtool.exe not found in any Windows SDK version under $sdkRoot"
-            Write-Warning "Please install Windows SDK or ensure SimpliSign runner has SDK installed."
-            echo "signed=false" >> $env:GITHUB_OUTPUT
-            echo "error=signtool_not_found" >> $env:GITHUB_OUTPUT
-            exit 0
+            Write-Error "signtool.exe not found. Install Windows SDK on this runner."
+            exit 1
           }
           Write-Host "Found signtool: $signtool"
 
           $installer = Get-ChildItem -Path "desktop\src-tauri\target\x86_64-pc-windows-msvc\release\bundle\nsis\*.exe" | Select-Object -First 1
           if (-not $installer) {
-            Write-Warning "No installer found to sign"
-            echo "signed=false" >> $env:GITHUB_OUTPUT
-            echo "error=no_installer" >> $env:GITHUB_OUTPUT
-            exit 0
+            Write-Error "No installer .exe found in NSIS bundle output"
+            exit 1
           }
 
           Write-Host "Signing: $($installer.FullName)"
           & $signtool sign /fd SHA256 /tr http://time.certum.pl /td SHA256 /d "Kaitu Desktop" "$($installer.FullName)"
-
           if ($LASTEXITCODE -ne 0) {
-            Write-Warning "Signing failed (exit code: $LASTEXITCODE)"
-            echo "signed=false" >> $env:GITHUB_OUTPUT
-            echo "error=sign_failed" >> $env:GITHUB_OUTPUT
-            exit 0
+            Write-Error "signtool sign failed (exit code: $LASTEXITCODE)"
+            exit 1
           }
 
           & $signtool verify /pa "$($installer.FullName)"
-          Write-Host "Installer signed successfully"
-          echo "signed=true" >> $env:GITHUB_OUTPUT
-        continue-on-error: true
-
-      - name: Notify Slack on signing failure
-        if: matrix.os == 'windows-latest' && steps.windows-sign.outputs.signed != 'true'
-        shell: bash
-        run: |
-          ERROR_TYPE="${{ steps.windows-sign.outputs.error }}"
-          case "$ERROR_TYPE" in
-            signtool_not_found)
-              ERROR_MSG="signtool.exe not found on runner. Windows SDK is not installed.
-
-          Action required:
-          1. RDP into the Windows runner
-          2. Install Windows SDK: winget install Microsoft.WindowsSDK.10.0.22621
-          3. Ensure SimpliSign Desktop is installed and running
-          4. Re-run the workflow
-
-          See: scripts/ci/windows/README.md for full setup."
-              ;;
-            *)
-              ERROR_MSG="Windows code signing failed ($ERROR_TYPE). Possible causes:
-          1. SimpliSign Desktop not running or session expired
-          2. Certificate not available in SimpliSign
-          3. signtool command returned error
-
-          Action required:
-          1. RDP into the Windows runner
-          2. Ensure SimpliSign Desktop is running and authenticated
-          3. Re-run the workflow
-
-          See: scripts/ci/windows/README.md for setup."
-              ;;
-          esac
-          ./scripts/ci/notify-slack.sh build-failure \
-            --platform "Windows" \
-            --error "$ERROR_MSG"
-        env:
-          SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_ALERT }}
-        continue-on-error: true
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "signtool verify failed — signature is invalid"
+            exit 1
+          }
+          Write-Host "Installer signed and verified successfully"
 
       # --- Upload artifacts to S3 ---
 
