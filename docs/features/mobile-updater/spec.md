@@ -186,7 +186,7 @@ iOS cannot self-update native code (Apple restriction). Two mechanisms:
 ```json
 {
   "version": "0.5.0",
-  "appstore_url": "https://apps.apple.com/app/id6448744655",
+  "appstore_url": "https://apps.apple.com/app/id6759199298",
   "released_at": "2026-02-14T10:00:00Z"
 }
 ```

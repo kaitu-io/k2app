@@ -126,7 +126,7 @@ if $UPLOAD_IOS; then
   cat > /tmp/ios-latest.json <<EOF
 {
   "version": "${VERSION}",
-  "appstore_url": "https://apps.apple.com/app/id6448744655",
+  "appstore_url": "https://apps.apple.com/app/id6759199298",
   "released_at": "${RELEASED_AT}"
 }
 EOF

@@ -151,7 +151,7 @@
   - `checkWebUpdate()`: fetch `web/latest.json`, compare version vs bundled version
   - `checkNativeUpdate()`: fetch `ios/latest.json`, compare version vs `Bundle.main.version`
   - `applyWebUpdate()`: download zip → verify sha256 → extract to Documents/web-update/ → swap with active
-  - `installNativeUpdate()`: open App Store URL (`https://apps.apple.com/app/id6448744655`)
+  - `installNativeUpdate()`: open App Store URL (`https://apps.apple.com/app/id6759199298`)
   - Backup mechanism: keep previous web version in Documents/web-backup/
   - On launch: check if Documents/web-update/ exists → use as webDir, else use bundled
 - REFACTOR: Extract URL fetching + hash verification into shared utility
