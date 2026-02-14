@@ -8,6 +8,14 @@ ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 
 cd "$ROOT_DIR"
 
+# --- Argument parsing ---
+FULL_BUILD=false
+for arg in "$@"; do
+  case "$arg" in
+    --full) FULL_BUILD=true ;;
+  esac
+done
+
 # --- Colors and helpers ---
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -187,6 +195,75 @@ if (cd webapp && npx tsc --noEmit) > /dev/null 2>&1; then
   pass "TypeScript check passed"
 else
   fail "TypeScript check failed"
+fi
+
+# ============================================================
+# 7. Full macOS build verification (--full only)
+# ============================================================
+if [ "$FULL_BUILD" = true ]; then
+  section "Full macOS Build (--full)"
+
+  echo "  Running make build-macos-fast (this may take several minutes)..."
+  if make build-macos-fast > /tmp/k2app-build-macos.log 2>&1; then
+    pass "make build-macos-fast succeeded"
+  else
+    fail "make build-macos-fast failed (see /tmp/k2app-build-macos.log)"
+  fi
+
+  PKG_VERSION=$(node -p "require('./package.json').version")
+  RELEASE_DIR="release/$PKG_VERSION"
+
+  # Check .pkg exists
+  PKG_FILE=$(find "$RELEASE_DIR" -name '*.pkg' 2>/dev/null | head -1)
+  if [ -n "$PKG_FILE" ]; then
+    pass ".pkg exists: $(basename "$PKG_FILE")"
+  else
+    fail ".pkg not found in $RELEASE_DIR/"
+  fi
+
+  # Check .pkg is a valid xar archive
+  if [ -n "$PKG_FILE" ] && file "$PKG_FILE" | grep -q "xar archive"; then
+    pass ".pkg is valid xar archive"
+  elif [ -n "$PKG_FILE" ]; then
+    fail ".pkg is not a xar archive: $(file "$PKG_FILE")"
+  fi
+
+  # Check .app.tar.gz exists
+  APP_TAR=$(find "$RELEASE_DIR" -name '*.app.tar.gz' 2>/dev/null | head -1)
+  if [ -n "$APP_TAR" ]; then
+    pass ".app.tar.gz exists: $(basename "$APP_TAR")"
+  else
+    fail ".app.tar.gz not found in $RELEASE_DIR/"
+  fi
+
+  # Check .sig exists
+  SIG_FILE=$(find "$RELEASE_DIR" -name '*.app.tar.gz.sig' 2>/dev/null | head -1)
+  if [ -n "$SIG_FILE" ]; then
+    pass ".app.tar.gz.sig exists: $(basename "$SIG_FILE")"
+  else
+    fail ".app.tar.gz.sig not found in $RELEASE_DIR/"
+  fi
+
+  # Verify .app codesign
+  APP_PATH="desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/Kaitu.app"
+  if [ -d "$APP_PATH" ]; then
+    if codesign --verify --deep --strict "$APP_PATH" 2>/dev/null; then
+      pass "codesign --verify --deep passed"
+    else
+      fail "codesign --verify --deep failed"
+    fi
+  else
+    skip "Kaitu.app not found, skipping codesign check"
+  fi
+
+  # Verify pkgutil can list .pkg contents
+  if [ -n "$PKG_FILE" ]; then
+    if pkgutil --payload-files "$PKG_FILE" > /dev/null 2>&1; then
+      pass "pkgutil --payload-files succeeded"
+    else
+      fail "pkgutil --payload-files failed"
+    fi
+  fi
 fi
 
 # ============================================================

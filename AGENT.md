@@ -6,7 +6,8 @@ Tauri v2 desktop app wrapping the k2 Go tunnel core. React webapp frontend serve
 
 ```bash
 make dev                         # k2 daemon + Vite HMR + Tauri window
-make build-macos                 # Signed macOS DMG (universal binary)
+make build-macos                 # Signed macOS PKG (universal binary)
+make build-macos-fast            # Same, skip notarization (local dev)
 make build-windows               # Signed Windows NSIS installer
 cd webapp && yarn test           # vitest (95 tests)
 cd desktop/src-tauri && cargo test  # Rust tests (4 tests)

@@ -13,10 +13,11 @@ build-k2:
 build-webapp:
 	cd webapp && yarn build
 
-build-macos: pre-build build-webapp
-	$(MAKE) build-k2 TARGET=aarch64-apple-darwin
-	$(MAKE) build-k2 TARGET=x86_64-apple-darwin
-	cd desktop && yarn tauri build --target universal-apple-darwin
+build-macos:
+	bash scripts/build-macos.sh
+
+build-macos-fast:
+	bash scripts/build-macos.sh --skip-notarization
 
 build-windows: pre-build build-webapp
 	$(MAKE) build-k2 TARGET=x86_64-pc-windows-msvc

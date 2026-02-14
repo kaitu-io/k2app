@@ -58,10 +58,12 @@ jobs:
       - name: Install Node dependencies
         run: yarn install --frozen-lockfile
 
-      - name: Run pre-build
+      - name: Run pre-build (Windows)
+        if: matrix.os == 'windows-latest'
         run: make pre-build
 
-      - name: Build webapp
+      - name: Build webapp (Windows)
+        if: matrix.os == 'windows-latest'
         run: make build-webapp
 
       # --- macOS: code signing certificate import ---
@@ -92,23 +94,20 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
 
-      # --- macOS: build k2 binaries for both architectures ---
+      # --- macOS: full build via shared script ---
 
-      - name: Build k2 for macOS (aarch64)
+      - name: Build macOS (k2 + tauri + pkg)
         if: matrix.os == 'macos-latest'
-        run: make build-k2 TARGET=aarch64-apple-darwin
         env:
-          GOARCH: arm64
-          GOOS: darwin
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_INSTALLER_IDENTITY: ${{ secrets.APPLE_INSTALLER_IDENTITY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: bash scripts/build-macos.sh
 
-      - name: Build k2 for macOS (x86_64)
-        if: matrix.os == 'macos-latest'
-        run: make build-k2 TARGET=x86_64-apple-darwin
-        env:
-          GOARCH: amd64
-          GOOS: darwin
-
-      # --- Windows: build k2 binary ---
+      # --- Windows: build k2 + Tauri ---
 
       - name: Build k2 for Windows
         if: matrix.os == 'windows-latest'
@@ -117,19 +116,14 @@ jobs:
           GOARCH: amd64
           GOOS: windows
 
-      # --- Build Tauri desktop app ---
-
-      - name: Build Tauri desktop app
+      - name: Build Tauri for Windows
+        if: matrix.os == 'windows-latest'
         env:
-          BUILD_TARGET: ${{ matrix.target }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: yarn tauri build --target "$BUILD_TARGET"
+          KAITU_SIGN_SERVER_URL: ${{ secrets.KAITU_SIGN_SERVER_URL }}
+          SKIP_WINDOWS_SIGNING: ${{ secrets.KAITU_SIGN_SERVER_URL == '' && 'true' || '' }}
+        run: yarn tauri build --target x86_64-pc-windows-msvc
         working-directory: desktop
 
       # --- Upload artifacts ---
@@ -140,9 +134,9 @@ jobs:
         with:
           name: kaitu-macos
           path: |
-            desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
-            desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz
-            desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
+            release/*/*.pkg
+            release/*/*.app.tar.gz
+            release/*/*.app.tar.gz.sig
 
       - name: Upload Windows artifacts
         if: matrix.os == 'windows-latest'
