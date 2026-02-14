@@ -37,7 +37,7 @@ aws s3 cp "${S3_VER}/" "${TMPDIR}/" --recursive \
   --exclude "*" --include "*.sig"
 
 MACOS_SIG=$(cat "${TMPDIR}"/*.app.tar.gz.sig 2>/dev/null || echo "")
-WINDOWS_SIG=$(cat "${TMPDIR}"/*_x64-setup.nsis.zip.sig 2>/dev/null || echo "")
+WINDOWS_SIG=$(cat "${TMPDIR}"/*_x64-setup.exe.sig 2>/dev/null || echo "")
 
 if [ -z "${MACOS_SIG}" ]; then
   echo "WARNING: macOS signature not found"
@@ -58,7 +58,7 @@ cat > "${TMPDIR}/cloudfront.latest.json" << EOF
       "signature": "${MACOS_SIG}"
     },
     "windows-x86_64": {
-      "url": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/${VERSION}/Kaitu_${VERSION}_x64-setup.nsis.zip",
+      "url": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/${VERSION}/Kaitu_${VERSION}_x64-setup.exe",
       "signature": "${WINDOWS_SIG}"
     }
   }
@@ -77,7 +77,7 @@ cat > "${TMPDIR}/d0.latest.json" << EOF
       "signature": "${MACOS_SIG}"
     },
     "windows-x86_64": {
-      "url": "https://d0.all7.cc/kaitu/desktop/${VERSION}/Kaitu_${VERSION}_x64-setup.nsis.zip",
+      "url": "https://d0.all7.cc/kaitu/desktop/${VERSION}/Kaitu_${VERSION}_x64-setup.exe",
       "signature": "${WINDOWS_SIG}"
     }
   }
@@ -92,7 +92,9 @@ cat "${TMPDIR}/d0.latest.json"
 echo ""
 
 # Upload latest.json files
-aws s3 cp "${TMPDIR}/cloudfront.latest.json" "${S3_ROOT}/cloudfront.latest.json"aws s3 cp "${TMPDIR}/d0.latest.json" "${S3_ROOT}/d0.latest.json"echo "latest.json files uploaded to S3"
+aws s3 cp "${TMPDIR}/cloudfront.latest.json" "${S3_ROOT}/cloudfront.latest.json"
+aws s3 cp "${TMPDIR}/d0.latest.json" "${S3_ROOT}/d0.latest.json"
+echo "latest.json files uploaded to S3"
 
 # Create GitHub Release
 gh release create "v${VERSION}" \
@@ -102,7 +104,7 @@ gh release create "v${VERSION}" \
 | Platform | Installer | Auto-Update |
 |----------|-----------|-------------|
 | **macOS** (Universal) | \`.pkg\` | \`.app.tar.gz\` |
-| **Windows** (x64) | \`.exe\` | \`.nsis.zip\` |
+| **Windows** (x64) | \`.exe\` | \`.exe\` (auto-update) |
 "
 
 echo ""
