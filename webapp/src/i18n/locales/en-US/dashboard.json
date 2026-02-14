@@ -1,0 +1,10 @@
+{
+  "title": "Dashboard",
+  "connect": "Connect",
+  "disconnect": "Disconnect",
+  "connecting": "Connecting...",
+  "connected": "Connected",
+  "disconnected": "Disconnected",
+  "uptime": "Uptime",
+  "error": "Connection Error"
+}
