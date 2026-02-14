@@ -1,18 +1,31 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { Layout } from './components/Layout';
+import { Settings } from './pages/Settings';
+import './i18n';
+import './app.css';
 
-function Home() {
-  return (
-    <div className="flex min-h-screen items-center justify-center">
-      <h1 className="text-4xl font-bold">Kaitu.io 开途</h1>
-    </div>
-  );
+function PlaceholderDashboard() {
+  return <div className="p-4">Dashboard (W3)</div>;
+}
+
+function PlaceholderServers() {
+  return <div className="p-4">Servers (W4)</div>;
+}
+
+function PlaceholderLogin() {
+  return <div className="p-4">Login (W2)</div>;
 }
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Home />} />
+        <Route path="/login" element={<PlaceholderLogin />} />
+        <Route element={<Layout />}>
+          <Route path="/" element={<PlaceholderDashboard />} />
+          <Route path="/servers" element={<PlaceholderServers />} />
+          <Route path="/settings" element={<Settings />} />
+        </Route>
       </Routes>
     </BrowserRouter>
   );

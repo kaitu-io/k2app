@@ -1,0 +1,11 @@
+{
+  "appName": "Kaitu.io",
+  "loading": "Loading...",
+  "retry": "Retry",
+  "cancel": "Cancel",
+  "confirm": "Confirm",
+  "save": "Save",
+  "error": "Error",
+  "success": "Success",
+  "servers": "Servers"
+}
