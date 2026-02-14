@@ -11,6 +11,7 @@ import (
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/daemon"
+	"github.com/kaitu-io/k2/wintun"
 )
 
 func cmdRun(args []string) {
@@ -39,6 +40,10 @@ func runInstall() {
 }
 
 func runDaemon() {
+	if _, err := wintun.EnsureExtracted(); err != nil {
+		log.Printf("wintun: %v", err)
+	}
+
 	daemon.ApplyResourceLimits()
 
 	go checkVersionAsync()
@@ -62,6 +67,10 @@ func runDaemon() {
 
 // runClientForeground runs the client in foreground (dev/debug mode, needs sudo for TUN).
 func runClientForeground(cfgPath string) {
+	if _, err := wintun.EnsureExtracted(); err != nil {
+		log.Printf("wintun: %v", err)
+	}
+
 	cfg, err := config.LoadClient(cfgPath)
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
