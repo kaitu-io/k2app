@@ -5,13 +5,10 @@ import { ServiceReadiness } from './components/ServiceReadiness';
 import { Settings } from './pages/Settings';
 import { Dashboard } from './pages/Dashboard';
 import { Login } from './pages/Login';
+import { Servers } from './pages/Servers';
 import { useAuthStore } from './stores/auth.store';
 import './i18n';
 import './app.css';
-
-function PlaceholderServers() {
-  return <div className="p-4">Servers (W4)</div>;
-}
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const { isLoggedIn } = useAuthStore();
@@ -33,7 +30,7 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route element={<AuthGuard><Layout /></AuthGuard>}>
             <Route path="/" element={<Dashboard />} />
-            <Route path="/servers" element={<PlaceholderServers />} />
+            <Route path="/servers" element={<Servers />} />
             <Route path="/settings" element={<Settings />} />
           </Route>
         </Routes>
