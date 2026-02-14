@@ -207,7 +207,7 @@ describe('UpdatePrompt', () => {
       expect(mockOnDownloadProgress).toHaveBeenCalled();
     });
     // Simulate progress update
-    progressHandler?.(42);
+    progressHandler!(42);
     await waitFor(() => {
       expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '42');
     });
