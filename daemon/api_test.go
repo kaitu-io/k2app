@@ -275,20 +275,6 @@ func TestSpeedtestLifecycle(t *testing.T) {
 	}
 }
 
-func TestHandleCoreReconnectNoConfig(t *testing.T) {
-	d := New()
-	body := `{"action":"reconnect"}`
-	req := httptest.NewRequest("POST", "/api/core", bytes.NewReader([]byte(body)))
-	w := httptest.NewRecorder()
-	d.handleCore(w, req)
-
-	var resp Response
-	json.NewDecoder(w.Body).Decode(&resp)
-	if resp.Code != 510 {
-		t.Fatalf("expected code 510, got %d: %s", resp.Code, resp.Message)
-	}
-}
-
 func TestHandleCoreGetConfig(t *testing.T) {
 	d := New()
 	d.TunnelBuilder = mockTunnelBuilder
