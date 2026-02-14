@@ -16,6 +16,15 @@ fn main() {
             if let Some(window) = app.get_webview_window("main") {
                 window.show().ok();
             }
+
+            // Initialize system tray
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = tray::init_tray(&app_handle) {
+                    log::error!("Failed to init tray: {}", e);
+                }
+            });
+
             Ok(())
         })
         .run(tauri::generate_context!())
