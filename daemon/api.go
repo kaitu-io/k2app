@@ -61,8 +61,6 @@ func (d *Daemon) handleCore(w http.ResponseWriter, r *http.Request) {
 		d.handleUp(w, req.Params)
 	case "down":
 		d.handleDown(w)
-	case "reconnect":
-		d.handleReconnect(w)
 	case "status":
 		d.handleStatus(w)
 	case "speedtest":
@@ -108,25 +106,6 @@ func (d *Daemon) handleUp(w http.ResponseWriter, params map[string]any) {
 func (d *Daemon) handleDown(w http.ResponseWriter) {
 	d.doDown()
 	writeJSON(w, Response{Code: 0, Message: "disconnected"})
-}
-
-func (d *Daemon) handleReconnect(w http.ResponseWriter) {
-	d.mu.RLock()
-	wireURL := d.lastWireURL
-	configPath := d.lastConfigPath
-	d.mu.RUnlock()
-
-	if wireURL == "" && configPath == "" {
-		writeJSON(w, Response{Code: 510, Message: "no saved config to reconnect with"})
-		return
-	}
-
-	if err := d.doUp(wireURL, configPath, 0); err != nil {
-		writeJSON(w, Response{Code: 511, Message: fmt.Sprintf("reconnect failed: %v", err)})
-		return
-	}
-
-	writeJSON(w, Response{Code: 0, Message: "reconnecting"})
 }
 
 func (d *Daemon) handleStatus(w http.ResponseWriter) {

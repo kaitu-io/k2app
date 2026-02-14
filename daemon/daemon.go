@@ -20,7 +20,6 @@ const (
 	StateStopped       = "stopped"
 	StateConnecting    = "connecting"
 	StateConnected     = "connected"
-	StateReconnecting  = "reconnecting"
 	StateDisconnecting = "disconnecting"
 	StateError         = "error"
 )
@@ -134,7 +133,7 @@ func (d *Daemon) doUp(wireURL, configPath string, pid int) error {
 	d.mu.Unlock()
 
 	// If already connected, disconnect first.
-	if current == StateConnected || current == StateConnecting || current == StateReconnecting {
+	if current == StateConnected || current == StateConnecting {
 		d.doDown()
 	}
 
