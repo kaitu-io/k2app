@@ -189,3 +189,47 @@ fn test_versions_match_with_build_metadata() {
 - All tests pass in `cargo test`
 
 ---
+
+## NativeVpnClient Constructor Injection Testing (2026-02-14, mobile-rewrite)
+
+**Pattern**: NativeVpnClient takes K2Plugin as constructor parameter. Tests create a mock plugin object with `vi.fn()` methods — no module mocking needed.
+
+**Mock factory**:
+```typescript
+function createMockPlugin() {
+  return {
+    checkReady: vi.fn(),
+    getUDID: vi.fn(),
+    getVersion: vi.fn(),
+    getStatus: vi.fn(),
+    getConfig: vi.fn(),
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+    addListener: vi.fn(),
+  };
+}
+const plugin = createMockPlugin();
+const client = new NativeVpnClient(plugin);
+```
+
+**Why constructor injection over vi.mock**:
+- `vi.mock('k2-plugin')` doesn't work because `k2-plugin` is a Capacitor native module — not a normal npm package
+- Constructor injection is simpler, type-safe, and portable across test frameworks
+- Each test gets fresh mock (no shared module-level state to reset)
+
+**Testing plugin events (subscribe)**:
+```typescript
+const stateChangeCall = plugin.addListener.mock.calls.find(
+  (call) => call[0] === 'vpnStateChange'
+);
+const handler = stateChangeCall![1];
+handler({ state: 'disconnected' });
+expect(events).toEqual([{ type: 'state_change', state: 'stopped' }]);
+```
+
+**Key insight**: Plugin listener setup is async (returns Promise with handle), but the handler callback is sync. Tests can trigger handlers immediately after subscribe().
+
+**Validating tests**:
+- `webapp/src/vpn-client/__tests__/native-client.test.ts` — 18 tests using this pattern
+
+---

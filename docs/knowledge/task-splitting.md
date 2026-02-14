@@ -65,3 +65,23 @@ Lessons from decomposing features into parallel worktree tasks.
 **Validation**: `yarn install` after merge produced clean lock file, all dependencies resolved.
 
 ---
+
+## Mobile Tasks Achieve Zero Merge Conflicts with Clean Platform Boundaries (2026-02-14, mobile-rewrite)
+
+**Observation**: Mobile-rewrite T1 (iOS), T2 (Android), T3 (NativeVpnClient) ran in parallel worktrees and merged to main with **zero conflicts**.
+
+**Why no conflicts** (contrast with k2app-rewrite's 6 conflicts):
+- T1 only touches `mobile/ios/**` + `mobile/plugins/k2-plugin/ios/**`
+- T2 only touches `mobile/android/**` + `mobile/plugins/k2-plugin/android/**`
+- T3 only touches `webapp/src/vpn-client/**`
+- No shared entry-point file (unlike `main.rs` or `App.tsx` in k2app-rewrite)
+
+**Key difference from desktop**: Desktop features all register in `main.rs` (conflict hotspot). Mobile platform code has zero file overlap by design — iOS and Android directories are completely separate. K2Plugin TypeScript definitions (`definitions.ts`) were created in T0 (foundation task), so T1/T2/T3 only read them.
+
+**Lesson**: When platform boundaries align with file system boundaries, parallel tasks have zero merge conflicts. Plan tasks along platform boundaries when possible.
+
+**Merge order used**: T3 → T1 → T2 (order didn't matter since no conflicts).
+
+**Validation**: All three merges succeeded without manual conflict resolution.
+
+---

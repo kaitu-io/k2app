@@ -11,7 +11,7 @@ Knowledge distilled from executed features. Links to validating tests.
 **Implementations**:
 - `HttpVpnClient` (desktop): HTTP to `http://127.0.0.1:1777` + internal 2s polling converted to events
 - `MockVpnClient` (testing): Controllable test double
-- `NativeVpnClient` (mobile, deferred): Capacitor Plugin bridge
+- `NativeVpnClient` (mobile): Capacitor Plugin bridge via constructor-injected K2Plugin
 
 **Key patterns**:
 - Factory function `createVpnClient(override?)` for dependency injection
@@ -155,5 +155,83 @@ COMMIT  := $(shell cd k2 && git rev-parse --short HEAD)
 **Validating tests**:
 - `scripts/test_version_propagation.sh` — verifies VERSION extraction, version.json generation
 - Build verification: all components report same version
+
+---
+
+## NativeVpnClient Mobile Bridge (2026-02-14, mobile-rewrite)
+
+**Decision**: NativeVpnClient wraps Capacitor K2Plugin calls behind the same VpnClient interface. The plugin is injected via constructor, loaded asynchronously via dynamic import to avoid bundling mobile-only dependencies in desktop builds.
+
+**Architecture**:
+- `NativeVpnClient(plugin)` — constructor injection of K2Plugin
+- `initVpnClient()` — async factory: detects `Capacitor.isNativePlatform()`, dynamically imports `NativeVpnClient` + `K2Plugin`
+- `createVpnClient()` — sync factory: throws on native (must use `initVpnClient()`)
+- `getVpnClient()` — accessor after initialization
+
+**State mapping**: Go Engine uses `"disconnected"` as idle state. The `mapState()` function in `native-client.ts` maps: `"disconnected"` → `"stopped"`, `"connecting"` → `"connecting"`, `"connected"` → `"connected"`, unknown → `"stopped"`.
+
+**Three-layer state mapping** (defense in depth):
+1. **Go Engine** outputs: `"disconnected"`, `"connecting"`, `"connected"`
+2. **K2Plugin native** (Swift/Kotlin `remapStatusKeys`): maps `"disconnected"` → `"stopped"` for `getStatus()` and event handlers
+3. **NativeVpnClient TS** (`mapState`): maps `"disconnected"` → `"stopped"` as safety net
+
+**Why constructor injection**:
+- Enables testing with mock plugin (no Capacitor dependency in tests)
+- Avoids module-level mocking (`vi.mock`)
+- K2Plugin is Capacitor-specific — cannot be imported outside native runtime
+
+**Validating tests**:
+- `webapp/src/vpn-client/__tests__/native-client.test.ts` — 18 tests covering all methods, state mapping, subscribe/unsubscribe, destroy
+- `webapp/src/vpn-client/__tests__/index.test.ts` — factory detection tests
+
+---
+
+## iOS Two-Process vs Android Single-Process VPN (2026-02-14, mobile-rewrite)
+
+**Decision**: iOS uses NEPacketTunnelProvider (separate NE process) + K2Plugin (main process). Android runs K2VpnService + K2Plugin + Engine all in the same process.
+
+**iOS architecture** (two processes):
+- Main App Process: Capacitor + K2Plugin → manages NETunnelProviderManager
+- NE Process: PacketTunnelProvider → gomobile Engine (Start/Stop/StatusJSON)
+- Communication: `sendProviderMessage()` for status RPC, `NEVPNStatusDidChange` for events, App Group UserDefaults for shared state
+
+**Android architecture** (single process):
+- Single Process: Capacitor + K2Plugin → K2VpnService → gomobile Engine
+- Communication: Direct method calls (Engine in same process), ServiceConnection binding
+- K2Plugin binds to K2VpnService via `bindService()` for lifecycle management
+
+**Why different**:
+- Apple requires VPN tunnels run in NE extension (separate process, sandboxed)
+- Android VpnService runs in app process (no process boundary)
+- This fundamentally changes status query pattern: iOS needs IPC (sendProviderMessage), Android calls Engine directly
+
+**Validating tests**:
+- Manual: iOS device test — connect, status via sendProviderMessage, disconnect
+- Manual: Android device test — connect, status via direct Engine call, disconnect
+
+---
+
+## Go→JS JSON Key Remapping at Native Bridge (2026-02-14, mobile-rewrite)
+
+**Decision**: Go `json.Marshal` outputs snake_case keys (`connected_at`, `uptime_seconds`, `wire_url`). Native bridge layers (K2Plugin.swift, K2Plugin.kt) remap to camelCase at the boundary before passing to webapp.
+
+**Key mapping** (in both Swift and Kotlin `remapStatusKeys`):
+| Go snake_case | JS camelCase |
+|---------------|-------------|
+| `connected_at` | `connectedAt` |
+| `uptime_seconds` | `uptimeSeconds` |
+| `wire_url` | `wireUrl` |
+
+**Additional mapping**: `"disconnected"` → `"stopped"` for state field.
+
+**Why remap at native bridge, not in Go**:
+- Go's `json.Marshal` convention is snake_case — changing it requires struct tags across all Go code
+- The native bridge is the natural boundary between Go and JS worlds
+- Same pattern used by all Go→JS bridge layers (consistent convention)
+- TypeScript definitions expect camelCase (standard JS convention)
+
+**Validating tests**:
+- `webapp/src/vpn-client/__tests__/native-client.test.ts` — `getStatus()` tests verify camelCase keys arrive correctly
+- Code review verification: Swift `remapStatusKeys()` and Kotlin `remapStatusKeys()` have identical key maps
 
 ---

@@ -46,6 +46,89 @@ tauri::Builder::default()
 
 ---
 
+## Go json.Marshal snake_case vs JavaScript camelCase (2026-02-14, mobile-rewrite)
+
+**Problem**: Go's `json.Marshal` outputs snake_case keys by default (`connected_at`, `uptime_seconds`). JavaScript/TypeScript expects camelCase (`connectedAt`, `uptimeSeconds`). When raw Go JSON is passed through native bridges to webapp, keys don't match TypeScript types.
+
+**Symptom**:
+- `getStatus().connectedAt` returns `undefined`
+- `getStatus().connected_at` has the value (but TypeScript type doesn't declare it)
+- No runtime error — silently wrong data
+
+**Root cause**:
+- Go `json.Marshal` uses struct field names (snake_case by Go convention) unless `json:"camelCase"` tags added
+- gomobile Engine.StatusJSON() returns raw JSON from Go
+- Native bridge passes it through without transformation
+
+**Solution**: Remap keys at native bridge layer (K2Plugin.swift and K2Plugin.kt):
+```swift
+private func remapStatusKeys(_ json: [String: Any]) -> [String: Any] {
+    let keyMap: [String: String] = [
+        "connected_at": "connectedAt",
+        "uptime_seconds": "uptimeSeconds",
+        "wire_url": "wireUrl",
+    ]
+    // ... remap keys + map "disconnected" → "stopped"
+}
+```
+
+**Prevention rule**: When passing Go JSON to JavaScript, always remap keys at the bridge. Convention added to AGENT.md.
+
+**Validation**:
+- `webapp/src/vpn-client/__tests__/native-client.test.ts` — getStatus() tests verify camelCase keys
+
+---
+
+## .gitignore Overbroad Patterns Hide Source Files (2026-02-14, mobile-rewrite)
+
+**Problem**: `.gitignore` patterns like `mobile/ios/` and `mobile/android/` ignore entire directories, including source files that should be tracked.
+
+**Symptom**:
+- `git status` shows no untracked files under `mobile/ios/`
+- New Swift/Kotlin files created by agents are invisible to git
+- No error messages — completely silent failure
+
+**Root cause**: Initial `.gitignore` included broad directory patterns to skip build artifacts. Pattern `mobile/ios/` matches ALL files under that directory.
+
+**Solution**: Replace broad patterns with targeted build artifact patterns:
+```gitignore
+mobile/ios/App/Pods/
+mobile/ios/App/build/
+mobile/android/.gradle/
+mobile/android/app/build/
+mobile/android/k2-mobile/libs/
+```
+
+**Verification**: `git check-ignore <source-file>` should return nothing (not ignored).
+
+**Prevention**: Convention added to AGENT.md: "Never ignore entire source directories. Only ignore build artifacts."
+
+---
+
+## Capacitor Plugin Dynamic Import to Avoid Desktop Bundle Bloat (2026-02-14, mobile-rewrite)
+
+**Problem**: Importing `K2Plugin` from `k2-plugin` at module level causes Vite to bundle Capacitor dependencies into the desktop build, where they're not needed.
+
+**Solution**: Dynamic import with `@vite-ignore` comment:
+```typescript
+export async function initVpnClient(): Promise<VpnClient> {
+  if (isCapacitorNative()) {
+    const { NativeVpnClient } = await import('./native-client');
+    const pluginModule = 'k2-plugin';
+    const { K2Plugin } = await import(/* @vite-ignore */ pluginModule);
+    instance = new NativeVpnClient(K2Plugin);
+  } else {
+    instance = new HttpVpnClient();
+  }
+}
+```
+
+**Why `@vite-ignore`**: Vite statically analyzes `import()` expressions. The variable indirection + `@vite-ignore` tells Vite to skip this import during static analysis. `k2-plugin` is only available at runtime on native platforms.
+
+**Trade-off**: Lose static analysis for this import. Type safety maintained via local `K2PluginType` interface in `native-client.ts`.
+
+---
+
 ## Vite Dev Proxy vs Production baseUrl (2026-02-14, k2app-rewrite)
 
 **Problem**: HttpVpnClient needs different baseUrl in dev vs production.

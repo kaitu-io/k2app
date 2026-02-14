@@ -7,7 +7,7 @@
 | Project | k2app |
 | Version | 0.4.0 |
 | Updated | 2026-02-14 |
-| Scope | Desktop (macOS, Windows) — Mobile deferred |
+| Scope | Desktop (macOS, Windows) + Mobile (iOS, Android) |
 
 ## Overview
 
@@ -52,7 +52,47 @@ k2app is a cross-platform VPN client built on the k2 Go core. It replaces the ol
 
 **Tech stack**: React 19, TypeScript, Vite, Tailwind CSS v4, Radix UI, Zustand, React Hook Form, Zod, i18next
 
-**Build output**: `webapp/dist/` — static HTML/CSS/JS bundle
+**Build output**: `webapp/dist/` — static HTML/CSS/JS bundle (shared by desktop and mobile)
+
+---
+
+## mobile/ — Capacitor 6 Mobile App (iOS + Android)
+
+**Purpose**: Mobile VPN client reusing webapp, with gomobile bind replacing Rust UniFFI for Go→native FFI.
+
+**Capabilities**:
+- Capacitor 6 shell wrapping same `webapp/dist/` as desktop
+- K2Plugin Capacitor native plugin (Swift + Kotlin)
+  - `checkReady()`, `getUDID()`, `getVersion()`, `getStatus()`, `getConfig()`
+  - `connect(wireUrl)`, `disconnect()`
+  - `vpnStateChange` and `vpnError` event listeners
+  - Go→JS JSON key remapping (`remapStatusKeys`: snake_case → camelCase)
+  - State mapping: Engine `"disconnected"` → webapp `"stopped"`
+- iOS PacketTunnelExtension (NE process)
+  - gomobile Engine runs in separate NE process
+  - `sendProviderMessage("status")` for rich status RPC
+  - `NEVPNStatusDidChange` for coarse state events
+  - App Group `group.io.kaitu` for shared state
+  - Entitlements: NE + App Group (device), App Group only (simulator)
+- Android K2VpnService (same process)
+  - gomobile Engine runs in app process
+  - Foreground service with notification
+  - `VpnService.Builder.establish()` provides TUN fd
+  - EventHandler bridge → K2Plugin → webapp
+- NativeVpnClient webapp implementation
+  - Constructor-injected K2Plugin for testability
+  - Dynamic import via `initVpnClient()` to avoid desktop bundle bloat
+  - `mapState()` for Engine→VpnState mapping
+
+**Tech stack**: Capacitor 6, gomobile bind, Swift (iOS), Kotlin (Android), TypeScript (plugin defs)
+
+**Build output**: IPA (iOS via Xcode), APK (Android via Gradle)
+
+**Key files**:
+- `mobile/capacitor.config.ts` — Capacitor configuration
+- `mobile/plugins/k2-plugin/` — Capacitor plugin (TS defs + Swift + Kotlin)
+- `mobile/ios/App/PacketTunnelExtension/` — iOS NE target
+- `mobile/android/app/src/main/java/io/kaitu/K2VpnService.kt` — Android VPN service
 
 ---
 
@@ -140,6 +180,8 @@ k2app is a cross-platform VPN client built on the k2 Go core. It replaces the ol
   - Extracts VERSION from package.json
   - Runs `make pre-build`
   - Validates version.json matches
+- `build-mobile-ios.sh` — iOS build pipeline (gomobile → xcframework → cap sync → xcodebuild)
+- `build-mobile-android.sh` — Android build pipeline (gomobile → AAR → cap sync → Gradle)
 
 ---
 
@@ -155,6 +197,8 @@ k2app is a cross-platform VPN client built on the k2 Go core. It replaces the ol
 - Webapp build (Vite)
 - macOS release build (universal binary, DMG)
 - Windows release build (NSIS installer)
+- Mobile iOS build (gomobile + xcodebuild)
+- Mobile Android build (gomobile + Gradle)
 - Dev mode launcher (calls scripts/dev.sh)
 - Clean targets (dist, target, binaries)
 
@@ -183,6 +227,11 @@ k2app is a cross-platform VPN client built on the k2 Go core. It replaces the ol
   - Signing and notarization (macOS)
   - Artifact upload to CDN
   - latest.json update for Tauri updater
+- Mobile build pipeline (build-mobile.yml)
+  - Manual dispatch with platform selection (ios/android/both)
+  - iOS job: macos-latest, Go 1.24, Node 20, gomobile, Xcode, CocoaPods
+  - Android job: ubuntu-latest, Go 1.24, Node 20, Java 17, Android SDK, gomobile
+  - Artifact upload (30-day retention)
 
 ---
 
@@ -197,6 +246,7 @@ k2app is a cross-platform VPN client built on the k2 Go core. It replaces the ol
 
 **Current features**:
 - k2app-rewrite (implemented) — full rewrite from kaitu 0.3.x to k2app 0.4.0
+- mobile-rewrite (implemented) — iOS + Android clients with Capacitor + gomobile
 
 ---
 
@@ -226,8 +276,8 @@ k2app is a cross-platform VPN client built on the k2 Go core. It replaces the ol
 **Purpose**: Project-wide configuration for package management, build tools, and version control.
 
 **Capabilities**:
-- package.json — Workspace root, version source of truth (0.4.0), yarn workspaces config
-- .gitignore — Exclusions for node_modules, dist, target, binaries
+- package.json — Workspace root, version source of truth (0.4.0), yarn workspaces (webapp, desktop, mobile)
+- .gitignore — Exclusions for node_modules, dist, target, binaries, mobile build artifacts
 - .gitmodules — k2 submodule at `k2/` pointing to kaitu-io/k2
 - CLAUDE.md — Project conventions for AI agents (VpnClient boundary, antiblock, version source)
 
