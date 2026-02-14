@@ -17,4 +17,4 @@ tokio = { version = "1", features = ["time"] }
 log = "0.4"
 
 [build-dependencies]
-tauri-build = "2"
+tauri-build = { version = "2", features = [] }

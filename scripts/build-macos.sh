@@ -35,16 +35,31 @@ make build-webapp
 # --- Build k2 for both architectures ---
 echo ""
 echo "--- Building k2 (aarch64-apple-darwin) ---"
-make build-k2 TARGET=aarch64-apple-darwin
+GOARCH=arm64 GOOS=darwin make build-k2 TARGET=aarch64-apple-darwin
 
 echo ""
 echo "--- Building k2 (x86_64-apple-darwin) ---"
-make build-k2 TARGET=x86_64-apple-darwin
+GOARCH=amd64 GOOS=darwin make build-k2 TARGET=x86_64-apple-darwin
+
+# --- Create universal k2 binary with lipo ---
+echo ""
+echo "--- Creating universal k2 binary ---"
+K2_BIN_DIR="desktop/src-tauri/binaries"
+lipo -create \
+  "$K2_BIN_DIR/k2-aarch64-apple-darwin" \
+  "$K2_BIN_DIR/k2-x86_64-apple-darwin" \
+  -output "$K2_BIN_DIR/k2-universal-apple-darwin"
+chmod +x "$K2_BIN_DIR/k2-universal-apple-darwin"
+echo "Created universal binary: $K2_BIN_DIR/k2-universal-apple-darwin"
 
 # --- Tauri build (universal binary) ---
 echo ""
 echo "--- Building Tauri app (universal-apple-darwin) ---"
 cd desktop
+if [ "$SKIP_NOTARIZATION" = true ]; then
+  # Unset Apple credentials to prevent Tauri's built-in notarization
+  unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
+fi
 yarn tauri build --target universal-apple-darwin --config src-tauri/tauri.bundle.conf.json
 cd "$ROOT_DIR"
 
@@ -73,26 +88,42 @@ mkdir -p "$RELEASE_DIR"
 PKG_UNSIGNED="$RELEASE_DIR/Kaitu-${VERSION}-unsigned.pkg"
 PKG_SIGNED="$RELEASE_DIR/Kaitu-${VERSION}.pkg"
 
-pkgbuild \
-  --root "$APP_PATH" \
-  --component-plist /dev/stdin \
-  --identifier io.kaitu.desktop \
-  --version "$VERSION" \
-  --install-location "/Applications/Kaitu.app" \
-  "$PKG_UNSIGNED" <<'PLIST'
+# Stage only the .app for pkgbuild (exclude updater artifacts)
+PKG_STAGE=$(mktemp -d /tmp/k2app-pkg-stage.XXXXXX)
+cp -R "$APP_PATH" "$PKG_STAGE/"
+
+# Create component plist with BundleIsRelocatable=false
+COMPONENT_PLIST=$(mktemp /tmp/k2app-component.XXXXXX)
+cat > "$COMPONENT_PLIST" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <array>
   <dict>
+    <key>BundleHasStrictIdentifier</key>
+    <true/>
     <key>BundleIsRelocatable</key>
     <false/>
     <key>BundleIsVersionChecked</key>
     <false/>
+    <key>BundleOverwriteAction</key>
+    <string>upgrade</string>
+    <key>RootRelativeBundlePath</key>
+    <string>Kaitu.app</string>
   </dict>
 </array>
 </plist>
 PLIST
+
+pkgbuild \
+  --root "$PKG_STAGE" \
+  --component-plist "$COMPONENT_PLIST" \
+  --identifier io.kaitu.desktop \
+  --version "$VERSION" \
+  --install-location "/Applications" \
+  "$PKG_UNSIGNED"
+
+rm -rf "$PKG_STAGE" "$COMPONENT_PLIST"
 
 echo "Created unsigned pkg: $PKG_UNSIGNED"
 
