@@ -92,9 +92,7 @@ cat "${TMPDIR}/d0.latest.json"
 echo ""
 
 # Upload latest.json files
-aws s3 cp "${TMPDIR}/cloudfront.latest.json" "${S3_ROOT}/cloudfront.latest.json" --acl public-read
-aws s3 cp "${TMPDIR}/d0.latest.json" "${S3_ROOT}/d0.latest.json" --acl public-read
-echo "latest.json files uploaded to S3"
+aws s3 cp "${TMPDIR}/cloudfront.latest.json" "${S3_ROOT}/cloudfront.latest.json"aws s3 cp "${TMPDIR}/d0.latest.json" "${S3_ROOT}/d0.latest.json"echo "latest.json files uploaded to S3"
 
 # Create GitHub Release
 gh release create "v${VERSION}" \

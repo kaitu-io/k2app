@@ -216,8 +216,7 @@ jobs:
         run: |
           VERSION=$(node -p "require('./package.json').version")
           S3_BASE="s3://d0.all7.cc/kaitu/desktop/${VERSION}"
-          aws s3 cp release/${VERSION}/ "${S3_BASE}/" --recursive --acl public-read
-
+          aws s3 cp release/${VERSION}/ "${S3_BASE}/" --recursive
       - name: Upload Windows to S3
         if: matrix.os == 'windows-latest'
         env:
