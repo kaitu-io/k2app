@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"runtime"
 	"strings"
+
+	"github.com/kaitu-io/k2/cloud"
 )
 
 // Request is the JSON request body for POST /api/core.
@@ -193,6 +195,47 @@ func corsMiddleware(next http.Handler) http.Handler {
 		}
 
 		next.ServeHTTP(w, r)
+	})
+}
+
+func (d *Daemon) handleDeviceUDID(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, Response{
+		Code:    0,
+		Message: "ok",
+		Data:    map[string]any{"udid": cloud.UDID()},
+	})
+}
+
+// webappHandler returns an http.Handler that serves the embedded webapp SPA.
+// Non-file paths return index.html for SPA routing.
+func webappHandler() http.Handler {
+	webFS, err := cloud.FS()
+	if err != nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "webapp not available", http.StatusInternalServerError)
+		})
+	}
+
+	fileServer := http.FileServer(http.FS(webFS))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Try to serve the exact file first.
+		path := r.URL.Path
+		if path == "/" {
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+
+		// Strip leading slash for fs.Open.
+		name := strings.TrimPrefix(path, "/")
+		if f, err := webFS.Open(name); err == nil {
+			f.Close()
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+
+		// SPA fallback: serve index.html for non-file paths.
+		r.URL.Path = "/"
+		fileServer.ServeHTTP(w, r)
 	})
 }
 
