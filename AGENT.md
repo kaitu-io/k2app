@@ -9,7 +9,7 @@ make dev                         # k2 daemon + Vite HMR + Tauri window
 make build-macos                 # Signed macOS PKG (universal binary)
 make build-macos-fast            # Same, skip notarization (local dev)
 make build-windows               # Signed Windows NSIS installer
-cd webapp && yarn test           # vitest (95 tests)
+cd webapp && yarn test           # vitest (115 tests)
 cd desktop/src-tauri && cargo test  # Rust tests (4 tests)
 scripts/test_build.sh            # Full build verification (14 checks)
 yarn install                     # Always run from root (workspace)
@@ -21,7 +21,8 @@ yarn install                     # Always run from root (workspace)
 k2/                  Go core (submodule, read-only — has its own AGENT.md)
 webapp/              React + Vite + Tailwind frontend (see webapp/AGENT.md)
 desktop/             Tauri v2 Rust shell (see desktop/AGENT.md)
-scripts/             dev.sh, build-k2.sh, test_build.sh, test_version_propagation.sh
+mobile/              Capacitor 6 mobile app (see mobile/ for K2Plugin)
+scripts/             dev.sh, build-macos.sh, build-mobile-*.sh, test_build.sh
 docs/features/       Feature specs and plans
 docs/baselines/      Project capability baseline
 docs/knowledge/      Distilled patterns (architecture, testing, gotchas, task-splitting, bugfix)
@@ -37,18 +38,21 @@ Makefile             Build orchestration — version from package.json, k2 from 
 - **k2 submodule**: Read-only. Built with `-tags nowebapp` (headless mode). Binary output to `desktop/src-tauri/binaries/`.
 - **i18n**: zh-CN default, en-US secondary. Browser language detection. Keys namespaced by page (common, dashboard, auth, settings).
 - **Webapp subagent tasks**: Always invoke `/word9f-frontend` for frontend decisions.
+- **Go→JS JSON key convention**: Go `json.Marshal` outputs snake_case (`connected_at`). JS/TS expects camelCase (`connectedAt`). Native bridge layers (K2Plugin.swift, K2Plugin.kt) must remap keys at the boundary. Never pass raw Go JSON to webapp without key remapping.
+- **`.gitignore` for native platforms**: Never ignore entire source directories (`mobile/ios/`, `mobile/android/`). Only ignore build artifacts (`Pods/`, `build/`, `libs/`, `.gradle/`). Source files must always be visible to git.
 
 ## Tech Stack
 
 - Frontend: React 19, TypeScript, Tailwind CSS v4, Zustand, React Router
 - Desktop: Tauri v2, Rust
 - Core: Go (k2 submodule)
-- Package: yarn workspaces (`webapp`, `desktop`)
-- CI: GitHub Actions (`ci.yml`, `release-desktop.yml`)
+- Mobile: Capacitor 6, gomobile bind (K2Plugin Swift/Kotlin)
+- Package: yarn workspaces (`webapp`, `desktop`, `mobile`)
+- CI: GitHub Actions (`ci.yml`, `release-desktop.yml`, `build-mobile.yml`)
 
 ## Domain Vocabulary
 
-- **VpnClient** — Platform abstraction (HttpVpnClient desktop, MockVpnClient test, NativeVpnClient mobile deferred)
+- **VpnClient** — Platform abstraction (HttpVpnClient desktop, MockVpnClient test, NativeVpnClient mobile)
 - **Antiblock** — Multi-CDN entry URL resolution for Cloud API in blocked regions
 - **Service readiness** — Daemon ping + version check before showing main UI
 - **Version matching** — Strip build metadata after `+` for semver comparison
