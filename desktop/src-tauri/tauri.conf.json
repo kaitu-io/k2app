@@ -1,0 +1,62 @@
+{
+  "productName": "Kaitu",
+  "version": "../../package.json",
+  "identifier": "io.kaitu.desktop",
+  "build": {
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../../webapp/dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [{
+      "label": "main",
+      "title": "Kaitu.io \u5f00\u9014",
+      "width": 430,
+      "height": 956,
+      "minWidth": 320,
+      "minHeight": 568,
+      "maxWidth": 480,
+      "center": true,
+      "resizable": true,
+      "maximizable": false,
+      "minimizable": false,
+      "visible": false,
+      "hiddenTitle": true
+    }],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["dmg", "nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "12.0",
+      "signingIdentity": "Developer ID Application: Wordgate LLC (NJT954Q3RH)",
+      "entitlements": "entitlements.plist",
+      "hardenedRuntime": true
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "perMachine"
+      }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/cloudfront.latest.json",
+        "https://d0.all7.cc/kaitu/desktop/d0.latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQwRDc1NDVGRDdDRURFODMKUldTRDNzN1hYMVRYUUxhU2FmRlF5SXljRUdINXYwZDdFT3NQVW1RR0pNUmpuQ3VxcTNlQVZLRUUK"
+    }
+  }
+}
