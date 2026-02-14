@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { ServiceReadiness } from "./components/ServiceReadiness";
 
 function Home() {
   return (
@@ -11,9 +12,11 @@ function Home() {
 export default function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Home />} />
-      </Routes>
+      <ServiceReadiness>
+        <Routes>
+          <Route path="/" element={<Home />} />
+        </Routes>
+      </ServiceReadiness>
     </BrowserRouter>
   );
 }
