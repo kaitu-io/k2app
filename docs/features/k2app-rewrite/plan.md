@@ -5,9 +5,9 @@
 | Field | Value |
 |-------|-------|
 | Feature | k2app-rewrite |
-| Spec | docs/features/k2app-rewrite/spec.md (v6) |
+| Spec | docs/features/k2app-rewrite/spec.md (v7) |
 | Date | 2026-02-14 |
-| Complexity | complex (greenfield, >20 files, 3 tech stacks) |
+| Complexity | complex (greenfield, >25 files, 3 tech stacks) |
 | Scope | Desktop only (Phase 1). Mobile deferred. |
 
 ## AC Mapping
@@ -22,7 +22,14 @@
 | k2 binary bundled as externalBin | `test_build_k2.sh`: binary exists at target path | S3 |
 | Service readiness loading state | vitest: ServiceReadiness loading → main UI | W1 |
 | Antiblock entry URL resolution | vitest: resolveEntry falls back through CDN sources | W1 |
-| Cloud API via antiblock entry | vitest: cloudApi.login calls ${entry}/api/auth/login | W2 |
+| Cloud API via antiblock entry | vitest: cloudApi.login calls ${entry}/api/auth/login | W1 |
+| VpnClient interface with HttpVpnClient | vitest: HttpVpnClient.connect sends correct HTTP | W1 |
+| HttpVpnClient poll→event with dedup | vitest: subscribe deduplicates identical states | W1 |
+| MockVpnClient injectable for tests | vitest: createVpnClient(mock) returns mock | W1 |
+| createVpnClient() auto-selects | vitest: factory returns HttpVpnClient in non-native env | W1 |
+| connect()/disconnect() resolve on "command accepted" | vitest: connect resolves before status changes | W1 |
+| subscribe() delivers VpnEvent | vitest: subscribe receives state_change events | W1 |
+| All UI uses VpnClient, never direct HTTP | code review: no direct fetch to :1777 outside vpn-client/ | W3 |
 | Old kaitu-service cleanup | Rust test: `detect_old_service` + cleanup logic | D1 |
 | System tray connect/disconnect/quit | manual + tray menu item count | D2 |
 | Auto-updater with CDN endpoints | updater config matches endpoints + pubkey | D3 |
@@ -34,7 +41,7 @@
 ## Dependency Graph
 
 ```
-F1 ──┬──→ S1 (webapp scaffold) ──┬──→ W1 (daemon+cloud API+antiblock) ──┬──→ W2 (auth)
+F1 ──┬──→ S1 (webapp scaffold) ──┬──→ W1 (VpnClient+antiblock+cloud) ──┬──→ W2 (auth)
      │                           │                                       ├──→ W3 (dashboard)
      │                           │                                       └──→ W4 (servers, also needs W2)
      │                           └──→ W5 (settings+i18n+layout)
@@ -59,15 +66,14 @@ F1 ──┬──→ S1 (webapp scaffold) ──┬──→ W1 (daemon+cloud A
 **Depends on**: none
 
 **Steps**:
-1. `git init` in k2app
-2. Add k2 as submodule: `git submodule add ../k2 k2`
-3. Create root `package.json`:
+1. Add k2 as submodule: `git submodule add ../k2 k2`
+2. Create root `package.json`:
    ```json
    { "name": "k2app", "version": "0.4.0", "private": true,
      "workspaces": ["webapp", "desktop"] }
    ```
    Note: `mobile` workspace added later when mobile phase begins.
-4. Create `.gitignore`:
+3. Create `.gitignore`:
    ```
    node_modules/
    dist/
@@ -78,12 +84,13 @@ F1 ──┬──→ S1 (webapp scaffold) ──┬──→ W1 (daemon+cloud A
    *.log
    .DS_Store
    ```
-5. Create `CLAUDE.md` with project conventions:
+4. Create `CLAUDE.md` with project conventions:
    - k2 is Go submodule at `k2/`, do NOT modify
    - Webapp in `webapp/`, desktop in `desktop/`
    - Build: `make dev` for development, `make build-macos` for release
    - k2 binary built with `-tags nowebapp`
-   - API contract: webapp → `http://127.0.0.1:1777` (k2 daemon)
+   - Webapp uses VpnClient interface — never direct HTTP to daemon outside vpn-client/
+   - webapp subagent tasks should invoke `/word9f-frontend`
 
 **TDD**:
 - RED: `test -f k2/go.mod` → fails (no submodule)
@@ -366,6 +373,9 @@ test "$(jq -r .version webapp/public/version.json)" = "$VERSION" || exit 1
    - Click on tray icon: toggle window
 2. Wire into `main.rs`: call `init_tray` in setup
 
+Note: Tray uses direct HTTP to daemon (Rust side), not VpnClient. This is fine —
+VpnClient constraint applies to webapp TypeScript code only.
+
 **TDD**:
 - RED: Build expects `tray` module → no file
 - GREEN: Implement tray with menu items, `cargo check` passes
@@ -397,41 +407,139 @@ test "$(jq -r .version webapp/public/version.json)" = "$VERSION" || exit 1
 
 ---
 
-### W1: Daemon API Client + Antiblock + Service Readiness
+### W1: VpnClient Abstraction + Antiblock + Cloud API + Service Readiness
 
-**Scope**: Two API clients (daemon + cloud), antiblock entry resolution, service readiness UI
-**Files**: `webapp/src/api/**`, `webapp/src/stores/daemon.store.ts`, `webapp/src/components/ServiceReadiness.tsx`
+**Scope**: VpnClient interface with HttpVpnClient, MockVpnClient, antiblock entry resolution,
+Cloud API client, service readiness UI. This is the core abstraction that ALL other
+webapp tasks depend on.
+**Files**: `webapp/src/vpn-client/**`, `webapp/src/api/**`, `webapp/src/stores/vpn.store.ts`, `webapp/src/components/ServiceReadiness.tsx`
 **Depends on**: [S1]
 
 **Steps**:
-1. Create `webapp/src/api/daemon.ts` — k2 daemon client (VPN control):
+1. Create `webapp/src/vpn-client/types.ts` — all types:
    ```typescript
-   const DAEMON_BASE = import.meta.env.DEV ? '' : 'http://127.0.0.1:1777';
+   export type VpnState = 'stopped' | 'connecting' | 'connected' | 'disconnecting' | 'error';
 
-   export async function apiCore<T>(action: string, params?: Record<string, unknown>): Promise<ApiResponse<T>> {
-     const res = await fetch(`${DAEMON_BASE}/api/core`, {
-       method: 'POST',
-       headers: { 'Content-Type': 'application/json' },
-       body: JSON.stringify({ action, params }),
-     });
-     return res.json();
+   export interface VpnStatus {
+     state: VpnState;
+     connectedAt?: string;
+     uptimeSeconds?: number;
+     error?: string;
+     wireUrl?: string;
    }
 
-   export async function ping(): Promise<boolean> {
-     try {
-       const res = await fetch(`${DAEMON_BASE}/ping`);
-       const data = await res.json();
-       return data.code === 0;
-     } catch { return false; }
+   export interface VersionInfo {
+     version: string;
+     go: string;
+     os: string;
+     arch: string;
    }
 
-   export async function getUDID(): Promise<string> {
-     const res = await fetch(`${DAEMON_BASE}/api/device/udid`);
-     const data = await res.json();
-     return data.data?.udid ?? '';
+   export interface VpnConfig {
+     wireUrl?: string;
+     configPath?: string;
+   }
+
+   export type ReadyState =
+     | { ready: true; version: string }
+     | { ready: false; reason: 'not_running' | 'version_mismatch' | 'not_installed' };
+
+   export type VpnEvent =
+     | { type: 'state_change'; state: VpnState }
+     | { type: 'error'; message: string };
+
+   export interface VpnClient {
+     connect(wireUrl: string): Promise<void>;
+     disconnect(): Promise<void>;
+     checkReady(): Promise<ReadyState>;
+     getStatus(): Promise<VpnStatus>;
+     getVersion(): Promise<VersionInfo>;
+     getUDID(): Promise<string>;
+     getConfig(): Promise<VpnConfig>;
+     subscribe(listener: (event: VpnEvent) => void): () => void;
+     destroy(): void;
    }
    ```
-2. Create `webapp/src/api/antiblock.ts` — entry URL resolution:
+
+2. Create `webapp/src/vpn-client/http-client.ts` — desktop implementation:
+   ```typescript
+   export class HttpVpnClient implements VpnClient {
+     private baseUrl: string;
+     private pollInterval: ReturnType<typeof setInterval> | null = null;
+     private lastState: VpnState | null = null;
+     private listeners: Set<(event: VpnEvent) => void> = new Set();
+
+     constructor(baseUrl = import.meta.env.DEV ? '' : 'http://127.0.0.1:1777') {
+       this.baseUrl = baseUrl;
+     }
+
+     // connect() resolves when command accepted (HTTP 200), NOT when VPN is up
+     async connect(wireUrl: string): Promise<void> {
+       await this.coreAction('up', { wire_url: wireUrl });
+     }
+
+     async disconnect(): Promise<void> {
+       await this.coreAction('down');
+     }
+
+     async checkReady(): Promise<ReadyState> {
+       try {
+         const ok = await this.ping();
+         if (!ok) return { ready: false, reason: 'not_running' };
+         const ver = await this.getVersion();
+         return { ready: true, version: ver.version };
+       } catch {
+         return { ready: false, reason: 'not_running' };
+       }
+     }
+
+     subscribe(listener: (event: VpnEvent) => void): () => void {
+       this.listeners.add(listener);
+       if (!this.pollInterval) this.startPolling();
+       return () => {
+         this.listeners.delete(listener);
+         if (this.listeners.size === 0) this.stopPolling();
+       };
+     }
+
+     // Internal: poll status every 2s, emit events on state change (deduplicated)
+     private startPolling() { ... }
+     private stopPolling() { ... }
+     private emit(event: VpnEvent) { ... }
+   }
+   ```
+
+3. Create `webapp/src/vpn-client/mock-client.ts` — test doubles:
+   ```typescript
+   export class MockVpnClient implements VpnClient {
+     public connectCalls: string[] = [];
+     public disconnectCalls: number = 0;
+     private statusToReturn: VpnStatus = { state: 'stopped' };
+     // ... setters for test control, listener simulation
+   }
+   ```
+
+4. Create `webapp/src/vpn-client/index.ts` — factory:
+   ```typescript
+   import { HttpVpnClient } from './http-client';
+   import type { VpnClient } from './types';
+
+   let instance: VpnClient | null = null;
+
+   export function createVpnClient(override?: VpnClient): VpnClient {
+     if (override) { instance = override; return override; }
+     if (!instance) instance = new HttpVpnClient();
+     return instance;
+   }
+
+   export function getVpnClient(): VpnClient {
+     if (!instance) throw new Error('VpnClient not initialized');
+     return instance;
+   }
+   ```
+   Note: `NativeVpnClient` (native-client.ts) deferred to mobile phase.
+
+5. Create `webapp/src/api/antiblock.ts` — entry URL resolution:
    ```typescript
    const STORAGE_KEY = 'k2_entry_url';
    const DEFAULT_ENTRY = 'https://w.app.52j.me';
@@ -440,50 +548,23 @@ test "$(jq -r .version webapp/public/version.json)" = "$VERSION" || exit 1
      'https://unpkg.com/unlock-it/config.js',
    ];
 
-   // Resolve entry URL: localStorage cache → CDN fetch → default
    export async function resolveEntry(): Promise<string> {
-     // 1. Fast path: cached entry
      const cached = localStorage.getItem(STORAGE_KEY);
      if (cached) {
-       refreshEntryInBackground(); // async, non-blocking
+       refreshEntryInBackground();
        return cached;
      }
-     // 2. Try CDN sources
      const entry = await fetchEntryFromCDN();
      return entry ?? DEFAULT_ENTRY;
    }
 
-   // JSONP fetch from CDN sources (bypasses CORS)
-   async function fetchEntryFromCDN(): Promise<string | null> { ... }
-
-   // Decode base64 entry URLs from CDN response
-   function decodeEntries(encoded: string[]): string[] { ... }
+   async function fetchEntryFromCDN(): Promise<string | null> { ... }  // JSONP
+   function decodeEntries(encoded: string[]): string[] { ... }  // base64
    ```
-3. Create `webapp/src/api/cloud.ts` — Cloud API client (via antiblock entry):
+
+6. Create `webapp/src/api/cloud.ts` — Cloud API client:
    ```typescript
    import { resolveEntry } from './antiblock';
-   import { getUDID } from './daemon';
-
-   let entryUrl: string | null = null;
-
-   async function getEntry(): Promise<string> {
-     if (!entryUrl) entryUrl = await resolveEntry();
-     return entryUrl;
-   }
-
-   export async function cloudRequest<T>(method: string, path: string, body?: unknown): Promise<ApiResponse<T>> {
-     const entry = await getEntry();
-     const token = localStorage.getItem('access_token') ?? '';
-     const res = await fetch(`${entry}${path}`, {
-       method,
-       headers: {
-         'Content-Type': 'application/json',
-         ...(token && { Authorization: `Bearer ${token}` }),
-       },
-       body: body ? JSON.stringify(body) : undefined,
-     });
-     return res.json();
-   }
 
    export const cloudApi = {
      getAuthCode: (email: string) => cloudRequest('POST', '/api/auth/code', { email }),
@@ -496,59 +577,78 @@ test "$(jq -r .version webapp/public/version.json)" = "$VERSION" || exit 1
      getAppConfig: () => cloudRequest('GET', '/api/app/config'),
    };
    ```
-4. Create `webapp/src/api/types.ts` — shared types:
+
+7. Create `webapp/src/api/types.ts` — Cloud API types:
    ```typescript
    export interface ApiResponse<T = unknown> {
      code: number;
      message: string;
      data?: T;
    }
-
-   // k2 daemon types
-   export type DaemonState = 'stopped' | 'connecting' | 'connected' | 'disconnecting' | 'error';
-
-   export interface StatusData {
-     state: DaemonState;
-     connected_at?: string;
-     uptime_seconds?: number;
-     error?: string;
-     wire_url?: string;
-     config_path?: string;
-   }
-
-   export interface VersionData {
-     version: string;
-     go: string;
-     os: string;
-     arch: string;
-   }
    ```
-5. Create `webapp/src/stores/daemon.store.ts`:
-   - `isDaemonReady`, `isPolling`, `error`
-   - `pollDaemon()` — retry /ping every 500ms until success or timeout (10s)
-6. Create `webapp/src/components/ServiceReadiness.tsx`:
-   - Wraps app content
-   - Shows "Starting service..." while polling
-   - Shows error + retry button on timeout
-   - Calls Tauri IPC `invoke("ensure_service_running")` if available (`window.__TAURI__`)
-7. Wire into `App.tsx` as top-level wrapper
+
+8. Create `webapp/src/stores/vpn.store.ts` — Zustand store wrapping VpnClient:
+   ```typescript
+   import { getVpnClient } from '../vpn-client';
+
+   export const useVpnStore = create<VpnStore>((set, get) => ({
+     state: 'stopped' as VpnState,
+     ready: null as ReadyState | null,
+     error: null,
+
+     init: async () => {
+       const client = getVpnClient();
+       const ready = await client.checkReady();
+       set({ ready });
+       if (ready.ready) {
+         client.subscribe((event) => {
+           if (event.type === 'state_change') set({ state: event.state });
+           if (event.type === 'error') set({ error: event.message });
+         });
+       }
+     },
+
+     connect: async (wireUrl: string) => {
+       set({ state: 'connecting' });  // optimistic
+       await getVpnClient().connect(wireUrl);
+     },
+
+     disconnect: async () => {
+       set({ state: 'disconnecting' });  // optimistic
+       await getVpnClient().disconnect();
+     },
+   }));
+   ```
+
+9. Create `webapp/src/components/ServiceReadiness.tsx`:
+   - Uses `useVpnStore().ready`
+   - `{ ready: true }` → render children
+   - `{ ready: false, reason: 'not_running' }` → "Starting service..." + Tauri IPC
+   - Retry with `vpnClient.checkReady()` every 500ms, timeout 10s
+   - Error + "Retry" button on timeout
+
+10. Wire into `App.tsx` as top-level wrapper
 
 **TDD**:
-- RED: vitest: `ping()` returns false on network error → no function
-- GREEN: Implement daemon client + mock fetch
-- RED: vitest: `resolveEntry()` returns cached → default → CDN fallback chain
-- GREEN: Implement antiblock with mock JSONP
+- RED: vitest: `HttpVpnClient.connect('k2v5://...')` sends POST /api/core with action:up
+- GREEN: Implement HttpVpnClient
+- RED: vitest: `subscribe()` emits state_change event; deduplicates identical states
+- GREEN: Implement poll→event with dedup
+- RED: vitest: `createVpnClient(mock)` returns the mock; `createVpnClient()` returns HttpVpnClient
+- GREEN: Implement factory
+- RED: vitest: `resolveEntry()` returns cached → CDN → default fallback chain
+- GREEN: Implement antiblock
 - RED: vitest: `cloudApi.login()` calls `${entry}/api/auth/login` with correct body
 - GREEN: Implement cloud client
-- RED: vitest: ServiceReadiness shows loading then content → no component
-- GREEN: Implement component with daemon store
-- REFACTOR: Ensure types match k2 daemon exactly, entry URL cached properly
+- RED: vitest: ServiceReadiness shows loading then content
+- GREEN: Implement component with vpn store
+- REFACTOR: Ensure types match k2 daemon API exactly
 
 ---
 
 ### W2: Auth Flow
 
-**Scope**: Login UI, token management, auth store (uses cloud.ts from W1)
+**Scope**: Login UI, token management, auth store (uses cloud.ts + VpnClient from W1)
 **Files**: `webapp/src/pages/Login.tsx`, `webapp/src/stores/auth.store.ts`
 **Depends on**: [W1]
 
@@ -556,7 +656,7 @@ test "$(jq -r .version webapp/public/version.json)" = "$VERSION" || exit 1
 1. Create `webapp/src/stores/auth.store.ts`:
    - `token`, `refreshToken`, `user`, `isLoggedIn`, `login()`, `logout()`
    - Token stored in localStorage
-   - `login(email, code)`: fetch UDID from daemon → call `cloudApi.login(email, code, udid)` → store tokens
+   - `login(email, code)`: `vpnClient.getUDID()` → `cloudApi.login(email, code, udid)` → store tokens
    - Auto-refresh on app startup using stored refreshToken
 2. Create `webapp/src/pages/Login.tsx`:
    - Email + verification code form (React Hook Form + Zod)
@@ -574,33 +674,30 @@ test "$(jq -r .version webapp/public/version.json)" = "$VERSION" || exit 1
 
 ### W3: Dashboard + VPN Control
 
-**Scope**: Main dashboard with connection button, status display, uptime
-**Files**: `webapp/src/pages/Dashboard.tsx`, `webapp/src/stores/vpn.store.ts`, `webapp/src/components/ConnectionButton.tsx`
+**Scope**: Main dashboard with connection button, status display, uptime.
+All VPN operations through VpnClient — no direct HTTP calls.
+**Files**: `webapp/src/pages/Dashboard.tsx`, `webapp/src/components/ConnectionButton.tsx`
 **Depends on**: [W1]
 
 **Steps**:
-1. Create `webapp/src/stores/vpn.store.ts`:
-   - `state` (5 daemon states), `uptimeSeconds`, `error`, `wireUrl`
-   - `connect(wireUrl)` → `apiCore("up", { wire_url })`
-   - `disconnect()` → `apiCore("down")`
-   - `pollStatus()` — every 2s, `apiCore("status")`, update all fields from response
-   - Note: no reconnect needed — daemon auto-reconnects on restart via state file
-2. Create `webapp/src/components/ConnectionButton.tsx`:
+1. Create `webapp/src/components/ConnectionButton.tsx`:
    - Big connect/disconnect button
+   - Uses `useVpnStore()` for state + connect/disconnect actions
    - State-aware: "Connect" / "Connecting..." / "Connected" / "Disconnect"
    - CVA variants for each state
-3. Create `webapp/src/pages/Dashboard.tsx`:
-   - Connection status display
+   - Disabled during transitional states (connecting, disconnecting)
+2. Create `webapp/src/pages/Dashboard.tsx`:
+   - Connection status display (from `useVpnStore().state`)
    - ConnectionButton
-   - Uptime counter (when connected, from `uptime_seconds`)
-   - Error display (when error state, from `error` field)
+   - Uptime counter (when connected, computed from subscribe events)
+   - Error display (when error state)
 
 **TDD**:
-- RED: vitest: vpn store connect sends correct API call → no store
-- GREEN: Implement store with mocked apiCore
-- RED: vitest: ConnectionButton renders correct state → no component
+- RED: vitest: ConnectionButton renders "Connect" in stopped state, "Connected" in connected state
 - GREEN: Implement button with variants
-- REFACTOR: Extract status polling into custom hook
+- RED: vitest: Dashboard shows error message in error state
+- GREEN: Implement Dashboard
+- REFACTOR: Extract status display into sub-component
 
 ---
 
@@ -613,12 +710,12 @@ test "$(jq -r .version webapp/public/version.json)" = "$VERSION" || exit 1
 **Steps**:
 1. Create `webapp/src/stores/servers.store.ts`:
    - `servers`, `selectedServer`, `isLoading`
-   - `fetchServers()` → Cloud API
+   - `fetchServers()` → `cloudApi.getTunnels()` (from api/cloud.ts)
    - `selectServer(id)` → stores selection, returns wire_url
 2. Create `webapp/src/components/ServerList.tsx`:
    - List of servers with country flags, names, latency
    - Selected server highlighted
-   - Click to select → connect via vpn store
+   - Click to select → `useVpnStore().connect(wire_url)`
 3. Create `webapp/src/pages/Servers.tsx`:
    - ServerList + search/filter
    - Connect action on server select
@@ -644,7 +741,7 @@ test "$(jq -r .version webapp/public/version.json)" = "$VERSION" || exit 1
    - Browser language detection
 2. Create `webapp/src/i18n/locales/zh-CN/` and `en-US/`:
    - `common.json`, `dashboard.json`, `auth.json`, `settings.json`
-   - Start with essential keys only
+   - Start with essential keys only, port from old kaitu translations
 3. Create `webapp/src/components/Layout.tsx`:
    - App shell wrapper (header + content + bottom nav)
 4. Create `webapp/src/components/BottomNav.tsx`:
@@ -739,7 +836,7 @@ Phase 2: Scaffolds (parallel)
 
 Phase 3: Shell + Core (parallel)
   D1, D2, D3 (desktop shell)   → parallel, ~1 day each
-  W1 (API client)              → ~1-2 days
+  W1 (VpnClient + API)         → ~2 days
   W5 (settings+i18n+layout)    → ~1-2 days
 
 Phase 4: Features (parallel after W1)
@@ -750,12 +847,18 @@ Phase 5: Integration
   I2 (CI/CD)                   → ~1 day
 ```
 
+## Execution Notes
+
+- **webapp subagent tasks**: always invoke `/word9f-frontend` for frontend decisions
+- **NativeVpnClient** (`native-client.ts`): deferred to mobile phase, not in this plan
+- **VpnClient is the boundary**: all webapp→backend communication goes through VpnClient.
+  Cloud API (antiblock) is the exception — it goes directly from webapp to Cloud API (no VPN backend involved).
+
 ## Out of Scope (Phase 2+)
 
-- Mobile (iOS/Android) — blocked on k2 `mobile/api.go`
+- Mobile (iOS/Android) — NativeVpnClient + Capacitor Plugin + MobileAPI
 - SpeedTest UI — blocked on k2 speedtest mobile support
 - Device management page
 - Invite system
 - Wallet/purchase system
 - Advanced settings (developer settings, rules config)
-- `capacitor://` CORS origin in k2 daemon (mobile-only concern)
