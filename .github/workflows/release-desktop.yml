@@ -26,6 +26,11 @@ jobs:
     timeout-minutes: 90
 
     steps:
+      - name: Clean git global config (self-hosted)
+        if: matrix.platform == 'Windows'
+        shell: pwsh
+        run: git config --global --unset-all url."git@github.com:".insteadOf 2>$null; exit 0
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -36,7 +41,7 @@ jobs:
 
       - name: Init k2 submodule
         run: |
-          git config --global url."git@github.com:".insteadOf "https://github.com/"
+          git config --local url."git@github.com:".insteadOf "https://github.com/"
           git submodule update --init --recursive
 
       - name: Setup Node.js
