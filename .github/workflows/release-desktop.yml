@@ -28,7 +28,7 @@ jobs:
     steps:
       - name: Clean git global config (self-hosted)
         if: matrix.platform == 'Windows'
-        shell: pwsh
+        shell: powershell
         run: git config --global --unset-all url."git@github.com:".insteadOf 2>$null; exit 0
 
       - name: Checkout repository
@@ -40,9 +40,8 @@ jobs:
           ssh-private-key: ${{ secrets.K2_DEPLOY_KEY }}
 
       - name: Init k2 submodule
-        run: |
-          git config --local url."git@github.com:".insteadOf "https://github.com/"
-          git submodule update --init --recursive
+        shell: bash
+        run: git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init --recursive
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -128,7 +127,7 @@ jobs:
 
       - name: Authenticate SimpliSign
         if: matrix.platform == 'Windows'
-        shell: pwsh
+        shell: powershell
         run: |
           pip install pyotp pywinauto -q
           python C:\actions-runner\scripts\simplisign_auto_login.py `
@@ -160,7 +159,7 @@ jobs:
 
       - name: Sign Windows installer
         if: matrix.platform == 'Windows'
-        shell: pwsh
+        shell: powershell
         run: |
           # Dynamic signtool discovery
           $signtool = $null
