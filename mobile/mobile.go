@@ -2,9 +2,11 @@ package mobile
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/kaitu-io/k2rule"
 
@@ -18,9 +20,12 @@ import (
 // (wire transports, router, DNS middleware, provider) and manages
 // the connection lifecycle. Exported as a struct for gomobile binding.
 type Engine struct {
-	mu      sync.Mutex
-	state   string
-	handler EventHandler
+	mu          sync.Mutex
+	state       string
+	wireUrl     string
+	connectedAt time.Time
+	lastError   string
+	handler     EventHandler
 
 	cancel context.CancelFunc
 	tunnel *core.ClientTunnel
@@ -59,6 +64,8 @@ func (e *Engine) Start(url string, fd int) error {
 		e.mu.Unlock()
 		return fmt.Errorf("engine: already started")
 	}
+	e.wireUrl = url
+	e.lastError = ""
 	e.setState(StateConnecting)
 	e.mu.Unlock()
 
@@ -150,6 +157,8 @@ func (e *Engine) Stop() error {
 		e.tm = nil
 	}
 	e.tunnel = nil
+	e.wireUrl = ""
+	e.connectedAt = time.Time{}
 
 	e.setState(StateDisconnected)
 	return nil
@@ -158,6 +167,9 @@ func (e *Engine) Stop() error {
 // setState updates state and notifies the EventHandler.
 // Must be called with e.mu held.
 func (e *Engine) setState(s string) {
+	if s == StateConnected {
+		e.connectedAt = time.Now()
+	}
 	e.state = s
 	if e.handler != nil {
 		e.handler.OnStateChange(s)
@@ -168,11 +180,35 @@ func (e *Engine) setState(s string) {
 func (e *Engine) fail(err error) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	e.lastError = err.Error()
 	if e.handler != nil {
 		e.handler.OnError(err.Error())
 	}
 	e.setState(StateDisconnected)
 	return err
+}
+
+// StatusJSON returns the engine status as a JSON string.
+// The format matches daemon.statusInfo() for consistency.
+func (e *Engine) StatusJSON() string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	info := map[string]any{
+		"state": e.state,
+	}
+	if e.state == StateConnected && !e.connectedAt.IsZero() {
+		info["connected_at"] = e.connectedAt.Format(time.RFC3339)
+		info["uptime_seconds"] = int(time.Since(e.connectedAt).Seconds())
+	}
+	if e.lastError != "" {
+		info["error"] = e.lastError
+	}
+	if e.wireUrl != "" {
+		info["wire_url"] = e.wireUrl
+	}
+	b, _ := json.Marshal(info)
+	return string(b)
 }
 
 // =========================================================================

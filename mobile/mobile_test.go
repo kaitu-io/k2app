@@ -1,6 +1,7 @@
 package mobile
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"sync"
@@ -352,6 +353,107 @@ func TestDNSHandler_NilDNS_PassThrough(t *testing.T) {
 	calls := inner.getUDPCalls()
 	if len(calls) != 1 || calls[0] != "8.8.8.8:53" {
 		t.Fatalf("inner.HandleUDP calls = %v, want [8.8.8.8:53]", calls)
+	}
+}
+
+// ==========================================================================
+// StatusJSON tests
+// ==========================================================================
+
+func TestEngine_StatusJSON_Disconnected(t *testing.T) {
+	e := NewEngine()
+	raw := e.StatusJSON()
+
+	var m map[string]any
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		t.Fatalf("StatusJSON returned invalid JSON: %v", err)
+	}
+	if m["state"] != StateDisconnected {
+		t.Fatalf("state = %v, want %q", m["state"], StateDisconnected)
+	}
+	// No extra keys when disconnected.
+	for _, key := range []string{"connected_at", "uptime_seconds", "wire_url", "error"} {
+		if _, ok := m[key]; ok {
+			t.Fatalf("unexpected key %q in disconnected state", key)
+		}
+	}
+}
+
+func TestEngine_StatusJSON_AfterFailedStart(t *testing.T) {
+	e := NewEngine()
+	_ = e.Start("garbage", 0)
+
+	raw := e.StatusJSON()
+	var m map[string]any
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		t.Fatalf("StatusJSON returned invalid JSON: %v", err)
+	}
+	if m["state"] != StateDisconnected {
+		t.Fatalf("state = %v, want %q", m["state"], StateDisconnected)
+	}
+	if _, ok := m["error"]; !ok {
+		t.Fatal("expected 'error' key after failed start")
+	}
+	if m["error"] == "" {
+		t.Fatal("error should be non-empty after failed start")
+	}
+}
+
+func TestEngine_StatusJSON_Connected(t *testing.T) {
+	e := NewEngine()
+
+	// Simulate connected state by setting fields under lock.
+	e.mu.Lock()
+	e.state = StateConnected
+	e.wireUrl = "k2v5://udid:tok@1.2.3.4:443"
+	e.connectedAt = time.Now().Add(-10 * time.Second)
+	e.mu.Unlock()
+
+	raw := e.StatusJSON()
+	var m map[string]any
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		t.Fatalf("StatusJSON returned invalid JSON: %v", err)
+	}
+	if m["state"] != StateConnected {
+		t.Fatalf("state = %v, want %q", m["state"], StateConnected)
+	}
+	if m["wire_url"] != "k2v5://udid:tok@1.2.3.4:443" {
+		t.Fatalf("wire_url = %v, want k2v5://udid:tok@1.2.3.4:443", m["wire_url"])
+	}
+	if _, ok := m["connected_at"]; !ok {
+		t.Fatal("expected 'connected_at' key when connected")
+	}
+	uptime, ok := m["uptime_seconds"].(float64)
+	if !ok {
+		t.Fatalf("uptime_seconds not a number: %v (%T)", m["uptime_seconds"], m["uptime_seconds"])
+	}
+	if uptime < 9 {
+		t.Fatalf("uptime_seconds = %v, want >= 9", uptime)
+	}
+}
+
+func TestEngine_StatusJSON_MatchesDaemonFormat(t *testing.T) {
+	e := NewEngine()
+
+	// Set all fields to produce the full JSON.
+	e.mu.Lock()
+	e.state = StateConnected
+	e.wireUrl = "k2v5://u:t@host:443"
+	e.connectedAt = time.Now().Add(-5 * time.Second)
+	e.lastError = "some previous error"
+	e.mu.Unlock()
+
+	raw := e.StatusJSON()
+	var m map[string]any
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		t.Fatalf("StatusJSON returned invalid JSON: %v", err)
+	}
+
+	expected := []string{"state", "connected_at", "uptime_seconds", "wire_url", "error"}
+	for _, key := range expected {
+		if _, ok := m[key]; !ok {
+			t.Errorf("missing expected key %q", key)
+		}
 	}
 }
 
