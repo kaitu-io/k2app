@@ -11,8 +11,6 @@ const buttonVariants = cva(
         stopped: 'bg-blue-600 hover:bg-blue-700 active:scale-95',
         connecting: 'bg-yellow-500 animate-pulse cursor-not-allowed',
         connected: 'bg-green-600 hover:bg-red-500',
-        disconnecting: 'bg-orange-500 animate-pulse cursor-not-allowed',
-        error: 'bg-red-600 hover:bg-blue-600',
       },
     },
     defaultVariants: {
@@ -31,7 +29,7 @@ interface Props extends VariantProps<typeof buttonVariants> {
 export function ConnectionButton({ state, onConnect, onDisconnect, className }: Props) {
   const { t } = useTranslation('dashboard');
 
-  const isTransitional = state === 'connecting' || state === 'disconnecting';
+  const isTransitional = state === 'connecting';
 
   const handleClick = () => {
     if (isTransitional) return;
@@ -46,8 +44,6 @@ export function ConnectionButton({ state, onConnect, onDisconnect, className }: 
     stopped: t('connect'),
     connecting: t('connecting'),
     connected: t('connected'),
-    disconnecting: t('disconnect'),
-    error: t('connect'),
   }[state];
 
   return (

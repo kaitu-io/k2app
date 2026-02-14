@@ -35,12 +35,11 @@ export const useVpnStore = create<VpnStore>((set) => ({
     try {
       await getVpnClient().connect(wireUrl);
     } catch (e) {
-      set({ state: 'error', error: e instanceof Error ? e.message : 'Connection failed' });
+      set({ state: 'stopped', error: e instanceof Error ? e.message : 'Connection failed' });
     }
   },
 
   disconnect: async () => {
-    set({ state: 'disconnecting', error: null });
     try {
       await getVpnClient().disconnect();
     } catch (e) {

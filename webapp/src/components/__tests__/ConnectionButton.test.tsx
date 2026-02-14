@@ -38,11 +38,6 @@ describe('ConnectionButton', () => {
     expect(screen.getByRole('button')).toBeDisabled();
   });
 
-  it('is disabled during disconnecting', () => {
-    render(<ConnectionButton state="disconnecting" onConnect={vi.fn()} onDisconnect={vi.fn()} />);
-    expect(screen.getByRole('button')).toBeDisabled();
-  });
-
   it('calls onConnect when stopped', async () => {
     const onConnect = vi.fn();
     render(<ConnectionButton state="stopped" onConnect={onConnect} onDisconnect={vi.fn()} />);
@@ -55,13 +50,6 @@ describe('ConnectionButton', () => {
     render(<ConnectionButton state="connected" onConnect={vi.fn()} onDisconnect={onDisconnect} />);
     await userEvent.click(screen.getByRole('button'));
     expect(onDisconnect).toHaveBeenCalled();
-  });
-
-  it('calls onConnect when in error state', async () => {
-    const onConnect = vi.fn();
-    render(<ConnectionButton state="error" onConnect={onConnect} onDisconnect={vi.fn()} />);
-    await userEvent.click(screen.getByRole('button'));
-    expect(onConnect).toHaveBeenCalled();
   });
 
   it('does not call handlers during connecting', async () => {

@@ -69,10 +69,10 @@ describe('Dashboard', () => {
     expect(screen.getByText('Dashboard')).toBeInTheDocument();
   });
 
-  it('shows error message when error state exists', () => {
+  it('shows error message when error is set', () => {
     mockStoreState = {
       ...mockStoreState,
-      state: 'error',
+      state: 'stopped',
       error: 'Network timeout',
     };
     render(<Dashboard />);

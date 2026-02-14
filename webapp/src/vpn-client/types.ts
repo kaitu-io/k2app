@@ -1,4 +1,4 @@
-export type VpnState = 'stopped' | 'connecting' | 'connected' | 'disconnecting' | 'error';
+export type VpnState = 'stopped' | 'connecting' | 'connected';
 
 export interface VpnStatus {
   state: VpnState;

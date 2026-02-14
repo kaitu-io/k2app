@@ -56,21 +56,22 @@ describe('useVpnStore', () => {
       // state was set to 'connecting' at start
     });
 
-    it('sets error state on failure', async () => {
+    it('reverts to stopped and sets error on failure', async () => {
       mock.setConnectError(new Error('Connection refused'));
 
       await useVpnStore.getState().connect('wg://test');
 
-      expect(useVpnStore.getState().state).toBe('error');
+      expect(useVpnStore.getState().state).toBe('stopped');
       expect(useVpnStore.getState().error).toBe('Connection refused');
     });
   });
 
   describe('disconnect', () => {
-    it('sets state to disconnecting', async () => {
+    it('calls disconnect without changing state', async () => {
       await useVpnStore.getState().disconnect();
 
       expect(mock.disconnectCalls).toBe(1);
+      expect(useVpnStore.getState().state).toBe('stopped');
     });
 
     it('sets error on failure', async () => {
