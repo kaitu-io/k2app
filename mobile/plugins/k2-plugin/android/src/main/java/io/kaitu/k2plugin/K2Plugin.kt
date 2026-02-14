@@ -57,11 +57,7 @@ class K2Plugin : Plugin() {
             val json = service.getStatusJSON()
             try {
                 val obj = JSObject(json)
-                // Map engine "disconnected" to webapp "stopped"
-                if (obj.getString("state") == "disconnected") {
-                    obj.put("state", "stopped")
-                }
-                call.resolve(obj)
+                call.resolve(remapStatusKeys(obj))
             } catch (e: Exception) {
                 val ret = JSObject()
                 ret.put("state", "stopped")
@@ -72,6 +68,26 @@ class K2Plugin : Plugin() {
             ret.put("state", "stopped")
             call.resolve(ret)
         }
+    }
+
+    /** Remap Go StatusJSON snake_case keys to JS camelCase and map "disconnected" → "stopped" */
+    private fun remapStatusKeys(obj: JSObject): JSObject {
+        val keyMap = mapOf(
+            "connected_at" to "connectedAt",
+            "uptime_seconds" to "uptimeSeconds",
+            "wire_url" to "wireUrl",
+        )
+        val result = JSObject()
+        val keys = obj.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            val newKey = keyMap[key] ?: key
+            result.put(newKey, obj.get(key))
+        }
+        if (result.getString("state") == "disconnected") {
+            result.put("state", "stopped")
+        }
+        return result
     }
 
     @PluginMethod

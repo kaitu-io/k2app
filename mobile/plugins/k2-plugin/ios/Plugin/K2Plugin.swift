@@ -72,12 +72,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             try session?.sendProviderMessage(message) { response in
                 if let data = response,
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    // Map engine "disconnected" to webapp "stopped"
-                    var result = json
-                    if let state = result["state"] as? String, state == "disconnected" {
-                        result["state"] = "stopped"
-                    }
-                    call.resolve(result as! [String: Any])
+                    call.resolve(self.remapStatusKeys(json))
                 } else {
                     // Fallback to connection status
                     let state = self.mapVPNStatus(manager.connection.status)
@@ -154,6 +149,24 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             self?.vpnManager = manager
             completion?(manager)
         }
+    }
+
+    /// Remap Go StatusJSON snake_case keys to JS camelCase and map "disconnected" → "stopped"
+    private func remapStatusKeys(_ json: [String: Any]) -> [String: Any] {
+        let keyMap: [String: String] = [
+            "connected_at": "connectedAt",
+            "uptime_seconds": "uptimeSeconds",
+            "wire_url": "wireUrl",
+        ]
+        var result: [String: Any] = [:]
+        for (key, value) in json {
+            let newKey = keyMap[key] ?? key
+            result[newKey] = value
+        }
+        if let state = result["state"] as? String, state == "disconnected" {
+            result["state"] = "stopped"
+        }
+        return result
     }
 
     private func mapVPNStatus(_ status: NEVPNStatus) -> String {
