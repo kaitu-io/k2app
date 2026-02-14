@@ -25,9 +25,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Checkout k2 submodule
+        uses: webfactory/ssh-agent@v0.9.0
         with:
-          submodules: recursive
-          ssh-key: ${{ secrets.K2_DEPLOY_KEY }}
+          ssh-private-key: ${{ secrets.K2_DEPLOY_KEY }}
+
+      - name: Init k2 submodule
+        run: git submodule update --init --recursive
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
