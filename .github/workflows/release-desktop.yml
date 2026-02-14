@@ -1,0 +1,161 @@
+name: Release Desktop
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: universal-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: k2/go.sum
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || 'x86_64-pc-windows-msvc' }}
+
+      - name: Cache Rust target directory
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            desktop/src-tauri/target
+          key: rust-release-${{ runner.os }}-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            rust-release-${{ runner.os }}-
+
+      - name: Install Node dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Run pre-build
+        run: make pre-build
+
+      - name: Build webapp
+        run: make build-webapp
+
+      # --- macOS: code signing certificate import ---
+
+      - name: Import Apple code signing certificate
+        if: matrix.os == 'macos-latest'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          CERTIFICATE_PATH="$RUNNER_TEMP/certificate.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 32)"
+
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$CERTIFICATE_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          security import "$CERTIFICATE_PATH" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
+
+      # --- macOS: build k2 binaries for both architectures ---
+
+      - name: Build k2 for macOS (aarch64)
+        if: matrix.os == 'macos-latest'
+        run: make build-k2 TARGET=aarch64-apple-darwin
+        env:
+          GOARCH: arm64
+          GOOS: darwin
+
+      - name: Build k2 for macOS (x86_64)
+        if: matrix.os == 'macos-latest'
+        run: make build-k2 TARGET=x86_64-apple-darwin
+        env:
+          GOARCH: amd64
+          GOOS: darwin
+
+      # --- Windows: build k2 binary ---
+
+      - name: Build k2 for Windows
+        if: matrix.os == 'windows-latest'
+        run: make build-k2 TARGET=x86_64-pc-windows-msvc
+        env:
+          GOARCH: amd64
+          GOOS: windows
+
+      # --- Build Tauri desktop app ---
+
+      - name: Build Tauri desktop app
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: yarn tauri build --target "$BUILD_TARGET"
+        working-directory: desktop
+
+      # --- Upload artifacts ---
+
+      - name: Upload macOS artifacts
+        if: matrix.os == 'macos-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: kaitu-macos
+          path: |
+            desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz
+            desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
+
+      - name: Upload Windows artifacts
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: kaitu-windows
+          path: |
+            desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+            desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.nsis.zip
+            desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.nsis.zip.sig
+
+      # --- Cleanup ---
+
+      - name: Clean up keychain
+        if: matrix.os == 'macos-latest' && always()
+        run: security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" || true
