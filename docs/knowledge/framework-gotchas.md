@@ -305,7 +305,7 @@ uconn := utls.UClient(conn, &utls.Config{
 
 ---
 
-## nhooyr.io/websocket: NetConn Requires Context (wire-protocol-compliance, 2026-02-12)
+## coder/websocket: NetConn Requires Context (wire-protocol-compliance, 2026-02-12)
 
 **Issue**: `websocket.NetConn(ctx, wsConn, messageType)` requires long-lived context. If ctx cancelled, NetConn dies.
 

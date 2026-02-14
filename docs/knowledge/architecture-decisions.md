@@ -274,7 +274,7 @@ if bytes.HasPrefix(data, []byte("GET /k2v5/tunnel")) {
 
 **Validation**:
 - Tests: `wire/tcpws_test.go` (TestTCPWSClient_WSUpgrade), `server/server_test.go` (TestServer_WSUpgrade)
-- Library: `nhooyr.io/websocket` chosen for clean `net.Conn` wrapper
+- Library: `coder/websocket` chosen for clean `net.Conn` wrapper
 
 **Trade-offs**:
 - Pro: HTTP camouflage, harder to fingerprint

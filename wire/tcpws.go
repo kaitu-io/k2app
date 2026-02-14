@@ -12,7 +12,7 @@ import (
 
 	utls "github.com/metacubex/utls"
 	smux "github.com/xtaci/smux/v2"
-	"nhooyr.io/websocket"
+	"github.com/coder/websocket"
 )
 
 // Compile-time interface checks.

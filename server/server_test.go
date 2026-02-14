@@ -24,7 +24,7 @@ import (
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/wire"
 	smux "github.com/xtaci/smux/v2"
-	"nhooyr.io/websocket"
+	"github.com/coder/websocket"
 )
 
 func generateTestCert(t *testing.T) tls.Certificate {
@@ -98,6 +98,7 @@ func TestServer_TCPWSProxy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	srv.handler.AllowPrivateIP = true // echo server is on localhost
 	srv.TLSConfig = &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		NextProtos:   []string{"h3"},
@@ -116,23 +117,19 @@ func TestServer_TCPWSProxy(t *testing.T) {
 
 	// Run TCP-WS accept loop.
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		srv.acceptTCPLoop(ctx, srv.tcpwsSrv)
-	}()
+	})
 
 	// Accept one raw TCP connection as if it were already TLS-terminated.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		conn, err := tcpLn.Accept()
 		if err != nil {
 			return
 		}
 		// Simulate TLS-terminated connection: feed directly to TCP-WS server.
 		srv.tcpwsSrv.HandleConn(conn)
-	}()
+	})
 
 	// Client: connect and create smux session.
 	clientConn, err := net.Dial("tcp", tcpLn.Addr().String())
@@ -258,6 +255,7 @@ func buildTestClientHello(sni string, includeECH bool) []byte {
 }
 
 // newTestServer creates a minimal server for testing with a self-signed TLS cert.
+// AllowPrivateIP is enabled because integration tests use localhost targets.
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
 	cert := generateTestCert(t)
@@ -266,6 +264,7 @@ func newTestServer(t *testing.T) *Server {
 	if err != nil {
 		t.Fatal(err)
 	}
+	srv.handler.AllowPrivateIP = true
 	srv.TLSConfig = &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		NextProtos:   []string{"h3"},
@@ -291,22 +290,18 @@ func TestServer_ECHRouting_ECHConnection(t *testing.T) {
 
 	// Run TCP-WS accept loop for smux streams.
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		srv.acceptTCPLoop(ctx, srv.tcpwsSrv)
-	}()
+	})
 
 	// Accept one connection and route through handleRawTCP.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		conn, err := tcpLn.Accept()
 		if err != nil {
 			return
 		}
 		srv.handleRawTCP(conn)
-	}()
+	})
 
 	// Client: connect with a real TLS handshake.
 	// The handleRawTCP will peek the ClientHello. Since we use standard Go TLS
@@ -523,11 +518,9 @@ func TestServer_WSUpgrade(t *testing.T) {
 
 	// Run TCP-WS accept loop.
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		srv.acceptTCPLoop(ctx, srv.tcpwsSrv)
-	}()
+	})
 
 	// Use net.Pipe to simulate TLS-terminated connection.
 	// Server side gets handleHTTP; client side does WS upgrade + smux.

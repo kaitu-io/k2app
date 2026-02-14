@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/apernet/quic-go v0.57.2-0.20260111184307-eec823306178
+	github.com/coder/websocket v1.8.14
 	github.com/kaitu-io/k2rule v0.3.1-go
 	github.com/metacubex/utls v1.8.4
 	github.com/miekg/dns v1.1.72
@@ -11,7 +12,6 @@ require (
 	github.com/sagernet/sing-tun v0.7.11
 	github.com/xtaci/smux/v2 v2.1.0
 	gopkg.in/yaml.v3 v3.0.1
-	nhooyr.io/websocket v1.8.17
 )
 
 require (

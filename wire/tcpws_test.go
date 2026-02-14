@@ -13,7 +13,7 @@ import (
 	"time"
 
 	smux "github.com/xtaci/smux/v2"
-	"nhooyr.io/websocket"
+	"github.com/coder/websocket"
 )
 
 func TestDefaultSmuxConfig(t *testing.T) {

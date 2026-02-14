@@ -22,7 +22,7 @@ import (
 	"github.com/kaitu-io/k2/wire"
 	"github.com/kaitu-io/k2/wire/tlspad"
 	smux "github.com/xtaci/smux/v2"
-	"nhooyr.io/websocket"
+	"github.com/coder/websocket"
 )
 
 // Server is the k2s server daemon.
