@@ -18,7 +18,7 @@ jobs:
           - runner: macos-latest
             target: universal-apple-darwin
             platform: macOS
-          - runner: [self-hosted, Windows, X64]
+          - runner: windows-latest
             target: x86_64-pc-windows-msvc
             platform: Windows
 
@@ -26,11 +26,6 @@ jobs:
     timeout-minutes: 90
 
     steps:
-      - name: Clean git global config (self-hosted)
-        if: matrix.platform == 'Windows'
-        shell: powershell
-        run: git config --global --unset-all url."git@github.com:".insteadOf 2>$null; exit 0
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -42,15 +37,6 @@ jobs:
       - name: Init k2 submodule
         shell: bash
         run: git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init --recursive
-
-      - name: Add user tools to PATH (self-hosted)
-        if: matrix.platform == 'Windows'
-        shell: bash
-        run: |
-          echo "C:\\Users\\david\\AppData\\Roaming\\npm" >> "$GITHUB_PATH"
-          echo "C:\\Users\\david\\.cargo\\bin" >> "$GITHUB_PATH"
-          echo "C:\\Users\\david\\AppData\\Local\\Programs\\Python\\Python312-arm64" >> "$GITHUB_PATH"
-          echo "C:\\Users\\david\\AppData\\Local\\Programs\\Python\\Python312-arm64\\Scripts" >> "$GITHUB_PATH"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -132,22 +118,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: bash scripts/build-macos.sh
 
-      # --- Windows: SimpliSign authentication ---
-
-      - name: Authenticate SimpliSign
-        if: matrix.platform == 'Windows'
-        shell: powershell
-        run: |
-          pip install pyotp pywinauto -q
-          python C:\actions-runner\scripts\simplisign_auto_login.py `
-            --totp-uri "$env:SIMPLISIGN_TOTP_URI" `
-            --username "$env:SIMPLISIGN_USERNAME"
-        env:
-          SIMPLISIGN_TOTP_URI: ${{ secrets.SIMPLISIGN_TOTP_URI }}
-          SIMPLISIGN_USERNAME: ${{ secrets.SIMPLISIGN_USERNAME }}
-        continue-on-error: true
-
-      # --- Windows: build k2 + Tauri ---
+      # --- Windows: build k2 + Tauri (NO signing — handled by kaitu-signer service) ---
 
       - name: Build k2 for Windows
         if: matrix.platform == 'Windows'
@@ -164,46 +135,92 @@ jobs:
         run: yarn tauri build --target x86_64-pc-windows-msvc
         working-directory: desktop
 
-      # --- Windows: code signing with SimpliSign + signtool ---
+      # --- Windows: upload unsigned artifacts → trigger signing service → wait → download signed ---
 
-      - name: Sign Windows installer
+      - name: Upload unsigned artifacts to S3 signing queue
         if: matrix.platform == 'Windows'
-        shell: powershell
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ap-northeast-1
+        shell: bash
         run: |
-          # Dynamic signtool discovery
-          $signtool = $null
-          $sdkRoot = "C:\Program Files (x86)\Windows Kits\10\bin"
-          if (Test-Path $sdkRoot) {
-            $signtool = Get-ChildItem -Path $sdkRoot -Recurse -Filter "signtool.exe" -ErrorAction SilentlyContinue |
-              Where-Object { $_.FullName -like "*\x64\*" } |
-              Sort-Object { [version]($_.Directory.Parent.Name -replace '[^0-9.]','') } -Descending -ErrorAction SilentlyContinue |
-              Select-Object -First 1 -ExpandProperty FullName
-          }
-          if (-not $signtool) {
-            Write-Error "signtool.exe not found. Install Windows SDK on this runner."
-            exit 1
-          }
-          Write-Host "Found signtool: $signtool"
+          NSIS_DIR="desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis"
+          RUN_ID="${GITHUB_RUN_ID}"
+          S3_PENDING="s3://d0.all7.cc/kaitu/signing/pending/${RUN_ID}/"
 
-          $installer = Get-ChildItem -Path "desktop\src-tauri\target\x86_64-pc-windows-msvc\release\bundle\nsis\*.exe" | Select-Object -First 1
-          if (-not $installer) {
-            Write-Error "No installer .exe found in NSIS bundle output"
-            exit 1
-          }
+          echo "Uploading unsigned artifacts to ${S3_PENDING}"
+          aws s3 cp "${NSIS_DIR}/" "${S3_PENDING}" --recursive \
+            --exclude "*" \
+            --include "*.exe" --include "*.exe.sig"
 
-          Write-Host "Signing: $($installer.FullName)"
-          & $signtool sign /fd SHA256 /tr http://time.certum.pl /td SHA256 /d "Kaitu Desktop" "$($installer.FullName)"
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "signtool sign failed (exit code: $LASTEXITCODE)"
-            exit 1
-          }
+          # List uploaded files for SQS message
+          FILES=$(aws s3 ls "${S3_PENDING}" | awk '{print $4}' | grep '\.exe$' | head -5)
+          echo "Uploaded files:"
+          echo "${FILES}"
 
-          & $signtool verify /pa "$($installer.FullName)"
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "signtool verify failed — signature is invalid"
-            exit 1
-          }
-          Write-Host "Installer signed and verified successfully"
+          # Save file list for next step
+          echo "${FILES}" > "${RUNNER_TEMP}/signing-files.txt"
+
+      - name: Send SQS signing request
+        if: matrix.platform == 'Windows'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ap-northeast-1
+          SQS_QUEUE_URL: ${{ secrets.SQS_SIGNING_QUEUE_URL }}
+        shell: bash
+        run: |
+          RUN_ID="${GITHUB_RUN_ID}"
+          FILES_JSON=$(cat "${RUNNER_TEMP}/signing-files.txt" | jq -R -s 'split("\n") | map(select(length > 0))')
+
+          MESSAGE=$(jq -n \
+            --arg run_id "${RUN_ID}" \
+            --arg s3_prefix "kaitu/signing/pending/${RUN_ID}/" \
+            --argjson files "${FILES_JSON}" \
+            --arg cert_name "Wordgate LLC" \
+            --arg timestamp_url "http://timestamp.sectigo.com" \
+            --arg completed_prefix "kaitu/signing/completed/${RUN_ID}/" \
+            '{run_id: $run_id, s3_prefix: $s3_prefix, files: $files, cert_name: $cert_name, timestamp_url: $timestamp_url, completed_prefix: $completed_prefix}')
+
+          echo "Sending SQS message:"
+          echo "${MESSAGE}" | jq .
+
+          aws sqs send-message \
+            --queue-url "${SQS_QUEUE_URL}" \
+            --message-body "${MESSAGE}"
+
+          echo "SQS message sent for run ${RUN_ID}"
+
+      - name: Wait for signing to complete
+        if: matrix.platform == 'Windows'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ap-northeast-1
+        shell: bash
+        run: |
+          bash scripts/ci/wait-for-signing.sh "${GITHUB_RUN_ID}" "d0.all7.cc" 600
+
+      - name: Download signed artifacts
+        if: matrix.platform == 'Windows'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ap-northeast-1
+        shell: bash
+        run: |
+          RUN_ID="${GITHUB_RUN_ID}"
+          S3_COMPLETED="s3://d0.all7.cc/kaitu/signing/completed/${RUN_ID}/"
+          LOCAL_SIGNED="signed-artifacts/"
+          mkdir -p "${LOCAL_SIGNED}"
+
+          echo "Downloading signed artifacts from ${S3_COMPLETED}"
+          aws s3 cp "${S3_COMPLETED}" "${LOCAL_SIGNED}" --recursive \
+            --exclude "status.json"
+
+          echo "Signed artifacts:"
+          ls -la "${LOCAL_SIGNED}"
 
       # --- Upload artifacts to S3 ---
 
@@ -212,25 +229,33 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ap-east-1
+          AWS_DEFAULT_REGION: ap-northeast-1
         run: |
           VERSION=$(node -p "require('./package.json').version")
           S3_BASE="s3://d0.all7.cc/kaitu/desktop/${VERSION}"
           aws s3 cp release/${VERSION}/ "${S3_BASE}/" --recursive
+
       - name: Upload Windows to S3
         if: matrix.platform == 'Windows'
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ap-east-1
+          AWS_DEFAULT_REGION: ap-northeast-1
         shell: bash
         run: |
           VERSION=$(node -p "require('./package.json').version")
           S3_BASE="s3://d0.all7.cc/kaitu/desktop/${VERSION}"
+
+          # Upload signed .exe files
+          aws s3 cp signed-artifacts/ "${S3_BASE}/" --recursive \
+            --exclude "*" \
+            --include "*.exe"
+
+          # Upload .exe.sig from original build (Tauri update signature, not code signature)
           NSIS_DIR="desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis"
           aws s3 cp "${NSIS_DIR}/" "${S3_BASE}/" --recursive \
             --exclude "*" \
-            --include "*.exe" --include "*.exe.sig"
+            --include "*.exe.sig"
 
       # --- Cleanup ---
 
