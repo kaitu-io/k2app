@@ -81,7 +81,7 @@ jobs:
             rust-release-${{ runner.os }}-
 
       - name: Install Node dependencies
-        run: yarn install --frozen-lockfile
+        run: yarn install --frozen-lockfile --network-timeout 600000 --network-concurrency 4
 
       - name: Run pre-build (Windows)
         if: matrix.platform == 'Windows'
