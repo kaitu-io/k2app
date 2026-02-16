@@ -28,8 +28,9 @@ class K2Plugin : Plugin() {
         private const val ANDROID_MANIFEST_URL = "https://d0.all7.cc/kaitu/android/latest.json"
     }
 
-    private var vpnService: K2VpnService? = null
+    private var vpnService: VpnServiceBridge? = null
     private var serviceConnection: ServiceConnection? = null
+    private val vpnServiceClassName = "io.kaitu.K2VpnService"
 
     override fun load() {
         // Check for OTA web update
@@ -135,7 +136,8 @@ class K2Plugin : Plugin() {
             .edit().putString("wireUrl", wireUrl).apply()
 
         // Start VPN service
-        val intent = Intent(context, K2VpnService::class.java).apply {
+        val intent = Intent().apply {
+            setClassName(context.packageName, vpnServiceClassName)
             action = "START"
             putExtra("wireUrl", wireUrl)
         }
@@ -145,7 +147,8 @@ class K2Plugin : Plugin() {
 
     @PluginMethod
     fun disconnect(call: PluginCall) {
-        val intent = Intent(context, K2VpnService::class.java).apply {
+        val intent = Intent().apply {
+            setClassName(context.packageName, vpnServiceClassName)
             action = "STOP"
         }
         context.startService(intent)
@@ -467,14 +470,14 @@ class K2Plugin : Plugin() {
     private fun bindToService() {
         serviceConnection = object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-                vpnService = (binder as? K2VpnService.LocalBinder)?.getService()
+                vpnService = (binder as? VpnServiceBridge.BridgeBinder)?.getService()
                 vpnService?.setPlugin(this@K2Plugin)
             }
             override fun onServiceDisconnected(name: ComponentName?) {
                 vpnService = null
             }
         }
-        val intent = Intent(context, K2VpnService::class.java)
+        val intent = Intent().setClassName(context.packageName, vpnServiceClassName)
         context.bindService(intent, serviceConnection!!, Context.BIND_AUTO_CREATE)
     }
 }

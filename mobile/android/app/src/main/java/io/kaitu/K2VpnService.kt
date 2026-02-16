@@ -5,24 +5,20 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Intent
 import android.net.VpnService
-import android.os.Binder
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
 import io.kaitu.k2plugin.K2Plugin
+import io.kaitu.k2plugin.VpnServiceBridge
 import mobile.Mobile
 import mobile.Engine
 import mobile.EventHandler as MobileEventHandler
 
-class K2VpnService : VpnService() {
+class K2VpnService : VpnService(), VpnServiceBridge {
 
     private var engine: Engine? = null
     private var vpnInterface: ParcelFileDescriptor? = null
     private var plugin: K2Plugin? = null
-    private val binder = LocalBinder()
-
-    inner class LocalBinder : Binder() {
-        fun getService(): K2VpnService = this@K2VpnService
-    }
+    private val binder = VpnServiceBridge.BridgeBinder(this)
 
     override fun onBind(intent: Intent?): IBinder {
         return binder
@@ -44,11 +40,11 @@ class K2VpnService : VpnService() {
         super.onRevoke()
     }
 
-    fun setPlugin(plugin: K2Plugin) {
+    override fun setPlugin(plugin: K2Plugin) {
         this.plugin = plugin
     }
 
-    fun getStatusJSON(): String {
+    override fun getStatusJSON(): String {
         return engine?.statusJSON() ?: "{\"state\":\"disconnected\"}"
     }
 
