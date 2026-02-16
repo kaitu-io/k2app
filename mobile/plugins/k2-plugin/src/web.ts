@@ -15,15 +15,15 @@ export class K2PluginWeb extends WebPlugin implements K2PluginInterface {
     throw this.unavailable('K2Plugin is not available on web');
   }
 
-  async getStatus(): Promise<{ state: string; connectedAt?: string; error?: string; wireUrl?: string }> {
+  async getStatus(): Promise<{ state: string; connectedAt?: string; error?: string }> {
     throw this.unavailable('K2Plugin is not available on web');
   }
 
-  async getConfig(): Promise<{ wireUrl?: string }> {
+  async getConfig(): Promise<{ config?: string }> {
     throw this.unavailable('K2Plugin is not available on web');
   }
 
-  async connect(_options: { wireUrl: string }): Promise<void> {
+  async connect(_options: { config: string }): Promise<void> {
     throw this.unavailable('K2Plugin is not available on web');
   }
 

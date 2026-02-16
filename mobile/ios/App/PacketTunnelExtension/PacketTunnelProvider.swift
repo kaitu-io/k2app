@@ -7,13 +7,13 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     private var engine: MobileEngine?
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
-        let wireUrl: String
-        if let url = options?["wireUrl"] as? String {
-            wireUrl = url
-        } else if let url = (protocolConfiguration as? NETunnelProviderProtocol)?.providerConfiguration?["wireUrl"] as? String {
-            wireUrl = url
+        let configJSON: String
+        if let config = options?["configJSON"] as? String {
+            configJSON = config
+        } else if let config = (protocolConfiguration as? NETunnelProviderProtocol)?.providerConfiguration?["configJSON"] as? String {
+            configJSON = config
         } else {
-            completionHandler(NSError(domain: "io.kaitu", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing wireUrl"]))
+            completionHandler(NSError(domain: "io.kaitu", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing configJSON"]))
             return
         }
 
@@ -65,7 +65,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                     try? FileManager.default.createDirectory(atPath: dataDir, withIntermediateDirectories: true)
                 }
 
-                try self?.engine?.start(wireUrl, fd: Int(fd), dataDir: dataDir)
+                try self?.engine?.start(configJSON, fd: Int(fd), dataDir: dataDir)
                 completionHandler(nil)
             } catch {
                 completionHandler(error)

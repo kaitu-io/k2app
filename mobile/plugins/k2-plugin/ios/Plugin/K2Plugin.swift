@@ -23,7 +23,6 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "applyWebUpdate", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "downloadNativeUpdate", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "installNativeUpdate", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "setRuleMode", returnType: CAPPluginReturnPromise),
     ]
 
     private var vpnManager: NETunnelProviderManager?
@@ -134,13 +133,13 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func getConfig(_ call: CAPPluginCall) {
         let defaults = UserDefaults(suiteName: kAppGroup)
-        let wireUrl = defaults?.string(forKey: "wireUrl")
-        call.resolve(["wireUrl": wireUrl ?? ""])
+        let config = defaults?.string(forKey: "configJSON")
+        call.resolve(["config": config ?? ""])
     }
 
     @objc func connect(_ call: CAPPluginCall) {
-        guard let wireUrl = call.getString("wireUrl") else {
-            call.reject("Missing wireUrl parameter")
+        guard let config = call.getString("config") else {
+            call.reject("Missing config parameter")
             return
         }
 
@@ -150,16 +149,10 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
 
-            // Read saved rule mode and append to wireUrl
-            let defaults = UserDefaults(suiteName: kAppGroup)
-            let ruleMode = defaults?.string(forKey: "ruleMode") ?? "global"
-            let separator = wireUrl.contains("?") ? "&" : "?"
-            let finalUrl = wireUrl + separator + "rule=" + ruleMode
-
             let proto = (manager.protocolConfiguration as? NETunnelProviderProtocol) ?? NETunnelProviderProtocol()
             proto.providerBundleIdentifier = "io.kaitu.PacketTunnelExtension"
-            proto.serverAddress = wireUrl
-            proto.providerConfiguration = ["wireUrl": finalUrl]
+            proto.serverAddress = "Kaitu VPN"
+            proto.providerConfiguration = ["configJSON": config]
             manager.protocolConfiguration = proto
             manager.isEnabled = true
             manager.localizedDescription = "Kaitu VPN"
@@ -176,10 +169,10 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                     }
                     do {
                         try (manager.connection as? NETunnelProviderSession)?.startVPNTunnel(options: [
-                            "wireUrl": NSString(string: finalUrl)
+                            "configJSON": NSString(string: config)
                         ])
-                        // Save wireUrl to App Group for NE access
-                        UserDefaults(suiteName: kAppGroup)?.set(finalUrl, forKey: "wireUrl")
+                        // Save config to App Group for NE access
+                        UserDefaults(suiteName: kAppGroup)?.set(config, forKey: "configJSON")
                         call.resolve()
                     } catch {
                         call.reject("Failed to start tunnel: \(error.localizedDescription)")
@@ -191,16 +184,6 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func disconnect(_ call: CAPPluginCall) {
         vpnManager?.connection.stopVPNTunnel()
-        call.resolve()
-    }
-
-    @objc func setRuleMode(_ call: CAPPluginCall) {
-        guard let mode = call.getString("mode") else {
-            call.reject("Missing mode parameter")
-            return
-        }
-        let defaults = UserDefaults(suiteName: kAppGroup)
-        defaults?.set(mode, forKey: "ruleMode")
         call.resolve()
     }
 
@@ -401,7 +384,6 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         let keyMap: [String: String] = [
             "connected_at": "connectedAt",
             "uptime_seconds": "uptimeSeconds",
-            "wire_url": "wireUrl",
         ]
         var result: [String: Any] = [:]
         for (key, value) in json {

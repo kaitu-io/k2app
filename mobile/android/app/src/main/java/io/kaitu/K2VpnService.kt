@@ -32,8 +32,8 @@ class K2VpnService : VpnService(), VpnServiceBridge {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             "START" -> {
-                val wireUrl = intent.getStringExtra("wireUrl") ?: return START_NOT_STICKY
-                startVpn(wireUrl)
+                val configJSON = intent.getStringExtra("configJSON") ?: return START_NOT_STICKY
+                startVpn(configJSON)
             }
             "STOP" -> stopVpn()
         }
@@ -53,8 +53,8 @@ class K2VpnService : VpnService(), VpnServiceBridge {
         return engine?.statusJSON() ?: "{\"state\":\"disconnected\"}"
     }
 
-    private fun startVpn(wireUrl: String) {
-        Log.d(TAG, "startVpn: wireUrl=$wireUrl")
+    private fun startVpn(configJSON: String) {
+        Log.d(TAG, "startVpn: configJSON length=${configJSON.length}")
         createNotificationChannel()
         startForeground(1, createNotification("Connecting..."))
 
@@ -104,7 +104,7 @@ class K2VpnService : VpnService(), VpnServiceBridge {
 
         try {
             Log.d(TAG, "Starting engine with fd=$fd")
-            engine?.start(wireUrl, fd.toLong(), filesDir.absolutePath)
+            engine?.start(configJSON, fd.toLong(), filesDir.absolutePath)
             Log.d(TAG, "Engine started successfully")
         } catch (e: Exception) {
             Log.e(TAG, "Engine start failed: ${e.message}", e)

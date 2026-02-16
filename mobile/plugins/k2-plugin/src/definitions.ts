@@ -17,11 +17,10 @@ export interface K2PluginInterface {
   checkReady(): Promise<{ ready: boolean; version?: string; reason?: string }>;
   getUDID(): Promise<{ udid: string }>;
   getVersion(): Promise<{ version: string; go: string; os: string; arch: string }>;
-  getStatus(): Promise<{ state: string; connectedAt?: string; uptimeSeconds?: number; error?: string; wireUrl?: string }>;
-  getConfig(): Promise<{ wireUrl?: string }>;
-  connect(options: { wireUrl: string }): Promise<void>;
+  getStatus(): Promise<{ state: string; connectedAt?: string; uptimeSeconds?: number; error?: string }>;
+  getConfig(): Promise<{ config?: string }>;
+  connect(options: { config: string }): Promise<void>;
   disconnect(): Promise<void>;
-  setRuleMode(options: { mode: string }): Promise<void>;
 
   checkWebUpdate(): Promise<WebUpdateInfo>;
   checkNativeUpdate(): Promise<NativeUpdateInfo>;
