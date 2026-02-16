@@ -51,7 +51,7 @@ Makefile             Build orchestration — version from package.json, k2 from 
 - **Antiblock**: Cloud API entry resolution via CDN JSONP (`webapp/src/api/antiblock.ts`). Only exception to VpnClient boundary.
 - **Version source of truth**: Root `package.json` (0.4.0). Tauri reads via `../../package.json` reference. k2 binary gets it via ldflags.
 - **k2 submodule**: Read-only. Built with `-tags nowebapp` (headless mode). Binary output to `desktop/src-tauri/binaries/`.
-- **i18n**: zh-CN default, en-US secondary. Browser language detection. Keys namespaced by page (common, dashboard, auth, settings, nav, purchase, invite, account, feedback).
+- **i18n**: zh-CN default, en-US secondary. Browser language detection. Keys namespaced by page (common, dashboard, auth, settings, purchase, invite, account, feedback).
 - **Dark-only theme**: No light mode. All design tokens in `webapp/src/app.css` as CSS variables. Components use `bg-[--color-*]` — zero hardcoded colors.
 - **Webapp subagent tasks**: Always invoke `/word9f-frontend` for frontend decisions.
 - **Go→JS JSON key convention**: Go `json.Marshal` outputs snake_case (`connected_at`). JS/TS expects camelCase (`connectedAt`). Native bridge layers (K2Plugin.swift, K2Plugin.kt) must remap keys at the boundary. Never pass raw Go JSON to webapp without key remapping.
@@ -60,6 +60,8 @@ Makefile             Build orchestration — version from package.json, k2 from 
 - **Capacitor plugin loading**: Use `registerPlugin('K2Plugin')` from `@capacitor/core`. Never use dynamic npm `import('k2-plugin')` — it fails in WebView at runtime.
 - **gomobile Swift API**: Generated methods use `throws` pattern in Swift, NOT NSError out-parameter. Always use `try`/`catch`.
 - **iOS extension targets**: Must have `CFBundleExecutable`, `CFBundleVersion` in Info.plist. Build settings (`CURRENT_PROJECT_VERSION`, `MARKETING_VERSION`) are NOT inherited from project — set per-target.
+- **Local Capacitor plugin sync**: `file:` protocol plugins are copied (not symlinked) to `node_modules/`. After editing plugin source in `mobile/plugins/`, must run `rm -rf node_modules/k2-plugin && yarn install --force` before `cap sync`. Otherwise stale code is deployed.
+- **Android VPN prepare context**: `VpnService.prepare()` must use Activity context (`activity`), not Application context (`context`). Application context causes `establish()` to return null on Android 15+.
 
 ## Tech Stack
 
