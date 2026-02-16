@@ -1,0 +1,312 @@
+# API Index - server/center
+#
+# This file helps AI assistants understand API structure without full codebase context.
+# Update when adding/removing/modifying API handlers.
+
+directory: server/center
+purpose: Backend API handlers, business logic, and data models for kaitu-center
+last_updated: 2025-01-15
+
+# API handler files and their endpoints
+api_handlers:
+  - file: api_auth.go
+    description: Authentication and authorization APIs
+    apis:
+      - auth.send_code      # POST /api/auth/code
+      - auth.login          # POST /api/auth/login
+      - auth.web_login      # POST /api/auth/web-login
+      - auth.refresh_token  # POST /api/auth/refresh
+      - auth.logout         # POST /api/auth/logout
+    contracts:
+      - docs/api-contracts/contracts/auth/*.yaml
+
+  - file: api_user.go
+    description: User profile and management APIs
+    apis:
+      - user.info           # GET /api/user/info
+      - user.devices        # GET /api/user/devices
+      - user.delete_device  # DELETE /api/user/devices/:uuid
+      - user.update_device_remark  # PUT /api/user/devices/:uuid/remark
+      - user.send_bind_verification  # POST /api/user/email/send-bind-verification
+      - user.update_email   # POST /api/user/email/update-email
+      - user.update_language  # PUT /api/user/language
+      - user.delete_account  # DELETE /api/user/delete-account
+      - user.access_key     # GET /api/user/access-key
+      - user.regenerate_access_key  # POST /api/user/access-key/regenerate
+    contracts:
+      - docs/api-contracts/contracts/user/*.yaml
+
+  - file: api_member.go
+    description: Team member management APIs
+    apis:
+      - user.members        # GET /api/user/members
+      - user.add_member     # POST /api/user/members
+      - user.remove_member  # DELETE /api/user/members/:userUUID
+      - user.get_delegate   # GET /api/user/delegate
+      - user.reject_delegate  # DELETE /api/user/delegate
+    contracts:
+      - docs/api-contracts/contracts/user/member*.yaml
+
+  - file: api_invite.go
+    description: Invite code management APIs
+    apis:
+      - invite.get_code     # GET /api/invite/code
+    contracts:
+      - docs/api-contracts/contracts/invite/*.yaml
+
+  - file: api_my_invite.go
+    description: User's own invite codes management
+    apis:
+      - invite.my_codes     # GET /api/invite/my-codes
+      - invite.my_latest_code  # GET /api/invite/my-codes/latest
+      - invite.create_code  # POST /api/invite/my-codes
+      - invite.update_remark  # PUT /api/invite/my-codes/:code/remark
+      - invite.share_link   # GET /api/invite/my-codes/:code/share-link
+      - invite.my_users     # GET /api/invite/my-users
+    contracts:
+      - docs/api-contracts/contracts/invite/*.yaml
+
+  - file: api_wallet.go
+    description: Wallet and balance management APIs
+    apis:
+      - wallet.get          # GET /api/wallet
+      - wallet.changes      # GET /api/wallet/changes
+      - wallet.withdraw_accounts  # GET/POST /api/wallet/withdraw-accounts
+      - wallet.set_default_account  # PUT /api/wallet/withdraw-accounts/:id/set-default
+      - wallet.delete_account  # DELETE /api/wallet/withdraw-accounts/:id
+      - wallet.withdraws    # GET/POST /api/wallet/withdraws
+    contracts:
+      - docs/api-contracts/contracts/wallet/*.yaml
+
+  - file: api_order.go
+    description: Order creation and management
+    apis:
+      - user.create_order   # POST /api/user/orders
+      - user.pro_histories  # GET /api/user/pro-histories
+    contracts:
+      - docs/api-contracts/contracts/order/*.yaml
+
+  - file: api_plan.go
+    description: Subscription plan listing
+    apis:
+      - plan.list           # GET /api/plans
+    contracts:
+      - docs/api-contracts/contracts/plan/*.yaml
+
+  - file: api_tunnel.go
+    description: Tunnel/node listing for VPN clients
+    apis:
+      - tunnel.list         # GET /api/tunnels
+      - app.config          # GET /api/app/config
+      - ca.get              # GET /api/ca
+    contracts:
+      - docs/api-contracts/contracts/tunnel/*.yaml
+
+  - file: api_retailer.go
+    description: Reseller/retailer APIs
+    apis:
+      - retailer.level      # GET /api/retailer/level
+      - retailer.stats      # GET /api/retailer/stats
+    contracts:
+      - docs/api-contracts/contracts/retailer/*.yaml
+
+  - file: api_ticket.go
+    description: Support ticket creation
+    apis:
+      - user.create_ticket  # POST /api/user/ticket
+    contracts:
+      - docs/api-contracts/contracts/user/ticket.yaml
+
+  # Admin APIs
+  - file: api_admin_tunnel.go
+    description: Admin tunnel management
+    apis:
+      - admin.tunnels.list    # GET /app/tunnels
+      - admin.tunnels.update  # PUT /app/tunnels/:id
+      - admin.tunnels.delete  # DELETE /app/tunnels/:id
+    contracts:
+      - docs/api-contracts/contracts/admin/tunnel*.yaml
+
+  - file: api_admin_node.go
+    description: Admin physical node management
+    apis:
+      - admin.nodes.list    # GET /app/nodes
+      - admin.nodes.update  # PUT /app/nodes/:ipv4
+      - admin.nodes.delete  # DELETE /app/nodes/:ipv4
+    contracts:
+      - docs/api-contracts/contracts/admin/node*.yaml
+
+  - file: api_admin_plan.go
+    description: Admin plan management
+    apis:
+      - admin.plans.list    # GET /app/plans
+      - admin.plans.create  # POST /app/plans
+      - admin.plans.update  # PUT /app/plans/:id
+      - admin.plans.delete  # DELETE /app/plans/:id
+      - admin.plans.restore # POST /app/plans/:id/restore
+    contracts:
+      - docs/api-contracts/contracts/admin/plan*.yaml
+
+  - file: api_admin_user.go
+    description: Admin user management
+    apis:
+      - admin.users.list    # GET /app/users
+      - admin.users.detail  # GET /app/users/:uuid
+      - admin.users.update_retailer_status  # PUT /app/users/:uuid/retailer-status
+      - admin.users.update_retailer_contacts  # PUT /app/users/:uuid/retailer-contacts
+      - admin.users.hard_delete  # POST /app/users/hard-delete
+    contracts:
+      - docs/api-contracts/contracts/admin/user*.yaml
+
+  - file: api_admin_order.go
+    description: Admin order management
+    apis:
+      - admin.orders.list   # GET /app/orders
+      - admin.orders.detail # GET /app/orders/:uuid
+    contracts:
+      - docs/api-contracts/contracts/admin/order*.yaml
+
+  - file: api_admin_campaign.go
+    description: Admin campaign/promotion management
+    apis:
+      - admin.campaigns.list    # GET /app/campaigns
+      - admin.campaigns.get     # GET /app/campaigns/:id
+      - admin.campaigns.create  # POST /app/campaigns
+      - admin.campaigns.update  # PUT /app/campaigns/:id
+      - admin.campaigns.delete  # DELETE /app/campaigns/:id
+      - admin.campaigns.stats   # GET /app/campaigns/code/:code/stats
+      - admin.campaigns.orders  # GET /app/campaigns/code/:code/orders
+      - admin.campaigns.funnel  # GET /app/campaigns/code/:code/funnel
+    contracts:
+      - docs/api-contracts/contracts/admin/campaign*.yaml
+
+  - file: api_admin_edm.go
+    description: Admin email marketing (EDM) management
+    apis:
+      - admin.edm.templates.list    # GET /app/edm/templates
+      - admin.edm.templates.create  # POST /app/edm/templates
+      - admin.edm.templates.update  # PUT /app/edm/templates/:id
+      - admin.edm.templates.delete  # DELETE /app/edm/templates/:id
+      - admin.edm.templates.translate  # POST /app/edm/templates/:id/translate/:language
+      - admin.edm.tasks.create      # POST /app/edm/tasks
+      - admin.edm.preview_targets   # POST /app/edm/preview-targets
+      - admin.edm.send_logs.list    # GET /app/edm/send-logs
+      - admin.edm.send_logs.stats   # GET /app/edm/send-logs/stats
+    contracts:
+      - docs/api-contracts/contracts/admin/edm*.yaml
+
+  - file: api_admin_wallet.go
+    description: Admin wallet/withdrawal management
+    apis:
+      - admin.wallet.withdraws.list     # GET /app/wallet/withdraws
+      - admin.wallet.withdraws.approve  # POST /app/wallet/withdraws/:id/approve
+      - admin.wallet.withdraws.complete # POST /app/wallet/withdraws/:id/complete
+    contracts:
+      - docs/api-contracts/contracts/admin/wallet*.yaml
+
+  # Internal/Slave APIs
+  - file: slave_api.go
+    description: Internal slave node APIs
+    apis:
+      - slave.node.upsert         # PUT /slave/nodes/:ipv4
+      - slave.node.upsert_tunnel  # PUT /slave/nodes/:ipv4/tunnels/:domain
+      - slave.node.delete_tunnel  # DELETE /slave/nodes/:ipv4/tunnels/:domain
+      - slave.report_status       # POST /slave/report/status
+      - slave.device_check_auth   # POST /slave/device-check-auth
+      - slave.accelerate_tunnels  # GET /slave/accelerate-tunnels
+      - slave.resolve_domain      # GET /slave/resolve-domain
+    contracts:
+      - docs/api-contracts/contracts/internal/*.yaml
+
+# Type definition files
+type_definitions:
+  - file: type.go
+    description: API request/response type definitions
+    line_count: ~670
+    key_types:
+      - SendAuthCodeRequest
+      - LoginRequest
+      - DataUser
+      - DataDevice
+      - DataPlan
+      - DataOrder
+      - DataWallet
+
+  - file: model.go
+    description: Database model definitions (GORM)
+    line_count: ~717
+    key_models:
+      - User
+      - Device
+      - Plan
+      - Order
+      - Wallet
+      - WalletChange
+      - InviteCode
+      - Campaign
+
+  - file: model_wallet.go
+    description: Wallet-specific models
+    key_models:
+      - WalletWithdrawAccount
+      - WithdrawRequest
+
+  - file: response.go
+    description: Response helpers and error codes
+    key_exports:
+      - ErrorNone (0)
+      - ErrorInvalidOperation (400)
+      - ErrorNotLogin (401)
+      - ErrorPaymentRequired (402)
+      - ErrorForbidden (403)
+      - ErrorNotFound (404)
+      - ErrorInvalidArgument (422)
+      - ErrorTooManyRequests (429)
+      - ErrorSystemError (500)
+
+# Business logic files
+logic_files:
+  - file: logic_auth.go
+    handles: Authentication flows, token generation
+  - file: logic_wallet.go
+    handles: Wallet balance calculation, transactions
+  - file: logic_order.go
+    handles: Order creation, payment processing
+  - file: logic_invite.go
+    handles: Invite code generation, sharing
+
+# Middleware
+middleware:
+  - file: middleware.go
+    provides:
+      - AuthRequired()
+      - ProRequired()
+      - DeviceAuthRequired()
+      - AdminRequired()
+      - RetailerRequired()
+      - SlaveAuthRequired()
+
+# Route registration
+routes:
+  - file: route.go
+    description: All route registrations
+    line_count: ~280
+
+# Related documentation
+related_docs:
+  - CLAUDE.md
+  - docs/api-contracts/API-CONTRACT-FRAMEWORK.md
+  - docs/api-contracts/usage-maps/
+
+# Dependencies
+depends_on:
+  - server/slave (for tunnel protocol)
+  - client/webapp/src/services (API types must match)
+  - web/src/lib (Admin dashboard API client)
+
+notes: |
+  - All API handlers follow naming convention: api_{action}_{resource}
+  - Admin APIs are prefixed with api_admin_
+  - Slave APIs are prefixed with api_slave_ or in slave_api*.go
+  - API documentation is maintained in docs/api-contracts/contracts/
+  - See API-CONTRACT-FRAMEWORK.md for complete API documentation workflow

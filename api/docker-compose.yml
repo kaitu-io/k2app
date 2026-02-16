@@ -1,0 +1,24 @@
+services:
+  mysql:
+    image: mariadb:10.6.18
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: 123456
+      MYSQL_DATABASE: kaitu
+      MYSQL_USER: kaitu
+      MYSQL_PASSWORD: 123456
+    volumes:
+      - ./data/mysql:/var/lib/mysql
+      - ./data/backups/:/data/backups
+    ports:
+      - "53721:3306"
+  redis:
+    image: redis:latest
+    restart: always
+    ports:
+      - "49183:6379"
+    volumes:
+      - ./data/redis:/root/redis
+    environment:
+      - REDIS_PORT=6379
+      - REDIS_DATABASES=16

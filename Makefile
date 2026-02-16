@@ -30,6 +30,13 @@ build-openwrt: pre-build
 dev: pre-build
 	./scripts/dev.sh
 
+# API server
+build-api:
+	cd api/cmd && go build -o kaitu-center .
+
+deploy-api: build-api
+	bash scripts/deploy-center.sh
+
 publish-release:
 	bash scripts/publish-release.sh
 

@@ -18,3 +18,10 @@ k2/build/
 *.aar
 
 .word9f
+
+# API local dev data (docker volumes, config with secrets, test artifacts)
+api/data/
+api/logs/
+api/cmd/kaitu-center
+api/config.yml
+api/cloudprovider/test-results/
