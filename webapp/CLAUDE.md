@@ -5,7 +5,7 @@ React 19 + TypeScript + Vite + Tailwind CSS v4. Served by tauri-plugin-localhost
 ## Commands
 
 ```bash
-yarn test              # vitest run (284 tests, 49 files)
+yarn test              # vitest run (294 tests, 50 files)
 yarn build             # Vite production build → dist/
 npx tsc --noEmit       # Type check
 ```
@@ -103,6 +103,7 @@ src/
 - **LoginDialog pattern**: Global modal via `login-dialog.store`. Guards call `openLoginDialog()` instead of redirecting to `/login`
 - **Feature flags**: `ui.store.getFeatureFlags()` controls tab visibility (e.g., `showInviteTab`)
 - **Dev proxy**: Vite proxies `/api/*` and `/ping` to `:1777`. Production uses absolute URL via `import.meta.env.DEV`
+- **Config-driven connect**: `connect(config: ClientConfig)` replaces `connect(wireUrl: string)`. Webapp assembles ClientConfig from server.wireUrl + user preferences (rule mode). Dashboard exports `buildConfig()`.
 - **connect/disconnect resolve on acceptance** (HTTP 200), not operation completion
 - **Polling dedup**: HttpVpnClient compares `JSON.stringify(prev)` — no redundant events
 - **Store mock pattern**: `vi.mock('../../stores/X.store')` then `vi.mocked(useXStore).mockReturnValue({...})` for component tests
@@ -113,4 +114,4 @@ src/
 - Mock pattern: `resetVpnClient()` → `new MockVpnClient()` → `createVpnClient(mock)` in beforeEach
 - Store mock pattern: `vi.mock('../../stores/X.store')` + `vi.mocked(useXStore).mockReturnValue({})`
 - i18n mock: `vi.mock('react-i18next')` with key→string map (returns keys as values)
-- 49 test files, 284 tests total
+- 50 test files, 294 tests total

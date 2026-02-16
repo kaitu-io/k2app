@@ -13,7 +13,7 @@ make build-mobile-android        # gomobile bind + cap sync + assembleRelease
 make build-mobile-ios            # gomobile bind + cap sync + xcodebuild archive
 make dev-android                 # gomobile bind + cap sync + cap run android
 make dev-ios                     # cap sync + cap run ios
-cd webapp && yarn test           # vitest (284 tests)
+cd webapp && yarn test           # vitest (294 tests)
 cd desktop/src-tauri && cargo test  # Rust tests (4 tests)
 scripts/test_build.sh            # Full build verification (14 checks)
 yarn install                     # Always run from root (workspace)
@@ -80,7 +80,8 @@ Makefile             Build orchestration — version from package.json, k2 from 
 - **VpnClient** — Platform abstraction (HttpVpnClient desktop, MockVpnClient test, NativeVpnClient mobile)
 - **PlatformApi** — Cross-platform capabilities (TauriPlatform, CapacitorPlatform, WebPlatform)
 - **Engine** — Unified tunnel lifecycle manager (k2/engine/) used by both desktop daemon and mobile wrapper
-- **Rule mode** — Routing strategy: "global" (proxy all traffic) or "smart" (GeoIP-based split routing). Mobile only. Persisted to native storage, appended to wireUrl as `&rule=xxx`
+- **ClientConfig** — Universal config contract: Go `config.ClientConfig` = TS `ClientConfig` = config.yml. Webapp assembles from Cloud API server + user preferences, passes to connect(). Flows through daemon API, mobile K2Plugin, and CLI identically.
+- **Rule mode** — Routing strategy: "global" (proxy all traffic) or "smart" (GeoIP-based split routing). Configured via `ClientConfig.rule.global` field, assembled by webapp at connect time.
 - **Antiblock** — Multi-CDN entry URL resolution for Cloud API in blocked regions
 - **Service readiness** — Daemon ping + version check before showing main UI
 - **Version matching** — Strip build metadata after `+` for semver comparison

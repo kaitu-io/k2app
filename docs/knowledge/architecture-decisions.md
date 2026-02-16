@@ -326,33 +326,26 @@ interface PlatformApi {
 
 ---
 
-## Mobile Rule Mode Storage + URL Parameter Flow (2026-02-16, unified-engine)
+## Config-Driven Connect — ClientConfig as Universal Currency (2026-02-16, config-driven-connect)
 
-**Decision**: Mobile rule mode (global vs smart routing) stored in platform-native persistent storage. Native plugins append `&rule=xxx` to wireUrl before starting VPN. Engine parses rule mode from URL query parameter.
+**Decision**: Replace opaque `connect(wireUrl)` passthrough with structured `connect(config: ClientConfig)` across all layers. `*config.ClientConfig` is the universal currency — webapp assembles it, daemon accepts it, state persists it, mobile receives it. Matches WireGuard/V2Ray/Clash pattern: GUI = config editor.
 
-**Storage locations**:
-- **iOS**: `UserDefaults(suiteName: "group.io.kaitu")` key `"ruleMode"` (App Group shared between main app and NE)
-- **Android**: `SharedPreferences("k2vpn")` key `"ruleMode"`
-- **Desktop**: Not applicable — uses `config.yaml` `rule.global` field
+**Three representations, one struct**:
+- **Go**: `config.ClientConfig` (YAML tags for CLI, JSON tags for API)
+- **TypeScript**: `ClientConfig` interface (webapp assembles, passes to connect)
+- **YAML**: `config.yml` (CLI users edit directly)
 
-**Data directory for k2rule cache**:
-- **iOS**: App Group container path + `/k2` (e.g., `/private/var/mobile/Containers/Shared/AppGroup/.../group.io.kaitu/k2`)
-- **Android**: `context.filesDir.absolutePath` (e.g., `/data/user/0/io.kaitu/files`)
-- **Desktop**: `~/.cache/k2rule/` (set via RuleConfig, not via DataDir field)
+**Desktop daemon**: `doUp(cfg *config.ClientConfig, pid int)`. API accepts `{ "config": {...} }` JSON. `persistedState` saves `*config.ClientConfig` for auto-reconnect. `buildEngineConfig()` deleted — `engineConfigFromClientConfig()` called directly.
 
-**Flow**:
-1. Webapp calls `setRuleMode("smart")` → K2Plugin saves to native storage
-2. User clicks connect → K2Plugin reads ruleMode, appends `&rule=smart` to wireUrl
-3. Native VPN service passes modified wireUrl to gomobile `engine.start(wireUrl, fd, dataDir)`
-4. Engine parses URL query `rule=smart`, initializes k2rule with `IsGlobal: false` + `CacheDir: dataDir`
+**Mobile**: `Engine.Start(configJSON string, fd int, dataDir string)` parses JSON → `config.SetDefaults()` → `engine.Config`. K2Plugin passes config JSON through `providerConfiguration` (iOS) / Intent extra (Android).
 
-**iOS NE cold start**: ruleMode is embedded in `providerConfiguration.wireUrl` when VPN starts. NE reads directly from URL, no need to re-read UserDefaults.
+**CLI**: Resolves URL → `ClientFromURL()` or YAML → `LoadClient()` before sending to daemon. Daemon doesn't know how input was specified.
 
-**Why URL parameter**: Decouples rule mode from VPN connection state. Disconnect+reconnect is the only way to change modes. No hot-switching complexity.
+**Eliminated**: `setRuleMode()` hack (Swift, Kotlin, TS), `&rule=` URL append, native-side ruleMode storage (UserDefaults, SharedPreferences), `wire_url`/`config_path` daemon API params, `lastWireURL`/`lastConfigPath` daemon fields.
 
-**Files**: `K2Plugin.swift`, `K2Plugin.kt`, `engine/engine.go` parseRuleFromURL helper
+**Why this matters**: Rule mode, DNS, proxy settings all flow through config — no side channels. Adding new user preferences (DNS, log level) is just adding fields to ClientConfig, not wiring new native storage.
 
-**Validating tests**: Manual device testing — no automated test yet.
+**Validating tests**: `k2/config/config_test.go` — JSON round-trip, YAML equivalence. `k2/daemon/daemon_test.go` — config-driven API. `webapp/src/vpn-client/__tests__/` — all implementations test config passing.
 
 ---
 
