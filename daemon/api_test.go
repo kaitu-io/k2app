@@ -2,17 +2,16 @@ package daemon
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
-	"net"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
-	"github.com/kaitu-io/k2/config"
-	"github.com/kaitu-io/k2/core"
-	"github.com/kaitu-io/k2/provider"
+	"github.com/kaitu-io/k2/engine"
 )
 
 func TestHandlePing(t *testing.T) {
@@ -80,38 +79,15 @@ func TestHandleCoreStatus(t *testing.T) {
 	}
 }
 
-// mockTunnelBuilder returns a mock tunnel for testing without root.
-func mockTunnelBuilder(ctx context.Context, cfg *config.ClientConfig) (*core.ClientTunnel, error) {
-	prov := &mockProvider{}
-	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{
-		Provider: prov,
-		Dialer:   &mockDialer{},
-	})
-	tunnel.Start(ctx)
-	return tunnel, nil
+// mockEngineStarter returns an engine without actually starting network connections.
+// The engine is in disconnected state, but the daemon tracks state separately.
+func mockEngineStarter(cfg engine.Config) (*engine.Engine, error) {
+	return engine.New(), nil
 }
-
-type mockProvider struct{}
-
-func (p *mockProvider) Start(ctx context.Context, handler provider.ConnectionHandler) error {
-	return nil
-}
-func (p *mockProvider) Close() error { return nil }
-func (p *mockProvider) Name() string { return "mock" }
-
-type mockDialer struct{}
-
-func (d *mockDialer) DialTCP(ctx context.Context, addr string) (net.Conn, error) {
-	return nil, nil
-}
-func (d *mockDialer) DialUDP(ctx context.Context, addr string) (net.PacketConn, error) {
-	return nil, nil
-}
-func (d *mockDialer) Close() error { return nil }
 
 func TestHandleCoreUpDown(t *testing.T) {
 	d := New()
-	d.TunnelBuilder = mockTunnelBuilder
+	d.EngineStarter = mockEngineStarter
 
 	// Up with URL.
 	upBody := `{"action":"up","params":{"wire_url":"k2v5://test:token@host:443"}}`
@@ -248,36 +224,9 @@ func TestCORSMiddleware(t *testing.T) {
 	}
 }
 
-func TestSpeedtestLifecycle(t *testing.T) {
-	d := New()
-
-	// Start speedtest.
-	body := `{"action":"speedtest","params":{}}`
-	req := httptest.NewRequest("POST", "/api/core", bytes.NewReader([]byte(body)))
-	w := httptest.NewRecorder()
-	d.handleCore(w, req)
-
-	var resp Response
-	json.NewDecoder(w.Body).Decode(&resp)
-	if resp.Code != 0 {
-		t.Fatalf("expected code 0, got %d: %s", resp.Code, resp.Message)
-	}
-
-	// Get status (may be running or completed since it's a stub).
-	statusBody := `{"action":"get_speedtest_status"}`
-	req = httptest.NewRequest("POST", "/api/core", bytes.NewReader([]byte(statusBody)))
-	w = httptest.NewRecorder()
-	d.handleCore(w, req)
-
-	json.NewDecoder(w.Body).Decode(&resp)
-	if resp.Code != 0 {
-		t.Fatalf("expected code 0, got %d", resp.Code)
-	}
-}
-
 func TestHandleCoreGetConfig(t *testing.T) {
 	d := New()
-	d.TunnelBuilder = mockTunnelBuilder
+	d.EngineStarter = mockEngineStarter
 
 	// Set some config via up.
 	upBody := `{"action":"up","params":{"wire_url":"k2v5://test:tok@host:443"}}`
@@ -411,5 +360,87 @@ func TestWebappServing_APIpriority(t *testing.T) {
 	data, _ := resp.Data.(map[string]any)
 	if _, ok := data["udid"]; !ok {
 		t.Fatal("/api/device/udid: expected udid in data")
+	}
+}
+
+// failingEngineStarter always returns an error.
+func failingEngineStarter(cfg engine.Config) (*engine.Engine, error) {
+	return nil, fmt.Errorf("simulated failure")
+}
+
+func TestDoUpFromError(t *testing.T) {
+	d := New()
+
+	// First attempt: fail to connect.
+	d.EngineStarter = failingEngineStarter
+	err := d.doUp("k2v5://test:tok@host:443", "", 0)
+	if err == nil {
+		t.Fatal("expected error from failing builder")
+	}
+
+	// State should be stopped with lastError set.
+	if d.State() != StateStopped {
+		t.Fatalf("expected stopped after failure, got %s", d.State())
+	}
+	info := d.statusInfo()
+	if info["error"] == nil || info["error"] == "" {
+		t.Fatal("expected lastError to be set after failure")
+	}
+
+	// Second attempt: succeed. Old error should be cleared.
+	d.EngineStarter = mockEngineStarter
+	err = d.doUp("k2v5://test:tok@host:443", "", 0)
+	if err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+
+	if d.State() != StateConnected {
+		t.Fatalf("expected connected, got %s", d.State())
+	}
+	info = d.statusInfo()
+	if info["error"] != nil {
+		t.Fatalf("expected lastError cleared, got %v", info["error"])
+	}
+}
+
+func TestConcurrentDoUp(t *testing.T) {
+	// Track how many engines are created to verify serialization.
+	var created atomic.Int32
+
+	trackingStarter := func(cfg engine.Config) (*engine.Engine, error) {
+		created.Add(1)
+		return engine.New(), nil
+	}
+
+	d := New()
+	d.EngineStarter = trackingStarter
+
+	// Launch 5 concurrent doUp calls.
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			d.doUp("k2v5://test:tok@host:443", "", 0)
+		}()
+	}
+	wg.Wait()
+
+	// Final state must be connected.
+	if d.State() != StateConnected {
+		t.Fatalf("expected connected, got %s", d.State())
+	}
+
+	// All 5 calls should have created engines (opMu serializes, each tears down previous).
+	if created.Load() != 5 {
+		t.Fatalf("expected 5 engines created, got %d", created.Load())
+	}
+
+	// Daemon must hold exactly one engine reference.
+	d.mu.RLock()
+	hasEngine := d.engine != nil
+	d.mu.RUnlock()
+	if !hasEngine {
+		t.Fatal("expected daemon to hold an engine after concurrent doUp")
 	}
 }

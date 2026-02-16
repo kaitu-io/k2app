@@ -31,8 +31,6 @@ func main() {
 		cmdDown(args)
 	case "status":
 		cmdStatus(args)
-	case "speedtest":
-		cmdSpeedtest(args)
 	case "run":
 		cmdRun(args)
 	case "open":
@@ -59,8 +57,6 @@ Usage:
   k2 up [URL or config.yaml]   Connect tunnel (auto-manages daemon)
   k2 down                      Disconnect tunnel
   k2 status                    Show connection status
-  k2 speedtest                 Run speed test
-
   k2 run                       Start daemon (called by service manager)
   k2 run -c <config.yaml>      Client foreground mode (dev/debug, needs sudo)
 

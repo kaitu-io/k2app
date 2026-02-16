@@ -76,6 +76,7 @@ func cmdUp(args []string) {
 		data, _ := json.Marshal(resp.Data)
 		var status struct {
 			State string `json:"state"`
+			Error string `json:"error"`
 		}
 		json.Unmarshal(data, &status)
 
@@ -83,8 +84,12 @@ func cmdUp(args []string) {
 		case "connected":
 			fmt.Println("Connected")
 			return
-		case "error":
-			fmt.Fprintf(os.Stderr, "Connection failed\n")
+		case "stopped":
+			if status.Error != "" {
+				fmt.Fprintf(os.Stderr, "Connection failed: %s\n", status.Error)
+			} else {
+				fmt.Fprintf(os.Stderr, "Connection stopped\n")
+			}
 			os.Exit(1)
 		}
 	}

@@ -63,10 +63,6 @@ func (d *Daemon) handleCore(w http.ResponseWriter, r *http.Request) {
 		d.handleDown(w)
 	case "status":
 		d.handleStatus(w)
-	case "speedtest":
-		d.handleSpeedtest(w, req.Params)
-	case "get_speedtest_status":
-		d.handleGetSpeedtestStatus(w)
 	case "get_config":
 		d.handleGetConfig(w)
 	case "version":
@@ -110,21 +106,6 @@ func (d *Daemon) handleDown(w http.ResponseWriter) {
 
 func (d *Daemon) handleStatus(w http.ResponseWriter) {
 	writeJSON(w, Response{Code: 0, Message: "ok", Data: d.statusInfo()})
-}
-
-func (d *Daemon) handleSpeedtest(w http.ResponseWriter, params map[string]any) {
-	if d.speedtest.IsRunning() {
-		writeJSON(w, Response{Code: 512, Message: "speedtest already running"})
-		return
-	}
-
-	serverID, _ := params["server_id"].(string)
-	go d.runSpeedtest(serverID)
-	writeJSON(w, Response{Code: 0, Message: "speedtest started"})
-}
-
-func (d *Daemon) handleGetSpeedtestStatus(w http.ResponseWriter) {
-	writeJSON(w, Response{Code: 0, Message: "ok", Data: d.speedtest.GetStatus()})
 }
 
 func (d *Daemon) handleGetConfig(w http.ResponseWriter) {

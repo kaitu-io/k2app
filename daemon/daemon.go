@@ -4,12 +4,18 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"net/netip"
+	"net/url"
 	"sync"
 	"time"
 
+	"github.com/kaitu-io/k2rule"
+
 	"github.com/kaitu-io/k2/config"
-	"github.com/kaitu-io/k2/core"
+	"github.com/kaitu-io/k2/directdial"
+	"github.com/kaitu-io/k2/engine"
 )
 
 // DefaultAddr is the daemon HTTP listen address.
@@ -17,24 +23,28 @@ const DefaultAddr = "127.0.0.1:1777"
 
 // Connection states.
 const (
-	StateStopped       = "stopped"
-	StateConnecting    = "connecting"
-	StateConnected     = "connected"
-	StateDisconnecting = "disconnecting"
-	StateError         = "error"
+	StateStopped    = "stopped"
+	StateConnecting = "connecting"
+	StateConnected  = "connected"
 )
 
 // Daemon is the k2 background service.
 // It manages the VPN tunnel lifecycle and exposes an HTTP API.
+//
+// Concurrency model:
+//   - opMu serializes doUp/doDown (coarse lifecycle lock)
+//   - mu protects field reads/writes (fine-grained data lock)
 type Daemon struct {
-	mu    sync.RWMutex
+	opMu sync.Mutex   // serializes doUp/doDown operations
+	mu   sync.RWMutex // protects field access
+
 	state string
 
 	// Last config used for auto-reconnect.
 	lastWireURL    string
 	lastConfigPath string
 
-	// Error from last connection attempt.
+	// Error from last connection attempt (orthogonal to state).
 	lastError string
 
 	// Connected at timestamp.
@@ -43,23 +53,21 @@ type Daemon struct {
 	// Process monitor PID.
 	monitorPID int
 
-	// Active tunnel.
-	tunnel    *core.ClientTunnel
-	tunnelCtx context.Context
-	tunnelCnl context.CancelFunc
+	// Active engine and its cancel function for PID monitoring.
+	engine    *engine.Engine
+	engineCtx context.Context
+	engineCnl context.CancelFunc
 
-	// TunnelBuilder allows overriding tunnel creation for testing.
-	TunnelBuilder func(ctx context.Context, cfg *config.ClientConfig) (*core.ClientTunnel, error)
-
-	// Speedtest state.
-	speedtest *SpeedtestState
+	// EngineStarter allows overriding engine creation for testing.
+	// It should create an engine, start it with the given config, and return it.
+	// When nil, the default production path (engine.New + Start) is used.
+	EngineStarter func(cfg engine.Config) (*engine.Engine, error)
 }
 
 // New creates a new daemon.
 func New() *Daemon {
 	return &Daemon{
-		state:     StateStopped,
-		speedtest: NewSpeedtestState(),
+		state: StateStopped,
 	}
 }
 
@@ -111,36 +119,48 @@ func (d *Daemon) State() string {
 	return d.state
 }
 
-func (d *Daemon) setState(s string) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
+// setStateLocked sets state. Caller must hold mu.
+func (d *Daemon) setStateLocked(s string) {
 	log.Printf("State: %s → %s", d.state, s)
 	d.state = s
 }
 
-func (d *Daemon) setError(msg string) {
+// closeTunnel tears down the active engine. Caller must hold opMu.
+// Idempotent: no-op if engine is nil.
+func (d *Daemon) closeTunnel() {
 	d.mu.Lock()
-	d.lastError = msg
-	d.state = StateError
+	eng := d.engine
+	cancel := d.engineCnl
+	d.engine = nil
+	d.engineCnl = nil
+	d.engineCtx = nil
+	d.monitorPID = 0
 	d.mu.Unlock()
-	log.Printf("Error: %s", msg)
+
+	if cancel != nil {
+		cancel()
+	}
+	if eng != nil {
+		eng.Stop()
+	}
+
+	d.mu.Lock()
+	d.setStateLocked(StateStopped)
+	d.mu.Unlock()
+
+	saveState(persistedState{State: StateStopped, Timestamp: time.Now()})
 }
 
 // doUp connects the tunnel with the given wire URL or config path.
 func (d *Daemon) doUp(wireURL, configPath string, pid int) error {
+	d.opMu.Lock()
+	defer d.opMu.Unlock()
+
+	// Unconditionally tear down any existing tunnel (idempotent).
+	d.closeTunnel()
+
 	d.mu.Lock()
-	current := d.state
-	d.mu.Unlock()
-
-	// If already connected, disconnect first.
-	if current == StateConnected || current == StateConnecting {
-		d.doDown()
-	}
-
-	d.setState(StateConnecting)
-
-	// Save config for auto-reconnect.
-	d.mu.Lock()
+	d.setStateLocked(StateConnecting)
 	d.lastWireURL = wireURL
 	d.lastConfigPath = configPath
 	d.monitorPID = pid
@@ -155,43 +175,46 @@ func (d *Daemon) doUp(wireURL, configPath string, pid int) error {
 		Timestamp:  time.Now(),
 	})
 
-	// Build config from wire URL or config file.
-	var cfg *config.ClientConfig
-	if configPath != "" {
-		var err error
-		cfg, err = config.LoadClient(configPath)
-		if err != nil {
-			d.setError(fmt.Sprintf("load config: %v", err))
-			return err
-		}
-	} else {
-		cfg = config.ClientFromURL(wireURL)
-	}
-
-	// Create and start tunnel.
-	builder := d.TunnelBuilder
-	if builder == nil {
-		builder = BuildTunnel
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	tunnel, err := builder(ctx, cfg)
+	// Build engine config from wire URL or config file.
+	engineCfg, err := d.buildEngineConfig(wireURL, configPath)
 	if err != nil {
-		cancel()
-		d.setError(fmt.Sprintf("build tunnel: %v", err))
+		msg := fmt.Sprintf("load config: %v", err)
+		d.mu.Lock()
+		d.lastError = msg
+		d.setStateLocked(StateStopped)
+		d.mu.Unlock()
+		log.Printf("Error: %s", msg)
 		return err
 	}
 
+	// Create and start engine.
+	starter := d.EngineStarter
+	if starter == nil {
+		starter = defaultEngineStarter
+	}
+	eng, err := starter(engineCfg)
+	if err != nil {
+		msg := fmt.Sprintf("start engine: %v", err)
+		d.mu.Lock()
+		d.lastError = msg
+		d.setStateLocked(StateStopped)
+		d.mu.Unlock()
+		log.Printf("Error: %s", msg)
+		return err
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
 	d.mu.Lock()
-	d.tunnel = tunnel
-	d.tunnelCtx = ctx
-	d.tunnelCnl = cancel
+	d.engine = eng
+	d.engineCtx = ctx
+	d.engineCnl = cancel
 	d.connectedAt = time.Now()
+	d.setStateLocked(StateConnected)
 	d.mu.Unlock()
 
-	d.setState(StateConnected)
-
 	// Start PID monitoring if requested.
-	// Uses tunnelCtx so the goroutine stops when doDown() cancels the context.
+	// Uses engineCtx so the goroutine stops when closeTunnel() cancels the context.
 	if pid > 0 {
 		go d.monitorProcess(ctx, pid)
 	}
@@ -207,32 +230,129 @@ func (d *Daemon) doUp(wireURL, configPath string, pid int) error {
 	return nil
 }
 
+// defaultEngineStarter is the production engine creation path.
+func defaultEngineStarter(cfg engine.Config) (*engine.Engine, error) {
+	eng := engine.New()
+	if err := eng.Start(cfg); err != nil {
+		return nil, err
+	}
+	return eng, nil
+}
+
+// buildEngineConfig creates an engine.Config from a wire URL or config file path.
+func (d *Daemon) buildEngineConfig(wireURL, configPath string) (engine.Config, error) {
+	// Create DirectDialer for physical interface binding (bypasses TUN).
+	dd := directdial.New()
+	if dd.InterfaceName() != "" {
+		log.Printf("tunnel: direct dialer bound to %s", dd.InterfaceName())
+	}
+
+	if configPath != "" {
+		cfg, err := config.LoadClient(configPath)
+		if err != nil {
+			return engine.Config{}, err
+		}
+		return d.engineConfigFromClientConfig(cfg, dd), nil
+	}
+
+	// Minimal config from wire URL only.
+	cfg := config.ClientFromURL(wireURL)
+	return d.engineConfigFromClientConfig(cfg, dd), nil
+}
+
+// engineConfigFromClientConfig maps a config.ClientConfig to an engine.Config.
+func (d *Daemon) engineConfigFromClientConfig(cfg *config.ClientConfig, dd *directdial.Dialer) engine.Config {
+	ecfg := engine.Config{
+		WireURL:        cfg.Server,
+		FileDescriptor: -1, // Desktop: engine creates its own TUN.
+		DirectDialer:   dd,
+		PreferIPv6:     true,
+		Mode:           cfg.Mode,
+		ProxyListen:    cfg.Proxy.Listen,
+	}
+
+	// Compute DNSExclude from DNS config + server host resolution.
+	ecfg.DNSExclude = d.computeDNSExclude(cfg)
+
+	// Map rule config if present.
+	if cfg.Rule.RuleURL != "" || cfg.Rule.GeoIPURL != "" || cfg.Rule.PornURL != "" ||
+		cfg.Rule.CacheDir != "" || cfg.Rule.Global {
+		ecfg.RuleConfig = d.buildRuleConfig(cfg)
+	}
+
+	return ecfg
+}
+
+// computeDNSExclude builds the list of IPs to exclude from TUN routing.
+func (d *Daemon) computeDNSExclude(cfg *config.ClientConfig) []netip.Addr {
+	var addrs []netip.Addr
+
+	// Parse DNS server IPs.
+	for _, s := range cfg.DNS.Direct {
+		host, _, err := splitHostPort(s)
+		if err != nil {
+			continue
+		}
+		if addr, err := netip.ParseAddr(host); err == nil {
+			addrs = append(addrs, addr)
+		}
+	}
+
+	// Resolve server host to IPs for route exclusion.
+	if serverHost := extractServerHost(cfg.Server); serverHost != "" {
+		if ips, err := net.LookupHost(serverHost); err == nil {
+			for _, ip := range ips {
+				if addr, err := netip.ParseAddr(ip); err == nil {
+					addrs = append(addrs, addr)
+				}
+			}
+		}
+	}
+
+	return addrs
+}
+
+// extractServerHost extracts the hostname from a k2v5:// URL.
+func extractServerHost(wireURL string) string {
+	// The wire URL format is: k2v5://user:pass@host:port
+	u, err := url.Parse(wireURL)
+	if err != nil {
+		return ""
+	}
+	return u.Hostname()
+}
+
+// buildRuleConfig creates a k2rule.Config from client config.
+func (d *Daemon) buildRuleConfig(cfg *config.ClientConfig) *k2rule.Config {
+	ruleCfg := &k2rule.Config{
+		RuleURL:  cfg.Rule.RuleURL,
+		GeoIPURL: cfg.Rule.GeoIPURL,
+		PornURL:  cfg.Rule.PornURL,
+		CacheDir: cfg.Rule.CacheDir,
+		IsGlobal: cfg.Rule.Global,
+	}
+	if cfg.Rule.Global {
+		ruleCfg.GlobalTarget = k2rule.TargetProxy
+	}
+	return ruleCfg
+}
+
+// splitHostPort splits a host:port string. Unlike net.SplitHostPort, it
+// doesn't require brackets around IPv6 addresses.
+func splitHostPort(hostport string) (string, string, error) {
+	for i := len(hostport) - 1; i >= 0; i-- {
+		if hostport[i] == ':' {
+			return hostport[:i], hostport[i+1:], nil
+		}
+	}
+	return hostport, "", fmt.Errorf("missing port in %q", hostport)
+}
+
 // doDown disconnects the tunnel.
 func (d *Daemon) doDown() {
-	d.setState(StateDisconnecting)
-
-	d.mu.Lock()
-	tunnel := d.tunnel
-	cancel := d.tunnelCnl
-	d.tunnel = nil
-	d.tunnelCnl = nil
-	d.tunnelCtx = nil
-	d.mu.Unlock()
-
-	if cancel != nil {
-		cancel()
-	}
-	if tunnel != nil {
-		tunnel.Close()
-	}
-
-	d.setState(StateStopped)
-
-	d.mu.Lock()
-	d.monitorPID = 0
-	d.mu.Unlock()
-
-	saveState(persistedState{State: StateStopped, Timestamp: time.Now()})
+	d.opMu.Lock()
+	defer d.opMu.Unlock()
+	d.closeTunnel()
 }
 
 // tryAutoReconnect checks persisted state and reconnects if applicable.
@@ -256,6 +376,10 @@ func (d *Daemon) tryAutoReconnect(ctx context.Context) {
 		case <-time.After(5 * time.Second):
 		case <-ctx.Done():
 			log.Println("Auto-reconnect: cancelled during startup delay")
+			return
+		}
+		// Skip if already connected (e.g. user called up during delay).
+		if d.State() == StateConnected {
 			return
 		}
 		if err := d.doUp(st.WireURL, st.ConfigPath, 0); err != nil {
