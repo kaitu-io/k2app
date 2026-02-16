@@ -6,7 +6,7 @@
 |-----------|------------------------------------------|
 | Feature   | kaitu-feature-migration                  |
 | Version   | v1                                       |
-| Status    | draft                                    |
+| Status    | implemented                              |
 | Created   | 2026-02-16                               |
 | Updated   | 2026-02-16                               |
 
