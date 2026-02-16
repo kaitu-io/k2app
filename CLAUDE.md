@@ -23,6 +23,9 @@ yarn install                     # Always run from root (workspace)
 
 ```
 k2/                  Go core (submodule, read-only — has its own CLAUDE.md)
+  engine/            Unified tunnel lifecycle manager (desktop + mobile)
+  daemon/            HTTP API shell over engine (desktop only)
+  mobile/            gomobile type adapter over engine (mobile only)
 webapp/              React + Vite + Tailwind frontend (see webapp/CLAUDE.md)
   src/vpn-client/    VPN backend abstraction (Http/Native/Mock)
   src/platform/      Platform capabilities abstraction (Tauri/Capacitor/Web)
@@ -76,6 +79,8 @@ Makefile             Build orchestration — version from package.json, k2 from 
 
 - **VpnClient** — Platform abstraction (HttpVpnClient desktop, MockVpnClient test, NativeVpnClient mobile)
 - **PlatformApi** — Cross-platform capabilities (TauriPlatform, CapacitorPlatform, WebPlatform)
+- **Engine** — Unified tunnel lifecycle manager (k2/engine/) used by both desktop daemon and mobile wrapper
+- **Rule mode** — Routing strategy: "global" (proxy all traffic) or "smart" (GeoIP-based split routing). Mobile only. Persisted to native storage, appended to wireUrl as `&rule=xxx`
 - **Antiblock** — Multi-CDN entry URL resolution for Cloud API in blocked regions
 - **Service readiness** — Daemon ping + version check before showing main UI
 - **Version matching** — Strip build metadata after `+` for semver comparison

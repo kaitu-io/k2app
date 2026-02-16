@@ -294,6 +294,68 @@ interface PlatformApi {
 
 ---
 
+## Unified Engine Package for Desktop + Mobile (2026-02-16, unified-engine)
+
+**Decision**: Extract shared tunnel lifecycle logic from desktop `daemon/tunnel.go` and mobile `mobile/mobile.go` into a single `k2/engine/` package. Desktop daemon becomes a thin HTTP shell over `engine.Engine`. Mobile wrapper becomes a gomobile type adapter.
+
+**Engine package structure**:
+- `engine/engine.go` — Engine struct, Start(), Stop(), StatusJSON(), Status()
+- `engine/config.go` — Config struct with platform-specific optional fields
+- `engine/event.go` — EventHandler interface + state constants
+- `engine/dns_handler.go` — DNS middleware for mobile TUN (moved from mobile/)
+- `engine/engine_test.go` — 14 unit tests covering all config combinations
+
+**Key design: Config.FileDescriptor discriminates platform behavior**:
+- `fd >= 0` → Mobile (platform provides TUN fd, use DNS middleware)
+- `fd == -1` → Desktop (self-create TUN with route exclusion)
+
+**Optional Config fields for desktop-only features**:
+- `DirectDialer` — Custom outbound interface binding
+- `PreferIPv6` — Wire server IPv6 preference
+- `Mode == "proxy"` → SOCKS5 proxy instead of TUN
+- `DNSExclude` — Route exclusion for DNS servers
+- `RuleConfig` — Complete k2rule config (overrides RuleMode)
+
+**Mobile simplification**: `mobile/mobile.go` reduced from 251 lines to 57 lines by delegating everything to `engine.Engine`.
+
+**Desktop simplification**: `daemon/tunnel.go` deleted — its `BuildTunnel()` logic is now `engine.Start()`.
+
+**Why unified**: 80% code duplication eliminated. Single tunnel assembly implementation ensures consistent behavior across platforms. Desktop-specific features isolated to optional Config fields.
+
+**Validating tests**: `k2/engine/engine_test.go` — TestEngineStart_MobileConfig, TestEngineStart_DesktopConfig, TestEngineStart_ProxyMode
+
+---
+
+## Mobile Rule Mode Storage + URL Parameter Flow (2026-02-16, unified-engine)
+
+**Decision**: Mobile rule mode (global vs smart routing) stored in platform-native persistent storage. Native plugins append `&rule=xxx` to wireUrl before starting VPN. Engine parses rule mode from URL query parameter.
+
+**Storage locations**:
+- **iOS**: `UserDefaults(suiteName: "group.io.kaitu")` key `"ruleMode"` (App Group shared between main app and NE)
+- **Android**: `SharedPreferences("k2vpn")` key `"ruleMode"`
+- **Desktop**: Not applicable — uses `config.yaml` `rule.global` field
+
+**Data directory for k2rule cache**:
+- **iOS**: App Group container path + `/k2` (e.g., `/private/var/mobile/Containers/Shared/AppGroup/.../group.io.kaitu/k2`)
+- **Android**: `context.filesDir.absolutePath` (e.g., `/data/user/0/io.kaitu/files`)
+- **Desktop**: `~/.cache/k2rule/` (set via RuleConfig, not via DataDir field)
+
+**Flow**:
+1. Webapp calls `setRuleMode("smart")` → K2Plugin saves to native storage
+2. User clicks connect → K2Plugin reads ruleMode, appends `&rule=smart` to wireUrl
+3. Native VPN service passes modified wireUrl to gomobile `engine.start(wireUrl, fd, dataDir)`
+4. Engine parses URL query `rule=smart`, initializes k2rule with `IsGlobal: false` + `CacheDir: dataDir`
+
+**iOS NE cold start**: ruleMode is embedded in `providerConfiguration.wireUrl` when VPN starts. NE reads directly from URL, no need to re-read UserDefaults.
+
+**Why URL parameter**: Decouples rule mode from VPN connection state. Disconnect+reconnect is the only way to change modes. No hot-switching complexity.
+
+**Files**: `K2Plugin.swift`, `K2Plugin.kt`, `engine/engine.go` parseRuleFromURL helper
+
+**Validating tests**: Manual device testing — no automated test yet.
+
+---
+
 ## Global LoginDialog Modal Replaces Login Route (2026-02-16, kaitu-feature-migration)
 
 **Decision**: Remove dedicated `/login` route. All authentication flows use a global `LoginDialog` modal component triggered on demand.

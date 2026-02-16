@@ -295,3 +295,29 @@ diff plugins/k2-plugin/android/.../K2Plugin.kt node_modules/k2-plugin/android/..
 **Cross-reference**: See Bugfix Patterns → "Capacitor Local Plugin Stale Copy in node_modules"
 
 ---
+
+## Engine Config FileDescriptor Discriminates Platform Behavior (2026-02-16, unified-engine)
+
+**Pattern**: `engine.Config.FileDescriptor` uses numeric value to discriminate platform:
+- `fd >= 0` → Mobile platform (TUN fd provided by system)
+- `fd == -1` → Desktop platform (self-create TUN)
+
+**Why discriminate by fd value**: Avoids adding separate platform enum field. The fd itself is the platform signal. Mobile always has a real fd (>=0); desktop always passes -1 as sentinel.
+
+**Mobile path** (fd >= 0):
+- Use provided TUN fd
+- Start Provider with DNS middleware (`prov.Start(ctx, &dnsHandler{...})`)
+- No route exclusion
+
+**Desktop path** (fd == -1):
+- Provider creates TUN device internally
+- Start tunnel directly (`tunnel.Start(ctx)`)
+- Route exclusion for DNS servers via `Config.DNSExclude`
+
+**Gotcha**: Never pass fd 0 (stdin) from desktop — it triggers mobile path. Always use -1 for "no fd".
+
+**Files**: `k2/engine/engine.go` Start() method branches on `cfg.FileDescriptor >= 0`
+
+**Validating tests**: `engine_test.go` TestEngineStart_MobileConfig vs TestEngineStart_DesktopConfig
+
+---

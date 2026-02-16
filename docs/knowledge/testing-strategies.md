@@ -131,8 +131,32 @@ test('renders user info', () => {
 
 **Example**: AC25 "Account membership status card with expiry" → `test_account_membership_card` in `Account.test.tsx`
 
-**Baseline tracking**: 129 tests (k2app-rewrite) → 279 tests (+150 from kaitu-feature-migration)
+**Baseline tracking**: 129 tests (k2app-rewrite) → 279 tests (+150 from kaitu-feature-migration) → 284 tests (+5 from unified-engine)
 
 **Validating artifact**: Plan AC Mapping table in `.word9f/kaitu-feature-migration/plan.md` lines 536–593
+
+---
+
+## Engine Package TDD: Config Combinations as Test Cases (2026-02-16, unified-engine)
+
+**Pattern**: `engine_test.go` has 14 test functions covering all Config field combinations. Each test verifies one aspect of Engine behavior.
+
+**Test structure**: RED → mock dependencies (wireCfg, k2rule, provider) → GREEN → call engine.Start(cfg) → REFACTOR → assert state.
+
+**Key test cases**:
+- `TestEngineStart_MobileConfig` — fd >= 0 triggers mobile path
+- `TestEngineStart_DesktopConfig` — fd == -1, Mode "tun" triggers self-create TUN
+- `TestEngineStart_ProxyMode` — fd == -1, Mode "proxy" uses ProxyProvider
+- `TestEngineStart_RuleFromURL_Smart` — URL `?rule=smart` → k2rule IsGlobal: false
+- `TestEngineStart_RuleFromURL_Global` — URL `?rule=global` → k2rule IsGlobal: true
+- `TestEngineStart_DataDir_PassedToK2rule` — Config.DataDir sets k2rule CacheDir
+- `TestEngineStart_WithDirectDialer` — non-nil DirectDialer passed to transports
+- `TestEngineStart_PreferIPv6` — PreferIPv6 + wireCfg.IPv6 available → host replaced
+
+**Why exhaustive combination testing**: Engine is the single tunnel lifecycle manager for both platforms. A bug in any Config path affects production. Exhaustive coverage ensures all platform paths work.
+
+**Trade-off**: 14 tests for 1 package is high. But engine replaces 2 implementations (daemon/tunnel.go + mobile/mobile.go), so it needs their combined test coverage.
+
+**Validating artifact**: `k2/engine/engine_test.go` — 500+ lines, 14 test functions
 
 ---

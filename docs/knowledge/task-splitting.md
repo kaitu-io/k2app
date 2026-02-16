@@ -149,3 +149,17 @@ F2 (Platform) ─┤                 ├── F4 (Nav+Layout+Global) ──┬�
 **Chosen**: Option 1 (accept conflicts). Mechanical resolution is reliable and fast.
 
 ---
+
+## Cross-Repo Worktree for Submodule Changes (2026-02-16, unified-engine)
+
+**Observation**: unified-engine modified files in `k2/` submodule (engine/ package, daemon/, mobile/) and k2app repo (iOS/Android native plugins, webapp TypeScript). The plan called for separate k2 worktrees (F1, T2, T3) and k2app worktrees (T4, T5, T6).
+
+**Execution reality**: All tasks worked in single k2app branch with submodule changes committed inline. No cross-repo merge. Simpler than planned.
+
+**Why planned complexity wasn't needed**: Tasks F1 (engine), T2 (daemon), T3 (mobile wrapper) were actually sequential (dependency chain), not parallel. Foundation F1 completed first; T2 and T3 both depended on it. So worktree parallelism didn't apply.
+
+**Pattern**: When submodule changes are foundational and have sequential dependencies, working in a single branch is simpler than cross-repo worktree merging.
+
+**When to use cross-repo worktrees**: Only when tasks in k2/ and k2app/ are truly parallel (no dependencies). Example: k2 daemon feature + k2app UI feature touching disjoint files.
+
+---
