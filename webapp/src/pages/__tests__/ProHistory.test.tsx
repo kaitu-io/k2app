@@ -68,7 +68,8 @@ describe('ProHistory', () => {
 
     // First page should show 10 items (first page of 15)
     await waitFor(() => {
-      expect(screen.getByText('Pro Monthly')).toBeInTheDocument();
+      const monthlyItems = screen.getAllByText('Pro Monthly');
+      expect(monthlyItems.length).toBeGreaterThan(0);
     });
 
     // Pagination should be present (we have 15 items, 10 per page = 2 pages)
@@ -107,12 +108,13 @@ describe('ProHistory', () => {
     render(<ProHistory />);
 
     await waitFor(() => {
-      expect(screen.getByText('Pro Monthly')).toBeInTheDocument();
+      const monthlyItems = screen.getAllByText('Pro Monthly');
+      expect(monthlyItems.length).toBeGreaterThan(0);
     });
 
     // Both plan names should be visible on first page
-    expect(screen.getByText('Pro Monthly')).toBeInTheDocument();
-    expect(screen.getByText('Pro Annual')).toBeInTheDocument();
+    expect(screen.getAllByText('Pro Monthly').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Pro Annual').length).toBeGreaterThan(0);
   });
 
   it('shows status for history items', async () => {
