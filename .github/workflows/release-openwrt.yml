@@ -1,0 +1,132 @@
+name: Release OpenWrt
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: arm64
+            name: aarch64
+          - goos: linux
+            goarch: amd64
+            name: x86_64
+          - goos: linux
+            goarch: arm
+            goarm: '7'
+            name: armv7
+          - goos: linux
+            goarch: mipsle
+            name: mipsle
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Checkout k2 submodule
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.K2_DEPLOY_KEY }}
+
+      - name: Init k2 submodule
+        run: git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init --recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache-dependency-path: k2/go.sum
+
+      - name: Install Node dependencies
+        run: yarn install --frozen-lockfile --network-timeout 600000 --network-concurrency 4
+
+      - name: Build webapp
+        run: cd webapp && yarn build
+
+      - name: Embed webapp into k2
+        run: |
+          rm -rf k2/cloud/dist
+          cp -r webapp/dist k2/cloud/dist
+
+      - name: Cross-compile k2
+        env:
+          CGO_ENABLED: '0'
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          COMMIT=$(cd k2 && git rev-parse --short HEAD)
+          mkdir -p build
+          cd k2 && go build \
+            -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" \
+            -o ../build/k2-openwrt-${{ matrix.name }} \
+            ./cmd/k2
+
+      - name: Verify binary architecture
+        run: file build/k2-openwrt-${{ matrix.name }}
+
+      - name: Smoke test with qemu
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq qemu-user-static binfmt-support
+          build/k2-openwrt-${{ matrix.name }} version
+
+      - name: Package tar.gz
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          PKGDIR=$(mktemp -d)
+          cp build/k2-openwrt-${{ matrix.name }} "${PKGDIR}/k2"
+          cp scripts/openwrt/install.sh "${PKGDIR}/"
+          cp scripts/openwrt/k2.init "${PKGDIR}/"
+          cp -r scripts/openwrt/luci-app-k2 "${PKGDIR}/"
+          tar -czf "build/k2-openwrt-${{ matrix.name }}-v${VERSION}.tar.gz" -C "${PKGDIR}" .
+          rm -rf "${PKGDIR}"
+          ls -lh build/k2-openwrt-${{ matrix.name }}-v${VERSION}.tar.gz
+
+      - name: Upload to S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ap-northeast-1
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          aws s3 cp "build/k2-openwrt-${{ matrix.name }}-v${VERSION}.tar.gz" \
+            "s3://d0.all7.cc/kaitu/openwrt/${VERSION}/"
+
+      - name: Notify Slack on success
+        if: success()
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          ./scripts/ci/notify-slack.sh deploy-success \
+            --version "${VERSION}" \
+            --platforms "OpenWrt-${{ matrix.name }}"
+        env:
+          SLACK_WEBHOOK_RELEASE: ${{ secrets.SLACK_WEBHOOK_RELEASE }}
+
+      - name: Notify Slack on failure
+        if: failure()
+        run: |
+          ./scripts/ci/notify-slack.sh build-failure \
+            --platform "OpenWrt-${{ matrix.name }}" \
+            --error "OpenWrt build failed for ${{ matrix.name }}"
+        env:
+          SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_ALERT }}
