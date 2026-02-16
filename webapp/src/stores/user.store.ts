@@ -6,6 +6,7 @@ export interface UserInfo {
   email: string;
   nickname?: string;
   avatar?: string;
+  role?: string;
   membership?: {
     plan: string;
     status: string;

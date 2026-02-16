@@ -1,0 +1,39 @@
+{
+  "title": "邀请",
+  "inviteCode": "邀请码",
+  "copyCode": "复制邀请码",
+  "copied": "已复制",
+  "shareLink": "分享链接",
+  "share": "分享",
+  "generateNew": "生成新邀请码",
+  "generating": "生成中...",
+  "remark": "备注",
+  "remarkPlaceholder": "添加备注",
+  "editRemark": "编辑备注",
+  "saveRemark": "保存",
+  "qrCode": "二维码",
+  "expiration": "有效期",
+  "expirationOptions": {
+    "1h": "1小时",
+    "24h": "24小时",
+    "7d": "7天",
+    "30d": "30天",
+    "never": "永不过期"
+  },
+  "stats": {
+    "registered": "已注册",
+    "purchased": "已购买"
+  },
+  "retailerStats": {
+    "title": "经销商统计",
+    "totalInvites": "总邀请数",
+    "registered": "已注册",
+    "purchased": "已购买"
+  },
+  "rules": {
+    "title": "邀请规则",
+    "rule1": "每个邀请码只能使用一次",
+    "rule2": "被邀请人注册后，您将获得奖励",
+    "rule3": "邀请码可设置有效期"
+  }
+}
