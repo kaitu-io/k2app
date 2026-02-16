@@ -1,0 +1,20 @@
+{
+  "title": "Account",
+  "membership": "Membership",
+  "membershipStatus": {
+    "active": "Active",
+    "expired": "Expired",
+    "none": "None"
+  },
+  "expireAt": "Expires: {{date}}",
+  "plan": "Plan: {{plan}}",
+  "menuPassword": "Change Password",
+  "menuDevices": "Device Management",
+  "menuSupport": "Help & Feedback",
+  "language": "Language",
+  "languageZh": "Chinese",
+  "languageEn": "English",
+  "version": "Version",
+  "logout": "Logout",
+  "devModeActivated": "Dev mode activated"
+}

@@ -1,0 +1,20 @@
+{
+  "title": "账户",
+  "membership": "会员",
+  "membershipStatus": {
+    "active": "已激活",
+    "expired": "已过期",
+    "none": "未开通"
+  },
+  "expireAt": "到期时间：{{date}}",
+  "plan": "套餐：{{plan}}",
+  "menuPassword": "修改密码",
+  "menuDevices": "设备管理",
+  "menuSupport": "帮助与反馈",
+  "language": "语言",
+  "languageZh": "中文",
+  "languageEn": "English",
+  "version": "版本",
+  "logout": "退出登录",
+  "devModeActivated": "开发者模式已激活"
+}
