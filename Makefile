@@ -31,10 +31,13 @@ publish-release:
 	bash scripts/publish-release.sh
 
 # Mobile builds
-mobile-ios:
+mobile-deps:
+	cd k2 && go get golang.org/x/mobile/bind@latest
+
+mobile-ios: mobile-deps
 	cd k2 && gomobile bind -target=ios -o build/K2Mobile.xcframework ./mobile/
 
-mobile-android:
+mobile-android: mobile-deps
 	cd k2 && gomobile bind -target=android -o build/k2mobile.aar -androidapi 24 ./mobile/
 
 build-mobile-ios: pre-build build-webapp mobile-ios
