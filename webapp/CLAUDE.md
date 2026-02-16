@@ -5,7 +5,7 @@ React 19 + TypeScript + Vite + Tailwind CSS v4. Served by tauri-plugin-localhost
 ## Commands
 
 ```bash
-yarn test              # vitest run (279 tests, 49 files)
+yarn test              # vitest run (284 tests, 49 files)
 yarn build             # Vite production build → dist/
 npx tsc --noEmit       # Type check
 ```
@@ -22,7 +22,7 @@ src/
 │   └── index.ts       Factory: initVpnClient() (async, mobile) + createVpnClient() (sync, desktop)
 ├── api/               Cloud API (antiblock exception — NOT through VpnClient)
 │   ├── cloud.ts       cloudApi: login, servers, user, purchase, invite, member, device, issue endpoints
-│   ├── antiblock.ts   Entry URL resolution: localStorage cache → CDN JSONP → default
+│   ├── antiblock.ts   Entry URL resolution: AES-256-GCM decrypt → localStorage cache → CDN JSONP → default
 │   └── types.ts       API response types (Plan, Order, InviteCode, Device, Member, Issue, etc.)
 ├── stores/            Zustand state (async init pattern: null → init() → loaded)
 │   ├── vpn.store.ts       VPN state, connect/disconnect, event subscription, daemonReachable
@@ -113,4 +113,4 @@ src/
 - Mock pattern: `resetVpnClient()` → `new MockVpnClient()` → `createVpnClient(mock)` in beforeEach
 - Store mock pattern: `vi.mock('../../stores/X.store')` + `vi.mocked(useXStore).mockReturnValue({})`
 - i18n mock: `vi.mock('react-i18next')` with key→string map (returns keys as values)
-- 49 test files, 279 tests total
+- 49 test files, 284 tests total

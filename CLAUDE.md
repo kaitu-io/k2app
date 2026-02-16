@@ -13,7 +13,7 @@ make build-mobile-android        # gomobile bind + cap sync + assembleRelease
 make build-mobile-ios            # gomobile bind + cap sync + xcodebuild archive
 make dev-android                 # gomobile bind + cap sync + cap run android
 make dev-ios                     # cap sync + cap run ios
-cd webapp && yarn test           # vitest (279 tests)
+cd webapp && yarn test           # vitest (284 tests)
 cd desktop/src-tauri && cargo test  # Rust tests (4 tests)
 scripts/test_build.sh            # Full build verification (14 checks)
 yarn install                     # Always run from root (workspace)
