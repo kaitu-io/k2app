@@ -17,13 +17,15 @@ jobs:
       - name: Encrypt config
         run: node scripts/antiblock-encrypt.js
         env:
-          ENTRIES: ${{ inputs.entries || secrets.ANTIBLOCK_ENTRIES }}
-          ENCRYPTION_KEY: ${{ secrets.ANTIBLOCK_KEY }}
+          ENTRIES: ${{ inputs.entries }}
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.UI_THEME_DEPLOY_KEY }}
       - name: Push to config repo
         run: |
           mkdir -p /tmp/config-repo && cd /tmp/config-repo
-          git clone --single-branch -b dist https://x-access-token:${{ secrets.CONFIG_REPO_TOKEN }}@github.com/kaitu-io/ui-theme.git . || {
-            git init && git remote add origin https://x-access-token:${{ secrets.CONFIG_REPO_TOKEN }}@github.com/kaitu-io/ui-theme.git
+          git clone --single-branch -b dist git@github.com:kaitu-io/ui-theme.git . || {
+            git init && git remote add origin git@github.com:kaitu-io/ui-theme.git
             git checkout --orphan dist
           }
           cp $GITHUB_WORKSPACE/config.js .

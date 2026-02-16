@@ -154,32 +154,39 @@ function truncate(str, len = 80) {
 // Main (non-test): read config from stdin, key from env/arg, write JSONP to stdout
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Defaults — hardcoded (same key as webapp/src/api/antiblock.ts DECRYPTION_KEY)
+// ---------------------------------------------------------------------------
+
+const DEFAULT_KEY = '9e3573184d5e5b3034a087c33fa2cdb76bd0126238ed08f54d1de8c6ae0eb4ba';
+const DEFAULT_ENTRIES = ['https://d1l0lk9fcyd6r8.cloudfront.net', 'https://w.app.52j.me'];
+
 if (require.main === module && !process.argv.includes('--test')) {
-  const entries = process.env.ENTRIES;
-  const keyHex = process.env.ENCRYPTION_KEY;
+  const entriesRaw = process.env.ENTRIES;
+  const keyHex = process.env.ENCRYPTION_KEY || DEFAULT_KEY;
 
-  if (!entries) {
-    console.error('Error: ENTRIES env var is required (JSON array of URLs)');
-    process.exit(1);
-  }
-  if (!keyHex || !/^[0-9a-f]{64}$/i.test(keyHex)) {
-    console.error('Error: ENCRYPTION_KEY env var must be a 64-char hex string');
+  if (!/^[0-9a-f]{64}$/i.test(keyHex)) {
+    console.error('Error: ENCRYPTION_KEY must be a 64-char hex string');
     process.exit(1);
   }
 
-  let parsed;
-  try {
-    parsed = JSON.parse(entries);
-  } catch {
-    console.error('Error: ENTRIES must be valid JSON');
-    process.exit(1);
-  }
-  if (!Array.isArray(parsed)) {
-    console.error('Error: ENTRIES must be a JSON array');
-    process.exit(1);
+  let entries;
+  if (entriesRaw) {
+    try {
+      entries = JSON.parse(entriesRaw);
+    } catch {
+      console.error('Error: ENTRIES must be valid JSON');
+      process.exit(1);
+    }
+    if (!Array.isArray(entries)) {
+      console.error('Error: ENTRIES must be a JSON array');
+      process.exit(1);
+    }
+  } else {
+    entries = DEFAULT_ENTRIES;
   }
 
-  const config = { entries: parsed };
+  const config = { entries };
   const jsonp = encrypt(config, keyHex);
   const outPath = path.join(process.cwd(), 'config.js');
   fs.writeFileSync(outPath, jsonp + '\n', 'utf8');
