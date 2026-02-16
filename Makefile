@@ -35,9 +35,11 @@ mobile-deps:
 	cd k2 && go get golang.org/x/mobile/bind@latest
 
 mobile-ios: mobile-deps
+	mkdir -p k2/build
 	cd k2 && gomobile bind -target=ios -o build/K2Mobile.xcframework ./mobile/
 
 mobile-android: mobile-deps
+	mkdir -p k2/build
 	cd k2 && gomobile bind -target=android -o build/k2mobile.aar -androidapi 24 ./mobile/
 
 build-mobile-ios: pre-build build-webapp mobile-ios
