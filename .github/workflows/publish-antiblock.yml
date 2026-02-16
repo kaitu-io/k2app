@@ -1,0 +1,37 @@
+name: Publish Antiblock Config
+on:
+  workflow_dispatch:
+    inputs:
+      entries:
+        description: 'Entry URLs as JSON array (leave empty for default)'
+        required: false
+        type: string
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Encrypt config
+        run: node scripts/antiblock-encrypt.js
+        env:
+          ENTRIES: ${{ inputs.entries || secrets.ANTIBLOCK_ENTRIES }}
+          ENCRYPTION_KEY: ${{ secrets.ANTIBLOCK_KEY }}
+      - name: Push to config repo
+        run: |
+          mkdir -p /tmp/config-repo && cd /tmp/config-repo
+          git clone --single-branch -b dist https://x-access-token:${{ secrets.CONFIG_REPO_TOKEN }}@github.com/kaitu-io/ui-theme.git . || {
+            git init && git remote add origin https://x-access-token:${{ secrets.CONFIG_REPO_TOKEN }}@github.com/kaitu-io/ui-theme.git
+            git checkout --orphan dist
+          }
+          cp $GITHUB_WORKSPACE/config.js .
+          git add config.js
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -m "update $(date -u +%Y%m%d%H%M%S)" || true
+          git push origin dist
+      - name: Purge CDN cache
+        run: |
+          curl -s https://purge.jsdelivr.net/gh/kaitu-io/ui-theme@dist/config.js

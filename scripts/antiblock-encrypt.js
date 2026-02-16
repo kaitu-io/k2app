@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // antiblock-encrypt.js — Encrypt antiblock config JSON into JSONP with AES-256-GCM
-// TODO-STUB: Implementation pending (T2)
 
 'use strict';
 
+const crypto = require('node:crypto');
+const fs = require('node:fs');
 const { execFileSync } = require('node:child_process');
 const path = require('node:path');
 
@@ -21,8 +22,14 @@ const path = require('node:path');
  * @returns {string} JSONP-wrapped encrypted config
  */
 function encrypt(config, keyHex) {
-  // Stub: will use node:crypto aes-256-gcm
-  throw new Error('encrypt not implemented');
+  const key = Buffer.from(keyHex, 'hex');
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const plaintext = JSON.stringify(config);
+  const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  const data = Buffer.concat([iv, encrypted, tag]).toString('base64');
+  return `void function(){var c={"v":1,"data":"${data}"}}();`;
 }
 
 // ---------------------------------------------------------------------------
@@ -134,7 +141,7 @@ function assert(condition, message) {
 }
 
 function extractJson(jsonp) {
-  const match = jsonp.match(/\{[\s\S]*\}/);
+  const match = jsonp.match(/\{"[^}]*\}/);
   return match ? match[0] : null;
 }
 
@@ -148,9 +155,35 @@ function truncate(str, len = 80) {
 // ---------------------------------------------------------------------------
 
 if (require.main === module && !process.argv.includes('--test')) {
-  console.error('Usage: echo \'{"entries":["https://..."]}\' | node antiblock-encrypt.js <key-hex>');
-  console.error('       node antiblock-encrypt.js --test');
-  process.exit(1);
+  const entries = process.env.ENTRIES;
+  const keyHex = process.env.ENCRYPTION_KEY;
+
+  if (!entries) {
+    console.error('Error: ENTRIES env var is required (JSON array of URLs)');
+    process.exit(1);
+  }
+  if (!keyHex || !/^[0-9a-f]{64}$/i.test(keyHex)) {
+    console.error('Error: ENCRYPTION_KEY env var must be a 64-char hex string');
+    process.exit(1);
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(entries);
+  } catch {
+    console.error('Error: ENTRIES must be valid JSON');
+    process.exit(1);
+  }
+  if (!Array.isArray(parsed)) {
+    console.error('Error: ENTRIES must be a JSON array');
+    process.exit(1);
+  }
+
+  const config = { entries: parsed };
+  const jsonp = encrypt(config, keyHex);
+  const outPath = path.join(process.cwd(), 'config.js');
+  fs.writeFileSync(outPath, jsonp + '\n', 'utf8');
+  console.log(`Wrote ${outPath} (${Buffer.byteLength(jsonp + '\n')} bytes)`);
 }
 
 module.exports = { encrypt };

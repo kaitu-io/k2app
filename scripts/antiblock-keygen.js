@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // antiblock-keygen.js — Generate AES-256 encryption key for antiblock config
-// TODO-STUB: Implementation pending (T2)
 
 'use strict';
 
+const crypto = require('node:crypto');
+
 function generateKey() {
-  // Stub: will use node:crypto.randomBytes(32) to produce 64-char hex
-  throw new Error('keygen not implemented');
+  return crypto.randomBytes(32).toString('hex');
 }
 
 // Main
