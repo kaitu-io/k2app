@@ -91,7 +91,7 @@ src/
 │   └── index.ts       Auto-detect platform, export singleton
 ├── i18n/              i18next: 8 namespaces × 2 locales (zh-CN default, en-US)
 │                      Namespaces: common, dashboard, auth, settings, purchase, invite, account, feedback
-├── App.tsx            ⚠️ PENDING MIGRATION — still old 3-route structure, needs 16 new routes
+├── App.tsx            16 routes + global components (ErrorBoundary, LoginDialog, ForceUpgradeDialog, etc.)
 └── main.tsx           Async bootstrap: initVpnClient() → React render
 ```
 
