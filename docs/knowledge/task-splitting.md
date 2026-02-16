@@ -115,3 +115,37 @@ F2 (Platform) ─┤                 ├── F4 (Nav+Layout+Global) ──┬�
 **Validating tests**: All component tests implicitly validate (they render without errors). `dark-theme.test.ts` explicitly checks CSS variable application.
 
 ---
+
+## Entry-Point Wiring Must Be an Explicit Task (2026-02-16, kaitu-feature-migration)
+
+**Problem**: 11 parallel tasks built 16 pages, 8 stores, 25 components, 279 tests — but App.tsx was never updated. All pages were orphaned (files exist, no routes). Gap analysis showed 94% routing gap despite 100% component completion.
+
+**Root cause**: No task was scoped to rewrite App.tsx. Each feature task built its own page file + test. The plan assumed Layout + BottomNav (F4) covered routing, but Layout only handles keep-alive rendering — App.tsx defines the actual `<Routes>` tree.
+
+**Fix**: Added explicit route wiring step after all feature tasks merged. One commit: 16 routes + 7 global components + guards + app config init.
+
+**Prevention rule**: When splitting a feature migration, always include an explicit "wire entry point" task that:
+1. Rewrites the router (`App.tsx`, `main.rs`, `mod.rs`) to import all new modules
+2. Integrates global components (error boundaries, modals, alerts)
+3. Depends on ALL feature tasks (runs last)
+
+**Lesson**: Building components without wiring them is 90% done but 0% functional.
+
+---
+
+## i18n Index File is a Merge Conflict Hotspot (2026-02-16, kaitu-feature-migration)
+
+**Problem**: `webapp/src/i18n/index.ts` had 3 merge conflicts across T6/T7/T10 merges. Each parallel feature task added its own namespace import (purchase, invite, account, feedback).
+
+**Pattern**: Same structure as `main.rs` entry-point conflicts — every feature registers itself in the same file (namespace imports + resources object).
+
+**Resolution**: Mechanical — combine all namespace imports and resource entries. Takes 30 seconds per conflict. But multiplicative: N parallel tasks = up to N-1 conflicts.
+
+**Mitigation options**:
+1. Accept conflicts (current approach) — fast to resolve, low risk
+2. Foundation task pre-registers all namespaces with empty JSON files — eliminates conflicts but requires foreknowledge
+3. Dynamic namespace loading (`i18next-http-backend`) — eliminates file entirely but adds runtime complexity
+
+**Chosen**: Option 1 (accept conflicts). Mechanical resolution is reliable and fast.
+
+---

@@ -21,6 +21,7 @@ export interface K2PluginInterface {
   getConfig(): Promise<{ wireUrl?: string }>;
   connect(options: { wireUrl: string }): Promise<void>;
   disconnect(): Promise<void>;
+  setRuleMode(options: { mode: string }): Promise<void>;
 
   checkWebUpdate(): Promise<WebUpdateInfo>;
   checkNativeUpdate(): Promise<NativeUpdateInfo>;

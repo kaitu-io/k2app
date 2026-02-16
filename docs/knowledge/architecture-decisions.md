@@ -120,6 +120,24 @@ Knowledge distilled from executed features. Links to validating tests.
 
 ---
 
+## iOS NE→App Error Propagation via App Group + cancelTunnelWithError (2026-02-16, ios-vpn-fixes)
+
+**Decision**: NE process writes error text to App Group UserDefaults (`vpnError` key), then calls `cancelTunnelWithError(error)` to trigger system disconnect. Main app reads error from App Group in `NEVPNStatusDidChange` handler when status is `.disconnected`, pushes `vpnError` event to JS, then clears the key.
+
+**Why this pattern**: iOS NE and main app are separate processes — no direct method calls or callbacks. The system provides exactly one real-time push channel from NE→App: `NEVPNStatusDidChange`. App Group provides the data channel. Together: NE writes error → triggers system notification → App reads error on notification.
+
+**State source of truth**: `NEVPNStatusDidChange` is the ONLY VPN state source in the main app. All previous `UserDefaults("vpnState")` writes from NE were removed as orphaned (written but never read by main app). K2Plugin maps `NEVPNStatus` enum to `"connected"/"connecting"/"stopped"` strings.
+
+**Error flow**: Go Engine error → `EventBridge.onError()` → App Group write + `cancelTunnelWithError(error)` → system sends `.disconnected` → K2Plugin reads App Group `vpnError` → JS `vpnError` event → clears key.
+
+**State flow**: Go Engine disconnect → `EventBridge.onStateChange("disconnected")` → `cancelTunnelWithError(nil)` → system sends `.disconnected` → K2Plugin maps to `"stopped"` → JS `vpnStateChange` event.
+
+**Files**: `PacketTunnelProvider.swift` (NE side), `K2Plugin.swift` (App side)
+
+**Validating tests**: Manual device testing — no test yet.
+
+---
+
 ## Go→JS JSON Key Remapping at Native Bridge (2026-02-14, mobile-rewrite)
 
 **Decision**: Go `json.Marshal` outputs snake_case; native bridge layers (K2Plugin.swift/kt) remap to camelCase before passing to webapp.
@@ -197,6 +215,32 @@ Knowledge distilled from executed features. Links to validating tests.
 - Performance profiling pages
 
 **Validating tests**: `yarn build` produces both `dist/index.html` and `dist/debug.html`; `webapp/src/pages/__tests__/Settings.test.tsx` validates hidden entry point.
+
+---
+
+## App.tsx Route Wiring + Global Component Integration (2026-02-16, kaitu-feature-migration)
+
+**Decision**: App.tsx is the single entry point for all routing, guards, and global overlays. No AuthGuard redirect — use LoginRequiredGuard (opens LoginDialog) and MembershipGuard (redirects to /purchase).
+
+**Route structure (20 routes)**:
+- 4 tab routes (keep-alive via Layout): `/`, `/purchase`, `/invite` (LoginRequired), `/account`
+- 6 login-required sub-pages: `/devices`, `/member-management`, `/pro-histories`, `/invite-codes`, `/issues`, `/issues/:number`
+- 2 membership-required sub-pages: `/update-email`, `/submit-ticket`
+- 4 open sub-pages: `/device-install`, `/faq`, `/changelog`, `/discover`
+
+**Global component stack** (rendered outside Routes, inside BrowserRouter):
+```
+ErrorBoundary > BrowserRouter > ServiceReadiness > [
+  ForceUpgradeDialog, AnnouncementBanner, ServiceAlert,
+  UpdatePrompt, AlertContainer, LoginDialog, Routes
+]
+```
+
+**App init**: `useEffect` calls `restoreSession()` + `loadAppConfig()` on mount. App config needed for ForceUpgradeDialog and feature flags.
+
+**Version injection**: Vite `define: { __APP_VERSION__: pkg.version }` — no PlatformApi version needed.
+
+**Validating tests**: All 279 tests pass; `npx tsc --noEmit` clean.
 
 ---
 

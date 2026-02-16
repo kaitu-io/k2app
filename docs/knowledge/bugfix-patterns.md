@@ -144,3 +144,42 @@ const K2Plugin = registerPlugin('K2Plugin');
 **Files fixed**: `mobile/ios/App/PacketTunnelExtension/Info.plist`, `App.xcodeproj/project.pbxproj`
 
 ---
+
+## Android VPN establish() Returns Null Silently (2026-02-16, mobile-debug)
+
+**Problem**: `VpnService.Builder().establish()` returns `null` instead of a TUN file descriptor. Original code `val fd = vpnInterface?.fd ?: return` silently returned — no error to JS, no logcat, no user feedback. VPN appeared to "do nothing".
+
+**Root cause (1)**: `VpnService.prepare()` was called with Application context (`Plugin.context`) instead of Activity context. On Android 15 (API 35), `prepare()` returns `null` (appears "already prepared") even when the VPN subsystem hasn't properly registered the app as a VPN provider. `establish()` then returns `null`.
+
+**Root cause (2)**: Capacitor `file:` protocol local plugins (`"k2-plugin": "file:./plugins/k2-plugin"`) are copied to `node_modules/` at `yarn install` time. Editing source doesn't update the copy. `cap sync` reads from `node_modules/`, not source. Multiple deploy cycles ran with stale code.
+
+**Fix**:
+1. Use `VpnService.prepare(activity)` (Activity context from `Plugin.getActivity()`), not `VpnService.prepare(context)` (Application context)
+2. Handle `establish()` null: report error via `plugin?.onError()` and call `stopVpn()`, never silently return
+3. After editing local Capacitor plugin source: `rm -rf node_modules/k2-plugin && yarn install --force` before `cap sync`
+
+**Files fixed**: `mobile/plugins/k2-plugin/android/src/main/java/io/kaitu/k2plugin/K2Plugin.kt`, `mobile/android/app/src/main/java/io/kaitu/K2VpnService.kt`
+
+**Validating tests**: Manual device testing — debug.html connect flow produces `vpnStateChange: "connecting"` events; Go engine starts and rejects invalid wireUrl with proper error propagation.
+
+---
+
+## Capacitor Local Plugin Stale Copy in node_modules (2026-02-16, mobile-debug)
+
+**Problem**: Capacitor plugin declared as `"k2-plugin": "file:./plugins/k2-plugin"` in `mobile/package.json` is copied (not symlinked) to `node_modules/k2-plugin/`. Editing source files in `mobile/plugins/k2-plugin/` has no effect — `cap sync` and Gradle build use the stale `node_modules/` copy.
+
+**Symptom**: Code changes don't take effect after rebuild. No error message. `yarn install` says "Already up-to-date" even when source files have changed. Can waste multiple deploy cycles debugging phantom issues.
+
+**Fix**: After editing local plugin source, always run:
+```bash
+rm -rf node_modules/k2-plugin && yarn install --force
+```
+Then `npx cap sync android` and rebuild.
+
+**Why it happens**: Yarn `file:` protocol copies files at install time and caches the result. It doesn't detect changes to source files — only `package.json` version changes trigger re-copy.
+
+**Alternative**: Consider `"k2-plugin": "link:./plugins/k2-plugin"` (symlink) instead of `file:` (copy) — but `link:` has its own Capacitor compatibility issues.
+
+**Prevention**: Add to CLAUDE.md as a convention.
+
+---

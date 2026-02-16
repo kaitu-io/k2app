@@ -4,6 +4,8 @@ import NetworkExtension
 import CommonCrypto
 import SSZipArchive
 
+private let kAppGroup = "group.io.kaitu"
+
 @objc(K2Plugin)
 public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "K2Plugin"
@@ -21,6 +23,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "applyWebUpdate", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "downloadNativeUpdate", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "installNativeUpdate", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setRuleMode", returnType: CAPPluginReturnPromise),
     ]
 
     private var vpnManager: NETunnelProviderManager?
@@ -52,6 +55,15 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             guard let connection = notification.object as? NEVPNConnection else { return }
             let state = self?.mapVPNStatus(connection.status) ?? "stopped"
             self?.notifyListeners("vpnStateChange", data: ["state": state])
+
+            // On disconnect, check App Group for error from NE process
+            if connection.status == .disconnected {
+                let defaults = UserDefaults(suiteName: kAppGroup)
+                if let errorMsg = defaults?.string(forKey: "vpnError"), !errorMsg.isEmpty {
+                    defaults?.removeObject(forKey: "vpnError")
+                    self?.notifyListeners("vpnError", data: ["message": errorMsg])
+                }
+            }
         }
         loadVPNManager()
     }
@@ -85,34 +97,43 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func getStatus(_ call: CAPPluginCall) {
-        guard let manager = vpnManager else {
-            call.resolve(["state": "stopped"])
-            return
+        let doGetStatus: (NETunnelProviderManager) -> Void = { [weak self] manager in
+            guard let self = self else { return }
+            let session = manager.connection as? NETunnelProviderSession
+            let message = "status".data(using: .utf8)!
+
+            do {
+                try session?.sendProviderMessage(message) { response in
+                    if let data = response,
+                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                        call.resolve(self.remapStatusKeys(json))
+                    } else {
+                        let state = self.mapVPNStatus(manager.connection.status)
+                        call.resolve(["state": state])
+                    }
+                }
+            } catch {
+                let state = self.mapVPNStatus(manager.connection.status)
+                call.resolve(["state": state])
+            }
         }
 
-        // Try sendProviderMessage for rich status (StatusJSON)
-        let session = manager.connection as? NETunnelProviderSession
-        let message = "status".data(using: .utf8)!
-
-        do {
-            try session?.sendProviderMessage(message) { response in
-                if let data = response,
-                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    call.resolve(self.remapStatusKeys(json))
+        if let manager = vpnManager {
+            doGetStatus(manager)
+        } else {
+            // Auto-load if vpnManager not yet available (race with load())
+            loadVPNManager { manager in
+                if let manager = manager {
+                    doGetStatus(manager)
                 } else {
-                    // Fallback to connection status
-                    let state = self.mapVPNStatus(manager.connection.status)
-                    call.resolve(["state": state])
+                    call.resolve(["state": "stopped"])
                 }
             }
-        } catch {
-            let state = mapVPNStatus(manager.connection.status)
-            call.resolve(["state": state])
         }
     }
 
     @objc func getConfig(_ call: CAPPluginCall) {
-        let defaults = UserDefaults(suiteName: "group.io.kaitu")
+        let defaults = UserDefaults(suiteName: kAppGroup)
         let wireUrl = defaults?.string(forKey: "wireUrl")
         call.resolve(["wireUrl": wireUrl ?? ""])
     }
@@ -129,10 +150,16 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
 
+            // Read saved rule mode and append to wireUrl
+            let defaults = UserDefaults(suiteName: kAppGroup)
+            let ruleMode = defaults?.string(forKey: "ruleMode") ?? "global"
+            let separator = wireUrl.contains("?") ? "&" : "?"
+            let finalUrl = wireUrl + separator + "rule=" + ruleMode
+
             let proto = (manager.protocolConfiguration as? NETunnelProviderProtocol) ?? NETunnelProviderProtocol()
             proto.providerBundleIdentifier = "io.kaitu.PacketTunnelExtension"
             proto.serverAddress = wireUrl
-            proto.providerConfiguration = ["wireUrl": wireUrl]
+            proto.providerConfiguration = ["wireUrl": finalUrl]
             manager.protocolConfiguration = proto
             manager.isEnabled = true
             manager.localizedDescription = "Kaitu VPN"
@@ -149,10 +176,10 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                     }
                     do {
                         try (manager.connection as? NETunnelProviderSession)?.startVPNTunnel(options: [
-                            "wireUrl": NSString(string: wireUrl)
+                            "wireUrl": NSString(string: finalUrl)
                         ])
                         // Save wireUrl to App Group for NE access
-                        UserDefaults(suiteName: "group.io.kaitu")?.set(wireUrl, forKey: "wireUrl")
+                        UserDefaults(suiteName: kAppGroup)?.set(finalUrl, forKey: "wireUrl")
                         call.resolve()
                     } catch {
                         call.reject("Failed to start tunnel: \(error.localizedDescription)")
@@ -164,6 +191,16 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func disconnect(_ call: CAPPluginCall) {
         vpnManager?.connection.stopVPNTunnel()
+        call.resolve()
+    }
+
+    @objc func setRuleMode(_ call: CAPPluginCall) {
+        guard let mode = call.getString("mode") else {
+            call.reject("Missing mode parameter")
+            return
+        }
+        let defaults = UserDefaults(suiteName: kAppGroup)
+        defaults?.set(mode, forKey: "ruleMode")
         call.resolve()
     }
 

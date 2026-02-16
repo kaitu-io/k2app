@@ -9,6 +9,7 @@ interface K2PluginType {
   getConfig(): Promise<{ wireUrl?: string }>;
   connect(options: { wireUrl: string }): Promise<void>;
   disconnect(): Promise<void>;
+  setRuleMode(options: { mode: string }): Promise<void>;
   checkWebUpdate(): Promise<WebUpdateInfo>;
   checkNativeUpdate(): Promise<NativeUpdateInfo>;
   applyWebUpdate(): Promise<void>;
@@ -41,6 +42,10 @@ export class NativeVpnClient implements VpnClient {
 
   async disconnect(): Promise<void> {
     await this.plugin.disconnect();
+  }
+
+  async setRuleMode(mode: string): Promise<void> {
+    await this.plugin.setRuleMode({ mode });
   }
 
   async checkReady(): Promise<ReadyState> {

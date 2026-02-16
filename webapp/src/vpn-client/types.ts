@@ -64,4 +64,5 @@ export interface VpnClient {
   downloadNativeUpdate?(): Promise<{ path: string }>;
   installNativeUpdate?(options: { path: string }): Promise<void>;
   onDownloadProgress?(handler: (percent: number) => void): () => void;
+  setRuleMode?(mode: string): Promise<void>;
 }

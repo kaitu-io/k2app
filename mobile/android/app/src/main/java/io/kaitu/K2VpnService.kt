@@ -7,6 +7,7 @@ import android.content.Intent
 import android.net.VpnService
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
+import android.util.Log
 import io.kaitu.k2plugin.K2Plugin
 import io.kaitu.k2plugin.VpnServiceBridge
 import mobile.Mobile
@@ -14,6 +15,10 @@ import mobile.Engine
 import mobile.EventHandler as MobileEventHandler
 
 class K2VpnService : VpnService(), VpnServiceBridge {
+
+    companion object {
+        private const val TAG = "K2VpnService"
+    }
 
     private var engine: Engine? = null
     private var vpnInterface: ParcelFileDescriptor? = null
@@ -49,12 +54,15 @@ class K2VpnService : VpnService(), VpnServiceBridge {
     }
 
     private fun startVpn(wireUrl: String) {
+        Log.d(TAG, "startVpn: wireUrl=$wireUrl")
         createNotificationChannel()
         startForeground(1, createNotification("Connecting..."))
 
+        Log.d(TAG, "Creating engine...")
         engine = Mobile.newEngine()
         engine?.setEventHandler(object : MobileEventHandler {
             override fun onStateChange(state: String?) {
+                Log.d(TAG, "onStateChange: $state")
                 state?.let {
                     plugin?.onStateChange(it)
                     if (it == "connected") {
@@ -64,6 +72,7 @@ class K2VpnService : VpnService(), VpnServiceBridge {
             }
 
             override fun onError(message: String?) {
+                Log.e(TAG, "onError: $message")
                 message?.let { plugin?.onError(it) }
             }
 
@@ -73,6 +82,7 @@ class K2VpnService : VpnService(), VpnServiceBridge {
         })
 
         // Build VPN interface
+        Log.d(TAG, "Building VPN interface...")
         val builder = Builder()
             .setSession("Kaitu VPN")
             .addAddress("10.0.0.2", 32)
@@ -82,11 +92,22 @@ class K2VpnService : VpnService(), VpnServiceBridge {
             .setMtu(1400)
 
         vpnInterface = builder.establish()
-        val fd = vpnInterface?.fd ?: return
+        Log.d(TAG, "establish() result: vpnInterface=$vpnInterface, fd=${vpnInterface?.fd}")
+
+        val fd = vpnInterface?.fd
+        if (fd == null) {
+            Log.e(TAG, "establish() returned null — VPN permission not granted?")
+            plugin?.onError("VPN establish failed: permission not granted or system rejected")
+            stopVpn()
+            return
+        }
 
         try {
-            engine?.start(wireUrl, fd.toLong())
+            Log.d(TAG, "Starting engine with fd=$fd")
+            engine?.start(wireUrl, fd.toLong(), filesDir.absolutePath)
+            Log.d(TAG, "Engine started successfully")
         } catch (e: Exception) {
+            Log.e(TAG, "Engine start failed: ${e.message}", e)
             plugin?.onError(e.message ?: "Failed to start engine")
             stopVpn()
         }

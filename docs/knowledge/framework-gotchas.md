@@ -168,3 +168,130 @@ engine?.start(wireUrl, fd: Int(fd), error: &error)  // COMPILE ERROR
 **Validating tests**: Manual device testing — debug.html successfully calls K2Plugin methods.
 
 ---
+
+## Android VpnService.prepare() Requires Activity Context (2026-02-16, mobile-debug)
+
+**Problem**: `VpnService.prepare(context)` with Application context (from Capacitor `Plugin.context`) returns `null` on Android 15 (API 35), suggesting VPN is "already prepared". But `VpnService.Builder().establish()` then returns `null` — the VPN subsystem didn't actually register the app.
+
+**Solution**: Always use Activity context: `VpnService.prepare(activity)` where `activity` is from Capacitor `Plugin.getActivity()`.
+
+**Why Activity context matters**: `VpnService.prepare()` checks the calling UID against the VPN owner. With Activity context, the system properly associates the VPN consent with the foreground app. Application context may not trigger the correct VPN preparation path on newer Android versions.
+
+**Capacitor pattern for VPN consent**:
+```kotlin
+val act = activity ?: run { call.reject("No activity"); return }
+val prepareIntent = VpnService.prepare(act)
+if (prepareIntent != null) {
+    startActivityForResult(call, prepareIntent, "vpnPermissionResult")
+} else {
+    startVpnService(wireUrl)
+    call.resolve()
+}
+
+@ActivityCallback
+private fun vpnPermissionResult(call: PluginCall, result: ActivityResult) {
+    if (result.resultCode == Activity.RESULT_OK) {
+        startVpnService(call.getString("wireUrl")!!)
+        call.resolve()
+    } else {
+        call.reject("VPN permission denied")
+    }
+}
+```
+
+**Cross-reference**: See Bugfix Patterns → "Android VPN establish() Returns Null Silently"
+
+**Validating tests**: Manual device testing — VPN TUN fd obtained, Go engine starts, state events flow to JS.
+
+---
+
+## iOS NE Engine Errors Invisible to Main App by Default (2026-02-16, ios-vpn-fixes)
+
+**Problem**: When Go Engine in the NE process encounters an error (bad wireUrl, connection timeout, etc.), `EventBridge.onError()` wrote to App Group but never called `cancelTunnelWithError()`. The NE process stayed alive, the system reported VPN as still `.connected` or `.connecting`, and the main app never knew about the error. From JS perspective, `vpnError` events were completely lost.
+
+**Root cause**: Two-process architecture. NE's `onError()` only wrote to UserDefaults. No mechanism existed to push errors to the main app in real-time. The main app only subscribed to `NEVPNStatusDidChange` — but without `cancelTunnelWithError()`, no status change was triggered.
+
+**Solution**: `EventBridge.onError()` now writes error to App Group AND calls `cancelTunnelWithError(error)`. This triggers `NEVPNStatusDidChange → .disconnected` in the main app. K2Plugin's handler reads the `vpnError` key from App Group on `.disconnected` and pushes `vpnError` event to JS.
+
+**Prevention**: In two-process VPN architectures, every error path must trigger `cancelTunnelWithError()` — otherwise the system doesn't know the tunnel failed.
+
+**Files fixed**: `mobile/ios/App/PacketTunnelExtension/PacketTunnelProvider.swift`, `mobile/plugins/k2-plugin/ios/Plugin/K2Plugin.swift`
+
+**Validating tests**: Manual device testing — no test yet.
+
+---
+
+## iOS TUN fd Must Be Acquired After setTunnelNetworkSettings (2026-02-16, ios-vpn-fixes)
+
+**Problem**: Original code acquired TUN fd via `packetFlow.value(forKey: "socket")` before calling `setTunnelNetworkSettings()`. While this often works, the fd is not guaranteed to be valid until network settings are applied. On some iOS versions, `packetFlow` isn't fully initialized until `setTunnelNetworkSettings` completes.
+
+**Solution**: Move `packetFlow.value(forKey: "socket")` into the `setTunnelNetworkSettings` completion handler, after settings are successfully applied. Add `fd >= 0` guard for extra safety.
+
+**Correct order**:
+```swift
+setTunnelNetworkSettings(settings) { [weak self] error in
+    guard error == nil else { completionHandler(error); return }
+    guard let fd = self?.packetFlow.value(forKey: "socket") as? Int32, fd >= 0 else { ... }
+    try self?.engine?.start(wireUrl, fd: Int(fd))
+}
+```
+
+**Files fixed**: `mobile/ios/App/PacketTunnelExtension/PacketTunnelProvider.swift`
+
+**Validating tests**: Manual device testing — no test yet.
+
+---
+
+## IPv6 Default Route Prevents DNS Leak in VPN (2026-02-16, ios-vpn-fixes)
+
+**Problem**: Original `NEPacketTunnelNetworkSettings` only configured IPv4 routes. IPv6 traffic bypassed the tunnel entirely — DNS queries over IPv6 could leak the user's real IP address.
+
+**Solution**: Add `NEIPv6Settings` with a ULA address (`fd00::2/64`) and default route (`NEIPv6Route.default()`). This captures all IPv6 traffic into the tunnel. Since the Go engine doesn't handle IPv6, it drops these packets — security (no leak) takes priority over IPv6 reachability.
+
+**Trade-off**: IPv6-only services will not work while VPN is active. This is acceptable because k2 protocol tunnels over IPv4 and most services support IPv4 fallback.
+
+**Files fixed**: `mobile/ios/App/PacketTunnelExtension/PacketTunnelProvider.swift`
+
+**Validating tests**: Manual device testing — no test yet.
+
+---
+
+## Vite define for App Version Injection (2026-02-16, kaitu-feature-migration)
+
+**Problem**: `ForceUpgradeDialog` needs the app version to compare against `appConfig.minClientVersion`. `PlatformApi` interface doesn't expose `version`. Importing `../../package.json` from `src/` fails — `tsconfig.json` `include` is `["src"]` only, and `resolveJsonModule` is not enabled.
+
+**Solution**: Vite `define` in `vite.config.ts`:
+```typescript
+import pkg from "../package.json";
+export default defineConfig({
+  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
+});
+```
+In source: `declare const __APP_VERSION__: string;` then use directly.
+
+**Why not PlatformApi**: Version is a build-time constant, not a runtime platform capability. Tauri/Capacitor each have their own version APIs (`@tauri-apps/api/app`, `@capacitor/app`) but they're async and require native runtime. Vite define is sync, available everywhere, zero runtime cost.
+
+**Validating tests**: `npx tsc --noEmit` passes; `ForceUpgradeDialog` renders in component tests.
+
+---
+
+## Capacitor file: Plugin Source Not Auto-Synced to node_modules (2026-02-16, mobile-debug)
+
+**Problem**: Local Capacitor plugins referenced via `"file:./plugins/k2-plugin"` are **copied** (not symlinked) to `node_modules/`. Source edits are invisible to `cap sync` and Gradle. `yarn install` says "Already up-to-date" without detecting file changes.
+
+**Symptom**: Plugin code changes have no effect after rebuild. No error. Multiple wasted deploy cycles.
+
+**Solution**: After editing local plugin source:
+```bash
+rm -rf node_modules/k2-plugin && yarn install --force
+npx cap sync android  # or ios
+```
+
+**Prevention**: Before any `cap sync` after plugin edits, always verify:
+```bash
+diff plugins/k2-plugin/android/.../K2Plugin.kt node_modules/k2-plugin/android/.../K2Plugin.kt
+```
+
+**Cross-reference**: See Bugfix Patterns → "Capacitor Local Plugin Stale Copy in node_modules"
+
+---

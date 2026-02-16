@@ -11,6 +11,7 @@ function createMockPlugin() {
     getConfig: vi.fn(),
     connect: vi.fn(),
     disconnect: vi.fn(),
+    setRuleMode: vi.fn(),
     checkWebUpdate: vi.fn(),
     checkNativeUpdate: vi.fn(),
     applyWebUpdate: vi.fn(),
@@ -39,6 +40,18 @@ describe('NativeVpnClient', () => {
     plugin.disconnect.mockResolvedValue(undefined);
     await client.disconnect();
     expect(plugin.disconnect).toHaveBeenCalled();
+  });
+
+  it('setRuleMode() calls plugin with correct options', async () => {
+    plugin.setRuleMode.mockResolvedValue(undefined);
+    await client.setRuleMode('smart');
+    expect(plugin.setRuleMode).toHaveBeenCalledWith({ mode: 'smart' });
+  });
+
+  it('setRuleMode() global mode', async () => {
+    plugin.setRuleMode.mockResolvedValue(undefined);
+    await client.setRuleMode('global');
+    expect(plugin.setRuleMode).toHaveBeenCalledWith({ mode: 'global' });
   });
 
   it('getStatus() maps "disconnected" to "stopped"', async () => {

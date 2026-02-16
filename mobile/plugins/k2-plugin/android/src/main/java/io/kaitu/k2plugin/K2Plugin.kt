@@ -1,17 +1,21 @@
 package io.kaitu.k2plugin
 
+import android.app.Activity
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.net.VpnService
 import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
+import androidx.activity.result.ActivityResult
 import androidx.core.content.FileProvider
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
+import com.getcapacitor.annotation.ActivityCallback
 import com.getcapacitor.annotation.CapacitorPlugin
 import org.json.JSONObject
 import java.io.File
@@ -124,6 +128,17 @@ class K2Plugin : Plugin() {
     }
 
     @PluginMethod
+    fun setRuleMode(call: PluginCall) {
+        val mode = call.getString("mode") ?: run {
+            call.reject("Missing mode parameter")
+            return
+        }
+        val prefs = context.getSharedPreferences("k2vpn", Context.MODE_PRIVATE)
+        prefs.edit().putString("ruleMode", mode).apply()
+        call.resolve()
+    }
+
+    @PluginMethod
     fun connect(call: PluginCall) {
         val wireUrl = call.getString("wireUrl")
         if (wireUrl == null) {
@@ -135,14 +150,53 @@ class K2Plugin : Plugin() {
         context.getSharedPreferences("k2vpn", Context.MODE_PRIVATE)
             .edit().putString("wireUrl", wireUrl).apply()
 
-        // Start VPN service
+        // Check VPN permission — Android requires user consent via VpnService.prepare()
+        // Must use Activity context for proper VPN consent handling
+        val act = activity
+        if (act == null) {
+            call.reject("No activity available for VPN permission")
+            return
+        }
+
+        val prepareIntent = VpnService.prepare(act)
+        if (prepareIntent != null) {
+            // Permission not yet granted — show system VPN consent dialog
+            startActivityForResult(call, prepareIntent, "vpnPermissionResult")
+        } else {
+            // Already authorized — start VPN directly
+            startVpnService(wireUrl)
+            call.resolve()
+        }
+    }
+
+    @ActivityCallback
+    private fun vpnPermissionResult(call: PluginCall, result: ActivityResult) {
+        if (result.resultCode == Activity.RESULT_OK) {
+            val wireUrl = call.getString("wireUrl")
+            if (wireUrl != null) {
+                startVpnService(wireUrl)
+                call.resolve()
+            } else {
+                call.reject("wireUrl lost after VPN permission grant")
+            }
+        } else {
+            call.reject("VPN permission denied by user")
+        }
+    }
+
+    private fun startVpnService(wireUrl: String) {
+        // Read saved rule mode and append to wireUrl
+        val prefs = context.getSharedPreferences("k2vpn", Context.MODE_PRIVATE)
+        val ruleMode = prefs.getString("ruleMode", "global") ?: "global"
+        val separator = if (wireUrl.contains("?")) "&" else "?"
+        val finalUrl = wireUrl + separator + "rule=" + ruleMode
+
         val intent = Intent().apply {
             setClassName(context.packageName, vpnServiceClassName)
             action = "START"
-            putExtra("wireUrl", wireUrl)
+            putExtra("wireUrl", finalUrl)
         }
         context.startForegroundService(intent)
-        call.resolve()
     }
 
     @PluginMethod
