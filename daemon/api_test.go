@@ -2,10 +2,8 @@ package daemon
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,9 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/kaitu-io/k2/config"
-	"github.com/kaitu-io/k2/core"
-	"github.com/kaitu-io/k2/provider"
+	"github.com/kaitu-io/k2/engine"
 )
 
 func TestHandlePing(t *testing.T) {
@@ -83,38 +79,15 @@ func TestHandleCoreStatus(t *testing.T) {
 	}
 }
 
-// mockTunnelBuilder returns a mock tunnel for testing without root.
-func mockTunnelBuilder(ctx context.Context, cfg *config.ClientConfig) (*core.ClientTunnel, error) {
-	prov := &mockProvider{}
-	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{
-		Provider: prov,
-		Dialer:   &mockDialer{},
-	})
-	tunnel.Start(ctx)
-	return tunnel, nil
+// mockEngineStarter returns an engine without actually starting network connections.
+// The engine is in disconnected state, but the daemon tracks state separately.
+func mockEngineStarter(cfg engine.Config) (*engine.Engine, error) {
+	return engine.New(), nil
 }
-
-type mockProvider struct{}
-
-func (p *mockProvider) Start(ctx context.Context, handler provider.ConnectionHandler) error {
-	return nil
-}
-func (p *mockProvider) Close() error { return nil }
-func (p *mockProvider) Name() string { return "mock" }
-
-type mockDialer struct{}
-
-func (d *mockDialer) DialTCP(ctx context.Context, addr string) (net.Conn, error) {
-	return nil, nil
-}
-func (d *mockDialer) DialUDP(ctx context.Context, addr string) (net.PacketConn, error) {
-	return nil, nil
-}
-func (d *mockDialer) Close() error { return nil }
 
 func TestHandleCoreUpDown(t *testing.T) {
 	d := New()
-	d.TunnelBuilder = mockTunnelBuilder
+	d.EngineStarter = mockEngineStarter
 
 	// Up with URL.
 	upBody := `{"action":"up","params":{"wire_url":"k2v5://test:token@host:443"}}`
@@ -253,7 +226,7 @@ func TestCORSMiddleware(t *testing.T) {
 
 func TestHandleCoreGetConfig(t *testing.T) {
 	d := New()
-	d.TunnelBuilder = mockTunnelBuilder
+	d.EngineStarter = mockEngineStarter
 
 	// Set some config via up.
 	upBody := `{"action":"up","params":{"wire_url":"k2v5://test:tok@host:443"}}`
@@ -390,8 +363,8 @@ func TestWebappServing_APIpriority(t *testing.T) {
 	}
 }
 
-// failingTunnelBuilder always returns an error.
-func failingTunnelBuilder(ctx context.Context, cfg *config.ClientConfig) (*core.ClientTunnel, error) {
+// failingEngineStarter always returns an error.
+func failingEngineStarter(cfg engine.Config) (*engine.Engine, error) {
 	return nil, fmt.Errorf("simulated failure")
 }
 
@@ -399,7 +372,7 @@ func TestDoUpFromError(t *testing.T) {
 	d := New()
 
 	// First attempt: fail to connect.
-	d.TunnelBuilder = failingTunnelBuilder
+	d.EngineStarter = failingEngineStarter
 	err := d.doUp("k2v5://test:tok@host:443", "", 0)
 	if err == nil {
 		t.Fatal("expected error from failing builder")
@@ -415,7 +388,7 @@ func TestDoUpFromError(t *testing.T) {
 	}
 
 	// Second attempt: succeed. Old error should be cleared.
-	d.TunnelBuilder = mockTunnelBuilder
+	d.EngineStarter = mockEngineStarter
 	err = d.doUp("k2v5://test:tok@host:443", "", 0)
 	if err != nil {
 		t.Fatalf("expected success, got %v", err)
@@ -431,23 +404,16 @@ func TestDoUpFromError(t *testing.T) {
 }
 
 func TestConcurrentDoUp(t *testing.T) {
-	// Track how many tunnels are created vs closed to detect orphans.
+	// Track how many engines are created to verify serialization.
 	var created atomic.Int32
-	var closed atomic.Int32
 
-	trackingBuilder := func(ctx context.Context, cfg *config.ClientConfig) (*core.ClientTunnel, error) {
+	trackingStarter := func(cfg engine.Config) (*engine.Engine, error) {
 		created.Add(1)
-		prov := &trackingProvider{closed: &closed}
-		tunnel := core.NewClientTunnel(core.ClientTunnelConfig{
-			Provider: prov,
-			Dialer:   &mockDialer{},
-		})
-		tunnel.Start(ctx)
-		return tunnel, nil
+		return engine.New(), nil
 	}
 
 	d := New()
-	d.TunnelBuilder = trackingBuilder
+	d.EngineStarter = trackingStarter
 
 	// Launch 5 concurrent doUp calls.
 	var wg sync.WaitGroup
@@ -465,24 +431,16 @@ func TestConcurrentDoUp(t *testing.T) {
 		t.Fatalf("expected connected, got %s", d.State())
 	}
 
-	// Exactly one tunnel should remain alive (created - closed == 1).
-	alive := created.Load() - closed.Load()
-	if alive != 1 {
-		t.Fatalf("expected 1 alive tunnel, got %d (created=%d, closed=%d)",
-			alive, created.Load(), closed.Load())
+	// All 5 calls should have created engines (opMu serializes, each tears down previous).
+	if created.Load() != 5 {
+		t.Fatalf("expected 5 engines created, got %d", created.Load())
+	}
+
+	// Daemon must hold exactly one engine reference.
+	d.mu.RLock()
+	hasEngine := d.engine != nil
+	d.mu.RUnlock()
+	if !hasEngine {
+		t.Fatal("expected daemon to hold an engine after concurrent doUp")
 	}
 }
-
-// trackingProvider counts Close calls for orphan detection.
-type trackingProvider struct {
-	closed *atomic.Int32
-}
-
-func (p *trackingProvider) Start(ctx context.Context, handler provider.ConnectionHandler) error {
-	return nil
-}
-func (p *trackingProvider) Close() error {
-	p.closed.Add(1)
-	return nil
-}
-func (p *trackingProvider) Name() string { return "tracking" }

@@ -11,6 +11,8 @@ import (
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/daemon"
+	"github.com/kaitu-io/k2/directdial"
+	"github.com/kaitu-io/k2/engine"
 	"github.com/kaitu-io/k2/wintun"
 )
 
@@ -90,11 +92,19 @@ func runClientForeground(cfgPath string) {
 		cancel()
 	}()
 
-	tunnel, err := daemon.BuildTunnel(ctx, cfg)
-	if err != nil {
+	dd := directdial.New()
+	eng := engine.New()
+	if err := eng.Start(engine.Config{
+		WireURL:        cfg.Server,
+		FileDescriptor: -1,
+		DirectDialer:   dd,
+		PreferIPv6:     true,
+		Mode:           cfg.Mode,
+		ProxyListen:    cfg.Proxy.Listen,
+	}); err != nil {
 		log.Fatalf("Failed to connect: %v", err)
 	}
-	defer tunnel.Close()
+	defer eng.Stop()
 
 	log.Printf("k2 connected (%s), Ctrl+C to stop", cfg.Server)
 	<-ctx.Done()
