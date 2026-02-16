@@ -5,7 +5,7 @@ React 19 + TypeScript + Vite + Tailwind CSS v4. Served by tauri-plugin-localhost
 ## Commands
 
 ```bash
-yarn test              # vitest run (95 tests)
+yarn test              # vitest run (169 tests)
 yarn build             # Vite production build → dist/
 npx tsc --noEmit       # Type check
 ```
@@ -17,8 +17,9 @@ src/
 ├── vpn-client/        VpnClient abstraction (THE boundary to k2 daemon)
 │   ├── types.ts       VpnClient interface, VpnStatus, VpnEvent, ReadyState
 │   ├── http-client.ts HttpVpnClient: HTTP to :1777 + 2s polling → events (dedup)
+│   ├── native-client.ts NativeVpnClient: Capacitor K2Plugin bridge (mobile)
 │   ├── mock-client.ts MockVpnClient: test double with observable state
-│   └── index.ts       Factory: createVpnClient(override?) + getVpnClient()
+│   └── index.ts       Factory: initVpnClient() (async, mobile) + createVpnClient() (sync, desktop)
 ├── api/               Cloud API (antiblock exception — NOT through VpnClient)
 │   ├── cloud.ts       cloudApi: login (email→code), servers, user endpoints
 │   ├── antiblock.ts   Entry URL resolution: localStorage cache → CDN JSONP → default
@@ -32,20 +33,27 @@ src/
 │   ├── BottomNav.tsx  Tab navigation (Dashboard, Servers, Settings)
 │   ├── ConnectionButton.tsx CVA-styled connect/disconnect button
 │   ├── ServerList.tsx Server list with country, city, load display
-│   └── ServiceReadiness.tsx Blocks UI until daemon ready + version match
+│   ├── ServiceReadiness.tsx Blocks UI until daemon ready + version match
+│   └── UpdatePrompt.tsx OTA update notification + apply flow
 ├── pages/             Route pages
 │   ├── Dashboard.tsx  VPN status + connection button + selected server
 │   ├── Login.tsx      Two-step: email → verification code
 │   ├── Servers.tsx    Server list + selection
 │   └── Settings.tsx   Language, version, about
 ├── i18n/              i18next setup + locale JSON (zh-CN default, en-US)
+├── platform/          PlatformApi abstraction (Tauri, Capacitor, Web backends)
+│   ├── types.ts       PlatformApi interface
+│   ├── tauri.ts       Tauri desktop backend
+│   ├── capacitor.ts   Capacitor mobile backend
+│   ├── web.ts         Web fallback backend
+│   └── index.ts       Auto-detect platform, export singleton
 ├── App.tsx            Routes: /login, / (Dashboard), /servers, /settings + AuthGuard
-└── main.tsx           React root mount
+└── main.tsx           Async bootstrap: initVpnClient() → React render
 ```
 
 ## Key Patterns
 
-- **VpnClient DI**: `createVpnClient(mock)` in tests — no module mocking needed
+- **VpnClient DI**: `createVpnClient(mock)` in tests — no module mocking needed. Mobile uses `initVpnClient()` (async) with `registerPlugin('K2Plugin')` from `@capacitor/core`
 - **Async store init**: Zustand stores use `init()` action (not async `create()`), called from `useEffect`
 - **Dev proxy**: Vite proxies `/api/*` and `/ping` to `:1777`. Production uses absolute URL via `import.meta.env.DEV`
 - **connect/disconnect resolve on acceptance** (HTTP 200), not operation completion
@@ -56,4 +64,4 @@ src/
 - vitest + @testing-library/react + @testing-library/user-event
 - Mock pattern: `resetVpnClient()` → `new MockVpnClient()` → `createVpnClient(mock)` in beforeEach
 - i18n mock: `vi.mock('react-i18next')` with key→string map
-- 13 test files, 95 tests total
+- 17 test files, 169 tests total

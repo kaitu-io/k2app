@@ -48,13 +48,56 @@ Platform-specific issues and workarounds discovered during implementation.
 
 ---
 
-## Capacitor Plugin Dynamic Import to Avoid Desktop Bundle Bloat (2026-02-14, mobile-rewrite)
+## Capacitor Plugin Loading: registerPlugin, Not npm Import (2026-02-16, android-aar-fix)
 
-**Problem**: Module-level `import { K2Plugin } from 'k2-plugin'` causes Vite to bundle Capacitor deps into desktop build.
+**Problem**: Dynamic `import('k2-plugin')` fails at runtime in Capacitor WebView. The npm package installs native bridge code but isn't a standard ES module that WebView can resolve.
 
-**Solution**: Dynamic import with variable indirection + `@vite-ignore` comment in `webapp/src/vpn-client/index.ts`. Vite skips static analysis for this import. `k2-plugin` only available at runtime on native platforms.
+**Solution**: Use `registerPlugin('K2Plugin')` from `@capacitor/core`. Capacitor's native loader registers plugins at app startup; JS side just calls `registerPlugin(name)` to get the bridge proxy.
 
-**Trade-off**: Lose static analysis for this import. Type safety maintained via local `K2PluginType` interface in `native-client.ts`.
+**Previous approach** (2026-02-14): Variable indirection `const pluginModule = 'k2-plugin'; await import(pluginModule)` — this only worked during Vite dev but broke in production WebView.
+
+**Current approach**: `const { registerPlugin } = await import('@capacitor/core'); const K2Plugin = registerPlugin('K2Plugin');` — works in all environments.
+
+**Trade-off**: Type safety maintained via `as any` cast + local `K2PluginInterface` in `native-client.ts`.
+
+**Cross-reference**: See Bugfix Patterns → "Capacitor registerPlugin vs npm Dynamic Import"
+
+---
+
+## gomobile Swift Bridging: Throws, Not NSError Out-Parameter (2026-02-16, android-aar-fix)
+
+**Problem**: gomobile generates ObjC methods with `NSError**` out-parameter (e.g., `start:fd:error:`). Swift automatically bridges these to throwing methods (`start(_:fd:) throws`). Writing code using the ObjC-style error pattern causes compile errors.
+
+**Correct Swift usage**:
+```swift
+do {
+    try engine?.start(wireUrl, fd: Int(fd))
+} catch {
+    // handle error
+}
+```
+
+**Wrong Swift usage** (ObjC style):
+```swift
+var error: NSError?
+engine?.start(wireUrl, fd: Int(fd), error: &error)  // COMPILE ERROR
+```
+
+**Applies to**: All gomobile-generated Go methods that return `error`. Swift bridges them as `throws`.
+
+**Cross-reference**: See Bugfix Patterns → "gomobile Swift API Uses Throws Pattern"
+
+---
+
+## iOS Extension Targets Don't Inherit Project Version Settings (2026-02-16, android-aar-fix)
+
+**Problem**: Extension target's Info.plist uses `$(CURRENT_PROJECT_VERSION)` and `$(MARKETING_VERSION)`, but these expand to empty strings because the extension target doesn't inherit them from the project-level build settings.
+
+**Symptom**: `CFBundleVersion` is null in built appex → device refuses to install ("does not have a CFBundleVersion key with a non-zero length string value").
+
+**Fix**: Explicitly set `CURRENT_PROJECT_VERSION` and `MARKETING_VERSION` in the extension target's build settings (both Debug and Release configurations).
+
+**Prevention**: When adding extension targets, always verify version build settings are set per-target, not just at project level.
 
 ---
 

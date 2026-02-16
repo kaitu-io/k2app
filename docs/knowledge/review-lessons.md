@@ -51,3 +51,19 @@ Insights from code reviews and merge processes.
 **Takeaway**: When reviewing iOS PRs, verify that every target (main app + extensions) has its own Info.plist with required keys.
 
 ---
+
+## Real Device Install Catches Issues Simulator Misses (2026-02-16, android-aar-fix)
+
+**Lesson**: `xcodebuild` succeeded but `devicectl device install` failed twice — first for missing `CFBundleExecutable`, then for missing `CFBundleVersion` in extension Info.plist. Xcode builds don't validate these keys; only real device install does.
+
+**Takeaway**: Always test on real device (not just build). `xcodebuild build` validates compilation and code signing but NOT installability. Missing plist keys are a device-side validation. `BUILD SUCCEEDED` does not mean `INSTALL SUCCEEDED`.
+
+---
+
+## Scrum Debate Reveals Simpler Architecture (2026-02-16, android-aar-fix)
+
+**Lesson**: Adversarial debate (Plan A: keep wrapper vs Plan B: flatDir everywhere) produced Plan C (remove wrapper entirely) because a challenger identified that k2-plugin doesn't actually need AAR access — VpnServiceBridge already decouples it. This reduced the problem from "multi-module AAR sharing" to "single module AAR reference".
+
+**Takeaway**: When facing integration complexity, question whether all consumers actually need the dependency. Decoupling interfaces may already exist.
+
+---

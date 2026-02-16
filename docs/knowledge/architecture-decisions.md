@@ -134,6 +134,24 @@ Knowledge distilled from executed features. Links to validating tests.
 
 ---
 
+## Android AAR: Direct flatDir, No Wrapper Module (2026-02-16, android-aar-fix)
+
+**Decision**: Remove `k2-mobile` wrapper module. App module references `k2mobile.aar` directly via Gradle `flatDir` + `implementation(name: 'k2mobile', ext: 'aar')`.
+
+**Context**: gomobile bind produces `k2mobile.aar`. Originally a `k2-mobile` wrapper module used `api files('libs/k2mobile.aar')` — but `files()` treats AARs as JARs, losing Android resource/manifest handling.
+
+**Why only app needs AAR**: k2-plugin module uses `VpnServiceBridge` interface (decoupled from AAR). Only `app` module's `K2VpnService` directly instantiates gomobile `Engine`. So only one consumer needs the AAR.
+
+**Build pipeline**: `gomobile bind` → `k2/build/k2mobile.aar` → copy to `mobile/android/app/libs/` → Gradle resolves via flatDir.
+
+**Alternatives rejected**:
+- **Plan A** (keep wrapper): `api files()` doesn't work for AAR, `api` dependency exposed AAR transitively but incorrectly.
+- **Plan B** (flatDir in all modules): Unnecessary — only app needs it.
+
+**Validating tests**: `./gradlew assembleRelease` succeeds; APK contains `libgojni.so` for all 4 ABIs.
+
+---
+
 ## Build System: Makefile Orchestration + Script Composition (2026-02-14)
 
 **Decision**: Makefile handles version extraction and target orchestration. Platform-specific build logic lives in `scripts/build-*.sh`.

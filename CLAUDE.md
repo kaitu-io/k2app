@@ -1,6 +1,6 @@
-# k2app — Kaitu VPN Desktop Client
+# k2app — Kaitu VPN Client
 
-Tauri v2 desktop app wrapping the k2 Go tunnel core. React webapp frontend served via tauri-plugin-localhost.
+Tauri v2 desktop + Capacitor 6 mobile app wrapping the k2 Go tunnel core. React webapp frontend shared across platforms.
 
 ## Quick Commands
 
@@ -9,7 +9,11 @@ make dev                         # k2 daemon + Vite HMR + Tauri window
 make build-macos                 # Signed macOS PKG (universal binary)
 make build-macos-fast            # Same, skip notarization (local dev)
 make build-windows               # Signed Windows NSIS installer
-cd webapp && yarn test           # vitest (115 tests)
+make build-mobile-android        # gomobile bind + cap sync + assembleRelease
+make build-mobile-ios            # gomobile bind + cap sync + xcodebuild archive
+make dev-android                 # gomobile bind + cap sync + cap run android
+make dev-ios                     # cap sync + cap run ios
+cd webapp && yarn test           # vitest (169 tests)
 cd desktop/src-tauri && cargo test  # Rust tests (4 tests)
 scripts/test_build.sh            # Full build verification (14 checks)
 yarn install                     # Always run from root (workspace)
@@ -21,7 +25,10 @@ yarn install                     # Always run from root (workspace)
 k2/                  Go core (submodule, read-only — has its own CLAUDE.md)
 webapp/              React + Vite + Tailwind frontend (see webapp/CLAUDE.md)
 desktop/             Tauri v2 Rust shell (see desktop/CLAUDE.md)
-mobile/              Capacitor 6 mobile app (see mobile/ for K2Plugin)
+mobile/              Capacitor 6 mobile app
+mobile/plugins/      K2Plugin (Swift + Kotlin) — native VPN bridge
+mobile/ios/          Xcode project (App + PacketTunnelExtension)
+mobile/android/      Gradle project (app module, flatDir AAR)
 scripts/             dev.sh, build-macos.sh, build-mobile-*.sh, test_build.sh
 docs/features/       Feature specs and plans
 docs/baselines/      Project capability baseline
@@ -40,6 +47,10 @@ Makefile             Build orchestration — version from package.json, k2 from 
 - **Webapp subagent tasks**: Always invoke `/word9f-frontend` for frontend decisions.
 - **Go→JS JSON key convention**: Go `json.Marshal` outputs snake_case (`connected_at`). JS/TS expects camelCase (`connectedAt`). Native bridge layers (K2Plugin.swift, K2Plugin.kt) must remap keys at the boundary. Never pass raw Go JSON to webapp without key remapping.
 - **`.gitignore` for native platforms**: Never ignore entire source directories (`mobile/ios/`, `mobile/android/`). Only ignore build artifacts (`Pods/`, `build/`, `libs/`, `.gradle/`). Source files must always be visible to git.
+- **Mobile bootstrap**: `main.tsx` must `await initVpnClient()` before React render. Mobile uses async dynamic imports (`NativeVpnClient`, `@capacitor/core`).
+- **Capacitor plugin loading**: Use `registerPlugin('K2Plugin')` from `@capacitor/core`. Never use dynamic npm `import('k2-plugin')` — it fails in WebView at runtime.
+- **gomobile Swift API**: Generated methods use `throws` pattern in Swift, NOT NSError out-parameter. Always use `try`/`catch`.
+- **iOS extension targets**: Must have `CFBundleExecutable`, `CFBundleVersion` in Info.plist. Build settings (`CURRENT_PROJECT_VERSION`, `MARKETING_VERSION`) are NOT inherited from project — set per-target.
 
 ## Tech Stack
 
@@ -61,7 +72,8 @@ Makefile             Build orchestration — version from package.json, k2 from 
 ## Layer Docs (read on demand)
 
 ```
-webapp/CLAUDE.md         Frontend modules, stores, testing, i18n
+webapp/CLAUDE.md         Frontend modules, stores, testing, i18n, platform abstraction
 desktop/CLAUDE.md        Tauri shell, Rust modules, config
 k2/CLAUDE.md             Go core architecture, wire protocol, daemon API
+docs/knowledge/          Distilled patterns from all executed features
 ```
