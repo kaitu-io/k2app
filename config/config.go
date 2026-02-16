@@ -12,6 +12,7 @@ import (
 // ClientConfig is the client-side configuration.
 // Loaded by `k2 run -c` or parsed from `k2 up` URL.
 type ClientConfig struct {
+	Listen string       `yaml:"listen"` // daemon HTTP listen address, default "127.0.0.1:1777"
 	Server string       `yaml:"server"` // k2v5:// URL
 	Mode   string       `yaml:"mode"`   // "tun" or "proxy", default "tun"
 	Proxy  ProxyConfig  `yaml:"proxy"`
@@ -119,6 +120,9 @@ func ClientFromURL(wireURL string) *ClientConfig {
 }
 
 func setClientDefaults(cfg *ClientConfig) {
+	if cfg.Listen == "" {
+		cfg.Listen = "127.0.0.1:1777"
+	}
 	if cfg.Mode == "" {
 		cfg.Mode = "tun"
 	}

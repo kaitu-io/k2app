@@ -165,3 +165,29 @@ func TestSetServerDefaults_CertDirPreserved(t *testing.T) {
 		t.Errorf("CertDir = %q, want /custom/path", cfg.CertDir)
 	}
 }
+
+func TestConfigListenDefault(t *testing.T) {
+	cfg := ClientFromURL("k2v5://udid:token@1.2.3.4:443")
+	if cfg.Listen != "127.0.0.1:1777" {
+		t.Errorf("Listen = %q, want 127.0.0.1:1777", cfg.Listen)
+	}
+}
+
+func TestConfigListenFromYAML(t *testing.T) {
+	yaml := `
+listen: "0.0.0.0:1777"
+server: "k2v5://udid:token@1.2.3.4:443"
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "client.yaml")
+	os.WriteFile(path, []byte(yaml), 0644)
+
+	cfg, err := LoadClient(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.Listen != "0.0.0.0:1777" {
+		t.Errorf("Listen = %q, want 0.0.0.0:1777", cfg.Listen)
+	}
+}

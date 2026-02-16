@@ -72,8 +72,12 @@ func New() *Daemon {
 }
 
 // Run starts the daemon HTTP server and blocks until ctx is cancelled.
-func (d *Daemon) Run(ctx context.Context) error {
-	log.Printf("k2 daemon starting on %s", DefaultAddr)
+// If listenAddr is empty, DefaultAddr is used.
+func (d *Daemon) Run(ctx context.Context, listenAddr string) error {
+	if listenAddr == "" {
+		listenAddr = DefaultAddr
+	}
+	log.Printf("k2 daemon starting on %s", listenAddr)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ping", d.handlePing)
@@ -83,7 +87,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	mux.Handle("/", webappHandler())
 
 	srv := &http.Server{
-		Addr:    DefaultAddr,
+		Addr:    listenAddr,
 		Handler: corsMiddleware(mux),
 	}
 

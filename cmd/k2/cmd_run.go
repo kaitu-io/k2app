@@ -19,6 +19,7 @@ import (
 func cmdRun(args []string) {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	clientCfg := fs.String("c", "", "client config file (foreground mode)")
+	listenAddr := fs.String("l", "", "daemon HTTP listen address (default 127.0.0.1:1777)")
 	install := fs.Bool("install", false, "install as system service and start")
 	fs.Parse(args)
 
@@ -28,7 +29,7 @@ func cmdRun(args []string) {
 	case *clientCfg != "":
 		runClientForeground(*clientCfg)
 	default:
-		runDaemon()
+		runDaemon(*listenAddr)
 	}
 }
 
@@ -41,7 +42,7 @@ func runInstall() {
 	fmt.Println("Service installed and started")
 }
 
-func runDaemon() {
+func runDaemon(listenAddr string) {
 	if _, err := wintun.EnsureExtracted(); err != nil {
 		log.Printf("wintun: %v", err)
 	}
@@ -62,7 +63,7 @@ func runDaemon() {
 		cancel()
 	}()
 
-	if err := d.Run(ctx); err != nil && err != context.Canceled {
+	if err := d.Run(ctx, listenAddr); err != nil && err != context.Canceled {
 		log.Fatalf("Daemon error: %v", err)
 	}
 }
