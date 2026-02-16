@@ -28,11 +28,25 @@
 
 ## Technical Decisions
 
-- **Architecture**: Vite multi-page entry (`rollupOptions.input`) — `debug.html` alongside `index.html` in `webapp/`. Same build pipeline, zero Capacitor config changes. Capacitor bridge is WebView-level, available on any page within the same webDir. (v1)
-- **API surface**: K2Plugin VPN methods only. Excludes update series (checkWebUpdate, checkNativeUpdate, applyWebUpdate, downloadNativeUpdate, installNativeUpdate) — those are an independent feature chain. (v1)
-- **No framework**: debug.html uses vanilla JS + DOM manipulation. No React, no bundler transforms beyond Vite's HTML entry handling. This ensures the debug page works even if webapp bootstrap is broken. (v1)
-- **Navigation model**: `window.location.href = '/debug.html'` from webapp. Full page navigation — React app unmounts, debug page loads fresh. Return via browser back or manual navigation. React re-initialization on return is acceptable for a debug tool. (v1)
-- **Persistence**: wireUrl saved to localStorage key `debug_wireUrl`. Preset URLs defined as a JS array in debug.html. (v1)
+### TD1: Vite Multi-Page Entry
+
+`debug.html` alongside `index.html` via `rollupOptions.input`. Same build pipeline, zero Capacitor config changes. Capacitor bridge is WebView-level, available on any page within the same webDir.
+
+### TD2: API Surface Scope
+
+K2Plugin VPN methods only. Excludes update series (checkWebUpdate, checkNativeUpdate, applyWebUpdate, downloadNativeUpdate, installNativeUpdate) — those are an independent feature chain.
+
+### TD3: No Framework
+
+debug.html uses vanilla JS + DOM manipulation. No React, no bundler transforms beyond Vite's HTML entry handling. This ensures the debug page works even if webapp bootstrap is broken.
+
+### TD4: Navigation Model
+
+`window.location.href = '/debug.html'` from webapp. Full page navigation — React app unmounts, debug page loads fresh. Return via browser back or manual navigation. React re-initialization on return is acceptable for a debug tool.
+
+### TD5: Persistence
+
+wireUrl saved to localStorage key `debug_wireUrl`. Preset URLs defined as a JS array in debug.html.
 
 ## K2Plugin API Coverage
 

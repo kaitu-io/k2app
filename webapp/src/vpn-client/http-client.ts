@@ -13,7 +13,13 @@ export class HttpVpnClient implements VpnClient {
   private lastState: VpnState | null = null;
 
   constructor() {
-    this.baseUrl = import.meta.env.DEV ? '' : 'http://127.0.0.1:1777';
+    if (import.meta.env.DEV) {
+      this.baseUrl = '';  // Vite proxy handles it
+    } else if (typeof window !== 'undefined' && (window as any).__TAURI__) {
+      this.baseUrl = 'http://127.0.0.1:1777';  // Tauri webview → daemon
+    } else {
+      this.baseUrl = '';  // Same-origin (OpenWrt, web browser)
+    }
   }
 
   async connect(wireUrl: string): Promise<void> {

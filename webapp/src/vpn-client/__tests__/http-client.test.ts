@@ -180,6 +180,67 @@ describe('HttpVpnClient', () => {
     });
   });
 
+  describe('baseUrl', () => {
+    it('uses empty baseUrl in dev mode', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ code: 0, message: 'ok' }),
+      });
+
+      await client.connect('wg://test');
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/core',
+        expect.anything(),
+      );
+    });
+
+    it('uses empty baseUrl when not Tauri and not dev (same-origin)', async () => {
+      const origDev = import.meta.env.DEV;
+      import.meta.env.DEV = false;
+      delete (window as any).__TAURI__;
+      try {
+        const webClient = new HttpVpnClient();
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ code: 0, message: 'ok' }),
+        });
+        await webClient.connect('wg://test');
+
+        expect(mockFetch).toHaveBeenCalledWith(
+          '/api/core',
+          expect.anything(),
+        );
+        webClient.destroy();
+      } finally {
+        import.meta.env.DEV = origDev;
+      }
+    });
+
+    it('uses absolute URL when Tauri and not dev', async () => {
+      const origDev = import.meta.env.DEV;
+      import.meta.env.DEV = false;
+      (window as any).__TAURI__ = {};
+      try {
+        const tauriClient = new HttpVpnClient();
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ code: 0, message: 'ok' }),
+        });
+        await tauriClient.connect('wg://test');
+
+        expect(mockFetch).toHaveBeenCalledWith(
+          'http://127.0.0.1:1777/api/core',
+          expect.anything(),
+        );
+        tauriClient.destroy();
+      } finally {
+        delete (window as any).__TAURI__;
+        import.meta.env.DEV = origDev;
+      }
+    });
+  });
+
   describe('subscribe', () => {
     it('deduplicates identical state events', async () => {
       vi.useFakeTimers();

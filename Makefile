@@ -24,6 +24,9 @@ build-windows: pre-build build-webapp
 	$(MAKE) build-k2 TARGET=x86_64-pc-windows-msvc
 	cd desktop && yarn tauri build --target x86_64-pc-windows-msvc
 
+build-openwrt: pre-build
+	bash scripts/build-openwrt.sh
+
 dev: pre-build
 	./scripts/dev.sh
 

@@ -1,9 +1,21 @@
-# Feature Spec: Mobile Update System
+# Feature: Mobile Update System
 
-> **Status**: Approved
-> **Created**: 2026-02-14
-> **Feature**: Three-channel update system for k2app mobile
-> **Parent**: docs/features/mobile-rewrite.md
+## Meta
+
+| Field      | Value                                                     |
+|------------|-----------------------------------------------------------|
+| Feature    | mobile-updater                                            |
+| Version    | v1                                                        |
+| Status     | implemented                                               |
+| Created    | 2026-02-14                                                |
+| Updated    | 2026-02-16                                                |
+| Depends on | mobile-webapp-bridge, mobile-vpn-ios, mobile-vpn-android  |
+
+## Version History
+
+| Version | Date       | Summary                                                              |
+|---------|------------|----------------------------------------------------------------------|
+| v1      | 2026-02-14 | Initial: three-channel update system (Web OTA, Android APK, iOS App Store) + CI/CD pipeline |
 
 ## Overview
 
@@ -17,17 +29,26 @@ Plus CI/CD pipeline to automate build + publish on `v*` tag push.
 
 ## Context
 
-- Desktop already has Tauri updater (CloudFront + S3 `latest.json` → download → install)
+- Desktop already has Tauri updater (CloudFront + S3 `latest.json` -> download -> install)
 - Mobile has no update mechanism — `build-mobile.yml` is manual dispatch only
 - Capacitor hybrid architecture enables web-layer-only OTA (web assets are separate files on device)
 - Apple Developer account + App Store listing already exist (app ID: `6448744655`)
 - S3 bucket `d.all7.cc` and CloudFront already in use for desktop releases
 
----
+## Product Requirements
 
-## Decision 1: Update Channel Architecture
+- PR1: Web OTA hot-updates webapp assets (JS/CSS/HTML) without app store review
+- PR2: Android APK self-update downloads + installs silently, no browser redirect
+- PR3: iOS updates via App Store with CI auto-upload
+- PR4: Update check on every app launch (priority: native > web)
+- PR5: CI/CD pipeline automates build + publish on v* tag push
+- PR6: S3 (d.all7.cc) hosts all update manifests and artifacts
 
-### Three Independent Channels
+## Technical Decisions
+
+### TD1: Update Channel Architecture
+
+Three independent channels, each with its own manifest and delivery mechanism.
 
 ```
                     ┌─────────────────────────────┐
@@ -55,7 +76,7 @@ Plus CI/CD pipeline to automate build + publish on `v*` tag push.
 | Android APK | Native/Go code change | Minutes, one-tap install | System install dialog |
 | iOS App Store | Any change | Hours-days (Apple review) | App Store update |
 
-### Update Check Priority
+#### Update Check Priority
 
 ```
 App startup
@@ -68,7 +89,7 @@ App startup
 
 Native update takes priority because a new native version may contain incompatible web changes.
 
-### S3 Layout
+#### S3 Layout
 
 ```
 d.all7.cc/kaitu/
@@ -90,11 +111,9 @@ d.all7.cc/kaitu/
 
 Web OTA assets at `kaitu/web/` (not `kaitu/mobile/web/`) because the webapp is shared across platforms.
 
----
+### TD2: Web OTA Mechanism
 
-## Decision 2: Web OTA Mechanism
-
-### Manifest Format
+#### Manifest Format
 
 `web/latest.json`:
 ```json
@@ -107,7 +126,7 @@ Web OTA assets at `kaitu/web/` (not `kaitu/mobile/web/`) because the webapp is s
 }
 ```
 
-### Client Flow (K2Plugin native layer)
+#### Client Flow (K2Plugin native layer)
 
 ```
 App startup
@@ -124,7 +143,7 @@ App startup
       Fall back to backup/ version
 ```
 
-### Key Design Points
+#### Key Design Points
 
 - Keep **1 backup** version for rollback
 - zip content = `webapp/dist/` output (Vite build)
@@ -132,11 +151,9 @@ App startup
 - sha256 hash verification prevents corruption/tampering
 - No real-time webview reload — simpler, takes effect on next launch
 
----
+### TD3: Android APK Self-Update
 
-## Decision 3: Android APK Self-Update
-
-### Manifest Format
+#### Manifest Format
 
 `android/latest.json`:
 ```json
@@ -150,7 +167,7 @@ App startup
 }
 ```
 
-### Client Flow (K2Plugin Kotlin layer)
+#### Client Flow (K2Plugin Kotlin layer)
 
 ```
 App startup (or manual check)
@@ -166,7 +183,7 @@ App startup (or manual check)
       6. User taps "Install" in system dialog → done
 ```
 
-### Key Design Points
+#### Key Design Points
 
 - **No browser redirect** — entire flow stays in-app
 - APK downloaded silently in background (user unaware until ready)
@@ -174,13 +191,11 @@ App startup (or manual check)
 - Uses `FileProvider` for secure APK sharing with system installer (Android 7+)
 - User sees only one system dialog ("Install") — minimal friction
 
----
-
-## Decision 4: iOS Update Path
+### TD4: iOS Update Path
 
 iOS cannot self-update native code (Apple restriction). Two mechanisms:
 
-### 1. App Store / TestFlight Redirect
+#### App Store / TestFlight Redirect
 
 `ios/latest.json`:
 ```json
@@ -197,15 +212,13 @@ checkNativeUpdate() → fetch ios/latest.json
   → New version? Show in-app dialog → open App Store URL
 ```
 
-### 2. Web OTA (shared with Android)
+#### Web OTA (shared with Android)
 
 iOS uses the same `web/latest.json` mechanism as Android. Web-only updates bypass App Store entirely.
 
----
+### TD5: CI/CD Pipeline
 
-## Decision 5: CI/CD Pipeline
-
-### Trigger Rules
+#### Trigger Rules
 
 All `v*` tags trigger the full pipeline. No prerelease distinction (2-person team, simplicity > staged rollout).
 
@@ -222,14 +235,14 @@ v* tag push
          └── Web OTA: zip webapp/dist → S3 + update web/latest.json
 ```
 
-### Rationale for No Prerelease Tags
+#### Rationale for No Prerelease Tags
 
 1. 2-person team doesn't need staged rollout
 2. TestFlight internal testing needs no review — instant after upload
 3. App Store "Pending Developer Release" is the safety gate
 4. One rule (`v*` = everything) reduces cognitive overhead
 
-### CI Secrets (new)
+#### CI Secrets (new)
 
 | Secret | Purpose |
 |--------|---------|
@@ -238,7 +251,7 @@ v* tag push
 | `APP_STORE_CONNECT_ISSUER_ID` | Team issuer ID |
 | `IOS_DISTRIBUTION_PROFILE_BASE64` | Distribution provisioning profile |
 
-### CI Files (new/modified)
+#### CI Files (new/modified)
 
 | File | Change |
 |------|--------|
@@ -247,9 +260,7 @@ v* tag push
 | `mobile/ios/ExportOptions.plist` | New — IPA export config (team ID, profile, method=app-store) |
 | `scripts/ci/upload-mobile-s3.sh` | New — S3 upload + manifest generation for Android + Web OTA |
 
----
-
-## Decision 6: Engineer Workflow
+### TD6: Engineer Workflow
 
 ```
 1. Develop on branches, merge to main
@@ -271,30 +282,76 @@ v* tag push
    → Go to App Store Connect → click "Release" (only manual step)
 ```
 
----
-
 ## Acceptance Criteria
 
-### CI/CD (Phase 1+2)
-- [ ] `ci.yml` runs K2 plugin type-check on push/PR
-- [ ] `build-mobile.yml` triggers automatically on `v*` tag push
-- [ ] iOS job exports IPA and uploads to App Store Connect
-- [ ] TestFlight internal testers can install within minutes of tag push
-- [ ] App Store review is submitted with "manually release" option
-- [ ] Android APK uploaded to `d.all7.cc/kaitu/android/{version}/`
-- [ ] `android/latest.json` updated with version, URL, hash, size
-- [ ] Web OTA bundle uploaded to `d.all7.cc/kaitu/web/{version}/`
-- [ ] `web/latest.json` updated with version, URL, hash, size
-- [ ] `ios/latest.json` updated with version and appstore_url
+### Web OTA
 
-### Client Updater (Phase 3)
-- [ ] App checks for native update on startup
-- [ ] App checks for web update on startup (after native check)
-- [ ] Web OTA: downloads zip, verifies hash, extracts to sandbox
-- [ ] Web OTA: new web assets take effect on next launch
-- [ ] Web OTA: fallback to backup on download/verify failure
-- [ ] Android: APK downloaded silently in background
-- [ ] Android: in-app dialog shows when download ready
-- [ ] Android: one-tap triggers system installer (no browser)
-- [ ] iOS: in-app dialog with "Update" opens App Store page
-- [ ] Update UI shows version number and download size
+- AC1: Web OTA bundle uploaded to `d.all7.cc/kaitu/web/{version}/`
+- AC2: `web/latest.json` updated with version, URL, hash, size
+- AC3: App checks for web update on startup (after native check)
+- AC4: Downloads zip, verifies sha256 hash, extracts to sandbox
+- AC5: New web assets take effect on next launch
+- AC6: Fallback to backup on download/verify failure
+
+### Android APK
+
+- AC7: Android APK uploaded to `d.all7.cc/kaitu/android/{version}/`
+- AC8: `android/latest.json` updated with version, URL, hash, size
+- AC9: APK downloaded silently in background
+- AC10: In-app dialog shows when download ready (version + size)
+- AC11: One-tap triggers system installer (no browser redirect)
+
+### iOS
+
+- AC12: `ios/latest.json` updated with version and appstore_url
+- AC13: In-app dialog with "Update" opens App Store page
+
+### CI/CD
+
+- AC14: `ci.yml` runs K2 plugin type-check on push/PR
+- AC15: `build-mobile.yml` triggers automatically on `v*` tag push
+- AC16: iOS job exports IPA and uploads to App Store Connect
+- AC17: TestFlight internal testers can install within minutes of tag push
+- AC18: App Store review is submitted with "manually release" option
+
+### Update Check
+
+- AC19: App checks for native update on startup (priority over web)
+- AC20: Update UI shows version number and download size
+
+## Testing Strategy
+
+### Automated
+
+- **CI type-check**: K2 plugin TypeScript definitions compile (`tsc --noEmit`)
+- **Webapp unit tests**: Mock `checkWebUpdate()` / `checkNativeUpdate()` responses, verify update dialog state transitions
+- **S3 manifest validation**: CI script verifies `latest.json` schema after upload (version, url, hash, size fields present)
+
+### Manual Integration
+
+- **Web OTA end-to-end**: Build webapp with visible version string, upload bundle, verify next app launch picks up new version
+- **Web OTA rollback**: Corrupt the downloaded zip, verify app falls back to backup version
+- **Android APK flow**: Push v* tag, verify APK appears on S3, install on device, verify system installer dialog
+- **iOS App Store flow**: Push v* tag, verify IPA uploads to App Store Connect, verify TestFlight availability
+- **Update priority**: Deploy both native + web update simultaneously, verify native update prompt appears first
+- **No-update path**: Verify app launches normally when already on latest version (no spurious dialogs)
+- **Offline resilience**: Verify app launches normally when manifest fetch fails (no crash, no blocking UI)
+
+## Deployment & CI/CD
+
+Build + publish is fully automated on `v*` tag push:
+
+```
+v* tag push
+  → build-mobile.yml triggers
+  → iOS: gomobile bind → xcframework → cap sync → xcodebuild archive → IPA → App Store Connect
+  → Android: gomobile bind → AAR → cap sync → assembleRelease → APK → S3
+  → Web OTA: yarn build → zip dist/ → S3
+  → Manifests: generate + upload latest.json for web/android/ios
+```
+
+CI secrets required: see TD5 (CI Secrets table).
+
+New CI files:
+- `mobile/ios/ExportOptions.plist` — IPA export config
+- `scripts/ci/upload-mobile-s3.sh` — S3 upload + manifest generation

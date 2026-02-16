@@ -9,7 +9,7 @@
 | Status    | implemented                              |
 | Created   | 2026-02-16                               |
 | Updated   | 2026-02-17                               |
-| Tests     | TBD                                      |
+| Tests     | Unit tests for decryption + JSONP parsing |
 
 ## Version History
 

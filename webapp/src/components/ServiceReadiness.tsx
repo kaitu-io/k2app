@@ -6,15 +6,20 @@ interface Props {
 }
 
 export function ServiceReadiness({ children }: Props) {
+  const isNativeApp = typeof window !== 'undefined' &&
+    ((window as any).__TAURI__ || (window as any).Capacitor);
+
   const { ready, init } = useVpnStore();
   const [retrying, setRetrying] = useState(false);
   const [timedOut, setTimedOut] = useState(false);
 
   useEffect(() => {
+    if (!isNativeApp) return;
     init();
-  }, [init]);
+  }, [init, isNativeApp]);
 
   useEffect(() => {
+    if (!isNativeApp) return;
     if (ready && !ready.ready && ready.reason === 'not_running' && !timedOut) {
       setRetrying(true);
       let attempts = 0;
@@ -30,7 +35,11 @@ export function ServiceReadiness({ children }: Props) {
       }, 500);
       return () => clearInterval(interval);
     }
-  }, [ready, init, timedOut]);
+  }, [ready, init, timedOut, isNativeApp]);
+
+  if (!isNativeApp) {
+    return <>{children}</>;
+  }
 
   if (!ready) {
     return <div className="flex items-center justify-center h-screen"><p>Loading...</p></div>;

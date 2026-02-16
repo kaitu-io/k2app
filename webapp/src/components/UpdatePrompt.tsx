@@ -16,6 +16,8 @@ function getPlatform(): 'ios' | 'android' | 'web' {
 
 export function UpdatePrompt() {
   const { t } = useTranslation();
+  const isNativeApp = typeof window !== 'undefined' &&
+    ((window as any).__TAURI__ || (window as any).Capacitor);
   const [update, setUpdate] = useState<UpdateCheckResult | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
@@ -63,6 +65,8 @@ export function UpdatePrompt() {
       setProgress(null);
     }
   }, [update]);
+
+  if (!isNativeApp) return null;
 
   if (!update || update.type === 'none' || dismissed) return null;
 

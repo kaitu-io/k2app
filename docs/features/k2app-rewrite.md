@@ -1,9 +1,34 @@
-# Feature Spec: k2app Rewrite
+# Program: k2app Rewrite
 
-> **Status**: Implemented
-> **Created**: 2026-02-14
-> **Implemented**: 2026-02-14
-> **Feature**: Rewrite kaitu app on top of k2 core
+## Meta
+
+| Field     | Value                                    |
+|-----------|------------------------------------------|
+| Program   | k2app-rewrite                            |
+| Status    | implemented                              |
+| Created   | 2026-02-14                               |
+| Updated   | 2026-02-16                               |
+
+## Version History
+
+| Version | Date       | Summary                                              |
+|---------|------------|------------------------------------------------------|
+| v1      | 2026-02-14 | Initial: full rewrite from kaitu to k2app            |
+
+## Feature Map
+
+| Feature | Spec | Status |
+|---------|------|--------|
+| Webapp feature migration | kaitu-feature-migration.md | implemented |
+| Webapp state alignment | webapp-state-alignment.md | implemented |
+| Desktop build unification | build-unification.md | implemented |
+| Mobile webapp bridge | mobile-webapp-bridge.md | implemented |
+| Mobile VPN — iOS | mobile-vpn-ios.md | implemented |
+| Mobile VPN — Android | mobile-vpn-android.md | implemented |
+| Unified engine + rule mode | mobile-rule-storage.md | implemented |
+| Mobile debug tool | mobile-debug.md | implemented |
+| Antiblock encrypted config | antiblock-encrypted-config.md | implemented |
+| Mobile update system | mobile-updater.md | draft |
 
 ## Overview
 
@@ -11,10 +36,8 @@ Rewrite the kaitu desktop + mobile app using the new k2 Go core, replacing the
 old Rust 12-crate workspace (kaitu-service, kaitu-protocol k2v4, etc.) with a
 drastically simplified architecture.
 
-## Context
-
 - **Old stack**: kaitu 0.3.22 — React 18 + MUI 5 + Emotion + Tauri v2 (full Rust backend) + kaitu-service (Go) + k2v4
-- **New stack**: k2app 0.4.0 — React 18 + Tailwind + Radix + Tauri v2 (thin shell) + k2 daemon (Go) + k2v5
+- **New stack**: k2app 0.4.0 — React 19 + Tailwind + Radix + Tauri v2 (thin shell) + k2 daemon (Go) + k2v5
 - **k2 repo**: `github.com/kaitu-io/k2` (open source, Go)
 - **k2app repo**: `github.com/kaitu-io/k2app` (proprietary, app layer)
 
@@ -46,7 +69,7 @@ interface VpnClient {
   getUDID(): Promise<string>
   getConfig(): Promise<VpnConfig>
 
-  // Events — unified push model (desktop: internal poll→event, mobile: native push)
+  // Events — unified push model (desktop: internal poll->event, mobile: native push)
   subscribe(listener: (event: VpnEvent) => void): () => void
 
   // Lifecycle
@@ -66,21 +89,22 @@ type VpnEvent =
 function createVpnClient(override?: VpnClient): VpnClient
 ```
 
-Two implementations:
+Three implementations:
 - **`HttpVpnClient`** (desktop): HTTP calls to `http://127.0.0.1:1777` + internal
   `setInterval` polling converted to events. Deduplicates consecutive identical states.
 - **`NativeVpnClient`** (mobile): Capacitor Plugin calls + gomobile EventHandler
   push via Capacitor Events. Zero polling.
+- **`MockVpnClient`** (test): injectable for unit tests.
 
 ### Mixed Content Solution: tauri-plugin-localhost
 
-WebKit (macOS) blocks `https://` → `http://` mixed content, even for loopback.
+WebKit (macOS) blocks `https://` to `http://` mixed content, even for loopback.
 Solution: use `tauri-plugin-localhost` to serve webapp from `http://localhost:{port}`
 instead of `https://tauri.localhost`.
 
 | Platform | Webview Engine | Without plugin | With plugin |
 |----------|---------------|----------------|-------------|
-| macOS | WebKit | BLOCKED (mixed content) | OK (HTTP→HTTP) |
+| macOS | WebKit | BLOCKED (mixed content) | OK (HTTP to HTTP) |
 | Windows | WebView2 (Chromium) | OK (Chrome allows loopback) | OK |
 | Linux | WebKitGTK | BLOCKED | OK |
 
@@ -88,40 +112,40 @@ instead of `https://tauri.localhost`.
 - Security: localhost port is accessible to other local processes,
   but k2 daemon already listens on 1777, so security model is unchanged
 
-### Desktop (macOS DMG / Windows NSIS)
+### Desktop Architecture (macOS / Windows)
 
 ```
-┌──────────────────────────────────────────┐
-│ Tauri v2 + tauri-plugin-localhost        │
-│  ├─ Webapp (frontendDist, local embed)   │  origin: http://localhost:{port}
-│  │   └─ fetch("http://127.0.0.1:1777/…")│  HTTP→HTTP, no mixed content
-│  ├─ Tauri IPC: updater, tray, svc mgmt  │  window.__TAURI__ available
-│  └─ k2 binary (bundled as externalBin)   │
-└──────────────────┬───────────────────────┘
-                   │ HTTP (cross-origin)
-                   ↓
-┌──────────────────────────────────────────┐
-│ k2 daemon (Go binary, port 1777)         │
-│  ├─ HTTP API (/api/core, /ping, etc.)    │
-│  ├─ No webapp serving (built with        │
-│  │   -tags nowebapp)                     │
-│  ├─ Service manager (run --install)      │
-│  ├─ Auto-reconnect (state file)          │
-│  ├─ wintun.dll embedded (Windows only)   │
-│  └─ k2v5 tunnel engine                  │
-└──────────────────────────────────────────┘
++------------------------------------------+
+| Tauri v2 + tauri-plugin-localhost        |
+|  +- Webapp (frontendDist, local embed)   |  origin: http://localhost:{port}
+|  |   +- fetch("http://127.0.0.1:1777/") |  HTTP to HTTP, no mixed content
+|  +- Tauri IPC: updater, tray, svc mgmt  |  window.__TAURI__ available
+|  +- k2 binary (bundled as externalBin)   |
++------------------+-----------------------+
+                   | HTTP (cross-origin)
+                   v
++------------------------------------------+
+| k2 daemon (Go binary, port 1777)         |
+|  +- HTTP API (/api/core, /ping, etc.)    |
+|  +- No webapp serving (built with        |
+|  |   -tags nowebapp)                     |
+|  +- Service manager (run --install)      |
+|  +- Auto-reconnect (state file)          |
+|  +- wintun.dll embedded (Windows only)   |
+|  +- k2v5 tunnel engine                   |
++------------------------------------------+
 ```
 
 **Tauri responsibilities**: window, tray, updater, service lifecycle (`k2 run --install`).
 **k2 daemon responsibilities**: tunnel control, status, speedtest, config, UDID, wintun, auto-reconnect.
 
-### k2 Daemon API (current)
+### k2 Daemon API
 
 Base: `http://127.0.0.1:1777`
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/ping` | GET | Health check → `{"code":0,"message":"pong"}` |
+| `/ping` | GET | Health check -> `{"code":0,"message":"pong"}` |
 | `/metrics` | GET | Memory stats, goroutines, GC info |
 | `/api/core` | POST | Action router (see below) |
 | `/api/device/udid` | GET | Device UDID (64-char hex SHA-256) |
@@ -139,7 +163,7 @@ Core actions (POST `/api/core` with `{"action":"...","params":{...}}`):
 | `get_config` | - | Returns: `wire_url`, `config_path` |
 | `version` | - | Returns: `version`, `go`, `os`, `arch` |
 
-Daemon states: `stopped` → `connecting` → `connected` → `disconnecting` → `stopped` (or `error`).
+Daemon states: `stopped` -> `connecting` -> `connected` -> `disconnecting` -> `stopped` (or `error`).
 
 Auto-reconnect: daemon persists state to `/tmp/k2/state.json`. On restart, if last
 state was `connected` and <1 hour old, auto-reconnects after 5s delay. No API needed.
@@ -161,225 +185,16 @@ k2 manages itself as a system service:
 | Windows | `k2 run --install` | `k2` | Windows Service (sc create) |
 | Linux | `k2 run --install` | `k2` | systemd unit |
 
-Uninstall: `ServiceManager.Uninstall()` (stops + removes service).
-IsInstalled: `ServiceManager.IsInstalled()` (checks plist/service existence).
-
 **Important**: k2 uses `run --install` (NOT `svc up`). The old kaitu Tauri shell
-referenced `svc up` but that command does not exist in k2. k2app must use the
-correct command.
+referenced `svc up` but that command does not exist in k2.
 
-### k2 CLI Commands (reference)
+### Mobile Architecture
 
-```
-k2 up [URL|config.yaml]     Connect (auto-manages daemon)
-k2 down                     Disconnect
-k2 status                   Show connection status
-k2 speedtest                Run speed test
-k2 run                      Start daemon (called by service manager)
-k2 run --install            Install as system service + start
-k2 run -c <config.yaml>     Client foreground mode (dev/debug, needs sudo)
-k2 open                     Open webapp in browser
-k2 upgrade [--check]        Download and install latest version from CDN
-k2 version                  Show version + commit hash
-k2 demo-config              Print example client config
-```
-
-### Mobile (iOS / Android) — Deferred
-
-Mobile uses **Capacitor native bridge** instead of HTTP. No HTTP API server on
-mobile. Webapp uses the same `VpnClient` interface — `NativeVpnClient` calls
-Capacitor Plugin which calls gomobile Engine through native code.
-
-#### Why Not HTTP on Mobile
-
-Flow simulation revealed that an HTTP server approach has critical flaws:
-1. **iOS**: Engine runs in NE (Network Extension) separate process. HTTP server
-   in NE can't serve before VPN starts. HTTP server in main app requires
-   bridging anyway — no simpler than Capacitor Plugin.
-2. **Android**: `VpnService.establish()` is a Java API. Go HTTP server can't
-   call it directly — needs native callback regardless.
-3. **Security**: localhost HTTP server accessible to all apps on device.
-4. **Battery**: 2s polling on mobile drains battery. Native events are free.
-
-#### Fundamental Platform Difference
-
-iOS and Android have **different VPN process models**. The Capacitor Plugin
-is a thin shell on both, but the underlying mechanics differ:
-
-```
-iOS:    Capacitor Plugin (Swift) → NEVPNManager IPC → NE Process → Engine
-Android: Capacitor Plugin (Kotlin) → direct gomobile call → Engine (same process)
-```
-
-#### Android Architecture
-
-```
-┌──────────────────── App Process (single) ─────────────────┐
-│                                                            │
-│  Capacitor + Webapp                                        │
-│       │ NativeVpnClient                                    │
-│       ▼                                                    │
-│  Capacitor Plugin (Kotlin, thin shell)                     │
-│       │ direct call                                        │
-│       ▼                                                    │
-│  MobileAPI (Go, mobile/api.go)                             │
-│       │ unified action dispatch in Go                      │
-│       ▼                                                    │
-│  Engine.Start(url, fd) / Stop() / StatusJSON()             │
-│       ▲                                                    │
-│       │ TUN fd via callback                                │
-│  VpnService (Kotlin)                                       │
-│       └── establish() → ParcelFileDescriptor → fd          │
-│                                                            │
-│  EventHandler.OnStateChange()                              │
-│       → MobileAPI → Capacitor notifyListeners()            │
-│       → webapp subscribe listener                          │
-└────────────────────────────────────────────────────────────┘
-```
-
-- Capacitor Plugin is **pure forwarding** — no action dispatch logic
-- `MobileAPI` in Go handles all action dispatch (written once, shared)
-- TUN fd obtained via Go→Kotlin callback (`TUNProvider` interface)
-- Events: `EventHandler` → `MobileAPI` → Capacitor `notifyListeners`
-- `connect()` is synchronous (blocks until Engine.Start completes)
-
-#### iOS Architecture
-
-```
-┌──────────────────── Main App Process ─────────────────────┐
-│                                                            │
-│  Capacitor + Webapp                                        │
-│       │ NativeVpnClient                                    │
-│       ▼                                                    │
-│  Capacitor Plugin (Swift, NE bridge layer)                 │
-│       │                                                    │
-│       ├── checkReady / getUDID / getVersion                │
-│       │   → local, no NE needed (always available)         │
-│       │                                                    │
-│       ├── connect(wireUrl)                                 │
-│       │   → NEVPNManager.startVPNTunnel(options: wireUrl)  │
-│       │   → Promise resolves = command sent (async)        │
-│       │                                                    │
-│       ├── disconnect()                                     │
-│       │   → connection.stopVPNTunnel()                     │
-│       │                                                    │
-│       ├── getStatus()                                      │
-│       │   → sendProviderMessage("status")                  │
-│       │   → timeout 5s, fallback to NEVPNConnection.status │
-│       │     mapped to VpnStatus (coarse)                   │
-│       │                                                    │
-│       └── subscribe(listener)                              │
-│           → observe NEVPNStatusDidChange notification       │
-│           → on change: sendProviderMessage for rich data   │
-│           → emit VpnEvent to webapp                        │
-│                                                            │
-└────────────────────────┬──────────────────────────────────┘
-                         │ NEVPNManager / sendProviderMessage
-                         │ (cross-process RPC, ≤1MB, 30s timeout)
-                         ▼
-┌──────────────────── NE Process ───────────────────────────┐
-│                                                            │
-│  NEPacketTunnelProvider (Swift)                             │
-│       ▼                                                    │
-│  MobileAPI (Go, same mobile/api.go)                        │
-│       ▼                                                    │
-│  Engine.Start(url, fd) / Stop() / StatusJSON()             │
-│       │ fd provided by system                              │
-│                                                            │
-│  handleAppMessage(data:) → route to MobileAPI              │
-│       → parse "status" request                             │
-│       → MobileAPI.CoreAction("status", "")                 │
-│       → serialize JSON response back                       │
-│                                                            │
-│  EventHandler.OnStateChange()                              │
-│       → write to App Group UserDefaults                    │
-│       → post Darwin Notification                           │
-│         (main app observes → triggers subscribe event)     │
-│                                                            │
-└────────────────────────────────────────────────────────────┘
-```
-
-- `checkReady`/`getUDID`/`getVersion` run locally — **no NE needed at launch**
-- `connect()` resolves when command is sent, NOT when VPN is up (async)
-- Rich status via `sendProviderMessage` with 5s timeout; fallback to
-  `NEVPNConnection.status` coarse mapping (connected/disconnecting/etc.)
-- Events via dual channel: `NEVPNStatusDidChange` (system, reliable) +
-  Darwin Notification (custom data from Engine EventHandler)
-- NE cross-process RPC has explicit error handling: timeout, NE killed,
-  data size limit
-
-#### iOS NE Communication Layer
-
-The cross-process bridge between main app and NE deserves explicit design:
-
-| Mechanism | Direction | Use |
-|-----------|-----------|-----|
-| `NEVPNManager.startVPNTunnel(options:)` | App → NE | Start VPN, pass wire_url in providerConfiguration |
-| `connection.stopVPNTunnel()` | App → NE | Stop VPN |
-| `NETunnelProviderSession.sendProviderMessage()` | App → NE → App | Request/response RPC (status query) |
-| `NEVPNStatusDidChange` notification | NE → App | Coarse state changes (system-level) |
-| Darwin Notification | NE → App | Custom event signal (Engine state change) |
-| App Group UserDefaults | NE ↔ App | Shared persistent data (last wire_url, rich status) |
-
-Constraints:
-- `sendProviderMessage` payload ≤ ~1MB, timeout 30s
-- NE process may be killed by system at any time — always handle failure
-- Darwin Notifications carry no payload — use App Group for data
-
-#### MobileAPI (k2 side, new: `mobile/api.go`)
-
-Unified Go-side API for both platforms. Capacitor Plugin (Kotlin/Swift) calls
-into MobileAPI. No HTTP server needed.
-
-```go
-// MobileAPI provides unified action dispatch for mobile platforms.
-// Android: called directly from Capacitor Plugin (Kotlin).
-// iOS: called from NEPacketTunnelProvider via handleAppMessage.
-type MobileAPI struct {
-    engine *Engine
-    udid   string
-    mu     sync.Mutex
-}
-
-func NewMobileAPI(engine *Engine) *MobileAPI
-func (m *MobileAPI) SetUDID(udid string)
-
-// CoreAction dispatches an action and returns JSON response.
-// Actions: up, down, status, get_config, version.
-// Same action names as daemon for consistency.
-func (m *MobileAPI) CoreAction(action, paramsJSON string) string
-
-// HandleProviderMessage handles iOS sendProviderMessage data.
-// Parses request, routes to CoreAction, returns serialized response.
-func (m *MobileAPI) HandleProviderMessage(data []byte) []byte
-```
-
-Current gomobile Engine API (5 methods):
-```go
-NewEngine() *Engine
-SetEventHandler(h EventHandler)
-Status() string                   // bare state string
-Start(url string, fd int) error
-Stop() error
-```
-
-New methods needed:
-```go
-Engine.SetUDID(udid string)       // Native side provides device ID
-Engine.StatusJSON() string        // Rich status as JSON (state, uptime, wire_url, error)
-```
-
-#### Platform Behavior Differences (transparent to webapp)
-
-| Aspect | Desktop (HttpVpnClient) | Android (NativeVpnClient) | iOS (NativeVpnClient) |
-|--------|------------------------|--------------------------|----------------------|
-| Backend | k2 daemon HTTP :1777 | gomobile direct call | NEVPNManager IPC |
-| connect() blocks? | Yes (daemon sync) | Yes (Engine.Start sync) | No (async, event-driven) |
-| Status source | HTTP poll → event | Engine.StatusJSON() push | sendProviderMessage + fallback |
-| Events | Internal poll (2s) | EventHandler → Capacitor | NEVPNStatusDidChange + Darwin |
-| UDID source | daemon /api/device/udid | Kotlin computed → SetUDID | UIDevice.identifierForVendor |
-| TUN fd source | N/A (daemon manages) | VpnService.establish() cb | System provides to NE |
-| stats event | Not available | EventHandler.OnStats | EventHandler.OnStats (via NE) |
+See dedicated feature specs:
+- **mobile-webapp-bridge.md** — NativeVpnClient + K2Plugin TypeScript + Capacitor shell
+- **mobile-vpn-ios.md** — K2Plugin.swift + PacketTunnelExtension + NE dual-process
+- **mobile-vpn-android.md** — K2Plugin.kt + K2VpnService + foreground service + AAR
+- **mobile-updater.md** — Web OTA + APK self-update + App Store CI
 
 ### Cloud API Access (Antiblock)
 
@@ -407,69 +222,69 @@ NPM-based entry URL distribution + custom CA for domain fronting.
 
 ```
 webapp startup
-  ├── 1. Check localStorage cache (instant, non-blocking)
-  ├── 2. Background: fetch entry config from CDN sources (JSONP)
-  │    ├── https://cdn.jsdelivr.net/npm/unlock-it/config.js
-  │    ├── https://unpkg.com/unlock-it/config.js
-  │    └── https://registry.npmmirror.com/unlock-it/latest (JSONP or fetch)
-  │    Response: __k2_entry(["d2FwcC41Mmoub WU=", ...])
-  │                          ↑ base64 encoded entry URLs
-  ├── 3. Decode + validate → store to localStorage
-  └── 4. Use entry URL for all Cloud API calls
+  +-- 1. Check localStorage cache (instant, non-blocking)
+  +-- 2. Background: fetch entry config from CDN sources (JSONP)
+  |    +-- https://cdn.jsdelivr.net/npm/unlock-it/config.js
+  |    +-- https://unpkg.com/unlock-it/config.js
+  |    +-- https://registry.npmmirror.com/unlock-it/latest (JSONP or fetch)
+  |    Response: __k2_entry(["d2FwcC41Mmoub WU=", ...])
+  |                          ^ base64 encoded entry URLs
+  +-- 3. Decode + validate -> store to localStorage
+  +-- 4. Use entry URL for all Cloud API calls
 ```
 
-Fallback chain: localStorage cache → CDN fetch → hardcoded default entry.
+Fallback chain: localStorage cache -> CDN fetch -> hardcoded default entry.
 
 #### Cloud API Call Flow
 
 ```
 webapp                                          Cloud API
-  │                                              (CORS: http://localhost:*)
-  ├── vpnClient.getUDID()
-  │    → desktop: HTTP GET /api/device/udid
-  │    → mobile: Capacitor Plugin → native UDID
-  │
-  ├── POST ${entry}/api/auth/login
-  │    body: { email, code, udid }
-  │    → receives { accessToken, refreshToken }
-  │
-  ├── GET ${entry}/api/tunnels
-  │    headers: { Authorization: Bearer ${token} }
-  │    → receives server list with wire_url per server
-  │
-  └── vpnClient.connect(wire_url)
-  │    → desktop: HTTP POST /api/core action:up
-  │    → mobile: Capacitor Plugin → Engine.Start
-  │
-  └── vpnClient.subscribe(event => ...)
-       → state_change: connected
+  |                                              (CORS: http://localhost:*)
+  +-- vpnClient.getUDID()
+  |    -> desktop: HTTP GET /api/device/udid
+  |    -> mobile: Capacitor Plugin -> native UDID
+  |
+  +-- POST ${entry}/api/auth/login
+  |    body: { email, code, udid }
+  |    -> receives { accessToken, refreshToken }
+  |
+  +-- GET ${entry}/api/tunnels
+  |    headers: { Authorization: Bearer ${token} }
+  |    -> receives server list with wire_url per server
+  |
+  +-- vpnClient.connect(wire_url)
+  |    -> desktop: HTTP POST /api/core action:up
+  |    -> mobile: Capacitor Plugin -> Engine.Start
+  |
+  +-- vpnClient.subscribe(event => ...)
+       -> state_change: connected
 ```
 
 Token stored in localStorage. UDID fetched via `VpnClient.getUDID()` (platform-transparent).
-
-#### Architecture Difference from Old Kaitu
-
-```
-Old:  webapp → Go service (proxy) → antiblock entry → Cloud API
-New:  webapp → antiblock entry → Cloud API (direct)
-              ↑                    ↑
-        JSONP from CDN       CORS allowed
-```
 
 k2 daemon / gomobile Engine is NOT involved in Cloud API calls. It stays pure:
 VPN control + UDID only. Cloud API calls work identically on all platforms —
 same webapp code, same antiblock module, same Cloud API client.
 
+### Auth Flow
+
+```
+Old:  webapp -> Go service (proxy) -> antiblock entry -> Cloud API
+New:  webapp -> antiblock entry -> Cloud API (direct)
+              ^                    ^
+        JSONP from CDN       CORS allowed
+```
+
 ### Dev Mode
 
 ```
-┌──────────────────────────────────────────┐
-│ Tauri dev                                │
-│  └─ devUrl: http://localhost:1420        │
-│       └─ Vite dev server + HMR           │
-│            └─ proxy /api/* → 127.0.0.1:1777
-│            └─ proxy /ping  → 127.0.0.1:1777
-└──────────────────────────────────────────┘
++------------------------------------------+
+| Tauri dev                                |
+|  +- devUrl: http://localhost:1420        |
+|       +- Vite dev server + HMR           |
+|            +- proxy /api/* -> 127.0.0.1:1777
+|            +- proxy /ping  -> 127.0.0.1:1777
++------------------------------------------+
 ```
 
 Standard Tauri + Vite workflow. `HttpVpnClient` uses relative URLs in dev
@@ -477,18 +292,39 @@ Standard Tauri + Vite workflow. `HttpVpnClient` uses relative URLs in dev
 
 Cloud API calls always use the resolved entry URL (no proxy needed in dev).
 
-```typescript
-// HttpVpnClient (desktop) daemon base URL
-const DAEMON_BASE = import.meta.env.DEV ? '' : 'http://127.0.0.1:1777';
+### Webapp Service Readiness
 
-// Cloud API base URL (resolved by antiblock, same on all platforms)
-const CLOUD_BASE = resolveEntryUrl(); // from antiblock module
+Webapp loads instantly from native shell, then checks backend readiness via VpnClient:
 
-// VpnClient factory — auto-selects implementation
-import { createVpnClient } from './vpn-client';
-const vpnClient = createVpnClient();
-// Desktop → HttpVpnClient, Mobile → NativeVpnClient, Test → MockVpnClient
 ```
+webapp loaded -> vpnClient.checkReady()
+  +- { ready: true, version } -> show main UI, vpnClient.subscribe(...)
+  +- { ready: false, reason: 'version_mismatch' } -> trigger service reinstall
+  +- { ready: false, reason: 'not_running' }  -> show "Starting service..."
+  |    +- Desktop: Tauri IPC invoke("ensure_service_running")
+  |    |    +- detects old kaitu-service -> cleanup + k2 run --install
+  |    |    +- k2 service not installed -> k2 run --install
+  |    +- retry checkReady() every 500ms
+  |    +- success within 10s -> show main UI
+  |    +- timeout -> show error + "Retry" button
+  |         +- click -> Tauri IPC: invoke("admin_reinstall_service")
+  +- { ready: false, reason: 'not_installed' } -> (mobile: should not happen)
+```
+
+On mobile, `checkReady()` always succeeds (Capacitor Plugin + gomobile
+are bundled in the app). If it fails, it indicates a native code bug.
+
+## Platform Behavior Summary
+
+| Aspect | Desktop (HttpVpnClient) | Android (NativeVpnClient) | iOS (NativeVpnClient) |
+|--------|------------------------|--------------------------|----------------------|
+| Backend | k2 daemon HTTP :1777 | gomobile direct call | NEVPNManager IPC |
+| connect() blocks? | Yes (daemon sync) | Yes (Engine.Start sync) | No (async, event-driven) |
+| Status source | HTTP poll -> event | Engine.StatusJSON() push | sendProviderMessage + fallback |
+| Events | Internal poll (2s) | EventHandler -> Capacitor | NEVPNStatusDidChange + Darwin |
+| UDID source | daemon /api/device/udid | Kotlin computed -> SetUDID | UIDevice.identifierForVendor |
+| TUN fd source | N/A (daemon manages) | VpnService.establish() cb | System provides to NE |
+| stats event | Not available | EventHandler.OnStats | EventHandler.OnStats (via NE) |
 
 ## Decisions
 
@@ -497,19 +333,17 @@ const vpnClient = createVpnClient();
 - k2 submodule stays clean — webapp is NOT copied into k2/cloud/dist/
 - k2 binary for k2app built with `-tags nowebapp` (excludes placeholder webapp)
 - k2 standalone build (CLI users) keeps placeholder webapp as-is
-- k2 `cloud/embed.go` has `//go:build !nowebapp` tag (done)
-- k2 `cloud/embed_nowebapp.go` provides stub FS() for nowebapp builds (done)
 
 ### Distribution
-- **macOS**: DMG only (no App Store / Network Extension for now)
-- **Windows**: NSIS installer
-- **iOS**: Capacitor + NEPacketTunnelProvider (Network Extension), deferred
-- **Android**: Capacitor + VpnService, deferred
+- **macOS**: PKG installer (universal binary, signed + notarized)
+- **Windows**: NSIS installer (signed)
+- **iOS**: Capacitor + NEPacketTunnelProvider (Network Extension)
+- **Android**: Capacitor + VpnService
 
 ### Windows wintun.dll — k2 Owns It
 k2 embeds wintun.dll via `wintun/embed_windows.go` (`//go:embed wintun.dll`) and
 extracts it next to the executable at startup (`EnsureExtracted()`). k2app does
-NOT need to bundle wintun.dll. Done in k2 repo.
+NOT need to bundle wintun.dll.
 
 ### Identity & Versioning
 - **Bundle ID**: `io.kaitu.desktop` (unchanged, enables seamless upgrade)
@@ -519,53 +353,18 @@ NOT need to bundle wintun.dll. Done in k2 repo.
 
 ### Version Propagation
 
-Single source of truth: root `package.json` → `version` field.
+Single source of truth: root `package.json` -> `version` field.
 
 ```
-package.json (version: "0.4.0")            ← SOURCE OF TRUTH
-  ├─→ tauri.conf.json                       ← Tauri native: "version": "../../package.json"
-  ├─→ k2 binary -ldflags                    ← Makefile: -X main.version=$(VERSION) -X main.commit=$(COMMIT)
-  ├─→ webapp public/version.json            ← Makefile: echo to file before build
-  ├─→ Cargo.toml version                    ← Makefile: sed replace before build
-  └─→ CI release tag                        ← git tag v$(VERSION)
+package.json (version: "0.4.0")            <- SOURCE OF TRUTH
+  +-> tauri.conf.json                       <- Tauri native: "version": "../../package.json"
+  +-> k2 binary -ldflags                    <- Makefile: -X main.version=$(VERSION) -X main.commit=$(COMMIT)
+  +-> webapp public/version.json            <- Makefile: echo to file before build
+  +-> Cargo.toml version                    <- Makefile: sed replace before build
+  +-> CI release tag                        <- git tag v$(VERSION)
 ```
 
-k2 binary has two ldflags: `version` (from package.json) and `commit` (from git).
-
-```makefile
-VERSION := $(shell node -p "require('./package.json').version")
-COMMIT  := $(shell cd k2 && git rev-parse --short HEAD)
-
-pre-build:
-	echo '{"version":"$(VERSION)"}' > webapp/public/version.json
-
-build-k2:
-	cd k2 && go build -tags nowebapp \
-		-ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT)" \
-		-o ../desktop/src-tauri/binaries/k2-$(TARGET) ./cmd/k2
-```
-
-### Webapp Tech Stack
-
-| Concern | Choice | Replaces (old) |
-|---------|--------|----------------|
-| Framework | React 18 + Vite | same |
-| CSS | Tailwind CSS | Emotion |
-| Component primitives | Radix UI (Dialog, Popover, Switch) | MUI 5 (27 component types) |
-| Class merging | cn() = clsx + tailwind-merge | - |
-| Variants | CVA (Class Variance Authority) | - |
-| Icons | Lucide React | @mui/icons-material |
-| Toast | Sonner | custom |
-| Forms | React Hook Form + Zod | custom |
-| State management | Zustand (3-4 stores) | Zustand (7 stores) |
-| Routing | React Router DOM | same |
-| i18n | i18next + react-i18next | same |
-| Error monitoring | Sentry (error boundary only) | same |
-| Testing | Vitest + Testing Library | same |
-
-**Expected bundle reduction**: ~1.9MB → ~600KB (MUI+Emotion removed).
-
-### Smooth Upgrade Path (kaitu 0.3.22 → k2app 0.4.0)
+### Smooth Upgrade Path (kaitu 0.3.22 -> k2app 0.4.0)
 - Tauri updater pushes 0.4.0 to existing users as normal update
 - On first launch of 0.4.0:
   1. Detect and stop old `kaitu-service` (Go binary)
@@ -573,147 +372,29 @@ build-k2:
      - Windows: check for old `kaitu-service` Windows service
   2. Remove old launchd plist / Windows service registration
   3. Install new `k2` service (`k2 run --install` with admin privileges)
-     - macOS: osascript for admin prompt → `k2 run --install` → creates `io.kaitu.k2` plist
-     - Windows: PowerShell RunAs → `k2.exe run --install` → creates `k2` Windows service
   4. Webapp loads from Tauri local bundle, calls k2 daemon API
 - No user data migration needed (UDID logic has changed)
 
-### CI/CD
-- GitHub Actions (simplified from kaitu workflows)
-- Go build replaces Rust cross-compilation (much faster)
-- Note: Windows cross-compile currently blocked by k2rule syscall.Mmap
-  (need native Windows build runner or upstream fix)
+### Webapp Tech Stack
 
-## Project Structure
+| Concern | Choice | Replaces (old) |
+|---------|--------|----------------|
+| Framework | React 19 + Vite | React 18 + Vite |
+| CSS | Tailwind CSS v4 | Emotion |
+| Component primitives | Radix UI (Dialog, Popover, Switch) | MUI 5 (27 component types) |
+| Class merging | cn() = clsx + tailwind-merge | - |
+| Variants | CVA (Class Variance Authority) | - |
+| Icons | Lucide React | @mui/icons-material |
+| Toast | Sonner | custom |
+| Forms | React Hook Form + Zod | custom |
+| State management | Zustand (8 stores) | Zustand (7 stores) |
+| Routing | React Router DOM | same |
+| i18n | i18next + react-i18next | same |
+| Error monitoring | Sentry (error boundary only) | same |
+| Testing | Vitest + Testing Library | same |
 
-```
-k2app/
-├── package.json                 # workspace root + version source of truth
-├── k2/                          # git submodule → kaitu-io/k2
-├── webapp/                      # React + Vite + Tailwind (rewritten)
-│   ├── src/
-│   │   ├── vpn-client/
-│   │   │   ├── types.ts         # VpnClient interface, VpnEvent, VpnStatus, ReadyState
-│   │   │   ├── http-client.ts   # HttpVpnClient (desktop: HTTP + poll→event)
-│   │   │   ├── native-client.ts # NativeVpnClient (mobile: Capacitor Plugin)
-│   │   │   ├── mock-client.ts   # MockVpnClient (testing)
-│   │   │   └── index.ts         # createVpnClient() factory
-│   │   ├── api/
-│   │   │   ├── cloud.ts         # Cloud API client (login, servers, user)
-│   │   │   ├── antiblock.ts     # Entry URL resolution (JSONP + CDN + cache)
-│   │   │   └── types.ts         # Cloud API types
-│   │   ├── components/          # shared components
-│   │   ├── pages/               # route pages (~5-7, down from 20)
-│   │   ├── stores/              # Zustand stores (3-4, down from 7)
-│   │   ├── i18n/                # translations (zh-CN, en-US)
-│   │   └── lib/                 # cn(), constants
-│   ├── public/
-│   │   └── version.json         # generated by build script
-│   ├── vite.config.ts           # proxy /api/* → 1777 in dev
-│   └── package.json
-├── desktop/                     # Tauri v2 thin shell
-│   ├── src-tauri/
-│   │   ├── tauri.conf.json      # bundle: io.kaitu.desktop, frontendDist
-│   │   ├── Cargo.toml           # tauri + updater + tray + single-instance + localhost
-│   │   ├── src/
-│   │   │   ├── main.rs          # setup, window
-│   │   │   ├── service.rs       # k2 run --install, old kaitu-service cleanup
-│   │   │   ├── tray.rs          # system tray
-│   │   │   └── updater.rs       # auto-update
-│   │   ├── binaries/            # k2 binary (go build output, per target triple)
-│   │   ├── keys/                # signing keys (from kaitu)
-│   │   └── icons/               # app icons (from kaitu)
-│   └── package.json
-├── mobile/                      # iOS + Android (deferred)
-│   ├── ios/
-│   │   ├── App/                 # Capacitor iOS app
-│   │   ├── K2Plugin/            # Capacitor Plugin (Swift, NE bridge)
-│   │   └── K2Tunnel/            # NEPacketTunnelProvider (NE target)
-│   ├── android/
-│   │   ├── app/                 # Capacitor Android app
-│   │   └── k2plugin/            # Capacitor Plugin (Kotlin) + VpnService
-│   └── package.json
-├── scripts/
-│   ├── build-k2.sh              # go build -tags nowebapp
-│   └── dev.sh                   # start k2 daemon + vite + tauri dev
-├── .github/workflows/
-│   ├── release-desktop.yml      # macOS + Windows build/sign/publish
-│   └── ci.yml                   # lint + test + build check
-├── Makefile                     # top-level build orchestration
-└── docs/
-    ├── contracts/
-    │   └── webapp-daemon-api.md
-    └── features/
-        ├── k2app-rewrite.md     # this file
-        ├── build-unification.md
-        ├── mobile-rewrite.md
-        ├── mobile-updater.md
-        └── webapp-state-alignment.md
-```
+## Desktop Acceptance Criteria
 
-Root `package.json` workspaces:
-```json
-{
-  "name": "k2app",
-  "version": "0.4.0",
-  "private": true,
-  "workspaces": ["webapp", "desktop", "mobile"]
-}
-```
-
-## Build Flow
-
-### Desktop Release
-```
-1. make pre-build                             # write version.json
-2. yarn build                                 # webapp → webapp/dist/
-3. make build-k2 TARGET=<target-triple>       # k2 binary → desktop/src-tauri/binaries/
-4. cd desktop && yarn tauri build             # Tauri bundles webapp + k2 binary
-5. Sign + notarize (macOS) / sign (Windows)
-6. Upload to CDN, update latest.json
-```
-
-### Mobile Release (deferred)
-```
-1. make pre-build && yarn build               # webapp → webapp/dist/
-2. cd k2 && gomobile bind -target=ios ...     # xcframework (includes MobileAPI)
-3. cd k2 && gomobile bind -target=android ... # aar (includes MobileAPI)
-4. cd mobile/ios && xcodebuild                # App + NE extension + Capacitor Plugin
-5. cd mobile/android && ./gradlew assemble    # App + VpnService + Capacitor Plugin
-```
-
-### Dev Mode
-```
-1. cd k2 && go build -tags nowebapp -o build/k2 ./cmd/k2 && ./build/k2 run
-2. cd desktop && yarn tauri dev               # Vite 1420 + Tauri shell
-   (Vite proxies /api/* and /ping to 127.0.0.1:1777)
-```
-
-## Webapp Service Readiness
-
-Webapp loads instantly from native shell, then checks backend readiness via VpnClient:
-
-```
-webapp loaded → vpnClient.checkReady()
-  ├─ { ready: true, version } → show main UI, vpnClient.subscribe(...)
-  ├─ { ready: false, reason: 'version_mismatch' } → trigger service reinstall
-  ├─ { ready: false, reason: 'not_running' }  → show "Starting service..."
-  │    ├─ Desktop: Tauri IPC invoke("ensure_service_running")
-  │    │    ├─ detects old kaitu-service → cleanup + k2 run --install
-  │    │    └─ k2 service not installed → k2 run --install
-  │    ├─ retry checkReady() every 500ms
-  │    ├─ success within 10s → show main UI
-  │    └─ timeout → show error + "Retry" button
-  │         └─ click → Tauri IPC: invoke("admin_reinstall_service")
-  └─ { ready: false, reason: 'not_installed' } → (mobile: should not happen)
-```
-
-On mobile, `checkReady()` always succeeds (Capacitor Plugin + gomobile
-are bundled in the app). If it fails, it indicates a native code bug.
-
-## Acceptance Criteria
-
-### Desktop
 - [x] k2 submodule configured, `git clone --recursive` works
 - [x] `make dev` starts k2 daemon + Vite + Tauri dev, HMR works
 - [x] tauri-plugin-localhost configured, webapp served via HTTP
@@ -724,59 +405,44 @@ are bundled in the app). If it fails, it indicates a native code bug.
 - [x] Old kaitu-service cleanup on first launch after upgrade
 - [x] System tray with connect/disconnect/quit
 - [x] Auto-updater works with existing CDN endpoints
-- [x] `make build-macos` produces signed DMG
+- [x] `make build-macos` produces signed PKG
 - [x] `make build-windows` produces signed NSIS installer
 - [x] Version 0.4.0 detected as upgrade from 0.3.22
 - [x] Version propagation: single source from package.json
+- [x] GitHub Actions pipeline builds and signs for macOS + Windows
 
 ### Webapp VpnClient
 - [x] VpnClient interface with HttpVpnClient and MockVpnClient implementations
-- [x] HttpVpnClient: HTTP calls + poll→event with deduplication
-- [ ] NativeVpnClient: Capacitor Plugin calls + native event push (deferred to mobile phase)
+- [x] HttpVpnClient: HTTP calls + poll->event with deduplication
+- [x] NativeVpnClient: Capacitor Plugin calls + native event push
 - [x] MockVpnClient: injectable for unit tests
 - [x] createVpnClient() factory auto-selects by platform
 - [x] All UI code uses VpnClient, never direct HTTP or Capacitor calls
 - [x] connect()/disconnect() resolve on "command accepted" (not operation complete)
 - [x] subscribe() delivers VpnEvent for all state changes
 
-### Mobile (deferred)
-- [ ] Webapp loads from local assets (same build as desktop)
-- [ ] k2 MobileAPI in Go with CoreAction() and HandleProviderMessage()
-- [ ] Android: Capacitor Plugin (Kotlin) → MobileAPI → Engine (single process)
-- [ ] Android: VpnService provides TUN fd via callback
-- [ ] Android: EventHandler → Capacitor notifyListeners → webapp events
-- [ ] iOS: Capacitor Plugin (Swift) → NEVPNManager → NE Process → Engine
-- [ ] iOS: checkReady/getUDID/getVersion work without NE running
-- [ ] iOS: sendProviderMessage for rich status, fallback to NEVPNConnection.status
-- [ ] iOS: NEVPNStatusDidChange + Darwin Notification → webapp events
-- [ ] iOS: App Group UserDefaults for NE↔App shared state
+### Mobile Acceptance Criteria
 
-### CI/CD
-- [x] GitHub Actions pipeline builds and signs for macOS + Windows
-- [x] Go build with `-tags nowebapp` in CI
-
----
+See individual feature specs: mobile-webapp-bridge.md, mobile-vpn-ios.md,
+mobile-vpn-android.md, mobile-rule-storage.md, mobile-debug.md.
 
 ## k2 Repo Dependencies
 
 Changes needed in k2 repo before k2app can be fully built:
 
-| Change | File | Status | Priority |
-|--------|------|--------|----------|
-| `nowebapp` build tag | cloud/embed.go | Done | - |
-| nowebapp stub | cloud/embed_nowebapp.go | Done | - |
-| wintun.dll embed | wintun/ package | Done | - |
-| UDID cross-platform | cloud/udid_{darwin,linux,windows}.go | Done | - |
-| Daemon UDID endpoint | daemon/api.go | Done | - |
-| Webapp SPA serving | daemon/api.go webappHandler() | Done | - |
-| Service manager | daemon/service_{darwin,linux,windows}.go | Done | - |
-| Makefile targets | build-nowebapp, build-windows, build-linux, mobile | Done | - |
-| gomobile build | mobile/ (iOS xcframework + Android AAR) | Done | - |
-| MobileAPI action dispatch | mobile/api.go (new) | Todo | P1 (deferred) |
-| MobileAPI.HandleProviderMessage | mobile/api.go (iOS NE bridge) | Todo | P1 (deferred) |
-| Engine.StatusJSON() | mobile/mobile.go (rich status) | Todo | P1 (deferred) |
-| Engine.SetUDID() | mobile/mobile.go | Todo | P1 (deferred) |
-| Windows cross-compile | k2rule syscall.Mmap upstream fix | Blocked | P2 |
+| Change | File | Status |
+|--------|------|--------|
+| `nowebapp` build tag | cloud/embed.go | Done |
+| nowebapp stub | cloud/embed_nowebapp.go | Done |
+| wintun.dll embed | wintun/ package | Done |
+| UDID cross-platform | cloud/udid_{darwin,linux,windows}.go | Done |
+| Daemon UDID endpoint | daemon/api.go | Done |
+| Webapp SPA serving | daemon/api.go webappHandler() | Done |
+| Service manager | daemon/service_{darwin,linux,windows}.go | Done |
+| Makefile targets | build-nowebapp, build-windows, build-linux, mobile | Done |
+| gomobile build | mobile/ (iOS xcframework + Android AAR) | Done |
+| Unified engine | engine/ (Start/Stop/Status lifecycle) | Done |
+| Mobile API wrapper | mobile/api.go (gomobile type adapter) | Done |
+| Windows cross-compile | k2rule syscall.Mmap upstream fix | Blocked |
 
-All desktop-blocking k2 dependencies are resolved. Mobile is deferred.
-Mobile no longer needs HTTP server or CORS — uses Capacitor native bridge instead.
+All desktop-blocking and mobile-blocking k2 dependencies are resolved.
