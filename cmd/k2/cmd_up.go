@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/daemon"
 )
 
@@ -18,22 +19,29 @@ func cmdUp(args []string) {
 	pid := fs.Int("pid", 0, "parent PID to monitor (auto-disconnect on exit)")
 	fs.Parse(args)
 
-	// Determine params from positional arg
+	// Resolve positional arg into a ClientConfig.
 	params := map[string]any{}
 	if fs.NArg() > 0 {
 		arg := fs.Arg(0)
+		var cfg *config.ClientConfig
 		if strings.Contains(arg, "://") {
-			// URL
-			params["wire_url"] = arg
+			// Wire URL — resolve to full config with defaults.
+			cfg = config.ClientFromURL(arg)
 		} else {
-			// Config file — resolve to absolute path
+			// YAML config file.
 			absPath, err := filepath.Abs(arg)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)
 			}
-			params["config_path"] = absPath
+			var loadErr error
+			cfg, loadErr = config.LoadClient(absPath)
+			if loadErr != nil {
+				fmt.Fprintf(os.Stderr, "Error: load config: %v\n", loadErr)
+				os.Exit(1)
+			}
 		}
+		params["config"] = cfg
 	}
 	// No arg = use daemon's saved config
 

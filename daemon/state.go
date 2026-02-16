@@ -6,14 +6,15 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/kaitu-io/k2/config"
 )
 
 // persistedState is saved to disk for auto-reconnect across daemon restarts.
 type persistedState struct {
-	WireURL    string    `json:"wire_url,omitempty"`
-	ConfigPath string    `json:"config_path,omitempty"`
-	State      string    `json:"state"`
-	Timestamp  time.Time `json:"timestamp"`
+	Config    *config.ClientConfig `json:"config,omitempty"`
+	State     string               `json:"state"`
+	Timestamp time.Time            `json:"timestamp"`
 }
 
 func stateFilePath() string {

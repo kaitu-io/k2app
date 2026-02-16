@@ -1,6 +1,10 @@
 package mobile
 
 import (
+	"encoding/json"
+	"fmt"
+
+	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/engine"
 )
 
@@ -34,14 +38,27 @@ func (e *Engine) Status() string {
 }
 
 // Start assembles the tunnel stack and begins forwarding traffic.
-// url is a k2v5:// connection URL; fd is the TUN file descriptor
-// provided by the platform (iOS NEPacketTunnelProvider / Android VpnService);
-// dataDir is the k2rule cache directory.
-func (e *Engine) Start(url string, fd int, dataDir string) error {
+// configJSON is a JSON-encoded config.ClientConfig; fd is the TUN file
+// descriptor provided by the platform (iOS NEPacketTunnelProvider /
+// Android VpnService); dataDir is the k2rule cache directory.
+func (e *Engine) Start(configJSON string, fd int, dataDir string) error {
+	var cfg config.ClientConfig
+	if err := json.Unmarshal([]byte(configJSON), &cfg); err != nil {
+		return fmt.Errorf("parse config: %w", err)
+	}
+	config.SetDefaults(&cfg)
+
+	// Map rule config to engine RuleMode.
+	ruleMode := "global"
+	if !cfg.Rule.Global {
+		ruleMode = "smart"
+	}
+
 	return e.inner.Start(engine.Config{
-		WireURL:        url,
+		WireURL:        cfg.Server,
 		FileDescriptor: fd,
 		DataDir:        dataDir,
+		RuleMode:       ruleMode,
 	})
 }
 

@@ -41,8 +41,7 @@ type Daemon struct {
 	state string
 
 	// Last config used for auto-reconnect.
-	lastWireURL    string
-	lastConfigPath string
+	lastConfig *config.ClientConfig
 
 	// Error from last connection attempt (orthogonal to state).
 	lastError string
@@ -155,8 +154,8 @@ func (d *Daemon) closeTunnel() {
 	saveState(persistedState{State: StateStopped, Timestamp: time.Now()})
 }
 
-// doUp connects the tunnel with the given wire URL or config path.
-func (d *Daemon) doUp(wireURL, configPath string, pid int) error {
+// doUp connects the tunnel with the given ClientConfig.
+func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 	d.opMu.Lock()
 	defer d.opMu.Unlock()
 
@@ -165,31 +164,24 @@ func (d *Daemon) doUp(wireURL, configPath string, pid int) error {
 
 	d.mu.Lock()
 	d.setStateLocked(StateConnecting)
-	d.lastWireURL = wireURL
-	d.lastConfigPath = configPath
+	d.lastConfig = cfg
 	d.monitorPID = pid
 	d.lastError = ""
 	d.mu.Unlock()
 
 	// Persist state for auto-reconnect across restarts.
 	saveState(persistedState{
-		WireURL:    wireURL,
-		ConfigPath: configPath,
-		State:      StateConnecting,
-		Timestamp:  time.Now(),
+		Config:    cfg,
+		State:     StateConnecting,
+		Timestamp: time.Now(),
 	})
 
-	// Build engine config from wire URL or config file.
-	engineCfg, err := d.buildEngineConfig(wireURL, configPath)
-	if err != nil {
-		msg := fmt.Sprintf("load config: %v", err)
-		d.mu.Lock()
-		d.lastError = msg
-		d.setStateLocked(StateStopped)
-		d.mu.Unlock()
-		log.Printf("Error: %s", msg)
-		return err
+	// Build engine config from ClientConfig.
+	dd := directdial.New()
+	if dd.InterfaceName() != "" {
+		log.Printf("tunnel: direct dialer bound to %s", dd.InterfaceName())
 	}
+	engineCfg := d.engineConfigFromClientConfig(cfg, dd)
 
 	// Create and start engine.
 	starter := d.EngineStarter
@@ -225,10 +217,9 @@ func (d *Daemon) doUp(wireURL, configPath string, pid int) error {
 
 	// Update persisted state.
 	saveState(persistedState{
-		WireURL:    wireURL,
-		ConfigPath: configPath,
-		State:      StateConnected,
-		Timestamp:  time.Now(),
+		Config:    cfg,
+		State:     StateConnected,
+		Timestamp: time.Now(),
 	})
 
 	return nil
@@ -241,27 +232,6 @@ func defaultEngineStarter(cfg engine.Config) (*engine.Engine, error) {
 		return nil, err
 	}
 	return eng, nil
-}
-
-// buildEngineConfig creates an engine.Config from a wire URL or config file path.
-func (d *Daemon) buildEngineConfig(wireURL, configPath string) (engine.Config, error) {
-	// Create DirectDialer for physical interface binding (bypasses TUN).
-	dd := directdial.New()
-	if dd.InterfaceName() != "" {
-		log.Printf("tunnel: direct dialer bound to %s", dd.InterfaceName())
-	}
-
-	if configPath != "" {
-		cfg, err := config.LoadClient(configPath)
-		if err != nil {
-			return engine.Config{}, err
-		}
-		return d.engineConfigFromClientConfig(cfg, dd), nil
-	}
-
-	// Minimal config from wire URL only.
-	cfg := config.ClientFromURL(wireURL)
-	return d.engineConfigFromClientConfig(cfg, dd), nil
 }
 
 // engineConfigFromClientConfig maps a config.ClientConfig to an engine.Config.
@@ -373,6 +343,11 @@ func (d *Daemon) tryAutoReconnect(ctx context.Context) {
 		return
 	}
 
+	if st.Config == nil {
+		log.Println("Auto-reconnect: no config in saved state, skipping")
+		return
+	}
+
 	log.Println("Auto-reconnect: reconnecting with saved config...")
 	go func() {
 		// Delay 5s to let daemon fully start; abort if daemon shuts down.
@@ -386,7 +361,7 @@ func (d *Daemon) tryAutoReconnect(ctx context.Context) {
 		if d.State() == StateConnected {
 			return
 		}
-		if err := d.doUp(st.WireURL, st.ConfigPath, 0); err != nil {
+		if err := d.doUp(st.Config, 0); err != nil {
 			log.Printf("Auto-reconnect failed: %v", err)
 		}
 	}()
@@ -406,12 +381,6 @@ func (d *Daemon) statusInfo() map[string]any {
 	}
 	if d.lastError != "" {
 		info["error"] = d.lastError
-	}
-	if d.lastWireURL != "" {
-		info["wire_url"] = d.lastWireURL
-	}
-	if d.lastConfigPath != "" {
-		info["config_path"] = d.lastConfigPath
 	}
 	return info
 }

@@ -5,6 +5,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/kaitu-io/k2/config"
 )
 
 func TestStatePersistence(t *testing.T) {
@@ -12,9 +14,12 @@ func TestStatePersistence(t *testing.T) {
 	os.Remove(stateFilePath())
 	defer os.Remove(stateFilePath())
 
+	cfg := &config.ClientConfig{Server: "k2v5://test:tok@host:443"}
+	config.SetDefaults(cfg)
+
 	// Save state.
 	st := persistedState{
-		WireURL:   "k2v5://test:tok@host:443",
+		Config:    cfg,
 		State:     StateConnected,
 		Timestamp: time.Now(),
 	}
@@ -26,8 +31,8 @@ func TestStatePersistence(t *testing.T) {
 		t.Fatalf("loadState: %v", err)
 	}
 
-	if loaded.WireURL != st.WireURL {
-		t.Fatalf("expected wire_url %s, got %s", st.WireURL, loaded.WireURL)
+	if loaded.Config == nil || loaded.Config.Server != st.Config.Server {
+		t.Fatalf("expected config server %s, got %v", st.Config.Server, loaded.Config)
 	}
 	if loaded.State != st.State {
 		t.Fatalf("expected state %s, got %s", st.State, loaded.State)
@@ -46,9 +51,12 @@ func TestAutoReconnectSkipsStale(t *testing.T) {
 	os.Remove(stateFilePath())
 	defer os.Remove(stateFilePath())
 
+	cfg := &config.ClientConfig{Server: "k2v5://test:tok@host:443"}
+	config.SetDefaults(cfg)
+
 	// Save stale state (2 hours ago).
 	saveState(persistedState{
-		WireURL:   "k2v5://test:tok@host:443",
+		Config:    cfg,
 		State:     StateConnected,
 		Timestamp: time.Now().Add(-2 * time.Hour),
 	})

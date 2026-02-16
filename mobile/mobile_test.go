@@ -64,7 +64,9 @@ func TestEngine_NewEngine(t *testing.T) {
 
 func TestEngine_Start_InvalidURL(t *testing.T) {
 	e := NewEngine()
-	err := e.Start("garbage", 0, "")
+	// Valid JSON config with an invalid server URL.
+	cfg := `{"server":"garbage"}`
+	err := e.Start(cfg, 0, "")
 	if err == nil {
 		t.Fatal("Start with invalid URL should return error")
 	}
@@ -75,15 +77,15 @@ func TestEngine_Start_InvalidURL(t *testing.T) {
 
 func TestEngine_DoubleStart(t *testing.T) {
 	e := NewEngine()
-	url := "k2v5://udid:token@127.0.0.1:12345?insecure=1"
+	cfg := `{"server":"k2v5://udid:token@127.0.0.1:12345?insecure=1"}`
 
 	// First start will fail on provider (no real TUN FD), that's fine.
-	_ = e.Start(url, 0, "")
+	_ = e.Start(cfg, 0, "")
 
 	// Second start should succeed (engine returned to disconnected after failure).
 	// This verifies the wrapper delegates correctly; the double-start guard
 	// when actually connected is tested in engine/engine_test.go.
-	err := e.Start(url, 0, "")
+	err := e.Start(cfg, 0, "")
 	// Both calls fail (no real TUN), but neither should panic.
 	_ = err
 }
@@ -113,7 +115,7 @@ func TestEngine_EventHandler_StateChanges(t *testing.T) {
 	e.SetEventHandler(h)
 
 	// Start with invalid URL triggers: connecting -> error -> disconnected
-	_ = e.Start("garbage", 0, "")
+	_ = e.Start(`{"server":"garbage"}`, 0, "")
 
 	states := h.getStates()
 	if len(states) < 2 {
@@ -132,7 +134,7 @@ func TestEngine_EventHandler_OnError(t *testing.T) {
 	h := &mockEventHandler{}
 	e.SetEventHandler(h)
 
-	_ = e.Start("garbage", 0, "")
+	_ = e.Start(`{"server":"garbage"}`, 0, "")
 
 	errs := h.getErrors()
 	if len(errs) == 0 {
@@ -165,7 +167,7 @@ func TestEngine_StatusJSON_Disconnected(t *testing.T) {
 
 func TestEngine_StatusJSON_AfterFailedStart(t *testing.T) {
 	e := NewEngine()
-	_ = e.Start("garbage", 0, "")
+	_ = e.Start(`{"server":"garbage"}`, 0, "")
 
 	raw := e.StatusJSON()
 	var m map[string]any

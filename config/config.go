@@ -10,20 +10,20 @@ import (
 )
 
 // ClientConfig is the client-side configuration.
-// Loaded by `k2 run -c` or parsed from `k2 up` URL.
+// Loaded by `k2 run -c` or parsed from `k2 up` URL, or unmarshalled from JSON.
 type ClientConfig struct {
-	Listen string       `yaml:"listen"` // daemon HTTP listen address, default "127.0.0.1:1777"
-	Server string       `yaml:"server"` // k2v5:// URL
-	Mode   string       `yaml:"mode"`   // "tun" or "proxy", default "tun"
-	Proxy  ProxyConfig  `yaml:"proxy"`
-	DNS  DNSConfig  `yaml:"dns"`
-	Rule RuleConfig `yaml:"rule"`
-	Log    LogConfig    `yaml:"log"`
+	Listen string      `yaml:"listen" json:"listen"` // daemon HTTP listen address, default "127.0.0.1:1777"
+	Server string      `yaml:"server" json:"server"` // k2v5:// URL
+	Mode   string      `yaml:"mode"   json:"mode"`   // "tun" or "proxy", default "tun"
+	Proxy  ProxyConfig `yaml:"proxy"  json:"proxy"`
+	DNS    DNSConfig   `yaml:"dns"    json:"dns"`
+	Rule   RuleConfig  `yaml:"rule"   json:"rule"`
+	Log    LogConfig   `yaml:"log"    json:"log"`
 }
 
 // ProxyConfig contains proxy mode configuration.
 type ProxyConfig struct {
-	Listen string `yaml:"listen"` // default "127.0.0.1:1080"
+	Listen string `yaml:"listen" json:"listen"` // default "127.0.0.1:1080"
 }
 
 // ServerConfig is the server-side configuration.
@@ -42,8 +42,8 @@ type ServerConfig struct {
 
 // DNSConfig contains DNS resolver configuration.
 type DNSConfig struct {
-	Direct []string `yaml:"direct"`
-	Proxy  []string `yaml:"proxy"`
+	Direct []string `yaml:"direct" json:"direct"`
+	Proxy  []string `yaml:"proxy"  json:"proxy"`
 }
 
 // TLSConfig contains TLS certificate paths.
@@ -67,17 +67,17 @@ type AuthConfig struct {
 
 // RuleConfig contains k2rule routing rule configuration.
 type RuleConfig struct {
-	RuleURL  string `yaml:"rule_url"`  // remote rule file URL ("" = CDN default)
-	GeoIPURL string `yaml:"geoip_url"` // remote GeoIP .mmdb URL ("" = CDN default)
-	PornURL  string `yaml:"porn_url"`  // remote porn list URL ("" = CDN default)
-	CacheDir string `yaml:"cache_dir"` // cache directory ("" = ~/.cache/k2rule/)
-	Global   bool   `yaml:"global"`    // true = global proxy mode (ignore rules)
+	RuleURL  string `yaml:"rule_url"  json:"rule_url"`  // remote rule file URL ("" = CDN default)
+	GeoIPURL string `yaml:"geoip_url" json:"geoip_url"` // remote GeoIP .mmdb URL ("" = CDN default)
+	PornURL  string `yaml:"porn_url"  json:"porn_url"`  // remote porn list URL ("" = CDN default)
+	CacheDir string `yaml:"cache_dir" json:"cache_dir"` // cache directory ("" = ~/.cache/k2rule/)
+	Global   bool   `yaml:"global"    json:"global"`    // true = global proxy mode (ignore rules)
 }
 
 // LogConfig contains logging configuration.
 type LogConfig struct {
-	Level  string `yaml:"level"`  // debug, info, warn, error
-	Output string `yaml:"output"` // stderr, stdout, or file path
+	Level  string `yaml:"level"  json:"level"`  // debug, info, warn, error
+	Output string `yaml:"output" json:"output"` // stderr, stdout, or file path
 }
 
 // LoadClient loads a client config from a YAML file.
@@ -92,7 +92,7 @@ func LoadClient(path string) (*ClientConfig, error) {
 		return nil, err
 	}
 
-	setClientDefaults(&cfg)
+	SetDefaults(&cfg)
 	return &cfg, nil
 }
 
@@ -115,11 +115,12 @@ func LoadServer(path string) (*ServerConfig, error) {
 // ClientFromURL creates a ClientConfig from a k2v5:// wire URL.
 func ClientFromURL(wireURL string) *ClientConfig {
 	cfg := &ClientConfig{Server: wireURL}
-	setClientDefaults(cfg)
+	SetDefaults(cfg)
 	return cfg
 }
 
-func setClientDefaults(cfg *ClientConfig) {
+// SetDefaults fills in default values for any zero-valued fields in a ClientConfig.
+func SetDefaults(cfg *ClientConfig) {
 	if cfg.Listen == "" {
 		cfg.Listen = "127.0.0.1:1777"
 	}

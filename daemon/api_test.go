@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/engine"
 )
 
@@ -89,8 +90,8 @@ func TestHandleCoreUpDown(t *testing.T) {
 	d := New()
 	d.EngineStarter = mockEngineStarter
 
-	// Up with URL.
-	upBody := `{"action":"up","params":{"wire_url":"k2v5://test:token@host:443"}}`
+	// Up with config JSON.
+	upBody := `{"action":"up","params":{"config":{"server":"k2v5://test:token@host:443"}}}`
 	req := httptest.NewRequest("POST", "/api/core", bytes.NewReader([]byte(upBody)))
 	w := httptest.NewRecorder()
 	d.handleCore(w, req)
@@ -229,7 +230,7 @@ func TestHandleCoreGetConfig(t *testing.T) {
 	d.EngineStarter = mockEngineStarter
 
 	// Set some config via up.
-	upBody := `{"action":"up","params":{"wire_url":"k2v5://test:tok@host:443"}}`
+	upBody := `{"action":"up","params":{"config":{"server":"k2v5://test:tok@host:443"}}}`
 	req := httptest.NewRequest("POST", "/api/core", bytes.NewReader([]byte(upBody)))
 	w := httptest.NewRecorder()
 	d.handleCore(w, req)
@@ -247,8 +248,8 @@ func TestHandleCoreGetConfig(t *testing.T) {
 	}
 
 	data := resp.Data.(map[string]any)
-	if data["wire_url"] != "k2v5://test:tok@host:443" {
-		t.Fatalf("expected wire_url, got %v", data["wire_url"])
+	if data["server"] != "k2v5://test:tok@host:443" {
+		t.Fatalf("expected server in config, got %v", data)
 	}
 }
 
@@ -370,10 +371,11 @@ func failingEngineStarter(cfg engine.Config) (*engine.Engine, error) {
 
 func TestDoUpFromError(t *testing.T) {
 	d := New()
+	cfg := config.ClientFromURL("k2v5://test:tok@host:443")
 
 	// First attempt: fail to connect.
 	d.EngineStarter = failingEngineStarter
-	err := d.doUp("k2v5://test:tok@host:443", "", 0)
+	err := d.doUp(cfg, 0)
 	if err == nil {
 		t.Fatal("expected error from failing builder")
 	}
@@ -389,7 +391,7 @@ func TestDoUpFromError(t *testing.T) {
 
 	// Second attempt: succeed. Old error should be cleared.
 	d.EngineStarter = mockEngineStarter
-	err = d.doUp("k2v5://test:tok@host:443", "", 0)
+	err = d.doUp(cfg, 0)
 	if err != nil {
 		t.Fatalf("expected success, got %v", err)
 	}
@@ -414,6 +416,7 @@ func TestConcurrentDoUp(t *testing.T) {
 
 	d := New()
 	d.EngineStarter = trackingStarter
+	clientCfg := config.ClientFromURL("k2v5://test:tok@host:443")
 
 	// Launch 5 concurrent doUp calls.
 	var wg sync.WaitGroup
@@ -421,7 +424,7 @@ func TestConcurrentDoUp(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			d.doUp("k2v5://test:tok@host:443", "", 0)
+			d.doUp(clientCfg, 0)
 		}()
 	}
 	wg.Wait()

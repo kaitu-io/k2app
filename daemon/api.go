@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/kaitu-io/k2/cloud"
+	"github.com/kaitu-io/k2/config"
 )
 
 // Request is the JSON request body for POST /api/core.
@@ -73,25 +74,40 @@ func (d *Daemon) handleCore(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d *Daemon) handleUp(w http.ResponseWriter, params map[string]any) {
-	wireURL, _ := params["wire_url"].(string)
-	configPath, _ := params["config_path"].(string)
 	pidFloat, _ := params["pid"].(float64) // JSON numbers are float64
 	pid := int(pidFloat)
 
-	if wireURL == "" && configPath == "" {
+	var cfg *config.ClientConfig
+
+	// Parse config from params.
+	if raw, ok := params["config"]; ok {
+		// Re-marshal the config sub-object to JSON, then unmarshal into ClientConfig.
+		data, err := json.Marshal(raw)
+		if err != nil {
+			writeJSON(w, Response{Code: 400, Message: fmt.Sprintf("bad config: %v", err)})
+			return
+		}
+		cfg = &config.ClientConfig{}
+		if err := json.Unmarshal(data, cfg); err != nil {
+			writeJSON(w, Response{Code: 400, Message: fmt.Sprintf("parse config: %v", err)})
+			return
+		}
+		config.SetDefaults(cfg)
+	}
+
+	if cfg == nil {
 		// Use last saved config.
 		d.mu.RLock()
-		wireURL = d.lastWireURL
-		configPath = d.lastConfigPath
+		cfg = d.lastConfig
 		d.mu.RUnlock()
 	}
 
-	if wireURL == "" && configPath == "" {
+	if cfg == nil {
 		writeJSON(w, Response{Code: 510, Message: "no configuration provided and no saved config"})
 		return
 	}
 
-	if err := d.doUp(wireURL, configPath, pid); err != nil {
+	if err := d.doUp(cfg, pid); err != nil {
 		writeJSON(w, Response{Code: 511, Message: fmt.Sprintf("connect failed: %v", err)})
 		return
 	}
@@ -114,10 +130,7 @@ func (d *Daemon) handleGetConfig(w http.ResponseWriter) {
 	writeJSON(w, Response{
 		Code:    0,
 		Message: "ok",
-		Data: map[string]any{
-			"wire_url":    d.lastWireURL,
-			"config_path": d.lastConfigPath,
-		},
+		Data:    d.lastConfig,
 	})
 }
 
