@@ -6,124 +6,53 @@ Platform-specific issues and workarounds discovered during implementation.
 
 ## WebKit Mixed Content Blocking on macOS (2026-02-14, k2app-rewrite)
 
-**Problem**: macOS WebKit blocks `https://` → `http://` requests even for loopback (127.0.0.1, localhost).
+**Problem**: macOS WebKit blocks `https://` → `http://` requests even for loopback. Tauri default origin `https://tauri.localhost` cannot call daemon at `http://127.0.0.1:1777`.
 
-**Symptom**:
-- Tauri default origin: `https://tauri.localhost`
-- k2 daemon: `http://127.0.0.1:1777`
-- Console error: "Blocked loading mixed active content"
+**Root cause**: WebKit enforces mixed content strictly (no loopback exception). Chromium (Windows) allows it.
 
-**Root cause**:
-- WebKit enforces mixed content policy strictly
-- Chromium (Windows) allows loopback mixed content as exception
-- WebKit has no such exception
+**Solution**: `tauri-plugin-localhost` serves webapp from `http://localhost:14580`. HTTP→HTTP calls are allowed. See `desktop/src-tauri/src/main.rs` — `Builder::new(14580).build()`.
 
-**Solution**: tauri-plugin-localhost
-- Changes webapp origin from `https://tauri.localhost` to `http://localhost:{port}`
-- HTTP→HTTP calls are allowed (no mixed content)
-- Tauri IPC (`window.__TAURI__`) still works over HTTP
+**Security**: localhost port accessible to local processes, but daemon already exposes :1777 (CORS protected). Attack surface unchanged.
 
-**Configuration**:
-```rust
-// desktop/src-tauri/src/main.rs
-use tauri_plugin_localhost::Builder;
+**Applies to**: macOS + Linux WebKitGTK. Not Windows (Chromium-based).
 
-tauri::Builder::default()
-    .plugin(Builder::new(1420).build())  // Serve webapp on http://localhost:1420
-    .run(tauri::generate_context!())
-```
-
-**Security consideration**:
-- localhost port is accessible to other local processes
-- k2 daemon already exposes :1777 to localhost (CORS protected)
-- Security model unchanged (same attack surface as daemon)
-
-**Validation**:
-- Integration test: fetch `/ping` from webview on macOS succeeds
-- No console errors in production build
-
-**Related**: Linux WebKitGTK has same issue, same solution works.
+**Validation**: fetch `/ping` from webview succeeds; no console mixed content errors.
 
 ---
 
 ## Go json.Marshal snake_case vs JavaScript camelCase (2026-02-14, mobile-rewrite)
 
-**Problem**: Go's `json.Marshal` outputs snake_case keys by default (`connected_at`, `uptime_seconds`). JavaScript/TypeScript expects camelCase (`connectedAt`, `uptimeSeconds`). When raw Go JSON is passed through native bridges to webapp, keys don't match TypeScript types.
+**Problem**: Go `json.Marshal` outputs `connected_at`, TypeScript expects `connectedAt`. Raw Go JSON passed through native bridges causes silent `undefined` values — no runtime error, just missing data.
 
-**Symptom**:
-- `getStatus().connectedAt` returns `undefined`
-- `getStatus().connected_at` has the value (but TypeScript type doesn't declare it)
-- No runtime error — silently wrong data
+**Discovery**: Code review caught mismatch between Go `Engine.StatusJSON()` output keys and `K2PluginInterface` TypeScript definitions.
 
-**Root cause**:
-- Go `json.Marshal` uses struct field names (snake_case by Go convention) unless `json:"camelCase"` tags added
-- gomobile Engine.StatusJSON() returns raw JSON from Go
-- Native bridge passes it through without transformation
+**Solution**: `remapStatusKeys()` in both K2Plugin.swift and K2Plugin.kt transforms keys at the native bridge boundary. Convention added to CLAUDE.md.
 
-**Solution**: Remap keys at native bridge layer (K2Plugin.swift and K2Plugin.kt):
-```swift
-private func remapStatusKeys(_ json: [String: Any]) -> [String: Any] {
-    let keyMap: [String: String] = [
-        "connected_at": "connectedAt",
-        "uptime_seconds": "uptimeSeconds",
-        "wire_url": "wireUrl",
-    ]
-    // ... remap keys + map "disconnected" → "stopped"
-}
-```
+**Prevention rule**: When passing Go JSON to JavaScript, always remap keys at the bridge.
 
-**Prevention rule**: When passing Go JSON to JavaScript, always remap keys at the bridge. Convention added to AGENT.md.
-
-**Validation**:
-- `webapp/src/vpn-client/__tests__/native-client.test.ts` — getStatus() tests verify camelCase keys
+**Cross-reference**: See Bugfix Patterns → "Go→JS JSON Key Mismatch" for discovery details. See Architecture Decisions → "Go→JS JSON Key Remapping" for the decision rationale.
 
 ---
 
 ## .gitignore Overbroad Patterns Hide Source Files (2026-02-14, mobile-rewrite)
 
-**Problem**: `.gitignore` patterns like `mobile/ios/` and `mobile/android/` ignore entire directories, including source files that should be tracked.
+**Problem**: `.gitignore` patterns like `mobile/ios/` ignore ALL files including source files.
 
-**Symptom**:
-- `git status` shows no untracked files under `mobile/ios/`
-- New Swift/Kotlin files created by agents are invisible to git
-- No error messages — completely silent failure
+**Symptom**: Source files created by agents invisible to git. `git status` shows nothing. Completely silent.
 
-**Root cause**: Initial `.gitignore` included broad directory patterns to skip build artifacts. Pattern `mobile/ios/` matches ALL files under that directory.
+**Solution**: Replace directory patterns with targeted build artifact patterns (`Pods/`, `build/`, `.gradle/`, `libs/`). Convention added to CLAUDE.md.
 
-**Solution**: Replace broad patterns with targeted build artifact patterns:
-```gitignore
-mobile/ios/App/Pods/
-mobile/ios/App/build/
-mobile/android/.gradle/
-mobile/android/app/build/
-mobile/android/k2-mobile/libs/
-```
+**Verification**: `git check-ignore <source-file>` should return nothing.
 
-**Verification**: `git check-ignore <source-file>` should return nothing (not ignored).
-
-**Prevention**: Convention added to AGENT.md: "Never ignore entire source directories. Only ignore build artifacts."
+**Cross-reference**: See Bugfix Patterns → "Overbroad .gitignore" for the original discovery.
 
 ---
 
 ## Capacitor Plugin Dynamic Import to Avoid Desktop Bundle Bloat (2026-02-14, mobile-rewrite)
 
-**Problem**: Importing `K2Plugin` from `k2-plugin` at module level causes Vite to bundle Capacitor dependencies into the desktop build, where they're not needed.
+**Problem**: Module-level `import { K2Plugin } from 'k2-plugin'` causes Vite to bundle Capacitor deps into desktop build.
 
-**Solution**: Dynamic import with `@vite-ignore` comment:
-```typescript
-export async function initVpnClient(): Promise<VpnClient> {
-  if (isCapacitorNative()) {
-    const { NativeVpnClient } = await import('./native-client');
-    const pluginModule = 'k2-plugin';
-    const { K2Plugin } = await import(/* @vite-ignore */ pluginModule);
-    instance = new NativeVpnClient(K2Plugin);
-  } else {
-    instance = new HttpVpnClient();
-  }
-}
-```
-
-**Why `@vite-ignore`**: Vite statically analyzes `import()` expressions. The variable indirection + `@vite-ignore` tells Vite to skip this import during static analysis. `k2-plugin` is only available at runtime on native platforms.
+**Solution**: Dynamic import with variable indirection + `@vite-ignore` comment in `webapp/src/vpn-client/index.ts`. Vite skips static analysis for this import. `k2-plugin` only available at runtime on native platforms.
 
 **Trade-off**: Lose static analysis for this import. Type safety maintained via local `K2PluginType` interface in `native-client.ts`.
 
@@ -131,183 +60,56 @@ export async function initVpnClient(): Promise<VpnClient> {
 
 ## Vite Dev Proxy vs Production baseUrl (2026-02-14, k2app-rewrite)
 
-**Problem**: HttpVpnClient needs different baseUrl in dev vs production.
+**Problem**: HttpVpnClient needs different baseUrl in dev (Vite proxy, relative URLs) vs production (no proxy, absolute `http://127.0.0.1:1777`).
 
-**Dev mode**:
-- Webapp: `http://localhost:1420` (Vite dev server)
-- Daemon: `http://127.0.0.1:1777`
-- Solution: Vite proxy `/api/*` and `/ping` to daemon
-- HttpVpnClient uses relative URLs: `fetch('/api/core')`
+**Solution**: `import.meta.env.DEV` compile-time switch. Dev: empty baseUrl (relative, proxied via `vite.config.ts`). Prod: absolute daemon URL. See `webapp/src/vpn-client/http-client.ts:16`.
 
-**Production**:
-- Webapp: `http://localhost:{port}` (Tauri localhost plugin)
-- Daemon: `http://127.0.0.1:1777`
-- No proxy available (Tauri serves static files)
-- HttpVpnClient must use absolute URLs: `fetch('http://127.0.0.1:1777/api/core')`
-
-**Implementation**:
-```typescript
-export class HttpVpnClient implements VpnClient {
-  private readonly baseUrl: string;
-
-  constructor() {
-    this.baseUrl = import.meta.env.DEV ? '' : 'http://127.0.0.1:1777';
-  }
-
-  private async coreRequest(action: string, params?: any) {
-    const resp = await fetch(`${this.baseUrl}/api/core`, { ... });
-    return resp.json();
-  }
-}
-```
-
-**Vite config**:
-```typescript
-// webapp/vite.config.ts
-export default defineConfig({
-  server: {
-    port: 1420,
-    proxy: {
-      '/api': 'http://127.0.0.1:1777',
-      '/ping': 'http://127.0.0.1:1777',
-    },
-  },
-});
-```
-
-**Why it works**:
-- `import.meta.env.DEV` is compile-time constant (true in dev, false in prod build)
-- Vite proxy is dev-only feature (not available in production)
-- Relative URLs in dev avoid CORS preflight (same-origin after proxy)
-- Absolute URLs in prod required because no proxy exists
-
-**Validation**:
-- Dev mode: `make dev` → API calls work, HMR works
-- Production: `make build-macos` → API calls work
+**Why**: Vite proxy is dev-only. Relative URLs avoid CORS preflight. Absolute URLs required in prod (Tauri serves static files, no proxy).
 
 ---
 
 ## Tauri Version Reference from Parent package.json (2026-02-14, k2app-rewrite)
 
-**Problem**: Tauri `version` field must match root `package.json` version for updater.
+**Problem**: Tauri `version` must match root `package.json` to prevent drift.
 
-**Naive approach** (doesn't work):
-```json
-{
-  "version": "0.4.0"  // Hardcoded, drifts from package.json
-}
-```
+**Solution**: `"version": "../../package.json"` in `desktop/src-tauri/tauri.conf.json`. Tauri CLI resolves paths ending in `.json` and reads the `version` field.
 
-**Correct approach**:
-```json
-{
-  "version": "../../package.json"  // Tauri resolves reference at build time
-}
-```
-
-**How it works**:
-- Tauri CLI reads `tauri.conf.json`
-- Sees string ending in `.json`
-- Resolves path relative to config file
-- Reads `version` field from referenced JSON
-- Uses that version in build
-
-**Benefits**:
-- Single source of truth (root package.json)
-- No build script needed to sync versions
-- Tauri native feature (no custom tooling)
-- Works in CI without special steps
-
-**Gotcha**: Path must be relative from `desktop/src-tauri/tauri.conf.json` to root, hence `../../package.json` not `../package.json`.
-
-**Validation**:
-- `make build-macos` → DMG has version matching package.json
-- Updater sees correct version for semver comparison
+**Gotcha**: Path is relative from `desktop/src-tauri/` to root — hence `../../` not `../`.
 
 ---
 
 ## Zustand Store Initialization with Async VpnClient (2026-02-14, k2app-rewrite)
 
-**Problem**: Zustand stores are synchronous, but `VpnClient.checkReady()` is async.
+**Problem**: Zustand stores are synchronous — `await` not allowed in `create()` callback.
 
-**Anti-pattern** (doesn't work):
-```typescript
-export const useVpnStore = create<VpnStore>((set) => ({
-  ready: await getVpnClient().checkReady(),  // ❌ await not allowed here
-}));
-```
+**Solution**: Separate `init()` async action called from React `useEffect`. Store created with `ready: null` initial state; `init()` calls async VpnClient methods and updates via `set()`.
 
-**Solution**: Separate initialization action
-```typescript
-export const useVpnStore = create<VpnStore>((set) => ({
-  ready: null,  // Initial state
-  init: async () => {
-    const client = getVpnClient();
-    const ready = await client.checkReady();
-    set({ ready });
-    if (ready.ready) {
-      client.subscribe((event) => { /* ... */ });
-    }
-  },
-}));
-```
+**Pattern**: Used by all stores — `useVpnStore.init()`, `useAuthStore.restoreSession()`, `useServersStore.fetchServers()`. Getter actions use `get()` closure for current state without subscription.
 
-**Usage in React**:
-```typescript
-function App() {
-  const init = useVpnStore((s) => s.init);
-
-  useEffect(() => {
-    init();  // Call async init on mount
-  }, []);
-
-  // ...
-}
-```
-
-**Why it works**:
-- Store creation is synchronous (no async in `create()`)
-- `init()` action is async (can await inside action)
-- React `useEffect` handles async action call
-- Store updates via `set()` trigger re-renders
-
-**Validation**:
-- `webapp/src/stores/__tests__/vpn.store.test.ts` — init() tests
-- ServiceReadiness component tests with store init flow
+**Validating tests**: `webapp/src/stores/__tests__/vpn.store.test.ts`
 
 ---
 
 ## Git Submodule in Monorepo Workspace (2026-02-14, k2app-rewrite)
 
-**Problem**: k2 is git submodule, but yarn workspaces doesn't support submodules by default.
+**Problem**: k2 is a Git submodule (Go), but yarn workspaces expects package.json in each workspace.
 
-**Symptom**:
-- `yarn install` ignores `k2/` directory
-- k2 has its own `go.mod`, not a yarn package
-- Workspace array includes non-existent packages
+**Solution**: Only include actual yarn packages in workspaces: `["webapp", "desktop", "mobile"]` — NOT `"k2"`. k2 is built via Makefile (`cd k2 && go build`), initialized via `git submodule update --init`.
 
-**Solution**: Only include actual yarn packages in workspaces
-```json
-{
-  "workspaces": ["webapp", "desktop"]  // NOT "k2"
-}
-```
+**CI gotcha**: Private submodule requires SSH agent setup in GitHub Actions workflows.
 
-**Why**:
-- k2 is Go module, not Node.js package (no package.json in k2/)
-- Yarn workspaces expects package.json in each workspace
-- k2 is built via Makefile (`cd k2 && go build`), not yarn
-- Submodule initialization via `git submodule update --init`, not yarn
+---
 
-**Build flow**:
-```makefile
-build-k2:
-    cd k2 && go build -tags nowebapp -o ../desktop/src-tauri/binaries/k2
-```
+## Service Readiness Retry on Startup (2026-02-14, k2app-rewrite)
 
-**Validation**:
-- `yarn install` succeeds without errors
-- `git clone --recursive` initializes k2 submodule
-- `make build-k2` compiles k2 binary successfully
+**Problem**: k2 daemon takes variable time to start after Tauri app launches. Immediate readiness check fails.
+
+**Solution**: `ServiceReadiness.tsx` retries up to 20 times at 500ms intervals (10s total). Shows "Starting service..." during retry, "Service not available" with manual retry button on timeout.
+
+**State machine**: Loading → Retrying (20×500ms) → Ready | Failed → (manual retry) → Retrying.
+
+**Why not just wait longer**: 10s covers 99% of cases. Manual retry button handles edge cases without blocking all users with a long spinner.
+
+**Validating tests**: `webapp/src/components/__tests__/ServiceReadiness.test.tsx` (if exists), manual dev testing.
 
 ---
