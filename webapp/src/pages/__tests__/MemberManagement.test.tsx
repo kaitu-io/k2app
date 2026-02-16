@@ -87,7 +87,6 @@ describe('MemberManagement', () => {
   });
 
   it('test_member_add_delete — lists members, adds new member, deletes member', async () => {
-    const user = userEvent.setup();
     render(<MemberManagement />);
 
     // Wait for members to load

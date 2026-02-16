@@ -6,6 +6,7 @@ interface VpnStore {
   state: VpnState;
   ready: ReadyState | null;
   error: string | null;
+  daemonReachable: boolean | null;
   init: () => Promise<void>;
   connect: (wireUrl: string) => Promise<void>;
   disconnect: () => Promise<void>;
@@ -15,11 +16,12 @@ export const useVpnStore = create<VpnStore>((set) => ({
   state: 'stopped',
   ready: null,
   error: null,
+  daemonReachable: null,
 
   init: async () => {
     const client = getVpnClient();
     const ready = await client.checkReady();
-    set({ ready });
+    set({ ready, daemonReachable: ready.ready });
     if (ready.ready) {
       const status = await client.getStatus();
       set({ state: status.state });

@@ -1,7 +1,7 @@
 import { useUiStore } from '../stores/ui.store';
 
 export function AlertContainer() {
-  const { alerts, removeAlert } = useUiStore();
+  const { alerts } = useUiStore();
 
   if (!alerts || alerts.length === 0) return null;
 

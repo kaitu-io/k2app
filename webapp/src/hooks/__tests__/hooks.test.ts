@@ -56,7 +56,7 @@ describe('hooks', () => {
       const { result } = renderHook(() => useUser());
 
       expect(result.current.user).toEqual(mockUserProfile);
-      expect(result.current.user.email).toBe('test@example.com');
+      expect(result.current.user!.email).toBe('test@example.com');
       expect(result.current.isLoading).toBe(false);
     });
 

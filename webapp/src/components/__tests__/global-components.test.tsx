@@ -102,7 +102,7 @@ describe('Global Components', () => {
     // Suppress console.error for expected error boundary logs
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    function ThrowingChild() {
+    function ThrowingChild(): never {
       throw new Error('Test error');
     }
 

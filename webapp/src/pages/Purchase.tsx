@@ -2,9 +2,6 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { usePurchaseStore } from '../stores/purchase.store';
 import { useAuthStore } from '../stores/auth.store';
-import { useUserStore } from '../stores/user.store';
-import { useUiStore } from '../stores/ui.store';
-import { getPlatform } from '../platform';
 import { EmailLoginForm } from '../components/EmailLoginForm';
 import type { Plan } from '../api/types';
 
@@ -19,7 +16,7 @@ function sortPlansByPeriod(plans: Plan[]): Plan[] {
 function getHighlightedPlanId(plans: Plan[]): string | null {
   if (plans.length === 0) return null;
   // Highlight the plan with the longest period (best value)
-  let best = plans[0];
+  let best: Plan = plans[0]!;
   for (const plan of plans) {
     if ((parseInt(plan.period, 10) || 0) > (parseInt(best.period, 10) || 0)) {
       best = plan;
@@ -33,7 +30,6 @@ export function Purchase() {
   const {
     plans,
     selectedPlanId,
-    campaignCode,
     orderPreview,
     currentOrder,
     isLoading,
@@ -44,8 +40,6 @@ export function Purchase() {
     createOrder,
   } = usePurchaseStore();
   const { isLoggedIn } = useAuthStore();
-  const { user } = useUserStore();
-  const { addAlert } = useUiStore();
 
   const [campaignInput, setCampaignInput] = useState('');
   const [showPaymentResult, setShowPaymentResult] = useState(false);

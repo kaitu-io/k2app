@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { Plan, Order } from '../../api/types';
 
@@ -18,24 +18,6 @@ vi.mock('../../stores/purchase.store', () => ({
 
 vi.mock('../../stores/auth.store', () => ({
   useAuthStore: vi.fn(),
-}));
-
-vi.mock('../../stores/user.store', () => ({
-  useUserStore: vi.fn(),
-}));
-
-vi.mock('../../stores/ui.store', () => ({
-  useUiStore: vi.fn(),
-}));
-
-// Mock platform
-const mockOpenExternal = vi.fn().mockResolvedValue(undefined);
-vi.mock('../../platform', () => ({
-  getPlatform: () => ({
-    openExternal: mockOpenExternal,
-    isMobile: false,
-    platformName: 'web',
-  }),
 }));
 
 // Mock cloud API
@@ -58,14 +40,10 @@ vi.mock('../../components/EmailLoginForm', () => ({
 import { Purchase } from '../Purchase';
 import { usePurchaseStore } from '../../stores/purchase.store';
 import { useAuthStore } from '../../stores/auth.store';
-import { useUserStore } from '../../stores/user.store';
-import { useUiStore } from '../../stores/ui.store';
 
 // Helper to type-cast mocked hooks
-const mockPurchaseStore = usePurchaseStore as unknown as ReturnType<typeof vi.fn>;
-const mockAuthStore = useAuthStore as unknown as ReturnType<typeof vi.fn>;
-const mockUserStore = useUserStore as unknown as ReturnType<typeof vi.fn>;
-const mockUiStore = useUiStore as unknown as ReturnType<typeof vi.fn>;
+const mockPurchaseStore = vi.mocked(usePurchaseStore);
+const mockAuthStore = vi.mocked(useAuthStore);
 
 // Test plan data sorted by period months: 1, 6, 12
 const testPlans: Plan[] = [
@@ -75,9 +53,8 @@ const testPlans: Plan[] = [
 ];
 
 function setupDefaultMocks(overrides: {
-  purchaseStore?: Partial<ReturnType<typeof mockPurchaseStore>>;
-  authStore?: Partial<ReturnType<typeof mockAuthStore>>;
-  userStore?: Partial<ReturnType<typeof mockUserStore>>;
+  purchaseStore?: Record<string, unknown>;
+  authStore?: Record<string, unknown>;
 } = {}) {
   const defaultPurchaseStore = {
     plans: [],
@@ -101,21 +78,10 @@ function setupDefaultMocks(overrides: {
     ...overrides.authStore,
   };
 
-  const defaultUserStore = {
-    user: { id: 'u1', email: 'user@test.com' },
-    isLoading: false,
-    error: null,
-    ...overrides.userStore,
-  };
+  mockPurchaseStore.mockReturnValue(defaultPurchaseStore as any);
+  mockAuthStore.mockReturnValue(defaultAuthStore as any);
 
-  mockPurchaseStore.mockReturnValue(defaultPurchaseStore);
-  mockAuthStore.mockReturnValue(defaultAuthStore);
-  mockUserStore.mockReturnValue(defaultUserStore);
-  mockUiStore.mockReturnValue({
-    addAlert: vi.fn(),
-  });
-
-  return { purchaseStore: defaultPurchaseStore, authStore: defaultAuthStore, userStore: defaultUserStore };
+  return { purchaseStore: defaultPurchaseStore, authStore: defaultAuthStore };
 }
 
 describe('Purchase', () => {
@@ -214,7 +180,7 @@ describe('Purchase', () => {
 
     // First render: no order yet, second render: order created
     let hasOrder = false;
-    mockPurchaseStore.mockImplementation(() => ({
+    mockPurchaseStore.mockImplementation((() => ({
       plans: testPlans,
       selectedPlanId: 'plan-1',
       campaignCode: null,
@@ -229,11 +195,9 @@ describe('Purchase', () => {
       createOrder: mockCreateOrder.mockImplementation(async () => {
         hasOrder = true;
       }),
-    }));
+    })) as any);
 
-    mockAuthStore.mockReturnValue({ isLoggedIn: true, isLoading: false });
-    mockUserStore.mockReturnValue({ user: { id: 'u1', email: 'user@test.com' }, isLoading: false, error: null });
-    mockUiStore.mockReturnValue({ addAlert: vi.fn() });
+    mockAuthStore.mockReturnValue({ isLoggedIn: true, isLoading: false } as any);
 
     const user = userEvent.setup();
     render(<Purchase />);
@@ -297,7 +261,7 @@ describe('Purchase', () => {
 
     // Click the first plan card (Monthly, period=1)
     const planCards = screen.getAllByTestId('plan-card');
-    await user.click(planCards[0]);
+    await user.click(planCards[0]!);
 
     expect(mockSelectPlan).toHaveBeenCalledWith('plan-1');
   });

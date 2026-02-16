@@ -77,6 +77,8 @@ export interface AppConfig {
   version: string;
   downloadUrl: string;
   features: Record<string, boolean>;
+  announcement?: string;
+  minClientVersion?: string;
 }
 
 export interface ProHistory {
