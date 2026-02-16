@@ -64,12 +64,31 @@ fi
 echo ""
 echo "--- Archiving iOS app ---"
 cd mobile/ios/App
-xcodebuild -workspace App.xcworkspace \
-  -scheme App \
-  -configuration Release \
-  -destination 'generic/platform=iOS' \
-  -archivePath build/App.xcarchive \
+
+XCODEBUILD_ARGS=(
+  -workspace App.xcworkspace
+  -scheme App
+  -configuration Release
+  -destination 'generic/platform=iOS'
+  -archivePath build/App.xcarchive
   archive
+)
+
+# Enable automatic provisioning if ASC API key is available (CI)
+if [ -n "${APP_STORE_CONNECT_KEY_ID:-}" ] && [ -n "${APP_STORE_CONNECT_ISSUER_ID:-}" ]; then
+  KEY_PATH="$HOME/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
+  if [ -f "$KEY_PATH" ]; then
+    XCODEBUILD_ARGS+=(
+      -allowProvisioningUpdates
+      -authenticationKeyPath "$KEY_PATH"
+      -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID"
+      -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
+    )
+    echo "Using App Store Connect API key for automatic signing"
+  fi
+fi
+
+xcodebuild "${XCODEBUILD_ARGS[@]}"
 
 echo ""
 echo "--- Verifying codesign ---"
@@ -82,10 +101,27 @@ cd "$ROOT_DIR"
 echo ""
 echo "--- Exporting IPA ---"
 cd mobile/ios/App
-xcodebuild -exportArchive \
-  -archivePath build/App.xcarchive \
-  -exportOptionsPlist ../ExportOptions.plist \
+
+EXPORT_ARGS=(
+  -exportArchive
+  -archivePath build/App.xcarchive
+  -exportOptionsPlist ../ExportOptions.plist
   -exportPath build/ipa
+)
+
+if [ -n "${APP_STORE_CONNECT_KEY_ID:-}" ] && [ -n "${APP_STORE_CONNECT_ISSUER_ID:-}" ]; then
+  KEY_PATH="$HOME/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
+  if [ -f "$KEY_PATH" ]; then
+    EXPORT_ARGS+=(
+      -allowProvisioningUpdates
+      -authenticationKeyPath "$KEY_PATH"
+      -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID"
+      -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
+    )
+  fi
+fi
+
+xcodebuild "${EXPORT_ARGS[@]}"
 
 cd "$ROOT_DIR"
 

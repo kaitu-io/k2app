@@ -2,11 +2,11 @@ platform :ios, '16.0'
 use_frameworks! :linkage => :static
 
 def capacitor_pods
-  pod 'Capacitor', :path => '../../node_modules/@capacitor/ios'
-  pod 'CapacitorCordova', :path => '../../node_modules/@capacitor/ios'
-  pod 'CapacitorApp', :path => '../../node_modules/@capacitor/app'
-  pod 'CapacitorStatusBar', :path => '../../node_modules/@capacitor/status-bar'
-  pod 'K2Plugin', :path => '../../plugins/k2-plugin'
+  pod 'Capacitor', :path => '../../../node_modules/@capacitor/ios'
+  pod 'CapacitorCordova', :path => '../../../node_modules/@capacitor/ios'
+  pod 'CapacitorApp', :path => '../../../node_modules/@capacitor/app'
+  pod 'CapacitorStatusBar', :path => '../../../node_modules/@capacitor/status-bar'
+  pod 'K2Plugin', :path => '../../../mobile/plugins/k2-plugin'
 end
 
 target 'App' do

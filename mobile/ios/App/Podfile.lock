@@ -1,0 +1,47 @@
+PODS:
+  - Capacitor (6.2.1):
+    - CapacitorCordova
+  - CapacitorApp (6.0.3):
+    - Capacitor
+  - CapacitorCordova (6.2.1)
+  - CapacitorStatusBar (6.0.3):
+    - Capacitor
+  - K2Plugin (0.1.0):
+    - Capacitor
+    - SSZipArchive (~> 2.5)
+  - SSZipArchive (2.6.0)
+
+DEPENDENCIES:
+  - "Capacitor (from `../../../node_modules/@capacitor/ios`)"
+  - "CapacitorApp (from `../../../node_modules/@capacitor/app`)"
+  - "CapacitorCordova (from `../../../node_modules/@capacitor/ios`)"
+  - "CapacitorStatusBar (from `../../../node_modules/@capacitor/status-bar`)"
+  - K2Plugin (from `../../../mobile/plugins/k2-plugin`)
+
+SPEC REPOS:
+  trunk:
+    - SSZipArchive
+
+EXTERNAL SOURCES:
+  Capacitor:
+    :path: "../../../node_modules/@capacitor/ios"
+  CapacitorApp:
+    :path: "../../../node_modules/@capacitor/app"
+  CapacitorCordova:
+    :path: "../../../node_modules/@capacitor/ios"
+  CapacitorStatusBar:
+    :path: "../../../node_modules/@capacitor/status-bar"
+  K2Plugin:
+    :path: "../../../mobile/plugins/k2-plugin"
+
+SPEC CHECKSUMS:
+  Capacitor: 1e0d0e7330dea9f983b50da737d8918abcf273f8
+  CapacitorApp: 22c94146dfaae1159ab7059cbd51e76d9f2d45ec
+  CapacitorCordova: 8d93e14982f440181be7304aa9559ca631d77fff
+  CapacitorStatusBar: 38665f1a18c55677098367a29f6b42126b72dc65
+  K2Plugin: 51b634dace0d84572053ec44ff339a4398c4fa93
+  SSZipArchive: 8a6ee5677c8e304bebc109e39cf0da91ccef22ea
+
+PODFILE CHECKSUM: 0335ebc5afd5de9ef52aac1bdc96361a63858923
+
+COCOAPODS: 1.16.2

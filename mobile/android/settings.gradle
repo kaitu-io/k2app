@@ -1,10 +1,6 @@
 include ':app'
 include ':k2-mobile'
-include ':capacitor-android'
-project(':capacitor-android').projectDir = new File('../../node_modules/@capacitor/android/capacitor')
-include ':capacitor-app'
-project(':capacitor-app').projectDir = new File('../../node_modules/@capacitor/app/android')
-include ':capacitor-status-bar'
-project(':capacitor-status-bar').projectDir = new File('../../node_modules/@capacitor/status-bar/android')
-include ':k2-plugin'
-project(':k2-plugin').projectDir = new File('../../plugins/k2-plugin/android')
+include ':capacitor-cordova-android-plugins'
+project(':capacitor-cordova-android-plugins').projectDir = new File('./capacitor-cordova-android-plugins/')
+
+apply from: 'capacitor.settings.gradle'

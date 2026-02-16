@@ -11,12 +11,21 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "0.4.0"
+        aaptOptions {
+            ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
     }
 
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    repositories {
+        flatDir {
+            dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
         }
     }
 
@@ -33,8 +42,13 @@ android {
 dependencies {
     implementation project(':k2-mobile')
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
     implementation project(':capacitor-app')
     implementation project(':capacitor-status-bar')
     implementation project(':k2-plugin')
+    implementation project(':capacitor-cordova-android-plugins')
 }
+
+apply from: 'capacitor.build.gradle'
