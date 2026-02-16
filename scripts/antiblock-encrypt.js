@@ -11,8 +11,8 @@ const path = require('node:path');
 /**
  * Encrypt a config object into a JSONP string.
  *
- * Output format:
- *   void function(){var c={v:1,data:"<base64>"}}();
+ * Output format (JSONP — sets window.__k2ac for <script> tag loading):
+ *   window.__k2ac={"v":1,"data":"<base64>"};
  *
  * Where `data` is AES-256-GCM encrypted, base64-encoded ciphertext
  * of the JSON-serialized config.
@@ -29,7 +29,7 @@ function encrypt(config, keyHex) {
   const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
   const tag = cipher.getAuthTag();
   const data = Buffer.concat([iv, encrypted, tag]).toString('base64');
-  return `void function(){var c={"v":1,"data":"${data}"}}();`;
+  return `window.__k2ac={"v":1,"data":"${data}"};`;
 }
 
 // ---------------------------------------------------------------------------
@@ -48,7 +48,7 @@ function runTests() {
   // ---- test_encrypt_produces_jsonp ----
   results.push(runTest('test_encrypt_produces_jsonp', () => {
     const output = encrypt(testConfig, testKey);
-    const pattern = /^void function\(\)\{var c=\{[\s\S]*\}\}\(\);$/;
+    const pattern = /^window\.__k2ac=\{.*\};$/;
     assert(pattern.test(output), `Output must match JSONP pattern, got: ${truncate(output)}`);
   }));
 
@@ -141,8 +141,8 @@ function assert(condition, message) {
 }
 
 function extractJson(jsonp) {
-  const match = jsonp.match(/\{"[^}]*\}/);
-  return match ? match[0] : null;
+  const match = jsonp.match(/=(\{.*\});$/);
+  return match ? match[1] : null;
 }
 
 function truncate(str, len = 80) {

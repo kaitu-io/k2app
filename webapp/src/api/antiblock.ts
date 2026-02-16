@@ -81,26 +81,57 @@ export async function decrypt(
 }
 
 // ---------------------------------------------------------------------------
-// CDN fetch — encrypted config format: { v: 1, data: "<base64 ciphertext>" }
+// JSONP loader — <script> tag injection (no CORS restrictions)
+// Config script sets window.__k2ac = { v: 1, data: "<base64 ciphertext>" }
 // ---------------------------------------------------------------------------
+
+const JSONP_GLOBAL = '__k2ac';
+
+interface AntiblockConfig {
+  v: number;
+  data: string;
+}
+
+function loadScript(url: string, timeoutMs = 10000): Promise<AntiblockConfig | null> {
+  return new Promise((resolve) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = window as any;
+    delete w[JSONP_GLOBAL];
+
+    const script = document.createElement('script');
+    const timer = setTimeout(() => {
+      script.remove();
+      resolve(null);
+    }, timeoutMs);
+
+    script.onload = () => {
+      clearTimeout(timer);
+      const config = w[JSONP_GLOBAL] as AntiblockConfig | undefined;
+      delete w[JSONP_GLOBAL];
+      script.remove();
+      resolve(config ?? null);
+    };
+    script.onerror = () => {
+      clearTimeout(timer);
+      script.remove();
+      resolve(null);
+    };
+    script.src = url;
+    document.head.appendChild(script);
+  });
+}
 
 async function fetchEntryFromCDN(): Promise<string | null> {
   for (const url of CDN_SOURCES) {
     try {
-      const resp = await fetch(url);
-      if (!resp.ok) continue;
-      const text = await resp.text();
-      const match = text.match(/\{[\s\S]*\}/);
-      if (!match) continue;
-      const config = JSON.parse(match[0]) as { v?: number; data?: string };
-      if (config.v === 1 && typeof config.data === 'string') {
-        const plaintext = await decrypt(config.data, DECRYPTION_KEY);
-        if (!plaintext) continue;
-        const parsed = JSON.parse(plaintext) as { entries?: string[] };
-        if (parsed.entries && parsed.entries.length > 0) {
-          localStorage.setItem(STORAGE_KEY, parsed.entries[0]!);
-          return parsed.entries[0]!;
-        }
+      const config = await loadScript(url);
+      if (!config || config.v !== 1 || typeof config.data !== 'string') continue;
+      const plaintext = await decrypt(config.data, DECRYPTION_KEY);
+      if (!plaintext) continue;
+      const parsed = JSON.parse(plaintext) as { entries?: string[] };
+      if (parsed.entries && parsed.entries.length > 0) {
+        localStorage.setItem(STORAGE_KEY, parsed.entries[0]!);
+        return parsed.entries[0]!;
       }
     } catch {
       continue;

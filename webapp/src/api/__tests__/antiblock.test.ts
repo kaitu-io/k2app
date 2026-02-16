@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
@@ -60,6 +60,42 @@ const sourceCode = readFileSync(
 );
 
 // ---------------------------------------------------------------------------
+// JSONP script mock — simulates <script> tag loading setting window.__k2ac
+// ---------------------------------------------------------------------------
+
+/**
+ * Mock document.head.appendChild to intercept <script> injections.
+ * When a script is appended, it simulates JSONP by setting window.__k2ac
+ * then firing onload (or onerror).
+ */
+function setupScriptMock(
+  configProvider: (url: string) => { v: number; data: string } | null,
+) {
+  const origAppendChild = document.head.appendChild.bind(document.head);
+
+  vi.spyOn(document.head, 'appendChild').mockImplementation(
+    <T extends Node>(node: T): T => {
+      if (node instanceof HTMLScriptElement && node.src) {
+        const url = node.src;
+        // Simulate async script load
+        setTimeout(() => {
+          const config = configProvider(url);
+          if (config) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__k2ac = config;
+            node.onload?.(new Event('load'));
+          } else {
+            node.onerror?.(new Event('error') as ErrorEvent);
+          }
+        }, 0);
+        return node;
+      }
+      return origAppendChild(node) as T;
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -78,7 +114,6 @@ describe('antiblock — AES-256-GCM decryption', () => {
   it('test_decrypt_wrong_key_returns_null', async () => {
     const original = 'https://example.com';
     const encrypted = await encryptForTest(original, TEST_KEY_HEX);
-    // Different key — last byte changed
     const wrongKey =
       'a01b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8ff';
     const result = await decrypt(encrypted, wrongKey);
@@ -88,9 +123,7 @@ describe('antiblock — AES-256-GCM decryption', () => {
   it('test_decrypt_tampered_payload_returns_null', async () => {
     const original = 'https://example.com';
     const encrypted = await encryptForTest(original, TEST_KEY_HEX);
-    // Decode base64 → flip a byte in the ciphertext portion → re-encode
     const raw = Uint8Array.from(atob(encrypted), (c) => c.charCodeAt(0));
-    // Flip a byte after the 12-byte IV (i.e. in the ciphertext)
     raw[14] = raw[14]! ^ 0xff;
     const tampered = btoa(String.fromCharCode(...raw));
     const result = await decrypt(tampered, TEST_KEY_HEX);
@@ -100,7 +133,6 @@ describe('antiblock — AES-256-GCM decryption', () => {
   // ── resolveEntry integration tests ──────────────────────────────────────
 
   describe('resolveEntry', () => {
-    let mockFetch: ReturnType<typeof vi.fn>;
     let mockLocalStorage: {
       getItem: ReturnType<typeof vi.fn>;
       setItem: ReturnType<typeof vi.fn>;
@@ -108,8 +140,6 @@ describe('antiblock — AES-256-GCM decryption', () => {
     };
 
     beforeEach(() => {
-      mockFetch = vi.fn();
-      vi.stubGlobal('fetch', mockFetch);
       mockLocalStorage = {
         getItem: vi.fn(),
         setItem: vi.fn(),
@@ -118,19 +148,23 @@ describe('antiblock — AES-256-GCM decryption', () => {
       vi.stubGlobal('localStorage', mockLocalStorage);
     });
 
+    afterEach(() => {
+      vi.restoreAllMocks();
+      delete // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__k2ac;
+    });
+
     it('test_cache_hit_skips_fetch', async () => {
       mockLocalStorage.getItem.mockReturnValue('https://cached.example.com');
-      mockFetch.mockRejectedValue(new Error('should not be called'));
 
       const entry = await resolveEntry();
       expect(entry).toBe('https://cached.example.com');
-      // fetch should NOT have been awaited/blocking — resolveEntry returns
-      // immediately from cache
     });
 
     it('test_all_cdn_fail_returns_default', async () => {
       mockLocalStorage.getItem.mockReturnValue(null);
-      mockFetch.mockRejectedValue(new Error('network error'));
+      // All scripts fail to load
+      setupScriptMock(() => null);
 
       const entry = await resolveEntry();
       expect(entry).toBe(DEFAULT_ENTRY);
@@ -138,30 +172,28 @@ describe('antiblock — AES-256-GCM decryption', () => {
 
     it('test_background_refresh_on_cache_hit', async () => {
       mockLocalStorage.getItem.mockReturnValue('https://cached.example.com');
-      mockFetch.mockResolvedValue({
-        ok: false,
-        text: () => Promise.resolve(''),
-      });
+      const appendSpy = vi.spyOn(document.head, 'appendChild');
 
       await resolveEntry();
 
-      // Even though we got cache hit, fetch should still be called in background
-      // Wait a tick for the background promise to fire
+      // Wait a tick for the background refresh to fire
       await new Promise((r) => setTimeout(r, 10));
-      expect(mockFetch).toHaveBeenCalled();
+      // Background refresh should inject a <script> tag
+      const scriptCalls = appendSpy.mock.calls.filter(
+        ([node]) => node instanceof HTMLScriptElement,
+      );
+      expect(scriptCalls.length).toBeGreaterThan(0);
     });
   });
 
   // ── Static analysis tests ───────────────────────────────────────────────
 
   it('test_cdn_sources_are_github_urls', () => {
-    const hasJsdelivrGh = CDN_SOURCES.some(
-      (url) =>
-        url.includes('jsdelivr.net/gh/kaitu-io/ui-theme'),
+    const hasJsdelivrGh = CDN_SOURCES.some((url) =>
+      url.includes('jsdelivr.net/gh/kaitu-io/ui-theme'),
     );
-    const hasStaticallyGh = CDN_SOURCES.some(
-      (url) =>
-        url.includes('statically.io/gh/kaitu-io/ui-theme'),
+    const hasStaticallyGh = CDN_SOURCES.some((url) =>
+      url.includes('statically.io/gh/kaitu-io/ui-theme'),
     );
     expect(hasJsdelivrGh).toBe(true);
     expect(hasStaticallyGh).toBe(true);
