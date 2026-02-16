@@ -1,3 +1,6 @@
+import { useUserStore } from '../stores/user.store';
+
 export function useUser() {
-  throw new Error('Not implemented');
+  const { user, isLoading, error } = useUserStore();
+  return { user, isLoading, error };
 }

@@ -9,11 +9,24 @@ export interface LoginDialogStore {
   close: () => void;
 }
 
-export const useLoginDialogStore = create<LoginDialogStore>(() => ({
+export const useLoginDialogStore = create<LoginDialogStore>((set) => ({
   isOpen: false,
   trigger: null,
   message: null,
 
-  open: () => { throw new Error('Not implemented'); },
-  close: () => { throw new Error('Not implemented'); },
+  open: (trigger?: string, message?: string) => {
+    set({
+      isOpen: true,
+      trigger: trigger ?? null,
+      message: message ?? null,
+    });
+  },
+
+  close: () => {
+    set({
+      isOpen: false,
+      trigger: null,
+      message: null,
+    });
+  },
 }));

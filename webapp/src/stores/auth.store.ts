@@ -55,6 +55,25 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   },
 
   logout: () => {
+    // Disconnect VPN
+    try {
+      const client = getVpnClient();
+      client.disconnect().catch(() => {});
+    } catch {
+      // VPN client may not be initialized, ignore
+    }
+
+    // Invalidate server-side session (fire-and-forget)
+    try {
+      const logoutPromise = cloudApi.logout();
+      if (logoutPromise && typeof logoutPromise.catch === 'function') {
+        logoutPromise.catch(() => {});
+      }
+    } catch {
+      // cloudApi.logout may not be available in some test contexts
+    }
+
+    // Clear local tokens
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(REFRESH_KEY);
     setAuthToken(null);

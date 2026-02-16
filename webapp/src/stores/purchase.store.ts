@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { cloudApi } from '../api/cloud';
 import type { Plan, Order } from '../api/types';
 
 export interface OrderPreview {
@@ -25,7 +26,7 @@ export interface PurchaseStore {
   createOrder: () => Promise<void>;
 }
 
-export const usePurchaseStore = create<PurchaseStore>(() => ({
+export const usePurchaseStore = create<PurchaseStore>((set, get) => ({
   plans: [],
   selectedPlanId: null,
   campaignCode: null,
@@ -34,9 +35,65 @@ export const usePurchaseStore = create<PurchaseStore>(() => ({
   isLoading: false,
   error: null,
 
-  loadPlans: async () => { throw new Error('Not implemented'); },
-  selectPlan: () => { throw new Error('Not implemented'); },
-  setCampaignCode: () => { throw new Error('Not implemented'); },
-  previewOrder: async () => { throw new Error('Not implemented'); },
-  createOrder: async () => { throw new Error('Not implemented'); },
+  loadPlans: async () => {
+    set({ isLoading: true, error: null });
+    try {
+      const resp = await cloudApi.getPlans();
+      const plans = (resp.data ?? []) as Plan[];
+      set({ plans, isLoading: false });
+    } catch (e) {
+      set({
+        isLoading: false,
+        error: e instanceof Error ? e.message : 'Failed to load plans',
+      });
+    }
+  },
+
+  selectPlan: (id: string) => {
+    set({ selectedPlanId: id });
+  },
+
+  setCampaignCode: (code: string) => {
+    set({ campaignCode: code });
+  },
+
+  previewOrder: async () => {
+    const { selectedPlanId, plans } = get();
+    if (!selectedPlanId) return;
+
+    const plan = plans.find((p) => p.id === selectedPlanId);
+    const period = plan?.period ?? 'monthly';
+
+    set({ isLoading: true, error: null });
+    try {
+      const resp = await cloudApi.previewOrder(selectedPlanId, period);
+      const preview = resp.data as OrderPreview;
+      set({ orderPreview: preview, isLoading: false });
+    } catch (e) {
+      set({
+        isLoading: false,
+        error: e instanceof Error ? e.message : 'Failed to preview order',
+      });
+    }
+  },
+
+  createOrder: async () => {
+    const { selectedPlanId, plans } = get();
+    if (!selectedPlanId) return;
+
+    const plan = plans.find((p) => p.id === selectedPlanId);
+    const period = plan?.period ?? 'monthly';
+
+    set({ isLoading: true, error: null });
+    try {
+      const resp = await cloudApi.createOrder(selectedPlanId, period);
+      const order = resp.data as Order;
+      set({ currentOrder: order, isLoading: false });
+    } catch (e) {
+      set({
+        isLoading: false,
+        error: e instanceof Error ? e.message : 'Failed to create order',
+      });
+    }
+  },
 }));
