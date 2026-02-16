@@ -150,9 +150,12 @@ export const cloudApi = {
     cloudRequest('POST', '/api/share-links', { inviteCode }),
 
   // Issues & Comments
-  getIssues: () => cloudRequest('GET', '/api/issues'),
+  getIssues: (page?: number) =>
+    cloudRequest('GET', `/api/issues${page ? `?page=${page}` : ''}`),
   getIssueDetail: (issueId: string) =>
     cloudRequest('GET', `/api/issues/${issueId}`),
+  getIssueComments: (issueId: string) =>
+    cloudRequest('GET', `/api/issues/${issueId}/comments`),
   createIssue: (title: string, content: string) =>
     cloudRequest('POST', '/api/issues', { title, content }),
   addComment: (issueId: string, content: string) =>

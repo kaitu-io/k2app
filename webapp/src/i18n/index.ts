@@ -6,18 +6,20 @@ import zhCommon from './locales/zh-CN/common.json';
 import zhDashboard from './locales/zh-CN/dashboard.json';
 import zhAuth from './locales/zh-CN/auth.json';
 import zhSettings from './locales/zh-CN/settings.json';
+import zhFeedback from './locales/zh-CN/feedback.json';
 import enCommon from './locales/en-US/common.json';
 import enDashboard from './locales/en-US/dashboard.json';
 import enAuth from './locales/en-US/auth.json';
 import enSettings from './locales/en-US/settings.json';
+import enFeedback from './locales/en-US/feedback.json';
 
 i18n
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
     resources: {
-      'zh-CN': { common: zhCommon, dashboard: zhDashboard, auth: zhAuth, settings: zhSettings },
-      'en-US': { common: enCommon, dashboard: enDashboard, auth: enAuth, settings: enSettings },
+      'zh-CN': { common: zhCommon, dashboard: zhDashboard, auth: zhAuth, settings: zhSettings, feedback: zhFeedback },
+      'en-US': { common: enCommon, dashboard: enDashboard, auth: enAuth, settings: enSettings, feedback: enFeedback },
     },
     fallbackLng: 'zh-CN',
     defaultNS: 'common',
