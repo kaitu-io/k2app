@@ -408,18 +408,11 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func unzip(fileAt sourceURL: URL, to destinationURL: URL) throws {
-        let success = SSZipArchive.unzipFile(
+        try SSZipArchive.unzipFile(
             atPath: sourceURL.path,
             toDestination: destinationURL.path,
             overwrite: true,
             password: nil
         )
-        if !success {
-            throw NSError(
-                domain: "K2Plugin",
-                code: -1,
-                userInfo: [NSLocalizedDescriptionKey: "Failed to unzip file"]
-            )
-        }
     }
 }

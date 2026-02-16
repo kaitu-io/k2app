@@ -16,7 +16,7 @@ DEPENDENCIES:
   - "CapacitorApp (from `../../../node_modules/@capacitor/app`)"
   - "CapacitorCordova (from `../../../node_modules/@capacitor/ios`)"
   - "CapacitorStatusBar (from `../../../node_modules/@capacitor/status-bar`)"
-  - K2Plugin (from `../../../mobile/plugins/k2-plugin`)
+  - K2Plugin (from `../../../node_modules/k2-plugin`)
 
 SPEC REPOS:
   trunk:
@@ -32,7 +32,7 @@ EXTERNAL SOURCES:
   CapacitorStatusBar:
     :path: "../../../node_modules/@capacitor/status-bar"
   K2Plugin:
-    :path: "../../../mobile/plugins/k2-plugin"
+    :path: "../../../node_modules/k2-plugin"
 
 SPEC CHECKSUMS:
   Capacitor: 1e0d0e7330dea9f983b50da737d8918abcf273f8
@@ -42,6 +42,6 @@ SPEC CHECKSUMS:
   K2Plugin: 51b634dace0d84572053ec44ff339a4398c4fa93
   SSZipArchive: 8a6ee5677c8e304bebc109e39cf0da91ccef22ea
 
-PODFILE CHECKSUM: 0335ebc5afd5de9ef52aac1bdc96361a63858923
+PODFILE CHECKSUM: 077a88fbb2982d3be81c228581e12788c6d0d39f
 
 COCOAPODS: 1.16.2

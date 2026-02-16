@@ -39,20 +39,19 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 return
             }
 
-            var startError: NSError?
-            self?.engine?.start(wireUrl, fd: Int(fd), error: &startError)
-            if let error = startError {
-                completionHandler(error)
-            } else {
+            do {
+                try self?.engine?.start(wireUrl, fd: Int(fd))
                 // Save state to App Group
                 UserDefaults(suiteName: "group.io.kaitu")?.set("connecting", forKey: "vpnState")
                 completionHandler(nil)
+            } catch {
+                completionHandler(error)
             }
         }
     }
 
     override func stopTunnel(with reason: NEProviderStopReason, completionHandler: @escaping () -> Void) {
-        engine?.stop()
+        try? engine?.stop()
         engine = nil
         UserDefaults(suiteName: "group.io.kaitu")?.set("stopped", forKey: "vpnState")
         completionHandler()

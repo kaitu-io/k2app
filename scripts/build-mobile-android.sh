@@ -38,8 +38,8 @@ make mobile-android
 # --- Copy AAR into Android project ---
 echo ""
 echo "--- Copying AAR to Android project ---"
-mkdir -p mobile/android/k2-mobile/libs
-cp k2/build/k2mobile.aar mobile/android/k2-mobile/libs/
+mkdir -p mobile/android/app/libs
+cp k2/build/k2mobile.aar mobile/android/app/libs/
 echo "Copied k2mobile.aar"
 
 # --- Capacitor sync ---

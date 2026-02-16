@@ -51,7 +51,8 @@ build-mobile-ios: pre-build build-webapp mobile-ios
 		-archivePath build/App.xcarchive archive
 
 build-mobile-android: pre-build build-webapp mobile-android
-	cp k2/build/k2mobile.aar mobile/android/k2-mobile/libs/
+	mkdir -p mobile/android/app/libs
+	cp k2/build/k2mobile.aar mobile/android/app/libs/
 	cd mobile && npx cap sync android
 	cd mobile/android && ./gradlew assembleRelease
 
@@ -59,7 +60,8 @@ dev-ios: pre-build build-webapp
 	cd mobile && npx cap sync ios && npx cap run ios
 
 dev-android: pre-build build-webapp mobile-android
-	cp k2/build/k2mobile.aar mobile/android/k2-mobile/libs/
+	mkdir -p mobile/android/app/libs
+	cp k2/build/k2mobile.aar mobile/android/app/libs/
 	cd mobile && npx cap sync android && npx cap run android
 
 clean:

@@ -15,8 +15,10 @@
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		51EF5EA20E6D3E5FA88D67A4 /* PacketTunnelExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = B3E4F1BB9F484E6F4766ADD2 /* PacketTunnelExtension.appex */; };
+		65E4ECC2D32A657AC351C764 /* K2Mobile.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = BBCE1198135DD938090D5E41 /* K2Mobile.xcframework */; };
 		9ECB53766821BE46A6517C18 /* PacketTunnelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDF0660D7E007B680F0370F8 /* PacketTunnelProvider.swift */; };
 		A084ECDBA7D38E1E42DFC39D /* Pods_App.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */; };
+		AC809A99C72119A8BD87D2F2 /* K2Mobile.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = BBCE1198135DD938090D5E41 /* K2Mobile.xcframework */; };
 		D36F09BE5D71D847D49AC01B /* Pods_PacketTunnelExtension.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 233A3F316C4F467CA6A1A8A2 /* Pods_PacketTunnelExtension.framework */; };
 		FCBE94BC67556466AB9AA049 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D08300DE0A8C33C607A9BC3E /* Foundation.framework */; };
 /* End PBXBuildFile section */
@@ -60,6 +62,7 @@
 		AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_App.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		AF51FD2D460BCFE21FA515B2 /* Pods-App.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-App.release.xcconfig"; path = "Pods/Target Support Files/Pods-App/Pods-App.release.xcconfig"; sourceTree = "<group>"; };
 		B3E4F1BB9F484E6F4766ADD2 /* PacketTunnelExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PacketTunnelExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		BBCE1198135DD938090D5E41 /* K2Mobile.xcframework */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = wrapper.xcframework; path = K2Mobile.xcframework; sourceTree = SOURCE_ROOT; };
 		D08300DE0A8C33C607A9BC3E /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		D37F6F07B15C96C61F3681FF /* Pods-PacketTunnelExtension.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-PacketTunnelExtension.release.xcconfig"; path = "Pods/Target Support Files/Pods-PacketTunnelExtension/Pods-PacketTunnelExtension.release.xcconfig"; sourceTree = "<group>"; };
 		DDF0660D7E007B680F0370F8 /* PacketTunnelProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PacketTunnelProvider.swift; sourceTree = "<group>"; };
@@ -72,6 +75,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A084ECDBA7D38E1E42DFC39D /* Pods_App.framework in Frameworks */,
+				AC809A99C72119A8BD87D2F2 /* K2Mobile.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -81,6 +85,7 @@
 			files = (
 				FCBE94BC67556466AB9AA049 /* Foundation.framework in Frameworks */,
 				D36F09BE5D71D847D49AC01B /* Pods_PacketTunnelExtension.framework in Frameworks */,
+				65E4ECC2D32A657AC351C764 /* K2Mobile.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -114,6 +119,7 @@
 				7F8756D8B27F46E3366F6CEA /* Pods */,
 				27E2DDA53C4D2A4D1A88CE4A /* Frameworks */,
 				270333A7A9DD28EA87B8AD2D /* PacketTunnelExtension */,
+				BBCE1198135DD938090D5E41 /* K2Mobile.xcframework */,
 			);
 			sourceTree = "<group>";
 		};
@@ -531,11 +537,13 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = PacketTunnelExtension/PacketTunnelExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = NJT954Q3RH;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = PacketTunnelExtension/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = io.kaitu.PacketTunnelExtension;
 				PRODUCT_NAME = PacketTunnelExtension;
 				SDKROOT = iphoneos;
@@ -552,11 +560,13 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = PacketTunnelExtension/PacketTunnelExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = NJT954Q3RH;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = PacketTunnelExtension/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = io.kaitu.PacketTunnelExtension;
 				PRODUCT_NAME = PacketTunnelExtension;
 				SDKROOT = iphoneos;

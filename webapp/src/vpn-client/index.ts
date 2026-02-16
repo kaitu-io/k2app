@@ -30,10 +30,9 @@ export async function initVpnClient(override?: VpnClient): Promise<VpnClient> {
   if (!instance) {
     if (isCapacitorNative()) {
       const { NativeVpnClient } = await import('./native-client');
-      // Use variable to prevent Vite from statically resolving this mobile-only dependency
-      const pluginModule = 'k2-plugin';
-      const { K2Plugin } = await import(/* @vite-ignore */ pluginModule);
-      instance = new NativeVpnClient(K2Plugin);
+      const { registerPlugin } = await import('@capacitor/core');
+      const K2Plugin = registerPlugin('K2Plugin');
+      instance = new NativeVpnClient(K2Plugin as any);
     } else {
       instance = new HttpVpnClient();
     }

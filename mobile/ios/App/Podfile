@@ -6,7 +6,7 @@ def capacitor_pods
   pod 'CapacitorCordova', :path => '../../../node_modules/@capacitor/ios'
   pod 'CapacitorApp', :path => '../../../node_modules/@capacitor/app'
   pod 'CapacitorStatusBar', :path => '../../../node_modules/@capacitor/status-bar'
-  pod 'K2Plugin', :path => '../../../mobile/plugins/k2-plugin'
+  pod 'K2Plugin', :path => '../../../node_modules/k2-plugin'
 end
 
 target 'App' do
