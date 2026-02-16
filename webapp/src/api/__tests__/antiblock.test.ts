@@ -25,9 +25,10 @@ async function encryptForTest(
   plaintext: string,
   keyHex: string,
 ): Promise<string> {
+  const rawKey = hexToBytes(keyHex);
   const key = await crypto.subtle.importKey(
     'raw',
-    hexToBytes(keyHex),
+    rawKey.buffer as ArrayBuffer,
     'AES-GCM',
     false,
     ['encrypt'],
@@ -35,9 +36,9 @@ async function encryptForTest(
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const encoded = new TextEncoder().encode(plaintext);
   const ciphertext = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
+    { name: 'AES-GCM', iv: iv.buffer as ArrayBuffer },
     key,
-    encoded,
+    encoded.buffer as ArrayBuffer,
   );
   const result = new Uint8Array(iv.length + ciphertext.byteLength);
   result.set(iv);
@@ -46,12 +47,6 @@ async function encryptForTest(
 }
 
 /** A valid 256-bit hex key for test fixtures */
-const TEST_KEY =
-  'a]1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9'.replace(
-    /]/g,
-    '0',
-  );
-// Ensure TEST_KEY is exactly 64 hex chars
 const TEST_KEY_HEX =
   'a01b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9';
 

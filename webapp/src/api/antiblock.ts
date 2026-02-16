@@ -61,17 +61,18 @@ export async function decrypt(
     const data = base64ToBytes(encoded);
     const iv = data.slice(0, 12);
     const ciphertext = data.slice(12);
+    const rawKey = hexToBytes(keyHex);
     const key = await crypto.subtle.importKey(
       'raw',
-      hexToBytes(keyHex),
+      rawKey.buffer as ArrayBuffer,
       'AES-GCM',
       false,
       ['decrypt'],
     );
     const plain = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv },
+      { name: 'AES-GCM', iv: iv.buffer as ArrayBuffer },
       key,
-      ciphertext,
+      ciphertext.buffer as ArrayBuffer,
     );
     return new TextDecoder().decode(plain);
   } catch {
