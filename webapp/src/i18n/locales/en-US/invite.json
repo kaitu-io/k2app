@@ -1,0 +1,39 @@
+{
+  "title": "Invite",
+  "inviteCode": "Invite Code",
+  "copyCode": "Copy Invite Code",
+  "copied": "Copied",
+  "shareLink": "Share Link",
+  "share": "Share",
+  "generateNew": "Generate New Code",
+  "generating": "Generating...",
+  "remark": "Remark",
+  "remarkPlaceholder": "Add a remark",
+  "editRemark": "Edit Remark",
+  "saveRemark": "Save",
+  "qrCode": "QR Code",
+  "expiration": "Expiration",
+  "expirationOptions": {
+    "1h": "1 Hour",
+    "24h": "24 Hours",
+    "7d": "7 Days",
+    "30d": "30 Days",
+    "never": "Never"
+  },
+  "stats": {
+    "registered": "Registered",
+    "purchased": "Purchased"
+  },
+  "retailerStats": {
+    "title": "Retailer Stats",
+    "totalInvites": "Total Invites",
+    "registered": "Registered",
+    "purchased": "Purchased"
+  },
+  "rules": {
+    "title": "Invite Rules",
+    "rule1": "Each invite code can only be used once",
+    "rule2": "You will receive a reward when invitees register",
+    "rule3": "Invite codes can have an expiration period"
+  }
+}

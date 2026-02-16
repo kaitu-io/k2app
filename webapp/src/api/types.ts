@@ -46,6 +46,14 @@ export interface InviteCode {
   used: boolean;
   usedBy: string | null;
   createdAt: string;
+  registeredCount?: number;
+  purchasedCount?: number;
+}
+
+export interface InviteStats {
+  totalInvites: number;
+  registeredCount: number;
+  purchasedCount: number;
 }
 
 export interface Issue {
