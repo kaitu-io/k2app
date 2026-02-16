@@ -1,8 +1,10 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -189,5 +191,115 @@ server: "k2v5://udid:token@1.2.3.4:443"
 
 	if cfg.Listen != "0.0.0.0:1777" {
 		t.Errorf("Listen = %q, want 0.0.0.0:1777", cfg.Listen)
+	}
+}
+
+// ==========================================================================
+// Config-driven connect tests (F1)
+// ==========================================================================
+
+func TestClientConfigJSONRoundTrip(t *testing.T) {
+	cfg := &ClientConfig{
+		Listen: "127.0.0.1:1777",
+		Server: "k2v5://udid:token@1.2.3.4:443",
+		Mode:   "tun",
+		Proxy:  ProxyConfig{Listen: "127.0.0.1:1080"},
+		DNS:    DNSConfig{Direct: []string{"114.114.114.114:53"}, Proxy: []string{"8.8.8.8:53"}},
+		Rule:   RuleConfig{Global: true, CacheDir: "/tmp/k2rule"},
+		Log:    LogConfig{Level: "info", Output: "stderr"},
+	}
+
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	// Verify JSON uses snake_case keys matching YAML tags.
+	var raw map[string]any
+	json.Unmarshal(data, &raw)
+	for _, key := range []string{"listen", "server", "mode", "proxy", "dns", "rule", "log"} {
+		if _, ok := raw[key]; !ok {
+			t.Errorf("expected JSON key %q, not found in %s", key, string(data))
+		}
+	}
+
+	var got ClientConfig
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if !reflect.DeepEqual(cfg, &got) {
+		t.Fatalf("round-trip mismatch:\n  original: %+v\n  decoded:  %+v", cfg, got)
+	}
+}
+
+func TestClientConfigJSONYAMLEquivalence(t *testing.T) {
+	// Build config from YAML file.
+	yamlContent := `
+server: "k2v5://udid:token@1.2.3.4:443"
+mode: proxy
+proxy:
+  listen: "0.0.0.0:8080"
+dns:
+  direct:
+    - "114.114.114.114:53"
+  proxy:
+    - "8.8.8.8:53"
+log:
+  level: debug
+  output: /var/log/k2.log
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "client.yaml")
+	os.WriteFile(path, []byte(yamlContent), 0644)
+
+	yamlCfg, err := LoadClient(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Build equivalent config from JSON.
+	jsonContent := `{
+		"server": "k2v5://udid:token@1.2.3.4:443",
+		"mode": "proxy",
+		"proxy": {"listen": "0.0.0.0:8080"},
+		"dns": {"direct": ["114.114.114.114:53"], "proxy": ["8.8.8.8:53"]},
+		"log": {"level": "debug", "output": "/var/log/k2.log"}
+	}`
+	var jsonCfg ClientConfig
+	if err := json.Unmarshal([]byte(jsonContent), &jsonCfg); err != nil {
+		t.Fatalf("unmarshal JSON: %v", err)
+	}
+	SetDefaults(&jsonCfg)
+
+	if !reflect.DeepEqual(yamlCfg, &jsonCfg) {
+		t.Fatalf("YAML and JSON configs differ:\n  YAML: %+v\n  JSON: %+v", yamlCfg, jsonCfg)
+	}
+}
+
+func TestSetDefaultsExported(t *testing.T) {
+	cfg := &ClientConfig{}
+	SetDefaults(cfg)
+
+	if cfg.Listen != "127.0.0.1:1777" {
+		t.Errorf("Listen = %q, want 127.0.0.1:1777", cfg.Listen)
+	}
+	if cfg.Mode != "tun" {
+		t.Errorf("Mode = %q, want tun", cfg.Mode)
+	}
+	if cfg.Proxy.Listen != "127.0.0.1:1080" {
+		t.Errorf("Proxy.Listen = %q, want 127.0.0.1:1080", cfg.Proxy.Listen)
+	}
+	if len(cfg.DNS.Direct) == 0 {
+		t.Error("DNS.Direct should have defaults")
+	}
+	if len(cfg.DNS.Proxy) == 0 {
+		t.Error("DNS.Proxy should have defaults")
+	}
+	if cfg.Log.Level != "info" {
+		t.Errorf("Log.Level = %q, want info", cfg.Log.Level)
+	}
+	if cfg.Log.Output != "stderr" {
+		t.Errorf("Log.Output = %q, want stderr", cfg.Log.Output)
 	}
 }

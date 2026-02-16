@@ -2,6 +2,7 @@ package mobile
 
 import (
 	"encoding/json"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -179,5 +180,37 @@ func TestEngine_StatusJSON_AfterFailedStart(t *testing.T) {
 	}
 	if m["error"] == "" {
 		t.Fatal("error should be non-empty after failed start")
+	}
+}
+
+// ==========================================================================
+// Config-driven connect tests (F1)
+// ==========================================================================
+
+func TestMobileEngineStartConfigJSON(t *testing.T) {
+	configJSON := `{
+		"server": "k2v5://udid:token@host:443",
+		"mode": "tun",
+		"rule": {"global": false}
+	}`
+
+	e := NewEngine()
+	// Start will fail (no real TUN FD), but we verify it parses config correctly.
+	err := e.Start(configJSON, 0, "/tmp/k2test")
+	// We expect an error from the engine (invalid URL format or provider failure),
+	// but NOT a JSON parse error.
+	if err != nil && strings.Contains(err.Error(), "parse config") {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+}
+
+func TestMobileEngineStartInvalidJSON(t *testing.T) {
+	e := NewEngine()
+	err := e.Start("not json", 0, "/tmp/k2test")
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+	if !strings.Contains(err.Error(), "parse config") {
+		t.Fatalf("expected error containing 'parse config', got: %v", err)
 	}
 }
