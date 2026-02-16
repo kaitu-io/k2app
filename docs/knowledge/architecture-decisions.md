@@ -199,3 +199,94 @@ Knowledge distilled from executed features. Links to validating tests.
 **Validating tests**: `yarn build` produces both `dist/index.html` and `dist/debug.html`; `webapp/src/pages/__tests__/Settings.test.tsx` validates hidden entry point.
 
 ---
+
+## PlatformApi Abstraction for Cross-Platform Capabilities (2026-02-16, kaitu-feature-migration)
+
+**Decision**: Create `PlatformApi` interface to abstract platform-specific capabilities (clipboard, external browser, locale sync, log upload). Three implementations: `TauriPlatform`, `CapacitorPlatform`, `WebPlatform` (fallback).
+
+**Factory pattern**: `createPlatform()` auto-detects environment via `window.__TAURI__` / `window.Capacitor`. Singleton via `getPlatform()` caches instance.
+
+**Why this approach**:
+- Same VpnClient pattern (DI-friendly abstraction)
+- Webapp code stays platform-agnostic — no conditional imports
+- Test injection via factory override parameter
+- Capacitor and Tauri both expose platform APIs via window globals (perfect for detection)
+
+**Key interfaces**:
+```typescript
+interface PlatformApi {
+  openExternal(url: string): Promise<void>;
+  writeClipboard(text: string): Promise<void>;
+  syncLocale?(lang: string): Promise<void>;
+  uploadLogs?(feedbackId: string): Promise<void>;
+  isMobile: boolean;
+  version: string;
+}
+```
+
+**Validating tests**: `webapp/src/platform/__tests__/platform.test.ts` — 8 tests covering all implementations
+
+---
+
+## Dark-Only Theme via CSS Variables (2026-02-16, kaitu-feature-migration)
+
+**Decision**: Ship exclusively dark mode. No light theme. No theme switcher. All design tokens defined as CSS custom properties in `app.css` under `@theme`.
+
+**Why dark-only**:
+- Reduces code complexity — no `dark:` Tailwind prefix, no theme toggle state
+- No ThemeContext or theme store needed
+- Faster development — design once, no light mode variants
+- Product decision — kaitu brand is dark aesthetic
+
+**Token architecture**:
+- Base colors: `--color-bg-default`, `--color-bg-paper`, `--color-text-primary`
+- Semantic status: `--color-success`, `--color-warning`, `--color-error`, `--color-info` (each with `-light`, `-dark`, `-bg`, `-border`, `-glow` variants)
+- Component tokens: `--color-card-bg`, `--color-selected-border`, `--color-divider`
+- All components use tokens via `bg-[--color-*]` pattern — zero hardcoded hex values in component files
+
+**Migration note**: Replicated kaitu webapp's dark palette exactly (`theme.ts` dark object + `theme/colors.ts`). MUI `sx` props → Tailwind classes with CSS variables.
+
+**Validating tests**: `webapp/src/components/__tests__/dark-theme.test.ts` — verifies CSS variables applied on body
+
+---
+
+## Global LoginDialog Modal Replaces Login Route (2026-02-16, kaitu-feature-migration)
+
+**Decision**: Remove dedicated `/login` route. All authentication flows use a global `LoginDialog` modal component triggered on demand.
+
+**Trigger sources**:
+- App startup (AuthGuard): if no valid session, open dialog automatically
+- Protected routes (LoginRequiredGuard): redirect → open dialog with context
+- Feature pages (Purchase, Invite): click "login to continue" → open dialog with custom message
+
+**State management**: `login-dialog.store.ts` Zustand store with `{ isOpen, trigger, message, open(), close() }`. On success, dialog closes and triggering page refreshes.
+
+**Why modal over route**:
+- No route navigation disruption — user stays on intended page
+- Context-aware messaging ("Login to purchase" vs "Login to manage invites")
+- Purchase page can show inline login form for unauthenticated users (same EmailLoginForm component)
+- Mobile UX: modal feels more native than full-page route change
+
+**Validating tests**: `webapp/src/components/__tests__/LoginDialog.test.tsx`, `webapp/src/components/__tests__/guards.test.tsx`
+
+---
+
+## Keep-Alive Tab Pattern for Tab Pages (2026-02-16, kaitu-feature-migration)
+
+**Decision**: Tab pages (Dashboard, Purchase, Invite, Account) are mounted on first visit, then hidden (not unmounted) when switching tabs.
+
+**Implementation**: `Layout.tsx` tracks mounted tabs in `useState`. Active tab rendered normally; inactive tabs use `visibility: hidden` + `position: absolute` CSS.
+
+**Why keep-alive**:
+- Preserves scroll position when switching tabs
+- Maintains component state (form inputs, expanded sections)
+- Reduces re-fetch on tab return (data stays loaded)
+- Better perceived performance (instant tab switch, no loading spinner)
+
+**Trade-off**: More memory usage (4 tab DOMs in memory). Acceptable for 4-tab app.
+
+**Non-tab pages**: Sub-pages (`/devices`, `/issues`, etc.) use normal React Router `<Outlet />` — mount/unmount on navigate.
+
+**Validating tests**: `webapp/src/components/__tests__/Layout.keepalive.test.ts`
+
+---

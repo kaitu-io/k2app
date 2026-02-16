@@ -9,12 +9,13 @@
 | Status    | implemented                              |
 | Created   | 2026-02-16                               |
 | Updated   | 2026-02-16                               |
+| Tests     | 279 total (150 new)                      |
 
 ## Version History
 
 | Version | Date       | Summary                                                    |
 |---------|------------|------------------------------------------------------------|
-| v1      | 2026-02-16 | Initial: Full feature migration from kaitu webapp to k2app |
+| v1      | 2026-02-16 | Full feature migration from kaitu webapp to k2app          |
 
 ## Overview
 
@@ -25,119 +26,119 @@ Migrate all non-Dashboard features from the old kaitu webapp (`kaitu/client/weba
 
 ## Product Requirements
 
-### PR1: Navigation Restructure (v1)
+### PR1: Navigation Restructure
 
-- Bottom nav changes from 3 tabs to 4 tabs: **Dashboard** / **Purchase** / **Invite** / **Account** (v1)
-- Remove standalone Servers tab — server selection merges into Dashboard page (v1)
-- Remove standalone Settings page — settings merge into Account page (v1)
-- Discover is an Account sub-page, not a tab (v1)
-- Feature flag system for conditional features (invite, discover, memberManagement, proHistory, feedback, deviceInstall, updateLoginEmail) (v1)
-- Keep-alive pattern for tab pages: once mounted, hidden but not unmounted when switching tabs (v1)
+- Bottom nav changes from 3 tabs to 4 tabs: **Dashboard** / **Purchase** / **Invite** / **Account**
+- Remove standalone Servers tab — server selection merges into Dashboard page
+- Remove standalone Settings page — settings merge into Account page
+- Discover is an Account sub-page, not a tab
+- Feature flag system for conditional features (invite, discover, memberManagement, proHistory, feedback, deviceInstall, updateLoginEmail)
+- Keep-alive pattern for tab pages: once mounted, hidden but not unmounted when switching tabs
 
-### PR2: Login Flow Overhaul (v1)
+### PR2: Login Flow Overhaul
 
-- Remove dedicated `/login` route and `Login.tsx` page (v1)
-- Replace with global `LoginDialog` component — modal overlay triggered on demand (v1)
-- `LoginDialog` triggered by: AuthGuard redirect (app open when not logged in), Purchase page, Invite page, any LoginRequiredGuard-wrapped route (v1)
-- Login dialog store (`login-dialog.store.ts`) with `open({ trigger, message })` and `close()` (v1)
-- Two-step flow preserved: email → verification code (v1)
-- On login success: dialog closes, triggering page refreshes its data (v1)
+- Remove dedicated `/login` route and `Login.tsx` page
+- Replace with global `LoginDialog` component — modal overlay triggered on demand
+- `LoginDialog` triggered by: AuthGuard redirect (app open when not logged in), Purchase page, Invite page, any LoginRequiredGuard-wrapped route
+- Login dialog store (`login-dialog.store.ts`) with `open({ trigger, message })` and `close()`
+- Two-step flow preserved: email → verification code
+- On login success: dialog closes, triggering page refreshes its data
 
-### PR3: Purchase Page (v1)
+### PR3: Purchase Page
 
-- New tab page at `/purchase` route (v1)
-- Fetch plan list from API (`GET /api/plans`), sorted by month, highlight badge on recommended plan (v1)
-- Plan selection cards: radio select, monthly price, total price, original price (strikethrough), savings chip (v1)
-- Campaign code input: collapsible text field, real-time preview via `POST /api/user/orders { preview: true }` (v1)
-- Order creation: `POST /api/user/orders { preview: false }` → open external payment URL → payment result dialog (success/fail) (v1)
-- Member selection: buy for self and/or team members via `MemberSelection` component (v1)
-- Inline login form for unauthenticated users (EmailLoginForm) (v1)
-- Invite reward banner when user has invite code and app config has `inviteReward` (v1)
-- Membership status banners: "complete first purchase" for trial, "authorization expired" for expired (v1)
-- Payment result dialog: order number, amount, confirm success/fail buttons (v1)
-- On payment success/fail: refresh user info, navigate to `/pro-histories?type=recharge` (v1)
+- New tab page at `/purchase` route
+- Fetch plan list from API (`GET /api/plans`), sorted by month, highlight badge on recommended plan
+- Plan selection cards: radio select, monthly price, total price, original price (strikethrough), savings chip
+- Campaign code input: collapsible text field, real-time preview via `POST /api/user/orders { preview: true }`
+- Order creation: `POST /api/user/orders { preview: false }` → open external payment URL → payment result dialog (success/fail)
+- Member selection: buy for self and/or team members via `MemberSelection` component
+- Inline login form for unauthenticated users (EmailLoginForm)
+- Invite reward banner when user has invite code and app config has `inviteReward`
+- Membership status banners: "complete first purchase" for trial, "authorization expired" for expired
+- Payment result dialog: order number, amount, confirm success/fail buttons
+- On payment success/fail: refresh user info, navigate to `/pro-histories?type=recharge`
 
-### PR4: Invite Page (v1)
+### PR4: Invite Page
 
-- New tab page at `/invite` route, requires login (LoginRequiredGuard) (v1)
-- Load latest invite code from `GET /api/invite/my-codes/latest` (v1)
-- Display invite code in large monospace font, click to copy (v1)
-- Stats row: registered count + purchased count (v1)
-- QR code generation from share link (desktop only, using `qrcode` library) (v1)
-- Share actions with expiration selector popover: "generate complete share content" + "generate share link" (v1)
-- Generate new invite code via `POST /api/invite/my-codes` (v1)
-- Editable remark on invite code (v1)
-- Retailer mode: show `RetailerStatsOverview` for retailer users (v1)
-- Non-retailer: show `InviteRule` (invite rules) + retailer CTA (v1)
-- "View All" link to `/invite-codes` sub-page (v1)
+- New tab page at `/invite` route, requires login (LoginRequiredGuard)
+- Load latest invite code from `GET /api/invite/my-codes/latest`
+- Display invite code in large monospace font, click to copy
+- Stats row: registered count + purchased count
+- QR code generation from share link (desktop only, using `qrcode` library)
+- Share actions with expiration selector popover: "generate complete share content" + "generate share link"
+- Generate new invite code via `POST /api/invite/my-codes`
+- Editable remark on invite code
+- Retailer mode: show `RetailerStatsOverview` for retailer users
+- Non-retailer: show `InviteRule` (invite rules) + retailer CTA
+- "View All" link to `/invite-codes` sub-page
 
-### PR5: Account Page (v1)
+### PR5: Account Page
 
-- New tab page at `/account` route, replaces old Settings page (v1)
-- **Brand Banner**: Kaitu.io card with slogan, click opens website (v1)
-- **Membership Status Card**: status chip (not logged in / active / expired / error), expiry date, refresh button, contextual action button (login / retry / renew) (v1)
-- **Login Email**: masked email display, set/modify email button → `/update-email` (v1)
-- **Set Password**: open password dialog → set/change account password (v1)
-- **My Devices**: navigate to `/devices` (v1)
-- **Member Management**: navigate to `/member-management` (v1)
-- **Payment History**: navigate to `/pro-histories` (v1)
-- **Wallet**: open external wallet URL (v1)
-- **Device Install Guide**: navigate to `/device-install` (v1)
-- **FAQ**: navigate to `/faq` (v1)
-- **Language Selector**: multi-language with country flags, sync to native layer + server (v1)
-- ~~**Theme Selector**~~: removed — dark-only mode, no user choice needed (v1)
-- **Version**: display app version, hidden dev-mode activation (multi-click) (v1)
-- **Logout button**: stop VPN, call logout API, clear session (v1)
+- New tab page at `/account` route, replaces old Settings page
+- **Brand Banner**: Kaitu.io card with slogan, click opens website
+- **Membership Status Card**: status chip (not logged in / active / expired / error), expiry date, refresh button, contextual action button (login / retry / renew)
+- **Login Email**: masked email display, set/modify email button → `/update-email`
+- **Set Password**: open password dialog → set/change account password
+- **My Devices**: navigate to `/devices`
+- **Member Management**: navigate to `/member-management`
+- **Payment History**: navigate to `/pro-histories`
+- **Wallet**: open external wallet URL
+- **Device Install Guide**: navigate to `/device-install`
+- **FAQ**: navigate to `/faq`
+- **Language Selector**: multi-language with country flags, sync to native layer + server
+- ~~**Theme Selector**~~: removed — dark-only mode, no user choice needed
+- **Version**: display app version, hidden dev-mode activation (multi-click)
+- **Logout button**: stop VPN, call logout API, clear session
 
-### PR6: Account Sub-Pages (v1)
+### PR6: Account Sub-Pages
 
-- **Devices** (`/devices`): device list with current device badge, editable remark, delete with confirmation dialog (v1)
-- **Member Management** (`/member-management`): member list with status (active/expired/not activated), add by email, delete with confirmation, refresh (v1)
-- **Pro History** (`/pro-histories`): payment and authorization history list, pagination, type filter from URL param, copy order number (v1)
-- **Update Email** (`/update-email`): two-step email change (send code → verify), requires MembershipGuard (v1)
-- **Device Install** (`/device-install`): multi-platform download links (iOS/Android/Windows/Mac), QR code for install URL, copy URL (v1)
-- **FAQ** (`/faq`): self-help cards (security info, community link), navigate to issues/submit-ticket (v1)
-- **Issues** (`/issues`): ticket list from API, status labels (open/closed), comment count, relative time, load more (v1)
-- **Issue Detail** (`/issues/:number`): issue content + comments, add comment form (v1)
-- **Submit Ticket** (`/submit-ticket`): subject + content form, silent log upload with feedback ID, requires MembershipGuard (v1)
-- **Changelog** (`/changelog`): iframe embed of kaitu.io changelog page (v1)
+- **Devices** (`/devices`): device list with current device badge, editable remark, delete with confirmation dialog
+- **Member Management** (`/member-management`): member list with status (active/expired/not activated), add by email, delete with confirmation, refresh
+- **Pro History** (`/pro-histories`): payment and authorization history list, pagination, type filter from URL param, copy order number
+- **Update Email** (`/update-email`): two-step email change (send code → verify), requires MembershipGuard
+- **Device Install** (`/device-install`): multi-platform download links (iOS/Android/Windows/Mac), QR code for install URL, copy URL
+- **FAQ** (`/faq`): self-help cards (security info, community link), navigate to issues/submit-ticket
+- **Issues** (`/issues`): ticket list from API, status labels (open/closed), comment count, relative time, load more
+- **Issue Detail** (`/issues/:number`): issue content + comments, add comment form
+- **Submit Ticket** (`/submit-ticket`): subject + content form, silent log upload with feedback ID, requires MembershipGuard
+- **Changelog** (`/changelog`): iframe embed of kaitu.io changelog page
 
-### PR7: Discover Sub-Page (v1)
+### PR7: Discover Sub-Page
 
-- Accessible from Account page, route `/discover` (v1)
-- iframe embed of kaitu.io with progress bar animation (v1)
-- External link handling: intercept iframe link clicks, open in system browser (v1)
-- Auth state broadcast to iframe on login/logout (v1)
+- Accessible from Account page, route `/discover`
+- iframe embed of kaitu.io with progress bar animation
+- External link handling: intercept iframe link clicks, open in system browser
+- Auth state broadcast to iframe on login/logout
 
-### PR8: Global Components (v1)
+### PR8: Global Components
 
-- **LoginDialog**: global modal for all login flows, replaces dedicated login page (v1)
-- **ForceUpgradeDialog**: triggered by `appConfig.minClientVersion` from Cloud API, blocks app usage until upgrade (v1)
-- **AnnouncementBanner**: top banner from app config, dismissible (v1)
-- **ServiceAlert**: fixed-top alert for daemon connection failure or network errors (v1)
-- **ErrorBoundary**: React error boundary with retry button (v1)
-- **AlertContainer**: global toast/snackbar system for success/error/warning messages (v1)
-- **MembershipGuard**: route guard that redirects non-members to Purchase page (v1)
-- **LoginRequiredGuard**: route guard that opens LoginDialog for unauthenticated users (v1)
-- **FeedbackButton**: floating draggable button for log collection + navigate to submit-ticket (v1)
+- **LoginDialog**: global modal for all login flows, replaces dedicated login page
+- **ForceUpgradeDialog**: triggered by `appConfig.minClientVersion` from Cloud API, blocks app usage until upgrade
+- **AnnouncementBanner**: top banner from app config, dismissible
+- **ServiceAlert**: fixed-top alert for daemon connection failure or network errors
+- **ErrorBoundary**: React error boundary with retry button
+- **AlertContainer**: global toast/snackbar system for success/error/warning messages
+- **MembershipGuard**: route guard that redirects non-members to Purchase page
+- **LoginRequiredGuard**: route guard that opens LoginDialog for unauthenticated users
+- **FeedbackButton**: floating draggable button for log collection + navigate to submit-ticket
 
-### PR9: Excluded Features (v1)
+### PR9: Excluded Features
 
 The following features from old kaitu are **NOT migrated** because k2 daemon does not implement them:
 
-- ~~DeveloperSettings page~~ (VPN mode tun/socks5/tproxy, log level, path type filter) (v1, excluded)
-- ~~fix_network button in FAQ~~ (network repair command) (v1, excluded)
-- ~~SpeedTest component in FAQ~~ (Go-level speed test infrastructure) (v1, excluded)
-- ~~Tunnels page~~ (self-deploy nodes, was "coming soon" placeholder) (v1, excluded)
-- ~~BridgeTest page~~ (development-only test page) (v1, excluded)
+- ~~DeveloperSettings page~~ (VPN mode tun/socks5/tproxy, log level, path type filter)
+- ~~fix_network button in FAQ~~ (network repair command)
+- ~~SpeedTest component in FAQ~~ (Go-level speed test infrastructure)
+- ~~Tunnels page~~ (self-deploy nodes, was "coming soon" placeholder)
+- ~~BridgeTest page~~ (development-only test page)
 
 ## Technical Decisions
 
-### TD1: UI Framework — Tailwind CSS v4 + CVA + Radix (v1)
+### TD1: UI Framework — Tailwind CSS v4 + CVA + Radix
 
 All MUI 5 components are rewritten in Tailwind. Use CVA (class-variance-authority) for variant-based component styling (already used by ConnectionButton). Use Radix UI primitives for accessible dialog/popover/select components. No MUI dependency.
 
-### TD2: API Layer — Extend cloudApi (v1)
+### TD2: API Layer — Extend cloudApi
 
 Old kaitu proxied all API calls through Go service (`k2api bridge`). k2app calls the Cloud API directly via `cloudApi` (fetch + antiblock). All new endpoints are added to `webapp/src/api/cloud.ts`:
 
@@ -178,7 +179,7 @@ POST /api/issues
 POST /api/issues/:number/comments
 ```
 
-### TD3: Platform Abstraction — PlatformApi (v1)
+### TD3: Platform Abstraction — PlatformApi
 
 New `webapp/src/platform/` module providing cross-platform capabilities:
 
@@ -200,7 +201,7 @@ Three implementations:
 
 Factory: `createPlatform()` auto-detects Tauri/Capacitor/web environment.
 
-### TD4: Login Pattern — Global LoginDialog Only (v1)
+### TD4: Login Pattern — Global LoginDialog Only
 
 Remove `/login` route. All authentication flows use `LoginDialog` modal:
 - App startup: if no valid session, show LoginDialog
@@ -208,7 +209,7 @@ Remove `/login` route. All authentication flows use `LoginDialog` modal:
 - Purchase/Invite pages: open LoginDialog with contextual message
 - `login-dialog.store.ts` Zustand store: `{ isOpen, trigger, message, open(), close() }`
 
-### TD5: State Management — Extend Zustand Stores (v1)
+### TD5: State Management — Extend Zustand Stores
 
 New stores:
 - `user.store.ts` — Extended user profile: membership status, expiry, devices, plan info. Replaces the `useUser()` hook pattern from old kaitu.
@@ -221,7 +222,7 @@ Modified stores:
 - `auth.store.ts` — Add logout API, remove redirect, LoginDialog integration
 - `servers.store.ts` — Keep as-is, used by merged Dashboard
 
-### TD6: Navigation — 4-Tab BottomNav + Keep-Alive (v1)
+### TD6: Navigation — 4-Tab BottomNav + Keep-Alive
 
 Tab config:
 ```
@@ -236,7 +237,7 @@ Tab config:
 
 Keep-alive: Tab pages are lazy-loaded on first visit, then hidden (visibility: hidden + position: absolute) when inactive. Non-tab sub-pages use normal `<Outlet />` routing.
 
-### TD7: Dark-Only Theme — CSS Variables (v1)
+### TD7: Dark-Only Theme — CSS Variables
 
 **Dark mode only. No light mode. No theme switcher.** All colors defined as CSS custom properties in `app.css` using kaitu webapp's dark palette (`theme.ts` dark palette + `theme/colors.ts` dark object). No `dark:` Tailwind prefix needed — dark colors are the base colors. No ThemeContext, no theme store, no theme persistence. Body background `#0F0F13`, paper surface `#1A1A1D`, text `rgba(255,255,255,0.95)`.
 
@@ -246,7 +247,7 @@ Key dark palette tokens:
 - Success: `#66bb6a`, Warning: `#ffa726`, Error: `#ef5350`, Info: `#42a5f5`
 - Background gradient: `linear-gradient(135deg, #0a0e27 0%, #1a1f3a 50%, #2d1b4e 100%)`
 
-### TD8: i18n — Extend Existing Setup (v1)
+### TD8: i18n — Extend Existing Setup
 
 Add new namespaces to existing i18n system (zh-CN default, en-US secondary):
 - `nav` — navigation labels
@@ -258,7 +259,7 @@ Add new namespaces to existing i18n system (zh-CN default, en-US secondary):
 
 Locale files: `webapp/src/i18n/locales/{lang}/{namespace}.json`
 
-### TD9: Feature Flags (v1)
+### TD9: Feature Flags
 
 App config from `GET /api/app/config` provides feature flags. Local fallback config for offline/error scenarios. Feature flags control:
 - Tab visibility (invite, discover)
@@ -267,7 +268,7 @@ App config from `GET /api/app/config` provides feature flags. Local fallback con
 
 Store in `ui.store.ts` or dedicated `app-config.store.ts`.
 
-### TD10: QR Code — qrcode library (v1)
+### TD10: QR Code — qrcode library
 
 Use `qrcode` npm package for invite code QR generation and device install QR. Same library as old kaitu.
 
@@ -399,92 +400,92 @@ The current `ServerList` and `ConnectionButton` components are reused. The `Serv
 ## Acceptance Criteria
 
 ### Navigation and Layout
-- AC1: Bottom nav shows 4 tabs: Dashboard, Purchase, Invite, Account (v1)
-- AC2: Tab pages use keep-alive pattern — switching tabs preserves scroll position and state (v1)
-- AC3: Invite tab hidden when feature flag `invite` is false (v1)
-- AC4: Non-tab pages show back button in top-left corner (v1)
+- AC1: Bottom nav shows 4 tabs: Dashboard, Purchase, Invite, Account
+- AC2: Tab pages use keep-alive pattern — switching tabs preserves scroll position and state
+- AC3: Invite tab hidden when feature flag `invite` is false
+- AC4: Non-tab pages show back button in top-left corner
 
 ### Login
-- AC5: No `/login` route exists; all login flows use LoginDialog modal (v1)
-- AC6: Opening app without valid session shows LoginDialog automatically (v1)
-- AC7: LoginDialog supports two-step flow: email then code then success (v1)
-- AC8: After login success, dialog closes and current page refreshes data (v1)
-- AC9: LoginRequiredGuard opens LoginDialog instead of redirecting (v1)
+- AC5: No `/login` route exists; all login flows use LoginDialog modal
+- AC6: Opening app without valid session shows LoginDialog automatically
+- AC7: LoginDialog supports two-step flow: email then code then success
+- AC8: After login success, dialog closes and current page refreshes data
+- AC9: LoginRequiredGuard opens LoginDialog instead of redirecting
 
 ### Purchase
-- AC10: Purchase page loads plan list from API and displays sorted by month (v1)
-- AC11: Highlighted plan shows ribbon badge (v1)
-- AC12: Selecting plan shows monthly and total price with currency formatting (v1)
-- AC13: Campaign code input triggers preview order and shows discounted price (v1)
-- AC14: "Pay Now" button creates order and opens payment URL in system browser (v1)
-- AC15: Payment result dialog shows order number and amount, with success/fail actions (v1)
-- AC16: Unauthenticated users see inline login form instead of member selection (v1)
-- AC17: MemberSelection allows buying for self and/or selected team members (v1)
+- AC10: Purchase page loads plan list from API and displays sorted by month
+- AC11: Highlighted plan shows ribbon badge
+- AC12: Selecting plan shows monthly and total price with currency formatting
+- AC13: Campaign code input triggers preview order and shows discounted price
+- AC14: "Pay Now" button creates order and opens payment URL in system browser
+- AC15: Payment result dialog shows order number and amount, with success/fail actions
+- AC16: Unauthenticated users see inline login form instead of member selection
+- AC17: MemberSelection allows buying for self and/or selected team members
 
 ### Invite
-- AC18: Invite page shows latest invite code in large monospace font (v1)
-- AC19: Clicking invite code copies to clipboard with success toast (v1)
-- AC20: Stats show registered and purchased counts (v1)
-- AC21: QR code generated from share link (desktop only) (v1)
-- AC22: Share buttons open expiration selector popover (v1)
-- AC23: "Generate New Code" creates new invite code via API (v1)
-- AC24: Invite code remark is editable inline (v1)
+- AC18: Invite page shows latest invite code in large monospace font
+- AC19: Clicking invite code copies to clipboard with success toast
+- AC20: Stats show registered and purchased counts
+- AC21: QR code generated from share link (desktop only)
+- AC22: Share buttons open expiration selector popover
+- AC23: "Generate New Code" creates new invite code via API
+- AC24: Invite code remark is editable inline
 
 ### Account
-- AC25: Account page shows membership status card with expiry date (v1)
-- AC26: Logout button stops VPN, calls logout API, clears session (v1)
-- AC27: Language selector changes i18n locale and syncs to native + server (v1)
-- ~~AC28~~: Removed — dark-only mode, no theme selector needed (v1)
-- AC29: Version displays app version; 5 rapid clicks activates dev mode (hidden) (v1)
-- AC30: All sub-page links navigate to correct routes (v1)
+- AC25: Account page shows membership status card with expiry date
+- AC26: Logout button stops VPN, calls logout API, clears session
+- AC27: Language selector changes i18n locale and syncs to native + server
+- ~~AC28~~: Removed — dark-only mode, no theme selector needed
+- AC29: Version displays app version; 5 rapid clicks activates dev mode (hidden)
+- AC30: All sub-page links navigate to correct routes
 
 ### Account Sub-Pages
-- AC31: Devices page lists all devices with current device highlighted (v1)
-- AC32: Device remark editable inline, delete with confirmation (v1)
-- AC33: Member management allows add by email and delete with confirmation (v1)
-- AC34: Pro history shows paginated list with type filter (v1)
-- AC35: Update email flow: enter email then send code then enter code then confirm (v1)
-- AC36: Device install shows QR code and platform-specific download buttons (v1)
-- AC37: FAQ shows help cards with links to issues and submit-ticket (v1)
-- AC38: Issues list loads from API with status labels and pagination (v1)
-- AC39: Issue detail shows comments with ability to reply (v1)
-- AC40: Submit ticket sends title + content to API (v1)
+- AC31: Devices page lists all devices with current device highlighted
+- AC32: Device remark editable inline, delete with confirmation
+- AC33: Member management allows add by email and delete with confirmation
+- AC34: Pro history shows paginated list with type filter
+- AC35: Update email flow: enter email then send code then enter code then confirm
+- AC36: Device install shows QR code and platform-specific download buttons
+- AC37: FAQ shows help cards with links to issues and submit-ticket
+- AC38: Issues list loads from API with status labels and pagination
+- AC39: Issue detail shows comments with ability to reply
+- AC40: Submit ticket sends title + content to API
 
 ### Global Components
-- AC41: ForceUpgradeDialog blocks app when version is less than minClientVersion (v1)
-- AC42: AnnouncementBanner displays when app config has announcement (v1)
-- AC43: ServiceAlert shows when daemon is unreachable (v1)
-- AC44: ErrorBoundary catches render errors and shows retry UI (v1)
-- AC45: AlertContainer shows toast notifications triggered from any component (v1)
-- AC46: FeedbackButton is draggable and navigates to submit-ticket (v1)
-- AC47: MembershipGuard redirects non-members to Purchase page (v1)
+- AC41: ForceUpgradeDialog blocks app when version is less than minClientVersion
+- AC42: AnnouncementBanner displays when app config has announcement
+- AC43: ServiceAlert shows when daemon is unreachable
+- AC44: ErrorBoundary catches render errors and shows retry UI
+- AC45: AlertContainer shows toast notifications triggered from any component
+- AC46: FeedbackButton is draggable and navigates to submit-ticket
+- AC47: MembershipGuard redirects non-members to Purchase page
 
 ### Platform
-- AC48: openExternal(url) opens URL in system browser on Tauri and Capacitor (v1)
-- AC49: writeClipboard(text) copies text on all platforms (v1)
-- AC50: Dark theme renders correctly — all components use CSS variable design tokens, no hardcoded colors (v1)
+- AC48: openExternal(url) opens URL in system browser on Tauri and Capacitor
+- AC49: writeClipboard(text) copies text on all platforms
+- AC50: Dark theme renders correctly — all components use CSS variable design tokens, no hardcoded colors
 
 ### API
-- AC51: All 20+ new cloudApi endpoints are callable and handle errors consistently (v1)
-- AC52: Auth token automatically included in authenticated requests (v1)
-- AC53: Token refresh handles 401 responses transparently (v1)
+- AC51: All 20+ new cloudApi endpoints are callable and handle errors consistently
+- AC52: Auth token automatically included in authenticated requests
+- AC53: Token refresh handles 401 responses transparently
 
 ## Testing Strategy
 
-- Unit tests for all new Zustand stores (purchase, invite, user, ui, login-dialog) using MockVpnClient pattern (v1)
-- Unit tests for PlatformApi implementations (mock Tauri/Capacitor globals) (v1)
-- Component tests for LoginDialog, MemberSelection, PlanList, ExpirationSelectorPopover using testing-library/react (v1)
-- Integration tests for login flow (dialog open, email, code, close, state updated) (v1)
-- Integration tests for purchase flow (select plan, preview, pay, result) (v1)
-- API tests for all new cloudApi endpoints (mock fetch) (v1)
-- Target: maintain 80% or higher coverage on new code (v1)
+- Unit tests for all new Zustand stores (purchase, invite, user, ui, login-dialog) using MockVpnClient pattern
+- Unit tests for PlatformApi implementations (mock Tauri/Capacitor globals)
+- Component tests for LoginDialog, MemberSelection, PlanList, ExpirationSelectorPopover using testing-library/react
+- Integration tests for login flow (dialog open, email, code, close, state updated)
+- Integration tests for purchase flow (select plan, preview, pay, result)
+- API tests for all new cloudApi endpoints (mock fetch)
+- Target: maintain 80% or higher coverage on new code
 
 ## Deployment and CI/CD
 
-- No CI changes needed — existing `yarn test` and `yarn build` cover new code (v1)
-- New Tailwind components use existing `app.css` + Tailwind v4 config (v1)
-- New npm dependencies: `qrcode`, `@radix-ui/react-dialog`, `@radix-ui/react-popover`, `@radix-ui/react-select` (v1)
-- Tauri plugins (if not already present): `@tauri-apps/plugin-shell`, `@tauri-apps/plugin-clipboard-manager` (v1)
+- No CI changes needed — existing `yarn test` and `yarn build` cover new code
+- New Tailwind components use existing `app.css` + Tailwind v4 config
+- New npm dependencies: `qrcode`, `@radix-ui/react-dialog`, `@radix-ui/react-popover`, `@radix-ui/react-select`
+- Tauri plugins (if not already present): `@tauri-apps/plugin-shell`, `@tauri-apps/plugin-clipboard-manager`
 
 ## Impact Analysis
 

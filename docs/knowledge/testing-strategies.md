@@ -95,3 +95,44 @@ Patterns and lessons from test implementation.
 **Validating tests**: Build output check (dist/debug.html exists); Settings entry point tests.
 
 ---
+
+## Component Test Pattern: Mock Stores + Testing Library (2026-02-16, kaitu-feature-migration)
+
+**Pattern**: Component tests use `@testing-library/react` with Zustand store mocking via `vi.mock()`. Mock store returns controllable state.
+
+**Structure**:
+```typescript
+vi.mock('@/stores/user.store', () => ({
+  useUserStore: vi.fn(() => ({ /* mock state */ }))
+}));
+
+test('renders user info', () => {
+  render(<Account />);
+  expect(screen.getByText('email@example.com')).toBeInTheDocument();
+});
+```
+
+**Why mock stores**: Isolates component logic from store logic. Store tests verify state management; component tests verify rendering/interaction.
+
+**Trade-off**: Not full integration test. Covered by separate integration test suite (login flow, purchase flow).
+
+**Validating tests**: `webapp/src/pages/__tests__/Purchase.test.tsx`, `Account.test.tsx`, etc. — 49 test files, 279 tests total
+
+---
+
+## Feature Coverage via AC-to-Test Mapping (2026-02-16, kaitu-feature-migration)
+
+**Pattern**: Plan document maps each Acceptance Criteria (AC1–AC53) to specific test function names. Execution writes tests named exactly as mapped.
+
+**Benefits**:
+- Traceability: AC ↔ test name ↔ validating code
+- Review efficiency: "AC25 passes" = verifiable claim
+- Gap detection: missing test = missing AC coverage
+
+**Example**: AC25 "Account membership status card with expiry" → `test_account_membership_card` in `Account.test.tsx`
+
+**Baseline tracking**: 129 tests (k2app-rewrite) → 279 tests (+150 from kaitu-feature-migration)
+
+**Validating artifact**: Plan AC Mapping table in `.word9f/kaitu-feature-migration/plan.md` lines 536–593
+
+---

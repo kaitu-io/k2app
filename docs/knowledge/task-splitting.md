@@ -63,3 +63,55 @@ Lessons from decomposing features into parallel worktree tasks.
 **Rule of thumb**: If `depends_on` graph is a straight line (T1→T2→T3), consider working directly on a single branch instead of per-task worktrees.
 
 ---
+
+## Foundation-Then-Features Task Dependency Pattern (2026-02-16, kaitu-feature-migration)
+
+**Pattern**: Large migrations split into Foundation tasks (F1–F4) then parallel Feature tasks (T5–T11). Foundation tasks establish interfaces and shared infrastructure. Feature tasks implement pages/flows using those foundations.
+
+**kaitu-feature-migration dependency graph**:
+```
+F1 (API) ──────┐
+               ├── F3 (Stores) ──┐
+F2 (Platform) ─┤                 ├── F4 (Nav+Layout+Global) ──┬── T5 (Purchase)
+               └─────────────────┘                            ├── T6 (Invite)
+                                                              ├── T7 (Account)
+                                                              ├── T8 (Dashboard)
+                                                              ├── T9 (Device/Member/History)
+                                                              ├── T10 (FAQ/Issues/Tickets)
+                                                              └── T11 (Email/Install/Changelog/Discover)
+```
+
+**Why this ordering**:
+- F1 (API layer) and F2 (Platform abstraction) are fully parallel (no shared code)
+- F3 (Stores) depends on F1 (API imports)
+- F4 (Layout + global components) depends on F2 + F3 (uses platform APIs, imports stores)
+- T5–T11 all depend on F4 (shared layout, guards, design tokens) but are mutually independent
+
+**Merge order**: F1 ‖ F2 → F3 → F4 → (T5 ‖ T6 ‖ T7 ‖ T8 ‖ T9 ‖ T10 ‖ T11). Critical path length: 4 (shortest with parallelism).
+
+**Conflicts**: 0 conflicts in F1/F2 merge (different directories). F4 established app.css and App.tsx routes — all feature tasks read, never modify entry points.
+
+**Validating artifact**: Plan dependency graph and execution summary in `.word9f/kaitu-feature-migration/plan.md` lines 520–533, 960–979
+
+---
+
+## Design Token First, Components Second (2026-02-16, kaitu-feature-migration)
+
+**Pattern**: Define ALL color/spacing/typography tokens in `app.css` before writing any components. Components reference tokens via `bg-[--color-*]` — zero hardcoded colors in component files.
+
+**Execution order**:
+1. F4 (foundation): Establish full token palette in `app.css` (97 lines of CSS variables)
+2. F4: Create component UI pattern reference in plan (card, button, input, list item, etc.)
+3. T5–T11 (features): Implement pages using tokens only
+
+**Benefits**:
+- Visual consistency enforced by token reference
+- Easy theme changes (edit tokens, all components update)
+- No "magic hex values" scattered across codebase
+- Tailwind v4 `@theme` integrates CSS variables natively
+
+**Trade-off**: More upfront design work. But kaitu-feature-migration had a source of truth (old kaitu webapp dark palette) — direct replication.
+
+**Validating tests**: All component tests implicitly validate (they render without errors). `dark-theme.test.ts` explicitly checks CSS variable application.
+
+---
