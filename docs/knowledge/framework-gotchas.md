@@ -156,3 +156,15 @@ engine?.start(wireUrl, fd: Int(fd), error: &error)  // COMPILE ERROR
 **Validating tests**: `webapp/src/components/__tests__/ServiceReadiness.test.tsx` (if exists), manual dev testing.
 
 ---
+
+## Capacitor Bridge is WebView-Level, Not Page-Level (2026-02-16, mobile-debug)
+
+**Discovery**: When navigating from `index.html` (React app) to `debug.html` (standalone) within the same Capacitor WebView via `window.location.href`, `window.Capacitor.Plugins.K2Plugin` remains available. The bridge is injected at WebView initialization, not per-HTML-page.
+
+**Implication**: Any HTML file in the Capacitor `webDir` (or accessible via the dev server) can access native plugins. This enables standalone debug/diagnostic pages that bypass the main app's framework stack entirely.
+
+**Caveat**: The Capacitor `native-bridge.js` must be present. In production builds, Capacitor injects it automatically. In dev mode (livereload), the Vite dev server must serve the page — Capacitor sets `server.url` to the dev server address, so `/debug.html` resolves correctly via Vite multi-page.
+
+**Validating tests**: Manual device testing — debug.html successfully calls K2Plugin methods.
+
+---

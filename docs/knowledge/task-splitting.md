@@ -53,3 +53,13 @@ Lessons from decomposing features into parallel worktree tasks.
 **Gotcha**: `k2/build/` must exist before `gomobile bind` — Makefile creates it.
 
 ---
+
+## Simple Features: Sequential Tasks, No Parallelism Benefit (2026-02-16, mobile-debug)
+
+**Observation**: mobile-debug had 2 tasks (T1: debug.html + vite config, T2: Settings entry). T2 depended on T1. No parallelism possible. Worktree overhead (create, install deps, merge, cleanup) exceeded the implementation time.
+
+**Lesson**: For simple features (<5 files, sequential deps), worktrees add overhead without benefit. The fire protocol's worktree model pays off at moderate+ complexity where parallel execution is possible.
+
+**Rule of thumb**: If `depends_on` graph is a straight line (T1→T2→T3), consider working directly on a single branch instead of per-task worktrees.
+
+---

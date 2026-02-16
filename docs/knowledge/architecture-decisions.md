@@ -180,3 +180,22 @@ Knowledge distilled from executed features. Links to validating tests.
 **Validating tests**: Release workflow dry-run; `wait-for-signing.sh` timeout handling
 
 ---
+
+## Vite Multi-Page Entry for Debug/Diagnostic Pages (2026-02-16, mobile-debug)
+
+**Decision**: Use Vite `rollupOptions.input` to add standalone HTML pages alongside the main React app. `debug.html` is a second entry point — pure HTML+JS, no React/Store/Auth, shares the same `dist/` output.
+
+**Why multi-page, not separate project**: Same build pipeline, zero Capacitor config changes. `cap sync` copies entire `dist/` including `debug.html`. Dev server serves both entries automatically.
+
+**Key insight**: Capacitor bridge is **WebView-level**, not page-level. Any HTML loaded within the same Capacitor WebView has access to `window.Capacitor.Plugins.K2Plugin`. This means standalone debug pages can call native plugins directly without going through the React app's bootstrap chain.
+
+**Navigation**: `window.location.href = '/debug.html'` causes full page navigation — React unmounts, debug page loads fresh. Return via back navigation re-initializes React (acceptable for debug tool).
+
+**Pattern applicability**: Any Capacitor/Tauri app needing isolated diagnostic pages without framework dependencies. Useful for:
+- Native bridge debugging (this use case)
+- Network diagnostics
+- Performance profiling pages
+
+**Validating tests**: `yarn build` produces both `dist/index.html` and `dist/debug.html`; `webapp/src/pages/__tests__/Settings.test.tsx` validates hidden entry point.
+
+---

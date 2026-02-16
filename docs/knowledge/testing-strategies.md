@@ -73,3 +73,25 @@ Patterns and lessons from test implementation.
 **Cross-reference**: See Bugfix Patterns → "Unused Import Causes TS6133 After Merge"
 
 ---
+
+## Hidden Entry Point Testing with Fake Timers (2026-02-16, mobile-debug)
+
+**Pattern**: Hidden UI entries (e.g., "tap version 5 times") are testable with `vi.useFakeTimers()`. Test clicks in rapid succession (within timeout), then verify navigation. Test timeout reset by advancing time past threshold, then clicking again.
+
+**Key technique**: Mock `window.location.href` assignment with `Object.defineProperty` or by spying on the setter. Direct assignment `window.location.href = '/x'` triggers navigation in jsdom — intercept it.
+
+**Why test this**: Hidden entries are easy to break silently (no visible UI, no user-facing flow). A unit test ensures the tap counter + timeout logic stays correct across refactors.
+
+**Validating tests**: `webapp/src/pages/__tests__/Settings.test.tsx` — `test_settings_debug_tap_counter`, `test_settings_tap_counter_resets`
+
+---
+
+## Debug Tools Don't Need Unit Tests for Themselves (2026-02-16, mobile-debug)
+
+**Pattern**: When the feature IS a test tool (debug page for native bridge validation), its own testing strategy is manual on-device. Unit-testing a debug page's DOM manipulation adds maintenance cost without real value.
+
+**What to test instead**: (1) Build verification — build produces the expected output files. (2) Entry point — the navigation path to reach the debug page. (3) The debug page itself validates manually on device.
+
+**Validating tests**: Build output check (dist/debug.html exists); Settings entry point tests.
+
+---
