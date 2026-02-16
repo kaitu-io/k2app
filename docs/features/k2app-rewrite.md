@@ -644,8 +644,11 @@ k2app/
     ├── contracts/
     │   └── webapp-daemon-api.md
     └── features/
-        └── k2app-rewrite/
-            └── spec.md          # this file
+        ├── k2app-rewrite.md     # this file
+        ├── build-unification.md
+        ├── mobile-rewrite.md
+        ├── mobile-updater.md
+        └── webapp-state-alignment.md
 ```
 
 Root `package.json` workspaces:

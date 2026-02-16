@@ -3,7 +3,7 @@
 > **Status**: Approved
 > **Created**: 2026-02-14
 > **Feature**: Three-channel update system for k2app mobile
-> **Parent**: docs/features/mobile-rewrite/spec.md
+> **Parent**: docs/features/mobile-rewrite.md
 
 ## Overview
 

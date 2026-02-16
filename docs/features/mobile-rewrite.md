@@ -3,7 +3,7 @@
 > **Status**: Draft
 > **Created**: 2026-02-14
 > **Feature**: k2app mobile client on Capacitor + gomobile
-> **Parent**: docs/features/k2app-rewrite/spec.md (architecture reference)
+> **Parent**: docs/features/k2app-rewrite.md (architecture reference)
 
 ## Overview
 
@@ -24,7 +24,7 @@ interface — only the `NativeVpnClient` implementation and native plugin differ
 
 ### What's Reused from Desktop Spec
 
-The parent spec (`k2app-rewrite/spec.md`) defines the core architecture that
+The parent spec (`k2app-rewrite.md`) defines the core architecture that
 mobile shares. These sections apply directly — **do not duplicate here**:
 
 - **VpnClient interface** (types, factory, subscribe model)
