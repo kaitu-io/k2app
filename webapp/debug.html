@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <title>K2 Mobile Debug</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        background: #1a1a2e;
+        color: #e0e0e0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-size: 14px;
+        min-height: 100vh;
+        padding-bottom: 20px;
+      }
+
+      .header {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background: #16213e;
+        padding: 12px 16px;
+        border-bottom: 1px solid #0f3460;
+        text-align: center;
+      }
+
+      .header h1 {
+        font-size: 18px;
+        font-weight: 600;
+        color: #e94560;
+      }
+
+      .section {
+        padding: 12px 16px;
+      }
+
+      .section-label {
+        font-size: 12px;
+        font-weight: 600;
+        color: #888;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 8px;
+      }
+
+      .wire-url-row {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+
+      #wireUrl {
+        flex: 1;
+        background: #0f3460;
+        border: 1px solid #533483;
+        border-radius: 8px;
+        color: #e0e0e0;
+        padding: 10px 12px;
+        font-size: 14px;
+        outline: none;
+      }
+
+      #wireUrl:focus {
+        border-color: #e94560;
+      }
+
+      #presets {
+        background: #0f3460;
+        border: 1px solid #533483;
+        border-radius: 8px;
+        color: #e0e0e0;
+        padding: 10px 8px;
+        font-size: 13px;
+        outline: none;
+        min-width: 110px;
+      }
+
+      .btn-row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 8px;
+      }
+
+      .btn {
+        flex: 1;
+        min-width: 80px;
+        min-height: 44px;
+        border: none;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: opacity 0.15s;
+        padding: 8px 12px;
+      }
+
+      .btn:active {
+        opacity: 0.7;
+      }
+
+      .btn-info {
+        background: #3b82f6;
+        color: #fff;
+      }
+
+      .btn-status {
+        background: #533483;
+        color: #fff;
+      }
+
+      .btn-connect {
+        background: #22c55e;
+        color: #fff;
+      }
+
+      .btn-disconnect {
+        background: #ef4444;
+        color: #fff;
+      }
+
+      .log-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+
+      .log-header h2 {
+        font-size: 14px;
+        font-weight: 600;
+        color: #888;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .btn-clear {
+        background: #333;
+        color: #aaa;
+        border: 1px solid #555;
+        border-radius: 6px;
+        padding: 4px 12px;
+        font-size: 12px;
+        cursor: pointer;
+        min-height: 32px;
+      }
+
+      .btn-clear:active {
+        opacity: 0.7;
+      }
+
+      #logArea {
+        background: #0d1117;
+        border: 1px solid #30363d;
+        border-radius: 8px;
+        padding: 12px;
+        min-height: 300px;
+        max-height: 60vh;
+        overflow-y: auto;
+        font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+        font-size: 12px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+
+      .log-entry {
+        margin-bottom: 6px;
+        border-bottom: 1px solid #1c2333;
+        padding-bottom: 6px;
+      }
+
+      .log-entry:last-child {
+        border-bottom: none;
+        margin-bottom: 0;
+        padding-bottom: 0;
+      }
+
+      .log-time {
+        color: #8b949e;
+      }
+
+      .log-type-api {
+        color: #3b82f6;
+        font-weight: 600;
+      }
+
+      .log-type-event {
+        color: #22c55e;
+        font-weight: 600;
+      }
+
+      .log-type-error {
+        color: #ef4444;
+        font-weight: 600;
+      }
+
+      .log-label {
+        color: #c9d1d9;
+      }
+
+      .log-data {
+        color: #8b949e;
+        margin-left: 12px;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <h1>K2 Mobile Debug</h1>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Wire URL</div>
+      <div class="wire-url-row">
+        <input type="text" id="wireUrl" placeholder="vless://... or paste wire URL" />
+        <select id="presets">
+          <option value="">Custom</option>
+          <option value="vless://example-server-1.kaitu.io:443?security=tls&type=ws">Server 1</option>
+          <option value="vless://example-server-2.kaitu.io:443?security=tls&type=ws">Server 2</option>
+          <option value="vless://example-server-3.kaitu.io:443?security=tls&type=grpc">Server 3</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Info</div>
+      <div class="btn-row">
+        <button class="btn btn-info" onclick="callPlugin('checkReady')">Check Ready</button>
+        <button class="btn btn-info" onclick="callPlugin('getVersion')">Get Version</button>
+        <button class="btn btn-info" onclick="callPlugin('getUDID')">Get UDID</button>
+      </div>
+
+      <div class="section-label">Status</div>
+      <div class="btn-row">
+        <button class="btn btn-status" onclick="callPlugin('getConfig')">Get Config</button>
+        <button class="btn btn-status" onclick="callPlugin('getStatus')">Get Status</button>
+      </div>
+
+      <div class="section-label">Actions</div>
+      <div class="btn-row">
+        <button class="btn btn-connect" onclick="doConnect()">Connect</button>
+        <button class="btn btn-disconnect" onclick="callPlugin('disconnect')">Disconnect</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="log-header">
+        <h2>Logs</h2>
+        <button class="btn-clear" onclick="clearLogs()">Clear</button>
+      </div>
+      <div id="logArea"></div>
+    </div>
+
+    <script>
+      var logArea = document.getElementById('logArea');
+      var wireUrlInput = document.getElementById('wireUrl');
+      var presetsSelect = document.getElementById('presets');
+      var STORAGE_KEY = 'debug_wireUrl';
+
+      // --- localStorage persistence ---
+      function saveWireUrl() {
+        try {
+          localStorage.setItem(STORAGE_KEY, wireUrlInput.value);
+        } catch (e) {
+          // localStorage may be unavailable
+        }
+      }
+
+      function restoreWireUrl() {
+        try {
+          var saved = localStorage.getItem(STORAGE_KEY);
+          if (saved) {
+            wireUrlInput.value = saved;
+            // Check if saved value matches a preset
+            for (var i = 0; i < presetsSelect.options.length; i++) {
+              if (presetsSelect.options[i].value === saved) {
+                presetsSelect.selectedIndex = i;
+                return;
+              }
+            }
+            presetsSelect.selectedIndex = 0; // Custom
+          }
+        } catch (e) {
+          // localStorage may be unavailable
+        }
+      }
+
+      wireUrlInput.addEventListener('input', function () {
+        saveWireUrl();
+        // Reset preset to Custom when manually editing
+        presetsSelect.selectedIndex = 0;
+      });
+
+      presetsSelect.addEventListener('change', function () {
+        var val = presetsSelect.value;
+        if (val) {
+          wireUrlInput.value = val;
+          saveWireUrl();
+        }
+      });
+
+      // --- Logging ---
+      function getTimestamp() {
+        var now = new Date();
+        var h = String(now.getHours()).padStart(2, '0');
+        var m = String(now.getMinutes()).padStart(2, '0');
+        var s = String(now.getSeconds()).padStart(2, '0');
+        return h + ':' + m + ':' + s;
+      }
+
+      function createSpan(className, text) {
+        var span = document.createElement('span');
+        span.className = className;
+        span.textContent = text;
+        return span;
+      }
+
+      function appendLog(type, label, data) {
+        var entry = document.createElement('div');
+        entry.className = 'log-entry';
+
+        var typeClass = 'log-type-api';
+        if (type === 'EVENT') typeClass = 'log-type-event';
+        if (type === 'ERROR') typeClass = 'log-type-error';
+
+        var header = document.createElement('div');
+        header.appendChild(createSpan('log-time', getTimestamp()));
+        header.appendChild(document.createTextNode(' '));
+        header.appendChild(createSpan(typeClass, '[' + type + ']'));
+        header.appendChild(document.createTextNode(' '));
+        header.appendChild(createSpan('log-label', label));
+        entry.appendChild(header);
+
+        if (data !== undefined && data !== null) {
+          var dataLine = document.createElement('span');
+          dataLine.className = 'log-data';
+          var formatted;
+          if (typeof data === 'object') {
+            try {
+              formatted = JSON.stringify(data, null, 2);
+            } catch (e) {
+              formatted = String(data);
+            }
+          } else {
+            formatted = String(data);
+          }
+          dataLine.textContent = '\u2192 ' + formatted;
+          entry.appendChild(dataLine);
+        }
+
+        logArea.appendChild(entry);
+        logArea.scrollTop = logArea.scrollHeight;
+      }
+
+      function clearLogs() {
+        while (logArea.firstChild) {
+          logArea.removeChild(logArea.firstChild);
+        }
+      }
+
+      // --- K2Plugin access ---
+      function getK2Plugin() {
+        if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.K2Plugin) {
+          return window.Capacitor.Plugins.K2Plugin;
+        }
+        return null;
+      }
+
+      function callPlugin(method, args) {
+        var plugin = getK2Plugin();
+        if (!plugin) {
+          appendLog('ERROR', method, 'K2Plugin not available (not running in Capacitor?)');
+          return;
+        }
+
+        if (typeof plugin[method] !== 'function') {
+          appendLog('ERROR', method, 'Method not found on K2Plugin');
+          return;
+        }
+
+        appendLog('API', method + '()', args || null);
+
+        try {
+          var result = plugin[method](args || {});
+          if (result && typeof result.then === 'function') {
+            result.then(function (data) {
+              appendLog('API', method + ' response', data);
+            }).catch(function (err) {
+              appendLog('ERROR', method + ' failed', err.message || err);
+            });
+          } else {
+            appendLog('API', method + ' response', result);
+          }
+        } catch (err) {
+          appendLog('ERROR', method + ' exception', err.message || err);
+        }
+      }
+
+      function doConnect() {
+        var wireUrl = wireUrlInput.value.trim();
+        if (!wireUrl) {
+          appendLog('ERROR', 'connect', 'wireUrl is empty');
+          return;
+        }
+        callPlugin('connect', { wireUrl: wireUrl });
+      }
+
+      // --- Event listeners ---
+      function setupEventListeners() {
+        var plugin = getK2Plugin();
+        if (!plugin) {
+          appendLog('ERROR', 'init', 'K2Plugin not available \u2014 event listeners not registered');
+          return;
+        }
+
+        if (typeof plugin.addListener !== 'function') {
+          appendLog('ERROR', 'init', 'K2Plugin.addListener not available');
+          return;
+        }
+
+        try {
+          plugin.addListener('vpnStateChange', function (data) {
+            appendLog('EVENT', 'vpnStateChange', data);
+          });
+          appendLog('EVENT', 'Registered listener', 'vpnStateChange');
+        } catch (err) {
+          appendLog('ERROR', 'vpnStateChange listener', err.message || err);
+        }
+
+        try {
+          plugin.addListener('vpnError', function (data) {
+            appendLog('EVENT', 'vpnError', data);
+          });
+          appendLog('EVENT', 'Registered listener', 'vpnError');
+        } catch (err) {
+          appendLog('ERROR', 'vpnError listener', err.message || err);
+        }
+      }
+
+      // --- Init ---
+      document.addEventListener('DOMContentLoaded', function () {
+        restoreWireUrl();
+        appendLog('API', 'Debug page loaded', {
+          userAgent: navigator.userAgent,
+          capacitorAvailable: !!(window.Capacitor),
+          pluginAvailable: !!(getK2Plugin())
+        });
+        setupEventListeners();
+      });
+    </script>
+  </body>
+</html>
