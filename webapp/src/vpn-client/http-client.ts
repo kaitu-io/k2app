@@ -1,4 +1,4 @@
-import type { VpnClient, VpnStatus, VersionInfo, VpnConfig, ReadyState, VpnEvent, VpnState } from './types';
+import type { VpnClient, VpnStatus, VersionInfo, ClientConfig, ReadyState, VpnEvent, VpnState } from './types';
 
 interface ApiResponse<T = unknown> {
   code: number;
@@ -22,8 +22,8 @@ export class HttpVpnClient implements VpnClient {
     }
   }
 
-  async connect(wireUrl: string): Promise<void> {
-    await this.coreRequest('up', { wire_url: wireUrl });
+  async connect(config: ClientConfig): Promise<void> {
+    await this.coreRequest('up', { config });
   }
 
   async disconnect(): Promise<void> {
@@ -48,9 +48,9 @@ export class HttpVpnClient implements VpnClient {
     return crypto.randomUUID();
   }
 
-  async getConfig(): Promise<VpnConfig> {
-    const resp = await this.coreRequest<VpnConfig>('get_config');
-    return resp.data ?? {};
+  async getConfig(): Promise<ClientConfig> {
+    const resp = await this.coreRequest<ClientConfig>('get_config');
+    return resp.data ?? { server: '' };
   }
 
   async checkReady(): Promise<ReadyState> {

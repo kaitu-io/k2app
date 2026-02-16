@@ -1,15 +1,14 @@
-import type { VpnClient, VpnStatus, VersionInfo, VpnConfig, ReadyState, VpnEvent, VpnState, UpdateCheckResult, WebUpdateInfo, NativeUpdateInfo } from './types';
+import type { VpnClient, VpnStatus, VersionInfo, ClientConfig, ReadyState, VpnEvent, VpnState, UpdateCheckResult, WebUpdateInfo, NativeUpdateInfo } from './types';
 
 // Keep in sync with mobile/plugins/k2-plugin/src/definitions.ts
 interface K2PluginType {
   checkReady(): Promise<{ ready: boolean; version?: string; reason?: string }>;
   getUDID(): Promise<{ udid: string }>;
   getVersion(): Promise<{ version: string; go: string; os: string; arch: string }>;
-  getStatus(): Promise<{ state: string; connectedAt?: string; uptimeSeconds?: number; error?: string; wireUrl?: string }>;
-  getConfig(): Promise<{ wireUrl?: string }>;
-  connect(options: { wireUrl: string }): Promise<void>;
+  getStatus(): Promise<{ state: string; connectedAt?: string; uptimeSeconds?: number; error?: string }>;
+  getConfig(): Promise<{ config?: string }>;
+  connect(options: { config: string }): Promise<void>;
   disconnect(): Promise<void>;
-  setRuleMode(options: { mode: string }): Promise<void>;
   checkWebUpdate(): Promise<WebUpdateInfo>;
   checkNativeUpdate(): Promise<NativeUpdateInfo>;
   applyWebUpdate(): Promise<void>;
@@ -36,16 +35,12 @@ export class NativeVpnClient implements VpnClient {
     this.plugin = plugin;
   }
 
-  async connect(wireUrl: string): Promise<void> {
-    await this.plugin.connect({ wireUrl });
+  async connect(config: ClientConfig): Promise<void> {
+    await this.plugin.connect({ config: JSON.stringify(config) });
   }
 
   async disconnect(): Promise<void> {
     await this.plugin.disconnect();
-  }
-
-  async setRuleMode(mode: string): Promise<void> {
-    await this.plugin.setRuleMode({ mode });
   }
 
   async checkReady(): Promise<ReadyState> {
@@ -63,7 +58,6 @@ export class NativeVpnClient implements VpnClient {
       connectedAt: result.connectedAt,
       uptimeSeconds: result.uptimeSeconds,
       error: result.error,
-      wireUrl: result.wireUrl,
     };
   }
 
@@ -76,8 +70,12 @@ export class NativeVpnClient implements VpnClient {
     return udid;
   }
 
-  async getConfig(): Promise<VpnConfig> {
-    return this.plugin.getConfig();
+  async getConfig(): Promise<ClientConfig> {
+    const result = await this.plugin.getConfig();
+    if (result.config) {
+      return JSON.parse(result.config) as ClientConfig;
+    }
+    return {} as ClientConfig;
   }
 
   subscribe(listener: (event: VpnEvent) => void): () => void {

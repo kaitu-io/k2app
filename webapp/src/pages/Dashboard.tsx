@@ -4,6 +4,17 @@ import { useVpnStore } from '../stores/vpn.store';
 import { useServersStore, type Server } from '../stores/servers.store';
 import { ConnectionButton } from '../components/ConnectionButton';
 import { ServerList } from '../components/ServerList';
+import type { ClientConfig } from '../vpn-client/types';
+
+export function buildConfig(
+  server: { wireUrl: string },
+  ruleMode: string,
+): ClientConfig {
+  return {
+    server: server.wireUrl,
+    rule: { global: ruleMode === 'global' },
+  };
+}
 
 export function Dashboard() {
   const { t } = useTranslation('dashboard');
@@ -44,8 +55,9 @@ export function Dashboard() {
   const selectedServer = getSelectedServer();
 
   const handleConnect = () => {
-    const wireUrl = selectedServer?.wireUrl || 'k2v5://connect';
-    connect(wireUrl);
+    const server = selectedServer || { wireUrl: 'k2v5://connect' };
+    const config = buildConfig(server, 'smart');
+    connect(config);
   };
 
   const handleSelectServer = (server: Server) => {

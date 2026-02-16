@@ -107,7 +107,7 @@ describe('Dashboard', () => {
       }),
     );
     // Should NOT be called with a plain string anymore
-    const callArg = mockConnect.mock.calls[0][0];
+    const callArg = mockConnect.mock.calls[0]![0];
     expect(typeof callArg).toBe('object');
     expect(callArg.server).toBeDefined();
   });

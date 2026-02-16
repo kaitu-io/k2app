@@ -1,13 +1,13 @@
-import type { VpnClient, VpnStatus, VersionInfo, VpnConfig, ReadyState, VpnEvent } from './types';
+import type { VpnClient, VpnStatus, VersionInfo, ClientConfig, ReadyState, VpnEvent } from './types';
 
 export class MockVpnClient implements VpnClient {
-  connectCalls: string[] = [];
+  connectCalls: ClientConfig[] = [];
   disconnectCalls = 0;
 
   private status: VpnStatus = { state: 'stopped' };
   private version: VersionInfo = { version: '0.0.0', go: '0.0', os: 'test', arch: 'test' };
   private ready: ReadyState = { ready: true, version: '0.0.0' };
-  private config: VpnConfig = {};
+  private config: ClientConfig = { server: '' };
   private udid = 'mock-device-id';
   private listeners: Set<(event: VpnEvent) => void> = new Set();
   private connectError: Error | null = null;
@@ -39,8 +39,8 @@ export class MockVpnClient implements VpnClient {
     }
   }
 
-  async connect(wireUrl: string): Promise<void> {
-    this.connectCalls.push(wireUrl);
+  async connect(config: ClientConfig): Promise<void> {
+    this.connectCalls.push(config);
     if (this.connectError) {
       throw this.connectError;
     }
@@ -69,7 +69,7 @@ export class MockVpnClient implements VpnClient {
     return this.udid;
   }
 
-  async getConfig(): Promise<VpnConfig> {
+  async getConfig(): Promise<ClientConfig> {
     return this.config;
   }
 

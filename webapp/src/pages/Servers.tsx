@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useServersStore, type Server } from '../stores/servers.store';
 import { useVpnStore } from '../stores/vpn.store';
 import { ServerList } from '../components/ServerList';
+import { buildConfig } from './Dashboard';
 
 export function Servers() {
   const { t } = useTranslation();
@@ -16,7 +17,7 @@ export function Servers() {
   const handleSelect = (server: Server) => {
     selectServer(server.id);
     if (state !== 'connected' && state !== 'connecting') {
-      connect(server.wireUrl);
+      connect(buildConfig(server, 'smart'));
     }
   };
 

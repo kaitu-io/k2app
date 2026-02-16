@@ -15,9 +15,13 @@ export interface VersionInfo {
   arch: string;
 }
 
-export interface VpnConfig {
-  wireUrl?: string;
-  configPath?: string;
+export interface ClientConfig {
+  server: string;
+  mode?: string;
+  proxy?: { listen?: string };
+  dns?: { direct?: string[]; proxy?: string[] };
+  rule?: { global?: boolean };
+  log?: { level?: string };
 }
 
 export type ReadyState =
@@ -50,13 +54,13 @@ export type VpnEvent =
   | { type: 'download_progress'; percent: number };
 
 export interface VpnClient {
-  connect(wireUrl: string): Promise<void>;
+  connect(config: ClientConfig): Promise<void>;
   disconnect(): Promise<void>;
   checkReady(): Promise<ReadyState>;
   getStatus(): Promise<VpnStatus>;
   getVersion(): Promise<VersionInfo>;
   getUDID(): Promise<string>;
-  getConfig(): Promise<VpnConfig>;
+  getConfig(): Promise<ClientConfig>;
   subscribe(listener: (event: VpnEvent) => void): () => void;
   destroy(): void;
   checkForUpdates?(): Promise<UpdateCheckResult>;
@@ -64,5 +68,4 @@ export interface VpnClient {
   downloadNativeUpdate?(): Promise<{ path: string }>;
   installNativeUpdate?(options: { path: string }): Promise<void>;
   onDownloadProgress?(handler: (percent: number) => void): () => void;
-  setRuleMode?(mode: string): Promise<void>;
 }

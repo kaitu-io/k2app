@@ -150,7 +150,7 @@ describe('Dashboard Integration — Server Selection', () => {
 
     // connect should be called with a ClientConfig object (not a plain string)
     expect(mockConnect).toHaveBeenCalled();
-    const callArg = mockConnect.mock.calls[0][0];
+    const callArg = mockConnect.mock.calls[0]![0];
     expect(typeof callArg).toBe('object');
     expect(callArg.server).toBeDefined();
   });

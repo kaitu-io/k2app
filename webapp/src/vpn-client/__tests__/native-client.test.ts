@@ -60,13 +60,11 @@ describe('NativeVpnClient', () => {
       state: 'connected',
       connectedAt: '2026-01-01T00:00:00Z',
       uptimeSeconds: 120,
-      wireUrl: 'wss://example.com/wire',
     });
     const status = await client.getStatus();
     expect(status.state).toBe('connected');
     expect(status.connectedAt).toBe('2026-01-01T00:00:00Z');
     expect(status.uptimeSeconds).toBe(120);
-    expect(status.wireUrl).toBe('wss://example.com/wire');
   });
 
   it('getStatus() passes through "connecting"', async () => {

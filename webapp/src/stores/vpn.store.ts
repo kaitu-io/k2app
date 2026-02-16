@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { getVpnClient } from '../vpn-client';
-import type { VpnState, ReadyState } from '../vpn-client';
+import type { VpnState, ReadyState, ClientConfig } from '../vpn-client';
 
 interface VpnStore {
   state: VpnState;
@@ -8,7 +8,7 @@ interface VpnStore {
   error: string | null;
   daemonReachable: boolean | null;
   init: () => Promise<void>;
-  connect: (wireUrl: string) => Promise<void>;
+  connect: (config: ClientConfig) => Promise<void>;
   disconnect: () => Promise<void>;
 }
 
@@ -32,10 +32,10 @@ export const useVpnStore = create<VpnStore>((set) => ({
     }
   },
 
-  connect: async (wireUrl: string) => {
+  connect: async (config: ClientConfig) => {
     set({ state: 'connecting', error: null });
     try {
-      await getVpnClient().connect(wireUrl);
+      await getVpnClient().connect(config);
     } catch (e) {
       set({ state: 'stopped', error: e instanceof Error ? e.message : 'Connection failed' });
     }
