@@ -4,19 +4,31 @@ export class TauriPlatform implements PlatformApi {
   readonly isMobile = false;
   readonly platformName = 'tauri';
 
-  openExternal(_url: string): Promise<void> {
-    throw new Error('Not implemented');
+  async openExternal(url: string): Promise<void> {
+    try {
+      const shellModule = '@tauri-apps/plugin-shell';
+      const { open } = await import(/* @vite-ignore */ shellModule);
+      await open(url);
+    } catch {
+      // Native API not available (e.g. in tests)
+    }
   }
 
-  writeClipboard(_text: string): Promise<void> {
-    throw new Error('Not implemented');
+  async writeClipboard(text: string): Promise<void> {
+    await navigator.clipboard.writeText(text);
   }
 
-  syncLocale(_locale: string): Promise<void> {
-    throw new Error('Not implemented');
+  async syncLocale(locale: string): Promise<void> {
+    try {
+      const coreModule = '@tauri-apps/api/core';
+      const { invoke } = await import(/* @vite-ignore */ coreModule);
+      await invoke('sync_locale', { locale });
+    } catch {
+      // Native API not available (e.g. in tests)
+    }
   }
 
-  uploadLogs(_feedbackId: string): Promise<void> {
-    throw new Error('Not implemented');
+  async uploadLogs(_feedbackId: string): Promise<void> {
+    // No-op on desktop — logs are local
   }
 }

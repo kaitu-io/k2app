@@ -4,19 +4,19 @@ export class WebPlatform implements PlatformApi {
   readonly isMobile = false;
   readonly platformName = 'web';
 
-  openExternal(_url: string): Promise<void> {
-    throw new Error('Not implemented');
+  async openExternal(url: string): Promise<void> {
+    window.open(url, '_blank');
   }
 
-  writeClipboard(_text: string): Promise<void> {
-    throw new Error('Not implemented');
+  async writeClipboard(text: string): Promise<void> {
+    await navigator.clipboard.writeText(text);
   }
 
-  syncLocale(_locale: string): Promise<void> {
-    throw new Error('Not implemented');
+  async syncLocale(_locale: string): Promise<void> {
+    // No-op on web
   }
 
-  uploadLogs(_feedbackId: string): Promise<void> {
-    throw new Error('Not implemented');
+  async uploadLogs(_feedbackId: string): Promise<void> {
+    // No-op on web
   }
 }

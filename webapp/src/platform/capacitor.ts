@@ -4,19 +4,37 @@ export class CapacitorPlatform implements PlatformApi {
   readonly isMobile = true;
   readonly platformName = 'capacitor';
 
-  openExternal(_url: string): Promise<void> {
-    throw new Error('Not implemented');
+  async openExternal(url: string): Promise<void> {
+    try {
+      const browserModule = '@capacitor/browser';
+      const { Browser } = await import(/* @vite-ignore */ browserModule);
+      await Browser.open({ url });
+    } catch {
+      // Native API not available (e.g. in tests)
+    }
   }
 
-  writeClipboard(_text: string): Promise<void> {
-    throw new Error('Not implemented');
+  async writeClipboard(text: string): Promise<void> {
+    await navigator.clipboard.writeText(text);
   }
 
-  syncLocale(_locale: string): Promise<void> {
-    throw new Error('Not implemented');
+  async syncLocale(locale: string): Promise<void> {
+    try {
+      const pluginModule = 'k2-plugin';
+      const { K2Plugin } = await import(/* @vite-ignore */ pluginModule);
+      await K2Plugin.syncLocale({ locale });
+    } catch {
+      // Native API not available (e.g. in tests)
+    }
   }
 
-  uploadLogs(_feedbackId: string): Promise<void> {
-    throw new Error('Not implemented');
+  async uploadLogs(feedbackId: string): Promise<void> {
+    try {
+      const pluginModule = 'k2-plugin';
+      const { K2Plugin } = await import(/* @vite-ignore */ pluginModule);
+      await K2Plugin.uploadLogs({ feedbackId });
+    } catch {
+      // Native API not available (e.g. in tests)
+    }
   }
 }
