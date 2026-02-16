@@ -1,9 +1,17 @@
 const STORAGE_KEY = 'k2_entry_url';
-const DEFAULT_ENTRY = 'https://w.app.52j.me';
-const CDN_SOURCES = [
+export const DEFAULT_ENTRY = 'https://w.app.52j.me';
+export const CDN_SOURCES = [
   'https://cdn.jsdelivr.net/npm/unlock-it/config.js',
   'https://unpkg.com/unlock-it/config.js',
 ];
+export const DECRYPTION_KEY = '';
+
+export async function decrypt(
+  _encoded: string,
+  _keyHex: string,
+): Promise<string | null> {
+  return null;
+}
 
 export async function resolveEntry(): Promise<string> {
   const cached = localStorage.getItem(STORAGE_KEY);
