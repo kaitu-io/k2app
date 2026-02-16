@@ -1,9 +1,20 @@
-# Feature Spec: Build Unification
+# Feature: Build Unification
 
-> **Status**: Implemented
-> **Created**: 2026-02-14
-> **Implemented**: 2026-02-14
-> **Feature**: Unify macOS build into single script with PKG installer
+## Meta
+
+| Field     | Value                                    |
+|-----------|------------------------------------------|
+| Feature   | build-unification                        |
+| Version   | v1                                       |
+| Status    | implemented                              |
+| Created   | 2026-02-14                               |
+| Updated   | 2026-02-14                               |
+
+## Version History
+
+| Version | Date       | Summary                                                    |
+|---------|------------|------------------------------------------------------------|
+| v1      | 2026-02-14 | Initial: single build script + PKG installer + test_build  |
 
 ## Overview
 
@@ -75,7 +86,9 @@ scripts/build-macos.sh [--skip-notarization]
 - Build artifact paths and binary presence
 - `--full` flag: actually run the macOS build pipeline
 
-## Decision 1: PKG over DMG
+## Technical Decisions
+
+### TD1: PKG over DMG
 
 | Aspect | DMG | PKG |
 |--------|-----|-----|
@@ -87,7 +100,7 @@ scripts/build-macos.sh [--skip-notarization]
 PKG wins on security UX and CI simplicity. Tauri updater is unaffected (uses
 .app.tar.gz + .sig regardless of initial install format).
 
-## Decision 2: Universal Binary via lipo
+### TD2: Universal Binary via lipo
 
 Go cross-compilation requires explicit `GOARCH`/`GOOS` env vars (Go does not
 infer target from Rust-style triple names). Build both arches separately then
@@ -102,7 +115,7 @@ lipo -create k2-aarch64-apple-darwin k2-x86_64-apple-darwin -output k2-universal
 Tauri's `--target universal-apple-darwin` expects the binary named
 `k2-universal-apple-darwin` in `desktop/src-tauri/binaries/`.
 
-## Decision 3: pkgbuild Staging Directory
+### TD3: pkgbuild Staging Directory
 
 pkgbuild `--root` packages everything in the directory. The Tauri build output
 directory contains `.app.tar.gz` and `.sig` files alongside `.app`. Without
@@ -114,7 +127,7 @@ Component plist sets `BundleIsRelocatable=false` so the installer always places
 the app in `/Applications`, and `BundleOverwriteAction=upgrade` for clean
 upgrades.
 
-## Decision 4: Notarization Guard
+### TD4: Notarization Guard
 
 Tauri's bundler auto-detects `APPLE_ID`/`APPLE_PASSWORD`/`APPLE_TEAM_ID`
 environment variables and attempts notarization internally. When

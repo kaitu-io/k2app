@@ -1,9 +1,20 @@
-# Feature Spec: Webapp State Alignment
+# Feature: Webapp State Alignment
 
-> **Status**: Implemented
-> **Created**: 2026-02-14
-> **Implemented**: 2026-02-14
-> **Feature**: Align webapp VpnState with k2 daemon's 3-state model
+## Meta
+
+| Field     | Value                                    |
+|-----------|------------------------------------------|
+| Feature   | webapp-state-alignment                   |
+| Version   | v1                                       |
+| Status    | implemented                              |
+| Created   | 2026-02-14                               |
+| Updated   | 2026-02-14                               |
+
+## Version History
+
+| Version | Date       | Summary                                                    |
+|---------|------------|------------------------------------------------------------|
+| v1      | 2026-02-14 | Initial: 5-state → 3-state VpnState, error as orthogonal  |
 
 ## Overview
 
@@ -77,7 +88,9 @@ ConnectionButton has exactly 3 variants (CVA):
 Error display is handled by Dashboard component using the `error` field,
 independent of which state the VPN is in.
 
-## Decision 1: Remove `disconnecting` State
+## Technical Decisions
+
+### TD1: Remove `disconnecting` State
 
 The `disconnecting` state existed for optimistic UI feedback ("Disconnecting..."
 shown briefly). In practice:
@@ -92,7 +105,7 @@ Removing it simplifies:
 - `isTransitional` check: `state === 'connecting' || state === 'disconnecting'` → `state === 'connecting'`
 - Label map: 5 entries → 3 entries
 
-## Decision 2: Error as Orthogonal Field
+### TD2: Error as Orthogonal Field
 
 The old `error` state conflated "what happened" (error) with "where we are"
 (state). This caused problems:
