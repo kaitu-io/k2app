@@ -1,1 +1,1 @@
-{}
+{"mcp-bridge":{"identifier":"mcp-bridge","description":"enables MCP bridge for development","local":true,"windows":["main"],"permissions":["mcp-bridge:default"]}}

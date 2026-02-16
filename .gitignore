@@ -16,3 +16,5 @@ mobile/android/local.properties
 k2/build/
 *.xcframework
 *.aar
+
+.word9f

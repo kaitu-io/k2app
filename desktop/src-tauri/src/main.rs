@@ -7,7 +7,7 @@ mod updater;
 use tauri::Manager;
 
 fn main() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_localhost::Builder::new(14580).build())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
@@ -23,7 +23,14 @@ fn main() {
             updater::check_update_now,
             updater::apply_update_now,
             updater::get_update_status,
-        ])
+        ]);
+
+    #[cfg(all(feature = "mcp-bridge", debug_assertions))]
+    {
+        builder = builder.plugin(tauri_plugin_mcp_bridge::init());
+    }
+
+    builder
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 window.show().ok();

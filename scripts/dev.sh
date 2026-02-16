@@ -27,4 +27,4 @@ trap cleanup EXIT INT TERM
 
 # Start Tauri dev
 cd "$ROOT_DIR/desktop"
-yarn tauri dev
+yarn tauri dev --features mcp-bridge
