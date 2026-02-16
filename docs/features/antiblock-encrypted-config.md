@@ -6,9 +6,9 @@
 |-----------|------------------------------------------|
 | Feature   | antiblock-encrypted-config               |
 | Version   | v1                                       |
-| Status    | draft                                    |
+| Status    | implemented                              |
 | Created   | 2026-02-16                               |
-| Updated   | 2026-02-16                               |
+| Updated   | 2026-02-17                               |
 | Tests     | TBD                                      |
 
 ## Version History
