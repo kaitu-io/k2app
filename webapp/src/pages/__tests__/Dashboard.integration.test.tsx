@@ -148,9 +148,11 @@ describe('Dashboard Integration — Server Selection', () => {
     const connectButton = screen.getByRole('button', { name: /connect/i });
     await user.click(connectButton);
 
-    // connect should be called (we don't check the exact wireUrl here since
-    // the mock state still shows sv-1 as selected after selectServer mock)
+    // connect should be called with a ClientConfig object (not a plain string)
     expect(mockConnect).toHaveBeenCalled();
+    const callArg = mockConnect.mock.calls[0][0];
+    expect(typeof callArg).toBe('object');
+    expect(callArg.server).toBeDefined();
   });
 
   it('test_dashboard_vpn_status_display — VPN status (connected/disconnected/connecting) is displayed with correct styling', () => {

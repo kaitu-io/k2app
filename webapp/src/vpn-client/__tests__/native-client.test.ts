@@ -11,7 +11,6 @@ function createMockPlugin() {
     getConfig: vi.fn(),
     connect: vi.fn(),
     disconnect: vi.fn(),
-    setRuleMode: vi.fn(),
     checkWebUpdate: vi.fn(),
     checkNativeUpdate: vi.fn(),
     applyWebUpdate: vi.fn(),
@@ -30,10 +29,13 @@ describe('NativeVpnClient', () => {
     client = new NativeVpnClient(plugin);
   });
 
-  it('connect() calls plugin.connect({ wireUrl })', async () => {
+  it('test_NativeVpnClient_connect_passes_config — connect() passes JSON-stringified config to plugin', async () => {
     plugin.connect.mockResolvedValue(undefined);
-    await client.connect('wss://example.com/wire');
-    expect(plugin.connect).toHaveBeenCalledWith({ wireUrl: 'wss://example.com/wire' });
+    const config = { server: 'k2v5://example.com/wire', rule: { global: true } };
+    await client.connect(config);
+    expect(plugin.connect).toHaveBeenCalledWith({
+      config: JSON.stringify({ server: 'k2v5://example.com/wire', rule: { global: true } }),
+    });
   });
 
   it('disconnect() calls plugin.disconnect()', async () => {
@@ -42,16 +44,9 @@ describe('NativeVpnClient', () => {
     expect(plugin.disconnect).toHaveBeenCalled();
   });
 
-  it('setRuleMode() calls plugin with correct options', async () => {
-    plugin.setRuleMode.mockResolvedValue(undefined);
-    await client.setRuleMode('smart');
-    expect(plugin.setRuleMode).toHaveBeenCalledWith({ mode: 'smart' });
-  });
-
-  it('setRuleMode() global mode', async () => {
-    plugin.setRuleMode.mockResolvedValue(undefined);
-    await client.setRuleMode('global');
-    expect(plugin.setRuleMode).toHaveBeenCalledWith({ mode: 'global' });
+  it('does not have setRuleMode method', () => {
+    // setRuleMode was removed — rule mode is now part of ClientConfig
+    expect((client as any).setRuleMode).toBeUndefined();
   });
 
   it('getStatus() maps "disconnected" to "stopped"', async () => {
@@ -117,10 +112,17 @@ describe('NativeVpnClient', () => {
     expect(result).toEqual(versionInfo);
   });
 
-  it('getConfig() returns plugin config', async () => {
-    plugin.getConfig.mockResolvedValue({ wireUrl: 'wss://example.com/wire' });
+  it('getConfig() parses config JSON string from plugin', async () => {
+    const configObj = { server: 'k2v5://example.com/wire', rule: { global: false } };
+    plugin.getConfig.mockResolvedValue({ config: JSON.stringify(configObj) });
     const result = await client.getConfig();
-    expect(result).toEqual({ wireUrl: 'wss://example.com/wire' });
+    expect(result).toEqual({ server: 'k2v5://example.com/wire', rule: { global: false } });
+  });
+
+  it('getConfig() returns empty config when plugin returns no config', async () => {
+    plugin.getConfig.mockResolvedValue({});
+    const result = await client.getConfig();
+    expect(result).toEqual({});
   });
 
   describe('subscribe()', () => {

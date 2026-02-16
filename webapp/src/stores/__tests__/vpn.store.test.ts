@@ -49,17 +49,18 @@ describe('useVpnStore', () => {
   });
 
   describe('connect', () => {
-    it('sets state to connecting then resolves', async () => {
-      await useVpnStore.getState().connect('wg://test');
+    it('test_vpn_store_connect_with_config — passes ClientConfig to vpnClient', async () => {
+      const config = { server: 'k2v5://test', rule: { global: true } };
+      await useVpnStore.getState().connect(config);
 
-      expect(mock.connectCalls).toEqual(['wg://test']);
+      expect(mock.connectCalls).toEqual([config]);
       // state was set to 'connecting' at start
     });
 
     it('reverts to stopped and sets error on failure', async () => {
       mock.setConnectError(new Error('Connection refused'));
 
-      await useVpnStore.getState().connect('wg://test');
+      await useVpnStore.getState().connect({ server: 'k2v5://test' });
 
       expect(useVpnStore.getState().state).toBe('stopped');
       expect(useVpnStore.getState().error).toBe('Connection refused');

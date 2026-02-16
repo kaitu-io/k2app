@@ -2,12 +2,14 @@ import { describe, it, expect, vi } from 'vitest';
 import { MockVpnClient } from '../mock-client';
 
 describe('MockVpnClient', () => {
-  it('tracks connect calls', async () => {
+  it('test_MockVpnClient_connect_accepts_config — tracks connect calls with ClientConfig', async () => {
     const mock = new MockVpnClient();
-    await mock.connect('wg://test1');
-    await mock.connect('wg://test2');
+    const config1 = { server: 'k2v5://test1' };
+    const config2 = { server: 'k2v5://test2', rule: { global: true } };
+    await mock.connect(config1);
+    await mock.connect(config2);
 
-    expect(mock.connectCalls).toEqual(['wg://test1', 'wg://test2']);
+    expect(mock.connectCalls).toEqual([config1, config2]);
   });
 
   it('tracks disconnect calls', async () => {

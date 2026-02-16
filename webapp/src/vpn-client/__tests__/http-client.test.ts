@@ -17,20 +17,21 @@ describe('HttpVpnClient', () => {
   });
 
   describe('connect', () => {
-    it('sends POST /api/core with action:up and wire_url', async () => {
+    it('test_HttpVpnClient_connect_sends_config — sends POST with { config } in params', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: () => Promise.resolve({ code: 0, message: 'ok' }),
       });
 
-      await client.connect('wg://example.com/tunnel');
+      const config = { server: 'k2v5://example.com/tunnel', rule: { global: true } };
+      await client.connect(config);
 
       expect(mockFetch).toHaveBeenCalledWith(
         expect.stringContaining('/api/core'),
         expect.objectContaining({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'up', params: { wire_url: 'wg://example.com/tunnel' } }),
+          body: JSON.stringify({ action: 'up', params: { config: { server: 'k2v5://example.com/tunnel', rule: { global: true } } } }),
         }),
       );
     });
@@ -42,7 +43,7 @@ describe('HttpVpnClient', () => {
         statusText: 'Internal Server Error',
       });
 
-      await expect(client.connect('wg://example.com')).rejects.toThrow();
+      await expect(client.connect({ server: 'wg://example.com' })).rejects.toThrow();
     });
   });
 
@@ -137,19 +138,19 @@ describe('HttpVpnClient', () => {
   });
 
   describe('getConfig', () => {
-    it('sends action:get_config', async () => {
+    it('sends action:get_config and returns ClientConfig', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: () =>
           Promise.resolve({
             code: 0,
             message: 'ok',
-            data: { wireUrl: 'wg://test', configPath: '/etc/config' },
+            data: { server: 'k2v5://test', rule: { global: false } },
           }),
       });
 
       const config = await client.getConfig();
-      expect(config).toEqual({ wireUrl: 'wg://test', configPath: '/etc/config' });
+      expect(config).toEqual({ server: 'k2v5://test', rule: { global: false } });
     });
   });
 
@@ -187,7 +188,7 @@ describe('HttpVpnClient', () => {
         json: () => Promise.resolve({ code: 0, message: 'ok' }),
       });
 
-      await client.connect('wg://test');
+      await client.connect({ server: 'wg://test' });
 
       expect(mockFetch).toHaveBeenCalledWith(
         '/api/core',
@@ -205,7 +206,7 @@ describe('HttpVpnClient', () => {
           ok: true,
           json: () => Promise.resolve({ code: 0, message: 'ok' }),
         });
-        await webClient.connect('wg://test');
+        await webClient.connect({ server: 'wg://test' });
 
         expect(mockFetch).toHaveBeenCalledWith(
           '/api/core',
@@ -227,7 +228,7 @@ describe('HttpVpnClient', () => {
           ok: true,
           json: () => Promise.resolve({ code: 0, message: 'ok' }),
         });
-        await tauriClient.connect('wg://test');
+        await tauriClient.connect({ server: 'wg://test' });
 
         expect(mockFetch).toHaveBeenCalledWith(
           'http://127.0.0.1:1777/api/core',
