@@ -33,6 +33,7 @@ func setupStrategyTestRouter() *gin.Engine {
 }
 
 func TestGetStrategyRules_NoActiveRules(t *testing.T) {
+	skipIfNoConfig(t)
 	r := setupStrategyTestRouter()
 
 	req, _ := http.NewRequest("GET", "/api/strategy/rules", nil)
@@ -56,6 +57,7 @@ func TestGetStrategyRules_NoActiveRules(t *testing.T) {
 }
 
 func TestGetStrategyRules_ResponseStructure(t *testing.T) {
+	skipIfNoConfig(t)
 	r := setupStrategyTestRouter()
 
 	t.Run("Response contains required fields", func(t *testing.T) {
@@ -86,6 +88,7 @@ func TestGetStrategyRules_ResponseStructure(t *testing.T) {
 }
 
 func TestGetStrategyRules_DefaultRulesContent(t *testing.T) {
+	skipIfNoConfig(t)
 	r := setupStrategyTestRouter()
 
 	req, _ := http.NewRequest("GET", "/api/strategy/rules", nil)
@@ -116,6 +119,7 @@ func TestGetStrategyRules_DefaultRulesContent(t *testing.T) {
 }
 
 func TestGetStrategyRules_HTTPMethod(t *testing.T) {
+	skipIfNoConfig(t)
 	r := setupStrategyTestRouter()
 
 	methods := []string{"POST", "PUT", "DELETE", "PATCH"}
@@ -132,6 +136,7 @@ func TestGetStrategyRules_HTTPMethod(t *testing.T) {
 }
 
 func TestGetStrategyRules_ETagCaching(t *testing.T) {
+	skipIfNoConfig(t)
 	r := setupStrategyTestRouter()
 
 	t.Run("Response includes ETag header for default rules", func(t *testing.T) {
@@ -187,6 +192,7 @@ func setupTelemetryTestRouter() *gin.Engine {
 }
 
 func TestTelemetryBatch_InvalidRequest(t *testing.T) {
+	skipIfNoConfig(t)
 	r := setupTelemetryTestRouter()
 
 	t.Run("Missing required fields returns error", func(t *testing.T) {
@@ -233,6 +239,7 @@ func TestTelemetryBatch_InvalidRequest(t *testing.T) {
 }
 
 func TestTelemetryBatch_DeviceNotFound(t *testing.T) {
+	skipIfNoConfig(t)
 	r := setupTelemetryTestRouter()
 
 	body := `{
@@ -262,6 +269,7 @@ func TestTelemetryBatch_DeviceNotFound(t *testing.T) {
 }
 
 func TestTelemetryBatch_ResponseStructure(t *testing.T) {
+	skipIfNoConfig(t)
 	r := setupTelemetryTestRouter()
 
 	// Even with device not found, we test the response parsing capability
@@ -284,6 +292,7 @@ func TestTelemetryBatch_ResponseStructure(t *testing.T) {
 }
 
 func TestTelemetryBatch_HTTPMethod(t *testing.T) {
+	skipIfNoConfig(t)
 	r := setupTelemetryTestRouter()
 
 	methods := []string{"GET", "PUT", "DELETE", "PATCH"}
