@@ -63,6 +63,7 @@ export default function Dashboard() {
   const {
     serviceState,
     isDisconnected,
+    isError,
     isServiceRunning,
     isRetrying,
     networkAvailable,
@@ -209,38 +210,49 @@ export default function Dashboard() {
     }
   }, [isAuthenticated, serviceFailureDuration]);
 
+  // Assemble minimal ClientConfig — Go's config.SetDefaults() fills the rest
+  const assembleConfig = useCallback(() => {
+    const config: Record<string, any> = {};
+    if (selectedCloudTunnel?.url) {
+      config.server = selectedCloudTunnel.url;
+    }
+    config.rule = {
+      global: activeRuleType === 'global',
+    };
+    return config;
+  }, [selectedCloudTunnel, activeRuleType]);
+
   // Handle connection toggle
   const handleToggleConnection = useCallback(async () => {
-    if (isDisconnected && !activeTunnelInfo.domain) {
+    if ((isDisconnected || isError) && !activeTunnelInfo.domain) {
       console.warn('[Dashboard] No tunnel selected');
       return;
     }
 
     try {
-      if (!isDisconnected || isRetrying) {
+      if (isError && !isRetrying) {
+        // Error state: reconnect
+        console.info('[Dashboard] Reconnecting VPN after error...');
+        setOptimisticState('connecting');
+        const config = assembleConfig();
+        await window._k2.run('up', config);
+      } else if (!isDisconnected || isRetrying) {
+        // Connected/connecting/retrying: disconnect
         console.info('[Dashboard] Stopping VPN...');
         setOptimisticState('disconnecting');
         await window._k2.run('down');
       } else {
+        // Disconnected: connect
         console.info('[Dashboard] Starting VPN...');
         setOptimisticState('connecting');
-
-        // Assemble minimal ClientConfig — Go's config.SetDefaults() fills the rest
-        const config: Record<string, any> = {};
-        if (selectedCloudTunnel?.url) {
-          config.server = selectedCloudTunnel.url;
-        }
-        config.rule = {
-          global: activeRuleType === 'global',
-        };
-
+        const config = assembleConfig();
         await window._k2.run('up', config);
       }
     } catch (err) {
       console.error('Connection operation failed', err);
       setOptimisticState(null);
     }
-  }, [isDisconnected, isRetrying, activeTunnelInfo.domain, selectedCloudTunnel, activeRuleType, setOptimisticState]);
+  }, [isDisconnected, isError, isRetrying, activeTunnelInfo.domain, assembleConfig, setOptimisticState]);
 
   // Check if any tunnel is selected (for Anonymity toggle)
   const hasTunnelSelected = !!activeTunnelInfo.domain;

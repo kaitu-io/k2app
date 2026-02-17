@@ -272,16 +272,27 @@ describe('Dashboard', () => {
         }) as any
       );
 
-      // Mock authenticated user with a selected tunnel
+      // Mock authenticated user so CloudTunnelList renders
       vi.mocked(useAuthStore).mockImplementation((selector: any) => {
         const state = { isAuthenticated: true };
         return selector(state);
       });
 
+      // Make CloudTunnelList auto-select a tunnel on mount
+      const { CloudTunnelList } = await import('../../components/CloudTunnelList');
+      vi.mocked(CloudTunnelList).mockImplementation(({ onSelect }: any) => {
+        // Trigger onSelect on first render via useEffect-like pattern
+        if (onSelect) {
+          setTimeout(() => onSelect({ domain: 'test.example.com', name: 'Test Tunnel', url: 'https://test.example.com', node: { country: 'US' } }), 0);
+        }
+        return null;
+      });
+
       render(<Dashboard />);
 
+      // Wait for the auto-selected tunnel to be reflected
       await waitFor(() => {
-        expect(screen.getByTestId('toggle-btn')).toBeInTheDocument();
+        expect(screen.getByTestId('tunnel-name')).toHaveTextContent('Test Tunnel');
       });
 
       const toggleBtn = screen.getByTestId('toggle-btn');
@@ -294,6 +305,10 @@ describe('Dashboard', () => {
     });
 
     it('error state without tunnel should not reconnect', async () => {
+      // Reset CloudTunnelList mock to default (no auto-select)
+      const { CloudTunnelList } = await import('../../components/CloudTunnelList');
+      vi.mocked(CloudTunnelList).mockImplementation(() => null);
+
       vi.mocked(useVPNStatus).mockReturnValue(
         createMockVPNStatus({
           serviceState: 'error',
