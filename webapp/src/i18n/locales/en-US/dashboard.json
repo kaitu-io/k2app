@@ -1,10 +1,237 @@
 {
-  "title": "Dashboard",
-  "connect": "Connect",
-  "disconnect": "Disconnect",
-  "connecting": "Connecting...",
-  "connected": "Connected",
-  "disconnected": "Disconnected",
-  "uptime": "Uptime",
-  "error": "Connection Error"
+  "dashboard": {
+    "autoSwitchLabel": "Automatically switch to other nodes in this country based on network conditions",
+    "autoSwitchInCountry": "Smart Switch in Same Country",
+    "autoSwitchAlwaysEnabled": "Smart Switch Enabled",
+    "autoSwitchInfo": "The system will automatically switch to other available nodes in this country based on network conditions",
+    "autoSwitchExplanationSpecific": "Will automatically switch to other available nodes in this country based on network conditions",
+    "autoSwitchExplanationGeneral": "Will automatically select and switch to the best node based on network conditions",
+    "autoSelect": "Auto Select",
+    "selectNode": "Select Node",
+    "noNodeSelected": "No Node Selected",
+    "proxyMode": "Proxy Mode",
+    "socks5Mode": "SOCKS5",
+    "autoSwitch": "Auto Switch",
+    "refreshNodeList": "Refresh Node List",
+    "loadingNodes": "Loading node list...",
+    "errorLoadingNodes": "Failed to load node list",
+    "retryLoading": "Retry Loading",
+    "noNodesTitle": "No Available Nodes",
+    "noNodesDescription": "No tunnel nodes found. Please check your network connection and try refreshing.",
+    "refreshNodes": "Refresh Nodes",
+    "refreshFailed": "Refresh Failed",
+    "currentSelectedNode": "Current Selected Node",
+    "proxyRules": "Proxy Rules",
+    "rule": {
+      "global": "Global",
+      "gfwlist": "Smart",
+      "chnroute": "Lite"
+    },
+    "ruleDescription": {
+      "global": "Won't miss any website",
+      "gfwlist": "Balance speed and accessibility",
+      "chnroute": "Ultra-fast local sites",
+      "uk": "UK identity verification"
+    },
+    "disconnectToModify": "Please disconnect before modifying",
+    "k2Options": "Advanced Options",
+    "enableMux": "Multiplexing",
+    "enableConcurrent": "Concurrent Connection",
+    "enableAnonymity": "Anonymity Mode",
+    "requiredByAnonymity": "Required by Anonymity Mode",
+    "load": "Load",
+    "advancedOptionsInfo": "Click for detailed information",
+    "advancedOptionsHelp": "Advanced Options Description",
+    "muxDescription": "##Lower latency, faster speed##. Multiple requests in one channel, like opening multiple lanes on a highway, ##reducing queuing time##. Ideal for video streaming and gaming.",
+    "concurrentDescription": "##Use multiple nodes simultaneously## for faster and more stable connections. Like taking multiple routes at once, one blocked route won't stop you. ##Especially effective under network restrictions##, Pro exclusive feature.",
+    "anonymityDescription": "##Use different IP addresses to connect to servers and access websites##, protecting your real location from being tracked. Like wearing a double mask, more privacy protection. Note: May slightly affect speed, Pro exclusive feature.",
+    "enableFakeIP": "Fake IP Mode",
+    "fakeIPDescription": "Assigns virtual IPs to domains that need proxying. DNS resolution happens server-side for faster connections and better privacy.",
+    "dnsMode": "DNS Mode",
+    "dnsModeDescription": "Choose DNS resolution method",
+    "dnsOptions": {
+      "fakeIp": "Fake IP",
+      "realIp": "Real IP",
+      "realIpDot": "Real IP (DoT)"
+    },
+    "recentLocations": "Recent",
+    "favorites": "Favorites",
+    "allLocations": "All Locations",
+    "advancedSettings": "Advanced Settings",
+    "searchLocations": "Search locations...",
+    "manualRefresh": "Refresh Now",
+    "refreshing": "Refreshing...",
+    "updated": "Updated",
+    "justNow": "Just now",
+    "minutesAgo": "minutes ago",
+    "hoursAgo": "hours ago",
+    "longTimeAgo": "a long time ago",
+    "selectServerHint": "Select a server from the list below to start",
+    "connectionRetrying": "Server connection failed, retrying...",
+    "serviceFailure": {
+      "title": "Service Connection Failed",
+      "message": "Unable to connect to VPN service. Please check if the service is running.",
+      "resolve": "Resolve",
+      "resolving": "Resolving...",
+      "more": "More",
+      "collecting": "Collecting diagnostics...",
+      "reported": "Reported to support team"
+    },
+    "serviceError": {
+      "title": "Service Error",
+      "subtitle": "The VPN core service is not running properly",
+      "reason1Title": "Auto-Update Incomplete",
+      "reason1Desc": "The application may have encountered an issue during update, causing service components to not install correctly.",
+      "reason2Title": "Blocked by Security Software",
+      "reason2Desc": "Security software like 360 or Tencent PC Manager may have mistakenly identified the VPN service as a risk and blocked it.",
+      "solutionTitle": "Solution",
+      "solutionDesc": "Please visit our website to download and reinstall the latest version to fix this issue.",
+      "downloadButton": "Go to Download",
+      "persistentTitle": "Problem keeps occurring?",
+      "persistentDesc": "If you still encounter this issue after reinstalling, please submit a ticket and our support team will assist you.",
+      "submitTicket": "Submit Ticket"
+    },
+    "networkError": {
+      "title": "Network Connection Error"
+    },
+    "initialization": {
+      "title": "Initializing service components",
+      "geoip": "GeoIP database",
+      "rules": "Proxy rules",
+      "antiblock": "Connection config"
+    },
+    "selfDeployed": "Self-Deployed",
+    "selfDeployedTag": "Self-Deployed",
+    "cloudNodes": "Cloud Nodes",
+    "cloudTag": "Cloud",
+    "analyzing": "Analyzing...",
+    "manageTunnels": "Manage Nodes",
+    "addTunnel": "Add Node",
+    "selfDeploy": "Self-Deploy",
+    "loginToGet": "Login to Get",
+    "guestEmpty": {
+      "title": "Login to Get Nodes",
+      "description": "Login to get cloud nodes and enjoy more stable service."
+    },
+    "loginBanner": {
+      "message": "Login to unlock more cloud nodes",
+      "viewPlans": "View Plans"
+    }
+  },
+  "tunnels": {
+    "title": "Node Management",
+    "description": "Manage your local node configurations. Add custom nodes or login to sync cloud nodes.",
+    "addTunnel": "Add Node",
+    "syncCloud": "Login to Get",
+    "loginHint": "Login to sync cloud node configurations",
+    "loginToSync": "Login to get cloud nodes",
+    "anonymity": "Anonymous",
+    "addresses": "addresses",
+    "empty": {
+      "title": "No Nodes",
+      "description": "Click the button below to add your first node"
+    },
+    "deleteConfirm": {
+      "title": "Delete Node",
+      "message": "Are you sure you want to delete the node \"{{name}}\"?"
+    },
+    "selfDeploy": {
+      "title": "Self-Deploy Service",
+      "description": "We are developing a self-deploy feature that allows you to deploy nodes on your own servers. This feature will be released after the project goes open source.",
+      "comingSoon": "Coming Soon",
+      "openSourceNote": "Deploy and customize freely after open source release"
+    },
+    "cloudNodes": {
+      "title": "Cloud Nodes",
+      "description": "Login to get cloud nodes, ready to use without self-deployment.",
+      "usingCloud": "You are using cloud nodes. Go back to home to select a node."
+    },
+    "form": {
+      "addTitle": "Add Node",
+      "editTitle": "Edit Node",
+      "name": "Node Name",
+      "namePlaceholder": "e.g., Hong Kong Node 1",
+      "nameRequired": "Please enter node name",
+      "url": "Node URL",
+      "urlHelp": "Format: k2wss://domain?addrs=IP_addresses",
+      "urlRequired": "Please enter node URL",
+      "urlInvalid": "URL must start with k2wss://",
+      "domain": "Domain (SNI)",
+      "domainRequired": "Please enter domain",
+      "addresses": "Address List",
+      "addressesHelp": "Separate multiple addresses with commas, default port 443",
+      "addrsRequired": "Please enter at least one address",
+      "anonymity": "Anonymity Mode",
+      "anonymityHelp": "Randomly select address for better privacy",
+      "advancedMode": "Advanced Mode",
+      "simpleMode": "Simple Mode",
+      "addFailed": "Add Failed",
+      "updateFailed": "Update Failed"
+    }
+  },
+  "troubleshooting": {
+    "title": "Troubleshooting",
+    "subtitle": "Diagnose network connection issues through speed test and network repair",
+    "speedtest": {
+      "title": "Speed Test",
+      "description": "Test your international network connection speed and quality (not through proxy)",
+      "start": "Start Test",
+      "testing": "Testing...",
+      "complete": "Test Complete",
+      "failed": "Test Failed",
+      "startFailed": "Failed to start speed test",
+      "networkError": "Network request failed",
+      "currentSpeed": "Current Speed",
+      "downloadSpeed": "Download Speed",
+      "uploadSpeed": "Upload Speed",
+      "latency": "Latency",
+      "jitter": "Jitter",
+      "duration": "Duration",
+      "seconds": "seconds",
+      "server": "Test Server",
+      "selectServer": "Select Server",
+      "autoSelect": "Auto select best server"
+    },
+    "fixNetwork": {
+      "title": "One-Click Network Fix",
+      "description": "Fix network connection issues, reset DNS and routing configuration",
+      "button": "One-Click Network Fix",
+      "fixing": "Fixing...",
+      "success": "Network fixed successfully!",
+      "error": "Network fix failed, please try again later",
+      "unsupported": "This feature is only supported on macOS"
+    },
+    "securitySoftware": {
+      "title": "Security Software Whitelist Setup",
+      "description": "If VPN connection is blocked by security software like 360 or Tencent PC Manager, please check setup guide"
+    },
+    "serverList": {
+      "show": "Show All Servers",
+      "hide": "Hide Server List",
+      "testing": "Testing server latency",
+      "failed": "Failed to get server list",
+      "startFailed": "Failed to start server list retrieval",
+      "networkError": "Network request failed",
+      "server": "Server",
+      "location": "Location",
+      "distance": "Distance",
+      "latency": "Latency",
+      "error": "Failed"
+    }
+  },
+  "versionComparison": {
+    "freeVersion": "Free Version",
+    "proVersion": "Pro Version",
+    "deviceCount": "Device Count",
+    "dailyUsage": "Daily Usage",
+    "adBlock": "Ad Blocking",
+    "techSupport": "Technical Support",
+    "multiThreading": "Multi-Threading",
+    "oneDevice": "1 device",
+    "fiveDevices": "5 devices",
+    "twoHours": "2 hours",
+    "unlimited": "Unlimited",
+    "no": "×",
+    "yes": "✓"
+  }
 }

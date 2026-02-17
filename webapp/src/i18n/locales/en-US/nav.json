@@ -1,0 +1,49 @@
+{
+  "appBar": {
+    "refreshAuth": "Refresh Authorization"
+  },
+  "navigation": {
+    "dashboard": "Dashboard",
+    "discover": "Discover",
+    "account": "Account",
+    "devices": "Devices",
+    "faq": "FAQ",
+    "purchase": "Purchase",
+    "activate": "Activate",
+    "invite": "Invite",
+    "retailer": "Reseller",
+    "proHistory": "Authorization History",
+    "help": "Help"
+  },
+  "appBarConnector": {
+    "disconnecting": "Disconnecting",
+    "connecting": "Connecting",
+    "antiClickProtection": "Anti-spam protection: Too frequent operations",
+    "refreshDataFailed": "Failed to refresh data after operation:",
+    "connectionOperationFailed": "Connection operation failed:",
+    "disconnectingTooltip": "Disconnecting...",
+    "connectingTooltip": "Connecting...",
+    "clickToDisconnect": "Click to disconnect",
+    "clickToConnect": "Click to connect",
+    "anonymous": "Anonymous",
+    "disconnect": "Disconnect",
+    "connect": "Connect",
+    "panel": "Panel",
+    "noNodeSelected": "Please select a node before connecting"
+  },
+  "appBarMembership": {
+    "trial": "Trial",
+    "standard": "Standard",
+    "expired": "Expired",
+    "proTrial": "Pro Trial",
+    "recharge": "Recharge",
+    "firstOrderPending": "First Order Pending",
+    "unlimitedTrial": "Unlimited Trial",
+    "completePurchase": "Complete Purchase"
+  },
+  "layout": {
+    "deviceInstall": "Install on Other Devices",
+    "troubleshooting": "Troubleshooting",
+    "accountAndSettings": "Account & Settings"
+  }
+}

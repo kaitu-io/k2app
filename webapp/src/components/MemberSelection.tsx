@@ -1,70 +1,353 @@
-import { useEffect, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { cloudApi } from '../api/cloud';
-import type { Member } from '../api/types';
+import { useState, useEffect } from "react";
+import {
+  Box,
+  Card,
+  Typography,
+  Button,
+  Checkbox,
+  FormControlLabel,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Stack,
+  Avatar,
+  Divider,
+} from "@mui/material";
+import {
+  PersonAdd as PersonAddIcon,
+  Person as PersonIcon,
+  Email as EmailIcon,
+  AccessTime as AccessTimeIcon,
+} from "@mui/icons-material";
+import { useTranslation } from "react-i18next";
+import { useAlert, useAuthStore } from "../stores";
 
-interface MemberSelectionProps {
-  onSelect: (memberId: string) => void;
-  currentUserId?: string;
+import type { DataUser, AddMemberRequest, ListResult } from "../services/api-types";
+import { ErrorInvalidArgument } from "../services/api-types";
+import EmailTextField from "./EmailTextField";
+import { k2api } from '../services/k2api';
+import { cacheStore } from '../services/cache-store';
+
+const MEMBERS_CACHE_KEY = 'api:user_members';
+
+export interface MemberSelectionProps {
+  selectedForMyself: boolean;
+  selectedMemberUUIDs: string[];
+  onSelectionChange: (forMyself: boolean, memberUUIDs: string[]) => void;
 }
 
-export function MemberSelection({ onSelect, currentUserId }: MemberSelectionProps) {
-  const { t } = useTranslation('purchase');
-  const [members, setMembers] = useState<Member[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+export default function MemberSelection({
+  selectedForMyself,
+  selectedMemberUUIDs,
+  onSelectionChange,
+}: MemberSelectionProps) {
+  const { t } = useTranslation();
+  const { showAlert } = useAlert();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+
+  const [members, setMembers] = useState<DataUser[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [newMemberEmail, setNewMemberEmail] = useState("");
+  const [addingMember, setAddingMember] = useState(false);
+
+  // 获取成员列表
+  const fetchMembers = async () => {
+    setLoading(true);
+    try {
+      // Use k2api cache:
+      // - key: cache key for members list
+      // - ttl: 3 minutes cache (members can change more frequently)
+      // - revalidate: SWR mode, return cache immediately and refresh in background
+      // - allowExpired: use expired cache as fallback on network failure
+      const { code, message, data } = await k2api({
+        cache: {
+          key: MEMBERS_CACHE_KEY,
+          ttl: 180,
+          revalidate: true,
+          allowExpired: true,
+        }
+      }).exec<ListResult<DataUser>>('api_request', {
+        method: 'GET',
+        path: '/api/user/members',
+      });
+      if (code === 0 && data) {
+        const memberList = data.items || [];
+        setMembers(memberList);
+
+        // Select all members by default
+        const allMemberUUIDs = memberList.map((member: { uuid: string }) => member.uuid);
+        onSelectionChange(selectedForMyself, allMemberUUIDs);
+      } else {
+        showAlert(message || t('purchase:memberSelection.getMembersFailed'), "error");
+      }
+    } catch (error) {
+      console.error(`Failed to fetch members: ${error}`);
+      showAlert(t('purchase:memberSelection.getMembersFailedRetry'), "error");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        const resp = await cloudApi.getMembers();
-        if (!cancelled) {
-          setMembers((resp.data ?? []) as Member[]);
-        }
-      } catch {
-        // ignore
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
-      }
+    if (isAuthenticated) {
+      fetchMembers();
     }
-    load();
-    return () => { cancelled = true; };
-  }, []);
+  }, [isAuthenticated]);
 
-  if (isLoading) {
-    return <div>{t('loading')}</div>;
-  }
+  // 添加成员
+  const handleAddMember = async () => {
+    if (!newMemberEmail.trim()) {
+      showAlert(t('purchase:memberSelection.emailRequired'), "error");
+      return;
+    }
+
+    setAddingMember(true);
+    try {
+      const request: AddMemberRequest = {
+        memberEmail: newMemberEmail.trim(),
+      };
+
+      const { code, message, data } = await k2api().exec<DataUser>('api_request', {
+        method: 'POST',
+        path: '/api/user/members',
+        body: request,
+      });
+      if (code === 0 && data) {
+        // Invalidate cache since members list changed
+        cacheStore.delete(MEMBERS_CACHE_KEY);
+
+        setMembers(prev => [...prev, data]);
+
+        // Select newly added member by default
+        const updatedMemberUUIDs = [...selectedMemberUUIDs, data.uuid];
+        onSelectionChange(selectedForMyself, updatedMemberUUIDs);
+
+        setNewMemberEmail("");
+        setAddDialogOpen(false);
+        showAlert(t('purchase:memberSelection.addMemberSuccess'), "success");
+      } else if (code === ErrorInvalidArgument) {
+        // 422 error: email already in use
+        showAlert(message || t('purchase:memberSelection.emailAlreadyInUse'), "error");
+        // Keep dialog open so user can modify email
+      } else {
+        showAlert(message || t('purchase:memberSelection.addMemberFailed'), "error");
+      }
+    } catch (error) {
+      console.error(`Failed to add member: ${error}`);
+      showAlert(t('purchase:memberSelection.addMemberFailedRetry'), "error");
+    } finally {
+      setAddingMember(false);
+    }
+  };
+
+  // 格式化过期时间
+  const formatExpiredAt = (expiredAt: number) => {
+    if (!expiredAt || expiredAt <= 0) {
+      return t('purchase:memberSelection.notActivated');
+    }
+    
+    const now = Date.now() / 1000;
+    if (expiredAt < now) {
+      return t('purchase:memberSelection.expired');
+    }
+    
+    return new Date(expiredAt * 1000).toLocaleDateString();
+  };
+
+  // 处理选择变化
+  const handleMyselfChange = (checked: boolean) => {
+    onSelectionChange(checked, selectedMemberUUIDs);
+  };
+
+  const handleMemberChange = (memberUUID: string, checked: boolean) => {
+    let newSelectedUUIDs = [...selectedMemberUUIDs];
+    if (checked) {
+      if (!newSelectedUUIDs.includes(memberUUID)) {
+        newSelectedUUIDs.push(memberUUID);
+      }
+    } else {
+      newSelectedUUIDs = newSelectedUUIDs.filter(uuid => uuid !== memberUUID);
+    }
+    onSelectionChange(selectedForMyself, newSelectedUUIDs);
+  };
+
+  // 获取主邮箱
+  const getPrimaryEmail = (user: DataUser): string => {
+    const emailIdentify = user.loginIdentifies.find(identify => identify.type === "email");
+    return emailIdentify?.value || t('purchase:memberSelection.noEmail');
+  };
+
+  const hasAnySelection = selectedForMyself || selectedMemberUUIDs.length > 0;
+
+  const totalSelectedCount = (selectedForMyself ? 1 : 0) + selectedMemberUUIDs.length;
 
   return (
-    <div className="space-y-2">
-      {currentUserId && (
-        <button
-          onClick={() => onSelect(currentUserId)}
-          className="w-full text-left px-3 py-2 rounded-lg border border-[--color-card-border] hover:bg-[--color-hover-bg] text-sm"
-        >
-          {t('buyForSelf')}
-        </button>
-      )}
+    <Box>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 600, fontSize: '1rem' }} component="span">
+          {t('purchase:memberSelection.selectPaymentTarget')}
+        </Typography>
+        {totalSelectedCount > 0 && (
+          <Box sx={{
+            display: 'flex',
+            alignItems: 'center',
+            bgcolor: 'primary.50',
+            border: '1px solid',
+            borderColor: 'primary.main',
+            borderRadius: '12px',
+            px: 1.5,
+            py: 0.3,
+          }}>
+            <Typography variant="body2" color="primary.main" sx={{ fontWeight: 600, fontSize: '0.8rem' }} component="span">
+              {t('purchase:memberSelection.selectedCount', { count: totalSelectedCount })}
+            </Typography>
+          </Box>
+        )}
+      </Box>
 
-      {members.length === 0 && !currentUserId ? (
-        <div className="text-sm text-[--color-text-disabled] py-2">{t('noMembers')}</div>
-      ) : (
-        members.map((member) => (
-          <button
-            key={member.id}
-            onClick={() => onSelect(member.id)}
-            className="w-full text-left px-3 py-2 rounded-lg border border-[--color-card-border] hover:bg-[--color-hover-bg] text-sm"
+      <Card variant="outlined" sx={{ borderRadius: 2, p: 2 }}>
+        {loading ? (
+          <Typography variant="body2" color="text.secondary" component="span">
+            {t('purchase:memberSelection.loading')}
+          </Typography>
+        ) : (
+          <Stack direction="column" spacing={2}>
+            {/* 为自己充值选项 */}
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={selectedForMyself}
+                  onChange={(e) => handleMyselfChange(e.target.checked)}
+                  color="primary"
+                />
+              }
+              label={
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main' }}>
+                    <PersonIcon fontSize="small" />
+                  </Avatar>
+                  <Box>
+                    <Typography variant="body1" fontWeight={600} component="span">
+                      {t('purchase:memberSelection.myself')}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" component="span">
+                      {t('purchase:memberSelection.chargeForMyself')}
+                    </Typography>
+                  </Box>
+                </Box>
+              }
+            />
+
+            {members.length > 0 && <Divider />}
+
+            {/* 成员列表 */}
+            {members.map((member) => {
+              const primaryEmail = getPrimaryEmail(member);
+              const isSelected = selectedMemberUUIDs.includes(member.uuid);
+              
+              return (
+                <FormControlLabel
+                  key={member.uuid}
+                  control={
+                    <Checkbox
+                      checked={isSelected}
+                      onChange={(e) => handleMemberChange(member.uuid, e.target.checked)}
+                      color="primary"
+                    />
+                  }
+                  label={
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
+                      <Avatar sx={{ width: 32, height: 32, bgcolor: 'secondary.main' }}>
+                        <PersonIcon fontSize="small" />
+                      </Avatar>
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                          <EmailIcon fontSize="small" color="action" />
+                          <Typography variant="body1" fontWeight={600} noWrap component="span">
+                            {primaryEmail}
+                          </Typography>
+                        </Box>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <AccessTimeIcon fontSize="small" color="action" />
+                          <Typography variant="body2" color="text.secondary" component="span">
+                            {t('purchase:memberSelection.expiresAt')}: {formatExpiredAt(member.expiredAt)}
+                          </Typography>
+                        </Box>
+                      </Box>
+                    </Box>
+                  }
+                />
+              );
+            })}
+
+            {/* 添加成员按钮 */}
+            <Button
+              startIcon={<PersonAddIcon />}
+              variant="outlined"
+              color="primary"
+              onClick={() => setAddDialogOpen(true)}
+              sx={{
+                mt: 1,
+                textTransform: "none",
+                alignSelf: 'flex-start',
+              }}
+            >
+              {members.length === 0 
+                ? t('purchase:memberSelection.addFirstMember') 
+                : t('purchase:memberSelection.addAnotherMember')
+              }
+            </Button>
+
+            {/* 选择提示 */}
+            {!hasAnySelection && (
+              <Box sx={{
+                mt: 2,
+                p: 1.5,
+                bgcolor: 'warning.50',
+                borderRadius: 1,
+                border: '1px solid',
+                borderColor: 'warning.main',
+              }}>
+                <Typography variant="body2" color="warning.dark" component="span">
+                  {t('purchase:memberSelection.selectAtLeastOne')}
+                </Typography>
+              </Box>
+            )}
+          </Stack>
+        )}
+      </Card>
+
+      {/* 添加成员对话框 */}
+      <Dialog open={addDialogOpen} onClose={() => setAddDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>{t('purchase:memberSelection.addMember')}</DialogTitle>
+        <DialogContent>
+          <EmailTextField
+            fullWidth
+            label={t('purchase:memberSelection.memberEmail')}
+            value={newMemberEmail}
+            onChange={setNewMemberEmail}
+            placeholder={t('purchase:memberSelection.memberEmailPlaceholder')}
+            sx={{ mt: 2 }}
+          />
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }} component="span">
+            {t('purchase:memberSelection.addMemberHint')}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAddDialogOpen(false)}>
+            {t('purchase:memberSelection.cancel')}
+          </Button>
+          <Button 
+            variant="contained" 
+            onClick={handleAddMember}
+            disabled={addingMember || !newMemberEmail.trim()}
           >
-            {member.email}
-          </button>
-        ))
-      )}
-
-      {members.length === 0 && currentUserId && (
-        <div className="text-sm text-[--color-text-disabled] py-2">{t('noMembers')}</div>
-      )}
-    </div>
+            {addingMember ? t('purchase:memberSelection.adding') : t('purchase:memberSelection.add')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
   );
 }

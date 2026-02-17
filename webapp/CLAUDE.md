@@ -63,7 +63,7 @@ Frontend uses two separate globals injected before app loads. They have distinct
 │ Platform Injection (before app loads)                     │
 │   Tauri:     Rust inject -> HTTP 127.0.0.1:1777          │
 │   Capacitor: Plugin inject -> Native SDK                 │
-│   Web:       JS inject -> web fallbacks                  │
+│   Web:       JS inject -> web fallbacks (standalone-k2)  │
 └──────────┬────────────────────────┬──────────────────────┘
            ↓                        ↓
 ┌─────────────────────┐  ┌─────────────────────────────────┐
@@ -74,8 +74,9 @@ Frontend uses two separate globals injected before app loads. They have distinct
 │   start, stop,       │  │   getUdid()                     │
 │   status, reconnect, │  │   writeClipboard(), readClipboard│
 │   evaluate_tunnels,  │  │   openExternal()                │
-│   speedtest, etc.    │  │   debug(), warn()               │
-└──────────┬───────────┘  └────────────────────────────────┘
+│   speedtest, etc.    │  │   updater?: IUpdater            │
+└──────────┬───────────┘  │   debug(), warn()               │
+           │              └────────────────────────────────┘
            ↓
 ┌──────────────────────────────────────────────────────────┐
 │ cloudApi (services/cloud-api.ts)                         │
@@ -102,6 +103,7 @@ Frontend uses two separate globals injected before app loads. They have distinct
 | `IK2Vpn` | `window._k2` | VPN control: `run<T>(action, params): Promise<SResponse<T>>` |
 | `IPlatform` | `window._platform` | Platform capabilities: storage, UDID, clipboard, logging |
 | `ISecureStorage` | `window._platform.storage` | Encrypted key-value storage |
+| `IUpdater` | `window._platform.updater` | Auto-update: check, apply, status |
 
 ### VPN Actions (via window._k2.run)
 
@@ -115,7 +117,7 @@ Cloud API calls go through `cloudApi.request()` which handles auth headers and t
 
 ## Tech Stack
 
-React 19, Material-UI 5, React Router 7, i18next, Vite 6, Zustand, TypeScript.
+React 18, Material-UI 5, React Router 7, i18next, Vite 6, Zustand, TypeScript.
 
 ---
 
@@ -124,19 +126,35 @@ React 19, Material-UI 5, React Router 7, i18next, Vite 6, Zustand, TypeScript.
 ```
 webapp/
 ├── src/
-│   ├── types/              # Type definitions (kaitu-core.ts = IK2Vpn + IPlatform)
-│   ├── services/           # cloudApi, k2api, authService, web-platform
+│   ├── types/              # Type definitions (kaitu-core.ts = IK2Vpn + IPlatform + IUpdater)
+│   ├── services/           # cloudApi, k2api, authService, cacheStore, web-platform, standalone-k2
 │   ├── core/               # Core module (getK2, isK2Ready, waitForK2, polling)
-│   ├── stores/             # Zustand stores (vpn, auth, evaluation, dashboard, ...)
+│   ├── stores/             # Zustand stores (vpn, auth, alert, layout, dashboard, evaluation, login-dialog)
 │   ├── pages/              # Route pages
 │   ├── components/         # UI components
-│   ├── hooks/              # Custom hooks (useEvaluation, useUser, etc.)
-│   ├── i18n/locales/       # Locale files (zh-CN, en-US, ja, zh-TW, etc.)
-│   ├── utils/              # Utilities (errorHandler.ts, versionCompare.ts)
-│   ├── config/             # App configuration
-│   └── theme/              # MUI theme
+│   ├── hooks/              # Custom hooks (useEvaluation, useUser, useAppConfig, useUpdater, etc.)
+│   ├── i18n/locales/       # Locale files (zh-CN, en-US, ja, zh-TW, zh-HK, en-AU, en-GB)
+│   ├── utils/              # Utilities (errorHandler, versionCompare, tunnel-sort, country, time)
+│   ├── config/             # App configuration (apps.ts — feature flags, app config)
+│   ├── contexts/           # React contexts (ThemeContext)
+│   ├── theme/              # MUI theme tokens (colors.ts)
+│   ├── assets/             # Static assets (payment logos)
+│   └── test/               # Test setup (setup.ts, setup-dom.ts, utils/)
+├── e2e/                    # Playwright E2E tests
+├── vitest.config.ts
+├── playwright.config.ts
 └── package.json
 ```
+
+---
+
+## Bootstrap (main.tsx)
+
+1. Initialize Sentry
+2. Await i18next initialization
+3. Check `window._k2` / `window._platform` — if missing, import `standalone-k2.ts` and call `ensureK2Injected()`
+4. `initializeAllStores()` (no args — globals already injected)
+5. `ReactDOM.createRoot().render(<App />)`
 
 ---
 
@@ -148,6 +166,23 @@ webapp/
 | `en-US` | English | Manual translation |
 | `ja` | Japanese | Manual translation |
 | `zh-TW` | Traditional Chinese | Manual translation |
+| `zh-HK` | Traditional Chinese (HK) | Manual translation |
+| `en-AU` | English (AU) | Manual translation |
+| `en-GB` | English (GB) | Manual translation |
+
+Namespaces: common, dashboard, auth, purchase, invite, account, feedback, developer, nav, retailer, startup, theme, ticket, wallet
+
+---
+
+## Key Patterns
+
+- **Store init**: `initializeAllStores()` calls layout → auth → vpn store init in order. Stores use `init()` action (not async `create()`)
+- **Keep-alive tabs**: Layout caches visited tab outlets, hides inactive with `visibility:hidden`. Tab paths: `/`, `/invite`, `/discover`, `/account`
+- **LoginDialog**: Global modal via `login-dialog.store`. Guards call `openLoginDialog()` instead of redirecting
+- **Feature flags**: `getCurrentAppConfig().features` controls route/tab visibility
+- **Dev proxy**: Vite proxies `/api/*` and `/ping` to `:1777`. Production uses absolute URL
+- **Config-driven connect**: `_k2.run('start', config)` where config is assembled from server + user preferences
+- **AuthGate**: Wraps all routes — checks service readiness + version match before rendering
 
 ---
 
@@ -159,6 +194,7 @@ cd webapp && yarn dev                    # Dev server
 cd webapp && yarn build                  # Production build
 cd webapp && npx vitest run              # Run all tests
 cd webapp && npx vitest run --reporter=verbose  # Verbose test output
+cd webapp && npx tsc --noEmit            # Type check
 ```
 
 ---
@@ -167,8 +203,8 @@ cd webapp && npx vitest run --reporter=verbose  # Verbose test output
 
 | Problem | Check |
 |---------|-------|
-| `window._k2` is undefined | Platform injection not running. Desktop: check Tauri inject. Web: check HTTP inject. |
-| `window._platform` is undefined | Platform injection not running. Check bootstrap sequence in main.tsx. |
+| `window._k2` is undefined | Platform injection not running. Desktop: check Tauri inject. Web: check standalone-k2 fallback. |
+| `window._platform` is undefined | Platform injection not running. Check bootstrap in main.tsx → ensureK2Injected(). |
 | VPN operations fail | Is kaitu-service running? Check service logs and network permissions. |
 | API calls fail | Token expired? Check network. Check browser Network panel. |
 | Service reachable? | `curl http://127.0.0.1:1777/ping` |
@@ -177,3 +213,4 @@ cd webapp && npx vitest run --reporter=verbose  # Verbose test output
 
 - [Client Architecture](../CLAUDE.md)
 - [Desktop Adapter](../desktop/CLAUDE.md)
+- [Center API](../api/CLAUDE.md)

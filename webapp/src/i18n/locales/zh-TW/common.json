@@ -1,0 +1,136 @@
+{
+  "status": {
+    "stopped": "已停止",
+    "connecting": "連線中...",
+    "connected": "已連線",
+    "reconnecting": "重新連線中...",
+    "disconnecting": "中斷連線中...",
+    "disconnected": "未連線",
+    "error": "連線失敗，重試中...",
+    "failed": "連線失敗",
+    "offline": "離線",
+    "online": "線上",
+    "active": "活躍",
+    "inactive": "非活躍",
+    "enabled": "已啟用",
+    "disabled": "已停用",
+    "clickToStop": "點擊中斷",
+    "reconnectingToServer": "正在重新連線伺服器...",
+    "waitingForNetwork": "等待網路連線..."
+  },
+  "common": {
+    "justNow": "剛剛",
+    "back": "返回",
+    "cancel": "取消",
+    "add": "新增",
+    "adding": "新增中...",
+    "ok": "確定",
+    "save": "儲存",
+    "delete": "刪除",
+    "copy": "複製",
+    "close": "關閉",
+    "loading": "載入中...",
+    "processing": "處理中...",
+    "retry": "重試",
+    "download": "下載",
+    "error": "錯誤",
+    "refresh": "重新整理",
+    "and": "和",
+    "success": "成功",
+    "loadFailed": "載入失敗",
+    "notFound": "資源不存在",
+    "serverError": "伺服器錯誤",
+    "unknownError": "未知錯誤",
+    "later": "稍後再說",
+    "login": "登入",
+    "viewDetails": "查看詳情",
+    "experimental": "實驗性"
+  },
+  "errors": {
+    "service": {
+      "serviceNotFound": "服務檔案不存在，請重新安裝應用程式",
+      "authRequired": "需要管理員權限來安裝服務",
+      "installFailed": "服務安裝失敗",
+      "connectionFailed": "無法連線到服務"
+    },
+    "network": {
+      "timeout": "網路請求逾時，請檢查網路連線",
+      "unreachable": "網路無法存取，請檢查網路連線",
+      "reset": "網路連線中斷，請檢查網路狀態",
+      "dns": "DNS 解析失敗，請檢查網路設定",
+      "tls": "安全連線失敗，請檢查網路環境",
+      "refused": "無法連線到伺服器，請稍後重試"
+    },
+    "server": {
+      "unavailable": "伺服器不可用，請稍後重試",
+      "overload": "伺服器繁忙，請稍後重試",
+      "maintenance": "伺服器維護中，請稍後重試",
+      "internal": "伺服器內部錯誤，請稍後重試",
+      "notImplemented": "功能暫未開放"
+    },
+    "client": {
+      "badRequest": "請求參數錯誤",
+      "unauthorized": "請先登入",
+      "forbidden": "沒有權限執行此操作",
+      "notFound": "請求的資源不存在"
+    },
+    "vpn": {
+      "authFailed": "登入已失效，請重新登入",
+      "membershipExpired": "會員已過期，請續費",
+      "stopFailed": "VPN 停止失敗，請重試",
+      "startFailed": "VPN 啟動失敗，請檢查網路",
+      "reconnectFailed": "VPN 重新連線失敗，請手動重新連線",
+      "timeout": "VPN 操作逾時，請重試",
+      "connectionFatal": "連線失敗，請檢查網路或更換節點",
+      "allAddrsFailed": "所有節點連線失敗，請稍後重試"
+    },
+    "installCancelled": "安裝已取消",
+    "unknown": "未知錯誤，請稍後重試",
+    "unknownError": "未知錯誤"
+  },
+  "brand": {
+    "name": "開途",
+    "slogan": "全球網路，一鍵直達",
+    "subtitle": "企業級安全隧道，連接世界每一個角落"
+  },
+  "features": {
+    "fastConnect": "極速連線",
+    "fastConnectDesc": "智慧路由優化，延遲降低 80%",
+    "security": "企業級加密",
+    "securityDesc": "軍事級 AES-256 加密，保護資料安全",
+    "global": "全球節點",
+    "globalDesc": "覆蓋 50+ 國家，200+ 優質節點",
+    "multiDevice": "多裝置支援",
+    "multiDeviceDesc": "一個帳號，全平台通用"
+  },
+  "messages": {
+    "sendVerificationSuccess": "驗證郵件發送成功",
+    "sendVerificationFailed": "發送驗證郵件失敗",
+    "logoutSuccess": "使用者已登出",
+    "logoutFailed": "登出失敗",
+    "copySuccess": "複製成功",
+    "copyFailed": "複製失敗",
+    "saveSuccess": "儲存成功",
+    "saveFailed": "儲存失敗",
+    "deleteSuccess": "刪除成功",
+    "deleteFailed": "刪除失敗",
+    "serviceInstalling": "正在靜默安裝服務，請稍候...",
+    "serviceInstallSuccess": "服務安裝成功！",
+    "serviceInstallFailedAuth": "需要管理員權限來安裝服務，請在 UAC 對話框中點擊「是」",
+    "updateSuccess": "更新成功",
+    "updateFailed": "更新失敗",
+    "networkError": "網路錯誤",
+    "serverError": "伺服器錯誤",
+    "unknownError": "未知錯誤"
+  },
+  "loadingAndEmpty": {
+    "noHistoryTitle": "暫無歷史記錄",
+    "noHistoryDescription": "您還沒有任何付費和授權歷史，快去體驗會員權益吧！",
+    "noPlansTitle": "暫無方案資訊",
+    "noPlansDescription": "方案載入中或暫時無可用方案，請稍後重試",
+    "noInviteCodesTitle": "暫無邀請碼",
+    "noInviteCodesDescription": "您還沒有建立任何邀請碼，快去建立專屬邀請碼分享給好友吧！",
+    "noDevicesTitle": "暫無裝置",
+    "noDevicesDescription": "您還沒有任何已登入的裝置"
+  }
+}

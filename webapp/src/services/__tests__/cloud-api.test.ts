@@ -25,6 +25,11 @@ vi.mock('../auth-service', () => ({
   },
 }));
 
+// Mock antiblock — resolveEntry returns '' so existing tests keep using relative URLs
+vi.mock('../antiblock', () => ({
+  resolveEntry: vi.fn().mockResolvedValue(''),
+}));
+
 // Mock auth store
 vi.mock('../../stores/auth.store', () => ({
   useAuthStore: {
@@ -39,10 +44,12 @@ vi.mock('../../stores/auth.store', () => ({
 import { cloudApi } from '../cloud-api';
 import { authService } from '../auth-service';
 import { useAuthStore } from '../../stores/auth.store';
+import { resolveEntry } from '../antiblock';
 
 // Type helper for mocked functions
 const mockedAuthService = vi.mocked(authService);
 const mockedAuthStore = vi.mocked(useAuthStore);
+const mockedResolveEntry = vi.mocked(resolveEntry);
 
 describe('Cloud API Client', () => {
   let originalFetch: typeof globalThis.fetch;
@@ -50,6 +57,8 @@ describe('Cloud API Client', () => {
   beforeEach(() => {
     originalFetch = globalThis.fetch;
     vi.clearAllMocks();
+    // Restore resolveEntry default after vi.restoreAllMocks() in afterEach
+    mockedResolveEntry.mockResolvedValue('');
   });
 
   afterEach(() => {
@@ -216,6 +225,66 @@ describe('Cloud API Client', () => {
 
       // Should return 401 response
       expect(response.code).toBe(401);
+    });
+  });
+
+  // ==================== Antiblock Integration ====================
+
+  describe('antiblock integration', () => {
+    it('test_cloud_api_uses_absolute_url', async () => {
+      mockedResolveEntry.mockResolvedValue('https://entry.example.com');
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ code: 0, data: {} }),
+      });
+      globalThis.fetch = mockFetch;
+      mockedAuthService.getToken.mockResolvedValue(null);
+
+      await cloudApi.request('GET', '/api/plans');
+
+      const [url] = mockFetch.mock.calls[0];
+      expect(url).toBe('https://entry.example.com/api/plans');
+    });
+
+    it('test_cloud_api_refresh_uses_absolute_url', async () => {
+      mockedResolveEntry.mockResolvedValue('https://entry.example.com');
+      const mockFetch = vi.fn()
+        // First request: 401
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 401,
+          json: () => Promise.resolve({ code: 401, message: 'Unauthorized' }),
+        })
+        // Refresh: success
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            code: 0,
+            data: { token: 'new-token', refreshToken: 'new-refresh' },
+          }),
+        })
+        // Retry: success
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ code: 0, data: { id: 1 } }),
+        });
+      globalThis.fetch = mockFetch;
+      mockedAuthService.getToken.mockResolvedValue('expired');
+      mockedAuthService.getRefreshToken.mockResolvedValue('refresh');
+      mockedAuthService.setTokens.mockResolvedValue(undefined);
+
+      await cloudApi.request('GET', '/api/user/info');
+
+      // Refresh call should use absolute URL
+      const [refreshUrl] = mockFetch.mock.calls[1];
+      expect(refreshUrl).toBe('https://entry.example.com/api/auth/refresh');
+
+      // Retry call should use absolute URL
+      const [retryUrl] = mockFetch.mock.calls[2];
+      expect(retryUrl).toBe('https://entry.example.com/api/user/info');
     });
   });
 

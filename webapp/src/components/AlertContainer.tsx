@@ -1,28 +1,27 @@
-import { useUiStore } from '../stores/ui.store';
+/**
+ * AlertContainer - 全局 Toast 通知容器
+ *
+ * 渲染 Snackbar 组件，订阅 alert store
+ */
+
+import { Snackbar, Alert } from '@mui/material';
+import { useAlertState } from '../stores';
 
 export function AlertContainer() {
-  const { alerts } = useUiStore();
-
-  if (!alerts || alerts.length === 0) return null;
+  const { open, message, severity, duration, hideAlert } = useAlertState();
 
   return (
-    <div className="fixed top-4 right-4 z-[200] space-y-2 max-w-sm w-full">
-      {alerts.map((alert) => (
-        <div
-          key={alert.id}
-          className={`rounded-lg px-4 py-3 text-sm text-text-primary shadow-lg ${
-            alert.type === 'error'
-              ? 'bg-error-bg border border-error-border'
-              : alert.type === 'warning'
-              ? 'bg-warning-bg border border-warning-border'
-              : alert.type === 'success'
-              ? 'bg-success-bg border border-success-border'
-              : 'bg-info-bg border border-info-border'
-          }`}
-        >
-          {alert.message}
-        </div>
-      ))}
-    </div>
+    <Snackbar
+      open={open}
+      autoHideDuration={duration}
+      onClose={hideAlert}
+      anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+    >
+      <Alert severity={severity} sx={{ width: '100%' }} onClose={hideAlert}>
+        {message}
+      </Alert>
+    </Snackbar>
   );
 }
+
+export default AlertContainer;

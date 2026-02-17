@@ -1,0 +1,15 @@
+{
+  "feedback": {
+    "buttonLabel": "回報問題",
+    "buttonTooltip": "有問題？點擊回饋",
+    "dialogTitle": "回報問題",
+    "dialogDescription": "點擊提交將自動收集應用日誌，幫助我們定位和解決問題。日誌不包含敏感資訊。",
+    "submitButton": "提交回饋",
+    "uploading": "正在上傳日誌...",
+    "uploadSuccess": "回饋提交成功",
+    "uploadSuccessDescription": "感謝您的回饋！我們會盡快處理。",
+    "uploadError": "提交失敗",
+    "uploadFailed": "日誌上傳失敗，請稍後重試",
+    "platformNotSupported": "當前平台暫不支援此功能"
+  }
+}

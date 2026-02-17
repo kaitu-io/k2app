@@ -1,0 +1,77 @@
+{
+  "startup": {
+    "activeUsers": "活跃用户",
+    "certified": "ISO 27001 认证",
+    "uptime": "可用性",
+    "authSuccess": "认证成功，用户登录状态已更新",
+    "deviceCanDirectLogin": "设备可以直接登录",
+    "deviceCannotDirectLogin": "设备无法直接登录",
+    "checkDeviceLoginFailed": "检测设备登录状态失败",
+    "deviceLoginFailed": "设备登录失败",
+    "deviceLoginFailedRetry": "设备登录失败，请重试",
+    "deviceLoginSuccess": "设备直接登录成功",
+    "pleaseEnterInviteCode": "请输入邀请码",
+    "registrationFailed": "注册失败",
+    "registrationFailedRetry": "注册失败，请重试",
+    "newDevice": "新设备",
+    "freeDeviceRegistrationFailed": "免费设备注册失败",
+    "inviteCodeIncorrect": "邀请码不正确",
+    "inviteCodeInvalidOrExpired": "邀请码无效或已过期",
+    "getInviteCodeInfoFailed": "获取邀请码信息失败",
+    "haveProAccount": "已有 Pro 账号？",
+    "loginProAccountDesc": "登录您的 Pro 账号，享受完整功能",
+    "deviceAlreadyRegistered": "检测到该设备已注册账号",
+    "deviceReady": "设备可直接登录",
+    "deviceReadyDesc": "您的设备已注册，可以直接登录使用",
+    "orEmailLogin": "或使用邮箱登录",
+    "experienceProFeatures": "体验 Pro 功能",
+    "enterInviteCodeDesc": "输入邀请码，立即体验 Pro 功能",
+    "inviteCode": "邀请码",
+    "enterInviteCodePlaceholder": "请输入邀请码（选填）",
+    "youHaveGoodFriend": "🎁 您有一个难得的好朋友😼",
+    "enjoyNow": "立享",
+    "days": "天",
+    "pro": "Pro",
+    "extraBonus": "额外赠送！",
+    "experience": "体验{{days}}天",
+    "purchaseBonus": "购买赠{{purchaseDays}}+{{downloadDays}}天",
+    "buyNowExtraBonus": "现在购买，额外赠送{{days}}天",
+    "buyNowEnjoyAllPro": "购买立享全部Pro权益",
+    "experienceOnly": "仅体验{{days}}天",
+    "experienceNow": "立即体验",
+    "or": "或",
+    "noAccountNoInviteCode": "没有账号也没有邀请码？",
+    "processing": "处理中...",
+    "registerNewAccount": "直接注册一个新的账号"
+  },
+  "serviceStatus": {
+    "disconnected": "服务连接断开，正在重连..."
+  },
+  "upgradeRequired": {
+    "title": "请更新应用",
+    "description": "当前版本已过时，请下载最新版本以继续使用。",
+    "downloadButton": "前往下载"
+  },
+  "forceUpgrade": {
+    "title": "版本过低，需要更新",
+    "description": "您当前的应用版本 ({{currentVersion}}) 已不受支持，需要更新到 {{minVersion}} 或更高版本才能继续使用。",
+    "downloadButton": "立即更新"
+  },
+  "app": {
+    "slogan": "安全、便捷的网络代理服务",
+    "error": "错误",
+    "updateNow": "立即更新",
+    "readyToInstall": "已准备好安装",
+    "hoverForDetails": "悬停查看详情",
+    "releaseNotes": "更新说明",
+    "newVersionAvailable": "新版本 {{version}} 可用！",
+    "updating": "正在更新",
+    "downloadingUpdate": "正在下载并安装更新... {{progress}}%",
+    "errorBoundary": {
+      "title": "应用出现错误",
+      "description": "错误信息已自动上报，我们会尽快修复。",
+      "details": "错误详情",
+      "retry": "重试"
+    }
+  }
+}

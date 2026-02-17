@@ -1,0 +1,77 @@
+{
+  "startup": {
+    "activeUsers": "Active Users",
+    "certified": "ISO 27001 Certified",
+    "uptime": "Availability",
+    "authSuccess": "Authentication successful, user login status updated",
+    "deviceCanDirectLogin": "Device can log in directly",
+    "deviceCannotDirectLogin": "Device cannot log in directly",
+    "checkDeviceLoginFailed": "Failed to check device login status",
+    "deviceLoginFailed": "Device login failed",
+    "deviceLoginFailedRetry": "Device login failed, please retry",
+    "deviceLoginSuccess": "Device direct login successful",
+    "pleaseEnterInviteCode": "Please enter invite code",
+    "registrationFailed": "Registration failed",
+    "registrationFailedRetry": "Registration failed, please retry",
+    "newDevice": "New Device",
+    "freeDeviceRegistrationFailed": "Free device registration failed",
+    "inviteCodeIncorrect": "Incorrect invite code",
+    "inviteCodeInvalidOrExpired": "Invalid or expired invite code",
+    "getInviteCodeInfoFailed": "Failed to get invite code information",
+    "haveProAccount": "Already have a Pro account?",
+    "loginProAccountDesc": "Log in to your Pro account to enjoy complete features",
+    "deviceAlreadyRegistered": "Device already registered",
+    "deviceReady": "Device ready to log in",
+    "deviceReadyDesc": "Your device is registered, you can log in directly",
+    "orEmailLogin": "Or log in with email",
+    "experienceProFeatures": "Experience Pro Features",
+    "enterInviteCodeDesc": "Enter invite code to experience Pro features immediately",
+    "inviteCode": "Invite Code",
+    "enterInviteCodePlaceholder": "Please enter invite code (optional)",
+    "youHaveGoodFriend": "🎁 You Have a Great Friend😼",
+    "enjoyNow": "Enjoy Now",
+    "days": "days",
+    "pro": "Pro",
+    "extraBonus": "Extra Bonus!",
+    "experience": "Experience {{days}} days",
+    "purchaseBonus": "Purchase bonus {{purchaseDays}}+{{downloadDays}} days",
+    "buyNowExtraBonus": "Buy now, extra {{days}} days bonus",
+    "buyNowEnjoyAllPro": "Purchase to enjoy all Pro benefits",
+    "experienceOnly": "Experience {{days}} days only",
+    "experienceNow": "Experience Now",
+    "or": "or",
+    "noAccountNoInviteCode": "No account or invite code?",
+    "processing": "Processing...",
+    "registerNewAccount": "Register a new account directly"
+  },
+  "serviceStatus": {
+    "disconnected": "Service disconnected, reconnecting..."
+  },
+  "upgradeRequired": {
+    "title": "Please Update App",
+    "description": "Current version is outdated, please download the latest version to continue using.",
+    "downloadButton": "Go to Download"
+  },
+  "forceUpgrade": {
+    "title": "Version Too Old, Update Required",
+    "description": "Your current app version ({{currentVersion}}) is no longer supported. Please update to version {{minVersion}} or higher to continue.",
+    "downloadButton": "Update Now"
+  },
+  "app": {
+    "slogan": "Secure, Convenient Network Proxy Service",
+    "error": "Error",
+    "updateNow": "Update Now",
+    "readyToInstall": "is ready to install",
+    "hoverForDetails": "hover for details",
+    "releaseNotes": "Release Notes",
+    "newVersionAvailable": "New version {{version}} available!",
+    "updating": "Updating",
+    "downloadingUpdate": "Downloading and installing update... {{progress}}%",
+    "errorBoundary": {
+      "title": "Application Error",
+      "description": "Error information has been automatically reported, we will fix it as soon as possible.",
+      "details": "Error Details",
+      "retry": "Retry"
+    }
+  }
+}

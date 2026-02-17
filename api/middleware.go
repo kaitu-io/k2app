@@ -3,6 +3,8 @@ package center
 import (
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"regexp"
 	"runtime/debug"
 	"strings"
@@ -564,6 +566,82 @@ func MiddleRecovery() gin.HandlerFunc {
 		c.AbortWithStatus(500)
 		slack.Send("alert", fmt.Sprintf("[kaitu]请关注有crash问题：%v\n\n堆栈信息：\n%s", recovered, stack))
 	})
+}
+
+// isPrivateOrigin checks if the origin is from localhost or RFC 1918 private network.
+// Matches: localhost, 127.0.0.1, capacitor://localhost, 10.x.x.x, 172.16-31.x.x, 192.168.x.x
+func isPrivateOrigin(origin string) bool {
+	// capacitor://localhost (iOS WebView)
+	if origin == "capacitor://localhost" {
+		return true
+	}
+
+	parsed, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+
+	host := parsed.Hostname()
+	if host == "" {
+		return false
+	}
+
+	// localhost
+	if host == "localhost" {
+		return true
+	}
+
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+
+	// 127.0.0.1
+	if ip.IsLoopback() {
+		return true
+	}
+
+	// RFC 1918 private ranges
+	ip4 := ip.To4()
+	if ip4 == nil {
+		return false
+	}
+	// 10.0.0.0/8
+	if ip4[0] == 10 {
+		return true
+	}
+	// 172.16.0.0/12
+	if ip4[0] == 172 && ip4[1] >= 16 && ip4[1] <= 31 {
+		return true
+	}
+	// 192.168.0.0/16
+	if ip4[0] == 192 && ip4[1] == 168 {
+		return true
+	}
+
+	return false
+}
+
+// ApiCORSMiddleware handles CORS for /api/* client routes.
+// Only allows local/LAN origins (localhost, 127.0.0.1, RFC 1918 private IPs,
+// capacitor://localhost). Echoes back the specific origin with credentials support.
+func ApiCORSMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		origin := c.GetHeader("Origin")
+		if origin != "" && isPrivateOrigin(origin) {
+			c.Header("Access-Control-Allow-Origin", origin)
+			c.Header("Access-Control-Allow-Credentials", "true")
+			c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token")
+			c.Header("Access-Control-Max-Age", "86400")
+		}
+
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+		c.Next()
+	}
 }
 
 // CORSMiddleware handles CORS for cross-origin requests from web dashboard

@@ -1,0 +1,15 @@
+{
+  "feedback": {
+    "buttonLabel": "問題を報告",
+    "buttonTooltip": "問題がありますか？クリックして報告",
+    "dialogTitle": "問題を報告",
+    "dialogDescription": "送信をクリックすると、問題の特定と解決に役立つアプリログが収集されます。ログには機密情報は含まれません。",
+    "submitButton": "フィードバックを送信",
+    "uploading": "ログをアップロード中...",
+    "uploadSuccess": "フィードバックを送信しました",
+    "uploadSuccessDescription": "フィードバックありがとうございます！早急に対応いたします。",
+    "uploadError": "送信に失敗しました",
+    "uploadFailed": "ログのアップロードに失敗しました。後でもう一度お試しください。",
+    "platformNotSupported": "この機能は現在のプラットフォームではまだサポートされていません"
+  }
+}

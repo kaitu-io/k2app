@@ -1,0 +1,233 @@
+{
+  "dashboard": {
+    "autoSwitchLabel": "根據網路狀況自動切換到該國家的其他節點",
+    "autoSwitchInCountry": "同國家智慧切換",
+    "autoSwitchAlwaysEnabled": "智慧切換已啟用",
+    "autoSwitchInfo": "系統會根據網路狀況自動切換到該國家的其他可用節點",
+    "autoSwitchExplanationSpecific": "將根據網路狀況自動切換到該國家的其他可用節點",
+    "autoSwitchExplanationGeneral": "將根據網路狀況自動選擇並切換到最佳節點",
+    "autoSelect": "自動選擇",
+    "selectNode": "選擇節點",
+    "noNodeSelected": "未選擇節點",
+    "proxyMode": "代理模式",
+    "socks5Mode": "SOCKS5",
+    "autoSwitch": "自動切換",
+    "refreshNodeList": "重新整理節點清單",
+    "loadingNodes": "正在載入節點清單...",
+    "errorLoadingNodes": "載入節點清單失敗",
+    "retryLoading": "重試載入",
+    "noNodesTitle": "無可用節點",
+    "noNodesDescription": "未找到隧道節點。請檢查您的網路連線並嘗試重新整理。",
+    "refreshNodes": "重新整理節點",
+    "refreshFailed": "重新整理失敗",
+    "currentSelectedNode": "目前選取節點",
+    "proxyRules": "代理規則",
+    "rule": {
+      "global": "全域",
+      "gfwlist": "智慧",
+      "chnroute": "輕量"
+    },
+    "ruleDescription": {
+      "global": "不會遺漏任何網站",
+      "gfwlist": "平衡速度與可存取性",
+      "chnroute": "本地網站極速存取",
+      "uk": "英國身份驗證"
+    },
+    "disconnectToModify": "請先中斷連線後修改",
+    "k2Options": "進階選項",
+    "enableMux": "多路複用",
+    "enableConcurrent": "並行連線",
+    "enableAnonymity": "匿名模式",
+    "requiredByAnonymity": "匿名模式必需",
+    "load": "負載",
+    "advancedOptionsInfo": "點擊查看詳細說明",
+    "advancedOptionsHelp": "進階選項說明",
+    "muxDescription": "##延遲更低，速度更快##。一條通道同時傳輸多個請求，就像高速公路上開闢多條車道，##減少排隊等待時間##。適合觀看影片、遊戲等場景。",
+    "concurrentDescription": "##同時使用多個節點##，讓連線更快更穩定。就像同時走多條路，一條堵了還有其他路可走。在##網路受限時特別有效##，Pro 專屬功能。",
+    "anonymityDescription": "##連線伺服器和存取網站使用不同的 IP 位址##，保護您的真實位置不被追蹤。就像戴上雙重面具，隱私更安全。注意：可能略微影響速度，Pro 專屬功能。",
+    "enableFakeIP": "虛擬 IP 模式",
+    "fakeIPDescription": "為需要代理的網域分配虛擬 IP，網域解析在伺服器端完成，提升連線速度和隱私性。",
+    "dnsMode": "DNS 模式",
+    "dnsModeDescription": "選擇 DNS 解析方式",
+    "dnsOptions": {
+      "fakeIp": "虛擬 IP",
+      "realIp": "真實 IP",
+      "realIpDot": "真實 IP (DoT)"
+    },
+    "recentLocations": "最近使用",
+    "favorites": "收藏的伺服器",
+    "allLocations": "所有位置",
+    "advancedSettings": "進階設定",
+    "searchLocations": "搜尋位置...",
+    "manualRefresh": "立即重新整理",
+    "refreshing": "重新整理中...",
+    "updated": "更新於",
+    "justNow": "剛剛",
+    "minutesAgo": "分鐘前",
+    "hoursAgo": "小時前",
+    "longTimeAgo": "很久之前",
+    "selectServerHint": "從下方清單選擇伺服器以開始",
+    "connectionRetrying": "伺服器連線失敗，正在重試...",
+    "serviceFailure": {
+      "title": "服務連線失敗",
+      "message": "無法連線到 VPN 服務。請檢查服務是否正在執行。",
+      "resolve": "解決"
+    },
+    "serviceError": {
+      "title": "服務異常",
+      "subtitle": "VPN 核心服務未能正常運作",
+      "reason1Title": "自動更新未完成",
+      "reason1Desc": "應用程式可能在更新過程中出現異常，導致服務元件未能正確安裝。",
+      "reason2Title": "安全軟體攔截",
+      "reason2Desc": "360、騰訊管家等安全軟體可能誤將 VPN 服務識別為風險程式並阻止其執行。",
+      "solutionTitle": "解決方案",
+      "solutionDesc": "請前往官網重新下載並安裝最新版本，即可修復此問題。",
+      "downloadButton": "前往下載",
+      "persistentTitle": "問題反覆出現？",
+      "persistentDesc": "如果重新安裝後仍然遇到此問題，請提交工單，我們的技術團隊將協助您解決。",
+      "submitTicket": "提交工單"
+    },
+    "networkError": {
+      "title": "網路連線異常"
+    },
+    "initialization": {
+      "title": "正在初始化服務元件",
+      "geoip": "地理位置資料庫",
+      "rules": "代理規則",
+      "antiblock": "連線設定"
+    },
+    "selfDeployed": "自部署",
+    "selfDeployedTag": "自部署",
+    "cloudNodes": "雲端節點",
+    "cloudTag": "雲端",
+    "analyzing": "分析中...",
+    "manageTunnels": "管理節點",
+    "addTunnel": "新增節點",
+    "selfDeploy": "自部署服務",
+    "loginToGet": "登入取得",
+    "guestEmpty": {
+      "title": "登入取得節點",
+      "description": "登入帳戶即可取得雲端節點，享受更穩定的服務。"
+    },
+    "loginBanner": {
+      "message": "登入解鎖更多雲端節點",
+      "viewPlans": "了解會員"
+    }
+  },
+  "tunnels": {
+    "title": "節點管理",
+    "description": "管理您的本機節點設定。新增自訂節點或登入同步雲端節點。",
+    "addTunnel": "新增節點",
+    "syncCloud": "登入取得",
+    "loginHint": "登入後可同步雲端節點設定",
+    "loginToSync": "登入後可取得雲端節點",
+    "anonymity": "匿名",
+    "addresses": "位址",
+    "empty": {
+      "title": "暫無節點",
+      "description": "點擊下方按鈕新增您的第一個節點"
+    },
+    "deleteConfirm": {
+      "title": "刪除節點",
+      "message": "確定要刪除節點 \"{{name}}\" 嗎？"
+    },
+    "selfDeploy": {
+      "title": "自部署服務",
+      "description": "我們正在開發自部署功能，讓您可以在自己的伺服器上部署節點。此功能將在專案開源後推出。",
+      "comingSoon": "正在推進中，敬請期待",
+      "openSourceNote": "開源後您可以自由部署和定制"
+    },
+    "cloudNodes": {
+      "title": "雲端節點",
+      "description": "登入即可取得雲端節點，無需自己部署，開箱即用。",
+      "usingCloud": "您正在使用雲端節點，返回主頁選擇節點開始使用"
+    },
+    "form": {
+      "addTitle": "新增節點",
+      "editTitle": "編輯節點",
+      "name": "節點名稱",
+      "namePlaceholder": "例如：香港節點 1",
+      "nameRequired": "請輸入節點名稱",
+      "url": "節點 URL",
+      "urlHelp": "格式: k2wss://網域?addrs=IP位址",
+      "urlRequired": "請輸入節點 URL",
+      "urlInvalid": "URL 必須以 k2wss:// 開頭",
+      "domain": "網域 (SNI)",
+      "domainRequired": "請輸入網域",
+      "addresses": "位址清單",
+      "addressesHelp": "多個位址用逗號分隔，連接埠預設 443",
+      "addrsRequired": "請輸入至少一個位址",
+      "anonymity": "匿名模式",
+      "anonymityHelp": "隨機選擇位址，提高隱私性",
+      "advancedMode": "進階模式",
+      "simpleMode": "簡易模式",
+      "addFailed": "新增失敗",
+      "updateFailed": "更新失敗"
+    }
+  },
+  "troubleshooting": {
+    "title": "問題排查",
+    "subtitle": "透過網速測試和網路修復來診斷網路連線問題",
+    "speedtest": {
+      "title": "網速測試",
+      "description": "測試您的國際出口網路連線速度和品質（不經過代理）",
+      "start": "開始測速",
+      "testing": "測速中...",
+      "complete": "測速完成",
+      "failed": "測速失敗",
+      "startFailed": "啟動測速失敗",
+      "networkError": "網路請求失敗",
+      "currentSpeed": "目前速度",
+      "downloadSpeed": "下載速度",
+      "uploadSpeed": "上傳速度",
+      "latency": "延遲",
+      "jitter": "抖動",
+      "duration": "耗時",
+      "seconds": "秒",
+      "server": "測試伺服器",
+      "selectServer": "選擇伺服器",
+      "autoSelect": "自動選擇最佳伺服器"
+    },
+    "fixNetwork": {
+      "title": "一鍵修復網路",
+      "description": "修復網路連線問題，重置 DNS 和路由配置",
+      "button": "一鍵恢復網路",
+      "fixing": "恢復中...",
+      "success": "網路修復成功！",
+      "error": "網路修復失敗，請稍後重試",
+      "unsupported": "該功能僅支援 macOS 系統"
+    },
+    "securitySoftware": {
+      "title": "安全軟體白名單設定",
+      "description": "如果 VPN 連線被 360、騰訊管家等安全軟體攔截，請查看設定指南"
+    },
+    "serverList": {
+      "show": "查看所有伺服器",
+      "hide": "隱藏伺服器清單",
+      "testing": "正在測試伺服器延遲",
+      "failed": "取得伺服器清單失敗",
+      "startFailed": "啟動伺服器清單取得失敗",
+      "networkError": "網路請求失敗",
+      "server": "伺服器",
+      "location": "位置",
+      "distance": "距離",
+      "latency": "延遲",
+      "error": "失敗"
+    }
+  },
+  "versionComparison": {
+    "freeVersion": "免費版",
+    "proVersion": "Pro 版",
+    "deviceCount": "裝置數量",
+    "dailyUsage": "每日使用時長",
+    "adBlock": "去廣告",
+    "techSupport": "技術支援",
+    "multiThreading": "多路並行",
+    "oneDevice": "1 台",
+    "fiveDevices": "5 台",
+    "twoHours": "2 小時",
+    "unlimited": "無限制",
+    "no": "×",
+    "yes": "✓"
+  }
+}

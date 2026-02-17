@@ -1,0 +1,58 @@
+{
+  "faq": {
+    "title": "常见问题"
+  },
+  "ticket": {
+    "title": "提交工单",
+    "description": "描述您遇到的问题，我们的支持团队会尽快通过邮件回复您。",
+    "feedbackTitle": "问题反馈",
+    "feedbackDescription": "日志正在上传中，请描述您遇到的问题。日志将帮助我们更快定位问题。",
+    "subjectLabel": "问题标题",
+    "subjectPlaceholder": "简要描述您遇到的问题",
+    "contentLabel": "问题描述",
+    "contentPlaceholder": "请详细描述您遇到的问题，包括操作步骤、错误信息等，这将帮助我们更快地为您解决问题。",
+    "submitButton": "提交工单",
+    "submitting": "提交中...",
+    "submitSuccess": "工单已提交成功",
+    "submitSuccessTitle": "工单提交成功！",
+    "submitFailed": "工单提交失败，请稍后重试",
+    "nextStepHint": "请查收您的邮箱",
+    "emailReplyHint": "我们的支持团队将通过邮件与您沟通，请留意邮箱中的回复。",
+    "howItWorks": "工单处理流程",
+    "howItWorksDescription": "提交后，系统会将工单发送到支持邮箱，并抄送一份到您的注册邮箱。后续沟通将通过邮件进行，请确保您能收到邮件通知。",
+    "entryTitle": "联系客服",
+    "entryDescription": "遇到问题？提交工单，我们会尽快回复",
+    "logUploadInProgress": "正在上传日志...",
+    "logUploadSuccess": "日志上传完成",
+    "logUploadFailed": "日志上传失败",
+    "validation": {
+      "subjectRequired": "请输入问题标题",
+      "contentRequired": "请输入问题描述",
+      "subjectTooLong": "问题标题不能超过200个字符",
+      "contentTooLong": "问题描述不能超过5000个字符"
+    }
+  },
+  "issues": {
+    "entryTitle": "社区反馈",
+    "entryDescription": "查看其他用户的问题和官方回复",
+    "listTitle": "问题列表",
+    "detailTitle": "问题详情",
+    "stateOpen": "待处理",
+    "stateClosed": "已解决",
+    "officialBadge": "官方回复",
+    "commentCount": "{{count}} 条回复",
+    "noComments": "暂无回复",
+    "loadMore": "加载更多",
+    "loading": "加载中...",
+    "empty": "暂无问题",
+    "emptyHint": "还没有用户提交过问题",
+    "error": "加载失败，请重试",
+    "commentsTitle": "回复",
+    "addComment": "添加回复",
+    "commentPlaceholder": "输入您的回复...",
+    "submitComment": "发送",
+    "submittingComment": "发送中...",
+    "commentSuccess": "回复已提交",
+    "commentFailed": "回复提交失败"
+  }
+}

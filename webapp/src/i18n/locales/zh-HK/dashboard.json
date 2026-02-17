@@ -1,0 +1,227 @@
+{
+  "dashboard": {
+    "autoSwitchLabel": "根據網絡狀況自動切換到該國家嘅其他節點",
+    "autoSwitchInCountry": "同國家智能切換",
+    "autoSwitchAlwaysEnabled": "智能切換已啟用",
+    "autoSwitchInfo": "系統會根據網絡狀況自動切換到該國家嘅其他可用節點",
+    "autoSwitchExplanationSpecific": "將根據網絡狀況自動切換到該國家嘅其他可用節點",
+    "autoSwitchExplanationGeneral": "將根據網絡狀況自動選擇並切換到最佳節點",
+    "autoSelect": "自動選擇",
+    "selectNode": "選擇節點",
+    "noNodeSelected": "未選擇節點",
+    "proxyMode": "代理模式",
+    "socks5Mode": "SOCKS5",
+    "autoSwitch": "自動切換",
+    "refreshNodeList": "刷新節點列表",
+    "loadingNodes": "正在載入節點列表...",
+    "errorLoadingNodes": "載入節點列表失敗",
+    "retryLoading": "重試載入",
+    "noNodesTitle": "無可用節點",
+    "noNodesDescription": "未找到隧道節點。請檢查您嘅網絡連接並嘗試刷新。",
+    "refreshNodes": "刷新節點",
+    "refreshFailed": "刷新失敗",
+    "currentSelectedNode": "當前選中節點",
+    "proxyRules": "代理規則",
+    "rule": {
+      "global": "全局",
+      "gfwlist": "智能",
+      "chnroute": "輕量"
+    },
+    "ruleDescription": {
+      "global": "唔會遺漏任何網站",
+      "gfwlist": "平衡速度與可訪問性",
+      "chnroute": "本地網站極速訪問",
+      "uk": "英國身份驗證"
+    },
+    "disconnectToModify": "請先斷開連接後修改",
+    "k2Options": "進階選項",
+    "enableMux": "多路複用",
+    "enableConcurrent": "並發連接",
+    "enableAnonymity": "匿名模式",
+    "requiredByAnonymity": "匿名模式必需",
+    "load": "負載",
+    "advancedOptionsInfo": "點擊查看詳細說明",
+    "advancedOptionsHelp": "進階選項說明",
+    "muxDescription": "##延遲更低，速度更快##。一條通道同時傳輸多個請求，就像高速公路上開闢多條車道，##減少排隊等待時間##。適合觀看視頻、遊戲等場景。",
+    "concurrentDescription": "##同時使用多個節點##，令連接更快更穩定。就像同時行多條路，一條塞咗仲有其他路可行。在##網絡受限時特別有效##，Pro 專屬功能。",
+    "anonymityDescription": "##連接伺服器和訪問網站使用不同嘅 IP 地址##，保護您嘅真實位置唔被追蹤。就像戴上雙重面具，私隱更安全。注意：可能略微影響速度，Pro 專屬功能。",
+    "enableFakeIP": "虛擬 IP 模式",
+    "fakeIPDescription": "為需要代理嘅網域分配虛擬 IP，網域解析喺伺服器端完成，提升連接速度同私隱性。",
+    "dnsMode": "DNS 模式",
+    "dnsModeDescription": "選擇 DNS 解析方式",
+    "dnsOptions": {
+      "fakeIp": "虛擬 IP",
+      "realIp": "真實 IP",
+      "realIpDot": "真實 IP (DoT)"
+    },
+    "recentLocations": "最近使用",
+    "favorites": "收藏嘅伺服器",
+    "allLocations": "所有位置",
+    "advancedSettings": "進階設定",
+    "searchLocations": "搜尋位置...",
+    "manualRefresh": "立即刷新",
+    "refreshing": "刷新中...",
+    "updated": "更新於",
+    "justNow": "啱啱",
+    "minutesAgo": "分鐘前",
+    "hoursAgo": "小時前",
+    "longTimeAgo": "好耐之前",
+    "selectServerHint": "從下方列表選擇伺服器以開始",
+    "connectionRetrying": "伺服器連接失敗，正在重試...",
+    "serviceFailure": {
+      "title": "服務連接失敗",
+      "message": "無法連接到 VPN 服務。請檢查服務是否正在運行。",
+      "resolve": "解決"
+    },
+    "serviceError": {
+      "title": "服務異常",
+      "subtitle": "VPN 核心服務未能正常運行",
+      "reason1Title": "自動更新未完成",
+      "reason1Desc": "應用程式可能喺更新過程中出現異常，導致服務組件未能正確安裝。",
+      "reason2Title": "安全軟件攔截",
+      "reason2Desc": "360、騰訊管家等安全軟件可能誤將 VPN 服務識別為風險程式並阻止其運行。",
+      "solutionTitle": "解決方案",
+      "solutionDesc": "請前往官網重新下載並安裝最新版本，即可修復此問題。",
+      "downloadButton": "前往下載",
+      "persistentTitle": "問題反覆出現？",
+      "persistentDesc": "如果重新安裝後仍然遇到此問題，請提交工單，我哋嘅技術團隊將協助您解決。",
+      "submitTicket": "提交工單"
+    },
+    "networkError": {
+      "title": "網絡連接異常"
+    },
+    "selfDeployed": "自部署",
+    "selfDeployedTag": "自部署",
+    "cloudNodes": "雲端節點",
+    "cloudTag": "雲端",
+    "analyzing": "分析中...",
+    "manageTunnels": "管理節點",
+    "addTunnel": "添加節點",
+    "selfDeploy": "自部署服務",
+    "loginToGet": "登入獲取",
+    "guestEmpty": {
+      "title": "登入獲取節點",
+      "description": "登入賬戶即可獲取雲端節點，享受更穩定嘅服務。"
+    },
+    "loginBanner": {
+      "message": "登入解鎖更多雲端節點",
+      "viewPlans": "了解會員"
+    }
+  },
+  "tunnels": {
+    "title": "節點管理",
+    "description": "管理您嘅本地節點配置。添加自定義節點或登入同步雲端節點。",
+    "addTunnel": "添加節點",
+    "syncCloud": "登入獲取",
+    "loginHint": "登入後可同步雲端節點配置",
+    "loginToSync": "登入後可獲取雲端節點",
+    "anonymity": "匿名",
+    "addresses": "地址",
+    "empty": {
+      "title": "暫無節點",
+      "description": "點擊下方按鈕添加您嘅第一個節點"
+    },
+    "deleteConfirm": {
+      "title": "刪除節點",
+      "message": "確定要刪除節點 \"{{name}}\" 嗎？"
+    },
+    "selfDeploy": {
+      "title": "自部署服務",
+      "description": "我哋正在開發自部署功能，令您可以喺自己嘅伺服器上部署節點。呢個功能將會喺項目開源後推出。",
+      "comingSoon": "正在推進中，敬請期待",
+      "openSourceNote": "開源後您可以自由部署同定制"
+    },
+    "cloudNodes": {
+      "title": "雲端節點",
+      "description": "登入即可獲取雲端節點，唔使自己部署，即開即用。",
+      "usingCloud": "您正在使用雲端節點，返回主頁揀節點開始使用"
+    },
+    "form": {
+      "addTitle": "添加節點",
+      "editTitle": "編輯節點",
+      "name": "節點名稱",
+      "namePlaceholder": "例如：香港節點 1",
+      "nameRequired": "請輸入節點名稱",
+      "url": "節點 URL",
+      "urlHelp": "格式: k2wss://域名?addrs=IP地址",
+      "urlRequired": "請輸入節點 URL",
+      "urlInvalid": "URL 必須以 k2wss:// 開頭",
+      "domain": "域名 (SNI)",
+      "domainRequired": "請輸入域名",
+      "addresses": "地址列表",
+      "addressesHelp": "多個地址用逗號分隔，端口默認 443",
+      "addrsRequired": "請輸入至少一個地址",
+      "anonymity": "匿名模式",
+      "anonymityHelp": "隨機選擇地址，提高私隱性",
+      "advancedMode": "進階模式",
+      "simpleMode": "簡單模式",
+      "addFailed": "添加失敗",
+      "updateFailed": "更新失敗"
+    }
+  },
+  "troubleshooting": {
+    "title": "問題排查",
+    "subtitle": "透過網速測試和網絡修復來診斷網絡連接問題",
+    "speedtest": {
+      "title": "網速測試",
+      "description": "測試您嘅國際出口網絡連接速度和質量（唔經過代理）",
+      "start": "開始測速",
+      "testing": "測速中...",
+      "complete": "測速完成",
+      "failed": "測速失敗",
+      "startFailed": "啟動測速失敗",
+      "networkError": "網絡請求失敗",
+      "currentSpeed": "當前速度",
+      "downloadSpeed": "下載速度",
+      "uploadSpeed": "上傳速度",
+      "latency": "延遲",
+      "jitter": "抖動",
+      "duration": "耗時",
+      "seconds": "秒",
+      "server": "測試伺服器",
+      "selectServer": "選擇伺服器",
+      "autoSelect": "自動選擇最佳伺服器"
+    },
+    "fixNetwork": {
+      "title": "一鍵修復網絡",
+      "description": "修復網絡連接問題，重設DNS和路由配置",
+      "button": "一鍵恢復網絡",
+      "fixing": "恢復中...",
+      "success": "網絡修復成功！",
+      "error": "網絡修復失敗，請稍後重試",
+      "unsupported": "該功能僅支援 macOS 系統"
+    },
+    "securitySoftware": {
+      "title": "安全軟件白名單設定",
+      "description": "如果VPN連接被360、騰訊管家等安全軟件攔截，請查看設定指南"
+    },
+    "serverList": {
+      "show": "查看所有伺服器",
+      "hide": "隱藏伺服器列表",
+      "testing": "正在測試伺服器延遲",
+      "failed": "獲取伺服器列表失敗",
+      "startFailed": "啟動伺服器列表獲取失敗",
+      "networkError": "網絡請求失敗",
+      "server": "伺服器",
+      "location": "位置",
+      "distance": "距離",
+      "latency": "延遲",
+      "error": "失敗"
+    }
+  },
+  "versionComparison": {
+    "freeVersion": "免費版",
+    "proVersion": "Pro版",
+    "deviceCount": "裝置數量",
+    "dailyUsage": "每日使用時長",
+    "adBlock": "去廣告",
+    "techSupport": "技術支援",
+    "multiThreading": "多路並發",
+    "oneDevice": "1台",
+    "fiveDevices": "5台",
+    "twoHours": "2小時",
+    "unlimited": "無限制",
+    "no": "×",
+    "yes": "✓"
+  }
+}

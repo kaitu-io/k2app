@@ -1,111 +1,82 @@
+/**
+ * Auth Store - 认证状态管理
+ *
+ * 职责：
+ * - 管理用户认证状态（isAuthenticated, isAuthChecking）
+ * - 同步服务端认证状态
+ *
+ * 注意：
+ * - 认证错误处理已移至 k2api 统一处理
+ * - 会员过期状态从 user.expiredAt 计算，不再维护 isMembershipExpired
+ *
+ * 使用：
+ * ```tsx
+ * const isAuthenticated = useAuthStore(s => s.isAuthenticated);
+ * const { setIsAuthenticated } = useAuthStore();
+ * ```
+ */
+
 import { create } from 'zustand';
-import { cloudApi, setAuthToken } from '../api/cloud';
-import { getVpnClient } from '../vpn-client';
+import { subscribeWithSelector } from 'zustand/middleware';
 
-interface AuthStore {
-  token: string | null;
-  refreshToken: string | null;
-  user: { email: string; plan?: string } | null;
-  isLoggedIn: boolean;
-  isLoading: boolean;
+interface AuthState {
+  // 状态
+  isAuthenticated: boolean;
+  isAuthChecking: boolean;
 
-  getAuthCode: (email: string) => Promise<void>;
-  login: (email: string, code: string) => Promise<void>;
-  logout: () => void;
-  restoreSession: () => Promise<void>;
+  // Actions
+  setIsAuthenticated: (value: boolean) => void;
+  setIsAuthChecking: (value: boolean) => void;
+
+  // 初始化同步（内部使用）
+  syncAuthStatus: () => Promise<void>;
 }
 
-const TOKEN_KEY = 'k2_auth_token';
-const REFRESH_KEY = 'k2_refresh_token';
+export const useAuthStore = create<AuthState>()(
+  subscribeWithSelector((set) => ({
+    // 初始状态
+    isAuthenticated: false,
+    isAuthChecking: true,
 
-export const useAuthStore = create<AuthStore>((set, get) => ({
-  token: null,
-  refreshToken: null,
-  user: null,
-  isLoggedIn: false,
-  isLoading: false,
+    // Actions
+    setIsAuthenticated: (value) => set({ isAuthenticated: value }),
+    setIsAuthChecking: (value) => set({ isAuthChecking: value }),
 
-  getAuthCode: async (email: string) => {
-    await cloudApi.getAuthCode(email);
-  },
+    // 同步认证状态
+    // 假设已登录，如果收到 401 错误会通过 k2api 自动处理
+    syncAuthStatus: async () => {
+      set({ isAuthenticated: true, isAuthChecking: false });
+    },
+  }))
+);
 
-  login: async (email: string, code: string) => {
-    set({ isLoading: true });
-    try {
-      const client = getVpnClient();
-      const udid = await client.getUDID();
-      const resp = await cloudApi.login(email, code, udid);
-      const data = resp.data as { token: string; refreshToken: string };
+/**
+ * 初始化 Auth Store
+ * 在应用启动时调用
+ */
+export function initializeAuthStore(): () => void {
+  // 立即同步认证状态
+  useAuthStore.getState().syncAuthStatus();
 
-      localStorage.setItem(TOKEN_KEY, data.token);
-      localStorage.setItem(REFRESH_KEY, data.refreshToken);
-      setAuthToken(data.token);
+  // 返回清理函数（当前无需清理）
+  return () => {};
+}
 
-      set({
-        token: data.token,
-        refreshToken: data.refreshToken,
-        user: { email },
-        isLoggedIn: true,
-        isLoading: false,
-      });
-    } catch (e) {
-      set({ isLoading: false });
-      throw e;
-    }
-  },
+// ============ 便捷 Hooks ============
 
-  logout: () => {
-    // Disconnect VPN
-    try {
-      const client = getVpnClient();
-      client.disconnect().catch(() => {});
-    } catch {
-      // VPN client may not be initialized, ignore
-    }
+/**
+ * 获取认证状态
+ */
+export function useAuth() {
+  return {
+    isAuthenticated: useAuthStore((s) => s.isAuthenticated),
+    setIsAuthenticated: useAuthStore((s) => s.setIsAuthenticated),
+  };
+}
 
-    // Invalidate server-side session (fire-and-forget)
-    try {
-      const logoutPromise = cloudApi.logout();
-      if (logoutPromise && typeof logoutPromise.catch === 'function') {
-        logoutPromise.catch(() => {});
-      }
-    } catch {
-      // cloudApi.logout may not be available in some test contexts
-    }
-
-    // Clear local tokens
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(REFRESH_KEY);
-    setAuthToken(null);
-    set({ token: null, refreshToken: null, user: null, isLoggedIn: false });
-  },
-
-  restoreSession: async () => {
-    const token = localStorage.getItem(TOKEN_KEY);
-    const refresh = localStorage.getItem(REFRESH_KEY);
-    if (!token || !refresh) return;
-
-    setAuthToken(token);
-    try {
-      const userResp = await cloudApi.getUserInfo();
-      const userData = userResp.data as { email: string; plan?: string };
-      set({ token, refreshToken: refresh, user: userData, isLoggedIn: true });
-    } catch {
-      // Token expired, try refresh
-      try {
-        const refreshResp = await cloudApi.refreshToken(refresh);
-        const data = refreshResp.data as { token: string; refreshToken: string };
-        localStorage.setItem(TOKEN_KEY, data.token);
-        localStorage.setItem(REFRESH_KEY, data.refreshToken);
-        setAuthToken(data.token);
-
-        const userResp = await cloudApi.getUserInfo();
-        const userData = userResp.data as { email: string; plan?: string };
-        set({ token: data.token, refreshToken: data.refreshToken, user: userData, isLoggedIn: true });
-      } catch {
-        // Refresh also failed, clear session
-        get().logout();
-      }
-    }
-  },
-}));
+/**
+ * 获取认证检查状态
+ */
+export function useAuthChecking(): boolean {
+  return useAuthStore((s) => s.isAuthChecking);
+}

@@ -1,142 +1,298 @@
-import { useEffect, useState, useCallback } from 'react';
-import { useTranslation } from 'react-i18next';
-import { useParams } from 'react-router-dom';
-import { cloudApi } from '../api/cloud';
+import { useState, useEffect, useCallback } from "react";
+import { useParams } from "react-router-dom";
+import {
+  Box,
+  Typography,
+  Card,
+  CardContent,
+  Chip,
+  Stack,
+  CircularProgress,
+  Alert,
+  Button,
+  Divider,
+  TextField,
+} from "@mui/material";
+import { useTranslation } from "react-i18next";
 
-interface IssueData {
-  id: string;
-  title: string;
-  content: string;
-  status: string;
-  createdAt: string;
-  updatedAt: string;
+import BackButton from "../components/BackButton";
+import { k2api } from "../services/k2api";
+import type { GitHubIssueDetail, GitHubComment } from "../services/api-types";
+
+function formatRelativeTime(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / (1000 * 60));
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffMins < 1) return "just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 30) return `${diffDays}d ago`;
+  return date.toLocaleDateString();
 }
 
-interface CommentData {
-  id: string;
-  issueId: string;
-  content: string;
-  author: string;
-  createdAt: string;
-}
+export default function IssueDetail() {
+  const { t } = useTranslation();
+  const { number } = useParams<{ number: string }>();
 
-export function IssueDetail() {
-  const { t } = useTranslation('feedback');
-  const { id } = useParams<{ id: string }>();
-  const [issue, setIssue] = useState<IssueData | null>(null);
-  const [comments, setComments] = useState<CommentData[]>([]);
-  const [commentText, setCommentText] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const [issue, setIssue] = useState<GitHubIssueDetail | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const fetchComments = useCallback(async () => {
-    if (!id) return;
-    const resp = await cloudApi.getIssueComments(id);
-    const data = resp.data as CommentData[] | undefined;
-    if (data) {
-      setComments(data);
+  // Comment form state
+  const [commentBody, setCommentBody] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  const fetchIssue = useCallback(async () => {
+    if (!number) return;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await k2api().exec<GitHubIssueDetail>("api_request", {
+        method: "GET",
+        path: `/api/issues/${number}`,
+      });
+
+      if (response.code === 0 && response.data) {
+        setIssue(response.data);
+      } else {
+        setError(t("ticket:issues.error"));
+      }
+    } catch (err) {
+      console.error("[IssueDetail] Failed to fetch issue:", err);
+      setError(t("ticket:issues.error"));
+    } finally {
+      setIsLoading(false);
     }
-  }, [id]);
+  }, [number, t]);
 
   useEffect(() => {
-    if (!id) return;
-
-    const fetchIssue = async () => {
-      const resp = await cloudApi.getIssueDetail(id);
-      const data = resp.data as IssueData | undefined;
-      if (data) {
-        setIssue(data);
-      }
-    };
-
     fetchIssue();
-    fetchComments();
-  }, [id, fetchComments]);
+  }, [fetchIssue]);
 
   const handleSubmitComment = async () => {
-    if (!id || !commentText.trim()) return;
-    setSubmitting(true);
+    if (!commentBody.trim() || !number) return;
+
+    setIsSubmitting(true);
+    setSubmitError(null);
+
     try {
-      await cloudApi.addComment(id, commentText);
-      setCommentText('');
-      await fetchComments();
+      const response = await k2api().exec<GitHubComment>("api_request", {
+        method: "POST",
+        path: `/api/issues/${number}/comments`,
+        body: { body: commentBody.trim() },
+      });
+
+      if (response.code === 0 && response.data) {
+        // Add the new comment to the list
+        setIssue((prev) =>
+          prev ? { ...prev, comments: [...prev.comments, response.data!] } : prev
+        );
+        setCommentBody("");
+      } else {
+        setSubmitError(t("ticket:issues.commentFailed"));
+      }
+    } catch (err) {
+      console.error("[IssueDetail] Failed to submit comment:", err);
+      setSubmitError(t("ticket:issues.commentFailed"));
     } finally {
-      setSubmitting(false);
+      setIsSubmitting(false);
     }
   };
 
-  const formatTime = (dateStr: string): string => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString();
-  };
-
-  if (!issue) {
-    return null;
-  }
-
   return (
-    <div className="p-4 space-y-6">
-      {/* Issue content card */}
-      <div className="rounded-lg p-4 bg-[--color-bg-paper]">
-        <h1 className="text-xl font-semibold text-[--color-text-primary] mb-2">
-          {issue.title}
-        </h1>
-        <p className="text-sm text-[--color-text-secondary] mb-3">
-          {formatTime(issue.createdAt)}
-        </p>
-        <p className="text-[--color-text-primary]">{issue.content}</p>
-      </div>
+    <Box sx={{ width: "100%", height: "100%", position: "relative" }}>
+      <BackButton to="/issues" />
 
-      {/* Comments section */}
-      <div>
-        <h2 className="text-lg font-medium mb-3">{t('comments')}</h2>
-
-        {comments.length === 0 ? (
-          <p className="text-[--color-text-secondary] text-sm">{t('noComments')}</p>
-        ) : (
-          <div className="space-y-0">
-            {comments.map((comment, index) => (
-              <div key={comment.id}>
-                {index > 0 && (
-                  <div className="border-t border-[--color-text-disabled]/20 my-3" />
-                )}
-                <div className="flex gap-3">
-                  <div className="w-8 h-8 rounded-full bg-[--color-primary]/20 flex items-center justify-center text-xs text-[--color-primary] shrink-0">
-                    {comment.author.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-sm font-medium text-[--color-text-primary]">
-                        {comment.author}
-                      </span>
-                      <span className="text-xs text-[--color-text-secondary]">
-                        {formatTime(comment.createdAt)}
-                      </span>
-                    </div>
-                    <p className="text-sm text-[--color-text-primary]">{comment.content}</p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Add comment form */}
-      <div className="space-y-3">
-        <textarea
-          value={commentText}
-          onChange={(e) => setCommentText(e.target.value)}
-          placeholder={t('commentPlaceholder')}
-          className="w-full rounded-lg p-3 bg-[--color-bg-paper] text-[--color-text-primary] border border-[--color-text-disabled]/30 resize-none min-h-[80px] placeholder:text-[--color-text-disabled]"
-        />
-        <button
-          onClick={handleSubmitComment}
-          disabled={submitting || !commentText.trim()}
-          className="py-2 px-4 rounded-lg border border-[--color-primary] text-[--color-primary] hover:bg-[--color-primary]/10 transition-colors disabled:opacity-50"
+      <Box
+        sx={{
+          width: "100%",
+          height: "100%",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "flex-start",
+          pt: 9,
+        }}
+      >
+        <Box
+          sx={{
+            width: 500,
+            display: "flex",
+            flexDirection: "column",
+            gap: 1.5,
+            overflow: "auto",
+            height: "100%",
+            pr: 0.5,
+            pb: 4,
+            "&::-webkit-scrollbar": { width: "8px" },
+            "&::-webkit-scrollbar-track": { background: "transparent" },
+            "&::-webkit-scrollbar-thumb": {
+              background: (theme) =>
+                theme.palette.mode === "dark"
+                  ? "rgba(255,255,255,0.2)"
+                  : "rgba(0,0,0,0.2)",
+              borderRadius: "4px",
+            },
+          }}
         >
-          {t('submit')}
-        </button>
-      </div>
-    </div>
+          {isLoading ? (
+            <Box display="flex" justifyContent="center" py={4}>
+              <CircularProgress />
+            </Box>
+          ) : error ? (
+            <Alert
+              severity="error"
+              action={
+                <Button color="inherit" size="small" onClick={fetchIssue}>
+                  {t("common:common.retry")}
+                </Button>
+              }
+            >
+              {error}
+            </Alert>
+          ) : issue ? (
+            <>
+              {/* Issue Header */}
+              <Card>
+                <CardContent>
+                  <Stack spacing={1.5}>
+                    <Stack direction="row" gap={1}>
+                      <Chip
+                        label={
+                          issue.state === "open"
+                            ? t("ticket:issues.stateOpen")
+                            : t("ticket:issues.stateClosed")
+                        }
+                        size="small"
+                        color={issue.state === "open" ? "warning" : "success"}
+                      />
+                      {issue.has_official && (
+                        <Chip
+                          label={t("ticket:issues.officialBadge")}
+                          size="small"
+                          color="primary"
+                        />
+                      )}
+                    </Stack>
+                    <Typography variant="h6">{issue.title}</Typography>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ whiteSpace: "pre-wrap" }}
+                    >
+                      {issue.body}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {formatRelativeTime(issue.created_at)}
+                    </Typography>
+                  </Stack>
+                </CardContent>
+              </Card>
+
+              {/* Comments Section */}
+              <Card>
+                <CardContent>
+                  <Typography variant="subtitle2" gutterBottom>
+                    {t("ticket:issues.commentsTitle")} ({issue.comments.length})
+                  </Typography>
+
+                  {issue.comments.length === 0 ? (
+                    <Typography variant="body2" color="text.secondary" py={2}>
+                      {t("ticket:issues.noComments")}
+                    </Typography>
+                  ) : (
+                    <Stack spacing={1.5} mt={1}>
+                      {issue.comments.map((comment, index) => (
+                        <Box key={comment.id}>
+                          {index > 0 && <Divider sx={{ mb: 1.5 }} />}
+                          <Box
+                            sx={{
+                              pl: comment.is_official ? 1.5 : 0,
+                              borderLeft: comment.is_official
+                                ? "3px solid"
+                                : "none",
+                              borderColor: "primary.main",
+                            }}
+                          >
+                            <Stack
+                              direction="row"
+                              alignItems="center"
+                              gap={1}
+                              mb={0.5}
+                            >
+                              {comment.is_official && (
+                                <Chip
+                                  label={t("ticket:issues.officialBadge")}
+                                  size="small"
+                                  color="primary"
+                                  sx={{ height: 18, fontSize: "0.65rem" }}
+                                />
+                              )}
+                              <Typography variant="caption" color="text.secondary">
+                                {formatRelativeTime(comment.created_at)}
+                              </Typography>
+                            </Stack>
+                            <Typography
+                              variant="body2"
+                              sx={{ whiteSpace: "pre-wrap" }}
+                            >
+                              {comment.body}
+                            </Typography>
+                          </Box>
+                        </Box>
+                      ))}
+                    </Stack>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Add Comment Form */}
+              <Card>
+                <CardContent>
+                  <Stack spacing={1.5}>
+                    <Typography variant="subtitle2">
+                      {t("ticket:issues.addComment")}
+                    </Typography>
+                    <TextField
+                      multiline
+                      rows={3}
+                      placeholder={t("ticket:issues.commentPlaceholder")}
+                      value={commentBody}
+                      onChange={(e) => setCommentBody(e.target.value)}
+                      disabled={isSubmitting}
+                      fullWidth
+                      size="small"
+                    />
+                    {submitError && (
+                      <Alert severity="error" onClose={() => setSubmitError(null)}>
+                        {submitError}
+                      </Alert>
+                    )}
+                    <Button
+                      variant="contained"
+                      onClick={handleSubmitComment}
+                      disabled={isSubmitting || !commentBody.trim()}
+                      fullWidth
+                    >
+                      {isSubmitting ? (
+                        <CircularProgress size={20} color="inherit" />
+                      ) : (
+                        t("ticket:issues.submitComment")
+                      )}
+                    </Button>
+                  </Stack>
+                </CardContent>
+              </Card>
+            </>
+          ) : null}
+        </Box>
+      </Box>
+    </Box>
   );
 }

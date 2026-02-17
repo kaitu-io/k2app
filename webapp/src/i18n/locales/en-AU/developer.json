@@ -1,0 +1,25 @@
+{
+  "developer": {
+    "title": "Developer Settings",
+    "warning": "These settings are for developers only. Incorrect settings may affect app performance.",
+    "sectionGeneral": "GENERAL",
+    "vpnMode": "VPN Mode",
+    "vpnModeDesc": "Select VPN operation mode",
+    "logLevel": "Log Level",
+    "logLevelDesc": "Control the verbosity of logging output",
+    "sectionK2v4": "K2V4 PROTOCOL",
+    "pathTypeFilter": "Transport Protocol",
+    "pathTypeFilterDesc": "Enable or disable transport protocols for multipath",
+    "devModeInfo": "Developer mode activated. Settings reset on app restart.",
+    "mode": {
+      "tun": "TUN",
+      "socks5": "SOCKS5",
+      "tproxy": "TProxy"
+    },
+    "filter": {
+      "all": "All",
+      "quic": "QUIC",
+      "tcpWs": "TCP-WS"
+    }
+  }
+}

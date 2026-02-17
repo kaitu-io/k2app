@@ -87,7 +87,9 @@ for i in $(seq 1 60); do
   sleep 1
 done
 
-# ── 6. Start Tauri dev (with MCP Bridge) ──
-echo "[dev] Starting Tauri dev..."
-cd "$ROOT_DIR/desktop"
-yarn tauri dev --features mcp-bridge
+# ── 6. Open in browser ──
+echo "[dev] Opening http://localhost:1420 ..."
+open "http://localhost:1420" 2>/dev/null || true
+
+echo "[dev] All services running. Press Ctrl+C to stop."
+wait

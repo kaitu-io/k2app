@@ -1,10 +1,237 @@
 {
-  "title": "仪表盘",
-  "connect": "连接",
-  "disconnect": "断开",
-  "connecting": "连接中...",
-  "connected": "已连接",
-  "disconnected": "未连接",
-  "uptime": "运行时间",
-  "error": "连接错误"
+  "dashboard": {
+    "autoSwitchLabel": "根据网络状况自动切换到该国家的其他节点",
+    "autoSwitchInCountry": "同国家智能切换",
+    "autoSwitchAlwaysEnabled": "智能切换已启用",
+    "autoSwitchInfo": "系统会根据网络状况自动切换到该国家的其他可用节点",
+    "autoSwitchExplanationSpecific": "将根据网络状况自动切换到该国家的其他可用节点",
+    "autoSwitchExplanationGeneral": "将根据网络状况自动选择并切换到最佳节点",
+    "autoSelect": "自动选择",
+    "selectNode": "选择节点",
+    "noNodeSelected": "未选择节点",
+    "proxyMode": "代理模式",
+    "socks5Mode": "SOCKS5",
+    "autoSwitch": "自动切换",
+    "refreshNodeList": "刷新节点列表",
+    "loadingNodes": "正在加载节点列表...",
+    "errorLoadingNodes": "加载节点列表失败",
+    "retryLoading": "重试加载",
+    "noNodesTitle": "无可用节点",
+    "noNodesDescription": "未找到隧道节点。请检查您的网络连接并尝试刷新。",
+    "refreshNodes": "刷新节点",
+    "refreshFailed": "刷新失败",
+    "currentSelectedNode": "当前选中节点",
+    "proxyRules": "代理规则",
+    "rule": {
+      "global": "全局",
+      "gfwlist": "智能",
+      "chnroute": "轻量"
+    },
+    "ruleDescription": {
+      "global": "不会遗漏任何网站",
+      "gfwlist": "平衡速度与可访问性",
+      "chnroute": "本地网站极速访问",
+      "uk": "英国身份验证"
+    },
+    "disconnectToModify": "请先断开连接后修改",
+    "k2Options": "高级选项",
+    "enableMux": "多路复用",
+    "enableConcurrent": "并发连接",
+    "enableAnonymity": "匿名模式",
+    "requiredByAnonymity": "匿名模式必需",
+    "load": "负载",
+    "advancedOptionsInfo": "点击查看详细说明",
+    "advancedOptionsHelp": "高级选项说明",
+    "muxDescription": "##延迟更低，速度更快##。一条通道同时传输多个请求，就像高速公路上开辟多条车道，##减少排队等待时间##。适合观看视频、游戏等场景。",
+    "concurrentDescription": "##同时使用多个节点##，让连接更快更稳定。就像同时走多条路，一条堵了还有其他路可走。在##网络受限时特别有效##，Pro 专属功能。",
+    "anonymityDescription": "##连接服务器和访问网站使用不同的 IP 地址##，保护您的真实位置不被追踪。就像戴上双重面具，隐私更安全。注意：可能略微影响速度，Pro 专属功能。",
+    "enableFakeIP": "虚拟 IP 模式",
+    "fakeIPDescription": "为需要代理的域名分配虚拟 IP，域名解析在服务器端完成，提升连接速度和隐私性。",
+    "dnsMode": "DNS 模式",
+    "dnsModeDescription": "选择 DNS 解析方式",
+    "dnsOptions": {
+      "fakeIp": "虚拟 IP",
+      "realIp": "真实 IP",
+      "realIpDot": "真实 IP (DoT)"
+    },
+    "recentLocations": "最近使用",
+    "favorites": "收藏的服务器",
+    "allLocations": "所有位置",
+    "advancedSettings": "高级设置",
+    "searchLocations": "搜索位置...",
+    "manualRefresh": "立即刷新",
+    "refreshing": "刷新中...",
+    "updated": "更新于",
+    "justNow": "刚刚",
+    "minutesAgo": "分钟前",
+    "hoursAgo": "小时前",
+    "longTimeAgo": "很久之前",
+    "selectServerHint": "从下方列表选择服务器以开始",
+    "connectionRetrying": "服务器连接失败，正在重试...",
+    "serviceFailure": {
+      "title": "服务连接失败",
+      "message": "无法连接到 VPN 服务。请检查服务是否正在运行。",
+      "resolve": "解决",
+      "resolving": "正在解决...",
+      "more": "更多",
+      "collecting": "正在收集诊断信息...",
+      "reported": "已报告给支持团队"
+    },
+    "serviceError": {
+      "title": "服务异常",
+      "subtitle": "VPN 核心服务未能正常运行",
+      "reason1Title": "自动更新未完成",
+      "reason1Desc": "应用可能在更新过程中出现异常，导致服务组件未能正确安装。",
+      "reason2Title": "安全软件拦截",
+      "reason2Desc": "360、腾讯管家等安全软件可能误将 VPN 服务识别为风险程序并阻止其运行。",
+      "solutionTitle": "解决方案",
+      "solutionDesc": "请访问官网重新下载并安装最新版本，即可修复此问题。",
+      "downloadButton": "前往下载",
+      "persistentTitle": "问题反复出现？",
+      "persistentDesc": "如果重新安装后仍然遇到此问题，请提交工单，我们的技术团队将协助您解决。",
+      "submitTicket": "提交工单"
+    },
+    "networkError": {
+      "title": "网络连接异常"
+    },
+    "initialization": {
+      "title": "正在初始化服务组件",
+      "geoip": "地理位置数据库",
+      "rules": "代理规则",
+      "antiblock": "连接配置"
+    },
+    "selfDeployed": "自部署",
+    "selfDeployedTag": "自部署",
+    "cloudNodes": "云端节点",
+    "cloudTag": "云端",
+    "analyzing": "分析中...",
+    "manageTunnels": "管理节点",
+    "addTunnel": "添加节点",
+    "selfDeploy": "自部署服务",
+    "loginToGet": "登录获取",
+    "guestEmpty": {
+      "title": "登录获取节点",
+      "description": "登录账户即可获取云端节点，享受更稳定的服务。"
+    },
+    "loginBanner": {
+      "message": "登录解锁更多云端节点",
+      "viewPlans": "了解会员"
+    }
+  },
+  "troubleshooting": {
+    "title": "问题排查",
+    "subtitle": "通过网速测试和网络修复来诊断网络连接问题",
+    "speedtest": {
+      "title": "网速测试",
+      "description": "测试您的国际出口网络连接速度和质量（不经过代理）",
+      "start": "开始测速",
+      "testing": "测速中...",
+      "complete": "测速完成",
+      "failed": "测速失败",
+      "startFailed": "启动测速失败",
+      "networkError": "网络请求失败",
+      "currentSpeed": "当前速度",
+      "downloadSpeed": "下载速度",
+      "uploadSpeed": "上传速度",
+      "latency": "延迟",
+      "jitter": "抖动",
+      "duration": "耗时",
+      "seconds": "秒",
+      "server": "测试服务器",
+      "selectServer": "选择服务器",
+      "autoSelect": "自动选择最佳服务器"
+    },
+    "fixNetwork": {
+      "title": "一键修复网络",
+      "description": "修复网络连接问题，重置DNS和路由配置",
+      "button": "一键恢复网络",
+      "fixing": "恢复中...",
+      "success": "网络修复成功！",
+      "error": "网络修复失败，请稍后重试",
+      "unsupported": "该功能仅支持 macOS 系统"
+    },
+    "securitySoftware": {
+      "title": "安全软件白名单设置",
+      "description": "如果VPN连接被360、腾讯管家等安全软件拦截，请查看设置指南"
+    },
+    "serverList": {
+      "show": "查看所有服务器",
+      "hide": "隐藏服务器列表",
+      "testing": "正在测试服务器延迟",
+      "failed": "获取服务器列表失败",
+      "startFailed": "启动服务器列表获取失败",
+      "networkError": "网络请求失败",
+      "server": "服务器",
+      "location": "位置",
+      "distance": "距离",
+      "latency": "延迟",
+      "error": "失败"
+    }
+  },
+  "versionComparison": {
+    "freeVersion": "免费版",
+    "proVersion": "Pro版",
+    "deviceCount": "设备数量",
+    "dailyUsage": "每日使用时长",
+    "adBlock": "去广告",
+    "techSupport": "技术支持",
+    "multiThreading": "多路并发",
+    "oneDevice": "1台",
+    "fiveDevices": "5台",
+    "twoHours": "2小时",
+    "unlimited": "无限制",
+    "no": "×",
+    "yes": "✓"
+  },
+  "tunnels": {
+    "title": "节点管理",
+    "description": "管理您的本地节点配置。添加自定义节点或登录同步云端节点。",
+    "addTunnel": "添加节点",
+    "syncCloud": "登录获取",
+    "loginHint": "登录后可同步云端节点配置",
+    "loginToSync": "登录后可获取云端节点",
+    "anonymity": "匿名",
+    "addresses": "地址",
+    "empty": {
+      "title": "暂无节点",
+      "description": "点击下方按钮添加您的第一个节点"
+    },
+    "deleteConfirm": {
+      "title": "删除节点",
+      "message": "确定要删除节点 \"{{name}}\" 吗？"
+    },
+    "selfDeploy": {
+      "title": "自部署服务",
+      "description": "我们正在开发自部署功能，让您可以在自己的服务器上部署节点。此功能将在项目开源后推出。",
+      "comingSoon": "正在推进中，敬请期待",
+      "openSourceNote": "开源后您可以自由部署和定制"
+    },
+    "cloudNodes": {
+      "title": "云端节点",
+      "description": "登录即可获取云端节点，无需自己部署，开箱即用。",
+      "usingCloud": "您正在使用云端节点，返回主页选择节点开始使用"
+    },
+    "form": {
+      "addTitle": "添加节点",
+      "editTitle": "编辑节点",
+      "name": "节点名称",
+      "namePlaceholder": "例如：香港节点 1",
+      "nameRequired": "请输入节点名称",
+      "url": "节点 URL",
+      "urlHelp": "格式: k2wss://域名?addrs=IP地址",
+      "urlRequired": "请输入节点 URL",
+      "urlInvalid": "URL 必须以 k2wss:// 开头",
+      "domain": "域名 (SNI)",
+      "domainRequired": "请输入域名",
+      "addresses": "地址列表",
+      "addressesHelp": "多个地址用逗号分隔，端口默认 443",
+      "addrsRequired": "请输入至少一个地址",
+      "anonymity": "匿名模式",
+      "anonymityHelp": "随机选择地址，提高隐私性",
+      "advancedMode": "高级模式",
+      "simpleMode": "简单模式",
+      "addFailed": "添加失败",
+      "updateFailed": "更新失败"
+    }
+  }
 }

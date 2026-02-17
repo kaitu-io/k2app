@@ -1,0 +1,48 @@
+{
+  "appBar": {
+    "refreshAuth": "重新整理授權"
+  },
+  "navigation": {
+    "dashboard": "儀表板",
+    "discover": "探索",
+    "account": "帳戶",
+    "devices": "裝置",
+    "faq": "常見問題",
+    "purchase": "購買",
+    "invite": "邀請",
+    "retailer": "分銷",
+    "proHistory": "授權歷史",
+    "help": "協助"
+  },
+  "appBarConnector": {
+    "disconnecting": "中斷中",
+    "connecting": "連線中",
+    "antiClickProtection": "防連點保護：操作過於頻繁",
+    "refreshDataFailed": "操作後重新整理資料失敗：",
+    "connectionOperationFailed": "連線操作失敗：",
+    "disconnectingTooltip": "正在中斷連線中...",
+    "connectingTooltip": "正在連線中...",
+    "clickToDisconnect": "點擊中斷連線",
+    "clickToConnect": "點擊開始連線",
+    "anonymous": "匿名",
+    "disconnect": "中斷",
+    "connect": "連線",
+    "panel": "面板",
+    "noNodeSelected": "請先選擇一個節點後再連線"
+  },
+  "appBarMembership": {
+    "trial": "試用",
+    "standard": "標準版",
+    "expired": "已過期",
+    "proTrial": "Pro 體驗",
+    "recharge": "儲值",
+    "firstOrderPending": "首單待完成",
+    "unlimitedTrial": "無限試用",
+    "completePurchase": "完成購買"
+  },
+  "layout": {
+    "deviceInstall": "其他裝置安裝",
+    "troubleshooting": "問題排查",
+    "accountAndSettings": "帳號與設定"
+  }
+}

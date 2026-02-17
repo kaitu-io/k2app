@@ -6,7 +6,7 @@
 |-----------|------------------------------------------|
 | Feature   | webapp-antiblock                         |
 | Version   | v3                                       |
-| Status    | draft                                    |
+| Status    | implemented                              |
 | Created   | 2026-02-17                               |
 | Updated   | 2026-02-17                               |
 | Tests     | Crypto + JSONP + resolveEntry + cloudApi + CORS |

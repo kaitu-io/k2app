@@ -25,3 +25,7 @@ api/logs/
 api/cmd/kaitu-center
 api/config.yml
 api/cloudprovider/test-results/
+
+# Webapp test artifacts
+webapp/playwright-report/
+webapp/test-results/

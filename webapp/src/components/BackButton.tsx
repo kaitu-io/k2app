@@ -1,18 +1,45 @@
-import { useNavigate } from 'react-router-dom';
-import { ChevronLeft } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
+import { IconButton } from "@mui/material";
+import { ArrowBack as ArrowBackIcon } from "@mui/icons-material";
+import { useNavigate } from "react-router-dom";
 
-export function BackButton() {
+interface BackButtonProps {
+  to?: string;
+  onClick?: () => void;
+}
+
+export default function BackButton({ to, onClick }: BackButtonProps) {
   const navigate = useNavigate();
-  const { t } = useTranslation();
+
+  const handleClick = () => {
+    if (onClick) {
+      onClick();
+    } else if (to) {
+      navigate(to);
+    } else {
+      navigate(-1);
+    }
+  };
 
   return (
-    <button
-      onClick={() => navigate(-1)}
-      className="flex items-center gap-1 text-sm text-text-secondary py-2 px-1"
+    <IconButton
+      onClick={handleClick}
+      sx={{
+        position: 'absolute',
+        left: 8,
+        top: 16,
+        zIndex: 10,
+        bgcolor: (theme) => theme.palette.mode === 'dark'
+          ? 'rgba(255, 255, 255, 0.08)'
+          : 'rgba(0, 0, 0, 0.04)',
+        '&:hover': {
+          bgcolor: (theme) => theme.palette.mode === 'dark'
+            ? 'rgba(255, 255, 255, 0.12)'
+            : 'rgba(0, 0, 0, 0.08)',
+        },
+        transition: 'all 0.2s',
+      }}
     >
-      <ChevronLeft className="w-4 h-4" />
-      <span>{t('common:back', 'Back')}</span>
-    </button>
+      <ArrowBackIcon />
+    </IconButton>
   );
 }
