@@ -19,7 +19,8 @@ import { getCountryName, getFlagIcon } from '../utils/country';
 import { getThemeColors } from '../theme/colors';
 import { LoadingState, EmptyState } from './LoadingAndEmpty';
 import { VerticalLoadBar } from './VerticalLoadBar';
-import { k2api } from '../services/k2api';
+import { cloudApi } from '../services/cloud-api';
+import { cacheStore } from '../services/cache-store';
 import { sortTunnelsByRecommendation } from '../utils/tunnel-sort';
 import { useAuthStore } from '../stores/auth.store';
 import { useVPNStore } from '../stores/vpn.store';
@@ -76,18 +77,34 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
     try {
       setRefreshing(true);
       setError(null);
-      const response = await k2api({
-        cache: { key: 'api:tunnels', ttl: 10, allowExpired: true }
-      }).exec<TunnelListResponse>('api_request', {
-        method: 'GET',
-        path: '/api/tunnels/k2v4'
-      });
+      // Check cache first (SWR: return immediately, refresh in background)
+      const cached = cacheStore.get<TunnelListResponse>('api:tunnels');
+      if (cached) {
+        const loadedTunnels = cached.items || [];
+        setTunnels(loadedTunnels);
+        setEchConfigList(cached.echConfigList);
+        retryCountRef.current = 0;
+        onTunnelsLoadedRef.current?.(loadedTunnels);
+        // Background revalidate
+        cloudApi.get<TunnelListResponse>('/api/tunnels/k2v4').then(res => {
+          if (res.code === 0 && res.data) {
+            cacheStore.set('api:tunnels', res.data, { ttl: 10 });
+            setTunnels(res.data.items || []);
+            setEchConfigList(res.data.echConfigList);
+            onTunnelsLoadedRef.current?.(res.data.items || []);
+          }
+        });
+        return;
+      }
+
+      const response = await cloudApi.get<TunnelListResponse>('/api/tunnels/k2v4');
 
       if (response.code === 0 && response.data) {
         const loadedTunnels = response.data.items || [];
         setTunnels(loadedTunnels);
         // Store ECH config list for K2v4 connections
         setEchConfigList(response.data.echConfigList);
+        cacheStore.set('api:tunnels', response.data, { ttl: 10 });
         console.debug('[CloudTunnelList] ECH config from API:', response.data.echConfigList ? `present (len=${response.data.echConfigList.length})` : 'empty');
         // Reset retry count on success
         retryCountRef.current = 0;

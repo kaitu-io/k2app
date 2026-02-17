@@ -36,7 +36,7 @@ import { useAlert } from "../stores";
 import { LoadingCard } from "../components/LoadingAndEmpty";
 import EmailTextField from "../components/EmailTextField";
 import BackButton from "../components/BackButton";
-import { k2api } from '../services/k2api';
+import { cloudApi } from '../services/cloud-api';
 import { delayedFocus } from '../utils/ui';
 
 // 成员状态计算
@@ -105,10 +105,7 @@ export default function MemberManagement() {
     }
 
     try {
-      const response = await k2api().exec<{ items: DataUser[] }>('api_request', {
-        method: 'GET',
-        path: '/api/user/members',
-      });
+      const response = await cloudApi.get<{ items: DataUser[] }>('/api/user/members');
 
       // 检查 response 是否存在
       if (!response) {
@@ -169,11 +166,7 @@ export default function MemberManagement() {
 
     setAddingMember(true);
     try {
-      const response = await k2api().exec<DataUser>('api_request', {
-        method: 'POST',
-        path: '/api/user/members',
-        body: { memberEmail: email },
-      });
+      const response = await cloudApi.post<DataUser>('/api/user/members', { memberEmail: email });
 
       // 检查 response 是否存在
       if (!response) {
@@ -221,10 +214,7 @@ export default function MemberManagement() {
   // 移除成员
   const handleRemoveMember = async (member: DataUser) => {
     try {
-      const response = await k2api().exec('api_request', {
-        method: 'DELETE',
-        path: `/api/user/members/${member.uuid}`,
-      });
+      const response = await cloudApi.request('DELETE', `/api/user/members/${member.uuid}`);
 
       // 检查 response 是否存在
       if (!response) {

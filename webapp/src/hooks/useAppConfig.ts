@@ -14,7 +14,8 @@
  */
 
 import { useState, useEffect } from 'react';
-import { k2api } from '../services/k2api';
+import { cloudApi } from '../services/cloud-api';
+import { cacheStore } from '../services/cache-store';
 import type { AppConfig } from '../services/api-types';
 
 interface UseAppConfigReturn {
@@ -47,20 +48,27 @@ export function useAppConfig(): UseAppConfigReturn {
     const fetchConfig = async () => {
       try {
         setLoading(true);
-        const response = await k2api({
-          cache: {
-            key: 'api:app_config',
-            ttl: 3600, // 1小时（配置变更频率低）
-            allowExpired: true, // 网络失败时允许用过期缓存
-            revalidate: true // 立即返回缓存，后台刷新
-          }
-        }).exec<AppConfig>('api_request', {
-          method: 'GET',
-          path: '/api/app/config'
-        });
+
+        // Check cache first (SWR: return immediately, refresh in background)
+        const cached = cacheStore.get<AppConfig>('api:app_config');
+        if (cached) {
+          setAppConfig(cached);
+          setLoading(false);
+          // Background revalidate
+          cloudApi.get<AppConfig>('/api/app/config').then(res => {
+            if (res.code === 0 && res.data) {
+              cacheStore.set('api:app_config', res.data, { ttl: 3600 });
+              setAppConfig(res.data);
+            }
+          });
+          return;
+        }
+
+        const response = await cloudApi.get<AppConfig>('/api/app/config');
 
         if (response.code === 0 && response.data) {
           setAppConfig(response.data);
+          cacheStore.set('api:app_config', response.data, { ttl: 3600 });
           setError(null);
         } else {
           console.error('[useAppConfig] Failed to load config:', response.code, response.message);

@@ -18,7 +18,7 @@ import {
 import { useTranslation } from "react-i18next";
 
 import BackButton from "../components/BackButton";
-import { k2api } from "../services/k2api";
+import { cloudApi } from "../services/cloud-api";
 import type { GitHubIssue, GitHubIssuesListResponse } from "../services/api-types";
 
 function formatRelativeTime(dateStr: string, t: (key: string) => string): string {
@@ -56,10 +56,7 @@ export default function Issues() {
     setError(null);
 
     try {
-      const response = await k2api().exec<GitHubIssuesListResponse>("api_request", {
-        method: "GET",
-        path: `/api/issues?page=${pageNum}&per_page=20`,
-      });
+      const response = await cloudApi.get<GitHubIssuesListResponse>(`/api/issues?page=${pageNum}&per_page=20`);
 
       if (response.code === 0 && response.data) {
         if (append) {

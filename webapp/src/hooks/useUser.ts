@@ -15,7 +15,8 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
-import { k2api } from '../services/k2api';
+import { cloudApi } from '../services/cloud-api';
+import { cacheStore } from '../services/cache-store';
 import { useAuthStore } from '../stores/auth.store';
 import type { DataUser } from '../services/api-types';
 
@@ -62,25 +63,40 @@ export function useUser(): UseUserReturn {
 
     setLoading(true);
     try {
-      const response = await k2api({
-        cache: {
-          key: 'api:user_info',
-          ttl: 3600, // 1小时
-          revalidate: !forceRefresh, // forceRefresh 时不使用 revalidate
-          allowExpired: !forceRefresh, // forceRefresh 时不允许过期缓存
-          forceRefresh: forceRefresh // 强制刷新时跳过缓存
+      // Check cache first (unless force refresh)
+      if (!forceRefresh) {
+        const cached = cacheStore.get<DataUser>('api:user_info');
+        if (cached) {
+          setUser(cached);
+          setLoading(false);
+          // Background revalidate
+          cloudApi.get<DataUser>('/api/user/info').then(res => {
+            if (res.code === 0 && res.data) {
+              cacheStore.set('api:user_info', res.data, { ttl: 3600 });
+              setUser(res.data);
+            }
+          });
+          return;
         }
-      }).exec<DataUser>('api_request', {
-        method: 'GET',
-        path: '/api/user/info'
-      });
+      }
+
+      const response = await cloudApi.get<DataUser>('/api/user/info');
 
       if (response.code === 0 && response.data) {
         setUser(response.data);
+        cacheStore.set('api:user_info', response.data, { ttl: 3600 });
       } else if (response.code === 401) {
-        // 401 已被 k2api 处理，这里只需清空 user
         setUser(null);
       } else {
+        // On failure, try expired cache as fallback
+        if (!forceRefresh) {
+          const expired = cacheStore.get<DataUser>('api:user_info', true);
+          if (expired) {
+            setUser(expired);
+            setLoading(false);
+            return;
+          }
+        }
         console.warn('[useUser] Failed to fetch user:', response.message);
       }
     } catch (error) {

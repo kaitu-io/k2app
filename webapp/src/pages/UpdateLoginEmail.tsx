@@ -12,7 +12,7 @@ import { useTranslation } from "react-i18next";
 
 import EmailTextField from "../components/EmailTextField";
 import BackButton from "../components/BackButton";
-import { k2api } from '../services/k2api';
+import { cloudApi } from '../services/cloud-api';
 import { delayedFocus } from '../utils/ui';
 
 export default function UpdateLoginEmail() {
@@ -47,11 +47,7 @@ export default function UpdateLoginEmail() {
     setError("");
     setSending(true);
     try {
-      await k2api().exec('api_request', {
-        method: 'POST',
-        path: '/api/user/email/send-bind-verification',
-        body: { email },
-      });
+      await cloudApi.post('/api/user/email/send-bind-verification', { email });
       setSuccess(true);
       setCountdown(60);
       const timer = setInterval(() => {
@@ -76,11 +72,7 @@ export default function UpdateLoginEmail() {
     setError("");
     setLoading(true);
     try {
-      await k2api().exec('api_request', {
-        method: 'POST',
-        path: '/api/user/email/update-email',
-        body: { email, verificationCode: code },
-      });
+      await cloudApi.post('/api/user/email/update-email', { email, verificationCode: code });
       setSuccess(true);
       navigate("/account", { replace: true });
     } catch (err) {

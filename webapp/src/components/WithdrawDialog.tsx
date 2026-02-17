@@ -24,7 +24,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useAlert } from '../stores';
 import type { WithdrawAccount, Withdraw, CreateWithdrawRequest } from '../services/api-types';
-import { k2api } from '../services/k2api';
+import { cloudApi } from '../services/cloud-api';
 
 interface WithdrawDialogProps {
   open: boolean;
@@ -109,11 +109,7 @@ export default function WithdrawDialog({
         userRemark: userRemark || undefined,
       };
 
-      const response = await k2api().exec<Withdraw>('api_request', {
-        method: 'POST',
-        path: '/api/wallet/withdraws',
-        body: requestData,
-      });
+      const response = await cloudApi.post<Withdraw>('/api/wallet/withdraws', requestData);
 
       if (response.code === 0) {
         showAlert(t('wallet:wallet.withdrawSuccess'), 'success');

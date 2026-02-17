@@ -20,7 +20,7 @@ import { useAlert } from "../stores";
 
 import type { AppConfig } from "../services/api-types";
 import BackButton from "../components/BackButton";
-import { k2api } from '../services/k2api';
+import { cloudApi } from '../services/cloud-api';
 
 // 默认的下载链接
 const DEFAULT_INSTALL_URL = "https://kaitu.io/install";
@@ -36,10 +36,7 @@ export default function DeviceInstall() {
     const loadAppConfig = async () => {
       try {
         // 获取应用配置
-        const response = await k2api().exec<AppConfig>('api_request', {
-          method: 'GET',
-          path: '/api/app/config',
-        });
+        const response = await cloudApi.get<AppConfig>('/api/app/config');
         if (response.code === 0 && response.data?.appLinks) {
           const { baseURL, installPath } = response.data.appLinks;
           if (baseURL && installPath) {

@@ -32,7 +32,8 @@ import {
   CheckCircle as CheckCircleIcon,
 } from "@mui/icons-material";
 import { getThemeColors } from '../theme/colors';
-import { k2api } from '../services/k2api';
+import { cloudApi } from '../services/cloud-api';
+import { cacheStore } from '../services/cache-store';
 
 // 斜角彩带组件
 function Ribbon({ text }: { text: string }) {
@@ -532,16 +533,12 @@ export default function Purchase() {
     setIsLoading(true);
     try {
       console.info('[Purchase] 创建订单请求: ' + JSON.stringify({ preview, plan, campaignCode, selectedForMyself, selectedMemberUUIDs }));
-      const response = await k2api().exec<{ order: Order; payUrl?: string }>('api_request', {
-        method: 'POST',
-        path: '/api/user/orders',
-        body: {
-          preview,
-          plan,
-          campaignCode: campaignCode || undefined,
-          forMyself: selectedForMyself,
-          forUserUUIDs: selectedMemberUUIDs.length > 0 ? selectedMemberUUIDs : undefined,
-        },
+      const response = await cloudApi.post<{ order: Order; payUrl?: string }>('/api/user/orders', {
+        preview,
+        plan,
+        campaignCode: campaignCode || undefined,
+        forMyself: selectedForMyself,
+        forUserUUIDs: selectedMemberUUIDs.length > 0 ? selectedMemberUUIDs : undefined,
       });
       console.info('[Purchase] 创建订单响应: ' + JSON.stringify(response));
       
@@ -611,19 +608,29 @@ export default function Purchase() {
         // - ttl: 5分钟缓存
         // - revalidate: SWR 模式，立即返回缓存同时后台刷新
         // - allowExpired: 网络失败时使用过期缓存
-        const response = await k2api({
-          cache: {
-            key: 'api:plans',
-            ttl: 300,
-            revalidate: true,
-            allowExpired: true,
-          }
-        }).exec<{ items: Plan[] }>('api_request', {
-          method: 'GET',
-          path: '/api/plans',
-        });
+        // Check cache first (SWR: return cache immediately, refresh in background)
+        const cachedPlans = cacheStore.get<{ items: Plan[] }>('api:plans');
+        if (cachedPlans) {
+          const fetchedPlans = cachedPlans.items || [];
+          setPlans(fetchedPlans);
+          selectDefaultPlan(fetchedPlans);
+          setPlansLoading(false);
+          // Background revalidate
+          cloudApi.get<{ items: Plan[] }>('/api/plans').then(res => {
+            if (res.code === 0 && res.data) {
+              cacheStore.set('api:plans', res.data, { ttl: 300 });
+              const updatedPlans = res.data.items || [];
+              setPlans(updatedPlans);
+              selectDefaultPlan(updatedPlans);
+            }
+          });
+          return;
+        }
+
+        const response = await cloudApi.get<{ items: Plan[] }>('/api/plans');
 
         if (response.code === 0 && response.data) {
+          cacheStore.set('api:plans', response.data, { ttl: 300 });
           const fetchedPlans = response.data.items || [];
           setPlans(fetchedPlans);
           selectDefaultPlan(fetchedPlans);
@@ -653,20 +660,26 @@ export default function Purchase() {
         // - ttl: 10 minutes cache
         // - revalidate: SWR mode, return cache immediately and refresh in background
         // - allowExpired: use expired cache as fallback on network failure
-        const response = await k2api({
-          cache: {
-            key: 'api:app_config',
-            ttl: 600,
-            revalidate: true,
-            allowExpired: true,
-          }
-        }).exec<AppConfig>('api_request', {
-          method: 'GET',
-          path: '/api/app/config',
-        });
+        // Check cache first (SWR: return cache immediately, refresh in background)
+        const cachedConfig = cacheStore.get<AppConfig>('api:app_config');
+        if (cachedConfig) {
+          setAppConfig(cachedConfig);
+          setAppConfigLoading(false);
+          // Background revalidate
+          cloudApi.get<AppConfig>('/api/app/config').then(res => {
+            if (res.code === 0 && res.data) {
+              cacheStore.set('api:app_config', res.data, { ttl: 600 });
+              setAppConfig(res.data);
+            }
+          });
+          return;
+        }
+
+        const response = await cloudApi.get<AppConfig>('/api/app/config');
         console.info('[Purchase] App 配置响应: ' + JSON.stringify(response));
 
         if (response.code === 0 && response.data) {
+          cacheStore.set('api:app_config', response.data, { ttl: 600 });
           setAppConfig(response.data);
         } else {
           console.error('[Purchase] 获取 App 配置失败:', response.message);

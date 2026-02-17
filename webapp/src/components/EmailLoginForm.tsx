@@ -30,8 +30,7 @@ import { useTranslation } from "react-i18next";
 import { useAuthStore } from "../stores";
 import { handleResponseError } from "../utils/errorCode";
 import type { SendCodeResponse, AuthResult } from "../services/api-types";
-import { k2api } from '../services/k2api';
-import { authService } from '../services/auth-service';
+import { cloudApi } from '../services/cloud-api';
 import { cacheStore } from '../services/cache-store';
 import { delayedFocus } from '../utils/ui';
 
@@ -127,13 +126,9 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
       setIsSubmitting(true);
       setError("");
 
-      const response = await k2api().exec<SendCodeResponse>('api_request', {
-        method: 'POST',
-        path: '/api/auth/code',
-        body: {
-          email,
-          language: i18n.language,
-        },
+      const response = await cloudApi.post<SendCodeResponse>('/api/auth/code', {
+        email,
+        language: i18n.language,
       });
 
       handleResponseError(
@@ -171,17 +166,13 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
       setIsSubmitting(true);
       setError("");
 
-      // Use api_request for login - tokens are automatically saved by k2api
-      const response = await k2api().exec<AuthResult>('api_request', {
-        method: 'POST',
-        path: '/api/auth/login',
-        body: {
-          email,
-          verificationCode: verificationCode,
-          remark: t("startup:startup.newDevice"),
-          inviteCode: inviteCode.trim() || undefined,
-          language: i18n.language,
-        },
+      // Tokens are automatically saved by cloudApi for auth paths
+      const response = await cloudApi.post<AuthResult>('/api/auth/login', {
+        email,
+        verificationCode: verificationCode,
+        remark: t("startup:startup.newDevice"),
+        inviteCode: inviteCode.trim() || undefined,
+        language: i18n.language,
       });
 
       handleResponseError(
@@ -216,21 +207,14 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
       setIsSubmitting(true);
       setError("");
 
-      const udid = await authService.getUdid();
-
       const deviceRemark = t("startup:startup.newDevice");
-      const response = await k2api().exec('api_request', {
-        method: 'POST',
-        path: '/api/auth/login/password',
-        body: {
-          email,
-          password,
-          udid,
-          remark: deviceRemark,
-          deviceName: deviceRemark,
-          platform: window._platform?.os || '',
-          language: i18n.language,
-        },
+      const response = await cloudApi.post('/api/auth/login/password', {
+        email,
+        password,
+        remark: deviceRemark,
+        deviceName: deviceRemark,
+        platform: window._platform?.os || '',
+        language: i18n.language,
       });
 
       handleResponseError(response.code, response.message, t, t("auth:auth.loginFailed"));

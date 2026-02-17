@@ -39,7 +39,7 @@ import { useInviteCodeActions } from "../hooks/useInviteCodeActions";
 import RetailerStatsOverview from "../components/RetailerStatsOverview";
 import InviteRule from "../components/InviteRule";
 import ExpirationSelectorPopover from "../components/ExpirationSelectorPopover";
-import { k2api } from '../services/k2api';
+import { cloudApi } from '../services/cloud-api';
 import { delayedFocus } from '../utils/ui';
 
 export default function Invite() {
@@ -90,10 +90,7 @@ export default function Invite() {
     try {
       setLoadingInviteCode(true);
       setInviteCodeError(null);
-      const response = await k2api().exec<MyInviteCode>('api_request', {
-        method: 'GET',
-        path: '/api/invite/my-codes/latest',
-      });
+      const response = await cloudApi.get<MyInviteCode>('/api/invite/my-codes/latest');
       if (response.code === 0 && response.data) {
         setInvite(response.data);
         setInviteCodeError(null);
@@ -161,10 +158,7 @@ export default function Invite() {
   // 生成新邀请码
   const handleAddCode = async () => {
     try {
-      const response = await k2api().exec<MyInviteCode>('api_request', {
-        method: 'POST',
-        path: '/api/invite/my-codes',
-      });
+      const response = await cloudApi.post<MyInviteCode>('/api/invite/my-codes');
       if (response.code === 0 && response.data) {
         setInvite(response.data);
         showAlert(t('invite:invite.newInviteCodeGenerated'), "success");
@@ -221,11 +215,7 @@ export default function Invite() {
     if (!invite) return;
 
     try {
-      const response = await k2api().exec<MyInviteCode>('api_request', {
-        method: 'PUT',
-        path: `/api/invite/my-codes/${invite.code}/remark`,
-        body: { remark: editRemark },
-      });
+      const response = await cloudApi.request<MyInviteCode>('PUT', `/api/invite/my-codes/${invite.code}/remark`, { remark: editRemark });
       if (response.code === 0) {
         setInvite({ ...invite, remark: editRemark });
         setEditing(false);

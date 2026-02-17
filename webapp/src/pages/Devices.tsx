@@ -29,7 +29,7 @@ import { Device } from "../services/api-types";
 
 import { useUser } from "../hooks/useUser";
 import { LoadingCard, EmptyDevices } from "../components/LoadingAndEmpty";
-import { k2api } from '../services/k2api';
+import { cloudApi } from '../services/cloud-api';
 import { delayedFocus } from '../utils/ui';
 
 export default function Devices() {
@@ -62,10 +62,7 @@ export default function Devices() {
     setLoading(true);
     try {
       console.debug(t('account:devices.loadDeviceListStart'));
-      const response = await k2api().exec<{ items: Device[] }>('api_request', {
-        method: 'GET',
-        path: '/api/user/devices',
-      });
+      const response = await cloudApi.get<{ items: Device[] }>('/api/user/devices');
       if (response.code !== 0 || !response.data) {
         console.error('[Devices] Load device list failed:', response.code, response.message);
         window._platform?.showToast?.(
@@ -97,10 +94,7 @@ export default function Devices() {
 
     try {
       console.debug(t('account:devices.deleteDeviceStart'));
-      const response = await k2api().exec('api_request', {
-        method: 'DELETE',
-        path: `/api/user/devices/${deviceToDelete.udid}`,
-      });
+      const response = await cloudApi.request('DELETE', `/api/user/devices/${deviceToDelete.udid}`);
       if (response.code !== 0) {
         console.error('[Devices] Delete device failed:', response.code, response.message);
         window._platform?.showToast?.(
@@ -143,11 +137,7 @@ export default function Devices() {
     }
     setSavingRemark(true);
     try {
-      const response = await k2api().exec('api_request', {
-        method: 'PUT',
-        path: `/api/user/devices/${device.udid}/remark`,
-        body: { remark: editingRemark.trim() },
-      });
+      const response = await cloudApi.request('PUT', `/api/user/devices/${device.udid}/remark`, { remark: editingRemark.trim() });
       if (response.code !== 0) {
         console.error('[Devices] Update remark failed:', response.code, response.message);
         window._platform?.showToast?.(
