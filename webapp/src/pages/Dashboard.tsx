@@ -29,7 +29,6 @@ import { useVPNStatus, useAuthStore } from "../stores";
 import { useUser } from "../hooks/useUser";
 
 import { useLoginDialogStore } from "../stores/login-dialog.store";
-import type { ConfigResponseData } from "../services/control-types";
 import { EmptyState } from '../components/LoadingAndEmpty';
 import { getCurrentAppConfig } from '../config/apps';
 import { HighlightedText } from '../components/HighlightedText';
@@ -78,33 +77,10 @@ export default function Dashboard() {
   const appConfig = getCurrentAppConfig();
   const proxyRuleConfig = appConfig.features.proxyRule || { visible: true, defaultValue: 'lightweight' };
 
-  // Local config state - fetch from control directly
-  const [config, setConfig] = useState<ConfigResponseData | null>(null);
-
-  // Load config on mount
-  useEffect(() => {
-    const loadConfig = async () => {
-      try {
-        const response = await window._k2.run('get_config');
-        if (response.code === 0 && response.data) {
-          setConfig(response.data as any);
-        }
-      } catch (error) {
-        console.error('Failed to load config:', error);
-      }
-    };
-    loadConfig();
-  }, []);
-
-  // Helper to get proxy rule
-  const getProxyRule = (cfg: ConfigResponseData | null): string => {
-    if (!cfg) return proxyRuleConfig.defaultValue;
-    return cfg.rule?.type || proxyRuleConfig.defaultValue;
-  };
-
   const [activeRuleType, setActiveRuleType] = useState<string>(
-    getProxyRule(config)
+    proxyRuleConfig.defaultValue
   );
+  const [activeDnsMode, setActiveDnsMode] = useState<string>('fake-ip');
   const [showAdvancedOptionsHelp, setShowAdvancedOptionsHelp] = useState(false);
 
   // Service failure alert tracking (silent mode - no UI feedback)
@@ -162,151 +138,32 @@ export default function Dashboard() {
     ];
   }, [t]);
 
-  // Initialize active rule type from config
-  useEffect(() => {
-    const rule = getProxyRule(config);
-    if (rule) {
-      setActiveRuleType(rule);
-    }
-  }, [config]);
-
-  // Parse active tunnel info from config - SINGLE SOURCE OF TRUTH
-  // Uses tunnel.items[0] when mode=items
-  const activeTunnelInfo = useMemo(() => {
-    const tunnelUrl = config?.tunnel?.mode === 'cloud' && config?.tunnel?.items?.[0]
-      ? config.tunnel.items[0]
-      : '';
-
-    if (!tunnelUrl) {
-      return { domain: '', name: '', anonymity: false, country: '' };
-    }
-
-    // Parse tunnel URL: k2v4://domain?ipv4=ip&port=port&country=XX#name
-    try {
-      // Handle k2v4:// protocol
-      const normalized = tunnelUrl.replace(/^k2v4:\/\//, 'https://');
-      const parsed = new URL(normalized);
-      const country = parsed.searchParams.get('country') || '';
-      const name = parsed.hash ? decodeURIComponent(parsed.hash.slice(1)) : parsed.hostname;
-      return {
-        domain: parsed.hostname.toLowerCase(),
-        name,
-        anonymity: parsed.searchParams.get('anonymity') === '1',
-        country,
-      };
-    } catch {
-      return { domain: '', name: '', anonymity: false, country: '' };
-    }
-  }, [config?.tunnel]);
-
   // For CollapsibleConnectionSection - track selected cloud tunnel
   const [selectedCloudTunnel, setSelectedCloudTunnel] = useState<Tunnel | null>(null);
 
-  // Sync selectedCloudTunnel when cloud tunnels are loaded
-  // This restores the selection state after app restart
-  const handleCloudTunnelsLoaded = useCallback((tunnels: Tunnel[]) => {
-    if (!activeTunnelInfo.domain || selectedCloudTunnel) return;
-
-    // Find the tunnel matching the persisted domain
-    const matchingTunnel = tunnels.find(
-      t => t.domain.toLowerCase() === activeTunnelInfo.domain
-    );
-    if (matchingTunnel) {
-      setSelectedCloudTunnel(matchingTunnel);
+  // Active tunnel info derived from selected cloud tunnel
+  const activeTunnelInfo = useMemo(() => {
+    if (!selectedCloudTunnel) {
+      return { domain: '', name: '', country: '' };
     }
-  }, [activeTunnelInfo.domain, selectedCloudTunnel]);
+    return {
+      domain: selectedCloudTunnel.domain.toLowerCase(),
+      name: selectedCloudTunnel.name || selectedCloudTunnel.domain,
+      country: selectedCloudTunnel.node?.country || '',
+    };
+  }, [selectedCloudTunnel]);
 
-  // Local wrapper method for updating configuration
-  // Only sends fields that service actually processes
-  const handleConfigUpdate = useCallback(
-    async (patch: Partial<ConfigResponseData>) => {
-      if (!config) return;
-
-      const mergedConfig = {
-        ...config,
-        ...patch,
-      };
-
-      // Only send fields that service actually handles (snake_case)
-      const newConfig: Partial<ConfigResponseData> = {
-        mode: mergedConfig.mode,
-        socks5_addr: mergedConfig.socks5_addr,
-        tunnel: mergedConfig.tunnel,
-        rule: mergedConfig.rule,
-        k2v4: mergedConfig.k2v4,
-        ipv6: mergedConfig.ipv6,
-        dns_mode: mergedConfig.dns_mode,
-        insecure: mergedConfig.insecure,
-      };
-
-      try {
-        console.debug('[Dashboard] Sending set_config: ' + JSON.stringify(newConfig));
-        const response = await window._k2.run('set_config', newConfig);
-        if (response.code === 0 && response.data) {
-          setConfig(response.data);
-          console.info('[Dashboard] Config updated successfully');
-        } else {
-          console.error('[Dashboard] Failed to update config:', response.code, response.message);
-        }
-      } catch (error) {
-        console.error('[Dashboard] Failed to update config:', error);
-      }
-    },
-    [config]
-  );
-
-  // Handle cloud tunnel selection
-  // Rust service expects tunnels as k2v4:// URL array
-  const handleCloudTunnelSelect = useCallback(async (tunnel: Tunnel, echConfigList?: string) => {
+  // Handle cloud tunnel selection (UI state only, no config persistence)
+  const handleCloudTunnelSelect = useCallback(async (tunnel: Tunnel, _echConfigList?: string) => {
     if (isServiceRunning) return;
-
-    // Build k2v4:// URL format for Rust service with country and name
-    const name = tunnel.name || tunnel.domain;
-    const country = tunnel.node?.country;
-
-    // Build URL with separate ipv4 and port parameters (canonical format)
-    // NOTE: sni is NOT needed - backend automatically uses domain for TLS SNI
-    let tunnelUrl = `k2v4://${tunnel.domain}?ipv4=${tunnel.node.ipv4}`;
-    if (tunnel.port && tunnel.port !== 443) {
-      tunnelUrl += `&port=${tunnel.port}`;
-    }
-    // Include ECH config list for K2v4 connections (enables encrypted SNI)
-    if (echConfigList) {
-      tunnelUrl += `&ech_config=${encodeURIComponent(echConfigList)}`;
-    }
-    if (country) {
-      tunnelUrl += `&country=${encodeURIComponent(country)}`;
-    }
-    tunnelUrl += `#${encodeURIComponent(name)}`;
-
-    console.debug('[Dashboard] Selecting cloud tunnel: ' + JSON.stringify({ domain: tunnel.domain, url: tunnelUrl }));
-
-    // Update selected cloud tunnel state for UI
+    console.debug('[Dashboard] Selecting cloud tunnel:', tunnel.domain);
     setSelectedCloudTunnel(tunnel);
+  }, [isServiceRunning]);
 
-    // Send bare URL - service reads credentials from k2v4 config at connection time
-    await handleConfigUpdate({
-      tunnel: {
-        mode: 'cloud',
-        items: [tunnelUrl],
-      },
-    });
-  }, [isServiceRunning, handleConfigUpdate]);
-
-  // Handle rule type selection
+  // Handle rule type selection (UI state only)
   const handleRuleTypeChange = useCallback(async (ruleType: string) => {
-    try {
-      // Use new rule structure (with backward compatibility via backend auto-migration)
-      await handleConfigUpdate({
-        rule: {
-          type: ruleType,
-          antiporn: config?.rule?.antiporn || false,
-        },
-      });
-    } catch (error) {
-      console.error('Failed to set rule type:', error);
-    }
-  }, [handleConfigUpdate, config?.rule?.antiporn]);
+    setActiveRuleType(ruleType);
+  }, []);
 
   // Handle Anonymity toggle
   // TODO: Anonymity feature not yet supported in Rust service k2v4:// format
@@ -363,11 +220,11 @@ export default function Dashboard() {
       if (!isDisconnected || isRetrying) {
         console.info('[Dashboard] Stopping VPN...');
         setOptimisticState('disconnecting');
-        await window._k2.run('stop');
+        await window._k2.run('down');
       } else {
         console.info('[Dashboard] Starting VPN...');
         setOptimisticState('connecting');
-        await window._k2.run('start');
+        await window._k2.run('up');
       }
     } catch (err) {
       console.error('Connection operation failed', err);
@@ -393,7 +250,7 @@ export default function Dashboard() {
         serviceState={serviceState}
         hasTunnelSelected={hasTunnelSelected}
         tunnelName={activeTunnelInfo.name}
-        tunnelCountry={activeTunnelInfo.country || selectedCloudTunnel?.node?.country}
+        tunnelCountry={activeTunnelInfo.country}
         onToggle={handleToggleConnection}
         error={error}
         isRetrying={isRetrying}
@@ -425,7 +282,6 @@ export default function Dashboard() {
               selectedDomain={activeTunnelInfo.domain}
               onSelect={handleCloudTunnelSelect}
               disabled={isServiceRunning}
-              onTunnelsLoaded={handleCloudTunnelsLoaded}
             />
           </Box>
         )}
@@ -567,7 +423,7 @@ export default function Dashboard() {
                 <FormControlLabel
                   control={
                     <Switch
-                      checked={activeTunnelInfo.anonymity}
+                      checked={false}
                       onChange={handleAnonymityToggle}
                       disabled={isServiceRunning || !hasTunnelSelected}
                     />
@@ -592,9 +448,9 @@ export default function Dashboard() {
                     {t('dashboard:dashboard.dnsModeDescription')}
                   </Typography>
                   <ToggleButtonGroup
-                    value={config?.dns_mode || 'fake-ip'}
+                    value={activeDnsMode}
                     exclusive
-                    onChange={(_e, value) => value && handleConfigUpdate({ dns_mode: value })}
+                    onChange={(_e, value) => value && setActiveDnsMode(value)}
                     disabled={isServiceRunning}
                     size="small"
                     fullWidth

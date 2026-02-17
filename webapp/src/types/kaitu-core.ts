@@ -232,11 +232,7 @@ export interface IPlatform {
  * which maps to the daemon's POST /api/core endpoint.
  *
  * Supported actions:
- * - start, stop, reconnect, status
- * - get_config, set_config, get_config_options
- * - version, fix_network
- * - speedtest, get_speedtest_status
- * - get_metrics, evaluate_tunnels
+ * - up, down, status, version
  */
 export interface IK2Vpn {
   /**
@@ -247,9 +243,9 @@ export interface IK2Vpn {
    * @returns Response
    *
    * @example
-   * await window._k2.run('start')
+   * await window._k2.run('up', config)
+   * await window._k2.run('down')
    * await window._k2.run('status')
-   * await window._k2.run('set_config', { proxyRule: 'global' })
    */
   run<T = any>(action: string, params?: any): Promise<SResponse<T>>;
 }
@@ -263,101 +259,3 @@ declare global {
   }
 }
 
-// ==================== VPN 状态类型 ====================
-
-/**
- * VPN 状态
- */
-export type VPNState =
-  | 'idle'
-  | 'connecting'
-  | 'connected'
-  | 'disconnecting'
-  | 'error';
-
-/**
- * VPN 错误信息
- */
-export interface VPNError {
-  code: string;
-  message: string;
-  details?: string;
-}
-
-/**
- * VPN 状态响应
- */
-export interface StatusResponseData {
-  state: VPNState;
-  startAt?: number;
-  error?: VPNError;
-  uploadBytes?: number;
-  downloadBytes?: number;
-  uploadSpeed?: number;
-  downloadSpeed?: number;
-}
-
-/**
- * VPN 配置
- */
-export interface ConfigResponseData {
-  proxyRule: 'global' | 'rule' | 'direct';
-  activeTunnelId?: string;
-  dnsMode?: 'auto' | 'custom';
-  customDns?: string[];
-}
-
-/**
- * 设置配置参数
- */
-export interface SetConfigParams {
-  proxyRule?: 'global' | 'rule' | 'direct';
-  activeTunnelId?: string;
-  dnsMode?: 'auto' | 'custom';
-  customDns?: string[];
-}
-
-/**
- * 版本信息
- */
-export interface VersionResponseData {
-  version: string;
-  commit?: string;
-  buildTime?: string;
-}
-
-/**
- * 简单隧道
- * URL 格式: k2wss://[token@]domain?addrs=ip1,ip2[&anonymity=1][&country=XX]#name
- */
-export interface SimpleTunnel {
-  id: string;
-  name: string;
-  url: string;
-  country?: string; // ISO 3166-1 alpha-2 国家代码
-}
-
-/**
- * 测速结果
- */
-export interface SpeedtestResponseData {
-  downloadSpeed: number;
-  uploadSpeed: number;
-  latency: number;
-}
-
-/**
- * 测速状态
- */
-export interface SpeedtestStatusResponseData {
-  running: boolean;
-  progress: number;
-  result?: SpeedtestResponseData;
-}
-
-/**
- * 日志设置
- */
-export interface LogSettingsResponseData {
-  level: 'TRACE' | 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
-}

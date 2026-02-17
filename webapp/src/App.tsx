@@ -33,7 +33,6 @@ import SubmitTicket from "./pages/SubmitTicket";
 import ServiceError from "./pages/ServiceError";
 import MemberManagement from "./pages/MemberManagement";
 import Changelog from "./pages/Changelog";
-import DeveloperSettings from "./pages/DeveloperSettings";
 import { getCurrentAppConfig } from "./config/apps";
 
 
@@ -60,7 +59,6 @@ function AppRoutes() {
           <Route path="purchase" element={<Purchase />} />
           <Route path="tunnels" element={<Tunnels />} />
           <Route path="changelog" element={<Changelog />} />
-          <Route path="developer-settings" element={<DeveloperSettings />} />
           <Route path="service-error" element={<ServiceError />} />
           <Route path="devices" element={<LoginRequiredGuard pagePath="/devices"><Devices /></LoginRequiredGuard>} />
 

@@ -84,37 +84,14 @@ Response data:
   "state": "connected",
   "connected_at": "2026-02-14T10:30:00Z",
   "uptime_seconds": 3600,
-  "wire_url": "k2v5://...",
+  "config": { "server": "k2v5://...", "rule": {...}, ... },
   "error": ""
 }
 ```
 
 Possible `state` values: `stopped`, `connecting`, `connected`, `reconnecting`, `disconnecting`, `error`.
 
-#### action: "reconnect" — Reconnect with saved config
-
-```json
-{ "action": "reconnect" }
-```
-
-Response: `{"code": 0, "message": "reconnecting"}`
-
-Error: `510` if no saved config.
-
-#### action: "get_config" — Saved config
-
-```json
-{ "action": "get_config" }
-```
-
-Response data:
-
-```json
-{
-  "wire_url": "k2v5://...",
-  "config_path": "/path/to/config.yaml"
-}
-```
+When connected, `config` contains the active `ClientConfig` that was passed to `up`.
 
 #### action: "version" — Binary info
 

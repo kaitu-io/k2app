@@ -71,10 +71,10 @@ Frontend uses two separate globals injected before app loads. They have distinct
 │   run(action, params)│  │   os, isDesktop, isMobile       │
 │                      │  │   version                       │
 │ VPN actions:         │  │   storage: ISecureStorage        │
-│   start, stop,       │  │   getUdid()                     │
-│   status, reconnect, │  │   writeClipboard(), readClipboard│
-│   evaluate_tunnels,  │  │   openExternal()                │
-│   speedtest, etc.    │  │   updater?: IUpdater            │
+│   up, down,          │  │   getUdid()                     │
+│   status, version    │  │   writeClipboard(), readClipboard│
+│                      │  │   openExternal()                │
+│                      │  │   updater?: IUpdater            │
 └──────────┬───────────┘  │   debug(), warn()               │
            │              └────────────────────────────────┘
            ↓
@@ -107,7 +107,7 @@ Frontend uses two separate globals injected before app loads. They have distinct
 
 ### VPN Actions (via window._k2.run)
 
-`start`, `stop`, `status`, `reconnect`, `get_config`, `set_config`, `get_config_options`, `speedtest`, `get_speedtest_status`, `fix_network`, `version`, `get_metrics`, `evaluate_tunnels`
+`up`, `down`, `status`, `version`
 
 ### API Calls (via cloudApi / k2api)
 
@@ -129,10 +129,10 @@ webapp/
 │   ├── types/              # Type definitions (kaitu-core.ts = IK2Vpn + IPlatform + IUpdater)
 │   ├── services/           # cloudApi, k2api, authService, cacheStore, web-platform, standalone-k2
 │   ├── core/               # Core module (getK2, isK2Ready, waitForK2, polling)
-│   ├── stores/             # Zustand stores (vpn, auth, alert, layout, dashboard, evaluation, login-dialog)
+│   ├── stores/             # Zustand stores (vpn, auth, alert, layout, dashboard, login-dialog)
 │   ├── pages/              # Route pages
 │   ├── components/         # UI components
-│   ├── hooks/              # Custom hooks (useEvaluation, useUser, useAppConfig, useUpdater, etc.)
+│   ├── hooks/              # Custom hooks (useUser, useAppConfig, useUpdater, etc.)
 │   ├── i18n/locales/       # Locale files (zh-CN, en-US, ja, zh-TW, zh-HK, en-AU, en-GB)
 │   ├── utils/              # Utilities (errorHandler, versionCompare, tunnel-sort, country, time)
 │   ├── config/             # App configuration (apps.ts — feature flags, app config)
@@ -170,7 +170,7 @@ webapp/
 | `en-AU` | English (AU) | Manual translation |
 | `en-GB` | English (GB) | Manual translation |
 
-Namespaces: common, dashboard, auth, purchase, invite, account, feedback, developer, nav, retailer, startup, theme, ticket, wallet
+Namespaces: common, dashboard, auth, purchase, invite, account, feedback, nav, retailer, startup, theme, ticket, wallet
 
 ---
 
@@ -181,7 +181,7 @@ Namespaces: common, dashboard, auth, purchase, invite, account, feedback, develo
 - **LoginDialog**: Global modal via `login-dialog.store`. Guards call `openLoginDialog()` instead of redirecting
 - **Feature flags**: `getCurrentAppConfig().features` controls route/tab visibility
 - **Dev proxy**: Vite proxies `/api/*` and `/ping` to `:1777`. Production uses absolute URL
-- **Config-driven connect**: `_k2.run('start', config)` where config is assembled from server + user preferences
+- **Config-driven connect**: `_k2.run('up', config)` where config is assembled from server + user preferences
 - **AuthGate**: Wraps all routes — checks service readiness + version match before rendering
 
 ---

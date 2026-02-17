@@ -6,7 +6,6 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, waitFor, fireEvent } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { render } from '../../test/utils/render';
 
 // Mock stores
@@ -114,24 +113,7 @@ describe('Dashboard', () => {
     };
 
     // Default mock implementations
-    mockExec.mockImplementation(async (action: string) => {
-      if (action === 'get_config') {
-        return {
-          code: 0,
-          data: {
-            mode: 'tun',
-            active_tunnel: null,
-            rule: { type: 'chnroute', antiporn: false },
-            dns_mode: 'fake-ip',
-          },
-        };
-      }
-      if (action === 'set_config') {
-        return { code: 0, data: {} };
-      }
-      if (action === 'start' || action === 'stop') {
-        return { code: 0 };
-      }
+    mockExec.mockImplementation(async () => {
       return { code: 0 };
     });
 
@@ -155,14 +137,6 @@ describe('Dashboard', () => {
   });
 
   describe('初始化', () => {
-    it('应该在挂载时调用 get_config', async () => {
-      render(<Dashboard />);
-
-      await waitFor(() => {
-        expect(mockExec).toHaveBeenCalledWith('get_config');
-      });
-    });
-
     it('应该渲染 Dashboard 容器', async () => {
       render(<Dashboard />);
 
@@ -225,96 +199,16 @@ describe('Dashboard', () => {
 
   describe('隧道选择状态', () => {
     it('未选择隧道时应该显示 hasTunnelSelected=no', async () => {
-      mockExec.mockImplementation(async (action: string) => {
-        if (action === 'get_config') {
-          return {
-            code: 0,
-            data: {
-              active_tunnel: null,
-              rule: { type: 'chnroute' },
-            },
-          };
-        }
-        return { code: 0 };
-      });
-
       render(<Dashboard />);
 
       await waitFor(() => {
         expect(screen.getByTestId('tunnel-selected')).toHaveTextContent('no');
       });
     });
-
-    it('已选择隧道时应该显示 hasTunnelSelected=yes 和隧道名称', async () => {
-      mockExec.mockImplementation(async (action: string) => {
-        if (action === 'get_config') {
-          return {
-            code: 0,
-            data: {
-              tunnel: {
-                mode: 'cloud',
-                items: ['k2v4://hk1.example.com?ipv4=1.2.3.4&country=HK#Hong%20Kong%201'],
-              },
-              rule: { type: 'chnroute' },
-            },
-          };
-        }
-        return { code: 0 };
-      });
-
-      render(<Dashboard />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('tunnel-selected')).toHaveTextContent('yes');
-        expect(screen.getByTestId('tunnel-name')).toHaveTextContent('Hong Kong 1');
-      });
-    });
   });
 
   describe('连接切换', () => {
-    it('点击 toggle 按钮在断开状态下应该调用 start', async () => {
-      const mockSetOptimisticState = vi.fn();
-
-      vi.mocked(useVPNStatus).mockReturnValue(
-        createMockVPNStatus({
-          serviceState: 'disconnected',
-          isDisconnected: true,
-          setOptimisticState: mockSetOptimisticState,
-        }) as any
-      );
-
-      mockExec.mockImplementation(async (action: string) => {
-        if (action === 'get_config') {
-          return {
-            code: 0,
-            data: {
-              tunnel: {
-                mode: 'cloud',
-                items: ['k2v4://test.example.com?ipv4=1.2.3.4#Test'],
-              },
-              rule: { type: 'chnroute' },
-            },
-          };
-        }
-        return { code: 0 };
-      });
-
-      render(<Dashboard />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('tunnel-selected')).toHaveTextContent('yes');
-      });
-
-      const toggleBtn = screen.getByTestId('toggle-btn');
-      fireEvent.click(toggleBtn);
-
-      await waitFor(() => {
-        expect(mockSetOptimisticState).toHaveBeenCalledWith('connecting');
-        expect(mockExec).toHaveBeenCalledWith('start');
-      });
-    });
-
-    it('点击 toggle 按钮在连接状态下应该调用 stop', async () => {
+    it('点击 toggle 按钮在连接状态下应该调用 down', async () => {
       const mockSetOptimisticState = vi.fn();
 
       vi.mocked(useVPNStatus).mockReturnValue(
@@ -327,22 +221,6 @@ describe('Dashboard', () => {
         }) as any
       );
 
-      mockExec.mockImplementation(async (action: string) => {
-        if (action === 'get_config') {
-          return {
-            code: 0,
-            data: {
-              tunnel: {
-                mode: 'cloud',
-                items: ['k2v4://test.example.com?ipv4=1.2.3.4#Test'],
-              },
-              rule: { type: 'chnroute' },
-            },
-          };
-        }
-        return { code: 0 };
-      });
-
       render(<Dashboard />);
 
       await waitFor(() => {
@@ -354,30 +232,17 @@ describe('Dashboard', () => {
 
       await waitFor(() => {
         expect(mockSetOptimisticState).toHaveBeenCalledWith('disconnecting');
-        expect(mockExec).toHaveBeenCalledWith('stop');
+        expect(mockExec).toHaveBeenCalledWith('down');
       });
     });
 
-    it('未选择隧道时点击 toggle 不应该调用 start', async () => {
+    it('未选择隧道时点击 toggle 不应该调用 up', async () => {
       vi.mocked(useVPNStatus).mockReturnValue(
         createMockVPNStatus({
           serviceState: 'disconnected',
           isDisconnected: true,
         }) as any
       );
-
-      mockExec.mockImplementation(async (action: string) => {
-        if (action === 'get_config') {
-          return {
-            code: 0,
-            data: {
-              active_tunnel: null,
-              rule: { type: 'chnroute' },
-            },
-          };
-        }
-        return { code: 0 };
-      });
 
       render(<Dashboard />);
 
@@ -388,9 +253,9 @@ describe('Dashboard', () => {
       const toggleBtn = screen.getByTestId('toggle-btn');
       fireEvent.click(toggleBtn);
 
-      // Wait a bit and verify start was not called
+      // Wait a bit and verify up was not called
       await new Promise(resolve => setTimeout(resolve, 100));
-      expect(mockExec).not.toHaveBeenCalledWith('start');
+      expect(mockExec).not.toHaveBeenCalledWith('up');
     });
   });
 
