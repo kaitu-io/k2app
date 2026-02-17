@@ -224,13 +224,23 @@ export default function Dashboard() {
       } else {
         console.info('[Dashboard] Starting VPN...');
         setOptimisticState('connecting');
-        await window._k2.run('up');
+
+        // Assemble minimal ClientConfig — Go's config.SetDefaults() fills the rest
+        const config: Record<string, any> = {};
+        if (selectedCloudTunnel?.url) {
+          config.server = selectedCloudTunnel.url;
+        }
+        config.rule = {
+          global: activeRuleType === 'global',
+        };
+
+        await window._k2.run('up', config);
       }
     } catch (err) {
       console.error('Connection operation failed', err);
       setOptimisticState(null);
     }
-  }, [isDisconnected, isRetrying, activeTunnelInfo.domain, setOptimisticState]);
+  }, [isDisconnected, isRetrying, activeTunnelInfo.domain, selectedCloudTunnel, activeRuleType, setOptimisticState]);
 
   // Check if any tunnel is selected (for Anonymity toggle)
   const hasTunnelSelected = !!activeTunnelInfo.domain;
