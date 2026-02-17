@@ -6,7 +6,7 @@
 |-----------|------------------------------------------|
 | Feature   | mobile-webapp-bridge                     |
 | Version   | v2                                       |
-| Status    | spec                                     |
+| Status    | implemented                              |
 | Created   | 2026-02-14                               |
 | Updated   | 2026-02-17                               |
 
