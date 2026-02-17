@@ -159,30 +159,26 @@ describe('IPlatform has getUdid', () => {
   });
 
   it('should have getUdid as a required (non-optional) property', () => {
-    // After the split, getUdid should be REQUIRED on IPlatform (not optional).
-    // Currently it's optional (`getUdid?()`), so this test will FAIL.
-    //
-    // We create an IPlatform WITHOUT getUdid. If the property is required,
-    // TypeScript won't compile. At runtime, we verify a "complete" platform
-    // object always has getUdid defined.
+    // After the split, getUdid is REQUIRED on IPlatform (not optional).
+    // A valid IPlatform MUST include getUdid — omitting it is a compile error.
+    // We verify at runtime that a properly constructed IPlatform has getUdid.
     const platform: IPlatform = {
       os: 'web',
       isDesktop: false,
       isMobile: false,
       version: '1.0.0',
-    } as IPlatform;
+      getUdid: async () => 'test-udid',
+      storage: {
+        get: async () => null,
+        set: async () => {},
+        remove: async () => {},
+        has: async () => false,
+        clear: async () => {},
+        keys: async () => [],
+      },
+    };
 
-    // If getUdid is required, this object is invalid. We verify at runtime:
-    // a properly constructed IPlatform MUST have getUdid defined (not undefined).
-    // The current type has `getUdid?()` which allows undefined — this test
-    // asserts the NEW contract where it's required.
-    //
-    // We test by checking that the type system requires it:
-    // create a "valid" IPlatform and ensure getUdid is always present.
-    // For the RED phase, we test that the CURRENT type fails this requirement.
-
-    // In the current code, IPlatform.getUdid is optional, so this will be undefined
-    // After the split, it should be required, so this should never be undefined
+    // getUdid is required — a valid IPlatform always has it defined
     expect(platform.getUdid).toBeDefined();
   });
 });
@@ -213,17 +209,26 @@ describe('IPlatform has storage', () => {
   });
 
   it('should have storage as a required (non-optional) property', () => {
-    // After the split, storage should be REQUIRED on IPlatform.
-    // Currently it's optional (`storage?: ISecureStorage`).
+    // After the split, storage is REQUIRED on IPlatform (not optional).
+    // A valid IPlatform MUST include storage — omitting it is a compile error.
+    // We verify at runtime that a properly constructed IPlatform has storage.
     const platform: IPlatform = {
       os: 'web',
       isDesktop: false,
       isMobile: false,
       version: '1.0.0',
-    } as IPlatform;
+      getUdid: async () => 'test-udid',
+      storage: {
+        get: async () => null,
+        set: async () => {},
+        remove: async () => {},
+        has: async () => false,
+        clear: async () => {},
+        keys: async () => [],
+      },
+    };
 
-    // Same pattern as getUdid: test that a "bare" IPlatform has storage defined
-    // This will FAIL with current optional type until we make it required
+    // storage is required — a valid IPlatform always has it defined
     expect(platform.storage).toBeDefined();
   });
 });
