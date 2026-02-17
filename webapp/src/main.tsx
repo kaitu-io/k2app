@@ -28,12 +28,19 @@ async function main() {
     console.info('[WebApp] Tauri detected, injecting Tauri bridge...');
     const { injectTauriGlobals } = await import('./services/tauri-k2');
     await injectTauriGlobals();
-  } else if (!window._k2 || !window._platform) {
-    console.warn('[WebApp] Globals missing, injecting standalone implementation...');
-    const { ensureK2Injected } = await import('./services/standalone-k2');
-    ensureK2Injected();
   } else {
-    console.info('[WebApp] K2 and platform already injected by host');
+    const { Capacitor } = await import('@capacitor/core');
+    if (Capacitor.isNativePlatform()) {
+      console.info('[WebApp] Capacitor native detected, injecting Capacitor bridge...');
+      const { injectCapacitorGlobals } = await import('./services/capacitor-k2');
+      await injectCapacitorGlobals();
+    } else if (!window._k2 || !window._platform) {
+      console.warn('[WebApp] Globals missing, injecting standalone implementation...');
+      const { ensureK2Injected } = await import('./services/standalone-k2');
+      ensureK2Injected();
+    } else {
+      console.info('[WebApp] K2 and platform already injected by host');
+    }
   }
 
   // Log source
