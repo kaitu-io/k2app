@@ -13,6 +13,7 @@ import (
 
 	"github.com/kaitu-io/k2/core/dns"
 	"github.com/kaitu-io/k2/provider"
+	"github.com/kaitu-io/k2/wire"
 	"github.com/kaitu-io/k2rule"
 )
 
@@ -602,6 +603,98 @@ func TestDNSHandler_NilDNS_PassThrough(t *testing.T) {
 	calls := inner.getUDPCalls()
 	if len(calls) != 1 || calls[0] != "8.8.8.8:53" {
 		t.Fatalf("inner.HandleUDP calls = %v, want [8.8.8.8:53]", calls)
+	}
+}
+
+// ==========================================================================
+// OnNetworkChanged tests
+// ==========================================================================
+
+func TestEngine_OnNetworkChanged_WhenConnected(t *testing.T) {
+	e := New()
+	h := &mockEventHandler{}
+	e.SetEventHandler(h)
+
+	// Simulate connected state with a TransportManager.
+	tm := &wire.TransportManager{}
+	e.mu.Lock()
+	e.state = StateConnected
+	e.tm = tm
+	e.mu.Unlock()
+
+	e.OnNetworkChanged()
+
+	states := h.getStates()
+	if len(states) != 2 {
+		t.Fatalf("expected 2 state changes, got %d: %v", len(states), states)
+	}
+	if states[0] != "reconnecting" {
+		t.Fatalf("first state = %q, want %q", states[0], "reconnecting")
+	}
+	if states[1] != StateConnected {
+		t.Fatalf("second state = %q, want %q", states[1], StateConnected)
+	}
+
+	// Engine's own state should remain connected throughout.
+	if e.Status() != StateConnected {
+		t.Fatalf("engine state = %q, want %q", e.Status(), StateConnected)
+	}
+}
+
+func TestEngine_OnNetworkChanged_WhenDisconnected(t *testing.T) {
+	e := New()
+	h := &mockEventHandler{}
+	e.SetEventHandler(h)
+
+	// Engine starts disconnected by default.
+	e.OnNetworkChanged()
+
+	states := h.getStates()
+	if len(states) != 0 {
+		t.Fatalf("expected 0 state changes when disconnected, got %d: %v", len(states), states)
+	}
+}
+
+func TestEngine_OnNetworkChanged_WhenConnecting(t *testing.T) {
+	e := New()
+	h := &mockEventHandler{}
+	e.SetEventHandler(h)
+
+	// Simulate connecting state.
+	e.mu.Lock()
+	e.state = StateConnecting
+	e.mu.Unlock()
+
+	e.OnNetworkChanged()
+
+	states := h.getStates()
+	if len(states) != 0 {
+		t.Fatalf("expected 0 state changes when connecting, got %d: %v", len(states), states)
+	}
+}
+
+func TestEngine_OnNetworkChanged_NilTransportManager(t *testing.T) {
+	e := New()
+	h := &mockEventHandler{}
+	e.SetEventHandler(h)
+
+	// Connected but no TransportManager (edge case).
+	e.mu.Lock()
+	e.state = StateConnected
+	e.tm = nil
+	e.mu.Unlock()
+
+	e.OnNetworkChanged()
+
+	states := h.getStates()
+	if len(states) != 2 {
+		t.Fatalf("expected 2 state changes, got %d: %v", len(states), states)
+	}
+	if states[0] != "reconnecting" {
+		t.Fatalf("first state = %q, want %q", states[0], "reconnecting")
+	}
+	if states[1] != StateConnected {
+		t.Fatalf("second state = %q, want %q", states[1], StateConnected)
 	}
 }
 
