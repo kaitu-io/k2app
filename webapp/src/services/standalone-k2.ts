@@ -91,10 +91,12 @@ export function getK2Source(): 'tauri' | 'capacitor' | 'standalone' | 'none' {
 
   const platform = window._platform;
 
-  if (platform.version === 'standalone') {
-    return 'standalone';
+  // Tauri: isDesktop + non-standalone version
+  if (platform.isDesktop && platform.version !== 'standalone') {
+    return 'tauri';
   }
 
+  // Capacitor: mobile + non-web OS
   if (platform.isMobile && platform.os !== 'web') {
     return 'capacitor';
   }

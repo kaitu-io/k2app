@@ -122,6 +122,50 @@ pub fn stop_vpn() {
     }
 }
 
+/// IPC command: proxy VPN action to k2 daemon
+/// Called from webapp as window.__TAURI__.core.invoke('daemon_exec', {action, params})
+#[tauri::command]
+pub async fn daemon_exec(
+    action: String,
+    params: Option<serde_json::Value>,
+) -> Result<ServiceResponse, String> {
+    tokio::task::spawn_blocking(move || core_action(&action, params))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
+}
+
+/// IPC command: get device UDID from daemon
+#[tauri::command]
+pub async fn get_udid() -> Result<ServiceResponse, String> {
+    tokio::task::spawn_blocking(|| {
+        let url = format!("{}/api/device/udid", SERVICE_BASE_URL);
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
+            .build()
+            .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+        let response = client
+            .get(&url)
+            .send()
+            .map_err(|e| format!("Failed to get UDID: {}", e))?;
+
+        response
+            .json::<ServiceResponse>()
+            .map_err(|e| format!("Failed to parse UDID response: {}", e))
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+
+/// IPC command: get platform info (no HTTP, pure local)
+#[tauri::command]
+pub fn get_platform_info() -> serde_json::Value {
+    serde_json::json!({
+        "os": std::env::consts::OS,
+        "version": env!("CARGO_PKG_VERSION"),
+    })
+}
+
 #[tauri::command]
 pub async fn admin_reinstall_service() -> Result<String, String> {
     log::info!("[service] Admin service install requested");

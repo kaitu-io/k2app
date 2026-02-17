@@ -1,6 +1,6 @@
 # Feature: Tauri Desktop Bridge
 
-**Status**: Planned
+**Status**: Implemented
 **Combines**: `tauri-webview-cannot-fetch-external-https` + `tauri-desktop-missing-k2-globals-injection`
 
 ## Problem

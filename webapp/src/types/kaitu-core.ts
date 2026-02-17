@@ -256,6 +256,7 @@ declare global {
   interface Window {
     _k2: IK2Vpn;
     _platform: IPlatform;
+    __TAURI__?: any;
   }
 }
 

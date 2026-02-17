@@ -1,0 +1,13 @@
+{
+  "identifier": "default",
+  "description": "Default capabilities for Kaitu desktop app",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "http:default",
+    "shell:allow-open",
+    "updater:default",
+    "process:default",
+    "autostart:default"
+  ]
+}
