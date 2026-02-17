@@ -499,10 +499,9 @@ func AdminRequired() gin.HandlerFunc {
 	}
 }
 
-// asynqmonAuthMiddleware 用于 asynqmon 监控面板的认证中间件
-// 与 AdminRequired() 不同，它在认证失败时返回 HTML 页面而不是 JSON 错误
-// 这样避免了重定向循环，同时保持了 asynqmon UI 的正常显示
-// TODO: 这是临时方案，应该在 qtoolkit/asynq 层面提供更好的认证支持
+// asynqmonAuthMiddleware provides authentication for the Asynq monitoring dashboard.
+// NOTE: Returns HTML responses (not JSON) because asynqmon is a browser-facing monitoring UI.
+// Users access it directly in their browser, so HTML error pages provide better UX than raw JSON.
 func asynqmonAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		user := ReqUser(c)

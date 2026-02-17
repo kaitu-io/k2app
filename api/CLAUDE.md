@@ -178,6 +178,87 @@ cd api/cmd && ./kaitu-center start -f -c ../config.yml   # Foreground mode
 ./kaitu-center health-check -c ../config.yml
 ```
 
+## Constitution (Coding Conventions)
+
+### Response Convention
+
+- **HTTP status always 200** — error state in JSON `code` field. Never return HTTP 4xx/5xx from business endpoints.
+- Use `Success(c, data)` for single objects, `List(c, items, pagination)` for paginated lists, `ItemsAll(c, items)` for unpaginated lists, `SuccessEmpty(c)` for void success.
+- Use `Error(c, ErrorCode, "message")` for errors. Use predefined constants from `response.go` (e.g., `ErrorNotFound`, `ErrorInvalidArgument`). Never invent ad-hoc numeric codes.
+- For rich error returns from logic layer, use `ErrorE(c, e(...))` with the `rerr` pattern.
+- **Exception — webhooks**: Payment provider callbacks (e.g., `api_webhook.go`) return HTTP status codes directly because upstream providers use HTTP status for retry logic. Document this exception with a comment at the handler top.
+- **Exception — asynqmon**: The embedded Asynq monitoring UI at `/app/asynqmon` returns HTML. This is intentional for its browser-based UI.
+
+### Logging Convention
+
+- Use `log.Errorf(c, ...)`, `log.Warnf(c, ...)`, `log.Debugf(c, ...)` from `qtoolkit/log`.
+- **No redundant prefixes**: Write `log.Errorf(c, "failed to get tunnels: %v", err)`, NOT `log.Errorf(c, "[ERROR] failed to get tunnels: %v", err)`. The log level already carries the severity.
+- **No Tracef for debug info**: Use `log.Debugf`, not `log.Tracef`. Trace is for protocol-level wire dumps, not application debug messages.
+- Always pass `c` (gin.Context) as first arg to enable request-scoped tracing.
+
+### File Naming Convention
+
+| Pattern | Purpose |
+|---------|---------|
+| `api_*.go` | HTTP handlers (public API) |
+| `api_admin_*.go` | Admin HTTP handlers |
+| `logic_*.go` | Business logic (called by handlers) |
+| `model*.go` | GORM data models |
+| `handler_*.go` | Asynq async task handlers |
+| `worker_*.go` | Background workers + cron jobs |
+| `slave_api*.go` | Internal slave node APIs |
+| `type.go` | Request/response types, enums |
+| `response.go` | Response helpers + error codes |
+| `middleware.go` | All middleware |
+| `route.go` | Route registration |
+| `*_test.go` | Tests (same package, `center` package) |
+
+### Test Convention
+
+**Three test tiers:**
+
+| Tier | DB | Config | Guard | Example |
+|------|-----|--------|-------|---------|
+| Unit | None | None | None | Pure function tests |
+| Mock DB | `SetupMockDB(t)` | `testInitConfig()` (auto) | None | Handler tests with go-sqlmock |
+| Integration | Real MySQL | `config.yml` | `skipIfNoConfig(t)` | Full DB round-trip tests |
+
+**Rules:**
+
+- **Always use `SetupMockDB(t)`** for mock DB tests. This is the canonical helper in `mock_db_test.go`. It uses `SkipInitializeWithVersion: true` and `QueryMatcherRegexp`.
+- **Guard integration tests with `skipIfNoConfig(t)`** at the top of each test function. This allows tests to run in CI without `config.yml`.
+- **Never panic on missing config**. `testInitConfig()` gracefully sets `testConfigAvailable = false` when `config.yml` is absent. Tests that need config must call `skipIfNoConfig(t)`.
+- **Use `t.Cleanup()`** for teardown, not `defer` in test body.
+- **Use `t.Helper()`** in all test helper functions.
+- **Use testify `assert`/`require`** for assertions, not raw `if` checks.
+- **Avoid zero-value assertions**: `assert.Equal(t, 0, resp.Code)` passes trivially on unmarshal failure. Always verify the positive case.
+- **Test file naming**: `api_*_test.go` for handler tests, `db_mock_test.go` for shared mock utilities, `mock_db_test.go` for MockDB struct.
+
+### GORM Model Convention
+
+- Always specify `column:` tag when Go field name auto-derivation differs from DB column. Example: `DeviceUDID` → GORM derives `device_ud_id`, but DB has `device_udid`. Fix: `gorm:"column:device_udid"`.
+- Use struct-based queries, not raw SQL strings.
+- Soft delete via `gorm.DeletedAt` field with index.
+- Timestamps: `CreatedAt`/`UpdatedAt` auto-managed by GORM.
+
+### Route Convention
+
+- All business routes under `/api/` prefix.
+- Admin routes under `/app/` prefix.
+- Slave node routes under `/slave/` prefix.
+- CSR routes under `/csr/` prefix.
+- Test routers must match production route prefixes. Use `/api/strategy/rules`, not `/api/k2v4/strategy/rules`.
+
+### Import Convention
+
+- Standard library first, then third-party, then internal packages.
+- Use blank identifier import only for side effects (e.g., `_ "embed"` in templates package).
+
+### Deprecated Stdlib
+
+- `strings.Title` is deprecated. Use manual ASCII title-case: `strings.ToUpper(s[:1]) + strings.ToLower(s[1:])`.
+- `golang.org/x/text/cases` is overkill for ASCII-only identifiers.
+
 ## Related Docs
 
 - [Client Architecture](../CLAUDE.md)

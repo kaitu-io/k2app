@@ -15,14 +15,11 @@ import (
 // =====================================================================
 
 func TestMockDB_PushToken_Create(t *testing.T) {
-	gormDB, mock, cleanup := setupMockDB(t)
-	defer cleanup()
+	m := SetupMockDB(t)
 
 	t.Run("Create push token successfully", func(t *testing.T) {
-		mock.ExpectBegin()
-		mock.ExpectExec(regexp.QuoteMeta("INSERT INTO `push_tokens`")).
+		m.Mock.ExpectExec(regexp.QuoteMeta("INSERT INTO `push_tokens`")).
 			WillReturnResult(sqlmock.NewResult(1, 1))
-		mock.ExpectCommit()
 
 		sandbox := false
 		token := PushToken{
@@ -42,16 +39,14 @@ func TestMockDB_PushToken_Create(t *testing.T) {
 			LastSeenAt:  time.Now().Unix(),
 		}
 
-		err := gormDB.Create(&token).Error
+		err := m.DB.Create(&token).Error
 		assert.NoError(t, err)
-		assert.NoError(t, mock.ExpectationsWereMet())
+		assert.NoError(t, m.Mock.ExpectationsWereMet())
 	})
 
 	t.Run("Create push token for Android FCM", func(t *testing.T) {
-		mock.ExpectBegin()
-		mock.ExpectExec(regexp.QuoteMeta("INSERT INTO `push_tokens`")).
+		m.Mock.ExpectExec(regexp.QuoteMeta("INSERT INTO `push_tokens`")).
 			WillReturnResult(sqlmock.NewResult(2, 1))
-		mock.ExpectCommit()
 
 		token := PushToken{
 			UserID:      uint64(2),
@@ -65,16 +60,14 @@ func TestMockDB_PushToken_Create(t *testing.T) {
 			LastSeenAt:  time.Now().Unix(),
 		}
 
-		err := gormDB.Create(&token).Error
+		err := m.DB.Create(&token).Error
 		assert.NoError(t, err)
-		assert.NoError(t, mock.ExpectationsWereMet())
+		assert.NoError(t, m.Mock.ExpectationsWereMet())
 	})
 
 	t.Run("Create push token for Android JPush (China)", func(t *testing.T) {
-		mock.ExpectBegin()
-		mock.ExpectExec(regexp.QuoteMeta("INSERT INTO `push_tokens`")).
+		m.Mock.ExpectExec(regexp.QuoteMeta("INSERT INTO `push_tokens`")).
 			WillReturnResult(sqlmock.NewResult(3, 1))
-		mock.ExpectCommit()
 
 		token := PushToken{
 			UserID:      uint64(3),
@@ -87,15 +80,14 @@ func TestMockDB_PushToken_Create(t *testing.T) {
 			LastSeenAt:  time.Now().Unix(),
 		}
 
-		err := gormDB.Create(&token).Error
+		err := m.DB.Create(&token).Error
 		assert.NoError(t, err)
-		assert.NoError(t, mock.ExpectationsWereMet())
+		assert.NoError(t, m.Mock.ExpectationsWereMet())
 	})
 }
 
 func TestMockDB_PushToken_FindByDeviceUDID(t *testing.T) {
-	gormDB, mock, cleanup := setupMockDB(t)
-	defer cleanup()
+	m := SetupMockDB(t)
 
 	t.Run("Find push token by device UDID", func(t *testing.T) {
 		userID := uint64(1)
@@ -111,18 +103,18 @@ func TestMockDB_PushToken_FindByDeviceUDID(t *testing.T) {
 			"17.0", "iPhone15,2", "active", time.Now().Unix(), "{}",
 		)
 
-		mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `push_tokens` WHERE device_udid = ? AND `push_tokens`.`deleted_at` IS NULL ORDER BY `push_tokens`.`id` LIMIT ?")).
+		m.Mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `push_tokens` WHERE device_udid = ? AND `push_tokens`.`deleted_at` IS NULL ORDER BY `push_tokens`.`id` LIMIT ?")).
 			WithArgs("device-udid-123", 1).
 			WillReturnRows(rows)
 
 		var token PushToken
-		err := gormDB.Where("device_udid = ?", "device-udid-123").First(&token).Error
+		err := m.DB.Where("device_udid = ?", "device-udid-123").First(&token).Error
 
 		assert.NoError(t, err)
 		assert.Equal(t, "device-udid-123", token.DeviceUDID)
 		assert.Equal(t, PushPlatformIOS, token.Platform)
 		assert.Equal(t, PushProviderAPNs, token.Provider)
-		assert.NoError(t, mock.ExpectationsWereMet())
+		assert.NoError(t, m.Mock.ExpectationsWereMet())
 	})
 
 	t.Run("Find push token by device UDID and provider", func(t *testing.T) {
@@ -139,43 +131,39 @@ func TestMockDB_PushToken_FindByDeviceUDID(t *testing.T) {
 			"14", "Pixel 8", "active", time.Now().Unix(), "{}",
 		)
 
-		mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `push_tokens` WHERE (device_udid = ? AND provider = ?) AND `push_tokens`.`deleted_at` IS NULL ORDER BY `push_tokens`.`id` LIMIT ?")).
+		m.Mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `push_tokens` WHERE (device_udid = ? AND provider = ?) AND `push_tokens`.`deleted_at` IS NULL ORDER BY `push_tokens`.`id` LIMIT ?")).
 			WithArgs("device-udid-456", PushProviderFCM, 1).
 			WillReturnRows(rows)
 
 		var token PushToken
-		err := gormDB.Where("device_udid = ? AND provider = ?", "device-udid-456", PushProviderFCM).First(&token).Error
+		err := m.DB.Where("device_udid = ? AND provider = ?", "device-udid-456", PushProviderFCM).First(&token).Error
 
 		assert.NoError(t, err)
 		assert.Equal(t, "device-udid-456", token.DeviceUDID)
 		assert.Equal(t, PushPlatformAndroid, token.Platform)
 		assert.Equal(t, PushProviderFCM, token.Provider)
-		assert.NoError(t, mock.ExpectationsWereMet())
+		assert.NoError(t, m.Mock.ExpectationsWereMet())
 	})
 }
 
 func TestMockDB_PushToken_UpdateStatus(t *testing.T) {
-	gormDB, mock, cleanup := setupMockDB(t)
-	defer cleanup()
+	m := SetupMockDB(t)
 
 	t.Run("Mark token as inactive", func(t *testing.T) {
-		mock.ExpectBegin()
-		mock.ExpectExec(regexp.QuoteMeta("UPDATE `push_tokens` SET")).
+		m.Mock.ExpectExec(regexp.QuoteMeta("UPDATE `push_tokens` SET")).
 			WillReturnResult(sqlmock.NewResult(0, 1))
-		mock.ExpectCommit()
 
-		err := gormDB.Model(&PushToken{}).
+		err := m.DB.Model(&PushToken{}).
 			Where("id = ?", uint64(1)).
 			Update("status", PushTokenStatusInactive).Error
 
 		assert.NoError(t, err)
-		assert.NoError(t, mock.ExpectationsWereMet())
+		assert.NoError(t, m.Mock.ExpectationsWereMet())
 	})
 }
 
 func TestMockDB_PushToken_FindActiveByUser(t *testing.T) {
-	gormDB, mock, cleanup := setupMockDB(t)
-	defer cleanup()
+	m := SetupMockDB(t)
 
 	t.Run("Find all active tokens for user across multiple devices", func(t *testing.T) {
 		userID := uint64(1)
@@ -201,12 +189,12 @@ func TestMockDB_PushToken_FindActiveByUser(t *testing.T) {
 			"13", "Xiaomi 14", "active", time.Now().Unix(), "{}",
 		)
 
-		mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `push_tokens` WHERE (user_id = ? AND status = ?) AND `push_tokens`.`deleted_at` IS NULL")).
+		m.Mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `push_tokens` WHERE (user_id = ? AND status = ?) AND `push_tokens`.`deleted_at` IS NULL")).
 			WithArgs(userID, PushTokenStatusActive).
 			WillReturnRows(rows)
 
 		var tokens []PushToken
-		err := gormDB.Where("user_id = ? AND status = ?", userID, PushTokenStatusActive).Find(&tokens).Error
+		err := m.DB.Where("user_id = ? AND status = ?", userID, PushTokenStatusActive).Find(&tokens).Error
 
 		assert.NoError(t, err)
 		assert.Len(t, tokens, 3)
@@ -223,7 +211,7 @@ func TestMockDB_PushToken_FindActiveByUser(t *testing.T) {
 		assert.Equal(t, 1, providers[PushProviderAPNs])
 		assert.Equal(t, 1, providers[PushProviderFCM])
 		assert.Equal(t, 1, providers[PushProviderJPush])
-		assert.NoError(t, mock.ExpectationsWereMet())
+		assert.NoError(t, m.Mock.ExpectationsWereMet())
 	})
 }
 
@@ -285,8 +273,7 @@ func TestPushToken_HelperMethods(t *testing.T) {
 // =====================================================================
 
 func TestMockDB_PushToken_IdempotentRegistration(t *testing.T) {
-	gormDB, mock, cleanup := setupMockDB(t)
-	defer cleanup()
+	m := SetupMockDB(t)
 
 	t.Run("Upsert token - update existing by device_udid and provider", func(t *testing.T) {
 		// First, try to find existing token
@@ -303,27 +290,25 @@ func TestMockDB_PushToken_IdempotentRegistration(t *testing.T) {
 			"17.0", "iPhone15,2", "active", time.Now().Unix(), "{}",
 		)
 
-		mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `push_tokens` WHERE (device_udid = ? AND provider = ?) AND `push_tokens`.`deleted_at` IS NULL ORDER BY `push_tokens`.`id` LIMIT ?")).
+		m.Mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `push_tokens` WHERE (device_udid = ? AND provider = ?) AND `push_tokens`.`deleted_at` IS NULL ORDER BY `push_tokens`.`id` LIMIT ?")).
 			WithArgs("device-udid-123", PushProviderAPNs, 1).
 			WillReturnRows(existingRows)
 
 		// Find existing
 		var token PushToken
-		err := gormDB.Where("device_udid = ? AND provider = ?", "device-udid-123", PushProviderAPNs).First(&token).Error
+		err := m.DB.Where("device_udid = ? AND provider = ?", "device-udid-123", PushProviderAPNs).First(&token).Error
 		assert.NoError(t, err)
 		assert.Equal(t, "old-token", token.Token)
 
 		// Then update it
-		mock.ExpectBegin()
-		mock.ExpectExec(regexp.QuoteMeta("UPDATE `push_tokens` SET")).
+		m.Mock.ExpectExec(regexp.QuoteMeta("UPDATE `push_tokens` SET")).
 			WillReturnResult(sqlmock.NewResult(0, 1))
-		mock.ExpectCommit()
 
 		token.Token = "new-token"
 		token.LastSeenAt = time.Now().Unix()
-		err = gormDB.Save(&token).Error
+		err = m.DB.Save(&token).Error
 		assert.NoError(t, err)
-		assert.NoError(t, mock.ExpectationsWereMet())
+		assert.NoError(t, m.Mock.ExpectationsWereMet())
 	})
 }
 
@@ -332,25 +317,22 @@ func TestMockDB_PushToken_IdempotentRegistration(t *testing.T) {
 // =====================================================================
 
 func TestMockDB_PushToken_AutoDeactivate(t *testing.T) {
-	gormDB, mock, cleanup := setupMockDB(t)
-	defer cleanup()
+	m := SetupMockDB(t)
 
 	t.Run("Deactivate token on provider error", func(t *testing.T) {
 		// Simulate finding a token that should be deactivated
-		mock.ExpectBegin()
-		mock.ExpectExec(regexp.QuoteMeta("UPDATE `push_tokens` SET `status`=?,`updated_at`=? WHERE token = ?")).
+		m.Mock.ExpectExec(regexp.QuoteMeta("UPDATE `push_tokens` SET `status`=?,`updated_at`=? WHERE token = ?")).
 			WithArgs(PushTokenStatusInactive, sqlmock.AnyArg(), "invalid-token-xyz").
 			WillReturnResult(sqlmock.NewResult(0, 1))
-		mock.ExpectCommit()
 
-		err := gormDB.Model(&PushToken{}).
+		err := m.DB.Model(&PushToken{}).
 			Where("token = ?", "invalid-token-xyz").
 			Updates(map[string]interface{}{
 				"status": PushTokenStatusInactive,
 			}).Error
 
 		assert.NoError(t, err)
-		assert.NoError(t, mock.ExpectationsWereMet())
+		assert.NoError(t, m.Mock.ExpectationsWereMet())
 	})
 }
 
@@ -685,4 +667,3 @@ func TestUserCentricPushDesign(t *testing.T) {
 		assert.Equal(t, PushProviderAPNs, activeTokens[0].Provider)
 	})
 }
-
