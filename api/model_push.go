@@ -56,7 +56,7 @@ type PushToken struct {
 	User   *User  `gorm:"foreignKey:UserID" json:"user,omitempty"`
 
 	// 设备关联（通过 Device.UDID 关联）
-	DeviceUDID string  `gorm:"type:varchar(255);not null;index" json:"deviceUdid"` // 关联 Device.UDID
+	DeviceUDID string  `gorm:"column:device_udid;type:varchar(255);not null;index" json:"deviceUdid"` // 关联 Device.UDID
 	Device     *Device `gorm:"foreignKey:DeviceUDID;references:UDID" json:"device,omitempty"`
 
 	// 推送通道信息
