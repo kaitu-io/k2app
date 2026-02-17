@@ -327,6 +327,36 @@ beforeEach(() => {
 
 ---
 
+## Tauri v2 Restrictive Mode: Any Capability File Activates It (2026-02-17, tauri-desktop-bridge)
+
+**Problem**: Once ANY capability JSON file exists in `src-tauri/capabilities/`, Tauri v2 switches from permissive mode (all APIs allowed) to restrictive mode (ONLY listed permissions active). A dev-only capability file (`mcp-bridge.json`) silently activated restrictive mode for all builds, blocking permissions not explicitly listed.
+
+**Symptom**: External fetch fails, IPC commands rejected, plugins non-functional -- but only in builds where the capability file is present. No clear error message pointing to capabilities as the cause.
+
+**Solution**: Create a production `default.json` capability file that lists all needed permissions: `core:default`, `http:default`, `shell:allow-open`, `updater:default`, `process:default`, `autostart:default`.
+
+**Prevention**: When adding any capability file (even dev-only), immediately create a companion production capability file listing all permissions the app needs.
+
+**Validating tests**: Runtime verification -- Tauri desktop app loads server list and connects to VPN.
+
+---
+
+## WebKit WKWebView Blocks Cross-Origin HTTPS from HTTP Localhost (2026-02-17, tauri-desktop-bridge)
+
+**Problem**: In Tauri dev mode (`http://localhost:1420`) and production (`http://127.0.0.1:14580`), WebKit WKWebView rejects `fetch()` calls to external HTTPS URLs (CloudFront, 52j.me) with "Load failed (TypeError)". Terminal `curl` to the same URLs works fine.
+
+**Root cause**: WebKit enforces CORS for cross-origin requests from HTTP origins. External servers may not send `Access-Control-Allow-Origin` for localhost HTTP origins. Additionally, CDN intermediaries (CloudFront) may strip or not set CORS headers.
+
+**Solution**: Use `@tauri-apps/plugin-http` which makes HTTP requests from the Rust process (not the WebView), completely bypassing WebKit restrictions. Override `window.fetch` to route external URLs through the plugin while keeping local URLs on native fetch.
+
+**Not the same as mixed-content blocking**: Mixed content blocks HTTP from HTTPS origin. This is the reverse -- HTTPS from HTTP origin. The issue is CORS, not mixed content.
+
+**Cross-reference**: See Architecture Decisions -> "Tauri Desktop Bridge: IPC + HTTP Plugin + Fetch Override"
+
+**Validating tests**: `webapp/src/services/__tests__/tauri-k2.test.ts` -- `test_fetch_override_routes_external_https`
+
+---
+
 ## Engine Config FileDescriptor Discriminates Platform Behavior (2026-02-16, unified-engine)
 
 **Pattern**: `engine.Config.FileDescriptor` uses numeric value to discriminate platform:
