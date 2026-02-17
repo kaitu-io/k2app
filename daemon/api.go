@@ -64,8 +64,6 @@ func (d *Daemon) handleCore(w http.ResponseWriter, r *http.Request) {
 		d.handleDown(w)
 	case "status":
 		d.handleStatus(w)
-	case "get_config":
-		d.handleGetConfig(w)
 	case "version":
 		d.handleVersion(w)
 	default:
@@ -122,16 +120,6 @@ func (d *Daemon) handleDown(w http.ResponseWriter) {
 
 func (d *Daemon) handleStatus(w http.ResponseWriter) {
 	writeJSON(w, Response{Code: 0, Message: "ok", Data: d.statusInfo()})
-}
-
-func (d *Daemon) handleGetConfig(w http.ResponseWriter) {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-	writeJSON(w, Response{
-		Code:    0,
-		Message: "ok",
-		Data:    d.lastConfig,
-	})
 }
 
 func (d *Daemon) handleVersion(w http.ResponseWriter) {

@@ -225,31 +225,66 @@ func TestCORSMiddleware(t *testing.T) {
 	}
 }
 
-func TestHandleCoreGetConfig(t *testing.T) {
+func TestGetConfigReturns400(t *testing.T) {
+	d := New()
+
+	body := `{"action":"get_config"}`
+	req := httptest.NewRequest("POST", "/api/core", bytes.NewReader([]byte(body)))
+	w := httptest.NewRecorder()
+	d.handleCore(w, req)
+
+	var resp Response
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp.Code != 400 {
+		t.Fatalf("expected code 400, got %d: %s", resp.Code, resp.Message)
+	}
+}
+
+func TestStatusIncludesConfig(t *testing.T) {
 	d := New()
 	d.EngineStarter = mockEngineStarter
 
-	// Set some config via up.
+	// Connect with config.
 	upBody := `{"action":"up","params":{"config":{"server":"k2v5://test:tok@host:443"}}}`
 	req := httptest.NewRequest("POST", "/api/core", bytes.NewReader([]byte(upBody)))
 	w := httptest.NewRecorder()
 	d.handleCore(w, req)
 
-	// Get config.
-	body := `{"action":"get_config"}`
-	req = httptest.NewRequest("POST", "/api/core", bytes.NewReader([]byte(body)))
+	var upResp Response
+	json.NewDecoder(w.Body).Decode(&upResp)
+	if upResp.Code != 0 {
+		t.Fatalf("up: expected code 0, got %d: %s", upResp.Code, upResp.Message)
+	}
+
+	// Status should include config.
+	statusBody := `{"action":"status"}`
+	req = httptest.NewRequest("POST", "/api/core", bytes.NewReader([]byte(statusBody)))
 	w = httptest.NewRecorder()
 	d.handleCore(w, req)
 
 	var resp Response
 	json.NewDecoder(w.Body).Decode(&resp)
 	if resp.Code != 0 {
-		t.Fatalf("expected code 0, got %d", resp.Code)
+		t.Fatalf("status: expected code 0, got %d", resp.Code)
 	}
 
-	data := resp.Data.(map[string]any)
-	if data["server"] != "k2v5://test:tok@host:443" {
-		t.Fatalf("expected server in config, got %v", data)
+	data, ok := resp.Data.(map[string]any)
+	if !ok {
+		t.Fatal("expected data to be a map")
+	}
+
+	cfgRaw, ok := data["config"]
+	if !ok {
+		t.Fatal("expected config field in status response")
+	}
+
+	cfg, ok := cfgRaw.(map[string]any)
+	if !ok {
+		t.Fatalf("expected config to be a map, got %T", cfgRaw)
+	}
+
+	if cfg["server"] != "k2v5://test:tok@host:443" {
+		t.Fatalf("expected server in config, got %v", cfg["server"])
 	}
 }
 

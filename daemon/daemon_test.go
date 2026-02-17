@@ -111,7 +111,7 @@ func TestPersistedStateWithClientConfig(t *testing.T) {
 	}
 }
 
-func TestHandleGetConfigReturnsClientConfig(t *testing.T) {
+func TestStatusIncludesClientConfig(t *testing.T) {
 	d := New()
 	d.EngineStarter = mockEngineStarter
 
@@ -121,8 +121,8 @@ func TestHandleGetConfigReturnsClientConfig(t *testing.T) {
 	w := httptest.NewRecorder()
 	d.handleCore(w, req)
 
-	// Get config.
-	body := `{"action":"get_config"}`
+	// Status should include config.
+	body := `{"action":"status"}`
 	req = httptest.NewRequest("POST", "/api/core", bytes.NewReader([]byte(body)))
 	w = httptest.NewRecorder()
 	d.handleCore(w, req)
@@ -133,14 +133,22 @@ func TestHandleGetConfigReturnsClientConfig(t *testing.T) {
 		t.Fatalf("expected code 0, got %d: %s", resp.Code, resp.Message)
 	}
 
-	// The response data should be a full ClientConfig with server field.
 	data := resp.Data.(map[string]any)
-	if data["server"] != "k2v5://test:tok@host:443" {
-		t.Fatalf("expected server in config, got %v", data)
+	cfgRaw, ok := data["config"]
+	if !ok {
+		t.Fatal("expected config field in status response")
+	}
+
+	cfg, ok := cfgRaw.(map[string]any)
+	if !ok {
+		t.Fatalf("expected config to be a map, got %T", cfgRaw)
+	}
+	if cfg["server"] != "k2v5://test:tok@host:443" {
+		t.Fatalf("expected server in config, got %v", cfg["server"])
 	}
 	// Should NOT have legacy wire_url key.
-	if _, ok := data["wire_url"]; ok {
-		t.Fatalf("get_config should not return legacy wire_url key")
+	if _, ok := cfg["wire_url"]; ok {
+		t.Fatalf("status config should not contain legacy wire_url key")
 	}
 }
 

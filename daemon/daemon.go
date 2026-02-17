@@ -382,5 +382,8 @@ func (d *Daemon) statusInfo() map[string]any {
 	if d.lastError != "" {
 		info["error"] = d.lastError
 	}
+	if d.lastConfig != nil {
+		info["config"] = d.lastConfig
+	}
 	return info
 }
