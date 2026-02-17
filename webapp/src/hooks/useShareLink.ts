@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { k2api } from '../services/k2api';
+import { cloudApi } from '../services/cloud-api';
 
 
 interface ShareLinkCache {
@@ -55,10 +55,7 @@ export function useShareLink() {
 
     try {
       console.log(`[useShareLink] Fetching share link for ${cacheKey}`);
-      const apiResponse = await k2api().exec<ShareLinkData>('api_request', {
-        method: 'GET',
-        path: `/api/invite/my-codes/${inviteCode}/share-link?expiresInDays=${expiresInDays}`,
-      });
+      const apiResponse = await cloudApi.get<ShareLinkData>(`/api/invite/my-codes/${inviteCode}/share-link?expiresInDays=${expiresInDays}`);
 
       console.log(`[useShareLink] API Response:`, JSON.stringify(apiResponse));
 

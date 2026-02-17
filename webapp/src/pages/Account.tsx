@@ -49,7 +49,7 @@ import { useTheme } from "../contexts/ThemeContext";
 import { getFlagIcon } from "../utils/country";
 import { languages, changeLanguage, type LanguageCode } from "../i18n/i18n";
 import { formatDate } from "../utils/time";
-import { k2api } from "../services/k2api";
+import { cloudApi } from "../services/cloud-api";
 import { useLoginDialogStore } from "../stores/login-dialog.store";
 
 import type { DataUser } from "../services/api-types";
@@ -87,12 +87,9 @@ export default function Account() {
 
   const handleLogout = async () => {
     try {
-      // Stop VPN first, then logout (tokens cleared automatically by k2api)
+      // Stop VPN first, then logout (tokens cleared automatically by cloudApi)
       await window._k2.run('down');
-      await k2api().exec('api_request', {
-        method: 'POST',
-        path: '/api/auth/logout',
-      });
+      await cloudApi.post('/api/auth/logout');
       setIsAuthenticated(false);
       console.info(t('common:messages.logoutSuccess'));
     } catch (err) {
@@ -116,11 +113,7 @@ export default function Account() {
     // If user is authenticated, update language preference on server
     if (isAuthenticated) {
       try {
-        await k2api().exec<DataUser>('api_request', {
-          method: 'PUT',
-          path: '/api/user/language',
-          body: { language: langCode },
-        });
+        await cloudApi.request<DataUser>('PUT', '/api/user/language', { language: langCode });
         console.info('Language preference updated on server');
       } catch (error) {
         console.error('Failed to update language preference on server:', error);

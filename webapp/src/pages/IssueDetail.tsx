@@ -16,7 +16,7 @@ import {
 import { useTranslation } from "react-i18next";
 
 import BackButton from "../components/BackButton";
-import { k2api } from "../services/k2api";
+import { cloudApi } from "../services/cloud-api";
 import type { GitHubIssueDetail, GitHubComment } from "../services/api-types";
 
 function formatRelativeTime(dateStr: string): string {
@@ -54,10 +54,7 @@ export default function IssueDetail() {
     setError(null);
 
     try {
-      const response = await k2api().exec<GitHubIssueDetail>("api_request", {
-        method: "GET",
-        path: `/api/issues/${number}`,
-      });
+      const response = await cloudApi.get<GitHubIssueDetail>(`/api/issues/${number}`);
 
       if (response.code === 0 && response.data) {
         setIssue(response.data);
@@ -83,11 +80,7 @@ export default function IssueDetail() {
     setSubmitError(null);
 
     try {
-      const response = await k2api().exec<GitHubComment>("api_request", {
-        method: "POST",
-        path: `/api/issues/${number}/comments`,
-        body: { body: commentBody.trim() },
-      });
+      const response = await cloudApi.post<GitHubComment>(`/api/issues/${number}/comments`, { body: commentBody.trim() });
 
       if (response.code === 0 && response.data) {
         // Add the new comment to the list

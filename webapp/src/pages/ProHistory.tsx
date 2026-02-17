@@ -23,7 +23,7 @@ import React from 'react';
 import { LoadingCard, EmptyHistory } from '../components/LoadingAndEmpty';
 import { useAlert } from "../stores";
 import Pagit from "../components/Pagit";
-import { k2api } from '../services/k2api';
+import { cloudApi } from '../services/cloud-api';
 
 export default function ProHistory() {
   const theme = useTheme();
@@ -51,10 +51,7 @@ export default function ProHistory() {
       if (typeFilter) {
         params.append('type', typeFilter);
       }
-      const {code, data, message} = await k2api().exec<{ items: ProHistory[]; pagination: Pagination }>('api_request', {
-        method: 'GET',
-        path: `/api/user/pro-histories?${params.toString()}`,
-      });
+      const {code, data, message} = await cloudApi.get<{ items: ProHistory[]; pagination: Pagination }>(`/api/user/pro-histories?${params.toString()}`);
       console.debug(`[ProHistory] code: ${code} data: ` + JSON.stringify(data));
       if (code === 0) {
         setHistories(data?.items || []);

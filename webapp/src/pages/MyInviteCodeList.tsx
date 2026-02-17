@@ -30,7 +30,7 @@ import { useAlert } from "../stores";
 import BackButton from "../components/BackButton";
 import { useInviteCodeActions } from "../hooks/useInviteCodeActions";
 import ExpirationSelectorPopover from "../components/ExpirationSelectorPopover";
-import { k2api } from '../services/k2api';
+import { cloudApi } from '../services/cloud-api';
 import { delayedFocus } from '../utils/ui';
 
 export default function MyInviteCodeList() {
@@ -73,10 +73,7 @@ export default function MyInviteCodeList() {
       setLoading(true);
       try {
         console.info(t('invite:invite.loading'));
-        const response = await k2api().exec<{ items: MyInviteCode[] }>('api_request', {
-          method: 'GET',
-          path: '/api/invite/my-codes?page=0&pageSize=100',
-        });
+        const response = await cloudApi.get<{ items: MyInviteCode[] }>('/api/invite/my-codes?page=0&pageSize=100');
 
         if (response.code === 0 && response.data) {
           console.info(`${t('invite:inviteCodeList.successGetInviteCodes')}: ${response.data.items.length}`);

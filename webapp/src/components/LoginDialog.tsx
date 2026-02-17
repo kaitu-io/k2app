@@ -35,8 +35,7 @@ import { useAuthStore } from "../stores";
 import { useLoginDialogStore } from "../stores/login-dialog.store";
 import { useAppLinks } from "../hooks/useAppLinks";
 import { handleResponseError } from "../utils/errorCode";
-import { k2api } from '../services/k2api';
-import { authService } from '../services/auth-service';
+import { cloudApi } from '../services/cloud-api';
 import { cacheStore } from '../services/cache-store';
 import type { AuthResult } from '../services/api-types';
 import { delayedFocus } from '../utils/ui';
@@ -116,15 +115,11 @@ export default function LoginDialog() {
       setIsSubmitting(true);
       setError("");
 
-      const response = await k2api().exec<{
+      const response = await cloudApi.post<{
         userExists: boolean;
         isActivated: boolean;
         isFirstOrderDone: boolean;
-      }>('api_request', {
-        method: 'POST',
-        path: '/api/auth/code',
-        body: { email, language: i18n.language },
-      });
+      }>('/api/auth/code', { email, language: i18n.language });
 
       handleResponseError(
         response.code,
@@ -157,13 +152,9 @@ export default function LoginDialog() {
       setIsSubmitting(true);
       setError("");
 
-      // Get device UDID for authentication binding
-      const udid = await authService.getUdid();
-
-      const response = await k2api().exec<AuthResult>('login', {
+      const response = await cloudApi.post<AuthResult>('/api/auth/login', {
         email,
         verificationCode: verificationCode,
-        udid,
         remark: t("startup:startup.newDevice"),
         inviteCode: inviteCode.trim() || undefined,
         language: i18n.language,
@@ -176,14 +167,7 @@ export default function LoginDialog() {
         t("auth:auth.loginFailed")
       );
 
-      // Save tokens using authService (replaces Go service token storage)
-      if (response.data) {
-        await authService.setTokens({
-          accessToken: response.data.accessToken,
-          refreshToken: response.data.refreshToken,
-        });
-      }
-
+      // Tokens are automatically saved by cloudApi for auth paths
       // Clear all cache to ensure fresh data after login
       cacheStore.clear();
       setIsAuthenticated(true);

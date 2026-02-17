@@ -26,7 +26,7 @@ import { useAlert, useAuthStore } from "../stores";
 import type { DataUser, AddMemberRequest, ListResult } from "../services/api-types";
 import { ErrorInvalidArgument } from "../services/api-types";
 import EmailTextField from "./EmailTextField";
-import { k2api } from '../services/k2api';
+import { cloudApi } from '../services/cloud-api';
 import { cacheStore } from '../services/cache-store';
 
 const MEMBERS_CACHE_KEY = 'api:user_members';
@@ -56,23 +56,28 @@ export default function MemberSelection({
   const fetchMembers = async () => {
     setLoading(true);
     try {
-      // Use k2api cache:
-      // - key: cache key for members list
-      // - ttl: 3 minutes cache (members can change more frequently)
-      // - revalidate: SWR mode, return cache immediately and refresh in background
-      // - allowExpired: use expired cache as fallback on network failure
-      const { code, message, data } = await k2api({
-        cache: {
-          key: MEMBERS_CACHE_KEY,
-          ttl: 180,
-          revalidate: true,
-          allowExpired: true,
-        }
-      }).exec<ListResult<DataUser>>('api_request', {
-        method: 'GET',
-        path: '/api/user/members',
-      });
+      // SWR: return cache immediately, refresh in background
+      const cached = cacheStore.get<ListResult<DataUser>>(MEMBERS_CACHE_KEY);
+      if (cached) {
+        const memberList = cached.items || [];
+        setMembers(memberList);
+        const allMemberUUIDs = memberList.map((member: { uuid: string }) => member.uuid);
+        onSelectionChange(selectedForMyself, allMemberUUIDs);
+        setLoading(false);
+        // Background revalidate
+        cloudApi.get<ListResult<DataUser>>('/api/user/members').then(res => {
+          if (res.code === 0 && res.data) {
+            cacheStore.set(MEMBERS_CACHE_KEY, res.data, { ttl: 180 });
+            const freshList = res.data.items || [];
+            setMembers(freshList);
+          }
+        });
+        return;
+      }
+
+      const { code, message, data } = await cloudApi.get<ListResult<DataUser>>('/api/user/members');
       if (code === 0 && data) {
+        cacheStore.set(MEMBERS_CACHE_KEY, data, { ttl: 180 });
         const memberList = data.items || [];
         setMembers(memberList);
 
@@ -109,11 +114,7 @@ export default function MemberSelection({
         memberEmail: newMemberEmail.trim(),
       };
 
-      const { code, message, data } = await k2api().exec<DataUser>('api_request', {
-        method: 'POST',
-        path: '/api/user/members',
-        body: request,
-      });
+      const { code, message, data } = await cloudApi.post<DataUser>('/api/user/members', request);
       if (code === 0 && data) {
         // Invalidate cache since members list changed
         cacheStore.delete(MEMBERS_CACHE_KEY);

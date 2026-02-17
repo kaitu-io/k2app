@@ -16,10 +16,13 @@ export * from './api-types';
 
 export * from './cache-store';
 
-// ==================== API Wrapper ====================
+// ==================== Cloud API ====================
 
-export { k2api } from './k2api';
-export type { K2ApiConfig, SResponse } from './k2api';
+export { cloudApi } from './cloud-api';
+
+// ==================== Types ====================
+
+export type { SResponse } from '../types/kaitu-core';
 
 // ==================== Web Platform ====================
 

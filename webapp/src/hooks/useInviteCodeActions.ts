@@ -4,7 +4,7 @@ import { useUser } from "./useUser";
 
 import { useShareLink } from './useShareLink';
 import type { MyInviteCode } from '../services/api-types';
-import { k2api } from '../services/k2api';
+import { cloudApi } from '../services/cloud-api';
 
 /**
  * 邀请码操作的自定义 Hook
@@ -122,11 +122,7 @@ ${rewardText}
    */
   const updateRemark = async (code: string, remark: string): Promise<boolean> => {
     try {
-      const response = await k2api().exec('api_request', {
-        method: 'PUT',
-        path: `/api/invite/my-codes/${code}/remark`,
-        body: { remark },
-      });
+      const response = await cloudApi.request('PUT', `/api/invite/my-codes/${code}/remark`, { remark });
       if (response.code === 0) {
         showAlert(t('invite:invite.remarkUpdated'), "success");
         return true;

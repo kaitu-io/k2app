@@ -19,7 +19,7 @@ import {
 import { useTranslation } from "react-i18next";
 
 import BackButton from "../components/BackButton";
-import { k2api } from '../services/k2api';
+import { cloudApi } from '../services/cloud-api';
 import { useAuthStore } from '../stores/auth.store';
 import { useUser } from '../hooks/useUser';
 
@@ -127,17 +127,13 @@ export default function SubmitTicket() {
     setSubmitResult(null);
 
     try {
-      const response = await k2api().exec('api_request', {
-        method: 'POST',
-        path: '/api/user/ticket',
-        body: {
-          subject: subject.trim(),
-          content: content.trim(),
-          // Include feedbackId if logs were uploaded successfully
-          ...(feedbackIdRef.current && logUploadStatus === 'success'
-            ? { feedbackId: feedbackIdRef.current }
-            : {}),
-        },
+      const response = await cloudApi.post('/api/user/ticket', {
+        subject: subject.trim(),
+        content: content.trim(),
+        // Include feedbackId if logs were uploaded successfully
+        ...(feedbackIdRef.current && logUploadStatus === 'success'
+          ? { feedbackId: feedbackIdRef.current }
+          : {}),
       });
 
       if (response.code === 0) {

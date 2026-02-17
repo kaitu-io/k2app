@@ -6,7 +6,7 @@
 |-----------|------------------------------------------|
 | Feature   | k2api-cleanup                            |
 | Version   | v1                                       |
-| Status    | draft                                    |
+| Status    | implemented                              |
 | Created   | 2026-02-17                               |
 | Updated   | 2026-02-17                               |
 | Depends on | webapp-architecture-v2                  |

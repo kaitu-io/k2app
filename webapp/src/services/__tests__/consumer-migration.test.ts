@@ -282,3 +282,245 @@ describe('codebase-wide: no _k2.api, _k2.platform, or _k2.updater in source file
     }
   });
 });
+
+// ==================== Test 5: No k2api imports in consumer files ====================
+
+describe('k2api cleanup: no k2api imports remain in consumer files', () => {
+  /**
+   * Recursively collect all .ts and .tsx files under a directory,
+   * excluding __tests__ directories, node_modules, and .d.ts / test files.
+   */
+  function collectSourceFiles(dir: string, excludeFiles: string[] = []): string[] {
+    const results: string[] = [];
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+
+      if (entry.isDirectory()) {
+        if (entry.name === '__tests__' || entry.name === 'node_modules' || entry.name === 'test') {
+          continue;
+        }
+        results.push(...collectSourceFiles(fullPath, excludeFiles));
+      } else if (entry.isFile()) {
+        if (
+          (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx')) &&
+          !entry.name.endsWith('.d.ts') &&
+          !entry.name.endsWith('.test.ts') &&
+          !entry.name.endsWith('.test.tsx') &&
+          !entry.name.endsWith('.spec.ts') &&
+          !entry.name.endsWith('.spec.tsx') &&
+          !excludeFiles.includes(entry.name)
+        ) {
+          results.push(fullPath);
+        }
+      }
+    }
+
+    return results;
+  }
+
+  it('should have zero k2api imports in source files (excluding k2api.ts itself)', () => {
+    const srcDir = path.resolve(__dirname, '../..');
+    // Exclude k2api.ts itself — we're checking consumers, not the module
+    const sourceFiles = collectSourceFiles(srcDir, ['k2api.ts']);
+
+    const violations: { file: string; line: number; text: string }[] = [];
+
+    for (const filePath of sourceFiles) {
+      const content = fs.readFileSync(filePath, 'utf-8');
+      const lines = content.split('\n');
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const trimmed = line.trim();
+
+        // Skip comment lines
+        if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) {
+          continue;
+        }
+
+        // Match any import containing 'k2api'
+        if (/import\s.*['"].*k2api.*['"]/.test(line) || /from\s+['"].*k2api.*['"]/.test(line)) {
+          violations.push({
+            file: path.relative(path.resolve(__dirname, '../..'), filePath),
+            line: i + 1,
+            text: trimmed,
+          });
+        }
+      }
+    }
+
+    if (violations.length > 0) {
+      const summary = violations
+        .map((v) => `  ${v.file}:${v.line} -> ${v.text}`)
+        .join('\n');
+      expect.fail(
+        `Found ${violations.length} k2api import(s) in consumer files:\n${summary}\n\n` +
+          'All callers should be migrated to use cloudApi.request() directly'
+      );
+    }
+  });
+});
+
+// ==================== Test 6: No api_request string in consumer files ====================
+
+describe('k2api cleanup: no api_request pattern remains in consumer files', () => {
+  function collectSourceFiles(dir: string, excludeFiles: string[] = []): string[] {
+    const results: string[] = [];
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+
+      if (entry.isDirectory()) {
+        if (entry.name === '__tests__' || entry.name === 'node_modules' || entry.name === 'test') {
+          continue;
+        }
+        results.push(...collectSourceFiles(fullPath, excludeFiles));
+      } else if (entry.isFile()) {
+        if (
+          (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx')) &&
+          !entry.name.endsWith('.d.ts') &&
+          !entry.name.endsWith('.test.ts') &&
+          !entry.name.endsWith('.test.tsx') &&
+          !entry.name.endsWith('.spec.ts') &&
+          !entry.name.endsWith('.spec.tsx') &&
+          !excludeFiles.includes(entry.name)
+        ) {
+          results.push(fullPath);
+        }
+      }
+    }
+
+    return results;
+  }
+
+  it('should have zero api_request references in source files (excluding k2api.ts itself)', () => {
+    const srcDir = path.resolve(__dirname, '../..');
+    // Exclude k2api.ts itself — it defines api_request, consumers should not use it
+    const sourceFiles = collectSourceFiles(srcDir, ['k2api.ts']);
+
+    const violations: { file: string; line: number; text: string }[] = [];
+
+    for (const filePath of sourceFiles) {
+      const content = fs.readFileSync(filePath, 'utf-8');
+      const lines = content.split('\n');
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const trimmed = line.trim();
+
+        // Skip comment lines
+        if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) {
+          continue;
+        }
+
+        // Match the string literal 'api_request' (the k2api function name)
+        if (/api_request/.test(line)) {
+          violations.push({
+            file: path.relative(path.resolve(__dirname, '../..'), filePath),
+            line: i + 1,
+            text: trimmed,
+          });
+        }
+      }
+    }
+
+    if (violations.length > 0) {
+      const summary = violations
+        .map((v) => `  ${v.file}:${v.line} -> ${v.text}`)
+        .join('\n');
+      expect.fail(
+        `Found ${violations.length} api_request reference(s) in consumer files:\n${summary}\n\n` +
+          'All callers should be migrated to use cloudApi.request() directly'
+      );
+    }
+  });
+});
+
+// ==================== Test 7: No manual authService.setTokens in components/pages/hooks ====================
+
+describe('k2api cleanup: no manual authService.setTokens in components, pages, or hooks', () => {
+  function collectSourceFiles(dir: string): string[] {
+    const results: string[] = [];
+
+    if (!fs.existsSync(dir)) return results;
+
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+
+      if (entry.isDirectory()) {
+        if (entry.name === '__tests__' || entry.name === 'node_modules' || entry.name === 'test') {
+          continue;
+        }
+        results.push(...collectSourceFiles(fullPath));
+      } else if (entry.isFile()) {
+        if (
+          (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx')) &&
+          !entry.name.endsWith('.d.ts') &&
+          !entry.name.endsWith('.test.ts') &&
+          !entry.name.endsWith('.test.tsx') &&
+          !entry.name.endsWith('.spec.ts') &&
+          !entry.name.endsWith('.spec.tsx')
+        ) {
+          results.push(fullPath);
+        }
+      }
+    }
+
+    return results;
+  }
+
+  it('should have zero authService.setTokens calls in pages/, components/, and hooks/', () => {
+    const srcDir = path.resolve(__dirname, '../..');
+    const dirsToScan = [
+      path.join(srcDir, 'pages'),
+      path.join(srcDir, 'components'),
+      path.join(srcDir, 'hooks'),
+    ];
+
+    const sourceFiles: string[] = [];
+    for (const dir of dirsToScan) {
+      sourceFiles.push(...collectSourceFiles(dir));
+    }
+
+    const violations: { file: string; line: number; text: string }[] = [];
+
+    for (const filePath of sourceFiles) {
+      const content = fs.readFileSync(filePath, 'utf-8');
+      const lines = content.split('\n');
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const trimmed = line.trim();
+
+        // Skip comment lines
+        if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) {
+          continue;
+        }
+
+        // Match authService.setTokens calls
+        if (/authService\.setTokens/.test(line)) {
+          violations.push({
+            file: path.relative(path.resolve(__dirname, '../..'), filePath),
+            line: i + 1,
+            text: trimmed,
+          });
+        }
+      }
+    }
+
+    if (violations.length > 0) {
+      const summary = violations
+        .map((v) => `  ${v.file}:${v.line} -> ${v.text}`)
+        .join('\n');
+      expect.fail(
+        `Found ${violations.length} authService.setTokens call(s) in UI layer files:\n${summary}\n\n` +
+          'Only services/cloud-api.ts should call authService.setTokens (token refresh is handled there)'
+      );
+    }
+  });
+});

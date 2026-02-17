@@ -29,7 +29,7 @@ import { useUser } from '../hooks/useUser';
 
 import { useAppLinks } from '../hooks/useAppLinks';
 import type { Wallet, RetailerStats } from '../services/api-types';
-import { k2api } from '../services/k2api';
+import { cloudApi } from '../services/cloud-api';
 
 // 等级对应的颜色
 const levelColors: Record<number, string> = {
@@ -71,14 +71,8 @@ export default function RetailerStatsOverview() {
     setError(null);
     try {
       const [walletRes, statsRes] = await Promise.all([
-        k2api().exec<Wallet>('api_request', {
-          method: 'GET',
-          path: '/api/wallet',
-        }),
-        k2api().exec<RetailerStats>('api_request', {
-          method: 'GET',
-          path: '/api/retailer/stats',
-        }),
+        cloudApi.get<Wallet>('/api/wallet'),
+        cloudApi.get<RetailerStats>('/api/retailer/stats'),
       ]);
 
       if (walletRes.code === 0 && walletRes.data) {

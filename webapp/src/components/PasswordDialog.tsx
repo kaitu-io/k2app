@@ -10,7 +10,7 @@ import {
   CircularProgress,
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
-import { k2api } from "../services/k2api";
+import { cloudApi } from '../services/cloud-api';
 import { handleResponseError } from "../utils/errorCode";
 
 interface PasswordDialogProps {
@@ -55,11 +55,7 @@ export default function PasswordDialog({ open, onClose, onSuccess }: PasswordDia
 
     try {
       setIsSubmitting(true);
-      const response = await k2api().exec("api_request", {
-        method: "POST",
-        path: "/api/user/password",
-        body: { password, confirmPassword },
-      });
+      const response = await cloudApi.post("/api/user/password", { password, confirmPassword });
       handleResponseError(response.code, response.message, t, t("account:password.setFailed"));
       onSuccess();
       handleClose();
