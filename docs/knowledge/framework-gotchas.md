@@ -357,6 +357,28 @@ beforeEach(() => {
 
 ---
 
+## Tauri v2 Command + Plugin Registration: Two Mandatory Steps (2026-02-17, tauri-desktop-bridge)
+
+**Problem**: Defining `#[tauri::command]` or adding a plugin to `Cargo.toml` is not enough. Both require explicit registration in `main.rs` builder chain.
+
+**Commands**: Every `#[tauri::command]` function must appear in `tauri::generate_handler![...]`. Missing commands silently fail — `invoke()` from JS rejects with an error, no Rust-side log. If the rejection happens during bootstrap `await`, the entire app fails to render (white screen).
+
+**Plugins**: Every `tauri-plugin-*` crate in `Cargo.toml` must have a corresponding `.plugin(tauri_plugin_*::init())` call. Missing plugin registration means JS-side `@tauri-apps/plugin-*` imports will fail at runtime (the plugin API endpoint doesn't exist).
+
+**Checklist when adding Tauri functionality**:
+1. Add `#[tauri::command]` function in Rust module → add to `generate_handler![]` in `main.rs`
+2. Add `tauri-plugin-*` to `Cargo.toml` → add `.plugin()` to builder in `main.rs`
+3. Add permission to `capabilities/default.json` if needed
+4. `cargo check` to verify compilation
+
+**Why silent**: Tauri v2 doesn't warn about unregistered commands at build time. The mismatch only manifests at runtime when JS calls `invoke()`.
+
+**Cross-reference**: See Bugfix Patterns → "Missing Tauri IPC Handler Registration Causes White Screen"
+
+**Validating tests**: `cargo check`; runtime — all `invoke()` calls succeed.
+
+---
+
 ## Engine Config FileDescriptor Discriminates Platform Behavior (2026-02-16, unified-engine)
 
 **Pattern**: `engine.Config.FileDescriptor` uses numeric value to discriminate platform:

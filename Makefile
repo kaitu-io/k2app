@@ -31,10 +31,9 @@ dev: pre-build
 	./scripts/dev.sh
 
 # API server
-build-api:
-	cd api/cmd && go build -o kaitu-center .
-
-deploy-api: build-api
+deploy-api:
+	mkdir -p release
+	cd api/cmd && GOOS=linux GOARCH=amd64 go build -o ../../release/kaitu-center .
 	bash scripts/deploy-center.sh
 
 publish-release:

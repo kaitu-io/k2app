@@ -30,6 +30,16 @@ export default defineConfig({
       // 3. tell vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],
     },
+    proxy: (() => {
+      const daemonPort = process.env.K2_DAEMON_PORT || '1777';
+      const daemon = `http://127.0.0.1:${daemonPort}`;
+      return {
+        '/core': daemon,
+        '/ping': daemon,
+        '/api/core': daemon,
+        '/api/device': daemon,
+      };
+    })(),
   },
 
   // Build configuration

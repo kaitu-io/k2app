@@ -13,7 +13,7 @@ import type { IK2Vpn, IPlatform, SResponse } from '../types/kaitu-core';
 import { webSecureStorage } from './secure-storage';
 import { webPlatform } from './web-platform';
 
-const CORE_ENDPOINT = '/core';
+const CORE_ENDPOINT = '/api/core';
 
 async function coreExec<T = any>(action: string, params?: any): Promise<SResponse<T>> {
   try {

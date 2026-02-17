@@ -4,7 +4,6 @@ export const DECRYPTION_KEY =
   '9e3573184d5e5b3034a087c33fa2cdb76bd0126238ed08f54d1de8c6ae0eb4ba';
 export const CDN_SOURCES = [
   'https://cdn.jsdelivr.net/gh/kaitu-io/ui-theme@dist/config.js',
-  'https://cdn.statically.io/gh/kaitu-io/ui-theme/dist/config.js',
 ];
 
 // ---------------------------------------------------------------------------

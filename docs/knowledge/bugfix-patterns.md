@@ -152,6 +152,30 @@ const K2Plugin = registerPlugin('K2Plugin');
 
 ---
 
+## Missing Tauri IPC Handler Registration Causes White Screen (2026-02-17, tauri-desktop-bridge)
+
+**Problem**: App opens to white screen. No error visible in the window. Console shows `[WebApp] Failed to initialize: ...` but React never renders.
+
+**Root cause**: `service.rs` defined 3 `#[tauri::command]` functions (`daemon_exec`, `get_udid`, `get_platform_info`) but `main.rs` `invoke_handler` only registered 2 of the 5 existing commands. The 3 new commands were never added to `tauri::generate_handler![]`.
+
+**White screen chain**:
+1. `main.tsx` detects `window.__TAURI__` → calls `injectTauriGlobals()`
+2. First line: `await invoke('get_platform_info')` — Tauri rejects (unregistered command)
+3. Error propagates to `main()` catch block — logs error but never calls `ReactDOM.render()`
+4. White screen
+
+**Companion issue**: `tauri-plugin-http` and `tauri-plugin-shell` had `Cargo.toml` dependencies but no `.plugin()` registration in builder chain. External HTTPS fetch and `openExternal()` would fail at runtime.
+
+**Fix**: Added all 3 commands to `invoke_handler` + registered `tauri_plugin_http::init()`, `tauri_plugin_shell::init()`, `tauri_plugin_autostart::init()` in `main.rs`.
+
+**Prevention**: When adding `#[tauri::command]` functions in Rust, immediately add them to `invoke_handler` in `main.rs`. When adding plugin dependencies to `Cargo.toml`, immediately add `.plugin()` to builder chain.
+
+**Files fixed**: `desktop/src-tauri/src/main.rs`
+
+**Validating tests**: `cargo check` passes; runtime verification — app renders after fix.
+
+---
+
 ## Capacitor Local Plugin Stale Copy in node_modules (2026-02-16, mobile-debug)
 
 **Problem**: Capacitor plugin declared as `"k2-plugin": "file:./plugins/k2-plugin"` in `mobile/package.json` is copied (not symlinked) to `node_modules/k2-plugin/`. Editing source files in `mobile/plugins/k2-plugin/` has no effect — `cap sync` and Gradle build use the stale `node_modules/` copy.
