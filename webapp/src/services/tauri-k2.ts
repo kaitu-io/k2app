@@ -128,6 +128,10 @@ export async function injectTauriGlobals(): Promise<void> {
       return '';
     },
 
+    nativeExec: async <T = any>(action: string, params?: Record<string, any>): Promise<T> => {
+      return invoke<T>(action, params ?? {});
+    },
+
     debug: (message: string) => console.debug('[K2:Tauri]', message),
     warn: (message: string) => console.warn('[K2:Tauri]', message),
   };

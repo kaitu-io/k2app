@@ -422,6 +422,34 @@ PacketTunnelProvider.swift
 
 ---
 
+## nativeExec: Generic IPC Passthrough for Platform Actions (2026-02-18, desktop-service-upgrade)
+
+**Decision**: `IPlatform.nativeExec(action, params?)` is a generic IPC passthrough — it maps action names directly to Tauri IPC commands (or native platform equivalents). No action-specific wrapper methods on `_platform`.
+
+**Tauri implementation** (`tauri-k2.ts`):
+```typescript
+nativeExec: async <T>(action: string, params?: Record<string, any>): Promise<T> => {
+  return invoke<T>(action, params ?? {});
+},
+```
+
+**Current actions**: `admin_reinstall_service` (elevated service install via osascript/PowerShell).
+
+**Why generic, not specific methods**: Adding per-action methods (`_platform.reinstallService()`) requires coordinated changes in types + bridge + every platform. `nativeExec` is open-ended — new actions only require Rust `#[tauri::command]` registration. Frontend callers like `ServiceAlert.tsx` pass the action string directly.
+
+**Fallback pattern** (`ServiceAlert.tsx`):
+```typescript
+if (!platform?.nativeExec) {
+  navigate('/service-error', ...);  // Web/standalone fallback
+  return;
+}
+await platform.nativeExec('admin_reinstall_service');
+```
+
+**Validating tests**: `webapp/src/services/__tests__/tauri-k2.test.ts` — 3 tests (action passthrough, params passthrough, error propagation)
+
+---
+
 ## Bridge as State Contract Translation Layer — transformStatus() Mandatory (2026-02-17, vpn-error-reconnect)
 
 **Decision**: Every bridge layer (`tauri-k2.ts`, `capacitor-k2.ts`) MUST implement `transformStatus()` to normalize backend state before exposing it to the webapp. Backends must never pass raw state strings directly to the webapp. The bridge is the contract translation layer.

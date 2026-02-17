@@ -106,6 +106,30 @@ describe('tauri-k2', () => {
       expect(result.message).toContain('Service unreachable');
     });
 
+    it('_platform.nativeExec calls invoke with action', async () => {
+      mockInvoke.mockResolvedValueOnce('Service installed and started');
+
+      const result = await window._platform.nativeExec!('admin_reinstall_service');
+
+      expect(mockInvoke).toHaveBeenCalledWith('admin_reinstall_service', {});
+      expect(result).toBe('Service installed and started');
+    });
+
+    it('_platform.nativeExec passes params to invoke', async () => {
+      mockInvoke.mockResolvedValueOnce('ok');
+
+      await window._platform.nativeExec!('some_action', { key: 'val' });
+
+      expect(mockInvoke).toHaveBeenCalledWith('some_action', { key: 'val' });
+    });
+
+    it('_platform.nativeExec rejects on invoke error', async () => {
+      mockInvoke.mockRejectedValueOnce(new Error('User cancelled'));
+
+      await expect(window._platform.nativeExec!('admin_reinstall_service'))
+        .rejects.toThrow('User cancelled');
+    });
+
     it('_platform.getUdid invokes get_udid IPC command', async () => {
       mockInvoke.mockResolvedValueOnce({
         code: 0,
