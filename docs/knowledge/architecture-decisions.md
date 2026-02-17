@@ -138,7 +138,7 @@ Matching origins get `Access-Control-Allow-Origin: <origin>` + `Access-Control-A
 
 **Error flow**: Go Engine error → `EventBridge.onError()` → App Group write + `cancelTunnelWithError(error)` → system sends `.disconnected` → K2Plugin reads App Group `vpnError` → JS `vpnError` event → clears key.
 
-**State flow**: Go Engine disconnect → `EventBridge.onStateChange("disconnected")` → `cancelTunnelWithError(nil)` → system sends `.disconnected` → K2Plugin maps to `"stopped"` → JS `vpnStateChange` event.
+**State flow**: Go Engine disconnect → `EventBridge.onStateChange("disconnected")` → `cancelTunnelWithError(nil)` → system sends `.disconnected` → K2Plugin maps to `"disconnected"` → JS `vpnStateChange` event.
 
 **Files**: `PacketTunnelProvider.swift` (NE side), `K2Plugin.swift` (App side)
 
@@ -150,13 +150,15 @@ Matching origins get `Access-Control-Allow-Origin: <origin>` + `Access-Control-A
 
 **Decision**: Go `json.Marshal` outputs snake_case; native bridge layers (K2Plugin.swift/kt) remap to camelCase before passing to webapp.
 
-**Key map**: `connected_at→connectedAt`, `uptime_seconds→uptimeSeconds`, `wire_url→wireUrl`. Also `"disconnected"→"stopped"` for state field.
+**Key map**: `connected_at→connectedAt`, `uptime_seconds→uptimeSeconds`, `wire_url→wireUrl`. State values pass through unchanged (Go engine `"disconnected"` arrives as `"disconnected"` in JS).
 
 **Why remap at bridge, not Go**: Go convention is snake_case (changing requires struct tags across all code). Native bridge is the natural boundary. TypeScript expects camelCase.
 
+**State passthrough (v2)**: The v1 bridge remapped `"disconnected"→"stopped"`, but webapp's `ServiceState` type has no `"stopped"` value, breaking all derived booleans. Fixed in mobile-webapp-bridge-v2: states pass through unchanged.
+
 **Cross-reference**: See Framework Gotchas → "Go json.Marshal snake_case vs JavaScript camelCase" for the discovery story. See Bugfix Patterns → "Go→JS JSON Key Mismatch" for the original bug.
 
-**Validating tests**: Manual device testing — K2Plugin native bridge verified on iOS and Android.
+**Validating tests**: `webapp/src/services/__tests__/capacitor-k2.test.ts` — tests verify `"disconnected"` and `"connected"` states pass through correctly.
 
 ---
 
@@ -354,5 +356,28 @@ Matching origins get `Access-Control-Allow-Origin: <origin>` + `Access-Control-A
 **Detection order in `main.tsx`**: `window.__TAURI__` -> Tauri bridge; `!_k2 || !_platform` -> standalone fallback; else -> host-injected (Capacitor).
 
 **Validating tests**: `webapp/src/services/__tests__/tauri-k2.test.ts` -- 11 tests (IPC delegation, fetch routing, platform detection, standalone regression)
+
+---
+
+## Capacitor Mobile Bridge: K2Plugin → Split Globals Adapter (2026-02-17, mobile-webapp-bridge-v2)
+
+**Decision**: `capacitor-k2.ts` wraps K2Plugin's separate methods (connect/disconnect/getStatus/getVersion) into the `IK2Vpn.run(action, params)` interface, and injects `window._platform` with mobile capabilities.
+
+**Detection chain in `main.tsx`**: `window.__TAURI__` → Tauri bridge; `Capacitor.isNativePlatform()` → Capacitor bridge; `!_k2 || !_platform` → standalone fallback.
+
+**Status format adaptation**: K2Plugin returns minimal status (`{ state, connectedAt?, uptimeSeconds?, error? }`). Bridge transforms to full `StatusResponseData`:
+- `running` = derived from state (connecting/connected = true)
+- `networkAvailable` = always true (mobile relies on system network detection)
+- `startAt` = connectedAt ISO string → Unix seconds
+- `error` = plain string → `ControlError { code: 570, message }`
+- `retrying` = always false (gomobile engine doesn't auto-retry)
+
+**Config-driven connect**: `run('up', config)` serializes config to JSON and passes to `K2Plugin.connect({ config: JSON.stringify(config) })`. Config is assembled by Dashboard from UI state (selectedCloudTunnel.url + activeRuleType). Go's `config.SetDefaults()` fills the rest.
+
+**Event strategy**: Bridge registers `vpnStateChange` + `vpnError` listeners that log to console. State updates come through existing 2s polling in vpn.store via `run('status')`. Events supplement polling for faster detection (future optimization: trigger immediate re-poll on event).
+
+**State passthrough fix**: Removed invalid `"disconnected"→"stopped"` mapping from both K2Plugin.swift and K2Plugin.kt. Go engine states now pass through unchanged to match webapp's `ServiceState` type.
+
+**Validating tests**: `webapp/src/services/__tests__/capacitor-k2.test.ts` — 15 tests (injection, status mapping, action dispatch, platform capabilities, getK2Source, standalone regression)
 
 ---
