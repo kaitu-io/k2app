@@ -67,6 +67,12 @@ func (e *Engine) Stop() error {
 	return e.inner.Stop()
 }
 
+// OnNetworkChanged notifies the engine of a network change.
+// Call from platform layer (Android NetworkCallback, iOS NWPathMonitor).
+func (e *Engine) OnNetworkChanged() {
+	e.inner.OnNetworkChanged()
+}
+
 // StatusJSON returns the engine status as a JSON string.
 // The format matches daemon.statusInfo() for consistency.
 func (e *Engine) StatusJSON() string {

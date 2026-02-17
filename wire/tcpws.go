@@ -292,6 +292,23 @@ func (c *TCPWSClient) DialUDP(ctx context.Context, addr string) (net.PacketConn,
 	}, nil
 }
 
+// resetConnection closes cached session resources without marking client as closed.
+// After reset, the next DialTCP/DialUDP will establish a fresh connection.
+func (c *TCPWSClient) resetConnection() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.udpMux != nil {
+		c.udpMux.close()
+		c.udpMux = nil
+	}
+	if c.sess != nil {
+		c.sess.Close()
+		c.sess = nil
+	}
+	c.alloc = nil
+	// NOTE: do NOT set c.closed = true — client must remain usable
+}
+
 // Close closes the smux session and underlying connection.
 func (c *TCPWSClient) Close() error {
 	c.mu.Lock()

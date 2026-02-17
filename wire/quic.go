@@ -321,6 +321,27 @@ func (c *QUICClient) dialUDPStream(ctx context.Context, conn *quic.Conn, addr st
 	}, nil
 }
 
+// resetConnection closes cached connection resources without marking client as closed.
+// After reset, the next DialTCP/DialUDP will establish a fresh connection.
+func (c *QUICClient) resetConnection() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.udpMux != nil {
+		c.udpMux.close()
+		c.udpMux = nil
+	}
+	if c.conn != nil {
+		c.conn.CloseWithError(0, "network changed")
+		c.conn = nil
+	}
+	if c.transport != nil {
+		c.transport.Close()
+		c.transport = nil
+	}
+	c.alloc = nil
+	// NOTE: do NOT set c.closed = true — client must remain usable
+}
+
 // Close closes the QUIC connection and underlying transport.
 func (c *QUICClient) Close() error {
 	c.mu.Lock()

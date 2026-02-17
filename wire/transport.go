@@ -101,6 +101,28 @@ func (tm *TransportManager) DialUDP(ctx context.Context, addr string) (net.Packe
 	return nil, ErrNotConnected
 }
 
+// Resettable is an optional interface for transports that support connection reset.
+type Resettable interface {
+	resetConnection()
+}
+
+// ResetConnections resets cached connections on all transports.
+// Transports that implement Resettable will have their connections cleared,
+// forcing new connections on the next dial attempt.
+func (tm *TransportManager) ResetConnections() {
+	tm.mu.RLock()
+	quic := tm.quic
+	tcpws := tm.tcpws
+	tm.mu.RUnlock()
+
+	if r, ok := quic.(Resettable); ok {
+		r.resetConnection()
+	}
+	if r, ok := tcpws.(Resettable); ok {
+		r.resetConnection()
+	}
+}
+
 // Close closes both transports.
 func (tm *TransportManager) Close() error {
 	tm.mu.Lock()

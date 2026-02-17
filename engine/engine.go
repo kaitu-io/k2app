@@ -177,6 +177,36 @@ func (e *Engine) Start(cfg Config) error {
 	return nil
 }
 
+// OnNetworkChanged should be called by the platform layer when a network
+// change is detected (e.g., WiFi to cellular). If the engine is connected,
+// it resets wire transport connections to force fresh connections on the
+// next dial attempt, avoiding dead cached connections.
+func (e *Engine) OnNetworkChanged() {
+	e.mu.Lock()
+	if e.state != StateConnected {
+		e.mu.Unlock()
+		return
+	}
+	handler := e.handler
+	tm := e.tm
+	e.mu.Unlock()
+
+	// Notify handler of transient reconnecting state (for UI feedback).
+	if handler != nil {
+		handler.OnStateChange("reconnecting")
+	}
+
+	// Reset cached connections — next dial will create fresh ones.
+	if tm != nil {
+		tm.ResetConnections()
+	}
+
+	// Notify handler we're back to connected.
+	if handler != nil {
+		handler.OnStateChange(StateConnected)
+	}
+}
+
 // Stop tears down the tunnel and returns the engine to disconnected.
 func (e *Engine) Stop() error {
 	e.mu.Lock()
