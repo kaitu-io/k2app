@@ -79,6 +79,7 @@ const createMockVPNStatus = (overrides = {}) => ({
   isTransitioning: false,
   isServiceRunning: false,
   isRetrying: false,
+  isError: false,
   networkAvailable: true,
   setOptimisticState: vi.fn(),
   error: null,
@@ -256,6 +257,64 @@ describe('Dashboard', () => {
       // Wait a bit and verify up was not called
       await new Promise(resolve => setTimeout(resolve, 100));
       expect(mockExec).not.toHaveBeenCalledWith('up');
+    });
+
+    it('error state with tunnel should reconnect on toggle', async () => {
+      const mockSetOptimisticState = vi.fn();
+
+      vi.mocked(useVPNStatus).mockReturnValue(
+        createMockVPNStatus({
+          serviceState: 'error',
+          isError: true,
+          isDisconnected: false,
+          isRetrying: false,
+          setOptimisticState: mockSetOptimisticState,
+        }) as any
+      );
+
+      // Mock authenticated user with a selected tunnel
+      vi.mocked(useAuthStore).mockImplementation((selector: any) => {
+        const state = { isAuthenticated: true };
+        return selector(state);
+      });
+
+      render(<Dashboard />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('toggle-btn')).toBeInTheDocument();
+      });
+
+      const toggleBtn = screen.getByTestId('toggle-btn');
+      fireEvent.click(toggleBtn);
+
+      await waitFor(() => {
+        expect(mockSetOptimisticState).toHaveBeenCalledWith('connecting');
+        expect(mockExec).toHaveBeenCalledWith('up', expect.any(Object));
+      });
+    });
+
+    it('error state without tunnel should not reconnect', async () => {
+      vi.mocked(useVPNStatus).mockReturnValue(
+        createMockVPNStatus({
+          serviceState: 'error',
+          isError: true,
+          isDisconnected: false,
+          isRetrying: false,
+        }) as any
+      );
+
+      render(<Dashboard />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('toggle-btn')).toBeInTheDocument();
+      });
+
+      const toggleBtn = screen.getByTestId('toggle-btn');
+      fireEvent.click(toggleBtn);
+
+      // Wait a bit and verify up was not called
+      await new Promise(resolve => setTimeout(resolve, 100));
+      expect(mockExec).not.toHaveBeenCalledWith('up', expect.any(Object));
     });
   });
 
