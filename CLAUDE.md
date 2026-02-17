@@ -64,6 +64,8 @@ Makefile             Build orchestration — version from package.json, k2 from 
 - **MUI dark theme**: Material-UI 5 with custom theme tokens. No light mode.
 - **Webapp subagent tasks**: Always invoke `/word9f-frontend` for frontend decisions.
 - **Go→JS JSON key convention**: Go `json.Marshal` outputs snake_case. JS/TS expects camelCase. Native bridge layers (K2Plugin.swift/kt) must remap at boundary.
+- **Bridge transformStatus() mandatory**: Every bridge (`tauri-k2.ts`, `capacitor-k2.ts`) must implement `transformStatus()`. No pass-through of raw backend state. Daemon outputs `"stopped"` but webapp expects `"disconnected"`. Error synthesis (`disconnected + error → "error"`) also happens in bridge.
+- **VPN state contract**: `reconnecting` is a transient engine signal (engine state stays `connected`). `disconnecting` is UI-only optimistic state. Backend never emits either directly. `error` is synthesized by bridge from `disconnected + lastError`.
 - **`.gitignore` for native platforms**: Never ignore entire source directories (`mobile/ios/`, `mobile/android/`). Only ignore build artifacts.
 - **Capacitor plugin loading**: Use `registerPlugin('K2Plugin')` from `@capacitor/core`. Never dynamic npm import.
 - **gomobile Swift API**: Generated methods use `throws` pattern, NOT NSError out-parameter.
@@ -97,6 +99,9 @@ Makefile             Build orchestration — version from package.json, k2 from 
 - **Keep-alive tabs** — Tab pages mount once, hide with `visibility:hidden` when inactive
 - **Design tokens** — MUI theme + CSS variables for dark-only theme
 - **Center** — Backend API service (`api/`): auth, user management, orders, tunnels, cloud management
+- **transformStatus()** — Bridge normalization function in `tauri-k2.ts` and `capacitor-k2.ts`. Converts raw backend state to webapp's `StatusResponseData`: normalizes `"stopped"`→`"disconnected"`, synthesizes `"error"` from `disconnected + lastError`, maps timestamp fields.
+- **OnNetworkChanged()** — gomobile-exported Engine method (`k2/mobile/mobile.go`) that resets wire connections after network change. Emits transient `"reconnecting"` signal, calls `wire.ResetConnections()`, then `"connected"`. State stays `StateConnected`.
+- **Resettable** — Optional Go interface (`k2/wire/transport.go`) that wire implementations can satisfy to support `ResetConnections()`. Used by engine via type assertion.
 
 ## Layer Docs (read on demand)
 

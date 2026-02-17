@@ -337,16 +337,16 @@ Bridge 修复后自动生效：
 
 ### In Scope
 
-- [ ] Tauri bridge: 新增 `transformStatus()`（`stopped→disconnected`、error 合成）
-- [ ] Capacitor bridge: `transformStatus()` 补全 error 合成
-- [ ] Dashboard `handleToggleConnection` error 分支
-- [ ] Dashboard guard 条件修复（`isError` 加入判断）
-- [ ] Go engine `OnNetworkChanged()` + gomobile 导出
-- [ ] Wire `ResetConnections()`（QUICClient + TCPWSClient）
-- [ ] Android `K2VpnService` NetworkCallback
-- [ ] iOS `PacketTunnelProvider` NWPathMonitor
-- [ ] Tauri bridge 测试更新（`"stopped"` → `"disconnected"` 归一化验证）
-- [ ] Capacitor bridge 测试更新（error 合成验证）
+- Tauri bridge: 新增 `transformStatus()`（`stopped→disconnected`、error 合成）
+- Capacitor bridge: `transformStatus()` 补全 error 合成
+- Dashboard `handleToggleConnection` error 分支
+- Dashboard guard 条件修复（`isError` 加入判断）
+- Go engine `OnNetworkChanged()` + gomobile 导出
+- Wire `ResetConnections()`（QUICClient + TCPWSClient）
+- Android `K2VpnService` NetworkCallback
+- iOS `PacketTunnelProvider` NWPathMonitor
+- Tauri bridge 测试更新（`"stopped"` → `"disconnected"` 归一化验证）
+- Capacitor bridge 测试更新（error 合成验证）
 
 ### Out of Scope
 

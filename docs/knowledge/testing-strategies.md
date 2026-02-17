@@ -97,6 +97,81 @@ test('renders user info', () => {
 
 ---
 
+## Bridge transformStatus() Unit Tests: Mock IPC, Assert Normalized Output (2026-02-17, vpn-error-reconnect)
+
+**Pattern**: Test `transformStatus()` logic by mocking the IPC invoke and verifying that the normalized `StatusResponseData` structure is returned — not the raw backend string. Each test case covers one transformation rule.
+
+**Test cases to cover for any bridge**:
+1. `"stopped"` → `"disconnected"` normalization (Tauri-specific)
+2. `"disconnected" + error string` → `state: "error"` synthesis
+3. `"connected" + error string` → error recorded but `state` unchanged (error clears on reconnect)
+4. `connected_at` ISO string → `startAt` Unix seconds
+5. Normal `"connected"` → `running: true`, no error
+6. Normal `"disconnected"` (no error) → `running: false`, no error
+
+**Vitest mock pattern for Tauri bridge**:
+```typescript
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: vi.fn()
+}));
+
+test('stopped normalized to disconnected', async () => {
+  vi.mocked(invoke).mockResolvedValue({
+    code: 0, data: { state: 'stopped' }
+  });
+  const result = await _k2.run('status');
+  expect(result.data.state).toBe('disconnected');
+  expect(result.data.running).toBe(false);
+});
+```
+
+**Why test transformation separately from store**: `transformStatus()` is pure logic. Testing it in isolation (not through the full store → component chain) gives precise failure messages: "error synthesis broken" rather than "button doesn't show red".
+
+**Bidirectional link**: Architecture Decisions → "Bridge as State Contract Translation Layer" explains why `transformStatus()` must exist.
+
+**Validating tests**: `webapp/src/services/__tests__/tauri-k2.test.ts` (6 tests), `webapp/src/services/__tests__/capacitor-k2.test.ts` (3 tests)
+
+---
+
+## Go Engine OnNetworkChanged TDD: State Guard + Signal Sequence (2026-02-17, vpn-error-reconnect)
+
+**Pattern**: Engine behavioral tests use mock EventHandler and mock wire transport to verify the sequence of state signals emitted and whether `ResetConnections()` was called.
+
+**Critical test case — guard condition**: `OnNetworkChanged()` must be a no-op when engine is not in `StateConnected`. Test must verify that calling it in `StateDisconnected` or `StateConnecting` emits no signals and calls no reset.
+
+**Critical test case — signal sequence**: When connected, expect exactly: `["reconnecting", "connected"]` in that order. A signal recorder mock captures all `OnStateChange` calls.
+
+**Mock pattern (Go)**:
+```go
+type mockHandler struct {
+    states []string
+}
+func (m *mockHandler) OnStateChange(state string) { m.states = append(m.states, state) }
+
+type mockWire struct {
+    resetCalled bool
+}
+func (m *mockWire) ResetConnections() { m.resetCalled = true }
+```
+
+**Test structure for Resettable interface**:
+```go
+// Wire that implements Resettable
+engine.wire = &mockWire{}
+engine.state = StateConnected
+engine.OnNetworkChanged()
+assert.Equal(t, []string{"reconnecting", "connected"}, handler.states)
+assert.True(t, wire.resetCalled)
+
+// Wire that does NOT implement Resettable (plain interface)
+engine.wire = &mockWireNoReset{}
+// No panic, no reset, signals still emitted
+```
+
+**Validating tests**: `k2/engine/engine_test.go` — 4 tests (connected triggers reset, disconnected no-op, connecting no-op, signal order verified), `k2/wire/transport_test.go` — 5 subtests
+
+---
+
 ## Engine Package TDD: Config Combinations as Test Cases (2026-02-16, unified-engine)
 
 **Pattern**: `engine_test.go` has 14 test functions covering all Config field combinations. Each test verifies one aspect of Engine behavior.

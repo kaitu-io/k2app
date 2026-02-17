@@ -405,6 +405,81 @@ beforeEach(() => {
 
 ---
 
+## Go Wire Layer: Cached Dead Connection Not Cleared on Network Change (2026-02-17, vpn-error-reconnect)
+
+**Problem**: `QUICClient.connect()` and `TCPWSClient.connect()` cache their connections (`c.conn`, `c.sess`) after first success. When the network changes (WiFi→4G), the cached connection dies but `c.conn != nil` — so subsequent `connect()` calls return the dead connection. All new streams fail silently. Engine still reports `"connected"`.
+
+**Why this is the fix shape**: The solution is `ResetConnections()` — close and nil the cached connection. The next `connect()` call (lazy) rebuilds from nil. TUN fd is not affected — it's a kernel interface independent of the physical network path.
+
+**Go implementation pattern** (from vpn-error-reconnect):
+```go
+// In QUICClient
+func (c *QUICClient) ResetConnections() {
+    c.mu.Lock()
+    defer c.mu.Unlock()
+    if c.conn != nil {
+        c.conn.CloseWithError(0, "network changed")
+        c.conn = nil
+    }
+    if c.transport != nil {
+        c.transport.Close()
+        c.transport = nil
+    }
+    if c.udpMux != nil {
+        c.udpMux.Close()
+        c.udpMux = nil
+    }
+    // c.closed stays false — allows future reconnect
+}
+```
+
+**Key invariant**: `closed=false` must be preserved so the lazy reconnect path in `connect()` is not blocked.
+
+**Resettable interface** for type-safe optional capability:
+```go
+type Resettable interface { ResetConnections() }
+// Usage:
+if r, ok := e.wire.(Resettable); ok { r.ResetConnections() }
+```
+
+**Validating tests**: `k2/wire/transport_test.go` — 5 subtests verifying reset clears connections, allows lazy reconnect, and preserves closed=false
+
+---
+
+## iOS NWPathMonitor Must Run in NE Process, Not Main App (2026-02-17, vpn-error-reconnect)
+
+**Context**: For mobile VPN network change detection, NWPathMonitor must run in the `PacketTunnelProvider` (Network Extension process), not in the main app. The main app has no direct access to the gomobile engine — it communicates with the NE via `sendProviderMessage()`. The NE process has the engine reference.
+
+**Why NE process**: Engine's `onNetworkChanged()` is a direct method call. Only the process holding the engine reference can call it. On iOS, the engine runs in the NE sandbox (`PacketTunnelProvider`), which is a separate process from the main app.
+
+**Implementation**:
+```swift
+// In PacketTunnelProvider.swift (NE process)
+private let pathMonitor = NWPathMonitor()
+private var pendingReconnectItem: DispatchWorkItem?
+
+func startMonitoringNetwork() {
+    pathMonitor.pathUpdateHandler = { [weak self] path in
+        guard path.status == .satisfied else { return }
+        self?.pendingReconnectItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            self?.engine?.onNetworkChanged()
+        }
+        self?.pendingReconnectItem = item
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.5, execute: item)
+    }
+    pathMonitor.start(queue: .global(qos: .utility))
+}
+```
+
+**DispatchWorkItem for debounce**: Unlike `DispatchQueue.asyncAfter` (not cancellable), `DispatchWorkItem` can be cancelled. The pattern `pendingItem?.cancel()` + new item + asyncAfter implements a cancellable 500ms debounce.
+
+**Contrast with Android**: Android uses `ConnectivityManager.NetworkCallback` in `K2VpnService` (which also holds the engine reference). Same architectural pattern — the component holding the engine drives reconnect.
+
+**Validating tests**: Manual device testing — VPN maintains connection through WiFi→4G transition.
+
+---
+
 ## Android Bans Netlink Sockets for Non-Root Apps (2026-02-17, android-vpn-audit)
 
 **Problem**: sing-tun's `NewNetworkUpdateMonitor()` uses `netlink.RouteSubscribe` + `netlink.LinkSubscribe` on Linux/Android. Google bans netlink sockets for non-root apps — `NewNetworkUpdateMonitor` returns `ErrNetlinkBanned` on Android.

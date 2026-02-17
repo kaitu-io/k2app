@@ -422,6 +422,100 @@ PacketTunnelProvider.swift
 
 ---
 
+## Bridge as State Contract Translation Layer — transformStatus() Mandatory (2026-02-17, vpn-error-reconnect)
+
+**Decision**: Every bridge layer (`tauri-k2.ts`, `capacitor-k2.ts`) MUST implement `transformStatus()` to normalize backend state before exposing it to the webapp. Backends must never pass raw state strings directly to the webapp. The bridge is the contract translation layer.
+
+**Root cause discovered**: Daemon outputs `state: "stopped"` but webapp's `ServiceState` type has no `"stopped"` value — only `"disconnected"`. Tauri bridge was a pass-through, so all downstream booleans computed from state were wrong on desktop:
+- `isDisconnected` → always false (because `"stopped" !== "disconnected"`)
+- `isError` → never triggered
+- `handleToggleConnection` button disabled logic → broken
+
+**State contract table (after fix)**:
+
+| ServiceState | Source | Produced by |
+|-------------|--------|-------------|
+| `disconnected` | Backend | Daemon `"stopped"` → bridge normalizes; Engine `"disconnected"` → direct |
+| `connecting` | Backend | Both backends |
+| `connected` | Backend | Both backends |
+| `error` | Bridge synthesis | `disconnected + lastError` → bridge synthesizes `"error"` |
+| `reconnecting` | Engine EventHandler | Transient signal (engine state stays `"connected"`) |
+| `disconnecting` | UI optimistic | `setOptimisticState('disconnecting')` — never from backend |
+
+**transformStatus() responsibilities**:
+1. State normalization: `"stopped"` → `"disconnected"` (daemon-specific rename)
+2. Error synthesis: `state === "disconnected" && raw.error` → `state = "error"`
+3. Field mapping: `connected_at` → `startAt` (Unix seconds); `error` string → `ControlError { code: 570, message }`
+4. Defaults: `running`, `networkAvailable`, `retrying` — synthesized from state
+
+**Validating tests**: `webapp/src/services/__tests__/tauri-k2.test.ts` (6 tests — stopped normalization, error synthesis, connected_at mapping), `webapp/src/services/__tests__/capacitor-k2.test.ts` (3 tests — error synthesis fix)
+
+---
+
+## OnNetworkChanged: Engine Wire Reset Pattern (2026-02-17, vpn-error-reconnect)
+
+**Decision**: `engine.OnNetworkChanged()` resets cached wire connections without changing engine state. It emits a transient `"reconnecting"` signal via `EventHandler.OnStateChange`, calls `wire.ResetConnections()`, then emits `"connected"`. Engine state remains `StateConnected` throughout — only the event handler sees the transient state.
+
+**Why transient signal, not state change**: Engine's 3-state model (`disconnected`, `connecting`, `connected`) is correct and simple. `"reconnecting"` is a UI concern — a momentary signal that wire is self-healing. Making it a persistent engine state would require extra transitions and teardown logic.
+
+**Wire Resettable interface** (`k2/wire/transport.go`):
+```go
+type Resettable interface {
+    ResetConnections()
+}
+```
+Type-assertion pattern: `if r, ok := e.wire.(Resettable); ok { r.ResetConnections() }`. Optional capability — not all wire implementations need it.
+
+**QUICClient reset**: Closes `c.conn` + `c.transport` + `c.udpMux`, sets them to nil, keeps `closed=false`. Next `connect()` call lazy-rebuilds from nil. TUN fd not affected (kernel interface, independent of physical network).
+
+**TCPWSClient reset**: Closes `c.sess` + `c.udpMux`, sets to nil. Same lazy-rebuild pattern.
+
+**gomobile export** (`k2/mobile/mobile.go`):
+```go
+func (e *Engine) OnNetworkChanged() {
+    e.inner.OnNetworkChanged()
+}
+```
+
+**Validating tests**: `k2/engine/engine_test.go` (4 tests — connected state triggers reset, non-connected state no-ops, reconnecting signal emitted), `k2/wire/transport_test.go` (5 subtests — reset clears conn, keeps closed=false, lazy reconnect on next dial)
+
+---
+
+## Platform Network Change Detection: Bridge Layer Owns Mobile Reconnect (2026-02-17, vpn-error-reconnect)
+
+**Decision**: Mobile network change detection (WiFi→4G) must be implemented in the native bridge layer (Android Kotlin, iOS Swift), not the Go engine. Platform provides the TUN fd — any reconnect requires tearing down and rebuilding the TUN fd from the platform.
+
+**Why bridge layer, not engine**: `engine.Start()` requires a platform-provided TUN fd (`VpnService.Builder.establish()` on Android, `packetFlow` on iOS NE). The engine cannot independently reconnect on mobile — it has no way to get a new TUN fd. This constraint was documented in `k2/mobile-sdk/spec.md`: "Auto-reconnect on network change — native shell responsibility".
+
+**Android implementation** (`K2VpnService.kt`):
+```kotlin
+// ConnectivityManager.NetworkCallback with 500ms debounce
+override fun onAvailable(network: Network) {
+    handler.removeCallbacks(reconnectRunnable)
+    handler.postDelayed(reconnectRunnable, 500)
+}
+```
+Wire reset via `engine?.onNetworkChanged()`. Network callback registered after engine start, unregistered on stop.
+
+**iOS implementation** (`PacketTunnelProvider.swift`, NE process):
+```swift
+// NWPathMonitor with 500ms DispatchWorkItem debounce
+pathMonitor.pathUpdateHandler = { [weak self] path in
+    if path.status == .satisfied {
+        self?.debounceReconnect()
+    }
+}
+```
+NE process is separate from app process — NWPathMonitor runs in the VPN extension sandbox.
+
+**500ms debounce rationale**: Network change events fire multiple times during transition (interface down, interface up, route updates). 500ms absorbs the storm and triggers only once after stabilization.
+
+**Desktop**: Not implemented. Daemon already has `tryAutoReconnect` mechanism based on persisted state. sing-tun `DefaultInterfaceMonitor` is viable for future desktop reconnection but not in scope.
+
+**Validating tests**: Manual device testing (Android WiFi→4G, iOS WiFi→4G). No unit tests for native platform callbacks — they require Android SDK / iOS SDK mocks.
+
+---
+
 ## sing-tun Network Monitoring: Available But Unused by k2 Engine (2026-02-17, android-vpn-audit)
 
 **Context**: Investigating why k2 engine has no network change detection or auto-reconnect.

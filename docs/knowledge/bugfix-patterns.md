@@ -176,6 +176,72 @@ const K2Plugin = registerPlugin('K2Plugin');
 
 ---
 
+## VPN State Contract Mismatch: Daemon "stopped" vs Webapp "disconnected" (2026-02-17, vpn-error-reconnect)
+
+**Problem**: Daemon returns `state: "stopped"` but webapp's `ServiceState` TypeScript type only has `"disconnected"`, `"connecting"`, `"connected"`, `"reconnecting"`, `"error"`, `"disconnecting"`. Tauri bridge was a pass-through — `"stopped"` arrived in the webapp store, making all derived booleans wrong:
+- `isDisconnected = (state === "disconnected")` → always false when daemon sends `"stopped"`
+- `isError` → never triggered
+- `handleToggleConnection` disabled guard → broken (button always enabled)
+- App "worked" only because `else`/`default` branches accidentally handled the unknown value
+
+**Discovery**: Spec authoring for vpn-error-reconnect feature — code audit of bridge layers vs webapp type definitions revealed the mismatch.
+
+**Fix**: Added `transformStatus()` to `tauri-k2.ts` that maps `"stopped"` → `"disconnected"` before returning from `run('status')`. This is a semantic correction, not a behavior change — the app was already rendering disconnected UI via else-branches.
+
+**Why the bug persisted**: Tauri bridge had no transformStatus function (was pure pass-through). Tests mocked the IPC and didn't verify state normalization. The else-branch fallback made desktop "appear functional" while masking the underlying type contract violation.
+
+**Files fixed**: `webapp/src/services/tauri-k2.ts`
+
+**Validating tests**: `webapp/src/services/__tests__/tauri-k2.test.ts` — `test_status_stopped_normalized_to_disconnected`
+
+---
+
+## VPN Error State Never Synthesized — isError Always False (2026-02-17, vpn-error-reconnect)
+
+**Problem**: When engine fails to connect, it returns `{ state: "disconnected", error: "some error string" }`. Both Tauri and Capacitor bridges passed this through without synthesizing `state: "error"`. Result: `useVPNStatus().isError` was always false on all platforms. Error state was completely invisible in the UI — the ConnectionButton never showed error styling, users got no feedback on connection failure.
+
+**Root cause (Tauri bridge)**: No `transformStatus()` at all — raw daemon response passed directly to webapp.
+
+**Root cause (Capacitor bridge)**: Had partial `transformStatus()` but missing the key synthesis step: `if (state === 'disconnected' && error) { state = 'error'; }`. The `let state` declaration was typed as `const` in the original, preventing reassignment.
+
+**Fix**:
+- Tauri: `transformStatus()` synthesizes `state = "error"` when `state === "disconnected" && raw.error`
+- Capacitor: Changed `const state` to `let state`, added `if (state === 'disconnected') { state = 'error'; }` after error is detected
+
+**Error lifecycle**: `_k2.run('up')` → engine enters `"connecting"` → state not `"disconnected"` → error auto-clears. `_k2.run('down')` → engine clears `lastError` → `state = "disconnected"`, no error → normal. Wire self-heal success → `"connected"` → error gone. Wire self-heal fail → `"disconnected" + lastError` → bridge synthesizes `"error"`.
+
+**Files fixed**: `webapp/src/services/tauri-k2.ts`, `webapp/src/services/capacitor-k2.ts`
+
+**Validating tests**: `webapp/src/services/__tests__/tauri-k2.test.ts` — `test_status_disconnected_with_error_synthesizes_error_state`; `webapp/src/services/__tests__/capacitor-k2.test.ts` — `test_status_disconnected_with_error_synthesizes_error_state`
+
+---
+
+## Dashboard handleToggleConnection Missing Error Branch (2026-02-17, vpn-error-reconnect)
+
+**Problem**: `handleToggleConnection` in `Dashboard.tsx` had no `isError` branch. When engine state was `"error"`, the function fell through to the `else if (!isDisconnected)` branch (which is true when state is `"error"`), triggering `_k2.run('down')` — trying to disconnect an already-disconnected engine. Result: clicking the error button attempted to disconnect instead of reconnect.
+
+**Fix**: Added explicit error branch before the `else if (!isDisconnected)` check:
+```ts
+if (isError && !isRetrying) {
+  // Error state: engine already disconnected, reconnect directly
+  setOptimisticState('connecting');
+  const config = assembleConfig();
+  await window._k2.run('up', config);
+} else if (!isDisconnected) {
+  // Connected/connecting: disconnect
+  ...
+}
+```
+Also fixed the guard condition: `(isDisconnected || isError) && !activeTunnelInfo.domain` — error state requires tunnel selection before reconnect, same as disconnected.
+
+**Config assembly extracted**: `assembleConfig()` helper extracted from inline connect logic to be reusable in both the `isError` branch and the `isDisconnected` branch.
+
+**Files fixed**: `webapp/src/pages/Dashboard.tsx`
+
+**Validating tests**: `webapp/src/pages/__tests__/Dashboard.test.tsx` — `test_error_state_reconnect_calls_up`, `test_error_state_guard_no_tunnel_selected`
+
+---
+
 ## Capacitor Local Plugin Stale Copy in node_modules (2026-02-16, mobile-debug)
 
 **Problem**: Capacitor plugin declared as `"k2-plugin": "file:./plugins/k2-plugin"` in `mobile/package.json` is copied (not symlinked) to `node_modules/k2-plugin/`. Editing source files in `mobile/plugins/k2-plugin/` has no effect — `cap sync` and Gradle build use the stale `node_modules/` copy.
