@@ -2,7 +2,9 @@ package cloudprovider
 
 import (
 	"context"
+	"fmt"
 	"testing"
+	"time"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -141,9 +143,11 @@ func TestSSHStandaloneProvider_GetOrphanStatus(t *testing.T) {
 	insertSlaveNode(t, db, "192.168.1.1", "Test Node", "us-west")
 
 	// Set up mock SSH executor for testing
+	now := time.Now()
 	SetSSHExecByIP(func(ctx context.Context, ip string, command string) (string, error) {
-		// Return mock vnstat output
-		return `{"vnstatversion":"2.6","jsonversion":"2","interfaces":[{"name":"eth0","traffic":{"month":[{"date":{"year":2026,"month":1},"rx":1073741824,"tx":2147483648}]}}]}`, nil
+		// Return mock vnstat output with current year/month so parseVnstatJSON matches
+		return fmt.Sprintf(`{"vnstatversion":"2.6","jsonversion":"2","interfaces":[{"name":"eth0","traffic":{"month":[{"date":{"year":%d,"month":%d},"rx":1073741824,"tx":2147483648}]}}]}`,
+			now.Year(), int(now.Month())), nil
 	})
 	defer SetSSHExecByIP(nil) // Clean up
 

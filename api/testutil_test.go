@@ -22,6 +22,10 @@ import (
 // testInitOnce ensures test configuration is initialized only once
 var testInitOnce bool
 
+// testConfigAvailable indicates whether config.yml was found during init.
+// Tests that require the config file should call skipIfNoConfig(t).
+var testConfigAvailable bool
+
 // testMiniRedis is the in-memory Redis server for tests
 var testMiniRedis *miniredis.Miniredis
 
@@ -46,9 +50,12 @@ func testInitConfig() {
 
 	if os.Getenv("KAITU_TEST_CONFIG") != "1" {
 		os.Setenv("KAITU_TEST_CONFIG", "1")
-		viper.SetConfigFile("../center/config.yml")
-		viper.ReadInConfig()
-		util.SetConfigFile("../center/config.yml")
+		if _, statErr := os.Stat("../center/config.yml"); statErr == nil {
+			viper.SetConfigFile("../center/config.yml")
+			viper.ReadInConfig()
+			util.SetConfigFile("../center/config.yml")
+			testConfigAvailable = true
+		}
 	}
 
 	// Re-set Redis config after config file load to ensure it takes precedence
@@ -58,6 +65,15 @@ func testInitConfig() {
 
 	// Enable mock verification code
 	EnableMockVerificationCode = true
+}
+
+// skipIfNoConfig skips the test if config.yml is not available.
+func skipIfNoConfig(t *testing.T) {
+	t.Helper()
+	testInitConfig()
+	if !testConfigAvailable {
+		t.Skip("config.yml not available")
+	}
 }
 
 // ===================== Router 设置 =====================
