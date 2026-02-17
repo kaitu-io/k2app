@@ -6,9 +6,9 @@
 |-----------|------------------------------------------|
 | Feature   | webapp-architecture-v2                   |
 | Version   | v1                                       |
-| Status    | draft                                    |
+| Status    | implemented                              |
 | Created   | 2026-02-17                               |
-| Updated   | 2026-02-17                               |
+| Updated   | 2026-02-18                               |
 | Depends on | config-driven-connect                   |
 
 ## Version History

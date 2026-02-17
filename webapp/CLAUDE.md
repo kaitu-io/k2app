@@ -1,117 +1,179 @@
-# webapp — React Frontend
+# Kaitu WebApp
 
-React 19 + TypeScript + Vite + Tailwind CSS v4. Served by tauri-plugin-localhost on `http://localhost:14580` (production) or Vite dev server on `:1420` (dev).
+Shared React UI codebase running on Web, Desktop (Tauri), and Mobile (Capacitor).
+
+---
+
+## Hard Rules
+
+```
+DO NOT:
+  - Direct fetch/axios calls from pages/components (use cloudApi or k2api)
+  - Hardcoded UI text in components (use i18n)
+  - Access window._k2 for API calls (use cloudApi module)
+  - Access window._k2 for platform capabilities (use window._platform)
+  - Use npm (use yarn)
+  - Display response.message to users (use code + i18n)
+
+DO:
+  - VPN control via window._k2.run(action, params)
+  - Cloud API calls via cloudApi.request() (src/services/cloud-api.ts)
+  - Platform capabilities via window._platform (storage, getUdid, clipboard, etc.)
+  - State management with Zustand stores
+  - Components use Material-UI
+  - Errors displayed via response.code mapped to i18n keys
+  - New text goes to zh-CN first, then manually translate to other locales
+```
+
+### Modification Checklist
+
+- [ ] New text added to all locale files?
+- [ ] VPN control goes through `window._k2.run()`?
+- [ ] API requests go through `cloudApi` or `k2api` (NOT `window._k2`)?
+- [ ] Platform features accessed via `window._platform`?
+- [ ] Cross-platform impact considered (Desktop/Mobile)?
+- [ ] Errors based on code, not message?
+
+---
+
+## Error Handling
+
+**Rule: `response.message` is for debug logs only. Users see i18n text mapped from `response.code`.**
+
+| Reason | Detail |
+|--------|--------|
+| Technical gibberish | `"request failed: POST /api/xxx"` is meaningless to users |
+| No i18n | Backend messages are English-only |
+| Security | Exposes internal API paths |
+
+Error code-to-i18n mapping lives in `utils/errorHandler.ts`. Use `handleResponseError()` and `getErrorMessage()` from that module. In catch blocks, log the raw error and show an i18n fallback string to the user.
+
+---
+
+## Architecture: Split Globals
+
+Frontend uses two separate globals injected before app loads. They have distinct responsibilities:
+
+- `window._k2: IK2Vpn` -- VPN tunnel control only (single `run()` method)
+- `window._platform: IPlatform` -- Platform capabilities (storage, UDID, clipboard, etc.)
+- `cloudApi` (internal module) -- Cloud API HTTP calls with auth injection
+
+```
+┌──────────────────────────────────────────────────────────┐
+│ Platform Injection (before app loads)                     │
+│   Tauri:     Rust inject -> HTTP 127.0.0.1:1777          │
+│   Capacitor: Plugin inject -> Native SDK                 │
+│   Web:       JS inject -> web fallbacks                  │
+└──────────┬────────────────────────┬──────────────────────┘
+           ↓                        ↓
+┌─────────────────────┐  ┌─────────────────────────────────┐
+│ window._k2: IK2Vpn  │  │ window._platform: IPlatform     │
+│   run(action, params)│  │   os, isDesktop, isMobile       │
+│                      │  │   version                       │
+│ VPN actions:         │  │   storage: ISecureStorage        │
+│   start, stop,       │  │   getUdid()                     │
+│   status, reconnect, │  │   writeClipboard(), readClipboard│
+│   evaluate_tunnels,  │  │   openExternal()                │
+│   speedtest, etc.    │  │   debug(), warn()               │
+└──────────┬───────────┘  └────────────────────────────────┘
+           ↓
+┌──────────────────────────────────────────────────────────┐
+│ cloudApi (services/cloud-api.ts)                         │
+│   request(method, path, body?) -> SResponse              │
+│   Auth header injection (Bearer token)                   │
+│   401 handling with token refresh                        │
+│   Uses authService for token management                  │
+└──────────────────────────────────────────────────────────┘
+           ↓
+┌──────────────────────────────────────────────────────────┐
+│ Frontend                                                  │
+│   services/   - k2api (cache/SWR wrapper over cloudApi)  │
+│   core/       - useStatusPolling() (polling via _k2.run) │
+│   stores/     - Zustand state management                 │
+│   pages/      - Route pages                              │
+│   components/ - UI components                            │
+└──────────────────────────────────────────────────────────┘
+```
+
+### Key Interfaces (types/kaitu-core.ts)
+
+| Interface | Global | Purpose |
+|-----------|--------|---------|
+| `IK2Vpn` | `window._k2` | VPN control: `run<T>(action, params): Promise<SResponse<T>>` |
+| `IPlatform` | `window._platform` | Platform capabilities: storage, UDID, clipboard, logging |
+| `ISecureStorage` | `window._platform.storage` | Encrypted key-value storage |
+
+### VPN Actions (via window._k2.run)
+
+`start`, `stop`, `status`, `reconnect`, `get_config`, `set_config`, `get_config_options`, `speedtest`, `get_speedtest_status`, `fix_network`, `version`, `get_metrics`, `evaluate_tunnels`
+
+### API Calls (via cloudApi / k2api)
+
+Cloud API calls go through `cloudApi.request()` which handles auth headers and token refresh. The `k2api()` wrapper adds caching and SWR support. Auth success/failure/401/402 side effects are handled by k2api.
+
+---
+
+## Tech Stack
+
+React 19, Material-UI 5, React Router 7, i18next, Vite 6, Zustand, TypeScript.
+
+---
+
+## Directory Structure
+
+```
+webapp/
+├── src/
+│   ├── types/              # Type definitions (kaitu-core.ts = IK2Vpn + IPlatform)
+│   ├── services/           # cloudApi, k2api, authService, web-platform
+│   ├── core/               # Core module (getK2, isK2Ready, waitForK2, polling)
+│   ├── stores/             # Zustand stores (vpn, auth, evaluation, dashboard, ...)
+│   ├── pages/              # Route pages
+│   ├── components/         # UI components
+│   ├── hooks/              # Custom hooks (useEvaluation, useUser, etc.)
+│   ├── i18n/locales/       # Locale files (zh-CN, en-US, ja, zh-TW, etc.)
+│   ├── utils/              # Utilities (errorHandler.ts, versionCompare.ts)
+│   ├── config/             # App configuration
+│   └── theme/              # MUI theme
+└── package.json
+```
+
+---
+
+## i18n
+
+| Code | Language | Role |
+|------|----------|------|
+| `zh-CN` | Simplified Chinese | Primary (add new text here first) |
+| `en-US` | English | Manual translation |
+| `ja` | Japanese | Manual translation |
+| `zh-TW` | Traditional Chinese | Manual translation |
+
+---
 
 ## Commands
 
 ```bash
-yarn test              # vitest run (294 tests, 50 files)
-yarn build             # Vite production build → dist/
-npx tsc --noEmit       # Type check
+yarn install                             # Install dependencies (from workspace root)
+cd webapp && yarn dev                    # Dev server
+cd webapp && yarn build                  # Production build
+cd webapp && npx vitest run              # Run all tests
+cd webapp && npx vitest run --reporter=verbose  # Verbose test output
 ```
 
-## Structure
+---
 
-```
-src/
-├── vpn-client/        VpnClient abstraction (THE boundary to k2 daemon)
-│   ├── types.ts       VpnClient interface, VpnStatus, VpnEvent, ReadyState
-│   ├── http-client.ts HttpVpnClient: HTTP to :1777 + 2s polling → events (dedup)
-│   ├── native-client.ts NativeVpnClient: Capacitor K2Plugin bridge (mobile)
-│   ├── mock-client.ts MockVpnClient: test double with observable state
-│   └── index.ts       Factory: initVpnClient() (async, mobile) + createVpnClient() (sync, desktop)
-├── api/               Cloud API (antiblock exception — NOT through VpnClient)
-│   ├── cloud.ts       cloudApi: login, servers, user, purchase, invite, member, device, issue endpoints
-│   ├── antiblock.ts   Entry URL resolution: AES-256-GCM decrypt → localStorage cache → CDN JSONP → default
-│   └── types.ts       API response types (Plan, Order, InviteCode, Device, Member, Issue, etc.)
-├── stores/            Zustand state (async init pattern: null → init() → loaded)
-│   ├── vpn.store.ts       VPN state, connect/disconnect, event subscription, daemonReachable
-│   ├── auth.store.ts      Login flow, token persistence (localStorage), session restore, logout
-│   ├── servers.store.ts   Server list, selection, auto-select first
-│   ├── user.store.ts      User profile, membership info
-│   ├── purchase.store.ts  Plans, order preview, campaign code, order creation
-│   ├── invite.store.ts    Invite codes CRUD, latest code, share link
-│   ├── ui.store.ts        App config, feature flags, alerts, announcement
-│   └── login-dialog.store.ts  Global login modal state (open/close/callback)
-├── hooks/             Composition hooks
-│   ├── useUser.ts     User profile from user.store
-│   ├── useShareLink.ts  Share link generation via cloudApi
-│   └── useInviteCodeActions.ts  Invite code CRUD operations
-├── components/        Shared UI
-│   ├── Layout.tsx         Keep-alive shell: caches visited tab outlets, hides inactive tabs
-│   ├── BottomNav.tsx      4 tabs: Dashboard, Purchase, Invite (feature-flagged), Account
-│   ├── LoginDialog.tsx    Global login modal (replaces /login route for auth flows)
-│   ├── LoginRequiredGuard.tsx  Opens LoginDialog when unauthenticated
-│   ├── MembershipGuard.tsx     Redirects to /purchase when no active membership
-│   ├── ErrorBoundary.tsx  React error boundary with retry
-│   ├── ForceUpgradeDialog.tsx  Blocking overlay when app < minClientVersion
-│   ├── AnnouncementBanner.tsx  Top banner from app config
-│   ├── ServiceAlert.tsx   Daemon unreachable alert
-│   ├── AlertContainer.tsx Toast notification system from ui.store
-│   ├── FeedbackButton.tsx Navigates to /issues
-│   ├── BackButton.tsx     Sub-page back navigation
-│   ├── Pagit.tsx          Reusable pagination component
-│   ├── LoadingAndEmpty.tsx  Loading spinner + empty state
-│   ├── MemberSelection.tsx  Member picker for purchase flow
-│   ├── ExpirationSelectorPopover.tsx  Expiration date picker
-│   ├── InviteRule.tsx     Invite rules display
-│   ├── RetailerStatsOverview.tsx  Retailer stats card
-│   ├── PasswordDialog.tsx  Password input dialog
-│   ├── VersionItem.tsx    Version display item
-│   ├── ConnectionButton.tsx CVA-styled connect/disconnect button
-│   ├── ServerList.tsx     Server list with country, city, load display
-│   ├── ServiceReadiness.tsx Blocks UI until daemon ready + version match
-│   ├── UpdatePrompt.tsx   OTA update notification + apply flow
-│   └── EmailLoginForm.tsx Two-step email login form
-├── pages/             Route pages
-│   ├── Dashboard.tsx      VPN status + connection button + selected server
-│   ├── Purchase.tsx       Plan cards, campaign code, payment flow
-│   ├── InviteHub.tsx      Invite code display, QR, share, remark
-│   ├── Account.tsx        Membership card, settings menu, language, logout
-│   ├── Devices.tsx        Device list, remark edit, delete
-│   ├── MemberManagement.tsx  Member CRUD (add/edit/delete)
-│   ├── ProHistory.tsx     Paginated purchase history
-│   ├── MyInviteCodeList.tsx  All invite codes list with remark editing
-│   ├── UpdateLoginEmail.tsx  Two-step email update flow
-│   ├── DeviceInstall.tsx  Platform download cards
-│   ├── FAQ.tsx            Help topic cards
-│   ├── Issues.tsx         Paginated issue list
-│   ├── IssueDetail.tsx    Issue detail + comments
-│   ├── SubmitTicket.tsx   Submit ticket form
-│   ├── Changelog.tsx      iframe changelog embed
-│   ├── Discover.tsx       iframe + auth postMessage bridge
-│   ├── Login.tsx          Legacy login page (to be removed)
-│   ├── Servers.tsx        Server list + selection (to be absorbed into Dashboard)
-│   └── Settings.tsx       Language, version, about (to be absorbed into Account)
-├── platform/          PlatformApi abstraction (Tauri, Capacitor, Web backends)
-│   ├── types.ts       PlatformApi interface
-│   ├── tauri.ts       Tauri desktop backend
-│   ├── capacitor.ts   Capacitor mobile backend
-│   ├── web.ts         Web fallback backend
-│   └── index.ts       Auto-detect platform, export singleton
-├── i18n/              i18next: 8 namespaces × 2 locales (zh-CN default, en-US)
-│                      Namespaces: common, dashboard, auth, settings, purchase, invite, account, feedback
-├── App.tsx            16 routes + global components (ErrorBoundary, LoginDialog, ForceUpgradeDialog, etc.)
-└── main.tsx           Async bootstrap: initVpnClient() → React render
-```
+## Troubleshooting
 
-## Key Patterns
+| Problem | Check |
+|---------|-------|
+| `window._k2` is undefined | Platform injection not running. Desktop: check Tauri inject. Web: check HTTP inject. |
+| `window._platform` is undefined | Platform injection not running. Check bootstrap sequence in main.tsx. |
+| VPN operations fail | Is kaitu-service running? Check service logs and network permissions. |
+| API calls fail | Token expired? Check network. Check browser Network panel. |
+| Service reachable? | `curl http://127.0.0.1:1777/ping` |
 
-- **VpnClient DI**: `createVpnClient(mock)` in tests — no module mocking needed. Mobile uses `initVpnClient()` (async) with `registerPlugin('K2Plugin')` from `@capacitor/core`
-- **Async store init**: Zustand stores use `init()` action (not async `create()`), called from `useEffect`
-- **Keep-alive tabs**: Layout caches visited tab outlets in state, hides inactive with `visibility:hidden; position:absolute`. Tab paths: `/`, `/purchase`, `/invite`, `/account`
-- **LoginDialog pattern**: Global modal via `login-dialog.store`. Guards call `openLoginDialog()` instead of redirecting to `/login`
-- **Feature flags**: `ui.store.getFeatureFlags()` controls tab visibility (e.g., `showInviteTab`)
-- **Dev proxy**: Vite proxies `/api/*` and `/ping` to `:1777`. Production uses absolute URL via `import.meta.env.DEV`
-- **Config-driven connect**: `connect(config: ClientConfig)` replaces `connect(wireUrl: string)`. Webapp assembles ClientConfig from server.wireUrl + user preferences (rule mode). Dashboard exports `buildConfig()`.
-- **connect/disconnect resolve on acceptance** (HTTP 200), not operation completion
-- **Polling dedup**: HttpVpnClient compares `JSON.stringify(prev)` — no redundant events
-- **Store mock pattern**: `vi.mock('../../stores/X.store')` then `vi.mocked(useXStore).mockReturnValue({...})` for component tests
+## Related Docs
 
-## Testing
-
-- vitest + @testing-library/react + @testing-library/user-event
-- Mock pattern: `resetVpnClient()` → `new MockVpnClient()` → `createVpnClient(mock)` in beforeEach
-- Store mock pattern: `vi.mock('../../stores/X.store')` + `vi.mocked(useXStore).mockReturnValue({})`
-- i18n mock: `vi.mock('react-i18next')` with key→string map (returns keys as values)
-- 50 test files, 294 tests total
+- [Client Architecture](../CLAUDE.md)
+- [Desktop Adapter](../desktop/CLAUDE.md)
