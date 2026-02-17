@@ -8,9 +8,9 @@ const buttonVariants = cva(
   {
     variants: {
       vpnState: {
-        stopped: 'bg-blue-600 hover:bg-blue-700 active:scale-95',
-        connecting: 'bg-yellow-500 animate-pulse cursor-not-allowed',
-        connected: 'bg-green-600 hover:bg-red-500',
+        stopped: 'bg-primary hover:bg-primary-dark active:scale-95',
+        connecting: 'bg-warning animate-pulse cursor-not-allowed',
+        connected: 'bg-success hover:bg-error',
       },
     },
     defaultVariants: {

@@ -8,9 +8,22 @@ fn main() {
   "identifier": "mcp-bridge",
   "description": "enables MCP bridge for development",
   "windows": ["main"],
-  "permissions": ["mcp-bridge:default"]
+  "permissions": [
+    "core:default",
+    "mcp-bridge:default",
+    "updater:default",
+    "process:default",
+    "autostart:default"
+  ]
 }"#;
-        std::fs::write(mcp_cap_path, cap).expect("failed to write mcp-bridge capability");
+        // Only write if content changed — avoids Tauri dev watcher rebuild loop
+        let needs_write = match std::fs::read_to_string(mcp_cap_path) {
+            Ok(existing) => existing != cap,
+            Err(_) => true,
+        };
+        if needs_write {
+            std::fs::write(mcp_cap_path, cap).expect("failed to write mcp-bridge capability");
+        }
     }
 
     #[cfg(not(all(feature = "mcp-bridge", debug_assertions)))]

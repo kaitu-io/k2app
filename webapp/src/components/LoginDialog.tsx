@@ -15,7 +15,7 @@ export function LoginDialog() {
       <div className="w-[calc(100%-32px)] max-w-md rounded-xl bg-bg-paper">
         {showTitle && (
           <div className="bg-bg-gradient rounded-t-xl px-6 pt-6 pb-4">
-            <h2 className="text-white font-bold text-lg">{t('auth:login_title', 'Login')}</h2>
+            <h2 className="text-white font-bold text-lg">{t('title')}</h2>
           </div>
         )}
         <div className="px-6 pt-6 pb-6">

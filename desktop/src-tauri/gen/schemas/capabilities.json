@@ -1,1 +1,1 @@
-{"mcp-bridge":{"identifier":"mcp-bridge","description":"enables MCP bridge for development","local":true,"windows":["main"],"permissions":["mcp-bridge:default"]}}
+{"mcp-bridge":{"identifier":"mcp-bridge","description":"enables MCP bridge for development","local":true,"windows":["main"],"permissions":["core:default","mcp-bridge:default","updater:default","process:default","autostart:default"]}}

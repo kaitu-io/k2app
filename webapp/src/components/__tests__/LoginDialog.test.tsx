@@ -10,13 +10,13 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => {
       const map: Record<string, string> = {
-        'auth:email_label': 'Email',
-        'auth:email_placeholder': 'Enter your email',
-        'auth:send_code': 'Send Code',
-        'auth:code_label': 'Verification Code',
-        'auth:code_placeholder': 'Enter code',
-        'auth:login': 'Login',
-        'auth:login_title': 'Login',
+        'title': 'Login',
+        'email': 'Email',
+        'emailPlaceholder': 'Enter your email',
+        'getCode': 'Send Code',
+        'code': 'Verification Code',
+        'codePlaceholder': 'Enter code',
+        'login': 'Login',
       };
       return map[key] || key;
     },

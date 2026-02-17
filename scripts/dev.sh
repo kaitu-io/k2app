@@ -4,6 +4,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 K2_BIN="$ROOT_DIR/desktop/src-tauri/binaries/k2-$(uname -m)-apple-darwin"
+K2_DEV_ADDR="127.0.0.1:11777"  # dev daemon port (system service uses :1777)
 API_BIN="$ROOT_DIR/api/cmd/kaitu-center"
 API_DIR="$ROOT_DIR/api"
 
@@ -60,12 +61,33 @@ if [ ! -f "$K2_BIN" ] || [ "$ROOT_DIR/k2/cmd/k2/main.go" -nt "$K2_BIN" ]; then
   go build -tags nowebapp -o "$K2_BIN" ./cmd/k2
 fi
 
-# ── 4. Start k2 daemon ──
-echo "[dev] Starting k2 daemon..."
-"$K2_BIN" run &
+# ── 4. Start k2 daemon (dev port, system service keeps :1777) ──
+echo "[dev] Starting k2 daemon on $K2_DEV_ADDR..."
+"$K2_BIN" run -l "$K2_DEV_ADDR" &
 PIDS+=($!)
 
-# ── 5. Start Tauri dev (with MCP Bridge) ──
+# ── 5. Start Vite dev server ──
+export K2_DAEMON_PORT="${K2_DEV_ADDR##*:}"
+echo "[dev] Starting Vite dev server (proxy → :$K2_DAEMON_PORT)..."
+cd "$ROOT_DIR/webapp"
+yarn dev &
+PIDS+=($!)
+
+# Wait for Vite to be ready on :1420
+echo "[dev] Waiting for Vite on :1420..."
+for i in $(seq 1 60); do
+  if curl -s -o /dev/null http://localhost:1420 2>/dev/null; then
+    echo "[dev] Vite ready."
+    break
+  fi
+  if [ "$i" -eq 60 ]; then
+    echo "[dev] Vite failed to start within 60s"
+    exit 1
+  fi
+  sleep 1
+done
+
+# ── 6. Start Tauri dev (with MCP Bridge) ──
 echo "[dev] Starting Tauri dev..."
 cd "$ROOT_DIR/desktop"
 yarn tauri dev --features mcp-bridge

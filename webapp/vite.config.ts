@@ -4,6 +4,8 @@ import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import pkg from "../package.json";
 
+const k2DaemonUrl = `http://127.0.0.1:${process.env.K2_DAEMON_PORT || "1777"}`;
+
 export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
@@ -26,11 +28,11 @@ export default defineConfig({
     port: 1420,
     proxy: {
       "/api": {
-        target: "http://127.0.0.1:1777",
+        target: k2DaemonUrl,
         changeOrigin: true,
       },
       "/ping": {
-        target: "http://127.0.0.1:1777",
+        target: k2DaemonUrl,
         changeOrigin: true,
       },
     },

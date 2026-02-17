@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useLocation, useOutlet } from 'react-router-dom';
 import { BottomNav } from './BottomNav';
+import { BackButton } from './BackButton';
 
 const TAB_PATHS = ['/', '/purchase', '/invite', '/account'];
 
@@ -51,7 +52,12 @@ export function Layout() {
             </div>
           ))
         ) : (
-          outlet
+          <>
+            <div className="px-2 pt-1">
+              <BackButton />
+            </div>
+            {outlet}
+          </>
         )}
       </main>
       {isTabRoute && <BottomNav />}

@@ -275,9 +275,17 @@ pub async fn ensure_service_running(app_version: String) -> Result<(), String> {
 
     log::info!("[service] Ensuring service running (v{})", app_version);
 
-    cleanup_old_kaitu_service();
+    // Run blocking operations (reqwest::blocking) in a blocking thread
+    // to avoid tokio "Cannot drop a runtime in async context" panic
+    let ver = app_version.clone();
+    let check_result = tokio::task::spawn_blocking(move || {
+        cleanup_old_kaitu_service();
+        check_service_version(&ver)
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking failed: {}", e))?;
 
-    match check_service_version(&app_version) {
+    match check_result {
         VersionCheckResult::VersionMatch => return Ok(()),
         VersionCheckResult::VersionMismatch {
             service_version, ..
@@ -295,10 +303,19 @@ pub async fn ensure_service_running(app_version: String) -> Result<(), String> {
 
     admin_reinstall_service().await?;
 
-    if wait_for_service(WAIT_MS, POLL_MS) {
-        if let VersionCheckResult::VersionMatch = check_service_version(&app_version) {
-            return Ok(());
+    let ver = app_version.clone();
+    let ok = tokio::task::spawn_blocking(move || {
+        if wait_for_service(WAIT_MS, POLL_MS) {
+            matches!(check_service_version(&ver), VersionCheckResult::VersionMatch)
+        } else {
+            false
         }
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking failed: {}", e))?;
+
+    if ok {
+        return Ok(());
     }
     Err("Failed to start service with correct version".to_string())
 }

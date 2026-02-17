@@ -45,7 +45,7 @@ export function EmailLoginForm({ onSuccess, onCodeSent }: EmailLoginFormProps) {
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder={t('auth:email_placeholder', 'Enter your email')}
+            placeholder={t('emailPlaceholder')}
             className="w-full rounded-lg border border-card-border bg-bg-paper text-sm text-text-primary px-3 py-2.5 outline-none"
           />
           <button
@@ -53,7 +53,7 @@ export function EmailLoginForm({ onSuccess, onCodeSent }: EmailLoginFormProps) {
             disabled={isLoading}
             className="w-full rounded-lg bg-primary text-white font-bold py-3.5"
           >
-            {t('auth:send_code', 'Send Code')}
+            {t('getCode')}
           </button>
         </>
       ) : (
@@ -62,7 +62,7 @@ export function EmailLoginForm({ onSuccess, onCodeSent }: EmailLoginFormProps) {
             type="text"
             value={code}
             onChange={(e) => setCode(e.target.value)}
-            placeholder={t('auth:code_placeholder', 'Enter code')}
+            placeholder={t('codePlaceholder')}
             className="w-full rounded-lg border border-card-border bg-bg-paper text-sm text-text-primary px-3 py-2.5 outline-none"
           />
           <button
@@ -70,7 +70,7 @@ export function EmailLoginForm({ onSuccess, onCodeSent }: EmailLoginFormProps) {
             disabled={isLoading}
             className="w-full rounded-lg bg-primary text-white font-bold py-3.5"
           >
-            {t('auth:login', 'Login')}
+            {t('login')}
           </button>
         </>
       )}

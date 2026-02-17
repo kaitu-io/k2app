@@ -24,7 +24,7 @@ export function Account() {
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
 
   const membershipStatus = getMembershipStatus();
-  const version = appConfig?.version ?? '0.0.0';
+  const version = appConfig?.version ?? __APP_VERSION__;
 
   const changeLanguage = async (locale: string) => {
     await i18n.changeLanguage(locale);
