@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import type { IK2, IPlatform, ISecureStorage, SResponse } from '../kaitu-core';
+import type { IK2Vpn, IPlatform, ISecureStorage, SResponse } from '../kaitu-core';
 
 /**
  * IK2Vpn — the new slim VPN-only interface
@@ -22,7 +22,7 @@ import type { IK2, IPlatform, ISecureStorage, SResponse } from '../kaitu-core';
 describe('IK2Vpn interface shape', () => {
   it('should have a run method on the IK2 interface', () => {
     // Create an object that satisfies the NEW IK2 contract (VPN-only)
-    const vpn: IK2 = {
+    const vpn: IK2Vpn = {
       run: async (_action: string, _params?: any): Promise<SResponse> => ({
         code: 0,
       }),
@@ -35,7 +35,7 @@ describe('IK2Vpn interface shape', () => {
   it('should NOT have api property on IK2 interface', () => {
     // After the split, IK2 is VPN-only.
     // Constructing a minimal valid IK2 should NOT require an `api` property.
-    const vpn: IK2 = {
+    const vpn: IK2Vpn = {
       run: async () => ({ code: 0 }),
     } as any;
 
@@ -52,7 +52,7 @@ describe('IK2Vpn interface shape', () => {
   });
 
   it('should NOT have platform property on IK2 interface', () => {
-    const vpn: IK2 = {
+    const vpn: IK2Vpn = {
       run: async () => ({ code: 0 }),
     } as any;
 
@@ -64,7 +64,7 @@ describe('IK2Vpn interface shape', () => {
 
   it('should NOT have core property on IK2 interface', () => {
     // After the split, IK2 IS the core — no nested `core` property needed
-    const vpn: IK2 = {
+    const vpn: IK2Vpn = {
       run: async () => ({ code: 0 }),
     } as any;
 

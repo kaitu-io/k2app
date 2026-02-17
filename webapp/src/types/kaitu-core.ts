@@ -220,7 +220,7 @@ export interface IPlatform {
 // ==================== 核心接口 ====================
 
 /**
- * IK2 - VPN-only global interface
+ * IK2Vpn - VPN-only global interface
  *
  * Slim interface injected as window._k2.
  * All VPN control goes through the single `run` method,
@@ -233,7 +233,7 @@ export interface IPlatform {
  * - speedtest, get_speedtest_status
  * - get_metrics, evaluate_tunnels
  */
-export interface IK2 {
+export interface IK2Vpn {
   /**
    * Execute a VPN command
    *
@@ -253,7 +253,7 @@ export interface IK2 {
 
 declare global {
   interface Window {
-    _k2: IK2;
+    _k2: IK2Vpn;
     _platform: IPlatform;
   }
 }

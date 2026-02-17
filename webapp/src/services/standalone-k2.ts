@@ -9,7 +9,7 @@
  *   window._platform = { os, storage, getUdid, ... }    (platform capabilities)
  */
 
-import type { IK2, IPlatform, SResponse } from '../types/kaitu-core';
+import type { IK2Vpn, IPlatform, SResponse } from '../types/kaitu-core';
 import { webSecureStorage } from './secure-storage';
 import { webPlatform } from './web-platform';
 
@@ -53,7 +53,7 @@ async function getDaemonUdid(): Promise<string> {
 /**
  * Standalone K2 — VPN-only global (window._k2)
  */
-export const standaloneK2: IK2 = {
+export const standaloneK2: IK2Vpn = {
   run: coreExec,
 };
 
