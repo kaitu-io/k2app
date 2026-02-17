@@ -168,35 +168,6 @@
   "troubleshooting": {
     "title": "問題排查",
     "subtitle": "透過網速測試和網路修復來診斷網路連線問題",
-    "speedtest": {
-      "title": "網速測試",
-      "description": "測試您的國際出口網路連線速度和品質（不經過代理）",
-      "start": "開始測速",
-      "testing": "測速中...",
-      "complete": "測速完成",
-      "failed": "測速失敗",
-      "startFailed": "啟動測速失敗",
-      "networkError": "網路請求失敗",
-      "currentSpeed": "目前速度",
-      "downloadSpeed": "下載速度",
-      "uploadSpeed": "上傳速度",
-      "latency": "延遲",
-      "jitter": "抖動",
-      "duration": "耗時",
-      "seconds": "秒",
-      "server": "測試伺服器",
-      "selectServer": "選擇伺服器",
-      "autoSelect": "自動選擇最佳伺服器"
-    },
-    "fixNetwork": {
-      "title": "一鍵修復網路",
-      "description": "修復網路連線問題，重置 DNS 和路由配置",
-      "button": "一鍵恢復網路",
-      "fixing": "恢復中...",
-      "success": "網路修復成功！",
-      "error": "網路修復失敗，請稍後重試",
-      "unsupported": "該功能僅支援 macOS 系統"
-    },
     "securitySoftware": {
       "title": "安全軟體白名單設定",
       "description": "如果 VPN 連線被 360、騰訊管家等安全軟體攔截，請查看設定指南"

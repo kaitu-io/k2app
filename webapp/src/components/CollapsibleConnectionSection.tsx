@@ -9,16 +9,13 @@
  * - 桌面版默认展开，路由器版默认折叠
  */
 
-import { Box, IconButton, Collapse, Typography, Button, Stack, styled, alpha } from '@mui/material';
+import { Box, IconButton, Collapse, Typography, Stack, styled, alpha } from '@mui/material';
 import {
   ExpandMore as ExpandMoreIcon,
   ExpandLess as ExpandLessIcon,
-  Warning as WarningIcon,
   Error as ErrorIcon,
-  Build as FixIcon,
 } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
 import { ConnectionButton } from './ConnectionButton';
 import { CompactConnectionButton } from './CompactConnectionButton';
 import { useLayout } from '../stores/layout.store';
@@ -64,16 +61,6 @@ const ToggleIconButton = styled(IconButton)(({ theme }) => ({
   },
 }));
 
-/**
- * 判断是否为网络相关错误（需要显示"修复网络"按钮）
- */
-function isNetworkError(code: number): boolean {
-  // 100-109: 网络错误
-  // 520-529: 网络修复相关错误
-  // 570-579: 连接错误
-  return (code >= 100 && code <= 109) || (code >= 520 && code <= 529) || (code >= 570 && code <= 579);
-}
-
 // 内联错误提示容器
 const InlineErrorBar = styled(Box)(({ theme }) => ({
   display: 'flex',
@@ -115,15 +102,9 @@ export function CollapsibleConnectionSection({
   networkAvailable = true,
 }: CollapsibleConnectionSectionProps) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   const { connectionButtonCollapsed, toggleConnectionButtonCollapsed } = useLayout();
 
-  const handleFixNetwork = () => {
-    navigate('/faq');
-  };
-
   const showError = error && connectionButtonCollapsed;
-  const showNetworkFix = showError && isNetworkError(error.code);
 
   return (
     <Box
@@ -152,11 +133,7 @@ export function CollapsibleConnectionSection({
       <Collapse in={!!showError} timeout={200}>
         <InlineErrorBar>
           <Stack direction="row" spacing={1} alignItems="center" sx={{ flex: 1, minWidth: 0 }}>
-            {showNetworkFix ? (
-              <WarningIcon sx={{ fontSize: 16, color: 'warning.main', flexShrink: 0 }} />
-            ) : (
-              <ErrorIcon sx={{ fontSize: 16, color: 'error.main', flexShrink: 0 }} />
-            )}
+            <ErrorIcon sx={{ fontSize: 16, color: 'error.main', flexShrink: 0 }} />
             <Typography
               variant="caption"
               sx={{
@@ -172,23 +149,6 @@ export function CollapsibleConnectionSection({
               })}
             </Typography>
           </Stack>
-          {showNetworkFix && (
-            <Button
-              size="small"
-              startIcon={<FixIcon sx={{ fontSize: 12 }} />}
-              onClick={handleFixNetwork}
-              sx={{
-                fontSize: '0.65rem',
-                py: 0.25,
-                px: 1,
-                minHeight: 'auto',
-                textTransform: 'none',
-                flexShrink: 0,
-              }}
-            >
-              {t('dashboard:troubleshooting.fixNetwork.button')}
-            </Button>
-          )}
         </InlineErrorBar>
       </Collapse>
 

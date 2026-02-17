@@ -172,35 +172,6 @@
   "troubleshooting": {
     "title": "Troubleshooting",
     "subtitle": "Diagnose network connection issues through speed test and network repair",
-    "speedtest": {
-      "title": "Speed Test",
-      "description": "Test your international network connection speed and quality (not through proxy)",
-      "start": "Start Test",
-      "testing": "Testing...",
-      "complete": "Test Complete",
-      "failed": "Test Failed",
-      "startFailed": "Failed to start speed test",
-      "networkError": "Network request failed",
-      "currentSpeed": "Current Speed",
-      "downloadSpeed": "Download Speed",
-      "uploadSpeed": "Upload Speed",
-      "latency": "Latency",
-      "jitter": "Jitter",
-      "duration": "Duration",
-      "seconds": "seconds",
-      "server": "Test Server",
-      "selectServer": "Select Server",
-      "autoSelect": "Auto select best server"
-    },
-    "fixNetwork": {
-      "title": "One-Click Network Fix",
-      "description": "Fix network connection issues, reset DNS and routing configuration",
-      "button": "One-Click Network Fix",
-      "fixing": "Fixing...",
-      "success": "Network fixed successfully!",
-      "error": "Network fix failed, please try again later",
-      "unsupported": "This feature is only supported on macOS"
-    },
     "securitySoftware": {
       "title": "Security Software Whitelist Setup",
       "description": "If VPN connection is blocked by security software like 360 or Tencent PC Manager, please check setup guide"

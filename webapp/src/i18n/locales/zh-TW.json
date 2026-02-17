@@ -808,15 +808,6 @@
     }
   },
   "troubleshooting": {
-    "fixNetwork": {
-      "button": "一键恢复网络",
-      "description": "修复网络连接问题，重置DNS和路由配置",
-      "error": "网络修复失败，请稍后重试",
-      "fixing": "恢复中...",
-      "success": "网络修复成功！",
-      "title": "一键修复网络",
-      "unsupported": "该功能仅支持 macOS 系统"
-    },
     "securitySoftware": {
       "description": "如果VPN连接被360、腾讯管家等安全软件拦截，请查看设置指南",
       "title": "安全软件白名单设置"
@@ -833,26 +824,6 @@
       "show": "查看所有服务器",
       "startFailed": "启动服务器列表获取失败",
       "testing": "正在测试服务器延迟"
-    },
-    "speedtest": {
-      "autoSelect": "自动选择最佳服务器",
-      "complete": "测速完成",
-      "currentSpeed": "当前速度",
-      "description": "测试您的国际出口网络连接速度和质量（不经过代理）",
-      "downloadSpeed": "下载速度",
-      "duration": "耗时",
-      "failed": "测速失败",
-      "jitter": "抖动",
-      "latency": "延迟",
-      "networkError": "网络请求失败",
-      "seconds": "秒",
-      "selectServer": "选择服务器",
-      "server": "测试服务器",
-      "start": "开始测速",
-      "startFailed": "启动测速失败",
-      "testing": "测速中...",
-      "title": "网速测试",
-      "uploadSpeed": "上传速度"
     },
     "subtitle": "通过网速测试和网络修复来诊断网络连接问题",
     "title": "问题排查"
