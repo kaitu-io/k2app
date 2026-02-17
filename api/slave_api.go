@@ -23,7 +23,7 @@ func api_slave_accelerate_tunnels(c *gin.Context) {
 	tunnels := []SlaveTunnel{}
 	err := db.Get().Model(&SlaveTunnel{}).Preload("Node").Find(&tunnels).Error
 	if err != nil {
-		log.Errorf(c, "[ERROR] failed to get tunnels: %v", err)
+		log.Errorf(c, "failed to get tunnels: %v", err)
 		Error(c, ErrorSystemError, "failed to get tunnels")
 		return
 	}
@@ -38,7 +38,7 @@ func api_slave_accelerate_tunnels(c *gin.Context) {
 		})
 	}
 
-	log.Tracef(c, "[DEBUG] api_slave_accelerate_tunnels: %v", paths)
+	log.Debugf(c, "api_slave_accelerate_tunnels: %v", paths)
 	List(c, paths, nil)
 }
 
@@ -66,7 +66,7 @@ func api_slave_resolve_domain(c *gin.Context) {
 	tunnels := []SlaveTunnel{}
 	err := db.Get().Model(&SlaveTunnel{}).Preload("Node").Find(&tunnels).Error
 	if err != nil {
-		log.Errorf(c, "[ERROR] failed to get tunnels: %v", err)
+		log.Errorf(c, "failed to get tunnels: %v", err)
 		Error(c, ErrorSystemError, "failed to get tunnels")
 		return
 	}

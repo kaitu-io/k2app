@@ -21,7 +21,7 @@ func setupStrategyTestRouter() *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
 
-	api := r.Group("/api/k2v4")
+	api := r.Group("/api")
 	{
 		strategy := api.Group("/strategy")
 		{
@@ -35,7 +35,7 @@ func setupStrategyTestRouter() *gin.Engine {
 func TestGetStrategyRules_NoActiveRules(t *testing.T) {
 	r := setupStrategyTestRouter()
 
-	req, _ := http.NewRequest("GET", "/api/k2v4/strategy/rules", nil)
+	req, _ := http.NewRequest("GET", "/api/strategy/rules", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -59,7 +59,7 @@ func TestGetStrategyRules_ResponseStructure(t *testing.T) {
 	r := setupStrategyTestRouter()
 
 	t.Run("Response contains required fields", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/api/k2v4/strategy/rules", nil)
+		req, _ := http.NewRequest("GET", "/api/strategy/rules", nil)
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
 
@@ -88,7 +88,7 @@ func TestGetStrategyRules_ResponseStructure(t *testing.T) {
 func TestGetStrategyRules_DefaultRulesContent(t *testing.T) {
 	r := setupStrategyTestRouter()
 
-	req, _ := http.NewRequest("GET", "/api/k2v4/strategy/rules", nil)
+	req, _ := http.NewRequest("GET", "/api/strategy/rules", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -121,7 +121,7 @@ func TestGetStrategyRules_HTTPMethod(t *testing.T) {
 	methods := []string{"POST", "PUT", "DELETE", "PATCH"}
 	for _, method := range methods {
 		t.Run(method+" should return 404", func(t *testing.T) {
-			req, _ := http.NewRequest(method, "/api/k2v4/strategy/rules", nil)
+			req, _ := http.NewRequest(method, "/api/strategy/rules", nil)
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, req)
 
@@ -135,7 +135,7 @@ func TestGetStrategyRules_ETagCaching(t *testing.T) {
 	r := setupStrategyTestRouter()
 
 	t.Run("Response includes ETag header for default rules", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/api/k2v4/strategy/rules", nil)
+		req, _ := http.NewRequest("GET", "/api/strategy/rules", nil)
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
 
@@ -149,7 +149,7 @@ func TestGetStrategyRules_ETagCaching(t *testing.T) {
 	})
 
 	t.Run("If-None-Match with non-matching ETag returns full response", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/api/k2v4/strategy/rules", nil)
+		req, _ := http.NewRequest("GET", "/api/strategy/rules", nil)
 		req.Header.Set("If-None-Match", "\"wrong-etag\"")
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
@@ -175,7 +175,7 @@ func setupTelemetryTestRouter() *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
 
-	api := r.Group("/api/k2v4")
+	api := r.Group("/api")
 	{
 		telemetry := api.Group("/telemetry")
 		{
@@ -191,7 +191,7 @@ func TestTelemetryBatch_InvalidRequest(t *testing.T) {
 
 	t.Run("Missing required fields returns error", func(t *testing.T) {
 		body := `{}`
-		req, _ := http.NewRequest("POST", "/api/k2v4/telemetry/batch", strings.NewReader(body))
+		req, _ := http.NewRequest("POST", "/api/telemetry/batch", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
@@ -217,7 +217,7 @@ func TestTelemetryBatch_InvalidRequest(t *testing.T) {
 				}
 			]
 		}`
-		req, _ := http.NewRequest("POST", "/api/k2v4/telemetry/batch", strings.NewReader(body))
+		req, _ := http.NewRequest("POST", "/api/telemetry/batch", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
@@ -247,7 +247,7 @@ func TestTelemetryBatch_DeviceNotFound(t *testing.T) {
 		]
 	}`
 
-	req, _ := http.NewRequest("POST", "/api/k2v4/telemetry/batch", strings.NewReader(body))
+	req, _ := http.NewRequest("POST", "/api/telemetry/batch", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -271,7 +271,7 @@ func TestTelemetryBatch_ResponseStructure(t *testing.T) {
 		"events": []
 	}`
 
-	req, _ := http.NewRequest("POST", "/api/k2v4/telemetry/batch", strings.NewReader(body))
+	req, _ := http.NewRequest("POST", "/api/telemetry/batch", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -289,7 +289,7 @@ func TestTelemetryBatch_HTTPMethod(t *testing.T) {
 	methods := []string{"GET", "PUT", "DELETE", "PATCH"}
 	for _, method := range methods {
 		t.Run(method+" should return 404", func(t *testing.T) {
-			req, _ := http.NewRequest(method, "/api/k2v4/telemetry/batch", nil)
+			req, _ := http.NewRequest(method, "/api/telemetry/batch", nil)
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, req)
 

@@ -1,7 +1,6 @@
 package center
 
 import (
-	db "github.com/wordgate/qtoolkit/db"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/wordgate/qtoolkit/log"
 	"github.com/wordgate/wordgate-sdk"
+	db "github.com/wordgate/qtoolkit/db"
 	"gorm.io/gorm"
 )
 
@@ -50,8 +50,14 @@ func isDeadlockError(err error) bool {
 		strings.Contains(errStr, "deadlock")
 }
 
-// api_wordgate_webhook 处理 wordgate webhook 事件
-//
+// api_wordgate_webhook handles Wordgate payment webhook events.
+// NOTE: This handler intentionally uses HTTP status codes (c.AbortWithStatus) instead of
+// the standard JSON error response (Error(c, code, msg)). Payment webhooks are server-to-server:
+// - HTTP 200 = processed successfully, don't retry
+// - HTTP 4xx = bad request, stop retrying
+// - HTTP 5xx = temporary failure, please retry
+// Returning HTTP 200 with JSON error code would cause the payment provider to stop retrying
+// on transient failures, potentially losing payments.
 func api_wordgate_webhook(c *gin.Context) {
 	// 读取原始请求体用于签名验证
 	body, err := io.ReadAll(c.Request.Body)
