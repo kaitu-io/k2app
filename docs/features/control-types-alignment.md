@@ -2,9 +2,10 @@
 
 ## Meta
 
-- Status: draft
+- Status: implemented
 - Version: 2.0
 - Created: 2026-02-17
+- Updated: 2026-02-17
 - Branch: w9f/control-types-alignment
 - Depends: [webapp-stale-cleanup](./webapp-stale-cleanup.md) (broken UI removed first)
 
