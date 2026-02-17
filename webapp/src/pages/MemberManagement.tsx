@@ -1,176 +1,563 @@
-import { useEffect, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { cloudApi } from '../api/cloud';
-import type { Member } from '../api/types';
+import { useState, useEffect, useRef } from "react";
+import {
+  Box,
+  Typography,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemIcon,
+  ListItemSecondaryAction,
+  Button,
+  IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Stack,
+  Chip,
+  Alert,
+  Divider,
+  Tooltip,
+} from "@mui/material";
+import {
+  Add as AddIcon,
+  Delete as DeleteIcon,
+  Email as EmailIcon,
+  Person as PersonIcon,
+  AccessTime as AccessTimeIcon,
+  Refresh as RefreshIcon,
+} from "@mui/icons-material";
+import { useTranslation } from "react-i18next";
 
-export function MemberManagement() {
-  const { t } = useTranslation();
-  const [members, setMembers] = useState<Member[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [newEmail, setNewEmail] = useState('');
-  const [deleteTarget, setDeleteTarget] = useState<Member | null>(null);
+import type { DataUser } from "../services/api-types";
+import { ErrorInvalidArgument } from "../services/api-types";
+import { formatTime } from "../utils/time";
+import { useAlert } from "../stores";
+import { LoadingCard } from "../components/LoadingAndEmpty";
+import EmailTextField from "../components/EmailTextField";
+import BackButton from "../components/BackButton";
+import { k2api } from '../services/k2api';
+import { delayedFocus } from '../utils/ui';
 
-  useEffect(() => {
-    async function load() {
-      setIsLoading(true);
-      try {
-        const resp = await cloudApi.getMembers();
-        setMembers((resp.data as Member[]) || []);
-      } catch {
-        // silently fail
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    load();
-  }, []);
+// 成员状态计算
+type MemberStatus = {
+  label: string;
+  color: 'default' | 'error' | 'warning' | 'success';
+};
 
-  const handleAddMember = async () => {
-    if (!newEmail.trim()) return;
-    try {
-      await cloudApi.addMember(newEmail.trim());
-      // Refresh the list
-      const resp = await cloudApi.getMembers();
-      setMembers((resp.data as Member[]) || []);
-      setNewEmail('');
-    } catch {
-      // silently fail
-    }
-  };
-
-  const handleDeleteConfirm = async () => {
-    if (!deleteTarget) return;
-    await cloudApi.deleteMember(deleteTarget.id);
-    setMembers((prev) => prev.filter((m) => m.id !== deleteTarget.id));
-    setDeleteTarget(null);
-  };
-
-  const getStatusLabel = (status: string): string => {
-    switch (status) {
-      case 'active':
-        return t('members:status_active');
-      case 'expired':
-        return t('members:status_expired');
-      case 'not_activated':
-        return t('members:status_not_activated');
-      default:
-        return status;
-    }
-  };
-
-  const getStatusStyle = (status: string): string => {
-    switch (status) {
-      case 'active':
-        return 'bg-[--color-success-bg] text-[--color-success]';
-      case 'expired':
-        return 'bg-[--color-warning-bg] text-[--color-warning]';
-      case 'not_activated':
-        return 'bg-[--color-info-bg] text-[--color-info]';
-      default:
-        return 'bg-[--color-glass-bg] text-[--color-text-secondary]';
-    }
-  };
-
-  const getInitial = (email: string): string => {
-    return email.charAt(0).toUpperCase();
-  };
-
-  if (isLoading) {
-    return (
-      <div className="p-4">
-        <p>{t('common:loading')}</p>
-      </div>
-    );
+function getMemberStatus(member: DataUser, t: (key: string, params?: any) => string): MemberStatus {
+  if (!member.expiredAt) {
+    return { label: t('account:memberManagement.notActivated'), color: 'default' };
   }
 
+  // expiredAt 是 Unix 时间戳（秒），需要转换为毫秒
+  const expiredAt = new Date(member.expiredAt * 1000);
+  const now = new Date();
+
+  if (expiredAt <= now) {
+    return { label: t('account:memberManagement.expired'), color: 'error' };
+  }
+
+  const daysLeft = Math.ceil((expiredAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  if (daysLeft <= 7) {
+    return { label: `${daysLeft}${t('invite:invite.days')}${t('account:memberManagement.expired')}`, color: 'warning' };
+  }
+
+  return { label: t('account:memberManagement.valid'), color: 'success' };
+}
+
+// 邮箱验证
+function isValidEmail(email: string): boolean {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email.trim());
+}
+
+export default function MemberManagement() {
+  const { t } = useTranslation();
+  const { showAlert } = useAlert();
+
+  // 状态管理
+  const [members, setMembers] = useState<DataUser[]>([]);
+  const [loading, setLoading] = useState(true); // 初始设为 true
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [newMemberEmail, setNewMemberEmail] = useState("");
+  const [addingMember, setAddingMember] = useState(false);
+  const [hasError, setHasError] = useState(false);
+
+  // Ref for delayed focus in dialog
+  const emailInputRef = useRef<HTMLDivElement>(null);
+
+  // Delayed focus when dialog opens - avoids timing issues on old WebViews
+  useEffect(() => {
+    if (!addDialogOpen) return;
+    const cancel = delayedFocus(
+      () => emailInputRef.current?.querySelector('input') as HTMLInputElement | null,
+      150
+    );
+    return cancel;
+  }, [addDialogOpen]);
+
+  // 获取成员列表
+  const fetchMembers = async (silent = false) => {
+    if (!silent) {
+      setLoading(true);
+      setHasError(false);
+    }
+
+    try {
+      const response = await k2api().exec<{ items: DataUser[] }>('api_request', {
+        method: 'GET',
+        path: '/api/user/members',
+      });
+
+      // 检查 response 是否存在
+      if (!response) {
+        console.error('[MemberManagement] API response is undefined');
+        throw new Error(t('common:errors.api.responseFailed'));
+      }
+
+      const { code, message, data } = response;
+      if (code === 0 && data) {
+        const items = data.items || [];
+        setMembers(items);
+        setHasError(false);
+        return true;
+      } else {
+        const errorMsg = message || t('account:memberManagement.getMembersFailed');
+        console.error('[MemberManagement] API returned error: ' + JSON.stringify({ code, message }));
+        if (!silent) {
+          showAlert(errorMsg, 'error');
+          window._platform?.showToast?.(errorMsg, 'error');
+        }
+        setHasError(true);
+        return false;
+      }
+    } catch (error) {
+      console.error('[MemberManagement] Failed to fetch members:', error);
+      setHasError(true);
+      if (!silent) {
+        const errorMsg = t('account:memberManagement.getMembersFailedRetry');
+        showAlert(errorMsg, 'error');
+        window._platform?.showToast?.(errorMsg, 'error');
+      }
+      // 确保在错误情况下也清空成员列表
+      setMembers([]);
+      return false;
+    } finally {
+      // 确保无论如何都会设置 loading 为 false
+      setLoading(false);
+    }
+  };
+
+  // 添加成员
+  const handleAddMember = async () => {
+    const email = newMemberEmail.trim();
+
+    if (!email) {
+      const msg = t('account:memberManagement.emailRequired');
+      showAlert(msg, 'warning');
+      window._platform?.showToast?.(msg, 'warning');
+      return;
+    }
+
+    if (!isValidEmail(email)) {
+      const msg = t('account:memberManagement.invalidEmail');
+      showAlert(msg, 'warning');
+      window._platform?.showToast?.(msg, 'warning');
+      return;
+    }
+
+    setAddingMember(true);
+    try {
+      const response = await k2api().exec<DataUser>('api_request', {
+        method: 'POST',
+        path: '/api/user/members',
+        body: { memberEmail: email },
+      });
+
+      // 检查 response 是否存在
+      if (!response) {
+        console.error('[MemberManagement] addMember API response is undefined');
+        throw new Error(t('common:errors.api.responseFailed'));
+      }
+
+      const { code, message, data } = response;
+      if (code === 0) {
+        // 添加成功后，直接更新本地状态，避免重新请求
+        if (data) {
+          setMembers(prev => [...prev, data]);
+        } else {
+          // 如果没有返回数据，静默刷新列表
+          await fetchMembers(true);
+        }
+        const successMsg = t('account:memberManagement.addMemberSuccess');
+        showAlert(successMsg, 'success');
+        window._platform?.showToast?.(successMsg, 'success');
+        setAddDialogOpen(false);
+        setNewMemberEmail("");
+      } else if (code === ErrorInvalidArgument) {
+        // 422 错误：邮箱已被使用
+        const errorMsg = message || t('account:memberManagement.emailAlreadyInUse');
+        console.error('[MemberManagement] Invalid argument: ' + JSON.stringify({ code, message }));
+        showAlert(errorMsg, 'error');
+        window._platform?.showToast?.(errorMsg, 'error');
+        // 不关闭对话框，让用户可以修改邮箱
+      } else {
+        const errorMsg = message || t('account:memberManagement.addMemberFailed');
+        console.error('[MemberManagement] Add member failed: ' + JSON.stringify({ code, message }));
+        showAlert(errorMsg, 'error');
+        window._platform?.showToast?.(errorMsg, 'error');
+      }
+    } catch (error) {
+      console.error('[MemberManagement] Exception adding member:', error);
+      const errorMsg = t('account:memberManagement.addMemberFailedRetry');
+      showAlert(errorMsg, 'error');
+      window._platform?.showToast?.(errorMsg, 'error');
+    } finally {
+      setAddingMember(false);
+    }
+  };
+
+  // 移除成员
+  const handleRemoveMember = async (member: DataUser) => {
+    try {
+      const response = await k2api().exec('api_request', {
+        method: 'DELETE',
+        path: `/api/user/members/${member.uuid}`,
+      });
+
+      // 检查 response 是否存在
+      if (!response) {
+        console.error('[MemberManagement] removeMember API response is undefined');
+        throw new Error(t('common:errors.api.responseFailed'));
+      }
+
+      const { code, message } = response;
+      if (code === 0) {
+        // 删除成功后，直接更新本地状态，避免重新请求
+        setMembers(prev => prev.filter(m => m.uuid !== member.uuid));
+        const successMsg = t('account:memberManagement.removeMemberSuccess');
+        showAlert(successMsg, 'success');
+        window._platform?.showToast?.(successMsg, 'success');
+      } else {
+        const errorMsg = message || t('account:memberManagement.removeMemberFailed');
+        console.error('[MemberManagement] Remove member failed: ' + JSON.stringify({ code, message }));
+        showAlert(errorMsg, 'error');
+        window._platform?.showToast?.(errorMsg, 'error');
+      }
+    } catch (error) {
+      console.error('[MemberManagement] Exception removing member:', error);
+      const errorMsg = t('account:memberManagement.removeMemberFailedRetry');
+      showAlert(errorMsg, 'error');
+      window._platform?.showToast?.(errorMsg, 'error');
+    }
+  };
+
+  // 关闭添加对话框
+  const handleCloseAddDialog = () => {
+    if (!addingMember) {
+      setAddDialogOpen(false);
+      setNewMemberEmail("");
+    }
+  };
+
+  // 刷新成员列表
+  const handleRefreshMembers = async () => {
+    await fetchMembers();
+  };
+
+  // 初始化
+  useEffect(() => {
+    // fetchMembers 已经处理了所有错误和状态，直接调用即可
+    fetchMembers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // 只在组件挂载时执行一次
+
   return (
-    <div className="p-4">
-      <h1 className="text-xl font-semibold mb-4">{t('members:title')}</h1>
-
-      {/* Add Member */}
-      <div className="flex items-center gap-2 mb-4">
-        <input
-          value={newEmail}
-          onChange={(e) => setNewEmail(e.target.value)}
-          placeholder={t('members:email_placeholder')}
-          className="flex-1 px-3 py-2 rounded border border-[--color-card-border] bg-[--color-bg-default] text-[--color-text-primary]"
-        />
-        <button
-          onClick={handleAddMember}
-          className="px-4 py-2 rounded border border-[--color-primary] text-[--color-primary]"
+    <Box sx={{
+      width: "100%",
+      py: 0.25,
+      backgroundColor: "transparent",
+      position: "relative"
+    }}>
+      <BackButton to="/account" />
+      <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.75, px: 0.75, pt: 7 }}>
+        <Typography variant="body1" sx={{ flex: 1, fontWeight: 600 }} component="span">
+          {t('account:memberManagement.title')}
+        </Typography>
+        <IconButton
+          onClick={handleRefreshMembers}
+          disabled={loading}
+          size="small"
+          sx={{ minWidth: 32 }}
         >
-          {t('members:add_member')}
-        </button>
-      </div>
+          <RefreshIcon fontSize="small" />
+        </IconButton>
+        <IconButton
+          color="primary"
+          onClick={() => setAddDialogOpen(true)}
+          disabled={loading}
+          size="small"
+          sx={{ minWidth: 32 }}
+        >
+          <AddIcon fontSize="small" />
+        </IconButton>
+      </Box>
 
-      {members.length === 0 ? (
-        <p>{t('members:no_members')}</p>
-      ) : (
-        <div className="space-y-3">
-          {members.map((member) => (
-            <div
-              key={member.id}
-              data-testid={`member-card-${member.id}`}
-              className="rounded-lg p-4 border border-[--color-card-border] bg-[--color-card-bg] flex items-center gap-3"
+      {/* 说明信息 */}
+      <Alert
+        severity="info"
+        sx={{
+          mb: 0.75,
+          mx: 0.75,
+          py: 0.5,
+          fontSize: '0.8rem',
+          '& .MuiAlert-icon': {
+            fontSize: '1.1rem',
+            py: 0
+          }
+        }}
+      >
+        {t('account:memberManagement.description')}
+      </Alert>
+
+      {/* 成员列表内容 */}
+      {loading ? (
+        <Box sx={{ px: 0.75 }}>
+          <LoadingCard message={t('account:memberManagement.loading')} />
+        </Box>
+      ) : hasError ? (
+        <Box sx={{
+          px: 0.75,
+          borderRadius: 2,
+          backgroundColor: (theme) => theme.palette.background.paper
+        }}>
+          <Box sx={{
+            textAlign: 'center',
+            py: 2.5
+          }}>
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {t('account:memberManagement.getMembersFailedRetry')}
+            </Alert>
+            <Button
+              variant="contained"
+              startIcon={<RefreshIcon />}
+              onClick={() => fetchMembers()}
+              size="small"
             >
-              {/* Avatar */}
-              <div className="bg-[--color-primary] w-9 h-9 rounded-full flex items-center justify-center text-white font-medium text-sm shrink-0">
-                {getInitial(member.email)}
-              </div>
+              {t('common:common.retry')}
+            </Button>
+          </Box>
+        </Box>
+      ) : members.length === 0 ? (
+        <Box sx={{
+          px: 0.75,
+          borderRadius: 2,
+          backgroundColor: (theme) => theme.palette.background.paper
+        }}>
+          <Box sx={{
+            textAlign: 'center',
+            py: 2.5
+          }}>
+            <PersonIcon sx={{
+              fontSize: 48,
+              color: 'text.secondary',
+              mb: 1.5
+            }} />
+            <Typography
+              variant="body1"
+              color="text.secondary"
+              gutterBottom
+              sx={{ fontWeight: 600 }}
+            >
+              {t('account:memberManagement.noMembers')}
+            </Typography>
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{
+                mb: 2,
+                fontSize: '0.8rem'
+              }}
+            >
+              {t('account:memberManagement.noMembersDesc')}
+            </Typography>
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => setAddDialogOpen(true)}
+              size="small"
+            >
+              {t('account:memberManagement.addFirstMember')}
+            </Button>
+          </Box>
+        </Box>
+      ) : (
+        <Box sx={{
+          borderRadius: 2,
+          mx: 0.75,
+          backgroundColor: (theme) => theme.palette.background.paper
+        }}>
+            <List sx={{ py: 0.5 }}>
+              {members.map((member, index) => {
+                const status = getMemberStatus(member, t);
+                const memberEmail = member.loginIdentifies?.find(
+                  (li) => li.type === 'email'
+                )?.value;
 
-              {/* Info */}
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{member.email}</p>
-              </div>
-
-              {/* Status chip */}
-              <span
-                className={`text-xs px-2 py-0.5 rounded-full ${getStatusStyle(member.status)}`}
-              >
-                {getStatusLabel(member.status)}
-              </span>
-
-              {/* Delete */}
-              <button
-                onClick={() => setDeleteTarget(member)}
-                className="text-sm text-[--color-error]"
-              >
-                {t('members:delete')}
-              </button>
-            </div>
-          ))}
-        </div>
+                return (
+                  <Box key={member.uuid}>
+                    <ListItem
+                      sx={{
+                        py: 1,
+                        px: 1,
+                        '&:hover': {
+                          bgcolor: 'action.hover',
+                          borderRadius: 1,
+                        },
+                        transition: 'background-color 0.2s ease',
+                      }}
+                    >
+                      <ListItemIcon sx={{ minWidth: 36 }}>
+                        <EmailIcon fontSize="small" />
+                      </ListItemIcon>
+                      <ListItemText
+                        primary={
+                          <Stack direction="column" spacing={0.5}>
+                            <Typography
+                              variant="body2"
+                              sx={{
+                                fontSize: '0.875rem',
+                                wordBreak: 'break-word',
+                                lineHeight: 1.3
+                              }}
+                            >
+                              {memberEmail || t('account:memberManagement.noEmail')}
+                            </Typography>
+                            <Chip
+                              label={status.label}
+                              color={status.color}
+                              size="small"
+                              variant="outlined"
+                              sx={{
+                                height: 20,
+                                fontSize: '0.7rem',
+                                alignSelf: 'flex-start',
+                                '& .MuiChip-label': {
+                                  px: 0.75,
+                                  py: 0
+                                }
+                              }}
+                            />
+                          </Stack>
+                        }
+                        secondary={
+                          <Stack
+                            direction="column"
+                            alignItems="flex-start"
+                            spacing={0.25}
+                            sx={{ mt: 0.5 }}
+                          >
+                            <Box component="span" sx={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 0.25
+                            }}>
+                              <AccessTimeIcon
+                                fontSize="small"
+                                color="action"
+                                sx={{
+                                  fontSize: '0.9rem'
+                                }}
+                              />
+                              <Typography
+                                variant="body2"
+                                color="text.secondary"
+                                sx={{ fontSize: '0.75rem' }}
+                              >
+                                {member.expiredAt
+                                  ? formatTime(member.expiredAt)
+                                  : t('account:memberManagement.notActivated')}
+                              </Typography>
+                            </Box>
+                            <Typography
+                              variant="body2"
+                              color="text.secondary"
+                              sx={{ fontSize: '0.7rem' }}
+                            >
+                              UUID: {member.uuid.slice(0, 6)}...
+                            </Typography>
+                          </Stack>
+                        }
+                        sx={{
+                          mr: 4
+                        }}
+                      />
+                      <ListItemSecondaryAction>
+                        <Tooltip title={t('account:memberManagement.removeMember')}>
+                          <IconButton
+                            edge="end"
+                            color="error"
+                            onClick={() => handleRemoveMember(member)}
+                            size="small"
+                            sx={{
+                              right: 8
+                            }}
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </ListItemSecondaryAction>
+                    </ListItem>
+                    {index < members.length - 1 && <Divider />}
+                  </Box>
+                );
+              })}
+            </List>
+        </Box>
       )}
 
-      {/* Delete Confirmation Dialog */}
-      {deleteTarget && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-[--color-bg-paper] rounded-lg p-6 max-w-sm w-full mx-4">
-            <div className="bg-[--color-error-gradient] -m-6 mb-4 p-4 rounded-t-lg">
-              <h2 className="text-lg font-semibold text-white">
-                {t('members:delete_confirm_title')}
-              </h2>
-            </div>
-            <p className="text-[--color-text-secondary] mb-6">
-              {t('members:delete_confirm_message')}
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => setDeleteTarget(null)}
-                className="px-4 py-2 rounded border border-[--color-card-border] text-[--color-text-primary]"
-              >
-                {t('members:cancel')}
-              </button>
-              <button
-                onClick={handleDeleteConfirm}
-                className="px-4 py-2 rounded bg-[--color-error] text-white"
-              >
-                {t('members:confirm')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+      {/* 添加成员对话框 */}
+      <Dialog
+        open={addDialogOpen}
+        onClose={handleCloseAddDialog}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>{t('account:memberManagement.addMemberDialog')}</DialogTitle>
+        <DialogContent>
+          <EmailTextField
+            ref={emailInputRef}
+            margin="dense"
+            label={t('account:memberManagement.emailLabel')}
+            fullWidth
+            variant="outlined"
+            value={newMemberEmail}
+            onChange={setNewMemberEmail}
+            placeholder={t('account:memberManagement.emailPlaceholder')}
+            disabled={addingMember}
+            helperText={t('account:memberManagement.emailHelp')}
+            sx={{ mt: 2 }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !addingMember) {
+                handleAddMember();
+              }
+            }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseAddDialog} disabled={addingMember}>
+            {t('common:common.cancel')}
+          </Button>
+          <Button
+            onClick={handleAddMember}
+            variant="contained"
+            disabled={addingMember || !newMemberEmail.trim()}
+          >
+            {addingMember ? t('common:common.adding') : t('common:common.add')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
   );
 }

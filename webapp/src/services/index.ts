@@ -1,7 +1,7 @@
 /**
  * Services exports
  *
- * 简化架构：直接使用 window._k2.core.exec()
+ * 简化架构：直接使用 window._k2.run()
  */
 
 // ==================== Types ====================

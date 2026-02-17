@@ -1,176 +1,306 @@
-import { useEffect, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { cloudApi } from '../api/cloud';
-import { getVpnClient } from '../vpn-client';
-import type { Device } from '../api/types';
+import React, { useEffect, useState, useRef } from "react";
+import {
+  Box,
+  Typography,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemSecondaryAction,
+  IconButton,
+  Chip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  TextField,
+  Tooltip,
+  CircularProgress,
+} from "@mui/material";
+import {
+  Delete as DeleteIcon,
+  Computer as ComputerIcon,
+  EditOutlined as EditIcon,
+} from "@mui/icons-material";
+import BackButton from "../components/BackButton";
+import { useTranslation } from "react-i18next";
+import { formatTime } from "../utils/time";
+import { Device } from "../services/api-types";
 
-export function Devices() {
+import { useUser } from "../hooks/useUser";
+import { LoadingCard, EmptyDevices } from "../components/LoadingAndEmpty";
+import { k2api } from '../services/k2api';
+import { delayedFocus } from '../utils/ui';
+
+export default function Devices() {
   const { t } = useTranslation();
   const [devices, setDevices] = useState<Device[]>([]);
-  const [currentUdid, setCurrentUdid] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [editingDeviceId, setEditingDeviceId] = useState<string | null>(null);
-  const [editRemark, setEditRemark] = useState('');
-  const [deleteTarget, setDeleteTarget] = useState<Device | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deviceToDelete, setDeviceToDelete] = useState<Device | null>(null);
+  const [editingUdid, setEditingUdid] = useState<string | null>(null);
+  const [editingRemark, setEditingRemark] = useState<string>("");
+  const [savingRemark, setSavingRemark] = useState(false);
+  const { user } = useUser();
+  const currentUdid = user?.device?.udid;
+
+  // Ref for delayed focus when editing device remark
+  const remarkInputRef = useRef<HTMLInputElement>(null);
+
+  // Delayed focus when entering edit mode
+  useEffect(() => {
+    if (!editingUdid) return;
+    const cancel = delayedFocus(() => remarkInputRef.current, 100);
+    return cancel;
+  }, [editingUdid]);
 
   useEffect(() => {
-    async function load() {
-      setIsLoading(true);
-      try {
-        const [devicesResp, udid] = await Promise.all([
-          cloudApi.getDevices(),
-          getVpnClient().getUDID(),
-        ]);
-        setDevices((devicesResp.data as Device[]) || []);
-        setCurrentUdid(udid);
-      } catch {
-        // silently fail
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    load();
+    loadDevices();
   }, []);
 
-  const handleEditStart = (device: Device) => {
-    setEditingDeviceId(device.id);
-    setEditRemark(device.remark);
+  const loadDevices = async () => {
+    setLoading(true);
+    try {
+      console.debug(t('account:devices.loadDeviceListStart'));
+      const response = await k2api().exec<{ items: Device[] }>('api_request', {
+        method: 'GET',
+        path: '/api/user/devices',
+      });
+      if (response.code !== 0 || !response.data) {
+        console.error('[Devices] Load device list failed:', response.code, response.message);
+        window._platform?.showToast?.(
+          t('account:devices.loadDeviceListFailed'),
+          'error'
+        );
+        return;
+      }
+      setDevices(response.data.items || []);
+      console.info('[Devices] Load device list success');
+    } catch (err) {
+      console.error('[Devices] Load device list failed:', err);
+      window._platform?.showToast?.(
+        t('account:devices.loadDeviceListFailed'),
+        'error'
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleEditSave = async (deviceId: string) => {
-    await cloudApi.updateDeviceRemark(deviceId, editRemark);
-    setDevices((prev) =>
-      prev.map((d) => (d.id === deviceId ? { ...d, remark: editRemark } : d))
-    );
-    setEditingDeviceId(null);
+  const handleDeleteClick = (device: Device) => {
+    setDeviceToDelete(device);
+    setDeleteDialogOpen(true);
   };
 
   const handleDeleteConfirm = async () => {
-    if (!deleteTarget) return;
-    await cloudApi.deleteDevice(deleteTarget.id);
-    setDevices((prev) => prev.filter((d) => d.id !== deleteTarget.id));
-    setDeleteTarget(null);
+    if (!deviceToDelete) return;
+
+    try {
+      console.debug(t('account:devices.deleteDeviceStart'));
+      const response = await k2api().exec('api_request', {
+        method: 'DELETE',
+        path: `/api/user/devices/${deviceToDelete.udid}`,
+      });
+      if (response.code !== 0) {
+        console.error('[Devices] Delete device failed:', response.code, response.message);
+        window._platform?.showToast?.(
+          t('account:devices.deleteDeviceFailed'),
+          'error'
+        );
+        return;
+      }
+      await loadDevices();
+      console.info('[Devices] Delete device success');
+      window._platform?.showToast?.(
+        t('account:devices.deleteDeviceSuccess'),
+        'success'
+      );
+    } catch (err) {
+      console.error('[Devices] Delete device failed:', err);
+      window._platform?.showToast?.(
+        t('account:devices.deleteDeviceFailed'),
+        'error'
+      );
+    } finally {
+      setDeleteDialogOpen(false);
+      setDeviceToDelete(null);
+    }
   };
 
-  if (isLoading) {
-    return (
-      <div className="p-4">
-        <p>{t('common:loading')}</p>
-      </div>
-    );
-  }
+  const handleEditRemark = (device: Device) => {
+    setEditingUdid(device.udid);
+    setEditingRemark(device.remark);
+  };
 
-  if (devices.length === 0) {
-    return (
-      <div className="p-4">
-        <h1 className="text-xl font-semibold mb-4">{t('devices:title')}</h1>
-        <p>{t('devices:no_devices')}</p>
-      </div>
-    );
-  }
+  const handleRemarkChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setEditingRemark(e.target.value);
+  };
+
+  const handleRemarkSave = async (device: Device) => {
+    if (editingRemark.trim() === "" || editingRemark === device.remark) {
+      setEditingUdid(null);
+      return;
+    }
+    setSavingRemark(true);
+    try {
+      const response = await k2api().exec('api_request', {
+        method: 'PUT',
+        path: `/api/user/devices/${device.udid}/remark`,
+        body: { remark: editingRemark.trim() },
+      });
+      if (response.code !== 0) {
+        console.error('[Devices] Update remark failed:', response.code, response.message);
+        window._platform?.showToast?.(
+          t('account:devices.updateRemarkFailed'),
+          'error'
+        );
+        return;
+      }
+      await loadDevices();
+      window._platform?.showToast?.(
+        t('account:devices.updateRemarkSuccess'),
+        'success'
+      );
+    } catch (err) {
+      console.error('[Devices] Update remark failed:', err);
+      window._platform?.showToast?.(
+        t('account:devices.updateRemarkFailed'),
+        'error'
+      );
+    } finally {
+      setSavingRemark(false);
+      setEditingUdid(null);
+    }
+  };
 
   return (
-    <div className="p-4">
-      <h1 className="text-xl font-semibold mb-4">{t('devices:title')}</h1>
+    <Box sx={{
+      width: "100%",
+      py: 0.5,
+      backgroundColor: "transparent",
+      position: "relative"
+    }}>
+      <BackButton to="/account" />
+      <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5, px: 1, pt: 7 }}>
+        <Typography variant="h6" sx={{ flex: 1, fontWeight: 600 }} component="span">
+          {t('account:devices.title')}
+        </Typography>
+      </Box>
 
-      <div className="space-y-3">
-        {devices.map((device) => {
-          const isCurrent = device.id === currentUdid;
-          const isEditing = editingDeviceId === device.id;
-
-          return (
-            <div
-              key={device.id}
-              data-testid={`device-card-${device.id}`}
-              className={`rounded-lg p-4 border ${
-                isCurrent
-                  ? 'border-[--color-primary] bg-[--color-selected-bg]'
-                  : 'border-[--color-card-border] bg-[--color-card-bg]'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">{device.name}</span>
-                  {isCurrent && (
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-[--color-primary] text-white">
-                      {t('devices:current_device')}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  {!isEditing && (
-                    <button
-                      onClick={() => handleEditStart(device)}
-                      className="text-sm text-[--color-primary]"
+      {loading ? (
+        <Box sx={{ px: 1 }}>
+          <LoadingCard message={t('account:devices.loading')} />
+        </Box>
+      ) : devices.length === 0 ? (
+        <Box sx={{ px: 1, backgroundColor: (theme) => theme.palette.background.paper, borderRadius: 2 }}>
+          <EmptyDevices />
+        </Box>
+      ) : (
+        <Box sx={{
+          backgroundColor: (theme) => theme.palette.background.paper,
+          borderRadius: 2,
+        }}>
+          <List>
+            {devices.map((device) => (
+              <ListItem key={device.udid}>
+                <ListItemText
+                  primary={
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                      {editingUdid === device.udid ? (
+                        <TextField
+                          value={editingRemark}
+                          onChange={handleRemarkChange}
+                          onBlur={() => handleRemarkSave(device)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') {
+                              handleRemarkSave(device);
+                            } else if (e.key === 'Escape') {
+                              setEditingUdid(null);
+                            }
+                          }}
+                          size="small"
+                          inputRef={remarkInputRef}
+                          disabled={savingRemark}
+                          InputProps={{
+                            endAdornment: savingRemark ? (
+                              <CircularProgress size={16} sx={{ ml: 1 }} />
+                            ) : null,
+                          }}
+                          inputProps={{
+                            autoCapitalize: "sentences",
+                            autoCorrect: "on",
+                            spellCheck: true,
+                          }}
+                          sx={{ minWidth: 120 }}
+                        />
+                      ) : (
+                        <Tooltip title={t('account:devices.clickEditRemark')} arrow>
+                          <Box sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }} onClick={() => handleEditRemark(device)}>
+                            <Typography
+                              variant="body1"
+                              sx={{ mr: 0.5 }}
+                            >
+                              {device.remark || t('account:devices.unnamedDevice')}
+                            </Typography>
+                            <EditIcon sx={{ fontSize: 18, color: 'action.active', opacity: 0.7 }} />
+                          </Box>
+                        </Tooltip>
+                      )}
+                    </Box>
+                  }
+                  secondary={
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 0.5 }}>
+                      <Typography variant="body2" color="text.secondary" component="span">
+                        {`${t('account:devices.lastLoginPrefix')}${formatTime(device.tokenLastUsedAt)}`}
+                      </Typography>
+                      {device.udid === currentUdid && (
+                        <Chip
+                          icon={<ComputerIcon />}
+                          label={t('account:devices.currentDevice')}
+                          size="small"
+                          color="primary"
+                          variant="outlined"
+                          sx={{ ml: 1 }}
+                        />
+                      )}
+                    </Box>
+                  }
+                  secondaryTypographyProps={{ component: 'div' }}
+                />
+                {device.udid !== currentUdid && (
+                  <ListItemSecondaryAction>
+                    <IconButton
+                      edge="end"
+                      aria-label="delete"
+                      onClick={() => handleDeleteClick(device)}
                     >
-                      {t('devices:edit')}
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setDeleteTarget(device)}
-                    className="text-sm text-[--color-error]"
-                  >
-                    {t('devices:delete')}
-                  </button>
-                </div>
-              </div>
-
-              {isEditing ? (
-                <div className="mt-2 flex items-center gap-2">
-                  <input
-                    value={editRemark}
-                    onChange={(e) => setEditRemark(e.target.value)}
-                    placeholder={t('devices:remark_placeholder')}
-                    className="flex-1 px-2 py-1 rounded border border-[--color-card-border] bg-[--color-bg-default] text-[--color-text-primary] text-sm"
-                  />
-                  <button
-                    onClick={() => handleEditSave(device.id)}
-                    className="text-sm px-3 py-1 rounded bg-[--color-primary] text-white"
-                  >
-                    {t('devices:save')}
-                  </button>
-                </div>
-              ) : (
-                device.remark && (
-                  <p className="text-xs text-[--color-text-secondary] mt-1">
-                    {device.remark}
-                  </p>
-                )
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Delete Confirmation Dialog */}
-      {deleteTarget && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-[--color-bg-paper] rounded-lg p-6 max-w-sm w-full mx-4">
-            <div className="bg-[--color-error-gradient] -m-6 mb-4 p-4 rounded-t-lg">
-              <h2 className="text-lg font-semibold text-white">
-                {t('devices:delete_confirm_title')}
-              </h2>
-            </div>
-            <p className="text-[--color-text-secondary] mb-6">
-              {t('devices:delete_confirm_message')}
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => setDeleteTarget(null)}
-                className="px-4 py-2 rounded border border-[--color-card-border] text-[--color-text-primary]"
-              >
-                {t('devices:cancel')}
-              </button>
-              <button
-                onClick={handleDeleteConfirm}
-                className="px-4 py-2 rounded bg-[--color-error] text-white"
-              >
-                {t('devices:confirm')}
-              </button>
-            </div>
-          </div>
-        </div>
+                      <DeleteIcon />
+                    </IconButton>
+                  </ListItemSecondaryAction>
+                )}
+              </ListItem>
+            ))}
+          </List>
+        </Box>
       )}
-    </div>
+
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={() => setDeleteDialogOpen(false)}
+      >
+        <DialogTitle>{t('account:devices.confirmDelete')}</DialogTitle>
+        <DialogContent>
+          <Typography>
+            {t('account:devices.deleteConfirmMessage', { deviceName: deviceToDelete?.remark || t('account:devices.unnamedDevice') })}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteDialogOpen(false)}>{t('common:common.cancel')}</Button>
+          <Button onClick={handleDeleteConfirm} color="error">
+            {t('common:common.delete')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
   );
 }

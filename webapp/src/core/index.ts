@@ -13,9 +13,8 @@ import type { IK2Vpn } from '../types/kaitu-core';
  *
  * @example
  * const k2 = getK2();
- * await k2.core.exec('start');
- * await k2.api.exec('login', { email, code });
- * await k2.window._k2!.platform.openExternal('https://kaitu.io');
+ * await k2.run('start');
+ * await window._platform.openExternal?.('https://kaitu.io');
  */
 export function getK2(): IK2Vpn {
   if (!window._k2) {
