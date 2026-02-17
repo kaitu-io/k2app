@@ -52,7 +52,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             queue: .main
         ) { [weak self] notification in
             guard let connection = notification.object as? NEVPNConnection else { return }
-            let state = self?.mapVPNStatus(connection.status) ?? "stopped"
+            let state = self?.mapVPNStatus(connection.status) ?? "disconnected"
             self?.notifyListeners("vpnStateChange", data: ["state": state])
 
             // On disconnect, check App Group for error from NE process
@@ -125,7 +125,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                 if let manager = manager {
                     doGetStatus(manager)
                 } else {
-                    call.resolve(["state": "stopped"])
+                    call.resolve(["state": "disconnected"])
                 }
             }
         }
@@ -379,7 +379,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    /// Remap Go StatusJSON snake_case keys to JS camelCase and map "disconnected" -> "stopped"
+    /// Remap Go StatusJSON snake_case keys to JS camelCase
     private func remapStatusKeys(_ json: [String: Any]) -> [String: Any] {
         let keyMap: [String: String] = [
             "connected_at": "connectedAt",
@@ -390,9 +390,6 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             let newKey = keyMap[key] ?? key
             result[newKey] = value
         }
-        if let state = result["state"] as? String, state == "disconnected" {
-            result["state"] = "stopped"
-        }
         return result
     }
 
@@ -400,7 +397,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         switch status {
         case .connected: return "connected"
         case .connecting, .reasserting: return "connecting"
-        default: return "stopped"
+        default: return "disconnected"
         }
     }
 

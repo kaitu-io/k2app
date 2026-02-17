@@ -88,17 +88,17 @@ class K2Plugin : Plugin() {
                 call.resolve(remapStatusKeys(obj))
             } catch (e: Exception) {
                 val ret = JSObject()
-                ret.put("state", "stopped")
+                ret.put("state", "disconnected")
                 call.resolve(ret)
             }
         } else {
             val ret = JSObject()
-            ret.put("state", "stopped")
+            ret.put("state", "disconnected")
             call.resolve(ret)
         }
     }
 
-    /** Remap Go StatusJSON snake_case keys to JS camelCase and map "disconnected" → "stopped" */
+    /** Remap Go StatusJSON snake_case keys to JS camelCase */
     private fun remapStatusKeys(obj: JSObject): JSObject {
         val keyMap = mapOf(
             "connected_at" to "connectedAt",
@@ -110,9 +110,6 @@ class K2Plugin : Plugin() {
             val key = keys.next()
             val newKey = keyMap[key] ?: key
             result.put(newKey, obj.get(key))
-        }
-        if (result.getString("state") == "disconnected") {
-            result.put("state", "stopped")
         }
         return result
     }
@@ -193,9 +190,8 @@ class K2Plugin : Plugin() {
 
     // Called by K2VpnService when state changes
     fun onStateChange(state: String) {
-        val mapped = if (state == "disconnected") "stopped" else state
         val data = JSObject()
-        data.put("state", mapped)
+        data.put("state", state)
         notifyListeners("vpnStateChange", data)
     }
 
