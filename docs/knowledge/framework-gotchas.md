@@ -404,3 +404,39 @@ beforeEach(() => {
 **Validating tests**: `engine_test.go` TestEngineStart_MobileConfig vs TestEngineStart_DesktopConfig
 
 ---
+
+## Android Bans Netlink Sockets for Non-Root Apps (2026-02-17, android-vpn-audit)
+
+**Problem**: sing-tun's `NewNetworkUpdateMonitor()` uses `netlink.RouteSubscribe` + `netlink.LinkSubscribe` on Linux/Android. Google bans netlink sockets for non-root apps — `NewNetworkUpdateMonitor` returns `ErrNetlinkBanned` on Android.
+
+**Implication**: sing-tun's Go-level network monitoring CANNOT be used on Android. The engine layer is blind to network changes on Android. Must use Android-native `ConnectivityManager.NetworkCallback` instead.
+
+**Contrast with desktop**: macOS (`AF_ROUTE`), Linux (`netlink` — works for root/privileged), Windows (`winipcfg`) all work. sing-tun's `DefaultInterfaceMonitor` is viable for desktop reconnection.
+
+**Correct approach for Android network monitoring**: Use `ConnectivityManager.registerNetworkCallback()` in `K2VpnService.kt` with `NetworkRequest.Builder().addCapability(NET_CAPABILITY_INTERNET)`. On `onAvailable()` + `onLost()`, drive engine stop/restart from Kotlin side.
+
+**Cross-reference**: See Architecture Decisions → "sing-tun Network Monitoring: Available But Unused by k2 Engine"
+
+**Tests**: No test yet — discovery from code audit.
+**Source**: android-vpn-audit (2026-02-17)
+**Status**: verified (confirmed by reading sing-tun source)
+
+---
+
+## QUIC/smux Dead Connection Caching Causes Silent Tunnel Death (2026-02-17, android-vpn-audit)
+
+**Problem**: `QUICClient.connect()` caches `c.conn` after first successful connection. When the network changes (WiFi→4G), the cached QUIC connection dies but is never cleared. All subsequent `DialTCP`/`DialUDP` calls reuse the dead connection, fail, and the engine still reports `"connected"`.
+
+**Timeline**: Network change → QUIC keepalive fails → 30s `MaxIdleTimeout` → connection dead → `c.conn != nil` → cached dead connection returned by `connect()` → all new streams fail → tunnel effectively dead but `engine.state == "connected"`.
+
+**Same issue in TCP-WS**: smux session caches similarly. `KeepAliveInterval: 10s`, `KeepAliveTimeout: 30s` — dead session detection takes 30s, but no reconnection.
+
+**Fix direction**: `QUICClient.connect()` should check connection liveness and clear `c.conn = nil` on error, forcing lazy reconnection on next dial. This is the minimal wire-layer fix that works across all platforms without platform-specific code.
+
+**Cross-reference**: See Architecture Decisions → "sing-tun Network Monitoring" for full reconnection architecture.
+
+**Tests**: No test yet — discovery from code audit.
+**Source**: android-vpn-audit (2026-02-17)
+**Status**: verified (code-level confirmation in `k2/wire/quic.go`)
+
+---

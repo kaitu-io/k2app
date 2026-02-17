@@ -381,3 +381,54 @@ Matching origins get `Access-Control-Allow-Origin: <origin>` + `Access-Control-A
 **Validating tests**: `webapp/src/services/__tests__/capacitor-k2.test.ts` — 15 tests (injection, status mapping, action dispatch, platform capabilities, getK2Source, standalone regression)
 
 ---
+
+## sing-tun Network Monitoring: Available But Unused by k2 Engine (2026-02-17, android-vpn-audit)
+
+**Context**: Investigating why k2 engine has no network change detection or auto-reconnect.
+
+**Discovery**: sing-tun v0.7.11 (already a k2 dependency) provides a complete cross-platform network monitoring system that k2 does NOT use.
+
+**Two monitor interfaces** (`github.com/sagernet/sing-tun/monitor.go`):
+- `NetworkUpdateMonitor` — detects any route/link changes, fires `NetworkUpdateCallback`
+- `DefaultInterfaceMonitor` — tracks default network interface, fires `DefaultInterfaceUpdateCallback` with interface info + flags. 1-second debounce built in.
+
+**Platform implementations**:
+
+| Platform | NetworkUpdateMonitor | DefaultInterfaceMonitor |
+|----------|---------------------|------------------------|
+| macOS | `AF_ROUTE` socket → route messages | `route.FetchRIB` or socket connect to `10.255.255.255:80` |
+| Linux | `netlink.RouteSubscribe` + `LinkSubscribe` | Main routing table query |
+| Windows | `winipcfg.RegisterRouteChangeCallback` + `InterfaceChangeCallback` | `GetIPForwardTable2` lowest metric |
+| Android | **BANNED** — returns `ErrNetlinkBanned` | Inspects `netlink.RuleList` for VPN routing rules |
+| iOS (NE) | N/A | `UnderNetworkExtension` mode: socket connect method |
+
+**k2 current usage**: ZERO. `tun.Options.InterfaceMonitor` never set. No `NetworkUpdateMonitor` created. No callbacks registered.
+
+**What happens on network change today** (silent tunnel death):
+1. User switches WiFi→4G → underlying socket loses route
+2. QUIC keepalive pings fail → 30s `MaxIdleTimeout` expires
+3. `QUICClient.connect()` caches dead `c.conn` (never cleared on error)
+4. All new streams fail through dead connection
+5. Engine still reports `"connected"` — no error, no state change
+
+**k2/ own documentation confirms scope exclusion**:
+- `mobile-sdk/spec.md`: "Auto-reconnect on network change — native shell responsibility"
+- `p1-platform-readiness/spec.md`: "Wire session health detection + auto-rebuild is P2 (not in scope)"
+
+**Architecture decision points for adding reconnection**:
+1. **Engine layer** (Go, cross-platform): Use sing-tun `DefaultInterfaceMonitor` → detect interface change → tear down + rebuild wire. Works on desktop. DOES NOT work on Android (netlink banned).
+2. **Wire layer** (Go): Clear cached `c.conn` in `QUICClient` on error → force lazy reconnect on next dial. Simplest change, self-healing after 30s timeout. Does not detect network change — just recovers from dead connections.
+3. **Bridge layer** (platform-native): Android `ConnectivityManager.NetworkCallback`, iOS `NWPathMonitor` → stop engine + restart with saved config + new TUN fd.
+4. **Daemon layer** (desktop only): Register sing-tun `DefaultInterfaceMonitor` → trigger `doDown()` + `doUp(savedConfig)`.
+
+**Key constraint**: Mobile reconnect MUST involve bridge layer — `engine.Start()` requires platform-provided TUN fd (`VpnService.Builder.establish()` on Android, `NEPacketTunnelProvider` on iOS). Engine cannot independently reconnect on mobile.
+
+**sing-tun `Options.InterfaceMonitor` vs application reconnect**: `InterfaceMonitor` in `tun.Options` is for auto-route management (telling sing-tun which interface to exclude). For application-level reconnection, use `NewNetworkUpdateMonitor()` + `NewDefaultInterfaceMonitor()` directly and register own callbacks.
+
+**Scrum verdict (2026-02-17)**: Short-term — bridge-layer error synthesis + Android NetworkCallback. Long-term — engine adds `StateError` + wire clears dead connections. See TODO: `docs/todos/android-mobile-error-state-ux-gap.md`.
+
+**Tests**: No test yet — discovery from code audit.
+**Source**: android-vpn-audit (scrum session 2026-02-17)
+**Status**: verified (code-level confirmation)
+
+---
