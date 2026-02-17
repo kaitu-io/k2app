@@ -4,6 +4,16 @@ import K2Mobile  // gomobile xcframework
 
 private let kAppGroup = "group.io.kaitu"
 
+private struct TunnelSettings: Codable {
+    var dns: [String]?
+    var mtu: Int?
+    var tunnelRemoteAddress: String?
+}
+
+private struct ConfigWrapper: Codable {
+    var tunnel: TunnelSettings?
+}
+
 class PacketTunnelProvider: NEPacketTunnelProvider {
     private var engine: MobileEngine?
     private var pathMonitor: NWPathMonitor?
@@ -32,18 +42,8 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         engine?.setEventHandler(handler)
 
         // Configure network settings first, then get TUN fd in completion
-        let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "10.0.0.1")
-
-        // IPv4
-        settings.ipv4Settings = NEIPv4Settings(addresses: ["10.0.0.2"], subnetMasks: ["255.255.255.0"])
-        settings.ipv4Settings?.includedRoutes = [NEIPv4Route.default()]
-
-        // IPv6 — capture default route so engine drops IPv6 (prevents DNS leak)
-        settings.ipv6Settings = NEIPv6Settings(addresses: ["fd00::2"], networkPrefixLengths: [64])
-        settings.ipv6Settings?.includedRoutes = [NEIPv6Route.default()]
-
-        settings.dnsSettings = NEDNSSettings(servers: ["1.1.1.1", "8.8.8.8"])
-        settings.mtu = 1400
+        let tunnelSettings = parseTunnelSettings(from: configJSON)
+        let settings = buildNetworkSettings(from: tunnelSettings)
 
         setTunnelNetworkSettings(settings) { [weak self] error in
             if let error = error {
@@ -75,6 +75,37 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 completionHandler(error)
             }
         }
+    }
+
+    private func parseTunnelSettings(from configJSON: String) -> TunnelSettings? {
+        guard let data = configJSON.data(using: .utf8),
+              let wrapper = try? JSONDecoder().decode(ConfigWrapper.self, from: data) else {
+            return nil
+        }
+        return wrapper.tunnel
+    }
+
+    private func buildNetworkSettings(from tunnelSettings: TunnelSettings?) -> NEPacketTunnelNetworkSettings {
+        let remoteAddr = tunnelSettings?.tunnelRemoteAddress ?? "10.0.0.1"
+        let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: remoteAddr)
+
+        // IPv4
+        settings.ipv4Settings = NEIPv4Settings(addresses: ["10.0.0.2"], subnetMasks: ["255.255.255.0"])
+        settings.ipv4Settings?.includedRoutes = [NEIPv4Route.default()]
+
+        // IPv6 — capture default route so engine drops IPv6 (prevents DNS leak)
+        settings.ipv6Settings = NEIPv6Settings(addresses: ["fd00::2"], networkPrefixLengths: [64])
+        settings.ipv6Settings?.includedRoutes = [NEIPv6Route.default()]
+
+        // DNS — use custom if provided, else defaults
+        let dnsServers = tunnelSettings?.dns ?? ["1.1.1.1", "8.8.8.8"]
+        settings.dnsSettings = NEDNSSettings(servers: dnsServers)
+
+        // MTU
+        let mtu = tunnelSettings?.mtu ?? 1400
+        settings.mtu = NSNumber(value: mtu)
+
+        return settings
     }
 
     override func stopTunnel(with reason: NEProviderStopReason, completionHandler: @escaping () -> Void) {
@@ -137,6 +168,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 
 class EventBridge: NSObject, MobileEventHandlerProtocol {
     weak var provider: PacketTunnelProvider?
+    private var hasReportedError = false
 
     init(provider: PacketTunnelProvider) {
         self.provider = provider
@@ -144,14 +176,23 @@ class EventBridge: NSObject, MobileEventHandlerProtocol {
 
     func onStateChange(_ state: String?) {
         guard let state = state else { return }
-        if state == "disconnected" {
-            // Notify system that tunnel has stopped — triggers NEVPNStatusDidChange → .disconnected
+        if state == "connecting" {
+            // New connection cycle — reset error flag
+            hasReportedError = false
+        } else if state == "disconnected" {
+            if hasReportedError {
+                // Error already reported and cancelTunnelWithError already called — skip
+                // to avoid nil-cancel overwriting the error in App Group
+                return
+            }
+            // Normal disconnect — notify system
             provider?.cancelTunnelWithError(nil)
         }
     }
 
     func onError(_ message: String?) {
         guard let message = message else { return }
+        hasReportedError = true
         // Write error to App Group so main app can read it
         UserDefaults(suiteName: kAppGroup)?.set(message, forKey: "vpnError")
         // Notify system that tunnel has failed

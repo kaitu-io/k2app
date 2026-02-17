@@ -46,9 +46,18 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             }
         }
 
+        loadVPNManager()
+    }
+
+    private func registerStatusObserver() {
+        // Remove old observer if exists
+        if let observer = statusObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+
         statusObserver = NotificationCenter.default.addObserver(
             forName: .NEVPNStatusDidChange,
-            object: nil,
+            object: vpnManager?.connection,
             queue: .main
         ) { [weak self] notification in
             guard let connection = notification.object as? NEVPNConnection else { return }
@@ -64,7 +73,6 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                 }
             }
         }
-        loadVPNManager()
     }
 
     deinit {
@@ -183,8 +191,51 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func disconnect(_ call: CAPPluginCall) {
-        vpnManager?.connection.stopVPNTunnel()
-        call.resolve()
+        guard let connection = vpnManager?.connection else {
+            call.resolve()
+            return
+        }
+
+        // Already disconnected
+        if connection.status == .disconnected {
+            call.resolve()
+            return
+        }
+
+        var disconnectObserver: NSObjectProtocol?
+        var timeoutWork: DispatchWorkItem?
+
+        let cleanup: () -> Void = {
+            if let obs = disconnectObserver {
+                NotificationCenter.default.removeObserver(obs)
+                disconnectObserver = nil
+            }
+            timeoutWork?.cancel()
+            timeoutWork = nil
+        }
+
+        // One-time observer for .disconnected
+        disconnectObserver = NotificationCenter.default.addObserver(
+            forName: .NEVPNStatusDidChange,
+            object: connection,
+            queue: .main
+        ) { notification in
+            guard let conn = notification.object as? NEVPNConnection,
+                  conn.status == .disconnected else { return }
+            cleanup()
+            call.resolve()
+        }
+
+        // 5s timeout fallback
+        let timeout = DispatchWorkItem {
+            cleanup()
+            call.resolve()
+        }
+        timeoutWork = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0, execute: timeout)
+
+        // Trigger the disconnect
+        connection.stopVPNTunnel()
     }
 
     // MARK: - Update Methods
@@ -373,8 +424,12 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
 
     private func loadVPNManager(completion: ((NETunnelProviderManager?) -> Void)? = nil) {
         NETunnelProviderManager.loadAllFromPreferences { [weak self] managers, error in
-            let manager = managers?.first ?? NETunnelProviderManager()
+            let bundleId = "io.kaitu.PacketTunnelExtension"
+            let manager = managers?.first(where: {
+                ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier == bundleId
+            }) ?? NETunnelProviderManager()
             self?.vpnManager = manager
+            self?.registerStatusObserver()
             completion?(manager)
         }
     }
@@ -396,8 +451,11 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
     private func mapVPNStatus(_ status: NEVPNStatus) -> String {
         switch status {
         case .connected: return "connected"
-        case .connecting, .reasserting: return "connecting"
-        default: return "disconnected"
+        case .connecting: return "connecting"
+        case .disconnecting: return "disconnecting"
+        case .reasserting: return "reconnecting"
+        case .disconnected, .invalid: return "disconnected"
+        @unknown default: return "disconnected"
         }
     }
 

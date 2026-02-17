@@ -6,9 +6,9 @@
 |-----------|------------------------------------------|
 | Feature   | ios-ne-lifecycle-fixes                   |
 | Version   | v1                                       |
-| Status    | draft                                    |
+| Status    | implemented                              |
 | Created   | 2026-02-17                               |
-| Updated   | 2026-02-17                               |
+| Updated   | 2026-02-18                               |
 
 ## Version History
 
