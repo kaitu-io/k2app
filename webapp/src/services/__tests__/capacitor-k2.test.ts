@@ -145,7 +145,7 @@ describe('capacitor-k2', () => {
       await injectCapacitorGlobals();
 
       mockK2Plugin.getStatus.mockResolvedValue({
-        state: 'error',
+        state: 'disconnected',
         error: 'Connection timed out',
       });
 
@@ -223,6 +223,47 @@ describe('capacitor-k2', () => {
 
       expect(result.code).toBe(-1);
       expect(result.message).toContain('Plugin not available');
+    });
+
+    it('test_capacitor_transformStatus_error_synthesis', async () => {
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      mockK2Plugin.getStatus.mockResolvedValue({
+        state: 'disconnected',
+        error: 'DNS failed',
+      });
+
+      const result = await window._k2.run('status');
+      expect(result.data.state).toBe('error');
+      expect(result.data.error).toEqual({ code: 570, message: 'DNS failed' });
+    });
+
+    it('test_capacitor_transformStatus_disconnected_no_error', async () => {
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      mockK2Plugin.getStatus.mockResolvedValue({
+        state: 'disconnected',
+      });
+
+      const result = await window._k2.run('status');
+      expect(result.data.state).toBe('disconnected');
+      expect(result.data.error).toBeUndefined();
+    });
+
+    it('test_capacitor_transformStatus_connected_no_error', async () => {
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      mockK2Plugin.getStatus.mockResolvedValue({
+        state: 'connected',
+        connectedAt: '2024-01-01T00:00:00Z',
+      });
+
+      const result = await window._k2.run('status');
+      expect(result.data.state).toBe('connected');
+      expect(result.data.error).toBeUndefined();
     });
   });
 

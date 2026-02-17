@@ -81,7 +81,8 @@ describe('tauri-k2', () => {
         params: null,
       });
       expect(result.code).toBe(0);
-      expect(result.data).toEqual({ state: 'stopped' });
+      expect(result.data.state).toBe('disconnected');
+      expect(result.data.running).toBe(false);
     });
 
     it('_k2.run passes params to daemon_exec', async () => {
@@ -116,6 +117,82 @@ describe('tauri-k2', () => {
 
       expect(mockInvoke).toHaveBeenCalledWith('get_udid');
       expect(udid).toBe('test-udid-123');
+    });
+  });
+
+  describe('transformStatus', () => {
+    // Test transformStatus through the _k2.run('status') path
+    // since transformStatus is not exported
+
+    beforeEach(async () => {
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === 'get_platform_info') {
+          return { os: 'macos', version: '0.4.0' };
+        }
+        return { code: 0, message: 'ok', data: {} };
+      });
+      await injectTauriGlobals();
+    });
+
+    it('maps stopped to disconnected', async () => {
+      mockInvoke.mockResolvedValueOnce({
+        code: 0, message: 'ok',
+        data: { state: 'stopped' },
+      });
+      const result = await window._k2.run('status');
+      expect(result.data.state).toBe('disconnected');
+      expect(result.data.running).toBe(false);
+    });
+
+    it('maps stopped with error to error state', async () => {
+      mockInvoke.mockResolvedValueOnce({
+        code: 0, message: 'ok',
+        data: { state: 'stopped', error: 'timeout' },
+      });
+      const result = await window._k2.run('status');
+      expect(result.data.state).toBe('error');
+      expect(result.data.error).toEqual({ code: 570, message: 'timeout' });
+    });
+
+    it('passes through connected state', async () => {
+      mockInvoke.mockResolvedValueOnce({
+        code: 0, message: 'ok',
+        data: { state: 'connected', connected_at: '2024-01-01T00:00:00Z' },
+      });
+      const result = await window._k2.run('status');
+      expect(result.data.state).toBe('connected');
+      expect(result.data.running).toBe(true);
+      expect(result.data.startAt).toBeDefined();
+    });
+
+    it('passes through connecting state', async () => {
+      mockInvoke.mockResolvedValueOnce({
+        code: 0, message: 'ok',
+        data: { state: 'connecting' },
+      });
+      const result = await window._k2.run('status');
+      expect(result.data.state).toBe('connecting');
+      expect(result.data.running).toBe(true);
+    });
+
+    it('stopped without error stays disconnected', async () => {
+      mockInvoke.mockResolvedValueOnce({
+        code: 0, message: 'ok',
+        data: { state: 'stopped' },
+      });
+      const result = await window._k2.run('status');
+      expect(result.data.state).toBe('disconnected');
+      expect(result.data.error).toBeUndefined();
+    });
+
+    it('connected state clears any error', async () => {
+      mockInvoke.mockResolvedValueOnce({
+        code: 0, message: 'ok',
+        data: { state: 'connected', connected_at: '2024-01-01T00:00:00Z' },
+      });
+      const result = await window._k2.run('status');
+      expect(result.data.state).toBe('connected');
+      expect(result.data.error).toBeUndefined();
     });
   });
 
