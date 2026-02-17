@@ -4,8 +4,14 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.VpnService
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.ParcelFileDescriptor
@@ -27,6 +33,9 @@ class K2VpnService : VpnService(), VpnServiceBridge {
     @Volatile
     private var plugin: K2Plugin? = null
     private val binder = VpnServiceBridge.BridgeBinder(this)
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var pendingNetworkChange: Runnable? = null
 
     override fun onBind(intent: Intent?): IBinder {
         return binder
@@ -130,6 +139,7 @@ class K2VpnService : VpnService(), VpnServiceBridge {
             Log.d(TAG, "Starting engine with fd=$fd")
             engine?.start(configJSON, fd.toLong(), filesDir.absolutePath)
             Log.d(TAG, "Engine started successfully")
+            registerNetworkCallback()
         } catch (e: Exception) {
             Log.e(TAG, "Engine start failed: ${e.message}", e)
             plugin?.onError(e.message ?: "Failed to start engine")
@@ -138,12 +148,50 @@ class K2VpnService : VpnService(), VpnServiceBridge {
     }
 
     private fun stopVpn() {
+        unregisterNetworkCallback()
         engine?.stop()
         engine = null
         vpnInterface?.close()
         vpnInterface = null
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
+    }
+
+    private fun registerNetworkCallback() {
+        val cm = getSystemService(ConnectivityManager::class.java) ?: return
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                Log.d(TAG, "Network available: $network")
+                // Debounce: cancel pending, schedule new after 500ms
+                pendingNetworkChange?.let { mainHandler.removeCallbacks(it) }
+                val runnable = Runnable {
+                    Log.d(TAG, "Triggering engine network change reset")
+                    engine?.onNetworkChanged()
+                }
+                pendingNetworkChange = runnable
+                mainHandler.postDelayed(runnable, 500)
+            }
+        }
+        cm.registerNetworkCallback(request, callback)
+        networkCallback = callback
+        Log.d(TAG, "Network callback registered")
+    }
+
+    private fun unregisterNetworkCallback() {
+        pendingNetworkChange?.let { mainHandler.removeCallbacks(it) }
+        pendingNetworkChange = null
+        networkCallback?.let {
+            try {
+                val cm = getSystemService(ConnectivityManager::class.java)
+                cm?.unregisterNetworkCallback(it)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to unregister network callback: ${e.message}")
+            }
+        }
+        networkCallback = null
     }
 
     private fun createNotificationChannel() {

@@ -1,3 +1,4 @@
+import Network
 import NetworkExtension
 import K2Mobile  // gomobile xcframework
 
@@ -5,6 +6,8 @@ private let kAppGroup = "group.io.kaitu"
 
 class PacketTunnelProvider: NEPacketTunnelProvider {
     private var engine: MobileEngine?
+    private var pathMonitor: NWPathMonitor?
+    private var pendingNetworkChange: DispatchWorkItem?
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
         let configJSON: String
@@ -66,6 +69,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 }
 
                 try self?.engine?.start(configJSON, fd: Int(fd), dataDir: dataDir)
+                self?.startMonitoringNetwork()
                 completionHandler(nil)
             } catch {
                 completionHandler(error)
@@ -74,9 +78,38 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 
     override func stopTunnel(with reason: NEProviderStopReason, completionHandler: @escaping () -> Void) {
+        stopMonitoringNetwork()
         try? engine?.stop()
         engine = nil
         completionHandler()
+    }
+
+    // MARK: - Network Monitoring
+
+    private func startMonitoringNetwork() {
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            guard path.status == .satisfied else { return }
+            NSLog("[PacketTunnel] Network path satisfied, scheduling engine reset")
+            // Debounce: cancel pending, schedule new after 500ms
+            self?.pendingNetworkChange?.cancel()
+            let workItem = DispatchWorkItem { [weak self] in
+                NSLog("[PacketTunnel] Triggering engine onNetworkChanged")
+                self?.engine?.onNetworkChanged()
+            }
+            self?.pendingNetworkChange = workItem
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.5, execute: workItem)
+        }
+        monitor.start(queue: DispatchQueue.global(qos: .utility))
+        pathMonitor = monitor
+        NSLog("[PacketTunnel] Network path monitor started")
+    }
+
+    private func stopMonitoringNetwork() {
+        pendingNetworkChange?.cancel()
+        pendingNetworkChange = nil
+        pathMonitor?.cancel()
+        pathMonitor = nil
     }
 
     override func handleAppMessage(_ messageData: Data, completionHandler: ((Data?) -> Void)?) {
