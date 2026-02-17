@@ -11,12 +11,45 @@ import { invoke } from '@tauri-apps/api/core';
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 import { open as shellOpen } from '@tauri-apps/plugin-shell';
 import type { IK2Vpn, IPlatform, SResponse } from '../types/kaitu-core';
+import type { StatusResponseData, ControlError, ServiceState } from './control-types';
 import { webSecureStorage } from './secure-storage';
 
 interface ServiceResponse {
   code: number;
   message: string;
   data: any;
+}
+
+/**
+ * Transform raw daemon status into normalized StatusResponseData.
+ * Daemon uses "stopped" instead of "disconnected" and snake_case keys.
+ * Error synthesis: disconnected + error -> error state.
+ */
+function transformStatus(raw: any): StatusResponseData {
+  let state: ServiceState = raw.state === 'stopped' ? 'disconnected' : (raw.state ?? 'disconnected');
+  const running = state === 'connecting' || state === 'connected';
+
+  let error: ControlError | undefined;
+  if (raw.error) {
+    error = { code: 570, message: raw.error };
+    if (state === 'disconnected') {
+      state = 'error';
+    }
+  }
+
+  let startAt: number | undefined;
+  if (raw.connected_at) {
+    startAt = Math.floor(new Date(raw.connected_at).getTime() / 1000);
+  }
+
+  return {
+    state,
+    running,
+    networkAvailable: true,
+    startAt,
+    error,
+    retrying: false,
+  };
 }
 
 /**
@@ -39,6 +72,15 @@ export async function injectTauriGlobals(): Promise<void> {
           action,
           params: params ?? null,
         });
+        // Transform status response to normalize daemon state values
+        if (action === 'status' && response.code === 0 && response.data) {
+          const transformed = transformStatus(response.data);
+          return {
+            code: response.code,
+            message: response.message,
+            data: transformed as unknown as T,
+          };
+        }
         return {
           code: response.code,
           message: response.message,

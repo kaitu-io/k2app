@@ -10,7 +10,7 @@
 import { Capacitor } from '@capacitor/core';
 import { K2Plugin } from 'k2-plugin';
 import type { IK2Vpn, IPlatform, SResponse } from '../types/kaitu-core';
-import type { StatusResponseData, ControlError } from './control-types';
+import type { StatusResponseData, ControlError, ServiceState } from './control-types';
 import { webSecureStorage } from './secure-storage';
 
 /**
@@ -22,14 +22,18 @@ export function isCapacitorNative(): boolean {
 
 /**
  * Transform K2Plugin's raw status into StatusResponseData format.
+ * Error synthesis: disconnected + error -> error state.
  */
 function transformStatus(raw: any): StatusResponseData {
-  const state = raw.state ?? 'disconnected';
+  let state: ServiceState = raw.state ?? 'disconnected';
   const running = state === 'connecting' || state === 'connected';
 
   let error: ControlError | undefined;
   if (raw.error) {
     error = { code: 570, message: raw.error };
+    if (state === 'disconnected') {
+      state = 'error';
+    }
   }
 
   let startAt: number | undefined;
