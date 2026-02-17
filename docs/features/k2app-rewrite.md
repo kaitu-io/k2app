@@ -158,8 +158,6 @@ Core actions (POST `/api/core` with `{"action":"...","params":{...}}`):
 | `up` | `wire_url`, `config_path`, `pid` (all optional) | No params = reconnect with last saved config |
 | `down` | - | Disconnect tunnel |
 | `status` | - | Returns: `state`, `connected_at`, `uptime_seconds`, `error`, `wire_url`, `config_path` |
-| `speedtest` | `server_id` (optional) | Async, returns immediately |
-| `get_speedtest_status` | - | Speedtest progress |
 | `get_config` | - | Returns: `wire_url`, `config_path` |
 | `version` | - | Returns: `version`, `go`, `os`, `arch` |
 

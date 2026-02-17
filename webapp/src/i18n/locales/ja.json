@@ -808,15 +808,6 @@
     }
   },
   "troubleshooting": {
-    "fixNetwork": {
-      "button": "ワンクリックでネットワーク復旧",
-      "description": "ネットワーク接続の問題を修正し、DNSとルーティング設定をリセットする。",
-      "error": "ネットワークの修復に失敗しました。",
-      "fixing": "取り戻す。",
-      "success": "ネットワーク修復は成功した！",
-      "title": "ワンクリック・ネットワーク修理",
-      "unsupported": "この機能はmacOSシステムでのみサポートされています。"
-    },
     "securitySoftware": {
       "description": "360、Tencent ButlerなどのセキュリティソフトによってVPN接続がブロックされている場合は、セットアップガイドをご確認ください。",
       "title": "セキュリティソフトのホワイトリスト設定"
@@ -833,26 +824,6 @@
       "show": "すべてのサーバーを見る",
       "startFailed": "起動サーバーリストの取得に失敗しました",
       "testing": "サーバーのレイテンシーをテスト中"
-    },
-    "speedtest": {
-      "autoSelect": "最適なサーバーの自動選択",
-      "complete": "スピード測定完了。",
-      "currentSpeed": "現在速度",
-      "description": "国際輸出ネットワーク接続の速度と品質をテスト（プロキシなし）",
-      "downloadSpeed": "ダウンロード速度",
-      "duration": "かける",
-      "failed": "速度測定に失敗",
-      "jitter": "ジャダー",
-      "latency": "先延ばしにする",
-      "networkError": "ネットワークリクエスト失敗",
-      "seconds": "秒",
-      "selectServer": "サーバーを選択",
-      "server": "テストサーバー",
-      "start": "スピードの計測を開始。",
-      "startFailed": "速度測定開始の失敗",
-      "testing": "タキメーター",
-      "title": "インターネット・スピード・テスト",
-      "uploadSpeed": "アップロード速度"
     },
     "subtitle": "スピードテストとネットワーク修復でネットワーク接続の問題を診断する",
     "title": "問題スクリーニング"

@@ -101,27 +101,6 @@ Response: `{"code": 0, "message": "reconnecting"}`
 
 Error: `510` if no saved config.
 
-#### action: "speedtest" — Start bandwidth test
-
-```json
-{
-  "action": "speedtest",
-  "params": { "server_id": "optional-server-id" }
-}
-```
-
-Response: `{"code": 0, "message": "speedtest started"}`
-
-Error: `512` if speedtest already running.
-
-#### action: "get_speedtest_status" — Poll speedtest progress
-
-```json
-{ "action": "get_speedtest_status" }
-```
-
-Response data: speedtest progress object (download/upload Mbps, latency, state).
-
 #### action: "get_config" — Saved config
 
 ```json

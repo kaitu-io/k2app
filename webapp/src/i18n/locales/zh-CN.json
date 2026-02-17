@@ -730,35 +730,6 @@
   "troubleshooting": {
     "title": "问题排查",
     "subtitle": "通过网速测试和网络修复来诊断网络连接问题",
-    "speedtest": {
-      "title": "网速测试",
-      "description": "测试您的国际出口网络连接速度和质量（不经过代理）",
-      "start": "开始测速",
-      "testing": "测速中...",
-      "complete": "测速完成",
-      "failed": "测速失败",
-      "startFailed": "启动测速失败",
-      "networkError": "网络请求失败",
-      "currentSpeed": "当前速度",
-      "downloadSpeed": "下载速度",
-      "uploadSpeed": "上传速度",
-      "latency": "延迟",
-      "jitter": "抖动",
-      "duration": "耗时",
-      "seconds": "秒",
-      "server": "测试服务器",
-      "selectServer": "选择服务器",
-      "autoSelect": "自动选择最佳服务器"
-    },
-    "fixNetwork": {
-      "title": "一键修复网络",
-      "description": "修复网络连接问题，重置DNS和路由配置",
-      "button": "一键恢复网络",
-      "fixing": "恢复中...",
-      "success": "网络修复成功！",
-      "error": "网络修复失败，请稍后重试",
-      "unsupported": "该功能仅支持 macOS 系统"
-    },
     "securitySoftware": {
       "title": "安全软件白名单设置",
       "description": "如果VPN连接被360、腾讯管家等安全软件拦截，请查看设置指南"

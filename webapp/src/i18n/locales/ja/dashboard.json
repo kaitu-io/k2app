@@ -168,35 +168,6 @@
   "troubleshooting": {
     "title": "問題診断",
     "subtitle": "速度テストとネットワーク修復でネットワーク接続の問題を診断",
-    "speedtest": {
-      "title": "速度テスト",
-      "description": "国際出口ネットワークの接続速度と品質をテスト（プロキシを経由しません）",
-      "start": "テスト開始",
-      "testing": "テスト中...",
-      "complete": "テスト完了",
-      "failed": "テスト失敗",
-      "startFailed": "速度テストの開始に失敗しました",
-      "networkError": "ネットワークリクエストに失敗しました",
-      "currentSpeed": "現在の速度",
-      "downloadSpeed": "ダウンロード速度",
-      "uploadSpeed": "アップロード速度",
-      "latency": "レイテンシー",
-      "jitter": "ジッター",
-      "duration": "所要時間",
-      "seconds": "秒",
-      "server": "テストサーバー",
-      "selectServer": "サーバーを選択",
-      "autoSelect": "最適なサーバーを自動選択"
-    },
-    "fixNetwork": {
-      "title": "ネットワークをワンクリック修復",
-      "description": "ネットワーク接続の問題を修復、DNSとルーティング設定をリセット",
-      "button": "ネットワークをワンクリック回復",
-      "fixing": "回復中...",
-      "success": "ネットワーク修復に成功しました！",
-      "error": "ネットワーク修復に失敗しました、後でもう一度お試しください",
-      "unsupported": "この機能はmacOSシステムのみサポートしています"
-    },
     "securitySoftware": {
       "title": "セキュリティソフトウェアホワイトリスト設定",
       "description": "VPN接続が360、テンセントマネージャーなどのセキュリティソフトウェアにブロックされている場合は、設定ガイドを参照してください"

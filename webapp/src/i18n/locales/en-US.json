@@ -808,15 +808,6 @@
     }
   },
   "troubleshooting": {
-    "fixNetwork": {
-      "button": "One-click network restoration",
-      "description": "Fix network connectivity issues, reset DNS and routing configurations",
-      "error": "Network repair failed. Please try again later.",
-      "fixing": "recover sth.",
-      "success": "Network repair was successful!",
-      "title": "One Click Network Repair",
-      "unsupported": "This feature is only supported on macOS systems"
-    },
     "securitySoftware": {
       "description": "If the VPN connection is blocked by security software such as 360, Tencent Butler, etc., please check the setup guide",
       "title": "Security software whitelist settings"
@@ -833,26 +824,6 @@
       "show": "View all servers",
       "startFailed": "Failed to get startup server list",
       "testing": "Server latency being tested"
-    },
-    "speedtest": {
-      "autoSelect": "Automatic selection of the best server",
-      "complete": "Speed measurement complete.",
-      "currentSpeed": "current velocity",
-      "description": "Test the speed and quality of your international export internet connection (without proxies)",
-      "downloadSpeed": "download speed",
-      "duration": "take a period of (x amount of time)",
-      "failed": "Failed to measure speed",
-      "jitter": "judder",
-      "latency": "procrastinate",
-      "networkError": "Network request failed",
-      "seconds": "秒",
-      "selectServer": "Select Server",
-      "server": "test server",
-      "start": "Starting to measure speed.",
-      "startFailed": "Failure to initiate speed measurement",
-      "testing": "tachymeter...",
-      "title": "Internet Speed Test",
-      "uploadSpeed": "upload speed"
     },
     "subtitle": "Diagnose network connectivity issues with network speed test and network repair",
     "title": "problem screening"

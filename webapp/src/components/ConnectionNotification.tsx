@@ -8,12 +8,10 @@
  * - 自动淡入淡出动画
  */
 
-import { useCallback } from 'react';
 import {
   Box,
   Typography,
   IconButton,
-  Button,
   Stack,
   styled,
   alpha,
@@ -23,10 +21,8 @@ import {
   Warning as WarningIcon,
   Error as ErrorIcon,
   Close as CloseIcon,
-  Build as FixIcon,
 } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
 import type { ControlError } from '../services/control-types';
 import { getErrorI18nKey } from '../services/control-types';
 
@@ -34,42 +30,41 @@ type NotificationType = 'info' | 'warning' | 'error';
 
 interface NotificationConfig {
   type: NotificationType;
-  showFixNetwork: boolean;
 }
 
 /**
- * 根据错误码判断通知类型和是否显示修复网络
+ * 根据错误码判断通知类型
  */
 function getNotificationConfig(error: ControlError): NotificationConfig {
   const code = error.code;
 
-  // 100 系列：网络错误，显示修复网络按钮
+  // 100 系列：网络错误
   if (code >= 100 && code <= 109) {
-    return { type: 'warning', showFixNetwork: true };
+    return { type: 'warning' };
   }
 
   // 110 系列：服务器错误
   if (code >= 110 && code <= 119) {
-    return { type: 'error', showFixNetwork: false };
+    return { type: 'error' };
   }
 
   // 500 系列：VPN 服务错误
   if (code >= 510 && code <= 519) {
-    return { type: 'error', showFixNetwork: false };
+    return { type: 'error' };
   }
 
-  // 520 系列：网络修复相关错误
+  // 520 系列：网络相关错误
   if (code >= 520 && code <= 529) {
-    return { type: 'warning', showFixNetwork: true };
+    return { type: 'warning' };
   }
 
-  // 570 系列：连接错误，可能是网络问题
+  // 570 系列：连接错误
   if (code >= 570 && code <= 579) {
-    return { type: 'error', showFixNetwork: true };
+    return { type: 'error' };
   }
 
   // 其他错误
-  return { type: 'error', showFixNetwork: false };
+  return { type: 'error' };
 }
 
 const NotificationContainer = styled(Box, {
@@ -155,11 +150,6 @@ export function ConnectionNotification({
   onClose,
 }: ConnectionNotificationProps) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
-
-  const handleFixNetwork = useCallback(() => {
-    navigate('/faq');
-  }, [navigate]);
 
   if (!error) {
     return null;
@@ -200,24 +190,6 @@ export function ConnectionNotification({
             defaultValue: error.message || t('common:status.error'),
           })}
         </Typography>
-
-        {config.showFixNetwork && (
-          <Button
-            size="small"
-            startIcon={<FixIcon sx={{ fontSize: 12 }} />}
-            onClick={handleFixNetwork}
-            sx={{
-              fontSize: '0.65rem',
-              py: 0.25,
-              px: 1,
-              minHeight: 'auto',
-              textTransform: 'none',
-              alignSelf: 'flex-start',
-            }}
-          >
-            {t('dashboard:troubleshooting.fixNetwork.button') || 'Fix Network'}
-          </Button>
-        )}
       </Stack>
 
       {onClose && (
