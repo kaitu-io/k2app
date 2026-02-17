@@ -2,9 +2,10 @@
 
 ## Meta
 
-- Status: draft
+- Status: implemented
 - Version: 1.1
 - Created: 2026-02-17
+- Updated: 2026-02-17
 - Branch: w9f/webapp-stale-cleanup
 - Related: [control-types-alignment](./control-types-alignment.md) (deeper type system cleanup)
 
