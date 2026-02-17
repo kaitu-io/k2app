@@ -16,10 +16,15 @@ fn main() {
             }
         }))
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             service::admin_reinstall_service,
             service::ensure_service_running,
+            service::daemon_exec,
+            service::get_udid,
+            service::get_platform_info,
             updater::check_update_now,
             updater::apply_update_now,
             updater::get_update_status,

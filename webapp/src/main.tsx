@@ -23,17 +23,22 @@ async function main() {
   await i18nPromise;
   console.info('[WebApp] i18n initialized');
 
-  // Check if window._k2 and window._platform are injected; inject standalone if missing
-  if (!window._k2 || !window._platform) {
+  // Inject platform-specific globals
+  if (window.__TAURI__) {
+    console.info('[WebApp] Tauri detected, injecting Tauri bridge...');
+    const { injectTauriGlobals } = await import('./services/tauri-k2');
+    await injectTauriGlobals();
+  } else if (!window._k2 || !window._platform) {
     console.warn('[WebApp] Globals missing, injecting standalone implementation...');
     const { ensureK2Injected } = await import('./services/standalone-k2');
     ensureK2Injected();
   } else {
     console.info('[WebApp] K2 and platform already injected by host');
-    const { getK2Source } = await import('./services/standalone-k2');
-    const source = getK2Source();
-    console.info(`[WebApp] K2 source: ${source}`);
   }
+
+  // Log source
+  const { getK2Source } = await import('./services/standalone-k2');
+  console.info(`[WebApp] K2 source: ${getK2Source()}`);
 
   // 初始化所有 Stores
   const cleanupStores = initializeAllStores();
