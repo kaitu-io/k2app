@@ -6,7 +6,7 @@
 |-----------|------------------------------------------|
 | Feature   | vpn-error-reconnect                      |
 | Version   | v2                                       |
-| Status    | draft                                    |
+| Status    | implemented                              |
 | Created   | 2026-02-17                               |
 | Updated   | 2026-02-17                               |
 
