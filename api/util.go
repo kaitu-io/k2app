@@ -87,7 +87,7 @@ func NormalizeBCP47Language(lang string) string {
 			parts[i] = strings.ToUpper(part)
 		} else if len(part) == 4 && regexp.MustCompile(`^[A-Za-z]{4}$`).MatchString(part) {
 			// Script code (4 letters) - Title case (first letter uppercase)
-			parts[i] = strings.Title(strings.ToLower(part))
+			parts[i] = strings.ToUpper(part[:1]) + strings.ToLower(part[1:])
 		}
 		// Other parts remain as-is
 	}

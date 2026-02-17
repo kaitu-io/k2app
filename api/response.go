@@ -120,20 +120,9 @@ func List[T any](c *gin.Context, items []T, pagination *Pagination) {
 	})
 }
 
-// ListWithData 使用转换后的数据进行分页响应
+// ListWithData is an alias for List, kept for backward compatibility of existing callers.
 func ListWithData[T any](c *gin.Context, items []T, pagination *Pagination) {
-	if pagination == nil {
-		log.Warnf(c, "pagination is nil, using empty pagination")
-		ItemsAll(c, items)
-		return
-	}
-	log.Debugf(c, "request to %s succeeded with converted data list response (total: %d)", c.Request.URL.Path, pagination.Total)
-	c.JSON(http.StatusOK, Response[ListResult[T]]{
-		Data: &ListResult[T]{
-			Items:      items,
-			Pagination: pagination,
-		},
-	})
+	List(c, items, pagination)
 }
 
 func Error(c *gin.Context, code ErrorCode, message string) {
