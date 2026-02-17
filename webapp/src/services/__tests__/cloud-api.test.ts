@@ -41,15 +41,27 @@ vi.mock('../../stores/auth.store', () => ({
   },
 }));
 
+// Mock cache store
+vi.mock('../cache-store', () => ({
+  cacheStore: {
+    clear: vi.fn(),
+    get: vi.fn(),
+    set: vi.fn(),
+    delete: vi.fn(),
+  },
+}));
+
 import { cloudApi } from '../cloud-api';
 import { authService } from '../auth-service';
 import { useAuthStore } from '../../stores/auth.store';
 import { resolveEntry } from '../antiblock';
+import { cacheStore } from '../cache-store';
 
 // Type helper for mocked functions
 const mockedAuthService = vi.mocked(authService);
 const mockedAuthStore = vi.mocked(useAuthStore);
 const mockedResolveEntry = vi.mocked(resolveEntry);
+const mockedCacheStore = vi.mocked(cacheStore);
 
 describe('Cloud API Client', () => {
   let originalFetch: typeof globalThis.fetch;
@@ -316,6 +328,226 @@ describe('Cloud API Client', () => {
       expect(response.code).toBe(-1);
       expect(response.message).toBeDefined();
       expect(typeof response.message).toBe('string');
+    });
+  });
+
+  // ==================== Convenience Methods (get/post) ====================
+
+  describe('convenience methods', () => {
+    it('test_get_convenience_method', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ code: 0, data: { id: 1 } }),
+      });
+      globalThis.fetch = mockFetch;
+      mockedAuthService.getToken.mockResolvedValue(null);
+
+      await cloudApi.get('/api/x');
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [url, options] = mockFetch.mock.calls[0];
+      expect(url).toBe('/api/x');
+      expect(options.method).toBe('GET');
+    });
+
+    it('test_post_convenience_method', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ code: 0, data: { ok: true } }),
+      });
+      globalThis.fetch = mockFetch;
+      mockedAuthService.getToken.mockResolvedValue(null);
+
+      const body = { email: 'user@example.com', code: '000000' };
+      await cloudApi.post('/api/x', body);
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [url, options] = mockFetch.mock.calls[0];
+      expect(url).toBe('/api/x');
+      expect(options.method).toBe('POST');
+      expect(options.headers['Content-Type']).toBe('application/json');
+      expect(JSON.parse(options.body)).toEqual(body);
+    });
+  });
+
+  // ==================== Auto Token Handling on Auth Paths ====================
+
+  describe('auto token handling on auth paths', () => {
+    it('test_login_auto_saves_tokens', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({
+          code: 0,
+          data: { accessToken: 'at', refreshToken: 'rt' },
+        }),
+      });
+      globalThis.fetch = mockFetch;
+      mockedAuthService.getToken.mockResolvedValue(null);
+      mockedAuthService.setTokens.mockResolvedValue(undefined);
+
+      const response = await cloudApi.post('/api/auth/login', {
+        email: 'user@example.com',
+        code: '123456',
+      });
+
+      expect(response.code).toBe(0);
+      expect(mockedAuthService.setTokens).toHaveBeenCalledWith({
+        accessToken: 'at',
+        refreshToken: 'rt',
+      });
+    });
+
+    it('test_register_auto_saves_tokens', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({
+          code: 0,
+          data: { accessToken: 'at', refreshToken: 'rt' },
+        }),
+      });
+      globalThis.fetch = mockFetch;
+      mockedAuthService.getToken.mockResolvedValue(null);
+      mockedAuthService.setTokens.mockResolvedValue(undefined);
+
+      const response = await cloudApi.post('/api/auth/register', {
+        email: 'new@example.com',
+        code: '654321',
+      });
+
+      expect(response.code).toBe(0);
+      expect(mockedAuthService.setTokens).toHaveBeenCalledWith({
+        accessToken: 'at',
+        refreshToken: 'rt',
+      });
+    });
+
+    it('test_logout_auto_clears', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ code: 0 }),
+      });
+      globalThis.fetch = mockFetch;
+      mockedAuthService.getToken.mockResolvedValue('some-token');
+      mockedAuthService.clearTokens.mockResolvedValue(undefined);
+
+      const response = await cloudApi.post('/api/auth/logout');
+
+      expect(response.code).toBe(0);
+      expect(mockedAuthService.clearTokens).toHaveBeenCalled();
+      expect(mockedCacheStore.clear).toHaveBeenCalled();
+    });
+
+    it('test_non_auth_path_does_not_save_tokens', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ code: 0, data: { id: 1 } }),
+      });
+      globalThis.fetch = mockFetch;
+      mockedAuthService.getToken.mockResolvedValue('token');
+
+      await cloudApi.request('GET', '/api/user/info');
+
+      expect(mockedAuthService.setTokens).not.toHaveBeenCalled();
+    });
+  });
+
+  // ==================== 401 Edge Cases ====================
+
+  describe('401 edge cases', () => {
+    it('test_401_null_refresh_token_skips_request', async () => {
+      const mockFetch = vi.fn()
+        // First request: 401
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 401,
+          json: () => Promise.resolve({ code: 401, message: 'Unauthorized' }),
+        });
+      globalThis.fetch = mockFetch;
+
+      mockedAuthService.getToken.mockResolvedValue('expired-token');
+      mockedAuthService.getRefreshToken.mockResolvedValue(null);
+      mockedAuthService.clearTokens.mockResolvedValue(undefined);
+
+      const response = await cloudApi.request('GET', '/api/user/info');
+
+      // Should NOT have made a refresh HTTP call — only the original request
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+
+      // Should return 401 immediately
+      expect(response.code).toBe(401);
+
+      // Should clear tokens and set isAuthenticated false
+      expect(mockedAuthService.clearTokens).toHaveBeenCalled();
+      expect(mockedAuthStore.setState).toHaveBeenCalledWith({
+        isAuthenticated: false,
+      });
+    });
+
+    it('test_401_concurrent_shares_refresh', async () => {
+      // Track calls to identify refresh requests
+      const mockFetch = vi.fn()
+        // Call 1: first request gets 401
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 401,
+          json: () => Promise.resolve({ code: 401, message: 'Unauthorized' }),
+        })
+        // Call 2: second request gets 401
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 401,
+          json: () => Promise.resolve({ code: 401, message: 'Unauthorized' }),
+        })
+        // Call 3: single shared refresh succeeds
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            code: 0,
+            data: { token: 'new-token', refreshToken: 'new-refresh' },
+          }),
+        })
+        // Call 4: retry for first request
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ code: 0, data: { id: 1 } }),
+        })
+        // Call 5: retry for second request
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ code: 0, data: { id: 2 } }),
+        });
+      globalThis.fetch = mockFetch;
+
+      mockedAuthService.getToken.mockResolvedValue('expired-token');
+      mockedAuthService.getRefreshToken.mockResolvedValue('valid-refresh');
+      mockedAuthService.setTokens.mockResolvedValue(undefined);
+
+      // Fire two requests concurrently
+      const [res1, res2] = await Promise.all([
+        cloudApi.request('GET', '/api/user/info'),
+        cloudApi.request('GET', '/api/user/orders'),
+      ]);
+
+      // Both should succeed
+      expect(res1.code).toBe(0);
+      expect(res2.code).toBe(0);
+
+      // Count how many calls went to the refresh URL
+      const refreshCalls = mockFetch.mock.calls.filter(
+        ([url]: [string]) => typeof url === 'string' && url.includes('/api/auth/refresh')
+      );
+
+      // Only ONE refresh call should have been made
+      expect(refreshCalls).toHaveLength(1);
     });
   });
 });
