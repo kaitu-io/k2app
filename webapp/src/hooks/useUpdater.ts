@@ -55,7 +55,7 @@ export function useUpdater() {
 
     // Listen for update-ready events if available
     if (updater.onUpdateReady) {
-      const unsubscribe = updater.onUpdateReady((info) => {
+      const unsubscribe = updater.onUpdateReady((info: UpdateInfo) => {
         console.info('[useUpdater] Update ready: ' + JSON.stringify(info));
         setState(prev => ({
           ...prev,
