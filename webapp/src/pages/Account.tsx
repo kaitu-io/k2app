@@ -39,7 +39,6 @@ import {
   CheckCircle as CheckCircleIcon,
   Error as ErrorIcon,
   AccountBalanceWallet as WalletIcon,
-  Code as CodeIcon,
   Lock as LockIcon,
 } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
@@ -56,7 +55,7 @@ import { useLoginDialogStore } from "../stores/login-dialog.store";
 import type { DataUser } from "../services/api-types";
 import { getThemeColors } from '../theme/colors';
 import { useAppLinks } from "../hooks/useAppLinks";
-import VersionItem, { isDevModeEnabled } from "../components/VersionItem";
+import VersionItem from "../components/VersionItem";
 import PasswordDialog from "../components/PasswordDialog";
 
 export default function Account() {
@@ -70,13 +69,10 @@ export default function Account() {
   const { links } = useAppLinks();
   const [appVersion, setAppVersion] = useState<string>("");
   const [selectedLanguage, setSelectedLanguage] = useState<LanguageCode>(i18n.language as LanguageCode || 'zh-CN');
-  const [devModeEnabled, setDevModeEnabled] = useState<boolean>(false);
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
 
   useEffect(() => {
     setAppVersion(window._platform!.version);
-    // Check if dev mode is already enabled from localStorage
-    setDevModeEnabled(isDevModeEnabled());
   }, []);
 
   const maskEmail = (email: string) => {
@@ -92,7 +88,7 @@ export default function Account() {
   const handleLogout = async () => {
     try {
       // Stop VPN first, then logout (tokens cleared automatically by k2api)
-      await window._k2.run('stop');
+      await window._k2.run('down');
       await k2api().exec('api_request', {
         method: 'POST',
         path: '/api/auth/logout',
@@ -799,36 +795,7 @@ export default function Account() {
 
             <Divider />
 
-            <VersionItem appVersion={appVersion} onDevModeActivated={() => setDevModeEnabled(true)} />
-
-            {/* Developer Settings - only shown when dev mode is enabled */}
-            {devModeEnabled && (
-              <>
-                <Divider />
-                <ListItem
-                  sx={{
-                    py: 1.5,
-                    cursor: 'pointer',
-                    '&:hover': {
-                      backgroundColor: 'action.hover',
-                    }
-                  }}
-                  onClick={() => navigate('/developer-settings')}
-                  secondaryAction={<ChevronRightIcon color="action" />}
-                >
-                  <ListItemIcon>
-                    <CodeIcon />
-                  </ListItemIcon>
-                  <ListItemText
-                    primary={
-                      <Typography variant="body2" sx={{ fontWeight: 500, fontSize: '0.9rem' }}>
-                        {t('developer:developer.title')}
-                      </Typography>
-                    }
-                  />
-                </ListItem>
-              </>
-            )}
+            <VersionItem appVersion={appVersion} />
           </List>
       </Box>
 

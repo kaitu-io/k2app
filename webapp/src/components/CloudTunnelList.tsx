@@ -9,8 +9,6 @@ import {
   Radio,
   Stack,
   IconButton,
-  Chip,
-  CircularProgress,
   Tooltip,
   Button,
   useTheme,
@@ -20,11 +18,8 @@ import { useTranslation } from 'react-i18next';
 import { getCountryName, getFlagIcon } from '../utils/country';
 import { getThemeColors } from '../theme/colors';
 import { LoadingState, EmptyState } from './LoadingAndEmpty';
-import { StarRating } from './StarRating';
 import { VerticalLoadBar } from './VerticalLoadBar';
 import { k2api } from '../services/k2api';
-import { useEvaluationStore } from '../stores/evaluation.store';
-import { useEvaluation } from '../hooks/useEvaluation';
 import { sortTunnelsByRecommendation } from '../utils/tunnel-sort';
 import { useAuthStore } from '../stores/auth.store';
 import { useVPNStore } from '../stores/vpn.store';
@@ -61,16 +56,11 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
   const prevAuthRef = useRef(isAuthenticated);
   const prevServiceConnectedRef = useRef(serviceConnected);
 
-  // Evaluation state
-  const { getRouteQuality } = useEvaluationStore();
-
-  // Trigger evaluation when tunnels load
-  const { isRunning: evaluationRunning } = useEvaluation({ tunnels, autoEvaluate: true });
-
-  // Sort tunnels by recommendation (star rating)
+  // Sort tunnels by recommendation (neutral quality - no evaluation)
+  const neutralQualityProvider = useMemo(() => ({ getRouteQuality: () => 0 }), []);
   const sortedTunnels = useMemo(() => {
-    return sortTunnelsByRecommendation(tunnels, { getRouteQuality });
-  }, [tunnels, getRouteQuality]);
+    return sortTunnelsByRecommendation(tunnels, neutralQualityProvider);
+  }, [tunnels, neutralQualityProvider]);
 
   // Retry state for automatic retry on error
   const retryCountRef = useRef(0);
@@ -99,12 +89,6 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
         // Store ECH config list for K2v4 connections
         setEchConfigList(response.data.echConfigList);
         console.debug('[CloudTunnelList] ECH config from API:', response.data.echConfigList ? `present (len=${response.data.echConfigList.length})` : 'empty');
-        // Persist ECH config to service config as fallback for Go dialer
-        if (response.data.echConfigList) {
-          window._k2.run('set_config', {
-            k2v4: { ech: { config: response.data.echConfigList } }
-          }).catch(err => console.debug('[CloudTunnelList] Failed to persist ECH config:', err));
-        }
         // Reset retry count on success
         retryCountRef.current = 0;
         // Notify parent about loaded tunnels for state sync
@@ -277,15 +261,6 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
           <Typography variant="overline" fontWeight={600} color="text.secondary" sx={{ fontSize: '0.7rem' }}>
             ☁️ {t('dashboard:dashboard.cloudNodes') || 'Cloud Nodes'}
           </Typography>
-
-          {evaluationRunning && (
-            <Chip
-              icon={<CircularProgress size={10} />}
-              label={t('dashboard:dashboard.analyzing') || 'Analyzing...'}
-              size="small"
-              sx={{ height: 20, fontSize: '0.65rem' }}
-            />
-          )}
         </Stack>
         <Stack direction="row" spacing={0.5} alignItems="center">
           {error && (
@@ -315,8 +290,6 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
         {sortedTunnels.map((tunnel) => {
           const domain = tunnel.domain.toLowerCase();
           const isSelected = selectedDomain === domain;
-          const routeQuality = getRouteQuality(domain);
-
           return (
             <ListItem
               key={tunnel.id}
@@ -348,11 +321,6 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
                 primaryTypographyProps={{ fontWeight: 600, fontSize: '0.9rem' }}
                 secondaryTypographyProps={{ fontSize: '0.75rem' }}
               />
-
-              {/* Star rating based on route quality */}
-              <Box sx={{ mr: 2 }}>
-                <StarRating value={routeQuality} />
-              </Box>
 
               {/* Vertical load bar (de-emphasized) */}
               <Box sx={{ mr: 2 }}>

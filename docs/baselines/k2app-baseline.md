@@ -141,7 +141,7 @@ k2app is a cross-platform VPN client built on the k2 Go core. It replaces the ol
 
 **Capabilities** (subset relevant to k2app):
 - HTTP API server on :1777
-  - POST /api/core — action router (up, down, status, version, get_config)
+  - POST /api/core — action router (up, down, status, version)
   - GET /ping — health check
   - GET /api/device/udid — device unique ID
   - GET /metrics — memory, goroutines, GC stats

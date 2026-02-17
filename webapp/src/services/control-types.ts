@@ -1,14 +1,5 @@
-/**
- * Control Protocol Types
- * Type definitions aligned with Rust service (kaitu-control)
- *
- * Canonical Rust sources:
- * - rust/crates/kaitu-core/src/types.rs (core types)
- * - rust/crates/kaitu-core/src/config.rs (Config struct)
- * - rust/client/kaitu-control/src/actions.rs (action router)
- */
-
-// Type definitions aligned with Rust service protocol
+// Type definitions for k2 daemon control protocol
+// Canonical source: k2/daemon/api.go (Go daemon HTTP API)
 
 // ==================== 错误码常量 ====================
 // 与 Go service/core/control/types.go 对齐
@@ -116,21 +107,6 @@ export function getErrorI18nKey(code: number): string {
 
 // ==================== VPN 控制 ====================
 
-export interface StartParams {
-  mode?: 'socks5' | 'tun';
-  socksPort?: number;
-}
-
-export interface StartResponseData {
-  startAt?: number;
-}
-
-export interface StopParams {}
-
-export interface StopResponseData {}
-
-export interface StatusParams {}
-
 // Service state enum (matches Go backend)
 export type ServiceState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'disconnecting' | 'error';
 
@@ -145,91 +121,6 @@ export type ServiceState = 'disconnected' | 'connecting' | 'connected' | 'reconn
 export interface ControlError {
   code: number;    // 错误码
   message: string; // 错误消息
-}
-
-/**
- * ServiceMetrics runtime metrics for monitoring
- * Used to detect resource leaks (goroutines, memory)
- *
- * Memory fields are provided in both MB (legacy) and KB (precise) for compatibility.
- * KB fields provide better precision for memory optimization targeting 30MB on iOS.
- */
-export interface ServiceMetrics {
-  goroutines: number; // Current number of goroutines
-
-  // Legacy MB fields (for backward compatibility)
-  heapAllocMB: number; // Heap memory allocated (MB)
-  heapSysMB: number;   // Heap memory obtained from OS (MB)
-
-  // Precise KB fields (for memory optimization)
-  heapAllocKB: number;  // Heap memory allocated (KB)
-  heapSysKB: number;    // Heap memory obtained from OS (KB)
-  heapInuseKB: number;  // Heap memory in use spans (KB)
-  heapIdleKB: number;   // Heap memory idle, can be released (KB)
-  stackInuseKB: number; // Stack memory in use (KB)
-
-  // GC metrics
-  numGC: number;         // Number of completed GC cycles
-  lastGCTimeSec: number; // Last GC time (Unix seconds)
-  lastGCPauseUs: number; // Last GC pause duration (microseconds)
-  nextGCKB: number;      // Heap size target for next GC (KB)
-}
-
-/**
- * MemoryDump detailed memory breakdown for optimization debugging
- * Provides comprehensive runtime.MemStats data organized by category
- */
-export interface MemoryDump {
-  // Goroutines
-  goroutines: number; // Current number of goroutines
-
-  // Heap memory (KB) - main optimization target
-  heapAllocKB: number;    // Bytes allocated and in use
-  heapSysKB: number;      // Bytes obtained from OS
-  heapIdleKB: number;     // Bytes in idle spans (can be released)
-  heapInuseKB: number;    // Bytes in in-use spans
-  heapReleasedKB: number; // Bytes released to OS
-  heapObjects: number;    // Number of allocated objects
-
-  // Stack memory (KB)
-  stackInuseKB: number; // Bytes in stack spans
-  stackSysKB: number;   // Bytes obtained from OS for stacks
-
-  // Off-heap memory (KB) - runtime overhead
-  mspanInuseKB: number;  // Bytes in mspan structures
-  mspanSysKB: number;    // Bytes obtained from OS for mspan
-  mcacheInuseKB: number; // Bytes in mcache structures
-  mcacheSysKB: number;   // Bytes obtained from OS for mcache
-  buckHashSysKB: number; // Bytes for profiling bucket hash table
-  gcSysKB: number;       // Bytes for GC metadata
-  otherSysKB: number;    // Other system allocations
-
-  // Total system memory (KB)
-  totalSysKB: number; // Total bytes obtained from OS
-
-  // GC metrics
-  numGC: number;         // Completed GC cycles
-  lastGCPauseUs: number; // Last GC pause (microseconds)
-  nextGCKB: number;      // Heap size target for next GC
-  gcCPUPercent: number;  // GC CPU usage percentage
-
-  // Allocator statistics
-  totalAllocKB: number; // Cumulative bytes allocated
-  mallocs: number;      // Cumulative malloc count
-  frees: number;        // Cumulative free count
-}
-
-/**
- * ForceGCResult result of force_gc action showing memory changes
- */
-export interface ForceGCResult {
-  beforeHeapAllocKB: number; // Heap before GC (KB)
-  afterHeapAllocKB: number;  // Heap after GC (KB)
-  beforeHeapIdleKB: number;  // Idle heap before GC (KB)
-  afterHeapIdleKB: number;   // Idle heap after GC (KB)
-  freedKB: number;           // Memory freed by GC (KB)
-  releasedToOSKB: number;    // Memory released to OS (KB)
-  numGC: number;             // GC cycle count after operation
 }
 
 /**
@@ -278,7 +169,7 @@ export type DNSMode = 'fake-ip' | 'real-ip';
 /**
  * K2V4Config - K2V4 protocol configuration
  * Controls protocol selection and features
- * JSON keys match Rust backend: tcp_ws, quic_pcc
+ * JSON keys match Go backend: tcp_ws, quic_pcc
  */
 export interface K2V4Config {
   /** Enable TCP-WebSocket protocol */
@@ -324,48 +215,6 @@ export interface TunnelConfig {
   subscription_url?: string;
 }
 
-// ==================== 隧道评估 ====================
-
-/** Input tunnel data for evaluation (snake_case for Rust compatibility) */
-export interface TunnelInput {
-  /** Tunnel domain identifier */
-  domain: string;
-  /** Node load score (0-100) */
-  node_load: number;
-  /** Traffic quota usage percentage */
-  traffic_usage_percent: number;
-  /** Bandwidth usage percentage */
-  bandwidth_usage_percent: number;
-  /** Route type for user -> server direction */
-  upstream_route_type?: string | null;
-  /** Route type for server -> user direction */
-  downstream_route_type?: string | null;
-}
-
-/** Output for a single evaluated tunnel (snake_case from Rust) */
-export interface EvaluatedTunnelOutput {
-  /** Tunnel domain */
-  domain: string;
-  /** Final score after adjustments */
-  final_score: number;
-  /** Route quality category */
-  route_quality: string;
-  /** Whether the tunnel is overloaded */
-  is_overloaded: boolean;
-}
-
-/** Response with evaluated tunnels (snake_case from Rust) */
-export interface EvaluateTunnelsResponse {
-  /** Evaluated tunnels sorted by recommendation order */
-  evaluated_tunnels: EvaluatedTunnelOutput[];
-  /** Recommended tunnel domain (first in sorted list) */
-  recommended_domain?: string;
-  /** Whether relay fallback was triggered */
-  should_use_relay: boolean;
-  /** Reason for relay fallback (if triggered) */
-  relay_reason?: string;
-}
-
 // ==================== 配置管理 ====================
 
 /** Log configuration */
@@ -377,8 +226,8 @@ export interface LogConfig {
 }
 
 /**
- * ConfigResponseData - Configuration data from get_config/set_config
- * Uses snake_case to match Rust/Go backend serialization
+ * ConfigResponseData - Configuration data from status response
+ * Uses snake_case to match Go backend serialization
  */
 export interface ConfigResponseData {
   // VPN mode: "tun" or "socks5"
@@ -406,238 +255,3 @@ export interface ConfigResponseData {
   // Skip TLS verification (for self-hosted servers)
   insecure?: boolean;
 }
-
-export interface GetConfigParams {}
-
-export interface SetConfigParams extends Partial<ConfigResponseData> {}
-
-// ==================== 认证管理 ====================
-
-export interface RegisterDeviceParams {
-  inviteCode?: string;
-}
-
-export interface GetAuthCodeParams {
-  email: string;
-  language?: string;
-}
-
-export interface LoginParams {
-  email: string;
-  verificationCode: string;
-  remark: string;
-  inviteCode?: string;
-  language?: string;
-}
-
-export interface AuthStatusChangeData {
-  isAuthenticated: boolean;
-  email?: string;
-  deviceID?: string;
-}
-
-export interface GetAuthStatusParams {}
-
-export interface LogoutParams {}
-
-// ==================== 存储管理 ====================
-
-export interface StorageSetParams {
-  key: string;
-  value: any;
-}
-
-export interface StorageGetParams {
-  key: string;
-}
-
-export interface StorageDeleteParams {
-  key: string;
-}
-
-// ==================== Self Hosted Tunnel Management ====================
-// Removed: Backend actions deleted, use set_config({ active_tunnel: "url" }) instead
-
-// ==================== 系统信息 ====================
-
-export interface VersionParams {}
-
-export interface VersionResponseData {
-  version: string;
-  gitCommit?: string;
-  buildTime?: string;
-}
-
-// ==================== Developer Config ====================
-// Removed: Use set_config({ log: { level: "TRACE" } }) instead
-
-// ==================== API 请求 ====================
-
-export interface ApiRequestParams {
-  url: string;
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
-  headers?: Record<string, string>;
-  body?: any;
-}
-
-export interface ApiRequestResponseData {
-  code: number;
-  message: string;
-  data: any;
-}
-
-// ==================== 网络与测速 ====================
-
-export interface SpeedtestParams {
-  forceDirect?: boolean;
-}
-
-export interface SpeedtestResponseData {
-  started: boolean;
-  forced_direct: boolean;
-}
-
-// 测速状态（轮询用）
-export type SpeedtestStatusType = 'idle' | 'running' | 'completed' | 'error';
-
-// 测速进度
-export interface SpeedtestProgress {
-  stage: string;
-  message: string;
-  percentage: number;
-  current_speed: number;
-}
-
-// 测速结果
-export interface SpeedtestResult {
-  success: boolean;
-  server_name?: string;
-  server_id?: string;
-  latency_ms?: number;
-  jitter_ms?: number;
-  download_mbps?: number;
-  upload_mbps?: number;
-  packet_loss?: number;
-  duration_ms?: number;
-  error?: string;
-}
-
-// 测速状态响应（get_speedtest_status 返回）
-export interface SpeedtestStatusResponseData {
-  status: SpeedtestStatusType;
-  forced_direct: boolean;
-  started_at?: number;
-  completed_at?: number;
-  progress?: SpeedtestProgress;
-  result?: SpeedtestResult;
-}
-
-// ==================== 系统操作 ====================
-
-export interface FixNetworkParams {}
-
-// REMOVED: quit_service and upgrade_service actions
-// Service management is now handled by Tauri via 'svc up' command
-// export interface QuitServiceParams {}
-// export interface UpgradeServiceParams {}
-// export interface UpgradeServiceResponseData {
-//   upgrading: boolean;
-//   message: string;
-// }
-
-// ==================== Evaluate Tunnels ====================
-
-export interface EvaluateTunnelsParams {
-  tunnels: TunnelInput[];
-  has_relays: boolean;
-}
-
-// ==================== Action 类型映射 ====================
-
-/**
- * Action 参数类型映射
- * 用于类型推导和验证
- */
-export interface ActionParamsMap {
-  // VPN 控制
-  start: StartParams;
-  stop: StopParams;
-  status: StatusParams;
-  reconnect: {};
-
-  // 配置管理
-  set_config: SetConfigParams;
-  get_config: GetConfigParams;
-  get_config_options: {};
-
-  // 认证管理
-  register_device: RegisterDeviceParams;
-  get_auth_code: GetAuthCodeParams;
-  login: LoginParams;
-  get_auth_status: GetAuthStatusParams;
-  logout: LogoutParams;
-
-  // 存储管理
-  storage_set: StorageSetParams;
-  storage_get: StorageGetParams;
-  storage_delete: StorageDeleteParams;
-
-  // 系统信息
-  version: VersionParams;
-  get_user_info: {};
-  get_app_config: {};
-  get_tunnels: {};
-  get_latest_invite_code: {};
-
-  // API 请求
-  api_request: ApiRequestParams;
-
-  // 网络与测速
-  speedtest: SpeedtestParams;
-  get_speedtest_status: {};
-
-  // 系统操作
-  fix_network: FixNetworkParams;
-
-  // Metrics and evaluation
-  get_metrics: {};
-  evaluate_tunnels: EvaluateTunnelsParams;
-}
-
-/**
- * Action 响应类型映射
- */
-export interface ActionResponseMap {
-  start: StartResponseData;
-  stop: StopResponseData;
-  status: StatusResponseData;
-  reconnect: { accepted: boolean; message: string };
-  set_config: ConfigResponseData;
-  get_config: ConfigResponseData;
-  get_config_options: any;
-  register_device: any;
-  get_auth_code: any;
-  login: any;
-  get_auth_status: AuthStatusChangeData;
-  logout: any;
-  storage_set: null;
-  storage_get: any;
-  storage_delete: null;
-  version: VersionResponseData;
-  get_user_info: any;
-  get_app_config: any;
-  get_tunnels: any;
-  get_latest_invite_code: any;
-  api_request: ApiRequestResponseData;
-  speedtest: SpeedtestResponseData;
-  get_speedtest_status: SpeedtestStatusResponseData;
-  fix_network: any;
-  get_metrics: any;
-  evaluate_tunnels: EvaluateTunnelsResponse;
-}
-
-/**
- * Action 类型常量
- */
-export type ControlAction = keyof ActionParamsMap;
-

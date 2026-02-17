@@ -155,10 +155,9 @@ Core actions (POST `/api/core` with `{"action":"...","params":{...}}`):
 
 | Action | Params | Notes |
 |--------|--------|-------|
-| `up` | `wire_url`, `config_path`, `pid` (all optional) | No params = reconnect with last saved config |
+| `up` | `config` (ClientConfig, optional) | No params = reconnect with last saved config |
 | `down` | - | Disconnect tunnel |
-| `status` | - | Returns: `state`, `connected_at`, `uptime_seconds`, `error`, `wire_url`, `config_path` |
-| `get_config` | - | Returns: `wire_url`, `config_path` |
+| `status` | - | Returns: `state`, `connected_at`, `uptime_seconds`, `error`, `config` |
 | `version` | - | Returns: `version`, `go`, `os`, `arch` |
 
 Daemon states: `stopped` -> `connecting` -> `connected` -> `disconnecting` -> `stopped` (or `error`).

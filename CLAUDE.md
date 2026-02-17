@@ -31,7 +31,7 @@ webapp/              React + MUI frontend (see webapp/CLAUDE.md)
   src/services/      Cloud API (cloudApi, k2api), auth, caching, platform fallbacks
   src/core/          K2 VPN bridge (getK2, waitForK2, polling)
   src/types/         Core interfaces (IK2Vpn, IPlatform, ISecureStorage)
-  src/stores/        Zustand state (vpn, auth, alert, layout, dashboard, evaluation, login-dialog)
+  src/stores/        Zustand state (vpn, auth, alert, layout, dashboard, login-dialog)
   src/pages/         Route pages (Dashboard, Purchase, Invite, Account, 15+ sub-pages)
   src/components/    Shared UI (LoginDialog, AuthGate, guards, global components)
   src/utils/         Error handling, version compare, tunnel sorting
@@ -89,7 +89,7 @@ Makefile             Build orchestration — version from package.json, k2 from 
 - **IPlatform** — Platform capabilities interface (`window._platform`): storage, UDID, clipboard, logging
 - **cloudApi** — Cloud API HTTP module with auth injection and token refresh
 - **Engine** — Unified tunnel lifecycle manager (k2/engine/) used by both desktop daemon and mobile wrapper
-- **ClientConfig** — Universal config contract: Go `config.ClientConfig` = TS `ClientConfig`. Webapp assembles from Cloud API + user preferences, passes to `_k2.run('start', config)`.
+- **ClientConfig** — Universal config contract: Go `config.ClientConfig` = TS `ClientConfig`. Webapp assembles from Cloud API + user preferences, passes to `_k2.run('up', config)`.
 - **Rule mode** — Routing strategy: "global" (proxy all) or "smart" (GeoIP split). Configured via `ClientConfig.rule.global`.
 - **Antiblock** — Multi-CDN entry URL resolution for Cloud API in blocked regions
 - **AuthGate** — Startup gate: checks service readiness + version match before showing main UI
