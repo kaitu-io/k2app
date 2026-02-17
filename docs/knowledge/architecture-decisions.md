@@ -4,27 +4,23 @@ Knowledge distilled from executed features. Links to validating tests.
 
 ---
 
-## VpnClient Abstraction Pattern (2026-02-14, k2app-rewrite)
+## Split Globals Architecture — _k2 + _platform (2026-02-17, webapp-architecture-v2)
 
-**Decision**: Webapp communicates with VPN backends through a unified `VpnClient` interface, never making direct HTTP calls to the daemon outside the `vpn-client/` module.
+**Decision**: Replace VpnClient/PlatformApi factory abstractions with two injected globals: `window._k2: IK2Vpn` (VPN control) and `window._platform: IPlatform` (platform capabilities). Cloud API calls go through `cloudApi.request()` module.
 
-**Implementations**:
-- `HttpVpnClient` (desktop): HTTP to `http://127.0.0.1:1777` + internal 2s polling converted to events
-- `MockVpnClient` (testing): Controllable test double with setter methods and call tracking
-- `NativeVpnClient` (mobile): Capacitor Plugin bridge via constructor-injected K2Plugin
+**Supersedes**: VpnClient Abstraction Pattern, NativeVpnClient Mobile Bridge, PlatformApi Abstraction (all removed — modules deleted in webapp v2 migration).
 
-**Key patterns**:
-- Factory function `createVpnClient(override?)` for dependency injection
-- All commands (`connect`, `disconnect`) resolve when accepted, NOT when operation completes
-- Event subscription with automatic poll management (start on first subscriber, stop on zero)
-- State deduplication in polling loop prevents redundant event emissions
+**Why split globals over factory pattern**:
+- Platform injection happens before React loads — no async factory chain needed
+- Single `_k2.run(action, params)` method replaces 3 VpnClient implementations
+- `_platform` exposes storage, UDID, clipboard, etc. directly — no conditional imports
+- Each platform (Tauri/Capacitor/Web) injects its own implementation at startup
 
-**Why it works**:
-- Single abstraction supports desktop HTTP, mobile native bridge, and test mocks
-- Webapp code is platform-agnostic (same code on desktop/mobile/web)
-- Polling-to-event transformation hides desktop's lack of native push events
+**Key interfaces** (defined in `webapp/src/types/kaitu-core.ts`):
+- `IK2Vpn.run<T>(action, params): Promise<SResponse<T>>` — all VPN control
+- `IPlatform` — os, storage, getUdid, clipboard, openExternal, updater
 
-**Validating tests**: `webapp/src/vpn-client/__tests__/` — http-client, index, mock-client, native-client
+**Validating tests**: `webapp/src/stores/__tests__/vpn.store.test.ts`
 
 ---
 
@@ -38,19 +34,45 @@ Knowledge distilled from executed features. Links to validating tests.
 
 ---
 
-## Antiblock Entry URL Resolution (2026-02-14, k2app-rewrite)
+## Antiblock Entry URL Resolution (2026-02-14→2026-02-17, k2app-rewrite + webapp-antiblock)
 
-**Decision**: Webapp resolves Cloud API entry URL through multi-source fallback chain with localStorage cache.
+**Decision**: Webapp resolves Cloud API entry URL through multi-source fallback chain with AES-256-GCM decryption and localStorage cache.
 
-**Flow**: localStorage cache → JSONP fetch from npm CDN mirrors (jsDelivr, unpkg) → base64 decode → hardcoded default fallback.
+**Flow**: localStorage cache → JSONP `<script>` from CDN mirrors (jsDelivr, Statically) → AES-256-GCM decrypt (hardcoded key) → parse entries JSON → pick first entry → cache to localStorage. Background refresh on cache hit.
 
-**Why this approach**:
-- Standard HTTPS (no custom CA), fast rotation via npm package publish
-- Multi-CDN prevents single point of failure
-- Base64 obfuscation prevents automated text scanning (not security, just evasion)
-- No frontend encryption — any JS key is extractable anyway
+**Why AES-256-GCM (not base64)**:
+- Encrypted payload prevents CDN-level content scanning/blocking
+- JSONP delivery (`window.__k2ac = {...}`) avoids CORS and fetch fingerprinting
+- Key is hardcoded in client JS — not security against determined reverse engineering, but raises the bar for automated censorship tools
+- No `atob()` in source — uses manual base64→Uint8Array to avoid detection patterns
 
-**Validating tests**: `webapp/src/api/__tests__/antiblock.test.ts` — cache, CDN fallback, decoding
+**Integration with cloudApi**: `cloudApi.request()` calls `resolveEntry()` before every fetch. Returns absolute URL (e.g., `https://entry.example.com`) or empty string (fallback to relative URL). 401 refresh and retry also use `resolveEntry()`.
+
+**Server-side CORS**: `/api/*` routes use `ApiCORSMiddleware()` — echoes origin with credentials for private origins only (localhost, 127.0.0.1, RFC 1918, `capacitor://localhost`). Public origins get no CORS headers. This allows cross-origin cloudApi calls from Tauri/Capacitor/dev-server while blocking CSRF from public sites.
+
+**Validating tests**: `webapp/src/services/__tests__/antiblock.test.ts` (10 tests — crypto, JSONP, cache, CDN sources), `webapp/src/services/__tests__/cloud-api.test.ts` (antiblock integration — absolute URL, refresh URL), `api/middleware_cors_test.go` (10 tests — private/public origin, preflight)
+
+---
+
+## Private-Origin CORS for Client API Routes (2026-02-17, webapp-antiblock)
+
+**Decision**: `/api/*` client routes use dynamic origin echo restricted to private/local origins. `/app/*` admin routes keep existing whitelist CORS.
+
+**Why not `Access-Control-Allow-Origin: *`**: Auth endpoints (`/api/auth/web-login`, `/api/auth/refresh`, `/api/auth/logout`) set `HttpOnly` cookies. Browser spec: wildcard `*` with `credentials: include` causes browsers to silently discard `Set-Cookie` headers. Login breaks.
+
+**Why not a static whitelist**: Client apps run from many origins — `http://localhost:1420` (Vite dev), `http://localhost:14580` (Tauri), `capacitor://localhost` (iOS), `https://localhost` (Android), `http://192.168.x.x` (OpenWrt router). A whitelist would need constant updating.
+
+**Solution**: `isPrivateOrigin()` checks origin hostname against:
+- `localhost` (any port, http/https)
+- `127.0.0.1` (loopback)
+- `capacitor://localhost` (iOS Capacitor)
+- RFC 1918 ranges: `10.x.x.x`, `172.16-31.x.x`, `192.168.x.x`
+
+Matching origins get `Access-Control-Allow-Origin: <origin>` + `Access-Control-Allow-Credentials: true`. Non-matching origins (public internet) get no CORS headers — browser blocks the request.
+
+**Security model**: Attacker must be on user's LAN to exploit. Cookie `SameSite=Lax` + CSRF token provide additional protection.
+
+**Validating tests**: `api/middleware_cors_test.go` — 10 tests covering all origin categories + preflight + boundary cases
 
 ---
 
@@ -89,20 +111,6 @@ Knowledge distilled from executed features. Links to validating tests.
 **Why**: Prevents version drift. Single update point for releases.
 
 **Validating tests**: `scripts/test_version_propagation.sh`
-
----
-
-## NativeVpnClient Mobile Bridge (2026-02-14, mobile-rewrite)
-
-**Decision**: NativeVpnClient wraps Capacitor K2Plugin behind VpnClient interface. Plugin is constructor-injected and loaded via dynamic import to avoid bundling mobile-only deps in desktop builds.
-
-**Factory chain**: `initVpnClient()` (async, detects native platform) → `NativeVpnClient(plugin)` or `HttpVpnClient()`.
-
-**Three-layer state mapping** (defense in depth): Go Engine `"disconnected"` → K2Plugin native `remapStatusKeys` → NativeVpnClient TS `mapState()`. All map `"disconnected"` → `"stopped"`.
-
-**Why constructor injection**: Enables testing with mock plugin — K2Plugin is Capacitor-specific, cannot be imported outside native runtime.
-
-**Validating tests**: `webapp/src/vpn-client/__tests__/native-client.test.ts` — 18 tests
 
 ---
 
@@ -148,7 +156,7 @@ Knowledge distilled from executed features. Links to validating tests.
 
 **Cross-reference**: See Framework Gotchas → "Go json.Marshal snake_case vs JavaScript camelCase" for the discovery story. See Bugfix Patterns → "Go→JS JSON Key Mismatch" for the original bug.
 
-**Validating tests**: `webapp/src/vpn-client/__tests__/native-client.test.ts` — `getStatus()` verifies camelCase keys
+**Validating tests**: Manual device testing — K2Plugin native bridge verified on iOS and Android.
 
 ---
 
@@ -218,79 +226,15 @@ Knowledge distilled from executed features. Links to validating tests.
 
 ---
 
-## App.tsx Route Wiring + Global Component Integration (2026-02-16, kaitu-feature-migration)
+## Dark-Only Theme with MUI + Tailwind v4 Design Tokens (2026-02-16→2026-02-17, kaitu-feature-migration + webapp-v2)
 
-**Decision**: App.tsx is the single entry point for all routing, guards, and global overlays. No AuthGuard redirect — use LoginRequiredGuard (opens LoginDialog) and MembershipGuard (redirects to /purchase).
+**Decision**: Ship exclusively dark mode. Design tokens defined in `webapp/src/theme/colors.ts` (MUI palette) and `webapp/src/app.css` (`@theme` block for Tailwind v4).
 
-**Route structure (20 routes)**:
-- 4 tab routes (keep-alive via Layout): `/`, `/purchase`, `/invite` (LoginRequired), `/account`
-- 6 login-required sub-pages: `/devices`, `/member-management`, `/pro-histories`, `/invite-codes`, `/issues`, `/issues/:number`
-- 2 membership-required sub-pages: `/update-email`, `/submit-ticket`
-- 4 open sub-pages: `/device-install`, `/faq`, `/changelog`, `/discover`
+**Why dark-only**: Brand decision. Reduces code complexity — no `dark:` prefix, no theme toggle state, design once.
 
-**Global component stack** (rendered outside Routes, inside BrowserRouter):
-```
-ErrorBoundary > BrowserRouter > ServiceReadiness > [
-  ForceUpgradeDialog, AnnouncementBanner, ServiceAlert,
-  UpdatePrompt, AlertContainer, LoginDialog, Routes
-]
-```
+**Token system (v2)**: MUI `ThemeProvider` with custom dark palette (`webapp/src/contexts/ThemeContext.tsx`). Tailwind v4 `@theme` in `app.css` defines utility classes (`bg-primary`, `bg-success`, etc.) directly from design token names. Use token utilities, not Tailwind palette colors (`bg-primary` not `bg-blue-600`).
 
-**App init**: `useEffect` calls `restoreSession()` + `loadAppConfig()` on mount. App config needed for ForceUpgradeDialog and feature flags.
-
-**Version injection**: Vite `define: { __APP_VERSION__: pkg.version }` — no PlatformApi version needed.
-
-**Validating tests**: All 279 tests pass; `npx tsc --noEmit` clean.
-
----
-
-## PlatformApi Abstraction for Cross-Platform Capabilities (2026-02-16, kaitu-feature-migration)
-
-**Decision**: Create `PlatformApi` interface to abstract platform-specific capabilities (clipboard, external browser, locale sync, log upload). Three implementations: `TauriPlatform`, `CapacitorPlatform`, `WebPlatform` (fallback).
-
-**Factory pattern**: `createPlatform()` auto-detects environment via `window.__TAURI__` / `window.Capacitor`. Singleton via `getPlatform()` caches instance.
-
-**Why this approach**:
-- Same VpnClient pattern (DI-friendly abstraction)
-- Webapp code stays platform-agnostic — no conditional imports
-- Test injection via factory override parameter
-- Capacitor and Tauri both expose platform APIs via window globals (perfect for detection)
-
-**Key interfaces**:
-```typescript
-interface PlatformApi {
-  openExternal(url: string): Promise<void>;
-  writeClipboard(text: string): Promise<void>;
-  syncLocale?(lang: string): Promise<void>;
-  uploadLogs?(feedbackId: string): Promise<void>;
-  isMobile: boolean;
-  version: string;
-}
-```
-
-**Validating tests**: `webapp/src/platform/__tests__/platform.test.ts` — 8 tests covering all implementations
-
----
-
-## Dark-Only Theme via CSS Variables (2026-02-16, kaitu-feature-migration)
-
-**Decision**: Ship exclusively dark mode. No light theme. No theme switcher. All design tokens defined as CSS custom properties in `app.css` under `@theme`.
-
-**Why dark-only**:
-- Reduces code complexity — no `dark:` Tailwind prefix, no theme toggle state
-- No ThemeContext or theme store needed
-- Faster development — design once, no light mode variants
-- Product decision — kaitu brand is dark aesthetic
-
-**Token architecture**:
-- Base colors: `--color-bg-default`, `--color-bg-paper`, `--color-text-primary`
-- Semantic status: `--color-success`, `--color-warning`, `--color-error`, `--color-info` (each with `-light`, `-dark`, `-bg`, `-border`, `-glow` variants)
-- Component tokens: `--color-card-bg`, `--color-selected-border`, `--color-divider`
-- All components use tokens via `bg-[--color-*]` pattern — zero hardcoded hex values in component files
-
-**Migration note**: Replicated kaitu webapp's dark palette exactly (`theme.ts` dark object + `theme/colors.ts`). MUI `sx` props → Tailwind classes with CSS variables.
-
-**Validating tests**: `webapp/src/components/__tests__/dark-theme.test.ts` — verifies CSS variables applied on body
+**Validating tests**: `npx tsc --noEmit` clean; visual verification.
 
 ---
 
@@ -345,7 +289,7 @@ interface PlatformApi {
 
 **Why this matters**: Rule mode, DNS, proxy settings all flow through config — no side channels. Adding new user preferences (DNS, log level) is just adding fields to ClientConfig, not wiring new native storage.
 
-**Validating tests**: `k2/config/config_test.go` — JSON round-trip, YAML equivalence. `k2/daemon/daemon_test.go` — config-driven API. `webapp/src/vpn-client/__tests__/` — all implementations test config passing.
+**Validating tests**: `k2/config/config_test.go` — JSON round-trip, YAML equivalence. `k2/daemon/daemon_test.go` — config-driven API.
 
 ---
 
@@ -366,7 +310,7 @@ interface PlatformApi {
 - Purchase page can show inline login form for unauthenticated users (same EmailLoginForm component)
 - Mobile UX: modal feels more native than full-page route change
 
-**Validating tests**: `webapp/src/components/__tests__/LoginDialog.test.tsx`, `webapp/src/components/__tests__/guards.test.tsx`
+**Validating tests**: `webapp/src/stores/login-dialog.store.ts` — store logic; component tests pending v2 migration.
 
 ---
 
@@ -386,6 +330,6 @@ interface PlatformApi {
 
 **Non-tab pages**: Sub-pages (`/devices`, `/issues`, etc.) use normal React Router `<Outlet />` — mount/unmount on navigate.
 
-**Validating tests**: `webapp/src/components/__tests__/Layout.keepalive.test.ts`
+**Validating tests**: `webapp/src/components/Layout.tsx` — implementation; keep-alive tests pending v2 migration.
 
 ---

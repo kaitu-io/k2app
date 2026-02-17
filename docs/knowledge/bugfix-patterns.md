@@ -10,7 +10,7 @@ Issues discovered during implementation and their fixes.
 
 **Fix**: Non-null assertion `!` after length check: `if (arr.length > 0) arr[0]!.id`. Never use on unvalidated user input or API response arrays.
 
-**Files fixed**: `webapp/src/stores/servers.store.ts`, `webapp/src/components/__tests__/ServerList.test.tsx`
+**Files fixed**: (original files deleted in webapp v2 migration — pattern still applies to any `noUncheckedIndexedAccess` project)
 
 **Validation**: `npx tsc --noEmit` passes.
 
@@ -103,19 +103,7 @@ const K2Plugin = registerPlugin('K2Plugin');
 
 **Root cause**: Capacitor plugins are not standard ES modules. The npm package provides type definitions and native bridge setup, but the actual plugin object must be obtained via `registerPlugin()`.
 
-**Files fixed**: `webapp/src/vpn-client/index.ts`
-
----
-
-## Async VpnClient Bootstrap Required on Mobile (2026-02-16, android-aar-fix)
-
-**Problem**: Webapp rendered before `initVpnClient()` completed. Zustand stores called `getVpnClient()` during render, throwing "VpnClient not initialized".
-
-**Symptom**: Blank screen on mobile with console error "VpnClient not initialized". Desktop worked because `createVpnClient()` (sync) was used.
-
-**Fix**: `main.tsx` now awaits `initVpnClient()` before calling `ReactDOM.createRoot().render()`. This is required because mobile's `initVpnClient()` uses dynamic imports (`NativeVpnClient`, `@capacitor/core`) which are async.
-
-**Files fixed**: `webapp/src/main.tsx`
+**Files fixed**: (original `webapp/src/vpn-client/index.ts` deleted in webapp v2 — pattern applies to any Capacitor plugin loading)
 
 ---
 

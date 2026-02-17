@@ -101,16 +101,6 @@ engine?.start(wireUrl, fd: Int(fd), error: &error)  // COMPILE ERROR
 
 ---
 
-## Vite Dev Proxy vs Production baseUrl (2026-02-14, k2app-rewrite)
-
-**Problem**: HttpVpnClient needs different baseUrl in dev (Vite proxy, relative URLs) vs production (no proxy, absolute `http://127.0.0.1:1777`).
-
-**Solution**: `import.meta.env.DEV` compile-time switch. Dev: empty baseUrl (relative, proxied via `vite.config.ts`). Prod: absolute daemon URL. See `webapp/src/vpn-client/http-client.ts:16`.
-
-**Why**: Vite proxy is dev-only. Relative URLs avoid CORS preflight. Absolute URLs required in prod (Tauri serves static files, no proxy).
-
----
-
 ## Tauri Version Reference from Parent package.json (2026-02-14, k2app-rewrite)
 
 **Problem**: Tauri `version` must match root `package.json` to prevent drift.
@@ -121,13 +111,13 @@ engine?.start(wireUrl, fd: Int(fd), error: &error)  // COMPILE ERROR
 
 ---
 
-## Zustand Store Initialization with Async VpnClient (2026-02-14, k2app-rewrite)
+## Zustand Store Initialization Pattern (2026-02-14→2026-02-17, k2app-rewrite + webapp-v2)
 
 **Problem**: Zustand stores are synchronous — `await` not allowed in `create()` callback.
 
-**Solution**: Separate `init()` async action called from React `useEffect`. Store created with `ready: null` initial state; `init()` calls async VpnClient methods and updates via `set()`.
+**Solution**: Separate `init()` async action called during app bootstrap. Store created with initial state; `init()` calls async methods and updates via `set()`.
 
-**Pattern**: Used by all stores — `useVpnStore.init()`, `useAuthStore.restoreSession()`, `useServersStore.fetchServers()`. Getter actions use `get()` closure for current state without subscription.
+**Pattern (v2)**: `initializeAllStores()` in `webapp/src/stores/index.ts` calls layout → auth → vpn store init in order. Stores use `init()` action.
 
 **Validating tests**: `webapp/src/stores/__tests__/vpn.store.test.ts`
 
@@ -143,17 +133,13 @@ engine?.start(wireUrl, fd: Int(fd), error: &error)  // COMPILE ERROR
 
 ---
 
-## Service Readiness Retry on Startup (2026-02-14, k2app-rewrite)
+## Service Readiness on Startup (2026-02-14→2026-02-17, k2app-rewrite + webapp-v2)
 
 **Problem**: k2 daemon takes variable time to start after Tauri app launches. Immediate readiness check fails.
 
-**Solution**: `ServiceReadiness.tsx` retries up to 20 times at 500ms intervals (10s total). Shows "Starting service..." during retry, "Service not available" with manual retry button on timeout.
+**Solution (v2)**: `AuthGate.tsx` wraps all routes — checks service readiness + version match before rendering app content. Replaces the old `ServiceReadiness.tsx` component.
 
-**State machine**: Loading → Retrying (20×500ms) → Ready | Failed → (manual retry) → Retrying.
-
-**Why not just wait longer**: 10s covers 99% of cases. Manual retry button handles edge cases without blocking all users with a long spinner.
-
-**Validating tests**: `webapp/src/components/__tests__/ServiceReadiness.test.tsx` (if exists), manual dev testing.
+**Validating tests**: `webapp/src/components/__tests__/AuthGate.test.tsx`
 
 ---
 
@@ -269,7 +255,7 @@ export default defineConfig({
 ```
 In source: `declare const __APP_VERSION__: string;` then use directly.
 
-**Why not PlatformApi**: Version is a build-time constant, not a runtime platform capability. Tauri/Capacitor each have their own version APIs (`@tauri-apps/api/app`, `@capacitor/app`) but they're async and require native runtime. Vite define is sync, available everywhere, zero runtime cost.
+**Why not runtime API**: Version is a build-time constant, not a runtime platform capability. Tauri/Capacitor each have their own version APIs but they're async and require native runtime. Vite define is sync, available everywhere, zero runtime cost.
 
 **Validating tests**: `npx tsc --noEmit` passes; `ForceUpgradeDialog` renders in component tests.
 
@@ -293,6 +279,51 @@ diff plugins/k2-plugin/android/.../K2Plugin.kt node_modules/k2-plugin/android/..
 ```
 
 **Cross-reference**: See Bugfix Patterns → "Capacitor Local Plugin Stale Copy in node_modules"
+
+---
+
+## Gin Group Middleware Not Invoked for Unregistered HTTP Methods (2026-02-17, webapp-antiblock)
+
+**Problem**: `api.Use(ApiCORSMiddleware())` on a Gin route group does NOT run for OPTIONS preflight requests unless an OPTIONS handler is explicitly registered. Gin skips group middleware entirely for HTTP methods with no matching handler.
+
+**Symptom**: CORS preflight returns 404 (Gin's default) instead of 204 with CORS headers. Browser blocks the actual request. No error in server logs — Gin never enters the middleware chain.
+
+**Solution**: Add explicit OPTIONS catch-all route to the group:
+```go
+api.OPTIONS("/*path", func(c *gin.Context) {})
+```
+The middleware aborts with 204 before this handler runs, but the handler's existence makes Gin enter the middleware chain.
+
+**Why this is subtle**: GET/POST/PUT/DELETE all work because they have registered handlers. Only preflight (OPTIONS) is affected. Unit tests that only test GET/POST miss this entirely.
+
+**Validating tests**: `api/middleware_cors_test.go` — `TestApiCORSMiddleware_PreflightReturns204`
+
+---
+
+## Vitest vi.restoreAllMocks() Clears vi.mock() Factory Implementations (2026-02-17, webapp-antiblock)
+
+**Problem**: `vi.restoreAllMocks()` in `afterEach` resets mock implementations set via `vi.mock()` factory at the top of the file. On the next test, the mock returns `undefined` instead of the factory-defined value.
+
+**Symptom**: `'undefined/api/auth/login'` — `resolveEntry()` returned `undefined` instead of `''` because the mock was cleared.
+
+**Solution**: Re-set the default mock value in `beforeEach`:
+```typescript
+// Top of file
+vi.mock('../antiblock', () => ({
+  resolveEntry: vi.fn().mockResolvedValue(''),
+}));
+
+// In beforeEach — REQUIRED after vi.restoreAllMocks()
+beforeEach(() => {
+  mockedResolveEntry.mockResolvedValue('');
+});
+```
+
+**Why this happens**: `vi.mock()` factory runs once at module load. `vi.restoreAllMocks()` restores the original function (before mocking), removing the factory implementation. The mock object still exists, but its implementation is gone.
+
+**Alternative**: Use `vi.clearAllMocks()` instead of `vi.restoreAllMocks()` — it clears call history but preserves implementations. Only use `restoreAllMocks` when you actually need to undo spy wrapping.
+
+**Validating tests**: `webapp/src/services/__tests__/cloud-api.test.ts` — all tests pass after adding `beforeEach` re-mock.
 
 ---
 
