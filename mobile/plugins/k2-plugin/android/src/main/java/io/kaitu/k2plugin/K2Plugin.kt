@@ -50,14 +50,6 @@ class K2Plugin : Plugin() {
         bindToService()
     }
 
-    override fun handleOnDestroy() {
-        serviceConnection?.let {
-            try { context.unbindService(it) } catch (_: Exception) {}
-        }
-        serviceConnection = null
-        super.handleOnDestroy()
-    }
-
     @PluginMethod
     fun checkReady(call: PluginCall) {
         val version = context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "unknown"

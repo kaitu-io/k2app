@@ -6,8 +6,6 @@ import android.app.NotificationManager
 import android.content.Intent
 import android.net.VpnService
 import android.os.IBinder
-import android.content.pm.ServiceInfo
-import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import io.kaitu.k2plugin.K2Plugin
@@ -24,7 +22,6 @@ class K2VpnService : VpnService(), VpnServiceBridge {
 
     private var engine: Engine? = null
     private var vpnInterface: ParcelFileDescriptor? = null
-    @Volatile
     private var plugin: K2Plugin? = null
     private val binder = VpnServiceBridge.BridgeBinder(this)
 
@@ -33,27 +30,17 @@ class K2VpnService : VpnService(), VpnServiceBridge {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent == null) {
-            stopSelf()
-            return START_NOT_STICKY
-        }
-        when (intent.action) {
+        when (intent?.action) {
             "START" -> {
-                val configJSON = intent.getStringExtra("configJSON")
-                if (configJSON == null) {
-                    stopSelf()
-                    return START_NOT_STICKY
-                }
+                val configJSON = intent.getStringExtra("configJSON") ?: return START_NOT_STICKY
                 startVpn(configJSON)
             }
             "STOP" -> stopVpn()
-            else -> stopSelf()
         }
-        return START_NOT_STICKY
+        return START_STICKY
     }
 
     override fun onRevoke() {
-        plugin?.onError("VPN permission revoked by system")
         stopVpn()
         super.onRevoke()
     }
@@ -68,17 +55,8 @@ class K2VpnService : VpnService(), VpnServiceBridge {
 
     private fun startVpn(configJSON: String) {
         Log.d(TAG, "startVpn: configJSON length=${configJSON.length}")
-        if (engine != null) {
-            Log.w(TAG, "Stopping existing VPN before reconnect")
-            stopVpn()
-        }
         createNotificationChannel()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(1, createNotification("Connecting..."),
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        } else {
-            startForeground(1, createNotification("Connecting..."))
-        }
+        startForeground(1, createNotification("Connecting..."))
 
         Log.d(TAG, "Creating engine...")
         engine = Mobile.newEngine()
@@ -108,9 +86,7 @@ class K2VpnService : VpnService(), VpnServiceBridge {
         val builder = Builder()
             .setSession("Kaitu VPN")
             .addAddress("10.0.0.2", 32)
-            .addAddress("fd00::2", 128)
             .addRoute("0.0.0.0", 0)
-            .addRoute("::", 0)
             .addDnsServer("1.1.1.1")
             .addDnsServer("8.8.8.8")
             .setMtu(1400)
