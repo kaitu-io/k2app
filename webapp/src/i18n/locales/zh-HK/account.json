@@ -102,5 +102,18 @@
     "removeMemberSuccess": "成員移除成功",
     "removeMemberFailed": "成員移除失敗",
     "removeMemberFailedRetry": "成員移除失敗，請重試"
+  },
+  "password": {
+    "setPassword": "設定密碼",
+    "changePassword": "修改密碼",
+    "newPassword": "新密碼",
+    "confirmPassword": "確認密碼",
+    "requirements": "至少8位，包含字母和數字",
+    "tooShort": "密碼至少8位",
+    "needsLetter": "密碼需要包含字母",
+    "needsNumber": "密碼需要包含數字",
+    "mismatch": "兩次輸入嘅密碼唔一致",
+    "setFailed": "設定密碼失敗",
+    "setSuccess": "密碼設定成功"
   }
 }

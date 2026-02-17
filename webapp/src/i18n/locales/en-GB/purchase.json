@@ -55,7 +55,11 @@
     "loginToPurchase": "Log in to Complete Purchase",
     "loginToPurchaseDesc": "Log in to select payment target and complete your purchase",
     "loginNow": "Log in Now",
-    "loginAndPay": "Log in & Pay"
+    "loginAndPay": "Log in & Pay",
+    "selectPayTarget": "Select Payment Target",
+    "bindEmailAndSelectTarget": "Bind Email and Select Payment Target",
+    "inviteRewardTitle": "Referral Reward",
+    "inviteRewardDesc": "Complete your first top-up to receive {{days}} extra days"
   },
   "deviceInstall": {
     "title": "Client Download",

@@ -12,7 +12,8 @@
     "invite": "Invite",
     "retailer": "Reseller",
     "proHistory": "Authorisation history",
-    "help": "Help"
+    "help": "Help",
+    "activate": "Activate"
   },
   "appBarConnector": {
     "disconnecting": "Disconnecting",

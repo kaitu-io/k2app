@@ -102,5 +102,18 @@
     "removeMemberSuccess": "Member removed successfully",
     "removeMemberFailed": "Failed to remove member",
     "removeMemberFailedRetry": "Failed to remove member, please retry"
+  },
+  "password": {
+    "setPassword": "Set Password",
+    "changePassword": "Change Password",
+    "newPassword": "New Password",
+    "confirmPassword": "Confirm Password",
+    "requirements": "At least 8 characters, including letters and numbers",
+    "tooShort": "Password must be at least 8 characters",
+    "needsLetter": "Password must contain letters",
+    "needsNumber": "Password must contain numbers",
+    "mismatch": "Passwords do not match",
+    "setFailed": "Failed to set password",
+    "setSuccess": "Password set successfully"
   }
 }

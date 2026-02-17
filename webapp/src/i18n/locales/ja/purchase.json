@@ -53,7 +53,7 @@
     "bindEmailAndSelectTarget": "メールアドレスを登録して支払い対象を選択",
     "selectAtLeastOneTarget": "少なくとも1つの支払い対象を選択してください",
     "inviteRewardTitle": "紹介報酬",
-    "inviteRewardDesc": "初回購入後に{{days}}日分の追加特典を獲得",
+    "inviteRewardDesc": "初回チャージで{{days}}日間の追加特典を獲得",
     "operationFailed": "操作に失敗しました",
     "loginRequired": "購入するにはログインしてください",
     "loginToPurchase": "ログインして購入を完了",

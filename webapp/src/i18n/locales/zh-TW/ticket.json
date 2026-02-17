@@ -31,5 +31,28 @@
       "subjectTooLong": "問題標題不能超過 200 個字元",
       "contentTooLong": "問題描述不能超過 5000 個字元"
     }
+  },
+  "issues": {
+    "entryTitle": "社群回饋",
+    "entryDescription": "查看其他使用者的問題和官方回覆",
+    "listTitle": "問題列表",
+    "detailTitle": "問題詳情",
+    "stateOpen": "待處理",
+    "stateClosed": "已解決",
+    "officialBadge": "官方回覆",
+    "commentCount": "{{count}} 則回覆",
+    "noComments": "暫無回覆",
+    "loadMore": "載入更多",
+    "loading": "載入中...",
+    "empty": "暫無問題",
+    "emptyHint": "還沒有使用者提交過問題",
+    "error": "載入失敗，請重試",
+    "commentsTitle": "回覆",
+    "addComment": "新增回覆",
+    "commentPlaceholder": "輸入您的回覆...",
+    "submitComment": "傳送",
+    "submittingComment": "傳送中...",
+    "commentSuccess": "回覆已提交",
+    "commentFailed": "回覆提交失敗"
   }
 }

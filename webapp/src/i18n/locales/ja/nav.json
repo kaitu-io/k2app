@@ -13,7 +13,8 @@
     "invite": "招待",
     "retailer": "販売代理",
     "proHistory": "認証履歴",
-    "help": "ヘルプ"
+    "help": "ヘルプ",
+    "activate": "開通"
   },
   "appBarConnector": {
     "disconnecting": "切断中",

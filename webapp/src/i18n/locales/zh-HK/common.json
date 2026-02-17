@@ -59,7 +59,11 @@
       "reset": "網絡連接中斷，請檢查網絡狀態",
       "dns": "DNS 解析失敗，請檢查網絡設定",
       "tls": "安全連接失敗，請檢查網絡環境",
-      "refused": "無法連接到伺服器，請稍後重試"
+      "refused": "無法連接到伺服器，請稍後重試",
+      "repairFailed": "網絡修復失敗，請手動檢查設定",
+      "repairDNS": "DNS 修復失敗",
+      "repairRoute": "路由修復失敗",
+      "repairPreFailed": "網絡修復準備失敗"
     },
     "server": {
       "unavailable": "伺服器不可用，請稍後重試",
@@ -83,6 +87,22 @@
       "timeout": "VPN 操作超時，請重試",
       "connectionFatal": "連接失敗，請檢查網絡或更換節點",
       "allAddrsFailed": "所有節點連接失敗，請稍後重試"
+    },
+    "auth": {
+      "logoutFailed": "登出失敗，請重試",
+      "tokenRefreshFailed": "登入狀態刷新失敗，請重新登入"
+    },
+    "tunnel": {
+      "listFailed": "獲取節點列表失敗",
+      "connectFailed": "連接節點失敗"
+    },
+    "action": {
+      "timeout": "操作逾時，請重試",
+      "parseFailed": "請求解析失敗"
+    },
+    "api": {
+      "requestFailed": "請求失敗，請檢查網絡",
+      "responseFailed": "回應解析失敗"
     },
     "installCancelled": "安裝已取消",
     "unknown": "未知錯誤，請稍後重試",

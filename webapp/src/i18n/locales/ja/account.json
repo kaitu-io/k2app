@@ -102,5 +102,18 @@
     "removeMemberSuccess": "メンバーの削除に成功しました",
     "removeMemberFailed": "メンバーの削除に失敗しました",
     "removeMemberFailedRetry": "メンバーの削除に失敗しました、再試行してください"
+  },
+  "password": {
+    "setPassword": "パスワードを設定",
+    "changePassword": "パスワードを変更",
+    "newPassword": "新しいパスワード",
+    "confirmPassword": "パスワードを確認",
+    "requirements": "8文字以上、英字と数字を含む",
+    "tooShort": "パスワードは8文字以上必要です",
+    "needsLetter": "パスワードに英字が必要です",
+    "needsNumber": "パスワードに数字が必要です",
+    "mismatch": "パスワードが一致しません",
+    "setFailed": "パスワードの設定に失敗しました",
+    "setSuccess": "パスワードを設定しました"
   }
 }

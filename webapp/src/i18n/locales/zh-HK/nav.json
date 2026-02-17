@@ -12,7 +12,8 @@
     "invite": "邀請",
     "retailer": "分銷",
     "proHistory": "授權歷史",
-    "help": "幫助"
+    "help": "幫助",
+    "activate": "開通"
   },
   "appBarConnector": {
     "disconnecting": "斷開中",

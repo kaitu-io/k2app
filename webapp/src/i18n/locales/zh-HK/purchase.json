@@ -55,7 +55,11 @@
     "loginToPurchase": "登入以完成購買",
     "loginToPurchaseDesc": "登入後即可選擇付費對象並完成支付",
     "loginNow": "立即登入",
-    "loginAndPay": "登入並支付"
+    "loginAndPay": "登入並支付",
+    "selectPayTarget": "選擇付費對象",
+    "bindEmailAndSelectTarget": "綁定郵箱並選擇付費對象",
+    "inviteRewardTitle": "好友推薦獎勵",
+    "inviteRewardDesc": "完成首次充值即可獲得 {{days}} 日額外贈送"
   },
   "deviceInstall": {
     "title": "客戶端下載",

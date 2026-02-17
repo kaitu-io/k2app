@@ -59,7 +59,11 @@
       "reset": "Network connection interrupted, please check network status",
       "dns": "DNS resolution failed, please check network settings",
       "tls": "Secure connection failed, please check network environment",
-      "refused": "Unable to connect to server, please try again later"
+      "refused": "Unable to connect to server, please try again later",
+      "repairFailed": "Network repair failed, please check settings manually",
+      "repairDNS": "DNS repair failed",
+      "repairRoute": "Route repair failed",
+      "repairPreFailed": "Network repair preparation failed"
     },
     "server": {
       "unavailable": "Server unavailable, please try again later",
@@ -68,11 +72,19 @@
       "internal": "Server internal error, please try again later",
       "notImplemented": "Feature not yet available"
     },
+    "auth": {
+      "logoutFailed": "Logout failed, please try again",
+      "tokenRefreshFailed": "Session refresh failed, please login again"
+    },
     "client": {
       "badRequest": "Request parameter error",
       "unauthorized": "Please log in first",
       "forbidden": "No permission to perform this operation",
       "notFound": "Requested resource not found"
+    },
+    "tunnel": {
+      "listFailed": "Failed to load server list",
+      "connectFailed": "Failed to connect to server"
     },
     "vpn": {
       "authFailed": "Session expired, please log in again",
@@ -83,6 +95,14 @@
       "timeout": "VPN operation timeout, please try again",
       "connectionFatal": "Connection failed, please check network or switch server",
       "allAddrsFailed": "All servers failed to connect, please try again later"
+    },
+    "action": {
+      "timeout": "Operation timed out, please try again",
+      "parseFailed": "Request parsing failed"
+    },
+    "api": {
+      "requestFailed": "Request failed, please check your network",
+      "responseFailed": "Response parsing failed"
     },
     "installCancelled": "Installation cancelled",
     "unknown": "Unknown error, please try again later",

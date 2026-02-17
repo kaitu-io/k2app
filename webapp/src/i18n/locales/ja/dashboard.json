@@ -71,7 +71,11 @@
     "serviceFailure": {
       "title": "サービス接続失敗",
       "message": "VPNサービスに接続できません。サービスが実行中かご確認ください。",
-      "resolve": "解決する"
+      "resolve": "解決する",
+      "resolving": "解決中...",
+      "more": "詳細",
+      "collecting": "診断情報を収集中...",
+      "reported": "サポートチームに報告しました"
     },
     "serviceError": {
       "title": "サービスエラー",

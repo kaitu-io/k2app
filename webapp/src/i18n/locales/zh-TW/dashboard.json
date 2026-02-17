@@ -71,7 +71,11 @@
     "serviceFailure": {
       "title": "服務連線失敗",
       "message": "無法連線到 VPN 服務。請檢查服務是否正在執行。",
-      "resolve": "解決"
+      "resolve": "解決",
+      "resolving": "正在解決...",
+      "more": "更多",
+      "collecting": "正在收集診斷資訊...",
+      "reported": "已回報給支援團隊"
     },
     "serviceError": {
       "title": "服務異常",

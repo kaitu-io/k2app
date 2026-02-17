@@ -31,5 +31,28 @@
       "subjectTooLong": "Issue title cannot exceed 200 characters",
       "contentTooLong": "Issue description cannot exceed 5000 characters"
     }
+  },
+  "issues": {
+    "entryTitle": "Community Feedback",
+    "entryDescription": "View questions from other users and official replies",
+    "listTitle": "Issue List",
+    "detailTitle": "Issue Details",
+    "stateOpen": "Open",
+    "stateClosed": "Resolved",
+    "officialBadge": "Official Reply",
+    "commentCount": "{{count}} replies",
+    "noComments": "No replies yet",
+    "loadMore": "Load More",
+    "loading": "Loading...",
+    "empty": "No issues",
+    "emptyHint": "No issues have been submitted yet",
+    "error": "Failed to load, please try again",
+    "commentsTitle": "Replies",
+    "addComment": "Add Reply",
+    "commentPlaceholder": "Enter your reply...",
+    "submitComment": "Send",
+    "submittingComment": "Sending...",
+    "commentSuccess": "Reply submitted",
+    "commentFailed": "Failed to submit reply"
   }
 }

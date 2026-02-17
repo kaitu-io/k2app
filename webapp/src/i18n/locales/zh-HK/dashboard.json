@@ -71,7 +71,11 @@
     "serviceFailure": {
       "title": "服務連接失敗",
       "message": "無法連接到 VPN 服務。請檢查服務是否正在運行。",
-      "resolve": "解決"
+      "resolve": "解決",
+      "resolving": "正在解決...",
+      "more": "更多",
+      "collecting": "正在收集診斷資訊...",
+      "reported": "已報告畀支援團隊"
     },
     "serviceError": {
       "title": "服務異常",
@@ -106,6 +110,12 @@
     "loginBanner": {
       "message": "登入解鎖更多雲端節點",
       "viewPlans": "了解會員"
+    },
+    "initialization": {
+      "title": "正在初始化服務組件",
+      "geoip": "地理位置數據庫",
+      "rules": "代理規則",
+      "antiblock": "連接配置"
     }
   },
   "tunnels": {

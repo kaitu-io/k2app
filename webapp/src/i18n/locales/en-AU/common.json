@@ -54,12 +54,16 @@
       "connectionFailed": "Unable to connect to service"
     },
     "network": {
-      "timeout": "Network request timed out, please check your network connection",
+      "timeout": "Network request timeout, please check your network connection",
       "unreachable": "Network unreachable, please check your network connection",
       "reset": "Network connection interrupted, please check network status",
       "dns": "DNS resolution failed, please check network settings",
       "tls": "Secure connection failed, please check network environment",
-      "refused": "Unable to connect to server, please try again later"
+      "refused": "Unable to connect to server, please try again later",
+      "repairFailed": "Network repair failed, please check settings manually",
+      "repairDNS": "DNS repair failed",
+      "repairRoute": "Route repair failed",
+      "repairPreFailed": "Network repair preparation failed"
     },
     "server": {
       "unavailable": "Server unavailable, please try again later",
@@ -83,6 +87,22 @@
       "timeout": "VPN operation timed out, please try again",
       "connectionFatal": "Connection failed, please check network or switch server",
       "allAddrsFailed": "All servers failed to connect, please try again later"
+    },
+    "auth": {
+      "logoutFailed": "Logout failed, please try again",
+      "tokenRefreshFailed": "Session refresh failed, please login again"
+    },
+    "tunnel": {
+      "listFailed": "Failed to load server list",
+      "connectFailed": "Failed to connect to server"
+    },
+    "action": {
+      "timeout": "Operation timed out, please try again",
+      "parseFailed": "Request parsing failed"
+    },
+    "api": {
+      "requestFailed": "Request failed, please check your network",
+      "responseFailed": "Response parsing failed"
     },
     "installCancelled": "Installation cancelled",
     "unknown": "Unknown error, please try again later",

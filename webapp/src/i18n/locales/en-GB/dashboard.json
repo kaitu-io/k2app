@@ -71,7 +71,11 @@
     "serviceFailure": {
       "title": "Service Connection Failed",
       "message": "Unable to connect to VPN service. Please check if the service is running.",
-      "resolve": "Resolve"
+      "resolve": "Resolve",
+      "resolving": "Resolving...",
+      "more": "More",
+      "collecting": "Collecting diagnostic information...",
+      "reported": "Reported to support team"
     },
     "serviceError": {
       "title": "Service Error",
