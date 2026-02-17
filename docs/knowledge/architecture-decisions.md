@@ -382,6 +382,46 @@ Matching origins get `Access-Control-Allow-Origin: <origin>` + `Access-Control-A
 
 ---
 
+## iOS TUN fd via KVC: Industry Standard for Go-Based VPN Engines (2026-02-17, ios-vpn-audit)
+
+**Decision**: `packetFlow.value(forKey: "socket")` KVC 获取 TUN fd 是行业标准做法，不是 bug。所有基于 Go engine 的 iOS VPN app（WireGuard、sing-box、Clash）都用相同模式。
+
+**Why KVC fd is necessary**: Apple 官方推荐 `readPacketObjects/writePacketObjects`，但这是 Swift async 回调模型。Go engine 使用阻塞 I/O（goroutine 里 `read(fd)` 循环），无法适配 Swift 的 async completion handler。将 Swift callbacks 桥接到 Go channel 会导致：
+- 每个 packet 两次跨语言调用（Swift→Go read, Go→Swift write）
+- `NEPacket` 对象分配开销（~50% 吞吐量损失）
+- 异步→同步桥接复杂度极高
+
+**k2 的完整 fd 链路**:
+```
+PacketTunnelProvider.swift
+    → packetFlow.value(forKey: "socket") as? Int32  (KVC)
+    → engine.start(configJSON, fd: Int(fd), dataDir: dataDir)  (gomobile)
+    → mobile.Engine.Start(configJSON, fd, dataDir)  (Go)
+    → engine.Config{FileDescriptor: fd}
+    → provider.NewTUNProvider → tun.New(Options{FileDescriptor: fd})  (sing-tun)
+    → tun.NewSystem(Stack{Handler: handlerAdapter})
+    → sing-tun 拥有 fd，运行 async packet loop
+```
+
+**k2 已使用 sing-tun v0.7.11**: Go 侧不做任何 raw packet 处理。sing-tun 管理 fd 的读写循环、IP/TCP/UDP 解析、L4 stream 分发。k2 engine 只接收 `ConnectionHandler.HandleTCP/HandleUDP` 回调。
+
+**同行验证**:
+- WireGuard-apple: `WireGuardAdapter` 内部获取 fd，传给 wireguard-go
+- sing-box-for-apple: `ExtensionPlatformInterface` 提供 fd 给 Go libbox
+- Clash for iOS: 同样的 KVC fd 模式
+
+**Apple 的态度**: Apple Developer Technical Support 表态 "the file-descriptor method works till now, but this is not a supported technique." 但没有在任何 iOS 版本中破坏过它，因为太多 VPN app 依赖此模式。
+
+**风险评估**: 极低。Apple 破坏此行为 = 所有第三方 VPN app 失效，包括 WireGuard 官方 iOS 客户端。
+
+**Cross-reference**: See Framework Gotchas → "iOS TUN fd Must Be Acquired After setTunnelNetworkSettings"
+
+**Tests**: No test — platform-level constraint.
+**Source**: ios-vpn-audit (2026-02-17)
+**Status**: verified (cross-validated against WireGuard, sing-box, sing-tun source)
+
+---
+
 ## sing-tun Network Monitoring: Available But Unused by k2 Engine (2026-02-17, android-vpn-audit)
 
 **Context**: Investigating why k2 engine has no network change detection or auto-reconnect.
