@@ -1,0 +1,35 @@
+{
+  "faq": {
+    "title": "FAQ"
+  },
+  "ticket": {
+    "title": "Submit ticket",
+    "description": "Describe your issue and our support team will reply via email as soon as possible.",
+    "feedbackTitle": "Feedback",
+    "feedbackDescription": "Logs are being uploaded. Please describe your issue. The logs will help us locate the problem faster.",
+    "subjectLabel": "Subject",
+    "subjectPlaceholder": "Briefly describe your issue",
+    "contentLabel": "Description",
+    "contentPlaceholder": "Please describe your issue in detail, including steps, error messages, etc. This will help us resolve it faster.",
+    "submitButton": "Submit ticket",
+    "submitting": "Submitting...",
+    "submitSuccess": "Ticket submitted successfully",
+    "submitSuccessTitle": "Ticket submitted!",
+    "submitFailed": "Ticket submission failed, please try again later",
+    "nextStepHint": "Please check your email",
+    "emailReplyHint": "Our support team will communicate with you via email. Please check your inbox for replies.",
+    "howItWorks": "How it works",
+    "howItWorksDescription": "After submission, the system will send the ticket to our support email and CC a copy to your registered email. Follow-up communication will be via email, so please ensure you can receive email notifications.",
+    "entryTitle": "Contact support",
+    "entryDescription": "Having issues? Submit a ticket and we'll reply soon",
+    "logUploadInProgress": "Uploading logs...",
+    "logUploadSuccess": "Logs uploaded successfully",
+    "logUploadFailed": "Failed to upload logs",
+    "validation": {
+      "subjectRequired": "Please enter a subject",
+      "contentRequired": "Please enter a description",
+      "subjectTooLong": "Subject cannot exceed 200 characters",
+      "contentTooLong": "Description cannot exceed 5000 characters"
+    }
+  }
+}

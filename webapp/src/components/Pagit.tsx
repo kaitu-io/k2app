@@ -1,48 +1,50 @@
-interface PagitProps {
-  currentPage: number;
-  totalPages: number;
-  onPageChange: (page: number) => void;
+import React from 'react';
+import { Box, Pagination as MuiPagination } from '@mui/material';
+import { Pagination } from '../services/api-types';
+
+interface PaginationProps {
+  pagination: Pagination;
+  onChange: (page: number) => void;
+  disabled?: boolean;
 }
 
-export function Pagit({ currentPage, totalPages, onPageChange }: PagitProps) {
-  if (totalPages <= 1) return null;
-
-  const pages: number[] = [];
-  for (let i = 1; i <= totalPages; i++) {
-    pages.push(i);
+export default function Pagit({ 
+  pagination, 
+  onChange, 
+  disabled = false 
+}: PaginationProps) {
+  const totalPages = Math.ceil(pagination.total / pagination.pageSize);
+  
+  if (totalPages <= 1) {
+    return null;
   }
 
+  const handlePageChange = (_: React.ChangeEvent<unknown>, value: number) => {
+    // MUI Pagination 从 1 开始，我们的 API 从 0 开始，所以需要转换
+    onChange(value - 1);
+  };
+
   return (
-    <div className="flex items-center justify-center gap-2 text-[--color-text-secondary] mt-4">
-      <button
-        onClick={() => onPageChange(currentPage - 1)}
-        disabled={currentPage <= 1}
-        className="px-2 py-1 rounded disabled:opacity-30"
-        aria-label="Previous page"
-      >
-        &laquo;
-      </button>
-      {pages.map((page) => (
-        <button
-          key={page}
-          onClick={() => onPageChange(page)}
-          className={`px-3 py-1 rounded text-sm ${
-            page === currentPage
-              ? 'bg-[--color-primary] text-white'
-              : 'hover:bg-[--color-glass-bg]'
-          }`}
-        >
-          {page}
-        </button>
-      ))}
-      <button
-        onClick={() => onPageChange(currentPage + 1)}
-        disabled={currentPage >= totalPages}
-        className="px-2 py-1 rounded disabled:opacity-30"
-        aria-label="Next page"
-      >
-        &raquo;
-      </button>
-    </div>
+    <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
+      <MuiPagination
+        count={totalPages}
+        page={pagination.page + 1} // API 从 0 开始，MUI 从 1 开始
+        onChange={handlePageChange}
+        color="primary"
+        shape="rounded"
+        size="medium"
+        showFirstButton
+        showLastButton
+        disabled={disabled}
+        sx={{
+          '& .MuiPaginationItem-root': {
+            fontWeight: 500,
+          },
+          '& .Mui-selected': {
+            fontWeight: 700,
+          },
+        }}
+      />
+    </Box>
   );
-}
+} 

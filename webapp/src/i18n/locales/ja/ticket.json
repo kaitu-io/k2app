@@ -1,0 +1,35 @@
+{
+  "faq": {
+    "title": "よくある質問"
+  },
+  "ticket": {
+    "title": "チケット提出",
+    "description": "問題を記述してください。サポートチームができるだけ早くメールで返信します。",
+    "feedbackTitle": "フィードバック",
+    "feedbackDescription": "ログをアップロード中です。問題を記述してください。ログは問題の特定に役立ちます。",
+    "subjectLabel": "問題のタイトル",
+    "subjectPlaceholder": "問題を簡単に記述してください",
+    "contentLabel": "問題の説明",
+    "contentPlaceholder": "問題の詳細、操作手順、エラーメッセージなどを記述してください。問題の迅速な解決に役立ちます。",
+    "submitButton": "チケットを提出",
+    "submitting": "提出中...",
+    "submitSuccess": "チケットが正常に提出されました",
+    "submitSuccessTitle": "チケットの提出が成功しました！",
+    "submitFailed": "チケットの提出に失敗しました、後でもう一度お試しください",
+    "nextStepHint": "メールをご確認ください",
+    "emailReplyHint": "サポートチームがメールでご連絡しますので、メールの返信に注意してください。",
+    "howItWorks": "チケット処理フロー",
+    "howItWorksDescription": "提出後、システムがサポートメールにチケットを送信し、登録メールにもコピーを送信します。その後のやり取りはメールで行われますので、メール通知を受信できることを確認してください。",
+    "entryTitle": "カスタマーサポートに連絡",
+    "entryDescription": "問題がありますか？チケットを提出してください、できるだけ早く返信します",
+    "logUploadInProgress": "ログをアップロード中...",
+    "logUploadSuccess": "ログのアップロードが完了しました",
+    "logUploadFailed": "ログのアップロードに失敗しました",
+    "validation": {
+      "subjectRequired": "問題のタイトルを入力してください",
+      "contentRequired": "問題の説明を入力してください",
+      "subjectTooLong": "問題のタイトルは200文字を超えることはできません",
+      "contentTooLong": "問題の説明は5000文字を超えることはできません"
+    }
+  }
+}

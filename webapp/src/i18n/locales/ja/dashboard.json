@@ -1,0 +1,233 @@
+{
+  "dashboard": {
+    "autoSwitchLabel": "ネットワーク状況に応じて同じ国の他のノードに自動切替",
+    "autoSwitchInCountry": "同一国内スマート切替",
+    "autoSwitchAlwaysEnabled": "スマート切替が有効です",
+    "autoSwitchInfo": "ネットワーク状況に応じて同じ国の他の利用可能なノードに自動切替します",
+    "autoSwitchExplanationSpecific": "ネットワーク状況に応じて同じ国の他の利用可能なノードに自動切替します",
+    "autoSwitchExplanationGeneral": "ネットワーク状況に応じて最適なノードを自動選択して切替します",
+    "autoSelect": "自動選択",
+    "selectNode": "ノードを選択",
+    "noNodeSelected": "ノードが未選択",
+    "proxyMode": "プロキシモード",
+    "socks5Mode": "SOCKS5",
+    "autoSwitch": "自動切替",
+    "refreshNodeList": "ノードリストを更新",
+    "loadingNodes": "ノードリストを読み込み中...",
+    "errorLoadingNodes": "ノードリストの読み込みに失敗しました",
+    "retryLoading": "再読み込み",
+    "noNodesTitle": "利用可能なノードなし",
+    "noNodesDescription": "トンネルノードが見つかりません。ネットワーク接続を確認して更新してください。",
+    "refreshNodes": "ノードを更新",
+    "refreshFailed": "更新に失敗しました",
+    "currentSelectedNode": "現在選択中のノード",
+    "proxyRules": "プロキシルール",
+    "rule": {
+      "global": "グローバル",
+      "gfwlist": "スマート",
+      "chnroute": "ライト"
+    },
+    "ruleDescription": {
+      "global": "すべてのサイトを網羅",
+      "gfwlist": "速度とアクセス性のバランス",
+      "chnroute": "国内サイトの高速アクセス",
+      "uk": "英国での認証"
+    },
+    "disconnectToModify": "まず切断してから変更してください",
+    "k2Options": "詳細オプション",
+    "enableMux": "多重化",
+    "enableConcurrent": "並行接続",
+    "enableAnonymity": "匿名モード",
+    "requiredByAnonymity": "匿名モードで必須",
+    "load": "負荷",
+    "advancedOptionsInfo": "クリックして詳細説明を表示",
+    "advancedOptionsHelp": "詳細オプション説明",
+    "muxDescription": "##レイテンシーが低く、速度が速い##。1つのチャネルで複数のリクエストを同時に転送、高速道路の車線を増やすのと同じで、##待機時間を短縮##。動画視聴やゲームに最適。",
+    "concurrentDescription": "##複数のノードを同時使用##で接続をより速く安定させます。複数の道を同時に使うようなもので、1つが混雑しても他の道があります。##ネットワーク制限時に特に有効##、Pro専用機能。",
+    "anonymityDescription": "##サーバー接続とサイトアクセスで異なるIPアドレスを使用##し、実際の位置を追跡から保護します。二重マスクをかけるようなもので、プライバシーがより安全。注意：速度がわずかに影響を受ける可能性があります、Pro専用機能。",
+    "enableFakeIP": "仮想IPモード",
+    "fakeIPDescription": "プロキシが必要なドメインに仮想IPを割り当てます。DNS解決はサーバー側で行われ、接続速度とプライバシーが向上します。",
+    "dnsMode": "DNSモード",
+    "dnsModeDescription": "DNS解決方法を選択",
+    "dnsOptions": {
+      "fakeIp": "仮想IP",
+      "realIp": "実IP",
+      "realIpDot": "実IP (DoT)"
+    },
+    "recentLocations": "最近使用",
+    "favorites": "お気に入りサーバー",
+    "allLocations": "すべての場所",
+    "advancedSettings": "詳細設定",
+    "searchLocations": "場所を検索...",
+    "manualRefresh": "今すぐ更新",
+    "refreshing": "更新中...",
+    "updated": "更新日時",
+    "justNow": "たった今",
+    "minutesAgo": "分前",
+    "hoursAgo": "時間前",
+    "longTimeAgo": "かなり前",
+    "selectServerHint": "下のリストからサーバーを選択して開始",
+    "connectionRetrying": "サーバー接続に失敗しました、再試行中...",
+    "serviceFailure": {
+      "title": "サービス接続失敗",
+      "message": "VPNサービスに接続できません。サービスが実行中かご確認ください。",
+      "resolve": "解決する"
+    },
+    "serviceError": {
+      "title": "サービスエラー",
+      "subtitle": "VPNコアサービスが正常に動作していません",
+      "reason1Title": "自動更新未完了",
+      "reason1Desc": "アップデート中にエラーが発生し、サービスコンポーネントが正しくインストールされなかった可能性があります。",
+      "reason2Title": "セキュリティソフトによるブロック",
+      "reason2Desc": "360やテンセントPCマネージャーなどのセキュリティソフトがVPNサービスをリスクとして誤認識し、ブロックしている可能性があります。",
+      "solutionTitle": "解決方法",
+      "solutionDesc": "公式サイトから最新版をダウンロードして再インストールすることで、この問題を解決できます。",
+      "downloadButton": "ダウンロードへ",
+      "persistentTitle": "問題が繰り返し発生しますか？",
+      "persistentDesc": "再インストール後も問題が続く場合は、チケットを送信してください。サポートチームが対応いたします。",
+      "submitTicket": "チケット送信"
+    },
+    "networkError": {
+      "title": "ネットワーク接続エラー"
+    },
+    "initialization": {
+      "title": "サービスコンポーネントを初期化中",
+      "geoip": "地理位置データベース",
+      "rules": "プロキシルール",
+      "antiblock": "接続設定"
+    },
+    "selfDeployed": "セルフデプロイ",
+    "selfDeployedTag": "セルフデプロイ",
+    "cloudNodes": "クラウドノード",
+    "cloudTag": "クラウド",
+    "analyzing": "分析中...",
+    "manageTunnels": "ノード管理",
+    "addTunnel": "ノードを追加",
+    "selfDeploy": "セルフデプロイ",
+    "loginToGet": "ログインして取得",
+    "guestEmpty": {
+      "title": "ログインしてノードを取得",
+      "description": "ログインしてクラウドノードを取得し、より安定したサービスをお楽しみください。"
+    },
+    "loginBanner": {
+      "message": "ログインしてクラウドノードを解放",
+      "viewPlans": "プランを見る"
+    }
+  },
+  "tunnels": {
+    "title": "ノード管理",
+    "description": "ローカルノード設定を管理。カスタムノードを追加するか、ログインしてクラウドノードを同期。",
+    "addTunnel": "ノードを追加",
+    "syncCloud": "ログインして取得",
+    "loginHint": "ログインしてクラウドノード設定を同期",
+    "loginToSync": "ログインしてクラウドノードを取得",
+    "anonymity": "匿名",
+    "addresses": "アドレス",
+    "empty": {
+      "title": "ノードがありません",
+      "description": "下のボタンをクリックして最初のノードを追加"
+    },
+    "deleteConfirm": {
+      "title": "ノードを削除",
+      "message": "ノード \"{{name}}\" を削除してもよろしいですか？"
+    },
+    "selfDeploy": {
+      "title": "セルフデプロイサービス",
+      "description": "セルフデプロイ機能を開発中です。自分のサーバーにノードをデプロイできるようになります。この機能はオープンソース公開後にリリースされます。",
+      "comingSoon": "まもなくリリース",
+      "openSourceNote": "オープンソース公開後、自由にデプロイとカスタマイズが可能"
+    },
+    "cloudNodes": {
+      "title": "クラウドノード",
+      "description": "ログインしてクラウドノードを取得、セルフデプロイ不要ですぐに使える。",
+      "usingCloud": "クラウドノードをご利用中です。ホームに戻ってノードを選択してください。"
+    },
+    "form": {
+      "addTitle": "ノードを追加",
+      "editTitle": "ノードを編集",
+      "name": "ノード名",
+      "namePlaceholder": "例：香港ノード1",
+      "nameRequired": "ノード名を入力してください",
+      "url": "ノードURL",
+      "urlHelp": "形式: k2wss://ドメイン?addrs=IPアドレス",
+      "urlRequired": "ノードURLを入力してください",
+      "urlInvalid": "URLはk2wss://で始まる必要があります",
+      "domain": "ドメイン (SNI)",
+      "domainRequired": "ドメインを入力してください",
+      "addresses": "アドレスリスト",
+      "addressesHelp": "複数のアドレスはカンマで区切り、デフォルトポート443",
+      "addrsRequired": "少なくとも1つのアドレスを入力してください",
+      "anonymity": "匿名モード",
+      "anonymityHelp": "プライバシー向上のためランダムにアドレスを選択",
+      "advancedMode": "詳細モード",
+      "simpleMode": "簡易モード",
+      "addFailed": "追加に失敗",
+      "updateFailed": "更新に失敗"
+    }
+  },
+  "troubleshooting": {
+    "title": "問題診断",
+    "subtitle": "速度テストとネットワーク修復でネットワーク接続の問題を診断",
+    "speedtest": {
+      "title": "速度テスト",
+      "description": "国際出口ネットワークの接続速度と品質をテスト（プロキシを経由しません）",
+      "start": "テスト開始",
+      "testing": "テスト中...",
+      "complete": "テスト完了",
+      "failed": "テスト失敗",
+      "startFailed": "速度テストの開始に失敗しました",
+      "networkError": "ネットワークリクエストに失敗しました",
+      "currentSpeed": "現在の速度",
+      "downloadSpeed": "ダウンロード速度",
+      "uploadSpeed": "アップロード速度",
+      "latency": "レイテンシー",
+      "jitter": "ジッター",
+      "duration": "所要時間",
+      "seconds": "秒",
+      "server": "テストサーバー",
+      "selectServer": "サーバーを選択",
+      "autoSelect": "最適なサーバーを自動選択"
+    },
+    "fixNetwork": {
+      "title": "ネットワークをワンクリック修復",
+      "description": "ネットワーク接続の問題を修復、DNSとルーティング設定をリセット",
+      "button": "ネットワークをワンクリック回復",
+      "fixing": "回復中...",
+      "success": "ネットワーク修復に成功しました！",
+      "error": "ネットワーク修復に失敗しました、後でもう一度お試しください",
+      "unsupported": "この機能はmacOSシステムのみサポートしています"
+    },
+    "securitySoftware": {
+      "title": "セキュリティソフトウェアホワイトリスト設定",
+      "description": "VPN接続が360、テンセントマネージャーなどのセキュリティソフトウェアにブロックされている場合は、設定ガイドを参照してください"
+    },
+    "serverList": {
+      "show": "すべてのサーバーを表示",
+      "hide": "サーバーリストを非表示",
+      "testing": "サーバーレイテンシーをテスト中",
+      "failed": "サーバーリストの取得に失敗しました",
+      "startFailed": "サーバーリスト取得の開始に失敗しました",
+      "networkError": "ネットワークリクエストに失敗しました",
+      "server": "サーバー",
+      "location": "場所",
+      "distance": "距離",
+      "latency": "レイテンシー",
+      "error": "失敗"
+    }
+  },
+  "versionComparison": {
+    "freeVersion": "無料版",
+    "proVersion": "Pro版",
+    "deviceCount": "デバイス数",
+    "dailyUsage": "1日の使用時間",
+    "adBlock": "広告ブロック",
+    "techSupport": "技術サポート",
+    "multiThreading": "マルチスレッド並行",
+    "oneDevice": "1台",
+    "fiveDevices": "5台",
+    "twoHours": "2時間",
+    "unlimited": "無制限",
+    "no": "×",
+    "yes": "✓"
+  }
+}

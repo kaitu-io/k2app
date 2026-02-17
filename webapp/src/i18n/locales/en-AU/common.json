@@ -1,0 +1,136 @@
+{
+  "status": {
+    "stopped": "Stopped",
+    "connecting": "Connecting...",
+    "connected": "Connected",
+    "reconnecting": "Reconnecting...",
+    "disconnecting": "Disconnecting...",
+    "disconnected": "Disconnected",
+    "error": "Connection error",
+    "failed": "Connection failed",
+    "offline": "Offline",
+    "online": "Online",
+    "active": "Active",
+    "inactive": "Inactive",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "clickToStop": "Click to disconnect",
+    "reconnectingToServer": "Reconnecting to server...",
+    "waitingForNetwork": "Waiting for network..."
+  },
+  "common": {
+    "justNow": "Just now",
+    "back": "Back",
+    "cancel": "Cancel",
+    "add": "Add",
+    "adding": "Adding...",
+    "ok": "OK",
+    "save": "Save",
+    "delete": "Delete",
+    "copy": "Copy",
+    "close": "Close",
+    "loading": "Loading...",
+    "processing": "Processing...",
+    "retry": "Retry",
+    "download": "Download",
+    "error": "Error",
+    "refresh": "Refresh",
+    "and": "and",
+    "success": "Success",
+    "loadFailed": "Load failed",
+    "notFound": "Resource not found",
+    "serverError": "Server error",
+    "unknownError": "Unknown error",
+    "later": "Later",
+    "login": "Login",
+    "viewDetails": "View Details",
+    "experimental": "Experimental"
+  },
+  "errors": {
+    "service": {
+      "serviceNotFound": "Service file not found, please reinstall the app",
+      "authRequired": "Administrator permission required to install service",
+      "installFailed": "Service installation failed",
+      "connectionFailed": "Unable to connect to service"
+    },
+    "network": {
+      "timeout": "Network request timed out, please check your network connection",
+      "unreachable": "Network unreachable, please check your network connection",
+      "reset": "Network connection interrupted, please check network status",
+      "dns": "DNS resolution failed, please check network settings",
+      "tls": "Secure connection failed, please check network environment",
+      "refused": "Unable to connect to server, please try again later"
+    },
+    "server": {
+      "unavailable": "Server unavailable, please try again later",
+      "overload": "Server busy, please try again later",
+      "maintenance": "Server under maintenance, please try again later",
+      "internal": "Server internal error, please try again later",
+      "notImplemented": "Feature not yet available"
+    },
+    "client": {
+      "badRequest": "Invalid request parameters",
+      "unauthorized": "Please log in first",
+      "forbidden": "No permission for this operation",
+      "notFound": "Requested resource not found"
+    },
+    "vpn": {
+      "authFailed": "Session expired, please log in again",
+      "membershipExpired": "Membership expired, please renew",
+      "stopFailed": "Failed to stop VPN, please try again",
+      "startFailed": "Failed to start VPN, please check network",
+      "reconnectFailed": "Failed to reconnect VPN, please reconnect manually",
+      "timeout": "VPN operation timed out, please try again",
+      "connectionFatal": "Connection failed, please check network or switch server",
+      "allAddrsFailed": "All servers failed to connect, please try again later"
+    },
+    "installCancelled": "Installation cancelled",
+    "unknown": "Unknown error, please try again later",
+    "unknownError": "Unknown error"
+  },
+  "brand": {
+    "name": "Kaitu",
+    "slogan": "Global network, one-click access",
+    "subtitle": "Enterprise-grade secure tunnel, connecting every corner of the world"
+  },
+  "features": {
+    "fastConnect": "Fast connection",
+    "fastConnectDesc": "Smart routing optimisation, 80% lower latency",
+    "security": "Enterprise-grade encryption",
+    "securityDesc": "Military-grade AES-256 encryption, protecting data security",
+    "global": "Global nodes",
+    "globalDesc": "Covering 50+ countries, 200+ quality nodes",
+    "multiDevice": "Multi-device support",
+    "multiDeviceDesc": "One account, all platforms"
+  },
+  "messages": {
+    "sendVerificationSuccess": "Verification email sent successfully",
+    "sendVerificationFailed": "Failed to send verification email",
+    "logoutSuccess": "User logged out",
+    "logoutFailed": "Logout failed",
+    "copySuccess": "Copied successfully",
+    "copyFailed": "Copy failed",
+    "saveSuccess": "Saved successfully",
+    "saveFailed": "Save failed",
+    "deleteSuccess": "Deleted successfully",
+    "deleteFailed": "Delete failed",
+    "serviceInstalling": "Silently installing service, please wait...",
+    "serviceInstallSuccess": "Service installed successfully!",
+    "serviceInstallFailedAuth": "Administrator permission required to install service, please click \"Yes\" in the UAC dialogue",
+    "updateSuccess": "Updated successfully",
+    "updateFailed": "Update failed",
+    "networkError": "Network error",
+    "serverError": "Server error",
+    "unknownError": "Unknown error"
+  },
+  "loadingAndEmpty": {
+    "noHistoryTitle": "No history",
+    "noHistoryDescription": "You don't have any payment or authorisation history yet. Try membership benefits now!",
+    "noPlansTitle": "No plan information",
+    "noPlansDescription": "Plans are loading or temporarily unavailable, please try again later",
+    "noInviteCodesTitle": "No invitation codes",
+    "noInviteCodesDescription": "You haven't created any invitation codes yet. Create your exclusive invitation code to share with friends!",
+    "noDevicesTitle": "No devices",
+    "noDevicesDescription": "You don't have any logged-in devices yet"
+  }
+}

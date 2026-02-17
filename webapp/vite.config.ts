@@ -1,44 +1,62 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import tailwindcss from "@tailwindcss/vite";
-import path from "path";
-import pkg from "../package.json";
+import { resolve } from 'path';
 
-const k2DaemonUrl = `http://127.0.0.1:${process.env.K2_DAEMON_PORT || "1777"}`;
+const host = process.env.TAURI_DEV_HOST;
 
+// https://vitejs.dev/config/
+// NOTE: This config is for Web standalone only.
+// Desktop uses desktop-tauri/vite.config.ts
+// Mobile uses mobile-capacitor/vite.config.ts
 export default defineConfig({
-  define: {
-    __APP_VERSION__: JSON.stringify(pkg.version),
-  },
-  plugins: [react(), tailwindcss()],
-  resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
-    },
-  },
-  build: {
-    rollupOptions: {
-      input: {
-        main: path.resolve(__dirname, "index.html"),
-        debug: path.resolve(__dirname, "debug.html"),
-      },
-    },
-  },
+  plugins: [react()],
+
+  // 1. prevent vite from obscuring rust errors
+  clearScreen: false,
+
+  // Server configuration
   server: {
     port: 1420,
-    proxy: {
-      "/api": {
-        target: k2DaemonUrl,
-        changeOrigin: true,
-      },
-      "/ping": {
-        target: k2DaemonUrl,
-        changeOrigin: true,
+    strictPort: true,
+    host: host || true,
+    hmr: host
+      ? {
+          protocol: "ws",
+          host,
+          port: 1421,
+        }
+      : undefined,
+    watch: {
+      // 3. tell vite to ignore watching `src-tauri`
+      ignored: ["**/src-tauri/**"],
+    },
+  },
+
+  // Build configuration
+  build: {
+    outDir: 'dist',
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, 'index.html'),
+        debug: resolve(__dirname, 'debug.html'),
       },
     },
   },
-  test: {
-    environment: "jsdom",
-    setupFiles: ["./src/test-setup.ts"],
+
+  // Base path for assets
+  base: '/',
+
+  // Module resolution
+  resolve: {
+    alias: {
+      '@': resolve(__dirname, './src'),
+    },
   },
+
+  // Environment variables
+  define: {
+    'import.meta.env.VITE_KAITU_ENTRY_URL': JSON.stringify(process.env.VITE_KAITU_ENTRY_URL || 'https://k2.52j.me'),
+    'import.meta.env.VITE_USE_MOCK': JSON.stringify(process.env.VITE_USE_MOCK || 'false'),
+    'import.meta.env.VITE_CLIENT_IS_ROUTER': JSON.stringify(process.env.VITE_CLIENT_IS_ROUTER || 'false'),
+  }
 });

@@ -40,7 +40,9 @@ func SetupRouter() *gin.Engine {
 	api := r.Group("/api")
 	log.Debugf(ctx, "registering /api group")
 
-	api.Use(log.MiddlewareRequestLog(true), MiddleRecovery())
+	api.Use(log.MiddlewareRequestLog(true), MiddleRecovery(), ApiCORSMiddleware())
+	// Preflight: ApiCORSMiddleware handles OPTIONS and aborts with 204
+	api.OPTIONS("/*path", func(c *gin.Context) {})
 	{
 		// 认证相关路由
 		auth := api.Group("/auth")

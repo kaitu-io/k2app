@@ -13,6 +13,7 @@
 import type { SResponse } from '../types/kaitu-core';
 import { authService } from './auth-service';
 import { useAuthStore } from '../stores/auth.store';
+import { resolveEntry } from './antiblock';
 
 /**
  * Cloud API client for direct HTTP communication with the cloud API.
@@ -55,8 +56,11 @@ export const cloudApi = {
         fetchOptions.body = JSON.stringify(body);
       }
 
-      // 4. Make the request
-      const httpResponse = await fetch(path, fetchOptions);
+      // 4. Resolve entry URL via antiblock
+      const entry = await resolveEntry();
+
+      // 5. Make the request
+      const httpResponse = await fetch(entry + path, fetchOptions);
 
       // 5. Parse the JSON response
       const jsonResponse = await httpResponse.json() as SResponse<T>;
@@ -87,8 +91,11 @@ export const cloudApi = {
       // Get refresh token
       const refreshToken = await authService.getRefreshToken();
 
+      // Resolve entry URL for refresh
+      const entry = await resolveEntry();
+
       // Attempt token refresh
-      const refreshResponse = await fetch('/api/auth/refresh', {
+      const refreshResponse = await fetch(entry + '/api/auth/refresh', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refreshToken }),
@@ -127,7 +134,7 @@ export const cloudApi = {
         fetchOptions.body = JSON.stringify(body);
       }
 
-      const retryResponse = await fetch(path, fetchOptions);
+      const retryResponse = await fetch(entry + path, fetchOptions);
       const retryJson = await retryResponse.json() as SResponse<T>;
 
       return retryJson;

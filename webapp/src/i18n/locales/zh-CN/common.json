@@ -1,20 +1,156 @@
 {
-  "appName": "Kaitu.io 开途",
-  "loading": "加载中...",
-  "retry": "重试",
-  "cancel": "取消",
-  "confirm": "确认",
-  "save": "保存",
-  "error": "错误",
-  "success": "成功",
-  "servers": "服务器",
-  "updateAvailable": "发现新版本",
-  "updateVersion": "版本 {{version}}",
-  "updateSize": "大小 {{size}}",
-  "updateNow": "立即更新",
-  "updateGoToAppStore": "前往 App Store",
-  "updateDownloading": "下载中...",
-  "updateLater": "稍后",
-  "updateRestartToApply": "更新已下载，重启应用即可生效。",
-  "updateFailed": "更新失败：{{message}}"
+  "status": {
+    "stopped": "已停止",
+    "connecting": "连接中...",
+    "connected": "已连接",
+    "reconnecting": "重连中...",
+    "disconnecting": "断开中...",
+    "disconnected": "未连接",
+    "error": "连接失败，重试中...",
+    "failed": "连接失败",
+    "offline": "离线",
+    "online": "在线",
+    "active": "活跃",
+    "inactive": "非活跃",
+    "enabled": "已启用",
+    "disabled": "已禁用",
+    "clickToStop": "点击断开",
+    "reconnectingToServer": "正在重连服务器...",
+    "waitingForNetwork": "等待网络连接..."
+  },
+  "common": {
+    "justNow": "刚刚",
+    "back": "返回",
+    "cancel": "取消",
+    "add": "添加",
+    "adding": "添加中...",
+    "ok": "确定",
+    "save": "保存",
+    "delete": "删除",
+    "copy": "复制",
+    "close": "关闭",
+    "loading": "加载中...",
+    "processing": "处理中...",
+    "retry": "重试",
+    "download": "下载",
+    "error": "错误",
+    "refresh": "刷新",
+    "and": "和",
+    "success": "成功",
+    "loadFailed": "加载失败",
+    "notFound": "资源不存在",
+    "serverError": "服务器错误",
+    "unknownError": "未知错误",
+    "later": "稍后再说",
+    "login": "登录",
+    "viewDetails": "查看详情",
+    "experimental": "实验性"
+  },
+  "errors": {
+    "service": {
+      "serviceNotFound": "服务文件不存在，请重新安装应用",
+      "authRequired": "需要管理员权限来安装服务",
+      "installFailed": "服务安装失败",
+      "connectionFailed": "无法连接到服务"
+    },
+    "network": {
+      "timeout": "网络请求超时，请检查网络连接",
+      "unreachable": "网络不可达，请检查网络连接",
+      "reset": "网络连接中断，请检查网络状态",
+      "dns": "DNS 解析失败，请检查网络设置",
+      "tls": "安全连接失败，请检查网络环境",
+      "refused": "无法连接到服务器，请稍后重试",
+      "repairFailed": "网络修复失败，请手动检查设置",
+      "repairDNS": "DNS 修复失败",
+      "repairRoute": "路由修复失败",
+      "repairPreFailed": "网络修复准备失败"
+    },
+    "server": {
+      "unavailable": "服务器不可用，请稍后重试",
+      "overload": "服务器繁忙，请稍后重试",
+      "maintenance": "服务器维护中，请稍后重试",
+      "internal": "服务器内部错误，请稍后重试",
+      "notImplemented": "功能暂未开放"
+    },
+    "client": {
+      "badRequest": "请求参数错误",
+      "unauthorized": "请先登录",
+      "forbidden": "没有权限执行此操作",
+      "notFound": "请求的资源不存在"
+    },
+    "vpn": {
+      "authFailed": "登录已失效，请重新登录",
+      "membershipExpired": "会员已过期，请续费",
+      "stopFailed": "VPN 停止失败，请重试",
+      "startFailed": "VPN 启动失败，请检查网络",
+      "reconnectFailed": "VPN 重连失败，请手动重连",
+      "timeout": "VPN 操作超时，请重试",
+      "connectionFatal": "连接失败，请检查网络或更换节点",
+      "allAddrsFailed": "所有节点连接失败，请稍后重试"
+    },
+    "auth": {
+      "logoutFailed": "登出失败，请重试",
+      "tokenRefreshFailed": "登录状态刷新失败，请重新登录"
+    },
+    "tunnel": {
+      "listFailed": "获取节点列表失败",
+      "connectFailed": "连接节点失败"
+    },
+    "action": {
+      "timeout": "操作超时，请重试",
+      "parseFailed": "请求解析失败"
+    },
+    "api": {
+      "requestFailed": "请求失败，请检查网络",
+      "responseFailed": "响应解析失败"
+    },
+    "installCancelled": "安装已取消",
+    "unknown": "未知错误，请稍后重试",
+    "unknownError": "未知错误"
+  },
+  "brand": {
+    "name": "开途",
+    "slogan": "全球网络，一键直达",
+    "subtitle": "企业级安全隧道，连接世界每一个角落"
+  },
+  "features": {
+    "fastConnect": "极速连接",
+    "fastConnectDesc": "智能路由优化，延迟降低80%",
+    "security": "企业级加密",
+    "securityDesc": "军事级AES-256加密，保护数据安全",
+    "global": "全球节点",
+    "globalDesc": "覆盖50+国家，200+优质节点",
+    "multiDevice": "多设备支持",
+    "multiDeviceDesc": "一个账号，全平台通用"
+  },
+  "messages": {
+    "sendVerificationSuccess": "验证邮件发送成功",
+    "sendVerificationFailed": "发送验证邮件失败",
+    "logoutSuccess": "用户已登出",
+    "logoutFailed": "登出失败",
+    "copySuccess": "复制成功",
+    "copyFailed": "复制失败",
+    "saveSuccess": "保存成功",
+    "saveFailed": "保存失败",
+    "deleteSuccess": "删除成功",
+    "deleteFailed": "删除失败",
+    "serviceInstalling": "正在静默安装服务，请稍候...",
+    "serviceInstallSuccess": "服务安装成功！",
+    "serviceInstallFailedAuth": "需要管理员权限来安装服务，请在UAC对话框中点击“是”",
+    "updateSuccess": "更新成功",
+    "updateFailed": "更新失败",
+    "networkError": "网络错误",
+    "serverError": "服务器错误",
+    "unknownError": "未知错误"
+  },
+  "loadingAndEmpty": {
+    "noHistoryTitle": "暂无历史记录",
+    "noHistoryDescription": "您还没有任何付费和授权历史，快去体验会员权益吧！",
+    "noPlansTitle": "暂无套餐信息",
+    "noPlansDescription": "套餐加载中或暂时无可用套餐，请稍后重试",
+    "noInviteCodesTitle": "暂无邀请码",
+    "noInviteCodesDescription": "您还没有创建任何邀请码，快去创建专属邀请码分享给好友吧！",
+    "noDevicesTitle": "暂无设备",
+    "noDevicesDescription": "您还没有任何已登录的设备"
+  }
 }

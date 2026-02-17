@@ -1,0 +1,35 @@
+{
+  "faq": {
+    "title": "常見問題"
+  },
+  "ticket": {
+    "title": "提交工單",
+    "description": "描述您遇到嘅問題，我哋嘅支援團隊會盡快透過電郵回覆您。",
+    "feedbackTitle": "問題回饋",
+    "feedbackDescription": "日誌正在上傳中，請描述您遇到嘅問題。日誌將幫助我哋更快定位問題。",
+    "subjectLabel": "問題標題",
+    "subjectPlaceholder": "簡要描述您遇到嘅問題",
+    "contentLabel": "問題描述",
+    "contentPlaceholder": "請詳細描述您遇到嘅問題，包括操作步驟、錯誤信息等，這將幫助我哋更快咁為您解決問題。",
+    "submitButton": "提交工單",
+    "submitting": "提交中...",
+    "submitSuccess": "工單已提交成功",
+    "submitSuccessTitle": "工單提交成功！",
+    "submitFailed": "工單提交失敗，請稍後重試",
+    "nextStepHint": "請查收您嘅電郵",
+    "emailReplyHint": "我哋嘅支援團隊將透過電郵與您溝通，請留意電郵中嘅回覆。",
+    "howItWorks": "工單處理流程",
+    "howItWorksDescription": "提交後，系統會將工單發送到支援電郵，並抄送一份到您嘅註冊電郵。後續溝通將透過電郵進行，請確保您能收到電郵通知。",
+    "entryTitle": "聯絡客服",
+    "entryDescription": "遇到問題？提交工單，我哋會盡快回覆",
+    "logUploadInProgress": "正在上傳日誌...",
+    "logUploadSuccess": "日誌上傳完成",
+    "logUploadFailed": "日誌上傳失敗",
+    "validation": {
+      "subjectRequired": "請輸入問題標題",
+      "contentRequired": "請輸入問題描述",
+      "subjectTooLong": "問題標題唔可以超過200個字符",
+      "contentTooLong": "問題描述唔可以超過5000個字符"
+    }
+  }
+}

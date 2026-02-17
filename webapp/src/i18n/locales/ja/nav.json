@@ -1,0 +1,49 @@
+{
+  "appBar": {
+    "refreshAuth": "認証を更新"
+  },
+  "navigation": {
+    "dashboard": "ダッシュボード",
+    "discover": "発見",
+    "account": "アカウント",
+    "devices": "デバイス",
+    "faq": "よくある質問",
+    "purchase": "購入",
+    "activate": "開通",
+    "invite": "招待",
+    "retailer": "販売代理",
+    "proHistory": "認証履歴",
+    "help": "ヘルプ"
+  },
+  "appBarConnector": {
+    "disconnecting": "切断中",
+    "connecting": "接続中",
+    "antiClickProtection": "連打防止：操作が頻繁すぎます",
+    "refreshDataFailed": "操作後のデータ更新に失敗しました：",
+    "connectionOperationFailed": "接続操作に失敗しました：",
+    "disconnectingTooltip": "切断中です...",
+    "connectingTooltip": "接続中です...",
+    "clickToDisconnect": "クリックして切断",
+    "clickToConnect": "クリックして接続開始",
+    "anonymous": "匿名",
+    "disconnect": "切断",
+    "connect": "接続",
+    "panel": "パネル",
+    "noNodeSelected": "まずノードを選択してから接続してください"
+  },
+  "appBarMembership": {
+    "trial": "試用",
+    "standard": "標準版",
+    "expired": "期限切れ",
+    "proTrial": "Pro体験",
+    "recharge": "チャージ",
+    "firstOrderPending": "初回購入待ち",
+    "unlimitedTrial": "無制限試用",
+    "completePurchase": "購入を完了"
+  },
+  "layout": {
+    "deviceInstall": "他のデバイスにインストール",
+    "troubleshooting": "問題診断",
+    "accountAndSettings": "アカウントと設定"
+  }
+}

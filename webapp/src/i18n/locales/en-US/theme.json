@@ -1,0 +1,9 @@
+{
+  "theme": {
+    "switchToLight": "Light",
+    "switchToDark": "Dark",
+    "light": "Light Mode",
+    "dark": "Dark Mode",
+    "system": "Follow System"
+  }
+}

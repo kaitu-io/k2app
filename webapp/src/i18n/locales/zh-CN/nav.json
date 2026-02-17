@@ -1,0 +1,49 @@
+{
+  "appBar": {
+    "refreshAuth": "刷新授权"
+  },
+  "navigation": {
+    "dashboard": "仪表板",
+    "discover": "发现",
+    "account": "账户",
+    "devices": "设备",
+    "faq": "常见问题",
+    "purchase": "购买",
+    "activate": "开通",
+    "invite": "邀请",
+    "retailer": "分销",
+    "proHistory": "授权历史",
+    "help": "帮助"
+  },
+  "appBarConnector": {
+    "disconnecting": "断开中",
+    "connecting": "连接中",
+    "antiClickProtection": "防连击保护：操作过于频繁",
+    "refreshDataFailed": "操作后刷新数据失败:",
+    "connectionOperationFailed": "连接操作失败:",
+    "disconnectingTooltip": "正在断开中...",
+    "connectingTooltip": "正在连接中...",
+    "clickToDisconnect": "点击断开连接",
+    "clickToConnect": "点击开始连接",
+    "anonymous": "匿名",
+    "disconnect": "断开",
+    "connect": "连接",
+    "panel": "面板",
+    "noNodeSelected": "请先选择一个节点后再连接"
+  },
+  "appBarMembership": {
+    "trial": "试用",
+    "standard": "标准版",
+    "expired": "已过期",
+    "proTrial": "Pro体验",
+    "recharge": "充值",
+    "firstOrderPending": "首单待完成",
+    "unlimitedTrial": "无限试用",
+    "completePurchase": "完成购买"
+  },
+  "layout": {
+    "deviceInstall": "其他设备安装",
+    "troubleshooting": "问题排查",
+    "accountAndSettings": "账号与设置"
+  }
+}

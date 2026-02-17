@@ -1,0 +1,25 @@
+{
+  "developer": {
+    "title": "開発者設定",
+    "warning": "この設定は開発者専用です。不適切な設定はアプリのパフォーマンスに影響を与える可能性があります。",
+    "sectionGeneral": "一般",
+    "vpnMode": "VPN モード",
+    "vpnModeDesc": "VPN 動作モードを選択",
+    "logLevel": "ログレベル",
+    "logLevelDesc": "ログ出力の詳細度を制御",
+    "sectionK2v4": "K2V4 プロトコル",
+    "pathTypeFilter": "トランスポートプロトコル",
+    "pathTypeFilterDesc": "マルチパスのトランスポートプロトコルを有効・無効にする",
+    "devModeInfo": "開発者モードが有効です。設定はアプリの再起動時にリセットされます。",
+    "mode": {
+      "tun": "TUN",
+      "socks5": "SOCKS5",
+      "tproxy": "TProxy"
+    },
+    "filter": {
+      "all": "すべて",
+      "quic": "QUIC",
+      "tcpWs": "TCP-WS"
+    }
+  }
+}

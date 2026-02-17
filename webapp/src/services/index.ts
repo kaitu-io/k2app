@@ -25,6 +25,10 @@ export type { K2ApiConfig, SResponse } from './k2api';
 
 export { webPlatform } from './web-platform';
 
+// ==================== Antiblock ====================
+
+export { resolveEntry, DEFAULT_ENTRY } from './antiblock';
+
 // ==================== Auth Service ====================
 
 export { authService, TOKEN_STORAGE_KEY, REFRESH_TOKEN_STORAGE_KEY } from './auth-service';

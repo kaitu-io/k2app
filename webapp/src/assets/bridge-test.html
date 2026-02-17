@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kaitu Bridge Test - Bidirectional Communication</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(255,255,255,0.1);
+            border-radius: 12px;
+            padding: 24px;
+            backdrop-filter: blur(10px);
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 28px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        .status {
+            background: rgba(255,255,255,0.15);
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 24px;
+        }
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        .status-value {
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        .section {
+            background: rgba(255,255,255,0.1);
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .section h2 {
+            margin-top: 0;
+            margin-bottom: 16px;
+            font-size: 18px;
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+            padding-bottom: 8px;
+        }
+        .buttons {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        button {
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+            color: white;
+            border: none;
+            padding: 12px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .log {
+            background: rgba(0,0,0,0.3);
+            padding: 16px;
+            border-radius: 8px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 12px;
+            line-height: 1.5;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .log-entry {
+            margin-bottom: 4px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            padding-bottom: 4px;
+        }
+        .log-timestamp {
+            color: #888;
+            margin-right: 8px;
+        }
+        .log-event {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        .log-native {
+            color: #FF9800;
+            font-weight: bold;
+        }
+        .log-error {
+            color: #f44336;
+            font-weight: bold;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid rgba(255,255,255,0.3);
+            background: rgba(255,255,255,0.1);
+            color: white;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        input::placeholder, textarea::placeholder {
+            color: rgba(255,255,255,0.6);
+        }
+        .auth-status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .auth-status.authenticated {
+            background: #4CAF50;
+            color: white;
+        }
+        .auth-status.not-authenticated {
+            background: #f44336;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌉 Kaitu Bridge Test - Bidirectional Communication</h1>
+        
+        <!-- Bridge Status -->
+        <div class="status">
+            <h2>Bridge Status</h2>
+            <div class="status-item">
+                <span>Bridge Available:</span>
+                <span class="status-value" id="bridge-status">❌ Not Available</span>
+            </div>
+            <div class="status-item">
+                <span>Platform:</span>
+                <span class="status-value" id="platform">Unknown</span>
+            </div>
+            <div class="status-item">
+                <span>Version:</span>
+                <span class="status-value" id="version">Unknown</span>
+            </div>
+            <div class="status-item">
+                <span>Auth Status:</span>
+                <span class="auth-status not-authenticated" id="auth-status">Not Authenticated</span>
+            </div>
+            <div class="status-item">
+                <span>Auth Token:</span>
+                <span class="status-value" id="auth-token">No Token</span>
+            </div>
+            <div class="status-item">
+                <span>Last Native Event:</span>
+                <span class="status-value" id="last-native-event">None</span>
+            </div>
+        </div>
+
+        <!-- Authentication API Testing -->
+        <div class="section">
+            <h2>🔐 Authentication API</h2>
+            <div class="buttons">
+                <button onclick="testIsAuthenticated()">Check Auth Status</button>
+                <button onclick="testLogin()">Request Login</button>
+                <button onclick="testLogout()">Request Logout</button>
+                <button onclick="testGetUserInfo()">Get User Info</button>
+            </div>
+        </div>
+
+        <!-- UI API Testing -->
+        <div class="section">
+            <h2>💬 UI API</h2>
+            <input type="text" id="toast-message" placeholder="Enter toast message" value="Hello from Web!">
+            <select id="toast-type">
+                <option value="info">Info</option>
+                <option value="success">Success</option>
+                <option value="warning">Warning</option>
+                <option value="error">Error</option>
+            </select>
+            <div class="buttons">
+                <button onclick="testShowToast()">Show Toast</button>
+                <button onclick="testShowAlert()">Show Alert</button>
+                <button onclick="testShowConfirm()">Show Confirm</button>
+                <button onclick="testSetTitle()">Set Title</button>
+            </div>
+        </div>
+
+        <!-- Storage API Testing -->
+        <div class="section">
+            <h2>💾 Storage API</h2>
+            <input type="text" id="storage-key" placeholder="Storage key" value="test_key">
+            <input type="text" id="storage-value" placeholder="Storage value" value="test_value">
+            <div class="buttons">
+                <button onclick="testStorageSet()">Set Storage</button>
+                <button onclick="testStorageGet()">Get Storage</button>
+                <button onclick="testStorageRemove()">Remove Storage</button>
+                <button onclick="testStorageClear()">Clear Storage</button>
+            </div>
+        </div>
+
+        <!-- Device API Testing -->
+        <div class="section">
+            <h2>📱 Device API</h2>
+            <div class="buttons">
+                <button onclick="testGetDeviceInfo()">Get Device Info</button>
+                <button onclick="testGetLocale()">Get Locale</button>
+                <button onclick="testIsOnline()">Check Online Status</button>
+                <button onclick="testCopyToClipboard()">Copy to Clipboard</button>
+                <button onclick="testReadFromClipboard()">Read from Clipboard</button>
+            </div>
+        </div>
+
+        <!-- Native Event Listeners -->
+        <div class="section">
+            <h2>📡 Native Event Monitoring (Bidirectional)</h2>
+            <p>This section shows events received from the Native app:</p>
+            <div class="buttons">
+                <button onclick="startAuthListener()">Start Auth Listener</button>
+                <button onclick="stopAuthListener()">Stop Auth Listener</button>
+                <button onclick="simulateAuthChange()">Simulate Auth Change</button>
+                <button onclick="clearEventLog()">Clear Event Log</button>
+            </div>
+            <div id="event-log" class="log">Waiting for native events...</div>
+        </div>
+
+        <!-- Test Log -->
+        <div class="section">
+            <h2>📊 Test Log</h2>
+            <button onclick="clearLog()">Clear Log</button>
+            <div id="log" class="log">Bridge test initialized. Checking for Kaitu bridge...</div>
+        </div>
+    </div>
+
+    <script>
+        // Global state
+        let authListener = null;
+        let bridgeAvailable = false;
+        let currentAuthState = false;
+
+        // Initialize bridge test
+        function initializeBridgeTest() {
+            log('🚀 Initializing Kaitu Bridge Test...');
+            
+            // Check if bridge is available
+            if (window.kaitu) {
+                bridgeAvailable = true;
+                log('✅ Kaitu bridge found!');
+                updateBridgeStatus();
+                
+                // Set up auth change listener
+                if (window.kaitu.auth && window.kaitu.auth.onAuthChange) {
+                    window.kaitu.auth.onAuthChange((isAuthenticated) => {
+                        log(`🔄 Auth state changed: ${isAuthenticated}`, 'native');
+                        currentAuthState = isAuthenticated;
+                        updateAuthStatus(isAuthenticated);
+                        logEvent('auth_state_changed', { isAuthenticated, source: 'native' });
+                    });
+                }
+                
+                // Set up native event handler for bidirectional communication
+                if (window.kaitu._handleNativeEvent) {
+                    log('📡 Native event handler found, bidirectional communication ready');
+                } else {
+                    log('⚠️ Native event handler not found, adding custom handler');
+                    // Add custom native event handler
+                    window.kaitu._handleNativeEvent = handleNativeEvent;
+                }
+                
+                // Initial auth status check
+                testIsAuthenticated();
+                
+            } else {
+                log('❌ Kaitu bridge not found. Make sure this page is loaded in a Kaitu WebView.');
+                updateBridgeStatus();
+            }
+            
+            // Set up storage monitoring for auth token
+            monitorAuthToken();
+        }
+
+        // Handle native events (bidirectional communication)
+        function handleNativeEvent(eventType, data) {
+            logEvent(`native_event_${eventType}`, data);
+            
+            switch (eventType) {
+                case 'auth_state_changed':
+                    log(`🔄 [Native] Auth state changed: ${data.isAuthenticated}`, 'native');
+                    currentAuthState = data.isAuthenticated;
+                    updateAuthStatus(data.isAuthenticated);
+                    
+                    if (data.token) {
+                        log(`🔑 [Native] Auth token received: ${data.token.substring(0, 20)}...`, 'native');
+                        localStorage.setItem('embed_auth_token', data.token);
+                        updateAuthToken(data.token);
+                    } else {
+                        log('🔑 [Native] Auth token removed', 'native');
+                        localStorage.removeItem('embed_auth_token');
+                        updateAuthToken(null);
+                    }
+                    
+                    // Auto-reload page with new token if authenticated
+                    if (data.isAuthenticated && data.token) {
+                        log('🔄 [Native] Auto-reloading page with new token in 2 seconds...', 'native');
+                        setTimeout(() => {
+                            location.reload();
+                        }, 2000);
+                    }
+                    break;
+                    
+                case 'token_updated':
+                    log(`🔑 [Native] Token updated: ${data.token ? data.token.substring(0, 20) + '...' : 'removed'}`, 'native');
+                    if (data.token) {
+                        localStorage.setItem('embed_auth_token', data.token);
+                        updateAuthToken(data.token);
+                    } else {
+                        localStorage.removeItem('embed_auth_token');
+                        updateAuthToken(null);
+                    }
+                    break;
+                    
+                default:
+                    log(`📨 [Native] Custom event: ${eventType}`, 'native');
+                    log(`📨 [Native] Event data: ${JSON.stringify(data)}`, 'native');
+                    break;
+            }
+        }
+
+        // Monitor auth token from localStorage
+        function monitorAuthToken() {
+            const checkToken = () => {
+                const token = localStorage.getItem('embed_auth_token');
+                updateAuthToken(token);
+            };
+            
+            // Initial check
+            checkToken();
+            
+            // Listen for storage changes
+            window.addEventListener('storage', (e) => {
+                if (e.key === 'embed_auth_token') {
+                    log(`💾 Auth token changed in localStorage: ${e.newValue ? e.newValue.substring(0, 20) + '...' : 'removed'}`);
+                    updateAuthToken(e.newValue);
+                }
+            });
+            
+            // Periodic check for same-window changes
+            setInterval(checkToken, 1000);
+        }
+
+        // Update bridge status display
+        function updateBridgeStatus() {
+            const statusEl = document.getElementById('bridge-status');
+            const platformEl = document.getElementById('platform');
+            const versionEl = document.getElementById('version');
+            
+            if (bridgeAvailable && window.kaitu) {
+                statusEl.textContent = '✅ Available';
+                statusEl.style.color = '#4CAF50';
+                platformEl.textContent = window.kaitu.platform || 'Unknown';
+                versionEl.textContent = window.kaitu.version || 'Unknown';
+            } else {
+                statusEl.textContent = '❌ Not Available';
+                statusEl.style.color = '#f44336';
+                platformEl.textContent = 'Unknown';
+                versionEl.textContent = 'Unknown';
+            }
+        }
+
+        // Update auth status display
+        function updateAuthStatus(isAuthenticated) {
+            const statusEl = document.getElementById('auth-status');
+            statusEl.textContent = isAuthenticated ? 'Authenticated' : 'Not Authenticated';
+            statusEl.className = `auth-status ${isAuthenticated ? 'authenticated' : 'not-authenticated'}`;
+            
+            // Update last native event
+            document.getElementById('last-native-event').textContent = 
+                `Auth Change: ${isAuthenticated} (${new Date().toLocaleTimeString()})`;
+        }
+
+        // Update auth token display
+        function updateAuthToken(token) {
+            const tokenEl = document.getElementById('auth-token');
+            if (token) {
+                tokenEl.textContent = token.substring(0, 30) + '...';
+                tokenEl.style.color = '#4CAF50';
+            } else {
+                tokenEl.textContent = 'No Token';
+                tokenEl.style.color = '#f44336';
+            }
+        }
+
+        // Logging functions
+        function log(message, type = 'info') {
+            const logEl = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const typeClass = type === 'error' ? 'log-error' : 
+                             type === 'native' ? 'log-native' : 
+                             type === 'event' ? 'log-event' : '';
+            
+            logEl.innerHTML += `<div class="log-entry"><span class="log-timestamp">[${timestamp}]</span><span class="${typeClass}">${message}</span></div>`;
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function logEvent(eventType, data) {
+            const eventLogEl = document.getElementById('event-log');
+            const timestamp = new Date().toLocaleTimeString();
+            
+            eventLogEl.innerHTML += `<div class="log-entry"><span class="log-timestamp">[${timestamp}]</span><span class="log-event">${eventType}</span>: ${JSON.stringify(data, null, 2)}</div>`;
+            eventLogEl.scrollTop = eventLogEl.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        function clearEventLog() {
+            document.getElementById('event-log').innerHTML = 'Event log cleared.';
+        }
+
+        // Auth API Tests
+        async function testIsAuthenticated() {
+            try {
+                const result = await window.kaitu.auth.isAuthenticated();
+                log(`🔐 Is Authenticated: ${result}`);
+                currentAuthState = result;
+                updateAuthStatus(result);
+                return result;
+            } catch (error) {
+                log(`❌ Auth check failed: ${error}`, 'error');
+            }
+        }
+
+        async function testLogin() {
+            try {
+                log('🔑 Requesting login...');
+                const result = await window.kaitu.auth.login();
+                log(`🔑 Login result: ${result}`);
+                return result;
+            } catch (error) {
+                log(`❌ Login failed: ${error}`, 'error');
+            }
+        }
+
+        async function testLogout() {
+            try {
+                log('🚪 Requesting logout...');
+                const result = await window.kaitu.auth.logout();
+                log(`🚪 Logout result: ${result}`);
+                return result;
+            } catch (error) {
+                log(`❌ Logout failed: ${error}`, 'error');
+            }
+        }
+
+        async function testGetUserInfo() {
+            try {
+                const userInfo = await window.kaitu.auth.getUserInfo();
+                log(`👤 User Info: ${JSON.stringify(userInfo)}`);
+                return userInfo;
+            } catch (error) {
+                log(`❌ Get user info failed: ${error}`, 'error');
+            }
+        }
+
+        // UI API Tests
+        async function testShowToast() {
+            const message = document.getElementById('toast-message').value || 'Test toast';
+            const type = document.getElementById('toast-type').value;
+            try {
+                await window.kaitu.ui.showToast(message, type);
+                log(`💬 Toast shown: ${message} (${type})`);
+            } catch (error) {
+                log(`❌ Toast failed: ${error}`, 'error');
+            }
+        }
+
+        async function testShowAlert() {
+            try {
+                await window.kaitu.ui.showAlert('Test Alert', 'This is a test alert from the web bridge!');
+                log(`🚨 Alert shown`);
+            } catch (error) {
+                log(`❌ Alert failed: ${error}`, 'error');
+            }
+        }
+
+        async function testShowConfirm() {
+            try {
+                const result = await window.kaitu.ui.showConfirm('Test Confirm', 'Do you want to proceed?');
+                log(`❓ Confirm result: ${result}`);
+            } catch (error) {
+                log(`❌ Confirm failed: ${error}`, 'error');
+            }
+        }
+
+        async function testSetTitle() {
+            try {
+                await window.kaitu.ui.setTitle('Bridge Test - Title Updated!');
+                log(`📝 Title set`);
+            } catch (error) {
+                log(`❌ Set title failed: ${error}`, 'error');
+            }
+        }
+
+        // Storage API Tests
+        async function testStorageSet() {
+            const key = document.getElementById('storage-key').value;
+            const value = document.getElementById('storage-value').value;
+            try {
+                await window.kaitu.storage.set(key, value);
+                log(`💾 Storage set: ${key} = ${value}`);
+            } catch (error) {
+                log(`❌ Storage set failed: ${error}`, 'error');
+            }
+        }
+
+        async function testStorageGet() {
+            const key = document.getElementById('storage-key').value;
+            try {
+                const value = await window.kaitu.storage.get(key);
+                log(`💾 Storage get: ${key} = ${value}`);
+            } catch (error) {
+                log(`❌ Storage get failed: ${error}`, 'error');
+            }
+        }
+
+        async function testStorageRemove() {
+            const key = document.getElementById('storage-key').value;
+            try {
+                await window.kaitu.storage.remove(key);
+                log(`💾 Storage removed: ${key}`);
+            } catch (error) {
+                log(`❌ Storage remove failed: ${error}`, 'error');
+            }
+        }
+
+        async function testStorageClear() {
+            try {
+                await window.kaitu.storage.clear();
+                log(`💾 Storage cleared`);
+            } catch (error) {
+                log(`❌ Storage clear failed: ${error}`, 'error');
+            }
+        }
+
+        // Device API Tests
+        async function testGetDeviceInfo() {
+            try {
+                const deviceInfo = await window.kaitu.device.getInfo();
+                log(`📱 Device Info: ${JSON.stringify(deviceInfo)}`);
+            } catch (error) {
+                log(`❌ Get device info failed: ${error}`, 'error');
+            }
+        }
+
+        async function testGetLocale() {
+            try {
+                const locale = await window.kaitu.device.getLocale();
+                log(`🌍 Locale: ${locale}`);
+            } catch (error) {
+                log(`❌ Get locale failed: ${error}`, 'error');
+            }
+        }
+
+        function testIsOnline() {
+            try {
+                const isOnline = window.kaitu.device.isOnline();
+                log(`🌐 Is Online: ${isOnline}`);
+            } catch (error) {
+                log(`❌ Check online status failed: ${error}`, 'error');
+            }
+        }
+
+        async function testCopyToClipboard() {
+            try {
+                await window.kaitu.device.copyToClipboard('Hello from Kaitu Bridge Test!');
+                log(`📋 Text copied to clipboard`);
+            } catch (error) {
+                log(`❌ Copy to clipboard failed: ${error}`, 'error');
+            }
+        }
+
+        async function testReadFromClipboard() {
+            try {
+                const text = await window.kaitu.device.readFromClipboard();
+                log(`📋 Clipboard text: ${text}`);
+            } catch (error) {
+                log(`❌ Read from clipboard failed: ${error}`, 'error');
+            }
+        }
+
+        // Event listener functions
+        function startAuthListener() {
+            if (authListener) {
+                log('📡 Auth listener already running');
+                return;
+            }
+            
+            if (!window.kaitu?.auth?.onAuthChange) {
+                log('❌ Auth change listener not available', 'error');
+                return;
+            }
+            
+            authListener = window.kaitu.auth.onAuthChange((isAuthenticated) => {
+                log(`📡 Auth listener: ${isAuthenticated}`, 'event');
+                logEvent('auth_change', { isAuthenticated, timestamp: Date.now() });
+            });
+            
+            log('📡 Auth listener started');
+        }
+
+        function stopAuthListener() {
+            if (!authListener) {
+                log('📡 No auth listener to stop');
+                return;
+            }
+            
+            // If the listener returns a cleanup function
+            if (typeof authListener === 'function') {
+                authListener();
+            }
+            
+            authListener = null;
+            log('📡 Auth listener stopped');
+        }
+
+        function simulateAuthChange() {
+            // Simulate receiving a native event
+            const mockAuthData = {
+                isAuthenticated: !currentAuthState,
+                token: !currentAuthState ? `mock_token_${Date.now()}` : null,
+                timestamp: Date.now()
+            };
+            
+            log(`🎭 Simulating auth state change: ${JSON.stringify(mockAuthData)}`, 'event');
+            
+            if (window.kaitu._handleNativeEvent) {
+                window.kaitu._handleNativeEvent('auth_state_changed', mockAuthData);
+            } else {
+                handleNativeEvent('auth_state_changed', mockAuthData);
+            }
+        }
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', initializeBridgeTest);
+        
+        // Also initialize immediately in case DOMContentLoaded already fired
+        if (document.readyState === 'loading') {
+            // Still loading, wait for DOMContentLoaded
+        } else {
+            // Already loaded
+            initializeBridgeTest();
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "theme": {
+    "switchToLight": "ライト",
+    "switchToDark": "ダーク",
+    "light": "ライトモード",
+    "dark": "ダークモード",
+    "system": "システムに従う"
+  }
+}

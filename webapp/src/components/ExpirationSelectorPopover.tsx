@@ -1,52 +1,79 @@
+import { useState, useEffect } from 'react';
+import {
+  Popover,
+  Box,
+  Typography,
+  RadioGroup,
+  FormControlLabel,
+  Radio,
+  Alert,
+} from '@mui/material';
 import { useTranslation } from 'react-i18next';
 
-const EXPIRATION_OPTIONS = [
-  { value: '1h', labelKey: 'expirationOptions.1h' },
-  { value: '24h', labelKey: 'expirationOptions.24h' },
-  { value: '7d', labelKey: 'expirationOptions.7d' },
-  { value: '30d', labelKey: 'expirationOptions.30d' },
-  { value: 'never', labelKey: 'expirationOptions.never' },
-] as const;
-
 interface ExpirationSelectorPopoverProps {
+  anchorEl: HTMLElement | null;
   open: boolean;
-  selected?: string;
-  onSelect: (value: string) => void;
   onClose: () => void;
+  onSelect: (days: number) => void;
+  defaultDays?: number;
 }
 
-export function ExpirationSelectorPopover({
+export default function ExpirationSelectorPopover({
+  anchorEl,
   open,
-  selected,
-  onSelect,
   onClose,
+  onSelect,
+  defaultDays = 7,
 }: ExpirationSelectorPopoverProps) {
-  const { t } = useTranslation('invite');
+  const { t } = useTranslation();
+  const [selectedDays, setSelectedDays] = useState(defaultDays);
 
-  if (!open) return null;
+  useEffect(() => {
+    if (open) setSelectedDays(defaultDays);
+  }, [open, defaultDays]);
 
-  const handleSelect = (value: string) => {
-    onSelect(value);
+  const handleSelect = (days: number) => {
+    setSelectedDays(days);
+    onSelect(days);
     onClose();
   };
 
+  const options = [
+    { label: t('invite:invite.expiration.1day'), days: 1 },
+    { label: t('invite:invite.expiration.7days'), days: 7 },
+    { label: t('invite:invite.expiration.30days'), days: 30 },
+    { label: t('invite:invite.expiration.365days'), days: 365 },
+  ];
+
   return (
-    <div data-testid="expiration-popover" className="bg-[--color-card-bg] rounded-lg shadow-lg p-3 space-y-1">
-      <p className="text-sm font-medium mb-2">{t('expiration')}</p>
-      {EXPIRATION_OPTIONS.map((option) => (
-        <button
-          key={option.value}
-          data-testid={`expiration-option-${option.value}`}
-          className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
-            selected === option.value
-              ? 'bg-[--color-primary] text-white'
-              : 'hover:bg-gray-100'
-          }`}
-          onClick={() => handleSelect(option.value)}
-        >
-          {t(option.labelKey)}
-        </button>
-      ))}
-    </div>
+    <Popover
+      open={open}
+      anchorEl={anchorEl}
+      onClose={onClose}
+      anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      transformOrigin={{ vertical: 'top', horizontal: 'center' }}
+    >
+      <Box sx={{ p: 2, maxWidth: 320 }}>
+        <Typography variant="subtitle2" sx={{ mb: 1.5, fontWeight: 600 }}>
+          {t('invite:invite.selectExpiration')}
+        </Typography>
+
+        <Alert severity="info" variant="outlined" sx={{ mb: 2, fontSize: '0.8rem' }}>
+          {t('invite:invite.expirationSecurityHint')}
+        </Alert>
+
+        <RadioGroup value={selectedDays}>
+          {options.map((option) => (
+            <FormControlLabel
+              key={option.days}
+              value={option.days}
+              control={<Radio />}
+              label={option.label}
+              onChange={() => handleSelect(option.days)}
+            />
+          ))}
+        </RadioGroup>
+      </Box>
+    </Popover>
   );
 }

@@ -1,0 +1,58 @@
+{
+  "faq": {
+    "title": "FAQ"
+  },
+  "ticket": {
+    "title": "Submit Ticket",
+    "description": "Describe the issue you encountered, and our support team will reply to you via email as soon as possible.",
+    "feedbackTitle": "Feedback",
+    "feedbackDescription": "Logs are being uploaded. Please describe the issue you encountered. The logs will help us locate the problem faster.",
+    "subjectLabel": "Issue Title",
+    "subjectPlaceholder": "Briefly describe the issue you encountered",
+    "contentLabel": "Issue Description",
+    "contentPlaceholder": "Please describe the issue in detail, including operation steps, error messages, etc., which will help us resolve the issue faster.",
+    "submitButton": "Submit Ticket",
+    "submitting": "Submitting...",
+    "submitSuccess": "Ticket submitted successfully",
+    "submitSuccessTitle": "Ticket Submitted Successfully!",
+    "submitFailed": "Failed to submit ticket, please try again later",
+    "nextStepHint": "Please check your email",
+    "emailReplyHint": "Our support team will communicate with you via email, please watch for replies in your inbox.",
+    "howItWorks": "Ticket Processing Flow",
+    "howItWorksDescription": "After submission, the system will send the ticket to the support email and send a copy to your registered email. Subsequent communication will be through email, please ensure you can receive email notifications.",
+    "entryTitle": "Contact Support",
+    "entryDescription": "Encountered a problem? Submit a ticket, we'll reply soon",
+    "logUploadInProgress": "Uploading logs...",
+    "logUploadSuccess": "Logs uploaded successfully",
+    "logUploadFailed": "Failed to upload logs",
+    "validation": {
+      "subjectRequired": "Please enter issue title",
+      "contentRequired": "Please enter issue description",
+      "subjectTooLong": "Issue title cannot exceed 200 characters",
+      "contentTooLong": "Issue description cannot exceed 5000 characters"
+    }
+  },
+  "issues": {
+    "entryTitle": "Community Feedback",
+    "entryDescription": "View issues and official replies from other users",
+    "listTitle": "Issues",
+    "detailTitle": "Issue Details",
+    "stateOpen": "Open",
+    "stateClosed": "Closed",
+    "officialBadge": "Official",
+    "commentCount": "{{count}} replies",
+    "noComments": "No replies yet",
+    "loadMore": "Load More",
+    "loading": "Loading...",
+    "empty": "No issues",
+    "emptyHint": "No issues have been submitted yet",
+    "error": "Failed to load, please retry",
+    "commentsTitle": "Replies",
+    "addComment": "Add Reply",
+    "commentPlaceholder": "Enter your reply...",
+    "submitComment": "Send",
+    "submittingComment": "Sending...",
+    "commentSuccess": "Reply submitted",
+    "commentFailed": "Failed to submit reply"
+  }
+}

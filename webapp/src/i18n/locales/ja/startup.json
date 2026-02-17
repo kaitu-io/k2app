@@ -1,0 +1,77 @@
+{
+  "startup": {
+    "activeUsers": "アクティブユーザー",
+    "certified": "ISO 27001認証",
+    "uptime": "可用性",
+    "authSuccess": "認証に成功しました、ユーザーログイン状態が更新されました",
+    "deviceCanDirectLogin": "デバイスは直接ログインできます",
+    "deviceCannotDirectLogin": "デバイスは直接ログインできません",
+    "checkDeviceLoginFailed": "デバイスログイン状態の確認に失敗しました",
+    "deviceLoginFailed": "デバイスログインに失敗しました",
+    "deviceLoginFailedRetry": "デバイスログインに失敗しました、再試行してください",
+    "deviceLoginSuccess": "デバイス直接ログインに成功しました",
+    "pleaseEnterInviteCode": "招待コードを入力してください",
+    "registrationFailed": "登録に失敗しました",
+    "registrationFailedRetry": "登録に失敗しました、再試行してください",
+    "newDevice": "新しいデバイス",
+    "freeDeviceRegistrationFailed": "無料デバイス登録に失敗しました",
+    "inviteCodeIncorrect": "招待コードが正しくありません",
+    "inviteCodeInvalidOrExpired": "招待コードが無効または期限切れです",
+    "getInviteCodeInfoFailed": "招待コード情報の取得に失敗しました",
+    "haveProAccount": "既にProアカウントをお持ちですか？",
+    "loginProAccountDesc": "Proアカウントでログインして、完全な機能をご利用ください",
+    "deviceAlreadyRegistered": "このデバイスは既にアカウントが登録されています",
+    "deviceReady": "デバイスは直接ログインできます",
+    "deviceReadyDesc": "デバイスは既に登録されており、直接ログインして使用できます",
+    "orEmailLogin": "またはメールでログイン",
+    "experienceProFeatures": "Pro機能を体験",
+    "enterInviteCodeDesc": "招待コードを入力して、今すぐPro機能を体験",
+    "inviteCode": "招待コード",
+    "enterInviteCodePlaceholder": "招待コードを入力してください（任意）",
+    "youHaveGoodFriend": "🎁 素晴らしい友達がいますね😼",
+    "enjoyNow": "今すぐ楽しむ",
+    "days": "日",
+    "pro": "Pro",
+    "extraBonus": "追加プレゼント！",
+    "experience": "{{days}}日体験",
+    "purchaseBonus": "購入で{{purchaseDays}}+{{downloadDays}}日プレゼント",
+    "buyNowExtraBonus": "今購入すると、{{days}}日の追加プレゼント",
+    "buyNowEnjoyAllPro": "購入してすべてのPro特典を楽しむ",
+    "experienceOnly": "{{days}}日体験のみ",
+    "experienceNow": "今すぐ体験",
+    "or": "または",
+    "noAccountNoInviteCode": "アカウントも招待コードもありませんか？",
+    "processing": "処理中...",
+    "registerNewAccount": "新しいアカウントを直接登録"
+  },
+  "serviceStatus": {
+    "disconnected": "サービス接続が切断されました、再接続中..."
+  },
+  "upgradeRequired": {
+    "title": "アプリを更新してください",
+    "description": "現在のバージョンは古くなっています。使用を続けるには最新バージョンをダウンロードしてください。",
+    "downloadButton": "ダウンロードに進む"
+  },
+  "forceUpgrade": {
+    "title": "バージョンが古すぎます、更新が必要です",
+    "description": "現在のアプリバージョン ({{currentVersion}}) はサポートされなくなりました。続行するにはバージョン {{minVersion}} 以上に更新してください。",
+    "downloadButton": "今すぐ更新"
+  },
+  "app": {
+    "slogan": "安全で便利なネットワークプロキシサービス",
+    "error": "エラー",
+    "updateNow": "今すぐ更新",
+    "readyToInstall": "のインストール準備ができました",
+    "hoverForDetails": "詳細はホバー",
+    "releaseNotes": "リリースノート",
+    "newVersionAvailable": "新しいバージョン{{version}}が利用可能です！",
+    "updating": "更新中",
+    "downloadingUpdate": "更新をダウンロードしてインストール中... {{progress}}%",
+    "errorBoundary": {
+      "title": "アプリエラーが発生しました",
+      "description": "エラー情報は自動的に報告されました。できるだけ早く修正します。",
+      "details": "エラーの詳細",
+      "retry": "再試行"
+    }
+  }
+}

@@ -1,0 +1,136 @@
+{
+  "status": {
+    "stopped": "停止",
+    "connecting": "接続中...",
+    "connected": "接続済み",
+    "reconnecting": "再接続中...",
+    "disconnecting": "切断中...",
+    "disconnected": "未接続",
+    "error": "接続失敗、再試行中...",
+    "failed": "接続失敗",
+    "offline": "オフライン",
+    "online": "オンライン",
+    "active": "アクティブ",
+    "inactive": "非アクティブ",
+    "enabled": "有効",
+    "disabled": "無効",
+    "clickToStop": "クリックして切断",
+    "reconnectingToServer": "サーバーに再接続中...",
+    "waitingForNetwork": "ネットワーク接続を待機中..."
+  },
+  "common": {
+    "justNow": "たった今",
+    "back": "戻る",
+    "cancel": "キャンセル",
+    "add": "追加",
+    "adding": "追加中...",
+    "ok": "確認",
+    "save": "保存",
+    "delete": "削除",
+    "copy": "コピー",
+    "close": "閉じる",
+    "loading": "読み込み中...",
+    "processing": "処理中...",
+    "retry": "再試行",
+    "download": "ダウンロード",
+    "error": "エラー",
+    "refresh": "更新",
+    "and": "と",
+    "success": "成功",
+    "loadFailed": "読み込み失敗",
+    "notFound": "リソースが存在しません",
+    "serverError": "サーバーエラー",
+    "unknownError": "不明なエラー",
+    "later": "後で",
+    "login": "ログイン",
+    "viewDetails": "詳細を見る",
+    "experimental": "実験的"
+  },
+  "errors": {
+    "service": {
+      "serviceNotFound": "サービスファイルが存在しません、アプリを再インストールしてください",
+      "authRequired": "サービスをインストールするには管理者権限が必要です",
+      "installFailed": "サービスのインストールに失敗しました",
+      "connectionFailed": "サービスに接続できません"
+    },
+    "network": {
+      "timeout": "ネットワークリクエストがタイムアウトしました、ネットワーク接続を確認してください",
+      "unreachable": "ネットワークに到達できません、ネットワーク接続を確認してください",
+      "reset": "ネットワーク接続が中断されました、ネットワーク状態を確認してください",
+      "dns": "DNS解決に失敗しました、ネットワーク設定を確認してください",
+      "tls": "セキュア接続に失敗しました、ネットワーク環境を確認してください",
+      "refused": "サーバーに接続できません、後でもう一度お試しください"
+    },
+    "server": {
+      "unavailable": "サーバーが利用できません、後でもう一度お試しください",
+      "overload": "サーバーが混雑しています、後でもう一度お試しください",
+      "maintenance": "サーバーメンテナンス中です、後でもう一度お試しください",
+      "internal": "サーバー内部エラー、後でもう一度お試しください",
+      "notImplemented": "この機能はまだ利用できません"
+    },
+    "client": {
+      "badRequest": "リクエストパラメータエラー",
+      "unauthorized": "まずログインしてください",
+      "forbidden": "この操作を実行する権限がありません",
+      "notFound": "リクエストされたリソースが存在しません"
+    },
+    "vpn": {
+      "authFailed": "ログインが無効になりました、再度ログインしてください",
+      "membershipExpired": "会員資格が期限切れです、更新してください",
+      "stopFailed": "VPNの停止に失敗しました、再試行してください",
+      "startFailed": "VPNの起動に失敗しました、ネットワークを確認してください",
+      "reconnectFailed": "VPNの再接続に失敗しました、手動で再接続してください",
+      "timeout": "VPN操作がタイムアウトしました、再試行してください",
+      "connectionFatal": "接続に失敗しました、ネットワークを確認するかサーバーを変更してください",
+      "allAddrsFailed": "すべてのサーバーへの接続に失敗しました、後でもう一度お試しください"
+    },
+    "installCancelled": "インストールがキャンセルされました",
+    "unknown": "不明なエラー、後でもう一度お試しください",
+    "unknownError": "不明なエラー"
+  },
+  "brand": {
+    "name": "Kaitu",
+    "slogan": "世界のネットワーク、ワンクリックで直結",
+    "subtitle": "エンタープライズ級セキュアトンネル、世界の隅々をつなぐ"
+  },
+  "features": {
+    "fastConnect": "高速接続",
+    "fastConnectDesc": "スマートルーティング最適化、レイテンシー80%削減",
+    "security": "エンタープライズ級暗号化",
+    "securityDesc": "軍事グレードAES-256暗号化、データセキュリティを保護",
+    "global": "グローバルノード",
+    "globalDesc": "50か国以上、200以上の優良ノードをカバー",
+    "multiDevice": "複数デバイスサポート",
+    "multiDeviceDesc": "1つのアカウント、全プラットフォーム対応"
+  },
+  "messages": {
+    "sendVerificationSuccess": "認証メールの送信に成功しました",
+    "sendVerificationFailed": "認証メールの送信に失敗しました",
+    "logoutSuccess": "ログアウトしました",
+    "logoutFailed": "ログアウトに失敗しました",
+    "copySuccess": "コピーに成功しました",
+    "copyFailed": "コピーに失敗しました",
+    "saveSuccess": "保存に成功しました",
+    "saveFailed": "保存に失敗しました",
+    "deleteSuccess": "削除に成功しました",
+    "deleteFailed": "削除に失敗しました",
+    "serviceInstalling": "サービスをサイレントインストール中、お待ちください...",
+    "serviceInstallSuccess": "サービスのインストールに成功しました！",
+    "serviceInstallFailedAuth": "サービスをインストールするには管理者権限が必要です。UACダイアログで「はい」をクリックしてください",
+    "updateSuccess": "更新に成功しました",
+    "updateFailed": "更新に失敗しました",
+    "networkError": "ネットワークエラー",
+    "serverError": "サーバーエラー",
+    "unknownError": "不明なエラー"
+  },
+  "loadingAndEmpty": {
+    "noHistoryTitle": "履歴レコードがありません",
+    "noHistoryDescription": "まだ支払いと認証の履歴がありません。会員特典を体験してください！",
+    "noPlansTitle": "プラン情報がありません",
+    "noPlansDescription": "プランを読み込み中か、一時的に利用可能なプランがありません。後でもう一度お試しください",
+    "noInviteCodesTitle": "招待コードがありません",
+    "noInviteCodesDescription": "まだ招待コードを作成していません。専用の招待コードを作成して友達と共有しましょう！",
+    "noDevicesTitle": "デバイスがありません",
+    "noDevicesDescription": "ログインしているデバイスはまだありません"
+  }
+}

@@ -1,136 +1,190 @@
-import { useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { cloudApi } from '../api/cloud';
-import { MembershipGuard } from '../components/MembershipGuard';
+import React, { useState, useRef, useEffect } from "react";
+import {
+  Box,
+  Typography,
+  TextField,
+  Button,
+  Stack,
+  Alert,
+} from "@mui/material";
+import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 
-function UpdateLoginEmailForm() {
-  const { t } = useTranslation('settings');
-  const [step, setStep] = useState<1 | 2>(1);
-  const [email, setEmail] = useState('');
-  const [code, setCode] = useState('');
-  const [error, setError] = useState<string | null>(null);
+import EmailTextField from "../components/EmailTextField";
+import BackButton from "../components/BackButton";
+import { k2api } from '../services/k2api';
+import { delayedFocus } from '../utils/ui';
+
+export default function UpdateLoginEmail() {
+  const navigate = useNavigate();
+  const { t } = useTranslation();
+  const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [countdown, setCountdown] = useState(0);
   const [success, setSuccess] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
 
+  // Ref for delayed focus
+  const emailInputRef = useRef<HTMLDivElement>(null);
+
+  // Delayed focus on mount
+  useEffect(() => {
+    const cancel = delayedFocus(
+      () => emailInputRef.current?.querySelector('input') as HTMLInputElement | null,
+      100
+    );
+    return cancel;
+  }, []);
+
+  // 发送验证码
   const handleSendCode = async () => {
-    setError(null);
-    setIsLoading(true);
-    try {
-      await cloudApi.sendEmailCode(email);
-      setStep(2);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to send code');
-    } finally {
-      setIsLoading(false);
+    if (!email) {
+      setError(t('auth:updateEmail.pleaseEnterEmail'));
+      return;
     }
-  };
-
-  const handleSubmit = async () => {
-    setError(null);
-    setIsLoading(true);
+    setError("");
+    setSending(true);
     try {
-      await cloudApi.updateEmail(email, code);
+      await k2api().exec('api_request', {
+        method: 'POST',
+        path: '/api/user/email/send-bind-verification',
+        body: { email },
+      });
       setSuccess(true);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to update email');
+      setCountdown(60);
+      const timer = setInterval(() => {
+        setCountdown(prev => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } catch (err) {
+      setError(t('auth:updateEmail.sendCodeFailed'));
     } finally {
-      setIsLoading(false);
+      setSending(false);
+    }
+  };
+
+  // 提交邮箱+验证码
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      await k2api().exec('api_request', {
+        method: 'POST',
+        path: '/api/user/email/update-email',
+        body: { email, verificationCode: code },
+      });
+      setSuccess(true);
+      navigate("/account", { replace: true });
+    } catch (err) {
+      setError(t('auth:updateEmail.setEmailFailed'));
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="p-4 space-y-6">
-      <h1 className="text-xl font-semibold">{t('updateEmail.title')}</h1>
-
-      {success && (
-        <div className="p-3 rounded-lg bg-success-bg text-success text-sm">
-          {t('updateEmail.success')}
-        </div>
-      )}
-
-      {error && (
-        <div className="p-3 rounded-lg bg-error-bg text-error text-sm">
-          {error}
-        </div>
-      )}
-
-      {/* Step indicator */}
-      <div className="flex items-center gap-2 text-sm">
-        <span className={step === 1 ? 'text-[--color-primary] font-bold' : 'text-text-secondary'}>
-          {t('updateEmail.step1')}
-        </span>
-        <span className="text-text-disabled">/</span>
-        <span className={step === 2 ? 'text-[--color-primary] font-bold' : 'text-text-secondary'}>
-          {t('updateEmail.step2')}
-        </span>
-      </div>
-
-      {step === 1 && (
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1 text-text-secondary">
-              {t('updateEmail.newEmail')}
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder={t('updateEmail.emailPlaceholder')}
-              className="w-full rounded-lg border border-card-border bg-bg-paper text-sm text-text-primary px-3 py-2.5 outline-none"
-            />
-          </div>
-          <button
-            onClick={handleSendCode}
-            disabled={isLoading || !email}
-            className="w-full rounded-lg bg-primary text-white font-bold py-3.5 disabled:opacity-50"
-          >
-            {t('updateEmail.sendCode')}
-          </button>
-        </div>
-      )}
-
-      {step === 2 && (
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1 text-text-secondary">
-              {t('updateEmail.newEmail')}
-            </label>
-            <input
-              type="email"
-              value={email}
-              readOnly
-              className="w-full rounded-lg border border-card-border bg-bg-paper text-sm text-text-disabled px-3 py-2.5 outline-none"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1 text-text-secondary">
-              {t('updateEmail.code')}
-            </label>
-            <input
-              type="text"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              placeholder={t('updateEmail.codePlaceholder')}
-              className="w-full rounded-lg border border-card-border bg-bg-paper text-sm text-text-primary px-3 py-2.5 outline-none"
-            />
-          </div>
-          <button
-            onClick={handleSubmit}
-            disabled={isLoading || !code}
-            className="w-full rounded-lg bg-primary text-white font-bold py-3.5 disabled:opacity-50"
-          >
-            {t('updateEmail.submit')}
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function UpdateLoginEmail() {
-  return (
-    <MembershipGuard>
-      <UpdateLoginEmailForm />
-    </MembershipGuard>
+    <Box sx={{
+      width: "100%",
+      py: 0.5,
+      backgroundColor: "transparent",
+      position: "relative"
+    }}>
+      <BackButton to="/account" />
+      <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5, px: 1, pt: 7 }}>
+        <Typography variant="h6" sx={{ flex: 1, fontWeight: 600 }} component="span">
+          {t('auth:updateEmail.title')}
+        </Typography>
+      </Box>
+      <Box sx={{ width: "100%", bgcolor: 'background.paper', p: 2, borderRadius: 2 }}>
+        <form onSubmit={handleSubmit}>
+          <Box sx={{ p: 0 }}>
+            <Stack spacing={2}>
+              {error && (
+                <Alert severity="error" onClose={() => setError("")}>{error}</Alert>
+              )}
+              {success && !loading && (
+                <Alert severity="success">
+                  {t('auth:updateEmail.codeSentSuccess')}
+                  <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
+                    {t('auth:auth.checkSpamFolder')}
+                  </Typography>
+                </Alert>
+              )}
+              <EmailTextField
+                ref={emailInputRef}
+                label={t('auth:updateEmail.emailLabel')}
+                value={email}
+                onChange={setEmail}
+                required
+                fullWidth
+                placeholder={t('auth:updateEmail.emailPlaceholder')}
+                disabled={loading}
+                size="small"
+              />
+              <Box sx={{ display: 'flex', gap: 2 }}>
+                <TextField
+                  label={t('auth:updateEmail.verificationCodeLabel')}
+                  value={code}
+                  onChange={e => setCode(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && !loading && email && code) {
+                      handleSubmit(e as any);
+                    }
+                  }}
+                  required
+                  fullWidth
+                  placeholder={t('auth:updateEmail.verificationCodePlaceholder')}
+                  disabled={loading}
+                  size="small"
+                  inputProps={{
+                    autoCapitalize: "none",
+                    autoCorrect: "off",
+                    autoComplete: "one-time-code",
+                    spellCheck: false,
+                    inputMode: "numeric",
+                    pattern: "[0-9]*",
+                  }}
+                />
+                <Button
+                  variant="outlined"
+                  onClick={handleSendCode}
+                  disabled={sending || countdown > 0 || !email}
+                  sx={{ minWidth: 120 }}
+                  size="small"
+                >
+                  {countdown > 0 ? t('auth:updateEmail.retryAfter', { seconds: countdown }) : t('auth:updateEmail.sendCode')}
+                </Button>
+              </Box>
+              <Box sx={{ display: "flex", gap: 2, justifyContent: "flex-end" }}>
+                <Button
+                  variant="outlined"
+                  onClick={() => navigate("/account")}
+                  disabled={loading}
+                  size="small"
+                >
+                  {t('common:common.cancel')}
+                </Button>
+                <Button
+                  type="submit"
+                  variant="contained"
+                  disabled={loading || !email || !code}
+                  size="small"
+                >
+                  {loading ? t('auth:updateEmail.submitting') : t('auth:updateEmail.confirmSetting')}
+                </Button>
+              </Box>
+            </Stack>
+          </Box>
+        </form>
+      </Box>
+    </Box>
   );
 }

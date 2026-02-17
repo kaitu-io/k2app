@@ -1,0 +1,11 @@
+{
+  "source": "zh-CN",
+  "targets": [
+    "en-AU",
+    "en-GB",
+    "en-US",
+    "ja",
+    "zh-HK",
+    "zh-TW"
+  ]
+}

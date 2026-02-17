@@ -1,0 +1,25 @@
+{
+  "developer": {
+    "title": "开发者设置",
+    "warning": "此设置仅供开发者使用。错误的设置可能会影响应用性能。",
+    "sectionGeneral": "常规",
+    "vpnMode": "VPN 模式",
+    "vpnModeDesc": "选择 VPN 运行模式",
+    "logLevel": "日志级别",
+    "logLevelDesc": "控制日志输出的详细程度",
+    "sectionK2v4": "K2V4 协议",
+    "pathTypeFilter": "传输协议",
+    "pathTypeFilterDesc": "启用或禁用多路径传输协议",
+    "devModeInfo": "开发者模式已激活。设置将在应用重启后重置。",
+    "mode": {
+      "tun": "TUN",
+      "socks5": "SOCKS5",
+      "tproxy": "TProxy"
+    },
+    "filter": {
+      "all": "全部",
+      "quic": "QUIC",
+      "tcpWs": "TCP-WS"
+    }
+  }
+}

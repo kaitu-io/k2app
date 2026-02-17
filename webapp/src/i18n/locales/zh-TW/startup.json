@@ -1,0 +1,77 @@
+{
+  "startup": {
+    "activeUsers": "活躍使用者",
+    "certified": "ISO 27001 認證",
+    "uptime": "可用性",
+    "authSuccess": "認證成功，使用者登入狀態已更新",
+    "deviceCanDirectLogin": "裝置可以直接登入",
+    "deviceCannotDirectLogin": "裝置無法直接登入",
+    "checkDeviceLoginFailed": "偵測裝置登入狀態失敗",
+    "deviceLoginFailed": "裝置登入失敗",
+    "deviceLoginFailedRetry": "裝置登入失敗，請重試",
+    "deviceLoginSuccess": "裝置直接登入成功",
+    "pleaseEnterInviteCode": "請輸入邀請碼",
+    "registrationFailed": "註冊失敗",
+    "registrationFailedRetry": "註冊失敗，請重試",
+    "newDevice": "新裝置",
+    "freeDeviceRegistrationFailed": "免費裝置註冊失敗",
+    "inviteCodeIncorrect": "邀請碼不正確",
+    "inviteCodeInvalidOrExpired": "邀請碼無效或已過期",
+    "getInviteCodeInfoFailed": "取得邀請碼資訊失敗",
+    "haveProAccount": "已有 Pro 帳號？",
+    "loginProAccountDesc": "登入您的 Pro 帳號，享受完整功能",
+    "deviceAlreadyRegistered": "偵測到該裝置已註冊帳號",
+    "deviceReady": "裝置可直接登入",
+    "deviceReadyDesc": "您的裝置已註冊，可以直接登入使用",
+    "orEmailLogin": "或使用信箱登入",
+    "experienceProFeatures": "體驗 Pro 功能",
+    "enterInviteCodeDesc": "輸入邀請碼，立即體驗 Pro 功能",
+    "inviteCode": "邀請碼",
+    "enterInviteCodePlaceholder": "請輸入邀請碼（選填）",
+    "youHaveGoodFriend": "🎁 您有一個難得的好朋友😼",
+    "enjoyNow": "立享",
+    "days": "天",
+    "pro": "Pro",
+    "extraBonus": "額外贈送！",
+    "experience": "體驗 {{days}} 天",
+    "purchaseBonus": "購買贈 {{purchaseDays}}+{{downloadDays}} 天",
+    "buyNowExtraBonus": "現在購買，額外贈送 {{days}} 天",
+    "buyNowEnjoyAllPro": "購買立享全部 Pro 權益",
+    "experienceOnly": "僅體驗 {{days}} 天",
+    "experienceNow": "立即體驗",
+    "or": "或",
+    "noAccountNoInviteCode": "沒有帳號也沒有邀請碼？",
+    "processing": "處理中...",
+    "registerNewAccount": "直接註冊一個新的帳號"
+  },
+  "serviceStatus": {
+    "disconnected": "服務連線中斷，正在重新連線..."
+  },
+  "upgradeRequired": {
+    "title": "請更新應用程式",
+    "description": "目前版本已過時，請下載最新版本以繼續使用。",
+    "downloadButton": "前往下載"
+  },
+  "forceUpgrade": {
+    "title": "版本過低，需要更新",
+    "description": "您目前的應用程式版本 ({{currentVersion}}) 已不受支援，需要更新到 {{minVersion}} 或更高版本才能繼續使用。",
+    "downloadButton": "立即更新"
+  },
+  "app": {
+    "slogan": "安全、便捷的網路代理服務",
+    "error": "錯誤",
+    "updateNow": "立即更新",
+    "readyToInstall": "已準備好安裝",
+    "hoverForDetails": "懸停查看詳情",
+    "releaseNotes": "更新說明",
+    "newVersionAvailable": "新版本 {{version}} 可用！",
+    "updating": "正在更新",
+    "downloadingUpdate": "正在下載並安裝更新... {{progress}}%",
+    "errorBoundary": {
+      "title": "應用程式出現錯誤",
+      "description": "錯誤訊息已自動回報，我們會盡快修復。",
+      "details": "錯誤詳情",
+      "retry": "重試"
+    }
+  }
+}
