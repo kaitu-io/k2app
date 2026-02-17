@@ -68,6 +68,11 @@ func (e *Engine) Start(cfg Config) error {
 	}
 	e.wireUrl = cfg.WireURL
 	e.lastError = ""
+
+	// Create context early so Stop() can cancel an in-progress Start().
+	ctx, cancel := context.WithCancel(context.Background())
+	e.cancel = cancel
+
 	e.setState(StateConnecting)
 	e.mu.Unlock()
 
@@ -132,8 +137,13 @@ func (e *Engine) Start(cfg Config) error {
 		})
 	}
 
+	// Check cancellation before starting the tunnel (the expensive part).
+	if ctx.Err() != nil {
+		tm.Close()
+		return e.fail(ctx.Err())
+	}
+
 	// 7. Build client tunnel.
-	ctx, cancel := context.WithCancel(context.Background())
 	tunnelCfg := core.ClientTunnelConfig{
 		Provider: prov,
 		Dialer:   tm,
@@ -153,21 +163,26 @@ func (e *Engine) Start(cfg Config) error {
 			Filter:   dns.NewFilter(dns.FilterConfig{}),
 		})
 		if err := prov.Start(ctx, &dnsHandler{inner: tunnel, dns: dnsMW}); err != nil {
-			cancel()
 			tm.Close()
 			return e.fail(err)
 		}
 	} else {
 		// Desktop path: tunnel.Start wires provider directly.
 		if err := tunnel.Start(ctx); err != nil {
-			cancel()
 			tm.Close()
 			return e.fail(err)
 		}
 	}
 
+	// 9. Commit — verify not cancelled before saving resources.
 	e.mu.Lock()
-	e.cancel = cancel
+	if ctx.Err() != nil {
+		// Stop() was called during Start() — clean up started resources.
+		e.mu.Unlock()
+		prov.Close()
+		tm.Close()
+		return ctx.Err()
+	}
 	e.tunnel = tunnel
 	e.tm = tm
 	e.prov = prov
@@ -271,11 +286,16 @@ func (e *Engine) setState(s string) {
 	}
 }
 
-// fail records an error, resets to disconnected, and returns the error.
+// fail records an error, cancels any in-flight context, resets to
+// disconnected, and returns the error.
 func (e *Engine) fail(err error) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.lastError = err.Error()
+	if e.cancel != nil {
+		e.cancel()
+		e.cancel = nil
+	}
 	if e.handler != nil {
 		e.handler.OnError(err.Error())
 	}

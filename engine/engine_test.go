@@ -699,6 +699,157 @@ func TestEngine_OnNetworkChanged_NilTransportManager(t *testing.T) {
 }
 
 // ==========================================================================
+// Start/Stop race safety tests
+// ==========================================================================
+
+// TestEngineFailCleansCancel verifies that fail() cancels and nils e.cancel,
+// preventing context leaks on error paths in Start().
+func TestEngineFailCleansCancel(t *testing.T) {
+	e := New()
+	h := &mockEventHandler{}
+	e.SetEventHandler(h)
+
+	// Simulate Start() saving cancel early (the fix).
+	ctx, cancel := context.WithCancel(context.Background())
+	e.mu.Lock()
+	e.cancel = cancel
+	e.state = StateConnecting
+	e.mu.Unlock()
+
+	// fail() should cancel context, nil e.cancel, notify handler, set disconnected.
+	e.fail(fmt.Errorf("test error"))
+
+	if ctx.Err() == nil {
+		t.Fatal("expected context to be cancelled after fail()")
+	}
+	e.mu.Lock()
+	hasCancel := e.cancel != nil
+	e.mu.Unlock()
+	if hasCancel {
+		t.Fatal("e.cancel should be nil after fail()")
+	}
+	if e.Status() != StateDisconnected {
+		t.Fatalf("state = %q, want %q", e.Status(), StateDisconnected)
+	}
+	errs := h.getErrors()
+	if len(errs) == 0 || errs[0] != "test error" {
+		t.Fatalf("expected OnError('test error'), got %v", errs)
+	}
+}
+
+// TestEngineStopCancelsStartContext verifies that Stop() cancels a context
+// saved by Start() before the mutex was released. This is the core fix:
+// Stop() during the Start() gap can now cancel in-progress work.
+func TestEngineStopCancelsStartContext(t *testing.T) {
+	e := New()
+
+	// Simulate Start() saving cancel before releasing lock.
+	ctx, cancel := context.WithCancel(context.Background())
+	e.mu.Lock()
+	e.cancel = cancel
+	e.state = StateConnecting
+	e.mu.Unlock()
+
+	// Stop should cancel the context and set disconnected.
+	_ = e.Stop()
+
+	if ctx.Err() == nil {
+		t.Fatal("expected context to be cancelled after Stop()")
+	}
+	if e.Status() != StateDisconnected {
+		t.Fatalf("state = %q, want %q", e.Status(), StateDisconnected)
+	}
+	e.mu.Lock()
+	hasCancel := e.cancel != nil
+	e.mu.Unlock()
+	if hasCancel {
+		t.Fatal("e.cancel should be nil after Stop()")
+	}
+}
+
+// TestEngineStartStopRace verifies that Stop() during Start()'s unlocked gap
+// results in a clean disconnected state. Uses a channel to guarantee Stop()
+// runs while the simulated Start() is in its gap (between unlock and commit).
+func TestEngineStartStopRace(t *testing.T) {
+	e := New()
+	h := &mockEventHandler{}
+	e.SetEventHandler(h)
+
+	inGap := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		// Simulate Start(): save cancel early, set connecting, unlock.
+		e.mu.Lock()
+		ctx, cancel := context.WithCancel(context.Background())
+		e.cancel = cancel
+		e.setState(StateConnecting)
+		e.mu.Unlock()
+
+		// Signal: we're in the gap (lock released, resources not yet committed).
+		close(inGap)
+
+		// Simulate work in the gap — give Stop() time to cancel.
+		time.Sleep(50 * time.Millisecond)
+
+		// Check cancellation (as fixed Start() does before heavy ops).
+		if ctx.Err() != nil {
+			return
+		}
+
+		// Commit: reacquire lock, verify not cancelled.
+		e.mu.Lock()
+		if ctx.Err() != nil {
+			e.mu.Unlock()
+			cancel()
+			return
+		}
+		e.setState(StateConnected)
+		e.mu.Unlock()
+	}()
+
+	// Wait for goroutine to enter the gap, then Stop().
+	<-inGap
+	_ = e.Stop()
+	<-done
+
+	if e.Status() != StateDisconnected {
+		t.Fatalf("state = %q, want disconnected", e.Status())
+	}
+	e.mu.Lock()
+	hasCancel := e.cancel != nil
+	e.mu.Unlock()
+	if hasCancel {
+		t.Fatal("e.cancel should be nil — resource leak")
+	}
+}
+
+// TestEngineStartStopRace_NoRace runs concurrent Start simulation and Stop
+// with varying timing under -race detector.
+func TestEngineStartStopRace_NoRace(t *testing.T) {
+	for i := range 50 {
+		e := New()
+
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			e.mu.Lock()
+			_, cancel := context.WithCancel(context.Background())
+			e.cancel = cancel
+			e.state = StateConnecting
+			e.mu.Unlock()
+			// Vary work duration.
+			time.Sleep(time.Duration(i%5) * time.Millisecond)
+		}()
+
+		time.Sleep(time.Duration(i%3) * time.Millisecond)
+		_ = e.Stop()
+		<-done
+		// Just verify no panic or data race (under -race flag).
+	}
+}
+
+// ==========================================================================
 // Test helpers
 // ==========================================================================
 
