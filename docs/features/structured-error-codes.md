@@ -6,7 +6,7 @@
 |-----------|------------------------------------------|
 | Feature   | structured-error-codes                   |
 | Version   | v1                                       |
-| Status    | draft                                    |
+| Status    | implemented                              |
 | Created   | 2026-02-18                               |
 | Updated   | 2026-02-18                               |
 
