@@ -72,7 +72,7 @@ export default function Dashboard() {
   const proxyRuleConfig = appConfig.features.proxyRule || { visible: true, defaultValue: 'lightweight' };
 
   // VPN config from persistent store
-  const { ruleMode, dnsMode, mode: proxyMode, logLevel, updateConfig, buildConnectConfig } = useConfigStore();
+  const { ruleMode, mode: proxyMode, logLevel, updateConfig, buildConnectConfig } = useConfigStore();
 
   // Service failure alert tracking (silent mode - no UI feedback)
   const [failureAlertSent, setFailureAlertSent] = useState(false);
@@ -435,29 +435,6 @@ export default function Dashboard() {
                     </ToggleButton>
                     <ToggleButton value="proxy">
                       {t('dashboard:dashboard.proxyModeOptions.proxy')}
-                    </ToggleButton>
-                  </ToggleButtonGroup>
-                </Box>
-                {/* DNS Mode Selection */}
-                <Box>
-                  <Typography variant="body2" sx={{ mb: 0.5 }}>{t('dashboard:dashboard.dnsMode')}</Typography>
-                  <Typography variant="caption" color="text.secondary" component="p" sx={{ mb: 1 }}>
-                    {t('dashboard:dashboard.dnsModeDescription')}
-                  </Typography>
-                  <ToggleButtonGroup
-                    value={dnsMode}
-                    exclusive
-                    onChange={(_e, value) => value && updateConfig({ dns_mode: value as 'fake-ip' | 'real-ip' })}
-                    disabled={isServiceRunning}
-                    size="small"
-                    fullWidth
-                    sx={{ '& .MuiToggleButton-root': { flex: 1, textTransform: 'none', fontSize: '0.75rem' } }}
-                  >
-                    <ToggleButton value="fake-ip">
-                      {t('dashboard:dashboard.dnsOptions.fakeIp')}
-                    </ToggleButton>
-                    <ToggleButton value="real-ip">
-                      {t('dashboard:dashboard.dnsOptions.realIp')}
                     </ToggleButton>
                   </ToggleButtonGroup>
                 </Box>

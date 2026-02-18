@@ -45,15 +45,6 @@
     "muxDescription": "##延迟更低，速度更快##。一条通道同时传输多个请求，就像高速公路上开辟多条车道，##减少排队等待时间##。适合观看视频、游戏等场景。",
     "concurrentDescription": "##同时使用多个节点##，让连接更快更稳定。就像同时走多条路，一条堵了还有其他路可走。在##网络受限时特别有效##，Pro 专属功能。",
     "anonymityDescription": "##连接服务器和访问网站使用不同的 IP 地址##，保护您的真实位置不被追踪。就像戴上双重面具，隐私更安全。注意：可能略微影响速度，Pro 专属功能。",
-    "enableFakeIP": "虚拟 IP 模式",
-    "fakeIPDescription": "为需要代理的域名分配虚拟 IP，域名解析在服务器端完成，提升连接速度和隐私性。",
-    "dnsMode": "DNS 模式",
-    "dnsModeDescription": "选择 DNS 解析方式",
-    "dnsOptions": {
-      "fakeIp": "虚拟 IP",
-      "realIp": "真实 IP",
-      "realIpDot": "真实 IP (DoT)"
-    },
     "proxyModeLabel": "代理模式",
     "proxyModeDescription": "选择网络代理方式",
     "proxyModeOptions": {

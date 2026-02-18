@@ -164,9 +164,9 @@ const K2Plugin = registerPlugin('K2Plugin');
 3. Error propagates to `main()` catch block — logs error but never calls `ReactDOM.render()`
 4. White screen
 
-**Companion issue**: `tauri-plugin-http` and `tauri-plugin-shell` had `Cargo.toml` dependencies but no `.plugin()` registration in builder chain. External HTTPS fetch and `openExternal()` would fail at runtime.
+**Companion issue**: `tauri-plugin-shell` had `Cargo.toml` dependency but no `.plugin()` registration in builder chain. `openExternal()` would fail at runtime.
 
-**Fix**: Added all 3 commands to `invoke_handler` + registered `tauri_plugin_http::init()`, `tauri_plugin_shell::init()`, `tauri_plugin_autostart::init()` in `main.rs`.
+**Fix**: Added all 3 commands to `invoke_handler` + registered `tauri_plugin_shell::init()`, `tauri_plugin_autostart::init()` in `main.rs`. (`tauri-plugin-http` was later removed entirely — see Framework Gotchas → "@tauri-apps/plugin-http Static Import Freezes WebKit JS Engine")
 
 **Prevention**: When adding `#[tauri::command]` functions in Rust, immediately add them to `invoke_handler` in `main.rs`. When adding plugin dependencies to `Cargo.toml`, immediately add `.plugin()` to builder chain.
 

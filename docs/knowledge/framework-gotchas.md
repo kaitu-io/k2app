@@ -333,7 +333,7 @@ beforeEach(() => {
 
 **Symptom**: External fetch fails, IPC commands rejected, plugins non-functional -- but only in builds where the capability file is present. No clear error message pointing to capabilities as the cause.
 
-**Solution**: Create a production `default.json` capability file that lists all needed permissions: `core:default`, `http:default`, `shell:allow-open`, `updater:default`, `process:default`, `autostart:default`.
+**Solution**: Create a production `default.json` capability file that lists all needed permissions: `core:default`, `shell:allow-open`, `updater:default`, `process:default`, `autostart:default`.
 
 **Prevention**: When adding any capability file (even dev-only), immediately create a companion production capability file listing all permissions the app needs.
 
@@ -341,19 +341,21 @@ beforeEach(() => {
 
 ---
 
-## WebKit WKWebView Blocks Cross-Origin HTTPS from HTTP Localhost (2026-02-17, tauri-desktop-bridge)
+## @tauri-apps/plugin-http Static Import Freezes WebKit JS Engine (2026-02-18, tauri-webkit-js-freeze)
 
-**Problem**: In Tauri dev mode (`http://localhost:1420`) and production (`http://127.0.0.1:14580`), WebKit WKWebView rejects `fetch()` calls to external HTTPS URLs (CloudFront, 52j.me) with "Load failed (TypeError)". Terminal `curl` to the same URLs works fine.
+**Problem**: `import { fetch as tauriFetch } from '@tauri-apps/plugin-http'` in `tauri-k2.ts` caused WebKit JS engine to completely freeze (main thread deadlock). Even if `tauriFetch` was never called — merely referencing it in a closure was enough to trigger the freeze. DevTools Console became unresponsive. No error logged.
 
-**Root cause**: WebKit enforces CORS for cross-origin requests from HTTP origins. External servers may not send `Access-Control-Allow-Origin` for localhost HTTP origins. Additionally, CDN intermediaries (CloudFront) may strip or not set CORS headers.
+**Discovery**: Binary search isolation — progressively added code back until freeze reproduced. The freeze occurred with any reference to `tauriFetch` in the `patchFetchForTauri()` closure, even behind an unreachable branch.
 
-**Solution**: Use `@tauri-apps/plugin-http` which makes HTTP requests from the Rust process (not the WebView), completely bypassing WebKit restrictions. Override `window.fetch` to route external URLs through the plugin while keeping local URLs on native fetch.
+**Root cause**: Unknown WebKit-specific issue with `@tauri-apps/plugin-http` module initialization. The plugin's JS binding may perform synchronous operations during import that deadlock WebKit's JS engine in certain contexts.
 
-**Not the same as mixed-content blocking**: Mixed content blocks HTTP from HTTPS origin. This is the reverse -- HTTPS from HTTP origin. The issue is CORS, not mixed content.
+**Resolution**: Deleted `@tauri-apps/plugin-http` entirely. Cloud API already has CORS configured (`ApiCORSMiddleware` allows localhost origins). Native `window.fetch` from `http://localhost:14580` to `https://` URLs works fine — HTTP→HTTPS is an upgrade, not mixed content, and the server sends proper CORS headers.
 
-**Cross-reference**: See Architecture Decisions -> "Tauri Desktop Bridge: IPC + HTTP Plugin + Fetch Override"
+**Previous incorrect assumption**: "WebKit blocks external HTTPS fetch from HTTP localhost" — this was never verified because the JS freeze prevented any fetch from executing. The real issue was the plugin import, not WebKit's fetch behavior.
 
-**Validating tests**: `webapp/src/services/__tests__/tauri-k2.test.ts` -- `test_fetch_override_routes_external_https`
+**Files deleted/modified**: `tauri-k2.ts` (removed import + patchFetchForTauri), `main.rs` (removed plugin), `Cargo.toml` (removed dep), `capabilities/default.json` (removed permission), `package.json` (removed dep)
+
+**Validating tests**: `webapp/src/services/__tests__/tauri-k2.test.ts` — all tests pass without plugin-http mock
 
 ---
 

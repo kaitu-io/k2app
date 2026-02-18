@@ -45,15 +45,6 @@
     "muxDescription": "##レイテンシーが低く、速度が速い##。1つのチャネルで複数のリクエストを同時に転送、高速道路の車線を増やすのと同じで、##待機時間を短縮##。動画視聴やゲームに最適。",
     "concurrentDescription": "##複数のノードを同時使用##で接続をより速く安定させます。複数の道を同時に使うようなもので、1つが混雑しても他の道があります。##ネットワーク制限時に特に有効##、Pro専用機能。",
     "anonymityDescription": "##サーバー接続とサイトアクセスで異なるIPアドレスを使用##し、実際の位置を追跡から保護します。二重マスクをかけるようなもので、プライバシーがより安全。注意：速度がわずかに影響を受ける可能性があります、Pro専用機能。",
-    "enableFakeIP": "仮想IPモード",
-    "fakeIPDescription": "プロキシが必要なドメインに仮想IPを割り当てます。DNS解決はサーバー側で行われ、接続速度とプライバシーが向上します。",
-    "dnsMode": "DNSモード",
-    "dnsModeDescription": "DNS解決方法を選択",
-    "dnsOptions": {
-      "fakeIp": "仮想IP",
-      "realIp": "実IP",
-      "realIpDot": "実IP (DoT)"
-    },
     "recentLocations": "最近使用",
     "favorites": "お気に入りサーバー",
     "allLocations": "すべての場所",

@@ -5,7 +5,7 @@
  * - loadConfig from storage (empty + existing)
  * - updateConfig deep merge + persistence
  * - buildConnectConfig merges defaults + stored + server
- * - Getters: ruleMode, dnsMode, mode, logLevel
+ * - Getters: ruleMode, mode, logLevel
  * - initializeAllStores calls loadConfig in correct order
  *
  * Run: yarn test src/stores/__tests__/config.store.test.ts
@@ -21,7 +21,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 interface ClientConfig {
   server?: string;
   mode?: string;
-  dns_mode?: string;
   rule?: { global?: boolean };
   log?: { level?: string; output?: string };
   proxy?: { listen?: string };
@@ -91,7 +90,6 @@ describe('Config Store', () => {
     it('loads existing config from storage', async () => {
       const storedConfig: Partial<ClientConfig> = {
         rule: { global: true },
-        dns_mode: 'real-ip',
       };
       mockStorage.get.mockResolvedValue(storedConfig);
 
@@ -101,7 +99,6 @@ describe('Config Store', () => {
       const state = useConfigStore.getState();
       expect(state.config).toEqual(storedConfig);
       expect(state.config.rule?.global).toBe(true);
-      expect(state.config.dns_mode).toBe('real-ip');
       expect(state.loaded).toBe(true);
     });
   });
@@ -115,20 +112,18 @@ describe('Config Store', () => {
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
 
-      await useConfigStore.getState().updateConfig({ dns_mode: 'real-ip' });
+      await useConfigStore.getState().updateConfig({ rule: { global: true } });
 
       const state = useConfigStore.getState();
       expect(state.config).toEqual({
-        rule: { global: false },
-        dns_mode: 'real-ip',
+        rule: { global: true },
       });
 
       // Verify persistence — storage.set called with storage key + merged config
       expect(mockStorage.set).toHaveBeenCalledWith(
         expect.any(String),
         expect.objectContaining({
-          rule: { global: false },
-          dns_mode: 'real-ip',
+          rule: { global: true },
         }),
       );
     });
@@ -164,7 +159,6 @@ describe('Config Store', () => {
       expect(result.server).toBe('k2v5://example');
       expect(result.rule?.global).toBe(true);
       expect(result.mode).toBe('tun');
-      expect(result.dns_mode).toBe('fake-ip');
       expect(result.log?.level).toBe('info');
     });
 
@@ -202,15 +196,6 @@ describe('Config Store', () => {
       await useConfigStore.getState().loadConfig();
 
       expect(useConfigStore.getState().ruleMode).toBe('global');
-    });
-
-    it('dnsMode returns fake-ip by default', async () => {
-      mockStorage.get.mockResolvedValue(null);
-
-      const useConfigStore = await getStore();
-      await useConfigStore.getState().loadConfig();
-
-      expect(useConfigStore.getState().dnsMode).toBe('fake-ip');
     });
 
     it('mode returns tun by default', async () => {

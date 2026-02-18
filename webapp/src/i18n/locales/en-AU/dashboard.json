@@ -45,15 +45,6 @@
     "muxDescription": "##Lower latency, faster speed##. Multiple requests transmitted through one channel, like opening multiple lanes on a motorway, ##reducing queuing time##. Ideal for video streaming and gaming.",
     "concurrentDescription": "##Use multiple nodes simultaneously## for faster and more stable connections. Like taking multiple routes at once - if one's blocked, you have others. ##Especially effective when networks are restricted##, Pro exclusive feature.",
     "anonymityDescription": "##Use different IP addresses for connecting to servers and accessing websites##, protecting your real location from being tracked. Like wearing a double mask, safer privacy. Note: May slightly affect speed, Pro exclusive feature.",
-    "enableFakeIP": "Fake IP Mode",
-    "fakeIPDescription": "Assigns virtual IPs to domains that need proxying. DNS resolution happens server-side for faster connections and better privacy.",
-    "dnsMode": "DNS Mode",
-    "dnsModeDescription": "Choose DNS resolution method",
-    "dnsOptions": {
-      "fakeIp": "Fake IP",
-      "realIp": "Real IP",
-      "realIpDot": "Real IP (DoT)"
-    },
     "recentLocations": "Recent",
     "favorites": "Favourite servers",
     "allLocations": "All locations",

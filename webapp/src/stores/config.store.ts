@@ -9,7 +9,7 @@
  *
  * Usage:
  * ```tsx
- * const { ruleMode, dnsMode, updateConfig, buildConnectConfig } = useConfigStore();
+ * const { ruleMode, updateConfig, buildConnectConfig } = useConfigStore();
  *
  * // Update rule mode
  * await updateConfig({ rule: { global: true } });
@@ -37,7 +37,6 @@ interface ConfigState {
 
   // Computed getters (recomputed on config change)
   ruleMode: 'global' | 'chnroute';
-  dnsMode: string;
   mode: string;
   logLevel: string;
 }
@@ -76,7 +75,6 @@ function deepMerge(base: ClientConfig, override: Partial<ClientConfig>): ClientC
 function computeGetters(config: ClientConfig) {
   return {
     ruleMode: (config.rule?.global ? 'global' : 'chnroute') as 'global' | 'chnroute',
-    dnsMode: config.dns_mode ?? CLIENT_CONFIG_DEFAULTS.dns_mode!,
     mode: config.mode ?? CLIENT_CONFIG_DEFAULTS.mode!,
     logLevel: config.log?.level ?? CLIENT_CONFIG_DEFAULTS.log!.level!,
   };

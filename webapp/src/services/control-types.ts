@@ -161,9 +161,6 @@ export interface StatusResponseData {
 // Note: Legacy types SimpleTunnel, K2Config, TunnelAuth, parseSimpleTunnelURL, buildSimpleTunnelURL
 // have been removed. Use active_tunnel URL string directly in config.
 
-// DNS resolution mode
-export type DNSMode = 'fake-ip' | 'real-ip';
-
 // ==================== K2V4 Protocol Config ====================
 
 /**
@@ -250,8 +247,6 @@ export interface ConfigResponseData {
   // ==================== Other Config ====================
   // Enable IPv6
   ipv6?: boolean;
-  // DNS mode: "fake-ip" or "real-ip"
-  dns_mode?: string;
   // Skip TLS verification (for self-hosted servers)
   insecure?: boolean;
 }

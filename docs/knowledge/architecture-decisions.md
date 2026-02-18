@@ -336,26 +336,24 @@ Matching origins get `Access-Control-Allow-Origin: <origin>` + `Access-Control-A
 
 ---
 
-## Tauri Desktop Bridge: IPC + HTTP Plugin + Fetch Override (2026-02-17, tauri-desktop-bridge)
+## Tauri Desktop Bridge: IPC for Daemon + Native Fetch for Cloud API (2026-02-17→2026-02-18, tauri-desktop-bridge)
 
-**Decision**: Tauri desktop injects `window._k2` and `window._platform` from the webapp side (not Rust initialization scripts), using Tauri IPC for daemon communication and `@tauri-apps/plugin-http` for external HTTPS.
+**Decision**: Tauri desktop injects `window._k2` and `window._platform` from the webapp side (not Rust initialization scripts). Daemon communication uses Tauri IPC. Cloud API uses native `window.fetch` directly (no Rust proxy needed).
 
-**Three-layer approach**:
+**Two-layer approach**:
 1. **Daemon calls** (`_k2.run()`) -> `invoke('daemon_exec')` -> Rust `spawn_blocking` -> `reqwest` to `127.0.0.1:1777`
-2. **Cloud API** (`cloudApi.request()`) -> patched `window.fetch` -> HTTP plugin `fetch()` -> Rust HTTP client
+2. **Cloud API** (`cloudApi.request()`) -> native `window.fetch` -> HTTPS directly (server has CORS for localhost)
 3. **Platform info** (`_platform.os`, `.version`) -> `invoke('get_platform_info')` -> Rust `std::env::consts::OS`
 
 **Why IPC for daemon (not direct fetch)**: WebView on `localhost:14580` cannot fetch `http://127.0.0.1:1777` -- different port = cross-origin, daemon has no CORS headers. IPC bypasses WebView entirely.
 
-**Why HTTP plugin for cloud API (not native fetch)**: WebKit WKWebView blocks external HTTPS fetch from HTTP localhost origin. The HTTP plugin makes requests from the Rust process, bypassing WebView restrictions.
+**Why native fetch for cloud API (not Rust proxy)**: Cloud API has `ApiCORSMiddleware` that allows localhost origins with credentials. HTTP→HTTPS is an upgrade (not mixed content), so WebKit allows it. No fetch patching needed. Previous `@tauri-apps/plugin-http` approach was removed because the plugin's static import caused WebKit JS engine to freeze (see Framework Gotchas).
 
-**Why webapp-side injection (not Rust init script)**: Rust `webview.eval_script()` cannot use ES module imports (`@tauri-apps/plugin-http`). Webapp dynamic import + `window.__TAURI__` detection provides full TypeScript type safety and access to npm packages.
+**Why webapp-side injection (not Rust init script)**: Rust `webview.eval_script()` cannot use ES module imports. Webapp dynamic import + `window.__TAURI__` detection provides full TypeScript type safety and access to npm packages.
 
-**Fetch override strategy**: `patchFetchForTauri()` replaces `window.fetch` -- local URLs (relative, `127.0.0.1`, `localhost`) use native fetch; external HTTPS routes through `tauriFetch`. This is transparent to `cloudApi.request()` (no cloudApi changes needed).
+**Detection order in `main.tsx`**: `window.__TAURI__` -> Tauri bridge; `Capacitor.isNativePlatform()` -> Capacitor bridge; `!_k2 || !_platform` -> standalone fallback.
 
-**Detection order in `main.tsx`**: `window.__TAURI__` -> Tauri bridge; `!_k2 || !_platform` -> standalone fallback; else -> host-injected (Capacitor).
-
-**Validating tests**: `webapp/src/services/__tests__/tauri-k2.test.ts` -- 11 tests (IPC delegation, fetch routing, platform detection, standalone regression)
+**Validating tests**: `webapp/src/services/__tests__/tauri-k2.test.ts` -- 8 tests (IPC delegation, platform detection, transformStatus, standalone regression)
 
 ---
 
