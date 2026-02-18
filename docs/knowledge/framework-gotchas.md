@@ -532,6 +532,95 @@ func startMonitoringNetwork() {
 
 ---
 
+## Tauri v2 Event Capability: core:event:default, Not event:default (2026-02-18, tauri-updater-and-logs)
+
+**Problem**: Using `listen()` from `@tauri-apps/api/event` to subscribe to Tauri events fails silently when the capability file lists `event:default`. Tauri v2 requires the `core:` prefix for built-in event permissions.
+
+**Symptom**: `listen('update-ready', callback)` registers without error but never fires. No console error, no Rust-side warning. The event is emitted by Rust (`app.emit("update-ready", payload)`) but the WebView listener is not permitted to receive it.
+
+**Fix**: In `capabilities/default.json`, use `"core:event:default"` not `"event:default"`:
+```json
+{
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "updater:default"
+  ]
+}
+```
+
+**Why this is subtle**: `core:default` does NOT include event permissions. You need both `core:default` (for basic IPC) and `core:event:default` (for `listen`/`emit`). Third-party plugins use their own namespace (`updater:default`, `opener:default`), but built-in event system uses `core:event:default`.
+
+**Validating tests**: Runtime verification — `listen('update-ready')` receives events after adding `core:event:default`.
+
+---
+
+## Tauri v2 Updater: Windows NSIS Requires Immediate Exit (2026-02-18, tauri-updater-and-logs)
+
+**Problem**: On Windows, `update.install(&bytes)` launches the NSIS installer as a child process. If the app continues running, the NSIS installer cannot replace locked files (the running executable and DLLs). The update silently fails or produces file-in-use errors.
+
+**Solution**: Call `app.exit(0)` immediately after `update.install()` on Windows. The NSIS installer handles the rest (extraction, service management, app relaunch).
+
+**Platform divergence**:
+- **Windows**: `update.install()` → `app.exit(0)` (NSIS takes over)
+- **macOS/Linux**: `update.install()` → store info in static → emit event to frontend → apply on exit via `app.restart()`
+
+**Implementation pattern** (conditional compilation):
+```rust
+#[cfg(target_os = "windows")]
+{
+    update.install(&bytes).map_err(|e| e.to_string())?;
+    app.exit(0);
+}
+
+#[cfg(not(target_os = "windows"))]
+{
+    update.install(&bytes).map_err(|e| e.to_string())?;
+    UPDATE_READY.store(true, Ordering::SeqCst);
+    let _ = app.emit("update-ready", info);
+}
+```
+
+**Validating tests**: `desktop/src-tauri/src/updater.rs` — unit tests for serialization; runtime verification for platform behavior.
+
+---
+
+## Tauri #[tauri::command] Async + spawn_blocking for Heavy I/O (2026-02-18, tauri-updater-and-logs)
+
+**Problem**: `#[tauri::command]` handlers run on the Tokio async runtime. Using `reqwest::blocking::Client` (or any blocking I/O) inside them causes a panic: "Cannot start a runtime from within a runtime."
+
+**Solution**: Wrap blocking code in `tokio::task::spawn_blocking()`. The `#[tauri::command]` function must be `async` and `.await` the spawn_blocking result.
+
+**Pattern**:
+```rust
+// WRONG — panics at runtime
+#[tauri::command]
+pub fn upload_logs(params: Params) -> Result<(), String> {
+    let client = reqwest::blocking::Client::new();  // PANIC
+    client.put(url).send().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// CORRECT — runs blocking code on dedicated thread pool
+#[tauri::command]
+pub async fn upload_logs(params: Params) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let client = reqwest::blocking::Client::new();
+        client.put(url).send().map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+```
+
+**When to use**: Any `#[tauri::command]` that performs file I/O, HTTP requests with `reqwest::blocking`, or other synchronous operations that may block. The alternative is using `reqwest::Client` (async), but `spawn_blocking` is simpler when the internal logic is inherently synchronous (e.g., read file → compress → upload → notify).
+
+**Cross-reference**: See Architecture Decisions → "Log Upload in Tauri Shell, Not Daemon" for the full pattern in context.
+
+**Validating tests**: `desktop/src-tauri/src/log_upload.rs` — compiles and runs; `cargo test` passes.
+
+---
+
 ## QUIC/smux Dead Connection Caching Causes Silent Tunnel Death (2026-02-17, android-vpn-audit)
 
 **Problem**: `QUICClient.connect()` caches `c.conn` after first successful connection. When the network changes (WiFi→4G), the cached QUIC connection dies but is never cleared. All subsequent `DialTCP`/`DialUDP` calls reuse the dead connection, fail, and the engine still reports `"connected"`.

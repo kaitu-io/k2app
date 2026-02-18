@@ -190,6 +190,77 @@ engine.wire = &mockWireNoReset{}
 
 ---
 
+## vi.clearAllMocks() Clears Mock Implementations in Nested Describe Blocks (2026-02-18, tauri-updater-and-logs)
+
+**Problem**: `vi.clearAllMocks()` in a parent `beforeEach` clears mock implementations set by `vi.mock()` factories at the top of the file. When nested `describe` blocks call `vi.clearAllMocks()` and then need mock implementations (e.g., `mockListen.mockResolvedValue(() => {})`), they must re-set them in their own `beforeEach`.
+
+**Distinction from restoreAllMocks**: `vi.clearAllMocks()` clears call history AND implementations but keeps the mock object. `vi.restoreAllMocks()` restores original functions entirely (removing the mock wrapper). Both destroy factory implementations.
+
+**Pattern**: When multiple describe blocks share a parent `beforeEach` with `vi.clearAllMocks()`, each nested describe that depends on specific mock behavior must re-establish those mocks:
+
+```typescript
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn().mockResolvedValue(() => {}),
+}));
+
+describe('parent', () => {
+  beforeEach(() => {
+    vi.clearAllMocks(); // Clears listen's mockResolvedValue
+  });
+
+  describe('updater', () => {
+    beforeEach(async () => {
+      // MUST re-set because parent cleared it
+      mockListen.mockResolvedValue(() => {});
+      mockInvoke.mockImplementation(async (cmd) => { ... });
+      await injectTauriGlobals();
+    });
+  });
+});
+```
+
+**Why this matters**: Without re-setting, `listen()` returns `undefined` (not a Promise), causing `listen(...).then(...)` to throw `TypeError: Cannot read properties of undefined`. The error points to an unrelated line, making debugging difficult.
+
+**Bidirectional link**: See Framework Gotchas → "Vitest vi.restoreAllMocks() Clears vi.mock() Factory Implementations" for the related `restoreAllMocks` variant.
+
+**Validating tests**: `webapp/src/services/__tests__/tauri-k2.test.ts` — updater describe block with re-set mockListen in beforeEach.
+
+---
+
+## Tauri Updater + IPC Command Testing: Mock invoke Dispatch Pattern (2026-02-18, tauri-updater-and-logs)
+
+**Pattern**: When testing a Tauri bridge that calls multiple IPC commands during initialization (e.g., `get_platform_info` then `get_update_status`), use `mockImplementation` with command name dispatch instead of `mockResolvedValueOnce` chains. The dispatch pattern survives test reordering and additional invocations.
+
+**Dispatch pattern**:
+```typescript
+mockInvoke.mockImplementation(async (cmd: string) => {
+  if (cmd === 'get_platform_info') return { os: 'macos', version: '0.4.0' };
+  if (cmd === 'get_update_status') return null;
+  return { code: 0, message: 'ok', data: {} };
+});
+await injectTauriGlobals();
+```
+
+**Why not mockResolvedValueOnce**: `injectTauriGlobals()` calls `invoke` multiple times internally (platform info + update status). `mockResolvedValueOnce` chains are order-dependent and break if the implementation adds another invoke call. The dispatch pattern is resilient to implementation changes.
+
+**Testing IPC commands after initialization**: Use `mockResolvedValueOnce` for the specific command under test, after the dispatch-based initialization:
+```typescript
+beforeEach(async () => {
+  mockInvoke.mockImplementation(async (cmd) => { /* dispatch */ });
+  await injectTauriGlobals();
+});
+
+it('applyUpdateNow calls invoke', async () => {
+  mockInvoke.mockResolvedValueOnce(undefined); // This one call
+  await window._platform.updater!.applyUpdateNow();
+  expect(mockInvoke).toHaveBeenCalledWith('apply_update_now');
+});
+```
+
+**Validating tests**: `webapp/src/services/__tests__/tauri-k2.test.ts` — all describe blocks use dispatch pattern for initialization.
+
+---
+
 ## Engine Package TDD: Config Combinations as Test Cases (2026-02-16, unified-engine)
 
 **Pattern**: `engine_test.go` has 14 test functions covering all Config field combinations. Each test verifies one aspect of Engine behavior.

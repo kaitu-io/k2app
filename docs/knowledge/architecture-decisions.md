@@ -430,6 +430,56 @@ PacketTunnelProvider.swift
 
 ---
 
+## Tauri Auto-Updater: Platform-Specific Install Paths (2026-02-18, tauri-updater-and-logs)
+
+**Decision**: Auto-updater uses `tauri-plugin-updater` with platform-specific post-install behavior. macOS/Linux: store update info in Rust static state, notify frontend via Tauri event, apply on app exit or user action. Windows: `update.install()` launches NSIS installer as child process, then `app.exit(0)` immediately (NSIS takes over).
+
+**Why platform divergence**: macOS/Linux updater replaces the app binary in-place — the app must restart to load the new binary. Windows NSIS installer is a separate process that handles extraction, service stop/start, and app relaunch itself. Keeping the app running during NSIS install causes file lock conflicts.
+
+**Rust static state pattern**:
+```rust
+static UPDATE_READY: AtomicBool = AtomicBool::new(false);
+static UPDATE_INFO: Mutex<Option<UpdateInfo>> = Mutex::new(None);
+```
+Cross-async coordination: the background check loop (`tokio::spawn`) sets these statics; IPC commands (`get_update_status`, `apply_update_now`) and `RunEvent::ExitRequested` handler read them. `AtomicBool` for the fast-path check, `Mutex<Option<T>>` for the payload.
+
+**Background check loop**: 5s initial delay (let app settle), then 30min `tokio::time::interval`. Skips check if `UPDATE_READY` is already true. Download progress logged at 10% intervals.
+
+**Frontend bridge**: `IUpdater` interface on `_platform.updater` with mutable properties (`isUpdateReady`, `updateInfo`, `isChecking`, `error`). `listen('update-ready')` for Tauri event. `invoke('get_update_status')` at initialization to restore pending update state from Rust (covers case where update was downloaded before frontend loaded).
+
+**ExitRequested hook**: `main.rs` `.run()` callback checks `RunEvent::ExitRequested` → calls `install_pending_update()` → `app.restart()`. This ensures updates apply even if user closes the app without clicking "Update Now".
+
+**Validating tests**: `desktop/src-tauri/src/updater.rs` — 3 unit tests (serialization, null notes, ready default); `webapp/src/services/__tests__/tauri-k2.test.ts` — 5 updater tests (initial state, existing update restore, apply, manual check, event listener)
+
+---
+
+## Log Upload in Tauri Shell, Not Daemon (2026-02-18, tauri-updater-and-logs)
+
+**Decision**: Service log upload runs in the Tauri Rust process (`log_upload.rs`), not in the k2 daemon. Uses `tokio::task::spawn_blocking` to run `reqwest::blocking::Client` HTTP calls from a `#[tauri::command]` async handler.
+
+**Why Tauri, not daemon**: The primary use case for log upload is when the daemon is crashed or unresponsive. If log upload lived in the daemon, it would be unavailable exactly when it's needed most. The Tauri shell process is always alive while the app window is open.
+
+**4 log sources**: service (Go daemon `service.log`), crash (Go panic `panic-*.log`), desktop (Tauri `desktop.log`), system (macOS Console via `log show` / Windows Event Log stub). Each uploaded separately with its own S3 key.
+
+**Sanitization**: `sanitize_logs()` strips sensitive patterns (`"token":"`, `"password":"`, `"secret":"`, `Authorization: Bearer`, `X-K2-Token:`) by prefix-matching and replacing with `***`. Simple string replacement — not regex — because log sanitization must never fail.
+
+**Upload pipeline**: Read log → sanitize → gzip compress (flate2) → S3 PUT (public bucket, no auth) → Slack webhook notification with S3 links. Partial success allowed — some logs may fail while others succeed.
+
+**spawn_blocking pattern** (reusable for any heavy I/O in Tauri):
+```rust
+#[tauri::command]
+pub async fn upload_service_log_command(params: UploadLogParams) -> Result<UploadLogResult, String> {
+    tokio::task::spawn_blocking(move || upload_service_log(params))
+        .await
+        .map_err(|e| format!("Task failed: {}", e))
+}
+```
+The inner function uses `reqwest::blocking::Client` freely. `spawn_blocking` moves it to a dedicated thread pool, avoiding Tokio runtime panic from blocking in async context.
+
+**Validating tests**: `desktop/src-tauri/src/log_upload.rs` — 7 unit tests (sanitize, compress roundtrip, S3 key format, Slack message, param deserialization); `webapp/src/services/__tests__/tauri-k2.test.ts` — 1 uploadLogs test
+
+---
+
 ## IPlatform Cleanup: 19→12 Members, Native Plugins Replace WebView APIs (2026-02-18, platform-interface-cleanup)
 
 **Decision**: Slim `IPlatform` from 19 to 12 members. Delete 7 unused/redundant methods, make 4 methods required (previously optional), replace WebView API stubs with native platform plugins.

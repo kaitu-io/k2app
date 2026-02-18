@@ -242,6 +242,28 @@ Also fixed the guard condition: `(isDisconnected || isError) && !activeTunnelInf
 
 ---
 
+## Tauri v2 Event Listener Silent Failure: Wrong Capability Name (2026-02-18, tauri-updater-and-logs)
+
+**Problem**: `listen('update-ready', callback)` from `@tauri-apps/api/event` registered without error but never fired. Rust side emitted the event successfully (`app.emit("update-ready", payload)` returned `Ok(())`). Frontend callback never called.
+
+**Root cause**: `capabilities/default.json` had `"event:default"` instead of `"core:event:default"`. Tauri v2's event system is part of the `core` plugin namespace. Without the `core:` prefix, the permission wasn't recognized, and event delivery was silently blocked.
+
+**Discovery**: Added `console.log` in the listen callback — never printed. Verified Rust emit returned Ok. Compared capability names against Tauri v2 docs and found the `core:` prefix requirement.
+
+**Fix**: Changed `"event:default"` to `"core:event:default"` in `desktop/src-tauri/capabilities/default.json`.
+
+**Why silent**: Tauri v2 does not warn at build time or runtime about unrecognized capability names. The permission simply doesn't match, and event delivery is blocked without any error. `listen()` returns a valid unlisten function regardless.
+
+**Prevention**: When adding Tauri event listeners (`listen`, `emit`), verify `"core:event:default"` is in `capabilities/default.json`. For plugin-specific events, use the plugin's namespace (e.g., `"updater:default"` for updater plugin events).
+
+**Cross-reference**: See Framework Gotchas → "Tauri v2 Event Capability: core:event:default, Not event:default"
+
+**Files fixed**: `desktop/src-tauri/capabilities/default.json`
+
+**Validating tests**: Runtime verification — listen callback fires after fix.
+
+---
+
 ## Capacitor Local Plugin Stale Copy in node_modules (2026-02-16, mobile-debug)
 
 **Problem**: Capacitor plugin declared as `"k2-plugin": "file:./plugins/k2-plugin"` in `mobile/package.json` is copied (not symlinked) to `node_modules/k2-plugin/`. Editing source files in `mobile/plugins/k2-plugin/` has no effect — `cap sync` and Gradle build use the stale `node_modules/` copy.
