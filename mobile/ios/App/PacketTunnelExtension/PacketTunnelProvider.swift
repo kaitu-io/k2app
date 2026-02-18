@@ -187,6 +187,10 @@ class EventBridge: NSObject, MobileEventHandlerProtocol {
             }
             // Normal disconnect — notify system
             provider?.cancelTunnelWithError(nil)
+        } else {
+            // Log transient states (reconnecting, connected from OnNetworkChanged)
+            // for debug observability. Not propagated to App process.
+            NSLog("[K2:NE] transient state: %@", state)
         }
     }
 
