@@ -638,3 +638,17 @@ pub async fn upload_logs(params: Params) -> Result<(), String> {
 **Status**: verified (code-level confirmation in `k2/wire/quic.go`)
 
 ---
+
+## Vite Multi-Page HTML: Globals Not Available on Load (2026-02-18, unified-debug-page)
+
+**Problem**: `debug.html` is a Vite multi-page entry loaded outside React bootstrap. `window._k2` and `window._platform` are injected by the main app's platform detection (Tauri/Capacitor/standalone), which doesn't run for non-index pages. Accessing globals directly on DOMContentLoaded throws.
+
+**Solution**: Poll `window._k2` every 200ms for up to 5s. If found, proceed. On timeout, show "Load Standalone Fallback" button that inlines minimal stubs. This preserves zero-framework-dependency (the page has no imports, no React, no bundler transforms).
+
+**Key constraint**: Cannot `import` from `standalone-k2.ts` because that adds module bundler dependency. The fallback must be inlined vanilla JS. On Tauri/Capacitor, the platform bridge injects globals before page load via native WebView evaluation, so the poll finds them immediately.
+
+**Tests**: No unit test — manual verification only.
+**Source**: unified-debug-page (2026-02-18)
+**Status**: verified (tested in Tauri dev mode)
+
+---

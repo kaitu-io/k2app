@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-    <title>K2 Mobile Debug</title>
+    <title>K2 Debug</title>
     <style>
       * {
         margin: 0;
@@ -20,6 +20,7 @@
         padding-bottom: 20px;
       }
 
+      /* ── Header ── */
       .header {
         position: sticky;
         top: 0;
@@ -27,7 +28,9 @@
         background: #16213e;
         padding: 12px 16px;
         border-bottom: 1px solid #0f3460;
-        text-align: center;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
       }
 
       .header h1 {
@@ -36,6 +39,32 @@
         color: #e94560;
       }
 
+      .header-right {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .platform-badge {
+        font-size: 11px;
+        font-weight: 600;
+        padding: 2px 8px;
+        border-radius: 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .badge-tauri { background: #3b82f6; color: #fff; }
+      .badge-capacitor { background: #22c55e; color: #fff; }
+      .badge-standalone { background: #6b7280; color: #fff; }
+      .badge-unknown { background: #ef4444; color: #fff; }
+
+      .version-label {
+        font-size: 12px;
+        color: #8b949e;
+      }
+
+      /* ── Sections ── */
       .section {
         padding: 12px 16px;
       }
@@ -47,40 +76,11 @@
         text-transform: uppercase;
         letter-spacing: 0.5px;
         margin-bottom: 8px;
+        border-bottom: 1px solid #333;
+        padding-bottom: 4px;
       }
 
-      .wire-url-row {
-        display: flex;
-        gap: 8px;
-        margin-bottom: 8px;
-      }
-
-      #wireUrl {
-        flex: 1;
-        background: #0f3460;
-        border: 1px solid #533483;
-        border-radius: 8px;
-        color: #e0e0e0;
-        padding: 10px 12px;
-        font-size: 14px;
-        outline: none;
-      }
-
-      #wireUrl:focus {
-        border-color: #e94560;
-      }
-
-      #presets {
-        background: #0f3460;
-        border: 1px solid #533483;
-        border-radius: 8px;
-        color: #e0e0e0;
-        padding: 10px 8px;
-        font-size: 13px;
-        outline: none;
-        min-width: 110px;
-      }
-
+      /* ── Buttons ── */
       .btn-row {
         display: flex;
         gap: 8px;
@@ -101,30 +101,99 @@
         padding: 8px 12px;
       }
 
-      .btn:active {
-        opacity: 0.7;
+      .btn:active { opacity: 0.7; }
+      .btn-info { background: #3b82f6; color: #fff; }
+      .btn-status { background: #533483; color: #fff; }
+      .btn-connect { background: #22c55e; color: #fff; }
+      .btn-disconnect { background: #ef4444; color: #fff; }
+      .btn-platform { background: #0ea5e9; color: #fff; }
+      .btn-desktop { background: #f59e0b; color: #000; }
+      .btn-danger { background: #dc2626; color: #fff; }
+
+      /* ── Inputs ── */
+      .input-row {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 8px;
+        align-items: center;
       }
 
-      .btn-info {
-        background: #3b82f6;
-        color: #fff;
+      .input-field {
+        flex: 1;
+        background: #0f3460;
+        border: 1px solid #533483;
+        border-radius: 8px;
+        color: #e0e0e0;
+        padding: 10px 12px;
+        font-size: 14px;
+        outline: none;
+        min-height: 44px;
       }
 
-      .btn-status {
-        background: #533483;
-        color: #fff;
+      .input-field:focus { border-color: #e94560; }
+
+      select.input-field {
+        min-width: 110px;
+        flex: 0 0 auto;
       }
 
-      .btn-connect {
-        background: #22c55e;
-        color: #fff;
+      .json-editor {
+        width: 100%;
+        background: #0d1117;
+        border: 1px solid #30363d;
+        border-radius: 8px;
+        color: #e0e0e0;
+        padding: 12px;
+        font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+        font-size: 12px;
+        line-height: 1.5;
+        min-height: 120px;
+        resize: vertical;
+        outline: none;
+        margin-bottom: 8px;
       }
 
-      .btn-disconnect {
-        background: #ef4444;
-        color: #fff;
+      .json-editor:focus { border-color: #e94560; }
+
+      /* ── Status banner ── */
+      .status-banner {
+        text-align: center;
+        padding: 20px 16px;
+        font-size: 14px;
+        color: #8b949e;
       }
 
+      .status-banner .spinner {
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        border: 2px solid #333;
+        border-top-color: #e94560;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        margin-right: 8px;
+        vertical-align: middle;
+      }
+
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+
+      .btn-fallback {
+        margin-top: 12px;
+        background: #333;
+        color: #e0e0e0;
+        border: 1px solid #555;
+        border-radius: 8px;
+        padding: 10px 20px;
+        font-size: 13px;
+        cursor: pointer;
+        min-height: 44px;
+      }
+
+      .btn-fallback:active { opacity: 0.7; }
+
+      /* ── Log area ── */
       .log-header {
         display: flex;
         justify-content: space-between;
@@ -151,17 +220,15 @@
         min-height: 32px;
       }
 
-      .btn-clear:active {
-        opacity: 0.7;
-      }
+      .btn-clear:active { opacity: 0.7; }
 
       #logArea {
         background: #0d1117;
         border: 1px solid #30363d;
         border-radius: 8px;
         padding: 12px;
-        min-height: 300px;
-        max-height: 60vh;
+        min-height: 200px;
+        max-height: 50vh;
         overflow-y: auto;
         font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
         font-size: 12px;
@@ -182,138 +249,150 @@
         padding-bottom: 0;
       }
 
-      .log-time {
-        color: #8b949e;
-      }
-
-      .log-type-api {
-        color: #3b82f6;
-        font-weight: 600;
-      }
-
-      .log-type-event {
-        color: #22c55e;
-        font-weight: 600;
-      }
-
-      .log-type-error {
-        color: #ef4444;
-        font-weight: 600;
-      }
-
-      .log-label {
-        color: #c9d1d9;
-      }
+      .log-time { color: #8b949e; }
+      .log-type-api { color: #3b82f6; font-weight: 600; }
+      .log-type-event { color: #22c55e; font-weight: 600; }
+      .log-type-error { color: #ef4444; font-weight: 600; }
+      .log-label { color: #c9d1d9; }
 
       .log-data {
         color: #8b949e;
         margin-left: 12px;
         display: block;
       }
+
+      .hidden { display: none !important; }
     </style>
   </head>
   <body>
+    <!-- Header -->
     <div class="header">
-      <h1>K2 Mobile Debug</h1>
-    </div>
-
-    <div class="section">
-      <div class="section-label">Wire URL</div>
-      <div class="wire-url-row">
-        <input type="text" id="wireUrl" placeholder="vless://... or paste wire URL" />
-        <select id="presets">
-          <option value="">Custom</option>
-          <option value="vless://example-server-1.kaitu.io:443?security=tls&type=ws">Server 1</option>
-          <option value="vless://example-server-2.kaitu.io:443?security=tls&type=ws">Server 2</option>
-          <option value="vless://example-server-3.kaitu.io:443?security=tls&type=grpc">Server 3</option>
-        </select>
+      <h1>K2 Debug</h1>
+      <div class="header-right">
+        <span id="platformBadge" class="platform-badge badge-unknown">...</span>
+        <span id="versionLabel" class="version-label"></span>
       </div>
     </div>
 
-    <div class="section">
-      <div class="section-label">Info</div>
-      <div class="btn-row">
-        <button class="btn btn-info" onclick="callPlugin('checkReady')">Check Ready</button>
-        <button class="btn btn-info" onclick="callPlugin('getVersion')">Get Version</button>
-        <button class="btn btn-info" onclick="callPlugin('getUDID')">Get UDID</button>
-      </div>
-
-      <div class="section-label">Status</div>
-      <div class="btn-row">
-        <button class="btn btn-status" onclick="callPlugin('getConfig')">Get Config</button>
-        <button class="btn btn-status" onclick="callPlugin('getStatus')">Get Status</button>
-      </div>
-
-      <div class="section-label">Actions</div>
-      <div class="btn-row">
-        <button class="btn btn-connect" onclick="doConnect()">Connect</button>
-        <button class="btn btn-disconnect" onclick="callPlugin('disconnect')">Disconnect</button>
-      </div>
+    <!-- Status banner (shown while waiting for globals) -->
+    <div id="statusBanner" class="status-banner">
+      <span class="spinner"></span> Waiting for window._k2...
+      <br />
+      <button class="btn-fallback hidden" id="fallbackBtn" onclick="loadStandaloneFallback()">
+        Load Standalone Fallback
+      </button>
     </div>
 
-    <div class="section">
-      <div class="log-header">
-        <h2>Logs</h2>
-        <button class="btn-clear" onclick="clearLogs()">Clear</button>
+    <!-- Main content (hidden until globals ready) -->
+    <div id="mainContent" class="hidden">
+
+      <!-- VPN Control -->
+      <div class="section">
+        <div class="section-label">VPN Control</div>
+        <div class="btn-row">
+          <button class="btn btn-status" onclick="callK2('status')">Status</button>
+          <button class="btn btn-info" onclick="callK2('version')">Version</button>
+          <button class="btn btn-disconnect" onclick="callK2('down')">Disconnect</button>
+        </div>
+        <div class="section-label" style="margin-top: 8px">ClientConfig</div>
+        <textarea id="configEditor" class="json-editor" spellcheck="false" placeholder='{ "server": { "wireUrl": "vless://..." }, "rule": { "global": true } }'></textarea>
+        <div class="input-row">
+          <select id="presets" class="input-field" onchange="applyPreset()">
+            <option value="">Custom</option>
+            <option value="global">Preset: Global Mode</option>
+            <option value="smart">Preset: Smart Mode</option>
+          </select>
+          <button class="btn btn-connect" onclick="doConnect()">Connect</button>
+        </div>
       </div>
-      <div id="logArea"></div>
+
+      <!-- Platform Capabilities -->
+      <div class="section">
+        <div class="section-label">Platform</div>
+        <div class="btn-row">
+          <button class="btn btn-platform" onclick="callPlatform('getUdid')">UDID</button>
+          <button class="btn btn-platform" onclick="doClipboardWrite()">Clip Write</button>
+          <button class="btn btn-platform" onclick="callPlatform('readClipboard')">Clip Read</button>
+        </div>
+        <div class="input-row">
+          <input type="text" id="clipboardText" class="input-field" placeholder="Text to write to clipboard" value="hello-debug" />
+        </div>
+        <div class="input-row">
+          <input type="text" id="externalUrl" class="input-field" placeholder="URL to open externally" value="https://kaitu.io" />
+          <button class="btn btn-platform" onclick="doOpenExternal()" style="flex:0 0 auto; min-width:60px">Open</button>
+        </div>
+        <div class="input-row">
+          <select id="localeSelect" class="input-field">
+            <option value="zh-CN">zh-CN</option>
+            <option value="en-US">en-US</option>
+            <option value="ja">ja</option>
+            <option value="zh-TW">zh-TW</option>
+          </select>
+          <button class="btn btn-platform" onclick="doSyncLocale()" style="flex:0 0 auto; min-width:80px">Sync Locale</button>
+        </div>
+      </div>
+
+      <!-- Desktop Only (Tauri) -->
+      <div id="desktopSection" class="section hidden">
+        <div class="section-label">Desktop Only (Tauri)</div>
+        <div class="btn-row">
+          <button class="btn btn-desktop" onclick="callPlatform('getPid')">PID</button>
+          <button class="btn btn-danger" onclick="doReinstallService()">Reinstall Service</button>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-desktop" onclick="doCheckUpdate()">Check Update</button>
+        </div>
+        <div class="input-row">
+          <input type="text" id="logReason" class="input-field" placeholder="Log upload reason" value="debug-test" />
+          <button class="btn btn-desktop" onclick="doUploadLogs()" style="flex:0 0 auto; min-width:100px">Upload Logs</button>
+        </div>
+      </div>
+
+      <!-- Logs -->
+      <div class="section">
+        <div class="log-header">
+          <h2>Logs</h2>
+          <button class="btn-clear" onclick="clearLogs()">Clear</button>
+        </div>
+        <div id="logArea"></div>
+      </div>
     </div>
 
     <script>
+      // ── Constants ──
+      var STORAGE_KEY = 'debug_config';
+      var POLL_INTERVAL = 200;
+      var POLL_TIMEOUT = 5000;
+
+      // ── DOM refs ──
       var logArea = document.getElementById('logArea');
-      var wireUrlInput = document.getElementById('wireUrl');
+      var configEditor = document.getElementById('configEditor');
       var presetsSelect = document.getElementById('presets');
-      var STORAGE_KEY = 'debug_wireUrl';
+      var statusBanner = document.getElementById('statusBanner');
+      var mainContent = document.getElementById('mainContent');
+      var fallbackBtn = document.getElementById('fallbackBtn');
+      var platformBadge = document.getElementById('platformBadge');
+      var versionLabel = document.getElementById('versionLabel');
+      var desktopSection = document.getElementById('desktopSection');
 
-      // --- localStorage persistence ---
-      function saveWireUrl() {
-        try {
-          localStorage.setItem(STORAGE_KEY, wireUrlInput.value);
-        } catch (e) {
-          // localStorage may be unavailable
+      // ── Presets ──
+      var PRESETS = {
+        global: {
+          server: { wireUrl: 'vless://example.kaitu.io:443?security=tls&type=ws' },
+          rule: { global: true }
+        },
+        smart: {
+          server: { wireUrl: 'vless://example.kaitu.io:443?security=tls&type=ws' },
+          rule: { global: false }
         }
-      }
+      };
 
-      function restoreWireUrl() {
-        try {
-          var saved = localStorage.getItem(STORAGE_KEY);
-          if (saved) {
-            wireUrlInput.value = saved;
-            // Check if saved value matches a preset
-            for (var i = 0; i < presetsSelect.options.length; i++) {
-              if (presetsSelect.options[i].value === saved) {
-                presetsSelect.selectedIndex = i;
-                return;
-              }
-            }
-            presetsSelect.selectedIndex = 0; // Custom
-          }
-        } catch (e) {
-          // localStorage may be unavailable
-        }
-      }
-
-      wireUrlInput.addEventListener('input', function () {
-        saveWireUrl();
-        // Reset preset to Custom when manually editing
-        presetsSelect.selectedIndex = 0;
-      });
-
-      presetsSelect.addEventListener('change', function () {
-        var val = presetsSelect.value;
-        if (val) {
-          wireUrlInput.value = val;
-          saveWireUrl();
-        }
-      });
-
-      // --- Logging ---
+      // ── Logging ──
       function getTimestamp() {
         var now = new Date();
-        var h = String(now.getHours()).padStart(2, '0');
-        var m = String(now.getMinutes()).padStart(2, '0');
-        var s = String(now.getSeconds()).padStart(2, '0');
-        return h + ':' + m + ':' + s;
+        return String(now.getHours()).padStart(2, '0') + ':' +
+               String(now.getMinutes()).padStart(2, '0') + ':' +
+               String(now.getSeconds()).padStart(2, '0');
       }
 
       function createSpan(className, text) {
@@ -344,11 +423,8 @@
           dataLine.className = 'log-data';
           var formatted;
           if (typeof data === 'object') {
-            try {
-              formatted = JSON.stringify(data, null, 2);
-            } catch (e) {
-              formatted = String(data);
-            }
+            try { formatted = JSON.stringify(data, null, 2); }
+            catch (e) { formatted = String(data); }
           } else {
             formatted = String(data);
           }
@@ -366,94 +442,339 @@
         }
       }
 
-      // --- K2Plugin access ---
-      function getK2Plugin() {
-        if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.K2Plugin) {
-          return window.Capacitor.Plugins.K2Plugin;
-        }
-        return null;
+      // ── Platform detection ──
+      function detectPlatform() {
+        if (window.__TAURI__) return 'tauri';
+        if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) return 'capacitor';
+        return 'standalone';
       }
 
-      function callPlugin(method, args) {
-        var plugin = getK2Plugin();
-        if (!plugin) {
-          appendLog('ERROR', method, 'K2Plugin not available (not running in Capacitor?)');
-          return;
+      function updatePlatformUI() {
+        var platform = detectPlatform();
+        var badgeClass = 'badge-' + (platform === 'tauri' ? 'tauri' : platform === 'capacitor' ? 'capacitor' : 'standalone');
+        var badgeText = platform.charAt(0).toUpperCase() + platform.slice(1);
+
+        platformBadge.className = 'platform-badge ' + badgeClass;
+        platformBadge.textContent = badgeText;
+
+        if (window._platform) {
+          versionLabel.textContent = (window._platform.os || '?') + ' ' + (window._platform.version || '?');
         }
 
-        if (typeof plugin[method] !== 'function') {
-          appendLog('ERROR', method, 'Method not found on K2Plugin');
-          return;
+        // Show desktop-only section for Tauri
+        if (platform === 'tauri') {
+          desktopSection.classList.remove('hidden');
         }
+      }
 
-        appendLog('API', method + '()', args || null);
+      // ── localStorage persistence ──
+      function saveConfig() {
+        try { localStorage.setItem(STORAGE_KEY, configEditor.value); }
+        catch (e) { /* localStorage may be unavailable */ }
+      }
 
+      function restoreConfig() {
         try {
-          var result = plugin[method](args || {});
-          if (result && typeof result.then === 'function') {
-            result.then(function (data) {
-              appendLog('API', method + ' response', data);
-            }).catch(function (err) {
-              appendLog('ERROR', method + ' failed', err.message || err);
-            });
-          } else {
-            appendLog('API', method + ' response', result);
-          }
-        } catch (err) {
-          appendLog('ERROR', method + ' exception', err.message || err);
+          var saved = localStorage.getItem(STORAGE_KEY);
+          if (saved) configEditor.value = saved;
+        } catch (e) { /* localStorage may be unavailable */ }
+      }
+
+      configEditor.addEventListener('input', function () {
+        saveConfig();
+        presetsSelect.selectedIndex = 0;
+      });
+
+      // ── Presets ──
+      function applyPreset() {
+        var key = presetsSelect.value;
+        if (key && PRESETS[key]) {
+          configEditor.value = JSON.stringify(PRESETS[key], null, 2);
+          saveConfig();
         }
+      }
+
+      // ── VPN Control ──
+      function callK2(action) {
+        if (!window._k2) {
+          appendLog('ERROR', '_k2.run(\'' + action + '\')', '_k2 not available');
+          return;
+        }
+
+        appendLog('API', '_k2.run(\'' + action + '\')', null);
+
+        window._k2.run(action).then(function (result) {
+          appendLog('API', action + ' response', result);
+        }).catch(function (err) {
+          appendLog('ERROR', action + ' failed', err.message || String(err));
+        });
       }
 
       function doConnect() {
-        var wireUrl = wireUrlInput.value.trim();
-        if (!wireUrl) {
-          appendLog('ERROR', 'connect', 'wireUrl is empty');
-          return;
-        }
-        callPlugin('connect', { wireUrl: wireUrl });
-      }
-
-      // --- Event listeners ---
-      function setupEventListeners() {
-        var plugin = getK2Plugin();
-        if (!plugin) {
-          appendLog('ERROR', 'init', 'K2Plugin not available \u2014 event listeners not registered');
+        if (!window._k2) {
+          appendLog('ERROR', 'connect', '_k2 not available');
           return;
         }
 
-        if (typeof plugin.addListener !== 'function') {
-          appendLog('ERROR', 'init', 'K2Plugin.addListener not available');
+        var raw = configEditor.value.trim();
+        if (!raw) {
+          appendLog('ERROR', 'connect', 'Config is empty');
           return;
         }
 
+        var config;
         try {
-          plugin.addListener('vpnStateChange', function (data) {
-            appendLog('EVENT', 'vpnStateChange', data);
-          });
-          appendLog('EVENT', 'Registered listener', 'vpnStateChange');
-        } catch (err) {
-          appendLog('ERROR', 'vpnStateChange listener', err.message || err);
+          config = JSON.parse(raw);
+        } catch (e) {
+          appendLog('ERROR', 'connect', 'Invalid JSON: ' + e.message);
+          return;
         }
 
-        try {
-          plugin.addListener('vpnError', function (data) {
-            appendLog('EVENT', 'vpnError', data);
-          });
-          appendLog('EVENT', 'Registered listener', 'vpnError');
-        } catch (err) {
-          appendLog('ERROR', 'vpnError listener', err.message || err);
-        }
-      }
+        appendLog('API', '_k2.run(\'up\', config)', config);
 
-      // --- Init ---
-      document.addEventListener('DOMContentLoaded', function () {
-        restoreWireUrl();
-        appendLog('API', 'Debug page loaded', {
-          userAgent: navigator.userAgent,
-          capacitorAvailable: !!(window.Capacitor),
-          pluginAvailable: !!(getK2Plugin())
+        window._k2.run('up', config).then(function (result) {
+          appendLog('API', 'up response', result);
+        }).catch(function (err) {
+          appendLog('ERROR', 'up failed', err.message || String(err));
         });
-        setupEventListeners();
+      }
+
+      // ── Platform Capabilities ──
+      function callPlatform(method) {
+        if (!window._platform) {
+          appendLog('ERROR', '_platform.' + method + '()', '_platform not available');
+          return;
+        }
+
+        if (typeof window._platform[method] !== 'function') {
+          appendLog('ERROR', method, 'Not a function on _platform (may be desktop-only)');
+          return;
+        }
+
+        appendLog('API', '_platform.' + method + '()', null);
+
+        window._platform[method]().then(function (result) {
+          appendLog('API', method + ' response', result);
+        }).catch(function (err) {
+          appendLog('ERROR', method + ' failed', err.message || String(err));
+        });
+      }
+
+      function doClipboardWrite() {
+        var text = document.getElementById('clipboardText').value;
+        if (!window._platform) {
+          appendLog('ERROR', 'writeClipboard', '_platform not available');
+          return;
+        }
+
+        appendLog('API', '_platform.writeClipboard(\'' + text + '\')', null);
+
+        window._platform.writeClipboard(text).then(function () {
+          appendLog('API', 'writeClipboard', 'OK');
+        }).catch(function (err) {
+          appendLog('ERROR', 'writeClipboard failed', err.message || String(err));
+        });
+      }
+
+      function doOpenExternal() {
+        var url = document.getElementById('externalUrl').value;
+        if (!window._platform) {
+          appendLog('ERROR', 'openExternal', '_platform not available');
+          return;
+        }
+
+        appendLog('API', '_platform.openExternal(\'' + url + '\')', null);
+
+        window._platform.openExternal(url).then(function () {
+          appendLog('API', 'openExternal', 'OK');
+        }).catch(function (err) {
+          appendLog('ERROR', 'openExternal failed', err.message || String(err));
+        });
+      }
+
+      function doSyncLocale() {
+        var locale = document.getElementById('localeSelect').value;
+        if (!window._platform) {
+          appendLog('ERROR', 'syncLocale', '_platform not available');
+          return;
+        }
+
+        appendLog('API', '_platform.syncLocale(\'' + locale + '\')', null);
+
+        window._platform.syncLocale(locale).then(function () {
+          appendLog('API', 'syncLocale', 'OK');
+        }).catch(function (err) {
+          appendLog('ERROR', 'syncLocale failed', err.message || String(err));
+        });
+      }
+
+      // ── Desktop Only (Tauri) ──
+      function doReinstallService() {
+        if (!window._platform || !window._platform.reinstallService) {
+          appendLog('ERROR', 'reinstallService', 'Not available');
+          return;
+        }
+
+        if (!confirm('Reinstall k2 service? This requires admin privileges.')) {
+          appendLog('API', 'reinstallService', 'Cancelled by user');
+          return;
+        }
+
+        appendLog('API', '_platform.reinstallService()', null);
+
+        window._platform.reinstallService().then(function () {
+          appendLog('API', 'reinstallService', 'OK');
+        }).catch(function (err) {
+          appendLog('ERROR', 'reinstallService failed', err.message || String(err));
+        });
+      }
+
+      function doCheckUpdate() {
+        if (!window._platform || !window._platform.updater) {
+          appendLog('ERROR', 'checkUpdate', 'Updater not available');
+          return;
+        }
+
+        if (!window._platform.updater.checkUpdateManual) {
+          appendLog('ERROR', 'checkUpdate', 'checkUpdateManual not available');
+          return;
+        }
+
+        appendLog('API', '_platform.updater.checkUpdateManual()', null);
+
+        window._platform.updater.checkUpdateManual().then(function (result) {
+          appendLog('API', 'checkUpdate response', result);
+          if (window._platform.updater.isUpdateReady) {
+            appendLog('EVENT', 'Update ready', window._platform.updater.updateInfo);
+          }
+        }).catch(function (err) {
+          appendLog('ERROR', 'checkUpdate failed', err.message || String(err));
+        });
+      }
+
+      function doUploadLogs() {
+        if (!window._platform || !window._platform.uploadLogs) {
+          appendLog('ERROR', 'uploadLogs', 'Not available');
+          return;
+        }
+
+        var reason = document.getElementById('logReason').value || 'debug-test';
+        var params = {
+          reason: reason,
+          platform: window._platform.os || 'unknown',
+          version: window._platform.version || 'unknown'
+        };
+
+        appendLog('API', '_platform.uploadLogs()', params);
+
+        window._platform.uploadLogs(params).then(function (result) {
+          appendLog('API', 'uploadLogs response', result);
+        }).catch(function (err) {
+          appendLog('ERROR', 'uploadLogs failed', err.message || String(err));
+        });
+      }
+
+      // ── Standalone fallback ──
+      function loadStandaloneFallback() {
+        appendLog('API', 'Loading standalone fallback...', null);
+
+        // Inline minimal standalone _k2 and _platform injection
+        if (!window._k2) {
+          window._k2 = {
+            run: function (action, params) {
+              return Promise.resolve({
+                code: -1,
+                message: 'Standalone stub: ' + action + ' not connected to daemon',
+                data: {}
+              });
+            }
+          };
+        }
+
+        if (!window._platform) {
+          window._platform = {
+            os: 'web',
+            version: '0.0.0',
+            storage: {
+              get: function () { return Promise.resolve(null); },
+              set: function () { return Promise.resolve(); },
+              remove: function () { return Promise.resolve(); },
+              has: function () { return Promise.resolve(false); },
+              clear: function () { return Promise.resolve(); },
+              keys: function () { return Promise.resolve([]); }
+            },
+            getUdid: function () { return Promise.resolve('standalone-' + Date.now()); },
+            openExternal: function (url) { window.open(url, '_blank'); return Promise.resolve(); },
+            writeClipboard: function (text) {
+              return navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject(new Error('Clipboard API not available'));
+            },
+            readClipboard: function () {
+              return navigator.clipboard ? navigator.clipboard.readText() : Promise.reject(new Error('Clipboard API not available'));
+            },
+            syncLocale: function () { return Promise.resolve(); }
+          };
+        }
+
+        onGlobalsReady();
+      }
+
+      // ── Init ──
+      function onGlobalsReady() {
+        statusBanner.classList.add('hidden');
+        mainContent.classList.remove('hidden');
+        updatePlatformUI();
+        restoreConfig();
+
+        appendLog('EVENT', 'Debug page ready', {
+          platform: detectPlatform(),
+          os: window._platform ? window._platform.os : '?',
+          version: window._platform ? window._platform.version : '?',
+          k2Available: !!window._k2,
+          platformAvailable: !!window._platform
+        });
+      }
+
+      function showPollTimeout() {
+        // Clear status banner content safely using DOM methods
+        while (statusBanner.firstChild) {
+          statusBanner.removeChild(statusBanner.firstChild);
+        }
+
+        var msg = document.createElement('span');
+        msg.style.color = '#ef4444';
+        msg.textContent = 'window._k2 not found after ' + (POLL_TIMEOUT / 1000) + 's';
+        statusBanner.appendChild(msg);
+        statusBanner.appendChild(document.createElement('br'));
+        statusBanner.appendChild(fallbackBtn);
+        fallbackBtn.classList.remove('hidden');
+      }
+
+      function pollForGlobals() {
+        var elapsed = 0;
+
+        var timer = setInterval(function () {
+          elapsed += POLL_INTERVAL;
+
+          if (window._k2 && window._platform) {
+            clearInterval(timer);
+            onGlobalsReady();
+            return;
+          }
+
+          if (elapsed >= POLL_TIMEOUT) {
+            clearInterval(timer);
+            showPollTimeout();
+          }
+        }, POLL_INTERVAL);
+      }
+
+      document.addEventListener('DOMContentLoaded', function () {
+        // Check if globals already available (e.g., Tauri/Capacitor injected before page load)
+        if (window._k2 && window._platform) {
+          onGlobalsReady();
+        } else {
+          pollForGlobals();
+        }
       });
     </script>
   </body>

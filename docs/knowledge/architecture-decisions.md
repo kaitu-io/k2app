@@ -655,3 +655,23 @@ NE process is separate from app process — NWPathMonitor runs in the VPN extens
 **Status**: verified (code-level confirmation)
 
 ---
+
+## Unified Debug Page at Abstraction Layer (2026-02-18, unified-debug-page)
+
+**Decision**: Debug page tests at `window._k2.run()` / `window._platform` abstraction layer instead of raw native APIs (K2Plugin or Tauri IPC). One `debug.html` works on all 3 platforms.
+
+**Supersedes**: mobile-debug v1 which called `window.Capacitor.Plugins.K2Plugin.method()` directly.
+
+**Why abstraction layer over raw native**:
+- Single page works everywhere — Tauri, Capacitor, Standalone
+- Catches bridge-layer bugs (transformStatus, key remapping) that raw native testing misses
+- Config-driven connect elevated ClientConfig to a first-class concept on all platforms; both Tauri and Capacitor use `_k2.run('up', config)` identically
+- Raw native debugging (when needed) is better served by Xcode/Android Studio/DevTools
+
+**Platform-conditional UI**: Desktop-only features (updater, reinstallService, getPid, uploadLogs) shown/hidden via `window.__TAURI__` check. Capacitor-only features (none currently) would use `Capacitor.isNativePlatform()`.
+
+**Tests**: No unit test — page is a diagnostic tool; build verification only (`vite build` → `dist/debug.html` exists).
+**Source**: unified-debug-page (2026-02-18)
+**Status**: verified (build passes, manual test)
+
+---
