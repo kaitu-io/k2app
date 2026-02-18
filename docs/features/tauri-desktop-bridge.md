@@ -1,7 +1,13 @@
 # Feature: Tauri Desktop Bridge
 
-**Status**: Implemented
-**Combines**: `tauri-webview-cannot-fetch-external-https` + `tauri-desktop-missing-k2-globals-injection`
+## Meta
+
+| Field     | Value                                    |
+|-----------|------------------------------------------|
+| Version   | v1                                       |
+| Status    | implemented                              |
+| Updated   | 2026-02-17                               |
+| Combines  | `tauri-webview-cannot-fetch-external-https` + `tauri-desktop-missing-k2-globals-injection` |
 
 ## Problem
 
