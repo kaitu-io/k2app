@@ -54,6 +54,20 @@
       "realIp": "真实 IP",
       "realIpDot": "真实 IP (DoT)"
     },
+    "proxyModeLabel": "代理模式",
+    "proxyModeDescription": "选择网络代理方式",
+    "proxyModeOptions": {
+      "tun": "TUN 模式",
+      "proxy": "代理模式"
+    },
+    "logLevel": "日志级别",
+    "logLevelDescription": "调试时可设置为 Debug 查看详细日志",
+    "logLevelOptions": {
+      "debug": "Debug",
+      "info": "Info",
+      "warn": "Warn",
+      "error": "Error"
+    },
     "recentLocations": "最近使用",
     "favorites": "收藏的服务器",
     "allLocations": "所有位置",

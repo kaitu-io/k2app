@@ -54,6 +54,20 @@
       "realIp": "Real IP",
       "realIpDot": "Real IP (DoT)"
     },
+    "proxyModeLabel": "Proxy Mode",
+    "proxyModeDescription": "Select network proxy mode",
+    "proxyModeOptions": {
+      "tun": "TUN Mode",
+      "proxy": "Proxy Mode"
+    },
+    "logLevel": "Log Level",
+    "logLevelDescription": "Set to Debug for detailed logs when troubleshooting",
+    "logLevelOptions": {
+      "debug": "Debug",
+      "info": "Info",
+      "warn": "Warn",
+      "error": "Error"
+    },
     "recentLocations": "Recent",
     "favorites": "Favorites",
     "allLocations": "All Locations",

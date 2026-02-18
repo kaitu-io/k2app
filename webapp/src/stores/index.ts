@@ -46,10 +46,14 @@ export {
   useDashboard,
 } from './dashboard.store';
 
+// ============ Config Store ============
+export { useConfigStore } from './config.store';
+
 // 内部导入（用于 initializeAllStores）
 import { initializeAuthStore } from './auth.store';
 import { initializeVPNStore } from './vpn.store';
 import { initializeLayoutStore } from './layout.store';
+import { useConfigStore } from './config.store';
 
 /**
  * 初始化所有 Store
@@ -63,6 +67,7 @@ import { initializeLayoutStore } from './layout.store';
 export function initializeAllStores(): () => void {
   // 按依赖顺序初始化 stores
   const cleanupLayout = initializeLayoutStore();
+  useConfigStore.getState().loadConfig(); // fire-and-forget, sets loaded=true when done
   const cleanupAuth = initializeAuthStore();
   const cleanupVPN = initializeVPNStore();
 

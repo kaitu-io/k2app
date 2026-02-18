@@ -2,16 +2,9 @@ import { useCallback, useEffect, useState, useMemo, useRef } from "react";
 import {
   Box,
   Typography,
-  Switch,
-  FormControlLabel,
   Stack,
   Button,
   Tooltip,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Chip,
   styled,
   Collapse,
   ToggleButton,
@@ -29,9 +22,9 @@ import { useVPNStatus, useAuthStore } from "../stores";
 import { useUser } from "../hooks/useUser";
 
 import { useLoginDialogStore } from "../stores/login-dialog.store";
+import { useConfigStore } from '../stores/config.store';
 import { EmptyState } from '../components/LoadingAndEmpty';
 import { getCurrentAppConfig } from '../config/apps';
-import { HighlightedText } from '../components/HighlightedText';
 import { CollapsibleConnectionSection } from '../components/CollapsibleConnectionSection';
 import { useDashboard } from '../stores/dashboard.store';
 import { CloudTunnelList } from '../components/CloudTunnelList';
@@ -78,11 +71,8 @@ export default function Dashboard() {
   const appConfig = getCurrentAppConfig();
   const proxyRuleConfig = appConfig.features.proxyRule || { visible: true, defaultValue: 'lightweight' };
 
-  const [activeRuleType, setActiveRuleType] = useState<string>(
-    proxyRuleConfig.defaultValue
-  );
-  const [activeDnsMode, setActiveDnsMode] = useState<string>('fake-ip');
-  const [showAdvancedOptionsHelp, setShowAdvancedOptionsHelp] = useState(false);
+  // VPN config from persistent store
+  const { ruleMode, dnsMode, mode: proxyMode, logLevel, updateConfig, buildConnectConfig } = useConfigStore();
 
   // Service failure alert tracking (silent mode - no UI feedback)
   const [failureAlertSent, setFailureAlertSent] = useState(false);
@@ -161,17 +151,10 @@ export default function Dashboard() {
     setSelectedCloudTunnel(tunnel);
   }, [isServiceRunning]);
 
-  // Handle rule type selection (UI state only)
-  const handleRuleTypeChange = useCallback(async (ruleType: string) => {
-    setActiveRuleType(ruleType);
-  }, []);
-
-  // Handle Anonymity toggle
-  // TODO: Anonymity feature not yet supported in Rust service k2v4:// format
-  const handleAnonymityToggle = useCallback(async (_e: any) => {
-    console.warn('[Dashboard] Anonymity toggle not yet supported in Rust service');
-    // Anonymity requires server-side support in k2v4 protocol
-  }, []);
+  // Handle rule type selection via config store
+  const handleRuleTypeChange = useCallback((ruleType: string) => {
+    updateConfig({ rule: { global: ruleType === 'global' } });
+  }, [updateConfig]);
 
   // Effect to detect prolonged failure and trigger silent alert
   useEffect(() => {
@@ -210,18 +193,6 @@ export default function Dashboard() {
     }
   }, [isAuthenticated, serviceFailureDuration]);
 
-  // Assemble minimal ClientConfig — Go's config.SetDefaults() fills the rest
-  const assembleConfig = useCallback(() => {
-    const config: Record<string, any> = {};
-    if (selectedCloudTunnel?.url) {
-      config.server = selectedCloudTunnel.url;
-    }
-    config.rule = {
-      global: activeRuleType === 'global',
-    };
-    return config;
-  }, [selectedCloudTunnel, activeRuleType]);
-
   // Handle connection toggle
   const handleToggleConnection = useCallback(async () => {
     if ((isDisconnected || isError) && !activeTunnelInfo.domain) {
@@ -234,8 +205,9 @@ export default function Dashboard() {
         // Error state: reconnect
         console.info('[Dashboard] Reconnecting VPN after error...');
         setOptimisticState('connecting');
-        const config = assembleConfig();
+        const config = buildConnectConfig(selectedCloudTunnel?.url);
         await window._k2.run('up', config);
+        updateConfig({ server: selectedCloudTunnel?.url });
       } else if (!isDisconnected || isRetrying) {
         // Connected/connecting/retrying: disconnect
         console.info('[Dashboard] Stopping VPN...');
@@ -245,16 +217,17 @@ export default function Dashboard() {
         // Disconnected: connect
         console.info('[Dashboard] Starting VPN...');
         setOptimisticState('connecting');
-        const config = assembleConfig();
+        const config = buildConnectConfig(selectedCloudTunnel?.url);
         await window._k2.run('up', config);
+        updateConfig({ server: selectedCloudTunnel?.url });
       }
     } catch (err) {
       console.error('Connection operation failed', err);
       setOptimisticState(null);
     }
-  }, [isDisconnected, isError, isRetrying, activeTunnelInfo.domain, assembleConfig, setOptimisticState]);
+  }, [isDisconnected, isError, isRetrying, activeTunnelInfo.domain, selectedCloudTunnel, buildConnectConfig, updateConfig, setOptimisticState]);
 
-  // Check if any tunnel is selected (for Anonymity toggle)
+  // Check if any tunnel is selected
   const hasTunnelSelected = !!activeTunnelInfo.domain;
 
   return (
@@ -404,7 +377,7 @@ export default function Dashboard() {
                 </Typography>
                 <Stack direction="row" spacing={0.5} sx={{ width: '100%' }}>
                   {proxyRules.map((rule) => {
-                    const isActive = activeRuleType === rule.type;
+                    const isActive = ruleMode === rule.type;
                     return (
                       <Tooltip key={`proxy-rule-${rule.type}`} title={rule.description} arrow>
                         <span style={{ flex: 1, display: 'flex' }}>
@@ -442,27 +415,29 @@ export default function Dashboard() {
                 </Tooltip>
               </Box>
               <Stack direction="column" spacing={1.5}>
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={false}
-                      onChange={handleAnonymityToggle}
-                      disabled={isServiceRunning || !hasTunnelSelected}
-                    />
-                  }
-                  label={
-                    <Box>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Typography variant="body2">{t('dashboard:dashboard.enableAnonymity')}</Typography>
-                        <Chip label={t('common:common.experimental')} size="small" color="warning" sx={{ height: 18, fontSize: '0.65rem' }} />
-                      </Box>
-                      <Typography variant="caption" color="text.secondary" component="span">
-                        <HighlightedText text={t('dashboard:dashboard.anonymityDescription')} />
-                      </Typography>
-                    </Box>
-                  }
-                  sx={{ m: 0, alignItems: 'flex-start' }}
-                />
+                {/* Proxy Mode Selection */}
+                <Box>
+                  <Typography variant="body2" sx={{ mb: 0.5 }}>{t('dashboard:dashboard.proxyModeLabel')}</Typography>
+                  <Typography variant="caption" color="text.secondary" component="p" sx={{ mb: 1 }}>
+                    {t('dashboard:dashboard.proxyModeDescription')}
+                  </Typography>
+                  <ToggleButtonGroup
+                    value={proxyMode}
+                    exclusive
+                    onChange={(_e, value) => value && updateConfig({ mode: value as 'tun' | 'proxy' })}
+                    disabled={isServiceRunning}
+                    size="small"
+                    fullWidth
+                    sx={{ '& .MuiToggleButton-root': { flex: 1, textTransform: 'none', fontSize: '0.75rem' } }}
+                  >
+                    <ToggleButton value="tun">
+                      {t('dashboard:dashboard.proxyModeOptions.tun')}
+                    </ToggleButton>
+                    <ToggleButton value="proxy">
+                      {t('dashboard:dashboard.proxyModeOptions.proxy')}
+                    </ToggleButton>
+                  </ToggleButtonGroup>
+                </Box>
                 {/* DNS Mode Selection */}
                 <Box>
                   <Typography variant="body2" sx={{ mb: 0.5 }}>{t('dashboard:dashboard.dnsMode')}</Typography>
@@ -470,9 +445,9 @@ export default function Dashboard() {
                     {t('dashboard:dashboard.dnsModeDescription')}
                   </Typography>
                   <ToggleButtonGroup
-                    value={activeDnsMode}
+                    value={dnsMode}
                     exclusive
-                    onChange={(_e, value) => value && setActiveDnsMode(value)}
+                    onChange={(_e, value) => value && updateConfig({ dns_mode: value as 'fake-ip' | 'real-ip' })}
                     disabled={isServiceRunning}
                     size="small"
                     fullWidth
@@ -486,41 +461,32 @@ export default function Dashboard() {
                     </ToggleButton>
                   </ToggleButtonGroup>
                 </Box>
+                {/* Log Level Selection */}
+                <Box>
+                  <Typography variant="body2" sx={{ mb: 0.5 }}>{t('dashboard:dashboard.logLevel')}</Typography>
+                  <Typography variant="caption" color="text.secondary" component="p" sx={{ mb: 1 }}>
+                    {t('dashboard:dashboard.logLevelDescription')}
+                  </Typography>
+                  <ToggleButtonGroup
+                    value={logLevel}
+                    exclusive
+                    onChange={(_e, value) => value && updateConfig({ log: { level: value } })}
+                    size="small"
+                    fullWidth
+                    sx={{ '& .MuiToggleButton-root': { flex: 1, textTransform: 'none', fontSize: '0.75rem' } }}
+                  >
+                    <ToggleButton value="error">Error</ToggleButton>
+                    <ToggleButton value="warn">Warn</ToggleButton>
+                    <ToggleButton value="info">Info</ToggleButton>
+                    <ToggleButton value="debug">Debug</ToggleButton>
+                  </ToggleButtonGroup>
+                </Box>
               </Stack>
             </Box>
           </Box>
         </Collapse>
       </Box>
 
-      {/* Advanced Options Help Dialog */}
-      <Dialog
-        open={showAdvancedOptionsHelp}
-        onClose={() => setShowAdvancedOptionsHelp(false)}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>{t('dashboard:dashboard.advancedOptionsHelp')}</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2.5} sx={{ mt: 1 }}>
-            <Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                <Typography variant="subtitle2" fontWeight={600} sx={{ color: 'warning.main' }}>
-                  {t('dashboard:dashboard.enableAnonymity')}
-                </Typography>
-                <Chip label={t('common:common.experimental')} size="small" color="warning" sx={{ height: 18, fontSize: '0.65rem' }} />
-              </Box>
-              <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.8 }}>
-                <HighlightedText text={t('dashboard:dashboard.anonymityDescription')} />
-              </Typography>
-            </Box>
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setShowAdvancedOptionsHelp(false)}>
-            {t('common:common.ok')}
-          </Button>
-        </DialogActions>
-      </Dialog>
     </DashboardContainer>
   );
 }

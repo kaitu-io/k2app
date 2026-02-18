@@ -6,7 +6,7 @@
 |-----------|------------------------------------------|
 | Feature   | config-driven-connect                    |
 | Version   | v2                                       |
-| Status    | draft                                    |
+| Status    | implemented                              |
 | Created   | 2026-02-16                               |
 | Updated   | 2026-02-18                               |
 | Depends on | mobile-webapp-bridge, mobile-vpn-ios, mobile-vpn-android |
