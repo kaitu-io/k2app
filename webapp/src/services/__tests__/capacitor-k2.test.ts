@@ -9,6 +9,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Browser } from '@capacitor/browser';
 import { Clipboard } from '@capacitor/clipboard';
+import { Capacitor } from '@capacitor/core';
 
 // Mock @capacitor/core
 vi.mock('@capacitor/core', () => ({
@@ -42,6 +43,7 @@ const mockK2Plugin = {
   connect: vi.fn(),
   disconnect: vi.fn(),
   addListener: vi.fn(),
+  installNativeUpdate: vi.fn(),
 };
 
 vi.mock('k2-plugin', () => ({
@@ -355,6 +357,176 @@ describe('capacitor-k2', () => {
 
       // syncLocale on mobile is a no-op — should not throw
       await expect(window._platform.syncLocale('zh-CN')).resolves.toBeUndefined();
+    });
+  });
+
+  describe('updater', () => {
+    /**
+     * Helper: extract the callback registered for a given event name from addListener calls.
+     * K2Plugin.addListener is called with (eventName, handler).
+     */
+    function getListenerCallback(eventName: string): ((data: any) => void) | undefined {
+      const call = mockK2Plugin.addListener.mock.calls.find(
+        (c: any[]) => c[0] === eventName,
+      );
+      return call ? call[1] : undefined;
+    }
+
+    it('test_injectCapacitorGlobals_sets_updater', async () => {
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      expect(window._platform.updater).toBeDefined();
+      expect(window._platform.updater).toBeTruthy();
+    });
+
+    it('test_updater_initial_state', async () => {
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      const updater = window._platform.updater;
+      expect(updater).toBeDefined();
+      expect(updater!.isUpdateReady).toBe(false);
+      expect(updater!.updateInfo).toBeNull();
+      expect(updater!.isChecking).toBe(false);
+      expect(updater!.error).toBeNull();
+    });
+
+    it('test_updater_handles_nativeUpdateReady_event', async () => {
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      // Simulate K2Plugin emitting nativeUpdateReady (Android APK downloaded)
+      const callback = getListenerCallback('nativeUpdateReady');
+      expect(callback).toBeDefined();
+      callback!({ version: '1.1.0', size: 12345, path: '/cache/app.apk' });
+
+      const updater = window._platform.updater!;
+      expect(updater.isUpdateReady).toBe(true);
+      expect(updater.updateInfo).toBeDefined();
+      expect(updater.updateInfo!.currentVersion).toBe('0.4.0');
+      expect(updater.updateInfo!.newVersion).toBe('1.1.0');
+    });
+
+    it('test_updater_handles_nativeUpdateAvailable_event', async () => {
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      // Simulate K2Plugin emitting nativeUpdateAvailable (iOS App Store)
+      const callback = getListenerCallback('nativeUpdateAvailable');
+      expect(callback).toBeDefined();
+      callback!({ version: '1.1.0', appStoreUrl: 'https://apps.apple.com/app/id6759199298' });
+
+      const updater = window._platform.updater!;
+      expect(updater.isUpdateReady).toBe(true);
+      expect(updater.updateInfo).toBeDefined();
+      expect(updater.updateInfo!.newVersion).toBe('1.1.0');
+    });
+
+    it('test_applyUpdateNow_android_calls_installNativeUpdate', async () => {
+      // Switch platform to android for this test
+      vi.mocked(Capacitor.getPlatform).mockReturnValue('android');
+
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      // Simulate nativeUpdateReady with a path (Android APK downloaded)
+      const callback = getListenerCallback('nativeUpdateReady');
+      expect(callback).toBeDefined();
+      callback!({ version: '1.1.0', size: 12345, path: '/cache/app.apk' });
+
+      mockK2Plugin.installNativeUpdate.mockResolvedValue(undefined);
+
+      await window._platform.updater!.applyUpdateNow();
+
+      expect(mockK2Plugin.installNativeUpdate).toHaveBeenCalledWith({ path: '/cache/app.apk' });
+
+      // Restore platform to ios for other tests
+      vi.mocked(Capacitor.getPlatform).mockReturnValue('ios');
+    });
+
+    it('test_applyUpdateNow_ios_opens_appstore', async () => {
+      // Platform is ios (default mock)
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      // Simulate nativeUpdateAvailable with App Store URL (iOS)
+      const callback = getListenerCallback('nativeUpdateAvailable');
+      expect(callback).toBeDefined();
+      callback!({ version: '1.1.0', appStoreUrl: 'https://apps.apple.com/app/id6759199298' });
+
+      await window._platform.updater!.applyUpdateNow();
+
+      expect(Browser.open).toHaveBeenCalledWith({
+        url: 'https://apps.apple.com/app/id6759199298',
+      });
+    });
+
+    it('test_onUpdateReady_callback', async () => {
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      const updater = window._platform.updater;
+      expect(updater).toBeDefined();
+      expect(updater!.onUpdateReady).toBeDefined();
+
+      const onReadyCallback = vi.fn();
+      updater!.onUpdateReady!(onReadyCallback);
+
+      // Simulate nativeUpdateReady event
+      const callback = getListenerCallback('nativeUpdateReady');
+      expect(callback).toBeDefined();
+      callback!({ version: '1.1.0', size: 12345, path: '/cache/app.apk' });
+
+      expect(onReadyCallback).toHaveBeenCalledTimes(1);
+      expect(onReadyCallback).toHaveBeenCalledWith(
+        expect.objectContaining({
+          newVersion: '1.1.0',
+        }),
+      );
+    });
+
+    it('test_onUpdateReady_returns_unsubscribe', async () => {
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      const updater = window._platform.updater;
+      expect(updater).toBeDefined();
+      expect(updater!.onUpdateReady).toBeDefined();
+
+      const onReadyCallback = vi.fn();
+      const unsubscribe = updater!.onUpdateReady!(onReadyCallback);
+
+      // Unsubscribe
+      unsubscribe();
+
+      // Simulate nativeUpdateReady event after unsubscribe
+      const callback = getListenerCallback('nativeUpdateReady');
+      expect(callback).toBeDefined();
+      callback!({ version: '1.1.0', size: 12345, path: '/cache/app.apk' });
+
+      // Callback should NOT have been invoked
+      expect(onReadyCallback).not.toHaveBeenCalled();
+    });
+
+    it('test_web_ota_no_ui_notification', async () => {
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      // Web OTA events (if emitted) should NOT set isUpdateReady
+      // The bridge should NOT register a listener for web OTA that updates the updater state
+      const updater = window._platform.updater;
+      expect(updater).toBeDefined();
+
+      // Even if there were a webOtaUpdate event, it shouldn't affect updater state
+      const webOtaCallback = getListenerCallback('webOtaUpdate');
+      if (webOtaCallback) {
+        webOtaCallback({ version: '1.2.0' });
+      }
+
+      // Updater state should remain unchanged — web OTA is silent
+      expect(updater!.isUpdateReady).toBe(false);
+      expect(updater!.updateInfo).toBeNull();
     });
   });
 
