@@ -28,8 +28,14 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
     private var vpnManager: NETunnelProviderManager?
     private var statusObserver: NSObjectProtocol?
 
-    private let webManifestURL = "https://d0.all7.cc/kaitu/web/latest.json"
-    private let iosManifestURL = "https://d0.all7.cc/kaitu/ios/latest.json"
+    private let webManifestEndpoints = [
+        "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/web/latest.json",
+        "https://d0.all7.cc/kaitu/web/latest.json"
+    ]
+    private let iosManifestEndpoints = [
+        "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/ios/latest.json",
+        "https://d0.all7.cc/kaitu/ios/latest.json"
+    ]
     private let appStoreURL = "https://apps.apple.com/app/id6759199298"
 
     override public func load() {
@@ -47,6 +53,10 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         loadVPNManager()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+            self?.performAutoUpdateCheck()
+        }
     }
 
     private func registerStatusObserver() {
@@ -241,16 +251,11 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
     // MARK: - Update Methods
 
     @objc func checkWebUpdate(_ call: CAPPluginCall) {
-        guard let url = URL(string: webManifestURL) else {
-            call.resolve(["available": false])
-            return
-        }
-
-        URLSession.shared.dataTask(with: url) { data, response, error in
-            guard let data = data, error == nil,
+        Task {
+            guard let (data, _) = await fetchManifest(endpoints: webManifestEndpoints),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let remoteVersion = json["version"] as? String else {
-                call.resolve(["available": false])
+                await MainActor.run { call.resolve(["available": false]) }
                 return
             }
 
@@ -273,24 +278,19 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                 if let size = json["size"] as? Int {
                     result["size"] = size
                 }
-                call.resolve(result)
+                await MainActor.run { call.resolve(result) }
             } else {
-                call.resolve(["available": false])
+                await MainActor.run { call.resolve(["available": false]) }
             }
-        }.resume()
+        }
     }
 
     @objc func checkNativeUpdate(_ call: CAPPluginCall) {
-        guard let url = URL(string: iosManifestURL) else {
-            call.resolve(["available": false])
-            return
-        }
-
-        URLSession.shared.dataTask(with: url) { data, response, error in
-            guard let data = data, error == nil,
+        Task {
+            guard let (data, _) = await fetchManifest(endpoints: iosManifestEndpoints),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let remoteVersion = json["version"] as? String else {
-                call.resolve(["available": false])
+                await MainActor.run { call.resolve(["available": false]) }
                 return
             }
 
@@ -306,100 +306,109 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                 } else {
                     result["url"] = self.appStoreURL
                 }
-                call.resolve(result)
+                await MainActor.run { call.resolve(result) }
             } else {
-                call.resolve(["available": false])
+                await MainActor.run { call.resolve(["available": false]) }
             }
-        }.resume()
+        }
     }
 
     @objc func applyWebUpdate(_ call: CAPPluginCall) {
-        guard let manifestUrl = URL(string: webManifestURL) else {
-            call.reject("Invalid manifest URL")
-            return
-        }
-
         Task {
-            let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-            let webUpdatePath = documentsPath.appendingPathComponent("web-update")
-            let webBackupPath = documentsPath.appendingPathComponent("web-backup")
-            let tempZipPath = documentsPath.appendingPathComponent("webapp-update.zip")
-
-            do {
-                // 1. Fetch manifest
-                let (manifestData, _) = try await URLSession.shared.data(from: manifestUrl)
-                guard let json = try? JSONSerialization.jsonObject(with: manifestData) as? [String: Any],
-                      let zipUrlString = json["url"] as? String,
-                      let remoteVersion = json["version"] as? String,
-                      let expectedHash = json["hash"] as? String,
-                      let zipUrl = URL(string: zipUrlString) else {
-                    await MainActor.run { call.reject("Failed to fetch or parse web update manifest") }
-                    return
+            await applyWebUpdateInternal { result in
+                switch result {
+                case .success:
+                    call.resolve()
+                case .failure(let error):
+                    call.reject("Failed to apply web update: \(error.localizedDescription)")
                 }
-
-                // Strip "sha256:" prefix if present
-                let cleanHash = expectedHash.hasPrefix("sha256:") ? String(expectedHash.dropFirst(7)) : expectedHash
-
-                // 2. Download zip
-                let (zipData, _) = try await URLSession.shared.data(from: zipUrl)
-
-                // 3. Verify SHA256 hash
-                let actualHash = self.sha256(data: zipData)
-                guard actualHash == cleanHash else {
-                    await MainActor.run { call.reject("Hash mismatch: expected \(cleanHash), got \(actualHash)") }
-                    return
-                }
-
-                // 4. Write zip to temp file
-                try zipData.write(to: tempZipPath)
-
-                // If existing web-update exists, move to web-backup
-                if FileManager.default.fileExists(atPath: webUpdatePath.path) {
-                    if FileManager.default.fileExists(atPath: webBackupPath.path) {
-                        try FileManager.default.removeItem(at: webBackupPath)
-                    }
-                    try FileManager.default.moveItem(at: webUpdatePath, to: webBackupPath)
-                }
-
-                // Create web-update directory
-                try FileManager.default.createDirectory(at: webUpdatePath, withIntermediateDirectories: true)
-
-                // 5. Unzip to web-update/
-                try self.unzip(fileAt: tempZipPath, to: webUpdatePath)
-
-                // Clean up temp zip
-                try? FileManager.default.removeItem(at: tempZipPath)
-
-                // Flatten nested subdirectory if index.html not at root
-                let indexPath = webUpdatePath.appendingPathComponent("index.html")
-                if !FileManager.default.fileExists(atPath: indexPath.path) {
-                    let contents = try FileManager.default.contentsOfDirectory(at: webUpdatePath, includingPropertiesForKeys: nil)
-                    if contents.count == 1, contents[0].hasDirectoryPath {
-                        let subdir = contents[0]
-                        let subContents = try FileManager.default.contentsOfDirectory(at: subdir, includingPropertiesForKeys: nil)
-                        for item in subContents {
-                            let dest = webUpdatePath.appendingPathComponent(item.lastPathComponent)
-                            try FileManager.default.moveItem(at: item, to: dest)
-                        }
-                        try FileManager.default.removeItem(at: subdir)
-                    }
-                }
-
-                // Write version for future comparison
-                try remoteVersion.write(to: webUpdatePath.appendingPathComponent("version.txt"),
-                                        atomically: true, encoding: .utf8)
-
-                await MainActor.run { call.resolve() }
-            } catch {
-                // Restore backup on failure
-                try? FileManager.default.removeItem(at: webUpdatePath)
-                if FileManager.default.fileExists(atPath: webBackupPath.path) {
-                    try? FileManager.default.moveItem(at: webBackupPath, to: webUpdatePath)
-                }
-                try? FileManager.default.removeItem(at: tempZipPath)
-
-                await MainActor.run { call.reject("Failed to apply web update: \(error.localizedDescription)") }
             }
+        }
+    }
+
+    /// Shared web update logic used by both applyWebUpdate (user-triggered) and auto-check.
+    /// Calls completion on MainActor when done.
+    private func applyWebUpdateInternal(completion: @escaping (Result<Void, Error>) -> Void) async {
+        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let webUpdatePath = documentsPath.appendingPathComponent("web-update")
+        let webBackupPath = documentsPath.appendingPathComponent("web-backup")
+        let tempZipPath = documentsPath.appendingPathComponent("webapp-update.zip")
+
+        do {
+            // 1. Fetch manifest from dual CDN endpoints
+            guard let (manifestData, baseURL) = await fetchManifest(endpoints: webManifestEndpoints),
+                  let json = try? JSONSerialization.jsonObject(with: manifestData) as? [String: Any],
+                  let zipUrlString = json["url"] as? String,
+                  let remoteVersion = json["version"] as? String,
+                  let expectedHash = json["hash"] as? String else {
+                await MainActor.run { completion(.failure(NSError(domain: "K2Plugin", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch or parse web update manifest"]))) }
+                return
+            }
+
+            let zipUrl = resolveDownloadURL(url: zipUrlString, baseURL: baseURL)
+
+            // Strip "sha256:" prefix if present
+            let cleanHash = expectedHash.hasPrefix("sha256:") ? String(expectedHash.dropFirst(7)) : expectedHash
+
+            // 2. Download zip
+            let (zipData, _) = try await URLSession.shared.data(from: zipUrl)
+
+            // 3. Verify SHA256 hash
+            let actualHash = self.sha256(data: zipData)
+            guard actualHash == cleanHash else {
+                await MainActor.run { completion(.failure(NSError(domain: "K2Plugin", code: -2, userInfo: [NSLocalizedDescriptionKey: "Hash mismatch: expected \(cleanHash), got \(actualHash)"]))) }
+                return
+            }
+
+            // 4. Write zip to temp file
+            try zipData.write(to: tempZipPath)
+
+            // If existing web-update exists, move to web-backup
+            if FileManager.default.fileExists(atPath: webUpdatePath.path) {
+                if FileManager.default.fileExists(atPath: webBackupPath.path) {
+                    try FileManager.default.removeItem(at: webBackupPath)
+                }
+                try FileManager.default.moveItem(at: webUpdatePath, to: webBackupPath)
+            }
+
+            // Create web-update directory
+            try FileManager.default.createDirectory(at: webUpdatePath, withIntermediateDirectories: true)
+
+            // 5. Unzip to web-update/
+            try self.unzip(fileAt: tempZipPath, to: webUpdatePath)
+
+            // Clean up temp zip
+            try? FileManager.default.removeItem(at: tempZipPath)
+
+            // Flatten nested subdirectory if index.html not at root
+            let indexPath = webUpdatePath.appendingPathComponent("index.html")
+            if !FileManager.default.fileExists(atPath: indexPath.path) {
+                let contents = try FileManager.default.contentsOfDirectory(at: webUpdatePath, includingPropertiesForKeys: nil)
+                if contents.count == 1, contents[0].hasDirectoryPath {
+                    let subdir = contents[0]
+                    let subContents = try FileManager.default.contentsOfDirectory(at: subdir, includingPropertiesForKeys: nil)
+                    for item in subContents {
+                        let dest = webUpdatePath.appendingPathComponent(item.lastPathComponent)
+                        try FileManager.default.moveItem(at: item, to: dest)
+                    }
+                    try FileManager.default.removeItem(at: subdir)
+                }
+            }
+
+            // Write version for future comparison
+            try remoteVersion.write(to: webUpdatePath.appendingPathComponent("version.txt"),
+                                    atomically: true, encoding: .utf8)
+
+            await MainActor.run { completion(.success(())) }
+        } catch {
+            // Restore backup on failure
+            try? FileManager.default.removeItem(at: webUpdatePath)
+            if FileManager.default.fileExists(atPath: webBackupPath.path) {
+                try? FileManager.default.moveItem(at: webBackupPath, to: webUpdatePath)
+            }
+            try? FileManager.default.removeItem(at: tempZipPath)
+
+            await MainActor.run { completion(.failure(error)) }
         }
     }
 
@@ -460,6 +469,94 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     // MARK: - Private Update Helpers
+
+    /// Try each endpoint in order with a 10s timeout. Returns (data, baseURL) where baseURL
+    /// is the manifest URL with the filename stripped (for resolving relative download paths).
+    private func fetchManifest(endpoints: [String]) async -> (Data, URL)? {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 10
+        let session = URLSession(configuration: config)
+
+        for endpoint in endpoints {
+            guard let url = URL(string: endpoint) else { continue }
+            do {
+                let (data, response) = try await session.data(from: url)
+                if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                    let baseURL = url.deletingLastPathComponent()
+                    return (data, baseURL)
+                }
+            } catch {
+                NSLog("[K2Plugin] fetchManifest failed for %@: %@", endpoint, error.localizedDescription)
+                continue
+            }
+        }
+        return nil
+    }
+
+    /// Resolve a download URL: absolute URLs pass through, relative paths are appended to baseURL.
+    private func resolveDownloadURL(url: String, baseURL: URL) -> URL {
+        if url.hasPrefix("http://") || url.hasPrefix("https://") {
+            return URL(string: url)!
+        }
+        return baseURL.appendingPathComponent(url)
+    }
+
+    /// Auto-check on cold start: check native update (emit event), then silently apply web OTA.
+    private func performAutoUpdateCheck() {
+        Task {
+            // 1. Check native (iOS) update
+            do {
+                if let (data, _) = await fetchManifest(endpoints: iosManifestEndpoints),
+                   let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let remoteVersion = json["version"] as? String {
+                    let localVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+                    if isNewerVersion(remoteVersion, than: localVersion) {
+                        let storeUrl = (json["appstore_url"] as? String) ?? appStoreURL
+                        await MainActor.run {
+                            self.notifyListeners("nativeUpdateAvailable", data: [
+                                "version": remoteVersion,
+                                "appStoreUrl": storeUrl
+                            ])
+                        }
+                    }
+                }
+            } catch {
+                NSLog("[K2Plugin] autocheck native update error: %@", error.localizedDescription)
+            }
+
+            // 2. Check + silently apply web OTA
+            do {
+                guard let (manifestData, _) = await fetchManifest(endpoints: webManifestEndpoints),
+                      let json = try JSONSerialization.jsonObject(with: manifestData) as? [String: Any],
+                      let remoteVersion = json["version"] as? String else {
+                    return
+                }
+
+                let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+                let versionFile = documentsPath.appendingPathComponent("web-update/version.txt")
+                let localVersion: String
+                if FileManager.default.fileExists(atPath: versionFile.path),
+                   let storedVersion = try? String(contentsOf: versionFile, encoding: .utf8) {
+                    localVersion = storedVersion.trimmingCharacters(in: .whitespacesAndNewlines)
+                } else {
+                    localVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+                }
+
+                guard isNewerVersion(remoteVersion, than: localVersion) else { return }
+
+                await applyWebUpdateInternal { result in
+                    switch result {
+                    case .success:
+                        NSLog("[K2Plugin] auto web OTA applied: %@", remoteVersion)
+                    case .failure(let error):
+                        NSLog("[K2Plugin] auto web OTA failed: %@", error.localizedDescription)
+                    }
+                }
+            } catch {
+                NSLog("[K2Plugin] autocheck web update error: %@", error.localizedDescription)
+            }
+        }
+    }
 
     private func isNewerVersion(_ remote: String, than local: String) -> Bool {
         let r = remote.split(separator: ".").compactMap { Int($0) }
