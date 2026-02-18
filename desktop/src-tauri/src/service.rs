@@ -3,8 +3,16 @@
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 
-const SERVICE_BASE_URL: &str = "http://127.0.0.1:1777";
+const DEFAULT_DAEMON_PORT: u16 = 1777;
 const REQUEST_TIMEOUT_SECS: u64 = 5;
+
+fn service_base_url() -> String {
+    let port = std::env::var("K2_DAEMON_PORT")
+        .ok()
+        .and_then(|v| v.parse::<u16>().ok())
+        .unwrap_or(DEFAULT_DAEMON_PORT);
+    format!("http://127.0.0.1:{}", port)
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ServiceResponse {
@@ -23,7 +31,7 @@ struct CoreRequest {
 
 /// Call k2 core API: POST /api/core with JSON body
 pub fn core_action(action: &str, params: Option<serde_json::Value>) -> Result<ServiceResponse, String> {
-    let url = format!("{}/api/core", SERVICE_BASE_URL);
+    let url = format!("{}/api/core", service_base_url());
     let body = CoreRequest {
         action: action.to_string(),
         params,
@@ -54,7 +62,7 @@ pub fn core_action(action: &str, params: Option<serde_json::Value>) -> Result<Se
 
 /// Ping the k2 service
 pub fn ping_service() -> bool {
-    let url = format!("{}/ping", SERVICE_BASE_URL);
+    let url = format!("{}/ping", service_base_url());
     let client = match reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(2))
         .build()
@@ -138,7 +146,7 @@ pub async fn daemon_exec(
 #[tauri::command]
 pub async fn get_udid() -> Result<ServiceResponse, String> {
     tokio::task::spawn_blocking(|| {
-        let url = format!("{}/api/device/udid", SERVICE_BASE_URL);
+        let url = format!("{}/api/device/udid", service_base_url());
         let client = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
             .build()

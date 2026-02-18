@@ -30,6 +30,9 @@ build-openwrt: pre-build
 dev: pre-build
 	./scripts/dev.sh
 
+dev-desktop: pre-build
+	./scripts/dev-desktop.sh
+
 # API server
 deploy-api:
 	mkdir -p release
