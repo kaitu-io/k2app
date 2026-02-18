@@ -8,9 +8,10 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
-import { open as shellOpen } from '@tauri-apps/plugin-shell';
-import type { IK2Vpn, IPlatform, SResponse } from '../types/kaitu-core';
+import { listen } from '@tauri-apps/api/event';
+import { openUrl } from '@tauri-apps/plugin-opener';
+import { writeText, readText } from '@tauri-apps/plugin-clipboard-manager';
+import type { IK2Vpn, IPlatform, IUpdater, UpdateInfo, SResponse } from '../types/kaitu-core';
 import type { StatusResponseData, ControlError, ServiceState } from './control-types';
 import { webSecureStorage } from './secure-storage';
 
@@ -95,10 +96,59 @@ export async function injectTauriGlobals(): Promise<void> {
     },
   };
 
+  // Build updater object implementing IUpdater
+  const updaterState: IUpdater = {
+    isUpdateReady: false,
+    updateInfo: null,
+    isChecking: false,
+    error: null,
+
+    applyUpdateNow: async (): Promise<void> => {
+      await invoke('apply_update_now');
+    },
+
+    checkUpdateManual: async (): Promise<string> => {
+      updaterState.isChecking = true;
+      updaterState.error = null;
+      try {
+        const result = await invoke<string>('check_update_now');
+        updaterState.isChecking = false;
+        return result;
+      } catch (e) {
+        updaterState.isChecking = false;
+        updaterState.error = e instanceof Error ? e.message : String(e);
+        throw e;
+      }
+    },
+
+    onUpdateReady: (callback: (info: UpdateInfo) => void): (() => void) => {
+      let unlisten: (() => void) | null = null;
+      listen<UpdateInfo>('update-ready', (event) => {
+        updaterState.isUpdateReady = true;
+        updaterState.updateInfo = event.payload;
+        callback(event.payload);
+      }).then((fn) => {
+        unlisten = fn;
+      });
+      return () => {
+        unlisten?.();
+      };
+    },
+  };
+
+  // Initialize updater state from existing Rust state (app may have update ready from startup check)
+  try {
+    const existingUpdate = await invoke<UpdateInfo | null>('get_update_status');
+    if (existingUpdate) {
+      updaterState.isUpdateReady = true;
+      updaterState.updateInfo = existingUpdate;
+    }
+  } catch {
+    // Updater not available, leave defaults
+  }
+
   const tauriPlatform: IPlatform = {
     os: osMap[platformInfo.os] ?? 'linux',
-    isDesktop: true,
-    isMobile: false,
     version: platformInfo.version,
 
     storage: webSecureStorage,
@@ -112,63 +162,38 @@ export async function injectTauriGlobals(): Promise<void> {
     },
 
     openExternal: async (url: string): Promise<void> => {
-      await shellOpen(url);
+      await openUrl(url);
     },
 
     writeClipboard: async (text: string): Promise<void> => {
-      if (navigator.clipboard) {
-        await navigator.clipboard.writeText(text);
-      }
+      await writeText(text);
     },
 
     readClipboard: async (): Promise<string> => {
-      if (navigator.clipboard) {
-        return navigator.clipboard.readText();
-      }
-      return '';
+      return await readText();
     },
 
-    nativeExec: async <T = any>(action: string, params?: Record<string, any>): Promise<T> => {
-      return invoke<T>(action, params ?? {});
+    syncLocale: async (locale: string): Promise<void> => {
+      await invoke('sync_locale', { locale });
     },
 
-    debug: (message: string) => console.debug('[K2:Tauri]', message),
-    warn: (message: string) => console.warn('[K2:Tauri]', message),
+    updater: updaterState,
+
+    reinstallService: async (): Promise<void> => {
+      await invoke('admin_reinstall_service');
+    },
+
+    getPid: async (): Promise<number> => {
+      return await invoke<number>('get_pid');
+    },
+
+    uploadLogs: async (params): Promise<{ success: boolean; error?: string }> => {
+      return await invoke<{ success: boolean; error?: string }>('upload_service_log_command', { params });
+    },
   };
 
   (window as any)._k2 = tauriK2;
   (window as any)._platform = tauriPlatform;
 
-  patchFetchForTauri();
-
   console.info(`[K2:Tauri] Injected - os=${tauriPlatform.os}, version=${tauriPlatform.version}`);
-}
-
-/**
- * Patch window.fetch so external HTTPS requests go through the Tauri HTTP plugin
- * (bypasses WebKit cross-origin restrictions). Local requests use native fetch.
- */
-function patchFetchForTauri(): void {
-  const nativeFetch = window.fetch.bind(window);
-
-  window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const url = typeof input === 'string'
-      ? input
-      : input instanceof URL
-        ? input.href
-        : input.url;
-
-    if (
-      url.startsWith('/') ||
-      url.startsWith('http://127.0.0.1') ||
-      url.startsWith('http://localhost') ||
-      url.startsWith('tauri:') ||
-      url.startsWith('data:') ||
-      url.startsWith('blob:')
-    ) {
-      return nativeFetch(input, init);
-    }
-
-    return tauriFetch(url, init);
-  };
 }

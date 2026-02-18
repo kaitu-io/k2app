@@ -5,6 +5,11 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));
 
+// Mock @tauri-apps/api/event
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn().mockResolvedValue(() => {}),
+}));
+
 // Mock @tauri-apps/plugin-opener
 vi.mock('@tauri-apps/plugin-opener', () => ({
   openUrl: vi.fn(),
@@ -17,12 +22,14 @@ vi.mock('@tauri-apps/plugin-clipboard-manager', () => ({
 }));
 
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { writeText, readText } from '@tauri-apps/plugin-clipboard-manager';
 import { injectTauriGlobals } from '../tauri-k2';
 import { getK2Source } from '../standalone-k2';
 
 const mockInvoke = vi.mocked(invoke);
+const mockListen = vi.mocked(listen);
 const mockOpenUrl = vi.mocked(openUrl);
 const mockWriteText = vi.mocked(writeText);
 const mockReadText = vi.mocked(readText);
@@ -48,6 +55,9 @@ describe('tauri-k2', () => {
       mockInvoke.mockImplementation(async (cmd: string) => {
         if (cmd === 'get_platform_info') {
           return { os: 'macos', version: '0.4.0' };
+        }
+        if (cmd === 'get_update_status') {
+          return null; // No pending update by default
         }
         return { code: 0, message: 'ok', data: {} };
       });
@@ -192,6 +202,9 @@ describe('tauri-k2', () => {
         if (cmd === 'get_platform_info') {
           return { os: 'macos', version: '0.4.0' };
         }
+        if (cmd === 'get_update_status') {
+          return null;
+        }
         return { code: 0, message: 'ok', data: {} };
       });
       await injectTauriGlobals();
@@ -259,11 +272,121 @@ describe('tauri-k2', () => {
     });
   });
 
+  describe('updater', () => {
+    beforeEach(async () => {
+      mockListen.mockResolvedValue(() => {});
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === 'get_platform_info') {
+          return { os: 'macos', version: '0.4.0' };
+        }
+        if (cmd === 'get_update_status') {
+          return null;
+        }
+        return { code: 0, message: 'ok', data: {} };
+      });
+      await injectTauriGlobals();
+    });
+
+    it('updater exists with initial state', () => {
+      expect(window._platform.updater).toBeDefined();
+      expect(window._platform.updater!.isUpdateReady).toBe(false);
+      expect(window._platform.updater!.updateInfo).toBeNull();
+      expect(window._platform.updater!.isChecking).toBe(false);
+      expect(window._platform.updater!.error).toBeNull();
+    });
+
+    it('updater initializes with existing update from Rust', async () => {
+      // Re-inject with a pending update
+      delete (window as any)._k2;
+      delete (window as any)._platform;
+      vi.clearAllMocks();
+
+      mockListen.mockResolvedValue(() => {});
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === 'get_platform_info') {
+          return { os: 'macos', version: '0.3.0' };
+        }
+        if (cmd === 'get_update_status') {
+          return { currentVersion: '0.3.0', newVersion: '0.4.0', releaseNotes: 'Bug fixes' };
+        }
+        return { code: 0, message: 'ok', data: {} };
+      });
+
+      await injectTauriGlobals();
+
+      expect(window._platform.updater!.isUpdateReady).toBe(true);
+      expect(window._platform.updater!.updateInfo).toEqual({
+        currentVersion: '0.3.0',
+        newVersion: '0.4.0',
+        releaseNotes: 'Bug fixes',
+      });
+    });
+
+    it('applyUpdateNow calls invoke', async () => {
+      mockInvoke.mockResolvedValueOnce(undefined);
+      await window._platform.updater!.applyUpdateNow();
+      expect(mockInvoke).toHaveBeenCalledWith('apply_update_now');
+    });
+
+    it('checkUpdateManual sets isChecking and calls invoke', async () => {
+      mockInvoke.mockResolvedValueOnce('Update 0.5.0 ready');
+
+      const result = await window._platform.updater!.checkUpdateManual!();
+
+      expect(mockInvoke).toHaveBeenCalledWith('check_update_now');
+      expect(result).toBe('Update 0.5.0 ready');
+      expect(window._platform.updater!.isChecking).toBe(false);
+    });
+
+    it('onUpdateReady registers listener via listen', () => {
+      const callback = vi.fn();
+      const unsub = window._platform.updater!.onUpdateReady!(callback);
+
+      expect(mockListen).toHaveBeenCalledWith('update-ready', expect.any(Function));
+      expect(typeof unsub).toBe('function');
+    });
+  });
+
+  describe('uploadLogs', () => {
+    beforeEach(async () => {
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === 'get_platform_info') {
+          return { os: 'macos', version: '0.4.0' };
+        }
+        if (cmd === 'get_update_status') {
+          return null;
+        }
+        return { code: 0, message: 'ok', data: {} };
+      });
+      await injectTauriGlobals();
+    });
+
+    it('uploadLogs calls invoke with correct params', async () => {
+      const params = {
+        email: 'user@test.com',
+        reason: 'connection failed',
+        failureDurationMs: 5000,
+        platform: 'macos',
+        version: '0.4.0',
+        feedbackId: 'fb-123',
+      };
+      mockInvoke.mockResolvedValueOnce({ success: true });
+
+      const result = await window._platform.uploadLogs!(params);
+
+      expect(mockInvoke).toHaveBeenCalledWith('upload_service_log_command', { params });
+      expect(result.success).toBe(true);
+    });
+  });
+
   describe('getK2Source', () => {
     it('returns tauri after Tauri injection', async () => {
       mockInvoke.mockImplementation(async (cmd: string) => {
         if (cmd === 'get_platform_info') {
           return { os: 'macos', version: '0.4.0' };
+        }
+        if (cmd === 'get_update_status') {
+          return null;
         }
         return { code: 0, message: 'ok', data: {} };
       });

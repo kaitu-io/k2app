@@ -4,8 +4,10 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "http:default",
-    "shell:allow-open",
+    "opener:default",
+    "clipboard-manager:allow-write-text",
+    "clipboard-manager:allow-read-text",
+    "core:event:default",
     "updater:default",
     "process:default",
     "autostart:default"

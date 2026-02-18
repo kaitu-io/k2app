@@ -1,10 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod log_upload;
 mod service;
 mod tray;
 mod updater;
 
-use tauri::Manager;
+use tauri::{Manager, RunEvent};
 
 fn main() {
     let mut builder = tauri::Builder::default()
@@ -17,8 +18,8 @@ fn main() {
         }))
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_http::init())
-        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
@@ -32,6 +33,9 @@ fn main() {
             updater::check_update_now,
             updater::apply_update_now,
             updater::get_update_status,
+            tray::sync_locale,
+            service::get_pid,
+            log_upload::upload_service_log_command,
         ]);
 
     #[cfg(all(feature = "mcp-bridge", debug_assertions))]
@@ -40,6 +44,7 @@ fn main() {
     }
 
     builder
+        .manage(tray::TrayLocale(std::sync::Mutex::new("en-US".to_string())))
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 window.show().ok();
@@ -66,6 +71,11 @@ fn main() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let RunEvent::ExitRequested { .. } = &event {
+                updater::install_pending_update(app);
+            }
+        });
 }
