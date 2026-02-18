@@ -18,7 +18,13 @@ pub fn sync_locale(locale: String, state: State<'_, TrayLocale>) {
     log::info!("[tray] Locale synced: {}", &*current);
 }
 
-const SERVICE_BASE_URL: &str = "http://127.0.0.1:1777";
+fn service_base_url() -> String {
+    let port = std::env::var("K2_DAEMON_PORT")
+        .ok()
+        .and_then(|v| v.parse::<u16>().ok())
+        .unwrap_or(1777);
+    format!("http://127.0.0.1:{}", port)
+}
 
 pub fn init_tray(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let show_hide = MenuItem::with_id(app, "show_hide", "Show/Hide", true, None::<&str>)?;
@@ -50,10 +56,11 @@ pub fn init_tray(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error
                     std::thread::spawn(|| {
                         if let Ok(client) = reqwest::blocking::Client::builder()
                             .timeout(std::time::Duration::from_secs(5))
+                            .no_proxy()
                             .build()
                         {
                             let _ = client
-                                .post(format!("{}/api/core", SERVICE_BASE_URL))
+                                .post(format!("{}/api/core", service_base_url()))
                                 .json(&serde_json::json!({"action": "up"}))
                                 .send();
                         }
@@ -63,10 +70,11 @@ pub fn init_tray(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error
                     std::thread::spawn(|| {
                         if let Ok(client) = reqwest::blocking::Client::builder()
                             .timeout(std::time::Duration::from_secs(5))
+                            .no_proxy()
                             .build()
                         {
                             let _ = client
-                                .post(format!("{}/api/core", SERVICE_BASE_URL))
+                                .post(format!("{}/api/core", service_base_url()))
                                 .json(&serde_json::json!({"action": "down"}))
                                 .send();
                         }

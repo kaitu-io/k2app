@@ -41,6 +41,7 @@ pub fn core_action(action: &str, params: Option<serde_json::Value>) -> Result<Se
 
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
+        .no_proxy()
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
@@ -65,6 +66,7 @@ pub fn ping_service() -> bool {
     let url = format!("{}/ping", service_base_url());
     let client = match reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(2))
+        .no_proxy()
         .build()
     {
         Ok(c) => c,
@@ -149,6 +151,7 @@ pub async fn get_udid() -> Result<ServiceResponse, String> {
         let url = format!("{}/api/device/udid", service_base_url());
         let client = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
+            .no_proxy()
             .build()
             .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
