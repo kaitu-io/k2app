@@ -62,6 +62,11 @@ func (p *TUNProvider) Start(ctx context.Context, handler ConnectionHandler) erro
 		}
 	}
 
+	// Pass interface monitor for TUN self-exclusion (prevents self-triggering).
+	if m, ok := p.cfg.InterfaceMonitor.(tun.DefaultInterfaceMonitor); ok {
+		tunOpts.InterfaceMonitor = m
+	}
+
 	if p.cfg.FileDescriptor > 0 {
 		tunOpts.FileDescriptor = p.cfg.FileDescriptor
 	}

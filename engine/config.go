@@ -49,4 +49,15 @@ type Config struct {
 	// priority over RuleMode and DataDir. Typically used by the desktop daemon
 	// which has richer rule configuration. Nil = auto-build from RuleMode + DataDir.
 	RuleConfig *k2rule.Config
+
+	// NetworkMonitor detects network interface changes (desktop only).
+	// When non-nil, engine registers a callback that calls OnNetworkChanged().
+	// On mobile, this is nil — platform calls OnNetworkChanged() directly.
+	NetworkMonitor NetworkChangeNotifier
+
+	// InterfaceMonitor is passed to the TUN provider for self-exclusion.
+	// On desktop, this should be the same sing-tun DefaultInterfaceMonitor instance
+	// used by NetworkMonitor, so the TUN device is excluded from triggering
+	// network change events. Opaque to engine — provider does type assertion.
+	InterfaceMonitor any
 }

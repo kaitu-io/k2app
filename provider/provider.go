@@ -27,7 +27,11 @@ type ProviderConfig struct {
 	FileDescriptor int          // 0 = create TUN; >0 = use existing FD (iOS/Android)
 	DNSServers     []netip.Addr // excluded from TUN route (anti-loop)
 	MTU            int          // default 1400
-	ProxyListen string // proxy mode: listen address (default "127.0.0.1:1080")
+	ProxyListen    string       // proxy mode: listen address (default "127.0.0.1:1080")
+
+	// InterfaceMonitor is a sing-tun DefaultInterfaceMonitor for TUN self-exclusion.
+	// Passed from engine.Config. Type assertion done in platform-specific provider.
+	InterfaceMonitor any
 }
 
 // DefaultMTU is optimized for QUIC overhead (1500 - 100).

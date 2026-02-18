@@ -28,10 +28,11 @@ type Engine struct {
 	lastError   *EngineError
 	handler     EventHandler
 
-	cancel context.CancelFunc
-	tunnel *core.ClientTunnel
-	tm     *wire.TransportManager
-	prov   provider.Provider
+	cancel         context.CancelFunc
+	tunnel         *core.ClientTunnel
+	tm             *wire.TransportManager
+	prov           provider.Provider
+	networkMonitor NetworkChangeNotifier
 }
 
 // New creates a new Engine in the disconnected state.
@@ -132,8 +133,9 @@ func (e *Engine) Start(cfg Config) error {
 	} else {
 		// Desktop TUN mode.
 		prov = provider.NewTUNProvider(provider.ProviderConfig{
-			Mode:       "tun",
-			DNSServers: cfg.DNSExclude,
+			Mode:             "tun",
+			DNSServers:       cfg.DNSExclude,
+			InterfaceMonitor: cfg.InterfaceMonitor,
 		})
 	}
 
@@ -186,8 +188,16 @@ func (e *Engine) Start(cfg Config) error {
 	e.tunnel = tunnel
 	e.tm = tm
 	e.prov = prov
+	e.networkMonitor = cfg.NetworkMonitor
 	e.setState(StateConnected)
 	e.mu.Unlock()
+
+	// Start network monitor if provided (desktop only).
+	if cfg.NetworkMonitor != nil {
+		if err := cfg.NetworkMonitor.Start(func() { e.OnNetworkChanged() }); err != nil {
+			log.Printf("engine: network monitor start failed: %v", err)
+		}
+	}
 
 	return nil
 }
@@ -231,6 +241,10 @@ func (e *Engine) Stop() error {
 		return nil
 	}
 
+	if e.networkMonitor != nil {
+		e.networkMonitor.Close()
+		e.networkMonitor = nil
+	}
 	if e.cancel != nil {
 		e.cancel()
 		e.cancel = nil
@@ -292,6 +306,10 @@ func (e *Engine) fail(err error) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.lastError = ClassifyError(err)
+	if e.networkMonitor != nil {
+		e.networkMonitor.Close()
+		e.networkMonitor = nil
+	}
 	if e.cancel != nil {
 		e.cancel()
 		e.cancel = nil
