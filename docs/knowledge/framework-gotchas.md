@@ -713,6 +713,24 @@ npx cap sync
 
 ---
 
+## Bash Arithmetic ((var++)) Exits Under set -e When var Is 0 (2026-02-18, openwrt-docker-testing)
+
+**Problem**: `((PASS++))` in a bash script with `set -e` causes immediate exit when `PASS` is 0. The post-increment evaluates to 0 (the pre-increment value), which is falsy in arithmetic context, returning exit code 1.
+
+**Symptom**: Test script runs first check successfully, increments counter, then exits silently. Only first test result is visible.
+
+**Fix**: Use `PASS=$((PASS + 1))` instead of `((PASS++))`. The `$((..))` form is an expression, not a command — its exit code doesn't affect `set -e`.
+
+**Alternative fixes**:
+- `((PASS++)) || true` — suppress the exit code
+- `: $((PASS++))` — colon command always succeeds
+
+**Prevention**: Never use `((var++))` or `((var--))` when `var` could be 0 in scripts with `set -e`. Always use `VAR=$((VAR + 1))` form.
+
+**Validating tests**: `scripts/test-openwrt.sh` — all 4 smoke tests pass after fix.
+
+---
+
 ## Vite Multi-Page HTML: Globals Not Available on Load (2026-02-18, unified-debug-page)
 
 **Problem**: `debug.html` is a Vite multi-page entry loaded outside React bootstrap. `window._k2` and `window._platform` are injected by the main app's platform detection (Tauri/Capacitor/standalone), which doesn't run for non-index pages. Accessing globals directly on DOMContentLoaded throws.

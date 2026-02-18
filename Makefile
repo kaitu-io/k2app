@@ -27,6 +27,35 @@ build-windows: pre-build build-webapp
 build-openwrt: pre-build
 	bash scripts/build-openwrt.sh
 
+# OpenWrt Docker testing (single arch, fast)
+# Override: make run-openwrt OPENWRT_PORT=11777 DOCKER_IMAGE=redis:7-alpine
+DOCKER_GOARCH ?= $(shell go env GOARCH)
+DOCKER_IMAGE  ?= alpine:latest
+OPENWRT_PORT  ?= 11777
+OPENWRT_BIN    = build/k2-linux-$(DOCKER_GOARCH)
+
+build-openwrt-docker: pre-build
+	cd webapp && npx vite build
+	rm -rf k2/cloud/dist && cp -r webapp/dist k2/cloud/dist
+	mkdir -p build
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(DOCKER_GOARCH) \
+		go build -C k2 \
+		-ldflags "-s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)" \
+		-o ../$(OPENWRT_BIN) ./cmd/k2
+	git -C k2 checkout -- cloud/dist/
+	@echo "Built $(OPENWRT_BIN)"
+
+run-openwrt: build-openwrt-docker
+	@echo "Starting k2 daemon at http://localhost:$(OPENWRT_PORT)"
+	docker run --rm -it -p $(OPENWRT_PORT):1777 \
+		--entrypoint "" \
+		-v $(PWD)/$(OPENWRT_BIN):/usr/bin/k2:ro \
+		$(DOCKER_IMAGE) /usr/bin/k2 run -l 0.0.0.0:1777
+
+test-openwrt: build-openwrt-docker
+	OPENWRT_PORT=$(OPENWRT_PORT) DOCKER_IMAGE=$(DOCKER_IMAGE) \
+		bash scripts/test-openwrt.sh $(OPENWRT_BIN)
+
 dev: pre-build
 	./scripts/dev.sh
 
@@ -82,4 +111,4 @@ dev-android: pre-build build-webapp mobile-android
 	cd mobile && npx cap sync android && npx cap run android
 
 clean:
-	rm -rf webapp/dist desktop/src-tauri/target desktop/src-tauri/binaries/k2-*
+	rm -rf webapp/dist desktop/src-tauri/target desktop/src-tauri/binaries/k2-* build/

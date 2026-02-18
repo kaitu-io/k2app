@@ -423,6 +423,36 @@ echo "fake-apk" > "$MOCK_S3/kaitu/android/0.5.0/Kaitu-0.5.0.apk"
 
 ---
 
+## OpenWrt Docker Smoke Testing: Daemon Mode Without TUN (2026-02-18, openwrt-docker-testing)
+
+**Pattern**: Test OpenWrt k2 binary in Docker by running daemon mode (`k2 run -l 0.0.0.0:1777`) without any TUN capabilities. The daemon starts HTTP server + embedded webapp without creating TUN — TUN is only created when user initiates VPN connection via API.
+
+**Docker setup** (no Dockerfile needed):
+```bash
+docker run --rm -it -p 11777:1777 \
+    --entrypoint "" \
+    -v ./build/k2-linux-arm64:/usr/bin/k2:ro \
+    alpine:latest /usr/bin/k2 run -l 0.0.0.0:1777
+```
+
+**Key design decisions**:
+- `--entrypoint ""` — overrides base image's default entrypoint (needed for non-alpine images like redis:7-alpine)
+- Port mapping `11777:1777` — avoids conflict with local daemon already running on 1777
+- Volume mount `:ro` — binary is read-only, no need to copy into container
+- `alpine:latest` default, configurable via env var — China can't pull from Docker Hub, use any cached alpine-based image
+
+**Four smoke tests**:
+1. `GET /ping` — daemon health check (returns `{"code":0,"message":"pong"}`)
+2. `GET /` — webapp serves HTML (embedded via `go:embed dist/*`)
+3. `k2 version` CLI — binary executes correctly on target arch
+4. `POST /api/core` with `{"action":"version"}` — daemon API responds
+
+**Build optimization**: `build-openwrt-docker` compiles only the host architecture (via `go env GOARCH`), unlike `build-openwrt` which cross-compiles all 4 architectures. ~4x faster for local dev iteration.
+
+**Validating tests**: `scripts/test-openwrt.sh` (4 smoke tests), `make test-openwrt`
+
+---
+
 ## Engine Package TDD: Config Combinations as Test Cases (2026-02-16, unified-engine)
 
 **Pattern**: `engine_test.go` has 14 test functions covering all Config field combinations. Each test verifies one aspect of Engine behavior.

@@ -318,6 +318,26 @@ Also fixed the guard condition: `(isDisconnected || isError) && !activeTunnelInf
 
 ---
 
+## OpenWrt init.d Used Client Mode Instead of Daemon Mode (2026-02-18, openwrt-docker-testing)
+
+**Problem**: `scripts/openwrt/k2.init` ran `k2 run -c /etc/k2/config.yaml` which triggers **foreground client mode** — direct tunnel connection with no HTTP server. The embedded webapp never starts, so LuCI iframe (`http://127.0.0.1:1777`) shows nothing. Users can't configure or control VPN via browser.
+
+**Root cause**: `k2 run` has two modes:
+- `-c config.yaml` → `runClientForeground()` — direct engine connection, no daemon HTTP server
+- `-l 0.0.0.0:1777` → `runDaemon()` — HTTP API + embedded webapp + waits for user interaction
+
+The init.d script was written for `-c` (client foreground), but OpenWrt needs daemon mode for the web UI.
+
+**Fix**: Changed `procd_set_param command /usr/bin/k2 run -c /etc/k2/config.yaml` to `procd_set_param command /usr/bin/k2 run -l 0.0.0.0:1777`.
+
+**Discovery**: Found during Docker smoke testing — attempted to run daemon and verify webapp serving, realized the init.d entry point was wrong.
+
+**Files fixed**: `scripts/openwrt/k2.init`
+
+**Validating tests**: `scripts/test-openwrt.sh` — webapp serves HTML at `/` confirms daemon mode works.
+
+---
+
 ## Capacitor Local Plugin Stale Copy in node_modules (2026-02-16, mobile-debug)
 
 **Problem**: Capacitor plugin declared as `"k2-plugin": "file:./plugins/k2-plugin"` in `mobile/package.json` is copied (not symlinked) to `node_modules/k2-plugin/`. Editing source files in `mobile/plugins/k2-plugin/` has no effect — `cap sync` and Gradle build use the stale `node_modules/` copy.
