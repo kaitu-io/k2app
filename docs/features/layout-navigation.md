@@ -4,7 +4,7 @@
 |-------|-------|
 | Feature | Layout & Navigation System |
 | Version | 0.4.0 |
-| Status | Implemented |
+| Status | implemented |
 | Created | 2026-02-18 |
 | Updated | 2026-02-18 |
 

@@ -88,7 +88,7 @@ done
 echo "[dev-desktop] Starting Tauri dev (K2_DAEMON_PORT=${K2_DEV_ADDR##*:})..."
 export K2_DAEMON_PORT="${K2_DEV_ADDR##*:}"
 cd "$ROOT_DIR/desktop"
-yarn tauri dev &
+yarn tauri dev --features mcp-bridge &
 PIDS+=($!)
 
 echo "[dev-desktop] All services running. Press Ctrl+C to stop."
