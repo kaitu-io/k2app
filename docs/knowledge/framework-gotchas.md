@@ -691,6 +691,28 @@ if (typeof raw.error === 'object' && raw.error !== null && 'code' in raw.error) 
 
 ---
 
+## K2Plugin definitions.ts Has Compiled dist/ — Must Rebuild After Editing (2026-02-18, updater-android-router)
+
+**Problem**: `mobile/plugins/k2-plugin/src/definitions.ts` defines the TypeScript interface for K2Plugin methods and events. When new methods (e.g., `installNativeUpdate`) or event listeners (e.g., `nativeUpdateReady`, `nativeUpdateAvailable`) are added to the interface, the compiled output at `mobile/plugins/k2-plugin/dist/` must be rebuilt. Without rebuilding dist/, the webapp imports stale type definitions — new method signatures are invisible to TypeScript, causing type errors or missing autocompletion.
+
+**Symptom**: After editing `definitions.ts`, `tsc --noEmit` in the webapp passes (because it sees the source definitions), but runtime behavior may differ from what TypeScript reports. More dangerously, if the dist/ mismatch causes mismatched method signatures, K2Plugin calls from the webapp can fail silently.
+
+**Fix**: After editing `mobile/plugins/k2-plugin/src/definitions.ts`:
+```bash
+cd mobile/plugins/k2-plugin && npm run build
+cd mobile
+rm -rf node_modules/k2-plugin && yarn install --force
+npx cap sync
+```
+
+**Why three steps**: (1) `npm run build` compiles TypeScript → `dist/`. (2) `rm + yarn install --force` replaces the stale node_modules copy (yarn `file:` protocol doesn't detect source file changes — see also "Capacitor file: Plugin Source Not Auto-Synced"). (3) `cap sync` propagates to native projects.
+
+**This is additive to the existing local plugin sync gotcha**: The existing rule (`rm -rf node_modules/k2-plugin && yarn install --force`) covers Swift/Kotlin changes. When also editing TypeScript definitions, the `npm run build` step must precede the node_modules refresh.
+
+**Validating tests**: `webapp/src/services/__tests__/capacitor-k2.test.ts` — updater describe block (tests pass only with correct type definitions in node_modules).
+
+---
+
 ## Vite Multi-Page HTML: Globals Not Available on Load (2026-02-18, unified-debug-page)
 
 **Problem**: `debug.html` is a Vite multi-page entry loaded outside React bootstrap. `window._k2` and `window._platform` are injected by the main app's platform detection (Tauri/Capacitor/standalone), which doesn't run for non-index pages. Accessing globals directly on DOMContentLoaded throws.

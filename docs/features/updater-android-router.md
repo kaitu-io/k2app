@@ -72,7 +72,7 @@ private const val ANDROID_MANIFEST_URL = "https://d0.all7.cc/kaitu/android/lates
 
 ## Product Requirements
 
-### PR1: 双 CDN 端点容灾 (v1)
+### PR1: 双 CDN 端点容灾
 
 K2Plugin 的 manifest URL 从单一字符串改为端点数组，按顺序尝试，第一个成功即返回。
 
@@ -82,7 +82,7 @@ K2Plugin 的 manifest URL 从单一字符串改为端点数组，按顺序尝试
 | Android APK | `d13jc1jqzlg4yt.cloudfront.net/kaitu/android/latest.json` | `d0.all7.cc/kaitu/android/latest.json` |
 | iOS | `d13jc1jqzlg4yt.cloudfront.net/kaitu/ios/latest.json` | `d0.all7.cc/kaitu/ios/latest.json` |
 
-### PR2: 相对路径 Manifest (v1)
+### PR2: 相对路径 Manifest
 
 S3 上只需维护**一份** `latest.json`，下载 URL 使用相对路径。客户端根据成功获取 manifest 的端点 base path 拼接完整下载 URL。
 
@@ -133,7 +133,7 @@ manifest 来自 https://d0.all7.cc/kaitu/web/latest.json
 
 如果 `url` 字段以 `http://` 或 `https://` 开头，视为绝对路径，不做拼接（向后兼容）。
 
-### PR3: 原生层自动检查更新 (v1)
+### PR3: 原生层自动检查更新
 
 App 启动（冷启动）时，原生层自动检查更新。复刻桌面端 Tauri 模式。
 
@@ -157,7 +157,7 @@ App 启动
 
 **原生更新优先级 > Web OTA**：新原生版本可能包含不兼容的 Web 变更。
 
-### PR4: Webapp 更新通知（跨平台复用）(v1)
+### PR4: Webapp 更新通知（跨平台复用）
 
 `capacitor-k2.ts` 注入 `_platform.updater: IUpdater`，webapp 通过统一的 `useUpdater` hook + `UpdateNotification` 组件显示更新通知。
 
@@ -169,7 +169,7 @@ App 启动
 
 Web OTA 全程静默，不走 UpdateNotification。
 
-### PR5: 两阶段安全发布 (v1)
+### PR5: 两阶段安全发布
 
 **阶段 1（CI 自动）**：`build-mobile.yml` 在 `v*` tag push 时自动构建 + 上传产物到 S3 版本目录。此时 `latest.json` 不变，用户不会收到更新。
 
@@ -268,8 +268,8 @@ CloudFront origin 指向同一 S3 bucket，自动镜像。
 v* tag push
   → 构建 APK / webapp.zip / IPA
   → 上传产物到 S3 版本目录：
-     s3://d0.all7.cc/kaitu/android/{version}/Kaitu-{version}.apk
-     s3://d0.all7.cc/kaitu/web/{version}/webapp.zip
+     s3://kaitu-releases/android/{version}/Kaitu-{version}.apk
+     s3://kaitu-releases/web/{version}/webapp.zip
   → 此时 latest.json 未变更，用户不会收到更新通知
 ```
 
@@ -280,7 +280,7 @@ make publish-mobile VERSION=0.5.0
 
 脚本执行：
 1. 验证 S3 上 `{version}/` 目录中产物存在
-2. 计算产物的 sha256 hash 和 size（从 S3 下载或使用 S3 metadata）
+2. 计算产物的 sha256 hash 和 size（从 S3 下载）
 3. 生成 `latest.json`（相对路径 URL）
 4. 上传 `latest.json` 到 S3 各 channel 目录
 5. 输出确认信息
@@ -288,62 +288,9 @@ make publish-mobile VERSION=0.5.0
 **Makefile target：**
 ```makefile
 publish-mobile:
+	@test -n "$(VERSION)" || (echo "Usage: make publish-mobile VERSION=x.y.z" && exit 1)
 	@echo "Publishing mobile v$(VERSION)..."
-	scripts/publish-mobile.sh $(VERSION)
-```
-
-**scripts/publish-mobile.sh 核心逻辑：**
-```bash
-#!/bin/bash
-set -euo pipefail
-VERSION="$1"
-
-# Android
-APK_KEY="kaitu/android/${VERSION}/Kaitu-${VERSION}.apk"
-aws s3 ls "s3://d0.all7.cc/${APK_KEY}" || { echo "APK not found on S3"; exit 1; }
-aws s3 cp "s3://d0.all7.cc/${APK_KEY}" /tmp/apk-check.apk
-HASH=$(sha256sum /tmp/apk-check.apk | cut -d' ' -f1)
-SIZE=$(stat -f%z /tmp/apk-check.apk 2>/dev/null || stat -c%s /tmp/apk-check.apk)
-cat > /tmp/android-latest.json << EOF
-{
-  "version": "${VERSION}",
-  "url": "${VERSION}/Kaitu-${VERSION}.apk",
-  "hash": "sha256:${HASH}",
-  "size": ${SIZE},
-  "released_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "min_android": 26
-}
-EOF
-aws s3 cp /tmp/android-latest.json s3://d0.all7.cc/kaitu/android/latest.json
-
-# Web OTA
-WEB_KEY="kaitu/web/${VERSION}/webapp.zip"
-aws s3 ls "s3://d0.all7.cc/${WEB_KEY}" || { echo "webapp.zip not found on S3"; exit 1; }
-aws s3 cp "s3://d0.all7.cc/${WEB_KEY}" /tmp/web-check.zip
-HASH=$(sha256sum /tmp/web-check.zip | cut -d' ' -f1)
-SIZE=$(stat -f%z /tmp/web-check.zip 2>/dev/null || stat -c%s /tmp/web-check.zip)
-cat > /tmp/web-latest.json << EOF
-{
-  "version": "${VERSION}",
-  "url": "${VERSION}/webapp.zip",
-  "hash": "sha256:${HASH}",
-  "size": ${SIZE},
-  "released_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-}
-EOF
-aws s3 cp /tmp/web-latest.json s3://d0.all7.cc/kaitu/web/latest.json
-
-# iOS
-cat > /tmp/ios-latest.json << EOF
-{
-  "version": "${VERSION}",
-  "appstore_url": "https://apps.apple.com/app/id6759199298",
-  "released_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-}
-EOF
-aws s3 cp /tmp/ios-latest.json s3://d0.all7.cc/kaitu/ios/latest.json
-
-echo "✓ Published mobile v${VERSION} — all latest.json updated"
+	bash scripts/publish-mobile.sh $(VERSION)
 ```
 
 **与桌面端 `publish-release.sh` 同一发布模式**：CI 负责构建，人工确认后再发布版本指针。
@@ -358,7 +305,7 @@ echo "✓ Published mobile v${VERSION} — all latest.json updated"
   run: |
     VERSION="${GITHUB_REF_NAME#v}"
     aws s3 cp "build/Kaitu-${VERSION}.apk" \
-      "s3://d0.all7.cc/kaitu/android/${VERSION}/Kaitu-${VERSION}.apk"
+      "s3://kaitu-releases/android/${VERSION}/Kaitu-${VERSION}.apk"
 
 # Web OTA（独立 job 或 build-android job 中）
 - name: Build and upload Web OTA
@@ -368,14 +315,14 @@ echo "✓ Published mobile v${VERSION} — all latest.json updated"
     cd dist && zip -r "../../webapp-${VERSION}.zip" .
     cd ../..
     aws s3 cp "webapp-${VERSION}.zip" \
-      "s3://d0.all7.cc/kaitu/web/${VERSION}/webapp.zip"
+      "s3://kaitu-releases/web/${VERSION}/webapp.zip"
 ```
 
 CI 只负责上传产物到版本目录。`latest.json` 由 `make publish-mobile VERSION=x.y.z` 手动更新（见 TD6）。
 
 ## Key Files
 
-### 需修改
+### 已修改
 
 | File | Change |
 |------|--------|
@@ -384,14 +331,15 @@ CI 只负责上传产物到版本目录。`latest.json` 由 `make publish-mobile
 | `webapp/src/services/capacitor-k2.ts` | 注入 `_platform.updater: IUpdater`，监听原生更新事件 |
 | `.github/workflows/build-mobile.yml` | 新增 S3 产物上传步骤（不更新 latest.json） |
 
-### 需新增
+### 已新增
 
 | File | Purpose |
 |------|---------|
 | `scripts/publish-mobile.sh` | 手动发布脚本：从 S3 验证产物 → 生成 latest.json → 上传 |
+| `scripts/test-publish-mobile.sh` | publish-mobile.sh 的 10 个 shell 测试（使用本地 mock S3） |
 | `Makefile` (publish-mobile target) | `make publish-mobile VERSION=x.y.z` 入口 |
 
-### 不需修改（已就绪）
+### 未修改（已就绪）
 
 | File | Why |
 |------|-----|
@@ -402,58 +350,58 @@ CI 只负责上传产物到版本目录。`latest.json` 由 `make publish-mobile
 
 ## Acceptance Criteria
 
-### AC1: 双 CDN 端点容灾 (v1)
+### AC1: 双 CDN 端点容灾
 
-- [ ] K2Plugin iOS/Android 从端点数组按顺序尝试获取 manifest
-- [ ] CloudFront 端点可用时优先使用（主端点）
-- [ ] CloudFront 不可用时自动 fallback 到 S3 直连
-- [ ] 连接超时 10 秒，不阻塞 app 启动
+- K2Plugin iOS/Android 从端点数组按顺序尝试获取 manifest
+- CloudFront 端点可用时优先使用（主端点）
+- CloudFront 不可用时自动 fallback 到 S3 直连
+- 连接超时 10 秒，不阻塞 app 启动
 
-### AC2: 相对路径 Manifest (v1)
+### AC2: 相对路径 Manifest
 
-- [ ] S3 上每个 channel 只有一份 `latest.json`
-- [ ] manifest `url` 字段为相对路径（如 `0.5.0/webapp.zip`）
-- [ ] 客户端根据成功获取 manifest 的端点 base path 拼接下载 URL
-- [ ] 绝对路径 URL（`https://...`）仍能正常工作（向后兼容）
-- [ ] 从 CloudFront 获取 manifest → 从 CloudFront 下载产物
-- [ ] 从 S3 获取 manifest → 从 S3 下载产物
+- S3 上每个 channel 只有一份 `latest.json`
+- manifest `url` 字段为相对路径（如 `0.5.0/webapp.zip`）
+- 客户端根据成功获取 manifest 的端点 base path 拼接下载 URL
+- 绝对路径 URL（`https://...`）仍能正常工作（向后兼容）
+- 从 CloudFront 获取 manifest → 从 CloudFront 下载产物
+- 从 S3 获取 manifest → 从 S3 下载产物
 
-### AC3: 原生自动检查 (v1)
+### AC3: 原生自动检查
 
-- [ ] App 冷启动后 3 秒自动开始检查
-- [ ] 先检查 native 更新，再检查 web OTA（native 优先）
-- [ ] Android 有新 APK → 静默后台下载 → emit `nativeUpdateReady` 事件
-- [ ] iOS 有新版本 → emit `nativeUpdateAvailable` 事件
-- [ ] Web OTA 有新版本 → 静默下载 + 解压 → 下次冷启动生效
-- [ ] 检查失败仅 log warning，不影响 app 正常使用
-- [ ] 从后台恢复不触发检查
+- App 冷启动后 3 秒自动开始检查
+- 先检查 native 更新，再检查 web OTA（native 优先）
+- Android 有新 APK → 静默后台下载 → emit `nativeUpdateReady` 事件
+- iOS 有新版本 → emit `nativeUpdateAvailable` 事件
+- Web OTA 有新版本 → 静默下载 + 解压 → 下次冷启动生效
+- 检查失败仅 log warning，不影响 app 正常使用
+- 从后台恢复不触发检查
 
-### AC4: Webapp Updater 集成 (v1)
+### AC4: Webapp Updater 集成
 
-- [ ] `capacitor-k2.ts` 注入 `_platform.updater: IUpdater`
-- [ ] `useUpdater` hook 在移动端返回 `isAvailable: true`
-- [ ] Android 收到 `nativeUpdateReady` → `UpdateNotification` 显示新版本号
-- [ ] iOS 收到 `nativeUpdateAvailable` → `UpdateNotification` 显示新版本号
-- [ ] Android 点击"立即更新" → 调起系统安装器
-- [ ] iOS 点击"立即更新" → 跳转 App Store
-- [ ] 点击"稍后" → 通知条消失，本次会话不再提示
-- [ ] Web OTA 更新全程无 UI 提示
+- `capacitor-k2.ts` 注入 `_platform.updater: IUpdater`
+- `useUpdater` hook 在移动端返回 `isAvailable: true`
+- Android 收到 `nativeUpdateReady` → `UpdateNotification` 显示新版本号
+- iOS 收到 `nativeUpdateAvailable` → `UpdateNotification` 显示新版本号
+- Android 点击"立即更新" → 调起系统安装器
+- iOS 点击"立即更新" → 跳转 App Store
+- 点击"稍后" → 通知条消失，本次会话不再提示
+- Web OTA 更新全程无 UI 提示
 
-### AC5: 两阶段安全发布 (v1)
+### AC5: 两阶段安全发布
 
-- [ ] `v*` tag push 触发 `build-mobile.yml`，上传产物到 S3 版本目录
-- [ ] CI 不自动更新 `latest.json`（安全发布门控）
-- [ ] `make publish-mobile VERSION=x.y.z` 从 S3 下载产物、计算 hash/size、生成 latest.json、上传
-- [ ] publish 脚本验证 S3 上产物存在后再生成 latest.json（防止指向不存在的文件）
-- [ ] 发布后 CloudFront 自动镜像更新的 latest.json
+- `v*` tag push 触发 `build-mobile.yml`，上传产物到 S3 版本目录
+- CI 不自动更新 `latest.json`（安全发布门控）
+- `make publish-mobile VERSION=x.y.z` 从 S3 下载产物、计算 hash/size、生成 latest.json、上传
+- publish 脚本验证 S3 上产物存在后再生成 latest.json（防止指向不存在的文件）
+- 发布后 CloudFront 自动镜像更新的 latest.json
 
 ## Testing Strategy
 
 ### 自动化
 
-- **Webapp 单元测试**：Mock `_platform.updater` + 事件回调，验证 `useUpdater` hook 状态转换
-- **CI manifest 验证**：上传后 curl `latest.json`，验证 JSON schema（version、url、hash、size 字段存在）
-- **向后兼容**：测试绝对路径 URL 仍能正确下载
+- **Webapp 单元测试**：`webapp/src/services/__tests__/capacitor-k2.test.ts` — 8 updater 测试，mock K2Plugin events，验证 IUpdater 状态转换（`test_injectCapacitorGlobals_sets_updater`、`test_updater_handles_nativeUpdateReady_event`、`test_applyUpdateNow_android_calls_installNativeUpdate` 等）
+- **Publish 脚本测试**：`scripts/test-publish-mobile.sh` — 10 个 shell 测试，使用本地 mock S3（`--s3-base` flag），验证 JSON schema、相对路径格式、sha256 前缀、版本一致性
+- **向后兼容**：`test_resolveDownloadURL_absolute_passthrough` — 绝对路径 URL 原样使用
 
 ### 手动集成
 

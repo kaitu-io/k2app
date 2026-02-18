@@ -11,6 +11,7 @@ make build-macos-fast            # Same, skip notarization (local dev)
 make build-windows               # Signed Windows NSIS installer
 make build-mobile-android        # gomobile bind + cap sync + assembleRelease
 make build-mobile-ios            # gomobile bind + cap sync + xcodebuild archive
+make publish-mobile VERSION=x.y.z  # Generate + upload mobile latest.json (phase 2 release)
 make dev-android                 # gomobile bind + cap sync + cap run android
 make dev-ios                     # cap sync + cap run ios
 cd webapp && yarn test           # vitest
@@ -74,6 +75,9 @@ Makefile             Build orchestration — version from package.json, k2 from 
 - **Android VPN prepare context**: `VpnService.prepare()` must use Activity context, not Application context.
 - **sing-tun monitor instance sharing**: `NewNetworkMonitor()` returns the same `DefaultInterfaceMonitor` for both `engine.Config.NetworkMonitor` (callback path) and `engine.Config.InterfaceMonitor` (tun.Options self-exclusion). Never split into two instances — sing-tun calls `RegisterMyInterface(tunName)` on the tun.Options instance to exclude TUN-self route changes from triggering reconnect.
 - **Network change events are debug-only**: `reconnecting` is a microsecond-duration transient state — the 2s polling loop will never catch it. Events from Android `vpnStateChange` and iOS EventBridge are logged (`console.debug` / `NSLog`) but do NOT update the VPN store. Polling remains the sole UI state source.
+- **K2Plugin dual-CDN pattern**: All manifest fetching in K2Plugin (iOS/Android) uses `fetchManifest(endpoints)` helper — ordered array, try CloudFront first, fall back to S3 direct. Returns `(data, baseURL)` tuple. Download URLs are resolved via `resolveDownloadURL(url, baseURL)`: relative paths are prepended with baseURL, absolute `http(s)://` URLs pass through unchanged (backward compat).
+- **Mobile two-phase release**: CI (`build-mobile.yml`) uploads artifacts to versioned S3 paths (`s3://kaitu-releases/{channel}/{version}/...`) but never updates `latest.json`. Human runs `make publish-mobile VERSION=x.y.z` after QA to publish the version pointer. Mirror of desktop `publish-release.sh` pattern.
+- **K2Plugin definitions.ts rebuild required**: After editing `mobile/plugins/k2-plugin/src/definitions.ts`, run `npm run build` inside the plugin dir BEFORE the standard `rm -rf node_modules/k2-plugin && yarn install --force` step. Without rebuilding dist/, node_modules gets stale type definitions.
 - **API file naming**: `api_*.go` handlers, `logic_*.go` business logic, `model*.go` data, `worker_*.go` background jobs, `slave_api*.go` node APIs.
 - **API response pattern**: HTTP status always 200. Error state in JSON `code` field. Use `Success()`, `Error()`, `ListWithData()` helpers.
 
@@ -108,6 +112,11 @@ Makefile             Build orchestration — version from package.json, k2 from 
 - **MonitorFactory** — Daemon testability pattern (parallel to `EngineStarter`): `func() (engine.NetworkChangeNotifier, any, error)`. Production default calls `NewNetworkMonitor()`. Tests inject a mock factory. The returned `DefaultInterfaceMonitor` instance MUST be the same instance passed to `engine.Config.InterfaceMonitor` (sing-tun self-exclusion via `RegisterMyInterface`).
 - **EngineError** — Structured error type (`k2/engine/error.go`): `{Code int, Message string}`. Produced by `ClassifyError(err error) *EngineError`. HTTP-aligned codes: 400 (BadConfig), 401 (AuthRejected), 403 (Forbidden), 408 (Timeout), 502 (ProtocolError), 503 (ServerUnreachable), 570 (ConnectionFatal/fallback). Priority chain: `net.Error.Timeout()` first, then string patterns, then fallback.
 - **vpn-types.ts** — Canonical TS VPN type file (`webapp/src/services/vpn-types.ts`). Replaces old `control-types.ts`. Contains `ControlError`, `StatusResponseData`, `ServiceState`, error code constants, and `getErrorI18nKey()`. Error codes aligned 1:1 with `EngineError` codes from k2 engine.
+- **fetchManifest()** — K2Plugin helper (iOS Swift + Android Kotlin) that tries an ordered endpoint array and returns `(manifestData, baseURL)`. CloudFront endpoint is tried first; S3 direct is fallback. 10s connect timeout per endpoint. All K2Plugin update methods share this helper.
+- **resolveDownloadURL()** — K2Plugin helper that prepends a CDN base URL to a relative manifest `url` field. If the `url` is already absolute (`http://` or `https://`), it is returned unchanged for backward compatibility.
+- **nativeUpdateReady** — Capacitor event emitted by Android K2Plugin when a new APK has been silently downloaded and is ready to install. Payload: `{version, size, path}`. Bridge wires this to `_platform.updater.isUpdateReady = true`.
+- **nativeUpdateAvailable** — Capacitor event emitted by iOS K2Plugin when a newer version is found in App Store. Payload: `{version, appStoreUrl}`. Bridge wires this to `_platform.updater.isUpdateReady = true` and stores the App Store URL for `applyUpdateNow()`.
+- **publish-mobile.sh** — Manual mobile release script (`scripts/publish-mobile.sh`). Phase 2 of mobile release: validates S3 artifacts exist, downloads, computes sha256+size, generates relative-URL `latest.json`, uploads to `{channel}/latest.json`. Supports `--dry-run` and `--s3-base=PATH` (local mock for testing).
 
 ## Layer Docs (read on demand)
 

@@ -360,6 +360,69 @@ This mirrors the `EngineStarter` testability pattern — same dependency injecti
 
 ---
 
+## Shell Script Testing with Local Filesystem Mock (2026-02-18, updater-android-router)
+
+**Pattern**: Bash scripts that interact with cloud infrastructure (S3, AWS CLI) are tested by adding a `--s3-base=PATH` flag that switches from real AWS to local filesystem operations. Test runner creates a temp directory as mock S3, plants fake artifact files, then verifies script output.
+
+**Script design for testability**:
+```bash
+use_local() { [ -n "$S3_BASE" ]; }
+
+check_artifact() {
+    if use_local; then [ -f "$S3_BASE/$path" ]
+    else aws s3 ls "s3://$S3_BUCKET/$path" >/dev/null 2>&1; fi
+}
+
+download_artifact() {
+    if use_local; then cp "$S3_BASE/$path" "$dest"
+    else aws s3 cp "s3://$S3_BUCKET/$path" "$dest"; fi
+}
+```
+
+**Test runner creates mock data**:
+```bash
+MOCK_S3="$WORK_TMPDIR/mock-s3"
+mkdir -p "$MOCK_S3/kaitu/android/0.5.0"
+echo "fake-apk" > "$MOCK_S3/kaitu/android/0.5.0/Kaitu-0.5.0.apk"
+"$PUBLISH_SCRIPT" "0.5.0" --s3-base="$MOCK_S3/kaitu" --dry-run
+```
+
+**JSON output validation via Python**: Shell tests use `python3 -c "import json; m = json.load(open(...)); ..."` to validate manifest field presence, types, and format constraints. Python is always available on CI and macOS developer machines.
+
+**Non-zero exit code testing**: `set -uo pipefail` (NOT `-e`) in test runner allows capturing non-zero exit codes from the script under test. `-e` in the test runner would cause the test runner itself to exit on the first expected-failure test.
+
+**What to test in the script (beyond build output)**:
+1. Missing artifact → exit 1 (gate condition)
+2. Required JSON fields present (`version`, `url`, `hash`, `size`, `released_at`)
+3. URL format (relative, not absolute)
+4. Hash format (`sha256:` prefix + 64-char hex)
+5. Version consistency (manifest version matches requested version)
+6. CI workflow references the upload script (structural check)
+7. CI upload uses versioned paths (`/{VERSION}/`, not root)
+
+**Validating tests**: `scripts/test-publish-mobile.sh` — 10 tests; all run without AWS credentials.
+
+---
+
+## TDD Adaptation for Native Code Without Test Harness (2026-02-18, updater-android-router)
+
+**Context**: K2Plugin Swift and Kotlin code has no unit test harness in this project (no XCTest, no JUnit setup). The TDD protocol requires RED → GREEN, but there is nothing to make red for native code.
+
+**Adaptation**: For native platforms (iOS Swift, Android Kotlin), skip the RED phase and document manual test scenarios in the plan. Write the implementation directly (GREEN), then verify manually on device.
+
+**Manual test documentation in plan**: Plan AC mapping lists test function names like `test_fetchManifest_primary_success` even though these are manual, not automated. This preserves the AC↔test bidirectional link format while being honest about what "test" means for native code.
+
+**Compensating control**: The webapp bridge (T3) covers event wiring with real vitest tests. Since T1/T2 (native) and T3 (bridge) are parallel tasks, the bridge tests validate that the event contract works correctly — testing the integration point even if the native emitter isn't testable.
+
+**When to use workaround**: This pattern applies to any code where:
+- The platform has no test harness set up
+- Adding a test harness is out of scope for the feature
+- The implementation is relatively simple and the contract is tested at the boundary
+
+**Validating tests**: `webapp/src/services/__tests__/capacitor-k2.test.ts` — updater describe block (8 tests) covers the bridge side of the native↔bridge contract.
+
+---
+
 ## Engine Package TDD: Config Combinations as Test Cases (2026-02-16, unified-engine)
 
 **Pattern**: `engine_test.go` has 14 test functions covering all Config field combinations. Each test verifies one aspect of Engine behavior.

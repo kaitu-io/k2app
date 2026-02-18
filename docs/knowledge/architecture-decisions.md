@@ -783,6 +783,111 @@ After:  {"state": "stopped", "error": {"code": 503, "message": "wire: TCP dial: 
 
 ---
 
+## Dual-CDN Manifest with Relative URLs — Single Source of Truth (2026-02-18, updater-android-router)
+
+**Decision**: K2Plugin (iOS/Android) uses an ordered endpoint array for manifest fetching. Manifest `url` fields use relative paths. Client resolves full download URL by prepending the base URL of whichever CDN endpoint returned the manifest.
+
+**Endpoint arrays** (CloudFront first, S3 fallback):
+```swift
+// iOS
+private let webManifestEndpoints = [
+    "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/web/latest.json",
+    "https://d0.all7.cc/kaitu/web/latest.json"
+]
+```
+```kotlin
+// Android
+private val ANDROID_MANIFEST_ENDPOINTS = listOf(
+    "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/android/latest.json",
+    "https://d0.all7.cc/kaitu/android/latest.json"
+)
+```
+
+**fetchManifest(endpoints) returns (data, baseURL)**: Try each endpoint in order (10s timeout). First success returns both the manifest JSON and the base URL of that CDN endpoint. All subsequent download URLs are resolved relative to that base URL.
+
+**resolveDownloadURL(url, baseURL)**: If `url` starts with `http://` or `https://`, use as-is (backward compat). Otherwise: `baseURL + url`. Example: manifest from CloudFront with `url: "0.5.0/webapp.zip"` → `https://d13jc1jqzlg4yt.cloudfront.net/kaitu/web/0.5.0/webapp.zip`.
+
+**Why relative URLs over duplicate manifests**: Desktop uses two absolute-URL manifests (`cloudfront.latest.json`, `d0.latest.json`) — they can drift. One relative manifest = one source of truth per channel. CloudFront is a read-through cache of the same S3 bucket, so one upload propagates everywhere automatically.
+
+**S3 layout**: `{channel}/latest.json` (single file) + `{channel}/{version}/{artifact}` (versioned artifact).
+
+**Contrast with desktop**: Desktop Tauri updater uses Tauri's built-in `endpoints` array with absolute URLs in each manifest — a different approach for a different system. Mobile rolls its own because K2Plugin is custom code.
+
+**Validating tests**: `test_resolveDownloadURL_relative`, `test_resolveDownloadURL_absolute_passthrough` (manual iOS/Android); `scripts/test-publish-mobile.sh` tests 4 and 6 verify relative URL format in generated manifests.
+
+---
+
+## Mobile Auto-Update Cold Start Check Pattern (2026-02-18, updater-android-router)
+
+**Decision**: K2Plugin fires auto-update check in `load()` with a 3-second delay. Checks native update first (Android: download APK silently; iOS: emit event), then web OTA (silent download+apply). From background resume, no check.
+
+**iOS implementation**:
+```swift
+override func load() {
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+        self?.performAutoUpdateCheck()
+    }
+}
+```
+
+**Android implementation**:
+```kotlin
+override fun load() {
+    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+        Thread { performAutoUpdateCheck() }.start()
+    }, 3000)
+}
+```
+
+**Sequencing — native before web OTA**: New native version may contain incompatible web changes. Installing native update is a complete app replace. If native update found on Android, web OTA is skipped (it would be overwritten anyway).
+
+**Why 3 seconds**: Startup UI must be interactive before any background work begins. 3s is enough for VPN state poll, auth check, and initial render to complete.
+
+**Why cold start only**: Background resume frequency is high (every app foreground). Manifest fetches consume data. Web OTA cannot take effect until next cold start anyway. Native update modals during resume are disruptive.
+
+**Why no periodic polling**: Mobile app lifecycle is short — killed by system frequently. Cold start check is equivalent to periodic polling at the user's natural usage cadence.
+
+**Event names**:
+- `nativeUpdateReady` — Android APK fully downloaded, ready to install. Payload: `{version, size, path}`
+- `nativeUpdateAvailable` — iOS new version found. Payload: `{version, appStoreUrl}`
+
+Web OTA is silent (no event emitted). Download, verify sha256, extract — next cold start uses new webapp.
+
+**Validating tests**: `test_autoCheck_triggered_on_load`, `test_autoCheck_native_before_web` (manual device); `webapp/src/services/__tests__/capacitor-k2.test.ts` — `test_updater_handles_nativeUpdateReady_event`, `test_updater_handles_nativeUpdateAvailable_event`.
+
+---
+
+## Two-Phase Mobile Release: CI Uploads Artifacts, Human Publishes latest.json (2026-02-18, updater-android-router)
+
+**Decision**: CI (`build-mobile.yml`) uploads artifacts to versioned S3 paths but never updates `latest.json`. Operators run `make publish-mobile VERSION=x.y.z` after verifying artifacts to publish the version pointer.
+
+**Phase 1 (CI, automatic on v* tag)**:
+```
+s3://kaitu-releases/android/{version}/Kaitu-{version}.apk
+s3://kaitu-releases/web/{version}/webapp.zip
+```
+`latest.json` unchanged — users see no update.
+
+**Phase 2 (manual, after verification)**:
+```bash
+make publish-mobile VERSION=0.5.0
+```
+Script validates artifacts exist on S3, downloads to compute sha256+size, generates `latest.json` with relative URL, uploads.
+
+**Why two-phase**: Same principle as desktop `publish-release.sh`. Artifacts may have last-minute issues found during QA. The gate between "built" and "deployed" is human intent, not CI automation.
+
+**scripts/publish-mobile.sh key behaviors**:
+- `--s3-base=PATH` flag: use local filesystem instead of real S3 (enables `scripts/test-publish-mobile.sh` to run without AWS)
+- `--dry-run` flag: print what would be uploaded without uploading
+- `set -euo pipefail`: exit immediately on any failure
+- `trap 'rm -rf "$WORK_TMPDIR"' EXIT`: always clean up temp files
+
+**iOS skipped**: iOS publish is App Store Connect review — no APK to hash. iOS `latest.json` only contains `{version, appstore_url, released_at}` — no hash/size. This is generated separately (or by a future iOS-specific publish step).
+
+**Validating tests**: `scripts/test-publish-mobile.sh` — 10 tests covering script existence, missing-artifact exit code, JSON field presence, relative URL format, sha256 prefix, version consistency, CI workflow S3 references.
+
+---
+
 ## Unified Debug Page at Abstraction Layer (2026-02-18, unified-debug-page)
 
 **Decision**: Debug page tests at `window._k2.run()` / `window._platform` abstraction layer instead of raw native APIs (K2Plugin or Tauri IPC). One `debug.html` works on all 3 platforms.
