@@ -60,12 +60,12 @@ func TestClassifyError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := classifyError(tt.err)
+			result := ClassifyError(tt.err)
 			if result.Code != tt.wantCode {
-				t.Errorf("classifyError(%q) code = %d, want %d", tt.err, result.Code, tt.wantCode)
+				t.Errorf("ClassifyError(%q) code = %d, want %d", tt.err, result.Code, tt.wantCode)
 			}
 			if result.Message != tt.err.Error() {
-				t.Errorf("classifyError(%q) message = %q, want %q", tt.err, result.Message, tt.err.Error())
+				t.Errorf("ClassifyError(%q) message = %q, want %q", tt.err, result.Message, tt.err.Error())
 			}
 		})
 	}

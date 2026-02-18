@@ -44,7 +44,7 @@ type Daemon struct {
 	lastConfig *config.ClientConfig
 
 	// Error from last connection attempt (orthogonal to state).
-	lastError string
+	lastError *engine.EngineError
 
 	// Connected at timestamp.
 	connectedAt time.Time
@@ -166,7 +166,7 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 	d.setStateLocked(StateConnecting)
 	d.lastConfig = cfg
 	d.monitorPID = pid
-	d.lastError = ""
+	d.lastError = nil
 	d.mu.Unlock()
 
 	// Persist state for auto-reconnect across restarts.
@@ -190,12 +190,11 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 	}
 	eng, err := starter(engineCfg)
 	if err != nil {
-		msg := fmt.Sprintf("start engine: %v", err)
 		d.mu.Lock()
-		d.lastError = msg
+		d.lastError = engine.ClassifyError(err)
 		d.setStateLocked(StateStopped)
 		d.mu.Unlock()
-		log.Printf("Error: %s", msg)
+		log.Printf("Error: %s", err)
 		return err
 	}
 
@@ -379,7 +378,7 @@ func (d *Daemon) statusInfo() map[string]any {
 		info["connected_at"] = d.connectedAt.Format(time.RFC3339)
 		info["uptime_seconds"] = int(time.Since(d.connectedAt).Seconds())
 	}
-	if d.lastError != "" {
+	if d.lastError != nil {
 		info["error"] = d.lastError
 	}
 	if d.lastConfig != nil {

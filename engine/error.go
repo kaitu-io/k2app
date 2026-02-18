@@ -28,9 +28,9 @@ func (e *EngineError) Error() string {
 	return e.Message
 }
 
-// classifyError maps a wire/engine error to an HTTP-aligned error code.
+// ClassifyError maps a wire/engine error to an HTTP-aligned error code.
 // Priority: net.Error.Timeout() → string pattern match → fallback 570.
-func classifyError(err error) *EngineError {
+func ClassifyError(err error) *EngineError {
 	msg := err.Error()
 
 	// Priority 1: Check for timeout via net.Error interface (most specific).

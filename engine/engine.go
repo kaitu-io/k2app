@@ -291,7 +291,7 @@ func (e *Engine) setState(s string) {
 func (e *Engine) fail(err error) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.lastError = classifyError(err)
+	e.lastError = ClassifyError(err)
 	if e.cancel != nil {
 		e.cancel()
 		e.cancel = nil
