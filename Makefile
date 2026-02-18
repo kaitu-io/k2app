@@ -42,6 +42,11 @@ deploy-api:
 publish-release:
 	bash scripts/publish-release.sh
 
+publish-mobile:
+	@test -n "$(VERSION)" || (echo "Usage: make publish-mobile VERSION=x.y.z" && exit 1)
+	@echo "Publishing mobile v$(VERSION)..."
+	bash scripts/publish-mobile.sh $(VERSION)
+
 # Mobile builds
 mobile-deps:
 	cd k2 && go get golang.org/x/mobile/bind@latest
