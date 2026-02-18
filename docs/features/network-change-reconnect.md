@@ -6,7 +6,7 @@
 |-----------|------------------------------------------|
 | Feature   | network-change-reconnect                 |
 | Version   | v1                                       |
-| Status    | draft                                    |
+| Status    | implemented                               |
 | Created   | 2026-02-18                               |
 | Updated   | 2026-02-18                               |
 | Depends on | vpn-error-reconnect (implemented), config-driven-connect (implemented) |
