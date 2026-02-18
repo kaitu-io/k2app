@@ -1,14 +1,14 @@
 /**
- * Capacitor K2 Bridge Tests — RED phase
+ * Capacitor K2 Bridge Tests
  *
  * Tests for the Capacitor mobile bridge (capacitor-k2.ts) which injects:
  *   window._k2      = { run(action, params) }     (VPN control via K2Plugin)
- *   window._platform = { os, isMobile, ..., storage, getUdid }
- *
- * All tests should FAIL because capacitor-k2.ts does not exist yet.
+ *   window._platform = { os, version, storage, getUdid, ... }
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { Browser } from '@capacitor/browser';
+import { Clipboard } from '@capacitor/clipboard';
 
 // Mock @capacitor/core
 vi.mock('@capacitor/core', () => ({
@@ -18,21 +18,30 @@ vi.mock('@capacitor/core', () => ({
   },
 }));
 
-// Mock k2-plugin — full mock object with all K2PluginInterface methods
+// Mock @capacitor/browser
+vi.mock('@capacitor/browser', () => ({
+  Browser: {
+    open: vi.fn(),
+  },
+}));
+
+// Mock @capacitor/clipboard
+vi.mock('@capacitor/clipboard', () => ({
+  Clipboard: {
+    write: vi.fn(),
+    read: vi.fn().mockResolvedValue({ type: 'text/plain', value: '' }),
+  },
+}));
+
+// Mock k2-plugin — only methods the bridge actually calls
 const mockK2Plugin = {
   checkReady: vi.fn(),
   getUDID: vi.fn(),
   getVersion: vi.fn(),
   getStatus: vi.fn(),
-  getConfig: vi.fn(),
   connect: vi.fn(),
   disconnect: vi.fn(),
   addListener: vi.fn(),
-  checkWebUpdate: vi.fn(),
-  checkNativeUpdate: vi.fn(),
-  applyWebUpdate: vi.fn(),
-  downloadNativeUpdate: vi.fn(),
-  installNativeUpdate: vi.fn(),
 };
 
 vi.mock('k2-plugin', () => ({
@@ -85,8 +94,6 @@ describe('capacitor-k2', () => {
 
       expect(window._platform).toBeDefined();
       expect(window._platform.os).toBe('ios');
-      expect(window._platform.isMobile).toBe(true);
-      expect(window._platform.isDesktop).toBe(false);
       expect(window._platform.version).toBe('0.4.0');
     });
 
@@ -278,6 +285,43 @@ describe('capacitor-k2', () => {
 
       expect(mockK2Plugin.getUDID).toHaveBeenCalled();
       expect(udid).toBe('test-mobile-udid-123');
+    });
+
+    it('test_platform_openExternal_uses_browser_plugin', async () => {
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      await window._platform.openExternal('https://example.com');
+
+      expect(Browser.open).toHaveBeenCalledWith({ url: 'https://example.com' });
+    });
+
+    it('test_platform_writeClipboard_uses_clipboard_plugin', async () => {
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      await window._platform.writeClipboard('hello-capacitor');
+
+      expect(Clipboard.write).toHaveBeenCalledWith({ string: 'hello-capacitor' });
+    });
+
+    it('test_platform_readClipboard_uses_clipboard_plugin', async () => {
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      vi.mocked(Clipboard.read).mockResolvedValueOnce({ type: 'text/plain', value: 'clipboard-data' });
+      const result = await window._platform.readClipboard();
+
+      expect(Clipboard.read).toHaveBeenCalled();
+      expect(result).toBe('clipboard-data');
+    });
+
+    it('test_platform_syncLocale_is_noop', async () => {
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      // syncLocale on mobile is a no-op — should not throw
+      await expect(window._platform.syncLocale('zh-CN')).resolves.toBeUndefined();
     });
   });
 

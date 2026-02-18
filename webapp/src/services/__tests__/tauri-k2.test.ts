@@ -5,33 +5,34 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));
 
-// Mock @tauri-apps/plugin-http
-vi.mock('@tauri-apps/plugin-http', () => ({
-  fetch: vi.fn(),
+// Mock @tauri-apps/plugin-opener
+vi.mock('@tauri-apps/plugin-opener', () => ({
+  openUrl: vi.fn(),
 }));
 
-// Mock @tauri-apps/plugin-shell
-vi.mock('@tauri-apps/plugin-shell', () => ({
-  open: vi.fn(),
+// Mock @tauri-apps/plugin-clipboard-manager
+vi.mock('@tauri-apps/plugin-clipboard-manager', () => ({
+  writeText: vi.fn(),
+  readText: vi.fn().mockResolvedValue(''),
 }));
 
 import { invoke } from '@tauri-apps/api/core';
-import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
+import { openUrl } from '@tauri-apps/plugin-opener';
+import { writeText, readText } from '@tauri-apps/plugin-clipboard-manager';
 import { injectTauriGlobals } from '../tauri-k2';
 import { getK2Source } from '../standalone-k2';
 
 const mockInvoke = vi.mocked(invoke);
-const mockTauriFetch = vi.mocked(tauriFetch);
+const mockOpenUrl = vi.mocked(openUrl);
+const mockWriteText = vi.mocked(writeText);
+const mockReadText = vi.mocked(readText);
 
 describe('tauri-k2', () => {
   let originalK2: any;
   let originalPlatform: any;
-  let originalFetch: typeof window.fetch;
-
   beforeEach(() => {
     originalK2 = window._k2;
     originalPlatform = window._platform;
-    originalFetch = window.fetch;
     delete (window as any)._k2;
     delete (window as any)._platform;
     vi.clearAllMocks();
@@ -40,7 +41,6 @@ describe('tauri-k2', () => {
   afterEach(() => {
     (window as any)._k2 = originalK2;
     (window as any)._platform = originalPlatform;
-    window.fetch = originalFetch;
   });
 
   describe('injectTauriGlobals', () => {
@@ -59,11 +59,9 @@ describe('tauri-k2', () => {
       expect(typeof window._k2.run).toBe('function');
     });
 
-    it('sets window._platform with correct desktop properties', () => {
+    it('sets window._platform with correct properties', () => {
       expect(window._platform).toBeDefined();
       expect(window._platform.os).toBe('macos');
-      expect(window._platform.isDesktop).toBe(true);
-      expect(window._platform.isMobile).toBe(false);
       expect(window._platform.version).toBe('0.4.0');
     });
 
@@ -97,6 +95,34 @@ describe('tauri-k2', () => {
       });
     });
 
+    it('_k2.run down calls daemon_exec with action down', async () => {
+      mockInvoke.mockResolvedValueOnce({ code: 0, message: 'ok', data: {} });
+
+      const result = await window._k2.run('down');
+
+      expect(mockInvoke).toHaveBeenCalledWith('daemon_exec', {
+        action: 'down',
+        params: null,
+      });
+      expect(result.code).toBe(0);
+    });
+
+    it('_k2.run version returns version data', async () => {
+      mockInvoke.mockResolvedValueOnce({
+        code: 0,
+        message: 'ok',
+        data: { version: '0.4.0' },
+      });
+
+      const result = await window._k2.run('version');
+
+      expect(mockInvoke).toHaveBeenCalledWith('daemon_exec', {
+        action: 'version',
+        params: null,
+      });
+      expect(result.data.version).toBe('0.4.0');
+    });
+
     it('_k2.run returns error response on invoke failure', async () => {
       mockInvoke.mockRejectedValueOnce(new Error('Service unreachable'));
 
@@ -106,28 +132,12 @@ describe('tauri-k2', () => {
       expect(result.message).toContain('Service unreachable');
     });
 
-    it('_platform.nativeExec calls invoke with action', async () => {
-      mockInvoke.mockResolvedValueOnce('Service installed and started');
-
-      const result = await window._platform.nativeExec!('admin_reinstall_service');
-
-      expect(mockInvoke).toHaveBeenCalledWith('admin_reinstall_service', {});
-      expect(result).toBe('Service installed and started');
-    });
-
-    it('_platform.nativeExec passes params to invoke', async () => {
+    it('_platform.reinstallService calls admin_reinstall_service IPC', async () => {
       mockInvoke.mockResolvedValueOnce('ok');
 
-      await window._platform.nativeExec!('some_action', { key: 'val' });
+      await window._platform.reinstallService!();
 
-      expect(mockInvoke).toHaveBeenCalledWith('some_action', { key: 'val' });
-    });
-
-    it('_platform.nativeExec rejects on invoke error', async () => {
-      mockInvoke.mockRejectedValueOnce(new Error('User cancelled'));
-
-      await expect(window._platform.nativeExec!('admin_reinstall_service'))
-        .rejects.toThrow('User cancelled');
+      expect(mockInvoke).toHaveBeenCalledWith('admin_reinstall_service');
     });
 
     it('_platform.getUdid invokes get_udid IPC command', async () => {
@@ -141,6 +151,35 @@ describe('tauri-k2', () => {
 
       expect(mockInvoke).toHaveBeenCalledWith('get_udid');
       expect(udid).toBe('test-udid-123');
+    });
+
+    it('_platform.openExternal calls opener plugin', async () => {
+      await window._platform.openExternal('https://example.com');
+      expect(mockOpenUrl).toHaveBeenCalledWith('https://example.com');
+    });
+
+    it('_platform.writeClipboard calls clipboard-manager plugin', async () => {
+      await window._platform.writeClipboard('hello');
+      expect(mockWriteText).toHaveBeenCalledWith('hello');
+    });
+
+    it('_platform.readClipboard calls clipboard-manager plugin', async () => {
+      mockReadText.mockResolvedValueOnce('clipboard-content');
+      const result = await window._platform.readClipboard();
+      expect(result).toBe('clipboard-content');
+    });
+
+    it('_platform.syncLocale calls sync_locale IPC', async () => {
+      mockInvoke.mockResolvedValueOnce(null);
+      await window._platform.syncLocale('zh-CN');
+      expect(mockInvoke).toHaveBeenCalledWith('sync_locale', { locale: 'zh-CN' });
+    });
+
+    it('_platform.getPid calls get_pid IPC', async () => {
+      mockInvoke.mockResolvedValueOnce(12345);
+      const pid = await window._platform.getPid!();
+      expect(mockInvoke).toHaveBeenCalledWith('get_pid');
+      expect(pid).toBe(12345);
     });
   });
 
@@ -217,48 +256,6 @@ describe('tauri-k2', () => {
       const result = await window._k2.run('status');
       expect(result.data.state).toBe('connected');
       expect(result.data.error).toBeUndefined();
-    });
-  });
-
-  describe('fetch override', () => {
-    beforeEach(async () => {
-      mockInvoke.mockImplementation(async (cmd: string) => {
-        if (cmd === 'get_platform_info') {
-          return { os: 'macos', version: '0.4.0' };
-        }
-        return { code: 0, message: 'ok', data: {} };
-      });
-      await injectTauriGlobals();
-    });
-
-    it('routes external HTTPS through tauriFetch', async () => {
-      const mockResponse = new Response('{}', { status: 200 });
-      mockTauriFetch.mockResolvedValueOnce(mockResponse as any);
-
-      await window.fetch('https://w.app.52j.me/api/tunnels');
-
-      expect(mockTauriFetch).toHaveBeenCalledWith(
-        'https://w.app.52j.me/api/tunnels',
-        undefined,
-      );
-    });
-
-    it('keeps relative paths on native fetch', async () => {
-      mockTauriFetch.mockClear();
-
-      // Relative URLs should NOT go through tauriFetch
-      // They'll fail in test env (no server) but that's fine — we just verify routing
-      await window.fetch('/core', { method: 'POST' }).catch(() => {});
-
-      expect(mockTauriFetch).not.toHaveBeenCalled();
-    });
-
-    it('keeps loopback URLs on native fetch', async () => {
-      mockTauriFetch.mockClear();
-
-      await window.fetch('http://127.0.0.1:1777/ping').catch(() => {});
-
-      expect(mockTauriFetch).not.toHaveBeenCalled();
     });
   });
 

@@ -1,12 +1,9 @@
 /**
- * Standalone K2 V2 Tests — new split-global injection behavior
+ * Standalone K2 V2 Tests — split-global injection behavior
  *
- * AFTER the split, ensureK2Injected() should inject:
+ * ensureK2Injected() injects:
  *   window._k2      = { run(action, params) }     (VPN-only)
- *   window._platform = { os, isDesktop, ..., storage, getUdid }
- *
- * These tests verify the new injection behavior.
- * They should FAIL until standalone-k2.ts is updated.
+ *   window._platform = { os, version, storage, getUdid, ... }
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -87,10 +84,7 @@ describe('Standalone K2 V2 — split global injection', () => {
 
     ensureK2Injected();
 
-    // AFTER the split, both globals should be defined
     expect(window._k2).toBeDefined();
-    // This will FAIL because current ensureK2Injected() only sets window._k2
-    // and does NOT set window._platform as a separate global
     expect((window as any)._platform).toBeDefined();
   });
 
@@ -99,8 +93,6 @@ describe('Standalone K2 V2 — split global injection', () => {
 
     ensureK2Injected();
 
-    // After the split, _k2 is VPN-only — no `api` property
-    // Current code sets _k2.api, so this will FAIL
     expect(window._k2).toBeDefined();
     expect('api' in window._k2).toBe(false);
   });
@@ -110,8 +102,6 @@ describe('Standalone K2 V2 — split global injection', () => {
 
     ensureK2Injected();
 
-    // After the split, _k2 is VPN-only — no `platform` property
-    // Current code sets _k2.platform, so this will FAIL
     expect(window._k2).toBeDefined();
     expect('platform' in window._k2).toBe(false);
   });
@@ -121,8 +111,6 @@ describe('Standalone K2 V2 — split global injection', () => {
 
     ensureK2Injected();
 
-    // After the split, platform capabilities live on window._platform
-    // Current code doesn't set window._platform, so this will FAIL
     const platform = (window as any)._platform;
     expect(platform).toBeDefined();
     expect(platform.storage).toBeDefined();
@@ -136,8 +124,6 @@ describe('Standalone K2 V2 — split global injection', () => {
 
     ensureK2Injected();
 
-    // After the split, getUdid lives on window._platform
-    // Current code doesn't set window._platform, so this will FAIL
     const platform = (window as any)._platform;
     expect(platform).toBeDefined();
     expect(typeof platform.getUdid).toBe('function');
@@ -148,8 +134,6 @@ describe('Standalone K2 V2 — split global injection', () => {
 
     ensureK2Injected();
 
-    // After the split, _k2 should have `run` (not `core.exec`)
-    // Current code has _k2.core.exec, so this will FAIL
     expect(typeof (window._k2 as any).run).toBe('function');
   });
 });
