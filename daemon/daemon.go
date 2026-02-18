@@ -61,6 +61,12 @@ type Daemon struct {
 	// It should create an engine, start it with the given config, and return it.
 	// When nil, the default production path (engine.New + Start) is used.
 	EngineStarter func(cfg engine.Config) (*engine.Engine, error)
+
+	// MonitorFactory creates the network change monitor.
+	// Returns (notifier, interfaceMonitor, error).
+	// When nil, the default NewNetworkMonitor is used.
+	// Overridable for testing.
+	MonitorFactory func() (engine.NetworkChangeNotifier, any, error)
 }
 
 // New creates a new daemon.
@@ -233,6 +239,12 @@ func defaultEngineStarter(cfg engine.Config) (*engine.Engine, error) {
 	return eng, nil
 }
 
+// defaultMonitorFactory wraps NewNetworkMonitor with the any return type
+// expected by MonitorFactory.
+func defaultMonitorFactory() (engine.NetworkChangeNotifier, any, error) {
+	return NewNetworkMonitor()
+}
+
 // engineConfigFromClientConfig maps a config.ClientConfig to an engine.Config.
 func (d *Daemon) engineConfigFromClientConfig(cfg *config.ClientConfig, dd *directdial.Dialer) engine.Config {
 	ecfg := engine.Config{
@@ -251,6 +263,19 @@ func (d *Daemon) engineConfigFromClientConfig(cfg *config.ClientConfig, dd *dire
 	if cfg.Rule.RuleURL != "" || cfg.Rule.GeoIPURL != "" || cfg.Rule.PornURL != "" ||
 		cfg.Rule.CacheDir != "" || cfg.Rule.Global {
 		ecfg.RuleConfig = d.buildRuleConfig(cfg)
+	}
+
+	// Create network monitor (desktop only, non-fatal if unavailable).
+	factory := d.MonitorFactory
+	if factory == nil {
+		factory = defaultMonitorFactory
+	}
+	monitor, ifaceMon, monErr := factory()
+	if monErr != nil {
+		log.Printf("network monitor unavailable: %v (passive timeout recovery only)", monErr)
+	} else {
+		ecfg.NetworkMonitor = monitor
+		ecfg.InterfaceMonitor = ifaceMon
 	}
 
 	return ecfg
