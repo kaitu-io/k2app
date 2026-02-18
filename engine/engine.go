@@ -25,7 +25,7 @@ type Engine struct {
 	state       string
 	wireUrl     string
 	connectedAt time.Time
-	lastError   string
+	lastError   *EngineError
 	handler     EventHandler
 
 	cancel context.CancelFunc
@@ -67,7 +67,7 @@ func (e *Engine) Start(cfg Config) error {
 		return fmt.Errorf("engine: already started")
 	}
 	e.wireUrl = cfg.WireURL
-	e.lastError = ""
+	e.lastError = nil
 
 	// Create context early so Stop() can cancel an in-progress Start().
 	ctx, cancel := context.WithCancel(context.Background())
@@ -264,7 +264,7 @@ func (e *Engine) StatusJSON() string {
 		info["connected_at"] = e.connectedAt.Format(time.RFC3339)
 		info["uptime_seconds"] = int(time.Since(e.connectedAt).Seconds())
 	}
-	if e.lastError != "" {
+	if e.lastError != nil {
 		info["error"] = e.lastError
 	}
 	if e.wireUrl != "" {
@@ -291,7 +291,7 @@ func (e *Engine) setState(s string) {
 func (e *Engine) fail(err error) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.lastError = err.Error()
+	e.lastError = classifyError(err)
 	if e.cancel != nil {
 		e.cancel()
 		e.cancel = nil

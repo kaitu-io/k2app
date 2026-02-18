@@ -465,7 +465,7 @@ func TestEngineStatusJSON_MatchesDaemonFormat(t *testing.T) {
 	e.state = StateConnected
 	e.wireUrl = "k2v5://u:t@host:443"
 	e.connectedAt = time.Now().Add(-5 * time.Second)
-	e.lastError = "some previous error"
+	e.lastError = &EngineError{Code: ErrCodeConnectionFatal, Message: "some previous error"}
 	e.mu.Unlock()
 
 	raw := e.StatusJSON()
