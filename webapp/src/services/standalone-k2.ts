@@ -63,13 +63,9 @@ export const standaloneK2: IK2Vpn = {
 export const standalonePlatform: IPlatform = {
   ...webPlatform,
   os: 'web',
-  isDesktop: false,
-  isMobile: false,
   version: 'standalone',
   getUdid: getDaemonUdid,
   storage: webSecureStorage,
-  debug: (message: string) => console.debug('[K2:Standalone]', message),
-  warn: (message: string) => console.warn('[K2:Standalone]', message),
 };
 
 export function isK2Injected(): boolean {
@@ -91,13 +87,13 @@ export function getK2Source(): 'tauri' | 'capacitor' | 'standalone' | 'none' {
 
   const platform = window._platform;
 
-  // Tauri: isDesktop + non-standalone version
-  if (platform.isDesktop && platform.version !== 'standalone') {
+  // Tauri: desktop OS + non-standalone version
+  if (['macos', 'windows', 'linux'].includes(platform.os) && platform.version !== 'standalone') {
     return 'tauri';
   }
 
-  // Capacitor: mobile + non-web OS
-  if (platform.isMobile && platform.os !== 'web') {
+  // Capacitor: mobile OS
+  if (['ios', 'android'].includes(platform.os)) {
     return 'capacitor';
   }
 

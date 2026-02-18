@@ -82,16 +82,9 @@ const ForceUpgradeDialog: React.FC = () => {
 
   const handleDownload = async () => {
     try {
-      // Use platform's openExternal method to open link in external browser
-      if (window._platform!.openExternal) {
-        await window._platform!.openExternal(downloadUrl);
-      } else {
-        // Fallback to window.open (Web environment)
-        window.open(downloadUrl, '_blank', 'noopener,noreferrer');
-      }
+      await window._platform!.openExternal(downloadUrl);
     } catch (error) {
       console.error('Failed to open download URL:', error);
-      // Also try window.open on error
       window.open(downloadUrl, '_blank', 'noopener,noreferrer');
     }
     // Note: Don't close the dialog - user must update

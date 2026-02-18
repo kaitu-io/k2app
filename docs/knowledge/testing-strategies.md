@@ -172,6 +172,24 @@ engine.wire = &mockWireNoReset{}
 
 ---
 
+## Stale Mock Properties Survive tsc When Typed as `any` (2026-02-18, platform-interface-cleanup)
+
+**Pattern**: After deleting `isDesktop`/`isMobile` from `IPlatform`, 6 test files still had mock platform objects with `{ isDesktop: true, isMobile: false }`. These passed tsc because mock objects are typed as `any` (e.g., `(window as any)._platform = { ... }`).
+
+**Risk**: Low — extra properties on mocks don't affect test behavior. Tests pass because they test specific interactions, not the shape of mock objects.
+
+**Cleanup approach**: Cosmetic — remove stale properties from mocks when touching those test files for other reasons. Not worth a dedicated cleanup pass.
+
+**Prevention**: When interface-breaking changes delete properties, grep for the property names in test files. Fix production code first (tsc catches those). Then clean test mocks if convenient.
+
+**Affected files**: `consumer-migration.test.ts`, `auth-service-v2.test.ts`, `kaitu-core.test.ts`, `Dashboard.test.tsx`, `config.store.test.ts`
+
+**Tests**: All 285 tests pass with stale mock properties present.
+**Source**: platform-interface-cleanup (2026-02-18)
+**Status**: verified
+
+---
+
 ## Engine Package TDD: Config Combinations as Test Cases (2026-02-16, unified-engine)
 
 **Pattern**: `engine_test.go` has 14 test functions covering all Config field combinations. Each test verifies one aspect of Engine behavior.

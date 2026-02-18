@@ -79,7 +79,7 @@ export default function ServiceAlert({ sidebarWidth = 0 }: ServiceAlertProps) {
   // Handle resolve button click - try to reinstall service with admin privileges
   const handleResolve = async () => {
     const platform = window._platform;
-    if (!platform?.nativeExec) {
+    if (!platform?.reinstallService) {
       // Fallback to more page if not available (web mode)
       navigate('/service-error', { state: { from: location.pathname } });
       return;
@@ -87,7 +87,7 @@ export default function ServiceAlert({ sidebarWidth = 0 }: ServiceAlertProps) {
 
     setIsResolving(true);
     try {
-      await platform.nativeExec('admin_reinstall_service');
+      await platform.reinstallService();
       // Success - the service should restart and connection should recover
       // The alert will disappear automatically when service reconnects
     } catch (err: any) {

@@ -150,6 +150,20 @@ F2 (Platform) ─┤                 ├── F4 (Nav+Layout+Global) ──┬�
 
 ---
 
+## Interface Change + Consumer Update Must Be Atomic Without Worktrees (2026-02-18, platform-interface-cleanup)
+
+**Observation**: Plan separated T1 (change IPlatform interface) and T2 (update 11 consumer files) as distinct tasks. But without worktrees, changing the interface immediately breaks all consumers — `tsc --noEmit` fails with 35 errors.
+
+**Execution**: T1 and T2 were effectively merged into a single pass. Changed interface → fixed all consumers → verified with tsc. No intermediate commit possible between T1 and T2.
+
+**Why this differs from worktree execution**: In worktree mode, T1 branch has the interface change and the T1 tests pass in isolation. T2 branch would be based on T1 and fix consumers. Without worktrees, both must happen atomically.
+
+**Lesson**: When planning interface-breaking changes for non-worktree execution, merge the "change interface" and "update consumers" tasks into one. The dependency isn't "T2 depends on T1" — it's "T1 and T2 are inseparable without worktrees".
+
+**Contrast**: T3 (Tauri bridge) and T4 (Capacitor bridge) remained independent — different files, no cross-dependency. Parallel execution worked for these.
+
+---
+
 ## Cross-Repo Worktree for Submodule Changes (2026-02-16, unified-engine)
 
 **Observation**: unified-engine modified files in `k2/` submodule (engine/ package, daemon/, mobile/) and k2app repo (iOS/Android native plugins, webapp TypeScript). The plan called for separate k2 worktrees (F1, T2, T3) and k2app worktrees (T4, T5, T6).

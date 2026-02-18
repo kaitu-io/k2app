@@ -1,10 +1,22 @@
 //! System tray module
 
+use std::sync::Mutex;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager,
+    Manager, State,
 };
+
+/// Shared locale state for tray menu i18n
+pub struct TrayLocale(pub Mutex<String>);
+
+/// IPC command: sync locale from webapp to Rust for tray menu i18n
+#[tauri::command]
+pub fn sync_locale(locale: String, state: State<'_, TrayLocale>) {
+    let mut current = state.0.lock().unwrap();
+    *current = locale;
+    log::info!("[tray] Locale synced: {}", &*current);
+}
 
 const SERVICE_BASE_URL: &str = "http://127.0.0.1:1777";
 

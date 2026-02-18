@@ -82,16 +82,16 @@ export interface StorageOptions {
  * @example
  * ```typescript
  * // 存储
- * await _k2.platform.storage.set('token', { access: 'xxx', refresh: 'yyy' });
+ * await _platform.storage.set('token', { access: 'xxx', refresh: 'yyy' });
  *
  * // 读取
- * const token = await _k2.platform.storage.get<{ access: string }>('token');
+ * const token = await _platform.storage.get<{ access: string }>('token');
  *
  * // 删除
- * await _k2.platform.storage.remove('token');
+ * await _platform.storage.remove('token');
  *
  * // 带 TTL
- * await _k2.platform.storage.set('cache', data, { ttl: 60000 });
+ * await _platform.storage.set('cache', data, { ttl: 60000 });
  * ```
  */
 export interface ISecureStorage {
@@ -116,66 +116,52 @@ export interface ISecureStorage {
 
 /**
  * 平台能力接口
+ *
+ * Injected as window._platform before React loads.
+ * Each platform (Tauri/Capacitor/Web) provides its own implementation.
  */
 export interface IPlatform {
-  /** 操作系统 */
+  // ====== 平台标识 ======
+
   os: 'windows' | 'macos' | 'linux' | 'ios' | 'android' | 'web';
-
-  /** 是否桌面端 */
-  isDesktop: boolean;
-
-  /** 是否移动端 */
-  isMobile: boolean;
-
-  /** 应用版本 */
   version: string;
 
-  // ==================== 可选能力 ====================
+  // ====== 核心能力 ======
 
-  /** 打开外部链接 */
-  openExternal?(url: string): Promise<void>;
+  storage: ISecureStorage;
+  getUdid(): Promise<string>;
+
+  // ====== 跨平台能力 ======
+
+  /** 打开外部链接（系统浏览器） */
+  openExternal(url: string): Promise<void>;
 
   /** 写入剪贴板 */
-  writeClipboard?(text: string): Promise<void>;
+  writeClipboard(text: string): Promise<void>;
 
   /** 读取剪贴板 */
-  readClipboard?(): Promise<string>;
+  readClipboard(): Promise<string>;
 
-  /** 显示 Toast */
-  showToast?(message: string, type: 'success' | 'error' | 'info' | 'warning'): Promise<void>;
+  /** 同步语言设置到原生层（Tauri: tray 菜单, Mobile: no-op） */
+  syncLocale(locale: string): Promise<void>;
 
-  /** 同步语言设置到原生层 */
-  syncLocale?(locale: string): Promise<void>;
+  // ====== 桌面专属（可选）======
 
-  /** 获取原生层语言设置 */
-  getLocale?(): Promise<string>;
-
-  /** 退出应用 */
-  exit?(): Promise<void>;
-
-  // ==================== 安全存储 ====================
-
-  /**
-   * 安全存储
-   * 比 localStorage 更安全，数据自动加密
-   */
-  storage: ISecureStorage;
-
-  // ==================== 应用更新（可选，仅桌面端）====================
-
-  /** 应用更新接口 */
   updater?: IUpdater;
 
-  // ==================== 调试能力（可选）====================
+  /** 以管理员权限重新安装 daemon service */
+  reinstallService?(): Promise<void>;
 
-  /** 调试日志 */
-  debug?(message: string): void;
+  /**
+   * 获取当前进程 PID
+   * 传入 k2 daemon 后，daemon 监控此 PID，进程退出时自动停止 VPN
+   */
+  getPid?(): Promise<number>;
 
-  /** 警告日志 */
-  warn?(message: string): void;
+  // ====== 诊断（可选）======
 
-  /** Upload service logs for diagnostics/feedback */
-  uploadServiceLogs?(params: {
+  /** 上传服务日志用于诊断/反馈 */
+  uploadLogs?(params: {
     email?: string | null;
     reason: string;
     failureDurationMs?: number;
@@ -183,43 +169,6 @@ export interface IPlatform {
     version?: string;
     feedbackId?: string;
   }): Promise<{ success: boolean; error?: string }>;
-
-  /**
-   * Native command execution (platform abstraction)
-   *
-   * Supported actions:
-   * - admin_reinstall_service: Admin reinstall service
-   *
-   * @param action - Command name
-   * @param params - Command parameters
-   * @returns Execution result
-   */
-  nativeExec?<T = any>(action: string, params?: Record<string, any>): Promise<T>;
-
-  // ==================== Device ID ====================
-
-  /**
-   * Get device unique identifier (UDID)
-   * Format: {48 random hex}-{8 fingerprint hash} (57 chars)
-   *
-   * Implementation:
-   * - Tauri: Uses tauriSecureStorage + desktop fingerprint
-   * - Capacitor: Uses capacitorSecureStorage + mobile fingerprint
-   * - Standalone: Fetches from daemon /api/device/udid
-   */
-  getUdid(): Promise<string>;
-
-  /**
-   * Get current process ID (for VPN auto-stop monitoring)
-   *
-   * When provided to start action, VPN service monitors this PID
-   * and auto-stops VPN when the process exits (prevents orphaned VPN)
-   *
-   * Implementation:
-   * - Tauri: std::process::id()
-   * - Others: Not applicable, returns 0
-   */
-  getPid?(): Promise<number>;
 }
 
 // ==================== 核心接口 ====================

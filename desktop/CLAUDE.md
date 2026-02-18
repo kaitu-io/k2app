@@ -38,6 +38,8 @@ yarn tauri build --target universal-apple-darwin  # macOS build
 - `tauri-plugin-updater` — Auto-update with CDN endpoints
 - `tauri-plugin-process` — Process management
 - `tauri-plugin-autostart` — Launch on system boot
+- `tauri-plugin-opener` — Open external URLs in system browser
+- `tauri-plugin-clipboard-manager` — Read/write system clipboard
 
 ## Gotchas
 

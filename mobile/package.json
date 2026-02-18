@@ -8,6 +8,8 @@
     "@capacitor/cli": "^6.0.0",
     "@capacitor/core": "^6.0.0",
     "@capacitor/ios": "^6.0.0",
+    "@capacitor/browser": "^6.0.0",
+    "@capacitor/clipboard": "^6.0.0",
     "@capacitor/status-bar": "^6.0.0",
     "k2-plugin": "file:./plugins/k2-plugin"
   }

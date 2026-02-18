@@ -16,8 +16,8 @@ export function useInviteCodeActions() {
   const { user } = useUser();
   const { getShareLink, loading: shareLinkLoading } = useShareLink();
 
-  // 检测平台类型（直接使用 window._platform!.isMobile，更可靠）
-  const isMobile = window._platform!.isMobile || /Mobile|Android|iPhone|iPad/i.test(navigator.userAgent);
+  // 检测平台类型（基于 os 判断）
+  const isMobile = ['ios', 'android'].includes(window._platform!.os) || /Mobile|Android|iPhone|iPad/i.test(navigator.userAgent);
 
   /**
    * 分享完整邀请内容

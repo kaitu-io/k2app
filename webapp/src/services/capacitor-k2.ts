@@ -8,6 +8,8 @@
  */
 
 import { Capacitor } from '@capacitor/core';
+import { Browser } from '@capacitor/browser';
+import { Clipboard } from '@capacitor/clipboard';
 import { K2Plugin } from 'k2-plugin';
 import type { IK2Vpn, IPlatform, SResponse } from '../types/kaitu-core';
 import type { StatusResponseData, ControlError, ServiceState } from './control-types';
@@ -113,8 +115,6 @@ export async function injectCapacitorGlobals(): Promise<void> {
   // Build _platform: mobile capabilities
   const capacitorPlatform: IPlatform = {
     os: platform,
-    isMobile: true,
-    isDesktop: false,
     version: appVersion,
 
     storage: webSecureStorage,
@@ -124,21 +124,22 @@ export async function injectCapacitorGlobals(): Promise<void> {
       return result.udid;
     },
 
+    openExternal: async (url: string): Promise<void> => {
+      await Browser.open({ url });
+    },
+
     writeClipboard: async (text: string): Promise<void> => {
-      if (navigator.clipboard) {
-        await navigator.clipboard.writeText(text);
-      }
+      await Clipboard.write({ string: text });
     },
 
     readClipboard: async (): Promise<string> => {
-      if (navigator.clipboard) {
-        return navigator.clipboard.readText();
-      }
-      return '';
+      const result = await Clipboard.read();
+      return result.value ?? '';
     },
 
-    debug: (message: string) => console.debug('[K2:Capacitor]', message),
-    warn: (message: string) => console.warn('[K2:Capacitor]', message),
+    syncLocale: async (_locale: string): Promise<void> => {
+      // No-op on mobile — no tray menu to update
+    },
   };
 
   // Inject globals

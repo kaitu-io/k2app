@@ -124,7 +124,7 @@ export default function MemberManagement() {
         console.error('[MemberManagement] API returned error: ' + JSON.stringify({ code, message }));
         if (!silent) {
           showAlert(errorMsg, 'error');
-          window._platform?.showToast?.(errorMsg, 'error');
+  
         }
         setHasError(true);
         return false;
@@ -135,7 +135,7 @@ export default function MemberManagement() {
       if (!silent) {
         const errorMsg = t('account:memberManagement.getMembersFailedRetry');
         showAlert(errorMsg, 'error');
-        window._platform?.showToast?.(errorMsg, 'error');
+
       }
       // 确保在错误情况下也清空成员列表
       setMembers([]);
@@ -153,14 +153,14 @@ export default function MemberManagement() {
     if (!email) {
       const msg = t('account:memberManagement.emailRequired');
       showAlert(msg, 'warning');
-      window._platform?.showToast?.(msg, 'warning');
+
       return;
     }
 
     if (!isValidEmail(email)) {
       const msg = t('account:memberManagement.invalidEmail');
       showAlert(msg, 'warning');
-      window._platform?.showToast?.(msg, 'warning');
+
       return;
     }
 
@@ -185,7 +185,6 @@ export default function MemberManagement() {
         }
         const successMsg = t('account:memberManagement.addMemberSuccess');
         showAlert(successMsg, 'success');
-        window._platform?.showToast?.(successMsg, 'success');
         setAddDialogOpen(false);
         setNewMemberEmail("");
       } else if (code === ErrorInvalidArgument) {
@@ -193,19 +192,18 @@ export default function MemberManagement() {
         const errorMsg = message || t('account:memberManagement.emailAlreadyInUse');
         console.error('[MemberManagement] Invalid argument: ' + JSON.stringify({ code, message }));
         showAlert(errorMsg, 'error');
-        window._platform?.showToast?.(errorMsg, 'error');
+
         // 不关闭对话框，让用户可以修改邮箱
       } else {
         const errorMsg = message || t('account:memberManagement.addMemberFailed');
         console.error('[MemberManagement] Add member failed: ' + JSON.stringify({ code, message }));
         showAlert(errorMsg, 'error');
-        window._platform?.showToast?.(errorMsg, 'error');
+
       }
     } catch (error) {
       console.error('[MemberManagement] Exception adding member:', error);
       const errorMsg = t('account:memberManagement.addMemberFailedRetry');
       showAlert(errorMsg, 'error');
-      window._platform?.showToast?.(errorMsg, 'error');
     } finally {
       setAddingMember(false);
     }
@@ -228,18 +226,16 @@ export default function MemberManagement() {
         setMembers(prev => prev.filter(m => m.uuid !== member.uuid));
         const successMsg = t('account:memberManagement.removeMemberSuccess');
         showAlert(successMsg, 'success');
-        window._platform?.showToast?.(successMsg, 'success');
       } else {
         const errorMsg = message || t('account:memberManagement.removeMemberFailed');
         console.error('[MemberManagement] Remove member failed: ' + JSON.stringify({ code, message }));
         showAlert(errorMsg, 'error');
-        window._platform?.showToast?.(errorMsg, 'error');
+
       }
     } catch (error) {
       console.error('[MemberManagement] Exception removing member:', error);
       const errorMsg = t('account:memberManagement.removeMemberFailedRetry');
       showAlert(errorMsg, 'error');
-      window._platform?.showToast?.(errorMsg, 'error');
     }
   };
 

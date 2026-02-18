@@ -420,31 +420,44 @@ PacketTunnelProvider.swift
 
 ---
 
-## nativeExec: Generic IPC Passthrough for Platform Actions (2026-02-18, desktop-service-upgrade)
+## ~~nativeExec: Generic IPC Passthrough~~ → SUPERSEDED by Specific Methods (2026-02-18)
 
-**Decision**: `IPlatform.nativeExec(action, params?)` is a generic IPC passthrough — it maps action names directly to Tauri IPC commands (or native platform equivalents). No action-specific wrapper methods on `_platform`.
+**Superseded by**: platform-interface-cleanup (2026-02-18). `nativeExec` deleted from `IPlatform`. Replaced by `reinstallService?(): Promise<void>` — the only action that ever used `nativeExec`.
 
-**Tauri implementation** (`tauri-k2.ts`):
-```typescript
-nativeExec: async <T>(action: string, params?: Record<string, any>): Promise<T> => {
-  return invoke<T>(action, params ?? {});
-},
-```
+**Why reversed**: "Generic IPC passthrough" sounds extensible but was YAGNI — only one action (`admin_reinstall_service`) ever used it across 4 months. Meanwhile, it created a type-unsafe `string` action name with `any` params/return, making it impossible for TypeScript to catch misuse. Specific optional methods (`reinstallService?`) provide type safety, discoverability, and platform-appropriate fallbacks.
 
-**Current actions**: `admin_reinstall_service` (elevated service install via osascript/PowerShell).
+**Consumer migration**: `ServiceAlert.tsx` changed from `platform?.nativeExec('admin_reinstall_service')` to `platform?.reinstallService()`.
 
-**Why generic, not specific methods**: Adding per-action methods (`_platform.reinstallService()`) requires coordinated changes in types + bridge + every platform. `nativeExec` is open-ended — new actions only require Rust `#[tauri::command]` registration. Frontend callers like `ServiceAlert.tsx` pass the action string directly.
+---
 
-**Fallback pattern** (`ServiceAlert.tsx`):
-```typescript
-if (!platform?.nativeExec) {
-  navigate('/service-error', ...);  // Web/standalone fallback
-  return;
-}
-await platform.nativeExec('admin_reinstall_service');
-```
+## IPlatform Cleanup: 19→12 Members, Native Plugins Replace WebView APIs (2026-02-18, platform-interface-cleanup)
 
-**Validating tests**: `webapp/src/services/__tests__/tauri-k2.test.ts` — 3 tests (action passthrough, params passthrough, error propagation)
+**Decision**: Slim `IPlatform` from 19 to 12 members. Delete 7 unused/redundant methods, make 4 methods required (previously optional), replace WebView API stubs with native platform plugins.
+
+**Deleted members** (zero production consumers): `isDesktop`, `isMobile`, `showToast`, `getLocale`, `exit`, `debug`, `warn`, `nativeExec`.
+
+**Renamed**: `uploadServiceLogs` → `uploadLogs` (clarity).
+
+**Made required** (previously optional): `openExternal`, `writeClipboard`, `readClipboard`, `syncLocale`.
+
+**Kept optional** (desktop-only): `reinstallService?`, `getPid?`, `updater?`, `uploadLogs?`.
+
+**Why delete `isDesktop`/`isMobile`**: Derivable from `os` field. Layout store has its own responsive `isDesktop`/`isMobile` (screen-size based) — name collision caused confusion. Consumers now use `['ios', 'android'].includes(os)`.
+
+**Native plugin replacements**:
+
+| Capability | Before (WebView API) | After (Native Plugin) |
+|-----------|---------------------|----------------------|
+| Tauri clipboard | `navigator.clipboard` | `@tauri-apps/plugin-clipboard-manager` |
+| Tauri open URL | `window.open()` | `@tauri-apps/plugin-opener` |
+| Capacitor clipboard | `navigator.clipboard` | `@capacitor/clipboard` |
+| Capacitor open URL | `window.open()` | `@capacitor/browser` |
+
+**Why native plugins over WebView APIs**: WebView clipboard is unreliable (Android WebView clipboard completely broken, Windows WebView2 focus bug). `window.open()` may be blocked by popup blockers. Native plugins use OS-level APIs — always work.
+
+**Tauri Rust additions**: `sync_locale` IPC command (tray menu i18n), `get_pid` IPC command (process monitoring). Both registered in `main.rs` `invoke_handler`.
+
+**Validating tests**: `webapp/src/services/__tests__/tauri-k2.test.ts` (13 tests — 5 new plugin tests), `webapp/src/services/__tests__/capacitor-k2.test.ts` (20 tests — 5 new plugin tests)
 
 ---
 

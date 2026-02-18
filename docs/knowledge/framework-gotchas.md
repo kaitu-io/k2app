@@ -327,6 +327,38 @@ beforeEach(() => {
 
 ---
 
+## Tauri plugin-shell Replaced by plugin-opener + plugin-clipboard-manager (2026-02-18, platform-interface-cleanup)
+
+**Problem**: `@tauri-apps/plugin-shell` was used for `shell.open(url)` to open external URLs. But `plugin-shell` is a heavy dependency that also provides `Command` (subprocess execution) — unnecessary for just opening URLs. And it provides no clipboard support at all.
+
+**Solution**: Replace with two focused plugins:
+- `@tauri-apps/plugin-opener` — `openUrl(url)`. Lightweight, single-purpose.
+- `@tauri-apps/plugin-clipboard-manager` — `writeText(text)`, `readText()`. Native OS clipboard.
+
+**Capabilities file update required**: `shell:allow-open` → `opener:default` + `clipboard-manager:allow-write-text` + `clipboard-manager:allow-read-text` in `capabilities/default.json`.
+
+**Cargo.toml update**: Remove `tauri-plugin-shell`, add `tauri-plugin-opener = "2"` + `tauri-plugin-clipboard-manager = "2"`.
+
+**main.rs registration**: `.plugin(tauri_plugin_opener::init())` + `.plugin(tauri_plugin_clipboard_manager::init())`.
+
+**Validating tests**: `webapp/src/services/__tests__/tauri-k2.test.ts` — openExternal, writeClipboard, readClipboard tests
+
+---
+
+## Capacitor @capacitor/browser and @capacitor/clipboard for Mobile Native APIs (2026-02-18, platform-interface-cleanup)
+
+**Problem**: Mobile `capacitor-k2.ts` used `window.open()` for external URLs and `navigator.clipboard` for clipboard — both unreliable in WebView. Android WebView clipboard completely broken. `window.open()` may trigger popup blocker warnings.
+
+**Solution**:
+- `@capacitor/browser` — `Browser.open({ url })`. Uses system browser (Safari/Chrome).
+- `@capacitor/clipboard` — `Clipboard.write({ string: text })`, `Clipboard.read()`. Native OS clipboard.
+
+**Package.json**: Add to `mobile/package.json` dependencies, not webapp.
+
+**Validating tests**: `webapp/src/services/__tests__/capacitor-k2.test.ts` — openExternal, writeClipboard, readClipboard tests
+
+---
+
 ## Tauri v2 Restrictive Mode: Any Capability File Activates It (2026-02-17, tauri-desktop-bridge)
 
 **Problem**: Once ANY capability JSON file exists in `src-tauri/capabilities/`, Tauri v2 switches from permissive mode (all APIs allowed) to restrictive mode (ONLY listed permissions active). A dev-only capability file (`mcp-bridge.json`) silently activated restrictive mode for all builds, blocking permissions not explicitly listed.

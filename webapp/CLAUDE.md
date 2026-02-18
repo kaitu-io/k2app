@@ -68,14 +68,13 @@ Frontend uses two separate globals injected before app loads. They have distinct
            ↓                        ↓
 ┌─────────────────────┐  ┌─────────────────────────────────┐
 │ window._k2: IK2Vpn  │  │ window._platform: IPlatform     │
-│   run(action, params)│  │   os, isDesktop, isMobile       │
-│                      │  │   version                       │
-│ VPN actions:         │  │   storage: ISecureStorage        │
-│   up, down,          │  │   getUdid()                     │
-│   status, version    │  │   writeClipboard(), readClipboard│
-│                      │  │   openExternal()                │
+│   run(action, params)│  │   os, version                   │
+│                      │  │   storage: ISecureStorage        │
+│ VPN actions:         │  │   getUdid(), syncLocale()       │
+│   up, down,          │  │   writeClipboard(), readClipboard│
+│   status, version    │  │   openExternal()                │
 │                      │  │   updater?: IUpdater            │
-└──────────┬───────────┘  │   debug(), warn()               │
+└──────────┬───────────┘  │   reinstallService?(), getPid?()│
            │              └────────────────────────────────┘
            ↓
 ┌──────────────────────────────────────────────────────────┐
@@ -101,7 +100,7 @@ Frontend uses two separate globals injected before app loads. They have distinct
 | Interface | Global | Purpose |
 |-----------|--------|---------|
 | `IK2Vpn` | `window._k2` | VPN control: `run<T>(action, params): Promise<SResponse<T>>` |
-| `IPlatform` | `window._platform` | Platform capabilities: storage, UDID, clipboard, logging |
+| `IPlatform` | `window._platform` | Platform capabilities: storage, UDID, clipboard, openExternal, syncLocale |
 | `ISecureStorage` | `window._platform.storage` | Encrypted key-value storage |
 | `IUpdater` | `window._platform.updater` | Auto-update: check, apply, status |
 

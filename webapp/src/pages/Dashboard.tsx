@@ -172,14 +172,14 @@ export default function Dashboard() {
   const handleServiceFailureAlert = useCallback(async () => {
     setFailureAlertSent(true);
 
-    if (!window._platform?.uploadServiceLogs) {
-      console.debug('[Dashboard] Log upload skipped - platform does not support uploadServiceLogs');
+    if (!window._platform?.uploadLogs) {
+      console.debug('[Dashboard] Log upload skipped - platform does not support uploadLogs');
       return;
     }
 
     try {
       console.debug('[Dashboard] Silently uploading service logs');
-      await window._platform.uploadServiceLogs!({
+      await window._platform.uploadLogs!({
         email: isAuthenticated ? user?.loginIdentifies?.[0]?.value : null,
         reason: 'service_connection_timeout',
         failureDurationMs: serviceFailureDuration ?? undefined,

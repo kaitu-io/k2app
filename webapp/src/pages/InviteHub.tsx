@@ -76,8 +76,8 @@ export default function Invite() {
   const [popoverAnchorEl, setPopoverAnchorEl] = useState<HTMLElement | null>(null);
   const [popoverAction, setPopoverAction] = useState<'complete' | 'link'>('complete');
 
-  // 检测平台类型（直接使用 window._platform!.isMobile）
-  const isMobile = window._platform!.isMobile || /Mobile|Android|iPhone|iPad/i.test(navigator.userAgent);
+  // 检测平台类型（基于 os 判断）
+  const isMobile = ['ios', 'android'].includes(window._platform!.os) || /Mobile|Android|iPhone|iPad/i.test(navigator.userAgent);
 
   // 加载最新邀请码（登录后重新加载）
   useEffect(() => {

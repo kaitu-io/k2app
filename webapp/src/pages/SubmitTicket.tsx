@@ -58,7 +58,7 @@ export default function SubmitTicket() {
   const [logUploadStatus, setLogUploadStatus] = useState<LogUploadStatus>('idle');
 
   // Check platform capabilities
-  const canUploadLogs = !!window._platform?.uploadServiceLogs;
+  const canUploadLogs = !!window._platform?.uploadLogs;
 
   // Upload logs silently (no UI feedback)
   const uploadLogs = useCallback(async () => {
@@ -75,7 +75,7 @@ export default function SubmitTicket() {
     setLogUploadStatus('uploading');
 
     try {
-      const result = await window._platform.uploadServiceLogs!({
+      const result = await window._platform.uploadLogs!({
         email: isAuthenticated ? user?.loginIdentifies?.[0]?.value : null,
         reason: 'user_feedback_report',
         platform: window._platform.os,

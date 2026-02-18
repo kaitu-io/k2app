@@ -48,8 +48,8 @@ export const useStatusBar = ({ isDark }: StatusBarConfig) => {
 
   useEffect(() => {
     const updateStatusBar = async () => {
-      // 直接使用 window._platform!.isMobile，不需要调用 getPlatformInfo()
-      if (!window._platform!.isMobile) {
+      // 只在移动平台上设置状态栏
+      if (!['ios', 'android'].includes(window._platform!.os)) {
         return;
       }
 
@@ -64,12 +64,12 @@ export const useStatusBar = ({ isDark }: StatusBarConfig) => {
         // Android: 设置状态栏背景色（透明，让内容延伸）
         await (window._platform! as any).setStatusBarColor?.(themeColor);
 
-        window._platform!.debug?.(`[useStatusBar] Theme applied: ${isDark ? 'dark' : 'light'}, statusBarStyle: ${statusBarStyle}`);
+        console.debug(`[useStatusBar] Theme applied: ${isDark ? 'dark' : 'light'}, statusBarStyle: ${statusBarStyle}`);
 
         // 更新 HTML theme-color meta 标签
         updateThemeColorMeta(themeColor);
       } catch (error) {
-        window._platform!.warn?.(`[useStatusBar] Failed to update status bar: ${error}`);
+        console.warn(`[useStatusBar] Failed to update status bar: ${error}`);
       }
     };
 

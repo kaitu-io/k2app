@@ -22,18 +22,16 @@ import { webSecureStorage } from './secure-storage';
  */
 export const webPlatform = {
   os: 'web' as const,
-  isDesktop: false,
-  isMobile: false,
   version: '0.0.0',
 
-  // Storage support
   storage: webSecureStorage,
 
-  // Logging
-  debug: (message: string) => console.debug('[Web]', message),
-  warn: (message: string) => console.warn('[Web]', message),
+  // External links (browser native)
+  openExternal: async (url: string) => {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  },
 
-  // Clipboard (using native Web APIs)
+  // Clipboard (browser native — works in browser context, unreliable in WebView)
   writeClipboard: async (text: string) => {
     if (navigator.clipboard) {
       await navigator.clipboard.writeText(text);
@@ -47,8 +45,6 @@ export const webPlatform = {
     return '';
   },
 
-  // External links
-  openExternal: async (url: string) => {
-    window.open(url, '_blank', 'noopener,noreferrer');
-  },
+  // Locale sync (no-op for web)
+  syncLocale: async (_locale: string) => {},
 };

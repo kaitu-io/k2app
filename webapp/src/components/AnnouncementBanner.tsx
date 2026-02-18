@@ -113,13 +113,7 @@ const AnnouncementBanner: React.FC = () => {
     if (!announcement?.linkUrl) return;
 
     try {
-      // Use platform's openExternal method to open link in external browser
-      if (window._platform!.openExternal) {
-        await window._platform!.openExternal(announcement.linkUrl);
-      } else {
-        // Fallback to window.open (Web environment)
-        window.open(announcement.linkUrl, '_blank', 'noopener,noreferrer');
-      }
+      await window._platform!.openExternal(announcement.linkUrl);
     } catch (error) {
       console.error('Failed to open link:', error);
       window.open(announcement.linkUrl, '_blank', 'noopener,noreferrer');

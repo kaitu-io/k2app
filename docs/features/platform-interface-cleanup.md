@@ -5,7 +5,7 @@
 | Field     | Value                          |
 |-----------|--------------------------------|
 | Version   | v1                             |
-| Status    | draft                          |
+| Status    | implemented                    |
 | Updated   | 2026-02-18                     |
 
 ## Problem

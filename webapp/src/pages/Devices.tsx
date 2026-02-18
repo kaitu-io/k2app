@@ -28,6 +28,7 @@ import { formatTime } from "../utils/time";
 import { Device } from "../services/api-types";
 
 import { useUser } from "../hooks/useUser";
+import { useAlert } from "../stores";
 import { LoadingCard, EmptyDevices } from "../components/LoadingAndEmpty";
 import { cloudApi } from '../services/cloud-api';
 import { delayedFocus } from '../utils/ui';
@@ -42,6 +43,7 @@ export default function Devices() {
   const [editingRemark, setEditingRemark] = useState<string>("");
   const [savingRemark, setSavingRemark] = useState(false);
   const { user } = useUser();
+  const { showAlert } = useAlert();
   const currentUdid = user?.device?.udid;
 
   // Ref for delayed focus when editing device remark
@@ -65,7 +67,7 @@ export default function Devices() {
       const response = await cloudApi.get<{ items: Device[] }>('/api/user/devices');
       if (response.code !== 0 || !response.data) {
         console.error('[Devices] Load device list failed:', response.code, response.message);
-        window._platform?.showToast?.(
+        showAlert(
           t('account:devices.loadDeviceListFailed'),
           'error'
         );
@@ -75,7 +77,7 @@ export default function Devices() {
       console.info('[Devices] Load device list success');
     } catch (err) {
       console.error('[Devices] Load device list failed:', err);
-      window._platform?.showToast?.(
+      showAlert(
         t('account:devices.loadDeviceListFailed'),
         'error'
       );
@@ -97,7 +99,7 @@ export default function Devices() {
       const response = await cloudApi.request('DELETE', `/api/user/devices/${deviceToDelete.udid}`);
       if (response.code !== 0) {
         console.error('[Devices] Delete device failed:', response.code, response.message);
-        window._platform?.showToast?.(
+        showAlert(
           t('account:devices.deleteDeviceFailed'),
           'error'
         );
@@ -105,13 +107,13 @@ export default function Devices() {
       }
       await loadDevices();
       console.info('[Devices] Delete device success');
-      window._platform?.showToast?.(
+      showAlert(
         t('account:devices.deleteDeviceSuccess'),
         'success'
       );
     } catch (err) {
       console.error('[Devices] Delete device failed:', err);
-      window._platform?.showToast?.(
+      showAlert(
         t('account:devices.deleteDeviceFailed'),
         'error'
       );
@@ -140,20 +142,20 @@ export default function Devices() {
       const response = await cloudApi.request('PUT', `/api/user/devices/${device.udid}/remark`, { remark: editingRemark.trim() });
       if (response.code !== 0) {
         console.error('[Devices] Update remark failed:', response.code, response.message);
-        window._platform?.showToast?.(
+        showAlert(
           t('account:devices.updateRemarkFailed'),
           'error'
         );
         return;
       }
       await loadDevices();
-      window._platform?.showToast?.(
+      showAlert(
         t('account:devices.updateRemarkSuccess'),
         'success'
       );
     } catch (err) {
       console.error('[Devices] Update remark failed:', err);
-      window._platform?.showToast?.(
+      showAlert(
         t('account:devices.updateRemarkFailed'),
         'error'
       );

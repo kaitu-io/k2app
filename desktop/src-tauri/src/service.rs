@@ -165,6 +165,12 @@ pub async fn get_udid() -> Result<ServiceResponse, String> {
     .map_err(|e| format!("Task join error: {}", e))?
 }
 
+/// IPC command: get current process PID
+#[tauri::command]
+pub fn get_pid() -> u32 {
+    std::process::id()
+}
+
 /// IPC command: get platform info (no HTTP, pure local)
 #[tauri::command]
 pub fn get_platform_info() -> serde_json::Value {

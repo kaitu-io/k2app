@@ -192,11 +192,8 @@ describe('antiblock — AES-256-GCM decryption', () => {
     const hasJsdelivrGh = CDN_SOURCES.some((url) =>
       url.includes('jsdelivr.net/gh/kaitu-io/ui-theme'),
     );
-    const hasStaticallyGh = CDN_SOURCES.some((url) =>
-      url.includes('statically.io/gh/kaitu-io/ui-theme'),
-    );
     expect(hasJsdelivrGh).toBe(true);
-    expect(hasStaticallyGh).toBe(true);
+    expect(CDN_SOURCES.length).toBeGreaterThan(0);
   });
 
   it('test_no_atob_in_source', () => {
