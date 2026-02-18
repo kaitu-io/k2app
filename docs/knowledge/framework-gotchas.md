@@ -639,6 +639,30 @@ pub async fn upload_logs(params: Params) -> Result<(), String> {
 
 ---
 
+## Daemon Error Format Change Requires Bridge Backward Compat (2026-02-18, structured-error-codes)
+
+**Context**: `structured-error-codes` changed the daemon status response `"error"` field from a plain string to a structured object: `{"code": 503, "message": "..."}`. Webapp and daemon are deployed independently.
+
+**Problem**: If webapp bridge reads `raw.error.code` directly without checking type, it fails for users still running old daemon (returns string, not object).
+
+**Solution**: Bridge checks type before accessing `.code`:
+```typescript
+if (typeof raw.error === 'object' && raw.error !== null && 'code' in raw.error) {
+  error = { code: raw.error.code, message: raw.error.message || '' };
+} else {
+  // Old daemon: string error, fallback to code 570
+  error = { code: 570, message: String(raw.error) };
+}
+```
+
+**Why backward compat in bridge, not daemon**: Daemon is a binary that users may not update immediately. Webapp is a web asset that can be updated centrally. Bridge is the right place to absorb format evolution.
+
+**Pattern applicability**: Any time a Go daemon API field changes type (string→object, number→object), the TypeScript bridge must handle both forms during the transition period.
+
+**Validating tests**: `webapp/src/services/__tests__/tauri-k2.test.ts` — `maps stopped with structured error to error state` and `maps stopped with string error to error state (backward compat)`
+
+---
+
 ## Vite Multi-Page HTML: Globals Not Available on Load (2026-02-18, unified-debug-page)
 
 **Problem**: `debug.html` is a Vite multi-page entry loaded outside React bootstrap. `window._k2` and `window._platform` are injected by the main app's platform detection (Tauri/Capacitor/standalone), which doesn't run for non-index pages. Accessing globals directly on DOMContentLoaded throws.

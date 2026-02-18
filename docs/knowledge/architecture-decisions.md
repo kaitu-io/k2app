@@ -656,6 +656,45 @@ NE process is separate from app process — NWPathMonitor runs in the VPN extens
 
 ---
 
+## Structured Error Codes: Engine-Layer Classification with HTTP-Aligned Codes (2026-02-18, structured-error-codes)
+
+**Decision**: Error classification happens in the k2 engine layer (`k2/engine/error.go`), not in wire layer, bridge layer, or webapp. `ClassifyError(err error) *EngineError` takes any Go error and maps it to one of 7 HTTP-aligned codes. Priority chain: `net.Error.Timeout()` check first (408), then string pattern matching, then fallback 570.
+
+**Why engine layer, not wire or bridge**:
+- Wire has 80+ error sites — adding classification at each would be high risk / high churn
+- Bridge regex (JS-side) is fragile — string formats can change between k2 versions
+- Engine is the single convergence point for all wire errors, downstream of all wire implementations
+
+**Seven codes (HTTP-aligned)**:
+
+| Code | Name | Trigger |
+|------|------|---------|
+| 400 | BadConfig | "parse URL", "missing auth", "unsupported scheme", "missing port" |
+| 401 | AuthRejected | "stream rejected by server" |
+| 403 | Forbidden | "pin mismatch", "blocked CA" |
+| 408 | Timeout | `net.Error.Timeout() == true` (checked FIRST) |
+| 502 | ProtocolError | "uTLS handshake", "certificate", "QUIC dial" |
+| 503 | ServerUnreachable | "TCP dial", "connection refused", "network unreachable", "listen UDP" |
+| 570 | ConnectionFatal | default / unclassified |
+
+**Daemon alignment**: `k2/daemon/daemon.go` `lastError` changed from `string` to `*engine.EngineError`. `doUp()` calls `engine.ClassifyError(err)` instead of `fmt.Sprintf`. `statusInfo()` serializes structured error. `ClassifyError` is exported (uppercase) for cross-package access.
+
+**API format change** (breaking): `"error"` field in daemon status changed from string to object:
+```
+Before: {"state": "stopped", "error": "wire: TCP dial: connection refused"}
+After:  {"state": "stopped", "error": {"code": 503, "message": "wire: TCP dial: ..."}}
+```
+
+**Backward compat in bridges**: Both bridges check `typeof raw.error === 'object'` first; fall back to string → code 570 for old daemons. This allows webapp to deploy before daemon binary is updated.
+
+**OnError() interface unchanged**: `EventHandler.OnError(message string)` stays as string. Status polling path (`StatusJSON()`) is the primary error delivery channel. gomobile compatibility preserved.
+
+**Webapp alignment**: `control-types.ts` renamed to `vpn-types.ts`. Dead codes removed (100–119 range, 510–519 range). Kept 400/401/402/403/408/502/503/570. `getErrorI18nKey()` maps each to an i18n key. All 7 locales updated.
+
+**Validating tests**: `k2/engine/error_test.go` (22 tests — 19 classification subtests + StatusJSON + OnError preservation), `k2/daemon/daemon_test.go` (3 daemon tests — structured error, no error, clear on doUp), `webapp/src/services/__tests__/tauri-k2.test.ts` (backward compat + structured error path)
+
+---
+
 ## Unified Debug Page at Abstraction Layer (2026-02-18, unified-debug-page)
 
 **Decision**: Debug page tests at `window._k2.run()` / `window._platform` abstraction layer instead of raw native APIs (K2Plugin or Tauri IPC). One `debug.html` works on all 3 platforms.

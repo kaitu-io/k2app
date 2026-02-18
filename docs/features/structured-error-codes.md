@@ -22,21 +22,21 @@ k2 engine 当前只输出 error 字符串，前端 bridge 硬编码所有错误�
 
 ## Product Requirements
 
-- PR1: 用户连接失败时看到精准的错误描述（网络不可达 vs 认证失败 vs 超时），而非统一的"连接失败" (v1)
-- PR2: 错误码体系前后端一致，k2 engine 产出的 code 与前端 i18n 映射 1:1 对应 (v1)
-- PR3: 前端类型文件命名清理，移除旧 `control-` 概念 (v1)
+- PR1: 用户连接失败时看到精准的错误描述（网络不可达 vs 认证失败 vs 超时），而非统一的"连接失败"
+- PR2: 错误码体系前后端一致，k2 engine 产出的 code 与前端 i18n 映射 1:1 对应
+- PR3: 前端类型文件命名清理，移除旧 `control-` 概念
 
 ## Technical Decisions
 
 ### TD1: 错误分类在 engine 层
 
-Wire 层保持现有 80+ 个 error string 不变。Engine 的 `fail()` 调用 `classifyError()` 做字符串匹配 + `net.Error` 类型断言，映射到 HTTP-aligned code。
+Wire 层保持现有 80+ 个 error string 不变。Engine 的 `fail()` 调用 `ClassifyError()` 做字符串匹配 + `net.Error` 类型断言，映射到 HTTP-aligned code。
 
 理由：wire 改动面太大 (80+ sites); engine 离 wire 近、同 repo 维护; JS 端正则太脆弱。
 
 ### TD2: HTTP-Aligned 错误码
 
-| Code | 语义 | wire 错误场景 | classifyError 匹配规则 |
+| Code | 语义 | wire 错误场景 | ClassifyError 匹配规则 |
 |------|------|--------------|----------------------|
 | 400 | Bad Config | `parse URL`, `missing auth`, `unsupported scheme`, `missing port` | 字符串含 "parse URL"/"missing auth"/"unsupported scheme"/"missing port" |
 | 401 | Auth Rejected | `stream rejected by server` (token 无效/过期) | 字符串含 "stream rejected" |
@@ -81,58 +81,58 @@ After:  {"state": "stopped", "error": {"code": 503, "message": "wire: TCP dial: 
 
 | 文件 | 动作 | 说明 |
 |------|------|------|
-| `k2/engine/error.go` | 新建 | `EngineError` type + `classifyError()` |
-| `k2/engine/error_test.go` | 新建 | classifyError 单元测试 |
-| `k2/engine/engine.go` | 修改 | `lastError` 从 `string` 改 `*EngineError`; `fail()` 用 classifyError; `StatusJSON()` 输出结构化 error |
+| `k2/engine/error.go` | 新建 | `EngineError` type + `ClassifyError()` |
+| `k2/engine/error_test.go` | 新建 | ClassifyError 单元测试 |
+| `k2/engine/engine.go` | 修改 | `lastError` 从 `string` 改 `*EngineError`; `fail()` 用 ClassifyError; `StatusJSON()` 输出结构化 error |
 | `k2/daemon/daemon.go` | 修改 | `lastError` 从 `string` 改 `*EngineError`; `doUp()` / `statusInfo()` 对齐 |
 
 ### Webapp
 
 | 文件 | 动作 | 说明 |
 |------|------|------|
-| `webapp/src/services/control-types.ts` → `vpn-types.ts` | 重命名+修改 | 错误码对齐 k2, 删除死码, 更新 getErrorI18nKey |
+| `webapp/src/services/vpn-types.ts` (formerly control-types.ts) | 重命名+修改 | 错误码对齐 k2, 删除死码, 更新 getErrorI18nKey |
 | `webapp/src/services/tauri-k2.ts` | 修改 | transformStatus() 读 raw.error.code |
 | `webapp/src/services/capacitor-k2.ts` | 修改 | transformStatus() 读 raw.error.code |
 | `webapp/src/services/__tests__/tauri-k2.test.ts` | 修改 | mock 数据格式对齐 |
 | `webapp/src/services/__tests__/capacitor-k2.test.ts` | 修改 | mock 数据格式对齐 |
-| 所有 import control-types 的文件 (~8个) | 修改 | import path 更新 |
+| 所有 import vpn-types 的文件 (~8个) | 修改 | import path 更新 |
 | `webapp/src/i18n/locales/zh-CN/common.json` + 6 locales | 修改 | 错误文案 key 更新 |
 
 ## Acceptance Criteria
 
-- AC1: k2 engine `classifyError()` 将 "wire: TCP dial ... connection refused" 分类为 code 503 (v1)
-- AC2: k2 engine `classifyError()` 将 "wire: stream rejected by server" 分类为 code 401 (v1)
-- AC3: k2 engine `classifyError()` 将 "wire: uTLS handshake: ..." 分类为 code 502 (v1)
-- AC4: k2 engine `classifyError()` 将 timeout 错误（net.Error.Timeout()）分类为 code 408 (v1)
-- AC5: k2 engine `classifyError()` 将 "wire: parse URL: ..." 分类为 code 400 (v1)
-- AC6: k2 engine `classifyError()` 将 "wire: pin mismatch ..." 分类为 code 403 (v1)
-- AC7: k2 engine `classifyError()` 将未识别错误分类为 code 570 (v1)
-- AC8: k2 engine `StatusJSON()` 输出 `"error": {"code": N, "message": "..."}` 格式 (v1)
-- AC9: k2 daemon `statusInfo()` 输出结构化 error object (v1)
-- AC10: Tauri bridge `transformStatus()` 从 `raw.error.code` 读取 code，不再硬编码 570 (v1)
-- AC11: Capacitor bridge `transformStatus()` 同 AC10 (v1)
-- AC12: 前端 `vpn-types.ts` 错误码常量与 k2 engine 对齐 (400/401/403/408/502/503/570) (v1)
-- AC13: `control-types.ts` 已重命名为 `vpn-types.ts`，所有 import 更新 (v1)
-- AC14: `getErrorI18nKey()` 为每个 k2 错误码返回正确的 i18n key (v1)
-- AC15: zh-CN 和其他 6 个 locale 有对应的错误文案 (v1)
-- AC16: `OnError(string)` 接口不变，gomobile 兼容 (v1)
-- AC17: `cd k2 && go test ./engine/...` 通过 (v1)
-- AC18: `cd k2 && go test ./daemon/...` 通过 (v1)
-- AC19: `cd webapp && npx vitest run` 通过 (v1)
-- AC20: `cd webapp && npx tsc --noEmit` 通过 (v1)
+- AC1: k2 engine `ClassifyError()` 将 "wire: TCP dial ... connection refused" 分类为 code 503
+- AC2: k2 engine `ClassifyError()` 将 "wire: stream rejected by server" 分类为 code 401
+- AC3: k2 engine `ClassifyError()` 将 "wire: uTLS handshake: ..." 分类为 code 502
+- AC4: k2 engine `ClassifyError()` 将 timeout 错误（net.Error.Timeout()）分类为 code 408
+- AC5: k2 engine `ClassifyError()` 将 "wire: parse URL: ..." 分类为 code 400
+- AC6: k2 engine `ClassifyError()` 将 "wire: pin mismatch ..." 分类为 code 403
+- AC7: k2 engine `ClassifyError()` 将未识别错误分类为 code 570
+- AC8: k2 engine `StatusJSON()` 输出 `"error": {"code": N, "message": "..."}` 格式
+- AC9: k2 daemon `statusInfo()` 输出结构化 error object
+- AC10: Tauri bridge `transformStatus()` 从 `raw.error.code` 读取 code，不再硬编码 570
+- AC11: Capacitor bridge `transformStatus()` 同 AC10
+- AC12: 前端 `vpn-types.ts` 错误码常量与 k2 engine 对齐 (400/401/403/408/502/503/570)
+- AC13: `control-types.ts` 已重命名为 `vpn-types.ts`，所有 import 更新
+- AC14: `getErrorI18nKey()` 为每个 k2 错误码返回正确的 i18n key
+- AC15: zh-CN 和其他 6 个 locale 有对应的错误文案
+- AC16: `OnError(string)` 接口不变，gomobile 兼容
+- AC17: `cd k2 && go test ./engine/...` 通过
+- AC18: `cd k2 && go test ./daemon/...` 通过
+- AC19: `cd webapp && npx vitest run` 通过
+- AC20: `cd webapp && npx tsc --noEmit` 通过
 
 ## Testing Strategy
 
-- k2 engine: `error_test.go` 覆盖全部 7 种错误码分类 + timeout 类型断言 + fallback (v1)
-- k2 daemon: 现有 daemon 测试更新 mock 格式 (v1)
-- webapp bridge: vitest mock 数据格式从 `"error": "string"` 改为 `"error": {code, message}` (v1)
-- webapp types: tsc --noEmit 确保 import rename 无遗漏 (v1)
+- k2 engine: `error_test.go` 覆盖全部 7 种错误码分类 + timeout 类型断言 + fallback
+- k2 daemon: 现有 daemon 测试更新 mock 格式
+- webapp bridge: vitest mock 数据格式从 `"error": "string"` 改为 `"error": {code, message}`
+- webapp types: tsc --noEmit 确保 import rename 无遗漏
 
 ## Deployment & CI/CD
 
-- k2 submodule更新后需重新 `gomobile bind`（mobile 路径） (v1)
-- 桌面端 daemon binary 需重新编译 (v1)
-- webapp 独立部署，bridge 变更向后兼容（可处理 string 或 object 格式的 error） (v1)
+- k2 submodule更新后需重新 `gomobile bind`（mobile 路径）
+- 桌面端 daemon binary 需重新编译
+- webapp 独立部署，bridge 变更向后兼容（可处理 string 或 object 格式的 error）
 
 ## Impact Analysis
 

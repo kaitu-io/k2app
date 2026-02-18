@@ -261,6 +261,48 @@ it('applyUpdateNow calls invoke', async () => {
 
 ---
 
+## Go Error Classification Testing: Table-Driven Subtests with net.Error Mock (2026-02-18, structured-error-codes)
+
+**Pattern**: `ClassifyError()` test uses Go table-driven subtests with a custom `mockTimeoutError` struct to exercise the `net.Error.Timeout()` priority path:
+
+```go
+type mockTimeoutError struct{}
+func (e *mockTimeoutError) Error() string   { return "mock timeout" }
+func (e *mockTimeoutError) Timeout() bool   { return true }
+func (e *mockTimeoutError) Temporary() bool { return false }
+
+tests := []struct {
+    name     string
+    err      error
+    wantCode int
+}{
+    {"timeout net.Error", &mockTimeoutError{}, 408},
+    {"connection refused", errors.New("wire: TCP dial: connection refused"), 503},
+    {"stream rejected", errors.New("wire: stream rejected by server: 401"), 401},
+    // ...19 subtests total
+}
+
+for _, tt := range tests {
+    t.Run(tt.name, func(t *testing.T) {
+        got := ClassifyError(tt.err)
+        assert.Equal(t, tt.wantCode, got.Code)
+    })
+}
+```
+
+**Key test cases for any priority-chain classifier**:
+1. Timeout wrapped in custom error type (net.Error interface, not string match)
+2. Each string pattern at least once
+3. Fallback (unrecognized string → 570)
+4. nil error → nil return (safety)
+5. Structured JSON output (StatusJSON uses EngineError)
+
+**Why priority chain matters**: A timeout error message often ALSO contains words like "connection refused" or "TCP dial" (e.g., `"context deadline exceeded: TCP dial: ..."` on Go 1.21+). The `net.Error.Timeout()` check must run FIRST or it gets misclassified as 503.
+
+**Validating tests**: `k2/engine/error_test.go` — 22 tests (19 classification subtests + StatusJSON structured/no-error + OnError interface preservation)
+
+---
+
 ## Engine Package TDD: Config Combinations as Test Cases (2026-02-16, unified-engine)
 
 **Pattern**: `engine_test.go` has 14 test functions covering all Config field combinations. Each test verifies one aspect of Engine behavior.

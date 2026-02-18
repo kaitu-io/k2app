@@ -264,6 +264,22 @@ Also fixed the guard condition: `(isDisconnected || isError) && !activeTunnelInf
 
 ---
 
+## Go Unexported Function Inaccessible Across Packages (2026-02-18, structured-error-codes)
+
+**Problem**: Initial plan named the error classification function `classifyError()` (lowercase = unexported). The daemon package (`k2/daemon/`) needed to call it, but Go's visibility rules prevent cross-package access to unexported names.
+
+**Symptom**: `daemon.go` references `engine.classifyError` → compile error: `cannot refer to unexported name engine.classifyError`.
+
+**Fix**: Rename to `ClassifyError()` (exported). Function is pure classification logic with no sensitive state — exporting is appropriate.
+
+**Prevention**: When a function in package A will be called from package B, name it exported from the start. Check call-site packages before finalizing function names in plan documents.
+
+**Files fixed**: `k2/engine/error.go` — `classifyError` → `ClassifyError`
+
+**Validating tests**: `k2/engine/error_test.go` (22 tests), `k2/daemon/daemon_test.go` (3 tests)
+
+---
+
 ## Capacitor Local Plugin Stale Copy in node_modules (2026-02-16, mobile-debug)
 
 **Problem**: Capacitor plugin declared as `"k2-plugin": "file:./plugins/k2-plugin"` in `mobile/package.json` is copied (not symlinked) to `node_modules/k2-plugin/`. Editing source files in `mobile/plugins/k2-plugin/` has no effect — `cap sync` and Gradle build use the stale `node_modules/` copy.
