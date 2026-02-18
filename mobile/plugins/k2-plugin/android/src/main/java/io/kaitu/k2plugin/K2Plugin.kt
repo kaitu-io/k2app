@@ -7,8 +7,11 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.net.VpnService
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.provider.Settings
+import android.util.Log
 import androidx.activity.result.ActivityResult
 import androidx.core.content.FileProvider
 import com.getcapacitor.JSObject
@@ -28,8 +31,15 @@ import java.util.zip.ZipInputStream
 class K2Plugin : Plugin() {
 
     companion object {
-        private const val WEB_MANIFEST_URL = "https://d0.all7.cc/kaitu/web/latest.json"
-        private const val ANDROID_MANIFEST_URL = "https://d0.all7.cc/kaitu/android/latest.json"
+        private const val TAG = "K2Plugin"
+        private val WEB_MANIFEST_ENDPOINTS = listOf(
+            "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/web/latest.json",
+            "https://d0.all7.cc/kaitu/web/latest.json"
+        )
+        private val ANDROID_MANIFEST_ENDPOINTS = listOf(
+            "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/android/latest.json",
+            "https://d0.all7.cc/kaitu/android/latest.json"
+        )
     }
 
     private var vpnService: VpnServiceBridge? = null
@@ -48,6 +58,11 @@ class K2Plugin : Plugin() {
         }
 
         bindToService()
+
+        // Auto-check for updates after 3s delay
+        Handler(Looper.getMainLooper()).postDelayed({
+            Thread { performAutoUpdateCheck() }.start()
+        }, 3000)
     }
 
     override fun handleOnDestroy() {
@@ -215,8 +230,14 @@ class K2Plugin : Plugin() {
     fun checkWebUpdate(call: PluginCall) {
         Thread {
             try {
-                val manifestBytes = fetchUrl(WEB_MANIFEST_URL)
-                val manifest = JSONObject(String(manifestBytes))
+                val result = fetchManifest(WEB_MANIFEST_ENDPOINTS)
+                if (result == null) {
+                    val ret = JSObject()
+                    ret.put("available", false)
+                    call.resolve(ret)
+                    return@Thread
+                }
+                val (manifest, _) = result
                 val remoteVersion = manifest.getString("version")
                 val remoteSize = manifest.optLong("size", 0)
 
@@ -249,11 +270,17 @@ class K2Plugin : Plugin() {
     fun checkNativeUpdate(call: PluginCall) {
         Thread {
             try {
-                val manifestBytes = fetchUrl(ANDROID_MANIFEST_URL)
-                val manifest = JSONObject(String(manifestBytes))
+                val result = fetchManifest(ANDROID_MANIFEST_ENDPOINTS)
+                if (result == null) {
+                    val ret = JSObject()
+                    ret.put("available", false)
+                    call.resolve(ret)
+                    return@Thread
+                }
+                val (manifest, baseURL) = result
                 val remoteVersion = manifest.getString("version")
                 val remoteSize = manifest.optLong("size", 0)
-                val remoteUrl = manifest.getString("url")
+                val remoteUrl = resolveDownloadURL(manifest.getString("url"), baseURL)
                 val minAndroid = manifest.optInt("min_android", 0)
 
                 val localVersion = context.packageManager
@@ -284,9 +311,10 @@ class K2Plugin : Plugin() {
             val webBackupDir = File(context.filesDir, "web-backup")
             try {
                 // Fetch manifest to get URL and hash
-                val manifestBytes = fetchUrl(WEB_MANIFEST_URL)
-                val manifest = JSONObject(String(manifestBytes))
-                val zipUrl = manifest.getString("url")
+                val result = fetchManifest(WEB_MANIFEST_ENDPOINTS)
+                    ?: throw java.io.IOException("All web manifest endpoints failed")
+                val (manifest, baseURL) = result
+                val zipUrl = resolveDownloadURL(manifest.getString("url"), baseURL)
                 val remoteVersion = manifest.getString("version")
                 val rawHash = manifest.getString("hash")
                 // Strip "sha256:" prefix if present
@@ -354,9 +382,10 @@ class K2Plugin : Plugin() {
         Thread {
             try {
                 // Fetch manifest to get APK URL
-                val manifestBytes = fetchUrl(ANDROID_MANIFEST_URL)
-                val manifest = JSONObject(String(manifestBytes))
-                val apkUrl = manifest.getString("url")
+                val result = fetchManifest(ANDROID_MANIFEST_ENDPOINTS)
+                    ?: throw java.io.IOException("All Android manifest endpoints failed")
+                val (manifest, baseURL) = result
+                val apkUrl = resolveDownloadURL(manifest.getString("url"), baseURL)
                 val remoteVersion = manifest.getString("version")
                 val totalSize = manifest.optLong("size", 0)
 
@@ -452,7 +481,167 @@ class K2Plugin : Plugin() {
         }
     }
 
+    // ── Auto-update check ───────────────────────────────────────────
+
+    private fun performAutoUpdateCheck() {
+        try {
+            // 1. Check native update first
+            val nativeResult = fetchManifest(ANDROID_MANIFEST_ENDPOINTS)
+            if (nativeResult != null) {
+                val (manifest, baseURL) = nativeResult
+                val remoteVersion = manifest.getString("version")
+                val totalSize = manifest.optLong("size", 0)
+                val apkUrl = resolveDownloadURL(manifest.getString("url"), baseURL)
+                val minAndroid = manifest.optInt("min_android", 0)
+                val localVersion = context.packageManager
+                    .getPackageInfo(context.packageName, 0).versionName ?: "0.0.0"
+
+                if (isNewerVersion(remoteVersion, localVersion) && Build.VERSION.SDK_INT >= minAndroid) {
+                    // Download APK in background
+                    val apkFile = File(context.cacheDir, "update-$remoteVersion.apk")
+
+                    // Skip download if cached file exists and size matches
+                    val needsDownload = !(apkFile.exists() && totalSize > 0 && apkFile.length() == totalSize)
+
+                    if (needsDownload) {
+                        val url = URL(apkUrl)
+                        val conn = url.openConnection() as HttpURLConnection
+                        conn.connectTimeout = 15000
+                        conn.readTimeout = 30000
+                        val code = conn.responseCode
+                        if (code != 200) {
+                            throw java.io.IOException("HTTP $code from $apkUrl")
+                        }
+
+                        conn.inputStream.use { input ->
+                            apkFile.outputStream().use { output ->
+                                val buffer = ByteArray(8192)
+                                var len: Int
+                                while (input.read(buffer).also { len = it } != -1) {
+                                    output.write(buffer, 0, len)
+                                }
+                            }
+                        }
+                    }
+
+                    // Emit nativeUpdateReady event
+                    val data = JSObject()
+                    data.put("version", remoteVersion)
+                    data.put("size", apkFile.length())
+                    data.put("path", apkFile.absolutePath)
+                    notifyListeners("nativeUpdateReady", data)
+                    return
+                }
+            }
+
+            // 2. No native update — check web OTA
+            val webResult = fetchManifest(WEB_MANIFEST_ENDPOINTS)
+            if (webResult != null) {
+                val (manifest, baseURL) = webResult
+                val remoteVersion = manifest.getString("version")
+                val zipUrl = resolveDownloadURL(manifest.getString("url"), baseURL)
+                val rawHash = manifest.getString("hash")
+                val expectedHash = if (rawHash.startsWith("sha256:")) rawHash.removePrefix("sha256:") else rawHash
+
+                val webVersionFile = File(File(context.filesDir, "web-update"), "version.txt")
+                val localVersion = if (webVersionFile.exists()) {
+                    webVersionFile.readText().trim()
+                } else {
+                    context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "0.0.0"
+                }
+
+                if (isNewerVersion(remoteVersion, localVersion)) {
+                    val webUpdateDir = File(context.filesDir, "web-update")
+                    val webBackupDir = File(context.filesDir, "web-backup")
+
+                    // Download the zip
+                    val zipData = fetchUrl(zipUrl)
+
+                    // Verify SHA-256
+                    val actualHash = sha256(zipData)
+                    if (actualHash != expectedHash) {
+                        Log.w(TAG, "Auto-update web OTA hash mismatch: expected $expectedHash, got $actualHash")
+                        return
+                    }
+
+                    // If existing web-update exists, move to web-backup
+                    if (webUpdateDir.exists()) {
+                        webBackupDir.deleteRecursively()
+                        webUpdateDir.renameTo(webBackupDir)
+                    }
+
+                    // Unzip to web-update/
+                    val tempZip = File(context.cacheDir, "webapp.zip")
+                    tempZip.writeBytes(zipData)
+                    try {
+                        unzip(tempZip, webUpdateDir)
+                    } finally {
+                        tempZip.delete()
+                    }
+
+                    // Flatten nested subdirectory if index.html not at root
+                    val indexFile = File(webUpdateDir, "index.html")
+                    if (!indexFile.exists()) {
+                        val contents = webUpdateDir.listFiles() ?: emptyArray()
+                        if (contents.size == 1 && contents[0].isDirectory) {
+                            val subdir = contents[0]
+                            subdir.listFiles()?.forEach { item ->
+                                item.renameTo(File(webUpdateDir, item.name))
+                            }
+                            subdir.deleteRecursively()
+                        }
+                    }
+
+                    // Write version for future comparison
+                    File(webUpdateDir, "version.txt").writeText(remoteVersion)
+                    Log.d(TAG, "Auto-update web OTA applied: $remoteVersion")
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Auto-update check failed: ${e.message}")
+        }
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────
+
+    /**
+     * Try each endpoint in order. Returns (manifest JSONObject, baseURL) on first success,
+     * or null if all endpoints fail. baseURL is the URL up to but not including the filename.
+     */
+    private fun fetchManifest(endpoints: List<String>): Pair<JSONObject, String>? {
+        for (endpoint in endpoints) {
+            try {
+                val url = URL(endpoint)
+                val conn = url.openConnection() as HttpURLConnection
+                conn.connectTimeout = 10000
+                conn.readTimeout = 15000
+                val code = conn.responseCode
+                if (code != 200) {
+                    conn.disconnect()
+                    continue
+                }
+                val bytes = conn.inputStream.use { it.readBytes() }
+                val manifest = JSONObject(String(bytes))
+                val baseURL = endpoint.substringBeforeLast("/")
+                return Pair(manifest, baseURL)
+            } catch (e: Exception) {
+                // Try next endpoint
+                continue
+            }
+        }
+        return null
+    }
+
+    /**
+     * Resolve a download URL against a base URL. If the url is already absolute
+     * (starts with http:// or https://), return as-is. Otherwise join baseURL + "/" + url.
+     */
+    private fun resolveDownloadURL(url: String, baseURL: String): String {
+        if (url.startsWith("http://") || url.startsWith("https://")) {
+            return url
+        }
+        return "$baseURL/$url"
+    }
 
     private fun isNewerVersion(remote: String, local: String): Boolean {
         val r = remote.split(".").map { it.toIntOrNull() ?: 0 }
