@@ -4,6 +4,26 @@ Shared React UI codebase running on Web, Desktop (Tauri), and Mobile (Capacitor)
 
 ---
 
+## Constitutional Rule: Bridge Layer Boundary
+
+**Webapp 代码绝不可跨越 bridge 层直接访问底层服务。** 所有对 desktop daemon / mobile engine / router 的调用，必须且只能通过 `window._k2` 和 `window._platform` 完成。
+
+Bridge 层（`tauri-k2.ts` / `capacitor-k2.ts` / `standalone-k2.ts`）是唯一的封装边界。
+
+违反条件（以下行为均被禁止）:
+- Webapp 代码中出现 `fetch('/api/core')` 或任何直接 HTTP 请求 daemon 端口
+- Webapp 代码中直接 `import` `@tauri-apps/*` 或 `@capacitor/*`（bridge 文件除外）
+- Webapp 代码中直接调用 `window.__TAURI__.core.invoke()` 或 `Capacitor.Plugins`（bridge 文件除外）
+- 任何独立页面（如 `debug.html`）内联重造 bridge 实现，而不复用已有 bridge 模块
+
+唯一允许访问底层 API 的文件:
+- `src/services/tauri-k2.ts` — Tauri bridge
+- `src/services/capacitor-k2.ts` — Capacitor bridge
+- `src/services/standalone-k2.ts` — Web fallback
+- `src/main.tsx` — 仅用于平台检测和 bridge 选择
+
+---
+
 ## Hard Rules
 
 ```
@@ -14,6 +34,7 @@ DO NOT:
   - Access window._k2 for platform capabilities (use window._platform)
   - Use npm (use yarn)
   - Display response.message to users (use code + i18n)
+  - Bypass bridge layer (see Constitutional Rule above)
 
 DO:
   - VPN control via window._k2.run(action, params)

@@ -358,25 +358,25 @@
       </div>
     </div>
 
-    <script>
+    <script type="module">
       // ── Constants ──
-      var STORAGE_KEY = 'debug_config';
-      var POLL_INTERVAL = 200;
-      var POLL_TIMEOUT = 5000;
+      const STORAGE_KEY = 'debug_config';
+      const POLL_INTERVAL = 200;
+      const POLL_TIMEOUT = 5000;
 
       // ── DOM refs ──
-      var logArea = document.getElementById('logArea');
-      var configEditor = document.getElementById('configEditor');
-      var presetsSelect = document.getElementById('presets');
-      var statusBanner = document.getElementById('statusBanner');
-      var mainContent = document.getElementById('mainContent');
-      var fallbackBtn = document.getElementById('fallbackBtn');
-      var platformBadge = document.getElementById('platformBadge');
-      var versionLabel = document.getElementById('versionLabel');
-      var desktopSection = document.getElementById('desktopSection');
+      const logArea = document.getElementById('logArea');
+      const configEditor = document.getElementById('configEditor');
+      const presetsSelect = document.getElementById('presets');
+      const statusBanner = document.getElementById('statusBanner');
+      const mainContent = document.getElementById('mainContent');
+      const fallbackBtn = document.getElementById('fallbackBtn');
+      const platformBadge = document.getElementById('platformBadge');
+      const versionLabel = document.getElementById('versionLabel');
+      const desktopSection = document.getElementById('desktopSection');
 
       // ── Presets ──
-      var PRESETS = {
+      const PRESETS = {
         global: {
           server: { wireUrl: 'vless://example.kaitu.io:443?security=tls&type=ws' },
           rule: { global: true }
@@ -389,28 +389,28 @@
 
       // ── Logging ──
       function getTimestamp() {
-        var now = new Date();
+        const now = new Date();
         return String(now.getHours()).padStart(2, '0') + ':' +
                String(now.getMinutes()).padStart(2, '0') + ':' +
                String(now.getSeconds()).padStart(2, '0');
       }
 
       function createSpan(className, text) {
-        var span = document.createElement('span');
+        const span = document.createElement('span');
         span.className = className;
         span.textContent = text;
         return span;
       }
 
       function appendLog(type, label, data) {
-        var entry = document.createElement('div');
+        const entry = document.createElement('div');
         entry.className = 'log-entry';
 
-        var typeClass = 'log-type-api';
+        let typeClass = 'log-type-api';
         if (type === 'EVENT') typeClass = 'log-type-event';
         if (type === 'ERROR') typeClass = 'log-type-error';
 
-        var header = document.createElement('div');
+        const header = document.createElement('div');
         header.appendChild(createSpan('log-time', getTimestamp()));
         header.appendChild(document.createTextNode(' '));
         header.appendChild(createSpan(typeClass, '[' + type + ']'));
@@ -419,9 +419,9 @@
         entry.appendChild(header);
 
         if (data !== undefined && data !== null) {
-          var dataLine = document.createElement('span');
+          const dataLine = document.createElement('span');
           dataLine.className = 'log-data';
-          var formatted;
+          let formatted;
           if (typeof data === 'object') {
             try { formatted = JSON.stringify(data, null, 2); }
             catch (e) { formatted = String(data); }
@@ -450,9 +450,9 @@
       }
 
       function updatePlatformUI() {
-        var platform = detectPlatform();
-        var badgeClass = 'badge-' + (platform === 'tauri' ? 'tauri' : platform === 'capacitor' ? 'capacitor' : 'standalone');
-        var badgeText = platform.charAt(0).toUpperCase() + platform.slice(1);
+        const platform = detectPlatform();
+        const badgeClass = 'badge-' + (platform === 'tauri' ? 'tauri' : platform === 'capacitor' ? 'capacitor' : 'standalone');
+        const badgeText = platform.charAt(0).toUpperCase() + platform.slice(1);
 
         platformBadge.className = 'platform-badge ' + badgeClass;
         platformBadge.textContent = badgeText;
@@ -475,7 +475,7 @@
 
       function restoreConfig() {
         try {
-          var saved = localStorage.getItem(STORAGE_KEY);
+          const saved = localStorage.getItem(STORAGE_KEY);
           if (saved) configEditor.value = saved;
         } catch (e) { /* localStorage may be unavailable */ }
       }
@@ -486,16 +486,16 @@
       });
 
       // ── Presets ──
-      function applyPreset() {
-        var key = presetsSelect.value;
+      window.applyPreset = function () {
+        const key = presetsSelect.value;
         if (key && PRESETS[key]) {
           configEditor.value = JSON.stringify(PRESETS[key], null, 2);
           saveConfig();
         }
-      }
+      };
 
       // ── VPN Control ──
-      function callK2(action) {
+      window.callK2 = function (action) {
         if (!window._k2) {
           appendLog('ERROR', '_k2.run(\'' + action + '\')', '_k2 not available');
           return;
@@ -508,21 +508,21 @@
         }).catch(function (err) {
           appendLog('ERROR', action + ' failed', err.message || String(err));
         });
-      }
+      };
 
-      function doConnect() {
+      window.doConnect = function () {
         if (!window._k2) {
           appendLog('ERROR', 'connect', '_k2 not available');
           return;
         }
 
-        var raw = configEditor.value.trim();
+        const raw = configEditor.value.trim();
         if (!raw) {
           appendLog('ERROR', 'connect', 'Config is empty');
           return;
         }
 
-        var config;
+        let config;
         try {
           config = JSON.parse(raw);
         } catch (e) {
@@ -537,10 +537,10 @@
         }).catch(function (err) {
           appendLog('ERROR', 'up failed', err.message || String(err));
         });
-      }
+      };
 
       // ── Platform Capabilities ──
-      function callPlatform(method) {
+      window.callPlatform = function (method) {
         if (!window._platform) {
           appendLog('ERROR', '_platform.' + method + '()', '_platform not available');
           return;
@@ -558,10 +558,10 @@
         }).catch(function (err) {
           appendLog('ERROR', method + ' failed', err.message || String(err));
         });
-      }
+      };
 
-      function doClipboardWrite() {
-        var text = document.getElementById('clipboardText').value;
+      window.doClipboardWrite = function () {
+        const text = document.getElementById('clipboardText').value;
         if (!window._platform) {
           appendLog('ERROR', 'writeClipboard', '_platform not available');
           return;
@@ -574,10 +574,10 @@
         }).catch(function (err) {
           appendLog('ERROR', 'writeClipboard failed', err.message || String(err));
         });
-      }
+      };
 
-      function doOpenExternal() {
-        var url = document.getElementById('externalUrl').value;
+      window.doOpenExternal = function () {
+        const url = document.getElementById('externalUrl').value;
         if (!window._platform) {
           appendLog('ERROR', 'openExternal', '_platform not available');
           return;
@@ -590,10 +590,10 @@
         }).catch(function (err) {
           appendLog('ERROR', 'openExternal failed', err.message || String(err));
         });
-      }
+      };
 
-      function doSyncLocale() {
-        var locale = document.getElementById('localeSelect').value;
+      window.doSyncLocale = function () {
+        const locale = document.getElementById('localeSelect').value;
         if (!window._platform) {
           appendLog('ERROR', 'syncLocale', '_platform not available');
           return;
@@ -606,10 +606,10 @@
         }).catch(function (err) {
           appendLog('ERROR', 'syncLocale failed', err.message || String(err));
         });
-      }
+      };
 
       // ── Desktop Only (Tauri) ──
-      function doReinstallService() {
+      window.doReinstallService = function () {
         if (!window._platform || !window._platform.reinstallService) {
           appendLog('ERROR', 'reinstallService', 'Not available');
           return;
@@ -627,9 +627,9 @@
         }).catch(function (err) {
           appendLog('ERROR', 'reinstallService failed', err.message || String(err));
         });
-      }
+      };
 
-      function doCheckUpdate() {
+      window.doCheckUpdate = function () {
         if (!window._platform || !window._platform.updater) {
           appendLog('ERROR', 'checkUpdate', 'Updater not available');
           return;
@@ -650,16 +650,16 @@
         }).catch(function (err) {
           appendLog('ERROR', 'checkUpdate failed', err.message || String(err));
         });
-      }
+      };
 
-      function doUploadLogs() {
+      window.doUploadLogs = function () {
         if (!window._platform || !window._platform.uploadLogs) {
           appendLog('ERROR', 'uploadLogs', 'Not available');
           return;
         }
 
-        var reason = document.getElementById('logReason').value || 'debug-test';
-        var params = {
+        const reason = document.getElementById('logReason').value || 'debug-test';
+        const params = {
           reason: reason,
           platform: window._platform.os || 'unknown',
           version: window._platform.version || 'unknown'
@@ -672,51 +672,41 @@
         }).catch(function (err) {
           appendLog('ERROR', 'uploadLogs failed', err.message || String(err));
         });
+      };
+
+      window.clearLogs = clearLogs;
+
+      // ── Bridge injection via canonical bridge modules (same as main.tsx) ──
+      async function injectBridge() {
+        if (window.__TAURI__) {
+          appendLog('API', 'Injecting Tauri bridge (tauri-k2.ts)...', null);
+          const { injectTauriGlobals } = await import('./src/services/tauri-k2.ts');
+          await injectTauriGlobals();
+          return true;
+        }
+
+        try {
+          const { Capacitor } = await import('@capacitor/core');
+          if (Capacitor.isNativePlatform()) {
+            appendLog('API', 'Injecting Capacitor bridge (capacitor-k2.ts)...', null);
+            const { injectCapacitorGlobals } = await import('./src/services/capacitor-k2.ts');
+            await injectCapacitorGlobals();
+            return true;
+          }
+        } catch (e) {
+          // Not in Capacitor environment
+        }
+
+        return false;
       }
 
-      // ── Standalone fallback ──
-      function loadStandaloneFallback() {
-        appendLog('API', 'Loading standalone fallback...', null);
-
-        // Inline minimal standalone _k2 and _platform injection
-        if (!window._k2) {
-          window._k2 = {
-            run: function (action, params) {
-              return Promise.resolve({
-                code: -1,
-                message: 'Standalone stub: ' + action + ' not connected to daemon',
-                data: {}
-              });
-            }
-          };
-        }
-
-        if (!window._platform) {
-          window._platform = {
-            os: 'web',
-            version: '0.0.0',
-            storage: {
-              get: function () { return Promise.resolve(null); },
-              set: function () { return Promise.resolve(); },
-              remove: function () { return Promise.resolve(); },
-              has: function () { return Promise.resolve(false); },
-              clear: function () { return Promise.resolve(); },
-              keys: function () { return Promise.resolve([]); }
-            },
-            getUdid: function () { return Promise.resolve('standalone-' + Date.now()); },
-            openExternal: function (url) { window.open(url, '_blank'); return Promise.resolve(); },
-            writeClipboard: function (text) {
-              return navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject(new Error('Clipboard API not available'));
-            },
-            readClipboard: function () {
-              return navigator.clipboard ? navigator.clipboard.readText() : Promise.reject(new Error('Clipboard API not available'));
-            },
-            syncLocale: function () { return Promise.resolve(); }
-          };
-        }
-
+      // ── Standalone fallback (reuses standalone-k2.ts bridge) ──
+      window.loadStandaloneFallback = async function () {
+        appendLog('API', 'Loading standalone fallback (standalone-k2.ts)...', null);
+        const { ensureK2Injected } = await import('./src/services/standalone-k2.ts');
+        ensureK2Injected();
         onGlobalsReady();
-      }
+      };
 
       // ── Init ──
       function onGlobalsReady() {
@@ -734,13 +724,20 @@
         });
       }
 
-      function showPollTimeout() {
-        // Clear status banner content safely using DOM methods
+      async function showPollTimeout() {
+        // Auto-inject bridge using canonical bridge modules
+        const injected = await injectBridge();
+        if (injected) {
+          onGlobalsReady();
+          return;
+        }
+
+        // No bridge available — show fallback button
         while (statusBanner.firstChild) {
           statusBanner.removeChild(statusBanner.firstChild);
         }
 
-        var msg = document.createElement('span');
+        const msg = document.createElement('span');
         msg.style.color = '#ef4444';
         msg.textContent = 'window._k2 not found after ' + (POLL_TIMEOUT / 1000) + 's';
         statusBanner.appendChild(msg);
@@ -750,9 +747,9 @@
       }
 
       function pollForGlobals() {
-        var elapsed = 0;
+        let elapsed = 0;
 
-        var timer = setInterval(function () {
+        const timer = setInterval(function () {
           elapsed += POLL_INTERVAL;
 
           if (window._k2 && window._platform) {
@@ -768,14 +765,12 @@
         }, POLL_INTERVAL);
       }
 
-      document.addEventListener('DOMContentLoaded', function () {
-        // Check if globals already available (e.g., Tauri/Capacitor injected before page load)
-        if (window._k2 && window._platform) {
-          onGlobalsReady();
-        } else {
-          pollForGlobals();
-        }
-      });
+      // Check if globals already available (e.g., injected before page load)
+      if (window._k2 && window._platform) {
+        onGlobalsReady();
+      } else {
+        pollForGlobals();
+      }
     </script>
   </body>
 </html>
