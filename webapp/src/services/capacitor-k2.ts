@@ -11,7 +11,7 @@ import { Capacitor } from '@capacitor/core';
 import { Browser } from '@capacitor/browser';
 import { Clipboard } from '@capacitor/clipboard';
 import { K2Plugin } from 'k2-plugin';
-import type { IK2Vpn, IPlatform, SResponse } from '../types/kaitu-core';
+import type { IK2Vpn, IPlatform, IUpdater, UpdateInfo, SResponse } from '../types/kaitu-core';
 import type { StatusResponseData, ControlError, ServiceState } from './vpn-types';
 import { webSecureStorage } from './secure-storage';
 
@@ -117,6 +117,32 @@ export async function injectCapacitorGlobals(): Promise<void> {
     },
   };
 
+  // Build updater: native update support
+  let updateReadyCallbacks: ((info: UpdateInfo) => void)[] = [];
+  let storedPath: string | null = null;
+  let storedAppStoreUrl: string | null = null;
+
+  const updater: IUpdater = {
+    isUpdateReady: false,
+    updateInfo: null,
+    isChecking: false,
+    error: null,
+    applyUpdateNow: async () => {
+      const currentPlatform = Capacitor.getPlatform();
+      if (currentPlatform === 'android' && storedPath) {
+        await K2Plugin.installNativeUpdate({ path: storedPath });
+      } else if (currentPlatform === 'ios' && storedAppStoreUrl) {
+        await Browser.open({ url: storedAppStoreUrl });
+      }
+    },
+    onUpdateReady: (callback: (info: UpdateInfo) => void) => {
+      updateReadyCallbacks.push(callback);
+      return () => {
+        updateReadyCallbacks = updateReadyCallbacks.filter(cb => cb !== callback);
+      };
+    },
+  };
+
   // Build _platform: mobile capabilities
   const capacitorPlatform: IPlatform = {
     os: platform,
@@ -145,6 +171,8 @@ export async function injectCapacitorGlobals(): Promise<void> {
     syncLocale: async (_locale: string): Promise<void> => {
       // No-op on mobile — no tray menu to update
     },
+
+    updater,
   };
 
   // Inject globals
@@ -159,6 +187,28 @@ export async function injectCapacitorGlobals(): Promise<void> {
 
   K2Plugin.addListener('vpnError', (event: any) => {
     console.warn('[K2:Capacitor] vpnError:', event.message ?? event);
+  });
+
+  K2Plugin.addListener('nativeUpdateReady', (event: any) => {
+    storedPath = event.path;
+    const info: UpdateInfo = {
+      currentVersion: appVersion,
+      newVersion: event.version,
+    };
+    updater.isUpdateReady = true;
+    updater.updateInfo = info;
+    updateReadyCallbacks.forEach(cb => cb(info));
+  });
+
+  K2Plugin.addListener('nativeUpdateAvailable', (event: any) => {
+    storedAppStoreUrl = event.appStoreUrl;
+    const info: UpdateInfo = {
+      currentVersion: appVersion,
+      newVersion: event.version,
+    };
+    updater.isUpdateReady = true;
+    updater.updateInfo = info;
+    updateReadyCallbacks.forEach(cb => cb(info));
   });
 
   console.info(`[K2:Capacitor] Injected - os=${platform}, version=${appVersion}`);
