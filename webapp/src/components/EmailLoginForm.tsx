@@ -167,9 +167,11 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
       setError("");
 
       // Tokens are automatically saved by cloudApi for auth paths
+      const udid = await window._platform!.getUdid();
       const response = await cloudApi.post<AuthResult>('/api/auth/login', {
         email,
         verificationCode: verificationCode,
+        udid,
         remark: t("startup:startup.newDevice"),
         inviteCode: inviteCode.trim() || undefined,
         language: i18n.language,
@@ -208,9 +210,11 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
       setError("");
 
       const deviceRemark = t("startup:startup.newDevice");
+      const udid = await window._platform!.getUdid();
       const response = await cloudApi.post('/api/auth/login/password', {
         email,
         password,
+        udid,
         remark: deviceRemark,
         deviceName: deviceRemark,
         platform: window._platform?.os || '',

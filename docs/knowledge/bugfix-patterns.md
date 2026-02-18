@@ -280,6 +280,44 @@ Also fixed the guard condition: `(isDisconnected || isError) && !activeTunnelInf
 
 ---
 
+## GORM Soft Delete: Use Delete() Not Manual Status Field (2026-02-18, cloud-worker-fix)
+
+**Problem**: `markOrphanedInstances()` in `worker_cloud.go` manually set `status = "deleted"` via `Updates(map[string]any{"status": "deleted"})` and filtered with `WHERE status != 'deleted'`. But the `CloudInstance` model already has `DeletedAt gorm.DeletedAt` — GORM's built-in soft delete mechanism.
+
+**Why this was wrong**:
+1. `gorm.DeletedAt` makes GORM auto-add `WHERE deleted_at IS NULL` to all queries — the manual `WHERE status != 'deleted'` was redundant
+2. Manual `status = "deleted"` set a string field but didn't populate `deleted_at` — GORM soft-deleted records still appeared in queries (double identity: status says deleted, but `deleted_at` is NULL so GORM includes them)
+3. Admin list APIs using `db.Find(&instances)` would show "deleted" instances because GORM only auto-filters on `deleted_at`, not on a custom `status` field
+
+**Fix**: Replace `Updates(status: "deleted")` with `db.Delete(&dbInst)`. Remove redundant `WHERE status != 'deleted'` filter. Separate `last_synced_at` update from the delete (two operations — update timestamp, then soft-delete).
+
+**Rule**: When a GORM model has `DeletedAt gorm.DeletedAt`, always use `db.Delete()` for soft delete. Never manually track deletion state in a separate status field — it creates conflicting sources of truth.
+
+**Files fixed**: `api/worker_cloud.go`
+
+**Validating tests**: `go test ./...` passes; manual verification of cloud sync worker behavior.
+
+---
+
+## Login Requests Must Include Device UDID (2026-02-18, login-udid-fix)
+
+**Problem**: `EmailLoginForm.tsx` and `LoginDialog.tsx` sent login requests without `udid` field. The backend API declares `UDID string binding:"required"` — the field is mandatory for device association, token generation, and device limit enforcement.
+
+**Impact**: Without UDID, the backend would either reject the request (400) or create a device record with an empty UDID, breaking device management (logout, device list, device limit).
+
+**Fix**: Call `window._platform!.getUdid()` before each login request and include the result as `udid` in the POST body. Applied to all three login paths:
+1. Email + verification code login (`EmailLoginForm`)
+2. Email + password login (`EmailLoginForm`)
+3. Verification code login in `LoginDialog`
+
+**Why `!` assertion is safe**: Login UI is only reachable after platform injection completes (`main.tsx` bootstrap). `_platform` is guaranteed non-null at this point.
+
+**Files fixed**: `webapp/src/components/EmailLoginForm.tsx`, `webapp/src/components/LoginDialog.tsx`
+
+**Validating tests**: Manual login flow verification on all platforms.
+
+---
+
 ## Capacitor Local Plugin Stale Copy in node_modules (2026-02-16, mobile-debug)
 
 **Problem**: Capacitor plugin declared as `"k2-plugin": "file:./plugins/k2-plugin"` in `mobile/package.json` is copied (not symlinked) to `node_modules/k2-plugin/`. Editing source files in `mobile/plugins/k2-plugin/` has no effect — `cap sync` and Gradle build use the stale `node_modules/` copy.

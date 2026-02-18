@@ -259,9 +259,6 @@ func markOrphanedInstances(ctx context.Context, account CloudInstanceAccount, sy
 		query = query.Where("region = ?", account.Region)
 	}
 
-	// Only check non-deleted instances
-	query = query.Where("status != ?", "deleted")
-
 	if err := query.Find(&dbInstances).Error; err != nil {
 		return fmt.Errorf("failed to query instances: %w", err)
 	}
@@ -273,10 +270,10 @@ func markOrphanedInstances(ctx context.Context, account CloudInstanceAccount, sy
 			log.Infof(ctx, "[CLOUD] Instance %s no longer exists in provider, marking as deleted (account=%s, ip=%s)",
 				dbInst.InstanceID, account.Name, dbInst.IPAddress)
 
-			if err := db.Get().Model(&dbInst).Updates(map[string]any{
-				"status":        "deleted",
-				"last_synced_at": time.Now().Unix(),
-			}).Error; err != nil {
+			if err := db.Get().Model(&dbInst).Update("last_synced_at", time.Now().Unix()).Error; err != nil {
+				log.Errorf(ctx, "[CLOUD] Failed to update last_synced_at for instance %s: %v", dbInst.InstanceID, err)
+			}
+			if err := db.Get().Delete(&dbInst).Error; err != nil {
 				log.Errorf(ctx, "[CLOUD] Failed to mark instance %s as deleted: %v", dbInst.InstanceID, err)
 			} else {
 				orphanCount++

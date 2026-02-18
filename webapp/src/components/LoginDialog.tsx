@@ -152,9 +152,11 @@ export default function LoginDialog() {
       setIsSubmitting(true);
       setError("");
 
+      const udid = await window._platform!.getUdid();
       const response = await cloudApi.post<AuthResult>('/api/auth/login', {
         email,
         verificationCode: verificationCode,
+        udid,
         remark: t("startup:startup.newDevice"),
         inviteCode: inviteCode.trim() || undefined,
         language: i18n.language,
