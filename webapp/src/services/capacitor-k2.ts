@@ -12,7 +12,7 @@ import { Browser } from '@capacitor/browser';
 import { Clipboard } from '@capacitor/clipboard';
 import { K2Plugin } from 'k2-plugin';
 import type { IK2Vpn, IPlatform, SResponse } from '../types/kaitu-core';
-import type { StatusResponseData, ControlError, ServiceState } from './control-types';
+import type { StatusResponseData, ControlError, ServiceState } from './vpn-types';
 import { webSecureStorage } from './secure-storage';
 
 /**
@@ -32,7 +32,12 @@ function transformStatus(raw: any): StatusResponseData {
 
   let error: ControlError | undefined;
   if (raw.error) {
-    error = { code: 570, message: raw.error };
+    if (typeof raw.error === 'object' && raw.error !== null && 'code' in raw.error) {
+      error = { code: raw.error.code, message: raw.error.message || '' };
+    } else {
+      // Backward compat: old daemon sends string
+      error = { code: 570, message: String(raw.error) };
+    }
     if (state === 'disconnected') {
       state = 'error';
     }

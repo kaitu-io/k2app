@@ -24,7 +24,7 @@ import type { Tunnel } from '../services/api-types';
 /**
  * SimpleTunnel - Simplified tunnel configuration
  * All configuration is encoded in the URL
- * Note: This type was moved here from control-types.ts for local use only
+ * Note: This type was moved here from vpn-types.ts for local use only
  */
 export interface SimpleTunnel {
   id: string;   // Tunnel ID (auto-generated or from API tunnel.id)

@@ -21,7 +21,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 
-import type { StatusResponseData } from '../services/control-types';
+import type { StatusResponseData } from '../services/vpn-types';
 
 // ============ Types ============
 

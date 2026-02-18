@@ -147,7 +147,26 @@ describe('capacitor-k2', () => {
       expect(result.data.running).toBe(false);
     });
 
-    it('test_k2_run_status_with_error_maps_to_ControlError', async () => {
+    it('test_k2_run_status_with_structured_error_maps_to_ControlError', async () => {
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      mockK2Plugin.getStatus.mockResolvedValue({
+        state: 'disconnected',
+        error: { code: 503, message: 'connection refused' },
+      });
+
+      const result = await window._k2.run('status');
+
+      expect(result.code).toBe(0);
+      expect(result.data).toBeDefined();
+      expect(result.data.state).toBe('error');
+      expect(result.data.error).toBeDefined();
+      expect(result.data.error.code).toBe(503);
+      expect(result.data.error.message).toBe('connection refused');
+    });
+
+    it('test_k2_run_status_with_string_error_backward_compat', async () => {
       const { injectCapacitorGlobals } = await import('../capacitor-k2');
       await injectCapacitorGlobals();
 
@@ -163,7 +182,7 @@ describe('capacitor-k2', () => {
       expect(result.data.state).toBe('error');
       expect(result.data.error).toBeDefined();
       expect(result.data.error.code).toBe(570);
-      expect(typeof result.data.error.message).toBe('string');
+      expect(result.data.error.message).toBe('Connection timed out');
     });
 
     it('test_k2_run_up_calls_connect_with_config', async () => {
@@ -232,7 +251,21 @@ describe('capacitor-k2', () => {
       expect(result.message).toContain('Plugin not available');
     });
 
-    it('test_capacitor_transformStatus_error_synthesis', async () => {
+    it('test_capacitor_transformStatus_error_synthesis_structured', async () => {
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      mockK2Plugin.getStatus.mockResolvedValue({
+        state: 'disconnected',
+        error: { code: 408, message: 'dial timeout' },
+      });
+
+      const result = await window._k2.run('status');
+      expect(result.data.state).toBe('error');
+      expect(result.data.error).toEqual({ code: 408, message: 'dial timeout' });
+    });
+
+    it('test_capacitor_transformStatus_error_synthesis_string_backward_compat', async () => {
       const { injectCapacitorGlobals } = await import('../capacitor-k2');
       await injectCapacitorGlobals();
 

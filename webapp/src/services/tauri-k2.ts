@@ -12,7 +12,7 @@ import { listen } from '@tauri-apps/api/event';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { writeText, readText } from '@tauri-apps/plugin-clipboard-manager';
 import type { IK2Vpn, IPlatform, IUpdater, UpdateInfo, SResponse } from '../types/kaitu-core';
-import type { StatusResponseData, ControlError, ServiceState } from './control-types';
+import type { StatusResponseData, ControlError, ServiceState } from './vpn-types';
 import { webSecureStorage } from './secure-storage';
 
 interface ServiceResponse {
@@ -32,7 +32,12 @@ function transformStatus(raw: any): StatusResponseData {
 
   let error: ControlError | undefined;
   if (raw.error) {
-    error = { code: 570, message: raw.error };
+    if (typeof raw.error === 'object' && raw.error !== null && 'code' in raw.error) {
+      error = { code: raw.error.code, message: raw.error.message || '' };
+    } else {
+      // Backward compat: old daemon sends string
+      error = { code: 570, message: String(raw.error) };
+    }
     if (state === 'disconnected') {
       state = 'error';
     }
@@ -69,9 +74,11 @@ export async function injectTauriGlobals(): Promise<void> {
   const tauriK2: IK2Vpn = {
     run: async <T = any>(action: string, params?: any): Promise<SResponse<T>> => {
       try {
+        // Daemon handleUp expects params.config, not raw ClientConfig
+        const wrappedParams = action === 'up' && params ? { config: params } : (params ?? null);
         const response = await invoke<ServiceResponse>('daemon_exec', {
           action,
-          params: params ?? null,
+          params: wrappedParams,
         });
         // Transform status response to normalize daemon state values
         if (action === 'status' && response.code === 0 && response.data) {

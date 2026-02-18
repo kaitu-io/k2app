@@ -4,7 +4,7 @@
  * 特性：
  * - 显示在右上角的紧凑通知
  * - 根据类型显示不同图标（info/warning/error）
- * - 100 系列错误码显示"修复网络"引导
+ * - 网络错误码 (408/503) 显示"修复网络"引导
  * - 自动淡入淡出动画
  */
 
@@ -23,8 +23,8 @@ import {
   Close as CloseIcon,
 } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
-import type { ControlError } from '../services/control-types';
-import { getErrorI18nKey } from '../services/control-types';
+import type { ControlError } from '../services/vpn-types';
+import { getErrorI18nKey } from '../services/vpn-types';
 
 type NotificationType = 'info' | 'warning' | 'error';
 

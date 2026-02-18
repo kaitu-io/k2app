@@ -6,7 +6,7 @@
 
 // ==================== Types ====================
 
-export * from './control-types';
+export * from './vpn-types';
 
 // ==================== API Types ====================
 

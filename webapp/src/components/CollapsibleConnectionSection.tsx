@@ -19,8 +19,8 @@ import { useTranslation } from 'react-i18next';
 import { ConnectionButton } from './ConnectionButton';
 import { CompactConnectionButton } from './CompactConnectionButton';
 import { useLayout } from '../stores/layout.store';
-import type { ControlError } from '../services/control-types';
-import { getErrorI18nKey } from '../services/control-types';
+import type { ControlError } from '../services/vpn-types';
+import { getErrorI18nKey } from '../services/vpn-types';
 
 type ServiceState =
   | 'disconnected'

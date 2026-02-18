@@ -1,106 +1,66 @@
-// Type definitions for k2 daemon control protocol
-// Canonical source: k2/daemon/api.go (Go daemon HTTP API)
+// Type definitions for k2 VPN control protocol
+// Canonical source: k2/engine/error.go (Go engine error codes)
 
-// ==================== 错误码常量 ====================
-// 与 Go service/core/control/types.go 对齐
+// ==================== Error Code Constants ====================
+// Aligned with k2 engine HTTP-aligned error codes
+// Source of truth: k2/engine/error.go
 
-// 网络错误（100-109）
-export const ErrCodeNetworkTimeout = 100;      // 网络请求超时
-export const ErrCodeNetworkUnreachable = 101;  // 网络不可达（无网络连接）
-export const ErrCodeNetworkReset = 102;        // 连接被重置
-export const ErrCodeNetworkDNS = 103;          // DNS 解析失败
-export const ErrCodeNetworkTLS = 104;          // TLS/SSL 握手失败
-export const ErrCodeNetworkRefused = 105;      // 连接被拒绝
+// Config errors
+export const ErrCodeBadConfig = 400;          // Invalid wire URL, missing auth, bad scheme
 
-// 服务器相关错误（110-119）
-export const ErrCodeServerUnavailable = 110;   // 服务器不可用
-export const ErrCodeServerOverload = 111;      // 服务器过载
-export const ErrCodeServerMaintenance = 112;   // 服务器维护中
+// Auth errors
+export const ErrCodeUnauthorized = 401;       // Server rejected authentication
+export const ErrCodeMembershipExpired = 402;  // Membership expired (Cloud API, not k2)
 
-// 客户端错误（400 系列，与 HTTP 对齐）
-export const ErrCodeBadRequest = 400;          // 请求参数错误
-export const ErrCodeUnauthorized = 401;        // 未授权
-export const ErrCodeForbidden = 403;           // 禁止访问
-export const ErrCodeNotFound = 404;            // 资源不存在
+// Certificate/pin errors
+export const ErrCodeForbidden = 403;          // Certificate pin mismatch, blocked CA
 
-// 服务端错误（500 系列，与 HTTP 对齐）
-export const ErrCodeInternalError = 500;       // 内部错误
-export const ErrCodeNotImplemented = 501;      // 功能未实现
+// Timeout
+export const ErrCodeTimeout = 408;            // Connection or handshake timeout
 
-// VPN 服务相关错误 (510-519)
-export const ErrCodeVPNStopFailed = 510;       // VPN 停止失败
-export const ErrCodeVPNStartFailed = 511;      // VPN 启动失败
-export const ErrCodeVPNReconnectFailed = 512;  // VPN 重连失败
-export const ErrCodeVPNTimeout = 513;          // VPN 操作超时
+// TLS/Protocol errors
+export const ErrCodeProtocolError = 502;      // TLS handshake failure, QUIC dial failure
 
-// 连接错误 (570-579)
-export const ErrCodeConnectionFatal = 570;     // 致命连接错误
-export const ErrCodeAllAddrsFailed = 571;      // 所有地址连接失败
+// Server unreachable
+export const ErrCodeServerUnreachable = 503;  // TCP dial failed, connection refused, network unreachable
 
-// 会员相关 (402)
-export const ErrCodeMembershipExpired = 402;   // 会员过期
+// Fallback
+export const ErrCodeConnectionFatal = 570;    // Unclassified connection error
 
 /**
- * 判断是否为网络相关错误（100-109）
+ * Whether the error is a network-level error (timeout or unreachable)
  */
 export function isNetworkError(code: number): boolean {
-  return code >= 100 && code < 110;
+  return code === 408 || code === 503;
 }
 
 /**
- * 判断是否为服务器相关错误（110-119）
- */
-export function isServerError(code: number): boolean {
-  return code >= 110 && code < 120;
-}
-
-/**
- * 判断是否为 VPN 连接错误（510-579）
+ * Whether the error is a VPN protocol/connection error
  */
 export function isVPNError(code: number): boolean {
-  return (code >= 510 && code < 520) || (code >= 570 && code < 580);
+  return code === 502 || code === 570;
 }
 
 /**
- * 判断是否为认证错误（需要重新登录或续费）
+ * Whether the error is an auth error (requires re-login or renewal)
  */
 export function isAuthError(code: number): boolean {
   return code === 401 || code === 402;
 }
 
 /**
- * 获取错误码对应的 i18n 键名
+ * Map error code to i18n key for user-facing messages
  */
 export function getErrorI18nKey(code: number): string {
   const errorMap: Record<number, string> = {
-    // 网络错误（100-109）
-    [ErrCodeNetworkTimeout]: 'errors.network.timeout',
-    [ErrCodeNetworkUnreachable]: 'errors.network.unreachable',
-    [ErrCodeNetworkReset]: 'errors.network.reset',
-    [ErrCodeNetworkDNS]: 'errors.network.dns',
-    [ErrCodeNetworkTLS]: 'errors.network.tls',
-    [ErrCodeNetworkRefused]: 'errors.network.refused',
-    // 服务器错误（110-119）
-    [ErrCodeServerUnavailable]: 'errors.server.unavailable',
-    [ErrCodeServerOverload]: 'errors.server.overload',
-    [ErrCodeServerMaintenance]: 'errors.server.maintenance',
-    // 客户端错误（400系列）
-    [ErrCodeBadRequest]: 'errors.client.badRequest',
+    [ErrCodeBadConfig]: 'errors.config.badConfig',
     [ErrCodeUnauthorized]: 'errors.vpn.authFailed',
     [ErrCodeMembershipExpired]: 'errors.vpn.membershipExpired',
-    [ErrCodeForbidden]: 'errors.client.forbidden',
-    [ErrCodeNotFound]: 'errors.client.notFound',
-    // 服务端错误（500系列）
-    [ErrCodeInternalError]: 'errors.server.internal',
-    [ErrCodeNotImplemented]: 'errors.server.notImplemented',
-    // VPN 服务错误（510-519）
-    [ErrCodeVPNStopFailed]: 'errors.vpn.stopFailed',
-    [ErrCodeVPNStartFailed]: 'errors.vpn.startFailed',
-    [ErrCodeVPNReconnectFailed]: 'errors.vpn.reconnectFailed',
-    [ErrCodeVPNTimeout]: 'errors.vpn.timeout',
-    // 连接错误（570-579）
+    [ErrCodeForbidden]: 'errors.vpn.forbidden',
+    [ErrCodeTimeout]: 'errors.network.timeout',
+    [ErrCodeProtocolError]: 'errors.vpn.protocolError',
+    [ErrCodeServerUnreachable]: 'errors.network.unreachable',
     [ErrCodeConnectionFatal]: 'errors.vpn.connectionFatal',
-    [ErrCodeAllAddrsFailed]: 'errors.vpn.allAddrsFailed',
   };
   return errorMap[code] || 'errors.unknown';
 }
@@ -113,10 +73,14 @@ export type ServiceState = 'disconnected' | 'connecting' | 'connected' | 'reconn
 /**
  * ControlError 错误信息
  * UI 层根据 Code 决定如何处理：
+ * - 400=配置错误 → 提示检查配置
  * - 401=登录失效 → 清除 token，跳转登录
  * - 402=会员过期 → 显示续费提示
+ * - 403=证书验证失败 → 提示更换节点
+ * - 408=连接超时 → 提示检查网络
+ * - 502=协议握手失败 → 提示更换节点
+ * - 503=服务器不可达 → 提示检查网络
  * - 570=连接失败 → 显示连接错误
- * - 571=所有地址失败 → 显示所有地址失败提示
  */
 export interface ControlError {
   code: number;    // 错误码
@@ -150,7 +114,7 @@ export interface StatusResponseData {
   startAt?: number;       // VPN 启动时间戳（Unix seconds，0 表示未启动）
   error?: ControlError;   // 错误信息（state=error 时有值）
   retrying?: boolean;     // K2 层是否正在重试（仅 state=error 时有意义）
-                          // - 网络错误 (570/571): true，K2 每 5 秒重试
+                          // - 网络/连接错误 (408/502/503/570): true，K2 每 5 秒重试
                           // - 认证错误 (401/402): false，需用户操作
   serviceVersion?: string; // kaitu-service 版本号（用于检测更新后版本不匹配）
   networkAvailable: boolean; // Whether network is available for VPN connection

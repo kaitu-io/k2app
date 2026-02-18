@@ -44,9 +44,9 @@ vi.mock('../../stores', () => ({
   useVPNStore: (selector: any) => selector(mockVPNStoreState),
 }));
 
-// Mock control-types
-vi.mock('../../services/control-types', () => ({
-  isNetworkError: (code: number) => code >= 100 && code <= 109,
+// Mock vpn-types
+vi.mock('../../services/vpn-types', () => ({
+  isNetworkError: (code: number) => code === 408 || code === 503,
 }));
 
 describe('ServiceAlert', () => {
@@ -77,14 +77,14 @@ describe('ServiceAlert', () => {
     });
 
     it('should render when network error occurs', () => {
-      mockVPNStatus.error = { code: 100, message: 'Network error' };
+      mockVPNStatus.error = { code: 408, message: 'Connection timeout' };
       renderAlert();
       expect(screen.getByText('dashboard:dashboard.networkError.title')).toBeInTheDocument();
     });
 
     it('should prioritize service failure over network error', () => {
       mockVPNStatus.isServiceFailedLongTime = true;
-      mockVPNStatus.error = { code: 100, message: 'Network error' };
+      mockVPNStatus.error = { code: 503, message: 'Server unreachable' };
       renderAlert();
       // Should show service failure message, not network error
       expect(screen.getByText('dashboard:dashboard.serviceFailure.title')).toBeInTheDocument();
@@ -92,32 +92,32 @@ describe('ServiceAlert', () => {
   });
 
   describe('Network Error Detection', () => {
-    it('should detect error code 100 as network error', () => {
-      mockVPNStatus.error = { code: 100, message: 'Error 100' };
+    it('should detect error code 408 (timeout) as network error', () => {
+      mockVPNStatus.error = { code: 408, message: 'Connection timeout' };
       renderAlert();
       expect(screen.getByText('dashboard:dashboard.networkError.title')).toBeInTheDocument();
     });
 
-    it('should detect error code 109 as network error', () => {
-      mockVPNStatus.error = { code: 109, message: 'Error 109' };
+    it('should detect error code 503 (unreachable) as network error', () => {
+      mockVPNStatus.error = { code: 503, message: 'Server unreachable' };
       renderAlert();
       expect(screen.getByText('dashboard:dashboard.networkError.title')).toBeInTheDocument();
     });
 
     it('should not show alert for non-network errors', () => {
-      mockVPNStatus.error = { code: 500, message: 'Server error' };
+      mockVPNStatus.error = { code: 570, message: 'Connection fatal' };
       const { container } = renderAlert();
       expect(container.firstChild).toBeNull();
     });
 
-    it('should not show alert for error code 99', () => {
-      mockVPNStatus.error = { code: 99, message: 'Error 99' };
+    it('should not show alert for auth errors', () => {
+      mockVPNStatus.error = { code: 401, message: 'Unauthorized' };
       const { container } = renderAlert();
       expect(container.firstChild).toBeNull();
     });
 
-    it('should not show alert for error code 110', () => {
-      mockVPNStatus.error = { code: 110, message: 'Error 110' };
+    it('should not show alert for protocol errors', () => {
+      mockVPNStatus.error = { code: 502, message: 'TLS handshake failed' };
       const { container } = renderAlert();
       expect(container.firstChild).toBeNull();
     });

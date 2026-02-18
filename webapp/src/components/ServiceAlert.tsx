@@ -4,14 +4,14 @@
  * 显示场景：
  * 1. 服务组件初始化中
  * 2. Service 连接失败超过 10 秒
- * 3. VPN 连接出现 100 系列网络错误
+ * 3. VPN 连接出现网络错误 (408/503)
  */
 
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useVPNStatus, useVPNStore } from '../stores';
-import { isNetworkError } from '../services/control-types';
+import { isNetworkError } from '../services/vpn-types';
 
 interface ServiceAlertProps {
   sidebarWidth?: number;

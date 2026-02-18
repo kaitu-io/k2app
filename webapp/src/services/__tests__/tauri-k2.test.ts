@@ -99,9 +99,10 @@ describe('tauri-k2', () => {
 
       await window._k2.run('up', config);
 
+      // Daemon handleUp expects params.config wrapping
       expect(mockInvoke).toHaveBeenCalledWith('daemon_exec', {
         action: 'up',
-        params: config,
+        params: { config },
       });
     });
 
@@ -220,7 +221,17 @@ describe('tauri-k2', () => {
       expect(result.data.running).toBe(false);
     });
 
-    it('maps stopped with error to error state', async () => {
+    it('maps stopped with structured error to error state', async () => {
+      mockInvoke.mockResolvedValueOnce({
+        code: 0, message: 'ok',
+        data: { state: 'stopped', error: { code: 503, message: 'connection refused' } },
+      });
+      const result = await window._k2.run('status');
+      expect(result.data.state).toBe('error');
+      expect(result.data.error).toEqual({ code: 503, message: 'connection refused' });
+    });
+
+    it('maps stopped with string error to error state (backward compat)', async () => {
       mockInvoke.mockResolvedValueOnce({
         code: 0, message: 'ok',
         data: { state: 'stopped', error: 'timeout' },

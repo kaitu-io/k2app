@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useRef, useCallback } from 'react';
-import type { StatusResponseData } from '../services/control-types';
+import type { StatusResponseData } from '../services/vpn-types';
 
 const POLL_INTERVAL = 2000; // 2s
 

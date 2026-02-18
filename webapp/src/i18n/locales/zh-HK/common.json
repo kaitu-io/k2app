@@ -53,9 +53,12 @@
       "installFailed": "服務安裝失敗",
       "connectionFailed": "無法連接到服務"
     },
+    "config": {
+      "badConfig": "配置錯誤，請檢查伺服器地址"
+    },
     "network": {
-      "timeout": "網絡請求超時，請檢查網絡連接",
-      "unreachable": "網絡不可達，請檢查網絡連接",
+      "timeout": "連線逾時，請檢查網路",
+      "unreachable": "伺服器不可達，請檢查網路連線",
       "reset": "網絡連接中斷，請檢查網絡狀態",
       "dns": "DNS 解析失敗，請檢查網絡設定",
       "tls": "安全連接失敗，請檢查網絡環境",
@@ -79,14 +82,11 @@
       "notFound": "請求嘅資源不存在"
     },
     "vpn": {
-      "authFailed": "登入已失效，請重新登入",
+      "authFailed": "認證失敗，請重新登入",
       "membershipExpired": "會員已過期，請續費",
-      "stopFailed": "VPN 停止失敗，請重試",
-      "startFailed": "VPN 啟動失敗，請檢查網絡",
-      "reconnectFailed": "VPN 重連失敗，請手動重連",
-      "timeout": "VPN 操作超時，請重試",
-      "connectionFatal": "連接失敗，請檢查網絡或更換節點",
-      "allAddrsFailed": "所有節點連接失敗，請稍後重試"
+      "forbidden": "伺服器憑證驗證失敗",
+      "protocolError": "協議握手失敗，請更換節點",
+      "connectionFatal": "連線失敗，請重試或更換節點"
     },
     "auth": {
       "logoutFailed": "登出失敗，請重試",
@@ -105,7 +105,7 @@
       "responseFailed": "回應解析失敗"
     },
     "installCancelled": "安裝已取消",
-    "unknown": "未知錯誤，請稍後重試",
+    "unknown": "未知錯誤",
     "unknownError": "未知錯誤"
   },
   "brand": {

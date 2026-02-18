@@ -16,7 +16,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { useVPNStore, useVPNStatus } from '../vpn.store';
 import { act, renderHook } from '@testing-library/react';
-import type { StatusResponseData, ControlError } from '../../services/control-types';
+import type { StatusResponseData, ControlError } from '../../services/vpn-types';
 
 describe('VPN Store', () => {
   beforeEach(() => {

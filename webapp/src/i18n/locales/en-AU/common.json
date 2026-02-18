@@ -53,9 +53,12 @@
       "installFailed": "Service installation failed",
       "connectionFailed": "Unable to connect to service"
     },
+    "config": {
+      "badConfig": "Configuration error, please check server address"
+    },
     "network": {
-      "timeout": "Network request timeout, please check your network connection",
-      "unreachable": "Network unreachable, please check your network connection",
+      "timeout": "Connection timed out, please check network",
+      "unreachable": "Server unreachable, please check network connection",
       "reset": "Network connection interrupted, please check network status",
       "dns": "DNS resolution failed, please check network settings",
       "tls": "Secure connection failed, please check network environment",
@@ -79,14 +82,11 @@
       "notFound": "Requested resource not found"
     },
     "vpn": {
-      "authFailed": "Session expired, please log in again",
+      "authFailed": "Authentication failed, please re-login",
       "membershipExpired": "Membership expired, please renew",
-      "stopFailed": "Failed to stop VPN, please try again",
-      "startFailed": "Failed to start VPN, please check network",
-      "reconnectFailed": "Failed to reconnect VPN, please reconnect manually",
-      "timeout": "VPN operation timed out, please try again",
-      "connectionFatal": "Connection failed, please check network or switch server",
-      "allAddrsFailed": "All servers failed to connect, please try again later"
+      "forbidden": "Server certificate verification failed",
+      "protocolError": "Protocol handshake failed, please try another node",
+      "connectionFatal": "Connection failed, please retry or switch node"
     },
     "auth": {
       "logoutFailed": "Logout failed, please try again",
@@ -105,7 +105,7 @@
       "responseFailed": "Response parsing failed"
     },
     "installCancelled": "Installation cancelled",
-    "unknown": "Unknown error, please try again later",
+    "unknown": "Unknown error",
     "unknownError": "Unknown error"
   },
   "brand": {
