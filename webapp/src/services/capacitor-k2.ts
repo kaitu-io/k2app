@@ -153,11 +153,12 @@ export async function injectCapacitorGlobals(): Promise<void> {
 
   // Register event listeners (polling handles state updates, these just log)
   K2Plugin.addListener('vpnStateChange', (event: any) => {
-    console.debug('[K2:Capacitor] vpnStateChange:', event);
+    console.debug('[K2:Capacitor] vpnStateChange:', event.state,
+      event.connectedAt ? `connectedAt=${event.connectedAt}` : '');
   });
 
   K2Plugin.addListener('vpnError', (event: any) => {
-    console.warn('[K2:Capacitor] vpnError:', event);
+    console.warn('[K2:Capacitor] vpnError:', event.message ?? event);
   });
 
   console.info(`[K2:Capacitor] Injected - os=${platform}, version=${appVersion}`);

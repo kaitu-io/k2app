@@ -165,7 +165,6 @@ class K2VpnService : VpnService(), VpnServiceBridge {
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 Log.d(TAG, "Network available: $network")
-                // Debounce: cancel pending, schedule new after 500ms
                 pendingNetworkChange?.let { mainHandler.removeCallbacks(it) }
                 val runnable = Runnable {
                     Log.d(TAG, "Triggering engine network change reset")
@@ -173,6 +172,13 @@ class K2VpnService : VpnService(), VpnServiceBridge {
                 }
                 pendingNetworkChange = runnable
                 mainHandler.postDelayed(runnable, 500)
+            }
+
+            override fun onLost(network: Network) {
+                Log.d(TAG, "Network lost: $network — clearing dead connections immediately")
+                pendingNetworkChange?.let { mainHandler.removeCallbacks(it) }
+                pendingNetworkChange = null
+                engine?.onNetworkChanged()
             }
         }
         cm.registerNetworkCallback(request, callback)
