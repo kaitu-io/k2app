@@ -6,7 +6,7 @@
 |-----------|------------------------------------------|
 | Feature   | network-change-reconnect                 |
 | Version   | v1                                       |
-| Status    | implemented                               |
+| Status    | implemented                              |
 | Created   | 2026-02-18                               |
 | Updated   | 2026-02-18                               |
 | Depends on | vpn-error-reconnect (implemented), config-driven-connect (implemented) |
@@ -151,12 +151,12 @@ type singTunMonitor struct {
     callback         func()
 }
 
-func NewNetworkMonitor(logger logger) (engine.NetworkChangeNotifier, tun.DefaultInterfaceMonitor, error) {
-    netMon, err := tun.NewNetworkUpdateMonitor(logger)
+func NewNetworkMonitor() (engine.NetworkChangeNotifier, tun.DefaultInterfaceMonitor, error) {
+    netMon, err := tun.NewNetworkUpdateMonitor((*nopLogger)(nil))
     if err != nil {
         return nil, nil, err  // returns ErrInvalid on unsupported platforms
     }
-    ifaceMon, err := tun.NewDefaultInterfaceMonitor(netMon, logger, tun.DefaultInterfaceMonitorOptions{})
+    ifaceMon, err := tun.NewDefaultInterfaceMonitor(netMon, (*nopLogger)(nil), tun.DefaultInterfaceMonitorOptions{})
     if err != nil {
         netMon.Close()
         return nil, nil, err
@@ -170,10 +170,9 @@ func NewNetworkMonitor(logger logger) (engine.NetworkChangeNotifier, tun.Default
 }
 
 func (m *singTunMonitor) Start(callback func()) error {
-    m.callback = callback
     m.interfaceMonitor.RegisterCallback(func(defaultInterface *control.Interface, flags int) {
-        if m.callback != nil {
-            m.callback()
+        if callback != nil {
+            callback()
         }
     })
     if err := m.networkMonitor.Start(); err != nil {
@@ -188,26 +187,17 @@ func (m *singTunMonitor) Close() error {
 }
 ```
 
-**daemon 启动时注入：**
+**daemon 通过 MonitorFactory 注入（testable pattern）：**
 
 ```go
-// k2/daemon/daemon.go — 启动流程
-monitor, ifaceMonitor, err := NewNetworkMonitor(logger)
-if err != nil {
-    // Non-fatal: platform doesn't support monitor (e.g. OpenWrt edge case)
-    logger.Warn("network monitor unavailable:", err)
+// k2/daemon/daemon.go
+type Daemon struct {
+    EngineStarter  func(engine.Config) (*engine.Engine, error)
+    MonitorFactory func() (engine.NetworkChangeNotifier, any, error)
 }
 
-engineCfg := engine.Config{
-    // ... existing fields ...
-    NetworkMonitor: monitor,  // nil if unavailable
-}
-
-// tun.Options also gets the same ifaceMonitor instance
-tunOpts := tun.Options{
-    // ... existing fields ...
-    InterfaceMonitor: ifaceMonitor,  // enables TUN self-exclusion
-}
+// doUp uses factory (nil → defaultMonitorFactory → NewNetworkMonitor)
+// Non-fatal on failure: logs warn, engine starts without monitor
 ```
 
 **关键约束：`ifaceMonitor` 必须同时传给 engine callback 和 `tun.Options.InterfaceMonitor`。**
@@ -274,20 +264,20 @@ val callback = object : ConnectivityManager.NetworkCallback() {
 
 ### In Scope
 
-- k2 engine: `NetworkChangeNotifier` interface + Config 字段 + lifecycle wiring (v1)
-- k2 daemon: sing-tun monitor adapter + tun.Options.InterfaceMonitor 注入 (v1)
-- k2 tun_desktop.go: 接受 InterfaceMonitor 参数 (v1)
-- iOS EventBridge: reconnecting/connected 改为 NSLog (v1)
-- Android capacitor-k2.ts: vpnStateChange 结构化 debug log (v1)
-- Android K2VpnService: 增加 onLost callback (v1)
+- k2 engine: `NetworkChangeNotifier` interface + Config 字段 + lifecycle wiring
+- k2 daemon: sing-tun monitor adapter + tun.Options.InterfaceMonitor 注入
+- k2 tun_desktop.go: 接受 InterfaceMonitor 参数
+- iOS EventBridge: reconnecting/connected 改为 NSLog
+- Android capacitor-k2.ts: vpnStateChange 结构化 debug log
+- Android K2VpnService: 增加 onLost callback
 
 ### Out of Scope
 
-- Event-push hybrid 架构（scrum 评估已否决）(v1)
-- reconnecting UI 显示（快速切换无需 UI 反馈）(v1)
-- VPN store 事件驱动更新（保持 2s polling）(v1)
-- retrying / networkAvailable 真实数据流（future consideration）(v1)
-- OpenWrt 网络检测（sing-tun netlink 在 OpenWrt 可能受限，需单独验证）(v1)
+- Event-push hybrid 架构（scrum 评估已否决）
+- reconnecting UI 显示（快速切换无需 UI 反馈）
+- VPN store 事件驱动更新（保持 2s polling）
+- retrying / networkAvailable 真实数据流（future consideration）
+- OpenWrt 网络检测（sing-tun netlink 在 OpenWrt 可能受限，需单独验证）
 
 ## Technical Decisions
 
@@ -307,76 +297,76 @@ val callback = object : ConnectivityManager.NetworkCallback() {
 - Given: macOS 上 VPN 已连接
 - When: WiFi→Ethernet 切换（默认路由接口变化）
 - Then: sing-tun monitor 检测到变化 → `engine.OnNetworkChanged()` → wire reset → 连接在 <3s 内恢复
-- Verify: 2s polling 下一轮显示 `connected`（对比之前 30s 超时） (v1)
+- Verify: 2s polling 下一轮显示 `connected`（对比之前 30s 超时）
 
 ### AC2: Desktop Windows 网络切换自动重连
 - Given: Windows 上 VPN 已连接
 - When: 网络接口变化
-- Then: 同 AC1 (v1)
+- Then: 同 AC1
 
 ### AC3: Desktop Linux 网络切换自动重连
 - Given: Linux 上 VPN 已连接
 - When: 默认路由接口变化
-- Then: 同 AC1 (v1)
+- Then: 同 AC1
 
 ### AC4: Monitor 不自触发
 - Given: sing-tun monitor 和 tun.Options.InterfaceMonitor 使用同一实例
 - When: TUN 接口创建/路由设置
-- Then: monitor 不触发 `OnNetworkChanged()`（TUN 已被 `RegisterMyInterface` 排除） (v1)
+- Then: monitor 不触发 `OnNetworkChanged()`（TUN 已被 `RegisterMyInterface` 排除）
 
 ### AC5: Monitor 创建失败 graceful 降级
 - Given: 平台不支持 network monitor（如 ErrInvalid）
 - When: daemon 启动
-- Then: 日志 warn，engine 正常工作，无 monitor callback。降级为 30s idle timeout 恢复。 (v1)
+- Then: 日志 warn，engine 正常工作，无 monitor callback。降级为 30s idle timeout 恢复。
 
 ### AC6: iOS EventBridge 日志可观测
 - Given: iOS VPN 已连接
 - When: 网络切换触发 `OnNetworkChanged()` → EventBridge 收到 `"reconnecting"` + `"connected"`
-- Then: NSLog 输出 `[K2:NE] transient state: reconnecting` 和 `[K2:NE] transient state: connected` (v1)
+- Then: NSLog 输出 `[K2:NE] transient state: reconnecting` 和 `[K2:NE] transient state: connected`
 
 ### AC7: Android vpnStateChange 结构化日志
 - Given: Android VPN 已连接
 - When: 网络切换触发状态事件
-- Then: JS console 输出包含 state 值和 connectedAt（如有） (v1)
+- Then: JS console 输出包含 state 值和 connectedAt（如有）
 
 ### AC8: Android onLost 清理死连接
 - Given: Android VPN 已连接
 - When: WiFi 断开且无 4G
-- Then: `onLost` 立即调用 `onNetworkChanged()`（无 debounce），清理 QUIC 死连接 (v1)
+- Then: `onLost` 立即调用 `onNetworkChanged()`（无 debounce），清理 QUIC 死连接
 - When: 4G 恢复
-- Then: `onAvailable` 500ms debounce 后 `onNetworkChanged()`，lazy dial 重建连接 (v1)
+- Then: `onAvailable` 500ms debounce 后 `onNetworkChanged()`，lazy dial 重建连接
 
 ### AC9: 不引入事件驱动 store 更新
 - Given: 任意平台网络切换
 - When: 事件到达 JS（Android）或被 EventBridge 处理（iOS）
-- Then: VPN store 不被事件直接更新。状态变更仅通过 2s polling 反映。 (v1)
+- Then: VPN store 不被事件直接更新。状态变更仅通过 2s polling 反映。
 
 ## Testing Strategy
 
 ### Go engine (k2/ submodule)
-- Unit test: `NetworkChangeNotifier` mock → engine.Start() 注册 callback → mock 触发 → verify `OnNetworkChanged()` 被调用 (v1)
-- Unit test: engine.Config.NetworkMonitor = nil → engine 正常启动，无 panic (v1)
-- Unit test: engine.Stop() 调用 monitor.Close() (v1)
+- Unit test: `NetworkChangeNotifier` mock → engine.Start() 注册 callback → mock 触发 → verify `OnNetworkChanged()` 被调用
+- Unit test: engine.Config.NetworkMonitor = nil → engine 正常启动，无 panic
+- Unit test: engine.Stop() 调用 monitor.Close()
 
 ### Daemon adapter
-- Integration test: `NewNetworkMonitor()` 在 macOS/Linux/Windows 返回有效 monitor (v1)
-- Integration test: monitor + tun.Options 使用同一 `DefaultInterfaceMonitor` 实例 (v1)
+- Integration test: `NewNetworkMonitor()` 在 macOS/Linux/Windows 返回有效 monitor
+- Integration test: monitor + tun.Options 使用同一 `DefaultInterfaceMonitor` 实例
 
 ### Mobile
-- Manual test: iOS — 切换网络后查看设备 Console，确认 NSLog 输出 (v1)
-- Manual test: Android — 切换网络后查看 logcat / WebView console，确认事件日志 (v1)
-- Manual test: Android — 飞行模式开关后确认连接恢复 (v1)
+- Manual test: iOS — 切换网络后查看设备 Console，确认 NSLog 输出
+- Manual test: Android — 切换网络后查看 logcat / WebView console，确认事件日志
+- Manual test: Android — 飞行模式开关后确认连接恢复
 
 ### Desktop E2E
-- Manual test: macOS — WiFi→Ethernet 切换，观察 VPN 恢复时间（<3s vs 之前 30s） (v1)
-- Manual test: Windows — 网络切换恢复 (v1)
+- Manual test: macOS — WiFi→Ethernet 切换，观察 VPN 恢复时间（<3s vs 之前 30s）
+- Manual test: Windows — 网络切换恢复
 
 ## Deployment & CI/CD
 
-- k2 submodule PR: engine interface + daemon adapter + tun_desktop.go 修改 (v1)
-- k2app PR: iOS EventBridge log + Android capacitor-k2.ts log + K2VpnService onLost (v1)
-- CI: existing `cargo test` + `yarn test` + `go test ./...` cover regressions (v1)
-- gomobile rebind required after k2 submodule update (for Android onLost changes) (v1)
+- k2 submodule PR: engine interface + daemon adapter + tun_desktop.go 修改
+- k2app PR: iOS EventBridge log + Android capacitor-k2.ts log + K2VpnService onLost
+- CI: existing `cargo test` + `yarn test` + `go test ./...` cover regressions
+- gomobile rebind required after k2 submodule update (for Android onLost changes)
 
 ## Impact Analysis
 
@@ -395,5 +385,5 @@ Webapp and mobile changes are minimal (log format only).
 ## Future Considerations
 
 - **Event-push architecture**: If real-time stats (bandwidth, latency) are needed, re-evaluate event channel design holistically. Do not build incrementally on debug log listeners. (scrum #1)
-- **OpenWrt network monitor**: sing-tun netlink works on standard Linux but may need testing on OpenWrt. Track as separate validation. (v1)
-- **Sleep/wake detection**: sing-tun monitor handles route changes but doesn't explicitly detect sleep/wake cycles. macOS `NSWorkspace.willSleepNotification` and Windows `WM_POWERBROADCAST` may be needed for aggressive session cleanup. (v1)
+- **OpenWrt network monitor**: sing-tun netlink works on standard Linux but may need testing on OpenWrt. Track as separate validation.
+- **Sleep/wake detection**: sing-tun monitor handles route changes but doesn't explicitly detect sleep/wake cycles. macOS `NSWorkspace.willSleepNotification` and Windows `WM_POWERBROADCAST` may be needed for aggressive session cleanup.

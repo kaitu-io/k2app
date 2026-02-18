@@ -621,6 +621,34 @@ pub async fn upload_logs(params: Params) -> Result<(), String> {
 
 ---
 
+## sing-tun logger.Logger Interface Requires 7 No-Op Methods (2026-02-18, network-change-reconnect)
+
+**Problem**: `tun.NewNetworkUpdateMonitor(logger)` and `tun.NewDefaultInterfaceMonitor(netMon, logger, opts)` require a `logger.Logger` from `github.com/sagernet/sing/common/logger`. This is NOT the stdlib `log.Logger` — it has 7 methods: `Trace`, `Debug`, `Info`, `Warn`, `Error`, `Fatal`, `Panic`.
+
+**Solution**: Define a `nopLogger` struct that satisfies all 7 methods with no-ops. Pass as nil pointer to the struct type:
+```go
+type nopLogger struct{}
+func (l *nopLogger) Trace(args ...any) {}
+func (l *nopLogger) Debug(args ...any) {}
+func (l *nopLogger) Info(args ...any)  {}
+func (l *nopLogger) Warn(args ...any)  {}
+func (l *nopLogger) Error(args ...any) {}
+func (l *nopLogger) Fatal(args ...any) {}
+func (l *nopLogger) Panic(args ...any) {}
+
+// Usage:
+netMon, err := tun.NewNetworkUpdateMonitor((*nopLogger)(nil))
+```
+
+**Why nil pointer works**: Go interfaces store (type, value) pairs. `(*nopLogger)(nil)` has type `*nopLogger` and nil value — the interface is non-nil (type pointer exists), so the caller can invoke methods without panic (methods use pointer receiver but don't dereference anything).
+
+**Alternative**: Pass daemon's real logger if structured log output is desired from sing-tun. nopLogger is appropriate when sing-tun's internal debug messages would be noise.
+
+**Files**: `k2/daemon/network_monitor.go`
+**Source**: network-change-reconnect (2026-02-18)
+
+---
+
 ## QUIC/smux Dead Connection Caching Causes Silent Tunnel Death (2026-02-17, android-vpn-audit)
 
 **Problem**: `QUICClient.connect()` caches `c.conn` after first successful connection. When the network changes (WiFi→4G), the cached QUIC connection dies but is never cleared. All subsequent `DialTCP`/`DialUDP` calls reuse the dead connection, fail, and the engine still reports `"connected"`.

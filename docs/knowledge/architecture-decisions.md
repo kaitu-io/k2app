@@ -605,6 +605,94 @@ NE process is separate from app process — NWPathMonitor runs in the VPN extens
 
 ---
 
+## NetworkChangeNotifier: Engine Interface, sing-tun Adapter in Daemon (2026-02-18, network-change-reconnect)
+
+**Decision**: `NetworkChangeNotifier` interface is defined in the `engine` package (not daemon). The daemon package provides `singTunMonitor` adapter that implements it by wrapping sing-tun's `NetworkUpdateMonitor` + `DefaultInterfaceMonitor`. Mobile platforms (iOS/Android) call `OnNetworkChanged()` directly from native bridge code — they don't need this interface.
+
+**Why interface in engine, not daemon**:
+- Engine must not import third-party tun libraries directly — clean dependency boundary
+- Interface allows testability with mock monitors (used in 5 engine tests)
+- Mobile calls `OnNetworkChanged()` without any monitor (platform handles detection natively)
+
+**Instance sharing: same DefaultInterfaceMonitor for engine callback AND tun.Options**:
+```go
+// k2/daemon/network_monitor.go
+func NewNetworkMonitor() (engine.NetworkChangeNotifier, tun.DefaultInterfaceMonitor, error) {
+    // Returns SAME ifaceMon for both uses
+    return &singTunMonitor{...}, ifaceMon, nil
+}
+// k2/daemon/daemon.go — both receive same instance
+ecfg.NetworkMonitor = monitor      // engine callback path
+ecfg.InterfaceMonitor = ifaceMon   // tun.Options self-exclusion path
+```
+`tun.Options.InterfaceMonitor` calls `RegisterMyInterface(tunName)` internally, excluding TUN self-routing from triggering change events. If you create separate instances, this self-exclusion is lost — the engine would constantly reconnect when the TUN interface is set up.
+
+**MonitorFactory for testability** (same pattern as `EngineStarter`):
+```go
+type Daemon struct {
+    EngineStarter  func(engine.Config) (*engine.Engine, error)
+    MonitorFactory func() (engine.NetworkChangeNotifier, any, error)
+}
+```
+Tests inject mock factories. Production uses `defaultMonitorFactory()` which calls `NewNetworkMonitor()`.
+
+**Non-fatal on failure**: Certain environments (containers, minimal Linux, edge cases) may return `ErrInvalid` from `NewNetworkUpdateMonitor`. Daemon logs a warning and continues — engine degrades to passive 30s idle timeout recovery.
+
+**Validating tests**: `k2/engine/engine_test.go` — `TestEngine_NetworkMonitor_NilMonitor_NoPanic`, `TestEngine_NetworkMonitor_StartedOnEngineStart`, `TestEngine_NetworkMonitor_ClosedOnEngineStop`, `TestEngine_NetworkMonitor_ClosedOnFail`, `TestEngine_NetworkMonitor_CallbackTriggersOnNetworkChanged`; `k2/daemon/network_monitor_test.go` — `TestNewNetworkMonitor_ReturnsAdapter`, `TestDaemon_EngineConfig_IncludesMonitor`, `TestDaemon_MonitorFactory_Failure_NonFatal`
+
+---
+
+## Polling-Only UI State: Events Are Debug-Only (2026-02-18, network-change-reconnect)
+
+**Decision**: 2s polling via `_k2.run('status')` remains the sole source of UI state updates. Network change events (Android `vpnStateChange`, iOS `EventBridge` transient states) are logged for debug observability only. No event-driven store updates.
+
+**Context**: The `reconnecting` transient state (emitted by `engine.OnNetworkChanged()`) is microsecond-duration — engine stays `StateConnected` throughout. The UI would never actually see it via any polling interval.
+
+**Why not event-push hybrid**:
+- Dual-channel (event + poll) creates timing consistency problems — debounce logic was designed for single source
+- Polling's self-healing property (every 2s gets ground truth from backend) is more reliable than event + missed-event recovery
+- Fast network transitions (<5s) are user-invisible — no `reconnecting` UI flash needed
+- Long disconnections (>5s) produce `error` state that existing polling catches via `error synthesis` in bridge
+
+**Implementation**:
+- iOS `EventBridge.onStateChange`: added `else { NSLog("[K2:NE] transient state: \(state)") }` — `reconnecting` + `connected` logged, not propagated to App process
+- Android `capacitor-k2.ts`: `console.debug('[K2:Capacitor] vpnStateChange:', event.state, ...)` — structured log, VPN store not touched
+
+**Future consideration**: If real-time bandwidth stats or sub-second latency display are needed, design a complete event-push architecture from scratch. Do NOT incrementally extend the debug log listeners into a hybrid.
+
+**Validating tests**: `k2/engine/engine_test.go` — `TestEngine_NetworkMonitor_CallbackTriggersOnNetworkChanged` (verifies `OnNetworkChanged` called); AC9 verified manually (VPN store not updated by events).
+
+---
+
+## Android onLost: Immediate Call, No Debounce (2026-02-18, network-change-reconnect)
+
+**Decision**: `K2VpnService.registerNetworkCallback()` `onLost` override calls `engine.onNetworkChanged()` immediately (no debounce). `onAvailable` retains 500ms debounce.
+
+**Rationale**:
+- `onLost`: Network is already gone. There is no benefit to waiting — the connection is dead. Clearing QUIC/TCP-WS cached connections immediately allows faster lazy-reconnect when the next network arrives.
+- `onAvailable`: New network may trigger multiple callbacks during interface stabilization (routing table updates, DHCP). 500ms debounce absorbs the storm and reconnects once.
+
+**Implementation**:
+```kotlin
+override fun onAvailable(network: Network) {
+    pendingNetworkChange?.let { mainHandler.removeCallbacks(it) }
+    val runnable = Runnable { engine?.onNetworkChanged() }
+    pendingNetworkChange = runnable
+    mainHandler.postDelayed(runnable, 500)
+}
+override fun onLost(network: Network) {
+    Log.d(TAG, "Network lost, clearing cached connections")
+    pendingNetworkChange?.let { mainHandler.removeCallbacks(it) }
+    engine?.onNetworkChanged()  // Immediate, cancels pending debounce too
+}
+```
+
+**Key invariant**: `onLost` cancels any pending `onAvailable` debounce before calling immediately. This prevents double-reconnect if onLost fires during the onAvailable debounce window.
+
+**Validating tests**: Manual device testing — airplane mode on/off cycle; WiFi drop with 4G available.
+
+---
+
 ## sing-tun Network Monitoring: Available But Unused by k2 Engine (2026-02-17, android-vpn-audit)
 
 **Context**: Investigating why k2 engine has no network change detection or auto-reconnect.

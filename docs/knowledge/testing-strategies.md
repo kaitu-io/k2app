@@ -303,6 +303,63 @@ for _, tt := range tests {
 
 ---
 
+## Engine NetworkChangeNotifier Testing: Triggerable Mock + Lifecycle Assertions (2026-02-18, network-change-reconnect)
+
+**Pattern**: `NetworkChangeNotifier` mock for engine tests needs to be triggerable from the test — not just passively callable. Use a channel-based design so the test can synchronously verify callbacks without timing issues.
+
+**Mock design** (`k2/engine/engine_test.go`):
+```go
+type mockNetworkMonitor struct {
+    mu       sync.Mutex
+    started  bool
+    closed   bool
+    callback func()
+}
+
+func (m *mockNetworkMonitor) Start(callback func()) error {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+    m.started = true
+    m.callback = callback
+    return nil
+}
+
+func (m *mockNetworkMonitor) Close() error {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+    m.closed = true
+    return nil
+}
+
+func (m *mockNetworkMonitor) triggerCallback() {
+    m.mu.Lock()
+    cb := m.callback
+    m.mu.Unlock()
+    if cb != nil {
+        cb()
+    }
+}
+```
+
+**Key test cases for any NetworkChangeNotifier-aware component**:
+1. `nil` monitor → no panic, engine starts normally (mobile path)
+2. Non-nil monitor → `Start()` called on engine start, callback registered
+3. Callback triggered → `OnNetworkChanged()` is called (verify via state signals or reset calls)
+4. Monitor closed on `engine.Stop()` — verify `isClosed() == true`
+5. Monitor closed on engine failure — verify cleanup even on error path
+
+**Daemon testability via MonitorFactory**:
+```go
+d.MonitorFactory = func() (engine.NetworkChangeNotifier, any, error) {
+    return &mockMonitor{}, "fake-iface-mon", nil
+}
+```
+This mirrors the `EngineStarter` testability pattern — same dependency injection for the production-replaceable factory.
+
+**Validating tests**: `k2/engine/engine_test.go` — 5 `TestEngine_NetworkMonitor_*` tests; `k2/daemon/network_monitor_test.go` — 3 tests
+
+---
+
 ## Engine Package TDD: Config Combinations as Test Cases (2026-02-16, unified-engine)
 
 **Pattern**: `engine_test.go` has 14 test functions covering all Config field combinations. Each test verifies one aspect of Engine behavior.
