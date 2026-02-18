@@ -75,6 +75,7 @@ Frontend uses two separate globals injected before app loads. They have distinct
 │   status, version    │  │   openExternal()                │
 │                      │  │   updater?: IUpdater            │
 └──────────┬───────────┘  │   reinstallService?(), getPid?()│
+│   uploadLogs?()                │
            │              └────────────────────────────────┘
            ↓
 ┌──────────────────────────────────────────────────────────┐

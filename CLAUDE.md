@@ -88,7 +88,7 @@ Makefile             Build orchestration — version from package.json, k2 from 
 ## Domain Vocabulary
 
 - **IK2Vpn** — VPN control interface (`window._k2`): single `run(action, params)` method
-- **IPlatform** — Platform capabilities interface (`window._platform`): storage, UDID, clipboard, logging
+- **IPlatform** — Platform capabilities interface (`window._platform`): storage, UDID, clipboard, openExternal, updater, uploadLogs
 - **cloudApi** — Cloud API HTTP module with auth injection and token refresh
 - **Engine** — Unified tunnel lifecycle manager (k2/engine/) used by both desktop daemon and mobile wrapper
 - **ClientConfig** — Universal config contract: Go `config.ClientConfig` = TS `ClientConfig`. Webapp assembles from Cloud API + user preferences, passes to `_k2.run('up', config)`.
