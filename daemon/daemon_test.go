@@ -152,6 +152,94 @@ func TestStatusIncludesClientConfig(t *testing.T) {
 	}
 }
 
+// ==========================================================================
+// Daemon error alignment tests (T2)
+// ==========================================================================
+
+func TestDaemon_StatusWithStructuredError(t *testing.T) {
+	d := New()
+	d.EngineStarter = failingEngineStarter // returns fmt.Errorf("simulated failure")
+
+	cfg := config.ClientFromURL("k2v5://test:tok@host:443")
+	err := d.doUp(cfg, 0)
+	if err == nil {
+		t.Fatal("expected error from failing starter")
+	}
+
+	// Status should contain a structured error object, not a plain string.
+	info := d.statusInfo()
+	errRaw, ok := info["error"]
+	if !ok {
+		t.Fatal("expected error key in status after failed doUp")
+	}
+
+	// Serialize to JSON and re-parse to verify structure.
+	// The error must be an object with "code" and "message" fields.
+	data, marshalErr := json.Marshal(info)
+	if marshalErr != nil {
+		t.Fatalf("json.Marshal(statusInfo): %v", marshalErr)
+	}
+
+	var parsed map[string]json.RawMessage
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+
+	var errObj struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(parsed["error"], &errObj); err != nil {
+		t.Fatalf("error field is not a structured object: %v (raw: %s, type: %T)", err, string(parsed["error"]), errRaw)
+	}
+
+	if errObj.Code == 0 {
+		t.Fatal("expected non-zero error code")
+	}
+	if errObj.Message == "" {
+		t.Fatal("expected non-empty error message")
+	}
+}
+
+func TestDaemon_StatusNoError(t *testing.T) {
+	d := New()
+
+	// Fresh daemon, no doUp called — status should not have "error" key.
+	info := d.statusInfo()
+	if _, ok := info["error"]; ok {
+		t.Fatalf("expected no error key in fresh daemon status, got %v", info["error"])
+	}
+}
+
+func TestDaemon_DoUpClearsLastError(t *testing.T) {
+	d := New()
+	cfg := config.ClientFromURL("k2v5://test:tok@host:443")
+
+	// First: fail.
+	d.EngineStarter = failingEngineStarter
+	if err := d.doUp(cfg, 0); err == nil {
+		t.Fatal("expected error from failing starter")
+	}
+
+	// Verify error is set.
+	info := d.statusInfo()
+	if info["error"] == nil {
+		t.Fatal("expected error after failed doUp")
+	}
+
+	// Second: succeed.
+	d.EngineStarter = mockEngineStarter
+	if err := d.doUp(cfg, 0); err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+
+	// After success, error should be cleared (nil, not present in map).
+	info = d.statusInfo()
+	if info["error"] != nil {
+		t.Fatalf("expected error cleared after successful doUp, got %v", info["error"])
+	}
+}
+
 func TestAutoReconnectWithSavedConfig(t *testing.T) {
 	os.Remove(stateFilePath())
 	defer os.Remove(stateFilePath())
