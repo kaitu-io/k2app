@@ -134,6 +134,13 @@ func (s *Sidecar) Start() error {
 	}
 	log.Printf("[Sidecar] Created ready flag: %s", readyFile)
 
+	// Step 3.6: Start k2v5 connect-url polling (if K2 tunnel is enabled)
+	// k2v5 writes connect-url.txt after startup, which is after sidecar's
+	// initial registration. This goroutine waits for the file and re-registers.
+	if s.config.Tunnel.Enabled && s.config.Tunnel.Domain != "" {
+		go s.pollAndRegisterK2V5ConnectURL()
+	}
+
 	// Step 4: Start RADIUS proxy (if OC tunnel is configured)
 	if s.config.OC.Domain != "" {
 		if err := s.startRadiusProxy(); err != nil {
@@ -239,6 +246,55 @@ func (s *Sidecar) buildTunnelConfigs() []sidecar.TunnelConfig {
 	}
 
 	return tunnels
+}
+
+// readConnectURL reads connect-url.txt from the given directory and builds a
+// clean server URL using BuildServerURL. Returns empty string if the file
+// doesn't exist or doesn't contain usable parameters.
+func readConnectURL(dir, domain string, port, hopStart, hopEnd int) string {
+	data, err := os.ReadFile(filepath.Join(dir, "connect-url.txt"))
+	if err != nil {
+		return ""
+	}
+	return sidecar.BuildServerURL(strings.TrimSpace(string(data)), domain, port, hopStart, hopEnd)
+}
+
+// pollAndRegisterK2V5ConnectURL polls for /etc/k2v5/connect-url.txt and
+// re-registers with Center once the file appears. k2v5 writes this file
+// after startup, which happens after sidecar's initial registration.
+func (s *Sidecar) pollAndRegisterK2V5ConnectURL() {
+	const pollInterval = 5 * time.Second
+	const logEvery = 6 // log "waiting" every 6 polls (30s)
+
+	iteration := 0
+	for {
+		serverURL := readConnectURL("/etc/k2v5",
+			s.config.Tunnel.Domain, s.config.Tunnel.Port,
+			s.config.Tunnel.HopPortStart, s.config.Tunnel.HopPortEnd)
+
+		if serverURL != "" {
+			// Rebuild tunnel configs with the discovered serverURL
+			tunnels := s.buildTunnelConfigs()
+			for i := range tunnels {
+				if tunnels[i].Domain == s.config.Tunnel.Domain {
+					tunnels[i].ServerURL = serverURL
+				}
+			}
+
+			if _, err := s.nodeInstance.Register(tunnels); err != nil {
+				log.Printf("[Sidecar] Failed to re-register with k2v5 serverURL: %v", err)
+			} else {
+				log.Printf("[Sidecar] Updated k2v5 serverURL: %s", serverURL)
+			}
+			return
+		}
+
+		iteration++
+		if iteration%logEvery == 0 {
+			log.Printf("[Sidecar] Waiting for k2v5 connect-url.txt...")
+		}
+		time.Sleep(pollInterval)
+	}
 }
 
 // saveCertificates saves tunnel certificates to required directories

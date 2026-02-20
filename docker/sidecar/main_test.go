@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"text/template"
@@ -42,4 +44,34 @@ func TestK2V5ConfigTemplate_ContainsCertDir(t *testing.T) {
 		assert.Contains(t, output, "dormant",
 			"tls entries should be annotated as dormant")
 	}
+}
+
+func TestReadConnectURL_FindsFileAndBuildsURL(t *testing.T) {
+	dir := t.TempDir()
+
+	// Write a valid k2v5:// connect URL
+	content := "k2v5://udid:token@1.2.3.4:443?ech=AABBCC&pin=sha256:testpin123&insecure=1\n"
+	err := os.WriteFile(filepath.Join(dir, "connect-url.txt"), []byte(content), 0644)
+	require.NoError(t, err)
+
+	result := readConnectURL(dir, "test.example.com", 443, 10020, 10119)
+
+	assert.NotEmpty(t, result, "should return a non-empty server URL")
+	assert.Contains(t, result, "k2v5://test.example.com:443")
+	assert.Contains(t, result, "ech=AABBCC")
+	assert.Contains(t, result, "pin=sha256:testpin123")
+	assert.Contains(t, result, "hop=10020-10119")
+	// Auth credentials must be stripped
+	assert.NotContains(t, result, "udid")
+	assert.NotContains(t, result, "token")
+	// Dev flags must be stripped
+	assert.NotContains(t, result, "insecure")
+}
+
+func TestReadConnectURL_ReturnsEmptyWhenMissing(t *testing.T) {
+	dir := t.TempDir()
+
+	result := readConnectURL(dir, "test.example.com", 443, 10020, 10119)
+
+	assert.Empty(t, result, "should return empty string when file is missing")
 }
