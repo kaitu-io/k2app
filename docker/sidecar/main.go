@@ -188,15 +188,34 @@ func (s *Sidecar) buildTunnelConfigs() []sidecar.TunnelConfig {
 
 	// K2 tunnel — use k2v5 protocol for new deployments
 	if s.config.Tunnel.Enabled && s.config.Tunnel.Domain != "" {
+		// Read k2v5 connect URL for cert pin and ECH config
+		var k2v5CertPin, k2v5ECHConfig string
+		connectURLPath := fmt.Sprintf("%s/connect-url.txt", s.config.ConfigDir)
+		if data, err := os.ReadFile(connectURLPath); err == nil {
+			k2v5CertPin, k2v5ECHConfig = sidecar.ParseConnectURL(strings.TrimSpace(string(data)))
+			if k2v5CertPin != "" {
+				pinPreview := k2v5CertPin
+				if len(pinPreview) > 16 {
+					pinPreview = pinPreview[:16]
+				}
+				log.Printf("[Sidecar] Parsed k2v5 connect URL: pin=%s... ech=%d bytes",
+					pinPreview, len(k2v5ECHConfig))
+			}
+		} else if !os.IsNotExist(err) {
+			log.Printf("[Sidecar] Warning: failed to read connect-url.txt: %v", err)
+		}
+
 		tunnels = append(tunnels, sidecar.TunnelConfig{
-			Domain:       s.config.Tunnel.Domain,
-			Protocol:     "k2v5", // K2 protocol version 5
-			Port:         s.config.Tunnel.Port,
-			HopPortStart: s.config.Tunnel.HopPortStart,
-			HopPortEnd:   s.config.Tunnel.HopPortEnd,
-			IsTest:       s.config.TestNode,
-			HasRelay:     s.config.Relay.Enabled,
-			HasTunnel:    s.config.Tunnel.Enabled,
+			Domain:        s.config.Tunnel.Domain,
+			Protocol:      "k2v5", // K2 protocol version 5
+			Port:          s.config.Tunnel.Port,
+			HopPortStart:  s.config.Tunnel.HopPortStart,
+			HopPortEnd:    s.config.Tunnel.HopPortEnd,
+			IsTest:        s.config.TestNode,
+			HasRelay:      s.config.Relay.Enabled,
+			HasTunnel:     s.config.Tunnel.Enabled,
+			CertPin:       k2v5CertPin,
+			ECHConfigList: k2v5ECHConfig,
 		})
 		testSuffix := ""
 		if s.config.TestNode {
