@@ -1,0 +1,35 @@
+{
+  "theme": {
+    "toggle": "Toggle theme",
+    "light": "Light mode",
+    "dark": "Dark mode",
+    "system": "System",
+    "switchToLight": "Switch to light mode",
+    "switchToDark": "Switch to dark mode",
+    "followSystem": "Follow system settings"
+  },
+  "opensource": {
+    "title": "Open Source Countdown",
+    "subtitle": "Kaitu is going open source",
+    "description": "We are committed to open-sourcing Kaitu's core code, allowing everyone to view, verify, and contribute code to build a more secure and transparent network tool together.",
+    "targetDate": "Open Source Release Date",
+    "targetDateValue": "June 04, 2026",
+    "days": "Days",
+    "hours": "Hours",
+    "minutes": "Minutes",
+    "seconds": "Seconds",
+    "countingDown": "Countdown to open source release...",
+    "released": "We're now open source!",
+    "releasedDesc": "Kaitu's core code is now open source on GitHub. Visit our repository to view code, submit issues, or contribute code.",
+    "viewOnGithub": "View on GitHub",
+    "whyTitle": "Why Choose Open Source?",
+    "reason1Title": "Transparent and Trustworthy",
+    "reason1Desc": "Open source code allows everyone to review our implementation, ensuring there are no backdoors or malicious code, building genuine trust.",
+    "reason2Title": "Community-Driven",
+    "reason2Desc": "Open source enables developers worldwide to participate, submit improvements and fixes, making the product better.",
+    "reason3Title": "Security Assurance",
+    "reason3Desc": "More eyes mean faster discovery and fixing of security vulnerabilities. Open source software is often more secure than closed source.",
+    "reason4Title": "Knowledge Sharing",
+    "reason4Desc": "We believe technology should benefit everyone. Open source allows everyone to learn and use advanced network technologies."
+  }
+}

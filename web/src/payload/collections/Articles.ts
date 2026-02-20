@@ -1,0 +1,290 @@
+import type { CollectionConfig, CollectionBeforeChangeHook, FieldHook } from 'payload'
+import { generateArticleMetadata } from '../hooks/ai-content-hook'
+
+// Reserved paths that cannot be used by CMS content (Next.js static routes)
+const RESERVED_PATHS = [
+  '/403',
+  '/account',
+  '/discovery',
+  '/install',
+  '/login',
+  '/opensource',
+  '/privacy',
+  '/purchase',
+  '/retailer',
+  '/routers',
+  '/s',
+  '/terms',
+  '/manager',
+  '/api',
+]
+
+// Validate path is not reserved
+const validatePath: FieldHook = ({ value }) => {
+  if (!value) return value
+
+  const normalizedPath = value.startsWith('/') ? value : `/${value}`
+  const pathSegments = normalizedPath.split('/').filter(Boolean)
+  const firstSegment = `/${pathSegments[0]}`
+
+  if (RESERVED_PATHS.includes(firstSegment)) {
+    throw new Error(`路径 "${firstSegment}" 是保留路径，不能用于 CMS 内容。保留路径包括: ${RESERVED_PATHS.join(', ')}`)
+  }
+
+  return normalizedPath
+}
+
+// AI-powered beforeChange hook for content processing
+const aiContentHook: CollectionBeforeChangeHook = async ({ data, req, operation }) => {
+  // Only process on create or when content changes
+  if (operation === 'create' || (operation === 'update' && data.content)) {
+    try {
+      // Check if AI processing is enabled and API key is available
+      if (process.env.AI_API_KEY && process.env.AI_ENABLED === 'true') {
+        const enhanced = await generateArticleMetadata({
+          content: data.content,
+          title: data.title,
+          locale: req.locale || 'zh-CN',
+        })
+
+        // Auto-fill summary if not manually provided
+        if (!data.summary && enhanced.summary) {
+          data.summary = enhanced.summary
+        }
+
+        // Auto-fill SEO fields if not manually provided
+        if (!data.seoTitle && enhanced.seoTitle) {
+          data.seoTitle = enhanced.seoTitle
+        }
+        if (!data.seoDescription && enhanced.seoDescription) {
+          data.seoDescription = enhanced.seoDescription
+        }
+        if (!data.slug && enhanced.slug) {
+          data.slug = enhanced.slug
+        }
+      }
+    } catch (error) {
+      // Log error but don't block the save operation
+      console.error('AI content hook error:', error)
+    }
+  }
+
+  return data
+}
+
+export const Articles: CollectionConfig = {
+  slug: 'articles',
+  admin: {
+    useAsTitle: 'title',
+    description: 'Blog articles and news posts',
+    group: 'Content',
+    defaultColumns: ['title', '_status', 'category', 'publishedAt', 'updatedAt'],
+  },
+  access: {
+    // Public can read published articles (using Payload's built-in _status field)
+    read: ({ req: { user } }) => {
+      if (user) return true
+      // Use Payload's built-in _status field from versions.drafts
+      return {
+        _status: {
+          equals: 'published',
+        },
+      }
+    },
+    create: ({ req: { user } }) => Boolean(user),
+    update: ({ req: { user } }) => Boolean(user),
+    delete: ({ req: { user } }) => user?.role === 'admin',
+  },
+  hooks: {
+    beforeChange: [aiContentHook],
+  },
+  versions: {
+    drafts: {
+      autosave: {
+        interval: 30000, // 30 seconds
+      },
+      schedulePublish: true,
+    },
+    maxPerDoc: 10,
+  },
+  fields: [
+    // Main content fields (localized)
+    {
+      name: 'title',
+      type: 'text',
+      label: 'Title',
+      required: true,
+      localized: true,
+      admin: {
+        description: 'The title of the article',
+      },
+    },
+    {
+      name: 'path',
+      type: 'text',
+      label: 'URL Path',
+      required: true,
+      unique: true,
+      admin: {
+        description: '页面访问路径，如 /about 或 /help/faq（不能使用保留路径如 /login, /purchase 等）',
+        position: 'sidebar',
+      },
+      hooks: {
+        beforeValidate: [validatePath],
+      },
+    },
+    {
+      name: 'slug',
+      type: 'text',
+      label: 'Slug',
+      required: false,
+      admin: {
+        description: 'URL-friendly identifier (auto-generated from path)',
+        position: 'sidebar',
+      },
+      hooks: {
+        beforeValidate: [
+          ({ value, data }) => {
+            // Auto-generate slug from path or title
+            if (!value) {
+              if (data?.path) {
+                // Extract last segment from path as slug
+                const segments = data.path.split('/').filter(Boolean)
+                return segments[segments.length - 1] || ''
+              }
+              if (data?.title) {
+                return data.title
+                  .toLowerCase()
+                  .replace(/[^\w\s-]/g, '')
+                  .replace(/\s+/g, '-')
+                  .substring(0, 100)
+              }
+            }
+            return value
+          },
+        ],
+      },
+    },
+    {
+      name: 'summary',
+      type: 'textarea',
+      label: 'Summary',
+      localized: true,
+      admin: {
+        description: 'Brief summary of the article (auto-generated by AI if empty)',
+      },
+    },
+    {
+      name: 'content',
+      type: 'richText',
+      label: 'Content',
+      required: true,
+      localized: true,
+    },
+    // Featured image
+    {
+      name: 'featuredImage',
+      type: 'upload',
+      relationTo: 'media',
+      label: 'Featured Image',
+      admin: {
+        description: 'Main image displayed with the article',
+      },
+    },
+    // Categorization
+    {
+      name: 'category',
+      type: 'select',
+      label: 'Category',
+      options: [
+        { label: 'News', value: 'news' },
+        { label: 'Tutorial', value: 'tutorial' },
+        { label: 'Announcement', value: 'announcement' },
+        { label: 'Guide', value: 'guide' },
+        { label: 'Case Study', value: 'case-study' },
+      ],
+      defaultValue: 'news',
+      admin: {
+        position: 'sidebar',
+      },
+    },
+    {
+      name: 'tags',
+      type: 'array',
+      label: 'Tags',
+      admin: {
+        position: 'sidebar',
+      },
+      fields: [
+        {
+          name: 'tag',
+          type: 'text',
+          required: true,
+        },
+      ],
+    },
+    // Note: Publishing status is handled by Payload's built-in _status field (versions.drafts)
+    // Use the Publish/Unpublish button in the admin UI instead of a custom status field
+    {
+      name: 'publishedAt',
+      type: 'date',
+      label: 'Published At',
+      admin: {
+        position: 'sidebar',
+        date: {
+          pickerAppearance: 'dayAndTime',
+        },
+      },
+    },
+    // SEO fields (auto-generated by AI)
+    {
+      name: 'seo',
+      type: 'group',
+      label: 'SEO',
+      admin: {
+        description: 'Search engine optimization settings (auto-generated by AI if empty)',
+      },
+      fields: [
+        {
+          name: 'seoTitle',
+          type: 'text',
+          label: 'SEO Title',
+          localized: true,
+          admin: {
+            description: 'Title for search engines (max 60 chars)',
+          },
+          maxLength: 60,
+        },
+        {
+          name: 'seoDescription',
+          type: 'textarea',
+          label: 'SEO Description',
+          localized: true,
+          admin: {
+            description: 'Description for search engines (max 160 chars)',
+          },
+          maxLength: 160,
+        },
+        {
+          name: 'ogImage',
+          type: 'upload',
+          relationTo: 'media',
+          label: 'Open Graph Image',
+          admin: {
+            description: 'Image for social media sharing (1200x630 recommended)',
+          },
+        },
+      ],
+    },
+    // Author reference
+    {
+      name: 'author',
+      type: 'relationship',
+      relationTo: 'users',
+      label: 'Author',
+      admin: {
+        position: 'sidebar',
+      },
+    },
+  ],
+}

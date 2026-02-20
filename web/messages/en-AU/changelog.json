@@ -1,0 +1,21 @@
+{
+  "title": "Changelog",
+  "subtitle": "Stay updated with the latest features and improvements in Kaitu",
+  "sections": {
+    "newFeatures": "New Features",
+    "bugFixes": "Bug Fixes",
+    "improvements": "Improvements",
+    "breakingChanges": "Breaking Changes"
+  },
+  "controls": {
+    "expandAll": "Expand All",
+    "collapseAll": "Collapse All"
+  },
+  "noData": "No changelog data available.",
+  "bullet": "•",
+  "cta": {
+    "title": "Try the Latest Version",
+    "description": "Download the latest Kaitu client for a better network experience",
+    "download": "Download Client"
+  }
+}

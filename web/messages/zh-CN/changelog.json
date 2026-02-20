@@ -1,0 +1,21 @@
+{
+  "title": "更新日志",
+  "subtitle": "了解 Kaitu 的最新功能更新和改进",
+  "sections": {
+    "newFeatures": "新功能",
+    "bugFixes": "问题修复",
+    "improvements": "改进优化",
+    "breakingChanges": "重大变更"
+  },
+  "controls": {
+    "expandAll": "全部展开",
+    "collapseAll": "全部收起"
+  },
+  "noData": "暂无更新日志数据。",
+  "bullet": "•",
+  "cta": {
+    "title": "体验最新版本",
+    "description": "下载最新版本的 Kaitu 客户端，享受更好的网络体验",
+    "download": "下载客户端"
+  }
+}

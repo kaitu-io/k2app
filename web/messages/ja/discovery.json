@@ -1,0 +1,99 @@
+{
+  "discovery": {
+    "title": "発見",
+    "subtitle": "厳選されたウェブサイト、アプリ、コンテンツで、ネットワーク体験をさらに充実させましょう",
+    "websites": {
+      "title": "人気ウェブサイト",
+      "description": "世界中の優良ウェブサイトを厳選、ワンクリックでアクセス"
+    },
+    "apps": {
+      "title": "おすすめアプリ",
+      "description": "実用ツールとエンターテインメントアプリのコレクション"
+    },
+    "videos": {
+      "title": "動画アルバム",
+      "description": "YouTube厳選チャンネルとプレイリスト"
+    },
+    "categories": {
+      "social": "ソーシャルメディア",
+      "news": "ニュース",
+      "entertainment": "エンターテインメント",
+      "education": "教育",
+      "technology": "テクノロジー",
+      "lifestyle": "ライフスタイル",
+      "shopping": "ショッピング",
+      "tools": "便利ツール"
+    },
+    "sections": {
+      "news": {
+        "title": "ニュース",
+        "description": "世界の保守系ニュースサイト厳選"
+      },
+      "entertainment": {
+        "title": "エンターテインメント",
+        "description": "優良ストリーミングプラットフォームとエンターテインメントサービス"
+      },
+      "communication": {
+        "title": "通信アプリ",
+        "description": "安全で信頼性の高いコミュニケーションツール"
+      },
+      "applications": {
+        "title": "おすすめアプリ",
+        "description": "業務効率を向上させる実用ツール"
+      },
+      "christian": {
+        "title": "福音リソース",
+        "description": "優良な福音派キリスト教学習リソース"
+      },
+      "aiTools": {
+        "title": "AIツール",
+        "description": "最先端の人工知能アプリケーションプラットフォーム"
+      },
+      "tradeTools": {
+        "title": "貿易ツール",
+        "description": "国際貿易と調達プラットフォーム"
+      },
+      "homeschool": {
+        "title": "教育リソース",
+        "description": "ホームスクールと学習プラットフォーム"
+      },
+      "videoPlaylists": {
+        "title": "動画アルバム",
+        "description": "厳選YouTubeチャンネルとプレイリストコレクション",
+        "comingSoon": "動画アルバム近日公開",
+        "comingSoonDesc": "優良なYouTubeチャンネルとプレイリストを厳選整理中です。お楽しみに"
+      }
+    },
+    "footer": {
+      "title": "さらに充実したネットワーク世界を探索",
+      "description": "Kaituネットワークプロキシを使用して、世界中の優良コンテンツに安全にアクセスし、境界のないネットワーク体験をお楽しみください",
+      "backHome": "ホームに戻る",
+      "learnRouters": "ルーター製品について"
+    }
+  },
+  "privacy": {
+    "title": "プライバシーポリシー",
+    "subtitle": "Kaitu（Kaitu.io）プライバシー保護に関する声明",
+    "contact": {
+      "title": "お問い合わせ",
+      "content": "本プライバシーポリシーについてご質問がございましたら、当社のプライバシーチームまでお問い合わせください",
+      "email": "privacy@kaitu.io"
+    }
+  },
+  "terms": {
+    "title": "利用規約",
+    "subtitle": "Kaitu（Kaitu.io）ユーザーサービス契約",
+    "contact": {
+      "title": "連絡先情報",
+      "content": "本利用規約についてご質問がございましたら、当社の法務チームまでお問い合わせください",
+      "email": "legal@kaitu.io"
+    }
+  },
+  "cookieConsent": {
+    "title": "Cookieの使用について",
+    "description": "当社は、招待コードの保存などの基本機能を含め、ブラウジング体験を向上させるためにCookieを使用しています。このウェブサイトの使用を継続することで、Cookieの使用に同意したものとみなされます。",
+    "details": "当社は、招待コード関連などの必要な機能的Cookieのみを使用し、広告や追跡目的であなたの個人情報を収集・共有することはありません。ブラウザ設定でCookie設定をいつでも管理できます。",
+    "accept": "同意する",
+    "decline": "拒否する"
+  }
+}

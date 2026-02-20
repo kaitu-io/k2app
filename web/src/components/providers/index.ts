@@ -1,0 +1,1 @@
+export { EmbedThemeProvider } from './EmbedThemeProvider';

@@ -1,0 +1,46 @@
+{
+  "nav": {
+    "openSource": "オープンソース",
+    "welcome": "ようこそ",
+    "adminPanel": "管理画面",
+    "login": "ログイン",
+    "logout": "ログアウト",
+    "purchase": "今すぐ開始",
+    "home": "ホーム",
+    "backToHome": "ホームに戻る"
+  },
+  "footer": {
+    "brandName": "Kaitu",
+    "brandDescription": "安全で便利なネットワークプロキシソリューション",
+    "product": {
+      "title": "製品",
+      "clientDownload": "クライアントダウンロード",
+      "smartRouter": "スマートルーター製品",
+      "retailerProgram": "販売代理プログラム",
+      "nodeStatus": "ノードステータス"
+    },
+    "developer": {
+      "title": "開発者",
+      "apiDocs": "APIドキュメント",
+      "openSource": "オープンソース",
+      "techBlog": "技術ブログ"
+    },
+    "support": {
+      "title": "サポート",
+      "userGuide": "ユーザーガイド",
+      "faq": "よくある質問",
+      "contact": "お問い合わせ"
+    },
+    "legal": {
+      "title": "利用規約"
+    },
+    "copyright": "All rights reserved.",
+    "copyrightSymbol": "©",
+    "period": "。"
+  },
+  "languageDetection": {
+    "message": "お使いのブラウザ言語は",
+    "question": "です。言語を切り替えますか？",
+    "switchTo": "切り替え先"
+  }
+}

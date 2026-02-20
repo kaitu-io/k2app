@@ -1,10 +1,12 @@
 # k2app — Kaitu VPN Client
 
-Tauri v2 desktop + Capacitor 6 mobile app wrapping the k2 Go tunnel core. React webapp frontend shared across platforms.
+Tauri v2 desktop + Capacitor 6 mobile app wrapping the k2 Go tunnel core. React webapp frontend shared across platforms. Next.js website for marketing, user self-service, and admin management.
 
 ## Quick Commands
 
 ```bash
+cd web && yarn dev               # Next.js website (Turbopack)
+cd web && yarn test              # vitest + playwright
 make dev                         # k2 daemon + Vite HMR + Tauri window
 make build-macos                 # Signed macOS PKG (universal binary)
 make build-macos-fast            # Same, skip notarization (local dev)
@@ -37,6 +39,10 @@ webapp/              React + MUI frontend (see webapp/CLAUDE.md)
   src/components/    Shared UI (LoginDialog, AuthGate, guards, global components)
   src/utils/         Error handling, version compare, tunnel sorting
   src/i18n/          Localization (7 locales, 15+ namespaces)
+web/                 Next.js website + admin dashboard + Payload CMS (see web/CLAUDE.md)
+  src/app/[locale]/  Public pages (install, purchase, account, wallet, changelog)
+  src/app/(manager)/ Admin dashboard (users, orders, nodes, tunnels, EDM, cloud)
+  src/app/(payload)/ Payload CMS (articles, media)
 api/                 Center API service — Go + Gin + GORM (see api/CLAUDE.md)
   cloudprovider/     Multi-cloud VPS management (AWS, Aliyun, Tencent, Bandwagon)
   cmd/               CLI entry point (start, stop, migrate, health-check)
@@ -83,12 +89,13 @@ Makefile             Build orchestration — version from package.json, k2 from 
 
 ## Tech Stack
 
-- Frontend: React 18, TypeScript, Material-UI 5, Zustand, React Router 7, i18next
+- Webapp: React 18, TypeScript, Material-UI 5, Zustand, React Router 7, i18next
+- Website: Next.js 15, React 19, Tailwind CSS 4, shadcn/ui, next-intl, Payload CMS 3
 - Desktop: Tauri v2, Rust
 - Core: Go (k2 submodule)
 - API: Go, Gin, GORM, MySQL, Redis, Asynq
 - Mobile: Capacitor 6, gomobile bind (K2Plugin Swift/Kotlin)
-- Package: yarn workspaces (`webapp`, `desktop`, `mobile`)
+- Package: yarn workspaces (`webapp`, `desktop`, `mobile`); `web` has independent yarn.lock
 - CI: GitHub Actions (`ci.yml`, `release-desktop.yml`, `build-mobile.yml`, `release-openwrt.yml`)
 
 ## Domain Vocabulary
@@ -122,6 +129,7 @@ Makefile             Build orchestration — version from package.json, k2 from 
 
 ```
 webapp/CLAUDE.md         Frontend: split globals, services, stores, i18n, components
+web/CLAUDE.md            Website: Next.js pages, admin dashboard, Payload CMS, API proxy
 desktop/CLAUDE.md        Tauri shell, Rust modules, config
 api/CLAUDE.md            Center API: routes, middleware, models, workers, cloudprovider
 k2/CLAUDE.md             Go core architecture, wire protocol, daemon API

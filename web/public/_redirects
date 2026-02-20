@@ -1,0 +1,14 @@
+# API proxy to backend service
+/api/* http://127.0.0.1:5800/api/:splat 200
+
+# SPA fallback for locale-based routes
+/zh-CN/* /zh-CN/index.html 200
+/zh-TW/* /zh-TW/index.html 200
+/zh-HK/* /zh-HK/index.html 200
+/en-US/* /en-US/index.html 200
+/en-GB/* /en-GB/index.html 200
+/en-AU/* /en-AU/index.html 200
+/ja/* /ja/index.html 200
+
+# Catch-all fallback to index.html for client-side routing
+/* /index.html 200

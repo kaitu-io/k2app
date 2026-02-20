@@ -1,0 +1,99 @@
+{
+  "discovery": {
+    "title": "發現",
+    "subtitle": "精選網站、應用與內容，讓您的網路體驗更精彩",
+    "websites": {
+      "title": "熱門網站",
+      "description": "精選全球優質網站，一鍵直達"
+    },
+    "apps": {
+      "title": "推薦應用",
+      "description": "實用工具與娛樂應用合集"
+    },
+    "videos": {
+      "title": "影片專輯",
+      "description": "YouTube精選頻道與播放清單"
+    },
+    "categories": {
+      "social": "社群媒體",
+      "news": "新聞資訊",
+      "entertainment": "娛樂影音",
+      "education": "教育學習",
+      "technology": "科技數位",
+      "lifestyle": "生活服務",
+      "shopping": "購物消費",
+      "tools": "實用工具"
+    },
+    "sections": {
+      "news": {
+        "title": "新聞資訊",
+        "description": "全球保守派新聞網站精選"
+      },
+      "entertainment": {
+        "title": "影音娛樂",
+        "description": "優質串流媒體平台和娛樂服務"
+      },
+      "communication": {
+        "title": "通訊應用",
+        "description": "安全可靠的溝通交流工具"
+      },
+      "applications": {
+        "title": "推薦應用",
+        "description": "提升工作效率的實用工具"
+      },
+      "christian": {
+        "title": "福音資源",
+        "description": "優質的福音派基督教學習資源"
+      },
+      "aiTools": {
+        "title": "AI工具",
+        "description": "前沿的人工智慧應用平台"
+      },
+      "tradeTools": {
+        "title": "外貿工具",
+        "description": "國際貿易和採購平台"
+      },
+      "homeschool": {
+        "title": "教育資源",
+        "description": "在家教育和學習平台"
+      },
+      "videoPlaylists": {
+        "title": "影片專輯",
+        "description": "精選YouTube頻道和播放清單合集",
+        "comingSoon": "影片專輯即將上線",
+        "comingSoonDesc": "我們正在精心整理優質的YouTube頻道和播放清單，敬請期待"
+      }
+    },
+    "footer": {
+      "title": "探索更精彩的網路世界",
+      "description": "使用開途網路代理，安全存取全球優質內容，享受無界限的網路體驗",
+      "backHome": "返回首頁",
+      "learnRouters": "了解路由器產品"
+    }
+  },
+  "privacy": {
+    "title": "隱私政策",
+    "subtitle": "開途（Kaitu.io）隱私保護聲明",
+    "contact": {
+      "title": "聯絡我們",
+      "content": "如果您對本隱私政策有任何疑問，請聯絡我們的隱私團隊",
+      "email": "privacy@kaitu.io"
+    }
+  },
+  "terms": {
+    "title": "服務條款",
+    "subtitle": "開途（Kaitu.io）使用者服務協議",
+    "contact": {
+      "title": "聯絡資訊",
+      "content": "如果您對本服務條款有任何疑問，請聯絡我們的法律團隊",
+      "email": "legal@kaitu.io"
+    }
+  },
+  "cookieConsent": {
+    "title": "關於 Cookie 的使用",
+    "description": "我們使用 Cookie 來改善您的瀏覽體驗，包括儲存您的邀請碼等基本功能。繼續使用本網站即表示您同意我們使用 Cookie。",
+    "details": "我們僅使用必要的功能性 Cookie（如邀請碼關聯），不會收集或分享您的個人資訊用於廣告或追蹤目的。您可以隨時在瀏覽器設定中管理 Cookie 偏好。",
+    "accept": "接受",
+    "decline": "拒絕"
+  }
+}

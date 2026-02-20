@@ -1,0 +1,21 @@
+{
+  "title": "更新日誌",
+  "subtitle": "了解 Kaitu 嘅最新功能更新同改進",
+  "sections": {
+    "newFeatures": "新功能",
+    "bugFixes": "問題修復",
+    "improvements": "改進優化",
+    "breakingChanges": "重大變更"
+  },
+  "controls": {
+    "expandAll": "全部展開",
+    "collapseAll": "全部收起"
+  },
+  "noData": "暫無更新日誌資料。",
+  "bullet": "•",
+  "cta": {
+    "title": "體驗最新版本",
+    "description": "下載最新版本嘅 Kaitu 客戶端，享受更好嘅網絡體驗",
+    "download": "下載客戶端"
+  }
+}

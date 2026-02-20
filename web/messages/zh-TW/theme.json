@@ -1,0 +1,35 @@
+{
+  "theme": {
+    "toggle": "切換主題",
+    "light": "淺色模式",
+    "dark": "深色模式",
+    "system": "系統",
+    "switchToLight": "切換到淺色模式",
+    "switchToDark": "切換到深色模式",
+    "followSystem": "跟隨系統設定"
+  },
+  "opensource": {
+    "title": "開源倒數計時",
+    "subtitle": "開途即將開源",
+    "description": "我們承諾將開途核心程式碼開源，讓每個人都能檢視、驗證和貢獻程式碼，共同建構更安全、透明的網路工具。",
+    "targetDate": "開源發布日期",
+    "targetDateValue": "2026年06月04日",
+    "days": "天",
+    "hours": "小時",
+    "minutes": "分鐘",
+    "seconds": "秒",
+    "countingDown": "距離開源發布還有...",
+    "released": "我們已經開源！",
+    "releasedDesc": "開途核心程式碼現已在 GitHub 上開源，歡迎造訪我們的儲存庫檢視程式碼、提交問題或貢獻程式碼。",
+    "viewOnGithub": "在 GitHub 上檢視",
+    "whyTitle": "為什麼選擇開源？",
+    "reason1Title": "透明可信",
+    "reason1Desc": "開源程式碼讓每個人都能審查我們的實作，確保沒有後門或惡意程式碼，建立真正的信任。",
+    "reason2Title": "社群驅動",
+    "reason2Desc": "開源讓全球開發者能夠共同參與，提交改進和修復，讓產品變得更好。",
+    "reason3Title": "安全保障",
+    "reason3Desc": "更多的眼睛意味著更快發現和修復安全漏洞，開源軟體往往比閉源更安全。",
+    "reason4Title": "知識共享",
+    "reason4Desc": "我們相信技術應該造福所有人，開源讓每個人都能學習和使用先進的網路技術。"
+  }
+}

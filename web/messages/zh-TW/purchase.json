@@ -1,0 +1,196 @@
+{
+  "purchase": {
+    "loading": "載入中...",
+    "proMemberBenefits": "專業會員特權",
+    "features": {
+      "multiDevice": "多裝置支援",
+      "multiDeviceDesc": "支援多裝置同時登入",
+      "ipAnonymize": "IP匿名化",
+      "ipAnonymizeDesc": "保護您的真實IP位址",
+      "multiThreading": "多執行緒加速",
+      "multiThreadingDesc": "更快的網路連線速度",
+      "adBlock": "廣告攔截",
+      "adBlockDesc": "攔截廣告和追蹤器",
+      "prioritySupport": "優先支援",
+      "prioritySupportDesc": "獲得優先客服服務"
+    },
+    "authorizationExpired": "授權已過期",
+    "selectPlanToRenew": "請選擇套餐以續費您的服務",
+    "completeFirstPurchase": "完成首次購買",
+    "currentlyInTrial": "您目前處於試用模式",
+    "selectPaymentTarget": "選擇付費對象",
+    "myself": "我自己",
+    "chargeForMyself": "為我自己購買",
+    "addFirstMember": "新增第一個成員",
+    "addAnotherMember": "新增另一個成員",
+    "addMember": "新增成員",
+    "addMemberHint": "輸入成員的電子郵件地址",
+    "memberEmail": "成員電子郵件",
+    "memberEmailPlaceholder": "請輸入成員電子郵件地址",
+    "cancel": "取消",
+    "add": "新增",
+    "adding": "新增中...",
+    "addMemberSuccess": "成員新增成功",
+    "addMemberFailed": "成員新增失敗",
+    "getMembersFailed": "取得成員清單失敗",
+    "getMembersFailedRetry": "取得成員清單失敗，請重試",
+    "emailRequired": "電子郵件地址必填",
+    "noEmail": "無電子郵件",
+    "expiresAt": "到期時間",
+    "notActivated": "未啟用",
+    "expired": "已過期",
+    "selectAtLeastOne": "請至少選擇一個付費對象",
+    "selectAtLeastOneTarget": "請至少選擇一個付費對象",
+    "friendReferralBonus": "好友推薦獎勵：{days}天",
+    "friendReferralGift": "+{days}天贈送",
+    "selectPlan": "選擇套餐",
+    "month": "個月",
+    "totalPrice": "總計",
+    "saveAmount": "節省 ${amount}",
+    "hotPlan": "熱門",
+    "total": "總計",
+    "proAuthorization": "{months}個月專業版授權",
+    "proAuthorizationMultiple": "{count}位使用者{months}個月專業版授權",
+    "havePromoCode": "有優惠碼嗎？",
+    "campaignCodePlaceholder": "請輸入優惠碼",
+    "clear": "清除",
+    "includingTax": "含稅",
+    "loadingPlans": "載入套餐中...",
+    "noPlans": "暫無可用套餐",
+    "selectTarget": "請選擇對象",
+    "payNow": "立即支付",
+    "bindEmailToPayNow": "綁定電子郵件後支付",
+    "noPlansAvailable": "暫無可用套餐",
+    "createOrderFailed": "建立訂單失敗",
+    "invalidCampaignCode": "無效的優惠碼",
+    "getPlansFailedRetry": "取得套餐失敗，請重試",
+    "paymentResultConfirm": "支付結果確認",
+    "orderNumber": "訂單號碼",
+    "paymentAmount": "支付金額",
+    "paymentConfirmHint": "請確認您的支付是否成功",
+    "paymentSuccess": "支付成功",
+    "paymentFailed": "支付失敗",
+    "refreshUserProfileFailed": "重新整理使用者資料失敗",
+    "loginToGetStarted": "登入以開始",
+    "loginHint": "請登入或註冊以繼續您的購買",
+    "loginRequired": "需要登入",
+    "sendVerificationCode": "發送驗證碼",
+    "confirmBinding": "確認綁定",
+    "bindingEmail": "正在綁定電子郵件",
+    "bindEmailAboveToGetStarted": "在上方綁定您的電子郵件以開始使用",
+    "selectPayTarget": "選擇付費對象",
+    "bindEmailAndSelectTarget": "綁定電子郵件並選擇目標",
+    "confirmAndPay": "確認並支付",
+    "stepProgress": "第 {current} 步，共 {total} 步",
+    "previousStep": "上一步",
+    "nextStep": "下一步",
+    "step": "步驟",
+    "of": "的",
+    "title": "購買專業版方案",
+    "subtitle": "透過三個簡單步驟完成您的購買",
+    "instantActivation": "即時啟用",
+    "securePayment": "安全支付",
+    "moneyBackGuarantee": "退款保證",
+    "moneyBackGuaranteeDetail": "退款透過錢包餘額退回，可用於續費或提現至數位貨幣錢包",
+    "support24x7": "24/7 支援",
+    "processing": "處理中",
+    "mostPopular": "最受歡迎",
+    "bestValue": "最超值",
+    "recommendedForMostUsers": "推薦給大多數使用者",
+    "savePercent": "節省 {percent}%",
+    "priceSlash": "/",
+    "dash": "-",
+    "ellipsis": "...",
+    "colon": "：",
+    "dollarSign": "$",
+    "inviteRewardTitle": "新使用者專享獎勵",
+    "inviteRewardDesc": "完成購買後，您將額外獲得 {days} 天的專業版使用時長"
+  },
+  "error403": {
+    "title": "存取被禁止",
+    "subtitle": "您沒有存取此頁面的權限",
+    "description": "抱歉，您沒有檢視此內容所需的權限。請聯絡您的管理員取得存取權限。",
+    "errorCode": "錯誤代碼：403",
+    "suggestions": {
+      "title": "您可以：",
+      "item1": "檢查是否使用正確的帳號登入",
+      "item2": "聯絡您的管理員取得存取權限",
+      "item3": "返回上一頁",
+      "item4": "回到儀表板"
+    },
+    "actions": {
+      "goBack": "返回",
+      "goToDashboard": "前往儀表板",
+      "contactSupport": "聯絡支援",
+      "retryLogin": "重新登入"
+    }
+  },
+  "refund": {
+    "title": "退款政策",
+    "subtitle": "了解我們的退款流程和錢包提現說明",
+    "lastUpdated": "最後更新：{date}",
+    "sections": {
+      "overview": {
+        "title": "退款概述",
+        "content": "我們致力於為使用者提供優質的服務體驗。如果您對購買的服務不滿意，可以根據我們的退款政策申請退款。退款將透過錢包餘額的形式退回到您的帳戶。"
+      },
+      "refundProcess": {
+        "title": "退款流程",
+        "content": "當您的退款申請被批准後，退款金額將立即退回到您的帳戶錢包餘額中。您可以使用錢包餘額繼續購買我們的服務，或者申請提現到您的數位貨幣錢包位址。"
+      },
+      "walletBalance": {
+        "title": "錢包餘額說明",
+        "content": "錢包餘額是您在開途平台的虛擬帳戶餘額，可用於以下用途：1. 購買或續費任何套餐服務；2. 提現到支援的數位貨幣錢包。退款到錢包後立即可用，無需等待。"
+      },
+      "withdrawalMethods": {
+        "title": "提現方式",
+        "content": "我們支援將錢包餘額提現到主流數位貨幣錢包。支援的數位貨幣包括："
+      },
+      "supportedCryptos": {
+        "title": "支援的數位貨幣",
+        "usdt": "USDT (Tether) - 支援 TRC20 和 ERC20 網路",
+        "usdc": "USDC (USD Coin) - 支援 ERC20 網路",
+        "eth": "ETH (以太坊) - ERC20 網路",
+        "btc": "BTC (比特幣) - Bitcoin 主網",
+        "other": "其他主流穩定幣和加密貨幣（請聯絡客服確認）"
+      },
+      "withdrawalProcess": {
+        "title": "提現流程",
+        "step1": "1. 在帳戶頁面申請提現",
+        "step2": "2. 選擇數位貨幣類型和區塊鏈網路",
+        "step3": "3. 填寫您的錢包位址",
+        "step4": "4. 確認提現金額和手續費",
+        "step5": "5. 提交申請並等待審核",
+        "step6": "6. 審核通過後 1-3 個工作日內到帳"
+      },
+      "importantNotes": {
+        "title": "重要提示",
+        "note1": "• 請務必確保提供的錢包位址和區塊鏈網路正確無誤",
+        "note2": "• 因錢包位址錯誤導致的資金損失由使用者自行承擔",
+        "note3": "• 不同數位貨幣和網路的提現手續費可能不同",
+        "note4": "• 提現申請提交後無法撤銷，請謹慎操作",
+        "note5": "• 首次提現可能需要進行身分驗證",
+        "note6": "• 大額提現可能需要額外的安全審核"
+      },
+      "withdrawalFees": {
+        "title": "提現手續費",
+        "content": "提現手續費根據不同的數位貨幣和區塊鏈網路而有所不同。具體費用將在您申請提現時顯示。我們會盡量選擇手續費較低的網路為您處理提現。"
+      },
+      "processingTime": {
+        "title": "處理時間",
+        "content": "提現申請將在 1-3 個工作日內處理完成。具體到帳時間取決於區塊鏈網路的確認速度。在高峰期或網路擁堵時，到帳時間可能會有所延長。"
+      },
+      "refundPolicy": {
+        "title": "退款條件",
+        "content": "退款申請需要符合以下條件：服務未超過7天、未大量使用流量、帳戶狀態正常等。具體退款條件請參考服務條款或聯絡客服諮詢。"
+      },
+      "contact": {
+        "title": "聯絡客服",
+        "content": "如果您對退款或提現有任何疑問，請隨時聯絡我們的客服團隊：support@kaitu.io"
+      }
+    }
+  },
+  "purchaseStep3": {
+    "priceSlash": "/"
+  }
+}

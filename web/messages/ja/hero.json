@@ -1,0 +1,233 @@
+{
+  "hero": {
+    "title": "安全で便利な",
+    "networkProxy": "ネットワークプロキシ",
+    "solution": "ソリューション",
+    "description": "Kaitu（カイトゥ）は、マルチプラットフォーム対応のプロフェッショナルグレードのネットワークプロキシサービスを提供し、先進的な暗号化技術により安全で高速、安定したネットワーク接続を実現します。",
+    "downloadClient": "クライアントをダウンロード",
+    "quickActivation": "クイック開始",
+    "smartRouter": "スマートルーター"
+  },
+  "security": {
+    "title": "Kaituプロトコル - 次世代ネットワーク転送技術",
+    "description": "Kaituプロトコルは、当社が独自開発した次世代ネットワーク転送プロトコルです。マルチパス集約、軍事グレード暗号化、スマートルーティングなどの先進技術により、安全で高速、安定したネットワーク接続体験を提供します。",
+    "icon": "🔒",
+    "caTech": {
+      "title": "マルチパス集約技術（MPTCP）",
+      "description": "Kaituプロトコル独自のマルチパス集約技術は、複数のネットワーク経路を同時に利用してデータを転送し、帯域幅の集約とインテリジェント負荷分散を実現します。単一経路に障害が発生してもシームレスに切り替わり、接続が途切れることはありません。",
+      "advantages": {
+        "title": "コア機能",
+        "item1": "複数チャンネルによる同時転送、帯域幅のインテリジェント集約",
+        "item2": "RTTリアルタイム測定、最適経路の自動選択",
+        "item3": "障害時の自動フェイルオーバー、接続の継続性を保証",
+        "item4": "指数移動平均アルゴリズムによる精密な経路評価",
+        "bullet": "•"
+      },
+      "adaptive": {
+        "title": "エンタープライズグレードのネットワーク適応",
+        "item1": "ネットワーク状況に応じて最適なプロトコルをインテリジェントに選択",
+        "item2": "WebSocket、HTTP/2などの複数の転送方式に対応",
+        "item3": "リアルタイムネットワーク品質監視と最適化",
+        "item4": "弱いネットワーク環境での信頼性の高い接続保証",
+        "bullet": "•"
+      }
+    },
+    "features": {
+      "title": "プロトコルの主要な優位性",
+      "multipath": {
+        "title": "マルチパス集約",
+        "description": "複数のネットワーク経路を同時に利用し、最適な経路をインテリジェントに選択して帯域幅を集約、自動フェイルオーバーを実現",
+        "icon": "🔀"
+      },
+      "encryption": {
+        "title": "軍事グレード暗号化",
+        "description": "AES-256-GCM暗号化アルゴリズム、ECDSA P-256楕円曲線、PBKDF2 10万回の鍵導出を採用",
+        "icon": "🔐"
+      },
+      "smartRouting": {
+        "title": "スマートルーティング",
+        "description": "RTTベースのリアルタイム経路最適化、指数移動平均アルゴリズムにより常に最速チャンネルを使用",
+        "icon": "🧭"
+      },
+      "disguise": {
+        "title": "トラフィック偽装",
+        "description": "CA証明書シミュレーション技術により、トラフィックを標準的なHTTPSとして表示し、通常のネットワーク環境に完全に統合",
+        "icon": "🎭"
+      },
+      "failover": {
+        "title": "自動フェイルオーバー",
+        "description": "単一経路の障害時にミリ秒単位で切り替え、ユーザーは全く気づかず、ビジネスの継続性を保証",
+        "icon": "🔄"
+      },
+      "performance": {
+        "title": "高性能アーキテクチャ",
+        "description": "5000並行接続に対応、32KBバッファプール最適化、ゼロコピーデータ転送",
+        "icon": "⚡"
+      }
+    },
+    "techSpecs": {
+      "title": "技術仕様",
+      "encryption": "暗号化アルゴリズム",
+      "encryptionValue": "AES-256-GCM + ECDSA P-256",
+      "keyDerivation": "鍵導出",
+      "keyDerivationValue": "PBKDF2-SHA512（10万回反復）",
+      "transport": "転送プロトコル",
+      "transportValue": "WebSocket over TLS / HTTP/2",
+      "multiplexing": "多重化",
+      "multiplexingValue": "smuxストリーム多重化 + マルチパス集約",
+      "heartbeat": "ハートビート",
+      "heartbeatValue": "30秒間隔 / 90秒タイムアウト",
+      "concurrent": "並行処理能力",
+      "concurrentValue": "単一セッション5000+並行ストリーム"
+    },
+    "comparison": {
+      "title": "プロトコル比較",
+      "metrics": {
+        "detection": "検出耐性",
+        "encryption": "暗号化強度",
+        "stability": "安定性",
+        "difficulty": "設定難易度"
+      },
+      "stars": {
+        "five": "★★★★★",
+        "four": "★★★★☆",
+        "three": "★★★☆☆",
+        "two": "★★☆☆☆",
+        "one": "★☆☆☆☆"
+      },
+      "kaitu": {
+        "letter": "K",
+        "name": "Kaitu",
+        "tech": "MPTCPマルチパス集約 + CA証明書偽装"
+      },
+      "trojan": {
+        "letter": "T",
+        "name": "Trojan",
+        "tech": "TLS暗号化 + トラフィック偽装"
+      },
+      "v2ray": {
+        "letter": "V",
+        "name": "V2Ray",
+        "tech": "VMess/VLESSプロトコル + 複数転送方式"
+      },
+      "shadowsocks": {
+        "letter": "S",
+        "name": "Shadowsocks",
+        "tech": "AEAD暗号化 + 軽量プロキシ"
+      }
+    },
+    "visualization": {
+      "title": "マルチパス集約技術（MPTCP）",
+      "subtitle": "リアルタイムデモ：データが複数の中継ノードを通じて同時に転送され、最適な経路をインテリジェントに選択",
+      "client": "クライアント",
+      "target": "ターゲットサーバー",
+      "relayNodes": "中継ノードクラスター",
+      "nodes": {
+        "hongkong": "香港ノード",
+        "japan": "日本ノード",
+        "singapore": "シンガポールノード"
+      },
+      "rtt": "RTT",
+      "ms": "ms",
+      "status": {
+        "optimal": "最適",
+        "good": "良好",
+        "slow": "やや遅い",
+        "failed": "障害"
+      },
+      "legend": {
+        "title": "凡例",
+        "dataPacket": "データパケット",
+        "activePath": "アクティブ経路",
+        "failedPath": "障害経路",
+        "optimalNode": "最適ノード"
+      },
+      "description": "上図はKaituプロトコルのマルチパス集約アーキテクチャを示しています：データはクライアントから出発し、地理的に異なる複数の中継ノードを通じて同時にターゲットサーバーに転送されます。システムは各ノードの遅延（RTT）をリアルタイムで監視し、最適なノード（緑の点線枠）に自動的により多くのトラフィックを割り当てます。ノードに障害が発生した場合、トラフィックは瞬時に他の利用可能なノードに切り替わり、接続が途切れることはありません。各中継ノードは複数のネットワークインターフェースを設定でき、帯域幅をさらに集約できます。"
+    }
+  },
+  "download": {
+    "title": "クライアントをダウンロード",
+    "subtitle": "お使いのデバイスに適したクライアントを選択し、安全なネットワークの旅を始めましょう",
+    "platforms": {
+      "ios": "iPhoneとiPadに対応",
+      "iosLabel": "iOS",
+      "android": "Android携帯とタブレットに対応",
+      "androidLabel": "Android",
+      "windows": "Windows 10/11に対応",
+      "windowsLabel": "Windows",
+      "macos": "macOS 10.15以上に対応",
+      "macosLabel": "macOS"
+    },
+    "downloadButton": "ダウンロード",
+    "comingSoon": "近日公開"
+  },
+  "routers": {
+    "title": "スマートネットワークルーター",
+    "subtitle": "プロフェッショナルグレードのルーターソリューション、内蔵セキュアプロキシでご家族全員が簡単に利用可能",
+    "presaleTag": "予約販売中",
+    "benefits": {
+      "title": "ルーターソリューションを選ぶ理由",
+      "subtitle": "包括的なネットワークプロキシソリューションで、安全なインターネット利用をシンプルに",
+      "items": {
+        "easySetup": {
+          "title": "ワンクリック設定",
+          "description": "プラグアンドプレイ、技術的な設定不要"
+        },
+        "familyFriendly": {
+          "title": "ご家族全員に",
+          "description": "ご家庭のすべてのデバイスが自動接続、老若男女問わず利用可能"
+        },
+        "alwaysOn": {
+          "title": "常時利用可能",
+          "description": "24時間無停止サービス、起動時に自動接続"
+        },
+        "multiDevice": {
+          "title": "マルチデバイス対応",
+          "description": "スマートTV、ゲーム機などすべてのネットワークデバイスに対応"
+        },
+        "techSupport": {
+          "title": "プロフェッショナルサポート",
+          "description": "専門技術チームによる包括的なアフターサービス"
+        },
+        "costEffective": {
+          "title": "コストパフォーマンス",
+          "description": "一度の購入で長期使用、サブスクリプションより経済的"
+        }
+      }
+    },
+    "backToHome": "ホームに戻る",
+    "welcome": "ようこそ",
+    "adminPanel": "管理画面",
+    "login": "ログイン",
+    "comma": "、",
+    "productFeatures": "製品の特徴",
+    "contactInquiry": "お問い合わせ",
+    "presalePriceConsult": "予約販売価格はカスタマーサービスまでお問い合わせください • 1年保証",
+    "presalePriceConsultFull": "予約販売価格はカスタマーサービスまでお問い合わせください • 1年保証 • サービスアクティベーションコード付き",
+    "routerVsClient": "ルーター vs クライアント比較",
+    "whyChooseRouter": "ルーターソリューションを選ぶ理由",
+    "smartRouter": "スマートルーター",
+    "recommended": "推奨ソリューション",
+    "clientSoftware": "クライアントソフトウェア",
+    "traditional": "従来ソリューション",
+    "bullet": "•",
+    "autoConnect": "ご家庭のすべてのデバイスが自動接続、個別設定不要",
+    "alwaysRunning": "24時間無停止動作、常時利用可能",
+    "allDevices": "スマートTV、ゲーム機などすべてのデバイスに対応",
+    "easyUse": "お年寄りやお子様でも簡単に利用可能",
+    "onePurchase": "一度の購入で長期使用",
+    "individualSetup": "各デバイスに個別にインストールと設定が必要",
+    "manualStart": "手動起動が必要、忘れやすい",
+    "deviceLimits": "スマートTV、ゲーム機は非対応",
+    "complexConfig": "設定が複雑、学習コストが高い",
+    "ongoing": "継続的なサブスクリプション料金が必要",
+    "contactUsMore": "詳細はお問い合わせください",
+    "teamDescription": "当社の専門チームが製品の特徴を詳しくご説明し、最適なルーターソリューションの選択をお手伝いします",
+    "emailConsult": "メールでのお問い合わせ",
+    "productDetailsTech": "製品詳細、技術サポート",
+    "onlineService": "オンラインサポート",
+    "realTimeResponse": "リアルタイム相談、迅速な対応",
+    "startOnlineService": "オンラインサポートを開始",
+    "warranty": "すべてのルーター製品には1年保証 • 無料技術サポート • 7日間返金保証"
+  }
+}

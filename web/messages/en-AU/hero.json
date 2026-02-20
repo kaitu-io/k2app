@@ -1,0 +1,233 @@
+{
+  "hero": {
+    "title": "Secure and Convenient",
+    "networkProxy": "Network Proxy",
+    "solution": "Solution",
+    "description": "Kaitu.io provides professional-grade network proxy services with multi-platform client support, utilising advanced encryption technology to ensure your network connection is secure, fast, and stable.",
+    "downloadClient": "Download Client",
+    "quickActivation": "Quick Activation",
+    "smartRouter": "Smart Router"
+  },
+  "security": {
+    "title": "Kaitu Protocol - Next-Generation Network Transmission",
+    "description": "The Kaitu Protocol is our proprietary next-generation network transmission protocol, utilising advanced technologies including multipath aggregation, military-grade encryption, and intelligent routing to provide you with a secure, fast, and stable network connection experience.",
+    "icon": "🔒",
+    "caTech": {
+      "title": "Multipath Aggregation Technology (MPTCP)",
+      "description": "Kaitu Protocol's innovative multipath aggregation technology enables simultaneous data transmission through multiple network channels, achieving bandwidth aggregation and intelligent load balancing. Even if a single link fails, seamless switching ensures uninterrupted connectivity.",
+      "advantages": {
+        "title": "Core Features",
+        "item1": "Multi-channel transmission with intelligent bandwidth aggregation",
+        "item2": "Real-time RTT measurement, automatic optimal path selection",
+        "item3": "Automatic failover, uninterrupted connectivity",
+        "item4": "Exponential moving average algorithm for precise path evaluation",
+        "bullet": "•"
+      },
+      "adaptive": {
+        "title": "Enterprise-Grade Network Adaptation",
+        "item1": "Intelligent protocol selection based on network conditions",
+        "item2": "Support for WebSocket, HTTP/2, and multiple transport methods",
+        "item3": "Real-time network quality monitoring and optimisation",
+        "item4": "Reliable connectivity in poor network environments",
+        "bullet": "•"
+      }
+    },
+    "features": {
+      "title": "Protocol Core Advantages",
+      "multipath": {
+        "title": "Multipath Aggregation",
+        "description": "Simultaneous utilisation of multiple network channels, intelligent optimal path selection, bandwidth aggregation, and automatic failover",
+        "icon": "🔀"
+      },
+      "encryption": {
+        "title": "Military-Grade Encryption",
+        "description": "AES-256-GCM encryption algorithm, ECDSA P-256 elliptic curve, PBKDF2 with 100,000 iterations for key derivation",
+        "icon": "🔐"
+      },
+      "smartRouting": {
+        "title": "Intelligent Routing",
+        "description": "RTT-based real-time path optimisation, exponential moving average algorithm ensures the fastest channel is always used",
+        "icon": "🧭"
+      },
+      "disguise": {
+        "title": "Traffic Obfuscation",
+        "description": "CA certificate simulation technology, traffic appears as standard HTTPS, perfectly blending into normal network environments",
+        "icon": "🎭"
+      },
+      "failover": {
+        "title": "Automatic Failover",
+        "description": "Millisecond-level switching when a single path fails, completely transparent to users, ensuring business continuity",
+        "icon": "🔄"
+      },
+      "performance": {
+        "title": "High-Performance Architecture",
+        "description": "Support for 5,000 concurrent connections, 32KB buffer pool optimisation, zero-copy data forwarding",
+        "icon": "⚡"
+      }
+    },
+    "techSpecs": {
+      "title": "Technical Specifications",
+      "encryption": "Encryption Algorithm",
+      "encryptionValue": "AES-256-GCM + ECDSA P-256",
+      "keyDerivation": "Key Derivation",
+      "keyDerivationValue": "PBKDF2-SHA512 (100,000 iterations)",
+      "transport": "Transport Protocol",
+      "transportValue": "WebSocket over TLS / HTTP/2",
+      "multiplexing": "Multiplexing",
+      "multiplexingValue": "smux stream multiplexing + multipath aggregation",
+      "heartbeat": "Heartbeat Keep-Alive",
+      "heartbeatValue": "30-second interval / 90-second timeout",
+      "concurrent": "Concurrent Capacity",
+      "concurrentValue": "5,000+ concurrent streams per session"
+    },
+    "comparison": {
+      "title": "Protocol Comparison",
+      "metrics": {
+        "detection": "Anti-Detection",
+        "encryption": "Encryption Strength",
+        "stability": "Stability",
+        "difficulty": "Configuration Difficulty"
+      },
+      "stars": {
+        "five": "★★★★★",
+        "four": "★★★★☆",
+        "three": "★★★☆☆",
+        "two": "★★☆☆☆",
+        "one": "★☆☆☆☆"
+      },
+      "kaitu": {
+        "letter": "K",
+        "name": "Kaitu",
+        "tech": "MPTCP multipath aggregation + CA certificate obfuscation"
+      },
+      "trojan": {
+        "letter": "T",
+        "name": "Trojan",
+        "tech": "TLS encryption + traffic obfuscation"
+      },
+      "v2ray": {
+        "letter": "V",
+        "name": "V2Ray",
+        "tech": "VMess/VLESS protocol + multiple transports"
+      },
+      "shadowsocks": {
+        "letter": "S",
+        "name": "Shadowsocks",
+        "tech": "AEAD encryption + lightweight proxy"
+      }
+    },
+    "visualization": {
+      "title": "Multipath Aggregation Technology (MPTCP)",
+      "subtitle": "Real-time demonstration: Data transmitted simultaneously through multiple relay nodes with intelligent optimal path selection",
+      "client": "Client",
+      "target": "Target Server",
+      "relayNodes": "Relay Node Cluster",
+      "nodes": {
+        "hongkong": "Hong Kong Node",
+        "japan": "Japan Node",
+        "singapore": "Singapore Node"
+      },
+      "rtt": "RTT",
+      "ms": "ms",
+      "status": {
+        "optimal": "Optimal",
+        "good": "Good",
+        "slow": "Slow",
+        "failed": "Failed"
+      },
+      "legend": {
+        "title": "Legend",
+        "dataPacket": "Data Packet",
+        "activePath": "Active Path",
+        "failedPath": "Failed Path",
+        "optimalNode": "Optimal Node"
+      },
+      "description": "The diagram above illustrates the Kaitu Protocol's multipath aggregation architecture: Data departs from the client and is transmitted simultaneously through multiple geographically distributed relay nodes to the target server. The system monitors each node's latency (RTT) in real-time, automatically allocating more traffic to the optimal node (green dashed box). When a node fails, traffic switches instantly to other available nodes, ensuring uninterrupted connectivity. Each relay node can also be configured with multiple network interfaces for further bandwidth aggregation."
+    }
+  },
+  "download": {
+    "title": "Download Client",
+    "subtitle": "Choose the client for your device and begin your secure network journey",
+    "platforms": {
+      "ios": "Supports iPhone and iPad",
+      "iosLabel": "iOS",
+      "android": "Supports Android phones and tablets",
+      "androidLabel": "Android",
+      "windows": "Supports Windows 10/11",
+      "windowsLabel": "Windows",
+      "macos": "Supports macOS 12+",
+      "macosLabel": "macOS"
+    },
+    "downloadButton": "Download",
+    "comingSoon": "Coming Soon"
+  },
+  "routers": {
+    "title": "Smart Network Routers",
+    "subtitle": "Professional-grade router solution with built-in secure proxy for effortless family use",
+    "presaleTag": "Pre-Order",
+    "benefits": {
+      "title": "Why Choose the Router Solution?",
+      "subtitle": "Comprehensive network proxy solution making secure internet access simple and accessible",
+      "items": {
+        "easySetup": {
+          "title": "One-Click Setup",
+          "description": "Plug and play, no technical configuration required"
+        },
+        "familyFriendly": {
+          "title": "Family-Friendly",
+          "description": "All household devices connect automatically, suitable for all ages"
+        },
+        "alwaysOn": {
+          "title": "Always Available",
+          "description": "24/7 uninterrupted service, automatic connection on startup"
+        },
+        "multiDevice": {
+          "title": "Multi-Device Support",
+          "description": "Supports smart TVs, gaming consoles, and all network devices"
+        },
+        "techSupport": {
+          "title": "Professional Support",
+          "description": "Professional technical team provides comprehensive after-sales service"
+        },
+        "costEffective": {
+          "title": "Cost-Effective",
+          "description": "One-time purchase for long-term use, more economical than subscriptions"
+        }
+      }
+    },
+    "backToHome": "Back to Home",
+    "welcome": "Welcome",
+    "adminPanel": "Admin Panel",
+    "login": "Log In",
+    "comma": ",",
+    "productFeatures": "Product Features",
+    "contactInquiry": "Contact Us",
+    "presalePriceConsult": "Pre-order pricing available from customer service • 1-year warranty",
+    "presalePriceConsultFull": "Pre-order pricing available from customer service • 1-year warranty • Service activation code included",
+    "routerVsClient": "Router vs Client Comparison",
+    "whyChooseRouter": "Why Choose the Router Solution?",
+    "smartRouter": "Smart Router",
+    "recommended": "Recommended",
+    "clientSoftware": "Client Software",
+    "traditional": "Traditional",
+    "bullet": "•",
+    "autoConnect": "All family devices connect automatically, no individual configuration needed",
+    "alwaysRunning": "24/7 continuous operation, always available",
+    "allDevices": "Supports smart TVs, gaming consoles, and all devices",
+    "easyUse": "Easy for elderly and children to use",
+    "onePurchase": "One-time purchase, long-term use",
+    "individualSetup": "Each device requires individual installation and configuration",
+    "manualStart": "Requires manual start, easy to forget",
+    "deviceLimits": "Smart TVs and gaming consoles not supported",
+    "complexConfig": "Complex configuration, high learning curve",
+    "ongoing": "Ongoing subscription payments required",
+    "contactUsMore": "Contact Us to Learn More",
+    "teamDescription": "Our professional team will provide detailed product information and help you choose the most suitable router solution",
+    "emailConsult": "Email Enquiry",
+    "productDetailsTech": "Product details, technical support",
+    "onlineService": "Online Service",
+    "realTimeResponse": "Real-time enquiries, rapid response",
+    "startOnlineService": "Start Online Service",
+    "warranty": "All router products include 1-year warranty • Free technical support • 7-day no-questions-asked returns"
+  }
+}

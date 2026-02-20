@@ -1,0 +1,22 @@
+version: 1
+applications:
+  - frontend:
+      phases:
+        preBuild:
+          commands:
+            - yarn install
+        build:
+          commands:
+            # Note: Payload migrations skipped - using push: true in db config for auto schema sync
+            # If you need migrations, add .ts extensions to imports in payload.config.ts
+            - echo "Building Next.js application..."
+            - yarn run build
+      artifacts:
+        baseDirectory: .next
+        files:
+          - '**/*'
+      cache:
+        paths:
+          - .next/cache/**/*
+          - node_modules/**/*
+    appRoot: web

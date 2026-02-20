@@ -1,0 +1,99 @@
+{
+  "discovery": {
+    "title": "Discover",
+    "subtitle": "Curated websites, apps, and content to enhance your online experience",
+    "websites": {
+      "title": "Popular Websites",
+      "description": "Curated global quality websites, one-click access"
+    },
+    "apps": {
+      "title": "Recommended Apps",
+      "description": "Collection of useful tools and entertainment apps"
+    },
+    "videos": {
+      "title": "Video Collections",
+      "description": "Curated YouTube channels and playlists"
+    },
+    "categories": {
+      "social": "Social Media",
+      "news": "News",
+      "entertainment": "Entertainment",
+      "education": "Education",
+      "technology": "Technology",
+      "lifestyle": "Lifestyle",
+      "shopping": "Shopping",
+      "tools": "Tools"
+    },
+    "sections": {
+      "news": {
+        "title": "News & Media",
+        "description": "Curated global conservative news websites"
+      },
+      "entertainment": {
+        "title": "Entertainment",
+        "description": "Quality streaming platforms and entertainment services"
+      },
+      "communication": {
+        "title": "Communication Apps",
+        "description": "Secure and reliable communication tools"
+      },
+      "applications": {
+        "title": "Recommended Apps",
+        "description": "Useful tools to boost productivity"
+      },
+      "christian": {
+        "title": "Gospel Resources",
+        "description": "Quality evangelical Christian learning resources"
+      },
+      "aiTools": {
+        "title": "AI Tools",
+        "description": "Cutting-edge artificial intelligence platforms"
+      },
+      "tradeTools": {
+        "title": "Trade Tools",
+        "description": "International trade and procurement platforms"
+      },
+      "homeschool": {
+        "title": "Educational Resources",
+        "description": "Homeschooling and learning platforms"
+      },
+      "videoPlaylists": {
+        "title": "Video Collections",
+        "description": "Curated YouTube channels and playlist collections",
+        "comingSoon": "Video collections coming soon",
+        "comingSoonDesc": "We're carefully curating quality YouTube channels and playlists, stay tuned"
+      }
+    },
+    "footer": {
+      "title": "Discover a More Exciting Online World",
+      "description": "Use Kaitu network proxy to securely access quality global content and enjoy unlimited online experiences",
+      "backHome": "Back to Home",
+      "learnRouters": "Learn About Router Products"
+    }
+  },
+  "privacy": {
+    "title": "Privacy Policy",
+    "subtitle": "Kaitu.io Privacy Protection Statement",
+    "contact": {
+      "title": "Contact Us",
+      "content": "If you have any questions about this Privacy Policy, please contact our privacy team",
+      "email": "privacy@kaitu.io"
+    }
+  },
+  "terms": {
+    "title": "Terms of Service",
+    "subtitle": "Kaitu.io User Service Agreement",
+    "contact": {
+      "title": "Contact Information",
+      "content": "If you have any questions about these Terms of Service, please contact our legal team",
+      "email": "legal@kaitu.io"
+    }
+  },
+  "cookieConsent": {
+    "title": "About Cookie Usage",
+    "description": "We use cookies to improve your browsing experience, including basic functions like saving your invitation code. Continuing to use this website indicates your consent to our use of cookies.",
+    "details": "We only use necessary functional cookies (such as invitation code linking), and do not collect or share your personal information for advertising or tracking purposes. You can manage cookie preferences in your browser settings at any time.",
+    "accept": "Accept",
+    "decline": "Decline"
+  }
+}

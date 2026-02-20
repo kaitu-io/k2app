@@ -1,0 +1,196 @@
+{
+  "purchase": {
+    "loading": "読み込み中...",
+    "proMemberBenefits": "プロフェッショナル会員特典",
+    "features": {
+      "multiDevice": "マルチデバイス対応",
+      "multiDeviceDesc": "複数デバイスでの同時ログインに対応",
+      "ipAnonymize": "IP匿名化",
+      "ipAnonymizeDesc": "実際のIPアドレスを保護",
+      "multiThreading": "マルチスレッド高速化",
+      "multiThreadingDesc": "より高速なネットワーク接続速度",
+      "adBlock": "広告ブロック",
+      "adBlockDesc": "広告とトラッカーをブロック",
+      "prioritySupport": "優先サポート",
+      "prioritySupportDesc": "優先カスタマーサービスを取得"
+    },
+    "authorizationExpired": "認証が期限切れです",
+    "selectPlanToRenew": "サービスを更新するプランを選択してください",
+    "completeFirstPurchase": "初回購入を完了",
+    "currentlyInTrial": "現在トライアルモードです",
+    "selectPaymentTarget": "支払い対象を選択",
+    "myself": "自分",
+    "chargeForMyself": "自分用に購入",
+    "addFirstMember": "最初のメンバーを追加",
+    "addAnotherMember": "別のメンバーを追加",
+    "addMember": "メンバーを追加",
+    "addMemberHint": "メンバーのメールアドレスを入力",
+    "memberEmail": "メンバーメール",
+    "memberEmailPlaceholder": "メンバーのメールアドレスを入力してください",
+    "cancel": "キャンセル",
+    "add": "追加",
+    "adding": "追加中...",
+    "addMemberSuccess": "メンバーを追加しました",
+    "addMemberFailed": "メンバーの追加に失敗しました",
+    "getMembersFailed": "メンバーリストの取得に失敗しました",
+    "getMembersFailedRetry": "メンバーリストの取得に失敗しました。再試行してください",
+    "emailRequired": "メールアドレスは必須です",
+    "noEmail": "メールなし",
+    "expiresAt": "有効期限",
+    "notActivated": "未有効化",
+    "expired": "期限切れ",
+    "selectAtLeastOne": "少なくとも1つの支払い対象を選択してください",
+    "selectAtLeastOneTarget": "少なくとも1つの支払い対象を選択してください",
+    "friendReferralBonus": "友達紹介特典：{days}日",
+    "friendReferralGift": "+{days}日プレゼント",
+    "selectPlan": "プランを選択",
+    "month": "ヶ月",
+    "totalPrice": "合計",
+    "saveAmount": "${amount}お得",
+    "hotPlan": "人気",
+    "total": "合計",
+    "proAuthorization": "{months}ヶ月プロ版認証",
+    "proAuthorizationMultiple": "{count}名のユーザー{months}ヶ月プロ版認証",
+    "havePromoCode": "プロモコードをお持ちですか？",
+    "campaignCodePlaceholder": "プロモコードを入力してください",
+    "clear": "クリア",
+    "includingTax": "税込",
+    "loadingPlans": "プラン読み込み中...",
+    "noPlans": "利用可能なプランがありません",
+    "selectTarget": "対象を選択してください",
+    "payNow": "今すぐ支払う",
+    "bindEmailToPayNow": "メール登録後に支払う",
+    "noPlansAvailable": "利用可能なプランがありません",
+    "createOrderFailed": "注文の作成に失敗しました",
+    "invalidCampaignCode": "無効なプロモコードです",
+    "getPlansFailedRetry": "プランの取得に失敗しました。再試行してください",
+    "paymentResultConfirm": "支払い結果の確認",
+    "orderNumber": "注文番号",
+    "paymentAmount": "支払い金額",
+    "paymentConfirmHint": "支払いが成功したかどうかをご確認ください",
+    "paymentSuccess": "支払い成功",
+    "paymentFailed": "支払い失敗",
+    "refreshUserProfileFailed": "ユーザープロファイルの更新に失敗しました",
+    "loginToGetStarted": "ログインして開始",
+    "loginHint": "購入を続けるにはログインまたは登録してください",
+    "loginRequired": "ログインが必要です",
+    "sendVerificationCode": "認証コードを送信",
+    "confirmBinding": "登録を確認",
+    "bindingEmail": "メールを登録中",
+    "bindEmailAboveToGetStarted": "上記でメールを登録して開始",
+    "selectPayTarget": "支払い対象を選択",
+    "bindEmailAndSelectTarget": "メールを登録して対象を選択",
+    "confirmAndPay": "確認して支払う",
+    "stepProgress": "ステップ{current} / {total}",
+    "previousStep": "前へ",
+    "nextStep": "次へ",
+    "step": "ステップ",
+    "of": "/",
+    "title": "プロ版プランの購入",
+    "subtitle": "3つの簡単なステップで購入を完了",
+    "instantActivation": "即座に有効化",
+    "securePayment": "安全な支払い",
+    "moneyBackGuarantee": "返金保証",
+    "moneyBackGuaranteeDetail": "返金はウォレット残高を通じて返金され、更新または仮想通貨ウォレットへの出金に使用できます",
+    "support24x7": "24時間サポート",
+    "processing": "処理中",
+    "mostPopular": "最も人気",
+    "bestValue": "最もお得",
+    "recommendedForMostUsers": "ほとんどのユーザーにおすすめ",
+    "savePercent": "{percent}%お得",
+    "priceSlash": "/",
+    "dash": "-",
+    "ellipsis": "...",
+    "colon": "：",
+    "dollarSign": "$",
+    "inviteRewardTitle": "新規ユーザー限定特典",
+    "inviteRewardDesc": "購入完了後、{days}日間のプロ版使用期間を追加でプレゼントします"
+  },
+  "error403": {
+    "title": "アクセスが禁止されています",
+    "subtitle": "このページにアクセスする権限がありません",
+    "description": "申し訳ございませんが、このコンテンツを表示するために必要な権限がありません。アクセス権限については管理者にお問い合わせください。",
+    "errorCode": "エラーコード：403",
+    "suggestions": {
+      "title": "次のことができます：",
+      "item1": "正しいアカウントでログインしているか確認する",
+      "item2": "管理者にアクセス権限をリクエストする",
+      "item3": "前のページに戻る",
+      "item4": "ダッシュボードに戻る"
+    },
+    "actions": {
+      "goBack": "戻る",
+      "goToDashboard": "ダッシュボードへ",
+      "contactSupport": "サポートに連絡",
+      "retryLogin": "再ログイン"
+    }
+  },
+  "refund": {
+    "title": "返金ポリシー",
+    "subtitle": "返金プロセスとウォレット出金の説明について",
+    "lastUpdated": "最終更新：{date}",
+    "sections": {
+      "overview": {
+        "title": "返金概要",
+        "content": "当社は、ユーザーに優れたサービス体験を提供することに尽力しています。購入されたサービスにご満足いただけない場合は、返金ポリシーに基づいて返金をリクエストできます。返金はウォレット残高の形式でアカウントに返金されます。"
+      },
+      "refundProcess": {
+        "title": "返金プロセス",
+        "content": "返金リクエストが承認されると、返金額はすぐにアカウントのウォレット残高に返金されます。ウォレット残高を使用して当社のサービスの購入を続けるか、仮想通貨ウォレットアドレスへの出金をリクエストできます。"
+      },
+      "walletBalance": {
+        "title": "ウォレット残高について",
+        "content": "ウォレット残高は、Kaituプラットフォームの仮想アカウント残高であり、以下の用途に使用できます：1. 任意のプランサービスの購入または更新、2. サポートされている仮想通貨ウォレットへの出金。ウォレットへの返金後、すぐに利用可能になり、待つ必要はありません。"
+      },
+      "withdrawalMethods": {
+        "title": "出金方法",
+        "content": "ウォレット残高を主要な仮想通貨ウォレットに出金することをサポートしています。サポートされている仮想通貨は以下の通りです："
+      },
+      "supportedCryptos": {
+        "title": "サポートされている仮想通貨",
+        "usdt": "USDT（Tether）- TRC20およびERC20ネットワークに対応",
+        "usdc": "USDC（USD Coin）- ERC20ネットワークに対応",
+        "eth": "ETH（イーサリアム）- ERC20ネットワーク",
+        "btc": "BTC（ビットコイン）- Bitcoinメインネット",
+        "other": "その他の主要なステーブルコインと仮想通貨（カスタマーサービスまでご確認ください）"
+      },
+      "withdrawalProcess": {
+        "title": "出金プロセス",
+        "step1": "1. アカウントページで出金をリクエスト",
+        "step2": "2. 仮想通貨タイプとブロックチェーンネットワークを選択",
+        "step3": "3. ウォレットアドレスを入力",
+        "step4": "4. 出金金額と手数料を確認",
+        "step5": "5. リクエストを送信して審査を待つ",
+        "step6": "6. 承認後1〜3営業日以内に着金"
+      },
+      "importantNotes": {
+        "title": "重要な注意事項",
+        "note1": "• 提供されたウォレットアドレスとブロックチェーンネットワークが正確であることを必ず確認してください",
+        "note2": "• ウォレットアドレスの誤りによる資金損失は、ユーザー自身の責任となります",
+        "note3": "• 異なる仮想通貨とネットワークの出金手数料は異なる場合があります",
+        "note4": "• 出金リクエストは送信後キャンセルできませんので、慎重に操作してください",
+        "note5": "• 初回出金時には本人確認が必要な場合があります",
+        "note6": "• 高額出金には追加のセキュリティ審査が必要な場合があります"
+      },
+      "withdrawalFees": {
+        "title": "出金手数料",
+        "content": "出金手数料は、仮想通貨とブロックチェーンネットワークによって異なります。具体的な手数料は出金リクエスト時に表示されます。可能な限り手数料の低いネットワークを選択して出金を処理します。"
+      },
+      "processingTime": {
+        "title": "処理時間",
+        "content": "出金リクエストは1〜3営業日以内に処理されます。具体的な着金時間は、ブロックチェーンネットワークの確認速度によります。ピーク時またはネットワークの混雑時には、着金時間が延長される場合があります。"
+      },
+      "refundPolicy": {
+        "title": "返金条件",
+        "content": "返金リクエストは以下の条件を満たす必要があります：サービス開始から7日以内、大量のトラフィック使用がない、アカウントステータスが正常など。具体的な返金条件については、利用規約をご参照いただくか、カスタマーサービスまでお問い合わせください。"
+      },
+      "contact": {
+        "title": "カスタマーサービスへのお問い合わせ",
+        "content": "返金または出金についてご質問がございましたら、いつでもカスタマーサービスチームまでお問い合わせください：support@kaitu.io"
+      }
+    }
+  },
+  "purchaseStep3": {
+    "priceSlash": "/"
+  }
+}

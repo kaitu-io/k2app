@@ -1,0 +1,233 @@
+{
+  "hero": {
+    "title": "安全便捷的",
+    "networkProxy": "网络代理",
+    "solution": "解决方案",
+    "description": "开途（Kaitu.io）提供专业级的网络代理服务，支持多平台客户端，采用先进的加密技术确保您的网络连接安全、快速、稳定。",
+    "downloadClient": "下载客户端",
+    "quickActivation": "快速开通",
+    "smartRouter": "智能路由器"
+  },
+  "security": {
+    "title": "开途协议 - 新一代网络传输技术",
+    "description": "开途协议（Kaitu Protocol）是我们自主研发的下一代网络传输协议，采用多路径聚合、军工级加密和智能路由等先进技术，为您提供安全、快速、稳定的网络连接体验。",
+    "icon": "🔒",
+    "caTech": {
+      "title": "多路径聚合技术（MPTCP）",
+      "description": "开途协议独创的多路径聚合技术，能够同时利用多条网络通道传输数据，实现带宽叠加和智能负载均衡，即使单条线路出现故障也能无缝切换，确保连接永不中断。",
+      "advantages": {
+        "title": "核心特性",
+        "item1": "多通道同时传输，带宽智能聚合",
+        "item2": "RTT实时测量，自动选择最优路径",
+        "item3": "故障自动转移，连接永不中断",
+        "item4": "指数移动平均算法，精准路径评估",
+        "bullet": "•"
+      },
+      "adaptive": {
+        "title": "企业级网络自适应",
+        "item1": "根据网络状况智能选择最优协议",
+        "item2": "支持 WebSocket、HTTP/2 等多种传输方式",
+        "item3": "实时网络质量监控与调优",
+        "item4": "弱网环境下的可靠连接保障",
+        "bullet": "•"
+      }
+    },
+    "features": {
+      "title": "协议核心优势",
+      "multipath": {
+        "title": "多路径聚合",
+        "description": "同时利用多条网络通道，智能选择最优路径，实现带宽叠加和自动故障转移",
+        "icon": "🔀"
+      },
+      "encryption": {
+        "title": "军工级加密",
+        "description": "采用 AES-256-GCM 加密算法，ECDSA P-256 椭圆曲线，PBKDF2 十万次密钥派生",
+        "icon": "🔐"
+      },
+      "smartRouting": {
+        "title": "智能路由",
+        "description": "基于 RTT 的实时路径优化，指数移动平均算法确保始终使用最快通道",
+        "icon": "🧭"
+      },
+      "disguise": {
+        "title": "流量伪装",
+        "description": "CA 证书模拟技术，流量呈现为标准 HTTPS，完美融入正常网络环境",
+        "icon": "🎭"
+      },
+      "failover": {
+        "title": "自动故障转移",
+        "description": "单路径故障时毫秒级切换，用户完全无感知，确保业务连续性",
+        "icon": "🔄"
+      },
+      "performance": {
+        "title": "高性能架构",
+        "description": "支持 5000 并发连接，32KB 缓冲池优化，零拷贝数据转发",
+        "icon": "⚡"
+      }
+    },
+    "techSpecs": {
+      "title": "技术规格",
+      "encryption": "加密算法",
+      "encryptionValue": "AES-256-GCM + ECDSA P-256",
+      "keyDerivation": "密钥派生",
+      "keyDerivationValue": "PBKDF2-SHA512 (100,000次迭代)",
+      "transport": "传输协议",
+      "transportValue": "WebSocket over TLS / HTTP/2",
+      "multiplexing": "多路复用",
+      "multiplexingValue": "smux 流复用 + 多路径聚合",
+      "heartbeat": "心跳保活",
+      "heartbeatValue": "30秒间隔 / 90秒超时",
+      "concurrent": "并发能力",
+      "concurrentValue": "单会话 5000+ 并发流"
+    },
+    "comparison": {
+      "title": "协议对比",
+      "metrics": {
+        "detection": "抗检测",
+        "encryption": "加密强度",
+        "stability": "稳定性",
+        "difficulty": "配置难度"
+      },
+      "stars": {
+        "five": "★★★★★",
+        "four": "★★★★☆",
+        "three": "★★★☆☆",
+        "two": "★★☆☆☆",
+        "one": "★☆☆☆☆"
+      },
+      "kaitu": {
+        "letter": "K",
+        "name": "Kaitu 开途",
+        "tech": "MPTCP 多路径聚合 + CA 证书伪装"
+      },
+      "trojan": {
+        "letter": "T",
+        "name": "Trojan",
+        "tech": "TLS 加密 + 流量伪装"
+      },
+      "v2ray": {
+        "letter": "V",
+        "name": "V2Ray",
+        "tech": "VMess/VLESS 协议 + 多种传输"
+      },
+      "shadowsocks": {
+        "letter": "S",
+        "name": "Shadowsocks",
+        "tech": "AEAD 加密 + 轻量代理"
+      }
+    },
+    "visualization": {
+      "title": "多路径聚合技术 (MPTCP)",
+      "subtitle": "实时演示：数据同时通过多个中转节点传输，智能选择最优路径",
+      "client": "客户端",
+      "target": "目标服务器",
+      "relayNodes": "中转节点集群",
+      "nodes": {
+        "hongkong": "香港节点",
+        "japan": "日本节点",
+        "singapore": "新加坡节点"
+      },
+      "rtt": "RTT",
+      "ms": "ms",
+      "status": {
+        "optimal": "最优",
+        "good": "良好",
+        "slow": "较慢",
+        "failed": "故障"
+      },
+      "legend": {
+        "title": "图例",
+        "dataPacket": "数据包",
+        "activePath": "活跃路径",
+        "failedPath": "故障路径",
+        "optimalNode": "最优节点"
+      },
+      "description": "上图展示了开途协议的多路径聚合架构：数据从客户端出发，同时通过多个地理位置不同的中转节点传输到目标服务器。系统实时监测每个节点的延迟（RTT），自动将更多流量分配给最优节点（绿色虚线框）。当某个节点出现故障时，流量会瞬间切换到其他可用节点，确保连接不中断。每个中转节点还可配置多网卡，实现带宽的进一步聚合。"
+    }
+  },
+  "download": {
+    "title": "下载客户端",
+    "subtitle": "选择适合您设备的客户端，开始安全的网络之旅",
+    "platforms": {
+      "ios": "支持 iPhone 和 iPad",
+      "iosLabel": "iOS",
+      "android": "支持 Android 手机和平板",
+      "androidLabel": "Android",
+      "windows": "支持 Windows 10/11",
+      "windowsLabel": "Windows",
+      "macos": "支持 macOS 12+",
+      "macosLabel": "macOS"
+    },
+    "downloadButton": "下载",
+    "comingSoon": "即将推出"
+  },
+  "routers": {
+    "title": "智能网络路由器",
+    "subtitle": "专业级路由器解决方案，内置安全代理，全家轻松使用",
+    "presaleTag": "预售中",
+    "benefits": {
+      "title": "为什么选择路由器方案？",
+      "subtitle": "全方位网络代理解决方案，让安全上网变得简单易用",
+      "items": {
+        "easySetup": {
+          "title": "一键设置",
+          "description": "即插即用，无需技术配置"
+        },
+        "familyFriendly": {
+          "title": "全家适用",
+          "description": "家中所有设备自动连接，老少皆宜"
+        },
+        "alwaysOn": {
+          "title": "随时可用",
+          "description": "24小时不间断服务，开机自动连接"
+        },
+        "multiDevice": {
+          "title": "多设备支持",
+          "description": "支持智能电视、游戏机等所有网络设备"
+        },
+        "techSupport": {
+          "title": "专业支持",
+          "description": "专业技术团队提供全面售后服务"
+        },
+        "costEffective": {
+          "title": "成本效益",
+          "description": "一次购买长期使用，比订阅更经济"
+        }
+      }
+    },
+    "backToHome": "返回首页",
+    "welcome": "欢迎",
+    "adminPanel": "管理后台",
+    "login": "登录",
+    "comma": "，",
+    "productFeatures": "产品特色",
+    "contactInquiry": "联系咨询",
+    "presalePriceConsult": "预售价格请咨询客服 • 1年质保",
+    "presalePriceConsultFull": "预售价格请咨询客服 • 1年质保 • 赠送服务激活码",
+    "routerVsClient": "路由器 vs 客户端对比",
+    "whyChooseRouter": "为什么选择路由器解决方案？",
+    "smartRouter": "智能路由器",
+    "recommended": "推荐方案",
+    "clientSoftware": "客户端软件",
+    "traditional": "传统方案",
+    "bullet": "•",
+    "autoConnect": "全家设备自动连接，无需单独配置",
+    "alwaysRunning": "24小时不间断运行，随时可用",
+    "allDevices": "支持智能电视、游戏机等所有设备",
+    "easyUse": "老人小孩都能轻松使用",
+    "onePurchase": "一次购买，长期使用",
+    "individualSetup": "每台设备需要单独安装配置",
+    "manualStart": "需要手动启动，容易忘记",
+    "deviceLimits": "智能电视、游戏机不支持",
+    "complexConfig": "配置复杂，学习成本高",
+    "ongoing": "需要持续订阅付费",
+    "contactUsMore": "联系我们了解更多",
+    "teamDescription": "我们的专业团队将为您详细介绍产品特性，协助您选择最适合的路由器方案",
+    "emailConsult": "邮件咨询",
+    "productDetailsTech": "产品详情、技术支持",
+    "onlineService": "在线客服",
+    "realTimeResponse": "实时咨询、快速响应",
+    "startOnlineService": "启动在线客服",
+    "warranty": "所有路由器产品均提供1年质保 • 免费技术支持 • 7天无理由退货"
+  }
+}

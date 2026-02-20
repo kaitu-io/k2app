@@ -1,0 +1,35 @@
+{
+  "theme": {
+    "toggle": "切換主題",
+    "light": "淺色模式",
+    "dark": "深色模式",
+    "system": "系統",
+    "switchToLight": "切換到淺色模式",
+    "switchToDark": "切換到深色模式",
+    "followSystem": "跟隨系統設定"
+  },
+  "opensource": {
+    "title": "開源倒數",
+    "subtitle": "開途即將開源",
+    "description": "我哋承諾將開途核心代碼開源，令每個人都能查看、驗證同貢獻代碼，共同構建更安全、透明嘅網絡工具。",
+    "targetDate": "開源發佈日期",
+    "targetDateValue": "2026年06月04日",
+    "days": "日",
+    "hours": "小時",
+    "minutes": "分鐘",
+    "seconds": "秒",
+    "countingDown": "距離開源發佈仲有...",
+    "released": "我哋已經開源！",
+    "releasedDesc": "開途核心代碼而家已經喺 GitHub 上開源，歡迎訪問我哋嘅倉庫查看代碼、提交問題或貢獻代碼。",
+    "viewOnGithub": "喺 GitHub 上查看",
+    "whyTitle": "點解選擇開源？",
+    "reason1Title": "透明可信",
+    "reason1Desc": "開源代碼令每個人都能審查我哋嘅實現，確保無後門或惡意代碼，建立真正嘅信任。",
+    "reason2Title": "社群驅動",
+    "reason2Desc": "開源令全球開發者能夠共同參與，提交改進同修復，令產品變得更好。",
+    "reason3Title": "安全保障",
+    "reason3Desc": "更多嘅眼睛意味住更快發現同修復安全漏洞，開源軟件往往比閉源更安全。",
+    "reason4Title": "知識共享",
+    "reason4Desc": "我哋相信技術應該造福所有人，開源令每個人都能學習同使用先進嘅網絡技術。"
+  }
+}

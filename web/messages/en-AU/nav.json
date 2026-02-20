@@ -1,0 +1,46 @@
+{
+  "nav": {
+    "openSource": "Open Source",
+    "welcome": "Welcome",
+    "adminPanel": "Admin Panel",
+    "login": "Log In",
+    "logout": "Log Out",
+    "purchase": "Subscribe Now",
+    "home": "Home",
+    "backToHome": "Back to Home"
+  },
+  "footer": {
+    "brandName": "Kaitu",
+    "brandDescription": "Secure and convenient network proxy solution",
+    "product": {
+      "title": "Product",
+      "clientDownload": "Client Download",
+      "smartRouter": "Smart Router Products",
+      "retailerProgram": "Reseller Programme",
+      "nodeStatus": "Node Status"
+    },
+    "developer": {
+      "title": "Developer",
+      "apiDocs": "API Documentation",
+      "openSource": "Open Source",
+      "techBlog": "Technical Blog"
+    },
+    "support": {
+      "title": "Support",
+      "userGuide": "User Guide",
+      "faq": "FAQ",
+      "contact": "Contact Us"
+    },
+    "legal": {
+      "title": "Legal"
+    },
+    "copyright": "All rights reserved.",
+    "copyrightSymbol": "©",
+    "period": "."
+  },
+  "languageDetection": {
+    "message": "Your browser language is detected as",
+    "question": ", would you like to switch?",
+    "switchTo": "Switch to"
+  }
+}

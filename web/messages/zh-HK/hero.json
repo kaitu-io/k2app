@@ -1,0 +1,233 @@
+{
+  "hero": {
+    "title": "安全便捷嘅",
+    "networkProxy": "網絡代理",
+    "solution": "解決方案",
+    "description": "開途（Kaitu.io）提供專業級嘅網絡代理服務，支援多平台客戶端，採用先進嘅加密技術確保您嘅網絡連接安全、快速、穩定。",
+    "downloadClient": "下載客戶端",
+    "quickActivation": "快速開通",
+    "smartRouter": "智能路由器"
+  },
+  "security": {
+    "title": "開途協議 - 新一代網絡傳輸技術",
+    "description": "開途協議（Kaitu Protocol）係我哋自主研發嘅下一代網絡傳輸協議，採用多路徑聚合、軍工級加密同智能路由等先進技術，為您提供安全、快速、穩定嘅網絡連接體驗。",
+    "icon": "🔒",
+    "caTech": {
+      "title": "多路徑聚合技術（MPTCP）",
+      "description": "開途協議獨創嘅多路徑聚合技術，能夠同時利用多條網絡通道傳輸數據，實現帶寬疊加同智能負載均衡，即使單條線路出現故障都能無縫切換，確保連接永不中斷。",
+      "advantages": {
+        "title": "核心特性",
+        "item1": "多通道同時傳輸，帶寬智能聚合",
+        "item2": "RTT實時測量，自動選擇最優路徑",
+        "item3": "故障自動轉移，連接永不中斷",
+        "item4": "指數移動平均演算法，精準路徑評估",
+        "bullet": "•"
+      },
+      "adaptive": {
+        "title": "企業級網絡自適應",
+        "item1": "根據網絡狀況智能選擇最優協議",
+        "item2": "支援 WebSocket、HTTP/2 等多種傳輸方式",
+        "item3": "實時網絡質素監控與調優",
+        "item4": "弱網環境下嘅可靠連接保障",
+        "bullet": "•"
+      }
+    },
+    "features": {
+      "title": "協議核心優勢",
+      "multipath": {
+        "title": "多路徑聚合",
+        "description": "同時利用多條網絡通道，智能選擇最優路徑，實現帶寬疊加同自動故障轉移",
+        "icon": "🔀"
+      },
+      "encryption": {
+        "title": "軍工級加密",
+        "description": "採用 AES-256-GCM 加密演算法，ECDSA P-256 橢圓曲線，PBKDF2 十萬次密鑰派生",
+        "icon": "🔐"
+      },
+      "smartRouting": {
+        "title": "智能路由",
+        "description": "基於 RTT 嘅實時路徑優化，指數移動平均演算法確保始終使用最快通道",
+        "icon": "🧭"
+      },
+      "disguise": {
+        "title": "流量偽裝",
+        "description": "CA 證書模擬技術，流量呈現為標準 HTTPS，完美融入正常網絡環境",
+        "icon": "🎭"
+      },
+      "failover": {
+        "title": "自動故障轉移",
+        "description": "單路徑故障時毫秒級切換，用戶完全無感知，確保業務連續性",
+        "icon": "🔄"
+      },
+      "performance": {
+        "title": "高性能架構",
+        "description": "支援 5000 並發連接，32KB 緩衝池優化，零複製數據轉發",
+        "icon": "⚡"
+      }
+    },
+    "techSpecs": {
+      "title": "技術規格",
+      "encryption": "加密演算法",
+      "encryptionValue": "AES-256-GCM + ECDSA P-256",
+      "keyDerivation": "密鑰派生",
+      "keyDerivationValue": "PBKDF2-SHA512 (100,000次迭代)",
+      "transport": "傳輸協議",
+      "transportValue": "WebSocket over TLS / HTTP/2",
+      "multiplexing": "多路複用",
+      "multiplexingValue": "smux 流複用 + 多路徑聚合",
+      "heartbeat": "心跳保活",
+      "heartbeatValue": "30秒間隔 / 90秒超時",
+      "concurrent": "並發能力",
+      "concurrentValue": "單會話 5000+ 並發流"
+    },
+    "comparison": {
+      "title": "協議對比",
+      "metrics": {
+        "detection": "抗檢測",
+        "encryption": "加密強度",
+        "stability": "穩定性",
+        "difficulty": "配置難度"
+      },
+      "stars": {
+        "five": "★★★★★",
+        "four": "★★★★☆",
+        "three": "★★★☆☆",
+        "two": "★★☆☆☆",
+        "one": "★☆☆☆☆"
+      },
+      "kaitu": {
+        "letter": "K",
+        "name": "Kaitu 開途",
+        "tech": "MPTCP 多路徑聚合 + CA 證書偽裝"
+      },
+      "trojan": {
+        "letter": "T",
+        "name": "Trojan",
+        "tech": "TLS 加密 + 流量偽裝"
+      },
+      "v2ray": {
+        "letter": "V",
+        "name": "V2Ray",
+        "tech": "VMess/VLESS 協議 + 多種傳輸"
+      },
+      "shadowsocks": {
+        "letter": "S",
+        "name": "Shadowsocks",
+        "tech": "AEAD 加密 + 輕量代理"
+      }
+    },
+    "visualization": {
+      "title": "多路徑聚合技術 (MPTCP)",
+      "subtitle": "實時演示：數據同時通過多個中轉節點傳輸，智能選擇最優路徑",
+      "client": "客戶端",
+      "target": "目標伺服器",
+      "relayNodes": "中轉節點集群",
+      "nodes": {
+        "hongkong": "香港節點",
+        "japan": "日本節點",
+        "singapore": "新加坡節點"
+      },
+      "rtt": "RTT",
+      "ms": "ms",
+      "status": {
+        "optimal": "最優",
+        "good": "良好",
+        "slow": "較慢",
+        "failed": "故障"
+      },
+      "legend": {
+        "title": "圖例",
+        "dataPacket": "數據包",
+        "activePath": "活躍路徑",
+        "failedPath": "故障路徑",
+        "optimalNode": "最優節點"
+      },
+      "description": "上圖展示咗開途協議嘅多路徑聚合架構：數據從客戶端出發，同時通過多個地理位置唔同嘅中轉節點傳輸到目標伺服器。系統實時監測每個節點嘅延遲（RTT），自動將更多流量分配俾最優節點（綠色虛線框）。當某個節點出現故障時，流量會瞬間切換到其他可用節點，確保連接唔中斷。每個中轉節點仲可配置多網卡，實現帶寬嘅進一步聚合。"
+    }
+  },
+  "download": {
+    "title": "下載客戶端",
+    "subtitle": "選擇適合您設備嘅客戶端，開始安全嘅網絡之旅",
+    "platforms": {
+      "ios": "支援 iPhone 同 iPad",
+      "iosLabel": "iOS",
+      "android": "支援 Android 手機同平板",
+      "androidLabel": "Android",
+      "windows": "支援 Windows 10/11",
+      "windowsLabel": "Windows",
+      "macos": "支援 macOS 12+",
+      "macosLabel": "macOS"
+    },
+    "downloadButton": "下載",
+    "comingSoon": "即將推出"
+  },
+  "routers": {
+    "title": "智能網絡路由器",
+    "subtitle": "專業級路由器解決方案，內置安全代理，全家輕鬆使用",
+    "presaleTag": "預售中",
+    "benefits": {
+      "title": "點解選擇路由器方案？",
+      "subtitle": "全方位網絡代理解決方案，令安全上網變得簡單易用",
+      "items": {
+        "easySetup": {
+          "title": "一鍵設置",
+          "description": "即插即用，無需技術配置"
+        },
+        "familyFriendly": {
+          "title": "全家適用",
+          "description": "屋企所有設備自動連接，老少皆宜"
+        },
+        "alwaysOn": {
+          "title": "隨時可用",
+          "description": "24小時唔間斷服務，開機自動連接"
+        },
+        "multiDevice": {
+          "title": "多設備支援",
+          "description": "支援智能電視、遊戲機等所有網絡設備"
+        },
+        "techSupport": {
+          "title": "專業支援",
+          "description": "專業技術團隊提供全面售後服務"
+        },
+        "costEffective": {
+          "title": "成本效益",
+          "description": "一次購買長期使用，比訂閱更經濟"
+        }
+      }
+    },
+    "backToHome": "返回首頁",
+    "welcome": "歡迎",
+    "adminPanel": "管理後台",
+    "login": "登入",
+    "comma": "，",
+    "productFeatures": "產品特色",
+    "contactInquiry": "聯繫咨詢",
+    "presalePriceConsult": "預售價格請咨詢客服 • 1年質保",
+    "presalePriceConsultFull": "預售價格請咨詢客服 • 1年質保 • 贈送服務激活碼",
+    "routerVsClient": "路由器 vs 客戶端對比",
+    "whyChooseRouter": "點解選擇路由器解決方案？",
+    "smartRouter": "智能路由器",
+    "recommended": "推薦方案",
+    "clientSoftware": "客戶端軟件",
+    "traditional": "傳統方案",
+    "bullet": "•",
+    "autoConnect": "全家設備自動連接，無需單獨配置",
+    "alwaysRunning": "24小時唔間斷運行，隨時可用",
+    "allDevices": "支援智能電視、遊戲機等所有設備",
+    "easyUse": "老人細路都能輕鬆使用",
+    "onePurchase": "一次購買，長期使用",
+    "individualSetup": "每部設備需要單獨安裝配置",
+    "manualStart": "需要手動啟動，容易唔記得",
+    "deviceLimits": "智能電視、遊戲機唔支援",
+    "complexConfig": "配置複雜，學習成本高",
+    "ongoing": "需要持續訂閱付費",
+    "contactUsMore": "聯繫我哋了解更多",
+    "teamDescription": "我哋嘅專業團隊會為您詳細介紹產品特性，協助您選擇最適合嘅路由器方案",
+    "emailConsult": "郵件咨詢",
+    "productDetailsTech": "產品詳情、技術支援",
+    "onlineService": "在線客服",
+    "realTimeResponse": "實時咨詢、快速回應",
+    "startOnlineService": "啟動在線客服",
+    "warranty": "所有路由器產品均提供1年質保 • 免費技術支援 • 7日無理由退貨"
+  }
+}

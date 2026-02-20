@@ -1,0 +1,46 @@
+{
+  "nav": {
+    "openSource": "开源代码",
+    "welcome": "欢迎",
+    "adminPanel": "管理后台",
+    "login": "登录",
+    "logout": "退出登录",
+    "purchase": "立即开通",
+    "home": "首页",
+    "backToHome": "返回首页"
+  },
+  "footer": {
+    "brandName": "开途 Kaitu",
+    "brandDescription": "安全便捷的网络代理解决方案",
+    "product": {
+      "title": "产品",
+      "clientDownload": "客户端下载",
+      "smartRouter": "智能路由器产品",
+      "retailerProgram": "分销计划",
+      "nodeStatus": "节点状态"
+    },
+    "developer": {
+      "title": "开发者",
+      "apiDocs": "API文档",
+      "openSource": "开源代码",
+      "techBlog": "技术博客"
+    },
+    "support": {
+      "title": "支持",
+      "userGuide": "使用指南",
+      "faq": "常见问题",
+      "contact": "联系我们"
+    },
+    "legal": {
+      "title": "法律条款"
+    },
+    "copyright": "保留所有权利.",
+    "copyrightSymbol": "©",
+    "period": "。"
+  },
+  "languageDetection": {
+    "message": "检测到您的浏览器语言是",
+    "question": "，是否切换？",
+    "switchTo": "切换到"
+  }
+}

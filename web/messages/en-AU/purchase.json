@@ -1,0 +1,196 @@
+{
+  "purchase": {
+    "loading": "Loading...",
+    "proMemberBenefits": "Pro Member Benefits",
+    "features": {
+      "multiDevice": "Multi-Device Support",
+      "multiDeviceDesc": "Support for multiple simultaneous device logins",
+      "ipAnonymize": "IP Anonymisation",
+      "ipAnonymizeDesc": "Protect your real IP address",
+      "multiThreading": "Multi-Threading Acceleration",
+      "multiThreadingDesc": "Faster network connection speeds",
+      "adBlock": "Ad Blocking",
+      "adBlockDesc": "Block ads and trackers",
+      "prioritySupport": "Priority Support",
+      "prioritySupportDesc": "Receive priority customer service"
+    },
+    "authorizationExpired": "Authorisation Expired",
+    "selectPlanToRenew": "Please select a plan to renew your service",
+    "completeFirstPurchase": "Complete First Purchase",
+    "currentlyInTrial": "You are currently in trial mode",
+    "selectPaymentTarget": "Select Payment Target",
+    "myself": "Myself",
+    "chargeForMyself": "Purchase for myself",
+    "addFirstMember": "Add First Member",
+    "addAnotherMember": "Add Another Member",
+    "addMember": "Add Member",
+    "addMemberHint": "Enter the member's email address",
+    "memberEmail": "Member Email",
+    "memberEmailPlaceholder": "Please enter member email address",
+    "cancel": "Cancel",
+    "add": "Add",
+    "adding": "Adding...",
+    "addMemberSuccess": "Member added successfully",
+    "addMemberFailed": "Failed to add member",
+    "getMembersFailed": "Failed to retrieve member list",
+    "getMembersFailedRetry": "Failed to retrieve member list, please try again",
+    "emailRequired": "Email address required",
+    "noEmail": "No email",
+    "expiresAt": "Expiry Date",
+    "notActivated": "Not Activated",
+    "expired": "Expired",
+    "selectAtLeastOne": "Please select at least one payment target",
+    "selectAtLeastOneTarget": "Please select at least one payment target",
+    "friendReferralBonus": "Friend referral reward: {days} days",
+    "friendReferralGift": "+{days} day gift",
+    "selectPlan": "Select Plan",
+    "month": "month",
+    "totalPrice": "Total",
+    "saveAmount": "Save ${amount}",
+    "hotPlan": "Popular",
+    "total": "Total",
+    "proAuthorization": "{months}-month Pro authorisation",
+    "proAuthorizationMultiple": "{count} users {months}-month Pro authorisation",
+    "havePromoCode": "Have a promo code?",
+    "campaignCodePlaceholder": "Please enter promo code",
+    "clear": "Clear",
+    "includingTax": "incl. tax",
+    "loadingPlans": "Loading plans...",
+    "noPlans": "No plans available",
+    "selectTarget": "Please select target",
+    "payNow": "Pay Now",
+    "bindEmailToPayNow": "Link email to pay",
+    "noPlansAvailable": "No plans available",
+    "createOrderFailed": "Failed to create order",
+    "invalidCampaignCode": "Invalid promo code",
+    "getPlansFailedRetry": "Failed to retrieve plans, please try again",
+    "paymentResultConfirm": "Payment Result Confirmation",
+    "orderNumber": "Order Number",
+    "paymentAmount": "Payment Amount",
+    "paymentConfirmHint": "Please confirm whether your payment was successful",
+    "paymentSuccess": "Payment Successful",
+    "paymentFailed": "Payment Failed",
+    "refreshUserProfileFailed": "Failed to refresh user profile",
+    "loginToGetStarted": "Log in to get started",
+    "loginHint": "Please log in or register to continue your purchase",
+    "loginRequired": "Login Required",
+    "sendVerificationCode": "Send Verification Code",
+    "confirmBinding": "Confirm Linking",
+    "bindingEmail": "Linking email",
+    "bindEmailAboveToGetStarted": "Link your email above to get started",
+    "selectPayTarget": "Select Payment Target",
+    "bindEmailAndSelectTarget": "Link email and select target",
+    "confirmAndPay": "Confirm and Pay",
+    "stepProgress": "Step {current} of {total}",
+    "previousStep": "Previous",
+    "nextStep": "Next",
+    "step": "Step",
+    "of": "of",
+    "title": "Purchase Pro Plan",
+    "subtitle": "Complete your purchase in three simple steps",
+    "instantActivation": "Instant Activation",
+    "securePayment": "Secure Payment",
+    "moneyBackGuarantee": "Money-Back Guarantee",
+    "moneyBackGuaranteeDetail": "Refunds are processed through wallet balance, which can be used for renewals or withdrawn to cryptocurrency wallets",
+    "support24x7": "24/7 Support",
+    "processing": "Processing",
+    "mostPopular": "Most Popular",
+    "bestValue": "Best Value",
+    "recommendedForMostUsers": "Recommended for most users",
+    "savePercent": "Save {percent}%",
+    "priceSlash": "/",
+    "dash": "-",
+    "ellipsis": "...",
+    "colon": ":",
+    "dollarSign": "$",
+    "inviteRewardTitle": "New User Exclusive Reward",
+    "inviteRewardDesc": "Upon completing your purchase, you will receive an additional {days} days of Pro membership"
+  },
+  "error403": {
+    "title": "Access Forbidden",
+    "subtitle": "You don't have permission to access this page",
+    "description": "Sorry, you don't have the required permissions to view this content. Please contact your administrator for access.",
+    "errorCode": "Error Code: 403",
+    "suggestions": {
+      "title": "You can:",
+      "item1": "Check if you're logged in with the correct account",
+      "item2": "Contact your administrator for access",
+      "item3": "Return to the previous page",
+      "item4": "Return to dashboard"
+    },
+    "actions": {
+      "goBack": "Go Back",
+      "goToDashboard": "Go to Dashboard",
+      "contactSupport": "Contact Support",
+      "retryLogin": "Log In Again"
+    }
+  },
+  "refund": {
+    "title": "Refund Policy",
+    "subtitle": "Learn about our refund process and wallet withdrawal instructions",
+    "lastUpdated": "Last updated: {date}",
+    "sections": {
+      "overview": {
+        "title": "Refund Overview",
+        "content": "We're committed to providing quality service experiences for our users. If you're dissatisfied with your purchased service, you may apply for a refund according to our refund policy. Refunds will be returned to your account as wallet balance."
+      },
+      "refundProcess": {
+        "title": "Refund Process",
+        "content": "When your refund request is approved, the refund amount will be immediately returned to your account wallet balance. You can use your wallet balance to continue purchasing our services or apply for withdrawal to your cryptocurrency wallet address."
+      },
+      "walletBalance": {
+        "title": "Wallet Balance Information",
+        "content": "Wallet balance is your virtual account balance on the Kaitu platform, which can be used for: 1. Purchasing or renewing any plan; 2. Withdrawal to supported cryptocurrency wallets. Refunds to wallet are immediately available, no waiting required."
+      },
+      "withdrawalMethods": {
+        "title": "Withdrawal Methods",
+        "content": "We support withdrawing wallet balance to mainstream cryptocurrency wallets. Supported cryptocurrencies include:"
+      },
+      "supportedCryptos": {
+        "title": "Supported Cryptocurrencies",
+        "usdt": "USDT (Tether) - supports TRC20 and ERC20 networks",
+        "usdc": "USDC (USD Coin) - supports ERC20 network",
+        "eth": "ETH (Ethereum) - ERC20 network",
+        "btc": "BTC (Bitcoin) - Bitcoin mainnet",
+        "other": "Other mainstream stablecoins and cryptocurrencies (please contact customer service for confirmation)"
+      },
+      "withdrawalProcess": {
+        "title": "Withdrawal Process",
+        "step1": "1. Apply for withdrawal on the account page",
+        "step2": "2. Select cryptocurrency type and blockchain network",
+        "step3": "3. Enter your wallet address",
+        "step4": "4. Confirm withdrawal amount and fees",
+        "step5": "5. Submit application and await review",
+        "step6": "6. After approval, funds will arrive within 1-3 business days"
+      },
+      "importantNotes": {
+        "title": "Important Notes",
+        "note1": "• Please ensure the wallet address and blockchain network are correct",
+        "note2": "• Users are responsible for fund losses due to incorrect wallet addresses",
+        "note3": "• Withdrawal fees may vary for different cryptocurrencies and networks",
+        "note4": "• Withdrawal applications cannot be cancelled once submitted, please proceed carefully",
+        "note5": "• First-time withdrawals may require identity verification",
+        "note6": "• Large withdrawals may require additional security review"
+      },
+      "withdrawalFees": {
+        "title": "Withdrawal Fees",
+        "content": "Withdrawal fees vary depending on cryptocurrency and blockchain network. Specific fees will be displayed when you apply for withdrawal. We'll try to select networks with lower fees to process your withdrawal."
+      },
+      "processingTime": {
+        "title": "Processing Time",
+        "content": "Withdrawal applications will be processed within 1-3 business days. Actual arrival time depends on blockchain network confirmation speed. During peak periods or network congestion, arrival time may be extended."
+      },
+      "refundPolicy": {
+        "title": "Refund Conditions",
+        "content": "Refund applications must meet the following conditions: service not exceeding 7 days, no excessive data usage, normal account status, etc. For specific refund conditions, please refer to the Terms of Service or contact customer service."
+      },
+      "contact": {
+        "title": "Contact Customer Service",
+        "content": "If you have any questions about refunds or withdrawals, please contact our customer service team: support@kaitu.io"
+      }
+    }
+  },
+  "purchaseStep3": {
+    "priceSlash": "/"
+  }
+}

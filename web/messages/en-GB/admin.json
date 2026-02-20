@@ -1,0 +1,112 @@
+{
+  "account": {
+    "title": "My Account",
+    "subtitle": "Manage your account settings and membership benefits",
+    "renew": {
+      "title": "Renewal",
+      "description": "Manage your membership service and renewals"
+    },
+    "members": {
+      "title": "Member Management",
+      "description": "After adding members, they can share your membership benefits. Suitable for families, enterprises and multi-user scenarios.",
+      "addMember": "Add member",
+      "removeMember": "Remove member",
+      "memberEmail": "Member email",
+      "memberStatus": "Status",
+      "userId": "User ID",
+      "expiryDate": "Expiry date",
+      "noMembers": "No members",
+      "noMembersDesc": "You haven't added any members yet",
+      "addFirstMember": "Add first member",
+      "addMemberDialog": "Add member",
+      "emailLabel": "Member email",
+      "emailPlaceholder": "Enter member email address",
+      "emailHelp": "Member will log in and use your membership benefits with this email",
+      "emailRequired": "Please enter email address",
+      "invalidEmail": "Invalid email format",
+      "emailAlreadyInUse": "This email is already in use",
+      "addMemberSuccess": "Member added successfully",
+      "addMemberFailed": "Failed to add member",
+      "addMemberFailedRetry": "Failed to add member, please retry",
+      "removeMemberConfirm": "Are you sure you want to remove this member? After removal, the member will no longer be able to use your membership benefits.",
+      "removeMemberSuccess": "Member removed successfully",
+      "removeMemberFailed": "Failed to remove member",
+      "removeMemberFailedRetry": "Failed to remove member, please retry",
+      "getMembersFailed": "Failed to retrieve member list",
+      "getMembersFailedRetry": "Failed to retrieve member list, please retry",
+      "loading": "Loading member list...",
+      "noEmail": "No email set",
+      "status": {
+        "notActivated": "Not activated",
+        "valid": "Active",
+        "expiringSoon": "Expiring soon",
+        "expired": "Expired"
+      }
+    },
+    "delegate": {
+      "title": "Payer Management",
+      "description": "Manage users who pay for your account",
+      "noDelegate": "You currently have no payer and are using your own membership benefits",
+      "payerEmail": "Payer email",
+      "info": "A user is currently paying for your account. You can use this user's membership benefits.",
+      "rejectWarning": "After rejecting payment delegation, you will lose the membership benefits provided by this user and will need to pay yourself or find another payer.",
+      "rejectButton": "Reject delegation",
+      "rejectSuccess": {
+        "title": "Rejection successful",
+        "description": "You have successfully rejected the payment delegation"
+      },
+      "rejectFailed": "Failed to reject delegation"
+    },
+    "wallet": {
+      "title": "My Wallet",
+      "description": "Manage your wallet balance and withdrawals"
+    }
+  },
+  "admin": {
+    "members": {
+      "title": "User Member Management",
+      "manageUserMembers": "Manage user members",
+      "addMember": "Add member",
+      "removeMember": "Remove member",
+      "noMembers": "This user has no members",
+      "noMembersDesc": "This user hasn't added any members yet",
+      "addFirstMember": "Add first member",
+      "addMemberDialog": "Add member",
+      "addMemberSuccess": "Member added successfully",
+      "addMemberFailed": "Failed to add member",
+      "removeMemberConfirm": "Are you sure you want to remove this member? After removal, the member will no longer be able to use this user's membership benefits.",
+      "removeMemberSuccess": "Member removed successfully",
+      "removeMemberFailed": "Failed to remove member",
+      "getMembersFailed": "Failed to retrieve member list",
+      "getMembersFailedRetry": "Failed to retrieve member list, please retry"
+    }
+  },
+  "retailer": {
+    "title": "Retailer"
+  },
+  "retailerRules": {
+    "title": "Retailer Rules",
+    "subtitle": "Learn about Kaitu retailer programme rules and reward structure",
+    "contact": {
+      "title": "Contact Us",
+      "content": "For any questions about the retailer programme, please contact our partnership team",
+      "email": "partner@kaitu.io"
+    }
+  },
+  "tasks": {
+    "migrated": {
+      "title": "Task system migrated",
+      "description": "Asynchronous tasks are now managed through the Asynqmon monitoring dashboard. You can view task queues, execution status and history in Asynqmon. Email delivery logs can be viewed on the EDM delivery logs page.",
+      "goToAsynqmon": "Go to Asynqmon",
+      "viewSendLogs": "View email delivery logs"
+    }
+  },
+  "users": {
+    "title": "User Management",
+    "selection": {
+      "selected": "Selected",
+      "users": "user(s)",
+      "sendMarketingEmail": "Send marketing email"
+    }
+  }
+}

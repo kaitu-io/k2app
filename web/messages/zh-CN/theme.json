@@ -1,0 +1,35 @@
+{
+  "theme": {
+    "toggle": "切换主题",
+    "light": "浅色模式",
+    "dark": "深色模式",
+    "system": "系统",
+    "switchToLight": "切换到浅色模式",
+    "switchToDark": "切换到深色模式",
+    "followSystem": "跟随系统设置"
+  },
+  "opensource": {
+    "title": "开源倒计时",
+    "subtitle": "开途即将开源",
+    "description": "我们承诺将开途核心代码开源，让每个人都能查看、验证和贡献代码，共同构建更安全、透明的网络工具。",
+    "targetDate": "开源发布日期",
+    "targetDateValue": "2026年06月04日",
+    "days": "天",
+    "hours": "小时",
+    "minutes": "分钟",
+    "seconds": "秒",
+    "countingDown": "距离开源发布还有...",
+    "released": "我们已经开源！",
+    "releasedDesc": "开途核心代码现已在 GitHub 上开源，欢迎访问我们的仓库查看代码、提交问题或贡献代码。",
+    "viewOnGithub": "在 GitHub 上查看",
+    "whyTitle": "为什么选择开源？",
+    "reason1Title": "透明可信",
+    "reason1Desc": "开源代码让每个人都能审查我们的实现，确保没有后门或恶意代码，建立真正的信任。",
+    "reason2Title": "社区驱动",
+    "reason2Desc": "开源让全球开发者能够共同参与，提交改进和修复，让产品变得更好。",
+    "reason3Title": "安全保障",
+    "reason3Desc": "更多的眼睛意味着更快发现和修复安全漏洞，开源软件往往比闭源更安全。",
+    "reason4Title": "知识共享",
+    "reason4Desc": "我们相信技术应该造福所有人，开源让每个人都能学习和使用先进的网络技术。"
+  }
+}
