@@ -59,6 +59,9 @@ describe('tauri-k2', () => {
         if (cmd === 'get_update_status') {
           return null; // No pending update by default
         }
+        if (cmd === 'get_pid') {
+          return 12345;
+        }
         return { code: 0, message: 'ok', data: {} };
       });
       await injectTauriGlobals();
@@ -93,16 +96,15 @@ describe('tauri-k2', () => {
       expect(result.data.running).toBe(false);
     });
 
-    it('_k2.run passes params to daemon_exec', async () => {
-      const config = { server: { wireUrl: 'test://url' } };
-      mockInvoke.mockResolvedValueOnce({ code: 0, message: 'ok', data: {} });
+    it('_k2.run passes params with pid to daemon_exec for up action', async () => {
+      const config = { server: 'test://url' };
 
       await window._k2.run('up', config);
 
-      // Daemon handleUp expects params.config wrapping
+      // Daemon handleUp expects params.config wrapping + pid for lifecycle monitoring
       expect(mockInvoke).toHaveBeenCalledWith('daemon_exec', {
         action: 'up',
-        params: { config },
+        params: { config, pid: 12345 },
       });
     });
 
@@ -206,6 +208,9 @@ describe('tauri-k2', () => {
         if (cmd === 'get_update_status') {
           return null;
         }
+        if (cmd === 'get_pid') {
+          return 12345;
+        }
         return { code: 0, message: 'ok', data: {} };
       });
       await injectTauriGlobals();
@@ -293,6 +298,9 @@ describe('tauri-k2', () => {
         if (cmd === 'get_update_status') {
           return null;
         }
+        if (cmd === 'get_pid') {
+          return 12345;
+        }
         return { code: 0, message: 'ok', data: {} };
       });
       await injectTauriGlobals();
@@ -319,6 +327,9 @@ describe('tauri-k2', () => {
         }
         if (cmd === 'get_update_status') {
           return { currentVersion: '0.3.0', newVersion: '0.4.0', releaseNotes: 'Bug fixes' };
+        }
+        if (cmd === 'get_pid') {
+          return 12345;
         }
         return { code: 0, message: 'ok', data: {} };
       });
@@ -367,6 +378,9 @@ describe('tauri-k2', () => {
         if (cmd === 'get_update_status') {
           return null;
         }
+        if (cmd === 'get_pid') {
+          return 12345;
+        }
         return { code: 0, message: 'ok', data: {} };
       });
       await injectTauriGlobals();
@@ -398,6 +412,9 @@ describe('tauri-k2', () => {
         }
         if (cmd === 'get_update_status') {
           return null;
+        }
+        if (cmd === 'get_pid') {
+          return 12345;
         }
         return { code: 0, message: 'ok', data: {} };
       });

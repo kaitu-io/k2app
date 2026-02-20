@@ -9,6 +9,7 @@
 export interface ClientConfig {
   server?: string;
   mode?: 'tun' | 'proxy';
+  tun?: { ipv4?: string; ipv6?: string };
   rule?: { global?: boolean };
   log?: { level?: string; output?: string };
   proxy?: { listen?: string };

@@ -74,8 +74,12 @@ export async function injectTauriGlobals(): Promise<void> {
   const tauriK2: IK2Vpn = {
     run: async <T = any>(action: string, params?: any): Promise<SResponse<T>> => {
       try {
-        // Daemon handleUp expects params.config, not raw ClientConfig
-        const wrappedParams = action === 'up' && params ? { config: params } : (params ?? null);
+        // Daemon handleUp expects params.config + pid for lifecycle monitoring
+        let wrappedParams: any = params ?? null;
+        if (action === 'up' && params) {
+          const pid = await window._platform?.getPid?.();
+          wrappedParams = { config: params, ...(pid != null && { pid }) };
+        }
         const response = await invoke<ServiceResponse>('daemon_exec', {
           action,
           params: wrappedParams,

@@ -888,6 +888,26 @@ Script validates artifacts exist on S3, downloads to compute sha256+size, genera
 
 ---
 
+## Three-Layer Config Chain: ClientConfig → engine.Config → ProviderConfig (2026-02-20, k2-service-call-requirements)
+
+**Decision**: TUN device configuration (IPv4/IPv6 addresses) flows through the three-layer config chain without defaults injection at intermediate layers. Only the final consumer (provider's `tun_desktop.go`) applies defaults.
+
+**Chain**:
+1. `config.ClientConfig.Tun` (`TunConfig{IPv4, IPv6}`) — user-facing, YAML/JSON
+2. `engine.Config.TunIPv4` / `TunIPv6` — internal, flat strings
+3. `provider.ProviderConfig.IPv4Address` / `IPv6Address` — platform-specific
+
+**Mapping points**:
+- `daemon.engineConfigFromClientConfig()` maps `cfg.Tun.IPv4` → `ecfg.TunIPv4`
+- `engine.Start()` maps `cfg.TunIPv4` → `ProviderConfig{IPv4Address: ...}`
+- `tun_desktop.go` applies defaults: empty → `defaultIPv4Address` (`198.18.0.7/15`)
+
+**Why defaults only at final layer**: Intermediate layers should pass empty values through unchanged. Provider's `Start()` method is the only place that knows the right platform default. Mobile uses platform-provided TUN (no address needed). Desktop uses `198.18.0.7/15`. A hypothetical future platform might use different defaults.
+
+**Validating tests**: `k2/config/config_test.go` — `TestTunConfig_JSONRoundTrip`, `TestClientConfig_WithTun_YAML`, `TestClientConfig_EmptyTun_Defaults`; `k2/provider/provider_test.go` — `TestProviderConfig_TunAddresses_Preserved`, `TestProviderConfig_TunAddresses_Empty`; `k2/daemon/daemon_test.go` — `TestEngineConfigFromClientConfig_TunFields`, `TestEngineConfigFromClientConfig_TunDefaults`, `TestEngineConfigFromClientConfig_ProxyModeUnchanged`
+
+---
+
 ## Unified Debug Page at Abstraction Layer (2026-02-18, unified-debug-page)
 
 **Decision**: Debug page tests at `window._k2.run()` / `window._platform` abstraction layer instead of raw native APIs (K2Plugin or Tauri IPC). One `debug.html` works on all 3 platforms.

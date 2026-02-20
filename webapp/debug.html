@@ -295,7 +295,7 @@
           <button class="btn btn-disconnect" onclick="callK2('down')">Disconnect</button>
         </div>
         <div class="section-label" style="margin-top: 8px">ClientConfig</div>
-        <textarea id="configEditor" class="json-editor" spellcheck="false" placeholder='{ "server": { "wireUrl": "vless://..." }, "rule": { "global": true } }'></textarea>
+        <textarea id="configEditor" class="json-editor" spellcheck="false" placeholder='{ "server": "vless://...", "mode": "tun", "rule": { "global": true } }'></textarea>
         <div class="input-row">
           <select id="presets" class="input-field" onchange="applyPreset()">
             <option value="">Custom</option>
@@ -378,11 +378,13 @@
       // ── Presets ──
       const PRESETS = {
         global: {
-          server: { wireUrl: 'vless://example.kaitu.io:443?security=tls&type=ws' },
+          server: 'vless://example.kaitu.io:443?security=tls&type=ws',
+          mode: 'tun',
           rule: { global: true }
         },
         smart: {
-          server: { wireUrl: 'vless://example.kaitu.io:443?security=tls&type=ws' },
+          server: 'vless://example.kaitu.io:443?security=tls&type=ws',
+          mode: 'tun',
           rule: { global: false }
         }
       };

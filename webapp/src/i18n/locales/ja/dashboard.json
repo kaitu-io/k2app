@@ -45,6 +45,23 @@
     "muxDescription": "##レイテンシーが低く、速度が速い##。1つのチャネルで複数のリクエストを同時に転送、高速道路の車線を増やすのと同じで、##待機時間を短縮##。動画視聴やゲームに最適。",
     "concurrentDescription": "##複数のノードを同時使用##で接続をより速く安定させます。複数の道を同時に使うようなもので、1つが混雑しても他の道があります。##ネットワーク制限時に特に有効##、Pro専用機能。",
     "anonymityDescription": "##サーバー接続とサイトアクセスで異なるIPアドレスを使用##し、実際の位置を追跡から保護します。二重マスクをかけるようなもので、プライバシーがより安全。注意：速度がわずかに影響を受ける可能性があります、Pro専用機能。",
+    "proxyModeLabel": "プロキシモード",
+    "proxyModeDescription": "ネットワークプロキシ方式を選択",
+    "proxyModeOptions": {
+      "tun": "TUN モード",
+      "proxy": "プロキシモード"
+    },
+    "proxyModeHint": "プロキシモードはトラフィックを自動的にキャプチャしません。アプリにプロキシを設定する必要があります。HTTP と SOCKS5 は同じアドレスを共有：",
+    "proxyModeAddress": "{{address}}",
+    "proxyModeTunHint": "TUN モードはすべてのシステムトラフィックを自動的にキャプチャします。追加設定は不要です。",
+    "logLevel": "ログレベル",
+    "logLevelDescription": "トラブルシューティング時はDebugに設定して詳細ログを確認",
+    "logLevelOptions": {
+      "debug": "Debug",
+      "info": "Info",
+      "warn": "Warn",
+      "error": "Error"
+    },
     "recentLocations": "最近使用",
     "favorites": "お気に入りサーバー",
     "allLocations": "すべての場所",

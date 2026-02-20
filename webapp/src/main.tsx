@@ -28,6 +28,9 @@ async function main() {
     console.info('[WebApp] Tauri detected, injecting Tauri bridge...');
     const { injectTauriGlobals } = await import('./services/tauri-k2');
     await injectTauriGlobals();
+    // Sync current i18n locale to Rust for tray menu i18n
+    const { default: i18n } = await import('i18next');
+    window._platform?.syncLocale(i18n.language).catch(() => {});
   } else {
     const { Capacitor } = await import('@capacitor/core');
     if (Capacitor.isNativePlatform()) {

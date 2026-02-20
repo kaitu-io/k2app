@@ -437,6 +437,24 @@ export default function Dashboard() {
                       {t('dashboard:dashboard.proxyModeOptions.proxy')}
                     </ToggleButton>
                   </ToggleButtonGroup>
+                  {proxyMode === 'proxy' ? (
+                    <Box sx={{ mt: 1, p: 1.5, bgcolor: 'action.hover', borderRadius: 1 }}>
+                      <Typography variant="caption" color="text.secondary" component="p">
+                        {t('dashboard:dashboard.proxyModeHint')}
+                      </Typography>
+                      <Typography
+                        variant="caption"
+                        component="p"
+                        sx={{ mt: 0.5, fontFamily: 'monospace', fontWeight: 600, color: 'primary.main' }}
+                      >
+                        {t('dashboard:dashboard.proxyModeAddress', { address: '127.0.0.1:1080' })}
+                      </Typography>
+                    </Box>
+                  ) : (
+                    <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 1 }}>
+                      {t('dashboard:dashboard.proxyModeTunHint')}
+                    </Typography>
+                  )}
                 </Box>
                 {/* Log Level Selection */}
                 <Box>

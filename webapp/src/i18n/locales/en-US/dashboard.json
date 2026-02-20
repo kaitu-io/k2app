@@ -51,6 +51,9 @@
       "tun": "TUN Mode",
       "proxy": "Proxy Mode"
     },
+    "proxyModeHint": "Proxy mode does not capture traffic automatically. You need to configure your apps to use the proxy. Both HTTP and SOCKS5 share the same address:",
+    "proxyModeAddress": "{{address}}",
+    "proxyModeTunHint": "TUN mode captures all system traffic automatically. No extra configuration needed.",
     "logLevel": "Log Level",
     "logLevelDescription": "Set to Debug for detailed logs when troubleshooting",
     "logLevelOptions": {

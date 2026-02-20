@@ -125,10 +125,12 @@ class K2VpnService : VpnService(), VpnServiceBridge {
             .setMtu(1400)
 
         vpnInterface = builder.establish()
-        Log.d(TAG, "establish() result: vpnInterface=$vpnInterface, fd=${vpnInterface?.fd}")
+        Log.d(TAG, "establish() result: vpnInterface=$vpnInterface")
 
-        val fd = vpnInterface?.fd
-        if (fd == null) {
+        // Transfer fd ownership to Go engine via detachFd().
+        // Go engine will close the fd when it stops — we must NOT close it from Kotlin.
+        val rawFd = vpnInterface?.detachFd()
+        if (rawFd == null || rawFd == -1) {
             Log.e(TAG, "establish() returned null — VPN permission not granted?")
             plugin?.onError("VPN establish failed: permission not granted or system rejected")
             stopVpn()
@@ -136,8 +138,8 @@ class K2VpnService : VpnService(), VpnServiceBridge {
         }
 
         try {
-            Log.d(TAG, "Starting engine with fd=$fd")
-            engine?.start(configJSON, fd.toLong(), filesDir.absolutePath)
+            Log.d(TAG, "Starting engine with fd=$rawFd")
+            engine?.start(configJSON, rawFd.toLong(), filesDir.absolutePath)
             Log.d(TAG, "Engine started successfully")
             registerNetworkCallback()
         } catch (e: Exception) {
@@ -151,7 +153,7 @@ class K2VpnService : VpnService(), VpnServiceBridge {
         unregisterNetworkCallback()
         engine?.stop()
         engine = null
-        vpnInterface?.close()
+        // fd ownership was transferred to Go engine via detachFd() — don't close vpnInterface
         vpnInterface = null
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()

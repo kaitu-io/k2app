@@ -45,6 +45,23 @@
     "muxDescription": "##延遲更低，速度更快##。一條通道同時傳輸多個請求，就像高速公路上開闢多條車道，##減少排隊等待時間##。適合觀看視頻、遊戲等場景。",
     "concurrentDescription": "##同時使用多個節點##，令連接更快更穩定。就像同時行多條路，一條塞咗仲有其他路可行。在##網絡受限時特別有效##，Pro 專屬功能。",
     "anonymityDescription": "##連接伺服器和訪問網站使用不同嘅 IP 地址##，保護您嘅真實位置唔被追蹤。就像戴上雙重面具，私隱更安全。注意：可能略微影響速度，Pro 專屬功能。",
+    "proxyModeLabel": "代理模式",
+    "proxyModeDescription": "選擇網絡代理方式",
+    "proxyModeOptions": {
+      "tun": "TUN 模式",
+      "proxy": "代理模式"
+    },
+    "proxyModeHint": "代理模式唔會自動接管系統流量，需要手動配置應用使用代理。HTTP 代理和 SOCKS5 代理共用同一地址：",
+    "proxyModeAddress": "{{address}}",
+    "proxyModeTunHint": "TUN 模式自動接管所有系統流量，唔需要額外配置。",
+    "logLevel": "日誌級別",
+    "logLevelDescription": "調試時可設置為 Debug 查看詳細日誌",
+    "logLevelOptions": {
+      "debug": "Debug",
+      "info": "Info",
+      "warn": "Warn",
+      "error": "Error"
+    },
     "recentLocations": "最近使用",
     "favorites": "收藏嘅伺服器",
     "allLocations": "所有位置",

@@ -278,7 +278,8 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                 if let size = json["size"] as? Int {
                     result["size"] = size
                 }
-                await MainActor.run { call.resolve(result) }
+                let finalResult = result
+                await MainActor.run { call.resolve(finalResult) }
             } else {
                 await MainActor.run { call.resolve(["available": false]) }
             }
@@ -306,7 +307,8 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                 } else {
                     result["url"] = self.appStoreURL
                 }
-                await MainActor.run { call.resolve(result) }
+                let finalResult = result
+                await MainActor.run { call.resolve(finalResult) }
             } else {
                 await MainActor.run { call.resolve(["available": false]) }
             }

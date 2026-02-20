@@ -51,6 +51,9 @@
       "tun": "TUN 模式",
       "proxy": "代理模式"
     },
+    "proxyModeHint": "代理模式不会自动接管系统流量，需要手动配置应用使用代理。HTTP 代理和 SOCKS5 代理共用同一地址：",
+    "proxyModeAddress": "{{address}}",
+    "proxyModeTunHint": "TUN 模式自动接管所有系统流量，无需额外配置。",
     "logLevel": "日志级别",
     "logLevelDescription": "调试时可设置为 Debug 查看详细日志",
     "logLevelOptions": {
