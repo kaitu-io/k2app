@@ -4,14 +4,45 @@ import K2Mobile  // gomobile xcframework
 
 private let kAppGroup = "group.io.kaitu"
 
-private struct TunnelSettings: Codable {
-    var dns: [String]?
-    var mtu: Int?
-    var tunnelRemoteAddress: String?
+private struct ClientConfigSubset: Codable {
+    var tun: TunConfig?
+    var dns: DNSConfig?
+
+    struct TunConfig: Codable {
+        var ipv4: String?   // CIDR "10.0.0.2/24"
+        var ipv6: String?   // CIDR "fd00::2/64"
+    }
+    struct DNSConfig: Codable {
+        var proxy: [String]?
+        var direct: [String]?
+    }
 }
 
-private struct ConfigWrapper: Codable {
-    var tunnel: TunnelSettings?
+/// Parse IPv4 CIDR "10.0.0.2/24" → ("10.0.0.2", "255.255.255.0"), nil on failure.
+private func parseIPv4CIDR(_ cidr: String) -> (String, String)? {
+    let parts = cidr.split(separator: "/", maxSplits: 1)
+    guard parts.count == 2, let prefix = Int(parts[1]), prefix >= 0, prefix <= 32 else { return nil }
+    let mask = prefix == 0 ? UInt32(0) : UInt32.max << (32 - prefix)
+    let m = String(format: "%d.%d.%d.%d",
+                   (mask >> 24) & 0xFF, (mask >> 16) & 0xFF, (mask >> 8) & 0xFF, mask & 0xFF)
+    return (String(parts[0]), m)
+}
+
+/// Parse IPv6 CIDR "fd00::2/64" → ("fd00::2", 64), nil on failure.
+private func parseIPv6CIDR(_ cidr: String) -> (String, Int)? {
+    let parts = cidr.split(separator: "/", maxSplits: 1)
+    guard parts.count == 2, let prefix = Int(parts[1]), prefix >= 0, prefix <= 128 else { return nil }
+    return (String(parts[0]), prefix)
+}
+
+/// Strip port from "8.8.8.8:53" → "8.8.8.8". Handles IPv6 "[::1]:53" → "::1".
+private func stripPort(_ addr: String) -> String {
+    if addr.hasPrefix("["), let closeBracket = addr.firstIndex(of: "]") {
+        return String(addr[addr.index(after: addr.startIndex)..<closeBracket])
+    }
+    let parts = addr.split(separator: ":")
+    if parts.count == 2 { return String(parts[0]) } // "ip:port"
+    return addr // bare IP or IPv6 without port
 }
 
 class PacketTunnelProvider: NEPacketTunnelProvider {
@@ -42,8 +73,8 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         engine?.setEventHandler(handler)
 
         // Configure network settings first, then get TUN fd in completion
-        let tunnelSettings = parseTunnelSettings(from: configJSON)
-        let settings = buildNetworkSettings(from: tunnelSettings)
+        let clientConfig = parseClientConfig(from: configJSON)
+        let settings = buildNetworkSettings(from: clientConfig)
 
         setTunnelNetworkSettings(settings) { [weak self] error in
             if let error = error {
@@ -77,33 +108,33 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         }
     }
 
-    private func parseTunnelSettings(from configJSON: String) -> TunnelSettings? {
-        guard let data = configJSON.data(using: .utf8),
-              let wrapper = try? JSONDecoder().decode(ConfigWrapper.self, from: data) else {
-            return nil
-        }
-        return wrapper.tunnel
+    private func parseClientConfig(from configJSON: String) -> ClientConfigSubset? {
+        guard let data = configJSON.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(ClientConfigSubset.self, from: data)
     }
 
-    private func buildNetworkSettings(from tunnelSettings: TunnelSettings?) -> NEPacketTunnelNetworkSettings {
-        let remoteAddr = tunnelSettings?.tunnelRemoteAddress ?? "10.0.0.1"
-        let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: remoteAddr)
+    private func buildNetworkSettings(from config: ClientConfigSubset?) -> NEPacketTunnelNetworkSettings {
+        // IPv4: parse from config or use defaults
+        let (ipv4Addr, ipv4Mask) = parseIPv4CIDR(config?.tun?.ipv4 ?? "10.0.0.2/24") ?? ("10.0.0.2", "255.255.255.0")
+        // IPv6: parse from config or use defaults
+        let (ipv6Addr, ipv6Prefix) = parseIPv6CIDR(config?.tun?.ipv6 ?? "fd00::2/64") ?? ("fd00::2", 64)
+
+        let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "10.0.0.1")
 
         // IPv4
-        settings.ipv4Settings = NEIPv4Settings(addresses: ["10.0.0.2"], subnetMasks: ["255.255.255.0"])
+        settings.ipv4Settings = NEIPv4Settings(addresses: [ipv4Addr], subnetMasks: [ipv4Mask])
         settings.ipv4Settings?.includedRoutes = [NEIPv4Route.default()]
 
         // IPv6 — capture default route so engine drops IPv6 (prevents DNS leak)
-        settings.ipv6Settings = NEIPv6Settings(addresses: ["fd00::2"], networkPrefixLengths: [64])
+        settings.ipv6Settings = NEIPv6Settings(addresses: [ipv6Addr], networkPrefixLengths: [ipv6Prefix as NSNumber])
         settings.ipv6Settings?.includedRoutes = [NEIPv6Route.default()]
 
-        // DNS — use custom if provided, else defaults
-        let dnsServers = tunnelSettings?.dns ?? ["1.1.1.1", "8.8.8.8"]
-        settings.dnsSettings = NEDNSSettings(servers: dnsServers)
+        // DNS — use proxy DNS servers from config (strip ports for NEDNSSettings), or defaults
+        let dnsServers = config?.dns?.proxy?.map { stripPort($0) }.filter { !$0.isEmpty }
+        settings.dnsSettings = NEDNSSettings(servers: (dnsServers?.isEmpty == false) ? dnsServers! : ["1.1.1.1", "8.8.8.8"])
 
-        // MTU
-        let mtu = tunnelSettings?.mtu ?? 1400
-        settings.mtu = NSNumber(value: mtu)
+        // MTU — matches Go DefaultMTU (not in ClientConfig)
+        settings.mtu = NSNumber(value: 1400)
 
         return settings
     }

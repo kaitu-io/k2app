@@ -18,9 +18,54 @@ import android.os.ParcelFileDescriptor
 import android.util.Log
 import io.kaitu.k2plugin.K2Plugin
 import io.kaitu.k2plugin.VpnServiceBridge
+import org.json.JSONObject
 import mobile.Mobile
 import mobile.Engine
 import mobile.EventHandler as MobileEventHandler
+
+private data class ParsedClientConfig(
+    val tunIpv4: String?,
+    val tunIpv6: String?,
+    val dnsProxy: List<String>?
+)
+
+/** Parse CIDR "10.0.0.2/24" → Pair("10.0.0.2", 24), null on failure. */
+private fun parseCIDR(cidr: String): Pair<String, Int>? {
+    val parts = cidr.split("/", limit = 2)
+    if (parts.size != 2) return null
+    val prefix = parts[1].toIntOrNull() ?: return null
+    return Pair(parts[0], prefix)
+}
+
+/** Strip port from "8.8.8.8:53" → "8.8.8.8". Handles IPv6 "[::1]:53" → "::1". */
+private fun stripPort(addr: String): String {
+    if (addr.startsWith("[")) {
+        val close = addr.indexOf(']')
+        return if (close > 0) addr.substring(1, close) else addr
+    }
+    val parts = addr.split(":")
+    return if (parts.size == 2) parts[0] else addr // "ip:port" or bare IP/IPv6
+}
+
+/** Extract tun + dns fields from ClientConfig JSON. Null on parse failure. */
+private fun parseClientConfig(configJSON: String): ParsedClientConfig? {
+    return try {
+        val root = JSONObject(configJSON)
+        val tun = root.optJSONObject("tun")
+        val dns = root.optJSONObject("dns")
+        val dnsProxy = dns?.optJSONArray("proxy")?.let { arr ->
+            (0 until arr.length()).map { arr.getString(it) }
+        }
+        ParsedClientConfig(
+            tunIpv4 = tun?.optString("ipv4", null),
+            tunIpv6 = tun?.optString("ipv6", null),
+            dnsProxy = dnsProxy
+        )
+    } catch (e: Exception) {
+        Log.w("K2VpnService", "Failed to parse ClientConfig: ${e.message}")
+        null
+    }
+}
 
 class K2VpnService : VpnService(), VpnServiceBridge {
 
@@ -112,17 +157,22 @@ class K2VpnService : VpnService(), VpnServiceBridge {
             }
         })
 
-        // Build VPN interface
+        // Build VPN interface from config (with fallback defaults)
         Log.d(TAG, "Building VPN interface...")
+        val config = parseClientConfig(configJSON)
+        val (ipv4Addr, ipv4Prefix) = parseCIDR(config?.tunIpv4 ?: "10.0.0.2/24") ?: Pair("10.0.0.2", 24)
+        val (ipv6Addr, ipv6Prefix) = parseCIDR(config?.tunIpv6 ?: "fd00::2/64") ?: Pair("fd00::2", 64)
+        val dnsServers = config?.dnsProxy?.map { stripPort(it) }?.filter { it.isNotEmpty() }
+            ?.takeIf { it.isNotEmpty() } ?: listOf("1.1.1.1", "8.8.8.8")
+
         val builder = Builder()
             .setSession("Kaitu VPN")
-            .addAddress("10.0.0.2", 32)
-            .addAddress("fd00::2", 128)
+            .addAddress(ipv4Addr, ipv4Prefix)
+            .addAddress(ipv6Addr, ipv6Prefix)
             .addRoute("0.0.0.0", 0)
             .addRoute("::", 0)
-            .addDnsServer("1.1.1.1")
-            .addDnsServer("8.8.8.8")
             .setMtu(1400)
+            .also { b -> dnsServers.forEach { b.addDnsServer(it) } }
 
         vpnInterface = builder.establish()
         Log.d(TAG, "establish() result: vpnInterface=$vpnInterface")
