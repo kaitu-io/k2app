@@ -36,7 +36,7 @@ interface SlaveTunnel {
   name: string;
   protocol: string;
   port: number;  // 隧道端口，用于 addrs 中 node_ip:tunnel_port
-  url: string;
+  serverUrl: string;
   node: SlaveNode;
 }
 
@@ -167,6 +167,7 @@ export default function TunnelsPage() {
             <TableHead>{"隧道名称"}</TableHead>
             <TableHead>{"协议"}</TableHead>
             <TableHead>{"端口"}</TableHead>
+            <TableHead>{"连接URL"}</TableHead>
             <TableHead>{"节点名称"}</TableHead>
             <TableHead>{"国家"}</TableHead>
             <TableHead>{"IPv4"}</TableHead>
@@ -192,6 +193,15 @@ export default function TunnelsPage() {
                 </span>
               </TableCell>
               <TableCell>{tunnel.port}</TableCell>
+              <TableCell>
+                {tunnel.serverUrl ? (
+                  <span className="font-mono text-xs bg-gray-100 dark:bg-gray-800 dark:text-gray-100 px-2 py-1 rounded break-all max-w-xs inline-block">
+                    {tunnel.serverUrl}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">-</span>
+                )}
+              </TableCell>
               <TableCell>{tunnel.node.name}</TableCell>
               <TableCell>{tunnel.node.country}</TableCell>
               <TableCell>
@@ -278,21 +288,26 @@ export default function TunnelsPage() {
       </div>
 
       <Tabs value={activeProtocol} onValueChange={setActiveProtocol} className="w-full">
-        <TabsList className="grid w-full max-w-md grid-cols-3 mb-6">
+        <TabsList className="grid w-full max-w-md grid-cols-4 mb-6">
           <TabsTrigger value="all">{"全部"}</TabsTrigger>
-          <TabsTrigger value="k2oc">{"k2oc"}</TabsTrigger>
+          <TabsTrigger value="k2v5">{"k2v5"}</TabsTrigger>
           <TabsTrigger value="k2v4">{"k2v4"}</TabsTrigger>
+          <TabsTrigger value="k2oc">{"k2oc"}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="all" className="mt-0">
           {renderContent()}
         </TabsContent>
 
-        <TabsContent value="k2oc" className="mt-0">
+        <TabsContent value="k2v5" className="mt-0">
           {renderContent()}
         </TabsContent>
 
         <TabsContent value="k2v4" className="mt-0">
+          {renderContent()}
+        </TabsContent>
+
+        <TabsContent value="k2oc" className="mt-0">
           {renderContent()}
         </TabsContent>
       </Tabs>

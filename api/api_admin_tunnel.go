@@ -82,12 +82,13 @@ func api_admin_list_tunnels(c *gin.Context) {
 		}
 
 		item := DataSlaveTunnel{
-			ID:       tunnel.ID,
-			Domain:   tunnel.Domain,
-			Name:     tunnel.Name,
-			Protocol: tunnel.Protocol,
-			Port:     tunnel.Port,
-			Node:     nodeData,
+			ID:        tunnel.ID,
+			Domain:    tunnel.Domain,
+			Name:      tunnel.Name,
+			Protocol:  tunnel.Protocol,
+			Port:      tunnel.Port,
+			ServerUrl: tunnel.ServerURL,
+			Node:      nodeData,
 		}
 		items = append(items, item)
 	}
@@ -101,7 +102,7 @@ func api_admin_list_tunnels(c *gin.Context) {
 type AdminUpdateTunnelRequest struct {
 	Protocol *TunnelProtocol `json:"protocol" example:"k2wss"`  // 隧道协议
 	Port     *int64          `json:"port" example:"10001"`      // 隧道端口
-	Url      *string         `json:"url" example:"https://..."` // 隧道URL
+	Url      *string         `json:"url" example:"https://..."` // 隧道URL (maps to server_url column)
 }
 
 func api_admin_update_tunnel(c *gin.Context) {
@@ -136,7 +137,7 @@ func api_admin_update_tunnel(c *gin.Context) {
 		updateData["port"] = *req.Port
 	}
 	if req.Url != nil {
-		updateData["url"] = *req.Url
+		updateData["server_url"] = *req.Url
 	}
 
 	if len(updateData) > 0 {
@@ -158,13 +159,17 @@ func api_admin_update_tunnel(c *gin.Context) {
 		Ipv6:    tunnel.Node.Ipv6,
 	}
 
+	// Re-read tunnel to get updated fields (including server_url)
+	db.Get().First(&tunnel, tunnelID)
+
 	result := DataSlaveTunnel{
-		ID:       tunnel.ID,
-		Domain:   tunnel.Domain,
-		Name:     tunnel.Name,
-		Protocol: tunnel.Protocol,
-		Port:     tunnel.Port,
-		Node:     nodeData,
+		ID:        tunnel.ID,
+		Domain:    tunnel.Domain,
+		Name:      tunnel.Name,
+		Protocol:  tunnel.Protocol,
+		Port:      tunnel.Port,
+		ServerUrl: tunnel.ServerURL,
+		Node:      nodeData,
 	}
 
 	Success(c, &result)
