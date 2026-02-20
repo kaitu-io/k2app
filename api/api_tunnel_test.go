@@ -35,47 +35,45 @@ func TestTunnelProtocolK2V5_Constant(t *testing.T) {
 	})
 }
 
-// TestTunnelProtocolK2V5_BackwardCompatibility verifies the backward compatibility
-// logic for k2v4 clients that should also receive k2v5 tunnels.
-//
-// k2v5 nodes physically serve k2v4 connections via front-door forwarding:
-// the k2v5 front-door detects non-ECH traffic and forwards it to a k2v4-slave.
-// Therefore, a client requesting k2v4 tunnels should receive both k2v4 and k2v5
-// tunnels; a client requesting k2v5 tunnels should receive only k2v5 tunnels.
+// TestTunnelProtocolK2V5_BackwardCompatibility verifies that all k2-family
+// protocols (k2, k2v4, k2wss) also return k2v5 tunnels, because the k2v5
+// front-door forwards all non-ECH traffic to the appropriate backend via
+// local_routes SNI matching.
 func TestTunnelProtocolK2V5_BackwardCompatibility(t *testing.T) {
-	t.Run("k2v4 request protocol set includes k2v5", func(t *testing.T) {
-		// When a client requests k2v4 tunnels, the query set must include k2v5.
+	t.Run("k2v4 request includes k2v5", func(t *testing.T) {
 		protocols := tunnelProtocolsForQuery(TunnelProtocolK2V4)
-		assert.Contains(t, protocols, TunnelProtocolK2V4,
-			"k2v4 query set must contain k2v4")
-		assert.Contains(t, protocols, TunnelProtocolK2V5,
-			"k2v4 query set must include k2v5 for backward compatibility")
+		assert.Contains(t, protocols, TunnelProtocolK2V4)
+		assert.Contains(t, protocols, TunnelProtocolK2V5)
 	})
 
-	t.Run("k2v5 request protocol set contains only k2v5", func(t *testing.T) {
-		// When a client requests k2v5 tunnels, only k2v5 tunnels are returned.
-		protocols := tunnelProtocolsForQuery(TunnelProtocolK2V5)
-		assert.Equal(t, []TunnelProtocol{TunnelProtocolK2V5}, protocols,
-			"k2v5 query set must contain only k2v5")
-	})
-
-	t.Run("k2oc request protocol set contains only k2oc", func(t *testing.T) {
-		// k2oc is an unrelated protocol — its set must not bleed into k2v4/k2v5.
-		protocols := tunnelProtocolsForQuery(TunnelProtocolK2OC)
-		assert.Equal(t, []TunnelProtocol{TunnelProtocolK2OC}, protocols,
-			"k2oc query set must contain only k2oc")
-	})
-
-	t.Run("k2wss request protocol set contains only k2wss", func(t *testing.T) {
+	t.Run("k2wss request includes k2v5", func(t *testing.T) {
 		protocols := tunnelProtocolsForQuery(TunnelProtocolK2WSS)
-		assert.Equal(t, []TunnelProtocol{TunnelProtocolK2WSS}, protocols,
-			"k2wss query set must contain only k2wss")
+		assert.Contains(t, protocols, TunnelProtocolK2WSS)
+		assert.Contains(t, protocols, TunnelProtocolK2V5)
 	})
 
-	t.Run("k2v4 query set does not include k2oc", func(t *testing.T) {
-		protocols := tunnelProtocolsForQuery(TunnelProtocolK2V4)
-		assert.NotContains(t, protocols, TunnelProtocolK2OC,
-			"k2v4 query set must not contain k2oc")
+	t.Run("k2 request includes k2v5", func(t *testing.T) {
+		protocols := tunnelProtocolsForQuery(TunnelProtocolK2)
+		assert.Contains(t, protocols, TunnelProtocolK2)
+		assert.Contains(t, protocols, TunnelProtocolK2V5)
+	})
+
+	t.Run("k2v5 request returns only k2v5", func(t *testing.T) {
+		protocols := tunnelProtocolsForQuery(TunnelProtocolK2V5)
+		assert.Equal(t, []TunnelProtocol{TunnelProtocolK2V5}, protocols)
+	})
+
+	t.Run("k2oc request returns only k2oc", func(t *testing.T) {
+		protocols := tunnelProtocolsForQuery(TunnelProtocolK2OC)
+		assert.Equal(t, []TunnelProtocol{TunnelProtocolK2OC}, protocols)
+	})
+
+	t.Run("k2-family query sets never include k2oc", func(t *testing.T) {
+		for _, p := range []TunnelProtocol{TunnelProtocolK2, TunnelProtocolK2V4, TunnelProtocolK2WSS} {
+			protocols := tunnelProtocolsForQuery(p)
+			assert.NotContains(t, protocols, TunnelProtocolK2OC,
+				"%s query set must not contain k2oc", p)
+		}
 	})
 }
 

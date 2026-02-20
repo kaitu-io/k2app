@@ -341,18 +341,21 @@ func (s *Sidecar) generateConfigs(result *sidecar.RegisterResult) error {
 
 // K2V5ConfigData holds template data for k2v5 configuration
 type K2V5ConfigData struct {
-	ConfigDir    string
+	CertPath     string
+	KeyPath      string
 	K2Domain     string
 	K2V4Port     string
 	K2OCDomain   string
-	K2OCPort     int
+	K2OCPort     string
 	CenterURL    string
 	LogLevel     string
 	HasOCDomain  bool
 }
 
 const k2v5ConfigTemplate = `listen: ":443"
-cert_dir: "{{.ConfigDir}}/k2v5"
+tls:
+  cert: "{{.CertPath}}"
+  key: "{{.KeyPath}}"
 auth:
   remote_url: "{{.CenterURL}}/slave/device-check-auth"
   cache_ttl: 5m
@@ -375,12 +378,18 @@ func (s *Sidecar) generateK2V5Config() error {
 		logLevel = "info"
 	}
 
+	k2ocPort := os.Getenv("K2OC_PORT")
+	if k2ocPort == "" {
+		k2ocPort = "10001"
+	}
+
 	data := K2V5ConfigData{
-		ConfigDir:   configDir,
+		CertPath:    fmt.Sprintf("%s/certs/server-cert.pem", configDir),
+		KeyPath:     fmt.Sprintf("%s/certs/server-key.pem", configDir),
 		K2Domain:    s.config.Tunnel.Domain,
 		K2V4Port:    s.config.K2V4Port,
 		K2OCDomain:  s.config.OC.Domain,
-		K2OCPort:    s.config.OC.Port,
+		K2OCPort:    k2ocPort,
 		CenterURL:   s.config.K2Center.BaseURL,
 		LogLevel:    logLevel,
 		HasOCDomain: s.config.OC.Domain != "",
@@ -389,30 +398,42 @@ func (s *Sidecar) generateK2V5Config() error {
 	return s.generateConfigFromTemplate("k2v5-config.yaml", k2v5ConfigTemplate, outputPath, data)
 }
 
-// K2V4ConfigData holds template data for k2v4 configuration
+// K2V4ConfigData holds template data for old-style config.yaml
+// The k2v4-slave binary (k2-slave) reads this format for cert paths and Center auth.
 type K2V4ConfigData struct {
-	Domain   string
-	CertFile string
-	KeyFile  string
+	CenterURL    string
+	CenterSecret string
+	Domain       string
+	ConfigDir    string
 }
 
-const k2v4ConfigTemplate = `domain: "{{.Domain}}"
-cert_file: "{{.CertFile}}"
-key_file: "{{.KeyFile}}"
+// Old-style config.yaml that k2-slave binary expects.
+// No local_routes or hop_port (k2v5 handles SNI routing and DNAT).
+const k2v4ConfigTemplate = `k2_center:
+  enabled: true
+  base_url: "{{.CenterURL}}"
+  timeout: "10s"
+  secret: "{{.CenterSecret}}"
+tunnel:
+  enabled: true
+  domain: "{{.Domain}}"
+  port: 443
+config_dir: "{{.ConfigDir}}"
 `
 
-// generateK2V4Config generates k2v4-config.yaml (simplified — no ECH, no local_routes)
+// generateK2V4Config generates config.yaml in old k2-slave format
 func (s *Sidecar) generateK2V4Config() error {
 	configDir := s.config.ConfigDir
-	outputPath := fmt.Sprintf("%s/k2v4-config.yaml", configDir)
+	outputPath := fmt.Sprintf("%s/config.yaml", configDir)
 
 	data := K2V4ConfigData{
-		Domain:   s.config.Tunnel.Domain,
-		CertFile: fmt.Sprintf("%s/certs/server-cert.pem", configDir),
-		KeyFile:  fmt.Sprintf("%s/certs/server-key.pem", configDir),
+		CenterURL:    s.config.K2Center.BaseURL,
+		CenterSecret: s.config.K2Center.Secret,
+		Domain:       s.config.Tunnel.Domain,
+		ConfigDir:    configDir,
 	}
 
-	return s.generateConfigFromTemplate("k2v4-config.yaml", k2v4ConfigTemplate, outputPath, data)
+	return s.generateConfigFromTemplate("config.yaml", k2v4ConfigTemplate, outputPath, data)
 }
 
 // OcservConfigData holds template data for ocserv configuration

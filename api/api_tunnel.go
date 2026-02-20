@@ -12,19 +12,21 @@ import (
 )
 
 // tunnelProtocolsForQuery returns the set of DB protocols to query for a given
-// requested protocol. This implements backward compatibility for k2v4 clients:
-// k2v5 nodes physically serve k2v4 connections via front-door forwarding (the
-// k2v5 front-door detects non-ECH traffic and routes it to the k2v4-slave).
-// Therefore a k2v4 client request must also return k2v5 tunnels.
+// requested protocol. k2v5 front-door forwards ALL non-ECH traffic to the
+// appropriate backend (k2v4-slave, k2-oc) via local_routes SNI matching.
+// Therefore any k2-family client (k2, k2v4, k2wss) can connect through a
+// k2v5 node, and queries for those protocols must also return k2v5 tunnels.
 //
 // Rules:
-//   - k2v4 requested → query for {k2v4, k2v5}
-//   - all other protocols → query for exactly the requested protocol
+//   - k2, k2v4, k2wss → also include k2v5 tunnels
+//   - k2v5, k2oc → exact match only
 func tunnelProtocolsForQuery(requested TunnelProtocol) []TunnelProtocol {
-	if requested == TunnelProtocolK2V4 {
-		return []TunnelProtocol{TunnelProtocolK2V4, TunnelProtocolK2V5}
+	switch requested {
+	case TunnelProtocolK2, TunnelProtocolK2V4, TunnelProtocolK2WSS:
+		return []TunnelProtocol{requested, TunnelProtocolK2V5}
+	default:
+		return []TunnelProtocol{requested}
 	}
-	return []TunnelProtocol{requested}
 }
 
 // api_k2_tunnels get all tunnel list (excludes k2oc protocol)
