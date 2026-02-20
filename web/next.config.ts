@@ -1,16 +1,15 @@
 import createNextIntlPlugin from 'next-intl/plugin';
-import { withPayload } from '@payloadcms/next/withPayload';
 import type { NextConfig } from 'next';
 import * as fs from 'fs';
 import * as path from 'path';
 
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
 
-// Read releaseVersion from client/package.json (monorepo root - single source of truth)
-// releaseVersion is the stable published version, separate from development version
+// Read version from root package.json (single source of truth)
+// Uses releaseVersion if set, otherwise falls back to version
 const getDesktopVersion = () => {
   try {
-    const packagePath = path.join(__dirname, '../client/package.json');
+    const packagePath = path.join(__dirname, '../package.json');
     const packageContent = fs.readFileSync(packagePath, 'utf8');
     const packageJson = JSON.parse(packageContent);
     // Use releaseVersion for stable releases, fallback to version if not set
@@ -25,25 +24,6 @@ const desktopVersion = getDesktopVersion();
 console.log(`🚀 Building with desktop version: ${desktopVersion}`);
 
 const nextConfig: NextConfig = {
-  // Suppress webpack warnings from payload's dynamic requires
-  webpack: (config, { isServer }) => {
-    // Handle payload's critical dependency warnings (dynamic require expressions)
-    if (isServer) {
-      config.ignoreWarnings = [
-        ...(config.ignoreWarnings || []),
-        {
-          module: /node_modules\/@payloadcms\/richtext-lexical/,
-          message: /Critical dependency/,
-        },
-        {
-          module: /node_modules\/payload\/dist/,
-          message: /Critical dependency/,
-        },
-      ];
-    }
-    return config;
-  },
-
   // Inject desktop version as environment variable at build time
   env: {
     NEXT_PUBLIC_DESKTOP_VERSION: desktopVersion,
@@ -135,5 +115,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-// Apply both withPayload and withNextIntl plugins
-export default withPayload(withNextIntl(nextConfig));
+export default withNextIntl(nextConfig);

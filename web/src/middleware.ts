@@ -112,6 +112,5 @@ function getBestLocale(acceptLanguage: string | null): string {
 
 export const config = {
   // Match only internationalized pathnames - exclude API routes (/api/ and /app/)
-  // Payload CMS at /manager/cms is handled by the middleware function check above
   matcher: ['/', '/(zh-CN|zh-TW|zh-HK|en-GB|en-US|en-AU|ja)/:path*', '/((?!api|app|_next|_vercel|.*\\..*).*)']
 };

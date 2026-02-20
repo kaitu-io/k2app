@@ -39,10 +39,9 @@ webapp/              React + MUI frontend (see webapp/CLAUDE.md)
   src/components/    Shared UI (LoginDialog, AuthGate, guards, global components)
   src/utils/         Error handling, version compare, tunnel sorting
   src/i18n/          Localization (7 locales, 15+ namespaces)
-web/                 Next.js website + admin dashboard + Payload CMS (see web/CLAUDE.md)
+web/                 Next.js website + admin dashboard (see web/CLAUDE.md)
   src/app/[locale]/  Public pages (install, purchase, account, wallet, changelog)
   src/app/(manager)/ Admin dashboard (users, orders, nodes, tunnels, EDM, cloud)
-  src/app/(payload)/ Payload CMS (articles, media)
 api/                 Center API service — Go + Gin + GORM (see api/CLAUDE.md)
   cloudprovider/     Multi-cloud VPS management (AWS, Aliyun, Tencent, Bandwagon)
   cmd/               CLI entry point (start, stop, migrate, health-check)
@@ -90,7 +89,7 @@ Makefile             Build orchestration — version from package.json, k2 from 
 ## Tech Stack
 
 - Webapp: React 18, TypeScript, Material-UI 5, Zustand, React Router 7, i18next
-- Website: Next.js 15, React 19, Tailwind CSS 4, shadcn/ui, next-intl, Payload CMS 3
+- Website: Next.js 15, React 19, Tailwind CSS 4, shadcn/ui, next-intl
 - Desktop: Tauri v2, Rust
 - Core: Go (k2 submodule)
 - API: Go, Gin, GORM, MySQL, Redis, Asynq
@@ -129,7 +128,7 @@ Makefile             Build orchestration — version from package.json, k2 from 
 
 ```
 webapp/CLAUDE.md         Frontend: split globals, services, stores, i18n, components
-web/CLAUDE.md            Website: Next.js pages, admin dashboard, Payload CMS, API proxy
+web/CLAUDE.md            Website: Next.js pages, admin dashboard, API proxy
 desktop/CLAUDE.md        Tauri shell, Rust modules, config
 api/CLAUDE.md            Center API: routes, middleware, models, workers, cloudprovider
 k2/CLAUDE.md             Go core architecture, wire protocol, daemon API

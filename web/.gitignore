@@ -38,11 +38,6 @@ yarn-error.log*
 
 # env files
 .env*
-!.env.example
-!.env.production
-
-# Payload CMS
-/src/payload/payload-types.ts
 
 # vercel
 .vercel
