@@ -207,4 +207,12 @@ export async function injectTauriGlobals(): Promise<void> {
   (window as any)._platform = tauriPlatform;
 
   console.info(`[K2:Tauri] Injected - os=${tauriPlatform.os}, version=${tauriPlatform.version}`);
+
+  // Show window after frontend is fully initialized
+  // This prevents size flashing on Windows
+  try {
+    await invoke('show_window');
+  } catch (error) {
+    console.warn('[TauriK2] Failed to show window:', error);
+  }
 }
