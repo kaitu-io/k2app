@@ -142,6 +142,48 @@ describe('Auth Service v2 (using window._platform)', () => {
     });
   });
 
+  // ==================== buildTunnelUrl ====================
+
+  describe('buildTunnelUrl', () => {
+    it('should inject UDID and token into k2v5 URL', async () => {
+      mockPlatform.getUdid.mockResolvedValue('device-udid-123');
+      mockStorage.get.mockResolvedValue('jwt-token-abc');
+
+      const { authService } = await import('../auth-service');
+      const result = await authService.buildTunnelUrl(
+        'k2v5://example.com:443?ech=AABB&pin=sha256:xyz'
+      );
+
+      expect(result).toBe('k2v5://device-udid-123:jwt-token-abc@example.com:443?ech=AABB&pin=sha256:xyz');
+    });
+
+    it('should return original URL when token is missing', async () => {
+      mockPlatform.getUdid.mockResolvedValue('device-udid-123');
+      mockStorage.get.mockResolvedValue(null);
+
+      const { authService } = await import('../auth-service');
+      const url = 'k2v5://example.com:443?ech=AABB';
+      const result = await authService.buildTunnelUrl(url);
+
+      expect(result).toBe(url);
+    });
+
+    it('should handle URL with complex query params', async () => {
+      mockPlatform.getUdid.mockResolvedValue('udid');
+      mockStorage.get.mockResolvedValue('tok');
+
+      const { authService } = await import('../auth-service');
+      const result = await authService.buildTunnelUrl(
+        'k2v5://host:443?ech=data&pin=sha256:a,sha256:b&insecure=1'
+      );
+
+      expect(result).toContain('k2v5://udid:tok@host:443');
+      expect(result).toContain('ech=data');
+      expect(result).toContain('pin=sha256');
+      expect(result).toContain('insecure=1');
+    });
+  });
+
   // ==================== Verify NOT using _k2.platform ====================
 
   describe('platform source verification', () => {

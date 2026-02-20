@@ -18,6 +18,8 @@ k2/build/
 *.aar
 
 .word9f
+.claude/agent-memory/
+.playwright-mcp/
 
 # API local dev data (docker volumes, config with secrets, test artifacts)
 api/data/

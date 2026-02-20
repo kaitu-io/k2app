@@ -163,8 +163,8 @@ func api_k2_tunnels(c *gin.Context) {
 			item.Instance = buildTunnelInstanceData(&inst)
 		}
 
-		// Pass through serverUrl for k2v5 tunnels when explicitly requested
-		if protocolParam == string(TunnelProtocolK2V5) && tunnel.ServerURL != "" {
+		// Always pass through serverUrl for k2v5 tunnels (needed by client regardless of protocol param)
+		if tunnel.Protocol == TunnelProtocolK2V5 && tunnel.ServerURL != "" {
 			item.ServerUrl = tunnel.ServerURL
 		}
 

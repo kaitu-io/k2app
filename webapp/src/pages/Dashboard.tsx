@@ -28,6 +28,7 @@ import { getCurrentAppConfig } from '../config/apps';
 import { CollapsibleConnectionSection } from '../components/CollapsibleConnectionSection';
 import { useDashboard } from '../stores/dashboard.store';
 import { CloudTunnelList } from '../components/CloudTunnelList';
+import { authService } from '../services/auth-service';
 import type { Tunnel } from '../services/api-types';
 
 // Styled Components for Modern Design
@@ -193,6 +194,12 @@ export default function Dashboard() {
     }
   }, [isAuthenticated, serviceFailureDuration]);
 
+  // Resolve server URL: inject auth for k2v5 protocol
+  const resolveServerUrl = useCallback(async (serverUrl?: string): Promise<string | undefined> => {
+    if (!serverUrl?.startsWith('k2v5://')) return serverUrl;
+    return authService.buildTunnelUrl(serverUrl);
+  }, []);
+
   // Handle connection toggle
   const handleToggleConnection = useCallback(async () => {
     if ((isDisconnected || isError) && !activeTunnelInfo.domain) {
@@ -205,9 +212,10 @@ export default function Dashboard() {
         // Error state: reconnect
         console.info('[Dashboard] Reconnecting VPN after error...');
         setOptimisticState('connecting');
-        const config = buildConnectConfig(selectedCloudTunnel?.url);
+        const serverUrl = await resolveServerUrl(selectedCloudTunnel?.serverUrl);
+        const config = buildConnectConfig(serverUrl);
         await window._k2.run('up', config);
-        updateConfig({ server: selectedCloudTunnel?.url });
+        updateConfig({ server: selectedCloudTunnel?.serverUrl });
       } else if (!isDisconnected || isRetrying) {
         // Connected/connecting/retrying: disconnect
         console.info('[Dashboard] Stopping VPN...');
@@ -217,15 +225,16 @@ export default function Dashboard() {
         // Disconnected: connect
         console.info('[Dashboard] Starting VPN...');
         setOptimisticState('connecting');
-        const config = buildConnectConfig(selectedCloudTunnel?.url);
+        const serverUrl = await resolveServerUrl(selectedCloudTunnel?.serverUrl);
+        const config = buildConnectConfig(serverUrl);
         await window._k2.run('up', config);
-        updateConfig({ server: selectedCloudTunnel?.url });
+        updateConfig({ server: selectedCloudTunnel?.serverUrl });
       }
     } catch (err) {
       console.error('Connection operation failed', err);
       setOptimisticState(null);
     }
-  }, [isDisconnected, isError, isRetrying, activeTunnelInfo.domain, selectedCloudTunnel, buildConnectConfig, updateConfig, setOptimisticState]);
+  }, [isDisconnected, isError, isRetrying, activeTunnelInfo.domain, selectedCloudTunnel, buildConnectConfig, updateConfig, setOptimisticState, resolveServerUrl]);
 
   // Check if any tunnel is selected
   const hasTunnelSelected = !!activeTunnelInfo.domain;

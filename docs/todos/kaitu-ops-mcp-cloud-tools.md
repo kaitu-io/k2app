@@ -1,0 +1,1 @@
+Kaitu Ops MCP: Cloud 工具扩展 — 在 kaitu-ops-mcp 完成 node 工具后，扩展 cloud 相关工具：list_cloud_instances（云实例列表+流量进度）、sync_cloud（触发云同步）、change_cloud_ip（换IP）。走 Center API，因为云厂商凭证在 Center 上。参考 docs/features/kaitu-ops-mcp.md 中已删除的 cloud 工具定义。

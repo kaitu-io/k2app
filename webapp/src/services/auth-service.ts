@@ -170,4 +170,26 @@ export const authService = {
     return token !== null && token.length > 0;
   },
 
+  /**
+   * Inject UDID and auth token into a tunnel URL as userinfo.
+   * k2v5 wire requires auth in the URL: k2v5://UDID:TOKEN@host:port?ech=...
+   *
+   * @param serverUrl - Base server URL without auth (e.g. k2v5://host:443?ech=...)
+   * @returns URL with auth injected, or original URL if auth unavailable
+   */
+  async buildTunnelUrl(serverUrl: string): Promise<string> {
+    const { udid, token } = await this.getCredentials();
+    if (!udid || !token) {
+      console.warn('[AuthService] Cannot inject auth: missing udid or token');
+      return serverUrl;
+    }
+
+    // Insert userinfo after scheme:// — preserves original URL structure exactly
+    const schemeEnd = serverUrl.indexOf('://');
+    if (schemeEnd < 0) return serverUrl;
+    const scheme = serverUrl.substring(0, schemeEnd);
+    const rest = serverUrl.substring(schemeEnd + 3);
+    return `${scheme}://${udid}:${token}@${rest}`;
+  },
+
 };

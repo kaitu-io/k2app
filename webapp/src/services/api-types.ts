@@ -171,9 +171,9 @@ export interface Tunnel {
   id: number; // 隧道ID
   domain: string; // 隧道域名（仅用于 SNI/TLS）
   name: string; // 隧道名称
-  protocol: string; // 隧道协议 (k2wss)
-  port: number; // 隧道端口，用于 addrs 中 node_ip:tunnel_port
-  url: string; // 隧道URL（包含 addrs 参数）
+  protocol: string; // 隧道协议 (k2v4, k2v5)
+  port: number; // 隧道端口
+  serverUrl?: string; // k2v5 connection URL (only present for k2v5 tunnels)
   node: SlaveNode; // 关联的物理节点
 }
 
