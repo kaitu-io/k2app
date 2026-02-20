@@ -2,11 +2,9 @@
 # Binary must be pre-built and copied to this directory before docker build
 # Build: cd k2 && go build -o ../docker/k2s/k2s ./cmd/k2s
 
-FROM debian:bookworm-slim
+FROM alpine:3.20
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates iptables \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache ca-certificates iptables
 
 WORKDIR /app
 
