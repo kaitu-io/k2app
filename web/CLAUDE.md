@@ -18,7 +18,7 @@ cd web && yarn test:e2e:headed   # E2E with browser visible
 
 ## Tech Stack
 
-Next.js 15 (App Router) | React 19 | TypeScript | Tailwind CSS 4 | shadcn/ui | next-intl
+Next.js 15 (App Router) | React 19 | TypeScript | Tailwind CSS 4 | shadcn/ui | next-intl | Velite (content)
 
 ## Architecture
 
@@ -35,6 +35,7 @@ web/
 │   │   │   ├── changelog/     # Release notes
 │   │   │   ├── login/         # Email OTP login
 │   │   │   ├── s/[code]/      # Invite link landing
+│   │   │   ├── [...slug]/     # Catch-all content pages (Velite markdown)
 │   │   │   └── ...            # privacy, terms, routers, opensource
 │   │   ├── (manager)/         # Admin dashboard (no locale prefix)
 │   │   │   └── manager/       # /manager/* routes
@@ -65,8 +66,12 @@ web/
 │   │   ├── udid.ts            # Device fingerprint
 │   │   └── utils.ts           # cn() helper (clsx + tailwind-merge)
 │   └── middleware.ts          # next-intl locale detection + manager bypass
+├── content/                   # Markdown content files (Velite)
+│   ├── zh-CN/                 # Chinese content (primary)
+│   └── en-US/                 # English content (fallback to zh-CN)
+├── velite.config.ts           # Velite schema + collection config
 ├── messages/                  # i18n JSON files (7 locales × 12+ namespaces)
-├── tests/                     # Playwright E2E specs
+├── tests/                     # Playwright E2E specs + vitest + build tests
 └── public/                    # Static assets, legal docs, app icons
 ```
 
@@ -131,14 +136,30 @@ const t = useTranslations();  // NOT const { t } = useTranslations()
 
 **Files**: `messages/{locale}/{namespace}.json` — namespaces: nav, common, auth, purchase, hero, install, discovery, invite, wallet, campaigns, changelog, admin, theme.
 
+## Content Publishing (Velite)
+
+Markdown files in `content/{locale}/` are processed by Velite at build time and served via the `[...slug]` catch-all route.
+
+- **Content files**: `web/content/{locale}/{path}.md` → URL: `/{locale}/{path}`
+- **Directory listing**: Any directory with content files gets an automatic listing page
+- **Multi-language**: Same path across locales = same article. Falls back to zh-CN if locale version missing.
+- **Images**: `web/public/images/content/` → reference as `/images/content/filename.jpg`
+- **Import data**: `import { posts } from '#velite'` (tsconfig path alias)
+- **Build**: Velite runs alongside Next.js via `process.argv` detection in `next.config.ts`
+- **Skill**: Use `/publish-content` to create content with AI assistance
+
+**Reserved paths** (content must NOT use): 403, account, discovery, install, login, opensource, privacy, purchase, retailer, routers, s, terms, changelog, manager
+
 ## Routing
 
 | Path pattern | Layout group | Auth | Purpose |
 |-------------|-------------|------|---------|
 | `/{locale}/*` | `[locale]` | Public/Mixed | User-facing pages |
+| `/{locale}/{...slug}` | `[locale]` | Public | Content pages (Velite catch-all) |
 | `/manager/*` | `(manager)` | Admin | Management dashboard |
 
 **Manager routes bypass i18n middleware** — no locale prefix. Chinese-only admin UI.
+**Static routes take priority** over the `[...slug]` catch-all (Next.js default behavior).
 
 ## Environment
 
@@ -160,6 +181,8 @@ AWS Amplify (`amplify.yml`). Prebuild script (`scripts/amplify-prebuild.sh`) han
 - **Separate from workspaces**: `web/` has its own `yarn.lock`. Run `yarn install` inside `web/`, not from root.
 - **Node version**: Requires Node >= 22 (see `.nvmrc`).
 - **API chain linkage**: When modifying Center API endpoints, update `web/src/lib/api.ts` typed methods to match.
+- **Velite `.velite/` directory**: Generated at build time, gitignored. Contains `index.js`, `index.d.ts`, `posts.json`. Rebuild with `npx velite build`.
+- **Content prose styling**: Uses `@tailwindcss/typography` — article content rendered with `prose dark:prose-invert` classes.
 
 ## Related Docs
 
