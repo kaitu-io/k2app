@@ -1,7 +1,7 @@
 # k2v5 Docker Deploy
 
 ## Meta
-- Status: draft
+- Status: implemented
 - Version: 1.0.0
 - Created: 2026-02-20
 - Feature: k2v5-docker-deploy

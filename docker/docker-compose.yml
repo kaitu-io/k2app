@@ -1,0 +1,164 @@
+# Kaitu k2v5 Docker Compose
+# Architecture:
+# - k2-sidecar: registration, config generation, RADIUS proxy (bridge network)
+# - k2v5: Go k2v5 tunnel with ECH front door (host network, owns port 443)
+# - k2v4-slave: k2v4 TCP-WS tunnel (bridge network, behind k2v5)
+# - k2-oc: OpenConnect tunnel (bridge network for sysctls)
+#
+# Network Design:
+# - k2-internal (bridge): k2-sidecar, k2v4-slave, k2-oc
+# - host network: k2v5 (required for ECH routing + iptables DNAT)
+#
+# Traffic Flow:
+# - Internet :443 (TCP+UDP) -> k2v5 (ECH front door, host network)
+#   - ECH present -> k2v5 handler (in-process QUIC+TCP-WS with ECH camouflage)
+#   - No ECH, SNI match -> TCP relay to k2v4-slave (127.0.0.1:K2V4_PORT) or k2-oc (127.0.0.1:K2OC_PORT)
+#   - Unknown SNI -> camouflage reverse proxy
+#
+# Communication:
+# - k2-oc -> k2-sidecar: RADIUS auth via Docker DNS (UDP 1812)
+# - k2v5 -> k2v4-slave: via host port mapping (127.0.0.1:K2V4_PORT -> container:443)
+# - k2v5 -> k2-oc: via host port mapping (127.0.0.1:K2OC_PORT -> container:443)
+#
+# Hop Port DNAT (on host network via k2v5 NET_ADMIN):
+# - UDP/TCP K2_HOP_PORT_MIN:K2_HOP_PORT_MAX -> REDIRECT :443
+#
+# Environment Variables:
+#   K2_LOG_LEVEL      - Log level: debug, info, warn, error (default: info)
+#   K2_HOP_PORT_MIN   - Start of hop port range (default: 10020)
+#   K2_HOP_PORT_MAX   - End of hop port range (default: 10119)
+#   K2V4_PORT         - Host port for k2v4-slave container (default: 8443)
+#   K2OC_PORT         - Host port for k2-oc container (default: 10001)
+
+networks:
+  k2-internal:
+    driver: bridge
+
+volumes:
+  config:  # Shared config volume for certificates and configs
+
+services:
+  # K2 Sidecar - Central management service (bridge network)
+  # Generates config files and certificates into the shared config volume.
+  # Provides RADIUS proxy for k2-oc authentication.
+  # Other services wait for the .ready flag written by this container.
+  k2-sidecar:
+    build: ./sidecar
+    container_name: k2-sidecar
+    restart: unless-stopped
+    networks:
+      - k2-internal
+    volumes:
+      - config:/etc/kaitu
+      - config:/etc/ocserv
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+    environment:
+      - K2_NODE_SECRET=${K2_NODE_SECRET}
+      - K2_CENTER_URL=${K2_CENTER_URL:-https://k2.52j.me}
+      - K2_DOMAIN=${K2_DOMAIN:-}
+      - K2V4_PORT=${K2V4_PORT:-8443}
+      - K2OC_DOMAIN=${K2OC_DOMAIN:-}
+      - K2OC_PORT=${K2OC_PORT:-10001}
+      - K2_NODE_NAME=${K2_NODE_NAME:-}
+      - K2_NODE_REGION=${K2_NODE_REGION:-}
+      - K2_LOG_LEVEL=${K2_LOG_LEVEL:-info}
+      - REPORT_INTERVAL=${REPORT_INTERVAL:-120s}
+      - K2_NODE_BILLING_START_DATE=${K2_NODE_BILLING_START_DATE:-}
+      - K2_NODE_TRAFFIC_LIMIT_GB=${K2_NODE_TRAFFIC_LIMIT_GB:-0}
+      - K2_TEST_NODE=${K2_TEST_NODE:-false}
+      - K2V3_PORT=${K2V3_PORT:-}
+      - K2OC_ENABLED=${K2OC_ENABLED:-false}
+      - K2_HAS_RELAY=${K2_HAS_RELAY:-false}
+      - K2_JUMP_PORT_MIN=${K2_JUMP_PORT_MIN:-10020}
+      - K2_JUMP_PORT_MAX=${K2_JUMP_PORT_MAX:-10119}
+    healthcheck:
+      test: ["CMD", "test", "-f", "/etc/kaitu/.ready"]
+      interval: 2s
+      timeout: 1s
+      retries: 60
+      start_period: 5s
+
+  # K2v5 - Go k2v5 tunnel with ECH front door (takes over port 443)
+  # Routes based on ECH and SNI:
+  # - ECH present: k2v5 protocol handled locally (QUIC + TCP-WS with ECH camouflage)
+  # - No ECH, SNI match: forward to k2v4-slave or k2-oc via local_routes
+  # - Unknown SNI: camouflage reverse proxy to real site
+  # Using host network mode for iptables DNAT and direct port 443 binding.
+  k2v5:
+    build: ./k2s
+    container_name: k2v5
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      k2-sidecar:
+        condition: service_healthy
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - config:/etc/kaitu:ro
+      - ${K2_LOG_DIR:-./logs}:/logs
+    environment:
+      - K2_HOP_PORT_MIN=${K2_HOP_PORT_MIN:-10020}
+      - K2_HOP_PORT_MAX=${K2_HOP_PORT_MAX:-10119}
+      - K2_LOG_LEVEL=${K2_LOG_LEVEL:-info}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # K2v4 Slave - k2v4 TCP-WS protocol (bridge network)
+  # No longer owns port 443; k2v5 forwards non-ECH traffic here via 127.0.0.1:K2V4_PORT.
+  # Provides backward compatibility for k2v4 clients.
+  k2v4-slave:
+    image: public.ecr.aws/d6n9t2r2/k2v4-slave:latest
+    container_name: k2v4-slave
+    restart: unless-stopped
+    networks:
+      - k2-internal
+    depends_on:
+      k2-sidecar:
+        condition: service_healthy
+    ports:
+      - "${K2V4_PORT:-8443}:443"
+    volumes:
+      - config:/etc/kaitu:ro
+      - ${K2_LOG_DIR:-./logs}:/logs
+    environment:
+      - K2_CONFIG_DIR=/etc/kaitu
+      - K2_LOG_LEVEL=${K2_LOG_LEVEL:-info}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # K2 OC Tunnel - OpenConnect protocol (bridge network)
+  # Bridge network allows sysctls (net.ipv4.ip_forward) to work.
+  # Port mapping: K2OC_PORT:443 (external port -> container port 443).
+  # k2v5 routes SNI traffic to 127.0.0.1:K2OC_PORT on host.
+  # RADIUS auth via k2-sidecar:1812 (Docker DNS on bridge network).
+  k2-oc:
+    image: public.ecr.aws/d6n9t2r2/k2-oc:latest
+    container_name: k2-oc
+    restart: unless-stopped
+    networks:
+      - k2-internal
+    privileged: true
+    sysctls:
+      - net.ipv4.ip_forward=1
+    cap_add:
+      - SYS_NICE
+      - NET_ADMIN
+      - NET_RAW
+    depends_on:
+      k2-sidecar:
+        condition: service_healthy
+    ports:
+      - "${K2OC_PORT:-10001}:443"
+    volumes:
+      - config:/etc/ocserv:ro
+    environment:
+      - OCSERV_CONFIG=/etc/ocserv/ocserv.conf
+      - DEBUG=${DEBUG:-false}
