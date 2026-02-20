@@ -123,8 +123,8 @@ export async function loadConfig(
   // Collect resolved values with env var priority over TOML
   const centerUrl = process.env['KAITU_CENTER_URL'] ?? toml.center?.url
   const accessKey = process.env['KAITU_ACCESS_KEY'] ?? toml.center?.access_key
-  const sshUser = process.env['KAITU_SSH_USER'] ?? toml.ssh?.user
-  const sshPortRaw = process.env['KAITU_SSH_PORT'] ?? toml.ssh?.port
+  const sshUser = process.env['KAITU_SSH_USER'] ?? toml.ssh?.user ?? 'ubuntu'
+  const sshPortRaw = process.env['KAITU_SSH_PORT'] ?? toml.ssh?.port ?? 1022
   const sshKeyPath = resolveSshKeyPath(
     process.env['KAITU_SSH_KEY'],
     toml.ssh?.private_key_path

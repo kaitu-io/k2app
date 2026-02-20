@@ -98,7 +98,7 @@ describe('loadConfig', () => {
     await expect(loadConfig('/nonexistent/path/config.toml')).rejects.toThrow(/center\.url|KAITU_CENTER_URL/)
   })
 
-  it('test_config_partial_missing — TOML has center but no ssh → error lists missing ssh fields', async () => {
+  it('test_config_partial_missing — TOML has center but no ssh → uses defaults for ssh.user and ssh.port', async () => {
     const partialToml = `
 [center]
 url = "https://api.example.com"
@@ -106,8 +106,9 @@ access_key = "test-access-key"
 `
     const tomlPath = writeTempToml(partialToml)
 
-    await expect(loadConfig(tomlPath)).rejects.toThrow(/missing/)
-    await expect(loadConfig(tomlPath)).rejects.toThrow(/ssh/)
+    const config = await loadConfig(tomlPath)
+    expect(config.ssh.user).toBe('ubuntu')
+    expect(config.ssh.port).toBe(1022)
   })
 
   it('test_ssh_key_resolution_order — resolves ssh key from default paths and env', async () => {
