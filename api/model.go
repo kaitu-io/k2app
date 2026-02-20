@@ -376,6 +376,7 @@ type TunnelProtocol string
 const (
 	TunnelProtocolK2    TunnelProtocol = "k2"    // K2 protocol (QUIC, legacy v3)
 	TunnelProtocolK2V4  TunnelProtocol = "k2v4"  // K2 protocol version 4 (QUIC, recommended)
+	TunnelProtocolK2V5  TunnelProtocol = "k2v5"  // K2 protocol version 5 (QUIC+ECH, front-door forwarding)
 	TunnelProtocolK2WSS TunnelProtocol = "k2wss" // K2WSS protocol (WebSocket, legacy)
 	TunnelProtocolK2OC  TunnelProtocol = "k2oc"  // K2OC protocol (OpenConnect, WayMaker compatible)
 )
