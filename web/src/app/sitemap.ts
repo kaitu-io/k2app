@@ -1,5 +1,6 @@
 import { MetadataRoute } from 'next';
 import { routing } from '@/i18n/routing';
+import { posts } from '#velite';
 
 const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://kaitu.io';
 
@@ -54,6 +55,17 @@ export default function sitemap(): MetadataRoute.Sitemap {
       }, {} as Record<string, string>),
     },
   });
+
+  // Add content pages from velite (published posts only)
+  const publishedPosts = posts.filter((post) => !post.draft);
+  for (const post of publishedPosts) {
+    sitemapEntries.push({
+      url: `${baseUrl}/${post.locale}/${post.slug}`,
+      lastModified: new Date(post.date),
+      changeFrequency: 'weekly',
+      priority: 0.6,
+    });
+  }
 
   return sitemapEntries;
 }
