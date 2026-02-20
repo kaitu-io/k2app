@@ -1,3 +1,12 @@
+// Velite build integration — starts the velite watcher/builder alongside Next.js.
+// Uses process.argv detection for Turbopack compatibility (avoids double-start).
+const isDev = process.argv.indexOf('dev') !== -1
+const isBuild = process.argv.indexOf('build') !== -1
+if (!process.env.VELITE_STARTED && (isDev || isBuild)) {
+  process.env.VELITE_STARTED = '1'
+  import('velite').then(m => m.build({ watch: isDev, clean: !isDev }))
+}
+
 import createNextIntlPlugin from 'next-intl/plugin';
 import type { NextConfig } from 'next';
 import * as fs from 'fs';
