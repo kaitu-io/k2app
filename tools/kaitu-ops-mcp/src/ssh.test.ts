@@ -133,6 +133,8 @@ function makeMockChannel(opts: {
       return true
     }),
     end: vi.fn(),
+    close: vi.fn(),
+    destroy: vi.fn(),
     // Expose trigger helpers
     _emit: () => {
       const delay = opts.delayExitMs ?? 0

@@ -13,16 +13,22 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { SshConfig } from '../config.ts'
 
 // ---------------------------------------------------------------------------
-// Mock ssh module — replace sshExec and sshExecWithStdin with spies
+// Mock ssh module — replace sshExec and sshExecWithStdin with spies.
+// vi.mock is hoisted to the top of the file so we cannot reference top-level
+// variables inside the factory. Instead we create the fns inside the factory
+// and re-export them so tests can access the spies via the module.
 // ---------------------------------------------------------------------------
 
-const mockSshExec = vi.fn()
-const mockSshExecWithStdin = vi.fn()
-
 vi.mock('../ssh.js', () => ({
-  sshExec: mockSshExec,
-  sshExecWithStdin: mockSshExecWithStdin,
+  sshExec: vi.fn(),
+  sshExecWithStdin: vi.fn(),
 }))
+
+import * as sshModule from '../ssh.js'
+
+// Typed accessors so tests have proper MockInstance types
+const mockSshExec = sshModule.sshExec as ReturnType<typeof vi.fn>
+const mockSshExecWithStdin = sshModule.sshExecWithStdin as ReturnType<typeof vi.fn>
 
 import { registerExecOnNode } from './exec-on-node.js'
 
@@ -47,16 +53,16 @@ async function invokeExecOnNode(
   const server = new McpServer({ name: 'test', version: '0.0.1' })
   registerExecOnNode(server, TEST_SSH_CONFIG)
 
-  // The McpServer stores tools in a private map; call via the server's tool handler
-  // by extracting the registered tool's callback directly.
+  // The McpServer stores tools in a private object (not a Map).
+  // The registered tool's callable method is named "handler".
   const registeredTools = (server as unknown as {
-    _registeredTools: Map<string, { callback: (args: Record<string, unknown>) => Promise<unknown> }>
+    _registeredTools: Record<string, { handler: (args: Record<string, unknown>) => Promise<unknown> }>
   })._registeredTools
 
-  const tool = registeredTools.get('exec_on_node')
+  const tool = registeredTools['exec_on_node']
   if (!tool) throw new Error('exec_on_node tool not registered')
 
-  return tool.callback(params) as Promise<{ content: Array<{ type: string; text: string }> }>
+  return tool.handler(params) as Promise<{ content: Array<{ type: string; text: string }> }>
 }
 
 // ---------------------------------------------------------------------------
