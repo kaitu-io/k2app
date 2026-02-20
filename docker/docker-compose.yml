@@ -16,7 +16,8 @@ networks:
     driver: bridge
 
 volumes:
-  config:  # Shared config volume for certificates and configs
+  config:      # Shared config volume for certificates and configs
+  k2v5-data:   # k2v5 writable data (connect-url.txt, self-signed certs)
 
 services:
   # K2 Sidecar - Central management service (bridge network)
@@ -31,6 +32,7 @@ services:
     volumes:
       - config:/etc/kaitu
       - config:/etc/ocserv
+      - k2v5-data:/etc/k2v5:ro
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
     environment:
@@ -75,6 +77,7 @@ services:
       - NET_ADMIN
     volumes:
       - config:/etc/kaitu:ro
+      - k2v5-data:/etc/k2v5
     environment:
       - K2_HOP_PORT_MIN=${K2_JUMP_PORT_MIN:-10020}
       - K2_HOP_PORT_MAX=${K2_JUMP_PORT_MAX:-10119}

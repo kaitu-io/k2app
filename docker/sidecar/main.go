@@ -190,7 +190,7 @@ func (s *Sidecar) buildTunnelConfigs() []sidecar.TunnelConfig {
 	if s.config.Tunnel.Enabled && s.config.Tunnel.Domain != "" {
 		// Read k2v5 connect URL and build server URL
 		var serverURL string
-		connectURLPath := fmt.Sprintf("%s/connect-url.txt", s.config.ConfigDir)
+		connectURLPath := "/etc/k2v5/connect-url.txt"
 		if data, err := os.ReadFile(connectURLPath); err == nil {
 			serverURL = sidecar.BuildServerURL(strings.TrimSpace(string(data)),
 				s.config.Tunnel.Domain, s.config.Tunnel.Port,
@@ -356,6 +356,7 @@ func (s *Sidecar) generateConfigs(result *sidecar.RegisterResult) error {
 
 // K2V5ConfigData holds template data for k2v5 configuration
 type K2V5ConfigData struct {
+	CertDir      string
 	CertPath     string
 	KeyPath      string
 	K2Domain     string
@@ -368,6 +369,9 @@ type K2V5ConfigData struct {
 }
 
 const k2v5ConfigTemplate = `listen: ":443"
+cert_dir: "{{.CertDir}}"
+# tls — dormant: k2v5 generates its own self-signed certs in cert_dir.
+# These entries are kept for documentation; k2v5 ignores them.
 tls:
   cert: "{{.CertPath}}"
   key: "{{.KeyPath}}"
@@ -398,7 +402,10 @@ func (s *Sidecar) generateK2V5Config() error {
 		k2ocPort = "10001"
 	}
 
+	k2v5DataDir := "/etc/k2v5"
+
 	data := K2V5ConfigData{
+		CertDir:     k2v5DataDir,
 		CertPath:    fmt.Sprintf("%s/certs/server-cert.pem", configDir),
 		KeyPath:     fmt.Sprintf("%s/certs/server-key.pem", configDir),
 		K2Domain:    s.config.Tunnel.Domain,
