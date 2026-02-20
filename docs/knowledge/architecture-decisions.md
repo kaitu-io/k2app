@@ -1053,3 +1053,62 @@ function setupViewportScaling() {
 **Validating tests**: `npx tsc --noEmit` passes; all 305 vitest tests pass. Manual: resize Tauri window below 430px → UI scales smoothly.
 
 ---
+
+## MCP + Skill Layered Architecture: Atomic Tools + Knowledge File (2026-02-20, kaitu-ops-mcp)
+
+**Decision**: MCP server provides atomic tool capabilities (what the model can do) + technical security via stdout redaction. A companion Skill file encodes domain knowledge and operational safety guardrails (how the model should behave).
+
+**Two layers**:
+- **MCP layer** (`tools/kaitu-ops-mcp/`): TypeScript + `@modelcontextprotocol/sdk`. Two tools: `list_nodes` (Center API discovery) + `exec_on_node` (SSH execution). Stdout redaction runs automatically before every return — technical security backstop.
+- **Skill layer** (`.claude/skills/kaitu-node-ops.md`): YAML front-matter with `triggers:` array for topic-based activation. Encodes: dual-architecture identification flow, container dependency chain, `.env` variable semantics, standard operations table, 7 safety guardrails, script execution modes.
+
+**Why split, not merge**:
+- MCP tool descriptions are short strings (1–2 sentences) — cannot carry operational knowledge
+- Skill file is unstructured prose with markdown tables — cannot enforce technical behavior
+- MCP = hands (capability + redaction safety), Skill = experience (knowledge + behavioral guardrails)
+- Skill guardrails are best-practice guides, not security boundaries. MCP redaction provides the actual security backstop.
+
+**Skill positioning (important)**: Skill is explicitly NOT a security boundary — admin has full SSH root access. Rules like "never read K2_NODE_SECRET" are *accidental damage prevention*, not access control. The MCP layer's `redactStdout()` is the technical guarantee.
+
+**Tool registration pattern** (TypeScript + `@modelcontextprotocol/sdk`):
+```typescript
+export function registerListNodes(server: McpServer, apiClient: CenterApiClient): void {
+  server.tool('list_nodes', 'description', { country: z.string().optional(), name: z.string().optional() }, async (params) => {
+    const raw = await apiClient.request('/app/nodes/batch-matrix')
+    const nodes = filterNodes(raw, params)
+    return { content: [{ type: 'text', text: JSON.stringify(nodes, null, 2) }] }
+  })
+}
+```
+
+**Entry point guard** (`index.ts` pattern):
+```typescript
+const isEntryPoint = process.argv[1] !== undefined &&
+  import.meta.url === new URL(`file://${process.argv[1]}`).href
+if (isEntryPoint) { main().catch(...) }
+```
+Prevents `main()` from running when module is imported by tests. Required for `createServer(config)` to be testable.
+
+**Validating tests**: `tools/kaitu-ops-mcp/src/tools/list-nodes.test.ts` (6 tests — AC1), `tools/kaitu-ops-mcp/src/tools/exec-on-node.test.ts` (AC2–5), `tools/kaitu-ops-mcp/src/redact.test.ts` (AC4), `tools/kaitu-ops-mcp/src/config.test.ts` (AC6–8)
+
+---
+
+## SSH Execution Module: ssh2 Library Pattern (2026-02-20, kaitu-ops-mcp)
+
+**Decision**: SSH command execution uses the `ssh2` npm library. Single shared `_sshExecCore()` function handles both plain exec and stdin-piped execution. Each tool call creates a new connection — no connection pool.
+
+**Why no connection pool**: Tool calls happen at human interaction pace (one per response cycle). Connection pool complexity (keep-alive detection, stale connection handling) outweighs benefits. Reconnect on every call is simpler and more robust.
+
+**Key implementation details**:
+- `settle()` guard function prevents double-resolution: `if (settled) return; settled = true`
+- Error classification at `client.on('error')`: `err.level === 'client-authentication'` → auth failed; `err.code === 'ECONNREFUSED'` → connection refused; else generic
+- Timeout via `setTimeout` → channel `destroy()` or `close()` → resolve with `exitCode: -1`
+- stdin pipe: `channel.write(stdinData, 'utf-8', () => { channel.end() })` — write then close stdin
+
+**stdin pipe vs heredoc**: Binary-safe stdin pipe avoids shell escaping issues entirely. Heredoc requires escaping `$`, backticks, single quotes — AI-generated scripts frequently break. Pattern: local file → `sshExecWithStdin(ip, config, 'bash -s', fileContent)`.
+
+**Error signals from ssh2**: `err.level` property (not `err.code`) distinguishes auth failures. `err.level === 'client-authentication'` is the ssh2-specific value. Generic connection errors use `err.code === 'ECONNREFUSED'` or string match on `err.message`.
+
+**Validating tests**: `tools/kaitu-ops-mcp/src/ssh.test.ts` — mock SSH server tests (AC2, AC5, AC9); `tools/kaitu-ops-mcp/src/tools/exec-on-node.test.ts` — truncation, redaction integration (AC3, AC4)
+
+---

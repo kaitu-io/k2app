@@ -19,6 +19,8 @@ make dev-ios                     # cap sync + cap run ios
 cd webapp && yarn test           # vitest
 cd desktop/src-tauri && cargo test  # Rust tests
 cd api && go test ./...          # Center API tests
+cd tools/kaitu-ops-mcp && npm run build  # Build MCP server (NodeNext ESM)
+cd tools/kaitu-ops-mcp && npm test       # vitest for MCP server
 scripts/test_build.sh            # Full build verification (14 checks)
 yarn install                     # Always run from root (workspace)
 ```
@@ -50,10 +52,15 @@ mobile/              Capacitor 6 mobile app
 mobile/plugins/      K2Plugin (Swift + Kotlin) — native VPN bridge
 mobile/ios/          Xcode project (App + PacketTunnelExtension)
 mobile/android/      Gradle project (app module, flatDir AAR)
+tools/kaitu-ops-mcp/ MCP server for AI-driven node ops (TypeScript + @modelcontextprotocol/sdk + ssh2)
+  src/                 index.ts (entry), config.ts, ssh.ts, redact.ts, center-api.ts, tools/
 scripts/             dev.sh, build-macos.sh, build-mobile-*.sh, test_build.sh
+docker/scripts/      Node ops scripts (prepare-docker-compose.sh, enable-ipv6.sh, etc.)
 docs/features/       Feature specs and plans
 docs/baselines/      Project capability baseline
 docs/knowledge/      Distilled patterns (architecture, testing, gotchas, task-splitting, bugfix)
+.claude/settings.json  Project-level Claude Code config (MCP server registration)
+.claude/skills/      Skill files for Claude Code (kaitu-node-ops.md — node ops safety guardrails)
 .github/workflows/   CI (push/PR) + Release Desktop (v* tags) + Release OpenWrt
 Makefile             Build orchestration — version from package.json, k2 from submodule
 ```
@@ -85,6 +92,7 @@ Makefile             Build orchestration — version from package.json, k2 from 
 - **K2Plugin definitions.ts rebuild required**: After editing `mobile/plugins/k2-plugin/src/definitions.ts`, run `npm run build` inside the plugin dir BEFORE the standard `rm -rf node_modules/k2-plugin && yarn install --force` step. Without rebuilding dist/, node_modules gets stale type definitions.
 - **API file naming**: `api_*.go` handlers, `logic_*.go` business logic, `model*.go` data, `worker_*.go` background jobs, `slave_api*.go` node APIs.
 - **API response pattern**: HTTP status always 200. Error state in JSON `code` field. Use `Success()`, `Error()`, `ListWithData()` helpers.
+- **NodeNext imports**: `tools/kaitu-ops-mcp/` uses `"module": "NodeNext"`. All relative imports must use `.js` extension in `.ts` source (e.g., `import { x } from './config.js'`). SDK subpath imports also need `.js`: `'@modelcontextprotocol/sdk/server/mcp.js'`.
 
 ## Tech Stack
 
@@ -94,8 +102,9 @@ Makefile             Build orchestration — version from package.json, k2 from 
 - Core: Go (k2 submodule)
 - API: Go, Gin, GORM, MySQL, Redis, Asynq
 - Mobile: Capacitor 6, gomobile bind (K2Plugin Swift/Kotlin)
-- Package: yarn workspaces (`webapp`, `desktop`, `mobile`); `web` has independent yarn.lock
+- Package: yarn workspaces (`webapp`, `desktop`, `mobile`); `web` has independent yarn.lock; `tools/kaitu-ops-mcp` has independent npm
 - CI: GitHub Actions (`ci.yml`, `release-desktop.yml`, `build-mobile.yml`, `release-openwrt.yml`)
+- Ops MCP: Node.js 22+, TypeScript (NodeNext), `@modelcontextprotocol/sdk`, `ssh2`, `smol-toml`
 
 ## Domain Vocabulary
 
@@ -123,6 +132,9 @@ Makefile             Build orchestration — version from package.json, k2 from 
 - **nativeUpdateReady** — Capacitor event emitted by Android K2Plugin when a new APK has been silently downloaded and is ready to install. Payload: `{version, size, path}`. Bridge wires this to `_platform.updater.isUpdateReady = true`.
 - **nativeUpdateAvailable** — Capacitor event emitted by iOS K2Plugin when a newer version is found in App Store. Payload: `{version, appStoreUrl}`. Bridge wires this to `_platform.updater.isUpdateReady = true` and stores the App Store URL for `applyUpdateNow()`.
 - **publish-mobile.sh** — Manual mobile release script (`scripts/publish-mobile.sh`). Phase 2 of mobile release: validates S3 artifacts exist, downloads, computes sha256+size, generates relative-URL `latest.json`, uploads to `{channel}/latest.json`. Supports `--dry-run` and `--s3-base=PATH` (local mock for testing).
+- **kaitu-ops-mcp** — MCP server for AI-driven node operations (`tools/kaitu-ops-mcp/`). TypeScript + `@modelcontextprotocol/sdk`. Two tools: `list_nodes` (Center API discovery via `X-Access-Key`) + `exec_on_node` (SSH direct to nodes). stdout redaction runs on every response.
+- **kaitu-node-ops skill** — Claude Code skill file (`.claude/skills/kaitu-node-ops.md`). Dual-architecture identification (k2v5 vs k2-slave), container dependency chain, `.env` variables, standard ops table, 7 safety guardrails. Activated by triggers: "node ops", "k2v5", "exec on node", etc.
+- **redactStdout()** — MCP server function (`tools/kaitu-ops-mcp/src/redact.ts`). Strips env-var-style secrets (`KEY_NAME=[REDACTED]`) and 64-char hex strings from SSH stdout before returning to Claude. Technical security backstop for accidental secret exposure.
 
 ## Layer Docs (read on demand)
 

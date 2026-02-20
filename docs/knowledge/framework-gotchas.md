@@ -896,3 +896,84 @@ ssh remote "cd /apps/kaitu-slave && docker compose pull && docker compose up -d"
 **Validating tests**: Remote `docker compose pull` succeeds after ECR login.
 
 ---
+
+## TypeScript NodeNext Module Resolution: Imports Must Use .js Extension (2026-02-20, kaitu-ops-mcp)
+
+**Problem**: With `"module": "NodeNext"` and `"moduleResolution": "NodeNext"` in tsconfig.json, TypeScript requires all relative imports to use the `.js` extension — even though the source files are `.ts`.
+
+**Symptom**: `import { loadConfig } from './config'` compiles but the emitted JavaScript fails at runtime with `Cannot find module './config'`. The `.js` file exists in `dist/` but Node.js cannot resolve it because the import has no extension.
+
+**Root cause**: NodeNext module resolution emulates what Node.js ESM does at runtime. Node.js ESM requires explicit extensions. TypeScript emits the import exactly as written — writing `.js` in the source gets emitted as `.js` in the output (correct for the runtime), while writing nothing gets emitted as nothing (incorrect).
+
+**Solution**: Write all relative imports with `.js` extension in `.ts` source files:
+```typescript
+// WRONG (fails at runtime with NodeNext)
+import { loadConfig } from './config'
+
+// CORRECT
+import { loadConfig } from './config.js'
+import { sshExec } from './ssh.js'
+```
+
+The `@modelcontextprotocol/sdk` package subpath imports also require `.js`: `'@modelcontextprotocol/sdk/server/mcp.js'`.
+
+**Applies to**: Any TypeScript project with `"module": "NodeNext"` targeting Node.js ESM, including `"type": "module"` packages.
+
+**Validating tests**: `tools/kaitu-ops-mcp/src/index.ts` and all tool files use `.js` extensions. `npm run build && node dist/index.js` starts MCP server successfully.
+
+---
+
+## MCP Server stdio Transport: Guard main() from Running on Import (2026-02-20, kaitu-ops-mcp)
+
+**Problem**: `@modelcontextprotocol/sdk` `StdioServerTransport.connect()` starts reading from `process.stdin`. If `main()` is called during module import (e.g., test files importing from `./index.js`), the stdio transport starts and blocks the test process.
+
+**Solution**: Guard `main()` with an entry point check:
+```typescript
+const isEntryPoint =
+  process.argv[1] !== undefined &&
+  import.meta.url === new URL(`file://${process.argv[1]}`).href
+
+if (isEntryPoint) {
+  main().catch(err => { console.error('Failed to start:', err); process.exit(1) })
+}
+```
+
+**Why `import.meta.url` comparison**: In Node.js ESM, `import.meta.url` is the `file://` URL of the current module. `process.argv[1]` is the path of the running script. They match only when the module is the entry point. For imported modules, `import.meta.url` is the module's own URL.
+
+**Extract `createServer(config)` for testability**: Tests call `createServer(config)` directly — gets a configured `McpServer` without starting stdio transport. The `main()` function calls `createServer()` then `server.connect(new StdioServerTransport())`.
+
+**Applies to**: Any Node.js ESM tool using stdio as I/O channel (MCP servers, CLI tools that read stdin).
+
+**Validating tests**: `tools/kaitu-ops-mcp/src/index.test.ts` — imports `createServer` and invokes it directly without blocking stdio.
+
+---
+
+## stdout Redaction: Global Regex Requires lastIndex Reset Between Calls (2026-02-20, kaitu-ops-mcp)
+
+**Problem**: Redaction regex patterns defined with the `g` flag at module level maintain `lastIndex` state between calls. Reusing the same pattern object without resetting causes alternating text matches to fail — the regex starts searching from a non-zero offset on the second call.
+
+**Root cause**: `RegExp.prototype.lastIndex` is mutated by `replace()` when the `g` flag is set. Module-level pattern objects persist this state across function invocations.
+
+**Solution**: Reset `lastIndex = 0` before each `.replace()` call:
+```typescript
+const REDACTION_PATTERNS = [{ pattern: /pattern/g, replacement: '...' }]
+
+export function redactStdout(text: string): string {
+  let result = text
+  for (const { pattern, replacement } of REDACTION_PATTERNS) {
+    pattern.lastIndex = 0  // REQUIRED: reset before each use of a /g pattern
+    result = result.replace(pattern, replacement)
+  }
+  return result
+}
+```
+
+**Pattern ordering matters**: More specific patterns should run before broader ones. In `redact.ts`, key=value pattern runs before 64-char hex to avoid double-redaction of secrets.
+
+**Redaction patterns for VPN node operations** (`tools/kaitu-ops-mcp/src/redact.ts`):
+1. `([A-Z0-9_]*(?:SECRET|KEY|PASSWORD|TOKEN)[A-Z0-9_]*)=\S+` → `$1=[REDACTED]` — env var style
+2. `(?<![0-9a-fA-F])[0-9a-fA-F]{64}(?![0-9a-fA-F])` → `[REDACTED]` — 64-char hex secrets
+
+**Validating tests**: `tools/kaitu-ops-mcp/src/redact.test.ts` — `test_redact_node_secret`, `test_redact_hex_string_64`, `test_redact_preserves_normal`, `test_redact_multiline` (AC4)
+
+---

@@ -476,3 +476,65 @@ docker run --rm -it -p 11777:1777 \
 **Validating artifact**: `k2/engine/engine_test.go` — 500+ lines, 14 test functions
 
 ---
+
+## MCP Tool Testing: Separate createServer() from main() for Testability (2026-02-20, kaitu-ops-mcp)
+
+**Pattern**: MCP server tests import `createServer(config)` directly — never the `main()` function that starts stdio transport. This lets tests verify tool registration and behavior without blocking the test process on stdin.
+
+**Test structure for MCP tools** (vitest):
+```typescript
+// list-nodes.test.ts
+import { filterNodes } from './list-nodes.js'
+
+describe('filterNodes', () => {
+  const mockRaw = { code: 0, data: { nodes: [/* ... */] } }
+  it('filters by country', () => {
+    const result = filterNodes(mockRaw, { country: 'jp' })
+    expect(result.every(n => n.country === 'jp')).toBe(true)
+  })
+  it('strips batch_script_results', () => {
+    const result = filterNodes(mockRaw, {})
+    expect(result[0]).not.toHaveProperty('batch_script_results')
+  })
+})
+```
+
+**Two-layer test separation**:
+1. **Pure logic tests** (`filterNodes`, `redactStdout`, `loadConfig`) — no MCP server, no SSH, pure functions. Fast, deterministic.
+2. **Integration tests** (`exec-on-node.test.ts`, `ssh.test.ts`) — mock SSH server or stub the ssh2 client. Verify stdout truncation at 10000 chars, redaction applied, timeout behavior.
+
+**Config loading tests**: Use temp TOML files + environment variable manipulation (`process.env['KAITU_ACCESS_KEY'] = 'test'` / `delete process.env['..']`). Restore env vars in `afterEach`. Use `os.tmpdir()` for temp config files.
+
+**What NOT to test for MCP tools**: Do not test the `server.tool()` registration call directly — the MCP SDK handles that. Test the handler logic (pure functions) and the tool callback behavior (integration tests).
+
+**Validating tests**: `tools/kaitu-ops-mcp/src/tools/list-nodes.test.ts` (AC1), `tools/kaitu-ops-mcp/src/redact.test.ts` (AC4), `tools/kaitu-ops-mcp/src/config.test.ts` (AC6–8), `tools/kaitu-ops-mcp/src/tools/exec-on-node.test.ts` (AC2–5)
+
+---
+
+## Config Module Pattern: TOML + Env Var Fallback with Clear Error Aggregation (2026-02-20, kaitu-ops-mcp)
+
+**Pattern**: Config loading collects ALL missing fields before throwing, so the user sees a complete error message in one go rather than fixing one field at a time.
+
+**Implementation** (`tools/kaitu-ops-mcp/src/config.ts`):
+```typescript
+const missing: string[] = []
+if (!centerUrl) missing.push('center.url (or KAITU_CENTER_URL env var)')
+if (!accessKey) missing.push('center.access_key (or KAITU_ACCESS_KEY env var)')
+// ... all required fields
+
+if (missing.length > 0) {
+  throw new Error(
+    `Configuration missing required fields:\n${missing.map(f => `  - ${f}`).join('\n')}`
+  )
+}
+```
+
+**TOML parsing**: Use `smol-toml` (`parse as parseToml`). Catches parse errors explicitly — only `ENOENT` (file not found) is silently skipped; parse errors rethrow with context. Env vars override TOML values with `??` nullish coalescing.
+
+**SSH key resolution priority chain**: env var → TOML config → `~/.ssh/id_rsa` (if exists) → `~/.ssh/id_ed25519` (if exists) → fall back to `id_rsa` path even if missing (produces clearer downstream error).
+
+**Why `smol-toml` over `@iarna/toml`**: Smaller bundle, ESM-first, no transitive dependencies. Spec-compliant for TOML 1.0.
+
+**Validating tests**: `tools/kaitu-ops-mcp/src/config.test.ts` — `test_config_missing_error` lists all missing fields; `test_config_env_overrides_toml`; `test_ssh_key_resolution_order` (AC6–8)
+
+---
