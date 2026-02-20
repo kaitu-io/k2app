@@ -430,6 +430,10 @@ type SlaveTunnel struct {
 	// Capability flags
 	HasRelay  *bool `gorm:"default:false"` // Whether this tunnel provides relay/forwarding capability
 	HasTunnel *bool `gorm:"default:true"`  // Whether this tunnel provides direct tunnel capability
+
+	// k2v5-specific fields (populated by sidecar from k2s connect-url.txt)
+	CertPin       string `gorm:"type:varchar(128)"` // Certificate pin for TLS pinning (e.g., "sha256:base64...")
+	ECHConfigList string `gorm:"type:text"`          // ECH config list (base64url encoded, from k2s)
 }
 
 // SlaveNodeLoad 节点负载历史记录

@@ -289,6 +289,7 @@ type DataSlaveTunnel struct {
 	HopPortEnd   int64          `json:"hopPortEnd"`   // Port hopping range end (0 = disabled)
 	Node         DataSlaveNode  `json:"node"`         // Associated physical node
 	Instance     *DataTunnelInstance `json:"instance,omitempty"` // Cloud instance data (if linked via IP)
+	ServerUrl    string         `json:"serverUrl,omitempty"` // Computed k2v5 connection URL (only for GET /tunnels/k2v5)
 }
 
 // DataSlaveTunnelListResponse 节点列表响应数据结构

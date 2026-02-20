@@ -3,6 +3,8 @@ package center
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
+	"strings"
 	"time"
 
 	db "github.com/wordgate/qtoolkit/db"
@@ -27,6 +29,31 @@ func tunnelProtocolsForQuery(requested TunnelProtocol) []TunnelProtocol {
 	default:
 		return []TunnelProtocol{requested}
 	}
+}
+
+// buildK2V5ServerURL constructs the k2v5 connection URL for a tunnel. This URL is
+// API-computed on demand and is never stored in the database — it is assembled from
+// the tunnel's stored fields (Domain, Port, CertPin, ECHConfigList, HopPortStart/End)
+// and returned only when the client explicitly requests the k2v5 protocol endpoint.
+//
+// URL format: k2v5://<domain>:<port>[?ech=<ECH>&pin=<pin>&hop=<start>-<end>]
+// Parameters are appended only when their underlying field is non-empty / non-zero.
+func buildK2V5ServerURL(t *SlaveTunnel) string {
+	u := fmt.Sprintf("k2v5://%s:%d", t.Domain, t.Port)
+	var params []string
+	if t.ECHConfigList != "" {
+		params = append(params, "ech="+t.ECHConfigList)
+	}
+	if t.CertPin != "" {
+		params = append(params, "pin="+t.CertPin)
+	}
+	if t.HopPortStart > 0 && t.HopPortEnd > 0 {
+		params = append(params, fmt.Sprintf("hop=%d-%d", t.HopPortStart, t.HopPortEnd))
+	}
+	if len(params) > 0 {
+		u += "?" + strings.Join(params, "&")
+	}
+	return u
 }
 
 // api_k2_tunnels get all tunnel list (excludes k2oc protocol)
@@ -161,6 +188,11 @@ func api_k2_tunnels(c *gin.Context) {
 		// Add instance data if CloudInstance found by IP
 		if inst, exists := instanceMap[tunnel.Node.Ipv4]; exists {
 			item.Instance = buildTunnelInstanceData(&inst)
+		}
+
+		// Compute serverUrl for k2v5 tunnels when explicitly requested
+		if protocolParam == string(TunnelProtocolK2V5) && tunnel.CertPin != "" {
+			item.ServerUrl = buildK2V5ServerURL(&tunnel)
 		}
 
 		items = append(items, item)
