@@ -4,6 +4,7 @@
   "description": "Kaitu ops MCP server for managing Center API and SSH operations",
   "type": "module",
   "main": "dist/index.js",
+  "bin": "dist/index.js",
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",

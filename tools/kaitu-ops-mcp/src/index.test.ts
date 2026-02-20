@@ -29,12 +29,12 @@ describe('createServer', () => {
   it('test_server_stdio_init — createServer returns an McpServer with correct name and version', async () => {
     const server = await createServer(testConfig)
 
-    // McpServer exposes server info via _serverInfo
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const info = (server as unknown as Record<string, unknown>)['_serverInfo'] as Record<
+    // McpServer wraps an internal Server instance at .server._serverInfo
+    const innerServer = (server as unknown as Record<string, unknown>)['server'] as Record<
       string,
       unknown
     >
+    const info = innerServer['_serverInfo'] as Record<string, unknown>
     expect(info).toBeDefined()
     expect(info['name']).toBe('kaitu-ops')
     expect(info['version']).toBe('0.1.0')
