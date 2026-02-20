@@ -136,6 +136,8 @@ func (e *Engine) Start(cfg Config) error {
 			Mode:             "tun",
 			DNSServers:       cfg.DNSExclude,
 			InterfaceMonitor: cfg.InterfaceMonitor,
+			IPv4Address:      cfg.TunIPv4,
+			IPv6Address:      cfg.TunIPv6,
 		})
 	}
 

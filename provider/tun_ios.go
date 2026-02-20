@@ -5,8 +5,15 @@ package provider
 import (
 	"context"
 	"fmt"
+	"net/netip"
 
 	"github.com/sagernet/sing-tun"
+)
+
+// iOS NEPacketTunnelProvider addresses — must match PacketTunnelProvider settings.
+var (
+	iosIPv4Prefix = netip.MustParsePrefix("10.0.0.2/24")
+	iosIPv6Prefix = netip.MustParsePrefix("fd00::2/64")
 )
 
 // TUNProvider wraps a TUN file descriptor from NEPacketTunnelProvider (iOS).
@@ -33,6 +40,8 @@ func (p *TUNProvider) Start(ctx context.Context, handler ConnectionHandler) erro
 	tunOpts := tun.Options{
 		MTU:            uint32(p.cfg.MTU),
 		FileDescriptor: p.cfg.FileDescriptor,
+		Inet4Address:   []netip.Prefix{iosIPv4Prefix},
+		Inet6Address:   []netip.Prefix{iosIPv6Prefix},
 	}
 
 	tunIf, err := tun.New(tunOpts)

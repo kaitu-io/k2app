@@ -41,6 +41,14 @@ type Config struct {
 	// Only used when Mode is "proxy".
 	ProxyListen string
 
+	// TunIPv4 is the TUN interface IPv4 address in CIDR notation (e.g. "10.0.0.2/24").
+	// Empty uses the provider default.
+	TunIPv4 string
+
+	// TunIPv6 is the TUN interface IPv6 address in CIDR notation (e.g. "fd00::2/128").
+	// Empty uses the provider default.
+	TunIPv6 string
+
 	// DNSExclude lists DNS server IPs to exclude from TUN routing (anti-loop).
 	// Desktop only.
 	DNSExclude []netip.Addr

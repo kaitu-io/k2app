@@ -45,6 +45,34 @@ func TestProviderConfig_PreservesValues(t *testing.T) {
 	}
 }
 
+func TestProviderConfig_TunAddresses_Preserved(t *testing.T) {
+	cfg := ProviderConfig{
+		IPv4Address: "10.0.0.2/24",
+		IPv6Address: "fd00::2/128",
+	}
+	cfg.SetDefaults()
+
+	if cfg.IPv4Address != "10.0.0.2/24" {
+		t.Errorf("IPv4Address = %q, want 10.0.0.2/24", cfg.IPv4Address)
+	}
+	if cfg.IPv6Address != "fd00::2/128" {
+		t.Errorf("IPv6Address = %q, want fd00::2/128", cfg.IPv6Address)
+	}
+}
+
+func TestProviderConfig_TunAddresses_Empty(t *testing.T) {
+	cfg := ProviderConfig{}
+	cfg.SetDefaults()
+
+	// Empty TUN addresses stay empty — provider uses hardcoded defaults
+	if cfg.IPv4Address != "" {
+		t.Errorf("IPv4Address should be empty, got %q", cfg.IPv4Address)
+	}
+	if cfg.IPv6Address != "" {
+		t.Errorf("IPv6Address should be empty, got %q", cfg.IPv6Address)
+	}
+}
+
 // testHandler records calls from providers.
 type testHandler struct {
 	tcpCalls chan tcpCall

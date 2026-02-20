@@ -12,6 +12,11 @@ server: "k2v5://my-device-id:my-token@your-server.com:443?ech=...&pin=sha256:...
 #   proxy — SOCKS5+HTTP proxy, no root needed
 mode: tun
 
+# TUN mode settings (only used when mode: tun)
+# tun:
+#   ipv4: "198.18.0.7/15"
+#   ipv6: "fdfe:dcba:9876::7/64"
+
 # Proxy mode settings (only used when mode: proxy)
 proxy:
   listen: "127.0.0.1:1080"       # SOCKS5 + HTTP proxy listen address

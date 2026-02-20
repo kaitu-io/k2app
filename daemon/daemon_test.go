@@ -77,6 +77,95 @@ func TestDoUpAcceptsClientConfig(t *testing.T) {
 	}
 }
 
+func TestEngineConfigFromClientConfig_TunFields(t *testing.T) {
+	var captured engine.Config
+	d := New()
+	d.EngineStarter = func(cfg engine.Config) (*engine.Engine, error) {
+		captured = cfg
+		return engine.New(), nil
+	}
+
+	clientCfg := &config.ClientConfig{
+		Server: "k2v5://test:token@host:443",
+		Tun: config.TunConfig{
+			IPv4: "10.0.0.2/24",
+			IPv6: "fd00::2/128",
+		},
+	}
+	config.SetDefaults(clientCfg)
+
+	if err := d.doUp(clientCfg, 0); err != nil {
+		t.Fatalf("doUp: %v", err)
+	}
+
+	if captured.TunIPv4 != "10.0.0.2/24" {
+		t.Errorf("engine TunIPv4 = %q, want 10.0.0.2/24", captured.TunIPv4)
+	}
+	if captured.TunIPv6 != "fd00::2/128" {
+		t.Errorf("engine TunIPv6 = %q, want fd00::2/128", captured.TunIPv6)
+	}
+}
+
+func TestEngineConfigFromClientConfig_TunDefaults(t *testing.T) {
+	var captured engine.Config
+	d := New()
+	d.EngineStarter = func(cfg engine.Config) (*engine.Engine, error) {
+		captured = cfg
+		return engine.New(), nil
+	}
+
+	// No Tun fields set — should remain empty (provider handles defaults).
+	clientCfg := &config.ClientConfig{
+		Server: "k2v5://test:token@host:443",
+	}
+	config.SetDefaults(clientCfg)
+
+	if err := d.doUp(clientCfg, 0); err != nil {
+		t.Fatalf("doUp: %v", err)
+	}
+
+	if captured.TunIPv4 != "" {
+		t.Errorf("engine TunIPv4 = %q, want empty", captured.TunIPv4)
+	}
+	if captured.TunIPv6 != "" {
+		t.Errorf("engine TunIPv6 = %q, want empty", captured.TunIPv6)
+	}
+}
+
+func TestEngineConfigFromClientConfig_ProxyModeUnchanged(t *testing.T) {
+	var captured engine.Config
+	d := New()
+	d.EngineStarter = func(cfg engine.Config) (*engine.Engine, error) {
+		captured = cfg
+		return engine.New(), nil
+	}
+
+	clientCfg := &config.ClientConfig{
+		Server: "k2v5://test:token@host:443",
+		Mode:   "proxy",
+		Tun: config.TunConfig{
+			IPv4: "10.0.0.2/24",
+		},
+	}
+	clientCfg.Proxy.Listen = "127.0.0.1:8080"
+	config.SetDefaults(clientCfg)
+
+	if err := d.doUp(clientCfg, 0); err != nil {
+		t.Fatalf("doUp: %v", err)
+	}
+
+	if captured.Mode != "proxy" {
+		t.Errorf("engine Mode = %q, want proxy", captured.Mode)
+	}
+	if captured.ProxyListen != "127.0.0.1:8080" {
+		t.Errorf("engine ProxyListen = %q, want 127.0.0.1:8080", captured.ProxyListen)
+	}
+	// TUN fields still pass through even in proxy mode (engine ignores them).
+	if captured.TunIPv4 != "10.0.0.2/24" {
+		t.Errorf("engine TunIPv4 = %q, want 10.0.0.2/24", captured.TunIPv4)
+	}
+}
+
 func TestPersistedStateWithClientConfig(t *testing.T) {
 	// Use state file path and clean up.
 	os.Remove(stateFilePath())

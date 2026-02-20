@@ -254,6 +254,8 @@ func (d *Daemon) engineConfigFromClientConfig(cfg *config.ClientConfig, dd *dire
 		PreferIPv6:     true,
 		Mode:           cfg.Mode,
 		ProxyListen:    cfg.Proxy.Listen,
+		TunIPv4:        cfg.Tun.IPv4,
+		TunIPv6:        cfg.Tun.IPv6,
 	}
 
 	// Compute DNSExclude from DNS config + server host resolution.

@@ -15,10 +15,17 @@ type ClientConfig struct {
 	Listen string      `yaml:"listen" json:"listen"` // daemon HTTP listen address, default "127.0.0.1:1777"
 	Server string      `yaml:"server" json:"server"` // k2v5:// URL
 	Mode   string      `yaml:"mode"   json:"mode"`   // "tun" or "proxy", default "tun"
+	Tun    TunConfig   `yaml:"tun"    json:"tun"`
 	Proxy  ProxyConfig `yaml:"proxy"  json:"proxy"`
 	DNS    DNSConfig   `yaml:"dns"    json:"dns"`
 	Rule   RuleConfig  `yaml:"rule"   json:"rule"`
 	Log    LogConfig   `yaml:"log"    json:"log"`
+}
+
+// TunConfig contains TUN device configuration.
+type TunConfig struct {
+	IPv4 string `yaml:"ipv4" json:"ipv4"` // CIDR, e.g. "10.0.0.2/24". Empty = provider default.
+	IPv6 string `yaml:"ipv6" json:"ipv6"` // CIDR, e.g. "fd00::2/128". Empty = provider default.
 }
 
 // ProxyConfig contains proxy mode configuration.

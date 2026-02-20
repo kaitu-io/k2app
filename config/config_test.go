@@ -277,6 +277,75 @@ log:
 	}
 }
 
+func TestTunConfig_JSONRoundTrip(t *testing.T) {
+	cfg := &ClientConfig{
+		Server: "k2v5://udid:token@1.2.3.4:443",
+		Mode:   "tun",
+		Tun:    TunConfig{IPv4: "10.0.0.2/24", IPv6: "fd00::2/128"},
+	}
+
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	// Verify JSON keys
+	var raw map[string]any
+	json.Unmarshal(data, &raw)
+	tunRaw, ok := raw["tun"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected tun key in JSON, got: %s", string(data))
+	}
+	if tunRaw["ipv4"] != "10.0.0.2/24" {
+		t.Errorf("tun.ipv4 = %v, want 10.0.0.2/24", tunRaw["ipv4"])
+	}
+	if tunRaw["ipv6"] != "fd00::2/128" {
+		t.Errorf("tun.ipv6 = %v, want fd00::2/128", tunRaw["ipv6"])
+	}
+
+	// Round-trip
+	var got ClientConfig
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.Tun.IPv4 != "10.0.0.2/24" || got.Tun.IPv6 != "fd00::2/128" {
+		t.Errorf("round-trip: got Tun=%+v", got.Tun)
+	}
+}
+
+func TestClientConfig_WithTun_YAML(t *testing.T) {
+	yamlContent := `
+server: "k2v5://udid:token@1.2.3.4:443"
+mode: tun
+tun:
+  ipv4: "10.0.0.2/24"
+  ipv6: "fd00::2/128"
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "client.yaml")
+	os.WriteFile(path, []byte(yamlContent), 0644)
+
+	cfg, err := LoadClient(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.Tun.IPv4 != "10.0.0.2/24" {
+		t.Errorf("Tun.IPv4 = %q, want 10.0.0.2/24", cfg.Tun.IPv4)
+	}
+	if cfg.Tun.IPv6 != "fd00::2/128" {
+		t.Errorf("Tun.IPv6 = %q, want fd00::2/128", cfg.Tun.IPv6)
+	}
+}
+
+func TestClientConfig_EmptyTun_Defaults(t *testing.T) {
+	// Empty tun config should remain zero-valued (provider handles defaults)
+	cfg := ClientFromURL("k2v5://udid:token@1.2.3.4:443")
+	if cfg.Tun.IPv4 != "" || cfg.Tun.IPv6 != "" {
+		t.Errorf("empty tun should have zero values, got %+v", cfg.Tun)
+	}
+}
+
 func TestSetDefaultsExported(t *testing.T) {
 	cfg := &ClientConfig{}
 	SetDefaults(cfg)
