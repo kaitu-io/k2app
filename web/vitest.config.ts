@@ -11,8 +11,8 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
-    include: ['src/**/*.{test,spec}.{js,ts,jsx,tsx}'],
-    exclude: ['**/node_modules/**', '**/dist/**', '**/tests/**'], // Exclude Playwright E2E tests
+    include: ['src/**/*.{test,spec}.{js,ts,jsx,tsx}', 'tests/**/*.test.ts'],
+    exclude: ['**/node_modules/**', '**/dist/**', 'tests/**/*.spec.{js,ts}'], // Playwright E2E specs are *.spec.ts
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html', 'lcov'],
@@ -42,6 +42,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '#velite': path.resolve(__dirname, './.velite'),
     },
   },
 });
