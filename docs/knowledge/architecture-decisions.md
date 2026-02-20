@@ -979,6 +979,42 @@ Script validates artifacts exist on S3, downloads to compute sha256+size, genera
 
 ---
 
+## Pre-Built Binary Dockerfiles for GFW Environments (2026-02-20, publish-docker)
+
+**Decision**: Docker images for k2v5 and k2-sidecar use pre-built Go binaries instead of multi-stage builds with `golang:` base image. Binaries are cross-compiled locally (`CGO_ENABLED=0 GOOS=linux GOARCH=amd64`), then `COPY`'d into Alpine containers.
+
+**Supersedes**: k2-sidecar's original multi-stage Dockerfile that used `FROM golang:1.22-alpine AS builder` + `go build` inside Docker.
+
+**Why pre-built over multi-stage**:
+- Docker Hub is unreachable behind GFW — `golang:1.22-alpine` cannot be pulled
+- Even with mirrors, multi-stage builds are fragile (mirror auth issues, `--platform` incompatibility)
+- Go cross-compilation is reliable and fast locally
+- Smaller attack surface: final image only has Alpine + binary, no Go toolchain
+- Build reproducibility: same binary tested locally is exactly what ships
+
+**Pipeline** (`scripts/publish-docker.sh`):
+```
+Step 1: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build → binary
+Step 2: docker build --platform linux/amd64 (COPY binary into alpine:3.20)
+Step 3: docker push to ECR
+```
+
+**Dockerfile pattern**:
+```dockerfile
+FROM alpine:3.20
+RUN apk add --no-cache ca-certificates
+COPY pre-built-binary /usr/local/bin/
+ENTRYPOINT ["/usr/local/bin/pre-built-binary"]
+```
+
+**Trade-off**: Requires Go toolchain on build machine (not just Docker). Acceptable because k2 developers always have Go installed.
+
+**`.gitignore` alignment**: Both `docker/k2s/.gitignore` and `docker/sidecar/.gitignore` ignore the built binaries (`k2s`, `k2-sidecar`) — they're build artifacts, not source.
+
+**Validating tests**: `make publish-docker` succeeds; remote `docker compose up` starts all services.
+
+---
+
 ## Viewport Scaling: CSS Transform for Narrow Desktop Windows (2026-02-20, desktop-window-management)
 
 **Decision**: When the Tauri desktop window is narrower than 430px design width (e.g., Windows 1080p laptops, small screens), scale the entire UI proportionally using CSS `transform: scale()` on `<body>`.

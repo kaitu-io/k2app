@@ -808,3 +808,91 @@ export async function injectTauriGlobals(): Promise<void> {
 **Validating tests**: Visual verification — no white flash on app start.
 
 ---
+
+## Docker Hub Unreachable Behind GFW: DaoCloud Mirror + Local Tag (2026-02-20, publish-docker)
+
+**Problem**: `docker build` with `FROM alpine:3.20` fails behind GFW — Docker Hub (`registry-1.docker.io`) times out. ECR public mirror (`public.ecr.aws/docker/library/alpine:3.20`) also blocked. DaoCloud mirror (`docker.m.daocloud.io/library/alpine:3.20`) works for `docker pull` but returns 401 when used in `docker build --platform linux/amd64`.
+
+**Root cause**: DaoCloud mirror authenticates differently during multi-platform `docker build` (buildkit) vs simple `docker pull`. The `--platform` flag triggers buildkit which makes a fresh registry request that DaoCloud rejects.
+
+**Solution**: Two-step workaround:
+1. `docker pull docker.m.daocloud.io/library/alpine:3.20` (works)
+2. `docker tag docker.m.daocloud.io/library/alpine:3.20 alpine:3.20` (local alias)
+3. Dockerfile uses `FROM alpine:3.20` — resolves from local cache
+
+**Alternative**: If DaoCloud is also blocked, try other China mirrors: `registry.cn-hangzhou.aliyuncs.com/library/alpine:3.20` (Aliyun), `mirror.ccs.tencentyun.com/library/alpine:3.20` (Tencent).
+
+**Prevention**: Keep local images cached. Run `docker pull` for base images periodically when network is available.
+
+**Applies to**: Any Docker build behind GFW that needs Docker Hub base images.
+
+**Validating tests**: `make publish-docker` succeeds with locally tagged base image.
+
+---
+
+## Apple Silicon Docker Builds Default to arm64 — Use --platform linux/amd64 (2026-02-20, publish-docker)
+
+**Problem**: `docker build` on Apple Silicon (M1/M2/M3) produces `linux/arm64` images by default. Server containers deployed to x86_64 Linux VMs crash with `exec format error` or fail to start silently.
+
+**Symptom**: Image builds and pushes successfully. Remote `docker pull` succeeds. `docker compose up` fails with no clear error — container exits immediately.
+
+**Solution**: Always pass `--platform linux/amd64` to `docker build` for server-targeted images:
+```bash
+docker build --platform linux/amd64 -t "${IMAGE}" docker/k2s/
+```
+
+**Go binary alignment**: Cross-compiled Go binaries must also target amd64:
+```bash
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o binary .
+```
+
+**Both must match**: `--platform linux/amd64` Docker image + `GOARCH=amd64` binary. Mismatched architectures cause silent failure.
+
+**Validating tests**: `docker inspect --format='{{.Architecture}}' image` returns `amd64`; remote deployment succeeds.
+
+---
+
+## ECR Public Repositories Must Be Created Before First Push (2026-02-20, publish-docker)
+
+**Problem**: `docker push public.ecr.aws/d6n9t2r2/k2v5:latest` fails with "The repository with name 'k2v5' does not exist in the registry". ECR Public does not auto-create repositories on push (unlike Docker Hub).
+
+**Solution**: Create repository before first push:
+```bash
+aws ecr-public create-repository --repository-name k2v5 --region us-east-1
+```
+
+**Note**: ECR Public repository creation MUST use `--region us-east-1` regardless of where you're deploying. ECR Public is a global service anchored to us-east-1.
+
+**ECR login command** (also us-east-1):
+```bash
+aws ecr-public get-login-password --region us-east-1 | \
+    docker login --username AWS --password-stdin public.ecr.aws
+```
+
+**Subsequent pushes**: Once the repo exists, `docker push` works without additional setup (just need valid ECR login).
+
+**Validating tests**: `docker push` succeeds after repo creation.
+
+---
+
+## ECR Public Rate Limiting on Unauthenticated Pulls (2026-02-20, publish-docker)
+
+**Problem**: Remote servers doing `docker compose pull` from ECR Public get rate limited: "toomanyrequests: Rate exceeded". ECR Public allows ~1 pull/sec unauthenticated, but `docker compose pull` with multiple images can exceed this.
+
+**Solution**: Authenticate the remote Docker client with ECR before pulling:
+```bash
+# Get token locally (where AWS credentials exist)
+TOKEN=$(aws ecr-public get-login-password --region us-east-1)
+
+# Pass to remote server
+ssh remote "echo '$TOKEN' | docker login --username AWS --password-stdin public.ecr.aws"
+ssh remote "cd /apps/kaitu-slave && docker compose pull && docker compose up -d"
+```
+
+**Authenticated rate limits**: Much higher (~10 pulls/sec). Token lasts 12 hours.
+
+**Alternative**: For production, consider ECR Private (higher limits, per-region) or cache images in a private registry.
+
+**Validating tests**: Remote `docker compose pull` succeeds after ECR login.
+
+---
