@@ -6,7 +6,7 @@
 |-------|-------|
 | Feature | k2v5-tunnel-expression |
 | Version | v1 |
-| Status | draft |
+| Status | implemented |
 | Created | 2026-02-20 |
 | Updated | 2026-02-20 |
 
