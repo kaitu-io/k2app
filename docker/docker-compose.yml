@@ -23,7 +23,7 @@ services:
   # Generates config files and certificates into the shared config volume.
   # Provides RADIUS proxy for k2-oc authentication.
   k2-sidecar:
-    build: ./sidecar
+    image: public.ecr.aws/d6n9t2r2/k2-sidecar:latest
     container_name: k2-sidecar
     restart: unless-stopped
     networks:
@@ -64,7 +64,7 @@ services:
   # - No ECH, SNI match: forward to k2v4-slave or k2-oc via local_routes
   # - Unknown SNI: camouflage reverse proxy to real site
   k2v5:
-    build: ./k2s
+    image: public.ecr.aws/d6n9t2r2/k2v5:latest
     container_name: k2v5
     restart: unless-stopped
     network_mode: host

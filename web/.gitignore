@@ -49,3 +49,6 @@ next-env.d.ts
 # generated changelog (source: client/releases/*.md)
 /public/changelog.json
 /public/changelog.md
+
+# velite generated output
+.velite/

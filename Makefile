@@ -62,6 +62,10 @@ dev: pre-build
 dev-desktop: pre-build
 	./scripts/dev-desktop.sh
 
+# Slave node Docker images (build + push to ECR)
+publish-docker:
+	bash scripts/publish-docker.sh
+
 # API server
 deploy-api:
 	mkdir -p release
