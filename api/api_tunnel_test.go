@@ -129,98 +129,55 @@ func TestDataSlaveTunnelListResponse_ECHConfigListField(t *testing.T) {
 	})
 }
 
-// TestBuildK2V5ServerURL_FullParams tests buildK2V5ServerURL with all parameters present.
-func TestBuildK2V5ServerURL_FullParams(t *testing.T) {
-	tunnel := SlaveTunnel{
-		Domain:        "hk1.example.com",
-		Port:          443,
-		CertPin:       "sha256:abc123",
-		ECHConfigList: "AABBCC",
-		HopPortStart:  10020,
-		HopPortEnd:    10119,
-	}
-	url := buildK2V5ServerURL(&tunnel)
-	assert.Equal(t, "k2v5://hk1.example.com:443?ech=AABBCC&pin=sha256:abc123&hop=10020-10119", url)
-}
-
-// TestBuildK2V5ServerURL_NoECH tests buildK2V5ServerURL when ECHConfigList is missing.
-func TestBuildK2V5ServerURL_NoECH(t *testing.T) {
-	tunnel := SlaveTunnel{Domain: "test.com", Port: 443, CertPin: "sha256:xyz"}
-	url := buildK2V5ServerURL(&tunnel)
-	assert.Contains(t, url, "pin=sha256:xyz")
-	assert.NotContains(t, url, "ech=")
-}
-
-// TestBuildK2V5ServerURL_NoHop tests buildK2V5ServerURL when hop ports are zero (disabled).
-func TestBuildK2V5ServerURL_NoHop(t *testing.T) {
-	tunnel := SlaveTunnel{Domain: "test.com", Port: 443, CertPin: "sha256:xyz", ECHConfigList: "AA"}
-	url := buildK2V5ServerURL(&tunnel)
-	assert.NotContains(t, url, "hop=")
-}
-
-// TestBuildK2V5ServerURL_Empty tests buildK2V5ServerURL with no optional parameters.
-func TestBuildK2V5ServerURL_Empty(t *testing.T) {
-	tunnel := SlaveTunnel{Domain: "test.com", Port: 443}
-	url := buildK2V5ServerURL(&tunnel)
-	assert.Equal(t, "k2v5://test.com:443", url)
-}
-
-// TestUpsertTunnel_K2V5WithCertPin verifies TunnelConfigInput accepts certPin and echConfigList
-// and SlaveTunnel model has the corresponding fields for DB storage.
-func TestUpsertTunnel_K2V5WithCertPin(t *testing.T) {
+// TestUpsertTunnel_K2V5WithServerURL verifies TunnelConfigInput accepts serverUrl
+// and SlaveTunnel model has the corresponding ServerURL field for DB storage.
+func TestUpsertTunnel_K2V5WithServerURL(t *testing.T) {
+	serverURL := "k2v5://k2v5.example.com:443?ech=AABBCCDDEEFF&pin=sha256:abc123def456"
 	input := TunnelConfigInput{
-		Domain:        "k2v5.example.com",
-		Protocol:      "k2v5",
-		Port:          443,
-		CertPin:       "sha256:abc123def456",
-		ECHConfigList: "AABBCCDDEEFF",
+		Domain:    "k2v5.example.com",
+		Protocol:  "k2v5",
+		Port:      443,
+		ServerURL: serverURL,
 	}
-	assert.Equal(t, "sha256:abc123def456", input.CertPin)
-	assert.Equal(t, "AABBCCDDEEFF", input.ECHConfigList)
+	assert.Equal(t, serverURL, input.ServerURL)
 
-	// Verify SlaveTunnel struct accepts the fields
+	// Verify SlaveTunnel struct accepts the field
 	tunnel := SlaveTunnel{
-		Domain:        input.Domain,
-		Protocol:      TunnelProtocolK2V5,
-		Port:          int64(input.Port),
-		CertPin:       input.CertPin,
-		ECHConfigList: input.ECHConfigList,
+		Domain:    input.Domain,
+		Protocol:  TunnelProtocolK2V5,
+		Port:      int64(input.Port),
+		ServerURL: input.ServerURL,
 	}
-	assert.Equal(t, "sha256:abc123def456", tunnel.CertPin)
-	assert.Equal(t, "AABBCCDDEEFF", tunnel.ECHConfigList)
+	assert.Equal(t, serverURL, tunnel.ServerURL)
 }
 
-// TestUpsertTunnel_K2V4NoCertPin verifies k2v4 registration without certPin compiles and works.
-func TestUpsertTunnel_K2V4NoCertPin(t *testing.T) {
+// TestUpsertTunnel_K2V4NoServerURL verifies k2v4 registration without serverUrl compiles and works.
+func TestUpsertTunnel_K2V4NoServerURL(t *testing.T) {
 	input := TunnelConfigInput{
 		Domain:   "k2v4.example.com",
 		Protocol: "k2v4",
 		Port:     10001,
 	}
-	assert.Empty(t, input.CertPin)
-	assert.Empty(t, input.ECHConfigList)
+	assert.Empty(t, input.ServerURL)
 
 	tunnel := SlaveTunnel{
-		Domain:        input.Domain,
-		Protocol:      TunnelProtocolK2V4,
-		Port:          int64(input.Port),
-		CertPin:       input.CertPin,
-		ECHConfigList: input.ECHConfigList,
+		Domain:    input.Domain,
+		Protocol:  TunnelProtocolK2V4,
+		Port:      int64(input.Port),
+		ServerURL: input.ServerURL,
 	}
-	assert.Empty(t, tunnel.CertPin)
-	assert.Empty(t, tunnel.ECHConfigList)
+	assert.Empty(t, tunnel.ServerURL)
 }
 
-// TestApiK2Tunnels_K2V5HasServerUrl verifies that for a k2v5 tunnel with CertPin,
-// buildK2V5ServerURL produces a non-empty serverUrl that can be set on DataSlaveTunnel.
+// TestApiK2Tunnels_K2V5HasServerUrl verifies that for a k2v5 tunnel with ServerURL,
+// the response builder passes through the serverUrl to DataSlaveTunnel.
 func TestApiK2Tunnels_K2V5HasServerUrl(t *testing.T) {
 	tunnel := SlaveTunnel{
-		ID:            1,
-		Domain:        "k2v5.example.com",
-		Protocol:      TunnelProtocolK2V5,
-		Port:          443,
-		CertPin:       "sha256:testabc",
-		ECHConfigList: "AABB",
+		ID:        1,
+		Domain:    "k2v5.example.com",
+		Protocol:  TunnelProtocolK2V5,
+		Port:      443,
+		ServerURL: "k2v5://k2v5.example.com:443?ech=AABB&pin=sha256:testabc",
 	}
 
 	// Simulate the response builder logic from api_k2_tunnels
@@ -231,12 +188,12 @@ func TestApiK2Tunnels_K2V5HasServerUrl(t *testing.T) {
 		Port:     tunnel.Port,
 	}
 
-	// Apply serverUrl for k2v5 with certPin
-	if tunnel.Protocol == TunnelProtocolK2V5 && tunnel.CertPin != "" {
-		item.ServerUrl = buildK2V5ServerURL(&tunnel)
+	// Apply serverUrl for k2v5 with ServerURL
+	if tunnel.Protocol == TunnelProtocolK2V5 && tunnel.ServerURL != "" {
+		item.ServerUrl = tunnel.ServerURL
 	}
 
-	assert.NotEmpty(t, item.ServerUrl, "k2v5 tunnel with certPin must have serverUrl")
+	assert.NotEmpty(t, item.ServerUrl, "k2v5 tunnel with ServerURL must have serverUrl")
 	assert.Contains(t, item.ServerUrl, "k2v5://")
 	assert.Contains(t, item.ServerUrl, "pin=sha256:testabc")
 }
@@ -258,8 +215,8 @@ func TestApiK2Tunnels_K2V4NoServerUrl(t *testing.T) {
 	}
 
 	// k2v4 does not set serverUrl
-	if tunnel.Protocol == TunnelProtocolK2V5 && tunnel.CertPin != "" {
-		item.ServerUrl = buildK2V5ServerURL(&tunnel)
+	if tunnel.Protocol == TunnelProtocolK2V5 && tunnel.ServerURL != "" {
+		item.ServerUrl = tunnel.ServerURL
 	}
 
 	assert.Empty(t, item.ServerUrl, "k2v4 tunnel must not have serverUrl")

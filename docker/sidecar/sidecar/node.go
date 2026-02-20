@@ -64,8 +64,7 @@ type TunnelConfig struct {
 	IsTest        bool   `json:"isTest,omitempty"`        // Whether this is a test node
 	HasRelay      bool   `json:"hasRelay,omitempty"`      // Whether this tunnel provides relay/forwarding capability
 	HasTunnel     bool   `json:"hasTunnel,omitempty"`     // Whether this tunnel provides direct tunnel capability
-	CertPin       string `json:"certPin,omitempty"`       // k2v5 cert pin (from connect-url.txt)
-	ECHConfigList string `json:"echConfigList,omitempty"` // k2v5 ECH config (from connect-url.txt)
+	ServerURL string `json:"serverUrl,omitempty"` // k2v5 connection URL (built from connect-url.txt)
 }
 
 // TunnelResult tunnel registration result (with certificate)

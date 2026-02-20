@@ -20,6 +20,25 @@ Platform-specific issues and workarounds discovered during implementation.
 
 ---
 
+## Go json.Marshal Escapes & as \u0026 in URL Strings (2026-02-20, k2v5-tunnel-expression)
+
+**Problem**: `json.Marshal` in Go escapes `&` as `\u0026` in JSON output. Tests that use `assert.Contains(t, string(jsonBytes), "ech=AABB&pin=sha256:abc")` fail because the actual JSON contains `ech=AABB\u0026pin=sha256:abc`.
+
+**Root cause**: Go's `encoding/json` escapes `<`, `>`, and `&` for HTML safety by default. This is correct behavior — the JSON is semantically equivalent — but string-level assertions break.
+
+**Solution**: Unmarshal back to `map[string]any` and assert on the deserialized value, not the raw JSON string:
+```go
+var parsed map[string]any
+require.NoError(t, json.Unmarshal(data, &parsed))
+assert.Equal(t, expectedURL, parsed["serverUrl"])
+```
+
+**Applies to**: Any Go test asserting URL strings (or any string containing `&`) in JSON output.
+
+**Validating tests**: `docker/sidecar/sidecar/connect_url_test.go` — `TestTunnelConfig_MarshalWithServerURL`
+
+---
+
 ## Go json.Marshal snake_case vs JavaScript camelCase (2026-02-14, mobile-rewrite)
 
 **Problem**: Go `json.Marshal` outputs `connected_at`, TypeScript expects `connectedAt`. Raw Go JSON passed through native bridges causes silent `undefined` values — no runtime error, just missing data.

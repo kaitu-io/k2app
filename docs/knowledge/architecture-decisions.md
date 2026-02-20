@@ -888,6 +888,32 @@ Script validates artifacts exist on S3, downloads to compute sha256+size, genera
 
 ---
 
+## Store Pre-Built URLs, Not Decomposed Components (2026-02-20, k2v5-tunnel-expression)
+
+**Decision**: Sidecar constructs the complete `k2v5://` connection URL from `connect-url.txt` + config (domain, port, hop range), then stores the full URL as `SlaveTunnel.ServerURL`. API returns it directly. Replaced the prior v1 approach of decomposing into `CertPin` + `ECHConfigList` fields and reassembling on API response.
+
+**Why store full URL over decomposed fields**:
+- Decompose-store-reassemble adds complexity with zero benefit — the URL is never queried by its parts
+- Single `ServerURL` field vs two fields (`CertPin`, `ECHConfigList`) — simpler model
+- `buildK2V5ServerURL()` server-side function deleted — no runtime computation on API read
+- Sidecar already has all the context to build the URL (connect-url.txt + configured domain/port/hop)
+
+**URL construction** (`sidecar.BuildServerURL()`):
+1. Parse connect-url.txt → extract `ech` and `pin` query params
+2. Strip auth credentials (`udid:token@`) and dev flags (`insecure=1`)
+3. Use sidecar-configured domain/port (not source URL's host:port)
+4. Append hop range if configured
+5. Result: `k2v5://domain:port?ech=xxx&pin=sha256:xxx[&hop=start-end]`
+
+**Pattern applicability**: When a downstream consumer needs a formatted value, build it at the source (where all context is available) rather than storing raw components and formatting on read. Especially true when:
+- The formatted value is never queried by its parts
+- The source has all necessary context
+- Multiple fields would be needed to store components
+
+**Validating tests**: `docker/sidecar/sidecar/connect_url_test.go` — 8 tests (`TestBuildServerURL_Full`, `_NoHop`, `_NoECH`, `_OverridesDomainPort`, `_InvalidURL`, `_EmptyString`, `_NoParams`, `TestTunnelConfig_MarshalWithServerURL`); `api/api_tunnel_test.go` — `TestUpsertTunnel_K2V5WithServerURL`, `TestApiK2Tunnels_K2V5HasServerUrl`
+
+---
+
 ## Three-Layer Config Chain: ClientConfig → engine.Config → ProviderConfig (2026-02-20, k2-service-call-requirements)
 
 **Decision**: TUN device configuration (IPv4/IPv6 addresses) flows through the three-layer config chain without defaults injection at intermediate layers. Only the final consumer (provider's `tun_desktop.go`) applies defaults.

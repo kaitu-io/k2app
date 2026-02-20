@@ -8,42 +8,61 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestParseConnectURL_Full(t *testing.T) {
-	url := "k2v5://udid:token@hk1.example.com:443?ech=AABBCCDD&pin=sha256:abc123&insecure=1"
-	certPin, echConfig := ParseConnectURL(url)
-	assert.Equal(t, "sha256:abc123", certPin)
-	assert.Equal(t, "AABBCCDD", echConfig)
+func TestBuildServerURL_Full(t *testing.T) {
+	raw := "k2v5://udid:token@hk1.example.com:443?ech=AABBCCDD&pin=sha256:abc123&insecure=1"
+	url := BuildServerURL(raw, "hk1.example.com", 443, 10020, 10119)
+	assert.Equal(t, "k2v5://hk1.example.com:443?ech=AABBCCDD&pin=sha256:abc123&hop=10020-10119", url)
 }
 
-func TestParseConnectURL_NoECH(t *testing.T) {
-	url := "k2v5://udid:token@test.com:443?pin=sha256:xyz"
-	certPin, echConfig := ParseConnectURL(url)
-	assert.Equal(t, "sha256:xyz", certPin)
-	assert.Equal(t, "", echConfig)
+func TestBuildServerURL_NoHop(t *testing.T) {
+	raw := "k2v5://udid:token@hk1.example.com:443?ech=AABBCCDD&pin=sha256:abc123"
+	url := BuildServerURL(raw, "hk1.example.com", 443, 0, 0)
+	assert.Equal(t, "k2v5://hk1.example.com:443?ech=AABBCCDD&pin=sha256:abc123", url)
 }
 
-func TestParseConnectURL_InvalidURL(t *testing.T) {
-	certPin, echConfig := ParseConnectURL("not a valid url %%%")
-	assert.Equal(t, "", certPin)
-	assert.Equal(t, "", echConfig)
+func TestBuildServerURL_NoECH(t *testing.T) {
+	raw := "k2v5://udid:token@test.com:443?pin=sha256:xyz"
+	url := BuildServerURL(raw, "node.example.com", 443, 0, 0)
+	assert.Equal(t, "k2v5://node.example.com:443?pin=sha256:xyz", url)
+	assert.NotContains(t, url, "ech=")
 }
 
-func TestParseConnectURL_EmptyString(t *testing.T) {
-	certPin, echConfig := ParseConnectURL("")
-	assert.Equal(t, "", certPin)
-	assert.Equal(t, "", echConfig)
+func TestBuildServerURL_OverridesDomainPort(t *testing.T) {
+	raw := "k2v5://udid:token@original.com:8443?ech=AA&pin=sha256:bb"
+	url := BuildServerURL(raw, "configured.com", 443, 0, 0)
+	assert.Contains(t, url, "k2v5://configured.com:443")
+	assert.NotContains(t, url, "original.com")
 }
 
-func TestTunnelConfig_MarshalWithCertPin(t *testing.T) {
+func TestBuildServerURL_InvalidURL(t *testing.T) {
+	url := BuildServerURL("not a valid url %%%", "test.com", 443, 0, 0)
+	assert.Equal(t, "", url)
+}
+
+func TestBuildServerURL_EmptyString(t *testing.T) {
+	url := BuildServerURL("", "test.com", 443, 0, 0)
+	assert.Equal(t, "", url)
+}
+
+func TestBuildServerURL_NoParams(t *testing.T) {
+	raw := "k2v5://udid:token@test.com:443"
+	url := BuildServerURL(raw, "test.com", 443, 0, 0)
+	assert.Equal(t, "", url, "should return empty when no ech or pin params")
+}
+
+func TestTunnelConfig_MarshalWithServerURL(t *testing.T) {
+	serverURL := "k2v5://test.com:443?ech=AABB&pin=sha256:abc"
 	tc := TunnelConfig{
-		Domain:        "test.com",
-		Protocol:      "k2v5",
-		Port:          443,
-		CertPin:       "sha256:abc",
-		ECHConfigList: "AABB",
+		Domain:    "test.com",
+		Protocol:  "k2v5",
+		Port:      443,
+		ServerURL: serverURL,
 	}
 	data, err := json.Marshal(tc)
 	require.NoError(t, err)
-	assert.Contains(t, string(data), `"certPin":"sha256:abc"`)
-	assert.Contains(t, string(data), `"echConfigList":"AABB"`)
+
+	// Unmarshal back and verify the field round-trips correctly
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal(data, &parsed))
+	assert.Equal(t, serverURL, parsed["serverUrl"])
 }

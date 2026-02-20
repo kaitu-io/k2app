@@ -35,8 +35,7 @@ type TunnelConfigInput struct {
 	IsTest       bool   `json:"isTest" example:"false"`                            // 是否为测试节点（测试节点仅对 admin 用户可见）
 	HasRelay     bool   `json:"hasRelay" example:"false"`                          // Whether this tunnel provides relay capability
 	HasTunnel    bool   `json:"hasTunnel" example:"true"`                          // Whether this tunnel provides direct tunnel capability (default: true)
-	CertPin       string `json:"certPin,omitempty"`       // k2v5 cert pin (e.g. "sha256:base64...")
-	ECHConfigList string `json:"echConfigList,omitempty"` // k2v5 ECH config list (base64url encoded)
+	ServerURL string `json:"serverUrl,omitempty"` // k2v5 connection URL
 }
 
 // TunnelConfigOutput 隧道配置输出（含证书）
@@ -250,8 +249,7 @@ func upsertTunnelForNode(c *gin.Context, node *SlaveNode, input TunnelConfigInpu
 		IsTest:        BoolPtr(input.IsTest),
 		HasRelay:      BoolPtr(input.HasRelay),
 		HasTunnel:     BoolPtr(input.HasTunnel || (!input.HasRelay && !input.HasTunnel)),
-		CertPin:       input.CertPin,
-		ECHConfigList: input.ECHConfigList,
+		ServerURL: input.ServerURL,
 	}
 	if err := db.Get().Create(&tunnel).Error; err != nil {
 		return nil, fmt.Errorf("failed to create tunnel: %w", err)
