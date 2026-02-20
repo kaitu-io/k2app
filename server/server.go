@@ -552,7 +552,13 @@ func (s *Server) handleRawTCP(conn net.Conn) {
 	}
 
 	if !info.HasECH {
-		// Non-ECH -> reverse proxy to the real website (camouflage).
+		// Check local_routes: forward known SNI to local services.
+		if target, ok := s.matchLocalRoute(info.SNI); ok {
+			allData, _ := br.Peek(br.Buffered())
+			wire.ReverseProxy(conn, allData, target)
+			return
+		}
+		// Unknown SNI: reverse proxy to the real website (camouflage).
 		allData, _ := br.Peek(br.Buffered())
 		wire.ReverseProxy(conn, allData, info.SNI+":443")
 		return
@@ -561,6 +567,28 @@ func (s *Server) handleRawTCP(conn net.Conn) {
 	// ECH -> TLS handshake with ECH decryption -> k2v5.
 	wrapped := &bufferedConn{Conn: conn, br: br}
 	s.handleK2V5(wrapped)
+}
+
+// matchLocalRoute checks if the SNI matches any configured local_routes.
+// Supports exact match and wildcard (*.) prefix matching.
+func (s *Server) matchLocalRoute(sni string) (string, bool) {
+	if len(s.cfg.LocalRoutes) == 0 {
+		return "", false
+	}
+	// Exact match.
+	if target, ok := s.cfg.LocalRoutes[sni]; ok {
+		return target, true
+	}
+	// Wildcard match: *.example.com matches foo.example.com.
+	for pattern, target := range s.cfg.LocalRoutes {
+		if strings.HasPrefix(pattern, "*.") {
+			suffix := pattern[1:] // ".example.com"
+			if strings.HasSuffix(sni, suffix) {
+				return target, true
+			}
+		}
+	}
+	return "", false
 }
 
 // handleK2V5 completes TLS and routes to auth (HTTP), WebSocket tunnel, or raw smux.

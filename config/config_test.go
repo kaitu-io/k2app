@@ -158,6 +158,51 @@ func TestSetServerDefaults_CertDirDefault(t *testing.T) {
 	}
 }
 
+func TestServerConfig_LocalRoutes(t *testing.T) {
+	yamlContent := `
+listen: ":443"
+local_routes:
+  "*.vpn.example.com": "127.0.0.1:8443"
+  "oc.example.com": "127.0.0.1:10001"
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "server.yaml")
+	os.WriteFile(path, []byte(yamlContent), 0644)
+
+	cfg, err := LoadServer(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(cfg.LocalRoutes) != 2 {
+		t.Fatalf("LocalRoutes count = %d, want 2", len(cfg.LocalRoutes))
+	}
+	if cfg.LocalRoutes["*.vpn.example.com"] != "127.0.0.1:8443" {
+		t.Errorf("wildcard route = %q, want 127.0.0.1:8443", cfg.LocalRoutes["*.vpn.example.com"])
+	}
+	if cfg.LocalRoutes["oc.example.com"] != "127.0.0.1:10001" {
+		t.Errorf("exact route = %q, want 127.0.0.1:10001", cfg.LocalRoutes["oc.example.com"])
+	}
+}
+
+func TestServerConfig_LocalRoutesEmpty(t *testing.T) {
+	yamlContent := `
+listen: ":443"
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "server.yaml")
+	os.WriteFile(path, []byte(yamlContent), 0644)
+
+	cfg, err := LoadServer(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(cfg.LocalRoutes) != 0 {
+		t.Errorf("LocalRoutes should be empty, got %d entries", len(cfg.LocalRoutes))
+	}
+}
+
 func TestSetServerDefaults_CertDirPreserved(t *testing.T) {
 	// When CertDir is already set, it should not be overwritten
 	cfg := &ServerConfig{CertDir: "/custom/path"}

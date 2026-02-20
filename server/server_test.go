@@ -488,6 +488,132 @@ func TestServer_ECHRouting_NonECHConnection(t *testing.T) {
 	}
 }
 
+// TestServer_MatchLocalRoute tests the SNI matching logic for local_routes.
+func TestServer_MatchLocalRoute(t *testing.T) {
+	cfg := &config.ServerConfig{
+		Listen: ":0",
+		LocalRoutes: map[string]string{
+			"*.vpn.example.com": "127.0.0.1:8443",
+			"oc.example.com":    "127.0.0.1:10001",
+		},
+	}
+	srv, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		sni        string
+		wantTarget string
+		wantMatch  bool
+	}{
+		// Exact match
+		{"oc.example.com", "127.0.0.1:10001", true},
+		// Wildcard match
+		{"node1.vpn.example.com", "127.0.0.1:8443", true},
+		{"us-west.vpn.example.com", "127.0.0.1:8443", true},
+		// No match — should fall through to camouflage
+		{"unknown.example.com", "", false},
+		{"vpn.example.com", "", false}, // wildcard requires subdomain
+		{"evil.com", "", false},
+	}
+
+	for _, tc := range tests {
+		target, ok := srv.matchLocalRoute(tc.sni)
+		if ok != tc.wantMatch {
+			t.Errorf("matchLocalRoute(%q) matched=%v, want %v", tc.sni, ok, tc.wantMatch)
+		}
+		if target != tc.wantTarget {
+			t.Errorf("matchLocalRoute(%q) target=%q, want %q", tc.sni, target, tc.wantTarget)
+		}
+	}
+}
+
+// TestServer_MatchLocalRoute_Empty verifies no panic when local_routes is nil.
+func TestServer_MatchLocalRoute_Empty(t *testing.T) {
+	cfg := &config.ServerConfig{Listen: ":0"}
+	srv, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, ok := srv.matchLocalRoute("anything.com")
+	if ok {
+		t.Errorf("expected no match with empty local_routes, got target=%q", target)
+	}
+}
+
+// TestServer_LocalRoutes_TCPRelay verifies that non-ECH connections with SNI
+// matching local_routes get forwarded to the configured target (AC4/AC5).
+func TestServer_LocalRoutes_TCPRelay(t *testing.T) {
+	// Start a mock backend that echoes data (simulating k2v4-slave).
+	backend, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backend.Close()
+
+	receivedCh := make(chan []byte, 1)
+	go func() {
+		conn, err := backend.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		buf := make([]byte, 4096)
+		n, _ := conn.Read(buf)
+		receivedCh <- buf[:n]
+		// Echo back a response
+		conn.Write([]byte("backend-response"))
+	}()
+
+	backendAddr := backend.Addr().String()
+
+	// Create server with local_routes pointing to our mock backend.
+	cfg := &config.ServerConfig{
+		Listen: ":0",
+		LocalRoutes: map[string]string{
+			"k2v4.example.com": backendAddr,
+		},
+	}
+	srv, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.handler.AllowPrivateIP = true
+	cert := generateTestCert(t)
+	srv.TLSConfig = &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS13,
+	}
+
+	// Use net.Pipe to feed a non-ECH ClientHello with matching SNI.
+	clientConn, serverConn := net.Pipe()
+
+	done := make(chan struct{})
+	go func() {
+		srv.handleRawTCP(serverConn)
+		close(done)
+	}()
+
+	// Build non-ECH ClientHello with SNI matching local_routes.
+	hello := buildTestClientHello("k2v4.example.com", false)
+	clientConn.Write(hello)
+
+	// The backend should receive the ClientHello data.
+	select {
+	case received := <-receivedCh:
+		// Verify the backend received the TLS ClientHello.
+		if len(received) < 5 || received[0] != 0x16 {
+			t.Fatalf("backend received non-TLS data: %x", received[:min(10, len(received))])
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("backend did not receive data in time")
+	}
+
+	clientConn.Close()
+	<-done
+}
+
 // TestServer_WSUpgrade verifies that WebSocket upgrade to /k2v5/tunnel works (AC12).
 // Tests the full TLS -> WS -> smux -> echo pipeline.
 func TestServer_WSUpgrade(t *testing.T) {
