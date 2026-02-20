@@ -24,9 +24,16 @@ type ClientConfig struct {
 
 // TunConfig contains TUN device configuration.
 type TunConfig struct {
-	IPv4 string `yaml:"ipv4" json:"ipv4"` // CIDR, e.g. "10.0.0.2/24". Empty = provider default.
-	IPv6 string `yaml:"ipv6" json:"ipv6"` // CIDR, e.g. "fd00::2/128". Empty = provider default.
+	IPv4 string `yaml:"ipv4" json:"ipv4"` // CIDR, e.g. "10.0.0.2/24"
+	IPv6 string `yaml:"ipv6" json:"ipv6"` // CIDR, e.g. "fd00::2/128"
 }
+
+// Default TUN addresses (desktop: RFC 2544 test range).
+// Mobile builds override these via init() in defaults_mobile.go.
+var (
+	DefaultTunIPv4 = "198.18.0.7/15"
+	DefaultTunIPv6 = "fdfe:dcba:9876::7/64"
+)
 
 // ProxyConfig contains proxy mode configuration.
 type ProxyConfig struct {
@@ -148,6 +155,12 @@ func SetDefaults(cfg *ClientConfig) {
 	}
 	if cfg.Log.Output == "" {
 		cfg.Log.Output = "stderr"
+	}
+	if cfg.Tun.IPv4 == "" {
+		cfg.Tun.IPv4 = DefaultTunIPv4
+	}
+	if cfg.Tun.IPv6 == "" {
+		cfg.Tun.IPv6 = DefaultTunIPv6
 	}
 }
 

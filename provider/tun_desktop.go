@@ -10,12 +10,6 @@ import (
 	"github.com/sagernet/sing-tun"
 )
 
-// Default network addresses (RFC 2544 test range).
-const (
-	defaultIPv4Address = "198.18.0.7/15"
-	defaultIPv6Address = "fdfe:dcba:9876::7/64"
-)
-
 // TUNProvider creates a TUN device and runs a sing-tun stack for L3→L4 conversion.
 type TUNProvider struct {
 	cfg   ProviderConfig
@@ -33,20 +27,11 @@ func NewTUNProvider(cfg ProviderConfig) *TUNProvider {
 }
 
 func (p *TUNProvider) Start(ctx context.Context, handler ConnectionHandler) error {
-	ipv4Str := p.cfg.IPv4Address
-	if ipv4Str == "" {
-		ipv4Str = defaultIPv4Address
-	}
-	ipv6Str := p.cfg.IPv6Address
-	if ipv6Str == "" {
-		ipv6Str = defaultIPv6Address
-	}
-
-	ipv4Prefix, err := netip.ParsePrefix(ipv4Str)
+	ipv4Prefix, err := netip.ParsePrefix(p.cfg.IPv4Address)
 	if err != nil {
 		return fmt.Errorf("provider: parse IPv4: %w", err)
 	}
-	ipv6Prefix, err := netip.ParsePrefix(ipv6Str)
+	ipv6Prefix, err := netip.ParsePrefix(p.cfg.IPv6Address)
 	if err != nil {
 		return fmt.Errorf("provider: parse IPv6: %w", err)
 	}

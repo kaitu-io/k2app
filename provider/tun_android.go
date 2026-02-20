@@ -10,12 +10,6 @@ import (
 	"github.com/sagernet/sing-tun"
 )
 
-// Android VPN builder addresses — must match K2VpnService.Builder config.
-var (
-	androidIPv4Prefix = netip.MustParsePrefix("10.0.0.2/24")
-	androidIPv6Prefix = netip.MustParsePrefix("fd00::2/64")
-)
-
 // TUNProvider wraps a TUN file descriptor from Android VpnService.Builder.
 type TUNProvider struct {
 	cfg   ProviderConfig
@@ -37,11 +31,20 @@ func (p *TUNProvider) Start(ctx context.Context, handler ConnectionHandler) erro
 		return fmt.Errorf("provider: Android requires FileDescriptor > 0")
 	}
 
+	ipv4Prefix, err := netip.ParsePrefix(p.cfg.IPv4Address)
+	if err != nil {
+		return fmt.Errorf("provider: parse IPv4: %w", err)
+	}
+	ipv6Prefix, err := netip.ParsePrefix(p.cfg.IPv6Address)
+	if err != nil {
+		return fmt.Errorf("provider: parse IPv6: %w", err)
+	}
+
 	tunOpts := tun.Options{
 		MTU:            uint32(p.cfg.MTU),
 		FileDescriptor: p.cfg.FileDescriptor,
-		Inet4Address:   []netip.Prefix{androidIPv4Prefix},
-		Inet6Address:   []netip.Prefix{androidIPv6Prefix},
+		Inet4Address:   []netip.Prefix{ipv4Prefix},
+		Inet6Address:   []netip.Prefix{ipv6Prefix},
 	}
 
 	tunIf, err := tun.New(tunOpts)

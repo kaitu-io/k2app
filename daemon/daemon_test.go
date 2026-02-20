@@ -114,7 +114,7 @@ func TestEngineConfigFromClientConfig_TunDefaults(t *testing.T) {
 		return engine.New(), nil
 	}
 
-	// No Tun fields set — should remain empty (provider handles defaults).
+	// No Tun fields set — SetDefaults fills platform defaults.
 	clientCfg := &config.ClientConfig{
 		Server: "k2v5://test:token@host:443",
 	}
@@ -124,11 +124,11 @@ func TestEngineConfigFromClientConfig_TunDefaults(t *testing.T) {
 		t.Fatalf("doUp: %v", err)
 	}
 
-	if captured.TunIPv4 != "" {
-		t.Errorf("engine TunIPv4 = %q, want empty", captured.TunIPv4)
+	if captured.TunIPv4 != config.DefaultTunIPv4 {
+		t.Errorf("engine TunIPv4 = %q, want %q", captured.TunIPv4, config.DefaultTunIPv4)
 	}
-	if captured.TunIPv6 != "" {
-		t.Errorf("engine TunIPv6 = %q, want empty", captured.TunIPv6)
+	if captured.TunIPv6 != config.DefaultTunIPv6 {
+		t.Errorf("engine TunIPv6 = %q, want %q", captured.TunIPv6, config.DefaultTunIPv6)
 	}
 }
 

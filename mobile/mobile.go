@@ -55,10 +55,14 @@ func (e *Engine) Start(configJSON string, fd int, dataDir string) error {
 	}
 
 	return e.inner.Start(engine.Config{
-		WireURL:        cfg.Server,
-		FileDescriptor: fd,
-		DataDir:        dataDir,
-		RuleMode:       ruleMode,
+		WireURL:          cfg.Server,
+		FileDescriptor:   fd,
+		DataDir:          dataDir,
+		RuleMode:         ruleMode,
+		TunIPv4:          cfg.Tun.IPv4,
+		TunIPv6:          cfg.Tun.IPv6,
+		DNSProxyServers:  cfg.DNS.Proxy,
+		DNSDirectServers: cfg.DNS.Direct,
 	})
 }
 

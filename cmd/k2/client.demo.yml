@@ -13,9 +13,10 @@ server: "k2v5://my-device-id:my-token@your-server.com:443?ech=...&pin=sha256:...
 mode: tun
 
 # TUN mode settings (only used when mode: tun)
-# tun:
-#   ipv4: "198.18.0.7/15"
-#   ipv6: "fdfe:dcba:9876::7/64"
+# Defaults shown below; mobile builds use 10.0.0.2/24 and fd00::2/64.
+tun:
+  ipv4: "198.18.0.7/15"
+  ipv6: "fdfe:dcba:9876::7/64"
 
 # Proxy mode settings (only used when mode: proxy)
 proxy:

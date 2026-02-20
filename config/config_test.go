@@ -339,10 +339,13 @@ tun:
 }
 
 func TestClientConfig_EmptyTun_Defaults(t *testing.T) {
-	// Empty tun config should remain zero-valued (provider handles defaults)
+	// Empty tun config should be filled with platform defaults by SetDefaults.
 	cfg := ClientFromURL("k2v5://udid:token@1.2.3.4:443")
-	if cfg.Tun.IPv4 != "" || cfg.Tun.IPv6 != "" {
-		t.Errorf("empty tun should have zero values, got %+v", cfg.Tun)
+	if cfg.Tun.IPv4 != DefaultTunIPv4 {
+		t.Errorf("Tun.IPv4 = %q, want %q", cfg.Tun.IPv4, DefaultTunIPv4)
+	}
+	if cfg.Tun.IPv6 != DefaultTunIPv6 {
+		t.Errorf("Tun.IPv6 = %q, want %q", cfg.Tun.IPv6, DefaultTunIPv6)
 	}
 }
 
@@ -370,5 +373,11 @@ func TestSetDefaultsExported(t *testing.T) {
 	}
 	if cfg.Log.Output != "stderr" {
 		t.Errorf("Log.Output = %q, want stderr", cfg.Log.Output)
+	}
+	if cfg.Tun.IPv4 != DefaultTunIPv4 {
+		t.Errorf("Tun.IPv4 = %q, want %q", cfg.Tun.IPv4, DefaultTunIPv4)
+	}
+	if cfg.Tun.IPv6 != DefaultTunIPv6 {
+		t.Errorf("Tun.IPv6 = %q, want %q", cfg.Tun.IPv6, DefaultTunIPv6)
 	}
 }

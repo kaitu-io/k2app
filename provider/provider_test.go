@@ -64,7 +64,7 @@ func TestProviderConfig_TunAddresses_Empty(t *testing.T) {
 	cfg := ProviderConfig{}
 	cfg.SetDefaults()
 
-	// Empty TUN addresses stay empty — provider uses hardcoded defaults
+	// Empty TUN addresses stay empty at provider level — config.SetDefaults() fills them upstream.
 	if cfg.IPv4Address != "" {
 		t.Errorf("IPv4Address should be empty, got %q", cfg.IPv4Address)
 	}

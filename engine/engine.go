@@ -123,6 +123,8 @@ func (e *Engine) Start(cfg Config) error {
 		// Mobile: platform-provided TUN FD.
 		prov = provider.NewTUNProvider(provider.ProviderConfig{
 			FileDescriptor: cfg.FileDescriptor,
+			IPv4Address:    cfg.TunIPv4,
+			IPv6Address:    cfg.TunIPv6,
 		})
 	} else if cfg.Mode == "proxy" {
 		// Desktop proxy mode.
@@ -162,9 +164,13 @@ func (e *Engine) Start(cfg Config) error {
 	if cfg.FileDescriptor >= 0 {
 		// Mobile path: insert DNS middleware between provider and tunnel.
 		dnsMW := dns.NewMiddleware(dns.MiddlewareConfig{
-			ProxyDNS: dns.NewProxyDNSClient(dns.ProxyDNSClientConfig{Dialer: tm}),
-			DNSCache: dns.NewDNSCache(dns.DNSCacheConfig{}),
-			Filter:   dns.NewFilter(dns.FilterConfig{}),
+			ProxyDNS: dns.NewProxyDNSClient(dns.ProxyDNSClientConfig{
+				Dialer:  tm,
+				Servers: cfg.DNSProxyServers,
+			}),
+			DirectDNS: dns.NewDirectDNSClient(cfg.DNSDirectServers),
+			DNSCache:  dns.NewDNSCache(dns.DNSCacheConfig{}),
+			Filter:    dns.NewFilter(dns.FilterConfig{}),
 		})
 		if err := prov.Start(ctx, &dnsHandler{inner: tunnel, dns: dnsMW}); err != nil {
 			tm.Close()

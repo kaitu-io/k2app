@@ -49,6 +49,14 @@ type Config struct {
 	// Empty uses the provider default.
 	TunIPv6 string
 
+	// DNSProxyServers lists DNS servers for proxy resolution (via tunnel).
+	// Format: "ip:port" (e.g. "8.8.8.8:53"). Empty uses middleware default.
+	DNSProxyServers []string
+
+	// DNSDirectServers lists DNS servers for direct resolution (raw UDP).
+	// Format: "ip:port" (e.g. "114.114.114.114:53"). Empty uses middleware default.
+	DNSDirectServers []string
+
 	// DNSExclude lists DNS server IPs to exclude from TUN routing (anti-loop).
 	// Desktop only.
 	DNSExclude []netip.Addr
