@@ -177,3 +177,19 @@ F2 (Platform) ─┤                 ├── F4 (Nav+Layout+Global) ──┬�
 **When to use cross-repo worktrees**: Only when tasks in k2/ and k2app/ are truly parallel (no dependencies). Example: k2 daemon feature + k2app UI feature touching disjoint files.
 
 ---
+
+## Port-From-Source Features: Read Target Files Before Planning (2026-02-20, desktop-window-management)
+
+**Observation**: Plan listed 6 file changes to port window management from kaitu/client. But 3 of the 6 were already implemented in k2app (window.rs existed, main.rs had all handlers, tray.rs had show/hide/quit). Only 3 webapp-side changes (tauri-k2.ts, main.tsx, index.html) were actually needed.
+
+**Why this happened**: The plan was written based on the source project's diff against an empty baseline. It didn't diff against k2app's current state.
+
+**Prevention**: When porting features from another project, always:
+1. Read source files to understand the complete feature
+2. Read **target** files to understand what's already present
+3. Diff the gap — only plan changes for missing pieces
+4. Mark already-implemented steps as "SKIP" in the plan
+
+**Cost of not checking**: Low in this case (discovered at execution time, 3 no-op steps). But if the plan had estimated time or assigned parallel agents, half the work allocation would be wasted.
+
+---

@@ -744,3 +744,48 @@ npx cap sync
 **Status**: verified (tested in Tauri dev mode)
 
 ---
+
+## Desktop Window: show_window IPC Must Be Last Step in Bridge Injection (2026-02-20, desktop-window-management)
+
+**Problem**: Tauri window is created hidden (`visible: false`) and sized by Rust during setup. If Rust calls `window.show()` directly in setup, the window appears before the WebView has loaded React, CSS, or MUI theme — user sees white flash or unstyled content for ~200ms.
+
+**Solution**: Rust setup sizes the window but does NOT show it. The `show_window` IPC command is called at the very end of `injectTauriGlobals()` in `tauri-k2.ts`, after all globals are injected and the bridge is ready. By this point, React and MUI are about to render.
+
+**Ordering in tauri-k2.ts**:
+```typescript
+export async function injectTauriGlobals(): Promise<void> {
+  // ... all injection code ...
+  (window as any)._k2 = tauriK2;
+  (window as any)._platform = tauriPlatform;
+  console.info(`[K2:Tauri] Injected`);
+
+  // LAST: Show window after frontend is fully initialized
+  try {
+    await invoke('show_window');
+  } catch (error) {
+    console.warn('[TauriK2] Failed to show window:', error);
+  }
+}
+```
+
+**Why try/catch**: `show_window` failing should not prevent the app from working. The window may already be visible (e.g., user opened it from tray during init), or the command may not be registered in older Rust builds.
+
+**Cross-reference**: See Architecture Decisions → "Desktop Window Management: Hidden→Size→Show Lifecycle"
+
+**Validating tests**: `webapp/src/services/__tests__/tauri-k2.test.ts` — all 29 tests pass. Manual: no white flash on `make dev`.
+
+---
+
+## Dark-Only App: Use Direct Background Color, Not prefers-color-scheme (2026-02-20, desktop-window-management)
+
+**Problem**: The kaitu/client source uses `@media (prefers-color-scheme: dark) { background: #0f0f13; }` in `index.html`. But k2app is a dark-only app (no light mode) — the media query means the background is white on light-mode OS, causing a white flash before MUI theme loads.
+
+**Solution**: Use `background: #0f0f13` directly on `html, body` without any media query. Since the app is always dark, the background should always be dark.
+
+**Why this matters**: On macOS with light appearance, the WebView loads with a white background. Without explicit dark background, the first 100–300ms shows white before React mounts and MUI theme applies `CssBaseline`. On fast machines this is barely visible; on Windows 1080p laptops it's noticeable.
+
+**Files**: `webapp/index.html` — `background: #0f0f13` on `html, body`
+
+**Validating tests**: Visual verification — no white flash on app start.
+
+---

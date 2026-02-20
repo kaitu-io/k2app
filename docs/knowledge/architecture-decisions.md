@@ -927,3 +927,67 @@ Script validates artifacts exist on S3, downloads to compute sha256+size, genera
 **Status**: verified (build passes, manual test)
 
 ---
+
+## Desktop Window Management: Hidden→Size→Show Lifecycle (2026-02-20, desktop-window-management)
+
+**Decision**: Window created hidden (`visible: false` in `tauri.conf.json`), dynamically sized based on screen in Rust setup, then shown only after frontend JavaScript completes initialization via `invoke('show_window')` IPC call.
+
+**Three-phase lifecycle**:
+1. **Setup (Rust)**: Parse `--minimized` → `window::init_startup_state()`. If not minimized: `window::adjust_window_size()` calculates optimal size from monitor (80% screen height, 9:20 aspect ratio, capped at 85% max height), centers window. Window remains hidden.
+2. **Frontend init (JS)**: `injectTauriGlobals()` runs → injects `_k2` + `_platform` → calls `invoke('show_window')` at the end. This ensures CSS, React, and MUI theme are loaded before the window appears.
+3. **Runtime**: Close button → `api.prevent_close()` + `window::hide_window()`. Tray click/dock click → `window::show_window_user_action()`. Second instance → unminimize + show + focus.
+
+**Why hidden-first**: Prevents two types of visual flash:
+- **Size flash**: Window appears at `tauri.conf.json` default size (430×956), then resizes to fit screen. User sees a jump.
+- **Content flash**: Window appears before React renders → white/empty window for ~200ms on slower machines.
+
+**Platform-specific hide/show behavior**:
+- **Windows**: `minimize()` instead of `hide()` — preserves taskbar icon. `set_always_on_top(true/false)` trick to bring window to front.
+- **macOS/Linux**: `hide()` / `show()` — standard behavior. `RunEvent::Reopen` handles dock icon click.
+
+**--minimized autostart**: `tauri-plugin-autostart` passes `Some(vec!["--minimized"])`. On autostart boot, window is never shown — user clicks tray icon to open. `IS_MINIMIZED_START` AtomicBool tracks this; `show_window_user_action()` clears it so future auto-shows work.
+
+**Files**: `desktop/src-tauri/src/window.rs` (196 lines, self-contained), `desktop/src-tauri/src/main.rs` (setup + RunEvent handlers), `webapp/src/services/tauri-k2.ts` (show_window IPC at end of injection)
+
+**Validating tests**: `cargo check` passes; `webapp/src/services/__tests__/tauri-k2.test.ts` — all 29 tests pass (show_window is part of injection flow). Manual: `make dev` — window appears correctly sized, no flash.
+
+---
+
+## Viewport Scaling: CSS Transform for Narrow Desktop Windows (2026-02-20, desktop-window-management)
+
+**Decision**: When the Tauri desktop window is narrower than 430px design width (e.g., Windows 1080p laptops, small screens), scale the entire UI proportionally using CSS `transform: scale()` on `<body>`.
+
+**Why body, not #root**: MUI Portals (Dialogs, Popovers, Snackbars) render as direct children of `<body>`, outside `#root`. Scaling `#root` would leave Portal content at full size — misaligned overlays, clipped dialogs. Scaling `<body>` affects everything.
+
+**Implementation** (`webapp/src/main.tsx`, Tauri-only):
+```typescript
+const DESIGN_WIDTH = 430;
+function setupViewportScaling() {
+  function applyScale() {
+    const scale = Math.min(window.innerWidth / DESIGN_WIDTH, 1); // Never scale up
+    if (scale < 1) {
+      document.body.style.width = `${DESIGN_WIDTH}px`;
+      document.body.style.height = `${window.innerHeight / scale}px`;
+      document.body.style.transform = `scale(${scale})`;
+      document.body.style.transformOrigin = "top left";
+    } else {
+      // Clear all scaling styles
+    }
+  }
+  applyScale();
+  window.addEventListener("resize", applyScale);
+}
+```
+
+**Height calculation**: `windowHeight / scale` — compensates for the CSS transform shrinking the visible area. Without this, content at the bottom would be cut off.
+
+**Tauri-only**: Called inside `if (window.__TAURI__)` block. Capacitor (mobile) has fixed viewport set by the OS. Standalone (web) runs in a browser where users control window size via browser zoom.
+
+**Supporting CSS** (`webapp/index.html`):
+- `width: 100%` on html/body — explicit for scaling calculations
+- `background: #0f0f13` on html/body — dark background prevents white flash
+- `overflow: hidden` + `display: flex; flex-direction: column` on `#root` — prevents scroll and ensures flex layout
+
+**Validating tests**: `npx tsc --noEmit` passes; all 305 vitest tests pass. Manual: resize Tauri window below 430px → UI scales smoothly.
+
+---
