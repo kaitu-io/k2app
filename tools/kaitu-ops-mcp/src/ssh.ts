@@ -7,7 +7,7 @@
 
 import * as fs from 'node:fs'
 import { Client } from 'ssh2'
-import type { SshConfig } from './config.ts'
+import type { SshConfig } from './config.js'
 
 /**
  * Result of an SSH command execution.

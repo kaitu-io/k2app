@@ -9,7 +9,7 @@
 import * as fs from 'node:fs'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import type { SshConfig } from '../config.ts'
+import type { SshConfig } from '../config.js'
 import { sshExec, sshExecWithStdin } from '../ssh.js'
 import { redactStdout } from '../redact.js'
 

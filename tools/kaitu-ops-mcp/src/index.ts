@@ -7,11 +7,11 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
-import { loadConfig } from './config.ts'
-import type { Config } from './config.ts'
-import { CenterApiClient } from './center-api.ts'
-import { registerListNodes } from './tools/list-nodes.ts'
-import { registerExecOnNode } from './tools/exec-on-node.ts'
+import { loadConfig } from './config.js'
+import type { Config } from './config.js'
+import { CenterApiClient } from './center-api.js'
+import { registerListNodes } from './tools/list-nodes.js'
+import { registerExecOnNode } from './tools/exec-on-node.js'
 
 /**
  * Creates and configures the MCP server with all tools registered.

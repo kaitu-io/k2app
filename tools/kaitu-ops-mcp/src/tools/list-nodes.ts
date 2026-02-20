@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import type { CenterApiClient } from '../center-api.ts'
+import type { CenterApiClient } from '../center-api.js'
 
 /**
  * Raw tunnel shape as returned by Center API batch-matrix endpoint.

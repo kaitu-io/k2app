@@ -1,4 +1,4 @@
-import type { Config } from './config.ts'
+import type { Config } from './config.js'
 
 /**
  * Type alias for the fetch function signature, allowing injection of a custom
