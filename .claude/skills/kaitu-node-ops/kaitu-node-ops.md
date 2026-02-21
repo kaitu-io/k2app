@@ -139,30 +139,48 @@ These are best-practice guardrails to prevent accidental damage during operation
 
 7. **Update = pull + up, never down** — To update containers: `docker compose pull && docker compose up -d`. Never use `docker compose down` — it removes containers and causes service interruption. The `up -d` command recreates only changed containers.
 
-## Step 6: Batch Deployment
+## Step 6: Batch Operations
+
+All batch scripts live in this skill directory (`.claude/skills/kaitu-node-ops/`).
+
+**Requires**: `KAITU_CENTER_URL` + `KAITU_ACCESS_KEY` env vars. SSH via `KAITU_SSH_USER` (default: `ubuntu`) port `KAITU_SSH_PORT` (default: `1022`).
 
 ### Deploy docker-compose.yml to All Nodes
 
-The canonical k2v5 compose file lives at `docker/docker-compose.yml` in the repo. To deploy it to all active nodes:
+The canonical k2v5 compose file lives at `docker/docker-compose.yml` in the repo.
 
 ```bash
 # Active nodes only (tunnelCount > 0) — recommended
-./scripts/deploy-compose.sh
+.claude/skills/kaitu-node-ops/deploy-compose.sh
 
 # All nodes including inactive (tunnelCount = 0)
-./scripts/deploy-compose.sh --all
+.claude/skills/kaitu-node-ops/deploy-compose.sh --all
 
 # Preview what would be deployed
-./scripts/deploy-compose.sh --dry-run
+.claude/skills/kaitu-node-ops/deploy-compose.sh --dry-run
 ```
 
-The script:
-1. Fetches the live node list from Center API (`/app/nodes/batch-matrix`)
-2. Filters by `tunnelCount > 0` (unless `--all`), skipping inactive/decommissioned nodes
-3. Compares MD5 checksum — skips nodes already up-to-date
-4. Creates `/apps/kaitu-slave/` if missing, uploads via SCP
+The script fetches the live node list from Center API, filters by `tunnelCount > 0`, compares MD5 checksums (skips up-to-date), creates `/apps/kaitu-slave/` if missing, and uploads via SCP.
 
-**Requires**: `KAITU_CENTER_URL` + `KAITU_ACCESS_KEY` env vars. SSH via `KAITU_SSH_USER` (default: `ubuntu`) port `KAITU_SSH_PORT` (default: `1022`).
+### Update Docker Compose on All Nodes
+
+Pull latest images and restart containers on all active nodes with a rolling interval.
+
+```bash
+# Update all active nodes (60s between each)
+.claude/skills/kaitu-node-ops/update-compose.sh
+
+# Custom interval between nodes
+.claude/skills/kaitu-node-ops/update-compose.sh --sleep=30
+
+# Update a single node only
+.claude/skills/kaitu-node-ops/update-compose.sh --node=8.218.55.0
+
+# Preview what would be updated
+.claude/skills/kaitu-node-ops/update-compose.sh --dry-run
+```
+
+Per-node steps: `docker compose pull` → `docker compose up -d` → wait 10s → verify sidecar healthy → sleep before next node.
 
 ### Node Activity Heuristic
 
@@ -174,11 +192,11 @@ The Center API has no explicit `status` field. Use these signals to identify act
 | `name` | Named (`hk.aliyun.wm01`) | IP-as-name (`13.114.150.53`) |
 | SSH on :1022 | Reachable | Often unreachable |
 
-Nodes with `tunnelCount == 0` and IP-as-name are typically decommissioned AWS instances. The deploy script skips them by default.
+Nodes with `tunnelCount == 0` and IP-as-name are typically decommissioned AWS instances. The batch scripts skip them by default.
 
 ## Step 7: Script Execution
 
-Two modes for running scripts on nodes:
+Two modes for running scripts on individual nodes:
 
 ### Mode 1: Direct Command (small operations)
 
@@ -204,13 +222,15 @@ Scripts in `docker/scripts/` (run ON nodes via SSH stdin pipe):
 
 | Script | Purpose | Warning |
 |--------|---------|---------|
+| `provision-node.sh` | Full node provisioning: Docker CE install + IPv6 kernel + nftables + daemon.json + UFW-Docker | **Destructive**. Stops all containers. For fresh/rebuild nodes only. Requires sudo + explicit user confirmation. |
 | `prepare-docker-compose.sh` | Initialize node deployment directory + write docker-compose.yml | **Old architecture only**. Requires sudo. Do NOT run on nodes that already have a deployment. |
-| `totally-reinstall-docker.sh` | Full Docker CE reinstall (cleanup + nftables + IPv6 + ufw-docker) | **Destructive**. Stops all running containers. Requires explicit user confirmation. |
-| `enable-ipv6.sh` | Enable IPv6 kernel params + test connectivity | Requires sudo. Restarts networking service. |
+| `totally-reinstall-docker.sh` | Docker CE reinstall only (no IPv6 kernel params) | **Destructive**. Superseded by `provision-node.sh`. |
+| `enable-ipv6.sh` | Enable IPv6 kernel params only | Superseded by `provision-node.sh` step 6. |
 | `simple-docker-pull-restart.sh` | Pull latest images and restart | Safe for routine updates. Equivalent to the standard update command. |
 
-Scripts in `scripts/` (run LOCALLY, orchestrate across nodes):
+Scripts in `.claude/skills/kaitu-node-ops/` (run LOCALLY, orchestrate across nodes):
 
 | Script | Purpose | Warning |
 |--------|---------|---------|
 | `deploy-compose.sh` | Deploy `docker/docker-compose.yml` to all active nodes via SCP | Safe — MD5 skip, no restart. Use `--all` for inactive nodes. |
+| `update-compose.sh` | Pull latest images + restart all active nodes with rolling interval | Safe — uses `pull + up -d` (no `down`). Supports `--sleep`, `--node`, `--dry-run`. |
