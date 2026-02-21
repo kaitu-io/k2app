@@ -4,7 +4,7 @@
     "subtitle": "一行命令部署，ECH 加密，不可檢測",
     "description": "開途 k2 是基於 ECH（加密客戶端問候）的下一代隱身隧道協議，支援 QUIC + TCP-WS 雙棧傳輸，自研自適應擁塞控制演算法，一行命令完成伺服器與客戶端部署，CT 日誌零暴露。",
     "cta_primary": "快速開始",
-    "cta_secondary": "查看協議",
+    "cta_secondary": "下載應用",
     "downloadClient": "下載客戶端",
     "quickActivation": "快速開通",
     "smartRouter": "智慧路由器",

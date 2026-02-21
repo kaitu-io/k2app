@@ -33,6 +33,12 @@ export default function Header() {
             {/* Open Source Countdown Link */}
             <div className="hidden sm:flex items-center space-x-2">
               <Link
+                href="/k2"
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {t('nav.nav.k2Protocol')}
+              </Link>
+              <Link
                 href="/opensource"
                 className="text-muted-foreground hover:text-foreground transition-colors"
                 title={t('nav.nav.openSource')}

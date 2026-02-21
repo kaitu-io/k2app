@@ -4,7 +4,7 @@
     "subtitle": "Deploy in one command, ECH encryption, undetectable",
     "description": "Kaitu k2 is a next-generation stealth tunnel protocol based on ECH (Encrypted Client Hello), supporting QUIC + TCP-WS dual-stack transport, proprietary adaptive congestion control, one-command deployment for both server and client, zero CT log exposure.",
     "cta_primary": "Get Started",
-    "cta_secondary": "View Protocol",
+    "cta_secondary": "Download App",
     "downloadClient": "Download Client",
     "quickActivation": "Quick Start",
     "smartRouter": "Smart Router",

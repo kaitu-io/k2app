@@ -7,7 +7,8 @@
     "logout": "退出登录",
     "purchase": "立即开通",
     "home": "首页",
-    "backToHome": "返回首页"
+    "backToHome": "返回首页",
+    "k2Protocol": "k2协议"
   },
   "footer": {
     "brandName": "开途 Kaitu",

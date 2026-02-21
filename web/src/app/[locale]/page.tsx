@@ -12,6 +12,7 @@ import {
   ExternalLink,
   Smartphone,
   Monitor,
+  Download,
   Terminal,
   Zap,
   Server
@@ -302,17 +303,17 @@ export default async function Home({
           </p>
 
           <div className="flex flex-col sm:flex-row justify-center items-center gap-4 max-w-md sm:max-w-2xl mx-auto">
-            <Link href="/install" className="w-full sm:flex-1">
+            <Link href="/purchase" className="w-full sm:flex-1">
               <Button size="lg" className="w-full min-w-[200px] font-bold"
                 style={{ backgroundColor: 'var(--primary)', color: '#0a0a0f', fontFamily: 'var(--font-mono), monospace' }}>
                 <Zap className="w-5 h-5 mr-2" />
                 {t('hero.cta_primary')}
               </Button>
             </Link>
-            <Link href="/purchase" className="w-full sm:flex-1">
+            <Link href="/install" className="w-full sm:flex-1">
               <Button variant="outline" size="lg" className="w-full min-w-[200px]"
                 style={{ borderColor: 'var(--secondary)', color: 'var(--secondary)', fontFamily: 'var(--font-mono), monospace' }}>
-                <Terminal className="w-5 h-5 mr-2" />
+                <Download className="w-5 h-5 mr-2" />
                 {t('hero.cta_secondary')}
               </Button>
             </Link>

@@ -4,7 +4,7 @@
     "subtitle": "1コマンドでデプロイ、ECH暗号化、検出不可能",
     "description": "Kaitu k2 は ECH（暗号化クライアントハロー）をベースにした次世代ステルストンネルプロトコルです。QUIC + TCP-WS デュアルスタック転送、独自の適応型輻輳制御アルゴリズム、1コマンドでサーバーとクライアントの両方をデプロイ、CT ログゼロ露出を実現します。",
     "cta_primary": "今すぐ始める",
-    "cta_secondary": "プロトコルを見る",
+    "cta_secondary": "アプリをダウンロード",
     "downloadClient": "クライアントをダウンロード",
     "quickActivation": "クイック開始",
     "smartRouter": "スマートルーター",
