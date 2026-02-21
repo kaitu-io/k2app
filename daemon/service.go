@@ -9,7 +9,7 @@ func NewServiceManager() *ServiceManager {
 }
 
 // Install installs k2 as a system service and starts it.
-// On macOS: launchd plist (io.kaitu.k2)
+// On macOS: launchd plist (kaitu)
 // On Linux: systemd unit (k2.service)
 func (s *ServiceManager) Install() error {
 	return installService()

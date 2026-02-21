@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	serviceLabel = "io.kaitu.k2"
+	serviceLabel = "kaitu"
 	plistDir     = "/Library/LaunchDaemons"
 )
 
@@ -27,6 +27,9 @@ func installService() error {
 	if err != nil {
 		return fmt.Errorf("resolve executable path: %w", err)
 	}
+
+	// Unload existing service first (ignore errors if not loaded).
+	exec.Command("launchctl", "unload", plistPath()).Run()
 
 	logDir := "/tmp/k2"
 	os.MkdirAll(logDir, 0755)
@@ -45,6 +48,22 @@ func installService() error {
     <true/>
     <key>KeepAlive</key>
     <true/>
+    <key>HardResourceLimits</key>
+    <dict>
+        <key>NumberOfProcesses</key>
+        <integer>4000</integer>
+        <key>NumberOfFiles</key>
+        <integer>10240</integer>
+    </dict>
+    <key>SoftResourceLimits</key>
+    <dict>
+        <key>NumberOfProcesses</key>
+        <integer>4000</integer>
+        <key>NumberOfFiles</key>
+        <integer>10240</integer>
+    </dict>
+    <key>ThrottleInterval</key>
+    <integer>2</integer>
     <key>StandardOutPath</key>
     <string>%s/k2.log</string>
     <key>StandardErrorPath</key>
@@ -57,7 +76,6 @@ func installService() error {
 		return fmt.Errorf("write plist: %w", err)
 	}
 
-	// Load and start the service.
 	if err := exec.Command("launchctl", "load", plistPath()).Run(); err != nil {
 		return fmt.Errorf("launchctl load: %w", err)
 	}
