@@ -8,7 +8,7 @@ mod updater;
 use tauri::{Manager, RunEvent};
 
 fn main() {
-    let mut builder = tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_localhost::Builder::new(14580).build())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {

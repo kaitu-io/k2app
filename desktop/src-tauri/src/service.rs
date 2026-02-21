@@ -122,16 +122,6 @@ pub fn check_service_version(app_version: &str) -> VersionCheckResult {
     }
 }
 
-/// Stop VPN synchronously (for app exit)
-pub fn stop_vpn() {
-    log::info!("Stopping VPN before exit...");
-    match core_action("down", None) {
-        Ok(resp) if resp.code == 0 => log::info!("VPN stopped"),
-        Ok(resp) => log::warn!("VPN stop code {}: {}", resp.code, resp.message),
-        Err(e) => log::warn!("Failed to stop VPN: {}", e),
-    }
-}
-
 /// IPC command: proxy VPN action to k2 daemon
 /// Called from webapp as window.__TAURI__.core.invoke('daemon_exec', {action, params})
 #[tauri::command]
