@@ -198,8 +198,8 @@ func TestReload_InvalidConfig(t *testing.T) {
 	d.state = StateStopped
 	d.mu.Unlock()
 
-	// Write invalid YAML.
-	writeConfigFile(t, cfgPath, ":::invalid yaml:::")
+	// Write invalid YAML (unclosed bracket — a genuine parse error).
+	writeConfigFile(t, cfgPath, "server: [unclosed bracket")
 
 	err := d.Reload()
 	if err == nil {
