@@ -1028,6 +1028,55 @@ import Link from 'next/link';
 
 ---
 
+## QUIC/TCP-WS Lazy Connection: First App Dial Triggers Wire Handshake (2026-02-21, k2-runtime-flow-audit)
+
+**Observation**: Neither `QUICClient` nor `TCPWSClient` connects during `engine.Start()`. The wire connection is only established on the first `DialTCP`/`DialUDP` call from an app, inside the lazy `connect()` method. This means `engine.Start()` can succeed even if the server is unreachable — the error only surfaces when the first app tries to connect.
+
+**Timeline**:
+```
+engine.Start()       → state="connected", no wire handshake yet
+First app dial       → QUICClient.connect() → QUIC handshake + TLS + ECH
+                       If fails: TransportManager tries TCPWSClient.connect()
+                       If both fail: that one app connection is dropped
+Subsequent app dials → reuse cached c.conn (fast, no handshake)
+```
+
+**Implications**:
+1. **"Connected" doesn't mean wire is established**: Engine state `connected` means the TUN device and routing are set up. Wire connectivity is unknown until first dial.
+2. **First connection is slower**: ~100-500ms QUIC handshake + TLS 1.3 + ECH on the first dial. Subsequent dials reuse the cached QUIC connection and just open a new stream (~5ms).
+3. **Server-down detection is delayed**: If the server goes down after `Start()` but before any app dials, the error is only discovered on first use.
+4. **No "pre-connect" option**: Engine has no explicit `wire.Connect()` call. If you need to verify server reachability before declaring success, you'd need to add a probe step.
+
+**Why lazy connection**: Avoids blocking `Start()` on network I/O. TUN route setup should be fast and deterministic. Wire connectivity is best-effort — the per-dial fallback handles transient failures.
+
+**Files**: `k2/wire/quic.go:137-205` (connect), `k2/wire/tcpws.go:100-133` (connect)
+
+**Tests**: No dedicated test — verified by engine test suite.
+**Source**: k2-runtime-flow-audit (2026-02-21)
+**Status**: verified (code-level confirmation)
+
+---
+
+## Engine Start() Concurrent Stop() Race: Two Cancellation Checkpoints (2026-02-21, k2-runtime-flow-audit)
+
+**Problem**: `engine.Start()` unlocks `e.mu` after setting state to `connecting` (to allow long-running operations like TUN creation). During this unlocked window, `Stop()` can be called by another goroutine. Without cancellation checks, `Start()` would commit resources (TUN, transport) that `Stop()` has already decided to tear down.
+
+**Solution**: Two cancellation checkpoints using `ctx.Err()`:
+1. **Step 8** (after transport init, before TUN start): `if ctx.Err() != nil → cleanup transport, return fail()`
+2. **Step 10** (after TUN start, re-acquire lock): `if ctx.Err() != nil → cleanup provider+transport, return ctx.Err()`
+
+**Why two checkpoints**: TUN creation (Step 9) is the most expensive operation — it creates a kernel device and installs routes. Checking before (Step 8) avoids unnecessary TUN creation. Checking after (Step 10) catches races during TUN creation itself.
+
+**Context sharing**: `ctx, cancel` is created early (Step 1) and saved to `e.cancel` before unlocking. `Stop()` calls `e.cancel()` which sets `ctx.Err() != nil`, signaling `Start()` to abort.
+
+**Files**: `k2/engine/engine.go:147-150` (Step 8 check), `k2/engine/engine.go:188-196` (Step 10 check)
+
+**Tests**: No dedicated race test — verified by code inspection.
+**Source**: k2-runtime-flow-audit (2026-02-21)
+**Status**: verified (code-level confirmation)
+
+---
+
 ## stdout Redaction: Global Regex Requires lastIndex Reset Between Calls (2026-02-20, kaitu-ops-mcp)
 
 **Problem**: Redaction regex patterns defined with the `g` flag at module level maintain `lastIndex` state between calls. Reusing the same pattern object without resetting causes alternating text matches to fail — the regex starts searching from a non-zero offset on the second call.

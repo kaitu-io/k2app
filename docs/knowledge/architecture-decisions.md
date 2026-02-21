@@ -1205,3 +1205,291 @@ Prevents `main()` from running when module is imported by tests. Required for `c
 **Validating tests**: `tools/kaitu-ops-mcp/src/ssh.test.ts` — mock SSH server tests (AC2, AC5, AC9); `tools/kaitu-ops-mcp/src/tools/exec-on-node.test.ts` — truncation, redaction integration (AC3, AC4)
 
 ---
+
+## Engine Single-Attempt Architecture — No Internal Retry (2026-02-21, k2-runtime-flow-audit)
+
+**Decision**: `engine.Start()` makes exactly one connection attempt. If it fails, the engine goes to `disconnected` and returns an error. There is no retry loop, exponential backoff, or server rotation inside the engine.
+
+**Retry responsibility lives at the caller**:
+- **Desktop daemon**: `tryAutoReconnect()` on daemon restart (single attempt with saved config, <1hr staleness guard)
+- **Webapp**: Server list rotation + user-initiated retry
+- **Mobile bridge**: Platform network change → call `OnNetworkChanged()` (wire reset, not full reconnect)
+
+**Why no engine-level retry**:
+- Engine requires platform-provided resources (TUN fd on mobile, DirectDialer on desktop) — can't independently restart
+- Server selection (which tunnel URL to try next) is a webapp concern, not an engine concern
+- Error classification semantics differ by code: 400/401/403 should not retry, 503 might retry, 408 might retry with backoff — policy belongs to the UI layer
+- Keeps engine simple: Start → success or fail. Clean separation of lifecycle vs retry policy.
+
+**Implication for callers**: After `engine.Start()` returns an error, the caller must decide whether to retry (and with what config). The engine does not hold any "pending retry" state.
+
+**Files**: `k2/engine/engine.go:64-211` (Start), `k2/daemon/daemon.go:164-231` (doUp — single attempt)
+
+**Validating tests**: `k2/engine/engine_test.go` — TestEngineStart failures return immediately; `k2/daemon/daemon_test.go` — doUp failure sets state to "stopped"
+**Source**: k2-runtime-flow-audit (2026-02-21)
+**Status**: verified (code-level confirmation)
+
+---
+
+## TransportManager: Per-Dial QUIC→TCP-WS Fallback (2026-02-21, k2-runtime-flow-audit)
+
+**Decision**: Transport fallback (QUIC → TCP-WS) happens on every individual `DialTCP`/`DialUDP` call, not at session establishment time. `TransportManager` holds references to both `QUICClient` and `TCPWSClient`, tries QUIC first, falls back to TCP-WS on any error.
+
+**Per-dial flow** (`k2/wire/transport.go:40-70`):
+```
+DialTCP(ctx, addr)
+├─ Try quic.DialTCP() → success? return immediately
+├─ QUIC failed → wrap error "QUIC: {err}"
+├─ Try tcpws.DialTCP() → success? return immediately
+├─ TCP-WS failed → wrap error "TCP-WS: {err}"
+└─ Both failed → return combined error
+```
+
+**Key behaviors**:
+1. **Per-dial, not per-session**: Each app connection independently tries the full transport chain. If QUIC recovers after a temporary failure, subsequent dials use QUIC again.
+2. **No backoff**: TCP-WS fallback is immediate (no delay between QUIC failure and TCP-WS attempt).
+3. **Lazy connection caching**: Both clients use `connect()` which caches the first successful connection. Subsequent dials reuse the cached connection for stream multiplexing (QUIC streams / smux streams).
+4. **Transport selection via URL param**: `?tp=quic` (QUIC only), `?tp=tcpws` (TCP-WS only), `?tp=` or absent (both, with fallback — default).
+
+**Error propagation**: When both fail, error message shows which transport failed: `"QUIC: connection refused, TCP-WS: uTLS handshake: ..."`. This flows into `ClassifyError()` which pattern-matches on the inner error strings.
+
+**Why per-dial, not session-level failover**: QUIC and TCP-WS have different connectivity characteristics. QUIC may fail due to UDP blocking (corporate firewalls) while TCP-WS works. But QUIC may work again on the next network change. Per-dial fallback adapts to the current network conditions on every connection attempt without requiring session-level state tracking.
+
+**Files**: `k2/wire/transport.go:40-102` (DialTCP/DialUDP), `k2/wire/transport.go:112-124` (ResetConnections)
+
+**Validating tests**: `k2/wire/transport_test.go` — 5 subtests covering QUIC-only, TCP-WS fallback, both-fail, reset, lazy reconnect
+**Source**: k2-runtime-flow-audit (2026-02-21)
+**Status**: verified (code-level confirmation)
+
+---
+
+## Daemon Auto-Reconnect: Persisted State Recovery on Restart (2026-02-21, k2-runtime-flow-audit)
+
+**Decision**: Daemon persists `{config, state, timestamp}` to `/tmp/k2/state.json` on every state change. On daemon startup, `tryAutoReconnect()` reads this file and attempts a single reconnect if the saved state was "connected" and less than 1 hour old.
+
+**State persistence points** (`k2/daemon/state.go`):
+- `doUp()` start → save `{state: "connecting", config, timestamp}`
+- `doUp()` success → save `{state: "connected", config, timestamp}`
+- `closeTunnel()` → save `{state: "stopped", timestamp}`
+
+**Auto-reconnect guard chain** (`k2/daemon/daemon.go:360-394`):
+1. No state file → skip
+2. `state != "connected"` → skip (only reconnect if last known state was connected)
+3. `timestamp > 1 hour ago` → skip (stale config, server may have changed)
+4. `config == nil` → skip (should never happen, but guard anyway)
+5. 5-second delay → let daemon HTTP server fully start
+6. If already connected during delay (user called `up` manually) → skip
+7. Single `doUp(savedConfig, pid=0)` attempt → success or log failure
+
+**No retry on failure**: If the single reconnect attempt fails, it's logged and abandoned. No exponential backoff, no loop. User must manually reconnect.
+
+**PID monitoring** (`k2/daemon/process.go:11-28`): When `pid > 0` is passed to `doUp()`, a goroutine polls every 5 seconds. If the PID no longer exists (Tauri app closed), daemon calls `doDown()` automatically. This ensures the tunnel doesn't outlive the UI.
+
+**Why /tmp/**: Volatile storage is intentional. System reboot clears the file — no stale reconnect on fresh boot. The 1-hour staleness guard is a second safety net for daemon-only restarts.
+
+**Files**: `k2/daemon/daemon.go:360-394` (tryAutoReconnect), `k2/daemon/state.go:25-54` (save/load), `k2/daemon/process.go:11-28` (PID monitor)
+
+**Tests**: No dedicated test — covered by daemon integration tests and manual verification.
+**Source**: k2-runtime-flow-audit (2026-02-21)
+**Status**: verified (code-level confirmation)
+
+---
+
+## Engine 3-State Machine: disconnected → connecting → connected (2026-02-21, k2-runtime-flow-audit)
+
+**Decision**: Engine has exactly 3 persistent states: `disconnected`, `connecting`, `connected`. Two additional pseudo-states (`reconnecting`, `disconnecting`) are transient signals or UI-only constructs, never stored in `engine.state`.
+
+**State transitions**:
+```
+disconnected ──Start()──▶ connecting ──success──▶ connected
+     ▲                       │                       │
+     │                   fail()                  Stop()
+     └──────── disconnected ◀────────────────────────┘
+```
+
+**Transient signals (not persistent states)**:
+- `"reconnecting"` — emitted by `OnNetworkChanged()` for ~microseconds. Engine state stays `connected`. Bridge logs this for debug but does NOT update VPN store.
+- `"disconnecting"` — UI-only optimistic state set by webapp when user presses disconnect. Backend never emits this.
+
+**Daemon state mapping**: Daemon uses `stopped`/`connecting`/`connected`. Bridge normalizes `"stopped"` → `"disconnected"` in `transformStatus()`.
+
+**Synthesized state at bridge layer**: `"error"` — when daemon reports `{state: "stopped", error: {...}}`, bridge synthesizes `state = "error"`. Engine never produces this state directly.
+
+**Concurrency safety in Start()**: Engine unlocks `e.mu` after setting `connecting` (line 78) to allow `Stop()` to run concurrently during the long assembly phase. Two cancellation checks (Step 8 and Step 10) detect if `Stop()` was called during assembly. The `ctx, cancel` is saved before unlock so `Stop()` can cancel it.
+
+**Files**: `k2/engine/engine.go:64-211` (Start), `k2/engine/engine.go:244-274` (Stop), `k2/engine/engine.go:313-330` (fail), `k2/engine/event.go:1-16` (state constants)
+
+**Validating tests**: `k2/engine/engine_test.go` — state transition verification in 14 test functions
+**Source**: k2-runtime-flow-audit (2026-02-21)
+**Status**: verified (code-level confirmation)
+
+---
+
+## Wire Protocol: k2v5 Stream Framing and Authentication (2026-02-21, k2-runtime-flow-audit)
+
+**Decision**: k2v5 uses a lightweight binary framing protocol over multiplexed streams (QUIC streams or smux-over-WebSocket). Each stream carries one proxied TCP connection or UDP session. Authentication happens via the wire URL credentials (`udid:token@`), verified server-side on stream open.
+
+**Wire URL format**: `k2v5://udid:token@host:port?ech=...&fp=...&pin=...&ip6=...&tp=...`
+- `ech` — ECH config list (base64, mandatory for TLS)
+- `fp` — uTLS fingerprint (chrome/firefox/safari)
+- `pin` — certificate pin (sha256:hex)
+- `ip6` — IPv6 address (optional, for PreferIPv6)
+- `tp` — transport preference (quic/tcpws/empty=both)
+
+**Stream protocol** (`k2/wire/stream.go:66-98`):
+
+QUIC path adds an H3 proxy frame type prefix (`[0x4B32]`) before the stream header.
+
+Request:
+```
+[StreamType: 1 byte] [addr_len: varint] [addr: string]
+StreamType: 0x01 = TCP, 0x02 = UDP
+```
+
+Response:
+```
+Success: [0x00]
+Error:   [0x01] [err_len: varint] [err_msg: string]
+```
+
+**TLS security stack** (applied to both QUIC and TCP-WS):
+1. TLS 1.3 mandatory
+2. ECH (Encrypted Client Hello) — real SNI encrypted, outer SNI is a dummy
+3. uTLS fingerprint — mimics real browser ClientHello (Chrome 120 PQ default)
+4. Certificate pin verification — sha256 of server public key, or Kaitu CA chain
+5. Blocked CA detection — rejects certificates from known MITM CAs
+
+**QUIC-specific**: PCC Vivace congestion control replaces default Cubic. Port hopping optional (hop range in URL). Session ID allocator for UDP multiplexing.
+
+**TCP-WS-specific**: WebSocket upgrade to `wss://host/k2v5/tunnel`, then smux multiplexing over the WebSocket connection. uTLS handshake for fingerprint mimicry.
+
+**Files**: `k2/wire/stream.go` (framing), `k2/wire/quic.go` (QUIC client), `k2/wire/tcpws.go` (TCP-WS client), `k2/wire/ech.go` (TLS config + ECH + pin), `k2/wire/ca.go` (blocked CA), `k2/wire/url.go` (URL parsing)
+
+**Tests**: Wire layer has internal tests for URL parsing and stream protocol.
+**Source**: k2-runtime-flow-audit (2026-02-21)
+**Status**: verified (code-level confirmation)
+
+---
+
+## QUIC UDP: Datagram vs Stream-Based Fallback (2026-02-21, k2-runtime-flow-audit)
+
+**Decision**: When proxying UDP traffic, `QUICClient.DialUDP()` checks if the QUIC connection supports datagrams. If yes, uses native QUIC datagrams (most efficient). If not, falls back to stream-based UDP framing.
+
+**Fallback logic** (`k2/wire/quic.go:253-322`):
+```go
+if c.datagramsSupported(conn) {
+    // Native QUIC datagram: each UDP packet = one datagram
+    // SessionID multiplexing via udpMux
+    return &quicUDPConn{...}
+}
+// Fallback: stream-based UDP
+// Shared QUIC stream for all UDP sessions
+// Frame format: [frame_len: varint][UDP frame]
+return c.dialUDPStream(ctx, conn, addr)
+```
+
+**Datagram path** (`quicUDPConn`):
+- Each UDP packet sent as an independent QUIC datagram
+- Unreliable delivery (no retransmission — matches UDP semantics)
+- SessionID + destination demultiplexing via `udpMux`
+- Lowest latency for DNS queries and real-time protocols
+
+**Stream fallback** (`quicStreamUDPConn`):
+- One shared QUIC stream carries all UDP sessions
+- Frame format: `[length: varint][payload]`
+- Reliable delivery (QUIC stream retransmits — slightly higher latency)
+- Works through middleboxes that strip QUIC datagrams
+
+**Shared stream optimization**: `c.udpMux.streamMux` is created once (under lock) and reused for all UDP sessions. This avoids opening a new QUIC stream per DNS query.
+
+**When datagrams are unsupported**: Some QUIC implementations or middleboxes don't negotiate datagram support during handshake. `conn.ConnectionState().SupportsDatagrams` returns false.
+
+**Files**: `k2/wire/quic.go:253-322` (DialUDP + dialUDPStream), `k2/wire/quic_udp_mux.go` (multiplexing)
+
+**Tests**: No dedicated test — covered by integration testing.
+**Source**: k2-runtime-flow-audit (2026-02-21)
+**Status**: verified (code-level confirmation)
+
+---
+
+## IPv6 Probe Fallback: HasIPv6() → IPv4 Silently (2026-02-21, k2-runtime-flow-audit)
+
+**Decision**: When `PreferIPv6` is set and the wire URL includes an `ip6=` parameter, `engine.Start()` probes for public IPv6 connectivity via `wire.HasIPv6()` (connects to api6.ipify.org). If the probe fails, the engine silently falls back to IPv4. No error, no warning — IPv6 unavailability is a normal condition.
+
+**Probe logic** (in `engine.Start()` Step 4):
+```go
+if cfg.PreferIPv6 && wireCfg.IPv6 != "" && wire.HasIPv6() {
+    wireCfg.Host = wireCfg.IPv6  // Use IPv6 address
+} else {
+    // Fall through: use original IPv4 host (default)
+}
+```
+
+**Why silent fallback**: IPv6 availability varies by ISP, network, and even time of day (some networks have intermittent IPv6). Logging a warning would create noise. The fallback to IPv4 is always safe — all k2 servers support IPv4.
+
+**Why probe at startup, not per-dial**: IPv6 availability rarely changes within a single VPN session. Probing once at connection time is sufficient. If the network changes (WiFi→cellular), `OnNetworkChanged()` resets wire connections — the next session could re-evaluate IPv6 if the engine is restarted.
+
+**Files**: `k2/engine/engine.go` (Step 4 in Start), `k2/wire/ipv6.go` (HasIPv6 probe)
+
+**Tests**: `k2/engine/engine_test.go` — TestEngineStart_PreferIPv6
+**Source**: k2-runtime-flow-audit (2026-02-21)
+**Status**: verified (code-level confirmation)
+
+---
+
+## sing-tun gVisor Stack: IP Packet → net.Conn Handler Adapter (2026-02-21, k2-runtime-flow-audit)
+
+**Decision**: k2 uses sing-tun's gVisor-based user-space IP stack to convert raw TUN packets into standard `net.Conn` (TCP) and `net.PacketConn` (UDP) interfaces. A `handlerAdapter` (`k2/provider/stack.go:16-44`) bridges sing-tun's `Handler` interface to k2's `ConnectionHandler` interface.
+
+**Packet flow**:
+```
+App writes packet → TUN device (utun0)
+    → gVisor IP stack (sing-tun)
+    → TCP/UDP reassembly
+    → handlerAdapter.NewConnectionEx() [TCP] or NewPacketConnectionEx() [UDP]
+    → go func() { handler.HandleTCP(conn, dest) }()
+    → ClientTunnel routes via k2rule → TransportManager.DialTCP()
+    → QUIC/TCP-WS stream to server
+```
+
+**Why gVisor, not raw packet processing**: sing-tun with gVisor provides a complete TCP/IP stack implementation. k2 engine never touches raw packets — it receives `net.Conn` objects and proxies them through wire transports. This eliminates the need for TCP state machine implementation, IP fragmentation handling, and UDP reassembly in k2's codebase.
+
+**singPacketConn wrapper** (`k2/provider/stack.go:46-82`): Adapts sing-tun's `N.PacketConn` (buffer-pool based) to Go standard `net.PacketConn` (byte-slice based). Handles buffer allocation/release.
+
+**MTU = 1400**: Optimized for QUIC overhead. Standard 1500 MTU minus ~100 bytes for QUIC/TLS/ECH headers prevents fragmentation at the outer transport layer.
+
+**Mobile vs Desktop TUN**:
+- Desktop (`fd == -1`): sing-tun creates TUN device internally, installs auto-routes, manages gVisor stack
+- Mobile (`fd >= 0`): Platform provides TUN fd, sing-tun wraps it with gVisor stack. DNS middleware intercepts port-53 UDP before it reaches the tunnel handler.
+
+**Files**: `k2/provider/tun_desktop.go:29-95` (TUN provider), `k2/provider/stack.go:16-82` (handler adapter + packet conn wrapper), `k2/core/tunnel.go:49-104` (ClientTunnel — connection handler)
+
+**Tests**: Covered by engine integration tests.
+**Source**: k2-runtime-flow-audit (2026-02-21)
+**Status**: verified (code-level confirmation)
+
+---
+
+## DirectDialer: Physical Interface Binding for TUN Bypass (2026-02-21, k2-runtime-flow-audit)
+
+**Decision**: Desktop tunnel connections use `directdial.Dialer` which binds outgoing sockets to the physical network interface (e.g., en0/eth0), bypassing the TUN device's default route. Without this, tunnel traffic would loop back through the TUN — the wire's own packets would be intercepted by the tunnel it's trying to establish.
+
+**Interface detection** (`k2/directdial/detect.go:6-54`): `detectDefault()` iterates network interfaces, finds the first one that is UP, not loopback, not point-to-point, and has a valid unicast address. Returns the interface name.
+
+**Binding mechanism** (`k2/directdial/directdial.go:24-51`):
+- TCP: `dialer.Control = bindToInterface(ifaceName)` → `syscall.SetsockoptString(fd, syscall.SOL_SOCKET, syscall.SO_BINDTODEVICE, name)` (Linux) or equivalent macOS/Windows API
+- UDP: `ListenPacket()` uses same interface binding
+
+**Who uses DirectDialer**:
+- `QUICClient.connect()` — creates UDP socket bound to physical interface
+- `TCPWSClient.connectTLSWebSocket()` — dials TCP to server via physical interface
+
+**Mobile doesn't need it**: Mobile TUN fd is provided by the OS VPN subsystem, which automatically excludes the VPN's own tunnel traffic from being re-routed through the TUN. The OS handles bypass at the VPN service level.
+
+**Files**: `k2/directdial/directdial.go:24-51`, `k2/directdial/detect.go:6-54`
+
+**Tests**: No dedicated test — verified by tunnel working correctly on desktop.
+**Source**: k2-runtime-flow-audit (2026-02-21)
+**Status**: verified (code-level confirmation)
+
+---
