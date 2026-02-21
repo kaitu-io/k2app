@@ -7,7 +7,7 @@
  * sidebar itself can be a lightweight Client Component that only needs
  * `usePathname()` for active-link highlighting.
  */
-import { usePathname } from 'next/navigation';
+import { usePathname } from '@/i18n/routing';
 import { Link } from '@/i18n/routing';
 import type { K2PostGroup } from '@/lib/k2-posts';
 
