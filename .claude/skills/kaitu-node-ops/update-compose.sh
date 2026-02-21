@@ -123,10 +123,11 @@ for entry in "${UPDATE_LIST[@]}"; do
     continue
   fi
 
-  # Step 3: Verify sidecar health
+  # Step 3: Verify sidecar health (detect architecture: k2-sidecar or k2-slave-sidecar)
   echo "  [3/3] Waiting 10s for sidecar health..."
   sleep 10
-  HEALTH=$(ssh $SSH_OPTS "$SSH_USER@$IP" "docker inspect --format='{{.State.Health.Status}}' k2-sidecar 2>/dev/null" 2>/dev/null || echo "not-found")
+  SIDECAR_NAME=$(ssh $SSH_OPTS "$SSH_USER@$IP" "docker ps --format '{{.Names}}' 2>/dev/null" 2>/dev/null | grep -o 'k2[^ ]*sidecar' || echo "k2-sidecar")
+  HEALTH=$(ssh $SSH_OPTS "$SSH_USER@$IP" "docker inspect --format='{{.State.Health.Status}}' $SIDECAR_NAME 2>/dev/null" 2>/dev/null || echo "not-found")
   CONTAINERS=$(ssh $SSH_OPTS "$SSH_USER@$IP" "docker ps --format '{{.Names}}' 2>/dev/null" 2>/dev/null | sort | tr '\n' ',' | sed 's/,$//')
 
   echo "  OK — sidecar=$HEALTH containers=$CONTAINERS"

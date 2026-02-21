@@ -2,9 +2,9 @@
 # Deploy docker-compose.yml to Kaitu VPN nodes
 #
 # Usage:
-#   ./scripts/deploy-compose.sh              # Active nodes only (tunnelCount > 0)
-#   ./scripts/deploy-compose.sh --all        # All reachable nodes
-#   ./scripts/deploy-compose.sh --dry-run    # Show what would be deployed
+#   .claude/skills/kaitu-node-ops/deploy-compose.sh              # Active nodes only (tunnelCount > 0)
+#   .claude/skills/kaitu-node-ops/deploy-compose.sh --all        # All reachable nodes
+#   .claude/skills/kaitu-node-ops/deploy-compose.sh --dry-run    # Show what would be deployed
 #
 # Requires:
 #   KAITU_CENTER_URL  — Center API base URL (e.g. https://k2.52j.me)
@@ -16,7 +16,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+PROJECT_DIR="$(cd "$SCRIPT_DIR" && git rev-parse --show-toplevel)"
 COMPOSE_FILE="$PROJECT_DIR/docker/docker-compose.yml"
 DEPLOY_DIR="/apps/kaitu-slave"
 
