@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { DOWNLOAD_LINKS } from '@/lib/constants';
 import { Link } from '@/i18n/routing';
+import { routing } from '@/i18n/routing';
 import NextLink from 'next/link';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
@@ -16,6 +17,8 @@ import {
   Server
 } from 'lucide-react';
 
+type Locale = (typeof routing.locales)[number];
+
 export const dynamic = 'force-static';
 
 /**
@@ -27,7 +30,8 @@ export async function generateMetadata({
 }: {
   params: Promise<{ locale: string }>;
 }): Promise<Metadata> {
-  const { locale } = await params;
+  const { locale: rawLocale } = await params;
+  const locale = rawLocale as Locale;
   const t = await getTranslations({ locale, namespace: 'hero' });
 
   return {
@@ -87,7 +91,8 @@ export default async function Home({
 }: {
   params: Promise<{ locale: string }>;
 }) {
-  const { locale } = await params;
+  const { locale: rawLocale } = await params;
+  const locale = rawLocale as Locale;
   setRequestLocale(locale);
 
   const t = await getTranslations({ locale, namespace: 'hero' });

@@ -1,19 +1,15 @@
 import { routing } from '@/i18n/routing';
 
-type Messages = typeof import('../messages/en-US.json');
-
 declare global {
-  // Use type safe message keys with `next-intl`
-  interface IntlMessages extends Messages {
-    // Required to prevent empty interface error
-    [key: string]: string | object;
-  }
+  // Messages are split across namespace JSON files (messages/{locale}/*.json)
+  // loaded dynamically at runtime. Use permissive typing.
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+  interface IntlMessages {}
 }
 
 // Module augmentation for next-intl
 declare module 'next-intl' {
   interface AppConfig {
     Locale: (typeof routing.locales)[number];
-    Messages: Messages;
   }
 }

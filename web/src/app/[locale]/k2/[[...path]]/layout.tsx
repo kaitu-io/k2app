@@ -28,11 +28,12 @@ export default async function K2Layout({
   children,
   params,
 }: K2LayoutProps): Promise<React.ReactElement> {
-  const { locale } = await params;
+  const { locale: rawLocale } = await params;
+  const locale = rawLocale as (typeof routing.locales)[number];
 
-  setRequestLocale(locale as (typeof routing.locales)[number]);
+  setRequestLocale(locale);
 
-  const groups = getK2Posts(locale);
+  const groups = getK2Posts(rawLocale);
   const t = await getTranslations({ locale, namespace: 'k2' });
 
   // Build section label map for the sidebar
