@@ -1,0 +1,24 @@
+#!/bin/bash
+# macOS PKG preinstall script
+# Runs as root BEFORE files are copied to /Applications/Kaitu.app
+
+K2="/Applications/Kaitu.app/Contents/MacOS/k2"
+
+# 1. Kill the running Kaitu app (release file handles)
+pkill -f "Kaitu.app/Contents/MacOS/Kaitu" 2>/dev/null || true
+
+# 2. Uninstall existing service (stop + remove plist)
+if [ -x "$K2" ]; then
+    "$K2" service uninstall 2>&1 || true
+fi
+
+# 3. Fallback: force unload if plist still exists (old kaitu-service format)
+if [ -f /Library/LaunchDaemons/kaitu.plist ]; then
+    launchctl unload /Library/LaunchDaemons/kaitu.plist 2>/dev/null || true
+    rm -f /Library/LaunchDaemons/kaitu.plist
+fi
+
+# 4. Wait for cleanup
+sleep 2
+
+exit 0

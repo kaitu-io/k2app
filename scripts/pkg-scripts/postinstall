@@ -1,0 +1,12 @@
+#!/bin/bash
+# macOS PKG postinstall script
+# Runs as root AFTER files are installed to /Applications/Kaitu.app
+
+K2="/Applications/Kaitu.app/Contents/MacOS/k2"
+
+# 1. Install and start the kaitu service
+if [ -x "$K2" ]; then
+    "$K2" service install 2>&1 || true
+fi
+
+exit 0

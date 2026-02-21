@@ -118,6 +118,7 @@ PLIST
 pkgbuild \
   --root "$PKG_STAGE" \
   --component-plist "$COMPONENT_PLIST" \
+  --scripts "$ROOT_DIR/scripts/pkg-scripts" \
   --identifier io.kaitu.desktop \
   --version "$VERSION" \
   --install-location "/Applications" \
