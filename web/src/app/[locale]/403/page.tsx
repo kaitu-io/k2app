@@ -1,13 +1,36 @@
-"use client";
+import { getTranslations, setRequestLocale } from 'next-intl/server';
+import type { Metadata } from 'next';
+import { routing } from '@/i18n/routing';
+import { ShieldX } from 'lucide-react';
+import ErrorActions from './ErrorActions';
 
-import { useRouter } from "@/i18n/routing";
-import { Button } from "@/components/ui/button";
-import { ArrowLeft, Home, ShieldX } from "lucide-react";
-import { useTranslations } from "next-intl";
+type Locale = (typeof routing.locales)[number];
 
-export default function ForbiddenPage() {
-  const t = useTranslations();
-  const router = useRouter();
+export const dynamic = 'force-static';
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}): Promise<Metadata> {
+  const { locale: rawLocale } = await params;
+  const locale = rawLocale as Locale;
+  const t = await getTranslations({ locale, namespace: 'purchase' });
+  return {
+    title: t('error403.title'),
+    description: t('error403.subtitle'),
+  };
+}
+
+export default async function ForbiddenPage({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale: rawLocale } = await params;
+  const locale = rawLocale as Locale;
+  setRequestLocale(locale);
+  const t = await getTranslations({ locale });
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 flex items-center justify-center px-4 sm:px-6 lg:px-8">
@@ -46,26 +69,8 @@ export default function ForbiddenPage() {
             </p>
           </div>
 
-          {/* Action buttons */}
-          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-            <Button
-              variant="outline"
-              size="lg"
-              onClick={() => router.back()}
-              className="w-full sm:w-auto min-w-[140px] h-12 text-base font-medium border-gray-300 hover:bg-gray-50 hover:border-gray-400 transition-colors"
-            >
-              <ArrowLeft className="w-5 h-5 mr-2" />
-              {t('purchase.error403.actions.goBack')}
-            </Button>
-            <Button
-              size="lg"
-              onClick={() => router.push('/')}
-              className="w-full sm:w-auto min-w-[140px] h-12 text-base font-medium bg-gray-900 hover:bg-gray-800 text-white transition-colors"
-            >
-              <Home className="w-5 h-5 mr-2" />
-              {t('purchase.error403.actions.goToDashboard')}
-            </Button>
-          </div>
+          {/* Action buttons — client island */}
+          <ErrorActions />
 
           {/* Additional info */}
           <div className="mt-12 pt-6 border-t border-gray-200">
