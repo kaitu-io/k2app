@@ -1,127 +1,267 @@
 {
   "hero": {
-    "title": "安全便捷的",
-    "networkProxy": "网络代理",
-    "solution": "解决方案",
-    "description": "开途（Kaitu.io）提供专业级的网络代理服务，支持多平台客户端，采用先进的加密技术确保您的网络连接安全、快速、稳定。",
+    "title": "k2 隐身网络隧道",
+    "subtitle": "一行命令部署，ECH 加密，不可检测",
+    "description": "开途 k2 是基于 ECH（加密客户端问候）的下一代隐身隧道协议，支持 QUIC + TCP-WS 双栈传输，自研自适应拥塞控制算法，一行命令完成服务端与客户端部署，CT 日志零暴露。",
+    "cta_primary": "快速开始",
+    "cta_secondary": "查看协议",
     "downloadClient": "下载客户端",
     "quickActivation": "快速开通",
-    "smartRouter": "智能路由器"
+    "smartRouter": "智能路由器",
+    "features": {
+      "title": "核心技术优势",
+      "ech": {
+        "title": "ECH 隐身",
+        "description": "加密客户端问候，SNI 完全隐藏，TLS 握手不可检测，DPI 深度包检测无效",
+        "icon": "🛡️"
+      },
+      "zeroDeploy": {
+        "title": "零配置部署",
+        "description": "curl 一行命令安装服务端与客户端，自动生成 k2v5:// 连接 URI，无需手动配置证书",
+        "icon": "⚡"
+      },
+      "transport": {
+        "title": "QUIC + TCP-WS 复合传输",
+        "description": "优先 QUIC 低延迟传输，网络受限自动降级为 TCP-WebSocket，无缝切换无感知",
+        "icon": "🔀"
+      },
+      "congestion": {
+        "title": "自研拥塞控制",
+        "description": "自研自适应拥塞控制算法，高丢包网络下显著优于 BBR，弱网环境吞吐量提升 3x",
+        "icon": "📈"
+      },
+      "reverseProxy": {
+        "title": "反向代理伪装",
+        "description": "内建反向代理，非 k2 流量转发至真实网站，主动探测返回合法 HTTPS 响应",
+        "icon": "🎭"
+      },
+      "selfSign": {
+        "title": "自签名 + Pin",
+        "description": "自签名证书 + 证书 Pin，CT 日志零暴露，无需购买证书，服务端域名完全隐藏",
+        "icon": "🔐"
+      }
+    },
+    "comparison": {
+      "title": "协议横向对比",
+      "subtitle": "k2v5 与主流翻墙协议的关键维度对比",
+      "dimensions": {
+        "ech": "ECH 隐身",
+        "tlsFingerprint": "TLS 指纹伪装",
+        "activeProbe": "主动探测防御",
+        "quic": "QUIC 传输",
+        "tcpFallback": "TCP 降级",
+        "congestion": "拥塞控制优化",
+        "zeroDeploy": "零配置部署",
+        "ctLog": "CT 日志零暴露",
+        "portReuse": "端口复用"
+      },
+      "protocols": [
+        {
+          "id": "k2",
+          "name": "k2v5",
+          "ech": true,
+          "tlsFingerprint": true,
+          "activeProbe": true,
+          "quic": true,
+          "tcpFallback": true,
+          "congestion": true,
+          "zeroDeploy": true,
+          "ctLog": true,
+          "portReuse": true
+        },
+        {
+          "id": "WireGuard",
+          "name": "WireGuard",
+          "ech": false,
+          "tlsFingerprint": false,
+          "activeProbe": false,
+          "quic": false,
+          "tcpFallback": false,
+          "congestion": false,
+          "zeroDeploy": false,
+          "ctLog": false,
+          "portReuse": false
+        },
+        {
+          "id": "VLESS",
+          "name": "VLESS+Reality",
+          "ech": false,
+          "tlsFingerprint": true,
+          "activeProbe": true,
+          "quic": false,
+          "tcpFallback": true,
+          "congestion": false,
+          "zeroDeploy": false,
+          "ctLog": false,
+          "portReuse": false
+        },
+        {
+          "id": "Hysteria2",
+          "name": "Hysteria2",
+          "ech": false,
+          "tlsFingerprint": false,
+          "activeProbe": false,
+          "quic": true,
+          "tcpFallback": false,
+          "congestion": true,
+          "zeroDeploy": false,
+          "ctLog": true,
+          "portReuse": false
+        },
+        {
+          "id": "Shadowsocks",
+          "name": "Shadowsocks",
+          "ech": false,
+          "tlsFingerprint": false,
+          "activeProbe": false,
+          "quic": false,
+          "tcpFallback": false,
+          "congestion": false,
+          "zeroDeploy": false,
+          "ctLog": false,
+          "portReuse": false
+        }
+      ],
+      "yes": "✓",
+      "no": "✗"
+    },
+    "quickstart": {
+      "title": "一分钟极速部署",
+      "server": {
+        "title": "服务端（1 分钟）",
+        "step1": "# 安装 k2s 服务端",
+        "step2": "curl -fsSL https://get.kaitu.io | sudo sh -s k2s",
+        "step3": "# 启动服务",
+        "step4": "k2s run",
+        "step5": "# 输出连接 URI",
+        "step6": "k2v5://..."
+      },
+      "client": {
+        "title": "客户端（30 秒）",
+        "step1": "# 安装 k2 客户端",
+        "step2": "curl -fsSL https://get.kaitu.io | sudo sh -s k2",
+        "step3": "# 连接（粘贴 URI）",
+        "step4": "k2 up k2v5://..."
+      }
+    }
   },
   "security": {
-    "title": "开途协议 - 新一代网络传输技术",
-    "description": "开途协议（Kaitu Protocol）是我们自主研发的下一代网络传输协议，采用多路径聚合、军工级加密和智能路由等先进技术，为您提供安全、快速、稳定的网络连接体验。",
-    "icon": "🔒",
+    "title": "k2v5 协议 — 下一代隐身隧道",
+    "description": "k2v5 基于 ECH（加密客户端问候）构建，彻底解决 SNI 泄漏问题。结合 QUIC 低延迟传输与自研自适应拥塞控制算法，在高丢包弱网环境下实现稳定高吞吐。",
+    "icon": "🛡️",
     "caTech": {
-      "title": "多路径聚合技术（MPTCP）",
-      "description": "开途协议独创的多路径聚合技术，能够同时利用多条网络通道传输数据，实现带宽叠加和智能负载均衡，即使单条线路出现故障也能无缝切换，确保连接永不中断。",
+      "title": "ECH 隐身隧道技术",
+      "description": "k2v5 采用 ECH（Encrypted Client Hello）加密 TLS 握手的 SNI 字段，DPI 深度包检测无法识别目标域名，主动探测返回合法网站响应，从协议层实现不可检测。",
       "advantages": {
         "title": "核心特性",
-        "item1": "多通道同时传输，带宽智能聚合",
-        "item2": "RTT实时测量，自动选择最优路径",
-        "item3": "故障自动转移，连接永不中断",
-        "item4": "指数移动平均算法，精准路径评估",
+        "item1": "ECH 加密 SNI，TLS 握手不可检测",
+        "item2": "QUIC 优先传输，低延迟高吞吐",
+        "item3": "自研自适应拥塞控制，弱网 3x 提升",
+        "item4": "反向代理伪装，主动探测防御",
         "bullet": "•"
       },
       "adaptive": {
-        "title": "企业级网络自适应",
-        "item1": "根据网络状况智能选择最优协议",
-        "item2": "支持 WebSocket、HTTP/2 等多种传输方式",
-        "item3": "实时网络质量监控与调优",
-        "item4": "弱网环境下的可靠连接保障",
+        "title": "自适应传输层",
+        "item1": "QUIC 受阻自动降级为 TCP-WebSocket",
+        "item2": "自签名证书 + Pin，CT 日志零暴露",
+        "item3": "端口复用，443 端口正常网站共存",
+        "item4": "一行命令部署，自动生成 k2v5:// URI",
         "bullet": "•"
       }
     },
     "features": {
       "title": "协议核心优势",
       "multipath": {
-        "title": "多路径聚合",
-        "description": "同时利用多条网络通道，智能选择最优路径，实现带宽叠加和自动故障转移",
-        "icon": "🔀"
+        "title": "ECH 加密握手",
+        "description": "加密客户端问候隐藏 SNI，TLS 握手完全不可检测，DPI 识别失效",
+        "icon": "🛡️"
       },
       "encryption": {
-        "title": "军工级加密",
-        "description": "采用 AES-256-GCM 加密算法，ECDSA P-256 椭圆曲线，PBKDF2 十万次密钥派生",
-        "icon": "🔐"
+        "title": "双栈传输",
+        "description": "QUIC 优先低延迟传输，TCP-WebSocket 自动降级备用，无缝切换无感知",
+        "icon": "🔀"
       },
       "smartRouting": {
-        "title": "智能路由",
-        "description": "基于 RTT 的实时路径优化，指数移动平均算法确保始终使用最快通道",
-        "icon": "🧭"
+        "title": "自研拥塞控制",
+        "description": "自研自适应拥塞控制算法，高丢包网络吞吐量超越 BBR，弱网体验显著提升",
+        "icon": "📈"
       },
       "disguise": {
-        "title": "流量伪装",
-        "description": "CA 证书模拟技术，流量呈现为标准 HTTPS，完美融入正常网络环境",
+        "title": "反向代理伪装",
+        "description": "内建反向代理，非隧道流量转发真实网站，主动探测返回合法 HTTPS 响应",
         "icon": "🎭"
       },
       "failover": {
-        "title": "自动故障转移",
-        "description": "单路径故障时毫秒级切换，用户完全无感知，确保业务连续性",
-        "icon": "🔄"
+        "title": "零配置部署",
+        "description": "curl 一行命令安装，自动生成 k2v5:// 连接 URI，10 分钟完成完整部署",
+        "icon": "⚡"
       },
       "performance": {
-        "title": "高性能架构",
-        "description": "支持 5000 并发连接，32KB 缓冲池优化，零拷贝数据转发",
-        "icon": "⚡"
+        "title": "CT 日志零暴露",
+        "description": "自签名证书 + 证书 Pin，完全绕过 CT 日志监控，服务端域名零暴露",
+        "icon": "🔐"
       }
     },
     "techSpecs": {
       "title": "技术规格",
-      "encryption": "加密算法",
-      "encryptionValue": "AES-256-GCM + ECDSA P-256",
-      "keyDerivation": "密钥派生",
-      "keyDerivationValue": "PBKDF2-SHA512 (100,000次迭代)",
-      "transport": "传输协议",
-      "transportValue": "WebSocket over TLS / HTTP/2",
-      "multiplexing": "多路复用",
-      "multiplexingValue": "smux 流复用 + 多路径聚合",
-      "heartbeat": "心跳保活",
-      "heartbeatValue": "30秒间隔 / 90秒超时",
-      "concurrent": "并发能力",
-      "concurrentValue": "单会话 5000+ 并发流"
+      "encryption": "握手加密",
+      "encryptionValue": "ECH（Encrypted Client Hello）",
+      "keyDerivation": "传输协议",
+      "keyDerivationValue": "QUIC / TCP-WebSocket 双栈",
+      "transport": "拥塞控制",
+      "transportValue": "自研自适应拥塞控制算法",
+      "multiplexing": "证书策略",
+      "multiplexingValue": "自签名 + 证书 Pin（CT 日志零暴露）",
+      "heartbeat": "部署方式",
+      "heartbeatValue": "curl 单行命令，自动生成 URI",
+      "concurrent": "端口策略",
+      "concurrentValue": "端口复用 + 反向代理伪装"
     },
     "comparison": {
       "title": "协议对比",
-      "metrics": {
-        "detection": "抗检测",
-        "encryption": "加密强度",
-        "stability": "稳定性",
-        "difficulty": "配置难度"
-      },
-      "stars": {
-        "five": "★★★★★",
-        "four": "★★★★☆",
-        "three": "★★★☆☆",
-        "two": "★★☆☆☆",
-        "one": "★☆☆☆☆"
+      "dimensions": {
+        "ech": "ECH 隐身",
+        "tlsFingerprint": "TLS 指纹伪装",
+        "activeProbe": "主动探测防御",
+        "quic": "QUIC 传输",
+        "tcpFallback": "TCP 降级",
+        "congestion": "拥塞控制优化",
+        "zeroDeploy": "零配置部署",
+        "ctLog": "CT 日志零暴露",
+        "portReuse": "端口复用"
       },
       "kaitu": {
         "letter": "K",
-        "name": "Kaitu 开途",
-        "tech": "MPTCP 多路径聚合 + CA 证书伪装"
+        "name": "k2v5",
+        "tech": "ECH 隐身 + QUIC+TCP-WS 双栈 + 自研拥塞控制"
       },
       "trojan": {
-        "letter": "T",
-        "name": "Trojan",
-        "tech": "TLS 加密 + 流量伪装"
+        "letter": "W",
+        "name": "WireGuard",
+        "tech": "UDP 加密隧道，无 TLS 伪装"
       },
       "v2ray": {
         "letter": "V",
-        "name": "V2Ray",
-        "tech": "VMess/VLESS 协议 + 多种传输"
+        "name": "VLESS+Reality",
+        "tech": "TLS 指纹伪装 + 反向代理，无 ECH"
       },
       "shadowsocks": {
         "letter": "S",
         "name": "Shadowsocks",
-        "tech": "AEAD 加密 + 轻量代理"
+        "tech": "AEAD 加密 + 轻量代理，无伪装"
+      },
+      "hysteria": {
+        "letter": "H",
+        "name": "Hysteria2",
+        "tech": "QUIC 传输 + 自研拥塞控制，无 ECH"
       }
     },
     "visualization": {
-      "title": "多路径聚合技术 (MPTCP)",
-      "subtitle": "实时演示：数据同时通过多个中转节点传输，智能选择最优路径",
+      "title": "k2v5 隐身隧道架构",
+      "subtitle": "ECH 加密握手 + QUIC/TCP-WS 双栈传输，DPI 完全无效",
       "client": "客户端",
       "target": "目标服务器",
-      "relayNodes": "中转节点集群",
+      "relayNodes": "k2 隧道节点",
       "nodes": {
         "hongkong": "香港节点",
         "japan": "日本节点",
@@ -139,15 +279,15 @@
         "title": "图例",
         "dataPacket": "数据包",
         "activePath": "活跃路径",
-        "failedPath": "故障路径",
+        "failedPath": "降级路径",
         "optimalNode": "最优节点"
       },
-      "description": "上图展示了开途协议的多路径聚合架构：数据从客户端出发，同时通过多个地理位置不同的中转节点传输到目标服务器。系统实时监测每个节点的延迟（RTT），自动将更多流量分配给最优节点（绿色虚线框）。当某个节点出现故障时，流量会瞬间切换到其他可用节点，确保连接不中断。每个中转节点还可配置多网卡，实现带宽的进一步聚合。"
+      "description": "k2v5 在 TLS 握手阶段使用 ECH 加密 SNI，防火墙无法识别目标域名。数据通过 QUIC（优先）或 TCP-WebSocket（降级）传输，自研自适应拥塞控制算法在高丢包环境下保持稳定吞吐。服务端内建反向代理，非 k2 流量转发至真实网站，主动探测无法区分。"
     }
   },
   "download": {
     "title": "下载客户端",
-    "subtitle": "选择适合您设备的客户端，开始安全的网络之旅",
+    "subtitle": "选择适合您设备的客户端，开始隐身网络之旅",
     "platforms": {
       "ios": "支持 iPhone 和 iPad",
       "iosLabel": "iOS",

@@ -1,127 +1,267 @@
 {
   "hero": {
-    "title": "Secure and Convenient",
-    "networkProxy": "Network Proxy",
-    "solution": "Solution",
-    "description": "Kaitu.io provides professional-grade network proxy services with multi-platform client support, utilising advanced encryption technology to ensure your network connection is secure, fast, and stable.",
+    "title": "k2 Stealth Network Tunnel",
+    "subtitle": "Deploy in one command, ECH encryption, undetectable",
+    "description": "Kaitu k2 is a next-generation stealth tunnel protocol based on ECH (Encrypted Client Hello), supporting QUIC + TCP-WS dual-stack transport, proprietary adaptive congestion control, one-command deployment for both server and client, zero CT log exposure.",
+    "cta_primary": "Get Started",
+    "cta_secondary": "View Protocol",
     "downloadClient": "Download Client",
-    "quickActivation": "Quick Activation",
-    "smartRouter": "Smart Router"
+    "quickActivation": "Quick Start",
+    "smartRouter": "Smart Router",
+    "features": {
+      "title": "Core Technology Advantages",
+      "ech": {
+        "title": "ECH Stealth",
+        "description": "Encrypted Client Hello hides SNI completely. TLS handshake is undetectable, DPI deep packet inspection is ineffective",
+        "icon": "🛡️"
+      },
+      "zeroDeploy": {
+        "title": "Zero-Config Deployment",
+        "description": "One curl command installs both server and client. Auto-generates k2v5:// connection URI. No manual certificate configuration needed",
+        "icon": "⚡"
+      },
+      "transport": {
+        "title": "QUIC + TCP-WS Dual Stack",
+        "description": "Prioritises QUIC for low-latency transport. Automatically falls back to TCP-WebSocket when QUIC is blocked. Seamless switching, imperceptible to users",
+        "icon": "🔀"
+      },
+      "congestion": {
+        "title": "Proprietary Congestion Control",
+        "description": "Proprietary adaptive congestion control algorithm. Significantly outperforms BBR on high-loss networks. 3x throughput improvement in poor network conditions",
+        "icon": "📈"
+      },
+      "reverseProxy": {
+        "title": "Reverse Proxy Camouflage",
+        "description": "Built-in reverse proxy forwards non-k2 traffic to a real website. Active probing returns legitimate HTTPS responses",
+        "icon": "🎭"
+      },
+      "selfSign": {
+        "title": "Self-Signed + Certificate Pin",
+        "description": "Self-signed certificate with certificate pinning. Zero CT log exposure. No certificate purchase required. Server domain completely hidden",
+        "icon": "🔐"
+      }
+    },
+    "comparison": {
+      "title": "Protocol Comparison",
+      "subtitle": "k2v5 vs. mainstream anti-censorship protocols across key dimensions",
+      "dimensions": {
+        "ech": "ECH Stealth",
+        "tlsFingerprint": "TLS Fingerprint Spoofing",
+        "activeProbe": "Active Probe Defence",
+        "quic": "QUIC Transport",
+        "tcpFallback": "TCP Fallback",
+        "congestion": "Congestion Control",
+        "zeroDeploy": "Zero-Config Deploy",
+        "ctLog": "Zero CT Log Exposure",
+        "portReuse": "Port Reuse"
+      },
+      "protocols": [
+        {
+          "id": "k2",
+          "name": "k2v5",
+          "ech": true,
+          "tlsFingerprint": true,
+          "activeProbe": true,
+          "quic": true,
+          "tcpFallback": true,
+          "congestion": true,
+          "zeroDeploy": true,
+          "ctLog": true,
+          "portReuse": true
+        },
+        {
+          "id": "WireGuard",
+          "name": "WireGuard",
+          "ech": false,
+          "tlsFingerprint": false,
+          "activeProbe": false,
+          "quic": false,
+          "tcpFallback": false,
+          "congestion": false,
+          "zeroDeploy": false,
+          "ctLog": false,
+          "portReuse": false
+        },
+        {
+          "id": "VLESS",
+          "name": "VLESS+Reality",
+          "ech": false,
+          "tlsFingerprint": true,
+          "activeProbe": true,
+          "quic": false,
+          "tcpFallback": true,
+          "congestion": false,
+          "zeroDeploy": false,
+          "ctLog": false,
+          "portReuse": false
+        },
+        {
+          "id": "Hysteria2",
+          "name": "Hysteria2",
+          "ech": false,
+          "tlsFingerprint": false,
+          "activeProbe": false,
+          "quic": true,
+          "tcpFallback": false,
+          "congestion": true,
+          "zeroDeploy": false,
+          "ctLog": true,
+          "portReuse": false
+        },
+        {
+          "id": "Shadowsocks",
+          "name": "Shadowsocks",
+          "ech": false,
+          "tlsFingerprint": false,
+          "activeProbe": false,
+          "quic": false,
+          "tcpFallback": false,
+          "congestion": false,
+          "zeroDeploy": false,
+          "ctLog": false,
+          "portReuse": false
+        }
+      ],
+      "yes": "✓",
+      "no": "✗"
+    },
+    "quickstart": {
+      "title": "Deploy in One Minute",
+      "server": {
+        "title": "Server (1 minute)",
+        "step1": "# Install k2s server",
+        "step2": "curl -fsSL https://get.kaitu.io | sudo sh -s k2s",
+        "step3": "# Start the service",
+        "step4": "k2s run",
+        "step5": "# Outputs connection URI",
+        "step6": "k2v5://..."
+      },
+      "client": {
+        "title": "Client (30 seconds)",
+        "step1": "# Install k2 client",
+        "step2": "curl -fsSL https://get.kaitu.io | sudo sh -s k2",
+        "step3": "# Connect (paste URI)",
+        "step4": "k2 up k2v5://..."
+      }
+    }
   },
   "security": {
-    "title": "Kaitu Protocol - Next-Generation Network Transmission",
-    "description": "The Kaitu Protocol is our proprietary next-generation network transmission protocol, utilising advanced technologies including multipath aggregation, military-grade encryption, and intelligent routing to provide you with a secure, fast, and stable network connection experience.",
-    "icon": "🔒",
+    "title": "k2v5 Protocol — Next-Generation Stealth Tunnel",
+    "description": "k2v5 is built on ECH (Encrypted Client Hello), completely solving SNI leakage. Combined with QUIC low-latency transport and proprietary adaptive congestion control, it achieves stable high throughput in high-loss, poor network conditions.",
+    "icon": "🛡️",
     "caTech": {
-      "title": "Multipath Aggregation Technology (MPTCP)",
-      "description": "Kaitu Protocol's innovative multipath aggregation technology enables simultaneous data transmission through multiple network channels, achieving bandwidth aggregation and intelligent load balancing. Even if a single link fails, seamless switching ensures uninterrupted connectivity.",
+      "title": "ECH Stealth Tunnel Technology",
+      "description": "k2v5 uses ECH (Encrypted Client Hello) to encrypt the SNI field in the TLS handshake. DPI cannot identify the target domain. Active probing returns legitimate website responses. Undetectable at the protocol layer.",
       "advantages": {
         "title": "Core Features",
-        "item1": "Multi-channel transmission with intelligent bandwidth aggregation",
-        "item2": "Real-time RTT measurement, automatic optimal path selection",
-        "item3": "Automatic failover, uninterrupted connectivity",
-        "item4": "Exponential moving average algorithm for precise path evaluation",
+        "item1": "ECH encrypts SNI — TLS handshake undetectable",
+        "item2": "QUIC-first transport — low latency, high throughput",
+        "item3": "Proprietary adaptive congestion control — 3x improvement on poor networks",
+        "item4": "Reverse proxy camouflage — active probe defence",
         "bullet": "•"
       },
       "adaptive": {
-        "title": "Enterprise-Grade Network Adaptation",
-        "item1": "Intelligent protocol selection based on network conditions",
-        "item2": "Support for WebSocket, HTTP/2, and multiple transport methods",
-        "item3": "Real-time network quality monitoring and optimisation",
-        "item4": "Reliable connectivity in poor network environments",
+        "title": "Adaptive Transport Layer",
+        "item1": "Auto-fallback from QUIC to TCP-WebSocket when blocked",
+        "item2": "Self-signed certificate + Pin — zero CT log exposure",
+        "item3": "Port reuse — coexists with real website on port 443",
+        "item4": "One-command deploy — auto-generates k2v5:// URI",
         "bullet": "•"
       }
     },
     "features": {
       "title": "Protocol Core Advantages",
       "multipath": {
-        "title": "Multipath Aggregation",
-        "description": "Simultaneous utilisation of multiple network channels, intelligent optimal path selection, bandwidth aggregation, and automatic failover",
-        "icon": "🔀"
+        "title": "ECH Encrypted Handshake",
+        "description": "Encrypted Client Hello hides SNI. TLS handshake completely undetectable. DPI identification fails",
+        "icon": "🛡️"
       },
       "encryption": {
-        "title": "Military-Grade Encryption",
-        "description": "AES-256-GCM encryption algorithm, ECDSA P-256 elliptic curve, PBKDF2 with 100,000 iterations for key derivation",
-        "icon": "🔐"
+        "title": "Dual-Stack Transport",
+        "description": "QUIC-first low-latency transport. Automatic TCP-WebSocket fallback. Seamless switching, imperceptible to users",
+        "icon": "🔀"
       },
       "smartRouting": {
-        "title": "Intelligent Routing",
-        "description": "RTT-based real-time path optimisation, exponential moving average algorithm ensures the fastest channel is always used",
-        "icon": "🧭"
+        "title": "Proprietary Congestion Control",
+        "description": "Proprietary adaptive congestion control algorithm. Outperforms BBR on high-loss networks. Significantly improved experience on poor networks",
+        "icon": "📈"
       },
       "disguise": {
-        "title": "Traffic Obfuscation",
-        "description": "CA certificate simulation technology, traffic appears as standard HTTPS, perfectly blending into normal network environments",
+        "title": "Reverse Proxy Camouflage",
+        "description": "Built-in reverse proxy forwards non-tunnel traffic to real website. Active probing returns legitimate HTTPS response",
         "icon": "🎭"
       },
       "failover": {
-        "title": "Automatic Failover",
-        "description": "Millisecond-level switching when a single path fails, completely transparent to users, ensuring business continuity",
-        "icon": "🔄"
+        "title": "Zero-Config Deployment",
+        "description": "One curl command to install. Auto-generates k2v5:// connection URI. Complete deployment in 10 minutes",
+        "icon": "⚡"
       },
       "performance": {
-        "title": "High-Performance Architecture",
-        "description": "Support for 5,000 concurrent connections, 32KB buffer pool optimisation, zero-copy data forwarding",
-        "icon": "⚡"
+        "title": "Zero CT Log Exposure",
+        "description": "Self-signed certificate + certificate pinning. Completely bypasses CT log monitoring. Server domain fully hidden",
+        "icon": "🔐"
       }
     },
     "techSpecs": {
       "title": "Technical Specifications",
-      "encryption": "Encryption Algorithm",
-      "encryptionValue": "AES-256-GCM + ECDSA P-256",
-      "keyDerivation": "Key Derivation",
-      "keyDerivationValue": "PBKDF2-SHA512 (100,000 iterations)",
-      "transport": "Transport Protocol",
-      "transportValue": "WebSocket over TLS / HTTP/2",
-      "multiplexing": "Multiplexing",
-      "multiplexingValue": "smux stream multiplexing + multipath aggregation",
-      "heartbeat": "Heartbeat Keep-Alive",
-      "heartbeatValue": "30-second interval / 90-second timeout",
-      "concurrent": "Concurrent Capacity",
-      "concurrentValue": "5,000+ concurrent streams per session"
+      "encryption": "Handshake Encryption",
+      "encryptionValue": "ECH (Encrypted Client Hello)",
+      "keyDerivation": "Transport Protocol",
+      "keyDerivationValue": "QUIC / TCP-WebSocket Dual Stack",
+      "transport": "Congestion Control",
+      "transportValue": "Proprietary Adaptive Algorithm",
+      "multiplexing": "Certificate Strategy",
+      "multiplexingValue": "Self-Signed + Certificate Pin (Zero CT Log)",
+      "heartbeat": "Deployment",
+      "heartbeatValue": "Single curl command, auto-generates URI",
+      "concurrent": "Port Strategy",
+      "concurrentValue": "Port reuse + reverse proxy camouflage"
     },
     "comparison": {
       "title": "Protocol Comparison",
-      "metrics": {
-        "detection": "Anti-Detection",
-        "encryption": "Encryption Strength",
-        "stability": "Stability",
-        "difficulty": "Configuration Difficulty"
-      },
-      "stars": {
-        "five": "★★★★★",
-        "four": "★★★★☆",
-        "three": "★★★☆☆",
-        "two": "★★☆☆☆",
-        "one": "★☆☆☆☆"
+      "dimensions": {
+        "ech": "ECH Stealth",
+        "tlsFingerprint": "TLS Fingerprint Spoofing",
+        "activeProbe": "Active Probe Defence",
+        "quic": "QUIC Transport",
+        "tcpFallback": "TCP Fallback",
+        "congestion": "Congestion Control",
+        "zeroDeploy": "Zero-Config Deploy",
+        "ctLog": "Zero CT Log Exposure",
+        "portReuse": "Port Reuse"
       },
       "kaitu": {
         "letter": "K",
-        "name": "Kaitu",
-        "tech": "MPTCP multipath aggregation + CA certificate obfuscation"
+        "name": "k2v5",
+        "tech": "ECH stealth + QUIC+TCP-WS dual stack + proprietary congestion control"
       },
       "trojan": {
-        "letter": "T",
-        "name": "Trojan",
-        "tech": "TLS encryption + traffic obfuscation"
+        "letter": "W",
+        "name": "WireGuard",
+        "tech": "UDP encrypted tunnel, no TLS camouflage"
       },
       "v2ray": {
         "letter": "V",
-        "name": "V2Ray",
-        "tech": "VMess/VLESS protocol + multiple transports"
+        "name": "VLESS+Reality",
+        "tech": "TLS fingerprint spoofing + reverse proxy, no ECH"
       },
       "shadowsocks": {
         "letter": "S",
         "name": "Shadowsocks",
-        "tech": "AEAD encryption + lightweight proxy"
+        "tech": "AEAD encryption + lightweight proxy, no camouflage"
+      },
+      "hysteria": {
+        "letter": "H",
+        "name": "Hysteria2",
+        "tech": "QUIC transport + proprietary congestion control, no ECH"
       }
     },
     "visualization": {
-      "title": "Multipath Aggregation Technology (MPTCP)",
-      "subtitle": "Real-time demonstration: Data transmitted simultaneously through multiple relay nodes with intelligent optimal path selection",
+      "title": "k2v5 Stealth Tunnel Architecture",
+      "subtitle": "ECH encrypted handshake + QUIC/TCP-WS dual-stack transport, DPI completely ineffective",
       "client": "Client",
       "target": "Target Server",
-      "relayNodes": "Relay Node Cluster",
+      "relayNodes": "k2 Tunnel Nodes",
       "nodes": {
         "hongkong": "Hong Kong Node",
         "japan": "Japan Node",
@@ -139,15 +279,15 @@
         "title": "Legend",
         "dataPacket": "Data Packet",
         "activePath": "Active Path",
-        "failedPath": "Failed Path",
+        "failedPath": "Fallback Path",
         "optimalNode": "Optimal Node"
       },
-      "description": "The diagram above illustrates the Kaitu Protocol's multipath aggregation architecture: Data departs from the client and is transmitted simultaneously through multiple geographically distributed relay nodes to the target server. The system monitors each node's latency (RTT) in real-time, automatically allocating more traffic to the optimal node (green dashed box). When a node fails, traffic switches instantly to other available nodes, ensuring uninterrupted connectivity. Each relay node can also be configured with multiple network interfaces for further bandwidth aggregation."
+      "description": "k2v5 uses ECH to encrypt SNI during the TLS handshake, preventing firewalls from identifying the target domain. Data is transmitted via QUIC (preferred) or TCP-WebSocket (fallback). The proprietary adaptive congestion control algorithm maintains stable throughput on high-loss networks. The server's built-in reverse proxy forwards non-k2 traffic to a real website, making active probing indistinguishable."
     }
   },
   "download": {
     "title": "Download Client",
-    "subtitle": "Choose the client for your device and begin your secure network journey",
+    "subtitle": "Choose the right client for your device and start your stealth network journey",
     "platforms": {
       "ios": "Supports iPhone and iPad",
       "iosLabel": "iOS",
@@ -162,12 +302,12 @@
     "comingSoon": "Coming Soon"
   },
   "routers": {
-    "title": "Smart Network Routers",
-    "subtitle": "Professional-grade router solution with built-in secure proxy for effortless family use",
-    "presaleTag": "Pre-Order",
+    "title": "Smart Network Router",
+    "subtitle": "Professional-grade router solution with built-in secure proxy for easy family use",
+    "presaleTag": "Pre-Sale",
     "benefits": {
-      "title": "Why Choose the Router Solution?",
-      "subtitle": "Comprehensive network proxy solution making secure internet access simple and accessible",
+      "title": "Why Choose Router Solution?",
+      "subtitle": "Comprehensive network proxy solution that makes secure internet access simple and easy",
       "items": {
         "easySetup": {
           "title": "One-Click Setup",
@@ -175,11 +315,11 @@
         },
         "familyFriendly": {
           "title": "Family-Friendly",
-          "description": "All household devices connect automatically, suitable for all ages"
+          "description": "All devices at home connect automatically, suitable for everyone"
         },
         "alwaysOn": {
           "title": "Always Available",
-          "description": "24/7 uninterrupted service, automatic connection on startup"
+          "description": "24/7 uninterrupted service, auto-connect on boot"
         },
         "multiDevice": {
           "title": "Multi-Device Support",
@@ -198,36 +338,36 @@
     "backToHome": "Back to Home",
     "welcome": "Welcome",
     "adminPanel": "Admin Panel",
-    "login": "Log In",
+    "login": "Login",
     "comma": ",",
     "productFeatures": "Product Features",
-    "contactInquiry": "Contact Us",
-    "presalePriceConsult": "Pre-order pricing available from customer service • 1-year warranty",
-    "presalePriceConsultFull": "Pre-order pricing available from customer service • 1-year warranty • Service activation code included",
+    "contactInquiry": "Contact for Inquiry",
+    "presalePriceConsult": "Pre-sale price available upon inquiry • 1-year warranty",
+    "presalePriceConsultFull": "Pre-sale price available upon inquiry • 1-year warranty • Free service activation code",
     "routerVsClient": "Router vs Client Comparison",
-    "whyChooseRouter": "Why Choose the Router Solution?",
+    "whyChooseRouter": "Why Choose Router Solution?",
     "smartRouter": "Smart Router",
     "recommended": "Recommended",
     "clientSoftware": "Client Software",
     "traditional": "Traditional",
     "bullet": "•",
-    "autoConnect": "All family devices connect automatically, no individual configuration needed",
-    "alwaysRunning": "24/7 continuous operation, always available",
+    "autoConnect": "All family devices connect automatically, no separate configuration needed",
+    "alwaysRunning": "Runs 24/7, always available",
     "allDevices": "Supports smart TVs, gaming consoles, and all devices",
     "easyUse": "Easy for elderly and children to use",
     "onePurchase": "One-time purchase, long-term use",
-    "individualSetup": "Each device requires individual installation and configuration",
-    "manualStart": "Requires manual start, easy to forget",
-    "deviceLimits": "Smart TVs and gaming consoles not supported",
+    "individualSetup": "Each device requires separate installation and configuration",
+    "manualStart": "Needs manual start, easy to forget",
+    "deviceLimits": "Smart TVs, gaming consoles not supported",
     "complexConfig": "Complex configuration, high learning curve",
-    "ongoing": "Ongoing subscription payments required",
-    "contactUsMore": "Contact Us to Learn More",
+    "ongoing": "Requires ongoing subscription fees",
+    "contactUsMore": "Contact us for more information",
     "teamDescription": "Our professional team will provide detailed product information and help you choose the most suitable router solution",
-    "emailConsult": "Email Enquiry",
+    "emailConsult": "Email Consultation",
     "productDetailsTech": "Product details, technical support",
-    "onlineService": "Online Service",
-    "realTimeResponse": "Real-time enquiries, rapid response",
-    "startOnlineService": "Start Online Service",
-    "warranty": "All router products include 1-year warranty • Free technical support • 7-day no-questions-asked returns"
+    "onlineService": "Online Support",
+    "realTimeResponse": "Real-time consultation, quick response",
+    "startOnlineService": "Start Online Support",
+    "warranty": "All router products include 1-year warranty • Free technical support • 7-day no-questions-asked return"
   }
 }

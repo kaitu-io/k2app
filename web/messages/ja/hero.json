@@ -1,127 +1,267 @@
 {
   "hero": {
-    "title": "安全で便利な",
-    "networkProxy": "ネットワークプロキシ",
-    "solution": "ソリューション",
-    "description": "Kaitu（カイトゥ）は、マルチプラットフォーム対応のプロフェッショナルグレードのネットワークプロキシサービスを提供し、先進的な暗号化技術により安全で高速、安定したネットワーク接続を実現します。",
+    "title": "k2 ステルスネットワークトンネル",
+    "subtitle": "1コマンドでデプロイ、ECH暗号化、検出不可能",
+    "description": "Kaitu k2 は ECH（暗号化クライアントハロー）をベースにした次世代ステルストンネルプロトコルです。QUIC + TCP-WS デュアルスタック転送、独自の適応型輻輳制御アルゴリズム、1コマンドでサーバーとクライアントの両方をデプロイ、CT ログゼロ露出を実現します。",
+    "cta_primary": "今すぐ始める",
+    "cta_secondary": "プロトコルを見る",
     "downloadClient": "クライアントをダウンロード",
     "quickActivation": "クイック開始",
-    "smartRouter": "スマートルーター"
+    "smartRouter": "スマートルーター",
+    "features": {
+      "title": "コア技術の優位性",
+      "ech": {
+        "title": "ECH ステルス",
+        "description": "暗号化クライアントハローにより SNI を完全に隠蔽。TLS ハンドシェイクは検出不可能、DPI ディープパケットインスペクションは無効",
+        "icon": "🛡️"
+      },
+      "zeroDeploy": {
+        "title": "ゼロ設定デプロイ",
+        "description": "1行の curl コマンドでサーバーとクライアントを両方インストール。k2v5:// 接続 URI を自動生成。証書の手動設定不要",
+        "icon": "⚡"
+      },
+      "transport": {
+        "title": "QUIC + TCP-WS デュアルスタック",
+        "description": "低遅延 QUIC 転送を優先。QUIC がブロックされた場合は自動的に TCP-WebSocket にフォールバック。シームレスな切り替えでユーザーには気づかれない",
+        "icon": "🔀"
+      },
+      "congestion": {
+        "title": "独自輻輳制御",
+        "description": "独自の適応型輻輳制御アルゴリズム。高パケットロスネットワークで BBR を大幅に上回る。劣悪なネットワーク環境でスループット 3x 向上",
+        "icon": "📈"
+      },
+      "reverseProxy": {
+        "title": "リバースプロキシ偽装",
+        "description": "内蔵リバースプロキシが非 k2 トラフィックを実際のウェブサイトに転送。アクティブプロービングには正当な HTTPS レスポンスを返す",
+        "icon": "🎭"
+      },
+      "selfSign": {
+        "title": "自己署名 + 証書ピン",
+        "description": "自己署名証書と証書ピニング。CT ログへの露出ゼロ。証書購入不要。サーバードメインを完全に隠蔽",
+        "icon": "🔐"
+      }
+    },
+    "comparison": {
+      "title": "プロトコル比較",
+      "subtitle": "k2v5 と主要な検閲回避プロトコルの主要な側面での比較",
+      "dimensions": {
+        "ech": "ECH ステルス",
+        "tlsFingerprint": "TLS フィンガープリント偽装",
+        "activeProbe": "アクティブプローブ防御",
+        "quic": "QUIC 転送",
+        "tcpFallback": "TCP フォールバック",
+        "congestion": "輻輳制御",
+        "zeroDeploy": "ゼロ設定デプロイ",
+        "ctLog": "CT ログゼロ露出",
+        "portReuse": "ポート再利用"
+      },
+      "protocols": [
+        {
+          "id": "k2",
+          "name": "k2v5",
+          "ech": true,
+          "tlsFingerprint": true,
+          "activeProbe": true,
+          "quic": true,
+          "tcpFallback": true,
+          "congestion": true,
+          "zeroDeploy": true,
+          "ctLog": true,
+          "portReuse": true
+        },
+        {
+          "id": "WireGuard",
+          "name": "WireGuard",
+          "ech": false,
+          "tlsFingerprint": false,
+          "activeProbe": false,
+          "quic": false,
+          "tcpFallback": false,
+          "congestion": false,
+          "zeroDeploy": false,
+          "ctLog": false,
+          "portReuse": false
+        },
+        {
+          "id": "VLESS",
+          "name": "VLESS+Reality",
+          "ech": false,
+          "tlsFingerprint": true,
+          "activeProbe": true,
+          "quic": false,
+          "tcpFallback": true,
+          "congestion": false,
+          "zeroDeploy": false,
+          "ctLog": false,
+          "portReuse": false
+        },
+        {
+          "id": "Hysteria2",
+          "name": "Hysteria2",
+          "ech": false,
+          "tlsFingerprint": false,
+          "activeProbe": false,
+          "quic": true,
+          "tcpFallback": false,
+          "congestion": true,
+          "zeroDeploy": false,
+          "ctLog": true,
+          "portReuse": false
+        },
+        {
+          "id": "Shadowsocks",
+          "name": "Shadowsocks",
+          "ech": false,
+          "tlsFingerprint": false,
+          "activeProbe": false,
+          "quic": false,
+          "tcpFallback": false,
+          "congestion": false,
+          "zeroDeploy": false,
+          "ctLog": false,
+          "portReuse": false
+        }
+      ],
+      "yes": "✓",
+      "no": "✗"
+    },
+    "quickstart": {
+      "title": "1分でデプロイ完了",
+      "server": {
+        "title": "サーバー（1分）",
+        "step1": "# k2s サーバーをインストール",
+        "step2": "curl -fsSL https://get.kaitu.io | sudo sh -s k2s",
+        "step3": "# サービスを起動",
+        "step4": "k2s run",
+        "step5": "# 接続 URI を出力",
+        "step6": "k2v5://..."
+      },
+      "client": {
+        "title": "クライアント（30秒）",
+        "step1": "# k2 クライアントをインストール",
+        "step2": "curl -fsSL https://get.kaitu.io | sudo sh -s k2",
+        "step3": "# 接続（URI を貼り付け）",
+        "step4": "k2 up k2v5://..."
+      }
+    }
   },
   "security": {
-    "title": "Kaituプロトコル - 次世代ネットワーク転送技術",
-    "description": "Kaituプロトコルは、当社が独自開発した次世代ネットワーク転送プロトコルです。マルチパス集約、軍事グレード暗号化、スマートルーティングなどの先進技術により、安全で高速、安定したネットワーク接続体験を提供します。",
-    "icon": "🔒",
+    "title": "k2v5 プロトコル — 次世代ステルストンネル",
+    "description": "k2v5 は ECH（暗号化クライアントハロー）をベースに構築されており、SNI 漏洩問題を完全に解決します。QUIC 低遅延転送と独自の適応型輻輳制御アルゴリズムを組み合わせ、高パケットロス・劣悪なネットワーク環境でも安定した高スループットを実現します。",
+    "icon": "🛡️",
     "caTech": {
-      "title": "マルチパス集約技術（MPTCP）",
-      "description": "Kaituプロトコル独自のマルチパス集約技術は、複数のネットワーク経路を同時に利用してデータを転送し、帯域幅の集約とインテリジェント負荷分散を実現します。単一経路に障害が発生してもシームレスに切り替わり、接続が途切れることはありません。",
+      "title": "ECH ステルストンネル技術",
+      "description": "k2v5 は ECH（Encrypted Client Hello）を使用して TLS ハンドシェイクの SNI フィールドを暗号化します。DPI はターゲットドメインを識別できません。アクティブプロービングには正当なウェブサイトレスポンスを返します。プロトコル層から検出不可能を実現します。",
       "advantages": {
         "title": "コア機能",
-        "item1": "複数チャンネルによる同時転送、帯域幅のインテリジェント集約",
-        "item2": "RTTリアルタイム測定、最適経路の自動選択",
-        "item3": "障害時の自動フェイルオーバー、接続の継続性を保証",
-        "item4": "指数移動平均アルゴリズムによる精密な経路評価",
+        "item1": "ECH が SNI を暗号化 — TLS ハンドシェイクは検出不可能",
+        "item2": "QUIC ファースト転送 — 低遅延、高スループット",
+        "item3": "独自適応型輻輳制御 — 劣悪ネットワークで 3x 向上",
+        "item4": "リバースプロキシ偽装 — アクティブプローブ防御",
         "bullet": "•"
       },
       "adaptive": {
-        "title": "エンタープライズグレードのネットワーク適応",
-        "item1": "ネットワーク状況に応じて最適なプロトコルをインテリジェントに選択",
-        "item2": "WebSocket、HTTP/2などの複数の転送方式に対応",
-        "item3": "リアルタイムネットワーク品質監視と最適化",
-        "item4": "弱いネットワーク環境での信頼性の高い接続保証",
+        "title": "適応型転送レイヤー",
+        "item1": "QUIC がブロックされると自動的に TCP-WebSocket にフォールバック",
+        "item2": "自己署名証書 + ピン — CT ログへの露出ゼロ",
+        "item3": "ポート再利用 — ポート 443 で実際のウェブサイトと共存",
+        "item4": "1コマンドデプロイ — k2v5:// URI を自動生成",
         "bullet": "•"
       }
     },
     "features": {
-      "title": "プロトコルの主要な優位性",
+      "title": "プロトコルのコア優位性",
       "multipath": {
-        "title": "マルチパス集約",
-        "description": "複数のネットワーク経路を同時に利用し、最適な経路をインテリジェントに選択して帯域幅を集約、自動フェイルオーバーを実現",
-        "icon": "🔀"
+        "title": "ECH 暗号化ハンドシェイク",
+        "description": "暗号化クライアントハローが SNI を隠蔽。TLS ハンドシェイクは完全に検出不可能。DPI 識別は失敗",
+        "icon": "🛡️"
       },
       "encryption": {
-        "title": "軍事グレード暗号化",
-        "description": "AES-256-GCM暗号化アルゴリズム、ECDSA P-256楕円曲線、PBKDF2 10万回の鍵導出を採用",
-        "icon": "🔐"
+        "title": "デュアルスタック転送",
+        "description": "QUIC ファースト低遅延転送。自動 TCP-WebSocket フォールバック。シームレスな切り替えでユーザーには気づかれない",
+        "icon": "🔀"
       },
       "smartRouting": {
-        "title": "スマートルーティング",
-        "description": "RTTベースのリアルタイム経路最適化、指数移動平均アルゴリズムにより常に最速チャンネルを使用",
-        "icon": "🧭"
+        "title": "独自輻輳制御",
+        "description": "独自の適応型輻輳制御アルゴリズム。高パケットロスネットワークで BBR を上回る。劣悪なネットワークでの体験を大幅に改善",
+        "icon": "📈"
       },
       "disguise": {
-        "title": "トラフィック偽装",
-        "description": "CA証明書シミュレーション技術により、トラフィックを標準的なHTTPSとして表示し、通常のネットワーク環境に完全に統合",
+        "title": "リバースプロキシ偽装",
+        "description": "内蔵リバースプロキシが非トンネルトラフィックを実際のウェブサイトに転送。アクティブプロービングには正当な HTTPS レスポンスを返す",
         "icon": "🎭"
       },
       "failover": {
-        "title": "自動フェイルオーバー",
-        "description": "単一経路の障害時にミリ秒単位で切り替え、ユーザーは全く気づかず、ビジネスの継続性を保証",
-        "icon": "🔄"
+        "title": "ゼロ設定デプロイ",
+        "description": "1行の curl コマンドでインストール。k2v5:// 接続 URI を自動生成。10分で完全デプロイ完了",
+        "icon": "⚡"
       },
       "performance": {
-        "title": "高性能アーキテクチャ",
-        "description": "5000並行接続に対応、32KBバッファプール最適化、ゼロコピーデータ転送",
-        "icon": "⚡"
+        "title": "CT ログゼロ露出",
+        "description": "自己署名証書と証書ピニング。CT ログ監視を完全にバイパス。サーバードメインを完全に隠蔽",
+        "icon": "🔐"
       }
     },
     "techSpecs": {
       "title": "技術仕様",
-      "encryption": "暗号化アルゴリズム",
-      "encryptionValue": "AES-256-GCM + ECDSA P-256",
-      "keyDerivation": "鍵導出",
-      "keyDerivationValue": "PBKDF2-SHA512（10万回反復）",
-      "transport": "転送プロトコル",
-      "transportValue": "WebSocket over TLS / HTTP/2",
-      "multiplexing": "多重化",
-      "multiplexingValue": "smuxストリーム多重化 + マルチパス集約",
-      "heartbeat": "ハートビート",
-      "heartbeatValue": "30秒間隔 / 90秒タイムアウト",
-      "concurrent": "並行処理能力",
-      "concurrentValue": "単一セッション5000+並行ストリーム"
+      "encryption": "ハンドシェイク暗号化",
+      "encryptionValue": "ECH（Encrypted Client Hello）",
+      "keyDerivation": "転送プロトコル",
+      "keyDerivationValue": "QUIC / TCP-WebSocket デュアルスタック",
+      "transport": "輻輳制御",
+      "transportValue": "独自適応型アルゴリズム",
+      "multiplexing": "証書戦略",
+      "multiplexingValue": "自己署名 + 証書ピン（CT ログゼロ露出）",
+      "heartbeat": "デプロイ",
+      "heartbeatValue": "1行の curl コマンド、URI を自動生成",
+      "concurrent": "ポート戦略",
+      "concurrentValue": "ポート再利用 + リバースプロキシ偽装"
     },
     "comparison": {
       "title": "プロトコル比較",
-      "metrics": {
-        "detection": "検出耐性",
-        "encryption": "暗号化強度",
-        "stability": "安定性",
-        "difficulty": "設定難易度"
-      },
-      "stars": {
-        "five": "★★★★★",
-        "four": "★★★★☆",
-        "three": "★★★☆☆",
-        "two": "★★☆☆☆",
-        "one": "★☆☆☆☆"
+      "dimensions": {
+        "ech": "ECH ステルス",
+        "tlsFingerprint": "TLS フィンガープリント偽装",
+        "activeProbe": "アクティブプローブ防御",
+        "quic": "QUIC 転送",
+        "tcpFallback": "TCP フォールバック",
+        "congestion": "輻輳制御",
+        "zeroDeploy": "ゼロ設定デプロイ",
+        "ctLog": "CT ログゼロ露出",
+        "portReuse": "ポート再利用"
       },
       "kaitu": {
         "letter": "K",
-        "name": "Kaitu",
-        "tech": "MPTCPマルチパス集約 + CA証明書偽装"
+        "name": "k2v5",
+        "tech": "ECH ステルス + QUIC+TCP-WS デュアルスタック + 独自輻輳制御"
       },
       "trojan": {
-        "letter": "T",
-        "name": "Trojan",
-        "tech": "TLS暗号化 + トラフィック偽装"
+        "letter": "W",
+        "name": "WireGuard",
+        "tech": "UDP 暗号化トンネル、TLS 偽装なし"
       },
       "v2ray": {
         "letter": "V",
-        "name": "V2Ray",
-        "tech": "VMess/VLESSプロトコル + 複数転送方式"
+        "name": "VLESS+Reality",
+        "tech": "TLS フィンガープリント偽装 + リバースプロキシ、ECH なし"
       },
       "shadowsocks": {
         "letter": "S",
         "name": "Shadowsocks",
-        "tech": "AEAD暗号化 + 軽量プロキシ"
+        "tech": "AEAD 暗号化 + 軽量プロキシ、偽装なし"
+      },
+      "hysteria": {
+        "letter": "H",
+        "name": "Hysteria2",
+        "tech": "QUIC 転送 + 独自輻輳制御、ECH なし"
       }
     },
     "visualization": {
-      "title": "マルチパス集約技術（MPTCP）",
-      "subtitle": "リアルタイムデモ：データが複数の中継ノードを通じて同時に転送され、最適な経路をインテリジェントに選択",
+      "title": "k2v5 ステルストンネルアーキテクチャ",
+      "subtitle": "ECH 暗号化ハンドシェイク + QUIC/TCP-WS デュアルスタック転送、DPI は完全に無効",
       "client": "クライアント",
       "target": "ターゲットサーバー",
-      "relayNodes": "中継ノードクラスター",
+      "relayNodes": "k2 トンネルノード",
       "nodes": {
         "hongkong": "香港ノード",
         "japan": "日本ノード",
@@ -138,24 +278,24 @@
       "legend": {
         "title": "凡例",
         "dataPacket": "データパケット",
-        "activePath": "アクティブ経路",
-        "failedPath": "障害経路",
+        "activePath": "アクティブパス",
+        "failedPath": "フォールバックパス",
         "optimalNode": "最適ノード"
       },
-      "description": "上図はKaituプロトコルのマルチパス集約アーキテクチャを示しています：データはクライアントから出発し、地理的に異なる複数の中継ノードを通じて同時にターゲットサーバーに転送されます。システムは各ノードの遅延（RTT）をリアルタイムで監視し、最適なノード（緑の点線枠）に自動的により多くのトラフィックを割り当てます。ノードに障害が発生した場合、トラフィックは瞬時に他の利用可能なノードに切り替わり、接続が途切れることはありません。各中継ノードは複数のネットワークインターフェースを設定でき、帯域幅をさらに集約できます。"
+      "description": "k2v5 は TLS ハンドシェイク段階で ECH を使用して SNI を暗号化し、ファイアウォールがターゲットドメインを識別できないようにします。データは QUIC（優先）または TCP-WebSocket（フォールバック）で転送されます。独自の適応型輻輳制御アルゴリズムにより、高パケットロス環境でも安定したスループットを維持します。サーバーの内蔵リバースプロキシが非 k2 トラフィックを実際のウェブサイトに転送するため、アクティブプロービングでは区別できません。"
     }
   },
   "download": {
     "title": "クライアントをダウンロード",
-    "subtitle": "お使いのデバイスに適したクライアントを選択し、安全なネットワークの旅を始めましょう",
+    "subtitle": "お使いのデバイスに適したクライアントを選択し、ステルスネットワークの旅を始めましょう",
     "platforms": {
-      "ios": "iPhoneとiPadに対応",
+      "ios": "iPhone と iPad に対応",
       "iosLabel": "iOS",
-      "android": "Android携帯とタブレットに対応",
+      "android": "Android 携帯とタブレットに対応",
       "androidLabel": "Android",
-      "windows": "Windows 10/11に対応",
+      "windows": "Windows 10/11 に対応",
       "windowsLabel": "Windows",
-      "macos": "macOS 10.15以上に対応",
+      "macos": "macOS 12+ に対応",
       "macosLabel": "macOS"
     },
     "downloadButton": "ダウンロード",

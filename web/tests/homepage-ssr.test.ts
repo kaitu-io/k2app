@@ -68,6 +68,9 @@ vi.mock('lucide-react', () => ({
   Smartphone: () => null,
   Monitor: () => null,
   Router: () => null,
+  Terminal: () => null,
+  Zap: () => null,
+  Server: () => null,
 }));
 
 // Mock shadcn/ui components
