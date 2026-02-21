@@ -9,6 +9,34 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// resolveIncludeInData unmarshals YAML data into a map, resolves any "include"
+// directive, and re-marshals the merged result. If no "include" key is present,
+// the original data is returned unchanged.
+func resolveIncludeInData(data []byte) ([]byte, error) {
+	var m map[string]any
+	if err := yaml.Unmarshal(data, &m); err != nil {
+		return data, nil // let the caller's unmarshal report the error
+	}
+
+	pattern, ok := m["include"].(string)
+	if !ok || pattern == "" {
+		return data, nil
+	}
+
+	// Remove "include" before merge so it doesn't persist in the final config.
+	delete(m, "include")
+
+	if err := ResolveInclude(pattern, m); err != nil {
+		return nil, err
+	}
+
+	merged, err := yaml.Marshal(m)
+	if err != nil {
+		return nil, fmt.Errorf("include: re-marshal: %w", err)
+	}
+	return merged, nil
+}
+
 // ResolveInclude resolves a glob pattern, reads each matching YAML file in
 // sorted (alphabetical) order, and merges the key-value pairs into base.
 // Later files override keys from earlier files (shallow merge).

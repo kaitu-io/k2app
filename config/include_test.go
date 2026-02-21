@@ -114,6 +114,39 @@ func TestIncludeNoMatch(t *testing.T) {
 	}
 }
 
+func TestLoadClientWithInclude(t *testing.T) {
+	dir := t.TempDir()
+	confDir := filepath.Join(dir, "conf.d")
+	if err := os.Mkdir(confDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write an include fragment that sets server URL
+	fragment := filepath.Join(confDir, "server.yaml")
+	if err := os.WriteFile(fragment, []byte("server: k2v5://test.example.com\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write main config with include directive
+	main := filepath.Join(dir, "k2.yaml")
+	mainContent := "listen: 127.0.0.1:1777\ninclude: " + filepath.Join(confDir, "*.yaml") + "\n"
+	if err := os.WriteFile(main, []byte(mainContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadClient(main)
+	if err != nil {
+		t.Fatalf("LoadClient with include: %v", err)
+	}
+
+	if cfg.Server != "k2v5://test.example.com" {
+		t.Errorf("server = %q, want k2v5://test.example.com (from included file)", cfg.Server)
+	}
+	if cfg.Listen != "127.0.0.1:1777" {
+		t.Errorf("listen = %q, want 127.0.0.1:1777 (from main config)", cfg.Listen)
+	}
+}
+
 // containsStr is a helper to check if a string contains a substring.
 func containsStr(s, sub string) bool {
 	return len(s) >= len(sub) && (s == sub || len(sub) == 0 ||

@@ -100,8 +100,14 @@ type LogConfig struct {
 }
 
 // LoadClient loads a client config from a YAML file.
+// If the config contains an "include" directive, matching files are merged.
 func LoadClient(path string) (*ClientConfig, error) {
 	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	data, err = resolveIncludeInData(data)
 	if err != nil {
 		return nil, err
 	}
@@ -116,8 +122,14 @@ func LoadClient(path string) (*ClientConfig, error) {
 }
 
 // LoadServer loads a server config from a YAML file.
+// If the config contains an "include" directive, matching files are merged.
 func LoadServer(path string) (*ServerConfig, error) {
 	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	data, err = resolveIncludeInData(data)
 	if err != nil {
 		return nil, err
 	}
