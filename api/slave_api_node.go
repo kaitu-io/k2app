@@ -435,6 +435,63 @@ func api_slave_node_delete_tunnel(c *gin.Context) {
 	SuccessEmpty(c)
 }
 
+// api_slave_node_unregister handles node self-unregistration during sidecar graceful shutdown.
+// Cascading hard-delete: SlaveTunnel + SlaveNodeLoad + SlaveNode.
+// Idempotent: returns success even if the node doesn't exist.
+// DELETE /slave/nodes/:ipv4
+func api_slave_node_unregister(c *gin.Context) {
+	node := ReqSlaveNode(c)
+	if node == nil {
+		Error(c, ErrorNotLogin, "node authentication required")
+		return
+	}
+
+	ipv4Param := c.Param("ipv4")
+	if ipv4Param != node.Ipv4 {
+		Error(c, ErrorForbidden, "ipv4 mismatch with authenticated node")
+		return
+	}
+
+	log.Infof(c, "node self-unregister: ipv4=%s", ipv4Param)
+
+	tx := db.Get().Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	if err := tx.Unscoped().Where("node_id = ?", node.ID).Delete(&SlaveTunnel{}).Error; err != nil {
+		tx.Rollback()
+		log.Errorf(c, "failed to delete tunnels for node %s: %v", ipv4Param, err)
+		Error(c, ErrorSystemError, "failed to delete tunnels")
+		return
+	}
+
+	if err := tx.Unscoped().Where("node_id = ?", node.ID).Delete(&SlaveNodeLoad{}).Error; err != nil {
+		tx.Rollback()
+		log.Errorf(c, "failed to delete load records for node %s: %v", ipv4Param, err)
+		Error(c, ErrorSystemError, "failed to delete load records")
+		return
+	}
+
+	if err := tx.Unscoped().Delete(&node).Error; err != nil {
+		tx.Rollback()
+		log.Errorf(c, "failed to delete node %s: %v", ipv4Param, err)
+		Error(c, ErrorSystemError, "failed to delete node")
+		return
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		log.Errorf(c, "failed to commit unregister for node %s: %v", ipv4Param, err)
+		Error(c, ErrorSystemError, "failed to commit unregister")
+		return
+	}
+
+	log.Infof(c, "node unregistered successfully: ipv4=%s", ipv4Param)
+	SuccessEmpty(c)
+}
+
 // generateSecret 生成随机密钥
 func generateSecret() string {
 	b := make([]byte, 32)

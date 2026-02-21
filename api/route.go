@@ -387,6 +387,7 @@ func SetupRouter() *gin.Engine {
 		slaveManage.PUT("/nodes/:ipv4", api_slave_node_upsert)                                                // 注册/更新物理节点
 		slaveManage.PUT("/nodes/:ipv4/tunnels/:domain", SlaveAuthRequired(), api_slave_node_upsert_tunnel)    // 添加/更新隧道
 		slaveManage.DELETE("/nodes/:ipv4/tunnels/:domain", SlaveAuthRequired(), api_slave_node_delete_tunnel) // 删除隧道
+		slaveManage.DELETE("/nodes/:ipv4", SlaveAuthRequired(), api_slave_node_unregister)                 // 节点自注销（graceful shutdown）
 
 		// 节点状态上报
 		slaveManage.POST("/report/status", SlaveAuthRequired(), api_slave_report_status)

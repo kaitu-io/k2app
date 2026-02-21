@@ -96,6 +96,10 @@ func (s *Sidecar) Start() error {
 	tunnels := s.buildTunnelConfigs()
 	log.Printf("[Sidecar] Tunnels to register: %d", len(tunnels))
 
+	if len(tunnels) == 0 {
+		return fmt.Errorf("no tunnels configured (K2_DOMAIN and K2OC_DOMAIN are both empty)")
+	}
+
 	// Step 2: Register node with all tunnels
 	result, err := s.nodeInstance.Register(tunnels)
 	if err != nil {
@@ -766,24 +770,10 @@ func (s *Sidecar) handleRadiusRequest(w radius.ResponseWriter, r *radius.Request
 func (s *Sidecar) shutdown() error {
 	log.Printf("[Sidecar] Shutting down...")
 
-	// Remove K2 tunnel
-	if s.config.Tunnel.Enabled && s.config.Tunnel.Domain != "" {
-		if err := s.nodeInstance.RemoveTunnel(s.config.Tunnel.Domain); err != nil {
-			log.Printf("[Sidecar] Warning: Failed to remove K2 tunnel: %v", err)
-		}
-	}
-	// Remove OC tunnel
-	if s.config.OC.Domain != "" {
-		if err := s.nodeInstance.RemoveTunnel(s.config.OC.Domain); err != nil {
-			log.Printf("[Sidecar] Warning: Failed to remove OC tunnel: %v", err)
-		}
-	}
-
-	// Mark node as offline to prevent clients from connecting to a dead node
-	if err := s.nodeInstance.MarkOffline(); err != nil {
-		log.Printf("[Sidecar] Warning: Failed to mark node offline: %v", err)
+	if err := s.nodeInstance.Unregister(); err != nil {
+		log.Printf("[Sidecar] Warning: Failed to unregister node: %v", err)
 	} else {
-		log.Printf("[Sidecar] Node marked offline successfully")
+		log.Printf("[Sidecar] Node unregistered successfully")
 	}
 
 	log.Printf("[Sidecar] Shutdown complete")

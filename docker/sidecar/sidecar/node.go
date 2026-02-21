@@ -88,7 +88,6 @@ type NodeUpsertRequest struct {
 	Name        string         `json:"name"`
 	IPv6        string         `json:"ipv6,omitempty"`
 	SecretToken string         `json:"secretToken,omitempty"`
-	IsAlive     *bool          `json:"isAlive,omitempty"`    // Node online status (optional, defaults to true)
 	Tunnels     []TunnelConfig `json:"tunnels,omitempty"`    // Batch tunnel configuration
 }
 
@@ -468,39 +467,23 @@ func (n *Node) RemoveTunnel(domain string) error {
 	return nil
 }
 
-// MarkOffline marks the node as offline
-// Used during graceful shutdown to notify Center the node is offline,
-// preventing clients from connecting to a dead node
-func (n *Node) MarkOffline() error {
+// Unregister deletes the node and all associated data from Center.
+// Used during graceful shutdown to prevent orphaned node records.
+// Idempotent: returns nil even if the node doesn't exist on Center.
+func (n *Node) Unregister() error {
 	if n.IPv4 == "" {
 		return fmt.Errorf("IPv4 is required, call DetectIP() first")
 	}
-	if n.Country == "" {
-		return fmt.Errorf("Country is required, call DetectIP() first")
-	}
-	if n.Name == "" {
-		n.Name = n.IPv4 // Default to IPv4 as name
-	}
 
-	log.Printf("[Node] Marking node offline: IPv4=%s", n.IPv4)
-
-	isAlive := false
-	nodeReq := NodeUpsertRequest{
-		Country:     n.Country,
-		Region:      n.Region,
-		Name:        n.Name,
-		IPv6:        n.IPv6,
-		SecretToken: n.Secret,
-		IsAlive:     &isAlive, // Mark as offline
-	}
+	log.Printf("[Node] Unregistering node: IPv4=%s", n.IPv4)
 
 	nodePath := fmt.Sprintf("/slave/nodes/%s", n.IPv4)
-	_, err := n.requestWithAuth("PUT", nodePath, nodeReq)
+	_, err := n.requestWithAuth("DELETE", nodePath, nil)
 	if err != nil {
-		return fmt.Errorf("failed to mark node offline: %w", err)
+		return fmt.Errorf("failed to unregister node: %w", err)
 	}
 
-	log.Printf("[Node] Node marked offline successfully: IPv4=%s", n.IPv4)
+	log.Printf("[Node] Node unregistered successfully: IPv4=%s", n.IPv4)
 	return nil
 }
 
