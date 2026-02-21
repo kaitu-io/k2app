@@ -77,6 +77,27 @@ func TestPIDStale(t *testing.T) {
 	}
 }
 
+func TestDefaultPIDPath(t *testing.T) {
+	// DefaultPIDPath should return a non-empty path containing the name.
+	path := DefaultPIDPath("k2")
+	if path == "" {
+		t.Fatal("DefaultPIDPath returned empty string")
+	}
+	if !containsPIDName(path, "k2") {
+		t.Errorf("DefaultPIDPath = %q, should contain 'k2'", path)
+	}
+}
+
+// containsPIDName checks that path contains the given name component.
+func containsPIDName(path, name string) bool {
+	for i := 0; i <= len(path)-len(name); i++ {
+		if path[i:i+len(name)] == name {
+			return true
+		}
+	}
+	return false
+}
+
 func TestPIDCleanup(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.pid")

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -58,6 +59,22 @@ func IsProcessAlive(pid int) bool {
 // RemovePID removes the PID file. Ignores any errors (best-effort cleanup).
 func RemovePID(path string) {
 	os.Remove(path) //nolint:errcheck
+}
+
+// DefaultPIDPath returns the platform-appropriate default PID file path for the
+// given process name.
+//
+// When running as root (uid 0) on Unix, it returns /var/run/{name}.pid.
+// Otherwise it returns ~/.config/{name}/{name}.pid.
+// On Windows (or when home dir lookup fails), it falls back to os.TempDir().
+func DefaultPIDPath(name string) string {
+	if os.Getuid() == 0 {
+		return filepath.Join("/var/run", name+".pid")
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		return filepath.Join(home, ".config", name, name+".pid")
+	}
+	return filepath.Join(os.TempDir(), name+".pid")
 }
 
 // CheckStale checks whether the PID file refers to a process that is no longer
