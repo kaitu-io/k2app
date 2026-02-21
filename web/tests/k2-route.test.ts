@@ -25,7 +25,7 @@ vi.mock('#velite', () => ({
       metadata: { readingTime: 1, wordCount: 50 },
       filePath: 'zh-CN/k2/index',
       locale: 'zh-CN',
-      slug: 'k2/index',
+      slug: 'k2',
       order: 1,
       section: 'getting-started',
     },
@@ -290,7 +290,7 @@ describe('test_k2_sidebar_groups_by_section', () => {
     expect(firstPost).toBeDefined();
     expect(typeof firstPost.title).toBe('string');
     expect(typeof firstPost.slug).toBe('string');
-    expect(firstPost.slug.startsWith('k2/')).toBe(true);
+    expect(firstPost.slug === 'k2' || firstPost.slug.startsWith('k2/')).toBe(true);
   });
 });
 
