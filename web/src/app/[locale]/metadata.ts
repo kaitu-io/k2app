@@ -5,34 +5,34 @@ const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://kaitu.io';
 
 export function generateMetadata(locale: string, pathname: string = ''): Metadata {
   const titles: Record<string, string> = {
-    'zh-CN': '开途网络代理 - 安全稳定的网络加速服务',
-    'zh-TW': '開途網路代理 - 安全穩定的網路加速服務',
-    'zh-HK': '開途網絡代理 - 安全穩定的網絡加速服務',
-    'en-US': 'Kaitu Network Proxy - Secure & Stable Network Acceleration',
-    'en-GB': 'Kaitu Network Proxy - Secure & Stable Network Acceleration',
-    'en-AU': 'Kaitu Network Proxy - Secure & Stable Network Acceleration',
-    'ja': 'Kaitu ネットワークプロキシ - 安全で安定したネットワーク高速化'
+    'zh-CN': '开途 k2 — ECH 隐身隧道协议',
+    'zh-TW': '開途 k2 — ECH 隱身隧道協議',
+    'zh-HK': '開途 k2 — ECH 隱身隧道協議',
+    'en-US': 'Kaitu k2 — ECH Stealth Tunnel Protocol',
+    'en-GB': 'Kaitu k2 — ECH Stealth Tunnel Protocol',
+    'en-AU': 'Kaitu k2 — ECH Stealth Tunnel Protocol',
+    'ja': 'Kaitu k2 — ECH ステルストンネルプロトコル'
   };
-  
+
   const descriptions: Record<string, string> = {
-    'zh-CN': '开途提供专业级的网络代理服务，采用先进的CA证书模拟技术，支持多平台客户端，确保您的网络连接安全、快速、稳定。',
-    'zh-TW': '開途提供專業級的網路代理服務，採用先進的CA憑證模擬技術，支援多平台客戶端，確保您的網路連接安全、快速、穩定。',
-    'zh-HK': '開途提供專業級的網絡代理服務，採用先進的CA證書模擬技術，支援多平台客戶端，確保您的網絡連接安全、快速、穩定。',
-    'en-US': 'Kaitu provides professional network proxy services with advanced CA certificate simulation technology, multi-platform support, ensuring secure, fast, and stable network connections.',
-    'en-GB': 'Kaitu provides professional network proxy services with advanced CA certificate simulation technology, multi-platform support, ensuring secure, fast, and stable network connections.',
-    'en-AU': 'Kaitu provides professional network proxy services with advanced CA certificate simulation technology, multi-platform support, ensuring secure, fast, and stable network connections.',
-    'ja': 'Kaituは高度なCA証明書シミュレーション技術を使用したプロフェッショナルなネットワークプロキシサービスを提供し、マルチプラットフォームをサポートし、安全で高速かつ安定したネットワーク接続を保証します。'
+    'zh-CN': '开途 k2 基于 ECH 加密客户端问候构建的隐身隧道，QUIC+TCP-WS 双栈传输，自研自适应拥塞控制算法，一行命令部署，CT 日志零暴露，抗审查网络隧道。',
+    'zh-TW': '開途 k2 基於 ECH 加密客戶端問候構建的隱身隧道，QUIC+TCP-WS 雙棧傳輸，自研自適應擁塞控制演算法，一行命令部署，CT 日誌零暴露，抗審查網路隧道。',
+    'zh-HK': '開途 k2 基於 ECH 加密客戶端問候構建的隱身隧道，QUIC+TCP-WS 雙棧傳輸，自研自適應擁塞控制算法，一行命令部署，CT 日誌零暴露，抗審查網絡隧道。',
+    'en-US': 'Kaitu k2 is an anti-censorship stealth tunnel built on ECH (Encrypted Client Hello), QUIC+TCP-WS dual-stack transport, proprietary adaptive congestion control, one-command deployment, zero CT log exposure.',
+    'en-GB': 'Kaitu k2 is an anti-censorship stealth tunnel built on ECH (Encrypted Client Hello), QUIC+TCP-WS dual-stack transport, proprietary adaptive congestion control, one-command deployment, zero CT log exposure.',
+    'en-AU': 'Kaitu k2 is an anti-censorship stealth tunnel built on ECH (Encrypted Client Hello), QUIC+TCP-WS dual-stack transport, proprietary adaptive congestion control, one-command deployment, zero CT log exposure.',
+    'ja': 'Kaitu k2 は ECH（暗号化クライアントハロー）をベースにした検閲対策ステルストンネルです。QUIC+TCP-WS デュアルスタック転送、独自の適応型輻輳制御、1コマンドデプロイ、CT ログゼロ露出を実現します。'
   };
-  
+
   const title = titles[locale] || titles['zh-CN'];
   const description = descriptions[locale] || descriptions['zh-CN'];
-  
+
   // Generate alternate links for all locales
   const languages: Record<string, string> = {};
   routing.locales.forEach(loc => {
     languages[loc.toLowerCase()] = `${baseUrl}/${loc}${pathname}`;
   });
-  
+
   return {
     title,
     description,

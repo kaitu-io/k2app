@@ -1,127 +1,267 @@
 {
   "hero": {
-    "title": "安全便捷的",
-    "networkProxy": "網路代理",
-    "solution": "解決方案",
-    "description": "開途（Kaitu.io）提供專業級的網路代理服務，支援多平台客戶端，採用先進的加密技術確保您的網路連線安全、快速、穩定。",
+    "title": "k2 隱身網路隧道",
+    "subtitle": "一行命令部署，ECH 加密，不可檢測",
+    "description": "開途 k2 是基於 ECH（加密客戶端問候）的下一代隱身隧道協議，支援 QUIC + TCP-WS 雙棧傳輸，自研自適應擁塞控制演算法，一行命令完成伺服器與客戶端部署，CT 日誌零暴露。",
+    "cta_primary": "快速開始",
+    "cta_secondary": "查看協議",
     "downloadClient": "下載客戶端",
     "quickActivation": "快速開通",
-    "smartRouter": "智慧路由器"
+    "smartRouter": "智慧路由器",
+    "features": {
+      "title": "核心技術優勢",
+      "ech": {
+        "title": "ECH 隱身",
+        "description": "加密客戶端問候，SNI 完全隱藏，TLS 握手不可檢測，DPI 深度封包檢測無效",
+        "icon": "🛡️"
+      },
+      "zeroDeploy": {
+        "title": "零配置部署",
+        "description": "curl 一行命令安裝伺服器與客戶端，自動生成 k2v5:// 連接 URI，無需手動配置憑證",
+        "icon": "⚡"
+      },
+      "transport": {
+        "title": "QUIC + TCP-WS 複合傳輸",
+        "description": "優先 QUIC 低延遲傳輸，網路受限自動降級為 TCP-WebSocket，無縫切換無感知",
+        "icon": "🔀"
+      },
+      "congestion": {
+        "title": "自研擁塞控制",
+        "description": "自研自適應擁塞控制演算法，高封包遺失網路下顯著優於 BBR，弱網環境吞吐量提升 3x",
+        "icon": "📈"
+      },
+      "reverseProxy": {
+        "title": "反向代理偽裝",
+        "description": "內建反向代理，非 k2 流量轉發至真實網站，主動探測回傳合法 HTTPS 回應",
+        "icon": "🎭"
+      },
+      "selfSign": {
+        "title": "自簽名 + Pin",
+        "description": "自簽名憑證 + 憑證 Pin，CT 日誌零暴露，無需購買憑證，伺服器域名完全隱藏",
+        "icon": "🔐"
+      }
+    },
+    "comparison": {
+      "title": "協議橫向對比",
+      "subtitle": "k2v5 與主流翻牆協議的關鍵維度對比",
+      "dimensions": {
+        "ech": "ECH 隱身",
+        "tlsFingerprint": "TLS 指紋偽裝",
+        "activeProbe": "主動探測防禦",
+        "quic": "QUIC 傳輸",
+        "tcpFallback": "TCP 降級",
+        "congestion": "擁塞控制優化",
+        "zeroDeploy": "零配置部署",
+        "ctLog": "CT 日誌零暴露",
+        "portReuse": "埠復用"
+      },
+      "protocols": [
+        {
+          "id": "k2",
+          "name": "k2v5",
+          "ech": true,
+          "tlsFingerprint": true,
+          "activeProbe": true,
+          "quic": true,
+          "tcpFallback": true,
+          "congestion": true,
+          "zeroDeploy": true,
+          "ctLog": true,
+          "portReuse": true
+        },
+        {
+          "id": "WireGuard",
+          "name": "WireGuard",
+          "ech": false,
+          "tlsFingerprint": false,
+          "activeProbe": false,
+          "quic": false,
+          "tcpFallback": false,
+          "congestion": false,
+          "zeroDeploy": false,
+          "ctLog": false,
+          "portReuse": false
+        },
+        {
+          "id": "VLESS",
+          "name": "VLESS+Reality",
+          "ech": false,
+          "tlsFingerprint": true,
+          "activeProbe": true,
+          "quic": false,
+          "tcpFallback": true,
+          "congestion": false,
+          "zeroDeploy": false,
+          "ctLog": false,
+          "portReuse": false
+        },
+        {
+          "id": "Hysteria2",
+          "name": "Hysteria2",
+          "ech": false,
+          "tlsFingerprint": false,
+          "activeProbe": false,
+          "quic": true,
+          "tcpFallback": false,
+          "congestion": true,
+          "zeroDeploy": false,
+          "ctLog": true,
+          "portReuse": false
+        },
+        {
+          "id": "Shadowsocks",
+          "name": "Shadowsocks",
+          "ech": false,
+          "tlsFingerprint": false,
+          "activeProbe": false,
+          "quic": false,
+          "tcpFallback": false,
+          "congestion": false,
+          "zeroDeploy": false,
+          "ctLog": false,
+          "portReuse": false
+        }
+      ],
+      "yes": "✓",
+      "no": "✗"
+    },
+    "quickstart": {
+      "title": "一分鐘極速部署",
+      "server": {
+        "title": "伺服器端（1 分鐘）",
+        "step1": "# 安裝 k2s 伺服器",
+        "step2": "curl -fsSL https://get.kaitu.io | sudo sh -s k2s",
+        "step3": "# 啟動服務",
+        "step4": "k2s run",
+        "step5": "# 輸出連接 URI",
+        "step6": "k2v5://..."
+      },
+      "client": {
+        "title": "客戶端（30 秒）",
+        "step1": "# 安裝 k2 客戶端",
+        "step2": "curl -fsSL https://get.kaitu.io | sudo sh -s k2",
+        "step3": "# 連接（貼上 URI）",
+        "step4": "k2 up k2v5://..."
+      }
+    }
   },
   "security": {
-    "title": "開途協定 - 新一代網路傳輸技術",
-    "description": "開途協定（Kaitu Protocol）是我們自主研發的下一代網路傳輸協定，採用多路徑聚合、軍工級加密和智慧路由等先進技術，為您提供安全、快速、穩定的網路連線體驗。",
-    "icon": "🔒",
+    "title": "k2v5 協議 — 下一代隱身隧道",
+    "description": "k2v5 基於 ECH（加密客戶端問候）構建，徹底解決 SNI 洩漏問題。結合 QUIC 低延遲傳輸與自研自適應擁塞控制演算法，在高封包遺失弱網環境下實現穩定高吞吐。",
+    "icon": "🛡️",
     "caTech": {
-      "title": "多路徑聚合技術（MPTCP）",
-      "description": "開途協定獨創的多路徑聚合技術，能夠同時利用多條網路通道傳輸資料，實現頻寬疊加和智慧負載均衡，即使單條線路出現故障也能無縫切換，確保連線永不中斷。",
+      "title": "ECH 隱身隧道技術",
+      "description": "k2v5 採用 ECH（Encrypted Client Hello）加密 TLS 握手的 SNI 字段，DPI 深度封包檢測無法識別目標域名，主動探測回傳合法網站回應，從協議層實現不可檢測。",
       "advantages": {
         "title": "核心特性",
-        "item1": "多通道同時傳輸，頻寬智慧聚合",
-        "item2": "RTT即時測量，自動選擇最優路徑",
-        "item3": "故障自動轉移，連線永不中斷",
-        "item4": "指數移動平均演算法，精準路徑評估",
+        "item1": "ECH 加密 SNI，TLS 握手不可檢測",
+        "item2": "QUIC 優先傳輸，低延遲高吞吐",
+        "item3": "自研自適應擁塞控制，弱網 3x 提升",
+        "item4": "反向代理偽裝，主動探測防禦",
         "bullet": "•"
       },
       "adaptive": {
-        "title": "企業級網路自適應",
-        "item1": "根據網路狀況智慧選擇最優協定",
-        "item2": "支援 WebSocket、HTTP/2 等多種傳輸方式",
-        "item3": "即時網路品質監控與調優",
-        "item4": "弱網環境下的可靠連線保障",
+        "title": "自適應傳輸層",
+        "item1": "QUIC 受阻自動降級為 TCP-WebSocket",
+        "item2": "自簽名憑證 + Pin，CT 日誌零暴露",
+        "item3": "埠復用，443 埠正常網站共存",
+        "item4": "一行命令部署，自動生成 k2v5:// URI",
         "bullet": "•"
       }
     },
     "features": {
-      "title": "協定核心優勢",
+      "title": "協議核心優勢",
       "multipath": {
-        "title": "多路徑聚合",
-        "description": "同時利用多條網路通道，智慧選擇最優路徑，實現頻寬疊加和自動故障轉移",
-        "icon": "🔀"
+        "title": "ECH 加密握手",
+        "description": "加密客戶端問候隱藏 SNI，TLS 握手完全不可檢測，DPI 識別失效",
+        "icon": "🛡️"
       },
       "encryption": {
-        "title": "軍工級加密",
-        "description": "採用 AES-256-GCM 加密演算法，ECDSA P-256 橢圓曲線，PBKDF2 十萬次金鑰派生",
-        "icon": "🔐"
+        "title": "雙棧傳輸",
+        "description": "QUIC 優先低延遲傳輸，TCP-WebSocket 自動降級備用，無縫切換無感知",
+        "icon": "🔀"
       },
       "smartRouting": {
-        "title": "智慧路由",
-        "description": "基於 RTT 的即時路徑最佳化，指數移動平均演算法確保始終使用最快通道",
-        "icon": "🧭"
+        "title": "自研擁塞控制",
+        "description": "自研自適應擁塞控制演算法，高封包遺失網路吞吐量超越 BBR，弱網體驗顯著提升",
+        "icon": "📈"
       },
       "disguise": {
-        "title": "流量偽裝",
-        "description": "CA 憑證模擬技術，流量呈現為標準 HTTPS，完美融入正常網路環境",
+        "title": "反向代理偽裝",
+        "description": "內建反向代理，非隧道流量轉發真實網站，主動探測回傳合法 HTTPS 回應",
         "icon": "🎭"
       },
       "failover": {
-        "title": "自動故障轉移",
-        "description": "單路徑故障時毫秒級切換，使用者完全無感知，確保業務連續性",
-        "icon": "🔄"
+        "title": "零配置部署",
+        "description": "curl 一行命令安裝，自動生成 k2v5:// 連接 URI，10 分鐘完成完整部署",
+        "icon": "⚡"
       },
       "performance": {
-        "title": "高效能架構",
-        "description": "支援 5000 並行連線，32KB 緩衝池最佳化，零複製資料轉發",
-        "icon": "⚡"
+        "title": "CT 日誌零暴露",
+        "description": "自簽名憑證 + 憑證 Pin，完全繞過 CT 日誌監控，伺服器域名零暴露",
+        "icon": "🔐"
       }
     },
     "techSpecs": {
       "title": "技術規格",
-      "encryption": "加密演算法",
-      "encryptionValue": "AES-256-GCM + ECDSA P-256",
-      "keyDerivation": "金鑰派生",
-      "keyDerivationValue": "PBKDF2-SHA512 (100,000次迭代)",
-      "transport": "傳輸協定",
-      "transportValue": "WebSocket over TLS / HTTP/2",
-      "multiplexing": "多工複用",
-      "multiplexingValue": "smux 流複用 + 多路徑聚合",
-      "heartbeat": "心跳保活",
-      "heartbeatValue": "30秒間隔 / 90秒逾時",
-      "concurrent": "並行能力",
-      "concurrentValue": "單會話 5000+ 並行流"
+      "encryption": "握手加密",
+      "encryptionValue": "ECH（Encrypted Client Hello）",
+      "keyDerivation": "傳輸協議",
+      "keyDerivationValue": "QUIC / TCP-WebSocket 雙棧",
+      "transport": "擁塞控制",
+      "transportValue": "自研自適應擁塞控制演算法",
+      "multiplexing": "憑證策略",
+      "multiplexingValue": "自簽名 + 憑證 Pin（CT 日誌零暴露）",
+      "heartbeat": "部署方式",
+      "heartbeatValue": "curl 單行命令，自動生成 URI",
+      "concurrent": "埠策略",
+      "concurrentValue": "埠復用 + 反向代理偽裝"
     },
     "comparison": {
-      "title": "協定對比",
-      "metrics": {
-        "detection": "抗檢測",
-        "encryption": "加密強度",
-        "stability": "穩定性",
-        "difficulty": "配置難度"
-      },
-      "stars": {
-        "five": "★★★★★",
-        "four": "★★★★☆",
-        "three": "★★★☆☆",
-        "two": "★★☆☆☆",
-        "one": "★☆☆☆☆"
+      "title": "協議對比",
+      "dimensions": {
+        "ech": "ECH 隱身",
+        "tlsFingerprint": "TLS 指紋偽裝",
+        "activeProbe": "主動探測防禦",
+        "quic": "QUIC 傳輸",
+        "tcpFallback": "TCP 降級",
+        "congestion": "擁塞控制優化",
+        "zeroDeploy": "零配置部署",
+        "ctLog": "CT 日誌零暴露",
+        "portReuse": "埠復用"
       },
       "kaitu": {
         "letter": "K",
-        "name": "Kaitu 開途",
-        "tech": "MPTCP 多路徑聚合 + CA 憑證偽裝"
+        "name": "k2v5",
+        "tech": "ECH 隱身 + QUIC+TCP-WS 雙棧 + 自研擁塞控制"
       },
       "trojan": {
-        "letter": "T",
-        "name": "Trojan",
-        "tech": "TLS 加密 + 流量偽裝"
+        "letter": "W",
+        "name": "WireGuard",
+        "tech": "UDP 加密隧道，無 TLS 偽裝"
       },
       "v2ray": {
         "letter": "V",
-        "name": "V2Ray",
-        "tech": "VMess/VLESS 協定 + 多種傳輸"
+        "name": "VLESS+Reality",
+        "tech": "TLS 指紋偽裝 + 反向代理，無 ECH"
       },
       "shadowsocks": {
         "letter": "S",
         "name": "Shadowsocks",
-        "tech": "AEAD 加密 + 輕量代理"
+        "tech": "AEAD 加密 + 輕量代理，無偽裝"
+      },
+      "hysteria": {
+        "letter": "H",
+        "name": "Hysteria2",
+        "tech": "QUIC 傳輸 + 自研擁塞控制，無 ECH"
       }
     },
     "visualization": {
-      "title": "多路徑聚合技術 (MPTCP)",
-      "subtitle": "即時演示：資料同時透過多個中轉節點傳輸，智慧選擇最優路徑",
+      "title": "k2v5 隱身隧道架構",
+      "subtitle": "ECH 加密握手 + QUIC/TCP-WS 雙棧傳輸，DPI 完全無效",
       "client": "客戶端",
       "target": "目標伺服器",
-      "relayNodes": "中轉節點叢集",
+      "relayNodes": "k2 隧道節點",
       "nodes": {
         "hongkong": "香港節點",
         "japan": "日本節點",
@@ -139,15 +279,15 @@
         "title": "圖例",
         "dataPacket": "資料封包",
         "activePath": "活躍路徑",
-        "failedPath": "故障路徑",
+        "failedPath": "降級路徑",
         "optimalNode": "最優節點"
       },
-      "description": "上圖展示了開途協定的多路徑聚合架構：資料從客戶端出發，同時透過多個地理位置不同的中轉節點傳輸到目標伺服器。系統即時監測每個節點的延遲（RTT），自動將更多流量分配給最優節點（綠色虛線框）。當某個節點出現故障時，流量會瞬間切換到其他可用節點，確保連線不中斷。每個中轉節點還可配置多網卡，實現頻寬的進一步聚合。"
+      "description": "k2v5 在 TLS 握手階段使用 ECH 加密 SNI，防火牆無法識別目標域名。資料透過 QUIC（優先）或 TCP-WebSocket（降級）傳輸，自研自適應擁塞控制演算法在高封包遺失環境下保持穩定吞吐。伺服器內建反向代理，非 k2 流量轉發至真實網站，主動探測無法區分。"
     }
   },
   "download": {
     "title": "下載客戶端",
-    "subtitle": "選擇適合您裝置的客戶端，開始安全的網路之旅",
+    "subtitle": "選擇適合您裝置的客戶端，開始隱身網路之旅",
     "platforms": {
       "ios": "支援 iPhone 和 iPad",
       "iosLabel": "iOS",
@@ -175,11 +315,11 @@
         },
         "familyFriendly": {
           "title": "全家適用",
-          "description": "家中所有裝置自動連線，老少皆宜"
+          "description": "家中所有裝置自動連接，老少皆宜"
         },
         "alwaysOn": {
           "title": "隨時可用",
-          "description": "24小時不間斷服務，開機自動連線"
+          "description": "24小時不間斷服務，開機自動連接"
         },
         "multiDevice": {
           "title": "多裝置支援",
@@ -202,8 +342,8 @@
     "comma": "，",
     "productFeatures": "產品特色",
     "contactInquiry": "聯絡諮詢",
-    "presalePriceConsult": "預售價格請諮詢客服 • 1年保固",
-    "presalePriceConsultFull": "預售價格請諮詢客服 • 1年保固 • 贈送服務啟用碼",
+    "presalePriceConsult": "預售價格請諮詢客服 • 1年質保",
+    "presalePriceConsultFull": "預售價格請諮詢客服 • 1年質保 • 贈送服務啟用碼",
     "routerVsClient": "路由器 vs 客戶端對比",
     "whyChooseRouter": "為什麼選擇路由器解決方案？",
     "smartRouter": "智慧路由器",
@@ -211,8 +351,8 @@
     "clientSoftware": "客戶端軟體",
     "traditional": "傳統方案",
     "bullet": "•",
-    "autoConnect": "全家裝置自動連線，無需單獨配置",
-    "alwaysRunning": "24小時不間斷執行，隨時可用",
+    "autoConnect": "全家裝置自動連接，無需單獨配置",
+    "alwaysRunning": "24小時不間斷運行，隨時可用",
     "allDevices": "支援智慧電視、遊戲機等所有裝置",
     "easyUse": "老人小孩都能輕鬆使用",
     "onePurchase": "一次購買，長期使用",
@@ -228,6 +368,6 @@
     "onlineService": "線上客服",
     "realTimeResponse": "即時諮詢、快速回應",
     "startOnlineService": "啟動線上客服",
-    "warranty": "所有路由器產品均提供1年保固 • 免費技術支援 • 7天無理由退貨"
+    "warranty": "所有路由器產品均提供1年質保 • 免費技術支援 • 7天無理由退貨"
   }
 }
