@@ -38,11 +38,11 @@ k2 is Kaitu's proprietary stealth network tunnel protocol, designed for use in h
 
 | Document | Description |
 |----------|-------------|
-| [1-Minute Quickstart](quickstart) | Start the server and connect in under a minute |
-| [k2s Server Deployment](server) | Detailed server installation and configuration |
-| [k2 Client Usage](client) | Client installation and common commands |
-| [Protocol Technical Details](protocol) | Deep dive into the k2v5 protocol implementation |
-| [Stealth Camouflage](stealth) | ECH, TLS fingerprinting, and active probe resistance |
+| [1-Minute Quickstart](/k2/quickstart) | Start the server and connect in under a minute |
+| [k2s Server Deployment](/k2/server) | Detailed server installation and configuration |
+| [k2 Client Usage](/k2/client) | Client installation and common commands |
+| [Protocol Technical Details](/k2/protocol) | Deep dive into the k2v5 protocol implementation |
+| [Stealth Camouflage](/k2/stealth) | ECH, TLS fingerprinting, and active probe resistance |
 
 ## Supported Platforms
 

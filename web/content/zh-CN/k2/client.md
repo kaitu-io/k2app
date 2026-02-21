@@ -133,4 +133,4 @@ sudo rm /usr/local/bin/k2
 
 ---
 
-接下来阅读：[协议技术详解](protocol) 深入了解 k2v5 的工作原理。
+接下来阅读：[协议技术详解](/k2/protocol) 深入了解 k2v5 的工作原理。

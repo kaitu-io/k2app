@@ -152,4 +152,4 @@ sudo systemctl restart k2s
 
 ---
 
-Next: [k2 Client Usage](client) to connect to your deployed server.
+Next: [k2 Client Usage](/k2/client) to connect to your deployed server.

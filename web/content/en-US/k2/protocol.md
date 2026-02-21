@@ -9,7 +9,7 @@ draft: false
 
 # Protocol Technical Details
 
-This document is intended for readers who want to understand the internals of the k2v5 protocol. For a quick setup, see the [1-Minute Quickstart](quickstart).
+This document is intended for readers who want to understand the internals of the k2v5 protocol. For a quick setup, see the [1-Minute Quickstart](/k2/quickstart).
 
 ## k2v5 URL Format
 
@@ -115,4 +115,4 @@ Non-ECH connections to k2s receive valid responses from real Cloudflare servers.
 
 ---
 
-Next: [Stealth Camouflage](stealth) — the threat model and how each mechanism addresses it.
+Next: [Stealth Camouflage](/k2/stealth) — the threat model and how each mechanism addresses it.

@@ -134,4 +134,4 @@ sudo rm /usr/local/bin/k2
 
 ---
 
-Next: [Protocol Technical Details](protocol) to understand how k2v5 works under the hood.
+Next: [Protocol Technical Details](/k2/protocol) to understand how k2v5 works under the hood.

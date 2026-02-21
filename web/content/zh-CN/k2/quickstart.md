@@ -64,4 +64,4 @@ k2 up --mode proxy k2v5://abc123:tok456@203.0.113.5:443?ech=AEX0...&pin=sha256:.
 
 ---
 
-接下来阅读：[k2s 服务端详细部署](server) 了解高级配置和 Docker 部署。
+接下来阅读：[k2s 服务端详细部署](/k2/server) 了解高级配置和 Docker 部署。

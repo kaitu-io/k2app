@@ -103,4 +103,4 @@ The client rotates its UDP port periodically, rendering fixed-port filtering rul
 
 ---
 
-For the underlying implementation details behind these mechanisms, see [Protocol Technical Details](protocol).
+For the underlying implementation details behind these mechanisms, see [Protocol Technical Details](/k2/protocol).

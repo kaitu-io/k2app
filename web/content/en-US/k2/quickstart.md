@@ -64,4 +64,4 @@ Proxy mode starts a local SOCKS5 proxy at `socks5://127.0.0.1:1080`. No system r
 
 ---
 
-Next: [k2s Server Deployment](server) for advanced configuration and Docker deployment.
+Next: [k2s Server Deployment](/k2/server) for advanced configuration and Docker deployment.
