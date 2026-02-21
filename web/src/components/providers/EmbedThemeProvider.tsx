@@ -83,8 +83,7 @@ export function EmbedThemeProvider({ children }: EmbedThemeProviderProps) {
   return (
     <ThemeProvider
       attribute="class"
-      defaultTheme="system"
-      enableSystem
+      defaultTheme="dark"
       disableTransitionOnChange
     >
       <EmbedThemeController>

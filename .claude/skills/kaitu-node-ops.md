@@ -139,7 +139,44 @@ These are best-practice guardrails to prevent accidental damage during operation
 
 7. **Update = pull + up, never down** — To update containers: `docker compose pull && docker compose up -d`. Never use `docker compose down` — it removes containers and causes service interruption. The `up -d` command recreates only changed containers.
 
-## Step 6: Script Execution
+## Step 6: Batch Deployment
+
+### Deploy docker-compose.yml to All Nodes
+
+The canonical k2v5 compose file lives at `docker/docker-compose.yml` in the repo. To deploy it to all active nodes:
+
+```bash
+# Active nodes only (tunnelCount > 0) — recommended
+./scripts/deploy-compose.sh
+
+# All nodes including inactive (tunnelCount = 0)
+./scripts/deploy-compose.sh --all
+
+# Preview what would be deployed
+./scripts/deploy-compose.sh --dry-run
+```
+
+The script:
+1. Fetches the live node list from Center API (`/app/nodes/batch-matrix`)
+2. Filters by `tunnelCount > 0` (unless `--all`), skipping inactive/decommissioned nodes
+3. Compares MD5 checksum — skips nodes already up-to-date
+4. Creates `/apps/kaitu-slave/` if missing, uploads via SCP
+
+**Requires**: `KAITU_CENTER_URL` + `KAITU_ACCESS_KEY` env vars. SSH via `KAITU_SSH_USER` (default: `ubuntu`) port `KAITU_SSH_PORT` (default: `1022`).
+
+### Node Activity Heuristic
+
+The Center API has no explicit `status` field. Use these signals to identify active vs inactive nodes:
+
+| Signal | Active | Inactive |
+|--------|--------|----------|
+| `tunnelCount` | > 0 | 0 |
+| `name` | Named (`hk.aliyun.wm01`) | IP-as-name (`13.114.150.53`) |
+| SSH on :1022 | Reachable | Often unreachable |
+
+Nodes with `tunnelCount == 0` and IP-as-name are typically decommissioned AWS instances. The deploy script skips them by default.
+
+## Step 7: Script Execution
 
 Two modes for running scripts on nodes:
 
@@ -163,7 +200,7 @@ The MCP implementation handles: read local file → SSH exec channel → pipe to
 
 ### Available Scripts
 
-Scripts are in `docker/scripts/` in the project repository:
+Scripts in `docker/scripts/` (run ON nodes via SSH stdin pipe):
 
 | Script | Purpose | Warning |
 |--------|---------|---------|
@@ -171,3 +208,9 @@ Scripts are in `docker/scripts/` in the project repository:
 | `totally-reinstall-docker.sh` | Full Docker CE reinstall (cleanup + nftables + IPv6 + ufw-docker) | **Destructive**. Stops all running containers. Requires explicit user confirmation. |
 | `enable-ipv6.sh` | Enable IPv6 kernel params + test connectivity | Requires sudo. Restarts networking service. |
 | `simple-docker-pull-restart.sh` | Pull latest images and restart | Safe for routine updates. Equivalent to the standard update command. |
+
+Scripts in `scripts/` (run LOCALLY, orchestrate across nodes):
+
+| Script | Purpose | Warning |
+|--------|---------|---------|
+| `deploy-compose.sh` | Deploy `docker/docker-compose.yml` to all active nodes via SCP | Safe — MD5 skip, no restart. Use `--all` for inactive nodes. |

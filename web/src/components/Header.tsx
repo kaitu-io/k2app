@@ -7,7 +7,6 @@ import { Link } from '@/i18n/routing';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 import { Github } from 'lucide-react';
 import Image from 'next/image';
-import { ThemeToggle } from '@/components/ThemeToggle';
 
 export default function Header() {
   const { isAuthenticated, user } = useAuth();
@@ -28,9 +27,6 @@ export default function Header() {
             <span className="text-xl font-bold text-foreground">{"Kaitu.io"}</span>
           </Link>
           <div className="flex items-center space-x-4">
-            {/* Theme Toggle */}
-            <ThemeToggle />
-
             {/* Language Switcher */}
             <LanguageSwitcher />
 

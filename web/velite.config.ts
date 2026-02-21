@@ -23,6 +23,8 @@ const posts = defineCollection({
       tags: s.array(s.string()).optional(),
       coverImage: s.string().optional(),
       draft: s.boolean().default(false),
+      order: s.number().optional(),
+      section: s.string().optional(),
       content: s.markdown(),
       metadata: s.metadata(),
       // filePath is injected by velite: the path relative to the collection root,
