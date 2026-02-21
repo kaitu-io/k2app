@@ -1,6 +1,7 @@
 # k2 client configuration
-# Most users don't need this — just run: sudo k2 up <url>
-# Use this file for custom settings: sudo k2 run -c client.yml
+# Start daemon: k2 [-c this-file]
+# Test config:  k2 -t [-c this-file]
+# Validate:     k2 -t -c this-file
 
 # Server connection URL (required)
 # Get this URL from your k2s server (printed on first run).
@@ -43,3 +44,11 @@ rule:
 log:
   level: info                     # debug, info, warn, error
   output: stderr                  # stderr, stdout, or file path
+
+# PID file path (optional — used by 'k2 -s stop|reload')
+# Default: /var/run/k2.pid (root) or ~/.config/k2/k2.pid (user)
+# pid_file: "/var/run/k2.pid"
+
+# Include additional config files (glob pattern, optional)
+# Overlapping keys are merged; last file wins.
+# include: "/etc/k2/conf.d/*.yaml"
