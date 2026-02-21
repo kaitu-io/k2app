@@ -63,7 +63,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
       url: `${baseUrl}/${post.locale}/${post.slug}`,
       lastModified: new Date(post.date),
       changeFrequency: 'weekly',
-      priority: 0.6,
+      priority: post.slug.startsWith('k2/') ? 0.9 : 0.6,
     });
   }
 
