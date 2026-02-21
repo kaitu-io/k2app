@@ -6,9 +6,9 @@
 |-----------|------------------------------------------|
 | Feature   | k2-cli-redesign                          |
 | Version   | v1                                       |
-| Status    | draft                                    |
+| Status    | implemented                              |
 | Created   | 2026-02-21                               |
-| Updated   | 2026-02-21                               |
+| Updated   | 2026-02-22                               |
 
 ## Version History
 
@@ -261,7 +261,6 @@ log:
   level: info                   # debug | info | warn | error
   output: stderr                # stderr | stdout | file path
 
-include: /etc/k2/conf.d/*.yaml # 可选
 ```
 
 **k2s.yaml（服务端）：**
@@ -290,8 +289,6 @@ auth:
 log:
   level: info
   output: stderr
-
-include: /etc/k2s/conf.d/*.yaml
 ```
 
 ### 进程启动流程
@@ -345,7 +342,6 @@ service_windows.go
 ```
 search.go        # 配置文件搜索链逻辑
 validate.go      # Validate() — 结构校验 + 语义校验
-include.go       # include 指令解析（glob + 合并）
 pid.go           # PID 文件读写
 ```
 
@@ -518,12 +514,7 @@ $ k2 run
 - `k2s run` 保留为 deprecated alias
 - deprecated alias 计划在 v2.0 移除
 
-### AC11: include 指令
-- 配置文件支持 `include: /path/to/conf.d/*.yaml`
-- glob 展开后按文件名字母序合并
-- include 文件语法错误时报告具体文件名和行号
-
-### AC12: Tauri 桌面端适配
+### AC11: Tauri 桌面端适配
 - `service.rs` 中 `admin_reinstall_service()` 调用 `k2 service install`（非 `run --install`）
 - macOS osascript 提权 + Windows PowerShell UAC 提权路径均正确执行
 - NSIS installer-hooks 使用 `k2.exe service install/uninstall`（非 `svc up/down`）
