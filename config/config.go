@@ -21,7 +21,6 @@ type ClientConfig struct {
 	Rule    RuleConfig  `yaml:"rule"     json:"rule"`
 	Log     LogConfig   `yaml:"log"      json:"log"`
 	PIDFile string      `yaml:"pid_file" json:"pid_file"` // path to PID file (empty = no PID file)
-	Include string      `yaml:"include"  json:"include"`  // glob pattern for additional config files
 }
 
 // TunConfig contains TUN device configuration.
@@ -56,7 +55,6 @@ type ServerConfig struct {
 	Auth        AuthConfig        `yaml:"auth"`
 	Log         LogConfig         `yaml:"log"`
 	PIDFile     string            `yaml:"pid_file"` // path to PID file (empty = no PID file)
-	Include     string            `yaml:"include"`  // glob pattern for additional config files
 }
 
 // DNSConfig contains DNS resolver configuration.
@@ -100,14 +98,8 @@ type LogConfig struct {
 }
 
 // LoadClient loads a client config from a YAML file.
-// If the config contains an "include" directive, matching files are merged.
 func LoadClient(path string) (*ClientConfig, error) {
 	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	data, err = resolveIncludeInData(data)
 	if err != nil {
 		return nil, err
 	}
@@ -122,14 +114,8 @@ func LoadClient(path string) (*ClientConfig, error) {
 }
 
 // LoadServer loads a server config from a YAML file.
-// If the config contains an "include" directive, matching files are merged.
 func LoadServer(path string) (*ServerConfig, error) {
 	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	data, err = resolveIncludeInData(data)
 	if err != nil {
 		return nil, err
 	}
