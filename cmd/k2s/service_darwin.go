@@ -18,7 +18,10 @@ func k2sPlistPath() string {
 	return filepath.Join(k2sPlistDir, k2sServiceLabel+".plist")
 }
 
-func installK2sService() error {
+// installService installs k2s as a launchd daemon and starts it.
+// The ProgramArguments array contains only the executable path — the binary
+// itself is the foreground server process (nginx-style).
+func installService() error {
 	exe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("find executable: %w", err)
@@ -40,8 +43,6 @@ func installK2sService() error {
     <key>ProgramArguments</key>
     <array>
         <string>%s</string>
-        <string>run</string>
-        <string>--foreground</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -66,16 +67,34 @@ func installK2sService() error {
 	return nil
 }
 
-func isK2sServiceInstalled() bool {
+// uninstallService unloads and removes the k2s launchd daemon.
+func uninstallService() error {
+	plistPath := k2sPlistPath()
+
+	// Unload the service (ignore error if not loaded).
+	_ = exec.Command("launchctl", "unload", plistPath).Run()
+
+	// Remove the plist file.
+	if err := os.Remove(plistPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove plist: %w", err)
+	}
+
+	return nil
+}
+
+// isServiceInstalled reports whether the k2s plist file exists.
+func isServiceInstalled() bool {
 	_, err := os.Stat(k2sPlistPath())
 	return err == nil
 }
 
-func isK2sServiceRunning() bool {
+// isServiceRunning reports whether k2s is currently running under launchd.
+func isServiceRunning() bool {
 	out, err := exec.Command("launchctl", "list", k2sServiceLabel).Output()
 	return err == nil && len(out) > 0
 }
 
-func startK2sService() error {
+// startService starts the k2s launchd service.
+func startService() error {
 	return exec.Command("launchctl", "start", k2sServiceLabel).Run()
 }

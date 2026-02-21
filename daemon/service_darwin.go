@@ -40,7 +40,6 @@ func installService() error {
     <key>ProgramArguments</key>
     <array>
         <string>%s</string>
-        <string>run</string>
     </array>
     <key>RunAtLoad</key>
     <true/>

@@ -12,14 +12,15 @@ import (
 // ClientConfig is the client-side configuration.
 // Loaded by `k2 run -c` or parsed from `k2 up` URL, or unmarshalled from JSON.
 type ClientConfig struct {
-	Listen string      `yaml:"listen" json:"listen"` // daemon HTTP listen address, default "127.0.0.1:1777"
-	Server string      `yaml:"server" json:"server"` // k2v5:// URL
-	Mode   string      `yaml:"mode"   json:"mode"`   // "tun" or "proxy", default "tun"
-	Tun    TunConfig   `yaml:"tun"    json:"tun"`
-	Proxy  ProxyConfig `yaml:"proxy"  json:"proxy"`
-	DNS    DNSConfig   `yaml:"dns"    json:"dns"`
-	Rule   RuleConfig  `yaml:"rule"   json:"rule"`
-	Log    LogConfig   `yaml:"log"    json:"log"`
+	Listen  string      `yaml:"listen"   json:"listen"`   // daemon HTTP listen address, default "127.0.0.1:1777"
+	Server  string      `yaml:"server"   json:"server"`   // k2v5:// URL
+	Mode    string      `yaml:"mode"     json:"mode"`     // "tun" or "proxy", default "tun"
+	Tun     TunConfig   `yaml:"tun"      json:"tun"`
+	Proxy   ProxyConfig `yaml:"proxy"    json:"proxy"`
+	DNS     DNSConfig   `yaml:"dns"      json:"dns"`
+	Rule    RuleConfig  `yaml:"rule"     json:"rule"`
+	Log     LogConfig   `yaml:"log"      json:"log"`
+	PIDFile string      `yaml:"pid_file" json:"pid_file"` // path to PID file (empty = no PID file)
 }
 
 // TunConfig contains TUN device configuration.
@@ -53,6 +54,7 @@ type ServerConfig struct {
 	Rate        int64             `yaml:"rate"`
 	Auth        AuthConfig        `yaml:"auth"`
 	Log         LogConfig         `yaml:"log"`
+	PIDFile     string            `yaml:"pid_file"` // path to PID file (empty = no PID file)
 }
 
 // DNSConfig contains DNS resolver configuration.

@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
 	_ "embed"
+	"flag"
 	"fmt"
+	"io"
 	"os"
 )
 
@@ -16,55 +19,157 @@ var (
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		printUsage()
+	// Define top-level flags (nginx-style: flags come before subcommands).
+	fs := flag.NewFlagSet("k2", flag.ContinueOnError)
+	configPath := fs.String("c", "", "config file path")
+	testConfig := fs.Bool("t", false, "test configuration and exit")
+	sendSignal := fs.String("s", "", "send signal to daemon: stop|reload")
+	showVersion := fs.Bool("v", false, "show version and exit")
+	fs.Usage = printUsage
+
+	// Parse flags stopping at first non-flag argument (subcommand).
+	if err := fs.Parse(os.Args[1:]); err != nil {
+		if err == flag.ErrHelp {
+			os.Exit(0)
+		}
 		os.Exit(1)
 	}
 
-	cmd := os.Args[1]
-	args := os.Args[2:]
-
-	switch cmd {
-	case "up":
-		cmdUp(args)
-	case "down":
-		cmdDown(args)
-	case "status":
-		cmdStatus(args)
-	case "run":
-		cmdRun(args)
-	case "open":
-		cmdOpen(args)
-	case "upgrade":
-		cmdUpgrade(args)
-	case "version":
-		cmdVersion()
-	case "demo-config":
-		fmt.Print(demoConfig)
-	case "-h", "--help", "help":
-		printUsage()
-	default:
-		fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", cmd)
-		printUsage()
-		os.Exit(1)
+	// -v: print version and exit.
+	if *showVersion {
+		fmt.Printf("k2 %s (%s)\n", version, commit)
+		return
 	}
+
+	// Check remaining args for subcommand.
+	args := fs.Args()
+
+	// Deprecated aliases first (print warning, forward).
+	if len(args) > 0 {
+		switch args[0] {
+		case "run":
+			deprecatedWarn("run", "k2 (no subcommand)", os.Stderr)
+			runDaemon(*configPath)
+			return
+		case "up":
+			deprecatedWarn("up", "k2 ctl up", os.Stderr)
+			cmdCtl(args) // pass full ["up", ...] slice
+			return
+		case "down":
+			deprecatedWarn("down", "k2 ctl down", os.Stderr)
+			cmdCtl(args)
+			return
+		case "status":
+			deprecatedWarn("status", "k2 ctl status", os.Stderr)
+			cmdCtl(args)
+			return
+		case "version":
+			fmt.Printf("k2 %s (%s)\n", version, commit)
+			return
+		case "ctl":
+			cmdCtl(args[1:])
+			return
+		case "setup":
+			cmdSetup(args[1:])
+			return
+		case "service":
+			cmdService(args[1:])
+			return
+		case "upgrade":
+			cmdUpgrade(args[1:])
+			return
+		case "demo-config":
+			fmt.Print(demoConfig)
+			return
+		case "-h", "--help", "help":
+			printUsage()
+			return
+		default:
+			fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", args[0])
+			printUsage()
+			os.Exit(1)
+		}
+	}
+
+	// No subcommand — handle flags-only invocations.
+
+	// -t: test config and exit.
+	if *testConfig {
+		var out bytes.Buffer
+		if err := runTestConfig(resolveConfigPath(*configPath), &out); err != nil {
+			fmt.Fprintf(os.Stderr, "Configuration test failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Print(out.String())
+		return
+	}
+
+	// -s: send signal.
+	if *sendSignal != "" {
+		pidPath := resolvePIDPath(*configPath)
+		var out bytes.Buffer
+		if err := runSignal(*sendSignal, pidPath, &out); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Print(out.String())
+		return
+	}
+
+	// Default: run as foreground daemon.
+	runDaemon(*configPath)
+}
+
+// resolveConfigPath returns cfgFlag if set, else the empty string (caller will search).
+func resolveConfigPath(cfgFlag string) string {
+	return cfgFlag
+}
+
+// resolvePIDPath returns the PID path derived from config or the default.
+func resolvePIDPath(cfgFlag string) string {
+	if cfgFlag != "" {
+		// Try loading config for its pid_file field.
+		if cfg, err := loadClientConfigFile(cfgFlag); err == nil && cfg.PIDFile != "" {
+			return cfg.PIDFile
+		}
+	}
+	return defaultPIDPath()
 }
 
 func printUsage() {
 	fmt.Fprintf(os.Stderr, `k2 — Kaitu network tunnel
 
 Usage:
-  k2 up [URL or config.yaml]   Connect tunnel (auto-manages daemon)
-  k2 down                      Disconnect tunnel
-  k2 status                    Show connection status
-  k2 run                       Start daemon (called by service manager)
-  k2 run -c <config.yaml>      Client foreground mode (dev/debug, needs sudo)
+  k2 [-c config]              Start daemon (foreground)
+  k2 -t [-c config]           Test configuration and exit
+  k2 -s stop|reload           Send signal to running daemon
+  k2 -v                       Show version and exit
 
-  k2 open                      Open webapp in browser
-  k2 upgrade                   Download and install latest version
-  k2 version                   Show version info
-  k2 demo-config                Print example client config (YAML)
+  k2 ctl up [URL|config]      Connect tunnel
+  k2 ctl down                 Disconnect tunnel
+  k2 ctl status               Show connection status
+
+  k2 setup [URL]              Generate config + install service + start
+  k2 setup -c config.yaml     Install service from existing config
+
+  k2 service install          Install system service
+  k2 service uninstall        Remove system service
+
+  k2 upgrade [--check]        Download and install latest version
+  k2 demo-config              Print example client config (YAML)
+  k2 version                  Show version info
+
+Deprecated (use above instead):
+  k2 run                      → k2 (no subcommand)
+  k2 up                       → k2 ctl up
+  k2 down                     → k2 ctl down
+  k2 status                   → k2 ctl status
 
 Server: use k2s binary for server deployment.
 `)
+}
+
+// deprecatedWarn prints a deprecation warning for oldCmd to w, showing the new replacement.
+func deprecatedWarn(oldCmd string, newCmd string, w io.Writer) {
+	fmt.Fprintf(w, "WARNING: 'k2 %s' is deprecated. Use '%s' instead.\n", oldCmd, newCmd)
 }

@@ -1,0 +1,120 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestPIDWrite(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.pid")
+
+	if err := WritePID(path); err != nil {
+		t.Fatalf("WritePID: %v", err)
+	}
+
+	pid, err := ReadPID(path)
+	if err != nil {
+		t.Fatalf("ReadPID after write: %v", err)
+	}
+	if pid <= 0 {
+		t.Errorf("PID = %d, want > 0", pid)
+	}
+}
+
+func TestPIDRead(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.pid")
+
+	// Write a known PID value directly
+	if err := os.WriteFile(path, []byte("12345\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	pid, err := ReadPID(path)
+	if err != nil {
+		t.Fatalf("ReadPID: %v", err)
+	}
+	if pid != 12345 {
+		t.Errorf("PID = %d, want 12345", pid)
+	}
+}
+
+func TestPIDRead_Missing(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "nonexistent.pid")
+
+	pid, err := ReadPID(path)
+	if err != nil {
+		t.Fatalf("ReadPID on missing file: expected nil error, got %v", err)
+	}
+	if pid != 0 {
+		t.Errorf("PID = %d, want 0 for missing file", pid)
+	}
+}
+
+func TestPIDStale(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "stale.pid")
+
+	// Write a PID that almost certainly does not exist (very large number)
+	if err := os.WriteFile(path, []byte("999999999\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	pid, err := CheckStale(path)
+	if err != nil {
+		t.Fatalf("CheckStale: %v", err)
+	}
+	// Should return the stale PID
+	if pid != 999999999 {
+		t.Errorf("stale PID = %d, want 999999999", pid)
+	}
+	// File should be cleaned up
+	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+		t.Error("stale PID file should have been removed")
+	}
+}
+
+func TestDefaultPIDPath(t *testing.T) {
+	// DefaultPIDPath should return a non-empty path containing the name.
+	path := DefaultPIDPath("k2")
+	if path == "" {
+		t.Fatal("DefaultPIDPath returned empty string")
+	}
+	if !containsPIDName(path, "k2") {
+		t.Errorf("DefaultPIDPath = %q, should contain 'k2'", path)
+	}
+}
+
+// containsPIDName checks that path contains the given name component.
+func containsPIDName(path, name string) bool {
+	for i := 0; i <= len(path)-len(name); i++ {
+		if path[i:i+len(name)] == name {
+			return true
+		}
+	}
+	return false
+}
+
+func TestPIDCleanup(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.pid")
+
+	if err := WritePID(path); err != nil {
+		t.Fatalf("WritePID: %v", err)
+	}
+
+	// Verify file exists
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Fatal("PID file should exist after WritePID")
+	}
+
+	RemovePID(path)
+
+	// Verify file is gone
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("PID file should be removed after RemovePID")
+	}
+}

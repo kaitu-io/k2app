@@ -34,7 +34,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=%s run
+ExecStart=%s
 Restart=always
 RestartSec=5
 

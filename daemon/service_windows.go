@@ -22,7 +22,7 @@ func installService() error {
 	}
 
 	err = exec.Command("sc", "create", k2ServiceName,
-		"binPath=", fmt.Sprintf(`"%s" run`, exe),
+		"binPath=", fmt.Sprintf(`"%s"`, exe),
 		"start=", "auto",
 		"DisplayName=", "k2 network tunnel daemon",
 	).Run()
