@@ -31,16 +31,6 @@ vi.mock('@/i18n/routing', () => ({
   Link: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-// Mock next/dynamic (used for MPTCPVisualization)
-vi.mock('next/dynamic', () => ({
-  default: () => () => null,
-}));
-
-// Mock @/components/MPTCPVisualization
-vi.mock('@/components/MPTCPVisualization', () => ({
-  default: () => null,
-}));
-
 // Mock @/components/Header
 vi.mock('@/components/Header', () => ({
   default: () => null,

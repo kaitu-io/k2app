@@ -3,9 +3,8 @@
 /**
  * HomeClient — client-side interactive portion of the homepage.
  *
- * Previously contained MPTCPVisualization canvas animation.
- * T5 rewrite removes the MPTCP content entirely — this component
- * is retained as a placeholder for future client-side interactions.
+ * Retained as a placeholder for future client-side interactions.
+ * The MPTCP visualization (T1 era) has been removed in T5.
  */
 export default function HomeClient(): React.ReactElement {
   return <></>;
