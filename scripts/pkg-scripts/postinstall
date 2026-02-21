@@ -9,4 +9,10 @@ if [ -x "$K2" ]; then
     "$K2" service install 2>&1 || true
 fi
 
+# 2. Launch the newly installed Kaitu app as the logged-in user
+CONSOLE_USER=$(stat -f "%Su" /dev/console)
+if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ]; then
+    sudo -u "$CONSOLE_USER" open /Applications/Kaitu.app &
+fi
+
 exit 0

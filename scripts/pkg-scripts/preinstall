@@ -4,8 +4,17 @@
 
 K2="/Applications/Kaitu.app/Contents/MacOS/k2"
 
-# 1. Kill the running Kaitu app (release file handles)
-pkill -f "Kaitu.app/Contents/MacOS/Kaitu" 2>/dev/null || true
+# 1. Quit the running Kaitu app and wait for it to exit
+if pgrep -f "Kaitu.app/Contents/MacOS/Kaitu" >/dev/null 2>&1; then
+    pkill -f "Kaitu.app/Contents/MacOS/Kaitu" 2>/dev/null || true
+    # Wait up to 5s for graceful exit
+    for i in $(seq 1 10); do
+        pgrep -f "Kaitu.app/Contents/MacOS/Kaitu" >/dev/null 2>&1 || break
+        sleep 0.5
+    done
+    # Force kill if still running
+    pkill -9 -f "Kaitu.app/Contents/MacOS/Kaitu" 2>/dev/null || true
+fi
 
 # 2. Uninstall existing service (stop + remove plist)
 if [ -x "$K2" ]; then
