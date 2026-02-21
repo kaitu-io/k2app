@@ -7,7 +7,7 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-mono: var(--font-mono);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -45,77 +45,40 @@
 
 :root {
   --radius: 0.625rem;
-  /* Professional Color Scheme - Light Mode (hsl format for browser compatibility) */
-  --card: hsl(0, 0%, 100%);
-  --card-foreground: hsl(0, 0%, 9%);
-  --popover: hsl(0, 0%, 100%);
-  --popover-foreground: hsl(0, 0%, 9%);
-  --primary: hsl(221, 83%, 53%);
-  --primary-foreground: hsl(0, 0%, 100%);
-  --secondary: hsl(192, 50%, 45%);
-  --secondary-foreground: hsl(0, 0%, 100%);
-  --muted: hsl(210, 20%, 96%);
-  --muted-foreground: hsl(0, 0%, 45%);
-  --accent: hsl(217, 80%, 60%);
-  --accent-foreground: hsl(0, 0%, 100%);
-  --destructive: hsl(0, 84%, 60%);
-  --border: hsl(0, 0%, 90%);
-  --input: hsl(0, 0%, 90%);
-  --ring: hsl(221, 83%, 53%);
-  /* Professional Chart Colors */
-  --chart-1: hsl(221, 83%, 53%);
-  --chart-2: hsl(192, 50%, 45%);
-  --chart-3: hsl(142, 60%, 45%);
-  --chart-4: hsl(35, 80%, 50%);
-  --chart-5: hsl(0, 84%, 60%);
-  /* Professional Sidebar Colors */
-  --sidebar: hsl(0, 0%, 100%);
-  --sidebar-foreground: hsl(0, 0%, 9%);
-  --sidebar-primary: hsl(221, 83%, 53%);
-  --sidebar-primary-foreground: hsl(0, 0%, 100%);
-  --sidebar-accent: hsl(210, 20%, 96%);
-  --sidebar-accent-foreground: hsl(221, 83%, 53%);
-  --sidebar-border: hsl(0, 0%, 90%);
-  --sidebar-ring: hsl(221, 83%, 53%);
-  --background: hsl(210, 20%, 98%);
-  --foreground: hsl(0, 0%, 9%);
-}
-
-.dark {
-  /* Harmonized Color Scheme - Dark Mode (hsl format for browser compatibility) */
-  --background: hsl(240, 6%, 10%);         /* #0F0F13 统一深色背景 */
-  --foreground: hsl(0, 0%, 98%);           /* #FAFAFA 统一前景色 */
-  --card: hsl(240, 4%, 16%);               /* #1A1A1D 统一卡片背景 */
-  --card-foreground: hsl(0, 0%, 98%);      /* #FAFAFA 统一卡片前景色 */
-  --popover: hsl(240, 4%, 16%);            /* #1A1A1D 统一弹出框背景 */
-  --popover-foreground: hsl(0, 0%, 98%);   /* #FAFAFA 统一弹出框前景色 */
-  --primary: hsl(217, 80%, 60%);
-  --primary-foreground: hsl(0, 0%, 9%);
-  --secondary: hsl(192, 60%, 55%);
-  --secondary-foreground: hsl(0, 0%, 9%);
-  --muted: hsl(0, 0%, 22%);                /* 统一静音背景色 */
-  --muted-foreground: hsl(0, 0%, 60%);     /* 统一静音前景色 */
-  --accent: hsl(221, 70%, 45%);
-  --accent-foreground: hsl(0, 0%, 98%);    /* 统一重点前景色 */
+  /* Terminal Dark Color System */
+  --background: #0a0a0f;
+  --foreground: #e0e0e0;
+  --card: #111118;
+  --card-foreground: #e0e0e0;
+  --popover: #111118;
+  --popover-foreground: #e0e0e0;
+  --primary: #00ff88;
+  --primary-foreground: #0a0a0f;
+  --secondary: #00d4ff;
+  --secondary-foreground: #0a0a0f;
+  --muted: #1a1a22;
+  --muted-foreground: #666;
+  --accent: #00ff88;
+  --accent-foreground: #0a0a0f;
   --destructive: hsl(0, 72%, 55%);
-  --border: hsla(0, 0%, 100%, 12%);        /* 统一边框透明度 */
-  --input: hsla(0, 0%, 100%, 15%);
-  --ring: hsl(217, 80%, 60%);
-  /* Professional Chart Colors - Dark Mode */
-  --chart-1: hsl(217, 80%, 60%);
-  --chart-2: hsl(192, 60%, 55%);
+  --border: rgba(0, 255, 136, 0.15);
+  --input: rgba(0, 255, 136, 0.1);
+  --ring: #00ff88;
+  /* Terminal Chart Colors */
+  --chart-1: #00ff88;
+  --chart-2: #00d4ff;
   --chart-3: hsl(142, 60%, 55%);
   --chart-4: hsl(45, 80%, 60%);
   --chart-5: hsl(0, 72%, 55%);
-  /* Harmonized Sidebar Colors - Dark Mode */
-  --sidebar: hsl(240, 4%, 16%);            /* #1A1A1D 统一侧边栏背景 */
-  --sidebar-foreground: hsl(0, 0%, 98%);   /* #FAFAFA 统一侧边栏前景色 */
-  --sidebar-primary: hsl(217, 80%, 60%);
-  --sidebar-primary-foreground: hsl(0, 0%, 9%);
-  --sidebar-accent: hsl(0, 0%, 22%);       /* 统一侧边栏重点背景 */
-  --sidebar-accent-foreground: hsl(0, 0%, 98%);  /* 统一侧边栏重点前景色 */
-  --sidebar-border: hsla(0, 0%, 100%, 12%);      /* 统一侧边栏边框 */
-  --sidebar-ring: hsl(217, 80%, 60%);
+  /* Terminal Sidebar Colors */
+  --sidebar: #111118;
+  --sidebar-foreground: #e0e0e0;
+  --sidebar-primary: #00ff88;
+  --sidebar-primary-foreground: #0a0a0f;
+  --sidebar-accent: #1a1a22;
+  --sidebar-accent-foreground: #e0e0e0;
+  --sidebar-border: rgba(0, 255, 136, 0.15);
+  --sidebar-ring: #00ff88;
 }
 
 @layer base {

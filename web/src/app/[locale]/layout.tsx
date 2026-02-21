@@ -12,10 +12,15 @@ import { LocaleProvider } from '@/components/providers/LocaleProvider';
 import { generateMetadata as generatePageMetadata } from './metadata';
 import { Metadata } from 'next';
 import { Suspense } from 'react';
-import { Inter } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "../globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono",
+});
 
 export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
@@ -53,7 +58,7 @@ export default async function LocaleLayout({
 
   return (
     <html lang={locale} suppressHydrationWarning>
-      <body className={inter.className} suppressHydrationWarning>
+      <body className={`${inter.className} ${jetbrainsMono.variable}`} suppressHydrationWarning>
         <NextIntlClientProvider messages={messages}>
           <LocaleProvider locale={locale}>
             <Suspense fallback={null}>
