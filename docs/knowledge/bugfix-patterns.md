@@ -357,3 +357,29 @@ Then `npx cap sync android` and rebuild.
 **Prevention**: Add to CLAUDE.md as a convention.
 
 ---
+
+## Service Label Mismatch: io.kaitu.k2 vs kaitu (2026-02-22, k2-cli-redesign)
+
+**Problem**: Initial k2 CLI redesign used `io.kaitu.k2` as the launchd service label. But production kaitu-service already uses label `kaitu` with plist at `/Library/LaunchDaemons/kaitu.plist`. New label would create a second service instead of replacing the old one.
+
+**Discovery**: UAT testing on local machine — `sudo k2 service install` created `/Library/LaunchDaemons/io.kaitu.k2.plist` alongside existing `kaitu.plist`. Two services running simultaneously.
+
+**Fix**: Changed `serviceLabel` from `"io.kaitu.k2"` to `"kaitu"` in `k2/daemon/service_darwin.go`. Added `launchctl unload` before plist write to ensure clean overwrite.
+
+**Prevention**: When replacing an existing service, use the SAME label/name. Check production environment for existing service identity before choosing a label.
+
+**Cross-reference**: See Architecture Decisions → "Service Label Unification"
+
+---
+
+## Over-Designed Include Directive Deleted (2026-02-22, k2-cli-redesign)
+
+**Problem**: k2 config spec initially included an `Include` field for nginx-style config inclusion (`include /path/to/extra.conf`). Fully implemented with `ResolveInclude()` function, recursive resolution, and cycle detection.
+
+**Why deleted**: k2 configs are simple (~10 lines). Include is a complexity multiplier with no current use case. User identified it as YAGNI: "本身我们的设置是干净利索的，没有太多内容，include 这个设计过重了。完全删除"
+
+**Lesson**: For simple config formats, resist the urge to add "power user" features. If the config file is small enough to read in one screen, include/import mechanics add complexity without value.
+
+**Files removed**: `k2/config/include.go`, `k2/config/include_test.go`. `Include` field removed from both `ClientConfig` and `ServerConfig` structs.
+
+---

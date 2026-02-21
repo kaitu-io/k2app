@@ -207,3 +207,15 @@ F2 (Platform) ─┤                 ├── F4 (Nav+Layout+Global) ──┬�
 **Cost of not checking**: Low in this case (discovered at execution time, 3 no-op steps). But if the plan had estimated time or assigned parallel agents, half the work allocation would be wasted.
 
 ---
+
+## Go Submodule: Single Branch for Sequential Dependencies (2026-02-22, k2-cli-redesign)
+
+**Observation**: k2-cli-redesign had 5 tasks (F1→F2→T3→T4→T5) where F1 was Go config, F2 was Go CLI, T3 was Go service management — all in the `k2/` submodule with sequential dependencies. Per-task worktrees added overhead: each needed the previous task's changes, so parallelism was impossible.
+
+**What worked**: Single feature branch `feat/cli-redesign` in k2 submodule. Tasks executed sequentially on the same branch. Merged to `master` (k2's main branch) with `--no-ff` after all tasks complete.
+
+**Contrast with k2app tasks**: T4 (Tauri service.rs) and T5 (installer hooks) touched different k2app files — could theoretically parallelize, but both depended on T3's Go service commands.
+
+**Lesson**: When a feature is concentrated in a single submodule with sequential task dependencies, use one feature branch. Reserve per-task worktrees for k2app-level tasks that touch independent directories.
+
+---

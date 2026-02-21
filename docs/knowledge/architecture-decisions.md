@@ -1493,3 +1493,85 @@ App writes packet → TUN device (utun0)
 **Status**: verified (code-level confirmation)
 
 ---
+
+## nginx-Style CLI Model for k2 (2026-02-22, k2-cli-redesign)
+
+**Decision**: k2 binary is the foreground process itself (no `run` subcommand). Service management via `k2 service install/uninstall/status`. Signal-based control: `k2 stop` sends SIGTERM to running daemon, `k2 reload` sends SIGHUP.
+
+**Supersedes**: Previous cobra-style `k2 run` + `k2 svc up/down` model.
+
+**Why nginx model**:
+- Binary is the daemon — `launchd`/`sc` directly execute it, no subcommand needed
+- `service install` writes plist/service config pointing to the binary itself
+- `stop`/`reload` find running PID via pidfile and send Unix signals (SIGTERM/SIGHUP)
+- Clean separation: lifecycle ops (`service *`) vs runtime control (`stop`/`reload`) vs info (`version`/`status`)
+
+**CLI structure**:
+```
+k2                    → foreground daemon (default, no subcommand)
+k2 service install    → write plist + launchctl load (macOS) / sc create + start (Windows)
+k2 service uninstall  → launchctl unload + rm plist / sc stop + delete
+k2 service status     → check launchd/sc status
+k2 stop               → send SIGTERM to running daemon via pidfile
+k2 reload             → send SIGHUP to running daemon via pidfile
+k2 version            → print version + build info
+k2 status             → query daemon HTTP API /api/core {action:"status"}
+```
+
+**Files**: `k2/cmd/root.go`, `k2/cmd/service.go`, `k2/daemon/service_darwin.go`, `k2/daemon/service_windows.go`
+
+**Validating tests**: `k2/cmd/root_test.go` — `TestCLIDispatch*`, `TestServiceSubcommands`
+**Source**: k2-cli-redesign (2026-02-22)
+**Status**: verified (UAT + production deployment)
+
+---
+
+## Service Label Unification: `kaitu` Replaces kaitu-service (2026-02-22, k2-cli-redesign + macos-pkg-service-lifecycle)
+
+**Decision**: k2's launchd service uses label `kaitu` (not `io.kaitu.k2`), plist at `/Library/LaunchDaemons/kaitu.plist`. Directly overwrites the existing kaitu-service plist.
+
+**Why not `io.kaitu.k2`**:
+- Production has `kaitu` label at `/Library/LaunchDaemons/kaitu.plist` from kaitu-service era
+- Using same label = zero migration cost. k2 `service install` simply overwrites the plist
+- No need for "detect old service + uninstall old + install new" migration logic
+- `service install` does `launchctl unload` first (safe if nothing loaded), then writes plist, then `launchctl load`
+
+**Production plist config** (resource limits for VPN daemon):
+- `HardResourceLimits` + `SoftResourceLimits`: 4000 processes, 10240 file descriptors
+- `ThrottleInterval: 2` (crash restart in 2s, default 10s is too slow for VPN)
+- `KeepAlive: true` (auto-restart on exit)
+
+**Files**: `k2/daemon/service_darwin.go` (const `serviceLabel = "kaitu"`)
+
+**Validating tests**: Manual UAT — `sudo k2 service install` → verify plist exists → verify `launchctl list | grep kaitu` → `sudo k2 service uninstall` → verify cleanup
+**Source**: k2-cli-redesign + macos-pkg-service-lifecycle (2026-02-22)
+**Status**: verified (UAT on local machine)
+
+---
+
+## PKG Installer preinstall/postinstall Lifecycle (2026-02-22, macos-pkg-service-lifecycle)
+
+**Decision**: macOS PKG uses two-phase install scripts: preinstall (before file copy) uninstalls old service, postinstall (after file copy) installs new service.
+
+**Why two scripts, not one postinstall**:
+- preinstall runs while OLD binary still at `/Applications/Kaitu.app/Contents/MacOS/k2`
+- Old binary must execute `service uninstall` before being overwritten (new binary might be incompatible)
+- App must be killed before file copy to release file handles
+- postinstall runs with NEW binary — safe to call `service install`
+
+**preinstall flow** (runs as root, old files):
+1. `pkill -f "Kaitu.app/Contents/MacOS/Kaitu"` — release file handles
+2. `k2 service uninstall` — stop + remove plist
+3. Fallback: `launchctl unload` + `rm` kaitu.plist (handles old kaitu-service without `service uninstall`)
+4. `sleep 2` — wait for cleanup
+
+**postinstall flow** (runs as root, new files):
+1. `k2 service install` — write plist + launchctl load
+
+**Files**: `scripts/pkg-scripts/preinstall`, `scripts/pkg-scripts/postinstall`, `scripts/build-macos.sh` (pkgbuild --scripts)
+
+**Cross-reference**: Windows NSIS uses same pattern in `desktop/src-tauri/installer-hooks.nsh` (PREINSTALL → k2.exe service uninstall, POSTINSTALL → k2.exe service install)
+**Source**: macos-pkg-service-lifecycle (2026-02-22)
+**Status**: verified (spec implemented + scripts reviewed)
+
+---

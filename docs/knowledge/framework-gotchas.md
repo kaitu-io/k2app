@@ -1106,3 +1106,39 @@ export function redactStdout(text: string): string {
 **Validating tests**: `tools/kaitu-ops-mcp/src/redact.test.ts` — `test_redact_node_secret`, `test_redact_hex_string_64`, `test_redact_preserves_normal`, `test_redact_multiline` (AC4)
 
 ---
+
+## macOS launchd: Must Unload Before Overwriting plist (2026-02-22, macos-pkg-service-lifecycle)
+
+**Problem**: Writing a new plist file while the service is loaded causes launchd to use stale config. The loaded service keeps running with old settings until explicitly unloaded.
+
+**Solution**: Always `launchctl unload /Library/LaunchDaemons/kaitu.plist` before overwriting the file, then `launchctl load` after writing new content.
+
+**k2 implementation**: `k2/daemon/service_darwin.go` `installService()` does unload → write plist → load in sequence.
+
+**Applies to**: Any launchd daemon service that gets upgraded in-place.
+
+**Source**: k2-cli-redesign (2026-02-22)
+**Status**: verified (UAT — sudo service install overwrites cleanly)
+
+---
+
+## PKG preinstall Runs OLD Binary, postinstall Runs NEW (2026-02-22, macos-pkg-service-lifecycle)
+
+**Problem**: macOS PKG installer copies files between preinstall and postinstall. Any binary executed in preinstall is the OLD version (before upgrade). Binary executed in postinstall is the NEW version.
+
+**Implication**: If preinstall needs to call `k2 service uninstall`, it MUST use the old binary. If the old binary doesn't support `service uninstall` (e.g., old kaitu-service), preinstall needs a fallback (`launchctl unload` + `rm` plist directly).
+
+**Pattern**:
+```
+preinstall:  old k2 → service uninstall → fallback cleanup
+[file copy]
+postinstall: new k2 → service install
+```
+
+**Contrast with NSIS (Windows)**: NSIS runs preinstall/postinstall custom sections in the same installer binary — not the installed binary. But the pattern is the same: uninstall before overwrite, install after.
+
+**Files**: `scripts/pkg-scripts/preinstall`, `scripts/pkg-scripts/postinstall`
+**Source**: macos-pkg-service-lifecycle (2026-02-22)
+**Status**: verified (spec review)
+
+---
