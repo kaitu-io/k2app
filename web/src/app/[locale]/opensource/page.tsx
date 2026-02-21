@@ -1,74 +1,53 @@
-"use client";
-
-import { useEffect, useState } from 'react';
-import { useTranslations } from 'next-intl';
+import { getTranslations, setRequestLocale } from 'next-intl/server';
+import type { Metadata } from 'next';
+import { routing } from '@/i18n/routing';
 import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Github, Calendar, Clock, Heart } from 'lucide-react';
+import { Github, Calendar } from 'lucide-react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
+import CountdownTimer from './CountdownTimer';
 
-const OPENSOURCE_DATE = new Date('2026-06-04T00:00:00Z'); // June 4, 2026
+type Locale = (typeof routing.locales)[number];
 
-interface TimeRemaining {
-  days: number;
-  hours: number;
-  minutes: number;
-  seconds: number;
+export const dynamic = 'force-static';
+
+const OPENSOURCE_DATE_ISO = '2026-06-04T00:00:00Z';
+
+/**
+ * Generate metadata for the opensource page (used by Next.js for <head> tags).
+ * Requires server-side translation to produce locale-aware title/description.
+ */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}): Promise<Metadata> {
+  const { locale: rawLocale } = await params;
+  const locale = rawLocale as Locale;
+  const t = await getTranslations({ locale, namespace: 'theme' });
+
+  return {
+    title: t('opensource.title'),
+    description: t('opensource.subtitle'),
+  };
 }
 
-export default function OpenSourcePage() {
-  const t = useTranslations();
-  const [timeRemaining, setTimeRemaining] = useState<TimeRemaining | null>(null);
-  const [isClient, setIsClient] = useState(false);
-
-  useEffect(() => {
-    setIsClient(true);
-
-    const calculateTimeRemaining = (): TimeRemaining => {
-      const now = new Date();
-      const diff = OPENSOURCE_DATE.getTime() - now.getTime();
-
-      if (diff <= 0) {
-        return { days: 0, hours: 0, minutes: 0, seconds: 0 };
-      }
-
-      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-      const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-
-      return { days, hours, minutes, seconds };
-    };
-
-    // Update immediately
-    setTimeRemaining(calculateTimeRemaining());
-
-    // Update every second
-    const interval = setInterval(() => {
-      setTimeRemaining(calculateTimeRemaining());
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  if (!isClient || !timeRemaining) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
-        <Header />
-        <div className="max-w-4xl mx-auto px-4 py-20 text-center">
-          <div className="animate-pulse">
-            <div className="h-12 bg-gray-200 dark:bg-gray-700 rounded mb-4"></div>
-            <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded"></div>
-          </div>
-        </div>
-        <Footer />
-      </div>
-    );
-  }
-
-  const isOpenSourced = timeRemaining.days === 0 && timeRemaining.hours === 0 &&
-                        timeRemaining.minutes === 0 && timeRemaining.seconds === 0;
+/**
+ * Opensource page Server Component — SSR-converted from client component.
+ *
+ * Static content (hero, countdown card frame, why open source) rendered on server.
+ * CountdownTimer client island handles the live countdown with useState/setInterval.
+ * Uses async params per Next.js 15 pattern.
+ */
+export default async function OpenSourcePage({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale: rawLocale } = await params;
+  const locale = rawLocale as Locale;
+  setRequestLocale(locale);
+  const t = await getTranslations({ locale });
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
@@ -108,70 +87,8 @@ export default function OpenSourcePage() {
             </p>
           </div>
 
-          {isOpenSourced ? (
-            <div className="text-center py-12">
-              <Heart className="w-20 h-20 text-red-500 mx-auto mb-6 animate-pulse" />
-              <h2 className="text-4xl font-bold text-gray-900 dark:text-white mb-4">
-                {t('theme.opensource.released')}
-              </h2>
-              <p className="text-xl text-gray-600 dark:text-gray-300 mb-8">
-                {t('theme.opensource.releasedDesc')}
-              </p>
-              <Button size="lg" className="bg-green-600 hover:bg-green-700">
-                <Github className="w-5 h-5 mr-2" />
-                {t('theme.opensource.viewOnGithub')}
-              </Button>
-            </div>
-          ) : (
-            <>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                <div className="text-center p-6 bg-gradient-to-br from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 rounded-lg">
-                  <div className="text-5xl font-bold text-blue-600 dark:text-blue-400 mb-2">
-                    {timeRemaining.days}
-                  </div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400 uppercase tracking-wide">
-                    {t('theme.opensource.days')}
-                  </div>
-                </div>
-
-                <div className="text-center p-6 bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-lg">
-                  <div className="text-5xl font-bold text-purple-600 dark:text-purple-400 mb-2">
-                    {timeRemaining.hours}
-                  </div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400 uppercase tracking-wide">
-                    {t('theme.opensource.hours')}
-                  </div>
-                </div>
-
-                <div className="text-center p-6 bg-gradient-to-br from-pink-50 to-orange-50 dark:from-pink-900/20 dark:to-orange-900/20 rounded-lg">
-                  <div className="text-5xl font-bold text-pink-600 dark:text-pink-400 mb-2">
-                    {timeRemaining.minutes}
-                  </div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400 uppercase tracking-wide">
-                    {t('theme.opensource.minutes')}
-                  </div>
-                </div>
-
-                <div className="text-center p-6 bg-gradient-to-br from-orange-50 to-yellow-50 dark:from-orange-900/20 dark:to-yellow-900/20 rounded-lg">
-                  <div className="text-5xl font-bold text-orange-600 dark:text-orange-400 mb-2">
-                    {timeRemaining.seconds}
-                  </div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400 uppercase tracking-wide">
-                    {t('theme.opensource.seconds')}
-                  </div>
-                </div>
-              </div>
-
-              <div className="text-center">
-                <div className="inline-flex items-center text-gray-600 dark:text-gray-400">
-                  <Clock className="w-5 h-5 mr-2" />
-                  <span className="text-lg font-medium">
-                    {t('theme.opensource.countingDown')}
-                  </span>
-                </div>
-              </div>
-            </>
-          )}
+          {/* Client island: handles live countdown with useState/setInterval */}
+          <CountdownTimer targetDateISO={OPENSOURCE_DATE_ISO} />
         </Card>
 
         {/* Why Open Source */}
