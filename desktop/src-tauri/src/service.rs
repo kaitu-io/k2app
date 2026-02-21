@@ -211,7 +211,7 @@ async fn admin_reinstall_service_macos() -> Result<String, String> {
     }
 
     let script = format!(
-        r#"do shell script "{} run --install" with administrator privileges"#,
+        r#"do shell script "{} service install" with administrator privileges"#,
         service_path
     );
 
@@ -245,7 +245,7 @@ async fn admin_reinstall_service_windows() -> Result<String, String> {
     }
 
     let ps_script = format!(
-        r#"Start-Process -FilePath '{}' -ArgumentList 'run','--install' -Verb RunAs -Wait -WindowStyle Hidden"#,
+        r#"Start-Process -FilePath '{}' -ArgumentList 'service','install' -Verb RunAs -Wait -WindowStyle Hidden"#,
         service_path.display()
     );
 

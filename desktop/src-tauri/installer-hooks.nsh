@@ -1,16 +1,9 @@
 ; Kaitu Desktop - NSIS Installer Hooks
 ; Windows service lifecycle management for Tauri application
 ;
-; Service management unified with 'k2 svc' commands:
-;   - k2.exe svc up      Install/update and start service (handles all cases)
-;   - k2.exe svc down    Stop and uninstall service
-;   - k2.exe svc status  Show service status
-;
-; 'svc up' automatically handles:
-;   - Migration from k2 if needed
-;   - Service installation if not present
-;   - Service updates if binary path changed
-;   - Ensures service is running
+; Service management via 'k2 service' commands:
+;   - k2.exe service install    Install and start system service
+;   - k2.exe service uninstall  Stop and uninstall system service
 ;
 ; IMPORTANT: Do NOT use sc.exe for service creation/deletion.
 ; Only use sc.exe for: querying status (sc query) and configuring recovery (sc failure)
@@ -73,11 +66,10 @@
   DetailPrint "Waiting for file handles (3 seconds)..."
   Sleep 3000
 
-  ; Step 3: Stop and uninstall service using unified 'svc down' command
+  ; Step 3: Stop and uninstall service
   ; This command handles: stop VPN, cleanup routes/DNS, uninstall service
-  ; Works for both k2 and legacy k2
   DetailPrint "Stopping and uninstalling service..."
-  nsExec::ExecToStack '"$INSTDIR\${SERVICE_EXE}" svc down'
+  nsExec::ExecToStack '"$INSTDIR\${SERVICE_EXE}" service uninstall'
   Pop $0
   Pop $1
   DetailPrint "Service down result: $0"
@@ -121,14 +113,9 @@
   DetailPrint "Configuring service..."
   DetailPrint "============================================"
 
-  ; Step 1: Install/update and start service using unified 'svc up' command
-  ; This command automatically handles:
-  ; - Migration from k2 if needed
-  ; - Service installation if not present
-  ; - Service updates if binary path changed
-  ; - Starting the service
+  ; Step 1: Install and start service
   DetailPrint "Installing and starting ${SERVICE_NAME} service..."
-  nsExec::ExecToStack '"$INSTDIR\${SERVICE_EXE}" svc up'
+  nsExec::ExecToStack '"$INSTDIR\${SERVICE_EXE}" service install'
   Pop $0
   Pop $1
   DetailPrint "Service up result: $0"
@@ -207,10 +194,9 @@
   DetailPrint "Waiting for file handles (3 seconds)..."
   Sleep 3000
 
-  ; Step 3: Stop and uninstall service using unified 'svc down' command
-  ; This command handles: stop VPN, cleanup routes/DNS, uninstall service
+  ; Step 3: Stop and uninstall service
   DetailPrint "Stopping and uninstalling ${SERVICE_NAME} service..."
-  nsExec::ExecToStack '"$INSTDIR\${SERVICE_EXE}" svc down'
+  nsExec::ExecToStack '"$INSTDIR\${SERVICE_EXE}" service uninstall'
   Pop $0
   Pop $1
   DetailPrint "Service down result: $0"

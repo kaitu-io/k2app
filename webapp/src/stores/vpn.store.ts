@@ -176,7 +176,7 @@ export function initializeVPNStore(): () => void {
     // 检测 app 版本与 service 版本是否匹配（macOS 更新后 service 可能未重启）
     // REMOVED: All version check logic moved to Rust (src-tauri/src/main.rs)
     // Tauri now handles version checking on startup via ensure_service_running()
-    // which calls admin_reinstall_service ('svc up') if needed
+    // which calls admin_reinstall_service ('service install') if needed
 
     // 防抖逻辑
     if (shouldDebounce(currentState, backendState)) {
