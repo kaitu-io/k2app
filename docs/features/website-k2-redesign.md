@@ -4,9 +4,10 @@
 
 | Field | Value |
 |-------|-------|
-| Status | draft |
+| Status | implemented |
 | Version | 1.2 |
 | Created | 2026-02-21 |
+| Updated | 2026-02-21 |
 
 ## 概述
 
