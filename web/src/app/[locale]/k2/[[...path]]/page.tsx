@@ -19,7 +19,7 @@ import type { K2Post } from '@/lib/k2-posts';
 /** Resolve a slug from the optional catch-all path param. */
 function resolveSlug(path: string[] | undefined): string {
   if (!path || path.length === 0) {
-    return 'k2/index';
+    return 'k2';
   }
   return `k2/${path.join('/')}`;
 }
@@ -75,10 +75,12 @@ export function generateStaticParams(): { locale: string; path: string[] | undef
   const params: { locale: string; path: string[] | undefined }[] = [];
 
   const k2Posts = (posts as K2Post[]).filter(
-    (p) => p.slug.startsWith('k2/') && !p.draft
+    (p) => (p.slug === 'k2' || p.slug.startsWith('k2/')) && !p.draft
   );
 
   for (const post of k2Posts) {
+    // Skip the index post (slug "k2") — handled below as path: undefined
+    if (post.slug === 'k2') continue;
     // Strip "k2/" prefix to get the path segments
     const pathSegments = post.slug.slice('k2/'.length).split('/');
 

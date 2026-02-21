@@ -46,7 +46,7 @@ export function getK2Posts(locale: string): K2PostGroup[] {
   const k2Posts = (posts as K2Post[]).filter(
     (post) =>
       post.locale === locale &&
-      post.slug.startsWith('k2/') &&
+      (post.slug === 'k2' || post.slug.startsWith('k2/')) &&
       !post.draft
   );
 
