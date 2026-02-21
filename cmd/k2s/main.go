@@ -5,7 +5,6 @@ import (
 	_ "embed"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 )
 
@@ -44,13 +43,8 @@ func main() {
 	// Check remaining args for subcommand.
 	args := fs.Args()
 
-	// Deprecated aliases first (print warning, forward).
 	if len(args) > 0 {
 		switch args[0] {
-		case "run":
-			deprecatedWarn("run", "k2s (no subcommand)", os.Stderr)
-			runServer(*configPath)
-			return
 		case "version":
 			fmt.Printf("k2s %s (%s)\n", version, commit)
 			return
@@ -133,14 +127,7 @@ Usage:
   k2s demo-config              Print example server config (YAML)
   k2s version                  Show version info
 
-Deprecated (use above instead):
-  k2s run                      → k2s (no subcommand)
-
 Client: use k2 binary for client deployment.
 `)
 }
 
-// deprecatedWarn prints a deprecation warning for oldCmd to w, showing the new replacement.
-func deprecatedWarn(oldCmd string, newCmd string, w io.Writer) {
-	fmt.Fprintf(w, "WARNING: 'k2s %s' is deprecated. Use '%s' instead.\n", oldCmd, newCmd)
-}

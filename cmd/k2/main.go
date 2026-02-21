@@ -5,7 +5,6 @@ import (
 	_ "embed"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 )
 
@@ -44,25 +43,8 @@ func main() {
 	// Check remaining args for subcommand.
 	args := fs.Args()
 
-	// Deprecated aliases first (print warning, forward).
 	if len(args) > 0 {
 		switch args[0] {
-		case "run":
-			deprecatedWarn("run", "k2 (no subcommand)", os.Stderr)
-			runDaemon(*configPath)
-			return
-		case "up":
-			deprecatedWarn("up", "k2 ctl up", os.Stderr)
-			cmdCtl(args) // pass full ["up", ...] slice
-			return
-		case "down":
-			deprecatedWarn("down", "k2 ctl down", os.Stderr)
-			cmdCtl(args)
-			return
-		case "status":
-			deprecatedWarn("status", "k2 ctl status", os.Stderr)
-			cmdCtl(args)
-			return
 		case "version":
 			fmt.Printf("k2 %s (%s)\n", version, commit)
 			return
@@ -159,17 +141,7 @@ Usage:
   k2 demo-config              Print example client config (YAML)
   k2 version                  Show version info
 
-Deprecated (use above instead):
-  k2 run                      → k2 (no subcommand)
-  k2 up                       → k2 ctl up
-  k2 down                     → k2 ctl down
-  k2 status                   → k2 ctl status
-
 Server: use k2s binary for server deployment.
 `)
 }
 
-// deprecatedWarn prints a deprecation warning for oldCmd to w, showing the new replacement.
-func deprecatedWarn(oldCmd string, newCmd string, w io.Writer) {
-	fmt.Fprintf(w, "WARNING: 'k2 %s' is deprecated. Use '%s' instead.\n", oldCmd, newCmd)
-}

@@ -68,15 +68,3 @@ func TestK2sSignalStop_NoPID(t *testing.T) {
 	}
 }
 
-// TestK2sDeprecatedRunAlias verifies that deprecatedWarn prints a deprecation warning.
-func TestK2sDeprecatedRunAlias(t *testing.T) {
-	var buf bytes.Buffer
-	deprecatedWarn("run", "k2s (no subcommand)", &buf)
-	out := buf.String()
-	if !strings.Contains(strings.ToLower(out), "deprecated") && !strings.Contains(strings.ToLower(out), "warning") {
-		t.Errorf("expected deprecation warning, got: %q", out)
-	}
-	if !strings.Contains(out, "run") {
-		t.Errorf("expected 'run' in warning message, got: %q", out)
-	}
-}

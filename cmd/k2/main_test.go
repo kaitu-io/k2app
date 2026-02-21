@@ -126,28 +126,3 @@ func TestSignalStop_StalePID(t *testing.T) {
 	}
 }
 
-// TestDeprecatedRunAlias verifies that "run" command prints a deprecation warning.
-func TestDeprecatedRunAlias(t *testing.T) {
-	var buf bytes.Buffer
-	deprecatedWarn("run", "k2 (no subcommand)", &buf)
-	out := buf.String()
-	if !strings.Contains(strings.ToLower(out), "deprecated") && !strings.Contains(strings.ToLower(out), "warning") {
-		t.Errorf("expected deprecation warning, got: %q", out)
-	}
-	if !strings.Contains(out, "run") {
-		t.Errorf("expected 'run' in warning message, got: %q", out)
-	}
-}
-
-// TestDeprecatedUpAlias verifies that "up" command prints a deprecation warning.
-func TestDeprecatedUpAlias(t *testing.T) {
-	var buf bytes.Buffer
-	deprecatedWarn("up", "k2 ctl up", &buf)
-	out := buf.String()
-	if !strings.Contains(strings.ToLower(out), "deprecated") && !strings.Contains(strings.ToLower(out), "warning") {
-		t.Errorf("expected deprecation warning, got: %q", out)
-	}
-	if !strings.Contains(out, "up") {
-		t.Errorf("expected 'up' in warning message, got: %q", out)
-	}
-}
