@@ -35,6 +35,7 @@ web/
 │   │   │   ├── changelog/     # Release notes
 │   │   │   ├── login/         # Email OTP login
 │   │   │   ├── s/[code]/      # Invite link landing
+│   │   │   ├── k2/[[...path]]/ # K2 protocol docs section (Velite + sidebar layout)
 │   │   │   ├── [...slug]/     # Catch-all content pages (Velite markdown)
 │   │   │   └── ...            # privacy, terms, routers, opensource
 │   │   ├── (manager)/         # Admin dashboard (no locale prefix)
@@ -63,14 +64,18 @@ web/
 │   │   ├── auth.ts            # JWT decode helpers
 │   │   ├── constants.ts       # Shared constants
 │   │   ├── events.ts          # App event bus (auth:unauthorized, etc.)
+│   │   ├── k2-posts.ts        # getK2Posts(locale) — Velite filter/group/sort for /k2/ sidebar
 │   │   ├── udid.ts            # Device fingerprint
 │   │   └── utils.ts           # cn() helper (clsx + tailwind-merge)
 │   └── middleware.ts          # next-intl locale detection + manager bypass
 ├── content/                   # Markdown content files (Velite)
 │   ├── zh-CN/                 # Chinese content (primary)
+│   │   └── k2/                # K2 protocol docs (zh-CN)
 │   └── en-US/                 # English content (fallback to zh-CN)
-├── velite.config.ts           # Velite schema + collection config
-├── messages/                  # i18n JSON files (7 locales × 12+ namespaces)
+│       └── k2/                # K2 protocol docs (en-US)
+├── velite.config.ts           # Velite schema + collection config (order/section fields)
+├── messages/                  # i18n JSON files (7 locales × 14 namespaces)
+│   └── namespaces.ts          # Namespace registry — update when adding new *.json files
 ├── tests/                     # Playwright E2E specs + vitest + build tests
 └── public/                    # Static assets, legal docs, app icons
 ```
@@ -134,11 +139,15 @@ const t = useTranslations();  // NOT const { t } = useTranslations()
 
 **Navigation**: Use `Link` from `@/i18n/routing` for internal links (auto locale prefix). Use `next/link` for external links.
 
-**Files**: `messages/{locale}/{namespace}.json` — namespaces: nav, common, auth, purchase, hero, install, discovery, invite, wallet, campaigns, changelog, admin, theme.
+**Files**: `messages/{locale}/{namespace}.json` — namespaces: nav, common, auth, purchase, hero, install, discovery, invite, wallet, campaigns, changelog, admin, theme, k2.
+
+**Namespace registry**: `messages/namespaces.ts` lists all active namespaces. When adding a new `*.json` namespace file, add its name to the `namespaces` array in `namespaces.ts` — otherwise it is never loaded and all keys return their raw key string silently.
+
+**usePathname / Link for locale-aware navigation**: Inside `[locale]` components, use `usePathname` and `Link` from `@/i18n/routing`, NOT from `next/navigation` or `next/link`. The `@/i18n/routing` versions strip the locale prefix from pathnames and auto-prefix links.
 
 ## Content Publishing (Velite)
 
-Markdown files in `content/{locale}/` are processed by Velite at build time and served via the `[...slug]` catch-all route.
+Markdown files in `content/{locale}/` are processed by Velite at build time and served via the `[...slug]` catch-all route or dedicated routes.
 
 - **Content files**: `web/content/{locale}/{path}.md` → URL: `/{locale}/{path}`
 - **Directory listing**: Any directory with content files gets an automatic listing page
@@ -148,18 +157,28 @@ Markdown files in `content/{locale}/` are processed by Velite at build time and 
 - **Build**: Velite runs alongside Next.js via `process.argv` detection in `next.config.ts`
 - **Skill**: Use `/publish-content` to create content with AI assistance
 
-**Reserved paths** (content must NOT use): 403, account, discovery, install, login, opensource, privacy, purchase, retailer, routers, s, terms, changelog, manager
+**Velite schema optional fields** (post frontmatter):
+- `order: number` — sidebar sort weight (used by `/k2/` sidebar). Omit for non-sidebar content.
+- `section: string` — sidebar grouping key (e.g., `"getting-started"`, `"technical"`, `"comparison"`). Omit for non-sidebar content.
+
+**K2 protocol docs** (`web/content/{locale}/k2/*.md`):
+- Served by `web/src/app/[locale]/k2/[[...path]]/page.tsx` (NOT the `[...slug]` catch-all)
+- Sidebar navigation driven by `order` + `section` frontmatter via `getK2Posts(locale)` helper
+- `getK2Posts()` is the single source: used by K2Sidebar, K2Page, and sitemap.ts
+
+**Reserved paths** (content must NOT use): 403, account, discovery, install, login, opensource, privacy, purchase, retailer, routers, s, terms, changelog, manager, k2
 
 ## Routing
 
 | Path pattern | Layout group | Auth | Purpose |
 |-------------|-------------|------|---------|
 | `/{locale}/*` | `[locale]` | Public/Mixed | User-facing pages |
+| `/{locale}/k2/[[...path]]` | `[locale]/k2` | Public | K2 protocol docs (Velite + sidebar) |
 | `/{locale}/{...slug}` | `[locale]` | Public | Content pages (Velite catch-all) |
 | `/manager/*` | `(manager)` | Admin | Management dashboard |
 
 **Manager routes bypass i18n middleware** — no locale prefix. Chinese-only admin UI.
-**Static routes take priority** over the `[...slug]` catch-all (Next.js default behavior).
+**Static routes take priority** over the `[...slug]` catch-all (Next.js default behavior). `/k2/[[...path]]` takes priority over `[...slug]` for all `/k2/*` paths.
 
 ## Environment
 
@@ -175,6 +194,8 @@ AWS Amplify (`amplify.yml`). Prebuild script (`scripts/amplify-prebuild.sh`) han
 
 - **`useTranslations()` pattern**: Must use `const t = useTranslations()` — destructuring `const { t }` does NOT work with next-intl.
 - **Translation keys in ALL locales**: Every key must exist in all 7 locale JSON files before committing.
+- **Namespace registry**: Adding a new `messages/{locale}/*.json` namespace requires adding it to `messages/namespaces.ts` `namespaces` array. Missing registry entry = silent key passthrough (no error).
+- **usePathname / Link — use @/i18n/routing**: Inside `[locale]` layout components, import `usePathname` and `Link` from `@/i18n/routing` (NOT `next/navigation` or `next/link`). ESLint enforces this.
 - **API response pattern**: Same as Center API — check `code` field, not HTTP status. Never show `message` to users.
 - **Manager has no i18n**: Admin dashboard is Chinese-only, routes bypass next-intl middleware entirely.
 - **Package manager**: Must use `yarn` exclusively (not npm).
@@ -183,6 +204,9 @@ AWS Amplify (`amplify.yml`). Prebuild script (`scripts/amplify-prebuild.sh`) han
 - **API chain linkage**: When modifying Center API endpoints, update `web/src/lib/api.ts` typed methods to match.
 - **Velite `.velite/` directory**: Generated at build time, gitignored. Contains `index.js`, `index.d.ts`, `posts.json`. Rebuild with `npx velite build`.
 - **Content prose styling**: Uses `@tailwindcss/typography` — article content rendered with `prose dark:prose-invert` classes.
+- **next-intl IntlMessages interface**: `web/src/types/i18n.d.ts` uses an empty `interface IntlMessages {}` (permissive typing) because messages are split across namespace files loaded dynamically. This disables compile-time key checking — use runtime tests instead.
+- **Server Component pages with setRequestLocale**: Cast locale to `(typeof routing.locales)[number]` when calling `setRequestLocale()`. The URL param type is `string` but next-intl requires the narrower union type.
+- **Homepage is Server Component + force-static**: `web/src/app/[locale]/page.tsx` has `export const dynamic = 'force-static'`. Do NOT add `"use client"` — it would break SSG and SEO.
 
 ## Related Docs
 

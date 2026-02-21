@@ -317,7 +317,7 @@ export async function generateMetadata({ params }) {
 
 **执行顺序**：AC1 (SSR) → 验证通过 → AC2 (主题) → AC3 (Velite) → AC4 (/k2/ 文档) → AC5 (首页) → AC6 (vs-hysteria2) → AC7 (SEO 补全)
 
-### AC1: Server Component 改造（前置，独立验证）(scrum-decided)
+### AC1: Server Component 改造（前置，独立验证）
 
 首页从 CSR 改为 SSR/SSG，在其他任何改动之前独立完成并验证。
 
@@ -336,7 +336,7 @@ export async function generateMetadata({ params }) {
 4. `(manager)` admin 页面不受影响
 5. embed mode（iframe 嵌入）功能正常
 
-**背景（scrum 辩论结论）**：
+**背景**：
 - `"use client"` 从项目第一次提交就存在（`1f9a8e9`），不是从 SSR 改过来的，属于原始开发习惯
 - Amplify 部署为 `WEB_COMPUTE` 平台 + `Next.js - SSR` 框架，完全支持 Server Component
 - `[...slug]/page.tsx` 已是 Server Component 且在生产正常运行，为本次改造提供了验证先例
@@ -407,14 +407,14 @@ export async function generateMetadata({ params }) {
 - 不改动 webapp/（VPN 客户端前端）的主题
 - 不改造剩余 18 个公共页面的 SSR（记录为 TODO，后续批量处理）
 
-## Technical Decisions (scrum-decided)
+## Technical Decisions
 
 1. **Velite Markdown 而非纯 React 页面**：SEO/GEO 友好，内容更新不需改代码，build time 静态生成
 2. **独立路由 `/k2/[[...path]]` 而非修改 `[...slug]`**：隔离关注点，/k2/ 有专属侧边栏布局
 3. **Terminal Dark 强制暗色**：移除 next-themes 的 system/light 切换，`defaultTheme="dark"` 且不可切换
 4. **拥塞控制不透露细节**：称为"自研自适应拥塞控制算法"，效果图不含公式或算法名称
-5. **Server Component + force-static（scrum 辩论裁决）**：首页 + /k2/ 全部为 Server Component，加 `export const dynamic = 'force-static'` 确保 SSG。build time 生成静态 HTML 由 CDN 分发，不走 Lambda。证据：`"use client"` 从首次提交即存在（非从 SSR 改过来），Amplify `WEB_COMPUTE` 平台完全支持，`[...slug]` 已验证 Server Component 模式可行
-6. **SSR 改造必须独立验证（scrum 辩论裁决）**：AC1 (SSR) 必须在其他 AC 之前独立完成。验证标准：build 输出为 `.html`、curl 验证初始 HTML 含文字、Amplify preview branch 部署正常。通过后才能进入主题和内容改版
+5. **Server Component + force-static**：首页 + /k2/ 全部为 Server Component，加 `export const dynamic = 'force-static'` 确保 SSG。build time 生成静态 HTML 由 CDN 分发，不走 Lambda。证据：`"use client"` 从首次提交即存在（非从 SSR 改过来），Amplify `WEB_COMPUTE` 平台完全支持，`[...slug]` 已验证 Server Component 模式可行
+6. **SSR 改造必须独立验证**：AC1 (SSR) 必须在其他 AC 之前独立完成。验证标准：build 输出为 `.html`、curl 验证初始 HTML 含文字、Amplify preview branch 部署正常。通过后才能进入主题和内容改版
 7. **JSON-LD 结构化数据**：帮助 AI 搜索引擎理解页面类型（软件产品 vs 技术文档 vs 对比文章）
 
 ## Version History

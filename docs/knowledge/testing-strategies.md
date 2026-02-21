@@ -511,6 +511,59 @@ describe('filterNodes', () => {
 
 ---
 
+## Next.js Website Testing: Velite Mock + Server Component Pattern (2026-02-21, website-k2-redesign)
+
+**Pattern**: Next.js website vitest tests (in `web/tests/`) mock the `#velite` import to provide synthetic post data. Server Component pages are tested by calling them as async functions directly (not through a React renderer), asserting on the returned JSX or generated metadata.
+
+**Velite mock pattern**:
+```typescript
+// web/tests/k2-content.test.ts
+vi.mock('#velite', () => ({
+  posts: [
+    {
+      title: 'k2 Protocol Overview',
+      slug: 'k2/index',
+      locale: 'zh-CN',
+      section: 'getting-started',
+      order: 1,
+      draft: false,
+      content: '<h2>k2s run</h2><p>...</p>k2 up k2v5://...',
+      summary: 'k2 协议概述',
+      date: '2026-02-21',
+      metadata: { readingTime: 5, wordCount: 500 },
+      filePath: 'content/zh-CN/k2/index.md',
+    },
+    // ... more posts
+  ],
+}));
+```
+
+**Server Component metadata testing**:
+```typescript
+// Call generateMetadata directly — no render needed
+import { generateMetadata } from '@/app/[locale]/k2/[[...path]]/page';
+const metadata = await generateMetadata({ params: Promise.resolve({ locale: 'zh-CN', path: ['quickstart'] }) });
+expect(metadata.title).toContain('quickstart');
+```
+
+**Content file validation (build-time)**: Use `fs.readFileSync` + frontmatter parsing to verify markdown files have required fields (`title`, `section`, `order`, `draft`) without spinning up a Next.js server. Fast, no network, catches content authoring mistakes.
+
+**SEO content validation**: Read `page.tsx` source with `fs.readFileSync` and verify it does NOT contain banned strings (e.g., `"MPTCP"`, `"CA证书模拟"`). Cheaper than rendering and more precise than regex on rendered HTML.
+
+**hero.json validation**: Read JSON files directly and assert on specific keys — no need for i18n mock infrastructure:
+```typescript
+const hero = JSON.parse(fs.readFileSync('messages/zh-CN/hero.json', 'utf-8'));
+expect(JSON.stringify(hero)).not.toContain('MPTCP');
+expect(hero.title).toContain('k2');
+```
+
+**Test file locations**: `web/tests/*.test.ts` (note: tests dir is separate from `web/src/` — these are integration/content tests, not unit tests).
+
+**Validating tests**: `web/tests/homepage-ssr.test.ts`, `web/tests/homepage-content.test.ts`, `web/tests/k2-route.test.ts`, `web/tests/k2-content.test.ts`, `web/tests/vs-hysteria2.test.ts`, `web/tests/seo-completion.test.ts`
+**Source**: website-k2-redesign (2026-02-21)
+
+---
+
 ## Config Module Pattern: TOML + Env Var Fallback with Clear Error Aggregation (2026-02-20, kaitu-ops-mcp)
 
 **Pattern**: Config loading collects ALL missing fields before throwing, so the user sees a complete error message in one go rather than fixing one field at a time.

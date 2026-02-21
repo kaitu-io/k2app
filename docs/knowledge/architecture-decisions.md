@@ -888,6 +888,99 @@ Script validates artifacts exist on S3, downloads to compute sha256+size, genera
 
 ---
 
+## Next.js Website: Terminal Dark Forced Theme (2026-02-21, website-k2-redesign)
+
+**Decision**: The `web/` Next.js website uses a forced dark-only "Terminal Dark" color scheme. `EmbedThemeProvider` sets `defaultTheme="dark"` with no `enableSystem` prop. The `ThemeToggle` component is deleted. CSS variables in `:root` are set to dark values directly — no `.dark {}` conditional block needed.
+
+**Terminal Dark color palette** (`web/src/app/globals.css`):
+```css
+:root {
+  --background: #0a0a0f;      /* Deep black */
+  --foreground: #e0e0e0;      /* Light grey text */
+  --card: #111118;             /* Card background */
+  --primary: #00ff88;          /* Terminal green — primary accent */
+  --secondary: #00d4ff;        /* Cyan — secondary accent */
+  --muted: #1a1a22;
+  --muted-foreground: #666;
+  --border: rgba(0, 255, 136, 0.15);  /* Green glow border */
+}
+```
+
+**Scope**: Affects `[locale]` public pages only. `(manager)` admin dashboard has its own independent theme and is unaffected.
+
+**Why forced dark**: Brand decision for the k2 protocol — "terminal hack aesthetic" consistent with the security/stealth positioning. Reduces code complexity (no `dark:` variants, no theme toggle state).
+
+**Cross-reference**: See Architecture Decisions → "Dark-Only Theme with MUI + Tailwind v4 Design Tokens" for the webapp (VPN client) equivalent decision.
+
+**Validating tests**: `web/src/lib/__tests__/theme.test.ts` — `test_theme_provider_forces_dark`, `test_header_no_theme_toggle`, `test_css_variables_terminal_dark`
+**Source**: website-k2-redesign (2026-02-21)
+
+---
+
+## Velite Content: order + section Frontmatter for Sidebar Navigation (2026-02-21, website-k2-redesign)
+
+**Decision**: Extend Velite's post schema with two optional frontmatter fields: `order: number` (sidebar sort weight) and `section: string` (sidebar grouping key). Content files at `web/content/{locale}/k2/*.md` use these fields to drive the `/k2/` sidebar navigation without any hardcoded sidebar configuration.
+
+**Schema extension** (`web/velite.config.ts`):
+```typescript
+order: s.number().optional(),
+section: s.string().optional(),
+```
+
+**Content file path convention**: `web/content/{locale}/k2/{name}.md` → Velite slug `k2/{name}` → URL `/{locale}/k2/{name}`.
+
+**getK2Posts() helper** (`web/src/lib/k2-posts.ts`): Single shared function that filters posts by locale + `k2/` slug prefix, sorts by `order` ascending (undefined → Infinity, sorts last), and groups by `section`. Used by `K2Sidebar`, `K2Page`, and `sitemap.ts` — no repeated filter logic.
+
+**Section values used**:
+- `"getting-started"` — index, quickstart, server, client
+- `"technical"` — protocol, stealth
+- `"comparison"` — vs-hysteria2
+
+**Sidebar i18n**: Section labels are translated via `messages/{locale}/k2.json` namespace and passed as props to `K2Sidebar` (Client Component) from the Server Component layout.
+
+**Why content-driven over hardcoded config**: Adding a new doc page requires only a new markdown file — no code changes to sidebar config, no route changes. Velite rebuilds at next `yarn build`.
+
+**Validating tests**: `web/tests/k2-route.test.ts` — `test_velite_schema_accepts_order_section`, `test_k2_sidebar_groups_by_section`; `web/tests/k2-content.test.ts` — `test_k2_content_has_required_frontmatter`
+**Source**: website-k2-redesign (2026-02-21)
+
+---
+
+## Next.js SSR/SSG: Homepage CSR→Server Component Conversion (2026-02-21, website-k2-redesign)
+
+**Decision**: The homepage (`web/src/app/[locale]/page.tsx`) is converted from CSR (`"use client"` + `useTranslations()`) to a Server Component (`async function` + `getTranslations()` from `next-intl/server`) with `export const dynamic = 'force-static'`. This ensures build-time static HTML generation, CDN distribution, and full crawlability by search engines and AI agents that don't execute JavaScript.
+
+**Pattern** (reference: `[...slug]/page.tsx` was already a Server Component in production):
+```tsx
+// Before (CSR — SEO harmful)
+"use client";
+import { useTranslations } from 'next-intl';
+export default function Home() {
+  const t = useTranslations();
+}
+
+// After (SSG — SEO friendly)
+import { getTranslations, setRequestLocale } from 'next-intl/server';
+export const dynamic = 'force-static';
+export default async function Home({ params }: { params: Promise<{ locale: string }> }) {
+  const { locale } = await params;
+  setRequestLocale(locale as (typeof routing.locales)[number]);
+  const t = await getTranslations();
+}
+```
+
+**Client components extracted**: `HomeClient.tsx` wraps any interactive DOM work needed at the homepage level. Header stays a Client Component (auth state, language toggle) but is composed inside the Server Component page via React composition pattern.
+
+**Why `force-static`**: Prevents Amplify (`WEB_COMPUTE` / Next.js SSR mode) from routing the homepage through Lambda. Static HTML is served directly from CloudFront CDN at zero Lambda cost.
+
+**AC1 verification criteria** (must pass before other ACs proceed):
+1. `yarn build` → homepage is `.html` in build output (not Lambda route)
+2. `curl http://localhost:3000/zh-CN/ | grep -c 'k2\|隐身\|隧道'` → returns > 0
+
+**Validating tests**: `web/tests/homepage-ssr.test.ts` — `test_homepage_ssr_renders_content`, `test_homepage_generates_metadata`
+**Source**: website-k2-redesign (2026-02-21)
+
+---
+
 ## Store Pre-Built URLs, Not Decomposed Components (2026-02-20, k2v5-tunnel-expression)
 
 **Decision**: Sidecar constructs the complete `k2v5://` connection URL from `connect-url.txt` + config (domain, port, hop range), then stores the full URL as `SlaveTunnel.ServerURL`. API returns it directly. Replaced the prior v1 approach of decomposing into `CertPin` + `ECHConfigList` fields and reassembling on API response.

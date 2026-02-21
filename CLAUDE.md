@@ -93,6 +93,9 @@ Makefile             Build orchestration — version from package.json, k2 from 
 - **API file naming**: `api_*.go` handlers, `logic_*.go` business logic, `model*.go` data, `worker_*.go` background jobs, `slave_api*.go` node APIs.
 - **API response pattern**: HTTP status always 200. Error state in JSON `code` field. Use `Success()`, `Error()`, `ListWithData()` helpers.
 - **NodeNext imports**: `tools/kaitu-ops-mcp/` uses `"module": "NodeNext"`. All relative imports must use `.js` extension in `.ts` source (e.g., `import { x } from './config.js'`). SDK subpath imports also need `.js`: `'@modelcontextprotocol/sdk/server/mcp.js'`.
+- **Website pages are Server Components + force-static**: `web/` public pages use `async` Server Components with `export const dynamic = 'force-static'`. Never add `"use client"` to route-level pages in `web/src/app/[locale]/`. Interactive sub-components use Client Component composition. See `web/CLAUDE.md` for conventions.
+- **Website namespace registry**: Adding a new `messages/{locale}/*.json` file in `web/` requires adding the namespace name to `web/messages/namespaces.ts`. Missing entry = silent key passthrough.
+- **Website routing in locale components**: Use `usePathname` and `Link` from `@/i18n/routing` (NOT `next/navigation`/`next/link`) inside `web/src/app/[locale]/` and `web/src/components/`.
 
 ## Tech Stack
 

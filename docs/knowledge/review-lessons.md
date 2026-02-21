@@ -99,6 +99,23 @@ Insights from code reviews and merge processes.
 
 ---
 
+## New Namespace Must Be Registered in namespaces.ts (2026-02-21, website-k2-redesign)
+
+**Lesson**: Adding a new `k2.json` translation file to all 7 locale directories (`messages/{locale}/k2.json`) is not sufficient. The `web/messages/namespaces.ts` file maintains a `namespaces` const array that controls dynamic loading. If the new namespace is not added to this array, it is never loaded at runtime and all `t('k2:*')` calls silently return the key string.
+
+**Symptom**: Sidebar section labels show their raw key strings (e.g., `"k2.sections.getting-started"`) instead of translated text. No runtime error.
+
+**Fix**: Add `"k2"` to the `namespaces` array in `web/messages/namespaces.ts`:
+```typescript
+export const namespaces = ["common","nav","hero","auth","discovery","purchase","wallet","campaigns","admin","invite","install","theme","changelog","k2"] as const;
+```
+
+**Why not caught by build**: next-intl does not validate that all referenced namespaces are registered. Missing namespace = silent key passthrough.
+
+**Prevention**: When adding any new `*.json` namespace file, immediately add it to `namespaces.ts` in the same commit.
+
+---
+
 ## TypeScript Delivery Gate Catches Compound Merge Issues (2026-02-16, kaitu-feature-migration)
 
 **Lesson**: After merging 11 parallel branches, `npx tsc --noEmit` caught 24 errors across 12 files. Each branch compiled independently. Errors were all cross-branch — unused imports from removed code, missing interface fields expected by new consumers, type narrowing failures from combined patterns.

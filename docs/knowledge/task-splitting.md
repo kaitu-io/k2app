@@ -178,6 +178,20 @@ F2 (Platform) ─┤                 ├── F4 (Nav+Layout+Global) ──┬�
 
 ---
 
+## Parallel Tasks With Shared Stub Files Create Merge Conflicts (2026-02-21, website-k2-redesign)
+
+**Observation**: website-k2-redesign had T3 (Velite + route infrastructure) and T5 (homepage rewrite) running in parallel after T2 (theme). Both tasks needed to create RED stub files for routes and components they would eventually implement. When the stubs touched the same file (e.g., `page.tsx` layout modifications), merge conflicts occurred even though the final implementations were disjoint.
+
+**Conflict pattern**: T3 creates `web/src/app/[locale]/k2/[[...path]]/page.tsx` (new file — no conflict). T5 modifies `web/src/app/[locale]/page.tsx` (existing file). If T3 also modified the homepage layout for sidebar CSS imports, both tasks conflict in the layout.
+
+**Mitigation**: Identify which files are "shared infrastructure" during planning. Files touched by more than one task should be owned by the earlier task in the dependency chain. Later tasks read but do not modify shared files.
+
+**In website-k2-redesign**: `layout.tsx` (font loading, theme) was owned by T2. T3 and T5 both read layout but only appended to CSS — no direct conflict.
+
+**Lesson**: When two tasks both have "foundation files" in their scope, extract a smaller foundation task that completes first and establishes the shared file. Subsequent tasks read the established file.
+
+---
+
 ## Port-From-Source Features: Read Target Files Before Planning (2026-02-20, desktop-window-management)
 
 **Observation**: Plan listed 6 file changes to port window management from kaitu/client. But 3 of the 6 were already implemented in k2app (window.rs existed, main.rs had all handlers, tray.rs had show/hide/quit). Only 3 webapp-side changes (tauri-k2.ts, main.tsx, index.html) were actually needed.

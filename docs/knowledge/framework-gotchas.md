@@ -948,6 +948,86 @@ if (isEntryPoint) {
 
 ---
 
+## next-intl Strict Typing: Empty IntlMessages Interface for Split Namespace Files (2026-02-21, website-k2-redesign)
+
+**Problem**: When next-intl is configured with split namespace JSON files loaded dynamically (e.g., `messages/{locale}/hero.json`, `messages/{locale}/k2.json`), TypeScript's `Messages` type inference breaks. The `IntlMessages` global interface tries to intersect all namespace shapes — but dynamic per-namespace loading means there is no single merged type to infer from.
+
+**Symptom**: Adding a new namespace file (`k2.json`) causes TypeScript errors throughout the codebase because next-intl cannot infer the complete merged `Messages` type from the new file's shape. Adding `k2` to `namespaces.ts` triggers type re-inference that propagates failures.
+
+**Root cause**: next-intl expects `IntlMessages` to be declared as a single merged interface. Dynamic per-namespace loading via `import(`./${lang}/${ns}.json`)` does not produce a statically inferrable merged type.
+
+**Solution**: Use an empty `IntlMessages {}` interface (permissive typing). Cast the locale string when calling `setRequestLocale`:
+```typescript
+// web/src/types/i18n.d.ts
+declare global {
+  // Messages are split across namespace JSON files — use permissive typing
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+  interface IntlMessages {}
+}
+```
+```typescript
+// page.tsx — cast locale string to the routing locales union type
+setRequestLocale(locale as (typeof routing.locales)[number]);
+```
+
+**Trade-off**: Loss of compile-time key checking for translation keys. Runtime errors for missing keys instead of compile-time errors. Acceptable when namespace files are managed centrally (`namespaces.ts` registry) and keys are tested via vitest.
+
+**When this pattern applies**: Any next-intl project that:
+1. Splits translations across multiple namespace JSON files
+2. Loads namespaces dynamically (not imported as a single merged JSON)
+3. Has more than one locale with per-namespace loading
+
+**Validating tests**: `web/tests/homepage-ssr.test.ts` — `test_homepage_ssr_renders_content`, `test_homepage_generates_metadata`
+**Source**: website-k2-redesign (2026-02-21)
+
+---
+
+## next-intl usePathname Must Use @/i18n/routing, Not next/navigation (2026-02-21, website-k2-redesign)
+
+**Problem**: ESLint rule `@next/next/no-restricted-navigation` (or next-intl's own ESLint plugin) flags `import { usePathname } from 'next/navigation'` inside components that live in the `[locale]` App Router segment. The `next/navigation` pathname includes the locale prefix (e.g., `/zh-CN/k2/quickstart`); the `@/i18n/routing` version strips the locale prefix for cleaner comparisons.
+
+**Symptom**: ESLint error "Use `usePathname` from `@/i18n/routing` instead of `next/navigation`" when writing a client component inside `web/src/components/` that needs the current path for active-link highlighting.
+
+**Solution**: Always import `usePathname` (and `Link`) from `@/i18n/routing` in components used within the `[locale]` layout group:
+```typescript
+// CORRECT
+import { usePathname } from '@/i18n/routing';
+import { Link } from '@/i18n/routing';
+
+// WRONG — ESLint error
+import { usePathname } from 'next/navigation';
+import Link from 'next/link';
+```
+
+**Why this matters for active-link detection**: `@/i18n/routing` `usePathname()` returns the path without locale prefix (e.g., `/k2/quickstart`), making slug comparison straightforward. `next/navigation` would return `/zh-CN/k2/quickstart` requiring manual locale stripping.
+
+**Files**: `web/src/components/K2Sidebar.tsx` — uses `@/i18n/routing` for both `usePathname` and `Link`
+
+**Validating tests**: `web/tests/k2-route.test.ts` — `test_k2_route_renders_sidebar`, `test_k2_sidebar_groups_by_section`
+**Source**: website-k2-redesign (2026-02-21)
+
+---
+
+## Next.js Static Route Priority Over Catch-All (2026-02-21, website-k2-redesign)
+
+**Problem**: The existing `[...slug]` catch-all route in `web/src/app/[locale]/[...slug]/page.tsx` handles all content pages including potential `/k2/*` paths. Adding a new `/k2/` section requires ensuring the new route takes priority without breaking existing content.
+
+**Root cause**: Next.js App Router resolves routes with a static-first priority rule. A more-specific static route pattern always wins over a less-specific catch-all.
+
+**Solution**: Create `web/src/app/[locale]/k2/[[...path]]/page.tsx` (optional catch-all). Next.js treats `k2/` as a more specific segment than `[...slug]`, so all `/k2/*` requests are intercepted by the new route. The existing `[...slug]` continues to handle all other paths unchanged.
+
+**Verified behavior**:
+- `/k2/` → `[[...path]]` page with `path = undefined` → renders `k2/index` post
+- `/k2/quickstart` → `[[...path]]` page with `path = ['quickstart']` → renders `k2/quickstart` post
+- `/changelog` → `[...slug]` catch-all → unchanged behavior
+
+**Why `[[...path]]` (optional) not `[...path]` (required)**: Optional catch-all matches the root `/k2/` path (with no path segments). Required catch-all would need a separate `/k2/index/page.tsx` for the overview page.
+
+**Validating tests**: `web/tests/k2-route.test.ts` — `test_k2_route_renders_content`, `test_k2_route_renders_sidebar`
+**Source**: website-k2-redesign (2026-02-21)
+
+---
+
 ## stdout Redaction: Global Regex Requires lastIndex Reset Between Calls (2026-02-20, kaitu-ops-mcp)
 
 **Problem**: Redaction regex patterns defined with the `g` flag at module level maintain `lastIndex` state between calls. Reusing the same pattern object without resetting causes alternating text matches to fail — the regex starts searching from a non-zero offset on the second call.
