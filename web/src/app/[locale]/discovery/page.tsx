@@ -1,12 +1,11 @@
-"use client";
-
+import { getTranslations, setRequestLocale } from 'next-intl/server';
+import type { Metadata } from 'next';
+import { routing } from '@/i18n/routing';
+import { Link } from '@/i18n/routing';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { useTranslations } from 'next-intl';
-import NextLink from 'next/link';
-import { Suspense } from 'react';
-import { useEmbedMode } from '@/hooks/useEmbedMode';
+import Image from 'next/image';
 import {
   Globe,
   Smartphone,
@@ -18,7 +17,11 @@ import {
   Tv,
   Newspaper
 } from 'lucide-react';
-import Image from 'next/image';
+import DiscoveryClient from './DiscoveryClient';
+
+type Locale = (typeof routing.locales)[number];
+
+export const dynamic = 'force-static';
 
 const DISCOVERY_DATA = {
   // Conservative News Sources
@@ -72,7 +75,7 @@ const DISCOVERY_DATA = {
       description: "纽约历史悠久的小报，以快速新闻报道著称"
     }
   ],
-  
+
   // Entertainment Platforms
   entertainment: [
     {
@@ -370,38 +373,62 @@ const DISCOVERY_DATA = {
       description: "高质量、低成本的家庭教育课程和资源"
     }
   ],
-
 };
 
+/**
+ * Generate metadata for the discovery page (used by Next.js for <head> tags).
+ * Requires server-side translation to produce locale-aware title/description.
+ */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}): Promise<Metadata> {
+  const { locale: rawLocale } = await params;
+  const locale = rawLocale as Locale;
+  const t = await getTranslations({ locale, namespace: 'discovery' });
+
+  return {
+    title: t('discovery.title'),
+    description: t('discovery.subtitle'),
+  };
+}
 
 /**
- * Internal component that uses hooks requiring Suspense
+ * Discovery page Server Component — SSR-converted from client component.
+ *
+ * Server shell renders all static content unconditionally.
+ * DiscoveryClient wraps content and applies embedded-mode CSS class.
+ * Uses async params per Next.js 15 pattern.
  */
-function DiscoveryPageContent() {
-  const t = useTranslations();
-  const { isEmbedded } = useEmbedMode();
-
-  // Note: isEmbedded state, external link handling, and context menu disabling
-  // are all handled by the useEmbedMode hook
+export default async function DiscoveryPage({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale: rawLocale } = await params;
+  const locale = rawLocale as Locale;
+  setRequestLocale(locale);
+  const t = await getTranslations({ locale });
 
   return (
-    <div className={`min-h-screen bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-800 ${isEmbedded ? 'embedded-mode' : ''}`}>
-      {/* Navigation - Hidden in embedded mode */}
-      {!isEmbedded && (
+    <DiscoveryClient>
+      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-800">
+        {/* Navigation */}
         <nav className="border-b bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm sticky top-0 z-50">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between items-center h-16">
               <div className="flex items-center space-x-2">
-                <Image 
-                  src="/kaitu-icon.png" 
-                  alt="Kaitu Logo" 
+                <Image
+                  src="/kaitu-icon.png"
+                  alt="Kaitu Logo"
                   width={32}
                   height={32}
                   className="rounded-md"
                 />
-                <NextLink href="/" className="text-xl font-bold text-gray-900 dark:text-white hover:text-blue-600 transition-colors">
+                <Link href="/" className="text-xl font-bold text-gray-900 dark:text-white hover:text-blue-600 transition-colors">
                   {"Kaitu.io"}
-                </NextLink>
+                </Link>
               </div>
               <div className="flex items-center space-x-4">
                 <Badge variant="outline" className="text-blue-600 border-blue-600">
@@ -411,10 +438,8 @@ function DiscoveryPageContent() {
             </div>
           </div>
         </nav>
-      )}
 
-      {/* Hero Section - Simplified in embedded mode */}
-      {!isEmbedded ? (
+        {/* Hero Section */}
         <section className="py-16 px-4 sm:px-6 lg:px-8">
           <div className="max-w-7xl mx-auto text-center">
             <div className="flex items-center justify-center mb-6">
@@ -430,402 +455,391 @@ function DiscoveryPageContent() {
             </p>
           </div>
         </section>
-      ) : (
-        <section className="py-4 px-4 sm:px-6 lg:px-8">
-          <div className="max-w-7xl mx-auto text-center">
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-              {t('discovery.discovery.title')}
-            </h1>
+
+        {/* News Section */}
+        <section className="py-12 px-4 sm:px-6 lg:px-8 bg-gray-50 dark:bg-gray-800/50">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex items-center mb-8">
+              <Newspaper className="w-6 h-6 text-blue-600 mr-3" />
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {t('discovery.discovery.sections.news.title')}
+                </h2>
+                <p className="text-gray-600 dark:text-gray-300">
+                  {t('discovery.discovery.sections.news.description')}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {DISCOVERY_DATA.news.map((website, index) => (
+                <Card key={index} className="p-4 hover:shadow-lg transition-all duration-300 group cursor-pointer bg-white dark:bg-gray-900">
+                  <a
+                    href={website.url}
+                    target="_blank"
+                    rel="nofollow noopener noreferrer"
+                    className="block"
+                  >
+                    <div className="flex items-start space-x-3">
+                      <div className="text-2xl group-hover:scale-110 transition-transform">
+                        {website.icon}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2 truncate">
+                          {website.name}
+                        </h3>
+                        <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-2">
+                          {website.description}
+                        </p>
+                        <div className="flex items-center justify-end mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <ExternalLink className="w-4 h-4 text-blue-600" />
+                        </div>
+                      </div>
+                    </div>
+                  </a>
+                </Card>
+              ))}
+            </div>
           </div>
         </section>
-      )}
 
+        {/* Entertainment Section */}
+        <section className="py-12 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex items-center mb-8">
+              <Tv className="w-6 h-6 text-purple-600 mr-3" />
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {t('discovery.discovery.sections.entertainment.title')}
+                </h2>
+                <p className="text-gray-600 dark:text-gray-300">
+                  {t('discovery.discovery.sections.entertainment.description')}
+                </p>
+              </div>
+            </div>
 
-      {/* News Section */}
-      <section className="py-12 px-4 sm:px-6 lg:px-8 bg-gray-50 dark:bg-gray-800/50">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center mb-8">
-            <Newspaper className="w-6 h-6 text-blue-600 mr-3" />
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-                {t('discovery.discovery.sections.news.title')}
-              </h2>
-              <p className="text-gray-600 dark:text-gray-300">
-                {t('discovery.discovery.sections.news.description')}
-              </p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-4">
+              {DISCOVERY_DATA.entertainment.map((platform, index) => (
+                <Card key={index} className="p-4 hover:shadow-lg transition-all duration-300 group cursor-pointer bg-white dark:bg-gray-900">
+                  <a
+                    href={platform.url}
+                    target="_blank"
+                    rel="nofollow noopener noreferrer"
+                    className="block text-center"
+                  >
+                    <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">
+                      {platform.icon}
+                    </div>
+                    <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1 truncate">
+                      {platform.name}
+                    </h3>
+                    <p className="text-xs text-gray-500 line-clamp-2">
+                      {platform.description}
+                    </p>
+                    <div className="flex items-center justify-center mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <ExternalLink className="w-3 h-3 text-purple-600" />
+                    </div>
+                  </a>
+                </Card>
+              ))}
             </div>
           </div>
-          
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {DISCOVERY_DATA.news.map((website, index) => (
-              <Card key={index} className="p-4 hover:shadow-lg transition-all duration-300 group cursor-pointer bg-white dark:bg-gray-900">
-                <NextLink 
-                  href={website.url} 
-                  target="_blank" 
-                  rel="nofollow noopener noreferrer"
-                  className="block"
-                >
-                  <div className="flex items-start space-x-3">
-                    <div className="text-2xl group-hover:scale-110 transition-transform">
-                      {website.icon}
+        </section>
+
+        {/* Communication Section */}
+        <section className="py-12 px-4 sm:px-6 lg:px-8 bg-gray-50 dark:bg-gray-800/50">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex items-center mb-8">
+              <Users className="w-6 h-6 text-green-600 mr-3" />
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {t('discovery.discovery.sections.communication.title')}
+                </h2>
+                <p className="text-gray-600 dark:text-gray-300">
+                  {t('discovery.discovery.sections.communication.description')}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
+              {DISCOVERY_DATA.communication.map((app, index) => (
+                <Card key={index} className="p-4 hover:shadow-lg transition-all duration-300 group cursor-pointer bg-white dark:bg-gray-900">
+                  <a
+                    href={app.url}
+                    target="_blank"
+                    rel="nofollow noopener noreferrer"
+                    className="block text-center"
+                  >
+                    <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">
+                      {app.icon}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2 truncate">
-                        {website.name}
-                      </h3>
-                      <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-2">
-                        {website.description}
-                      </p>
-                      <div className="flex items-center justify-end mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <ExternalLink className="w-4 h-4 text-blue-600" />
+                    <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1 truncate">
+                      {app.name}
+                    </h3>
+                    <p className="text-xs text-gray-500 line-clamp-2">
+                      {app.description}
+                    </p>
+                    <div className="flex items-center justify-center mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <ExternalLink className="w-3 h-3 text-green-600" />
+                    </div>
+                  </a>
+                </Card>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Applications Section */}
+        <section className="py-12 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex items-center mb-8">
+              <Globe className="w-6 h-6 text-orange-600 mr-3" />
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {t('discovery.discovery.sections.applications.title')}
+                </h2>
+                <p className="text-gray-600 dark:text-gray-300">
+                  {t('discovery.discovery.sections.applications.description')}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
+              {DISCOVERY_DATA.applications.map((app, index) => (
+                <Card key={index} className="p-4 hover:shadow-lg transition-all duration-300 group cursor-pointer bg-white dark:bg-gray-900">
+                  <a
+                    href={app.url}
+                    target="_blank"
+                    rel="nofollow noopener noreferrer"
+                    className="block text-center"
+                  >
+                    <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">
+                      {app.icon}
+                    </div>
+                    <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1 truncate">
+                      {app.name}
+                    </h3>
+                    <p className="text-xs text-gray-500 line-clamp-2">
+                      {app.description}
+                    </p>
+                    <div className="flex items-center justify-center mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <ExternalLink className="w-3 h-3 text-orange-600" />
+                    </div>
+                  </a>
+                </Card>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Christian Resources Section */}
+        <section className="py-12 px-4 sm:px-6 lg:px-8 bg-blue-50 dark:bg-blue-900/20">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex items-center mb-8">
+              <BookOpen className="w-6 h-6 text-blue-600 mr-3" />
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {t('discovery.discovery.sections.christian.title')}
+                </h2>
+                <p className="text-gray-600 dark:text-gray-300">
+                  {t('discovery.discovery.sections.christian.description')}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {DISCOVERY_DATA.christian.map((resource, index) => (
+                <Card key={index} className="p-4 hover:shadow-lg transition-all duration-300 group cursor-pointer bg-white dark:bg-gray-900">
+                  <a
+                    href={resource.url}
+                    target="_blank"
+                    rel="nofollow noopener noreferrer"
+                    className="block"
+                  >
+                    <div className="flex items-start space-x-3">
+                      <div className="text-2xl group-hover:scale-110 transition-transform">
+                        {resource.icon}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2 truncate">
+                          {resource.name}
+                        </h3>
+                        <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-2">
+                          {resource.description}
+                        </p>
+                        <div className="flex items-center justify-end mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <ExternalLink className="w-4 h-4 text-blue-600" />
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </NextLink>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Entertainment Section */}
-      <section className="py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center mb-8">
-            <Tv className="w-6 h-6 text-purple-600 mr-3" />
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-                {t('discovery.discovery.sections.entertainment.title')}
-              </h2>
-              <p className="text-gray-600 dark:text-gray-300">
-                {t('discovery.discovery.sections.entertainment.description')}
-              </p>
+                  </a>
+                </Card>
+              ))}
             </div>
           </div>
-          
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-4">
-            {DISCOVERY_DATA.entertainment.map((platform, index) => (
-              <Card key={index} className="p-4 hover:shadow-lg transition-all duration-300 group cursor-pointer bg-white dark:bg-gray-900">
-                <NextLink 
-                  href={platform.url} 
-                  target="_blank" 
-                  rel="nofollow noopener noreferrer"
-                  className="block text-center"
-                >
-                  <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">
-                    {platform.icon}
-                  </div>
-                  <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1 truncate">
-                    {platform.name}
-                  </h3>
-                  <p className="text-xs text-gray-500 line-clamp-2">
-                    {platform.description}
-                  </p>
-                  <div className="flex items-center justify-center mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <ExternalLink className="w-3 h-3 text-purple-600" />
-                  </div>
-                </NextLink>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
+        </section>
 
-      {/* Communication Section */}
-      <section className="py-12 px-4 sm:px-6 lg:px-8 bg-gray-50 dark:bg-gray-800/50">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center mb-8">
-            <Users className="w-6 h-6 text-green-600 mr-3" />
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-                {t('discovery.discovery.sections.communication.title')}
-              </h2>
-              <p className="text-gray-600 dark:text-gray-300">
-                {t('discovery.discovery.sections.communication.description')}
-              </p>
+        {/* AI Tools Section */}
+        <section className="py-12 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex items-center mb-8">
+              <Smartphone className="w-6 h-6 text-indigo-600 mr-3" />
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {t('discovery.discovery.sections.aiTools.title')}
+                </h2>
+                <p className="text-gray-600 dark:text-gray-300">
+                  {t('discovery.discovery.sections.aiTools.description')}
+                </p>
+              </div>
             </div>
-          </div>
-          
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
-            {DISCOVERY_DATA.communication.map((app, index) => (
-              <Card key={index} className="p-4 hover:shadow-lg transition-all duration-300 group cursor-pointer bg-white dark:bg-gray-900">
-                <NextLink 
-                  href={app.url} 
-                  target="_blank" 
-                  rel="nofollow noopener noreferrer"
-                  className="block text-center"
-                >
-                  <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">
-                    {app.icon}
-                  </div>
-                  <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1 truncate">
-                    {app.name}
-                  </h3>
-                  <p className="text-xs text-gray-500 line-clamp-2">
-                    {app.description}
-                  </p>
-                  <div className="flex items-center justify-center mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <ExternalLink className="w-3 h-3 text-green-600" />
-                  </div>
-                </NextLink>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
 
-      {/* Applications Section */}
-      <section className="py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center mb-8">
-            <Globe className="w-6 h-6 text-orange-600 mr-3" />
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-                {t('discovery.discovery.sections.applications.title')}
-              </h2>
-              <p className="text-gray-600 dark:text-gray-300">
-                {t('discovery.discovery.sections.applications.description')}
-              </p>
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
-            {DISCOVERY_DATA.applications.map((app, index) => (
-              <Card key={index} className="p-4 hover:shadow-lg transition-all duration-300 group cursor-pointer bg-white dark:bg-gray-900">
-                <NextLink 
-                  href={app.url} 
-                  target="_blank" 
-                  rel="nofollow noopener noreferrer"
-                  className="block text-center"
-                >
-                  <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">
-                    {app.icon}
-                  </div>
-                  <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1 truncate">
-                    {app.name}
-                  </h3>
-                  <p className="text-xs text-gray-500 line-clamp-2">
-                    {app.description}
-                  </p>
-                  <div className="flex items-center justify-center mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <ExternalLink className="w-3 h-3 text-orange-600" />
-                  </div>
-                </NextLink>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Christian Resources Section */}
-      <section className="py-12 px-4 sm:px-6 lg:px-8 bg-blue-50 dark:bg-blue-900/20">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center mb-8">
-            <BookOpen className="w-6 h-6 text-blue-600 mr-3" />
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-                {t('discovery.discovery.sections.christian.title')}
-              </h2>
-              <p className="text-gray-600 dark:text-gray-300">
-                {t('discovery.discovery.sections.christian.description')}
-              </p>
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {DISCOVERY_DATA.christian.map((resource, index) => (
-              <Card key={index} className="p-4 hover:shadow-lg transition-all duration-300 group cursor-pointer bg-white dark:bg-gray-900">
-                <NextLink 
-                  href={resource.url} 
-                  target="_blank" 
-                  rel="nofollow noopener noreferrer"
-                  className="block"
-                >
-                  <div className="flex items-start space-x-3">
-                    <div className="text-2xl group-hover:scale-110 transition-transform">
-                      {resource.icon}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
+              {DISCOVERY_DATA.aiTools.map((tool, index) => (
+                <Card key={index} className="p-4 hover:shadow-lg transition-all duration-300 group cursor-pointer bg-white dark:bg-gray-900">
+                  <a
+                    href={tool.url}
+                    target="_blank"
+                    rel="nofollow noopener noreferrer"
+                    className="block text-center"
+                  >
+                    <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">
+                      {tool.icon}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2 truncate">
-                        {resource.name}
-                      </h3>
-                      <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-2">
-                        {resource.description}
-                      </p>
-                      <div className="flex items-center justify-end mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <ExternalLink className="w-4 h-4 text-blue-600" />
+                    <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1 truncate">
+                      {tool.name}
+                    </h3>
+                    <p className="text-xs text-gray-500 line-clamp-2">
+                      {tool.description}
+                    </p>
+                    <div className="flex items-center justify-center mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <ExternalLink className="w-3 h-3 text-indigo-600" />
+                    </div>
+                  </a>
+                </Card>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Trade Tools Section */}
+        <section className="py-12 px-4 sm:px-6 lg:px-8 bg-gray-50 dark:bg-gray-800/50">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex items-center mb-8">
+              <ShoppingBag className="w-6 h-6 text-amber-600 mr-3" />
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {t('discovery.discovery.sections.tradeTools.title')}
+                </h2>
+                <p className="text-gray-600 dark:text-gray-300">
+                  {t('discovery.discovery.sections.tradeTools.description')}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
+              {DISCOVERY_DATA.tradeTools.map((tool, index) => (
+                <Card key={index} className="p-4 hover:shadow-lg transition-all duration-300 group cursor-pointer bg-white dark:bg-gray-900">
+                  <a
+                    href={tool.url}
+                    target="_blank"
+                    rel="nofollow noopener noreferrer"
+                    className="block text-center"
+                  >
+                    <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">
+                      {tool.icon}
+                    </div>
+                    <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1 truncate">
+                      {tool.name}
+                    </h3>
+                    <p className="text-xs text-gray-500 line-clamp-2">
+                      {tool.description}
+                    </p>
+                    <div className="flex items-center justify-center mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <ExternalLink className="w-3 h-3 text-amber-600" />
+                    </div>
+                  </a>
+                </Card>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Homeschool Section */}
+        <section className="py-12 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex items-center mb-8">
+              <BookOpen className="w-6 h-6 text-teal-600 mr-3" />
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {t('discovery.discovery.sections.homeschool.title')}
+                </h2>
+                <p className="text-gray-600 dark:text-gray-300">
+                  {t('discovery.discovery.sections.homeschool.description')}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {DISCOVERY_DATA.homeschool.map((resource, index) => (
+                <Card key={index} className="p-4 hover:shadow-lg transition-all duration-300 group cursor-pointer bg-white dark:bg-gray-900">
+                  <a
+                    href={resource.url}
+                    target="_blank"
+                    rel="nofollow noopener noreferrer"
+                    className="block"
+                  >
+                    <div className="flex items-start space-x-3">
+                      <div className="text-2xl group-hover:scale-110 transition-transform">
+                        {resource.icon}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2 truncate">
+                          {resource.name}
+                        </h3>
+                        <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-2">
+                          {resource.description}
+                        </p>
+                        <div className="flex items-center justify-end mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <ExternalLink className="w-4 h-4 text-teal-600" />
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </NextLink>
-              </Card>
-            ))}
+                  </a>
+                </Card>
+              ))}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* AI Tools Section */}
-      <section className="py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center mb-8">
-            <Smartphone className="w-6 h-6 text-indigo-600 mr-3" />
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-                {t('discovery.discovery.sections.aiTools.title')}
-              </h2>
+        {/* Video Playlists Section - Placeholder */}
+        <section className="py-12 px-4 sm:px-6 lg:px-8 bg-red-50 dark:bg-red-900/10">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex items-center mb-8">
+              <Video className="w-6 h-6 text-red-600 mr-3" />
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {t('discovery.discovery.sections.videoPlaylists.title')}
+                </h2>
+                <p className="text-gray-600 dark:text-gray-300">
+                  {t('discovery.discovery.sections.videoPlaylists.description')}
+                </p>
+              </div>
+            </div>
+
+            <div className="text-center py-16">
+              <div className="text-6xl mb-4">{"🎬"}</div>
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+                {t('discovery.discovery.sections.videoPlaylists.comingSoon')}
+              </h3>
               <p className="text-gray-600 dark:text-gray-300">
-                {t('discovery.discovery.sections.aiTools.description')}
+                {t('discovery.discovery.sections.videoPlaylists.comingSoonDesc')}
               </p>
             </div>
           </div>
-          
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
-            {DISCOVERY_DATA.aiTools.map((tool, index) => (
-              <Card key={index} className="p-4 hover:shadow-lg transition-all duration-300 group cursor-pointer bg-white dark:bg-gray-900">
-                <NextLink 
-                  href={tool.url} 
-                  target="_blank" 
-                  rel="nofollow noopener noreferrer"
-                  className="block text-center"
-                >
-                  <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">
-                    {tool.icon}
-                  </div>
-                  <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1 truncate">
-                    {tool.name}
-                  </h3>
-                  <p className="text-xs text-gray-500 line-clamp-2">
-                    {tool.description}
-                  </p>
-                  <div className="flex items-center justify-center mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <ExternalLink className="w-3 h-3 text-indigo-600" />
-                  </div>
-                </NextLink>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
+        </section>
 
-      {/* Trade Tools Section */}
-      <section className="py-12 px-4 sm:px-6 lg:px-8 bg-gray-50 dark:bg-gray-800/50">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center mb-8">
-            <ShoppingBag className="w-6 h-6 text-amber-600 mr-3" />
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-                {t('discovery.discovery.sections.tradeTools.title')}
-              </h2>
-              <p className="text-gray-600 dark:text-gray-300">
-                {t('discovery.discovery.sections.tradeTools.description')}
-              </p>
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
-            {DISCOVERY_DATA.tradeTools.map((tool, index) => (
-              <Card key={index} className="p-4 hover:shadow-lg transition-all duration-300 group cursor-pointer bg-white dark:bg-gray-900">
-                <NextLink 
-                  href={tool.url} 
-                  target="_blank" 
-                  rel="nofollow noopener noreferrer"
-                  className="block text-center"
-                >
-                  <div className="text-3xl mb-2 group-hover:scale-110 transition-transform">
-                    {tool.icon}
-                  </div>
-                  <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-1 truncate">
-                    {tool.name}
-                  </h3>
-                  <p className="text-xs text-gray-500 line-clamp-2">
-                    {tool.description}
-                  </p>
-                  <div className="flex items-center justify-center mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <ExternalLink className="w-3 h-3 text-amber-600" />
-                  </div>
-                </NextLink>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Homeschool Section */}
-      <section className="py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center mb-8">
-            <BookOpen className="w-6 h-6 text-teal-600 mr-3" />
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-                {t('discovery.discovery.sections.homeschool.title')}
-              </h2>
-              <p className="text-gray-600 dark:text-gray-300">
-                {t('discovery.discovery.sections.homeschool.description')}
-              </p>
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {DISCOVERY_DATA.homeschool.map((resource, index) => (
-              <Card key={index} className="p-4 hover:shadow-lg transition-all duration-300 group cursor-pointer bg-white dark:bg-gray-900">
-                <NextLink 
-                  href={resource.url} 
-                  target="_blank" 
-                  rel="nofollow noopener noreferrer"
-                  className="block"
-                >
-                  <div className="flex items-start space-x-3">
-                    <div className="text-2xl group-hover:scale-110 transition-transform">
-                      {resource.icon}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2 truncate">
-                        {resource.name}
-                      </h3>
-                      <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-2">
-                        {resource.description}
-                      </p>
-                      <div className="flex items-center justify-end mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <ExternalLink className="w-4 h-4 text-teal-600" />
-                      </div>
-                    </div>
-                  </div>
-                </NextLink>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Video Playlists Section - Placeholder */}
-      <section className="py-12 px-4 sm:px-6 lg:px-8 bg-red-50 dark:bg-red-900/10">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center mb-8">
-            <Video className="w-6 h-6 text-red-600 mr-3" />
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-                {t('discovery.discovery.sections.videoPlaylists.title')}
-              </h2>
-              <p className="text-gray-600 dark:text-gray-300">
-                {t('discovery.discovery.sections.videoPlaylists.description')}
-              </p>
-            </div>
-          </div>
-          
-          <div className="text-center py-16">
-            <div className="text-6xl mb-4">{"🎬"}</div>
-            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
-              {t('discovery.discovery.sections.videoPlaylists.comingSoon')}
-            </h3>
-            <p className="text-gray-600 dark:text-gray-300">
-              {t('discovery.discovery.sections.videoPlaylists.comingSoonDesc')}
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* Footer CTA - Hidden in embedded mode */}
-      {!isEmbedded && (
+        {/* Footer CTA */}
         <section className="py-16 px-4 sm:px-6 lg:px-8 border-t">
           <div className="max-w-4xl mx-auto text-center">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
@@ -835,39 +849,20 @@ function DiscoveryPageContent() {
               {t('discovery.discovery.footer.description')}
             </p>
             <div className="flex flex-col sm:flex-row justify-center items-center space-y-4 sm:space-y-0 sm:space-x-4">
-              <NextLink href="/">
+              <Link href="/">
                 <Button size="lg">
                   {t('discovery.discovery.footer.backHome')}
                 </Button>
-              </NextLink>
-              <NextLink href="/routers">
+              </Link>
+              <Link href="/routers">
                 <Button variant="outline" size="lg">
                   {t('discovery.discovery.footer.learnRouters')}
                 </Button>
-              </NextLink>
+              </Link>
             </div>
           </div>
         </section>
-      )}
-    </div>
-  );
-}
-
-/**
- * Discovery page wrapper with Suspense for useSearchParams compatibility
- * Automatically handles embed mode detection and context menu disabling
- */
-export default function DiscoveryPage() {
-  return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-800 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600 dark:text-gray-300">{"Loading..."}</p>
-        </div>
       </div>
-    }>
-      <DiscoveryPageContent />
-    </Suspense>
+    </DiscoveryClient>
   );
 }
