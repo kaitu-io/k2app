@@ -57,6 +57,10 @@ type Daemon struct {
 	engineCtx context.Context
 	engineCnl context.CancelFunc
 
+	// ConfigPath is the path to the YAML config file loaded at startup.
+	// When set, Reload() re-reads this file and applies dynamic field changes.
+	ConfigPath string
+
 	// EngineStarter allows overriding engine creation for testing.
 	// It should create an engine, start it with the given config, and return it.
 	// When nil, the default production path (engine.New + Start) is used.
