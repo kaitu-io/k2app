@@ -2,7 +2,7 @@ package sidecar
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -56,8 +56,12 @@ func NewTrafficMonitor(billingStartDate string, trafficLimitGB int64) (*TrafficM
 	// Calculate current billing cycle end time
 	tm.billingCycleEndAt = tm.calculateNextCycleEnd(time.Now()).Unix()
 
-	log.Printf("[Traffic] Monitor initialized: interface=%s, billingDate=%s, limitGB=%d, startBytes=%d",
-		tm.primaryInterface, billingStartDate, trafficLimitGB, currentBytes)
+	slog.Info("Traffic monitor initialized",
+		"component", "traffic",
+		"interface", tm.primaryInterface,
+		"billingDate", billingStartDate,
+		"limitGB", trafficLimitGB,
+		"startBytes", currentBytes)
 
 	return tm, nil
 }
@@ -107,7 +111,7 @@ func (tm *TrafficMonitor) detectPrimaryInterface() error {
 
 	tm.primaryInterface = maxInterface
 	tm.lastDetectedAt = time.Now()
-	log.Printf("[Traffic] Detected primary interface: %s (totalBytes=%d)", maxInterface, maxBytes)
+	slog.Info("Detected primary interface", "component", "traffic", "interface", maxInterface, "totalBytes", maxBytes)
 	return nil
 }
 
@@ -116,7 +120,7 @@ func (tm *TrafficMonitor) readInterfaceBytes() (uint64, error) {
 	// Re-detect primary interface every hour (prevents issues from interface changes)
 	if time.Since(tm.lastDetectedAt) > time.Hour {
 		if err := tm.detectPrimaryInterface(); err != nil {
-			log.Printf("[Traffic] Warning: failed to re-detect interface: %v", err)
+			slog.Warn("Failed to re-detect interface", "component", "traffic", "err", err)
 		}
 	}
 
@@ -191,8 +195,11 @@ func (tm *TrafficMonitor) checkAndResetCycle() error {
 	tm.cycleStartBytes = currentBytes
 	tm.billingCycleEndAt = tm.calculateNextCycleEnd(now).Unix()
 
-	log.Printf("[Traffic] Billing cycle reset: oldEnd=%s, newEnd=%s, cycleStartBytes=%d",
-		oldCycleEnd.Format("2006-01-02"), time.Unix(tm.billingCycleEndAt, 0).Format("2006-01-02"), currentBytes)
+	slog.Info("Billing cycle reset",
+		"component", "traffic",
+		"oldEnd", oldCycleEnd.Format("2006-01-02"),
+		"newEnd", time.Unix(tm.billingCycleEndAt, 0).Format("2006-01-02"),
+		"cycleStartBytes", currentBytes)
 
 	return nil
 }
@@ -201,7 +208,7 @@ func (tm *TrafficMonitor) checkAndResetCycle() error {
 func (tm *TrafficMonitor) GetTrafficStats() (TrafficStats, error) {
 	// Check if billing cycle needs to be reset
 	if err := tm.checkAndResetCycle(); err != nil {
-		log.Printf("[Traffic] Warning: failed to check cycle: %v", err)
+		slog.Warn("Failed to check cycle", "component", "traffic", "err", err)
 	}
 
 	tm.mu.RLock()

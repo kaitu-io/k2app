@@ -2,7 +2,7 @@ package config
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -154,7 +154,7 @@ func loadConfig() *Config {
 
 	// 1. Set default values
 	if err := defaults.Set(cfg); err != nil {
-		log.Printf("[Config] Failed to set defaults: %v", err)
+		slog.Warn("Failed to set defaults", "component", "config", "err", err)
 	}
 
 	// 2. Find config file (prefer -c specified path)
@@ -164,7 +164,8 @@ func loadConfig() *Config {
 		if fileExists(configFilePath) {
 			cfgFile = configFilePath
 		} else {
-			log.Fatalf("[Config] Specified config file does not exist: %s", configFilePath)
+			slog.Error("Specified config file does not exist", "component", "config", "path", configFilePath)
+			os.Exit(1)
 		}
 	} else {
 		// Fall back to auto-discovery (same directory as executable)
@@ -172,18 +173,18 @@ func loadConfig() *Config {
 	}
 
 	if cfgFile != "" {
-		log.Printf("[Config] Loading config file: %s", cfgFile)
+		slog.Info("Loading config file", "component", "config", "path", cfgFile)
 		if err := loadConfigFile(cfg, cfgFile); err != nil {
-			log.Printf("[Config] Failed to load config file: %v", err)
+			slog.Warn("Failed to load config file", "component", "config", "err", err)
 		}
 	} else {
-		log.Printf("[Config] No config file found, using defaults")
+		slog.Info("No config file found, using defaults", "component", "config")
 	}
 
 	// 3. Override K2V4Port from environment if set
 	if envPort := os.Getenv("K2V4_PORT"); envPort != "" {
 		cfg.K2V4Port = envPort
-		log.Printf("[Config] Read K2V4_PORT from env: %s", cfg.K2V4Port)
+		slog.Info("Read K2V4_PORT from env", "component", "config", "port", cfg.K2V4Port)
 	}
 
 	// 4. If K2 enabled, must get IPv4 address (from config or auto-detect)
@@ -192,13 +193,13 @@ func loadConfig() *Config {
 		if envHopPortStart := os.Getenv("K2_JUMP_PORT_MIN"); envHopPortStart != "" {
 			if port := parseIntSafe(envHopPortStart, 0); port > 0 {
 				cfg.Tunnel.HopPortStart = port
-				log.Printf("[Config] Read hop_port_start from env: %d", cfg.Tunnel.HopPortStart)
+				slog.Info("Read hop_port_start from env", "component", "config", "port", cfg.Tunnel.HopPortStart)
 			}
 		}
 		if envHopPortEnd := os.Getenv("K2_JUMP_PORT_MAX"); envHopPortEnd != "" {
 			if port := parseIntSafe(envHopPortEnd, 0); port > 0 {
 				cfg.Tunnel.HopPortEnd = port
-				log.Printf("[Config] Read hop_port_end from env: %d", cfg.Tunnel.HopPortEnd)
+				slog.Info("Read hop_port_end from env", "component", "config", "port", cfg.Tunnel.HopPortEnd)
 			}
 		}
 
@@ -206,64 +207,73 @@ func loadConfig() *Config {
 		var needIPDetection = cfg.Node.IPv4 == "" || cfg.Node.Country == "" || cfg.Node.Region == ""
 
 		if needIPDetection {
-			log.Printf("[Config] Detecting missing network info...")
+			slog.Info("Detecting missing network info...", "component", "config")
 			var err error
 			ipData, err = sidecar.GetExternalIP("ipv4")
 			if err != nil {
 				if cfg.Node.IPv4 == "" {
-					log.Fatalf("[Config] Failed to get IPv4 address: %v (K2 mode requires IPv4)", err)
+					slog.Error("Failed to get IPv4 address (K2 mode requires IPv4)", "component", "config", "err", err)
+					os.Exit(1)
 				}
-				log.Printf("[Config] Failed to get location info: %v (using defaults)", err)
+				slog.Warn("Failed to get location info, using defaults", "component", "config", "err", err)
 			}
 		}
 
 		// Set IPv4
 		if cfg.Node.IPv4 == "" {
 			if ipData.IP == "" {
-				log.Fatalf("[Config] IPv4 address is empty, cannot start (K2 mode requires IPv4)")
+				slog.Error("IPv4 address is empty, cannot start (K2 mode requires IPv4)", "component", "config")
+				os.Exit(1)
 			}
 			cfg.Node.IPv4 = ipData.IP
-			log.Printf("[Config] Auto-detected IPv4: %s", cfg.Node.IPv4)
+			slog.Info("Auto-detected IPv4", "component", "config", "ipv4", cfg.Node.IPv4)
 		} else {
-			log.Printf("[Config] Using configured IPv4: %s", cfg.Node.IPv4)
+			slog.Info("Using configured IPv4", "component", "config", "ipv4", cfg.Node.IPv4)
 		}
 
 		// Set country code
 		if cfg.Node.Country == "" && ipData.CountryCode != "" {
 			cfg.Node.Country = ipData.CountryCode
-			log.Printf("[Config] Auto-detected country: %s", cfg.Node.Country)
+			slog.Info("Auto-detected country", "component", "config", "country", cfg.Node.Country)
 		}
 
 		// Set Region (default: Country-Location)
 		if cfg.Node.Region == "" {
 			if ipData.CountryCode != "" && ipData.Location != "" {
 				cfg.Node.Region = slugify(ipData.CountryCode + "-" + ipData.Location)
-				log.Printf("[Config] Auto-generated region: %s", cfg.Node.Region)
+				slog.Info("Auto-generated region", "component", "config", "region", cfg.Node.Region)
 			} else if cfg.Node.Country != "" {
 				cfg.Node.Region = slugify(cfg.Node.Country)
-				log.Printf("[Config] Using country as region: %s", cfg.Node.Region)
+				slog.Info("Using country as region", "component", "config", "region", cfg.Node.Region)
 			}
 		} else {
-			log.Printf("[Config] Using configured region: %s", cfg.Node.Region)
+			slog.Info("Using configured region", "component", "config", "region", cfg.Node.Region)
 		}
 
 		// Verify IPv4 is set
 		if cfg.Node.IPv4 == "" {
-			log.Fatalf("[Config] IPv4 address is empty, cannot start (K2 mode requires IPv4)")
+			slog.Error("IPv4 address is empty, cannot start (K2 mode requires IPv4)", "component", "config")
+			os.Exit(1)
 		}
 	}
 
 	// Auto-generate Tunnel.Domain using sslip.io if not configured
 	if cfg.Tunnel.Domain == "" && cfg.Node.IPv4 != "" {
 		cfg.Tunnel.Domain = strings.ReplaceAll(cfg.Node.IPv4, ".", "-") + ".sslip.io"
-		log.Printf("[Config] Auto-generated tunnel domain: %s", cfg.Tunnel.Domain)
+		slog.Info("Auto-generated tunnel domain", "component", "config", "domain", cfg.Tunnel.Domain)
 	}
 
 	// Validate configuration and log warnings
 	validateConfig(cfg)
 
-	log.Printf("[Config] Loaded: ipv4=%s, country=%s, region=%s, tunnel_port=%d, k2_enabled=%v, tunnel_domain=%s",
-		cfg.Node.IPv4, cfg.Node.Country, cfg.Node.Region, cfg.Tunnel.Port, cfg.K2Center.Enabled, cfg.Tunnel.Domain)
+	slog.Info("Config loaded",
+		"component", "config",
+		"ipv4", cfg.Node.IPv4,
+		"country", cfg.Node.Country,
+		"region", cfg.Node.Region,
+		"tunnelPort", cfg.Tunnel.Port,
+		"k2Enabled", cfg.K2Center.Enabled,
+		"tunnelDomain", cfg.Tunnel.Domain)
 
 	return cfg
 }
@@ -272,7 +282,7 @@ func loadConfig() *Config {
 func findConfigFile() string {
 	exePath, err := os.Executable()
 	if err != nil {
-		log.Printf("[Config] Failed to get executable path: %v", err)
+		slog.Warn("Failed to get executable path", "component", "config", "err", err)
 		return ""
 	}
 
@@ -335,12 +345,12 @@ func parseIntSafe(s string, defaultValue int) int {
 func validateConfig(cfg *Config) {
 	// Warn if both tunnel and relay are disabled
 	if !cfg.Tunnel.Enabled && !cfg.Relay.Enabled {
-		log.Printf("[Config] WARNING: Both tunnel and relay are disabled - node will not serve any traffic")
+		slog.Warn("Both tunnel and relay are disabled - node will not serve any traffic", "component", "config")
 	}
 
 	// Warn if tunnel is enabled but no domain
 	if cfg.Tunnel.Enabled && cfg.Tunnel.Domain == "" && cfg.K2Center.Enabled {
-		log.Printf("[Config] INFO: Tunnel domain not set, will auto-generate using sslip.io")
+		slog.Info("Tunnel domain not set, will auto-generate using sslip.io", "component", "config")
 	}
 }
 
@@ -354,12 +364,12 @@ func GetNode() (*sidecar.Node, error) {
 
 	var initErr error
 	nodeOnce.Do(func() {
-		log.Printf("[Node] Initializing shared Node instance...")
+		slog.Info("Initializing shared Node instance...", "component", "node")
 		nodeInstance, initErr = sidecar.NewNode(cfg.K2Center.BaseURL, cfg.K2Center.Secret)
 		if initErr != nil {
-			log.Printf("[Node] Failed to create Node instance: %v", initErr)
+			slog.Error("Failed to create Node instance", "component", "node", "err", initErr)
 		} else {
-			log.Printf("[Node] Shared Node instance initialized successfully")
+			slog.Info("Shared Node instance initialized successfully", "component", "node")
 		}
 	})
 

@@ -2,7 +2,7 @@ package sidecar
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"strconv"
@@ -39,13 +39,13 @@ func NewCollector(node *Node, reportInterval time.Duration, billingStartDate str
 	if billingStartDate != "" {
 		monitor, err := NewTrafficMonitor(billingStartDate, trafficLimitGB)
 		if err != nil {
-			log.Printf("[Collector] Warning: Failed to initialize traffic monitor: %v", err)
+			slog.Warn("Failed to initialize traffic monitor", "component", "collector", "err", err)
 		} else {
 			c.trafficMonitor = monitor
-			log.Printf("[Collector] Traffic monitoring enabled")
+			slog.Info("Traffic monitoring enabled", "component", "collector")
 		}
 	} else {
-		log.Printf("[Collector] Traffic monitoring disabled (no billing date configured)")
+		slog.Info("Traffic monitoring disabled (no billing date configured)", "component", "collector")
 	}
 
 	return c
@@ -57,12 +57,12 @@ func (c *Collector) Run() error {
 	ticker := time.NewTicker(c.reportInterval)
 	defer ticker.Stop()
 
-	log.Printf("[Metrics] Starting metrics collection loop")
+	slog.Info("Starting metrics collection loop", "component", "metrics")
 	for {
 		select {
 		case <-ticker.C:
 			if err := c.collectAndReport(); err != nil {
-				log.Printf("[Metrics] Error collecting and reporting: %v", err)
+				slog.Error("Error collecting and reporting", "component", "metrics", "err", err)
 			}
 		}
 	}
@@ -72,9 +72,13 @@ func (c *Collector) Run() error {
 func (c *Collector) collectAndReport() error {
 	health := c.collectMetrics()
 
-	log.Printf("[Metrics] Collected: CPU=%.1f%%, Memory=%.1f%%, Disk=%.1f%%, NetworkUp=%.2fMbps, NetworkDown=%.2fMbps",
-		health.CPUUsage, health.MemoryUsage, health.DiskUsage,
-		health.BandwidthUpMbps, health.BandwidthDownMbps)
+	slog.Info("Collected metrics",
+		"component", "metrics",
+		"cpu", health.CPUUsage,
+		"memory", health.MemoryUsage,
+		"disk", health.DiskUsage,
+		"networkUpMbps", health.BandwidthUpMbps,
+		"networkDownMbps", health.BandwidthDownMbps)
 
 	return c.report(health)
 }
@@ -111,7 +115,7 @@ func (c *Collector) collectMetrics() Health {
 	if c.trafficMonitor != nil {
 		trafficStats, err := c.trafficMonitor.GetTrafficStats()
 		if err != nil {
-			log.Printf("[Collector] Warning: Failed to get traffic stats: %v", err)
+			slog.Warn("Failed to get traffic stats", "component", "collector", "err", err)
 		} else {
 			health.BillingCycleEndAt = trafficStats.BillingCycleEndAt
 			health.MonthlyTrafficLimitBytes = trafficStats.MonthlyTrafficLimitBytes

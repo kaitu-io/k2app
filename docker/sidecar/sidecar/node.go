@@ -7,7 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"math/rand"
 	"net"
 	"net/http"
@@ -147,7 +147,7 @@ func (tc *TunnelCertificate) BuildTLSConfig() (*tls.Config, error) {
 			// Go's TLS automatically decrypts ECH before calling this callback.
 			// chi.ServerName contains the decrypted inner SNI (real domain: *.sslip.io).
 			// Return the certificate that matches the real domain, not the public_name.
-			log.Printf("[TLS] GetCertificate: inner_sni=%s (expected: *.sslip.io or *.kaitu.io)", chi.ServerName)
+			slog.Debug("GetCertificate", "component", "tls", "inner_sni", chi.ServerName)
 			return &cert, nil
 		},
 		MinVersion: tls.VersionTLS12,
@@ -177,14 +177,14 @@ func (tc *TunnelCertificate) SaveToFiles(certDir, certFileName, keyFileName stri
 	if err := os.WriteFile(certPath, []byte(tc.SSLCert), 0644); err != nil {
 		return fmt.Errorf("failed to write certificate: %w", err)
 	}
-	log.Printf("[Certificate] Saved certificate to: %s", certPath)
+	slog.Info("Saved certificate", "component", "certificate", "path", certPath)
 
 	// Save private key file
 	keyPath := filepath.Join(certDir, keyFileName)
 	if err := os.WriteFile(keyPath, []byte(tc.SSLKey), 0600); err != nil {
 		return fmt.Errorf("failed to write private key: %w", err)
 	}
-	log.Printf("[Certificate] Saved private key to: %s", keyPath)
+	slog.Info("Saved private key", "component", "certificate", "path", keyPath)
 
 	return nil
 }
@@ -213,9 +213,9 @@ func getAuthCache() *AuthCache {
 	initAuthCacheOnce.Do(func() {
 		globalAuthCache = NewAuthCache()
 		if authCacheEnabled {
-			log.Printf("[Auth] Auth cache ENABLED with %v TTL (K2_AUTH_CACHE_ENABLED=true)", authCacheDuration)
+			slog.Info("Auth cache ENABLED", "component", "auth", "ttl", authCacheDuration)
 		} else {
-			log.Printf("[Auth] Auth cache DISABLED (set K2_AUTH_CACHE_ENABLED=true to enable)")
+			slog.Info("Auth cache DISABLED (set K2_AUTH_CACHE_ENABLED=true to enable)", "component", "auth")
 		}
 	})
 	return globalAuthCache
@@ -267,12 +267,12 @@ func (n *Node) DetectIP() error {
 		n.Region = slugify(ipData.CountryCode)
 	}
 
-	log.Printf("[Node] Detected IPv4: %s, Country: %s, Region: %s", n.IPv4, n.Country, n.Region)
+	slog.Info("Detected IP", "component", "node", "ipv4", n.IPv4, "country", n.Country, "region", n.Region)
 
 	// Try to detect IPv6 (optional) - using exported function from ip.go
 	if ipv6, _, err := GetExternalIPWithData("ipv6"); err == nil {
 		n.IPv6 = ipv6
-		log.Printf("[Node] Detected IPv6: %s", n.IPv6)
+		slog.Info("Detected IPv6", "component", "node", "ipv6", n.IPv6)
 	}
 
 	// Default to using IPv4 as node name
@@ -296,7 +296,7 @@ func (n *Node) RegisterNode() (string, error) {
 		return "", fmt.Errorf("Name is required")
 	}
 
-	log.Printf("[Node] Registering node: IPv4=%s, Country=%s, Name=%s", n.IPv4, n.Country, n.Name)
+	slog.Info("Registering node", "component", "node", "ipv4", n.IPv4, "country", n.Country, "name", n.Name)
 
 	nodeReq := NodeUpsertRequest{
 		Country:     n.Country,
@@ -321,7 +321,7 @@ func (n *Node) RegisterNode() (string, error) {
 		return "", fmt.Errorf("node registration failed: code=%d, message=%s", nodeResp.Code, nodeResp.Message)
 	}
 
-	log.Printf("[Node] Node registered successfully: IPv4=%s, Created=%v", nodeResp.Data.IPv4, nodeResp.Data.Created)
+	slog.Info("Node registered successfully", "component", "node", "ipv4", nodeResp.Data.IPv4, "created", nodeResp.Data.Created)
 	return nodeResp.Data.SecretToken, nil
 }
 
@@ -339,7 +339,7 @@ func (n *Node) Register(tunnels []TunnelConfig) (*RegisterResult, error) {
 		n.Name = n.IPv4 // Default to IPv4 as name
 	}
 
-	log.Printf("[Node] Registering node with %d tunnels: IPv4=%s, Country=%s", len(tunnels), n.IPv4, n.Country)
+	slog.Info("Registering node with tunnels", "component", "node", "tunnels", len(tunnels), "ipv4", n.IPv4, "country", n.Country)
 
 	// Build request
 	nodeReq := NodeUpsertRequest{
@@ -379,11 +379,10 @@ func (n *Node) Register(tunnels []TunnelConfig) (*RegisterResult, error) {
 			SSLCert: t.SSLCert,
 			SSLKey:  t.SSLKey,
 		}
-		log.Printf("[Node] Tunnel registered: Domain=%s, Protocol=%s, Created=%v", t.Domain, t.Protocol, t.Created)
+		slog.Info("Tunnel registered", "component", "node", "domain", t.Domain, "protocol", t.Protocol, "created", t.Created)
 	}
 
-	log.Printf("[Node] Registration completed: IPv4=%s, NodeCreated=%v, Tunnels=%d",
-		result.IPv4, result.NodeCreated, len(result.Tunnels))
+	slog.Info("Registration completed", "component", "node", "ipv4", result.IPv4, "nodeCreated", result.NodeCreated, "tunnels", len(result.Tunnels))
 
 	return result, nil
 }
@@ -408,8 +407,9 @@ func (n *Node) AddTunnel(domain string, port int, protocol string, version int, 
 	// Auto-generate name: Country + random[0000,10000)
 	name := generateTunnelName(n.Country)
 
-	log.Printf("[Node] Adding tunnel: Domain=%s, Port=%d, Protocol=%s, Version=%d, HopPorts=%d-%d, Name=%s",
-		domain, port, protocol, version, hopPortStart, hopPortEnd, name)
+	slog.Info("Adding tunnel", "component", "node",
+		"domain", domain, "port", port, "protocol", protocol,
+		"version", version, "hopPortStart", hopPortStart, "hopPortEnd", hopPortEnd, "name", name)
 
 	tunnelReq := TunnelUpsertRequest{
 		Name:         name,
@@ -435,8 +435,9 @@ func (n *Node) AddTunnel(domain string, port int, protocol string, version int, 
 		return nil, fmt.Errorf("add tunnel failed: code=%d, message=%s", tunnelResp.Code, tunnelResp.Message)
 	}
 
-	log.Printf("[Node] Tunnel added successfully: Domain=%s, Protocol=%s, TunnelID=%d, Created=%v",
-		tunnelResp.Data.Domain, protocol, tunnelResp.Data.TunnelID, tunnelResp.Data.Created)
+	slog.Info("Tunnel added successfully", "component", "node",
+		"domain", tunnelResp.Data.Domain, "protocol", protocol,
+		"tunnelID", tunnelResp.Data.TunnelID, "created", tunnelResp.Data.Created)
 
 	// Return certificate wrapper object
 	return &TunnelCertificate{
@@ -455,7 +456,7 @@ func (n *Node) RemoveTunnel(domain string) error {
 		return fmt.Errorf("domain is required")
 	}
 
-	log.Printf("[Node] Removing tunnel: Domain=%s", domain)
+	slog.Info("Removing tunnel", "component", "node", "domain", domain)
 
 	tunnelPath := fmt.Sprintf("/slave/nodes/%s/tunnels/%s", n.IPv4, domain)
 	_, err := n.requestWithAuth("DELETE", tunnelPath, nil)
@@ -463,7 +464,7 @@ func (n *Node) RemoveTunnel(domain string) error {
 		return fmt.Errorf("failed to remove tunnel: %w", err)
 	}
 
-	log.Printf("[Node] Tunnel removed successfully: Domain=%s", domain)
+	slog.Info("Tunnel removed successfully", "component", "node", "domain", domain)
 	return nil
 }
 
@@ -475,7 +476,7 @@ func (n *Node) Unregister() error {
 		return fmt.Errorf("IPv4 is required, call DetectIP() first")
 	}
 
-	log.Printf("[Node] Unregistering node: IPv4=%s", n.IPv4)
+	slog.Info("Unregistering node", "component", "node", "ipv4", n.IPv4)
 
 	nodePath := fmt.Sprintf("/slave/nodes/%s", n.IPv4)
 	_, err := n.requestWithAuth("DELETE", nodePath, nil)
@@ -483,7 +484,7 @@ func (n *Node) Unregister() error {
 		return fmt.Errorf("failed to unregister node: %w", err)
 	}
 
-	log.Printf("[Node] Node unregistered successfully: IPv4=%s", n.IPv4)
+	slog.Info("Node unregistered successfully", "component", "node", "ipv4", n.IPv4)
 	return nil
 }
 
@@ -514,7 +515,7 @@ func (n *Node) requestWithAuth(method, path string, body interface{}) ([]byte, e
 	resp, err := client.Do(req)
 	elapsed := time.Since(startTime)
 	if err != nil {
-		log.Printf("[Node] Center request failed: %s %s elapsed=%v error=%v", method, path, elapsed, err)
+		slog.Error("Center request failed", "component", "node", "method", method, "path", path, "elapsed", elapsed, "err", err)
 		return nil, err
 	}
 	defer resp.Body.Close()
@@ -524,11 +525,11 @@ func (n *Node) requestWithAuth(method, path string, body interface{}) ([]byte, e
 	respBody.ReadFrom(resp.Body)
 
 	if resp.StatusCode >= 300 {
-		log.Printf("[Node] Center request failed: %s %s status=%d elapsed=%v body=%s", method, path, resp.StatusCode, elapsed, respBody.String())
+		slog.Error("Center request failed", "component", "node", "method", method, "path", path, "status", resp.StatusCode, "elapsed", elapsed, "body", respBody.String())
 		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, respBody.String())
 	}
 
-	log.Printf("[Node] Center request ok: %s %s status=%d elapsed=%v", method, path, resp.StatusCode, elapsed)
+	slog.Info("Center request ok", "component", "node", "method", method, "path", path, "status", resp.StatusCode, "elapsed", elapsed)
 	return respBody.Bytes(), nil
 }
 
@@ -545,10 +546,12 @@ func (n *Node) ReportStatus(health Health) error {
 		return fmt.Errorf("IPv4 is required, call DetectIP() first")
 	}
 
-	log.Printf("[Node] Reporting: CPU=%.1f%% Mem=%.1f%% Disk=%.1f%% Conn=%d Speed=%.2f/%.2f/%.2fMbps Latency=%.2fms Loss=%.2f%% Traffic=%d/%d",
-		health.CPUUsage, health.MemoryUsage, health.DiskUsage, health.Connections,
-		health.NetworkSpeedMbps, health.BandwidthUpMbps, health.BandwidthDownMbps,
-		health.NetworkLatencyMs, health.PacketLossPercent, health.NetworkIn, health.NetworkOut)
+	slog.Info("Reporting status", "component", "node",
+		"cpu", health.CPUUsage, "mem", health.MemoryUsage, "disk", health.DiskUsage,
+		"conn", health.Connections, "speedMbps", health.NetworkSpeedMbps,
+		"upMbps", health.BandwidthUpMbps, "downMbps", health.BandwidthDownMbps,
+		"latencyMs", health.NetworkLatencyMs, "loss", health.PacketLossPercent,
+		"netIn", health.NetworkIn, "netOut", health.NetworkOut)
 
 	req := ReportRequest{
 		UpdatedAt: time.Now().Unix(),
@@ -557,11 +560,11 @@ func (n *Node) ReportStatus(health Health) error {
 
 	respBody, err := n.requestWithAuth("POST", "/slave/report/status", req)
 	if err != nil {
-		log.Printf("[Node] Failed to report status: %v", err)
+		slog.Error("Failed to report status", "component", "node", "err", err)
 		return fmt.Errorf("failed to report status: %w", err)
 	}
 
-	log.Printf("[Node] Status reported successfully, response: %s", string(respBody))
+	slog.Info("Status reported successfully", "component", "node", "response", string(respBody))
 	return nil
 }
 
@@ -777,7 +780,7 @@ func (n *Node) CheckDeviceAuth(udid, token string) AuthResult {
 	elapsed := time.Since(startTime)
 
 	if err != nil {
-		log.Printf("[Node] Auth failed: UDID=%s elapsed=%v error=%v", udid, elapsed, err)
+		slog.Error("Auth failed", "component", "node", "udid", udid, "elapsed", elapsed, "err", err)
 		return AuthResult{
 			Success:   false,
 			ErrorCode: AuthErrorUnknown,
@@ -787,7 +790,7 @@ func (n *Node) CheckDeviceAuth(udid, token string) AuthResult {
 
 	var apiResp CenterResponse[DeviceCheckAuthResponse]
 	if err := json.Unmarshal(respBody, &apiResp); err != nil {
-		log.Printf("[Node] Auth failed: UDID=%s elapsed=%v error=parse_failed body=%s", udid, elapsed, string(respBody))
+		slog.Error("Auth failed: parse error", "component", "node", "udid", udid, "elapsed", elapsed, "body", string(respBody))
 		return AuthResult{
 			Success:   false,
 			ErrorCode: AuthErrorUnknown,
@@ -802,7 +805,7 @@ func (n *Node) CheckDeviceAuth(udid, token string) AuthResult {
 		if errorCode != AuthErrorInvalidToken && errorCode != AuthErrorMembershipExpired {
 			errorCode = AuthErrorUnknown
 		}
-		log.Printf("[Node] Auth failed: UDID=%s elapsed=%v code=%d message=%s", udid, elapsed, apiResp.Code, apiResp.Message)
+		slog.Warn("Auth failed", "component", "node", "udid", udid, "elapsed", elapsed, "code", apiResp.Code, "message", apiResp.Message)
 		return AuthResult{
 			Success:   false,
 			ErrorCode: errorCode,
@@ -811,7 +814,7 @@ func (n *Node) CheckDeviceAuth(udid, token string) AuthResult {
 	}
 
 	if apiResp.Data == nil {
-		log.Printf("[Node] Auth failed: UDID=%s elapsed=%v error=nil_data", udid, elapsed)
+		slog.Error("Auth failed: nil data", "component", "node", "udid", udid, "elapsed", elapsed)
 		return AuthResult{
 			Success:   false,
 			ErrorCode: AuthErrorUnknown,
@@ -821,7 +824,7 @@ func (n *Node) CheckDeviceAuth(udid, token string) AuthResult {
 
 	// Check UDID match
 	if apiResp.Data.UDID != udid {
-		log.Printf("[Node] Auth failed: UDID=%s elapsed=%v error=UDID_mismatch expected=%s got=%s", udid, elapsed, udid, apiResp.Data.UDID)
+		slog.Error("Auth failed: UDID mismatch", "component", "node", "udid", udid, "elapsed", elapsed, "expected", udid, "got", apiResp.Data.UDID)
 		return AuthResult{
 			Success:   false,
 			ErrorCode: AuthErrorInvalidToken,
@@ -829,7 +832,7 @@ func (n *Node) CheckDeviceAuth(udid, token string) AuthResult {
 		}
 	}
 
-	log.Printf("[Node] Auth success: UDID=%s UserID=%d elapsed=%v", udid, apiResp.Data.UserID, elapsed)
+	slog.Info("Auth success", "component", "node", "udid", udid, "userID", apiResp.Data.UserID, "elapsed", elapsed)
 	return AuthResult{
 		Success:   true,
 		ErrorCode: AuthErrorNone,
@@ -841,7 +844,7 @@ func (n *Node) CheckDeviceAuth(udid, token string) AuthResult {
 // If format doesn't match rules, directly rejects the auth request to avoid invalid API calls
 func ValidateCredentialFormat(udid, token string) bool {
 	if udid == "" || token == "" {
-		log.Printf("[Auth] Format validation failed: UDID=%s Token=%s error=empty_credentials", udid, token)
+		slog.Warn("Format validation failed: empty credentials", "component", "auth", "udid", udid)
 		return false
 	}
 
@@ -895,7 +898,7 @@ func (n *Node) CheckAuthWithResult(udid, token string) AuthResult {
 				return AuthResult{Success: true, ErrorCode: AuthErrorNone}
 			}
 			// Hit negative cache
-			log.Printf("[Auth] Cached auth failure for UDID=%s code=%d", udid, cacheResult.ErrorCode)
+			slog.Warn("Cached auth failure", "component", "auth", "udid", udid, "code", cacheResult.ErrorCode)
 			return AuthResult{
 				Success:   false,
 				ErrorCode: cacheResult.ErrorCode,
@@ -917,7 +920,7 @@ func (n *Node) CheckAuthWithResult(udid, token string) AuthResult {
 			// Negative cache (5 minutes) - only cache 401 errors (token invalid)
 			// Don't cache 402 (membership expired), because user may renew at any time
 			cache.SetFailure(udid, token, negativeCacheDuration, result.ErrorCode)
-			log.Printf("[Auth] Negative cache set for UDID=%s code=%d duration=%v", udid, result.ErrorCode, negativeCacheDuration)
+			slog.Info("Negative cache set", "component", "auth", "udid", udid, "code", result.ErrorCode, "duration", negativeCacheDuration)
 		}
 	}
 	// Note: AuthErrorMembershipExpired (402) and AuthErrorUnknown (500) are not cached
@@ -1003,7 +1006,7 @@ func (n *Node) FetchECHKeys(outputPath string) (int, error) {
 		return 0, fmt.Errorf("IPv4 is required, call DetectIP() first")
 	}
 
-	log.Printf("[Node] Fetching ECH keys from Center...")
+	slog.Info("Fetching ECH keys from Center...", "component", "node")
 
 	// Request ECH keys from Center
 	respBody, err := n.requestWithAuth("GET", "/slave/ech/keys", nil)
@@ -1021,7 +1024,7 @@ func (n *Node) FetchECHKeys(outputPath string) (int, error) {
 	}
 
 	if echResp.Data == nil || len(echResp.Data.Items) == 0 {
-		log.Printf("[Node] No ECH keys returned from Center")
+		slog.Info("No ECH keys returned from Center", "component", "node")
 		return 0, nil
 	}
 
@@ -1045,7 +1048,7 @@ func (n *Node) FetchECHKeys(outputPath string) (int, error) {
 		return 0, fmt.Errorf("failed to write ECH keys file: %w", err)
 	}
 
-	log.Printf("[Node] ECH keys written to %s (%d keys)", outputPath, len(keysFile.Keys))
+	slog.Info("ECH keys written", "component", "node", "path", outputPath, "count", len(keysFile.Keys))
 	return len(keysFile.Keys), nil
 }
 
@@ -1061,7 +1064,7 @@ func (n *Node) FetchECHKeysAndNotify(outputPath, pidFile string) (int, error) {
 
 	if count > 0 && pidFile != "" {
 		if err := SendSIGHUP(pidFile); err != nil {
-			log.Printf("[Node] Warning: failed to send SIGHUP to k2-slave: %v", err)
+			slog.Warn("Failed to send SIGHUP to k2-slave", "component", "node", "err", err)
 			// Don't return error - keys were written successfully
 		}
 	}
@@ -1091,6 +1094,6 @@ func SendSIGHUP(pidFile string) error {
 		return fmt.Errorf("send SIGHUP: %w", err)
 	}
 
-	log.Printf("[Node] Sent SIGHUP to k2-slave (pid=%d)", pid)
+	slog.Info("Sent SIGHUP to k2-slave", "component", "node", "pid", pid)
 	return nil
 }
