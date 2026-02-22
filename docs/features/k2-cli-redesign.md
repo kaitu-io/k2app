@@ -6,7 +6,7 @@
 |-----------|------------------------------------------|
 | Feature   | k2-cli-redesign                          |
 | Version   | v2                                       |
-| Status    | in-progress                              |
+| Status    | implemented                              |
 | Created   | 2026-02-21                               |
 | Updated   | 2026-02-22                               |
 
