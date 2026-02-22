@@ -11,11 +11,14 @@ import (
 	"sync"
 	"time"
 
+	"path/filepath"
+
 	"github.com/kaitu-io/k2rule"
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/directdial"
 	"github.com/kaitu-io/k2/engine"
+	"github.com/kaitu-io/k2/paths"
 )
 
 // DefaultAddr is the daemon HTTP listen address.
@@ -265,11 +268,8 @@ func (d *Daemon) engineConfigFromClientConfig(cfg *config.ClientConfig, dd *dire
 	// Compute DNSExclude from DNS config + server host resolution.
 	ecfg.DNSExclude = d.computeDNSExclude(cfg)
 
-	// Map rule config if present.
-	if cfg.Rule.RuleURL != "" || cfg.Rule.GeoIPURL != "" || cfg.Rule.PornURL != "" ||
-		cfg.Rule.CacheDir != "" || cfg.Rule.Global {
-		ecfg.RuleConfig = d.buildRuleConfig(cfg)
-	}
+	// Always provide RuleConfig with CacheDir (k2rule v0.5.0-go requires it).
+	ecfg.RuleConfig = d.buildRuleConfig(cfg)
 
 	// Create network monitor (desktop only, non-fatal if unavailable).
 	factory := d.MonitorFactory
@@ -327,12 +327,17 @@ func extractServerHost(wireURL string) string {
 }
 
 // buildRuleConfig creates a k2rule.Config from client config.
+// Defaults CacheDir to paths.CacheDir()/k2rule if not explicitly set.
 func (d *Daemon) buildRuleConfig(cfg *config.ClientConfig) *k2rule.Config {
+	cacheDir := cfg.Rule.CacheDir
+	if cacheDir == "" {
+		cacheDir = filepath.Join(paths.CacheDir(), "k2rule")
+	}
 	ruleCfg := &k2rule.Config{
 		RuleURL:  cfg.Rule.RuleURL,
 		GeoIPURL: cfg.Rule.GeoIPURL,
 		PornURL:  cfg.Rule.PornURL,
-		CacheDir: cfg.Rule.CacheDir,
+		CacheDir: cacheDir,
 		IsGlobal: cfg.Rule.Global,
 	}
 	if cfg.Rule.Global {

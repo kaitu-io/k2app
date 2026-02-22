@@ -87,7 +87,7 @@ type RuleConfig struct {
 	RuleURL  string `yaml:"rule_url"  json:"rule_url"`  // remote rule file URL ("" = CDN default)
 	GeoIPURL string `yaml:"geoip_url" json:"geoip_url"` // remote GeoIP .mmdb URL ("" = CDN default)
 	PornURL  string `yaml:"porn_url"  json:"porn_url"`  // remote porn list URL ("" = CDN default)
-	CacheDir string `yaml:"cache_dir" json:"cache_dir"` // cache directory ("" = ~/.cache/k2rule/)
+	CacheDir string `yaml:"cache_dir" json:"cache_dir"` // cache directory ("" = paths.CacheDir()/k2rule)
 	Global   bool   `yaml:"global"    json:"global"`    // true = global proxy mode (ignore rules)
 }
 

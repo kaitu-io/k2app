@@ -535,6 +535,17 @@ func TestEngineStatusJSON_MatchesDaemonFormat(t *testing.T) {
 // ==========================================================================
 
 func TestDNSHandler_Intercept_Port53(t *testing.T) {
+	// Initialize k2rule so DNS middleware can route queries (v0.5.0-go requires CacheDir).
+	// Non-existent file paths skip remote downloads (retryForever); globalConfig is set
+	// before the file-open error, and global-mode Match() only checks globalConfig.
+	k2rule.Init(&k2rule.Config{
+		CacheDir:     t.TempDir(),
+		IsGlobal:     true,
+		GlobalTarget: k2rule.TargetProxy,
+		GeoIPFile:    "/nonexistent",
+		PornFile:     "/nonexistent",
+	})
+
 	inner := &mockConnectionHandler{}
 
 	// Build a Middleware with a mock querier that returns canned DNS responses.
