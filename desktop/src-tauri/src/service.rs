@@ -457,6 +457,35 @@ pub async fn ensure_service_running(app_version: String) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    // Test: daemon_exec non-macOS path calls core_action (existing behavior).
+    // On non-macOS platforms daemon_exec routes to core_action (daemon HTTP path).
+    // We verify by calling it with no daemon running — expects an Err from HTTP.
+    #[tokio::test]
+    async fn test_daemon_exec_non_macos() {
+        #[cfg(not(target_os = "macos"))]
+        {
+            let result = daemon_exec("status".to_string(), None).await;
+            assert!(
+                result.is_err(),
+                "daemon_exec should Err when no daemon is running (non-macOS path)"
+            );
+            let err_msg = result.unwrap_err();
+            assert!(
+                err_msg.contains("Failed to call action")
+                    || err_msg.contains("connection refused")
+                    || err_msg.contains("os error"),
+                "error should indicate HTTP connection failure: {}",
+                err_msg
+            );
+        }
+        #[cfg(target_os = "macos")]
+        {
+            // On macOS daemon_exec calls ne_action; test just verifies no panic
+            let result = daemon_exec("status".to_string(), None).await;
+            let _ = result;
+        }
+    }
+
     #[test]
     fn test_versions_match_identical() {
         assert!(versions_match("0.4.0", "0.4.0"));

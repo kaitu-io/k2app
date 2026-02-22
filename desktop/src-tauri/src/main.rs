@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod log_upload;
+mod ne;
 mod service;
 mod tray;
 mod updater;
