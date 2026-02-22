@@ -30,5 +30,17 @@
     <!-- Hardened runtime exceptions for bundled binaries -->
     <key>com.apple.security.cs.disable-library-validation</key>
     <true/>
+
+    <!-- Network Extension: packet-tunnel-provider for macOS NE mode -->
+    <key>com.apple.developer.networking.networkextension</key>
+    <array>
+        <string>packet-tunnel-provider</string>
+    </array>
+
+    <!-- App Group shared between main app and KaituTunnel NE extension -->
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>group.io.kaitu.desktop</string>
+    </array>
 </dict>
 </plist>

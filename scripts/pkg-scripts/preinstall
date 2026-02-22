@@ -19,11 +19,17 @@ if [ -x "$K2" ]; then
     "$K2" service uninstall 2>&1 || true
 fi
 
-# 3. Fallback: force unload if plist still exists (old kaitu-service format)
-if [ -f /Library/LaunchDaemons/kaitu.plist ]; then
-    launchctl unload /Library/LaunchDaemons/kaitu.plist 2>/dev/null || true
-    rm -f /Library/LaunchDaemons/kaitu.plist
-fi
+# 3. Clean up all known launchd service variants (legacy + current formats)
+for PLIST in \
+    /Library/LaunchDaemons/io.kaitu.k2.plist \
+    /Library/LaunchDaemons/io.kaitu.service.plist \
+    /Library/LaunchDaemons/com.kaitu.service.plist \
+    /Library/LaunchDaemons/kaitu.plist; do
+    if [ -f "$PLIST" ]; then
+        launchctl unload "$PLIST" 2>/dev/null || true
+        rm -f "$PLIST"
+    fi
+done
 
 # 4. Wait for cleanup
 sleep 2
