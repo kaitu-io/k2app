@@ -1,6 +1,6 @@
 package daemon
 
-import "log"
+import "log/slog"
 
 const (
 	defaultMaxProcs = 4000
@@ -11,9 +11,9 @@ const (
 // Should be called early in main() before creating goroutines.
 func ApplyResourceLimits() {
 	if err := setMaxProcs(defaultMaxProcs); err != nil {
-		log.Printf("Warning: failed to set max processes: %v", err)
+		slog.Warn("failed to set max processes", "err", err)
 	}
 	if err := setMaxFiles(defaultMaxFiles); err != nil {
-		log.Printf("Warning: failed to set max files: %v", err)
+		slog.Warn("failed to set max files", "err", err)
 	}
 }

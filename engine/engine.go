@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/url"
 	"sync"
 	"time"
@@ -80,7 +80,7 @@ func (e *Engine) Start(cfg Config) error {
 	// 1. Parse rule mode: RuleConfig > RuleMode > URL query "rule=" > default "global".
 	ruleCfg := e.buildK2ruleConfig(cfg)
 	if err := k2rule.Init(ruleCfg); err != nil {
-		log.Printf("engine: k2rule init: %v (continuing with defaults)", err)
+		slog.Warn("engine: k2rule init failed, continuing with defaults", "err", err)
 	}
 
 	// 2. Parse k2v5:// URL.
@@ -91,7 +91,7 @@ func (e *Engine) Start(cfg Config) error {
 
 	// 3. Prefer IPv6 when configured and both server and client support it.
 	if cfg.PreferIPv6 && wireCfg.IPv6 != "" && wire.HasIPv6() {
-		log.Printf("engine: IPv6 available, using %s", wireCfg.IPv6)
+		slog.Info("engine: IPv6 available, switching to IPv6 address", "addr", wireCfg.IPv6)
 		wireCfg.Host = wireCfg.IPv6
 	}
 
@@ -203,7 +203,7 @@ func (e *Engine) Start(cfg Config) error {
 	// Start network monitor if provided (desktop only).
 	if cfg.NetworkMonitor != nil {
 		if err := cfg.NetworkMonitor.Start(func() { e.OnNetworkChanged() }); err != nil {
-			log.Printf("engine: network monitor start failed: %v", err)
+			slog.Warn("engine: network monitor start failed", "err", err)
 		}
 	}
 

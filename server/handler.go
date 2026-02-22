@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net"
 	"sync"
 	"time"
@@ -78,7 +78,7 @@ func (h *ProxyHandler) HandleTCP(conn net.Conn, addr string) {
 	if !h.AllowPrivateIP {
 		if err := checkAddr(addr); err != nil {
 			wire.WriteStreamResponse(conn, err)
-			log.Printf("server: TCP proxy blocked %s: %v", addr, err)
+			slog.Error("server: TCP proxy blocked", "addr", addr, "err", err)
 			return
 		}
 	}
@@ -86,7 +86,7 @@ func (h *ProxyHandler) HandleTCP(conn net.Conn, addr string) {
 	target, err := net.DialTimeout("tcp", addr, h.DialTimeout)
 	if err != nil {
 		wire.WriteStreamResponse(conn, err)
-		log.Printf("server: TCP proxy dial %s: %v", addr, err)
+		slog.Error("server: TCP proxy dial", "addr", addr, "err", err)
 		return
 	}
 	defer target.Close()
@@ -103,7 +103,7 @@ func (h *ProxyHandler) HandleTCP(conn net.Conn, addr string) {
 func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 	if !h.AllowPrivateIP {
 		if err := checkAddr(addr); err != nil {
-			log.Printf("server: UDP proxy blocked %s: %v", addr, err)
+			slog.Error("server: UDP proxy blocked", "addr", addr, "err", err)
 			conn.Close()
 			return
 		}
@@ -111,14 +111,14 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 
 	targetAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
-		log.Printf("server: UDP resolve %s: %v", addr, err)
+		slog.Error("server: UDP resolve", "addr", addr, "err", err)
 		conn.Close()
 		return
 	}
 
 	target, err := net.DialUDP("udp", nil, targetAddr)
 	if err != nil {
-		log.Printf("server: UDP dial %s: %v", addr, err)
+		slog.Error("server: UDP dial", "addr", addr, "err", err)
 		conn.Close()
 		return
 	}

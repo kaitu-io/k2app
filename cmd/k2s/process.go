@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -17,18 +17,37 @@ import (
 // configPath is the -c flag value (empty = auto-search, then default).
 // This is the main entry point when the binary is invoked with no subcommand.
 func runServer(configPath string) {
+	// Phase 1: Set up logging with defaults before config is loaded so that any
+	// early errors are captured with structured logging.
+	cleanup, err := config.SetupLogging(config.LogConfig{}, "k2s")
+	if err != nil {
+		slog.Error("Failed to set up default logging", "err", err)
+		os.Exit(1)
+	}
+	defer cleanup()
+
 	// 1. Load config.
 	cfg, cfgPathUsed, err := loadOrDefaultServerConfig(configPath)
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		slog.Error("Failed to load config", "err", err)
+		os.Exit(1)
 	}
 	if cfgPathUsed != "" {
-		log.Printf("Using config: %s", cfgPathUsed)
+		slog.Info("Using config", "path", cfgPathUsed)
 	}
+
+	// Phase 2: Re-configure logging with the settings from the loaded config.
+	cleanup2, err := config.SetupLogging(cfg.Log, "k2s")
+	if err != nil {
+		slog.Error("Failed to set up logging from config", "err", err)
+		os.Exit(1)
+	}
+	defer cleanup2()
 
 	// 2. Validate config.
 	if err := config.ValidateServer(cfg); err != nil {
-		log.Fatalf("Config validation failed: %v", err)
+		slog.Error("Config validation failed", "err", err)
+		os.Exit(1)
 	}
 
 	// 3. Determine PID file path and check for stale/running instance.
@@ -36,20 +55,23 @@ func runServer(configPath string) {
 	if pidPath != "" {
 		stalePID, err := config.CheckStale(pidPath)
 		if err != nil {
-			log.Fatalf("PID file error: %v", err)
+			slog.Error("PID file error", "err", err)
+			os.Exit(1)
 		}
 		if stalePID > 0 {
-			log.Printf("Removed stale PID file (was PID %d)", stalePID)
+			slog.Info("Removed stale PID file", "pid", stalePID)
 		}
 		// Check if server is already running.
 		existingPID, err := config.ReadPID(pidPath)
 		if err == nil && existingPID > 0 && config.IsProcessAlive(existingPID) {
-			log.Fatalf("k2s is already running (PID %d)", existingPID)
+			slog.Error("k2s is already running", "pid", existingPID)
+			os.Exit(1)
 		}
 
 		// Write our PID.
 		if err := config.WritePID(pidPath); err != nil {
-			log.Fatalf("Failed to write PID: %v", err)
+			slog.Error("Failed to write PID", "err", err)
+			os.Exit(1)
 		}
 		defer config.RemovePID(pidPath)
 	}
@@ -57,7 +79,8 @@ func runServer(configPath string) {
 	// 4. Create and configure server.
 	srv, err := server.New(cfg)
 	if err != nil {
-		log.Fatalf("Failed to create server: %v", err)
+		slog.Error("Failed to create server", "err", err)
+		os.Exit(1)
 	}
 
 	// 5. Set up context + signal handling.
@@ -71,9 +94,9 @@ func runServer(configPath string) {
 			switch sig {
 			case syscall.SIGHUP:
 				// Server reload is complex (cert rotation etc.) — log and ignore for now.
-				log.Println("Received SIGHUP — reload not yet supported for k2s")
+				slog.Info("Received SIGHUP — reload not yet supported for k2s")
 			default:
-				log.Println("Shutting down...")
+				slog.Info("Shutting down...")
 				cancel()
 				return
 			}
@@ -82,7 +105,8 @@ func runServer(configPath string) {
 
 	// 6. Run server (blocks until shutdown).
 	if err := srv.Run(ctx); err != nil && err != context.Canceled {
-		log.Fatalf("Server error: %v", err)
+		slog.Error("Server error", "err", err)
+		os.Exit(1)
 	}
 }
 

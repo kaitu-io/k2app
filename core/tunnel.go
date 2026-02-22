@@ -3,7 +3,7 @@ package core
 import (
 	"context"
 	"io"
-	"log"
+	"log/slog"
 	"net"
 	"sync"
 
@@ -123,7 +123,7 @@ func (t *ClientTunnel) handleTCPDirect(local net.Conn, dest string) {
 		remote, err = net.Dial("tcp", dest)
 	}
 	if err != nil {
-		log.Printf("tunnel: direct TCP dial %s: %v", dest, err)
+		slog.Warn("tunnel: direct TCP dial failed", "dest", dest, "err", err)
 		return
 	}
 	defer remote.Close()
@@ -133,7 +133,7 @@ func (t *ClientTunnel) handleTCPDirect(local net.Conn, dest string) {
 func (t *ClientTunnel) handleTCPProxy(local net.Conn, dest string) {
 	remote, err := t.dialer.DialTCP(t.ctx, dest)
 	if err != nil {
-		log.Printf("tunnel: proxy TCP dial %s: %v", dest, err)
+		slog.Warn("tunnel: proxy TCP dial failed", "dest", dest, "err", err)
 		return
 	}
 	defer remote.Close()
@@ -149,14 +149,14 @@ func (t *ClientTunnel) handleUDPDirect(local net.PacketConn, dest string) {
 		remote, err = net.ListenPacket("udp", "")
 	}
 	if err != nil {
-		log.Printf("tunnel: direct UDP listen: %v", err)
+		slog.Warn("tunnel: direct UDP listen failed", "err", err)
 		return
 	}
 	defer remote.Close()
 
 	destAddr, err := net.ResolveUDPAddr("udp", dest)
 	if err != nil {
-		log.Printf("tunnel: resolve %s: %v", dest, err)
+		slog.Warn("tunnel: resolve UDP addr failed", "dest", dest, "err", err)
 		return
 	}
 	pipePacket(local, remote, destAddr)
@@ -165,7 +165,7 @@ func (t *ClientTunnel) handleUDPDirect(local net.PacketConn, dest string) {
 func (t *ClientTunnel) handleUDPProxy(local net.PacketConn, dest string) {
 	remote, err := t.dialer.DialUDP(t.ctx, dest)
 	if err != nil {
-		log.Printf("tunnel: proxy UDP dial %s: %v", dest, err)
+		slog.Warn("tunnel: proxy UDP dial failed", "dest", dest, "err", err)
 		return
 	}
 	defer remote.Close()
