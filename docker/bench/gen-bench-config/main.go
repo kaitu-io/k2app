@@ -14,7 +14,7 @@ import (
 	"encoding/pem"
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -28,13 +28,15 @@ func main() {
 	flag.Parse()
 
 	if err := os.MkdirAll(*outDir, 0755); err != nil {
-		log.Fatal(err)
+		slog.Error("mkdir", "path", *outDir, "err", err)
+		os.Exit(1)
 	}
 
 	// 1. k2s server config — auto-provisioning handles certs/ECH/auth.
 	k2sCertDir := filepath.Join(*outDir, "k2s")
 	if err := os.MkdirAll(k2sCertDir, 0755); err != nil {
-		log.Fatal(err)
+		slog.Error("mkdir", "path", k2sCertDir, "err", err)
+		os.Exit(1)
 	}
 	serverCfg := fmt.Sprintf(`listen: ":443"
 host: "%s"
@@ -49,7 +51,8 @@ log:
 	hy2CertPath := filepath.Join(*outDir, "hy2.crt")
 	hy2KeyPath := filepath.Join(*outDir, "hy2.key")
 	if err := generateTLSCert(hy2CertPath, hy2KeyPath, *serverHost); err != nil {
-		log.Fatalf("generate hysteria2 TLS cert: %v", err)
+		slog.Error("generate hysteria2 TLS cert", "err", err)
+		os.Exit(1)
 	}
 	fmt.Printf("Hysteria2 TLS cert: %s, key: %s\n", hy2CertPath, hy2KeyPath)
 
@@ -147,7 +150,8 @@ log:
 
 func writeFile(path, content string) {
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		log.Fatalf("write %s: %v", path, err)
+		slog.Error("write file", "path", path, "err", err)
+		os.Exit(1)
 	}
 	fmt.Printf("Config: %s\n", path)
 }
@@ -155,10 +159,12 @@ func writeFile(path, content string) {
 func writeJSON(path string, v any) {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
-		log.Fatalf("marshal JSON: %v", err)
+		slog.Error("marshal JSON", "err", err)
+		os.Exit(1)
 	}
 	if err := os.WriteFile(path, data, 0644); err != nil {
-		log.Fatalf("write %s: %v", path, err)
+		slog.Error("write file", "path", path, "err", err)
+		os.Exit(1)
 	}
 	fmt.Printf("Config: %s\n", path)
 }

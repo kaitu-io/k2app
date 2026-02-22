@@ -10,7 +10,7 @@ import (
 	"encoding/pem"
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -27,14 +27,16 @@ func main() {
 	flag.Parse()
 
 	if err := os.MkdirAll(*outDir, 0755); err != nil {
-		log.Fatal(err)
+		slog.Error("mkdir", "err", err)
+		os.Exit(1)
 	}
 
 	// 1. Generate TLS certificate
 	certPath := filepath.Join(*outDir, "cert.pem")
 	keyPath := filepath.Join(*outDir, "key.pem")
 	if err := generateTLSCert(certPath, keyPath); err != nil {
-		log.Fatalf("generate TLS cert: %v", err)
+		slog.Error("generate TLS cert", "err", err)
+		os.Exit(1)
 	}
 	fmt.Printf("TLS cert: %s, key: %s\n", certPath, keyPath)
 
@@ -42,10 +44,12 @@ func main() {
 	echKeyPath := filepath.Join(*outDir, "ech.key")
 	echKey, echConfigList, err := wire.GenerateECHKey(*publicName)
 	if err != nil {
-		log.Fatalf("generate ECH key: %v", err)
+		slog.Error("generate ECH key", "err", err)
+		os.Exit(1)
 	}
 	if err := wire.SaveECHKey(echKeyPath, echKey.PrivateKey, echConfigList); err != nil {
-		log.Fatalf("save ECH key: %v", err)
+		slog.Error("save ECH key", "err", err)
+		os.Exit(1)
 	}
 	echB64 := base64.URLEncoding.EncodeToString(echConfigList)
 	fmt.Printf("ECH key: %s\n", echKeyPath)
@@ -66,7 +70,8 @@ log:
 
 	serverCfgPath := filepath.Join(*outDir, "server.yaml")
 	if err := os.WriteFile(serverCfgPath, []byte(serverCfg), 0644); err != nil {
-		log.Fatal(err)
+		slog.Error("write server config", "err", err)
+		os.Exit(1)
 	}
 	fmt.Printf("Server config: %s\n", serverCfgPath)
 
@@ -92,7 +97,8 @@ log:
 
 	clientCfgPath := filepath.Join(*outDir, "client.yaml")
 	if err := os.WriteFile(clientCfgPath, []byte(clientCfg), 0644); err != nil {
-		log.Fatal(err)
+		slog.Error("write client config", "err", err)
+		os.Exit(1)
 	}
 	fmt.Printf("Client config: %s\n", clientCfgPath)
 }
