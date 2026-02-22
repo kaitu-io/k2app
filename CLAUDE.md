@@ -96,7 +96,7 @@ docs/contracts/                API contracts (webapp-daemon-api)
 
 ## Dependencies
 
-- `github.com/kaitu-io/k2rule v0.3.1-go` — domain/IP routing rules with unified Init API + SetTmpRule
+- `github.com/kaitu-io/k2rule v0.5.0-go` — domain/IP routing rules with unified Init API + SetTmpRule (CacheDir required)
 - `github.com/miekg/dns` — DNS message handling
 - `github.com/sagernet/sing-tun` — TUN device with gVisor stack
 - `github.com/apernet/quic-go` — QUIC with congestion control API
