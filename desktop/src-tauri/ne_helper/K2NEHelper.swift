@@ -63,6 +63,8 @@ private func mapVPNStatus(_ status: NEVPNStatus) -> String {
 /// Must be called from a background thread (not main queue) to avoid deadlock.
 /// Returns cached manager if already loaded.
 private func loadManager() -> NETunnelProviderManager? {
+    // MUST: DispatchSemaphore must NOT wait on main queue — deadlock prevention
+    dispatchPrecondition(condition: .notOnQueue(.main))
     if let m = cachedManager { return m }
     let sem = DispatchSemaphore(value: 0)
     var result: NETunnelProviderManager?
@@ -80,6 +82,8 @@ private func loadManager() -> NETunnelProviderManager? {
 /// Save manager to preferences, blocking the calling thread.
 /// Must be called from a background thread (not main queue) to avoid deadlock.
 private func saveManager(_ manager: NETunnelProviderManager) -> Error? {
+    // MUST: DispatchSemaphore must NOT wait on main queue — deadlock prevention
+    dispatchPrecondition(condition: .notOnQueue(.main))
     let sem = DispatchSemaphore(value: 0)
     var saveError: Error?
     manager.saveToPreferences { err in
@@ -93,6 +97,8 @@ private func saveManager(_ manager: NETunnelProviderManager) -> Error? {
 /// Reload manager from preferences, blocking the calling thread.
 /// Must be called from a background thread (not main queue) to avoid deadlock.
 private func reloadManager(_ manager: NETunnelProviderManager) -> Error? {
+    // MUST: DispatchSemaphore must NOT wait on main queue — deadlock prevention
+    dispatchPrecondition(condition: .notOnQueue(.main))
     let sem = DispatchSemaphore(value: 0)
     var loadError: Error?
     manager.loadFromPreferences { err in
@@ -106,6 +112,8 @@ private func reloadManager(_ manager: NETunnelProviderManager) -> Error? {
 /// Remove manager from preferences, blocking the calling thread.
 /// Must be called from a background thread (not main queue) to avoid deadlock.
 private func removeManager(_ manager: NETunnelProviderManager) -> Error? {
+    // MUST: DispatchSemaphore must NOT wait on main queue — deadlock prevention
+    dispatchPrecondition(condition: .notOnQueue(.main))
     let sem = DispatchSemaphore(value: 0)
     var removeError: Error?
     manager.removeFromPreferences { err in
@@ -358,8 +366,12 @@ public func k2ne_set_state_callback(
         object: nil,
         queue: nil  // nil = delivered on the notification thread
     ) { notification in
+        // MUST 1: Thread-safe callback invocation — capture callback reference into
+        // a local constant before dispatching to avoid races with k2ne_set_state_callback
+        // being called concurrently to unregister/replace the callback.
+        let capturedCallback = stateCallback
         DispatchQueue.global(qos: .userInitiated).async {
-            guard let cb = stateCallback else { return }
+            guard let cb = capturedCallback else { return }
             let state: String
             if let connection = notification.object as? NEVPNConnection {
                 state = mapVPNStatus(connection.status)
