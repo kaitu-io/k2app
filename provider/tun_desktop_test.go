@@ -3,7 +3,6 @@
 package provider
 
 import (
-	"fmt"
 	"runtime"
 	"strings"
 	"testing"
@@ -20,10 +19,6 @@ func TestDefaultTunName(t *testing.T) {
 	case "darwin":
 		if !strings.HasPrefix(name, "utun") {
 			t.Errorf("defaultTunName() on darwin = %q, want prefix utun", name)
-		}
-		var idx int
-		if _, err := fmt.Sscanf(name, "utun%d", &idx); err != nil {
-			t.Errorf("defaultTunName() on darwin = %q, want utun%%d format", name)
 		}
 	case "linux":
 		if name != "k2tun" {

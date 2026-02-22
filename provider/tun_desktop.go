@@ -5,7 +5,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/netip"
 	"runtime"
 	"time"
@@ -14,39 +13,13 @@ import (
 )
 
 // defaultTunName returns a platform-appropriate TUN device name.
-// On macOS, sing-tun connects to the utun kernel control with Unit = ifIndex + 1,
-// which requests a specific utun device. We scan existing interfaces to find an
-// unused index, avoiding conflicts with system utun devices (iCloud Relay, etc.).
+// Darwin: delegates to sing-tun's CalculateInterfaceName (finds next available utunN).
+// Linux/Windows: hardcoded "k2tun" (no index needed).
 func defaultTunName() string {
-	switch runtime.GOOS {
-	case "darwin":
-		return nextAvailableUtun()
-	case "linux":
-		return "k2tun"
-	default: // windows
-		return "k2tun"
+	if runtime.GOOS == "darwin" {
+		return tun.CalculateInterfaceName("")
 	}
-}
-
-// nextAvailableUtun finds the lowest unused utun index on macOS.
-func nextAvailableUtun() string {
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		return "utun198"
-	}
-	used := make(map[int]bool)
-	for _, iface := range ifaces {
-		var idx int
-		if _, err := fmt.Sscanf(iface.Name, "utun%d", &idx); err == nil {
-			used[idx] = true
-		}
-	}
-	for i := 0; i < 256; i++ {
-		if !used[i] {
-			return fmt.Sprintf("utun%d", i)
-		}
-	}
-	return "utun198"
+	return "k2tun"
 }
 
 // TUNProvider creates a TUN device and runs a sing-tun stack for L3→L4 conversion.
@@ -107,6 +80,11 @@ func (p *TUNProvider) Start(ctx context.Context, handler ConnectionHandler) erro
 	tunIf, err := tun.New(tunOpts)
 	if err != nil {
 		return fmt.Errorf("provider: create TUN: %w", err)
+	}
+
+	if err := tunIf.Start(); err != nil {
+		tunIf.Close()
+		return fmt.Errorf("provider: start TUN: %w", err)
 	}
 
 	stack, err := tun.NewSystem(tun.StackOptions{
