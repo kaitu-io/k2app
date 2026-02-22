@@ -626,4 +626,72 @@ mod tests {
             InstallAction::NotNeeded => panic!("Expected Needed, got NotNeeded"),
         }
     }
+
+    // -----------------------------------------------------------------------
+    // REFACTOR [MUST] 1: ServiceResponse format is identical across NE and daemon paths
+    // -----------------------------------------------------------------------
+    // Both paths return the same ServiceResponse struct {code: i32, message: String, data: Value}.
+    // The shared struct definition enforces this at compile time. This test verifies
+    // that a ServiceResponse can be deserialized from both styles of JSON payload:
+    // - With data field (NE path, daemon v2+)
+    // - Without data field (old daemon — serde(default) = null)
+    #[test]
+    fn test_refactor_service_response_format_identical_across_paths() {
+        // NE path: always includes data field
+        let with_data = r#"{"code":0,"message":"ok","data":{"state":"disconnected"}}"#;
+        let resp_with: ServiceResponse = serde_json::from_str(with_data).unwrap();
+        assert_eq!(resp_with.code, 0);
+        assert_eq!(resp_with.message, "ok");
+        assert!(resp_with.data.get("state").is_some());
+
+        // Daemon path: may omit data field → defaults to null
+        let without_data = r#"{"code":0,"message":"ok"}"#;
+        let resp_without: ServiceResponse = serde_json::from_str(without_data).unwrap();
+        assert_eq!(resp_without.code, 0);
+        assert_eq!(resp_without.message, "ok");
+        assert!(resp_without.data.is_null(), "missing data should default to null");
+
+        // Error response: code != 0
+        let error_resp = r#"{"code":503,"message":"server unreachable","data":null}"#;
+        let resp_error: ServiceResponse = serde_json::from_str(error_resp).unwrap();
+        assert_eq!(resp_error.code, 503);
+        assert!(!resp_error.message.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // REFACTOR [MUST] 2: get_pid returns Tauri app's own PID (not daemon PID)
+    // -----------------------------------------------------------------------
+    #[test]
+    fn test_refactor_get_pid_returns_own_process_id() {
+        let pid = get_pid();
+        // get_pid() must return std::process::id() — the current process PID
+        assert_eq!(pid, std::process::id(), "get_pid() should return own process PID");
+        // PID must be non-zero (the kernel never assigns PID 0 to user processes)
+        assert!(pid > 0, "PID should be positive");
+    }
+
+    // -----------------------------------------------------------------------
+    // REFACTOR [MUST] 3: ServiceResponse is shared — ne.rs imports from service
+    // -----------------------------------------------------------------------
+    // This is verified at compile time: ne.rs uses `crate::service::ServiceResponse`.
+    // The test below confirms the struct is publicly accessible and the fields align.
+    #[test]
+    fn test_refactor_service_response_shared_type() {
+        // Construct a ServiceResponse as ne.rs would (same type, same fields)
+        let resp = ServiceResponse {
+            code: 0,
+            message: "ok".into(),
+            data: serde_json::json!({ "version": "0.4.0", "os": "macos" }),
+        };
+        // Serialize to JSON and verify the canonical {code, message, data} shape
+        let json = serde_json::to_string(&resp).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(parsed.get("code").is_some(), "must have 'code' field");
+        assert!(parsed.get("message").is_some(), "must have 'message' field");
+        assert!(parsed.get("data").is_some(), "must have 'data' field");
+        // Verify round-trip
+        let round_tripped: ServiceResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(round_tripped.code, resp.code);
+        assert_eq!(round_tripped.message, resp.message);
+    }
 }
