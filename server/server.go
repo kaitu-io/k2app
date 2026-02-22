@@ -8,7 +8,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -109,7 +109,7 @@ func (s *Server) setupCertPair(cfg *config.ServerConfig) error {
 	if cfg.ECH.PublicName != "" {
 		profile, err = wire.ProbeTarget(cfg.ECH.PublicName)
 		if err != nil {
-			log.Printf("server: probe %s failed (padding disabled): %v", cfg.ECH.PublicName, err)
+			slog.Error("server: probe target failed (padding disabled)", "target", cfg.ECH.PublicName, "err", err)
 			// Continue without padding — certs still work, just not padded.
 		}
 	}
@@ -122,7 +122,7 @@ func (s *Server) setupCertPair(cfg *config.ServerConfig) error {
 		if tlspad.MeasureCertDERLen(&pair.RSA) < targetLen {
 			padded, err := tlspad.GeneratePaddedCert(pair.RSA.PrivateKey, targetLen)
 			if err != nil {
-				log.Printf("server: RSA cert padding failed: %v", err)
+				slog.Error("server: RSA cert padding failed", "err", err)
 			} else {
 				pair.RSA = padded
 			}
@@ -132,14 +132,13 @@ func (s *Server) setupCertPair(cfg *config.ServerConfig) error {
 		if tlspad.MeasureCertDERLen(&pair.EC) < targetLen {
 			padded, err := tlspad.GeneratePaddedCert(pair.EC.PrivateKey, targetLen)
 			if err != nil {
-				log.Printf("server: EC cert padding failed: %v", err)
+				slog.Error("server: EC cert padding failed", "err", err)
 			} else {
 				pair.EC = padded
 			}
 		}
 
-		log.Printf("server: certs padded to ~%d bytes (target: %s, algo: %s)",
-			targetLen, cfg.ECH.PublicName, profile.KeyAlgo)
+		slog.Info("server: certs padded", "size", targetLen, "target", cfg.ECH.PublicName, "algo", profile.KeyAlgo)
 	}
 
 	// Initialize TLS config with GetCertificate callback.
@@ -149,7 +148,7 @@ func (s *Server) setupCertPair(cfg *config.ServerConfig) error {
 	}
 	s.SetCertPair(pair, profile)
 
-	log.Printf("server: cert pins: %s", pair.FormatPins())
+	slog.Info("server: cert pins", "pins", pair.FormatPins())
 	return nil
 }
 
@@ -200,8 +199,7 @@ func (s *Server) setupECHRotation(cfg *config.ServerConfig) error {
 		s.echConfig = wire.BuildECHConfigList(allConfigs[:1])
 	}
 
-	log.Printf("server: ECH rotation: %d config(s) loaded, latest config_id=%d",
-		len(allConfigs), allConfigs[0][4])
+	slog.Info("server: ECH rotation", "configs", len(allConfigs), "config_id", allConfigs[0][4])
 
 	return nil
 }
@@ -262,7 +260,7 @@ func (s *Server) setupAutoProvision(cfg *config.ServerConfig) error {
 	if publicName != "" {
 		profile, err = wire.ProbeTarget(publicName)
 		if err != nil {
-			log.Printf("server: probe %s failed (padding disabled): %v", publicName, err)
+			slog.Error("server: probe target failed (padding disabled)", "target", publicName, "err", err)
 			// Non-fatal: certs still work, just not padded.
 		}
 	}
@@ -274,7 +272,7 @@ func (s *Server) setupAutoProvision(cfg *config.ServerConfig) error {
 		if tlspad.MeasureCertDERLen(&pair.RSA) < targetLen {
 			padded, padErr := tlspad.GeneratePaddedCert(pair.RSA.PrivateKey, targetLen)
 			if padErr != nil {
-				log.Printf("server: RSA cert padding failed: %v", padErr)
+				slog.Error("server: RSA cert padding failed", "err", padErr)
 			} else {
 				pair.RSA = padded
 			}
@@ -283,14 +281,13 @@ func (s *Server) setupAutoProvision(cfg *config.ServerConfig) error {
 		if tlspad.MeasureCertDERLen(&pair.EC) < targetLen {
 			padded, padErr := tlspad.GeneratePaddedCert(pair.EC.PrivateKey, targetLen)
 			if padErr != nil {
-				log.Printf("server: EC cert padding failed: %v", padErr)
+				slog.Error("server: EC cert padding failed", "err", padErr)
 			} else {
 				pair.EC = padded
 			}
 		}
 
-		log.Printf("server: certs padded to ~%d bytes (target: %s, algo: %s)",
-			targetLen, publicName, profile.KeyAlgo)
+		slog.Info("server: certs padded", "size", targetLen, "target", publicName, "algo", profile.KeyAlgo)
 	}
 
 	// 9. Initialize TLS config.
@@ -314,10 +311,9 @@ func (s *Server) setupAutoProvision(cfg *config.ServerConfig) error {
 	}
 
 	// 11. Log connection info.
-	log.Printf("server: cert pins: %s", pair.FormatPins())
+	slog.Info("server: cert pins", "pins", pair.FormatPins())
 	if len(allConfigs) > 0 {
-		log.Printf("server: ECH: %d config(s) loaded, latest config_id=%d",
-			len(allConfigs), allConfigs[0][4])
+		slog.Info("server: ECH", "configs", len(allConfigs), "config_id", allConfigs[0][4])
 	}
 	logConnectionURL(cfg, pair, s.echConfig, auth)
 
@@ -348,15 +344,15 @@ func logConnectionURL(cfg *config.ServerConfig, pair *wire.CertPair, echConfigLi
 	// Detect IPv6 and append to URL if available.
 	if ip6Host := detectIPv6(); ip6Host != "" {
 		connectURL += "&ip6=" + ip6Host
-		log.Printf("server: IPv6 detected: %s", ip6Host)
+		slog.Info("server: IPv6 detected", "host", ip6Host)
 	}
 
-	log.Printf("Connect URL: %s", connectURL)
+	slog.Info("Connect URL", "url", connectURL)
 
-	// Save connect URL to file for `k2s run` smart mode to read.
+	// Save connect URL to file for k2s run smart mode to read.
 	urlPath := filepath.Join(cfg.CertDir, "connect-url.txt")
 	if err := os.WriteFile(urlPath, []byte(connectURL+"\n"), 0600); err != nil {
-		log.Printf("server: failed to save connect URL: %v", err)
+		slog.Error("server: failed to save connect URL", "err", err)
 	}
 }
 
@@ -403,7 +399,7 @@ func (s *Server) Run(ctx context.Context) error {
 	// Start background ticket cleanup.
 	s.store.StartCleanup(5*time.Minute, s.done)
 
-	log.Printf("k2s server starting on %s", s.cfg.Listen)
+	slog.Info("k2s server starting", "listen", s.cfg.Listen)
 
 	// TCP listener.
 	tcpLn, err := net.Listen("tcp", s.cfg.Listen)
@@ -472,10 +468,10 @@ func (s *Server) Run(ctx context.Context) error {
 		s.tcpListenLoop(ctx, tcpLn)
 	}()
 
-	log.Printf("k2s server ready (TCP+QUIC on %s)", s.cfg.Listen)
+	slog.Info("k2s server ready", "listen", s.cfg.Listen)
 
 	<-ctx.Done()
-	log.Println("k2s server shutting down...")
+	slog.Info("k2s server shutting down")
 
 	close(s.done)
 	s.quicSrv.Close()
@@ -496,7 +492,7 @@ func (s *Server) acceptTCPLoop(ctx context.Context, ln wire.Listener) {
 			case <-s.done:
 				return
 			default:
-				log.Printf("server: AcceptTCP: %v", err)
+				slog.Error("server: AcceptTCP", "err", err)
 				return
 			}
 		}
@@ -515,7 +511,7 @@ func (s *Server) tcpListenLoop(ctx context.Context, ln net.Listener) {
 			case <-s.done:
 				return
 			default:
-				log.Printf("server: TCP accept: %v", err)
+				slog.Error("server: TCP accept", "err", err)
 				return
 			}
 		}
@@ -595,7 +591,7 @@ func (s *Server) matchLocalRoute(sni string) (string, bool) {
 func (s *Server) handleK2V5(conn net.Conn) {
 	tlsConn := tls.Server(conn, s.TLSConfig)
 	if err := tlsConn.Handshake(); err != nil {
-		log.Printf("server: TLS handshake: %v", err)
+		slog.Error("server: TLS handshake", "err", err)
 		conn.Close()
 		return
 	}
@@ -635,7 +631,7 @@ func (s *Server) handleHTTP(conn net.Conn) {
 			InsecureSkipVerify: true,
 		})
 		if err != nil {
-			log.Printf("server: WS accept: %v", err)
+			slog.Error("server: WS accept", "err", err)
 			return
 		}
 		// Use a context that lives until the connection is done (not the HTTP request context).
@@ -712,8 +708,8 @@ type responseRecorder struct {
 	body   bytes.Buffer
 }
 
-func (r *responseRecorder) Header() http.Header   { return r.header }
-func (r *responseRecorder) WriteHeader(code int)   { r.code = code }
+func (r *responseRecorder) Header() http.Header         { return r.header }
+func (r *responseRecorder) WriteHeader(code int)        { r.code = code }
 func (r *responseRecorder) Write(b []byte) (int, error) { return r.body.Write(b) }
 
 // singleConnListener serves exactly one connection through http.Server.Serve.
