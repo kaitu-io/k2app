@@ -142,10 +142,30 @@ Makefile             Build orchestration — version from package.json, k2 from 
 ## Layer Docs (read on demand)
 
 ```
-webapp/CLAUDE.md         Frontend: split globals, services, stores, i18n, components
-web/CLAUDE.md            Website: Next.js pages, admin dashboard, API proxy
-desktop/CLAUDE.md        Tauri shell, Rust modules, config
-api/CLAUDE.md            Center API: routes, middleware, models, workers, cloudprovider
-k2/CLAUDE.md             Go core architecture, wire protocol, daemon API
-docs/knowledge/          Distilled patterns from all executed features
+webapp/CLAUDE.md                    Frontend: split globals, services, stores, i18n, components
+web/CLAUDE.md                       Website: Next.js pages, admin dashboard, API proxy
+desktop/CLAUDE.md                   Tauri shell, Rust modules, config
+api/CLAUDE.md                       Center API: routes, middleware, models, workers, cloudprovider
+k2/CLAUDE.md                        Go core architecture, wire protocol, daemon API
+docs/knowledge/                     Distilled patterns from all executed features
+```
+
+### k2 Submodule Docs (read-only, has its own word9f ecosystem)
+
+```
+k2/docs/features/                   Tunnel-level feature specs (8 features)
+  cloud-webapp/                     Cloud API integration spec
+  mobile-sdk/                       gomobile SDK spec
+  private-ip-guard/                 Private IP protection spec
+  zero-config-stealth/              Zero-config stealth spec
+  logging-and-tun-defaults/         Logging + TUN defaults spec
+k2/docs/knowledge/                  Go core patterns (5 files)
+  architecture-decisions.md         L4 proxy, wire interfaces, provider callbacks
+  bugfix-patterns.md                base64, transport, certs, DNS
+  framework-gotchas.md              sing-tun, smux, QUIC, gomobile
+  testing-strategies.md             Mocking, E2E, platform tags
+  task-splitting.md                 Foundation-first, parallel independence
+k2/docs/contracts/                  API contracts
+  webapp-daemon-api.md              Daemon HTTP API (POST /api/core actions, CORS, states)
+k2/docs/todos/                      k2 backlog (p0/p1/p2 priority)
 ```
