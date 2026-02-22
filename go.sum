@@ -27,6 +27,8 @@ github.com/kaitu-io/k2rule v0.5.2-go h1:0xmxX1CGGxpWRVfEW3B1OygL3BysDYFtPl0Rq/sY
 github.com/kaitu-io/k2rule v0.5.2-go/go.mod h1:F3WHcROD4jAA1NbfVbZUlZtVk9AF10SiPeq88ZFLUcU=
 github.com/kaitu-io/k2rule v0.6.0 h1:xfvzV5LEK5MXLBlkLNBUdQ58wf0sM2q72aK7tgV+yRM=
 github.com/kaitu-io/k2rule v0.6.0/go.mod h1:d7aj3bhw1e3+LTK7a+Xc/M8+b8pz+qSp1HHkQdxZC0U=
+github.com/kaitu-io/k2rule v0.6.1 h1:6/Stn4TFeW5FaKEk+8jztuesuGHAFJFQomZBYF86hRY=
+github.com/kaitu-io/k2rule v0.6.1/go.mod h1:d7aj3bhw1e3+LTK7a+Xc/M8+b8pz+qSp1HHkQdxZC0U=
 github.com/klauspost/compress v1.17.9 h1:6KIumPrER1LHsvBVuDa0r5xaG0Es51mhhB9BQB2qeMA=
 github.com/klauspost/compress v1.17.9/go.mod h1:Di0epgTjJY877eYKx5yC51cX2A2Vl2ibi7bDH9ttBbw=
 github.com/kr/pretty v0.3.1 h1:flRD4NNwYAUpkphVc1HcthR4KEIFJ65n8Mw5qdRn3LE=

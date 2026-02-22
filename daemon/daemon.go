@@ -336,6 +336,7 @@ func (d *Daemon) buildRuleConfig(cfg *config.ClientConfig) *k2rule.Config {
 	ruleCfg := &k2rule.Config{
 		RuleURL:  cfg.Rule.RuleURL,
 		GeoIPURL: cfg.Rule.GeoIPURL,
+		Antiporn: cfg.Rule.Antiporn,
 		PornURL:  cfg.Rule.PornURL,
 		CacheDir: cacheDir,
 		IsGlobal: cfg.Rule.Global,

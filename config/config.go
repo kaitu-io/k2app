@@ -86,7 +86,8 @@ type AuthConfig struct {
 type RuleConfig struct {
 	RuleURL  string `yaml:"rule_url"  json:"rule_url"`  // remote rule file URL ("" = CDN default)
 	GeoIPURL string `yaml:"geoip_url" json:"geoip_url"` // remote GeoIP .mmdb URL ("" = CDN default)
-	PornURL  string `yaml:"porn_url"  json:"porn_url"`  // remote porn list URL ("" = CDN default)
+	Antiporn bool   `yaml:"antiporn"  json:"antiporn"`  // enable anti-porn detection (default: false)
+	PornURL  string `yaml:"porn_url"  json:"porn_url"`  // remote porn list URL ("" = CDN default, only when antiporn=true)
 	CacheDir string `yaml:"cache_dir" json:"cache_dir"` // cache directory ("" = paths.CacheDir()/k2rule)
 	Global   bool   `yaml:"global"    json:"global"`    // true = global proxy mode (ignore rules)
 }
