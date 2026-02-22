@@ -48,6 +48,12 @@ func (m *mockEventHandler) getErrors() []string {
 	return cp
 }
 
+// testEngineConfig returns an EngineConfig suitable for tests.
+// Uses empty CacheDir so k2rule.Init fails fast (no network downloads).
+func testEngineConfig() *EngineConfig {
+	return &EngineConfig{}
+}
+
 // ==========================================================================
 // Lifecycle tests
 // ==========================================================================
@@ -64,9 +70,8 @@ func TestEngine_NewEngine(t *testing.T) {
 
 func TestEngine_Start_InvalidURL(t *testing.T) {
 	e := NewEngine()
-	// Valid JSON config with an invalid server URL.
 	cfg := `{"server":"garbage"}`
-	err := e.Start(cfg, 0, "")
+	err := e.Start(cfg, 0, testEngineConfig())
 	if err == nil {
 		t.Fatal("Start with invalid URL should return error")
 	}
@@ -75,18 +80,24 @@ func TestEngine_Start_InvalidURL(t *testing.T) {
 	}
 }
 
+func TestEngine_Start_NilConfig(t *testing.T) {
+	e := NewEngine()
+	err := e.Start(`{"server":"garbage"}`, 0, nil)
+	if err == nil {
+		t.Fatal("Start with nil EngineConfig should return error")
+	}
+	if !strings.Contains(err.Error(), "EngineConfig is required") {
+		t.Fatalf("expected 'EngineConfig is required' error, got: %v", err)
+	}
+}
+
 func TestEngine_DoubleStart(t *testing.T) {
 	e := NewEngine()
 	cfg := `{"server":"k2v5://udid:token@127.0.0.1:12345?insecure=1"}`
+	ecfg := testEngineConfig()
 
-	// First start will fail on provider (no real TUN FD), that's fine.
-	_ = e.Start(cfg, 0, "")
-
-	// Second start should succeed (engine returned to disconnected after failure).
-	// This verifies the wrapper delegates correctly; the double-start guard
-	// when actually connected is tested in engine/engine_test.go.
-	err := e.Start(cfg, 0, "")
-	// Both calls fail (no real TUN), but neither should panic.
+	_ = e.Start(cfg, 0, ecfg)
+	err := e.Start(cfg, 0, ecfg)
 	_ = err
 }
 
@@ -114,8 +125,7 @@ func TestEngine_EventHandler_StateChanges(t *testing.T) {
 	h := &mockEventHandler{}
 	e.SetEventHandler(h)
 
-	// Start with invalid URL triggers: connecting -> error -> disconnected
-	_ = e.Start(`{"server":"garbage"}`, 0, "")
+	_ = e.Start(`{"server":"garbage"}`, 0, testEngineConfig())
 
 	states := h.getStates()
 	if len(states) < 2 {
@@ -134,7 +144,7 @@ func TestEngine_EventHandler_OnError(t *testing.T) {
 	h := &mockEventHandler{}
 	e.SetEventHandler(h)
 
-	_ = e.Start(`{"server":"garbage"}`, 0, "")
+	_ = e.Start(`{"server":"garbage"}`, 0, testEngineConfig())
 
 	errs := h.getErrors()
 	if len(errs) == 0 {
@@ -157,7 +167,6 @@ func TestEngine_StatusJSON_Disconnected(t *testing.T) {
 	if m["state"] != StateDisconnected {
 		t.Fatalf("state = %v, want %q", m["state"], StateDisconnected)
 	}
-	// No extra keys when disconnected.
 	for _, key := range []string{"connected_at", "uptime_seconds", "wire_url", "error"} {
 		if _, ok := m[key]; ok {
 			t.Fatalf("unexpected key %q in disconnected state", key)
@@ -167,7 +176,7 @@ func TestEngine_StatusJSON_Disconnected(t *testing.T) {
 
 func TestEngine_StatusJSON_AfterFailedStart(t *testing.T) {
 	e := NewEngine()
-	_ = e.Start(`{"server":"garbage"}`, 0, "")
+	_ = e.Start(`{"server":"garbage"}`, 0, testEngineConfig())
 
 	raw := e.StatusJSON()
 	var m map[string]any
@@ -186,10 +195,23 @@ func TestEngine_StatusJSON_AfterFailedStart(t *testing.T) {
 }
 
 // ==========================================================================
-// Config-driven connect tests (F1)
+// EngineConfig tests
 // ==========================================================================
 
-func TestMobileEngineStartConfigJSON(t *testing.T) {
+func TestEngineConfig_NewEngineConfig(t *testing.T) {
+	cfg := NewEngineConfig()
+	if cfg == nil {
+		t.Fatal("NewEngineConfig returned nil")
+	}
+	if cfg.CacheDir != "" {
+		t.Fatalf("CacheDir = %q, want empty", cfg.CacheDir)
+	}
+	if cfg.LogDir != "" {
+		t.Fatalf("LogDir = %q, want empty", cfg.LogDir)
+	}
+}
+
+func TestEngine_Start_WithEngineConfig(t *testing.T) {
 	configJSON := `{
 		"server": "k2v5://udid:token@host:443",
 		"mode": "tun",
@@ -197,20 +219,23 @@ func TestMobileEngineStartConfigJSON(t *testing.T) {
 	}`
 
 	e := NewEngine()
-	// Start will fail (no real TUN FD), but we verify it parses config correctly.
-	// Empty dataDir so k2rule.Init fails fast on CacheDir validation (v0.5.0-go
-	// requires CacheDir). Engine logs warning and continues.
-	err := e.Start(configJSON, 0, "")
-	// We expect an error from the engine (invalid URL format or provider failure),
-	// but NOT a JSON parse error.
+	cfg := &EngineConfig{
+		// Empty CacheDir: engine skips k2rule.Init (avoids blocking remote downloads).
+		// Purpose: verify EngineConfig is accepted and JSON parsing succeeds.
+		LogDir: t.TempDir(),
+	}
+	err := e.Start(configJSON, 0, cfg)
 	if err != nil && strings.Contains(err.Error(), "parse config") {
 		t.Fatalf("unexpected parse error: %v", err)
+	}
+	if err != nil && strings.Contains(err.Error(), "EngineConfig is required") {
+		t.Fatalf("unexpected EngineConfig error: %v", err)
 	}
 }
 
 func TestMobileEngineStartInvalidJSON(t *testing.T) {
 	e := NewEngine()
-	err := e.Start("not json", 0, "/tmp/k2test")
+	err := e.Start("not json", 0, testEngineConfig())
 	if err == nil {
 		t.Fatal("expected error for invalid JSON")
 	}

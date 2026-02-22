@@ -3,6 +3,7 @@ package mobile
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/engine"
@@ -40,29 +41,38 @@ func (e *Engine) Status() string {
 // Start assembles the tunnel stack and begins forwarding traffic.
 // configJSON is a JSON-encoded config.ClientConfig; fd is the TUN file
 // descriptor provided by the platform (iOS NEPacketTunnelProvider /
-// Android VpnService); dataDir is the k2rule cache directory.
-func (e *Engine) Start(configJSON string, fd int, dataDir string) error {
-	var cfg config.ClientConfig
-	if err := json.Unmarshal([]byte(configJSON), &cfg); err != nil {
+// Android VpnService); cfg provides platform-specific paths (CacheDir, LogDir).
+func (e *Engine) Start(configJSON string, fd int, cfg *EngineConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("engine: EngineConfig is required")
+	}
+
+	var clientCfg config.ClientConfig
+	if err := json.Unmarshal([]byte(configJSON), &clientCfg); err != nil {
 		return fmt.Errorf("parse config: %w", err)
 	}
-	config.SetDefaults(&cfg)
+	config.SetDefaults(&clientCfg)
 
 	// Map rule config to engine RuleMode.
 	ruleMode := "global"
-	if !cfg.Rule.Global {
+	if !clientCfg.Rule.Global {
 		ruleMode = "smart"
 	}
 
+	var dataDir string
+	if cfg.CacheDir != "" {
+		dataDir = filepath.Join(cfg.CacheDir, "k2rule")
+	}
+
 	return e.inner.Start(engine.Config{
-		WireURL:          cfg.Server,
+		WireURL:          clientCfg.Server,
 		FileDescriptor:   fd,
 		DataDir:          dataDir,
 		RuleMode:         ruleMode,
-		TunIPv4:          cfg.Tun.IPv4,
-		TunIPv6:          cfg.Tun.IPv6,
-		DNSProxyServers:  cfg.DNS.Proxy,
-		DNSDirectServers: cfg.DNS.Direct,
+		TunIPv4:          clientCfg.Tun.IPv4,
+		TunIPv6:          clientCfg.Tun.IPv6,
+		DNSProxyServers:  clientCfg.DNS.Proxy,
+		DNSDirectServers: clientCfg.DNS.Direct,
 	})
 }
 
