@@ -6,9 +6,24 @@ import (
 	"context"
 	"fmt"
 	"net/netip"
+	"runtime"
 
 	"github.com/sagernet/sing-tun"
 )
+
+// defaultTunName returns a platform-appropriate TUN device name.
+// sing-tun v0.7.11 on macOS requires a non-empty Name matching "utun%d" format
+// when FileDescriptor == 0; the kernel auto-allocates the next available index.
+func defaultTunName() string {
+	switch runtime.GOOS {
+	case "darwin":
+		return "utun0"
+	case "linux":
+		return "tun0"
+	default: // windows
+		return "sing-tun"
+	}
+}
 
 // TUNProvider creates a TUN device and runs a sing-tun stack for L3→L4 conversion.
 type TUNProvider struct {
@@ -37,7 +52,7 @@ func (p *TUNProvider) Start(ctx context.Context, handler ConnectionHandler) erro
 	}
 
 	tunOpts := tun.Options{
-		Name:         "",
+		Name:         defaultTunName(),
 		MTU:          uint32(p.cfg.MTU),
 		Inet4Address: []netip.Prefix{ipv4Prefix},
 		Inet6Address: []netip.Prefix{ipv6Prefix},
