@@ -2,7 +2,7 @@ package daemon
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -25,18 +25,18 @@ func stateFilePath() string {
 func saveState(st persistedState) {
 	path := stateFilePath()
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		log.Printf("Warning: cannot create state dir: %v", err)
+		slog.Warn("cannot create state dir", "err", err)
 		return
 	}
 
 	data, err := json.Marshal(st)
 	if err != nil {
-		log.Printf("Warning: cannot marshal state: %v", err)
+		slog.Warn("cannot marshal state", "err", err)
 		return
 	}
 
 	if err := os.WriteFile(path, data, 0600); err != nil {
-		log.Printf("Warning: cannot write state file: %v", err)
+		slog.Warn("cannot write state file", "err", err)
 	}
 }
 

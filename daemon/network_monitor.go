@@ -1,7 +1,7 @@
 package daemon
 
 import (
-	"log"
+	"log/slog"
 
 	tun "github.com/sagernet/sing-tun"
 	"github.com/sagernet/sing/common/control"
@@ -39,7 +39,7 @@ func NewNetworkMonitor() (engine.NetworkChangeNotifier, tun.DefaultInterfaceMoni
 func (m *singTunMonitor) Start(callback func()) error {
 	m.interfaceMonitor.RegisterCallback(func(defaultInterface *control.Interface, flags int) {
 		if callback != nil {
-			log.Printf("network: default interface changed to %s (flags=%d)", defaultInterface.Name, flags)
+			slog.Debug("network: default interface changed", "interface", defaultInterface.Name, "flags", flags)
 			callback()
 		}
 	})

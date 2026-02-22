@@ -3,7 +3,7 @@ package daemon
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
@@ -86,7 +86,7 @@ func (d *Daemon) Run(ctx context.Context, listenAddr string) error {
 	if listenAddr == "" {
 		listenAddr = DefaultAddr
 	}
-	log.Printf("k2 daemon starting on %s", listenAddr)
+	slog.Info("k2 daemon starting", "addr", listenAddr)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ping", d.handlePing)
@@ -110,11 +110,11 @@ func (d *Daemon) Run(ctx context.Context, listenAddr string) error {
 		}
 	}()
 
-	log.Printf("k2 daemon ready")
+	slog.Info("k2 daemon ready")
 
 	select {
 	case <-ctx.Done():
-		log.Println("Daemon shutting down...")
+		slog.Info("daemon shutting down")
 		d.doDown()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -134,7 +134,7 @@ func (d *Daemon) State() string {
 
 // setStateLocked sets state. Caller must hold mu.
 func (d *Daemon) setStateLocked(s string) {
-	log.Printf("State: %s → %s", d.state, s)
+	slog.Info("state transition", "from", d.state, "to", s)
 	d.state = s
 }
 
@@ -189,7 +189,7 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 	// Build engine config from ClientConfig.
 	dd := directdial.New()
 	if dd.InterfaceName() != "" {
-		log.Printf("tunnel: direct dialer bound to %s", dd.InterfaceName())
+		slog.Info("tunnel: direct dialer bound", "interface", dd.InterfaceName())
 	}
 	engineCfg := d.engineConfigFromClientConfig(cfg, dd)
 
@@ -204,7 +204,7 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 		d.lastError = engine.ClassifyError(err)
 		d.setStateLocked(StateStopped)
 		d.mu.Unlock()
-		log.Printf("Error: %s", err)
+		slog.Error("engine start failed", "err", err)
 		return err
 	}
 
@@ -278,7 +278,7 @@ func (d *Daemon) engineConfigFromClientConfig(cfg *config.ClientConfig, dd *dire
 	}
 	monitor, ifaceMon, monErr := factory()
 	if monErr != nil {
-		log.Printf("network monitor unavailable: %v (passive timeout recovery only)", monErr)
+		slog.Warn("network monitor unavailable", "err", monErr, "recovery", "passive timeout only")
 	} else {
 		ecfg.NetworkMonitor = monitor
 		ecfg.InterfaceMonitor = ifaceMon
@@ -369,22 +369,22 @@ func (d *Daemon) tryAutoReconnect(ctx context.Context) {
 
 	// Only auto-reconnect if disconnected less than 1 hour ago.
 	if time.Since(st.Timestamp) > 1*time.Hour {
-		log.Println("Auto-reconnect: stale state (>1h), skipping")
+		slog.Info("auto-reconnect: stale state, skipping", "age", ">1h")
 		return
 	}
 
 	if st.Config == nil {
-		log.Println("Auto-reconnect: no config in saved state, skipping")
+		slog.Info("auto-reconnect: no config in saved state, skipping")
 		return
 	}
 
-	log.Println("Auto-reconnect: reconnecting with saved config...")
+	slog.Info("auto-reconnect: reconnecting with saved config")
 	go func() {
 		// Delay 5s to let daemon fully start; abort if daemon shuts down.
 		select {
 		case <-time.After(5 * time.Second):
 		case <-ctx.Done():
-			log.Println("Auto-reconnect: cancelled during startup delay")
+			slog.Info("auto-reconnect: cancelled during startup delay")
 			return
 		}
 		// Skip if already connected (e.g. user called up during delay).
@@ -392,7 +392,7 @@ func (d *Daemon) tryAutoReconnect(ctx context.Context) {
 			return
 		}
 		if err := d.doUp(st.Config, 0); err != nil {
-			log.Printf("Auto-reconnect failed: %v", err)
+			slog.Error("auto-reconnect failed", "err", err)
 		}
 	}()
 }

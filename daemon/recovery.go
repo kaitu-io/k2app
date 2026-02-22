@@ -2,7 +2,7 @@ package daemon
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -14,7 +14,7 @@ import (
 func HandlePanic() {
 	if r := recover(); r != nil {
 		stack := debug.Stack()
-		log.Printf("PANIC: %v\n%s", r, stack)
+		slog.Error("PANIC", "panic", r, "stack", string(stack))
 
 		// Write panic log.
 		dir := filepath.Join(os.TempDir(), "k2")
@@ -24,9 +24,9 @@ func HandlePanic() {
 
 		content := fmt.Sprintf("Panic: %v\n\n%s", r, stack)
 		if err := os.WriteFile(path, []byte(content), 0600); err != nil {
-			log.Printf("Failed to write panic log: %v", err)
+			slog.Error("failed to write panic log", "err", err)
 		} else {
-			log.Printf("Panic log written to %s", path)
+			slog.Info("panic log written", "path", path)
 		}
 
 		// Attempt network recovery.
