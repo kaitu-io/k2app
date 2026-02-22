@@ -6,7 +6,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"log"
+	"log/slog"
 	"math/rand"
 	"net"
 	"sync"
@@ -194,7 +194,7 @@ func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
 
 	// Set PCC congestion control (replaces default Cubic)
 	conn.SetCongestionControl(pcc.NewPCCSenderGFWMode(pcc.DefaultMaxRate))
-	log.Printf("wire: QUIC client PCC enabled (maxRate=%d Mbps)", pcc.DefaultMaxRate/1_000_000)
+	slog.Info("wire: QUIC client PCC enabled", "maxRateMbps", pcc.DefaultMaxRate/1_000_000)
 
 	c.conn = conn
 	c.transport = transport

@@ -2,7 +2,7 @@ package dns
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/miekg/dns"
@@ -45,20 +45,18 @@ func (c *DirectDNSClient) Query(query *dns.Msg) (*dns.Msg, error) {
 	for _, server := range c.servers {
 		resp, rtt, err := client.Exchange(query, server)
 		if err != nil {
-			log.Printf("Direct DNS query to %s failed: %v", server, err)
+			slog.Warn("direct DNS query failed", "server", server, "err", err)
 			lastErr = err
 			continue
 		}
 
 		if resp.Rcode != dns.RcodeSuccess {
-			log.Printf("Direct DNS query to %s returned error code: %s",
-				server, dns.RcodeToString[resp.Rcode])
+			slog.Warn("direct DNS query returned error code", "server", server, "rcode", dns.RcodeToString[resp.Rcode])
 			lastErr = fmt.Errorf("DNS error: %s", dns.RcodeToString[resp.Rcode])
 			continue
 		}
 
-		log.Printf("Direct DNS: %s → %s (RTT: %v)",
-			extractDomain(query), server, rtt)
+		slog.Debug("direct DNS query ok", "domain", extractDomain(query), "server", server, "rtt", rtt)
 
 		return resp, nil
 	}

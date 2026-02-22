@@ -3,7 +3,7 @@ package dns
 import (
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net"
 	"strings"
 
@@ -105,7 +105,7 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, error) {
 	}
 
 	qtype := extractQueryType(query)
-	log.Printf("DNS: %s %s", domain, qtype)
+	slog.Debug("DNS query", "domain", domain, "type", qtype)
 
 	// 2. Check hosts file first (OS behavior)
 	if m.hosts != nil {
@@ -122,7 +122,7 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, error) {
 		if m.metrics != nil {
 			m.metrics.IncrSpecialUseHit()
 		}
-		log.Printf("DNS: %s special-use → filtered", domain)
+		slog.Debug("DNS special-use filtered", "domain", domain)
 		return m.filter.HandleSpecialUse(query), nil
 	}
 
@@ -131,7 +131,7 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, error) {
 		if m.metrics != nil {
 			m.metrics.IncrLocalDomainHit()
 		}
-		log.Printf("DNS: %s local domain → NXDOMAIN", domain)
+		slog.Debug("DNS local domain NXDOMAIN", "domain", domain)
 		return m.filter.CreateNXDOMAIN(query), nil
 	}
 
@@ -141,7 +141,7 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, error) {
 			if m.metrics != nil {
 				m.metrics.IncrNoiseFiltered()
 			}
-			log.Printf("DNS: %s noise → filtered", domain)
+			slog.Debug("DNS noise filtered", "domain", domain)
 			return noiseResp, nil
 		}
 	}
@@ -153,7 +153,7 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, error) {
 				m.metrics.IncrMessageCacheHit()
 			}
 			cachedResp.Id = query.Id
-			log.Printf("DNS: %s cache hit", domain)
+			slog.Debug("DNS cache hit", "domain", domain)
 			return cachedResp, nil
 		}
 	}
@@ -175,10 +175,10 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, error) {
 			if m.metrics != nil {
 				m.metrics.IncrError()
 			}
-			log.Printf("DNS: direct query failed for %s: %v", domain, err)
+			slog.Warn("DNS direct query failed", "domain", domain, "err", err)
 			return nil, err
 		}
-		log.Printf("DNS: %s → direct", domain)
+		slog.Debug("DNS routed direct", "domain", domain)
 
 	case k2rule.TargetProxy:
 		if m.metrics != nil {
@@ -189,14 +189,14 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, error) {
 			if m.metrics != nil {
 				m.metrics.IncrError()
 			}
-			log.Printf("DNS: proxy query failed for %s: %v", domain, err)
+			slog.Warn("DNS proxy query failed", "domain", domain, "err", err)
 			return nil, err
 		}
-		log.Printf("DNS: %s → proxy", domain)
+		slog.Debug("DNS routed proxy", "domain", domain)
 
 	case k2rule.TargetReject:
 		resp = createNXDOMAIN(query)
-		log.Printf("DNS: %s → reject", domain)
+		slog.Debug("DNS routed reject", "domain", domain)
 	}
 
 	// 9. Cache DNS message
