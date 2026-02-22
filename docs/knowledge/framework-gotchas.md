@@ -152,7 +152,7 @@ local.Read(buf)
 
 **Validated in**: Multiple tests using pipe for connection mocking.
 
-**Source**: Documented in AGENT.md, validated during testing.
+**Source**: Documented in CLAUDE.md, validated during testing.
 
 ---
 

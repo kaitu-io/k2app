@@ -1,6 +1,6 @@
 # Core Layer (core/)
 
-L4 client tunnel, router, and packet processing. DNS has its own doc at `core/dns/AGENT.md`.
+L4 client tunnel, router, and packet processing. DNS has its own doc at `core/dns/CLAUDE.md`.
 
 ## Tunnel (tunnel.go)
 

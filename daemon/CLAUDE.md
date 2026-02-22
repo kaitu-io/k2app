@@ -20,11 +20,9 @@ State machine + HTTP API on `127.0.0.1:1777`. Auto-installed as system service.
 
 | Action | Params | Description |
 |--------|--------|-------------|
-| `up` | `wire_url` or `config_path`, `pid` | Connect tunnel |
+| `up` | `config: ClientConfig` or `wire_url`, optional `pid` | Connect tunnel |
 | `down` | — | Disconnect |
-| `reconnect` | — | Reconnect with saved config |
-| `status` | — | State + connection info |
-| `get_config` | — | Saved config |
+| `status` | — | State + connection info + active config |
 | `version` | — | Version info |
 
 ### Other
