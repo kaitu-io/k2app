@@ -193,12 +193,14 @@ func TestMobileEngineStartConfigJSON(t *testing.T) {
 	configJSON := `{
 		"server": "k2v5://udid:token@host:443",
 		"mode": "tun",
-		"rule": {"global": false}
+		"rule": {"global": true}
 	}`
 
 	e := NewEngine()
 	// Start will fail (no real TUN FD), but we verify it parses config correctly.
-	err := e.Start(configJSON, 0, "/tmp/k2test")
+	// Empty dataDir so k2rule.Init fails fast on CacheDir validation (v0.5.0-go
+	// requires CacheDir). Engine logs warning and continues.
+	err := e.Start(configJSON, 0, "")
 	// We expect an error from the engine (invalid URL format or provider failure),
 	// but NOT a JSON parse error.
 	if err != nil && strings.Contains(err.Error(), "parse config") {

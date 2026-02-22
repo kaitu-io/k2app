@@ -27,10 +27,18 @@ func (m *mockQuerier) Query(q *dns.Msg) (*dns.Msg, error) {
 
 // initK2Rule initializes k2rule in global mode with the given target.
 // Handles the zero-value issue where TargetDirect (0) is ignored in Config.
-func initK2Rule(target k2rule.Target) {
+//
+// Uses non-existent file paths for GeoIP/Porn to avoid network downloads
+// (retryForever). Init sets globalConfig before failing on file open, and
+// global-mode Match() only checks globalConfig — not the managers.
+func initK2Rule(t *testing.T, target k2rule.Target) {
+	t.Helper()
 	k2rule.Init(&k2rule.Config{
+		CacheDir:     t.TempDir(),
 		IsGlobal:     true,
 		GlobalTarget: k2rule.TargetProxy, // non-zero so Config accepts it
+		GeoIPFile:    "/nonexistent",     // skip remote download
+		PornFile:     "/nonexistent",     // skip remote download
 	})
 	k2rule.SetGlobalTarget(target)
 	k2rule.ToggleGlobal(true)
@@ -64,7 +72,7 @@ func buildAResponse(domain string, ip net.IP) *dns.Msg {
 }
 
 func TestHandleQuery_DirectDomain(t *testing.T) {
-	initK2Rule(k2rule.TargetDirect)
+	initK2Rule(t, k2rule.TargetDirect)
 
 	directQ := &mockQuerier{
 		resp: buildAResponse("direct.example.com", net.ParseIP("1.2.3.4")),
@@ -114,7 +122,7 @@ func TestHandleQuery_DirectDomain(t *testing.T) {
 }
 
 func TestHandleQuery_ProxyDomain(t *testing.T) {
-	initK2Rule(k2rule.TargetProxy)
+	initK2Rule(t, k2rule.TargetProxy)
 
 	directQ := &mockQuerier{
 		resp: buildAResponse("proxy.example.com", net.ParseIP("1.2.3.4")),
@@ -157,7 +165,7 @@ func TestHandleQuery_ProxyDomain(t *testing.T) {
 }
 
 func TestHandleQuery_RejectDomain(t *testing.T) {
-	initK2Rule(k2rule.TargetReject)
+	initK2Rule(t, k2rule.TargetReject)
 
 	directQ := &mockQuerier{
 		resp: buildAResponse("reject.example.com", net.ParseIP("1.2.3.4")),
@@ -195,7 +203,7 @@ func TestHandleQuery_RejectDomain(t *testing.T) {
 }
 
 func TestHandleQuery_CacheHit(t *testing.T) {
-	initK2Rule(k2rule.TargetDirect)
+	initK2Rule(t, k2rule.TargetDirect)
 
 	directQ := &mockQuerier{
 		resp: buildAResponse("cached.example.com", net.ParseIP("1.2.3.4")),
@@ -254,7 +262,7 @@ func TestHandleQuery_InvalidBytes(t *testing.T) {
 
 func TestHandleQuery_NilWriter(t *testing.T) {
 	// Middleware with nil Writer (L4 mode) -- HandleQuery works fine
-	initK2Rule(k2rule.TargetDirect)
+	initK2Rule(t, k2rule.TargetDirect)
 
 	directQ := &mockQuerier{
 		resp: buildAResponse("l4.example.com", net.ParseIP("1.2.3.4")),
