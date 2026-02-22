@@ -11,7 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -277,7 +277,7 @@ func ReverseProxy(client net.Conn, clientData []byte, target string) {
 
 	remote, err := net.DialTimeout("tcp", target, 10*time.Second)
 	if err != nil {
-		log.Printf("wire: reverse proxy dial %s: %v", target, err)
+		slog.Warn("wire: reverse proxy dial failed", "target", target, "err", err)
 		return
 	}
 	defer remote.Close()

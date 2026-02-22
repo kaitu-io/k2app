@@ -3,7 +3,7 @@ package dns
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/kaitu-io/k2/wire"
@@ -48,7 +48,7 @@ func (c *ProxyDNSClient) Query(query *dns.Msg) (*dns.Msg, error) {
 	for _, server := range c.servers {
 		resp, err := c.queryServer(server, queryBytes, query)
 		if err != nil {
-			log.Printf("Proxy DNS error for %s: %v", server, err)
+			slog.Warn("proxy DNS query failed", "server", server, "err", err)
 			continue
 		}
 		return resp, nil
@@ -83,6 +83,6 @@ func (c *ProxyDNSClient) queryServer(server string, queryBytes []byte, query *dn
 		return nil, fmt.Errorf("unpack response: %w", err)
 	}
 
-	log.Printf("Proxy DNS: %s → %s (via tunnel)", extractDomain(query), server)
+	slog.Debug("proxy DNS query ok", "domain", extractDomain(query), "server", server)
 	return &resp, nil
 }
