@@ -1,8 +1,8 @@
 {
   "hero": {
     "title": "k2 隱身網絡隧道",
-    "subtitle": "一行命令部署，ECH 加密，不可偵測",
-    "description": "開途 k2 係基於 ECH（加密客戶端問候）嘅下一代隱身隧道協議，支援 QUIC + TCP-WS 雙棧傳輸，自研自適應擁塞控制算法，一行命令完成伺服器同客戶端部署，CT 日誌零暴露。",
+    "subtitle": "搭載 k2arc 自適應速率控制，ECH 加密隱身，零配置部署",
+    "description": "開途 k2 係搭載自研 k2arc 自適應速率控制算法嘅下一代隱身隧道協議。k2arc 透過梯度上升效用函數自動探測最優傳送速率，喺 GFW 高封包遺失網絡中維持遠超 BBR 嘅吞吐量。基於 ECH 加密 SNI + TLS 指紋偽裝實現流量不可偵測，QUIC + TCP-WS 雙棧傳輸，一行命令完成部署。",
     "cta_primary": "快速開始",
     "cta_secondary": "下載應用",
     "downloadClient": "下載客戶端",
@@ -26,8 +26,8 @@
         "icon": "🔀"
       },
       "congestion": {
-        "title": "自研擁塞控制",
-        "description": "自研自適應擁塞控制算法，高封包遺失網絡下顯著優於 BBR，弱網環境吞吐量提升 3x",
+        "title": "k2arc 自適應速率控制",
+        "description": "自研 k2arc 算法透過梯度上升效用函數自動探測最優速率，自適應丟包懲罰係數區分審查丟包同擁塞丟包，GFW 高封包遺失環境下吞吐量遠超 BBR",
         "icon": "📈"
       },
       "reverseProxy": {
@@ -130,7 +130,7 @@
       "server": {
         "title": "伺服器端（1 分鐘）",
         "step1": "# 安裝 k2s 伺服器",
-        "step2": "curl -fsSL https://get.kaitu.io | sudo sh -s k2s",
+        "step2": "curl -fsSL https://kaitu.io/install.sh | sudo sh -s k2s",
         "step3": "# 啟動服務",
         "step4": "k2s run",
         "step5": "# 輸出連接 URI",
@@ -139,7 +139,7 @@
       "client": {
         "title": "客戶端（30 秒）",
         "step1": "# 安裝 k2 客戶端",
-        "step2": "curl -fsSL https://get.kaitu.io | sudo sh -s k2",
+        "step2": "curl -fsSL https://kaitu.io/install.sh | sudo sh -s k2",
         "step3": "# 連接（貼上 URI）",
         "step4": "k2 up k2v5://..."
       }
@@ -147,7 +147,7 @@
   },
   "security": {
     "title": "k2v5 協議 — 下一代隱身隧道",
-    "description": "k2v5 基於 ECH（加密客戶端問候）構建，徹底解決 SNI 洩漏問題。結合 QUIC 低延遲傳輸同自研自適應擁塞控制算法，喺高封包遺失弱網環境下實現穩定高吞吐。",
+    "description": "k2v5 基於 ECH（加密客戶端問候）構建，徹底解決 SNI 洩漏問題。搭載自研 k2arc 自適應速率控制算法，結合 QUIC 低延遲傳輸，喺高封包遺失弱網環境下實現穩定高吞吐。",
     "icon": "🛡️",
     "caTech": {
       "title": "ECH 隱身隧道技術",
@@ -156,7 +156,7 @@
         "title": "核心特性",
         "item1": "ECH 加密 SNI，TLS 握手不可偵測",
         "item2": "QUIC 優先傳輸，低延遲高吞吐",
-        "item3": "自研自適應擁塞控制，弱網 3x 提升",
+        "item3": "k2arc 自適應速率控制，審查網絡吞吐量遠超 BBR",
         "item4": "反向代理偽裝，主動探測防禦",
         "bullet": "•"
       },
@@ -182,8 +182,8 @@
         "icon": "🔀"
       },
       "smartRouting": {
-        "title": "自研擁塞控制",
-        "description": "自研自適應擁塞控制算法，高封包遺失網絡吞吐量超越 BBR，弱網體驗顯著提升",
+        "title": "k2arc 自適應速率控制",
+        "description": "自研 k2arc 算法自動探測最優傳送速率，自適應丟包懲罰區分審查丟包，高封包遺失網絡吞吐量遠超 BBR",
         "icon": "📈"
       },
       "disguise": {
@@ -209,7 +209,7 @@
       "keyDerivation": "傳輸協議",
       "keyDerivationValue": "QUIC / TCP-WebSocket 雙棧",
       "transport": "擁塞控制",
-      "transportValue": "自研自適應擁塞控制算法",
+      "transportValue": "k2arc 自適應速率控制算法",
       "multiplexing": "證書策略",
       "multiplexingValue": "自簽名 + 證書 Pin（CT 日誌零暴露）",
       "heartbeat": "部署方式",
@@ -233,7 +233,7 @@
       "kaitu": {
         "letter": "K",
         "name": "k2v5",
-        "tech": "ECH 隱身 + QUIC+TCP-WS 雙棧 + 自研擁塞控制"
+        "tech": "ECH 隱身 + QUIC+TCP-WS 雙棧 + k2arc 自適應速率控制"
       },
       "trojan": {
         "letter": "W",
@@ -282,7 +282,7 @@
         "failedPath": "降級路徑",
         "optimalNode": "最優節點"
       },
-      "description": "k2v5 喺 TLS 握手階段使用 ECH 加密 SNI，防火牆無法識別目標域名。數據透過 QUIC（優先）或 TCP-WebSocket（降級）傳輸，自研自適應擁塞控制算法喺高封包遺失環境下保持穩定吞吐。伺服器內建反向代理，非 k2 流量轉發至真實網站，主動探測無法區分。"
+      "description": "k2v5 喺 TLS 握手階段使用 ECH 加密 SNI，防火牆無法識別目標域名。數據透過 QUIC（優先）或 TCP-WebSocket（降級）傳輸，搭載 k2arc 自適應速率控制算法喺高封包遺失環境下保持穩定吞吐。伺服器內建反向代理，非 k2 流量轉發至真實網站，主動探測無法區分。"
     }
   },
   "download": {

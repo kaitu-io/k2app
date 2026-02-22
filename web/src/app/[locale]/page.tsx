@@ -52,7 +52,7 @@ const JSON_LD_CONTENT = JSON.stringify({
   applicationCategory: 'NetworkingApplication',
   operatingSystem: 'Windows, macOS, iOS, Android, Linux',
   description:
-    'ECH-based stealth tunnel protocol with QUIC+TCP-WS dual-stack transport. Anti-censorship network tunnel with zero CT log exposure and one-command deployment.',
+    'ECH-based stealth tunnel protocol powered by k2arc adaptive rate control. QUIC+TCP-WS dual-stack transport with zero CT log exposure and one-command deployment.',
   url: 'https://kaitu.io',
   publisher: {
     '@type': 'Organization',
@@ -67,7 +67,7 @@ const JSON_LD_CONTENT = JSON.stringify({
   featureList: [
     'ECH (Encrypted Client Hello) stealth',
     'QUIC + TCP-WebSocket dual-stack transport',
-    'Proprietary adaptive congestion control',
+    'k2arc adaptive rate control algorithm',
     'Reverse proxy camouflage',
     'Self-signed certificate + certificate pinning',
     'Zero CT log exposure',
@@ -216,18 +216,18 @@ export default async function Home({
 
   const featureCards = [
     {
-      key: 'ech',
-      icon: '🛡️',
-      title: t('hero.features.ech.title'),
-      description: t('hero.features.ech.description'),
+      key: 'congestion',
+      icon: '📈',
+      title: t('hero.features.congestion.title'),
+      description: t('hero.features.congestion.description'),
       borderColor: 'border-t-4',
       borderStyle: { borderTopColor: 'var(--primary)' },
     },
     {
-      key: 'zeroDeploy',
-      icon: '⚡',
-      title: t('hero.features.zeroDeploy.title'),
-      description: t('hero.features.zeroDeploy.description'),
+      key: 'ech',
+      icon: '🛡️',
+      title: t('hero.features.ech.title'),
+      description: t('hero.features.ech.description'),
       borderColor: 'border-t-4',
       borderStyle: { borderTopColor: 'var(--secondary)' },
     },
@@ -240,10 +240,10 @@ export default async function Home({
       borderStyle: { borderTopColor: 'var(--primary)' },
     },
     {
-      key: 'congestion',
-      icon: '📈',
-      title: t('hero.features.congestion.title'),
-      description: t('hero.features.congestion.description'),
+      key: 'zeroDeploy',
+      icon: '⚡',
+      title: t('hero.features.zeroDeploy.title'),
+      description: t('hero.features.zeroDeploy.description'),
       borderColor: 'border-t-4',
       borderStyle: { borderTopColor: 'var(--secondary)' },
     },
@@ -334,7 +334,7 @@ export default async function Home({
             <div className="p-6 text-sm space-y-2" style={{ fontFamily: 'var(--font-mono), monospace' }}>
               <div>
                 <span style={{ color: 'hsl(var(--muted-foreground))' }}>$ </span>
-                <span style={{ color: 'var(--primary)' }}>curl -fsSL https://get.kaitu.io | sudo sh -s k2s</span>
+                <span style={{ color: 'var(--primary)' }}>curl -fsSL https://kaitu.io/install.sh | sudo sh -s k2s</span>
               </div>
               <div style={{ color: 'hsl(var(--muted-foreground))' }}>Installing k2s...</div>
               <div>

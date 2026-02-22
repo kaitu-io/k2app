@@ -75,6 +75,13 @@ deploy-api:
 publish-release:
 	bash scripts/publish-release.sh
 
+# k2/k2s standalone binaries (linux + darwin × amd64 + arm64)
+build-k2-standalone:
+	bash scripts/build-k2-standalone.sh
+
+publish-k2:
+	bash scripts/publish-k2.sh
+
 publish-mobile:
 	@test -n "$(VERSION)" || (echo "Usage: make publish-mobile VERSION=x.y.z" && exit 1)
 	@echo "Publishing mobile v$(VERSION)..."

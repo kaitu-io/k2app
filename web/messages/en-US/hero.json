@@ -1,8 +1,8 @@
 {
   "hero": {
     "title": "k2 Stealth Network Tunnel",
-    "subtitle": "Deploy in one command, ECH encryption, undetectable",
-    "description": "Kaitu k2 is a next-generation stealth tunnel protocol based on ECH (Encrypted Client Hello), supporting QUIC + TCP-WS dual-stack transport, proprietary adaptive congestion control, one-command deployment for both server and client, zero CT log exposure.",
+    "subtitle": "Powered by k2arc adaptive rate control, ECH stealth, zero-config deploy",
+    "description": "Kaitu k2 is a next-generation stealth tunnel protocol powered by the proprietary k2arc adaptive rate control algorithm. k2arc uses gradient ascent utility functions to automatically find optimal send rates, maintaining far higher throughput than BBR under GFW high-loss conditions. ECH-encrypted SNI + TLS fingerprint spoofing makes traffic undetectable. QUIC + TCP-WS dual-stack transport, one-command deployment.",
     "cta_primary": "Get Started",
     "cta_secondary": "Download App",
     "downloadClient": "Download Client",
@@ -26,8 +26,8 @@
         "icon": "🔀"
       },
       "congestion": {
-        "title": "Proprietary Congestion Control",
-        "description": "Proprietary adaptive congestion control algorithm. Significantly outperforms BBR on high-loss networks. 3x throughput improvement in poor network conditions",
+        "title": "k2arc Adaptive Rate Control",
+        "description": "Proprietary k2arc algorithm uses gradient ascent utility functions to find optimal send rates. Adaptive loss penalty distinguishes censorship drops from congestion. Far outperforms BBR under GFW high-loss conditions",
         "icon": "📈"
       },
       "reverseProxy": {
@@ -130,7 +130,7 @@
       "server": {
         "title": "Server (1 minute)",
         "step1": "# Install k2s server",
-        "step2": "curl -fsSL https://get.kaitu.io | sudo sh -s k2s",
+        "step2": "curl -fsSL https://kaitu.io/install.sh | sudo sh -s k2s",
         "step3": "# Start the service",
         "step4": "k2s run",
         "step5": "# Outputs connection URI",
@@ -139,7 +139,7 @@
       "client": {
         "title": "Client (30 seconds)",
         "step1": "# Install k2 client",
-        "step2": "curl -fsSL https://get.kaitu.io | sudo sh -s k2",
+        "step2": "curl -fsSL https://kaitu.io/install.sh | sudo sh -s k2",
         "step3": "# Connect (paste URI)",
         "step4": "k2 up k2v5://..."
       }
@@ -147,7 +147,7 @@
   },
   "security": {
     "title": "k2v5 Protocol — Next-Generation Stealth Tunnel",
-    "description": "k2v5 is built on ECH (Encrypted Client Hello), completely solving SNI leakage. Combined with QUIC low-latency transport and proprietary adaptive congestion control, it achieves stable high throughput in high-loss, poor network conditions.",
+    "description": "k2v5 is built on ECH (Encrypted Client Hello), completely solving SNI leakage. Powered by the proprietary k2arc adaptive rate control algorithm combined with QUIC low-latency transport, it achieves stable high throughput in high-loss, poor network conditions.",
     "icon": "🛡️",
     "caTech": {
       "title": "ECH Stealth Tunnel Technology",
@@ -156,7 +156,7 @@
         "title": "Core Features",
         "item1": "ECH encrypts SNI — TLS handshake undetectable",
         "item2": "QUIC-first transport — low latency, high throughput",
-        "item3": "Proprietary adaptive congestion control — 3x improvement on poor networks",
+        "item3": "k2arc adaptive rate control — far outperforms BBR under censorship",
         "item4": "Reverse proxy camouflage — active probe defense",
         "bullet": "•"
       },
@@ -182,8 +182,8 @@
         "icon": "🔀"
       },
       "smartRouting": {
-        "title": "Proprietary Congestion Control",
-        "description": "Proprietary adaptive congestion control algorithm. Outperforms BBR on high-loss networks. Significantly improved experience on poor networks",
+        "title": "k2arc Adaptive Rate Control",
+        "description": "Proprietary k2arc algorithm automatically finds optimal send rates. Adaptive loss penalty distinguishes censorship drops. Far outperforms BBR under high-loss conditions",
         "icon": "📈"
       },
       "disguise": {
@@ -209,7 +209,7 @@
       "keyDerivation": "Transport Protocol",
       "keyDerivationValue": "QUIC / TCP-WebSocket Dual Stack",
       "transport": "Congestion Control",
-      "transportValue": "Proprietary Adaptive Algorithm",
+      "transportValue": "k2arc Adaptive Rate Control",
       "multiplexing": "Certificate Strategy",
       "multiplexingValue": "Self-Signed + Certificate Pin (Zero CT Log)",
       "heartbeat": "Deployment",
@@ -233,7 +233,7 @@
       "kaitu": {
         "letter": "K",
         "name": "k2v5",
-        "tech": "ECH stealth + QUIC+TCP-WS dual stack + proprietary congestion control"
+        "tech": "ECH stealth + QUIC+TCP-WS dual stack + k2arc adaptive rate control"
       },
       "trojan": {
         "letter": "W",
@@ -282,7 +282,7 @@
         "failedPath": "Fallback Path",
         "optimalNode": "Optimal Node"
       },
-      "description": "k2v5 uses ECH to encrypt SNI during the TLS handshake, preventing firewalls from identifying the target domain. Data is transmitted via QUIC (preferred) or TCP-WebSocket (fallback). The proprietary adaptive congestion control algorithm maintains stable throughput on high-loss networks. The server's built-in reverse proxy forwards non-k2 traffic to a real website, making active probing indistinguishable."
+      "description": "k2v5 uses ECH to encrypt SNI during the TLS handshake, preventing firewalls from identifying the target domain. Data is transmitted via QUIC (preferred) or TCP-WebSocket (fallback). The k2arc adaptive rate control algorithm maintains stable throughput on high-loss networks. The server's built-in reverse proxy forwards non-k2 traffic to a real website, making active probing indistinguishable."
     }
   },
   "download": {

@@ -1,7 +1,7 @@
 ---
 title: k2 客户端使用
-date: 2026-02-21
-summary: 在 Linux 或 macOS 上安装 k2 命令行客户端，连接 k2v5 服务端，管理 VPN 隧道。
+date: 2026-02-22
+summary: 在 Linux 或 macOS 上安装 k2 命令行客户端，连接 k2v5 服务端。k2arc 算法自动探测最优速率，无需手动配置带宽。
 section: getting-started
 order: 4
 draft: false
@@ -15,7 +15,7 @@ k2 命令行客户端支持 **Linux**（x86_64 / arm64）和 **macOS**（Intel /
 ## 安装
 
 ```bash
-curl -fsSL https://dl.k2.52j.me/install.sh | sudo sh -s k2
+curl -fsSL https://kaitu.io/install.sh | sudo sh -s k2
 ```
 
 验证安装：
@@ -32,7 +32,7 @@ k2 --version
 sudo k2 up k2v5://abc123:tok456@203.0.113.5:443?ech=AEX0...&pin=sha256:...
 ```
 
-连接成功后，系统路由表会自动更新，所有流量通过隧道传输。
+连接成功后，系统路由表会自动更新，所有流量通过隧道传输。k2 的 k2arc 算法会自动探测最优发送速率，无需像 Hysteria2 那样手动指定 `up_mbps` / `down_mbps`。
 
 ## 常用命令
 
@@ -133,4 +133,4 @@ sudo rm /usr/local/bin/k2
 
 ---
 
-接下来阅读：[协议技术详解](/k2/protocol) 深入了解 k2v5 的工作原理。
+接下来阅读：[协议技术详解](/k2/protocol) 深入了解 k2v5 的工作原理和 k2arc 算法。

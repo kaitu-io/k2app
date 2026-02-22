@@ -1,7 +1,7 @@
 ---
 title: 1 分钟快速开始
-date: 2026-02-21
-summary: 一分钟内启动 k2s 服务端并通过 k2 客户端完成首次连接。服务端自动生成密钥，客户端一条命令接入。
+date: 2026-02-22
+summary: 一分钟内启动 k2s 服务端并通过 k2 客户端完成首次连接。零配置——服务端自动生成密钥，k2arc 算法自动探测最优速率。
 section: getting-started
 order: 2
 draft: false
@@ -16,16 +16,16 @@ draft: false
 在您的服务器上执行：
 
 ```bash
-curl -fsSL https://dl.k2.52j.me/install.sh | sudo sh -s k2s
+curl -fsSL https://kaitu.io/install.sh | sudo sh -s k2s
 sudo k2s run
 ```
 
 **首次启动**会自动：
 
 - 生成 TLS 自签名证书（RSA + EC 双证书）
-- 生成 ECH 密钥
-- 安装系统服务
-- 打印即用的连接 URL，格式如下：
+- 生成 ECH 密钥（从 Cloudflare 真实配置派生）
+- 安装 systemd 系统服务
+- 打印即用的连接 URL
 
 ```
 k2v5://abc123:tok456@203.0.113.5:443?ech=AEX0...&pin=sha256:...
@@ -38,11 +38,13 @@ k2v5://abc123:tok456@203.0.113.5:443?ech=AEX0...&pin=sha256:...
 在您的客户端机器上执行（将 URL 替换为上一步输出的实际 URL）：
 
 ```bash
-curl -fsSL https://dl.k2.52j.me/install.sh | sudo sh -s k2
+curl -fsSL https://kaitu.io/install.sh | sudo sh -s k2
 sudo k2 up k2v5://abc123:tok456@203.0.113.5:443?ech=AEX0...&pin=sha256:...
 ```
 
-连接成功后，所有流量将通过 k2 隧道加密传输。
+连接成功后，k2 的 **k2arc 自适应速率控制算法**会自动探测网络最优速率——无需手动指定带宽参数。所有流量通过 k2 隧道加密传输。
+
+> 与 Hysteria2 不同，k2 不需要配置 `up_mbps` / `down_mbps`。k2arc 算法根据实时网络状况自动调整发送速率，在丢包恢复、延迟控制和吞吐量之间找到最优平衡。
 
 ## 常用命令
 
