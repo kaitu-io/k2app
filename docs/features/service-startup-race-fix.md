@@ -6,9 +6,9 @@
 |-----------|------------------------------------------|
 | Feature   | service-startup-race-fix                 |
 | Version   | v1                                       |
-| Status    | draft                                    |
+| Status    | implemented                              |
 | Created   | 2026-02-22                               |
-| Updated   | 2026-02-22                               |
+| Updated   | 2026-02-23                               |
 | Depends   | macos-pkg-service-lifecycle              |
 
 ## Version History
