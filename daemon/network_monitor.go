@@ -25,7 +25,9 @@ func NewNetworkMonitor() (engine.NetworkChangeNotifier, tun.DefaultInterfaceMoni
 	if err != nil {
 		return nil, nil, err
 	}
-	ifaceMon, err := tun.NewDefaultInterfaceMonitor(netMon, (*nopLogger)(nil), tun.DefaultInterfaceMonitorOptions{})
+	ifaceMon, err := tun.NewDefaultInterfaceMonitor(netMon, (*nopLogger)(nil), tun.DefaultInterfaceMonitorOptions{
+		InterfaceFinder: control.NewDefaultInterfaceFinder(),
+	})
 	if err != nil {
 		netMon.Close()
 		return nil, nil, err

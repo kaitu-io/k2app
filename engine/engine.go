@@ -78,12 +78,15 @@ func (e *Engine) Start(cfg Config) error {
 	e.mu.Unlock()
 
 	// 1. Parse rule mode: RuleConfig > RuleMode > URL query "rule=" > default "global".
+	slog.Info("engine: step 1 - k2rule init starting")
 	ruleCfg := e.buildK2ruleConfig(cfg)
 	if err := k2rule.Init(ruleCfg); err != nil {
 		slog.Warn("engine: k2rule init failed, continuing with defaults", "err", err)
 	}
+	slog.Info("engine: step 1 - k2rule init done")
 
 	// 2. Parse k2v5:// URL.
+	slog.Info("engine: step 2 - parse wire URL")
 	wireCfg, err := wire.ParseURL(cfg.WireURL)
 	if err != nil {
 		return e.fail(err)
