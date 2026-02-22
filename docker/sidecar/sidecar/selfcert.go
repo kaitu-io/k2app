@@ -8,7 +8,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
-	"log"
+	"log/slog"
 	"math/big"
 	"net"
 	"os"
@@ -110,8 +110,11 @@ func GenerateSelfSignedCert(config *SelfSignedCertConfig) (*TunnelCertificate, e
 		Bytes: keyDER,
 	})
 
-	log.Printf("[SelfCert] Generated self-signed certificate: CN=%s, Valid=%d days, Expires=%s",
-		config.CommonName, config.ValidDays, notAfter.Format("2006-01-02"))
+	slog.Info("Generated self-signed certificate",
+		"component", "selfcert",
+		"cn", config.CommonName,
+		"validDays", config.ValidDays,
+		"expires", notAfter.Format("2006-01-02"))
 
 	return &TunnelCertificate{
 		SSLCert: string(certPEM),
@@ -136,17 +139,17 @@ func GetOrCreateSelfSignedCert(certDir string, config *SelfSignedCertConfig) (*T
 		// Try to load existing certificate
 		cert, err := loadCertificateFromFiles(certFile, keyFile)
 		if err != nil {
-			log.Printf("[SelfCert] Failed to load existing certificate: %v, will regenerate", err)
+			slog.Warn("Failed to load existing certificate, will regenerate", "component", "selfcert", "err", err)
 		} else if isCertificateValid(cert) {
-			log.Printf("[SelfCert] Loaded existing self-signed certificate from %s", certDir)
+			slog.Info("Loaded existing self-signed certificate", "component", "selfcert", "dir", certDir)
 			return cert, nil
 		} else {
-			log.Printf("[SelfCert] Existing certificate expired or invalid, will regenerate")
+			slog.Info("Existing certificate expired or invalid, will regenerate", "component", "selfcert")
 		}
 	}
 
 	// Generate new certificate
-	log.Printf("[SelfCert] Generating new self-signed certificate...")
+	slog.Info("Generating new self-signed certificate...", "component", "selfcert")
 	cert, err := GenerateSelfSignedCert(config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate certificate: %w", err)
@@ -157,7 +160,7 @@ func GetOrCreateSelfSignedCert(certDir string, config *SelfSignedCertConfig) (*T
 		return nil, fmt.Errorf("failed to save certificate: %w", err)
 	}
 
-	log.Printf("[SelfCert] Self-signed certificate saved to %s", certDir)
+	slog.Info("Self-signed certificate saved", "component", "selfcert", "dir", certDir)
 	return cert, nil
 }
 

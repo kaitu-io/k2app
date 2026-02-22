@@ -4,7 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -36,11 +36,12 @@ func init() {
 
 func main() {
 	flag.Parse()
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	log.Printf("[Sidecar] Starting k2-slave-sidecar v5.0 (unified config, batch registration)")
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	slog.Info("Starting k2-slave-sidecar v5.0 (unified config, batch registration)", "component", "sidecar")
 
 	if configFile == "" {
-		log.Fatalf("[Sidecar] Config file path is required. Usage: ./k2-sidecar -c /path/to/config.yaml")
+		slog.Error("Config file path is required. Usage: ./k2-sidecar -c /path/to/config.yaml", "component", "sidecar")
+		os.Exit(1)
 	}
 
 	// Use config package's config loading
@@ -49,11 +50,13 @@ func main() {
 
 	s, err := NewSidecar(&cfg)
 	if err != nil {
-		log.Fatalf("[Sidecar] Failed to initialize: %v", err)
+		slog.Error("Failed to initialize", "component", "sidecar", "err", err)
+		os.Exit(1)
 	}
 
 	if err := s.Start(); err != nil {
-		log.Fatalf("[Sidecar] Failed to start: %v", err)
+		slog.Error("Failed to start", "component", "sidecar", "err", err)
+		os.Exit(1)
 	}
 }
 
@@ -74,7 +77,7 @@ func NewSidecar(cfg *config.Config) (*Sidecar, error) {
 	// Auto-generate Tunnel.Domain using sslip.io if not configured
 	if cfg.Tunnel.Domain == "" && n.GetIPv4() != "" {
 		cfg.Tunnel.Domain = strings.ReplaceAll(n.GetIPv4(), ".", "-") + ".sslip.io"
-		log.Printf("[Sidecar] Auto-generated K2 domain: %s", cfg.Tunnel.Domain)
+		slog.Info("Auto-generated K2 domain", "component", "sidecar", "domain", cfg.Tunnel.Domain)
 	}
 
 	// Note: OC domain is NOT auto-generated - must be explicitly configured
@@ -89,12 +92,12 @@ func NewSidecar(cfg *config.Config) (*Sidecar, error) {
 
 // Start starts the sidecar service
 func (s *Sidecar) Start() error {
-	log.Printf("[Sidecar] Center URL: %s", s.config.K2Center.BaseURL)
-	log.Printf("[Sidecar] Config Dir: %s", s.config.ConfigDir)
+	slog.Info("Center URL", "component", "sidecar", "url", s.config.K2Center.BaseURL)
+	slog.Info("Config Dir", "component", "sidecar", "dir", s.config.ConfigDir)
 
 	// Step 1: Build tunnel configurations
 	tunnels := s.buildTunnelConfigs()
-	log.Printf("[Sidecar] Tunnels to register: %d", len(tunnels))
+	slog.Info("Tunnels to register", "component", "sidecar", "count", len(tunnels))
 
 	if len(tunnels) == 0 {
 		return fmt.Errorf("no tunnels configured (K2_DOMAIN and K2OC_DOMAIN are both empty)")
@@ -105,7 +108,7 @@ func (s *Sidecar) Start() error {
 	if err != nil {
 		return fmt.Errorf("failed to register node: %w", err)
 	}
-	log.Printf("[Sidecar] Node registered: IPv4=%s, Tunnels=%d", result.IPv4, len(result.Tunnels))
+	slog.Info("Node registered", "component", "sidecar", "ipv4", result.IPv4, "tunnels", len(result.Tunnels))
 
 	// Step 3: Save certificates and generate configs
 	if err := s.saveCertificates(result); err != nil {
@@ -124,10 +127,10 @@ func (s *Sidecar) Start() error {
 		}
 		count, err := s.nodeInstance.FetchECHKeys(echKeysFile)
 		if err != nil {
-			log.Printf("[Sidecar] Warning: Failed to fetch ECH keys: %v", err)
+			slog.Warn("Failed to fetch ECH keys", "component", "sidecar", "err", err)
 			// Non-fatal: k2-slave will start without ECH
 		} else {
-			log.Printf("[Sidecar] Fetched %d ECH keys to %s", count, echKeysFile)
+			slog.Info("Fetched ECH keys", "component", "sidecar", "count", count, "file", echKeysFile)
 		}
 	}
 
@@ -136,7 +139,7 @@ func (s *Sidecar) Start() error {
 	if err := os.WriteFile(readyFile, []byte(fmt.Sprintf("%d", time.Now().Unix())), 0644); err != nil {
 		return fmt.Errorf("failed to create ready flag: %w", err)
 	}
-	log.Printf("[Sidecar] Created ready flag: %s", readyFile)
+	slog.Info("Created ready flag", "component", "sidecar", "file", readyFile)
 
 	// Step 3.6: Start k2v5 connect-url polling (if K2 tunnel is enabled)
 	// k2v5 writes connect-url.txt after startup, which is after sidecar's
@@ -164,18 +167,18 @@ func (s *Sidecar) Start() error {
 	// Start metrics collection in background
 	go func() {
 		if err := s.collector.Run(); err != nil {
-			log.Printf("[Sidecar] Metrics collector error: %v", err)
+			slog.Error("Metrics collector error", "component", "sidecar", "err", err)
 		}
 	}()
 
 	// Setup signal handling
 	signal.Notify(s.shutdownChan, syscall.SIGINT, syscall.SIGTERM)
 
-	log.Printf("[Sidecar] Service started successfully, waiting for shutdown signal...")
+	slog.Info("Service started successfully, waiting for shutdown signal...", "component", "sidecar")
 
 	// Wait for shutdown signal
 	sig := <-s.shutdownChan
-	log.Printf("[Sidecar] Received signal: %v, shutting down...", sig)
+	slog.Info("Received signal, shutting down...", "component", "sidecar", "signal", sig)
 
 	return s.shutdown()
 }
@@ -187,7 +190,7 @@ func parseReportInterval(interval string) time.Duration {
 	}
 	d, err := time.ParseDuration(interval)
 	if err != nil {
-		log.Printf("[Sidecar] Invalid report_interval %q, using default 120s", interval)
+		slog.Warn("Invalid report_interval, using default 120s", "component", "sidecar", "interval", interval)
 		return 120 * time.Second
 	}
 	return d
@@ -207,10 +210,10 @@ func (s *Sidecar) buildTunnelConfigs() []sidecar.TunnelConfig {
 				s.config.Tunnel.Domain, s.config.Tunnel.Port,
 				s.config.Tunnel.HopPortStart, s.config.Tunnel.HopPortEnd)
 			if serverURL != "" {
-				log.Printf("[Sidecar] Built k2v5 server URL: %s", serverURL)
+				slog.Info("Built k2v5 server URL", "component", "sidecar", "url", serverURL)
 			}
 		} else if !os.IsNotExist(err) {
-			log.Printf("[Sidecar] Warning: failed to read connect-url.txt: %v", err)
+			slog.Warn("Failed to read connect-url.txt", "component", "sidecar", "err", err)
 		}
 
 		tunnels = append(tunnels, sidecar.TunnelConfig{
@@ -228,9 +231,14 @@ func (s *Sidecar) buildTunnelConfigs() []sidecar.TunnelConfig {
 		if s.config.TestNode {
 			testSuffix = " (test node)"
 		}
-		log.Printf("[Sidecar] K2 tunnel configured: %s:%d, protocol=k2v5, hopPorts=%d-%d%s",
-			s.config.Tunnel.Domain, s.config.Tunnel.Port,
-			s.config.Tunnel.HopPortStart, s.config.Tunnel.HopPortEnd, testSuffix)
+		slog.Info("K2 tunnel configured",
+			"component", "sidecar",
+			"domain", s.config.Tunnel.Domain,
+			"port", s.config.Tunnel.Port,
+			"protocol", "k2v5",
+			"hopPortStart", s.config.Tunnel.HopPortStart,
+			"hopPortEnd", s.config.Tunnel.HopPortEnd,
+			"suffix", testSuffix)
 	}
 
 	// OC tunnel (register if domain is configured, regardless of oc.enabled flag)
@@ -246,7 +254,11 @@ func (s *Sidecar) buildTunnelConfigs() []sidecar.TunnelConfig {
 		if s.config.TestNode {
 			testSuffix = " (test node)"
 		}
-		log.Printf("[Sidecar] OC tunnel configured: %s:%d%s", s.config.OC.Domain, s.config.OC.Port, testSuffix)
+		slog.Info("OC tunnel configured",
+			"component", "sidecar",
+			"domain", s.config.OC.Domain,
+			"port", s.config.OC.Port,
+			"suffix", testSuffix)
 	}
 
 	return tunnels
@@ -286,16 +298,16 @@ func (s *Sidecar) pollAndRegisterK2V5ConnectURL() {
 			}
 
 			if _, err := s.nodeInstance.Register(tunnels); err != nil {
-				log.Printf("[Sidecar] Failed to re-register with k2v5 serverURL: %v", err)
+				slog.Error("Failed to re-register with k2v5 serverURL", "component", "sidecar", "err", err)
 			} else {
-				log.Printf("[Sidecar] Updated k2v5 serverURL: %s", serverURL)
+				slog.Info("Updated k2v5 serverURL", "component", "sidecar", "url", serverURL)
 			}
 			return
 		}
 
 		iteration++
 		if iteration%logEvery == 0 {
-			log.Printf("[Sidecar] Waiting for k2v5 connect-url.txt...")
+			slog.Info("Waiting for k2v5 connect-url.txt...", "component", "sidecar")
 		}
 		time.Sleep(pollInterval)
 	}
@@ -321,7 +333,7 @@ func (s *Sidecar) saveCertificates(result *sidecar.RegisterResult) error {
 			if err := cert.SaveToFiles(kaituCertDir, domainCertFile, domainKeyFile); err != nil {
 				return fmt.Errorf("failed to save K2 cert to %s: %w", kaituCertDir, err)
 			}
-			log.Printf("[Sidecar] Saved K2 certificate: %s/%s", kaituCertDir, domainCertFile)
+			slog.Info("Saved K2 certificate", "component", "sidecar", "dir", kaituCertDir, "file", domainCertFile)
 
 			// Create symlinks or copy to fixed filenames for k2-slave
 			if err := s.linkOrCopyCertificate(kaituCertDir, domainCertFile, "server-cert.pem"); err != nil {
@@ -330,7 +342,7 @@ func (s *Sidecar) saveCertificates(result *sidecar.RegisterResult) error {
 			if err := s.linkOrCopyCertificate(kaituCertDir, domainKeyFile, "server-key.pem"); err != nil {
 				return fmt.Errorf("failed to link K2 key: %w", err)
 			}
-			log.Printf("[Sidecar] Linked K2 certificate to server-cert.pem")
+			slog.Info("Linked K2 certificate to server-cert.pem", "component", "sidecar")
 		}
 
 		// OC tunnel cert -> /etc/ocserv/
@@ -342,7 +354,7 @@ func (s *Sidecar) saveCertificates(result *sidecar.RegisterResult) error {
 			if err := cert.SaveToFiles(ocservDir, domainCertFile, domainKeyFile); err != nil {
 				return fmt.Errorf("failed to save OC cert to %s: %w", ocservDir, err)
 			}
-			log.Printf("[Sidecar] Saved OC certificate: %s/%s", ocservDir, domainCertFile)
+			slog.Info("Saved OC certificate", "component", "sidecar", "dir", ocservDir, "file", domainCertFile)
 
 			// Create symlinks or copy to fixed filenames
 			if err := s.linkOrCopyCertificate(ocservDir, domainCertFile, "server-cert.pem"); err != nil {
@@ -351,7 +363,7 @@ func (s *Sidecar) saveCertificates(result *sidecar.RegisterResult) error {
 			if err := s.linkOrCopyCertificate(ocservDir, domainKeyFile, "server-key.pem"); err != nil {
 				return fmt.Errorf("failed to link OC key: %w", err)
 			}
-			log.Printf("[Sidecar] Linked OC certificate to server-cert.pem")
+			slog.Info("Linked OC certificate to server-cert.pem", "component", "sidecar")
 		}
 	}
 
@@ -370,7 +382,7 @@ func (s *Sidecar) linkOrCopyCertificate(dir, sourceFile, targetFile string) erro
 	// Try to create symlink first
 	if err := os.Symlink(sourceFile, targetPath); err != nil {
 		// Fallback: copy file if symlink fails
-		log.Printf("[Sidecar] Symlink failed, copying instead: %v", err)
+		slog.Warn("Symlink failed, copying instead", "component", "sidecar", "err", err)
 		data, readErr := os.ReadFile(sourcePath)
 		if readErr != nil {
 			return fmt.Errorf("failed to read source file: %w", readErr)
@@ -645,7 +657,7 @@ func (s *Sidecar) generateOcservConfig() error {
 		}
 	}
 
-	log.Printf("[Sidecar] Generated ocserv configuration files in %s", ocservDir)
+	slog.Info("Generated ocserv configuration files", "component", "sidecar", "dir", ocservDir)
 	return nil
 }
 
@@ -665,7 +677,7 @@ func (s *Sidecar) generateConfigFromTemplate(name, tmplStr, outputPath string, d
 		return fmt.Errorf("failed to execute template: %w", err)
 	}
 
-	log.Printf("[Sidecar] Generated config file: %s", outputPath)
+	slog.Info("Generated config file", "component", "sidecar", "path", outputPath)
 	return nil
 }
 
@@ -702,7 +714,7 @@ func (s *Sidecar) downloadCACert(outputPath string) error {
 		return fmt.Errorf("failed to write CA cert file: %w", err)
 	}
 
-	log.Printf("[Sidecar] Downloaded CA certificate to: %s", outputPath)
+	slog.Info("Downloaded CA certificate", "component", "sidecar", "path", outputPath)
 	return nil
 }
 
@@ -715,11 +727,11 @@ func (s *Sidecar) startRadiusProxy() error {
 		Addr:         ":1812",
 	}
 
-	log.Printf("[RADIUS] Starting RADIUS proxy on :1812")
+	slog.Info("Starting RADIUS proxy on :1812", "component", "radius")
 
 	go func() {
 		if err := server.ListenAndServe(); err != nil {
-			log.Printf("[RADIUS] Server error: %v", err)
+			slog.Error("Server error", "component", "radius", "err", err)
 		}
 	}()
 
@@ -734,7 +746,7 @@ func (s *Sidecar) handleRadiusRequest(w radius.ResponseWriter, r *radius.Request
 	password := rfc2865.UserPassword_GetString(r.Packet)
 
 	if rawUDID == "" || password == "" {
-		log.Printf("[RADIUS] Request missing username (udid) or password")
+		slog.Warn("Request missing username (udid) or password", "component", "radius")
 		w.Write(r.Response(radius.CodeAccessReject))
 		return
 	}
@@ -745,38 +757,38 @@ func (s *Sidecar) handleRadiusRequest(w radius.ResponseWriter, r *radius.Request
 	if strings.Contains(rawUDID, "@") {
 		parts := strings.SplitN(rawUDID, "@", 2)
 		udid = parts[0]
-		log.Printf("[RADIUS] Parsed UDID format: %s -> %s (extracted from @-format)", rawUDID, udid)
+		slog.Info("Parsed UDID format", "component", "radius", "raw", rawUDID, "udid", udid)
 	}
 
 	udidPreview := udid
 	if len(udidPreview) > 16 {
 		udidPreview = udidPreview[:16]
 	}
-	log.Printf("[RADIUS] Auth request for udid: %s...", udidPreview)
+	slog.Info("Auth request", "component", "radius", "udid_prefix", udidPreview)
 
 	// Use node.CheckAuth with internal caching
 	success := s.nodeInstance.CheckAuth(udid, password)
 
 	if success {
-		log.Printf("[RADIUS] Authentication successful")
+		slog.Info("Authentication successful", "component", "radius")
 		w.Write(r.Response(radius.CodeAccessAccept))
 	} else {
-		log.Printf("[RADIUS] Authentication failed")
+		slog.Info("Authentication failed", "component", "radius")
 		w.Write(r.Response(radius.CodeAccessReject))
 	}
 }
 
 // shutdown gracefully shuts down the sidecar
 func (s *Sidecar) shutdown() error {
-	log.Printf("[Sidecar] Shutting down...")
+	slog.Info("Shutting down...", "component", "sidecar")
 
 	if err := s.nodeInstance.Unregister(); err != nil {
-		log.Printf("[Sidecar] Warning: Failed to unregister node: %v", err)
+		slog.Warn("Failed to unregister node", "component", "sidecar", "err", err)
 	} else {
-		log.Printf("[Sidecar] Node unregistered successfully")
+		slog.Info("Node unregistered successfully", "component", "sidecar")
 	}
 
-	log.Printf("[Sidecar] Shutdown complete")
+	slog.Info("Shutdown complete", "component", "sidecar")
 	return nil
 }
 

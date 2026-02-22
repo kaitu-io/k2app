@@ -2,7 +2,7 @@ package sidecar
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"net/url"
 	"strings"
 )
@@ -21,7 +21,7 @@ func BuildServerURL(connectURLContent, domain string, port, hopStart, hopEnd int
 	}
 	u, err := url.Parse(connectURLContent)
 	if err != nil {
-		log.Printf("[Sidecar] Warning: failed to parse connect URL: %v", err)
+		slog.Warn("Failed to parse connect URL", "component", "sidecar", "err", err)
 		return ""
 	}
 
