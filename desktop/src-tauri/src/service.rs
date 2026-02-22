@@ -122,40 +122,64 @@ pub fn check_service_version(app_version: &str) -> VersionCheckResult {
     }
 }
 
-/// IPC command: proxy VPN action to k2 daemon
+/// IPC command: proxy VPN action to k2 daemon (non-macOS) or NE bridge (macOS).
+///
+/// On macOS the call is routed through the Swift NE helper static library.
+/// On all other platforms the call goes to the k2 daemon HTTP API at :1777.
 /// Called from webapp as window.__TAURI__.core.invoke('daemon_exec', {action, params})
 #[tauri::command]
 pub async fn daemon_exec(
     action: String,
     params: Option<serde_json::Value>,
 ) -> Result<ServiceResponse, String> {
-    tokio::task::spawn_blocking(move || core_action(&action, params))
-        .await
-        .map_err(|e| format!("Task join error: {}", e))?
+    #[cfg(target_os = "macos")]
+    {
+        tokio::task::spawn_blocking(move || crate::ne::ne_action(&action, params))
+            .await
+            .map_err(|e| format!("Task join error: {}", e))?
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        tokio::task::spawn_blocking(move || core_action(&action, params))
+            .await
+            .map_err(|e| format!("Task join error: {}", e))?
+    }
 }
 
-/// IPC command: get device UDID from daemon
+/// IPC command: get device UDID.
+///
+/// On macOS the hardware UUID is read via `sysctl -n kern.uuid` (no daemon needed).
+/// On other platforms the UDID is fetched from the k2 daemon HTTP API.
 #[tauri::command]
 pub async fn get_udid() -> Result<ServiceResponse, String> {
-    tokio::task::spawn_blocking(|| {
-        let url = format!("{}/api/device/udid", service_base_url());
-        let client = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
-            .no_proxy()
-            .build()
-            .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+    #[cfg(target_os = "macos")]
+    {
+        tokio::task::spawn_blocking(|| crate::ne::get_udid_native())
+            .await
+            .map_err(|e| format!("Task join error: {}", e))?
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        tokio::task::spawn_blocking(|| {
+            let url = format!("{}/api/device/udid", service_base_url());
+            let client = reqwest::blocking::Client::builder()
+                .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
+                .no_proxy()
+                .build()
+                .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
-        let response = client
-            .get(&url)
-            .send()
-            .map_err(|e| format!("Failed to get UDID: {}", e))?;
+            let response = client
+                .get(&url)
+                .send()
+                .map_err(|e| format!("Failed to get UDID: {}", e))?;
 
-        response
-            .json::<ServiceResponse>()
-            .map_err(|e| format!("Failed to parse UDID response: {}", e))
-    })
-    .await
-    .map_err(|e| format!("Task join error: {}", e))?
+            response
+                .json::<ServiceResponse>()
+                .map_err(|e| format!("Failed to parse UDID response: {}", e))
+        })
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
+    }
 }
 
 /// IPC command: get current process PID
@@ -179,7 +203,10 @@ pub async fn admin_reinstall_service() -> Result<String, String> {
 
     #[cfg(target_os = "macos")]
     {
-        admin_reinstall_service_macos().await
+        // On macOS: delegate to NE helper (Swift static library)
+        tokio::task::spawn_blocking(|| crate::ne::admin_reinstall_ne())
+            .await
+            .map_err(|e| format!("Task join error: {}", e))?
     }
 
     #[cfg(target_os = "windows")]
@@ -369,9 +396,31 @@ pub fn wait_for_service(timeout_ms: u64, poll_interval_ms: u64) -> bool {
     false
 }
 
-/// Main entry: ensure service running with correct version
+/// Main entry: ensure service running with correct version.
+///
+/// On macOS this calls `ne::ensure_ne_installed()` which installs the NE
+/// configuration into macOS VPN preferences via the Swift helper library.
+/// On other platforms the existing daemon lifecycle logic is used.
 #[tauri::command]
 pub async fn ensure_service_running(app_version: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        log::info!(
+            "[service] macOS: ensuring NE installed (v{})",
+            app_version
+        );
+        return tokio::task::spawn_blocking(|| crate::ne::ensure_ne_installed())
+            .await
+            .map_err(|e| format!("spawn_blocking failed: {}", e))?;
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    ensure_service_running_daemon(app_version).await
+}
+
+/// Daemon-based service lifecycle (non-macOS): ping → version check → install.
+#[cfg(not(target_os = "macos"))]
+async fn ensure_service_running_daemon(app_version: String) -> Result<(), String> {
     const POST_INSTALL_WAIT_MS: u64 = 5000;
     const PRE_INSTALL_WAIT_MS: u64 = 8000;
     const POLL_MS: u64 = 500;
@@ -456,6 +505,35 @@ pub async fn ensure_service_running(app_version: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Test: daemon_exec non-macOS path calls core_action (existing behavior).
+    // On non-macOS platforms daemon_exec routes to core_action (daemon HTTP path).
+    // We verify by calling it with no daemon running — expects an Err from HTTP.
+    #[tokio::test]
+    async fn test_daemon_exec_non_macos() {
+        #[cfg(not(target_os = "macos"))]
+        {
+            let result = daemon_exec("status".to_string(), None).await;
+            assert!(
+                result.is_err(),
+                "daemon_exec should Err when no daemon is running (non-macOS path)"
+            );
+            let err_msg = result.unwrap_err();
+            assert!(
+                err_msg.contains("Failed to call action")
+                    || err_msg.contains("connection refused")
+                    || err_msg.contains("os error"),
+                "error should indicate HTTP connection failure: {}",
+                err_msg
+            );
+        }
+        #[cfg(target_os = "macos")]
+        {
+            // On macOS daemon_exec calls ne_action; test just verifies no panic
+            let result = daemon_exec("status".to_string(), None).await;
+            let _ = result;
+        }
+    }
 
     #[test]
     fn test_versions_match_identical() {
@@ -547,5 +625,73 @@ mod tests {
             InstallAction::Needed { .. } => {}
             InstallAction::NotNeeded => panic!("Expected Needed, got NotNeeded"),
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // REFACTOR [MUST] 1: ServiceResponse format is identical across NE and daemon paths
+    // -----------------------------------------------------------------------
+    // Both paths return the same ServiceResponse struct {code: i32, message: String, data: Value}.
+    // The shared struct definition enforces this at compile time. This test verifies
+    // that a ServiceResponse can be deserialized from both styles of JSON payload:
+    // - With data field (NE path, daemon v2+)
+    // - Without data field (old daemon — serde(default) = null)
+    #[test]
+    fn test_refactor_service_response_format_identical_across_paths() {
+        // NE path: always includes data field
+        let with_data = r#"{"code":0,"message":"ok","data":{"state":"disconnected"}}"#;
+        let resp_with: ServiceResponse = serde_json::from_str(with_data).unwrap();
+        assert_eq!(resp_with.code, 0);
+        assert_eq!(resp_with.message, "ok");
+        assert!(resp_with.data.get("state").is_some());
+
+        // Daemon path: may omit data field → defaults to null
+        let without_data = r#"{"code":0,"message":"ok"}"#;
+        let resp_without: ServiceResponse = serde_json::from_str(without_data).unwrap();
+        assert_eq!(resp_without.code, 0);
+        assert_eq!(resp_without.message, "ok");
+        assert!(resp_without.data.is_null(), "missing data should default to null");
+
+        // Error response: code != 0
+        let error_resp = r#"{"code":503,"message":"server unreachable","data":null}"#;
+        let resp_error: ServiceResponse = serde_json::from_str(error_resp).unwrap();
+        assert_eq!(resp_error.code, 503);
+        assert!(!resp_error.message.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // REFACTOR [MUST] 2: get_pid returns Tauri app's own PID (not daemon PID)
+    // -----------------------------------------------------------------------
+    #[test]
+    fn test_refactor_get_pid_returns_own_process_id() {
+        let pid = get_pid();
+        // get_pid() must return std::process::id() — the current process PID
+        assert_eq!(pid, std::process::id(), "get_pid() should return own process PID");
+        // PID must be non-zero (the kernel never assigns PID 0 to user processes)
+        assert!(pid > 0, "PID should be positive");
+    }
+
+    // -----------------------------------------------------------------------
+    // REFACTOR [MUST] 3: ServiceResponse is shared — ne.rs imports from service
+    // -----------------------------------------------------------------------
+    // This is verified at compile time: ne.rs uses `crate::service::ServiceResponse`.
+    // The test below confirms the struct is publicly accessible and the fields align.
+    #[test]
+    fn test_refactor_service_response_shared_type() {
+        // Construct a ServiceResponse as ne.rs would (same type, same fields)
+        let resp = ServiceResponse {
+            code: 0,
+            message: "ok".into(),
+            data: serde_json::json!({ "version": "0.4.0", "os": "macos" }),
+        };
+        // Serialize to JSON and verify the canonical {code, message, data} shape
+        let json = serde_json::to_string(&resp).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(parsed.get("code").is_some(), "must have 'code' field");
+        assert!(parsed.get("message").is_some(), "must have 'message' field");
+        assert!(parsed.get("data").is_some(), "must have 'data' field");
+        // Verify round-trip
+        let round_tripped: ServiceResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(round_tripped.code, resp.code);
+        assert_eq!(round_tripped.message, resp.message);
     }
 }
