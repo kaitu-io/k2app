@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -18,18 +18,37 @@ import (
 // configPath is the -c flag value (empty = auto-search).
 // This is the main entry point when the binary is invoked with no subcommand.
 func runDaemon(configPath string) {
+	// Phase 1: Set up logging with defaults before config is loaded so that any
+	// early errors are captured with structured logging.
+	cleanup, err := config.SetupLogging(config.LogConfig{}, "k2")
+	if err != nil {
+		slog.Error("Failed to set up default logging", "err", err)
+		os.Exit(1)
+	}
+	defer cleanup()
+
 	// 1. Load config.
 	cfg, cfgPathUsed, err := loadOrDefaultConfig(configPath)
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		slog.Error("Failed to load config", "err", err)
+		os.Exit(1)
 	}
 	if cfgPathUsed != "" {
-		log.Printf("Using config: %s", cfgPathUsed)
+		slog.Info("Using config", "path", cfgPathUsed)
 	}
+
+	// Phase 2: Re-configure logging with the settings from the loaded config.
+	cleanup2, err := config.SetupLogging(cfg.Log, "k2")
+	if err != nil {
+		slog.Error("Failed to set up logging from config", "err", err)
+		os.Exit(1)
+	}
+	defer cleanup2()
 
 	// 2. Validate config.
 	if err := config.ValidateClient(cfg); err != nil {
-		log.Fatalf("Config validation failed: %v", err)
+		slog.Error("Config validation failed", "err", err)
+		os.Exit(1)
 	}
 
 	// 3. Determine PID file path and check for stale/running instance.
@@ -37,27 +56,30 @@ func runDaemon(configPath string) {
 	if pidPath != "" {
 		stalePID, err := config.CheckStale(pidPath)
 		if err != nil {
-			log.Fatalf("PID file error: %v", err)
+			slog.Error("PID file error", "err", err)
+			os.Exit(1)
 		}
 		if stalePID > 0 {
-			log.Printf("Removed stale PID file (was PID %d)", stalePID)
+			slog.Info("Removed stale PID file", "pid", stalePID)
 		}
 		// Check if daemon is already running.
 		existingPID, err := config.ReadPID(pidPath)
 		if err == nil && existingPID > 0 && config.IsProcessAlive(existingPID) {
-			log.Fatalf("k2 is already running (PID %d)", existingPID)
+			slog.Error("k2 is already running", "pid", existingPID)
+			os.Exit(1)
 		}
 
 		// Write our PID.
 		if err := config.WritePID(pidPath); err != nil {
-			log.Fatalf("Failed to write PID: %v", err)
+			slog.Error("Failed to write PID", "err", err)
+			os.Exit(1)
 		}
 		defer config.RemovePID(pidPath)
 	}
 
 	// 4. Platform setup.
 	if _, err := wintun.EnsureExtracted(); err != nil {
-		log.Printf("wintun: %v", err)
+		slog.Info("wintun", "err", err)
 	}
 	daemon.ApplyResourceLimits()
 
@@ -80,14 +102,14 @@ func runDaemon(configPath string) {
 		for sig := range sigCh {
 			switch sig {
 			case syscall.SIGHUP:
-				log.Println("Received SIGHUP, reloading config...")
+				slog.Info("Received SIGHUP, reloading config...")
 				if err := d.Reload(); err != nil {
-					log.Printf("Reload failed: %v", err)
+					slog.Error("Reload failed", "err", err)
 				} else {
-					log.Println("Config reloaded")
+					slog.Info("Config reloaded")
 				}
 			default:
-				log.Println("Shutting down...")
+				slog.Info("Shutting down...")
 				cancel()
 				return
 			}
@@ -99,7 +121,8 @@ func runDaemon(configPath string) {
 
 	// 9. Run daemon (blocks until shutdown).
 	if err := d.Run(ctx, listenAddr); err != nil && err != context.Canceled {
-		log.Fatalf("Daemon error: %v", err)
+		slog.Error("Daemon error", "err", err)
+		os.Exit(1)
 	}
 }
 

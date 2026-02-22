@@ -2,14 +2,15 @@ package main
 
 import (
 	"bytes"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-// captureStderr redirects log output and stderr to a buffer for the duration of f.
+// captureStderr redirects os.Stderr to a buffer for the duration of f.
+// Since the package now uses slog (which writes to os.Stderr by default),
+// this captures slog output by redirecting the underlying file descriptor.
 func captureStderr(f func()) string {
 	var buf bytes.Buffer
 	old := os.Stderr
@@ -17,16 +18,10 @@ func captureStderr(f func()) string {
 	r, w, _ := os.Pipe()
 	os.Stderr = w
 
-	log.SetOutput(w)
-	oldFlags := log.Flags()
-	log.SetFlags(0)
-
 	f()
 
 	w.Close()
 	os.Stderr = old
-	log.SetOutput(os.Stderr)
-	log.SetFlags(oldFlags)
 
 	buf.ReadFrom(r)
 	return buf.String()
@@ -125,4 +120,3 @@ func TestSignalStop_StalePID(t *testing.T) {
 		t.Error("expected stale PID file to be removed")
 	}
 }
-
