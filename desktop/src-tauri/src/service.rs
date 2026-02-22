@@ -397,4 +397,73 @@ mod tests {
         // Should not crash even if service doesn't exist
         let _ = detect_old_kaitu_service();
     }
+
+    // --- should_install decision logic tests ---
+
+    #[test]
+    fn test_should_install_version_match() {
+        let result = should_install(&VersionCheckResult::VersionMatch, None);
+        assert_eq!(result, InstallAction::NotNeeded);
+    }
+
+    #[test]
+    fn test_should_install_mismatch_immediate() {
+        let initial = VersionCheckResult::VersionMismatch {
+            service_version: "0.3.0".to_string(),
+            app_version: "0.4.0".to_string(),
+        };
+        let result = should_install(&initial, None);
+        match result {
+            InstallAction::Needed { reason } => {
+                assert!(reason.contains("mismatch"), "reason should mention mismatch: {}", reason);
+            }
+            InstallAction::NotNeeded => panic!("Expected Needed, got NotNeeded"),
+        }
+    }
+
+    #[test]
+    fn test_should_install_not_running_then_match() {
+        let initial = VersionCheckResult::ServiceNotRunning;
+        let post_wait = VersionCheckResult::VersionMatch;
+        let result = should_install(&initial, Some(&post_wait));
+        assert_eq!(result, InstallAction::NotNeeded);
+    }
+
+    #[test]
+    fn test_should_install_not_running_then_mismatch() {
+        let initial = VersionCheckResult::ServiceNotRunning;
+        let post_wait = VersionCheckResult::VersionMismatch {
+            service_version: "0.3.0".to_string(),
+            app_version: "0.4.0".to_string(),
+        };
+        let result = should_install(&initial, Some(&post_wait));
+        match result {
+            InstallAction::Needed { .. } => {}
+            InstallAction::NotNeeded => panic!("Expected Needed, got NotNeeded"),
+        }
+    }
+
+    #[test]
+    fn test_should_install_not_running_wait_timeout() {
+        // post_wait=None means wait_for_service timed out
+        let initial = VersionCheckResult::ServiceNotRunning;
+        let result = should_install(&initial, None);
+        match result {
+            InstallAction::Needed { reason } => {
+                assert!(reason.len() > 0, "reason should not be empty");
+            }
+            InstallAction::NotNeeded => panic!("Expected Needed, got NotNeeded"),
+        }
+    }
+
+    #[test]
+    fn test_should_install_not_running_then_still_not_running() {
+        let initial = VersionCheckResult::ServiceNotRunning;
+        let post_wait = VersionCheckResult::ServiceNotRunning;
+        let result = should_install(&initial, Some(&post_wait));
+        match result {
+            InstallAction::Needed { .. } => {}
+            InstallAction::NotNeeded => panic!("Expected Needed, got NotNeeded"),
+        }
+    }
 }
