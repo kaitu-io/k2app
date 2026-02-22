@@ -40,7 +40,7 @@ func isUsableInterface(iface *net.Interface) bool {
 	}
 	// Skip TUN and WireGuard interfaces.
 	name := iface.Name
-	for _, prefix := range []string{"utun", "tun", "wg", "docker", "br-", "veth"} {
+	for _, prefix := range []string{"utun", "tun", "k2tun", "wg", "docker", "br-", "veth"} {
 		if len(name) >= len(prefix) && name[:len(prefix)] == prefix {
 			return false
 		}

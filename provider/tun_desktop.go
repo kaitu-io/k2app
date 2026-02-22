@@ -5,24 +5,48 @@ package provider
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/netip"
 	"runtime"
+	"time"
 
 	"github.com/sagernet/sing-tun"
 )
 
 // defaultTunName returns a platform-appropriate TUN device name.
-// sing-tun v0.7.11 on macOS requires a non-empty Name matching "utun%d" format
-// when FileDescriptor == 0; the kernel auto-allocates the next available index.
+// On macOS, sing-tun connects to the utun kernel control with Unit = ifIndex + 1,
+// which requests a specific utun device. We scan existing interfaces to find an
+// unused index, avoiding conflicts with system utun devices (iCloud Relay, etc.).
 func defaultTunName() string {
 	switch runtime.GOOS {
 	case "darwin":
-		return "utun0"
+		return nextAvailableUtun()
 	case "linux":
-		return "tun0"
+		return "k2tun"
 	default: // windows
-		return "sing-tun"
+		return "k2tun"
 	}
+}
+
+// nextAvailableUtun finds the lowest unused utun index on macOS.
+func nextAvailableUtun() string {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return "utun198"
+	}
+	used := make(map[int]bool)
+	for _, iface := range ifaces {
+		var idx int
+		if _, err := fmt.Sscanf(iface.Name, "utun%d", &idx); err == nil {
+			used[idx] = true
+		}
+	}
+	for i := 0; i < 256; i++ {
+		if !used[i] {
+			return fmt.Sprintf("utun%d", i)
+		}
+	}
+	return "utun198"
 }
 
 // TUNProvider creates a TUN device and runs a sing-tun stack for L3→L4 conversion.
@@ -89,6 +113,7 @@ func (p *TUNProvider) Start(ctx context.Context, handler ConnectionHandler) erro
 		Context:    ctx,
 		Tun:        tunIf,
 		TunOptions: tunOpts,
+		UDPTimeout: 5 * time.Minute,
 		Handler:    &handlerAdapter{handler: handler},
 	})
 	if err != nil {

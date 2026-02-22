@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"net/netip"
+	"time"
 
 	"github.com/sagernet/sing-tun"
 )
@@ -56,6 +57,7 @@ func (p *TUNProvider) Start(ctx context.Context, handler ConnectionHandler) erro
 		Context:    ctx,
 		Tun:        tunIf,
 		TunOptions: tunOpts,
+		UDPTimeout: 5 * time.Minute,
 		Handler:    &handlerAdapter{handler: handler},
 	})
 	if err != nil {
