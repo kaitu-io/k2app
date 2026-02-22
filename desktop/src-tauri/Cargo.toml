@@ -27,5 +27,12 @@ dirs = "5"
 [features]
 mcp-bridge = ["dep:tauri-plugin-mcp-bridge"]
 
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+panic = "abort"
+opt-level = "s"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

@@ -8,7 +8,7 @@ pre-build:
 build-k2:
 	cd k2 && go generate ./wintun/ ./cloud/
 	cd k2 && go build -tags nowebapp \
-		-ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT)" \
+		-ldflags "-s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)" \
 		-o ../desktop/src-tauri/binaries/k2-$(TARGET) ./cmd/k2
 
 build-webapp:
