@@ -78,8 +78,7 @@ func ctlUp(args []string) {
 	client := daemon.NewClient(daemon.DefaultAddr)
 	resp, err := client.Do("up", params)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: cannot reach daemon at %s (%v)\n", daemon.DefaultAddr, err)
-		fmt.Fprintf(os.Stderr, "Is the daemon running? Start it with: k2\n")
+		fmt.Fprint(os.Stderr, daemonNotRunningHint())
 		os.Exit(1)
 	}
 
@@ -132,8 +131,7 @@ func ctlDown(args []string) {
 	client := daemon.NewClient(daemon.DefaultAddr)
 	resp, err := client.Do("down", nil)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: cannot reach daemon at %s (%v)\n", daemon.DefaultAddr, err)
-		fmt.Fprintf(os.Stderr, "Is the daemon running? Start it with: k2\n")
+		fmt.Fprint(os.Stderr, daemonNotRunningHint())
 		os.Exit(1)
 	}
 
@@ -152,7 +150,7 @@ func ctlStatus(args []string) {
 	client := daemon.NewClient(daemon.DefaultAddr)
 	resp, err := client.Do("status", nil)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: cannot reach daemon (%v)\n", err)
+		fmt.Fprint(os.Stderr, daemonNotRunningHint())
 		os.Exit(1)
 	}
 
