@@ -95,6 +95,13 @@ mobile-ios: mobile-deps
 	mkdir -p k2/build
 	cd k2 && gomobile bind -target=ios -o build/K2Mobile.xcframework ./mobile/
 
+mobile-macos: mobile-deps
+	mkdir -p k2/build
+	cd k2 && gomobile bind -target=macos -o build/K2MobileMacOS.xcframework ./mobile/
+
+build-macos-ne-lib: mobile-macos
+	@echo "macOS NE xcframework ready: k2/build/K2MobileMacOS.xcframework"
+
 mobile-android: mobile-deps
 	mkdir -p k2/build
 	cd k2 && gomobile bind -target=android -o build/k2mobile.aar -androidapi 24 ./mobile/
