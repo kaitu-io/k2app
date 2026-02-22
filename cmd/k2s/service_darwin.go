@@ -21,6 +21,8 @@ func k2sPlistPath() string {
 // installService installs k2s as a launchd daemon and starts it.
 // The ProgramArguments array contains only the executable path — the binary
 // itself is the foreground server process (nginx-style).
+// Log output is handled by Go-level logging (lumberjack); launchd log
+// redirection (StandardOutPath/StandardErrorPath) is intentionally omitted.
 func installService() error {
 	exe, err := os.Executable()
 	if err != nil {
@@ -30,9 +32,6 @@ func installService() error {
 	if err != nil {
 		return fmt.Errorf("resolve path: %w", err)
 	}
-
-	logDir := "/tmp/k2s"
-	os.MkdirAll(logDir, 0755)
 
 	plist := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -48,13 +47,9 @@ func installService() error {
     <true/>
     <key>KeepAlive</key>
     <true/>
-    <key>StandardOutPath</key>
-    <string>%s/k2s.log</string>
-    <key>StandardErrorPath</key>
-    <string>%s/k2s.log</string>
 </dict>
 </plist>
-`, k2sServiceLabel, exe, logDir, logDir)
+`, k2sServiceLabel, exe)
 
 	if err := os.WriteFile(k2sPlistPath(), []byte(plist), 0644); err != nil {
 		return fmt.Errorf("write plist: %w", err)

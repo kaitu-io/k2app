@@ -19,8 +19,9 @@ func plistPath() string {
 }
 
 // plistContent generates the launchd plist XML for the daemon service.
+// Log output is handled by Go-level logging (lumberjack); launchd log
+// redirection (StandardOutPath/StandardErrorPath) is intentionally omitted.
 func plistContent(label, exe string) string {
-	logDir := "/tmp/k2"
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -51,13 +52,9 @@ func plistContent(label, exe string) string {
     </dict>
     <key>ThrottleInterval</key>
     <integer>2</integer>
-    <key>StandardOutPath</key>
-    <string>%s/k2.log</string>
-    <key>StandardErrorPath</key>
-    <string>%s/k2.log</string>
 </dict>
 </plist>
-`, label, exe, logDir, logDir)
+`, label, exe)
 }
 
 func installService() error {
@@ -72,8 +69,6 @@ func installService() error {
 
 	// Unload existing service first (ignore errors if not loaded).
 	exec.Command("launchctl", "unload", plistPath()).Run()
-
-	os.MkdirAll("/tmp/k2", 0755)
 
 	if err := os.WriteFile(plistPath(), []byte(plistContent(serviceLabel, exe)), 0644); err != nil {
 		return fmt.Errorf("write plist: %w", err)
