@@ -6,9 +6,9 @@
 |-----------|------------------------------------------|
 | Feature   | macos-network-extension                  |
 | Version   | v1                                       |
-| Status    | draft                                    |
+| Status    | implemented                              |
 | Created   | 2026-02-23                               |
-| Updated   | 2026-02-23 (v1.1)                        |
+| Updated   | 2026-02-23 (v1.1 implemented)            |
 | Depends   | mobile-vpn-ios (implemented), tauri-desktop-bridge (implemented), network-change-reconnect (implemented) |
 
 ## Version History
