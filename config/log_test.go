@@ -41,6 +41,29 @@ func TestDefaultLogPath_User(t *testing.T) {
 	}
 }
 
+// TestSetupLogging_DefaultCreatesFile verifies that empty output auto-detects
+// and creates a log file via DefaultLogPath.
+func TestSetupLogging_DefaultCreatesFile(t *testing.T) {
+	// Use empty config — should auto-detect log path and create a file.
+	cfg := LogConfig{} // Output is empty
+	cleanup, err := SetupLogging(cfg, "k2")
+	if err != nil {
+		t.Fatalf("SetupLogging with empty config: %v", err)
+	}
+	defer cleanup()
+
+	// The auto-detected path should be a real file path (not "stderr" or "stdout").
+	logPath := DefaultLogPath("k2")
+	slog.Info("test auto-detect message")
+	cleanup()
+
+	if _, err := os.Stat(logPath); os.IsNotExist(err) {
+		t.Errorf("auto-detected log file %q was not created", logPath)
+	}
+	// Clean up the auto-created file so tests don't leave artifacts.
+	os.Remove(logPath)
+}
+
 // TestSetupLogging_Stderr verifies that output:"stderr" configures slog to use stderr.
 func TestSetupLogging_Stderr(t *testing.T) {
 	cfg := LogConfig{Level: "info", Output: "stderr"}

@@ -98,7 +98,7 @@ func SetupLogging(cfg LogConfig, name string) (func(), error) {
 
 	output := cfg.Output
 	if output == "" {
-		output = "stderr"
+		output = DefaultLogPath(name)
 	}
 
 	// Save the previous default handler so cleanup can restore it.
