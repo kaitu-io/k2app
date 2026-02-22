@@ -5,8 +5,8 @@
 | Field     | Value                                    |
 |-----------|------------------------------------------|
 | Feature   | k2-cli-redesign                          |
-| Version   | v1                                       |
-| Status    | implemented                              |
+| Version   | v2                                       |
+| Status    | in-progress                              |
 | Created   | 2026-02-21                               |
 | Updated   | 2026-02-22                               |
 
@@ -15,6 +15,7 @@
 | Version | Date       | Summary                                              |
 |---------|------------|------------------------------------------------------|
 | v1      | 2026-02-21 | Initial: nginx 风格 CLI 重构 (k2 + k2s)              |
+| v2      | 2026-02-22 | `k2 ctl` 平台感知错误提示（scrum 决议，否决 auto 行为）|
 
 ## Overview
 
@@ -188,6 +189,72 @@ WantedBy=multi-user.target
 ```
 
 注意：不再有 `run --foreground`，因为二进制本身就是前台。服务模板直接调 `k2` / `k2s`。
+
+### TD8: `k2 ctl` 平台感知错误提示（v2 新增）
+
+**问题**: v1 的 `k2 ctl up` 在 daemon 未运行时打印通用错误 `"Is the daemon running? Start it with: k2"`，用户无法区分是 service 没装还是没启动，也不知道平台对应的操作命令。
+
+**Scrum 决议（2026-02-22）**: 对三个合并提议逐一辩论后，全部否决自动行为：
+
+| 提议 | 裁定 | 理由 |
+|------|------|------|
+| `ctl up` 合并 `service install` | ❌ 否决 | 权限升级（需 root）、隐式副作用、`k2 setup` 已覆盖 |
+| `ctl down` 合并 `service uninstall` | ❌ 否决 | 语义错误（断连≠卸载）、破坏开机自启、频繁 up/down 场景灾难 |
+| `ctl up` 自动 `service start` | ❌ 否决（二次审议） | service start 某些平台也需 root；增加复杂度（IsInstalled/Start/重试）；清晰提示更符合 Unix 哲学 |
+
+**最终方案**: 不加任何自动行为，改善错误信息——根据平台给出精确的 next step 命令。
+
+**错误提示设计**:
+
+```
+k2 ctl up（daemon 未运行时）:
+
+  macOS:
+    Error: daemon not running
+
+      First time?    k2 setup <URL>
+      Already set up? sudo launchctl start kaitu
+
+  Linux:
+    Error: daemon not running
+
+      First time?    k2 setup <URL>
+      Already set up? sudo systemctl start k2
+
+  Windows:
+    Error: daemon not running
+
+      First time?    k2 setup <URL>
+      Already set up? sc start k2
+```
+
+`k2 ctl down` 和 `k2 ctl status` 同理，daemon 不可达时打印平台相关提示。
+
+**设计原则**:
+- `ctl` 命令永远只做一件事：IPC 通信。行为完全可预测
+- 不需要 `--no-autostart` flag（没有自动行为）
+- 不需要新增 `IsInstalled()` / `Start()` 方法
+- 错误提示通过编译时 build tag 选择平台对应文案（`ctl_hint_darwin.go`、`ctl_hint_linux.go`、`ctl_hint_windows.go`）
+
+**交互模型总结**:
+
+```
+首次使用:
+  k2 setup <URL>              → 生成配置 + install service + start + connect
+
+日常使用:
+  k2 ctl up [URL|config]      → IPC 连接（daemon 必须已运行）
+  k2 ctl down                 → disconnect (service stays running)
+  k2 ctl status               → show state
+
+运维管理:
+  k2 service install           → 注册系统服务
+  k2 service uninstall         → 卸载系统服务
+
+开发调试:
+  k2 (no args)                 → 前台 daemon
+  k2 ctl up --pid <PID>       → 跟随进程生命周期
+```
 
 ## Design
 
@@ -492,9 +559,11 @@ $ k2 run
 
 ### AC7: ctl 命令
 - `k2 ctl up <url>` 通过 IPC 连接 VPN，行为等价原 `k2 up <url>`
-- `k2 ctl down` 等价原 `k2 down`
+- `k2 ctl down` 等价原 `k2 down`（仅断开隧道，daemon 保持运行）
 - `k2 ctl status` 等价原 `k2 status`
-- daemon 未运行时给出明确错误（不再自动安装）
+- daemon 不可达时打印平台感知的错误提示（含 `k2 setup` 引导 + 平台对应的 service start 命令）
+- 错误提示通过 build tag 区分平台（macOS: `launchctl start`、Linux: `systemctl start`、Windows: `sc start`）
+- 不含任何自动 start/install 行为——ctl 只做 IPC 通信
 
 ### AC8: service 管理
 - `k2 service install` 在当前平台安装系统服务（systemd/launchd/SC）
