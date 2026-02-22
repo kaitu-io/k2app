@@ -177,49 +177,14 @@ pub fn get_platform_info() -> serde_json::Value {
 pub async fn admin_reinstall_service() -> Result<String, String> {
     log::info!("[service] Admin service install requested");
 
-    #[cfg(target_os = "macos")]
-    {
-        admin_reinstall_service_macos().await
-    }
-
     #[cfg(target_os = "windows")]
     {
         admin_reinstall_service_windows().await
     }
 
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(not(target_os = "windows"))]
     {
         Err("Not supported on this platform".to_string())
-    }
-}
-
-#[cfg(target_os = "macos")]
-async fn admin_reinstall_service_macos() -> Result<String, String> {
-    let service_path = "/Applications/Kaitu.app/Contents/MacOS/k2";
-    if !std::path::Path::new(service_path).exists() {
-        return Err(format!("Service not found: {}", service_path));
-    }
-
-    let script = format!(
-        r#"do shell script "{} service install" with administrator privileges"#,
-        service_path
-    );
-
-    let output = Command::new("osascript")
-        .arg("-e")
-        .arg(&script)
-        .output()
-        .map_err(|e| format!("osascript failed: {}", e))?;
-
-    if output.status.success() {
-        Ok("Service installed and started".to_string())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if stderr.contains("User canceled") || stderr.contains("-128") {
-            Err("User cancelled".to_string())
-        } else {
-            Err(format!("Failed: {}", stderr))
-        }
     }
 }
 

@@ -96,6 +96,7 @@ Makefile             Build orchestration — version from package.json, k2 from 
 - **Website pages are Server Components + force-static**: `web/` public pages use `async` Server Components with `export const dynamic = 'force-static'`. Never add `"use client"` to route-level pages in `web/src/app/[locale]/`. Interactive sub-components use Client Component composition. See `web/CLAUDE.md` for conventions.
 - **Website namespace registry**: Adding a new `messages/{locale}/*.json` file in `web/` requires adding the namespace name to `web/messages/namespaces.ts`. Missing entry = silent key passthrough.
 - **Website routing in locale components**: Use `usePathname` and `Link` from `@/i18n/routing` (NOT `next/navigation`/`next/link`) inside `web/src/app/[locale]/` and `web/src/components/`.
+- **macOS NE mode**: On macOS, VPN is managed via Network Extension — no k2 daemon process. `daemon_exec` IPC routes to `ne_action()` in `ne.rs` via `#[cfg(target_os = "macos")]`. Windows/Linux keep daemon HTTP at :1777. The `admin_reinstall_service_macos()` function was removed (dead code since T3 routes macOS to `ne::admin_reinstall_ne()`).
 
 ## Tech Stack
 
@@ -138,6 +139,10 @@ Makefile             Build orchestration — version from package.json, k2 from 
 - **kaitu-ops-mcp** — MCP server for AI-driven node operations (`tools/kaitu-ops-mcp/`). TypeScript + `@modelcontextprotocol/sdk`. Two tools: `list_nodes` (Center API discovery via `X-Access-Key`) + `exec_on_node` (SSH direct to nodes). stdout redaction runs on every response.
 - **kaitu-node-ops skill** — Claude Code skill file (`.claude/skills/kaitu-node-ops.md`). Dual-architecture identification (k2v5 vs k2-slave), container dependency chain, `.env` variables, standard ops table, 7 safety guardrails. Activated by triggers: "node ops", "k2v5", "exec on node", etc.
 - **redactStdout()** — MCP server function (`tools/kaitu-ops-mcp/src/redact.ts`). Strips env-var-style secrets (`KEY_NAME=[REDACTED]`) and 64-char hex strings from SSH stdout before returning to Claude. Technical security backstop for accidental secret exposure.
+- **KaituTunnel.appex** — macOS NE App Extension containing PacketTunnelProvider + gomobile engine. Lives in `Kaitu.app/Contents/PlugIns/`. Communicates with main app via NEVPNManager + `sendProviderMessage`.
+- **libk2_ne_helper.a** — Swift static library wrapping NEVPNManager for C FFI. Exposes `k2ne_install` / `k2ne_start` / `k2ne_stop` / `k2ne_status` / `k2ne_reinstall` / `k2ne_set_state_callback`. Returns ServiceResponse JSON strings.
+- **ne.rs** — Rust NE bridge module (`desktop/src-tauri/src/ne.rs`, macOS only). Routes `daemon_exec` IPC to Swift NE helper via C FFI. Replaces `ensure_service_running` with `ensure_ne_installed` on macOS.
+- **ensure_ne_installed** — macOS startup: installs NE VPN profile via `k2ne_install()`. Replaces `ensure_service_running` (which does daemon ping + version check + osascript install). No daemon process required on macOS.
 
 ## Layer Docs (read on demand)
 
