@@ -52,6 +52,21 @@ lipo -create \
 chmod +x "$K2_BIN_DIR/k2-universal-apple-darwin"
 echo "Created universal binary: $K2_BIN_DIR/k2-universal-apple-darwin"
 
+# --- Build gomobile macOS xcframework ---
+echo ""
+echo "--- Building gomobile macOS xcframework ---"
+make mobile-macos
+
+# --- Build libk2_ne_helper.a ---
+echo ""
+echo "--- Building NE helper static library ---"
+cd "$ROOT_DIR/desktop/src-tauri/ne_helper"
+bash build.sh universal
+cd "$ROOT_DIR"
+
+# Set env var for Rust build.rs to find the library
+export NE_HELPER_LIB_DIR="$ROOT_DIR/desktop/src-tauri/ne_helper"
+
 # --- Tauri build (universal binary) ---
 echo ""
 echo "--- Building Tauri app (universal-apple-darwin) ---"
@@ -72,6 +87,55 @@ if [ ! -d "$APP_PATH" ]; then
   exit 1
 fi
 echo "Found app bundle: $APP_PATH"
+
+# --- Build and inject KaituTunnel.appex ---
+echo ""
+echo "--- Building KaituTunnel.appex ---"
+APPEX_BUILD_DIR=$(mktemp -d /tmp/kaitu-appex.XXXXXX)
+APPEX_DIR="$APPEX_BUILD_DIR/KaituTunnel.appex/Contents/MacOS"
+mkdir -p "$APPEX_DIR"
+
+XCFW_PATH="$ROOT_DIR/k2/build/K2MobileMacOS.xcframework"
+MACOS_SDK_PATH=$(xcrun --show-sdk-path --sdk macosx)
+
+# Compile PacketTunnelProvider.swift → KaituTunnel executable
+swiftc \
+  -emit-executable \
+  -module-name KaituTunnel \
+  -sdk "$MACOS_SDK_PATH" \
+  -target arm64-apple-macos12 \
+  -F "$XCFW_PATH" \
+  -framework K2MobileMacOS \
+  "$ROOT_DIR/desktop/src-tauri/KaituTunnel/PacketTunnelProvider.swift" \
+  -o "$APPEX_DIR/KaituTunnel"
+
+# Copy Info.plist into appex bundle
+cp "$ROOT_DIR/desktop/src-tauri/KaituTunnel/Info.plist" \
+   "$APPEX_BUILD_DIR/KaituTunnel.appex/Contents/"
+
+# Install appex into .app bundle PlugIns directory
+mkdir -p "$APP_PATH/Contents/PlugIns"
+cp -R "$APPEX_BUILD_DIR/KaituTunnel.appex" "$APP_PATH/Contents/PlugIns/"
+
+# Determine signing identity (use env var or well-known default)
+SIGN_IDENTITY="${APPLE_SIGNING_IDENTITY:-Developer ID Application: ALL NATION CONNECT TECHNOLOGY PTE. LTD. (NJT954Q3RH)}"
+
+# Codesign the appex with its own entitlements
+echo "--- Codesigning KaituTunnel.appex ---"
+codesign --force --sign "$SIGN_IDENTITY" \
+  --entitlements "$ROOT_DIR/desktop/src-tauri/KaituTunnel/KaituTunnel.entitlements" \
+  --options runtime \
+  "$APP_PATH/Contents/PlugIns/KaituTunnel.appex"
+
+# Re-codesign main app (deep) now that PlugIns directory has changed
+echo "--- Re-codesigning main app (deep) after PlugIns injection ---"
+codesign --force --sign "$SIGN_IDENTITY" \
+  --entitlements "$ROOT_DIR/desktop/src-tauri/entitlements.plist" \
+  --options runtime \
+  --deep "$APP_PATH"
+
+rm -rf "$APPEX_BUILD_DIR"
+echo "KaituTunnel.appex injected into $APP_PATH/Contents/PlugIns/"
 
 # --- Verify codesign ---
 echo ""
