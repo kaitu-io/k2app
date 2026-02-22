@@ -301,6 +301,57 @@ pub fn cleanup_old_kaitu_service() {
     }
 }
 
+/// Decision outcome for whether admin reinstall is needed.
+#[derive(Debug, Clone, PartialEq)]
+pub enum InstallAction {
+    NotNeeded,
+    Needed { reason: String },
+}
+
+/// Pure decision function: given initial check + optional post-wait check,
+/// determine whether admin install is needed.
+///
+/// - `VersionMatch` initial → NotNeeded (no wait needed)
+/// - `VersionMismatch` initial → Needed immediately (service IS running, wrong version)
+/// - `ServiceNotRunning` initial + post_wait=Some(VersionMatch) → NotNeeded (service started on its own)
+/// - `ServiceNotRunning` initial + post_wait=Some(other) → Needed
+/// - `ServiceNotRunning` initial + post_wait=None (timeout) → Needed
+pub fn should_install(
+    initial: &VersionCheckResult,
+    post_wait: Option<&VersionCheckResult>,
+) -> InstallAction {
+    match initial {
+        VersionCheckResult::VersionMatch => InstallAction::NotNeeded,
+        VersionCheckResult::VersionMismatch {
+            service_version,
+            app_version,
+        } => InstallAction::Needed {
+            reason: format!(
+                "mismatch: service={}, app={}",
+                service_version, app_version
+            ),
+        },
+        VersionCheckResult::ServiceNotRunning => match post_wait {
+            Some(VersionCheckResult::VersionMatch) => InstallAction::NotNeeded,
+            Some(VersionCheckResult::VersionMismatch {
+                service_version,
+                app_version,
+            }) => InstallAction::Needed {
+                reason: format!(
+                    "mismatch after wait: service={}, app={}",
+                    service_version, app_version
+                ),
+            },
+            Some(VersionCheckResult::ServiceNotRunning) => InstallAction::Needed {
+                reason: "still not running after wait".to_string(),
+            },
+            None => InstallAction::Needed {
+                reason: "not running and wait timed out".to_string(),
+            },
+        },
+    }
+}
+
 /// Wait for service to be reachable
 pub fn wait_for_service(timeout_ms: u64, poll_interval_ms: u64) -> bool {
     let start = std::time::Instant::now();
@@ -321,7 +372,8 @@ pub fn wait_for_service(timeout_ms: u64, poll_interval_ms: u64) -> bool {
 /// Main entry: ensure service running with correct version
 #[tauri::command]
 pub async fn ensure_service_running(app_version: String) -> Result<(), String> {
-    const WAIT_MS: u64 = 5000;
+    const POST_INSTALL_WAIT_MS: u64 = 5000;
+    const PRE_INSTALL_WAIT_MS: u64 = 8000;
     const POLL_MS: u64 = 500;
 
     log::info!("[service] Ensuring service running (v{})", app_version);
@@ -329,15 +381,21 @@ pub async fn ensure_service_running(app_version: String) -> Result<(), String> {
     // Run blocking operations (reqwest::blocking) in a blocking thread
     // to avoid tokio "Cannot drop a runtime in async context" panic
     let ver = app_version.clone();
-    let check_result = tokio::task::spawn_blocking(move || {
+    let initial_check = tokio::task::spawn_blocking(move || {
         cleanup_old_kaitu_service();
         check_service_version(&ver)
     })
     .await
     .map_err(|e| format!("spawn_blocking failed: {}", e))?;
 
-    match check_result {
-        VersionCheckResult::VersionMatch => return Ok(()),
+    // For ServiceNotRunning: wait first (service may be starting after PKG install),
+    // then re-check before deciding to show the admin password prompt.
+    // For VersionMismatch: no wait needed — service IS running, just wrong version.
+    let action = match &initial_check {
+        VersionCheckResult::VersionMatch => {
+            log::info!("[service] Version match, nothing to do");
+            should_install(&initial_check, None)
+        }
         VersionCheckResult::VersionMismatch {
             service_version, ..
         } => {
@@ -346,9 +404,33 @@ pub async fn ensure_service_running(app_version: String) -> Result<(), String> {
                 service_version,
                 app_version
             );
+            should_install(&initial_check, None)
         }
         VersionCheckResult::ServiceNotRunning => {
-            log::info!("[service] Not running");
+            log::info!("[service] Not running — waiting for startup...");
+            let ver = app_version.clone();
+            let post_wait_check = tokio::task::spawn_blocking(move || {
+                let started = wait_for_service(PRE_INSTALL_WAIT_MS, POLL_MS);
+                log::info!("[service] Wait result: started={}", started);
+                if started {
+                    let result = check_service_version(&ver);
+                    log::info!("[service] Post-wait check: {:?}", result);
+                    Some(result)
+                } else {
+                    None
+                }
+            })
+            .await
+            .map_err(|e| format!("spawn_blocking failed: {}", e))?;
+
+            should_install(&initial_check, post_wait_check.as_ref())
+        }
+    };
+
+    match action {
+        InstallAction::NotNeeded => return Ok(()),
+        InstallAction::Needed { reason } => {
+            log::info!("[service] Install needed: {}", reason);
         }
     }
 
@@ -356,7 +438,7 @@ pub async fn ensure_service_running(app_version: String) -> Result<(), String> {
 
     let ver = app_version.clone();
     let ok = tokio::task::spawn_blocking(move || {
-        if wait_for_service(WAIT_MS, POLL_MS) {
+        if wait_for_service(POST_INSTALL_WAIT_MS, POLL_MS) {
             matches!(check_service_version(&ver), VersionCheckResult::VersionMatch)
         } else {
             false
