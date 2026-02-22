@@ -1,6 +1,5 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@plugin "@tailwindcss/typography";
 
 @custom-variant dark (.dark &);
 
@@ -101,4 +100,169 @@
   .embed-mode {
     cursor: default;
   }
+}
+
+/* Standalone prose typography — replaces @tailwindcss/typography.
+   Placed outside @layer so Turbopack always processes these rules. */
+.prose {
+  color: var(--foreground);
+  font-size: 1rem;
+  line-height: 1.75;
+  max-width: 65ch;
+}
+.prose.max-w-none {
+  max-width: none;
+}
+
+/* Headings */
+.prose h1 {
+  font-size: 2.25em;
+  font-weight: 700;
+  color: var(--foreground);
+  margin-top: 0;
+  margin-bottom: 0.6em;
+  line-height: 1.15;
+}
+.prose h2 {
+  font-size: 1.5em;
+  font-weight: 600;
+  color: var(--foreground);
+  margin-top: 1.4em;
+  margin-bottom: 0.5em;
+  line-height: 1.25;
+}
+.prose h3 {
+  font-size: 1.25em;
+  font-weight: 600;
+  color: var(--foreground);
+  margin-top: 1.2em;
+  margin-bottom: 0.4em;
+  line-height: 1.35;
+}
+.prose h4 {
+  font-size: 1.125em;
+  font-weight: 600;
+  color: var(--foreground);
+  margin-top: 1em;
+  margin-bottom: 0.3em;
+  line-height: 1.4;
+}
+
+/* Body text */
+.prose p {
+  margin-bottom: 1.25em;
+}
+
+/* Links */
+.prose a {
+  color: var(--secondary);
+  text-decoration: none;
+}
+.prose a:hover {
+  text-decoration: underline;
+}
+
+/* Strong */
+.prose strong {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+/* Lists */
+.prose ul {
+  list-style-type: disc;
+  padding-left: 1.625em;
+  margin-bottom: 1.25em;
+}
+.prose ol {
+  list-style-type: decimal;
+  padding-left: 1.625em;
+  margin-bottom: 1.25em;
+}
+.prose li {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+.prose li > ul,
+.prose li > ol {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+/* Blockquote */
+.prose blockquote {
+  border-left: 4px solid var(--primary);
+  padding-left: 1em;
+  margin: 1.25em 0;
+  font-style: italic;
+  color: var(--muted-foreground);
+}
+.prose blockquote p {
+  margin-bottom: 0.5em;
+}
+
+/* Inline code */
+.prose code {
+  background: var(--muted);
+  color: var(--primary);
+  padding: 0.2em 0.4em;
+  border-radius: 0.25rem;
+  font-size: 0.875em;
+  font-family: var(--font-mono), ui-monospace, monospace;
+}
+
+/* Code blocks — reset inline code styles on pre > code */
+.prose pre {
+  background: var(--card);
+  padding: 1em 1.25em;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  margin-bottom: 1.25em;
+}
+.prose pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  border-radius: 0;
+  font-size: 0.875em;
+}
+
+/* Table */
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1.25em;
+}
+.prose thead {
+  background: var(--card);
+}
+.prose th {
+  padding: 0.5em 0.75em;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.875em;
+  border: 1px solid var(--border);
+}
+.prose td {
+  padding: 0.5em 0.75em;
+  font-size: 0.875em;
+  border: 1px solid var(--border);
+}
+.prose tbody tr:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* Horizontal rule */
+.prose hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 2em 0;
+}
+
+/* Images */
+.prose img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+  margin: 1.25em 0;
 }

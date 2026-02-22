@@ -123,7 +123,7 @@ export default async function K2Page({
   // Content is Velite-processed Markdown (trusted build-time source)
   /* eslint-disable-next-line react/no-danger */
   return (
-    <article className="prose dark:prose-invert max-w-none min-w-0 flex-1">
+    <article className="prose max-w-none min-w-0 flex-1">
       <h1 className="text-3xl font-bold text-foreground mb-4">{post.title}</h1>
       {post.summary && (
         <p className="text-lg text-muted-foreground mb-8">{post.summary}</p>

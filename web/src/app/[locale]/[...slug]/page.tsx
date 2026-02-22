@@ -177,7 +177,7 @@ function ArticleDetail({ post }: ArticleDetailProps) {
     <div className="min-h-screen bg-background">
       <Header />
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <article className="prose dark:prose-invert max-w-none">
+        <article className="prose max-w-none">
           <h1 className="text-3xl font-bold text-foreground mb-4">
             {post.title}
           </h1>
