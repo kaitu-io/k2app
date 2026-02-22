@@ -1459,7 +1459,7 @@ App writes packet → TUN device (utun0)
 **MTU = 1400**: Optimized for QUIC overhead. Standard 1500 MTU minus ~100 bytes for QUIC/TLS/ECH headers prevents fragmentation at the outer transport layer.
 
 **Mobile vs Desktop TUN**:
-- Desktop (`fd == -1`): sing-tun creates TUN device internally, installs auto-routes, manages gVisor stack
+- Desktop (`fd == -1`): sing-tun creates TUN device via `tun.New()`, then `tunIf.Start()` installs auto-routes + registers interface monitor, then gVisor stack runs via `tun.NewSystem()` + `stack.Start()`
 - Mobile (`fd >= 0`): Platform provides TUN fd, sing-tun wraps it with gVisor stack. DNS middleware intercepts port-53 UDP before it reaches the tunnel handler.
 
 **Files**: `k2/provider/tun_desktop.go:29-95` (TUN provider), `k2/provider/stack.go:16-82` (handler adapter + packet conn wrapper), `k2/core/tunnel.go:49-104` (ClientTunnel — connection handler)

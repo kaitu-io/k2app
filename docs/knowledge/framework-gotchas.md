@@ -1107,6 +1107,56 @@ export function redactStdout(text: string): string {
 
 ---
 
+## sing-tun Lifecycle: New → Start → NewSystem → stack.Start (2026-02-22, sing-tun-lifecycle-fix)
+
+**Problem**: sing-tun `tun.New()` creates the TUN device but does NOT install routing table entries or register the interface for self-exclusion. Calling `tun.NewSystem()` + `stack.Start()` immediately after `New()` results in a functional gVisor stack attached to a TUN that receives no traffic (no OS routes point to it).
+
+**Correct lifecycle**:
+```
+tun.New(opts)           → kernel TUN device created (utunN on macOS)
+tunIf.Start()           → AutoRoute entries installed, InterfaceMonitor registered, DNS cache flushed
+tun.NewSystem(stackOpts)→ gVisor user-space IP stack created
+stack.Start()           → gVisor stack begins processing packets
+```
+
+**What `Start()` does internally** (sing-tun v0.7.11):
+1. `autoRoute.Configure()` — installs split routes (1.0.0.0/8, 2.0.0.0/7, etc.) pointing to the TUN
+2. `InterfaceMonitor.RegisterMyInterface(tunName)` — tells the monitor to ignore TUN-self route changes
+3. `clearDNSCache()` — flushes OS DNS cache (macOS: `dscacheutil -flushcache`)
+
+**Verification**: `netstat -rn | grep utunN` should show many route entries after `Start()`. Zero entries = `Start()` was not called.
+
+**Applies to**: Desktop only (macOS/Linux/Windows). Mobile providers (`tun_ios.go`, `tun_android.go`) use platform-provided fd and OS-managed routes — `Start()` is not called (and would panic due to nil InterfaceMonitor).
+
+**Cross-reference**: See Bugfix Patterns → "sing-tun Missing tunIf.Start()"
+
+**Validating tests**: `go test ./provider/ -v` — `TestDefaultTunName`. Live: `netstat -rn | grep utun` shows routes.
+
+---
+
+## sing-tun CalculateInterfaceName: Use Instead of Manual utun Scanning (2026-02-22, sing-tun-lifecycle-fix)
+
+**Problem**: k2 had a 30-line `nextAvailableUtun()` function that scanned `net.Interfaces()` for used utun indices. sing-tun already provides `tun.CalculateInterfaceName("")` that does exactly this (and handles edge cases better — e.g., system utun devices on newer macOS).
+
+**Solution**: Replace manual scanning with `tun.CalculateInterfaceName("")` on darwin. Linux/Windows use hardcoded `"k2tun"` (no index needed).
+
+```go
+func defaultTunName() string {
+    if runtime.GOOS == "darwin" {
+        return tun.CalculateInterfaceName("")
+    }
+    return "k2tun"
+}
+```
+
+**Why `""` argument**: Empty string tells sing-tun to use its default naming pattern. On darwin, it finds next available utun index. Passing a specific name (e.g., `"k2tun"`) would use that name literally.
+
+**Files**: `k2/provider/tun_desktop.go`
+
+**Validating tests**: `go test ./provider/ -v` — `TestDefaultTunName` verifies utun prefix on darwin.
+
+---
+
 ## macOS launchd: Must Unload Before Overwriting plist (2026-02-22, macos-pkg-service-lifecycle)
 
 **Problem**: Writing a new plist file while the service is loaded causes launchd to use stale config. The loaded service keeps running with old settings until explicitly unloaded.

@@ -372,6 +372,44 @@ Then `npx cap sync android` and rebuild.
 
 ---
 
+## sing-tun Missing tunIf.Start() — TUN Created But No Routes Installed (2026-02-22, sing-tun-lifecycle-fix)
+
+**Problem**: VPN connects successfully (utun8 allocated, engine state `"connected"`) but no traffic flows through the tunnel. DNS queries bypass the TUN — youtube.com resolves to a Facebook IP via poisoned DNS (114.114.114.114), while bing.com works (not poisoned in China).
+
+**Root cause**: sing-tun's correct lifecycle is `tun.New() → tunIf.Start() → tun.NewSystem() → stack.Start()`. Our code skipped `tunIf.Start()`. The `Tun.Start()` method is responsible for:
+1. Installing AutoRoute entries into the OS routing table (the `/1` split routes)
+2. Calling `InterfaceMonitor.RegisterMyInterface()` for TUN self-exclusion
+3. Flushing DNS cache (macOS)
+
+Without `Start()`, the TUN device exists (visible in `ifconfig`) but the routing table has zero routes through it. All traffic continues via the default interface (en0).
+
+**Discovery**: `netstat -rn | grep utun` showed no routes through utun8 despite successful connection. Compared our lifecycle against sing-box source code (the canonical sing-tun consumer).
+
+**Fix**: Added `tunIf.Start()` between `tun.New()` and `tun.NewSystem()` in `k2/provider/tun_desktop.go`:
+```go
+tunIf, err := tun.New(tunOpts)
+if err != nil { return fmt.Errorf("provider: create TUN: %w", err) }
+
+if err := tunIf.Start(); err != nil {
+    tunIf.Close()
+    return fmt.Errorf("provider: start TUN: %w", err)
+}
+
+stack, err := tun.NewSystem(tun.StackOptions{...})
+```
+
+**Why the bug persisted**: The TUN device was created and traffic was captured at the IP level (gVisor stack running), but without routing table entries, no traffic was directed to the TUN in the first place. The engine reported `"connected"` because all Go-level initialization succeeded — routing is an OS-level side effect of `Start()`.
+
+**Secondary fix**: Replaced 30-line `nextAvailableUtun()` with `tun.CalculateInterfaceName("")` — sing-tun already provides this exact functionality.
+
+**iOS/Android NOT affected**: Mobile providers don't call `tunIf.Start()` — the OS manages routes. `Start()` calls `InterfaceMonitor.RegisterMyInterface()` which panics if the monitor is nil (mobile doesn't set one).
+
+**Files fixed**: `k2/provider/tun_desktop.go`, `k2/provider/tun_desktop_test.go`
+
+**Validating tests**: `go test ./provider/ -v` — `TestDefaultTunName` passes. Live verification: `netstat -rn | grep utun` shows AutoRoute entries after reconnect.
+
+---
+
 ## Over-Designed Include Directive Deleted (2026-02-22, k2-cli-redesign)
 
 **Problem**: k2 config spec initially included an `Include` field for nginx-style config inclusion (`include /path/to/extra.conf`). Fully implemented with `ResolveInclude()` function, recursive resolution, and cycle detection.
