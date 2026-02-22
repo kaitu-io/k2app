@@ -122,40 +122,64 @@ pub fn check_service_version(app_version: &str) -> VersionCheckResult {
     }
 }
 
-/// IPC command: proxy VPN action to k2 daemon
+/// IPC command: proxy VPN action to k2 daemon (non-macOS) or NE bridge (macOS).
+///
+/// On macOS the call is routed through the Swift NE helper static library.
+/// On all other platforms the call goes to the k2 daemon HTTP API at :1777.
 /// Called from webapp as window.__TAURI__.core.invoke('daemon_exec', {action, params})
 #[tauri::command]
 pub async fn daemon_exec(
     action: String,
     params: Option<serde_json::Value>,
 ) -> Result<ServiceResponse, String> {
-    tokio::task::spawn_blocking(move || core_action(&action, params))
-        .await
-        .map_err(|e| format!("Task join error: {}", e))?
+    #[cfg(target_os = "macos")]
+    {
+        tokio::task::spawn_blocking(move || crate::ne::ne_action(&action, params))
+            .await
+            .map_err(|e| format!("Task join error: {}", e))?
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        tokio::task::spawn_blocking(move || core_action(&action, params))
+            .await
+            .map_err(|e| format!("Task join error: {}", e))?
+    }
 }
 
-/// IPC command: get device UDID from daemon
+/// IPC command: get device UDID.
+///
+/// On macOS the hardware UUID is read via `sysctl -n kern.uuid` (no daemon needed).
+/// On other platforms the UDID is fetched from the k2 daemon HTTP API.
 #[tauri::command]
 pub async fn get_udid() -> Result<ServiceResponse, String> {
-    tokio::task::spawn_blocking(|| {
-        let url = format!("{}/api/device/udid", service_base_url());
-        let client = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
-            .no_proxy()
-            .build()
-            .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+    #[cfg(target_os = "macos")]
+    {
+        tokio::task::spawn_blocking(|| crate::ne::get_udid_native())
+            .await
+            .map_err(|e| format!("Task join error: {}", e))?
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        tokio::task::spawn_blocking(|| {
+            let url = format!("{}/api/device/udid", service_base_url());
+            let client = reqwest::blocking::Client::builder()
+                .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
+                .no_proxy()
+                .build()
+                .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
-        let response = client
-            .get(&url)
-            .send()
-            .map_err(|e| format!("Failed to get UDID: {}", e))?;
+            let response = client
+                .get(&url)
+                .send()
+                .map_err(|e| format!("Failed to get UDID: {}", e))?;
 
-        response
-            .json::<ServiceResponse>()
-            .map_err(|e| format!("Failed to parse UDID response: {}", e))
-    })
-    .await
-    .map_err(|e| format!("Task join error: {}", e))?
+            response
+                .json::<ServiceResponse>()
+                .map_err(|e| format!("Failed to parse UDID response: {}", e))
+        })
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
+    }
 }
 
 /// IPC command: get current process PID
@@ -179,7 +203,10 @@ pub async fn admin_reinstall_service() -> Result<String, String> {
 
     #[cfg(target_os = "macos")]
     {
-        admin_reinstall_service_macos().await
+        // On macOS: delegate to NE helper (Swift static library)
+        tokio::task::spawn_blocking(|| crate::ne::admin_reinstall_ne())
+            .await
+            .map_err(|e| format!("Task join error: {}", e))?
     }
 
     #[cfg(target_os = "windows")]
@@ -369,9 +396,31 @@ pub fn wait_for_service(timeout_ms: u64, poll_interval_ms: u64) -> bool {
     false
 }
 
-/// Main entry: ensure service running with correct version
+/// Main entry: ensure service running with correct version.
+///
+/// On macOS this calls `ne::ensure_ne_installed()` which installs the NE
+/// configuration into macOS VPN preferences via the Swift helper library.
+/// On other platforms the existing daemon lifecycle logic is used.
 #[tauri::command]
 pub async fn ensure_service_running(app_version: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        log::info!(
+            "[service] macOS: ensuring NE installed (v{})",
+            app_version
+        );
+        return tokio::task::spawn_blocking(|| crate::ne::ensure_ne_installed())
+            .await
+            .map_err(|e| format!("spawn_blocking failed: {}", e))?;
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    ensure_service_running_daemon(app_version).await
+}
+
+/// Daemon-based service lifecycle (non-macOS): ping → version check → install.
+#[cfg(not(target_os = "macos"))]
+async fn ensure_service_running_daemon(app_version: String) -> Result<(), String> {
     const POST_INSTALL_WAIT_MS: u64 = 5000;
     const PRE_INSTALL_WAIT_MS: u64 = 8000;
     const POLL_MS: u64 = 500;
