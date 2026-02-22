@@ -18,23 +18,10 @@ func plistPath() string {
 	return filepath.Join(plistDir, serviceLabel+".plist")
 }
 
-func installService() error {
-	exe, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("find executable: %w", err)
-	}
-	exe, err = filepath.Abs(exe)
-	if err != nil {
-		return fmt.Errorf("resolve executable path: %w", err)
-	}
-
-	// Unload existing service first (ignore errors if not loaded).
-	exec.Command("launchctl", "unload", plistPath()).Run()
-
+// plistContent generates the launchd plist XML for the daemon service.
+func plistContent(label, exe string) string {
 	logDir := "/tmp/k2"
-	os.MkdirAll(logDir, 0755)
-
-	plist := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -70,9 +57,25 @@ func installService() error {
     <string>%s/k2.log</string>
 </dict>
 </plist>
-`, serviceLabel, exe, logDir, logDir)
+`, label, exe, logDir, logDir)
+}
 
-	if err := os.WriteFile(plistPath(), []byte(plist), 0644); err != nil {
+func installService() error {
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("find executable: %w", err)
+	}
+	exe, err = filepath.Abs(exe)
+	if err != nil {
+		return fmt.Errorf("resolve executable path: %w", err)
+	}
+
+	// Unload existing service first (ignore errors if not loaded).
+	exec.Command("launchctl", "unload", plistPath()).Run()
+
+	os.MkdirAll("/tmp/k2", 0755)
+
+	if err := os.WriteFile(plistPath(), []byte(plistContent(serviceLabel, exe)), 0644); err != nil {
 		return fmt.Errorf("write plist: %w", err)
 	}
 
