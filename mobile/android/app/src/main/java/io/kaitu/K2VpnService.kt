@@ -189,7 +189,9 @@ class K2VpnService : VpnService(), VpnServiceBridge {
 
         try {
             Log.d(TAG, "Starting engine with fd=$rawFd")
-            engine?.start(configJSON, rawFd.toLong(), filesDir.absolutePath)
+            val engineCfg = Mobile.newEngineConfig()
+            engineCfg.cacheDir = cacheDir.absolutePath
+            engine?.start(configJSON, rawFd.toLong(), engineCfg)
             Log.d(TAG, "Engine started successfully")
             registerNetworkCallback()
         } catch (e: Exception) {

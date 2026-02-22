@@ -90,16 +90,16 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             }
 
             do {
-                // Compute App Group storage path for k2rule cache
+                // Build EngineConfig with platform paths
+                let engineCfg = MobileNewEngineConfig()
                 let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: kAppGroup)
-                let dataDir = containerURL?.appendingPathComponent("k2").path ?? ""
+                engineCfg.cacheDir = containerURL?.appendingPathComponent("k2").path ?? ""
 
-                // Create directory if needed
-                if !dataDir.isEmpty {
-                    try? FileManager.default.createDirectory(atPath: dataDir, withIntermediateDirectories: true)
+                if !engineCfg.cacheDir.isEmpty {
+                    try? FileManager.default.createDirectory(atPath: engineCfg.cacheDir, withIntermediateDirectories: true)
                 }
 
-                try self?.engine?.start(configJSON, fd: Int(fd), dataDir: dataDir)
+                try self?.engine?.start(configJSON, fd: Int(fd), cfg: engineCfg)
                 self?.startMonitoringNetwork()
                 completionHandler(nil)
             } catch {
