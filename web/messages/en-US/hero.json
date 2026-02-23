@@ -2,7 +2,7 @@
   "hero": {
     "title": "k2 Stealth Network Tunnel",
     "subtitle": "Powered by k2arc adaptive rate control, ECH stealth, zero-config deploy",
-    "description": "Kaitu k2 is a next-generation stealth tunnel protocol powered by the proprietary k2arc adaptive rate control algorithm. k2arc uses gradient ascent utility functions to automatically find optimal send rates, maintaining far higher throughput than BBR under GFW high-loss conditions. ECH-encrypted SNI + TLS fingerprint spoofing makes traffic undetectable. QUIC + TCP-WS dual-stack transport, one-command deployment.",
+    "description": "Kaitu k2 is a next-generation stealth tunnel protocol powered by k2arc adaptive rate control. k2arc automatically finds optimal send rates, maintaining far higher throughput than BBR under GFW high-loss conditions. ECH-encrypted SNI + TLS fingerprint spoofing makes traffic undetectable. QUIC + TCP-WS dual-stack transport, one-command deployment.",
     "cta_primary": "Get Started",
     "cta_secondary": "Download App",
     "downloadClient": "Download Client",
@@ -27,7 +27,7 @@
       },
       "congestion": {
         "title": "k2arc Adaptive Rate Control",
-        "description": "Proprietary k2arc algorithm uses gradient ascent utility functions to find optimal send rates. Adaptive loss penalty distinguishes censorship drops from congestion. Far outperforms BBR under GFW high-loss conditions",
+        "description": "Proprietary k2arc algorithm automatically finds optimal send rates. Censorship-aware mechanism distinguishes censorship drops from congestion. Far outperforms BBR under GFW high-loss conditions",
         "icon": "📈"
       },
       "reverseProxy": {
@@ -147,7 +147,7 @@
   },
   "security": {
     "title": "k2v5 Protocol — Next-Generation Stealth Tunnel",
-    "description": "k2v5 is built on ECH (Encrypted Client Hello), completely solving SNI leakage. Powered by the proprietary k2arc adaptive rate control algorithm combined with QUIC low-latency transport, it achieves stable high throughput in high-loss, poor network conditions.",
+    "description": "k2v5 is built on ECH (Encrypted Client Hello), completely solving SNI leakage. Powered by k2arc adaptive rate control combined with QUIC low-latency transport, it achieves stable high throughput in high-loss, poor network conditions.",
     "icon": "🛡️",
     "caTech": {
       "title": "ECH Stealth Tunnel Technology",
@@ -183,7 +183,7 @@
       },
       "smartRouting": {
         "title": "k2arc Adaptive Rate Control",
-        "description": "Proprietary k2arc algorithm automatically finds optimal send rates. Adaptive loss penalty distinguishes censorship drops. Far outperforms BBR under high-loss conditions",
+        "description": "k2arc automatically finds optimal send rates. Censorship-aware mechanism distinguishes censorship drops. Far outperforms BBR under high-loss conditions",
         "icon": "📈"
       },
       "disguise": {
@@ -282,7 +282,7 @@
         "failedPath": "Fallback Path",
         "optimalNode": "Optimal Node"
       },
-      "description": "k2v5 uses ECH to encrypt SNI during the TLS handshake, preventing firewalls from identifying the target domain. Data is transmitted via QUIC (preferred) or TCP-WebSocket (fallback). The k2arc adaptive rate control algorithm maintains stable throughput on high-loss networks. The server's built-in reverse proxy forwards non-k2 traffic to a real website, making active probing indistinguishable."
+      "description": "k2v5 uses ECH to encrypt SNI during the TLS handshake, preventing firewalls from identifying the target domain. Data is transmitted via QUIC (preferred) or TCP-WebSocket (fallback). k2arc maintains stable throughput on high-loss networks. The server's built-in reverse proxy forwards non-k2 traffic to a real website, making active probing indistinguishable."
     }
   },
   "download": {

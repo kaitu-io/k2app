@@ -12,7 +12,7 @@ eeat_score: High
 | Field | Value |
 |-------|-------|
 | Primary KW | k2 vs VLESS Reality |
-| Secondary KW | TLS 指纹伪装, GFW 封锁对抗, ECH vs Reality, 拥塞控制对比, 隧道协议对比 |
+| Secondary KW | TLS 指纹伪装, GFW 封锁对抗, ECH vs Reality, 传输性能对比, 隧道协议对比 |
 | Intent | commercial (comparison for protocol selection decision) |
 | Audience | 技术用户，正在选择翻墙协议的开发者和高级用户 |
 | Tone | 技术性、客观、有数据支撑 |
@@ -25,14 +25,14 @@ eeat_score: High
 - AC1: 包含 TLS 指纹伪装机制的技术对比（uTLS、ECH、Reality steal-from-real-server）
 - AC2: 包含 GFW 检测方法（SNI、主动探测、IP-SNI 交叉、流量分析）的对照表
 - AC3: 引用 ≥3 篇学术论文（USENIX Security 2023/2024/2025、NDSS 2025）
-- AC4: 拥塞控制维度对比（k2arc vs 无应用层拥塞控制）
+- AC4: 传输性能对比（k2arc vs 无应用层拥塞控制）
 - AC5: 配置复杂度和用户体验对比
 - AC6: 包含总结对比表 + FAQ
 - AC7: CORE-EEAT score >= Medium
 
 ## Internal Links
 
-- /k2/protocol#k2arc-自适应速率控制算法
+- /k2/protocol#k2arc-自适应速率控制
 - /k2/stealth
 - /k2/vs-hysteria2
 - /k2/quickstart

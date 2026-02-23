@@ -1359,7 +1359,7 @@ Error:   [0x01] [err_len: varint] [err_msg: string]
 4. Certificate pin verification — sha256 of server public key, or Kaitu CA chain
 5. Blocked CA detection — rejects certificates from known MITM CAs
 
-**QUIC-specific**: PCC Vivace congestion control replaces default Cubic. Port hopping optional (hop range in URL). Session ID allocator for UDP multiplexing.
+**QUIC-specific**: Proprietary adaptive congestion control (k2arc) replaces default Cubic. Port hopping optional (hop range in URL). Session ID allocator for UDP multiplexing.
 
 **TCP-WS-specific**: WebSocket upgrade to `wss://host/k2v5/tunnel`, then smux multiplexing over the WebSocket connection. uTLS handshake for fingerprint mimicry.
 

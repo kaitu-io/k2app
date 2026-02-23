@@ -96,7 +96,7 @@
 | ECH 隐身 | Encrypted Client Hello 隐藏真实 SNI，外观与 Cloudflare 流量一致 |
 | 零配置部署 | 一行命令安装运行，自动生成证书、ECH 密钥、auth token |
 | QUIC + TCP-WS 复合传输 | QUIC/H3 主传输，UDP 被封锁时自动降级 TCP-WebSocket |
-| 自研拥塞控制 | 专为受限网络优化的自适应拥塞控制算法（细节将在开源日公开） |
+| 自研拥塞控制 | 专为受限网络优化的自适应拥塞控制 |
 | 反向代理伪装 | 非 ECH 连接透明转发到真实网站，主动探测看到正常 HTTPS 站点 |
 | 自签名 + Pin | 无 CA 依赖，无 CT 日志暴露，证书指纹 pinning 验证 |
 
@@ -111,7 +111,7 @@
 | 主动探测防御 | ✓ (反向代理) | ✗ | ✓ (steal cert) | ✗ | ✗ |
 | QUIC 传输 | ✓ (主传输) | ✗ | 可选 | ✓ (仅QUIC) | ✗ |
 | TCP 降级 | ✓ (自动) | ✗ | 需手动 | ✗ | ✓ |
-| 拥塞控制优化 | ✓ (自研算法) | 无 | 无 | Brutal(固定速率) | 依赖系统 |
+| 拥塞控制优化 | ✓ (k2arc) | 无 | 无 | Brutal(固定速率) | 依赖系统 |
 | 零配置部署 | ✓ | 需配置密钥对 | 需配置UUID/dest | 需配置密码 | 需配置密码/加密 |
 | CT 日志零暴露 | ✓ (自签名+pin) | N/A | ✗ (偷取真证书) | ✗ (Let's Encrypt) | N/A |
 | 端口复用 | ✓ (QUIC+TCP共享443) | ✗ (独占UDP端口) | ✗ | ✗ | ✗ |
@@ -142,7 +142,6 @@ $ k2s run                    $ k2 up k2v5://...
   - 与其他流量共存时的公平性
 - 展示形式：效果对比图表（Chart.js 或静态 SVG）
 - 结论：k2 在受限网络下自适应表现优于固定速率方案
-- 尾注："k2 拥塞控制算法细节将在开源日公开"
 
 **数据来源**：需要提供实际测试数据。如暂无数据，页面先以定性对比为主，预留数据填充位置。
 
@@ -412,7 +411,7 @@ export async function generateMetadata({ params }) {
 1. **Velite Markdown 而非纯 React 页面**：SEO/GEO 友好，内容更新不需改代码，build time 静态生成
 2. **独立路由 `/k2/[[...path]]` 而非修改 `[...slug]`**：隔离关注点，/k2/ 有专属侧边栏布局
 3. **Terminal Dark 强制暗色**：移除 next-themes 的 system/light 切换，`defaultTheme="dark"` 且不可切换
-4. **拥塞控制不透露细节**：称为"自研自适应拥塞控制算法"，效果图不含公式或算法名称
+4. **拥塞控制不透露细节**：不公开算法实现细节，效果图不含公式或算法名称
 5. **Server Component + force-static**：首页 + /k2/ 全部为 Server Component，加 `export const dynamic = 'force-static'` 确保 SSG。build time 生成静态 HTML 由 CDN 分发，不走 Lambda。证据：`"use client"` 从首次提交即存在（非从 SSR 改过来），Amplify `WEB_COMPUTE` 平台完全支持，`[...slug]` 已验证 Server Component 模式可行
 6. **SSR 改造必须独立验证**：AC1 (SSR) 必须在其他 AC 之前独立完成。验证标准：build 输出为 `.html`、curl 验证初始 HTML 含文字、Amplify preview branch 部署正常。通过后才能进入主题和内容改版
 7. **JSON-LD 结构化数据**：帮助 AI 搜索引擎理解页面类型（软件产品 vs 技术文档 vs 对比文章）

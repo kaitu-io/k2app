@@ -13,7 +13,7 @@ Congestion control is one of the most critical factors determining the performan
 
 ## Background
 
-**k2** uses a proprietary adaptive congestion control algorithm. It is rate-based and finds the optimal sending rate by performing gradient ascent on a utility function, dynamically responding to changing network conditions.
+**k2** uses a proprietary adaptive congestion control algorithm. It automatically finds the optimal sending rate, dynamically responding to changing network conditions.
 
 **Hysteria2** uses a congestion control strategy called Brutal: the user specifies a maximum bandwidth cap, and the protocol sends at that fixed rate regardless of congestion signals.
 
@@ -23,10 +23,10 @@ Congestion control is one of the most critical factors determining the performan
 
 ### k2
 
-k2's proprietary adaptive congestion control algorithm maintains an adaptive loss penalty coefficient. When packet loss is detected, the algorithm distinguishes between congestion-induced loss and non-congestion loss (such as active packet dropping by censorship infrastructure):
+k2's proprietary adaptive congestion control algorithm uses a censorship-aware mechanism to handle packet loss. When packet loss is detected, the algorithm distinguishes between congestion-induced loss and non-congestion loss (such as active packet dropping by censorship infrastructure):
 
-- **Adaptive penalty coefficient**: Dynamically adjusted based on observed loss patterns, preventing misclassification of censorship-induced packet drops as network congestion.
-- **Aggressive mode**: Enabled for high-censorship network environments, allowing higher sending rates to be maintained under a tolerable rate of non-congestion packet loss.
+- **Censorship-aware**: Distinguishes between congestion-induced and censorship-induced packet drops, avoiding unnecessary rate reduction under active interference.
+- **High-censorship optimization**: Maintains higher sending rates under non-congestion packet loss, keeping throughput stable in censored network environments.
 - **Probing mechanism**: After a rate reduction, periodically attempts higher rates to actively recover available bandwidth.
 
 ### Hysteria2
@@ -45,7 +45,7 @@ The Hysteria2 Brutal strategy ignores all packet loss signals and sends at a fix
 
 ### k2
 
-k2's proprietary algorithm incorporates RTT (round-trip time) as an important input variable in its utility function. When buffer queues begin to build up (bufferbloat), rising RTT triggers a rate reduction to suppress latency degradation:
+k2's proprietary algorithm incorporates RTT (round-trip time) as a key signal for rate adjustment. When buffer queues begin to build up (bufferbloat), rising RTT triggers a rate reduction to suppress latency degradation:
 
 - **RTT awareness**: Real-time monitoring of round-trip time prevents excessive filling of network buffers.
 - **Rate-based pacing**: Data packets are spread evenly over time, avoiding burst traffic that causes queue buildup.
@@ -65,7 +65,7 @@ Hysteria2's fixed-rate sending strategy is insensitive to RTT changes:
 
 ### k2
 
-k2's proprietary algorithm continuously probes for the optimal sending rate through gradient ascent:
+k2's proprietary algorithm continuously probes for the optimal sending rate:
 
 - **No manual configuration needed**: The algorithm automatically discovers and tracks the actual available network bandwidth.
 - **Probing mechanism**: After rate reductions, periodically attempts higher rates to dynamically recover available throughput.
@@ -107,15 +107,13 @@ Hysteria2's Brutal strategy has significant fairness problems in multi-flow scen
 
 | Dimension | k2 (Proprietary Adaptive Algorithm) | Hysteria2 (Brutal) |
 |-----------|-------------------------------------|-------------------|
-| Packet Loss Recovery | Adaptive penalty coefficient; distinguishes congestion vs. non-congestion loss | Ignores loss signals; relies on retransmission |
+| Packet Loss Recovery | Censorship-aware; distinguishes congestion vs. non-congestion loss | Ignores loss signals; relies on retransmission |
 | Latency Stability | RTT-aware + rate pacing; suppresses bufferbloat | Fixed rate; prone to queue buildup |
 | Bandwidth Utilization | Automatic optimal rate probing; no manual config needed | Requires manual setting; no dynamic probing |
 | Fairness | Rate-adaptive; coexists peacefully with other flows | Fixed rate; tends to crowd out other traffic |
 
 ---
 
-## Notes and Future Work
+## Notes
 
 The comparisons above are based on algorithmic design analysis. Benchmark data will be published separately when conditions permit.
-
-Full technical details of k2's proprietary adaptive congestion control algorithm will be disclosed on **open-source day**.

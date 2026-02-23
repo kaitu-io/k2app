@@ -67,7 +67,7 @@ const JSON_LD_CONTENT = JSON.stringify({
   featureList: [
     'ECH (Encrypted Client Hello) stealth',
     'QUIC + TCP-WebSocket dual-stack transport',
-    'k2arc adaptive rate control algorithm',
+    'k2arc adaptive rate control',
     'Reverse proxy camouflage',
     'Self-signed certificate + certificate pinning',
     'Zero CT log exposure',
