@@ -12,7 +12,6 @@ import (
 	tun "github.com/sagernet/sing-tun"
 
 	"github.com/kaitu-io/k2/config"
-	"github.com/kaitu-io/k2/directdial"
 	"github.com/kaitu-io/k2/engine"
 )
 
@@ -191,11 +190,11 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 
 	// Create directdial with monitor for dynamic interface tracking.
 	// When monitor is unavailable, dd stays nil — engine skips interface binding.
-	var dd *directdial.Dialer
+	var dd *directDialer
 	if dim, ok := ifaceMon.(tun.DefaultInterfaceMonitor); ok && monErr == nil {
-		dd = directdial.New(dim)
-		if dd.InterfaceName() != "" {
-			slog.Info("tunnel: direct dialer bound", "interface", dd.InterfaceName())
+		dd = newDirectDialer(dim)
+		if dd.interfaceName() != "" {
+			slog.Info("tunnel: direct dialer bound", "interface", dd.interfaceName())
 		}
 	} else if monErr != nil {
 		slog.Warn("network monitor unavailable, no interface binding", "err", monErr)
@@ -264,7 +263,7 @@ func defaultMonitorFactory() (engine.NetworkChangeNotifier, any, error) {
 // before directdial so the same monitor can be shared).
 func (d *Daemon) engineConfigFromClientConfig(
 	cfg *config.ClientConfig,
-	dd *directdial.Dialer,
+	dd *directDialer,
 	monitor engine.NetworkChangeNotifier,
 	ifaceMon any,
 	monErr error,

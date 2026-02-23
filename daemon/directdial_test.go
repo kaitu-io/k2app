@@ -1,4 +1,4 @@
-package directdial
+package daemon
 
 import (
 	"context"
@@ -11,50 +11,53 @@ import (
 	tun "github.com/sagernet/sing-tun"
 )
 
-// mockMonitor implements tun.DefaultInterfaceMonitor for testing.
-type mockMonitor struct {
+// mockIfaceMonitor implements tun.DefaultInterfaceMonitor for testing.
+type mockIfaceMonitor struct {
 	iface *control.Interface
 }
 
-func (m *mockMonitor) Start() error                            { return nil }
-func (m *mockMonitor) Close() error                            { return nil }
-func (m *mockMonitor) DefaultInterface() *control.Interface    { return m.iface }
-func (m *mockMonitor) OverrideAndroidVPN() bool                { return false }
-func (m *mockMonitor) AndroidVPNEnabled() bool                 { return false }
-func (m *mockMonitor) RegisterCallback(cb tun.DefaultInterfaceUpdateCallback) *list.Element[tun.DefaultInterfaceUpdateCallback] {
+func (m *mockIfaceMonitor) Start() error                            { return nil }
+func (m *mockIfaceMonitor) Close() error                            { return nil }
+func (m *mockIfaceMonitor) DefaultInterface() *control.Interface    { return m.iface }
+func (m *mockIfaceMonitor) OverrideAndroidVPN() bool                { return false }
+func (m *mockIfaceMonitor) AndroidVPNEnabled() bool                 { return false }
+func (m *mockIfaceMonitor) RegisterCallback(cb tun.DefaultInterfaceUpdateCallback) *list.Element[tun.DefaultInterfaceUpdateCallback] {
 	return nil
 }
-func (m *mockMonitor) UnregisterCallback(*list.Element[tun.DefaultInterfaceUpdateCallback]) {}
-func (m *mockMonitor) RegisterMyInterface(string)                                           {}
-func (m *mockMonitor) MyInterface() string                                                  { return "" }
+func (m *mockIfaceMonitor) UnregisterCallback(*list.Element[tun.DefaultInterfaceUpdateCallback]) {}
+func (m *mockIfaceMonitor) RegisterMyInterface(string)                                           {}
+func (m *mockIfaceMonitor) MyInterface() string                                                  { return "" }
 
-func TestNew_DynamicInterface(t *testing.T) {
-	mon := &mockMonitor{
+func TestDirectDialer_DynamicInterface(t *testing.T) {
+	mon := &mockIfaceMonitor{
 		iface: &control.Interface{Name: "en0", Index: 12},
 	}
-	d := New(mon)
+	d := newDirectDialer(mon)
 
-	if got := d.InterfaceName(); got != "en0" {
-		t.Errorf("InterfaceName() = %q, want %q", got, "en0")
+	if got := d.interfaceName(); got != "en0" {
+		t.Errorf("interfaceName() = %q, want %q", got, "en0")
 	}
 
 	// Simulate network change.
 	mon.iface = &control.Interface{Name: "en1", Index: 14}
-	if got := d.InterfaceName(); got != "en1" {
-		t.Errorf("after change: InterfaceName() = %q, want %q", got, "en1")
+	if got := d.interfaceName(); got != "en1" {
+		t.Errorf("after change: interfaceName() = %q, want %q", got, "en1")
 	}
 }
 
-func TestNew_NilInterface(t *testing.T) {
-	mon := &mockMonitor{iface: nil}
-	d := New(mon)
+func TestDirectDialer_NilInterface(t *testing.T) {
+	mon := &mockIfaceMonitor{iface: nil}
+	d := newDirectDialer(mon)
 
-	if got := d.InterfaceName(); got != "" {
-		t.Errorf("InterfaceName() = %q, want empty", got)
+	if got := d.interfaceName(); got != "" {
+		t.Errorf("interfaceName() = %q, want empty", got)
 	}
 }
 
-func TestDialContext(t *testing.T) {
+func TestDirectDialer_DialContext(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping live network test in short mode")
+	}
 	// Use real monitor to get a real interface for integration test.
 	netMon, ifaceMon, err := createRealMonitor(t)
 	if err != nil {
@@ -63,15 +66,15 @@ func TestDialContext(t *testing.T) {
 	defer netMon.Close()
 	defer ifaceMon.Close()
 
-	d := New(ifaceMon)
-	if d.InterfaceName() == "" {
+	d := newDirectDialer(ifaceMon)
+	if d.interfaceName() == "" {
 		t.Skip("no default interface detected")
 	}
 
 	// Get interface IP to listen on (can't use loopback with bound sockets).
-	iface, err := net.InterfaceByName(d.InterfaceName())
+	iface, err := net.InterfaceByName(d.interfaceName())
 	if err != nil {
-		t.Skipf("can't get interface %s: %v", d.InterfaceName(), err)
+		t.Skipf("can't get interface %s: %v", d.interfaceName(), err)
 	}
 	addrs, err := iface.Addrs()
 	if err != nil || len(addrs) == 0 {
@@ -102,7 +105,7 @@ func TestDialContext(t *testing.T) {
 	conn.Close()
 }
 
-func TestListenPacket(t *testing.T) {
+func TestDirectDialer_ListenPacket(t *testing.T) {
 	netMon, ifaceMon, err := createRealMonitor(t)
 	if err != nil {
 		t.Skip("network monitor unavailable:", err)
@@ -110,8 +113,8 @@ func TestListenPacket(t *testing.T) {
 	defer netMon.Close()
 	defer ifaceMon.Close()
 
-	d := New(ifaceMon)
-	if d.InterfaceName() == "" {
+	d := newDirectDialer(ifaceMon)
+	if d.interfaceName() == "" {
 		t.Skip("no default interface detected")
 	}
 
