@@ -4,42 +4,80 @@ import (
 	"context"
 	"net"
 	"testing"
+
+	"github.com/sagernet/sing/common/control"
+	"github.com/sagernet/sing/common/x/list"
+
+	tun "github.com/sagernet/sing-tun"
 )
 
-func TestNew(t *testing.T) {
-	d := New()
-	// Should detect at least some interface on any machine.
-	if d.ifName == "" {
-		t.Skip("no physical interface detected (expected in some CI environments)")
-	}
-	t.Logf("detected interface: %s (index=%d)", d.ifName, d.ifIdx)
+// mockMonitor implements tun.DefaultInterfaceMonitor for testing.
+type mockMonitor struct {
+	iface *control.Interface
 }
 
-func TestNewWithInterface_Invalid(t *testing.T) {
-	_, err := NewWithInterface("nonexistent_iface_xyz")
-	if err == nil {
-		t.Error("NewWithInterface with invalid name should return error")
+func (m *mockMonitor) Start() error                            { return nil }
+func (m *mockMonitor) Close() error                            { return nil }
+func (m *mockMonitor) DefaultInterface() *control.Interface    { return m.iface }
+func (m *mockMonitor) OverrideAndroidVPN() bool                { return false }
+func (m *mockMonitor) AndroidVPNEnabled() bool                 { return false }
+func (m *mockMonitor) RegisterCallback(cb tun.DefaultInterfaceUpdateCallback) *list.Element[tun.DefaultInterfaceUpdateCallback] {
+	return nil
+}
+func (m *mockMonitor) UnregisterCallback(*list.Element[tun.DefaultInterfaceUpdateCallback]) {}
+func (m *mockMonitor) RegisterMyInterface(string)                                           {}
+func (m *mockMonitor) MyInterface() string                                                  { return "" }
+
+func TestNew_DynamicInterface(t *testing.T) {
+	mon := &mockMonitor{
+		iface: &control.Interface{Name: "en0", Index: 12},
+	}
+	d := New(mon)
+
+	if got := d.InterfaceName(); got != "en0" {
+		t.Errorf("InterfaceName() = %q, want %q", got, "en0")
+	}
+
+	// Simulate network change.
+	mon.iface = &control.Interface{Name: "en1", Index: 14}
+	if got := d.InterfaceName(); got != "en1" {
+		t.Errorf("after change: InterfaceName() = %q, want %q", got, "en1")
+	}
+}
+
+func TestNew_NilInterface(t *testing.T) {
+	mon := &mockMonitor{iface: nil}
+	d := New(mon)
+
+	if got := d.InterfaceName(); got != "" {
+		t.Errorf("InterfaceName() = %q, want empty", got)
 	}
 }
 
 func TestDialContext(t *testing.T) {
-	d := New()
-	if d.ifName == "" {
-		t.Skip("no physical interface detected")
+	// Use real monitor to get a real interface for integration test.
+	netMon, ifaceMon, err := createRealMonitor(t)
+	if err != nil {
+		t.Skip("network monitor unavailable:", err)
+	}
+	defer netMon.Close()
+	defer ifaceMon.Close()
+
+	d := New(ifaceMon)
+	if d.InterfaceName() == "" {
+		t.Skip("no default interface detected")
 	}
 
-	// Get the IP address of the physical interface (not loopback).
-	// Can't use 127.0.0.1 because bound-to-interface sockets can't reach loopback.
-	iface, err := net.InterfaceByName(d.ifName)
+	// Get interface IP to listen on (can't use loopback with bound sockets).
+	iface, err := net.InterfaceByName(d.InterfaceName())
 	if err != nil {
-		t.Skipf("can't get interface %s: %v", d.ifName, err)
+		t.Skipf("can't get interface %s: %v", d.InterfaceName(), err)
 	}
 	addrs, err := iface.Addrs()
 	if err != nil || len(addrs) == 0 {
 		t.Skip("no addresses on interface")
 	}
 
-	// Find first IPv4 address on the interface.
 	var ifIP string
 	for _, addr := range addrs {
 		if ipnet, ok := addr.(*net.IPNet); ok && ipnet.IP.To4() != nil {
@@ -65,9 +103,16 @@ func TestDialContext(t *testing.T) {
 }
 
 func TestListenPacket(t *testing.T) {
-	d := New()
-	if d.ifName == "" {
-		t.Skip("no physical interface detected")
+	netMon, ifaceMon, err := createRealMonitor(t)
+	if err != nil {
+		t.Skip("network monitor unavailable:", err)
+	}
+	defer netMon.Close()
+	defer ifaceMon.Close()
+
+	d := New(ifaceMon)
+	if d.InterfaceName() == "" {
+		t.Skip("no default interface detected")
 	}
 
 	pc, err := d.ListenPacket("udp", ":0")
@@ -77,26 +122,28 @@ func TestListenPacket(t *testing.T) {
 	pc.Close()
 }
 
-func TestDetectDefault(t *testing.T) {
-	name, idx := detectDefault()
-	if name == "" {
-		t.Skip("no default interface detected")
-	}
-	if idx <= 0 {
-		t.Errorf("interface %q has invalid index %d", name, idx)
-	}
-	t.Logf("default interface: %s (index=%d)", name, idx)
-}
-
-func TestIsUsableInterface(t *testing.T) {
-	// Loopback should not be usable.
-	lo, err := net.InterfaceByName("lo0")
+// createRealMonitor creates a real sing-tun monitor pair for integration tests.
+func createRealMonitor(t *testing.T) (tun.NetworkUpdateMonitor, tun.DefaultInterfaceMonitor, error) {
+	t.Helper()
+	netMon, err := tun.NewNetworkUpdateMonitor(nil)
 	if err != nil {
-		lo, err = net.InterfaceByName("lo")
+		return nil, nil, err
 	}
-	if err == nil {
-		if isUsableInterface(lo) {
-			t.Error("loopback interface should not be usable")
-		}
+	ifaceMon, err := tun.NewDefaultInterfaceMonitor(netMon, nil, tun.DefaultInterfaceMonitorOptions{
+		InterfaceFinder: control.NewDefaultInterfaceFinder(),
+	})
+	if err != nil {
+		netMon.Close()
+		return nil, nil, err
 	}
+	if err := netMon.Start(); err != nil {
+		ifaceMon.Close()
+		netMon.Close()
+		return nil, nil, err
+	}
+	if err := ifaceMon.Start(); err != nil {
+		netMon.Close()
+		return nil, nil, err
+	}
+	return netMon, ifaceMon, nil
 }

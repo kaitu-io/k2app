@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	tun "github.com/sagernet/sing-tun"
+
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/directdial"
 	"github.com/kaitu-io/k2/engine"
@@ -183,12 +185,26 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 		Timestamp: time.Now(),
 	})
 
-	// Build engine config from ClientConfig.
-	dd := directdial.New()
-	if dd.InterfaceName() != "" {
-		slog.Info("tunnel: direct dialer bound", "interface", dd.InterfaceName())
+	// Create network monitor first — directdial uses it for dynamic interface tracking.
+	factory := d.MonitorFactory
+	if factory == nil {
+		factory = defaultMonitorFactory
 	}
-	engineCfg := d.engineConfigFromClientConfig(cfg, dd)
+	monitor, ifaceMon, monErr := factory()
+
+	// Create directdial with monitor for dynamic interface tracking.
+	// When monitor is unavailable, dd stays nil — engine skips interface binding.
+	var dd *directdial.Dialer
+	if dim, ok := ifaceMon.(tun.DefaultInterfaceMonitor); ok && monErr == nil {
+		dd = directdial.New(dim)
+		if dd.InterfaceName() != "" {
+			slog.Info("tunnel: direct dialer bound", "interface", dd.InterfaceName())
+		}
+	} else if monErr != nil {
+		slog.Warn("network monitor unavailable, no interface binding", "err", monErr)
+	}
+
+	engineCfg := d.engineConfigFromClientConfig(cfg, dd, monitor, ifaceMon, monErr)
 
 	// Create and start engine.
 	starter := d.EngineStarter
@@ -247,9 +263,15 @@ func defaultMonitorFactory() (engine.NetworkChangeNotifier, any, error) {
 }
 
 // engineConfigFromClientConfig maps a config.ClientConfig to an engine.Config.
-// The ClientConfig is passed directly as the single source of truth.
-// Only platform runtime resources (DirectDialer, NetworkMonitor, etc.) are added here.
-func (d *Daemon) engineConfigFromClientConfig(cfg *config.ClientConfig, dd *directdial.Dialer) engine.Config {
+// monitor/ifaceMon/monErr are the pre-created network monitor results (created in doUp
+// before directdial so the same monitor can be shared).
+func (d *Daemon) engineConfigFromClientConfig(
+	cfg *config.ClientConfig,
+	dd *directdial.Dialer,
+	monitor engine.NetworkChangeNotifier,
+	ifaceMon any,
+	monErr error,
+) engine.Config {
 	// Ensure CacheDir has a value for k2rule.
 	if cfg.Rule.CacheDir == "" {
 		cfg.Rule.CacheDir = filepath.Join(paths.CacheDir(), "k2rule")
@@ -262,15 +284,8 @@ func (d *Daemon) engineConfigFromClientConfig(cfg *config.ClientConfig, dd *dire
 		PreferIPv6:     true,
 	}
 
-	// Create network monitor (desktop only, non-fatal if unavailable).
-	factory := d.MonitorFactory
-	if factory == nil {
-		factory = defaultMonitorFactory
-	}
-	monitor, ifaceMon, monErr := factory()
-	if monErr != nil {
-		slog.Warn("network monitor unavailable", "err", monErr, "recovery", "passive timeout only")
-	} else {
+	// Apply network monitor if available.
+	if monErr == nil {
 		ecfg.NetworkMonitor = monitor
 		ecfg.InterfaceMonitor = ifaceMon
 	}
