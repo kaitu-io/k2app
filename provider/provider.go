@@ -23,11 +23,12 @@ type ConnectionHandler interface {
 
 // ProviderConfig holds configuration for creating a Provider.
 type ProviderConfig struct {
-	Mode           string       // "tun" (default) or "proxy"
+	Mode           string       // "tun" (default), "proxy", or "tproxy"
 	FileDescriptor int          // 0 = create TUN; >0 = use existing FD (iOS/Android)
 	DNSServers     []netip.Addr // excluded from TUN route (anti-loop)
 	MTU            int          // default 1400
 	ProxyListen    string       // proxy mode: listen address (default "127.0.0.1:1080")
+	TProxyPort     int          // tproxy mode: local redirect port (default 12345)
 	IPv4Address    string       // TUN IPv4 CIDR, e.g. "10.0.0.2/24". Empty = platform default.
 	IPv6Address    string       // TUN IPv6 CIDR, e.g. "fd00::2/128". Empty = platform default.
 

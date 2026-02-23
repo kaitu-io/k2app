@@ -149,6 +149,13 @@ func (e *Engine) Start(cfg Config) error {
 			Mode:        "proxy",
 			ProxyListen: client.Proxy.Listen,
 		})
+	} else if client.Mode == "tproxy" {
+		// Linux tproxy mode (OpenWRT, headless Linux).
+		prov = provider.NewTProxyProvider(provider.ProviderConfig{
+			Mode:        "tproxy",
+			IPv4Address: client.Tun.IPv4,
+			IPv6Address: client.Tun.IPv6,
+		})
 	} else {
 		// Desktop TUN mode.
 		prov = provider.NewTUNProvider(provider.ProviderConfig{
