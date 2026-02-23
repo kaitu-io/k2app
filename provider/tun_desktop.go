@@ -5,6 +5,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/netip"
 	"runtime"
 	"time"
@@ -13,13 +14,28 @@ import (
 )
 
 // defaultTunName returns a platform-appropriate TUN device name.
-// Darwin: delegates to sing-tun's CalculateInterfaceName (finds next available utunN).
-// Linux/Windows: hardcoded "k2tun" (no index needed).
+// On macOS, sing-tun uses the parsed index from "utun%d" as the kernel unit number.
+// We must pick an index not already in use, otherwise Connect returns "resource busy".
 func defaultTunName() string {
-	if runtime.GOOS == "darwin" {
-		return tun.CalculateInterfaceName("")
+	switch runtime.GOOS {
+	case "darwin":
+		return nextFreeDarwinUtun()
+	case "linux":
+		return "tun0"
+	default: // windows
+		return "sing-tun"
 	}
-	return "k2tun"
+}
+
+// nextFreeDarwinUtun finds the first unused utun index on macOS.
+func nextFreeDarwinUtun() string {
+	for i := 0; i < 256; i++ {
+		name := fmt.Sprintf("utun%d", i)
+		if _, err := net.InterfaceByName(name); err != nil {
+			return name
+		}
+	}
+	return "utun255"
 }
 
 // TUNProvider creates a TUN device and runs a sing-tun stack for L3→L4 conversion.

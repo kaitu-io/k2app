@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"fmt"
 	"log/slog"
 
 	tun "github.com/sagernet/sing-tun"
@@ -21,11 +22,11 @@ type singTunMonitor struct {
 // so sing-tun excludes the TUN device from triggering network change events.
 // Returns error on platforms without support (e.g., containers).
 func NewNetworkMonitor() (engine.NetworkChangeNotifier, tun.DefaultInterfaceMonitor, error) {
-	netMon, err := tun.NewNetworkUpdateMonitor((*nopLogger)(nil))
+	netMon, err := tun.NewNetworkUpdateMonitor(&slogAdapter{})
 	if err != nil {
 		return nil, nil, err
 	}
-	ifaceMon, err := tun.NewDefaultInterfaceMonitor(netMon, (*nopLogger)(nil), tun.DefaultInterfaceMonitorOptions{
+	ifaceMon, err := tun.NewDefaultInterfaceMonitor(netMon, &slogAdapter{}, tun.DefaultInterfaceMonitorOptions{
 		InterfaceFinder: control.NewDefaultInterfaceFinder(),
 	})
 	if err != nil {
@@ -56,13 +57,13 @@ func (m *singTunMonitor) Close() error {
 	return m.networkMonitor.Close()
 }
 
-// nopLogger satisfies sing's logger.Logger interface with no-ops.
-type nopLogger struct{}
+// slogAdapter bridges sing's logger.Logger to Go's slog.
+type slogAdapter struct{}
 
-func (l *nopLogger) Trace(args ...any) {}
-func (l *nopLogger) Debug(args ...any) {}
-func (l *nopLogger) Info(args ...any)  {}
-func (l *nopLogger) Warn(args ...any)  {}
-func (l *nopLogger) Error(args ...any) {}
-func (l *nopLogger) Fatal(args ...any) {}
-func (l *nopLogger) Panic(args ...any) {}
+func (l *slogAdapter) Trace(args ...any) { slog.Debug("[sing-tun] " + fmt.Sprint(args...)) }
+func (l *slogAdapter) Debug(args ...any) { slog.Debug("[sing-tun] " + fmt.Sprint(args...)) }
+func (l *slogAdapter) Info(args ...any)  { slog.Info("[sing-tun] " + fmt.Sprint(args...)) }
+func (l *slogAdapter) Warn(args ...any)  { slog.Warn("[sing-tun] " + fmt.Sprint(args...)) }
+func (l *slogAdapter) Error(args ...any) { slog.Error("[sing-tun] " + fmt.Sprint(args...)) }
+func (l *slogAdapter) Fatal(args ...any) { slog.Error("[sing-tun] FATAL: " + fmt.Sprint(args...)) }
+func (l *slogAdapter) Panic(args ...any) { slog.Error("[sing-tun] PANIC: " + fmt.Sprint(args...)) }
