@@ -37,7 +37,7 @@ docker compose up --build           # Docker: server + init container (docker/)
 cmd/k2/CLAUDE.md               Client CLI subcommands + dispatch
 cmd/k2s/CLAUDE.md              Server CLI + foreground/service mode
 config/CLAUDE.md               ClientConfig + ServerConfig + YAML formats
-engine/                        Unified tunnel lifecycle manager (state machine, EventHandler, Config assembly)
+engine/CLAUDE.md               Unified tunnel lifecycle manager (state machine, EventHandler, Config assembly)
 core/CLAUDE.md                 L4 ClientTunnel, Router, ConnectionHandler
 core/dns/CLAUDE.md             DNS 13-step middleware pipeline
 daemon/CLAUDE.md               Desktop platform shell: HTTP API, service management, auto-reconnect
@@ -46,7 +46,7 @@ server/CLAUDE.md               Server listener orchestration, TCP/UDP handlers
 wire/CLAUDE.md                 k2v5 wire protocol, Dialer/Listener interfaces
 wire/k2v5-protocol-spec.md    k2v5 protocol specification (TLS, ECH, camouflage, framing)
 wire/arc/CLAUDE.md             PCC Vivace congestion control
-mobile/                        Mobile platform shell: gomobile SDK (EventHandler bridge)
+mobile/CLAUDE.md               Mobile platform shell: gomobile SDK (EventHandler bridge)
 test/CLAUDE.md                 E2E integration tests
 docs/features/                 Feature specs (cloud-webapp, mobile-sdk, private-ip-guard, etc.)
 docs/knowledge/                Distilled patterns (architecture, bugfix, gotchas, testing, tasks)
@@ -135,7 +135,7 @@ Platform Shell (daemon/mobile) assembles `engine.Config` with platform-specific 
 
 ## Dependencies
 
-- `github.com/kaitu-io/k2rule v0.6.1` — domain/IP routing rules with unified Init API + SetTmpRule (CacheDir required, non-blocking background download, Antiporn opt-in)
+- `github.com/kaitu-io/k2rule v0.6.2` — domain/IP routing rules with unified Init API + SetTmpRule (CacheDir required, non-blocking background download, Antiporn opt-in)
 - `github.com/miekg/dns` — DNS message handling
 - `github.com/sagernet/sing-tun` — TUN device with gVisor stack
 - `github.com/apernet/quic-go` — QUIC with congestion control API

@@ -1,6 +1,6 @@
 # Wire Layer (wire/ — k2v5 composite protocol)
 
-242 tests. QUIC/H3 primary, TCP-WS/smux fallback.
+~183 test functions. QUIC/H3 primary, TCP-WS/smux fallback.
 
 ## Interfaces (wire.go)
 
@@ -45,6 +45,7 @@ Fields: UDID, Token, Host, Port, ECH, Fingerprint, HopStart, HopEnd, Insecure, P
 - `quic.go` — QUIC config, `StreamConn` adapter, `QUICClient`/`QUICServer`, port hopping
 - `tcpws.go` — smux config, `TCPWSClient`/`TCPWSServer`
 - `transport.go` — `TransportManager`: sets QUIC/TCP-WS, `DialTCP` prefers QUIC with TCP-WS fallback
+- `ip.go` — `ProbePublicIP`, `FormatSslipHost`, `HasIPv6` (server auto-provisioning helpers)
 - `tlspad/` — TLS record padding (probe target cert length, pad server cert to match)
 - `arc/` — PCC Vivace congestion control for QUIC
 
