@@ -341,10 +341,16 @@ func logConnectionURL(cfg *config.ServerConfig, pair *wire.CertPair, echConfigLi
 	connectURL := fmt.Sprintf("k2v5://%s:%s@%s:%s?ech=%s&pin=%s&insecure=1",
 		auth.UDID, auth.Token, host, port, echB64, pins)
 
-	// Detect IPv6 and append to URL if available.
-	if ip6Host := detectIPv6(); ip6Host != "" {
-		connectURL += "&ip6=" + ip6Host
-		slog.Info("server: IPv6 detected", "host", ip6Host)
+	// Add ip= raw IPv4 for dialing (separate from Host which is TLS SNI domain).
+	if rawIP4 := wire.ProbePublicIP("https://api4.ipify.org"); rawIP4 != "" {
+		connectURL += "&ip=" + rawIP4
+		slog.Info("server: IPv4 detected", "ip", rawIP4)
+	}
+
+	// Add ip6= raw IPv6 for dialing (preferred over IPv4 when available).
+	if rawIP6 := wire.ProbePublicIP("https://api6.ipify.org"); rawIP6 != "" {
+		connectURL += "&ip6=" + rawIP6
+		slog.Info("server: IPv6 detected", "ip6", rawIP6)
 	}
 
 	slog.Info("Connect URL", "url", connectURL)
@@ -366,15 +372,6 @@ func detectHost() string {
 		return wire.FormatSslipHost(ip)
 	}
 	return "YOUR_SERVER_IP.sslip.io"
-}
-
-// detectIPv6 probes for public IPv6 connectivity and returns the sslip.io domain.
-// Returns "" if IPv6 is not available.
-func detectIPv6() string {
-	if ip := wire.ProbePublicIP("https://api6.ipify.org"); ip != "" {
-		return wire.FormatSslipHost(ip)
-	}
-	return ""
 }
 
 // SetCertPair configures the server to use a dual cert pair with dynamic cert selection.

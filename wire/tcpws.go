@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -79,10 +80,14 @@ type TCPWSClient struct {
 
 // NewTCPWSClient creates a new TCP-WS client transport.
 func NewTCPWSClient(cfg Config, store *TicketStore) *TCPWSClient {
+	dialHost := cfg.Host
+	if cfg.DialAddr != "" {
+		dialHost = cfg.DialAddr
+	}
 	return &TCPWSClient{
 		cfg:        cfg,
 		store:      store,
-		serverAddr: fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
+		serverAddr: net.JoinHostPort(dialHost, strconv.Itoa(cfg.Port)),
 	}
 }
 

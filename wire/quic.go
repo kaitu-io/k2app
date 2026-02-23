@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"math/rand"
 	"net"
+	"strconv"
 	"sync"
 	"time"
 
@@ -98,10 +99,14 @@ type QUICClient struct {
 
 // NewQUICClient creates a new QUIC client transport.
 func NewQUICClient(cfg Config, store *TicketStore) *QUICClient {
+	dialHost := cfg.Host
+	if cfg.DialAddr != "" {
+		dialHost = cfg.DialAddr
+	}
 	return &QUICClient{
 		cfg:        cfg,
 		store:      store,
-		serverAddr: fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
+		serverAddr: net.JoinHostPort(dialHost, strconv.Itoa(cfg.Port)),
 		hopStart:   cfg.HopStart,
 		hopEnd:     cfg.HopEnd,
 	}
@@ -147,7 +152,11 @@ func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
 
 	addr := c.serverAddr
 	if c.hopEnabled() {
-		addr = fmt.Sprintf("%s:%d", c.cfg.Host, c.hopPort())
+		dialHost := c.cfg.Host
+		if c.cfg.DialAddr != "" {
+			dialHost = c.cfg.DialAddr
+		}
+		addr = net.JoinHostPort(dialHost, strconv.Itoa(c.hopPort()))
 	}
 
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)

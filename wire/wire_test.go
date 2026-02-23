@@ -174,25 +174,93 @@ func TestParsePins_Empty(t *testing.T) {
 	}
 }
 
-func TestParseURL_IPv6(t *testing.T) {
+func TestParseURL_IPv4Param(t *testing.T) {
+	raw := "k2v5://dev:tok@camouflage.example.com:443?ip=45.78.4.222"
+	cfg, err := ParseURL(raw)
+	if err != nil {
+		t.Fatalf("ParseURL error: %v", err)
+	}
+	if cfg.Host != "camouflage.example.com" {
+		t.Errorf("Host = %q, want %q", cfg.Host, "camouflage.example.com")
+	}
+	if cfg.IPv4 != "45.78.4.222" {
+		t.Errorf("IPv4 = %q, want %q", cfg.IPv4, "45.78.4.222")
+	}
+}
+
+func TestParseURL_IPv6RawParam(t *testing.T) {
+	raw := "k2v5://dev:tok@1.2.3.4:443?ip6=2001:db8::1"
+	cfg, err := ParseURL(raw)
+	if err != nil {
+		t.Fatalf("ParseURL error: %v", err)
+	}
+	if cfg.IPv6 != "2001:db8::1" {
+		t.Errorf("IPv6 = %q, want %q", cfg.IPv6, "2001:db8::1")
+	}
+}
+
+func TestParseURL_IPv6SslipBackwardCompat(t *testing.T) {
 	raw := "k2v5://dev:tok@1.2.3.4:443?ip6=2001-db8--1.sslip.io"
 	cfg, err := ParseURL(raw)
 	if err != nil {
 		t.Fatalf("ParseURL error: %v", err)
 	}
-	if cfg.IPv6 != "2001-db8--1.sslip.io" {
-		t.Errorf("IPv6 = %q, want %q", cfg.IPv6, "2001-db8--1.sslip.io")
+	if cfg.IPv6 != "2001:db8::1" {
+		t.Errorf("IPv6 = %q, want %q (sslip.io should be normalized to raw)", cfg.IPv6, "2001:db8::1")
 	}
 }
 
-func TestParseURL_NoIPv6(t *testing.T) {
+func TestParseURL_BothIPParams(t *testing.T) {
+	raw := "k2v5://dev:tok@camouflage.example.com:443?ip=45.78.4.222&ip6=2001:db8::1&ech=ABC"
+	cfg, err := ParseURL(raw)
+	if err != nil {
+		t.Fatalf("ParseURL error: %v", err)
+	}
+	if cfg.Host != "camouflage.example.com" {
+		t.Errorf("Host = %q, want %q", cfg.Host, "camouflage.example.com")
+	}
+	if cfg.IPv4 != "45.78.4.222" {
+		t.Errorf("IPv4 = %q, want %q", cfg.IPv4, "45.78.4.222")
+	}
+	if cfg.IPv6 != "2001:db8::1" {
+		t.Errorf("IPv6 = %q, want %q", cfg.IPv6, "2001:db8::1")
+	}
+	if cfg.ECH != "ABC" {
+		t.Errorf("ECH = %q, want %q", cfg.ECH, "ABC")
+	}
+}
+
+func TestParseURL_NoIPParams(t *testing.T) {
 	raw := "k2v5://dev:tok@1.2.3.4:443"
 	cfg, err := ParseURL(raw)
 	if err != nil {
 		t.Fatalf("ParseURL error: %v", err)
 	}
+	if cfg.IPv4 != "" {
+		t.Errorf("IPv4 = %q, want empty", cfg.IPv4)
+	}
 	if cfg.IPv6 != "" {
 		t.Errorf("IPv6 = %q, want empty", cfg.IPv6)
+	}
+}
+
+func TestNormalizeSslipIPv6(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"2001-db8--1.sslip.io", "2001:db8::1"},
+		{"2001:db8::1", "2001:db8::1"},
+		{"fe80--1.sslip.io", "fe80::1"},
+		{"45.78.4.222", "45.78.4.222"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := normalizeSslipIPv6(tt.input)
+			if got != tt.want {
+				t.Errorf("normalizeSslipIPv6(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
 	}
 }
 

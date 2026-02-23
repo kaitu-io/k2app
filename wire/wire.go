@@ -56,7 +56,7 @@ func (f UDPHandlerFunc) HandleUDP(conn net.PacketConn, addr string) { f(conn, ad
 type Config struct {
 	UDID        string
 	Token       string
-	Host        string
+	Host        string // TLS SNI domain (URL hostname) — NOT used for dialing when DialAddr is set
 	Port        int
 	ECH         string
 	Fingerprint string
@@ -64,8 +64,10 @@ type Config struct {
 	HopEnd      int
 	Insecure    bool   // skip TLS certificate verification (for self-signed certs)
 	Pin         string // pin=sha256:<rsa>,sha256:<ec> — public key pin hashes
-	IPv6        string // ip6= parameter: IPv6 sslip.io domain (optional)
+	IPv4        string // ip= parameter: raw IPv4 address for dialing
+	IPv6        string // ip6= parameter: raw IPv6 address for dialing
 	Transport   string // tp= parameter: "quic", "tcpws", or "" (auto, default)
+	DialAddr    string // Resolved dial address (set by engine: ip6 preferred > ip4). Not parsed from URL.
 }
 
 // ParseURL parses a k2v5:// URL into Config.
@@ -120,8 +122,11 @@ func ParseURL(raw string) (Config, error) {
 	if v := q.Get("pin"); v != "" {
 		cfg.Pin = v
 	}
+	if v := q.Get("ip"); v != "" {
+		cfg.IPv4 = v
+	}
 	if v := q.Get("ip6"); v != "" {
-		cfg.IPv6 = v
+		cfg.IPv6 = normalizeSslipIPv6(v)
 	}
 	if v := q.Get("tp"); v != "" {
 		cfg.Transport = v
@@ -165,6 +170,17 @@ func ParsePins(pin string) ([][32]byte, error) {
 		hashes = append(hashes, h)
 	}
 	return hashes, nil
+}
+
+// normalizeSslipIPv6 converts an ip6= parameter value to raw IPv6.
+// If the value is a sslip.io domain (e.g., "2001-db8--1.sslip.io"),
+// it strips the suffix and converts dashes back to colons.
+// Raw IPv6 values (e.g., "2001:db8::1") pass through unchanged.
+func normalizeSslipIPv6(s string) string {
+	if host, ok := strings.CutSuffix(s, ".sslip.io"); ok {
+		return strings.ReplaceAll(host, "-", ":")
+	}
+	return s
 }
 
 func parseHopRange(s string) (int, int, error) {

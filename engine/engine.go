@@ -98,10 +98,16 @@ func (e *Engine) Start(cfg Config) error {
 		return e.fail(err)
 	}
 
-	// 3. Prefer IPv6 when configured and both server and client support it.
-	if cfg.PreferIPv6 && wireCfg.IPv6 != "" && wire.HasIPv6() {
-		slog.Info("engine: IPv6 available, switching to IPv6 address", "addr", wireCfg.IPv6)
-		wireCfg.Host = wireCfg.IPv6
+	// 3. Resolve dial address: ip6 (preferred) > ip4 (required).
+	// Host stays as TLS SNI domain; DialAddr is used for TCP/UDP dialing.
+	if wireCfg.IPv6 != "" {
+		wireCfg.DialAddr = wireCfg.IPv6
+		slog.Info("engine: using IPv6 for dial", "addr", wireCfg.IPv6)
+	} else if wireCfg.IPv4 != "" {
+		wireCfg.DialAddr = wireCfg.IPv4
+		slog.Info("engine: using IPv4 for dial", "addr", wireCfg.IPv4)
+	} else {
+		slog.Warn("engine: k2v5 URL missing ip= parameter, using Host for dial (deprecated)")
 	}
 
 	// 4. Build transports.
