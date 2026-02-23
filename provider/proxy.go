@@ -3,12 +3,16 @@ package provider
 import (
 	"bufio"
 	"context"
+	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
 
 // ProxyProvider implements Provider as a local SOCKS5/HTTP mixed proxy server.
@@ -167,6 +171,8 @@ func (p *ProxyProvider) handleSOCKS5(conn net.Conn, br *bufio.Reader, handler Co
 		conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
 		// Wrap with buffered reader to handle any remaining data
 		handler.HandleTCP(&bufferedConn{Conn: conn, br: br}, dest)
+	case 0x03: // UDP ASSOCIATE
+		p.handleUDPAssociate(conn, handler)
 	default:
 		// Command not supported
 		conn.Write([]byte{0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
@@ -213,3 +219,279 @@ type bufferedConn struct {
 func (c *bufferedConn) Read(b []byte) (int, error) {
 	return c.br.Read(b)
 }
+
+// ============================================================================
+// SOCKS5 UDP ASSOCIATE (RFC 1928 Section 7)
+// ============================================================================
+
+// handleUDPAssociate handles SOCKS5 UDP ASSOCIATE (CMD=0x03).
+// Opens a UDP relay, replies with its address, then blocks until the
+// TCP control connection closes (per RFC 1928).
+func (p *ProxyProvider) handleUDPAssociate(conn net.Conn, handler ConnectionHandler) {
+	// Listen on same IP as TCP listener, random port.
+	tcpAddr := p.listener.Addr().(*net.TCPAddr)
+	udpConn, err := net.ListenPacket("udp", net.JoinHostPort(tcpAddr.IP.String(), "0"))
+	if err != nil {
+		conn.Write([]byte{0x05, 0x01, 0x00, 0x01, 0, 0, 0, 0, 0, 0}) // general failure
+		conn.Close()
+		return
+	}
+
+	// Reply with relay's bound address.
+	udpAddr := udpConn.LocalAddr().(*net.UDPAddr)
+	conn.Write(buildSOCKS5Reply(udpAddr))
+
+	// Create and start relay.
+	relay := &udpRelay{
+		udpConn:  udpConn,
+		handler:  handler,
+		sessions: make(map[string]*udpSession),
+		done:     make(chan struct{}),
+	}
+	go relay.run()
+
+	// Block until TCP control connection closes.
+	buf := make([]byte, 1)
+	for {
+		if _, err := conn.Read(buf); err != nil {
+			break
+		}
+	}
+
+	relay.close()
+	conn.Close()
+}
+
+// buildSOCKS5Reply constructs the SOCKS5 reply for UDP ASSOCIATE with the relay's bound address.
+func buildSOCKS5Reply(addr *net.UDPAddr) []byte {
+	// VER=5 REP=0(success) RSV=0 ATYP BND.ADDR BND.PORT
+	ip4 := addr.IP.To4()
+	if ip4 != nil {
+		reply := make([]byte, 10)
+		reply[0] = 0x05
+		reply[3] = 0x01 // IPv4
+		copy(reply[4:8], ip4)
+		binary.BigEndian.PutUint16(reply[8:10], uint16(addr.Port))
+		return reply
+	}
+	reply := make([]byte, 22)
+	reply[0] = 0x05
+	reply[3] = 0x04 // IPv6
+	copy(reply[4:20], addr.IP.To16())
+	binary.BigEndian.PutUint16(reply[20:22], uint16(addr.Port))
+	return reply
+}
+
+// ============================================================================
+// SOCKS5 UDP header parse/write (RFC 1928 Section 7)
+// Format: [RSV:2][FRAG:1][ATYP:1][DST.ADDR:variable][DST.PORT:2][DATA]
+// ============================================================================
+
+func parseSOCKS5UDPHeader(data []byte) (dest string, payload []byte, err error) {
+	if len(data) < 4 {
+		return "", nil, errors.New("socks5 udp: packet too short")
+	}
+	if data[2] != 0x00 {
+		return "", nil, errors.New("socks5 udp: fragmented packets not supported")
+	}
+
+	atyp := data[3]
+	var host string
+	var offset int
+
+	switch atyp {
+	case 0x01: // IPv4
+		if len(data) < 10 {
+			return "", nil, errors.New("socks5 udp: IPv4 packet too short")
+		}
+		host = net.IP(data[4:8]).String()
+		offset = 10
+	case 0x03: // Domain
+		if len(data) < 5 {
+			return "", nil, errors.New("socks5 udp: domain packet too short")
+		}
+		dLen := int(data[4])
+		end := 5 + dLen + 2
+		if len(data) < end {
+			return "", nil, errors.New("socks5 udp: domain packet truncated")
+		}
+		host = string(data[5 : 5+dLen])
+		offset = end
+	case 0x04: // IPv6
+		if len(data) < 22 {
+			return "", nil, errors.New("socks5 udp: IPv6 packet too short")
+		}
+		host = net.IP(data[4:20]).String()
+		offset = 22
+	default:
+		return "", nil, fmt.Errorf("socks5 udp: unsupported ATYP %d", atyp)
+	}
+
+	port := int(data[offset-2])<<8 | int(data[offset-1])
+	return net.JoinHostPort(host, strconv.Itoa(port)), data[offset:], nil
+}
+
+func writeSOCKS5UDPHeader(dest string) []byte {
+	host, portStr, _ := net.SplitHostPort(dest)
+	port, _ := strconv.Atoi(portStr)
+
+	// RSV(2) + FRAG(1) = 3 bytes of zeros
+	var buf []byte
+
+	if ip := net.ParseIP(host); ip != nil {
+		if ip4 := ip.To4(); ip4 != nil {
+			buf = make([]byte, 10)
+			buf[3] = 0x01 // ATYP = IPv4
+			copy(buf[4:8], ip4)
+			binary.BigEndian.PutUint16(buf[8:10], uint16(port))
+		} else {
+			buf = make([]byte, 22)
+			buf[3] = 0x04 // ATYP = IPv6
+			copy(buf[4:20], ip.To16())
+			binary.BigEndian.PutUint16(buf[20:22], uint16(port))
+		}
+	} else {
+		// Domain
+		buf = make([]byte, 4+1+len(host)+2)
+		buf[3] = 0x03 // ATYP = Domain
+		buf[4] = byte(len(host))
+		copy(buf[5:], host)
+		binary.BigEndian.PutUint16(buf[5+len(host):], uint16(port))
+	}
+	return buf
+}
+
+// ============================================================================
+// UDP Relay — per-TCP-connection relay coordinator
+// ============================================================================
+
+type udpRelay struct {
+	udpConn   net.PacketConn
+	handler   ConnectionHandler
+	sessions  map[string]*udpSession // dest → session
+	mu        sync.Mutex
+	done      chan struct{}
+	closeOnce sync.Once
+}
+
+func (r *udpRelay) run() {
+	buf := make([]byte, 4096)
+	for {
+		n, from, err := r.udpConn.ReadFrom(buf)
+		if err != nil {
+			select {
+			case <-r.done:
+				return
+			default:
+				continue
+			}
+		}
+
+		dest, payload, err := parseSOCKS5UDPHeader(buf[:n])
+		if err != nil {
+			continue // drop malformed/fragmented
+		}
+
+		r.mu.Lock()
+		sess, ok := r.sessions[dest]
+		if !ok {
+			sess = &udpSession{
+				relay:      r,
+				clientAddr: from,
+				dest:       dest,
+				readCh:     make(chan []byte, 32),
+				done:       make(chan struct{}),
+			}
+			r.sessions[dest] = sess
+			go r.handler.HandleUDP(sess, dest)
+		}
+		r.mu.Unlock()
+
+		sess.setClientAddr(from)
+		sess.deliver(payload)
+	}
+}
+
+func (r *udpRelay) close() {
+	r.closeOnce.Do(func() {
+		close(r.done)
+		r.udpConn.Close()
+		r.mu.Lock()
+		for _, sess := range r.sessions {
+			sess.close()
+		}
+		r.mu.Unlock()
+	})
+}
+
+// ============================================================================
+// UDP Session — virtual net.PacketConn per destination
+// ============================================================================
+
+type udpSession struct {
+	relay      *udpRelay
+	clientAddr net.Addr
+	dest       string
+	readCh     chan []byte
+	done       chan struct{}
+	closeOnce  sync.Once
+	mu         sync.Mutex // protects clientAddr
+}
+
+var _ net.PacketConn = (*udpSession)(nil)
+
+func (s *udpSession) deliver(payload []byte) {
+	p := make([]byte, len(payload))
+	copy(p, payload)
+	select {
+	case s.readCh <- p:
+	case <-s.done:
+	}
+}
+
+func (s *udpSession) setClientAddr(addr net.Addr) {
+	s.mu.Lock()
+	s.clientAddr = addr
+	s.mu.Unlock()
+}
+
+func (s *udpSession) ReadFrom(b []byte) (int, net.Addr, error) {
+	select {
+	case payload := <-s.readCh:
+		n := copy(b, payload)
+		addr, _ := net.ResolveUDPAddr("udp", s.dest)
+		return n, addr, nil
+	case <-s.done:
+		return 0, nil, net.ErrClosed
+	}
+}
+
+func (s *udpSession) WriteTo(b []byte, _ net.Addr) (int, error) {
+	header := writeSOCKS5UDPHeader(s.dest)
+	pkt := make([]byte, len(header)+len(b))
+	copy(pkt, header)
+	copy(pkt[len(header):], b)
+
+	s.mu.Lock()
+	addr := s.clientAddr
+	s.mu.Unlock()
+
+	if _, err := s.relay.udpConn.WriteTo(pkt, addr); err != nil {
+		return 0, err
+	}
+	return len(b), nil
+}
+
+func (s *udpSession) close() {
+	s.closeOnce.Do(func() { close(s.done) })
+}
+
+func (s *udpSession) Close() error {
+	s.close()
+	return nil
+}
+
+func (s *udpSession) LocalAddr() net.Addr                { return s.relay.udpConn.LocalAddr() }
+func (s *udpSession) SetDeadline(t time.Time) error      { return nil }
+func (s *udpSession) SetReadDeadline(t time.Time) error  { return nil }
+func (s *udpSession) SetWriteDeadline(t time.Time) error { return nil }

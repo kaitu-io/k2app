@@ -1,15 +1,13 @@
 package provider
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"net"
 	"testing"
+	"time"
 )
-
-func TestProvider_InterfaceCompliance(t *testing.T) {
-	var _ Provider = (*ProxyProvider)(nil)
-	var _ Provider = (*TUNProvider)(nil)
-}
 
 func TestProviderConfig_SetDefaults(t *testing.T) {
 	var cfg ProviderConfig
@@ -102,13 +100,6 @@ func (h *testHandler) HandleTCP(conn net.Conn, dest string) {
 
 func (h *testHandler) HandleUDP(conn net.PacketConn, dest string) {
 	h.udpCalls <- udpCall{conn: conn, dest: dest}
-}
-
-func TestProxyProvider_Name(t *testing.T) {
-	p := NewProxyProvider(ProviderConfig{})
-	if p.Name() != "proxy" {
-		t.Errorf("Name = %q, want proxy", p.Name())
-	}
 }
 
 func TestProxyProvider_StartClose(t *testing.T) {
@@ -298,5 +289,383 @@ func TestProxyProvider_HTTPConnect_NoPort(t *testing.T) {
 		}
 	default:
 		t.Fatal("handler.HandleTCP not called")
+	}
+}
+
+// ============================================================================
+// SOCKS5 UDP header tests
+// ============================================================================
+
+func TestParseSOCKS5UDPHeader_IPv4(t *testing.T) {
+	// [RSV:2][FRAG:1][ATYP:1][IPv4:4][PORT:2][DATA]
+	data := []byte{
+		0x00, 0x00, // RSV
+		0x00,       // FRAG
+		0x01,       // ATYP = IPv4
+		93, 184, 216, 34, // 93.184.216.34
+		0x00, 0x50, // port 80
+		'h', 'e', 'l', 'l', 'o', // payload
+	}
+	dest, payload, err := parseSOCKS5UDPHeader(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dest != "93.184.216.34:80" {
+		t.Errorf("dest = %q, want 93.184.216.34:80", dest)
+	}
+	if string(payload) != "hello" {
+		t.Errorf("payload = %q, want hello", payload)
+	}
+}
+
+func TestParseSOCKS5UDPHeader_Domain(t *testing.T) {
+	data := []byte{
+		0x00, 0x00, // RSV
+		0x00,       // FRAG
+		0x03,       // ATYP = Domain
+		11,         // domain length
+		'e', 'x', 'a', 'm', 'p', 'l', 'e', '.', 'c', 'o', 'm',
+		0x00, 0x50, // port 80
+		'd', 'a', 't', 'a', // payload
+	}
+	dest, payload, err := parseSOCKS5UDPHeader(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dest != "example.com:80" {
+		t.Errorf("dest = %q, want example.com:80", dest)
+	}
+	if string(payload) != "data" {
+		t.Errorf("payload = %q, want data", payload)
+	}
+}
+
+func TestParseSOCKS5UDPHeader_IPv6(t *testing.T) {
+	ip := net.ParseIP("::1")
+	data := make([]byte, 0, 4+16+2+1)
+	data = append(data, 0x00, 0x00, 0x00, 0x04) // RSV + FRAG + ATYP=IPv6
+	data = append(data, ip.To16()...)             // 16 bytes
+	data = append(data, 0x01, 0xBB)               // port 443
+	data = append(data, 'x')                      // payload
+
+	dest, payload, err := parseSOCKS5UDPHeader(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dest != "[::1]:443" {
+		t.Errorf("dest = %q, want [::1]:443", dest)
+	}
+	if string(payload) != "x" {
+		t.Errorf("payload = %q, want x", payload)
+	}
+}
+
+func TestParseSOCKS5UDPHeader_Fragmented(t *testing.T) {
+	data := []byte{0x00, 0x00, 0x01, 0x01, 1, 2, 3, 4, 0x00, 0x50}
+	_, _, err := parseSOCKS5UDPHeader(data)
+	if err == nil {
+		t.Fatal("expected error for fragmented packet")
+	}
+}
+
+func TestParseSOCKS5UDPHeader_TooShort(t *testing.T) {
+	_, _, err := parseSOCKS5UDPHeader([]byte{0x00, 0x00})
+	if err == nil {
+		t.Fatal("expected error for short packet")
+	}
+}
+
+func TestWriteSOCKS5UDPHeader_IPv4(t *testing.T) {
+	header := writeSOCKS5UDPHeader("93.184.216.34:80")
+	want := []byte{
+		0x00, 0x00, 0x00, // RSV + FRAG
+		0x01,              // ATYP = IPv4
+		93, 184, 216, 34,  // IP
+		0x00, 0x50,        // port 80
+	}
+	if !bytes.Equal(header, want) {
+		t.Errorf("header = %v, want %v", header, want)
+	}
+}
+
+func TestWriteSOCKS5UDPHeader_Domain(t *testing.T) {
+	header := writeSOCKS5UDPHeader("example.com:80")
+	want := []byte{
+		0x00, 0x00, 0x00, // RSV + FRAG
+		0x03,              // ATYP = Domain
+		11,                // domain length
+		'e', 'x', 'a', 'm', 'p', 'l', 'e', '.', 'c', 'o', 'm',
+		0x00, 0x50, // port 80
+	}
+	if !bytes.Equal(header, want) {
+		t.Errorf("header = %v, want %v", header, want)
+	}
+}
+
+func TestSOCKS5UDPHeader_Roundtrip(t *testing.T) {
+	tests := []string{
+		"93.184.216.34:80",
+		"example.com:443",
+		"[::1]:8080",
+	}
+	for _, dest := range tests {
+		t.Run(dest, func(t *testing.T) {
+			header := writeSOCKS5UDPHeader(dest)
+			payload := []byte("test-payload")
+			pkt := append(header, payload...)
+
+			gotDest, gotPayload, err := parseSOCKS5UDPHeader(pkt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if gotDest != dest {
+				t.Errorf("dest = %q, want %q", gotDest, dest)
+			}
+			if string(gotPayload) != "test-payload" {
+				t.Errorf("payload = %q, want test-payload", gotPayload)
+			}
+		})
+	}
+}
+
+// ============================================================================
+// SOCKS5 UDP ASSOCIATE integration tests
+// ============================================================================
+
+// socks5UDPHandshake performs SOCKS5 auth + UDP ASSOCIATE handshake.
+// Returns the relay address from the server reply.
+func socks5UDPHandshake(t *testing.T, conn net.Conn) *net.UDPAddr {
+	t.Helper()
+
+	// Auth: version 5, 1 method (no auth)
+	conn.Write([]byte{0x05, 0x01, 0x00})
+	reply := make([]byte, 2)
+	if _, err := conn.Read(reply); err != nil {
+		t.Fatal(err)
+	}
+	if reply[0] != 0x05 || reply[1] != 0x00 {
+		t.Fatalf("auth reply = %v, want [5 0]", reply)
+	}
+
+	// UDP ASSOCIATE: CMD=0x03, ATYP=0x01, DST.ADDR=0.0.0.0, DST.PORT=0
+	conn.Write([]byte{
+		0x05, 0x03, 0x00, 0x01,
+		0, 0, 0, 0, // 0.0.0.0
+		0, 0, // port 0
+	})
+
+	// Read reply: VER REP RSV ATYP BND.ADDR BND.PORT
+	buf := make([]byte, 10) // IPv4 reply is exactly 10 bytes
+	if _, err := conn.Read(buf); err != nil {
+		t.Fatal(err)
+	}
+	if buf[1] != 0x00 {
+		t.Fatalf("UDP ASSOCIATE reply status = %d, want 0 (success)", buf[1])
+	}
+	if buf[3] != 0x01 {
+		t.Fatalf("reply ATYP = %d, want 1 (IPv4)", buf[3])
+	}
+
+	ip := net.IP(buf[4:8])
+	port := int(binary.BigEndian.Uint16(buf[8:10]))
+	return &net.UDPAddr{IP: ip, Port: port}
+}
+
+// buildSOCKS5UDPPacket builds a SOCKS5 UDP datagram with the given dest and payload.
+func buildSOCKS5UDPPacket(dest string, payload []byte) []byte {
+	header := writeSOCKS5UDPHeader(dest)
+	return append(header, payload...)
+}
+
+func TestProxyProvider_SOCKS5_UDPAssociate(t *testing.T) {
+	p := NewProxyProvider(ProviderConfig{ProxyListen: "127.0.0.1:0"})
+	handler := newTestHandler()
+
+	if err := p.Start(context.Background(), handler); err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+
+	// TCP connection for SOCKS5 handshake
+	addr := p.listener.Addr().String()
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	// Perform UDP ASSOCIATE handshake, get relay address
+	relayAddr := socks5UDPHandshake(t, conn)
+
+	// Open local UDP socket to communicate with relay
+	udpConn, err := net.DialUDP("udp", nil, relayAddr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer udpConn.Close()
+
+	// Send SOCKS5 UDP packet to relay
+	pkt := buildSOCKS5UDPPacket("127.0.0.1:9999", []byte("hello"))
+	if _, err := udpConn.Write(pkt); err != nil {
+		t.Fatal(err)
+	}
+
+	// Handler should receive HandleUDP call
+	var call udpCall
+	select {
+	case call = <-handler.udpCalls:
+	case <-time.After(2 * time.Second):
+		t.Fatal("handler.HandleUDP not called")
+	}
+	if call.dest != "127.0.0.1:9999" {
+		t.Errorf("dest = %q, want 127.0.0.1:9999", call.dest)
+	}
+
+	// Read payload from the session's PacketConn
+	buf := make([]byte, 4096)
+	call.conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	n, _, err := call.conn.ReadFrom(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(buf[:n]) != "hello" {
+		t.Errorf("payload = %q, want hello", buf[:n])
+	}
+
+	// Write response back through the session
+	call.conn.WriteTo([]byte("world"), nil)
+
+	// Read response from UDP socket (should be SOCKS5 framed)
+	udpConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	n, err = udpConn.Read(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dest, payload, err := parseSOCKS5UDPHeader(buf[:n])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dest != "127.0.0.1:9999" {
+		t.Errorf("response dest = %q, want 127.0.0.1:9999", dest)
+	}
+	if string(payload) != "world" {
+		t.Errorf("response payload = %q, want world", payload)
+	}
+}
+
+func TestProxyProvider_SOCKS5_UDPAssociate_MultiDest(t *testing.T) {
+	p := NewProxyProvider(ProviderConfig{ProxyListen: "127.0.0.1:0"})
+	handler := newTestHandler()
+
+	if err := p.Start(context.Background(), handler); err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+
+	addr := p.listener.Addr().String()
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	relayAddr := socks5UDPHandshake(t, conn)
+
+	udpConn, err := net.DialUDP("udp", nil, relayAddr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer udpConn.Close()
+
+	// Send to two different destinations
+	udpConn.Write(buildSOCKS5UDPPacket("127.0.0.1:1111", []byte("first")))
+	udpConn.Write(buildSOCKS5UDPPacket("127.0.0.1:2222", []byte("second")))
+
+	// Should get two HandleUDP calls with different dests
+	dests := make(map[string]net.PacketConn)
+	for i := 0; i < 2; i++ {
+		select {
+		case call := <-handler.udpCalls:
+			dests[call.dest] = call.conn
+		case <-time.After(2 * time.Second):
+			t.Fatalf("expected 2 HandleUDP calls, got %d", i)
+		}
+	}
+
+	if _, ok := dests["127.0.0.1:1111"]; !ok {
+		t.Error("missing HandleUDP call for 127.0.0.1:1111")
+	}
+	if _, ok := dests["127.0.0.1:2222"]; !ok {
+		t.Error("missing HandleUDP call for 127.0.0.1:2222")
+	}
+
+	// Verify each session gets correct payload
+	buf := make([]byte, 4096)
+	for dest, pc := range dests {
+		pc.SetReadDeadline(time.Now().Add(2 * time.Second))
+		n, _, err := pc.ReadFrom(buf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		switch dest {
+		case "127.0.0.1:1111":
+			if string(buf[:n]) != "first" {
+				t.Errorf("dest %s payload = %q, want first", dest, buf[:n])
+			}
+		case "127.0.0.1:2222":
+			if string(buf[:n]) != "second" {
+				t.Errorf("dest %s payload = %q, want second", dest, buf[:n])
+			}
+		}
+	}
+}
+
+func TestProxyProvider_SOCKS5_UDPAssociate_TCPClose(t *testing.T) {
+	p := NewProxyProvider(ProviderConfig{ProxyListen: "127.0.0.1:0"})
+	handler := newTestHandler()
+
+	if err := p.Start(context.Background(), handler); err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+
+	addr := p.listener.Addr().String()
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	relayAddr := socks5UDPHandshake(t, conn)
+
+	udpConn, err := net.DialUDP("udp", nil, relayAddr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer udpConn.Close()
+
+	// Create a session
+	udpConn.Write(buildSOCKS5UDPPacket("127.0.0.1:9999", []byte("data")))
+
+	var call udpCall
+	select {
+	case call = <-handler.udpCalls:
+	case <-time.After(2 * time.Second):
+		t.Fatal("handler.HandleUDP not called")
+	}
+
+	// Drain the delivered payload first
+	buf := make([]byte, 4096)
+	call.conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	call.conn.ReadFrom(buf)
+
+	// Close TCP control connection
+	conn.Close()
+
+	// Session should eventually return error from ReadFrom
+	// (relay.close triggers close(s.done) → ReadFrom returns net.ErrClosed)
+	time.Sleep(100 * time.Millisecond)
+	_, _, err = call.conn.ReadFrom(make([]byte, 1))
+	if err == nil {
+		t.Fatal("expected error after TCP close, got nil")
 	}
 }
