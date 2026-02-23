@@ -22,6 +22,7 @@ import org.json.JSONObject
 import mobile.Mobile
 import mobile.Engine
 import mobile.EventHandler as MobileEventHandler
+import java.util.concurrent.Executors
 
 private data class ParsedClientConfig(
     val tunIpv4: String?,
@@ -67,7 +68,14 @@ private fun parseClientConfig(configJSON: String): ParsedClientConfig? {
     }
 }
 
-class K2VpnService : VpnService(), VpnServiceBridge {
+class K2VpnService : VpnService(), VpnServiceBridge, mobile.SocketProtector {
+
+    // mobile.SocketProtector — marks socket FDs for VPN routing exclusion.
+    // Delegates to VpnService.protect(int) which tells the OS kernel to route
+    // this socket outside the TUN interface, preventing routing loops.
+    override fun protect(fd: Int): Boolean {
+        return super.protect(fd)
+    }
 
     companion object {
         private const val TAG = "K2VpnService"
@@ -81,6 +89,10 @@ class K2VpnService : VpnService(), VpnServiceBridge {
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private var pendingNetworkChange: Runnable? = null
+    /** Single-thread executor for all blocking gomobile JNI calls — keeps them off the main thread. */
+    private val engineExecutor = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "k2-engine").apply { isDaemon = true }
+    }
 
     override fun onBind(intent: Intent?): IBinder {
         return binder
@@ -139,17 +151,22 @@ class K2VpnService : VpnService(), VpnServiceBridge {
         engine?.setEventHandler(object : MobileEventHandler {
             override fun onStateChange(state: String?) {
                 Log.d(TAG, "onStateChange: $state")
-                state?.let {
-                    plugin?.onStateChange(it)
-                    if (it == "connected") {
-                        updateNotification("Connected")
+                state?.let { s ->
+                    // Dispatch to main thread — Go callbacks run on goroutine threads
+                    mainHandler.post {
+                        plugin?.onStateChange(s)
+                        if (s == "connected") {
+                            updateNotification("Connected")
+                        }
                     }
                 }
             }
 
             override fun onError(message: String?) {
                 Log.e(TAG, "onError: $message")
-                message?.let { plugin?.onError(it) }
+                message?.let { msg ->
+                    mainHandler.post { plugin?.onError(msg) }
+                }
             }
 
             override fun onStats(txBytes: Long, rxBytes: Long) {
@@ -187,28 +204,50 @@ class K2VpnService : VpnService(), VpnServiceBridge {
             return
         }
 
-        try {
-            Log.d(TAG, "Starting engine with fd=$rawFd")
-            val engineCfg = Mobile.newEngineConfig()
-            engineCfg.cacheDir = cacheDir.absolutePath
-            engine?.start(configJSON, rawFd.toLong(), engineCfg)
-            Log.d(TAG, "Engine started successfully")
-            registerNetworkCallback()
-        } catch (e: Exception) {
-            Log.e(TAG, "Engine start failed: ${e.message}", e)
-            plugin?.onError(e.message ?: "Failed to start engine")
-            stopVpn()
+        // Run blocking gomobile engine.start() off the main thread to prevent ANR.
+        val cachePath = cacheDir.absolutePath
+        engineExecutor.execute {
+            try {
+                Log.d(TAG, "Starting engine with fd=$rawFd (background thread)")
+                val engineCfg = Mobile.newEngineConfig()
+                engineCfg.cacheDir = cachePath
+                engineCfg.socketProtector = this@K2VpnService
+                engine?.start(configJSON, rawFd.toLong(), engineCfg)
+                Log.d(TAG, "Engine started successfully")
+                mainHandler.post { registerNetworkCallback() }
+            } catch (e: Exception) {
+                Log.e(TAG, "Engine start failed: ${e.message}", e)
+                mainHandler.post {
+                    plugin?.onError(e.message ?: "Failed to start engine")
+                    stopVpn()
+                }
+            }
         }
     }
 
     private fun stopVpn() {
         unregisterNetworkCallback()
-        engine?.stop()
+        val eng = engine
         engine = null
         // fd ownership was transferred to Go engine via detachFd() — don't close vpnInterface
         vpnInterface = null
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        if (eng != null) {
+            // Run blocking gomobile stop() off main thread
+            engineExecutor.execute {
+                try {
+                    eng.stop()
+                } catch (e: Exception) {
+                    Log.w(TAG, "Engine stop error: ${e.message}")
+                }
+                mainHandler.post {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                }
+            }
+        } else {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
     }
 
     private fun registerNetworkCallback() {
@@ -221,8 +260,11 @@ class K2VpnService : VpnService(), VpnServiceBridge {
                 Log.d(TAG, "Network available: $network")
                 pendingNetworkChange?.let { mainHandler.removeCallbacks(it) }
                 val runnable = Runnable {
-                    Log.d(TAG, "Triggering engine network change reset")
-                    engine?.onNetworkChanged()
+                    // Run gomobile call off main thread
+                    engineExecutor.execute {
+                        Log.d(TAG, "Triggering engine network change reset")
+                        engine?.onNetworkChanged()
+                    }
                 }
                 pendingNetworkChange = runnable
                 mainHandler.postDelayed(runnable, 500)
@@ -232,7 +274,10 @@ class K2VpnService : VpnService(), VpnServiceBridge {
                 Log.d(TAG, "Network lost: $network — clearing dead connections immediately")
                 pendingNetworkChange?.let { mainHandler.removeCallbacks(it) }
                 pendingNetworkChange = null
-                engine?.onNetworkChanged()
+                // Run gomobile call off main thread
+                engineExecutor.execute {
+                    engine?.onNetworkChanged()
+                }
             }
         }
         cm.registerNetworkCallback(request, callback)
