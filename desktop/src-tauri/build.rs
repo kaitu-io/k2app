@@ -26,6 +26,7 @@ fn main() {
 
             // System frameworks required by the NE helper
             println!("cargo:rustc-link-lib=framework=NetworkExtension");
+            println!("cargo:rustc-link-lib=framework=SystemExtensions");
             println!("cargo:rustc-link-lib=framework=Foundation");
         } else if !skip && !lib_exists {
             // Emit a warning but do not fail — unit tests use mock stubs

@@ -20,6 +20,9 @@ build-macos:
 build-macos-fast:
 	bash scripts/build-macos.sh --skip-notarization
 
+build-macos-test:
+	bash scripts/build-macos.sh --skip-notarization --single-arch --features=mcp-bridge,devtools
+
 build-windows: pre-build build-webapp
 	$(MAKE) build-k2 TARGET=x86_64-pc-windows-msvc
 	cd desktop && yarn tauri build --target x86_64-pc-windows-msvc

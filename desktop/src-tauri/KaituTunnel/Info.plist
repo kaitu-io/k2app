@@ -15,7 +15,15 @@
     <key>CFBundleShortVersionString</key>
     <string>1.0</string>
     <key>CFBundlePackageType</key>
-    <string>XPC!</string>
+    <string>SYSX</string>
+    <key>NetworkExtension</key>
+    <dict>
+        <key>NEProviderClasses</key>
+        <dict>
+            <key>com.apple.networkextension.packet-tunnel</key>
+            <string>KaituTunnel.PacketTunnelProvider</string>
+        </dict>
+    </dict>
     <key>NSExtension</key>
     <dict>
         <key>NSExtensionPointIdentifier</key>
