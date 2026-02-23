@@ -3,7 +3,7 @@
 
 Reads JSON result files from each scenario and produces:
 1. Summary table (per-scenario, per-protocol averages)
-2. Three-way comparison (k2 PCC vs Hy2 Brutal vs Hy2 BBR)
+2. Three-way comparison (K2ARC vs Hy2 Brutal vs Hy2 BBR)
 3. CSV export for plotting
 
 Usage:
@@ -34,7 +34,7 @@ SCENARIO_INFO = {
 
 # Protocol display names and matching keys
 PROTO_ORDER = ["k2_pcc", "hy2_brutal", "hy2_bbr"]
-PROTO_LABELS = {"k2_pcc": "k2 PCC", "hy2_brutal": "Hy2 Brutal", "hy2_bbr": "Hy2 BBR"}
+PROTO_LABELS = {"k2_pcc": "K2ARC", "hy2_brutal": "Hy2 Brutal", "hy2_bbr": "Hy2 BBR"}
 
 
 def load_results(results_dir):
@@ -89,7 +89,7 @@ def compute_averages(results):
 def print_report(all_data):
     print()
     print("=" * 110)
-    print("  k2 PCC vs Hysteria2 Brutal vs Hysteria2 BBR — Performance Report")
+    print("  K2ARC vs Hysteria2 Brutal vs Hysteria2 BBR — Performance Report")
     print("=" * 110)
     print()
 
@@ -135,7 +135,7 @@ def print_report(all_data):
     print("  Three-Way Comparison")
     print("=" * 110)
     print()
-    print(f"{'Scenario':<18} {'k2 PCC':>10} {'Brutal':>10} {'BBR':>10} {'Best':>12} {'k2 vs Brutal':>14} {'k2 vs BBR':>12}")
+    print(f"{'Scenario':<18} {'K2ARC':>10} {'Brutal':>10} {'BBR':>10} {'Best':>12} {'k2 vs Brutal':>14} {'k2 vs BBR':>12}")
     print("-" * 100)
 
     for scenario in SCENARIO_INFO:
@@ -153,7 +153,7 @@ def print_report(all_data):
         bbr_mbps = bbr["avg_mbps"] if bbr else 0
 
         candidates = {}
-        if k2:  candidates["k2 PCC"] = k2_mbps
+        if k2:  candidates["K2ARC"] = k2_mbps
         if brt: candidates["Brutal"] = brt_mbps
         if bbr: candidates["BBR"]    = bbr_mbps
         best = max(candidates, key=candidates.get) if candidates else "-"

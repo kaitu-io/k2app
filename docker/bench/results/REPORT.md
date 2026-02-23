@@ -1,4 +1,4 @@
-# k2 PCC vs Hysteria2 Brutal vs BBR — Benchmark Report
+# K2ARC vs Hysteria2 Brutal vs BBR — Benchmark Report
 
 **Date:** 2026-02-13
 **Platform:** Docker Desktop (macOS), Docker bridge networking
@@ -17,7 +17,7 @@ speedtest.py → SOCKS5 proxy (local) → QUIC tunnel → Docker bridge (netem) 
 
 ## 2. Protocol Configuration
 
-### k2 PCC (Performance-oriented Congestion Control)
+### K2ARC (Performance-oriented Congestion Control)
 - **CC algorithm:** PCC Vivace with GFW-optimized utility function (alpha=0.5)
 - **Initial cwnd multiplier:** 2.0x
 - **QUIC stream windows:** 8 MB (stream), 20 MB (connection)
@@ -65,28 +65,28 @@ speedtest.py → SOCKS5 proxy (local) → QUIC tunnel → Docker bridge (netem) 
 
 ### Per-Scenario Throughput (Mbps)
 
-| Scenario | k2 PCC | Hy2 Brutal | Hy2 BBR | Best Protocol |
+| Scenario | K2ARC | Hy2 Brutal | Hy2 BBR | Best Protocol |
 |---|---:|---:|---:|---|
 | T0_ideal | 200.3 | 201.6 | 25.6 | Brutal |
 | T1_good | 129.8 | 194.2 | 48.4 | Brutal |
-| T2_fair | **416.5** | 28.3 | 174.6 | **k2 PCC** |
-| T3_poor | **375.5** | 237.7 | 253.6 | **k2 PCC** |
-| T4_bad | **305.3** | 141.0 | 249.7 | **k2 PCC** |
+| T2_fair | **416.5** | 28.3 | 174.6 | **K2ARC** |
+| T3_poor | **375.5** | 237.7 | 253.6 | **K2ARC** |
+| T4_bad | **305.3** | 141.0 | 249.7 | **K2ARC** |
 | T5_hostile | 143.8 | 173.3 | 5.6 (timeout) | Brutal |
-| T6_gfw_normal | **519.7** | 331.4 | 128.8 | **k2 PCC** |
-| T7_gfw_detected | **566.8** | 254.3 | 317.5 | **k2 PCC** |
-| T8_gfw_extreme | **173.3** | 116.9 | 21.5 (timeout) | **k2 PCC** |
-| C1_cmcc_south | **376.5** | 130.5 | 45.4 | **k2 PCC** |
+| T6_gfw_normal | **519.7** | 331.4 | 128.8 | **K2ARC** |
+| T7_gfw_detected | **566.8** | 254.3 | 317.5 | **K2ARC** |
+| T8_gfw_extreme | **173.3** | 116.9 | 21.5 (timeout) | **K2ARC** |
+| C1_cmcc_south | **376.5** | 130.5 | 45.4 | **K2ARC** |
 | C2_cmcc_peak | 203.3 | 207.3 | 33.8 | Brutal |
-| C3_ct_cn2 | **362.2** | 93.8 | failed | **k2 PCC** |
-| C4_ct_163_peak | **618.0** | 381.6 | 469.2 | **k2 PCC** |
+| C3_ct_cn2 | **362.2** | 93.8 | failed | **K2ARC** |
+| C4_ct_163_peak | **618.0** | 381.6 | 469.2 | **K2ARC** |
 | C5_cu_peak | failed | 296.6 | 61.2 | Brutal |
 
-**Scorecard:** k2 PCC wins 9/14, Brutal wins 5/14, BBR wins 0/14.
+**Scorecard:** K2ARC wins 9/14, Brutal wins 5/14, BBR wins 0/14.
 
-### Three-Way Comparison (k2 PCC delta vs others)
+### Three-Way Comparison (K2ARC delta vs others)
 
-| Scenario | k2 PCC | vs Brutal | vs BBR |
+| Scenario | K2ARC | vs Brutal | vs BBR |
 |---|---:|---:|---:|
 | T0_ideal | 200.3 | -1% | +682% |
 | T1_good | 129.8 | -33% | +168% |
@@ -107,7 +107,7 @@ Positive = k2 faster. Negative = k2 slower.
 
 ### Throughput Stability (CV = Coefficient of Variation)
 
-| Scenario | k2 PCC | Hy2 Brutal | Hy2 BBR |
+| Scenario | K2ARC | Hy2 Brutal | Hy2 BBR |
 |---|---:|---:|---:|
 | T0_ideal | 0.460 | 0.484 | 1.439 |
 | T1_good | 0.674 | 0.499 | 0.960 |
@@ -116,44 +116,44 @@ Positive = k2 faster. Negative = k2 slower.
 | C4_ct_163_peak | **0.079** | 0.283 | 0.114 |
 | C5_cu_peak | - | 0.203 | 0.295 |
 
-Lower CV = more stable throughput. k2 PCC achieves the lowest CV in several high-loss scenarios (T7: 0.076, C4: 0.079), indicating steady throughput under adversity.
+Lower CV = more stable throughput. K2ARC achieves the lowest CV in several high-loss scenarios (T7: 0.076, C4: 0.079), indicating steady throughput under adversity.
 
 ## 5. China ISP Scenario Analysis
 
 ### C1: CMCC South off-peak (120ms, 5% loss, burst 33%)
-- **k2 PCC: 376.5 Mbps** — Dominates. PCC's gradient-ascent utility function finds optimal rate despite bursty loss.
+- **K2ARC: 376.5 Mbps** — Dominates. PCC's gradient-ascent utility function finds optimal rate despite bursty loss.
 - Brutal: 130.5 Mbps — Sends at 1053 Mbps (1000/0.95) to compensate for 5% loss; ACK delays cause server-side buffering.
 - BBR: 45.4 Mbps — BBR significantly underperforms; loss triggers aggressive backoff.
 
 ### C2: CMCC South peak / 晚高峰 (200ms, 15% loss, burst 50%)
-- k2 PCC: 203.3 Mbps — Nearly tied with Brutal.
+- K2ARC: 203.3 Mbps — Nearly tied with Brutal.
 - **Brutal: 207.3 Mbps** — Marginal winner. Brutal sends at 1176 Mbps (1000/0.85); its loss-ignoring strategy works when raw capacity exists.
 - BBR: 33.8 Mbps — Severe loss + high RTT collapse BBR throughput.
 
 ### C3: CT CN2 GIA premium (50ms, 0.5% loss)
-- **k2 PCC: 362.2 Mbps** — Clean win on premium routing.
+- **K2ARC: 362.2 Mbps** — Clean win on premium routing.
 - Brutal: 93.8 Mbps (partial: 1.9 GB) — Connection degraded mid-transfer.
 - BBR: Failed (SOCKS5 connect error).
 
 ### C4: CT 163 backbone peak (100ms, 8% loss, burst 33%)
-- **k2 PCC: 618.0 Mbps** — Best result in the entire benchmark. PCC ramps up aggressively after initial probing phase.
+- **K2ARC: 618.0 Mbps** — Best result in the entire benchmark. PCC ramps up aggressively after initial probing phase.
 - BBR: 469.2 Mbps — Respectable; BBR performs better here than most scenarios.
 - Brutal: 381.6 Mbps — Hampered by connection instability (partial data on first attempt).
 
 ### C5: CU congested peak (120ms, 6% loss, burst 33%)
-- k2 PCC: Failed (connection reset) — Intermittent SOCKS5 failure.
+- K2ARC: Failed (connection reset) — Intermittent SOCKS5 failure.
 - **Brutal: 296.6 Mbps** — Won by default due to k2 failure.
 - BBR: 61.2 Mbps (partial: 724 MB).
 
 ### China ISP Summary
 For typical CMCC/CT/CU users with moderate-to-high loss (5-15%):
-- **k2 PCC is 2-3x faster** than alternatives when connections succeed
-- Brutal is a reliable fallback but underperforms k2 PCC in most scenarios
+- **K2ARC is 2-3x faster** than alternatives when connections succeed
+- Brutal is a reliable fallback but underperforms K2ARC in most scenarios
 - **BBR is inadequate** for China cross-border use (33-61 Mbps in C1-C5)
 
 ## 6. Key Findings
 
-1. **k2 PCC dominates high-loss scenarios.** Under GFW-like conditions (T7: 26% loss, T8: 50% loss) and China ISP conditions (C1-C4: 5-15% loss), k2 PCC achieves 2-5x higher throughput than alternatives.
+1. **K2ARC dominates high-loss scenarios.** Under GFW-like conditions (T7: 26% loss, T8: 50% loss) and China ISP conditions (C1-C4: 5-15% loss), K2ARC achieves 2-5x higher throughput than alternatives.
 
 2. **Brutal wins low-loss, low-delay scenarios.** At T0 (no impairment) and T1 (50ms, 0.1%), Brutal's fixed-rate strategy matches or exceeds PCC. Brutal's 1000 Mbps declared rate is effective when network conditions are good.
 
@@ -161,7 +161,7 @@ For typical CMCC/CT/CU users with moderate-to-high loss (5-15%):
 
 4. **PCC shows exceptional stability under loss.** CV of 0.076 on T7_gfw_detected (26% loss) and 0.079 on C4_ct_163_peak (8% loss) indicate rock-steady throughput despite hostile conditions.
 
-5. **Connection reliability varies.** k2 PCC failed on C5_cu_peak, BBR failed on C3_ct_cn2. With ROUNDS=1, transient failures are not retried. Multi-round testing would improve reliability data.
+5. **Connection reliability varies.** K2ARC failed on C5_cu_peak, BBR failed on C3_ct_cn2. With ROUNDS=1, transient failures are not retried. Multi-round testing would improve reliability data.
 
 ## 7. Methodology Notes
 

@@ -1,11 +1,11 @@
 #!/bin/bash
 # ============================================================================
-# k2 PCC vs Hysteria2 Brutal/BBR — Congestion Control Benchmark Suite
+# K2ARC vs Hysteria2 Brutal/BBR — Congestion Control Benchmark Suite
 # ============================================================================
 #
 # Compares three QUIC congestion control algorithms under 14 network scenarios:
 #
-#   k2 PCC          Adaptive rate-based CC (gradient ascent on utility function)
+#   K2ARC          Adaptive rate-based CC (gradient ascent on utility function)
 #   Hy2 Brutal      Fixed-rate CC (user-declared bandwidth, loss-compensating)
 #   Hy2 BBR          Google BBR CC (adaptive, no bandwidth declaration)
 #
@@ -56,7 +56,7 @@ ALL_SCENARIOS="T0_ideal T1_good T2_fair T3_poor T4_bad T5_hostile T6_gfw_normal 
 SCENARIOS="${@:-$ALL_SCENARIOS}"
 
 echo "=============================================="
-echo "  k2 PCC vs Hysteria2 Brutal/BBR Benchmark"
+echo "  K2ARC vs Hysteria2 Brutal/BBR Benchmark"
 echo "=============================================="
 echo "Scenarios:   $SCENARIOS"
 echo "File size:   ${SIZE:-2000MB}"

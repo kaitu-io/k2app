@@ -54,7 +54,7 @@ CLIENTEOF
 # Start proxies
 k2 run -c /tmp/k2-client.yaml &
 K2_PID=$!
-echo "k2 PCC started (PID $K2_PID, SOCKS5 :10005)"
+echo "K2ARC started (PID $K2_PID, SOCKS5 :10005)"
 
 sing-box run -c /etc/bench/hy2-brutal-client.json &
 SB_BRUTAL_PID=$!
