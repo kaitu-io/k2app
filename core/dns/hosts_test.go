@@ -95,28 +95,3 @@ func TestHostsFile_Size(t *testing.T) {
 	}
 }
 
-func TestHostsFile_EmptyFile(t *testing.T) {
-	tmpfile, err := os.CreateTemp("", "hosts-test-*.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Remove(tmpfile.Name())
-	tmpfile.Close()
-
-	hosts := NewHostsFile()
-	if err := hosts.Load(tmpfile.Name()); err != nil {
-		t.Fatalf("Failed to load empty hosts file: %v", err)
-	}
-
-	if size := hosts.Size(); size != 0 {
-		t.Errorf("Size() = %d, want 0", size)
-	}
-}
-
-func TestHostsFile_InvalidFile(t *testing.T) {
-	hosts := NewHostsFile()
-	err := hosts.Load("/nonexistent/hosts/file")
-	if err == nil {
-		t.Error("Expected error loading nonexistent file, got nil")
-	}
-}

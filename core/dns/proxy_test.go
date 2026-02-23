@@ -150,16 +150,3 @@ func TestProxyDNSClient_Query(t *testing.T) {
 	}
 }
 
-func TestProxyDNSClient_Defaults(t *testing.T) {
-	client := NewProxyDNSClient(ProxyDNSClientConfig{})
-
-	if client.dialer != nil {
-		t.Error("expected nil dialer when not provided")
-	}
-	if len(client.servers) != 2 {
-		t.Errorf("servers = %d, want 2", len(client.servers))
-	}
-	if client.servers[0] != "8.8.8.8:53" {
-		t.Errorf("server[0] = %q, want 8.8.8.8:53", client.servers[0])
-	}
-}

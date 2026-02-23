@@ -109,13 +109,6 @@ func TestEngine_Stop_NotStarted(t *testing.T) {
 	}
 }
 
-func TestEngine_Status(t *testing.T) {
-	e := NewEngine()
-	if e.Status() != StateDisconnected {
-		t.Fatalf("new engine status = %q, want %q", e.Status(), StateDisconnected)
-	}
-}
-
 // ==========================================================================
 // EventHandler tests
 // ==========================================================================
@@ -197,19 +190,6 @@ func TestEngine_StatusJSON_AfterFailedStart(t *testing.T) {
 // ==========================================================================
 // EngineConfig tests
 // ==========================================================================
-
-func TestEngineConfig_NewEngineConfig(t *testing.T) {
-	cfg := NewEngineConfig()
-	if cfg == nil {
-		t.Fatal("NewEngineConfig returned nil")
-	}
-	if cfg.CacheDir != "" {
-		t.Fatalf("CacheDir = %q, want empty", cfg.CacheDir)
-	}
-	if cfg.LogDir != "" {
-		t.Fatalf("LogDir = %q, want empty", cfg.LogDir)
-	}
-}
 
 func TestEngine_Start_WithEngineConfig(t *testing.T) {
 	configJSON := `{

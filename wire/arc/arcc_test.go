@@ -12,11 +12,6 @@ import (
 // Tests for K2ARCSender - K2ARC Vivace Congestion Control
 // ============================================================================
 
-func TestK2ARCSender_Interface(t *testing.T) {
-	// K2ARCSender must implement CongestionControl interface
-	var _ congestion.CongestionControl = (*K2ARCSender)(nil)
-}
-
 func TestNewK2ARCSender(t *testing.T) {
 	maxRate := int64(100_000_000) // 100 Mbps
 	sender := NewK2ARCSender(maxRate)

@@ -2,7 +2,6 @@ package appext
 
 import (
 	"context"
-	"math"
 	"net"
 	"sync"
 	"testing"
@@ -83,24 +82,3 @@ func TestProtectedDialer_ListenPacket(t *testing.T) {
 	}
 }
 
-func TestProtectedDialer_ControlFunc(t *testing.T) {
-	var receivedFD int
-	pd := &protectedDialer{
-		protect: func(fd int) bool {
-			receivedFD = fd
-			return fd > 0
-		},
-	}
-
-	ctrl := pd.ControlFunc()
-	if ctrl == nil {
-		t.Fatal("ControlFunc returned nil")
-	}
-
-	// Verify that ProtectFunc overflow guard works at the bridge layer.
-	// The bridge converts int -> int32 for gomobile.
-	if int32(math.MaxInt32) != math.MaxInt32 {
-		t.Fatal("int32 max mismatch")
-	}
-	_ = receivedFD
-}

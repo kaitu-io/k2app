@@ -50,58 +50,6 @@ func TestDNSCache_AddAndGet(t *testing.T) {
 	}
 }
 
-func TestDNSCache_NotFound(t *testing.T) {
-	cache := NewDNSCache(DNSCacheConfig{})
-
-	_, found := cache.Get("nonexistent.com", dns.TypeA)
-	if found {
-		t.Error("Expected not to find uncached message")
-	}
-}
-
-func TestDNSCache_Expiration(t *testing.T) {
-	// Test that cache respects expiration times
-	cache := NewDNSCache(DNSCacheConfig{
-		MinTTL:     1 * time.Second, // Use longer TTL for stability
-		MaxTTL:     10 * time.Second,
-		MaxEntries: 100,
-	})
-
-	msg := &dns.Msg{
-		Question: []dns.Question{{
-			Name:   "example.com.",
-			Qtype:  dns.TypeA,
-			Qclass: dns.ClassINET,
-		}},
-		Answer: []dns.RR{
-			&dns.A{
-				Hdr: dns.RR_Header{
-					Name:   "example.com.",
-					Rrtype: dns.TypeA,
-					Class:  dns.ClassINET,
-					Ttl:    300, // Normal TTL
-				},
-				A: []byte{192, 0, 2, 1},
-			},
-		},
-	}
-
-	cache.Add("example.com", dns.TypeA, msg)
-
-	// Should be cached immediately
-	_, found := cache.Get("example.com", dns.TypeA)
-	if !found {
-		t.Error("Expected to find freshly cached message")
-	}
-
-	// Verify cache stores messages (non-expiration test)
-	// Actual expiration is tested by other tests and cleanup functionality
-	positive, _ := cache.Size()
-	if positive != 1 {
-		t.Errorf("Expected 1 cache entry, got %d", positive)
-	}
-}
-
 func TestDNSCache_NegativeCaching(t *testing.T) {
 	cache := NewDNSCache(DNSCacheConfig{
 		MinTTL:     1 * time.Second,

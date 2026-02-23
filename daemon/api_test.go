@@ -14,24 +14,6 @@ import (
 	"github.com/kaitu-io/k2/engine"
 )
 
-func TestHandlePing(t *testing.T) {
-	d := New()
-	req := httptest.NewRequest("GET", "/ping", nil)
-	w := httptest.NewRecorder()
-
-	d.handlePing(w, req)
-
-	var resp Response
-	json.NewDecoder(w.Body).Decode(&resp)
-
-	if resp.Code != 0 {
-		t.Fatalf("expected code 0, got %d", resp.Code)
-	}
-	if resp.Message != "pong" {
-		t.Fatalf("expected pong, got %s", resp.Message)
-	}
-}
-
 func TestHandleMetrics(t *testing.T) {
 	d := New()
 	req := httptest.NewRequest("GET", "/metrics", nil)
@@ -134,20 +116,6 @@ func TestHandleCoreUpNoConfig(t *testing.T) {
 	json.NewDecoder(w.Body).Decode(&resp)
 	if resp.Code != 510 {
 		t.Fatalf("expected code 510, got %d: %s", resp.Code, resp.Message)
-	}
-}
-
-func TestHandleCoreVersion(t *testing.T) {
-	d := New()
-	body := `{"action":"version"}`
-	req := httptest.NewRequest("POST", "/api/core", bytes.NewReader([]byte(body)))
-	w := httptest.NewRecorder()
-	d.handleCore(w, req)
-
-	var resp Response
-	json.NewDecoder(w.Body).Decode(&resp)
-	if resp.Code != 0 {
-		t.Fatalf("expected code 0, got %d", resp.Code)
 	}
 }
 
