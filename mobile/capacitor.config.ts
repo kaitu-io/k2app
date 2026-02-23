@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: 'Kaitu',
   webDir: '../webapp/dist',
   ios: {
-    contentInset: 'always',
+    contentInset: 'never',
     allowsLinkPreview: false,
     scrollEnabled: false,
   },
