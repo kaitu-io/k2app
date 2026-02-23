@@ -17,9 +17,6 @@ func TestDefaultTunName(t *testing.T) {
 
 	switch runtime.GOOS {
 	case "darwin":
-		if name != "utun0" {
-			t.Errorf("defaultTunName() on darwin = %q, want utun0", name)
-		}
 		if !strings.HasPrefix(name, "utun") {
 			t.Errorf("defaultTunName() on darwin = %q, want prefix utun", name)
 		}
