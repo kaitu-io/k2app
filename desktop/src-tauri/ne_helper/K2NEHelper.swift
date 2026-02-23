@@ -8,6 +8,7 @@
 
 import Foundation
 import NetworkExtension
+import SystemExtensions
 
 // MARK: - Constants
 
@@ -21,6 +22,92 @@ private var cachedManager: NETunnelProviderManager? = nil
 
 // Serial queue for all NE operations to avoid concurrent semaphore waits
 private let neQueue = DispatchQueue(label: "io.kaitu.ne-helper", qos: .userInitiated)
+
+// MARK: - System Extension Activation
+
+/// Delegate for OSSystemExtensionRequest that signals a semaphore on completion.
+/// Used by k2ne_install() and k2ne_reinstall() to synchronously wait for sysext activation.
+private class SysExtDelegate: NSObject, OSSystemExtensionRequestDelegate {
+    let semaphore = DispatchSemaphore(value: 0)
+    var result: OSSystemExtensionRequest.Result?
+    var error: Error?
+
+    func request(_ request: OSSystemExtensionRequest,
+                 didFinishWithResult result: OSSystemExtensionRequest.Result) {
+        self.result = result
+        semaphore.signal()
+    }
+
+    func request(_ request: OSSystemExtensionRequest, didFailWithError error: Error) {
+        self.error = error
+        semaphore.signal()
+    }
+
+    func requestNeedsUserApproval(_ request: OSSystemExtensionRequest) {
+        // macOS automatically shows System Settings → Privacy & Security dialog.
+        // We just wait for the user to approve (semaphore timeout handles slow users).
+        NSLog("[K2NEHelper] System Extension needs user approval — waiting for System Settings")
+    }
+
+    func request(_ request: OSSystemExtensionRequest,
+                 actionForReplacingExtension existing: OSSystemExtensionProperties,
+                 withExtension ext: OSSystemExtensionProperties) -> OSSystemExtensionRequest.ReplacementAction {
+        // Auto-replace on app update — no re-approval needed
+        return .replace
+    }
+}
+
+/// Activate the System Extension, blocking until completion or timeout.
+/// Returns (success, errorMessage). Timeout: 120s (user needs time for System Settings approval).
+private func activateSystemExtension() -> (Bool, String?) {
+    let delegate = SysExtDelegate()
+    let request = OSSystemExtensionRequest.activationRequest(
+        forExtensionWithIdentifier: kNEBundleId,
+        queue: .main
+    )
+    request.delegate = delegate
+    OSSystemExtensionManager.shared.submitRequest(request)
+
+    let waitResult = delegate.semaphore.wait(timeout: .now() + 120.0)
+    if waitResult == .timedOut {
+        return (false, "System Extension activation timed out (120s). Please approve in System Settings → Privacy & Security and try again.")
+    }
+    if let err = delegate.error {
+        return (false, "System Extension activation failed: \(err.localizedDescription)")
+    }
+    if let result = delegate.result {
+        switch result {
+        case .completed:
+            NSLog("[K2NEHelper] System Extension activated successfully")
+            return (true, nil)
+        case .willCompleteAfterReboot:
+            return (false, "System Extension will complete after reboot. Please restart your Mac.")
+        @unknown default:
+            return (true, nil)
+        }
+    }
+    return (false, "System Extension activation returned no result")
+}
+
+/// Deactivate the System Extension, blocking until completion or timeout.
+private func deactivateSystemExtension() -> (Bool, String?) {
+    let delegate = SysExtDelegate()
+    let request = OSSystemExtensionRequest.deactivationRequest(
+        forExtensionWithIdentifier: kNEBundleId,
+        queue: .main
+    )
+    request.delegate = delegate
+    OSSystemExtensionManager.shared.submitRequest(request)
+
+    let waitResult = delegate.semaphore.wait(timeout: .now() + 30.0)
+    if waitResult == .timedOut {
+        return (false, "System Extension deactivation timed out")
+    }
+    if let err = delegate.error {
+        return (false, "System Extension deactivation failed: \(err.localizedDescription)")
+    }
+    return (true, nil)
+}
 
 // MARK: - Private Helpers
 
@@ -136,8 +223,8 @@ private func configureProtocol(on manager: NETunnelProviderManager) {
 
 // MARK: - C-Exported Functions
 
-/// Install the Network Extension VPN profile.
-/// Creates and saves a new NETunnelProviderManager if none exists.
+/// Install the System Extension and Network Extension VPN profile.
+/// Two-step flow: (1) activate System Extension if needed, (2) save VPN profile.
 /// Returns ServiceResponse JSON: {"code":0,"message":"ok","data":{"installed":true}}
 /// On error: {"code":-1,"message":"<error description>"}
 @_cdecl("k2ne_install")
@@ -146,8 +233,8 @@ public func k2ne_install() -> UnsafeMutablePointer<CChar> {
 
     let sem = DispatchSemaphore(value: 0)
     DispatchQueue.global(qos: .userInitiated).async {
-        // Check if already installed
-        if let existing = loadManager() {
+        // Check if already installed (existing profile means sysext already activated)
+        if loadManager() != nil {
             resultJSON = serviceResponse(
                 code: 0,
                 message: "ok",
@@ -157,7 +244,15 @@ public func k2ne_install() -> UnsafeMutablePointer<CChar> {
             return
         }
 
-        // Create new manager and configure it
+        // Step 1: Activate System Extension (user approval required on first install)
+        let (activated, activationError) = activateSystemExtension()
+        if !activated {
+            resultJSON = serviceResponse(code: -1, message: activationError ?? "System Extension activation failed")
+            sem.signal()
+            return
+        }
+
+        // Step 2: Create and save VPN profile
         let manager = NETunnelProviderManager()
         configureProtocol(on: manager)
 
@@ -190,10 +285,16 @@ public func k2ne_start(_ config_json: UnsafePointer<CChar>?) -> UnsafeMutablePoi
 
     let sem = DispatchSemaphore(value: 0)
     DispatchQueue.global(qos: .userInitiated).async {
-        // Load or auto-install manager
+        // Load or auto-install manager (includes System Extension activation)
         var manager = loadManager()
         if manager == nil {
-            // Auto-install: create profile on first launch
+            // Auto-install: activate sysext + create profile on first launch
+            let (activated, activationError) = activateSystemExtension()
+            if !activated {
+                resultJSON = serviceResponse(code: -1, message: "Auto-install failed: \(activationError ?? "System Extension activation failed")")
+                sem.signal()
+                return
+            }
             let newManager = NETunnelProviderManager()
             configureProtocol(on: newManager)
             if let err = saveManager(newManager) {
@@ -387,7 +488,7 @@ public func k2ne_set_state_callback(
     }
 }
 
-/// Reinstall the VPN profile: removes existing profile, then installs a fresh one.
+/// Reinstall: deactivate System Extension, remove VPN profile, reactivate, install fresh profile.
 /// Invalidates the cached manager.
 /// Returns ServiceResponse JSON: {"code":0,"message":"ok","data":{"installed":true}}
 /// On error: {"code":-1,"message":"<error description>"}
@@ -397,7 +498,7 @@ public func k2ne_reinstall() -> UnsafeMutablePointer<CChar> {
 
     let sem = DispatchSemaphore(value: 0)
     DispatchQueue.global(qos: .userInitiated).async {
-        // Remove existing profile if present
+        // Step 1: Remove existing VPN profile
         if let existing = loadManager() {
             if let err = removeManager(existing) {
                 resultJSON = serviceResponse(code: -1, message: "Failed to remove profile: \(err.localizedDescription)")
@@ -405,10 +506,24 @@ public func k2ne_reinstall() -> UnsafeMutablePointer<CChar> {
                 return
             }
         }
-        // Clear cache so loadManager() creates a fresh one
         cachedManager = nil
 
-        // Install fresh profile
+        // Step 2: Deactivate System Extension
+        let (deactivated, deactivateErr) = deactivateSystemExtension()
+        if !deactivated {
+            NSLog("[K2NEHelper] Deactivation warning: \(deactivateErr ?? "unknown") — continuing with reactivation")
+            // Non-fatal: proceed to reactivation even if deactivation fails
+        }
+
+        // Step 3: Reactivate System Extension
+        let (activated, activateErr) = activateSystemExtension()
+        if !activated {
+            resultJSON = serviceResponse(code: -1, message: activateErr ?? "System Extension reactivation failed")
+            sem.signal()
+            return
+        }
+
+        // Step 4: Install fresh VPN profile
         let manager = NETunnelProviderManager()
         configureProtocol(on: manager)
 
