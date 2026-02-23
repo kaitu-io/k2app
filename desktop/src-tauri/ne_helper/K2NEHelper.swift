@@ -59,14 +59,20 @@ private class SysExtDelegate: NSObject, OSSystemExtensionRequestDelegate {
 
 /// Activate the System Extension, blocking until completion or timeout.
 /// Returns (success, errorMessage). Timeout: 120s (user needs time for System Settings approval).
+/// MUST NOT be called from the main thread (uses semaphore wait).
 private func activateSystemExtension() -> (Bool, String?) {
+    dispatchPrecondition(condition: .notOnQueue(.main))
     let delegate = SysExtDelegate()
     let request = OSSystemExtensionRequest.activationRequest(
         forExtensionWithIdentifier: kNEBundleId,
         queue: .main
     )
     request.delegate = delegate
-    OSSystemExtensionManager.shared.submitRequest(request)
+    // Apple requires submitRequest() on main thread — dispatch synchronously-ish
+    // while keeping the semaphore wait on the current (background) thread.
+    DispatchQueue.main.async {
+        OSSystemExtensionManager.shared.submitRequest(request)
+    }
 
     let waitResult = delegate.semaphore.wait(timeout: .now() + 120.0)
     if waitResult == .timedOut {
@@ -90,14 +96,18 @@ private func activateSystemExtension() -> (Bool, String?) {
 }
 
 /// Deactivate the System Extension, blocking until completion or timeout.
+/// MUST NOT be called from the main thread (uses semaphore wait).
 private func deactivateSystemExtension() -> (Bool, String?) {
+    dispatchPrecondition(condition: .notOnQueue(.main))
     let delegate = SysExtDelegate()
     let request = OSSystemExtensionRequest.deactivationRequest(
         forExtensionWithIdentifier: kNEBundleId,
         queue: .main
     )
     request.delegate = delegate
-    OSSystemExtensionManager.shared.submitRequest(request)
+    DispatchQueue.main.async {
+        OSSystemExtensionManager.shared.submitRequest(request)
+    }
 
     let waitResult = delegate.semaphore.wait(timeout: .now() + 30.0)
     if waitResult == .timedOut {

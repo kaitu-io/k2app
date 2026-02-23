@@ -147,13 +147,15 @@ export interface K2V4Config {
 
 /**
  * RuleConfig - 代理规则配置
- * 替代旧的 proxyRule 字段
+ * Matches Go config.RuleConfig JSON tags (snake_case).
  */
 export interface RuleConfig {
-  /** Rule type: "chnroute", "global", "gfwlist" */
-  type: string;
-  /** Anti-porn filter (reserved for future use) */
-  antiporn: boolean;
+  global?: boolean;
+  rule_url?: string;
+  geoip_url?: string;
+  antiporn?: boolean;
+  porn_url?: string;
+  cache_dir?: string;
 }
 
 // ==================== Tunnel Config ====================

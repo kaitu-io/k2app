@@ -16,6 +16,8 @@
     <string>1.0</string>
     <key>CFBundlePackageType</key>
     <string>SYSX</string>
+    <key>NSSystemExtensionUsageDescription</key>
+    <string>Kaitu uses a system extension to provide VPN functionality.</string>
     <key>NetworkExtension</key>
     <dict>
         <key>NEProviderClasses</key>

@@ -109,10 +109,15 @@ else
 fi
 
 cd desktop
-if [ "$SKIP_NOTARIZATION" = true ]; then
-  # Unset Apple credentials to prevent Tauri's built-in notarization
-  unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
-fi
+# Always skip Tauri's built-in notarization — we re-sign after sysext injection,
+# which invalidates any Tauri-applied notarization ticket. PKG notarization
+# (below) covers the final signed bundle.
+_SAVED_APPLE_ID="${APPLE_ID:-}"
+_SAVED_APPLE_PASSWORD="${APPLE_PASSWORD:-}"
+_SAVED_APPLE_TEAM_ID="${APPLE_TEAM_ID:-}"
+_SAVED_APPLE_CERTIFICATE="${APPLE_CERTIFICATE:-}"
+_SAVED_APPLE_CERTIFICATE_PASSWORD="${APPLE_CERTIFICATE_PASSWORD:-}"
+unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD
 
 TAURI_ARGS="--config src-tauri/tauri.bundle.conf.json"
 if [ "$SINGLE_ARCH" = true ]; then
@@ -125,6 +130,13 @@ if [ -n "$EXTRA_FEATURES" ]; then
 fi
 yarn tauri build $TAURI_ARGS
 cd "$ROOT_DIR"
+
+# Restore Apple credentials for PKG signing + notarization
+export APPLE_ID="$_SAVED_APPLE_ID"
+export APPLE_PASSWORD="$_SAVED_APPLE_PASSWORD"
+export APPLE_TEAM_ID="$_SAVED_APPLE_TEAM_ID"
+export APPLE_CERTIFICATE="$_SAVED_APPLE_CERTIFICATE"
+export APPLE_CERTIFICATE_PASSWORD="$_SAVED_APPLE_CERTIFICATE_PASSWORD"
 
 # --- Locate .app bundle ---
 if [ "$SINGLE_ARCH" = true ]; then
@@ -186,7 +198,7 @@ cp -R "$SYSEXT_BUILD_DIR/$SYSEXT_NAME" "$SYSEXT_DEST/"
 # --- Embed provisioning profiles ---
 echo ""
 echo "--- Embedding provisioning profiles ---"
-PROFILE_DIR="${PROFILE_DIR:-$HOME/Downloads}"
+PROFILE_DIR="${PROFILE_DIR:-$ROOT_DIR/desktop/src-tauri/profiles}"
 
 APP_PROFILE="$PROFILE_DIR/Kaitu_Desktop_Developer_ID.provisionprofile"
 TUNNEL_PROFILE="$PROFILE_DIR/Kaitu_Tunnel_Developer_ID.provisionprofile"
@@ -214,19 +226,26 @@ fi
 # Determine signing identity (use env var or well-known default)
 SIGN_IDENTITY="${APPLE_SIGNING_IDENTITY:-Developer ID Application: ALL NATION CONNECT TECHNOLOGY PTE. LTD. (NJT954Q3RH)}"
 
-# Codesign the systemextension with its own entitlements
+# Sign each component individually (NOT --deep) to avoid applying NE restricted
+# entitlement to the k2 sidecar binary. AMFI validates each binary independently
+# and rejects binaries that have restricted entitlements without a matching profile.
+
+echo "--- Codesigning k2 sidecar (hardened runtime only, no NE entitlements) ---"
+codesign --force --sign "$SIGN_IDENTITY" \
+  --options runtime \
+  "$APP_PATH/Contents/MacOS/k2"
+
 echo "--- Codesigning KaituTunnel.systemextension ---"
 codesign --force --sign "$SIGN_IDENTITY" \
   --entitlements "$ROOT_DIR/desktop/src-tauri/KaituTunnel/KaituTunnel.entitlements" \
   --options runtime \
   "$SYSEXT_DEST/$SYSEXT_NAME"
 
-# Re-codesign main app (deep) now that SystemExtensions directory has changed
-echo "--- Re-codesigning main app (deep) after SystemExtension injection ---"
+echo "--- Codesigning main app bundle (with NE entitlements) ---"
 codesign --force --sign "$SIGN_IDENTITY" \
   --entitlements "$ROOT_DIR/desktop/src-tauri/entitlements.plist" \
   --options runtime \
-  --deep "$APP_PATH"
+  "$APP_PATH"
 
 rm -rf "$SYSEXT_BUILD_DIR"
 echo "KaituTunnel.systemextension injected into $SYSEXT_DEST/"

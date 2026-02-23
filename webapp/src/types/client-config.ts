@@ -10,7 +10,14 @@ export interface ClientConfig {
   server?: string;
   mode?: 'tun' | 'proxy';
   tun?: { ipv4?: string; ipv6?: string };
-  rule?: { global?: boolean };
+  rule?: {
+    global?: boolean;
+    rule_url?: string;
+    geoip_url?: string;
+    antiporn?: boolean;
+    porn_url?: string;
+    cache_dir?: string;
+  };
   log?: { level?: string; output?: string };
   proxy?: { listen?: string };
   dns?: { direct?: string[]; proxy?: string[] };
