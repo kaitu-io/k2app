@@ -11,7 +11,7 @@
     <key>CFBundleIdentifier</key>
     <string>io.kaitu.desktop.tunnel</string>
     <key>CFBundleVersion</key>
-    <string>3</string>
+    <string>7</string>
     <key>CFBundleShortVersionString</key>
     <string>1.0.2</string>
     <key>CFBundlePackageType</key>

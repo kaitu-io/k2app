@@ -1484,7 +1484,9 @@ App writes packet → TUN device (utun0)
 - `QUICClient.connect()` — creates UDP socket bound to physical interface
 - `TCPWSClient.connectTLSWebSocket()` — dials TCP to server via physical interface
 
-**Mobile doesn't need it**: Mobile TUN fd is provided by the OS VPN subsystem, which automatically excludes the VPN's own tunnel traffic from being re-routed through the TUN. The OS handles bypass at the VPN service level.
+**Mobile platform differences**:
+- **iOS**: PacketTunnelProvider self-excludes at kernel level — no per-socket protection needed. ProtectFunc stays nil.
+- **Android**: VpnService does NOT auto-exclude. Must call `VpnService.protect(fd)` on every outbound socket. See "Android Socket Protection" entry below.
 
 **Files**: `k2/directdial/directdial.go:24-51`, `k2/directdial/detect.go:6-54`
 
@@ -1573,5 +1575,37 @@ k2 status             → query daemon HTTP API /api/core {action:"status"}
 **Cross-reference**: Windows NSIS uses same pattern in `desktop/src-tauri/installer-hooks.nsh` (PREINSTALL → k2.exe service uninstall, POSTINSTALL → k2.exe service install)
 **Source**: macos-pkg-service-lifecycle (2026-02-22)
 **Status**: verified (spec implemented + scripts reviewed)
+
+---
+
+## Android Socket Protection: ProtectFunc + protectedDialer (2026-02-23, android-socket-protection)
+
+**Decision**: Android VPN sockets must be explicitly protected via `VpnService.protect(fd)`. This is wired through a 3-layer bridge: `SocketProtector` (gomobile interface) → `ProtectFunc` (engine func) → `protectedDialer` (wire.DirectDialer impl).
+
+**Why 3 layers**:
+- `mobile.SocketProtector`: gomobile-compatible interface (int32 primitive, no import cycles)
+- `engine.Config.ProtectFunc`: `func(fd int) bool` — engine can't import `mobile/` (circular), uses func type
+- `engine.protectedDialer`: implements `wire.DirectDialer` using `syscall.RawConn.Control()` — same pattern as `directdial.Dialer` but protect-based instead of bind-based
+
+**Coverage** (all outbound sockets on mobile path):
+| Socket | Protection mechanism |
+|--------|---------------------|
+| QUIC UDP | `QUICClient.SetDirectDialer(pd)` |
+| TCP-WS TCP | `TCPWSClient.SetDirectDialer(pd)` |
+| Direct TCP/UDP (smart mode) | `tunnelCfg.DirectDialer = pd` |
+| Direct DNS UDP | `dns.Client.Dialer` with `Control` func |
+| Proxy DNS | Through wire transport (already protected) |
+
+**Why Android needs it but iOS doesn't**: iOS `NEPacketTunnelProvider` runs in a kernel-managed network extension — the OS excludes the extension's sockets from TUN routing at the kernel level. Android `VpnService` runs in the app process and uses the same routing table as all other sockets — explicit `protect(fd)` syscall needed per socket.
+
+**Guard**: `cfg.ProtectFunc != nil && cfg.DirectDialer == nil` — mutual exclusion with desktop's DirectDialer. Desktop sets DirectDialer (sing-tun interface binding), mobile sets ProtectFunc (VpnService.protect). Never both.
+
+**int32 safety**: Bridge includes `fd > math.MaxInt32` overflow guard (defensive — Android FDs never reach this). Returns false on overflow.
+
+**Files**: `k2/mobile/protector.go`, `k2/mobile/config.go`, `k2/mobile/mobile.go`, `k2/engine/config.go`, `k2/engine/protect.go`, `k2/engine/engine.go`, `k2/core/dns/direct.go`, `mobile/android/.../K2VpnService.kt`
+
+**Validating tests**: `k2/engine/protect_test.go` — `TestProtectedDialer_CallsProtect`, `TestProtectedDialer_ProtectFails`, `TestProtectedDialer_ListenPacket`, `TestProtectedDialer_ControlFunc`
+**Source**: android-socket-protection (2026-02-23)
+**Status**: verified (unit tests pass, code review clean)
 
 ---

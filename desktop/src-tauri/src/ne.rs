@@ -86,7 +86,13 @@ mod macos {
     ) -> Result<ServiceResponse, String> {
         match action {
             "up" => {
-                let config_json = params
+                // Bridge wraps params as { config: ClientConfig, pid?: number }.
+                // Extract the inner "config" field — the Go engine expects ClientConfig directly.
+                let config_value = params
+                    .as_ref()
+                    .and_then(|p| p.get("config").cloned())
+                    .or(params.clone());
+                let config_json = config_value
                     .as_ref()
                     .map(|p| serde_json::to_string(p).unwrap_or_default())
                     .unwrap_or_default();
@@ -323,7 +329,11 @@ mod tests {
         // the extern "C" declarations on all platforms.
         match action {
             "up" => {
-                let config_json = params
+                let config_value = params
+                    .as_ref()
+                    .and_then(|p| p.get("config").cloned())
+                    .or(params.clone());
+                let config_json = config_value
                     .as_ref()
                     .map(|p| serde_json::to_string(p).unwrap_or_default())
                     .unwrap_or_default();

@@ -1,3 +1,4 @@
+import Foundation
 import Network
 import NetworkExtension
 import K2MobileMacOS  // gomobile xcframework (macOS target)
@@ -35,6 +36,38 @@ private func parseIPv6CIDR(_ cidr: String) -> (String, Int)? {
     return (String(parts[0]), prefix)
 }
 
+/// CTLIOCGINFO = _IOWR('N', 3, struct ctl_info) — Swift can't import this macro directly.
+/// Computed: IOC_INOUT(0xC0000000) | sizeof(ctl_info=100)<<16 | 'N'(0x4E)<<8 | 3
+private let CTLIOCGINFO_VALUE: UInt = 0xC0644E03
+
+/// Find the utun file descriptor by scanning open fds (WireGuard approach).
+/// Works reliably in both App Extensions and System Extensions.
+private func findTunnelFileDescriptor() -> Int32? {
+    var ctlInfo = ctl_info()
+    withUnsafeMutablePointer(to: &ctlInfo.ctl_name) {
+        $0.withMemoryRebound(to: CChar.self, capacity: MemoryLayout.size(ofValue: $0.pointee)) {
+            _ = strcpy($0, "com.apple.net.utun_control")
+        }
+    }
+    for fd: Int32 in 0...1024 {
+        var addr = sockaddr_ctl()
+        var ret: Int32 = -1
+        var len = socklen_t(MemoryLayout.size(ofValue: addr))
+        withUnsafeMutablePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                ret = getpeername(fd, $0, &len)
+            }
+        }
+        if ret != 0 || addr.sc_family != AF_SYSTEM { continue }
+        if ctlInfo.ctl_id == 0 {
+            ret = ioctl(fd, CTLIOCGINFO_VALUE, &ctlInfo)
+            if ret != 0 { continue }
+        }
+        if addr.sc_id == ctlInfo.ctl_id { return fd }
+    }
+    return nil
+}
+
 /// Strip port from "8.8.8.8:53" → "8.8.8.8". Handles IPv6 "[::1]:53" → "::1".
 private func stripPort(_ addr: String) -> String {
     if addr.hasPrefix("["), let closeBracket = addr.firstIndex(of: "]") {
@@ -51,23 +84,31 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     private var pendingNetworkChange: DispatchWorkItem?
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
+        NSLog("[KaituTunnel] startTunnel called, options keys: %@", options?.keys.joined(separator: ", ") ?? "nil")
+
         let configJSON: String
         if let config = options?["configJSON"] as? String {
+            NSLog("[KaituTunnel] configJSON from options (len=%d)", config.count)
             configJSON = config
         } else if let config = (protocolConfiguration as? NETunnelProviderProtocol)?.providerConfiguration?["configJSON"] as? String {
+            NSLog("[KaituTunnel] configJSON from providerConfiguration (len=%d)", config.count)
             configJSON = config
         } else {
+            NSLog("[KaituTunnel] ERROR: Missing configJSON")
             completionHandler(NSError(domain: "io.kaitu.desktop", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing configJSON"]))
             return
         }
 
         // Clean old engine before creating new one
         if engine != nil {
+            NSLog("[KaituTunnel] Cleaning old engine")
             try? engine?.stop()
             engine = nil
         }
 
+        NSLog("[KaituTunnel] Creating MobileNewEngine")
         engine = MobileNewEngine()
+        NSLog("[KaituTunnel] Engine created: %@", engine != nil ? "ok" : "nil")
 
         let handler = EventBridge(provider: self)
         engine?.setEventHandler(handler)
@@ -75,15 +116,28 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         // Configure network settings first, then get TUN fd in completion
         let clientConfig = parseClientConfig(from: configJSON)
         let settings = buildNetworkSettings(from: clientConfig)
+        NSLog("[KaituTunnel] Calling setTunnelNetworkSettings")
 
         setTunnelNetworkSettings(settings) { [weak self] error in
             if let error = error {
+                NSLog("[KaituTunnel] ERROR: setTunnelNetworkSettings failed: %@", error.localizedDescription)
                 completionHandler(error)
                 return
             }
+            NSLog("[KaituTunnel] Network settings applied successfully")
 
-            // Get TUN fd AFTER network settings are applied (industry standard: WireGuard/sing-box/Clash)
-            guard let fd = self?.packetFlow.value(forKey: "socket") as? Int32, fd >= 0 else {
+            // Get TUN fd AFTER network settings are applied.
+            // Try KVC first (works in App Extensions), fall back to fd scan (WireGuard approach,
+            // works in System Extensions where KVC may return nil).
+            let fd: Int32
+            if let kvcFd = self?.packetFlow.value(forKey: "socket") as? Int32, kvcFd >= 0 {
+                NSLog("[KaituTunnel] TUN fd via KVC: %d", kvcFd)
+                fd = kvcFd
+            } else if let scanFd = findTunnelFileDescriptor() {
+                NSLog("[KaituTunnel] TUN fd via utun scan: %d", scanFd)
+                fd = scanFd
+            } else {
+                NSLog("[KaituTunnel] ERROR: Failed to get TUN fd (both KVC and utun scan failed)")
                 let err = NSError(domain: "io.kaitu.desktop", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to get TUN fd"])
                 completionHandler(err)
                 return
@@ -92,21 +146,31 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             do {
                 // Build EngineConfig with platform paths (App Group shared container)
                 guard let engineCfg = MobileNewEngineConfig() else {
+                    NSLog("[KaituTunnel] ERROR: Failed to create EngineConfig")
                     let err = NSError(domain: "io.kaitu.desktop", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to create EngineConfig"])
                     completionHandler(err)
                     return
                 }
                 let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: kAppGroup)
                 engineCfg.cacheDir = containerURL?.appendingPathComponent("k2").path ?? ""
+                NSLog("[KaituTunnel] cacheDir: %@", engineCfg.cacheDir.isEmpty ? "(empty)" : engineCfg.cacheDir)
 
                 if !engineCfg.cacheDir.isEmpty {
                     try? FileManager.default.createDirectory(atPath: engineCfg.cacheDir, withIntermediateDirectories: true)
                 }
 
+                // Redirect stderr to a file so we can capture Go panic output
+                let stderrPath = (engineCfg.cacheDir as NSString).deletingLastPathComponent + "/go_stderr.log"
+                NSLog("[KaituTunnel] Redirecting stderr to: %@", stderrPath)
+                freopen(stderrPath, "w", stderr)
+
+                NSLog("[KaituTunnel] Calling engine.start(fd=%d)", fd)
                 try self?.engine?.start(configJSON, fd: Int(fd), cfg: engineCfg)
+                NSLog("[KaituTunnel] Engine started successfully")
                 self?.startMonitoringNetwork()
                 completionHandler(nil)
             } catch {
+                NSLog("[KaituTunnel] ERROR: engine.start failed: %@", error.localizedDescription)
                 completionHandler(error)
             }
         }
@@ -245,3 +309,11 @@ class EventBridge: NSObject, MobileEventHandlerProtocol {
         // Stats tracking if needed
     }
 }
+
+// MARK: - System Extension Entry Point
+// Required: register this process as a Network Extension provider and keep it alive.
+// Without this, the executable exits immediately and nesessionmanager never sees the provider.
+autoreleasepool {
+    NEProvider.startSystemExtensionMode()
+}
+dispatchMain()

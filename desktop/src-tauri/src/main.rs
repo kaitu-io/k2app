@@ -9,7 +9,7 @@ mod updater;
 use tauri::{Manager, RunEvent};
 
 fn main() {
-    let builder = tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_localhost::Builder::new(14580).build())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
@@ -39,7 +39,7 @@ fn main() {
             log_upload::upload_service_log_command,
         ]);
 
-    #[cfg(all(feature = "mcp-bridge", debug_assertions))]
+    #[cfg(feature = "mcp-bridge")]
     {
         builder = builder.plugin(tauri_plugin_mcp_bridge::init());
     }

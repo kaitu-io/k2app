@@ -21,7 +21,7 @@ build-macos-fast:
 	bash scripts/build-macos.sh --skip-notarization
 
 build-macos-test:
-	bash scripts/build-macos.sh --single-arch --features=mcp-bridge
+	bash scripts/build-macos.sh --single-arch --skip-notarization --features=mcp-bridge
 
 build-windows: pre-build build-webapp
 	$(MAKE) build-k2 TARGET=x86_64-pc-windows-msvc

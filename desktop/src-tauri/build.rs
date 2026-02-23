@@ -60,7 +60,7 @@ fn main() {
 
     let mcp_cap_path = std::path::Path::new("capabilities/mcp-bridge.json");
 
-    #[cfg(all(feature = "mcp-bridge", debug_assertions))]
+    #[cfg(feature = "mcp-bridge")]
     {
         std::fs::create_dir_all("capabilities").expect("failed to create capabilities dir");
         let cap = r#"{
@@ -85,7 +85,7 @@ fn main() {
         }
     }
 
-    #[cfg(not(all(feature = "mcp-bridge", debug_assertions)))]
+    #[cfg(not(feature = "mcp-bridge"))]
     {
         let _ = std::fs::remove_file(mcp_cap_path);
     }
