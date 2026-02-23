@@ -265,6 +265,10 @@ func (d *Daemon) engineConfigFromClientConfig(cfg *config.ClientConfig, dd *dire
 		TunIPv6:        cfg.Tun.IPv6,
 	}
 
+	// Pass DNS server lists for middleware.
+	ecfg.DNSProxyServers = cfg.DNS.Proxy
+	ecfg.DNSDirectServers = cfg.DNS.Direct
+
 	// Compute DNSExclude from DNS config + server host resolution.
 	ecfg.DNSExclude = d.computeDNSExclude(cfg)
 

@@ -161,8 +161,8 @@ func (e *Engine) Start(cfg Config) error {
 	tunnel := core.NewClientTunnel(tunnelCfg)
 
 	// 8. Start.
-	if cfg.FileDescriptor >= 0 {
-		// Mobile path: insert DNS middleware between provider and tunnel.
+	if cfg.Mode != "proxy" {
+		// TUN mode (mobile or desktop): intercept DNS at port 53.
 		dnsMW := dns.NewMiddleware(dns.MiddlewareConfig{
 			ProxyDNS: dns.NewProxyDNSClient(dns.ProxyDNSClientConfig{
 				Dialer:  tm,
@@ -172,12 +172,12 @@ func (e *Engine) Start(cfg Config) error {
 			DNSCache:  dns.NewDNSCache(dns.DNSCacheConfig{}),
 			Filter:    dns.NewFilter(dns.FilterConfig{}),
 		})
-		if err := prov.Start(ctx, &dnsHandler{inner: tunnel, dns: dnsMW}); err != nil {
+		if err := tunnel.StartWithHandler(ctx, &dnsHandler{inner: tunnel, dns: dnsMW}); err != nil {
 			tm.Close()
 			return e.fail(err)
 		}
 	} else {
-		// Desktop path: tunnel.Start wires provider directly.
+		// Proxy mode: no TUN, no DNS interception.
 		if err := tunnel.Start(ctx); err != nil {
 			tm.Close()
 			return e.fail(err)
