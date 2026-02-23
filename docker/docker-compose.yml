@@ -24,7 +24,7 @@ services:
   # Generates config files and certificates into the shared config volume.
   # Provides RADIUS proxy for k2-oc authentication.
   k2-sidecar:
-    image: public.ecr.aws/d6n9t2r2/k2-sidecar:latest
+    image: public.ecr.aws/d6n9t2r2/k2-slave-sidecar:latest
     container_name: k2-sidecar
     restart: unless-stopped
     networks:

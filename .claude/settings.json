@@ -1,9 +1,1 @@
-{
-  "mcpServers": {
-    "kaitu-ops": {
-      "command": "node",
-      "args": ["tools/kaitu-ops-mcp/dist/index.js"],
-      "env": {}
-    }
-  }
-}
+{}

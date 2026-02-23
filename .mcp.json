@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "kaitu-ops": {
+      "command": "node",
+      "args": ["tools/kaitu-ops-mcp/dist/index.js"],
+      "env": {
+        "KAITU_CENTER_URL": "${KAITU_CENTER_URL}",
+        "KAITU_ACCESS_KEY": "${KAITU_ACCESS_KEY}"
+      }
+    }
+  }
+}
