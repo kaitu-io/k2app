@@ -7,6 +7,9 @@ Single file: `config.go` — separate `ClientConfig` and `ServerConfig` types.
 ```yaml
 server: "k2v5://udid:token@host:443?ech=...&pin=sha256:..."
 mode: tun          # "tun" (default, needs root) or "proxy"
+tun:
+  ipv4: "198.18.0.7/15"    # default; mobile overrides via init()
+  ipv6: "fdfe:dcba:9876::7/64"
 proxy:
   listen: "127.0.0.1:1080"
 dns:
@@ -14,6 +17,10 @@ dns:
   proxy: ["8.8.8.8:53", "1.1.1.1:53"]
 rule:
   global: false    # true = global proxy (ignore rules)
+  rule_url: ""     # remote rule file URL ("" = CDN default)
+  geoip_url: ""    # remote GeoIP .mmdb URL ("" = CDN default)
+  porn_url: ""     # remote porn list URL ("" = CDN default)
+  cache_dir: ""    # set by platform shell (daemon/mobile)
 log:
   level: info      # debug, info, warn, error
 ```
@@ -42,7 +49,8 @@ log:
 
 ## Types
 
-- `ClientConfig` — Server URL, Mode, Proxy, DNS, Rule, Log
+- `ClientConfig` — Server, Mode, Tun, Proxy, DNS, Rule, Log, Listen, PIDFile
+  - Sub-types: `TunConfig`, `ProxyConfig`, `DNSConfig`, `RuleConfig`, `LogConfig`
 - `ServerConfig` — Listen, Host, TLS, ECH, CertDir, PCC, Rate, Auth, Log
 - `LoadClient(path)` / `LoadServer(path)` — YAML loaders
 - `ClientFromURL(wireURL)` — creates ClientConfig from k2v5:// URL

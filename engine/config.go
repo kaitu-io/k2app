@@ -1,29 +1,26 @@
 package engine
 
 import (
-	"net/netip"
-
+	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/directdial"
-	"github.com/kaitu-io/k2rule"
 )
 
 // Config holds all parameters needed to assemble and start a tunnel.
-// It unifies the desktop (daemon/tunnel.go) and mobile (mobile/mobile.go) paths.
+// It unifies the desktop (daemon/) and mobile (mobile/) paths.
+//
+// Client is the single source of truth for user configuration.
+// Engine reads Server, Mode, Tun, Proxy, DNS, Rule fields directly from Client.
+// Fields not used by engine (Listen, PIDFile, Log) are ignored.
+//
+// The remaining fields are platform runtime resources (not user-configurable).
 type Config struct {
-	// WireURL is the k2v5:// connection URL (required).
-	WireURL string
+	// Client is the user configuration (YAML/JSON single source of truth).
+	Client *config.ClientConfig
 
 	// FileDescriptor controls TUN device source:
 	//   -1  = self-create TUN (desktop)
 	//   >=0 = platform-provided FD (mobile: iOS NEPacketTunnelProvider / Android VpnService)
 	FileDescriptor int
-
-	// DataDir is the k2rule cache directory. Empty uses default (~/.cache/k2rule/).
-	DataDir string
-
-	// RuleMode selects routing mode: "global" or "smart". Default is "global".
-	// Ignored when RuleConfig is non-nil.
-	RuleMode string
 
 	// DirectDialer binds transport connections to the physical interface,
 	// bypassing TUN. Desktop only; nil on mobile.
@@ -32,39 +29,6 @@ type Config struct {
 	// PreferIPv6 enables IPv6 transport when both server and client support it.
 	// Desktop only.
 	PreferIPv6 bool
-
-	// Mode selects the provider type: "tun" (default) or "proxy".
-	// Only applies when FileDescriptor < 0 (desktop).
-	Mode string
-
-	// ProxyListen is the proxy mode listen address (e.g. "127.0.0.1:1080").
-	// Only used when Mode is "proxy".
-	ProxyListen string
-
-	// TunIPv4 is the TUN interface IPv4 address in CIDR notation (e.g. "10.0.0.2/24").
-	// Empty uses the provider default.
-	TunIPv4 string
-
-	// TunIPv6 is the TUN interface IPv6 address in CIDR notation (e.g. "fd00::2/128").
-	// Empty uses the provider default.
-	TunIPv6 string
-
-	// DNSProxyServers lists DNS servers for proxy resolution (via tunnel).
-	// Format: "ip:port" (e.g. "8.8.8.8:53"). Empty uses middleware default.
-	DNSProxyServers []string
-
-	// DNSDirectServers lists DNS servers for direct resolution (raw UDP).
-	// Format: "ip:port" (e.g. "114.114.114.114:53"). Empty uses middleware default.
-	DNSDirectServers []string
-
-	// DNSExclude lists DNS server IPs to exclude from TUN routing (anti-loop).
-	// Desktop only.
-	DNSExclude []netip.Addr
-
-	// RuleConfig provides full k2rule configuration. When non-nil, it takes
-	// priority over RuleMode and DataDir. Typically used by the desktop daemon
-	// which has richer rule configuration. Nil = auto-build from RuleMode + DataDir.
-	RuleConfig *k2rule.Config
 
 	// NetworkMonitor detects network interface changes (desktop only).
 	// When non-nil, engine registers a callback that calls OnNetworkChanged().

@@ -4,16 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
-	"net/netip"
-	"net/url"
+	"path/filepath"
 	"sync"
 	"time"
-
-	"path/filepath"
-
-	"github.com/kaitu-io/k2rule"
 
 	tun "github.com/sagernet/sing-tun"
 
@@ -278,22 +272,17 @@ func (d *Daemon) engineConfigFromClientConfig(
 	ifaceMon any,
 	monErr error,
 ) engine.Config {
+	// Ensure CacheDir has a value for k2rule.
+	if cfg.Rule.CacheDir == "" {
+		cfg.Rule.CacheDir = filepath.Join(paths.CacheDir(), "k2rule")
+	}
+
 	ecfg := engine.Config{
-		WireURL:        cfg.Server,
+		Client:         cfg,
 		FileDescriptor: -1, // Desktop: engine creates its own TUN.
 		DirectDialer:   dd,
 		PreferIPv6:     true,
-		Mode:           cfg.Mode,
-		ProxyListen:    cfg.Proxy.Listen,
-		TunIPv4:        cfg.Tun.IPv4,
-		TunIPv6:        cfg.Tun.IPv6,
 	}
-
-	// Compute DNSExclude from DNS config + server host resolution.
-	ecfg.DNSExclude = d.computeDNSExclude(cfg)
-
-	// Always provide RuleConfig with CacheDir (k2rule v0.5.0-go requires it).
-	ecfg.RuleConfig = d.buildRuleConfig(cfg)
 
 	// Apply network monitor if available.
 	if monErr == nil {
@@ -302,77 +291,6 @@ func (d *Daemon) engineConfigFromClientConfig(
 	}
 
 	return ecfg
-}
-
-// computeDNSExclude builds the list of IPs to exclude from TUN routing.
-func (d *Daemon) computeDNSExclude(cfg *config.ClientConfig) []netip.Addr {
-	var addrs []netip.Addr
-
-	// Parse DNS server IPs.
-	for _, s := range cfg.DNS.Direct {
-		host, _, err := splitHostPort(s)
-		if err != nil {
-			continue
-		}
-		if addr, err := netip.ParseAddr(host); err == nil {
-			addrs = append(addrs, addr)
-		}
-	}
-
-	// Resolve server host to IPs for route exclusion.
-	if serverHost := extractServerHost(cfg.Server); serverHost != "" {
-		if ips, err := net.LookupHost(serverHost); err == nil {
-			for _, ip := range ips {
-				if addr, err := netip.ParseAddr(ip); err == nil {
-					addrs = append(addrs, addr)
-				}
-			}
-		}
-	}
-
-	return addrs
-}
-
-// extractServerHost extracts the hostname from a k2v5:// URL.
-func extractServerHost(wireURL string) string {
-	// The wire URL format is: k2v5://user:pass@host:port
-	u, err := url.Parse(wireURL)
-	if err != nil {
-		return ""
-	}
-	return u.Hostname()
-}
-
-// buildRuleConfig creates a k2rule.Config from client config.
-// Defaults CacheDir to paths.CacheDir()/k2rule if not explicitly set.
-func (d *Daemon) buildRuleConfig(cfg *config.ClientConfig) *k2rule.Config {
-	cacheDir := cfg.Rule.CacheDir
-	if cacheDir == "" {
-		cacheDir = filepath.Join(paths.CacheDir(), "k2rule")
-	}
-	ruleCfg := &k2rule.Config{
-		RuleURL:  cfg.Rule.RuleURL,
-		GeoIPURL: cfg.Rule.GeoIPURL,
-		Antiporn: cfg.Rule.Antiporn,
-		PornURL:  cfg.Rule.PornURL,
-		CacheDir: cacheDir,
-		IsGlobal: cfg.Rule.Global,
-	}
-	if cfg.Rule.Global {
-		ruleCfg.GlobalTarget = k2rule.TargetProxy
-	}
-	return ruleCfg
-}
-
-// splitHostPort splits a host:port string. Unlike net.SplitHostPort, it
-// doesn't require brackets around IPv6 addresses.
-func splitHostPort(hostport string) (string, string, error) {
-	for i := len(hostport) - 1; i >= 0; i-- {
-		if hostport[i] == ':' {
-			return hostport[:i], hostport[i+1:], nil
-		}
-	}
-	return hostport, "", fmt.Errorf("missing port in %q", hostport)
 }
 
 // doDown disconnects the tunnel.

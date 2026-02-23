@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/apernet/quic-go"
-	"github.com/kaitu-io/k2/wire/pcc"
+	"github.com/kaitu-io/k2/wire/arc"
 )
 
 // Compile-time interface checks.
@@ -33,7 +33,7 @@ func DefaultQUICConfig() *quic.Config {
 		EnableDatagrams:                true,
 		MaxIdleTimeout:                 30 * time.Second,
 		KeepAlivePeriod:                10 * time.Second,
-		MaxIncomingStreams:              256,
+		MaxIncomingStreams:             256,
 	}
 }
 
@@ -49,7 +49,7 @@ func MobileQUICConfig() *quic.Config {
 		EnableDatagrams:                true,
 		MaxIdleTimeout:                 30 * time.Second,
 		KeepAlivePeriod:                10 * time.Second,
-		MaxIncomingStreams:              256,
+		MaxIncomingStreams:             256,
 	}
 }
 
@@ -84,8 +84,8 @@ type QUICClient struct {
 	serverAddr   string
 	hopStart     int
 	hopEnd       int
-	tlsConfig    *tls.Config   // override for testing (bypasses BuildClientTLSConfig)
-	quicConfig   *quic.Config  // override for platform-specific tuning (e.g., iOS)
+	tlsConfig    *tls.Config  // override for testing (bypasses BuildClientTLSConfig)
+	quicConfig   *quic.Config // override for platform-specific tuning (e.g., iOS)
 	directDialer DirectDialer
 
 	mu        sync.Mutex
@@ -192,9 +192,9 @@ func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
 		return nil, fmt.Errorf("wire: QUIC dial: %w", err)
 	}
 
-	// Set PCC congestion control (replaces default Cubic)
-	conn.SetCongestionControl(pcc.NewPCCSenderGFWMode(pcc.DefaultMaxRate))
-	slog.Info("wire: QUIC client PCC enabled", "maxRateMbps", pcc.DefaultMaxRate/1_000_000)
+	// Set K2ARC congestion control (replaces default Cubic)
+	conn.SetCongestionControl(arc.NewArcSenderGFWMode(arc.DefaultMaxRate))
+	slog.Info("wire: QUIC client K2ARC enabled", "maxRateMbps", arc.DefaultMaxRate/1_000_000)
 
 	c.conn = conn
 	c.transport = transport
@@ -419,8 +419,8 @@ func (s *QUICServer) acceptLoop() {
 			s.sendTCP(tcpAcceptResult{err: fmt.Errorf("wire: accept: %w", err)})
 			return
 		}
-		// Set PCC congestion control for server-side sending (critical for download speed)
-		conn.SetCongestionControl(pcc.NewPCCSenderGFWMode(pcc.DefaultMaxRate))
+		// Set K2ARC congestion control for server-side sending (critical for download speed)
+		conn.SetCongestionControl(arc.NewArcSenderGFWMode(arc.DefaultMaxRate))
 		go s.handleConn(conn)
 	}
 }
@@ -740,10 +740,10 @@ func (c *quicUDPConn) Close() error {
 	return nil
 }
 
-func (c *quicUDPConn) LocalAddr() net.Addr             { return c.qconn.LocalAddr() }
+func (c *quicUDPConn) LocalAddr() net.Addr              { return c.qconn.LocalAddr() }
 func (c *quicUDPConn) SetDeadline(time.Time) error      { return nil }
-func (c *quicUDPConn) SetReadDeadline(time.Time) error   { return nil }
-func (c *quicUDPConn) SetWriteDeadline(time.Time) error  { return nil }
+func (c *quicUDPConn) SetReadDeadline(time.Time) error  { return nil }
+func (c *quicUDPConn) SetWriteDeadline(time.Time) error { return nil }
 
 // ============================================================================
 // Server-side PacketConn for UDP sessions
@@ -797,10 +797,10 @@ func (c *serverUDPConn) Close() error {
 	return nil
 }
 
-func (c *serverUDPConn) LocalAddr() net.Addr             { return c.qconn.LocalAddr() }
+func (c *serverUDPConn) LocalAddr() net.Addr              { return c.qconn.LocalAddr() }
 func (c *serverUDPConn) SetDeadline(time.Time) error      { return nil }
-func (c *serverUDPConn) SetReadDeadline(time.Time) error   { return nil }
-func (c *serverUDPConn) SetWriteDeadline(time.Time) error  { return nil }
+func (c *serverUDPConn) SetReadDeadline(time.Time) error  { return nil }
+func (c *serverUDPConn) SetWriteDeadline(time.Time) error { return nil }
 
 // ============================================================================
 // Server-side QUIC stream writer (shared, mutex-protected)
@@ -867,24 +867,24 @@ func (c *quicStreamServerUDPConn) Close() error {
 	return nil
 }
 
-func (c *quicStreamServerUDPConn) LocalAddr() net.Addr             { return &net.UDPAddr{} }
+func (c *quicStreamServerUDPConn) LocalAddr() net.Addr              { return &net.UDPAddr{} }
 func (c *quicStreamServerUDPConn) SetDeadline(time.Time) error      { return nil }
-func (c *quicStreamServerUDPConn) SetReadDeadline(time.Time) error   { return nil }
-func (c *quicStreamServerUDPConn) SetWriteDeadline(time.Time) error  { return nil }
+func (c *quicStreamServerUDPConn) SetReadDeadline(time.Time) error  { return nil }
+func (c *quicStreamServerUDPConn) SetWriteDeadline(time.Time) error { return nil }
 
 // ============================================================================
 // Client-side stream-based UDP mux (fallback when datagrams not supported)
 // ============================================================================
 
 type quicStreamUDPMux struct {
-	stream    *quic.Stream
-	qconn     *quic.Conn
-	br        *bufio.Reader
-	writeMu   sync.Mutex
-	mu        sync.Mutex
-	sessions  map[uint32]chan *UDPFrame
-	done      chan struct{}
-	started   bool
+	stream   *quic.Stream
+	qconn    *quic.Conn
+	br       *bufio.Reader
+	writeMu  sync.Mutex
+	mu       sync.Mutex
+	sessions map[uint32]chan *UDPFrame
+	done     chan struct{}
+	started  bool
 }
 
 func newQuicStreamUDPMux(stream *quic.Stream, qconn *quic.Conn) *quicStreamUDPMux {
@@ -997,7 +997,7 @@ func (c *quicStreamUDPConn) Close() error {
 	return nil
 }
 
-func (c *quicStreamUDPConn) LocalAddr() net.Addr             { return c.mux.qconn.LocalAddr() }
+func (c *quicStreamUDPConn) LocalAddr() net.Addr              { return c.mux.qconn.LocalAddr() }
 func (c *quicStreamUDPConn) SetDeadline(time.Time) error      { return nil }
-func (c *quicStreamUDPConn) SetReadDeadline(time.Time) error   { return nil }
-func (c *quicStreamUDPConn) SetWriteDeadline(time.Time) error  { return nil }
+func (c *quicStreamUDPConn) SetReadDeadline(time.Time) error  { return nil }
+func (c *quicStreamUDPConn) SetWriteDeadline(time.Time) error { return nil }

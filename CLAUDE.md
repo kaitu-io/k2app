@@ -37,45 +37,84 @@ docker compose up --build           # Docker: server + init container (docker/)
 cmd/k2/CLAUDE.md               Client CLI subcommands + dispatch
 cmd/k2s/CLAUDE.md              Server CLI + foreground/service mode
 config/CLAUDE.md               ClientConfig + ServerConfig + YAML formats
+engine/                        Unified tunnel lifecycle manager (state machine, EventHandler, Config assembly)
 core/CLAUDE.md                 L4 ClientTunnel, Router, ConnectionHandler
 core/dns/CLAUDE.md             DNS 13-step middleware pipeline
-daemon/CLAUDE.md               Daemon state machine, HTTP API, service management
+daemon/CLAUDE.md               Desktop platform shell: HTTP API, service management, auto-reconnect
 provider/CLAUDE.md             Provider interface (TUN, Proxy, iOS, Android)
 server/CLAUDE.md               Server listener orchestration, TCP/UDP handlers
 wire/CLAUDE.md                 k2v5 wire protocol, Dialer/Listener interfaces
 wire/k2v5-protocol-spec.md    k2v5 protocol specification (TLS, ECH, camouflage, framing)
-wire/pcc/CLAUDE.md             PCC Vivace congestion control
-mobile/                        Mobile SDK (Engine, EventHandler, dnsHandler)
+wire/arc/CLAUDE.md             PCC Vivace congestion control
+mobile/                        Mobile platform shell: gomobile SDK (EventHandler bridge)
 test/CLAUDE.md                 E2E integration tests
 docs/features/                 Feature specs (cloud-webapp, mobile-sdk, private-ip-guard, etc.)
 docs/knowledge/                Distilled patterns (architecture, bugfix, gotchas, testing, tasks)
 docs/contracts/                API contracts (webapp-daemon-api)
 ```
 
-## Data Flow
-
-- DNS (L4/mobile): App -> TUN -> gVisor -> dnsHandler (port 53) -> Middleware.HandleQuery -> Cache/Filter/k2rule/TmpRule -> Upstream
-- DNS (L3/desktop): App -> TUN -> DNS Middleware.HandleDNSQuery (raw IP) -> HandleQuery -> same pipeline
-- Traffic: TUN -> gVisor stack -> ConnectionHandler -> Router -> Wire (QUIC/TCP-WS) -> Server
-- Server: Wire -> Auth -> AcceptTCP/ServeUDP -> net.Dial -> Target
-- Control: CLI -> HTTP 127.0.0.1:1777 -> Daemon -> Tunnel
-
 ## Architecture
 
 **L4 Proxy Model**: Client uses gVisor stack (sing-tun) to convert TUN packets to L4 TCP/UDP connections. Server is simple userspace proxy (no TUN/NAT).
 
-**Interfaces**:
+### Layer Model
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ Platform Shell (daemon/ mobile/)                        │
+│   职责: 平台入口 + Config 组装 + 平台特有功能              │
+│   规则: 不管隧道状态——状态由 engine 管, shell 只透传        │
+├─────────────────────────────────────────────────────────┤
+│ Engine (engine/)                                        │
+│   职责: 唯一的隧道生命周期管理者 (single source of truth)  │
+│   拥有: state machine, EventHandler, error classification │
+│   组装: wire → provider → tunnel → DNS middleware         │
+├─────────────────────────────────────────────────────────┤
+│ Core (core/ + core/dns/)                                │
+│   职责: L4 数据面 + DNS pipeline (无状态, 只处理连接)      │
+├─────────────────────────────────────────────────────────┤
+│ Provider (provider/)                                    │
+│   职责: 平台 packet I/O 抽象 (TUN/Proxy → L4 connections)│
+├─────────────────────────────────────────────────────────┤
+│ Wire (wire/)                                            │
+│   职责: k2v5 协议传输 (Dialer/Listener)                  │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Platform Call Chains
+
+```
+Desktop:  CLI → HTTP → daemon.Daemon ──[builds Config]──→ engine.Engine.Start()
+Mobile:   Native → mobile.Engine ──[builds Config]──→ engine.Engine.Start()
+                                                          ↓
+                                                     engine assembles:
+                                                     k2rule → wire → provider → tunnel → DNS
+```
+
+Platform Shell (daemon/mobile) assembles `engine.Config` with platform-specific fields (DirectDialer, NetworkMonitor for desktop; FileDescriptor for mobile), then delegates all lifecycle to engine. Engine doesn't know or care which platform called it.
+
+### Interfaces
+
 - `wire.Dialer`: DialTCP, DialUDP, Close (implemented by QUICClient, TCPWSClient, TransportManager)
 - `wire.Listener`: AcceptTCP, ServeUDP, Close (implemented by QUICServer, TCPWSServer)
 - `provider.Provider`: Start(ctx, ConnectionHandler), Close, Name (TUN/Proxy/iOS/Android)
-- `provider.ConnectionHandler`: HandleTCP(conn, dest), HandleUDP(conn, dest) (implemented by ClientTunnel, mobile.dnsHandler)
+- `provider.ConnectionHandler`: HandleTCP(conn, dest), HandleUDP(conn, dest) (implemented by ClientTunnel, dnsHandler)
+- `engine.EventHandler`: OnStateChange(state), OnError(msg), OnStats(tx, rx) (implemented by daemon, mobile.eventBridge)
 - `dns.DNSQuerier`: Query(*dns.Msg) (*dns.Msg, error) (implemented by DirectDNSClient, ProxyDNSClient)
 
-**Binary Split**:
+### Binary Split
+
 - `k2`: client (CLI, daemon, provider, core, DNS middleware)
 - `k2s`: server (listener, auth, TCP/UDP handlers)
-- `mobile/`: gomobile SDK (Engine + EventHandler + dnsHandler composition)
-- Shared: wire/, config/, some daemon/ files
+- `mobile/`: gomobile SDK (Engine + EventHandler bridge — gomobile can't export dependency interfaces)
+- Shared: wire/, config/, engine/
+
+## Data Flow
+
+- DNS (all TUN): App → TUN → gVisor → dnsHandler (port 53) → Middleware.HandleQuery → Cache/Filter/k2rule/TmpRule → Upstream
+- Traffic: TUN → gVisor stack → ConnectionHandler → Router → Wire (QUIC/TCP-WS) → Server
+- Server: Wire → Auth → AcceptTCP/ServeUDP → net.Dial → Target
+- Control: CLI → HTTP 127.0.0.1:1777 → Daemon → Engine
 
 ## Critical Gotchas
 

@@ -1,5 +1,5 @@
-// PCC Vivace - Performance-oriented Congestion Control
-package pcc
+// K2ARC Vivace - Performance-oriented Congestion Control
+package arc
 
 import (
 	"sync"
@@ -9,9 +9,9 @@ import (
 )
 
 // ============================================================================
-// PCC Vivace - Performance-oriented Congestion Control
+// K2ARC Vivace - Performance-oriented Congestion Control
 //
-// PCC uses gradient ascent on a utility function to find optimal sending rate:
+// K2ARC uses gradient ascent on a utility function to find optimal sending rate:
 // U = Throughput - α * LossRate * Throughput - β * ΔRtt
 //
 // Key features:
@@ -20,30 +20,30 @@ import (
 // - GFW mode: low α to tolerate non-congestion packet loss
 //
 // References:
-// - PCC Vivace (NSDI '18): https://www.usenix.org/conference/nsdi18/presentation/dong
+// - K2ARC Vivace (NSDI '18): https://www.usenix.org/conference/nsdi18/presentation/dong
 // ============================================================================
 
-// Constants for PCC algorithm
+// Constants for K2ARC algorithm
 const (
-	// Default max rate for PCC (500 Mbps — generous upper bound)
+	// Default max rate for K2ARC (500 Mbps — generous upper bound)
 	DefaultMaxRate = int64(500_000_000)
 
 	// Minimum congestion window (10 packets worth)
-	pccMinWindow = congestion.ByteCount(14720) // 10 × 1472 (typical MTU)
+	arcMinWindow = congestion.ByteCount(14720) // 10 × 1472 (typical MTU)
 
 	// Maximum congestion window (1GB)
-	pccMaxWindow = congestion.ByteCount(1_000_000_000)
+	arcMaxWindow = congestion.ByteCount(1_000_000_000)
 
 	// ============================================================================
 	// Rate Boundaries - Aligned with realistic bandwidth constraints
 	// ============================================================================
 
 	// Minimum upload rate (10 Mbps - realistic home upload minimum)
-	pccMinRate = 10_000_000.0 // 10 Mbps
+	arcMinRate = 10_000_000.0 // 10 Mbps
 
 	// Minimum download rate (30 Mbps - realistic home download minimum)
 	// Used when maxRate >= 30 Mbps (download scenarios)
-	pccMinDownloadRate = 30_000_000.0 // 30 Mbps
+	arcMinDownloadRate = 30_000_000.0 // 30 Mbps
 
 	// ============================================================================
 	// Performance Tuning - Optimized for fast convergence
@@ -51,19 +51,19 @@ const (
 
 	// Probing epsilon: exploration step size
 	// Old: 0.05 (5%, conservative), New: 0.15 (15%, aggressive)
-	DefaultPCCEpsilon = 0.15
+	DefaultK2ARCEpsilon = 0.15
 
 	// Beta: latency penalty coefficient
 	// Low: throughput-prioritized for tunnel use
-	DefaultPCCBeta = 0.1
+	DefaultK2ARCBeta = 0.1
 
 	// EWMA smoothing factor for rate updates
 	// Old: 0.7 (70% new value), New: 0.9 (90% new value, faster response)
-	pccRateEWMAAlpha = 0.9
+	arcRateEWMAAlpha = 0.9
 
 	// Slow start growth factor
 	// Old: 2.0 (double each MI), New: 2.5 (2.5x each MI, faster ramp-up)
-	pccSlowStartFactor = 2.5
+	arcSlowStartFactor = 2.5
 
 	// ============================================================================
 	// Recovery Mechanisms
@@ -94,14 +94,14 @@ const (
 	MinMIPacketsRelaxed = uint64(3)
 
 	// Default alpha (loss penalty) - standard mode
-	DefaultPCCAlpha = 10.0
+	DefaultK2ARCAlpha = 10.0
 
 	// Alpha for GFW/aggressive mode (low loss penalty)
-	GFWPCCAlpha = 0.5
+	GFWK2ARCAlpha = 0.5
 
 	// Congestion window multiplier (for rate to cwnd conversion)
 	// 2.0× BDP matches BBR's cwnd gain, provides headroom for bursty ACK patterns
-	pccCwndMultiplier = 2.0
+	arcCwndMultiplier = 2.0
 
 	// ============================================================================
 	// Adaptive Alpha Constants
@@ -129,24 +129,24 @@ const (
 	LossHistorySize = 4
 )
 
-// PCCMode represents the PCC operating mode
-type PCCMode int
+// K2ARCMode represents the K2ARC operating mode
+type K2ARCMode int
 
 const (
-	// PCCModeSlowStart - exponential growth until utility drops
-	PCCModeSlowStart PCCMode = iota
-	// PCCModeDecision - probing to determine rate direction
-	PCCModeDecision
-	// PCCModeRateAdjusting - applying gradient updates
-	PCCModeRateAdjusting
+	// K2ARCModeSlowStart - exponential growth until utility drops
+	K2ARCModeSlowStart K2ARCMode = iota
+	// K2ARCModeDecision - probing to determine rate direction
+	K2ARCModeDecision
+	// K2ARCModeRateAdjusting - applying gradient updates
+	K2ARCModeRateAdjusting
 )
 
 // ============================================================================
-// PCC Configuration
+// K2ARC Configuration
 // ============================================================================
 
-// PCCConfig holds configuration for PCC algorithm
-type PCCConfig struct {
+// K2ARCConfig holds configuration for K2ARC algorithm
+type K2ARCConfig struct {
 	// Alpha is the loss penalty coefficient
 	// Standard: 10.0-100.0 (loss-sensitive)
 	// GFW mode: 0.1-2.0 (ignore non-congestion loss)
@@ -170,35 +170,35 @@ type PCCConfig struct {
 	InitialAlpha float64
 }
 
-// DefaultPCCConfig returns default PCC configuration
-func DefaultPCCConfig() *PCCConfig {
-	return &PCCConfig{
-		Alpha:          DefaultPCCAlpha,
-		Beta:           DefaultPCCBeta,
-		Epsilon:        DefaultPCCEpsilon,
+// DefaultK2ARCConfig returns default K2ARC configuration
+func DefaultK2ARCConfig() *K2ARCConfig {
+	return &K2ARCConfig{
+		Alpha:          DefaultK2ARCAlpha,
+		Beta:           DefaultK2ARCBeta,
+		Epsilon:        DefaultK2ARCEpsilon,
 		AggressiveMode: false,
 	}
 }
 
-// GFWPCCConfig returns PCC configuration optimized for GFW/lossy networks
-func GFWPCCConfig() *PCCConfig {
-	return &PCCConfig{
-		Alpha:          GFWPCCAlpha,
-		Beta:           DefaultPCCBeta,
-		Epsilon:        DefaultPCCEpsilon,
+// GFWK2ARCConfig returns K2ARC configuration optimized for GFW/lossy networks
+func GFWK2ARCConfig() *K2ARCConfig {
+	return &K2ARCConfig{
+		Alpha:          GFWK2ARCAlpha,
+		Beta:           DefaultK2ARCBeta,
+		Epsilon:        DefaultK2ARCEpsilon,
 		AggressiveMode: true,
 		AdaptiveAlpha:  false,
 		InitialAlpha:   InitialAlpha,
 	}
 }
 
-// NewPCCConfigAdaptive returns PCC configuration with adaptive alpha mode
+// NewK2ARCConfigAdaptive returns K2ARC configuration with adaptive alpha mode
 // Alpha is automatically adjusted based on observed loss rate
-func NewPCCConfigAdaptive() *PCCConfig {
-	return &PCCConfig{
+func NewK2ARCConfigAdaptive() *K2ARCConfig {
+	return &K2ARCConfig{
 		Alpha:          InitialAlpha,
-		Beta:           DefaultPCCBeta,
-		Epsilon:        DefaultPCCEpsilon,
+		Beta:           DefaultK2ARCBeta,
+		Epsilon:        DefaultK2ARCEpsilon,
 		AggressiveMode: false,
 		AdaptiveAlpha:  true,
 		InitialAlpha:   InitialAlpha,
@@ -311,7 +311,7 @@ func (mi *MonitorInterval) AvgRTT() time.Duration {
 // Utility Function
 // ============================================================================
 
-// UtilityFunction calculates PCC utility
+// UtilityFunction calculates K2ARC utility
 type UtilityFunction struct {
 	Alpha        float64
 	Beta         float64
@@ -432,14 +432,14 @@ func (uf *UtilityFunction) Calculate(mi *MonitorInterval) float64 {
 }
 
 // ============================================================================
-// PCC State
+// K2ARC State
 // ============================================================================
 
-// PCCState holds the PCC algorithm state
-type PCCState struct {
+// K2ARCState holds the K2ARC algorithm state
+type K2ARCState struct {
 	CurrentRate      float64
 	Epsilon          float64
-	Mode             PCCMode
+	Mode             K2ARCMode
 	CurrentMI        *MonitorInterval
 	NextMIID         uint64
 	LastUtility      *float64
@@ -448,7 +448,7 @@ type PCCState struct {
 }
 
 // ensureCurrentMI ensures there's a current MI
-func (s *PCCState) ensureCurrentMI(rate float64) *MonitorInterval {
+func (s *K2ARCState) ensureCurrentMI(rate float64) *MonitorInterval {
 	if s.CurrentMI == nil {
 		s.CurrentMI = NewMonitorInterval(s.NextMIID, rate)
 		s.NextMIID++
@@ -457,7 +457,7 @@ func (s *PCCState) ensureCurrentMI(rate float64) *MonitorInterval {
 }
 
 // startNewMI starts a new Monitor Interval
-func (s *PCCState) startNewMI(rate float64) *MonitorInterval {
+func (s *K2ARCState) startNewMI(rate float64) *MonitorInterval {
 	if s.CurrentMI != nil {
 		s.CurrentMI.Complete()
 	}
@@ -467,13 +467,13 @@ func (s *PCCState) startNewMI(rate float64) *MonitorInterval {
 }
 
 // ============================================================================
-// PCC Sender (Congestion Controller)
+// K2ARC Sender (Congestion Controller)
 // ============================================================================
 
-// PCCSender implements PCC Vivace congestion control
-type PCCSender struct {
-	config   *PCCConfig
-	state    *PCCState
+// K2ARCSender implements K2ARC Vivace congestion control
+type K2ARCSender struct {
+	config   *K2ARCConfig
+	state    *K2ARCState
 	utility  *UtilityFunction
 	maxRate  int64
 	cwnd     congestion.ByteCount
@@ -489,30 +489,30 @@ type PCCSender struct {
 	mu sync.RWMutex
 }
 
-// NewPCCSender creates a new PCC sender with default config
-func NewPCCSender(maxRate int64) *PCCSender {
-	return NewPCCSenderWithConfig(maxRate, DefaultPCCConfig())
+// NewK2ARCSender creates a new K2ARC sender with default config
+func NewK2ARCSender(maxRate int64) *K2ARCSender {
+	return NewK2ARCSenderWithConfig(maxRate, DefaultK2ARCConfig())
 }
 
-// NewPCCSenderGFWMode creates a new PCC sender optimized for GFW/lossy networks
-func NewPCCSenderGFWMode(maxRate int64) *PCCSender {
-	return NewPCCSenderWithConfig(maxRate, GFWPCCConfig())
+// NewArcSenderGFWMode creates a new K2ARC sender optimized for GFW/lossy networks
+func NewArcSenderGFWMode(maxRate int64) *K2ARCSender {
+	return NewK2ARCSenderWithConfig(maxRate, GFWK2ARCConfig())
 }
 
-// NewPCCSenderAdaptive creates a new PCC sender with adaptive alpha mode
-func NewPCCSenderAdaptive(maxRate int64) *PCCSender {
-	return NewPCCSenderWithConfig(maxRate, NewPCCConfigAdaptive())
+// NewK2ARCSenderAdaptive creates a new K2ARC sender with adaptive alpha mode
+func NewK2ARCSenderAdaptive(maxRate int64) *K2ARCSender {
+	return NewK2ARCSenderWithConfig(maxRate, NewK2ARCConfigAdaptive())
 }
 
-// NewPCCSenderWithConfig creates a new PCC sender with custom config
-func NewPCCSenderWithConfig(maxRate int64, config *PCCConfig) *PCCSender {
+// NewK2ARCSenderWithConfig creates a new K2ARC sender with custom config
+func NewK2ARCSenderWithConfig(maxRate int64, config *K2ARCConfig) *K2ARCSender {
 	// Start at 30% of max (fast ramp via slow start)
 	initialRate := float64(maxRate) * 0.3
 
-	state := &PCCState{
+	state := &K2ARCState{
 		CurrentRate: initialRate,
 		Epsilon:     config.Epsilon,
-		Mode:        PCCModeSlowStart,
+		Mode:        K2ARCModeSlowStart,
 	}
 
 	// Create utility function based on mode
@@ -523,7 +523,7 @@ func NewPCCSenderWithConfig(maxRate int64, config *PCCConfig) *PCCSender {
 		utility = NewUtilityFunction(config.Alpha, config.Beta)
 	}
 
-	return &PCCSender{
+	return &K2ARCSender{
 		config:         config,
 		state:          state,
 		utility:        utility,
@@ -542,26 +542,26 @@ func rateToCwnd(rateBps float64, rtt time.Duration) congestion.ByteCount {
 	// cwnd = (rate_bps / 8) * rtt_seconds * multiplier
 	bytesPerSec := rateBps / 8.0
 	rttSecs := rtt.Seconds()
-	cwnd := congestion.ByteCount(bytesPerSec * rttSecs * pccCwndMultiplier)
+	cwnd := congestion.ByteCount(bytesPerSec * rttSecs * arcCwndMultiplier)
 
-	cwnd = max(cwnd, pccMinWindow)
-	cwnd = min(cwnd, pccMaxWindow)
+	cwnd = max(cwnd, arcMinWindow)
+	cwnd = min(cwnd, arcMaxWindow)
 	return cwnd
 }
 
 // SetRTTStatsProvider sets the RTT statistics provider
-func (p *PCCSender) SetRTTStatsProvider(provider congestion.RTTStatsProvider) {
+func (p *K2ARCSender) SetRTTStatsProvider(provider congestion.RTTStatsProvider) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.rttStats = provider
 }
 
 // updateRate updates the sending rate with EWMA smoothing
-func (p *PCCSender) updateRate(newRate float64) {
+func (p *K2ARCSender) updateRate(newRate float64) {
 	// Determine minimum rate based on scenario
-	minRate := pccMinRate // 10 Mbps (upload)
-	if float64(p.maxRate) >= pccMinDownloadRate {
-		minRate = pccMinDownloadRate // 30 Mbps (download)
+	minRate := arcMinRate // 10 Mbps (upload)
+	if float64(p.maxRate) >= arcMinDownloadRate {
+		minRate = arcMinDownloadRate // 30 Mbps (download)
 	}
 
 	// Clamp new rate
@@ -573,7 +573,7 @@ func (p *PCCSender) updateRate(newRate float64) {
 	}
 
 	// EWMA smoothing
-	p.state.CurrentRate = p.state.CurrentRate*(1.0-pccRateEWMAAlpha) + newRate*pccRateEWMAAlpha
+	p.state.CurrentRate = p.state.CurrentRate*(1.0-arcRateEWMAAlpha) + newRate*arcRateEWMAAlpha
 
 	// Strict floor protection AFTER EWMA
 	if p.state.CurrentRate < minRate {
@@ -585,12 +585,12 @@ func (p *PCCSender) updateRate(newRate float64) {
 }
 
 // IsAdaptive returns whether the sender is in adaptive alpha mode
-func (p *PCCSender) IsAdaptive() bool {
+func (p *K2ARCSender) IsAdaptive() bool {
 	return p.config.AdaptiveAlpha
 }
 
 // processCompletedMI processes a completed Monitor Interval
-func (p *PCCSender) processCompletedMI(mi *MonitorInterval) {
+func (p *K2ARCSender) processCompletedMI(mi *MonitorInterval) {
 	// Rate probing (BEFORE app-limited check)
 	// Every N MIs, probe higher rate to recover from previous reductions
 	if p.state.NextMIID%RateProbingInterval == 0 {
@@ -622,20 +622,20 @@ func (p *PCCSender) processCompletedMI(mi *MonitorInterval) {
 	utility := p.utility.Calculate(mi)
 
 	switch p.state.Mode {
-	case PCCModeSlowStart:
+	case K2ARCModeSlowStart:
 		// Check if we should exit slow start
 		if p.state.LastUtility != nil && utility < *p.state.LastUtility*0.95 {
 			// Utility dropped, exit slow start
-			p.state.Mode = PCCModeDecision
+			p.state.Mode = K2ARCModeDecision
 			p.state.UtilityIncreases = 0
 			p.state.UtilityDecreases = 0
 		} else {
 			// Continue slow start: multiply by growth factor
-			newRate := p.state.CurrentRate * pccSlowStartFactor
+			newRate := p.state.CurrentRate * arcSlowStartFactor
 			p.updateRate(newRate)
 		}
 
-	case PCCModeDecision, PCCModeRateAdjusting:
+	case K2ARCModeDecision, K2ARCModeRateAdjusting:
 		if p.state.LastUtility != nil {
 			gradient := utility - *p.state.LastUtility
 
@@ -677,7 +677,7 @@ func (p *PCCSender) processCompletedMI(mi *MonitorInterval) {
 // ============================================================================
 
 // TimeUntilSend returns when the next packet can be sent
-func (p *PCCSender) TimeUntilSend(bytesInFlight congestion.ByteCount) congestion.Time {
+func (p *K2ARCSender) TimeUntilSend(bytesInFlight congestion.ByteCount) congestion.Time {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
@@ -698,7 +698,7 @@ func (p *PCCSender) TimeUntilSend(bytesInFlight congestion.ByteCount) congestion
 }
 
 // HasPacingBudget returns true if we have pacing budget to send
-func (p *PCCSender) HasPacingBudget(now congestion.Time) bool {
+func (p *K2ARCSender) HasPacingBudget(now congestion.Time) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -724,7 +724,7 @@ func (p *PCCSender) HasPacingBudget(now congestion.Time) bool {
 }
 
 // OnPacketSent is called when a packet is sent
-func (p *PCCSender) OnPacketSent(
+func (p *K2ARCSender) OnPacketSent(
 	sentTime congestion.Time,
 	bytesInFlight congestion.ByteCount,
 	packetNumber congestion.PacketNumber,
@@ -748,17 +748,17 @@ func (p *PCCSender) OnPacketSent(
 }
 
 // CanSend returns true if we can send more data
-func (p *PCCSender) CanSend(bytesInFlight congestion.ByteCount) bool {
+func (p *K2ARCSender) CanSend(bytesInFlight congestion.ByteCount) bool {
 	return bytesInFlight < p.GetCongestionWindow()
 }
 
 // MaybeExitSlowStart is called to check if we should exit slow start
-func (p *PCCSender) MaybeExitSlowStart() {
-	// PCC handles this in processCompletedMI
+func (p *K2ARCSender) MaybeExitSlowStart() {
+	// K2ARC handles this in processCompletedMI
 }
 
 // OnPacketAcked is called when a packet is acknowledged
-func (p *PCCSender) OnPacketAcked(
+func (p *K2ARCSender) OnPacketAcked(
 	number congestion.PacketNumber,
 	ackedBytes congestion.ByteCount,
 	priorInFlight congestion.ByteCount,
@@ -798,7 +798,7 @@ func (p *PCCSender) OnPacketAcked(
 }
 
 // OnCongestionEvent is called when congestion is detected
-func (p *PCCSender) OnCongestionEvent(
+func (p *K2ARCSender) OnCongestionEvent(
 	number congestion.PacketNumber,
 	lostBytes congestion.ByteCount,
 	priorInFlight congestion.ByteCount,
@@ -815,32 +815,32 @@ func (p *PCCSender) OnCongestionEvent(
 }
 
 // OnRetransmissionTimeout is called when RTO expires
-func (p *PCCSender) OnRetransmissionTimeout(packetsRetransmitted bool) {
-	// PCC doesn't reduce cwnd on timeout
+func (p *K2ARCSender) OnRetransmissionTimeout(packetsRetransmitted bool) {
+	// K2ARC doesn't reduce cwnd on timeout
 }
 
 // SetMaxDatagramSize sets the maximum datagram size
-func (p *PCCSender) SetMaxDatagramSize(size congestion.ByteCount) {
+func (p *K2ARCSender) SetMaxDatagramSize(size congestion.ByteCount) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.maxSize = size
 }
 
 // InSlowStart returns whether we're in slow start mode
-func (p *PCCSender) InSlowStart() bool {
+func (p *K2ARCSender) InSlowStart() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return p.state.Mode == PCCModeSlowStart
+	return p.state.Mode == K2ARCModeSlowStart
 }
 
 // InRecovery returns whether we're in recovery mode
-func (p *PCCSender) InRecovery() bool {
-	return false // PCC doesn't use traditional recovery
+func (p *K2ARCSender) InRecovery() bool {
+	return false // K2ARC doesn't use traditional recovery
 }
 
 // getCongestionWindowLocked computes cwnd without acquiring the lock.
 // Caller must already hold p.mu (read or write).
-func (p *PCCSender) getCongestionWindowLocked() congestion.ByteCount {
+func (p *K2ARCSender) getCongestionWindowLocked() congestion.ByteCount {
 	rtt := p.rtt
 	if p.rttStats != nil {
 		smoothedRTT := p.rttStats.SmoothedRTT()
@@ -858,11 +858,11 @@ func (p *PCCSender) getCongestionWindowLocked() congestion.ByteCount {
 }
 
 // GetCongestionWindow returns the current congestion window size
-func (p *PCCSender) GetCongestionWindow() congestion.ByteCount {
+func (p *K2ARCSender) GetCongestionWindow() congestion.ByteCount {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.getCongestionWindowLocked()
 }
 
-// Verify PCCSender implements CongestionControl interface
-var _ congestion.CongestionControl = (*PCCSender)(nil)
+// Verify K2ARCSender implements CongestionControl interface
+var _ congestion.CongestionControl = (*K2ARCSender)(nil)

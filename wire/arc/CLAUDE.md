@@ -1,4 +1,4 @@
-# PCC Vivace Congestion Control (wire/pcc/)
+# K2ARC Vivace Congestion Control (wire/arc/)
 
 866 lines. Custom congestion control for QUIC, optimized for GFW environments.
 
@@ -7,5 +7,5 @@ Implements `quic-go`'s `CongestionControl` interface via `github.com/apernet/qui
 ## Testing
 
 ```bash
-go test ./wire/pcc/...    # 26 tests
+go test ./wire/arc/...    # 26 tests
 ```

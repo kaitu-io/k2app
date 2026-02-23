@@ -34,35 +34,35 @@ Request/Response: `daemon.Request{Action, Params}` / `daemon.Response{Code, Mess
 
 ## Tunnel Lifecycle (doUp/doDown)
 
-**doUp(wireURL or configPath)**:
+**doUp(cfg *ClientConfig, pid int)**:
 1. `opMu.Lock()` — serialize with other doUp/doDown
 2. `closeTunnel()` — unconditional teardown (idempotent)
-3. Set state to `connecting`, save config fields
-4. Build config from wire URL or config file
-5. Build tunnel via TunnelBuilder
-6. Set tunnel refs, state to `connected`
-7. Start PID monitor if requested
-8. Persist state for auto-reconnect
+3. `engineConfigFromClientConfig(cfg)` — assemble `engine.Config` with platform fields (DirectDialer, NetworkMonitor, InterfaceMonitor, PreferIPv6)
+4. `engine.Start(cfg)` — delegates all lifecycle to engine
+5. Start PID monitor if requested
+6. Persist state for auto-reconnect
 
 Error path: set `lastError` + state to `stopped`.
 
 **doDown()**:
 1. `opMu.Lock()` — serialize
-2. `closeTunnel()` — teardown + transition to `stopped`
+2. `closeTunnel()` — `engine.Stop()` + transition to `stopped`
 
 ## Files
 
-- `daemon.go` — `Daemon` struct, state machine, HTTP server setup
-- `tunnel.go` — BuildTunnel helper (wire URL → ClientTunnel)
+- `daemon.go` — `Daemon` struct, state machine, HTTP server setup, `engineConfigFromClientConfig`
 - `api.go` — `handleCore`/`handlePing`/`handleMetrics` + CORS middleware
 - `client.go` — `Client` struct for IPC (used by CLI commands)
 - `state.go` — Persisted state: saved config + last connect time (auto-reconnect <1h)
-- `process.go` / `process_unix.go` — PID monitoring (auto-disconnect on parent exit)
-- `recovery.go` / `recovery_unix.go` — Panic recovery + network restore
-- `rlimit.go` / `rlimit_unix.go` — `RLIMIT_NPROC=4000`, `RLIMIT_NOFILE=10240`
+- `reload.go` — Hot-reload config on SIGHUP (dynamic changes without restart)
+- `network_monitor.go` — Desktop network change detection (WiFi/cellular switch)
+- `process.go` / `process_unix.go` / `process_windows.go` — PID monitoring (auto-disconnect on parent exit)
+- `recovery.go` / `recovery_unix.go` / `recovery_windows.go` — Panic recovery + network restore
+- `rlimit.go` / `rlimit_unix.go` / `rlimit_windows.go` — `RLIMIT_NPROC=4000`, `RLIMIT_NOFILE=10240`
 - `service.go` — `ServiceManager` interface: Install/Uninstall/IsInstalled
 - `service_darwin.go` — macOS launchd plist (`io.kaitu.k2`)
 - `service_linux.go` — Linux systemd unit (`k2.service`)
+- `service_windows.go` — Windows Service
 
 ## Testing
 

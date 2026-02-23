@@ -38,11 +38,14 @@ Provider ──► ClientTunnel.HandleTCP/HandleUDP
 
 Routes traffic using k2rule (domain/IP → Direct/Proxy/Reject).
 
-**Initialization** (daemon/tunnel.go):
+**Initialization** (engine.go `buildRuleConfig`):
 ```go
 k2rule.Init(&k2rule.Config{
-    Rules:     rulesYAML,
-    GeoIPPath: mmdbPath,
+    RuleURL:  rule.RuleURL,
+    GeoIPURL: rule.GeoIPURL,
+    PornURL:  rule.PornURL,
+    CacheDir: rule.CacheDir,
+    IsGlobal: rule.Global,
 })
 ```
 
@@ -53,7 +56,7 @@ router.RouteAddr("example.com") → k2rule.TargetProxy
 router.RouteAddr("blocked.com") → k2rule.TargetReject
 ```
 
-**k2rule v0.3.0-go**: unified Init API, GeoIP validation at init (not runtime).
+**k2rule v0.5.0-go**: unified Init API + SetTmpRule, URL-based remote downloads (CacheDir required).
 
 ## Packet (packet/)
 

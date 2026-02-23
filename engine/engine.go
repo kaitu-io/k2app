@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
+	"net/netip"
 	"net/url"
 	"sync"
 	"time"
 
 	"github.com/kaitu-io/k2rule"
 
+	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/core"
 	"github.com/kaitu-io/k2/core/dns"
 	"github.com/kaitu-io/k2/provider"
@@ -23,7 +26,7 @@ import (
 type Engine struct {
 	mu          sync.Mutex
 	state       string
-	wireUrl     string
+	client      *config.ClientConfig
 	connectedAt time.Time
 	lastError   *EngineError
 	handler     EventHandler
@@ -67,7 +70,12 @@ func (e *Engine) Start(cfg Config) error {
 		e.mu.Unlock()
 		return fmt.Errorf("engine: already started")
 	}
-	e.wireUrl = cfg.WireURL
+	client := cfg.Client
+	if client == nil {
+		e.mu.Unlock()
+		return fmt.Errorf("engine: Client config is required")
+	}
+	e.client = client
 	e.lastError = nil
 
 	// Create context early so Stop() can cancel an in-progress Start().
@@ -77,17 +85,15 @@ func (e *Engine) Start(cfg Config) error {
 	e.setState(StateConnecting)
 	e.mu.Unlock()
 
-	// 1. Parse rule mode: RuleConfig > RuleMode > URL query "rule=" > default "global".
-	slog.Info("engine: step 1 - k2rule init starting")
-	ruleCfg := e.buildK2ruleConfig(cfg)
+	// 1. Rule config — built directly from client.Rule.
+	ruleCfg := buildRuleConfig(client)
 	if err := k2rule.Init(ruleCfg); err != nil {
 		slog.Warn("engine: k2rule init failed, continuing with defaults", "err", err)
 	}
 	slog.Info("engine: step 1 - k2rule init done")
 
 	// 2. Parse k2v5:// URL.
-	slog.Info("engine: step 2 - parse wire URL")
-	wireCfg, err := wire.ParseURL(cfg.WireURL)
+	wireCfg, err := wire.ParseURL(client.Server)
 	if err != nil {
 		return e.fail(err)
 	}
@@ -126,23 +132,23 @@ func (e *Engine) Start(cfg Config) error {
 		// Mobile: platform-provided TUN FD.
 		prov = provider.NewTUNProvider(provider.ProviderConfig{
 			FileDescriptor: cfg.FileDescriptor,
-			IPv4Address:    cfg.TunIPv4,
-			IPv6Address:    cfg.TunIPv6,
+			IPv4Address:    client.Tun.IPv4,
+			IPv6Address:    client.Tun.IPv6,
 		})
-	} else if cfg.Mode == "proxy" {
+	} else if client.Mode == "proxy" {
 		// Desktop proxy mode.
 		prov = provider.NewProxyProvider(provider.ProviderConfig{
 			Mode:        "proxy",
-			ProxyListen: cfg.ProxyListen,
+			ProxyListen: client.Proxy.Listen,
 		})
 	} else {
 		// Desktop TUN mode.
 		prov = provider.NewTUNProvider(provider.ProviderConfig{
 			Mode:             "tun",
-			DNSServers:       cfg.DNSExclude,
+			DNSServers:       computeDNSExclude(client),
 			InterfaceMonitor: cfg.InterfaceMonitor,
-			IPv4Address:      cfg.TunIPv4,
-			IPv6Address:      cfg.TunIPv6,
+			IPv4Address:      client.Tun.IPv4,
+			IPv6Address:      client.Tun.IPv6,
 		})
 	}
 
@@ -164,23 +170,23 @@ func (e *Engine) Start(cfg Config) error {
 	tunnel := core.NewClientTunnel(tunnelCfg)
 
 	// 8. Start.
-	if cfg.FileDescriptor >= 0 {
-		// Mobile path: insert DNS middleware between provider and tunnel.
+	if client.Mode != "proxy" {
+		// TUN mode (mobile or desktop): intercept DNS at port 53.
 		dnsMW := dns.NewMiddleware(dns.MiddlewareConfig{
 			ProxyDNS: dns.NewProxyDNSClient(dns.ProxyDNSClientConfig{
 				Dialer:  tm,
-				Servers: cfg.DNSProxyServers,
+				Servers: client.DNS.Proxy,
 			}),
-			DirectDNS: dns.NewDirectDNSClient(cfg.DNSDirectServers),
+			DirectDNS: dns.NewDirectDNSClient(client.DNS.Direct),
 			DNSCache:  dns.NewDNSCache(dns.DNSCacheConfig{}),
 			Filter:    dns.NewFilter(dns.FilterConfig{}),
 		})
-		if err := prov.Start(ctx, &dnsHandler{inner: tunnel, dns: dnsMW}); err != nil {
+		if err := tunnel.StartWithHandler(ctx, &dnsHandler{inner: tunnel, dns: dnsMW}); err != nil {
 			tm.Close()
 			return e.fail(err)
 		}
 	} else {
-		// Desktop path: tunnel.Start wires provider directly.
+		// Proxy mode: no TUN, no DNS interception.
 		if err := tunnel.Start(ctx); err != nil {
 			tm.Close()
 			return e.fail(err)
@@ -269,7 +275,7 @@ func (e *Engine) Stop() error {
 		e.tm = nil
 	}
 	e.tunnel = nil
-	e.wireUrl = ""
+	e.client = nil
 	e.connectedAt = time.Time{}
 
 	e.setState(StateDisconnected)
@@ -292,8 +298,8 @@ func (e *Engine) StatusJSON() string {
 	if e.lastError != nil {
 		info["error"] = e.lastError
 	}
-	if e.wireUrl != "" {
-		info["wire_url"] = e.wireUrl
+	if e.client != nil {
+		info["wire_url"] = e.client.Server
 	}
 	b, _ := json.Marshal(info)
 	return string(b)
@@ -332,39 +338,59 @@ func (e *Engine) fail(err error) error {
 	return err
 }
 
-// buildK2ruleConfig resolves the k2rule configuration from Config fields.
-// Priority: RuleConfig > RuleMode > URL query "rule=" > default "global".
-func (e *Engine) buildK2ruleConfig(cfg Config) *k2rule.Config {
-	// If caller provides a full RuleConfig, use it directly.
-	if cfg.RuleConfig != nil {
-		return cfg.RuleConfig
-	}
-
-	// Resolve rule mode: RuleMode > URL query param > default.
-	ruleMode := cfg.RuleMode
-	if ruleMode == "" {
-		ruleMode = parseRuleFromURL(cfg.WireURL)
-	}
-	if ruleMode == "" {
-		ruleMode = "global"
-	}
-
+// buildRuleConfig creates a k2rule.Config from the client's Rule settings.
+// CacheDir must be set by the platform shell (daemon/mobile) before calling engine.
+func buildRuleConfig(client *config.ClientConfig) *k2rule.Config {
+	rule := client.Rule
 	ruleCfg := &k2rule.Config{
-		CacheDir: cfg.DataDir,
-		IsGlobal: ruleMode == "global",
+		RuleURL:  rule.RuleURL,
+		GeoIPURL: rule.GeoIPURL,
+		Antiporn: rule.Antiporn,
+		PornURL:  rule.PornURL,
+		CacheDir: rule.CacheDir,
+		IsGlobal: rule.Global,
 	}
-	if ruleCfg.IsGlobal {
+	if rule.Global {
 		ruleCfg.GlobalTarget = k2rule.TargetProxy
 	}
 	return ruleCfg
 }
 
-// parseRuleFromURL extracts the "rule" query parameter from a URL string.
-// Returns empty string if the URL is invalid or has no rule parameter.
-func parseRuleFromURL(rawURL string) string {
-	u, err := url.Parse(rawURL)
+// computeDNSExclude builds the list of IPs to exclude from TUN routing.
+// This includes DNS direct server IPs and the wire server's resolved IPs.
+func computeDNSExclude(client *config.ClientConfig) []netip.Addr {
+	var addrs []netip.Addr
+
+	// Parse DNS server IPs from direct servers.
+	for _, s := range client.DNS.Direct {
+		host, _, err := net.SplitHostPort(s)
+		if err != nil {
+			continue
+		}
+		if addr, err := netip.ParseAddr(host); err == nil {
+			addrs = append(addrs, addr)
+		}
+	}
+
+	// Resolve server host to IPs for route exclusion.
+	if serverHost := extractServerHost(client.Server); serverHost != "" {
+		if ips, err := net.LookupHost(serverHost); err == nil {
+			for _, ip := range ips {
+				if addr, err := netip.ParseAddr(ip); err == nil {
+					addrs = append(addrs, addr)
+				}
+			}
+		}
+	}
+
+	return addrs
+}
+
+// extractServerHost extracts the hostname from a k2v5:// URL.
+func extractServerHost(wireURL string) string {
+	u, err := url.Parse(wireURL)
 	if err != nil {
 		return ""
 	}
-	return u.Query().Get("rule")
+	return u.Hostname()
 }

@@ -53,26 +53,14 @@ func (e *Engine) Start(configJSON string, fd int, cfg *EngineConfig) error {
 	}
 	config.SetDefaults(&clientCfg)
 
-	// Map rule config to engine RuleMode.
-	ruleMode := "global"
-	if !clientCfg.Rule.Global {
-		ruleMode = "smart"
-	}
-
-	var dataDir string
+	// Inject platform cache dir for k2rule.
 	if cfg.CacheDir != "" {
-		dataDir = filepath.Join(cfg.CacheDir, "k2rule")
+		clientCfg.Rule.CacheDir = filepath.Join(cfg.CacheDir, "k2rule")
 	}
 
 	return e.inner.Start(engine.Config{
-		WireURL:          clientCfg.Server,
-		FileDescriptor:   fd,
-		DataDir:          dataDir,
-		RuleMode:         ruleMode,
-		TunIPv4:          clientCfg.Tun.IPv4,
-		TunIPv6:          clientCfg.Tun.IPv6,
-		DNSProxyServers:  clientCfg.DNS.Proxy,
-		DNSDirectServers: clientCfg.DNS.Direct,
+		Client:         &clientCfg,
+		FileDescriptor: fd,
 	})
 }
 

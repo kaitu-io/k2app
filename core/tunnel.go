@@ -48,8 +48,15 @@ func NewClientTunnel(cfg ClientTunnelConfig) *ClientTunnel {
 
 // Start starts the provider, which will call HandleTCP/HandleUDP for each connection.
 func (t *ClientTunnel) Start(ctx context.Context) error {
+	return t.StartWithHandler(ctx, t)
+}
+
+// StartWithHandler starts the provider with a custom ConnectionHandler.
+// This allows inserting middleware (e.g. DNS interception) between the
+// provider and the tunnel.
+func (t *ClientTunnel) StartWithHandler(ctx context.Context, handler provider.ConnectionHandler) error {
 	t.ctx, t.cancel = context.WithCancel(ctx)
-	return t.provider.Start(t.ctx, t)
+	return t.provider.Start(t.ctx, handler)
 }
 
 // Close stops the tunnel and provider.

@@ -46,7 +46,7 @@ Fields: UDID, Token, Host, Port, ECH, Fingerprint, HopStart, HopEnd, Insecure, P
 - `tcpws.go` — smux config, `TCPWSClient`/`TCPWSServer`
 - `transport.go` — `TransportManager`: sets QUIC/TCP-WS, `DialTCP` prefers QUIC with TCP-WS fallback
 - `tlspad/` — TLS record padding (probe target cert length, pad server cert to match)
-- `pcc/` — PCC Vivace congestion control for QUIC
+- `arc/` — PCC Vivace congestion control for QUIC
 
 ## ECH Rotation Flow
 
