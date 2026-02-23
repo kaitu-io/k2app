@@ -8,7 +8,7 @@ Single file: `config.go` — separate `ClientConfig` and `ServerConfig` types.
 server: "k2v5://udid:token@host:443?ech=...&pin=sha256:..."
 mode: tun          # "tun" (default, needs root) or "proxy"
 tun:
-  ipv4: "198.18.0.7/15"    # default; mobile overrides via init()
+  ipv4: "198.18.0.7/15"    # default; appext overrides via init()
   ipv6: "fdfe:dcba:9876::7/64"
 proxy:
   listen: "127.0.0.1:1080"
@@ -20,7 +20,7 @@ rule:
   rule_url: ""     # remote rule file URL ("" = CDN default)
   geoip_url: ""    # remote GeoIP .mmdb URL ("" = CDN default)
   porn_url: ""     # remote porn list URL ("" = CDN default)
-  cache_dir: ""    # set by platform shell (daemon/mobile)
+  cache_dir: ""    # set by platform shell (daemon/appext)
 log:
   level: info      # debug, info, warn, error
 ```

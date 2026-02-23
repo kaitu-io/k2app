@@ -97,7 +97,7 @@ Platform Shell (daemon/appext) assembles `engine.Config` with platform-specific 
 
 - `wire.Dialer`: DialTCP, DialUDP, Close (implemented by QUICClient, TCPWSClient, TransportManager)
 - `wire.Listener`: AcceptTCP, ServeUDP, Close (implemented by QUICServer, TCPWSServer)
-- `wire.DirectDialer`: DialContext, ListenPacket (implemented by directdial.Dialer, appext.protectedDialer)
+- `wire.DirectDialer`: DialContext, ListenPacket (implemented by daemon.directDialer, appext.protectedDialer)
 - `wire.DialerController`: ControlFunc() (optional, for DNS socket protection — implemented by appext.protectedDialer)
 - `provider.Provider`: Start(ctx, ConnectionHandler), Close, Name (TUN/Proxy/TProxy/iOS/Android)
 - `provider.ConnectionHandler`: HandleTCP(conn, dest), HandleUDP(conn, dest) (implemented by ClientTunnel, dnsHandler)
@@ -167,6 +167,6 @@ docs/todos/p2-*.md     Nice to have
 | macOS sysext | xcframework | appext/ | tun (FD) | nil |
 | iOS | xcframework | appext/ | tun (FD) | nil |
 | Android | aar | appext/ | tun (FD) | protectedDialer |
-| Linux desktop | cmd/k2 | daemon/ | tun (self-create) | directdial.Dialer |
-| Windows | cmd/k2 | daemon/ | tun (self-create) | directdial.Dialer |
+| Linux desktop | cmd/k2 | daemon/ | tun (self-create) | daemon.directDialer |
+| Windows | cmd/k2 | daemon/ | tun (self-create) | daemon.directDialer |
 | OpenWRT | cmd/k2 | daemon/ | tproxy | nil |

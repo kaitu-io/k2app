@@ -53,7 +53,7 @@ HTTP-aligned error codes for frontend consumption:
 |-------|-----------------|-------------------|---------|
 | `Client` | from YAML/URL | from JSON | from YAML/URL |
 | `FileDescriptor` | -1 (self-create TUN) | >=0 (platform FD) | -1 |
-| `DirectDialer` | directdial.Dialer | protectedDialer (Android) / nil (iOS/macOS) | nil |
+| `DirectDialer` | daemon.directDialer | protectedDialer (Android) / nil (iOS/macOS) | nil |
 | `NetworkMonitor` | sing-tun DefaultInterfaceMonitor | nil (platform calls directly) | nil |
 | `InterfaceMonitor` | same sing-tun instance | nil | nil |
 

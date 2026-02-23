@@ -63,6 +63,9 @@ Error path: set `lastError` + state to `stopped`.
 - `service_darwin.go` — macOS launchd plist (`io.kaitu.k2`)
 - `service_linux.go` — Linux systemd unit (`k2.service`) + OpenWRT init.d/procd (auto-detected)
 - `service_windows.go` — Windows Service
+- `directdial.go` — `directDialer` (implements `wire.DirectDialer`, sing-tun interface binding)
+- `paths.go` — `cacheDir()`, `logDir()` (platform-specific cache/log directories)
+- `wintun/` — wintun.dll embedding + extraction (Windows TUN driver)
 
 ## Testing
 
