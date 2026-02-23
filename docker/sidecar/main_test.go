@@ -54,13 +54,15 @@ func TestReadConnectURL_FindsFileAndBuildsURL(t *testing.T) {
 	err := os.WriteFile(filepath.Join(dir, "connect-url.txt"), []byte(content), 0644)
 	require.NoError(t, err)
 
-	result := readConnectURL(dir, "test.example.com", 443, 10020, 10119)
+	result := readConnectURL(dir, "test.example.com", 443, 10020, 10119, "5.6.7.8", "2001:db8::1")
 
 	assert.NotEmpty(t, result, "should return a non-empty server URL")
 	assert.Contains(t, result, "k2v5://test.example.com:443")
 	assert.Contains(t, result, "ech=AABBCC")
 	assert.Contains(t, result, "pin=sha256:testpin123")
 	assert.Contains(t, result, "hop=10020-10119")
+	assert.Contains(t, result, "ip=5.6.7.8")
+	assert.Contains(t, result, "ipv6=2001:db8::1")
 	// Auth credentials must be stripped
 	assert.NotContains(t, result, "udid")
 	assert.NotContains(t, result, "token")
@@ -71,7 +73,7 @@ func TestReadConnectURL_FindsFileAndBuildsURL(t *testing.T) {
 func TestReadConnectURL_ReturnsEmptyWhenMissing(t *testing.T) {
 	dir := t.TempDir()
 
-	result := readConnectURL(dir, "test.example.com", 443, 10020, 10119)
+	result := readConnectURL(dir, "test.example.com", 443, 10020, 10119, "5.6.7.8", "")
 
 	assert.Empty(t, result, "should return empty string when file is missing")
 }

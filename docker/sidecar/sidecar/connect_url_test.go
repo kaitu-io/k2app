@@ -10,44 +10,65 @@ import (
 
 func TestBuildServerURL_Full(t *testing.T) {
 	raw := "k2v5://udid:token@hk1.example.com:443?ech=AABBCCDD&pin=sha256:abc123&insecure=1"
-	url := BuildServerURL(raw, "hk1.example.com", 443, 10020, 10119)
+	url := BuildServerURL(raw, "hk1.example.com", 443, 10020, 10119, "", "")
 	assert.Equal(t, "k2v5://hk1.example.com:443?ech=AABBCCDD&pin=sha256:abc123&hop=10020-10119", url)
 }
 
 func TestBuildServerURL_NoHop(t *testing.T) {
 	raw := "k2v5://udid:token@hk1.example.com:443?ech=AABBCCDD&pin=sha256:abc123"
-	url := BuildServerURL(raw, "hk1.example.com", 443, 0, 0)
+	url := BuildServerURL(raw, "hk1.example.com", 443, 0, 0, "", "")
 	assert.Equal(t, "k2v5://hk1.example.com:443?ech=AABBCCDD&pin=sha256:abc123", url)
 }
 
 func TestBuildServerURL_NoECH(t *testing.T) {
 	raw := "k2v5://udid:token@test.com:443?pin=sha256:xyz"
-	url := BuildServerURL(raw, "node.example.com", 443, 0, 0)
+	url := BuildServerURL(raw, "node.example.com", 443, 0, 0, "", "")
 	assert.Equal(t, "k2v5://node.example.com:443?pin=sha256:xyz", url)
 	assert.NotContains(t, url, "ech=")
 }
 
 func TestBuildServerURL_OverridesDomainPort(t *testing.T) {
 	raw := "k2v5://udid:token@original.com:8443?ech=AA&pin=sha256:bb"
-	url := BuildServerURL(raw, "configured.com", 443, 0, 0)
+	url := BuildServerURL(raw, "configured.com", 443, 0, 0, "", "")
 	assert.Contains(t, url, "k2v5://configured.com:443")
 	assert.NotContains(t, url, "original.com")
 }
 
 func TestBuildServerURL_InvalidURL(t *testing.T) {
-	url := BuildServerURL("not a valid url %%%", "test.com", 443, 0, 0)
+	url := BuildServerURL("not a valid url %%%", "test.com", 443, 0, 0, "", "")
 	assert.Equal(t, "", url)
 }
 
 func TestBuildServerURL_EmptyString(t *testing.T) {
-	url := BuildServerURL("", "test.com", 443, 0, 0)
+	url := BuildServerURL("", "test.com", 443, 0, 0, "", "")
 	assert.Equal(t, "", url)
 }
 
 func TestBuildServerURL_NoParams(t *testing.T) {
 	raw := "k2v5://udid:token@test.com:443"
-	url := BuildServerURL(raw, "test.com", 443, 0, 0)
+	url := BuildServerURL(raw, "test.com", 443, 0, 0, "", "")
 	assert.Equal(t, "", url, "should return empty when no ech or pin params")
+}
+
+func TestBuildServerURL_WithIPv4(t *testing.T) {
+	raw := "k2v5://udid:token@hk1.example.com:443?ech=AABB&pin=sha256:abc"
+	url := BuildServerURL(raw, "hk1.example.com", 443, 10020, 10119, "1.2.3.4", "")
+	assert.Contains(t, url, "ip=1.2.3.4")
+	assert.NotContains(t, url, "ipv6=")
+}
+
+func TestBuildServerURL_WithIPv4AndIPv6(t *testing.T) {
+	raw := "k2v5://udid:token@hk1.example.com:443?ech=AABB&pin=sha256:abc"
+	url := BuildServerURL(raw, "hk1.example.com", 443, 10020, 10119, "1.2.3.4", "2001:db8::1")
+	assert.Contains(t, url, "ip=1.2.3.4")
+	assert.Contains(t, url, "ipv6=2001:db8::1")
+}
+
+func TestBuildServerURL_WithIPv6Only(t *testing.T) {
+	raw := "k2v5://udid:token@hk1.example.com:443?ech=AABB&pin=sha256:abc"
+	url := BuildServerURL(raw, "hk1.example.com", 443, 0, 0, "", "2001:db8::1")
+	assert.NotContains(t, url, "ip=")
+	assert.Contains(t, url, "ipv6=2001:db8::1")
 }
 
 func TestTunnelConfig_MarshalWithServerURL(t *testing.T) {

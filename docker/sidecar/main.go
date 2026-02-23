@@ -208,7 +208,8 @@ func (s *Sidecar) buildTunnelConfigs() []sidecar.TunnelConfig {
 		if data, err := os.ReadFile(connectURLPath); err == nil {
 			serverURL = sidecar.BuildServerURL(strings.TrimSpace(string(data)),
 				s.config.Tunnel.Domain, s.config.Tunnel.Port,
-				s.config.Tunnel.HopPortStart, s.config.Tunnel.HopPortEnd)
+				s.config.Tunnel.HopPortStart, s.config.Tunnel.HopPortEnd,
+				s.nodeInstance.IPv4, s.nodeInstance.IPv6)
 			if serverURL != "" {
 				slog.Info("Built k2v5 server URL", "component", "sidecar", "url", serverURL)
 			}
@@ -267,12 +268,12 @@ func (s *Sidecar) buildTunnelConfigs() []sidecar.TunnelConfig {
 // readConnectURL reads connect-url.txt from the given directory and builds a
 // clean server URL using BuildServerURL. Returns empty string if the file
 // doesn't exist or doesn't contain usable parameters.
-func readConnectURL(dir, domain string, port, hopStart, hopEnd int) string {
+func readConnectURL(dir, domain string, port, hopStart, hopEnd int, ipv4, ipv6 string) string {
 	data, err := os.ReadFile(filepath.Join(dir, "connect-url.txt"))
 	if err != nil {
 		return ""
 	}
-	return sidecar.BuildServerURL(strings.TrimSpace(string(data)), domain, port, hopStart, hopEnd)
+	return sidecar.BuildServerURL(strings.TrimSpace(string(data)), domain, port, hopStart, hopEnd, ipv4, ipv6)
 }
 
 // pollAndRegisterK2V5ConnectURL polls for /etc/k2v5/connect-url.txt and
@@ -286,7 +287,8 @@ func (s *Sidecar) pollAndRegisterK2V5ConnectURL() {
 	for {
 		serverURL := readConnectURL("/etc/k2v5",
 			s.config.Tunnel.Domain, s.config.Tunnel.Port,
-			s.config.Tunnel.HopPortStart, s.config.Tunnel.HopPortEnd)
+			s.config.Tunnel.HopPortStart, s.config.Tunnel.HopPortEnd,
+			s.nodeInstance.IPv4, s.nodeInstance.IPv6)
 
 		if serverURL != "" {
 			// Rebuild tunnel configs with the discovered serverURL
