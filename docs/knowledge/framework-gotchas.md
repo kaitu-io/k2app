@@ -1192,3 +1192,57 @@ postinstall: new k2 → service install
 **Status**: verified (spec review)
 
 ---
+
+## Android VpnService.protect() Required for ALL Outbound Sockets (2026-02-23, android-socket-protection)
+
+**Problem**: Android `VpnService` does NOT auto-exclude the VPN app's own sockets from TUN routing (unlike iOS `NEPacketTunnelProvider` which self-excludes at kernel level). Every socket that should bypass TUN must be explicitly marked via `VpnService.protect(fd)`.
+
+**Affected socket types**: Wire transport (QUIC UDP, TCP-WS TCP), direct DNS (raw UDP to 114.114.114.114), and direct tunnel connections (smart routing mode bypass). Missing ANY of these causes a routing loop → fd exhaustion → OOM kill.
+
+**Solution pattern**: `syscall.RawConn.Control()` in Go's `net.Dialer.Control` / `net.ListenConfig.Control`. The Control function runs on the raw fd BEFORE the OS `connect()` call — the correct point to call `protect()`.
+
+**miekg/dns Dialer integration**: `dns.Client{Dialer: &net.Dialer{Control: protectFunc}}` — miekg/dns copies the full `net.Dialer` struct (value copy, not pointer reference) and uses it for UDP socket creation. The `Control` func is preserved through the copy.
+
+**gomobile type constraint**: `SocketProtector.Protect(fd int32)` uses `int32` not `int` — gomobile maps Go `int` inconsistently across platforms. `int32` maps to Java `int` (32-bit), which matches `VpnService.protect(int)`.
+
+**Files**: `k2/engine/protect.go`, `k2/core/dns/direct.go`, `K2VpnService.kt`
+**Source**: android-socket-protection (2026-02-23)
+**Status**: verified (unit tests + code review)
+
+---
+
+## Capacitor iOS CapacitorRouter URL(fileURLWithPath:) Empty Path (2026-02-23, capacitor-ios-white-screen)
+
+**Problem**: Capacitor 6.x `CapacitorRouter.route(for:)` in `Router.swift` fails when `path` is `""` (empty string). `URL(fileURLWithPath: "")` resolves to the current working directory, not an empty/error URL. If the cwd path has an extension (common inside `.app` bundles), `pathExtension.isEmpty` returns `false`, and the router returns the basePath directory instead of `basePath + "/index.html"`.
+
+**Why path is empty**: `CAPInstanceConfiguration.m:44` constructs `serverURL` as `scheme://hostname` without trailing slash. When WebView loads `capacitor://localhost`, `url.path` is `""`. The trailing-slash variant `capacitor://localhost/` would yield `url.path == "/"`, which the router handles correctly.
+
+**Why not fixed upstream**: As of Capacitor 6.2.1 (our version), this is unfixed. Capacitor 7+ may restructure the router. The bug requires specific cwd state to trigger, making it environment-dependent and hard to reproduce in CI.
+
+**Fix pattern**: Override `open func router() -> Router` on `CAPBridgeViewController` subclass. Return a custom `Router` conformance that checks `path.isEmpty || path == "/"` before `URL(fileURLWithPath:)`. This is the framework's designed extension point.
+
+```swift
+struct FixedCapacitorRouter: Router {
+    var basePath: String = ""
+    func route(for path: String) -> String {
+        if path.isEmpty || path == "/" {
+            return basePath + "/index.html"
+        }
+        let pathUrl = URL(fileURLWithPath: path)
+        if pathUrl.pathExtension.isEmpty {
+            return basePath + "/index.html"
+        }
+        return basePath + path
+    }
+}
+```
+
+**Storyboard wiring**: Main.storyboard must reference the custom subclass (`AppBridgeViewController` in module `App`), not Capacitor's `CAPBridgeViewController`.
+
+**Diagnostic trail**: Systematic debugging proved the router was the fault — a custom `WKURLSchemeHandler` serving the same `basePath + "/index.html"` worked perfectly (green diagnostic screen), while Capacitor's handler returned "Is a directory".
+
+**Files**: `mobile/ios/App/App/AppBridgeViewController.swift`, `Main.storyboard`
+**Source**: capacitor-ios-white-screen (2026-02-23)
+**Status**: verified (real device test on iPhone 15)
+
+---

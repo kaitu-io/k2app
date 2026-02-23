@@ -81,6 +81,7 @@ Makefile             Build orchestration — version from package.json, k2 from 
 - **VPN state contract**: `reconnecting` is a transient engine signal (engine state stays `connected`). `disconnecting` is UI-only optimistic state. Backend never emits either directly. `error` is synthesized by bridge from `disconnected + lastError`.
 - **`.gitignore` for native platforms**: Never ignore entire source directories (`mobile/ios/`, `mobile/android/`). Only ignore build artifacts.
 - **Capacitor plugin loading**: Use `registerPlugin('K2Plugin')` from `@capacitor/core`. Never dynamic npm import.
+- **Capacitor iOS router fix**: `AppBridgeViewController` in `mobile/ios/App/App/` overrides `router()` with `FixedCapacitorRouter` to fix Capacitor 6.x empty-path bug (`URL(fileURLWithPath: "")` resolves to cwd). Main.storyboard must reference this subclass, NOT `CAPBridgeViewController`.
 - **gomobile Swift API**: Generated methods use `throws` pattern, NOT NSError out-parameter.
 - **iOS extension targets**: Must have `CFBundleExecutable`, `CFBundleVersion` in Info.plist. Build settings NOT inherited from project.
 - **Local Capacitor plugin sync**: `file:` plugins are copied to `node_modules/`. After editing: `rm -rf node_modules/k2-plugin && yarn install --force` before `cap sync`.

@@ -421,3 +421,51 @@ stack, err := tun.NewSystem(tun.StackOptions{...})
 **Files removed**: `k2/config/include.go`, `k2/config/include_test.go`. `Include` field removed from both `ClientConfig` and `ServerConfig` structs.
 
 ---
+
+## Android VPN Routing Loop: Missing VpnService.protect() (2026-02-23, android-socket-protection)
+
+**Problem**: VPN connects on Android but all traffic fails. DNS queries from TUN address `10.0.0.2` loop back through TUN → fd exhaustion → `too many open files` → OOM kill (signal 9).
+
+**Root cause**: Go engine's outbound sockets (wire protocol TCP/UDP + direct DNS) were never marked for VPN exclusion. Desktop uses `DirectDialer` (SO_BINDTODEVICE/IP_BOUND_IF), but mobile had no equivalent — `DirectDialer` was nil, `ProtectFunc` didn't exist.
+
+**Symptoms** (all visible in logcat):
+- DNS `223.5.5.5:53` queries originating from `10.0.0.2` (TUN address, not physical interface)
+- `too many open files` — fd leak from looping connections
+- Process killed by signal 9 (kernel OOM)
+
+**Fix**: Implemented `SocketProtector` → `ProtectFunc` → `protectedDialer` chain. Every outbound socket (QUIC, TCP-WS, direct TCP/UDP, direct DNS) now calls `VpnService.protect(fd)` via `syscall.RawConn.Control()` before connect.
+
+**Key insight**: iOS doesn't need this — `NEPacketTunnelProvider` self-excludes at kernel level. Only Android requires explicit per-socket `protect()`.
+
+**Files fixed**: `k2/engine/protect.go` (new), `k2/engine/engine.go`, `k2/core/dns/direct.go`, `k2/mobile/mobile.go`, `K2VpnService.kt`
+
+**Validating tests**: `k2/engine/protect_test.go` — 4 tests
+**Cross-reference**: See Architecture Decisions → "Android Socket Protection" for design rationale
+
+---
+
+## Capacitor iOS White Screen: CapacitorRouter Empty-Path Bug (2026-02-23, capacitor-ios-white-screen)
+
+**Problem**: iOS Capacitor app shows white screen on real iPhone 15 device. WebView loads `capacitor://localhost` but WKWebView fails with `NSPOSIXErrorDomain Code=21 "Is a directory"`.
+
+**Root cause chain**:
+1. `CAPInstanceConfiguration.m:44` constructs `serverURL` as `capacitor://localhost` (NO trailing slash)
+2. `loadWebView()` loads `appStartServerURL` which equals `serverURL` when `appStartPath` is nil
+3. `WKURLSchemeHandler` receives request, `url.path` for `capacitor://localhost` = `""` (empty string)
+4. `CapacitorRouter.route(for: "")` does `URL(fileURLWithPath: "")` which resolves to cwd
+5. Inside `.app` bundle, cwd has extension → `pathExtension.isEmpty` returns `false`
+6. Router returns `basePath + ""` = `basePath` (the `public/` directory itself)
+7. `Data(contentsOf:)` on a directory → `NSPOSIXErrorDomain Code=21 "Is a directory"`
+
+**Why only on real device**: The exact cwd and `.app` bundle path differ between simulator and device. The bug is latent in all Capacitor 6.x but only triggers when the cwd path extension is non-empty.
+
+**Fix**: Override `router()` (which is `open` on `CAPBridgeViewController`) to return a `FixedCapacitorRouter` that checks `path.isEmpty || path == "/"` BEFORE the `URL(fileURLWithPath:)` conversion. This uses Capacitor's designed extension point — no monkey-patching.
+
+**Key insight**: `URL(fileURLWithPath: "")` is a Swift footgun — it resolves to the current working directory, not an error. Combined with `pathExtension` check, it creates a silent logic bomb.
+
+**Files fixed**: `mobile/ios/App/App/AppBridgeViewController.swift` (new), `Main.storyboard` (point to new VC)
+
+**Validating tests**: Manual device test — app loads webapp correctly. No automated test (Capacitor framework bug, not our logic).
+**Cross-reference**: See Framework Gotchas → "Capacitor iOS CapacitorRouter URL(fileURLWithPath:) Empty Path"
+
+---
