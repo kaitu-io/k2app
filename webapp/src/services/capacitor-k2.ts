@@ -14,6 +14,7 @@ import { K2Plugin } from 'k2-plugin';
 import type { IK2Vpn, IPlatform, IUpdater, UpdateInfo, SResponse } from '../types/kaitu-core';
 import type { StatusResponseData, ControlError, ServiceState } from './vpn-types';
 import { webSecureStorage } from './secure-storage';
+import { useVPNStore } from '../stores/vpn.store';
 
 /**
  * Check if running inside a Capacitor native environment.
@@ -179,14 +180,43 @@ export async function injectCapacitorGlobals(): Promise<void> {
   (window as any)._k2 = capacitorK2;
   (window as any)._platform = capacitorPlatform;
 
-  // Register event listeners (polling handles state updates, these just log)
+  // Register event listeners — wire native events to VPN store for instant UI updates.
+  // Polling is the steady-state source, but events provide immediate feedback on connect/error.
   K2Plugin.addListener('vpnStateChange', (event: any) => {
     console.debug('[K2:Capacitor] vpnStateChange:', event.state,
       event.connectedAt ? `connectedAt=${event.connectedAt}` : '');
+    // Push native state change into VPN store immediately (don't wait for next poll)
+    try {
+      const status = transformStatus(event);
+      const store = useVPNStore.getState();
+      store.setStatus(status);
+      // Clear optimistic state on terminal states so UI reflects reality
+      if (event.state === 'connected' || event.state === 'disconnected' || event.state === 'error') {
+        store.setOptimisticState(null);
+      }
+    } catch (e) {
+      // Store may not be initialized yet during startup — polling will catch up
+    }
   });
 
   K2Plugin.addListener('vpnError', (event: any) => {
     console.warn('[K2:Capacitor] vpnError:', event.message ?? event);
+    // Push error into VPN store immediately
+    try {
+      const store = useVPNStore.getState();
+      const currentStatus = store.status;
+      store.setStatus({
+        ...currentStatus,
+        state: 'error',
+        running: false,
+        networkAvailable: currentStatus?.networkAvailable ?? true,
+        error: { code: 570, message: event.message ?? String(event) },
+        retrying: false,
+      });
+      store.setOptimisticState(null);
+    } catch (e) {
+      // Store may not be initialized yet — polling will catch up
+    }
   });
 
   K2Plugin.addListener('nativeUpdateReady', (event: any) => {

@@ -91,9 +91,14 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 
             do {
                 // Build EngineConfig with platform paths
-                let engineCfg = MobileNewEngineConfig()
+                guard let engineCfg = MobileNewEngineConfig() else {
+                    let err = NSError(domain: "io.kaitu", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to create EngineConfig"])
+                    completionHandler(err)
+                    return
+                }
                 let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: kAppGroup)
                 engineCfg.cacheDir = containerURL?.appendingPathComponent("k2").path ?? ""
+                // socketProtector left nil — iOS PacketTunnelProvider self-excludes at kernel level
 
                 if !engineCfg.cacheDir.isEmpty {
                     try? FileManager.default.createDirectory(atPath: engineCfg.cacheDir, withIntermediateDirectories: true)

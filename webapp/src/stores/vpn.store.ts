@@ -58,9 +58,9 @@ const SERVICE_FAILURE_THRESHOLD_MS = 10000;
 /** 验证乐观状态到后端状态的转换是否合法 */
 const isValidTransition = (from: ServiceState, to: ServiceState): boolean => {
   const valid: Record<ServiceState, ServiceState[]> = {
-    connecting: ['connecting', 'connected', 'error', 'reconnecting'],
+    connecting: ['connecting', 'connected', 'disconnected', 'error', 'reconnecting'],
     disconnecting: ['disconnecting', 'disconnected', 'error'],
-    reconnecting: ['reconnecting', 'connecting', 'connected', 'error'],
+    reconnecting: ['reconnecting', 'connecting', 'connected', 'disconnected', 'error'],
     disconnected: [],
     connected: [],
     error: [],
