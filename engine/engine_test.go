@@ -11,6 +11,7 @@ import (
 
 	mdns "github.com/miekg/dns"
 
+	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/core/dns"
 	"github.com/kaitu-io/k2/provider"
 	"github.com/kaitu-io/k2/wire"
@@ -206,6 +207,14 @@ func newPacketPipe(t *testing.T) *packetPipe {
 	return &packetPipe{local: local, remote: remote, addr: remote.LocalAddr()}
 }
 
+// testConfig creates a Config with the given wire URL for testing.
+func testConfig(server string) Config {
+	return Config{
+		Client:         &config.ClientConfig{Server: server},
+		FileDescriptor: -1,
+	}
+}
+
 // ==========================================================================
 // Lifecycle tests
 // ==========================================================================
@@ -220,9 +229,23 @@ func TestEngineNew(t *testing.T) {
 	}
 }
 
+func TestEngineStart_NilClient(t *testing.T) {
+	e := New()
+	err := e.Start(Config{FileDescriptor: -1})
+	if err == nil {
+		t.Fatal("Start with nil Client should return error")
+	}
+	if got := err.Error(); got != "engine: Client config is required" {
+		t.Fatalf("error = %q, want 'engine: Client config is required'", got)
+	}
+	if e.Status() != StateDisconnected {
+		t.Fatalf("state = %q, want %q after nil client", e.Status(), StateDisconnected)
+	}
+}
+
 func TestEngineStart_InvalidURL(t *testing.T) {
 	e := New()
-	err := e.Start(Config{WireURL: "garbage", FileDescriptor: -1})
+	err := e.Start(testConfig("garbage"))
 	if err == nil {
 		t.Fatal("Start with invalid URL should return error")
 	}
@@ -236,14 +259,14 @@ func TestEngineStart_DoubleStart(t *testing.T) {
 	url := "k2v5://udid:token@127.0.0.1:12345?insecure=1"
 
 	// First start will fail (no real TUN), that's fine.
-	_ = e.Start(Config{WireURL: url, FileDescriptor: -1})
+	_ = e.Start(testConfig(url))
 
 	// Force state to connected to test double-start guard.
 	e.mu.Lock()
 	e.state = StateConnected
 	e.mu.Unlock()
 
-	err := e.Start(Config{WireURL: url, FileDescriptor: -1})
+	err := e.Start(testConfig(url))
 	if err == nil {
 		t.Fatal("double Start should return error")
 	}
@@ -261,134 +284,66 @@ func TestEngineStop_NotStarted(t *testing.T) {
 }
 
 // ==========================================================================
-// Rule parsing tests
+// Rule config tests
 // ==========================================================================
 
-func TestParseRuleFromURL(t *testing.T) {
-	tests := []struct {
-		name string
-		url  string
-		want string
-	}{
-		{
-			name: "smart rule",
-			url:  "k2v5://udid:tok@host:443?rule=smart",
-			want: "smart",
-		},
-		{
-			name: "global rule",
-			url:  "k2v5://udid:tok@host:443?rule=global",
-			want: "global",
-		},
-		{
-			name: "no rule param",
-			url:  "k2v5://udid:tok@host:443",
-			want: "",
-		},
-		{
-			name: "empty rule param",
-			url:  "k2v5://udid:tok@host:443?rule=",
-			want: "",
-		},
-		{
-			name: "rule with other params",
-			url:  "k2v5://udid:tok@host:443?insecure=1&rule=smart&tp=quic",
-			want: "smart",
-		},
-		{
-			name: "invalid URL",
-			url:  "://broken",
-			want: "",
-		},
+func TestBuildRuleConfig_Default_Global(t *testing.T) {
+	client := &config.ClientConfig{
+		Server: "k2v5://udid:tok@host:443",
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := parseRuleFromURL(tt.url)
-			if got != tt.want {
-				t.Fatalf("parseRuleFromURL(%q) = %q, want %q", tt.url, got, tt.want)
-			}
-		})
+	ruleCfg := buildRuleConfig(client)
+	if ruleCfg.IsGlobal {
+		t.Fatal("expected IsGlobal false when Rule.Global not set")
 	}
 }
 
-func TestBuildK2ruleConfig_Default_Global(t *testing.T) {
-	e := New()
-	cfg := Config{
-		WireURL:        "k2v5://udid:tok@host:443",
-		FileDescriptor: -1,
+func TestBuildRuleConfig_GlobalTrue(t *testing.T) {
+	client := &config.ClientConfig{
+		Server: "k2v5://udid:tok@host:443",
+		Rule:   config.RuleConfig{Global: true},
 	}
-	ruleCfg := e.buildK2ruleConfig(cfg)
+	ruleCfg := buildRuleConfig(client)
 	if !ruleCfg.IsGlobal {
-		t.Fatal("expected IsGlobal true when no rule specified")
+		t.Fatal("expected IsGlobal true when Rule.Global is true")
 	}
 	if ruleCfg.GlobalTarget != k2rule.TargetProxy {
 		t.Fatalf("GlobalTarget = %v, want TargetProxy", ruleCfg.GlobalTarget)
 	}
 }
 
-func TestBuildK2ruleConfig_DataDir(t *testing.T) {
-	e := New()
-	cfg := Config{
-		WireURL:        "k2v5://udid:tok@host:443",
-		FileDescriptor: -1,
-		DataDir:        "/tmp/k2test",
+func TestBuildRuleConfig_CacheDir(t *testing.T) {
+	client := &config.ClientConfig{
+		Server: "k2v5://udid:tok@host:443",
+		Rule:   config.RuleConfig{CacheDir: "/tmp/k2test"},
 	}
-	ruleCfg := e.buildK2ruleConfig(cfg)
+	ruleCfg := buildRuleConfig(client)
 	if ruleCfg.CacheDir != "/tmp/k2test" {
 		t.Fatalf("CacheDir = %q, want %q", ruleCfg.CacheDir, "/tmp/k2test")
 	}
 }
 
-func TestBuildK2ruleConfig_RuleConfig_Override(t *testing.T) {
-	e := New()
-	custom := &k2rule.Config{
-		IsGlobal:     false,
-		RuleURL:      "https://example.com/rules",
-		CacheDir:     "/custom/dir",
-		GlobalTarget: k2rule.TargetDirect,
+func TestBuildRuleConfig_RuleURLs(t *testing.T) {
+	client := &config.ClientConfig{
+		Server: "k2v5://udid:tok@host:443",
+		Rule: config.RuleConfig{
+			RuleURL:  "https://example.com/rules",
+			GeoIPURL: "https://example.com/geoip",
+			PornURL:  "https://example.com/porn",
+			CacheDir: "/custom/dir",
+		},
 	}
-	cfg := Config{
-		WireURL:        "k2v5://udid:tok@host:443",
-		FileDescriptor: -1,
-		RuleMode:       "global", // should be ignored
-		DataDir:        "/ignored",
-		RuleConfig:     custom,
+	ruleCfg := buildRuleConfig(client)
+	if ruleCfg.RuleURL != "https://example.com/rules" {
+		t.Fatalf("RuleURL = %q, want %q", ruleCfg.RuleURL, "https://example.com/rules")
 	}
-	ruleCfg := e.buildK2ruleConfig(cfg)
-	if ruleCfg != custom {
-		t.Fatal("expected custom RuleConfig to be used directly")
+	if ruleCfg.GeoIPURL != "https://example.com/geoip" {
+		t.Fatalf("GeoIPURL = %q, want %q", ruleCfg.GeoIPURL, "https://example.com/geoip")
 	}
-	if ruleCfg.IsGlobal {
-		t.Fatal("expected IsGlobal false from custom config")
+	if ruleCfg.PornURL != "https://example.com/porn" {
+		t.Fatalf("PornURL = %q, want %q", ruleCfg.PornURL, "https://example.com/porn")
 	}
 	if ruleCfg.CacheDir != "/custom/dir" {
 		t.Fatalf("CacheDir = %q, want %q", ruleCfg.CacheDir, "/custom/dir")
-	}
-}
-
-func TestBuildK2ruleConfig_RuleModeFromURL(t *testing.T) {
-	e := New()
-	cfg := Config{
-		WireURL:        "k2v5://udid:tok@host:443?rule=smart",
-		FileDescriptor: -1,
-	}
-	ruleCfg := e.buildK2ruleConfig(cfg)
-	if ruleCfg.IsGlobal {
-		t.Fatal("expected IsGlobal false when URL has rule=smart")
-	}
-}
-
-func TestBuildK2ruleConfig_RuleMode_OverridesURL(t *testing.T) {
-	e := New()
-	cfg := Config{
-		WireURL:        "k2v5://udid:tok@host:443?rule=smart",
-		FileDescriptor: -1,
-		RuleMode:       "global", // explicit RuleMode takes priority over URL
-	}
-	ruleCfg := e.buildK2ruleConfig(cfg)
-	if !ruleCfg.IsGlobal {
-		t.Fatal("expected IsGlobal true when RuleMode explicitly set to global")
 	}
 }
 
@@ -402,7 +357,7 @@ func TestEngineStart_EventHandler_StateChanges(t *testing.T) {
 	e.SetEventHandler(h)
 
 	// Start with invalid URL triggers: connecting -> error -> disconnected
-	_ = e.Start(Config{WireURL: "garbage", FileDescriptor: -1})
+	_ = e.Start(testConfig("garbage"))
 
 	states := h.getStates()
 	if len(states) < 2 {
@@ -421,7 +376,7 @@ func TestEngineStart_EventHandler_OnError(t *testing.T) {
 	h := &mockEventHandler{}
 	e.SetEventHandler(h)
 
-	_ = e.Start(Config{WireURL: "garbage", FileDescriptor: -1})
+	_ = e.Start(testConfig("garbage"))
 
 	errs := h.getErrors()
 	if len(errs) == 0 {
@@ -458,7 +413,7 @@ func TestEngineStatusJSON_Connected(t *testing.T) {
 	// Simulate connected state by setting fields under lock.
 	e.mu.Lock()
 	e.state = StateConnected
-	e.wireUrl = "k2v5://udid:tok@1.2.3.4:443"
+	e.client = &config.ClientConfig{Server: "k2v5://udid:tok@1.2.3.4:443"}
 	e.connectedAt = time.Now().Add(-10 * time.Second)
 	e.mu.Unlock()
 
@@ -487,7 +442,7 @@ func TestEngineStatusJSON_Connected(t *testing.T) {
 
 func TestEngineStatusJSON_AfterFailedStart(t *testing.T) {
 	e := New()
-	_ = e.Start(Config{WireURL: "garbage", FileDescriptor: -1})
+	_ = e.Start(testConfig("garbage"))
 
 	raw := e.StatusJSON()
 	var m map[string]any
@@ -511,7 +466,7 @@ func TestEngineStatusJSON_MatchesDaemonFormat(t *testing.T) {
 	// Set all fields to produce the full JSON.
 	e.mu.Lock()
 	e.state = StateConnected
-	e.wireUrl = "k2v5://u:t@host:443"
+	e.client = &config.ClientConfig{Server: "k2v5://u:t@host:443"}
 	e.connectedAt = time.Now().Add(-5 * time.Second)
 	e.lastError = &EngineError{Code: ErrCodeConnectionFatal, Message: "some previous error"}
 	e.mu.Unlock()
@@ -773,7 +728,7 @@ func TestEngine_NetworkMonitor_NilMonitor_NoPanic(t *testing.T) {
 	// This will fail at the wire.ParseURL step (invalid URL), but the point
 	// is that it should NOT panic due to nil NetworkMonitor handling.
 	cfg := Config{
-		WireURL:        "k2v5://udid:token@127.0.0.1:12345?insecure=1",
+		Client:         &config.ClientConfig{Server: "k2v5://udid:token@127.0.0.1:12345?insecure=1"},
 		FileDescriptor: -1,
 		NetworkMonitor: nil,
 	}
@@ -784,7 +739,7 @@ func TestEngine_NetworkMonitor_NilMonitor_NoPanic(t *testing.T) {
 
 // TestEngine_NetworkMonitor_CallbackTriggersOnNetworkChanged verifies that
 // when the monitor fires its callback, it calls OnNetworkChanged on the
-// engine, which emits reconnecting→connected state transitions.
+// engine, which emits reconnecting->connected state transitions.
 func TestEngine_NetworkMonitor_CallbackTriggersOnNetworkChanged(t *testing.T) {
 	e := New()
 	h := &mockEventHandler{}
@@ -835,7 +790,7 @@ func TestEngine_NetworkMonitor_StartedOnEngineStart(t *testing.T) {
 	// Config with NetworkMonitor set — engine should start the monitor
 	// after reaching connected state.
 	cfg := Config{
-		WireURL:        "k2v5://udid:token@127.0.0.1:12345?insecure=1",
+		Client:         &config.ClientConfig{Server: "k2v5://udid:token@127.0.0.1:12345?insecure=1"},
 		FileDescriptor: -1,
 		NetworkMonitor: mon,
 	}
@@ -1091,6 +1046,39 @@ func TestEngineStartStopRace_NoRace(t *testing.T) {
 		_ = e.Stop()
 		<-done
 		// Just verify no panic or data race (under -race flag).
+	}
+}
+
+// ==========================================================================
+// computeDNSExclude tests
+// ==========================================================================
+
+func TestComputeDNSExclude_ParsesDirectServers(t *testing.T) {
+	client := &config.ClientConfig{
+		DNS: config.DNSConfig{
+			Direct: []string{"114.114.114.114:53", "223.5.5.5:53"},
+		},
+	}
+	addrs := computeDNSExclude(client)
+	if len(addrs) < 2 {
+		t.Fatalf("expected at least 2 addrs, got %d", len(addrs))
+	}
+}
+
+func TestExtractServerHost(t *testing.T) {
+	tests := []struct {
+		url  string
+		want string
+	}{
+		{"k2v5://u:p@example.com:443", "example.com"},
+		{"k2v5://u:p@1.2.3.4:443", "1.2.3.4"},
+		{"://broken", ""},
+	}
+	for _, tt := range tests {
+		got := extractServerHost(tt.url)
+		if got != tt.want {
+			t.Errorf("extractServerHost(%q) = %q, want %q", tt.url, got, tt.want)
+		}
 	}
 }
 

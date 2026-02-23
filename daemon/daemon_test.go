@@ -72,8 +72,11 @@ func TestDoUpAcceptsClientConfig(t *testing.T) {
 	if d.State() != StateConnected {
 		t.Fatalf("expected connected, got %s", d.State())
 	}
-	if captured.WireURL != "k2v5://test:token@host:443" {
-		t.Fatalf("engine WireURL = %q, want k2v5://test:token@host:443", captured.WireURL)
+	if captured.Client == nil {
+		t.Fatal("engine Client is nil")
+	}
+	if captured.Client.Server != "k2v5://test:token@host:443" {
+		t.Fatalf("engine Client.Server = %q, want k2v5://test:token@host:443", captured.Client.Server)
 	}
 }
 
@@ -98,11 +101,11 @@ func TestEngineConfigFromClientConfig_TunFields(t *testing.T) {
 		t.Fatalf("doUp: %v", err)
 	}
 
-	if captured.TunIPv4 != "10.0.0.2/24" {
-		t.Errorf("engine TunIPv4 = %q, want 10.0.0.2/24", captured.TunIPv4)
+	if captured.Client.Tun.IPv4 != "10.0.0.2/24" {
+		t.Errorf("engine Client.Tun.IPv4 = %q, want 10.0.0.2/24", captured.Client.Tun.IPv4)
 	}
-	if captured.TunIPv6 != "fd00::2/128" {
-		t.Errorf("engine TunIPv6 = %q, want fd00::2/128", captured.TunIPv6)
+	if captured.Client.Tun.IPv6 != "fd00::2/128" {
+		t.Errorf("engine Client.Tun.IPv6 = %q, want fd00::2/128", captured.Client.Tun.IPv6)
 	}
 }
 
@@ -124,11 +127,11 @@ func TestEngineConfigFromClientConfig_TunDefaults(t *testing.T) {
 		t.Fatalf("doUp: %v", err)
 	}
 
-	if captured.TunIPv4 != config.DefaultTunIPv4 {
-		t.Errorf("engine TunIPv4 = %q, want %q", captured.TunIPv4, config.DefaultTunIPv4)
+	if captured.Client.Tun.IPv4 != config.DefaultTunIPv4 {
+		t.Errorf("engine Client.Tun.IPv4 = %q, want %q", captured.Client.Tun.IPv4, config.DefaultTunIPv4)
 	}
-	if captured.TunIPv6 != config.DefaultTunIPv6 {
-		t.Errorf("engine TunIPv6 = %q, want %q", captured.TunIPv6, config.DefaultTunIPv6)
+	if captured.Client.Tun.IPv6 != config.DefaultTunIPv6 {
+		t.Errorf("engine Client.Tun.IPv6 = %q, want %q", captured.Client.Tun.IPv6, config.DefaultTunIPv6)
 	}
 }
 
@@ -154,15 +157,15 @@ func TestEngineConfigFromClientConfig_ProxyModeUnchanged(t *testing.T) {
 		t.Fatalf("doUp: %v", err)
 	}
 
-	if captured.Mode != "proxy" {
-		t.Errorf("engine Mode = %q, want proxy", captured.Mode)
+	if captured.Client.Mode != "proxy" {
+		t.Errorf("engine Client.Mode = %q, want proxy", captured.Client.Mode)
 	}
-	if captured.ProxyListen != "127.0.0.1:8080" {
-		t.Errorf("engine ProxyListen = %q, want 127.0.0.1:8080", captured.ProxyListen)
+	if captured.Client.Proxy.Listen != "127.0.0.1:8080" {
+		t.Errorf("engine Client.Proxy.Listen = %q, want 127.0.0.1:8080", captured.Client.Proxy.Listen)
 	}
 	// TUN fields still pass through even in proxy mode (engine ignores them).
-	if captured.TunIPv4 != "10.0.0.2/24" {
-		t.Errorf("engine TunIPv4 = %q, want 10.0.0.2/24", captured.TunIPv4)
+	if captured.Client.Tun.IPv4 != "10.0.0.2/24" {
+		t.Errorf("engine Client.Tun.IPv4 = %q, want 10.0.0.2/24", captured.Client.Tun.IPv4)
 	}
 }
 
