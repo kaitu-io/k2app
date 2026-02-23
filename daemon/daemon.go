@@ -14,7 +14,6 @@ import (
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/directdial"
 	"github.com/kaitu-io/k2/engine"
-	"github.com/kaitu-io/k2/paths"
 )
 
 // DefaultAddr is the daemon HTTP listen address.
@@ -272,7 +271,7 @@ func (d *Daemon) engineConfigFromClientConfig(
 ) engine.Config {
 	// Ensure CacheDir has a value for k2rule.
 	if cfg.Rule.CacheDir == "" {
-		cfg.Rule.CacheDir = filepath.Join(paths.CacheDir(), "k2rule")
+		cfg.Rule.CacheDir = filepath.Join(cacheDir(), "k2rule")
 	}
 
 	ecfg := engine.Config{

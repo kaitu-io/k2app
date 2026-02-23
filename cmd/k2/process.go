@@ -11,7 +11,7 @@ import (
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/daemon"
-	"github.com/kaitu-io/k2/wintun"
+	"github.com/kaitu-io/k2/daemon/wintun"
 )
 
 // runDaemon starts k2 as a foreground daemon process.

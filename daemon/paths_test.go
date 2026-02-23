@@ -1,4 +1,4 @@
-package paths
+package daemon
 
 import (
 	"os"
@@ -8,17 +8,17 @@ import (
 )
 
 func TestCacheDir(t *testing.T) {
-	dir := CacheDir()
+	dir := cacheDir()
 	if dir == "" {
-		t.Fatal("CacheDir returned empty string")
+		t.Fatal("cacheDir returned empty string")
 	}
 	if !strings.HasSuffix(dir, "k2") {
-		t.Fatalf("CacheDir = %q, want suffix 'k2'", dir)
+		t.Fatalf("cacheDir = %q, want suffix 'k2'", dir)
 	}
 }
 
 func TestCacheDir_ContainsK2(t *testing.T) {
-	dir := CacheDir()
+	dir := cacheDir()
 	switch runtime.GOOS {
 	case "darwin":
 		if !strings.Contains(dir, "Library/Caches/k2") {
@@ -32,23 +32,23 @@ func TestCacheDir_ContainsK2(t *testing.T) {
 }
 
 func TestLogDir(t *testing.T) {
-	dir := LogDir()
+	dir := logDir()
 	if dir == "" {
-		t.Fatal("LogDir returned empty string")
+		t.Fatal("logDir returned empty string")
 	}
 	if !strings.HasSuffix(dir, "k2") {
-		t.Fatalf("LogDir = %q, want suffix 'k2'", dir)
+		t.Fatalf("logDir = %q, want suffix 'k2'", dir)
 	}
 }
 
 func TestLogDir_Root(t *testing.T) {
 	if os.Getuid() == 0 {
-		dir := LogDir()
+		dir := logDir()
 		if dir != "/var/log/k2" {
-			t.Fatalf("LogDir as root = %q, want /var/log/k2", dir)
+			t.Fatalf("logDir as root = %q, want /var/log/k2", dir)
 		}
 	} else {
-		dir := LogDir()
+		dir := logDir()
 		switch runtime.GOOS {
 		case "darwin":
 			if !strings.Contains(dir, "Library/Logs/k2") {

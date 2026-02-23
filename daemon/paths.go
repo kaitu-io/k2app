@@ -1,4 +1,4 @@
-package paths
+package daemon
 
 import (
 	"os"
@@ -14,7 +14,7 @@ import (
 //	Linux root:   /root/.cache/k2
 //	Linux user:   ~/.cache/k2
 //	Windows:      %LocalAppData%\k2\cache
-func CacheDir() string {
+func cacheDir() string {
 	base, err := os.UserCacheDir()
 	if err != nil {
 		base = os.TempDir()
@@ -30,7 +30,7 @@ func CacheDir() string {
 //	Linux root:   /var/log/k2
 //	Linux user:   ~/.local/state/k2/log
 //	Windows:      %ProgramData%\k2\log (SYSTEM) or %LocalAppData%\k2\log (user)
-func LogDir() string {
+func logDir() string {
 	switch runtime.GOOS {
 	case "darwin":
 		if os.Getuid() == 0 {
