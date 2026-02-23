@@ -1,4 +1,4 @@
-package mobile
+package appext
 
 import (
 	"encoding/json"
@@ -78,7 +78,7 @@ func (e *Engine) Start(configJSON string, fd int, cfg *EngineConfig) error {
 				return false
 			}
 			ok := p.Protect(int32(fd))
-			slog.Debug("mobile: SocketProtector.Protect()", "fd", fd, "ok", ok)
+			slog.Debug("appext: SocketProtector.Protect()", "fd", fd, "ok", ok)
 			return ok
 		}
 	}

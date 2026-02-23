@@ -1,4 +1,4 @@
-.PHONY: build test generate build-windows build-linux build-nowebapp mobile-ios mobile-android mobile
+.PHONY: build test generate build-windows build-linux build-nowebapp mobile-ios mobile-android mobile appext-ios appext-android
 
 build: generate
 	go build -o build/k2 ./cmd/k2
@@ -22,10 +22,12 @@ build-linux: generate
 build-nowebapp:
 	go build -tags nowebapp -o build/k2-nowebapp ./cmd/k2
 
-mobile-ios:
-	gomobile bind -target=ios -o build/K2Mobile.xcframework ./mobile/
+mobile-ios: appext-ios
+mobile-android: appext-android
+mobile: appext-ios appext-android
 
-mobile-android:
-	gomobile bind -target=android -o build/k2mobile.aar -androidapi 21 ./mobile/
+appext-ios:
+	gomobile bind -target=ios -o build/K2Mobile.xcframework ./appext/
 
-mobile: mobile-ios mobile-android
+appext-android:
+	gomobile bind -target=android -o build/k2mobile.aar -androidapi 21 ./appext/

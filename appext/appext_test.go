@@ -1,4 +1,4 @@
-package mobile
+package appext
 
 import (
 	"encoding/json"
@@ -233,7 +233,7 @@ func TestEngine_Start_WithEngineConfig(t *testing.T) {
 	}
 }
 
-func TestMobileEngineStartInvalidJSON(t *testing.T) {
+func TestAppextEngineStartInvalidJSON(t *testing.T) {
 	e := NewEngine()
 	err := e.Start("not json", 0, testEngineConfig())
 	if err == nil {

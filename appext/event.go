@@ -1,4 +1,4 @@
-package mobile
+package appext
 
 import (
 	"github.com/kaitu-io/k2/engine"
@@ -19,7 +19,7 @@ const (
 	StateConnected    = engine.StateConnected
 )
 
-// eventBridge adapts mobile.EventHandler to engine.EventHandler.
+// eventBridge adapts appext.EventHandler to engine.EventHandler.
 type eventBridge struct {
 	handler EventHandler
 }
