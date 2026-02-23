@@ -493,6 +493,7 @@ func (s *Server) acceptTCPLoop(ctx context.Context, ln wire.Listener) {
 				return
 			}
 		}
+		slog.Debug("server: AcceptTCP got stream", "addr", addr)
 		go s.handler.HandleTCP(conn, addr)
 	}
 }

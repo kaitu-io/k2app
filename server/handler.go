@@ -74,6 +74,7 @@ func NewProxyHandler() *ProxyHandler {
 // Writes a stream response, then pipes data bidirectionally.
 func (h *ProxyHandler) HandleTCP(conn net.Conn, addr string) {
 	defer conn.Close()
+	slog.Debug("server: HandleTCP enter", "addr", addr)
 
 	if !h.AllowPrivateIP {
 		if err := checkAddr(addr); err != nil {
@@ -83,6 +84,7 @@ func (h *ProxyHandler) HandleTCP(conn net.Conn, addr string) {
 		}
 	}
 
+	slog.Debug("server: HandleTCP dialing target", "addr", addr)
 	target, err := net.DialTimeout("tcp", addr, h.DialTimeout)
 	if err != nil {
 		wire.WriteStreamResponse(conn, err)
@@ -90,11 +92,14 @@ func (h *ProxyHandler) HandleTCP(conn net.Conn, addr string) {
 		return
 	}
 	defer target.Close()
+	slog.Debug("server: HandleTCP target connected, writing response", "addr", addr)
 
 	if err := wire.WriteStreamResponse(conn, nil); err != nil {
+		slog.Debug("server: HandleTCP write response failed", "addr", addr, "err", err)
 		return
 	}
 
+	slog.Debug("server: HandleTCP piping", "addr", addr)
 	pipe(conn, target)
 }
 

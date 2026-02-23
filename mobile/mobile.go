@@ -5,11 +5,17 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"os"
 	"path/filepath"
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/engine"
 )
+
+func init() {
+	// Enable debug-level logging for mobile builds.
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})))
+}
 
 // Engine is the mobile VPN engine. It delegates all tunnel assembly and
 // lifecycle management to engine.Engine, exposing only the gomobile-compatible
@@ -71,7 +77,9 @@ func (e *Engine) Start(configJSON string, fd int, cfg *EngineConfig) error {
 				slog.Warn("socket protect: fd out of int32 range", "fd", fd)
 				return false
 			}
-			return p.Protect(int32(fd))
+			ok := p.Protect(int32(fd))
+			slog.Debug("mobile: SocketProtector.Protect()", "fd", fd, "ok", ok)
+			return ok
 		}
 	}
 	return e.inner.Start(ecfg)

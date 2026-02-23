@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
@@ -140,18 +141,23 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 // connectTLSWebSocket establishes TCP → uTLS → WebSocket connection.
 // Returns a net.Conn-compatible WebSocket connection ready for smux.
 func (c *TCPWSClient) connectTLSWebSocket(ctx context.Context) (net.Conn, error) {
+	slog.Debug("TCPWSClient: connectTLSWebSocket start", "serverAddr", c.serverAddr, "hasDirectDialer", c.directDialer != nil)
 	// 1. TCP dial (use DirectDialer if set, to bypass TUN)
 	var conn net.Conn
 	var err error
 	if c.directDialer != nil {
+		slog.Debug("TCPWSClient: using directDialer for TCP dial")
 		conn, err = c.directDialer.DialContext(ctx, "tcp", c.serverAddr)
 	} else {
+		slog.Debug("TCPWSClient: using default dialer for TCP dial")
 		var d net.Dialer
 		conn, err = d.DialContext(ctx, "tcp", c.serverAddr)
 	}
 	if err != nil {
+		slog.Debug("TCPWSClient: TCP dial failed", "serverAddr", c.serverAddr, "err", err)
 		return nil, fmt.Errorf("wire: TCP dial %s: %w", c.serverAddr, err)
 	}
+	slog.Debug("TCPWSClient: TCP dial success", "local", conn.LocalAddr(), "remote", conn.RemoteAddr())
 
 	// 2. uTLS handshake
 	var tlsCfg *tls.Config
@@ -184,18 +190,24 @@ func (c *TCPWSClient) connectTLSWebSocket(ctx context.Context) (net.Conn, error)
 	}
 
 	// Create uTLS connection with fingerprint
+	slog.Debug("TCPWSClient: starting uTLS handshake", "sni", tlsCfg.ServerName, "fingerprint", fmt.Sprintf("%v", clientHelloID))
 	uconn := utls.UClient(conn, utlsCfg, clientHelloID)
 	if err := uconn.HandshakeContext(ctx); err != nil {
 		conn.Close()
+		slog.Debug("TCPWSClient: uTLS handshake failed", "err", err)
 		return nil, fmt.Errorf("wire: uTLS handshake: %w", err)
 	}
+	slog.Debug("TCPWSClient: uTLS handshake success")
 
 	// 3. WebSocket upgrade over TLS connection
+	slog.Debug("TCPWSClient: starting WebSocket upgrade", "host", c.cfg.Host)
 	wsConn, err := c.upgradeWebSocket(ctx, uconn)
 	if err != nil {
 		uconn.Close()
+		slog.Debug("TCPWSClient: WebSocket upgrade failed", "err", err)
 		return nil, fmt.Errorf("wire: WebSocket upgrade: %w", err)
 	}
+	slog.Debug("TCPWSClient: WebSocket upgrade success — connection fully established")
 
 	return wsConn, nil
 }

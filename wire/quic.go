@@ -216,15 +216,20 @@ func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
 // DialTCP opens a TCP proxy stream through the QUIC connection.
 // Writes H3 frame type + stream header, reads response, returns the stream.
 func (c *QUICClient) DialTCP(ctx context.Context, addr string) (net.Conn, error) {
+	slog.Debug("QUICClient.DialTCP: connecting", "addr", addr)
 	conn, err := c.connect(ctx)
 	if err != nil {
+		slog.Debug("QUICClient.DialTCP: connect failed", "addr", addr, "err", err)
 		return nil, err
 	}
 
+	slog.Debug("QUICClient.DialTCP: opening stream", "addr", addr)
 	stream, err := conn.OpenStreamSync(ctx)
 	if err != nil {
+		slog.Debug("QUICClient.DialTCP: open stream failed", "addr", addr, "err", err)
 		return nil, fmt.Errorf("wire: open stream: %w", err)
 	}
+	slog.Debug("QUICClient.DialTCP: stream opened", "addr", addr, "streamID", stream.StreamID())
 
 	// Write H3 custom frame type marker + TCP stream header
 	if err := WriteH3ProxyFrameType(stream); err != nil {
@@ -235,19 +240,23 @@ func (c *QUICClient) DialTCP(ctx context.Context, addr string) (net.Conn, error)
 		stream.Close()
 		return nil, fmt.Errorf("wire: write stream header: %w", err)
 	}
+	slog.Debug("QUICClient.DialTCP: header written, waiting for response", "addr", addr)
 
 	// Read response
 	br := bufio.NewReader(stream)
 	ok, errMsg, err := ReadStreamResponse(br)
 	if err != nil {
+		slog.Debug("QUICClient.DialTCP: read response failed", "addr", addr, "err", err)
 		stream.Close()
 		return nil, fmt.Errorf("wire: read response: %w", err)
 	}
 	if !ok {
+		slog.Debug("QUICClient.DialTCP: stream rejected", "addr", addr, "errMsg", errMsg)
 		stream.Close()
 		return nil, fmt.Errorf("%w: %s", ErrStreamRejected, errMsg)
 	}
 
+	slog.Debug("QUICClient.DialTCP: success", "addr", addr)
 	return &quicStreamConn{
 		Stream: stream,
 		local:  conn.LocalAddr(),
@@ -428,6 +437,7 @@ func (s *QUICServer) acceptLoop() {
 			s.sendTCP(tcpAcceptResult{err: fmt.Errorf("wire: accept: %w", err)})
 			return
 		}
+		slog.Debug("QUICServer: accepted connection", "remote", conn.RemoteAddr())
 		// Set K2ARC congestion control for server-side sending (critical for download speed)
 		conn.SetCongestionControl(arc.NewArcSenderGFWMode(arc.DefaultMaxRate))
 		go s.handleConn(conn)
@@ -456,10 +466,12 @@ func (s *QUICServer) handleStream(qconn *quic.Conn, stream *quic.Stream) {
 	// Read H3 frame type marker
 	frameType, _, err := ReadVarint(br)
 	if err != nil {
+		slog.Debug("QUICServer.handleStream: read frame type failed", "remote", qconn.RemoteAddr(), "err", err)
 		stream.Close()
 		return
 	}
 	if frameType != H3FrameTypeK2Proxy {
+		slog.Debug("QUICServer.handleStream: unknown frame type", "frameType", frameType, "remote", qconn.RemoteAddr())
 		stream.Close()
 		return
 	}
@@ -467,9 +479,12 @@ func (s *QUICServer) handleStream(qconn *quic.Conn, stream *quic.Stream) {
 	// Read stream header
 	streamType, addr, err := ReadStreamHeader(br)
 	if err != nil {
+		slog.Debug("QUICServer.handleStream: read header failed", "remote", qconn.RemoteAddr(), "err", err)
 		stream.Close()
 		return
 	}
+
+	slog.Debug("QUICServer.handleStream: parsed", "streamType", streamType, "addr", addr, "remote", qconn.RemoteAddr())
 
 	switch streamType {
 	case StreamTypeTCP:
@@ -480,9 +495,11 @@ func (s *QUICServer) handleStream(qconn *quic.Conn, stream *quic.Stream) {
 			br:     br,
 		}
 		s.sendTCP(tcpAcceptResult{conn: sc, addr: addr})
+		slog.Debug("QUICServer.handleStream: TCP queued", "addr", addr)
 	case StreamTypeUDP:
 		s.handleUDPStream(qconn, stream, br)
 	default:
+		slog.Debug("QUICServer.handleStream: unknown stream type", "streamType", streamType)
 		stream.Close()
 	}
 }

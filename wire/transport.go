@@ -3,8 +3,10 @@ package wire
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"sync"
+	"time"
 )
 
 // TransportManager manages QUIC and TCP-WS transports.
@@ -43,23 +45,31 @@ func (tm *TransportManager) DialTCP(ctx context.Context, addr string) (net.Conn,
 	tcpws := tm.tcpws
 	tm.mu.RUnlock()
 
+	slog.Debug("TransportManager: DialTCP", "addr", addr, "hasQUIC", quic != nil, "hasTCPWS", tcpws != nil)
+
 	var lastErr error
 
-	// Try QUIC first (preferred)
+	// Try QUIC first (preferred), with time budget so TCP-WS gets a fair chance.
 	if quic != nil {
-		conn, err := quic.DialTCP(ctx, addr)
+		quicCtx, quicCancel := tm.quicContext(ctx, tcpws != nil)
+		slog.Debug("TransportManager: trying QUIC first")
+		conn, err := quic.DialTCP(quicCtx, addr)
+		quicCancel()
 		if err == nil {
 			return conn, nil
 		}
+		slog.Debug("TransportManager: QUIC failed", "err", err)
 		lastErr = fmt.Errorf("QUIC: %w", err)
 	}
 
 	// Fall back to TCP-WS
 	if tcpws != nil {
+		slog.Debug("TransportManager: trying TCP-WS fallback")
 		conn, err := tcpws.DialTCP(ctx, addr)
 		if err == nil {
 			return conn, nil
 		}
+		slog.Debug("TransportManager: TCP-WS failed", "err", err)
 		lastErr = fmt.Errorf("TCP-WS: %w", err)
 	}
 
@@ -77,21 +87,29 @@ func (tm *TransportManager) DialUDP(ctx context.Context, addr string) (net.Packe
 	tcpws := tm.tcpws
 	tm.mu.RUnlock()
 
+	slog.Debug("TransportManager: DialUDP", "addr", addr, "hasQUIC", quic != nil, "hasTCPWS", tcpws != nil)
+
 	var lastErr error
 
 	if quic != nil {
-		conn, err := quic.DialUDP(ctx, addr)
+		quicCtx, quicCancel := tm.quicContext(ctx, tcpws != nil)
+		slog.Debug("TransportManager: trying QUIC for UDP")
+		conn, err := quic.DialUDP(quicCtx, addr)
+		quicCancel()
 		if err == nil {
 			return conn, nil
 		}
+		slog.Debug("TransportManager: QUIC UDP failed", "err", err)
 		lastErr = fmt.Errorf("QUIC: %w", err)
 	}
 
 	if tcpws != nil {
+		slog.Debug("TransportManager: trying TCP-WS for UDP fallback")
 		conn, err := tcpws.DialUDP(ctx, addr)
 		if err == nil {
 			return conn, nil
 		}
+		slog.Debug("TransportManager: TCP-WS UDP failed", "err", err)
 		lastErr = fmt.Errorf("TCP-WS: %w", err)
 	}
 
@@ -99,6 +117,31 @@ func (tm *TransportManager) DialUDP(ctx context.Context, addr string) (net.Packe
 		return nil, lastErr
 	}
 	return nil, ErrNotConnected
+}
+
+// quicContext returns a sub-context for QUIC with a time budget.
+// When TCP-WS fallback exists, QUIC gets at most half the remaining time
+// (capped at 3s) so TCP-WS always has a fair chance to connect.
+// When QUIC is the only transport, it gets the full parent context.
+func (tm *TransportManager) quicContext(parent context.Context, hasFallback bool) (context.Context, context.CancelFunc) {
+	if !hasFallback {
+		return context.WithCancel(parent)
+	}
+
+	const maxQUICBudget = 3 * time.Second
+
+	if deadline, ok := parent.Deadline(); ok {
+		budget := time.Until(deadline) / 2
+		if budget > maxQUICBudget {
+			budget = maxQUICBudget
+		}
+		if budget < time.Second {
+			budget = time.Second
+		}
+		return context.WithTimeout(parent, budget)
+	}
+
+	return context.WithTimeout(parent, maxQUICBudget)
 }
 
 // Resettable is an optional interface for transports that support connection reset.

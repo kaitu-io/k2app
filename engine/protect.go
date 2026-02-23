@@ -3,8 +3,10 @@ package engine
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"syscall"
+	"time"
 )
 
 // protectedDialer implements wire.DirectDialer by calling ProtectFunc
@@ -16,10 +18,24 @@ type protectedDialer struct {
 
 // DialContext dials with socket protection applied before connect.
 func (d *protectedDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	ctxErr := ctx.Err()
+	deadline, hasDeadline := ctx.Deadline()
+	remaining := ""
+	if hasDeadline {
+		remaining = fmt.Sprintf("%.1fs", time.Until(deadline).Seconds())
+	}
+	slog.Debug("protectedDialer: DialContext", "network", network, "addr", addr,
+		"ctxErr", ctxErr, "hasDeadline", hasDeadline, "remaining", remaining)
 	nd := &net.Dialer{
 		Control: d.controlFunc(),
 	}
-	return nd.DialContext(ctx, network, addr)
+	conn, err := nd.DialContext(ctx, network, addr)
+	if err != nil {
+		slog.Debug("protectedDialer: DialContext failed", "addr", addr, "err", err, "ctxErr", ctx.Err())
+	} else {
+		slog.Debug("protectedDialer: DialContext success", "addr", addr, "local", conn.LocalAddr())
+	}
+	return conn, err
 }
 
 // ListenPacket creates a protected UDP socket.
@@ -36,7 +52,9 @@ func (d *protectedDialer) controlFunc() func(string, string, syscall.RawConn) er
 	return func(network, address string, c syscall.RawConn) error {
 		var err error
 		c.Control(func(fd uintptr) {
-			if !d.protect(int(fd)) {
+			ok := d.protect(int(fd))
+			slog.Debug("protectedDialer: protect()", "fd", fd, "ok", ok, "network", network, "address", address)
+			if !ok {
 				err = fmt.Errorf("socket protect failed for fd %d", fd)
 			}
 		})
