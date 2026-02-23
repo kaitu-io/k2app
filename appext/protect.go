@@ -1,4 +1,4 @@
-package engine
+package appext
 
 import (
 	"context"
@@ -9,9 +9,9 @@ import (
 	"time"
 )
 
-// protectedDialer implements wire.DirectDialer by calling ProtectFunc
-// on every socket before connection. Used on mobile (Android) to mark
-// sockets for VPN routing exclusion via VpnService.protect(fd).
+// protectedDialer implements wire.DirectDialer and wire.DialerController
+// by calling protect on every socket before connection. Used on Android to
+// mark sockets for VPN routing exclusion via VpnService.protect(fd).
 type protectedDialer struct {
 	protect func(fd int) bool
 }
@@ -27,7 +27,7 @@ func (d *protectedDialer) DialContext(ctx context.Context, network, addr string)
 	slog.Debug("protectedDialer: DialContext", "network", network, "addr", addr,
 		"ctxErr", ctxErr, "hasDeadline", hasDeadline, "remaining", remaining)
 	nd := &net.Dialer{
-		Control: d.controlFunc(),
+		Control: d.ControlFunc(),
 	}
 	conn, err := nd.DialContext(ctx, network, addr)
 	if err != nil {
@@ -41,14 +41,15 @@ func (d *protectedDialer) DialContext(ctx context.Context, network, addr string)
 // ListenPacket creates a protected UDP socket.
 func (d *protectedDialer) ListenPacket(network, addr string) (net.PacketConn, error) {
 	lc := &net.ListenConfig{
-		Control: d.controlFunc(),
+		Control: d.ControlFunc(),
 	}
 	return lc.ListenPacket(context.Background(), network, addr)
 }
 
-// controlFunc returns a syscall.RawConn control function that calls protect
+// ControlFunc returns a syscall.RawConn control function that calls protect
 // on the socket fd before the OS connect() call.
-func (d *protectedDialer) controlFunc() func(string, string, syscall.RawConn) error {
+// Implements wire.DialerController.
+func (d *protectedDialer) ControlFunc() func(string, string, syscall.RawConn) error {
 	return func(network, address string, c syscall.RawConn) error {
 		var err error
 		c.Control(func(fd uintptr) {

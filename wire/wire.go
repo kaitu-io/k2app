@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 // Errors
@@ -18,10 +19,17 @@ var (
 )
 
 // DirectDialer is the interface for physical-interface-bound dialing.
-// Implemented by directdial.Dialer; nil means no binding (default net.Dial).
+// Implemented by directdial.Dialer and protectedDialer; nil means no binding (default net.Dial).
 type DirectDialer interface {
 	DialContext(ctx context.Context, network, addr string) (net.Conn, error)
 	ListenPacket(network, addr string) (net.PacketConn, error)
+}
+
+// DialerController is an optional interface that DirectDialer implementations
+// can implement to provide a syscall control function for raw socket operations
+// (e.g. DNS direct queries that need socket protection on Android).
+type DialerController interface {
+	ControlFunc() func(network, address string, c syscall.RawConn) error
 }
 
 // Dialer is the k2v5 client transport interface.

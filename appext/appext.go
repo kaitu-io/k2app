@@ -72,14 +72,16 @@ func (e *Engine) Start(configJSON string, fd int, cfg *EngineConfig) error {
 	}
 	if cfg.SocketProtector != nil {
 		p := cfg.SocketProtector
-		ecfg.ProtectFunc = func(fd int) bool {
-			if fd < 0 || fd > math.MaxInt32 {
-				slog.Warn("socket protect: fd out of int32 range", "fd", fd)
-				return false
-			}
-			ok := p.Protect(int32(fd))
-			slog.Debug("appext: SocketProtector.Protect()", "fd", fd, "ok", ok)
-			return ok
+		ecfg.DirectDialer = &protectedDialer{
+			protect: func(fd int) bool {
+				if fd < 0 || fd > math.MaxInt32 {
+					slog.Warn("socket protect: fd out of int32 range", "fd", fd)
+					return false
+				}
+				ok := p.Protect(int32(fd))
+				slog.Debug("appext: SocketProtector.Protect()", "fd", fd, "ok", ok)
+				return ok
+			},
 		}
 	}
 	return e.inner.Start(ecfg)

@@ -281,7 +281,6 @@ func (d *Daemon) engineConfigFromClientConfig(
 		Client:         cfg,
 		FileDescriptor: -1, // Desktop: engine creates its own TUN.
 		DirectDialer:   dd,
-		PreferIPv6:     true,
 	}
 
 	// Apply network monitor if available.

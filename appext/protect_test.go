@@ -1,4 +1,4 @@
-package engine
+package appext
 
 import (
 	"context"
@@ -92,9 +92,9 @@ func TestProtectedDialer_ControlFunc(t *testing.T) {
 		},
 	}
 
-	ctrl := pd.controlFunc()
+	ctrl := pd.ControlFunc()
 	if ctrl == nil {
-		t.Fatal("controlFunc returned nil")
+		t.Fatal("ControlFunc returned nil")
 	}
 
 	// Verify that ProtectFunc overflow guard works at the bridge layer.

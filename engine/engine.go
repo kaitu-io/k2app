@@ -114,15 +114,6 @@ func (e *Engine) Start(cfg Config) error {
 	quicClient := wire.NewQUICClient(wireCfg, nil)
 	tcpwsClient := wire.NewTCPWSClient(wireCfg, nil)
 
-	// Mobile socket protection: create a protectedDialer from ProtectFunc.
-	// This replaces DirectDialer (which uses sing-tun interface binding, desktop only).
-	var pd *protectedDialer
-	if cfg.ProtectFunc != nil && cfg.DirectDialer == nil {
-		pd = &protectedDialer{protect: cfg.ProtectFunc}
-		quicClient.SetDirectDialer(pd)
-		tcpwsClient.SetDirectDialer(pd)
-		slog.Info("engine: socket protection active (mobile)")
-	}
 	if cfg.DirectDialer != nil {
 		quicClient.SetDirectDialer(cfg.DirectDialer)
 		tcpwsClient.SetDirectDialer(cfg.DirectDialer)
@@ -183,19 +174,18 @@ func (e *Engine) Start(cfg Config) error {
 	}
 	if cfg.DirectDialer != nil {
 		tunnelCfg.DirectDialer = cfg.DirectDialer
-	} else if pd != nil {
-		tunnelCfg.DirectDialer = pd
 	}
 	tunnel := core.NewClientTunnel(tunnelCfg)
 
 	// 8. Start.
 	if client.Mode != "proxy" {
 		// TUN mode (mobile or desktop): intercept DNS at port 53.
-		// Build direct DNS options (protected dialer for mobile).
+		// If DirectDialer implements DialerController, use its control func
+		// for direct DNS queries (e.g. Android socket protection).
 		var dnsOpts []dns.DirectDNSOption
-		if pd != nil {
+		if dc, ok := cfg.DirectDialer.(wire.DialerController); ok {
 			dnsOpts = append(dnsOpts, dns.WithDialer(&net.Dialer{
-				Control: pd.controlFunc(),
+				Control: dc.ControlFunc(),
 			}))
 		}
 		dnsMW := dns.NewMiddleware(dns.MiddlewareConfig{
