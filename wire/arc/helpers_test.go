@@ -1,4 +1,4 @@
-package pcc
+package arc
 
 import "time"
 
@@ -30,4 +30,4 @@ func (m *mockRTTStatsProvider) UpdateRTT(sendDelta, ackDelay time.Duration) {
 }
 
 func (m *mockRTTStatsProvider) SetMaxAckDelay(mad time.Duration) {}
-func (m *mockRTTStatsProvider) SetInitialRTT(t time.Duration)   { m.smoothedRTT = t }
+func (m *mockRTTStatsProvider) SetInitialRTT(t time.Duration)    { m.smoothedRTT = t }

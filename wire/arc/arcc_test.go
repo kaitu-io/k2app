@@ -1,5 +1,5 @@
-// PCC Vivace tests
-package pcc
+// K2ARC Vivace tests
+package arc
 
 import (
 	"testing"
@@ -9,17 +9,17 @@ import (
 )
 
 // ============================================================================
-// Tests for PCCSender - PCC Vivace Congestion Control
+// Tests for K2ARCSender - K2ARC Vivace Congestion Control
 // ============================================================================
 
-func TestPCCSender_Interface(t *testing.T) {
-	// PCCSender must implement CongestionControl interface
-	var _ congestion.CongestionControl = (*PCCSender)(nil)
+func TestK2ARCSender_Interface(t *testing.T) {
+	// K2ARCSender must implement CongestionControl interface
+	var _ congestion.CongestionControl = (*K2ARCSender)(nil)
 }
 
-func TestNewPCCSender(t *testing.T) {
+func TestNewK2ARCSender(t *testing.T) {
 	maxRate := int64(100_000_000) // 100 Mbps
-	sender := NewPCCSender(maxRate)
+	sender := NewK2ARCSender(maxRate)
 
 	if sender == nil {
 		t.Fatal("sender should not be nil")
@@ -30,22 +30,22 @@ func TestNewPCCSender(t *testing.T) {
 	}
 
 	// Verify default config
-	if sender.config.Alpha != DefaultPCCAlpha {
-		t.Errorf("expected default alpha=%f, got %f", DefaultPCCAlpha, sender.config.Alpha)
+	if sender.config.Alpha != DefaultK2ARCAlpha {
+		t.Errorf("expected default alpha=%f, got %f", DefaultK2ARCAlpha, sender.config.Alpha)
 	}
 }
 
-func TestNewPCCSenderGFWMode(t *testing.T) {
+func TestNewArcSenderGFWMode(t *testing.T) {
 	maxRate := int64(100_000_000)
-	sender := NewPCCSenderGFWMode(maxRate)
+	sender := NewArcSenderGFWMode(maxRate)
 
 	if sender == nil {
 		t.Fatal("sender should not be nil")
 	}
 
 	// GFW mode should have low alpha
-	if sender.config.Alpha > GFWPCCAlpha*2 {
-		t.Errorf("expected GFW alpha around %f, got %f", GFWPCCAlpha, sender.config.Alpha)
+	if sender.config.Alpha > GFWK2ARCAlpha*2 {
+		t.Errorf("expected GFW alpha around %f, got %f", GFWK2ARCAlpha, sender.config.Alpha)
 	}
 
 	if !sender.config.AggressiveMode {
@@ -114,7 +114,7 @@ func TestMonitorInterval_Throughput(t *testing.T) {
 
 	throughput := mi.Throughput()
 	// Expected: 125000 bytes * 8 bits / 1 second = 1,000,000 bps
-	expectedMin := 900_000.0  // Allow some tolerance
+	expectedMin := 900_000.0 // Allow some tolerance
 	expectedMax := 1_100_000.0
 
 	if throughput < expectedMin || throughput > expectedMax {
@@ -147,7 +147,7 @@ func TestMonitorInterval_AvgRTT(t *testing.T) {
 // ============================================================================
 
 func TestUtilityFunction_Calculate(t *testing.T) {
-	uf := NewUtilityFunction(DefaultPCCAlpha, DefaultPCCBeta)
+	uf := NewUtilityFunction(DefaultK2ARCAlpha, DefaultK2ARCBeta)
 
 	mi := NewMonitorInterval(1, 10_000_000.0)
 	mi.BytesSent = 125000
@@ -166,7 +166,7 @@ func TestUtilityFunction_Calculate(t *testing.T) {
 }
 
 func TestUtilityFunction_LossPenalty(t *testing.T) {
-	uf := NewUtilityFunction(DefaultPCCAlpha, DefaultPCCBeta)
+	uf := NewUtilityFunction(DefaultK2ARCAlpha, DefaultK2ARCBeta)
 
 	// Create two MIs: one with loss, one without
 	miNoLoss := NewMonitorInterval(1, 10_000_000.0)
@@ -195,8 +195,8 @@ func TestUtilityFunction_LossPenalty(t *testing.T) {
 }
 
 func TestUtilityFunction_GFWModeToleratesLoss(t *testing.T) {
-	standard := NewUtilityFunction(DefaultPCCAlpha, DefaultPCCBeta)
-	gfw := NewUtilityFunction(GFWPCCAlpha, DefaultPCCBeta)
+	standard := NewUtilityFunction(DefaultK2ARCAlpha, DefaultK2ARCBeta)
+	gfw := NewUtilityFunction(GFWK2ARCAlpha, DefaultK2ARCBeta)
 
 	mi := NewMonitorInterval(1, 10_000_000.0)
 	mi.BytesSent = 125000
@@ -216,11 +216,11 @@ func TestUtilityFunction_GFWModeToleratesLoss(t *testing.T) {
 }
 
 // ============================================================================
-// Tests for PCCSender Congestion Window
+// Tests for K2ARCSender Congestion Window
 // ============================================================================
 
-func TestPCCSender_GetCongestionWindow(t *testing.T) {
-	sender := NewPCCSender(100_000_000) // 100 Mbps max
+func TestK2ARCSender_GetCongestionWindow(t *testing.T) {
+	sender := NewK2ARCSender(100_000_000) // 100 Mbps max
 
 	// Set up mock RTT provider
 	mockRTT := &mockRTTStatsProvider{smoothedRTT: 100 * time.Millisecond}
@@ -234,13 +234,13 @@ func TestPCCSender_GetCongestionWindow(t *testing.T) {
 	}
 
 	// Should be at least minimum window
-	if cwnd < pccMinWindow {
-		t.Errorf("cwnd %d should be >= minWindow %d", cwnd, pccMinWindow)
+	if cwnd < arcMinWindow {
+		t.Errorf("cwnd %d should be >= minWindow %d", cwnd, arcMinWindow)
 	}
 }
 
-func TestPCCSender_CanSend(t *testing.T) {
-	sender := NewPCCSender(100_000_000)
+func TestK2ARCSender_CanSend(t *testing.T) {
+	sender := NewK2ARCSender(100_000_000)
 	mockRTT := &mockRTTStatsProvider{smoothedRTT: 100 * time.Millisecond}
 	sender.SetRTTStatsProvider(mockRTT)
 
@@ -256,8 +256,8 @@ func TestPCCSender_CanSend(t *testing.T) {
 	}
 }
 
-func TestPCCSender_InSlowStart(t *testing.T) {
-	sender := NewPCCSender(100_000_000)
+func TestK2ARCSender_InSlowStart(t *testing.T) {
+	sender := NewK2ARCSender(100_000_000)
 
 	// Should start in slow start mode
 	if !sender.InSlowStart() {
@@ -269,7 +269,7 @@ func TestPCCSender_InSlowStart(t *testing.T) {
 // Tests for Rate Adjustment (Gradient Ascent)
 // ============================================================================
 
-func TestPCCSender_RateToCwnd(t *testing.T) {
+func TestK2ARCSender_RateToCwnd(t *testing.T) {
 	// Test rate to cwnd conversion
 	// cwnd = (rate_bps / 8) * RTT_seconds * multiplier
 	rate := 10_000_000.0 // 10 Mbps
@@ -286,8 +286,8 @@ func TestPCCSender_RateToCwnd(t *testing.T) {
 	}
 }
 
-func TestPCCSender_OnPacketAcked_UpdatesState(t *testing.T) {
-	sender := NewPCCSender(100_000_000)
+func TestK2ARCSender_OnPacketAcked_UpdatesState(t *testing.T) {
+	sender := NewK2ARCSender(100_000_000)
 	mockRTT := &mockRTTStatsProvider{smoothedRTT: 100 * time.Millisecond}
 	sender.SetRTTStatsProvider(mockRTT)
 
@@ -307,8 +307,8 @@ func TestPCCSender_OnPacketAcked_UpdatesState(t *testing.T) {
 	}
 }
 
-func TestPCCSender_OnCongestionEvent_RecordsLoss(t *testing.T) {
-	sender := NewPCCSender(100_000_000)
+func TestK2ARCSender_OnCongestionEvent_RecordsLoss(t *testing.T) {
+	sender := NewK2ARCSender(100_000_000)
 	mockRTT := &mockRTTStatsProvider{smoothedRTT: 100 * time.Millisecond}
 	sender.SetRTTStatsProvider(mockRTT)
 
@@ -324,28 +324,28 @@ func TestPCCSender_OnCongestionEvent_RecordsLoss(t *testing.T) {
 }
 
 // ============================================================================
-// Tests for PCC Config
+// Tests for K2ARC Config
 // ============================================================================
 
-func TestPCCConfig_Default(t *testing.T) {
-	config := DefaultPCCConfig()
+func TestK2ARCConfig_Default(t *testing.T) {
+	config := DefaultK2ARCConfig()
 
-	if config.Alpha != DefaultPCCAlpha {
-		t.Errorf("expected alpha=%f, got %f", DefaultPCCAlpha, config.Alpha)
+	if config.Alpha != DefaultK2ARCAlpha {
+		t.Errorf("expected alpha=%f, got %f", DefaultK2ARCAlpha, config.Alpha)
 	}
-	if config.Beta != DefaultPCCBeta {
-		t.Errorf("expected beta=%f, got %f", DefaultPCCBeta, config.Beta)
+	if config.Beta != DefaultK2ARCBeta {
+		t.Errorf("expected beta=%f, got %f", DefaultK2ARCBeta, config.Beta)
 	}
 	if config.AggressiveMode {
 		t.Error("default should not be aggressive mode")
 	}
 }
 
-func TestPCCConfig_GFWMode(t *testing.T) {
-	config := GFWPCCConfig()
+func TestK2ARCConfig_GFWMode(t *testing.T) {
+	config := GFWK2ARCConfig()
 
-	if config.Alpha != GFWPCCAlpha {
-		t.Errorf("expected alpha=%f, got %f", GFWPCCAlpha, config.Alpha)
+	if config.Alpha != GFWK2ARCAlpha {
+		t.Errorf("expected alpha=%f, got %f", GFWK2ARCAlpha, config.Alpha)
 	}
 	if !config.AggressiveMode {
 		t.Error("GFW mode should be aggressive")
@@ -359,7 +359,7 @@ func TestPCCConfig_GFWMode(t *testing.T) {
 func TestAdaptiveAlphaCalculation(t *testing.T) {
 	// Formula: α = BASE_ALPHA / (1 + SENSITIVITY × loss_rate)
 	// With AdaptiveBaseAlpha = 10.0, AdaptiveSensitivity = 50.0
-	utility := NewUtilityFunctionAdaptive(InitialAlpha, DefaultPCCBeta)
+	utility := NewUtilityFunctionAdaptive(InitialAlpha, DefaultK2ARCBeta)
 
 	// 0% loss -> alpha = 10.0 / (1 + 50 * 0) = 10.0
 	alpha0 := utility.computeAdaptiveAlpha(0.0)
@@ -387,7 +387,7 @@ func TestAdaptiveAlphaCalculation(t *testing.T) {
 }
 
 func TestAdaptiveAlphaBounds(t *testing.T) {
-	utility := NewUtilityFunctionAdaptive(InitialAlpha, DefaultPCCBeta)
+	utility := NewUtilityFunctionAdaptive(InitialAlpha, DefaultK2ARCBeta)
 
 	// Very high loss should be clamped to MinAlpha (0.1)
 	alphaExtreme := utility.computeAdaptiveAlpha(1.0) // 100% loss
@@ -403,7 +403,7 @@ func TestAdaptiveAlphaBounds(t *testing.T) {
 }
 
 func TestAdaptiveAlphaEWMASmoothing(t *testing.T) {
-	utility := NewUtilityFunctionAdaptive(InitialAlpha, DefaultPCCBeta)
+	utility := NewUtilityFunctionAdaptive(InitialAlpha, DefaultK2ARCBeta)
 
 	// Initial alpha should be InitialAlpha (2.0)
 	if diff := utility.Alpha - InitialAlpha; diff < -0.01 || diff > 0.01 {
@@ -440,7 +440,7 @@ func TestAdaptiveAlphaEWMASmoothing(t *testing.T) {
 }
 
 func TestAdaptiveAlphaLossHistory(t *testing.T) {
-	utility := NewUtilityFunctionAdaptive(InitialAlpha, DefaultPCCBeta)
+	utility := NewUtilityFunctionAdaptive(InitialAlpha, DefaultK2ARCBeta)
 
 	// Create MIs with varying loss rates
 	lossRates := []float64{0.05, 0.10, 0.15, 0.20, 0.25}
@@ -465,8 +465,8 @@ func TestAdaptiveAlphaLossHistory(t *testing.T) {
 }
 
 func TestAdaptiveConfig(t *testing.T) {
-	// Test NewPCCConfigAdaptive() constructor
-	config := NewPCCConfigAdaptive()
+	// Test NewK2ARCConfigAdaptive() constructor
+	config := NewK2ARCConfigAdaptive()
 
 	if !config.AdaptiveAlpha {
 		t.Error("AdaptiveAlpha should be true")
@@ -479,16 +479,16 @@ func TestAdaptiveConfig(t *testing.T) {
 	}
 }
 
-func TestPCCSenderAdaptiveMode(t *testing.T) {
-	sender := NewPCCSenderAdaptive(100_000_000) // 100 Mbps
+func TestK2ARCSenderAdaptiveMode(t *testing.T) {
+	sender := NewK2ARCSenderAdaptive(100_000_000) // 100 Mbps
 
 	if !sender.IsAdaptive() {
 		t.Error("Sender should be in adaptive mode")
 	}
 }
 
-func TestPCCSenderAdaptiveIntegration(t *testing.T) {
-	sender := NewPCCSenderAdaptive(100_000_000) // 100 Mbps
+func TestK2ARCSenderAdaptiveIntegration(t *testing.T) {
+	sender := NewK2ARCSenderAdaptive(100_000_000) // 100 Mbps
 	mockRTT := &mockRTTStatsProvider{smoothedRTT: 100 * time.Millisecond}
 	sender.SetRTTStatsProvider(mockRTT)
 
