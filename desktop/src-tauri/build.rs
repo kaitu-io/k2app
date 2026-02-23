@@ -28,6 +28,22 @@ fn main() {
             println!("cargo:rustc-link-lib=framework=NetworkExtension");
             println!("cargo:rustc-link-lib=framework=SystemExtensions");
             println!("cargo:rustc-link-lib=framework=Foundation");
+
+            // Swift runtime libraries path — required for Swift compatibility shims
+            // referenced by the static library (swiftCompatibility56, etc.)
+            if let Ok(output) = std::process::Command::new("xcode-select")
+                .arg("-p")
+                .output()
+            {
+                let dev_dir = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                let swift_lib = format!(
+                    "{}/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/macosx",
+                    dev_dir
+                );
+                if std::path::Path::new(&swift_lib).exists() {
+                    println!("cargo:rustc-link-search=native={}", swift_lib);
+                }
+            }
         } else if !skip && !lib_exists {
             // Emit a warning but do not fail — unit tests use mock stubs
             println!(

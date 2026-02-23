@@ -91,7 +91,11 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 
             do {
                 // Build EngineConfig with platform paths (App Group shared container)
-                let engineCfg = MobileNewEngineConfig()
+                guard let engineCfg = MobileNewEngineConfig() else {
+                    let err = NSError(domain: "io.kaitu.desktop", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to create EngineConfig"])
+                    completionHandler(err)
+                    return
+                }
                 let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: kAppGroup)
                 engineCfg.cacheDir = containerURL?.appendingPathComponent("k2").path ?? ""
 

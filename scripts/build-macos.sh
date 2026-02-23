@@ -151,6 +151,11 @@ mkdir -p "$SYSEXT_DIR"
 XCFW_PATH="$ROOT_DIR/k2/build/K2MobileMacOS.xcframework"
 MACOS_SDK_PATH=$(xcrun --show-sdk-path --sdk macosx)
 
+# Resolve the framework slice directory inside the xcframework
+# xcframework structure: K2MobileMacOS.xcframework/macos-arm64_x86_64/K2MobileMacOS.framework
+XCFW_SLICE_DIR=$(find "$XCFW_PATH" -name "K2MobileMacOS.framework" -maxdepth 2 -type d | head -1)
+XCFW_SLICE_PARENT=$(dirname "$XCFW_SLICE_DIR")
+
 # Determine swiftc target
 if [ "$SINGLE_ARCH" = true ]; then
   SYSEXT_TARGET="${NE_ARCH}-apple-macos12"
@@ -164,7 +169,7 @@ swiftc \
   -module-name KaituTunnel \
   -sdk "$MACOS_SDK_PATH" \
   -target "$SYSEXT_TARGET" \
-  -F "$XCFW_PATH" \
+  -F "$XCFW_SLICE_PARENT" \
   -framework K2MobileMacOS \
   "$ROOT_DIR/desktop/src-tauri/KaituTunnel/PacketTunnelProvider.swift" \
   -o "$SYSEXT_DIR/KaituTunnel"
