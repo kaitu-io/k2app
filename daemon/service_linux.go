@@ -9,9 +9,15 @@ import (
 	"path/filepath"
 )
 
+// systemd constants.
 const (
 	serviceUnit = "k2.service"
 	unitDir     = "/etc/systemd/system"
+)
+
+// OpenWRT init.d constants.
+const (
+	initdScript = "/etc/init.d/k2"
 )
 
 func unitPath() string {
@@ -19,6 +25,42 @@ func unitPath() string {
 }
 
 func installService() error {
+	if isOpenWRT() {
+		return installOpenWRT()
+	}
+	return installSystemd()
+}
+
+func uninstallService() error {
+	if isOpenWRT() {
+		return uninstallOpenWRT()
+	}
+	return uninstallSystemd()
+}
+
+func isServiceInstalled() bool {
+	if isOpenWRT() {
+		_, err := os.Stat(initdScript)
+		return err == nil
+	}
+	_, err := os.Stat(unitPath())
+	return err == nil
+}
+
+// isOpenWRT detects OpenWRT by checking for /etc/openwrt_release or fw4.
+func isOpenWRT() bool {
+	if _, err := os.Stat("/etc/openwrt_release"); err == nil {
+		return true
+	}
+	if _, err := exec.LookPath("fw4"); err == nil {
+		return true
+	}
+	return false
+}
+
+// --- systemd ---
+
+func installSystemd() error {
 	exe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("find executable: %w", err)
@@ -56,14 +98,60 @@ WantedBy=multi-user.target
 	return nil
 }
 
-func uninstallService() error {
+func uninstallSystemd() error {
 	exec.Command("systemctl", "disable", "--now", serviceUnit).Run()
 	os.Remove(unitPath())
 	exec.Command("systemctl", "daemon-reload").Run()
 	return nil
 }
 
-func isServiceInstalled() bool {
-	_, err := os.Stat(unitPath())
-	return err == nil
+// --- OpenWRT init.d/procd ---
+
+func installOpenWRT() error {
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("find executable: %w", err)
+	}
+	exe, err = filepath.Abs(exe)
+	if err != nil {
+		return fmt.Errorf("resolve executable path: %w", err)
+	}
+
+	script := fmt.Sprintf(`#!/bin/sh /etc/rc.common
+# k2 network tunnel daemon
+
+START=99
+STOP=10
+
+USE_PROCD=1
+
+start_service() {
+    procd_open_instance
+    procd_set_param command %s
+    procd_set_param respawn
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_close_instance
+}
+`, exe)
+
+	if err := os.WriteFile(initdScript, []byte(script), 0755); err != nil {
+		return fmt.Errorf("write init.d script: %w", err)
+	}
+
+	if err := exec.Command(initdScript, "enable").Run(); err != nil {
+		return fmt.Errorf("init.d enable: %w", err)
+	}
+	if err := exec.Command(initdScript, "start").Run(); err != nil {
+		return fmt.Errorf("init.d start: %w", err)
+	}
+
+	return nil
+}
+
+func uninstallOpenWRT() error {
+	exec.Command(initdScript, "stop").Run()
+	exec.Command(initdScript, "disable").Run()
+	os.Remove(initdScript)
+	return nil
 }
