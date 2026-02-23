@@ -10,10 +10,10 @@ Used as a read-only submodule in k2app. See parent `CLAUDE.md` for integration c
 ```bash
 go build -o k2 ./cmd/k2            # Build client
 go build -o k2s ./cmd/k2s          # Build server
-go test ./...                      # All tests (wire + core + dns + mobile + daemon + server + e2e)
+go test ./...                      # All tests (wire + core + dns + appext + daemon + server + e2e)
 go test -short ./...               # Fast: skip live DNS/network tests
-make mobile-ios                    # iOS xcframework (gomobile bind)
-make mobile-android                # Android aar (gomobile bind)
+make appext-ios                    # iOS xcframework (gomobile bind)
+make appext-android                # Android aar (gomobile bind)
 k2 setup <k2v5://URL>              # First-time: generate config + install service + start
 k2 ctl up                          # Connect (uses saved config)
 k2 ctl status                      # Connection status JSON
@@ -41,12 +41,12 @@ engine/CLAUDE.md               Unified tunnel lifecycle manager (state machine, 
 core/CLAUDE.md                 L4 ClientTunnel, Router, ConnectionHandler
 core/dns/CLAUDE.md             DNS 13-step middleware pipeline
 daemon/CLAUDE.md               Desktop platform shell: HTTP API, service management, auto-reconnect
-provider/CLAUDE.md             Provider interface (TUN, Proxy, iOS, Android)
+provider/CLAUDE.md             Provider interface (TUN, Proxy, TProxy, iOS, Android)
 server/CLAUDE.md               Server listener orchestration, TCP/UDP handlers
 wire/CLAUDE.md                 k2v5 wire protocol, Dialer/Listener interfaces
 wire/k2v5-protocol-spec.md    k2v5 protocol specification (TLS, ECH, camouflage, framing)
 wire/arc/CLAUDE.md             PCC Vivace congestion control
-mobile/CLAUDE.md               Mobile platform shell: gomobile SDK (EventHandler bridge)
+appext/CLAUDE.md               App extension shell: gomobile SDK (macOS sysext, iOS, Android)
 test/CLAUDE.md                 E2E integration tests
 docs/features/                 Feature specs (cloud-webapp, mobile-sdk, private-ip-guard, etc.)
 docs/knowledge/                Distilled patterns (architecture, bugfix, gotchas, testing, tasks)
@@ -61,7 +61,7 @@ docs/contracts/                API contracts (webapp-daemon-api)
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│ Platform Shell (daemon/ mobile/)                        │
+│ Platform Shell (daemon/ appext/)                        │
 │   职责: 平台入口 + Config 组装 + 平台特有功能              │
 │   规则: 不管隧道状态——状态由 engine 管, shell 只透传        │
 ├─────────────────────────────────────────────────────────┤
@@ -84,29 +84,31 @@ docs/contracts/                API contracts (webapp-daemon-api)
 ### Platform Call Chains
 
 ```
-Desktop:  CLI → HTTP → daemon.Daemon ──[builds Config]──→ engine.Engine.Start()
-Mobile:   Native → mobile.Engine ──[builds Config]──→ engine.Engine.Start()
-                                                          ↓
-                                                     engine assembles:
-                                                     k2rule → wire → provider → tunnel → DNS
+Desktop:   CLI → HTTP → daemon.Daemon ──[builds Config]──→ engine.Engine.Start()
+App ext:   Native → appext.Engine ──[builds Config]──→ engine.Engine.Start()
+                                                           ↓
+                                                      engine assembles:
+                                                      k2rule → wire → provider → tunnel → DNS
 ```
 
-Platform Shell (daemon/mobile) assembles `engine.Config` with platform-specific fields (DirectDialer, NetworkMonitor for desktop; FileDescriptor for mobile), then delegates all lifecycle to engine. Engine doesn't know or care which platform called it.
+Platform Shell (daemon/appext) assembles `engine.Config` with platform-specific fields (DirectDialer, NetworkMonitor for desktop; FileDescriptor for appext), then delegates all lifecycle to engine. Engine doesn't know or care which platform called it.
 
 ### Interfaces
 
 - `wire.Dialer`: DialTCP, DialUDP, Close (implemented by QUICClient, TCPWSClient, TransportManager)
 - `wire.Listener`: AcceptTCP, ServeUDP, Close (implemented by QUICServer, TCPWSServer)
-- `provider.Provider`: Start(ctx, ConnectionHandler), Close, Name (TUN/Proxy/iOS/Android)
+- `wire.DirectDialer`: DialContext, ListenPacket (implemented by directdial.Dialer, appext.protectedDialer)
+- `wire.DialerController`: ControlFunc() (optional, for DNS socket protection — implemented by appext.protectedDialer)
+- `provider.Provider`: Start(ctx, ConnectionHandler), Close, Name (TUN/Proxy/TProxy/iOS/Android)
 - `provider.ConnectionHandler`: HandleTCP(conn, dest), HandleUDP(conn, dest) (implemented by ClientTunnel, dnsHandler)
-- `engine.EventHandler`: OnStateChange(state), OnError(msg), OnStats(tx, rx) (implemented by daemon, mobile.eventBridge)
+- `engine.EventHandler`: OnStateChange(state), OnError(msg), OnStats(tx, rx) (implemented by daemon, appext.eventBridge)
 - `dns.DNSQuerier`: Query(*dns.Msg) (*dns.Msg, error) (implemented by DirectDNSClient, ProxyDNSClient)
 
 ### Binary Split
 
-- `k2`: client (CLI, daemon, provider, core, DNS middleware)
+- `k2`: client (CLI, daemon, provider, core, DNS middleware) — Linux/Windows desktop
 - `k2s`: server (listener, auth, TCP/UDP handlers)
-- `mobile/`: gomobile SDK (Engine + EventHandler bridge — gomobile can't export dependency interfaces)
+- `appext/`: gomobile SDK (Engine + EventHandler bridge — gomobile can't export dependency interfaces) — macOS sysext, iOS, Android
 - Shared: wire/, config/, engine/
 
 ## Data Flow
@@ -132,6 +134,7 @@ Platform Shell (daemon/mobile) assembles `engine.Config` with platform-specific 
 - Server generates dual certs (RSA+EC) — both padded to match target site's cert length
 - EC CA (`wire/kaitu_ca.pem`, disguised as DigiCert) can sign both RSA and EC server certs
 - `tun_desktop.go` build tag: `(darwin && !ios) || (linux && !android) || windows` — must exclude android/ios
+- tproxy provider (Linux only) manages nftables rules — cleanup on Close() is critical
 
 ## Dependencies
 
@@ -155,4 +158,15 @@ docs/todos/p2-*.md     Nice to have
 
 ## Status
 
-**Done**: Full L4 architecture, wire protocol (QUIC+TCP-WS), DNS middleware (L3+L4), auth, ECH (DNS-based forging + config rotation), TLS record padding, dual certs (RSA+EC), client CA pool (system + Kaitu CA - Chinese CAs), PCC, client tunnel, server handlers, e2e tests, zero-config server startup, k2/k2s binaries, mobile SDK (gomobile, iOS+Android)
+**Done**: Full L4 architecture, wire protocol (QUIC+TCP-WS), DNS middleware (L3+L4), auth, ECH (DNS-based forging + config rotation), TLS record padding, dual certs (RSA+EC), client CA pool (system + Kaitu CA - Chinese CAs), PCC, client tunnel, server handlers, e2e tests, zero-config server startup, k2/k2s binaries, appext SDK (gomobile, macOS sysext+iOS+Android), tproxy provider (OpenWRT/Linux), OpenWRT service management (init.d/procd)
+
+## Platform Mapping
+
+| Platform | Entry | Shell | Provider | DirectDialer |
+|----------|-------|-------|----------|--------------|
+| macOS sysext | xcframework | appext/ | tun (FD) | nil |
+| iOS | xcframework | appext/ | tun (FD) | nil |
+| Android | aar | appext/ | tun (FD) | protectedDialer |
+| Linux desktop | cmd/k2 | daemon/ | tun (self-create) | directdial.Dialer |
+| Windows | cmd/k2 | daemon/ | tun (self-create) | directdial.Dialer |
+| OpenWRT | cmd/k2 | daemon/ | tproxy | nil |

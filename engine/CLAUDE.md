@@ -1,12 +1,12 @@
 # Engine Layer (engine/)
 
 Unified tunnel lifecycle manager — single source of truth for connection state.
-Both desktop (daemon/) and mobile (mobile/) delegate all lifecycle here.
+Both desktop (daemon/) and appext (appext/) delegate all lifecycle here.
 
 ## Architecture
 
 ```
-Platform Shell (daemon/mobile)
+Platform Shell (daemon/appext)
     │
     ├── builds engine.Config (platform-specific fields)
     └── calls engine.Start(cfg)
@@ -16,9 +16,9 @@ Platform Shell (daemon/mobile)
               ├── 3. Resolve dial address (ip4/ip6)
               ├── 4. Build transports (QUIC + TCP-WS)
               ├── 5. Router (k2rule)
-              ├── 6. Provider (TUN/Proxy/mobile FD)
+              ├── 6. Provider (TUN/Proxy/TProxy/appext FD)
               ├── 7. ClientTunnel
-              ├── 8. DNS middleware (TUN mode only)
+              ├── 8. DNS middleware (TUN/TProxy mode only)
               └── 9. Commit → StateConnected
 ```
 
@@ -47,26 +47,24 @@ HTTP-aligned error codes for frontend consumption:
 
 ## Config (config.go)
 
-`engine.Config` unifies desktop and mobile:
+`engine.Config` unifies all platforms via `wire.DirectDialer` interface:
 
-| Field | Desktop | Mobile |
-|-------|---------|--------|
-| `Client` | from YAML/URL | from JSON |
-| `FileDescriptor` | -1 (self-create TUN) | >=0 (platform FD) |
-| `DirectDialer` | sing-tun interface binding | nil |
-| `ProtectFunc` | nil | Android VpnService.protect |
-| `NetworkMonitor` | sing-tun DefaultInterfaceMonitor | nil (platform calls directly) |
-| `InterfaceMonitor` | same sing-tun instance | nil |
+| Field | Desktop (daemon) | App ext (appext) | OpenWRT |
+|-------|-----------------|-------------------|---------|
+| `Client` | from YAML/URL | from JSON | from YAML/URL |
+| `FileDescriptor` | -1 (self-create TUN) | >=0 (platform FD) | -1 |
+| `DirectDialer` | directdial.Dialer | protectedDialer (Android) / nil (iOS/macOS) | nil |
+| `NetworkMonitor` | sing-tun DefaultInterfaceMonitor | nil (platform calls directly) | nil |
+| `InterfaceMonitor` | same sing-tun instance | nil | nil |
 
 ## Files
 
 - `engine.go` — `Engine` struct, `Start`/`Stop`/`OnNetworkChanged`, assembly pipeline
-- `config.go` — `Config` struct (platform-unified tunnel parameters)
+- `config.go` — `Config` struct (platform-unified tunnel parameters, uses `wire.DirectDialer` interface)
 - `event.go` — `EventHandler` interface, state constants
 - `error.go` — `EngineError`, `ClassifyError` (HTTP-aligned error codes)
 - `dns_handler.go` — `dnsHandler` (port 53 interception wrapper)
 - `network.go` — `NetworkChangeNotifier` interface
-- `protect.go` — `protectedDialer` (Android socket protection via syscall.RawConn)
 
 ## Testing
 

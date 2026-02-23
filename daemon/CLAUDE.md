@@ -37,7 +37,7 @@ Request/Response: `daemon.Request{Action, Params}` / `daemon.Response{Code, Mess
 **doUp(cfg *ClientConfig, pid int)**:
 1. `opMu.Lock()` — serialize with other doUp/doDown
 2. `closeTunnel()` — unconditional teardown (idempotent)
-3. `engineConfigFromClientConfig(cfg)` — assemble `engine.Config` with platform fields (DirectDialer, NetworkMonitor, InterfaceMonitor, PreferIPv6)
+3. `engineConfigFromClientConfig(cfg)` — assemble `engine.Config` with platform fields (DirectDialer, NetworkMonitor, InterfaceMonitor)
 4. `engine.Start(cfg)` — delegates all lifecycle to engine
 5. Start PID monitor if requested
 6. Persist state for auto-reconnect
@@ -61,7 +61,7 @@ Error path: set `lastError` + state to `stopped`.
 - `rlimit.go` / `rlimit_unix.go` / `rlimit_windows.go` — `RLIMIT_NPROC=4000`, `RLIMIT_NOFILE=10240`
 - `service.go` — `ServiceManager` interface: Install/Uninstall/IsInstalled
 - `service_darwin.go` — macOS launchd plist (`io.kaitu.k2`)
-- `service_linux.go` — Linux systemd unit (`k2.service`)
+- `service_linux.go` — Linux systemd unit (`k2.service`) + OpenWRT init.d/procd (auto-detected)
 - `service_windows.go` — Windows Service
 
 ## Testing
