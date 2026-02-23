@@ -17,6 +17,9 @@ k2/build/
 *.xcframework
 *.aar
 
+# NE helper build artifact (rebuilt by ne_helper/build.sh)
+desktop/src-tauri/ne_helper/*.a
+
 .word9f
 .claude/agent-memory/
 .playwright-mcp/

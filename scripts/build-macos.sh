@@ -168,23 +168,33 @@ MACOS_SDK_PATH=$(xcrun --show-sdk-path --sdk macosx)
 XCFW_SLICE_DIR=$(find "$XCFW_PATH" -name "K2MobileMacOS.framework" -maxdepth 2 -type d | head -1)
 XCFW_SLICE_PARENT=$(dirname "$XCFW_SLICE_DIR")
 
-# Determine swiftc target
-if [ "$SINGLE_ARCH" = true ]; then
-  SYSEXT_TARGET="${NE_ARCH}-apple-macos12"
-else
-  SYSEXT_TARGET="arm64-apple-macos12"
-fi
-
 # Compile PacketTunnelProvider.swift → KaituTunnel executable
-swiftc \
-  -emit-executable \
-  -module-name KaituTunnel \
-  -sdk "$MACOS_SDK_PATH" \
-  -target "$SYSEXT_TARGET" \
-  -F "$XCFW_SLICE_PARENT" \
-  -framework K2MobileMacOS \
-  "$ROOT_DIR/desktop/src-tauri/KaituTunnel/PacketTunnelProvider.swift" \
-  -o "$SYSEXT_DIR/KaituTunnel"
+SYSEXT_SWIFT_SRC="$ROOT_DIR/desktop/src-tauri/KaituTunnel/PacketTunnelProvider.swift"
+
+compile_sysext() {
+  local target="$1"
+  local output="$2"
+  swiftc \
+    -emit-executable \
+    -module-name KaituTunnel \
+    -sdk "$MACOS_SDK_PATH" \
+    -target "$target" \
+    -F "$XCFW_SLICE_PARENT" \
+    -framework K2MobileMacOS \
+    "$SYSEXT_SWIFT_SRC" \
+    -o "$output"
+}
+
+if [ "$SINGLE_ARCH" = true ]; then
+  compile_sysext "${NE_ARCH}-apple-macos12" "$SYSEXT_DIR/KaituTunnel"
+else
+  # Universal: compile both architectures and merge with lipo
+  compile_sysext "arm64-apple-macos12" "$SYSEXT_DIR/KaituTunnel-arm64"
+  compile_sysext "x86_64-apple-macos12" "$SYSEXT_DIR/KaituTunnel-x86_64"
+  lipo -create "$SYSEXT_DIR/KaituTunnel-arm64" "$SYSEXT_DIR/KaituTunnel-x86_64" \
+    -output "$SYSEXT_DIR/KaituTunnel"
+  rm -f "$SYSEXT_DIR/KaituTunnel-arm64" "$SYSEXT_DIR/KaituTunnel-x86_64"
+fi
 
 # Copy Info.plist into systemextension bundle
 cp "$ROOT_DIR/desktop/src-tauri/KaituTunnel/Info.plist" \

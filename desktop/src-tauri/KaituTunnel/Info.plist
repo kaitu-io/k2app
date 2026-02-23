@@ -11,9 +11,9 @@
     <key>CFBundleIdentifier</key>
     <string>io.kaitu.desktop.tunnel</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>3</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
+    <string>1.0.2</string>
     <key>CFBundlePackageType</key>
     <string>SYSX</string>
     <key>NSSystemExtensionUsageDescription</key>
@@ -31,7 +31,7 @@
         <key>NSExtensionPointIdentifier</key>
         <string>com.apple.networkextension.packet-tunnel</string>
         <key>NSExtensionPrincipalClass</key>
-        <string>PacketTunnelProvider</string>
+        <string>KaituTunnel.PacketTunnelProvider</string>
     </dict>
 </dict>
 </plist>

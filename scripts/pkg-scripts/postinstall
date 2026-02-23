@@ -3,14 +3,14 @@
 # Runs as root AFTER files are installed to /Applications/Kaitu.app
 
 K2="/Applications/Kaitu.app/Contents/MacOS/k2"
-NE_APPEX="/Applications/Kaitu.app/Contents/PlugIns/KaituTunnel.appex"
+NE_SYSEXT="/Applications/Kaitu.app/Contents/Library/SystemExtensions/io.kaitu.desktop.tunnel.systemextension"
 
 # 1. Install daemon service (NE mode: skip — NE profile installed by app at runtime)
-if [ -d "$NE_APPEX" ]; then
+if [ -d "$NE_SYSEXT" ]; then
     # NE mode: KaituTunnel.appex is present — Network Extension handles VPN,
     # no daemon service needed. The NE profile is installed by the app at runtime
     # via ensure_ne_installed() in Rust.
-    echo "NE mode: skipping daemon service install (KaituTunnel.appex present)"
+    echo "NE mode: skipping daemon service install (systemextension present)"
 else
     # Legacy daemon mode: install k2 service
     if [ -x "$K2" ]; then

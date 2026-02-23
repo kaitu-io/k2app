@@ -2,6 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <!-- Identity: required by nesessionmanager for NE IPC authorization -->
+    <key>com.apple.application-identifier</key>
+    <string>NJT954Q3RH.io.kaitu.desktop</string>
+    <key>com.apple.developer.team-identifier</key>
+    <string>NJT954Q3RH</string>
+
     <!-- Network access for cloud API + VPN control -->
     <key>com.apple.security.network.client</key>
     <true/>
@@ -16,12 +22,6 @@
     <key>com.apple.developer.networking.networkextension</key>
     <array>
         <string>packet-tunnel-provider-systemextension</string>
-    </array>
-
-    <!-- App Group shared between main app and KaituTunnel NE extension -->
-    <key>com.apple.security.application-groups</key>
-    <array>
-        <string>group.io.kaitu.desktop</string>
     </array>
 </dict>
 </plist>

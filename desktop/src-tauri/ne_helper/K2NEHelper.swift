@@ -221,6 +221,32 @@ private func removeManager(_ manager: NETunnelProviderManager) -> Error? {
     return removeError
 }
 
+/// Read the CFBundleVersion from the bundled system extension's Info.plist.
+private func bundledSysextVersion() -> String? {
+    guard let appBundle = Bundle.main.bundleURL
+        .appendingPathComponent("Contents/Library/SystemExtensions/\(kNEBundleId).systemextension/Contents/Info.plist")
+        .path as String?,
+          let dict = NSDictionary(contentsOfFile: appBundle) else { return nil }
+    return dict["CFBundleVersion"] as? String
+}
+
+/// Key used to store the last-installed system extension version.
+private let kInstalledSysextVersionKey = "io.kaitu.installedSysextVersion"
+
+/// Check if the bundled sysext version differs from the last-installed version.
+private func sysextNeedsUpdate() -> Bool {
+    guard let bundled = bundledSysextVersion() else { return false }
+    let installed = UserDefaults.standard.string(forKey: kInstalledSysextVersionKey)
+    return installed != bundled
+}
+
+/// Record the current bundled sysext version as installed.
+private func recordSysextVersion() {
+    if let v = bundledSysextVersion() {
+        UserDefaults.standard.set(v, forKey: kInstalledSysextVersionKey)
+    }
+}
+
 /// Configure protocol on manager with the macOS NE bundle identifier.
 private func configureProtocol(on manager: NETunnelProviderManager) {
     let proto = NETunnelProviderProtocol()
@@ -243,8 +269,29 @@ public func k2ne_install() -> UnsafeMutablePointer<CChar> {
 
     let sem = DispatchSemaphore(value: 0)
     DispatchQueue.global(qos: .userInitiated).async {
-        // Check if already installed (existing profile means sysext already activated)
-        if loadManager() != nil {
+        let existingProfile = loadManager() != nil
+
+        // If sysext version changed (app update / entitlement fix), re-activate
+        if existingProfile && sysextNeedsUpdate() {
+            NSLog("[K2NEHelper] Sysext version mismatch — re-activating")
+            let (activated, activationError) = activateSystemExtension()
+            if !activated {
+                NSLog("[K2NEHelper] Sysext re-activation failed: \(activationError ?? "unknown")")
+                // Non-fatal: continue with existing profile
+            } else {
+                recordSysextVersion()
+            }
+            resultJSON = serviceResponse(
+                code: 0,
+                message: "ok",
+                data: ["installed": true, "existing": true, "updated": true]
+            )
+            sem.signal()
+            return
+        }
+
+        // Already installed and up-to-date
+        if existingProfile {
             resultJSON = serviceResponse(
                 code: 0,
                 message: "ok",
@@ -254,7 +301,7 @@ public func k2ne_install() -> UnsafeMutablePointer<CChar> {
             return
         }
 
-        // Step 1: Activate System Extension (user approval required on first install)
+        // First install: activate System Extension (user approval required)
         let (activated, activationError) = activateSystemExtension()
         if !activated {
             resultJSON = serviceResponse(code: -1, message: activationError ?? "System Extension activation failed")
@@ -262,7 +309,7 @@ public func k2ne_install() -> UnsafeMutablePointer<CChar> {
             return
         }
 
-        // Step 2: Create and save VPN profile
+        // Create and save VPN profile
         let manager = NETunnelProviderManager()
         configureProtocol(on: manager)
 
@@ -272,9 +319,8 @@ public func k2ne_install() -> UnsafeMutablePointer<CChar> {
             return
         }
 
-        // Cache the newly installed manager
         cachedManager = manager
-
+        recordSysextVersion()
         resultJSON = serviceResponse(code: 0, message: "ok", data: ["installed": true])
         sem.signal()
     }
@@ -544,6 +590,7 @@ public func k2ne_reinstall() -> UnsafeMutablePointer<CChar> {
         }
 
         cachedManager = manager
+        recordSysextVersion()
         resultJSON = serviceResponse(code: 0, message: "ok", data: ["installed": true])
         sem.signal()
     }

@@ -18,11 +18,10 @@ VERSION=$(node -p "require('${ROOT_DIR}/package.json').version")
 COMMIT=$(cd "${ROOT_DIR}/k2" && git rev-parse --short HEAD)
 LDFLAGS="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}"
 
+# macOS uses Network Extension (no standalone daemon). Linux only.
 PLATFORMS=(
     "linux:amd64"
     "linux:arm64"
-    "darwin:amd64"
-    "darwin:arm64"
 )
 
 build_binary() {

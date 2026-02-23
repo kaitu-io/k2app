@@ -21,9 +21,6 @@ build-macos-fast:
 	bash scripts/build-macos.sh --skip-notarization
 
 build-macos-test:
-	bash scripts/build-macos.sh --skip-notarization --single-arch --features=mcp-bridge
-
-build-macos-test-notarized:
 	bash scripts/build-macos.sh --single-arch --features=mcp-bridge
 
 build-windows: pre-build build-webapp
@@ -97,11 +94,11 @@ publish-mobile:
 mobile-deps:
 	cd k2 && go get golang.org/x/mobile/bind@latest
 
-mobile-ios: mobile-deps
+mobile-ios:
 	mkdir -p k2/build
 	cd k2 && gomobile bind -target=ios -o build/K2Mobile.xcframework ./mobile/
 
-mobile-macos: mobile-deps
+mobile-macos:
 	mkdir -p k2/build
 	cd k2 && gomobile bind -target=macos -o build/K2MobileMacOS.xcframework ./mobile/
 

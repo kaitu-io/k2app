@@ -15,7 +15,7 @@ fn main() {
         // Default: ne_helper/build/ relative to this build.rs location (src-tauri/).
         // Override with NE_HELPER_LIB_DIR env var if the lib is elsewhere.
         let ne_helper_lib_dir = std::env::var("NE_HELPER_LIB_DIR")
-            .unwrap_or_else(|_| "ne_helper/build".to_string());
+            .unwrap_or_else(|_| "ne_helper".to_string());
 
         let lib_path = std::path::Path::new(&ne_helper_lib_dir).join("libk2_ne_helper.a");
         let lib_exists = lib_path.exists();

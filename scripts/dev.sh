@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -e
 
+# Webapp browser-only dev (no Tauri). Starts k2 daemon for standalone webapp
+# testing. For Tauri desktop dev, use `make dev-desktop` instead.
+# Note: On macOS, the Tauri app uses Network Extension (not daemon).
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 K2_BIN="$ROOT_DIR/desktop/src-tauri/binaries/k2-$(uname -m)-apple-darwin"
