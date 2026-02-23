@@ -47,3 +47,4 @@ cloud/dist/*
 docker/bench/sing-box
 docker/bench/results/
 docker/bench/__pycache__/
+.worktrees
