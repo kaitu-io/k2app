@@ -51,7 +51,7 @@ Error path: set `lastError` + state to `stopped`.
 ## Files
 
 - `daemon.go` — `Daemon` struct, state machine, HTTP server setup, `engineConfigFromClientConfig`
-- `api.go` — `handleCore`/`handlePing`/`handleMetrics` + CORS middleware
+- `api.go` — `handleCore`/`handlePing`/`handleMetrics`/`handleVersion` + CORS middleware
 - `client.go` — `Client` struct for IPC (used by CLI commands)
 - `state.go` — Persisted state: saved config + last connect time (auto-reconnect <1h)
 - `reload.go` — Hot-reload config on SIGHUP (dynamic changes without restart)

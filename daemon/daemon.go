@@ -91,8 +91,6 @@ func (d *Daemon) Run(ctx context.Context, listenAddr string) error {
 	mux.HandleFunc("/ping", d.handlePing)
 	mux.HandleFunc("/metrics", d.handleMetrics)
 	mux.HandleFunc("/api/core", d.handleCore)
-	mux.HandleFunc("/api/device/udid", d.handleDeviceUDID)
-	mux.Handle("/", webappHandler())
 
 	srv := &http.Server{
 		Addr:    listenAddr,
