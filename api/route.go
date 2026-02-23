@@ -418,15 +418,6 @@ func SetupRouter() *gin.Engine {
 		csr.POST("/verify", api_csr_verify)
 	}
 
-	// Node installation public routes (no authentication required)
-	// Usage: curl -fsSL https://k2.52j.me/slave/init-node.sh | sudo bash
-	slavePublic := r.Group("/slave")
-	slavePublic.Use(log.MiddlewareRequestLog(true), MiddleRecovery())
-	{
-		slavePublic.GET("/init-node.sh", api_cloud_init_node_script)
-		slavePublic.GET("/ssh-pubkey", api_cloud_ssh_pubkey)
-		slavePublic.GET("/docker-compose.yml", api_cloud_docker_compose)
-	}
 
 	// 注册任务处理器并挂载监控面板
 	// 路径: /app/asynqmon - 与其他管理接口保持一致（/app/* 前缀）

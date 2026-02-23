@@ -55,7 +55,7 @@ mobile/android/      Gradle project (app module, flatDir AAR)
 tools/kaitu-ops-mcp/ MCP server for AI-driven node ops (TypeScript + @modelcontextprotocol/sdk + ssh2)
   src/                 index.ts (entry), config.ts, ssh.ts, redact.ts, center-api.ts, tools/
 scripts/             dev.sh, build-macos.sh, build-mobile-*.sh, test_build.sh
-docker/scripts/      Node ops scripts (prepare-docker-compose.sh, enable-ipv6.sh, etc.)
+docker/scripts/      Node ops scripts (provision-node.sh, enable-ipv6.sh, etc.)
 docs/features/       Feature specs and plans
 docs/baselines/      Project capability baseline
 docs/knowledge/      Distilled patterns (architecture, testing, gotchas, task-splitting, bugfix)

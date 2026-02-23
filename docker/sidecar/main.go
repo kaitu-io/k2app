@@ -37,7 +37,7 @@ func init() {
 func main() {
 	flag.Parse()
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
-	slog.Info("Starting k2-slave-sidecar v5.0 (unified config, batch registration)", "component", "sidecar")
+	slog.Info("Starting k2-sidecar v5.0 (unified config, batch registration)", "component", "sidecar")
 
 	if configFile == "" {
 		slog.Error("Config file path is required. Usage: ./k2-sidecar -c /path/to/config.yaml", "component", "sidecar")

@@ -123,7 +123,7 @@ for entry in "${UPDATE_LIST[@]}"; do
     continue
   fi
 
-  # Step 3: Verify sidecar health (detect architecture: k2-sidecar or k2-slave-sidecar)
+  # Step 3: Verify sidecar health (k2-sidecar)
   echo "  [3/3] Waiting 10s for sidecar health..."
   sleep 10
   SIDECAR_NAME=$(ssh $SSH_OPTS "$SSH_USER@$IP" "docker ps --format '{{.Names}}' 2>/dev/null" 2>/dev/null | grep -o 'k2[^ ]*sidecar' || echo "k2-sidecar")

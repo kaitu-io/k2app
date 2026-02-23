@@ -6,7 +6,7 @@
 #
 # Images (each with :latest + :vX.Y.Z-<commit>):
 #   - public.ecr.aws/d6n9t2r2/k2v5
-#   - public.ecr.aws/d6n9t2r2/k2-slave-sidecar
+#   - public.ecr.aws/d6n9t2r2/k2-sidecar
 #
 set -e
 
@@ -18,7 +18,7 @@ COMMIT=$(git rev-parse --short=8 HEAD)
 TAG="v${VERSION}-${COMMIT}"
 
 K2V5_IMAGE="${ECR_REGISTRY}/k2v5"
-SIDECAR_IMAGE="${ECR_REGISTRY}/k2-slave-sidecar"
+SIDECAR_IMAGE="${ECR_REGISTRY}/k2-sidecar"
 
 echo "================================================"
 echo "  Build & Push Slave Docker Images"

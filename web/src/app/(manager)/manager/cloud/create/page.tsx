@@ -164,11 +164,15 @@ export default function CreateCloudInstancePage() {
   const selectedPlanObj = plans.find(p => p.id === selectedPlan);
   const selectedImageObj = images.find(i => i.id === selectedImage);
 
-  // Install script command
-  const installCommand = `curl -fsSL https://k2.52j.me/slave/init-node.sh | sudo bash -s -- \\
-  --secret "YOUR_NODE_SECRET" \\
-  --name "your-node-name" \\
-  --region "your-region"`;
+  // Install steps (via kaitu-node-ops skill)
+  const installCommand = `# 1. Provision node (SSH as root)
+exec_on_node(ip, "bash -s", { scriptPath: "docker/scripts/provision-node.sh" })
+
+# 2. Deploy docker-compose.yml
+.claude/skills/kaitu-node-ops/deploy-compose.sh --node=IP
+
+# 3. Start services
+exec_on_node(ip, "cd /apps/kaitu-slave && docker compose up -d")`;
 
   const handleCopyCommand = async () => {
     try {

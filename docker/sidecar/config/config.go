@@ -57,7 +57,7 @@ type OCTunnelConfig struct {
 	Domain       string `yaml:"domain"`
 	Port         int    `yaml:"port" default:"443"`        // Registration port (for SNI routing, always 443)
 	ListenPort   int    `yaml:"listen_port" default:"443"` // Container listening port (exposed via port mapping)
-	RadiusServer string `yaml:"radius_server" default:"k2-slave-sidecar"`
+	RadiusServer string `yaml:"radius_server" default:"k2-sidecar"`
 }
 
 // ECHSectionConfig holds ECH (Encrypted Client Hello) configuration

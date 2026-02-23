@@ -73,9 +73,7 @@ Slave 节点是运行 VPN 服务的物理服务器。通过 `SlaveAuthRequired()
 | `GET /slave/resolve-domain` | SlaveAuth | DNS 式域名解析：精确匹配 + 通配符匹配 |
 | `GET /slave/ech/keys` | SlaveAuth | 获取 ECH 密钥对（active + grace_period 状态的密钥） |
 | `POST /slave/nodes/:ipv4/route-diagnosis` | SlaveAuth | 上报 inbound 路由诊断结果（carrier:province -> route_type） |
-| `GET /slave/init-node.sh` | 公开 | 节点初始化脚本（`curl -fsSL .../init-node.sh \| sudo bash`） |
-| `GET /slave/ssh-pubkey` | 公开 | 获取中心 SSH 公钥（节点初始化时添加到 authorized_keys） |
-| `GET /slave/docker-compose.yml` | 公开 | 节点 Docker Compose 模板 |
+
 
 ### CSR 证书签发 (`/csr/*`)
 
@@ -316,7 +314,7 @@ Slave 节点是运行 VPN 服务的物理服务器。通过 `SlaveAuthRequired()
 - [x] ECH 密钥同步返回 active + grace_period 状态的密钥
 - [x] Inbound 路由诊断上报 upsert 存储
 - [x] 新节点注册自动触发 outbound 诊断
-- [x] 公开脚本/公钥/docker-compose 端点无需认证
+
 
 ### CSR 证书签发
 

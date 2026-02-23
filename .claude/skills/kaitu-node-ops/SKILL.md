@@ -71,12 +71,12 @@ Deployment path: `/apps/kaitu-slave/` (same)
 
 | Container | Role | Network | Image |
 |-----------|------|---------|-------|
-| k2-slave-sidecar | Same as k2-sidecar above | bridge | k2-slave-sidecar:latest |
+| k2-sidecar | Same as k2-sidecar above | bridge | k2-sidecar:latest |
 | k2-slave | SNI router (no ECH), host network, port 443 | host | k2-slave:latest |
 | k2-oc | Same as above | bridge | k2-oc:latest |
 
 Differences from new architecture:
-- Container names: `k2-slave-sidecar` instead of `k2-sidecar`, `k2-slave` instead of `k2v5`
+- Container names: `k2-sidecar` (same name, same image), `k2-slave` instead of `k2v5`
 - No k2v4-slave container (k2-slave IS the tunnel, not a front door)
 - k2-slave does SNI routing without ECH support
 - All operational commands are the same — just substitute container names
@@ -105,7 +105,7 @@ The `.env` file is at `/apps/kaitu-slave/.env`. Core variables:
 Use `exec_on_node(ip, command)` for all operations. Replace `{sidecar}` and `{tunnel}` with the correct container names based on architecture identification:
 
 - **New arch**: `{sidecar}` = `k2-sidecar`, `{tunnel}` = `k2v5`
-- **Old arch**: `{sidecar}` = `k2-slave-sidecar`, `{tunnel}` = `k2-slave`
+- **Old arch**: `{sidecar}` = `k2-sidecar`, `{tunnel}` = `k2-slave`
 
 | Operation | Command |
 |-----------|---------|
@@ -223,7 +223,6 @@ Scripts in `docker/scripts/` (run ON nodes via SSH stdin pipe):
 | Script | Purpose | Warning |
 |--------|---------|---------|
 | `provision-node.sh` | Full node provisioning: Docker CE install + IPv6 kernel + nftables + daemon.json + UFW-Docker | **Destructive**. Stops all containers. For fresh/rebuild nodes only. Requires sudo + explicit user confirmation. |
-| `prepare-docker-compose.sh` | Initialize node deployment directory + write docker-compose.yml | **Old architecture only**. Requires sudo. Do NOT run on nodes that already have a deployment. |
 | `totally-reinstall-docker.sh` | Docker CE reinstall only (no IPv6 kernel params) | **Destructive**. Superseded by `provision-node.sh`. |
 | `enable-ipv6.sh` | Enable IPv6 kernel params only | Superseded by `provision-node.sh` step 6. |
 | `simple-docker-pull-restart.sh` | Pull latest images and restart | Safe for routine updates. Equivalent to the standard update command. |

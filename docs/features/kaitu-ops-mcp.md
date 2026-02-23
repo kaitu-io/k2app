@@ -133,7 +133,6 @@ Skill 引用 `docker/scripts/` 下的运维脚本：
 
 | 脚本 | 用途 | 注意 |
 |------|------|------|
-| `prepare-docker-compose.sh` | 初始化节点部署目录 + 写入 docker-compose.yml | **旧版架构专用**。需要 sudo，已有部署的节点不要运行 |
 | `totally-reinstall-docker.sh` | 全量重装 Docker CE（清理旧版 + nftables + IPv6） | 破坏性操作，需要用户确认 |
 | `enable-ipv6.sh` | 启用 IPv6 内核参数 + 测试连通性 | 需要 sudo |
 | `simple-docker-pull-restart.sh` | 拉取最新镜像并重启 | 日常更新用 |
@@ -254,10 +253,12 @@ tools/kaitu-ops-mcp/
 .claude/
 ├── settings.json         # MCP server 注册
 └── skills/
-    └── kaitu-node-ops.md # 运维安全护栏
+    └── kaitu-node-ops/
+        ├── SKILL.md              # 运维安全护栏
+        ├── deploy-compose.sh     # SCP 部署 docker-compose.yml
+        └── update-compose.sh     # 批量 pull + restart
 
 docker/scripts/           # 运维脚本
-├── prepare-docker-compose.sh
 ├── totally-reinstall-docker.sh
 ├── enable-ipv6.sh
 └── simple-docker-pull-restart.sh
@@ -286,7 +287,7 @@ docker/scripts/           # 运维脚本
 - AC14: Skill 包含标准运维操作命令表（容器名按架构版本替换）
 - AC15: Skill 包含 7 条运维安全护栏，明确定位为防误操作最佳实践（非安全边界）
 - AC16: Skill 记录两种脚本执行模式（小命令直接 exec / 大脚本 stdin pipe）
-- AC17: Skill 引用 `docker/scripts/` 下的脚本及使用注意事项，标记 `prepare-docker-compose.sh` 为旧版专用
+- AC17: Skill 引用 `docker/scripts/` 下的脚本及使用注意事项
 
 ### 脚本
 
