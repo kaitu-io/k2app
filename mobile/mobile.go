@@ -3,6 +3,8 @@ package mobile
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"math"
 	"path/filepath"
 
 	"github.com/kaitu-io/k2/config"
@@ -58,10 +60,21 @@ func (e *Engine) Start(configJSON string, fd int, cfg *EngineConfig) error {
 		clientCfg.Rule.CacheDir = filepath.Join(cfg.CacheDir, "k2rule")
 	}
 
-	return e.inner.Start(engine.Config{
+	ecfg := engine.Config{
 		Client:         &clientCfg,
 		FileDescriptor: fd,
-	})
+	}
+	if cfg.SocketProtector != nil {
+		p := cfg.SocketProtector
+		ecfg.ProtectFunc = func(fd int) bool {
+			if fd < 0 || fd > math.MaxInt32 {
+				slog.Warn("socket protect: fd out of int32 range", "fd", fd)
+				return false
+			}
+			return p.Protect(int32(fd))
+		}
+	}
+	return e.inner.Start(ecfg)
 }
 
 // Stop tears down the tunnel and returns the engine to disconnected.

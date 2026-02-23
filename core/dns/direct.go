@@ -3,6 +3,7 @@ package dns
 import (
 	"fmt"
 	"log/slog"
+	"net"
 	"time"
 
 	"github.com/miekg/dns"
@@ -13,10 +14,20 @@ import (
 type DirectDNSClient struct {
 	servers []string // DNS server addresses (e.g., "114.114.114.114:53")
 	timeout time.Duration
+	dialer  *net.Dialer // optional: protected dialer for mobile socket protection
+}
+
+// DirectDNSOption configures a DirectDNSClient.
+type DirectDNSOption func(*DirectDNSClient)
+
+// WithDialer sets a custom net.Dialer for DNS queries.
+// Used on mobile to route DNS through a protected socket (VpnService.protect).
+func WithDialer(d *net.Dialer) DirectDNSOption {
+	return func(c *DirectDNSClient) { c.dialer = d }
 }
 
 // NewDirectDNSClient creates a new direct DNS client
-func NewDirectDNSClient(servers []string) *DirectDNSClient {
+func NewDirectDNSClient(servers []string, opts ...DirectDNSOption) *DirectDNSClient {
 	if len(servers) == 0 {
 		// Default to common CN DNS servers
 		servers = []string{
@@ -25,10 +36,14 @@ func NewDirectDNSClient(servers []string) *DirectDNSClient {
 		}
 	}
 
-	return &DirectDNSClient{
+	c := &DirectDNSClient{
 		servers: servers,
 		timeout: 5 * time.Second,
 	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
 // Query sends a DNS query via direct UDP socket (bypassing TUN)
@@ -37,6 +52,7 @@ func (c *DirectDNSClient) Query(query *dns.Msg) (*dns.Msg, error) {
 	client := &dns.Client{
 		Net:     "udp",
 		Timeout: c.timeout,
+		Dialer:  c.dialer,
 	}
 
 	var lastErr error

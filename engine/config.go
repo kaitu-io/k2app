@@ -40,4 +40,8 @@ type Config struct {
 	// used by NetworkMonitor, so the TUN device is excluded from triggering
 	// network change events. Opaque to engine — provider does type assertion.
 	InterfaceMonitor any
+
+	// ProtectFunc marks a socket FD as excluded from TUN routing.
+	// Mobile only (Android VpnService.protect). Nil on desktop.
+	ProtectFunc func(fd int) bool
 }
