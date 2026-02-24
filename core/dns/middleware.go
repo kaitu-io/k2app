@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"strings"
+	"sync"
 
 	"github.com/kaitu-io/k2rule"
 	"github.com/kaitu-io/k2/core/packet"
@@ -17,6 +18,13 @@ type DNSQuerier interface {
 	Query(query *dns.Msg) (*dns.Msg, error)
 }
 
+// inflightResult is the shared result of an in-flight upstream DNS query.
+type inflightResult struct {
+	resp *dns.Msg
+	err  error
+	done chan struct{} // closed when result is ready
+}
+
 // Middleware handles DNS query interception and routing
 type Middleware struct {
 	// Upstream DNS clients
@@ -25,6 +33,10 @@ type Middleware struct {
 
 	// Caches
 	dnsCache *DNSCache // DNS message cache (with negative caching)
+
+	// In-flight dedup: domain+qtype → *inflightResult.
+	// Prevents duplicate upstream queries for the same question.
+	inflight sync.Map
 
 	// Filters
 	hosts  *HostsFile // /etc/hosts lookup
@@ -161,42 +173,40 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, error) {
 	// 7. Domain-based routing (k2rule)
 	action := k2rule.Match(domain)
 
-	// 8. Query upstream DNS
-	var resp *dns.Msg
-	var err error
-
-	switch action {
-	case k2rule.TargetDirect:
-		if m.metrics != nil {
-			m.metrics.IncrDirect()
-		}
-		resp, err = m.directDNS.Query(query)
-		if err != nil {
-			if m.metrics != nil {
-				m.metrics.IncrError()
-			}
-			slog.Warn("DNS direct query failed", "domain", domain, "err", err)
-			return nil, err
-		}
-		slog.Debug("DNS routed direct", "domain", domain)
-
-	case k2rule.TargetProxy:
-		if m.metrics != nil {
-			m.metrics.IncrProxy()
-		}
-		resp, err = m.proxyDNS.Query(query)
-		if err != nil {
-			if m.metrics != nil {
-				m.metrics.IncrError()
-			}
-			slog.Warn("DNS proxy query failed", "domain", domain, "err", err)
-			return nil, err
-		}
-		slog.Debug("DNS routed proxy", "domain", domain)
-
-	case k2rule.TargetReject:
-		resp = createNXDOMAIN(query)
+	// Reject is instant — no upstream query, no dedup needed.
+	if action == k2rule.TargetReject {
 		slog.Debug("DNS routed reject", "domain", domain)
+		return createNXDOMAIN(query), nil
+	}
+
+	// 8. Query upstream DNS with in-flight deduplication.
+	// If another goroutine is already querying the same domain+qtype,
+	// we wait for its result instead of issuing a duplicate query.
+	inflightKey := fmt.Sprintf("%s:%d", domain, query.Question[0].Qtype)
+
+	result := &inflightResult{done: make(chan struct{})}
+	if existing, loaded := m.inflight.LoadOrStore(inflightKey, result); loaded {
+		// Another goroutine is already querying — wait for its result.
+		existing := existing.(*inflightResult)
+		<-existing.done
+		if existing.err != nil {
+			return nil, existing.err
+		}
+		// Clone response and set caller's query ID.
+		resp := existing.resp.Copy()
+		resp.Id = query.Id
+		return resp, nil
+	}
+
+	// We own this query — execute and broadcast result.
+	resp, err := m.queryUpstream(domain, action, query)
+	result.resp = resp
+	result.err = err
+	close(result.done)
+	m.inflight.Delete(inflightKey)
+
+	if err != nil {
+		return nil, err
 	}
 
 	// 9. Cache DNS message
@@ -214,6 +224,44 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, error) {
 	}
 
 	return resp, nil
+}
+
+// queryUpstream sends a DNS query to the appropriate upstream (direct or proxy).
+func (m *Middleware) queryUpstream(domain string, action k2rule.Target, query *dns.Msg) (*dns.Msg, error) {
+	switch action {
+	case k2rule.TargetDirect:
+		if m.metrics != nil {
+			m.metrics.IncrDirect()
+		}
+		resp, err := m.directDNS.Query(query)
+		if err != nil {
+			if m.metrics != nil {
+				m.metrics.IncrError()
+			}
+			slog.Warn("DNS direct query failed", "domain", domain, "err", err)
+			return nil, err
+		}
+		slog.Debug("DNS routed direct", "domain", domain)
+		return resp, nil
+
+	case k2rule.TargetProxy:
+		if m.metrics != nil {
+			m.metrics.IncrProxy()
+		}
+		resp, err := m.proxyDNS.Query(query)
+		if err != nil {
+			if m.metrics != nil {
+				m.metrics.IncrError()
+			}
+			slog.Warn("DNS proxy query failed", "domain", domain, "err", err)
+			return nil, err
+		}
+		slog.Debug("DNS routed proxy", "domain", domain)
+		return resp, nil
+
+	default:
+		return nil, fmt.Errorf("unexpected routing action: %d", action)
+	}
 }
 
 // HandleDNSQuery processes a DNS query from L3 packets (TUN device).
@@ -355,29 +403,6 @@ func extractIPsFromResponse(resp *dns.Msg) []string {
 	}
 
 	return ips
-}
-
-// extractTTL extracts the minimum TTL from DNS response
-// Returns 300 seconds (5 minutes) as default if no answers
-func extractTTL(resp *dns.Msg) uint32 {
-	if len(resp.Answer) == 0 {
-		return 300 // Default 5 minutes
-	}
-
-	minTTL := resp.Answer[0].Header().Ttl
-	for _, answer := range resp.Answer {
-		ttl := answer.Header().Ttl
-		if ttl < minTTL {
-			minTTL = ttl
-		}
-	}
-
-	// Enforce minimum TTL of 60 seconds
-	if minTTL < 60 {
-		minTTL = 60
-	}
-
-	return minTTL
 }
 
 // createNXDOMAIN creates a DNS NXDOMAIN response

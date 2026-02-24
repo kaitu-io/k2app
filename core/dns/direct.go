@@ -57,7 +57,9 @@ func (c *DirectDNSClient) Query(query *dns.Msg) (*dns.Msg, error) {
 
 	var lastErr error
 
-	// Try each server until one succeeds
+	// Try each server until one succeeds.
+	// Any valid DNS response (including NXDOMAIN) is returned — only
+	// transport-level errors (timeout, connection refused) cause fallback.
 	for _, server := range c.servers {
 		resp, rtt, err := client.Exchange(query, server)
 		if err != nil {
@@ -66,14 +68,7 @@ func (c *DirectDNSClient) Query(query *dns.Msg) (*dns.Msg, error) {
 			continue
 		}
 
-		if resp.Rcode != dns.RcodeSuccess {
-			slog.Warn("direct DNS query returned error code", "server", server, "rcode", dns.RcodeToString[resp.Rcode])
-			lastErr = fmt.Errorf("DNS error: %s", dns.RcodeToString[resp.Rcode])
-			continue
-		}
-
-		slog.Debug("direct DNS query ok", "domain", extractDomain(query), "server", server, "rtt", rtt)
-
+		slog.Debug("direct DNS query ok", "domain", extractDomain(query), "server", server, "rtt", rtt, "rcode", dns.RcodeToString[resp.Rcode])
 		return resp, nil
 	}
 

@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"encoding/binary"
+	"io"
 	"net"
 
 	"github.com/kaitu-io/k2/core/dns"
@@ -8,14 +10,19 @@ import (
 )
 
 // dnsHandler wraps a ConnectionHandler to intercept DNS queries (port 53).
-// UDP packets destined for port 53 are handled locally by the DNS middleware
-// instead of being forwarded through the tunnel. TCP and non-DNS UDP pass through.
+// Both TCP and UDP packets destined for port 53 are handled locally by the
+// DNS middleware instead of being forwarded through the tunnel.
 type dnsHandler struct {
 	inner provider.ConnectionHandler
 	dns   *dns.Middleware
 }
 
 func (h *dnsHandler) HandleTCP(conn net.Conn, dest string) {
+	_, port, _ := net.SplitHostPort(dest)
+	if port == "53" && h.dns != nil {
+		h.serveDNSStream(conn)
+		return
+	}
 	h.inner.HandleTCP(conn, dest)
 }
 
@@ -41,5 +48,42 @@ func (h *dnsHandler) serveDNS(conn net.PacketConn) {
 			continue
 		}
 		conn.WriteTo(resp, addr)
+	}
+}
+
+// serveDNSStream handles DNS-over-TCP (RFC 1035 §4.2.2).
+// Each message is prefixed with a 2-byte big-endian length.
+func (h *dnsHandler) serveDNSStream(conn net.Conn) {
+	defer conn.Close()
+	for {
+		// Read 2-byte length prefix.
+		var length uint16
+		if err := binary.Read(conn, binary.BigEndian, &length); err != nil {
+			return
+		}
+		if length == 0 || length > 4096 {
+			return
+		}
+
+		// Read DNS message.
+		buf := make([]byte, length)
+		if _, err := io.ReadFull(conn, buf); err != nil {
+			return
+		}
+
+		resp, err := h.dns.HandleQuery(buf)
+		if err != nil {
+			continue
+		}
+
+		// Write 2-byte length prefix + response.
+		var respLen [2]byte
+		binary.BigEndian.PutUint16(respLen[:], uint16(len(resp)))
+		if _, err := conn.Write(respLen[:]); err != nil {
+			return
+		}
+		if _, err := conn.Write(resp); err != nil {
+			return
+		}
 	}
 }

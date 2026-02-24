@@ -162,7 +162,7 @@ func (e *Engine) Start(cfg Config) error {
 		// Desktop TUN mode.
 		prov = provider.NewTUNProvider(provider.ProviderConfig{
 			Mode:             "tun",
-			DNSServers:       computeDNSExclude(client),
+			RouteExcludeAddrs: computeDNSExclude(client),
 			InterfaceMonitor: cfg.InterfaceMonitor,
 			IPv4Address:      client.Tun.IPv4,
 			IPv6Address:      client.Tun.IPv6,

@@ -25,7 +25,7 @@ type ConnectionHandler interface {
 type ProviderConfig struct {
 	Mode           string       // "tun" (default), "proxy", or "tproxy"
 	FileDescriptor int          // 0 = create TUN; >0 = use existing FD (iOS/Android)
-	DNSServers     []netip.Addr // excluded from TUN route (anti-loop)
+	RouteExcludeAddrs []netip.Addr // IPs excluded from TUN routing (direct DNS, wire server)
 	MTU            int          // default 1400 (desktop), platform-aware on mobile
 	ProxyListen    string       // proxy mode: listen address (default "127.0.0.1:1080")
 	TProxyPort     int          // tproxy mode: local redirect port (default 12345)

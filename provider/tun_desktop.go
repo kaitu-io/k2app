@@ -70,18 +70,23 @@ func (p *TUNProvider) Start(ctx context.Context, handler ConnectionHandler) erro
 		Inet4Address:            []netip.Prefix{ipv4Prefix},
 		Inet6Address:            []netip.Prefix{ipv6Prefix},
 		AutoRoute:               true,
-		DNSServers:              p.cfg.DNSServers,
 		EXP_MultiPendingPackets: runtime.GOOS == "darwin" && p.cfg.MTU < 32768,
+		// DNSServers intentionally NOT set — sing-tun auto-derives TUN_IP.Next()
+		// which tells the OS to send DNS through TUN for Handler-level interception.
+		// On Windows: luid.SetDNS(TUN_IP.Next())
+		// On Linux:   resolvectl dns <tun> TUN_IP.Next()
+		// On macOS:   unused (AutoRoute captures all traffic)
 	}
 
-	// Exclude DNS servers from routing to prevent loops.
-	for _, dns := range p.cfg.DNSServers {
-		if dns.Is4() {
+	// Exclude direct DNS upstream IPs and wire server IPs from TUN routing.
+	// This prevents DirectDNSClient queries from looping back into the TUN.
+	for _, addr := range p.cfg.RouteExcludeAddrs {
+		if addr.Is4() {
 			tunOpts.Inet4RouteExcludeAddress = append(tunOpts.Inet4RouteExcludeAddress,
-				netip.PrefixFrom(dns, 32))
+				netip.PrefixFrom(addr, 32))
 		} else {
 			tunOpts.Inet6RouteExcludeAddress = append(tunOpts.Inet6RouteExcludeAddress,
-				netip.PrefixFrom(dns, 128))
+				netip.PrefixFrom(addr, 128))
 		}
 	}
 
