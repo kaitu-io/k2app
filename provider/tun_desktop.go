@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/sagernet/sing/common/control"
+
 	"github.com/sagernet/sing-tun"
 )
 
@@ -98,7 +100,11 @@ func (p *TUNProvider) Start(ctx context.Context, handler ConnectionHandler) erro
 	}
 
 	if p.cfg.FileDescriptor > 0 {
+		// NE / mobile FD path: platform already created TUN and manages routes.
+		// Skip Name (don't create new device) and AutoRoute (NE handles routing).
 		tunOpts.FileDescriptor = p.cfg.FileDescriptor
+		tunOpts.Name = ""
+		tunOpts.AutoRoute = false
 	}
 
 	tunIf, err := tun.New(tunOpts)
@@ -111,12 +117,17 @@ func (p *TUNProvider) Start(ctx context.Context, handler ConnectionHandler) erro
 		return fmt.Errorf("provider: start TUN: %w", err)
 	}
 
-	stack, err := tun.NewSystem(tun.StackOptions{
-		Context:    ctx,
-		Tun:        tunIf,
-		TunOptions: tunOpts,
-		UDPTimeout: 5 * time.Minute,
-		Handler:    &handlerAdapter{handler: handler},
+	// Use sing-tun's NewStack dispatcher (mirrors sing-box pattern):
+	//   IncludeAllNetworks=true (NE FD path) → gVisor (full userspace TCP/IP)
+	//   IncludeAllNetworks=false (daemon)     → Mixed (gVisor UDP + System TCP) or System
+	stack, err := tun.NewStack("", tun.StackOptions{
+		Context:            ctx,
+		Tun:                tunIf,
+		TunOptions:         tunOpts,
+		UDPTimeout:         5 * time.Minute,
+		Handler:            &handlerAdapter{handler: handler},
+		InterfaceFinder:    control.NewDefaultInterfaceFinder(),
+		IncludeAllNetworks: p.cfg.FileDescriptor > 0,
 	})
 	if err != nil {
 		tunIf.Close()

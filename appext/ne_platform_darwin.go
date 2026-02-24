@@ -122,13 +122,18 @@ func (p *nePlatform) interfaceName() string {
 // --- internal ---
 
 func (p *nePlatform) controlFunc() control.Func {
-	return control.BindToInterfaceFunc(p.finder, func(network, address string) (string, int, error) {
+	// Wrap BindToInterface0 directly instead of using BindToInterfaceFunc.
+	// When the monitor hasn't resolved the default interface yet (nil during
+	// the ~20ms startup window), return nil to skip binding — NECP handles
+	// NE socket bypass regardless. BindToInterfaceFunc with ("", -1) would
+	// error with "interface not found".
+	return func(network, address string, conn syscall.RawConn) error {
 		iface := p.ifaceMon.DefaultInterface()
 		if iface == nil {
-			return "", -1, nil
+			return nil // no interface yet — NECP auto-bypasses NE sockets
 		}
-		return iface.Name, iface.Index, nil
-	})
+		return control.BindToInterface0(p.finder, conn, network, address, iface.Name, iface.Index, false)
+	}
 }
 
 // neSlogAdapter bridges sing's logger to Go's slog.

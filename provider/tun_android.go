@@ -53,12 +53,15 @@ func (p *TUNProvider) Start(ctx context.Context, handler ConnectionHandler) erro
 		return fmt.Errorf("provider: create TUN from FD: %w", err)
 	}
 
-	stack, err := tun.NewSystem(tun.StackOptions{
-		Context:    ctx,
-		Tun:        tunIf,
-		TunOptions: tunOpts,
-		UDPTimeout: 5 * time.Minute,
-		Handler:    &handlerAdapter{handler: handler},
+	// Android VpnService: gVisor stack via IncludeAllNetworks (mirrors sing-box pattern).
+	// System stack's net.Listen() may not work reliably in VPN service sandbox.
+	stack, err := tun.NewStack("", tun.StackOptions{
+		Context:            ctx,
+		Tun:                tunIf,
+		TunOptions:         tunOpts,
+		UDPTimeout:         5 * time.Minute,
+		Handler:            &handlerAdapter{handler: handler},
+		IncludeAllNetworks: true,
 	})
 	if err != nil {
 		tunIf.Close()
