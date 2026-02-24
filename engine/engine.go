@@ -332,6 +332,8 @@ func (e *Engine) Stop() error {
 		e.cancel()
 		e.cancel = nil
 	}
+	// Close provider and transport first — this forces in-flight pipe/pipePacket
+	// goroutines to error out on the closed connections and exit.
 	if e.prov != nil {
 		e.prov.Close()
 		e.prov = nil
@@ -340,7 +342,13 @@ func (e *Engine) Stop() error {
 		e.tm.Close()
 		e.tm = nil
 	}
-	e.tunnel = nil
+	if e.tunnel != nil {
+		// Waits for all HandleTCP/HandleUDP goroutines to finish (wg.Wait).
+		// tunnel.Close also calls provider/dialer.Close internally but they're
+		// already closed above — double-close is safe for these implementations.
+		e.tunnel.Close()
+		e.tunnel = nil
+	}
 	e.client = nil
 	e.connectedAt = time.Time{}
 	e.paused = false
