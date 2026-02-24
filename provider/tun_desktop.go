@@ -87,6 +87,16 @@ func (p *TUNProvider) Start(ctx context.Context, handler ConnectionHandler) erro
 	// Pass interface monitor for TUN self-exclusion (prevents self-triggering).
 	if m, ok := p.cfg.InterfaceMonitor.(tun.DefaultInterfaceMonitor); ok {
 		tunOpts.InterfaceMonitor = m
+	} else if p.cfg.FileDescriptor > 0 {
+		// macOS System Extension: NE provides the TUN fd but no InterfaceMonitor.
+		// sing-tun's NativeTun.Start() unconditionally calls
+		// InterfaceMonitor.RegisterMyInterface() — nil causes a panic.
+		// Create a minimal monitor (not started — only RegisterMyInterface is needed).
+		netMon, _ := tun.NewNetworkUpdateMonitor(nil)
+		ifMon, _ := tun.NewDefaultInterfaceMonitor(netMon, nil, tun.DefaultInterfaceMonitorOptions{
+			UnderNetworkExtension: true,
+		})
+		tunOpts.InterfaceMonitor = ifMon
 	}
 
 	if p.cfg.FileDescriptor > 0 {

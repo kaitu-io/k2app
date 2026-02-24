@@ -145,11 +145,12 @@ func (e *Engine) Start(cfg Config) error {
 	// 6. Build provider.
 	var prov provider.Provider
 	if cfg.FileDescriptor >= 0 {
-		// Mobile: platform-provided TUN FD.
+		// Mobile / macOS sysext: platform-provided TUN FD.
 		prov = provider.NewTUNProvider(provider.ProviderConfig{
-			FileDescriptor: cfg.FileDescriptor,
-			IPv4Address:    client.Tun.IPv4,
-			IPv6Address:    client.Tun.IPv6,
+			FileDescriptor:   cfg.FileDescriptor,
+			InterfaceMonitor: cfg.InterfaceMonitor,
+			IPv4Address:      client.Tun.IPv4,
+			IPv6Address:      client.Tun.IPv6,
 		})
 	} else if client.Mode == "proxy" {
 		// Desktop proxy mode.
