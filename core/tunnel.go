@@ -81,6 +81,7 @@ func (t *ClientTunnel) HandleTCP(conn net.Conn, dest string) {
 	defer conn.Close()
 
 	action := t.route(dest)
+	slog.Debug("tunnel: route", "dest", dest, "action", action)
 
 	switch action {
 	case k2rule.TargetDirect:

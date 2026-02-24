@@ -22,7 +22,8 @@ func init() {
 // lifecycle management to engine.Engine, exposing only the gomobile-compatible
 // API surface (string, int, int64 params only).
 type Engine struct {
-	inner *engine.Engine
+	inner       *engine.Engine
+	platformNet *nePlatform // Darwin NE: owns monitors, closed on Stop()
 }
 
 // NewEngine creates a new Engine in the disconnected state.
@@ -96,7 +97,28 @@ func (e *Engine) Start(configJSON string, fd int, cfg *EngineConfig) error {
 				return ok
 			},
 		}
+	} else if isNetworkExtension {
+		// Darwin NE: unified platform networking (DirectDialer + NetworkMonitor + InterfaceMonitor).
+		// All three roles share one DefaultInterfaceMonitor with UnderNetworkExtension: true.
+		if pn, err := newNEPlatform(); err == nil && pn != nil {
+			ecfg.DirectDialer = pn
+			ecfg.NetworkMonitor = pn
+			ecfg.InterfaceMonitor = pn.InterfaceMonitor()
+			e.platformNet = pn
+			slog.Info("appext: NE platform networking active", "interface", pn.interfaceName())
+		} else if err != nil {
+			slog.Warn("appext: NE platform init failed, relying on NECP", "err", err)
+		}
 	}
+
+	slog.Info("appext: start",
+		"server", clientCfg.Server,
+		"global", clientCfg.Rule.Global,
+		"hasDirectDialer", ecfg.DirectDialer != nil,
+		"hasNetworkMonitor", ecfg.NetworkMonitor != nil,
+		"hasInterfaceMonitor", ecfg.InterfaceMonitor != nil,
+		"isNE", isNetworkExtension)
+
 	// Note: once engine.Start is called, the FD may be consumed by sing-tun.
 	// We do NOT close it on error — sing-tun handles cleanup if it took ownership,
 	// and a single leaked FD on early failure is harmless vs. a double-close risk.
@@ -112,7 +134,11 @@ func (e *Engine) Wake() { e.inner.Wake() }
 
 // Stop tears down the tunnel and returns the engine to disconnected.
 func (e *Engine) Stop() error {
-	return e.inner.Stop()
+	err := e.inner.Stop() // engine.Stop() closes NetworkMonitor (nePlatform) internally
+	if e.platformNet != nil {
+		e.platformNet = nil
+	}
+	return err
 }
 
 // OnNetworkChanged notifies the engine of a network change.
