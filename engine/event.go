@@ -13,4 +13,5 @@ const (
 	StateDisconnected = "disconnected"
 	StateConnecting   = "connecting"
 	StateConnected    = "connected"
+	StatePaused       = "paused" // handler-only transient state; engine.state stays "connected"
 )

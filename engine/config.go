@@ -40,4 +40,9 @@ type Config struct {
 	// used by NetworkMonitor, so the TUN device is excluded from triggering
 	// network change events. Opaque to engine — provider does type assertion.
 	InterfaceMonitor any
+
+	// NetworkExtension indicates the tunnel runs under Apple's NEPacketTunnelProvider.
+	// When true, TUN MTU is capped at 4064 to avoid a known Apple kernel performance bug.
+	// Set by appext on Darwin platforms. Always false on daemon path.
+	NetworkExtension bool
 }

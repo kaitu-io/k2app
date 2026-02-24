@@ -65,12 +65,13 @@ func (p *TUNProvider) Start(ctx context.Context, handler ConnectionHandler) erro
 	}
 
 	tunOpts := tun.Options{
-		Name:         defaultTunName(),
-		MTU:          uint32(p.cfg.MTU),
-		Inet4Address: []netip.Prefix{ipv4Prefix},
-		Inet6Address: []netip.Prefix{ipv6Prefix},
-		AutoRoute:    true,
-		DNSServers:   p.cfg.DNSServers,
+		Name:                    defaultTunName(),
+		MTU:                     uint32(p.cfg.MTU),
+		Inet4Address:            []netip.Prefix{ipv4Prefix},
+		Inet6Address:            []netip.Prefix{ipv6Prefix},
+		AutoRoute:               true,
+		DNSServers:              p.cfg.DNSServers,
+		EXP_MultiPendingPackets: runtime.GOOS == "darwin" && p.cfg.MTU < 32768,
 	}
 
 	// Exclude DNS servers from routing to prevent loops.

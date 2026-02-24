@@ -17,6 +17,7 @@ const (
 	StateDisconnected = engine.StateDisconnected
 	StateConnecting   = engine.StateConnecting
 	StateConnected    = engine.StateConnected
+	StatePaused       = engine.StatePaused
 )
 
 // eventBridge adapts appext.EventHandler to engine.EventHandler.

@@ -42,10 +42,11 @@ func (p *TUNProvider) Start(ctx context.Context, handler ConnectionHandler) erro
 	}
 
 	tunOpts := tun.Options{
-		MTU:            uint32(p.cfg.MTU),
-		FileDescriptor: p.cfg.FileDescriptor,
-		Inet4Address:   []netip.Prefix{ipv4Prefix},
-		Inet6Address:   []netip.Prefix{ipv6Prefix},
+		MTU:                     uint32(p.cfg.MTU),
+		FileDescriptor:          p.cfg.FileDescriptor,
+		Inet4Address:            []netip.Prefix{ipv4Prefix},
+		Inet6Address:            []netip.Prefix{ipv6Prefix},
+		EXP_MultiPendingPackets: p.cfg.MTU < 32768,
 	}
 
 	tunIf, err := tun.New(tunOpts)
@@ -72,7 +73,11 @@ func (p *TUNProvider) Start(ctx context.Context, handler ConnectionHandler) erro
 
 	p.tunIf = tunIf
 	p.stack = stack
-	p.name = "utun-ios"
+	if name, err := tunIf.Name(); err == nil {
+		p.name = name
+	} else {
+		p.name = "utun-ios"
+	}
 	return nil
 }
 

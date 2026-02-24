@@ -26,19 +26,29 @@ type ProviderConfig struct {
 	Mode           string       // "tun" (default), "proxy", or "tproxy"
 	FileDescriptor int          // 0 = create TUN; >0 = use existing FD (iOS/Android)
 	DNSServers     []netip.Addr // excluded from TUN route (anti-loop)
-	MTU            int          // default 1400
+	MTU            int          // default 1400 (desktop), platform-aware on mobile
 	ProxyListen    string       // proxy mode: listen address (default "127.0.0.1:1080")
 	TProxyPort     int          // tproxy mode: local redirect port (default 12345)
 	IPv4Address    string       // TUN IPv4 CIDR, e.g. "10.0.0.2/24". Empty = platform default.
 	IPv6Address    string       // TUN IPv6 CIDR, e.g. "fd00::2/128". Empty = platform default.
+
+	// NetworkExtension indicates the tunnel runs under Apple's NEPacketTunnelProvider.
+	// When true, MTU is capped at NetworkExtensionMTU to avoid a known kernel perf bug.
+	NetworkExtension bool
 
 	// InterfaceMonitor is a sing-tun DefaultInterfaceMonitor for TUN self-exclusion.
 	// Passed from engine.Config. Type assertion done in platform-specific provider.
 	InterfaceMonitor any
 }
 
-// DefaultMTU is optimized for QUIC overhead (1500 - 100).
-const DefaultMTU = 1400
+const (
+	// DefaultMTU is optimized for QUIC overhead (1500 - 100). Used on desktop.
+	DefaultMTU = 1400
+
+	// NetworkExtensionMTU is the Apple NetworkExtension performance ceiling.
+	// MTU > 4064 (4096 - UTUN_IF_HEADROOM_SIZE) causes severe throughput degradation.
+	NetworkExtensionMTU = 4064
+)
 
 // SetDefaults fills in zero-value fields with defaults.
 func (c *ProviderConfig) SetDefaults() {
@@ -46,7 +56,20 @@ func (c *ProviderConfig) SetDefaults() {
 		c.Mode = "tun"
 	}
 	if c.MTU == 0 {
-		c.MTU = DefaultMTU
+		switch {
+		case c.NetworkExtension:
+			c.MTU = NetworkExtensionMTU
+		case platformMaxMTU > 0:
+			c.MTU = platformMaxMTU
+		default:
+			c.MTU = DefaultMTU
+		}
+	}
+	// Cap to platform limits regardless of explicit value.
+	if c.NetworkExtension && c.MTU > NetworkExtensionMTU {
+		c.MTU = NetworkExtensionMTU
+	} else if platformMaxMTU > 0 && c.MTU > platformMaxMTU {
+		c.MTU = platformMaxMTU
 	}
 	if c.ProxyListen == "" {
 		c.ProxyListen = "127.0.0.1:1080"

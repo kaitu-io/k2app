@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/engine"
@@ -55,6 +56,17 @@ func (e *Engine) Start(configJSON string, fd int, cfg *EngineConfig) error {
 		return fmt.Errorf("engine: EngineConfig is required")
 	}
 
+	// Duplicate the TUN FD so k2 owns it independently of the native wrapper.
+	// The native side (NEPacketTunnelProvider / VpnService) may close its copy
+	// at any time; dup isolates us from that lifecycle.
+	if fd > 0 {
+		newFd, err := syscall.Dup(fd)
+		if err != nil {
+			return fmt.Errorf("dup TUN fd: %w", err)
+		}
+		fd = newFd
+	}
+
 	var clientCfg config.ClientConfig
 	if err := json.Unmarshal([]byte(configJSON), &clientCfg); err != nil {
 		return fmt.Errorf("parse config: %w", err)
@@ -67,25 +79,36 @@ func (e *Engine) Start(configJSON string, fd int, cfg *EngineConfig) error {
 	}
 
 	ecfg := engine.Config{
-		Client:         &clientCfg,
-		FileDescriptor: fd,
+		Client:           &clientCfg,
+		FileDescriptor:   fd,
+		NetworkExtension: isNetworkExtension,
 	}
 	if cfg.SocketProtector != nil {
 		p := cfg.SocketProtector
 		ecfg.DirectDialer = &protectedDialer{
-			protect: func(fd int) bool {
-				if fd < 0 || fd > math.MaxInt32 {
-					slog.Warn("socket protect: fd out of int32 range", "fd", fd)
+			protect: func(socketFd int) bool {
+				if socketFd < 0 || socketFd > math.MaxInt32 {
+					slog.Warn("socket protect: fd out of int32 range", "fd", socketFd)
 					return false
 				}
-				ok := p.Protect(int32(fd))
-				slog.Debug("appext: SocketProtector.Protect()", "fd", fd, "ok", ok)
+				ok := p.Protect(int32(socketFd))
+				slog.Debug("appext: SocketProtector.Protect()", "fd", socketFd, "ok", ok)
 				return ok
 			},
 		}
 	}
+	// Note: once engine.Start is called, the FD may be consumed by sing-tun.
+	// We do NOT close it on error — sing-tun handles cleanup if it took ownership,
+	// and a single leaked FD on early failure is harmless vs. a double-close risk.
 	return e.inner.Start(ecfg)
 }
+
+// Pause releases wire transport resources for memory conservation (iOS).
+// The provider and gVisor stack remain alive. Call Wake() to restore.
+func (e *Engine) Pause() { e.inner.Pause() }
+
+// Wake restores the engine after a Pause, forcing fresh transport connections.
+func (e *Engine) Wake() { e.inner.Wake() }
 
 // Stop tears down the tunnel and returns the engine to disconnected.
 func (e *Engine) Stop() error {

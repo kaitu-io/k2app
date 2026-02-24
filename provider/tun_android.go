@@ -72,7 +72,11 @@ func (p *TUNProvider) Start(ctx context.Context, handler ConnectionHandler) erro
 
 	p.tunIf = tunIf
 	p.stack = stack
-	p.name = "tun-android"
+	if name, err := tunIf.Name(); err == nil {
+		p.name = name
+	} else {
+		p.name = "tun-android"
+	}
 	return nil
 }
 

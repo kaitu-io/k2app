@@ -26,6 +26,7 @@ import (
 type Engine struct {
 	mu          sync.Mutex
 	state       string
+	paused      bool
 	client      *config.ClientConfig
 	connectedAt time.Time
 	lastError   *EngineError
@@ -139,6 +140,7 @@ func (e *Engine) Start(cfg Config) error {
 		// Mobile / macOS sysext: platform-provided TUN FD.
 		prov = provider.NewTUNProvider(provider.ProviderConfig{
 			FileDescriptor:   cfg.FileDescriptor,
+			NetworkExtension: cfg.NetworkExtension,
 			InterfaceMonitor: cfg.InterfaceMonitor,
 			IPv4Address:      client.Tun.IPv4,
 			IPv6Address:      client.Tun.IPv6,
@@ -248,7 +250,7 @@ func (e *Engine) Start(cfg Config) error {
 // next dial attempt, avoiding dead cached connections.
 func (e *Engine) OnNetworkChanged() {
 	e.mu.Lock()
-	if e.state != StateConnected {
+	if e.state != StateConnected || e.paused {
 		e.mu.Unlock()
 		return
 	}
@@ -267,6 +269,47 @@ func (e *Engine) OnNetworkChanged() {
 	}
 
 	// Notify handler we're back to connected.
+	if handler != nil {
+		handler.OnStateChange(StateConnected)
+	}
+}
+
+// Pause releases wire transport resources for memory conservation (iOS).
+// The provider and gVisor stack remain alive. Call Wake() to restore.
+func (e *Engine) Pause() {
+	e.mu.Lock()
+	if e.state != StateConnected || e.paused {
+		e.mu.Unlock()
+		return
+	}
+	e.paused = true
+	handler := e.handler
+	tm := e.tm
+	e.mu.Unlock()
+
+	if tm != nil {
+		tm.ResetConnections()
+	}
+	if handler != nil {
+		handler.OnStateChange(StatePaused)
+	}
+}
+
+// Wake restores the engine after a Pause, forcing fresh transport connections.
+func (e *Engine) Wake() {
+	e.mu.Lock()
+	if e.state != StateConnected || !e.paused {
+		e.mu.Unlock()
+		return
+	}
+	e.paused = false
+	handler := e.handler
+	tm := e.tm
+	e.mu.Unlock()
+
+	if tm != nil {
+		tm.ResetConnections()
+	}
 	if handler != nil {
 		handler.OnStateChange(StateConnected)
 	}
@@ -300,6 +343,7 @@ func (e *Engine) Stop() error {
 	e.tunnel = nil
 	e.client = nil
 	e.connectedAt = time.Time{}
+	e.paused = false
 
 	e.setState(StateDisconnected)
 	return nil
