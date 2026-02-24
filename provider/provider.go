@@ -42,8 +42,11 @@ type ProviderConfig struct {
 }
 
 const (
-	// DefaultMTU is optimized for QUIC overhead (1500 - 100). Used on desktop.
-	DefaultMTU = 1400
+	// DefaultMTU for the TUN interface on desktop. Aligned with sing-box: TUN MTU is
+	// independent of wire (QUIC/TCP) MTU. A large TUN MTU reduces IP fragmentation
+	// and system calls in the gVisor/system stack. Wire transports manage their own
+	// packet sizes independently.
+	DefaultMTU = 65535
 
 	// NetworkExtensionMTU is the Apple NetworkExtension performance ceiling.
 	// MTU > 4064 (4096 - UTUN_IF_HEADROOM_SIZE) causes severe throughput degradation.

@@ -61,6 +61,7 @@ func (p *TUNProvider) Start(ctx context.Context, handler ConnectionHandler) erro
 		TunOptions:         tunOpts,
 		UDPTimeout:         5 * time.Minute,
 		Handler:            &handlerAdapter{handler: handler},
+		Logger:             &slogTunLogger{},
 		IncludeAllNetworks: true,
 	})
 	if err != nil {

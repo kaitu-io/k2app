@@ -2,6 +2,8 @@ package provider
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
 	"net"
 	"time"
 
@@ -79,3 +81,14 @@ func (c *singPacketConn) LocalAddr() net.Addr                { return c.conn.Loc
 func (c *singPacketConn) SetDeadline(t time.Time) error      { return c.conn.SetDeadline(t) }
 func (c *singPacketConn) SetReadDeadline(t time.Time) error  { return c.conn.SetReadDeadline(t) }
 func (c *singPacketConn) SetWriteDeadline(t time.Time) error { return c.conn.SetWriteDeadline(t) }
+
+// slogTunLogger adapts Go's slog to sing's logger.Logger interface.
+type slogTunLogger struct{}
+
+func (l *slogTunLogger) Trace(args ...any) { slog.Debug("[tun] " + fmt.Sprint(args...)) }
+func (l *slogTunLogger) Debug(args ...any) { slog.Debug("[tun] " + fmt.Sprint(args...)) }
+func (l *slogTunLogger) Info(args ...any)  { slog.Info("[tun] " + fmt.Sprint(args...)) }
+func (l *slogTunLogger) Warn(args ...any)  { slog.Warn("[tun] " + fmt.Sprint(args...)) }
+func (l *slogTunLogger) Error(args ...any) { slog.Error("[tun] " + fmt.Sprint(args...)) }
+func (l *slogTunLogger) Fatal(args ...any) { slog.Error("[tun] FATAL: " + fmt.Sprint(args...)) }
+func (l *slogTunLogger) Panic(args ...any) { slog.Error("[tun] PANIC: " + fmt.Sprint(args...)) }

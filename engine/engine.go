@@ -447,7 +447,21 @@ func computeDNSExclude(client *config.ClientConfig) []netip.Addr {
 		}
 	}
 
-	// Resolve server host to IPs for route exclusion.
+	// Extract IPs directly from wire URL ip=/ip6= parameters first.
+	// This is reliable even before DNS is working (which matters since TUN
+	// hasn't started routing yet when this runs).
+	if u, err := url.Parse(client.Server); err == nil {
+		q := u.Query()
+		for _, key := range []string{"ip", "ip6"} {
+			if raw := q.Get(key); raw != "" {
+				if addr, err := netip.ParseAddr(raw); err == nil {
+					addrs = append(addrs, addr)
+				}
+			}
+		}
+	}
+
+	// Also try resolving server hostname (may fail if DNS not ready).
 	if serverHost := extractServerHost(client.Server); serverHost != "" {
 		if ips, err := net.LookupHost(serverHost); err == nil {
 			for _, ip := range ips {

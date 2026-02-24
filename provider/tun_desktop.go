@@ -72,6 +72,7 @@ func (p *TUNProvider) Start(ctx context.Context, handler ConnectionHandler) erro
 		Inet4Address:            []netip.Prefix{ipv4Prefix},
 		Inet6Address:            []netip.Prefix{ipv6Prefix},
 		AutoRoute:               true,
+		StrictRoute:             true,
 		EXP_MultiPendingPackets: runtime.GOOS == "darwin" && p.cfg.MTU < 32768,
 		// DNSServers intentionally NOT set — sing-tun auto-derives TUN_IP.Next()
 		// which tells the OS to send DNS through TUN for Handler-level interception.
@@ -107,25 +108,23 @@ func (p *TUNProvider) Start(ctx context.Context, handler ConnectionHandler) erro
 		tunOpts.AutoRoute = false
 	}
 
+	// Step 1: Create TUN device (FD ready, but routes not yet set).
 	tunIf, err := tun.New(tunOpts)
 	if err != nil {
 		return fmt.Errorf("provider: create TUN: %w", err)
 	}
 
-	if err := tunIf.Start(); err != nil {
-		tunIf.Close()
-		return fmt.Errorf("provider: start TUN: %w", err)
-	}
-
+	// Step 2: Create stack (TCP listener not yet bound).
 	// Use sing-tun's NewStack dispatcher (mirrors sing-box pattern):
 	//   IncludeAllNetworks=true (NE FD path) → gVisor (full userspace TCP/IP)
-	//   IncludeAllNetworks=false (daemon)     → Mixed (gVisor UDP + System TCP) or System
+	//   IncludeAllNetworks=false (daemon)     → Mixed (gVisor UDP + System TCP)
 	stack, err := tun.NewStack("", tun.StackOptions{
 		Context:            ctx,
 		Tun:                tunIf,
 		TunOptions:         tunOpts,
 		UDPTimeout:         5 * time.Minute,
 		Handler:            &handlerAdapter{handler: handler},
+		Logger:             &slogTunLogger{},
 		InterfaceFinder:    control.NewDefaultInterfaceFinder(),
 		IncludeAllNetworks: p.cfg.FileDescriptor > 0,
 	})
@@ -134,9 +133,18 @@ func (p *TUNProvider) Start(ctx context.Context, handler ConnectionHandler) erro
 		return fmt.Errorf("provider: create stack: %w", err)
 	}
 
+	// Step 3: Start stack (TCP listener binds, tunLoop starts reading packets).
 	if err := stack.Start(); err != nil {
 		tunIf.Close()
 		return fmt.Errorf("provider: start stack: %w", err)
+	}
+
+	// Step 4: Start TUN interface (sets system routes → traffic enters TUN).
+	// Must be AFTER stack.Start() so incoming packets have a ready handler.
+	if err := tunIf.Start(); err != nil {
+		stack.Close()
+		tunIf.Close()
+		return fmt.Errorf("provider: start TUN: %w", err)
 	}
 
 	p.tunIf = tunIf
