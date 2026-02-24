@@ -162,7 +162,14 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 // Redirect stderr to a file so we can capture Go panic output
                 let stderrPath = (engineCfg.cacheDir as NSString).deletingLastPathComponent + "/go_stderr.log"
                 NSLog("[KaituTunnel] Redirecting stderr to: %@", stderrPath)
-                freopen(stderrPath, "w", stderr)
+                let fp = freopen(stderrPath, "w", stderr)
+                NSLog("[KaituTunnel] freopen result: %@", fp != nil ? "ok" : "FAILED")
+
+                // Diagnostic: dump exact configJSON to App Group for post-mortem
+                let diagPath = (engineCfg.cacheDir as NSString).deletingLastPathComponent + "/diag_configJSON.txt"
+                try? configJSON.write(toFile: diagPath, atomically: true, encoding: .utf8)
+                NSLog("[KaituTunnel] configJSON first 200 chars: %@", String(configJSON.prefix(200)))
+                NSLog("[KaituTunnel] configJSON len=%d, contains k2v5=%@", configJSON.count, configJSON.contains("k2v5") ? "YES" : "NO")
 
                 NSLog("[KaituTunnel] Calling engine.start(fd=%d)", fd)
                 try self?.engine?.start(configJSON, fd: Int(fd), cfg: engineCfg)
@@ -182,10 +189,9 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 
     private func buildNetworkSettings(from config: ClientConfigSubset?) -> NEPacketTunnelNetworkSettings {
-        // IPv4: parse from config or use defaults
-        let (ipv4Addr, ipv4Mask) = parseIPv4CIDR(config?.tun?.ipv4 ?? "10.0.0.2/24") ?? ("10.0.0.2", "255.255.255.0")
-        // IPv6: parse from config or use defaults
-        let (ipv6Addr, ipv6Prefix) = parseIPv6CIDR(config?.tun?.ipv6 ?? "fd00::2/64") ?? ("fd00::2", 64)
+        // IPv4/IPv6: parse from config or use defaults aligned with Go config.DefaultTunIPv4/IPv6.
+        let (ipv4Addr, ipv4Mask) = parseIPv4CIDR(config?.tun?.ipv4 ?? "198.18.0.7/15") ?? ("198.18.0.7", "254.0.0.0")
+        let (ipv6Addr, ipv6Prefix) = parseIPv6CIDR(config?.tun?.ipv6 ?? "fdfe:dcba:9876::7/64") ?? ("fdfe:dcba:9876::7", 64)
 
         let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "10.0.0.1")
 

@@ -81,4 +81,4 @@ fi
 # =============================================================================
 
 echo "[INFO] Starting k2s with config: $CONFIG_FILE"
-exec ./k2s run -s "$CONFIG_FILE"
+exec ./k2s -c "$CONFIG_FILE"
