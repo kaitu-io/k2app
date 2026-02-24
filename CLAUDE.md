@@ -113,7 +113,7 @@ Platform Shell (daemon/appext) assembles `engine.Config` with platform-specific 
 
 ## Data Flow
 
-- DNS (all TUN): App → TUN → gVisor → dnsHandler (port 53) → Middleware.HandleQuery → Cache/Filter/k2rule/TmpRule → Upstream
+- DNS (all TUN): App → TUN → gVisor → dnsHandler (port 53 TCP+UDP) → Middleware.HandleQuery → Cache/Filter/k2rule/dedup → Upstream
 - Traffic: TUN → gVisor stack → ConnectionHandler → Router → Wire (QUIC/TCP-WS) → Server
 - Server: Wire → Auth → AcceptTCP/ServeUDP → net.Dial → Target
 - Control: CLI → HTTP 127.0.0.1:1777 → Daemon → Engine
@@ -135,6 +135,8 @@ Platform Shell (daemon/appext) assembles `engine.Config` with platform-specific 
 - EC CA (`wire/kaitu_ca.pem`, disguised as DigiCert) can sign both RSA and EC server certs
 - `tun_desktop.go` build tag: `(darwin && !ios) || (linux && !android) || windows` — must exclude android/ios
 - tproxy provider (Linux only) manages nftables rules — cleanup on Close() is critical
+- `tun.Options.DNSServers` must NOT be set — it configures OS DNS settings, not packet interception. sing-tun auto-derives `TUN_IP.Next()`. DNS hijack is application-level (dnsHandler checks port 53)
+- `ProviderConfig.RouteExcludeAddrs` (NOT DNSServers) excludes IPs from TUN routing — prevents DirectDNSClient query loops
 
 ## Dependencies
 

@@ -24,11 +24,13 @@ Platform Shell (daemon/appext)
 
 ## State Machine
 
-3 states: `disconnected` → `connecting` → `connected` → `disconnected`
+4 states: `disconnected`, `connecting`, `connected`, `paused`
 
 - `Start()`: disconnected → connecting → connected (or disconnected on error)
-- `Stop()`: any → disconnected (idempotent)
-- `OnNetworkChanged()`: connected → reconnecting → connected (resets wire transport connections)
+- `Stop()`: any → disconnected (idempotent, resets `paused`)
+- `OnNetworkChanged()`: connected (not paused) → reconnecting → connected (resets wire transports)
+- `Pause()`: connected → paused (releases wire transports, provider stays alive — iOS memory pressure)
+- `Wake()`: paused → connected (forces fresh wire transport connections)
 - `fail()`: any → disconnected + classified error
 
 ## Error Classification (error.go)
@@ -56,6 +58,7 @@ HTTP-aligned error codes for frontend consumption:
 | `DirectDialer` | daemon.directDialer | protectedDialer (Android) / nil (iOS/macOS) | nil |
 | `NetworkMonitor` | sing-tun DefaultInterfaceMonitor | nil (platform calls directly) | nil |
 | `InterfaceMonitor` | same sing-tun instance | nil | nil |
+| `NetworkExtension` | false | true (Darwin) / false (Android) | false |
 
 ## Files
 
@@ -63,7 +66,7 @@ HTTP-aligned error codes for frontend consumption:
 - `config.go` — `Config` struct (platform-unified tunnel parameters, uses `wire.DirectDialer` interface)
 - `event.go` — `EventHandler` interface, state constants
 - `error.go` — `EngineError`, `ClassifyError` (HTTP-aligned error codes)
-- `dns_handler.go` — `dnsHandler` (port 53 interception wrapper)
+- `dns_handler.go` — `dnsHandler` (port 53 TCP+UDP interception, RFC 1035 TCP framing)
 - `network.go` — `NetworkChangeNotifier` interface
 
 ## Testing
