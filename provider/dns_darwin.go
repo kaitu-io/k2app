@@ -228,13 +228,55 @@ import "C"
 import (
 	"fmt"
 	"log/slog"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 	"unsafe"
 )
+
+// dnsServiceFile returns the path to the file that persists the overridden
+// service ID across crashes. Used to clean stale Setup:/ keys on restart.
+func dnsServiceFile() string {
+	if os.Getuid() == 0 {
+		return "/var/run/k2-dns-service"
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		return filepath.Join(home, ".config", "k2", "dns-service")
+	}
+	return filepath.Join(os.TempDir(), "k2-dns-service")
+}
+
+// CleanupStaleDNSOverride removes any leftover Setup:/ DNS key from a
+// previous crash. Called at daemon startup before tunnel connects.
+func CleanupStaleDNSOverride() {
+	path := dnsServiceFile()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return // no saved state, nothing to clean
+	}
+	serviceID := strings.TrimSpace(string(data))
+	if serviceID == "" {
+		os.Remove(path)
+		return
+	}
+
+	cid := C.CString(serviceID)
+	defer C.free(unsafe.Pointer(cid))
+
+	cstr := C.k2GetSetupDNS(cid)
+	if cstr != nil {
+		C.free(unsafe.Pointer(cstr))
+		C.k2RemoveSetupDNS(cid)
+		flushDNSCache()
+		slog.Info("provider: cleaned stale DNS override from previous crash", "service", serviceID)
+	}
+	os.Remove(path)
+}
 
 // dnsOverride manages macOS system DNS to point at the TUN address.
 //
@@ -289,7 +331,23 @@ func (d *dnsOverride) set() error {
 	cid := C.CString(d.serviceID)
 	defer C.free(unsafe.Pointer(cid))
 
-	// Clean up stale Setup:/ key from previous crash (if any).
+	// Clean stale Setup:/ key from a DIFFERENT service (crash + network switch).
+	savedPath := dnsServiceFile()
+	if data, err := os.ReadFile(savedPath); err == nil {
+		oldSvc := strings.TrimSpace(string(data))
+		if oldSvc != "" && oldSvc != d.serviceID {
+			oldID := C.CString(oldSvc)
+			cstr := C.k2GetSetupDNS(oldID)
+			if cstr != nil {
+				C.free(unsafe.Pointer(cstr))
+				C.k2RemoveSetupDNS(oldID)
+				slog.Info("provider: cleaned stale DNS override from different service", "old", oldSvc)
+			}
+			C.free(unsafe.Pointer(oldID))
+		}
+	}
+
+	// Clean stale Setup:/ key on current service (crash, same service).
 	cstr := C.k2GetSetupDNS(cid)
 	if cstr != nil {
 		stale := C.GoString(cstr)
@@ -315,6 +373,12 @@ func (d *dnsOverride) set() error {
 	if ret := C.k2SetSetupDNS(cid, cs); ret != 0 {
 		return fmt.Errorf("SCDynamicStoreSetValue failed: %d", ret)
 	}
+
+	// Persist service ID for crash recovery.
+	if dir := filepath.Dir(savedPath); dir != "" {
+		os.MkdirAll(dir, 0o755)
+	}
+	os.WriteFile(savedPath, []byte(d.serviceID), 0o644)
 
 	flushDNSCache()
 	slog.Info("provider: macOS DNS override set", "dns", d.tunDNS, "orig", d.origDNS, "service", d.serviceID)
@@ -357,6 +421,9 @@ func (d *dnsOverride) reapply() {
 		slog.Info("provider: primary service changed",
 			"old", d.serviceID, "new", newSvc, "origDNS", d.origDNS)
 		d.serviceID = newSvc
+
+		// Update saved file for crash recovery.
+		os.WriteFile(dnsServiceFile(), []byte(newSvc), 0o644)
 	}
 
 	// Check if Setup:/ DNS is still ours.
@@ -409,6 +476,7 @@ func (d *dnsOverride) stop() {
 		defer C.free(unsafe.Pointer(cid))
 		C.k2RemoveSetupDNS(cid)
 	}
+	os.Remove(dnsServiceFile())
 	flushDNSCache()
 	slog.Info("provider: macOS DNS override removed", "restored", d.origDNS)
 }

@@ -2,6 +2,9 @@
 
 package provider
 
+// CleanupStaleDNSOverride is a no-op on non-macOS platforms.
+func CleanupStaleDNSOverride() {}
+
 // dnsOverride is a no-op on non-macOS platforms.
 // Linux: sing-tun sets DNS via resolvectl.
 // Windows: sing-tun sets DNS via luid.SetDNS.

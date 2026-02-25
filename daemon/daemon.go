@@ -13,6 +13,7 @@ import (
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/engine"
+	"github.com/kaitu-io/k2/provider"
 )
 
 // DefaultAddr is the daemon HTTP listen address.
@@ -84,6 +85,9 @@ func (d *Daemon) Run(ctx context.Context, listenAddr string) error {
 		listenAddr = DefaultAddr
 	}
 	slog.Info("k2 daemon starting", "addr", listenAddr)
+
+	// Clean stale DNS override from previous crash (kill -9, power loss).
+	provider.CleanupStaleDNSOverride()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ping", d.handlePing)
