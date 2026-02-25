@@ -162,21 +162,10 @@ function computeDerivedState(state: VPNState) {
 // ============ Initialize ============
 
 export function initializeVPNStore(): () => void {
-  console.info('[VPNStore] 启动状态轮询');
-
   const handleStatusChange = (newStatus: StatusResponseData) => {
     const { localState, status: currentStatus } = useVPNStore.getState();
     const currentState = (currentStatus?.state as ServiceState) || 'disconnected';
     const backendState = newStatus.state as ServiceState;
-
-    // 注意：认证错误处理已移至 k2api 统一处理
-    // VPN 状态中的 error 不再触发认证流程
-
-    // ============ Service 版本检测 ============
-    // 检测 app 版本与 service 版本是否匹配（macOS 更新后 service 可能未重启）
-    // REMOVED: All version check logic moved to Rust (src-tauri/src/main.rs)
-    // Tauri now handles version checking on startup via ensure_service_running()
-    // which calls admin_reinstall_service ('service install') if needed
 
     // 防抖逻辑
     if (shouldDebounce(currentState, backendState)) {
@@ -212,6 +201,44 @@ export function initializeVPNStore(): () => void {
       useVPNStore.setState({ localState: null });
     }
   };
+
+  // Event-driven mode: desktop/mobile with SSE or native events
+  if (window._k2?.onServiceStateChange && window._k2?.onStatusChange) {
+    console.info('[VPNStore] Event-driven mode (SSE)');
+
+    const unsubService = window._k2.onServiceStateChange((available) => {
+      console.debug('[VPNStore] service-state-changed:', available);
+      useVPNStore.getState().setServiceFailed(!available);
+    });
+
+    const unsubStatus = window._k2.onStatusChange((status) => {
+      console.debug('[VPNStore] vpn-status-changed:', status.state);
+      handleStatusChange(status);
+      useVPNStore.getState().setServiceFailed(false);
+    });
+
+    // Bridge initial gap: one-time status query before first SSE event
+    window._k2.run('status').then((resp: any) => {
+      if (resp.code === 0 && resp.data) {
+        handleStatusChange(resp.data);
+        useVPNStore.getState().setServiceFailed(false);
+      }
+    }).catch(() => {
+      // Service may not be running yet — SSE will handle it
+    });
+
+    return () => {
+      unsubService();
+      unsubStatus();
+      [optimisticTimer, debounceTimer].forEach(t => t && clearTimeout(t));
+      optimisticTimer = debounceTimer = null;
+      pendingState = null;
+      useVPNStore.setState({ serviceConnected: true, serviceFailedSince: null });
+    };
+  }
+
+  // Polling fallback: standalone/web mode
+  console.info('[VPNStore] Polling mode (2s)');
 
   const pollStatus = async () => {
     try {
