@@ -22,18 +22,12 @@ interface PollingOptions {
 }
 
 /**
- * 状态轮询 Hook
+ * @deprecated Use event-driven status in vpn.store.ts instead.
+ * The actual status polling now lives in initializeVPNStore() which
+ * automatically uses events when available and falls back to polling.
  *
- * 在 App 顶层调用一次即可
- *
- * @example
- * function App() {
- *   useStatusPolling({
- *     onStatusChange: (status) => vpnStore.updateStatus(status),
- *     onConnectionChange: (connected) => coreStore.setConnected(connected),
- *   });
- *   return <AppRoutes />;
- * }
+ * This hook is preserved for backward compatibility but is not used
+ * by any component in the current codebase.
  */
 export function useStatusPolling(options: PollingOptions = {}) {
   const {
