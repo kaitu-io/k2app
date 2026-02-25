@@ -17,7 +17,7 @@ import {
   Settings as SettingsIcon,
 } from "@mui/icons-material";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useVPNStatus, useAuthStore } from "../stores";
 import { useUser } from "../hooks/useUser";
 
@@ -47,6 +47,7 @@ const DashboardContainer = styled(Box)(({ theme }) => ({
 export default function Dashboard() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
 
   // Auth state
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -111,6 +112,28 @@ export default function Dashboard() {
       container.removeEventListener('scroll', handleScroll);
     };
   }, [setScrollPosition]);
+
+  // Workaround: WebKit compositing bug — force repaint when tab becomes visible
+  // after being hidden by keep-alive system, to ensure opacity/filter layer changes
+  // are properly recomposited
+  const containerRef = useRef<HTMLDivElement>(null);
+  const wasHidden = useRef(false);
+
+  useEffect(() => {
+    const isVisible = location.pathname === '/';
+    if (!isVisible) {
+      wasHidden.current = true;
+      return;
+    }
+    if (wasHidden.current && containerRef.current) {
+      wasHidden.current = false;
+      const el = containerRef.current;
+      el.style.transform = 'translateZ(0)';
+      requestAnimationFrame(() => {
+        el.style.transform = '';
+      });
+    }
+  }, [location.pathname]);
 
   // Get proxy rule types
   const proxyRules = useMemo(() => {
@@ -241,6 +264,7 @@ export default function Dashboard() {
 
   return (
     <DashboardContainer
+      ref={containerRef}
       sx={{
         ...(isServiceFailedLongTime && {
           pointerEvents: 'none',
