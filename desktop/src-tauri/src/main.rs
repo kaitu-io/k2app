@@ -3,6 +3,7 @@
 mod log_upload;
 mod ne;
 mod service;
+mod status_stream;
 mod tray;
 mod updater;
 
@@ -59,9 +60,9 @@ fn main() {
                 }
             });
 
-            // On macOS: register NE state callback before ensuring NE is installed.
+            // In NE mode: register NE state callback before ensuring NE is installed.
             // This ensures state change events are emitted to the webapp from startup.
-            #[cfg(target_os = "macos")]
+            #[cfg(all(target_os = "macos", feature = "ne-mode"))]
             ne::register_state_callback(app.handle().clone());
 
             // Ensure k2 service / NE configuration is running with correct version
@@ -71,6 +72,13 @@ fn main() {
                     log::error!("[startup] Service error: {}", e);
                 }
             });
+
+            // Start SSE status stream (daemon mode only — not NE mode)
+            #[cfg(not(all(target_os = "macos", feature = "ne-mode")))]
+            {
+                let sse_handle = app.handle().clone();
+                status_stream::start(sse_handle);
+            }
 
             // Start auto-updater
             updater::start_auto_updater(app.handle().clone());
