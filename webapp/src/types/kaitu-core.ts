@@ -4,6 +4,8 @@
  * 核心接口定义，所有平台通过 window._k2 注入实现
  */
 
+import type { StatusResponseData } from '../services/vpn-types';
+
 // ==================== 基础类型 ====================
 
 /**
@@ -197,6 +199,26 @@ export interface IK2Vpn {
    * await window._k2.run('status')
    */
   run<T = any>(action: string, params?: any): Promise<SResponse<T>>;
+
+  /**
+   * Service 可达性事件（可选）
+   * daemon 模式: SSE 连接成功 = available, 断开 = unavailable
+   * NE 模式: NE 配置安装后恒 true
+   * standalone: 不实现 → 退化为轮询
+   *
+   * @returns unsubscribe function
+   */
+  onServiceStateChange?(callback: (available: boolean) => void): () => void;
+
+  /**
+   * VPN 状态变更事件（可选）
+   * daemon 模式: SSE status events
+   * NE 模式: NE state callback → full status
+   * standalone: 不实现 → 退化为轮询
+   *
+   * @returns unsubscribe function
+   */
+  onStatusChange?(callback: (status: StatusResponseData) => void): () => void;
 }
 
 // ==================== 全局类型声明 ====================
