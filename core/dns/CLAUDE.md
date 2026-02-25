@@ -32,7 +32,7 @@ Steps: parse → validate → hosts lookup → filter (RFC 6761 + noise) → cac
 ## Testing
 
 ```bash
-go test ./core/dns/...    # 45+ tests, some need network access
+go test ./core/dns/...    # 35 tests, some need network access
 ```
 
 Tests cover: cache TTL, negative caching, hosts parsing, filter rules, metrics counters.

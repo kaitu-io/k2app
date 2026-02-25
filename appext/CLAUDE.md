@@ -25,21 +25,23 @@ e.StatusJSON() string          // JSON status (matches daemon API format)
 - `event.go` — `EventHandler` interface, `eventBridge` (appext→engine adapter), state constants
 - `config.go` — `EngineConfig` (CacheDir, LogDir, SocketProtector)
 - `protector.go` — `SocketProtector` interface (Android VpnService.protect)
-- `protect.go` — `protectedDialer` (implements `wire.DirectDialer` + `wire.DialerController`)
+- `protect.go` — `protectedDialer` (implements `wire.DirectDialer` + `wire.DialerController`) — Android only
+- `ne_platform_darwin.go` / `ne_platform_other.go` — `nePlatform`: unified Darwin NE networking (implements `wire.DirectDialer` + `wire.DialerController` + `engine.NetworkChangeNotifier`). Mirrors daemon's 3-type architecture (directDialer + singTunMonitor + ifaceMon) in 1 type with shared `DefaultInterfaceMonitor`
+- `platform_darwin.go` / `platform_other.go` — `isNetworkExtension` platform constant
 
 ## Platform Integration
 
 | Platform | TUN FD Source | Socket Protection | Network Change |
 |----------|---------------|-------------------|----------------|
-| macOS sysext | NEPacketTunnelProvider | Not needed (kernel self-excludes) | NWPathMonitor → `OnNetworkChanged()` |
-| iOS | NEPacketTunnelProvider | Not needed (kernel self-excludes) | NWPathMonitor → `OnNetworkChanged()` |
+| macOS sysext | NEPacketTunnelProvider | `nePlatform` (interface-bound dialing via DefaultInterfaceMonitor) | `nePlatform` (sing-tun monitor → engine) |
+| iOS | NEPacketTunnelProvider | `nePlatform` (interface-bound dialing via DefaultInterfaceMonitor) | `nePlatform` (sing-tun monitor → engine) |
 | Android | VpnService | `SocketProtector.Protect(fd)` → `protectedDialer` | ConnectivityManager → `OnNetworkChanged()` |
 
-## Socket Protection (protect.go)
+## Socket Protection
 
-`protectedDialer` implements both `wire.DirectDialer` (for transport sockets) and
-`wire.DialerController` (for DNS direct query sockets). Created in `appext.Start()`
-when `SocketProtector` is non-nil, then passed to engine as `Config.DirectDialer`.
+**Android** (`protect.go`): `protectedDialer` implements `wire.DirectDialer` + `wire.DialerController`. Created when `SocketProtector` is non-nil. Uses `VpnService.protect(fd)` to exclude sockets from VPN routing.
+
+**Darwin** (`ne_platform_darwin.go`): `nePlatform` implements `wire.DirectDialer` + `wire.DialerController` + `engine.NetworkChangeNotifier`. Uses sing-tun `DefaultInterfaceMonitor` with `UnderNetworkExtension: true` for interface-bound dialing (socket probe instead of route table parsing).
 
 ## Build
 

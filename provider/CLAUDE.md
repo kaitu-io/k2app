@@ -30,6 +30,9 @@ Provider calls `handler.HandleTCP/HandleUDP` when connections arrive. `ClientTun
 - `proxy.go` — SOCKS5/HTTP proxy provider (no root needed, `mode: proxy`)
 - `tproxy_linux.go` — nftables TPROXY provider (Linux only, `mode: tproxy`)
 - `tproxy_other.go` — stub returning error on non-Linux
+- `dns_darwin.go` — macOS DNS override via SCDynamicStore (sets TUN IP as DNS for primary service, crash-safe cleanup on daemon restart)
+- `dns_other.go` — no-op stub for non-macOS
+- `provider_test.go` / `tun_desktop_test.go` — unit tests
 
 ## Modes
 
@@ -65,3 +68,9 @@ The tproxy provider uses nftables TPROXY target to redirect traffic:
 3. IP_TRANSPARENT socket option preserves original destination
 4. IP_RECVORIGDSTADDR extracts original UDP destination
 5. Cleanup removes all nftables rules and ip route/rules on Close()
+
+## Testing
+
+```bash
+go test ./provider/...    # Provider unit tests
+```

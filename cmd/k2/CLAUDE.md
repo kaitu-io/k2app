@@ -26,11 +26,12 @@ k2 version                          Version + commit info
 
 - `main.go` — Subcommand dispatch (`switch cmd`), top-level flags (`-c`, `-t`, `-s`, `-v`)
 - `ctl.go` — `k2 ctl`: IPC client (up/down/status via daemon HTTP API)
+- `ctl_hint_darwin.go` / `ctl_hint_linux.go` / `ctl_hint_windows.go` — Platform-specific "daemon not running" hints
 - `setup.go` — `k2 setup`: first-time config generation + service install
 - `service.go` — `k2 service`: install/uninstall system service
 - `upgrade.go` — `k2 upgrade`: self-update binary from CDN
 - `process.go` — PID monitoring helpers
-- `signal.go` — Signal dispatch (`-s stop|reload`)
+- `signal.go` / `signal_windows.go` — Signal dispatch (`-s stop|reload`)
 
 ## Pattern
 

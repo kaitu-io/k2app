@@ -20,6 +20,10 @@ k2s version              Version info
 
 - `main.go` — entry point, subcommand dispatch, top-level flags (`-c`, `-t`, `-s`, `-v`)
 - `setup.go` — `k2s setup`: install service if needed, wait for connect-url.txt, print URL
+- `service.go` — `k2s service`: install/uninstall system service
+- `service_darwin.go` / `service_linux.go` / `service_windows.go` — Platform-specific service management
+- `process.go` — PID file helpers
+- `signal.go` / `signal_windows.go` — Signal dispatch (`-s stop|reload`)
 
 ## Architecture
 
