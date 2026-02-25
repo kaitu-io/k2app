@@ -1,11 +1,14 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
 	"strings"
 	"testing"
+
+	"github.com/kaitu-io/k2/wire"
 )
 
 // timeoutError is a mock net.Error that returns Timeout()=true.
@@ -52,6 +55,20 @@ func TestClassifyError(t *testing.T) {
 		{"network unreachable", errors.New("wire: TCP dial: network unreachable"), 503},
 		{"listen UDP", errors.New("wire: listen UDP: address already in use"), 503},
 
+		// MultiTransportError — classifies by TCP-WS (primary)
+		{"multi transport TCP refused", &wire.MultiTransportError{
+			QUICErr:  errors.New("wire: QUIC dial: crypto handshake failed"),
+			TCPWSErr: errors.New("wire: TCP dial: connection refused"),
+		}, 503},
+		{"multi transport TLS error", &wire.MultiTransportError{
+			QUICErr:  errors.New("wire: QUIC dial: crypto handshake failed"),
+			TCPWSErr: errors.New("wire: uTLS handshake: certificate verify failed"),
+		}, 502},
+
+		// context.DeadlineExceeded
+		{"context deadline exceeded", context.DeadlineExceeded, 408},
+		{"wrapped deadline exceeded", fmt.Errorf("start: %w", context.DeadlineExceeded), 408},
+
 		// 570 Fallback
 		{"unknown error", errors.New("wire: something completely unknown"), 570},
 		{"smux error", errors.New("wire: smux client: broken pipe"), 570},
@@ -68,6 +85,33 @@ func TestClassifyError(t *testing.T) {
 				t.Errorf("ClassifyError(%q) message = %q, want %q", tt.err, result.Message, tt.err.Error())
 			}
 		})
+	}
+}
+
+func TestClassifyError_MultiTransportMessage(t *testing.T) {
+	mte := &wire.MultiTransportError{
+		QUICErr:  errors.New("QUIC fail"),
+		TCPWSErr: errors.New("TCP fail"),
+	}
+	result := ClassifyError(mte)
+	// Message should contain BOTH errors for UI display.
+	if !strings.Contains(result.Message, "QUIC fail") {
+		t.Errorf("message missing QUIC error: %s", result.Message)
+	}
+	if !strings.Contains(result.Message, "TCP fail") {
+		t.Errorf("message missing TCP error: %s", result.Message)
+	}
+}
+
+func TestClassifyError_MultiTransportNilTCPWS(t *testing.T) {
+	// TCPWSErr nil — should classify by QUICErr without panicking.
+	mte := &wire.MultiTransportError{
+		QUICErr:  errors.New("wire: QUIC dial: crypto handshake failed"),
+		TCPWSErr: nil,
+	}
+	result := ClassifyError(mte)
+	if result.Code != 502 {
+		t.Errorf("code = %d, want 502", result.Code)
 	}
 }
 

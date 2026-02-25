@@ -38,9 +38,17 @@ func ClassifyError(err error) *EngineError {
 	// but keep full combined message for UI display.
 	var mte *wire.MultiTransportError
 	if errors.As(err, &mte) {
-		classified := classifyByPatterns(mte.TCPWSErr.Error())
-		classified.Message = mte.Error()
-		return classified
+		if mte.TCPWSErr != nil {
+			classified := classifyByPatterns(mte.TCPWSErr.Error())
+			classified.Message = mte.Error()
+			return classified
+		}
+		if mte.QUICErr != nil {
+			classified := classifyByPatterns(mte.QUICErr.Error())
+			classified.Message = mte.Error()
+			return classified
+		}
+		// Both nil (shouldn't happen) — fall through to pattern matching.
 	}
 
 	msg := err.Error()

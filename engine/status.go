@@ -7,6 +7,7 @@ import (
 
 // Status is the engine's typed state snapshot.
 // Used by EventHandler.OnStatus, daemon statusInfo, appext StatusJSON.
+// Fields use json:"-" because MarshalJSON computes uptime_seconds dynamically.
 type Status struct {
 	State       string       `json:"-"`
 	Error       *EngineError `json:"-"`

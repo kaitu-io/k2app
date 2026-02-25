@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/kaitu-io/k2/engine"
 )
 
 // handleEvents serves the SSE endpoint for real-time status push.
@@ -65,13 +67,9 @@ func (d *Daemon) handleEvents(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// broadcastStatus sends the current lastStatus to all connected SSE clients.
-func (d *Daemon) broadcastStatus() {
-	d.mu.RLock()
-	s := d.lastStatus
-	d.mu.RUnlock()
-
-	data, _ := json.Marshal(s)
+// broadcastStatus sends the given status to all connected SSE clients.
+func (d *Daemon) broadcastStatus(status engine.Status) {
+	data, _ := json.Marshal(status)
 	msg := fmt.Sprintf("event: status\ndata: %s\n\n", data)
 
 	d.sseMu.RLock()

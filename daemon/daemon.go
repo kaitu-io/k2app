@@ -213,8 +213,9 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 				Error: engine.ClassifyError(err),
 			}
 		}
+		s := d.lastStatus
 		d.mu.Unlock()
-		d.broadcastStatus()
+		d.broadcastStatus(s)
 		slog.Error("engine start failed", "err", err)
 		return err
 	}
@@ -357,7 +358,7 @@ func (d *Daemon) OnStatus(status engine.Status) {
 	d.mu.Lock()
 	d.lastStatus = status
 	d.mu.Unlock()
-	d.broadcastStatus()
+	d.broadcastStatus(status)
 }
 
 // OnStats implements engine.EventHandler — currently a no-op for daemon.

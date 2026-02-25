@@ -194,6 +194,54 @@ func TestTransportManager_ImplementsDialer(t *testing.T) {
 	var _ Dialer = (*TransportManager)(nil)
 }
 
+func TestMultiTransportError_Unwrap(t *testing.T) {
+	inner := errors.New("connection refused")
+	mte := &MultiTransportError{
+		QUICErr:  errors.New("handshake failed"),
+		TCPWSErr: inner,
+	}
+	if !errors.Is(mte, inner) {
+		t.Fatal("Unwrap should return TCPWSErr")
+	}
+}
+
+func TestMultiTransportError_Format(t *testing.T) {
+	mte := &MultiTransportError{
+		QUICErr:  errors.New("QUIC fail"),
+		TCPWSErr: errors.New("TCP fail"),
+	}
+	got := mte.Error()
+	want := "QUIC: QUIC fail; TCP-WS: TCP fail"
+	if got != want {
+		t.Fatalf("Error() = %q, want %q", got, want)
+	}
+}
+
+func TestTransportManager_DialUDP_BothDown(t *testing.T) {
+	quic := &mockTransport{
+		available: true,
+		dialUDPFn: func(ctx context.Context, addr string) (net.PacketConn, error) {
+			return nil, errors.New("QUIC fail")
+		},
+	}
+	tcpws := &mockTransport{
+		available: true,
+		dialUDPFn: func(ctx context.Context, addr string) (net.PacketConn, error) {
+			return nil, errors.New("TCP fail")
+		},
+	}
+
+	tm := NewTransportManager()
+	tm.SetQUIC(quic)
+	tm.SetTCPWS(tcpws)
+
+	_, err := tm.DialUDP(context.Background(), "8.8.8.8:53")
+	var mte *MultiTransportError
+	if !errors.As(err, &mte) {
+		t.Fatalf("expected MultiTransportError, got %T", err)
+	}
+}
+
 // ==========================================================================
 // ResetConnections tests
 // ==========================================================================

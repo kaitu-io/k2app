@@ -23,6 +23,11 @@ import (
 // Engine is the unified tunnel lifecycle manager. It assembles the tunnel
 // stack (wire transports, router, DNS middleware, provider) and manages the
 // connection lifecycle for both desktop and mobile platforms.
+//
+// Lock ordering: engine.mu must be acquired before any EventHandler lock
+// (e.g. daemon.mu). setState/fail call handler.OnStatus under engine.mu.
+// EventHandler implementations must NOT call back into engine while holding
+// their own lock.
 type Engine struct {
 	mu          sync.Mutex
 	state       string
@@ -488,13 +493,16 @@ func extractServerHost(wireURL string) string {
 
 // ForceConnected sets the engine to connected state and fires OnStatus.
 // For testing only — allows daemon tests to simulate a connected engine.
+// Releases lock before calling handler to match OnNetworkChanged/Pause/Wake pattern.
 func (e *Engine) ForceConnected() {
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	e.state = StateConnected
 	e.connectedAt = time.Now()
 	e.lastError = nil
-	if e.handler != nil {
-		e.handler.OnStatus(e.buildStatusLocked())
+	status := e.buildStatusLocked()
+	handler := e.handler
+	e.mu.Unlock()
+	if handler != nil {
+		handler.OnStatus(status)
 	}
 }
