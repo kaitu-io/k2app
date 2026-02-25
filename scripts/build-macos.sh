@@ -3,7 +3,7 @@ set -euo pipefail
 
 # macOS build script for k2app.
 # Builds universal binary, creates .pkg installer, signs, and notarizes.
-# Usage: bash scripts/build-macos.sh [--skip-notarization] [--single-arch] [--features=FEATURE]
+# Usage: bash scripts/build-macos.sh [--skip-notarization] [--single-arch] [--features=FEATURE] [--ne-mode]
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -14,22 +14,41 @@ cd "$ROOT_DIR"
 SKIP_NOTARIZATION=false
 SINGLE_ARCH=false
 EXTRA_FEATURES=""
+NE_MODE=false
 for arg in "$@"; do
   case "$arg" in
     --skip-notarization) SKIP_NOTARIZATION=true ;;
     --single-arch) SINGLE_ARCH=true ;;
     --features=*) EXTRA_FEATURES="${arg#--features=}" ;;
+    --ne-mode) NE_MODE=true ;;
     *) echo "Unknown argument: $arg"; exit 1 ;;
   esac
 done
 
+# Append ne-mode feature when building sysext variant
+if [ "$NE_MODE" = true ]; then
+  if [ -n "$EXTRA_FEATURES" ]; then
+    EXTRA_FEATURES="$EXTRA_FEATURES,ne-mode"
+  else
+    EXTRA_FEATURES="ne-mode"
+  fi
+fi
+
 # --- Read version ---
 VERSION=$(node -p "require('./package.json').version")
 
-if [ "$SINGLE_ARCH" = true ]; then
-  echo "=== Building Kaitu $VERSION for macOS (single-arch) ==="
+if [ "$NE_MODE" = true ]; then
+  if [ "$SINGLE_ARCH" = true ]; then
+    echo "=== Building Kaitu $VERSION for macOS (NE/sysext mode, single-arch) ==="
+  else
+    echo "=== Building Kaitu $VERSION for macOS (NE/sysext mode, universal) ==="
+  fi
 else
-  echo "=== Building Kaitu $VERSION for macOS (universal) ==="
+  if [ "$SINGLE_ARCH" = true ]; then
+    echo "=== Building Kaitu $VERSION for macOS (daemon mode, single-arch) ==="
+  else
+    echo "=== Building Kaitu $VERSION for macOS (daemon mode, universal) ==="
+  fi
 fi
 
 # Determine native architecture for single-arch builds
@@ -55,50 +74,54 @@ echo ""
 echo "--- Building webapp ---"
 make build-webapp
 
-# --- Build k2 ---
-if [ "$SINGLE_ARCH" = true ]; then
-  echo ""
-  echo "--- Building k2 ($K2_TARGET) ---"
-  GOARCH=$K2_GOARCH GOOS=darwin make build-k2 TARGET=$K2_TARGET
-else
-  echo ""
-  echo "--- Building k2 (aarch64-apple-darwin) ---"
-  GOARCH=arm64 GOOS=darwin make build-k2 TARGET=aarch64-apple-darwin
+if [ "$NE_MODE" != true ]; then
+  # --- Build k2 (daemon mode only) ---
+  if [ "$SINGLE_ARCH" = true ]; then
+    echo ""
+    echo "--- Building k2 ($K2_TARGET) ---"
+    GOARCH=$K2_GOARCH GOOS=darwin make build-k2 TARGET=$K2_TARGET
+  else
+    echo ""
+    echo "--- Building k2 (aarch64-apple-darwin) ---"
+    GOARCH=arm64 GOOS=darwin make build-k2 TARGET=aarch64-apple-darwin
 
-  echo ""
-  echo "--- Building k2 (x86_64-apple-darwin) ---"
-  GOARCH=amd64 GOOS=darwin make build-k2 TARGET=x86_64-apple-darwin
+    echo ""
+    echo "--- Building k2 (x86_64-apple-darwin) ---"
+    GOARCH=amd64 GOOS=darwin make build-k2 TARGET=x86_64-apple-darwin
 
-  # --- Create universal k2 binary with lipo ---
-  echo ""
-  echo "--- Creating universal k2 binary ---"
-  K2_BIN_DIR="desktop/src-tauri/binaries"
-  lipo -create \
-    "$K2_BIN_DIR/k2-aarch64-apple-darwin" \
-    "$K2_BIN_DIR/k2-x86_64-apple-darwin" \
-    -output "$K2_BIN_DIR/k2-universal-apple-darwin"
-  chmod +x "$K2_BIN_DIR/k2-universal-apple-darwin"
-  echo "Created universal binary: $K2_BIN_DIR/k2-universal-apple-darwin"
+    # --- Create universal k2 binary with lipo ---
+    echo ""
+    echo "--- Creating universal k2 binary ---"
+    K2_BIN_DIR="desktop/src-tauri/binaries"
+    lipo -create \
+      "$K2_BIN_DIR/k2-aarch64-apple-darwin" \
+      "$K2_BIN_DIR/k2-x86_64-apple-darwin" \
+      -output "$K2_BIN_DIR/k2-universal-apple-darwin"
+    chmod +x "$K2_BIN_DIR/k2-universal-apple-darwin"
+    echo "Created universal binary: $K2_BIN_DIR/k2-universal-apple-darwin"
+  fi
 fi
 
-# --- Build gomobile macOS xcframework ---
-echo ""
-echo "--- Building gomobile macOS xcframework ---"
-make mobile-macos
+if [ "$NE_MODE" = true ]; then
+  # --- Build gomobile macOS xcframework (NE mode only) ---
+  echo ""
+  echo "--- Building gomobile macOS xcframework ---"
+  make mobile-macos
 
-# --- Build libk2_ne_helper.a ---
-echo ""
-echo "--- Building NE helper static library ---"
-cd "$ROOT_DIR/desktop/src-tauri/ne_helper"
-if [ "$SINGLE_ARCH" = true ]; then
-  bash build.sh --arch "$NE_ARCH"
-else
-  bash build.sh --arch universal
+  # --- Build libk2_ne_helper.a (NE mode only) ---
+  echo ""
+  echo "--- Building NE helper static library ---"
+  cd "$ROOT_DIR/desktop/src-tauri/ne_helper"
+  if [ "$SINGLE_ARCH" = true ]; then
+    bash build.sh --arch "$NE_ARCH"
+  else
+    bash build.sh --arch universal
+  fi
+  cd "$ROOT_DIR"
+
+  # Set env var for Rust build.rs to find the library
+  export NE_HELPER_LIB_DIR="$ROOT_DIR/desktop/src-tauri/ne_helper"
 fi
-cd "$ROOT_DIR"
-
-# Set env var for Rust build.rs to find the library
-export NE_HELPER_LIB_DIR="$ROOT_DIR/desktop/src-tauri/ne_helper"
 
 # --- Tauri build ---
 echo ""
@@ -109,8 +132,9 @@ else
 fi
 
 cd desktop
-# Always skip Tauri's built-in notarization — we re-sign after sysext injection,
-# which invalidates any Tauri-applied notarization ticket. PKG notarization
+# Always skip Tauri's built-in notarization — we re-sign after build (sysext
+# injection in NE mode, or simple hardened runtime in daemon mode), which
+# invalidates any Tauri-applied notarization ticket. PKG notarization
 # (below) covers the final signed bundle.
 _SAVED_APPLE_ID="${APPLE_ID:-}"
 _SAVED_APPLE_PASSWORD="${APPLE_PASSWORD:-}"
@@ -152,119 +176,141 @@ if [ ! -d "$APP_PATH" ]; then
 fi
 echo "Found app bundle: $APP_PATH"
 
-# --- Build and inject System Extension ---
-echo ""
-echo "--- Building KaituTunnel.systemextension ---"
-SYSEXT_BUILD_DIR=$(mktemp -d /tmp/kaitu-sysext.XXXXXX)
-SYSEXT_NAME="io.kaitu.desktop.tunnel.systemextension"
-SYSEXT_DIR="$SYSEXT_BUILD_DIR/$SYSEXT_NAME/Contents/MacOS"
-mkdir -p "$SYSEXT_DIR"
+if [ "$NE_MODE" = true ]; then
+  # --- Build and inject System Extension (NE mode only) ---
+  echo ""
+  echo "--- Building KaituTunnel.systemextension ---"
+  SYSEXT_BUILD_DIR=$(mktemp -d /tmp/kaitu-sysext.XXXXXX)
+  SYSEXT_NAME="io.kaitu.desktop.tunnel.systemextension"
+  SYSEXT_DIR="$SYSEXT_BUILD_DIR/$SYSEXT_NAME/Contents/MacOS"
+  mkdir -p "$SYSEXT_DIR"
 
-XCFW_PATH="$ROOT_DIR/k2/build/K2MobileMacOS.xcframework"
-MACOS_SDK_PATH=$(xcrun --show-sdk-path --sdk macosx)
+  XCFW_PATH="$ROOT_DIR/k2/build/K2MobileMacOS.xcframework"
+  MACOS_SDK_PATH=$(xcrun --show-sdk-path --sdk macosx)
 
-# Resolve the framework slice directory inside the xcframework
-# xcframework structure: K2MobileMacOS.xcframework/macos-arm64_x86_64/K2MobileMacOS.framework
-XCFW_SLICE_DIR=$(find "$XCFW_PATH" -name "K2MobileMacOS.framework" -maxdepth 2 -type d | head -1)
-XCFW_SLICE_PARENT=$(dirname "$XCFW_SLICE_DIR")
+  # Resolve the framework slice directory inside the xcframework
+  # xcframework structure: K2MobileMacOS.xcframework/macos-arm64_x86_64/K2MobileMacOS.framework
+  XCFW_SLICE_DIR=$(find "$XCFW_PATH" -name "K2MobileMacOS.framework" -maxdepth 2 -type d | head -1)
+  XCFW_SLICE_PARENT=$(dirname "$XCFW_SLICE_DIR")
 
-# Compile PacketTunnelProvider.swift → KaituTunnel executable
-SYSEXT_SWIFT_SRC="$ROOT_DIR/desktop/src-tauri/KaituTunnel/PacketTunnelProvider.swift"
+  # Compile PacketTunnelProvider.swift → KaituTunnel executable
+  SYSEXT_SWIFT_SRC="$ROOT_DIR/desktop/src-tauri/KaituTunnel/PacketTunnelProvider.swift"
 
-compile_sysext() {
-  local target="$1"
-  local output="$2"
-  swiftc \
-    -emit-executable \
-    -module-name KaituTunnel \
-    -sdk "$MACOS_SDK_PATH" \
-    -target "$target" \
-    -F "$XCFW_SLICE_PARENT" \
-    -framework K2MobileMacOS \
-    "$SYSEXT_SWIFT_SRC" \
-    -o "$output"
-}
+  compile_sysext() {
+    local target="$1"
+    local output="$2"
+    swiftc \
+      -emit-executable \
+      -module-name KaituTunnel \
+      -sdk "$MACOS_SDK_PATH" \
+      -target "$target" \
+      -F "$XCFW_SLICE_PARENT" \
+      -framework K2MobileMacOS \
+      "$SYSEXT_SWIFT_SRC" \
+      -o "$output"
+  }
 
-if [ "$SINGLE_ARCH" = true ]; then
-  compile_sysext "${NE_ARCH}-apple-macos12" "$SYSEXT_DIR/KaituTunnel"
+  if [ "$SINGLE_ARCH" = true ]; then
+    compile_sysext "${NE_ARCH}-apple-macos12" "$SYSEXT_DIR/KaituTunnel"
+  else
+    # Universal: compile both architectures and merge with lipo
+    compile_sysext "arm64-apple-macos12" "$SYSEXT_DIR/KaituTunnel-arm64"
+    compile_sysext "x86_64-apple-macos12" "$SYSEXT_DIR/KaituTunnel-x86_64"
+    lipo -create "$SYSEXT_DIR/KaituTunnel-arm64" "$SYSEXT_DIR/KaituTunnel-x86_64" \
+      -output "$SYSEXT_DIR/KaituTunnel"
+    rm -f "$SYSEXT_DIR/KaituTunnel-arm64" "$SYSEXT_DIR/KaituTunnel-x86_64"
+  fi
+
+  # Copy Info.plist into systemextension bundle
+  cp "$ROOT_DIR/desktop/src-tauri/KaituTunnel/Info.plist" \
+     "$SYSEXT_BUILD_DIR/$SYSEXT_NAME/Contents/"
+
+  # Install systemextension into .app bundle
+  SYSEXT_DEST="$APP_PATH/Contents/Library/SystemExtensions"
+  mkdir -p "$SYSEXT_DEST"
+  cp -R "$SYSEXT_BUILD_DIR/$SYSEXT_NAME" "$SYSEXT_DEST/"
+
+  # --- Embed provisioning profiles ---
+  echo ""
+  echo "--- Embedding provisioning profiles ---"
+  PROFILE_DIR="${PROFILE_DIR:-$ROOT_DIR/desktop/src-tauri/profiles}"
+
+  APP_PROFILE="$PROFILE_DIR/Kaitu_Desktop_Developer_ID.provisionprofile"
+  TUNNEL_PROFILE="$PROFILE_DIR/Kaitu_Tunnel_Developer_ID.provisionprofile"
+
+  if [ -f "$APP_PROFILE" ]; then
+    cp "$APP_PROFILE" "$APP_PATH/Contents/embedded.provisionprofile"
+    echo "Embedded app profile: $APP_PROFILE"
+  else
+    echo "WARNING: App profile not found at $APP_PROFILE — skipping"
+  fi
+
+  if [ -f "$TUNNEL_PROFILE" ]; then
+    cp "$TUNNEL_PROFILE" "$SYSEXT_DEST/$SYSEXT_NAME/Contents/embedded.provisionprofile"
+    echo "Embedded tunnel profile: $TUNNEL_PROFILE"
+  else
+    echo "WARNING: Tunnel profile not found at $TUNNEL_PROFILE — skipping"
+  fi
+
+  # --- Add NSSystemExtensionUsageDescription to main app Info.plist ---
+  /usr/libexec/PlistBuddy -c "Add :NSSystemExtensionUsageDescription string 'Kaitu uses a system extension to provide VPN functionality.'" \
+    "$APP_PATH/Contents/Info.plist" 2>/dev/null || \
+  /usr/libexec/PlistBuddy -c "Set :NSSystemExtensionUsageDescription 'Kaitu uses a system extension to provide VPN functionality.'" \
+    "$APP_PATH/Contents/Info.plist"
+
+  # Determine signing identity (use env var or well-known default)
+  SIGN_IDENTITY="${APPLE_SIGNING_IDENTITY:-Developer ID Application: ALL NATION CONNECT TECHNOLOGY PTE. LTD. (NJT954Q3RH)}"
+
+  # Sign each component individually (NOT --deep) to avoid applying NE restricted
+  # entitlement to the k2 sidecar binary. AMFI validates each binary independently
+  # and rejects binaries that have restricted entitlements without a matching profile.
+
+  echo "--- Codesigning k2 sidecar (hardened runtime only, no NE entitlements) ---"
+  codesign --force --sign "$SIGN_IDENTITY" \
+    --options runtime \
+    "$APP_PATH/Contents/MacOS/k2"
+
+  echo "--- Codesigning KaituTunnel.systemextension ---"
+  codesign --force --sign "$SIGN_IDENTITY" \
+    --entitlements "$ROOT_DIR/desktop/src-tauri/KaituTunnel/KaituTunnel.entitlements" \
+    --options runtime \
+    "$SYSEXT_DEST/$SYSEXT_NAME"
+
+  echo "--- Codesigning main app bundle (with NE entitlements) ---"
+  codesign --force --sign "$SIGN_IDENTITY" \
+    --entitlements "$ROOT_DIR/desktop/src-tauri/entitlements.plist" \
+    --options runtime \
+    "$APP_PATH"
+
+  rm -rf "$SYSEXT_BUILD_DIR"
+  echo "KaituTunnel.systemextension injected into $SYSEXT_DEST/"
+
+  # --- Verify codesign ---
+  echo ""
+  echo "--- Verifying codesign ---"
+  codesign --verify --deep --strict "$APP_PATH"
+  echo "codesign verification passed"
+
 else
-  # Universal: compile both architectures and merge with lipo
-  compile_sysext "arm64-apple-macos12" "$SYSEXT_DIR/KaituTunnel-arm64"
-  compile_sysext "x86_64-apple-macos12" "$SYSEXT_DIR/KaituTunnel-x86_64"
-  lipo -create "$SYSEXT_DIR/KaituTunnel-arm64" "$SYSEXT_DIR/KaituTunnel-x86_64" \
-    -output "$SYSEXT_DIR/KaituTunnel"
-  rm -f "$SYSEXT_DIR/KaituTunnel-arm64" "$SYSEXT_DIR/KaituTunnel-x86_64"
+  # --- Daemon mode: sign app bundle without sysext injection ---
+  echo ""
+  echo "--- Codesigning app bundle (daemon mode) ---"
+  SIGN_IDENTITY="${APPLE_SIGNING_IDENTITY:-Developer ID Application: ALL NATION CONNECT TECHNOLOGY PTE. LTD. (NJT954Q3RH)}"
+
+  # Sign k2 sidecar with hardened runtime
+  codesign --force --sign "$SIGN_IDENTITY" \
+    --options runtime \
+    "$APP_PATH/Contents/MacOS/k2"
+
+  # Sign main app
+  codesign --force --sign "$SIGN_IDENTITY" \
+    --options runtime \
+    "$APP_PATH"
+
+  echo "--- Verifying codesign ---"
+  codesign --verify --deep --strict "$APP_PATH"
+  echo "codesign verification passed"
 fi
-
-# Copy Info.plist into systemextension bundle
-cp "$ROOT_DIR/desktop/src-tauri/KaituTunnel/Info.plist" \
-   "$SYSEXT_BUILD_DIR/$SYSEXT_NAME/Contents/"
-
-# Install systemextension into .app bundle
-SYSEXT_DEST="$APP_PATH/Contents/Library/SystemExtensions"
-mkdir -p "$SYSEXT_DEST"
-cp -R "$SYSEXT_BUILD_DIR/$SYSEXT_NAME" "$SYSEXT_DEST/"
-
-# --- Embed provisioning profiles ---
-echo ""
-echo "--- Embedding provisioning profiles ---"
-PROFILE_DIR="${PROFILE_DIR:-$ROOT_DIR/desktop/src-tauri/profiles}"
-
-APP_PROFILE="$PROFILE_DIR/Kaitu_Desktop_Developer_ID.provisionprofile"
-TUNNEL_PROFILE="$PROFILE_DIR/Kaitu_Tunnel_Developer_ID.provisionprofile"
-
-if [ -f "$APP_PROFILE" ]; then
-  cp "$APP_PROFILE" "$APP_PATH/Contents/embedded.provisionprofile"
-  echo "Embedded app profile: $APP_PROFILE"
-else
-  echo "WARNING: App profile not found at $APP_PROFILE — skipping"
-fi
-
-if [ -f "$TUNNEL_PROFILE" ]; then
-  cp "$TUNNEL_PROFILE" "$SYSEXT_DEST/$SYSEXT_NAME/Contents/embedded.provisionprofile"
-  echo "Embedded tunnel profile: $TUNNEL_PROFILE"
-else
-  echo "WARNING: Tunnel profile not found at $TUNNEL_PROFILE — skipping"
-fi
-
-# --- Add NSSystemExtensionUsageDescription to main app Info.plist ---
-/usr/libexec/PlistBuddy -c "Add :NSSystemExtensionUsageDescription string 'Kaitu uses a system extension to provide VPN functionality.'" \
-  "$APP_PATH/Contents/Info.plist" 2>/dev/null || \
-/usr/libexec/PlistBuddy -c "Set :NSSystemExtensionUsageDescription 'Kaitu uses a system extension to provide VPN functionality.'" \
-  "$APP_PATH/Contents/Info.plist"
-
-# Determine signing identity (use env var or well-known default)
-SIGN_IDENTITY="${APPLE_SIGNING_IDENTITY:-Developer ID Application: ALL NATION CONNECT TECHNOLOGY PTE. LTD. (NJT954Q3RH)}"
-
-# Sign each component individually (NOT --deep) to avoid applying NE restricted
-# entitlement to the k2 sidecar binary. AMFI validates each binary independently
-# and rejects binaries that have restricted entitlements without a matching profile.
-
-echo "--- Codesigning k2 sidecar (hardened runtime only, no NE entitlements) ---"
-codesign --force --sign "$SIGN_IDENTITY" \
-  --options runtime \
-  "$APP_PATH/Contents/MacOS/k2"
-
-echo "--- Codesigning KaituTunnel.systemextension ---"
-codesign --force --sign "$SIGN_IDENTITY" \
-  --entitlements "$ROOT_DIR/desktop/src-tauri/KaituTunnel/KaituTunnel.entitlements" \
-  --options runtime \
-  "$SYSEXT_DEST/$SYSEXT_NAME"
-
-echo "--- Codesigning main app bundle (with NE entitlements) ---"
-codesign --force --sign "$SIGN_IDENTITY" \
-  --entitlements "$ROOT_DIR/desktop/src-tauri/entitlements.plist" \
-  --options runtime \
-  "$APP_PATH"
-
-rm -rf "$SYSEXT_BUILD_DIR"
-echo "KaituTunnel.systemextension injected into $SYSEXT_DEST/"
-
-# --- Verify codesign ---
-echo ""
-echo "--- Verifying codesign ---"
-codesign --verify --deep --strict "$APP_PATH"
-echo "codesign verification passed"
 
 # --- Create .pkg with pkgbuild ---
 echo ""

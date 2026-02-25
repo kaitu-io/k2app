@@ -23,6 +23,15 @@ build-macos-fast:
 build-macos-test:
 	bash scripts/build-macos.sh --single-arch --skip-notarization --features=mcp-bridge
 
+build-macos-sysext:
+	bash scripts/build-macos.sh --ne-mode
+
+build-macos-sysext-fast:
+	bash scripts/build-macos.sh --ne-mode --skip-notarization
+
+build-macos-sysext-test:
+	bash scripts/build-macos.sh --ne-mode --single-arch --skip-notarization
+
 build-windows: pre-build build-webapp
 	$(MAKE) build-k2 TARGET=x86_64-pc-windows-msvc
 	cd desktop && yarn tauri build --target x86_64-pc-windows-msvc
@@ -96,18 +105,18 @@ mobile-deps:
 
 mobile-ios:
 	mkdir -p k2/build
-	cd k2 && gomobile bind -target=ios -o build/K2Mobile.xcframework ./mobile/
+	cd k2 && gomobile bind -tags with_gvisor -target=ios -o build/K2Mobile.xcframework ./appext/
 
 mobile-macos:
 	mkdir -p k2/build
-	cd k2 && gomobile bind -target=macos -o build/K2MobileMacOS.xcframework ./mobile/
+	cd k2 && gomobile bind -tags with_gvisor -target=macos -o build/K2MobileMacOS.xcframework ./appext/
 
 build-macos-ne-lib: mobile-macos
 	@echo "macOS NE xcframework ready: k2/build/K2MobileMacOS.xcframework"
 
 mobile-android: mobile-deps
 	mkdir -p k2/build
-	cd k2 && gomobile bind -target=android -o build/k2mobile.aar -androidapi 24 ./mobile/
+	cd k2 && gomobile bind -tags with_gvisor -target=android -o build/k2mobile.aar -androidapi 24 ./appext/
 
 build-mobile-ios: pre-build build-webapp mobile-ios
 	cp -r k2/build/K2Mobile.xcframework mobile/ios/App/
