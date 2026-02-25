@@ -105,6 +105,30 @@ export async function injectTauriGlobals(): Promise<void> {
         };
       }
     },
+
+    onServiceStateChange: (callback: (available: boolean) => void): (() => void) => {
+      let unlisten: (() => void) | null = null;
+      listen<{ available: boolean }>('service-state-changed', (event) => {
+        callback(event.payload.available);
+      }).then((fn) => {
+        unlisten = fn;
+      });
+      return () => {
+        unlisten?.();
+      };
+    },
+
+    onStatusChange: (callback: (status: StatusResponseData) => void): (() => void) => {
+      let unlisten: (() => void) | null = null;
+      listen<any>('vpn-status-changed', (event) => {
+        callback(transformStatus(event.payload));
+      }).then((fn) => {
+        unlisten = fn;
+      });
+      return () => {
+        unlisten?.();
+      };
+    },
   };
 
   // Build updater object implementing IUpdater
