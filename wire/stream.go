@@ -4,7 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
 )
+
+// streamHeaderPool pools small buffers for WriteStreamHeader/WriteStreamResponse.
+var streamHeaderPool = sync.Pool{
+	New: func() any { b := make([]byte, 0, 300); return &b },
+}
 
 // Stream type constants.
 const (
@@ -64,12 +70,14 @@ func ReadVarint(r io.ByteReader) (uint64, int, error) {
 
 // WriteStreamHeader writes a stream header to w.
 func WriteStreamHeader(w io.Writer, streamType byte, addr string) error {
-	addrBytes := []byte(addr)
-	buf := make([]byte, 0, 1+2+len(addrBytes))
+	bp := streamHeaderPool.Get().(*[]byte)
+	buf := (*bp)[:0]
 	buf = append(buf, streamType)
-	buf = AppendVarint(buf, uint64(len(addrBytes)))
-	buf = append(buf, addrBytes...)
+	buf = AppendVarint(buf, uint64(len(addr)))
+	buf = append(buf, addr...)
 	_, err := w.Write(buf)
+	*bp = buf
+	streamHeaderPool.Put(bp)
 	return err
 }
 
@@ -108,12 +116,15 @@ func WriteStreamResponse(w io.Writer, respErr error) error {
 		return err
 	}
 
-	msg := []byte(respErr.Error())
-	buf := make([]byte, 0, 1+2+len(msg))
+	errMsg := respErr.Error()
+	bp := streamHeaderPool.Get().(*[]byte)
+	buf := (*bp)[:0]
 	buf = append(buf, 0x01)
-	buf = AppendVarint(buf, uint64(len(msg)))
-	buf = append(buf, msg...)
+	buf = AppendVarint(buf, uint64(len(errMsg)))
+	buf = append(buf, errMsg...)
 	_, err := w.Write(buf)
+	*bp = buf
+	streamHeaderPool.Put(bp)
 	return err
 }
 

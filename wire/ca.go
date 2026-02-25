@@ -10,17 +10,17 @@ import (
 //go:embed kaitu_ca.pem
 var kaituCAPEM []byte
 
-// blockedCAOrgs contains organization names of Chinese CAs to reject.
+// blockedCAOrgs contains organization names of Chinese CAs to reject (pre-uppercased).
 var blockedCAOrgs = []string{
 	"CNNIC",
-	"WoSign",
-	"WoTrus",
+	"WOSIGN",
+	"WOTRUS",
 	"CFCA",
 	"GDCA",
 	"SHECA",
-	"China Financial Certification Authority",
-	"Shanghai Electronic Certification Authority",
-	"Guang Dong Certificate Authority",
+	"CHINA FINANCIAL CERTIFICATION AUTHORITY",
+	"SHANGHAI ELECTRONIC CERTIFICATION AUTHORITY",
+	"GUANG DONG CERTIFICATE AUTHORITY",
 }
 
 // kaituCACertPool contains only the Kaitu CA certificate, parsed once at init.
@@ -45,15 +45,17 @@ func BuildDefaultCAPool() *x509.CertPool {
 // IsBlockedCA checks if a certificate was issued by a blocked Chinese CA.
 func IsBlockedCA(cert *x509.Certificate) bool {
 	for _, org := range cert.Subject.Organization {
+		upper := strings.ToUpper(org)
 		for _, blocked := range blockedCAOrgs {
-			if strings.Contains(strings.ToUpper(org), strings.ToUpper(blocked)) {
+			if strings.Contains(upper, blocked) {
 				return true
 			}
 		}
 	}
 	for _, org := range cert.Issuer.Organization {
+		upper := strings.ToUpper(org)
 		for _, blocked := range blockedCAOrgs {
-			if strings.Contains(strings.ToUpper(org), strings.ToUpper(blocked)) {
+			if strings.Contains(upper, blocked) {
 				return true
 			}
 		}

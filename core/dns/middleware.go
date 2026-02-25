@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -25,10 +26,11 @@ type DNSQuerier interface {
 }
 
 // inflightResult is the shared result of an in-flight upstream DNS query.
+// Stores pre-packed bytes so waiters avoid dns.Msg.Copy() + Pack().
 type inflightResult struct {
-	resp *dns.Msg
-	err  error
-	done chan struct{} // closed when result is ready
+	packed []byte      // pre-packed DNS response (nil on error)
+	err    error
+	done   chan struct{} // closed when result is ready
 }
 
 // Middleware handles DNS query interception and routing
@@ -97,9 +99,14 @@ func (m *Middleware) HandleQuery(query []byte) ([]byte, error) {
 	}
 
 	// 2-12. Full pipeline (hosts, filter, cache, k2rule, upstream, SetTmpRule)
-	resp, err := m.processQuery(&msg)
+	resp, packed, err := m.processQuery(&msg)
 	if err != nil {
 		return nil, err
+	}
+
+	// Fast path: cache hit or inflight dedup returned pre-packed bytes.
+	if packed != nil {
+		return packed, nil
 	}
 
 	if resp == nil {
@@ -111,15 +118,16 @@ func (m *Middleware) HandleQuery(query []byte) ([]byte, error) {
 }
 
 // processQuery runs the DNS pipeline on a parsed message.
-// Shared by both HandleQuery (L4) and HandleDNSQuery (L3).
-func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, error) {
+// Returns (resp, nil, nil) for non-hot paths (HandleQuery will Pack),
+// or (nil, packed, nil) for cache hits and inflight dedup (pre-packed bytes).
+func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, []byte, error) {
 	// 1. Extract domain from query
 	domain := extractQueryDomain(query)
 	if domain == "" {
 		if m.metrics != nil {
 			m.metrics.IncrError()
 		}
-		return nil, fmt.Errorf("no domain in DNS query")
+		return nil, nil, fmt.Errorf("no domain in DNS query")
 	}
 
 	qtype := extractQueryType(query)
@@ -131,7 +139,7 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, error) {
 			if m.metrics != nil {
 				m.metrics.IncrHostsHit()
 			}
-			return m.createHostsResponse(query, ips), nil
+			return m.createHostsResponse(query, ips), nil, nil
 		}
 	}
 
@@ -141,7 +149,7 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, error) {
 			m.metrics.IncrSpecialUseHit()
 		}
 		slog.Debug("DNS special-use filtered", "domain", domain)
-		return m.filter.HandleSpecialUse(query), nil
+		return m.filter.HandleSpecialUse(query), nil, nil
 	}
 
 	// 4. Check local domains (.local, .lan, etc.)
@@ -150,7 +158,7 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, error) {
 			m.metrics.IncrLocalDomainHit()
 		}
 		slog.Debug("DNS local domain NXDOMAIN", "domain", domain)
-		return m.filter.CreateNXDOMAIN(query), nil
+		return m.filter.CreateNXDOMAIN(query), nil, nil
 	}
 
 	// 5. Noise filtering (PTR, AAAA, WPAD)
@@ -160,19 +168,18 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, error) {
 				m.metrics.IncrNoiseFiltered()
 			}
 			slog.Debug("DNS noise filtered", "domain", domain)
-			return noiseResp, nil
+			return noiseResp, nil, nil
 		}
 	}
 
-	// 6. Check DNS message cache
+	// 6. Check DNS message cache — fast path returns pre-packed bytes.
 	if m.dnsCache != nil {
-		if cachedResp, found := m.dnsCache.Get(domain, query.Question[0].Qtype); found {
+		if packed, found := m.dnsCache.GetPacked(domain, query.Question[0].Qtype, query.Id); found {
 			if m.metrics != nil {
 				m.metrics.IncrMessageCacheHit()
 			}
-			cachedResp.Id = query.Id
 			slog.Debug("DNS cache hit", "domain", domain)
-			return cachedResp, nil
+			return nil, packed, nil
 		}
 	}
 
@@ -182,13 +189,13 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, error) {
 	// Reject is instant — no upstream query, no dedup needed.
 	if action == k2rule.TargetReject {
 		slog.Debug("DNS routed reject", "domain", domain)
-		return createNXDOMAIN(query), nil
+		return createNXDOMAIN(query), nil, nil
 	}
 
 	// 8. Query upstream DNS with in-flight deduplication.
 	// If another goroutine is already querying the same domain+qtype,
 	// we wait for its result instead of issuing a duplicate query.
-	inflightKey := fmt.Sprintf("%s:%d", domain, query.Question[0].Qtype)
+	inflightKey := domain + ":" + strconv.FormatUint(uint64(query.Question[0].Qtype), 10)
 
 	result := &inflightResult{done: make(chan struct{})}
 	if existing, loaded := m.inflight.LoadOrStore(inflightKey, result); loaded {
@@ -197,44 +204,56 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, error) {
 		select {
 		case <-existing.done:
 			if existing.err != nil {
-				return nil, existing.err
+				return nil, nil, existing.err
 			}
-			// Clone response and set caller's query ID.
-			resp := existing.resp.Copy()
-			resp.Id = query.Id
-			return resp, nil
+			// Copy packed bytes and patch caller's query ID.
+			packed := cloneAndPatchID(existing.packed, query.Id)
+			return nil, packed, nil
 		case <-time.After(inflightTimeout):
 			slog.Warn("DNS inflight dedup timeout", "domain", domain, "key", inflightKey)
-			return nil, fmt.Errorf("DNS query timeout waiting for in-flight %s", inflightKey)
+			return nil, nil, fmt.Errorf("DNS query timeout waiting for in-flight %s", inflightKey)
 		}
 	}
 
 	// We own this query — execute and broadcast result.
 	resp, err := m.queryUpstream(domain, action, query)
-	result.resp = resp
-	result.err = err
+
+	if err != nil {
+		result.err = err
+		close(result.done)
+		m.inflight.Delete(inflightKey)
+		return nil, nil, err
+	}
+
+	// Pack response for inflight waiters and our return value.
+	packed, packErr := resp.Pack()
+	if packErr != nil {
+		result.err = packErr
+		close(result.done)
+		m.inflight.Delete(inflightKey)
+		return nil, nil, packErr
+	}
+
+	// Broadcast packed bytes to waiters.
+	result.packed = packed
 	close(result.done)
 	m.inflight.Delete(inflightKey)
 
-	if err != nil {
-		return nil, err
-	}
-
-	// 9. Cache DNS message
-	if m.dnsCache != nil && resp != nil {
+	// 9. Cache DNS message (uses *dns.Msg for TTL optimization, packs internally)
+	if m.dnsCache != nil {
 		m.dnsCache.Add(domain, query.Question[0].Qtype, resp)
 	}
 
 	// 10. Store DNS-learned IP routes as temporary rules.
 	// SetTmpRule skips storage when static rules already agree (built-in optimization).
-	if resp != nil && resp.Rcode == dns.RcodeSuccess {
+	if resp.Rcode == dns.RcodeSuccess {
 		ips := extractIPsFromResponse(resp)
 		for _, ip := range ips {
 			k2rule.SetTmpRule(ip, action)
 		}
 	}
 
-	return resp, nil
+	return nil, packed, nil
 }
 
 // queryUpstream sends a DNS query to the appropriate upstream (direct or proxy).
@@ -398,7 +417,7 @@ func extractQueryType(query *dns.Msg) string {
 
 // extractIPsFromResponse extracts all IP addresses from a DNS response
 func extractIPsFromResponse(resp *dns.Msg) []string {
-	var ips []string
+	ips := make([]string, 0, len(resp.Answer))
 
 	for _, answer := range resp.Answer {
 		switch rr := answer.(type) {

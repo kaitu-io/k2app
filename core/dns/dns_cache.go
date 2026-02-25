@@ -1,28 +1,30 @@
 package dns
 
 import (
-	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/miekg/dns"
 )
 
-// CachedMessage represents a cached DNS message with expiration
-type CachedMessage struct {
-	Message  *dns.Msg
-	ExpireAt time.Time
+// cachedEntry stores a pre-packed DNS response with expiration.
+// Storing packed bytes instead of *dns.Msg eliminates dns.Msg.Copy() on
+// every cache hit and lets callers skip resp.Pack() entirely.
+type cachedEntry struct {
+	packed   []byte
+	expireAt time.Time
 }
 
 // DNSCache implements DNS message caching with negative caching (RFC 2308)
 type DNSCache struct {
 	mu sync.RWMutex
 
-	// Positive cache: domain+qtype → cached response
-	messages map[string]CachedMessage
+	// Positive cache: domain+qtype → pre-packed DNS response
+	messages map[string]cachedEntry
 
-	// Negative cache: domain+qtype → NXDOMAIN expiration
-	negative map[string]time.Time
+	// Negative cache: domain+qtype → pre-packed NXDOMAIN response
+	negative map[string]cachedEntry
 
 	// Configuration
 	minTTL     time.Duration // Minimum TTL (user requirement: 10 minutes)
@@ -53,8 +55,8 @@ func NewDNSCache(cfg DNSCacheConfig) *DNSCache {
 	}
 
 	return &DNSCache{
-		messages:    make(map[string]CachedMessage),
-		negative:    make(map[string]time.Time),
+		messages:    make(map[string]cachedEntry, cfg.MaxEntries),
+		negative:    make(map[string]cachedEntry, 256),
 		minTTL:      cfg.MinTTL,
 		maxTTL:      cfg.MaxTTL,
 		maxEntries:  cfg.MaxEntries,
@@ -62,47 +64,62 @@ func NewDNSCache(cfg DNSCacheConfig) *DNSCache {
 	}
 }
 
-// Get retrieves a cached DNS message
-// Returns (message, true) if found and not expired
-// Returns (nil, false) if not found or expired
-func (c *DNSCache) Get(domain string, qtype uint16) (*dns.Msg, bool) {
+// GetPacked retrieves a pre-packed DNS response from cache.
+// Returns a copy of the packed bytes with the query ID patched to queryID.
+// This is the fast path: pure memcpy, no dns.Msg.Copy() or Pack().
+func (c *DNSCache) GetPacked(domain string, qtype uint16, queryID uint16) ([]byte, bool) {
 	key := cacheKey(domain, qtype)
 
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
+	now := time.Now()
+
 	// Check negative cache first
-	if expireAt, found := c.negative[key]; found {
-		if time.Now().Before(expireAt) {
-			// Negative cache hit - create NXDOMAIN response
-			return createNXDOMAINWithSOA(&dns.Msg{
-				Question: []dns.Question{{
-					Name:   dns.Fqdn(domain),
-					Qtype:  qtype,
-					Qclass: dns.ClassINET,
-				}},
-			}), true
+	if entry, found := c.negative[key]; found {
+		if now.Before(entry.expireAt) {
+			return cloneAndPatchID(entry.packed, queryID), true
 		}
-		// Expired negative entry - will be cleaned up later
 	}
 
 	// Check positive cache
-	cached, found := c.messages[key]
+	entry, found := c.messages[key]
 	if !found {
 		return nil, false
 	}
-
-	// Check expiration
-	if time.Now().After(cached.ExpireAt) {
+	if now.After(entry.expireAt) {
 		return nil, false
 	}
 
-	// Clone message to avoid mutation
-	msg := cached.Message.Copy()
-	return msg, true
+	return cloneAndPatchID(entry.packed, queryID), true
 }
 
-// Add adds a DNS message to the cache with TTL optimization
+// Get retrieves a cached DNS message (convenience wrapper, unpacks internally).
+// Production hot paths should use GetPacked instead.
+func (c *DNSCache) Get(domain string, qtype uint16) (*dns.Msg, bool) {
+	packed, found := c.GetPacked(domain, qtype, 0)
+	if !found {
+		return nil, false
+	}
+	var msg dns.Msg
+	if err := msg.Unpack(packed); err != nil {
+		return nil, false
+	}
+	return &msg, true
+}
+
+// cloneAndPatchID copies packed DNS bytes and overwrites the query ID (bytes 0-1).
+func cloneAndPatchID(packed []byte, queryID uint16) []byte {
+	out := make([]byte, len(packed))
+	copy(out, packed)
+	out[0] = byte(queryID >> 8)
+	out[1] = byte(queryID)
+	return out
+}
+
+// Add adds a DNS message to the cache. The message is packed (serialized) once
+// and stored as raw bytes, eliminating dns.Msg.Copy() and allowing cache hits
+// to return pre-packed bytes via GetPacked.
 func (c *DNSCache) Add(domain string, qtype uint16, msg *dns.Msg) {
 	if msg == nil {
 		return
@@ -116,7 +133,13 @@ func (c *DNSCache) Add(domain string, qtype uint16, msg *dns.Msg) {
 	// Handle NXDOMAIN (negative caching per RFC 2308)
 	if msg.Rcode == dns.RcodeNameError {
 		ttl := c.extractNegativeTTL(msg)
-		c.negative[key] = time.Now().Add(ttl)
+		// Pre-pack NXDOMAIN response with SOA for negative cache.
+		nxResp := createNXDOMAINWithSOA(&dns.Msg{Question: msg.Question})
+		packed, err := nxResp.Pack()
+		if err != nil {
+			return
+		}
+		c.negative[key] = cachedEntry{packed: packed, expireAt: time.Now().Add(ttl)}
 		return
 	}
 
@@ -128,20 +151,22 @@ func (c *DNSCache) Add(domain string, qtype uint16, msg *dns.Msg) {
 	// Optimize TTL (10 minute minimum per user requirement)
 	c.optimizeTTL(msg)
 
+	// Pack after TTL optimization so stored bytes have correct TTLs
+	packed, err := msg.Pack()
+	if err != nil {
+		return
+	}
+
 	// Calculate expiration based on minimum answer TTL
 	ttl := c.extractTTL(msg)
-	expireAt := time.Now().Add(ttl)
 
-	// LRU eviction if cache is full
+	// Evict a random entry if cache is full
 	if len(c.messages) >= c.maxEntries {
-		c.evictOldest()
+		c.evictOne()
 	}
 
-	// Store cached message
-	c.messages[key] = CachedMessage{
-		Message:  msg.Copy(),
-		ExpireAt: expireAt,
-	}
+	// Store pre-packed response
+	c.messages[key] = cachedEntry{packed: packed, expireAt: time.Now().Add(ttl)}
 }
 
 // optimizeTTL enforces minimum and maximum TTL on all RRs
@@ -230,25 +255,14 @@ func (c *DNSCache) extractNegativeTTL(msg *dns.Msg) time.Duration {
 	return c.minTTL
 }
 
-// evictOldest removes the oldest cache entry (simple LRU)
-func (c *DNSCache) evictOldest() {
-	if len(c.messages) == 0 {
+// evictOne removes a random cache entry. Go map iteration order is randomized,
+// so deleting the first iterated key gives O(1) random eviction. This is
+// sufficient for DNS caches where most entries have similar TTLs (minTTL=10min)
+// and expired entries are cleaned up by the background goroutine.
+func (c *DNSCache) evictOne() {
+	for key := range c.messages {
+		delete(c.messages, key)
 		return
-	}
-
-	// Find entry with earliest expiration
-	var oldestKey string
-	var oldestTime time.Time
-
-	for key, cached := range c.messages {
-		if oldestKey == "" || cached.ExpireAt.Before(oldestTime) {
-			oldestKey = key
-			oldestTime = cached.ExpireAt
-		}
-	}
-
-	if oldestKey != "" {
-		delete(c.messages, oldestKey)
 	}
 }
 
@@ -289,25 +303,20 @@ func (c *DNSCache) cleanup() {
 	defer c.mu.Unlock()
 
 	now := time.Now()
-	removed := 0
 
 	// Clean positive cache
-	for key, cached := range c.messages {
-		if now.After(cached.ExpireAt) {
+	for key, entry := range c.messages {
+		if now.After(entry.expireAt) {
 			delete(c.messages, key)
-			removed++
 		}
 	}
 
 	// Clean negative cache
-	for key, expireAt := range c.negative {
-		if now.After(expireAt) {
+	for key, entry := range c.negative {
+		if now.After(entry.expireAt) {
 			delete(c.negative, key)
-			removed++
 		}
 	}
-
-	// No logging to avoid noise
 }
 
 // Size returns current cache size
@@ -319,5 +328,5 @@ func (c *DNSCache) Size() (positive, negative int) {
 
 // cacheKey creates a cache key from domain and query type
 func cacheKey(domain string, qtype uint16) string {
-	return fmt.Sprintf("%s:%d", domain, qtype)
+	return domain + ":" + strconv.FormatUint(uint64(qtype), 10)
 }
