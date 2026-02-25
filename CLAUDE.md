@@ -97,7 +97,8 @@ Makefile             Build orchestration — version from package.json, k2 from 
 - **Website pages are Server Components + force-static**: `web/` public pages use `async` Server Components with `export const dynamic = 'force-static'`. Never add `"use client"` to route-level pages in `web/src/app/[locale]/`. Interactive sub-components use Client Component composition. See `web/CLAUDE.md` for conventions.
 - **Website namespace registry**: Adding a new `messages/{locale}/*.json` file in `web/` requires adding the namespace name to `web/messages/namespaces.ts`. Missing entry = silent key passthrough.
 - **Website routing in locale components**: Use `usePathname` and `Link` from `@/i18n/routing` (NOT `next/navigation`/`next/link`) inside `web/src/app/[locale]/` and `web/src/components/`.
-- **macOS NE mode**: On macOS, VPN is managed via Network Extension — no k2 daemon process. `daemon_exec` IPC routes to `ne_action()` in `ne.rs` via `#[cfg(target_os = "macos")]`. Windows/Linux keep daemon HTTP at :1777. The `admin_reinstall_service_macos()` function was removed (dead code since T3 routes macOS to `ne::admin_reinstall_ne()`).
+- **macOS dual build**: Default macOS build uses daemon HTTP (same as Win/Linux). NE mode requires `--features ne-mode` Cargo flag (`build-macos-sysext` target). `#[cfg(all(target_os = "macos", feature = "ne-mode"))]` gates all NE code in `ne.rs`, `service.rs`, `main.rs`, `build.rs`.
+- **Event-driven status**: Desktop uses SSE (`status_stream.rs` connects to daemon `GET /api/events`) or NE callbacks to push `service-state-changed` and `vpn-status-changed` Tauri events. Webapp VPN store subscribes via `_k2.onServiceStateChange` / `_k2.onStatusChange`. Standalone/web falls back to 2s polling.
 
 ## Tech Stack
 
