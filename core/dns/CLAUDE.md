@@ -12,7 +12,7 @@ Steps: parse → validate → hosts lookup → filter (RFC 6761 + noise) → cac
 
 **Key**: Direct DNS uses raw UDP sockets (bypasses TUN). Proxy DNS goes through tunnel.
 
-**In-flight dedup**: `sync.Map` keyed by `domain:qtype`. If another goroutine is already querying the same domain+qtype, waiters share the result instead of issuing duplicate upstream queries.
+**In-flight dedup**: `sync.Map` keyed by `domain:qtype`. If another goroutine is already querying the same domain+qtype, waiters share the result instead of issuing duplicate upstream queries. Waiters timeout after 12s (`inflightTimeout`) to prevent indefinite blocking if the owning query hangs.
 
 ## Files
 

@@ -31,7 +31,8 @@ Provider calls `handler.HandleTCP/HandleUDP` when connections arrive. `ClientTun
 - `tproxy_linux.go` — nftables TPROXY provider (Linux only, `mode: tproxy`)
 - `tproxy_other.go` — stub returning error on non-Linux
 - `dns_darwin.go` — macOS DNS override via SCDynamicStore (sets TUN IP as DNS for primary service, crash-safe cleanup on daemon restart)
-- `dns_other.go` — no-op stub for non-macOS
+- `dns_windows.go` — Windows DNS crash recovery: marker file (`%ProgramData%\k2\dns-state.json`), `CleanupStaleDNSOverride()` at daemon startup
+- `dns_other.go` — no-op stub for Linux/iOS (build tag: `(!darwin && !windows) || ios`)
 - `provider_test.go` / `tun_desktop_test.go` — unit tests
 
 ## Modes
