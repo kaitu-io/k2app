@@ -5,6 +5,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/netip"
 	"runtime"
@@ -42,10 +43,11 @@ func nextFreeDarwinUtun() string {
 
 // TUNProvider creates a TUN device and runs a sing-tun stack for L3→L4 conversion.
 type TUNProvider struct {
-	cfg   ProviderConfig
-	tunIf tun.Tun
-	stack tun.Stack
-	name  string
+	cfg         ProviderConfig
+	tunIf       tun.Tun
+	stack       tun.Stack
+	name        string
+	dnsOverride *dnsOverride // macOS: system DNS → TUN IP (nil on other platforms)
 }
 
 var _ Provider = (*TUNProvider)(nil)
@@ -78,7 +80,7 @@ func (p *TUNProvider) Start(ctx context.Context, handler ConnectionHandler) erro
 		// which tells the OS to send DNS through TUN for Handler-level interception.
 		// On Windows: luid.SetDNS(TUN_IP.Next())
 		// On Linux:   resolvectl dns <tun> TUN_IP.Next()
-		// On macOS:   unused (AutoRoute captures all traffic)
+		// On macOS:   dns_darwin.go overrides system DNS → TUN IP via SCDynamicStore
 	}
 
 	// Exclude direct DNS upstream IPs and wire server IPs from TUN routing.
@@ -152,10 +154,32 @@ func (p *TUNProvider) Start(ctx context.Context, handler ConnectionHandler) erro
 
 	name, _ := tunIf.Name()
 	p.name = name
+
+	// macOS desktop: override system DNS → TUN_IP.Next() for DNS hijack.
+	// TUN_IP itself is LOCAL (kernel delivers without entering TUN data plane).
+	// TUN_IP.Next() routes through TUN gateway → gVisor intercepts port 53.
+	// Must be AFTER TUN is up so dnsHandler can receive DNS queries.
+	// Skip for NE/mobile FD path (NE manages DNS via NEDNSSettings).
+	if p.cfg.FileDescriptor <= 0 {
+		p.dnsOverride = newDNSOverride(ipv4Prefix.Addr().Next().String())
+		if p.dnsOverride != nil {
+			if err := p.dnsOverride.set(); err != nil {
+				slog.Warn("provider: DNS override failed (user can set DNS manually)", "err", err)
+			} else {
+				go p.dnsOverride.monitor()
+			}
+		}
+	}
+
 	return nil
 }
 
 func (p *TUNProvider) Close() error {
+	// Restore system DNS FIRST (while TUN still has routes).
+	if p.dnsOverride != nil {
+		p.dnsOverride.stop()
+		p.dnsOverride = nil
+	}
 	if p.stack != nil {
 		p.stack.Close()
 	}
