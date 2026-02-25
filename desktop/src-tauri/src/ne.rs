@@ -1,13 +1,13 @@
 //! macOS Network Extension (NE) bridge — FFI to Swift libk2_ne_helper.a
 //!
-//! This module is compiled only on macOS (`#[cfg(target_os = "macos")]`).
+//! This module is compiled only on macOS with the `ne-mode` feature enabled.
 //! It exposes the same IPC surface as `service.rs` but routes calls through
 //! the Swift NE helper static library instead of the k2 daemon HTTP API.
 
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", feature = "ne-mode"))]
 pub use macos::*;
 
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", feature = "ne-mode"))]
 mod macos {
     use crate::service::ServiceResponse;
     use std::ffi::{CStr, CString};
@@ -182,13 +182,22 @@ mod macos {
             Err(_) => return,
         };
 
-        // Acquire the stored AppHandle and emit a Tauri event.
         let guard = STATE_HANDLE.lock();
         if let Ok(maybe_handle) = guard {
             if let Some(handle) = maybe_handle.as_ref() {
-                let payload = serde_json::json!({ "state": state });
-                if let Err(e) = handle.emit("ne-state-changed", payload) {
-                    log::error!("[ne] Failed to emit ne-state-changed: {}", e);
+                // NE installed = service always available
+                let _ = handle.emit(
+                    "service-state-changed",
+                    serde_json::json!({ "available": true }),
+                );
+
+                // Get full status from NE helper for vpn-status-changed
+                let status_payload = match call_ne_fn(k2ne_status()) {
+                    Ok(resp) if resp.code == 0 => resp.data,
+                    _ => serde_json::json!({ "state": state }),
+                };
+                if let Err(e) = handle.emit("vpn-status-changed", status_payload) {
+                    log::error!("[ne] Failed to emit vpn-status-changed: {}", e);
                 }
             }
         }
@@ -486,9 +495,9 @@ mod tests {
     // -----------------------------------------------------------------------
     #[test]
     fn test_get_udid_macos_native() {
-        // On macOS, call the real sysctl to get the hardware UUID.
-        // On other platforms, test the response parsing logic with a known UUID.
-        #[cfg(target_os = "macos")]
+        // On macOS with ne-mode, call the real sysctl to get the hardware UUID.
+        // Otherwise, test the response parsing logic with a known UUID.
+        #[cfg(all(target_os = "macos", feature = "ne-mode"))]
         {
             // Import the real implementation
             let result = crate::ne::get_udid_native();
@@ -506,7 +515,7 @@ mod tests {
                 udid_str
             );
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(all(target_os = "macos", feature = "ne-mode")))]
         {
             // Simulate the parsing logic: build a ServiceResponse with a known UUID
             // and verify the structure is correct.
@@ -527,9 +536,9 @@ mod tests {
     #[test]
     fn test_ensure_ne_installed_replaces_service() {
         // Verify the function exists by calling it through the mock.
-        // On macOS the real crate::ne::ensure_ne_installed() is available.
-        // On other platforms we test the stub call directly.
-        #[cfg(target_os = "macos")]
+        // With ne-mode on macOS the real crate::ne::ensure_ne_installed() is available.
+        // Otherwise we test the stub call directly.
+        #[cfg(all(target_os = "macos", feature = "ne-mode"))]
         {
             let result = crate::ne::ensure_ne_installed();
             // Mock returns code=0, so this should succeed
@@ -539,7 +548,7 @@ mod tests {
                 result.err()
             );
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(all(target_os = "macos", feature = "ne-mode")))]
         {
             // Verify the mock k2ne_install stub itself returns a valid ServiceResponse
             let ptr = k2ne_install();
