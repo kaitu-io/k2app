@@ -1,13 +1,15 @@
-//go:build !darwin || ios
+//go:build (!darwin && !windows) || ios
 
 package provider
 
-// CleanupStaleDNSOverride is a no-op on non-macOS platforms.
+// CleanupStaleDNSOverride is a no-op on Linux/iOS.
 func CleanupStaleDNSOverride() {}
 
-// dnsOverride is a no-op on non-macOS platforms.
+func saveDNSState(ifaceName, dnsServer string) {}
+func removeDNSState()                          {}
+
+// dnsOverride is a no-op on Linux/iOS.
 // Linux: sing-tun sets DNS via resolvectl.
-// Windows: sing-tun sets DNS via luid.SetDNS.
 type dnsOverride struct{}
 
 func newDNSOverride(tunDNS string) *dnsOverride { return nil }

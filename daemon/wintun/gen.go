@@ -22,8 +22,13 @@ import (
 const (
 	wintunURL    = "https://www.wintun.net/builds/wintun-0.14.1.zip"
 	wintunSHA256 = "07c256185d6ee3652e09fa55c0b673e2624b565e02c4b9091c79ca7d2f24ef51"
-	dllZipPath   = "wintun/bin/amd64/wintun.dll"
 )
+
+// Architectures to extract: zip path → local filename.
+var archDLLs = map[string]string{
+	"wintun/bin/amd64/wintun.dll": "wintun_amd64.dll",
+	"wintun/bin/arm64/wintun.dll": "wintun_arm64.dll",
+}
 
 func main() {
 	if err := run(); err != nil {
@@ -67,15 +72,18 @@ func run() error {
 	}
 	fmt.Println("sha256 verified")
 
-	// Extract wintun.dll from the zip.
-	if err := extractDLL(zipFile, dllZipPath, "wintun.dll"); err != nil {
-		os.Remove(zipFile)
-		return err
+	// Extract architecture-specific DLLs from the zip.
+	for zipPath, localName := range archDLLs {
+		if err := extractDLL(zipFile, zipPath, localName); err != nil {
+			os.Remove(zipFile)
+			return err
+		}
+		fmt.Printf("extracted: %s\n", localName)
 	}
 
 	// Clean up the zip.
 	os.Remove(zipFile)
-	fmt.Println("done: wintun.dll extracted")
+	fmt.Println("done")
 	return nil
 }
 

@@ -171,6 +171,11 @@ func (p *TUNProvider) Start(ctx context.Context, handler ConnectionHandler) erro
 		}
 	}
 
+	// Save DNS state marker for crash recovery. On Windows, sing-tun sets DNS
+	// directly via luid.SetDNS — we track state externally so the next daemon
+	// startup can detect and clean up after a crash. No-op on other platforms.
+	saveDNSState(p.name, ipv4Prefix.Addr().Next().String())
+
 	return nil
 }
 
@@ -180,6 +185,8 @@ func (p *TUNProvider) Close() error {
 		p.dnsOverride.stop()
 		p.dnsOverride = nil
 	}
+	// Remove DNS state marker — clean shutdown means no crash recovery needed.
+	removeDNSState()
 	if p.stack != nil {
 		p.stack.Close()
 	}

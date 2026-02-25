@@ -2,11 +2,15 @@
 
 package daemon
 
-import "log/slog"
+import (
+	"log/slog"
 
-// restoreNetworkPlatform attempts platform-specific network restoration.
-// On Windows, sing-tun should auto-clean routes on Close().
+	"github.com/kaitu-io/k2/provider"
+)
+
+// restoreNetworkPlatform attempts Windows-specific network restoration
+// after a panic. Best-effort cleanup of DNS and routes.
 func restoreNetworkPlatform() {
-	slog.Info("recovery: sing-tun should auto-restore routes on Close()")
-	// TODO: If sing-tun doesn't clean up on crash, add manual route/DNS removal here.
+	slog.Info("recovery: attempting Windows network restoration after panic")
+	provider.CleanupStaleDNSOverride()
 }

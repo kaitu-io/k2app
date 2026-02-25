@@ -2,7 +2,9 @@ package dns
 
 import (
 	"net"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/kaitu-io/k2rule"
 	"github.com/miekg/dns"
@@ -286,5 +288,127 @@ func TestHandleQuery_NilWriter(t *testing.T) {
 	}
 	if resp.Rcode != dns.RcodeSuccess {
 		t.Errorf("Expected success, got %s", dns.RcodeToString[resp.Rcode])
+	}
+}
+
+// slowQuerier implements DNSQuerier and blocks for a configurable duration.
+type slowQuerier struct {
+	delay time.Duration
+	resp  *dns.Msg
+	err   error
+	mu    sync.Mutex
+	calls int
+}
+
+func (q *slowQuerier) Query(msg *dns.Msg) (*dns.Msg, error) {
+	q.mu.Lock()
+	q.calls++
+	q.mu.Unlock()
+	time.Sleep(q.delay)
+	if q.err != nil {
+		return nil, q.err
+	}
+	resp := q.resp.Copy()
+	resp.Id = msg.Id
+	return resp, nil
+}
+
+func TestInflightDedup_WaiterTimesOut(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow inflight timeout test")
+	}
+	initK2Rule(t, k2rule.TargetDirect)
+
+	// Owner query blocks much longer than inflightTimeout.
+	directQ := &slowQuerier{
+		delay: inflightTimeout + 30*time.Second,
+		resp:  buildAResponse("hang.example.com", net.ParseIP("1.2.3.4")),
+	}
+
+	mw := NewMiddleware(MiddlewareConfig{
+		DirectDNS: directQ,
+		ProxyDNS:  &mockQuerier{resp: buildAResponse("hang.example.com", net.ParseIP("5.6.7.8"))},
+	})
+
+	query := buildAQuery("hang.example.com")
+
+	// Start the owning query in background.
+	go mw.HandleQuery(query)
+	time.Sleep(50 * time.Millisecond) // let owner register inflight entry
+
+	// Waiter query — must return within inflightTimeout + margin.
+	start := time.Now()
+	_, err := mw.HandleQuery(query)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected timeout error from waiter, got nil")
+	}
+	if elapsed > inflightTimeout+2*time.Second {
+		t.Errorf("waiter blocked too long: %v (expected ~%v)", elapsed, inflightTimeout)
+	}
+	if elapsed < inflightTimeout-time.Second {
+		t.Errorf("waiter returned too early: %v (expected ~%v)", elapsed, inflightTimeout)
+	}
+}
+
+func TestInflightDedup_NormalDedup(t *testing.T) {
+	initK2Rule(t, k2rule.TargetDirect)
+
+	directQ := &slowQuerier{
+		delay: 200 * time.Millisecond,
+		resp:  buildAResponse("dedup.example.com", net.ParseIP("1.2.3.4")),
+	}
+
+	mw := NewMiddleware(MiddlewareConfig{
+		DirectDNS: directQ,
+		ProxyDNS:  &mockQuerier{resp: buildAResponse("dedup.example.com", net.ParseIP("5.6.7.8"))},
+	})
+
+	query := buildAQuery("dedup.example.com")
+
+	// Fire two concurrent queries for the same domain.
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	resps := make([][]byte, 2)
+
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			resps[idx], errs[idx] = mw.HandleQuery(query)
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("query %d: unexpected error: %v", i, err)
+		}
+	}
+
+	// Both should have valid responses with the same IP.
+	for i, respBytes := range resps {
+		var resp dns.Msg
+		if err := resp.Unpack(respBytes); err != nil {
+			t.Errorf("query %d: unpack error: %v", i, err)
+			continue
+		}
+		if len(resp.Answer) == 0 {
+			t.Errorf("query %d: no answer", i)
+			continue
+		}
+		a := resp.Answer[0].(*dns.A)
+		if !a.A.Equal(net.ParseIP("1.2.3.4")) {
+			t.Errorf("query %d: got %s, want 1.2.3.4", i, a.A)
+		}
+	}
+
+	// Verify dedup: only 1 upstream call for 2 queries.
+	directQ.mu.Lock()
+	calls := directQ.calls
+	directQ.mu.Unlock()
+	if calls != 1 {
+		t.Errorf("expected 1 upstream call (dedup), got %d", calls)
 	}
 }

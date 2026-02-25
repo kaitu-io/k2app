@@ -7,11 +7,17 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/kaitu-io/k2rule"
 	"github.com/kaitu-io/k2/core/packet"
 	"github.com/miekg/dns"
 )
+
+// inflightTimeout bounds how long a waiter blocks for an in-flight
+// upstream DNS query. Must exceed ProxyDNSClient's worst-case
+// (5 s/server × 2 servers = 10 s).
+const inflightTimeout = 12 * time.Second
 
 // DNSQuerier is satisfied by DirectDNSClient and ProxyDNSClient.
 type DNSQuerier interface {
@@ -188,14 +194,19 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, error) {
 	if existing, loaded := m.inflight.LoadOrStore(inflightKey, result); loaded {
 		// Another goroutine is already querying — wait for its result.
 		existing := existing.(*inflightResult)
-		<-existing.done
-		if existing.err != nil {
-			return nil, existing.err
+		select {
+		case <-existing.done:
+			if existing.err != nil {
+				return nil, existing.err
+			}
+			// Clone response and set caller's query ID.
+			resp := existing.resp.Copy()
+			resp.Id = query.Id
+			return resp, nil
+		case <-time.After(inflightTimeout):
+			slog.Warn("DNS inflight dedup timeout", "domain", domain, "key", inflightKey)
+			return nil, fmt.Errorf("DNS query timeout waiting for in-flight %s", inflightKey)
 		}
-		// Clone response and set caller's query ID.
-		resp := existing.resp.Copy()
-		resp.Id = query.Id
-		return resp, nil
 	}
 
 	// We own this query — execute and broadcast result.

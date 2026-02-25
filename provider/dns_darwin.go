@@ -484,3 +484,9 @@ func (d *dnsOverride) stop() {
 func flushDNSCache() {
 	exec.Command("dscacheutil", "-flushcache").Run()
 }
+
+// saveDNSState is a no-op on macOS (uses dnsServiceFile for crash recovery).
+func saveDNSState(ifaceName, dnsServer string) {}
+
+// removeDNSState is a no-op on macOS (dnsOverride.stop removes dnsServiceFile).
+func removeDNSState() {}
