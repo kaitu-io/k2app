@@ -53,14 +53,19 @@ When `CertDir` is set (always true in zero-config mode):
 
 ```go
 type Server struct {
-    listener    net.Listener
-    ticketStore *wire.TicketStore
-    quicServer  *wire.QUICServer
-    tcpwsServer *wire.TCPWSServer
-    reverseProxy *wire.ReverseProxy
-    certPair    *wire.CertPair       // RSA + EC dual keypair
+    cfg      *config.ServerConfig
+    store    *wire.TicketStore
+    quicSrv  *wire.QUICServer
+    tcpwsSrv *wire.TCPWSServer
+    handler  *ProxyHandler         // TCP/UDP proxy (AcceptTCP/ServeUDP)
+    authHandler http.Handler       // POST /k2v5/auth
+    TLSConfig   *tls.Config       // cert selection callback + ECH keys
+    echConfig   []byte            // ECH config list for client distribution
+    done        chan struct{}
 }
 ```
+
+Note: `wire.ReverseProxy` is a function (not a type) — called for non-ECH SNIs to camouflage as the real target site.
 
 ## Lifecycle
 

@@ -22,41 +22,50 @@ import (
 // Mock helpers
 // ==========================================================================
 
-// mockEventHandler records calls for assertion.
+// mockEventHandler records OnStatus calls for assertion.
 type mockEventHandler struct {
-	mu     sync.Mutex
-	states []string
-	errors []string
+	mu       sync.Mutex
+	statuses []Status
 }
 
-func (m *mockEventHandler) OnStateChange(state string) {
+func (m *mockEventHandler) OnStatus(status Status) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.states = append(m.states, state)
-}
-
-func (m *mockEventHandler) OnError(message string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.errors = append(m.errors, message)
+	m.statuses = append(m.statuses, status)
 }
 
 func (m *mockEventHandler) OnStats(txBytes, rxBytes int64) {}
 
-func (m *mockEventHandler) getStates() []string {
+func (m *mockEventHandler) getStatuses() []Status {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	cp := make([]string, len(m.states))
-	copy(cp, m.states)
+	cp := make([]Status, len(m.statuses))
+	copy(cp, m.statuses)
 	return cp
 }
 
+// getStates extracts state strings from recorded statuses.
+func (m *mockEventHandler) getStates() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	states := make([]string, len(m.statuses))
+	for i, s := range m.statuses {
+		states[i] = s.State
+	}
+	return states
+}
+
+// getErrors extracts error messages from recorded statuses (non-nil errors only).
 func (m *mockEventHandler) getErrors() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	cp := make([]string, len(m.errors))
-	copy(cp, m.errors)
-	return cp
+	var errs []string
+	for _, s := range m.statuses {
+		if s.Error != nil {
+			errs = append(errs, s.Error.Message)
+		}
+	}
+	return errs
 }
 
 // mockConnectionHandler records HandleTCP / HandleUDP calls.
@@ -371,7 +380,7 @@ func TestEngineStart_EventHandler_StateChanges(t *testing.T) {
 	}
 }
 
-func TestEngineStart_EventHandler_OnError(t *testing.T) {
+func TestEngineStart_EventHandler_Error(t *testing.T) {
 	e := New()
 	h := &mockEventHandler{}
 	e.SetEventHandler(h)
@@ -380,7 +389,7 @@ func TestEngineStart_EventHandler_OnError(t *testing.T) {
 
 	errs := h.getErrors()
 	if len(errs) == 0 {
-		t.Fatal("expected OnError to be called")
+		t.Fatal("expected OnStatus with error to be called")
 	}
 }
 
@@ -400,7 +409,7 @@ func TestEngineStatusJSON_Disconnected(t *testing.T) {
 		t.Fatalf("state = %v, want %q", m["state"], StateDisconnected)
 	}
 	// No extra keys when disconnected.
-	for _, key := range []string{"connected_at", "uptime_seconds", "wire_url", "error"} {
+	for _, key := range []string{"connected_at", "uptime_seconds", "error"} {
 		if _, ok := m[key]; ok {
 			t.Fatalf("unexpected key %q in disconnected state", key)
 		}
@@ -424,9 +433,6 @@ func TestEngineStatusJSON_Connected(t *testing.T) {
 	}
 	if m["state"] != StateConnected {
 		t.Fatalf("state = %v, want %q", m["state"], StateConnected)
-	}
-	if m["wire_url"] != "k2v5://udid:tok@1.2.3.4:443" {
-		t.Fatalf("wire_url = %v, want k2v5://udid:tok@1.2.3.4:443", m["wire_url"])
 	}
 	if _, ok := m["connected_at"]; !ok {
 		t.Fatal("expected 'connected_at' key when connected")
@@ -452,11 +458,16 @@ func TestEngineStatusJSON_AfterFailedStart(t *testing.T) {
 	if m["state"] != StateDisconnected {
 		t.Fatalf("state = %v, want %q", m["state"], StateDisconnected)
 	}
-	if _, ok := m["error"]; !ok {
+	errRaw, ok := m["error"]
+	if !ok {
 		t.Fatal("expected 'error' key after failed start")
 	}
-	if m["error"] == "" {
-		t.Fatal("error should be non-empty after failed start")
+	errObj, ok := errRaw.(map[string]any)
+	if !ok {
+		t.Fatalf("error should be an object, got %T", errRaw)
+	}
+	if errObj["message"] == "" {
+		t.Fatal("error.message should be non-empty after failed start")
 	}
 }
 
@@ -477,7 +488,7 @@ func TestEngineStatusJSON_MatchesDaemonFormat(t *testing.T) {
 		t.Fatalf("StatusJSON returned invalid JSON: %v", err)
 	}
 
-	expected := []string{"state", "connected_at", "uptime_seconds", "wire_url", "error"}
+	expected := []string{"state", "connected_at", "uptime_seconds", "error"}
 	for _, key := range expected {
 		if _, ok := m[key]; !ok {
 			t.Errorf("missing expected key %q", key)
@@ -894,7 +905,7 @@ func TestEngine_NetworkMonitor_ClosedOnFail(t *testing.T) {
 	}
 	errs := h.getErrors()
 	if len(errs) == 0 || errs[0] != "connection lost" {
-		t.Fatalf("expected OnError('connection lost'), got %v", errs)
+		t.Fatalf("expected error 'connection lost', got %v", errs)
 	}
 }
 
@@ -933,7 +944,7 @@ func TestEngineFailCleansCancel(t *testing.T) {
 	}
 	errs := h.getErrors()
 	if len(errs) == 0 || errs[0] != "test error" {
-		t.Fatalf("expected OnError('test error'), got %v", errs)
+		t.Fatalf("expected error 'test error', got %v", errs)
 	}
 }
 

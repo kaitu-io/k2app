@@ -101,8 +101,8 @@ Platform Shell (daemon/appext) assembles `engine.Config` with platform-specific 
 - `wire.DialerController`: ControlFunc() (optional, for DNS socket protection — implemented by appext.protectedDialer)
 - `provider.Provider`: Start(ctx, ConnectionHandler), Close, Name (TUN/Proxy/TProxy/iOS/Android)
 - `provider.ConnectionHandler`: HandleTCP(conn, dest), HandleUDP(conn, dest) (implemented by ClientTunnel, dnsHandler)
-- `engine.EventHandler`: OnStateChange(state), OnError(msg), OnStats(tx, rx) (implemented by daemon, appext.eventBridge)
-- `engine.NetworkChangeNotifier`: Start(ctx, InterfaceMonitor), Close (implemented by daemon.singTunMonitor, appext.nePlatform)
+- `engine.EventHandler`: OnStatus(Status), OnStats(tx, rx) (implemented by daemon, appext.eventBridge)
+- `engine.NetworkChangeNotifier`: Start(callback func()) error, Close() error (implemented by daemon.singTunMonitor, appext.nePlatform)
 - `dns.DNSQuerier`: Query(*dns.Msg) (*dns.Msg, error) (implemented by DirectDNSClient, ProxyDNSClient)
 
 ### Binary Split
@@ -165,11 +165,11 @@ docs/todos/p2-*.md     Nice to have
 
 ## Platform Mapping
 
-| Platform | Entry | Shell | Provider | DirectDialer |
-|----------|-------|-------|----------|--------------|
-| macOS sysext | xcframework | appext/ | tun (FD) | nePlatform |
-| iOS | xcframework | appext/ | tun (FD) | nePlatform |
-| Android | aar | appext/ | tun (FD) | protectedDialer |
-| Linux desktop | cmd/k2 | daemon/ | tun (self-create) | daemon.directDialer |
-| Windows | cmd/k2 | daemon/ | tun (self-create) | daemon.directDialer |
-| OpenWRT | cmd/k2 | daemon/ | tproxy | nil |
+| Platform | Entry | Shell | Provider | DirectDialer | NetworkMonitor |
+|----------|-------|-------|----------|--------------|----------------|
+| macOS sysext | xcframework | appext/ | tun (FD) | nePlatform | nePlatform |
+| iOS | xcframework | appext/ | tun (FD) | nePlatform | nePlatform |
+| Android | aar | appext/ | tun (FD) | protectedDialer | nil (OS calls OnNetworkChanged) |
+| Linux desktop | cmd/k2 | daemon/ | tun (self-create) | daemon.directDialer | singTunMonitor |
+| Windows | cmd/k2 | daemon/ | tun (self-create) | daemon.directDialer | singTunMonitor |
+| OpenWRT | cmd/k2 | daemon/ | tproxy | nil | nil |

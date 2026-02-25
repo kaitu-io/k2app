@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/kaitu-io/k2/config"
+	"github.com/kaitu-io/k2/engine"
 )
 
 func TestStatePersistence(t *testing.T) {
@@ -20,7 +21,7 @@ func TestStatePersistence(t *testing.T) {
 	// Save state.
 	st := persistedState{
 		Config:    cfg,
-		State:     StateConnected,
+		State:     engine.StateConnected,
 		Timestamp: time.Now(),
 	}
 	saveState(st)
@@ -57,7 +58,7 @@ func TestAutoReconnectSkipsStale(t *testing.T) {
 	// Save stale state (2 hours ago).
 	saveState(persistedState{
 		Config:    cfg,
-		State:     StateConnected,
+		State:     engine.StateConnected,
 		Timestamp: time.Now().Add(-2 * time.Hour),
 	})
 
@@ -66,7 +67,7 @@ func TestAutoReconnectSkipsStale(t *testing.T) {
 	d.tryAutoReconnect(context.Background())
 
 	// State should remain stopped.
-	if d.State() != StateStopped {
+	if d.State() != engine.StateDisconnected {
 		t.Fatalf("expected stopped, got %s", d.State())
 	}
 }

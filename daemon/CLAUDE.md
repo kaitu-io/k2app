@@ -1,17 +1,20 @@
 # Daemon Layer (daemon/)
 
-State machine + HTTP API on `127.0.0.1:1777`. Auto-installed as system service.
+HTTP API on `127.0.0.1:1777` + SSE push. Auto-installed as system service.
+Implements `engine.EventHandler` — receives state from engine, not the other way around.
 
-## State Machine
+## State Model
 
-3 states: `stopped` → `connecting` → `connected` → `stopped`
+Engine is single source of truth. Daemon stores `lastStatus engine.Status` updated by engine's `OnStatus` callback.
+No independent state machine — daemon derives everything from engine events.
 
-`lastError` is orthogonal — present in any state. API returns `{"state":"stopped", "error":"..."}` on failure.
+State values: `disconnected`, `connecting`, `connected`, `reconnecting`, `paused`
 
 ## Concurrency Model
 
 - `opMu sync.Mutex` — serializes doUp/doDown (coarse lifecycle lock)
 - `mu sync.RWMutex` — protects field access (fine-grained data lock)
+- `sseMu sync.RWMutex` — protects SSE client map
 - `closeTunnel()` — idempotent teardown, caller must hold opMu
 
 ## API
@@ -20,10 +23,15 @@ State machine + HTTP API on `127.0.0.1:1777`. Auto-installed as system service.
 
 | Action | Params | Description |
 |--------|--------|-------------|
-| `up` | `config: ClientConfig` or `wire_url`, optional `pid` | Connect tunnel |
+| `up` | `config: ClientConfig`, optional `pid` | Connect tunnel |
 | `down` | — | Disconnect |
-| `status` | — | State + connection info + active config |
+| `status` | — | State + structured error + active config |
 | `version` | — | Version info |
+
+### GET /api/events — SSE
+
+Real-time status push. Each event is a full `engine.Status` snapshot (idempotent).
+Heartbeat every 15s. Buffered per client (cap 8), slow clients get dropped.
 
 ### Other
 
@@ -36,21 +44,23 @@ Request/Response: `daemon.Request{Action, Params}` / `daemon.Response{Code, Mess
 
 **doUp(cfg *ClientConfig, pid int)**:
 1. `opMu.Lock()` — serialize with other doUp/doDown
-2. `closeTunnel()` — unconditional teardown (idempotent)
-3. `engineConfigFromClientConfig(cfg)` — assemble `engine.Config` with platform fields (DirectDialer, NetworkMonitor, InterfaceMonitor)
-4. `engine.Start(cfg)` — delegates all lifecycle to engine
-5. Start PID monitor if requested
-6. Persist state for auto-reconnect
+2. `closeTunnel()` — unconditional teardown (engine.Stop fires OnStatus(disconnected))
+3. `eng := engine.New()` + `eng.SetEventHandler(d)` — daemon receives events from this point
+4. `engineConfigFromClientConfig(cfg)` — assemble `engine.Config` with platform fields
+5. `d.StartFunc(eng, cfg)` — engine fires OnStatus(connecting), then OnStatus(connected) or error
+6. Start PID monitor if requested
+7. Persist state for auto-reconnect
 
-Error path: set `lastError` + state to `stopped`.
+Error path: engine's fail() fires OnStatus(disconnected+error) → daemon's lastStatus updated automatically.
 
 **doDown()**:
 1. `opMu.Lock()` — serialize
-2. `closeTunnel()` — `engine.Stop()` + transition to `stopped`
+2. `closeTunnel()` — `engine.Stop()` fires OnStatus(disconnected)
 
 ## Files
 
-- `daemon.go` — `Daemon` struct, state machine, HTTP server setup, `engineConfigFromClientConfig`
+- `daemon.go` — `Daemon` struct, `OnStatus`/`OnStats` (EventHandler impl), HTTP server setup, `engineConfigFromClientConfig`
+- `sse.go` — `handleEvents()` SSE endpoint, `broadcastStatus()` fan-out
 - `api.go` — `handleCore`/`handlePing`/`handleMetrics`/`handleVersion` + CORS middleware
 - `client.go` — `Client` struct for IPC (used by CLI commands)
 - `state.go` — Persisted state: saved config + last connect time (auto-reconnect <1h)

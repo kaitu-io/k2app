@@ -1,10 +1,10 @@
 package engine
 
 // EventHandler receives lifecycle events from the Engine.
-// All methods use simple parameter types for gomobile compatibility.
+// OnStatus delivers a typed Status snapshot on every state change.
+// OnStats delivers traffic counters (high-frequency, separate concern).
 type EventHandler interface {
-	OnStateChange(state string)
-	OnError(message string)
+	OnStatus(status Status)
 	OnStats(txBytes, rxBytes int64)
 }
 
@@ -13,5 +13,6 @@ const (
 	StateDisconnected = "disconnected"
 	StateConnecting   = "connecting"
 	StateConnected    = "connected"
-	StatePaused       = "paused" // handler-only transient state; engine.state stays "connected"
+	StatePaused       = "paused"       // handler-only transient; engine.state stays "connected"
+	StateReconnecting = "reconnecting" // handler-only transient; engine.state stays "connected"
 )

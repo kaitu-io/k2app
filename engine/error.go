@@ -1,9 +1,12 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"net"
 	"strings"
+
+	"github.com/kaitu-io/k2/wire"
 )
 
 // Error codes aligned with HTTP status codes.
@@ -29,19 +32,36 @@ func (e *EngineError) Error() string {
 }
 
 // ClassifyError maps a wire/engine error to an HTTP-aligned error code.
-// Priority: net.Error.Timeout() → string pattern match → fallback 570.
+// Priority: MultiTransportError → timeout → string pattern match → fallback 570.
 func ClassifyError(err error) *EngineError {
+	// Priority 1: MultiTransportError — classify by primary (TCP-WS) error,
+	// but keep full combined message for UI display.
+	var mte *wire.MultiTransportError
+	if errors.As(err, &mte) {
+		classified := classifyByPatterns(mte.TCPWSErr.Error())
+		classified.Message = mte.Error()
+		return classified
+	}
+
 	msg := err.Error()
 
-	// Priority 1: Check for timeout via net.Error interface (most specific).
+	// Priority 2: context.DeadlineExceeded (not a net.Error, so check explicitly).
+	if errors.Is(err, context.DeadlineExceeded) {
+		return &EngineError{Code: ErrCodeTimeout, Message: msg}
+	}
+
+	// Priority 3: net.Error.Timeout() interface check.
 	var netErr net.Error
 	if errors.As(err, &netErr) && netErr.Timeout() {
 		return &EngineError{Code: ErrCodeTimeout, Message: msg}
 	}
 
-	// Priority 2: String pattern matching.
-	// Order matters — check more specific patterns first.
+	// Priority 4: String pattern matching.
+	return classifyByPatterns(msg)
+}
 
+// classifyByPatterns matches error message text to an error code.
+func classifyByPatterns(msg string) *EngineError {
 	// 401: Auth rejected (server explicitly rejected credentials).
 	if strings.Contains(msg, "stream rejected") {
 		return &EngineError{Code: ErrCodeAuthRejected, Message: msg}

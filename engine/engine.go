@@ -260,7 +260,7 @@ func (e *Engine) OnNetworkChanged() {
 
 	// Notify handler of transient reconnecting state (for UI feedback).
 	if handler != nil {
-		handler.OnStateChange("reconnecting")
+		handler.OnStatus(Status{State: StateReconnecting})
 	}
 
 	// Reset cached connections — next dial will create fresh ones.
@@ -268,9 +268,12 @@ func (e *Engine) OnNetworkChanged() {
 		tm.ResetConnections()
 	}
 
-	// Notify handler we're back to connected.
+	// Notify handler we're back to connected with full status snapshot.
 	if handler != nil {
-		handler.OnStateChange(StateConnected)
+		e.mu.Lock()
+		s := e.buildStatusLocked()
+		e.mu.Unlock()
+		handler.OnStatus(s)
 	}
 }
 
@@ -291,7 +294,7 @@ func (e *Engine) Pause() {
 		tm.ResetConnections()
 	}
 	if handler != nil {
-		handler.OnStateChange(StatePaused)
+		handler.OnStatus(Status{State: StatePaused})
 	}
 }
 
@@ -305,13 +308,14 @@ func (e *Engine) Wake() {
 	e.paused = false
 	handler := e.handler
 	tm := e.tm
+	s := e.buildStatusLocked()
 	e.mu.Unlock()
 
 	if tm != nil {
 		tm.ResetConnections()
 	}
 	if handler != nil {
-		handler.OnStateChange(StateConnected)
+		handler.OnStatus(s)
 	}
 }
 
@@ -357,30 +361,30 @@ func (e *Engine) Stop() error {
 	return nil
 }
 
+// GetStatus returns the current engine state as a typed snapshot.
+func (e *Engine) GetStatus() Status {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.buildStatusLocked()
+}
+
+// buildStatusLocked builds a Status from current fields. Caller must hold e.mu.
+func (e *Engine) buildStatusLocked() Status {
+	return Status{
+		State:       e.state,
+		Error:       e.lastError,
+		ConnectedAt: e.connectedAt,
+	}
+}
+
 // StatusJSON returns the engine status as a JSON string.
 // The format uses snake_case keys for consistency with the daemon API.
 func (e *Engine) StatusJSON() string {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	info := map[string]any{
-		"state": e.state,
-	}
-	if e.state == StateConnected && !e.connectedAt.IsZero() {
-		info["connected_at"] = e.connectedAt.Format(time.RFC3339)
-		info["uptime_seconds"] = int(time.Since(e.connectedAt).Seconds())
-	}
-	if e.lastError != nil {
-		info["error"] = e.lastError
-	}
-	if e.client != nil {
-		info["wire_url"] = e.client.Server
-	}
-	b, _ := json.Marshal(info)
+	b, _ := json.Marshal(e.GetStatus())
 	return string(b)
 }
 
-// setState updates state and notifies the EventHandler.
+// setState updates state and notifies the EventHandler with a full status snapshot.
 // Must be called with e.mu held.
 func (e *Engine) setState(s string) {
 	if s == StateConnected {
@@ -388,12 +392,13 @@ func (e *Engine) setState(s string) {
 	}
 	e.state = s
 	if e.handler != nil {
-		e.handler.OnStateChange(s)
+		e.handler.OnStatus(e.buildStatusLocked())
 	}
 }
 
 // fail records an error, cancels any in-flight context, resets to
-// disconnected, and returns the error.
+// disconnected, and returns the error. The OnStatus event carries both
+// the disconnected state and the classified error atomically.
 func (e *Engine) fail(err error) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -405,9 +410,6 @@ func (e *Engine) fail(err error) error {
 	if e.cancel != nil {
 		e.cancel()
 		e.cancel = nil
-	}
-	if e.handler != nil {
-		e.handler.OnError(err.Error())
 	}
 	e.setState(StateDisconnected)
 	return err
@@ -482,4 +484,17 @@ func extractServerHost(wireURL string) string {
 		return ""
 	}
 	return u.Hostname()
+}
+
+// ForceConnected sets the engine to connected state and fires OnStatus.
+// For testing only — allows daemon tests to simulate a connected engine.
+func (e *Engine) ForceConnected() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.state = StateConnected
+	e.connectedAt = time.Now()
+	e.lastError = nil
+	if e.handler != nil {
+		e.handler.OnStatus(e.buildStatusLocked())
+	}
 }

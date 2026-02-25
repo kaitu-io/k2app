@@ -18,7 +18,7 @@ import (
 
 func TestHandleUpConfigJSON(t *testing.T) {
 	d := New()
-	d.EngineStarter = mockEngineStarter
+	d.StartFunc = mockStartFunc
 
 	body := `{"action":"up","params":{"config":{"server":"k2v5://test:token@host:443"}}}`
 	req := httptest.NewRequest("POST", "/api/core", bytes.NewReader([]byte(body)))
@@ -31,7 +31,7 @@ func TestHandleUpConfigJSON(t *testing.T) {
 		t.Fatalf("expected code 0, got %d: %s", resp.Code, resp.Message)
 	}
 
-	if d.State() != StateConnected {
+	if d.State() != engine.StateConnected {
 		t.Fatalf("expected connected, got %s", d.State())
 	}
 }
@@ -55,9 +55,10 @@ func TestHandleUpRejectsWireURL(t *testing.T) {
 func TestDoUpAcceptsClientConfig(t *testing.T) {
 	var captured engine.Config
 	d := New()
-	d.EngineStarter = func(cfg engine.Config) (*engine.Engine, error) {
+	d.StartFunc = func(eng *engine.Engine, cfg engine.Config) error {
 		captured = cfg
-		return engine.New(), nil
+		eng.ForceConnected()
+		return nil
 	}
 
 	clientCfg := &config.ClientConfig{
@@ -69,7 +70,7 @@ func TestDoUpAcceptsClientConfig(t *testing.T) {
 		t.Fatalf("doUp: %v", err)
 	}
 
-	if d.State() != StateConnected {
+	if d.State() != engine.StateConnected {
 		t.Fatalf("expected connected, got %s", d.State())
 	}
 	if captured.Client == nil {
@@ -83,9 +84,10 @@ func TestDoUpAcceptsClientConfig(t *testing.T) {
 func TestEngineConfigFromClientConfig_TunFields(t *testing.T) {
 	var captured engine.Config
 	d := New()
-	d.EngineStarter = func(cfg engine.Config) (*engine.Engine, error) {
+	d.StartFunc = func(eng *engine.Engine, cfg engine.Config) error {
 		captured = cfg
-		return engine.New(), nil
+		eng.ForceConnected()
+		return nil
 	}
 
 	clientCfg := &config.ClientConfig{
@@ -112,9 +114,10 @@ func TestEngineConfigFromClientConfig_TunFields(t *testing.T) {
 func TestEngineConfigFromClientConfig_TunDefaults(t *testing.T) {
 	var captured engine.Config
 	d := New()
-	d.EngineStarter = func(cfg engine.Config) (*engine.Engine, error) {
+	d.StartFunc = func(eng *engine.Engine, cfg engine.Config) error {
 		captured = cfg
-		return engine.New(), nil
+		eng.ForceConnected()
+		return nil
 	}
 
 	// No Tun fields set — SetDefaults fills platform defaults.
@@ -138,9 +141,10 @@ func TestEngineConfigFromClientConfig_TunDefaults(t *testing.T) {
 func TestEngineConfigFromClientConfig_ProxyModeUnchanged(t *testing.T) {
 	var captured engine.Config
 	d := New()
-	d.EngineStarter = func(cfg engine.Config) (*engine.Engine, error) {
+	d.StartFunc = func(eng *engine.Engine, cfg engine.Config) error {
 		captured = cfg
-		return engine.New(), nil
+		eng.ForceConnected()
+		return nil
 	}
 
 	clientCfg := &config.ClientConfig{
@@ -182,7 +186,7 @@ func TestPersistedStateWithClientConfig(t *testing.T) {
 
 	st := persistedState{
 		Config:    cfg,
-		State:     StateConnected,
+		State:     engine.StateConnected,
 		Timestamp: time.Now(),
 	}
 	saveState(st)
@@ -205,7 +209,7 @@ func TestPersistedStateWithClientConfig(t *testing.T) {
 
 func TestStatusIncludesClientConfig(t *testing.T) {
 	d := New()
-	d.EngineStarter = mockEngineStarter
+	d.StartFunc = mockStartFunc
 
 	// Connect via config JSON.
 	upBody := `{"action":"up","params":{"config":{"server":"k2v5://test:tok@host:443","mode":"tun"}}}`
@@ -250,7 +254,7 @@ func TestStatusIncludesClientConfig(t *testing.T) {
 
 func TestDaemon_StatusWithStructuredError(t *testing.T) {
 	d := New()
-	d.EngineStarter = failingEngineStarter // returns fmt.Errorf("simulated failure")
+	d.StartFunc = failingStartFunc // returns fmt.Errorf("simulated failure")
 
 	cfg := config.ClientFromURL("k2v5://test:tok@host:443")
 	err := d.doUp(cfg, 0)
@@ -308,7 +312,7 @@ func TestDaemon_DoUpClearsLastError(t *testing.T) {
 	cfg := config.ClientFromURL("k2v5://test:tok@host:443")
 
 	// First: fail.
-	d.EngineStarter = failingEngineStarter
+	d.StartFunc = failingStartFunc
 	if err := d.doUp(cfg, 0); err == nil {
 		t.Fatal("expected error from failing starter")
 	}
@@ -320,7 +324,7 @@ func TestDaemon_DoUpClearsLastError(t *testing.T) {
 	}
 
 	// Second: succeed.
-	d.EngineStarter = mockEngineStarter
+	d.StartFunc = mockStartFunc
 	if err := d.doUp(cfg, 0); err != nil {
 		t.Fatalf("expected success, got %v", err)
 	}
@@ -344,7 +348,7 @@ func TestAutoReconnectWithSavedConfig(t *testing.T) {
 	// Save connected state with Config field.
 	saveState(persistedState{
 		Config:    cfg,
-		State:     StateConnected,
+		State:     engine.StateConnected,
 		Timestamp: time.Now(),
 	})
 

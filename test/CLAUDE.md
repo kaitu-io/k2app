@@ -10,10 +10,10 @@ Full stack integration tests: k2 client ↔ k2s server.
 ## Test Coverage
 
 1. **TestE2E_ClientServerConnect** — handshake, auth, connection established
-2. **TestE2E_TCPProxy** — HTTP request/response through tunnel
-3. **TestE2E_UDPProxy_DNS** — DNS query resolution through tunnel
-4. **TestE2E_QUICFallbackTCPWS** — block QUIC port, verify TCP-WS used
-5. **TestE2E_ECH_Fingerprint** — ECH negotiation, outer vs inner SNI
+2. **TestE2E_QUIC_TCPProxy** — TCP proxy over QUIC transport
+3. **TestE2E_QUIC_UDPProxy** — UDP proxy over QUIC transport
+4. **TestE2E_TCPWS_TCPProxy** — TCP proxy over TCP-WS transport
+5. **TestE2E_TransportManager_Failover** — QUIC blocked, verify TCP-WS fallback
 
 ## Architecture
 

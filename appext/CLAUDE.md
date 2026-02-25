@@ -12,7 +12,7 @@ Cannot export interfaces from dependency packages — must re-declare `EventHand
 
 ```go
 e := appext.NewEngine()
-e.SetEventHandler(handler)     // EventHandler: OnStateChange, OnError, OnStats
+e.SetEventHandler(handler)     // EventHandler: OnStatus(statusJSON), OnStats(tx, rx)
 e.Start(configJSON, fd, cfg)   // JSON config + TUN FD + EngineConfig
 e.Stop()
 e.OnNetworkChanged()           // Called by platform on WiFi/cellular switch

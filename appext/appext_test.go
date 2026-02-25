@@ -11,41 +11,53 @@ import (
 // Mock helpers
 // ==========================================================================
 
-// mockEventHandler records calls for assertion.
+// mockEventHandler records OnStatus calls for assertion.
+// Implements appext.EventHandler (OnStatus(string), OnStats).
 type mockEventHandler struct {
-	mu     sync.Mutex
-	states []string
-	errors []string
+	mu       sync.Mutex
+	statuses []string // raw JSON from OnStatus
 }
 
-func (m *mockEventHandler) OnStateChange(state string) {
+func (m *mockEventHandler) OnStatus(statusJSON string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.states = append(m.states, state)
-}
-
-func (m *mockEventHandler) OnError(message string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.errors = append(m.errors, message)
+	m.statuses = append(m.statuses, statusJSON)
 }
 
 func (m *mockEventHandler) OnStats(txBytes, rxBytes int64) {}
 
+// getStates extracts state strings from recorded JSON statuses.
 func (m *mockEventHandler) getStates() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	cp := make([]string, len(m.states))
-	copy(cp, m.states)
-	return cp
+	var states []string
+	for _, raw := range m.statuses {
+		var s struct {
+			State string `json:"state"`
+		}
+		if err := json.Unmarshal([]byte(raw), &s); err == nil {
+			states = append(states, s.State)
+		}
+	}
+	return states
 }
 
+// getErrors extracts error messages from recorded JSON statuses (non-nil errors only).
 func (m *mockEventHandler) getErrors() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	cp := make([]string, len(m.errors))
-	copy(cp, m.errors)
-	return cp
+	var errs []string
+	for _, raw := range m.statuses {
+		var s struct {
+			Error *struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal([]byte(raw), &s); err == nil && s.Error != nil {
+			errs = append(errs, s.Error.Message)
+		}
+	}
+	return errs
 }
 
 // testEngineConfig returns an EngineConfig suitable for tests.
@@ -132,7 +144,7 @@ func TestEngine_EventHandler_StateChanges(t *testing.T) {
 	}
 }
 
-func TestEngine_EventHandler_OnError(t *testing.T) {
+func TestEngine_EventHandler_Error(t *testing.T) {
 	e := NewEngine()
 	h := &mockEventHandler{}
 	e.SetEventHandler(h)
@@ -141,7 +153,7 @@ func TestEngine_EventHandler_OnError(t *testing.T) {
 
 	errs := h.getErrors()
 	if len(errs) == 0 {
-		t.Fatal("expected OnError to be called")
+		t.Fatal("expected OnStatus with error to be called")
 	}
 }
 
@@ -160,7 +172,7 @@ func TestEngine_StatusJSON_Disconnected(t *testing.T) {
 	if m["state"] != StateDisconnected {
 		t.Fatalf("state = %v, want %q", m["state"], StateDisconnected)
 	}
-	for _, key := range []string{"connected_at", "uptime_seconds", "wire_url", "error"} {
+	for _, key := range []string{"connected_at", "uptime_seconds", "error"} {
 		if _, ok := m[key]; ok {
 			t.Fatalf("unexpected key %q in disconnected state", key)
 		}
@@ -179,11 +191,16 @@ func TestEngine_StatusJSON_AfterFailedStart(t *testing.T) {
 	if m["state"] != StateDisconnected {
 		t.Fatalf("state = %v, want %q", m["state"], StateDisconnected)
 	}
-	if _, ok := m["error"]; !ok {
+	errRaw, ok := m["error"]
+	if !ok {
 		t.Fatal("expected 'error' key after failed start")
 	}
-	if m["error"] == "" {
-		t.Fatal("error should be non-empty after failed start")
+	errObj, ok := errRaw.(map[string]any)
+	if !ok {
+		t.Fatalf("error should be an object, got %T", errRaw)
+	}
+	if errObj["message"] == "" {
+		t.Fatal("error.message should be non-empty after failed start")
 	}
 }
 

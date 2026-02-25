@@ -19,33 +19,25 @@ import (
 // DefaultAddr is the daemon HTTP listen address.
 const DefaultAddr = "127.0.0.1:1777"
 
-// Connection states.
-const (
-	StateStopped    = "stopped"
-	StateConnecting = "connecting"
-	StateConnected  = "connected"
-)
-
 // Daemon is the k2 background service.
 // It manages the VPN tunnel lifecycle and exposes an HTTP API.
+//
+// State is event-driven: engine fires OnStatus → daemon updates lastStatus.
+// Engine is the single source of truth for connection state.
 //
 // Concurrency model:
 //   - opMu serializes doUp/doDown (coarse lifecycle lock)
 //   - mu protects field reads/writes (fine-grained data lock)
+//   - sseMu protects SSE client map
 type Daemon struct {
 	opMu sync.Mutex   // serializes doUp/doDown operations
 	mu   sync.RWMutex // protects field access
 
-	state string
+	// lastStatus is updated by engine's OnStatus callback — single source of truth.
+	lastStatus engine.Status
 
 	// Last config used for auto-reconnect.
 	lastConfig *config.ClientConfig
-
-	// Error from last connection attempt (orthogonal to state).
-	lastError *engine.EngineError
-
-	// Connected at timestamp.
-	connectedAt time.Time
 
 	// Process monitor PID.
 	monitorPID int
@@ -59,22 +51,28 @@ type Daemon struct {
 	// When set, Reload() re-reads this file and applies dynamic field changes.
 	ConfigPath string
 
-	// EngineStarter allows overriding engine creation for testing.
-	// It should create an engine, start it with the given config, and return it.
-	// When nil, the default production path (engine.New + Start) is used.
-	EngineStarter func(cfg engine.Config) (*engine.Engine, error)
+	// StartFunc allows overriding engine start for testing.
+	// It receives a pre-created engine (with EventHandler already set)
+	// and should start it with the given config.
+	// When nil, the default production path (eng.Start) is used.
+	StartFunc func(eng *engine.Engine, cfg engine.Config) error
 
 	// MonitorFactory creates the network change monitor.
 	// Returns (notifier, interfaceMonitor, error).
 	// When nil, the default NewNetworkMonitor is used.
 	// Overridable for testing.
 	MonitorFactory func() (engine.NetworkChangeNotifier, any, error)
+
+	// SSE client channels for real-time status push.
+	sseClients map[chan string]struct{}
+	sseMu      sync.RWMutex
 }
 
 // New creates a new daemon.
 func New() *Daemon {
 	return &Daemon{
-		state: StateStopped,
+		lastStatus: engine.Status{State: engine.StateDisconnected},
+		sseClients: make(map[chan string]struct{}),
 	}
 }
 
@@ -93,6 +91,7 @@ func (d *Daemon) Run(ctx context.Context, listenAddr string) error {
 	mux.HandleFunc("/ping", d.handlePing)
 	mux.HandleFunc("/metrics", d.handleMetrics)
 	mux.HandleFunc("/api/core", d.handleCore)
+	mux.HandleFunc("/api/events", d.handleEvents)
 
 	srv := &http.Server{
 		Addr:    listenAddr,
@@ -128,17 +127,12 @@ func (d *Daemon) Run(ctx context.Context, listenAddr string) error {
 func (d *Daemon) State() string {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
-	return d.state
-}
-
-// setStateLocked sets state. Caller must hold mu.
-func (d *Daemon) setStateLocked(s string) {
-	slog.Info("state transition", "from", d.state, "to", s)
-	d.state = s
+	return d.lastStatus.State
 }
 
 // closeTunnel tears down the active engine. Caller must hold opMu.
 // Idempotent: no-op if engine is nil.
+// Engine.Stop() fires OnStatus(disconnected) → updates d.lastStatus automatically.
 func (d *Daemon) closeTunnel() {
 	d.mu.Lock()
 	eng := d.engine
@@ -153,17 +147,15 @@ func (d *Daemon) closeTunnel() {
 		cancel()
 	}
 	if eng != nil {
-		eng.Stop()
+		eng.Stop() // fires OnStatus(disconnected) → d.lastStatus updated via EventHandler
 	}
 
-	d.mu.Lock()
-	d.setStateLocked(StateStopped)
-	d.mu.Unlock()
-
-	saveState(persistedState{State: StateStopped, Timestamp: time.Now()})
+	saveState(persistedState{State: engine.StateDisconnected, Timestamp: time.Now()})
 }
 
 // doUp connects the tunnel with the given ClientConfig.
+// Engine is created with EventHandler(d) set BEFORE Start, so the daemon
+// receives all state transitions (connecting, connected, disconnected+error).
 func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 	d.opMu.Lock()
 	defer d.opMu.Unlock()
@@ -172,16 +164,14 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 	d.closeTunnel()
 
 	d.mu.Lock()
-	d.setStateLocked(StateConnecting)
 	d.lastConfig = cfg
 	d.monitorPID = pid
-	d.lastError = nil
 	d.mu.Unlock()
 
 	// Persist state for auto-reconnect across restarts.
 	saveState(persistedState{
 		Config:    cfg,
-		State:     StateConnecting,
+		State:     engine.StateConnecting,
 		Timestamp: time.Now(),
 	})
 
@@ -206,17 +196,25 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 
 	engineCfg := d.engineConfigFromClientConfig(cfg, dd, monitor, ifaceMon, monErr)
 
-	// Create and start engine.
-	starter := d.EngineStarter
-	if starter == nil {
-		starter = defaultEngineStarter
+	// Create engine and set EventHandler BEFORE start — daemon receives all events.
+	eng := engine.New()
+	eng.SetEventHandler(d)
+
+	startFn := d.StartFunc
+	if startFn == nil {
+		startFn = defaultStartFunc
 	}
-	eng, err := starter(engineCfg)
-	if err != nil {
+	if err := startFn(eng, engineCfg); err != nil {
+		// Ensure error is captured even if StartFunc didn't go through engine.fail().
 		d.mu.Lock()
-		d.lastError = engine.ClassifyError(err)
-		d.setStateLocked(StateStopped)
+		if d.lastStatus.Error == nil {
+			d.lastStatus = engine.Status{
+				State: engine.StateDisconnected,
+				Error: engine.ClassifyError(err),
+			}
+		}
 		d.mu.Unlock()
+		d.broadcastStatus()
 		slog.Error("engine start failed", "err", err)
 		return err
 	}
@@ -227,8 +225,6 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 	d.engine = eng
 	d.engineCtx = ctx
 	d.engineCnl = cancel
-	d.connectedAt = time.Now()
-	d.setStateLocked(StateConnected)
 	d.mu.Unlock()
 
 	// Start PID monitoring if requested.
@@ -240,20 +236,16 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 	// Update persisted state.
 	saveState(persistedState{
 		Config:    cfg,
-		State:     StateConnected,
+		State:     engine.StateConnected,
 		Timestamp: time.Now(),
 	})
 
 	return nil
 }
 
-// defaultEngineStarter is the production engine creation path.
-func defaultEngineStarter(cfg engine.Config) (*engine.Engine, error) {
-	eng := engine.New()
-	if err := eng.Start(cfg); err != nil {
-		return nil, err
-	}
-	return eng, nil
+// defaultStartFunc is the production engine start path.
+func defaultStartFunc(eng *engine.Engine, cfg engine.Config) error {
+	return eng.Start(cfg)
 }
 
 // defaultMonitorFactory wraps NewNetworkMonitor with the any return type
@@ -303,7 +295,7 @@ func (d *Daemon) doDown() {
 // ctx is the daemon's lifecycle context — reconnect is aborted if ctx is cancelled.
 func (d *Daemon) tryAutoReconnect(ctx context.Context) {
 	st, err := loadState()
-	if err != nil || st.State != StateConnected {
+	if err != nil || st.State != engine.StateConnected {
 		return
 	}
 
@@ -328,7 +320,7 @@ func (d *Daemon) tryAutoReconnect(ctx context.Context) {
 			return
 		}
 		// Skip if already connected (e.g. user called up during delay).
-		if d.State() == StateConnected {
+		if d.State() == engine.StateConnected {
 			return
 		}
 		if err := d.doUp(st.Config, 0); err != nil {
@@ -337,23 +329,36 @@ func (d *Daemon) tryAutoReconnect(ctx context.Context) {
 	}()
 }
 
-// statusInfo returns current status as a map.
+// statusInfo returns current status as a map for the HTTP poll endpoint.
 func (d *Daemon) statusInfo() map[string]any {
 	d.mu.RLock()
-	defer d.mu.RUnlock()
+	s := d.lastStatus
+	cfg := d.lastConfig
+	d.mu.RUnlock()
 
 	info := map[string]any{
-		"state": d.state,
+		"state": s.State,
 	}
-	if d.state == StateConnected {
-		info["connected_at"] = d.connectedAt.Format(time.RFC3339)
-		info["uptime_seconds"] = int(time.Since(d.connectedAt).Seconds())
+	if s.Error != nil {
+		info["error"] = s.Error
 	}
-	if d.lastError != nil {
-		info["error"] = d.lastError
+	if s.State == engine.StateConnected && !s.ConnectedAt.IsZero() {
+		info["connected_at"] = s.ConnectedAt.Format(time.RFC3339)
+		info["uptime_seconds"] = int(time.Since(s.ConnectedAt).Seconds())
 	}
-	if d.lastConfig != nil {
-		info["config"] = d.lastConfig
+	if cfg != nil {
+		info["config"] = cfg
 	}
 	return info
 }
+
+// OnStatus implements engine.EventHandler — updates lastStatus and broadcasts to SSE clients.
+func (d *Daemon) OnStatus(status engine.Status) {
+	d.mu.Lock()
+	d.lastStatus = status
+	d.mu.Unlock()
+	d.broadcastStatus()
+}
+
+// OnStats implements engine.EventHandler — currently a no-op for daemon.
+func (d *Daemon) OnStats(txBytes, rxBytes int64) {}

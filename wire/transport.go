@@ -9,6 +9,21 @@ import (
 	"time"
 )
 
+// MultiTransportError is returned when both QUIC and TCP-WS transports fail.
+// Unwrap returns the TCP-WS error (last-resort transport) for classification.
+type MultiTransportError struct {
+	QUICErr  error
+	TCPWSErr error
+}
+
+func (e *MultiTransportError) Error() string {
+	return fmt.Sprintf("QUIC: %v; TCP-WS: %v", e.QUICErr, e.TCPWSErr)
+}
+
+func (e *MultiTransportError) Unwrap() error {
+	return e.TCPWSErr
+}
+
 // TransportManager manages QUIC and TCP-WS transports.
 // QUIC is preferred; TCP-WS is used as fallback.
 // Implements the Dialer interface.
@@ -47,7 +62,7 @@ func (tm *TransportManager) DialTCP(ctx context.Context, addr string) (net.Conn,
 
 	slog.Debug("TransportManager: DialTCP", "addr", addr, "hasQUIC", quic != nil, "hasTCPWS", tcpws != nil)
 
-	var lastErr error
+	var quicErr, tcpwsErr error
 
 	// Try QUIC first (preferred), with time budget so TCP-WS gets a fair chance.
 	if quic != nil {
@@ -59,7 +74,7 @@ func (tm *TransportManager) DialTCP(ctx context.Context, addr string) (net.Conn,
 			return conn, nil
 		}
 		slog.Debug("TransportManager: QUIC failed", "err", err)
-		lastErr = fmt.Errorf("QUIC: %w", err)
+		quicErr = err
 	}
 
 	// Fall back to TCP-WS
@@ -70,11 +85,17 @@ func (tm *TransportManager) DialTCP(ctx context.Context, addr string) (net.Conn,
 			return conn, nil
 		}
 		slog.Debug("TransportManager: TCP-WS failed", "err", err)
-		lastErr = fmt.Errorf("TCP-WS: %w", err)
+		tcpwsErr = err
 	}
 
-	if lastErr != nil {
-		return nil, lastErr
+	if quicErr != nil && tcpwsErr != nil {
+		return nil, &MultiTransportError{QUICErr: quicErr, TCPWSErr: tcpwsErr}
+	}
+	if tcpwsErr != nil {
+		return nil, fmt.Errorf("TCP-WS: %w", tcpwsErr)
+	}
+	if quicErr != nil {
+		return nil, fmt.Errorf("QUIC: %w", quicErr)
 	}
 	return nil, ErrNotConnected
 }
@@ -89,7 +110,7 @@ func (tm *TransportManager) DialUDP(ctx context.Context, addr string) (net.Packe
 
 	slog.Debug("TransportManager: DialUDP", "addr", addr, "hasQUIC", quic != nil, "hasTCPWS", tcpws != nil)
 
-	var lastErr error
+	var quicErr, tcpwsErr error
 
 	if quic != nil {
 		quicCtx, quicCancel := tm.quicContext(ctx, tcpws != nil)
@@ -100,7 +121,7 @@ func (tm *TransportManager) DialUDP(ctx context.Context, addr string) (net.Packe
 			return conn, nil
 		}
 		slog.Debug("TransportManager: QUIC UDP failed", "err", err)
-		lastErr = fmt.Errorf("QUIC: %w", err)
+		quicErr = err
 	}
 
 	if tcpws != nil {
@@ -110,11 +131,17 @@ func (tm *TransportManager) DialUDP(ctx context.Context, addr string) (net.Packe
 			return conn, nil
 		}
 		slog.Debug("TransportManager: TCP-WS UDP failed", "err", err)
-		lastErr = fmt.Errorf("TCP-WS: %w", err)
+		tcpwsErr = err
 	}
 
-	if lastErr != nil {
-		return nil, lastErr
+	if quicErr != nil && tcpwsErr != nil {
+		return nil, &MultiTransportError{QUICErr: quicErr, TCPWSErr: tcpwsErr}
+	}
+	if tcpwsErr != nil {
+		return nil, fmt.Errorf("TCP-WS: %w", tcpwsErr)
+	}
+	if quicErr != nil {
+		return nil, fmt.Errorf("QUIC: %w", quicErr)
 	}
 	return nil, ErrNotConnected
 }

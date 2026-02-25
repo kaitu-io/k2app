@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/kaitu-io/k2/config"
+	"github.com/kaitu-io/k2/engine"
 )
 
 // Reload re-reads the config file at d.ConfigPath and applies dynamic field
@@ -35,7 +36,7 @@ func (d *Daemon) Reload() error {
 	serverChanged := d.applyDynamicConfig(newCfg)
 	d.mu.Unlock()
 
-	if serverChanged && d.State() == StateConnected {
+	if serverChanged && d.State() == engine.StateConnected {
 		slog.Warn("reload: server URL changed while connected — reconnect required", "hint", "send 'up' again or restart")
 	}
 

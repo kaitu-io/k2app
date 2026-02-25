@@ -32,7 +32,10 @@ Tunnel control. All actions use the same endpoint with different `action` values
 {
   "action": "up",
   "params": {
-    "wire_url": "k2v5://udid:token@host:port?ech=...&pin=..."
+    "config": {
+      "server": "k2v5://udid:token@host:port?ech=...&pin=...",
+      "mode": "tun"
+    }
   }
 }
 ```
@@ -40,7 +43,7 @@ Tunnel control. All actions use the same endpoint with different `action` values
 Response: `{"code": 0, "message": "connecting"}`
 
 Error codes:
-- `510`: No configuration provided
+- `510`: No configuration provided (or legacy `wire_url` used)
 - `511`: Connect failed (check `message` for details)
 
 #### action: "down" — Disconnect tunnel
@@ -64,58 +67,38 @@ Response data:
   "state": "connected",
   "connected_at": "2026-02-14T10:30:00Z",
   "uptime_seconds": 3600,
-  "wire_url": "k2v5://...",
-  "error": ""
+  "config": {
+    "server": "k2v5://...",
+    "mode": "tun"
+  }
 }
 ```
 
-Possible `state` values: `stopped`, `connecting`, `connected`, `reconnecting`, `disconnecting`, `error`.
-
-#### action: "reconnect" — Reconnect with saved config
-
-```json
-{ "action": "reconnect" }
-```
-
-Response: `{"code": 0, "message": "reconnecting"}`
-
-Error: `510` if no saved config.
-
-#### action: "speedtest" — Start bandwidth test
+When an error has occurred:
 
 ```json
 {
-  "action": "speedtest",
-  "params": { "server_id": "optional-server-id" }
+  "state": "disconnected",
+  "error": {
+    "code": 503,
+    "message": "QUIC: wire: QUIC dial: ...; TCP-WS: wire: TCP dial: connection refused"
+  }
 }
 ```
 
-Response: `{"code": 0, "message": "speedtest started"}`
+**State values**: `disconnected`, `connecting`, `connected`, `reconnecting`, `paused`
 
-Error: `512` if speedtest already running.
+**Error codes** (in `error.code`):
 
-#### action: "get_speedtest_status" — Poll speedtest progress
-
-```json
-{ "action": "get_speedtest_status" }
-```
-
-Response data: speedtest progress object (download/upload Mbps, latency, state).
-
-#### action: "get_config" — Saved config
-
-```json
-{ "action": "get_config" }
-```
-
-Response data:
-
-```json
-{
-  "wire_url": "k2v5://...",
-  "config_path": "/path/to/config.yaml"
-}
-```
+| Code | Meaning |
+|------|---------|
+| 400 | Bad config (parse URL, missing auth) |
+| 401 | Auth rejected (server rejected token) |
+| 403 | Forbidden (pin mismatch, blocked CA) |
+| 408 | Timeout (dial timeout, deadline exceeded) |
+| 502 | Protocol error (TLS/QUIC handshake failure) |
+| 503 | Server unreachable (connection refused, network unreachable) |
+| 570 | Unclassified error |
 
 #### action: "version" — Binary info
 
@@ -134,6 +117,33 @@ Response data:
 }
 ```
 
+### GET /api/events — Server-Sent Events (SSE)
+
+Real-time status push. Connect with `EventSource` or `curl -N`.
+
+```
+GET /api/events
+Accept: text/event-stream
+```
+
+Events:
+
+```
+event: status
+data: {"state":"connecting"}
+
+event: status
+data: {"state":"connected","connected_at":"2026-02-25T10:00:00Z","uptime_seconds":0}
+
+event: status
+data: {"state":"disconnected","error":{"code":503,"message":"..."}}
+```
+
+- Each `status` event is a full snapshot (idempotent — safe to receive duplicates)
+- Heartbeat every 15s: `: heartbeat\n\n`
+- On connect: sends current status immediately
+- Buffered per client (cap 8), slow clients get dropped messages
+
 ### GET /ping
 
 Health check. Returns `{"code": 0, "message": "pong"}`.
@@ -148,8 +158,8 @@ Runtime metrics. Returns goroutine count, heap allocation, GC stats.
 
 The daemon adds CORS headers for these origins:
 
-- `http://127.0.0.1:1777`
-- `http://localhost:1777`
+- `http://127.0.0.1:*` (any port)
+- `http://localhost:*` (any port)
 - `tauri://localhost`
 - `https://tauri.localhost`
 
@@ -160,16 +170,15 @@ The daemon adds CORS headers for these origins:
 1. User logs in via k2app → app sends credentials to Cloud API
 2. Cloud returns auth token + server list
 3. User selects a server → app gets `k2v5://` URL from Cloud
-4. `POST /api/core` `{action:"up", params:{wire_url:"k2v5://..."}}`
-5. Poll `{action:"status"}` until `state:"connected"`
+4. `POST /api/core` `{action:"up", params:{config:{server:"k2v5://..."}}}`
+5. Listen on `GET /api/events` for `state:"connected"` (or poll `{action:"status"}`)
 
 ### Daily Use
 
-1. App loads → read token from localStorage
-2. Validate token with Cloud API
-3. `POST /api/core` `{action:"status"}` → show current state
-4. If stopped → show server list + connect button
-5. If connected → show status, uptime, disconnect button
+1. App loads → connect to `GET /api/events` for real-time status
+2. `POST /api/core` `{action:"status"}` → show current state
+3. If disconnected → show server list + connect button
+4. If connected → show status, uptime, disconnect button
 
 ### Daemon Not Running
 

@@ -1,14 +1,15 @@
 package appext
 
 import (
+	"encoding/json"
+
 	"github.com/kaitu-io/k2/engine"
 )
 
 // EventHandler receives lifecycle events from the Engine.
 // All methods use gomobile-compatible parameter types (string, int64).
 type EventHandler interface {
-	OnStateChange(state string)
-	OnError(message string)
+	OnStatus(statusJSON string)
 	OnStats(txBytes, rxBytes int64)
 }
 
@@ -18,13 +19,18 @@ const (
 	StateConnecting   = engine.StateConnecting
 	StateConnected    = engine.StateConnected
 	StatePaused       = engine.StatePaused
+	StateReconnecting = engine.StateReconnecting
 )
 
 // eventBridge adapts appext.EventHandler to engine.EventHandler.
+// Converts typed engine.Status to JSON string for gomobile compatibility.
 type eventBridge struct {
 	handler EventHandler
 }
 
-func (b *eventBridge) OnStateChange(state string) { b.handler.OnStateChange(state) }
-func (b *eventBridge) OnError(message string)     { b.handler.OnError(message) }
-func (b *eventBridge) OnStats(tx, rx int64)       { b.handler.OnStats(tx, rx) }
+func (b *eventBridge) OnStatus(status engine.Status) {
+	data, _ := json.Marshal(status)
+	b.handler.OnStatus(string(data))
+}
+
+func (b *eventBridge) OnStats(tx, rx int64) { b.handler.OnStats(tx, rx) }

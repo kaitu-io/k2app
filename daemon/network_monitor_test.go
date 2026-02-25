@@ -31,9 +31,10 @@ func TestNewNetworkMonitor_ReturnsAdapter(t *testing.T) {
 func TestDaemon_EngineConfig_IncludesMonitor(t *testing.T) {
 	var captured engine.Config
 	d := New()
-	d.EngineStarter = func(cfg engine.Config) (*engine.Engine, error) {
+	d.StartFunc = func(eng *engine.Engine, cfg engine.Config) error {
 		captured = cfg
-		return engine.New(), nil
+		eng.ForceConnected()
+		return nil
 	}
 
 	// Inject a mock monitor factory.
@@ -58,9 +59,10 @@ func TestDaemon_EngineConfig_IncludesMonitor(t *testing.T) {
 func TestDaemon_MonitorFactory_Failure_NonFatal(t *testing.T) {
 	var captured engine.Config
 	d := New()
-	d.EngineStarter = func(cfg engine.Config) (*engine.Engine, error) {
+	d.StartFunc = func(eng *engine.Engine, cfg engine.Config) error {
 		captured = cfg
-		return engine.New(), nil
+		eng.ForceConnected()
+		return nil
 	}
 
 	// Factory returns error — doUp should still succeed.
@@ -72,7 +74,7 @@ func TestDaemon_MonitorFactory_Failure_NonFatal(t *testing.T) {
 	if err := d.doUp(cfg, 0); err != nil {
 		t.Fatalf("doUp should succeed even when monitor fails: %v", err)
 	}
-	if d.State() != StateConnected {
+	if d.State() != engine.StateConnected {
 		t.Fatalf("expected connected, got %s", d.State())
 	}
 	if captured.NetworkMonitor != nil {

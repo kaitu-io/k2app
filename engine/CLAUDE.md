@@ -64,8 +64,9 @@ HTTP-aligned error codes for frontend consumption:
 
 - `engine.go` — `Engine` struct, `Start`/`Stop`/`OnNetworkChanged`, assembly pipeline
 - `config.go` — `Config` struct (platform-unified tunnel parameters, uses `wire.DirectDialer` interface)
-- `event.go` — `EventHandler` interface, state constants
-- `error.go` — `EngineError`, `ClassifyError` (HTTP-aligned error codes)
+- `status.go` — `Status` struct, custom `MarshalJSON` (computes `uptime_seconds` dynamically)
+- `event.go` — `EventHandler` interface (`OnStatus(Status)` + `OnStats`), state constants
+- `error.go` — `EngineError`, `ClassifyError` (HTTP-aligned error codes, MultiTransportError handling)
 - `dns_handler.go` — `dnsHandler` (port 53 TCP+UDP interception, RFC 1035 TCP framing)
 - `network.go` — `NetworkChangeNotifier` interface
 

@@ -23,11 +23,11 @@ Gradient ascent on utility function: `U = Throughput - α * LossRate * Throughpu
 ## Files
 
 - `arc.go` — `K2ARC` struct, MI-based rate control, utility gradient computation
-- `arcc_test.go` — 26 test functions (convergence, loss tolerance, rate bounds)
+- `arcc_test.go` — 25 test functions (convergence, loss tolerance, rate bounds)
 - `helpers_test.go` — test fixtures
 
 ## Testing
 
 ```bash
-go test ./wire/arc/...    # 26 tests
+go test ./wire/arc/...    # 25 tests
 ```

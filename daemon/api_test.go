@@ -56,20 +56,21 @@ func TestHandleCoreStatus(t *testing.T) {
 	if !ok {
 		t.Fatal("expected data to be a map")
 	}
-	if data["state"] != StateStopped {
-		t.Fatalf("expected state %s, got %v", StateStopped, data["state"])
+	if data["state"] != engine.StateDisconnected {
+		t.Fatalf("expected state %s, got %v", engine.StateDisconnected, data["state"])
 	}
 }
 
-// mockEngineStarter returns an engine without actually starting network connections.
-// The engine is in disconnected state, but the daemon tracks state separately.
-func mockEngineStarter(cfg engine.Config) (*engine.Engine, error) {
-	return engine.New(), nil
+// mockStartFunc simulates a successful engine start by forcing the connected state.
+// The engine fires OnStatus(connected) to the daemon's EventHandler.
+func mockStartFunc(eng *engine.Engine, cfg engine.Config) error {
+	eng.ForceConnected()
+	return nil
 }
 
 func TestHandleCoreUpDown(t *testing.T) {
 	d := New()
-	d.EngineStarter = mockEngineStarter
+	d.StartFunc = mockStartFunc
 
 	// Up with config JSON.
 	upBody := `{"action":"up","params":{"config":{"server":"k2v5://test:token@host:443"}}}`
@@ -83,7 +84,7 @@ func TestHandleCoreUpDown(t *testing.T) {
 		t.Fatalf("up: expected code 0, got %d: %s", upResp.Code, upResp.Message)
 	}
 
-	if d.State() != StateConnected {
+	if d.State() != engine.StateConnected {
 		t.Fatalf("expected state connected, got %s", d.State())
 	}
 
@@ -99,7 +100,7 @@ func TestHandleCoreUpDown(t *testing.T) {
 		t.Fatalf("down: expected code 0, got %d", downResp.Code)
 	}
 
-	if d.State() != StateStopped {
+	if d.State() != engine.StateDisconnected {
 		t.Fatalf("expected state stopped, got %s", d.State())
 	}
 }
@@ -209,7 +210,7 @@ func TestGetConfigReturns400(t *testing.T) {
 
 func TestStatusIncludesConfig(t *testing.T) {
 	d := New()
-	d.EngineStarter = mockEngineStarter
+	d.StartFunc = mockStartFunc
 
 	// Connect with config.
 	upBody := `{"action":"up","params":{"config":{"server":"k2v5://test:tok@host:443"}}}`
@@ -256,9 +257,9 @@ func TestStatusIncludesConfig(t *testing.T) {
 }
 
 
-// failingEngineStarter always returns an error.
-func failingEngineStarter(cfg engine.Config) (*engine.Engine, error) {
-	return nil, fmt.Errorf("simulated failure")
+// failingStartFunc always returns an error.
+func failingStartFunc(eng *engine.Engine, cfg engine.Config) error {
+	return fmt.Errorf("simulated failure")
 }
 
 func TestDoUpFromError(t *testing.T) {
@@ -266,14 +267,14 @@ func TestDoUpFromError(t *testing.T) {
 	cfg := config.ClientFromURL("k2v5://test:tok@host:443")
 
 	// First attempt: fail to connect.
-	d.EngineStarter = failingEngineStarter
+	d.StartFunc = failingStartFunc
 	err := d.doUp(cfg, 0)
 	if err == nil {
 		t.Fatal("expected error from failing builder")
 	}
 
 	// State should be stopped with lastError set.
-	if d.State() != StateStopped {
+	if d.State() != engine.StateDisconnected {
 		t.Fatalf("expected stopped after failure, got %s", d.State())
 	}
 	info := d.statusInfo()
@@ -282,13 +283,13 @@ func TestDoUpFromError(t *testing.T) {
 	}
 
 	// Second attempt: succeed. Old error should be cleared.
-	d.EngineStarter = mockEngineStarter
+	d.StartFunc = mockStartFunc
 	err = d.doUp(cfg, 0)
 	if err != nil {
 		t.Fatalf("expected success, got %v", err)
 	}
 
-	if d.State() != StateConnected {
+	if d.State() != engine.StateConnected {
 		t.Fatalf("expected connected, got %s", d.State())
 	}
 	info = d.statusInfo()
@@ -301,13 +302,14 @@ func TestConcurrentDoUp(t *testing.T) {
 	// Track how many engines are created to verify serialization.
 	var created atomic.Int32
 
-	trackingStarter := func(cfg engine.Config) (*engine.Engine, error) {
+	trackingStarter := func(eng *engine.Engine, cfg engine.Config) error {
 		created.Add(1)
-		return engine.New(), nil
+		eng.ForceConnected()
+		return nil
 	}
 
 	d := New()
-	d.EngineStarter = trackingStarter
+	d.StartFunc = trackingStarter
 	clientCfg := config.ClientFromURL("k2v5://test:tok@host:443")
 
 	// Launch 5 concurrent doUp calls.
@@ -322,7 +324,7 @@ func TestConcurrentDoUp(t *testing.T) {
 	wg.Wait()
 
 	// Final state must be connected.
-	if d.State() != StateConnected {
+	if d.State() != engine.StateConnected {
 		t.Fatalf("expected connected, got %s", d.State())
 	}
 

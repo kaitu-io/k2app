@@ -94,7 +94,7 @@ func TestStatusJSON_NoError(t *testing.T) {
 	}
 }
 
-func TestFail_OnErrorStillReceivesString(t *testing.T) {
+func TestFail_OnStatusReceivesError(t *testing.T) {
 	e := New()
 	h := &mockEventHandler{}
 	e.SetEventHandler(h)
@@ -104,9 +104,9 @@ func TestFail_OnErrorStillReceivesString(t *testing.T) {
 
 	errs := h.getErrors()
 	if len(errs) == 0 {
-		t.Fatal("expected OnError to be called")
+		t.Fatal("expected OnStatus with error to be called")
 	}
 	if errs[0] != testErr.Error() {
-		t.Errorf("OnError received %q, want %q", errs[0], testErr.Error())
+		t.Errorf("OnStatus error message = %q, want %q", errs[0], testErr.Error())
 	}
 }

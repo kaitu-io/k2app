@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/kaitu-io/k2/config"
+	"github.com/kaitu-io/k2/engine"
 )
 
 // writeConfigFile writes a YAML client config file to the given path.
@@ -33,7 +34,7 @@ func TestReload_DynamicFields(t *testing.T) {
 	initialCfg := config.ClientFromURL("k2v5://user:pass@initial.host:443")
 	d.mu.Lock()
 	d.lastConfig = initialCfg
-	d.state = StateConnected
+	d.lastStatus.State = engine.StateConnected
 	d.mu.Unlock()
 
 	// Now update the config file with a new server URL.
@@ -70,7 +71,7 @@ func TestReload_StaticFieldWarning(t *testing.T) {
 	initialCfg.Listen = "127.0.0.1:1777"
 	d.mu.Lock()
 	d.lastConfig = initialCfg
-	d.state = StateStopped
+	d.lastStatus.State = engine.StateDisconnected
 	d.mu.Unlock()
 
 	// Write updated config with changed listen address.
@@ -118,7 +119,7 @@ func TestReload_DNSUpdate(t *testing.T) {
 	initialCfg.DNS.Direct = []string{"8.8.8.8:53"}
 	d.mu.Lock()
 	d.lastConfig = initialCfg
-	d.state = StateStopped
+	d.lastStatus.State = engine.StateDisconnected
 	d.mu.Unlock()
 
 	// Update DNS servers.
@@ -160,7 +161,7 @@ func TestReload_LogLevel(t *testing.T) {
 	initialCfg.Log.Level = "info"
 	d.mu.Lock()
 	d.lastConfig = initialCfg
-	d.state = StateStopped
+	d.lastStatus.State = engine.StateDisconnected
 	d.mu.Unlock()
 
 	// Update log level.
@@ -195,7 +196,7 @@ func TestReload_InvalidConfig(t *testing.T) {
 	initialCfg := config.ClientFromURL("k2v5://user:pass@host:443")
 	d.mu.Lock()
 	d.lastConfig = initialCfg
-	d.state = StateStopped
+	d.lastStatus.State = engine.StateDisconnected
 	d.mu.Unlock()
 
 	// Write invalid YAML (unclosed bracket — a genuine parse error).
