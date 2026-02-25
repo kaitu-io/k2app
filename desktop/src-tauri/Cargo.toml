@@ -26,6 +26,7 @@ dirs = "5"
 
 [features]
 mcp-bridge = ["dep:tauri-plugin-mcp-bridge"]
+ne-mode = []
 
 [profile.release]
 strip = true
