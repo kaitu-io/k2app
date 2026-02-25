@@ -122,23 +122,23 @@ pub fn check_service_version(app_version: &str) -> VersionCheckResult {
     }
 }
 
-/// IPC command: proxy VPN action to k2 daemon (non-macOS) or NE bridge (macOS).
+/// IPC command: proxy VPN action to k2 daemon or NE bridge (macOS + ne-mode).
 ///
-/// On macOS the call is routed through the Swift NE helper static library.
-/// On all other platforms the call goes to the k2 daemon HTTP API at :1777.
+/// In NE mode (macOS + `ne-mode` feature) the call is routed through the Swift NE helper.
+/// Otherwise (default, all platforms) the call goes to the k2 daemon HTTP API at :1777.
 /// Called from webapp as window.__TAURI__.core.invoke('daemon_exec', {action, params})
 #[tauri::command]
 pub async fn daemon_exec(
     action: String,
     params: Option<serde_json::Value>,
 ) -> Result<ServiceResponse, String> {
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", feature = "ne-mode"))]
     {
         tokio::task::spawn_blocking(move || crate::ne::ne_action(&action, params))
             .await
             .map_err(|e| format!("Task join error: {}", e))?
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(all(target_os = "macos", feature = "ne-mode")))]
     {
         tokio::task::spawn_blocking(move || core_action(&action, params))
             .await
@@ -148,17 +148,17 @@ pub async fn daemon_exec(
 
 /// IPC command: get device UDID.
 ///
-/// On macOS the hardware UUID is read via `sysctl -n kern.uuid` (no daemon needed).
-/// On other platforms the UDID is fetched from the k2 daemon HTTP API.
+/// In NE mode (macOS + `ne-mode` feature) the hardware UUID is read via `sysctl -n kern.uuid`.
+/// Otherwise the UDID is fetched from the k2 daemon HTTP API.
 #[tauri::command]
 pub async fn get_udid() -> Result<ServiceResponse, String> {
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", feature = "ne-mode"))]
     {
         tokio::task::spawn_blocking(|| crate::ne::get_udid_native())
             .await
             .map_err(|e| format!("Task join error: {}", e))?
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(all(target_os = "macos", feature = "ne-mode")))]
     {
         tokio::task::spawn_blocking(|| {
             let url = format!("{}/api/device/udid", service_base_url());
@@ -201,9 +201,9 @@ pub fn get_platform_info() -> serde_json::Value {
 pub async fn admin_reinstall_service() -> Result<String, String> {
     log::info!("[service] Admin service install requested");
 
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", feature = "ne-mode"))]
     {
-        // On macOS: delegate to NE helper (Swift static library)
+        // On macOS NE mode: delegate to NE helper (Swift static library)
         tokio::task::spawn_blocking(|| crate::ne::admin_reinstall_ne())
             .await
             .map_err(|e| format!("Task join error: {}", e))?
@@ -214,7 +214,7 @@ pub async fn admin_reinstall_service() -> Result<String, String> {
         admin_reinstall_service_windows().await
     }
 
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(not(any(all(target_os = "macos", feature = "ne-mode"), target_os = "windows")))]
     {
         Err("Not supported on this platform".to_string())
     }
@@ -251,10 +251,14 @@ async fn admin_reinstall_service_windows() -> Result<String, String> {
 
 /// Detect old kaitu-service
 pub fn detect_old_kaitu_service() -> bool {
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", not(feature = "ne-mode")))]
     {
         std::path::Path::new("/Library/LaunchDaemons/io.kaitu.service.plist").exists()
             || std::path::Path::new("/Library/LaunchDaemons/com.kaitu.service.plist").exists()
+    }
+    #[cfg(all(target_os = "macos", feature = "ne-mode"))]
+    {
+        false
     }
     #[cfg(target_os = "windows")]
     {
@@ -277,7 +281,7 @@ pub fn cleanup_old_kaitu_service() {
     }
     log::info!("[service] Cleaning up old kaitu-service");
 
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", not(feature = "ne-mode")))]
     {
         for plist in &[
             "/Library/LaunchDaemons/io.kaitu.service.plist",
@@ -368,12 +372,12 @@ pub fn wait_for_service(timeout_ms: u64, poll_interval_ms: u64) -> bool {
 
 /// Main entry: ensure service running with correct version.
 ///
-/// On macOS this calls `ne::ensure_ne_installed()` which installs the NE
-/// configuration into macOS VPN preferences via the Swift helper library.
-/// On other platforms the existing daemon lifecycle logic is used.
+/// In NE mode (macOS + `ne-mode` feature) this calls `ne::ensure_ne_installed()`
+/// which installs the NE configuration into macOS VPN preferences via the Swift helper.
+/// Otherwise the daemon lifecycle logic is used (ping → version check → install).
 #[tauri::command]
 pub async fn ensure_service_running(app_version: String) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", feature = "ne-mode"))]
     {
         log::info!(
             "[service] macOS: ensuring NE installed (v{})",
@@ -384,12 +388,12 @@ pub async fn ensure_service_running(app_version: String) -> Result<(), String> {
             .map_err(|e| format!("spawn_blocking failed: {}", e))?;
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(all(target_os = "macos", feature = "ne-mode")))]
     ensure_service_running_daemon(app_version).await
 }
 
-/// Daemon-based service lifecycle (non-macOS): ping → version check → install.
-#[cfg(not(target_os = "macos"))]
+/// Daemon-based service lifecycle: ping → version check → install.
+#[cfg(not(all(target_os = "macos", feature = "ne-mode")))]
 async fn ensure_service_running_daemon(app_version: String) -> Result<(), String> {
     const POST_INSTALL_WAIT_MS: u64 = 5000;
     const PRE_INSTALL_WAIT_MS: u64 = 8000;
@@ -476,17 +480,17 @@ async fn ensure_service_running_daemon(app_version: String) -> Result<(), String
 mod tests {
     use super::*;
 
-    // Test: daemon_exec non-macOS path calls core_action (existing behavior).
-    // On non-macOS platforms daemon_exec routes to core_action (daemon HTTP path).
-    // We verify by calling it with no daemon running — expects an Err from HTTP.
+    // Test: daemon_exec daemon path calls core_action.
+    // Without ne-mode, daemon_exec routes to core_action (daemon HTTP path).
+    // We verify by calling it with no daemon running -- expects an Err from HTTP.
     #[tokio::test]
     async fn test_daemon_exec_non_macos() {
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(all(target_os = "macos", feature = "ne-mode")))]
         {
             let result = daemon_exec("status".to_string(), None).await;
             assert!(
                 result.is_err(),
-                "daemon_exec should Err when no daemon is running (non-macOS path)"
+                "daemon_exec should Err when no daemon is running (daemon path)"
             );
             let err_msg = result.unwrap_err();
             assert!(
@@ -497,9 +501,9 @@ mod tests {
                 err_msg
             );
         }
-        #[cfg(target_os = "macos")]
+        #[cfg(all(target_os = "macos", feature = "ne-mode"))]
         {
-            // On macOS daemon_exec calls ne_action; test just verifies no panic
+            // In NE mode daemon_exec calls ne_action; test just verifies no panic
             let result = daemon_exec("status".to_string(), None).await;
             let _ = result;
         }

@@ -126,10 +126,13 @@ swiftc \
 #### 场景 B: 改了 Go 代码（k2/ 子模块）
 
 ```bash
-cd $ROOT_DIR/k2 && make mobile-macos
+cd $ROOT_DIR && make mobile-macos
+# 内部执行: gomobile bind -tags with_gvisor -target=macos ...
 # 产出: k2/build/K2MobileMacOS.xcframework
 # 然后执行场景 A 的 swiftc 编译
 ```
+
+> **重要**: `-tags with_gvisor` 是必需的。gVisor stack 用于 NE 的 TCP/IP 处理（System stack 在 NE 沙箱中不工作）。
 
 #### 场景 C: 改了 NE Helper (K2NEHelper.swift)
 
@@ -285,6 +288,71 @@ nslookup google.com
 - [ ] `down` 返回 `{ code: 0 }`
 - [ ] `scutil --nc status` 显示 `Disconnected`
 - [ ] 重连周期：up → down → up 均正常
+
+---
+
+## Split Routing 验证（smart 模式）
+
+### 前置条件
+- VPN 以 `rule: { global: false }` 连接（smart routing）
+- k2rule 缓存存在于 App Group 容器的 `k2/` 目录
+- 终端清除代理: `env -u HTTPS_PROXY env -u HTTP_PROXY`（避免 GOST 等本地代理干扰）
+
+### DNS 验证
+
+```bash
+# Direct DNS（CN 域名走直连 DNS）
+dig @198.18.0.7 myip.ipip.net
+# 期望: 返回 A 记录
+
+# Proxy DNS（海外域名走代理 DNS）
+dig @198.18.0.7 api.ipify.org
+# 期望: 返回 A 记录
+```
+
+### TCP 分流验证
+
+```bash
+# CN 站点 → 直连（应显示真实 IP）
+env -u HTTPS_PROXY curl -s --max-time 15 https://myip.ipip.net
+# 期望: 显示你的真实 IP（非 VPN 出口 IP）
+
+# 海外站点 → 代理（应显示 VPN 出口 IP）
+env -u HTTPS_PROXY curl -s --max-time 15 https://api.ipify.org
+# 期望: 显示 VPN 服务器出口 IP
+```
+
+### TUN 流量检查
+
+```bash
+# 找到 utun 接口
+ifconfig | grep "utun.*:" | awk '{print $1}' | tr -d ':'
+
+# 检查双向流量（Ipkts 和 Opkts 都 > 0）
+netstat -I utunN
+# Ipkts=0 → 单向流量，stack 有问题
+# Ipkts>0 && Opkts>0 → 双向正常
+```
+
+### 日志验证
+
+```bash
+sudo cat "/private/var/root/Library/Group Containers/group.io.kaitu.desktop/go_stderr.log" | grep -E "tunnel: route|appext: start|wire:"
+# 期望:
+#   "appext: start" 含 hasDirectDialer=true, hasNetworkMonitor=true
+#   "tunnel: route" 行显示 proxy/direct 路由决策
+#   "wire: QUIC client" 显示传输建立成功
+```
+
+### 故障排查
+
+| 症状 | 可能原因 |
+|------|----------|
+| DNS 成功但 TCP 超时 | Stack 类型错误（System stack 不支持 NE），需要 gVisor |
+| 所有流量走 VPN | `global: true` 或 k2rule 缓存不存在 |
+| CN 站点也走 VPN | k2rule 规则不正确或 DNS 路由判断错误 |
+| curl 走了本地代理 | 未清除 HTTPS_PROXY 环境变量 |
+| TUN Ipkts=0 | tun.Options 中 Name 或 AutoRoute 设置错误（FD 路径应清空） |
 
 ---
 

@@ -1,19 +1,28 @@
 VERSION := $(shell node -p "require('./package.json').version")
-COMMIT  := $(shell cd k2 && git rev-parse --short HEAD)
+K2_VARS  = VERSION=$(VERSION)
+K2_BIN   = desktop/src-tauri/binaries
 
 pre-build:
 	mkdir -p webapp/public
 	echo '{"version":"$(VERSION)"}' > webapp/public/version.json
 
-build-k2:
-	cd k2 && go generate ./wintun/ ./cloud/
-	cd k2 && go build -tags nowebapp \
-		-ldflags "-s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)" \
-		-o ../desktop/src-tauri/binaries/k2-$(TARGET) ./cmd/k2
-
 build-webapp:
 	cd webapp && yarn build
 
+# --- k2 sidecar (delegates to k2/Makefile) ---
+build-k2-macos:
+	cd k2 && make build-darwin-universal $(K2_VARS)
+	cp k2/build/k2-darwin-universal $(K2_BIN)/k2-universal-apple-darwin
+
+build-k2-windows:
+	cd k2 && make build-windows-amd64 $(K2_VARS)
+	cp k2/build/k2-windows-amd64.exe $(K2_BIN)/k2-x86_64-pc-windows-msvc.exe
+
+build-k2-linux:
+	cd k2 && make build-linux-amd64 $(K2_VARS)
+	cp k2/build/k2-linux-amd64 $(K2_BIN)/k2-x86_64-unknown-linux-gnu
+
+# --- Desktop builds ---
 build-macos:
 	bash scripts/build-macos.sh
 
@@ -32,8 +41,7 @@ build-macos-sysext-fast:
 build-macos-sysext-test:
 	bash scripts/build-macos.sh --ne-mode --single-arch --skip-notarization
 
-build-windows: pre-build build-webapp
-	$(MAKE) build-k2 TARGET=x86_64-pc-windows-msvc
+build-windows: pre-build build-webapp build-k2-windows
 	cd desktop && yarn tauri build --target x86_64-pc-windows-msvc
 
 build-openwrt: pre-build
@@ -47,14 +55,9 @@ OPENWRT_PORT  ?= 11777
 OPENWRT_BIN    = build/k2-linux-$(DOCKER_GOARCH)
 
 build-openwrt-docker: pre-build
-	cd webapp && npx vite build
-	rm -rf k2/cloud/dist && cp -r webapp/dist k2/cloud/dist
+	cd k2 && make build-linux-$(DOCKER_GOARCH) $(K2_VARS)
 	mkdir -p build
-	CGO_ENABLED=0 GOOS=linux GOARCH=$(DOCKER_GOARCH) \
-		go build -C k2 \
-		-ldflags "-s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)" \
-		-o ../$(OPENWRT_BIN) ./cmd/k2
-	git -C k2 checkout -- cloud/dist/
+	cp k2/build/k2-linux-$(DOCKER_GOARCH) $(OPENWRT_BIN)
 	@echo "Built $(OPENWRT_BIN)"
 
 run-openwrt: build-openwrt-docker
@@ -99,24 +102,21 @@ publish-mobile:
 	@echo "Publishing mobile v$(VERSION)..."
 	bash scripts/publish-mobile.sh $(VERSION)
 
-# Mobile builds
+# --- Mobile (delegates to k2/Makefile) ---
 mobile-deps:
 	cd k2 && go get golang.org/x/mobile/bind@latest
 
 mobile-ios:
-	mkdir -p k2/build
-	cd k2 && gomobile bind -tags with_gvisor -target=ios -o build/K2Mobile.xcframework ./appext/
+	cd k2 && make appext-ios
 
 mobile-macos:
-	mkdir -p k2/build
-	cd k2 && gomobile bind -tags with_gvisor -target=macos -o build/K2MobileMacOS.xcframework ./appext/
+	cd k2 && make appext-macos
 
 build-macos-ne-lib: mobile-macos
 	@echo "macOS NE xcframework ready: k2/build/K2MobileMacOS.xcframework"
 
 mobile-android: mobile-deps
-	mkdir -p k2/build
-	cd k2 && gomobile bind -tags with_gvisor -target=android -o build/k2mobile.aar -androidapi 24 ./appext/
+	cd k2 && make appext-android
 
 build-mobile-ios: pre-build build-webapp mobile-ios
 	cp -r k2/build/K2Mobile.xcframework mobile/ios/App/
@@ -141,4 +141,5 @@ dev-android: pre-build build-webapp mobile-android
 	cd mobile && npx cap sync android && npx cap run android
 
 clean:
-	rm -rf webapp/dist desktop/src-tauri/target desktop/src-tauri/binaries/k2-* build/
+	rm -rf webapp/dist desktop/src-tauri/target $(K2_BIN)/k2-* build/
+	cd k2 && make clean

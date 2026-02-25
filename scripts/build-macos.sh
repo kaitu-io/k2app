@@ -75,30 +75,14 @@ echo "--- Building webapp ---"
 make build-webapp
 
 if [ "$NE_MODE" != true ]; then
-  # --- Build k2 (daemon mode only) ---
+  echo ""
+  echo "--- Building k2 (universal) ---"
+  make build-k2-macos
+  # When single-arch, Tauri expects k2-<target> (e.g. k2-aarch64-apple-darwin)
+  # but we always build universal. Copy to arch-specific name for sidecar resolution.
   if [ "$SINGLE_ARCH" = true ]; then
-    echo ""
-    echo "--- Building k2 ($K2_TARGET) ---"
-    GOARCH=$K2_GOARCH GOOS=darwin make build-k2 TARGET=$K2_TARGET
-  else
-    echo ""
-    echo "--- Building k2 (aarch64-apple-darwin) ---"
-    GOARCH=arm64 GOOS=darwin make build-k2 TARGET=aarch64-apple-darwin
-
-    echo ""
-    echo "--- Building k2 (x86_64-apple-darwin) ---"
-    GOARCH=amd64 GOOS=darwin make build-k2 TARGET=x86_64-apple-darwin
-
-    # --- Create universal k2 binary with lipo ---
-    echo ""
-    echo "--- Creating universal k2 binary ---"
-    K2_BIN_DIR="desktop/src-tauri/binaries"
-    lipo -create \
-      "$K2_BIN_DIR/k2-aarch64-apple-darwin" \
-      "$K2_BIN_DIR/k2-x86_64-apple-darwin" \
-      -output "$K2_BIN_DIR/k2-universal-apple-darwin"
-    chmod +x "$K2_BIN_DIR/k2-universal-apple-darwin"
-    echo "Created universal binary: $K2_BIN_DIR/k2-universal-apple-darwin"
+    cp "desktop/src-tauri/binaries/k2-universal-apple-darwin" \
+       "desktop/src-tauri/binaries/k2-$K2_TARGET"
   fi
 fi
 

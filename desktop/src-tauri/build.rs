@@ -1,14 +1,17 @@
 fn main() {
-    // On macOS: link the Swift NE helper static library and required system frameworks.
-    // The library is built from desktop/src-tauri/ne_helper/ and placed in ne_helper/build/.
-    // In CI the library is pre-built and placed there by the build script.
+    // On macOS with ne-mode feature: link the Swift NE helper static library and
+    // required system frameworks. The library is built from desktop/src-tauri/ne_helper/
+    // and placed in ne_helper/build/. In CI the library is pre-built and placed there
+    // by the build script.
     //
     // Skip linking when:
     //   a) Not macOS
-    //   b) NE_HELPER_SKIP_LINK=1 is set (used during `cargo test` without the real lib)
-    //   c) The library file is absent (development without Swift build)
-    #[cfg(target_os = "macos")]
-    {
+    //   b) ne-mode feature is not enabled
+    //   c) NE_HELPER_SKIP_LINK=1 is set (used during `cargo test` without the real lib)
+    //   d) The library file is absent (development without Swift build)
+    let ne_mode = std::env::var("CARGO_FEATURE_NE_MODE").is_ok();
+
+    if cfg!(target_os = "macos") && ne_mode {
         let skip = std::env::var("NE_HELPER_SKIP_LINK").as_deref() == Ok("1");
 
         // Directory that contains libk2_ne_helper.a
@@ -57,6 +60,9 @@ fn main() {
         println!("cargo:rerun-if-env-changed=NE_HELPER_LIB_DIR");
         println!("cargo:rerun-if-env-changed=NE_HELPER_SKIP_LINK");
     }
+
+    // Rebuild if ne-mode feature changes
+    println!("cargo:rerun-if-env-changed=CARGO_FEATURE_NE_MODE");
 
     let mcp_cap_path = std::path::Path::new("capabilities/mcp-bridge.json");
 
