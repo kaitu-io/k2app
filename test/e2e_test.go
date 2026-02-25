@@ -178,6 +178,7 @@ func TestE2E_TransportManager_Failover(t *testing.T) {
 	if err := tunnel.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	defer tm.Close()
 	defer tunnel.Close()
 
 	clientConn, appConn := net.Pipe()

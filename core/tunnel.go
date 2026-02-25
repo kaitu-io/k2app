@@ -6,11 +6,50 @@ import (
 	"log/slog"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/kaitu-io/k2rule"
 	"github.com/kaitu-io/k2/provider"
 	"github.com/kaitu-io/k2/wire"
 )
+
+// closeTimeout is the maximum time to wait for handler goroutines to exit
+// after all tracked connections have been forcefully closed.
+const closeTimeout = 5 * time.Second
+
+// connTracker tracks active connections for forceful close during shutdown.
+type connTracker struct {
+	mu    sync.Mutex
+	conns map[io.Closer]struct{}
+}
+
+func newConnTracker() *connTracker {
+	return &connTracker{conns: make(map[io.Closer]struct{})}
+}
+
+// track registers a connection. The returned function removes it.
+func (ct *connTracker) track(c io.Closer) func() {
+	ct.mu.Lock()
+	ct.conns[c] = struct{}{}
+	ct.mu.Unlock()
+	return func() {
+		ct.mu.Lock()
+		delete(ct.conns, c)
+		ct.mu.Unlock()
+	}
+}
+
+// closeAll forcefully closes every tracked connection to unblock
+// any blocking Read/Write in pipe/pipePacket.
+func (ct *connTracker) closeAll() {
+	ct.mu.Lock()
+	conns := ct.conns
+	ct.conns = make(map[io.Closer]struct{})
+	ct.mu.Unlock()
+	for c := range conns {
+		c.Close()
+	}
+}
 
 // ClientTunnel connects a Provider to wire.Dialer, implementing provider.ConnectionHandler.
 // It routes each TCP/UDP connection through the Router, then either direct (net.Dial)
@@ -24,6 +63,7 @@ type ClientTunnel struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
+	conns  *connTracker
 }
 
 var _ provider.ConnectionHandler = (*ClientTunnel)(nil)
@@ -43,6 +83,7 @@ func NewClientTunnel(cfg ClientTunnelConfig) *ClientTunnel {
 		dialer:       cfg.Dialer,
 		router:       cfg.Router,
 		directDialer: cfg.DirectDialer,
+		conns:        newConnTracker(),
 	}
 }
 
@@ -59,17 +100,23 @@ func (t *ClientTunnel) StartWithHandler(ctx context.Context, handler provider.Co
 	return t.provider.Start(t.ctx, handler)
 }
 
-// Close stops the tunnel and provider.
+// Close drains all handler goroutines by forcefully closing tracked connections.
+// It does NOT close provider or dialer — those are owned by the caller (engine).
 func (t *ClientTunnel) Close() error {
 	if t.cancel != nil {
 		t.cancel()
 	}
-	t.wg.Wait()
-	if t.provider != nil {
-		t.provider.Close()
-	}
-	if t.dialer != nil {
-		t.dialer.Close()
+	t.conns.closeAll()
+
+	done := make(chan struct{})
+	go func() {
+		t.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(closeTimeout):
+		slog.Warn("tunnel: Close timed out waiting for goroutines", "timeout", closeTimeout)
 	}
 	return nil
 }
@@ -79,6 +126,8 @@ func (t *ClientTunnel) HandleTCP(conn net.Conn, dest string) {
 	t.wg.Add(1)
 	defer t.wg.Done()
 	defer conn.Close()
+	untrack := t.conns.track(conn)
+	defer untrack()
 
 	action := t.route(dest)
 	slog.Debug("tunnel: route", "dest", dest, "action", action)
@@ -98,6 +147,8 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 	t.wg.Add(1)
 	defer t.wg.Done()
 	defer conn.Close()
+	untrack := t.conns.track(conn)
+	defer untrack()
 
 	action := t.route(dest)
 
@@ -126,7 +177,7 @@ func (t *ClientTunnel) handleTCPDirect(local net.Conn, dest string) {
 	var remote net.Conn
 	var err error
 	if t.directDialer != nil {
-		remote, err = t.directDialer.DialContext(context.Background(), "tcp", dest)
+		remote, err = t.directDialer.DialContext(t.ctx, "tcp", dest)
 	} else {
 		remote, err = net.Dial("tcp", dest)
 	}
@@ -135,6 +186,8 @@ func (t *ClientTunnel) handleTCPDirect(local net.Conn, dest string) {
 		return
 	}
 	defer remote.Close()
+	untrack := t.conns.track(remote)
+	defer untrack()
 	pipe(local, remote)
 }
 
@@ -145,6 +198,8 @@ func (t *ClientTunnel) handleTCPProxy(local net.Conn, dest string) {
 		return
 	}
 	defer remote.Close()
+	untrack := t.conns.track(remote)
+	defer untrack()
 	pipe(local, remote)
 }
 
@@ -161,6 +216,8 @@ func (t *ClientTunnel) handleUDPDirect(local net.PacketConn, dest string) {
 		return
 	}
 	defer remote.Close()
+	untrack := t.conns.track(remote)
+	defer untrack()
 
 	destAddr, err := net.ResolveUDPAddr("udp", dest)
 	if err != nil {
@@ -177,6 +234,8 @@ func (t *ClientTunnel) handleUDPProxy(local net.PacketConn, dest string) {
 		return
 	}
 	defer remote.Close()
+	untrack := t.conns.track(remote)
+	defer untrack()
 	pipePacket(local, remote, nil)
 }
 

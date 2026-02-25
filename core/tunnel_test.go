@@ -350,3 +350,128 @@ func (c *mockPacketConn) LocalAddr() net.Addr                { return nil }
 func (c *mockPacketConn) SetDeadline(time.Time) error        { return nil }
 func (c *mockPacketConn) SetReadDeadline(time.Time) error    { return nil }
 func (c *mockPacketConn) SetWriteDeadline(time.Time) error   { return nil }
+
+// --- Close unblocking tests ---
+
+// TestClientTunnel_Close_UnblocksStuckTCP verifies that Close() forcefully
+// interrupts handler goroutines stuck in pipe() by closing tracked connections.
+// This reproduces the TUN mode disconnect hang (I5).
+func TestClientTunnel_Close_UnblocksStuckTCP(t *testing.T) {
+	dialer := newMockDialer()
+	prov := &mockProvider{}
+
+	tunnel := NewClientTunnel(ClientTunnelConfig{
+		Provider: prov,
+		Dialer:   dialer,
+	})
+
+	if err := tunnel.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	// net.Pipe() connections block Read() until explicitly closed —
+	// simulates gVisor connections that don't error on stack.Close().
+	localConn, _ := net.Pipe()
+	remoteConn, _ := net.Pipe()
+	dialer.tcpConns <- remoteConn
+
+	handlerDone := make(chan struct{})
+	go func() {
+		prov.handler.HandleTCP(localConn, "stuck.example.com:80")
+		close(handlerDone)
+	}()
+
+	// Let handler enter pipe()
+	time.Sleep(50 * time.Millisecond)
+
+	// Close MUST complete within timeout (not hang forever).
+	closeDone := make(chan struct{})
+	go func() {
+		tunnel.Close()
+		close(closeDone)
+	}()
+
+	select {
+	case <-closeDone:
+	case <-time.After(10 * time.Second):
+		t.Fatal("tunnel.Close() blocked — connTracker fix not working")
+	}
+
+	select {
+	case <-handlerDone:
+	case <-time.After(time.Second):
+		t.Fatal("handler goroutine still running after Close")
+	}
+}
+
+// TestClientTunnel_Close_UnblocksStuckUDP verifies Close() unblocks
+// handler goroutines stuck in pipePacket().
+func TestClientTunnel_Close_UnblocksStuckUDP(t *testing.T) {
+	dialer := newMockDialer()
+	prov := &mockProvider{}
+
+	tunnel := NewClientTunnel(ClientTunnelConfig{
+		Provider: prov,
+		Dialer:   dialer,
+	})
+
+	if err := tunnel.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	// mockPacketConn with no data injected — ReadFrom blocks until Close.
+	localPC := newMockPacketConn()
+	remotePC := newMockPacketConn()
+	dialer.udpConns <- remotePC
+
+	handlerDone := make(chan struct{})
+	go func() {
+		prov.handler.HandleUDP(localPC, "8.8.8.8:53")
+		close(handlerDone)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	closeDone := make(chan struct{})
+	go func() {
+		tunnel.Close()
+		close(closeDone)
+	}()
+
+	select {
+	case <-closeDone:
+	case <-time.After(10 * time.Second):
+		t.Fatal("tunnel.Close() blocked for UDP — connTracker fix not working")
+	}
+
+	select {
+	case <-handlerDone:
+	case <-time.After(time.Second):
+		t.Fatal("UDP handler goroutine still running after Close")
+	}
+}
+
+// TestConnTracker_ConcurrentOps verifies connTracker is safe under
+// concurrent track/untrack/closeAll.
+func TestConnTracker_ConcurrentOps(t *testing.T) {
+	ct := newConnTracker()
+	var wg sync.WaitGroup
+
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			a, b := net.Pipe()
+			defer b.Close()
+			untrack := ct.track(a)
+			time.Sleep(time.Millisecond)
+			untrack()
+			a.Close()
+		}()
+	}
+
+	// Concurrent closeAll
+	go ct.closeAll()
+
+	wg.Wait()
+}

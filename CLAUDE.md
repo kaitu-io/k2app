@@ -119,6 +119,34 @@ Platform Shell (daemon/appext) assembles `engine.Config` with platform-specific 
 - Server: Wire → Auth → AcceptTCP/ServeUDP → net.Dial → Target
 - Control: CLI → HTTP 127.0.0.1:1777 → Daemon → Engine
 
+## Resource Ownership Rules
+
+> **谁创建，谁销毁。Borrower 只用不关。**
+
+Engine creates provider, transport, and tunnel during `Start()`. Engine closes them during `Stop()`. Tunnel borrows provider and dialer references but **never closes them** — it only manages its own resources (context, WaitGroup, connTracker).
+
+```
+engine.Stop()
+  ├─ prov.Close()       // Engine owns provider → Engine closes it
+  ├─ tm.Close()         // Engine owns transport → Engine closes it
+  └─ tunnel.Close()     // Tunnel only drains its own goroutines
+     ├─ cancel()        // Tunnel owns context
+     ├─ conns.closeAll()// Tunnel owns connTracker
+     └─ wg.Wait()       // Tunnel owns WaitGroup
+```
+
+| Resource | Owner (create + destroy) | Borrower (use only) |
+|----------|--------------------------|---------------------|
+| provider | Engine | Tunnel, dnsHandler |
+| transport/dialer | Engine | Tunnel |
+| ctx + wg + connTracker | Tunnel | — |
+| handler goroutines | Tunnel | — |
+| networkMonitor | Engine | — |
+
+**Why this order matters**: Provider must close first (stops new TUN packets), then transport (drops wire connections), then tunnel (drains in-flight handlers). Tunnel's `connTracker.closeAll()` force-closes any connections stuck in `pipe()`/`pipePacket()` so `wg.Wait()` returns promptly.
+
+**Violation pattern to avoid**: `tunnel.Close()` must never call `provider.Close()` or `dialer.Close()`. This causes double-close panics (e.g. sing-tun `StopFD.Stop()` on macOS).
+
 ## Critical Gotchas
 
 - sing-tun gVisor stack owns connections — handler must defer close, not close prematurely

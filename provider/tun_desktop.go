@@ -189,9 +189,12 @@ func (p *TUNProvider) Close() error {
 	removeDNSState()
 	if p.stack != nil {
 		p.stack.Close()
+		p.stack = nil
 	}
 	if p.tunIf != nil {
-		return p.tunIf.Close()
+		err := p.tunIf.Close()
+		p.tunIf = nil
+		return err
 	}
 	return nil
 }

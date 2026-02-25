@@ -352,9 +352,8 @@ func (e *Engine) Stop() error {
 		e.tm = nil
 	}
 	if e.tunnel != nil {
-		// Waits for all HandleTCP/HandleUDP goroutines to finish (wg.Wait).
-		// tunnel.Close also calls provider/dialer.Close internally but they're
-		// already closed above — double-close is safe for these implementations.
+		// tunnel.Close() only drains handler goroutines (connTracker.closeAll + wg.Wait).
+		// Provider and dialer are owned by engine and already closed above.
 		e.tunnel.Close()
 		e.tunnel = nil
 	}
