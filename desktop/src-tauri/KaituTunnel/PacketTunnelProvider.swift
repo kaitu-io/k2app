@@ -1,7 +1,7 @@
 import Foundation
 import Network
 import NetworkExtension
-import K2MobileMacOS  // gomobile xcframework (macOS target)
+import K2MobileMacOS  // gomobile xcframework (macOS target, appext/ package)
 
 private let kAppGroup = "group.io.kaitu.desktop"
 
@@ -78,8 +78,12 @@ private func stripPort(_ addr: String) -> String {
     return addr // bare IP or IPv6 without port
 }
 
+/// Apple NetworkExtension MTU ceiling (4096 - UTUN_IF_HEADROOM_SIZE).
+/// Must match Go provider.NetworkExtensionMTU.
+private let networkExtensionMTU = 4064
+
 class PacketTunnelProvider: NEPacketTunnelProvider {
-    private var engine: MobileEngine?
+    private var engine: AppextEngine?
     private var pathMonitor: NWPathMonitor?
     private var pendingNetworkChange: DispatchWorkItem?
 
@@ -106,8 +110,8 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             engine = nil
         }
 
-        NSLog("[KaituTunnel] Creating MobileNewEngine")
-        engine = MobileNewEngine()
+        NSLog("[KaituTunnel] Creating AppextNewEngine")
+        engine = AppextNewEngine()
         NSLog("[KaituTunnel] Engine created: %@", engine != nil ? "ok" : "nil")
 
         let handler = EventBridge(provider: self)
@@ -145,7 +149,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 
             do {
                 // Build EngineConfig with platform paths (App Group shared container)
-                guard let engineCfg = MobileNewEngineConfig() else {
+                guard let engineCfg = AppextNewEngineConfig() else {
                     NSLog("[KaituTunnel] ERROR: Failed to create EngineConfig")
                     let err = NSError(domain: "io.kaitu.desktop", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to create EngineConfig"])
                     completionHandler(err)
@@ -210,8 +214,8 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         dnsSettings.matchDomains = [""]
         settings.dnsSettings = dnsSettings
 
-        // MTU — matches Go DefaultMTU (not in ClientConfig)
-        settings.mtu = NSNumber(value: 1400)
+        // MTU — Apple NE performance ceiling (matches Go provider.NetworkExtensionMTU)
+        settings.mtu = NSNumber(value: networkExtensionMTU)
 
         return settings
     }
@@ -259,7 +263,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 
         switch command {
         case "status":
-            let json = engine?.statusJSON() ?? "{\"state\":\"stopped\"}"
+            let json = engine?.statusJSON() ?? "{\"state\":\"disconnected\"}"
             completionHandler?(json.data(using: .utf8))
         case "error":
             let defaults = UserDefaults(suiteName: kAppGroup)
@@ -274,41 +278,42 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 
 // MARK: - EventBridge
 
-class EventBridge: NSObject, MobileEventHandlerProtocol {
+class EventBridge: NSObject, AppextEventHandlerProtocol {
     weak var provider: PacketTunnelProvider?
-    private var hasReportedError = false
 
     init(provider: PacketTunnelProvider) {
         self.provider = provider
     }
 
-    func onStateChange(_ state: String?) {
-        guard let state = state else { return }
-        if state == "connecting" {
-            // New connection cycle — reset error flag
-            hasReportedError = false
-        } else if state == "disconnected" {
-            if hasReportedError {
-                // Error already reported and cancelTunnelWithError already called — skip
-                // to avoid nil-cancel overwriting the error in App Group
-                return
-            }
-            // Normal disconnect — notify system
-            provider?.cancelTunnelWithError(nil)
-        } else {
-            // Log transient states (reconnecting, connected from OnNetworkChanged) — debug-only
-            NSLog("[KaituTunnel:NE] transient state: %@", state)
+    func onStatus(_ statusJSON: String?) {
+        guard let json = statusJSON,
+              let data = json.data(using: .utf8),
+              let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let state = parsed["state"] as? String else {
+            NSLog("[KaituTunnel:NE] onStatus: invalid or nil JSON")
+            return
         }
-    }
 
-    func onError(_ message: String?) {
-        guard let message = message else { return }
-        hasReportedError = true
-        // Write error to App Group shared container so main app can read it
-        UserDefaults(suiteName: kAppGroup)?.set(message, forKey: "vpnError")
-        // Notify system that tunnel has failed
-        let error = NSError(domain: "io.kaitu.desktop", code: 100, userInfo: [NSLocalizedDescriptionKey: message])
-        provider?.cancelTunnelWithError(error)
+        NSLog("[KaituTunnel:NE] onStatus: state=%@", state)
+
+        if state == "disconnected" {
+            if let errorObj = parsed["error"] as? [String: Any] {
+                let code = errorObj["code"] as? Int ?? 0
+                let message = errorObj["message"] as? String ?? "unknown error"
+                NSLog("[KaituTunnel:NE] Disconnected with error: code=%d message=%@", code, message)
+
+                // Write error to App Group so main app can read it
+                UserDefaults(suiteName: kAppGroup)?.set(message, forKey: "vpnError")
+
+                let nsError = NSError(domain: "io.kaitu.desktop", code: code,
+                                      userInfo: [NSLocalizedDescriptionKey: message])
+                provider?.cancelTunnelWithError(nsError)
+            } else {
+                NSLog("[KaituTunnel:NE] Normal disconnect")
+                provider?.cancelTunnelWithError(nil)
+            }
+        }
+        // Other states (connecting, connected, reconnecting, paused) are transient — log only
     }
 
     func onStats(_ txBytes: Int64, rxBytes: Int64) {
