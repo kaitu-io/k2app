@@ -196,23 +196,6 @@ cd api/cmd && ./kaitu-center start -f -c ../config.yml   # Foreground mode
 - **No Tracef for debug info**: Use `log.Debugf`, not `log.Tracef`. Trace is for protocol-level wire dumps, not application debug messages.
 - Always pass `c` (gin.Context) as first arg to enable request-scoped tracing.
 
-### File Naming Convention
-
-| Pattern | Purpose |
-|---------|---------|
-| `api_*.go` | HTTP handlers (public API) |
-| `api_admin_*.go` | Admin HTTP handlers |
-| `logic_*.go` | Business logic (called by handlers) |
-| `model*.go` | GORM data models |
-| `handler_*.go` | Asynq async task handlers |
-| `worker_*.go` | Background workers + cron jobs |
-| `slave_api*.go` | Internal slave node APIs |
-| `type.go` | Request/response types, enums |
-| `response.go` | Response helpers + error codes |
-| `middleware.go` | All middleware |
-| `route.go` | Route registration |
-| `*_test.go` | Tests (same package, `center` package) |
-
 ### Test Convention
 
 **Three test tiers:**
