@@ -128,14 +128,14 @@ Use `exec_on_node(ip, command)` for all operations. Replace `{sidecar}` and `{tu
 
 After provisioning a new node (or reinstalling OS), ensure these are all done:
 
-1. **SSH port**: Changed from 22 to 1022. On Ubuntu 24.04, also sed `/etc/ssh/sshd_config.d/*.conf` drop-in files.
-2. **provision-node.sh**: Docker CE + IPv6 + BBR + nftables + daemon.json + UFW-Docker + cron.
+1. **SSH port**: Now automated by provision-node.sh step 10 (port 22 → 1022 only). Verify: `ss -tlnp | grep :1022`
+2. **provision-node.sh**: Docker CE + IPv6 + BBR + SSH port 1022 + docker group + daemon.json + UFW-Docker + cron + unattended-upgrades removal.
 3. **docker-compose.yml**: Deploy via `deploy-compose.sh --node=IP` or SCP manually.
 4. **.env**: Restore from backup or generate new via Center API.
 5. **auto-update.sh + cron**: Deploy via `deploy-auto-update.sh --node=IP`.
 6. **Containers up**: `docker compose up -d` and verify sidecar healthy.
 7. **BBR active**: `sysctl net.ipv4.tcp_congestion_control` should show `bbr`. Included in provision-node.sh step 7.
-8. **Disable unattended-upgrades**: `sudo apt-get remove -y unattended-upgrades` (prevents surprise reboots).
+8. **Hop port DNAT**: After containers up, verify: `iptables -t nat -L PREROUTING -n | grep REDIRECT`
 
 ### BBR Congestion Control
 

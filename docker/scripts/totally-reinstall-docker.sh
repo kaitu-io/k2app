@@ -1,9 +1,18 @@
 #!/bin/bash
 
 # ============================================================
-# Docker 环境标准化全能脚本 (适用于 Ubuntu 20.04/22.04/24.04)
-# 功能：清洗旧环境 -> 安装官方版本 -> 修正防火墙后端 -> 安全加固
+# DEPRECATED — Use provision-node.sh instead
+#
+# This script switches iptables to nftables backend which can
+# break cloud VPS networking (Lightsail/EC2/Aliyun).
+# provision-node.sh is the safe replacement with SSH hardening,
+# BBR, IPv6, and auto-update cron.
 # ============================================================
+
+echo -e "\033[0;31m=== DEPRECATED: Use provision-node.sh instead ===\033[0m"
+echo -e "\033[0;31m=== This script switches iptables to nftables which can break cloud VPS ===\033[0m"
+echo "Press Ctrl+C within 5 seconds to cancel..."
+sleep 5
 
 set -e # 遇到错误立即停止
 export DEBIAN_FRONTEND=noninteractive
