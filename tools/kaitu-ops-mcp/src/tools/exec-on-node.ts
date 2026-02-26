@@ -30,7 +30,8 @@ const STDERR_TRUNCATE_LIMIT = 2000
  *
  * Tool behaviour:
  * - If scriptPath is provided: reads the local file and pipes its content via
- *   stdin to "bash -s" on the remote host, ignoring the command parameter.
+ *   stdin to the command on the remote host (defaults to "bash -s" if command
+ *   is empty; use "sudo bash -s" for root execution).
  * - Otherwise: executes the command parameter directly via SSH.
  * - Both stdout and stderr are redacted via redactStdout() before returning.
  * - stdout is truncated at 10000 chars, stderr at 2000 chars.
@@ -55,7 +56,10 @@ export function registerExecOnNode(server: McpServer, sshConfig: SshConfig): voi
       scriptPath: z
         .string()
         .optional()
-        .describe('Local script file path to pipe via stdin (uses bash -s)'),
+        .describe(
+          'Local script file path to pipe via stdin. The command parameter ' +
+            'specifies what to run (e.g. "sudo bash -s"). Defaults to "bash -s" if command is not provided.'
+        ),
     },
     async (params) => {
       const { ip, command, timeout, scriptPath } = params
@@ -65,9 +69,11 @@ export function registerExecOnNode(server: McpServer, sshConfig: SshConfig): voi
 
       try {
         if (scriptPath !== undefined) {
-          // Read local script file and pipe via stdin
+          // Read local script file and pipe via stdin.
+          // Use command param as the remote shell (e.g. "sudo bash -s"), default "bash -s".
           const fileContent = fs.readFileSync(scriptPath, 'utf-8')
-          result = await sshExecWithStdin(ip, sshConfig, 'bash -s', fileContent, timeoutMs)
+          const remoteCmd = command || 'bash -s'
+          result = await sshExecWithStdin(ip, sshConfig, remoteCmd, fileContent, timeoutMs)
         } else {
           result = await sshExec(ip, sshConfig, command, timeoutMs)
         }

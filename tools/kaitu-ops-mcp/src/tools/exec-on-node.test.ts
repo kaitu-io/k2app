@@ -186,7 +186,7 @@ describe('exec_on_node tool', () => {
     expect(parsed.stderr).toContain('DB_PASSWORD=[REDACTED]')
   })
 
-  it('pipes script via stdin when scriptPath provided', async () => {
+  it('pipes script via stdin when scriptPath provided, using command as remote shell', async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'exec-on-node-test-'))
     const scriptPath = path.join(tmpDir, 'test.sh')
     const scriptContent = '#!/bin/bash\necho from-script'
@@ -196,7 +196,7 @@ describe('exec_on_node tool', () => {
 
     const result = await invokeExecOnNode({
       ip: '1.2.3.4',
-      command: 'ignored-when-script-path-given',
+      command: 'sudo bash -s',
       scriptPath,
     })
 
@@ -206,13 +206,27 @@ describe('exec_on_node tool', () => {
 
     expect(calledIp).toBe('1.2.3.4')
     expect(calledConfig).toEqual(TEST_SSH_CONFIG)
-    expect(calledCommand).toBe('bash -s')
+    expect(calledCommand).toBe('sudo bash -s')
     expect(calledStdin).toBe(scriptContent)
 
     expect(mockSshExec).not.toHaveBeenCalled()
 
     const parsed = parseResult(result)
     expect(parsed.stdout).toBe('from-script')
+  })
+
+  it('defaults to "bash -s" when scriptPath provided without command', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'exec-on-node-test-'))
+    const scriptPath = path.join(tmpDir, 'test2.sh')
+    fs.writeFileSync(scriptPath, 'echo hello')
+
+    mockSshExecWithStdin.mockResolvedValue({ stdout: 'hello', stderr: '', exitCode: 0 })
+
+    await invokeExecOnNode({ ip: '1.2.3.4', command: '', scriptPath })
+
+    const [, , calledCommand] =
+      mockSshExecWithStdin.mock.calls[0]! as [string, SshConfig, string, string]
+    expect(calledCommand).toBe('bash -s')
   })
 
   it('passes timeout in milliseconds to ssh function', async () => {

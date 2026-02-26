@@ -97,6 +97,9 @@ The `.env` file is at `/apps/kaitu-slave/.env`. Core variables:
 | `K2_HOP_PORT_MAX` | Hop port range end (default 10119) | Max 100 ports |
 | `K2_CENTER_URL` | Center API URL | Default `https://k2.52j.me` |
 | `K2_LOG_LEVEL` | Log level | `debug`, `info`, `warn`, `error` |
+| `K2_NODE_NAME` | Human-readable node name | Format: `{region}.{provider}.wm{NN}` e.g. `jp-tokyo.aws.wm04` |
+| `K2_NODE_REGION` | Node region identifier | e.g. `jp-tokyo.aws`, `hk.aliyun` |
+| `K2_NODE_ARCH` | Node architecture identifier | Default `k2v5`. Reported in registration meta. |
 | `K2_NODE_BILLING_START_DATE` | Traffic billing start | Format: `YYYY-MM-DD` |
 | `K2_NODE_TRAFFIC_LIMIT_GB` | Traffic limit in GB | `0` = unlimited |
 
@@ -123,6 +126,9 @@ Use `exec_on_node(ip, command)` for all operations. Replace `{sidecar}` and `{tu
 | BBR status | `sysctl net.ipv4.tcp_congestion_control` |
 | Auto-update log | `tail -50 /apps/kaitu-slave/auto-update.log` |
 | Cron entries | `crontab -l` |
+| Container outbound network | `docker exec k2-sidecar wget -qO- --timeout=5 https://api.ipify.org` |
+| iptables backend check | `iptables --version` |
+| Deploy compose to single node | `exec_on_node(ip, "sudo tee /apps/kaitu-slave/docker-compose.yml > /dev/null", { scriptPath: "docker/docker-compose.yml" })` |
 
 ## Step 5: Post-Provisioning Checklist
 
@@ -131,11 +137,12 @@ After provisioning a new node (or reinstalling OS), ensure these are all done:
 1. **SSH port**: Now automated by provision-node.sh step 10 (port 22 → 1022 only). Verify: `ss -tlnp | grep :1022`
 2. **provision-node.sh**: Docker CE + IPv6 + BBR + SSH port 1022 + docker group + daemon.json + UFW-Docker + cron + unattended-upgrades removal.
 3. **docker-compose.yml**: Deploy via `deploy-compose.sh --node=IP` or SCP manually.
-4. **.env**: Restore from backup or generate new via Center API.
+4. **.env**: Restore from backup or generate new. **K2_DOMAIN and K2OC_DOMAIN must be globally unique** — run `list_nodes()` first and verify no other node uses the same domains. Domain collision silently breaks the other node.
 5. **auto-update.sh + cron**: Deploy via `deploy-auto-update.sh --node=IP`.
 6. **Containers up**: `docker compose up -d` and verify sidecar healthy.
 7. **BBR active**: `sysctl net.ipv4.tcp_congestion_control` should show `bbr`. Included in provision-node.sh step 7.
 8. **Hop port DNAT**: After containers up, verify: `iptables -t nat -L PREROUTING -n | grep REDIRECT`
+9. **Container network**: Verify container outbound: `docker exec k2-sidecar wget -qO- --timeout=5 https://api.ipify.org`. If timeout → check `iptables --version`. If `(nf_tables)` → fix with `update-alternatives --set iptables /usr/sbin/iptables-legacy` + restart Docker.
 
 ### BBR Congestion Control
 
@@ -169,6 +176,8 @@ These are best-practice guardrails to prevent accidental damage during operation
 6. **Never modify iptables rules** — Hop port DNAT rules are managed by k2v5/k2-slave entrypoint scripts. Manual changes break on restart.
 
 7. **Update = pull + up, never down** — To update containers: `docker compose pull && docker compose up -d`. Never use `docker compose down` — it removes containers and causes service interruption. The `up -d` command recreates only changed containers.
+
+8. **Tunnel domains must be globally unique** — Every node MUST have its own unique `K2_DOMAIN` and `K2OC_DOMAIN`. Never copy another node's `.env` domains. If two nodes register the same domain, Center reassigns the tunnel to the last registrant — silently breaking the other node (`tunnels: []`). When creating `.env` for a new node, only reference other nodes for `K2_NODE_REGION` and `K2_CENTER_URL`. `K2_DOMAIN` and `K2OC_DOMAIN` must be fresh, unique values. Always run `list_nodes()` first to verify no collision.
 
 ## Step 7: Batch Operations
 
@@ -284,11 +293,21 @@ exec_on_node(ip, "cd /apps/kaitu-slave && docker compose ps")
 
 ### Mode 2: Stdin Pipe (script files)
 
-For larger scripts from `docker/scripts/`, the MCP tool reads the local file and pipes it via SSH stdin. This avoids shell escaping issues:
+For larger scripts from `docker/scripts/`, the MCP tool reads the local file and pipes it via SSH stdin. This avoids shell escaping issues.
+
+**MANDATORY**: Always use `scriptPath` + `command` for scripts. The `command` parameter specifies the remote shell. Use `"sudo bash -s"` for scripts requiring root (e.g., `provision-node.sh`):
+
+```
+exec_on_node(ip, "sudo bash -s", { scriptPath: "docker/scripts/provision-node.sh", timeout: 300 })
+```
+
+For scripts that don't need root:
 
 ```
 exec_on_node(ip, "bash -s", { scriptPath: "docker/scripts/enable-ipv6.sh" })
 ```
+
+**NEVER** inline large scripts as command strings or use base64 encoding. Always upload via `scriptPath`.
 
 The MCP implementation handles: read local file → SSH exec channel → pipe to stdin → execute remotely.
 
@@ -311,3 +330,68 @@ Scripts in `.claude/skills/kaitu-node-ops/` (run LOCALLY, orchestrate across nod
 | `deploy-compose.sh` | Deploy `docker/docker-compose.yml` to all active nodes via SCP | Safe — MD5 skip, no restart. Use `--all` for inactive nodes. |
 | `update-compose.sh` | Pull latest images + restart all active nodes with rolling interval | Safe — uses `pull + up -d` (no `down`). Supports `--sleep`, `--node`, `--dry-run`. |
 | `deploy-auto-update.sh` | Deploy `auto-update.sh` + cron to all active nodes | Safe — MD5 skip, idempotent cron. Supports `--node`, `--all`, `--dry-run`. |
+
+## Step 9: Troubleshooting Known Issues
+
+### iptables-nft Incompatibility (Ubuntu 20.04)
+
+**Symptom**: Sidecar loops with `Failed to get IPv4 address: all ipv4 services failed (i/o timeout)`. Host `curl` works fine but `docker exec` network calls fail.
+
+**Root cause**: `iptables` set to `iptables-nft` backend but Docker requires legacy iptables for NAT. Container MASQUERADE rules fail silently → containers cannot reach external network.
+
+**Detection**:
+```bash
+iptables --version
+# BAD: iptables v1.8.4 (nf_tables)
+# GOOD: iptables v1.8.4 (legacy)
+```
+
+**Fix**:
+```bash
+sudo update-alternatives --set iptables /usr/sbin/iptables-legacy
+sudo update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy
+sudo systemctl restart docker
+# Then: cd /apps/kaitu-slave && docker compose down && docker compose up -d
+```
+
+Note: `provision-node.sh` step 2 handles this for new provisions. This fix is for existing nodes provisioned before the script update.
+
+### Domain Collision (tunnels: [] on a node)
+
+**Symptom**: A previously working node suddenly shows `tunnels: []` in `list_nodes()`.
+
+**Root cause**: Another node registered with the same `K2_DOMAIN` or `K2OC_DOMAIN`. Center reassigns the tunnel to the last registrant.
+
+**Detection**: Run `list_nodes()` and search for the missing domain — it will appear on the wrong node.
+
+**Fix**: Change the conflicting node's `.env` to use unique domains, then restart both nodes.
+
+### Sidecar Restart Loop (no registration)
+
+**Symptom**: `docker compose ps` shows sidecar restarting. Logs show repeated `Detecting missing network info...` → error → restart.
+
+**Common causes**:
+1. Container network broken (see iptables-nft above)
+2. Missing or invalid `K2_NODE_SECRET` in `.env`
+3. `K2_CENTER_URL` unreachable from the node
+
+**Diagnosis**: Check sidecar logs for the specific error, then verify container outbound network with `docker exec k2-sidecar wget -qO- --timeout=5 https://api.ipify.org`.
+
+## Step 10: Post-Deployment Verification
+
+**MANDATORY** after deploying containers to a new or restarted node. Run these checks in order:
+
+| # | Check | Command | Expected |
+|---|-------|---------|----------|
+| 1 | Containers running | `cd /apps/kaitu-slave && docker compose ps` | All 4 containers Up, sidecar (healthy) |
+| 2 | Sidecar registered | `docker logs --tail 30 k2-sidecar \| grep "Registration completed"` | `tunnels=2` |
+| 3 | Tunnel domains correct | `docker logs --tail 30 k2-sidecar \| grep "Tunnel registered"` | Correct domains, `created=true` |
+| 4 | k2v5 started | `docker logs --tail 20 k2v5 \| grep "server ready"` | `k2s server ready listen=:443` |
+| 5 | Container network | `docker exec k2-sidecar wget -qO- --timeout=5 https://api.ipify.org` | Returns node's public IP |
+| 6 | MCP cross-check | `list_nodes(name=NODE_NAME)` | `tunnels` array has 2 entries with correct domains |
+| 7 | No domain conflict | `list_nodes()` — scan ALL nodes | No other node has `tunnels: []` unexpectedly |
+
+**If any check fails**, investigate before proceeding:
+- `tunnels: []` on another node → domain conflict (guardrail #8 violated)
+- Container network timeout → iptables-nft issue (Step 9)
+- Sidecar restart loop → check `.env` for missing/invalid values (Step 9)
