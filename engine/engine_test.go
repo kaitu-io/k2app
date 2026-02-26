@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -289,6 +290,46 @@ func TestEngineStop_NotStarted(t *testing.T) {
 	err := e.Stop()
 	if err != nil {
 		t.Fatalf("Stop on fresh engine should not error, got %v", err)
+	}
+}
+
+func TestEngineStart_WireProbeFailure(t *testing.T) {
+	e := New()
+	h := &mockEventHandler{}
+	e.SetEventHandler(h)
+
+	// 127.0.0.1:65534 — connection refused (instant TCP failure).
+	// QUIC gets 3s budget (UDP to closed port → timeout), TCP-WS fails fast.
+	url := "k2v5://udid:token@127.0.0.1:65534?insecure=1&ip=127.0.0.1"
+	err := e.Start(testConfig(url))
+	if err == nil {
+		t.Fatal("Start with unreachable wire server should fail")
+	}
+
+	if e.Status() != StateDisconnected {
+		t.Fatalf("state = %q, want disconnected", e.Status())
+	}
+
+	// Error should originate from wire probe.
+	if !strings.Contains(err.Error(), "wire probe") {
+		t.Errorf("error = %q, want to contain 'wire probe'", err.Error())
+	}
+
+	// EventHandler should receive classified error.
+	statuses := h.getStatuses()
+	if len(statuses) < 2 {
+		t.Fatalf("expected at least 2 status changes (connecting + disconnected), got %d", len(statuses))
+	}
+	lastStatus := statuses[len(statuses)-1]
+	if lastStatus.State != StateDisconnected {
+		t.Fatalf("last state = %q, want disconnected", lastStatus.State)
+	}
+	if lastStatus.Error == nil {
+		t.Fatal("expected classified error in final status")
+	}
+	// Connection refused → 503 (ServerUnreachable) or timeout → 408.
+	if lastStatus.Error.Code != 503 && lastStatus.Error.Code != 408 {
+		t.Errorf("error code = %d, want 503 or 408", lastStatus.Error.Code)
 	}
 }
 

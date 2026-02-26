@@ -136,6 +136,22 @@ func (e *Engine) Start(cfg Config) error {
 		tm.SetTCPWS(tcpwsClient)
 	}
 
+	// 4.5 Verify wire connectivity before setting up TUN/provider.
+	// Without this check, engine reports "connected" after TUN starts even if
+	// wire server is unreachable — DNS handler silently absorbs wire failures
+	// and ReportWireError() never triggers (no TCP connections created).
+	slog.Info("engine: step 4.5 - wire connectivity probe")
+	probeCtx, probeCancel := context.WithTimeout(ctx, 15*time.Second)
+	probeConn, probeErr := tm.DialTCP(probeCtx, "1.1.1.1:443")
+	probeCancel()
+	if probeErr != nil {
+		slog.Warn("engine: wire probe failed", "err", probeErr)
+		tm.Close()
+		return e.fail(fmt.Errorf("wire probe: %w", probeErr))
+	}
+	probeConn.Close()
+	slog.Info("engine: step 4.5 - wire probe ok")
+
 	// 5. Router.
 	router := core.NewRouter()
 
