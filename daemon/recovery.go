@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"time"
+
+	"github.com/kaitu-io/k2/config"
 )
 
 // HandlePanic is a deferred function that catches panics, logs the stack trace,
@@ -16,14 +18,14 @@ func HandlePanic() {
 		stack := debug.Stack()
 		slog.Error("PANIC", "panic", r, "stack", string(stack))
 
-		// Write panic log.
-		dir := filepath.Join(os.TempDir(), "k2")
-		os.MkdirAll(dir, 0700)
+		// Write panic log alongside service logs so Tauri can find it.
+		dir := filepath.Dir(config.DefaultLogPath("k2"))
+		os.MkdirAll(dir, 0755)
 		name := fmt.Sprintf("panic-%s.log", time.Now().Format("20060102-150405"))
 		path := filepath.Join(dir, name)
 
 		content := fmt.Sprintf("Panic: %v\n\n%s", r, stack)
-		if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 			slog.Error("failed to write panic log", "err", err)
 		} else {
 			slog.Info("panic log written", "path", path)

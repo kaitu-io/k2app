@@ -18,6 +18,8 @@ import (
 // configPath is the -c flag value (empty = auto-search).
 // This is the main entry point when the binary is invoked with no subcommand.
 func runDaemon(configPath string) {
+	defer daemon.HandlePanic()
+
 	// Phase 1: Set up logging with defaults before config is loaded so that any
 	// early errors are captured with structured logging.
 	cleanup, err := config.SetupLogging(config.LogConfig{}, "k2")

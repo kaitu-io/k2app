@@ -120,6 +120,14 @@ func SetupLogging(cfg LogConfig, name string) (func(), error) {
 		if err := os.MkdirAll(filepath.Dir(logPath), 0755); err != nil {
 			return nil, fmt.Errorf("log: create log dir: %w", err)
 		}
+		// Pre-create with world-readable permissions so non-root processes
+		// (e.g. Tauri log upload) can read the file. Lumberjack copies mode
+		// from existing file on rotation, so 0644 propagates automatically.
+		if _, statErr := os.Stat(logPath); os.IsNotExist(statErr) {
+			if f, createErr := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY, 0644); createErr == nil {
+				f.Close()
+			}
+		}
 		lj := &lumberjack.Logger{
 			Filename:   logPath,
 			MaxSize:    50, // MB

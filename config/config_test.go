@@ -416,8 +416,8 @@ func TestSetDefaultsExported(t *testing.T) {
 	if cfg.Log.Level != "info" {
 		t.Errorf("Log.Level = %q, want info", cfg.Log.Level)
 	}
-	if cfg.Log.Output != "stderr" {
-		t.Errorf("Log.Output = %q, want stderr", cfg.Log.Output)
+	if cfg.Log.Output != "" {
+		t.Errorf("Log.Output = %q, want empty (auto-detect via DefaultLogPath)", cfg.Log.Output)
 	}
 	if cfg.Tun.IPv4 != DefaultTunIPv4 {
 		t.Errorf("Tun.IPv4 = %q, want %q", cfg.Tun.IPv4, DefaultTunIPv4)

@@ -19,8 +19,8 @@ func plistPath() string {
 }
 
 // plistContent generates the launchd plist XML for the daemon service.
-// Log output is handled by Go-level logging (lumberjack); launchd log
-// redirection (StandardOutPath/StandardErrorPath) is intentionally omitted.
+// Primary logging is handled by Go (slog + lumberjack → /var/log/kaitu/k2.log).
+// StandardErrorPath is a safety net for pre-logging panics and cgo crashes.
 func plistContent(label, exe string) string {
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -50,6 +50,8 @@ func plistContent(label, exe string) string {
         <key>NumberOfFiles</key>
         <integer>10240</integer>
     </dict>
+    <key>StandardErrorPath</key>
+    <string>/var/log/kaitu/k2-stderr.log</string>
     <key>ThrottleInterval</key>
     <integer>2</integer>
 </dict>

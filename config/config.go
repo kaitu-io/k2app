@@ -157,9 +157,10 @@ func SetDefaults(cfg *ClientConfig) {
 	if cfg.Log.Level == "" {
 		cfg.Log.Level = "info"
 	}
-	if cfg.Log.Output == "" {
-		cfg.Log.Output = "stderr"
-	}
+	// Log.Output intentionally left empty when unset — SetupLogging()
+	// interprets empty as DefaultLogPath(), which writes to the correct
+	// platform log file. Overriding to "stderr" broke daemon logging
+	// under service supervisors (launchd, Windows SCM) that discard stderr.
 	if cfg.Tun.IPv4 == "" {
 		cfg.Tun.IPv4 = DefaultTunIPv4
 	}
