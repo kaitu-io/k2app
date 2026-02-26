@@ -43,22 +43,6 @@ func DefaultQUICConfig() *quic.Config {
 	}
 }
 
-// MobileQUICConfig returns QUIC configuration for memory-constrained platforms (iOS).
-// iOS Network Extension has ~50 MB memory limit; these windows keep QUIC overhead under ~8 MB
-// while still allowing ~320 Mbps at 100ms RTT.
-func MobileQUICConfig() *quic.Config {
-	return &quic.Config{
-		InitialStreamReceiveWindow:     4 << 20, // 4 MB
-		MaxStreamReceiveWindow:         4 << 20, // 4 MB
-		InitialConnectionReceiveWindow: 8 << 20, // 8 MB
-		MaxConnectionReceiveWindow:     8 << 20, // 8 MB
-		EnableDatagrams:                true,
-		MaxIdleTimeout:                 30 * time.Second,
-		KeepAlivePeriod:                10 * time.Second,
-		MaxIncomingStreams:             256,
-	}
-}
-
 // quicStreamConn wraps a quic.Stream to satisfy net.Conn.
 type quicStreamConn struct {
 	*quic.Stream
@@ -90,8 +74,7 @@ type QUICClient struct {
 	serverAddr   string
 	hopStart     int
 	hopEnd       int
-	tlsConfig    *tls.Config  // override for testing (bypasses BuildClientTLSConfig)
-	quicConfig   *quic.Config // override for platform-specific tuning (e.g., iOS)
+	tlsConfig    *tls.Config // override for testing (bypasses BuildClientTLSConfig)
 	directDialer DirectDialer
 
 	mu        sync.Mutex
@@ -120,12 +103,6 @@ func NewQUICClient(cfg Config, store *TicketStore) *QUICClient {
 // SetTLSConfig overrides the TLS config for testing (bypasses BuildClientTLSConfig).
 func (c *QUICClient) SetTLSConfig(cfg *tls.Config) {
 	c.tlsConfig = cfg
-}
-
-// SetQUICConfig overrides the QUIC config for platform-specific tuning.
-// Use MobileQUICConfig() for iOS to stay within memory limits.
-func (c *QUICClient) SetQUICConfig(cfg *quic.Config) {
-	c.quicConfig = cfg
 }
 
 // SetDirectDialer sets a physical-interface-bound dialer for bypassing TUN.
@@ -195,10 +172,7 @@ func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
 		tlsCfg.NextProtos = []string{"h3"}
 	}
 
-	qcfg := c.quicConfig
-	if qcfg == nil {
-		qcfg = DefaultQUICConfig()
-	}
+	qcfg := DefaultQUICConfig()
 
 	conn, err := transport.Dial(ctx, udpAddr, tlsCfg, qcfg)
 	if err != nil {

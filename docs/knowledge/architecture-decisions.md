@@ -413,7 +413,7 @@ tlsCfg.EncryptedClientHelloKeys = BuildECHKeys(privKey, allConfigs)
 
 **Validation**:
 - Tests: `wire/ech_test.go` (TestEnsureECHPrivateKey, TestSaveLoadECHConfig, TestBuildECHKeys)
-- Integration: Server startup in `server/server.go` (setupECHRotation)
+- Integration: Server startup in `server/server.go` (setupAutoProvision)
 
 **Trade-offs**:
 - Pro: Graceful rotation, no client breakage

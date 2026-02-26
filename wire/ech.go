@@ -239,16 +239,6 @@ func PeekClientHello(data []byte) (ClientHelloInfo, error) {
 	return ClientHelloInfo{SNI: sni, HasECH: hasECH}, nil
 }
 
-// PeekClientHelloSNI extracts the SNI (Server Name Indication) from a raw TLS ClientHello.
-// This is a backward-compatible wrapper around PeekClientHello.
-func PeekClientHelloSNI(data []byte) (string, error) {
-	info, err := PeekClientHello(data)
-	if err != nil {
-		return "", err
-	}
-	return info.SNI, nil
-}
-
 func parseSNIExtension(data []byte) (string, error) {
 	if len(data) < 2 {
 		return "", errors.New("wire: SNI extension too short")

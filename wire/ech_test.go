@@ -364,19 +364,6 @@ func TestPinVerificationBothAlgos(t *testing.T) {
 	})
 }
 
-func TestPeekClientHelloSNI(t *testing.T) {
-	// Construct a minimal TLS ClientHello with SNI "example.com"
-	hello := buildTestClientHello("example.com", false)
-
-	sni, err := PeekClientHelloSNI(hello)
-	if err != nil {
-		t.Fatalf("PeekClientHelloSNI failed: %v", err)
-	}
-	if sni != "example.com" {
-		t.Errorf("SNI = %q, want %q", sni, "example.com")
-	}
-}
-
 func TestPeekClientHello_WithECH(t *testing.T) {
 	// AC1: ClientHello with 0xfe0d extension → hasECH=true
 	hello := buildTestClientHello("microsoft.com", true)
@@ -409,28 +396,6 @@ func TestPeekClientHello_WithoutECH(t *testing.T) {
 	}
 }
 
-func TestPeekClientHello_BackwardCompat(t *testing.T) {
-	// Verify old PeekClientHelloSNI still works (as wrapper)
-	hello := buildTestClientHello("test.com", false)
-
-	sni, err := PeekClientHelloSNI(hello)
-	if err != nil {
-		t.Fatalf("PeekClientHelloSNI failed: %v", err)
-	}
-	if sni != "test.com" {
-		t.Errorf("SNI = %q, want %q", sni, "test.com")
-	}
-
-	// Should also work with ECH present (SNI still extracted)
-	helloWithECH := buildTestClientHello("ech.test.com", true)
-	sni2, err := PeekClientHelloSNI(helloWithECH)
-	if err != nil {
-		t.Fatalf("PeekClientHelloSNI with ECH failed: %v", err)
-	}
-	if sni2 != "ech.test.com" {
-		t.Errorf("SNI = %q, want %q", sni2, "ech.test.com")
-	}
-}
 
 // buildTestClientHello constructs a minimal TLS 1.3 ClientHello with the given SNI.
 // If includeECH is true, adds a placeholder ECH extension (0xfe0d).
