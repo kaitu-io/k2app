@@ -5,7 +5,7 @@
  * - loadConfig from storage (empty + existing)
  * - updateConfig deep merge + persistence
  * - buildConnectConfig merges defaults + stored + server
- * - Getters: ruleMode, mode, logLevel
+ * - Getters: ruleMode
  * - initializeAllStores calls loadConfig in correct order
  *
  * Run: yarn test src/stores/__tests__/config.store.test.ts
@@ -198,23 +198,6 @@ describe('Config Store', () => {
       expect(useConfigStore.getState().ruleMode).toBe('global');
     });
 
-    it('mode returns tun by default', async () => {
-      mockStorage.get.mockResolvedValue(null);
-
-      const useConfigStore = await getStore();
-      await useConfigStore.getState().loadConfig();
-
-      expect(useConfigStore.getState().mode).toBe('tun');
-    });
-
-    it('logLevel returns info by default', async () => {
-      mockStorage.get.mockResolvedValue(null);
-
-      const useConfigStore = await getStore();
-      await useConfigStore.getState().loadConfig();
-
-      expect(useConfigStore.getState().logLevel).toBe('info');
-    });
   });
 
   // ==================== initializeAllStores integration ====================

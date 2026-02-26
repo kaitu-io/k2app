@@ -7,12 +7,9 @@ import {
   Tooltip,
   styled,
   Collapse,
-  ToggleButton,
-  ToggleButtonGroup,
 } from "@mui/material";
 import {
   Dns as DnsIcon,
-  Info as InfoIcon,
   ExpandMore as ExpandMoreIcon,
   Settings as SettingsIcon,
 } from "@mui/icons-material";
@@ -74,7 +71,7 @@ export default function Dashboard() {
   const proxyRuleConfig = appConfig.features.proxyRule || { visible: true, defaultValue: 'lightweight' };
 
   // VPN config from persistent store
-  const { ruleMode, mode: proxyMode, logLevel, updateConfig, buildConnectConfig } = useConfigStore();
+  const { ruleMode, updateConfig, buildConnectConfig } = useConfigStore();
 
   // Service failure alert tracking (silent mode - no UI feedback)
   const [failureAlertSent, setFailureAlertSent] = useState(false);
@@ -437,80 +434,6 @@ export default function Dashboard() {
               </Box>
             )}
 
-            {/* K2 Advanced Options Section */}
-            <Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1.5 }}>
-                <Typography variant="body2" fontWeight={600}>
-                  {t('dashboard:dashboard.k2Options')}
-                </Typography>
-                <Tooltip title={t('dashboard:dashboard.advancedOptionsInfo')}>
-                  <InfoIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
-                </Tooltip>
-              </Box>
-              <Stack direction="column" spacing={1.5}>
-                {/* Proxy Mode Selection */}
-                <Box>
-                  <Typography variant="body2" sx={{ mb: 0.5 }}>{t('dashboard:dashboard.proxyModeLabel')}</Typography>
-                  <Typography variant="caption" color="text.secondary" component="p" sx={{ mb: 1 }}>
-                    {t('dashboard:dashboard.proxyModeDescription')}
-                  </Typography>
-                  <ToggleButtonGroup
-                    value={proxyMode}
-                    exclusive
-                    onChange={(_e, value) => value && updateConfig({ mode: value as 'tun' | 'proxy' })}
-                    disabled={isServiceRunning}
-                    size="small"
-                    fullWidth
-                    sx={{ '& .MuiToggleButton-root': { flex: 1, textTransform: 'none', fontSize: '0.75rem' } }}
-                  >
-                    <ToggleButton value="tun">
-                      {t('dashboard:dashboard.proxyModeOptions.tun')}
-                    </ToggleButton>
-                    <ToggleButton value="proxy">
-                      {t('dashboard:dashboard.proxyModeOptions.proxy')}
-                    </ToggleButton>
-                  </ToggleButtonGroup>
-                  {proxyMode === 'proxy' ? (
-                    <Box sx={{ mt: 1, p: 1.5, bgcolor: 'action.hover', borderRadius: 1 }}>
-                      <Typography variant="caption" color="text.secondary" component="p">
-                        {t('dashboard:dashboard.proxyModeHint')}
-                      </Typography>
-                      <Typography
-                        variant="caption"
-                        component="p"
-                        sx={{ mt: 0.5, fontFamily: 'monospace', fontWeight: 600, color: 'primary.main' }}
-                      >
-                        {t('dashboard:dashboard.proxyModeAddress', { address: '127.0.0.1:1080' })}
-                      </Typography>
-                    </Box>
-                  ) : (
-                    <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 1 }}>
-                      {t('dashboard:dashboard.proxyModeTunHint')}
-                    </Typography>
-                  )}
-                </Box>
-                {/* Log Level Selection */}
-                <Box>
-                  <Typography variant="body2" sx={{ mb: 0.5 }}>{t('dashboard:dashboard.logLevel')}</Typography>
-                  <Typography variant="caption" color="text.secondary" component="p" sx={{ mb: 1 }}>
-                    {t('dashboard:dashboard.logLevelDescription')}
-                  </Typography>
-                  <ToggleButtonGroup
-                    value={logLevel}
-                    exclusive
-                    onChange={(_e, value) => value && updateConfig({ log: { level: value } })}
-                    size="small"
-                    fullWidth
-                    sx={{ '& .MuiToggleButton-root': { flex: 1, textTransform: 'none', fontSize: '0.75rem' } }}
-                  >
-                    <ToggleButton value="error">Error</ToggleButton>
-                    <ToggleButton value="warn">Warn</ToggleButton>
-                    <ToggleButton value="info">Info</ToggleButton>
-                    <ToggleButton value="debug">Debug</ToggleButton>
-                  </ToggleButtonGroup>
-                </Box>
-              </Stack>
-            </Box>
           </Box>
         </Collapse>
       </Box>

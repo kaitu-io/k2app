@@ -37,8 +37,6 @@ interface ConfigState {
 
   // Computed getters (recomputed on config change)
   ruleMode: 'global' | 'chnroute';
-  mode: string;
-  logLevel: string;
 }
 
 interface ConfigActions {
@@ -75,8 +73,6 @@ function deepMerge(base: ClientConfig, override: Partial<ClientConfig>): ClientC
 function computeGetters(config: ClientConfig) {
   return {
     ruleMode: (config.rule?.global ? 'global' : 'chnroute') as 'global' | 'chnroute',
-    mode: config.mode ?? CLIENT_CONFIG_DEFAULTS.mode!,
-    logLevel: config.log?.level ?? CLIENT_CONFIG_DEFAULTS.log!.level!,
   };
 }
 
@@ -125,6 +121,10 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
   buildConnectConfig: (serverUrl?: string) => {
     const { config } = get();
     const result = deepMerge(CLIENT_CONFIG_DEFAULTS, config);
+
+    // Force defaults — mode and log level are not user-configurable
+    result.mode = 'tun';
+    result.log = { ...result.log, level: 'info' };
 
     if (serverUrl) {
       result.server = serverUrl;

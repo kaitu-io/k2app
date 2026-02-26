@@ -200,17 +200,19 @@ export async function injectCapacitorGlobals(): Promise<void> {
   });
 
   K2Plugin.addListener('vpnError', (event: any) => {
-    console.warn('[K2:Capacitor] vpnError:', event.message ?? event);
+    console.warn('[K2:Capacitor] vpnError:', event.code ?? 'no-code', event.message ?? event);
     // Push error into VPN store immediately
     try {
       const store = useVPNStore.getState();
       const currentStatus = store.status;
+      // Use structured error code from event if available, fallback to 570 (unclassified)
+      const errorCode = typeof event.code === 'number' ? event.code : 570;
       store.setStatus({
         ...currentStatus,
         state: 'error',
         running: false,
         networkAvailable: currentStatus?.networkAvailable ?? true,
-        error: { code: 570, message: event.message ?? String(event) },
+        error: { code: errorCode, message: event.message ?? String(event) },
         retrying: false,
       });
       store.setOptimisticState(null);
