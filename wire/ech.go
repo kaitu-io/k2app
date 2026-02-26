@@ -304,6 +304,68 @@ func ReverseProxy(client net.Conn, clientData []byte, target string) {
 	<-done
 }
 
+// ReverseProxyWithTimeout forwards a TCP connection with idle timeout and max duration.
+// idleTimeout closes the connection if no data is transferred for this duration.
+// maxDuration is the absolute maximum lifetime of the proxied connection.
+func ReverseProxyWithTimeout(client net.Conn, clientData []byte, target string, idleTimeout, maxDuration time.Duration) {
+	defer client.Close()
+
+	remote, err := net.DialTimeout("tcp", target, 5*time.Second)
+	if err != nil {
+		slog.Warn("wire: reverse proxy dial failed", "target", target, "err", err)
+		return
+	}
+	defer remote.Close()
+
+	// Absolute max duration deadline.
+	deadline := time.Now().Add(maxDuration)
+	client.SetDeadline(deadline)
+	remote.SetDeadline(deadline)
+
+	// Forward the already-read ClientHello data.
+	if len(clientData) > 0 {
+		if _, err := remote.Write(clientData); err != nil {
+			return
+		}
+	}
+
+	// Bidirectional forwarding with idle timeout.
+	done := make(chan struct{})
+	go func() {
+		bp := copyBufPool.Get().(*[]byte)
+		copyWithIdleTimeout(remote, client, *bp, idleTimeout)
+		copyBufPool.Put(bp)
+		if tc, ok := remote.(*net.TCPConn); ok {
+			tc.CloseWrite()
+		}
+		done <- struct{}{}
+	}()
+
+	bp := copyBufPool.Get().(*[]byte)
+	copyWithIdleTimeout(client, remote, *bp, idleTimeout)
+	copyBufPool.Put(bp)
+	if tc, ok := client.(*net.TCPConn); ok {
+		tc.CloseWrite()
+	}
+	<-done
+}
+
+// copyWithIdleTimeout copies from src to dst, resetting the read deadline on each successful read.
+func copyWithIdleTimeout(dst net.Conn, src net.Conn, buf []byte, idle time.Duration) {
+	for {
+		src.SetReadDeadline(time.Now().Add(idle))
+		n, err := src.Read(buf)
+		if n > 0 {
+			if _, wErr := dst.Write(buf[:n]); wErr != nil {
+				return
+			}
+		}
+		if err != nil {
+			return
+		}
+	}
+}
+
 // GenerateECHKey generates a new ECH key pair and config for the given public name.
 // Returns the EncryptedClientHelloKey and the ECH config bytes (to be distributed to clients).
 func GenerateECHKey(publicName string) (tls.EncryptedClientHelloKey, []byte, error) {

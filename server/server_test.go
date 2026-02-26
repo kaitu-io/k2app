@@ -348,7 +348,7 @@ func TestServer_ECHRouting_ECHConnection(t *testing.T) {
 	}()
 
 	// Server side: handleK2V5 on the server end of the pipe.
-	go srv.handleK2V5(serverRaw)
+	go srv.handleK2V5(serverRaw, "")
 
 	// Client side: TLS handshake + smux session.
 	tlsConn := tls.Client(clientRaw, &tls.Config{
@@ -653,7 +653,7 @@ func TestServer_WSUpgrade(t *testing.T) {
 	clientRaw, serverRaw := net.Pipe()
 
 	// Server: TLS server side -> handleK2V5 (which routes GET to handleHTTP).
-	go srv.handleK2V5(serverRaw)
+	go srv.handleK2V5(serverRaw, "")
 
 	// Client: TLS client handshake.
 	tlsConn := tls.Client(clientRaw, &tls.Config{
@@ -736,7 +736,7 @@ func TestServer_AuthWithoutWS(t *testing.T) {
 	// Server side: handleK2V5.
 	done := make(chan struct{})
 	go func() {
-		srv.handleK2V5(serverRaw)
+		srv.handleK2V5(serverRaw, "")
 		close(done)
 	}()
 
@@ -885,7 +885,7 @@ func TestServer_AuthViaHTTPHandler(t *testing.T) {
 	clientRaw, serverRaw := net.Pipe()
 
 	// Server side: handleK2V5.
-	go srv.handleK2V5(serverRaw)
+	go srv.handleK2V5(serverRaw, "")
 
 	// Client side: TLS + GET /k2v5/auth (routed through handleHTTP).
 	tlsConn := tls.Client(clientRaw, &tls.Config{

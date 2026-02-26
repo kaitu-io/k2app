@@ -44,20 +44,36 @@ type Server struct {
 	// echConfig is the ECH config list bytes (for distribution to clients).
 	echConfig []byte
 
+	// trustedSNIs holds outer SNIs learned from successful ECH connections.
+	// Key: outer SNI domain, Value: last seen time.
+	// Entries expire after trustedSNITTL. Max trustedSNIMax entries.
+	trustedSNIs  map[string]time.Time
+	trustedSNIMu sync.RWMutex
+
+	// proxySem limits concurrent reverse proxy connections.
+	proxySem chan struct{}
+
 	done chan struct{}
 }
+
+const (
+	trustedSNITTL = 1 * time.Hour // outer SNI expiry
+	trustedSNIMax = 32            // max cached outer SNIs
+)
 
 // New creates a server from config.
 func New(cfg *config.ServerConfig) (*Server, error) {
 	store := wire.NewTicketStore()
 
 	s := &Server{
-		cfg:      cfg,
-		store:    store,
-		quicSrv:  wire.NewQUICServer(store),
-		tcpwsSrv: wire.NewTCPWSServer(store),
-		handler:  NewProxyHandler(),
-		done:     make(chan struct{}),
+		cfg:         cfg,
+		store:       store,
+		quicSrv:     wire.NewQUICServer(store),
+		tcpwsSrv:    wire.NewTCPWSServer(store),
+		handler:     NewProxyHandler(),
+		trustedSNIs: make(map[string]time.Time),
+		proxySem:    make(chan struct{}, 128),
+		done:        make(chan struct{}),
 	}
 
 	// Auto-provisioning: unified cert + ECH + auth setup when cert_dir is set.
@@ -451,19 +467,93 @@ func (s *Server) handleRawTCP(conn net.Conn) {
 	if !info.HasECH {
 		// Check local_routes: forward known SNI to local services.
 		if target, ok := s.matchLocalRoute(info.SNI); ok {
+			select {
+			case s.proxySem <- struct{}{}:
+				defer func() { <-s.proxySem }()
+			default:
+				slog.Warn("server: reverse proxy at capacity", "sni", info.SNI)
+				conn.Close()
+				return
+			}
 			allData, _ := br.Peek(br.Buffered())
-			wire.ReverseProxy(conn, allData, target)
+			wire.ReverseProxyWithTimeout(conn, allData, target, 5*time.Minute, 24*time.Hour)
 			return
 		}
-		// Unknown SNI: reverse proxy to the real website (camouflage).
-		allData, _ := br.Peek(br.Buffered())
-		wire.ReverseProxy(conn, allData, info.SNI+":443")
+		// Dynamic trusted SNI whitelist (learned from successful ECH connections).
+		if s.isTrustedSNI(info.SNI) {
+			select {
+			case s.proxySem <- struct{}{}:
+				defer func() { <-s.proxySem }()
+			default:
+				slog.Warn("server: reverse proxy at capacity", "sni", info.SNI)
+				conn.Close()
+				return
+			}
+			allData, _ := br.Peek(br.Buffered())
+			wire.ReverseProxyWithTimeout(conn, allData, info.SNI+":443", 30*time.Second, 5*time.Minute)
+			return
+		}
+		// Unknown SNI: reject (not in whitelist).
+		slog.Debug("server: rejected unknown SNI", "sni", info.SNI, "remote", conn.RemoteAddr())
+		conn.Close()
 		return
 	}
 
 	// ECH -> TLS handshake with ECH decryption -> k2v5.
 	wrapped := &bufferedConn{Conn: conn, br: br}
-	s.handleK2V5(wrapped)
+	s.handleK2V5(wrapped, info.SNI)
+}
+
+// learnOuterSNI records an outer SNI from a successful ECH connection.
+// The SNI is added to trustedSNIs with the current timestamp.
+// Expired entries are evicted, and the map is capped at trustedSNIMax.
+func (s *Server) learnOuterSNI(sni string) {
+	if sni == "" {
+		return
+	}
+	s.trustedSNIMu.Lock()
+	defer s.trustedSNIMu.Unlock()
+
+	// Refresh if already present.
+	if _, ok := s.trustedSNIs[sni]; ok {
+		s.trustedSNIs[sni] = time.Now()
+		return
+	}
+
+	// Evict expired entries.
+	now := time.Now()
+	for k, t := range s.trustedSNIs {
+		if now.Sub(t) > trustedSNITTL {
+			delete(s.trustedSNIs, k)
+		}
+	}
+
+	// Enforce max size: evict oldest.
+	if len(s.trustedSNIs) >= trustedSNIMax {
+		var oldestKey string
+		var oldestTime time.Time
+		for k, t := range s.trustedSNIs {
+			if oldestKey == "" || t.Before(oldestTime) {
+				oldestKey = k
+				oldestTime = t
+			}
+		}
+		delete(s.trustedSNIs, oldestKey)
+	}
+
+	s.trustedSNIs[sni] = now
+	slog.Info("server: learned trusted SNI", "sni", sni, "total", len(s.trustedSNIs))
+}
+
+// isTrustedSNI checks if an outer SNI is in the trusted map and not expired.
+func (s *Server) isTrustedSNI(sni string) bool {
+	s.trustedSNIMu.RLock()
+	defer s.trustedSNIMu.RUnlock()
+	t, ok := s.trustedSNIs[sni]
+	if !ok {
+		return false
+	}
+	return time.Since(t) <= trustedSNITTL
 }
 
 // matchLocalRoute checks if the SNI matches any configured local_routes.
@@ -489,12 +579,18 @@ func (s *Server) matchLocalRoute(sni string) (string, bool) {
 }
 
 // handleK2V5 completes TLS and routes to auth (HTTP), WebSocket tunnel, or raw smux.
-func (s *Server) handleK2V5(conn net.Conn) {
+// outerSNI is the plaintext SNI from the ClientHello (before ECH decryption).
+func (s *Server) handleK2V5(conn net.Conn, outerSNI string) {
 	tlsConn := tls.Server(conn, s.TLSConfig)
 	if err := tlsConn.Handshake(); err != nil {
 		slog.Error("server: TLS handshake", "err", err)
 		conn.Close()
 		return
+	}
+
+	// Learn outer SNI from successful ECH connections for camouflage whitelist.
+	if tlsConn.ConnectionState().ECHAccepted {
+		s.learnOuterSNI(outerSNI)
 	}
 
 	// Peek first bytes to distinguish HTTP (auth/WS) from smux (tunnel).
