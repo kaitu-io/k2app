@@ -26,9 +26,6 @@ build-k2-linux:
 build-macos:
 	bash scripts/build-macos.sh
 
-build-macos-fast:
-	bash scripts/build-macos.sh --skip-notarization
-
 build-macos-test:
 	bash scripts/build-macos.sh --single-arch --skip-notarization --features=mcp-bridge
 
@@ -43,6 +40,9 @@ build-macos-sysext-test:
 
 build-windows: pre-build build-webapp build-k2-windows
 	cd desktop && yarn tauri build --target x86_64-pc-windows-msvc
+
+build-windows-test:
+	bash scripts/build-windows-test.sh
 
 build-openwrt: pre-build
 	bash scripts/build-openwrt.sh

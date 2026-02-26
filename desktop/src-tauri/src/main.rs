@@ -67,9 +67,11 @@ fn main() {
 
             // Ensure k2 service / NE configuration is running with correct version
             let app_version = env!("CARGO_PKG_VERSION").to_string();
+            log::info!("[startup] App version: {}, os: {}", app_version, std::env::consts::OS);
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = service::ensure_service_running(app_version).await {
-                    log::error!("[startup] Service error: {}", e);
+                match service::ensure_service_running(app_version).await {
+                    Ok(()) => log::info!("[startup] Service ready"),
+                    Err(e) => log::error!("[startup] Service error: {}", e),
                 }
             });
 

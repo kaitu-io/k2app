@@ -75,7 +75,7 @@ export function showErrorToast(error: unknown, t: TFunction): void {
     const message = getErrorMessage(code, t, error.message);
     showAlert(message, 'error');
   } else if (error instanceof Error) {
-    showAlert(error.message, 'error');
+    showAlert(t('common:common.unknownError'), 'error');
   } else {
     showAlert(t('common:common.unknownError'), 'error');
   }

@@ -91,11 +91,15 @@ export default function ServiceAlert({ sidebarWidth = 0 }: ServiceAlertProps) {
       // Success - the service should restart and connection should recover
       // The alert will disappear automatically when service reconnects
     } catch (err: any) {
-      // User cancelled or error occurred - navigate to more options
-      if (err?.message !== 'User cancelled') {
-        console.error('Failed to reinstall service:', err);
+      const msg = err?.message || String(err);
+      if (msg.includes('User cancelled') || msg.includes('cancel')) {
+        // User cancelled admin prompt — stay on current page
+        console.debug('[ServiceAlert] User cancelled reinstall');
+      } else {
+        // Real error — navigate to troubleshooting page
+        console.error('[ServiceAlert] Failed to reinstall service:', err);
+        navigate('/service-error', { state: { from: location.pathname } });
       }
-      navigate('/service-error', { state: { from: location.pathname } });
     } finally {
       setIsResolving(false);
     }

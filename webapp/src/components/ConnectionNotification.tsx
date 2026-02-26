@@ -187,7 +187,7 @@ export function ConnectionNotification({
           }}
         >
           {t(`common:${getErrorI18nKey(error.code)}`, {
-            defaultValue: error.message || t('common:status.error'),
+            defaultValue: t('common:status.error'),
           })}
         </Typography>
       </Stack>

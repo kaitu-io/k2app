@@ -9,8 +9,8 @@ cd web && yarn dev               # Next.js website (Turbopack)
 cd web && yarn test              # vitest + playwright
 make dev                         # k2 daemon + Vite HMR + Tauri window
 make build-macos                 # Signed macOS PKG (universal binary)
-make build-macos-fast            # Same, skip notarization (local dev)
 make build-windows               # Signed Windows NSIS installer
+make build-windows-test          # Remote unsigned build on Windows VM (with MCP bridge)
 make build-mobile-android        # gomobile bind + cap sync + assembleRelease
 make build-mobile-ios            # gomobile bind + cap sync + xcodebuild archive
 make publish-mobile VERSION=x.y.z  # Generate + upload mobile latest.json (phase 2 release)

@@ -52,22 +52,28 @@ cd "$API_DIR"
 PIDS+=($!)
 sleep 2
 
-# ── 3. Build and start k2 daemon (non-macOS only) ──
-# macOS uses Network Extension — Tauri IPC routes to NE, no daemon needed.
-if [ "$(uname -s)" != "Darwin" ]; then
-  if [ ! -f "$K2_BIN" ] || [ "$ROOT_DIR/k2/cmd/k2/main.go" -nt "$K2_BIN" ]; then
-    echo "[dev-desktop] Building k2..."
-    cd "$ROOT_DIR/k2"
-    go build -tags nowebapp -o "$K2_BIN" ./cmd/k2
-  fi
-  echo "[dev-desktop] Starting k2 daemon on $K2_DEV_ADDR..."
-  "$K2_BIN" run -l "$K2_DEV_ADDR" &
-  PIDS+=($!)
-else
-  echo "[dev-desktop] macOS NE mode — skipping k2 daemon."
+# ── 3. Build and start k2 daemon ──
+# Default build uses daemon mode on all platforms (including macOS).
+# NE mode (macOS sysext) is only used with `--features ne-mode` in production builds.
+if [ ! -f "$K2_BIN" ] || [ "$ROOT_DIR/k2/cmd/k2/main.go" -nt "$K2_BIN" ]; then
+  echo "[dev-desktop] Building k2..."
+  cd "$ROOT_DIR/k2"
+  go build -tags nowebapp -o "$K2_BIN" ./cmd/k2
 fi
+# Create minimal dev config for k2 daemon
+K2_DEV_CONFIG="$ROOT_DIR/.k2-dev-config.yaml"
+cat > "$K2_DEV_CONFIG" <<YAML
+listen: "$K2_DEV_ADDR"
+YAML
+
+echo "[dev-desktop] Starting k2 daemon on $K2_DEV_ADDR..."
+# k2 needs root for TUN device (actual VPN connection). Run with sudo.
+sudo "$K2_BIN" -c "$K2_DEV_CONFIG" &
+PIDS+=($!)
 
 # ── 5. Start Vite dev server ──
+# Export K2_DAEMON_PORT so Vite proxy targets the dev daemon (for standalone browser testing)
+export K2_DAEMON_PORT="${K2_DEV_ADDR##*:}"
 echo "[dev-desktop] Starting Vite dev server..."
 cd "$ROOT_DIR/webapp"
 yarn dev &

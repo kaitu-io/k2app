@@ -148,37 +148,60 @@ pub async fn daemon_exec(
 
 /// IPC command: get device UDID.
 ///
-/// In NE mode (macOS + `ne-mode` feature) the hardware UUID is read via `sysctl -n kern.uuid`.
-/// Otherwise the UDID is fetched from the k2 daemon HTTP API.
+/// macOS: hardware UUID via `sysctl -n kern.uuid` (no daemon dependency).
+/// Windows: hardware UUID via `wmic csproduct get UUID`.
+/// Linux: reads `/etc/machine-id`.
 #[tauri::command]
 pub async fn get_udid() -> Result<ServiceResponse, String> {
-    #[cfg(all(target_os = "macos", feature = "ne-mode"))]
-    {
-        tokio::task::spawn_blocking(|| crate::ne::get_udid_native())
-            .await
-            .map_err(|e| format!("Task join error: {}", e))?
-    }
-    #[cfg(not(all(target_os = "macos", feature = "ne-mode")))]
-    {
-        tokio::task::spawn_blocking(|| {
-            let url = format!("{}/api/device/udid", service_base_url());
-            let client = reqwest::blocking::Client::builder()
-                .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
-                .no_proxy()
-                .build()
-                .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
-
-            let response = client
-                .get(&url)
-                .send()
-                .map_err(|e| format!("Failed to get UDID: {}", e))?;
-
-            response
-                .json::<ServiceResponse>()
-                .map_err(|e| format!("Failed to parse UDID response: {}", e))
-        })
+    tokio::task::spawn_blocking(|| get_udid_native())
         .await
         .map_err(|e| format!("Task join error: {}", e))?
+}
+
+fn get_udid_native() -> Result<ServiceResponse, String> {
+    let udid = get_hardware_uuid()?;
+    Ok(ServiceResponse {
+        code: 0,
+        message: "ok".to_string(),
+        data: serde_json::json!({ "udid": udid }),
+    })
+}
+
+fn get_hardware_uuid() -> Result<String, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let output = Command::new("sysctl")
+            .args(["-n", "kern.uuid"])
+            .output()
+            .map_err(|e| format!("sysctl failed: {}", e))?;
+        let uuid = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if uuid.is_empty() {
+            return Err("Empty UUID from sysctl".to_string());
+        }
+        Ok(uuid)
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let output = Command::new("wmic")
+            .args(["csproduct", "get", "UUID"])
+            .output()
+            .map_err(|e| format!("wmic failed: {}", e))?;
+        let text = String::from_utf8_lossy(&output.stdout);
+        // wmic output: "UUID\r\nXXXX-XXXX...\r\n"
+        let uuid = text.lines()
+            .nth(1)
+            .map(|s| s.trim().to_string())
+            .unwrap_or_default();
+        if uuid.is_empty() {
+            return Err("Empty UUID from wmic".to_string());
+        }
+        Ok(uuid)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::fs::read_to_string("/etc/machine-id")
+            .map(|s| s.trim().to_string())
+            .map_err(|e| format!("Failed to read machine-id: {}", e))
     }
 }
 
@@ -209,12 +232,19 @@ pub async fn admin_reinstall_service() -> Result<String, String> {
             .map_err(|e| format!("Task join error: {}", e))?
     }
 
+    #[cfg(all(target_os = "macos", not(feature = "ne-mode")))]
+    {
+        tokio::task::spawn_blocking(admin_reinstall_service_macos)
+            .await
+            .map_err(|e| format!("Task join error: {}", e))?
+    }
+
     #[cfg(target_os = "windows")]
     {
         admin_reinstall_service_windows().await
     }
 
-    #[cfg(not(any(all(target_os = "macos", feature = "ne-mode"), target_os = "windows")))]
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         Err("Not supported on this platform".to_string())
     }
@@ -246,6 +276,67 @@ async fn admin_reinstall_service_windows() -> Result<String, String> {
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
         Err(format!("Failed: {}", stderr))
+    }
+}
+
+/// macOS daemon mode: install k2 service with admin privileges via osascript.
+/// Uses the k2 sidecar binary at Contents/MacOS/k2 relative to the running app.
+/// The osascript dialog prompts the user for their admin password.
+#[cfg(all(target_os = "macos", not(feature = "ne-mode")))]
+fn admin_reinstall_service_macos() -> Result<String, String> {
+    let exe_path = std::env::current_exe()
+        .map_err(|e| format!("Failed to get exe path: {}", e))?;
+    let app_dir = exe_path.parent().ok_or("Failed to get app directory")?;
+
+    // Try plain `k2` first (production build), then look for `k2-*` (target-triple variant)
+    let k2_path = if app_dir.join("k2").exists() {
+        app_dir.join("k2")
+    } else {
+        // Find k2-{target-triple} in the same directory
+        let found = std::fs::read_dir(app_dir)
+            .map_err(|e| format!("Failed to read app dir: {}", e))?
+            .filter_map(|e| e.ok())
+            .find(|e| {
+                let name = e.file_name();
+                let name_str = name.to_string_lossy();
+                name_str.starts_with("k2-") && !name_str.contains('.')
+            })
+            .map(|e| e.path());
+        match found {
+            Some(path) => path,
+            None => return Err(format!("k2 binary not found in {:?}", app_dir)),
+        }
+    };
+
+    let k2_str = k2_path.to_string_lossy();
+    log::info!("[service] Installing via osascript: {}", k2_str);
+
+    // Use osascript to run `k2 service install` with admin privileges.
+    // This shows the macOS admin password dialog.
+    let script = format!(
+        r#"do shell script "{} service install" with administrator privileges"#,
+        k2_str.replace('\\', "\\\\").replace('"', "\\\"")
+    );
+
+    let output = Command::new("osascript")
+        .args(["-e", &script])
+        .output()
+        .map_err(|e| format!("osascript failed: {}", e))?;
+
+    if output.status.success() {
+        log::info!("[service] Service installed successfully via osascript");
+        Ok("Service installed and started".to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr_str = stderr.trim();
+        // osascript returns -128 when user clicks Cancel
+        if stderr_str.contains("User canceled") || stderr_str.contains("-128") {
+            log::info!("[service] User cancelled admin prompt");
+            Err("User cancelled".to_string())
+        } else {
+            log::error!("[service] osascript failed: {}", stderr_str);
+            Err(format!("Failed to install service: {}", stderr_str))
+        }
     }
 }
 

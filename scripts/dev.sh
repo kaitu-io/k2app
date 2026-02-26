@@ -66,8 +66,13 @@ if [ ! -f "$K2_BIN" ] || [ "$ROOT_DIR/k2/cmd/k2/main.go" -nt "$K2_BIN" ]; then
 fi
 
 # ── 4. Start k2 daemon (dev port, system service keeps :1777) ──
+K2_DEV_CONFIG="$ROOT_DIR/.k2-dev-config.yaml"
+cat > "$K2_DEV_CONFIG" <<YAML
+listen: "$K2_DEV_ADDR"
+YAML
+
 echo "[dev] Starting k2 daemon on $K2_DEV_ADDR..."
-"$K2_BIN" run -l "$K2_DEV_ADDR" &
+"$K2_BIN" -c "$K2_DEV_CONFIG" &
 PIDS+=($!)
 
 # ── 5. Start Vite dev server ──

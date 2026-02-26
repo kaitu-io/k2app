@@ -26,15 +26,15 @@ async function coreExec<T = any>(action: string, params?: any): Promise<SRespons
     if (!response.ok) {
       return {
         code: -1,
-        message: `HTTP ${response.status}: ${response.statusText}`,
+        message: 'Service error',
       };
     }
 
     return await response.json();
-  } catch (error) {
+  } catch {
     return {
       code: -1,
-      message: error instanceof Error ? error.message : 'Network error',
+      message: 'Service unavailable',
     };
   }
 }
