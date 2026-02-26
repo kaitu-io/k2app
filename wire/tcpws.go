@@ -385,7 +385,14 @@ func (s *TCPWSServer) HandleConn(conn net.Conn) {
 		conn.Close()
 		return
 	}
-	go s.handleSession(sess)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("TCPWSServer: panic in handleSession", "panic", r)
+			}
+		}()
+		s.handleSession(sess)
+	}()
 }
 
 // HandleSession processes streams from a smux session, blocking until it ends.
@@ -402,7 +409,14 @@ func (s *TCPWSServer) handleSession(sess *smux.Session) {
 		if err != nil {
 			return
 		}
-		go s.handleStream(stream)
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					slog.Error("TCPWSServer: panic in handleStream", "panic", r)
+				}
+			}()
+			s.handleStream(stream)
+		}()
 	}
 }
 
@@ -458,7 +472,15 @@ func (s *TCPWSServer) handleUDPStream(stream *smux.Stream, br *bufio.Reader) {
 			handler := s.udpH
 			s.mu.Unlock()
 			if handler != nil {
-				go handler.HandleUDP(sess, frame.Addr)
+				addr := frame.Addr
+				go func() {
+					defer func() {
+						if r := recover(); r != nil {
+							slog.Error("TCPWSServer: panic in HandleUDP", "panic", r, "addr", addr)
+						}
+					}()
+					handler.HandleUDP(sess, addr)
+				}()
 			}
 		}
 

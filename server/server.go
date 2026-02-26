@@ -494,7 +494,14 @@ func (s *Server) acceptTCPLoop(ctx context.Context, ln wire.Listener) {
 			}
 		}
 		slog.Debug("server: AcceptTCP got stream", "addr", addr)
-		go s.handler.HandleTCP(conn, addr)
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					slog.Error("server: panic in HandleTCP", "panic", r, "addr", addr)
+				}
+			}()
+			s.handler.HandleTCP(conn, addr)
+		}()
 	}
 }
 
@@ -513,7 +520,14 @@ func (s *Server) tcpListenLoop(ctx context.Context, ln net.Listener) {
 				return
 			}
 		}
-		go s.handleRawTCP(conn)
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					slog.Error("server: panic in handleRawTCP", "panic", r, "remote", conn.RemoteAddr())
+				}
+			}()
+			s.handleRawTCP(conn)
+		}()
 	}
 }
 

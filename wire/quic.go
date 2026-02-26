@@ -441,7 +441,14 @@ func (s *QUICServer) Listen(ln *quic.Listener) {
 	s.mu.Lock()
 	s.ln = ln
 	s.mu.Unlock()
-	go s.acceptLoop()
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("QUICServer: panic in acceptLoop", "panic", r)
+			}
+		}()
+		s.acceptLoop()
+	}()
 }
 
 func (s *QUICServer) acceptLoop() {
@@ -459,19 +466,38 @@ func (s *QUICServer) acceptLoop() {
 		slog.Debug("QUICServer: accepted connection", "remote", conn.RemoteAddr())
 		// Set K2ARC congestion control for server-side sending (critical for download speed)
 		conn.SetCongestionControl(arc.NewArcSenderGFWMode(arc.DefaultMaxRate))
-		go s.handleConn(conn)
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					slog.Error("QUICServer: panic in handleConn", "panic", r, "remote", conn.RemoteAddr())
+				}
+			}()
+			s.handleConn(conn)
+		}()
 	}
 }
 
 func (s *QUICServer) handleConn(conn *quic.Conn) {
 	// Accept streams (TCP proxy)
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("QUICServer: panic in AcceptStream loop", "panic", r, "remote", conn.RemoteAddr())
+			}
+		}()
 		for {
 			stream, err := conn.AcceptStream(context.Background())
 			if err != nil {
 				return
 			}
-			go s.handleStream(conn, stream)
+			go func() {
+				defer func() {
+					if r := recover(); r != nil {
+						slog.Error("QUICServer: panic in handleStream", "panic", r, "remote", conn.RemoteAddr())
+					}
+				}()
+				s.handleStream(conn, stream)
+			}()
 		}
 	}()
 
@@ -555,7 +581,15 @@ func (s *QUICServer) handleUDPStream(qconn *quic.Conn, stream *quic.Stream, br *
 			handler := s.udpH
 			s.mu.Unlock()
 			if handler != nil {
-				go handler.HandleUDP(sess, frame.Addr)
+				addr := frame.Addr
+				go func() {
+					defer func() {
+						if r := recover(); r != nil {
+							slog.Error("QUICServer: panic in HandleUDP (stream)", "panic", r, "addr", addr)
+						}
+					}()
+					handler.HandleUDP(sess, addr)
+				}()
 			}
 		}
 
@@ -603,7 +637,15 @@ func (s *QUICServer) handleDatagrams(conn *quic.Conn) {
 			handler := s.udpH
 			s.mu.Unlock()
 			if handler != nil {
-				go handler.HandleUDP(sess, frame.Addr)
+				addr := frame.Addr
+				go func() {
+					defer func() {
+						if r := recover(); r != nil {
+							slog.Error("QUICServer: panic in HandleUDP (datagram)", "panic", r, "addr", addr)
+						}
+					}()
+					handler.HandleUDP(sess, addr)
+				}()
 			}
 		}
 		mu.Unlock()

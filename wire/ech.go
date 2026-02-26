@@ -211,10 +211,14 @@ func PeekClientHello(data []byte) (ClientHelloInfo, error) {
 	var sni string
 	var hasECH bool
 
-	for pos+4 <= extsEnd {
+	for pos+4 <= extsEnd && pos+4 <= len(body) {
 		extType := int(body[pos])<<8 | int(body[pos+1])
 		extLen := int(body[pos+2])<<8 | int(body[pos+3])
 		pos += 4
+
+		if pos+extLen > len(body) {
+			return ClientHelloInfo{}, fmt.Errorf("wire: extension length %d exceeds body size %d", extLen, len(body)-pos)
+		}
 
 		if extType == 0x0000 { // server_name
 			var err error

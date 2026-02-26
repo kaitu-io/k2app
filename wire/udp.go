@@ -77,6 +77,9 @@ func ReadUDPFrame(r interface {
 	if err != nil {
 		return nil, fmt.Errorf("wire: read UDP addr_len: %w", err)
 	}
+	if addrLen > maxAddrLen {
+		return nil, fmt.Errorf("wire: UDP addr_len %d exceeds max %d", addrLen, maxAddrLen)
+	}
 
 	// addr (if present)
 	var addr string
@@ -165,6 +168,9 @@ func ReadSmuxUDPFrame(r interface {
 	frameLen, _, err := ReadVarint(r)
 	if err != nil {
 		return nil, fmt.Errorf("wire: read smux UDP frame_len: %w", err)
+	}
+	if frameLen > maxFrameLen {
+		return nil, fmt.Errorf("wire: smux UDP frame_len %d exceeds max %d", frameLen, maxFrameLen)
 	}
 
 	// Read exactly frame_len bytes into pooled buffer.

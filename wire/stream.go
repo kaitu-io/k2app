@@ -18,6 +18,13 @@ const (
 	StreamTypeUDP byte = 0x02
 )
 
+// Limits for varint-decoded lengths to prevent OOM from malicious input.
+const (
+	maxAddrLen     = 4096           // max host:port string length
+	maxErrorMsgLen = 8192           // max error message length
+	maxFrameLen    = 16 * 1024 * 1024 // 16MB max smux UDP frame
+)
+
 // H3FrameTypeK2Proxy is the custom H3 frame type for k2v5 proxy streams.
 // "K2" in ASCII = 0x4B 0x32.
 const H3FrameTypeK2Proxy uint64 = 0x4B32
@@ -96,6 +103,9 @@ func ReadStreamHeader(r interface {
 	if err != nil {
 		return 0, "", fmt.Errorf("wire: read addr_len: %w", err)
 	}
+	if addrLen > maxAddrLen {
+		return 0, "", fmt.Errorf("wire: addr_len %d exceeds max %d", addrLen, maxAddrLen)
+	}
 
 	addrBuf := make([]byte, addrLen)
 	if _, err := io.ReadFull(r, addrBuf); err != nil {
@@ -164,6 +174,9 @@ func ReadStreamResponse(r interface {
 		if err != nil {
 			return false, 0, "", fmt.Errorf("wire: read error length: %w", err)
 		}
+		if errLen > maxErrorMsgLen {
+			return false, 0, "", fmt.Errorf("wire: error length %d exceeds max %d", errLen, maxErrorMsgLen)
+		}
 		msgBuf := make([]byte, errLen)
 		if _, err := io.ReadFull(r, msgBuf); err != nil {
 			return false, 0, "", fmt.Errorf("wire: read error message: %w", err)
@@ -179,6 +192,9 @@ func ReadStreamResponse(r interface {
 		errLen, _, err := ReadVarint(r)
 		if err != nil {
 			return false, 0, "", fmt.Errorf("wire: read error length: %w", err)
+		}
+		if errLen > maxErrorMsgLen {
+			return false, 0, "", fmt.Errorf("wire: error length %d exceeds max %d", errLen, maxErrorMsgLen)
 		}
 		msgBuf := make([]byte, errLen)
 		if _, err := io.ReadFull(r, msgBuf); err != nil {
