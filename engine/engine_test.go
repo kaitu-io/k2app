@@ -1061,6 +1061,244 @@ func TestEngineStartStopRace_NoRace(t *testing.T) {
 }
 
 // ==========================================================================
+// WireErrorReporter tests
+// ==========================================================================
+
+func TestEngine_ReportWireError_Basic(t *testing.T) {
+	e := New()
+	h := &mockEventHandler{}
+	e.SetEventHandler(h)
+
+	// Must be connected for ReportWireError to take effect.
+	e.mu.Lock()
+	e.state = StateConnected
+	e.mu.Unlock()
+
+	e.ReportWireError(fmt.Errorf("wire: TCP dial: connection refused"))
+
+	statuses := h.getStatuses()
+	if len(statuses) != 1 {
+		t.Fatalf("expected 1 status update, got %d", len(statuses))
+	}
+	if statuses[0].Error == nil {
+		t.Fatal("expected error in status")
+	}
+	if statuses[0].Error.Code != 503 {
+		t.Errorf("error code = %d, want 503", statuses[0].Error.Code)
+	}
+	if statuses[0].Error.Category != CategoryServer {
+		t.Errorf("error category = %q, want %q", statuses[0].Error.Category, CategoryServer)
+	}
+}
+
+func TestEngine_ReportWireError_Debounce(t *testing.T) {
+	e := New()
+	h := &mockEventHandler{}
+	e.SetEventHandler(h)
+
+	e.mu.Lock()
+	e.state = StateConnected
+	e.mu.Unlock()
+
+	// First error fires.
+	e.ReportWireError(fmt.Errorf("wire: TCP dial: connection refused"))
+	// Second non-auth error is debounced.
+	e.ReportWireError(fmt.Errorf("wire: network unreachable"))
+
+	statuses := h.getStatuses()
+	if len(statuses) != 1 {
+		t.Fatalf("expected 1 status update (debounce), got %d", len(statuses))
+	}
+}
+
+func TestEngine_ReportWireError_AuthUpgrade(t *testing.T) {
+	e := New()
+	h := &mockEventHandler{}
+	e.SetEventHandler(h)
+
+	e.mu.Lock()
+	e.state = StateConnected
+	e.mu.Unlock()
+
+	// 503 first.
+	e.ReportWireError(fmt.Errorf("wire: TCP dial: connection refused"))
+	// 401 upgrades the existing network error.
+	e.ReportWireError(&wire.StreamError{Code: 401, Message: "token expired"})
+
+	statuses := h.getStatuses()
+	if len(statuses) != 2 {
+		t.Fatalf("expected 2 status updates (initial + auth upgrade), got %d", len(statuses))
+	}
+	lastErr := statuses[1].Error
+	if lastErr == nil {
+		t.Fatal("expected error in upgraded status")
+	}
+	if lastErr.Code != 401 {
+		t.Errorf("upgraded error code = %d, want 401", lastErr.Code)
+	}
+	if lastErr.Category != CategoryClient {
+		t.Errorf("upgraded error category = %q, want %q", lastErr.Category, CategoryClient)
+	}
+}
+
+func TestEngine_ClearWireError_Basic(t *testing.T) {
+	e := New()
+	h := &mockEventHandler{}
+	e.SetEventHandler(h)
+
+	e.mu.Lock()
+	e.state = StateConnected
+	e.lastError = &EngineError{Code: 503, Category: CategoryServer, Message: "refused"}
+	e.mu.Unlock()
+
+	e.ClearWireError()
+
+	statuses := h.getStatuses()
+	if len(statuses) != 1 {
+		t.Fatalf("expected 1 status update, got %d", len(statuses))
+	}
+	if statuses[0].Error != nil {
+		t.Errorf("expected nil error after clear, got %+v", statuses[0].Error)
+	}
+}
+
+func TestEngine_ClearWireError_ProtectsAuthError(t *testing.T) {
+	e := New()
+	h := &mockEventHandler{}
+	e.SetEventHandler(h)
+
+	e.mu.Lock()
+	e.state = StateConnected
+	e.lastError = &EngineError{Code: 401, Category: CategoryClient, Message: "token expired"}
+	e.mu.Unlock()
+
+	e.ClearWireError()
+
+	// Should NOT have fired OnStatus (auth error protected).
+	statuses := h.getStatuses()
+	if len(statuses) != 0 {
+		t.Fatalf("expected 0 status updates (auth protected), got %d", len(statuses))
+	}
+
+	// Error should still be there.
+	e.mu.Lock()
+	if e.lastError == nil || e.lastError.Code != 401 {
+		t.Errorf("auth error should persist after ClearWireError")
+	}
+	e.mu.Unlock()
+}
+
+func TestEngine_ReportWireError_NotConnected(t *testing.T) {
+	e := New()
+	h := &mockEventHandler{}
+	e.SetEventHandler(h)
+
+	// Engine is disconnected — should be a no-op.
+	e.ReportWireError(fmt.Errorf("wire: TCP dial: connection refused"))
+
+	statuses := h.getStatuses()
+	if len(statuses) != 0 {
+		t.Fatalf("expected 0 status updates when not connected, got %d", len(statuses))
+	}
+}
+
+func TestEngine_OnNetworkChanged_PreservesAuthError(t *testing.T) {
+	e := New()
+	h := &mockEventHandler{}
+	e.SetEventHandler(h)
+
+	tm := &wire.TransportManager{}
+	e.mu.Lock()
+	e.state = StateConnected
+	e.tm = tm
+	e.lastError = &EngineError{Code: 401, Category: CategoryClient, Message: "token expired"}
+	e.mu.Unlock()
+
+	e.OnNetworkChanged()
+
+	// After OnNetworkChanged, auth error should persist.
+	e.mu.Lock()
+	if e.lastError == nil || e.lastError.Code != 401 {
+		t.Errorf("auth error should persist after OnNetworkChanged, got %+v", e.lastError)
+	}
+	e.mu.Unlock()
+
+	// The last status emitted should still carry the auth error.
+	statuses := h.getStatuses()
+	last := statuses[len(statuses)-1]
+	if last.Error == nil || last.Error.Code != 401 {
+		t.Errorf("last status should carry auth error, got %+v", last.Error)
+	}
+}
+
+func TestEngine_OnNetworkChanged_ClearsNetworkError(t *testing.T) {
+	e := New()
+	h := &mockEventHandler{}
+	e.SetEventHandler(h)
+
+	tm := &wire.TransportManager{}
+	e.mu.Lock()
+	e.state = StateConnected
+	e.tm = tm
+	e.lastError = &EngineError{Code: 503, Category: CategoryServer, Message: "refused"}
+	e.mu.Unlock()
+
+	e.OnNetworkChanged()
+
+	// Network error should be cleared after OnNetworkChanged.
+	e.mu.Lock()
+	if e.lastError != nil {
+		t.Errorf("network error should be cleared after OnNetworkChanged, got %+v", e.lastError)
+	}
+	e.mu.Unlock()
+}
+
+func TestEngine_Stop_ClearsAuthError(t *testing.T) {
+	e := New()
+
+	e.mu.Lock()
+	e.state = StateConnected
+	e.lastError = &EngineError{Code: 401, Category: CategoryClient, Message: "token expired"}
+	_, cancel := context.WithCancel(context.Background())
+	e.cancel = cancel
+	e.mu.Unlock()
+
+	_ = e.Stop()
+
+	e.mu.Lock()
+	if e.lastError != nil {
+		t.Errorf("Stop() should clear all errors unconditionally, got %+v", e.lastError)
+	}
+	e.mu.Unlock()
+}
+
+func TestEngine_ReportWireError_Concurrent(t *testing.T) {
+	e := New()
+	h := &mockEventHandler{}
+	e.SetEventHandler(h)
+
+	e.mu.Lock()
+	e.state = StateConnected
+	e.mu.Unlock()
+
+	var wg sync.WaitGroup
+	for i := range 20 {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			e.ReportWireError(fmt.Errorf("wire: error %d: connection refused", n))
+		}(i)
+	}
+	wg.Wait()
+
+	// Should not panic or race. Only first error should fire (debounce).
+	statuses := h.getStatuses()
+	if len(statuses) != 1 {
+		t.Errorf("expected 1 status update (debounce), got %d", len(statuses))
+	}
+}
+
+// ==========================================================================
 // computeDNSExclude tests
 // ==========================================================================
 

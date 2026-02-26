@@ -78,7 +78,7 @@ func (h *ProxyHandler) HandleTCP(conn net.Conn, addr string) {
 
 	if !h.AllowPrivateIP {
 		if err := checkAddr(addr); err != nil {
-			wire.WriteStreamResponse(conn, err)
+			wire.WriteStreamResponse(conn, &wire.StreamError{Code: 403, Message: err.Error()})
 			slog.Error("server: TCP proxy blocked", "addr", addr, "err", err)
 			return
 		}
@@ -87,7 +87,7 @@ func (h *ProxyHandler) HandleTCP(conn net.Conn, addr string) {
 	slog.Debug("server: HandleTCP dialing target", "addr", addr)
 	target, err := net.DialTimeout("tcp", addr, h.DialTimeout)
 	if err != nil {
-		wire.WriteStreamResponse(conn, err)
+		wire.WriteStreamResponse(conn, &wire.StreamError{Code: 502, Message: err.Error()})
 		slog.Error("server: TCP proxy dial", "addr", addr, "err", err)
 		return
 	}

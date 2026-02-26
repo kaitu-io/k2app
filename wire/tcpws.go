@@ -257,13 +257,16 @@ func (c *TCPWSClient) DialTCP(ctx context.Context, addr string) (net.Conn, error
 	}
 
 	br := bufio.NewReader(stream)
-	ok, errMsg, err := ReadStreamResponse(br)
+	ok, errCode, errMsg, err := ReadStreamResponse(br)
 	if err != nil {
 		stream.Close()
 		return nil, fmt.Errorf("wire: read response: %w", err)
 	}
 	if !ok {
 		stream.Close()
+		if errCode > 0 {
+			return nil, &StreamError{Code: errCode, Message: errMsg}
+		}
 		return nil, fmt.Errorf("%w: %s", ErrStreamRejected, errMsg)
 	}
 
@@ -278,8 +281,13 @@ func (c *TCPWSClient) DialUDP(ctx context.Context, addr string) (net.PacketConn,
 		return nil, err
 	}
 
-	// Ensure shared UDP stream and mux exist
+	// Ensure shared UDP stream and mux exist.
+	// Check alloc first — nil means resetConnection() ran (network change).
 	c.mu.Lock()
+	if c.alloc == nil {
+		c.mu.Unlock()
+		return nil, ErrNotConnected
+	}
 	if c.udpMux == nil {
 		stream, err := sess.OpenStream()
 		if err != nil {
@@ -434,6 +442,9 @@ func (s *TCPWSServer) handleUDPStream(stream *smux.Stream, br *bufio.Reader) {
 
 		sess, ok := sessions[frame.SessionID]
 		if !ok {
+			if len(sessions) >= maxServerUDPSessions {
+				continue // at capacity, drop frame
+			}
 			sess = &smuxServerUDPConn{
 				writer:    mux,
 				sessionID: frame.SessionID,

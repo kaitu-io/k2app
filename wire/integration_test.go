@@ -156,7 +156,7 @@ func TestIntegration_QUIC_FullProxyFlow(t *testing.T) {
 	WriteStreamHeader(proxyStream, StreamTypeTCP, "93.184.216.34:80")
 
 	pbr := bufio.NewReader(proxyStream)
-	rok, errMsg, err := ReadStreamResponse(pbr)
+	rok, _, errMsg, err := ReadStreamResponse(pbr)
 	if err != nil {
 		t.Fatalf("ReadStreamResponse: %v", err)
 	}
@@ -274,7 +274,7 @@ func TestIntegration_Smux_FullProxyFlow(t *testing.T) {
 	}
 	WriteStreamHeader(tcpStream, StreamTypeTCP, "93.184.216.34:80")
 	tbr := bufio.NewReader(tcpStream)
-	rok, _, err := ReadStreamResponse(tbr)
+	rok, _, _, err := ReadStreamResponse(tbr)
 	if err != nil {
 		t.Fatal(err)
 	}

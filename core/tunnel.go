@@ -11,6 +11,7 @@ import (
 	"github.com/kaitu-io/k2rule"
 	"github.com/kaitu-io/k2/provider"
 	"github.com/kaitu-io/k2/wire"
+	"golang.org/x/sync/semaphore"
 )
 
 // closeTimeout is the maximum time to wait for handler goroutines to exit
@@ -51,6 +52,13 @@ func (ct *connTracker) closeAll() {
 	}
 }
 
+// WireErrorReporter receives runtime wire transport errors from the tunnel.
+// Implemented by engine.Engine to surface errors in the status API.
+type WireErrorReporter interface {
+	ReportWireError(err error)
+	ClearWireError()
+}
+
 // ClientTunnel connects a Provider to wire.Dialer, implementing provider.ConnectionHandler.
 // It routes each TCP/UDP connection through the Router, then either direct (net.Dial)
 // or proxy (wire.DialTCP/DialUDP).
@@ -59,11 +67,13 @@ type ClientTunnel struct {
 	dialer       wire.Dialer
 	router       *Router
 	directDialer wire.DirectDialer
+	wireReporter WireErrorReporter
 
-	ctx    context.Context
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
-	conns  *connTracker
+	ctx     context.Context
+	cancel  context.CancelFunc
+	wg      sync.WaitGroup
+	conns   *connTracker
+	connSem *semaphore.Weighted // limits concurrent handler goroutines
 }
 
 var _ provider.ConnectionHandler = (*ClientTunnel)(nil)
@@ -74,6 +84,7 @@ type ClientTunnelConfig struct {
 	Dialer       wire.Dialer
 	Router       *Router
 	DirectDialer wire.DirectDialer
+	WireReporter WireErrorReporter
 }
 
 // NewClientTunnel creates a new L4 client tunnel.
@@ -83,7 +94,9 @@ func NewClientTunnel(cfg ClientTunnelConfig) *ClientTunnel {
 		dialer:       cfg.Dialer,
 		router:       cfg.Router,
 		directDialer: cfg.DirectDialer,
+		wireReporter: cfg.WireReporter,
 		conns:        newConnTracker(),
+		connSem:      semaphore.NewWeighted(int64(maxTunnelConns)),
 	}
 }
 
@@ -123,6 +136,12 @@ func (t *ClientTunnel) Close() error {
 
 // HandleTCP processes a TCP connection from the provider.
 func (t *ClientTunnel) HandleTCP(conn net.Conn, dest string) {
+	if err := t.connSem.Acquire(t.ctx, 1); err != nil {
+		conn.Close()
+		return
+	}
+	defer t.connSem.Release(1)
+
 	t.wg.Add(1)
 	defer t.wg.Done()
 	defer conn.Close()
@@ -144,6 +163,12 @@ func (t *ClientTunnel) HandleTCP(conn net.Conn, dest string) {
 
 // HandleUDP processes a UDP connection from the provider.
 func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
+	if err := t.connSem.Acquire(t.ctx, 1); err != nil {
+		conn.Close()
+		return
+	}
+	defer t.connSem.Release(1)
+
 	t.wg.Add(1)
 	defer t.wg.Done()
 	defer conn.Close()
@@ -195,7 +220,13 @@ func (t *ClientTunnel) handleTCPProxy(local net.Conn, dest string) {
 	remote, err := t.dialer.DialTCP(t.ctx, dest)
 	if err != nil {
 		slog.Warn("tunnel: proxy TCP dial failed", "dest", dest, "err", err)
+		if t.wireReporter != nil {
+			t.wireReporter.ReportWireError(err)
+		}
 		return
+	}
+	if t.wireReporter != nil {
+		t.wireReporter.ClearWireError()
 	}
 	defer remote.Close()
 	untrack := t.conns.track(remote)
@@ -231,7 +262,13 @@ func (t *ClientTunnel) handleUDPProxy(local net.PacketConn, dest string) {
 	remote, err := t.dialer.DialUDP(t.ctx, dest)
 	if err != nil {
 		slog.Warn("tunnel: proxy UDP dial failed", "dest", dest, "err", err)
+		if t.wireReporter != nil {
+			t.wireReporter.ReportWireError(err)
+		}
 		return
+	}
+	if t.wireReporter != nil {
+		t.wireReporter.ClearWireError()
 	}
 	defer remote.Close()
 	untrack := t.conns.track(remote)

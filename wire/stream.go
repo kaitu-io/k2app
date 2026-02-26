@@ -110,18 +110,32 @@ func ReadStreamHeader(r interface {
 // ============================================================================
 
 // WriteStreamResponse writes a TCP stream response (success or error).
+// If respErr is a *StreamError with Code > 0, writes the 0x02 coded format.
+// Otherwise writes the legacy 0x01 format.
 func WriteStreamResponse(w io.Writer, respErr error) error {
 	if respErr == nil {
 		_, err := w.Write([]byte{0x00})
 		return err
 	}
 
-	errMsg := respErr.Error()
 	bp := streamHeaderPool.Get().(*[]byte)
 	buf := (*bp)[:0]
-	buf = append(buf, 0x01)
-	buf = AppendVarint(buf, uint64(len(errMsg)))
-	buf = append(buf, errMsg...)
+
+	var se *StreamError
+	if errors.As(respErr, &se) && se.Code > 0 {
+		// 0x02: error with numeric code
+		buf = append(buf, 0x02)
+		buf = AppendVarint(buf, uint64(se.Code))
+		buf = AppendVarint(buf, uint64(len(se.Message)))
+		buf = append(buf, se.Message...)
+	} else {
+		// 0x01: legacy error (message only)
+		errMsg := respErr.Error()
+		buf = append(buf, 0x01)
+		buf = AppendVarint(buf, uint64(len(errMsg)))
+		buf = append(buf, errMsg...)
+	}
+
 	_, err := w.Write(buf)
 	*bp = buf
 	streamHeaderPool.Put(bp)
@@ -129,35 +143,52 @@ func WriteStreamResponse(w io.Writer, respErr error) error {
 }
 
 // ReadStreamResponse reads a TCP stream response.
-// Returns (true, "", nil) on success or (false, errMsg, nil) on server error.
+// Returns (true, 0, "", nil) on success, or (false, code, errMsg, nil) on server error.
+// code is 0 for legacy 0x01 format, or the server-provided code for 0x02 format.
 func ReadStreamResponse(r interface {
 	io.Reader
 	io.ByteReader
-}) (ok bool, errMsg string, err error) {
+}) (ok bool, errCode int, errMsg string, err error) {
 	status, err := r.ReadByte()
 	if err != nil {
-		return false, "", fmt.Errorf("wire: read response status: %w", err)
+		return false, 0, "", fmt.Errorf("wire: read response status: %w", err)
 	}
 
-	if status == 0x00 {
-		return true, "", nil
-	}
+	switch status {
+	case 0x00:
+		return true, 0, "", nil
 
-	if status != 0x01 {
-		return false, "", fmt.Errorf("wire: unknown response status 0x%02x", status)
-	}
+	case 0x01:
+		// Legacy error: message only
+		errLen, _, err := ReadVarint(r)
+		if err != nil {
+			return false, 0, "", fmt.Errorf("wire: read error length: %w", err)
+		}
+		msgBuf := make([]byte, errLen)
+		if _, err := io.ReadFull(r, msgBuf); err != nil {
+			return false, 0, "", fmt.Errorf("wire: read error message: %w", err)
+		}
+		return false, 0, string(msgBuf), nil
 
-	errLen, _, err := ReadVarint(r)
-	if err != nil {
-		return false, "", fmt.Errorf("wire: read error length: %w", err)
-	}
+	case 0x02:
+		// Coded error: [code:varint][err_len:varint][err_msg]
+		code, _, err := ReadVarint(r)
+		if err != nil {
+			return false, 0, "", fmt.Errorf("wire: read error code: %w", err)
+		}
+		errLen, _, err := ReadVarint(r)
+		if err != nil {
+			return false, 0, "", fmt.Errorf("wire: read error length: %w", err)
+		}
+		msgBuf := make([]byte, errLen)
+		if _, err := io.ReadFull(r, msgBuf); err != nil {
+			return false, 0, "", fmt.Errorf("wire: read error message: %w", err)
+		}
+		return false, int(code), string(msgBuf), nil
 
-	msgBuf := make([]byte, errLen)
-	if _, err := io.ReadFull(r, msgBuf); err != nil {
-		return false, "", fmt.Errorf("wire: read error message: %w", err)
+	default:
+		return false, 0, "", fmt.Errorf("wire: unknown response status 0x%02x", status)
 	}
-
-	return false, string(msgBuf), nil
 }
 
 // ============================================================================
@@ -174,3 +205,12 @@ func WriteH3ProxyFrameType(w io.Writer) error {
 
 // ErrStreamRejected is returned when the server rejects a stream request.
 var ErrStreamRejected = errors.New("wire: stream rejected by server")
+
+// StreamError is a server rejection with a numeric error code.
+// Used by ClassifyError to extract server-provided codes without pattern matching.
+type StreamError struct {
+	Code    int
+	Message string
+}
+
+func (e *StreamError) Error() string { return e.Message }

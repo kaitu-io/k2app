@@ -41,18 +41,21 @@ func TestClassifyError(t *testing.T) {
 		{"pin mismatch", errors.New("wire: public key pin mismatch and not signed by Kaitu CA"), 403},
 		{"blocked CA", fmt.Errorf("wire: certificate issued by blocked CA: %s", "BadCA"), 403},
 
-		// 408 Timeout (via net.Error interface)
-		{"dial timeout", fmt.Errorf("wire: TCP dial: %w", &timeoutError{msg: "i/o timeout"}), 408},
-		{"wrapped timeout", fmt.Errorf("start engine: %w", &timeoutError{msg: "connection timed out"}), 408},
+		// 108 Timeout (via net.Error interface)
+		{"dial timeout", fmt.Errorf("wire: TCP dial: %w", &timeoutError{msg: "i/o timeout"}), 108},
+		{"wrapped timeout", fmt.Errorf("start engine: %w", &timeoutError{msg: "connection timed out"}), 108},
 
 		// 502 TLS/Protocol Error
 		{"uTLS handshake", errors.New("wire: uTLS handshake: certificate verify failed"), 502},
 		{"certificate error", errors.New("wire: certificate issued by unknown authority"), 502},
 		{"QUIC dial", fmt.Errorf("wire: QUIC dial: %w", errors.New("crypto handshake failed")), 502},
 
+		// 101 Client Network Unavailable
+		{"network unreachable", errors.New("wire: TCP dial: network unreachable"), 101},
+		{"no route to host", errors.New("wire: TCP dial: no route to host"), 101},
+
 		// 503 Server Unreachable
 		{"TCP dial refused", fmt.Errorf("wire: TCP dial 10.0.0.1:443: %w", errors.New("connection refused")), 503},
-		{"network unreachable", errors.New("wire: TCP dial: network unreachable"), 503},
 		{"listen UDP", errors.New("wire: listen UDP: address already in use"), 503},
 
 		// MultiTransportError — classifies by TCP-WS (primary)
@@ -66,8 +69,8 @@ func TestClassifyError(t *testing.T) {
 		}, 502},
 
 		// context.DeadlineExceeded
-		{"context deadline exceeded", context.DeadlineExceeded, 408},
-		{"wrapped deadline exceeded", fmt.Errorf("start: %w", context.DeadlineExceeded), 408},
+		{"context deadline exceeded", context.DeadlineExceeded, 108},
+		{"wrapped deadline exceeded", fmt.Errorf("start: %w", context.DeadlineExceeded), 108},
 
 		// 570 Fallback
 		{"unknown error", errors.New("wire: something completely unknown"), 570},
@@ -121,9 +124,11 @@ func TestStatusJSON_StructuredError(t *testing.T) {
 	e.fail(fmt.Errorf("wire: TCP dial: connection refused"))
 
 	status := e.StatusJSON()
-	// Should contain "error":{"code":503,"message":"wire: TCP dial: connection refused"}
 	if !strings.Contains(status, `"code":503`) {
 		t.Errorf("StatusJSON missing structured error code, got: %s", status)
+	}
+	if !strings.Contains(status, `"category":"server"`) {
+		t.Errorf("StatusJSON missing category, got: %s", status)
 	}
 	if !strings.Contains(status, `"message":"wire: TCP dial: connection refused"`) {
 		t.Errorf("StatusJSON missing error message, got: %s", status)
@@ -135,6 +140,88 @@ func TestStatusJSON_NoError(t *testing.T) {
 	status := e.StatusJSON()
 	if strings.Contains(status, "error") {
 		t.Errorf("StatusJSON should not contain error when none set, got: %s", status)
+	}
+}
+
+func TestClassifyError_Category(t *testing.T) {
+	tests := []struct {
+		name         string
+		err          error
+		wantCode     int
+		wantCategory string
+	}{
+		{"101 network", errors.New("wire: network unreachable"), 101, CategoryNetwork},
+		{"108 network", context.DeadlineExceeded, 108, CategoryNetwork},
+		{"400 client", fmt.Errorf("wire: parse URL: bad"), 400, CategoryClient},
+		{"401 client", errors.New("wire: stream rejected by server: expired"), 401, CategoryClient},
+		{"402 client", errors.New("payment required"), 402, CategoryClient},
+		{"403 client", errors.New("wire: public key pin mismatch and not signed by Kaitu CA"), 403, CategoryClient},
+		{"502 server", errors.New("wire: uTLS handshake: verify failed"), 502, CategoryServer},
+		{"503 server", errors.New("wire: TCP dial: connection refused"), 503, CategoryServer},
+		{"570 server", errors.New("wire: something unknown"), 570, CategoryServer},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ClassifyError(tt.err)
+			if result.Code != tt.wantCode {
+				t.Errorf("code = %d, want %d", result.Code, tt.wantCode)
+			}
+			if result.Category != tt.wantCategory {
+				t.Errorf("category = %q, want %q", result.Category, tt.wantCategory)
+			}
+		})
+	}
+}
+
+func TestClassifyError_StreamErrorPriority(t *testing.T) {
+	// StreamError with code should use the code directly, not pattern matching.
+	se := &wire.StreamError{Code: 403, Message: "blocked: 10.0.0.1 is a reserved IP"}
+	result := ClassifyError(se)
+	if result.Code != 403 {
+		t.Errorf("code = %d, want 403", result.Code)
+	}
+	if result.Category != CategoryClient {
+		t.Errorf("category = %q, want %q", result.Category, CategoryClient)
+	}
+	if result.Message != se.Message {
+		t.Errorf("message = %q, want %q", result.Message, se.Message)
+	}
+}
+
+func TestClassifyError_PaymentRequired(t *testing.T) {
+	result := ClassifyError(errors.New("subscription expired"))
+	if result.Code != 402 {
+		t.Errorf("code = %d, want 402", result.Code)
+	}
+	if result.Category != CategoryClient {
+		t.Errorf("category = %q, want %q", result.Category, CategoryClient)
+	}
+}
+
+func TestClassifyError_NotConnected(t *testing.T) {
+	result := ClassifyError(errors.New("wire: not connected"))
+	if result.Code != 503 {
+		t.Errorf("code = %d, want 503", result.Code)
+	}
+	if result.Category != CategoryServer {
+		t.Errorf("category = %q, want %q", result.Category, CategoryServer)
+	}
+}
+
+func TestClassifyError_StreamErrorInsideMTE(t *testing.T) {
+	// StreamError inside MultiTransportError should be found via errors.As
+	// thanks to Unwrap() []error.
+	mte := &wire.MultiTransportError{
+		QUICErr:  &wire.StreamError{Code: 401, Message: "token expired"},
+		TCPWSErr: errors.New("wire: TCP dial: connection refused"),
+	}
+	result := ClassifyError(mte)
+	// StreamError priority 0 should find the 401 inside QUICErr.
+	if result.Code != 401 {
+		t.Errorf("code = %d, want 401 (StreamError found via MTE.Unwrap)", result.Code)
+	}
+	if result.Category != CategoryClient {
+		t.Errorf("category = %q, want %q", result.Category, CategoryClient)
 	}
 }
 

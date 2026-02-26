@@ -363,7 +363,7 @@ func TestSmuxLoopback_ProxyStream(t *testing.T) {
 	WriteStreamHeader(stream, StreamTypeTCP, "8.8.8.8:53")
 
 	br := bufio.NewReader(stream)
-	ok, errMsg, err := ReadStreamResponse(br)
+	ok, _, errMsg, err := ReadStreamResponse(br)
 	if err != nil {
 		t.Fatalf("ReadStreamResponse: %v", err)
 	}
@@ -518,7 +518,7 @@ func TestSmuxLoopback_MultipleStreams(t *testing.T) {
 		WriteStreamHeader(stream, StreamTypeTCP, "10.0.0.1:80")
 
 		br := bufio.NewReader(stream)
-		ok, _, err := ReadStreamResponse(br)
+		ok, _, _, err := ReadStreamResponse(br)
 		if err != nil {
 			t.Fatalf("stream %d: ReadStreamResponse: %v", i, err)
 		}

@@ -182,9 +182,10 @@ func (e *Engine) Start(cfg Config) error {
 
 	// 7. Build client tunnel.
 	tunnelCfg := core.ClientTunnelConfig{
-		Provider: prov,
-		Dialer:   tm,
-		Router:   router,
+		Provider:     prov,
+		Dialer:       tm,
+		Router:       router,
+		WireReporter: e,
 	}
 	if cfg.DirectDialer != nil {
 		tunnelCfg.DirectDialer = cfg.DirectDialer
@@ -273,11 +274,17 @@ func (e *Engine) OnNetworkChanged() {
 		tm.ResetConnections()
 	}
 
+	// Clear non-client wire errors (network errors are stale after network change).
+	// Auth errors survive — WiFi→cellular doesn't fix expired subscriptions.
+	e.mu.Lock()
+	if e.lastError != nil && e.lastError.Category != CategoryClient {
+		e.lastError = nil
+	}
+	s := e.buildStatusLocked()
+	e.mu.Unlock()
+
 	// Notify handler we're back to connected with full status snapshot.
 	if handler != nil {
-		e.mu.Lock()
-		s := e.buildStatusLocked()
-		e.mu.Unlock()
 		handler.OnStatus(s)
 	}
 }
@@ -360,6 +367,7 @@ func (e *Engine) Stop() error {
 	e.client = nil
 	e.connectedAt = time.Time{}
 	e.paused = false
+	e.lastError = nil // unconditional clear on stop
 
 	e.setState(StateDisconnected)
 	return nil
@@ -488,6 +496,54 @@ func extractServerHost(wireURL string) string {
 		return ""
 	}
 	return u.Hostname()
+}
+
+// ReportWireError reports a runtime wire transport error (proxy dial failure).
+// Called by tunnel's handleTCPProxy/handleUDPProxy on proxy dial failure.
+// Debounces: first error fires OnStatus, subsequent non-auth errors are no-ops.
+// Auth errors (client category) can upgrade existing network errors.
+func (e *Engine) ReportWireError(err error) {
+	newErr := ClassifyError(err)
+	e.mu.Lock()
+	if e.state != StateConnected {
+		e.mu.Unlock()
+		return
+	}
+	if e.lastError != nil {
+		if e.lastError.Category == CategoryClient {
+			e.mu.Unlock()
+			return // don't overwrite auth error with anything
+		}
+		if newErr.Category != CategoryClient {
+			e.mu.Unlock()
+			return // debounce: non-auth error already reported
+		}
+		// auth error upgrades existing network error — fall through
+	}
+	e.lastError = newErr
+	handler := e.handler
+	status := e.buildStatusLocked()
+	e.mu.Unlock()
+	if handler != nil {
+		handler.OnStatus(status)
+	}
+}
+
+// ClearWireError clears a runtime wire error after a successful proxy dial.
+// Does NOT clear client-category errors (401/402/403) — those require user action.
+func (e *Engine) ClearWireError() {
+	e.mu.Lock()
+	if e.lastError == nil || e.lastError.Category == CategoryClient {
+		e.mu.Unlock()
+		return
+	}
+	e.lastError = nil
+	handler := e.handler
+	status := e.buildStatusLocked()
+	e.mu.Unlock()
+	if handler != nil {
+		handler.OnStatus(status)
+	}
 }
 
 // ForceConnected sets the engine to connected state and fires OnStatus.

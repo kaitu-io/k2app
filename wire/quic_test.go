@@ -640,7 +640,7 @@ func TestQUICLoopback_ProxyStream(t *testing.T) {
 
 	// Read response
 	br := bufio.NewReader(stream)
-	ok, errMsg, err := ReadStreamResponse(br)
+	ok, _, errMsg, err := ReadStreamResponse(br)
 	if err != nil {
 		t.Fatalf("ReadStreamResponse: %v", err)
 	}

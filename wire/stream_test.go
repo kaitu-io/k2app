@@ -172,7 +172,7 @@ func TestWriteReadStreamResponseOK(t *testing.T) {
 	var buf bytes.Buffer
 	WriteStreamResponse(&buf, nil) // success
 
-	ok, errMsg, err := ReadStreamResponse(&buf)
+	ok, _, errMsg, err := ReadStreamResponse(&buf)
 	if err != nil {
 		t.Fatalf("ReadStreamResponse: %v", err)
 	}
@@ -188,7 +188,7 @@ func TestWriteReadStreamResponseError(t *testing.T) {
 	var buf bytes.Buffer
 	WriteStreamResponse(&buf, net.UnknownNetworkError("connection refused"))
 
-	ok, errMsg, err := ReadStreamResponse(&buf)
+	ok, _, errMsg, err := ReadStreamResponse(&buf)
 	if err != nil {
 		t.Fatalf("ReadStreamResponse: %v", err)
 	}
@@ -220,7 +220,7 @@ func TestStreamConn_ReadWrite(t *testing.T) {
 		}
 		// Read response before sending data (avoids net.Pipe deadlock)
 		clientBuf := bufio.NewReader(client)
-		ok, _, err := ReadStreamResponse(clientBuf)
+		ok, _, _, err := ReadStreamResponse(clientBuf)
 		if err != nil {
 			errCh <- err
 			return
@@ -260,6 +260,79 @@ func TestStreamConn_ReadWrite(t *testing.T) {
 
 	if err := <-errCh; err != nil {
 		t.Fatalf("client error: %v", err)
+	}
+}
+
+// ============================================================================
+// StreamError 0x02 wire format
+// ============================================================================
+
+func TestWriteReadStreamResponse_StreamError(t *testing.T) {
+	// 0x02 coded format roundtrip: code preserved
+	var buf bytes.Buffer
+	WriteStreamResponse(&buf, &StreamError{Code: 403, Message: "blocked: reserved IP"})
+
+	ok, errCode, errMsg, err := ReadStreamResponse(&buf)
+	if err != nil {
+		t.Fatalf("ReadStreamResponse: %v", err)
+	}
+	if ok {
+		t.Error("expected ok=false")
+	}
+	if errCode != 403 {
+		t.Errorf("errCode = %d, want 403", errCode)
+	}
+	if errMsg != "blocked: reserved IP" {
+		t.Errorf("errMsg = %q, want %q", errMsg, "blocked: reserved IP")
+	}
+}
+
+func TestWriteReadStreamResponse_LegacyCode0(t *testing.T) {
+	// Legacy 0x01 format: code should be 0
+	var buf bytes.Buffer
+	WriteStreamResponse(&buf, net.UnknownNetworkError("dial failed"))
+
+	ok, errCode, errMsg, err := ReadStreamResponse(&buf)
+	if err != nil {
+		t.Fatalf("ReadStreamResponse: %v", err)
+	}
+	if ok {
+		t.Error("expected ok=false")
+	}
+	if errCode != 0 {
+		t.Errorf("errCode = %d, want 0 for legacy format", errCode)
+	}
+	if errMsg == "" {
+		t.Error("expected non-empty errMsg")
+	}
+}
+
+func TestReadStreamResponse_UnknownStatus(t *testing.T) {
+	// Old client reading 0x02 is handled, but 0x03 should fail gracefully
+	buf := bytes.NewReader([]byte{0x03})
+	_, _, _, err := ReadStreamResponse(buf)
+	if err == nil {
+		t.Fatal("expected error for unknown status byte")
+	}
+}
+
+func TestStreamErrorCodes_Roundtrip(t *testing.T) {
+	// Test various server error codes through the wire format
+	codes := []int{400, 401, 402, 403, 502, 503}
+	for _, code := range codes {
+		var buf bytes.Buffer
+		WriteStreamResponse(&buf, &StreamError{Code: code, Message: "test"})
+
+		ok, gotCode, _, err := ReadStreamResponse(&buf)
+		if err != nil {
+			t.Fatalf("code %d: ReadStreamResponse: %v", code, err)
+		}
+		if ok {
+			t.Errorf("code %d: expected ok=false", code)
+		}
+		if gotCode != code {
+			t.Errorf("code %d: got code %d", code, gotCode)
+		}
 	}
 }
 

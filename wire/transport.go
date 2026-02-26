@@ -20,8 +20,8 @@ func (e *MultiTransportError) Error() string {
 	return fmt.Sprintf("QUIC: %v; TCP-WS: %v", e.QUICErr, e.TCPWSErr)
 }
 
-func (e *MultiTransportError) Unwrap() error {
-	return e.TCPWSErr
+func (e *MultiTransportError) Unwrap() []error {
+	return []error{e.QUICErr, e.TCPWSErr}
 }
 
 // TransportManager manages QUIC and TCP-WS transports.

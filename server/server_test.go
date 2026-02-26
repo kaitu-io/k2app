@@ -155,7 +155,7 @@ func TestServer_TCPWSProxy(t *testing.T) {
 	}
 
 	br := bufio.NewReader(stream)
-	ok, errMsg, err := wire.ReadStreamResponse(br)
+	ok, _, errMsg, err := wire.ReadStreamResponse(br)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -375,7 +375,7 @@ func TestServer_ECHRouting_ECHConnection(t *testing.T) {
 	}
 
 	br := bufio.NewReader(stream)
-	ok, errMsg, err := wire.ReadStreamResponse(br)
+	ok, _, errMsg, err := wire.ReadStreamResponse(br)
 	if err != nil {
 		t.Fatalf("read response: %v", err)
 	}
@@ -700,7 +700,7 @@ func TestServer_WSUpgrade(t *testing.T) {
 	}
 
 	br := bufio.NewReader(stream)
-	ok, errMsg, err := wire.ReadStreamResponse(br)
+	ok, _, errMsg, err := wire.ReadStreamResponse(br)
 	if err != nil {
 		t.Fatalf("read response: %v", err)
 	}

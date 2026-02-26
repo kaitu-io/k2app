@@ -23,6 +23,11 @@ var (
 	_ Listener = (*QUICServer)(nil)
 )
 
+// maxServerUDPSessions caps per-connection UDP session count on the server.
+// Prevents a malicious client from creating unbounded goroutines via
+// incrementing session IDs in datagrams or stream-based UDP frames.
+const maxServerUDPSessions = 4096
+
 // DefaultQUICConfig returns the QUIC configuration for servers and desktop clients.
 // Uses large receive windows (matching Hysteria2) for maximum throughput.
 func DefaultQUICConfig() *quic.Config {
@@ -244,15 +249,18 @@ func (c *QUICClient) DialTCP(ctx context.Context, addr string) (net.Conn, error)
 
 	// Read response
 	br := bufio.NewReader(stream)
-	ok, errMsg, err := ReadStreamResponse(br)
+	ok, errCode, errMsg, err := ReadStreamResponse(br)
 	if err != nil {
 		slog.Debug("QUICClient.DialTCP: read response failed", "addr", addr, "err", err)
 		stream.Close()
 		return nil, fmt.Errorf("wire: read response: %w", err)
 	}
 	if !ok {
-		slog.Debug("QUICClient.DialTCP: stream rejected", "addr", addr, "errMsg", errMsg)
+		slog.Debug("QUICClient.DialTCP: stream rejected", "addr", addr, "errCode", errCode, "errMsg", errMsg)
 		stream.Close()
+		if errCode > 0 {
+			return nil, &StreamError{Code: errCode, Message: errMsg}
+		}
 		return nil, fmt.Errorf("%w: %s", ErrStreamRejected, errMsg)
 	}
 
@@ -276,14 +284,21 @@ func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, 
 
 	// Try datagram path if supported
 	if c.datagramsSupported(conn) {
-		sessionID := c.alloc.Next()
-		readCh := c.udpMux.register(sessionID)
+		c.mu.Lock()
+		alloc, mux := c.alloc, c.udpMux
+		c.mu.Unlock()
+		if alloc == nil || mux == nil {
+			return nil, ErrNotConnected
+		}
+
+		sessionID := alloc.Next()
+		readCh := mux.register(sessionID)
 
 		return &quicUDPConn{
 			qconn:      conn,
 			sessionID:  sessionID,
 			targetAddr: addr,
-			mux:        c.udpMux,
+			mux:        mux,
 			readCh:     readCh,
 			done:       make(chan struct{}),
 		}, nil
@@ -304,6 +319,10 @@ func (c *QUICClient) datagramsSupported(conn *quic.Conn) bool {
 func (c *QUICClient) dialUDPStream(ctx context.Context, conn *quic.Conn, addr string) (net.PacketConn, error) {
 	// Ensure shared UDP stream and mux exist
 	c.mu.Lock()
+	if c.udpMux == nil || c.alloc == nil {
+		c.mu.Unlock()
+		return nil, ErrNotConnected
+	}
 	if c.udpMux.streamMux == nil {
 		stream, err := conn.OpenStreamSync(ctx)
 		if err != nil {
@@ -520,6 +539,9 @@ func (s *QUICServer) handleUDPStream(qconn *quic.Conn, stream *quic.Stream, br *
 
 		sess, ok := sessions[frame.SessionID]
 		if !ok {
+			if len(sessions) >= maxServerUDPSessions {
+				continue // at capacity, drop frame
+			}
 			sess = &quicStreamServerUDPConn{
 				writer:    writer,
 				sessionID: frame.SessionID,
@@ -564,6 +586,10 @@ func (s *QUICServer) handleDatagrams(conn *quic.Conn) {
 		mu.Lock()
 		sess, ok := sessions[frame.SessionID]
 		if !ok {
+			if len(sessions) >= maxServerUDPSessions {
+				mu.Unlock()
+				continue // at capacity, drop frame
+			}
 			sess = &serverUDPConn{
 				qconn:     conn,
 				sessionID: frame.SessionID,

@@ -81,6 +81,7 @@ When an error has occurred:
   "state": "disconnected",
   "error": {
     "code": 503,
+    "category": "server",
     "message": "QUIC: wire: QUIC dial: ...; TCP-WS: wire: TCP dial: connection refused"
   }
 }
@@ -90,15 +91,25 @@ When an error has occurred:
 
 **Error codes** (in `error.code`):
 
-| Code | Meaning |
-|------|---------|
-| 400 | Bad config (parse URL, missing auth) |
-| 401 | Auth rejected (server rejected token) |
-| 403 | Forbidden (pin mismatch, blocked CA) |
-| 408 | Timeout (dial timeout, deadline exceeded) |
-| 502 | Protocol error (TLS/QUIC handshake failure) |
-| 503 | Server unreachable (connection refused, network unreachable) |
-| 570 | Unclassified error |
+| Code | Category | Meaning |
+|------|----------|---------|
+| 101 | network | Network unavailable (client network unreachable) |
+| 108 | network | Timeout (dial timeout, deadline exceeded) |
+| 400 | client | Bad config (parse URL, missing auth) |
+| 401 | client | Auth rejected (server rejected token) |
+| 402 | client | Membership expired |
+| 403 | client | Forbidden (pin mismatch, blocked CA) |
+| 502 | server | Protocol error (TLS/QUIC handshake failure) |
+| 503 | server | Server unreachable (connection refused, TCP dial failed) |
+| 570 | server | Unclassified error |
+
+**Error categories** (in `error.category`):
+
+| Category | Range | Frontend behavior |
+|----------|-------|-------------------|
+| `network` | 10x | Client network problem — show warning |
+| `client` | 40x | User action needed — show error |
+| `server` | 50x | Node issue — suggest switching node |
 
 #### action: "version" — Binary info
 
@@ -136,7 +147,7 @@ event: status
 data: {"state":"connected","connected_at":"2026-02-25T10:00:00Z","uptime_seconds":0}
 
 event: status
-data: {"state":"disconnected","error":{"code":503,"message":"..."}}
+data: {"state":"disconnected","error":{"code":503,"category":"server","message":"..."}}
 ```
 
 - Each `status` event is a full snapshot (idempotent — safe to receive duplicates)

@@ -99,7 +99,7 @@ func TestProxyHandler_HandleTCP_PrivateIP(t *testing.T) {
 	})
 
 	br := bufio.NewReader(clientConn)
-	ok, _, err := wire.ReadStreamResponse(br)
+	ok, _, _, err := wire.ReadStreamResponse(br)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestProxyHandler_HandleTCP(t *testing.T) {
 
 	// Client: read stream response.
 	br := bufio.NewReader(clientConn)
-	ok, errMsg, err := wire.ReadStreamResponse(br)
+	ok, _, errMsg, err := wire.ReadStreamResponse(br)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +196,7 @@ func TestProxyHandler_HandleTCP_DialFail(t *testing.T) {
 	})
 
 	br := bufio.NewReader(clientConn)
-	ok, _, err := wire.ReadStreamResponse(br)
+	ok, _, _, err := wire.ReadStreamResponse(br)
 	if err != nil {
 		t.Fatal(err)
 	}

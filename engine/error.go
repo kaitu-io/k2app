@@ -9,31 +9,67 @@ import (
 	"github.com/kaitu-io/k2/wire"
 )
 
-// Error codes aligned with HTTP status codes.
+// Error codes: 10x client network, 40x client action, 50x server/node.
 // Used by StatusJSON() and exposed to frontend via daemon API.
 const (
-	ErrCodeBadConfig         = 400 // Invalid wire URL, missing auth, bad scheme
-	ErrCodeAuthRejected      = 401 // Server rejected authentication (stream rejected)
-	ErrCodeForbidden         = 403 // Certificate pin mismatch, blocked CA
-	ErrCodeTimeout           = 408 // Connection or handshake timeout
-	ErrCodeProtocolError     = 502 // TLS handshake failure, QUIC dial failure
-	ErrCodeServerUnreachable = 503 // TCP dial failed, connection refused, network unreachable
-	ErrCodeConnectionFatal   = 570 // Unclassified connection error (fallback)
+	ErrCodeNetworkUnavailable = 101 // Client network unreachable, no route to host
+	ErrCodeTimeout            = 108 // Connection or handshake timeout
+	ErrCodeBadConfig          = 400 // Invalid wire URL, missing auth, bad scheme
+	ErrCodeAuthRejected       = 401 // Server rejected authentication (stream rejected)
+	ErrCodePaymentRequired    = 402 // Subscription expired or payment required
+	ErrCodeForbidden          = 403 // Certificate pin mismatch, blocked CA
+	ErrCodeProtocolError      = 502 // TLS handshake failure, QUIC dial failure
+	ErrCodeServerUnreachable  = 503 // TCP dial failed, connection refused
+	ErrCodeConnectionFatal    = 570 // Unclassified connection error (fallback)
 )
 
-// EngineError is a structured error with an HTTP-aligned code.
+// Error categories for frontend blame attribution.
+const (
+	CategoryClient  = "client"  // User action needed (re-auth, reconfigure, renew)
+	CategoryNetwork = "network" // Transient, auto-retry or wait
+	CategoryServer  = "server"  // Server-side issue (suggest update)
+	CategoryUnknown = "unknown" // Unclassified
+)
+
+// EngineError is a structured error with an HTTP-aligned code and blame category.
 type EngineError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
+	Code     int    `json:"code"`
+	Category string `json:"category"`
+	Message  string `json:"message"`
+}
+
+// categoryForCode maps an error code to its blame category.
+func categoryForCode(code int) string {
+	switch code {
+	case ErrCodeBadConfig, ErrCodeAuthRejected, ErrCodePaymentRequired, ErrCodeForbidden:
+		return CategoryClient
+	case ErrCodeNetworkUnavailable, ErrCodeTimeout:
+		return CategoryNetwork
+	case ErrCodeProtocolError, ErrCodeServerUnreachable, ErrCodeConnectionFatal:
+		return CategoryServer
+	default:
+		return CategoryUnknown
+	}
+}
+
+// newEngineError creates an EngineError with auto-derived category.
+func newEngineError(code int, msg string) *EngineError {
+	return &EngineError{Code: code, Category: categoryForCode(code), Message: msg}
 }
 
 func (e *EngineError) Error() string {
 	return e.Message
 }
 
-// ClassifyError maps a wire/engine error to an HTTP-aligned error code.
-// Priority: MultiTransportError → timeout → string pattern match → fallback 570.
+// ClassifyError maps a wire/engine error to an HTTP-aligned error code with category.
+// Priority: StreamError (server-provided code) → MultiTransportError → timeout → string pattern → fallback 570.
 func ClassifyError(err error) *EngineError {
+	// Priority 0: StreamError with server-provided code — use directly.
+	var se *wire.StreamError
+	if errors.As(err, &se) && se.Code > 0 {
+		return newEngineError(se.Code, se.Message)
+	}
+
 	// Priority 1: MultiTransportError — classify by primary (TCP-WS) error,
 	// but keep full combined message for UI display.
 	var mte *wire.MultiTransportError
@@ -55,29 +91,34 @@ func ClassifyError(err error) *EngineError {
 
 	// Priority 2: context.DeadlineExceeded (not a net.Error, so check explicitly).
 	if errors.Is(err, context.DeadlineExceeded) {
-		return &EngineError{Code: ErrCodeTimeout, Message: msg}
+		return newEngineError(ErrCodeTimeout, msg)
 	}
 
 	// Priority 3: net.Error.Timeout() interface check.
 	var netErr net.Error
 	if errors.As(err, &netErr) && netErr.Timeout() {
-		return &EngineError{Code: ErrCodeTimeout, Message: msg}
+		return newEngineError(ErrCodeTimeout, msg)
 	}
 
 	// Priority 4: String pattern matching.
 	return classifyByPatterns(msg)
 }
 
-// classifyByPatterns matches error message text to an error code.
+// classifyByPatterns matches error message text to an error code with category.
 func classifyByPatterns(msg string) *EngineError {
 	// 401: Auth rejected (server explicitly rejected credentials).
 	if strings.Contains(msg, "stream rejected") {
-		return &EngineError{Code: ErrCodeAuthRejected, Message: msg}
+		return newEngineError(ErrCodeAuthRejected, msg)
+	}
+
+	// 402: Payment required / subscription expired.
+	if strings.Contains(msg, "payment required") || strings.Contains(msg, "subscription") {
+		return newEngineError(ErrCodePaymentRequired, msg)
 	}
 
 	// 403: Forbidden (certificate/pin verification failure).
 	if strings.Contains(msg, "pin mismatch") || strings.Contains(msg, "blocked CA") {
-		return &EngineError{Code: ErrCodeForbidden, Message: msg}
+		return newEngineError(ErrCodeForbidden, msg)
 	}
 
 	// 400: Bad config (URL parse errors, missing fields).
@@ -85,25 +126,29 @@ func classifyByPatterns(msg string) *EngineError {
 		strings.Contains(msg, "missing auth") ||
 		strings.Contains(msg, "unsupported scheme") ||
 		strings.Contains(msg, "missing port") {
-		return &EngineError{Code: ErrCodeBadConfig, Message: msg}
+		return newEngineError(ErrCodeBadConfig, msg)
+	}
+
+	// 101: Client network unavailable (checked BEFORE 503 — "TCP dial: network unreachable" is client-side).
+	if strings.Contains(msg, "network unreachable") || strings.Contains(msg, "no route to host") {
+		return newEngineError(ErrCodeNetworkUnavailable, msg)
 	}
 
 	// 502: TLS/Protocol error (handshake failures).
 	if strings.Contains(msg, "uTLS handshake") ||
 		strings.Contains(msg, "certificate") ||
 		strings.Contains(msg, "QUIC dial") {
-		return &EngineError{Code: ErrCodeProtocolError, Message: msg}
+		return newEngineError(ErrCodeProtocolError, msg)
 	}
 
-	// 503: Server unreachable (network-level failures).
+	// 503: Server unreachable (connection refused, dial failed).
 	if strings.Contains(msg, "TCP dial") ||
 		strings.Contains(msg, "connection refused") ||
-		strings.Contains(msg, "network unreachable") ||
-		strings.Contains(msg, "no route to host") ||
-		strings.Contains(msg, "listen UDP") {
-		return &EngineError{Code: ErrCodeServerUnreachable, Message: msg}
+		strings.Contains(msg, "listen UDP") ||
+		strings.Contains(msg, "not connected") {
+		return newEngineError(ErrCodeServerUnreachable, msg)
 	}
 
 	// 570: Fallback for all unclassified errors.
-	return &EngineError{Code: ErrCodeConnectionFatal, Message: msg}
+	return newEngineError(ErrCodeConnectionFatal, msg)
 }
