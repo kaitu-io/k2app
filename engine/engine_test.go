@@ -829,10 +829,9 @@ func TestEngine_NetworkMonitor_CallbackTriggersOnNetworkChanged(t *testing.T) {
 }
 
 // TestEngine_NetworkMonitor_StartedOnEngineStart verifies that monitor.Start()
-// is called when the engine starts with a non-nil NetworkMonitor. Since a real
-// Start() requires TUN (unavailable in tests), we simulate the connected flow
-// by setting internal state and verifying the monitor would be started after
-// the engine reaches connected state.
+// is called early in engine.Start() (step 4.1, before wire probe) so that
+// DirectDialer can resolve the default interface. When Start() fails, the
+// monitor should be properly closed.
 func TestEngine_NetworkMonitor_StartedOnEngineStart(t *testing.T) {
 	e := New()
 	h := &mockEventHandler{}
@@ -840,19 +839,20 @@ func TestEngine_NetworkMonitor_StartedOnEngineStart(t *testing.T) {
 	mon := &mockNetworkMonitor{}
 
 	// Config with NetworkMonitor set — engine should start the monitor
-	// after reaching connected state.
+	// early (step 4.1) for DirectDialer interface resolution.
 	cfg := Config{
 		Client:         &config.ClientConfig{Server: "k2v5://udid:token@127.0.0.1:12345?insecure=1"},
 		FileDescriptor: -1,
 		NetworkMonitor: mon,
 	}
 
-	// Start will fail (no real TUN), but the monitor field should be stored.
+	// Start will fail at wire probe, but monitor should have been started
+	// and then closed during cleanup.
 	_ = e.Start(cfg)
 
-	// Since Start() failed before reaching connected, monitor should NOT be started.
-	if mon.isStarted() {
-		t.Fatal("monitor should not be started when engine fails to connect")
+	// Monitor was started early (step 4.1) but closed on failure cleanup.
+	if !mon.isClosed() {
+		t.Fatal("monitor should be closed after engine fails to connect")
 	}
 
 	// Now simulate a successful start: set state to connected and verify

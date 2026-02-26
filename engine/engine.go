@@ -136,6 +136,15 @@ func (e *Engine) Start(cfg Config) error {
 		tm.SetTCPWS(tcpwsClient)
 	}
 
+	// 4.1 Start network monitor early — DirectDialer needs DefaultInterface()
+	// for interface-bound dialing. Must start before wire probe (step 4.5).
+	// Safe: OnNetworkChanged() early-returns when state != connected.
+	if cfg.NetworkMonitor != nil {
+		if err := cfg.NetworkMonitor.Start(func() { e.OnNetworkChanged() }); err != nil {
+			slog.Warn("engine: network monitor start failed (non-fatal)", "err", err)
+		}
+	}
+
 	// 4.5 Verify wire connectivity before setting up TUN/provider.
 	// Without this check, engine reports "connected" after TUN starts even if
 	// wire server is unreachable — DNS handler silently absorbs wire failures
@@ -146,6 +155,9 @@ func (e *Engine) Start(cfg Config) error {
 	probeCancel()
 	if probeErr != nil {
 		slog.Warn("engine: wire probe failed", "err", probeErr)
+		if cfg.NetworkMonitor != nil {
+			cfg.NetworkMonitor.Close()
+		}
 		tm.Close()
 		return e.fail(fmt.Errorf("wire probe: %w", probeErr))
 	}
@@ -192,6 +204,9 @@ func (e *Engine) Start(cfg Config) error {
 
 	// Check cancellation before starting the tunnel (the expensive part).
 	if ctx.Err() != nil {
+		if cfg.NetworkMonitor != nil {
+			cfg.NetworkMonitor.Close()
+		}
 		tm.Close()
 		return e.fail(ctx.Err())
 	}
@@ -229,12 +244,18 @@ func (e *Engine) Start(cfg Config) error {
 			Filter:    dns.NewFilter(dns.FilterConfig{}),
 		})
 		if err := tunnel.StartWithHandler(ctx, &dnsHandler{inner: tunnel, dns: dnsMW}); err != nil {
+			if cfg.NetworkMonitor != nil {
+				cfg.NetworkMonitor.Close()
+			}
 			tm.Close()
 			return e.fail(err)
 		}
 	} else {
 		// Proxy mode: no TUN, no DNS interception.
 		if err := tunnel.Start(ctx); err != nil {
+			if cfg.NetworkMonitor != nil {
+				cfg.NetworkMonitor.Close()
+			}
 			tm.Close()
 			return e.fail(err)
 		}
@@ -245,6 +266,9 @@ func (e *Engine) Start(cfg Config) error {
 	if ctx.Err() != nil {
 		// Stop() was called during Start() — clean up started resources.
 		e.mu.Unlock()
+		if cfg.NetworkMonitor != nil {
+			cfg.NetworkMonitor.Close()
+		}
 		prov.Close()
 		tm.Close()
 		return ctx.Err()
@@ -256,12 +280,7 @@ func (e *Engine) Start(cfg Config) error {
 	e.setState(StateConnected)
 	e.mu.Unlock()
 
-	// Start network monitor if provided (desktop only).
-	if cfg.NetworkMonitor != nil {
-		if err := cfg.NetworkMonitor.Start(func() { e.OnNetworkChanged() }); err != nil {
-			slog.Warn("engine: network monitor start failed", "err", err)
-		}
-	}
+	// Network monitor already started in step 4.1 (before wire probe).
 
 	return nil
 }
