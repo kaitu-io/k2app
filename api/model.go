@@ -397,6 +397,7 @@ type SlaveNode struct {
 	Region      string `gorm:"type:varchar(50);not null"`             // 服务器机房位置/区域
 	Name        string `gorm:"type:varchar(255);not null"`            // 节点名称
 	Ipv6        string `gorm:"type:varchar(20);not null"`             // 节点IPv6地址
+	Meta        string `gorm:"type:json;default:null"`                // 节点元数据（JSON，如架构类型）
 
 	// 关联
 	Tunnels []SlaveTunnel `gorm:"foreignKey:NodeID"` // 该物理节点上的隧道

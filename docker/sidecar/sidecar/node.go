@@ -83,12 +83,13 @@ type TunnelResult struct {
 
 // NodeUpsertRequest node registration/update request (supports batch tunnels)
 type NodeUpsertRequest struct {
-	Country     string         `json:"country"`
-	Region      string         `json:"region,omitempty"`
-	Name        string         `json:"name"`
-	IPv6        string         `json:"ipv6,omitempty"`
-	SecretToken string         `json:"secretToken,omitempty"`
-	Tunnels     []TunnelConfig `json:"tunnels,omitempty"`    // Batch tunnel configuration
+	Country     string                 `json:"country"`
+	Region      string                 `json:"region,omitempty"`
+	Name        string                 `json:"name"`
+	IPv6        string                 `json:"ipv6,omitempty"`
+	SecretToken string                 `json:"secretToken,omitempty"`
+	Tunnels     []TunnelConfig         `json:"tunnels,omitempty"` // Batch tunnel configuration
+	Meta        map[string]interface{} `json:"meta,omitempty"`    // Node metadata (e.g., architecture type)
 }
 
 // NodeUpsertResponse node registration/update response (with tunnel certificates)
@@ -200,6 +201,19 @@ type Node struct {
 	Name      string // Node name (optional, defaults to IPv4)
 }
 
+// buildNodeMeta returns node metadata from environment variables.
+// K2_NODE_ARCH: architecture type (e.g., "k2v5", "k2-slave")
+func buildNodeMeta() map[string]interface{} {
+	meta := make(map[string]interface{})
+	if arch := os.Getenv("K2_NODE_ARCH"); arch != "" {
+		meta["arch"] = arch
+	}
+	if len(meta) == 0 {
+		return nil
+	}
+	return meta
+}
+
 // Global auth cache (30 minute validity)
 var (
 	globalAuthCache   *AuthCache
@@ -304,6 +318,7 @@ func (n *Node) RegisterNode() (string, error) {
 		Name:        n.Name,
 		IPv6:        n.IPv6,
 		SecretToken: n.Secret,
+		Meta:        buildNodeMeta(),
 	}
 
 	nodePath := fmt.Sprintf("/slave/nodes/%s", n.IPv4)
@@ -349,6 +364,7 @@ func (n *Node) Register(tunnels []TunnelConfig) (*RegisterResult, error) {
 		IPv6:        n.IPv6,
 		SecretToken: n.Secret,
 		Tunnels:     tunnels,
+		Meta:        buildNodeMeta(),
 	}
 
 	nodePath := fmt.Sprintf("/slave/nodes/%s", n.IPv4)

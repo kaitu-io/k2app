@@ -20,7 +20,7 @@ triggers:
 
 # Kaitu Node Operations
 
-Use this skill when operating on Kaitu VPN nodes via `list_nodes` and `exec_on_node` MCP tools.
+Use this skill when operating on Kaitu VPN nodes via MCP tools: `list_nodes`, `exec_on_node`, `ping_node`, `delete_node`.
 
 ## Step 1: Identify Node Architecture
 
@@ -241,6 +241,22 @@ Per-node steps: SCP `auto-update.sh` → `chmod +x` → ensure cron installed �
 5. Wait 30s, verify sidecar healthy
 6. Slack notification on update/error (silent when no changes)
 7. Log to `/apps/kaitu-slave/auto-update.log` (auto-rotate at 1MB)
+
+### MCP Tool Reference
+
+| Tool | Purpose | Key Parameters |
+|------|---------|---------------|
+| `list_nodes` | List all nodes with tunnels, filterable | `country?`, `name?` |
+| `exec_on_node` | Execute command on node via SSH | `ip`, `command`, `timeout?` (default 60s), `scriptPath?` |
+| `ping_node` | SSH connectivity check (no command) | `ip` |
+| `delete_node` | Remove node from Center DB (API only) | `ip` |
+
+**exec_on_node structured output**: Response includes `status` field:
+- `"success"` — command executed (check `exitCode` for pass/fail)
+- `"ssh_error"` — SSH connection/auth failed (no stdout/stderr returned)
+- `"timeout"` — command timed out (partial output may be available)
+
+stdout capped at 10000 chars, stderr at 2000 chars. Both are redacted for secrets.
 
 ### Node Activity Heuristic
 

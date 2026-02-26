@@ -37,7 +37,7 @@ describe('createServer', () => {
     const info = innerServer['_serverInfo'] as Record<string, unknown>
     expect(info).toBeDefined()
     expect(info['name']).toBe('kaitu-ops')
-    expect(info['version']).toBe('0.1.0')
+    expect(info['version']).toBe('0.2.0')
   })
 
   it('test_server_registers_two_tools — after createServer, both list_nodes and exec_on_node are registered', async () => {
@@ -52,5 +52,7 @@ describe('createServer', () => {
     expect(registeredTools).toBeDefined()
     expect(Object.keys(registeredTools)).toContain('list_nodes')
     expect(Object.keys(registeredTools)).toContain('exec_on_node')
+    expect(Object.keys(registeredTools)).toContain('ping_node')
+    expect(Object.keys(registeredTools)).toContain('delete_node')
   })
 })

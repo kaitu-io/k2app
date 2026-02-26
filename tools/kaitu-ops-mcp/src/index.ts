@@ -1,7 +1,7 @@
 /**
  * kaitu-ops-mcp — MCP server entry point.
  *
- * Wires together config loading, the Center API client, and both MCP tools,
+ * Wires together config loading, the Center API client, and all MCP tools,
  * then connects to stdio transport for MCP protocol communication.
  */
 
@@ -12,6 +12,8 @@ import type { Config } from './config.js'
 import { CenterApiClient } from './center-api.js'
 import { registerListNodes } from './tools/list-nodes.js'
 import { registerExecOnNode } from './tools/exec-on-node.js'
+import { registerPingNode } from './tools/ping-node.js'
+import { registerDeleteNode } from './tools/delete-node.js'
 
 /**
  * Creates and configures the MCP server with all tools registered.
@@ -20,18 +22,20 @@ import { registerExecOnNode } from './tools/exec-on-node.js'
  * starting the stdio transport (which would block the process).
  *
  * @param config - Fully resolved configuration object
- * @returns A configured McpServer with list_nodes and exec_on_node registered
+ * @returns A configured McpServer with all tools registered
  */
 export async function createServer(config: Config): Promise<McpServer> {
   const apiClient = new CenterApiClient(config)
 
   const server = new McpServer({
     name: 'kaitu-ops',
-    version: '0.1.0',
+    version: '0.2.0',
   })
 
   registerListNodes(server, apiClient)
   registerExecOnNode(server, config.ssh)
+  registerPingNode(server, config.ssh)
+  registerDeleteNode(server, apiClient)
 
   return server
 }

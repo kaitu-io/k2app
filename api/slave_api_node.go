@@ -3,6 +3,7 @@ package center
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	mathrand "math/rand"
 	"strings"
@@ -22,6 +23,7 @@ type SlaveNodeUpsertRequest struct {
 	IPv6        string              `json:"ipv6" example:"2001:db8::1"`                         // 节点IPv6地址
 	SecretToken string              `json:"secretToken" binding:"required" example:"abc123..."` // 节点认证令牌（必需，客户端持久化保存）
 	Tunnels     []TunnelConfigInput `json:"tunnels"`                                            // 隧道配置列表（可选，支持批量注册）
+	Meta        json.RawMessage     `json:"meta,omitempty"`                                     // 节点元数据（可选JSON，如架构类型）
 }
 
 // TunnelConfigInput 隧道配置输入
@@ -134,6 +136,7 @@ func api_slave_node_upsert(c *gin.Context) {
 			Region:      region,
 			Name:        req.Name,
 			Ipv6:        req.IPv6,
+			Meta:        string(req.Meta),
 		}
 		if err := tx.Create(&node).Error; err != nil {
 			tx.Rollback()
@@ -158,6 +161,7 @@ func api_slave_node_upsert(c *gin.Context) {
 			Region:      region,
 			Name:        req.Name,
 			Ipv6:        req.IPv6,
+			Meta:        string(req.Meta),
 		}
 		if err := db.Get().Create(&node).Error; err != nil {
 			log.Errorf(c, "failed to create node: %v", err)

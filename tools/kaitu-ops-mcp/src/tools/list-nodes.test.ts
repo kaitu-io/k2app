@@ -137,4 +137,37 @@ describe('filterNodes', () => {
     const sg = result[1]
     expect(sg?.tunnels).toHaveLength(2)
   })
+
+  it('passes through meta field when present', () => {
+    const responseWithMeta = {
+      code: 0,
+      data: {
+        nodes: [
+          {
+            id: 1,
+            name: 'jp-01',
+            ipv4: '1.2.3.4',
+            ipv6: '2001:db8::1',
+            country: 'jp',
+            region: 'tokyo',
+            status: 'online',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-02T00:00:00Z',
+            tunnels: [],
+            batch_script_results: {},
+            meta: { arch: 'k2v5' },
+          },
+        ],
+      },
+    }
+
+    const result = filterNodes(responseWithMeta, {})
+    expect(result).toHaveLength(1)
+    expect(result[0]?.meta).toEqual({ arch: 'k2v5' })
+  })
+
+  it('omits meta field when not present in raw response', () => {
+    const result = filterNodes(rawBatchMatrixResponse, {})
+    expect(result[0]?.meta).toBeUndefined()
+  })
 })

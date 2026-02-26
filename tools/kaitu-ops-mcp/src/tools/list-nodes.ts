@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { CenterApiClient } from '../center-api.js'
+import { audit } from '../audit.js'
 
 /**
  * Raw tunnel shape as returned by Center API batch-matrix endpoint.
@@ -63,6 +64,7 @@ export interface NodeInfo {
   country: string
   region: string
   tunnels: TunnelInfo[]
+  meta?: Record<string, unknown>
 }
 
 /**
@@ -110,7 +112,7 @@ function mapTunnel(raw: RawTunnel): TunnelInfo {
  * @returns A filtered NodeInfo with only the safe fields
  */
 function mapNode(raw: RawNode): NodeInfo {
-  return {
+  const node: NodeInfo = {
     name: raw.name,
     ipv4: raw.ipv4,
     ipv6: raw.ipv6,
@@ -118,6 +120,11 @@ function mapNode(raw: RawNode): NodeInfo {
     region: raw.region,
     tunnels: raw.tunnels.map(mapTunnel),
   }
+  // Pass through meta if present (added by sidecar registration)
+  if (raw['meta'] != null && typeof raw['meta'] === 'object') {
+    node.meta = raw['meta'] as Record<string, unknown>
+  }
+  return node
 }
 
 /**
@@ -173,6 +180,11 @@ export function registerListNodes(server: McpServer, apiClient: CenterApiClient)
       const nodes = filterNodes(rawResponse, {
         country: params.country,
         name: params.name,
+      })
+
+      await audit('list_nodes', {
+        filter: [params.country, params.name].filter(Boolean).join(',') || 'none',
+        count: nodes.length,
       })
 
       return {

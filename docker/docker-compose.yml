@@ -53,6 +53,7 @@ services:
       - K2_HAS_RELAY=${K2_HAS_RELAY:-false}
       - K2_JUMP_PORT_MIN=${K2_JUMP_PORT_MIN:-10020}
       - K2_JUMP_PORT_MAX=${K2_JUMP_PORT_MAX:-10119}
+      - K2_NODE_ARCH=${K2_NODE_ARCH:-k2v5}
     healthcheck:
       test: ["CMD", "test", "-f", "/etc/kaitu/.ready"]
       interval: 2s

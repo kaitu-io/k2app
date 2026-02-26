@@ -256,7 +256,8 @@ type NodeBatchMatrixNode struct {
 	UpdatedAt   int64                             `json:"updatedAt"`
 	TunnelCount int                               `json:"tunnelCount"`
 	Tunnels     []NodeBatchMatrixTunnel           `json:"tunnels"`
-	Results     map[string]*NodeBatchMatrixResult `json:"results"` // script_id -> result
+	Results     map[string]*NodeBatchMatrixResult `json:"results"`        // script_id -> result
+	Meta        json.RawMessage                   `json:"meta,omitempty"` // 节点元数据
 }
 
 // NodeBatchMatrixResponse is the response for the batch-matrix API
@@ -422,7 +423,7 @@ func api_admin_nodes_batch_matrix(c *gin.Context) {
 			tunnels = []NodeBatchMatrixTunnel{}
 		}
 
-		responseNodes = append(responseNodes, NodeBatchMatrixNode{
+		matrixNode := NodeBatchMatrixNode{
 			ID:          node.ID,
 			Name:        node.Name,
 			Country:     node.Country,
@@ -433,7 +434,11 @@ func api_admin_nodes_batch_matrix(c *gin.Context) {
 			TunnelCount: len(tunnels),
 			Tunnels:     tunnels,
 			Results:     results,
-		})
+		}
+		if node.Meta != "" {
+			matrixNode.Meta = json.RawMessage(node.Meta)
+		}
+		responseNodes = append(responseNodes, matrixNode)
 	}
 
 	Success(c, &NodeBatchMatrixResponse{
