@@ -84,10 +84,9 @@ services:
       - K2_HOP_PORT_MAX=${K2_JUMP_PORT_MAX:-10119}
       - K2_LOG_LEVEL=${K2_LOG_LEVEL:-info}
     logging:
-      driver: "json-file"
+      driver: journald
       options:
-        max-size: "10m"
-        max-file: "3"
+        tag: k2v5
 
   # K2v4 Slave - k2v4 protocol (bridge network, behind k2v5 front door)
   # k2v5 forwards non-ECH traffic matching K2_DOMAIN to this port.

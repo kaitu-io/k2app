@@ -4,20 +4,23 @@
 # Combines: Docker CE install + IPv6 + BBR + SSH hardening + auto-update cron
 # Target: Ubuntu 20.04 / 22.04 / 24.04
 #
-# What it does (12 steps):
+# What it does (16 steps):
 #   1. Set timezone to Asia/Singapore (UTC+8)
-#   2. Clean old Docker versions
-#   3. Ensure iptables is installed
-#   4. Configure official Docker apt source
-#   5. Install Docker CE + plugins + docker group + disable unattended-upgrades
-#   6. Create docker-compose compatibility wrapper
-#   7. Enable IPv6 kernel params (sysctl)
-#   8. Enable BBR congestion control (sysctl)
-#   9. Configure Docker daemon (IPv6 + log rotation)
-#  10. Install UFW-Docker security patch (if UFW active)
-#  11. Harden SSH: switch to port 1022 only (with rollback on failure)
-#  12. Deploy auto-update cron (daily 04:00 Beijing time)
-#  13. Verify everything works
+#   2. Remove snapd and reclaim space
+#   3. Setup swap (1GB for instances with ≤2GB RAM)
+#   4. Clean old Docker versions
+#   5. Ensure iptables is installed
+#   6. Configure official Docker apt source
+#   7. Install Docker CE + plugins + docker group + disable unattended-upgrades
+#   8. Create docker-compose compatibility wrapper
+#   9. Enable IPv6 kernel params (sysctl)
+#  10. Enable BBR congestion control (sysctl)
+#  11. Configure Docker daemon (IPv6 + log rotation)
+#  12. Install UFW-Docker security patch (if UFW active)
+#  13. Harden SSH: switch to port 1022 only (with rollback on failure)
+#  14. Configure journald persistence + k2v5 crash monitor
+#  15. Deploy auto-update cron (daily 04:00 Beijing time)
+#  16. Verify everything works
 #
 # Safety:
 #   - NO set -e: each step handles its own errors
@@ -113,10 +116,10 @@ if [ "$ALREADY_DONE" = true ]; then
 fi
 
 # ===================================================================
-# [1/13] Set timezone to Asia/Singapore (UTC+8)
+# [1/16] Set timezone to Asia/Singapore (UTC+8)
 # ===================================================================
 
-echo -e "${YELLOW}[1/13] Setting timezone to Asia/Singapore (UTC+8)...${NC}"
+echo -e "${YELLOW}[1/16] Setting timezone to Asia/Singapore (UTC+8)...${NC}"
 if timedatectl set-timezone Asia/Singapore 2>/dev/null; then
     ok "Timezone set to Asia/Singapore ($(date +%Z %z))."
 else
@@ -127,10 +130,92 @@ else
 fi
 
 # ===================================================================
-# [2/13] Clean old Docker versions
+# [2/16] Remove snapd and reclaim space
 # ===================================================================
 
-echo -e "${YELLOW}[2/13] Cleaning old Docker versions...${NC}"
+echo -e "${YELLOW}[2/16] Removing snapd and reclaiming space...${NC}"
+
+if command -v snap >/dev/null 2>&1; then
+    # List and remove all snap packages first (dependency order matters)
+    SNAPS=$(snap list 2>/dev/null | awk 'NR>1 && $1!="snapd" {print $1}')
+    for s in $SNAPS; do
+        snap remove --purge "$s" 2>/dev/null || true
+    done
+    snap remove --purge snapd 2>/dev/null || true
+
+    # Remove snapd package
+    apt_wait
+    apt-get remove -y --purge snapd 2>/dev/null || true
+    apt-get autoremove -y 2>/dev/null || true
+
+    # Clean leftover directories
+    rm -rf /snap /var/snap /var/lib/snapd /var/cache/snapd \
+           ~/snap /root/snap 2>/dev/null || true
+
+    # Prevent snapd from being re-installed by apt
+    if [ ! -f /etc/apt/preferences.d/no-snapd ]; then
+        cat > /etc/apt/preferences.d/no-snapd <<'PINEOF'
+Package: snapd
+Pin: release *
+Pin-Priority: -10
+PINEOF
+    fi
+
+    FREED=$(du -sh /snap /var/snap /var/lib/snapd 2>/dev/null | awk '{sum+=$1} END {print sum"M"}' || echo "unknown")
+    ok "snapd removed. Space reclaimed."
+else
+    ok "snapd not installed, skipping."
+fi
+
+# ===================================================================
+# [3/16] Setup swap (1GB for instances with ≤2GB RAM)
+# ===================================================================
+
+echo -e "${YELLOW}[3/16] Setting up swap...${NC}"
+
+TOTAL_RAM_MB=$(awk '/MemTotal/ {printf "%d", $2/1024}' /proc/meminfo)
+SWAP_SIZE_MB=$(swapon --show=SIZE --bytes --noheadings 2>/dev/null | awk '{sum+=$1} END {printf "%d", sum/1024/1024}')
+: "${SWAP_SIZE_MB:=0}"
+
+if [ "$SWAP_SIZE_MB" -gt 0 ]; then
+    ok "Swap already active: ${SWAP_SIZE_MB}MB. Skipping."
+elif [ "$TOTAL_RAM_MB" -le 2048 ]; then
+    # Create 1GB swapfile for small instances
+    SWAPFILE="/swapfile"
+    if [ ! -f "$SWAPFILE" ]; then
+        dd if=/dev/zero of="$SWAPFILE" bs=1M count=1024 status=progress 2>/dev/null || \
+        dd if=/dev/zero of="$SWAPFILE" bs=1M count=1024 2>/dev/null
+        chmod 600 "$SWAPFILE"
+        mkswap "$SWAPFILE" >/dev/null
+    fi
+    swapon "$SWAPFILE" 2>/dev/null || true
+
+    # Persist in fstab (idempotent)
+    if ! grep -q "$SWAPFILE" /etc/fstab; then
+        echo "$SWAPFILE none swap sw 0 0" >> /etc/fstab
+    fi
+
+    # Low swappiness: only swap under real pressure
+    sysctl -w vm.swappiness=10 >/dev/null 2>&1 || true
+    if ! grep -q 'vm.swappiness' /etc/sysctl.conf 2>/dev/null; then
+        echo "vm.swappiness=10" >> /etc/sysctl.conf
+    fi
+
+    VERIFY_SWAP=$(swapon --show=SIZE --bytes --noheadings 2>/dev/null | awk '{printf "%d", $1/1024/1024}')
+    if [ "${VERIFY_SWAP:-0}" -gt 0 ]; then
+        ok "1GB swap created and active. swappiness=10. RAM=${TOTAL_RAM_MB}MB."
+    else
+        warn "Swapfile created but swapon failed. Check manually."
+    fi
+else
+    ok "RAM=${TOTAL_RAM_MB}MB (>2GB), swap not needed."
+fi
+
+# ===================================================================
+# [4/16] Clean old Docker versions
+# ===================================================================
+
+echo -e "${YELLOW}[4/16] Cleaning old Docker versions...${NC}"
 systemctl stop docker >/dev/null 2>&1 || true
 systemctl stop docker.socket >/dev/null 2>&1 || true
 
@@ -143,10 +228,10 @@ rm -f /usr/local/bin/docker-compose /usr/bin/docker-compose
 ok "Old versions cleaned."
 
 # ===================================================================
-# [3/13] Ensure iptables is installed
+# [5/16] Ensure iptables is installed
 # ===================================================================
 
-echo -e "${YELLOW}[3/13] Ensuring iptables is installed...${NC}"
+echo -e "${YELLOW}[5/16] Ensuring iptables is installed...${NC}"
 apt_wait || die "Cannot acquire apt lock"
 apt-get update -qq 2>&1 || warn "apt-get update had warnings"
 apt-get install -y iptables >/dev/null 2>&1 || warn "iptables install issue (may already be present)"
@@ -154,10 +239,10 @@ apt-get install -y iptables >/dev/null 2>&1 || warn "iptables install issue (may
 ok "iptables ready (using OS default backend)."
 
 # ===================================================================
-# [4/13] Configure official Docker apt source
+# [6/16] Configure official Docker apt source
 # ===================================================================
 
-echo -e "${YELLOW}[4/13] Configuring official Docker apt source...${NC}"
+echo -e "${YELLOW}[6/16] Configuring official Docker apt source...${NC}"
 apt-get install -y ca-certificates curl gnupg >/dev/null 2>&1
 
 install -m 0755 -d /etc/apt/keyrings
@@ -176,10 +261,10 @@ apt-get update -qq 2>&1 || warn "apt-get update had warnings"
 ok "Apt source configured."
 
 # ===================================================================
-# [5/13] Install Docker CE + plugins
+# [7/16] Install Docker CE + plugins
 # ===================================================================
 
-echo -e "${YELLOW}[5/13] Installing Docker CE + plugins...${NC}"
+echo -e "${YELLOW}[7/16] Installing Docker CE + plugins...${NC}"
 apt_wait || die "Cannot acquire apt lock"
 if ! apt-get install -y docker-ce docker-ce-cli containerd.io \
      docker-buildx-plugin docker-compose-plugin 2>&1; then
@@ -200,10 +285,10 @@ if dpkg -l unattended-upgrades &>/dev/null 2>&1; then
 fi
 
 # ===================================================================
-# [6/13] Create docker-compose compatibility wrapper
+# [8/16] Create docker-compose compatibility wrapper
 # ===================================================================
 
-echo -e "${YELLOW}[6/13] Creating docker-compose compatibility wrapper...${NC}"
+echo -e "${YELLOW}[8/16] Creating docker-compose compatibility wrapper...${NC}"
 cat > /usr/local/bin/docker-compose << 'EOF'
 #!/bin/bash
 exec docker compose "$@"
@@ -214,10 +299,10 @@ ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
 ok "docker-compose wrapper created."
 
 # ===================================================================
-# [7/13] Enable IPv6 kernel params
+# [9/16] Enable IPv6 kernel params
 # ===================================================================
 
-echo -e "${YELLOW}[7/13] Enabling IPv6 kernel params...${NC}"
+echo -e "${YELLOW}[9/16] Enabling IPv6 kernel params...${NC}"
 cp /etc/sysctl.conf /etc/sysctl.conf.bak_provision 2>/dev/null || true
 
 # Remove existing entries then append (idempotent)
@@ -241,10 +326,10 @@ fi
 ok "IPv6 kernel params enabled."
 
 # ===================================================================
-# [8/13] Enable BBR congestion control
+# [10/16] Enable BBR congestion control
 # ===================================================================
 
-echo -e "${YELLOW}[8/13] Enabling BBR congestion control...${NC}"
+echo -e "${YELLOW}[10/16] Enabling BBR congestion control...${NC}"
 
 if sysctl net.ipv4.tcp_congestion_control 2>/dev/null | grep -q bbr; then
     ok "BBR already active."
@@ -265,10 +350,10 @@ else
 fi
 
 # ===================================================================
-# [9/13] Configure Docker daemon (IPv6 + log rotation)
+# [11/16] Configure Docker daemon (IPv6 + log rotation)
 # ===================================================================
 
-echo -e "${YELLOW}[9/13] Configuring Docker daemon...${NC}"
+echo -e "${YELLOW}[11/16] Configuring Docker daemon...${NC}"
 if [ -f /etc/docker/daemon.json ]; then
     cp /etc/docker/daemon.json /etc/docker/daemon.json.bak_$(date +%s)
 fi
@@ -296,10 +381,10 @@ fi
 ok "Docker daemon configured (IPv6 + log rotation)."
 
 # ===================================================================
-# [10/13] Install UFW-Docker security patch
+# [12/16] Install UFW-Docker security patch
 # ===================================================================
 
-echo -e "${YELLOW}[10/13] Installing UFW-Docker security patch...${NC}"
+echo -e "${YELLOW}[12/16] Installing UFW-Docker security patch...${NC}"
 if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
     if wget -q -O /usr/local/bin/ufw-docker \
          https://github.com/chaifeng/ufw-docker/raw/master/ufw-docker 2>/dev/null; then
@@ -315,10 +400,10 @@ else
 fi
 
 # ===================================================================
-# [11/13] Harden SSH: port 22 → 1022 only
+# [13/16] Harden SSH: port 22 → 1022 only
 # ===================================================================
 
-echo -e "${YELLOW}[11/13] Hardening SSH: port 22 → 1022 only...${NC}"
+echo -e "${YELLOW}[13/16] Hardening SSH: port 22 → 1022 only...${NC}"
 
 # Already on 1022 only? Skip.
 if ss -tlnp | grep -q ":1022 " && ! ss -tlnp | grep -q ":22 "; then
@@ -401,10 +486,62 @@ else
 fi
 
 # ===================================================================
-# [12/13] Deploy auto-update cron
+# [14/16] Deploy k2v5 crash monitor + journald persistence
 # ===================================================================
 
-echo -e "${YELLOW}[12/13] Deploying auto-update cron...${NC}"
+echo -e "${YELLOW}[14/16] Configuring journald persistence + crash monitor...${NC}"
+
+# Journald persistent storage with retention limits
+mkdir -p /etc/systemd/journald.conf.d
+cat > /etc/systemd/journald.conf.d/k2v5.conf <<'JEOF'
+[Journal]
+Storage=persistent
+SystemMaxUse=500M
+MaxRetentionSec=30day
+JEOF
+mkdir -p /var/log/journal
+systemd-tmpfiles --create --prefix /var/log/journal 2>/dev/null || true
+systemctl restart systemd-journald 2>/dev/null || true
+
+# Install crash monitor systemd service
+if [ -f /apps/kaitu-slave/k2v5-crash-monitor.sh ]; then
+    chmod +x /apps/kaitu-slave/k2v5-crash-monitor.sh
+    cat > /etc/systemd/system/k2v5-crash-monitor.service <<'SEOF'
+[Unit]
+Description=k2v5 crash monitor
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+ExecStart=/apps/kaitu-slave/k2v5-crash-monitor.sh
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=k2v5-crash-monitor
+
+[Install]
+WantedBy=multi-user.target
+SEOF
+    systemctl daemon-reload
+    systemctl enable k2v5-crash-monitor.service 2>/dev/null || true
+    systemctl restart k2v5-crash-monitor.service 2>/dev/null || true
+
+    if systemctl is-active --quiet k2v5-crash-monitor.service 2>/dev/null; then
+        ok "journald persistent + crash monitor active."
+    else
+        warn "Crash monitor installed but not active (Docker may not be running yet)."
+    fi
+else
+    warn "k2v5-crash-monitor.sh not found. Deploy it to /apps/kaitu-slave/ after provisioning."
+fi
+
+# ===================================================================
+# [15/16] Deploy auto-update cron
+# ===================================================================
+
+echo -e "${YELLOW}[15/16] Deploying auto-update cron...${NC}"
 
 which crontab >/dev/null 2>&1 || apt-get install -y cron >/dev/null 2>&1 || true
 
@@ -421,10 +558,10 @@ else
 fi
 
 # ===================================================================
-# [13/13] Verify
+# [16/16] Verify
 # ===================================================================
 
-echo -e "${YELLOW}[13/13] Verifying...${NC}"
+echo -e "${YELLOW}[16/16] Verifying...${NC}"
 echo -e "${BLUE}==================================================${NC}"
 echo -e "Timezone:    $(timedatectl 2>/dev/null | grep 'Time zone' | awk '{print $3, $4}' || date +%Z)"
 echo -e "Ubuntu:      ${UBUNTU_VERSION} (${UBUNTU_CODENAME})"
@@ -434,7 +571,12 @@ echo -e "iptables:    $(iptables --version 2>/dev/null || echo 'NOT INSTALLED')"
 echo -e "Docker IPv6: $(grep -q '"ipv6": true' /etc/docker/daemon.json 2>/dev/null && echo 'true' || echo 'false')"
 echo -e "TCP CC:      $(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo 'unknown')"
 echo -e "SSH port:    $(ss -tlnp | grep -q ':1022 ' && echo '1022 OK' || echo 'NOT ON 1022')"
+echo -e "Swap:        $(swapon --show=NAME,SIZE --noheadings 2>/dev/null || echo 'none')"
+echo -e "Swappiness:  $(sysctl -n vm.swappiness 2>/dev/null || echo 'unknown')"
+echo -e "Snapd:       $(command -v snap >/dev/null 2>&1 && echo 'INSTALLED (unexpected)' || echo 'removed')"
 echo -e "Cron:        $(crontab -l 2>/dev/null | grep -c auto-update || echo 0) auto-update entry"
+echo -e "Journald:    $(test -f /etc/systemd/journald.conf.d/k2v5.conf && echo 'persistent (500M/30d)' || echo 'not configured')"
+echo -e "CrashMon:    $(systemctl is-active k2v5-crash-monitor 2>/dev/null || echo 'not installed')"
 
 IPV6_ADDR=$(ip -6 addr show scope global 2>/dev/null | grep inet6 | awk '{print $2}' | head -n 1)
 if [ -n "$IPV6_ADDR" ]; then

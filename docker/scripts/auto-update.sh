@@ -93,6 +93,25 @@ fi
 
 echo "Image changes detected, restarting..."
 
+# --- Snapshot k2v5 logs before destroying containers ---
+echo "--- Snapshotting k2v5 logs before down ---"
+SNAPSHOT_DIR="/var/log/k2v5-crashes"
+mkdir -p "$SNAPSHOT_DIR"
+SNAPSHOT_TS=$(date -u '+%Y%m%d-%H%M%S')
+SNAPSHOT_FILE="${SNAPSHOT_DIR}/snapshot-${SNAPSHOT_TS}.log"
+{
+    echo "=== pre-update log snapshot ==="
+    echo "Node: ${NODE_NAME}"
+    echo "Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+    echo ""
+    echo "=== k2v5 container state ==="
+    docker inspect --format='ExitCode={{.State.ExitCode}} Status={{.State.Status}} StartedAt={{.State.StartedAt}} OOMKilled={{.State.OOMKilled}} RestartCount={{.RestartCount}}' k2v5 2>/dev/null || echo "(not running)"
+    echo ""
+    echo "=== k2v5 last 500 log lines ==="
+    docker logs --tail 500 --timestamps k2v5 2>&1 || echo "(no logs)"
+} > "$SNAPSHOT_FILE" 2>&1
+echo "Saved to $SNAPSHOT_FILE"
+
 # --- Down: remove containers + networks, keep volumes ---
 echo "--- Stopping containers (down) ---"
 docker compose down 2>&1

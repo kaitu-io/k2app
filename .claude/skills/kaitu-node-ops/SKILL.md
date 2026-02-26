@@ -401,3 +401,7 @@ Note: `provision-node.sh` step 2 handles this for new provisions. This fix is fo
 - `tunnels: []` on another node → domain conflict (guardrail #8 violated)
 - Container network timeout → iptables-nft issue (Step 9)
 - Sidecar restart loop → check `.env` for missing/invalid values (Step 9)
+
+## Step 11: Cloud Provider Notes
+
+- **AWS nodes are Lightsail, not EC2**.查实例/重启优先用 `aws lightsail` 命令（`get-instances`, `reboot-instance`），不要用 `aws ec2`。
