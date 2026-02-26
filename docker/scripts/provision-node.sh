@@ -1,19 +1,21 @@
 #!/bin/bash
 # Provision a fresh Ubuntu node for Kaitu VPN service
 #
-# Combines: Docker CE install + IPv6 kernel enablement + security hardening
+# Combines: Docker CE install + IPv6 kernel enablement + BBR + security hardening + auto-update cron
 # Target: Ubuntu 20.04 / 22.04 / 24.04
 #
-# What it does (9 steps):
+# What it does (11 steps):
 #   1. Clean old Docker versions
 #   2. Unify firewall backend to nftables
 #   3. Configure official Docker apt source
 #   4. Install Docker CE + plugins
 #   5. Create docker-compose compatibility wrapper
 #   6. Enable IPv6 kernel params (sysctl)
-#   7. Configure Docker daemon (IPv6 + log rotation)
-#   8. Install UFW-Docker security patch (if UFW present)
-#   9. Verify everything works
+#   7. Enable BBR congestion control (sysctl)
+#   8. Configure Docker daemon (IPv6 + log rotation)
+#   9. Install UFW-Docker security patch (if UFW present)
+#  10. Deploy auto-update cron (daily 04:00 Beijing = 20:00 UTC)
+#  11. Verify everything works
 #
 # Usage:
 #   sudo bash provision-node.sh
@@ -134,9 +136,33 @@ fi
 sleep 3
 echo -e "${GREEN}>>> IPv6 kernel params enabled.${NC}"
 
-# --- [7/9] Configure Docker daemon (IPv6 + log rotation) ---
+# --- [7/11] Enable BBR congestion control ---
 
-echo -e "${YELLOW}[7/9] Configuring Docker daemon...${NC}"
+echo -e "${YELLOW}[7/11] Enabling BBR congestion control...${NC}"
+
+# Check if BBR is already active
+if sysctl net.ipv4.tcp_congestion_control 2>/dev/null | grep -q bbr; then
+    echo -e "${GREEN}>>> BBR already active.${NC}"
+else
+    # Add BBR sysctl params (idempotent)
+    sed -i '/net.core.default_qdisc/d' /etc/sysctl.conf
+    sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.conf
+
+    echo "net.core.default_qdisc = fq" >> /etc/sysctl.conf
+    echo "net.ipv4.tcp_congestion_control = bbr" >> /etc/sysctl.conf
+
+    sysctl -p > /dev/null 2>&1
+
+    if sysctl net.ipv4.tcp_congestion_control 2>/dev/null | grep -q bbr; then
+        echo -e "${GREEN}>>> BBR enabled.${NC}"
+    else
+        echo -e "${YELLOW}>>> BBR not available (kernel may not support it).${NC}"
+    fi
+fi
+
+# --- [8/11] Configure Docker daemon (IPv6 + log rotation) ---
+
+echo -e "${YELLOW}[8/11] Configuring Docker daemon...${NC}"
 if [ -f /etc/docker/daemon.json ]; then
     cp /etc/docker/daemon.json /etc/docker/daemon.json.bak_$(date +%s)
 fi
@@ -157,9 +183,9 @@ EOF
 systemctl restart docker
 echo -e "${GREEN}>>> Docker daemon configured (IPv6 + log rotation).${NC}"
 
-# --- [8/9] Install UFW-Docker security patch ---
+# --- [9/11] Install UFW-Docker security patch ---
 
-echo -e "${YELLOW}[8/9] Installing UFW-Docker security patch...${NC}"
+echo -e "${YELLOW}[9/11] Installing UFW-Docker security patch...${NC}"
 if command -v ufw >/dev/null; then
     wget -O /usr/local/bin/ufw-docker https://github.com/chaifeng/ufw-docker/raw/master/ufw-docker >/dev/null 2>&1
     chmod +x /usr/local/bin/ufw-docker
@@ -170,14 +196,37 @@ else
     echo -e "${YELLOW}>>> UFW not found, skipping.${NC}"
 fi
 
-# --- [9/9] Verify ---
+# --- [10/11] Deploy auto-update cron ---
 
-echo -e "${YELLOW}[9/9] Verifying...${NC}"
+echo -e "${YELLOW}[10/11] Deploying auto-update cron...${NC}"
+
+# Install cron if missing
+which crontab >/dev/null 2>&1 || apt-get install -y cron >/dev/null 2>&1
+
+# The auto-update.sh script should be deployed separately via deploy-auto-update.sh
+# Here we just ensure cron entry exists if script is already present
+if [ -f /apps/kaitu-slave/auto-update.sh ]; then
+    CRON_EXISTS=$(crontab -l 2>/dev/null | grep -c 'auto-update.sh' || true)
+    if [ "$CRON_EXISTS" = "0" ]; then
+        (crontab -l 2>/dev/null; echo "0 20 * * * /apps/kaitu-slave/auto-update.sh") | crontab -
+        echo -e "${GREEN}>>> Cron entry added (20:00 UTC = 04:00 Beijing).${NC}"
+    else
+        echo -e "${GREEN}>>> Cron entry already exists.${NC}"
+    fi
+else
+    echo -e "${YELLOW}>>> auto-update.sh not found yet. Deploy it with deploy-auto-update.sh after provisioning.${NC}"
+fi
+
+# --- [11/11] Verify ---
+
+echo -e "${YELLOW}[11/11] Verifying...${NC}"
 echo -e "${BLUE}==================================================${NC}"
 echo -e "Docker:   $(docker --version)"
 echo -e "Compose:  $(docker-compose version)"
 echo -e "iptables: $(iptables --version)"
 echo -e "Docker IPv6: $(docker info --format '{{.IPv6}}')"
+echo -e "TCP CC:     $(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo 'unknown')"
+echo -e "Cron:       $(crontab -l 2>/dev/null | grep -c auto-update) auto-update entry"
 
 IPV6_ADDR=$(ip -6 addr show scope global | grep inet6 | awk '{print $2}' | head -n 1)
 if [ -n "$IPV6_ADDR" ]; then

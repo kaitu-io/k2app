@@ -32,6 +32,7 @@ function transformStatus(raw: any): StatusResponseData {
   const running = state === 'connecting' || state === 'connected';
 
   let error: ControlError | undefined;
+  let retrying = false;
   if (raw.error) {
     if (typeof raw.error === 'object' && raw.error !== null && 'code' in raw.error) {
       error = { code: raw.error.code, message: raw.error.message || '' };
@@ -39,7 +40,11 @@ function transformStatus(raw: any): StatusResponseData {
       // Backward compat: old daemon sends string
       error = { code: 570, message: String(raw.error) };
     }
-    if (state === 'disconnected') {
+    if (state === 'disconnected' || state === 'connected') {
+      // connected + error: TUN up but wire broken — engine retries on next traffic
+      // disconnected + error: engine gave up
+      const isClientError = [400, 401, 402, 403].includes(error.code);
+      retrying = state === 'connected' && !isClientError;
       state = 'error';
     }
   }
@@ -55,7 +60,7 @@ function transformStatus(raw: any): StatusResponseData {
     networkAvailable: true,
     startAt,
     error,
-    retrying: false,
+    retrying,
   };
 }
 

@@ -120,8 +120,39 @@ Use `exec_on_node(ip, command)` for all operations. Replace `{sidecar}` and `{tu
 | Network connections | `ss -s` |
 | IPv6 status | `ip -6 addr show scope global` |
 | Check hop port rules | `iptables -t nat -L PREROUTING -n \| grep -E "10020\|REDIRECT"` |
+| BBR status | `sysctl net.ipv4.tcp_congestion_control` |
+| Auto-update log | `tail -50 /apps/kaitu-slave/auto-update.log` |
+| Cron entries | `crontab -l` |
 
-## Step 5: Safety Guardrails
+## Step 5: Post-Provisioning Checklist
+
+After provisioning a new node (or reinstalling OS), ensure these are all done:
+
+1. **SSH port**: Changed from 22 to 1022. On Ubuntu 24.04, also sed `/etc/ssh/sshd_config.d/*.conf` drop-in files.
+2. **provision-node.sh**: Docker CE + IPv6 + BBR + nftables + daemon.json + UFW-Docker + cron.
+3. **docker-compose.yml**: Deploy via `deploy-compose.sh --node=IP` or SCP manually.
+4. **.env**: Restore from backup or generate new via Center API.
+5. **auto-update.sh + cron**: Deploy via `deploy-auto-update.sh --node=IP`.
+6. **Containers up**: `docker compose up -d` and verify sidecar healthy.
+7. **BBR active**: `sysctl net.ipv4.tcp_congestion_control` should show `bbr`. Included in provision-node.sh step 7.
+8. **Disable unattended-upgrades**: `sudo apt-get remove -y unattended-upgrades` (prevents surprise reboots).
+
+### BBR Congestion Control
+
+All nodes MUST have BBR enabled. BBR significantly improves TCP throughput, especially for high-latency cross-border connections.
+
+```bash
+# Check BBR status
+sysctl net.ipv4.tcp_congestion_control
+# Expected: net.ipv4.tcp_congestion_control = bbr
+
+# Enable BBR (if not already done by provision-node.sh)
+sudo bash -c 'sed -i "/net.core.default_qdisc/d" /etc/sysctl.conf; sed -i "/net.ipv4.tcp_congestion_control/d" /etc/sysctl.conf; echo "net.core.default_qdisc = fq" >> /etc/sysctl.conf; echo "net.ipv4.tcp_congestion_control = bbr" >> /etc/sysctl.conf; sysctl -p'
+```
+
+Requires Linux kernel 4.9+ (all Ubuntu 20.04+ have it).
+
+## Step 6: Safety Guardrails
 
 These are best-practice guardrails to prevent accidental damage during operations. You have full SSH root access — these rules guide safe usage:
 
@@ -139,7 +170,7 @@ These are best-practice guardrails to prevent accidental damage during operation
 
 7. **Update = pull + up, never down** — To update containers: `docker compose pull && docker compose up -d`. Never use `docker compose down` — it removes containers and causes service interruption. The `up -d` command recreates only changed containers.
 
-## Step 6: Batch Operations
+## Step 7: Batch Operations
 
 All batch scripts live in this skill directory (`.claude/skills/kaitu-node-ops/`).
 
@@ -182,6 +213,35 @@ Pull latest images and restart containers on all active nodes with a rolling int
 
 Per-node steps: `docker compose pull` → `docker compose up -d` → wait 10s → verify sidecar healthy → sleep before next node.
 
+### Deploy Auto-Update Cron to All Nodes
+
+Deploy `docker/scripts/auto-update.sh` and configure daily cron (20:00 UTC = 04:00 Beijing).
+
+```bash
+# Active nodes only — recommended
+.claude/skills/kaitu-node-ops/deploy-auto-update.sh
+
+# All nodes including inactive
+.claude/skills/kaitu-node-ops/deploy-auto-update.sh --all
+
+# Single node
+.claude/skills/kaitu-node-ops/deploy-auto-update.sh --node=8.218.55.0
+
+# Preview
+.claude/skills/kaitu-node-ops/deploy-auto-update.sh --dry-run
+```
+
+Per-node steps: SCP `auto-update.sh` → `chmod +x` → ensure cron installed → add cron entry (idempotent).
+
+**Auto-update script behavior** (`docker/scripts/auto-update.sh`):
+1. Random 0-10 min stagger delay (skip with `K2_NO_STAGGER=1`)
+2. `docker compose pull` with retry (5 attempts, exponential backoff for ECR rate limits)
+3. Compare running container image IDs vs pulled `:latest` — skip if identical
+4. `docker compose down` (remove containers + networks, keep volumes) + `docker compose up -d`
+5. Wait 30s, verify sidecar healthy
+6. Slack notification on update/error (silent when no changes)
+7. Log to `/apps/kaitu-slave/auto-update.log` (auto-rotate at 1MB)
+
 ### Node Activity Heuristic
 
 The Center API has no explicit `status` field. Use these signals to identify active vs inactive nodes:
@@ -194,7 +254,7 @@ The Center API has no explicit `status` field. Use these signals to identify act
 
 Nodes with `tunnelCount == 0` and IP-as-name are typically decommissioned AWS instances. The batch scripts skip them by default.
 
-## Step 7: Script Execution
+## Step 8: Script Execution
 
 Two modes for running scripts on individual nodes:
 
@@ -222,7 +282,8 @@ Scripts in `docker/scripts/` (run ON nodes via SSH stdin pipe):
 
 | Script | Purpose | Warning |
 |--------|---------|---------|
-| `provision-node.sh` | Full node provisioning: Docker CE install + IPv6 kernel + nftables + daemon.json + UFW-Docker | **Destructive**. Stops all containers. For fresh/rebuild nodes only. Requires sudo + explicit user confirmation. |
+| `provision-node.sh` | Full node provisioning: Docker CE + IPv6 + BBR + nftables + daemon.json + UFW-Docker + auto-update cron | **Destructive**. Stops all containers. For fresh/rebuild nodes only. Requires sudo + explicit user confirmation. |
+| `auto-update.sh` | Daily auto-update: pull images, compare, down+up if changed, Slack notify | Safe. Deployed via `deploy-auto-update.sh`. Runs from cron at 20:00 UTC. |
 | `totally-reinstall-docker.sh` | Docker CE reinstall only (no IPv6 kernel params) | **Destructive**. Superseded by `provision-node.sh`. |
 | `enable-ipv6.sh` | Enable IPv6 kernel params only | Superseded by `provision-node.sh` step 6. |
 | `simple-docker-pull-restart.sh` | Pull latest images and restart | Safe for routine updates. Equivalent to the standard update command. |
@@ -233,3 +294,4 @@ Scripts in `.claude/skills/kaitu-node-ops/` (run LOCALLY, orchestrate across nod
 |--------|---------|---------|
 | `deploy-compose.sh` | Deploy `docker/docker-compose.yml` to all active nodes via SCP | Safe — MD5 skip, no restart. Use `--all` for inactive nodes. |
 | `update-compose.sh` | Pull latest images + restart all active nodes with rolling interval | Safe — uses `pull + up -d` (no `down`). Supports `--sleep`, `--node`, `--dry-run`. |
+| `deploy-auto-update.sh` | Deploy `auto-update.sh` + cron to all active nodes | Safe — MD5 skip, idempotent cron. Supports `--node`, `--all`, `--dry-run`. |

@@ -302,8 +302,21 @@ class EventBridge: NSObject, AppextEventHandlerProtocol {
                 NSLog("[K2:NE] Normal disconnect")
                 provider?.cancelTunnelWithError(nil)
             }
+        } else if state == "connected", let errorObj = parsed["error"] as? [String: Any] {
+            // Wire error while TUN is up — write to App Group for K2Plugin polling to pick up.
+            // Do NOT call cancelTunnelWithError — tunnel is still running.
+            let code = errorObj["code"] as? Int ?? 0
+            let message = errorObj["message"] as? String ?? "unknown error"
+            NSLog("[K2:NE] Connected with wire error: code=%d message=%@", code, message)
+            if let errorJSON = try? JSONSerialization.data(withJSONObject: errorObj),
+               let errorStr = String(data: errorJSON, encoding: .utf8) {
+                UserDefaults(suiteName: kAppGroup)?.set(errorStr, forKey: "vpnError")
+            }
+        } else if state == "connected" {
+            // Wire recovered — clear any stale error from App Group
+            UserDefaults(suiteName: kAppGroup)?.removeObject(forKey: "vpnError")
         }
-        // Other states (connecting, connected, reconnecting, paused) are transient — log only
+        // Other states (connecting, reconnecting, paused) are transient — log only
     }
 
     func onStats(_ txBytes: Int64, rxBytes: Int64) {

@@ -13,6 +13,8 @@ scripts/ci/setup-secrets.sh
 # (Android/iOS have their own .gitignore for platform-specific ignores)
 mobile/android/k2-mobile/libs/
 mobile/android/local.properties
+mobile/ios/App/build-device/
+mobile/ios/App/build-output/
 k2/build/
 *.xcframework
 *.aar
