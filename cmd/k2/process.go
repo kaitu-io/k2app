@@ -51,25 +51,11 @@ func runDaemon(configPath string) {
 		os.Exit(1)
 	}
 
-	// 3. Determine PID file path and check for stale/running instance.
+	// 3. Write PID file (nginx-style: unconditional overwrite, no stale/alive checks).
+	// Duplicate instance prevention relies on port binding failure, not PID files.
+	// PID file exists solely for "k2 -s stop|reload" signal dispatch.
 	pidPath := daemonPIDPath(cfg)
 	if pidPath != "" {
-		stalePID, err := config.CheckStale(pidPath)
-		if err != nil {
-			slog.Error("PID file error", "err", err)
-			os.Exit(1)
-		}
-		if stalePID > 0 {
-			slog.Info("Removed stale PID file", "pid", stalePID)
-		}
-		// Check if daemon is already running.
-		existingPID, err := config.ReadPID(pidPath)
-		if err == nil && existingPID > 0 && config.IsProcessAlive(existingPID) {
-			slog.Error("k2 is already running", "pid", existingPID)
-			os.Exit(1)
-		}
-
-		// Write our PID.
 		if err := config.WritePID(pidPath); err != nil {
 			slog.Error("Failed to write PID", "err", err)
 			os.Exit(1)
