@@ -1,6 +1,8 @@
 VERSION := $(shell node -p "require('./package.json').version")
 K2_VARS  = VERSION=$(VERSION)
 K2_BIN   = desktop/src-tauri/binaries
+FEATURES ?=
+TAURI_FEATURES_ARG := $(if $(FEATURES),--features $(FEATURES),)
 
 pre-build:
 	mkdir -p webapp/public
@@ -15,6 +17,7 @@ build-k2-macos:
 	cp k2/build/k2-darwin-universal $(K2_BIN)/k2-universal-apple-darwin
 
 build-k2-windows:
+	cd k2/daemon/wintun && go run gen.go
 	cd k2 && make build-windows-amd64 $(K2_VARS)
 	cp k2/build/k2-windows-amd64.exe $(K2_BIN)/k2-x86_64-pc-windows-msvc.exe
 
@@ -39,7 +42,9 @@ build-macos-sysext-test:
 	bash scripts/build-macos.sh --ne-mode --single-arch --skip-notarization
 
 build-windows: pre-build build-webapp build-k2-windows
-	cd desktop && yarn tauri build --target x86_64-pc-windows-msvc
+	@if [ "$$(uname -s 2>/dev/null)" = "Darwin" ] || [ "$$(uname -s 2>/dev/null)" = "Linux" ]; then \
+		echo "ERROR: build-windows requires a Windows host (ring crate needs MSVC). Use 'make build-windows-test' to delegate to Windows VM."; exit 1; fi
+	cd desktop && yarn tauri build --target x86_64-pc-windows-msvc $(TAURI_FEATURES_ARG)
 
 build-windows-test:
 	bash scripts/build-windows-test.sh

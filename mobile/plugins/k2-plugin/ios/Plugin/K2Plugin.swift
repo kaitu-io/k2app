@@ -74,12 +74,21 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             let state = self?.mapVPNStatus(connection.status) ?? "disconnected"
             self?.notifyListeners("vpnStateChange", data: ["state": state])
 
-            // On disconnect, check App Group for error from NE process
+            // On disconnect, check App Group for error from NE process.
+            // Error is stored as JSON {"code": 503, "message": "..."} or legacy plain string.
             if connection.status == .disconnected {
                 let defaults = UserDefaults(suiteName: kAppGroup)
-                if let errorMsg = defaults?.string(forKey: "vpnError"), !errorMsg.isEmpty {
+                if let errorStr = defaults?.string(forKey: "vpnError"), !errorStr.isEmpty {
                     defaults?.removeObject(forKey: "vpnError")
-                    self?.notifyListeners("vpnError", data: ["message": errorMsg])
+                    // Try parsing as JSON error object first, fall back to plain message
+                    if let errorData = errorStr.data(using: .utf8),
+                       let errorObj = try? JSONSerialization.jsonObject(with: errorData) as? [String: Any],
+                       let code = errorObj["code"] as? Int,
+                       let message = errorObj["message"] as? String {
+                        self?.notifyListeners("vpnError", data: ["code": code, "message": message])
+                    } else {
+                        self?.notifyListeners("vpnError", data: ["message": errorStr])
+                    }
                 }
             }
         }

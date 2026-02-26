@@ -1,6 +1,5 @@
-import Network
 import NetworkExtension
-import K2Mobile  // gomobile xcframework
+import K2Mobile  // gomobile xcframework (appext/ package)
 
 private let kAppGroup = "group.io.kaitu"
 
@@ -35,6 +34,73 @@ private func parseIPv6CIDR(_ cidr: String) -> (String, Int)? {
     return (String(parts[0]), prefix)
 }
 
+// MARK: - TUN fd scan (WireGuard approach)
+// iOS SDK doesn't expose sys/kern_control.h — define structs manually.
+// Layout from XNU: bsd/sys/kern_control.h
+
+private let MAX_KCTL_NAME = 96
+
+private struct ctl_info_manual {
+    var ctl_id: UInt32 = 0
+    var ctl_name: (CChar, CChar, CChar, CChar, CChar, CChar, CChar, CChar,
+                   CChar, CChar, CChar, CChar, CChar, CChar, CChar, CChar,
+                   CChar, CChar, CChar, CChar, CChar, CChar, CChar, CChar,
+                   CChar, CChar, CChar, CChar, CChar, CChar, CChar, CChar,
+                   CChar, CChar, CChar, CChar, CChar, CChar, CChar, CChar,
+                   CChar, CChar, CChar, CChar, CChar, CChar, CChar, CChar,
+                   CChar, CChar, CChar, CChar, CChar, CChar, CChar, CChar,
+                   CChar, CChar, CChar, CChar, CChar, CChar, CChar, CChar,
+                   CChar, CChar, CChar, CChar, CChar, CChar, CChar, CChar,
+                   CChar, CChar, CChar, CChar, CChar, CChar, CChar, CChar,
+                   CChar, CChar, CChar, CChar, CChar, CChar, CChar, CChar,
+                   CChar, CChar, CChar, CChar, CChar, CChar, CChar, CChar) =
+        (0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+         0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0)
+}
+
+private struct sockaddr_ctl_manual {
+    var sc_len: UInt8 = 0
+    var sc_family: UInt8 = 0
+    var ss_sysaddr: UInt16 = 0
+    var sc_id: UInt32 = 0
+    var sc_unit: UInt32 = 0
+    var sc_reserved: (UInt32, UInt32, UInt32, UInt32, UInt32) = (0, 0, 0, 0, 0)
+}
+
+/// CTLIOCGINFO = _IOWR('N', 3, struct ctl_info)
+/// IOC_INOUT(0xC0000000) | sizeof(ctl_info=100)<<16 | 'N'(0x4E)<<8 | 3
+private let CTLIOCGINFO_VALUE: UInt = 0xC0644E03
+private let AF_SYS_CONTROL: UInt16 = 2
+
+/// Find the utun file descriptor by scanning open fds (WireGuard approach).
+/// iOS SDK lacks kern_control.h so we define structs manually.
+private func findTunnelFileDescriptor() -> Int32? {
+    var ctlInfo = ctl_info_manual()
+    withUnsafeMutablePointer(to: &ctlInfo.ctl_name) {
+        $0.withMemoryRebound(to: CChar.self, capacity: MAX_KCTL_NAME) {
+            _ = strcpy($0, "com.apple.net.utun_control")
+        }
+    }
+    for fd: Int32 in 0...1024 {
+        var addr = sockaddr_ctl_manual()
+        var ret: Int32 = -1
+        var len = socklen_t(MemoryLayout<sockaddr_ctl_manual>.size)
+        withUnsafeMutablePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                ret = getpeername(fd, $0, &len)
+            }
+        }
+        if ret != 0 || addr.sc_family != UInt8(AF_SYSTEM) { continue }
+        if ctlInfo.ctl_id == 0 {
+            ret = ioctl(fd, CTLIOCGINFO_VALUE, &ctlInfo)
+            if ret != 0 { continue }
+        }
+        if addr.sc_id == ctlInfo.ctl_id { return fd }
+    }
+    return nil
+}
+
 /// Strip port from "8.8.8.8:53" → "8.8.8.8". Handles IPv6 "[::1]:53" → "::1".
 private func stripPort(_ addr: String) -> String {
     if addr.hasPrefix("["), let closeBracket = addr.firstIndex(of: "]") {
@@ -46,28 +112,33 @@ private func stripPort(_ addr: String) -> String {
 }
 
 class PacketTunnelProvider: NEPacketTunnelProvider {
-    private var engine: MobileEngine?
-    private var pathMonitor: NWPathMonitor?
-    private var pendingNetworkChange: DispatchWorkItem?
+    private var engine: AppextEngine?
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
+        NSLog("[K2:NE] startTunnel called, options keys: %@", options?.keys.joined(separator: ",") ?? "nil")
+
         let configJSON: String
         if let config = options?["configJSON"] as? String {
+            NSLog("[K2:NE] Got configJSON from options (%d bytes)", config.count)
             configJSON = config
         } else if let config = (protocolConfiguration as? NETunnelProviderProtocol)?.providerConfiguration?["configJSON"] as? String {
+            NSLog("[K2:NE] Got configJSON from providerConfiguration (%d bytes)", config.count)
             configJSON = config
         } else {
+            NSLog("[K2:NE] ERROR: Missing configJSON")
             completionHandler(NSError(domain: "io.kaitu", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing configJSON"]))
             return
         }
 
         // Clean old engine before creating new one
         if engine != nil {
+            NSLog("[K2:NE] Stopping old engine")
             try? engine?.stop()
             engine = nil
         }
 
-        engine = MobileNewEngine()
+        NSLog("[K2:NE] Creating AppextEngine")
+        engine = AppextNewEngine()
 
         let handler = EventBridge(provider: self)
         engine?.setEventHandler(handler)
@@ -75,39 +146,56 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         // Configure network settings first, then get TUN fd in completion
         let clientConfig = parseClientConfig(from: configJSON)
         let settings = buildNetworkSettings(from: clientConfig)
+        NSLog("[K2:NE] Setting tunnel network settings")
 
         setTunnelNetworkSettings(settings) { [weak self] error in
             if let error = error {
+                NSLog("[K2:NE] setTunnelNetworkSettings FAILED: %@", error.localizedDescription)
                 completionHandler(error)
                 return
             }
+            NSLog("[K2:NE] Network settings applied OK")
 
-            // Get TUN fd AFTER network settings are applied
-            guard let fd = self?.packetFlow.value(forKey: "socket") as? Int32, fd >= 0 else {
-                let err = NSError(domain: "io.kaitu", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to get TUN fd"])
+            // Get TUN fd AFTER network settings are applied.
+            // Primary: KVC keypath (sing-box ExtensionPlatformInterface.swift:191)
+            // Fallback: fd scan for utun control socket (WireGuard/sing-box approach)
+            let fd: Int32
+            if let kvcFd = self?.packetFlow.value(forKeyPath: "socket.fileDescriptor") as? Int32, kvcFd >= 0 {
+                fd = kvcFd
+                NSLog("[K2:NE] Got TUN fd=%d (KVC)", fd)
+            } else if let scanFd = findTunnelFileDescriptor() {
+                fd = scanFd
+                NSLog("[K2:NE] Got TUN fd=%d (fd scan)", fd)
+            } else {
+                NSLog("[K2:NE] ERROR: Failed to get TUN fd (both KVC and fd scan failed)")
+                let err = NSError(domain: "io.kaitu", code: 2,
+                                  userInfo: [NSLocalizedDescriptionKey: "Failed to get TUN fd"])
                 completionHandler(err)
                 return
             }
 
             do {
                 // Build EngineConfig with platform paths
-                guard let engineCfg = MobileNewEngineConfig() else {
+                guard let engineCfg = AppextNewEngineConfig() else {
+                    NSLog("[K2:NE] ERROR: Failed to create EngineConfig")
                     let err = NSError(domain: "io.kaitu", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to create EngineConfig"])
                     completionHandler(err)
                     return
                 }
                 let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: kAppGroup)
                 engineCfg.cacheDir = containerURL?.appendingPathComponent("k2").path ?? ""
-                // socketProtector left nil — iOS PacketTunnelProvider self-excludes at kernel level
+                NSLog("[K2:NE] EngineConfig cacheDir=%@", engineCfg.cacheDir)
 
                 if !engineCfg.cacheDir.isEmpty {
                     try? FileManager.default.createDirectory(atPath: engineCfg.cacheDir, withIntermediateDirectories: true)
                 }
 
+                NSLog("[K2:NE] Calling engine.start()")
                 try self?.engine?.start(configJSON, fd: Int(fd), cfg: engineCfg)
-                self?.startMonitoringNetwork()
+                NSLog("[K2:NE] engine.start() returned OK")
                 completionHandler(nil)
             } catch {
+                NSLog("[K2:NE] engine.start() FAILED: %@", error.localizedDescription)
                 completionHandler(error)
             }
         }
@@ -145,38 +233,10 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 
     override func stopTunnel(with reason: NEProviderStopReason, completionHandler: @escaping () -> Void) {
-        stopMonitoringNetwork()
+        NSLog("[K2:NE] stopTunnel called, reason=%ld", reason.rawValue)
         try? engine?.stop()
         engine = nil
         completionHandler()
-    }
-
-    // MARK: - Network Monitoring
-
-    private func startMonitoringNetwork() {
-        let monitor = NWPathMonitor()
-        monitor.pathUpdateHandler = { [weak self] path in
-            guard path.status == .satisfied else { return }
-            NSLog("[PacketTunnel] Network path satisfied, scheduling engine reset")
-            // Debounce: cancel pending, schedule new after 500ms
-            self?.pendingNetworkChange?.cancel()
-            let workItem = DispatchWorkItem { [weak self] in
-                NSLog("[PacketTunnel] Triggering engine onNetworkChanged")
-                self?.engine?.onNetworkChanged()
-            }
-            self?.pendingNetworkChange = workItem
-            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.5, execute: workItem)
-        }
-        monitor.start(queue: DispatchQueue.global(qos: .utility))
-        pathMonitor = monitor
-        NSLog("[PacketTunnel] Network path monitor started")
-    }
-
-    private func stopMonitoringNetwork() {
-        pendingNetworkChange?.cancel()
-        pendingNetworkChange = nil
-        pathMonitor?.cancel()
-        pathMonitor = nil
     }
 
     override func handleAppMessage(_ messageData: Data, completionHandler: ((Data?) -> Void)?) {
@@ -187,7 +247,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 
         switch command {
         case "status":
-            let json = engine?.statusJSON() ?? "{\"state\":\"stopped\"}"
+            let json = engine?.statusJSON() ?? "{\"state\":\"disconnected\"}"
             completionHandler?(json.data(using: .utf8))
         case "error":
             let defaults = UserDefaults(suiteName: kAppGroup)
@@ -202,42 +262,48 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 
 // MARK: - EventBridge
 
-class EventBridge: NSObject, MobileEventHandlerProtocol {
+class EventBridge: NSObject, AppextEventHandlerProtocol {
     weak var provider: PacketTunnelProvider?
-    private var hasReportedError = false
 
     init(provider: PacketTunnelProvider) {
         self.provider = provider
     }
 
-    func onStateChange(_ state: String?) {
-        guard let state = state else { return }
-        if state == "connecting" {
-            // New connection cycle — reset error flag
-            hasReportedError = false
-        } else if state == "disconnected" {
-            if hasReportedError {
-                // Error already reported and cancelTunnelWithError already called — skip
-                // to avoid nil-cancel overwriting the error in App Group
-                return
-            }
-            // Normal disconnect — notify system
-            provider?.cancelTunnelWithError(nil)
-        } else {
-            // Log transient states (reconnecting, connected from OnNetworkChanged)
-            // for debug observability. Not propagated to App process.
-            NSLog("[K2:NE] transient state: %@", state)
+    func onStatus(_ statusJSON: String?) {
+        guard let json = statusJSON,
+              let data = json.data(using: .utf8),
+              let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let state = parsed["state"] as? String else {
+            NSLog("[K2:NE] onStatus: invalid or nil JSON")
+            return
         }
-    }
 
-    func onError(_ message: String?) {
-        guard let message = message else { return }
-        hasReportedError = true
-        // Write error to App Group so main app can read it
-        UserDefaults(suiteName: kAppGroup)?.set(message, forKey: "vpnError")
-        // Notify system that tunnel has failed
-        let error = NSError(domain: "io.kaitu", code: 100, userInfo: [NSLocalizedDescriptionKey: message])
-        provider?.cancelTunnelWithError(error)
+        NSLog("[K2:NE] onStatus: state=%@", state)
+
+        if state == "disconnected" {
+            if let errorObj = parsed["error"] as? [String: Any] {
+                let code = errorObj["code"] as? Int ?? 0
+                let message = errorObj["message"] as? String ?? "unknown error"
+                NSLog("[K2:NE] Disconnected with error: code=%d message=%@", code, message)
+
+                // Write structured error JSON to App Group so K2Plugin preserves the error code.
+                // Format: {"code": 503, "message": "server unreachable"}
+                if let errorJSON = try? JSONSerialization.data(withJSONObject: errorObj),
+                   let errorStr = String(data: errorJSON, encoding: .utf8) {
+                    UserDefaults(suiteName: kAppGroup)?.set(errorStr, forKey: "vpnError")
+                } else {
+                    UserDefaults(suiteName: kAppGroup)?.set(message, forKey: "vpnError")
+                }
+
+                let nsError = NSError(domain: "io.kaitu", code: code,
+                                      userInfo: [NSLocalizedDescriptionKey: message])
+                provider?.cancelTunnelWithError(nsError)
+            } else {
+                NSLog("[K2:NE] Normal disconnect")
+                provider?.cancelTunnelWithError(nil)
+            }
+        }
+        // Other states (connecting, connected, reconnecting, paused) are transient — log only
     }
 
     func onStats(_ txBytes: Int64, rxBytes: Int64) {
