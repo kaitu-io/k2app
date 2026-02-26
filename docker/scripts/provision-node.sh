@@ -5,18 +5,19 @@
 # Target: Ubuntu 20.04 / 22.04 / 24.04
 #
 # What it does (12 steps):
-#   1. Clean old Docker versions
-#   2. Ensure iptables is installed
-#   3. Configure official Docker apt source
-#   4. Install Docker CE + plugins + docker group + disable unattended-upgrades
-#   5. Create docker-compose compatibility wrapper
-#   6. Enable IPv6 kernel params (sysctl)
-#   7. Enable BBR congestion control (sysctl)
-#   8. Configure Docker daemon (IPv6 + log rotation)
-#   9. Install UFW-Docker security patch (if UFW active)
-#  10. Harden SSH: switch to port 1022 only (with rollback on failure)
-#  11. Deploy auto-update cron (daily 04:00 Beijing = 20:00 UTC)
-#  12. Verify everything works
+#   1. Set timezone to Asia/Singapore (UTC+8)
+#   2. Clean old Docker versions
+#   3. Ensure iptables is installed
+#   4. Configure official Docker apt source
+#   5. Install Docker CE + plugins + docker group + disable unattended-upgrades
+#   6. Create docker-compose compatibility wrapper
+#   7. Enable IPv6 kernel params (sysctl)
+#   8. Enable BBR congestion control (sysctl)
+#   9. Configure Docker daemon (IPv6 + log rotation)
+#  10. Install UFW-Docker security patch (if UFW active)
+#  11. Harden SSH: switch to port 1022 only (with rollback on failure)
+#  12. Deploy auto-update cron (daily 04:00 Beijing time)
+#  13. Verify everything works
 #
 # Safety:
 #   - NO set -e: each step handles its own errors
@@ -112,10 +113,24 @@ if [ "$ALREADY_DONE" = true ]; then
 fi
 
 # ===================================================================
-# [1/12] Clean old Docker versions
+# [1/13] Set timezone to Asia/Singapore (UTC+8)
 # ===================================================================
 
-echo -e "${YELLOW}[1/12] Cleaning old Docker versions...${NC}"
+echo -e "${YELLOW}[1/13] Setting timezone to Asia/Singapore (UTC+8)...${NC}"
+if timedatectl set-timezone Asia/Singapore 2>/dev/null; then
+    ok "Timezone set to Asia/Singapore ($(date +%Z %z))."
+else
+    # Fallback for minimal systems without timedatectl
+    ln -sf /usr/share/zoneinfo/Asia/Singapore /etc/localtime
+    echo "Asia/Singapore" > /etc/timezone
+    ok "Timezone set to Asia/Singapore (fallback method)."
+fi
+
+# ===================================================================
+# [2/13] Clean old Docker versions
+# ===================================================================
+
+echo -e "${YELLOW}[2/13] Cleaning old Docker versions...${NC}"
 systemctl stop docker >/dev/null 2>&1 || true
 systemctl stop docker.socket >/dev/null 2>&1 || true
 
@@ -128,10 +143,10 @@ rm -f /usr/local/bin/docker-compose /usr/bin/docker-compose
 ok "Old versions cleaned."
 
 # ===================================================================
-# [2/12] Ensure iptables is installed
+# [3/13] Ensure iptables is installed
 # ===================================================================
 
-echo -e "${YELLOW}[2/12] Ensuring iptables is installed...${NC}"
+echo -e "${YELLOW}[3/13] Ensuring iptables is installed...${NC}"
 apt_wait || die "Cannot acquire apt lock"
 apt-get update -qq 2>&1 || warn "apt-get update had warnings"
 apt-get install -y iptables >/dev/null 2>&1 || warn "iptables install issue (may already be present)"
@@ -139,10 +154,10 @@ apt-get install -y iptables >/dev/null 2>&1 || warn "iptables install issue (may
 ok "iptables ready (using OS default backend)."
 
 # ===================================================================
-# [3/12] Configure official Docker apt source
+# [4/13] Configure official Docker apt source
 # ===================================================================
 
-echo -e "${YELLOW}[3/12] Configuring official Docker apt source...${NC}"
+echo -e "${YELLOW}[4/13] Configuring official Docker apt source...${NC}"
 apt-get install -y ca-certificates curl gnupg >/dev/null 2>&1
 
 install -m 0755 -d /etc/apt/keyrings
@@ -161,10 +176,10 @@ apt-get update -qq 2>&1 || warn "apt-get update had warnings"
 ok "Apt source configured."
 
 # ===================================================================
-# [4/12] Install Docker CE + plugins
+# [5/13] Install Docker CE + plugins
 # ===================================================================
 
-echo -e "${YELLOW}[4/12] Installing Docker CE + plugins...${NC}"
+echo -e "${YELLOW}[5/13] Installing Docker CE + plugins...${NC}"
 apt_wait || die "Cannot acquire apt lock"
 if ! apt-get install -y docker-ce docker-ce-cli containerd.io \
      docker-buildx-plugin docker-compose-plugin 2>&1; then
@@ -185,10 +200,10 @@ if dpkg -l unattended-upgrades &>/dev/null 2>&1; then
 fi
 
 # ===================================================================
-# [5/12] Create docker-compose compatibility wrapper
+# [6/13] Create docker-compose compatibility wrapper
 # ===================================================================
 
-echo -e "${YELLOW}[5/12] Creating docker-compose compatibility wrapper...${NC}"
+echo -e "${YELLOW}[6/13] Creating docker-compose compatibility wrapper...${NC}"
 cat > /usr/local/bin/docker-compose << 'EOF'
 #!/bin/bash
 exec docker compose "$@"
@@ -199,10 +214,10 @@ ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
 ok "docker-compose wrapper created."
 
 # ===================================================================
-# [6/12] Enable IPv6 kernel params
+# [7/13] Enable IPv6 kernel params
 # ===================================================================
 
-echo -e "${YELLOW}[6/12] Enabling IPv6 kernel params...${NC}"
+echo -e "${YELLOW}[7/13] Enabling IPv6 kernel params...${NC}"
 cp /etc/sysctl.conf /etc/sysctl.conf.bak_provision 2>/dev/null || true
 
 # Remove existing entries then append (idempotent)
@@ -226,10 +241,10 @@ fi
 ok "IPv6 kernel params enabled."
 
 # ===================================================================
-# [7/12] Enable BBR congestion control
+# [8/13] Enable BBR congestion control
 # ===================================================================
 
-echo -e "${YELLOW}[7/12] Enabling BBR congestion control...${NC}"
+echo -e "${YELLOW}[8/13] Enabling BBR congestion control...${NC}"
 
 if sysctl net.ipv4.tcp_congestion_control 2>/dev/null | grep -q bbr; then
     ok "BBR already active."
@@ -250,10 +265,10 @@ else
 fi
 
 # ===================================================================
-# [8/12] Configure Docker daemon (IPv6 + log rotation)
+# [9/13] Configure Docker daemon (IPv6 + log rotation)
 # ===================================================================
 
-echo -e "${YELLOW}[8/12] Configuring Docker daemon...${NC}"
+echo -e "${YELLOW}[9/13] Configuring Docker daemon...${NC}"
 if [ -f /etc/docker/daemon.json ]; then
     cp /etc/docker/daemon.json /etc/docker/daemon.json.bak_$(date +%s)
 fi
@@ -281,10 +296,10 @@ fi
 ok "Docker daemon configured (IPv6 + log rotation)."
 
 # ===================================================================
-# [9/12] Install UFW-Docker security patch
+# [10/13] Install UFW-Docker security patch
 # ===================================================================
 
-echo -e "${YELLOW}[9/12] Installing UFW-Docker security patch...${NC}"
+echo -e "${YELLOW}[10/13] Installing UFW-Docker security patch...${NC}"
 if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
     if wget -q -O /usr/local/bin/ufw-docker \
          https://github.com/chaifeng/ufw-docker/raw/master/ufw-docker 2>/dev/null; then
@@ -300,10 +315,10 @@ else
 fi
 
 # ===================================================================
-# [10/12] Harden SSH: port 22 → 1022 only
+# [11/13] Harden SSH: port 22 → 1022 only
 # ===================================================================
 
-echo -e "${YELLOW}[10/12] Hardening SSH: port 22 → 1022 only...${NC}"
+echo -e "${YELLOW}[11/13] Hardening SSH: port 22 → 1022 only...${NC}"
 
 # Already on 1022 only? Skip.
 if ss -tlnp | grep -q ":1022 " && ! ss -tlnp | grep -q ":22 "; then
@@ -386,18 +401,18 @@ else
 fi
 
 # ===================================================================
-# [11/12] Deploy auto-update cron
+# [12/13] Deploy auto-update cron
 # ===================================================================
 
-echo -e "${YELLOW}[11/12] Deploying auto-update cron...${NC}"
+echo -e "${YELLOW}[12/13] Deploying auto-update cron...${NC}"
 
 which crontab >/dev/null 2>&1 || apt-get install -y cron >/dev/null 2>&1 || true
 
 if [ -f /apps/kaitu-slave/auto-update.sh ]; then
     CRON_EXISTS=$(crontab -l 2>/dev/null | grep -c 'auto-update.sh' || true)
     if [ "$CRON_EXISTS" = "0" ]; then
-        (crontab -l 2>/dev/null; echo "0 20 * * * /apps/kaitu-slave/auto-update.sh") | crontab -
-        ok "Cron entry added (20:00 UTC = 04:00 Beijing)."
+        (crontab -l 2>/dev/null; echo "0 4 * * * /apps/kaitu-slave/auto-update.sh >> /apps/kaitu-slave/auto-update.log 2>&1") | crontab -
+        ok "Cron entry added (04:00 Beijing time)."
     else
         ok "Cron entry already exists."
     fi
@@ -406,11 +421,12 @@ else
 fi
 
 # ===================================================================
-# [12/12] Verify
+# [13/13] Verify
 # ===================================================================
 
-echo -e "${YELLOW}[12/12] Verifying...${NC}"
+echo -e "${YELLOW}[13/13] Verifying...${NC}"
 echo -e "${BLUE}==================================================${NC}"
+echo -e "Timezone:    $(timedatectl 2>/dev/null | grep 'Time zone' | awk '{print $3, $4}' || date +%Z)"
 echo -e "Ubuntu:      ${UBUNTU_VERSION} (${UBUNTU_CODENAME})"
 echo -e "Docker:      $(docker --version 2>/dev/null || echo 'NOT INSTALLED')"
 echo -e "Compose:     $(docker compose version 2>/dev/null || echo 'NOT INSTALLED')"

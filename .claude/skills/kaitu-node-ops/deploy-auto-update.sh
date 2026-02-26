@@ -9,7 +9,7 @@
 #
 # Deploys:
 #   1. docker/scripts/auto-update.sh → /apps/kaitu-slave/auto-update.sh
-#   2. Cron entry: 0 20 * * * /apps/kaitu-slave/auto-update.sh (20:00 UTC = 04:00 Beijing)
+#   2. Cron entry: 0 4 * * * ... >> auto-update.log 2>&1 (04:00 Beijing time, requires Asia/Singapore timezone)
 #
 # Requires:
 #   KAITU_CENTER_URL  — Center API base URL
@@ -21,7 +21,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR" && git rev-parse --show-toplevel)"
 AUTO_UPDATE_SCRIPT="$PROJECT_DIR/docker/scripts/auto-update.sh"
 DEPLOY_DIR="/apps/kaitu-slave"
-CRON_ENTRY="0 20 * * * /apps/kaitu-slave/auto-update.sh"
+CRON_ENTRY="0 4 * * * /apps/kaitu-slave/auto-update.sh >> /apps/kaitu-slave/auto-update.log 2>&1"
 
 SSH_USER="${KAITU_SSH_USER:-ubuntu}"
 SSH_PORT="${KAITU_SSH_PORT:-1022}"

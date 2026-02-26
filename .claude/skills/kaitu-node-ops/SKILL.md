@@ -126,23 +126,28 @@ Use `exec_on_node(ip, command)` for all operations. Replace `{sidecar}` and `{tu
 | BBR status | `sysctl net.ipv4.tcp_congestion_control` |
 | Auto-update log | `tail -50 /apps/kaitu-slave/auto-update.log` |
 | Cron entries | `crontab -l` |
+| Timezone check | `timedatectl \| head -2` |
+| Set timezone | `sudo timedatectl set-timezone Asia/Singapore` |
 | Container outbound network | `docker exec k2-sidecar wget -qO- --timeout=5 https://api.ipify.org` |
 | iptables backend check | `iptables --version` |
 | Deploy compose to single node | `exec_on_node(ip, "sudo tee /apps/kaitu-slave/docker-compose.yml > /dev/null", { scriptPath: "docker/docker-compose.yml" })` |
+| Fix cron (single node) | `(sudo crontab -l 2>/dev/null \| grep -v 'auto-update'; echo '0 4 * * * /apps/kaitu-slave/auto-update.sh >> /apps/kaitu-slave/auto-update.log 2>&1') \| sudo crontab -` |
 
 ## Step 5: Post-Provisioning Checklist
 
 After provisioning a new node (or reinstalling OS), ensure these are all done:
 
-1. **SSH port**: Now automated by provision-node.sh step 10 (port 22 → 1022 only). Verify: `ss -tlnp | grep :1022`
-2. **provision-node.sh**: Docker CE + IPv6 + BBR + SSH port 1022 + docker group + daemon.json + UFW-Docker + cron + unattended-upgrades removal.
+1. **Timezone**: Must be `Asia/Singapore` (UTC+8). All cron schedules assume Beijing time. Verify: `timedatectl | grep 'Time zone'`. Fix: `sudo timedatectl set-timezone Asia/Singapore`. Now automated by provision-node.sh step 1.
+2. **SSH port**: Now automated by provision-node.sh step 11 (port 22 → 1022 only). Verify: `ss -tlnp | grep :1022`
+3. **provision-node.sh**: Timezone + Docker CE + IPv6 + BBR + SSH port 1022 + docker group + daemon.json + UFW-Docker + cron + unattended-upgrades removal.
 3. **docker-compose.yml**: Deploy via `deploy-compose.sh --node=IP` or SCP manually.
-4. **.env**: Restore from backup or generate new. **K2_DOMAIN and K2OC_DOMAIN must be globally unique** — run `list_nodes()` first and verify no other node uses the same domains. Domain collision silently breaks the other node.
-5. **auto-update.sh + cron**: Deploy via `deploy-auto-update.sh --node=IP`.
-6. **Containers up**: `docker compose up -d` and verify sidecar healthy.
-7. **BBR active**: `sysctl net.ipv4.tcp_congestion_control` should show `bbr`. Included in provision-node.sh step 7.
-8. **Hop port DNAT**: After containers up, verify: `iptables -t nat -L PREROUTING -n | grep REDIRECT`
-9. **Container network**: Verify container outbound: `docker exec k2-sidecar wget -qO- --timeout=5 https://api.ipify.org`. If timeout → check `iptables --version`. If `(nf_tables)` → fix with `update-alternatives --set iptables /usr/sbin/iptables-legacy` + restart Docker.
+4. **docker-compose.yml**: Deploy via `deploy-compose.sh --node=IP` or SCP manually.
+5. **.env**: Restore from backup or generate new. **K2_DOMAIN and K2OC_DOMAIN must be globally unique** — run `list_nodes()` first and verify no other node uses the same domains. Domain collision silently breaks the other node.
+6. **auto-update.sh + cron**: Deploy via `deploy-auto-update.sh --node=IP`.
+7. **Containers up**: `docker compose up -d` and verify sidecar healthy.
+8. **BBR active**: `sysctl net.ipv4.tcp_congestion_control` should show `bbr`. Included in provision-node.sh step 8.
+9. **Hop port DNAT**: After containers up, verify: `iptables -t nat -L PREROUTING -n | grep REDIRECT`
+10. **Container network**: Verify container outbound: `docker exec k2-sidecar wget -qO- --timeout=5 https://api.ipify.org`. If timeout → check `iptables --version`. If `(nf_tables)` → fix with `update-alternatives --set iptables /usr/sbin/iptables-legacy` + restart Docker.
 
 ### BBR Congestion Control
 
@@ -224,7 +229,7 @@ Per-node steps: `docker compose pull` → `docker compose up -d` → wait 10s �
 
 ### Deploy Auto-Update Cron to All Nodes
 
-Deploy `docker/scripts/auto-update.sh` and configure daily cron (20:00 UTC = 04:00 Beijing).
+Deploy `docker/scripts/auto-update.sh` and configure daily cron (04:00 Beijing time). All nodes MUST have timezone set to `Asia/Singapore` (UTC+8) for cron to execute at the correct time.
 
 ```bash
 # Active nodes only — recommended
@@ -317,8 +322,8 @@ Scripts in `docker/scripts/` (run ON nodes via SSH stdin pipe):
 
 | Script | Purpose | Warning |
 |--------|---------|---------|
-| `provision-node.sh` | Full node provisioning: Docker CE + IPv6 + BBR + nftables + daemon.json + UFW-Docker + auto-update cron | **Destructive**. Stops all containers. For fresh/rebuild nodes only. Requires sudo + explicit user confirmation. |
-| `auto-update.sh` | Daily auto-update: pull images, compare, down+up if changed, Slack notify | Safe. Deployed via `deploy-auto-update.sh`. Runs from cron at 20:00 UTC. |
+| `provision-node.sh` | Full node provisioning: Timezone (Asia/Singapore) + Docker CE + IPv6 + BBR + nftables + daemon.json + UFW-Docker + SSH 1022 + auto-update cron | **Destructive**. Stops all containers. For fresh/rebuild nodes only. Requires sudo + explicit user confirmation. |
+| `auto-update.sh` | Daily auto-update: pull images, compare, down+up if changed, Slack notify | Safe. Deployed via `deploy-auto-update.sh`. Runs from cron at 04:00 Beijing time (requires Asia/Singapore timezone). |
 | `totally-reinstall-docker.sh` | Docker CE reinstall only (no IPv6 kernel params) | **Destructive**. Superseded by `provision-node.sh`. |
 | `enable-ipv6.sh` | Enable IPv6 kernel params only | Superseded by `provision-node.sh` step 6. |
 | `simple-docker-pull-restart.sh` | Pull latest images and restart | Safe for routine updates. Equivalent to the standard update command. |
@@ -383,6 +388,7 @@ Note: `provision-node.sh` step 2 handles this for new provisions. This fix is fo
 
 | # | Check | Command | Expected |
 |---|-------|---------|----------|
+| 0 | Timezone correct | `timedatectl \| grep 'Time zone'` | `Asia/Singapore (+08, +0800)` |
 | 1 | Containers running | `cd /apps/kaitu-slave && docker compose ps` | All 4 containers Up, sidecar (healthy) |
 | 2 | Sidecar registered | `docker logs --tail 30 k2-sidecar \| grep "Registration completed"` | `tunnels=2` |
 | 3 | Tunnel domains correct | `docker logs --tail 30 k2-sidecar \| grep "Tunnel registered"` | Correct domains, `created=true` |
