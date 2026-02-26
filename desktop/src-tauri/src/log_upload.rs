@@ -4,15 +4,15 @@
 //! Runs in Tauri (not in daemon) because daemon may be crashed.
 //!
 //! Uploads 4 separate log files:
-//! 1. service-{id}.log.gz - Go service logs (service.log)
+//! 1. service-{id}.log.gz - Go daemon logs (k2.log)
 //! 2. crash-{id}.log.gz - Go panic/crash logs (panic-*.log)
 //! 3. desktop-{id}.log.gz - Tauri desktop app logs (desktop.log)
 //! 4. system-{id}.log.gz - System-level app logs (macOS Console / Windows Event Log)
 //!
-//! Log file locations (must match k2 daemon log paths):
-//! - macOS:   /var/log/kaitu/service.log
-//! - Windows: C:\ProgramData\kaitu\logs\service.log
-//! - Linux:   /var/log/kaitu/service.log
+//! Log file locations (must match k2 daemon log paths in k2/config/log.go):
+//! - macOS:   /var/log/kaitu/k2.log
+//! - Windows: C:\ProgramData\kaitu\k2.log
+//! - Linux:   /var/log/kaitu/k2.log
 
 use chrono::Utc;
 use flate2::write::GzEncoder;
@@ -105,7 +105,7 @@ fn get_log_dir() -> PathBuf {
     {
         let program_data =
             std::env::var("ProgramData").unwrap_or_else(|_| r"C:\ProgramData".to_string());
-        PathBuf::from(program_data).join("kaitu").join("logs")
+        PathBuf::from(program_data).join("kaitu")
     }
 
     #[cfg(target_os = "linux")]
@@ -121,7 +121,7 @@ fn get_log_dir() -> PathBuf {
 
 /// Get service log path
 fn get_service_log_path() -> PathBuf {
-    get_log_dir().join("service.log")
+    get_log_dir().join("k2.log")
 }
 
 /// Get desktop log path (user-level directory)
