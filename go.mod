@@ -11,6 +11,7 @@ require (
 	github.com/sagernet/sing v0.7.6
 	github.com/sagernet/sing-tun v0.7.11
 	github.com/xtaci/smux/v2 v2.1.0
+	golang.org/x/mobile v0.0.0-20260217195705-b56b3793a9c4
 	golang.org/x/sync v0.19.0
 	golang.org/x/sys v0.41.0
 	gopkg.in/lumberjack.v2 v2.0.0
