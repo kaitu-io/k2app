@@ -20,9 +20,13 @@ Gradient ascent on utility function: `U = Throughput - α * LossRate * Throughpu
 - `DefaultK2ARCBeta`: 0.1 (latency penalty — low for throughput-prioritized tunnel use)
 - `arcMinRate`: 10 Mbps (upload floor), `arcMinDownloadRate`: 30 Mbps (download floor)
 
+## Observability
+
+`Snapshot()` returns `ARCSnapshot` (SendingRate, LossRate, Throughput, RTT, MinRTT, Cwnd, Mode, MIID) under `RLock`. Used by `QUICClient.WireStats()` for external metric access.
+
 ## Files
 
-- `arc.go` — `K2ARC` struct, MI-based rate control, utility gradient computation
+- `arc.go` — `K2ARC` struct, MI-based rate control, utility gradient computation, `ARCSnapshot`/`Snapshot()`
 - `arcc_test.go` — 25 test functions (convergence, loss tolerance, rate bounds)
 - `helpers_test.go` — test fixtures
 

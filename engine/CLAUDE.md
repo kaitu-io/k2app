@@ -19,7 +19,8 @@ Platform Shell (daemon/appext)
               ├── 6. Provider (TUN/Proxy/TProxy/appext FD)
               ├── 7. ClientTunnel
               ├── 8. DNS middleware (TUN/TProxy mode only)
-              └── 9. Commit → StateConnected
+              ├── 9. Commit → StateConnected
+              └── 10. HealthMonitor start (1Hz wire stats + health FSM)
 ```
 
 ## State Machine
@@ -59,6 +60,7 @@ HTTP-aligned error codes for frontend consumption:
 | `NetworkMonitor` | sing-tun DefaultInterfaceMonitor | nil (platform calls directly) | nil |
 | `InterfaceMonitor` | same sing-tun instance | nil | nil |
 | `NetworkExtension` | false | true (Darwin) / false (Android) | false |
+| `HealthCallback` | `d.broadcastSnapshot` | nil | nil |
 
 ## Files
 
@@ -67,6 +69,7 @@ HTTP-aligned error codes for frontend consumption:
 - `status.go` — `Status` struct, custom `MarshalJSON` (computes `uptime_seconds` dynamically)
 - `event.go` — `EventHandler` interface (`OnStatus(Status)` + `OnStats`), state constants
 - `error.go` — `EngineError`, `ClassifyError` (HTTP-aligned error codes, MultiTransportError handling)
+- `health.go` — `healthMonitor` (1Hz sampling, ring buffer 300s, health FSM: healthy→degraded→critical, corrective actions: port hop / full reconnect)
 - `dns_handler.go` — `dnsHandler` (port 53 TCP+UDP interception, RFC 1035 TCP framing)
 - `network.go` — `NetworkChangeNotifier` interface
 

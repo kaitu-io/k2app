@@ -32,6 +32,8 @@ Provider ──► ClientTunnel.HandleTCP/HandleUDP
 3. Direct: `net.ListenPacket` + forward to dest
 4. Proxy: `wire.DialUDP(dest)` + forward packets
 
+**Traffic counting**: `txBytes`/`rxBytes` `atomic.Int64` fields count all bytes through `pipe()`/`pipePacket()`. `TrafficBytes()` returns cumulative TX/RX.
+
 **Files**: `tunnel.go`, `tunnel_test.go`
 
 ## Router (router.go)

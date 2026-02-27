@@ -99,6 +99,7 @@ Platform Shell (daemon/appext) assembles `engine.Config` with platform-specific 
 - `wire.Listener`: AcceptTCP, ServeUDP, Close (implemented by QUICServer, TCPWSServer)
 - `wire.DirectDialer`: DialContext, ListenPacket (implemented by daemon.directDialer, appext.protectedDialer)
 - `wire.DialerController`: ControlFunc() (optional, for DNS socket protection — implemented by appext.protectedDialer)
+- `wire.StatsProvider`: WireStats() (optional, type-asserted on Dialer — implemented by QUICClient, TCPWSClient)
 - `provider.Provider`: Start(ctx, ConnectionHandler), Close, Name (TUN/Proxy/TProxy/iOS/Android)
 - `provider.ConnectionHandler`: HandleTCP(conn, dest), HandleUDP(conn, dest) (implemented by ClientTunnel, dnsHandler)
 - `engine.EventHandler`: OnStatus(Status), OnStats(tx, rx) (implemented by daemon, appext.eventBridge)
@@ -127,6 +128,7 @@ Engine creates provider, transport, and tunnel during `Start()`. Engine closes t
 
 ```
 engine.Stop()
+  ├─ healthMonitor.stop()// Engine owns health monitor → stop goroutine first (reads tm/tunnel)
   ├─ prov.Close()       // Engine owns provider → Engine closes it
   ├─ tm.Close()         // Engine owns transport → Engine closes it
   └─ tunnel.Close()     // Tunnel only drains its own goroutines
@@ -139,11 +141,12 @@ engine.Stop()
 |----------|--------------------------|---------------------|
 | provider | Engine | Tunnel, dnsHandler |
 | transport/dialer | Engine | Tunnel |
+| healthMonitor | Engine | — |
 | ctx + wg + connTracker | Tunnel | — |
 | handler goroutines | Tunnel | — |
 | networkMonitor | Engine | — |
 
-**Why this order matters**: Provider must close first (stops new TUN packets), then transport (drops wire connections), then tunnel (drains in-flight handlers). Tunnel's `connTracker.closeAll()` force-closes any connections stuck in `pipe()`/`pipePacket()` so `wg.Wait()` returns promptly.
+**Why this order matters**: Health monitor stops first (its goroutine reads tm and tunnel). Provider closes next (stops new TUN packets), then transport (drops wire connections), then tunnel (drains in-flight handlers). Tunnel's `connTracker.closeAll()` force-closes any connections stuck in `pipe()`/`pipePacket()` so `wg.Wait()` returns promptly.
 
 **Violation pattern to avoid**: `tunnel.Close()` must never call `provider.Close()` or `dialer.Close()`. This causes double-close panics (e.g. sing-tun `StopFD.Stop()` on macOS).
 
@@ -189,7 +192,7 @@ docs/todos/p2-*.md     Nice to have
 
 ## Status
 
-**Done**: Full L4 architecture, wire protocol (QUIC+TCP-WS), DNS middleware (L3+L4), auth, ECH (DNS-based forging + config rotation), TLS record padding, dual certs (RSA+EC), client CA pool (system + Kaitu CA - Chinese CAs), PCC, client tunnel, server handlers, e2e tests, zero-config server startup, k2/k2s binaries, appext SDK (gomobile, macOS sysext+iOS+Android), tproxy provider (OpenWRT/Linux), OpenWRT service management (init.d/procd)
+**Done**: Full L4 architecture, wire protocol (QUIC+TCP-WS), DNS middleware (L3+L4), auth, ECH (DNS-based forging + config rotation), TLS record padding, dual certs (RSA+EC), client CA pool (system + Kaitu CA - Chinese CAs), PCC, client tunnel, server handlers, e2e tests, zero-config server startup, k2/k2s binaries, appext SDK (gomobile, macOS sysext+iOS+Android), tproxy provider (OpenWRT/Linux), OpenWRT service management (init.d/procd), wire observability (K2ARC metrics + TX/RX counting + HealthMonitor FSM + embedded /stats dashboard)
 
 ## Platform Mapping
 

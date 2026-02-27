@@ -30,13 +30,18 @@ State values: `disconnected`, `connecting`, `connected`, `reconnecting`, `paused
 
 ### GET /api/events — SSE
 
-Real-time status push. Each event is a full `engine.Status` snapshot (idempotent).
+Real-time push. Two event types:
+- `event: status` — full `engine.Status` snapshot (idempotent)
+- `event: stats` — 1Hz `engine.HealthSnapshot` (wire metrics + health level)
+
 Heartbeat every 15s. Buffered per client (cap 8), slow clients get dropped.
 
 ### Other
 
 - `GET /ping` — Health check (returns `{"code":0,"message":"pong"}`)
 - `GET /metrics` — goroutines, heap, GC stats
+- `GET /api/stats` — Ring buffer of last 300 health snapshots (5 min, oldest-first)
+- `GET /stats` — Embedded HTML dashboard (dark theme, 4 Canvas charts, SSE live updates)
 
 Request/Response: `daemon.Request{Action, Params}` / `daemon.Response{Code, Message, Data}`
 
@@ -60,8 +65,10 @@ Error path: engine's fail() fires OnStatus(disconnected+error) → daemon's last
 ## Files
 
 - `daemon.go` — `Daemon` struct, `OnStatus`/`OnStats` (EventHandler impl), HTTP server setup, `engineConfigFromClientConfig`
-- `sse.go` — `handleEvents()` SSE endpoint, `broadcastStatus()` fan-out
-- `api.go` — `handleCore`/`handlePing`/`handleMetrics`/`handleVersion` + CORS middleware
+- `sse.go` — `handleEvents()` SSE endpoint, `broadcastStatus()` + `broadcastSnapshot()` fan-out
+- `api.go` — `handleCore`/`handlePing`/`handleMetrics`/`handleVersion`/`handleStats` + CORS middleware
+- `stats_embed.go` — `go:embed stats.html`, serves `/stats` dashboard
+- `stats.html` — Embedded dark-themed stats dashboard (vanilla JS, Canvas charts, SSE live)
 - `client.go` — `Client` struct for IPC (used by CLI commands)
 - `state.go` — Persisted state: saved config + last connect time (auto-reconnect <1h)
 - `reload.go` — Hot-reload config on SIGHUP (dynamic changes without restart)

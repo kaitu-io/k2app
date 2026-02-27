@@ -22,6 +22,11 @@ type Listener interface {
 type UDPHandler interface {
     HandleUDP(conn net.PacketConn, addr string)
 }
+
+// Optional — type-asserted on Dialer, not part of Dialer interface
+type StatsProvider interface {
+    WireStats() WireStats
+}
 ```
 
 ## Config (wire.go)
@@ -32,7 +37,7 @@ Fields: UDID, Token, Host, Port, ECH, Fingerprint, HopStart, HopEnd, Insecure, P
 
 ## Files
 
-- `wire.go` — Dialer/Listener/UDPHandler interfaces, Config, `ParseURL()`
+- `wire.go` — Dialer/Listener/UDPHandler interfaces, `WireStats`/`StatsProvider`, Config, `ParseURL()`
 - `auth.go` — `TicketStore` (1h TTL, 30s grace), `AuthHandler` (JWT full + ticket)
 - `auth_info.go` — `AuthInfo` (UDID+Token), `EnsureAuth()` (load or generate credentials)
 - `ech.go` — ECH key management (generate, save/load, rotation, migration), `BuildClientTLSConfig`, SNI peek, reverse proxy
