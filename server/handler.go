@@ -106,6 +106,7 @@ func (h *ProxyHandler) HandleTCP(conn net.Conn, addr string) {
 // HandleUDP proxies a UDP session to the target address.
 // Implements wire.UDPHandler.
 func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
+	slog.Info("server: HandleUDP start", "addr", addr)
 	if !h.AllowPrivateIP {
 		if err := checkAddr(addr); err != nil {
 			slog.Error("server: UDP proxy blocked", "addr", addr, "err", err)
@@ -138,9 +139,12 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 		for {
 			n, _, err := conn.ReadFrom(buf)
 			if err != nil {
+				slog.Debug("server: HandleUDP client->target ReadFrom done", "addr", addr, "err", err)
 				break
 			}
+			slog.Debug("server: HandleUDP client->target forwarding", "addr", addr, "len", n)
 			if _, err := target.Write(buf[:n]); err != nil {
+				slog.Warn("server: HandleUDP client->target Write failed", "addr", addr, "err", err)
 				break
 			}
 		}
@@ -154,9 +158,12 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 		target.SetReadDeadline(time.Now().Add(30 * time.Second))
 		n, err := target.Read(buf)
 		if err != nil {
+			slog.Debug("server: HandleUDP target->client Read done", "addr", addr, "err", err)
 			break
 		}
+		slog.Debug("server: HandleUDP target->client forwarding", "addr", addr, "len", n)
 		if _, err := conn.WriteTo(buf[:n], nil); err != nil {
+			slog.Warn("server: HandleUDP target->client WriteTo failed", "addr", addr, "err", err)
 			break
 		}
 	}
@@ -165,6 +172,7 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 	conn.Close()
 	target.Close()
 	<-done
+	slog.Debug("server: HandleUDP done", "addr", addr)
 }
 
 // pipe copies data bidirectionally between two connections.

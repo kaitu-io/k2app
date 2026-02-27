@@ -261,7 +261,9 @@ func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, 
 	}
 
 	// Try datagram path if supported
-	if c.datagramsSupported(conn) {
+	dgSupported := c.datagramsSupported(conn)
+	slog.Info("QUICClient.DialUDP", "addr", addr, "datagramsSupported", dgSupported)
+	if dgSupported {
 		c.mu.Lock()
 		alloc, mux := c.alloc, c.udpMux
 		c.mu.Unlock()
@@ -600,12 +602,14 @@ func (s *QUICServer) handleUDPStream(qconn *quic.Conn, stream *quic.Stream, br *
 }
 
 func (s *QUICServer) handleDatagrams(conn *quic.Conn) {
+	slog.Info("QUICServer: handleDatagrams started", "remote", conn.RemoteAddr())
 	sessions := make(map[uint32]*serverUDPConn)
 	var mu sync.Mutex
 
 	for {
 		data, err := conn.ReceiveDatagram(context.Background())
 		if err != nil {
+			slog.Info("QUICServer: handleDatagrams exiting", "remote", conn.RemoteAddr(), "err", err)
 			mu.Lock()
 			for _, sess := range sessions {
 				sess.close()
@@ -616,15 +620,18 @@ func (s *QUICServer) handleDatagrams(conn *quic.Conn) {
 
 		frame, err := ReadUDPFrame(bytes.NewReader(data))
 		if err != nil {
+			slog.Warn("QUICServer: datagram parse failed", "len", len(data), "err", err)
 			continue
 		}
+		slog.Debug("QUICServer: datagram received", "sessionID", frame.SessionID, "addr", frame.Addr, "payloadLen", len(frame.Payload))
 
 		mu.Lock()
 		sess, ok := sessions[frame.SessionID]
 		if !ok {
 			if len(sessions) >= maxServerUDPSessions {
 				mu.Unlock()
-				continue // at capacity, drop frame
+				slog.Warn("QUICServer: max UDP sessions reached, dropping")
+				continue
 			}
 			sess = &serverUDPConn{
 				qconn:     conn,
@@ -638,6 +645,7 @@ func (s *QUICServer) handleDatagrams(conn *quic.Conn) {
 			s.mu.Lock()
 			handler := s.udpH
 			s.mu.Unlock()
+			slog.Info("QUICServer: new UDP session", "sessionID", frame.SessionID, "addr", frame.Addr, "handlerSet", handler != nil)
 			if handler != nil {
 				addr := frame.Addr
 				go func() {
@@ -745,11 +753,14 @@ func (m *quicUDPMux) start() {
 }
 
 func (m *quicUDPMux) readLoop() {
+	slog.Info("quicUDPMux: readLoop started")
 	for {
 		data, err := m.conn.ReceiveDatagram(context.Background())
 		if err != nil {
+			slog.Warn("quicUDPMux: readLoop exiting", "err", err)
 			return
 		}
+		slog.Debug("quicUDPMux: received datagram", "len", len(data))
 		frame, err := ReadUDPFrame(bytes.NewReader(data))
 		if err != nil {
 			continue
@@ -820,11 +831,13 @@ func (c *quicUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	select {
 	case frame := <-c.readCh:
 		n := copy(b, frame.Payload)
+		slog.Debug("quicUDPConn: ReadFrom ok", "sessionID", c.sessionID, "target", c.targetAddr, "len", n)
 		addr, _ := net.ResolveUDPAddr("udp", c.targetAddr)
 		return n, addr, nil
 	case <-c.done:
 		return 0, nil, net.ErrClosed
 	case <-timerCh:
+		slog.Warn("quicUDPConn: ReadFrom timeout", "sessionID", c.sessionID, "target", c.targetAddr)
 		return 0, nil, os.ErrDeadlineExceeded
 	}
 }
@@ -833,8 +846,10 @@ func (c *quicUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
 	var buf bytes.Buffer
 	WriteUDPFrame(&buf, c.sessionID, c.targetAddr, b)
 	if err := c.qconn.SendDatagram(buf.Bytes()); err != nil {
+		slog.Warn("quicUDPConn: SendDatagram failed", "sessionID", c.sessionID, "target", c.targetAddr, "err", err)
 		return 0, err
 	}
+	slog.Debug("quicUDPConn: SendDatagram ok", "sessionID", c.sessionID, "target", c.targetAddr, "len", len(b))
 	return len(b), nil
 }
 
@@ -899,8 +914,10 @@ func (c *serverUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
 	// Empty addr for response frames (client already knows the target)
 	WriteUDPFrame(&buf, c.sessionID, "", b)
 	if err := c.qconn.SendDatagram(buf.Bytes()); err != nil {
+		slog.Warn("serverUDPConn: SendDatagram failed", "sessionID", c.sessionID, "addr", c.addr, "err", err)
 		return 0, err
 	}
+	slog.Debug("serverUDPConn: SendDatagram ok", "sessionID", c.sessionID, "addr", c.addr, "len", len(b))
 	return len(b), nil
 }
 
