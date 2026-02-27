@@ -28,6 +28,8 @@ export interface K2PluginInterface {
   downloadNativeUpdate(): Promise<{ path: string }>;
   installNativeUpdate(options: { path: string }): Promise<void>;
 
+  debugDump(): Promise<Record<string, unknown>>;
+
   addListener(eventName: 'vpnStateChange', handler: (data: { state: string }) => void): Promise<PluginListenerHandle>;
   addListener(eventName: 'vpnError', handler: (data: { message: string }) => void): Promise<PluginListenerHandle>;
   addListener(eventName: 'updateDownloadProgress', handler: (data: { percent: number }) => void): Promise<PluginListenerHandle>;

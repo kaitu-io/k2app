@@ -309,6 +309,92 @@ describe('capacitor-k2', () => {
     });
   });
 
+  describe('transformStatus retrying logic', () => {
+    // connected + network/protocol errors → retrying=true (engine retries automatically)
+    it.each([503, 408, 502, 570])(
+      'test_connected_error_%i_retrying_true',
+      async (errorCode) => {
+        const { injectCapacitorGlobals } = await import('../capacitor-k2');
+        await injectCapacitorGlobals();
+
+        mockK2Plugin.getStatus.mockResolvedValue({
+          state: 'connected',
+          connectedAt: '2024-01-01T00:00:00Z',
+          error: { code: errorCode, message: `error ${errorCode}` },
+        });
+
+        const result = await window._k2.run('status');
+        expect(result.data.state).toBe('error');
+        expect(result.data.retrying).toBe(true);
+        expect(result.data.error.code).toBe(errorCode);
+      },
+    );
+
+    // connected + client errors → retrying=false (requires user action)
+    it.each([400, 401, 402, 403])(
+      'test_connected_client_error_%i_retrying_false',
+      async (errorCode) => {
+        const { injectCapacitorGlobals } = await import('../capacitor-k2');
+        await injectCapacitorGlobals();
+
+        mockK2Plugin.getStatus.mockResolvedValue({
+          state: 'connected',
+          error: { code: errorCode, message: `client error ${errorCode}` },
+        });
+
+        const result = await window._k2.run('status');
+        expect(result.data.state).toBe('error');
+        expect(result.data.retrying).toBe(false);
+        expect(result.data.error.code).toBe(errorCode);
+      },
+    );
+
+    // reconnecting + error → state stays reconnecting (no error synthesis)
+    it('test_reconnecting_with_error_no_synthesis', async () => {
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      mockK2Plugin.getStatus.mockResolvedValue({
+        state: 'reconnecting',
+        error: { code: 503, message: 'temporary' },
+      });
+
+      const result = await window._k2.run('status');
+      expect(result.data.state).toBe('reconnecting');
+      expect(result.data.retrying).toBe(false);
+    });
+
+    // connecting + error → state stays connecting (no error synthesis)
+    it('test_connecting_with_error_no_synthesis', async () => {
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      mockK2Plugin.getStatus.mockResolvedValue({
+        state: 'connecting',
+        error: { code: 408, message: 'timeout' },
+      });
+
+      const result = await window._k2.run('status');
+      expect(result.data.state).toBe('connecting');
+      expect(result.data.retrying).toBe(false);
+    });
+
+    // disconnected + error → retrying=false (engine gave up)
+    it('test_disconnected_error_503_retrying_false', async () => {
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      mockK2Plugin.getStatus.mockResolvedValue({
+        state: 'disconnected',
+        error: { code: 503, message: 'connection refused' },
+      });
+
+      const result = await window._k2.run('status');
+      expect(result.data.state).toBe('error');
+      expect(result.data.retrying).toBe(false);
+    });
+  });
+
   describe('_platform', () => {
     it('test_platform_getUdid', async () => {
       const { injectCapacitorGlobals } = await import('../capacitor-k2');
@@ -570,5 +656,98 @@ describe('standalone fallback (regression)', () => {
     expect(window._k2).toBeDefined();
     expect(window._platform).toBeDefined();
     expect(getK2Source()).toBe('standalone');
+  });
+});
+
+/**
+ * Cross-layer JSON contract tests.
+ *
+ * Validates the Go engine statusJSON → Swift remapStatusKeys → TS transformStatus pipeline.
+ * Input represents the post-remapStatusKeys output (camelCase) that K2Plugin returns to JS.
+ * Expected represents the StatusResponseData fields after transformStatus.
+ */
+describe('cross-layer JSON contract', () => {
+  let originalK2: any;
+  let originalPlatform: any;
+
+  beforeEach(() => {
+    originalK2 = window._k2;
+    originalPlatform = window._platform;
+    delete (window as any)._k2;
+    delete (window as any)._platform;
+    vi.clearAllMocks();
+    vi.resetModules();
+
+    mockK2Plugin.checkReady.mockResolvedValue({ ready: true, version: '0.4.0' });
+    mockK2Plugin.addListener.mockResolvedValue({ remove: vi.fn() });
+  });
+
+  afterEach(() => {
+    (window as any)._k2 = originalK2;
+    (window as any)._platform = originalPlatform;
+  });
+
+  const CONTRACT_SAMPLES = [
+    {
+      name: 'connected normal',
+      input: { state: 'connected', connectedAt: '2024-01-01T00:00:00Z', uptimeSeconds: 3600 },
+      expect: { state: 'connected', running: true },
+    },
+    {
+      name: 'disconnected clean',
+      input: { state: 'disconnected' },
+      expect: { state: 'disconnected', running: false },
+    },
+    {
+      name: 'disconnected with server error',
+      input: { state: 'disconnected', error: { code: 503, message: 'server unreachable' } },
+      expect: { state: 'error', errorCode: 503, retrying: false },
+    },
+    {
+      name: 'connected with wire timeout (retrying)',
+      input: { state: 'connected', error: { code: 408, message: 'dial timeout' } },
+      expect: { state: 'error', errorCode: 408, retrying: true },
+    },
+    {
+      name: 'connected with auth rejected (no retry)',
+      input: { state: 'connected', error: { code: 401, message: 'auth rejected' } },
+      expect: { state: 'error', errorCode: 401, retrying: false },
+    },
+    {
+      name: 'connecting',
+      input: { state: 'connecting' },
+      expect: { state: 'connecting' },
+    },
+    {
+      name: 'reconnecting',
+      input: { state: 'reconnecting' },
+      expect: { state: 'reconnecting' },
+    },
+    {
+      name: 'disconnecting',
+      input: { state: 'disconnecting' },
+      expect: { state: 'disconnecting' },
+    },
+  ];
+
+  it.each(CONTRACT_SAMPLES)('contract: $name', async ({ input, expect: expected }) => {
+    const { injectCapacitorGlobals } = await import('../capacitor-k2');
+    await injectCapacitorGlobals();
+
+    mockK2Plugin.getStatus.mockResolvedValue(input);
+    const result = await window._k2.run('status');
+
+    expect(result.data.state).toBe(expected.state);
+
+    if (expected.running !== undefined) {
+      expect(result.data.running).toBe(expected.running);
+    }
+    if (expected.errorCode !== undefined) {
+      expect(result.data.error).toBeDefined();
+      expect(result.data.error.code).toBe(expected.errorCode);
+    }
+    if (expected.retrying !== undefined) {
+      expect(result.data.retrying).toBe(expected.retrying);
+    }
   });
 });

@@ -39,4 +39,6 @@ android {
 dependencies {
     implementation project(':capacitor-android')
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+
+    testImplementation "junit:junit:$junitVersion"
 }

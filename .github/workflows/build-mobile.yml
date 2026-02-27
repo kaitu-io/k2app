@@ -212,6 +212,11 @@ jobs:
             ~/.gradle/wrapper
           key: gradle-${{ hashFiles('mobile/android/**/*.gradle*') }}
 
+      - name: Compile Android (interface verification)
+        run: |
+          cd mobile/android
+          ./gradlew :app:compileDebugKotlin :k2-plugin:compileDebugKotlin --no-daemon
+
       - name: Build Android
         run: bash scripts/build-mobile-android.sh
         env:

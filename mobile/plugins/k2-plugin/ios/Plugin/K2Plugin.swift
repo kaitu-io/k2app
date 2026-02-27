@@ -3,8 +3,10 @@ import Capacitor
 import NetworkExtension
 import CommonCrypto
 import SSZipArchive
+import os.log
 
 private let kAppGroup = "group.io.kaitu"
+private let logger = Logger(subsystem: "io.kaitu", category: "K2Plugin")
 
 @objc(K2Plugin)
 public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
@@ -23,6 +25,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "applyWebUpdate", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "downloadNativeUpdate", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "installNativeUpdate", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "debugDump", returnType: CAPPluginReturnPromise),
     ]
 
     private var vpnManager: NETunnelProviderManager?
@@ -48,7 +51,12 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                 bridge?.setServerBasePath(webUpdatePath.path)
             } else {
                 // Corrupt OTA dir, remove it
-                try? FileManager.default.removeItem(at: webUpdatePath)
+                do {
+                    try FileManager.default.removeItem(at: webUpdatePath)
+                    logger.info("Removed corrupt OTA dir")
+                } catch {
+                    logger.warning("Failed to remove corrupt OTA dir: \(error)")
+                }
             }
         }
 
@@ -79,14 +87,17 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             if connection.status == .disconnected {
                 let defaults = UserDefaults(suiteName: kAppGroup)
                 if let errorStr = defaults?.string(forKey: "vpnError"), !errorStr.isEmpty {
+                    logger.debug("Read vpnError from App Group: \(errorStr)")
                     defaults?.removeObject(forKey: "vpnError")
                     // Try parsing as JSON error object first, fall back to plain message
                     if let errorData = errorStr.data(using: .utf8),
                        let errorObj = try? JSONSerialization.jsonObject(with: errorData) as? [String: Any],
                        let code = errorObj["code"] as? Int,
                        let message = errorObj["message"] as? String {
+                        logger.info("Emitting vpnError event: code=\(code) message=\(message)")
                         self?.notifyListeners("vpnError", data: ["code": code, "message": message])
                     } else {
+                        logger.info("Emitting vpnError event (legacy string): \(errorStr)")
                         self?.notifyListeners("vpnError", data: ["message": errorStr])
                     }
                 }
@@ -132,13 +143,15 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                 try session?.sendProviderMessage(message) { response in
                     if let data = response,
                        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                        call.resolve(self.remapStatusKeys(json))
+                        call.resolve(remapStatusKeys(json))
                     } else {
+                        logger.debug("sendProviderMessage returned nil/unparseable response, falling back to NEVPNStatus")
                         let state = self.mapVPNStatus(manager.connection.status)
                         call.resolve(["state": state])
                     }
                 }
             } catch {
+                logger.debug("sendProviderMessage failed, falling back to NEVPNStatus: \(error)")
                 let state = self.mapVPNStatus(manager.connection.status)
                 call.resolve(["state": state])
             }
@@ -279,7 +292,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                 localVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
             }
 
-            if self.isNewerVersion(remoteVersion, than: localVersion) {
+            if isNewerVersion(remoteVersion, than: localVersion) {
                 var result: [String: Any] = [
                     "available": true,
                     "version": remoteVersion
@@ -306,7 +319,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
 
             let localVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
 
-            if self.isNewerVersion(remoteVersion, than: localVersion) {
+            if isNewerVersion(remoteVersion, than: localVersion) {
                 var result: [String: Any] = [
                     "available": true,
                     "version": remoteVersion
@@ -440,6 +453,46 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    // MARK: - Debug
+
+    @objc func debugDump(_ call: CAPPluginCall) {
+        let defaults = UserDefaults(suiteName: kAppGroup)
+        let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: kAppGroup)
+
+        var dump: [String: Any] = [
+            "appGroup": kAppGroup,
+            "containerPath": containerURL?.path ?? "nil",
+            "configJSON_exists": defaults?.string(forKey: "configJSON") != nil,
+            "configJSON_length": defaults?.string(forKey: "configJSON")?.count ?? 0,
+            "vpnError": defaults?.string(forKey: "vpnError") ?? "nil",
+            "vpnManager_loaded": vpnManager != nil,
+            "vpnManager_enabled": vpnManager?.isEnabled ?? false,
+            "vpnManager_status": vpnManager != nil ? mapVPNStatus(vpnManager!.connection.status) : "no_manager",
+            "vpnManager_protoBundleId": (vpnManager?.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier ?? "nil",
+            "appVersion": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown",
+            "buildNumber": Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown",
+            "deviceId": UIDevice.current.identifierForVendor?.uuidString ?? "nil",
+        ]
+
+        // Check cache dir contents
+        if let containerPath = containerURL?.appendingPathComponent("k2").path {
+            let contents = (try? FileManager.default.contentsOfDirectory(atPath: containerPath)) ?? []
+            dump["cacheDirContents"] = contents
+            dump["cacheDirExists"] = FileManager.default.fileExists(atPath: containerPath)
+        }
+
+        // Web update status
+        let docsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let webUpdatePath = docsPath.appendingPathComponent("web-update")
+        dump["webUpdate_exists"] = FileManager.default.fileExists(atPath: webUpdatePath.path)
+        if let versionData = try? String(contentsOf: webUpdatePath.appendingPathComponent("version.txt"), encoding: .utf8) {
+            dump["webUpdate_version"] = versionData.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        logger.info("debugDump: \(dump)")
+        call.resolve(dump)
+    }
+
     // MARK: - Private VPN Helpers
 
     private func loadVPNManager(completion: ((NETunnelProviderManager?) -> Void)? = nil) {
@@ -454,29 +507,10 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    /// Remap Go StatusJSON snake_case keys to JS camelCase
-    private func remapStatusKeys(_ json: [String: Any]) -> [String: Any] {
-        let keyMap: [String: String] = [
-            "connected_at": "connectedAt",
-            "uptime_seconds": "uptimeSeconds",
-        ]
-        var result: [String: Any] = [:]
-        for (key, value) in json {
-            let newKey = keyMap[key] ?? key
-            result[newKey] = value
-        }
-        return result
-    }
+    // remapStatusKeys is in K2Helpers.swift (module-level function)
 
     private func mapVPNStatus(_ status: NEVPNStatus) -> String {
-        switch status {
-        case .connected: return "connected"
-        case .connecting: return "connecting"
-        case .disconnecting: return "disconnecting"
-        case .reasserting: return "reconnecting"
-        case .disconnected, .invalid: return "disconnected"
-        @unknown default: return "disconnected"
-        }
+        return mapVPNStatusString(status.rawValue)
     }
 
     // MARK: - Private Update Helpers
@@ -497,7 +531,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                     return (data, baseURL)
                 }
             } catch {
-                NSLog("[K2Plugin] fetchManifest failed for %@: %@", endpoint, error.localizedDescription)
+                logger.debug("fetchManifest failed for \(endpoint): \(error.localizedDescription)")
                 continue
             }
         }
@@ -532,7 +566,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                     }
                 }
             } catch {
-                NSLog("[K2Plugin] autocheck native update error: %@", error.localizedDescription)
+                logger.warning("autocheck native update error: \(error.localizedDescription)")
             }
 
             // 2. Check + silently apply web OTA
@@ -558,28 +592,18 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                 await applyWebUpdateInternal { result in
                     switch result {
                     case .success:
-                        NSLog("[K2Plugin] auto web OTA applied: %@", remoteVersion)
+                        logger.info("auto web OTA applied: \(remoteVersion)")
                     case .failure(let error):
-                        NSLog("[K2Plugin] auto web OTA failed: %@", error.localizedDescription)
+                        logger.warning("auto web OTA failed: \(error.localizedDescription)")
                     }
                 }
             } catch {
-                NSLog("[K2Plugin] autocheck web update error: %@", error.localizedDescription)
+                logger.warning("autocheck web update error: \(error.localizedDescription)")
             }
         }
     }
 
-    private func isNewerVersion(_ remote: String, than local: String) -> Bool {
-        let r = remote.split(separator: ".").compactMap { Int($0) }
-        let l = local.split(separator: ".").compactMap { Int($0) }
-        for i in 0..<max(r.count, l.count) {
-            let rv = i < r.count ? r[i] : 0
-            let lv = i < l.count ? l[i] : 0
-            if rv > lv { return true }
-            if rv < lv { return false }
-        }
-        return false
-    }
+    // isNewerVersion is in K2Helpers.swift (module-level function)
 
     private func sha256(data: Data) -> String {
         var hash = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))

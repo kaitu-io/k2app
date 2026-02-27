@@ -8,23 +8,36 @@
 
 /* Begin PBXBuildFile section */
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
+		3781D684BB9C96059E40EA5D /* NEHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10F65EE64D38B428B1B21F29 /* NEHelpers.swift */; };
+		41A12CB52DDBDCFEF454E423 /* NEHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10F65EE64D38B428B1B21F29 /* NEHelpers.swift */; };
+		4A0F6114028D95A7FEB60E53 /* K2Helpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBFAE7F17CEFF46E3748DC13 /* K2Helpers.swift */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
-		AB10000000000000000000F1 /* AppBridgeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10000000000000000000F2 /* AppBridgeViewController.swift */; };
 		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		51EF5EA20E6D3E5FA88D67A4 /* PacketTunnelExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = B3E4F1BB9F484E6F4766ADD2 /* PacketTunnelExtension.appex */; };
 		65E4ECC2D32A657AC351C764 /* K2Mobile.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = BBCE1198135DD938090D5E41 /* K2Mobile.xcframework */; };
+		70874F7C1F94F5C55643C066 /* K2HelpersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF81A8541F041F2827C75E09 /* K2HelpersTests.swift */; };
+		7C62EE0757ADF7F3C8CB6E54 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D08300DE0A8C33C607A9BC3E /* Foundation.framework */; };
 		9ECB53766821BE46A6517C18 /* PacketTunnelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDF0660D7E007B680F0370F8 /* PacketTunnelProvider.swift */; };
 		A084ECDBA7D38E1E42DFC39D /* Pods_App.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */; };
+		AB10000000000000000000F1 /* AppBridgeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10000000000000000000F2 /* AppBridgeViewController.swift */; };
 		AC809A99C72119A8BD87D2F2 /* K2Mobile.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = BBCE1198135DD938090D5E41 /* K2Mobile.xcframework */; };
 		D36F09BE5D71D847D49AC01B /* Pods_PacketTunnelExtension.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 233A3F316C4F467CA6A1A8A2 /* Pods_PacketTunnelExtension.framework */; };
+		D936F650E10A1AAA3C1291AD /* NEHelpersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8FBC8B200147C902DEE140F /* NEHelpersTests.swift */; };
 		FCBE94BC67556466AB9AA049 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D08300DE0A8C33C607A9BC3E /* Foundation.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		9B5C9E1C539B598D8E8CFFE2 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 504EC3031FED79650016851F;
+			remoteInfo = App;
+		};
 		9B73336DA576EEC2AF6E8E78 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
@@ -49,25 +62,30 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		10F65EE64D38B428B1B21F29 /* NEHelpers.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NEHelpers.swift; sourceTree = "<group>"; };
 		1BA01B94F08FAC328D94CDED /* Pods-PacketTunnelExtension.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-PacketTunnelExtension.debug.xcconfig"; path = "Pods/Target Support Files/Pods-PacketTunnelExtension/Pods-PacketTunnelExtension.debug.xcconfig"; sourceTree = "<group>"; };
 		233A3F316C4F467CA6A1A8A2 /* Pods_PacketTunnelExtension.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_PacketTunnelExtension.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
+		4CA3ACD2BD7AA77D298C2606 /* K2Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = K2Tests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
 		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		504EC3071FED79650016851F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
-		AB10000000000000000000F2 /* AppBridgeViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppBridgeViewController.swift; sourceTree = "<group>"; };
 		504EC30C1FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
 		504EC30E1FED79650016851F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		504EC3111FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
+		AB10000000000000000000F2 /* AppBridgeViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppBridgeViewController.swift; sourceTree = "<group>"; };
 		AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_App.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		AF51FD2D460BCFE21FA515B2 /* Pods-App.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-App.release.xcconfig"; path = "Pods/Target Support Files/Pods-App/Pods-App.release.xcconfig"; sourceTree = "<group>"; };
 		B3E4F1BB9F484E6F4766ADD2 /* PacketTunnelExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PacketTunnelExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		BBCE1198135DD938090D5E41 /* K2Mobile.xcframework */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = wrapper.xcframework; path = K2Mobile.xcframework; sourceTree = SOURCE_ROOT; };
+		BF81A8541F041F2827C75E09 /* K2HelpersTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = K2HelpersTests.swift; sourceTree = "<group>"; };
+		CBFAE7F17CEFF46E3748DC13 /* K2Helpers.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = K2Helpers.swift; path = "../../../plugins/k2-plugin/ios/Plugin/K2Helpers.swift"; sourceTree = "<group>"; };
 		D08300DE0A8C33C607A9BC3E /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		D37F6F07B15C96C61F3681FF /* Pods-PacketTunnelExtension.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-PacketTunnelExtension.release.xcconfig"; path = "Pods/Target Support Files/Pods-PacketTunnelExtension/Pods-PacketTunnelExtension.release.xcconfig"; sourceTree = "<group>"; };
 		DDF0660D7E007B680F0370F8 /* PacketTunnelProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PacketTunnelProvider.swift; sourceTree = "<group>"; };
+		E8FBC8B200147C902DEE140F /* NEHelpersTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NEHelpersTests.swift; sourceTree = "<group>"; };
 		FC68EB0AF532CFC21C3344DD /* Pods-App.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-App.debug.xcconfig"; path = "Pods/Target Support Files/Pods-App/Pods-App.debug.xcconfig"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -91,13 +109,33 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		9AD360E51F96B28FB5247E41 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7C62EE0757ADF7F3C8CB6E54 /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		0014434EA83B0A3B0665D878 /* K2Tests */ = {
+			isa = PBXGroup;
+			children = (
+				BF81A8541F041F2827C75E09 /* K2HelpersTests.swift */,
+				E8FBC8B200147C902DEE140F /* NEHelpersTests.swift */,
+				CBFAE7F17CEFF46E3748DC13 /* K2Helpers.swift */,
+			);
+			name = K2Tests;
+			path = K2Tests;
+			sourceTree = "<group>";
+		};
 		270333A7A9DD28EA87B8AD2D /* PacketTunnelExtension */ = {
 			isa = PBXGroup;
 			children = (
 				DDF0660D7E007B680F0370F8 /* PacketTunnelProvider.swift */,
+				10F65EE64D38B428B1B21F29 /* NEHelpers.swift */,
 			);
 			name = PacketTunnelExtension;
 			path = PacketTunnelExtension;
@@ -122,6 +160,7 @@
 				27E2DDA53C4D2A4D1A88CE4A /* Frameworks */,
 				270333A7A9DD28EA87B8AD2D /* PacketTunnelExtension */,
 				BBCE1198135DD938090D5E41 /* K2Mobile.xcframework */,
+				0014434EA83B0A3B0665D878 /* K2Tests */,
 			);
 			sourceTree = "<group>";
 		};
@@ -130,6 +169,7 @@
 			children = (
 				504EC3041FED79650016851F /* App.app */,
 				B3E4F1BB9F484E6F4766ADD2 /* PacketTunnelExtension.appex */,
+				4CA3ACD2BD7AA77D298C2606 /* K2Tests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -211,6 +251,24 @@
 			productReference = 504EC3041FED79650016851F /* App.app */;
 			productType = "com.apple.product-type.application";
 		};
+		F2FEFBC4940A6D5AE3742098 /* K2Tests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E4DA0529BAD77ABD6566D9F0 /* Build configuration list for PBXNativeTarget "K2Tests" */;
+			buildPhases = (
+				7135089B5A3071060B972F61 /* Sources */,
+				9AD360E51F96B28FB5247E41 /* Frameworks */,
+				CD692C5C96E2D7C7BE7990FC /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				2B2FC72303CF2C424AC87380 /* PBXTargetDependency */,
+			);
+			name = K2Tests;
+			productName = K2Tests;
+			productReference = 4CA3ACD2BD7AA77D298C2606 /* K2Tests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -242,6 +300,7 @@
 			targets = (
 				504EC3031FED79650016851F /* App */,
 				1947B197736C4969E8F1E92A /* PacketTunnelExtension */,
+				F2FEFBC4940A6D5AE3742098 /* K2Tests */,
 			);
 		};
 /* End PBXProject section */
@@ -257,6 +316,13 @@
 				50379B232058CBB4000EE86E /* capacitor.config.json in Resources */,
 				504EC30D1FED79650016851F /* Main.storyboard in Resources */,
 				2FAD9763203C412B000D30F8 /* config.xml in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CD692C5C96E2D7C7BE7990FC /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -350,12 +416,30 @@
 			buildActionMask = 2147483647;
 			files = (
 				9ECB53766821BE46A6517C18 /* PacketTunnelProvider.swift in Sources */,
+				3781D684BB9C96059E40EA5D /* NEHelpers.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7135089B5A3071060B972F61 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				70874F7C1F94F5C55643C066 /* K2HelpersTests.swift in Sources */,
+				D936F650E10A1AAA3C1291AD /* NEHelpersTests.swift in Sources */,
+				4A0F6114028D95A7FEB60E53 /* K2Helpers.swift in Sources */,
+				41A12CB52DDBDCFEF454E423 /* NEHelpers.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		2B2FC72303CF2C424AC87380 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = App;
+			target = 504EC3031FED79650016851F /* App */;
+			targetProxy = 9B5C9E1C539B598D8E8CFFE2 /* PBXContainerItemProxy */;
+		};
 		70561086C6687E43836A4EB8 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			name = PacketTunnelExtension;
@@ -534,6 +618,25 @@
 			};
 			name = Release;
 		};
+		AEC589AB92CFE120D68CC2E4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = NJT954Q3RH;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.kaitu.K2Tests;
+				PRODUCT_NAME = K2Tests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/App";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 		B63896E443B09FCD01547F0B /* Release */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = D37F6F07B15C96C61F3681FF /* Pods-PacketTunnelExtension.release.xcconfig */;
@@ -579,6 +682,24 @@
 			};
 			name = Debug;
 		};
+		D89B5B833DB4537D7BF8F407 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = NJT954Q3RH;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.kaitu.K2Tests;
+				PRODUCT_NAME = K2Tests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/App";
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -605,6 +726,15 @@
 			buildConfigurations = (
 				B63896E443B09FCD01547F0B /* Release */,
 				CF789D2994406C697F2FBAE3 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E4DA0529BAD77ABD6566D9F0 /* Build configuration list for PBXNativeTarget "K2Tests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AEC589AB92CFE120D68CC2E4 /* Release */,
+				D89B5B833DB4537D7BF8F407 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

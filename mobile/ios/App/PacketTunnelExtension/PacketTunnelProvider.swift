@@ -1,7 +1,9 @@
 import NetworkExtension
 import K2Mobile  // gomobile xcframework (appext/ package)
+import os.log
 
 private let kAppGroup = "group.io.kaitu"
+private let logger = Logger(subsystem: "io.kaitu", category: "NE")
 
 private struct ClientConfigSubset: Codable {
     var tun: TunConfig?
@@ -17,22 +19,7 @@ private struct ClientConfigSubset: Codable {
     }
 }
 
-/// Parse IPv4 CIDR "10.0.0.2/24" → ("10.0.0.2", "255.255.255.0"), nil on failure.
-private func parseIPv4CIDR(_ cidr: String) -> (String, String)? {
-    let parts = cidr.split(separator: "/", maxSplits: 1)
-    guard parts.count == 2, let prefix = Int(parts[1]), prefix >= 0, prefix <= 32 else { return nil }
-    let mask = prefix == 0 ? UInt32(0) : UInt32.max << (32 - prefix)
-    let m = String(format: "%d.%d.%d.%d",
-                   (mask >> 24) & 0xFF, (mask >> 16) & 0xFF, (mask >> 8) & 0xFF, mask & 0xFF)
-    return (String(parts[0]), m)
-}
-
-/// Parse IPv6 CIDR "fd00::2/64" → ("fd00::2", 64), nil on failure.
-private func parseIPv6CIDR(_ cidr: String) -> (String, Int)? {
-    let parts = cidr.split(separator: "/", maxSplits: 1)
-    guard parts.count == 2, let prefix = Int(parts[1]), prefix >= 0, prefix <= 128 else { return nil }
-    return (String(parts[0]), prefix)
-}
+// Pure helpers (parseIPv4CIDR, parseIPv6CIDR, stripPort) are in NEHelpers.swift
 
 // MARK: - TUN fd scan (WireGuard approach)
 // iOS SDK doesn't expose sys/kern_control.h — define structs manually.
@@ -101,43 +88,39 @@ private func findTunnelFileDescriptor() -> Int32? {
     return nil
 }
 
-/// Strip port from "8.8.8.8:53" → "8.8.8.8". Handles IPv6 "[::1]:53" → "::1".
-private func stripPort(_ addr: String) -> String {
-    if addr.hasPrefix("["), let closeBracket = addr.firstIndex(of: "]") {
-        return String(addr[addr.index(after: addr.startIndex)..<closeBracket])
-    }
-    let parts = addr.split(separator: ":")
-    if parts.count == 2 { return String(parts[0]) } // "ip:port"
-    return addr // bare IP or IPv6 without port
-}
+// stripPort is in NEHelpers.swift
 
 class PacketTunnelProvider: NEPacketTunnelProvider {
     private var engine: AppextEngine?
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
-        NSLog("[K2:NE] startTunnel called, options keys: %@", options?.keys.joined(separator: ",") ?? "nil")
+        logger.info("startTunnel called, options keys: \(options?.keys.joined(separator: ",") ?? "nil")")
 
         let configJSON: String
         if let config = options?["configJSON"] as? String {
-            NSLog("[K2:NE] Got configJSON from options (%d bytes)", config.count)
+            logger.info("Got configJSON from options (\(config.count) bytes)")
             configJSON = config
         } else if let config = (protocolConfiguration as? NETunnelProviderProtocol)?.providerConfiguration?["configJSON"] as? String {
-            NSLog("[K2:NE] Got configJSON from providerConfiguration (%d bytes)", config.count)
+            logger.info("Got configJSON from providerConfiguration (\(config.count) bytes)")
             configJSON = config
         } else {
-            NSLog("[K2:NE] ERROR: Missing configJSON")
+            logger.error("Missing configJSON in both options and providerConfiguration")
             completionHandler(NSError(domain: "io.kaitu", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing configJSON"]))
             return
         }
 
         // Clean old engine before creating new one
         if engine != nil {
-            NSLog("[K2:NE] Stopping old engine")
-            try? engine?.stop()
+            logger.info("Stopping old engine")
+            do {
+                try engine?.stop()
+            } catch {
+                logger.warning("Failed to stop old engine: \(error)")
+            }
             engine = nil
         }
 
-        NSLog("[K2:NE] Creating AppextEngine")
+        logger.info("Creating AppextEngine")
         engine = AppextNewEngine()
 
         let handler = EventBridge(provider: self)
@@ -146,15 +129,15 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         // Configure network settings first, then get TUN fd in completion
         let clientConfig = parseClientConfig(from: configJSON)
         let settings = buildNetworkSettings(from: clientConfig)
-        NSLog("[K2:NE] Setting tunnel network settings")
+        logger.info("Setting tunnel network settings")
 
         setTunnelNetworkSettings(settings) { [weak self] error in
             if let error = error {
-                NSLog("[K2:NE] setTunnelNetworkSettings FAILED: %@", error.localizedDescription)
+                logger.error("setTunnelNetworkSettings FAILED: \(error.localizedDescription)")
                 completionHandler(error)
                 return
             }
-            NSLog("[K2:NE] Network settings applied OK")
+            logger.info("Network settings applied OK")
 
             // Get TUN fd AFTER network settings are applied.
             // Primary: KVC keypath (sing-box ExtensionPlatformInterface.swift:191)
@@ -162,12 +145,12 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             let fd: Int32
             if let kvcFd = self?.packetFlow.value(forKeyPath: "socket.fileDescriptor") as? Int32, kvcFd >= 0 {
                 fd = kvcFd
-                NSLog("[K2:NE] Got TUN fd=%d (KVC)", fd)
+                logger.info("Got TUN fd=\(fd) (KVC)")
             } else if let scanFd = findTunnelFileDescriptor() {
                 fd = scanFd
-                NSLog("[K2:NE] Got TUN fd=%d (fd scan)", fd)
+                logger.info("Got TUN fd=\(fd) (fd scan)")
             } else {
-                NSLog("[K2:NE] ERROR: Failed to get TUN fd (both KVC and fd scan failed)")
+                logger.error("Failed to get TUN fd (both KVC and fd scan failed)")
                 let err = NSError(domain: "io.kaitu", code: 2,
                                   userInfo: [NSLocalizedDescriptionKey: "Failed to get TUN fd"])
                 completionHandler(err)
@@ -177,33 +160,45 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             do {
                 // Build EngineConfig with platform paths
                 guard let engineCfg = AppextNewEngineConfig() else {
-                    NSLog("[K2:NE] ERROR: Failed to create EngineConfig")
+                    logger.error("Failed to create EngineConfig")
                     let err = NSError(domain: "io.kaitu", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to create EngineConfig"])
                     completionHandler(err)
                     return
                 }
                 let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: kAppGroup)
                 engineCfg.cacheDir = containerURL?.appendingPathComponent("k2").path ?? ""
-                NSLog("[K2:NE] EngineConfig cacheDir=%@", engineCfg.cacheDir)
+                logger.info("EngineConfig cacheDir=\(engineCfg.cacheDir)")
 
                 if !engineCfg.cacheDir.isEmpty {
-                    try? FileManager.default.createDirectory(atPath: engineCfg.cacheDir, withIntermediateDirectories: true)
+                    do {
+                        try FileManager.default.createDirectory(atPath: engineCfg.cacheDir, withIntermediateDirectories: true)
+                    } catch {
+                        logger.warning("Failed to create cacheDir: \(error)")
+                    }
                 }
 
-                NSLog("[K2:NE] Calling engine.start()")
+                logger.info("Calling engine.start()")
                 try self?.engine?.start(configJSON, fd: Int(fd), cfg: engineCfg)
-                NSLog("[K2:NE] engine.start() returned OK")
+                logger.info("engine.start() returned OK")
                 completionHandler(nil)
             } catch {
-                NSLog("[K2:NE] engine.start() FAILED: %@", error.localizedDescription)
+                logger.error("engine.start() FAILED: \(error.localizedDescription)")
                 completionHandler(error)
             }
         }
     }
 
     private func parseClientConfig(from configJSON: String) -> ClientConfigSubset? {
-        guard let data = configJSON.data(using: .utf8) else { return nil }
-        return try? JSONDecoder().decode(ClientConfigSubset.self, from: data)
+        guard let data = configJSON.data(using: .utf8) else {
+            logger.info("Could not encode configJSON to UTF-8 data")
+            return nil
+        }
+        do {
+            return try JSONDecoder().decode(ClientConfigSubset.self, from: data)
+        } catch {
+            logger.info("Could not parse ClientConfig subset, using defaults: \(error)")
+            return nil
+        }
     }
 
     private func buildNetworkSettings(from config: ClientConfigSubset?) -> NEPacketTunnelNetworkSettings {
@@ -233,8 +228,12 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 
     override func stopTunnel(with reason: NEProviderStopReason, completionHandler: @escaping () -> Void) {
-        NSLog("[K2:NE] stopTunnel called, reason=%ld", reason.rawValue)
-        try? engine?.stop()
+        logger.info("stopTunnel called, reason=\(reason.rawValue)")
+        do {
+            try engine?.stop()
+        } catch {
+            logger.warning("engine.stop() failed: \(error)")
+        }
         engine = nil
         completionHandler()
     }
@@ -274,17 +273,17 @@ class EventBridge: NSObject, AppextEventHandlerProtocol {
               let data = json.data(using: .utf8),
               let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let state = parsed["state"] as? String else {
-            NSLog("[K2:NE] onStatus: invalid or nil JSON")
+            logger.warning("onStatus: invalid or nil JSON: \(statusJSON ?? "nil")")
             return
         }
 
-        NSLog("[K2:NE] onStatus: state=%@", state)
+        logger.debug("onStatus: state=\(state)")
 
         if state == "disconnected" {
             if let errorObj = parsed["error"] as? [String: Any] {
                 let code = errorObj["code"] as? Int ?? 0
                 let message = errorObj["message"] as? String ?? "unknown error"
-                NSLog("[K2:NE] Disconnected with error: code=%d message=%@", code, message)
+                logger.error("Disconnected with error: code=\(code) message=\(message)")
 
                 // Write structured error JSON to App Group so K2Plugin preserves the error code.
                 // Format: {"code": 503, "message": "server unreachable"}
@@ -299,7 +298,7 @@ class EventBridge: NSObject, AppextEventHandlerProtocol {
                                       userInfo: [NSLocalizedDescriptionKey: message])
                 provider?.cancelTunnelWithError(nsError)
             } else {
-                NSLog("[K2:NE] Normal disconnect")
+                logger.info("Normal disconnect")
                 provider?.cancelTunnelWithError(nil)
             }
         } else if state == "connected", let errorObj = parsed["error"] as? [String: Any] {
@@ -307,7 +306,7 @@ class EventBridge: NSObject, AppextEventHandlerProtocol {
             // Do NOT call cancelTunnelWithError — tunnel is still running.
             let code = errorObj["code"] as? Int ?? 0
             let message = errorObj["message"] as? String ?? "unknown error"
-            NSLog("[K2:NE] Connected with wire error: code=%d message=%@", code, message)
+            logger.error("Connected with wire error: code=\(code) message=\(message)")
             if let errorJSON = try? JSONSerialization.data(withJSONObject: errorObj),
                let errorStr = String(data: errorJSON, encoding: .utf8) {
                 UserDefaults(suiteName: kAppGroup)?.set(errorStr, forKey: "vpnError")

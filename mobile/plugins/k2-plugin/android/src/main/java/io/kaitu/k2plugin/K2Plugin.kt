@@ -47,13 +47,16 @@ class K2Plugin : Plugin() {
     private val vpnServiceClassName = "io.kaitu.K2VpnService"
 
     override fun load() {
+        Log.d(TAG, "load: K2Plugin initializing")
+
         // Check for OTA web update
         val webUpdateDir = File(context.filesDir, "web-update")
         val indexFile = File(webUpdateDir, "index.html")
         if (webUpdateDir.exists() && indexFile.exists()) {
+            Log.d(TAG, "load: OTA web update found, setting server base path: ${webUpdateDir.absolutePath}")
             bridge.setServerBasePath(webUpdateDir.absolutePath)
         } else if (webUpdateDir.exists()) {
-            // Corrupt OTA dir, remove it
+            Log.w(TAG, "load: corrupt OTA web dir (no index.html) — removing")
             webUpdateDir.deleteRecursively()
         }
 
@@ -61,6 +64,7 @@ class K2Plugin : Plugin() {
 
         // Auto-check for updates after 3s delay
         Handler(Looper.getMainLooper()).postDelayed({
+            Log.d(TAG, "load: starting auto-update check")
             Thread { performAutoUpdateCheck() }.start()
         }, 3000)
     }
@@ -106,15 +110,18 @@ class K2Plugin : Plugin() {
         val service = vpnService
         if (service != null) {
             val json = service.getStatusJSON()
+            Log.d(TAG, "getStatus: raw JSON from service: $json")
             try {
                 val obj = JSObject(json)
                 call.resolve(remapStatusKeys(obj))
             } catch (e: Exception) {
+                Log.w(TAG, "getStatus: failed to parse service JSON: ${e.message}")
                 val ret = JSObject()
                 ret.put("state", "disconnected")
                 call.resolve(ret)
             }
         } else {
+            Log.d(TAG, "getStatus: service not bound — returning disconnected")
             val ret = JSObject()
             ret.put("state", "disconnected")
             call.resolve(ret)
@@ -150,28 +157,33 @@ class K2Plugin : Plugin() {
     fun connect(call: PluginCall) {
         val config = call.getString("config")
         if (config == null) {
+            Log.e(TAG, "connect: missing config parameter")
             call.reject("Missing config parameter")
             return
         }
+        Log.i(TAG, "connect: config length=${config.length}")
 
         // Save config JSON
         context.getSharedPreferences("k2vpn", Context.MODE_PRIVATE)
             .edit().putString("configJSON", config).apply()
+        Log.d(TAG, "connect: config saved to SharedPreferences")
 
         // Check VPN permission — Android requires user consent via VpnService.prepare()
-        // Must use Activity context for proper VPN consent handling
+        // CRITICAL: Must use Activity context (NOT Application context).
+        // Using app context → establish() returns null on Android 15+.
         val act = activity
         if (act == null) {
+            Log.e(TAG, "connect: no activity available — cannot request VPN permission")
             call.reject("No activity available for VPN permission")
             return
         }
 
         val prepareIntent = VpnService.prepare(act)
         if (prepareIntent != null) {
-            // Permission not yet granted — show system VPN consent dialog
+            Log.d(TAG, "connect: VPN permission not yet granted — showing system consent dialog")
             startActivityForResult(call, prepareIntent, "vpnPermissionResult")
         } else {
-            // Already authorized — start VPN directly
+            Log.d(TAG, "connect: VPN permission already granted — starting service directly")
             startVpnService(config)
             call.resolve()
         }
@@ -179,20 +191,25 @@ class K2Plugin : Plugin() {
 
     @ActivityCallback
     private fun vpnPermissionResult(call: PluginCall, result: ActivityResult) {
+        Log.d(TAG, "vpnPermissionResult: resultCode=${result.resultCode}")
         if (result.resultCode == Activity.RESULT_OK) {
             val config = call.getString("config")
             if (config != null) {
+                Log.i(TAG, "vpnPermissionResult: permission granted — starting VPN service")
                 startVpnService(config)
                 call.resolve()
             } else {
+                Log.e(TAG, "vpnPermissionResult: config lost after permission grant")
                 call.reject("config lost after VPN permission grant")
             }
         } else {
+            Log.w(TAG, "vpnPermissionResult: user denied VPN permission")
             call.reject("VPN permission denied by user")
         }
     }
 
     private fun startVpnService(configJSON: String) {
+        Log.d(TAG, "startVpnService: sending START intent to $vpnServiceClassName")
         val intent = Intent().apply {
             setClassName(context.packageName, vpnServiceClassName)
             action = "START"
@@ -203,6 +220,7 @@ class K2Plugin : Plugin() {
 
     @PluginMethod
     fun disconnect(call: PluginCall) {
+        Log.i(TAG, "disconnect: sending STOP intent")
         val intent = Intent().apply {
             setClassName(context.packageName, vpnServiceClassName)
             action = "STOP"
@@ -211,15 +229,50 @@ class K2Plugin : Plugin() {
         call.resolve()
     }
 
-    // Called by K2VpnService when state changes
-    fun onStateChange(state: String) {
-        val data = JSObject()
-        data.put("state", state)
-        notifyListeners("vpnStateChange", data)
+    /**
+     * Unified status callback from K2VpnService — receives engine status JSON.
+     * JSON format: {"state":"...","error":{"code":N,"message":"..."},"connected_at":"...","uptime_seconds":N}
+     *
+     * Emits vpnStateChange (always) with full remapped status for transformStatus() in JS.
+     * Also emits vpnError when disconnected+error for immediate error UI path.
+     */
+    fun onStatus(statusJSON: String) {
+        Log.d(TAG, "onStatus: $statusJSON")
+        try {
+            val obj = JSONObject(statusJSON)
+            val state = obj.optString("state", "disconnected")
+
+            // Emit vpnStateChange with full remapped status — JS transformStatus() handles all cases
+            val data = JSObject(statusJSON)
+            notifyListeners("vpnStateChange", remapStatusKeys(data))
+
+            // Also emit vpnError for terminal error states (disconnected + error).
+            // Do NOT emit for connected+error — that's a retrying state (TUN up, wire broken).
+            val errorObj = obj.optJSONObject("error")
+            if (errorObj != null && state == "disconnected") {
+                val errorData = JSObject()
+                errorData.put("code", errorObj.optInt("code", 570))
+                errorData.put("message", errorObj.optString("message", "unknown error"))
+                Log.w(TAG, "onStatus: terminal error — code=${errorObj.optInt("code")} message=${errorObj.optString("message")}")
+                notifyListeners("vpnError", errorData)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "onStatus: failed to parse status JSON: ${e.message}", e)
+            // Fallback: emit basic disconnected state
+            val data = JSObject()
+            data.put("state", "disconnected")
+            notifyListeners("vpnStateChange", data)
+        }
     }
 
+    /**
+     * Direct error callback for non-engine errors (e.g., VPN permission revoked by system).
+     * Kept as fallback — prefer onStatus() for engine events.
+     */
     fun onError(message: String) {
+        Log.w(TAG, "onError: $message")
         val data = JSObject()
+        data.put("code", 570)
         data.put("message", message)
         notifyListeners("vpnError", data)
     }
@@ -636,30 +689,10 @@ class K2Plugin : Plugin() {
      * Resolve a download URL against a base URL. If the url is already absolute
      * (starts with http:// or https://), return as-is. Otherwise join baseURL + "/" + url.
      */
-    private fun resolveDownloadURL(url: String, baseURL: String): String {
-        if (url.startsWith("http://") || url.startsWith("https://")) {
-            return url
-        }
-        return "$baseURL/$url"
-    }
-
-    private fun isNewerVersion(remote: String, local: String): Boolean {
-        val r = remote.split(".").map { it.toIntOrNull() ?: 0 }
-        val l = local.split(".").map { it.toIntOrNull() ?: 0 }
-        val maxLen = maxOf(r.size, l.size)
-        for (i in 0 until maxLen) {
-            val rv = r.getOrElse(i) { 0 }
-            val lv = l.getOrElse(i) { 0 }
-            if (rv > lv) return true
-            if (rv < lv) return false
-        }
-        return false
-    }
-
-    private fun sha256(data: ByteArray): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        return digest.digest(data).joinToString("") { "%02x".format(it) }
-    }
+    // Pure utility functions extracted to K2PluginUtils for JVM unit testing.
+    private fun resolveDownloadURL(url: String, baseURL: String) = K2PluginUtils.resolveDownloadURL(url, baseURL)
+    private fun isNewerVersion(remote: String, local: String) = K2PluginUtils.isNewerVersion(remote, local)
+    private fun sha256(data: ByteArray) = K2PluginUtils.sha256(data)
 
     private fun unzip(zipFile: File, targetDir: File) {
         targetDir.mkdirs()
@@ -697,12 +730,16 @@ class K2Plugin : Plugin() {
     // ── VPN service binding ─────────────────────────────────────────
 
     private fun bindToService() {
+        Log.d(TAG, "bindToService: binding to $vpnServiceClassName")
         serviceConnection = object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+                Log.d(TAG, "onServiceConnected: binder=$binder")
                 vpnService = (binder as? VpnServiceBridge.BridgeBinder)?.getService()
                 vpnService?.setPlugin(this@K2Plugin)
+                Log.i(TAG, "onServiceConnected: vpnService bound=${vpnService != null}")
             }
             override fun onServiceDisconnected(name: ComponentName?) {
+                Log.w(TAG, "onServiceDisconnected: service connection lost")
                 vpnService = null
             }
         }

@@ -49,6 +49,9 @@ dependencies {
     implementation project(':capacitor-status-bar')
     implementation project(':k2-plugin')
     implementation project(':capacitor-cordova-android-plugins')
+
+    testImplementation "junit:junit:$junitVersion"
+    testImplementation "org.json:json:20231013"
 }
 
 apply from: 'capacitor.build.gradle'

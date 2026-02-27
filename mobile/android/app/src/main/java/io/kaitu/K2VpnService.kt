@@ -19,58 +19,17 @@ import android.util.Log
 import io.kaitu.k2plugin.K2Plugin
 import io.kaitu.k2plugin.VpnServiceBridge
 import org.json.JSONObject
-import mobile.Mobile
-import mobile.Engine
-import mobile.EventHandler as MobileEventHandler
+import appext.Appext
+import appext.Engine
+import appext.EventHandler as AppextEventHandler
 import java.util.concurrent.Executors
 
-private data class ParsedClientConfig(
-    val tunIpv4: String?,
-    val tunIpv6: String?,
-    val dnsProxy: List<String>?
-)
+// Pure utility functions (parseCIDR, stripPort, parseClientConfig, ParsedClientConfig)
+// are in K2VpnServiceUtils.kt for JVM unit testing.
 
-/** Parse CIDR "10.0.0.2/24" → Pair("10.0.0.2", 24), null on failure. */
-private fun parseCIDR(cidr: String): Pair<String, Int>? {
-    val parts = cidr.split("/", limit = 2)
-    if (parts.size != 2) return null
-    val prefix = parts[1].toIntOrNull() ?: return null
-    return Pair(parts[0], prefix)
-}
+class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector {
 
-/** Strip port from "8.8.8.8:53" → "8.8.8.8". Handles IPv6 "[::1]:53" → "::1". */
-private fun stripPort(addr: String): String {
-    if (addr.startsWith("[")) {
-        val close = addr.indexOf(']')
-        return if (close > 0) addr.substring(1, close) else addr
-    }
-    val parts = addr.split(":")
-    return if (parts.size == 2) parts[0] else addr // "ip:port" or bare IP/IPv6
-}
-
-/** Extract tun + dns fields from ClientConfig JSON. Null on parse failure. */
-private fun parseClientConfig(configJSON: String): ParsedClientConfig? {
-    return try {
-        val root = JSONObject(configJSON)
-        val tun = root.optJSONObject("tun")
-        val dns = root.optJSONObject("dns")
-        val dnsProxy = dns?.optJSONArray("proxy")?.let { arr ->
-            (0 until arr.length()).map { arr.getString(it) }
-        }
-        ParsedClientConfig(
-            tunIpv4 = tun?.optString("ipv4", null),
-            tunIpv6 = tun?.optString("ipv6", null),
-            dnsProxy = dnsProxy
-        )
-    } catch (e: Exception) {
-        Log.w("K2VpnService", "Failed to parse ClientConfig: ${e.message}")
-        null
-    }
-}
-
-class K2VpnService : VpnService(), VpnServiceBridge, mobile.SocketProtector {
-
-    // mobile.SocketProtector — marks socket FDs for VPN routing exclusion.
+    // appext.SocketProtector — marks socket FDs for VPN routing exclusion.
     // Delegates to VpnService.protect(int) which tells the OS kernel to route
     // this socket outside the TUN interface, preventing routing loops.
     override fun protect(fd: Int): Boolean {
@@ -95,11 +54,14 @@ class K2VpnService : VpnService(), VpnServiceBridge, mobile.SocketProtector {
     }
 
     override fun onBind(intent: Intent?): IBinder {
+        Log.d(TAG, "onBind: service binding requested")
         return binder
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.d(TAG, "onStartCommand: action=${intent?.action} flags=$flags startId=$startId")
         if (intent == null) {
+            Log.w(TAG, "onStartCommand: null intent — stopping self")
             stopSelf()
             return START_NOT_STICKY
         }
@@ -107,19 +69,37 @@ class K2VpnService : VpnService(), VpnServiceBridge, mobile.SocketProtector {
             "START" -> {
                 val configJSON = intent.getStringExtra("configJSON")
                 if (configJSON == null) {
+                    Log.e(TAG, "onStartCommand START: missing configJSON — stopping self")
                     stopSelf()
                     return START_NOT_STICKY
                 }
+                Log.d(TAG, "onStartCommand START: configJSON length=${configJSON.length}")
                 startVpn(configJSON)
             }
-            "STOP" -> stopVpn()
-            else -> stopSelf()
+            "STOP" -> {
+                Log.d(TAG, "onStartCommand STOP: tearing down VPN")
+                stopVpn()
+            }
+            else -> {
+                Log.w(TAG, "onStartCommand: unknown action=${intent.action} — stopping self")
+                stopSelf()
+            }
         }
         return START_NOT_STICKY
     }
 
     override fun onRevoke() {
-        plugin?.onError("VPN permission revoked by system")
+        Log.w(TAG, "onRevoke: VPN permission revoked by system")
+        // Synthesize a status event for revocation (engine won't emit this).
+        // Use code 403 (Forbidden) to indicate permission issue.
+        val revokeStatus = JSONObject().apply {
+            put("state", "disconnected")
+            put("error", JSONObject().apply {
+                put("code", 403)
+                put("message", "VPN permission revoked by system")
+            })
+        }
+        plugin?.onStatus(revokeStatus.toString())
         stopVpn()
         super.onRevoke()
     }
@@ -133,9 +113,9 @@ class K2VpnService : VpnService(), VpnServiceBridge, mobile.SocketProtector {
     }
 
     private fun startVpn(configJSON: String) {
-        Log.d(TAG, "startVpn: configJSON length=${configJSON.length}")
+        Log.i(TAG, "startVpn: configJSON length=${configJSON.length}")
         if (engine != null) {
-            Log.w(TAG, "Stopping existing VPN before reconnect")
+            Log.w(TAG, "startVpn: engine already exists — stopping before reconnect")
             stopVpn()
         }
         createNotificationChannel()
@@ -147,40 +127,61 @@ class K2VpnService : VpnService(), VpnServiceBridge, mobile.SocketProtector {
         }
 
         Log.d(TAG, "Creating engine...")
-        engine = Mobile.newEngine()
-        engine?.setEventHandler(object : MobileEventHandler {
-            override fun onStateChange(state: String?) {
-                Log.d(TAG, "onStateChange: $state")
-                state?.let { s ->
-                    // Dispatch to main thread — Go callbacks run on goroutine threads
-                    mainHandler.post {
-                        plugin?.onStateChange(s)
-                        if (s == "connected") {
-                            updateNotification("Connected")
+        engine = Appext.newEngine()
+        engine?.setEventHandler(object : AppextEventHandler {
+            /**
+             * Unified status callback — receives JSON: {"state":"...","error":{...},"connected_at":"..."}
+             * Replaces the old onStateChange+onError dual callbacks (Go EventHandler API migrated).
+             * iOS already uses this pattern (PacketTunnelProvider.swift EventBridge.onStatus).
+             */
+            override fun onStatus(statusJSON: String?) {
+                Log.d(TAG, "onStatus: $statusJSON")
+                if (statusJSON == null) {
+                    Log.w(TAG, "onStatus called with null JSON — ignoring")
+                    return
+                }
+                mainHandler.post {
+                    // Forward full status JSON to K2Plugin for JS event dispatch
+                    plugin?.onStatus(statusJSON)
+
+                    // Update notification based on state
+                    try {
+                        val obj = JSONObject(statusJSON)
+                        val state = obj.optString("state", "")
+                        Log.d(TAG, "onStatus parsed state=$state")
+                        when (state) {
+                            "connected" -> updateNotification("Connected")
+                            "connecting" -> updateNotification("Connecting...")
+                            "reconnecting" -> updateNotification("Reconnecting...")
+                            "disconnected" -> {
+                                val hasError = obj.has("error") && !obj.isNull("error")
+                                if (hasError) {
+                                    val errObj = obj.optJSONObject("error")
+                                    Log.w(TAG, "Disconnected with error: code=${errObj?.optInt("code")} message=${errObj?.optString("message")}")
+                                } else {
+                                    Log.d(TAG, "Normal disconnect")
+                                }
+                            }
                         }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to parse status JSON for notification: ${e.message}")
                     }
                 }
             }
 
-            override fun onError(message: String?) {
-                Log.e(TAG, "onError: $message")
-                message?.let { msg ->
-                    mainHandler.post { plugin?.onError(msg) }
-                }
-            }
-
             override fun onStats(txBytes: Long, rxBytes: Long) {
-                // Stats tracking
+                // Stats tracking — could forward to JS in future
+                Log.v(TAG, "onStats: tx=$txBytes rx=$rxBytes")
             }
         })
 
         // Build VPN interface from config (with fallback defaults)
-        Log.d(TAG, "Building VPN interface...")
-        val config = parseClientConfig(configJSON)
-        val (ipv4Addr, ipv4Prefix) = parseCIDR(config?.tunIpv4 ?: "10.0.0.2/24") ?: Pair("10.0.0.2", 24)
-        val (ipv6Addr, ipv6Prefix) = parseCIDR(config?.tunIpv6 ?: "fd00::2/64") ?: Pair("fd00::2", 64)
-        val dnsServers = config?.dnsProxy?.map { stripPort(it) }?.filter { it.isNotEmpty() }
+        val config = K2VpnServiceUtils.parseClientConfig(configJSON)
+        val (ipv4Addr, ipv4Prefix) = K2VpnServiceUtils.parseCIDR(config?.tunIpv4 ?: "10.0.0.2/24") ?: Pair("10.0.0.2", 24)
+        val (ipv6Addr, ipv6Prefix) = K2VpnServiceUtils.parseCIDR(config?.tunIpv6 ?: "fd00::2/64") ?: Pair("fd00::2", 64)
+        val dnsServers = config?.dnsProxy?.map { K2VpnServiceUtils.stripPort(it) }?.filter { it.isNotEmpty() }
             ?.takeIf { it.isNotEmpty() } ?: listOf("1.1.1.1", "8.8.8.8")
+        Log.i(TAG, "Building VPN interface: ipv4=$ipv4Addr/$ipv4Prefix ipv6=$ipv6Addr/$ipv6Prefix dns=$dnsServers")
 
         val builder = Builder()
             .setSession("Kaitu VPN")
@@ -199,17 +200,25 @@ class K2VpnService : VpnService(), VpnServiceBridge, mobile.SocketProtector {
         val rawFd = vpnInterface?.detachFd()
         if (rawFd == null || rawFd == -1) {
             Log.e(TAG, "establish() returned null — VPN permission not granted?")
-            plugin?.onError("VPN establish failed: permission not granted or system rejected")
+            val errorStatus = JSONObject().apply {
+                put("state", "disconnected")
+                put("error", JSONObject().apply {
+                    put("code", 403)
+                    put("message", "VPN establish failed: permission not granted or system rejected")
+                })
+            }
+            plugin?.onStatus(errorStatus.toString())
             stopVpn()
             return
         }
+        Log.d(TAG, "detachFd() returned fd=$rawFd — ownership transferred to Go engine")
 
         // Run blocking gomobile engine.start() off the main thread to prevent ANR.
         val cachePath = cacheDir.absolutePath
         engineExecutor.execute {
             try {
                 Log.d(TAG, "Starting engine with fd=$rawFd (background thread)")
-                val engineCfg = Mobile.newEngineConfig()
+                val engineCfg = Appext.newEngineConfig()
                 engineCfg.cacheDir = cachePath
                 engineCfg.socketProtector = this@K2VpnService
                 engine?.start(configJSON, rawFd.toLong(), engineCfg)
@@ -218,7 +227,16 @@ class K2VpnService : VpnService(), VpnServiceBridge, mobile.SocketProtector {
             } catch (e: Exception) {
                 Log.e(TAG, "Engine start failed: ${e.message}", e)
                 mainHandler.post {
-                    plugin?.onError(e.message ?: "Failed to start engine")
+                    // Engine may have already emitted onStatus with error before throwing.
+                    // This is a safety net — synthesize status for unhandled start failures.
+                    val errorStatus = JSONObject().apply {
+                        put("state", "disconnected")
+                        put("error", JSONObject().apply {
+                            put("code", 570)
+                            put("message", e.message ?: "Failed to start engine")
+                        })
+                    }
+                    plugin?.onStatus(errorStatus.toString())
                     stopVpn()
                 }
             }
@@ -226,6 +244,7 @@ class K2VpnService : VpnService(), VpnServiceBridge, mobile.SocketProtector {
     }
 
     private fun stopVpn() {
+        Log.i(TAG, "stopVpn: beginning teardown (engine=${engine != null})")
         unregisterNetworkCallback()
         val eng = engine
         engine = null
@@ -235,16 +254,20 @@ class K2VpnService : VpnService(), VpnServiceBridge, mobile.SocketProtector {
             // Run blocking gomobile stop() off main thread
             engineExecutor.execute {
                 try {
+                    Log.d(TAG, "stopVpn: calling engine.stop() on background thread")
                     eng.stop()
+                    Log.d(TAG, "stopVpn: engine.stop() completed")
                 } catch (e: Exception) {
-                    Log.w(TAG, "Engine stop error: ${e.message}")
+                    Log.e(TAG, "stopVpn: engine.stop() threw: ${e.message}", e)
                 }
                 mainHandler.post {
+                    Log.d(TAG, "stopVpn: removing foreground service + stopping self")
                     stopForeground(STOP_FOREGROUND_REMOVE)
                     stopSelf()
                 }
             }
         } else {
+            Log.d(TAG, "stopVpn: no engine — just stopping foreground service")
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         }
