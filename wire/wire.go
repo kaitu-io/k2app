@@ -47,6 +47,7 @@ type WireStats struct {
 	MIID        uint64        // Monitor Interval ID (QUIC only)
 	TxBytes     int64
 	RxBytes     int64
+	Fallback    bool // TCP-WS serving traffic due to QUIC failure
 }
 
 // StatsProvider is an optional interface for Dialers that expose metrics.

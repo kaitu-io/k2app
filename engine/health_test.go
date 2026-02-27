@@ -137,6 +137,30 @@ func TestHealthCooldown(t *testing.T) {
 	}
 }
 
+func TestHealthTransitions_Fallback(t *testing.T) {
+	tm := mockTransportManager()
+	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
+	hm := newHealthMonitor(tm, tunnel, nil, nil)
+
+	// Fallback stats → assess returns degraded (not critical).
+	for i := 0; i < 5; i++ {
+		level := hm.assess(wire.WireStats{Transport: "tcpws", Fallback: true})
+		hm.transition(level)
+	}
+	if hm.health != HealthDegraded {
+		t.Fatalf("fallback should be degraded, got %s", hm.health)
+	}
+
+	// Fallback recovery: QUIC comes back with good stats → healthy after 10 samples.
+	for i := 0; i < 10; i++ {
+		level := hm.assess(wire.WireStats{Transport: "quic", LossRate: 0.01, Throughput: 80e6})
+		hm.transition(level)
+	}
+	if hm.health != HealthHealthy {
+		t.Fatalf("should be healthy after QUIC recovery, got %s", hm.health)
+	}
+}
+
 func TestHealthEscalation(t *testing.T) {
 	tm := mockTransportManager()
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})

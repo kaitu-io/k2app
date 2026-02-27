@@ -30,6 +30,11 @@ var (
 // incrementing session IDs in datagrams or stream-based UDP frames.
 const maxServerUDPSessions = 4096
 
+// maxDatagramHops is the number of port hops to attempt when datagrams become
+// unhealthy before falling back to TCP-WS. ISP QoS typically matches on
+// port/5-tuple, so hopping to a new port often restores QUIC datagram path.
+const maxDatagramHops int32 = 3
+
 // DefaultQUICConfig returns the QUIC configuration for servers and desktop clients.
 // Uses large receive windows (matching Hysteria2) for maximum throughput.
 func DefaultQUICConfig() *quic.Config {
@@ -86,6 +91,8 @@ type QUICClient struct {
 	udpMux    *quicUDPMux
 	closed    bool
 	arcSender *arc.K2ARCSender // stored for stats access
+
+	datagramHopAttempts atomic.Int32 // hop attempts before TCP-WS fallback
 }
 
 // NewQUICClient creates a new QUIC client transport.
@@ -192,7 +199,7 @@ func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
 	c.conn = conn
 	c.transport = transport
 	c.alloc = NewSessionIDAllocator()
-	c.udpMux = newQuicUDPMux(conn)
+	c.udpMux = newQuicUDPMux(conn, &c.datagramHopAttempts)
 
 	return conn, nil
 }
@@ -254,52 +261,70 @@ func (c *QUICClient) DialTCP(ctx context.Context, addr string) (net.Conn, error)
 
 // DialUDP opens a UDP proxy session through QUIC datagrams or stream fallback.
 // Returns a PacketConn backed by QUIC datagrams with a unique session ID.
-// If datagrams are not supported, falls back to stream-based UDP.
+//
+// When the datagram path is unhealthy (3 consecutive ReadFrom timeouts) and
+// port hopping is configured, DialUDP hops to a new port (resetConnection +
+// reconnect) up to maxDatagramHops times before returning ErrDatagramUnhealthy.
+// This gives QUIC a chance to recover from ISP QoS that blocks specific ports.
 func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, error) {
-	conn, err := c.connect(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	// Single lock hold: verify conn is still current + read all resources.
-	// Prevents TOCTOU race with resetConnection() which can close conn and
-	// nil alloc/udpMux between connect() return and resource access.
-	c.mu.Lock()
-	stale := c.conn != conn
-	alloc := c.alloc
-	mux := c.udpMux
-	c.mu.Unlock()
-
-	if stale || alloc == nil || mux == nil {
-		return nil, ErrNotConnected
-	}
-
-	// Safe: conn verified current under lock; ConnectionState() reads
-	// immutable handshake data set during QUIC handshake.
-	dgSupported := conn.ConnectionState().SupportsDatagrams
-	slog.Info("QUICClient.DialUDP", "addr", addr, "datagramsSupported", dgSupported)
-	if dgSupported {
-		if !mux.datagramHealthy() {
-			slog.Warn("QUICClient.DialUDP: datagram path unhealthy, forcing fallback",
-				"addr", addr, "timeouts", mux.consecutiveTimeouts.Load())
-			return nil, ErrDatagramUnhealthy
+	for {
+		conn, err := c.connect(ctx)
+		if err != nil {
+			return nil, err
 		}
 
-		sessionID := alloc.Next()
-		readCh := mux.register(sessionID)
+		// Single lock hold: verify conn is still current + read all resources.
+		// Prevents TOCTOU race with resetConnection() which can close conn and
+		// nil alloc/udpMux between connect() return and resource access.
+		c.mu.Lock()
+		stale := c.conn != conn
+		alloc := c.alloc
+		mux := c.udpMux
+		c.mu.Unlock()
 
-		return &quicUDPConn{
-			qconn:      conn,
-			sessionID:  sessionID,
-			targetAddr: addr,
-			mux:        mux,
-			readCh:     readCh,
-			done:       make(chan struct{}),
-		}, nil
+		if stale || alloc == nil || mux == nil {
+			return nil, ErrNotConnected
+		}
+
+		// Safe: conn verified current under lock; ConnectionState() reads
+		// immutable handshake data set during QUIC handshake.
+		dgSupported := conn.ConnectionState().SupportsDatagrams
+		slog.Info("QUICClient.DialUDP", "addr", addr, "datagramsSupported", dgSupported)
+		if dgSupported {
+			if !mux.datagramHealthy() {
+				// Hop port before falling back to TCP-WS
+				if c.hopEnabled() && c.datagramHopAttempts.Load() < maxDatagramHops {
+					c.datagramHopAttempts.Add(1)
+					slog.Warn("QUICClient.DialUDP: datagram unhealthy, hopping port",
+						"addr", addr,
+						"hopAttempt", c.datagramHopAttempts.Load(),
+						"maxHops", maxDatagramHops)
+					c.resetConnection()
+					continue // retry: new port, new mux (healthy)
+				}
+				// Hops exhausted (or hop not configured) → TCP-WS fallback
+				slog.Warn("QUICClient.DialUDP: datagram path unhealthy, forcing fallback",
+					"addr", addr,
+					"hopAttempts", c.datagramHopAttempts.Load())
+				return nil, ErrDatagramUnhealthy
+			}
+
+			sessionID := alloc.Next()
+			readCh := mux.register(sessionID)
+
+			return &quicUDPConn{
+				qconn:      conn,
+				sessionID:  sessionID,
+				targetAddr: addr,
+				mux:        mux,
+				readCh:     readCh,
+				done:       make(chan struct{}),
+			}, nil
+		}
+
+		// Fallback: stream-based UDP (datagrams not supported by server)
+		return c.dialUDPStream(ctx, conn, addr)
 	}
-
-	// Fallback: stream-based UDP
-	return c.dialUDPStream(ctx, conn, addr)
 }
 
 // dialUDPStream opens a QUIC stream for UDP and returns a stream-based PacketConn.
@@ -745,6 +770,8 @@ type quicUDPMux struct {
 	// a broken QUIC datagram path (e.g. ISP QoS dropping UDP).
 	consecutiveTimeouts atomic.Int32
 	lastRecv            atomic.Int64 // UnixNano of last received datagram
+
+	clientHopAttempts *atomic.Int32 // shared with QUICClient; nil on server/tests
 }
 
 const datagramTimeoutThreshold int32 = 3
@@ -752,6 +779,9 @@ const datagramTimeoutThreshold int32 = 3
 func (m *quicUDPMux) recordRecv() {
 	m.consecutiveTimeouts.Store(0)
 	m.lastRecv.Store(time.Now().UnixNano())
+	if m.clientHopAttempts != nil {
+		m.clientHopAttempts.Store(0)
+	}
 }
 
 func (m *quicUDPMux) recordTimeout() {
@@ -762,11 +792,12 @@ func (m *quicUDPMux) datagramHealthy() bool {
 	return m.consecutiveTimeouts.Load() < datagramTimeoutThreshold
 }
 
-func newQuicUDPMux(conn *quic.Conn) *quicUDPMux {
+func newQuicUDPMux(conn *quic.Conn, hopAttempts *atomic.Int32) *quicUDPMux {
 	return &quicUDPMux{
-		conn:     conn,
-		sessions: make(map[uint32]chan *UDPFrame),
-		done:     make(chan struct{}),
+		conn:              conn,
+		sessions:          make(map[uint32]chan *UDPFrame),
+		done:              make(chan struct{}),
+		clientHopAttempts: hopAttempts,
 	}
 }
 

@@ -29,6 +29,7 @@ type HealthSnapshot struct {
 	TxBytes     int64     `json:"tx_bytes"`
 	RxBytes     int64     `json:"rx_bytes"`
 	Health      string    `json:"health"`
+	Fallback    bool      `json:"fallback"` // TCP-WS serving due to QUIC failure
 }
 
 const (
@@ -128,6 +129,7 @@ func (hm *healthMonitor) sample() {
 		TxBytes:     tx,
 		RxBytes:     rx,
 		Health:      hm.health,
+		Fallback:    ws.Fallback,
 	}
 
 	// Write to ring buffer.
@@ -148,6 +150,13 @@ func (hm *healthMonitor) assess(ws wire.WireStats) string {
 	// No transport data yet — retain previous state (default: healthy).
 	if ws.Transport == "" {
 		return hm.health
+	}
+
+	// In fallback: TCP-WS working but suboptimal. Treat as degraded
+	// so HealthMonitor reflects reality without triggering aggressive
+	// corrective actions that would disrupt the working TCP-WS path.
+	if ws.Fallback {
+		return HealthDegraded
 	}
 
 	highLoss := ws.LossRate > 0.05

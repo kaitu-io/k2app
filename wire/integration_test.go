@@ -368,8 +368,9 @@ func TestIntegration_TransportManager_Failover(t *testing.T) {
 	}
 	conn2.Close()
 
-	// Simulate QUIC recovery
+	// Simulate QUIC recovery + network change (clears backoff)
 	quic.available = true
+	tm.ResetConnections()
 
 	// Third call: QUIC again
 	conn3, err := tm.DialTCP(context.Background(), "9.9.9.9:443")
