@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -639,11 +640,19 @@ type smuxUDPConn struct {
 	readCh     chan *UDPFrame
 	done       chan struct{}
 	closeOnce  sync.Once
+	rd         readDeadline
 }
 
 var _ net.PacketConn = (*smuxUDPConn)(nil)
 
 func (c *smuxUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
+	timerCh, timer, expired := c.rd.makeTimer()
+	if expired != nil {
+		return 0, nil, expired
+	}
+	if timer != nil {
+		defer timer.Stop()
+	}
 	select {
 	case frame := <-c.readCh:
 		n := copy(b, frame.Payload)
@@ -651,6 +660,8 @@ func (c *smuxUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 		return n, addr, nil
 	case <-c.done:
 		return 0, nil, net.ErrClosed
+	case <-timerCh:
+		return 0, nil, os.ErrDeadlineExceeded
 	}
 }
 
@@ -669,10 +680,10 @@ func (c *smuxUDPConn) Close() error {
 	return nil
 }
 
-func (c *smuxUDPConn) LocalAddr() net.Addr             { return c.mux.stream.LocalAddr() }
-func (c *smuxUDPConn) SetDeadline(time.Time) error      { return nil }
-func (c *smuxUDPConn) SetReadDeadline(time.Time) error   { return nil }
-func (c *smuxUDPConn) SetWriteDeadline(time.Time) error  { return nil }
+func (c *smuxUDPConn) LocalAddr() net.Addr                    { return c.mux.stream.LocalAddr() }
+func (c *smuxUDPConn) SetDeadline(t time.Time) error          { c.rd.set(t); return nil }
+func (c *smuxUDPConn) SetReadDeadline(t time.Time) error      { c.rd.set(t); return nil }
+func (c *smuxUDPConn) SetWriteDeadline(time.Time) error       { return nil }
 
 // ============================================================================
 // Server-side smux UDP stream writer (shared, mutex-protected)
@@ -700,6 +711,7 @@ type smuxServerUDPConn struct {
 	readCh    chan []byte
 	done      chan struct{}
 	closeOnce sync.Once
+	rd        readDeadline
 }
 
 var _ net.PacketConn = (*smuxServerUDPConn)(nil)
@@ -712,6 +724,13 @@ func (c *smuxServerUDPConn) deliver(payload []byte) {
 }
 
 func (c *smuxServerUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
+	timerCh, timer, expired := c.rd.makeTimer()
+	if expired != nil {
+		return 0, nil, expired
+	}
+	if timer != nil {
+		defer timer.Stop()
+	}
 	select {
 	case payload := <-c.readCh:
 		n := copy(b, payload)
@@ -719,6 +738,8 @@ func (c *smuxServerUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 		return n, addr, nil
 	case <-c.done:
 		return 0, nil, net.ErrClosed
+	case <-timerCh:
+		return 0, nil, os.ErrDeadlineExceeded
 	}
 }
 
@@ -739,7 +760,7 @@ func (c *smuxServerUDPConn) Close() error {
 	return nil
 }
 
-func (c *smuxServerUDPConn) LocalAddr() net.Addr             { return c.writer.stream.LocalAddr() }
-func (c *smuxServerUDPConn) SetDeadline(time.Time) error      { return nil }
-func (c *smuxServerUDPConn) SetReadDeadline(time.Time) error   { return nil }
-func (c *smuxServerUDPConn) SetWriteDeadline(time.Time) error  { return nil }
+func (c *smuxServerUDPConn) LocalAddr() net.Addr                    { return c.writer.stream.LocalAddr() }
+func (c *smuxServerUDPConn) SetDeadline(t time.Time) error          { c.rd.set(t); return nil }
+func (c *smuxServerUDPConn) SetReadDeadline(t time.Time) error      { c.rd.set(t); return nil }
+func (c *smuxServerUDPConn) SetWriteDeadline(time.Time) error       { return nil }

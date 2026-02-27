@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"math/rand"
 	"net"
+	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -803,11 +804,19 @@ type quicUDPConn struct {
 	readCh     chan *UDPFrame
 	done       chan struct{}
 	closeOnce  sync.Once
+	rd         readDeadline
 }
 
 var _ net.PacketConn = (*quicUDPConn)(nil)
 
 func (c *quicUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
+	timerCh, timer, expired := c.rd.makeTimer()
+	if expired != nil {
+		return 0, nil, expired
+	}
+	if timer != nil {
+		defer timer.Stop()
+	}
 	select {
 	case frame := <-c.readCh:
 		n := copy(b, frame.Payload)
@@ -815,6 +824,8 @@ func (c *quicUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 		return n, addr, nil
 	case <-c.done:
 		return 0, nil, net.ErrClosed
+	case <-timerCh:
+		return 0, nil, os.ErrDeadlineExceeded
 	}
 }
 
@@ -835,10 +846,10 @@ func (c *quicUDPConn) Close() error {
 	return nil
 }
 
-func (c *quicUDPConn) LocalAddr() net.Addr              { return c.qconn.LocalAddr() }
-func (c *quicUDPConn) SetDeadline(time.Time) error      { return nil }
-func (c *quicUDPConn) SetReadDeadline(time.Time) error  { return nil }
-func (c *quicUDPConn) SetWriteDeadline(time.Time) error { return nil }
+func (c *quicUDPConn) LocalAddr() net.Addr                { return c.qconn.LocalAddr() }
+func (c *quicUDPConn) SetDeadline(t time.Time) error      { c.rd.set(t); return nil }
+func (c *quicUDPConn) SetReadDeadline(t time.Time) error   { c.rd.set(t); return nil }
+func (c *quicUDPConn) SetWriteDeadline(time.Time) error    { return nil }
 
 // ============================================================================
 // Server-side PacketConn for UDP sessions
@@ -851,6 +862,7 @@ type serverUDPConn struct {
 	readCh    chan []byte
 	done      chan struct{}
 	closeOnce sync.Once
+	rd        readDeadline
 }
 
 var _ net.PacketConn = (*serverUDPConn)(nil)
@@ -863,6 +875,13 @@ func (c *serverUDPConn) deliver(payload []byte) {
 }
 
 func (c *serverUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
+	timerCh, timer, expired := c.rd.makeTimer()
+	if expired != nil {
+		return 0, nil, expired
+	}
+	if timer != nil {
+		defer timer.Stop()
+	}
 	select {
 	case payload := <-c.readCh:
 		n := copy(b, payload)
@@ -870,6 +889,8 @@ func (c *serverUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 		return n, addr, nil
 	case <-c.done:
 		return 0, nil, net.ErrClosed
+	case <-timerCh:
+		return 0, nil, os.ErrDeadlineExceeded
 	}
 }
 
@@ -892,10 +913,10 @@ func (c *serverUDPConn) Close() error {
 	return nil
 }
 
-func (c *serverUDPConn) LocalAddr() net.Addr              { return c.qconn.LocalAddr() }
-func (c *serverUDPConn) SetDeadline(time.Time) error      { return nil }
-func (c *serverUDPConn) SetReadDeadline(time.Time) error  { return nil }
-func (c *serverUDPConn) SetWriteDeadline(time.Time) error { return nil }
+func (c *serverUDPConn) LocalAddr() net.Addr                { return c.qconn.LocalAddr() }
+func (c *serverUDPConn) SetDeadline(t time.Time) error      { c.rd.set(t); return nil }
+func (c *serverUDPConn) SetReadDeadline(t time.Time) error   { c.rd.set(t); return nil }
+func (c *serverUDPConn) SetWriteDeadline(time.Time) error    { return nil }
 
 // ============================================================================
 // Server-side QUIC stream writer (shared, mutex-protected)
@@ -923,6 +944,7 @@ type quicStreamServerUDPConn struct {
 	readCh    chan []byte
 	done      chan struct{}
 	closeOnce sync.Once
+	rd        readDeadline
 }
 
 var _ net.PacketConn = (*quicStreamServerUDPConn)(nil)
@@ -935,6 +957,13 @@ func (c *quicStreamServerUDPConn) deliver(payload []byte) {
 }
 
 func (c *quicStreamServerUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
+	timerCh, timer, expired := c.rd.makeTimer()
+	if expired != nil {
+		return 0, nil, expired
+	}
+	if timer != nil {
+		defer timer.Stop()
+	}
 	select {
 	case payload := <-c.readCh:
 		n := copy(b, payload)
@@ -942,6 +971,8 @@ func (c *quicStreamServerUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 		return n, addr, nil
 	case <-c.done:
 		return 0, nil, net.ErrClosed
+	case <-timerCh:
+		return 0, nil, os.ErrDeadlineExceeded
 	}
 }
 
@@ -962,10 +993,10 @@ func (c *quicStreamServerUDPConn) Close() error {
 	return nil
 }
 
-func (c *quicStreamServerUDPConn) LocalAddr() net.Addr              { return &net.UDPAddr{} }
-func (c *quicStreamServerUDPConn) SetDeadline(time.Time) error      { return nil }
-func (c *quicStreamServerUDPConn) SetReadDeadline(time.Time) error  { return nil }
-func (c *quicStreamServerUDPConn) SetWriteDeadline(time.Time) error { return nil }
+func (c *quicStreamServerUDPConn) LocalAddr() net.Addr                { return &net.UDPAddr{} }
+func (c *quicStreamServerUDPConn) SetDeadline(t time.Time) error      { c.rd.set(t); return nil }
+func (c *quicStreamServerUDPConn) SetReadDeadline(t time.Time) error   { c.rd.set(t); return nil }
+func (c *quicStreamServerUDPConn) SetWriteDeadline(time.Time) error    { return nil }
 
 // ============================================================================
 // Client-side stream-based UDP mux (fallback when datagrams not supported)
@@ -1062,11 +1093,19 @@ type quicStreamUDPConn struct {
 	readCh     chan *UDPFrame
 	done       chan struct{}
 	closeOnce  sync.Once
+	rd         readDeadline
 }
 
 var _ net.PacketConn = (*quicStreamUDPConn)(nil)
 
 func (c *quicStreamUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
+	timerCh, timer, expired := c.rd.makeTimer()
+	if expired != nil {
+		return 0, nil, expired
+	}
+	if timer != nil {
+		defer timer.Stop()
+	}
 	select {
 	case frame := <-c.readCh:
 		n := copy(b, frame.Payload)
@@ -1074,6 +1113,8 @@ func (c *quicStreamUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 		return n, addr, nil
 	case <-c.done:
 		return 0, nil, net.ErrClosed
+	case <-timerCh:
+		return 0, nil, os.ErrDeadlineExceeded
 	}
 }
 
@@ -1092,7 +1133,7 @@ func (c *quicStreamUDPConn) Close() error {
 	return nil
 }
 
-func (c *quicStreamUDPConn) LocalAddr() net.Addr              { return c.mux.qconn.LocalAddr() }
-func (c *quicStreamUDPConn) SetDeadline(time.Time) error      { return nil }
-func (c *quicStreamUDPConn) SetReadDeadline(time.Time) error  { return nil }
-func (c *quicStreamUDPConn) SetWriteDeadline(time.Time) error { return nil }
+func (c *quicStreamUDPConn) LocalAddr() net.Addr                { return c.mux.qconn.LocalAddr() }
+func (c *quicStreamUDPConn) SetDeadline(t time.Time) error      { c.rd.set(t); return nil }
+func (c *quicStreamUDPConn) SetReadDeadline(t time.Time) error   { c.rd.set(t); return nil }
+func (c *quicStreamUDPConn) SetWriteDeadline(time.Time) error    { return nil }
