@@ -864,5 +864,37 @@ func (p *K2ARCSender) GetCongestionWindow() congestion.ByteCount {
 	return p.getCongestionWindowLocked()
 }
 
+// ARCSnapshot is a point-in-time snapshot of K2ARC internal state.
+// All fields are copied under the read lock — safe for concurrent use after return.
+type ARCSnapshot struct {
+	SendingRate float64       // Current sending rate in bps
+	LossRate    float64       // Current MI loss rate (0.0-1.0)
+	Throughput  float64       // Current MI throughput in bps
+	RTT         time.Duration // Smoothed RTT
+	MinRTT      time.Duration // Minimum observed RTT
+	Cwnd        int64         // Congestion window in bytes
+	Mode        K2ARCMode     // SlowStart/Decision/RateAdjusting
+	MIID        uint64        // Current Monitor Interval ID
+}
+
+// Snapshot returns a point-in-time copy of K2ARC state.
+func (p *K2ARCSender) Snapshot() ARCSnapshot {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	s := ARCSnapshot{
+		SendingRate: p.state.CurrentRate,
+		RTT:         p.rtt,
+		MinRTT:      p.utility.MinRTT,
+		Cwnd:        int64(p.cwnd),
+		Mode:        p.state.Mode,
+	}
+	if mi := p.state.CurrentMI; mi != nil {
+		s.LossRate = mi.LossRate()
+		s.Throughput = mi.Throughput()
+		s.MIID = mi.ID
+	}
+	return s
+}
+
 // Verify K2ARCSender implements CongestionControl interface
 var _ congestion.CongestionControl = (*K2ARCSender)(nil)

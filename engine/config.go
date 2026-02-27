@@ -45,4 +45,8 @@ type Config struct {
 	// When true, TUN MTU is capped at 4064 to avoid a known Apple kernel performance bug.
 	// Set by appext on Darwin platforms. Always false on daemon path.
 	NetworkExtension bool
+
+	// HealthCallback receives 1Hz health snapshots from the HealthMonitor.
+	// Nil = no callback (appext typically doesn't need this).
+	HealthCallback func(HealthSnapshot)
 }

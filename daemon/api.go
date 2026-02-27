@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/kaitu-io/k2/config"
+	"github.com/kaitu-io/k2/engine"
 )
 
 // Request is the JSON request body for POST /api/core.
@@ -132,6 +133,20 @@ func (d *Daemon) handleVersion(w http.ResponseWriter) {
 			"arch":    runtime.GOARCH,
 		},
 	})
+}
+
+func (d *Daemon) handleStats(w http.ResponseWriter, r *http.Request) {
+	d.mu.RLock()
+	eng := d.engine
+	d.mu.RUnlock()
+	var history []engine.HealthSnapshot
+	if eng != nil {
+		history = eng.StatsHistory()
+	}
+	if history == nil {
+		history = []engine.HealthSnapshot{}
+	}
+	writeJSON(w, Response{Code: 0, Message: "ok", Data: history})
 }
 
 func writeJSON(w http.ResponseWriter, resp Response) {

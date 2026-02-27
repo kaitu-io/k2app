@@ -82,3 +82,18 @@ func (d *Daemon) broadcastStatus(status engine.Status) {
 	}
 	d.sseMu.RUnlock()
 }
+
+// broadcastSnapshot sends a health snapshot to all connected SSE clients.
+func (d *Daemon) broadcastSnapshot(snap engine.HealthSnapshot) {
+	data, _ := json.Marshal(snap)
+	msg := fmt.Sprintf("event: stats\ndata: %s\n\n", data)
+
+	d.sseMu.RLock()
+	for ch := range d.sseClients {
+		select {
+		case ch <- msg:
+		default:
+		}
+	}
+	d.sseMu.RUnlock()
+}

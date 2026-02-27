@@ -83,6 +83,7 @@ type QUICClient struct {
 	alloc     *SessionIDAllocator
 	udpMux    *quicUDPMux
 	closed    bool
+	arcSender *arc.K2ARCSender // stored for stats access
 }
 
 // NewQUICClient creates a new QUIC client transport.
@@ -181,7 +182,9 @@ func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
 	}
 
 	// Set K2ARC congestion control (replaces default Cubic)
-	conn.SetCongestionControl(arc.NewArcSenderGFWMode(arc.DefaultMaxRate))
+	sender := arc.NewArcSenderGFWMode(arc.DefaultMaxRate)
+	conn.SetCongestionControl(sender)
+	c.arcSender = sender
 	slog.Info("wire: QUIC client K2ARC enabled", "maxRateMbps", arc.DefaultMaxRate/1_000_000)
 
 	c.conn = conn
@@ -332,6 +335,29 @@ func (c *QUICClient) dialUDPStream(ctx context.Context, conn *quic.Conn, addr st
 	}, nil
 }
 
+// WireStats returns a snapshot of QUIC transport metrics including K2ARC state.
+func (c *QUICClient) WireStats() WireStats {
+	c.mu.Lock()
+	sender := c.arcSender
+	c.mu.Unlock()
+
+	s := WireStats{Transport: "quic"}
+	if sender != nil {
+		snap := sender.Snapshot()
+		s.LossRate = snap.LossRate
+		s.Throughput = snap.Throughput
+		s.SendingRate = snap.SendingRate
+		s.RTT = snap.RTT
+		s.MinRTT = snap.MinRTT
+		s.Cwnd = snap.Cwnd
+		s.Mode = int(snap.Mode)
+		s.MIID = snap.MIID
+	}
+	return s
+}
+
+var _ StatsProvider = (*QUICClient)(nil)
+
 // resetConnection closes cached connection resources without marking client as closed.
 // After reset, the next DialTCP/DialUDP will establish a fresh connection.
 func (c *QUICClient) resetConnection() {
@@ -350,6 +376,7 @@ func (c *QUICClient) resetConnection() {
 		c.transport = nil
 	}
 	c.alloc = nil
+	c.arcSender = nil
 	// NOTE: do NOT set c.closed = true — client must remain usable
 }
 

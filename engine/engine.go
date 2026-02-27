@@ -42,6 +42,7 @@ type Engine struct {
 	tm             *wire.TransportManager
 	prov           provider.Provider
 	networkMonitor NetworkChangeNotifier
+	health         *healthMonitor
 }
 
 // New creates a new Engine in the disconnected state.
@@ -277,6 +278,12 @@ func (e *Engine) Start(cfg Config) error {
 	e.tm = tm
 	e.prov = prov
 	e.networkMonitor = cfg.NetworkMonitor
+
+	// Start health monitor (1Hz wire stats sampling + health FSM).
+	hm := newHealthMonitor(tm, tunnel, cfg.HealthCallback, func() { e.OnNetworkChanged() })
+	hm.start()
+	e.health = hm
+
 	e.setState(StateConnected)
 	e.mu.Unlock()
 
@@ -375,6 +382,11 @@ func (e *Engine) Stop() error {
 		return nil
 	}
 
+	// Stop health monitor first — its goroutine reads tm and tunnel.
+	if e.health != nil {
+		e.health.stop()
+		e.health = nil
+	}
 	if e.networkMonitor != nil {
 		e.networkMonitor.Close()
 		e.networkMonitor = nil
@@ -406,6 +418,17 @@ func (e *Engine) Stop() error {
 
 	e.setState(StateDisconnected)
 	return nil
+}
+
+// StatsHistory returns the health monitor's ring buffer (oldest-first).
+func (e *Engine) StatsHistory() []HealthSnapshot {
+	e.mu.Lock()
+	hm := e.health
+	e.mu.Unlock()
+	if hm == nil {
+		return nil
+	}
+	return hm.History()
 }
 
 // GetStatus returns the current engine state as a typed snapshot.

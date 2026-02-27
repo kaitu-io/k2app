@@ -92,6 +92,8 @@ func (d *Daemon) Run(ctx context.Context, listenAddr string) error {
 	mux.HandleFunc("/metrics", d.handleMetrics)
 	mux.HandleFunc("/api/core", d.handleCore)
 	mux.HandleFunc("/api/events", d.handleEvents)
+	mux.HandleFunc("/api/stats", d.handleStats)
+	mux.HandleFunc("/stats", d.handleStatsPage)
 
 	srv := &http.Server{
 		Addr:    listenAddr,
@@ -274,6 +276,7 @@ func (d *Daemon) engineConfigFromClientConfig(
 		Client:         cfg,
 		FileDescriptor: -1, // Desktop: engine creates its own TUN.
 		DirectDialer:   dd,
+		HealthCallback: d.broadcastSnapshot,
 	}
 
 	// Apply network monitor if available.

@@ -79,6 +79,14 @@ type TCPWSClient struct {
 	closed bool
 }
 
+// WireStats returns a snapshot of TCP-WS transport metrics.
+// TCP-WS has no congestion control stats — only transport name is returned.
+func (c *TCPWSClient) WireStats() WireStats {
+	return WireStats{Transport: "tcpws"}
+}
+
+var _ StatsProvider = (*TCPWSClient)(nil)
+
 // NewTCPWSClient creates a new TCP-WS client transport.
 func NewTCPWSClient(cfg Config, store *TicketStore) *TCPWSClient {
 	dialHost := cfg.Host

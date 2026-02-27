@@ -193,6 +193,22 @@ func (tm *TransportManager) ResetConnections() {
 	}
 }
 
+// WireStats returns stats from the active transport.
+// Checks QUIC first (preferred), falls back to TCP-WS.
+func (tm *TransportManager) WireStats() WireStats {
+	tm.mu.RLock()
+	q, t := tm.quic, tm.tcpws
+	tm.mu.RUnlock()
+
+	if sp, ok := q.(StatsProvider); ok {
+		return sp.WireStats()
+	}
+	if sp, ok := t.(StatsProvider); ok {
+		return sp.WireStats()
+	}
+	return WireStats{}
+}
+
 // Close closes both transports.
 func (tm *TransportManager) Close() error {
 	tm.mu.Lock()

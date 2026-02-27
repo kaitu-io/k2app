@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 )
 
 // Errors
@@ -30,6 +31,27 @@ type DirectDialer interface {
 // (e.g. DNS direct queries that need socket protection on Android).
 type DialerController interface {
 	ControlFunc() func(network, address string, c syscall.RawConn) error
+}
+
+// WireStats is a point-in-time snapshot of wire transport metrics.
+type WireStats struct {
+	Transport   string        // "quic" or "tcpws"
+	LossRate    float64       // 0.0-1.0 (QUIC only)
+	Throughput  float64       // bps (QUIC only)
+	SendingRate float64       // bps (QUIC only)
+	RTT         time.Duration // smoothed (QUIC only)
+	MinRTT      time.Duration // minimum observed (QUIC only)
+	Cwnd        int64         // bytes (QUIC only)
+	Mode        int           // K2ARCMode (QUIC only)
+	MIID        uint64        // Monitor Interval ID (QUIC only)
+	TxBytes     int64
+	RxBytes     int64
+}
+
+// StatsProvider is an optional interface for Dialers that expose metrics.
+// Checked via type assertion — does not break the Dialer interface.
+type StatsProvider interface {
+	WireStats() WireStats
 }
 
 // Dialer is the k2v5 client transport interface.

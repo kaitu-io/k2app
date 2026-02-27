@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/kaitu-io/k2rule"
@@ -74,6 +75,9 @@ type ClientTunnel struct {
 	wg      sync.WaitGroup
 	conns   *connTracker
 	connSem *semaphore.Weighted // limits concurrent handler goroutines
+
+	txBytes atomic.Int64 // total bytes sent (local→remote)
+	rxBytes atomic.Int64 // total bytes received (remote→local)
 }
 
 var _ provider.ConnectionHandler = (*ClientTunnel)(nil)
@@ -132,6 +136,11 @@ func (t *ClientTunnel) Close() error {
 		slog.Warn("tunnel: Close timed out waiting for goroutines", "timeout", closeTimeout)
 	}
 	return nil
+}
+
+// TrafficBytes returns cumulative TX (local→remote) and RX (remote→local) byte counts.
+func (t *ClientTunnel) TrafficBytes() (tx, rx int64) {
+	return t.txBytes.Load(), t.rxBytes.Load()
 }
 
 // HandleTCP processes a TCP connection from the provider.
@@ -213,7 +222,7 @@ func (t *ClientTunnel) handleTCPDirect(local net.Conn, dest string) {
 	defer remote.Close()
 	untrack := t.conns.track(remote)
 	defer untrack()
-	pipe(local, remote)
+	pipe(local, remote, &t.txBytes, &t.rxBytes)
 }
 
 func (t *ClientTunnel) handleTCPProxy(local net.Conn, dest string) {
@@ -231,7 +240,7 @@ func (t *ClientTunnel) handleTCPProxy(local net.Conn, dest string) {
 	defer remote.Close()
 	untrack := t.conns.track(remote)
 	defer untrack()
-	pipe(local, remote)
+	pipe(local, remote, &t.txBytes, &t.rxBytes)
 }
 
 func (t *ClientTunnel) handleUDPDirect(local net.PacketConn, dest string) {
@@ -255,7 +264,7 @@ func (t *ClientTunnel) handleUDPDirect(local net.PacketConn, dest string) {
 		slog.Warn("tunnel: resolve UDP addr failed", "dest", dest, "err", err)
 		return
 	}
-	pipePacket(local, remote, destAddr)
+	pipePacket(local, remote, destAddr, &t.txBytes, &t.rxBytes)
 }
 
 func (t *ClientTunnel) handleUDPProxy(local net.PacketConn, dest string) {
@@ -273,7 +282,7 @@ func (t *ClientTunnel) handleUDPProxy(local net.PacketConn, dest string) {
 	defer remote.Close()
 	untrack := t.conns.track(remote)
 	defer untrack()
-	pipePacket(local, remote, nil)
+	pipePacket(local, remote, nil, &t.txBytes, &t.rxBytes)
 }
 
 // Buffer pools to avoid per-connection allocations.
@@ -284,28 +293,36 @@ var (
 
 // pipe copies data bidirectionally between two connections.
 // Each direction's completion closes the peer to unblock the other.
-func pipe(a, b net.Conn) {
+// Optional tx/rx counters accumulate bytes per direction (nil = no counting).
+func pipe(a, b net.Conn, tx, rx *atomic.Int64) {
 	done := make(chan struct{})
 	go func() {
 		bp := tcpBufPool.Get().(*[]byte)
-		io.CopyBuffer(b, a, *bp)
+		n, _ := io.CopyBuffer(b, a, *bp) // a→b = TX
 		tcpBufPool.Put(bp)
+		if tx != nil {
+			tx.Add(n)
+		}
 		b.Close()
 		close(done)
 	}()
 	bp := tcpBufPool.Get().(*[]byte)
-	io.CopyBuffer(a, b, *bp)
+	n, _ := io.CopyBuffer(a, b, *bp) // b→a = RX
 	tcpBufPool.Put(bp)
+	if rx != nil {
+		rx.Add(n)
+	}
 	a.Close()
 	<-done
 }
 
 // pipePacket forwards packets between two PacketConns.
 // destAddr is the target for local→remote; if nil, WriteTo uses nil addr.
-func pipePacket(local, remote net.PacketConn, destAddr net.Addr) {
+// Optional tx/rx counters accumulate bytes per direction (nil = no counting).
+func pipePacket(local, remote net.PacketConn, destAddr net.Addr, tx, rx *atomic.Int64) {
 	done := make(chan struct{}, 2)
 
-	// local → remote
+	// local → remote (TX)
 	go func() {
 		bp := udpBufPool.Get().(*[]byte)
 		buf := *bp
@@ -317,12 +334,15 @@ func pipePacket(local, remote net.PacketConn, destAddr net.Addr) {
 			if _, err := remote.WriteTo(buf[:n], destAddr); err != nil {
 				break
 			}
+			if tx != nil {
+				tx.Add(int64(n))
+			}
 		}
 		udpBufPool.Put(bp)
 		done <- struct{}{}
 	}()
 
-	// remote → local
+	// remote → local (RX)
 	go func() {
 		bp := udpBufPool.Get().(*[]byte)
 		buf := *bp
@@ -333,6 +353,9 @@ func pipePacket(local, remote net.PacketConn, destAddr net.Addr) {
 			}
 			if _, err := local.WriteTo(buf[:n], from); err != nil {
 				break
+			}
+			if rx != nil {
+				rx.Add(int64(n))
 			}
 		}
 		udpBufPool.Put(bp)
