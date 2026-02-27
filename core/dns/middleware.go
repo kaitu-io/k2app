@@ -201,6 +201,8 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, []byte, error) {
 	if existing, loaded := m.inflight.LoadOrStore(inflightKey, result); loaded {
 		// Another goroutine is already querying — wait for its result.
 		existing := existing.(*inflightResult)
+		timer := time.NewTimer(inflightTimeout)
+		defer timer.Stop()
 		select {
 		case <-existing.done:
 			if existing.err != nil {
@@ -209,7 +211,7 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, []byte, error) {
 			// Copy packed bytes and patch caller's query ID.
 			packed := cloneAndPatchID(existing.packed, query.Id)
 			return nil, packed, nil
-		case <-time.After(inflightTimeout):
+		case <-timer.C:
 			slog.Warn("DNS inflight dedup timeout", "domain", domain, "key", inflightKey)
 			return nil, nil, fmt.Errorf("DNS query timeout waiting for in-flight %s", inflightKey)
 		}

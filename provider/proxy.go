@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -428,6 +429,35 @@ func (r *udpRelay) close() {
 // UDP Session — virtual net.PacketConn per destination
 // ============================================================================
 
+// readDeadline is a thread-safe read deadline for channel-based PacketConn types.
+// Zero value is ready to use (no deadline set).
+// Local copy of wire.readDeadline to avoid cross-layer dependency.
+type readDeadline struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+func (d *readDeadline) set(t time.Time) {
+	d.mu.Lock()
+	d.t = t
+	d.mu.Unlock()
+}
+
+func (d *readDeadline) makeTimer() (<-chan time.Time, *time.Timer, error) {
+	d.mu.Lock()
+	t := d.t
+	d.mu.Unlock()
+	if t.IsZero() {
+		return nil, nil, nil
+	}
+	dur := time.Until(t)
+	if dur <= 0 {
+		return nil, nil, os.ErrDeadlineExceeded
+	}
+	timer := time.NewTimer(dur)
+	return timer.C, timer, nil
+}
+
 type udpSession struct {
 	relay      *udpRelay
 	clientAddr net.Addr
@@ -436,6 +466,7 @@ type udpSession struct {
 	done       chan struct{}
 	closeOnce  sync.Once
 	mu         sync.Mutex // protects clientAddr
+	rd         readDeadline
 }
 
 var _ net.PacketConn = (*udpSession)(nil)
@@ -456,6 +487,13 @@ func (s *udpSession) setClientAddr(addr net.Addr) {
 }
 
 func (s *udpSession) ReadFrom(b []byte) (int, net.Addr, error) {
+	timerCh, timer, expired := s.rd.makeTimer()
+	if expired != nil {
+		return 0, nil, expired
+	}
+	if timer != nil {
+		defer timer.Stop()
+	}
 	select {
 	case payload := <-s.readCh:
 		n := copy(b, payload)
@@ -463,6 +501,8 @@ func (s *udpSession) ReadFrom(b []byte) (int, net.Addr, error) {
 		return n, addr, nil
 	case <-s.done:
 		return 0, nil, net.ErrClosed
+	case <-timerCh:
+		return 0, nil, os.ErrDeadlineExceeded
 	}
 }
 
@@ -491,7 +531,7 @@ func (s *udpSession) Close() error {
 	return nil
 }
 
-func (s *udpSession) LocalAddr() net.Addr                { return s.relay.udpConn.LocalAddr() }
-func (s *udpSession) SetDeadline(t time.Time) error      { return nil }
-func (s *udpSession) SetReadDeadline(t time.Time) error  { return nil }
-func (s *udpSession) SetWriteDeadline(t time.Time) error { return nil }
+func (s *udpSession) LocalAddr() net.Addr                    { return s.relay.udpConn.LocalAddr() }
+func (s *udpSession) SetDeadline(t time.Time) error          { s.rd.set(t); return nil }
+func (s *udpSession) SetReadDeadline(t time.Time) error      { s.rd.set(t); return nil }
+func (s *udpSession) SetWriteDeadline(time.Time) error       { return nil }
