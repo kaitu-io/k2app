@@ -2,9 +2,11 @@ package engine
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 
 	"github.com/kaitu-io/k2/core/dns"
 	"github.com/kaitu-io/k2/provider"
@@ -17,9 +19,14 @@ var dnsBufPool = sync.Pool{New: func() any { b := make([]byte, 4096); return &b 
 // Both TCP and UDP packets destined for port 53 are handled locally by the
 // DNS middleware instead of being forwarded through the tunnel.
 type dnsHandler struct {
-	inner provider.ConnectionHandler
-	dns   *dns.Middleware
+	inner  provider.ConnectionHandler
+	dns    *dns.Middleware
+	engine *Engine // for wire error reporting (same package); nil in tests
+
+	consecutiveFails atomic.Int32
 }
+
+const dnsWireErrorThreshold int32 = 5
 
 func (h *dnsHandler) HandleTCP(conn net.Conn, dest string) {
 	_, port, _ := net.SplitHostPort(dest)
@@ -49,8 +56,10 @@ func (h *dnsHandler) serveDNS(conn net.PacketConn) {
 		}
 		resp, err := h.dns.HandleQuery(buf[:n])
 		if err != nil {
+			h.recordDNSFailure(err)
 			continue
 		}
+		h.recordDNSSuccess()
 		conn.WriteTo(resp, addr)
 	}
 }
@@ -85,8 +94,10 @@ func (h *dnsHandler) serveDNSStream(conn net.Conn) {
 
 		resp, err := h.dns.HandleQuery(buf)
 		if err != nil {
+			h.recordDNSFailure(err)
 			continue
 		}
+		h.recordDNSSuccess()
 
 		// Write 2-byte length prefix + response.
 		var respLen [2]byte
@@ -97,5 +108,24 @@ func (h *dnsHandler) serveDNSStream(conn net.Conn) {
 		if _, err := conn.Write(resp); err != nil {
 			return
 		}
+	}
+}
+
+func (h *dnsHandler) recordDNSFailure(err error) {
+	if h.engine == nil {
+		return
+	}
+	if h.consecutiveFails.Add(1) == dnsWireErrorThreshold {
+		h.engine.ReportWireError(fmt.Errorf("DNS: %d consecutive failures: %w",
+			dnsWireErrorThreshold, err))
+	}
+}
+
+func (h *dnsHandler) recordDNSSuccess() {
+	if h.engine == nil {
+		return
+	}
+	if h.consecutiveFails.Swap(0) >= dnsWireErrorThreshold {
+		h.engine.ClearWireError()
 	}
 }

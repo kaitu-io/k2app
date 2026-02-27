@@ -145,9 +145,9 @@ func (hm *healthMonitor) sample() {
 
 // assess evaluates current wire stats and returns the appropriate health level.
 func (hm *healthMonitor) assess(ws wire.WireStats) string {
-	// No transport data yet — stay healthy.
+	// No transport data yet — retain previous state (default: healthy).
 	if ws.Transport == "" {
-		return HealthHealthy
+		return hm.health
 	}
 
 	highLoss := ws.LossRate > 0.05

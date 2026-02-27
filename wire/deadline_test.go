@@ -81,6 +81,9 @@ func TestQuicUDPConn_ReadFrom_Timeout(t *testing.T) {
 		readCh:     make(chan *UDPFrame),
 		done:       make(chan struct{}),
 		targetAddr: "8.8.8.8:53",
+		mux: &quicUDPMux{
+			done: make(chan struct{}),
+		},
 	}
 	c.SetReadDeadline(time.Now().Add(50 * time.Millisecond))
 
@@ -105,6 +108,9 @@ func TestQuicUDPConn_ReadFrom_NoDeadline(t *testing.T) {
 		readCh:     readCh,
 		done:       make(chan struct{}),
 		targetAddr: "8.8.8.8:53",
+		mux: &quicUDPMux{
+			done: make(chan struct{}),
+		},
 	}
 
 	buf := make([]byte, 512)
@@ -140,6 +146,9 @@ func TestSmuxUDPConn_ReadFrom_Timeout(t *testing.T) {
 		readCh:     make(chan *UDPFrame),
 		done:       make(chan struct{}),
 		targetAddr: "8.8.8.8:53",
+		mux: &smuxUDPMux{
+			done: make(chan struct{}),
+		},
 	}
 	c.SetReadDeadline(time.Now().Add(50 * time.Millisecond))
 
@@ -196,6 +205,9 @@ func TestReadFrom_PastDeadline_ImmediateReturn(t *testing.T) {
 		readCh:     make(chan *UDPFrame),
 		done:       make(chan struct{}),
 		targetAddr: "8.8.8.8:53",
+		mux: &quicUDPMux{
+			done: make(chan struct{}),
+		},
 	}
 	c.SetReadDeadline(time.Now().Add(-time.Second))
 
@@ -218,6 +230,9 @@ func TestReadFrom_DataBeforeDeadline(t *testing.T) {
 		readCh:     readCh,
 		done:       make(chan struct{}),
 		targetAddr: "8.8.8.8:53",
+		mux: &quicUDPMux{
+			done: make(chan struct{}),
+		},
 	}
 	// Deadline in the future, but data arrives immediately
 	c.SetReadDeadline(time.Now().Add(5 * time.Second))

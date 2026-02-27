@@ -336,7 +336,9 @@ func (c *TCPWSClient) resetConnection() {
 		c.udpMux = nil
 	}
 	if c.sess != nil {
-		c.sess.Close()
+		if err := c.sess.Close(); err != nil {
+			slog.Debug("TCPWSClient: resetConnection close error", "err", err)
+		}
 		c.sess = nil
 	}
 	c.alloc = nil
@@ -582,9 +584,17 @@ func (m *smuxUDPMux) start() {
 }
 
 func (m *smuxUDPMux) readLoop() {
+	defer func() {
+		select {
+		case <-m.done:
+		default:
+			close(m.done)
+		}
+	}()
 	for {
 		frame, err := ReadSmuxUDPFrame(m.br)
 		if err != nil {
+			slog.Warn("smuxUDPMux: readLoop exiting", "err", err)
 			return
 		}
 		m.mu.Lock()
@@ -659,6 +669,8 @@ func (c *smuxUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 		addr, _ := net.ResolveUDPAddr("udp", c.targetAddr)
 		return n, addr, nil
 	case <-c.done:
+		return 0, nil, net.ErrClosed
+	case <-c.mux.done:
 		return 0, nil, net.ErrClosed
 	case <-timerCh:
 		return 0, nil, os.ErrDeadlineExceeded

@@ -15,8 +15,9 @@ import (
 
 // Errors
 var (
-	ErrNotConnected   = errors.New("wire: not connected")
-	ErrUDPNotSupported = errors.New("wire: UDP not supported by server")
+	ErrNotConnected      = errors.New("wire: not connected")
+	ErrUDPNotSupported   = errors.New("wire: UDP not supported by server")
+	ErrDatagramUnhealthy = errors.New("wire: QUIC datagram path unhealthy")
 )
 
 // DirectDialer is the interface for physical-interface-bound dialing.

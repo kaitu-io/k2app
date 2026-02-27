@@ -165,6 +165,18 @@ func (e *Engine) Start(cfg Config) error {
 	probeConn.Close()
 	slog.Info("engine: step 4.5 - wire probe ok")
 
+	// 4.6 Optional UDP probe — non-fatal, logs warning if UDP broken.
+	// Runtime datagram health tracking (Step 2) handles fallback.
+	udpProbeCtx, udpProbeCancel := context.WithTimeout(ctx, 5*time.Second)
+	udpConn, udpErr := tm.DialUDP(udpProbeCtx, "8.8.8.8:53")
+	udpProbeCancel()
+	if udpErr != nil {
+		slog.Warn("engine: wire UDP probe failed (DNS will use fallback)", "err", udpErr)
+	} else {
+		udpConn.Close()
+		slog.Info("engine: step 4.6 - wire UDP probe ok")
+	}
+
 	// 5. Router.
 	router := core.NewRouter()
 
@@ -244,7 +256,7 @@ func (e *Engine) Start(cfg Config) error {
 			DNSCache:  dns.NewDNSCache(dns.DNSCacheConfig{}),
 			Filter:    dns.NewFilter(dns.FilterConfig{}),
 		})
-		if err := tunnel.StartWithHandler(ctx, &dnsHandler{inner: tunnel, dns: dnsMW}); err != nil {
+		if err := tunnel.StartWithHandler(ctx, &dnsHandler{inner: tunnel, dns: dnsMW, engine: e}); err != nil {
 			if cfg.NetworkMonitor != nil {
 				cfg.NetworkMonitor.Close()
 			}

@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/apernet/quic-go"
@@ -260,15 +261,28 @@ func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, 
 		return nil, err
 	}
 
-	// Try datagram path if supported
-	dgSupported := c.datagramsSupported(conn)
+	// Single lock hold: verify conn is still current + read all resources.
+	// Prevents TOCTOU race with resetConnection() which can close conn and
+	// nil alloc/udpMux between connect() return and resource access.
+	c.mu.Lock()
+	stale := c.conn != conn
+	alloc := c.alloc
+	mux := c.udpMux
+	c.mu.Unlock()
+
+	if stale || alloc == nil || mux == nil {
+		return nil, ErrNotConnected
+	}
+
+	// Safe: conn verified current under lock; ConnectionState() reads
+	// immutable handshake data set during QUIC handshake.
+	dgSupported := conn.ConnectionState().SupportsDatagrams
 	slog.Info("QUICClient.DialUDP", "addr", addr, "datagramsSupported", dgSupported)
 	if dgSupported {
-		c.mu.Lock()
-		alloc, mux := c.alloc, c.udpMux
-		c.mu.Unlock()
-		if alloc == nil || mux == nil {
-			return nil, ErrNotConnected
+		if !mux.datagramHealthy() {
+			slog.Warn("QUICClient.DialUDP: datagram path unhealthy, forcing fallback",
+				"addr", addr, "timeouts", mux.consecutiveTimeouts.Load())
+			return nil, ErrDatagramUnhealthy
 		}
 
 		sessionID := alloc.Next()
@@ -286,13 +300,6 @@ func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, 
 
 	// Fallback: stream-based UDP
 	return c.dialUDPStream(ctx, conn, addr)
-}
-
-// datagramsSupported checks if QUIC datagrams are supported on the connection.
-func (c *QUICClient) datagramsSupported(conn *quic.Conn) bool {
-	// Check the connection's datagram support via connection state
-	// quic-go exposes this via ConnectionState().SupportsDatagrams
-	return conn.ConnectionState().SupportsDatagrams
 }
 
 // dialUDPStream opens a QUIC stream for UDP and returns a stream-based PacketConn.
@@ -371,7 +378,9 @@ func (c *QUICClient) resetConnection() {
 		c.udpMux = nil
 	}
 	if c.conn != nil {
-		c.conn.CloseWithError(0, "network changed")
+		if err := c.conn.CloseWithError(0, "network changed"); err != nil {
+			slog.Debug("QUICClient: resetConnection close error", "err", err)
+		}
 		c.conn = nil
 	}
 	if c.transport != nil {
@@ -731,6 +740,26 @@ type quicUDPMux struct {
 	done      chan struct{}
 	started   bool
 	streamMux *quicStreamUDPMux // stream-based UDP fallback
+
+	// Datagram health tracking: consecutive ReadFrom timeouts indicate
+	// a broken QUIC datagram path (e.g. ISP QoS dropping UDP).
+	consecutiveTimeouts atomic.Int32
+	lastRecv            atomic.Int64 // UnixNano of last received datagram
+}
+
+const datagramTimeoutThreshold int32 = 3
+
+func (m *quicUDPMux) recordRecv() {
+	m.consecutiveTimeouts.Store(0)
+	m.lastRecv.Store(time.Now().UnixNano())
+}
+
+func (m *quicUDPMux) recordTimeout() {
+	m.consecutiveTimeouts.Add(1)
+}
+
+func (m *quicUDPMux) datagramHealthy() bool {
+	return m.consecutiveTimeouts.Load() < datagramTimeoutThreshold
 }
 
 func newQuicUDPMux(conn *quic.Conn) *quicUDPMux {
@@ -753,6 +782,13 @@ func (m *quicUDPMux) start() {
 }
 
 func (m *quicUDPMux) readLoop() {
+	defer func() {
+		select {
+		case <-m.done:
+		default:
+			close(m.done)
+		}
+	}()
 	slog.Info("quicUDPMux: readLoop started")
 	for {
 		data, err := m.conn.ReceiveDatagram(context.Background())
@@ -760,6 +796,7 @@ func (m *quicUDPMux) readLoop() {
 			slog.Warn("quicUDPMux: readLoop exiting", "err", err)
 			return
 		}
+		m.recordRecv()
 		slog.Debug("quicUDPMux: received datagram", "len", len(data))
 		frame, err := ReadUDPFrame(bytes.NewReader(data))
 		if err != nil {
@@ -836,7 +873,10 @@ func (c *quicUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 		return n, addr, nil
 	case <-c.done:
 		return 0, nil, net.ErrClosed
+	case <-c.mux.done:
+		return 0, nil, net.ErrClosed
 	case <-timerCh:
+		c.mux.recordTimeout()
 		slog.Warn("quicUDPConn: ReadFrom timeout", "sessionID", c.sessionID, "target", c.targetAddr)
 		return 0, nil, os.ErrDeadlineExceeded
 	}
@@ -1052,9 +1092,17 @@ func (m *quicStreamUDPMux) start() {
 }
 
 func (m *quicStreamUDPMux) readLoop() {
+	defer func() {
+		select {
+		case <-m.done:
+		default:
+			close(m.done)
+		}
+	}()
 	for {
 		frame, err := ReadSmuxUDPFrame(m.br)
 		if err != nil {
+			slog.Warn("quicStreamUDPMux: readLoop exiting", "err", err)
 			return
 		}
 		m.mu.Lock()
@@ -1129,6 +1177,8 @@ func (c *quicStreamUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 		addr, _ := net.ResolveUDPAddr("udp", c.targetAddr)
 		return n, addr, nil
 	case <-c.done:
+		return 0, nil, net.ErrClosed
+	case <-c.mux.done:
 		return 0, nil, net.ErrClosed
 	case <-timerCh:
 		return 0, nil, os.ErrDeadlineExceeded
