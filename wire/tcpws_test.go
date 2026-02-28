@@ -959,3 +959,124 @@ func TestTCPWSClient_DialUDP_WS(t *testing.T) {
 		t.Fatalf("server error: %v", err)
 	}
 }
+
+// TestTCPWSClient_ProbeContextCancellation reproduces the engine wire probe bug:
+// when the dial context is canceled after DialTCP returns (simulating probeCancel()),
+// the WebSocket's NetConn read/write contexts are killed, destroying the cached
+// smux session. Subsequent DialTCP calls fail because connect() returns the dead session.
+//
+// Root cause: websocket.NetConn(ctx, ws, ...) derives read/write contexts from ctx.
+// When ctx is canceled, all reads/writes fail → smux session dies.
+func TestTCPWSClient_ProbeContextCancellation(t *testing.T) {
+	cert := generateTestCert(t)
+
+	// Server: accept multiple streams (probe + real traffic).
+	mux := http.NewServeMux()
+	mux.HandleFunc("/k2v5/tunnel", func(w http.ResponseWriter, r *http.Request) {
+		ws, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		wsConn := websocket.NetConn(context.Background(), ws, websocket.MessageBinary)
+		defer wsConn.Close()
+
+		sess, err := smux.Server(wsConn, DefaultSmuxConfig())
+		if err != nil {
+			return
+		}
+		defer sess.Close()
+
+		// Handle streams until session closes.
+		for {
+			stream, err := sess.AcceptStream()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer stream.Close()
+				br := bufio.NewReader(stream)
+				streamType, _, err := ReadStreamHeader(br)
+				if err != nil {
+					return
+				}
+				if streamType == StreamTypeTCP {
+					WriteStreamResponse(stream, nil)
+					// Echo loop
+					buf := make([]byte, 4096)
+					for {
+						n, err := br.Read(buf)
+						if err != nil {
+							return
+						}
+						if _, err := stream.Write(buf[:n]); err != nil {
+							return
+						}
+					}
+				}
+			}()
+		}
+	})
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	host, portStr, _ := net.SplitHostPort(listener.Addr().String())
+	var port int
+	fmt.Sscanf(portStr, "%d", &port)
+
+	srv := &http.Server{
+		Handler:   mux,
+		TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}},
+	}
+	go srv.Serve(tls.NewListener(listener, srv.TLSConfig))
+	defer srv.Close()
+
+	// Client
+	client := NewTCPWSClient(Config{Host: host, Port: port, Fingerprint: "chrome"}, nil)
+	client.tlsConfig = &tls.Config{
+		ServerName:         host,
+		InsecureSkipVerify: true,
+	}
+	defer client.Close()
+
+	// === Phase 1: Probe DialTCP — simulates engine wire probe ===
+	probeCtx, probeCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	probeConn, err := client.DialTCP(probeCtx, "1.1.1.1:443")
+	if err != nil {
+		t.Fatalf("probe DialTCP failed: %v", err)
+	}
+
+	// Cancel probe context — simulates engine's probeCancel()
+	probeCancel()
+	probeConn.Close()
+
+	// Let context cancellation propagate to WebSocket read/write contexts.
+	time.Sleep(200 * time.Millisecond)
+
+	// === Phase 2: Real DialTCP — must succeed if session survived ===
+	realCtx, realCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer realCancel()
+
+	conn, err := client.DialTCP(realCtx, "example.com:80")
+	if err != nil {
+		t.Fatalf("post-probe DialTCP failed (session killed by probe context cancel): %v", err)
+	}
+	defer conn.Close()
+
+	// Verify data actually flows
+	if _, err := conn.Write([]byte("hello")); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	buf := make([]byte, 100)
+	n, err := conn.Read(buf)
+	if err != nil {
+		t.Fatalf("Read failed: %v", err)
+	}
+	if string(buf[:n]) != "hello" {
+		t.Errorf("echo = %q, want hello", string(buf[:n]))
+	}
+}

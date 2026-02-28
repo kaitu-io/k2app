@@ -120,7 +120,17 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 		return nil, ErrNotConnected
 	}
 	if c.sess != nil {
-		return c.sess, nil
+		if !c.sess.IsClosed() {
+			return c.sess, nil
+		}
+		// Session dead (keepalive timeout, underlying conn closed) — clear and reconnect.
+		slog.Info("TCPWSClient: clearing dead smux session")
+		if c.udpMux != nil {
+			c.udpMux.close()
+			c.udpMux = nil
+		}
+		c.sess = nil
+		c.alloc = nil
 	}
 
 	var conn net.Conn
@@ -243,9 +253,12 @@ func (c *TCPWSClient) upgradeWebSocket(ctx context.Context, tlsConn net.Conn) (n
 		return nil, err
 	}
 
-	// Convert WebSocket to net.Conn using nhooyr's NetConn wrapper
-	// MessageBinary mode: read/write binary frames transparently
-	return websocket.NetConn(ctx, ws, websocket.MessageBinary), nil
+	// Use background context for NetConn — caller's ctx is only for dial/handshake.
+	// websocket.NetConn derives read/write contexts from ctx (netconn.go:58-59).
+	// A short-lived dial context (e.g. engine wire probe's probeCtx) would kill
+	// the WebSocket on cancel, destroying the cached smux session.
+	// Connection lifecycle is managed by TCPWSClient.Close()/resetConnection().
+	return websocket.NetConn(context.Background(), ws, websocket.MessageBinary), nil
 }
 
 // DialTCP opens a TCP proxy stream through the smux session.
