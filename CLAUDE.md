@@ -31,7 +31,7 @@ yarn install                     # Always run from root (workspace)
 k2/                  Go core (submodule, read-only — has its own CLAUDE.md)
   engine/            Unified tunnel lifecycle manager (desktop + mobile)
   daemon/            HTTP API shell over engine (desktop only)
-  mobile/            gomobile type adapter over engine (mobile only)
+  appext/            gomobile type adapter over engine (mobile + macOS sysext)
 webapp/              React + MUI frontend (see webapp/CLAUDE.md)
   src/services/      Cloud API (cloudApi, k2api), auth, caching, platform fallbacks
   src/core/          K2 VPN bridge (getK2, waitForK2, polling)
@@ -86,6 +86,8 @@ Makefile             Build orchestration — version from package.json, k2 from 
 - **iOS extension targets**: Must have `CFBundleExecutable`, `CFBundleVersion` in Info.plist. Build settings NOT inherited from project.
 - **Local Capacitor plugin sync**: `file:` plugins are copied to `node_modules/`. After editing: `rm -rf node_modules/k2-plugin && yarn install --force` before `cap sync`.
 - **Android VPN prepare context**: `VpnService.prepare()` must use Activity context, not Application context.
+- **gomobile package naming**: Go directory name determines Java/ObjC package. `k2/appext/` → Android package `appext.*` (classes: `Appext`, `Engine`, `EventHandler`, `EngineConfig`, `SocketProtector`). If Go package is renamed, all native import statements must update.
+- **Android JVM unit tests**: Pure Kotlin utils (no Android framework deps) live in `K2VpnServiceUtils.kt` / `K2PluginUtils.kt`. JVM tests need `testImplementation "org.json:json:20231013"` since `org.json.JSONObject` is built into Android runtime but not JVM. Never use `android.util.Log` in testable utils.
 - **sing-tun monitor instance sharing**: `NewNetworkMonitor()` returns the same `DefaultInterfaceMonitor` for both `engine.Config.NetworkMonitor` (callback path) and `engine.Config.InterfaceMonitor` (tun.Options self-exclusion). Never split into two instances — sing-tun calls `RegisterMyInterface(tunName)` on the tun.Options instance to exclude TUN-self route changes from triggering reconnect.
 - **Network change events are debug-only**: `reconnecting` is a microsecond-duration transient state — the 2s polling loop will never catch it. Events from Android `vpnStateChange` and iOS EventBridge are logged (`console.debug` / `NSLog`) but do NOT update the VPN store. Polling remains the sole UI state source.
 - **K2Plugin dual-CDN pattern**: All manifest fetching in K2Plugin (iOS/Android) uses `fetchManifest(endpoints)` helper — ordered array, try CloudFront first, fall back to S3 direct. Returns `(data, baseURL)` tuple. Download URLs are resolved via `resolveDownloadURL(url, baseURL)`: relative paths are prepended with baseURL, absolute `http(s)://` URLs pass through unchanged (backward compat).
@@ -127,7 +129,7 @@ Makefile             Build orchestration — version from package.json, k2 from 
 - **Design tokens** — MUI theme + CSS variables for dark-only theme
 - **Center** — Backend API service (`api/`): auth, user management, orders, tunnels, cloud management
 - **transformStatus()** — Bridge normalization function in `tauri-k2.ts` and `capacitor-k2.ts`. Converts raw backend state to webapp's `StatusResponseData`: normalizes `"stopped"`→`"disconnected"`, synthesizes `"error"` from `disconnected + lastError`, maps timestamp fields. Handles both structured `{code, message}` error objects and legacy string errors.
-- **OnNetworkChanged()** — gomobile-exported Engine method (`k2/mobile/mobile.go`) that resets wire connections after network change. Emits transient `"reconnecting"` signal, calls `wire.ResetConnections()`, then `"connected"`. State stays `StateConnected`.
+- **OnNetworkChanged()** — gomobile-exported Engine method (`k2/appext/appext.go`) that resets wire connections after network change. Emits transient `"reconnecting"` signal, calls `wire.ResetConnections()`, then `"connected"`. State stays `StateConnected`.
 - **Resettable** — Optional Go interface (`k2/wire/transport.go`) that wire implementations can satisfy to support `ResetConnections()`. Used by engine via type assertion.
 - **NetworkChangeNotifier** — Optional Go interface (`k2/engine/network.go`) for platform-specific network change detection. Desktop: `singTunMonitor` adapter in `k2/daemon/network_monitor.go` wraps sing-tun `NetworkUpdateMonitor` + `DefaultInterfaceMonitor`. Mobile: platforms call `OnNetworkChanged()` directly from native bridge. Engine starts/closes the monitor as part of lifecycle. Non-fatal if platform doesn't support it.
 - **MonitorFactory** — Daemon testability pattern (parallel to `EngineStarter`): `func() (engine.NetworkChangeNotifier, any, error)`. Production default calls `NewNetworkMonitor()`. Tests inject a mock factory. The returned `DefaultInterfaceMonitor` instance MUST be the same instance passed to `engine.Config.InterfaceMonitor` (sing-tun self-exclusion via `RegisterMyInterface`).
@@ -139,12 +141,6 @@ Makefile             Build orchestration — version from package.json, k2 from 
 - **nativeUpdateAvailable** — Capacitor event emitted by iOS K2Plugin when a newer version is found in App Store. Payload: `{version, appStoreUrl}`. Bridge wires this to `_platform.updater.isUpdateReady = true` and stores the App Store URL for `applyUpdateNow()`.
 - **publish-mobile.sh** — Manual mobile release script (`scripts/publish-mobile.sh`). Phase 2 of mobile release: validates S3 artifacts exist, downloads, computes sha256+size, generates relative-URL `latest.json`, uploads to `{channel}/latest.json`. Supports `--dry-run` and `--s3-base=PATH` (local mock for testing).
 - **kaitu-ops-mcp** — MCP server for AI-driven node operations (`tools/kaitu-ops-mcp/`). TypeScript + `@modelcontextprotocol/sdk`. Two tools: `list_nodes` (Center API discovery via `X-Access-Key`) + `exec_on_node` (SSH direct to nodes). stdout redaction runs on every response.
-- **kaitu-node-ops skill** — Claude Code skill file (`.claude/skills/kaitu-node-ops.md`). Dual-architecture identification (k2v5 vs k2-slave), container dependency chain, `.env` variables, standard ops table, 7 safety guardrails. Activated by triggers: "node ops", "k2v5", "exec on node", etc.
-- **redactStdout()** — MCP server function (`tools/kaitu-ops-mcp/src/redact.ts`). Strips env-var-style secrets (`KEY_NAME=[REDACTED]`) and 64-char hex strings from SSH stdout before returning to Claude. Technical security backstop for accidental secret exposure.
-- **KaituTunnel.appex** — macOS NE App Extension containing PacketTunnelProvider + gomobile engine. Lives in `Kaitu.app/Contents/PlugIns/`. Communicates with main app via NEVPNManager + `sendProviderMessage`.
-- **libk2_ne_helper.a** — Swift static library wrapping NEVPNManager for C FFI. Exposes `k2ne_install` / `k2ne_start` / `k2ne_stop` / `k2ne_status` / `k2ne_reinstall` / `k2ne_set_state_callback`. Returns ServiceResponse JSON strings.
-- **ne.rs** — Rust NE bridge module (`desktop/src-tauri/src/ne.rs`, macOS only). Routes `daemon_exec` IPC to Swift NE helper via C FFI. Replaces `ensure_service_running` with `ensure_ne_installed` on macOS.
-- **ensure_ne_installed** — macOS startup: installs NE VPN profile via `k2ne_install()`. Replaces `ensure_service_running` (which does daemon ping + version check + osascript install). No daemon process required on macOS.
 
 ## Layer Docs (read on demand)
 
