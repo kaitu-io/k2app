@@ -61,6 +61,21 @@ pub fn core_action(action: &str, params: Option<serde_json::Value>) -> Result<Se
         .map_err(|e| format!("Failed to parse response: {}", e))
 }
 
+/// Stop VPN before app exit (best-effort, sync, short timeout)
+pub fn stop_vpn() {
+    log::info!("Stopping VPN before exit...");
+    match core_action("down", None) {
+        Ok(resp) => {
+            if resp.code == 0 {
+                log::info!("VPN stopped successfully");
+            } else {
+                log::warn!("VPN stop returned code {}: {}", resp.code, resp.message);
+            }
+        }
+        Err(e) => log::warn!("VPN stop failed (may not be running): {}", e),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum VersionCheckResult {
     VersionMatch,

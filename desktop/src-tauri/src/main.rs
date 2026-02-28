@@ -6,9 +6,10 @@ mod service;
 mod status_stream;
 mod tray;
 mod updater;
+mod window;
 
 use std::path::PathBuf;
-use tauri::{Manager, RunEvent};
+use tauri::{RunEvent, WindowEvent};
 
 /// Desktop log directory — shared between log plugin and log_upload.
 pub(crate) fn get_desktop_log_dir() -> PathBuf {
@@ -47,7 +48,20 @@ fn resolve_log_dir() -> PathBuf {
     log_dir
 }
 
+/// Hide window (Tauri command for TypeScript)
+#[tauri::command]
+fn hide_window(app: tauri::AppHandle) {
+    window::hide_window(&app);
+}
+
+/// Show window (Tauri command for TypeScript)
+#[tauri::command]
+fn show_window(app: tauri::AppHandle) {
+    window::show_window(&app);
+}
+
 fn main() {
+    #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_localhost::Builder::new(14580).build())
         .plugin({
@@ -71,10 +85,7 @@ fn main() {
                 .build()
         })
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
+            window::show_window_user_action(app);
         }))
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -82,9 +93,11 @@ fn main() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            None,
+            Some(vec!["--minimized"]),
         ))
         .invoke_handler(tauri::generate_handler![
+            show_window,
+            hide_window,
             service::admin_reinstall_service,
             service::ensure_service_running,
             service::daemon_exec,
@@ -106,8 +119,18 @@ fn main() {
     builder
         .manage(tray::TrayLocale(std::sync::Mutex::new("en-US".to_string())))
         .setup(|app| {
-            if let Some(window) = app.get_webview_window("main") {
-                window.show().ok();
+            // Check for --minimized argument (autostart)
+            let args: Vec<String> = std::env::args().collect();
+            let should_minimize = args.contains(&"--minimized".to_string());
+            window::init_startup_state(should_minimize);
+
+            // Adjust window size based on screen and show (skip if minimized)
+            if !should_minimize {
+                if let Some(_win) = window::adjust_window_size(app.handle()) {
+                    window::show_window(app.handle());
+                    #[cfg(debug_assertions)]
+                    _win.open_devtools();
+                }
             }
 
             // Initialize system tray
@@ -148,8 +171,37 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
-            if let RunEvent::ExitRequested { .. } = &event {
-                updater::install_pending_update(app);
+            match event {
+                RunEvent::WindowEvent {
+                    label,
+                    event: WindowEvent::CloseRequested { api, .. },
+                    ..
+                } => {
+                    if label == "main" {
+                        api.prevent_close();
+                        window::hide_window(app);
+                        log::debug!("Window close requested, hiding instead");
+                    }
+                }
+                RunEvent::ExitRequested { .. } => {
+                    log::info!("Exit requested, stopping VPN before exit");
+                    service::stop_vpn();
+
+                    // On Windows, NSIS installer already launched — skip restart
+                    #[cfg(not(target_os = "windows"))]
+                    updater::install_pending_update(app);
+                }
+                #[cfg(target_os = "macos")]
+                RunEvent::Reopen {
+                    has_visible_windows,
+                    ..
+                } => {
+                    if !has_visible_windows {
+                        log::debug!("Dock icon clicked with no visible windows, showing window");
+                        window::show_window_user_action(app);
+                    }
+                }
+                _ => {}
             }
         });
 }

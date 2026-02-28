@@ -1,25 +1,32 @@
 //! System tray module
+//!
+//! - Left click: show window + focus
+//! - Right click: show context menu (Show, Hide, Quit)
+//! - Menu is rebuilt when locale changes
 
 use std::sync::Mutex;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager, State,
+    State,
 };
+
+use crate::service;
+use crate::window;
 
 /// Shared locale state for tray menu i18n
 pub struct TrayLocale(pub Mutex<String>);
 
 const TRAY_ID: &str = "main-tray";
 
-/// Get translated tray menu text: (show, quit)
-fn get_translations(locale: &str) -> (&'static str, &'static str) {
+/// Get translated tray menu text: (show, hide, quit)
+fn get_translations(locale: &str) -> (&'static str, &'static str, &'static str) {
     match locale {
-        "zh-CN" => ("显示", "退出"),
-        "zh-TW" | "zh-HK" => ("顯示", "退出"),
-        "ja" => ("表示", "終了"),
+        "zh-CN" => ("显示", "隐藏", "退出"),
+        "zh-TW" | "zh-HK" => ("顯示", "隱藏", "退出"),
+        "ja" => ("表示", "非表示", "終了"),
         // en-US, en-GB, en-AU and any unknown locale
-        _ => ("Show", "Quit"),
+        _ => ("Show", "Hide", "Quit"),
     }
 }
 
@@ -27,13 +34,14 @@ fn build_tray_menu(
     app: &tauri::AppHandle,
     locale: &str,
 ) -> Result<Menu<tauri::Wry>, Box<dyn std::error::Error>> {
-    let (show_text, quit_text) = get_translations(locale);
+    let (show_text, hide_text, quit_text) = get_translations(locale);
 
     let show = MenuItem::with_id(app, "show", show_text, true, None::<&str>)?;
+    let hide = MenuItem::with_id(app, "hide", hide_text, true, None::<&str>)?;
     let separator = MenuItem::with_id(app, "sep1", "---", false, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", quit_text, true, None::<&str>)?;
 
-    Ok(Menu::with_items(app, &[&show, &separator, &quit])?)
+    Ok(Menu::with_items(app, &[&show, &hide, &separator, &quit])?)
 }
 
 /// IPC command: sync locale from webapp to Rust for tray menu i18n
@@ -65,12 +73,14 @@ pub fn init_tray(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "show" => {
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
+                window::show_window_user_action(app);
+            }
+            "hide" => {
+                window::hide_window(app);
             }
             "quit" => {
+                log::info!("Quit menu item clicked, stopping VPN and exiting app");
+                service::stop_vpn();
                 app.exit(0);
             }
             _ => {}
@@ -81,11 +91,7 @@ pub fn init_tray(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error
                 ..
             } = event
             {
-                let app = tray.app_handle();
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
+                window::show_window_user_action(tray.app_handle());
             }
         })
         .build(app)?;
