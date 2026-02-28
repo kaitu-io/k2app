@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 tauri = { version = "2", features = ["tray-icon", "devtools"] }
 tauri-plugin-localhost = "2"
+tauri-plugin-log = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-autostart = "2"

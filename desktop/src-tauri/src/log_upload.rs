@@ -124,27 +124,9 @@ fn get_service_log_path() -> PathBuf {
     get_log_dir().join("k2.log")
 }
 
-/// Get desktop log path (user-level directory)
+/// Get desktop log path (delegates to shared get_desktop_log_dir)
 fn get_desktop_log_path() -> PathBuf {
-    #[cfg(target_os = "macos")]
-    let dir = dirs::home_dir()
-        .map(|h| h.join("Library/Logs/kaitu"))
-        .unwrap_or_else(|| PathBuf::from("/tmp/kaitu"));
-
-    #[cfg(target_os = "windows")]
-    let dir = dirs::data_local_dir()
-        .map(|d| d.join("kaitu").join("logs"))
-        .unwrap_or_else(|| PathBuf::from(r"C:\temp\kaitu"));
-
-    #[cfg(target_os = "linux")]
-    let dir = dirs::home_dir()
-        .map(|h| h.join(".local/share/kaitu/logs"))
-        .unwrap_or_else(|| PathBuf::from("/tmp/kaitu"));
-
-    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-    let dir = PathBuf::from("/tmp/kaitu");
-
-    dir.join("desktop.log")
+    crate::get_desktop_log_dir().join("desktop.log")
 }
 
 // ============================================================================

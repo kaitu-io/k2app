@@ -7,11 +7,69 @@ mod status_stream;
 mod tray;
 mod updater;
 
+use std::path::PathBuf;
 use tauri::{Manager, RunEvent};
+
+/// Desktop log directory — shared between log plugin and log_upload.
+pub(crate) fn get_desktop_log_dir() -> PathBuf {
+    #[cfg(target_os = "macos")]
+    {
+        dirs::home_dir()
+            .map(|h| h.join("Library/Logs/kaitu"))
+            .unwrap_or_else(|| PathBuf::from("/tmp/kaitu"))
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        dirs::data_local_dir()
+            .map(|d| d.join("kaitu").join("logs"))
+            .unwrap_or_else(|| PathBuf::from(r"C:\temp\kaitu"))
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        dirs::home_dir()
+            .map(|h| h.join(".local/share/kaitu/logs"))
+            .unwrap_or_else(|| PathBuf::from("/tmp/kaitu"))
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    {
+        PathBuf::from("/tmp/kaitu")
+    }
+}
+
+fn resolve_log_dir() -> PathBuf {
+    let log_dir = get_desktop_log_dir();
+    if let Err(e) = std::fs::create_dir_all(&log_dir) {
+        eprintln!("Warning: Failed to create log directory {}: {}", log_dir.display(), e);
+    }
+    log_dir
+}
 
 fn main() {
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_localhost::Builder::new(14580).build())
+        .plugin({
+            let log_dir = resolve_log_dir();
+            tauri_plugin_log::Builder::new()
+                .level(if cfg!(debug_assertions) {
+                    log::LevelFilter::Debug
+                } else {
+                    log::LevelFilter::Info
+                })
+                .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
+                .filter(|metadata| !metadata.target().starts_with("reqwest"))
+                .target(tauri_plugin_log::Target::new(
+                    tauri_plugin_log::TargetKind::Folder {
+                        path: log_dir,
+                        file_name: Some("desktop".into()),
+                    },
+                ))
+                .max_file_size(50_000_000) // 50 MB
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepAll)
+                .build()
+        })
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();

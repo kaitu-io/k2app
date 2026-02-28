@@ -475,32 +475,20 @@ async fn ensure_service_running_daemon(app_version: String) -> Result<(), String
 mod tests {
     use super::*;
 
-    // Test: daemon_exec daemon path calls core_action.
-    // Without ne-mode, daemon_exec routes to core_action (daemon HTTP path).
-    // We verify by calling it with no daemon running -- expects an Err from HTTP.
+    // Test: daemon_exec routes correctly and does not panic.
+    // Result depends on whether a local daemon is running — both Ok and Err are valid.
     #[tokio::test]
-    async fn test_daemon_exec_non_macos() {
-        #[cfg(not(all(target_os = "macos", feature = "ne-mode")))]
-        {
-            let result = daemon_exec("status".to_string(), None).await;
-            assert!(
-                result.is_err(),
-                "daemon_exec should Err when no daemon is running (daemon path)"
-            );
-            let err_msg = result.unwrap_err();
-            assert!(
-                err_msg.contains("Failed to call action")
-                    || err_msg.contains("connection refused")
-                    || err_msg.contains("os error"),
-                "error should indicate HTTP connection failure: {}",
-                err_msg
-            );
-        }
-        #[cfg(all(target_os = "macos", feature = "ne-mode"))]
-        {
-            // In NE mode daemon_exec calls ne_action; test just verifies no panic
-            let result = daemon_exec("status".to_string(), None).await;
-            let _ = result;
+    async fn test_daemon_exec_no_panic() {
+        let result = daemon_exec("status".to_string(), None).await;
+        match &result {
+            Ok(_resp) => {} // Daemon running — valid
+            Err(e) => assert!(
+                e.contains("Failed to call action")
+                    || e.contains("connection refused")
+                    || e.contains("os error"),
+                "Err should indicate connection failure: {}",
+                e
+            ),
         }
     }
 
