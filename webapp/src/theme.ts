@@ -26,6 +26,8 @@ const sharedThemeConfig: ThemeOptions = {
         input, textarea, [contenteditable="true"] {
           -webkit-user-select: text !important;
           user-select: text !important;
+          caret-color: auto;
+          cursor: text;
         }
       `,
     },
