@@ -230,6 +230,7 @@ func (e *Engine) Start(cfg Config) error {
 		Dialer:       tm,
 		Router:       router,
 		WireReporter: e,
+		SniffBT:      !client.Rule.Global, // sniff BT in smart mode only
 	}
 	if cfg.DirectDialer != nil {
 		tunnelCfg.DirectDialer = cfg.DirectDialer

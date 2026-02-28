@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"io"
 	"net"
@@ -474,4 +475,201 @@ func TestConnTracker_ConcurrentOps(t *testing.T) {
 	go ct.closeAll()
 
 	wg.Wait()
+}
+
+func TestClientTunnel_HandleTCP_BTForcedDirect(t *testing.T) {
+	// Start a local server to accept the direct connection
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	serverGot := make(chan string, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		buf := make([]byte, 256)
+		n, _ := conn.Read(buf)
+		serverGot <- string(buf[:n])
+	}()
+
+	dialer := newMockDialer()
+	prov := &mockProvider{}
+
+	tunnel := NewClientTunnel(ClientTunnelConfig{
+		Provider: prov,
+		Dialer:   dialer,
+		SniffBT:  true,
+		// Router nil → defaults to proxy → sniff will check for BT
+	})
+
+	if err := tunnel.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Build a BT handshake (20 bytes header + 48 bytes rest)
+	btHandshake, _ := hex.DecodeString(
+		"13426974546f7272656e742070726f746f636f6c" +
+			"0000000000100000e21ea9569b69bab33c97851d0298bdfa89bc90922d5554313631302dea812fcd6a3563e3be40c1d1")
+
+	// Create connection that sends BT handshake
+	localConn, providerConn := net.Pipe()
+
+	done := make(chan struct{})
+	go func() {
+		// Use ln.Addr() so direct dial succeeds to our local server
+		prov.handler.HandleTCP(localConn, ln.Addr().String())
+		close(done)
+	}()
+
+	// Send BT handshake from provider side
+	providerConn.Write(btHandshake)
+
+	// The server should receive the full BT handshake (sniff must prepend peeked bytes)
+	select {
+	case got := <-serverGot:
+		if len(got) < 20 {
+			t.Fatalf("server got only %d bytes, expected >= 20", len(got))
+		}
+		if got[:20] != "\x13BitTorrent protocol" {
+			t.Errorf("server didn't receive BT handshake, got %q", got[:20])
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timeout waiting for server to receive data")
+	}
+
+	providerConn.Close()
+	<-done
+
+	// Verify DialTCP was NOT called (should have gone direct, not proxy)
+	dialer.mu.Lock()
+	defer dialer.mu.Unlock()
+	if len(dialer.tcpCalls) != 0 {
+		t.Errorf("DialTCP called %d times, expected 0 (BT should force direct)", len(dialer.tcpCalls))
+	}
+
+	tunnel.Close()
+}
+
+func TestClientTunnel_HandleTCP_NonBTStillProxied(t *testing.T) {
+	dialer := newMockDialer()
+	prov := &mockProvider{}
+
+	tunnel := NewClientTunnel(ClientTunnelConfig{
+		Provider: prov,
+		Dialer:   dialer,
+		SniffBT:  true,
+		// Router nil → defaults to proxy
+	})
+
+	if err := tunnel.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	remoteConn, clientConn := net.Pipe()
+	dialer.tcpConns <- remoteConn
+
+	localConn, providerConn := net.Pipe()
+
+	done := make(chan struct{})
+	go func() {
+		prov.handler.HandleTCP(localConn, "example.com:443")
+		close(done)
+	}()
+
+	// Send TLS ClientHello (not BT) — starts with 0x16
+	tlsHello := []byte{0x16, 0x03, 0x01, 0x00, 0x05, 0x01, 0x00, 0x00, 0x01, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+	providerConn.Write(tlsHello)
+
+	// Should be proxied — read from remote side
+	buf := make([]byte, 256)
+	n, err := clientConn.Read(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Verify TLS hello arrived intact (sniffed bytes prepended correctly)
+	if buf[0] != 0x16 {
+		t.Errorf("first byte = 0x%02x, want 0x16 (TLS)", buf[0])
+	}
+	if n < 20 {
+		t.Errorf("got %d bytes, want >= 20", n)
+	}
+
+	providerConn.Close()
+	clientConn.Close()
+	<-done
+
+	// Verify DialTCP WAS called (non-BT goes to proxy)
+	dialer.mu.Lock()
+	defer dialer.mu.Unlock()
+	if len(dialer.tcpCalls) != 1 {
+		t.Errorf("DialTCP called %d times, expected 1", len(dialer.tcpCalls))
+	}
+
+	tunnel.Close()
+}
+
+func TestClientTunnel_HandleTCP_BTNotSniffedInGlobalMode(t *testing.T) {
+	dialer := newMockDialer()
+	prov := &mockProvider{}
+
+	tunnel := NewClientTunnel(ClientTunnelConfig{
+		Provider: prov,
+		Dialer:   dialer,
+		SniffBT:  false, // global mode — no sniffing
+	})
+
+	if err := tunnel.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	remoteConn, clientConn := net.Pipe()
+	dialer.tcpConns <- remoteConn
+
+	localConn, providerConn := net.Pipe()
+
+	// Build a BT handshake
+	btHandshake, _ := hex.DecodeString(
+		"13426974546f7272656e742070726f746f636f6c" +
+			"0000000000100000e21ea9569b69bab33c97851d0298bdfa89bc90922d5554313631302dea812fcd6a3563e3be40c1d1")
+
+	done := make(chan struct{})
+	go func() {
+		prov.handler.HandleTCP(localConn, "example.com:443")
+		close(done)
+	}()
+
+	providerConn.Write(btHandshake)
+
+	// In global mode, BT should still be proxied — read from remote side
+	buf := make([]byte, 256)
+	n, err := clientConn.Read(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n < 20 {
+		t.Fatalf("got %d bytes, want >= 20", n)
+	}
+	// Verify BT handshake arrived on proxy side (not forced to direct)
+	if buf[0] != 0x13 {
+		t.Errorf("first byte = 0x%02x, want 0x13 (BT)", buf[0])
+	}
+
+	providerConn.Close()
+	clientConn.Close()
+	<-done
+
+	// Verify DialTCP WAS called (global mode → proxy, no sniff override)
+	dialer.mu.Lock()
+	defer dialer.mu.Unlock()
+	if len(dialer.tcpCalls) != 1 {
+		t.Errorf("DialTCP called %d times, expected 1 (global mode should proxy BT)", len(dialer.tcpCalls))
+	}
+
+	tunnel.Close()
 }

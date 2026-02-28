@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/kaitu-io/k2rule"
 	"github.com/kaitu-io/k2/provider"
+	"github.com/kaitu-io/k2/sniff"
 	"github.com/kaitu-io/k2/wire"
 	"golang.org/x/sync/semaphore"
 )
@@ -69,6 +71,7 @@ type ClientTunnel struct {
 	router       *Router
 	directDialer wire.DirectDialer
 	wireReporter WireErrorReporter
+	sniffBT      bool // sniff BitTorrent and force direct (disabled in global mode)
 
 	ctx     context.Context
 	cancel  context.CancelFunc
@@ -89,6 +92,7 @@ type ClientTunnelConfig struct {
 	Router       *Router
 	DirectDialer wire.DirectDialer
 	WireReporter WireErrorReporter
+	SniffBT      bool // enable BitTorrent sniffing (should be false in global mode)
 }
 
 // NewClientTunnel creates a new L4 client tunnel.
@@ -99,6 +103,7 @@ func NewClientTunnel(cfg ClientTunnelConfig) *ClientTunnel {
 		router:       cfg.Router,
 		directDialer: cfg.DirectDialer,
 		wireReporter: cfg.WireReporter,
+		sniffBT:      cfg.SniffBT,
 		conns:        newConnTracker(),
 		connSem:      semaphore.NewWeighted(int64(maxTunnelConns)),
 	}
@@ -158,6 +163,19 @@ func (t *ClientTunnel) HandleTCP(conn net.Conn, dest string) {
 	defer untrack()
 
 	action := t.route(dest)
+
+	// Sniff proxy-bound TCP for BitTorrent — force to direct (skipped in global mode)
+	if t.sniffBT && action == k2rule.TargetProxy {
+		peeked, isBT := sniffBT(conn)
+		if isBT {
+			action = k2rule.TargetDirect
+			slog.Debug("tunnel: BitTorrent detected, forcing direct", "dest", dest)
+		}
+		if len(peeked) > 0 {
+			conn = &prefixConn{Conn: conn, reader: io.MultiReader(bytes.NewReader(peeked), conn)}
+		}
+	}
+
 	slog.Debug("tunnel: route", "dest", dest, "action", action)
 
 	switch action {
@@ -185,6 +203,18 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 	defer untrack()
 
 	action := t.route(dest)
+
+	// Sniff proxy-bound UDP for uTP/tracker — force to direct (skipped in global mode)
+	if t.sniffBT && action == k2rule.TargetProxy {
+		packet, addr, isBT := sniffUDPBT(conn)
+		if isBT {
+			action = k2rule.TargetDirect
+			slog.Debug("tunnel: BitTorrent UDP detected, forcing direct", "dest", dest)
+		}
+		if packet != nil {
+			conn = &prefixPacketConn{PacketConn: conn, first: packet, firstAddr: addr}
+		}
+	}
 
 	switch action {
 	case k2rule.TargetDirect:
@@ -290,6 +320,66 @@ var (
 	tcpBufPool = sync.Pool{New: func() any { b := make([]byte, 32*1024); return &b }}
 	udpBufPool = sync.Pool{New: func() any { b := make([]byte, 4096); return &b }}
 )
+
+// sniffTimeout is the max time to wait for first bytes when sniffing protocol.
+// BT clients send handshake immediately, so this is a generous upper bound.
+const sniffTimeout = 200 * time.Millisecond
+
+// prefixConn wraps a net.Conn to prepend previously-read bytes.
+type prefixConn struct {
+	net.Conn
+	reader io.Reader
+}
+
+func (c *prefixConn) Read(b []byte) (int, error) {
+	return c.reader.Read(b)
+}
+
+// sniffBT reads first bytes from conn and checks for BitTorrent handshake.
+// Returns the peeked bytes (must be prepended back) and whether BT was detected.
+func sniffBT(conn net.Conn) (peeked []byte, isBT bool) {
+	buf := make([]byte, 20) // BT handshake = 1 + 19 bytes
+	conn.SetReadDeadline(time.Now().Add(sniffTimeout))
+	n, _ := io.ReadFull(conn, buf)
+	conn.SetReadDeadline(time.Time{})
+	if n == 0 {
+		return nil, false
+	}
+	peeked = buf[:n]
+	return peeked, sniff.IsBitTorrent(bytes.NewReader(peeked))
+}
+
+// prefixPacketConn wraps a net.PacketConn to replay the first read packet.
+type prefixPacketConn struct {
+	net.PacketConn
+	first     []byte
+	firstAddr net.Addr
+	replayed  bool
+}
+
+func (c *prefixPacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
+	if !c.replayed {
+		c.replayed = true
+		n := copy(b, c.first)
+		return n, c.firstAddr, nil
+	}
+	return c.PacketConn.ReadFrom(b)
+}
+
+// sniffUDPBT reads the first UDP packet and checks for uTP or UDP Tracker.
+// Returns the packet, source addr, and whether BT was detected.
+func sniffUDPBT(conn net.PacketConn) (packet []byte, addr net.Addr, isBT bool) {
+	buf := make([]byte, 4096)
+	conn.SetReadDeadline(time.Now().Add(sniffTimeout))
+	n, from, err := conn.ReadFrom(buf)
+	conn.SetReadDeadline(time.Time{})
+	if err != nil || n == 0 {
+		return nil, nil, false
+	}
+	packet = make([]byte, n)
+	copy(packet, buf[:n])
+	return packet, from, sniff.IsUTP(packet) || sniff.IsUDPTracker(packet)
+}
 
 // pipe copies data bidirectionally between two connections.
 // Each direction's completion closes the peer to unblock the other.
