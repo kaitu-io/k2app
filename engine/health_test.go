@@ -179,3 +179,33 @@ func TestHealthEscalation(t *testing.T) {
 		t.Fatal("expected escalation to full reconnect after >3 hops")
 	}
 }
+
+func TestHealthMonitor_ResetCounters(t *testing.T) {
+	tm := mockTransportManager()
+	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
+	hm := newHealthMonitor(tm, tunnel, nil, nil)
+
+	// Drive into non-default state.
+	hm.health = HealthCritical
+	hm.degradedStreak = 5
+	hm.criticalStreak = 3
+	hm.healthyStreak = 0
+	hm.hopAttempts = 2
+	hm.peakThroughput = 100.0
+
+	hm.resetCounters()
+
+	if hm.health != HealthHealthy {
+		t.Fatalf("health = %s, want %s", hm.health, HealthHealthy)
+	}
+	if hm.degradedStreak != 0 || hm.criticalStreak != 0 || hm.healthyStreak != 0 {
+		t.Fatalf("streaks not zeroed: degraded=%d critical=%d healthy=%d",
+			hm.degradedStreak, hm.criticalStreak, hm.healthyStreak)
+	}
+	if hm.hopAttempts != 0 {
+		t.Fatalf("hopAttempts = %d, want 0", hm.hopAttempts)
+	}
+	if hm.peakThroughput != 0 {
+		t.Fatalf("peakThroughput = %f, want 0", hm.peakThroughput)
+	}
+}

@@ -1080,3 +1080,107 @@ func TestTCPWSClient_ProbeContextCancellation(t *testing.T) {
 		t.Errorf("echo = %q, want hello", string(buf[:n]))
 	}
 }
+
+// TestTCPWSClient_DialUDP_AfterReset verifies that after resetConnection(),
+// TCPWSClient.DialUDP can rebuild a new smux session and udpMux.
+// This simulates a network change: old session dies, new connection is established.
+func TestTCPWSClient_DialUDP_AfterReset(t *testing.T) {
+	// Phase 1: initial setup + first DialUDP
+	clientConn1, serverConn1 := net.Pipe()
+	store := NewTicketStore()
+	server := NewTCPWSServer(store)
+	server.HandleConn(serverConn1)
+
+	client := NewTCPWSClient(Config{Host: "127.0.0.1", Port: 443}, store)
+	client.testConn = clientConn1
+
+	received1 := make(chan string, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go server.ServeUDP(ctx, UDPHandlerFunc(func(conn net.PacketConn, addr string) {
+		buf := make([]byte, 100)
+		n, _, err := conn.ReadFrom(buf)
+		if err != nil {
+			return
+		}
+		received1 <- string(buf[:n])
+	}))
+	time.Sleep(50 * time.Millisecond)
+
+	pc1, err := client.DialUDP(context.Background(), "8.8.8.8:53")
+	if err != nil {
+		t.Fatalf("first DialUDP: %v", err)
+	}
+	pc1.WriteTo([]byte("before-reset"), nil)
+
+	select {
+	case msg := <-received1:
+		if msg != "before-reset" {
+			t.Fatalf("first msg = %q, want before-reset", msg)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout on first DialUDP")
+	}
+	pc1.Close()
+
+	// Phase 2: reset + reconnect with new pipe
+	client.resetConnection()
+
+	// Verify udpMux was cleared
+	client.mu.Lock()
+	if client.udpMux != nil {
+		client.mu.Unlock()
+		t.Fatal("udpMux should be nil after resetConnection")
+	}
+	client.mu.Unlock()
+
+	// Create fresh pipe for "new network connection"
+	clientConn2, serverConn2 := net.Pipe()
+	client.mu.Lock()
+	client.testConn = clientConn2
+	client.mu.Unlock()
+
+	// Server needs new smux session on new pipe
+	server2 := NewTCPWSServer(store)
+	server2.HandleConn(serverConn2)
+
+	received2 := make(chan string, 1)
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	go server2.ServeUDP(ctx2, UDPHandlerFunc(func(conn net.PacketConn, addr string) {
+		buf := make([]byte, 100)
+		n, _, err := conn.ReadFrom(buf)
+		if err != nil {
+			return
+		}
+		received2 <- string(buf[:n])
+	}))
+	time.Sleep(50 * time.Millisecond)
+
+	// Phase 3: second DialUDP should build new smux session + udpMux
+	pc2, err := client.DialUDP(context.Background(), "8.8.8.8:53")
+	if err != nil {
+		t.Fatalf("second DialUDP after reset: %v", err)
+	}
+	defer pc2.Close()
+
+	pc2.WriteTo([]byte("after-reset"), nil)
+
+	select {
+	case msg := <-received2:
+		if msg != "after-reset" {
+			t.Fatalf("second msg = %q, want after-reset", msg)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout on second DialUDP after reset")
+	}
+
+	// Cleanup
+	client.Close()
+	server.Close()
+	server2.Close()
+	clientConn1.Close()
+	serverConn1.Close()
+	clientConn2.Close()
+	serverConn2.Close()
+}

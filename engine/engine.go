@@ -329,6 +329,14 @@ func (e *Engine) OnNetworkChanged() {
 		tm.ResetConnections()
 	}
 
+	// Reset health monitor — stale streaks from old network are irrelevant.
+	e.mu.Lock()
+	hm := e.health
+	e.mu.Unlock()
+	if hm != nil {
+		hm.resetCounters()
+	}
+
 	// Clear non-client wire errors (network errors are stale after network change).
 	// Auth errors survive — WiFi→cellular doesn't fix expired subscriptions.
 	e.mu.Lock()

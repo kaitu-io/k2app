@@ -93,6 +93,7 @@ type QUICClient struct {
 	arcSender *arc.K2ARCSender // stored for stats access
 
 	datagramHopAttempts atomic.Int32 // hop attempts before TCP-WS fallback
+	hopInProgress       atomic.Bool  // CAS guard: prevents concurrent hops
 }
 
 // NewQUICClient creates a new QUIC client transport.
@@ -292,15 +293,11 @@ func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, 
 		slog.Info("QUICClient.DialUDP", "addr", addr, "datagramsSupported", dgSupported)
 		if dgSupported {
 			if !mux.datagramHealthy() {
-				// Hop port before falling back to TCP-WS
+				// Hop port before falling back to TCP-WS.
+				// tryHop() uses CAS to ensure only one goroutine hops at a time.
 				if c.hopEnabled() && c.datagramHopAttempts.Load() < maxDatagramHops {
-					c.datagramHopAttempts.Add(1)
-					slog.Warn("QUICClient.DialUDP: datagram unhealthy, hopping port",
-						"addr", addr,
-						"hopAttempt", c.datagramHopAttempts.Load(),
-						"maxHops", maxDatagramHops)
-					c.resetConnection()
-					continue // retry: new port, new mux (healthy)
+					c.tryHop() // winner resets connection; loser gets stale conn
+					continue   // both retry: connect() gives fresh conn/mux
 				}
 				// Hops exhausted (or hop not configured) → TCP-WS fallback
 				slog.Warn("QUICClient.DialUDP: datagram path unhealthy, forcing fallback",
@@ -398,6 +395,21 @@ func (c *QUICClient) WireStats() WireStats {
 }
 
 var _ StatsProvider = (*QUICClient)(nil)
+
+// tryHop attempts a single datagram port hop. Returns true if this goroutine
+// won the race and executed the hop. Concurrent callers get false immediately.
+func (c *QUICClient) tryHop() bool {
+	if !c.hopInProgress.CompareAndSwap(false, true) {
+		return false
+	}
+	defer c.hopInProgress.Store(false)
+
+	attempt := c.datagramHopAttempts.Add(1)
+	slog.Warn("QUICClient: datagram unhealthy, hopping port",
+		"hopAttempt", attempt, "maxHops", maxDatagramHops)
+	c.resetConnection()
+	return true
+}
 
 // resetConnection closes cached connection resources without marking client as closed.
 // After reset, the next DialTCP/DialUDP will establish a fresh connection.
@@ -996,7 +1008,12 @@ func (c *quicUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
 	var buf bytes.Buffer
 	WriteUDPFrame(&buf, c.sessionID, c.targetAddr, b)
 	if err := c.qconn.SendDatagram(buf.Bytes()); err != nil {
-		slog.Warn("quicUDPConn: SendDatagram failed", "sessionID", c.sessionID, "target", c.targetAddr, "err", err)
+		slog.Warn("quicUDPConn: SendDatagram failed", "sessionID", c.sessionID,
+			"target", c.targetAddr, "frameSize", buf.Len(), "err", err)
+		// Count failed sends in loss rate tracking so datagramHealthy()
+		// detects the broken path and triggers hop/fallback.
+		c.mux.recordSend()
+		c.mux.recordTimeout()
 		return 0, err
 	}
 	c.mux.recordSend()

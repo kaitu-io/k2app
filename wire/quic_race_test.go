@@ -58,6 +58,68 @@ func TestQUICClient_DialUDP_ResetRace(t *testing.T) {
 	wg.Wait()
 }
 
+// TestQUICClient_DialTCP_ResetRace exercises concurrent DialTCP + resetConnection.
+// DialTCP uses connect() → OpenStreamSync() without stale conn detection (unlike
+// DialUDP). When resetConnection() closes the QUIC conn between connect() and
+// OpenStreamSync(), the caller gets an error. This test verifies no panic, no hang,
+// and no data race under -race.
+func TestQUICClient_DialTCP_ResetRace(t *testing.T) {
+	client, server, cleanup := setupQUICPair(t)
+	defer cleanup()
+
+	// Server: drain accepted streams
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	go func() {
+		for {
+			conn, _, err := server.AcceptTCP(ctx)
+			if err != nil {
+				return
+			}
+			WriteStreamResponse(conn, nil)
+			conn.Close()
+		}
+	}()
+
+	// Warmup connect
+	if _, err := client.connect(ctx); err != nil {
+		t.Fatalf("warmup connect: %v", err)
+	}
+
+	const goroutines = 50
+	var wg sync.WaitGroup
+
+	// Concurrent DialTCP callers
+	for range goroutines {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 10 {
+				dctx, dcancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+				conn, err := client.DialTCP(dctx, "8.8.8.8:53")
+				dcancel()
+				if err != nil {
+					continue
+				}
+				conn.Close()
+			}
+		}()
+	}
+
+	// Concurrent resetConnection caller
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for range 20 {
+			client.resetConnection()
+			time.Sleep(time.Millisecond)
+		}
+	}()
+
+	wg.Wait()
+	// No panic, no hang = pass
+}
+
 // TestQUICClient_DialUDP_StaleCheck verifies that DialUDP detects a stale conn
 // after resetConnection runs between connect() and the resource read.
 func TestQUICClient_DialUDP_StaleCheck(t *testing.T) {

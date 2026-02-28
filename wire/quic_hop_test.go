@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -182,6 +184,89 @@ func TestQUICClient_DialUDP_HopNotResetWithHighLoss(t *testing.T) {
 
 	if client.datagramHopAttempts.Load() != 2 {
 		t.Fatalf("hopAttempts = %d, want 2 (30%% loss above recovery threshold)", client.datagramHopAttempts.Load())
+	}
+}
+
+// TestQUICClient_ConcurrentHopRace verifies that when multiple goroutines
+// detect datagramHealthy()=false simultaneously, only one actually executes
+// a hop. Without the CAS guard, N goroutines would each Add(1) + resetConnection(),
+// burning N hops in a single unhealthy event.
+func TestQUICClient_ConcurrentHopRace(t *testing.T) {
+	client, _, cleanup := setupQUICPairWithHop(t)
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := client.connect(ctx); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+
+	// 10 goroutines all try to hop simultaneously.
+	// Only 1 should win; the rest should get false from tryHop().
+	var winners atomic.Int32
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if client.tryHop() {
+				winners.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if winners.Load() != 1 {
+		t.Fatalf("hop winners = %d, want exactly 1", winners.Load())
+	}
+	if client.datagramHopAttempts.Load() != 1 {
+		t.Fatalf("datagramHopAttempts = %d, want 1", client.datagramHopAttempts.Load())
+	}
+}
+
+// TestQuicUDPConn_WriteTo_FailureFeedsLossRate verifies that when SendDatagram
+// fails (e.g. "DATAGRAM frame too large" after MTU reset), the failure is counted
+// as a send+timeout in loss rate tracking. Without this, failed writes are invisible
+// to datagramHealthy() and hop/fallback never triggers.
+func TestQuicUDPConn_WriteTo_FailureFeedsLossRate(t *testing.T) {
+	client, _, cleanup := setupQUICPair(t)
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Get a working PacketConn
+	pconn, err := client.DialUDP(ctx, "8.8.8.8:53")
+	if err != nil {
+		t.Fatalf("DialUDP: %v", err)
+	}
+	defer pconn.Close()
+
+	// Record mux state before
+	client.mu.Lock()
+	mux := client.udpMux
+	client.mu.Unlock()
+	sentBefore := mux.datagramSent.Load()
+	timeoutsBefore := mux.consecutiveTimeouts.Load()
+
+	// Send a payload that exceeds even the peer's MaxDatagramFrameSize.
+	// quic-go caps MaxDatagramFrameSize at MaxPacketBufferSize (~64KB).
+	// 70KB payload + UDPFrame overhead will exceed any reasonable limit.
+	largePayload := make([]byte, 70000)
+	_, werr := pconn.WriteTo(largePayload, nil)
+	if werr == nil {
+		t.Fatal("WriteTo should fail with frame-too-large error")
+	}
+
+	// Verify: failure was counted in loss tracking
+	sentAfter := mux.datagramSent.Load()
+	timeoutsAfter := mux.consecutiveTimeouts.Load()
+
+	if sentAfter != sentBefore+1 {
+		t.Fatalf("datagramSent: before=%d after=%d, want +1", sentBefore, sentAfter)
+	}
+	if timeoutsAfter != timeoutsBefore+1 {
+		t.Fatalf("consecutiveTimeouts: before=%d after=%d, want +1", timeoutsBefore, timeoutsAfter)
 	}
 }
 

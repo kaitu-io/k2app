@@ -46,6 +46,9 @@ type TransportManager struct {
 	fallbackActive   atomic.Bool
 	quicBackoffUntil atomic.Int64 // UnixNano: skip QUIC until this time
 	quicFailCount    atomic.Int32 // consecutive QUIC dial failures
+
+	// Post-reset grace: first QUIC dial after ResetConnections gets extended budget.
+	freshAfterReset atomic.Bool
 }
 
 // NewTransportManager creates a new transport manager.
@@ -82,8 +85,13 @@ func (tm *TransportManager) recordQuicSuccess() {
 
 // recordQuicFailure sets fallback state and exponential backoff.
 // Backoff schedule: 30s → 60s → 120s (cap).
+// Deduplicates concurrent goroutines: if backoff was just set by another
+// goroutine in the same failure burst, skip to prevent count inflation.
 func (tm *TransportManager) recordQuicFailure() {
 	tm.fallbackActive.Store(true)
+	if tm.inQuicBackoff() {
+		return
+	}
 	count := tm.quicFailCount.Add(1)
 	backoff := quicBackoffBase
 	for i := int32(1); i < count && backoff < quicBackoffMax; i++ {
@@ -170,7 +178,9 @@ func (tm *TransportManager) DialUDP(ctx context.Context, addr string) (net.Packe
 		conn, err := quic.DialUDP(quicCtx, addr)
 		quicCancel()
 		if err == nil {
-			tm.recordQuicSuccess()
+			// Don't call recordQuicSuccess() here. QUIC datagram success
+			// doesn't prove the TCP stream path works. Let DialTCP manage
+			// its own recovery when TCP actually succeeds.
 			return conn, nil
 		}
 		slog.Debug("TransportManager: QUIC UDP failed", "err", err)
@@ -210,20 +220,30 @@ func (tm *TransportManager) quicContext(parent context.Context, hasFallback bool
 		return context.WithCancel(parent)
 	}
 
-	const maxQUICBudget = 3 * time.Second
+	const (
+		maxQUICBudget  = 3 * time.Second // steady-state: cached connection
+		reconnectBudget = 8 * time.Second // post-reset: full handshake needs more time
+	)
 
-	if deadline, ok := parent.Deadline(); ok {
-		budget := time.Until(deadline) / 2
-		if budget > maxQUICBudget {
-			budget = maxQUICBudget
-		}
-		if budget < time.Second {
-			budget = time.Second
-		}
-		return context.WithTimeout(parent, budget)
+	// First QUIC dial after ResetConnections gets extended budget for
+	// DNS + TLS/ECH + QUIC handshake on a potentially new network path.
+	budget := maxQUICBudget
+	if tm.freshAfterReset.CompareAndSwap(true, false) {
+		budget = reconnectBudget
 	}
 
-	return context.WithTimeout(parent, maxQUICBudget)
+	if deadline, ok := parent.Deadline(); ok {
+		half := time.Until(deadline) / 2
+		if half > budget {
+			half = budget
+		}
+		if half < time.Second {
+			half = time.Second
+		}
+		return context.WithTimeout(parent, half)
+	}
+
+	return context.WithTimeout(parent, budget)
 }
 
 // Resettable is an optional interface for transports that support connection reset.
@@ -242,6 +262,13 @@ func (tm *TransportManager) ResetConnections() {
 	if r, ok := quic.(Resettable); ok {
 		r.resetConnection()
 	}
+	// Network change = fresh path. Reset datagram hop counter so
+	// QUIC datagrams can attempt port hopping on the new network.
+	// Not inside resetConnection() — hop logic calls resetConnection()
+	// itself, and resetting there would cause infinite hop loops.
+	if qc, ok := quic.(*QUICClient); ok {
+		qc.datagramHopAttempts.Store(0)
+	}
 	if r, ok := tcpws.(Resettable); ok {
 		r.resetConnection()
 	}
@@ -250,6 +277,7 @@ func (tm *TransportManager) ResetConnections() {
 	tm.fallbackActive.Store(false)
 	tm.quicBackoffUntil.Store(0)
 	tm.quicFailCount.Store(0)
+	tm.freshAfterReset.Store(true)
 }
 
 // WireStats returns stats from the active transport.

@@ -298,8 +298,10 @@ func (c *TCPWSClient) DialTCP(ctx context.Context, addr string) (net.Conn, error
 // DialUDP opens a UDP proxy session through a shared smux UDP stream.
 // Returns a PacketConn backed by SmuxUDPFrame messages.
 func (c *TCPWSClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, error) {
+	slog.Info("TCPWSClient.DialUDP", "addr", addr)
 	sess, err := c.connect(ctx)
 	if err != nil {
+		slog.Warn("TCPWSClient.DialUDP: connect failed", "addr", addr, "err", err)
 		return nil, err
 	}
 
@@ -329,6 +331,7 @@ func (c *TCPWSClient) DialUDP(ctx context.Context, addr string) (net.PacketConn,
 
 	sessionID := alloc.Next()
 	readCh := mux.register(sessionID)
+	slog.Info("TCPWSClient.DialUDP: session ready", "addr", addr, "sessionID", sessionID)
 
 	return &smuxUDPConn{
 		mux:        mux,
@@ -686,14 +689,20 @@ func (c *smuxUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	case <-c.mux.done:
 		return 0, nil, net.ErrClosed
 	case <-timerCh:
+		slog.Warn("smuxUDPConn: ReadFrom timeout", "sessionID", c.sessionID,
+			"target", c.targetAddr)
 		return 0, nil, os.ErrDeadlineExceeded
 	}
 }
 
 func (c *smuxUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
 	if err := c.mux.writeFrame(c.sessionID, c.targetAddr, b); err != nil {
+		slog.Warn("smuxUDPConn: WriteTo failed", "sessionID", c.sessionID,
+			"target", c.targetAddr, "len", len(b), "err", err)
 		return 0, err
 	}
+	slog.Debug("smuxUDPConn: WriteTo ok", "sessionID", c.sessionID,
+		"target", c.targetAddr, "len", len(b))
 	return len(b), nil
 }
 

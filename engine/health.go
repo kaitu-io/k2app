@@ -233,6 +233,19 @@ func (hm *healthMonitor) maybeAct() {
 	}
 }
 
+// resetCounters clears all health streaks and corrective action state.
+// Called on network change: stale health data from the old network is irrelevant.
+func (hm *healthMonitor) resetCounters() {
+	hm.mu.Lock()
+	defer hm.mu.Unlock()
+	hm.health = HealthHealthy
+	hm.degradedStreak = 0
+	hm.criticalStreak = 0
+	hm.healthyStreak = 0
+	hm.hopAttempts = 0
+	hm.peakThroughput = 0
+}
+
 // History returns the ring buffer contents oldest-first.
 func (hm *healthMonitor) History() []HealthSnapshot {
 	hm.mu.Lock()

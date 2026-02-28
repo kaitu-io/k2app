@@ -253,6 +253,8 @@ func TestTransportManager_DatagramUnhealthyNotFallback(t *testing.T) {
 }
 
 // TestTransportManager_ExponentialBackoff verifies the backoff schedule: 30s → 60s → 120s.
+// Each call simulates a separate failure event by clearing backoff first (as would
+// happen in production when the backoff period expires naturally).
 func TestTransportManager_ExponentialBackoff(t *testing.T) {
 	tm := NewTransportManager()
 
@@ -263,7 +265,8 @@ func TestTransportManager_ExponentialBackoff(t *testing.T) {
 		t.Fatalf("1st backoff = %v, want ~30s", b1)
 	}
 
-	// 2nd failure: 60s backoff
+	// 2nd failure: simulate backoff expiry, then new failure event → 60s backoff
+	tm.quicBackoffUntil.Store(0)
 	tm.recordQuicFailure()
 	b2 := time.Duration(tm.quicBackoffUntil.Load()-time.Now().UnixNano()) * time.Nanosecond
 	if b2 < 59*time.Second || b2 > 61*time.Second {
@@ -271,6 +274,7 @@ func TestTransportManager_ExponentialBackoff(t *testing.T) {
 	}
 
 	// 3rd failure: 120s backoff (cap)
+	tm.quicBackoffUntil.Store(0)
 	tm.recordQuicFailure()
 	b3 := time.Duration(tm.quicBackoffUntil.Load()-time.Now().UnixNano()) * time.Nanosecond
 	if b3 < 119*time.Second || b3 > 121*time.Second {
@@ -278,6 +282,7 @@ func TestTransportManager_ExponentialBackoff(t *testing.T) {
 	}
 
 	// 4th failure: still 120s (cap)
+	tm.quicBackoffUntil.Store(0)
 	tm.recordQuicFailure()
 	b4 := time.Duration(tm.quicBackoffUntil.Load()-time.Now().UnixNano()) * time.Nanosecond
 	if b4 < 119*time.Second || b4 > 121*time.Second {

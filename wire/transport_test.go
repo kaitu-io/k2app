@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"net"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // mockTransport implements a minimal transport for testing TransportManager.
@@ -326,5 +329,204 @@ func TestTransportManager_ResetConnections(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// ==========================================================================
+// Network change recovery tests
+// ==========================================================================
+
+func TestResetConnections_ClearsDatagramHopAttempts(t *testing.T) {
+	client := NewQUICClient(Config{HopStart: 1000, HopEnd: 2000}, nil)
+	client.datagramHopAttempts.Store(3) // exhausted
+
+	tm := NewTransportManager()
+	tm.SetQUIC(client)
+
+	tm.ResetConnections()
+
+	if got := client.datagramHopAttempts.Load(); got != 0 {
+		t.Fatalf("datagramHopAttempts = %d after ResetConnections, want 0", got)
+	}
+}
+
+func TestRecordQuicFailure_ConcurrentDedup(t *testing.T) {
+	tm := NewTransportManager()
+
+	// Simulate 50 concurrent goroutines all calling recordQuicFailure.
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			tm.recordQuicFailure()
+		}()
+	}
+	wg.Wait()
+
+	// With dedup, count should be very small (1-2, due to nanosecond race window).
+	count := tm.quicFailCount.Load()
+	if count > 3 {
+		t.Fatalf("quicFailCount = %d after 50 concurrent failures, want ≤ 3 (dedup)", count)
+	}
+	if !tm.fallbackActive.Load() {
+		t.Fatal("fallbackActive should be true")
+	}
+}
+
+func TestRecordQuicFailure_EscalatesAcrossEvents(t *testing.T) {
+	tm := NewTransportManager()
+
+	// First failure event: count=1, backoff=30s.
+	tm.recordQuicFailure()
+	if tm.quicFailCount.Load() != 1 {
+		t.Fatalf("count = %d, want 1", tm.quicFailCount.Load())
+	}
+
+	// Simulate backoff expiry.
+	tm.quicBackoffUntil.Store(0)
+
+	// Second failure event: count=2, backoff=60s.
+	tm.recordQuicFailure()
+	if tm.quicFailCount.Load() != 2 {
+		t.Fatalf("count = %d, want 2", tm.quicFailCount.Load())
+	}
+}
+
+func TestQuicContext_ExtendedBudgetAfterReset(t *testing.T) {
+	tm := NewTransportManager()
+	tm.ResetConnections() // sets freshAfterReset
+
+	// First call after reset: should get extended budget (~8s).
+	ctx := context.Background()
+	qCtx, cancel := tm.quicContext(ctx, true)
+	defer cancel()
+	deadline, ok := qCtx.Deadline()
+	if !ok {
+		t.Fatal("expected deadline on context")
+	}
+	budget := time.Until(deadline)
+	if budget < 7*time.Second || budget > 9*time.Second {
+		t.Fatalf("post-reset budget = %v, want ~8s", budget)
+	}
+
+	// Second call: should be back to normal (~3s).
+	qCtx2, cancel2 := tm.quicContext(ctx, true)
+	defer cancel2()
+	deadline2, ok := qCtx2.Deadline()
+	if !ok {
+		t.Fatal("expected deadline on context")
+	}
+	budget2 := time.Until(deadline2)
+	if budget2 < 2*time.Second || budget2 > 4*time.Second {
+		t.Fatalf("normal budget = %v, want ~3s", budget2)
+	}
+}
+
+// TestTransportManager_DialUDP_DoesNotClearTCPBackoff verifies that QUIC
+// datagram success does not clear transport-level fallback state.
+// Scenario: DialTCP fails → fallback+backoff set → backoff expires → next
+// DialUDP goes through QUIC (datagrams work). The fallback flag must persist
+// because datagram success doesn't prove the TCP stream path is fixed.
+func TestTransportManager_DialUDP_DoesNotClearTCPBackoff(t *testing.T) {
+	quic := &mockTransport{
+		available: true,
+		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
+			return nil, errors.New("QUIC TCP broken")
+		},
+		dialUDPFn: func(ctx context.Context, addr string) (net.PacketConn, error) {
+			return newWorkingPacketConn(), nil
+		},
+	}
+	tcpws := &mockTransport{
+		available: true,
+		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
+			c, _ := net.Pipe()
+			return c, nil
+		},
+	}
+
+	tm := NewTransportManager()
+	tm.SetQUIC(quic)
+	tm.SetTCPWS(tcpws)
+
+	// Trigger TCP fallback: QUIC TCP fails, TCP-WS succeeds → backoff set
+	conn, err := tm.DialTCP(context.Background(), "1.1.1.1:443")
+	if err != nil {
+		t.Fatalf("DialTCP: %v", err)
+	}
+	conn.Close()
+	if !tm.FallbackActive() {
+		t.Fatal("should be in fallback after QUIC TCP failure")
+	}
+	if tm.quicFailCount.Load() != 1 {
+		t.Fatalf("quicFailCount = %d, want 1", tm.quicFailCount.Load())
+	}
+
+	// Simulate backoff expiry so QUIC is tried again for UDP
+	tm.quicBackoffUntil.Store(time.Now().Add(-time.Second).UnixNano())
+
+	// DialUDP succeeds through QUIC datagrams
+	pconn, err := tm.DialUDP(context.Background(), "8.8.8.8:53")
+	if err != nil {
+		t.Fatalf("DialUDP: %v", err)
+	}
+	pconn.Close()
+
+	// fallbackActive and failCount must NOT be cleared
+	if !tm.FallbackActive() {
+		t.Fatal("DialUDP success should not clear TCP fallback state")
+	}
+	if tm.quicFailCount.Load() != 1 {
+		t.Fatalf("quicFailCount = %d, want 1 (DialUDP should not reset)", tm.quicFailCount.Load())
+	}
+}
+
+// TestTransportManager_ConcurrentSuccessFailure exercises concurrent DialTCP
+// where QUIC alternates success/failure. Two goroutines may interleave
+// recordQuicSuccess() and recordQuicFailure() — both use atomics without
+// mutex. This verifies no panic/race and final state is valid.
+func TestTransportManager_ConcurrentSuccessFailure(t *testing.T) {
+	// QUIC: alternates success and failure
+	var calls atomic.Int32
+	quic := &mockTransport{
+		available: true,
+		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
+			if calls.Add(1)%2 == 0 {
+				c, _ := net.Pipe()
+				return c, nil
+			}
+			return nil, errors.New("QUIC flaky")
+		},
+	}
+	tcpws := &mockTransport{
+		available: true,
+		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
+			c, _ := net.Pipe()
+			return c, nil
+		},
+	}
+
+	tm := NewTransportManager()
+	tm.SetQUIC(quic)
+	tm.SetTCPWS(tcpws)
+
+	var wg sync.WaitGroup
+	for range 50 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			conn, err := tm.DialTCP(context.Background(), "1.1.1.1:443")
+			if err == nil {
+				conn.Close()
+			}
+		}()
+	}
+	wg.Wait()
+
+	// No panic, no race = pass. Final state is valid if:
+	count := tm.quicFailCount.Load()
+	if count < 0 {
+		t.Fatalf("negative quicFailCount: %d", count)
 	}
 }
