@@ -114,9 +114,10 @@ func TestQUICClient_DialUDP_HopExhausted(t *testing.T) {
 	}
 }
 
-// TestQUICClient_DialUDP_HopResetOnRecv verifies that a successful datagram
-// receive resets the hop counter to zero.
-func TestQUICClient_DialUDP_HopResetOnRecv(t *testing.T) {
+// TestQUICClient_DialUDP_HopResetOnLossRecovery verifies that hop counter
+// resets only when sliding-window loss rate recovers below threshold,
+// not on a single successful receive.
+func TestQUICClient_DialUDP_HopResetOnLossRecovery(t *testing.T) {
 	client, _, cleanup := setupQUICPairWithHop(t)
 	defer cleanup()
 
@@ -126,17 +127,61 @@ func TestQUICClient_DialUDP_HopResetOnRecv(t *testing.T) {
 		t.Fatalf("connect: %v", err)
 	}
 
-	// Simulate 2 prior hops
 	client.datagramHopAttempts.Store(2)
 
-	// A datagram receive should reset hop counter
 	client.mu.Lock()
 	mux := client.udpMux
 	client.mu.Unlock()
+
+	// A single recv should NOT reset hop counter
 	mux.recordRecv()
+	if client.datagramHopAttempts.Load() != 2 {
+		t.Fatalf("hopAttempts = %d, want 2 (single recv must not reset)", client.datagramHopAttempts.Load())
+	}
+
+	// Simulate good traffic (0% loss) with enough samples
+	for i := 0; i < 20; i++ {
+		mux.recordSend()
+		mux.recordRecv()
+	}
+	mux.expireLossWindow()
+	mux.evaluateLossRate() // triggers hop reset (loss < 15%)
 
 	if client.datagramHopAttempts.Load() != 0 {
-		t.Fatalf("datagramHopAttempts = %d, want 0 after recordRecv", client.datagramHopAttempts.Load())
+		t.Fatalf("hopAttempts = %d, want 0 after loss recovery", client.datagramHopAttempts.Load())
+	}
+}
+
+// TestQUICClient_DialUDP_HopNotResetWithHighLoss verifies that hop counter
+// stays elevated when loss rate remains above recovery threshold.
+func TestQUICClient_DialUDP_HopNotResetWithHighLoss(t *testing.T) {
+	client, _, cleanup := setupQUICPairWithHop(t)
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := client.connect(ctx); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+
+	client.datagramHopAttempts.Store(2)
+
+	client.mu.Lock()
+	mux := client.udpMux
+	client.mu.Unlock()
+
+	// Simulate 30% loss (above 15% recovery threshold)
+	for i := 0; i < 20; i++ {
+		mux.recordSend()
+		if i%10 < 7 {
+			mux.recordRecv() // 70% recv = 30% loss
+		}
+	}
+	mux.expireLossWindow()
+	mux.evaluateLossRate()
+
+	if client.datagramHopAttempts.Load() != 2 {
+		t.Fatalf("hopAttempts = %d, want 2 (30%% loss above recovery threshold)", client.datagramHopAttempts.Load())
 	}
 }
 

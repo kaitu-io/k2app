@@ -59,6 +59,28 @@ canvas{width:100%;height:120px;display:block}
     <canvas id="c-cwnd"></canvas>
   </div>
 </div>
+<div style="padding:0 20px 12px">
+  <div class="card">
+    <h2>Datagram Health</h2>
+    <div style="display:flex;gap:32px;align-items:center;flex-wrap:wrap">
+      <div>
+        <div class="value" id="v-dgloss"><small>%</small></div>
+        <div style="font-size:12px;color:#8b949e">Loss Rate</div>
+      </div>
+      <div>
+        <div class="value" id="v-dgto" style="font-size:18px"></div>
+        <div style="font-size:12px;color:#8b949e">Timeouts</div>
+      </div>
+      <div>
+        <div class="value" id="v-dghops" style="font-size:18px"></div>
+        <div style="font-size:12px;color:#8b949e">Hops</div>
+      </div>
+      <div style="flex:1;min-width:200px">
+        <canvas id="c-dgloss"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
 <div class="info-row">
   <div class="item">Mode: <span id="v-mode"></span></div>
   <div class="item">TX: <span id="v-tx">0</span></div>
@@ -74,7 +96,7 @@ canvas{width:100%;height:120px;display:block}
 (function(){
 'use strict';
 var MAX=300;
-var series={loss:[],tp:[],rtt:[],cwnd:[]};
+var series={loss:[],tp:[],rtt:[],cwnd:[],dgloss:[]};
 var charts={};
 var lastHealth='';
 
@@ -142,6 +164,18 @@ function push(s){
   setText('v-sr',(s.sending_rate/1e6).toFixed(2)+' Mbps');
   setText('transport',s.transport||'');
 
+  var dgloss=(s.dg_loss_rate||0)*100;
+  setText('v-dgloss',dgloss.toFixed(1)+' %');
+  setText('v-dgto',String(s.dg_timeouts||0));
+  setText('v-dghops',String(s.dg_hops||0)+' / 3');
+  series.dgloss.push(dgloss);
+  if(series.dgloss.length>MAX)series.dgloss.shift();
+
+  if(s.dg_hops>0&&s.dg_hops>(window._lastDgHops||0)){
+    addLog('#d29922','Datagram hop #'+s.dg_hops);
+  }
+  window._lastDgHops=s.dg_hops||0;
+
   var hb=document.getElementById('health');
   hb.textContent=s.health||'offline';
   hb.className='badge '+(s.health||'offline');
@@ -171,6 +205,7 @@ function render(){
   drawChart('c-tp',series.tp,'#58a6ff');
   drawChart('c-rtt',series.rtt,'#d29922');
   drawChart('c-cwnd',series.cwnd,'#2dc653');
+  drawChart('c-dgloss',series.dgloss,'#d29922');
   requestAnimationFrame(render);
 }
 

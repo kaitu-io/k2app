@@ -374,6 +374,7 @@ func (c *QUICClient) dialUDPStream(ctx context.Context, conn *quic.Conn, addr st
 func (c *QUICClient) WireStats() WireStats {
 	c.mu.Lock()
 	sender := c.arcSender
+	mux := c.udpMux
 	c.mu.Unlock()
 
 	s := WireStats{Transport: "quic"}
@@ -388,6 +389,11 @@ func (c *QUICClient) WireStats() WireStats {
 		s.Mode = int(snap.Mode)
 		s.MIID = snap.MIID
 	}
+	if mux != nil {
+		s.DatagramLossRate = mux.evaluateLossRate()
+		s.DatagramTimeouts = mux.consecutiveTimeouts.Load()
+	}
+	s.DatagramHopAttempts = c.datagramHopAttempts.Load()
 	return s
 }
 
@@ -772,16 +778,38 @@ type quicUDPMux struct {
 	lastRecv            atomic.Int64 // UnixNano of last received datagram
 
 	clientHopAttempts *atomic.Int32 // shared with QUICClient; nil on server/tests
+
+	// Sliding window loss rate tracking.
+	datagramSent atomic.Int64
+	datagramRecv atomic.Int64
+
+	// Cached loss rate (lazy evaluation per window).
+	lossMu       sync.Mutex
+	lossRate     float64
+	lossTime     int64 // UnixNano of last evaluation
+	lossPrevSent int64
+	lossPrevRecv int64
 }
 
-const datagramTimeoutThreshold int32 = 3
+const (
+	datagramTimeoutThreshold int32 = 3
+
+	datagramLossWindow    = 5 * time.Second
+	datagramLossUnhealthy = 0.40 // 40% loss → unhealthy
+	datagramLossRecovered = 0.15 // <15% → recovered (hop reset)
+	datagramMinSamples    = 10   // min packets in window to evaluate
+)
 
 func (m *quicUDPMux) recordRecv() {
 	m.consecutiveTimeouts.Store(0)
 	m.lastRecv.Store(time.Now().UnixNano())
-	if m.clientHopAttempts != nil {
-		m.clientHopAttempts.Store(0)
-	}
+	m.datagramRecv.Add(1)
+	// Hop counter reset moved to evaluateLossRate() — requires sustained
+	// low loss rate, not just a single lucky packet.
+}
+
+func (m *quicUDPMux) recordSend() {
+	m.datagramSent.Add(1)
 }
 
 func (m *quicUDPMux) recordTimeout() {
@@ -789,7 +817,58 @@ func (m *quicUDPMux) recordTimeout() {
 }
 
 func (m *quicUDPMux) datagramHealthy() bool {
-	return m.consecutiveTimeouts.Load() < datagramTimeoutThreshold
+	if m.consecutiveTimeouts.Load() >= datagramTimeoutThreshold {
+		return false
+	}
+	if m.evaluateLossRate() >= datagramLossUnhealthy {
+		return false
+	}
+	return true
+}
+
+// evaluateLossRate computes datagram loss rate from sent/received deltas.
+// Lazy evaluation: caches result for datagramLossWindow, recomputes on expiry.
+func (m *quicUDPMux) evaluateLossRate() float64 {
+	m.lossMu.Lock()
+	defer m.lossMu.Unlock()
+
+	now := time.Now().UnixNano()
+	if m.lossTime > 0 && now-m.lossTime < datagramLossWindow.Nanoseconds() {
+		return m.lossRate // cached within window
+	}
+
+	sent := m.datagramSent.Load()
+	recv := m.datagramRecv.Load()
+	deltaSent := sent - m.lossPrevSent
+	deltaRecv := recv - m.lossPrevRecv
+
+	m.lossPrevSent = sent
+	m.lossPrevRecv = recv
+	m.lossTime = now
+
+	if deltaSent < datagramMinSamples {
+		return m.lossRate // not enough data
+	}
+
+	if deltaRecv >= deltaSent {
+		m.lossRate = 0
+	} else {
+		m.lossRate = 1.0 - float64(deltaRecv)/float64(deltaSent)
+	}
+
+	// Reset hop counter when loss rate recovers below threshold.
+	if m.lossRate < datagramLossRecovered && m.clientHopAttempts != nil {
+		m.clientHopAttempts.Store(0)
+	}
+
+	return m.lossRate
+}
+
+// expireLossWindow forces next evaluateLossRate to recompute. Test helper.
+func (m *quicUDPMux) expireLossWindow() {
+	m.lossMu.Lock()
+	m.lossTime = time.Now().Add(-2 * datagramLossWindow).UnixNano()
+	m.lossMu.Unlock()
 }
 
 func newQuicUDPMux(conn *quic.Conn, hopAttempts *atomic.Int32) *quicUDPMux {
@@ -920,6 +999,7 @@ func (c *quicUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
 		slog.Warn("quicUDPConn: SendDatagram failed", "sessionID", c.sessionID, "target", c.targetAddr, "err", err)
 		return 0, err
 	}
+	c.mux.recordSend()
 	slog.Debug("quicUDPConn: SendDatagram ok", "sessionID", c.sessionID, "target", c.targetAddr, "len", len(b))
 	return len(b), nil
 }

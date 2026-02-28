@@ -48,6 +48,11 @@ type WireStats struct {
 	TxBytes     int64
 	RxBytes     int64
 	Fallback    bool // TCP-WS serving traffic due to QUIC failure
+
+	// Datagram health (QUIC only, zero when not in use).
+	DatagramLossRate    float64 // 0.0-1.0 sliding window
+	DatagramTimeouts    int32   // consecutive timeout count
+	DatagramHopAttempts int32   // port hop attempts
 }
 
 // StatsProvider is an optional interface for Dialers that expose metrics.

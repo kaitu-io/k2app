@@ -30,6 +30,11 @@ type HealthSnapshot struct {
 	RxBytes     int64     `json:"rx_bytes"`
 	Health      string    `json:"health"`
 	Fallback    bool      `json:"fallback"` // TCP-WS serving due to QUIC failure
+
+	// Datagram health
+	DatagramLossRate    float64 `json:"dg_loss_rate"`
+	DatagramTimeouts    int32   `json:"dg_timeouts"`
+	DatagramHopAttempts int32   `json:"dg_hops"`
 }
 
 const (
@@ -130,6 +135,10 @@ func (hm *healthMonitor) sample() {
 		RxBytes:     rx,
 		Health:      hm.health,
 		Fallback:    ws.Fallback,
+
+		DatagramLossRate:    ws.DatagramLossRate,
+		DatagramTimeouts:    ws.DatagramTimeouts,
+		DatagramHopAttempts: ws.DatagramHopAttempts,
 	}
 
 	// Write to ring buffer.
