@@ -23,6 +23,10 @@ const sharedThemeConfig: ThemeOptions = {
           user-select: none !important;
           -webkit-touch-callout: none !important;
         }
+        input, textarea, [contenteditable="true"] {
+          -webkit-user-select: text !important;
+          user-select: text !important;
+        }
       `,
     },
     MuiDrawer: {
