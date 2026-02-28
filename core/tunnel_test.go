@@ -673,3 +673,126 @@ func TestClientTunnel_HandleTCP_BTNotSniffedInGlobalMode(t *testing.T) {
 
 	tunnel.Close()
 }
+
+func TestClientTunnel_HandleUDP_UTPForcedDirect(t *testing.T) {
+	// Start a real UDP listener as the direct target
+	directListener, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer directListener.Close()
+
+	serverGot := make(chan []byte, 1)
+	go func() {
+		buf := make([]byte, 4096)
+		n, _, err := directListener.ReadFrom(buf)
+		if err != nil {
+			return
+		}
+		pkt := make([]byte, n)
+		copy(pkt, buf[:n])
+		serverGot <- pkt
+	}()
+
+	dialer := newMockDialer()
+	prov := &mockProvider{}
+
+	tunnel := NewClientTunnel(ClientTunnelConfig{
+		Provider: prov,
+		Dialer:   dialer,
+		SniffBT:  true,
+		// Router nil → defaults to proxy → sniff will check for uTP
+	})
+
+	if err := tunnel.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	// uTP packet fixture (from sniff/bittorrent_test.go)
+	utpData, _ := hex.DecodeString("21001ecb6817f2805d044fd700100000dbd03029")
+
+	localPC := newMockPacketConn()
+
+	done := make(chan struct{})
+	go func() {
+		prov.handler.HandleUDP(localPC, directListener.LocalAddr().String())
+		close(done)
+	}()
+
+	// Inject uTP packet as first read
+	localPC.injectRead(utpData, nil)
+
+	// The direct listener should receive the uTP packet
+	select {
+	case got := <-serverGot:
+		if !bytes.Equal(got, utpData) {
+			t.Errorf("direct listener got %x, want %x", got, utpData)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timeout waiting for direct listener to receive uTP packet")
+	}
+
+	localPC.closeConn()
+	<-done
+
+	// Verify DialUDP was NOT called (uTP should force direct)
+	dialer.mu.Lock()
+	defer dialer.mu.Unlock()
+	if len(dialer.udpCalls) != 0 {
+		t.Errorf("DialUDP called %d times, expected 0 (uTP should force direct)", len(dialer.udpCalls))
+	}
+
+	tunnel.Close()
+}
+
+func TestClientTunnel_HandleUDP_NonBTStillProxied(t *testing.T) {
+	dialer := newMockDialer()
+	prov := &mockProvider{}
+
+	tunnel := NewClientTunnel(ClientTunnelConfig{
+		Provider: prov,
+		Dialer:   dialer,
+		SniffBT:  true,
+		// Router nil → defaults to proxy
+	})
+
+	if err := tunnel.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	remotePC := newMockPacketConn()
+	dialer.udpConns <- remotePC
+
+	localPC := newMockPacketConn()
+
+	done := make(chan struct{})
+	go func() {
+		prov.handler.HandleUDP(localPC, "8.8.8.8:53")
+		close(done)
+	}()
+
+	// Inject non-BT UDP packet (plain DNS-like bytes)
+	plainUDP := []byte{0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x03, 0x77, 0x77, 0x77, 0x06, 0x67, 0x6f, 0x6f,
+		0x67, 0x6c, 0x65, 0x03, 0x63, 0x6f, 0x6d, 0x00, 0x00, 0x01, 0x00, 0x01}
+	localPC.injectRead(plainUDP, nil)
+
+	// Should be proxied — packet arrives at mock remote
+	pkt := remotePC.waitWrite(t, 3*time.Second)
+	if !bytes.Equal(pkt, plainUDP) {
+		t.Errorf("remote got %x, want %x", pkt, plainUDP)
+	}
+
+	localPC.closeConn()
+	remotePC.closeConn()
+	<-done
+
+	// Verify DialUDP WAS called (non-BT goes to proxy)
+	dialer.mu.Lock()
+	defer dialer.mu.Unlock()
+	if len(dialer.udpCalls) != 1 {
+		t.Errorf("DialUDP called %d times, expected 1", len(dialer.udpCalls))
+	}
+
+	tunnel.Close()
+}

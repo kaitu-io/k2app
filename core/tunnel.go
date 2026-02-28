@@ -369,7 +369,9 @@ func (c *prefixPacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
 // sniffUDPBT reads the first UDP packet and checks for uTP or UDP Tracker.
 // Returns the packet, source addr, and whether BT was detected.
 func sniffUDPBT(conn net.PacketConn) (packet []byte, addr net.Addr, isBT bool) {
-	buf := make([]byte, 4096)
+	bp := udpBufPool.Get().(*[]byte)
+	buf := *bp
+	defer udpBufPool.Put(bp)
 	conn.SetReadDeadline(time.Now().Add(sniffTimeout))
 	n, from, err := conn.ReadFrom(buf)
 	conn.SetReadDeadline(time.Time{})
