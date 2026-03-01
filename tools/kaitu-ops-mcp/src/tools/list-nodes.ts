@@ -8,6 +8,7 @@ import { audit } from '../audit.js'
  */
 interface RawTunnel {
   id: number
+  name: string
   domain: string
   protocol: string
   port: number
@@ -47,10 +48,12 @@ interface BatchMatrixResponse {
  * Filtered tunnel shape exposed to MCP callers.
  */
 export interface TunnelInfo {
+  name: string
+  country: string
   domain: string
   protocol: string
   port: number
-  serverUrl: string
+  url: string
 }
 
 /**
@@ -90,17 +93,20 @@ function isBatchMatrixResponse(value: unknown): value is BatchMatrixResponse {
 
 /**
  * Maps a raw tunnel from the API response to the filtered TunnelInfo shape.
- * Converts snake_case `server_url` to camelCase `serverUrl` and drops `id`.
+ * Denormalizes `country` from the parent node for self-contained tunnel info.
  *
  * @param raw - The raw tunnel object from the API response
+ * @param country - The parent node's country code
  * @returns A filtered TunnelInfo with only the safe fields
  */
-function mapTunnel(raw: RawTunnel): TunnelInfo {
+function mapTunnel(raw: RawTunnel, country: string): TunnelInfo {
   return {
+    name: raw.name,
+    country,
     domain: raw.domain,
     protocol: raw.protocol,
     port: raw.port,
-    serverUrl: raw.server_url,
+    url: raw.server_url,
   }
 }
 
@@ -118,7 +124,7 @@ function mapNode(raw: RawNode): NodeInfo {
     ipv6: raw.ipv6,
     country: raw.country,
     region: raw.region,
-    tunnels: raw.tunnels.map(mapTunnel),
+    tunnels: raw.tunnels.map((t) => mapTunnel(t, raw.country)),
   }
   // Pass through meta if present (added by sidecar registration)
   if (raw['meta'] != null && typeof raw['meta'] === 'object') {

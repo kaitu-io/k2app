@@ -9,10 +9,10 @@ import (
 
 // BuildServerURL constructs a complete k2v5 connection URL from connect-url.txt content
 // and sidecar config. Strips auth credentials and dev flags, uses configured domain/port,
-// appends hop range, ip, and ipv6 if provided.
+// appends hop range, ip, and ip6 if provided.
 //
 // Input: k2v5://udid:token@host:port?ech=base64url&pin=sha256:base64&insecure=1
-// Output: k2v5://domain:port?ech=base64url&pin=sha256:base64[&hop=start-end][&ip=x.x.x.x][&ipv6=xxxx]
+// Output: k2v5://domain:port?ech=base64url&pin=sha256:base64[&hop=start-end][&ip=x.x.x.x][&ip6=xxxx]
 //
 // Returns empty string if connectURLContent is empty or unparseable.
 func BuildServerURL(connectURLContent, domain string, port, hopStart, hopEnd int, ipv4, ipv6 string) string {
@@ -47,7 +47,7 @@ func BuildServerURL(connectURLContent, domain string, port, hopStart, hopEnd int
 		params = append(params, "ip="+ipv4)
 	}
 	if ipv6 != "" {
-		params = append(params, "ipv6="+ipv6)
+		params = append(params, "ip6="+ipv6)
 	}
 
 	result := fmt.Sprintf("k2v5://%s:%d", domain, port)

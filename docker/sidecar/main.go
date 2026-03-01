@@ -434,8 +434,10 @@ type K2V5ConfigData struct {
 	CertPath     string
 	KeyPath      string
 	K2Domain     string
+	K2V4Host     string
 	K2V4Port     string
 	K2OCDomain   string
+	K2OCHost     string
 	K2OCPort     string
 	CenterURL    string
 	LogLevel     string
@@ -453,9 +455,9 @@ auth:
   remote_url: "{{.CenterURL}}/slave/device-check-auth"
   cache_ttl: 5m
 local_routes:
-  "{{.K2Domain}}": "127.0.0.1:{{.K2V4Port}}"
+  "{{.K2Domain}}": "{{.K2V4Host}}:{{.K2V4Port}}"
 {{- if .HasOCDomain}}
-  "{{.K2OCDomain}}": "127.0.0.1:{{.K2OCPort}}"
+  "{{.K2OCDomain}}": "{{.K2OCHost}}:{{.K2OCPort}}"
 {{- end}}
 log:
   level: "{{.LogLevel}}"
@@ -476,6 +478,15 @@ func (s *Sidecar) generateK2V5Config() error {
 		k2ocPort = "10001"
 	}
 
+	k2v4Host := os.Getenv("K2V4_HOST")
+	if k2v4Host == "" {
+		k2v4Host = "127.0.0.1"
+	}
+	k2ocHost := os.Getenv("K2OC_HOST")
+	if k2ocHost == "" {
+		k2ocHost = "127.0.0.1"
+	}
+
 	k2v5DataDir := "/etc/k2v5"
 
 	data := K2V5ConfigData{
@@ -483,8 +494,10 @@ func (s *Sidecar) generateK2V5Config() error {
 		CertPath:    fmt.Sprintf("%s/certs/server-cert.pem", configDir),
 		KeyPath:     fmt.Sprintf("%s/certs/server-key.pem", configDir),
 		K2Domain:    s.config.Tunnel.Domain,
+		K2V4Host:    k2v4Host,
 		K2V4Port:    s.config.K2V4Port,
 		K2OCDomain:  s.config.OC.Domain,
+		K2OCHost:    k2ocHost,
 		K2OCPort:    k2ocPort,
 		CenterURL:   s.config.K2Center.BaseURL,
 		LogLevel:    logLevel,

@@ -62,7 +62,7 @@ func TestReadConnectURL_FindsFileAndBuildsURL(t *testing.T) {
 	assert.Contains(t, result, "pin=sha256:testpin123")
 	assert.Contains(t, result, "hop=10020-10119")
 	assert.Contains(t, result, "ip=5.6.7.8")
-	assert.Contains(t, result, "ipv6=2001:db8::1")
+	assert.Contains(t, result, "ip6=2001:db8::1")
 	// Auth credentials must be stripped
 	assert.NotContains(t, result, "udid")
 	assert.NotContains(t, result, "token")

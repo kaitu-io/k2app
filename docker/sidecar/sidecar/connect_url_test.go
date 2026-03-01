@@ -54,21 +54,21 @@ func TestBuildServerURL_WithIPv4(t *testing.T) {
 	raw := "k2v5://udid:token@hk1.example.com:443?ech=AABB&pin=sha256:abc"
 	url := BuildServerURL(raw, "hk1.example.com", 443, 10020, 10119, "1.2.3.4", "")
 	assert.Contains(t, url, "ip=1.2.3.4")
-	assert.NotContains(t, url, "ipv6=")
+	assert.NotContains(t, url, "ip6=")
 }
 
 func TestBuildServerURL_WithIPv4AndIPv6(t *testing.T) {
 	raw := "k2v5://udid:token@hk1.example.com:443?ech=AABB&pin=sha256:abc"
 	url := BuildServerURL(raw, "hk1.example.com", 443, 10020, 10119, "1.2.3.4", "2001:db8::1")
 	assert.Contains(t, url, "ip=1.2.3.4")
-	assert.Contains(t, url, "ipv6=2001:db8::1")
+	assert.Contains(t, url, "ip6=2001:db8::1")
 }
 
 func TestBuildServerURL_WithIPv6Only(t *testing.T) {
 	raw := "k2v5://udid:token@hk1.example.com:443?ech=AABB&pin=sha256:abc"
 	url := BuildServerURL(raw, "hk1.example.com", 443, 0, 0, "", "2001:db8::1")
 	assert.NotContains(t, url, "ip=")
-	assert.Contains(t, url, "ipv6=2001:db8::1")
+	assert.Contains(t, url, "ip6=2001:db8::1")
 }
 
 func TestTunnelConfig_MarshalWithServerURL(t *testing.T) {

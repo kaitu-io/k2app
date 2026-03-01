@@ -316,7 +316,6 @@ func (n *Node) RegisterNode() (string, error) {
 		Country:     n.Country,
 		Region:      n.Region,
 		Name:        n.Name,
-		IPv6:        n.IPv6,
 		SecretToken: n.Secret,
 		Meta:        buildNodeMeta(),
 	}
@@ -361,7 +360,6 @@ func (n *Node) Register(tunnels []TunnelConfig) (*RegisterResult, error) {
 		Country:     n.Country,
 		Region:      n.Region,
 		Name:        n.Name,
-		IPv6:        n.IPv6,
 		SecretToken: n.Secret,
 		Tunnels:     tunnels,
 		Meta:        buildNodeMeta(),

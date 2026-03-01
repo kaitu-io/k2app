@@ -1,19 +1,24 @@
 # Kaitu k2v5 Docker Compose
 # Architecture:
 # - k2-sidecar: registration, config generation, RADIUS proxy (bridge network)
-# - k2v5: Go k2v5 tunnel with ECH front door (host network, owns port 443)
+# - k2v5: Go k2v5 tunnel with ECH front door (bridge network, Docker port mapping)
 # - k2v4-slave: k2v4 TCP-WS tunnel (bridge network, behind k2v5)
 # - k2-oc: OpenConnect tunnel (bridge network for sysctls)
 #
 # Traffic Flow:
-# - Internet :443 (TCP+UDP) -> k2v5 (ECH front door, host network)
+# - Internet :443 (TCP+UDP) -> Docker port mapping -> k2v5:443
 #   - ECH present -> k2v5 handler (in-process QUIC+TCP-WS with ECH camouflage)
-#   - No ECH, SNI match -> TCP relay to k2v4-slave (127.0.0.1:K2V4_PORT) or k2-oc (127.0.0.1:K2OC_PORT)
+#   - No ECH, SNI match -> TCP relay to k2v4-slave:443 or k2-oc:443 (Docker internal DNS)
 #   - Unknown SNI -> camouflage reverse proxy
+# - Internet :40000-40019 (UDP hop ports) -> Docker port mapping -> k2v5:443
 
 networks:
   k2-internal:
     driver: bridge
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: "fd00:2::/80"
 
 volumes:
   config:      # Shared config volume for certificates and configs
@@ -39,9 +44,11 @@ services:
       - K2_NODE_SECRET=${K2_NODE_SECRET}
       - K2_CENTER_URL=${K2_CENTER_URL:-https://k2.52j.me}
       - K2_DOMAIN=${K2_DOMAIN:-}
-      - K2V4_PORT=${K2V4_PORT:-8443}
+      - K2V4_HOST=k2v4-slave
+      - K2V4_PORT=443
       - K2OC_DOMAIN=${K2OC_DOMAIN:-}
-      - K2OC_PORT=${K2OC_PORT:-10001}
+      - K2OC_HOST=k2-oc
+      - K2OC_PORT=443
       - K2OC_ENABLED=${K2OC_ENABLED:-false}
       - K2_NODE_NAME=${K2_NODE_NAME:-}
       - K2_NODE_REGION=${K2_NODE_REGION:-}
@@ -51,8 +58,8 @@ services:
       - K2_NODE_TRAFFIC_LIMIT_GB=${K2_NODE_TRAFFIC_LIMIT_GB:-0}
       - K2_TEST_NODE=${K2_TEST_NODE:-false}
       - K2_HAS_RELAY=${K2_HAS_RELAY:-false}
-      - K2_JUMP_PORT_MIN=${K2_JUMP_PORT_MIN:-10020}
-      - K2_JUMP_PORT_MAX=${K2_JUMP_PORT_MAX:-10119}
+      - K2_JUMP_PORT_MIN=${K2_JUMP_PORT_MIN:-40000}
+      - K2_JUMP_PORT_MAX=${K2_JUMP_PORT_MAX:-40019}
       - K2_NODE_ARCH=${K2_NODE_ARCH:-k2v5}
     healthcheck:
       test: ["CMD", "test", "-f", "/etc/kaitu/.ready"]
@@ -61,27 +68,50 @@ services:
       retries: 60
       start_period: 5s
 
-  # K2v5 - Go k2v5 tunnel with ECH front door (takes over port 443)
+  # K2v5 - Go k2v5 tunnel with ECH front door (bridge network)
+  # Docker port mapping handles: 443 TCP+UDP + hop ports 40000-40019 UDP -> container 443
   # Routes based on ECH and SNI:
-  # - ECH present: k2v5 protocol handled locally
-  # - No ECH, SNI match: forward to k2v4-slave or k2-oc via local_routes
+  # - ECH present: k2v5 protocol handled locally (QUIC on UDP 443, TCP-WS on TCP 443)
+  # - No ECH, SNI match: forward to k2v4-slave or k2-oc via local_routes (Docker DNS)
   # - Unknown SNI: camouflage reverse proxy to real site
   k2v5:
     image: public.ecr.aws/d6n9t2r2/k2v5:latest
     container_name: k2v5
     restart: unless-stopped
-    network_mode: host
+    networks:
+      - k2-internal
     depends_on:
       k2-sidecar:
         condition: service_healthy
-    cap_add:
-      - NET_ADMIN
+    ports:
+      - "443:443/tcp"
+      - "443:443/udp"
+      - "40000:443/udp"
+      - "40001:443/udp"
+      - "40002:443/udp"
+      - "40003:443/udp"
+      - "40004:443/udp"
+      - "40005:443/udp"
+      - "40006:443/udp"
+      - "40007:443/udp"
+      - "40008:443/udp"
+      - "40009:443/udp"
+      - "40010:443/udp"
+      - "40011:443/udp"
+      - "40012:443/udp"
+      - "40013:443/udp"
+      - "40014:443/udp"
+      - "40015:443/udp"
+      - "40016:443/udp"
+      - "40017:443/udp"
+      - "40018:443/udp"
+      - "40019:443/udp"
     volumes:
       - config:/etc/kaitu:ro
       - k2v5-data:/etc/k2v5
     environment:
-      - K2_HOP_PORT_MIN=${K2_JUMP_PORT_MIN:-10020}
-      - K2_HOP_PORT_MAX=${K2_JUMP_PORT_MAX:-10119}
+      - K2_HOP_PORT_MIN=${K2_JUMP_PORT_MIN:-40000}
+      - K2_HOP_PORT_MAX=${K2_JUMP_PORT_MAX:-40019}
       - K2_LOG_LEVEL=${K2_LOG_LEVEL:-info}
     logging:
       driver: journald
@@ -89,7 +119,7 @@ services:
         tag: k2v5
 
   # K2v4 Slave - k2v4 protocol (bridge network, behind k2v5 front door)
-  # k2v5 forwards non-ECH traffic matching K2_DOMAIN to this port.
+  # k2v5 forwards non-ECH traffic matching K2_DOMAIN via Docker internal network.
   k2v4-slave:
     image: public.ecr.aws/d6n9t2r2/k2-slave:latest
     container_name: k2v4-slave
@@ -100,7 +130,7 @@ services:
       k2-sidecar:
         condition: service_healthy
     ports:
-      - "${K2V4_PORT:-8443}:443"
+      - "8443:443"
     volumes:
       - config:/etc/kaitu:ro
     environment:
@@ -132,7 +162,7 @@ services:
       k2-sidecar:
         condition: service_healthy
     ports:
-      - "${K2OC_PORT:-10001}:443"
+      - "10001:443"
     volumes:
       - config:/etc/ocserv:ro
     environment:

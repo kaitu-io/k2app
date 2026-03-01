@@ -84,6 +84,11 @@ for SVC_CONTAINER in "k2-sidecar:k2-sidecar" "k2v5:k2v5" "k2v4-slave:k2-slave" "
     fi
 done
 
+if [ "${K2_FORCE_RESTART:-}" = "1" ]; then
+    NEEDS_RESTART=1
+    echo "Force restart requested (K2_FORCE_RESTART=1)"
+fi
+
 if [ "$NEEDS_RESTART" = "0" ]; then
     echo "All containers already on latest images, no restart needed."
     echo "Finished: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
@@ -91,7 +96,7 @@ if [ "$NEEDS_RESTART" = "0" ]; then
     exit 0
 fi
 
-echo "Image changes detected, restarting..."
+echo "Restarting containers..."
 
 # --- Snapshot k2v5 logs before destroying containers ---
 echo "--- Snapshotting k2v5 logs before down ---"

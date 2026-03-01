@@ -44,23 +44,24 @@ Deployment path: `/apps/kaitu-slave/`
 
 ```
 k2-sidecar (bridge network)
-  ├── healthy ──→ k2v5 (host network, owns :443 TCP+UDP)
-  ├── healthy ──→ k2v4-slave (bridge, :K2V4_PORT mapped to container :443)
-  └── healthy ──→ k2-oc (bridge, :K2OC_PORT mapped to container :443)
+  ├── healthy ──→ k2v5 (bridge network, Docker port mapping :443 TCP+UDP + 40000-40019 UDP)
+  ├── healthy ──→ k2v4-slave (bridge, :8443 mapped to container :443)
+  └── healthy ──→ k2-oc (bridge, :10001 mapped to container :443)
 ```
 
 | Container | Role | Network | Image |
 |-----------|------|---------|-------|
 | k2-sidecar | Registration, config generation, RADIUS proxy, health reporting | bridge (k2-internal) | k2-sidecar:latest |
-| k2v5 | ECH front door. Owns port 443. ECH traffic → in-process; non-ECH → SNI route to k2v4/k2-oc | host | k2v5:latest |
+| k2v5 | ECH front door. Owns port 443. ECH traffic → in-process; non-ECH → SNI route to k2v4/k2-oc | bridge (k2-internal) | k2v5:latest |
 | k2v4-slave | Legacy TCP-WS tunnel, receives forwarded non-ECH traffic from k2v5 | bridge (k2-internal) | k2-slave:latest |
 | k2-oc | OpenConnect tunnel, RADIUS auth via sidecar | bridge (k2-internal) | k2-oc:latest |
 
 Key details:
 - k2-sidecar writes `/etc/kaitu/.ready` when config generation is complete
 - All other containers wait for sidecar healthcheck before starting
-- k2v5 uses host network for direct port 443 access + iptables hop port DNAT
-- k2v4-slave and k2-oc use bridge network, exposed via port mapping
+- All 4 containers use bridge network (k2-internal). k2v5 uses Docker port mapping: 443/tcp + 443/udp + 40000-40019/udp → container 443
+- k2v5→k2v4-slave/k2-oc communication uses Docker internal DNS (container names), not host ports
+- No iptables management, no NET_ADMIN, no wrapper scripts
 - Images from `public.ecr.aws/d6n9t2r2/`
 
 ### Old Architecture (k2-slave SNI router)
@@ -89,12 +90,10 @@ The `.env` file is at `/apps/kaitu-slave/.env`. Core variables:
 |----------|---------|-------|
 | `K2_NODE_SECRET` | Node authentication key | **NEVER read, display, or modify** |
 | `K2_DOMAIN` | Tunnel domain (wildcard `*.example.com`) | Shared by k2v5 + k2v4 |
-| `K2V4_PORT` | k2v4 container port (default 8443) | New arch only |
 | `K2OC_ENABLED` | Enable OpenConnect tunnel | `true` / `false` |
 | `K2OC_DOMAIN` | OpenConnect domain | Separate from K2_DOMAIN |
-| `K2OC_PORT` | OpenConnect port (default 10001) | |
-| `K2_HOP_PORT_MIN` | Hop port range start (default 10020) | iptables DNAT to 443 |
-| `K2_HOP_PORT_MAX` | Hop port range end (default 10119) | Max 100 ports |
+| `K2_JUMP_PORT_MIN` | Hop port range start (default 40000) | Docker port mapping to container 443 |
+| `K2_JUMP_PORT_MAX` | Hop port range end (default 40019) | 20 ports, high range to avoid GFW scan |
 | `K2_CENTER_URL` | Center API URL | Default `https://k2.52j.me` |
 | `K2_LOG_LEVEL` | Log level | `debug`, `info`, `warn`, `error` |
 | `K2_NODE_NAME` | Human-readable node name | Format: `{region}.{provider}.wm{NN}` e.g. `jp-tokyo.aws.wm04` |
@@ -122,14 +121,13 @@ Use `exec_on_node(ip, command)` for all operations. Replace `{sidecar}` and `{tu
 | Disk/memory/CPU | `df -h && free -h && top -bn1 \| head -5` |
 | Network connections | `ss -s` |
 | IPv6 status | `ip -6 addr show scope global` |
-| Check hop port rules | `iptables -t nat -L PREROUTING -n \| grep -E "10020\|REDIRECT"` |
+| Check hop port mapping | `docker port k2v5` |
 | BBR status | `sysctl net.ipv4.tcp_congestion_control` |
 | Auto-update log | `tail -50 /apps/kaitu-slave/auto-update.log` |
 | Cron entries | `crontab -l` |
 | Timezone check | `timedatectl \| head -2` |
 | Set timezone | `sudo timedatectl set-timezone Asia/Singapore` |
 | Container outbound network | `docker exec k2-sidecar wget -qO- --timeout=5 https://api.ipify.org` |
-| iptables backend check | `iptables --version` |
 | Deploy compose to single node | `exec_on_node(ip, "sudo tee /apps/kaitu-slave/docker-compose.yml > /dev/null", { scriptPath: "docker/docker-compose.yml" })` |
 | Fix cron (single node) | `(sudo crontab -l 2>/dev/null \| grep -v 'auto-update'; echo '0 4 * * * /apps/kaitu-slave/auto-update.sh >> /apps/kaitu-slave/auto-update.log 2>&1') \| sudo crontab -` |
 
@@ -140,13 +138,12 @@ After provisioning a new node (or reinstalling OS), ensure these are all done:
 1. **Timezone**: Must be `Asia/Singapore` (UTC+8). All cron schedules assume Beijing time. Verify: `timedatectl | grep 'Time zone'`. Fix: `sudo timedatectl set-timezone Asia/Singapore`. Now automated by provision-node.sh step 1.
 2. **SSH port**: Now automated by provision-node.sh step 11 (port 22 → 1022 only). Verify: `ss -tlnp | grep :1022`
 3. **provision-node.sh**: Timezone + Docker CE + IPv6 + BBR + SSH port 1022 + docker group + daemon.json + UFW-Docker + cron + unattended-upgrades removal.
-3. **docker-compose.yml**: Deploy via `deploy-compose.sh --node=IP` or SCP manually.
 4. **docker-compose.yml**: Deploy via `deploy-compose.sh --node=IP` or SCP manually.
 5. **.env**: Restore from backup or generate new. **K2_DOMAIN and K2OC_DOMAIN must be globally unique** — run `list_nodes()` first and verify no other node uses the same domains. Domain collision silently breaks the other node.
 6. **auto-update.sh + cron**: Deploy via `deploy-auto-update.sh --node=IP`.
 7. **Containers up**: `docker compose up -d` and verify sidecar healthy.
 8. **BBR active**: `sysctl net.ipv4.tcp_congestion_control` should show `bbr`. Included in provision-node.sh step 8.
-9. **Hop port DNAT**: After containers up, verify: `iptables -t nat -L PREROUTING -n | grep REDIRECT`
+9. **Port mapping**: After containers up, verify: `docker port k2v5` should show 443/tcp + 443/udp + 40000-40019/udp (22 mappings total).
 10. **Container network**: Verify container outbound: `docker exec k2-sidecar wget -qO- --timeout=5 https://api.ipify.org`. If timeout → check `iptables --version`. If `(nf_tables)` → fix with `update-alternatives --set iptables /usr/sbin/iptables-legacy` + restart Docker.
 
 ### BBR Congestion Control
@@ -178,11 +175,45 @@ These are best-practice guardrails to prevent accidental damage during operation
 
 5. **Never touch /etc/kaitu/ directly** — This is auto-generated config from sidecar. Manual changes will be overwritten on next sidecar restart.
 
-6. **Never modify iptables rules** — Hop port DNAT rules are managed by k2v5/k2-slave entrypoint scripts. Manual changes break on restart.
+6. **Port mapping is Docker-managed** — k2v5 hop port mapping (40000-40019 UDP) is handled by Docker port mapping in docker-compose.yml. No manual iptables rules needed. Do not add custom iptables DNAT rules.
 
 7. **Update = pull + up, never down** — To update containers: `docker compose pull && docker compose up -d`. Never use `docker compose down` — it removes containers and causes service interruption. The `up -d` command recreates only changed containers.
 
-8. **Tunnel domains must be globally unique** — Every node MUST have its own unique `K2_DOMAIN` and `K2OC_DOMAIN`. Never copy another node's `.env` domains. If two nodes register the same domain, Center reassigns the tunnel to the last registrant — silently breaking the other node (`tunnels: []`). When creating `.env` for a new node, only reference other nodes for `K2_NODE_REGION` and `K2_CENTER_URL`. `K2_DOMAIN` and `K2OC_DOMAIN` must be fresh, unique values. Always run `list_nodes()` first to verify no collision.
+8. **Tunnel domains must be globally unique** — See "Domain Registry" section below for the authoritative allocation table and assignment procedure. Center silently reassigns domains to the last registrant — breaking the previous owner with no warning (`tunnels: []`).
+
+## Domain Registry
+
+### Naming Convention
+
+All tunnel domains MUST follow: **`www.{city}.people.cn`**
+
+- `{city}` is a Chinese province or city name in pinyin (lowercase, no spaces)
+- Examples: `www.beijing.people.cn`, `www.chengdu.people.cn`, `www.dalian.people.cn`
+- No random prefixes, no other TLDs (`.aliyun.com` etc.)
+- Each domain is globally unique — no two nodes share the same domain, regardless of protocol (k2v5/k2oc)
+- Live data source: always `list_nodes()` — never hardcode node-specific data in this skill
+
+### Domain Assignment Procedure (MANDATORY)
+
+When assigning domains for a new node or changing an existing node's domains:
+
+1. **Run `list_nodes()`** — get all currently allocated domains across ALL nodes
+2. **Collect all `domain` values** from every node's `tunnels` array
+3. **Pick a city name** not present in the collected domains. Use `www.{city}.people.cn` format only
+4. **Write to `.env`** and apply with `docker compose up -d` (NOT `docker restart` — env vars only reload on container recreation)
+
+### Collision Detection
+
+When diagnosing node issues, check for domain collisions:
+
+1. `list_nodes()` — if a node has fewer tunnels than expected (e.g., only k2oc but no k2v5), it's likely a collision victim
+2. Read the victim node's `.env` (`K2_DOMAIN` / `K2OC_DOMAIN`) and search `list_nodes()` output for that domain — it will appear on a different node
+3. Fix: change the offending node's `.env` to a unique domain → `docker compose up -d` → then restart victim's sidecar to re-register
+
+### `docker restart` vs `docker compose up -d`
+
+- `docker restart` — reuses existing container with OLD env vars. Does NOT re-read `.env`.
+- `docker compose up -d` — recreates containers when config/env changed. **Only way to apply `.env` changes.**
 
 ## Step 7: Batch Operations
 
@@ -396,6 +427,7 @@ Note: `provision-node.sh` step 2 handles this for new provisions. This fix is fo
 | 5 | Container network | `docker exec k2-sidecar wget -qO- --timeout=5 https://api.ipify.org` | Returns node's public IP |
 | 6 | MCP cross-check | `list_nodes(name=NODE_NAME)` | `tunnels` array has 2 entries with correct domains |
 | 7 | No domain conflict | `list_nodes()` — scan ALL nodes | No other node has `tunnels: []` unexpectedly |
+| 8 | Port mapping | `docker port k2v5` | 22 mappings: 443/tcp + 443/udp + 40000-40019/udp |
 
 **If any check fails**, investigate before proceeding:
 - `tunnels: []` on another node → domain conflict (guardrail #8 violated)

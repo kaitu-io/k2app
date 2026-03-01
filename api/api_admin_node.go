@@ -239,10 +239,12 @@ type NodeBatchMatrixResult struct {
 
 // NodeBatchMatrixTunnel represents a tunnel in the batch matrix
 type NodeBatchMatrixTunnel struct {
-	ID       uint64 `json:"id"`
-	Domain   string `json:"domain"`
-	Protocol string `json:"protocol"`
-	Port     int64  `json:"port"`
+	ID        uint64 `json:"id"`
+	Name      string `json:"name"`
+	Domain    string `json:"domain"`
+	Protocol  string `json:"protocol"`
+	Port      int64  `json:"port"`
+	ServerURL string `json:"server_url,omitempty"`
 }
 
 // NodeBatchMatrixNode represents a node with its batch results
@@ -341,10 +343,12 @@ func api_admin_nodes_batch_matrix(c *gin.Context) {
 	tunnelMap := make(map[uint64][]NodeBatchMatrixTunnel)
 	for _, tunnel := range allTunnels {
 		tunnelMap[tunnel.NodeID] = append(tunnelMap[tunnel.NodeID], NodeBatchMatrixTunnel{
-			ID:       tunnel.ID,
-			Domain:   tunnel.Domain,
-			Protocol: string(tunnel.Protocol),
-			Port:     tunnel.Port,
+			ID:        tunnel.ID,
+			Name:      tunnel.Name,
+			Domain:    tunnel.Domain,
+			Protocol:  string(tunnel.Protocol),
+			Port:      tunnel.Port,
+			ServerURL: tunnel.ServerURL,
 		})
 	}
 

@@ -21,10 +21,11 @@ const rawBatchMatrixResponse = {
         tunnels: [
           {
             id: 10,
+            name: 'JP Tokyo K2V5',
             domain: 'jp.example.com',
             protocol: 'k2v5',
             port: 443,
-            server_url: 'https://jp.example.com',
+            server_url: 'k2v5://jp.example.com:443?ech=AA&pin=sha256:BB',
           },
         ],
         batch_script_results: {
@@ -46,17 +47,19 @@ const rawBatchMatrixResponse = {
         tunnels: [
           {
             id: 20,
+            name: 'SG K2V4',
             domain: 'sg.example.com',
             protocol: 'k2v4',
             port: 8443,
-            server_url: 'https://sg.example.com',
+            server_url: 'k2v5://sg.example.com:8443',
           },
           {
             id: 21,
+            name: 'SG K2V5',
             domain: 'sg2.example.com',
             protocol: 'k2v5',
             port: 443,
-            server_url: 'https://sg2.example.com',
+            server_url: 'k2v5://sg2.example.com:443?ech=CC',
           },
         ],
         batch_script_results: {},
@@ -121,17 +124,18 @@ describe('filterNodes', () => {
     const jp = result[0]
     expect(jp?.tunnels).toHaveLength(1)
     const tunnel = jp?.tunnels[0]
-    // camelCase keys
+    expect(tunnel).toHaveProperty('name', 'JP Tokyo K2V5')
+    expect(tunnel).toHaveProperty('country', 'jp')
     expect(tunnel).toHaveProperty('domain', 'jp.example.com')
     expect(tunnel).toHaveProperty('protocol', 'k2v5')
     expect(tunnel).toHaveProperty('port', 443)
-    expect(tunnel).toHaveProperty('serverUrl', 'https://jp.example.com')
-    // snake_case key must NOT appear
-    expect(tunnel).not.toHaveProperty('server_url')
+    expect(tunnel).toHaveProperty('url', 'k2v5://jp.example.com:443?ech=AA&pin=sha256:BB')
     // id must be stripped
     expect(tunnel).not.toHaveProperty('id')
-    // tunnel keys are exactly the 4 expected
-    expect(Object.keys(tunnel ?? {})).toEqual(['domain', 'protocol', 'port', 'serverUrl'])
+    // snake_case key must NOT appear
+    expect(tunnel).not.toHaveProperty('server_url')
+    // tunnel keys are exactly the 6 expected
+    expect(Object.keys(tunnel ?? {})).toEqual(['name', 'country', 'domain', 'protocol', 'port', 'url'])
 
     // sg-01 has 2 tunnels
     const sg = result[1]
