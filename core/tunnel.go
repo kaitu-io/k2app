@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -181,14 +182,27 @@ func (t *ClientTunnel) HandleTCP(conn net.Conn, dest string) {
 				}
 			}
 
-			// SNI: upgrade DIRECT → PROXY (port 443 only, one-way)
-			if t.sniffSNI && t.router != nil && action == k2rule.TargetDirect && port == "443" {
-				if sni := sniff.SniffTLS(peeked); sni != "" {
-					if sniAction := t.router.RouteAddr(sni); sniAction == k2rule.TargetProxy {
-						action = k2rule.TargetProxy
-						k2rule.SetTmpRule(host, k2rule.TargetProxy)
-						slog.Debug("tunnel: SNI override", "dest", dest, "sni", sni)
-					}
+			// SNI detection (port 443 only, single parse)
+			var sni string
+			if t.sniffSNI && port == "443" {
+				sni = sniff.SniffTLS(peeked)
+			}
+
+			// SNI: upgrade DIRECT → PROXY
+			if sni != "" && t.router != nil && action == k2rule.TargetDirect {
+				if sniAction := t.router.RouteAddr(sni); sniAction == k2rule.TargetProxy {
+					action = k2rule.TargetProxy
+					dest = net.JoinHostPort(sni, port)
+					k2rule.SetTmpRule(host, k2rule.TargetProxy)
+					slog.Debug("tunnel: SNI override", "dest", dest, "sni", sni)
+				}
+			}
+
+			// IPv6→hostname: server may lack IPv6, give it a resolvable hostname
+			if sni != "" && action == k2rule.TargetProxy && strings.Contains(host, ":") {
+				if newDest := net.JoinHostPort(sni, port); dest != newDest {
+					dest = newDest
+					slog.Debug("tunnel: IPv6 dest rewrite", "original", host, "sni", sni)
 				}
 			}
 		}
@@ -236,14 +250,27 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 				}
 			}
 
-			// QUIC SNI: upgrade DIRECT → PROXY (port 443 only, one-way)
-			if t.sniffSNI && t.router != nil && action == k2rule.TargetDirect && port == "443" {
-				if sni := sniff.SniffQUIC(packet); sni != "" {
-					if sniAction := t.router.RouteAddr(sni); sniAction == k2rule.TargetProxy {
-						action = k2rule.TargetProxy
-						k2rule.SetTmpRule(host, k2rule.TargetProxy)
-						slog.Debug("tunnel: QUIC SNI override", "dest", dest, "sni", sni)
-					}
+			// QUIC SNI detection (port 443 only, single parse)
+			var sni string
+			if t.sniffSNI && port == "443" {
+				sni = sniff.SniffQUIC(packet)
+			}
+
+			// QUIC SNI: upgrade DIRECT → PROXY
+			if sni != "" && t.router != nil && action == k2rule.TargetDirect {
+				if sniAction := t.router.RouteAddr(sni); sniAction == k2rule.TargetProxy {
+					action = k2rule.TargetProxy
+					dest = net.JoinHostPort(sni, port)
+					k2rule.SetTmpRule(host, k2rule.TargetProxy)
+					slog.Debug("tunnel: QUIC SNI override", "dest", dest, "sni", sni)
+				}
+			}
+
+			// IPv6→hostname rewrite
+			if sni != "" && action == k2rule.TargetProxy && strings.Contains(host, ":") {
+				if newDest := net.JoinHostPort(sni, port); dest != newDest {
+					dest = newDest
+					slog.Debug("tunnel: IPv6 dest rewrite", "original", host, "sni", sni)
 				}
 			}
 		}
