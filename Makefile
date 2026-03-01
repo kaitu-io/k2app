@@ -1,4 +1,4 @@
-.PHONY: build test generate clean \
+.PHONY: build test generate clean netem-test \
 	build-darwin-arm64 build-darwin-amd64 build-darwin-universal \
 	build-windows-amd64 build-linux-amd64 build-linux-arm64 \
 	appext-ios appext-macos appext-android
@@ -75,6 +75,10 @@ appext-macos:
 appext-android:
 	mkdir -p build
 	gomobile bind -tags with_gvisor -target=android -o build/k2mobile.aar -androidapi 24 ./appext/
+
+# --- Network degradation tests (Docker netem) ---
+netem-test:
+	SCENARIO=$(or $(SCENARIO),all) test/netem/run.sh
 
 clean:
 	rm -rf build/

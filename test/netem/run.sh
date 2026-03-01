@@ -42,6 +42,7 @@ API="http://localhost:11777"
 SOCKS="localhost:11080"
 TRAFFIC_PID=""
 COMPOSE_UP=false
+REPORT_DIR="$SCRIPT_DIR/.reports"
 
 # ── Cleanup on exit ─────────────────────────────────────────────────
 cleanup() {
@@ -284,10 +285,130 @@ check_recovered() {
     fi
 }
 
+# ── Report generation ─────────────────────────────────────────────
+
+generate_scenario_report() {
+    local name="$1" baseline="$2" degraded="$3" recovered="$4"
+
+    jq -n \
+      --arg name "$name" \
+      --argjson loss "$LOSS" --argjson delay "$DELAY" \
+      --argjson jitter "$JITTER" --argjson rate "$RATE" \
+      --argjson mtu "$MTU_LIMIT" --arg protocol "$PROTOCOL" \
+      --argjson soak "$SOAK" --argjson recovery "$RECOVERY" \
+      --argjson baseline "$baseline" \
+      --argjson degraded "$degraded" \
+      --argjson recovered "$recovered" \
+      '{
+        scenario: $name,
+        params: {loss_pct: $loss, delay_ms: $delay, jitter_ms: $jitter,
+                 rate_kbit: $rate, mtu_limit: $mtu, protocol: $protocol,
+                 soak_s: $soak, recovery_s: $recovery},
+        baseline: ($baseline.data[-1:][0] // {}),
+        degradation: {
+          samples_total: ($degraded.data | length),
+          last_10: [($degraded.data[-10:][]) | {health, fallback, transport,
+                    loss_rate, dg_loss_rate, dg_hops, dg_timeouts, rtt_ms, cwnd}],
+          peak_loss: ([($degraded.data[-10:][].loss_rate)] | max),
+          peak_dg_loss: ([($degraded.data[-10:][].dg_loss_rate)] | max),
+          max_rtt_ms: ([($degraded.data[-10:][].rtt_ms)] | max),
+          max_hops: ([($degraded.data[-10:][].dg_hops)] | max),
+          fallback_triggered: (any($degraded.data[-10:][]; .fallback == true)),
+          health_states: [($degraded.data[-10:][].health)] | unique
+        },
+        recovery: {
+          final: ($recovered.data[-1:][0] // {} | {health, fallback, transport,
+                  loss_rate, dg_loss_rate, rtt_ms, cwnd}),
+          quic_restored: (($recovered.data[-1:][0] // {}) |
+                          .transport == "quic" and (.fallback | not))
+        }
+      }' > "$REPORT_DIR/${name}.json"
+
+    log_info "Report: $REPORT_DIR/${name}.json"
+}
+
+generate_summary_report() {
+    log_info "Generating summary report..."
+
+    {
+        echo "# k2 netem Test Report"
+        echo ""
+        echo "Date: $(date -u '+%Y-%m-%d %H:%M UTC')"
+        echo "Commit: $(git -C "$PROJECT_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+        echo ""
+        echo "## Scenario Matrix"
+        echo ""
+        echo "| Scenario | Params | Health States | Peak Loss | Peak RTT | Hops | Fallback | Recovery |"
+        echo "|----------|--------|---------------|-----------|----------|------|----------|----------|"
+
+        for f in "$REPORT_DIR"/*.json; do
+            [[ -f "$f" ]] || continue
+            jq -r '
+              "| \(.scenario) " +
+              "| L\(.params.loss_pct)% D\(.params.delay_ms)ms R\(.params.rate_kbit)k " +
+              "| \(.degradation.health_states | join(",")) " +
+              "| \((.degradation.peak_loss * 100 | floor))% / \((.degradation.peak_dg_loss * 100 | floor))% " +
+              "| \((.degradation.max_rtt_ms | floor))ms " +
+              "| \(.degradation.max_hops) " +
+              "| \(if .degradation.fallback_triggered then "YES" else "no" end) " +
+              "| \(if .recovery.quic_restored then "QUIC ✓" elif .recovery.final.health == "healthy" then "healthy" else .recovery.final.health end) |"
+            ' "$f"
+        done
+
+        echo ""
+        echo "## Optimization Signals"
+        echo ""
+        echo "| Signal | Scenarios | Recommendation |"
+        echo "|--------|-----------|----------------|"
+
+        # Hop ineffective: hops attempted but fallback still triggered
+        for f in "$REPORT_DIR"/*.json; do
+            [[ -f "$f" ]] || continue
+            jq -r 'select(.degradation.max_hops > 0 and .degradation.fallback_triggered) |
+              "| Hop ineffective | \(.scenario) | Hops=\(.degradation.max_hops) but fallback still triggered |"
+            ' "$f"
+        done
+
+        # QUIC not restored after recovery
+        for f in "$REPORT_DIR"/*.json; do
+            [[ -f "$f" ]] || continue
+            jq -r 'select(.recovery.quic_restored == false and .recovery.final.health != "critical") |
+              "| QUIC not restored | \(.scenario) | Final: \(.recovery.final.transport) fallback=\(.recovery.final.fallback) |"
+            ' "$f"
+        done
+
+        # No degradation detected
+        for f in "$REPORT_DIR"/*.json; do
+            [[ -f "$f" ]] || continue
+            jq -r 'select(.degradation.health_states == ["healthy"]) |
+              "| No degradation detected | \(.scenario) | L\(.params.loss_pct)% — thresholds may be too high |"
+            ' "$f"
+        done
+
+        echo ""
+        echo "## Per-Scenario Details"
+        echo ""
+        for f in "$REPORT_DIR"/*.json; do
+            [[ -f "$f" ]] || continue
+            local sname
+            sname=$(jq -r '.scenario' "$f")
+            echo "### $sname"
+            echo '```json'
+            jq '.degradation.last_10' "$f"
+            echo '```'
+            echo ""
+        done
+
+    } > "$REPORT_DIR/report.md"
+
+    log_ok "Summary: $REPORT_DIR/report.md"
+}
+
 # ── Main test flow ──────────────────────────────────────────────────
 
 run_single_test() {
     local scenario_name="${1:-custom}"
+    mkdir -p "$REPORT_DIR"
 
     echo ""
     echo "═══════════════════════════════════════════════════════════════"
@@ -301,7 +422,9 @@ run_single_test() {
     # Baseline
     log_info "Checking baseline..."
     sleep 3  # let stats accumulate
-    check_baseline "$(get_stats)"
+    local baseline_stats
+    baseline_stats=$(get_stats)
+    check_baseline "$baseline_stats"
 
     # Start traffic
     start_traffic
@@ -315,7 +438,9 @@ run_single_test() {
 
     # Check degradation
     log_info "Checking degradation..."
-    check_degraded "$(get_stats)"
+    local degraded_stats
+    degraded_stats=$(get_stats)
+    check_degraded "$degraded_stats"
 
     # Remove degradation
     remove_netem
@@ -326,10 +451,15 @@ run_single_test() {
 
     # Check recovery
     log_info "Checking recovery..."
-    check_recovered "$(get_stats)"
+    local recovered_stats
+    recovered_stats=$(get_stats)
+    check_recovered "$recovered_stats"
 
     # Stop traffic
     stop_traffic
+
+    # Generate scenario report
+    generate_scenario_report "$scenario_name" "$baseline_stats" "$degraded_stats" "$recovered_stats"
 
     echo ""
     log_ok "Scenario '$scenario_name' completed"
@@ -370,6 +500,8 @@ main() {
             sleep 10
         done
 
+        generate_summary_report
+
         echo ""
         echo "═══════════════════════════════════════════════════════════════"
         if [[ $failed -eq 0 ]]; then
@@ -396,6 +528,9 @@ main() {
 
     # Run test
     run_single_test "${SCENARIO:-custom}"
+
+    # Generate summary (single scenario)
+    generate_summary_report
 }
 
 main "$@"
