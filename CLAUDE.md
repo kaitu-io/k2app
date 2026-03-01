@@ -197,7 +197,7 @@ docs/todos/p2-*.md     Nice to have
 
 ## Status
 
-**Done**: Full L4 architecture, wire protocol (QUIC+TCP-WS), DNS middleware (L3+L4), auth, ECH (DNS-based forging + config rotation), TLS record padding, dual certs (RSA+EC), client CA pool (system + Kaitu CA - Chinese CAs), PCC, client tunnel, server handlers, e2e tests, zero-config server startup, k2/k2s binaries, appext SDK (gomobile, macOS sysext+iOS+Android), tproxy provider (OpenWRT/Linux), OpenWRT service management (init.d/procd), wire observability (K2ARC metrics + TX/RX counting + HealthMonitor FSM + embedded /stats dashboard), protocol sniffing (TLS SNI, QUIC SNI, HTTP Host, BitTorrent, STUN, DTLS)
+**Done**: Full L4 architecture, wire protocol (QUIC+TCP-WS), DNS middleware (L3+L4), auth, ECH (DNS-based forging + config rotation), TLS record padding, dual certs (RSA+EC), client CA pool (system + Kaitu CA - Chinese CAs), PCC, client tunnel, server handlers, e2e tests, zero-config server startup, k2/k2s binaries, appext SDK (gomobile, macOS sysext+iOS+Android), tproxy provider (OpenWRT/Linux), OpenWRT service management (init.d/procd), wire observability (K2ARC metrics + TX/RX counting + HealthMonitor FSM + embedded /stats dashboard), protocol sniffing (TLS SNI, QUIC SNI, HTTP Host, BitTorrent, STUN, DTLS), Happy Eyeballs (RFC 8305 IPv6/IPv4 address selection)
 
 ## Platform Mapping
 

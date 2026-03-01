@@ -13,7 +13,7 @@ Platform Shell (daemon/appext)
               │
               ├── 1. k2rule.Init (routing rules)
               ├── 2. wire.ParseURL (k2v5:// URL)
-              ├── 3. Resolve dial address (ip4/ip6)
+              ├── 3. Happy Eyeballs address resolution (RFC 8305)
               ├── 4. Build transports (QUIC + TCP-WS)
               ├── 5. Router (k2rule)
               ├── 6. Provider (TUN/Proxy/TProxy/appext FD)
@@ -70,6 +70,7 @@ HTTP-aligned error codes for frontend consumption:
 - `event.go` — `EventHandler` interface (`OnStatus(Status)` + `OnStats`), state constants
 - `error.go` — `EngineError`, `ClassifyError` (HTTP-aligned error codes, MultiTransportError handling)
 - `health.go` — `healthMonitor` (1Hz sampling, ring buffer 300s, health FSM: healthy→degraded→critical, corrective actions: port hop / full reconnect)
+- `happy_eyeballs.go` — `resolveDialAddr`, `happyEyeballs` (RFC 8305 IPv6/IPv4 race with 250ms head start)
 - `dns_handler.go` — `dnsHandler` (port 53 TCP+UDP interception, RFC 1035 TCP framing)
 - `network.go` — `NetworkChangeNotifier` interface
 
