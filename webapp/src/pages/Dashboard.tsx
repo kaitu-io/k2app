@@ -262,6 +262,17 @@ export default function Dashboard() {
   return (
     <DashboardContainer
       ref={containerRef}
+      onClickCapture={() => {
+        const el = containerRef.current;
+        const cs = el ? getComputedStyle(el) : null;
+        console.warn('[DIAG:Dashboard] click captured', {
+          pointerEvents: cs?.pointerEvents,
+          opacity: cs?.opacity,
+          isServiceFailedLongTime,
+          isServiceRunning,
+          serviceState,
+        });
+      }}
       sx={{
         ...(isServiceFailedLongTime && {
           pointerEvents: 'none',

@@ -237,6 +237,14 @@ export async function injectTauriGlobals(): Promise<void> {
 
   console.info(`[K2:Tauri] Injected - os=${tauriPlatform.os}, version=${tauriPlatform.version}`);
 
+  // Forward WebView console.* to Tauri log system (desktop.log)
+  try {
+    const { attachConsole } = await import('@tauri-apps/plugin-log');
+    await attachConsole();
+  } catch {
+    // plugin-log not available, skip
+  }
+
   // Show window after frontend is fully initialized
   // This prevents size flashing on Windows
   try {

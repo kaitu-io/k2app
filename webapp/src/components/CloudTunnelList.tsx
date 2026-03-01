@@ -310,7 +310,10 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
           return (
             <ListItem
               key={tunnel.id}
-              onClick={() => !disabled && onSelect(tunnel, echConfigList)}
+              onClick={() => {
+                console.warn('[DIAG:TunnelClick]', { disabled, tunnel: tunnel.domain });
+                !disabled && onSelect(tunnel, echConfigList);
+              }}
               sx={{
                 borderRadius: 2,
                 mb: 0.5,
