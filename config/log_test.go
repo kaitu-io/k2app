@@ -144,6 +144,40 @@ func TestSetupLogging_LevelError(t *testing.T) {
 	}
 }
 
+// TestSetupLogging_EnvOverride verifies that K2_LOG_LEVEL env var overrides config level.
+func TestSetupLogging_EnvOverride(t *testing.T) {
+	t.Setenv("K2_LOG_LEVEL", "debug")
+
+	cfg := LogConfig{Level: "error", Output: "stderr"}
+	cleanup, err := SetupLogging(cfg, "k2")
+	if err != nil {
+		t.Fatalf("SetupLogging: %v", err)
+	}
+	defer cleanup()
+
+	handler := slog.Default().Handler()
+	if !handler.Enabled(nil, slog.LevelDebug) {
+		t.Error("K2_LOG_LEVEL=debug should override config level error, but debug is not enabled")
+	}
+}
+
+// TestSetupLogging_EnvEmpty verifies that empty K2_LOG_LEVEL does not override config.
+func TestSetupLogging_EnvEmpty(t *testing.T) {
+	t.Setenv("K2_LOG_LEVEL", "")
+
+	cfg := LogConfig{Level: "error", Output: "stderr"}
+	cleanup, err := SetupLogging(cfg, "k2")
+	if err != nil {
+		t.Fatalf("SetupLogging: %v", err)
+	}
+	defer cleanup()
+
+	handler := slog.Default().Handler()
+	if handler.Enabled(nil, slog.LevelInfo) {
+		t.Error("empty K2_LOG_LEVEL should not override config level error")
+	}
+}
+
 // TestSetupLogging_LumberjackConfig verifies that file output uses lumberjack writer
 // (tested indirectly: SetupLogging must return no error for a file path).
 func TestSetupLogging_LumberjackConfig(t *testing.T) {

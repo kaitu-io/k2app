@@ -91,10 +91,16 @@ func DefaultLogPath(name string) string {
 //   - any other value → treated as a file path; lumberjack is used for rotation
 //
 // If output is empty, cfg.Output is used as-is; if still empty, "stderr" is the default.
+// The K2_LOG_LEVEL environment variable overrides cfg.Level if set (debug|info|warn|error).
 // Returns a cleanup function that restores the previous slog default handler and closes
 // any open file writers.
 func SetupLogging(cfg LogConfig, name string) (func(), error) {
-	level := parseLevel(cfg.Level)
+	// Environment variable overrides config file level.
+	levelStr := cfg.Level
+	if envLevel := os.Getenv("K2_LOG_LEVEL"); envLevel != "" {
+		levelStr = envLevel
+	}
+	level := parseLevel(levelStr)
 
 	output := cfg.Output
 	if output == "" {

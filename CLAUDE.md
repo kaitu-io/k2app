@@ -25,6 +25,10 @@ k2s -c server.yaml                 # Server with explicit config (foreground)
 docker compose up --build           # Docker: server + init container (docker/)
 ```
 
+## Environment Variables
+
+- `K2_LOG_LEVEL` — Overrides `log.level` in config file. Values: `debug`, `info`, `warn`, `error`. Useful for setting log level via launchd plist (`EnvironmentVariables`), systemd unit (`Environment=`), or Windows service registry without editing config files.
+
 ## Code Style
 
 - **Minimalist**: Avoid over-engineering, prefer concrete types over interfaces
