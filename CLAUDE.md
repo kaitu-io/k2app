@@ -34,6 +34,7 @@ docker compose up --build           # Docker: server + init container (docker/)
 ## Layer Docs (read on demand)
 
 ```
+sniff/CLAUDE.md                Protocol sniffing (TLS/QUIC/HTTP/BT/STUN/DTLS detectors)
 cmd/k2/CLAUDE.md               Client CLI subcommands + dispatch
 cmd/k2s/CLAUDE.md              Server CLI + foreground/service mode
 config/CLAUDE.md               ClientConfig + ServerConfig + YAML formats
@@ -172,7 +173,7 @@ engine.Stop()
 
 ## Dependencies
 
-- `github.com/kaitu-io/k2rule v0.6.2` — domain/IP routing rules with unified Init API + SetTmpRule (CacheDir required, non-blocking background download, Antiporn opt-in)
+- `github.com/kaitu-io/k2rule v0.6.3` — domain/IP routing rules with unified Init API + SetTmpRule (CacheDir required, non-blocking background download, Antiporn opt-in)
 - `github.com/miekg/dns` — DNS message handling
 - `github.com/sagernet/sing-tun` — TUN device with gVisor stack
 - `github.com/apernet/quic-go` — QUIC with congestion control API
@@ -192,7 +193,7 @@ docs/todos/p2-*.md     Nice to have
 
 ## Status
 
-**Done**: Full L4 architecture, wire protocol (QUIC+TCP-WS), DNS middleware (L3+L4), auth, ECH (DNS-based forging + config rotation), TLS record padding, dual certs (RSA+EC), client CA pool (system + Kaitu CA - Chinese CAs), PCC, client tunnel, server handlers, e2e tests, zero-config server startup, k2/k2s binaries, appext SDK (gomobile, macOS sysext+iOS+Android), tproxy provider (OpenWRT/Linux), OpenWRT service management (init.d/procd), wire observability (K2ARC metrics + TX/RX counting + HealthMonitor FSM + embedded /stats dashboard)
+**Done**: Full L4 architecture, wire protocol (QUIC+TCP-WS), DNS middleware (L3+L4), auth, ECH (DNS-based forging + config rotation), TLS record padding, dual certs (RSA+EC), client CA pool (system + Kaitu CA - Chinese CAs), PCC, client tunnel, server handlers, e2e tests, zero-config server startup, k2/k2s binaries, appext SDK (gomobile, macOS sysext+iOS+Android), tproxy provider (OpenWRT/Linux), OpenWRT service management (init.d/procd), wire observability (K2ARC metrics + TX/RX counting + HealthMonitor FSM + embedded /stats dashboard), protocol sniffing (TLS SNI, QUIC SNI, HTTP Host, BitTorrent, STUN, DTLS)
 
 ## Platform Mapping
 
