@@ -14,8 +14,9 @@ var streamHeaderPool = sync.Pool{
 
 // Stream type constants.
 const (
-	StreamTypeTCP byte = 0x01
-	StreamTypeUDP byte = 0x02
+	StreamTypeTCP         byte = 0x01
+	StreamTypeUDP         byte = 0x02
+	StreamTypeUDPOverflow byte = 0x03
 )
 
 // Limits for varint-decoded lengths to prevent OOM from malicious input.

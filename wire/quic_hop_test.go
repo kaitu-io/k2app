@@ -224,11 +224,11 @@ func TestQUICClient_ConcurrentHopRace(t *testing.T) {
 	}
 }
 
-// TestQuicUDPConn_WriteTo_FailureFeedsLossRate verifies that when SendDatagram
-// fails (e.g. "DATAGRAM frame too large" after MTU reset), the failure is counted
-// as a send+timeout in loss rate tracking. Without this, failed writes are invisible
-// to datagramHealthy() and hop/fallback never triggers.
-func TestQuicUDPConn_WriteTo_FailureFeedsLossRate(t *testing.T) {
+// TestQuicUDPConn_WriteTo_LargePayloadUsesOverflow verifies that when SendDatagram
+// returns DatagramTooLargeError, the packet is transparently sent via the overflow
+// stream instead of failing. The send is counted in datagramSent (for throughput
+// tracking) but NOT in consecutiveTimeouts (it's not a network problem).
+func TestQuicUDPConn_WriteTo_LargePayloadUsesOverflow(t *testing.T) {
 	client, _, cleanup := setupQUICPair(t)
 	defer cleanup()
 
@@ -249,24 +249,25 @@ func TestQuicUDPConn_WriteTo_FailureFeedsLossRate(t *testing.T) {
 	sentBefore := mux.datagramSent.Load()
 	timeoutsBefore := mux.consecutiveTimeouts.Load()
 
-	// Send a payload that exceeds even the peer's MaxDatagramFrameSize.
+	// Send a payload that exceeds the peer's MaxDatagramFrameSize.
 	// quic-go caps MaxDatagramFrameSize at MaxPacketBufferSize (~64KB).
-	// 70KB payload + UDPFrame overhead will exceed any reasonable limit.
+	// 70KB payload + UDPFrame overhead will exceed any reasonable limit,
+	// triggering overflow fallback.
 	largePayload := make([]byte, 70000)
 	_, werr := pconn.WriteTo(largePayload, nil)
-	if werr == nil {
-		t.Fatal("WriteTo should fail with frame-too-large error")
+	if werr != nil {
+		t.Fatalf("WriteTo should succeed via overflow, got: %v", werr)
 	}
 
-	// Verify: failure was counted in loss tracking
+	// Verify: send was counted but NOT as a timeout (overflow is not a network failure)
 	sentAfter := mux.datagramSent.Load()
 	timeoutsAfter := mux.consecutiveTimeouts.Load()
 
 	if sentAfter != sentBefore+1 {
 		t.Fatalf("datagramSent: before=%d after=%d, want +1", sentBefore, sentAfter)
 	}
-	if timeoutsAfter != timeoutsBefore+1 {
-		t.Fatalf("consecutiveTimeouts: before=%d after=%d, want +1", timeoutsBefore, timeoutsAfter)
+	if timeoutsAfter != timeoutsBefore {
+		t.Fatalf("consecutiveTimeouts: before=%d after=%d, want unchanged (overflow is not a timeout)", timeoutsBefore, timeoutsAfter)
 	}
 }
 

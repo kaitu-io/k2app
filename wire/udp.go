@@ -57,6 +57,19 @@ func WriteUDPFrame(w io.Writer, sessionID uint32, addr string, payload []byte) e
 	return err
 }
 
+// MarshalUDPFrame serializes a UDP frame into a pool-backed []byte.
+// The returned put function MUST be called after the caller is done with data
+// to return the buffer to the pool. Safe for SendDatagram which copies internally.
+func MarshalUDPFrame(sessionID uint32, addr string, payload []byte) (data []byte, put func()) {
+	bp := udpFramePool.Get().(*[]byte)
+	buf := (*bp)[:0]
+	buf = binary.BigEndian.AppendUint32(buf, sessionID)
+	buf = AppendVarint(buf, uint64(len(addr)))
+	buf = append(buf, addr...)
+	buf = append(buf, payload...)
+	return buf, func() { *bp = buf; udpFramePool.Put(bp) }
+}
+
 // ReadUDPFrame reads a UDP message frame from a datagram (known-length) or buffer.
 // For QUIC datagrams, pass the full datagram bytes as a bytes.Buffer.
 // For smux/stream, the caller must first read the frame_len prefix.

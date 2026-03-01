@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math/rand"
@@ -34,6 +35,89 @@ const maxServerUDPSessions = 4096
 // unhealthy before falling back to TCP-WS. ISP QoS typically matches on
 // port/5-tuple, so hopping to a new port often restores QUIC datagram path.
 const maxDatagramHops int32 = 3
+
+// ============================================================================
+// UDP overflow stream — per-packet fallback for oversized datagrams
+// ============================================================================
+
+// udpOverflowStream lazily opens a QUIC stream for sending UDP packets that
+// exceed the QUIC datagram size limit. The stream uses SmuxUDPFrame format
+// and is shared across all UDP sessions on a connection.
+//
+// Write serialization: initMu protects lazy init (rare), writeMu serializes
+// frame writes (hot path). This avoids holding a single lock across both
+// init and I/O, keeping mutex hold time minimal on the data plane.
+type udpOverflowStream struct {
+	qconn   *quic.Conn
+	initMu  sync.Mutex
+	writeMu sync.Mutex
+	stream  *quic.Stream
+	initErr error
+	opened  bool
+}
+
+// init lazily opens the overflow stream on first call. Subsequent calls are no-ops.
+func (o *udpOverflowStream) init() error {
+	o.initMu.Lock()
+	defer o.initMu.Unlock()
+
+	if o.opened {
+		return o.initErr
+	}
+	o.opened = true
+
+	stream, err := o.qconn.OpenStreamSync(context.Background())
+	if err != nil {
+		o.initErr = fmt.Errorf("wire: open overflow stream: %w", err)
+		slog.Warn("udpOverflowStream: open failed", "err", o.initErr)
+		return o.initErr
+	}
+
+	// Write H3 frame type + StreamTypeUDPOverflow header
+	if err := WriteH3ProxyFrameType(stream); err != nil {
+		stream.Close()
+		o.initErr = fmt.Errorf("wire: write overflow H3 frame: %w", err)
+		return o.initErr
+	}
+	if err := WriteStreamHeader(stream, StreamTypeUDPOverflow, ""); err != nil {
+		stream.Close()
+		o.initErr = fmt.Errorf("wire: write overflow header: %w", err)
+		return o.initErr
+	}
+
+	o.stream = stream
+	slog.Info("udpOverflowStream: opened", "streamID", stream.StreamID())
+	return nil
+}
+
+// send writes a single UDP frame to the overflow stream, lazily opening it on first call.
+func (o *udpOverflowStream) send(sessionID uint32, addr string, payload []byte) error {
+	if err := o.init(); err != nil {
+		return err
+	}
+
+	o.writeMu.Lock()
+	defer o.writeMu.Unlock()
+	return WriteSmuxUDPFrame(o.stream, sessionID, addr, payload)
+}
+
+func (o *udpOverflowStream) close() {
+	o.initMu.Lock()
+	defer o.initMu.Unlock()
+	if o.stream != nil {
+		o.stream.Close()
+	}
+}
+
+// connUDPState holds shared UDP state for a single QUIC connection on the server.
+// Both the datagram reader and overflow stream reader share this state so that
+// packets from the same session ID are delivered to the same serverUDPConn.
+type connUDPState struct {
+	mu       sync.Mutex
+	sessions map[uint32]*serverUDPConn
+	overflow *udpOverflowStream
+	done     chan struct{}
+}
 
 // DefaultQUICConfig returns the QUIC configuration for servers and desktop clients.
 // Uses large receive windows (matching Hysteria2) for maximum throughput.
@@ -201,6 +285,9 @@ func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
 	c.transport = transport
 	c.alloc = NewSessionIDAllocator()
 	c.udpMux = newQuicUDPMux(conn, &c.datagramHopAttempts)
+
+	// Start accept loop for server-initiated overflow streams
+	go c.acceptOverflowStreams(conn, c.udpMux)
 
 	return conn, nil
 }
@@ -396,6 +483,68 @@ func (c *QUICClient) WireStats() WireStats {
 
 var _ StatsProvider = (*QUICClient)(nil)
 
+// acceptOverflowStreams runs a loop accepting server-initiated QUIC streams.
+// It handles StreamTypeUDPOverflow streams by reading SmuxUDPFrame and delivering
+// to the udpMux session map (same sessions as datagram path).
+func (c *QUICClient) acceptOverflowStreams(conn *quic.Conn, mux *quicUDPMux) {
+	for {
+		stream, err := conn.AcceptStream(context.Background())
+		if err != nil {
+			return // connection closed
+		}
+		go c.handleServerOverflowStream(stream, mux)
+	}
+}
+
+// handleServerOverflowStream reads one overflow stream from the server.
+func (c *QUICClient) handleServerOverflowStream(stream *quic.Stream, mux *quicUDPMux) {
+	defer stream.Close()
+
+	br := bufio.NewReader(stream)
+
+	// Read H3 frame type marker
+	frameType, _, err := ReadVarint(br)
+	if err != nil {
+		slog.Debug("QUICClient: overflow stream read frame type failed", "err", err)
+		return
+	}
+	if frameType != H3FrameTypeK2Proxy {
+		slog.Debug("QUICClient: overflow stream unknown frame type", "frameType", frameType)
+		return
+	}
+
+	// Read stream header
+	streamType, _, err := ReadStreamHeader(br)
+	if err != nil {
+		slog.Debug("QUICClient: overflow stream read header failed", "err", err)
+		return
+	}
+	if streamType != StreamTypeUDPOverflow {
+		slog.Debug("QUICClient: overflow stream unexpected type", "streamType", streamType)
+		return
+	}
+
+	slog.Info("QUICClient: receiving overflow stream from server")
+
+	// Read SmuxUDPFrame loop and deliver to mux sessions
+	for {
+		frame, err := ReadSmuxUDPFrame(br)
+		if err != nil {
+			return
+		}
+
+		mux.mu.Lock()
+		ch, ok := mux.sessions[frame.SessionID]
+		mux.mu.Unlock()
+		if ok {
+			select {
+			case ch <- frame:
+			default: // drop if full
+			}
+		}
+	}
+}
+
 // tryHop attempts a single datagram port hop. Returns true if this goroutine
 // won the race and executed the hop. Concurrent callers get false immediately.
 func (c *QUICClient) tryHop() bool {
@@ -534,7 +683,14 @@ func (s *QUICServer) acceptLoop() {
 }
 
 func (s *QUICServer) handleConn(conn *quic.Conn) {
-	// Accept streams (TCP proxy)
+	// Shared UDP state for datagram + overflow stream paths
+	state := &connUDPState{
+		sessions: make(map[uint32]*serverUDPConn),
+		overflow: &udpOverflowStream{qconn: conn},
+		done:     make(chan struct{}),
+	}
+
+	// Accept streams (TCP proxy + UDP overflow)
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -552,16 +708,25 @@ func (s *QUICServer) handleConn(conn *quic.Conn) {
 						slog.Error("QUICServer: panic in handleStream", "panic", r, "remote", conn.RemoteAddr())
 					}
 				}()
-				s.handleStream(conn, stream)
+				s.handleStream(conn, stream, state)
 			}()
 		}
 	}()
 
 	// Read datagrams (UDP proxy) — blocks until connection closes
-	s.handleDatagrams(conn)
+	s.handleDatagrams(conn, state)
+
+	// Cleanup: close all UDP sessions and overflow stream
+	close(state.done)
+	state.overflow.close()
+	state.mu.Lock()
+	for _, sess := range state.sessions {
+		sess.close()
+	}
+	state.mu.Unlock()
 }
 
-func (s *QUICServer) handleStream(qconn *quic.Conn, stream *quic.Stream) {
+func (s *QUICServer) handleStream(qconn *quic.Conn, stream *quic.Stream, state *connUDPState) {
 	br := bufio.NewReader(stream)
 
 	// Read H3 frame type marker
@@ -598,14 +763,16 @@ func (s *QUICServer) handleStream(qconn *quic.Conn, stream *quic.Stream) {
 		s.sendTCP(tcpAcceptResult{conn: sc, addr: addr})
 		slog.Debug("QUICServer.handleStream: TCP queued", "addr", addr)
 	case StreamTypeUDP:
-		s.handleUDPStream(qconn, stream, br)
+		s.handleUDPStream(stream, br)
+	case StreamTypeUDPOverflow:
+		s.handleUDPOverflowStream(br, state)
 	default:
 		slog.Debug("QUICServer.handleStream: unknown stream type", "streamType", streamType)
 		stream.Close()
 	}
 }
 
-func (s *QUICServer) handleUDPStream(qconn *quic.Conn, stream *quic.Stream, br *bufio.Reader) {
+func (s *QUICServer) handleUDPStream(stream *quic.Stream, br *bufio.Reader) {
 	writer := &quicStreamWriter{stream: stream}
 	sessions := make(map[uint32]*quicStreamServerUDPConn)
 
@@ -653,20 +820,13 @@ func (s *QUICServer) handleUDPStream(qconn *quic.Conn, stream *quic.Stream, br *
 	}
 }
 
-func (s *QUICServer) handleDatagrams(conn *quic.Conn) {
+func (s *QUICServer) handleDatagrams(conn *quic.Conn, state *connUDPState) {
 	slog.Info("QUICServer: handleDatagrams started", "remote", conn.RemoteAddr())
-	sessions := make(map[uint32]*serverUDPConn)
-	var mu sync.Mutex
 
 	for {
 		data, err := conn.ReceiveDatagram(context.Background())
 		if err != nil {
 			slog.Info("QUICServer: handleDatagrams exiting", "remote", conn.RemoteAddr(), "err", err)
-			mu.Lock()
-			for _, sess := range sessions {
-				sess.close()
-			}
-			mu.Unlock()
 			return
 		}
 
@@ -677,42 +837,64 @@ func (s *QUICServer) handleDatagrams(conn *quic.Conn) {
 		}
 		slog.Debug("QUICServer: datagram received", "sessionID", frame.SessionID, "addr", frame.Addr, "payloadLen", len(frame.Payload))
 
-		mu.Lock()
-		sess, ok := sessions[frame.SessionID]
-		if !ok {
-			if len(sessions) >= maxServerUDPSessions {
-				mu.Unlock()
-				slog.Warn("QUICServer: max UDP sessions reached, dropping")
-				continue
-			}
-			sess = &serverUDPConn{
-				qconn:     conn,
-				sessionID: frame.SessionID,
-				addr:      frame.Addr,
-				readCh:    make(chan []byte, 32),
-				done:      make(chan struct{}),
-			}
-			sessions[frame.SessionID] = sess
+		s.deliverToSession(state, conn, frame)
+	}
+}
 
-			s.mu.Lock()
-			handler := s.udpH
-			s.mu.Unlock()
-			slog.Info("QUICServer: new UDP session", "sessionID", frame.SessionID, "addr", frame.Addr, "handlerSet", handler != nil)
-			if handler != nil {
-				addr := frame.Addr
-				go func() {
-					defer func() {
-						if r := recover(); r != nil {
-							slog.Error("QUICServer: panic in HandleUDP (datagram)", "panic", r, "addr", addr)
-						}
-					}()
-					handler.HandleUDP(sess, addr)
-				}()
-			}
+// deliverToSession looks up or creates a serverUDPConn in state.sessions, then delivers the payload.
+// Used by both handleDatagrams and handleUDPOverflowStream for session sharing.
+func (s *QUICServer) deliverToSession(state *connUDPState, conn *quic.Conn, frame *UDPFrame) {
+	state.mu.Lock()
+	sess, ok := state.sessions[frame.SessionID]
+	if !ok {
+		if len(state.sessions) >= maxServerUDPSessions {
+			state.mu.Unlock()
+			slog.Warn("QUICServer: max UDP sessions reached, dropping")
+			return
 		}
-		mu.Unlock()
+		sess = &serverUDPConn{
+			qconn:     conn,
+			sessionID: frame.SessionID,
+			addr:      frame.Addr,
+			readCh:    make(chan []byte, 32),
+			done:      make(chan struct{}),
+			overflow:  state.overflow,
+		}
+		state.sessions[frame.SessionID] = sess
 
-		sess.deliver(frame.Payload)
+		s.mu.Lock()
+		handler := s.udpH
+		s.mu.Unlock()
+		slog.Info("QUICServer: new UDP session", "sessionID", frame.SessionID, "addr", frame.Addr, "handlerSet", handler != nil)
+		if handler != nil {
+			addr := frame.Addr
+			go func() {
+				defer func() {
+					if r := recover(); r != nil {
+						slog.Error("QUICServer: panic in HandleUDP", "panic", r, "addr", addr)
+					}
+				}()
+				handler.HandleUDP(sess, addr)
+			}()
+		}
+	}
+	state.mu.Unlock()
+
+	sess.deliver(frame.Payload)
+}
+
+// handleUDPOverflowStream reads SmuxUDPFrame from a client-initiated overflow stream
+// and delivers them to the shared session map (same sessions as datagram path).
+func (s *QUICServer) handleUDPOverflowStream(br *bufio.Reader, state *connUDPState) {
+	slog.Info("QUICServer: receiving overflow stream from client")
+	// We need the qconn to create new sessions — get it from the overflow struct.
+	conn := state.overflow.qconn
+	for {
+		frame, err := ReadSmuxUDPFrame(br)
+		if err != nil {
+			return
+		}
+		s.deliverToSession(state, conn, frame)
 	}
 }
 
@@ -783,6 +965,7 @@ type quicUDPMux struct {
 	done      chan struct{}
 	started   bool
 	streamMux *quicStreamUDPMux // stream-based UDP fallback
+	overflow  *udpOverflowStream // per-packet overflow for oversized datagrams
 
 	// Datagram health tracking: consecutive ReadFrom timeouts indicate
 	// a broken QUIC datagram path (e.g. ISP QoS dropping UDP).
@@ -889,6 +1072,7 @@ func newQuicUDPMux(conn *quic.Conn, hopAttempts *atomic.Int32) *quicUDPMux {
 		sessions:          make(map[uint32]chan *UDPFrame),
 		done:              make(chan struct{}),
 		clientHopAttempts: hopAttempts,
+		overflow:          &udpOverflowStream{qconn: conn},
 	}
 }
 
@@ -957,6 +1141,9 @@ func (m *quicUDPMux) close() {
 	default:
 		close(m.done)
 	}
+	if m.overflow != nil {
+		m.overflow.close()
+	}
 	if m.streamMux != nil {
 		m.streamMux.close()
 	}
@@ -1005,20 +1192,30 @@ func (c *quicUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 }
 
 func (c *quicUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
-	var buf bytes.Buffer
-	WriteUDPFrame(&buf, c.sessionID, c.targetAddr, b)
-	if err := c.qconn.SendDatagram(buf.Bytes()); err != nil {
-		slog.Warn("quicUDPConn: SendDatagram failed", "sessionID", c.sessionID,
-			"target", c.targetAddr, "frameSize", buf.Len(), "err", err)
-		// Count failed sends in loss rate tracking so datagramHealthy()
-		// detects the broken path and triggers hop/fallback.
+	frame, put := MarshalUDPFrame(c.sessionID, c.targetAddr, b)
+	err := c.qconn.SendDatagram(frame)
+	put() // SendDatagram copies internally; safe to return buffer to pool
+	if err == nil {
 		c.mux.recordSend()
-		c.mux.recordTimeout()
-		return 0, err
+		return len(b), nil
 	}
+
+	// Per-packet overflow: if datagram too large, send via overflow stream
+	var tooLarge *quic.DatagramTooLargeError
+	if errors.As(err, &tooLarge) && c.mux.overflow != nil {
+		if err2 := c.mux.overflow.send(c.sessionID, c.targetAddr, b); err2 != nil {
+			return 0, err2
+		}
+		c.mux.recordSend()
+		return len(b), nil
+	}
+
+	// Other errors: track for health monitoring
+	slog.Warn("quicUDPConn: SendDatagram failed", "sessionID", c.sessionID,
+		"target", c.targetAddr, "payloadLen", len(b), "err", err)
 	c.mux.recordSend()
-	slog.Debug("quicUDPConn: SendDatagram ok", "sessionID", c.sessionID, "target", c.targetAddr, "len", len(b))
-	return len(b), nil
+	c.mux.recordTimeout()
+	return 0, err
 }
 
 func (c *quicUDPConn) Close() error {
@@ -1046,6 +1243,7 @@ type serverUDPConn struct {
 	done      chan struct{}
 	closeOnce sync.Once
 	rd        readDeadline
+	overflow  *udpOverflowStream // per-packet overflow for oversized datagrams
 }
 
 var _ net.PacketConn = (*serverUDPConn)(nil)
@@ -1078,15 +1276,25 @@ func (c *serverUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 }
 
 func (c *serverUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
-	var buf bytes.Buffer
 	// Empty addr for response frames (client already knows the target)
-	WriteUDPFrame(&buf, c.sessionID, "", b)
-	if err := c.qconn.SendDatagram(buf.Bytes()); err != nil {
-		slog.Warn("serverUDPConn: SendDatagram failed", "sessionID", c.sessionID, "addr", c.addr, "err", err)
-		return 0, err
+	frame, put := MarshalUDPFrame(c.sessionID, "", b)
+	err := c.qconn.SendDatagram(frame)
+	put() // SendDatagram copies internally; safe to return buffer to pool
+	if err == nil {
+		return len(b), nil
 	}
-	slog.Debug("serverUDPConn: SendDatagram ok", "sessionID", c.sessionID, "addr", c.addr, "len", len(b))
-	return len(b), nil
+
+	// Per-packet overflow: if datagram too large, send via overflow stream
+	var tooLarge *quic.DatagramTooLargeError
+	if errors.As(err, &tooLarge) && c.overflow != nil {
+		if err2 := c.overflow.send(c.sessionID, "", b); err2 != nil {
+			return 0, err2
+		}
+		return len(b), nil
+	}
+
+	slog.Warn("serverUDPConn: SendDatagram failed", "sessionID", c.sessionID, "addr", c.addr, "err", err)
+	return 0, err
 }
 
 func (c *serverUDPConn) close() {
