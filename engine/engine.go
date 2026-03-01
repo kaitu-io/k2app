@@ -105,17 +105,19 @@ func (e *Engine) Start(cfg Config) error {
 		return e.fail(err)
 	}
 
-	// 3. Resolve dial address: ip6 (preferred) > ip4 (required).
-	// Host stays as TLS SNI domain; DialAddr is used for TCP/UDP dialing.
-	if wireCfg.IPv6 != "" {
-		wireCfg.DialAddr = wireCfg.IPv6
-		slog.Info("engine: using IPv6 for dial", "addr", wireCfg.IPv6)
-	} else if wireCfg.IPv4 != "" {
-		wireCfg.DialAddr = wireCfg.IPv4
-		slog.Info("engine: using IPv4 for dial", "addr", wireCfg.IPv4)
+	// 3. Resolve dial address via Happy Eyeballs (RFC 8305).
+	// When both IPv6 and IPv4 are available, races them with IPv6 head start.
+	// Must complete BEFORE step 4 — NewQUICClient/NewTCPWSClient cache DialAddr.
+	dialAddr, err := resolveDialAddr(ctx, wireCfg, cfg.DirectDialer)
+	if err != nil {
+		return e.fail(fmt.Errorf("address resolution: %w", err))
+	}
+	if dialAddr != "" {
+		wireCfg.DialAddr = dialAddr
 	} else {
 		slog.Warn("engine: k2v5 URL missing ip= parameter, using Host for dial (deprecated)")
 	}
+	slog.Info("engine: step 3 - dial address resolved", "addr", wireCfg.DialAddr)
 
 	// 4. Build transports.
 	quicClient := wire.NewQUICClient(wireCfg, nil)
