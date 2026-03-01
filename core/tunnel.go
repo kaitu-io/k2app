@@ -185,10 +185,14 @@ func (t *ClientTunnel) HandleTCP(conn net.Conn, dest string) {
 				}
 			}
 
-			// SNI detection (port 443 only, single parse)
+			// SNI / HTTP host detection (single parse)
 			var sni string
-			if t.sniffSNI && port == "443" {
-				sni = sniff.SniffTLS(peeked)
+			if t.sniffSNI {
+				if port == "443" {
+					sni = sniff.SniffTLS(peeked)
+				} else {
+					sni = sniff.SniffHTTP(peeked)
+				}
 			}
 
 			// SNI: upgrade DIRECT → PROXY
@@ -257,11 +261,14 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 		if packet, addr := peekUDP(conn); packet != nil {
 			conn = &prefixPacketConn{PacketConn: conn, first: packet, firstAddr: addr}
 
-			// BT: downgrade PROXY → DIRECT
+			// BT + WebRTC: downgrade PROXY → DIRECT
 			if t.sniffBT && action == k2rule.TargetProxy {
 				if sniff.IsUTP(packet) || sniff.IsUDPTracker(packet) {
 					action = k2rule.TargetDirect
 					slog.Debug("tunnel: BitTorrent UDP detected, forcing direct", "dest", dest)
+				} else if sniff.IsSTUN(packet) || sniff.IsDTLS(packet) {
+					action = k2rule.TargetDirect
+					slog.Debug("tunnel: WebRTC detected, forcing direct", "dest", dest)
 				}
 			}
 

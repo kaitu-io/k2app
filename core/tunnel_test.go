@@ -797,6 +797,146 @@ func TestClientTunnel_HandleUDP_NonBTStillProxied(t *testing.T) {
 	tunnel.Close()
 }
 
+func TestClientTunnel_HandleUDP_STUNForcedDirect(t *testing.T) {
+	// Start a real UDP listener as the direct target
+	directListener, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer directListener.Close()
+
+	serverGot := make(chan []byte, 1)
+	go func() {
+		buf := make([]byte, 4096)
+		n, _, err := directListener.ReadFrom(buf)
+		if err != nil {
+			return
+		}
+		pkt := make([]byte, n)
+		copy(pkt, buf[:n])
+		serverGot <- pkt
+	}()
+
+	dialer := newMockDialer()
+	prov := &mockProvider{}
+
+	tunnel := NewClientTunnel(ClientTunnelConfig{
+		Provider: prov,
+		Dialer:   dialer,
+		SniffBT:  true,
+		// Router nil → defaults to proxy → sniff will check for STUN
+	})
+
+	if err := tunnel.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	// STUN Binding Request: type=0x0001, length=0, magic=0x2112A442, txn_id=12 bytes
+	stunPacket := make([]byte, 20)
+	stunPacket[0], stunPacket[1] = 0x00, 0x01 // Binding Request
+	stunPacket[2], stunPacket[3] = 0x00, 0x00 // Length = 0
+	stunPacket[4], stunPacket[5], stunPacket[6], stunPacket[7] = 0x21, 0x12, 0xA4, 0x42 // Magic cookie
+
+	localPC := newMockPacketConn()
+
+	done := make(chan struct{})
+	go func() {
+		prov.handler.HandleUDP(localPC, directListener.LocalAddr().String())
+		close(done)
+	}()
+
+	localPC.injectRead(stunPacket, nil)
+
+	select {
+	case got := <-serverGot:
+		if !bytes.Equal(got, stunPacket) {
+			t.Errorf("direct listener got %x, want %x", got, stunPacket)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timeout waiting for direct listener to receive STUN packet")
+	}
+
+	localPC.closeConn()
+	<-done
+
+	dialer.mu.Lock()
+	defer dialer.mu.Unlock()
+	if len(dialer.udpCalls) != 0 {
+		t.Errorf("DialUDP called %d times, expected 0 (STUN should force direct)", len(dialer.udpCalls))
+	}
+
+	tunnel.Close()
+}
+
+func TestClientTunnel_HandleUDP_DTLSForcedDirect(t *testing.T) {
+	directListener, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer directListener.Close()
+
+	serverGot := make(chan []byte, 1)
+	go func() {
+		buf := make([]byte, 4096)
+		n, _, err := directListener.ReadFrom(buf)
+		if err != nil {
+			return
+		}
+		pkt := make([]byte, n)
+		copy(pkt, buf[:n])
+		serverGot <- pkt
+	}()
+
+	dialer := newMockDialer()
+	prov := &mockProvider{}
+
+	tunnel := NewClientTunnel(ClientTunnelConfig{
+		Provider: prov,
+		Dialer:   dialer,
+		SniffBT:  true,
+	})
+
+	if err := tunnel.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	// DTLS ClientHello: content_type=22(handshake), version=0xFEFD(DTLS 1.2), + padding
+	dtlsPacket := make([]byte, 13)
+	dtlsPacket[0] = 22   // handshake
+	dtlsPacket[1] = 0xFE // version major
+	dtlsPacket[2] = 0xFD // version minor (DTLS 1.2)
+
+	localPC := newMockPacketConn()
+
+	done := make(chan struct{})
+	go func() {
+		prov.handler.HandleUDP(localPC, directListener.LocalAddr().String())
+		close(done)
+	}()
+
+	localPC.injectRead(dtlsPacket, nil)
+
+	select {
+	case got := <-serverGot:
+		if !bytes.Equal(got, dtlsPacket) {
+			t.Errorf("direct listener got %x, want %x", got, dtlsPacket)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timeout waiting for direct listener to receive DTLS packet")
+	}
+
+	localPC.closeConn()
+	<-done
+
+	dialer.mu.Lock()
+	defer dialer.mu.Unlock()
+	if len(dialer.udpCalls) != 0 {
+		t.Errorf("DialUDP called %d times, expected 0 (DTLS should force direct)", len(dialer.udpCalls))
+	}
+
+	tunnel.Close()
+}
+
 func TestClientTunnel_HandleTCP_HTTPSniffReplay(t *testing.T) {
 	dialer := newMockDialer()
 	prov := &mockProvider{}
