@@ -232,6 +232,7 @@ func (e *Engine) Start(cfg Config) error {
 		WireReporter: e,
 		SniffBT:      !client.Rule.Global, // sniff BT in smart mode only
 		SniffSNI:     !client.Rule.Global, // sniff TLS/QUIC SNI in smart mode only
+		RewriteIPv6:  wireCfg.IPv6 == "",  // rewrite IPv6 PROXY dests when server lacks IPv6
 	}
 	if cfg.DirectDialer != nil {
 		tunnelCfg.DirectDialer = cfg.DirectDialer
@@ -256,7 +257,7 @@ func (e *Engine) Start(cfg Config) error {
 			}),
 			DirectDNS: dns.NewDirectDNSClient(client.DNS.Direct, dnsOpts...),
 			DNSCache:  dns.NewDNSCache(dns.DNSCacheConfig{}),
-			Filter:    dns.NewFilter(dns.FilterConfig{}),
+			Filter:    dns.NewFilter(dns.FilterConfig{EnableIPv6: wireCfg.IPv6 != ""}),
 		})
 		if err := tunnel.StartWithHandler(ctx, &dnsHandler{inner: tunnel, dns: dnsMW, engine: e}); err != nil {
 			if cfg.NetworkMonitor != nil {

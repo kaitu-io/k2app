@@ -51,8 +51,3 @@ func FormatSslipHost(ip string) string {
 	return strings.ReplaceAll(ip, ":", "-") + ".sslip.io"
 }
 
-// HasIPv6 checks whether this host has public IPv6 connectivity
-// by probing api6.ipify.org.
-func HasIPv6() bool {
-	return ProbePublicIP("https://api6.ipify.org") != ""
-}
