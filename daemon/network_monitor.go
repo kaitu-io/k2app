@@ -41,10 +41,22 @@ func NewNetworkMonitor() (engine.NetworkChangeNotifier, tun.DefaultInterfaceMoni
 
 func (m *singTunMonitor) Start(callback func()) error {
 	m.interfaceMonitor.RegisterCallback(func(defaultInterface *control.Interface, flags int) {
-		if callback != nil {
-			slog.Debug("network: default interface changed", "interface", defaultInterface.Name, "flags", flags)
-			callback()
+		if callback == nil {
+			return
 		}
+		if defaultInterface == nil {
+			slog.Debug("network: default interface changed but nil, skipping", "callbackFlags", flags)
+			return
+		}
+		slog.Debug("network: default interface changed",
+			"interface", defaultInterface.Name,
+			"index", defaultInterface.Index,
+			"mtu", defaultInterface.MTU,
+			"ifFlags", defaultInterface.Flags.String(),
+			"addrs", defaultInterface.Addresses,
+			"callbackFlags", flags,
+		)
+		callback()
 	})
 	if err := m.networkMonitor.Start(); err != nil {
 		return err
