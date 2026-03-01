@@ -118,3 +118,41 @@ func TestSniffHTTP(t *testing.T) {
 		})
 	}
 }
+
+var benchHTTPData = []byte("GET /index.html HTTP/1.1\r\nHost: example.com\r\nAccept: text/html\r\nConnection: keep-alive\r\n\r\n")
+
+func BenchmarkSniffHTTP(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		SniffHTTP(benchHTTPData)
+	}
+}
+
+func BenchmarkSniffHTTP_NotHTTP(b *testing.B) {
+	data := []byte{0x16, 0x03, 0x01, 0x00, 0x05}
+	b.ReportAllocs()
+	for b.Loop() {
+		SniffHTTP(data)
+	}
+}
+
+func BenchmarkIsSTUN(b *testing.B) {
+	pkt := make([]byte, 20)
+	pkt[0], pkt[1] = 0x00, 0x01
+	pkt[4], pkt[5], pkt[6], pkt[7] = 0x21, 0x12, 0xA4, 0x42
+	b.ReportAllocs()
+	for b.Loop() {
+		IsSTUN(pkt)
+	}
+}
+
+func BenchmarkIsDTLS(b *testing.B) {
+	pkt := make([]byte, 13)
+	pkt[0] = 22
+	pkt[1] = 0xFE
+	pkt[2] = 0xFD
+	b.ReportAllocs()
+	for b.Loop() {
+		IsDTLS(pkt)
+	}
+}
