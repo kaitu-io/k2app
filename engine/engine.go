@@ -105,11 +105,23 @@ func (e *Engine) Start(cfg Config) error {
 		return e.fail(err)
 	}
 
+	// 2.5. Start network monitor — DirectDialer needs DefaultInterface()
+	// for interface-bound dialing. Must start before Happy Eyeballs (step 3).
+	// Safe: OnNetworkChanged() early-returns when state != connected.
+	if cfg.NetworkMonitor != nil {
+		if err := cfg.NetworkMonitor.Start(func() { e.OnNetworkChanged() }); err != nil {
+			slog.Warn("engine: network monitor start failed (non-fatal)", "err", err)
+		}
+	}
+
 	// 3. Resolve dial address via Happy Eyeballs (RFC 8305).
 	// When both IPv6 and IPv4 are available, races them with IPv6 head start.
 	// Must complete BEFORE step 4 — NewQUICClient/NewTCPWSClient cache DialAddr.
 	dialAddr, err := resolveDialAddr(ctx, wireCfg, cfg.DirectDialer)
 	if err != nil {
+		if cfg.NetworkMonitor != nil {
+			cfg.NetworkMonitor.Close()
+		}
 		return e.fail(fmt.Errorf("address resolution: %w", err))
 	}
 	if dialAddr != "" {
@@ -137,15 +149,6 @@ func (e *Engine) Start(cfg Config) error {
 	default:
 		tm.SetQUIC(quicClient)
 		tm.SetTCPWS(tcpwsClient)
-	}
-
-	// 4.1 Start network monitor early — DirectDialer needs DefaultInterface()
-	// for interface-bound dialing. Must start before wire probe (step 4.5).
-	// Safe: OnNetworkChanged() early-returns when state != connected.
-	if cfg.NetworkMonitor != nil {
-		if err := cfg.NetworkMonitor.Start(func() { e.OnNetworkChanged() }); err != nil {
-			slog.Warn("engine: network monitor start failed (non-fatal)", "err", err)
-		}
 	}
 
 	// 4.5 Verify wire connectivity before setting up TUN/provider.
