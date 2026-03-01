@@ -1,0 +1,4 @@
+FROM debian:bookworm-slim
+COPY .build/k2s /usr/local/bin/k2s
+COPY .build/gen-config /usr/local/bin/gen-config
+ENTRYPOINT ["k2s"]

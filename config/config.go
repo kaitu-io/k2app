@@ -199,7 +199,7 @@ func setServerDefaults(cfg *ServerConfig) {
 	if cfg.Listen == "" {
 		cfg.Listen = ":443"
 	}
-	if cfg.CertDir == "" {
+	if cfg.CertDir == "" && cfg.TLS.Cert == "" {
 		cfg.CertDir = defaultServerDir()
 	}
 	if cfg.ECH.Provider == "" {

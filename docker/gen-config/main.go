@@ -24,6 +24,7 @@ func main() {
 	serverHost := flag.String("host", "k2s", "server hostname (for client wire URL)")
 	serverPort := flag.Int("port", 443, "server port")
 	publicName := flag.String("public-name", "cloudflare-ech.com", "ECH public name (outer SNI)")
+	listenAddr := flag.String("listen", "", "daemon HTTP listen address (e.g., 0.0.0.0:1777)")
 	flag.Parse()
 
 	if err := os.MkdirAll(*outDir, 0755); err != nil {
@@ -94,6 +95,10 @@ log:
   level: debug
   output: stderr
 `, wireURL)
+
+	if *listenAddr != "" {
+		clientCfg += fmt.Sprintf("listen: \"%s\"\n", *listenAddr)
+	}
 
 	clientCfgPath := filepath.Join(*outDir, "client.yaml")
 	if err := os.WriteFile(clientCfgPath, []byte(clientCfg), 0644); err != nil {

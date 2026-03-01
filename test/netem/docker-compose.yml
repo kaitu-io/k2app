@@ -1,0 +1,42 @@
+services:
+  init:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    entrypoint: ["gen-config", "-out", "/etc/k2", "-host", "k2s", "-port", "443", "-listen", "0.0.0.0:1777"]
+    volumes:
+      - k2-config:/etc/k2
+
+  k2s:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    command: ["-c", "/etc/k2/server.yaml"]
+    depends_on:
+      init: { condition: service_completed_successfully }
+    volumes:
+      - k2-config:/etc/k2
+    networks: [k2-net]
+
+  k2:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    command: ["-c", "/etc/k2/client.yaml"]
+    depends_on:
+      k2s: { condition: service_started }
+      init: { condition: service_completed_successfully }
+    volumes:
+      - k2-config:/etc/k2
+    ports:
+      - "11080:1080"
+      - "11777:1777"
+    cap_add: [NET_ADMIN]
+    networks: [k2-net]
+
+networks:
+  k2-net:
+    driver: bridge
+
+volumes:
+  k2-config:

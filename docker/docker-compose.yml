@@ -14,7 +14,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
       target: k2s
-    command: ["run", "-s", "/etc/k2/server.yaml"]
+    command: ["-c", "/etc/k2/server.yaml"]
     depends_on:
       init:
         condition: service_completed_successfully
@@ -29,7 +29,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
       target: k2
-    command: ["run", "-c", "/etc/k2/client.yaml"]
+    command: ["-c", "/etc/k2/client.yaml"]
     depends_on:
       k2s:
         condition: service_started
