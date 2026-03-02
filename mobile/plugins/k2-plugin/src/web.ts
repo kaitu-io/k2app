@@ -50,4 +50,8 @@ export class K2PluginWeb extends WebPlugin implements K2PluginInterface {
   async installNativeUpdate(_options: { path: string }): Promise<void> {
     throw this.unavailable('K2Plugin is not available on web');
   }
+
+  async debugDump(): Promise<Record<string, unknown>> {
+    throw this.unavailable('K2Plugin is not available on web');
+  }
 }

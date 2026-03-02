@@ -8,21 +8,27 @@ pre-build:
 	mkdir -p webapp/public
 	echo '{"version":"$(VERSION)"}' > webapp/public/version.json
 
-build-webapp:
+build-k2-plugin:
+	cd mobile/plugins/k2-plugin && npm run build
+
+build-webapp: build-k2-plugin
 	cd webapp && yarn build
 
 # --- k2 sidecar (delegates to k2/Makefile) ---
 build-k2-macos:
 	cd k2 && make build-darwin-universal $(K2_VARS)
+	mkdir -p $(K2_BIN)
 	cp k2/build/k2-darwin-universal $(K2_BIN)/k2-universal-apple-darwin
 
 build-k2-windows:
 	cd k2/daemon/wintun && go run gen.go
 	cd k2 && make build-windows-amd64 $(K2_VARS)
+	mkdir -p $(K2_BIN)
 	cp k2/build/k2-windows-amd64.exe $(K2_BIN)/k2-x86_64-pc-windows-msvc.exe
 
 build-k2-linux:
 	cd k2 && make build-linux-amd64 $(K2_VARS)
+	mkdir -p $(K2_BIN)
 	cp k2/build/k2-linux-amd64 $(K2_BIN)/k2-x86_64-unknown-linux-gnu
 
 # --- Desktop builds ---
