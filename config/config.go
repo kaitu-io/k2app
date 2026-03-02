@@ -77,8 +77,10 @@ type ECHConfig struct {
 }
 
 // AuthConfig contains server auth configuration.
+// Validators are checked in order: users_file → remote_url → accept-all.
 type AuthConfig struct {
-	RemoteURL string        `yaml:"remote_url"`
+	UsersFile string        `yaml:"users_file"` // path to users file (udid:token per line)
+	RemoteURL string        `yaml:"remote_url"` // Center API auth URL
 	CacheTTL  time.Duration `yaml:"cache_ttl"`
 }
 

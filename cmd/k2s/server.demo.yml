@@ -34,9 +34,10 @@ listen: ":443"
 # Per-client rate limit in bytes/sec (0 = unlimited)
 # rate: 0
 
-# Authentication
+# Authentication — validators checked in order, first match wins.
 # auth:
-#   remote_url: "https://api.example.com/k2/auth"
+#   users_file: "/etc/k2s/users"    # file-based (udid:token per line, hot-reload)
+#   remote_url: "https://api.example.com/k2/auth"  # Center API
 #   cache_ttl: 5m
 
 # Logging

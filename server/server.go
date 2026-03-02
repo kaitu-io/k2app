@@ -104,10 +104,27 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 		}
 	}
 
-	// Auth handler — accept all non-empty credentials for now.
-	s.authHandler = wire.NewAuthHandler(store, func(jwt, udid string) bool {
-		return jwt != "" && udid != ""
-	})
+	// Auth: build validator chain (users_file → remote_url → accept-all).
+	var validators []wire.JWTValidator
+	if cfg.Auth.UsersFile != "" {
+		slog.Info("server: auth chain", "mode", "users_file", "path", cfg.Auth.UsersFile)
+		validators = append(validators, wire.NewUsersFileValidator(cfg.Auth.UsersFile))
+	}
+	if cfg.Auth.RemoteURL != "" {
+		slog.Info("server: auth chain", "mode", "remote_url", "url", cfg.Auth.RemoteURL)
+		validators = append(validators, wire.NewRemoteValidator(cfg.Auth.RemoteURL))
+	}
+
+	var validator wire.JWTValidator
+	if len(validators) > 0 {
+		validator = wire.ChainValidators(validators...)
+	} else {
+		slog.Info("server: auth chain", "mode", "accept-all")
+		validator = func(jwt, udid string) bool {
+			return jwt != "" && udid != ""
+		}
+	}
+	s.authHandler = wire.NewAuthHandler(store, validator)
 
 	return s, nil
 }
