@@ -15,6 +15,7 @@ import type { Metadata } from 'next';
 import { posts } from '#velite';
 import { routing } from '@/i18n/routing';
 import type { K2Post } from '@/lib/k2-posts';
+import { generateMetadata as generateBaseMetadata, baseUrl } from '../../metadata';
 
 /** Resolve a slug from the optional catch-all path param. */
 function resolveSlug(path: string[] | undefined): string {
@@ -22,6 +23,14 @@ function resolveSlug(path: string[] | undefined): string {
     return 'k2';
   }
   return `k2/${path.join('/')}`;
+}
+
+/** Build the URL pathname from the catch-all path param. */
+function resolvePathname(path: string[] | undefined): string {
+  if (!path || path.length === 0) {
+    return '/k2';
+  }
+  return `/k2/${path.join('/')}`;
 }
 
 /** Find a published k2 post by locale + slug, with zh-CN fallback. */
@@ -54,21 +63,25 @@ export async function generateMetadata({
   const { locale, path } = await params;
   const slug = resolveSlug(path);
   const post = findK2Post(locale, slug);
+  const pathname = resolvePathname(path);
 
   if (post) {
-    return {
+    return generateBaseMetadata(locale, pathname, {
       title: post.title,
       description: post.summary,
-      openGraph: {
-        title: post.title,
-        description: post.summary,
+      ogType: 'article',
+      article: {
+        publishedTime: post.date,
+        modifiedTime: post.date,
+        section: post.section,
+        tags: post.tags,
       },
-    };
+    });
   }
 
-  return {
+  return generateBaseMetadata(locale, pathname, {
     title: 'k2 | Kaitu',
-  };
+  });
 }
 
 export function generateStaticParams(): { locale: string; path: string[] | undefined }[] {
@@ -120,15 +133,41 @@ export default async function K2Page({
     notFound();
   }
 
+  const pathname = resolvePathname(path);
+
+  // Per-article structured data — content is Velite-processed at build time (trusted source)
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'TechArticle',
+    headline: post.title,
+    description: post.summary || '',
+    url: `${baseUrl}/${locale}${pathname}`,
+    datePublished: post.date,
+    dateModified: post.date,
+    inLanguage: locale,
+    wordCount: post.metadata?.wordCount,
+    author: { '@type': 'Organization', name: 'Kaitu', url: baseUrl },
+    publisher: { '@type': 'Organization', name: 'Kaitu', url: baseUrl },
+    isPartOf: { '@type': 'WebSite', name: 'Kaitu', url: baseUrl },
+    mainEntityOfPage: { '@type': 'WebPage', '@id': `${baseUrl}/${locale}${pathname}` },
+  };
+
   // Content is Velite-processed Markdown (trusted build-time source)
-  /* eslint-disable-next-line react/no-danger */
+  /* eslint-disable react/no-danger */
   return (
-    <article className="prose max-w-none min-w-0 flex-1">
-      <h1 className="text-3xl font-bold text-foreground mb-4">{post.title}</h1>
-      {post.summary && (
-        <p className="text-lg text-muted-foreground mb-8">{post.summary}</p>
-      )}
-      <div dangerouslySetInnerHTML={{ __html: post.content }} />
-    </article>
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+      <article className="prose max-w-none min-w-0 flex-1">
+        <h1 className="text-3xl font-bold text-foreground mb-4">{post.title}</h1>
+        {post.summary && (
+          <p className="text-lg text-muted-foreground mb-8">{post.summary}</p>
+        )}
+        <div dangerouslySetInnerHTML={{ __html: post.content }} />
+      </article>
+    </>
   );
+  /* eslint-enable react/no-danger */
 }

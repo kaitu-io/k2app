@@ -17,7 +17,6 @@ import {
   Smartphone,
   CheckCircle,
   Star,
-  Users,
   Mail
 } from 'lucide-react';
 
@@ -397,50 +396,6 @@ export default async function RoutersPage({
                 </li>
               </ul>
             </Card>
-          </div>
-        </div>
-      </section>
-
-      {/* Contact Section */}
-      <section className="py-16 px-4 sm:px-6 lg:px-8 bg-blue-50 dark:bg-blue-900/20">
-        <div className="max-w-4xl mx-auto text-center">
-          <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-6">
-            {t('routers.contactUsMore')}
-          </h2>
-          <p className="text-gray-600 dark:text-gray-300 text-lg mb-8">
-            {t('routers.teamDescription')}
-          </p>
-
-          <div className="grid sm:grid-cols-2 gap-6 max-w-2xl mx-auto">
-            <Card className="p-6">
-              <Mail className="w-8 h-8 text-blue-600 mx-auto mb-3" />
-              <h3 className="font-semibold mb-2">{t('routers.emailConsult')}</h3>
-              <p className="text-gray-600 dark:text-gray-300 text-sm mb-3">
-                {t('routers.productDetailsTech')}
-              </p>
-              <Button variant="outline" className="w-full" asChild>
-                <a href="mailto:contact@kaitu.io">
-                  {"contact@kaitu.io"}
-                </a>
-              </Button>
-            </Card>
-
-            <Card className="p-6">
-              <Users className="w-8 h-8 text-green-600 mx-auto mb-3" />
-              <h3 className="font-semibold mb-2">{t('routers.onlineService')}</h3>
-              <p className="text-gray-600 dark:text-gray-300 text-sm mb-3">
-                {t('routers.realTimeResponse')}
-              </p>
-              <Button variant="outline" className="w-full">
-                {t('routers.startOnlineService')}
-              </Button>
-            </Card>
-          </div>
-
-          <div className="mt-8 p-4 bg-white dark:bg-gray-800 rounded-lg">
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              {t('routers.warranty')}
-            </p>
           </div>
         </div>
       </section>

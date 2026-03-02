@@ -39,6 +39,12 @@ export default function Header() {
                 {t('nav.nav.k2Protocol')}
               </Link>
               <Link
+                href="/routers"
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {t('nav.nav.routers')}
+              </Link>
+              <Link
                 href="/opensource"
                 className="text-muted-foreground hover:text-foreground transition-colors"
                 title={t('nav.nav.openSource')}

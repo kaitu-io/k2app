@@ -1,10 +1,11 @@
 {
   "hero": {
-    "title": "k2 隐身网络隧道",
-    "subtitle": "搭载 k2arc 自适应速率控制，ECH 加密隐身，零配置部署",
-    "description": "开途 k2 是搭载 k2arc 自适应速率控制的下一代隐身隧道协议。k2arc 自动探测最优发送速率，在 GFW 高丢包网络中维持远超 BBR 的吞吐量。基于 ECH 加密 SNI + TLS 指纹伪装实现流量不可检测，QUIC + TCP-WS 双栈传输，一行命令完成部署。",
+    "title": "30% 丢包，满速。",
+    "subtitle": "这不科学——但 k2 做到了。",
+    "description": "k2arc 重写了拥塞控制的规则。在高丢包弱网环境中，k2 依然保持远超传统协议的稳定吞吐。基于 ECH 加密隐身 + QUIC/TCP-WS 双栈传输，一行命令部署。",
     "cta_primary": "开通和续费",
-    "cta_secondary": "下载应用",
+    "cta_secondary": "下载客户端",
+    "terminalTitle": "服务端自部署",
     "downloadClient": "下载客户端",
     "quickActivation": "快速开通",
     "smartRouter": "智能路由器",

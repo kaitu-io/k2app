@@ -11,7 +11,7 @@ export default function Footer() {
   return (
     <footer className="py-12 px-4 sm:px-6 lg:px-8 border-t">
       <div className="max-w-7xl mx-auto">
-        <div className="grid md:grid-cols-4 gap-8">
+        <div className="grid md:grid-cols-3 gap-8">
           <div>
             <div className="flex items-center space-x-2 mb-4">
               <Image 
@@ -51,16 +51,6 @@ export default function Footer() {
                   {t('changelog.title')}
                 </Link>
               </li>
-              <li><a href="#" className="hover:text-blue-600">{t('nav.footer.product.nodeStatus')}</a></li>
-            </ul>
-          </div>
-
-          <div>
-            <h4 className="font-semibold text-gray-900 dark:text-white mb-4">{t('nav.footer.support.title')}</h4>
-            <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-300">
-              <li><a href="#" className="hover:text-blue-600">{t('nav.footer.support.userGuide')}</a></li>
-              <li><a href="#" className="hover:text-blue-600">{t('nav.footer.support.faq')}</a></li>
-              <li><a href="#" className="hover:text-blue-600">{t('nav.footer.support.contact')}</a></li>
             </ul>
           </div>
 
@@ -82,6 +72,7 @@ export default function Footer() {
         </div>
         
         <div className="mt-8 pt-8 border-t text-center text-sm text-gray-600 dark:text-gray-300">
+          <p className="mb-2 text-muted-foreground/60 italic">{"愿上帝为你开路"}</p>
           <p>{"©"} {COMPANY_INFO.year} {"Kaitu LLC"}{". "}{t('nav.footer.copyright')}</p>
         </div>
       </div>

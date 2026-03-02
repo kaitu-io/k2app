@@ -57,13 +57,31 @@ export default function sitemap(): MetadataRoute.Sitemap {
   });
 
   // Add content pages from velite (published posts only)
+  // Deduplicate by slug, then expand to all locales with hreflang alternates.
+  // All locale URLs are valid (generateStaticParams + zh-CN fallback).
   const publishedPosts = posts.filter((post) => !post.draft);
-  for (const post of publishedPosts) {
-    sitemapEntries.push({
-      url: `${baseUrl}/${post.locale}/${post.slug}`,
-      lastModified: new Date(post.date),
-      changeFrequency: 'weekly',
-      priority: post.slug.startsWith('k2/') ? 0.9 : 0.6,
+  const uniqueSlugs = [...new Set(publishedPosts.map(p => p.slug))];
+
+  for (const slug of uniqueSlugs) {
+    const postsForSlug = publishedPosts.filter(p => p.slug === slug);
+    const latestDate = postsForSlug.reduce(
+      (latest, p) => (new Date(p.date) > latest ? new Date(p.date) : latest),
+      new Date(0)
+    );
+
+    const alternates: Record<string, string> = {};
+    routing.locales.forEach(locale => {
+      alternates[locale] = `${baseUrl}/${locale}/${slug}`;
+    });
+
+    routing.locales.forEach(locale => {
+      sitemapEntries.push({
+        url: `${baseUrl}/${locale}/${slug}`,
+        lastModified: latestDate,
+        changeFrequency: 'weekly',
+        priority: slug.startsWith('k2') ? 0.9 : 0.6,
+        alternates: { languages: alternates },
+      });
     });
   }
 

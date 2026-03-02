@@ -58,23 +58,9 @@ export default async function K2Layout({
     }
   }
 
-  const jsonLd = {
-    '@context': 'https://schema.org',
-    '@type': 'TechArticle',
-    publisher: {
-      '@type': 'Organization',
-      name: 'Kaitu',
-      url: 'https://kaitu.io',
-    },
-  };
-
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-      />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="flex gap-8">
           <K2Sidebar

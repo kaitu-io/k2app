@@ -13,9 +13,7 @@ import {
   Smartphone,
   Monitor,
   Download,
-  Terminal,
   Zap,
-  Server
 } from 'lucide-react';
 
 type Locale = (typeof routing.locales)[number];
@@ -36,7 +34,7 @@ export async function generateMetadata({
   const t = await getTranslations({ locale, namespace: 'hero' });
 
   return {
-    title: t('hero.title'),
+    title: `${t('hero.title')} Kaitu k2`,
     description: t('hero.description'),
   };
 }
@@ -285,11 +283,8 @@ export default async function Home({
           </div>
 
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6 leading-tight"
-            style={{ fontFamily: 'var(--font-mono), monospace' }}>
-            <span style={{ color: 'var(--primary)' }}>k2</span>{' '}
-            <span style={{ color: 'var(--foreground)' }}>
-              {t('hero.title').replace(/^k2\s*/, '')}
-            </span>
+            style={{ fontFamily: 'var(--font-mono), monospace', color: 'var(--foreground)' }}>
+            {t('hero.title')}
           </h1>
 
           <p className="text-xl mb-4 max-w-3xl mx-auto"
@@ -328,7 +323,7 @@ export default async function Home({
               <span className="w-3 h-3 rounded-full bg-yellow-500 opacity-70"></span>
               <span className="w-3 h-3 rounded-full opacity-70" style={{ backgroundColor: 'var(--primary)' }}></span>
               <span className="ml-2 text-xs" style={{ color: 'hsl(var(--muted-foreground))', fontFamily: 'var(--font-mono), monospace' }}>
-                k2s — server
+                {"k2s — "}{t('hero.terminalTitle')}
               </span>
             </div>
             <div className="p-6 text-sm space-y-2" style={{ fontFamily: 'var(--font-mono), monospace' }}>
@@ -445,85 +440,6 @@ export default async function Home({
                 ))}
               </tbody>
             </table>
-          </div>
-        </div>
-      </section>
-
-      {/* Quick Start Section */}
-      <section className="py-20 px-4 sm:px-6 lg:px-8"
-        style={{ backgroundColor: 'rgba(17,17,24,0.5)' }}>
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center mb-14">
-            <h2 className="text-3xl font-bold mb-4"
-              style={{ fontFamily: 'var(--font-mono), monospace' }}>
-              {t('hero.quickstart.title')}
-            </h2>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-8">
-            {/* Server Terminal */}
-            <div className="rounded-lg overflow-hidden"
-              style={{ border: '1px solid rgba(0,255,136,0.3)' }}>
-              <div className="flex items-center gap-2 px-4 py-3"
-                style={{ backgroundColor: 'rgba(0,255,136,0.08)', borderBottom: '1px solid rgba(0,255,136,0.15)' }}>
-                <Server className="w-4 h-4" style={{ color: 'var(--primary)' }} />
-                <span className="text-sm font-bold" style={{ color: 'var(--primary)', fontFamily: 'var(--font-mono), monospace' }}>
-                  {t('hero.quickstart.server.title')}
-                </span>
-              </div>
-              <div className="p-5 text-sm space-y-2"
-                style={{ backgroundColor: 'var(--card)', fontFamily: 'var(--font-mono), monospace' }}>
-                <div style={{ color: 'hsl(var(--muted-foreground))' }}>
-                  {t('hero.quickstart.server.step1')}
-                </div>
-                <div>
-                  <span style={{ color: 'hsl(var(--muted-foreground))' }}>$ </span>
-                  <span style={{ color: 'var(--primary)' }}>{t('hero.quickstart.server.step2')}</span>
-                </div>
-                <div className="pt-2" style={{ color: 'hsl(var(--muted-foreground))' }}>
-                  {t('hero.quickstart.server.step3')}
-                </div>
-                <div>
-                  <span style={{ color: 'hsl(var(--muted-foreground))' }}>$ </span>
-                  <span style={{ color: 'var(--primary)' }}>{t('hero.quickstart.server.step4')}</span>
-                </div>
-                <div className="pt-2" style={{ color: 'hsl(var(--muted-foreground))' }}>
-                  {t('hero.quickstart.server.step5')}
-                </div>
-                <div style={{ color: 'var(--secondary)' }}>
-                  {t('hero.quickstart.server.step6')}
-                </div>
-              </div>
-            </div>
-
-            {/* Client Terminal */}
-            <div className="rounded-lg overflow-hidden"
-              style={{ border: '1px solid rgba(0,212,255,0.3)' }}>
-              <div className="flex items-center gap-2 px-4 py-3"
-                style={{ backgroundColor: 'rgba(0,212,255,0.08)', borderBottom: '1px solid rgba(0,212,255,0.15)' }}>
-                <Terminal className="w-4 h-4" style={{ color: 'var(--secondary)' }} />
-                <span className="text-sm font-bold" style={{ color: 'var(--secondary)', fontFamily: 'var(--font-mono), monospace' }}>
-                  {t('hero.quickstart.client.title')}
-                </span>
-              </div>
-              <div className="p-5 text-sm space-y-2"
-                style={{ backgroundColor: 'var(--card)', fontFamily: 'var(--font-mono), monospace' }}>
-                <div style={{ color: 'hsl(var(--muted-foreground))' }}>
-                  {t('hero.quickstart.client.step1')}
-                </div>
-                <div>
-                  <span style={{ color: 'hsl(var(--muted-foreground))' }}>$ </span>
-                  <span style={{ color: 'var(--secondary)' }}>{t('hero.quickstart.client.step2')}</span>
-                </div>
-                <div className="pt-2" style={{ color: 'hsl(var(--muted-foreground))' }}>
-                  {t('hero.quickstart.client.step3')}
-                </div>
-                <div>
-                  <span style={{ color: 'hsl(var(--muted-foreground))' }}>$ </span>
-                  <span style={{ color: 'var(--secondary)' }}>{t('hero.quickstart.client.step4')}</span>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </section>
