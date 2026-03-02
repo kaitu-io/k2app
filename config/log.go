@@ -11,6 +11,10 @@ import (
 	"gopkg.in/lumberjack.v2"
 )
 
+// LogLevel is the global mutable log level. SetupLogging initializes it;
+// SetLogLevel changes it at runtime without recreating the handler.
+var LogLevel slog.LevelVar
+
 // parseLevel converts a string log level to slog.Level.
 // Defaults to slog.LevelInfo for unknown values.
 func parseLevel(level string) slog.Level {
@@ -91,16 +95,12 @@ func DefaultLogPath(name string) string {
 //   - any other value → treated as a file path; lumberjack is used for rotation
 //
 // If output is empty, cfg.Output is used as-is; if still empty, "stderr" is the default.
-// The K2_LOG_LEVEL environment variable overrides cfg.Level if set (debug|info|warn|error).
+// The level is set on the package-level LogLevel var, which can be changed at runtime
+// via SetLogLevel without recreating the handler.
 // Returns a cleanup function that restores the previous slog default handler and closes
 // any open file writers.
 func SetupLogging(cfg LogConfig, name string) (func(), error) {
-	// Environment variable overrides config file level.
-	levelStr := cfg.Level
-	if envLevel := os.Getenv("K2_LOG_LEVEL"); envLevel != "" {
-		levelStr = envLevel
-	}
-	level := parseLevel(levelStr)
+	LogLevel.Set(parseLevel(cfg.Level))
 
 	output := cfg.Output
 	if output == "" {
@@ -146,7 +146,7 @@ func SetupLogging(cfg LogConfig, name string) (func(), error) {
 		}
 	}
 
-	opts := &slog.HandlerOptions{Level: level}
+	opts := &slog.HandlerOptions{Level: &LogLevel}
 	handler := slog.NewTextHandler(writer, opts)
 	slog.SetDefault(slog.New(handler))
 
@@ -156,4 +156,10 @@ func SetupLogging(cfg LogConfig, name string) (func(), error) {
 	}
 
 	return cleanup, nil
+}
+
+// SetLogLevel changes the global log level at runtime without recreating
+// the handler or writer. Valid values: debug, info, warn, error.
+func SetLogLevel(level string) {
+	LogLevel.Set(parseLevel(level))
 }

@@ -257,6 +257,72 @@ func TestStatusIncludesConfig(t *testing.T) {
 }
 
 
+func TestHandleLogLevel(t *testing.T) {
+	d := New()
+
+	// POST with valid level.
+	body := `{"level":"debug"}`
+	req := httptest.NewRequest("POST", "/api/log-level", bytes.NewReader([]byte(body)))
+	w := httptest.NewRecorder()
+	d.handleLogLevel(w, req)
+
+	var resp Response
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp.Code != 0 {
+		t.Fatalf("expected code 0, got %d: %s", resp.Code, resp.Message)
+	}
+
+	// Verify the level actually changed.
+	if config.LogLevel.Level() != -4 { // slog.LevelDebug = -4
+		t.Fatalf("expected debug level (-4), got %d", config.LogLevel.Level())
+	}
+
+	// Switch to error.
+	body = `{"level":"error"}`
+	req = httptest.NewRequest("POST", "/api/log-level", bytes.NewReader([]byte(body)))
+	w = httptest.NewRecorder()
+	d.handleLogLevel(w, req)
+
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp.Code != 0 {
+		t.Fatalf("expected code 0, got %d", resp.Code)
+	}
+	if config.LogLevel.Level() != 8 { // slog.LevelError = 8
+		t.Fatalf("expected error level (8), got %d", config.LogLevel.Level())
+	}
+
+	// Restore to info for other tests.
+	config.SetLogLevel("info")
+}
+
+func TestHandleLogLevel_MethodNotAllowed(t *testing.T) {
+	d := New()
+
+	req := httptest.NewRequest("GET", "/api/log-level", nil)
+	w := httptest.NewRecorder()
+	d.handleLogLevel(w, req)
+
+	var resp Response
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp.Code != 405 {
+		t.Fatalf("expected code 405, got %d", resp.Code)
+	}
+}
+
+func TestHandleLogLevel_InvalidJSON(t *testing.T) {
+	d := New()
+
+	req := httptest.NewRequest("POST", "/api/log-level", bytes.NewReader([]byte("not-json")))
+	w := httptest.NewRecorder()
+	d.handleLogLevel(w, req)
+
+	var resp Response
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp.Code != 400 {
+		t.Fatalf("expected code 400, got %d", resp.Code)
+	}
+}
+
 // failingStartFunc always returns an error.
 func failingStartFunc(eng *engine.Engine, cfg engine.Config) error {
 	return fmt.Errorf("simulated failure")

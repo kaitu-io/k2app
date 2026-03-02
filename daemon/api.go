@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"runtime"
 	"strings"
@@ -147,6 +148,23 @@ func (d *Daemon) handleStats(w http.ResponseWriter, r *http.Request) {
 		history = []engine.HealthSnapshot{}
 	}
 	writeJSON(w, Response{Code: 0, Message: "ok", Data: history})
+}
+
+func (d *Daemon) handleLogLevel(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, Response{Code: 405, Message: "method not allowed"})
+		return
+	}
+	var req struct {
+		Level string `json:"level"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, Response{Code: 400, Message: "invalid request"})
+		return
+	}
+	config.SetLogLevel(req.Level)
+	slog.Info("log level changed", "level", req.Level)
+	writeJSON(w, Response{Code: 0, Message: "ok"})
 }
 
 func writeJSON(w http.ResponseWriter, resp Response) {

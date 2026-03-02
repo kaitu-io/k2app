@@ -91,6 +91,7 @@ func (d *Daemon) Run(ctx context.Context, listenAddr string) error {
 	mux.HandleFunc("/ping", d.handlePing)
 	mux.HandleFunc("/metrics", d.handleMetrics)
 	mux.HandleFunc("/api/core", d.handleCore)
+	mux.HandleFunc("/api/log-level", d.handleLogLevel)
 	mux.HandleFunc("/api/events", d.handleEvents)
 	mux.HandleFunc("/api/stats", d.handleStats)
 	mux.HandleFunc("/stats", d.handleStatsPage)

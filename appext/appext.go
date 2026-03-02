@@ -5,18 +5,12 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
-	"os"
 	"path/filepath"
 	"syscall"
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/engine"
 )
-
-func init() {
-	// Enable debug-level logging for mobile builds.
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})))
-}
 
 // Engine is the mobile VPN engine. It delegates all tunnel assembly and
 // lifecycle management to engine.Engine, exposing only the gomobile-compatible
@@ -73,6 +67,15 @@ func (e *Engine) Start(configJSON string, fd int, cfg *EngineConfig) error {
 		return fmt.Errorf("parse config: %w", err)
 	}
 	config.SetDefaults(&clientCfg)
+
+	// Configure logging from client config (default: info to stderr).
+	logCfg := config.LogConfig{Level: clientCfg.Log.Level, Output: "stderr"}
+	if cfg.LogDir != "" {
+		logCfg.Output = filepath.Join(cfg.LogDir, "k2.log")
+	}
+	if _, err := config.SetupLogging(logCfg, "k2"); err != nil {
+		slog.Warn("appext: SetupLogging failed, using defaults", "err", err)
+	}
 
 	// Inject platform cache dir for k2rule.
 	if cfg.CacheDir != "" {

@@ -36,6 +36,11 @@ Real-time push. Two event types:
 
 Heartbeat every 15s. Buffered per client (cap 8), slow clients get dropped.
 
+### POST /api/log-level
+
+Hot-switch global slog log level at runtime. Body: `{"level": "debug"}`.
+Valid levels: `debug`, `info`, `warn`, `error`. Uses `config.SetLogLevel()` (LevelVar).
+
 ### Other
 
 - `GET /ping` — Health check (returns `{"code":0,"message":"pong"}`)

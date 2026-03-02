@@ -144,37 +144,41 @@ func TestSetupLogging_LevelError(t *testing.T) {
 	}
 }
 
-// TestSetupLogging_EnvOverride verifies that K2_LOG_LEVEL env var overrides config level.
-func TestSetupLogging_EnvOverride(t *testing.T) {
-	t.Setenv("K2_LOG_LEVEL", "debug")
-
-	cfg := LogConfig{Level: "error", Output: "stderr"}
+// TestSetLogLevel_HotSwitch verifies that SetLogLevel changes the global log level
+// at runtime without recreating the handler.
+func TestSetLogLevel_HotSwitch(t *testing.T) {
+	cfg := LogConfig{Level: "info", Output: "stderr"}
 	cleanup, err := SetupLogging(cfg, "k2")
 	if err != nil {
 		t.Fatalf("SetupLogging: %v", err)
 	}
 	defer cleanup()
 
+	// Initially info — debug should be disabled.
 	handler := slog.Default().Handler()
+	if handler.Enabled(nil, slog.LevelDebug) {
+		t.Fatal("debug should be disabled at info level")
+	}
+
+	// Hot-switch to debug.
+	SetLogLevel("debug")
 	if !handler.Enabled(nil, slog.LevelDebug) {
-		t.Error("K2_LOG_LEVEL=debug should override config level error, but debug is not enabled")
+		t.Error("after SetLogLevel(debug), debug should be enabled")
 	}
-}
 
-// TestSetupLogging_EnvEmpty verifies that empty K2_LOG_LEVEL does not override config.
-func TestSetupLogging_EnvEmpty(t *testing.T) {
-	t.Setenv("K2_LOG_LEVEL", "")
-
-	cfg := LogConfig{Level: "error", Output: "stderr"}
-	cleanup, err := SetupLogging(cfg, "k2")
-	if err != nil {
-		t.Fatalf("SetupLogging: %v", err)
-	}
-	defer cleanup()
-
-	handler := slog.Default().Handler()
+	// Hot-switch to error.
+	SetLogLevel("error")
 	if handler.Enabled(nil, slog.LevelInfo) {
-		t.Error("empty K2_LOG_LEVEL should not override config level error")
+		t.Error("after SetLogLevel(error), info should be disabled")
+	}
+	if !handler.Enabled(nil, slog.LevelError) {
+		t.Error("after SetLogLevel(error), error should be enabled")
+	}
+
+	// Unknown level defaults to info.
+	SetLogLevel("unknown")
+	if LogLevel.Level() != slog.LevelInfo {
+		t.Errorf("SetLogLevel(unknown) = %v, want LevelInfo", LogLevel.Level())
 	}
 }
 
