@@ -4,7 +4,7 @@ import type { CenterApiClient } from '../center-api.js'
 import { audit } from '../audit.js'
 
 /**
- * Raw tunnel shape as returned by Center API batch-matrix endpoint.
+ * Raw tunnel shape as returned by Center API /app/nodes endpoint.
  */
 interface RawTunnel {
   id: number
@@ -12,12 +12,12 @@ interface RawTunnel {
   domain: string
   protocol: string
   port: number
-  server_url: string
+  serverUrl: string
   [key: string]: unknown
 }
 
 /**
- * Raw node shape as returned by Center API batch-matrix endpoint.
+ * Raw node shape as returned by Center API /app/nodes endpoint.
  */
 interface RawNode {
   id: number
@@ -26,21 +26,23 @@ interface RawNode {
   ipv6: string
   country: string
   region: string
-  status: string
-  created_at: string
-  updated_at: string
+  updatedAt: number
   tunnels: RawTunnel[]
-  batch_script_results: unknown
   [key: string]: unknown
 }
 
 /**
- * Raw batch-matrix API response shape.
+ * Raw /app/nodes API response shape (ListResult with pagination).
  */
-interface BatchMatrixResponse {
+interface NodesListResponse {
   code: number
   data: {
-    nodes: RawNode[]
+    items: RawNode[]
+    pagination?: {
+      page: number
+      pageSize: number
+      total: number
+    }
   }
 }
 
@@ -79,15 +81,15 @@ export interface NodeFilters {
 }
 
 /**
- * Type guard to verify the raw API response matches the expected BatchMatrixResponse shape.
+ * Type guard to verify the raw API response matches the expected NodesListResponse shape.
  */
-function isBatchMatrixResponse(value: unknown): value is BatchMatrixResponse {
+function isNodesListResponse(value: unknown): value is NodesListResponse {
   if (typeof value !== 'object' || value === null) return false
   const obj = value as Record<string, unknown>
   if (typeof obj['code'] !== 'number') return false
   if (typeof obj['data'] !== 'object' || obj['data'] === null) return false
   const data = obj['data'] as Record<string, unknown>
-  if (!Array.isArray(data['nodes'])) return false
+  if (!Array.isArray(data['items'])) return false
   return true
 }
 
@@ -106,13 +108,13 @@ function mapTunnel(raw: RawTunnel, country: string): TunnelInfo {
     domain: raw.domain,
     protocol: raw.protocol,
     port: raw.port,
-    url: raw.server_url,
+    url: raw.serverUrl,
   }
 }
 
 /**
  * Maps a raw node from the API response to the filtered NodeInfo shape.
- * Drops id, status, created_at, updated_at, and batch_script_results.
+ * Drops id and updatedAt.
  *
  * @param raw - The raw node object from the API response
  * @returns A filtered NodeInfo with only the safe fields
@@ -134,21 +136,21 @@ function mapNode(raw: RawNode): NodeInfo {
 }
 
 /**
- * Filters nodes from the raw batch-matrix API response, applying optional country/name
- * filters and stripping all sensitive or heavy fields (id, status, timestamps,
- * batch_script_results). Returns only {name, ipv4, ipv6, country, region, tunnels}.
+ * Filters nodes from the raw /app/nodes API response, applying optional country/name
+ * filters and stripping all sensitive or internal fields (id, updatedAt).
+ * Returns only {name, ipv4, ipv6, country, region, tunnels}.
  *
- * @param rawResponse - The raw unknown response from the Center API batch-matrix endpoint
+ * @param rawResponse - The raw unknown response from the Center API /app/nodes endpoint
  * @param filters - Optional filters: `country` and/or `name` for exact string matching
  * @returns Array of filtered NodeInfo objects
- * @throws {Error} If the response does not match the expected BatchMatrixResponse shape
+ * @throws {Error} If the response does not match the expected NodesListResponse shape
  */
 export function filterNodes(rawResponse: unknown, filters: NodeFilters): NodeInfo[] {
-  if (!isBatchMatrixResponse(rawResponse)) {
-    throw new Error('Invalid batch-matrix response shape from Center API')
+  if (!isNodesListResponse(rawResponse)) {
+    throw new Error('Invalid nodes list response shape from Center API')
   }
 
-  let nodes = rawResponse.data.nodes
+  let nodes = rawResponse.data.items
 
   if (filters.country !== undefined) {
     const country = filters.country
@@ -166,9 +168,9 @@ export function filterNodes(rawResponse: unknown, filters: NodeFilters): NodeInf
 /**
  * Registers the `list_nodes` MCP tool on the given server.
  *
- * The tool fetches all nodes from the Center API batch-matrix endpoint, applies optional
+ * The tool fetches all nodes from the Center API /app/nodes endpoint, applies optional
  * country/name filters, and returns a cleaned list of node objects. Sensitive fields such
- * as batch_script_results, internal IDs, and status are always stripped from the output.
+ * as internal IDs and timestamps are always stripped from the output.
  *
  * @param server - The McpServer instance to register the tool on
  * @param apiClient - The CenterApiClient used to make the authenticated API request
@@ -182,7 +184,7 @@ export function registerListNodes(server: McpServer, apiClient: CenterApiClient)
       name: z.string().optional().describe('Filter nodes by exact node name (e.g. "jp-01")'),
     },
     async (params) => {
-      const rawResponse = await apiClient.request('/app/nodes/batch-matrix')
+      const rawResponse = await apiClient.request('/app/nodes?pageSize=100')
       const nodes = filterNodes(rawResponse, {
         country: params.country,
         name: params.name,

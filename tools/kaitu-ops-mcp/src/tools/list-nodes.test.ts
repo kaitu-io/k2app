@@ -2,12 +2,12 @@ import { describe, it, expect } from 'vitest'
 import { filterNodes } from './list-nodes.js'
 
 /**
- * Raw batch-matrix API response fixture with two nodes — jp-01 and sg-01.
+ * Raw /app/nodes API response fixture with two nodes — jp-01 and sg-01.
  */
-const rawBatchMatrixResponse = {
+const rawNodesListResponse = {
   code: 0,
   data: {
-    nodes: [
+    items: [
       {
         id: 1,
         name: 'jp-01',
@@ -15,9 +15,7 @@ const rawBatchMatrixResponse = {
         ipv6: '2001:db8::1',
         country: 'jp',
         region: 'tokyo',
-        status: 'online',
-        created_at: '2024-01-01T00:00:00Z',
-        updated_at: '2024-01-02T00:00:00Z',
+        updatedAt: 1704067200,
         tunnels: [
           {
             id: 10,
@@ -25,14 +23,9 @@ const rawBatchMatrixResponse = {
             domain: 'jp.example.com',
             protocol: 'k2v5',
             port: 443,
-            server_url: 'k2v5://jp.example.com:443?ech=AA&pin=sha256:BB',
+            serverUrl: 'k2v5://jp.example.com:443?ech=AA&pin=sha256:BB',
           },
         ],
-        batch_script_results: {
-          cpu: '10%',
-          memory: '512MB',
-          secret_data: 'sensitive-value',
-        },
       },
       {
         id: 2,
@@ -41,9 +34,7 @@ const rawBatchMatrixResponse = {
         ipv6: '2001:db8::2',
         country: 'sg',
         region: 'singapore',
-        status: 'offline',
-        created_at: '2024-02-01T00:00:00Z',
-        updated_at: '2024-02-02T00:00:00Z',
+        updatedAt: 1706745600,
         tunnels: [
           {
             id: 20,
@@ -51,7 +42,7 @@ const rawBatchMatrixResponse = {
             domain: 'sg.example.com',
             protocol: 'k2v4',
             port: 8443,
-            server_url: 'k2v5://sg.example.com:8443',
+            serverUrl: 'k2v5://sg.example.com:8443',
           },
           {
             id: 21,
@@ -59,18 +50,22 @@ const rawBatchMatrixResponse = {
             domain: 'sg2.example.com',
             protocol: 'k2v5',
             port: 443,
-            server_url: 'k2v5://sg2.example.com:443?ech=CC',
+            serverUrl: 'k2v5://sg2.example.com:443?ech=CC',
           },
         ],
-        batch_script_results: {},
       },
     ],
+    pagination: {
+      page: 1,
+      pageSize: 500,
+      total: 2,
+    },
   },
 }
 
 describe('filterNodes', () => {
-  it('test_list_nodes_field_extraction — raw batch-matrix response filtered to {name, ipv4, ipv6, country, region, tunnels}', () => {
-    const result = filterNodes(rawBatchMatrixResponse, {})
+  it('extracts only safe fields from nodes list response — {name, ipv4, ipv6, country, region, tunnels}', () => {
+    const result = filterNodes(rawNodesListResponse, {})
 
     expect(result).toHaveLength(2)
     const jp = result[0]
@@ -84,42 +79,39 @@ describe('filterNodes', () => {
     expect(Object.keys(jp ?? {})).toEqual(['name', 'ipv4', 'ipv6', 'country', 'region', 'tunnels'])
   })
 
-  it('test_list_nodes_drops_script_results — batch_script_results must be stripped from output', () => {
-    const result = filterNodes(rawBatchMatrixResponse, {})
+  it('drops internal fields — id and updatedAt must be stripped from output', () => {
+    const result = filterNodes(rawNodesListResponse, {})
 
     for (const node of result) {
-      expect(node).not.toHaveProperty('batch_script_results')
       expect(node).not.toHaveProperty('id')
-      expect(node).not.toHaveProperty('status')
-      expect(node).not.toHaveProperty('created_at')
-      expect(node).not.toHaveProperty('updated_at')
+      expect(node).not.toHaveProperty('updatedAt')
     }
   })
 
-  it('test_list_nodes_filter_by_country — country="jp" returns only Japanese nodes', () => {
-    const result = filterNodes(rawBatchMatrixResponse, { country: 'jp' })
+  it('filter by country — country="jp" returns only Japanese nodes', () => {
+    const result = filterNodes(rawNodesListResponse, { country: 'jp' })
 
     expect(result).toHaveLength(1)
     expect(result[0]).toHaveProperty('country', 'jp')
     expect(result[0]).toHaveProperty('name', 'jp-01')
   })
 
-  it('test_list_nodes_filter_by_name — name="sg-01" returns only matching node', () => {
-    const result = filterNodes(rawBatchMatrixResponse, { name: 'sg-01' })
+  it('filter by name — name="sg-01" returns only matching node', () => {
+    const result = filterNodes(rawNodesListResponse, { name: 'sg-01' })
 
     expect(result).toHaveLength(1)
     expect(result[0]).toHaveProperty('name', 'sg-01')
   })
 
-  it('test_list_nodes_empty_result — no nodes match filter returns empty array', () => {
-    const result = filterNodes(rawBatchMatrixResponse, { country: 'us' })
+  it('empty result — no nodes match filter returns empty array', () => {
+    const result = filterNodes(rawNodesListResponse, { country: 'us' })
 
     expect(result).toHaveLength(0)
     expect(Array.isArray(result)).toBe(true)
   })
 
-  it('test_list_nodes_tunnel_mapping — tunnels nested under each node with camelCase keys', () => {
-    const result = filterNodes(rawBatchMatrixResponse, {})
+  it('tunnel mapping — tunnels nested under each node with correct keys', () => {
+    const result = filterNodes(rawNodesListResponse, {})
 
     const jp = result[0]
     expect(jp?.tunnels).toHaveLength(1)
@@ -132,8 +124,8 @@ describe('filterNodes', () => {
     expect(tunnel).toHaveProperty('url', 'k2v5://jp.example.com:443?ech=AA&pin=sha256:BB')
     // id must be stripped
     expect(tunnel).not.toHaveProperty('id')
-    // snake_case key must NOT appear
-    expect(tunnel).not.toHaveProperty('server_url')
+    // serverUrl must not appear (mapped to url)
+    expect(tunnel).not.toHaveProperty('serverUrl')
     // tunnel keys are exactly the 6 expected
     expect(Object.keys(tunnel ?? {})).toEqual(['name', 'country', 'domain', 'protocol', 'port', 'url'])
 
@@ -146,7 +138,7 @@ describe('filterNodes', () => {
     const responseWithMeta = {
       code: 0,
       data: {
-        nodes: [
+        items: [
           {
             id: 1,
             name: 'jp-01',
@@ -154,14 +146,12 @@ describe('filterNodes', () => {
             ipv6: '2001:db8::1',
             country: 'jp',
             region: 'tokyo',
-            status: 'online',
-            created_at: '2024-01-01T00:00:00Z',
-            updated_at: '2024-01-02T00:00:00Z',
+            updatedAt: 1704067200,
             tunnels: [],
-            batch_script_results: {},
             meta: { arch: 'k2v5' },
           },
         ],
+        pagination: { page: 1, pageSize: 500, total: 1 },
       },
     }
 
@@ -171,7 +161,7 @@ describe('filterNodes', () => {
   })
 
   it('omits meta field when not present in raw response', () => {
-    const result = filterNodes(rawBatchMatrixResponse, {})
+    const result = filterNodes(rawNodesListResponse, {})
     expect(result[0]?.meta).toBeUndefined()
   })
 })

@@ -32,6 +32,9 @@ type AdminNodeItem struct {
 func api_admin_list_nodes(c *gin.Context) {
 	log.Infof(c, "admin request to list physical nodes")
 	pagination := PaginationFromRequest(c)
+	if c.Query("pageSize") == "" {
+		pagination.PageSize = 500
+	}
 
 	var nodes []SlaveNode
 	query := db.Get().Model(&SlaveNode{})
