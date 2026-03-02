@@ -195,10 +195,7 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector {
         vpnInterface = builder.establish()
         Log.d(TAG, "establish() result: vpnInterface=$vpnInterface")
 
-        // Transfer fd ownership to Go engine via detachFd().
-        // Go engine will close the fd when it stops — we must NOT close it from Kotlin.
-        val rawFd = vpnInterface?.detachFd()
-        if (rawFd == null || rawFd == -1) {
+        if (vpnInterface == null) {
             Log.e(TAG, "establish() returned null — VPN permission not granted?")
             val errorStatus = JSONObject().apply {
                 put("state", "disconnected")
@@ -211,7 +208,12 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector {
             stopVpn()
             return
         }
-        Log.d(TAG, "detachFd() returned fd=$rawFd — ownership transferred to Go engine")
+        // Pass fd to Go WITHOUT detaching — Kotlin retains ParcelFileDescriptor ownership.
+        // Go's appext.Start() already calls syscall.Dup(fd) internally (appext.go:63-68),
+        // so Go gets its own independent copy. On disconnect, stopVpn() calls
+        // vpnInterface.close() which notifies Android to tear down VPN routing + status bar icon.
+        val rawFd = vpnInterface!!.fd
+        Log.d(TAG, "fd=$rawFd — Go will dup internally, Kotlin retains ParcelFileDescriptor")
 
         // Run blocking gomobile engine.start() off the main thread to prevent ANR.
         val cachePath = cacheDir.absolutePath
@@ -248,8 +250,6 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector {
         unregisterNetworkCallback()
         val eng = engine
         engine = null
-        // fd ownership was transferred to Go engine via detachFd() — don't close vpnInterface
-        vpnInterface = null
         if (eng != null) {
             // Run blocking gomobile stop() off main thread
             engineExecutor.execute {
@@ -261,12 +261,19 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector {
                     Log.e(TAG, "stopVpn: engine.stop() threw: ${e.message}", e)
                 }
                 mainHandler.post {
+                    // Close VPN interface AFTER engine stops — this notifies Android's VPN
+                    // framework to tear down routing and remove the status bar icon.
+                    // ParcelFileDescriptor.close() is idempotent (safe if called twice).
+                    try { vpnInterface?.close() } catch (_: Exception) {}
+                    vpnInterface = null
                     Log.d(TAG, "stopVpn: removing foreground service + stopping self")
                     stopForeground(STOP_FOREGROUND_REMOVE)
                     stopSelf()
                 }
             }
         } else {
+            try { vpnInterface?.close() } catch (_: Exception) {}
+            vpnInterface = null
             Log.d(TAG, "stopVpn: no engine — just stopping foreground service")
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
