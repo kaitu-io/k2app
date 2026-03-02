@@ -54,6 +54,22 @@ vi.mock('js-cookie', () => ({
   },
 }));
 
+// Fix localStorage: Node 22 provides a broken native localStorage in worker_threads
+// (missing clear/getItem/setItem/removeItem) which overrides jsdom's implementation.
+// Provide a proper Storage mock to ensure tests work.
+const storageMock = (() => {
+  let store: Record<string, string> = {};
+  return {
+    getItem: (key: string) => store[key] ?? null,
+    setItem: (key: string, value: string) => { store[key] = String(value); },
+    removeItem: (key: string) => { delete store[key]; },
+    clear: () => { store = {}; },
+    get length() { return Object.keys(store).length; },
+    key: (index: number) => Object.keys(store)[index] ?? null,
+  };
+})();
+Object.defineProperty(globalThis, 'localStorage', { value: storageMock, writable: true });
+
 // Mock window.matchMedia
 Object.defineProperty(window, 'matchMedia', {
   writable: true,

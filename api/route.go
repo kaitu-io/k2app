@@ -221,7 +221,6 @@ func SetupRouter() *gin.Engine {
 
 		// 物理节点管理
 		admin.GET("/nodes", api_admin_list_nodes)
-		admin.GET("/nodes/batch-matrix", api_admin_nodes_batch_matrix)
 		admin.PUT("/nodes/:ipv4", api_admin_update_node)
 		admin.DELETE("/nodes/:ipv4", api_admin_delete_node)
 
@@ -329,35 +328,6 @@ func SetupRouter() *gin.Engine {
 		admin.GET("/cloud/regions", api_admin_list_cloud_regions)
 		admin.GET("/cloud/plans", api_admin_list_cloud_plans)
 		admin.GET("/cloud/images", api_admin_list_cloud_images)
-
-		// SSH Terminal (WebSocket)
-		admin.GET("/nodes/:ipv4/terminal", api_admin_ssh_terminal)
-
-		// WebSocket authentication token
-		// Used by frontend to get a short-lived token for cross-domain WebSocket connections
-		admin.GET("/ws-token", api_get_ws_token)
-
-		// Batch script execution management
-		admin.POST("/batch-scripts", api_admin_batch_scripts_create)
-		admin.GET("/batch-scripts", api_admin_batch_scripts_list)
-		admin.GET("/batch-scripts/:id", api_admin_batch_scripts_detail)
-		admin.PUT("/batch-scripts/:id", api_admin_batch_scripts_update)
-		admin.DELETE("/batch-scripts/:id", api_admin_batch_scripts_delete)
-		admin.GET("/batch-scripts/:id/versions", api_admin_batch_scripts_versions)
-		admin.GET("/batch-scripts/:id/versions/:version", api_admin_batch_scripts_version_detail)
-		admin.POST("/batch-scripts/:id/versions/:version/restore", api_admin_batch_scripts_version_restore)
-		admin.POST("/batch-scripts/:id/test", api_admin_batch_scripts_test)
-
-		admin.POST("/batch-tasks", api_admin_batch_tasks_create)
-		admin.GET("/batch-tasks", api_admin_batch_tasks_list)
-		admin.GET("/batch-tasks/scheduled", api_admin_batch_tasks_scheduled)
-		admin.GET("/batch-tasks/:id", api_admin_batch_tasks_detail)
-		admin.PUT("/batch-tasks/:id/pause", api_admin_batch_tasks_pause)
-		admin.PUT("/batch-tasks/:id/resume", api_admin_batch_tasks_resume)
-		admin.POST("/batch-tasks/:id/retry", api_admin_batch_tasks_retry)
-		admin.PUT("/batch-tasks/:id/schedule", api_admin_batch_tasks_schedule_update)
-		admin.DELETE("/batch-tasks/:id/schedule", api_admin_batch_tasks_schedule_delete)
-		admin.DELETE("/batch-tasks/:id", api_admin_batch_tasks_delete)
 
 		// Strategy rules management
 		strategy := admin.Group("/strategy")

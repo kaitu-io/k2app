@@ -1832,167 +1832,17 @@ export const api = {
 
   // ========================= Slave Node Management APIs =========================
 
-  // List slave nodes
-  async listSlaveNodes(params: PaginationParams = { page: 1, pageSize: 100 }): Promise<SlaveNodeListResponse> {
+  // List slave nodes (with tunnels)
+  async listSlaveNodes(params: PaginationParams = { page: 1, pageSize: 200 }): Promise<ListResult<AdminNodeItem>> {
     const queryParams = new URLSearchParams();
     queryParams.set('page', params.page.toString());
     queryParams.set('pageSize', params.pageSize.toString());
-    return this.request<SlaveNodeListResponse>(`/app/nodes?${queryParams.toString()}`);
-  },
-
-  // Get nodes batch matrix (last 5 scripts and their results per node)
-  async getNodesBatchMatrix(): Promise<NodeBatchMatrixResponse> {
-    return this.request<NodeBatchMatrixResponse>('/app/nodes/batch-matrix');
+    return this.request<ListResult<AdminNodeItem>>(`/app/nodes?${queryParams.toString()}`);
   },
 
   // Delete slave node by IPv4
   async deleteSlaveNode(ipv4: string): Promise<void> {
     return this.request<void>(`/app/nodes/${encodeURIComponent(ipv4)}`, {
-      method: 'DELETE',
-    });
-  },
-
-  // Get WebSocket authentication token
-  // Used for cross-domain WebSocket connections (e.g., SSH terminal)
-  // Returns a short-lived token (5 minutes) to pass as URL query parameter
-  async getWsToken(): Promise<WebSocketTokenResponse> {
-    return this.request<WebSocketTokenResponse>('/app/ws-token');
-  },
-
-  // ========================= Batch Script Management APIs =========================
-
-  // Create batch script
-  async createBatchScript(params: CreateBatchScriptRequest): Promise<BatchScriptResponse> {
-    return this.request<BatchScriptResponse>('/app/batch-scripts', {
-      method: 'POST',
-      body: JSON.stringify(params),
-    });
-  },
-
-  // List batch scripts
-  async listBatchScripts(params: PaginationParams = { page: 1, pageSize: 20 }): Promise<BatchScriptListResponse> {
-    const queryParams = new URLSearchParams();
-    queryParams.set('page', params.page.toString());
-    queryParams.set('pageSize', params.pageSize.toString());
-    return this.request<BatchScriptListResponse>(`/app/batch-scripts?${queryParams.toString()}`);
-  },
-
-  // Get batch script detail (with decrypted content)
-  async getBatchScript(id: number): Promise<BatchScriptDetailResponse> {
-    return this.request<BatchScriptDetailResponse>(`/app/batch-scripts/${id}`);
-  },
-
-  // Delete batch script
-  async deleteBatchScript(id: number): Promise<{ success: boolean }> {
-    return this.request<{ success: boolean }>(`/app/batch-scripts/${id}`, {
-      method: 'DELETE',
-    });
-  },
-
-  // Update batch script
-  async updateBatchScript(id: number, params: UpdateBatchScriptRequest): Promise<BatchScriptDetailResponse> {
-    return this.request<BatchScriptDetailResponse>(`/app/batch-scripts/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(params),
-    });
-  },
-
-  // Get script version history
-  async getBatchScriptVersions(id: number): Promise<BatchScriptVersionListResponse> {
-    return this.request<BatchScriptVersionListResponse>(`/app/batch-scripts/${id}/versions`);
-  },
-
-  // Get specific version content
-  async getBatchScriptVersionDetail(id: number, version: number): Promise<BatchScriptVersionDetailResponse> {
-    return this.request<BatchScriptVersionDetailResponse>(`/app/batch-scripts/${id}/versions/${version}`);
-  },
-
-  // Restore a previous version
-  async restoreBatchScriptVersion(id: number, version: number): Promise<BatchScriptDetailResponse> {
-    return this.request<BatchScriptDetailResponse>(`/app/batch-scripts/${id}/versions/${version}/restore`, {
-      method: 'POST',
-    });
-  },
-
-  // Test script on a single node
-  async testBatchScript(id: number, params: TestBatchScriptRequest): Promise<TestBatchScriptResponse> {
-    return this.request<TestBatchScriptResponse>(`/app/batch-scripts/${id}/test`, {
-      method: 'POST',
-      body: JSON.stringify(params),
-    });
-  },
-
-  // ========================= Batch Task Management APIs =========================
-
-  // Create batch task
-  async createBatchTask(params: CreateBatchTaskRequest): Promise<BatchTaskResponse> {
-    return this.request<BatchTaskResponse>('/app/batch-tasks', {
-      method: 'POST',
-      body: JSON.stringify(params),
-    });
-  },
-
-  // List batch tasks (with optional status filter)
-  async listBatchTasks(params: PaginationParams & { status?: string } = { page: 1, pageSize: 20 }): Promise<BatchTaskListResponse> {
-    const queryParams = new URLSearchParams();
-    queryParams.set('page', params.page.toString());
-    queryParams.set('pageSize', params.pageSize.toString());
-    if (params.status) {
-      queryParams.set('status', params.status);
-    }
-    return this.request<BatchTaskListResponse>(`/app/batch-tasks?${queryParams.toString()}`);
-  },
-
-  // Get batch task detail (with all node results)
-  async getBatchTask(id: number): Promise<BatchTaskDetailResponse> {
-    return this.request<BatchTaskDetailResponse>(`/app/batch-tasks/${id}`);
-  },
-
-  // Pause batch task
-  async pauseBatchTask(id: number): Promise<{ success: boolean }> {
-    return this.request<{ success: boolean }>(`/app/batch-tasks/${id}/pause`, {
-      method: 'PUT',
-    });
-  },
-
-  // Resume batch task
-  async resumeBatchTask(id: number): Promise<{ success: boolean }> {
-    return this.request<{ success: boolean }>(`/app/batch-tasks/${id}/resume`, {
-      method: 'PUT',
-    });
-  },
-
-  // Delete batch task (only completed/failed)
-  async deleteBatchTask(id: number): Promise<{ success: boolean }> {
-    return this.request<{ success: boolean }>(`/app/batch-tasks/${id}`, {
-      method: 'DELETE',
-    });
-  },
-
-  // Retry failed nodes in a batch task
-  async retryBatchTask(id: number, params?: RetryBatchTaskRequest): Promise<RetryBatchTaskResponse> {
-    return this.request<RetryBatchTaskResponse>(`/app/batch-tasks/${id}/retry`, {
-      method: 'POST',
-      body: JSON.stringify(params || {}),
-    });
-  },
-
-  // Get scheduled (cron) tasks
-  async getScheduledBatchTasks(): Promise<ScheduledTasksListResponse> {
-    return this.request<ScheduledTasksListResponse>('/app/batch-tasks/scheduled');
-  },
-
-  // Update schedule for a cron task
-  async updateBatchTaskSchedule(id: number, params: ScheduleBatchTaskRequest): Promise<{ success: boolean }> {
-    return this.request<{ success: boolean }>(`/app/batch-tasks/${id}/schedule`, {
-      method: 'PUT',
-      body: JSON.stringify(params),
-    });
-  },
-
-  // Cancel/disable a scheduled cron task
-  async cancelBatchTaskSchedule(id: number): Promise<{ success: boolean }> {
-    return this.request<{ success: boolean }>(`/app/batch-tasks/${id}/schedule`, {
       method: 'DELETE',
     });
   },
@@ -2127,50 +1977,18 @@ export interface CloudTaskResponse {
 
 // ========================= Slave Node Management Types =========================
 
-export interface SlaveNode {
-  id: number;
-  name: string;
-  country: string;
-  region: string;
-  ipv4: string;
-  ipv6: string;
-  load: number;
-  updatedAt: number;
-  trafficUsagePercent: number;
-  bandwidthUsagePercent: number;
-}
+// ========================= Admin Node Types =========================
 
-export interface SlaveNodeListResponse {
-  items: SlaveNode[];
-  pagination: Pagination;
-}
-
-// ========================= Node Batch Matrix Types =========================
-
-export interface NodeBatchMatrixScript {
-  id: number;
-  name: string;
-}
-
-export interface NodeBatchMatrixResult {
-  status: 'success' | 'failed';
-  taskId: number;
-  executedAt: number;
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-}
-
-export interface NodeBatchMatrixTunnel {
+export interface AdminNodeTunnel {
   id: number;
   name: string;
   domain: string;
   protocol: string;
   port: number;
-  url: string;
+  serverUrl?: string;
 }
 
-export interface NodeBatchMatrixNode {
+export interface AdminNodeItem {
   id: number;
   name: string;
   country: string;
@@ -2178,181 +1996,5 @@ export interface NodeBatchMatrixNode {
   ipv4: string;
   ipv6: string;
   updatedAt: number;
-  tunnelCount: number;
-  tunnels: NodeBatchMatrixTunnel[];
-  results: Record<string, NodeBatchMatrixResult | null>;
+  tunnels: AdminNodeTunnel[];
 }
-
-export interface NodeBatchMatrixResponse {
-  scripts: NodeBatchMatrixScript[];
-  nodes: NodeBatchMatrixNode[];
-}
-
-// ========================= Batch Script Management Types =========================
-
-export interface CreateBatchScriptRequest {
-  name: string;
-  description: string;
-  content: string; // Plain text script content
-  executeWithSudo: boolean; // Execute script with sudo privileges
-}
-
-export interface UpdateBatchScriptRequest {
-  name: string;
-  description: string;
-  content: string; // Plain text script content
-  executeWithSudo: boolean; // Execute script with sudo privileges
-}
-
-export interface BatchScriptResponse {
-  id: number;
-  name: string;
-  description: string;
-  executeWithSudo: boolean;
-  createdAt: number;
-  updatedAt: number;
-}
-
-export interface BatchScriptDetailResponse {
-  id: number;
-  name: string;
-  description: string;
-  content: string; // Decrypted plain text
-  executeWithSudo: boolean;
-  createdAt: number;
-  updatedAt: number;
-}
-
-export interface BatchScriptListResponse {
-  items: BatchScriptResponse[];
-  pagination: Pagination;
-}
-
-// Script version history types
-export interface BatchScriptVersionResponse {
-  version: number;
-  createdAt: number;
-  createdBy: number;
-}
-
-export interface BatchScriptVersionDetailResponse {
-  version: number;
-  content: string;
-  createdAt: number;
-  createdBy: number;
-}
-
-export interface BatchScriptVersionListResponse {
-  items: BatchScriptVersionResponse[];
-  pagination: Pagination;
-}
-
-// Script test types
-export interface TestBatchScriptRequest {
-  nodeId: number;
-}
-
-export interface TestBatchScriptResponse {
-  stdout: string;
-  stderr: string;
-  exitCode: number;
-  duration: number; // milliseconds
-  error: string;
-}
-
-// ========================= Batch Task Management Types =========================
-
-export interface CreateBatchTaskRequest {
-  scriptId: number;
-  nodeIds: number[]; // Explicit node ID list
-  scheduleType: 'once' | 'cron';
-  executeAt?: number; // Required when scheduleType=once (milliseconds timestamp)
-  cronExpr?: string; // Required when scheduleType=cron
-}
-
-export interface BatchTaskResponse {
-  id: number;
-  asynqTaskId: string; // Asynq task ID for tracking
-  scriptId: number;
-  scriptName: string;
-  nodeIds: number[];
-  scheduleType: string;
-  executeAt?: number | null;
-  cronExpr: string;
-  status: string;
-  currentIndex: number;
-  totalNodes: number;
-  createdAt: number;
-  completedAt?: number | null;
-  parentTaskId?: number | null; // Parent task ID for retry tracking
-  isEnabled: boolean; // Whether scheduled task is enabled
-}
-
-export interface TaskResultItem {
-  nodeId: number;
-  nodeName: string; // Joined from SlaveNode.Name
-  nodeIpv4: string; // Joined from SlaveNode.Ipv4
-  nodeIndex: number;
-  status: string;
-  stdout: string;
-  stderr: string;
-  exitCode: number;
-  error: string;
-  startedAt?: number | null;
-  endedAt?: number | null;
-  duration?: number | null; // Milliseconds (endedAt - startedAt)
-}
-
-export interface BatchTaskDetailResponse extends BatchTaskResponse {
-  results: TaskResultItem[];
-  successCount: number;
-  failedCount: number;
-}
-
-// Retry batch task request
-export interface RetryBatchTaskRequest {
-  nodeIds?: number[]; // Optional: specific nodes to retry, empty = all failed
-}
-
-// Retry batch task response
-export interface RetryBatchTaskResponse {
-  taskId: number; // New task ID for retry
-}
-
-// Schedule batch task request
-export interface ScheduleBatchTaskRequest {
-  cronExpr: string;
-  isEnabled: boolean;
-}
-
-// Scheduled task info
-export interface ScheduledTaskInfo {
-  id: number;
-  scriptId: number;
-  scriptName: string;
-  cronExpr: string;
-  isEnabled: boolean;
-  nodeIds: number[];
-  totalNodes: number;
-  nextRunAt?: number | null;
-  lastRunAt?: number | null;
-  lastStatus?: string;
-  createdAt: number;
-}
-
-// Scheduled tasks list response
-export interface ScheduledTasksListResponse {
-  items: ScheduledTaskInfo[];
-  pagination: Pagination;
-}
-
-export interface BatchTaskListResponse {
-  items: BatchTaskResponse[];
-  pagination: Pagination;
-}
-
-// WebSocket authentication token response
-export interface WebSocketTokenResponse {
-  token: string;     // JWT token for WebSocket authentication
-  expiresAt: number; // Token expiration timestamp (Unix seconds)
-} 

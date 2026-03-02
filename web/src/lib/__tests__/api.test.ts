@@ -474,49 +474,4 @@ describe('API Methods', () => {
     });
   });
 
-  describe('updateBatchScript', () => {
-    it('should send PUT request to update script', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            code: 0,
-            data: {
-              id: 1,
-              name: 'Updated Script',
-              description: 'Updated description',
-              content: 'echo "updated"',
-              executeWithSudo: true,
-              createdAt: 1700000000000,
-              updatedAt: 1700000001000,
-            },
-          }),
-        headers: new Headers({ 'Content-Length': '200' }),
-        status: 200,
-      });
-
-      const result = await api.updateBatchScript(1, {
-        name: 'Updated Script',
-        description: 'Updated description',
-        content: 'echo "updated"',
-        executeWithSudo: true,
-      });
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining('/app/batch-scripts/1'),
-        expect.objectContaining({
-          method: 'PUT',
-          body: JSON.stringify({
-            name: 'Updated Script',
-            description: 'Updated description',
-            content: 'echo "updated"',
-            executeWithSudo: true,
-          }),
-        })
-      );
-      expect(result.id).toBe(1);
-      expect(result.name).toBe('Updated Script');
-      expect(result.executeWithSudo).toBe(true);
-    });
-  });
 });

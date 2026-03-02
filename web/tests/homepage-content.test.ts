@@ -39,17 +39,17 @@ describe('test_homepage_hero_k2_content', () => {
     expect(hasECH || hasHidden || hasK2 || hasTunnel).toBe(true);
   });
 
-  it('zh-CN hero.json title contains k2 or 隧道', () => {
+  it('zh-CN hero.json title contains 丢包 or 满速', () => {
     const parsed = JSON.parse(readHeroJson('zh-CN'));
     const titleContent = JSON.stringify(parsed.hero?.title || '');
-    const hasK2OrTunnel = titleContent.includes('k2') || titleContent.includes('隧道') || titleContent.includes('隐身');
-    expect(hasK2OrTunnel).toBe(true);
+    const hasExpected = titleContent.includes('丢包') || titleContent.includes('满速');
+    expect(hasExpected).toBe(true);
   });
 
-  it('zh-CN hero.json subtitle contains ECH', () => {
+  it('zh-CN hero.json subtitle contains k2', () => {
     const parsed = JSON.parse(readHeroJson('zh-CN'));
     const subtitleContent = JSON.stringify(parsed.hero?.subtitle || '');
-    expect(subtitleContent.includes('ECH')).toBe(true);
+    expect(subtitleContent.includes('k2')).toBe(true);
   });
 });
 

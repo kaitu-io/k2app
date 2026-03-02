@@ -14,7 +14,8 @@ import {
 import { Button } from "@/components/ui/button";
 import {
   api,
-  NodeBatchMatrixResponse,
+  AdminNodeItem,
+  ListResult,
 } from "@/lib/api";
 import { toast } from "sonner";
 import { RefreshCw, Copy } from "lucide-react";
@@ -38,13 +39,13 @@ function copyToClipboard(text: string) {
 }
 
 export default function NodesPage() {
-  const [data, setData] = useState<NodeBatchMatrixResponse | null>(null);
+  const [data, setData] = useState<ListResult<AdminNodeItem> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const response = await api.getNodesBatchMatrix();
+      const response = await api.listSlaveNodes({ page: 1, pageSize: 200 });
       setData(response);
     } catch (error) {
       console.error("Failed to fetch nodes data:", error);
@@ -89,8 +90,8 @@ export default function NodesPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data?.nodes && data.nodes.length > 0 ? (
-                data.nodes.map((node) => (
+              {data?.items && data.items.length > 0 ? (
+                data.items.map((node) => (
                   <TableRow key={node.id} className="align-top">
                     {/* Node: name + country/region */}
                     <TableCell>
@@ -121,18 +122,20 @@ export default function NodesPage() {
                                 <div className="text-xs text-muted-foreground">{tunnel.name}</div>
                                 <div
                                   className="font-mono text-xs truncate max-w-[500px] cursor-pointer hover:text-primary"
-                                  title={tunnel.url}
-                                  onClick={() => copyToClipboard(tunnel.url)}
+                                  title={tunnel.serverUrl ?? ''}
+                                  onClick={() => tunnel.serverUrl && copyToClipboard(tunnel.serverUrl)}
                                 >
-                                  {tunnel.url}
+                                  {tunnel.serverUrl ?? `${tunnel.domain}:${tunnel.port}`}
                                 </div>
                               </div>
-                              <button
-                                className="shrink-0 mt-3 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-primary"
-                                onClick={() => copyToClipboard(tunnel.url)}
-                              >
-                                <Copy className="h-3.5 w-3.5" />
-                              </button>
+                              {tunnel.serverUrl && (
+                                <button
+                                  className="shrink-0 mt-3 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-primary"
+                                  onClick={() => copyToClipboard(tunnel.serverUrl!)}
+                                >
+                                  <Copy className="h-3.5 w-3.5" />
+                                </button>
+                              )}
                             </div>
                           ))}
                         </div>

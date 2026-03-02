@@ -957,66 +957,6 @@ type CloudInstance struct {
 	SyncError    string `gorm:"type:text"`          // Last sync error message
 }
 
-// ========================= Batch Script Execution =========================
-
-// SlaveBatchScript script template for batch execution (encrypted storage)
-type SlaveBatchScript struct {
-	ID              uint64 `gorm:"primarykey;autoIncrement"`
-	CreatedAt       int64  `gorm:"autoCreateTime:milli"`
-	UpdatedAt       int64  `gorm:"autoUpdateTime:milli"`
-	Name            string `gorm:"size:128;not null;index"` // Script name for identification
-	Description     string `gorm:"size:512"`                 // Script description
-	Content         string `gorm:"type:text;not null"`       // Encrypted script content (via secretEncrypt)
-	ExecuteWithSudo bool   `gorm:"default:false;not null"`   // Execute script with sudo privileges
-}
-
-// SlaveBatchTask batch execution task
-type SlaveBatchTask struct {
-	ID           uint64 `gorm:"primarykey;autoIncrement"`
-	CreatedAt    int64  `gorm:"autoCreateTime:milli"`
-	UpdatedAt    int64  `gorm:"autoUpdateTime:milli"`
-	ScriptID     uint64 `gorm:"not null;index"`                        // Associated script
-	NodeIDs      string `gorm:"type:text;not null"`                    // JSON array of node IDs: [1,2,3]
-	ScheduleType string `gorm:"size:16;not null"`                      // "once" | "cron"
-	ExecuteAt    *int64 `gorm:"index"`                                 // Execute time for one-time tasks (milliseconds timestamp)
-	CronExpr     string `gorm:"size:64"`                               // Cron expression: "0 2 * * *"
-	Status       string `gorm:"size:16;not null;index"`                // "pending" | "running" | "paused" | "completed" | "failed"
-	CurrentIndex int    `gorm:"default:0"`                             // Current node index (0-based)
-	TotalNodes   int    `gorm:"not null"`                              // Total number of nodes
-	CreatedBy    uint64 `gorm:"index"`                                 // Creator user ID
-	CompletedAt  *int64                                                // Completion time
-	AsynqTaskID  string `gorm:"type:varchar(128);index"`               // Asynq task ID for tracking
-	ParentTaskID *uint64 `gorm:"index"`                                // Parent task ID for retry tracking
-	IsEnabled    bool   `gorm:"default:true;not null"`                 // Whether scheduled task is enabled
-}
-
-// SlaveBatchTaskResult execution result for a single node
-type SlaveBatchTaskResult struct {
-	ID         uint64 `gorm:"primarykey;autoIncrement"`
-	CreatedAt  int64  `gorm:"autoCreateTime:milli"`
-	TaskID     uint64 `gorm:"not null;index:idx_task_node"`       // Associated task
-	NodeID     uint64 `gorm:"not null;index:idx_task_node"`       // Associated node (SlaveNode.ID)
-	NodeIndex  int    `gorm:"not null"`                            // Execution order (0-based)
-	Status     string `gorm:"size:16;not null"`                    // "success" | "failed" | "skipped"
-	Stdout     string `gorm:"type:text"`                           // Standard output
-	Stderr     string `gorm:"type:text"`                           // Standard error
-	ExitCode   int    `gorm:"default:-1"`                          // Exit code (-1 = not executed)
-	Error      string `gorm:"type:text"`                           // Error message (SSH failure, etc.)
-	StartedAt  *int64                                              // Start time
-	EndedAt    *int64                                              // End time
-	RetryCount int    `gorm:"default:0"`                           // Number of retry attempts
-}
-
-// SlaveBatchScriptVersion script version history for auditing
-type SlaveBatchScriptVersion struct {
-	ID        uint64 `gorm:"primarykey;autoIncrement"`
-	CreatedAt int64  `gorm:"autoCreateTime:milli"`
-	ScriptID  uint64 `gorm:"not null;index"`              // Associated script
-	Version   int    `gorm:"not null"`                    // Version number
-	Content   string `gorm:"type:text;not null"`          // Encrypted script content
-	CreatedBy uint64 `gorm:"index"`                       // Creator user ID
-}
-
 // CloudOperationLog tracks async cloud operations
 type CloudOperationLog struct {
 	ID          uint64 `gorm:"primarykey;autoIncrement"`

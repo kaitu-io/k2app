@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
 	"github.com/wordgate/qtoolkit/slack"
@@ -837,55 +836,3 @@ func api_password_login(c *gin.Context) {
 	Success(c, authResult)
 }
 
-// ===================== WebSocket Token =====================
-
-// WebSocketTokenExpiry WebSocket 认证 token 的有效期（5分钟）
-// 短有效期因为：1) 仅用于 WebSocket 握手 2) 防止 token 泄露后的长期滥用
-const WebSocketTokenExpiry = 5 * time.Minute
-
-// DataWebSocketToken WebSocket 认证 token 响应
-type DataWebSocketToken struct {
-	Token     string `json:"token"`     // JWT token for WebSocket authentication
-	ExpiresAt int64  `json:"expiresAt"` // Token expiration timestamp (Unix seconds)
-}
-
-// api_get_ws_token 获取用于 WebSocket 连接的短期认证 token
-// WebSocket 连接无法携带跨域 Cookie，需要通过 URL 参数传递 token
-// 此端点为已认证用户生成一个短期（5分钟）token，用于 WebSocket 握手
-func api_get_ws_token(c *gin.Context) {
-	user := ReqUser(c)
-	if user == nil {
-		log.Warnf(c, "ws-token request without authentication")
-		Error(c, ErrorNotLogin, "authentication required")
-		return
-	}
-
-	// Generate a short-lived token for WebSocket authentication
-	jwtConfig := configJwt(c)
-	jwtSecret := []byte(jwtConfig.Secret)
-
-	now := time.Now()
-	expiresAt := now.Add(WebSocketTokenExpiry)
-
-	claims := TokenClaims{
-		UserID:       user.ID,
-		DeviceID:     "", // Web 认证无设备
-		Exp:          expiresAt.Unix(),
-		Type:         TokenTypeAccess,
-		TokenIssueAt: now.Unix(),
-		Roles:        user.Roles,
-	}
-
-	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(jwtSecret)
-	if err != nil {
-		log.Errorf(c, "failed to generate ws token for user %d: %v", user.ID, err)
-		Error(c, ErrorSystemError, "failed to generate token")
-		return
-	}
-
-	log.Infof(c, "generated ws token for user %d, expires at %v", user.ID, expiresAt)
-	Success(c, &DataWebSocketToken{
-		Token:     token,
-		ExpiresAt: expiresAt.Unix(),
-	})
-}

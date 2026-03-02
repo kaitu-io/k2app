@@ -72,9 +72,6 @@ func InitWorker() {
 	// 注册云同步 worker
 	RegisterCloudWorker()
 
-	// 注册批量脚本执行 worker
-	RegisterBatchWorker()
-
 	log.Infof(context.Background(), "[WORKER] Task handlers registered (including renewal reminder cron at 10:30 Beijing time)")
 }
 
