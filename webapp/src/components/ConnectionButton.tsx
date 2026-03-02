@@ -18,7 +18,7 @@ import {
   Button,
   styled,
 } from '@mui/material';
-import { PlayArrow, Stop } from '@mui/icons-material';
+import { PlayArrow, Stop, Check } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import { getThemeColors, getStatusGradient, getStatusShadow } from '../theme/colors';
 import { getFlagIcon } from '../utils/country';
@@ -210,9 +210,9 @@ export function ConnectionButton({
     if (isTransitioning) {
       return <CircularProgress size={50} sx={{ color: 'white' }} />;
     }
-    // 已连接显示停止图标
+    // 已连接：默认显示勾选图标，hover 时由 showStopHint 切换为停止图标
     if (isConnected) {
-      return <Stop sx={{ fontSize: 50, color: 'white' }} />;
+      return <Check sx={{ fontSize: 50, color: 'white' }} />;
     }
     // 其他状态显示播放图标
     return <PlayArrow sx={{ fontSize: 50, color: 'white' }} />;

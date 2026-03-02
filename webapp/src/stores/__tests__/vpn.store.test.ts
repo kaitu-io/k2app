@@ -219,7 +219,7 @@ describe('VPN Store', () => {
     });
 
     it('isServiceRunning 应该在 VPN 运行相关状态时返回 true', () => {
-      const runningStates = ['connected', 'connecting', 'reconnecting', 'error'] as const;
+      const runningStates = ['connected', 'connecting', 'reconnecting'] as const;
 
       for (const state of runningStates) {
         act(() => {
@@ -245,6 +245,48 @@ describe('VPN Store', () => {
 
       const { result } = renderHook(() => useVPNStatus());
       expect(result.current.isServiceRunning).toBe(false);
+    });
+
+    it('isServiceRunning: error+retrying=true 时为 true，error+notRetrying 时为 false', () => {
+      // error + retrying=true → engine 正在重试，UI 应保持锁定
+      act(() => {
+        useVPNStore.getState().setStatus({
+          running: false,
+          state: 'error',
+          startAt: 0,
+          retrying: true,
+          networkAvailable: true,
+        });
+      });
+
+      const { result: retrying } = renderHook(() => useVPNStatus());
+      expect(retrying.current.isServiceRunning).toBe(true);
+
+      // error + retrying=false → engine 已放弃，用户应能选择新 tunnel
+      act(() => {
+        useVPNStore.getState().setStatus({
+          running: false,
+          state: 'error',
+          startAt: 0,
+          retrying: false,
+          networkAvailable: true,
+        });
+      });
+
+      const { result: notRetrying } = renderHook(() => useVPNStatus());
+      expect(notRetrying.current.isServiceRunning).toBe(false);
+
+      // error + 无 retrying 字段 → 默认不重试
+      act(() => {
+        useVPNStore.getState().setStatus({
+          running: false,
+          state: 'error',
+          startAt: 0,
+        });
+      });
+
+      const { result: noField } = renderHook(() => useVPNStatus());
+      expect(noField.current.isServiceRunning).toBe(false);
     });
 
     it('error 应该返回状态中的错误信息', () => {

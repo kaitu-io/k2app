@@ -6,7 +6,7 @@
     "reconnecting": "重新連線中...",
     "disconnecting": "中斷連線中...",
     "disconnected": "未連線",
-    "error": "連線失敗，重試中...",
+    "error": "連線失敗",
     "failed": "連線失敗",
     "offline": "離線",
     "online": "線上",

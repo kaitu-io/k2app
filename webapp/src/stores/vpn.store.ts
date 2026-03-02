@@ -152,7 +152,7 @@ function computeDerivedState(state: VPNState) {
     isRetrying, // error state - whether K2 is retrying
     networkAvailable, // network availability during error retry
     isTransitioning: ['connecting', 'reconnecting', 'disconnecting'].includes(serviceState),
-    isServiceRunning: ['connected', 'connecting', 'reconnecting', 'error'].includes(serviceState),
+    isServiceRunning: ['connected', 'connecting', 'reconnecting'].includes(serviceState) || (serviceState === 'error' && isRetrying),
     serviceConnected: state.serviceConnected,
     serviceFailureDuration: failureDuration,
     isServiceFailedLongTime: failureDuration !== null && failureDuration >= SERVICE_FAILURE_THRESHOLD_MS,

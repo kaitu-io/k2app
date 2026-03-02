@@ -6,7 +6,7 @@
     "reconnecting": "Reconnecting...",
     "disconnecting": "Disconnecting...",
     "disconnected": "Disconnected",
-    "error": "Connection failed, retrying...",
+    "error": "Connection Failed",
     "failed": "Connection Failed",
     "offline": "Offline",
     "online": "Online",
