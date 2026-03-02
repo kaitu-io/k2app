@@ -125,8 +125,8 @@ while IFS='|' read -r IP NAME TC; do
     continue
   fi
 
-  # Ensure deploy directory exists
-  ssh $SSH_OPTS "$SSH_USER@$IP" "sudo mkdir -p $DEPLOY_DIR && sudo chown -R $SSH_USER: $DEPLOY_DIR" 2>/dev/null
+  # Ensure deploy directory and users file exist
+  ssh $SSH_OPTS "$SSH_USER@$IP" "sudo mkdir -p $DEPLOY_DIR && sudo chown -R $SSH_USER: $DEPLOY_DIR && touch $DEPLOY_DIR/users" 2>/dev/null
 
   # Compare remote file MD5
   REMOTE_MD5=$(ssh $SSH_OPTS "$SSH_USER@$IP" "md5sum $DEPLOY_DIR/docker-compose.yml 2>/dev/null | awk '{print \$1}'" 2>/dev/null)

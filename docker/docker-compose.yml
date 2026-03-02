@@ -110,6 +110,7 @@ services:
     volumes:
       - config:/etc/kaitu:ro
       - k2v5-data:/etc/k2v5
+      - ./users:/etc/k2v5/users
     environment:
       - TZ=Asia/Singapore
       - K2_HOP_PORT_MIN=${K2_JUMP_PORT_MIN:-40000}

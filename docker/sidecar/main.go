@@ -442,6 +442,7 @@ type K2V5ConfigData struct {
 	CenterURL    string
 	LogLevel     string
 	HasOCDomain  bool
+	UsersFile    string
 }
 
 const k2v5ConfigTemplate = `listen: ":443"
@@ -452,6 +453,7 @@ tls:
   cert: "{{.CertPath}}"
   key: "{{.KeyPath}}"
 auth:
+  users_file: "{{.UsersFile}}"
   remote_url: "{{.CenterURL}}/slave/device-check-auth"
   cache_ttl: 5m
 local_routes:
@@ -502,6 +504,7 @@ func (s *Sidecar) generateK2V5Config() error {
 		CenterURL:   s.config.K2Center.BaseURL,
 		LogLevel:    logLevel,
 		HasOCDomain: s.config.OC.Domain != "",
+		UsersFile:   k2v5DataDir + "/users",
 	}
 
 	return s.generateConfigFromTemplate("k2v5-config.yaml", k2v5ConfigTemplate, outputPath, data)

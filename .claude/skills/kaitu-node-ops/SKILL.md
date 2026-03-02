@@ -131,6 +131,28 @@ Use `exec_on_node(ip, command)` for all operations. Replace `{sidecar}` and `{tu
 | Deploy compose to single node | `exec_on_node(ip, "sudo tee /apps/kaitu-slave/docker-compose.yml > /dev/null", { scriptPath: "docker/docker-compose.yml" })` |
 | Fix cron (single node) | `(sudo crontab -l 2>/dev/null \| grep -v 'auto-update'; echo '0 4 * * * /apps/kaitu-slave/auto-update.sh >> /apps/kaitu-slave/auto-update.log 2>&1') \| sudo crontab -` |
 
+### User Management (k2v5 auth)
+
+k2v5 supports two auth modes (checked in order, first match wins):
+1. **users_file**: `/apps/kaitu-slave/users` on host → bind-mounted to `/etc/k2v5/users` in container
+2. **remote_url**: Center API at `/slave/device-check-auth` (fallback when file is empty)
+
+Empty file = 0 users = pure remote auth (default). No restart needed — changes take effect on next full auth. Existing tickets (1h TTL) stay valid.
+
+**File format** (one user per line: `udid:token`):
+```
+a1b2c3d4:0123456789abcdef0123456789abcdef
+e5f6g7h8:abcdef0123456789abcdef0123456789
+```
+
+| Operation | Command |
+|-----------|---------|
+| View users | `cat /apps/kaitu-slave/users` |
+| Add user | `echo "udid:token" >> /apps/kaitu-slave/users` |
+| Remove user | `sed -i "/^UDID:/d" /apps/kaitu-slave/users` |
+| Clear all (remote only) | `truncate -s 0 /apps/kaitu-slave/users` |
+| Check auth config | `docker exec k2v5 grep -E 'users_file\|remote_url' /etc/kaitu/k2v5-config.yaml` |
+
 ## Step 5: Post-Provisioning Checklist
 
 After provisioning a new node (or reinstalling OS), ensure these are all done:
