@@ -482,6 +482,179 @@ func TestK2ARCSenderAdaptiveMode(t *testing.T) {
 	}
 }
 
+// ============================================================================
+// Tests for LossRate Clamp + Snapshot MI Boundary Fallback
+// ============================================================================
+
+func TestMonitorInterval_LossRate_Clamped(t *testing.T) {
+	// Bug: MI boundary can produce BytesLost > BytesSent (stale loss events
+	// from previous MI attributed to new MI with few bytes sent).
+	// LossRate must never exceed 1.0.
+	mi := NewMonitorInterval(1, 10_000_000.0)
+	mi.BytesSent = 1000
+	mi.BytesLost = 5000 // Impossible in theory, but happens at MI boundary
+
+	loss := mi.LossRate()
+	if loss > 1.0 {
+		t.Errorf("LossRate should be clamped to 1.0, got %f", loss)
+	}
+	if loss != 1.0 {
+		t.Errorf("LossRate with BytesLost > BytesSent should be exactly 1.0, got %f", loss)
+	}
+
+	// Normal case: unchanged behavior
+	mi2 := NewMonitorInterval(2, 10_000_000.0)
+	mi2.BytesSent = 10000
+	mi2.BytesLost = 2000
+	if diff := mi2.LossRate() - 0.2; diff < -0.01 || diff > 0.01 {
+		t.Errorf("Normal loss rate should be 0.2, got %f", mi2.LossRate())
+	}
+
+	// Zero sent: 0.0
+	mi3 := NewMonitorInterval(3, 10_000_000.0)
+	if mi3.LossRate() != 0.0 {
+		t.Errorf("Zero BytesSent should return 0.0, got %f", mi3.LossRate())
+	}
+}
+
+func TestK2ARCSender_Snapshot_UsesLastCompletedOnBoundary(t *testing.T) {
+	// When CurrentMI has insufficient data (BytesSent < minSnapshotBytes),
+	// Snapshot() should return the last completed MI's loss/throughput.
+	sender := NewK2ARCSender(100_000_000)
+	mockRTT := &mockRTTStatsProvider{smoothedRTT: 50 * time.Millisecond}
+	sender.SetRTTStatsProvider(mockRTT)
+
+	// Simulate a completed MI with known stats
+	sender.lastCompletedLoss = 0.02
+	sender.lastCompletedThroughput = 5_000_000.0
+
+	// Set up CurrentMI with very few bytes (MI boundary state)
+	sender.state.ensureCurrentMI(sender.state.CurrentRate)
+	sender.state.CurrentMI.BytesSent = 500 // << minSnapshotBytes (100000)
+	sender.state.CurrentMI.BytesLost = 300 // Would produce 60% loss — garbage
+	sender.state.CurrentMI.BytesAcked = 200
+
+	snap := sender.Snapshot()
+
+	// Should use lastCompleted values, not the garbage from young MI
+	if snap.LossRate != 0.02 {
+		t.Errorf("Expected lastCompleted LossRate 0.02, got %f", snap.LossRate)
+	}
+	if snap.Throughput != 5_000_000.0 {
+		t.Errorf("Expected lastCompleted Throughput 5000000, got %f", snap.Throughput)
+	}
+
+	// Now simulate MI with enough data
+	sender.state.CurrentMI.BytesSent = 200000 // > minSnapshotBytes (100000)
+	sender.state.CurrentMI.BytesLost = 20000  // 10% real loss
+	sender.state.CurrentMI.BytesAcked = 180000
+	sender.state.CurrentMI.StartTime = time.Now().Add(-time.Second)
+	sender.state.CurrentMI.Complete()
+
+	snap2 := sender.Snapshot()
+
+	// Should use CurrentMI values now
+	if snap2.LossRate < 0.09 || snap2.LossRate > 0.11 {
+		t.Errorf("Expected CurrentMI LossRate ~0.10, got %f", snap2.LossRate)
+	}
+	if snap2.Throughput <= 0 {
+		t.Errorf("Expected positive Throughput from CurrentMI, got %f", snap2.Throughput)
+	}
+}
+
+func TestK2ARCSender_Snapshot_UpdatesLastCompletedOnMICompletion(t *testing.T) {
+	// When MI completes via OnPacketAcked, lastCompleted fields should update.
+	sender := NewK2ARCSender(100_000_000)
+	mockRTT := &mockRTTStatsProvider{smoothedRTT: 50 * time.Millisecond}
+	sender.SetRTTStatsProvider(mockRTT)
+
+	// Initially zero
+	if sender.lastCompletedLoss != 0 {
+		t.Errorf("Initial lastCompletedLoss should be 0, got %f", sender.lastCompletedLoss)
+	}
+
+	// Send packets to build up MI
+	for i := 0; i < 20; i++ {
+		sender.OnPacketSent(0, 0, congestion.PacketNumber(i), 1472, true)
+	}
+	// Add some loss
+	sender.OnCongestionEvent(15, 1472*2, 0)
+
+	// Ack enough packets to trigger MI completion (MinMIPackets = 10)
+	for i := 0; i < 12; i++ {
+		sender.OnPacketAcked(congestion.PacketNumber(i), 1472, 0, 0)
+	}
+
+	// After MI completes, lastCompleted should be non-zero
+	sender.mu.RLock()
+	completedLoss := sender.lastCompletedLoss
+	completedThroughput := sender.lastCompletedThroughput
+	sender.mu.RUnlock()
+
+	// We can't predict exact values, but they should be set
+	if completedLoss == 0 && completedThroughput == 0 {
+		t.Error("After MI completion, lastCompletedLoss and lastCompletedThroughput should be updated")
+	}
+}
+
+func TestOnCongestionEvent_StaleLossFiltering(t *testing.T) {
+	// Confirmed root cause: OnCongestionEvent receives loss events for packets
+	// sent in the PREVIOUS MI, inflating the new MI's BytesLost (e.g., 947% LossRate).
+	// 86 stale events in 3 minutes observed in production diagnostic run.
+	sender := NewK2ARCSender(100_000_000)
+	mockRTT := &mockRTTStatsProvider{smoothedRTT: 50 * time.Millisecond}
+	sender.SetRTTStatsProvider(mockRTT)
+
+	// Send packets 0-19 in MI #0
+	for i := 0; i < 20; i++ {
+		sender.OnPacketSent(0, 0, congestion.PacketNumber(i), 1472, true)
+	}
+
+	// Ack enough to complete MI #0 (MinMIPackets=10) → starts MI #1
+	for i := 0; i < 12; i++ {
+		sender.OnPacketAcked(congestion.PacketNumber(i), 1472, 0, 0)
+	}
+
+	// Send packets 20-29 in MI #1
+	for i := 20; i < 30; i++ {
+		sender.OnPacketSent(0, 0, congestion.PacketNumber(i), 1472, true)
+	}
+
+	// Get MI #1's BytesLost before stale loss
+	sender.mu.RLock()
+	lostBefore := sender.state.CurrentMI.BytesLost
+	miFirstPkt := sender.state.CurrentMI.FirstPacketNumber
+	sender.mu.RUnlock()
+
+	if miFirstPkt <= 0 {
+		t.Fatalf("MI #1 should have FirstPacketNumber > 0, got %d", miFirstPkt)
+	}
+
+	// Loss event for packet 15 (belongs to MI #0, not MI #1!)
+	sender.OnCongestionEvent(congestion.PacketNumber(15), 1472, 0)
+
+	// MI #1's BytesLost should NOT increase from stale loss
+	sender.mu.RLock()
+	lostAfter := sender.state.CurrentMI.BytesLost
+	sender.mu.RUnlock()
+
+	if lostAfter != lostBefore {
+		t.Errorf("Stale loss (pkt 15 < firstPkt %d) should not increase MI #1 BytesLost: before=%d, after=%d",
+			miFirstPkt, lostBefore, lostAfter)
+	}
+
+	// Loss event for packet 25 (belongs to MI #1) SHOULD be counted
+	sender.OnCongestionEvent(congestion.PacketNumber(25), 1472, 0)
+
+	sender.mu.RLock()
+	lostAfterValid := sender.state.CurrentMI.BytesLost
+	sender.mu.RUnlock()
+
+	if lostAfterValid == lostBefore {
+		t.Error("Loss from current MI's packet (pkt 25) should be counted")
+	}
+}
+
 func TestK2ARCSenderAdaptiveIntegration(t *testing.T) {
 	sender := NewK2ARCSenderAdaptive(100_000_000) // 100 Mbps
 	mockRTT := &mockRTTStatsProvider{smoothedRTT: 100 * time.Millisecond}

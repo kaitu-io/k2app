@@ -2,6 +2,7 @@
 package arc
 
 import (
+	"log/slog"
 	"sync"
 	"time"
 
@@ -222,6 +223,10 @@ type MonitorInterval struct {
 	PacketsSent  uint64
 	PacketsAcked uint64
 
+	// Packet number range for stale loss detection
+	FirstPacketNumber int64 // set on first OnPacketSent
+	LastPacketNumber  int64 // updated on every OnPacketSent
+
 	// IsAppLimited indicates if this MI was application-limited
 	// (application not sending at full rate, e.g., idle period)
 	IsAppLimited bool
@@ -287,12 +292,18 @@ func (mi *MonitorInterval) Throughput() float64 {
 	return throughput
 }
 
-// LossRate calculates loss rate (0.0 to 1.0)
+// LossRate calculates loss rate, clamped to [0.0, 1.0].
+// MI boundary artifacts can produce BytesLost > BytesSent when stale loss
+// events from a previous MI are attributed to a new MI with few bytes sent.
 func (mi *MonitorInterval) LossRate() float64 {
 	if mi.BytesSent == 0 {
 		return 0.0
 	}
-	return float64(mi.BytesLost) / float64(mi.BytesSent)
+	loss := float64(mi.BytesLost) / float64(mi.BytesSent)
+	if loss > 1.0 {
+		loss = 1.0
+	}
+	return loss
 }
 
 // AvgRTT calculates average RTT
@@ -485,6 +496,11 @@ type K2ARCSender struct {
 	lastSendTime   congestion.Time
 	pacingBudget   congestion.ByteCount
 	lastUpdateTime congestion.Time
+
+	// Snapshot fallback: when CurrentMI is too young (MI boundary), Snapshot()
+	// returns these values instead of the in-progress MI's unreliable stats.
+	lastCompletedLoss       float64
+	lastCompletedThroughput float64
 
 	mu sync.RWMutex
 }
@@ -745,6 +761,10 @@ func (p *K2ARCSender) OnPacketSent(
 	mi := p.state.ensureCurrentMI(p.state.CurrentRate)
 	mi.BytesSent += uint64(bytes)
 	mi.PacketsSent++
+	if mi.PacketsSent == 1 {
+		mi.FirstPacketNumber = int64(packetNumber)
+	}
+	mi.LastPacketNumber = int64(packetNumber)
 }
 
 // CanSend returns true if we can send more data
@@ -786,6 +806,10 @@ func (p *K2ARCSender) OnPacketAcked(
 		miCopy := *mi
 		mi.Complete()
 
+		// Save completed MI stats for Snapshot() fallback
+		p.lastCompletedLoss = miCopy.LossRate()
+		p.lastCompletedThroughput = miCopy.Throughput()
+
 		// Process the completed MI
 		p.processCompletedMI(&miCopy)
 
@@ -806,8 +830,20 @@ func (p *K2ARCSender) OnCongestionEvent(
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	// Record loss in current MI
+	// Record loss in current MI — but skip stale losses from previous MI.
+	// QUIC reports loss for packets sent in old MI after new MI has started.
+	// Without filtering: BytesLost >> BytesSent → LossRate 300-900% → false CRITICAL.
 	mi := p.state.ensureCurrentMI(p.state.CurrentRate)
+
+	if mi.PacketsSent > 0 && int64(number) < mi.FirstPacketNumber {
+		// Stale loss: packet belongs to a previous MI. Don't pollute current MI.
+		slog.Debug("arc: skipping stale loss",
+			"lostPkt", number,
+			"miFirstPkt", mi.FirstPacketNumber,
+		)
+		return
+	}
+
 	mi.BytesLost += uint64(lostBytes)
 
 	// In aggressive/GFW mode, we mostly ignore loss
@@ -877,6 +913,13 @@ type ARCSnapshot struct {
 	MIID        uint64        // Current Monitor Interval ID
 }
 
+// minSnapshotBytes is the minimum BytesSent in the current MI before its stats
+// are trusted for external consumption. Below this threshold, MI boundary
+// artifacts (stale loss events, tiny duration) produce unreliable metrics.
+// Set to 100KB to ensure stale loss from previous MI (up to ~BDP worth of
+// packets) is adequately diluted before reporting.
+const minSnapshotBytes = uint64(100000) // 100KB
+
 // Snapshot returns a point-in-time copy of K2ARC state.
 func (p *K2ARCSender) Snapshot() ARCSnapshot {
 	p.mu.RLock()
@@ -889,8 +932,14 @@ func (p *K2ARCSender) Snapshot() ARCSnapshot {
 		Mode:        p.state.Mode,
 	}
 	if mi := p.state.CurrentMI; mi != nil {
-		s.LossRate = mi.LossRate()
-		s.Throughput = mi.Throughput()
+		if mi.BytesSent >= minSnapshotBytes {
+			s.LossRate = mi.LossRate()
+			s.Throughput = mi.Throughput()
+		} else {
+			// MI too young — use last completed MI's stats to avoid boundary artifacts.
+			s.LossRate = p.lastCompletedLoss
+			s.Throughput = p.lastCompletedThroughput
+		}
 		s.MIID = mi.ID
 	}
 	return s

@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"log/slog"
 	"sync"
 	"time"
 
@@ -38,8 +39,11 @@ type HealthSnapshot struct {
 }
 
 const (
-	ringSize       = 300 // 5 minutes at 1Hz
-	actionCooldown = 10 * time.Second
+	ringSize           = 300 // 5 minutes at 1Hz
+	actionCooldown     = 10 * time.Second
+	ewmaAlpha          = 0.3   // EWMA weight for new sample (matches ARC adaptive alpha weight)
+	peakDecayPerSample = 0.999 // per-second decay, half-life ≈ 693 seconds
+	ewmaWarmupSamples  = 10   // samples before peakThroughput tracking starts (skip init burst)
 )
 
 // healthMonitor samples wire stats at 1Hz, maintains a ring buffer,
@@ -58,6 +62,13 @@ type healthMonitor struct {
 	lastAction     time.Time
 	peakThroughput float64
 	hopAttempts    int
+
+	// EWMA-smoothed metrics for health decisions.
+	// Raw values are still reported in HealthSnapshot for observability.
+	smoothLoss       float64
+	smoothThroughput float64
+	ewmaInitialized  bool
+	ewmaSamples      int // warm-up counter: peakThroughput not updated until stabilized
 
 	ring     [ringSize]HealthSnapshot
 	ringIdx  int
@@ -112,12 +123,28 @@ func (hm *healthMonitor) sample() {
 	hm.mu.Lock()
 	defer hm.mu.Unlock()
 
-	// Track peak throughput for degradation detection.
-	if ws.Throughput > hm.peakThroughput {
-		hm.peakThroughput = ws.Throughput
+	// EWMA smoothing: dampens MI boundary artifacts (lossRate spikes,
+	// throughput spikes) that cause false health degradation.
+	if !hm.ewmaInitialized {
+		hm.smoothLoss = ws.LossRate
+		hm.smoothThroughput = ws.Throughput
+		hm.ewmaInitialized = true
+		hm.ewmaSamples = 1
+	} else {
+		hm.smoothLoss = ewmaAlpha*ws.LossRate + (1-ewmaAlpha)*hm.smoothLoss
+		hm.smoothThroughput = ewmaAlpha*ws.Throughput + (1-ewmaAlpha)*hm.smoothThroughput
+		hm.ewmaSamples++
 	}
 
-	// Assess health from current metrics.
+	// Decay peak throughput (half-life ~693s) then track from smoothed values.
+	// Skip peak tracking during warm-up to avoid inflating peak from init burst
+	// (QUIC handshake produces astronomical throughput in the first MI).
+	hm.peakThroughput *= peakDecayPerSample
+	if hm.ewmaSamples >= ewmaWarmupSamples && hm.smoothThroughput > hm.peakThroughput {
+		hm.peakThroughput = hm.smoothThroughput
+	}
+
+	// Assess health from smoothed metrics.
 	level := hm.assess(ws)
 	hm.transition(level)
 
@@ -168,12 +195,11 @@ func (hm *healthMonitor) assess(ws wire.WireStats) string {
 		return HealthDegraded
 	}
 
-	highLoss := ws.LossRate > 0.05
-	veryHighLoss := ws.LossRate > 0.25
+	highLoss := hm.smoothLoss > 0.05
+	veryHighLoss := hm.smoothLoss > 0.25
 	highRTT := ws.MinRTT > 0 && ws.RTT > 3*ws.MinRTT
-	throughputDrop := hm.peakThroughput > 0 && ws.Throughput < hm.peakThroughput*0.3
 
-	if veryHighLoss || (hm.health == HealthDegraded && throughputDrop) {
+	if veryHighLoss {
 		return HealthCritical
 	}
 	if highLoss || highRTT {
@@ -190,6 +216,7 @@ func (hm *healthMonitor) transition(level string) {
 		hm.degradedStreak = 0
 		hm.criticalStreak = 0
 		if hm.healthyStreak >= 10 && hm.health != HealthHealthy {
+			slog.Info("health: recovery", "from", hm.health)
 			hm.health = HealthHealthy
 			hm.hopAttempts = 0
 		}
@@ -204,7 +231,8 @@ func (hm *healthMonitor) transition(level string) {
 		hm.criticalStreak++
 		hm.healthyStreak = 0
 		hm.degradedStreak = 0
-		if hm.criticalStreak >= 3 && hm.health != HealthCritical {
+		if hm.criticalStreak >= 5 && hm.health != HealthCritical {
+			slog.Warn("health: critical", "streak", hm.criticalStreak)
 			hm.health = HealthCritical
 		}
 		if hm.health == HealthCritical {
@@ -223,12 +251,14 @@ func (hm *healthMonitor) maybeAct() {
 
 	if hm.hopAttempts > 3 {
 		// Escalate: full reconnect.
+		slog.Warn("health: full reconnect", "hopAttempts", hm.hopAttempts)
 		hm.hopAttempts = 0
 		if hm.onAction != nil {
 			hm.onAction()
 		}
 	} else {
 		// Port hop: reset cached connections.
+		slog.Warn("health: port hop", "attempt", hm.hopAttempts)
 		hm.tm.ResetConnections()
 	}
 }
@@ -244,6 +274,10 @@ func (hm *healthMonitor) resetCounters() {
 	hm.healthyStreak = 0
 	hm.hopAttempts = 0
 	hm.peakThroughput = 0
+	hm.smoothLoss = 0
+	hm.smoothThroughput = 0
+	hm.ewmaInitialized = false
+	hm.ewmaSamples = 0
 }
 
 // History returns the ring buffer contents oldest-first.
