@@ -3,7 +3,7 @@
     "title": "k2 ステルスネットワークトンネル",
     "subtitle": "k2arc 適応型レート制御搭載、ECH ステルス暗号化、ゼロ設定デプロイ",
     "description": "Kaitu k2 は k2arc 適応型レート制御を搭載した次世代ステルストンネルプロトコルです。k2arc は最適送信レートを自動探索し、GFW 高パケットロス環境で BBR を大幅に上回るスループットを維持します。ECH 暗号化 SNI + TLS フィンガープリント偽装でトラフィックは検出不可能。QUIC + TCP-WS デュアルスタック転送、1コマンドでデプロイ完了。",
-    "cta_primary": "今すぐ始める",
+    "cta_primary": "開通と更新",
     "cta_secondary": "アプリをダウンロード",
     "downloadClient": "クライアントをダウンロード",
     "quickActivation": "クイック開始",

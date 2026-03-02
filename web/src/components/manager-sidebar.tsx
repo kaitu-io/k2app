@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { Network, Package, Users, Server, Receipt, Mail, Tag, Wallet, FileText, Activity, LogOut, Gauge, PenSquare, UserCircle, ClipboardList, Cloud } from "lucide-react";
+import { Package, Users, Server, Receipt, Mail, Tag, Wallet, FileText, Activity, LogOut, Gauge, PenSquare, UserCircle, ClipboardList, Cloud } from "lucide-react";
 import Image from "next/image";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,6 @@ const ManagerSidebar = () => {
         { href: "/manager/plans", icon: Package, label: "套餐管理" },
         { href: "/manager/cloud", icon: Cloud, label: "节点部署" },
         { href: "/manager/nodes", icon: Server, label: "节点运维" },
-        { href: "/manager/tunnels", icon: Network, label: "隧道管理" },
       ]
     },
     {

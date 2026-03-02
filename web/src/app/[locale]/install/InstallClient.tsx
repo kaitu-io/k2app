@@ -112,7 +112,7 @@ export default function InstallClient() {
       {/* Device Detection Status */}
       <Card className="p-8 mb-8">
         <div className="text-center">
-          <div className="w-16 h-16 mx-auto mb-4 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center">
+          <div className="w-16 h-16 mx-auto mb-4 bg-blue-900/30 rounded-full flex items-center justify-center">
             {device?.isMobile ? (
               <Smartphone className="w-8 h-8 text-blue-600" />
             ) : device?.isDesktop ? (
@@ -122,12 +122,12 @@ export default function InstallClient() {
             )}
           </div>
 
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+          <h2 className="text-2xl font-bold text-foreground mb-2">
             {device ? t('install.install.deviceDetected', {device: device.name}) : t('install.install.detectingDevice')}
           </h2>
 
           {downloadState === 'detecting' && (
-            <p className="text-gray-600 dark:text-gray-300">
+            <p className="text-muted-foreground">
               {t('install.install.analyzingDevice')}
             </p>
           )}
@@ -136,13 +136,13 @@ export default function InstallClient() {
 
       {/* Download State Cards */}
       {downloadState === 'ready' && (
-        <Card className="p-8 mb-8 border-blue-200 bg-blue-50 dark:bg-blue-900/20">
+        <Card className="p-8 mb-8 border-blue-800 bg-blue-900/20">
           <div className="text-center">
             <RefreshCw className="w-12 h-12 text-blue-600 mx-auto mb-4 animate-spin" />
-            <h3 className="text-xl font-bold text-blue-900 dark:text-blue-100 mb-2">
+            <h3 className="text-xl font-bold text-foreground mb-2">
               {t('install.install.readyToDownload')}
             </h3>
-            <p className="text-blue-700 dark:text-blue-200 mb-4">
+            <p className="text-blue-200 mb-4">
               {t('install.install.autoDownloadCountdown', {seconds: countdown})}
             </p>
             <div className="flex justify-center space-x-4">
@@ -159,13 +159,13 @@ export default function InstallClient() {
       )}
 
       {downloadState === 'downloading' && (
-        <Card className="p-8 mb-8 border-yellow-200 bg-yellow-50 dark:bg-yellow-900/20">
+        <Card className="p-8 mb-8 border-yellow-800 bg-yellow-900/20">
           <div className="text-center">
             <Download className="w-12 h-12 text-yellow-600 mx-auto mb-4 animate-bounce" />
-            <h3 className="text-xl font-bold text-yellow-900 dark:text-yellow-100 mb-2">
+            <h3 className="text-xl font-bold text-foreground mb-2">
               {t('install.install.downloading')}
             </h3>
-            <p className="text-yellow-700 dark:text-yellow-200">
+            <p className="text-yellow-200">
               {t('install.install.checkDownloadLocation')}
             </p>
           </div>
@@ -173,13 +173,13 @@ export default function InstallClient() {
       )}
 
       {downloadState === 'success' && (
-        <Card className="p-8 mb-8 border-green-200 bg-green-50 dark:bg-green-900/20">
+        <Card className="p-8 mb-8 border-green-800 bg-green-900/20">
           <div className="text-center">
             <CheckCircle className="w-12 h-12 text-green-600 mx-auto mb-4" />
-            <h3 className="text-xl font-bold text-green-900 dark:text-green-100 mb-2">
+            <h3 className="text-xl font-bold text-foreground mb-2">
               {t('install.install.downloadSuccess')}
             </h3>
-            <p className="text-green-700 dark:text-green-200 mb-4">
+            <p className="text-green-200 mb-4">
               {t('install.install.runInstaller')}
             </p>
             <div className="flex justify-center space-x-4">
@@ -199,13 +199,13 @@ export default function InstallClient() {
       )}
 
       {downloadState === 'failed' && (
-        <Card className="p-8 mb-8 border-red-200 bg-red-50 dark:bg-red-900/20">
+        <Card className="p-8 mb-8 border-red-800 bg-red-900/20">
           <div className="text-center">
             <AlertCircle className="w-12 h-12 text-red-600 mx-auto mb-4" />
-            <h3 className="text-xl font-bold text-red-900 dark:text-red-100 mb-2">
+            <h3 className="text-xl font-bold text-foreground mb-2">
               {t('install.install.downloadFailed')}
             </h3>
-            <p className="text-red-700 dark:text-red-200 mb-4">
+            <p className="text-red-200 mb-4">
               {t('install.install.downloadFailedMessage')}
             </p>
             <div className="flex justify-center space-x-4">
@@ -223,16 +223,16 @@ export default function InstallClient() {
       )}
 
       {downloadState === 'unavailable' && device?.isMobile && (
-        <Card className="p-8 mb-8 border-orange-200 bg-orange-50 dark:bg-orange-900/20">
+        <Card className="p-8 mb-8 border-orange-800 bg-orange-900/20">
           <div className="text-center">
             <Smartphone className="w-12 h-12 text-orange-600 mx-auto mb-4" />
-            <h3 className="text-xl font-bold text-orange-900 dark:text-orange-100 mb-2">
+            <h3 className="text-xl font-bold text-foreground mb-2">
               {t('install.install.mobileComingSoon')}
             </h3>
-            <p className="text-orange-700 dark:text-orange-200 mb-4">
+            <p className="text-orange-200 mb-4">
               {t('install.install.platformDevelopment', {platform: device.type === 'ios' ? 'iOS' : 'Android'})}
             </p>
-            <p className="text-sm text-orange-600 dark:text-orange-300">
+            <p className="text-sm text-orange-300">
               {t('install.install.useDesktopVersion')}
             </p>
           </div>

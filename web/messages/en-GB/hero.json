@@ -3,7 +3,7 @@
     "title": "k2 Stealth Network Tunnel",
     "subtitle": "Powered by k2arc adaptive rate control, ECH stealth, zero-config deploy",
     "description": "Kaitu k2 is a next-generation stealth tunnel protocol powered by k2arc adaptive rate control. k2arc automatically finds optimal send rates, maintaining far higher throughput than BBR under GFW high-loss conditions. ECH-encrypted SNI + TLS fingerprint spoofing makes traffic undetectable. QUIC + TCP-WS dual-stack transport, one-command deployment.",
-    "cta_primary": "Get Started",
+    "cta_primary": "Subscribe & Renew",
     "cta_secondary": "Download App",
     "downloadClient": "Download Client",
     "quickActivation": "Quick Start",

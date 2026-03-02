@@ -13,6 +13,7 @@ import { generateMetadata as generatePageMetadata } from './metadata';
 import { Metadata } from 'next';
 import { Suspense } from 'react';
 import { Inter, JetBrains_Mono } from "next/font/google";
+import ChatwootWidget from '@/components/ChatwootWidget';
 import "../globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -69,6 +70,7 @@ export default async function LocaleLayout({
                     {children}
                     <Toaster />
                     <CookieConsent />
+                    <ChatwootWidget />
                   </AuthProvider>
                 </AppConfigProvider>
               </EmbedThemeProvider>

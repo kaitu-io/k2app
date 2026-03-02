@@ -3,7 +3,7 @@
     "title": "k2 隱身網路隧道",
     "subtitle": "搭載 k2arc 自適應速率控制，ECH 加密隱身，零配置部署",
     "description": "開途 k2 是搭載 k2arc 自適應速率控制的下一代隱身隧道協議。k2arc 自動探測最優傳送速率，在 GFW 高封包遺失網路中維持遠超 BBR 的吞吐量。基於 ECH 加密 SNI + TLS 指紋偽裝實現流量不可檢測，QUIC + TCP-WS 雙棧傳輸，一行命令完成部署。",
-    "cta_primary": "快速開始",
+    "cta_primary": "開通和續費",
     "cta_secondary": "下載應用",
     "downloadClient": "下載客戶端",
     "quickActivation": "快速開通",

@@ -2163,9 +2163,11 @@ export interface NodeBatchMatrixResult {
 
 export interface NodeBatchMatrixTunnel {
   id: number;
+  name: string;
   domain: string;
   protocol: string;
   port: number;
+  url: string;
 }
 
 export interface NodeBatchMatrixNode {
