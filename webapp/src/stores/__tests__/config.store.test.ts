@@ -177,6 +177,47 @@ describe('Config Store', () => {
     });
   });
 
+  // ==================== buildConnectConfig log level ====================
+
+  describe('buildConnectConfig log level', () => {
+    it('reads log level from localStorage when k2_log_level is set', async () => {
+      mockStorage.get.mockResolvedValue(null);
+      localStorage.setItem('k2_log_level', 'debug');
+
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      const result = useConfigStore.getState().buildConnectConfig('k2v5://example');
+      expect(result.log?.level).toBe('debug');
+
+      localStorage.removeItem('k2_log_level');
+    });
+
+    it('defaults to info when k2_log_level is not set', async () => {
+      mockStorage.get.mockResolvedValue(null);
+      localStorage.removeItem('k2_log_level');
+
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      const result = useConfigStore.getState().buildConnectConfig('k2v5://example');
+      expect(result.log?.level).toBe('info');
+    });
+
+    it('overrides stored config log level with localStorage value', async () => {
+      mockStorage.get.mockResolvedValue({ log: { level: 'warn' } });
+      localStorage.setItem('k2_log_level', 'error');
+
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      const result = useConfigStore.getState().buildConnectConfig();
+      expect(result.log?.level).toBe('error');
+
+      localStorage.removeItem('k2_log_level');
+    });
+  });
+
   // ==================== Getters ====================
 
   describe('Getters', () => {

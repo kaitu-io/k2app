@@ -142,6 +142,44 @@ pub async fn daemon_exec(
     }
 }
 
+/// IPC command: hot-switch daemon log level.
+///
+/// Daemon mode: POST /api/log-level to k2 daemon.
+/// NE mode: no-op (level applies on next connect via config).
+#[tauri::command]
+pub async fn set_log_level(level: String) -> Result<ServiceResponse, String> {
+    #[cfg(all(target_os = "macos", feature = "ne-mode"))]
+    {
+        // NE mode: no daemon to hot-switch. Level is applied on next connect via config.
+        Ok(ServiceResponse {
+            code: 0,
+            message: "ok".to_string(),
+            data: serde_json::Value::Null,
+        })
+    }
+    #[cfg(not(all(target_os = "macos", feature = "ne-mode")))]
+    {
+        tokio::task::spawn_blocking(move || {
+            let url = format!("{}/api/log-level", service_base_url());
+            let client = reqwest::blocking::Client::builder()
+                .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
+                .no_proxy()
+                .build()
+                .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+            let response = client
+                .post(&url)
+                .json(&serde_json::json!({"level": level}))
+                .send()
+                .map_err(|e| format!("Failed to set log level: {}", e))?;
+            response
+                .json::<ServiceResponse>()
+                .map_err(|e| format!("Failed to parse response: {}", e))
+        })
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
+    }
+}
+
 /// IPC command: get device UDID.
 ///
 /// macOS: hardware UUID via `sysctl -n kern.uuid` (no daemon dependency).

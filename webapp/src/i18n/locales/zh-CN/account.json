@@ -49,6 +49,8 @@
     "renewNow": "立即续费",
     "exitApp": "退出应用"
   },
+  "developerModeActivated": "开发者模式已开启",
+  "logLevel": "日志级别",
   "devices": {
     "title": "我的设备",
     "loading": "正在加载设备列表...",

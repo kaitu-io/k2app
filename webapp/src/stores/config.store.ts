@@ -122,9 +122,9 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
     const { config } = get();
     const result = deepMerge(CLIENT_CONFIG_DEFAULTS, config);
 
-    // Force defaults — mode and log level are not user-configurable
+    // Force defaults — mode is not user-configurable; log level from developer options
     result.mode = 'tun';
-    result.log = { ...result.log, level: 'info' };
+    result.log = { ...result.log, level: localStorage.getItem('k2_log_level') || 'info' };
 
     if (serverUrl) {
       result.server = serverUrl;

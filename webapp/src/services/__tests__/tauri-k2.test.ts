@@ -404,6 +404,43 @@ describe('tauri-k2', () => {
     });
   });
 
+  describe('setLogLevel', () => {
+    beforeEach(async () => {
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === 'get_platform_info') {
+          return { os: 'macos', version: '0.4.0' };
+        }
+        if (cmd === 'get_update_status') {
+          return null;
+        }
+        if (cmd === 'get_pid') {
+          return 12345;
+        }
+        return { code: 0, message: 'ok', data: {} };
+      });
+      await injectTauriGlobals();
+      localStorage.removeItem('k2_log_level');
+    });
+
+    afterEach(() => {
+      localStorage.removeItem('k2_log_level');
+    });
+
+    it('sets localStorage and invokes set_log_level IPC', () => {
+      window._platform.setLogLevel!('debug');
+
+      expect(localStorage.getItem('k2_log_level')).toBe('debug');
+      expect(mockInvoke).toHaveBeenCalledWith('set_log_level', { level: 'debug' });
+    });
+
+    it('does not throw when invoke fails (best-effort)', () => {
+      mockInvoke.mockRejectedValueOnce(new Error('daemon down'));
+
+      expect(() => window._platform.setLogLevel!('error')).not.toThrow();
+      expect(localStorage.getItem('k2_log_level')).toBe('error');
+    });
+  });
+
   describe('getK2Source', () => {
     it('returns tauri after Tauri injection', async () => {
       mockInvoke.mockImplementation(async (cmd: string) => {

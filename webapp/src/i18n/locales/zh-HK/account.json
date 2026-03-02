@@ -36,6 +36,8 @@
     "renewNow": "立即續費",
     "exitApp": "退出應用"
   },
+  "developerModeActivated": "開發者模式已開啟",
+  "logLevel": "日誌級別",
   "devices": {
     "title": "我的裝置",
     "loading": "正在載入裝置列表...",

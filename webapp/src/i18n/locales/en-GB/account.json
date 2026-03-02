@@ -36,6 +36,8 @@
     "renewNow": "Renew Now",
     "exitApp": "Exit App"
   },
+  "developerModeActivated": "Developer mode enabled",
+  "logLevel": "Log Level",
   "devices": {
     "title": "My Devices",
     "loading": "Loading device list...",

@@ -446,6 +446,36 @@ describe('capacitor-k2', () => {
     });
   });
 
+  describe('setLogLevel', () => {
+    beforeEach(() => {
+      localStorage.removeItem('k2_log_level');
+    });
+
+    afterEach(() => {
+      localStorage.removeItem('k2_log_level');
+    });
+
+    it('sets localStorage k2_log_level', async () => {
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      window._platform.setLogLevel!('debug');
+
+      expect(localStorage.getItem('k2_log_level')).toBe('debug');
+    });
+
+    it('overwrites existing log level', async () => {
+      localStorage.setItem('k2_log_level', 'info');
+
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      window._platform.setLogLevel!('warn');
+
+      expect(localStorage.getItem('k2_log_level')).toBe('warn');
+    });
+  });
+
   describe('updater', () => {
     /**
      * Helper: extract the callback registered for a given event name from addListener calls.

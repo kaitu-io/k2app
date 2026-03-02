@@ -179,6 +179,11 @@ export async function injectCapacitorGlobals(): Promise<void> {
     },
 
     updater,
+
+    setLogLevel: (level: string): void => {
+      localStorage.setItem('k2_log_level', level);
+      // Mobile: takes effect on next connect via buildConnectConfig()
+    },
   };
 
   // Inject globals

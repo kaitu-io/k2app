@@ -162,6 +162,9 @@ export interface IPlatform {
 
   // ====== 诊断（可选）======
 
+  /** 设置日志级别（开发者模式） */
+  setLogLevel?(level: 'debug' | 'info' | 'warn' | 'error'): void;
+
   /** 上传服务日志用于诊断/反馈 */
   uploadLogs?(params: {
     email?: string | null;

@@ -230,6 +230,11 @@ export async function injectTauriGlobals(): Promise<void> {
     uploadLogs: async (params): Promise<{ success: boolean; error?: string }> => {
       return await invoke<{ success: boolean; error?: string }>('upload_service_log_command', { params });
     },
+
+    setLogLevel: (level: string): void => {
+      localStorage.setItem('k2_log_level', level);
+      invoke('set_log_level', { level }).catch(() => {}); // best-effort, daemon may be down
+    },
   };
 
   (window as any)._k2 = tauriK2;
