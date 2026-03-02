@@ -25,6 +25,8 @@
     "logUploadInProgress": "正在上傳日誌...",
     "logUploadSuccess": "日誌上傳完成",
     "logUploadFailed": "日誌上傳失敗",
+    "betaWarning": "你正在使用 Beta 版本。如果遇到問題，可以在帳號設定中切回穩定版。",
+    "switchToStable": "切回穩定版",
     "validation": {
       "subjectRequired": "請輸入問題標題",
       "contentRequired": "請輸入問題描述",

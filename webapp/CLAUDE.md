@@ -96,7 +96,7 @@ Frontend uses two separate globals injected before app loads. They have distinct
 │   status, version    │  │   openExternal()                │
 │                      │  │   updater?: IUpdater            │
 └──────────┬───────────┘  │   reinstallService?(), getPid?()│
-│   uploadLogs?()                │
+│   uploadLogs?(), setLogLevel?()│
            │              └────────────────────────────────┘
            ↓
 ┌──────────────────────────────────────────────────────────┐
@@ -124,7 +124,7 @@ Frontend uses two separate globals injected before app loads. They have distinct
 | `IK2Vpn` | `window._k2` | VPN control: `run<T>(action, params): Promise<SResponse<T>>` |
 | `IPlatform` | `window._platform` | Platform capabilities: storage, UDID, clipboard, openExternal, syncLocale |
 | `ISecureStorage` | `window._platform.storage` | Encrypted key-value storage |
-| `IUpdater` | `window._platform.updater` | Auto-update: check, apply, status |
+| `IUpdater` | `window._platform.updater` | Auto-update: check, apply, status, channel |
 
 ### VPN Actions (via window._k2.run)
 
@@ -200,7 +200,7 @@ Namespaces: common, dashboard, auth, purchase, invite, account, feedback, nav, r
 - **Store init**: `initializeAllStores()` calls layout → auth → vpn store init in order. Stores use `init()` action (not async `create()`)
 - **Keep-alive tabs**: Layout caches visited tab outlets, hides inactive with `visibility:hidden`. Tab paths: `/`, `/invite`, `/discover`, `/account`
 - **Keep-alive + GPU layers gotcha**: WebKit doesn't recomposite layers when `opacity`/`filter` are removed while an element is `visibility:hidden`. Dashboard uses a `translateZ(0)` toggle on hidden→visible transitions to force layer rebuild. Any new compositing-layer CSS changes on keep-alive tabs need similar consideration.
-- **Config store**: `useConfigStore()` in `stores/config.store.ts` persists VPN settings (ruleMode, proxyMode, logLevel, server). `buildConnectConfig(serverUrl?)` assembles `ClientConfig` from stored preferences. `updateConfig(partial)` merges and persists.
+- **Config store**: `useConfigStore()` in `stores/config.store.ts` persists VPN settings (ruleMode, proxyMode, logLevel, server). `buildConnectConfig(serverUrl?)` assembles `ClientConfig` from stored preferences — forces `log.level = 'debug'` when beta channel active. `updateConfig(partial)` merges and persists.
 - **LoginDialog**: Global modal via `login-dialog.store`. Guards call `openLoginDialog()` instead of redirecting
 - **Feature flags**: `getCurrentAppConfig().features` controls route/tab visibility
 - **Dev proxy**: Vite proxies `/api/*` and `/ping` to `:1777`. Production uses absolute URL

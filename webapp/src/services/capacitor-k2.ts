@@ -133,6 +133,7 @@ export async function injectCapacitorGlobals(): Promise<void> {
     updateInfo: null,
     isChecking: false,
     error: null,
+    channel: 'stable',
     applyUpdateNow: async () => {
       const currentPlatform = Capacitor.getPlatform();
       if (currentPlatform === 'android' && storedPath) {

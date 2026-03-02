@@ -25,6 +25,8 @@
     "logUploadInProgress": "Uploading logs...",
     "logUploadSuccess": "Logs uploaded successfully",
     "logUploadFailed": "Failed to upload logs",
+    "betaWarning": "You're using a beta version. If you're experiencing issues, you can switch back to stable in Account settings.",
+    "switchToStable": "Switch to Stable",
     "validation": {
       "subjectRequired": "Please enter a subject",
       "contentRequired": "Please enter a description",

@@ -49,6 +49,16 @@
     "renewNow": "立即续费",
     "exitApp": "退出应用"
   },
+  "betaProgram": {
+    "title": "Beta 测试计划",
+    "description": "提前体验新功能，帮助改进产品",
+    "enableWarning": "Beta 版本可能不稳定，可能影响正常使用。你可以随时切回稳定版。",
+    "enableConfirm": "启用 Beta",
+    "disableWarning": "将立即下载并安装当前稳定版本，安装后应用会重启。",
+    "disableConfirm": "切回稳定版",
+    "downloading": "正在下载稳定版...",
+    "badge": "Beta"
+  },
   "developerModeActivated": "开发者模式已开启",
   "logLevel": "日志级别",
   "devices": {

@@ -9,10 +9,24 @@ set -euo pipefail
 #   - gh CLI authenticated (for GitHub Release creation)
 #
 # Usage:
-#   bash scripts/publish-release.sh
+#   bash scripts/publish-release.sh                  # stable (default)
+#   bash scripts/publish-release.sh --channel=beta   # beta
 #   AWS_DEFAULT_REGION=ap-east-1 bash scripts/publish-release.sh
 
 export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-ap-east-1}"
+
+# Parse --channel flag
+CHANNEL="stable"
+for arg in "$@"; do
+  case "$arg" in
+    --channel=*) CHANNEL="${arg#*=}" ;;
+  esac
+done
+
+if [ "$CHANNEL" != "stable" ] && [ "$CHANNEL" != "beta" ]; then
+  echo "ERROR: Invalid channel '${CHANNEL}'. Must be 'stable' or 'beta'."
+  exit 1
+fi
 
 VERSION=$(node -p "require('./package.json').version")
 PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
@@ -20,8 +34,16 @@ S3_VER="s3://d0.all7.cc/kaitu/desktop/${VERSION}"
 S3_ROOT="s3://d0.all7.cc/kaitu/desktop"
 REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 
-echo "Publishing Kaitu Desktop v${VERSION}"
+# Beta publishes to beta/ subdirectory
+if [ "$CHANNEL" = "beta" ]; then
+  S3_MANIFEST="${S3_ROOT}/beta"
+else
+  S3_MANIFEST="${S3_ROOT}"
+fi
+
+echo "Publishing Kaitu Desktop v${VERSION} (channel=${CHANNEL})"
 echo "S3 version path: ${S3_VER}"
+echo "S3 manifest path: ${S3_MANIFEST}"
 echo ""
 
 # Verify S3 artifacts exist
@@ -92,20 +114,24 @@ cat "${TMPDIR}/d0.latest.json"
 echo ""
 
 # Upload latest.json files
-aws s3 cp "${TMPDIR}/cloudfront.latest.json" "${S3_ROOT}/cloudfront.latest.json"
-aws s3 cp "${TMPDIR}/d0.latest.json" "${S3_ROOT}/d0.latest.json"
-echo "latest.json files uploaded to S3"
+aws s3 cp "${TMPDIR}/cloudfront.latest.json" "${S3_MANIFEST}/cloudfront.latest.json"
+aws s3 cp "${TMPDIR}/d0.latest.json" "${S3_MANIFEST}/d0.latest.json"
+echo "latest.json files uploaded to ${S3_MANIFEST}/"
 
-# Create GitHub Release
-gh release create "v${VERSION}" \
-  --title "Kaitu v${VERSION}" \
-  --notes "## Kaitu Desktop v${VERSION}
+# Create GitHub Release (stable only — beta skips GitHub Release)
+if [ "$CHANNEL" = "stable" ]; then
+  gh release create "v${VERSION}" \
+    --title "Kaitu v${VERSION}" \
+    --notes "## Kaitu Desktop v${VERSION}
 
 | Platform | Installer | Auto-Update |
 |----------|-----------|-------------|
 | **macOS** (Universal) | \`.pkg\` | \`.app.tar.gz\` |
 | **Windows** (x64) | \`.exe\` | \`.exe\` (auto-update) |
 "
-
-echo ""
-echo "Done! Published Kaitu Desktop v${VERSION}"
+  echo ""
+  echo "Done! Published Kaitu Desktop v${VERSION} (stable + GitHub Release)"
+else
+  echo ""
+  echo "Done! Published Kaitu Desktop v${VERSION} (beta channel only, no GitHub Release)"
+fi

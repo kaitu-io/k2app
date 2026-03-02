@@ -24,6 +24,7 @@ chrono = "0.4"
 uuid = { version = "1", features = ["v4"] }
 glob = "0.3"
 dirs = "5"
+url = "2"
 futures-util = "0.3"
 
 [features]

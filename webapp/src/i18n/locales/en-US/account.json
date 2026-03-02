@@ -49,6 +49,16 @@
     "renewNow": "Renew Now",
     "exitApp": "Exit App"
   },
+  "betaProgram": {
+    "title": "Beta Program",
+    "description": "Get early access to new features and help improve the product",
+    "enableWarning": "Beta versions may be unstable and could affect normal usage. You can switch back to stable at any time.",
+    "enableConfirm": "Enable Beta",
+    "disableWarning": "The current stable version will be downloaded and installed immediately. The app will restart after installation.",
+    "disableConfirm": "Switch to Stable",
+    "downloading": "Downloading stable version...",
+    "badge": "Beta"
+  },
   "developerModeActivated": "Developer mode enabled",
   "logLevel": "Log Level",
   "devices": {

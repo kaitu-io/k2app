@@ -25,6 +25,8 @@
     "logUploadInProgress": "正在上传日志...",
     "logUploadSuccess": "日志上传完成",
     "logUploadFailed": "日志上传失败",
+    "betaWarning": "你正在使用 Beta 版本。如果遇到问题，可以在账号设置中切回稳定版。",
+    "switchToStable": "切回稳定版",
     "validation": {
       "subjectRequired": "请输入问题标题",
       "contentRequired": "请输入问题描述",

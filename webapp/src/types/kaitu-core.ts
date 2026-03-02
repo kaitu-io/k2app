@@ -44,6 +44,9 @@ export interface IUpdater {
   /** 错误信息 */
   error: string | null;
 
+  /** 当前更新通道 (stable/beta) */
+  channel: 'stable' | 'beta';
+
   /** 立即应用更新（重启应用） */
   applyUpdateNow(): Promise<void>;
 
@@ -52,6 +55,9 @@ export interface IUpdater {
 
   /** 监听更新就绪事件 */
   onUpdateReady?(callback: (info: UpdateInfo) => void): () => void;
+
+  /** 切换更新通道，返回新通道名。触发后台更新检查。 */
+  setChannel?(channel: 'stable' | 'beta'): Promise<string>;
 }
 
 // ==================== 安全存储 ====================

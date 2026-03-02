@@ -124,7 +124,8 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
 
     // Force defaults — mode is not user-configurable; log level from developer options
     result.mode = 'tun';
-    result.log = { ...result.log, level: localStorage.getItem('k2_log_level') || 'info' };
+    const isBeta = window._platform?.updater?.channel === 'beta';
+    result.log = { ...result.log, level: isBeta ? 'debug' : (localStorage.getItem('k2_log_level') || 'info') };
 
     if (serverUrl) {
       result.server = serverUrl;

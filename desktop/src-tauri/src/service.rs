@@ -142,42 +142,52 @@ pub async fn daemon_exec(
     }
 }
 
+/// Internal: set daemon log level via HTTP (no IPC, no channel check).
+/// Blocking — call from sync context or wrap in `spawn_blocking`.
+#[cfg(not(all(target_os = "macos", feature = "ne-mode")))]
+pub fn set_log_level_internal(level: &str) -> Result<ServiceResponse, String> {
+    let url = format!("{}/api/log-level", service_base_url());
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
+        .no_proxy()
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+    client
+        .post(&url)
+        .json(&serde_json::json!({"level": level}))
+        .send()
+        .map_err(|e| format!("Failed to set log level: {}", e))?
+        .json::<ServiceResponse>()
+        .map_err(|e| format!("Failed to parse response: {}", e))
+}
+
+/// NE mode stub: no daemon to hot-switch.
+#[cfg(all(target_os = "macos", feature = "ne-mode"))]
+pub fn set_log_level_internal(_level: &str) -> Result<ServiceResponse, String> {
+    Ok(ServiceResponse {
+        code: 0,
+        message: "ok".to_string(),
+        data: serde_json::Value::Null,
+    })
+}
+
 /// IPC command: hot-switch daemon log level.
 ///
+/// Beta channel forces debug level — any other level is rejected.
 /// Daemon mode: POST /api/log-level to k2 daemon.
 /// NE mode: no-op (level applies on next connect via config).
 #[tauri::command]
-pub async fn set_log_level(level: String) -> Result<ServiceResponse, String> {
-    #[cfg(all(target_os = "macos", feature = "ne-mode"))]
-    {
-        // NE mode: no daemon to hot-switch. Level is applied on next connect via config.
-        Ok(ServiceResponse {
-            code: 0,
-            message: "ok".to_string(),
-            data: serde_json::Value::Null,
-        })
-    }
-    #[cfg(not(all(target_os = "macos", feature = "ne-mode")))]
-    {
-        tokio::task::spawn_blocking(move || {
-            let url = format!("{}/api/log-level", service_base_url());
-            let client = reqwest::blocking::Client::builder()
-                .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
-                .no_proxy()
-                .build()
-                .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
-            let response = client
-                .post(&url)
-                .json(&serde_json::json!({"level": level}))
-                .send()
-                .map_err(|e| format!("Failed to set log level: {}", e))?;
-            response
-                .json::<ServiceResponse>()
-                .map_err(|e| format!("Failed to parse response: {}", e))
-        })
+pub async fn set_log_level(app: tauri::AppHandle, level: String) -> Result<ServiceResponse, String> {
+    let effective_level = if crate::channel::get_channel(&app) == "beta" {
+        log::info!("[service] Beta channel: forcing debug log level (requested: {})", level);
+        "debug".to_string()
+    } else {
+        level
+    };
+
+    tokio::task::spawn_blocking(move || set_log_level_internal(&effective_level))
         .await
         .map_err(|e| format!("Task join error: {}", e))?
-    }
 }
 
 /// IPC command: get device UDID.

@@ -7,14 +7,23 @@
 //! - User clicks "Update Now" → app.restart()
 //! - On app exit, auto-apply pending update (macOS/Linux)
 //! - Windows: NSIS installer launched immediately, app exits
+//!
+//! Supports stable/beta channels — channel preference read from disk on each check.
+//! Downgrade (beta→stable) uses version_comparator(!=) to bypass semver > check.
 
 use serde::Serialize;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::AppHandle;
 use tauri::Emitter;
+use tauri::Manager;
 use tauri_plugin_updater::UpdaterExt;
+
+use crate::channel;
+use crate::log_upload;
+use crate::service;
 
 /// Check interval: 30 minutes
 const CHECK_INTERVAL_SECS: u64 = 30 * 60;
@@ -65,14 +74,43 @@ pub fn start_auto_updater(app: AppHandle) {
     });
 }
 
-/// Check for update, download, and prepare installation
+/// Check for update, download, and prepare installation.
+///
+/// Automatically detects downgrade scenario: if the channel is "stable" but the
+/// running version contains "-beta", uses version_comparator(!=) to trigger update
+/// even when the remote version is lower (beta→stable downgrade).
 async fn check_download_and_install(app: &AppHandle) {
-    log::info!("[updater] Checking for updates...");
+    let ch = channel::get_channel(app);
+    let endpoints = match channel::endpoints_for_channel(&ch) {
+        Ok(eps) => eps,
+        Err(e) => {
+            log::error!("[updater] Failed to build endpoints for channel {}: {}", ch, e);
+            return;
+        }
+    };
 
-    let updater = match app.updater() {
+    // Auto-detect downgrade: stable channel + running beta build
+    let current_version = app.package_info().version.to_string();
+    let force_different = ch == "stable" && current_version.contains("-beta");
+
+    log::info!("[updater] Checking for updates (channel={}, force={})", ch, force_different);
+
+    let mut builder = match app.updater_builder().endpoints(endpoints) {
+        Ok(b) => b,
+        Err(e) => {
+            log::error!("[updater] Failed to configure updater endpoints: {}", e);
+            return;
+        }
+    };
+
+    if force_different {
+        builder = builder.version_comparator(|current, remote| remote.version != current);
+    }
+
+    let updater = match builder.build() {
         Ok(u) => u,
         Err(e) => {
-            log::error!("[updater] Failed to get updater: {}", e);
+            log::error!("[updater] Failed to build updater: {}", e);
             return;
         }
     };
@@ -193,7 +231,7 @@ pub fn apply_update_now(app: AppHandle) -> Result<(), String> {
     }
 }
 
-/// IPC: Manual update check (downloads + installs if available)
+/// IPC: Manual update check — reads channel from disk, checks appropriate endpoints
 #[tauri::command]
 pub async fn check_update_now(app: AppHandle) -> Result<String, String> {
     log::info!("[updater] Manual update check triggered");
@@ -205,7 +243,24 @@ pub async fn check_update_now(app: AppHandle) -> Result<String, String> {
         }
     }
 
-    let updater = app.updater().map_err(|e| e.to_string())?;
+    let ch = channel::get_channel(&app);
+    let endpoints = channel::endpoints_for_channel(&ch)?;
+
+    // Auto-detect downgrade: stable channel + running beta build
+    let current_version = app.package_info().version.to_string();
+    let force_different = ch == "stable" && current_version.contains("-beta");
+
+    let mut builder = app
+        .updater_builder()
+        .endpoints(endpoints)
+        .map_err(|e| e.to_string())?;
+
+    if force_different {
+        log::info!("[updater] Downgrade detected (stable channel, beta build), using != comparator");
+        builder = builder.version_comparator(|current, remote| remote.version != current);
+    }
+
+    let updater = builder.build().map_err(|e| e.to_string())?;
 
     match updater.check().await {
         Ok(Some(update)) => {
@@ -266,6 +321,117 @@ pub async fn check_update_now(app: AppHandle) -> Result<String, String> {
             Err(e.to_string())
         }
     }
+}
+
+/// IPC: Get current update channel
+#[tauri::command]
+pub fn get_update_channel(app: AppHandle) -> Result<String, String> {
+    Ok(channel::get_channel(&app))
+}
+
+/// IPC: Set update channel and trigger appropriate check.
+/// Downgrade detection is automatic inside check_download_and_install().
+///
+/// When switching to beta: saves current log level, forces debug, starts auto-upload.
+/// When switching from beta: restores previous log level, stops auto-upload.
+#[tauri::command]
+pub async fn set_update_channel(
+    app: AppHandle,
+    channel: String,
+    current_log_level: Option<String>,
+) -> Result<String, String> {
+    let old_channel = channel::get_channel(&app);
+    channel::save_channel(&app, &channel)?;
+    let new_channel = channel::get_channel(&app); // re-read to get normalized value
+
+    log::info!(
+        "[updater] Channel changed: {} -> {}",
+        old_channel,
+        new_channel
+    );
+
+    // Clear stale update state from previous channel
+    UPDATE_READY.store(false, Ordering::SeqCst);
+    *UPDATE_INFO.lock().unwrap() = None;
+
+    // Beta log level management
+    if new_channel == "beta" && old_channel != "beta" {
+        // Switching TO beta: save current log level and force debug
+        let level_to_save = current_log_level.unwrap_or_else(|| "info".to_string());
+        save_pre_beta_log_level(&app, &level_to_save);
+        log::info!(
+            "[updater] Saved pre-beta log level: {}",
+            level_to_save
+        );
+
+        // Force daemon to debug level
+        let _ = tokio::task::spawn_blocking(|| service::set_log_level_internal("debug")).await;
+
+        // Start beta auto-upload
+        log_upload::start_beta_auto_upload(app.clone());
+
+        // Notify frontend to update localStorage
+        let _ = app.emit(
+            "beta-log-level-override",
+            serde_json::json!({"level": "debug"}),
+        );
+    } else if new_channel != "beta" && old_channel == "beta" {
+        // Switching FROM beta: restore previous log level
+        let restored = read_pre_beta_log_level(&app).unwrap_or_else(|| "info".to_string());
+        log::info!("[updater] Restoring pre-beta log level: {}", restored);
+
+        let restored_clone = restored.clone();
+        let _ =
+            tokio::task::spawn_blocking(move || service::set_log_level_internal(&restored_clone))
+                .await;
+
+        // Stop beta auto-upload
+        log_upload::stop_beta_auto_upload();
+
+        // Notify frontend to restore localStorage
+        let _ = app.emit(
+            "beta-log-level-override",
+            serde_json::json!({"level": restored}),
+        );
+    }
+
+    // Trigger update check in background
+    // force_different is auto-detected inside check_download_and_install()
+    let app_clone = app.clone();
+    tauri::async_runtime::spawn(async move {
+        check_download_and_install(&app_clone).await;
+    });
+
+    Ok(new_channel)
+}
+
+// ============================================================================
+// Pre-beta log level persistence
+// ============================================================================
+
+const PRE_BETA_LEVEL_FILE: &str = "pre-beta-log-level";
+
+fn pre_beta_level_path(app: &AppHandle) -> Option<PathBuf> {
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(|d| d.join(PRE_BETA_LEVEL_FILE))
+}
+
+fn save_pre_beta_log_level(app: &AppHandle, level: &str) {
+    if let Some(path) = pre_beta_level_path(app) {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::write(&path, level);
+    }
+}
+
+fn read_pre_beta_log_level(app: &AppHandle) -> Option<String> {
+    pre_beta_level_path(app)
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
 }
 
 /// Install pending update on app exit (macOS/Linux only)

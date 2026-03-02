@@ -9,6 +9,7 @@ import {
   MenuItem,
   FormControl,
   Divider,
+  Chip,
 } from '@mui/material';
 import {
   BuildCircle as BuildCircleIcon,
@@ -96,6 +97,14 @@ export default function VersionItem({ appVersion }: VersionItemProps) {
               >
                 {appVersion}
               </Typography>
+              {(window._platform?.updater?.channel === 'beta' || appVersion.includes('-beta')) && (
+                <Chip
+                  label={t('betaProgram.badge')}
+                  color="warning"
+                  size="small"
+                  sx={{ height: 18, fontSize: '0.65rem', fontWeight: 600 }}
+                />
+              )}
             </Box>
           }
         />

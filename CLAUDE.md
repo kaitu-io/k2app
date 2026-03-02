@@ -101,6 +101,9 @@ Makefile             Build orchestration — version from package.json, k2 from 
 - **Website routing in locale components**: Use `usePathname` and `Link` from `@/i18n/routing` (NOT `next/navigation`/`next/link`) inside `web/src/app/[locale]/` and `web/src/components/`.
 - **macOS dual build**: Default macOS build uses daemon HTTP (same as Win/Linux). NE mode requires `--features ne-mode` Cargo flag (`build-macos-sysext` target). `#[cfg(all(target_os = "macos", feature = "ne-mode"))]` gates all NE code in `ne.rs`, `service.rs`, `main.rs`, `build.rs`.
 - **Event-driven status**: Desktop uses SSE (`status_stream.rs` connects to daemon `GET /api/events`) or NE callbacks to push `service-state-changed` and `vpn-status-changed` Tauri events. Webapp VPN store subscribes via `_k2.onServiceStateChange` / `_k2.onStatusChange`. Standalone/web falls back to 2s polling.
+- **Beta channel forces debug**: When channel is "beta", ALL 3 log layers are forced to debug — user cannot override. Desktop log: `is_beta_early()` in main.rs builder. Daemon log: `set_log_level` IPC rejects non-debug. Engine log: `buildConnectConfig()` checks `_platform.updater.channel`. Switching to beta saves current log level to disk; switching back restores it.
+- **Beta auto-upload**: Every 24h, silently uploads all logs to S3 then cleans up files. `start_beta_auto_upload()` / `stop_beta_auto_upload()` in `log_upload.rs`. Started on app launch if beta, and on channel switch to beta. Cleanup: delete on macOS/Linux, truncate on Windows (tauri-plugin-log holds file handle).
+- **Pre-AppHandle channel reading**: `channel::get_channel_early()` uses `dirs::data_dir().join("io.kaitu.desktop")` to match Tauri's `app_data_dir()`. Required because tauri-plugin-log is configured in builder chain before `.setup()` provides `AppHandle`.
 
 ## Tech Stack
 
@@ -141,6 +144,9 @@ Makefile             Build orchestration — version from package.json, k2 from 
 - **nativeUpdateAvailable** — Capacitor event emitted by iOS K2Plugin when a newer version is found in App Store. Payload: `{version, appStoreUrl}`. Bridge wires this to `_platform.updater.isUpdateReady = true` and stores the App Store URL for `applyUpdateNow()`.
 - **publish-mobile.sh** — Manual mobile release script (`scripts/publish-mobile.sh`). Phase 2 of mobile release: validates S3 artifacts exist, downloads, computes sha256+size, generates relative-URL `latest.json`, uploads to `{channel}/latest.json`. Supports `--dry-run` and `--s3-base=PATH` (local mock for testing).
 - **kaitu-ops-mcp** — MCP server for AI-driven node operations (`tools/kaitu-ops-mcp/`). TypeScript + `@modelcontextprotocol/sdk`. Two tools: `list_nodes` (Center API discovery via `X-Access-Key`) + `exec_on_node` (SSH direct to nodes). stdout redaction runs on every response.
+- **IUpdater.channel** — `'stable' | 'beta'` field on `window._platform.updater`. Read from Rust at startup via `get_update_channel` IPC. Updated by `setChannel()`. Used by `buildConnectConfig()` and `setLogLevel()` to enforce beta debug behavior on the JS side.
+- **beta-log-level-override** — Tauri event emitted by Rust when switching channels. Payload: `{level: string}`. Webapp `tauri-k2.ts` listens and updates `localStorage('k2_log_level')`. Ensures JS-side log level stays in sync with Rust-side channel changes.
+- **set_log_level_internal()** — Pub blocking function in `service.rs` that sends HTTP POST to daemon `/api/log-level`. Reusable by `main.rs` (startup), `updater.rs` (channel switch), and `set_log_level` IPC. Must be called via `spawn_blocking` in async context.
 
 ## Layer Docs (read on demand)
 

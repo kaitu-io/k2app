@@ -6,20 +6,22 @@ Rust desktop shell using Tauri v2. Serves webapp via tauri-plugin-localhost (por
 
 ```bash
 cd src-tauri && cargo check     # Rust compilation check
-cd src-tauri && cargo test      # Rust tests (33 tests)
+cd src-tauri && cargo test      # Rust tests (43 tests)
 yarn tauri dev                  # Dev mode (expects Vite on :1420)
 yarn tauri build --target universal-apple-darwin  # macOS build
 ```
 
 ## Rust Modules (`src-tauri/src/`)
 
-- **main.rs** — App setup: localhost plugin (14580), single-instance, process, updater, opener, clipboard-manager plugins. Wires tray + service + updater in setup closure. `RunEvent::ExitRequested` handler auto-applies pending updates.
+- **main.rs** — App setup: localhost plugin (14580), single-instance, process, updater, opener, clipboard-manager plugins. Wires tray + service + updater in setup closure. Beta channel: forces debug log level via `channel::is_beta_early()`, chains daemon debug after `ensure_service_running`, starts beta auto-upload. `RunEvent::ExitRequested` handler auto-applies pending updates.
 - **service.rs** — k2 daemon lifecycle. macOS dual build: NE mode (`--features ne-mode`) routes to `ne.rs`; daemon mode (default) uses HTTP to :1777 (same as Win/Linux).
   - `daemon_exec`: NE mode → `ne::ne_action()`; daemon mode → `core_action()` HTTP to :1777
   - `get_udid`: NE mode → `ne::get_udid_native()`; daemon mode → daemon HTTP
   - `ensure_service_running`: NE mode → `ne::ensure_ne_installed()`; daemon mode → ping + version check + install
   - `admin_reinstall_service`: NE mode → `ne::admin_reinstall_ne()`; Windows → PowerShell elevated
+  - `set_log_level`: IPC command with beta channel check — forces debug when beta. Uses `set_log_level_internal()` (pub, blocking HTTP, reusable by updater/main).
   - All macOS cfg gates: `#[cfg(all(target_os = "macos", feature = "ne-mode"))]`
+- **channel.rs** — Update channel persistence (stable/beta). Reads/writes `update-channel` file in app data dir. Two read paths: `get_channel(app)` (runtime, needs `AppHandle`) and `get_channel_early()` (pre-setup, uses `dirs` crate directly). `endpoints_for_channel()` returns stable or beta CDN URLs.
 - **ne.rs** — macOS Network Extension bridge (`#[cfg(all(target_os = "macos", feature = "ne-mode"))]`):
   - `ne_action()`: routes up/down/status/version to Swift NE helper via C FFI
   - `ensure_ne_installed()`: installs NE VPN profile via `k2ne_install()`
@@ -30,8 +32,8 @@ yarn tauri build --target universal-apple-darwin  # macOS build
   - Emits `service-state-changed { available }` on connect/disconnect
   - Emits `vpn-status-changed { ...engine.Status }` on SSE status events
 - **tray.rs** — System tray: Show/Hide window, Connect (`action:up`), Disconnect (`action:down`), Quit
-- **updater.rs** — Auto-updater: 5s delay → 30min periodic check loop. `UpdateInfo` struct (currentVersion, newVersion, releaseNotes). Emits `update-ready` Tauri event. Windows: NSIS install + `app.exit(0)`. macOS/Linux: store update, apply on exit via `install_pending_update()`.
-- **log_upload.rs** — Service log upload: reads 4 log sources (service, crash, desktop, system), sanitizes sensitive data, gzip compresses, uploads to S3, notifies Slack. Uses `spawn_blocking` for blocking HTTP.
+- **updater.rs** — Auto-updater: 5s delay → 30min periodic check loop. `UpdateInfo` struct (currentVersion, newVersion, releaseNotes). Emits `update-ready` Tauri event. Windows: NSIS install + `app.exit(0)`. macOS/Linux: store update, apply on exit via `install_pending_update()`. Beta channel: `set_update_channel` saves/restores pre-beta log level, starts/stops auto-upload, emits `beta-log-level-override` event. Downgrade detection: stable channel + beta build → `version_comparator(!=)`.
+- **log_upload.rs** — Service log upload: reads 4 log sources (service, crash, desktop, system), sanitizes sensitive data, gzip compresses, uploads to S3, notifies Slack. Uses `spawn_blocking` for blocking HTTP. Beta auto-upload: 24h periodic cycle (`start_beta_auto_upload` / `stop_beta_auto_upload`) — uploads all logs then cleans up (delete on macOS/Linux, truncate on Windows due to file locks).
 
 ## Tauri Config (`src-tauri/tauri.conf.json`)
 
@@ -68,6 +70,9 @@ yarn tauri build --target universal-apple-darwin  # macOS build
 | `check_update_now` | updater | Manual update check |
 | `apply_update_now` | updater | Apply downloaded update |
 | `get_update_status` | updater | Returns `UpdateInfo \| null` |
+| `set_log_level` | service | Set daemon log level (beta forces debug) |
+| `get_update_channel` | updater | Returns current channel ("stable"/"beta") |
+| `set_update_channel` | updater | Set channel, accepts `currentLogLevel` for pre-beta save |
 | `sync_locale` | tray | Sync locale to system tray |
 | `upload_service_log_command` | log_upload | Collect + upload logs to S3 |
 
@@ -83,3 +88,6 @@ yarn tauri build --target universal-apple-darwin  # macOS build
 - NE helper uses DispatchSemaphore — C FFI functions in ne.rs must NOT be called from the main thread (use `tokio::task::spawn_blocking`)
 - NE appex must be codesigned with the same identity as the main app, with a separate entitlements file that includes `com.apple.developer.networking.networkextension`
 - SSE status stream (`status_stream.rs`) emits Tauri events: `service-state-changed` (SSE connection state) + `vpn-status-changed` (VPN status from SSE). Used by webapp VPN store for event-driven updates instead of 2s polling.
+- `get_channel_early()` uses `dirs::data_dir().join("io.kaitu.desktop")` to read channel BEFORE `AppHandle` exists (log plugin is configured in builder chain before `.setup()`). Path must match Tauri's `app_data_dir()` on all platforms.
+- Beta channel forces ALL 3 log layers to debug: desktop log (tauri-plugin-log via `is_beta_early()`), daemon log (HTTP via `set_log_level_internal`), engine log (`buildConnectConfig()` in webapp). User cannot override while on beta.
+- Pre-beta log level stored in `{app_data_dir}/pre-beta-log-level` file. Frontend passes `currentLogLevel` (from localStorage) when calling `set_update_channel` IPC since Rust cannot read browser localStorage.

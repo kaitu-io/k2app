@@ -56,6 +56,7 @@ import type { DataUser } from "../services/api-types";
 import { getThemeColors } from '../theme/colors';
 import { useAppLinks } from "../hooks/useAppLinks";
 import VersionItem from "../components/VersionItem";
+import BetaChannelToggle from "../components/BetaChannelToggle";
 import PasswordDialog from "../components/PasswordDialog";
 
 export default function Account() {
@@ -787,6 +788,8 @@ export default function Account() {
             </ListItem>
 
             <Divider />
+
+            <BetaChannelToggle />
 
             <VersionItem appVersion={appVersion} />
           </List>

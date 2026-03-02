@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import {
   Box,
   Typography,
@@ -40,6 +40,7 @@ function generateFeedbackId(): string {
 export default function SubmitTicket() {
   const { t } = useTranslation();
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const { user } = useUser();
 
@@ -59,6 +60,8 @@ export default function SubmitTicket() {
 
   // Check platform capabilities
   const canUploadLogs = !!window._platform?.uploadLogs;
+  const isBetaUser = window._platform?.updater?.channel === 'beta' ||
+    window._platform?.version?.includes('-beta');
 
   // Upload logs silently (no UI feedback)
   const uploadLogs = useCallback(async () => {
@@ -217,6 +220,23 @@ export default function SubmitTicket() {
             /* 工单表单 - 只在未成功时显示 */
             <>
               {/* Log upload happens silently in background - no UI display */}
+
+              {isBetaUser && (
+                <Alert
+                  severity="warning"
+                  action={
+                    <Button
+                      color="warning"
+                      size="small"
+                      onClick={() => navigate('/account')}
+                    >
+                      {t('ticket:ticket.switchToStable')}
+                    </Button>
+                  }
+                >
+                  {t('ticket:ticket.betaWarning')}
+                </Alert>
+              )}
 
               <Card>
                 <CardContent>

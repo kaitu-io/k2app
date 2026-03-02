@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod channel;
 mod log_upload;
 mod ne;
 mod service;
@@ -66,12 +67,13 @@ fn main() {
         .plugin(tauri_plugin_localhost::Builder::new(14580).build())
         .plugin({
             let log_dir = resolve_log_dir();
+            let level = if channel::is_beta_early() || cfg!(debug_assertions) {
+                log::LevelFilter::Debug
+            } else {
+                log::LevelFilter::Info
+            };
             tauri_plugin_log::Builder::new()
-                .level(if cfg!(debug_assertions) {
-                    log::LevelFilter::Debug
-                } else {
-                    log::LevelFilter::Info
-                })
+                .level(level)
                 .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
                 .filter(|metadata| !metadata.target().starts_with("reqwest"))
                 .target(tauri_plugin_log::Target::new(
@@ -107,6 +109,8 @@ fn main() {
             updater::check_update_now,
             updater::apply_update_now,
             updater::get_update_status,
+            updater::get_update_channel,
+            updater::set_update_channel,
             tray::sync_locale,
             service::get_pid,
             log_upload::upload_service_log_command,
@@ -150,9 +154,19 @@ fn main() {
             // Ensure k2 service / NE configuration is running with correct version
             let app_version = env!("CARGO_PKG_VERSION").to_string();
             log::info!("[startup] App version: {}, os: {}", app_version, std::env::consts::OS);
+            let startup_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 match service::ensure_service_running(app_version).await {
-                    Ok(()) => log::info!("[startup] Service ready"),
+                    Ok(()) => {
+                        log::info!("[startup] Service ready");
+                        // Force daemon to debug level if beta channel
+                        if channel::get_channel(&startup_handle) == "beta" {
+                            log::info!("[startup] Beta channel: forcing daemon debug log level");
+                            let _ = tokio::task::spawn_blocking(||
+                                service::set_log_level_internal("debug")
+                            ).await;
+                        }
+                    }
                     Err(e) => log::error!("[startup] Service error: {}", e),
                 }
             });
@@ -166,6 +180,11 @@ fn main() {
 
             // Start auto-updater
             updater::start_auto_updater(app.handle().clone());
+
+            // Start beta auto-upload if on beta channel
+            if channel::get_channel(app.handle()) == "beta" {
+                log_upload::start_beta_auto_upload(app.handle().clone());
+            }
 
             Ok(())
         })

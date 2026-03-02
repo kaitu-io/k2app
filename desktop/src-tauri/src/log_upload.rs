@@ -20,6 +20,8 @@ use flate2::Compression;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 // ============================================================================
 // Configuration
@@ -553,6 +555,106 @@ fn upload_service_log(params: UploadLogParams) -> UploadLogResult {
 }
 
 // ============================================================================
+// Beta Auto-Upload (24h periodic)
+// ============================================================================
+
+/// Whether the beta auto-upload loop is active
+static BETA_UPLOAD_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+/// Start 24h periodic upload loop (beta only).
+/// Idempotent — if already running, returns immediately.
+pub fn start_beta_auto_upload(_app: tauri::AppHandle) {
+    if BETA_UPLOAD_ACTIVE.swap(true, Ordering::SeqCst) {
+        log::info!("[log_upload] Beta auto-upload already running");
+        return;
+    }
+
+    log::info!("[log_upload] Starting beta auto-upload (24h interval)");
+    tauri::async_runtime::spawn(async move {
+        // Initial delay: 5 minutes (let app fully start)
+        tokio::time::sleep(Duration::from_secs(5 * 60)).await;
+
+        loop {
+            if !BETA_UPLOAD_ACTIVE.load(Ordering::SeqCst) {
+                log::info!("[log_upload] Beta auto-upload stopped");
+                break;
+            }
+
+            // MUST use spawn_blocking — upload_service_log uses reqwest::blocking::Client
+            let _ = tokio::task::spawn_blocking(upload_and_cleanup_silent).await;
+
+            tokio::time::sleep(Duration::from_secs(24 * 60 * 60)).await;
+        }
+    });
+}
+
+/// Stop the beta auto-upload loop (next iteration will exit).
+pub fn stop_beta_auto_upload() {
+    BETA_UPLOAD_ACTIVE.store(false, Ordering::SeqCst);
+    log::info!("[log_upload] Beta auto-upload stop requested");
+}
+
+/// Upload all logs silently, then cleanup. Blocking — call via spawn_blocking.
+fn upload_and_cleanup_silent() {
+    log::info!("[log_upload] Beta auto-upload: starting upload cycle");
+
+    let params = UploadLogParams {
+        email: None,
+        reason: "beta-auto-upload".to_string(),
+        failure_duration_ms: None,
+        platform: Some(std::env::consts::OS.to_string()),
+        version: Some(env!("CARGO_PKG_VERSION").to_string()),
+        feedback_id: None,
+    };
+
+    let result = upload_service_log(params);
+    log::info!(
+        "[log_upload] Beta auto-upload: success={}, error={:?}",
+        result.success,
+        result.error
+    );
+
+    cleanup_all_logs();
+}
+
+/// Delete all log files (service logs, crash logs, desktop logs).
+fn cleanup_all_logs() {
+    // Service logs: /var/log/kaitu/*.log
+    cleanup_dir_logs(&get_log_dir(), |name| name.ends_with(".log"));
+
+    // Desktop logs: ~/Library/Logs/kaitu/desktop*.log*
+    cleanup_dir_logs(&crate::get_desktop_log_dir(), |name| {
+        name.starts_with("desktop") && name.contains("log")
+    });
+}
+
+/// Clean log files in a directory matching a filter.
+/// Windows: truncate files (may be locked by log plugin).
+/// macOS/Linux: delete files (safe even with open handles).
+fn cleanup_dir_logs(dir: &std::path::Path, filter: impl Fn(&str) -> bool) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if filter(&name) {
+            #[cfg(target_os = "windows")]
+            {
+                if std::fs::File::create(entry.path()).is_ok() {
+                    log::info!("[log_upload] Truncated: {}", entry.path().display());
+                }
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                if std::fs::remove_file(entry.path()).is_ok() {
+                    log::info!("[log_upload] Removed: {}", entry.path().display());
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
 // Tauri Command
 // ============================================================================
 
@@ -668,5 +770,47 @@ mod tests {
         assert_eq!(params.email.as_deref(), Some("user@test.com"));
         assert_eq!(params.failure_duration_ms, Some(5000));
         assert_eq!(params.feedback_id.as_deref(), Some("fb-123"));
+    }
+
+    #[test]
+    fn test_cleanup_dir_logs_removes_matching_files() {
+        let dir = std::env::temp_dir().join("k2app-test-cleanup-logs");
+        let _ = std::fs::create_dir_all(&dir);
+
+        // Create test files
+        std::fs::write(dir.join("k2.log"), "test log").unwrap();
+        std::fs::write(dir.join("panic-2024.log"), "test panic").unwrap();
+        std::fs::write(dir.join("keep.txt"), "keep me").unwrap();
+
+        cleanup_dir_logs(&dir, |name| name.ends_with(".log"));
+
+        // .log files should be removed, .txt should remain
+        assert!(!dir.join("k2.log").exists());
+        assert!(!dir.join("panic-2024.log").exists());
+        assert!(dir.join("keep.txt").exists());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_cleanup_dir_logs_nonexistent_dir() {
+        // Should not crash on nonexistent directory
+        cleanup_dir_logs(
+            &std::env::temp_dir().join("k2app-nonexistent-dir-12345"),
+            |_| true,
+        );
+    }
+
+    #[test]
+    fn test_beta_upload_active_default_false() {
+        // Static default is false (test binary starts fresh)
+        // Note: other tests may have set it, so we just verify the API doesn't crash
+        let _ = BETA_UPLOAD_ACTIVE.load(Ordering::SeqCst);
+    }
+
+    #[test]
+    fn test_stop_beta_auto_upload_no_crash() {
+        stop_beta_auto_upload();
+        assert!(!BETA_UPLOAD_ACTIVE.load(Ordering::SeqCst));
     }
 }

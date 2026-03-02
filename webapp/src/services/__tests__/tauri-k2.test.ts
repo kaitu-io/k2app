@@ -369,6 +369,60 @@ describe('tauri-k2', () => {
     });
   });
 
+  describe('channel', () => {
+    beforeEach(async () => {
+      mockListen.mockResolvedValue(() => {});
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === 'get_platform_info') return { os: 'macos', version: '0.4.0' };
+        if (cmd === 'get_update_status') return null;
+        if (cmd === 'get_pid') return 12345;
+        return { code: 0, message: 'ok', data: {} };
+      });
+      await injectTauriGlobals();
+    });
+
+    it('initializes channel as stable by default', async () => {
+      // Default beforeEach doesn't mock get_update_channel → catch → 'stable'
+      expect(window._platform.updater!.channel).toBe('stable');
+    });
+
+    it('initializes channel as beta when Rust returns beta', async () => {
+      delete (window as any)._k2;
+      delete (window as any)._platform;
+      vi.clearAllMocks();
+
+      mockListen.mockResolvedValue(() => {});
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === 'get_platform_info') return { os: 'macos', version: '0.5.0-beta.1' };
+        if (cmd === 'get_update_status') return null;
+        if (cmd === 'get_update_channel') return 'beta';
+        if (cmd === 'get_pid') return 12345;
+        return { code: 0, message: 'ok', data: {} };
+      });
+      await injectTauriGlobals();
+
+      expect(window._platform.updater!.channel).toBe('beta');
+    });
+
+    it('setChannel calls set_update_channel IPC and updates local state', async () => {
+      mockInvoke.mockResolvedValueOnce('beta');
+
+      const result = await window._platform.updater!.setChannel!('beta');
+
+      expect(mockInvoke).toHaveBeenCalledWith('set_update_channel', { channel: 'beta', currentLogLevel: 'info' });
+      expect(result).toBe('beta');
+      expect(window._platform.updater!.channel).toBe('beta');
+    });
+
+    it('setChannel normalizes unknown response to stable', async () => {
+      mockInvoke.mockResolvedValueOnce('unknown');
+
+      await window._platform.updater!.setChannel!('stable');
+
+      expect(window._platform.updater!.channel).toBe('stable');
+    });
+  });
+
   describe('uploadLogs', () => {
     beforeEach(async () => {
       mockInvoke.mockImplementation(async (cmd: string) => {

@@ -25,6 +25,8 @@
     "logUploadInProgress": "ログをアップロード中...",
     "logUploadSuccess": "ログのアップロードが完了しました",
     "logUploadFailed": "ログのアップロードに失敗しました",
+    "betaWarning": "ベータ版をご使用中です。問題が発生した場合は、アカウント設定から安定版に切り替えることができます。",
+    "switchToStable": "安定版に切り替える",
     "validation": {
       "subjectRequired": "問題のタイトルを入力してください",
       "contentRequired": "問題の説明を入力してください",
