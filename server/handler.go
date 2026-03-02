@@ -85,7 +85,7 @@ func (h *ProxyHandler) HandleTCP(conn net.Conn, addr string) {
 	}
 
 	slog.Debug("server: HandleTCP dialing target", "addr", addr)
-	target, err := net.DialTimeout("tcp", addr, h.DialTimeout)
+	target, err := net.DialTimeout("tcp4", addr, h.DialTimeout)
 	if err != nil {
 		wire.WriteStreamResponse(conn, &wire.StreamError{Code: 502, Message: err.Error()})
 		slog.Error("server: TCP proxy dial", "addr", addr, "err", err)
@@ -115,14 +115,14 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 		}
 	}
 
-	targetAddr, err := net.ResolveUDPAddr("udp", addr)
+	targetAddr, err := net.ResolveUDPAddr("udp4", addr)
 	if err != nil {
 		slog.Error("server: UDP resolve", "addr", addr, "err", err)
 		conn.Close()
 		return
 	}
 
-	target, err := net.DialUDP("udp", nil, targetAddr)
+	target, err := net.DialUDP("udp4", nil, targetAddr)
 	if err != nil {
 		slog.Error("server: UDP dial", "addr", addr, "err", err)
 		conn.Close()

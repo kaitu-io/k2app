@@ -72,9 +72,8 @@ type ClientTunnel struct {
 	router       *Router
 	directDialer wire.DirectDialer
 	wireReporter WireErrorReporter
-	sniffBT      bool // sniff BitTorrent and force direct (disabled in global mode)
-	sniffSNI     bool // sniff TLS/QUIC SNI and upgrade DIRECT→PROXY (disabled in global mode)
-	rewriteIPv6  bool // rewrite IPv6 PROXY dests to hostname via SNI (when server lacks IPv6)
+	sniffBT  bool // sniff BitTorrent and force direct (disabled in global mode)
+	sniffSNI bool // sniff TLS/QUIC SNI and upgrade DIRECT→PROXY (disabled in global mode)
 
 	ctx     context.Context
 	cancel  context.CancelFunc
@@ -95,9 +94,8 @@ type ClientTunnelConfig struct {
 	Router       *Router
 	DirectDialer wire.DirectDialer
 	WireReporter WireErrorReporter
-	SniffBT      bool // enable BitTorrent sniffing (should be false in global mode)
-	SniffSNI     bool // enable TLS/QUIC SNI sniffing for DIRECT→PROXY upgrade (should be false in global mode)
-	RewriteIPv6  bool // rewrite IPv6 PROXY dests to hostname via SNI (when server lacks IPv6)
+	SniffBT  bool // enable BitTorrent sniffing (should be false in global mode)
+	SniffSNI bool // enable TLS/QUIC SNI sniffing for DIRECT→PROXY upgrade (should be false in global mode)
 }
 
 // NewClientTunnel creates a new L4 client tunnel.
@@ -108,9 +106,8 @@ func NewClientTunnel(cfg ClientTunnelConfig) *ClientTunnel {
 		router:       cfg.Router,
 		directDialer: cfg.DirectDialer,
 		wireReporter: cfg.WireReporter,
-		sniffBT:      cfg.SniffBT,
-		sniffSNI:     cfg.SniffSNI,
-		rewriteIPv6:  cfg.RewriteIPv6,
+		sniffBT:  cfg.SniffBT,
+		sniffSNI: cfg.SniffSNI,
 		conns:        newConnTracker(),
 		connSem:      semaphore.NewWeighted(int64(maxTunnelConns)),
 	}
@@ -206,7 +203,7 @@ func (t *ClientTunnel) HandleTCP(conn net.Conn, dest string) {
 			}
 
 			// IPv6→hostname: server may lack IPv6, give it a resolvable hostname
-			if t.rewriteIPv6 && sni != "" && action == k2rule.TargetProxy && strings.Contains(host, ":") {
+			if sni != "" && action == k2rule.TargetProxy && strings.Contains(host, ":") {
 				if newDest := net.JoinHostPort(sni, port); dest != newDest {
 					dest = newDest
 					slog.Debug("tunnel: IPv6 dest rewrite", "original", host, "sni", sni)
@@ -216,8 +213,8 @@ func (t *ClientTunnel) HandleTCP(conn net.Conn, dest string) {
 	}
 
 	// IPv6→hostname rewrite (global mode): sniffBT/sniffSNI disabled, but IPv6 PROXY
-	// dests still need hostname rewrite when server lacks IPv6
-	if t.rewriteIPv6 && !(t.sniffBT || t.sniffSNI) && action == k2rule.TargetProxy && port == "443" && strings.Contains(host, ":") {
+	// dests still need hostname rewrite so server resolves via Happy Eyeballs
+	if !(t.sniffBT || t.sniffSNI) && action == k2rule.TargetProxy && port == "443" && strings.Contains(host, ":") {
 		if peeked := peekTCP(conn); len(peeked) > 0 {
 			conn = &prefixConn{Conn: conn, reader: io.MultiReader(bytes.NewReader(peeked), conn)}
 			if sni := sniff.SniffTLS(peeked); sni != "" {
@@ -289,7 +286,7 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 			}
 
 			// IPv6→hostname rewrite
-			if t.rewriteIPv6 && sni != "" && action == k2rule.TargetProxy && strings.Contains(host, ":") {
+			if sni != "" && action == k2rule.TargetProxy && strings.Contains(host, ":") {
 				if newDest := net.JoinHostPort(sni, port); dest != newDest {
 					dest = newDest
 					slog.Debug("tunnel: IPv6 dest rewrite", "original", host, "sni", sni)
@@ -299,8 +296,8 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 	}
 
 	// IPv6→hostname rewrite (global mode): sniffBT/sniffSNI disabled, but IPv6 PROXY
-	// dests still need hostname rewrite when server lacks IPv6
-	if t.rewriteIPv6 && !(t.sniffBT || t.sniffSNI) && action == k2rule.TargetProxy && port == "443" && strings.Contains(host, ":") {
+	// dests still need hostname rewrite so server resolves via Happy Eyeballs
+	if !(t.sniffBT || t.sniffSNI) && action == k2rule.TargetProxy && port == "443" && strings.Contains(host, ":") {
 		if packet, addr := peekUDP(conn); packet != nil {
 			conn = &prefixPacketConn{PacketConn: conn, first: packet, firstAddr: addr}
 			if sni := sniff.SniffQUIC(packet); sni != "" {
