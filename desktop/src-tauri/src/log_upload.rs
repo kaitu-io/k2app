@@ -30,7 +30,7 @@ const S3_BUCKET_URL: &str = "https://kaitu-service-logs.s3.ap-northeast-1.amazon
 
 /// Slack webhook URL for alerts
 const SLACK_WEBHOOK_URL: &str =
-    "https://hooks.slack.com/services/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";
+    "https://hooks.slack.com/services/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";
 
 /// Request timeout in seconds
 const REQUEST_TIMEOUT_SECS: u64 = 60;
@@ -534,7 +534,7 @@ fn upload_service_log(params: UploadLogParams) -> UploadLogResult {
 
     // Slack notification (silent on failure)
     if let Err(e) = send_slack_alert(&params, &uploaded_files) {
-        log::debug!("Slack alert skipped: {}", e);
+        log::warn!("Slack alert failed: {}", e);
     }
 
     log::info!(
