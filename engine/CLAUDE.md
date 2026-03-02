@@ -13,8 +13,10 @@ Platform Shell (daemon/appext)
               │
               ├── 1. k2rule.Init (routing rules)
               ├── 2. wire.ParseURL (k2v5:// URL)
+              ├── 2.5. Start NetworkMonitor (DirectDialer needs DefaultInterface)
               ├── 3. Happy Eyeballs address resolution (RFC 8305)
               ├── 4. Build transports (QUIC + TCP-WS)
+              ├── 4.5. Wire connectivity probe (TCP + UDP)
               ├── 5. Router (k2rule)
               ├── 6. Provider (TUN/Proxy/TProxy/appext FD)
               ├── 7. ClientTunnel
