@@ -537,9 +537,11 @@ func pipePacket(local, remote net.PacketConn, destAddr net.Addr, tx, rx *atomic.
 		for {
 			n, from, err := remote.ReadFrom(buf)
 			if err != nil {
+				slog.Debug("pipePacket: remote→local ReadFrom done", "err", err)
 				break
 			}
 			if _, err := local.WriteTo(buf[:n], from); err != nil {
+				slog.Debug("pipePacket: remote→local WriteTo failed", "from", from, "len", n, "err", err)
 				break
 			}
 			if rx != nil {

@@ -1111,11 +1111,14 @@ func (m *quicUDPMux) readLoop() {
 		m.mu.Lock()
 		ch, ok := m.sessions[frame.SessionID]
 		m.mu.Unlock()
-		if ok {
-			select {
-			case ch <- frame:
-			default: // drop if full
-			}
+		if !ok {
+			slog.Debug("quicUDPMux: no session for datagram", "sessionID", frame.SessionID, "addr", frame.Addr, "payloadLen", len(frame.Payload))
+			continue
+		}
+		select {
+		case ch <- frame:
+		default:
+			slog.Warn("quicUDPMux: channel full, dropping datagram", "sessionID", frame.SessionID, "addr", frame.Addr, "payloadLen", len(frame.Payload))
 		}
 	}
 }
