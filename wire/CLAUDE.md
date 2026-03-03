@@ -47,9 +47,9 @@ Fields: UDID, Token, Host, Port, ECH, Fingerprint, HopStart, HopEnd, Insecure, P
 - `certgen.go` — `GenerateCertPair` (RSA-2048 + EC P-256), `EnsureCertPair`, pin hash generation
 - `stream.go` — QUIC varint encoding, `StreamHeader` (type 0x4B32 H3 frame), request/response
 - `udp.go` — `UDPFrame` wire format, `SessionAllocator`, `SessionMap`, smux framing
-- `quic.go` — QUIC config, `StreamConn` adapter, `QUICClient`/`QUICServer`, port hopping
+- `quic.go` — QUIC config, `StreamConn` adapter, `QUICClient`/`QUICServer`, port hopping, datagram health tracking (`quicUDPMux`: consecutive timeouts + sliding-window loss rate → hop → recovery probe cycle)
 - `tcpws.go` — smux config, `TCPWSClient`/`TCPWSServer`
-- `transport.go` — `TransportManager`: sets QUIC/TCP-WS, `DialTCP` prefers QUIC with TCP-WS fallback
+- `transport.go` — `TransportManager`: QUIC preferred, TCP-WS fallback. `DialTCP` with QUIC backoff (30s→60s→120s). `DialUDP` with `ErrDatagramUnhealthy` fallback (not counted as transport failure). `FallbackActive` tracks QUIC→TCP-WS state for health reporting.
 - `ip.go` — `ProbePublicIP`, `FormatSslipHost`, `HasIPv6` (server auto-provisioning helpers)
 - `tlspad/` — TLS record padding (probe target cert length, pad server cert to match)
 - `arc/` — PCC Vivace congestion control for QUIC
