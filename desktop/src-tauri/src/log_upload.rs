@@ -32,7 +32,7 @@ const S3_BUCKET_URL: &str = "https://kaitu-service-logs.s3.ap-northeast-1.amazon
 
 /// Slack webhook URL for alerts
 const SLACK_WEBHOOK_URL: &str =
-    "https://hooks.slack.com/services/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";
+    "https://hooks.slack.com/services/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";
 
 /// Request timeout in seconds
 const REQUEST_TIMEOUT_SECS: u64 = 60;
