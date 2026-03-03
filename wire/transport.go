@@ -268,6 +268,7 @@ func (tm *TransportManager) ResetConnections() {
 	// itself, and resetting there would cause infinite hop loops.
 	if qc, ok := quic.(*QUICClient); ok {
 		qc.datagramHopAttempts.Store(0)
+		qc.datagramHopExhausted.Store(0)
 	}
 	if r, ok := tcpws.(Resettable); ok {
 		r.resetConnection()

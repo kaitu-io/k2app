@@ -83,7 +83,7 @@ func TestQuicUDPMux_DatagramHealthy_BelowThreshold(t *testing.T) {
 // ==========================================================================
 
 func TestQuicUDPMux_LossRate_NoData(t *testing.T) {
-	mux := newQuicUDPMux(nil, nil)
+	mux := newQuicUDPMux(nil, nil, nil)
 	rate := mux.evaluateLossRate()
 	if rate != 0 {
 		t.Fatalf("loss rate with no data = %f, want 0", rate)
@@ -91,7 +91,7 @@ func TestQuicUDPMux_LossRate_NoData(t *testing.T) {
 }
 
 func TestQuicUDPMux_LossRate_AllReceived(t *testing.T) {
-	mux := newQuicUDPMux(nil, nil)
+	mux := newQuicUDPMux(nil, nil, nil)
 	for i := 0; i < 20; i++ {
 		mux.recordSend()
 		mux.recordRecv()
@@ -104,7 +104,7 @@ func TestQuicUDPMux_LossRate_AllReceived(t *testing.T) {
 }
 
 func TestQuicUDPMux_LossRate_PartialLoss(t *testing.T) {
-	mux := newQuicUDPMux(nil, nil)
+	mux := newQuicUDPMux(nil, nil, nil)
 	for i := 0; i < 20; i++ {
 		mux.recordSend()
 		if i%2 == 0 {
@@ -119,7 +119,7 @@ func TestQuicUDPMux_LossRate_PartialLoss(t *testing.T) {
 }
 
 func TestQuicUDPMux_LossRate_BelowMinSamples(t *testing.T) {
-	mux := newQuicUDPMux(nil, nil)
+	mux := newQuicUDPMux(nil, nil, nil)
 	for i := 0; i < 5; i++ {
 		mux.recordSend() // only 5, below datagramMinSamples
 	}
@@ -131,7 +131,7 @@ func TestQuicUDPMux_LossRate_BelowMinSamples(t *testing.T) {
 }
 
 func TestQuicUDPMux_DatagramHealthy_LossRateUnhealthy(t *testing.T) {
-	mux := newQuicUDPMux(nil, nil)
+	mux := newQuicUDPMux(nil, nil, nil)
 	for i := 0; i < 20; i++ {
 		mux.recordSend()
 		if i%2 == 0 {
@@ -145,7 +145,7 @@ func TestQuicUDPMux_DatagramHealthy_LossRateUnhealthy(t *testing.T) {
 }
 
 func TestQuicUDPMux_LossRate_WindowCaching(t *testing.T) {
-	mux := newQuicUDPMux(nil, nil)
+	mux := newQuicUDPMux(nil, nil, nil)
 	for i := 0; i < 20; i++ {
 		mux.recordSend()
 		mux.recordRecv()
@@ -176,7 +176,7 @@ func TestQuicUDPMux_LossRate_WindowCaching(t *testing.T) {
 
 // expireLossWindowForTest verifies the helper actually forces re-evaluation.
 func TestQuicUDPMux_ExpireLossWindow(t *testing.T) {
-	mux := newQuicUDPMux(nil, nil)
+	mux := newQuicUDPMux(nil, nil, nil)
 	// Evaluate once to set lossTime
 	mux.evaluateLossRate()
 

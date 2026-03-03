@@ -130,6 +130,7 @@ func TestQUICClient_DialUDP_HopResetOnLossRecovery(t *testing.T) {
 	}
 
 	client.datagramHopAttempts.Store(2)
+	client.datagramHopExhausted.Store(time.Now().Add(-1 * time.Minute).UnixNano())
 
 	client.mu.Lock()
 	mux := client.udpMux
@@ -151,6 +152,9 @@ func TestQUICClient_DialUDP_HopResetOnLossRecovery(t *testing.T) {
 
 	if client.datagramHopAttempts.Load() != 0 {
 		t.Fatalf("hopAttempts = %d, want 0 after loss recovery", client.datagramHopAttempts.Load())
+	}
+	if client.datagramHopExhausted.Load() != 0 {
+		t.Fatalf("datagramHopExhausted = %d, want 0 after loss recovery", client.datagramHopExhausted.Load())
 	}
 }
 
@@ -299,5 +303,111 @@ func TestQUICClient_DialUDP_NoHopWithoutConfig(t *testing.T) {
 
 	if client.datagramHopAttempts.Load() != 0 {
 		t.Fatalf("datagramHopAttempts = %d, want 0 (no hop without config)", client.datagramHopAttempts.Load())
+	}
+}
+
+// TestQUICClient_DialUDP_HopRecoveryAfterCooldown verifies that after hop
+// exhaustion + cooldown elapsed, the hop counter resets and QUIC gets a fresh
+// round of probes (OpenConnect-style periodic recovery).
+func TestQUICClient_DialUDP_HopRecoveryAfterCooldown(t *testing.T) {
+	client, _, cleanup := setupQUICPairWithHop(t)
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Establish connection
+	if _, err := client.connect(ctx); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+
+	// Simulate hop exhaustion that happened 4 minutes ago (past 3min cooldown)
+	client.datagramHopAttempts.Store(maxDatagramHops)
+	client.datagramHopExhausted.Store(time.Now().Add(-4 * time.Minute).UnixNano())
+
+	// Make datagram path unhealthy
+	client.mu.Lock()
+	mux := client.udpMux
+	client.mu.Unlock()
+	for i := int32(0); i < datagramTimeoutThreshold; i++ {
+		mux.recordTimeout()
+	}
+
+	// DialUDP should trigger recovery: reset hops → hop → reconnect → succeed
+	pc, err := client.DialUDP(ctx, "8.8.8.8:53")
+	if err != nil {
+		t.Fatalf("DialUDP should succeed after recovery probe, got: %v", err)
+	}
+	defer pc.Close()
+
+	// Recovery resets to 0, then hop increments to 1
+	if got := client.datagramHopAttempts.Load(); got != 1 {
+		t.Fatalf("datagramHopAttempts = %d, want 1 (reset + one hop)", got)
+	}
+	// Exhaustion timestamp cleared by recovery
+	if got := client.datagramHopExhausted.Load(); got != 0 {
+		t.Fatalf("datagramHopExhausted = %d, want 0 (cleared by recovery)", got)
+	}
+}
+
+// TestQUICClient_DialUDP_HopRecoveryBlockedDuringCooldown verifies that within
+// the recovery cooldown period, hops stay exhausted and ErrDatagramUnhealthy
+// is returned (TCP-WS continues serving).
+func TestQUICClient_DialUDP_HopRecoveryBlockedDuringCooldown(t *testing.T) {
+	client, _, cleanup := setupQUICPairWithHop(t)
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if _, err := client.connect(ctx); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+
+	// Simulate hop exhaustion that just happened (well within 3min cooldown)
+	client.datagramHopAttempts.Store(maxDatagramHops)
+	client.datagramHopExhausted.Store(time.Now().UnixNano())
+
+	// Make datagram path unhealthy
+	client.mu.Lock()
+	mux := client.udpMux
+	client.mu.Unlock()
+	for i := int32(0); i < datagramTimeoutThreshold; i++ {
+		mux.recordTimeout()
+	}
+
+	// DialUDP should return ErrDatagramUnhealthy (cooldown not elapsed)
+	_, err := client.DialUDP(ctx, "8.8.8.8:53")
+	if !errors.Is(err, ErrDatagramUnhealthy) {
+		t.Fatalf("DialUDP = %v, want ErrDatagramUnhealthy (within cooldown)", err)
+	}
+
+	// Hop counter should be unchanged
+	if got := client.datagramHopAttempts.Load(); got != maxDatagramHops {
+		t.Fatalf("datagramHopAttempts = %d, want %d (unchanged during cooldown)", got, maxDatagramHops)
+	}
+}
+
+// TestQUICClient_DialUDP_HopRecoveryResetOnNetworkChange verifies that
+// ResetConnections() clears the datagramHopExhausted timestamp along with
+// the hop counter, giving QUIC a fully fresh start on the new network.
+func TestQUICClient_DialUDP_HopRecoveryResetOnNetworkChange(t *testing.T) {
+	client, _, cleanup := setupQUICPairWithHop(t)
+	defer cleanup()
+
+	// Simulate a prior exhaustion
+	client.datagramHopAttempts.Store(maxDatagramHops)
+	client.datagramHopExhausted.Store(time.Now().Add(-1 * time.Minute).UnixNano())
+
+	// Network change → ResetConnections
+	tm := NewTransportManager()
+	tm.SetQUIC(client)
+	tm.ResetConnections()
+
+	if got := client.datagramHopAttempts.Load(); got != 0 {
+		t.Fatalf("datagramHopAttempts = %d, want 0 (cleared by ResetConnections)", got)
+	}
+	if got := client.datagramHopExhausted.Load(); got != 0 {
+		t.Fatalf("datagramHopExhausted = %d, want 0 (cleared by ResetConnections)", got)
 	}
 }
