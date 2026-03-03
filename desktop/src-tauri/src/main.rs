@@ -154,6 +154,16 @@ fn main() {
             // Ensure k2 service / NE configuration is running with correct version
             let app_version = env!("CARGO_PKG_VERSION").to_string();
             log::info!("[startup] App version: {}, os: {}", app_version, std::env::consts::OS);
+
+            // Auto-set beta channel for direct beta installs.
+            // Only if user never explicitly chose a channel (file doesn't exist).
+            // If file exists (user toggled before), respect their choice.
+            if app_version.contains("-beta") && !channel::has_channel_preference(app.handle()) {
+                log::info!("[startup] Beta build detected ({}), no channel preference — defaulting to beta", app_version);
+                if let Err(e) = channel::save_channel(app.handle(), "beta") {
+                    log::error!("[startup] Failed to save beta channel: {}", e);
+                }
+            }
             let startup_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 match service::ensure_service_running(app_version).await {

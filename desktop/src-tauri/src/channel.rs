@@ -49,6 +49,13 @@ pub fn get_channel_early() -> String {
     }
 }
 
+/// Whether the channel file exists on disk (user has explicitly set a channel preference).
+pub fn has_channel_preference(app: &AppHandle) -> bool {
+    channel_file_path(app)
+        .map(|p| p.exists())
+        .unwrap_or(false)
+}
+
 /// Whether the current channel is beta (pre-AppHandle version).
 pub fn is_beta_early() -> bool {
     get_channel_early() == BETA
