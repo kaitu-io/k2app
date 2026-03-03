@@ -58,10 +58,10 @@ section "Version Consistency"
 PKG_VERSION=$(node -p "require('./package.json').version")
 echo "  package.json version: $PKG_VERSION"
 
-if [ "$PKG_VERSION" = "0.4.0" ]; then
-  pass "package.json version is 0.4.0"
+if [[ "$PKG_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+  pass "package.json version is valid semver ($PKG_VERSION)"
 else
-  fail "package.json version: expected 0.4.0, got $PKG_VERSION"
+  fail "package.json version is not valid semver: $PKG_VERSION"
 fi
 
 # Run make pre-build to generate version.json

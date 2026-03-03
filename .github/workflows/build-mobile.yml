@@ -137,12 +137,25 @@ jobs:
             --apiKey "$APP_STORE_CONNECT_KEY_ID" \
             --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID"
 
+      - name: Detect release channel
+        id: channel
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [[ "$VERSION" == *"-beta"* ]]; then
+            CHANNEL="beta"
+          else
+            CHANNEL="stable"
+          fi
+          echo "channel=${CHANNEL}" >> "$GITHUB_OUTPUT"
+          echo "Release channel: ${CHANNEL} (version: ${VERSION})"
+
       - name: Upload Web OTA + iOS manifest to S3
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ap-northeast-1
-        run: bash scripts/ci/upload-mobile-s3.sh --web --ios
+        run: bash scripts/ci/upload-mobile-s3.sh --web --ios --channel=${{ steps.channel.outputs.channel }}
 
       - name: Clean up keychain
         if: always()
@@ -229,9 +242,22 @@ jobs:
           path: release/*/Kaitu-*.apk
           retention-days: 30
 
+      - name: Detect release channel
+        id: channel
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [[ "$VERSION" == *"-beta"* ]]; then
+            CHANNEL="beta"
+          else
+            CHANNEL="stable"
+          fi
+          echo "channel=${CHANNEL}" >> "$GITHUB_OUTPUT"
+          echo "Release channel: ${CHANNEL} (version: ${VERSION})"
+
       - name: Upload Android APK to S3
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ap-northeast-1
-        run: bash scripts/ci/upload-mobile-s3.sh --android
+        run: bash scripts/ci/upload-mobile-s3.sh --android --channel=${{ steps.channel.outputs.channel }}

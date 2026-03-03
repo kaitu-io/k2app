@@ -2,22 +2,24 @@
 set -euo pipefail
 
 # Upload mobile build artifacts to S3 and generate latest.json manifests.
+# Channel is auto-detected from version string: -beta suffix → beta channel.
 #
 # Usage:
-#   bash scripts/ci/upload-mobile-s3.sh --android   # Upload APK + android/latest.json
-#   bash scripts/ci/upload-mobile-s3.sh --web        # Upload webapp.zip + web/latest.json
-#   bash scripts/ci/upload-mobile-s3.sh --ios        # Upload ios/latest.json (metadata only)
-#   bash scripts/ci/upload-mobile-s3.sh --all        # All of the above
+#   bash scripts/ci/upload-mobile-s3.sh --android                    # Upload APK + android/latest.json
+#   bash scripts/ci/upload-mobile-s3.sh --web                        # Upload webapp.zip + web/latest.json
+#   bash scripts/ci/upload-mobile-s3.sh --ios                        # Upload ios/latest.json (metadata only)
+#   bash scripts/ci/upload-mobile-s3.sh --all                        # All of the above
+#   bash scripts/ci/upload-mobile-s3.sh --android --channel=beta     # Force beta channel
 #
 # Required env vars:
 #   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION
 #
 # S3 layout:
 #   s3://d0.all7.cc/kaitu/web/{version}/webapp.zip
-#   s3://d0.all7.cc/kaitu/web/latest.json
+#   s3://d0.all7.cc/kaitu/web/[beta/]latest.json
 #   s3://d0.all7.cc/kaitu/android/{version}/Kaitu-{version}.apk
-#   s3://d0.all7.cc/kaitu/android/latest.json
-#   s3://d0.all7.cc/kaitu/ios/latest.json
+#   s3://d0.all7.cc/kaitu/android/[beta/]latest.json
+#   s3://d0.all7.cc/kaitu/ios/[beta/]latest.json
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
@@ -31,6 +33,7 @@ RELEASED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 UPLOAD_ANDROID=false
 UPLOAD_WEB=false
 UPLOAD_IOS=false
+CHANNEL=""
 
 for arg in "$@"; do
   case "$arg" in
@@ -38,6 +41,7 @@ for arg in "$@"; do
     --web)     UPLOAD_WEB=true ;;
     --ios)     UPLOAD_IOS=true ;;
     --all)     UPLOAD_ANDROID=true; UPLOAD_WEB=true; UPLOAD_IOS=true ;;
+    --channel=*) CHANNEL="${arg#*=}" ;;
     *) echo "Unknown argument: $arg"; exit 1 ;;
   esac
 done
@@ -46,6 +50,23 @@ if ! $UPLOAD_ANDROID && ! $UPLOAD_WEB && ! $UPLOAD_IOS; then
   echo "Error: specify --android, --web, --ios, or --all"
   exit 1
 fi
+
+# Auto-detect channel from version if not explicitly set
+if [ -z "$CHANNEL" ]; then
+  if [[ "$VERSION" == *"-beta"* ]]; then
+    CHANNEL="beta"
+  else
+    CHANNEL="stable"
+  fi
+fi
+
+if [ "$CHANNEL" = "beta" ]; then
+  MANIFEST_SUBDIR="beta/"
+else
+  MANIFEST_SUBDIR=""
+fi
+
+echo "Channel: ${CHANNEL} (version: ${VERSION})"
 
 # --- Web OTA ---
 if $UPLOAD_WEB; then
@@ -75,11 +96,11 @@ if $UPLOAD_WEB; then
   "released_at": "${RELEASED_AT}"
 }
 EOF
-  aws s3 cp /tmp/web-latest.json "${S3_BUCKET}/web/latest.json" \
+  aws s3 cp /tmp/web-latest.json "${S3_BUCKET}/web/${MANIFEST_SUBDIR}latest.json" \
     --content-type "application/json"
 
   echo "Web OTA uploaded: ${CDN_BASE}/web/${VERSION}/webapp.zip"
-  echo "Manifest: ${CDN_BASE}/web/latest.json"
+  echo "Manifest: ${CDN_BASE}/web/${MANIFEST_SUBDIR}latest.json"
   rm -f "$WEB_ZIP" /tmp/web-latest.json
 fi
 
@@ -110,11 +131,11 @@ if $UPLOAD_ANDROID; then
   "min_android": 26
 }
 EOF
-  aws s3 cp /tmp/android-latest.json "${S3_BUCKET}/android/latest.json" \
+  aws s3 cp /tmp/android-latest.json "${S3_BUCKET}/android/${MANIFEST_SUBDIR}latest.json" \
     --content-type "application/json"
 
   echo "APK uploaded: ${CDN_BASE}/android/${VERSION}/${APK_FILENAME}"
-  echo "Manifest: ${CDN_BASE}/android/latest.json"
+  echo "Manifest: ${CDN_BASE}/android/${MANIFEST_SUBDIR}latest.json"
   rm -f /tmp/android-latest.json
 fi
 
@@ -130,10 +151,10 @@ if $UPLOAD_IOS; then
   "released_at": "${RELEASED_AT}"
 }
 EOF
-  aws s3 cp /tmp/ios-latest.json "${S3_BUCKET}/ios/latest.json" \
+  aws s3 cp /tmp/ios-latest.json "${S3_BUCKET}/ios/${MANIFEST_SUBDIR}latest.json" \
     --content-type "application/json"
 
-  echo "iOS manifest: ${CDN_BASE}/ios/latest.json"
+  echo "iOS manifest: ${CDN_BASE}/ios/${MANIFEST_SUBDIR}latest.json"
   rm -f /tmp/ios-latest.json
 fi
 

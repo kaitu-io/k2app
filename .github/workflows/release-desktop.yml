@@ -11,6 +11,9 @@ permissions:
 
 jobs:
   release:
+    outputs:
+      channel: ${{ steps.channel.outputs.channel }}
+
     strategy:
       fail-fast: false
       matrix:
@@ -68,6 +71,31 @@ jobs:
 
       - name: Install Node dependencies
         run: yarn install --frozen-lockfile --network-timeout 600000 --network-concurrency 4
+
+      - name: Verify tag matches package.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag version ($TAG_VERSION) does not match package.json ($PKG_VERSION)"
+            exit 1
+          fi
+          echo "Tag and package.json version match: $TAG_VERSION"
+
+      - name: Detect release channel
+        id: channel
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [[ "$VERSION" == *"-beta"* ]]; then
+            CHANNEL="beta"
+          else
+            CHANNEL="stable"
+          fi
+          echo "channel=${CHANNEL}" >> "$GITHUB_OUTPUT"
+          echo "Release channel: ${CHANNEL} (version: ${VERSION})"
 
       - name: Run pre-build (Windows)
         if: matrix.platform == 'Windows'
@@ -285,3 +313,38 @@ jobs:
             --error "Release build failed on ${{ matrix.platform }}. Check workflow run for details."
         env:
           SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_ALERT }}
+
+  # Auto-publish beta manifest after both platform builds succeed
+  publish-beta:
+    needs: [release]
+    if: needs.release.outputs.channel == 'beta'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Publish beta manifest
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ap-east-1
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/publish-desktop.sh
+
+      - name: Notify Slack
+        if: success()
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          ./scripts/ci/notify-slack.sh deploy-success \
+            --version "${VERSION}" \
+            --platforms "beta-manifest"
+        env:
+          SLACK_WEBHOOK_RELEASE: ${{ secrets.SLACK_WEBHOOK_RELEASE }}

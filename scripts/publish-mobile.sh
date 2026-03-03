@@ -4,12 +4,14 @@ set -euo pipefail
 # Two-phase release: publish mobile manifests (latest.json) for Android APK and Web OTA.
 # Phase 1 (CI): build-mobile.yml uploads artifacts to S3 versioned directories
 # Phase 2 (this script): validates artifacts exist, computes hashes, generates latest.json
+# Channel is auto-detected from version string: -beta suffix → beta channel.
 #
 # Usage:
-#   scripts/publish-mobile.sh VERSION [--s3-base=PATH] [--dry-run]
+#   scripts/publish-mobile.sh VERSION [--s3-base=PATH] [--dry-run] [--channel=stable|beta]
 #
 # Examples:
-#   make publish-mobile VERSION=0.5.0            # Real S3 publish
+#   make publish-mobile VERSION=0.5.0            # Real S3 publish (stable)
+#   make publish-mobile VERSION=0.5.0-beta.1     # Real S3 publish (auto-detects beta)
 #   scripts/publish-mobile.sh 0.5.0 --dry-run    # Verify without uploading
 #   scripts/publish-mobile.sh 0.5.0 --s3-base=/tmp/mock-s3/kaitu --dry-run  # Local test
 
@@ -17,6 +19,7 @@ VERSION="${1:-}"
 S3_BUCKET="kaitu-releases"
 S3_BASE=""
 DRY_RUN=false
+CHANNEL=""
 
 # Parse arguments
 shift || true
@@ -24,12 +27,27 @@ for arg in "$@"; do
     case "$arg" in
         --s3-base=*) S3_BASE="${arg#*=}" ;;
         --dry-run) DRY_RUN=true ;;
+        --channel=*) CHANNEL="${arg#*=}" ;;
         *) echo "Unknown argument: $arg" >&2; exit 1 ;;
     esac
 done
 
 if [ -z "$VERSION" ]; then
-    echo "Usage: $0 VERSION [--s3-base=PATH] [--dry-run]" >&2
+    echo "Usage: $0 VERSION [--s3-base=PATH] [--dry-run] [--channel=stable|beta]" >&2
+    exit 1
+fi
+
+# Auto-detect channel from version if not explicitly set
+if [ -z "$CHANNEL" ]; then
+    if [[ "$VERSION" == *"-beta"* ]]; then
+        CHANNEL="beta"
+    else
+        CHANNEL="stable"
+    fi
+fi
+
+if [ "$CHANNEL" != "stable" ] && [ "$CHANNEL" != "beta" ]; then
+    echo "ERROR: Invalid channel '${CHANNEL}'. Must be 'stable' or 'beta'." >&2
     exit 1
 fi
 
@@ -126,16 +144,25 @@ generate_manifest() {
 }
 MANIFEST_EOF
 
-    # Upload
-    upload_manifest "${channel}/latest.json" "$manifest"
-    echo "  Published ${channel}/latest.json"
+    # Upload (beta → channel/beta/latest.json, stable → channel/latest.json)
+    if [ "$CHANNEL" = "beta" ]; then
+        upload_manifest "${channel}/beta/latest.json" "$manifest"
+        echo "  Published ${channel}/beta/latest.json"
+    else
+        upload_manifest "${channel}/latest.json" "$manifest"
+        echo "  Published ${channel}/latest.json"
+    fi
 }
 
 generate_manifest "android" "$android_artifact"
 generate_manifest "web" "$web_artifact"
 
 echo ""
-echo "Published mobile v${VERSION} manifests successfully."
+if [ "$CHANNEL" = "beta" ]; then
+    echo "Published mobile v${VERSION} beta manifests successfully."
+else
+    echo "Published mobile v${VERSION} manifests successfully."
+fi
 if [ "$DRY_RUN" = true ]; then
     echo "(dry-run mode - no actual S3 uploads)"
 fi

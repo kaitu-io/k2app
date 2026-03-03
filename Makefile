@@ -98,8 +98,8 @@ deploy-api:
 	cd api/cmd && GOOS=linux GOARCH=amd64 go build -o ../../release/kaitu-center .
 	bash scripts/deploy-center.sh
 
-publish-release:
-	bash scripts/publish-release.sh
+publish-desktop:
+	bash scripts/publish-desktop.sh
 
 # k2/k2s standalone binaries (linux + darwin × amd64 + arm64)
 build-k2-standalone:

@@ -1,22 +1,30 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Publish release: generate latest.json files and upload to S3, then create GitHub Release.
+# Publish desktop release: generate latest.json files and upload to S3, then create GitHub Release.
 # Run manually after CI build completes and S3 artifacts are verified.
+# Channel is auto-detected from version string: -beta suffix → beta channel.
 #
 # Prerequisites:
 #   - AWS CLI configured (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION)
 #   - gh CLI authenticated (for GitHub Release creation)
 #
 # Usage:
-#   bash scripts/publish-release.sh                  # stable (default)
-#   bash scripts/publish-release.sh --channel=beta   # beta
-#   AWS_DEFAULT_REGION=ap-east-1 bash scripts/publish-release.sh
+#   bash scripts/publish-desktop.sh                  # auto-detect from package.json version
+#   bash scripts/publish-desktop.sh --channel=beta   # force beta channel
+#   AWS_DEFAULT_REGION=ap-east-1 bash scripts/publish-desktop.sh
 
 export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-ap-east-1}"
 
-# Parse --channel flag
-CHANNEL="stable"
+VERSION=$(node -p "require('./package.json').version")
+
+# Auto-detect channel from version; allow --channel override
+if [[ "$VERSION" == *"-beta"* ]]; then
+  CHANNEL="beta"
+else
+  CHANNEL="stable"
+fi
+
 for arg in "$@"; do
   case "$arg" in
     --channel=*) CHANNEL="${arg#*=}" ;;
@@ -27,8 +35,6 @@ if [ "$CHANNEL" != "stable" ] && [ "$CHANNEL" != "beta" ]; then
   echo "ERROR: Invalid channel '${CHANNEL}'. Must be 'stable' or 'beta'."
   exit 1
 fi
-
-VERSION=$(node -p "require('./package.json').version")
 PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
 S3_VER="s3://d0.all7.cc/kaitu/desktop/${VERSION}"
 S3_ROOT="s3://d0.all7.cc/kaitu/desktop"
