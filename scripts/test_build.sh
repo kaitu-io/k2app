@@ -85,6 +85,20 @@ else
   fail "Cargo.toml version mismatch: expected $PKG_VERSION, got $CARGO_VERSION"
 fi
 
+GRADLE_VNAME=$(sed -n 's/.*versionName "\(.*\)"/\1/p' mobile/android/app/build.gradle)
+if [ "$GRADLE_VNAME" = "$PKG_VERSION" ]; then
+  pass "Android versionName matches package.json ($GRADLE_VNAME)"
+else
+  fail "Android versionName mismatch: expected $PKG_VERSION, got $GRADLE_VNAME"
+fi
+
+IOS_MVER=$(sed -n 's/.*MARKETING_VERSION = \(.*\);/\1/p' mobile/ios/App/App.xcodeproj/project.pbxproj | head -1)
+if [ "$IOS_MVER" = "$PKG_VERSION" ]; then
+  pass "iOS MARKETING_VERSION matches package.json ($IOS_MVER)"
+else
+  fail "iOS MARKETING_VERSION mismatch: expected $PKG_VERSION, got $IOS_MVER"
+fi
+
 # ============================================================
 # 2. Webapp build
 # ============================================================

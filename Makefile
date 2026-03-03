@@ -4,7 +4,10 @@ K2_BIN   = desktop/src-tauri/binaries
 FEATURES ?=
 TAURI_FEATURES_ARG := $(if $(FEATURES),--features $(FEATURES),)
 
-pre-build:
+sync-version:
+	bash scripts/sync-version.sh
+
+pre-build: sync-version
 	mkdir -p webapp/public
 	echo '{"version":"$(VERSION)"}' > webapp/public/version.json
 
