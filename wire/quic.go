@@ -313,7 +313,14 @@ func (c *QUICClient) DialTCP(ctx context.Context, addr string) (net.Conn, error)
 	slog.Debug("QUICClient.DialTCP: opening stream", "addr", addr)
 	stream, err := conn.OpenStreamSync(ctx)
 	if err != nil {
-		slog.Debug("QUICClient.DialTCP: open stream failed", "addr", addr, "err", err)
+		// Non-context errors mean the connection is dead (idle timeout,
+		// peer close, transport error). Reset so next connect() builds
+		// a fresh connection instead of retrying on this dead one.
+		if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+			slog.Warn("QUICClient.DialTCP: stream open failed, resetting connection",
+				"addr", addr, "err", err)
+			c.resetConnection()
+		}
 		return nil, fmt.Errorf("wire: open stream: %w", err)
 	}
 	slog.Debug("QUICClient.DialTCP: stream opened", "addr", addr, "streamID", stream.StreamID())
@@ -448,6 +455,12 @@ func (c *QUICClient) dialUDPStream(ctx context.Context, conn *quic.Conn, addr st
 		stream, err := conn.OpenStreamSync(ctx)
 		if err != nil {
 			c.mu.Unlock()
+			// Same pattern as DialTCP: non-context errors mean dead connection.
+			if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+				slog.Warn("QUICClient.dialUDPStream: stream open failed, resetting connection",
+					"addr", addr, "err", err)
+				c.resetConnection()
+			}
 			return nil, fmt.Errorf("wire: open UDP stream: %w", err)
 		}
 		// Write H3 frame type + UDP stream header

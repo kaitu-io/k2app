@@ -752,3 +752,136 @@ func TestQUICLoopback_Datagram(t *testing.T) {
 		t.Fatalf("server error: %v", err)
 	}
 }
+
+// TestQUICClient_DialTCP_ResetsOnStreamError verifies that DialTCP resets
+// the connection when OpenStreamSync fails with a non-context error (e.g.,
+// connection closed). This prevents the dead-connection retry loop where
+// TransportManager backoff retries keep hitting the same dead conn.
+func TestQUICClient_DialTCP_ResetsOnStreamError(t *testing.T) {
+	client, server, cleanup := setupQUICPair(t)
+	defer cleanup()
+
+	// Establish a connection first.
+	ctx := context.Background()
+	serverDone := make(chan error, 1)
+	go func() {
+		conn, _, err := server.AcceptTCP(ctx)
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		WriteStreamResponse(conn, nil)
+		conn.Close()
+		serverDone <- nil
+	}()
+
+	conn, err := client.DialTCP(ctx, "example.com:80")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.Close()
+	<-serverDone
+
+	// Verify client has a cached connection.
+	client.mu.Lock()
+	hasConn := client.conn != nil
+	client.mu.Unlock()
+	if !hasConn {
+		t.Fatal("expected cached connection before server close")
+	}
+
+	// Simulate a dead connection: close the underlying QUIC connection directly.
+	// The client still has c.conn != nil (connect() will return it), but
+	// OpenStreamSync will fail immediately on the closed connection.
+	// This mirrors production: ISP kills the path, conn object is stale.
+	client.mu.Lock()
+	client.conn.CloseWithError(0, "test: simulate dead connection")
+	client.mu.Unlock()
+
+	// DialTCP should fail AND reset the dead connection.
+	_, err = client.DialTCP(ctx, "example.com:80")
+	if err == nil {
+		t.Fatal("expected error from DialTCP on dead connection")
+	}
+
+	// The connection should have been reset (nil'd).
+	client.mu.Lock()
+	connAfter := client.conn
+	client.mu.Unlock()
+	if connAfter != nil {
+		t.Fatal("expected conn to be nil after DialTCP reset")
+	}
+}
+
+// TestQUICClient_DialTCP_NoResetOnContextTimeout verifies that DialTCP
+// does NOT reset the connection when the failure is due to context timeout.
+// The connection might still be healthy — just slow.
+func TestQUICClient_DialTCP_NoResetOnContextTimeout(t *testing.T) {
+	client, _, cleanup := setupQUICPair(t)
+	defer cleanup()
+
+	// Establish connection.
+	ctx := context.Background()
+	_, err := client.connect(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Use an already-expired context so OpenStreamSync fails with DeadlineExceeded.
+	expiredCtx, cancel := context.WithTimeout(ctx, 0)
+	cancel()
+
+	_, err = client.DialTCP(expiredCtx, "example.com:80")
+	if err == nil {
+		t.Fatal("expected error from DialTCP with expired context")
+	}
+
+	// Connection should NOT be reset — context error, not connection error.
+	client.mu.Lock()
+	connAfter := client.conn
+	client.mu.Unlock()
+	if connAfter == nil {
+		t.Fatal("conn should NOT be nil after context timeout")
+	}
+}
+
+// TestQUICClient_dialUDPStream_ResetsOnStreamError verifies that dialUDPStream
+// resets the connection when OpenStreamSync fails with a non-context error,
+// matching the DialTCP behavior. This is a defensive fix for the datagram-
+// disabled fallback path.
+func TestQUICClient_dialUDPStream_ResetsOnStreamError(t *testing.T) {
+	client, _, cleanup := setupQUICPair(t)
+	defer cleanup()
+
+	// Establish connection (sets c.conn, c.udpMux, c.alloc).
+	ctx := context.Background()
+	conn, err := client.connect(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify client has a cached connection.
+	client.mu.Lock()
+	hasConn := client.conn != nil
+	client.mu.Unlock()
+	if !hasConn {
+		t.Fatal("expected cached connection after connect")
+	}
+
+	// Kill the QUIC connection so OpenStreamSync will fail.
+	conn.CloseWithError(0, "test: simulate dead connection")
+
+	// dialUDPStream should fail AND reset the dead connection.
+	_, err = client.dialUDPStream(ctx, conn, "example.com:80")
+	if err == nil {
+		t.Fatal("expected error from dialUDPStream on dead connection")
+	}
+
+	// The connection should have been reset (nil'd).
+	client.mu.Lock()
+	connAfter := client.conn
+	client.mu.Unlock()
+	if connAfter != nil {
+		t.Fatal("expected conn to be nil after dialUDPStream reset")
+	}
+}
