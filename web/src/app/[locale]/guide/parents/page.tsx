@@ -229,7 +229,7 @@ export default function GuideParentsPage() {
                   </p>
                 </div>
               </div>
-              <a href="/guides/mac-guide.pdf" download>
+              <a href="https://d13jc1jqzlg4yt.cloudfront.net/kaitu/guides/mac-guide.pdf" target="_blank" rel="noopener noreferrer">
                 <Button variant="outline" size="sm">
                   <Download className="w-4 h-4 mr-2" />
                   {t('guide-parents.guides.download')}
@@ -250,7 +250,7 @@ export default function GuideParentsPage() {
                   </p>
                 </div>
               </div>
-              <a href="/guides/win-guide.pdf" download>
+              <a href="https://d13jc1jqzlg4yt.cloudfront.net/kaitu/guides/win-guide.pdf" target="_blank" rel="noopener noreferrer">
                 <Button variant="outline" size="sm">
                   <Download className="w-4 h-4 mr-2" />
                   {t('guide-parents.guides.download')}
