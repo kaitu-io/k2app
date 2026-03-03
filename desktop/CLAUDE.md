@@ -89,5 +89,7 @@ yarn tauri build --target universal-apple-darwin  # macOS build
 - NE appex must be codesigned with the same identity as the main app, with a separate entitlements file that includes `com.apple.developer.networking.networkextension`
 - SSE status stream (`status_stream.rs`) emits Tauri events: `service-state-changed` (SSE connection state) + `vpn-status-changed` (VPN status from SSE). Used by webapp VPN store for event-driven updates instead of 2s polling.
 - `get_channel_early()` uses `dirs::data_dir().join("io.kaitu.desktop")` to read channel BEFORE `AppHandle` exists (log plugin is configured in builder chain before `.setup()`). Path must match Tauri's `app_data_dir()` on all platforms.
+- Missing `#[tauri::command]` registration in `tauri::generate_handler![]` causes white screen — first `invoke()` fails silently, React never renders.
+- Windows updater: `update.install()` launches NSIS as child process, must call `app.exit(0)` immediately — NSIS needs old process to exit to overwrite binaries.
 - Beta channel forces ALL 3 log layers to debug: desktop log (tauri-plugin-log via `is_beta_early()`), daemon log (HTTP via `set_log_level_internal`), engine log (`buildConnectConfig()` in webapp). User cannot override while on beta.
 - Pre-beta log level stored in `{app_data_dir}/pre-beta-log-level` file. Frontend passes `currentLogLevel` (from localStorage) when calling `set_update_channel` IPC since Rust cannot read browser localStorage.

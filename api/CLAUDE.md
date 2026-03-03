@@ -221,6 +221,7 @@ cd api/cmd && ./kaitu-center start -f -c ../config.yml   # Foreground mode
 
 - Always specify `column:` tag when Go field name auto-derivation differs from DB column. Example: `DeviceUDID` → GORM derives `device_ud_id`, but DB has `device_udid`. Fix: `gorm:"column:device_udid"`.
 - Use struct-based queries, not raw SQL strings.
+- **Soft delete: use `db.Delete()`, not manual status field**. When model has `DeletedAt gorm.DeletedAt`, GORM auto-filters on `deleted_at`. A manual `status = "deleted"` field creates conflicting sources of truth — records appear in queries despite being "deleted".
 - Soft delete via `gorm.DeletedAt` field with index.
 - Timestamps: `CreatedAt`/`UpdatedAt` auto-managed by GORM.
 

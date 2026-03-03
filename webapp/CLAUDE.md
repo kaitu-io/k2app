@@ -231,6 +231,8 @@ cd webapp && npx tsc --noEmit            # Type check
 | VPN operations fail | Is kaitu-service running? Check service logs and network permissions. |
 | API calls fail | Token expired? Check network. Check browser Network panel. |
 | Service reachable? | `curl http://127.0.0.1:1777/ping` |
+| White flash on app start | `index.html` must use `background: #0f0f13` directly on `html, body` WITHOUT `@media (prefers-color-scheme: dark)`. Media query causes 100-300ms white flash on light-mode OS before MUI loads. |
+| Login fails with 422 | All login paths must include `udid` from `window._platform!.getUdid()` in POST body. Backend requires UDID for device association. |
 
 ## Related Docs
 

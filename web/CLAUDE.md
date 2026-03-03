@@ -204,6 +204,8 @@ AWS Amplify (`amplify.yml`). Prebuild script (`scripts/amplify-prebuild.sh`) han
 - **API chain linkage**: When modifying Center API endpoints, update `web/src/lib/api.ts` typed methods to match.
 - **Velite `.velite/` directory**: Generated at build time, gitignored. Contains `index.js`, `index.d.ts`, `posts.json`. Rebuild with `npx velite build`.
 - **Content prose styling**: Uses `@tailwindcss/typography` — article content rendered with `prose dark:prose-invert` classes.
+- **Optional catch-all for root match**: Use `[[...path]]` (not `[...path]`) when the route must also match the root path (e.g., `/k2/` with no segments). Static routes always win over catch-all.
+- **Velite mock in tests**: vitest tests mock `#velite` import with synthetic post data. Server Component pages tested by calling as async functions directly, asserting on returned JSX or `generateMetadata()` output.
 - **next-intl IntlMessages interface**: `web/src/types/i18n.d.ts` uses an empty `interface IntlMessages {}` (permissive typing) because messages are split across namespace files loaded dynamically. This disables compile-time key checking — use runtime tests instead.
 - **Server Component pages with setRequestLocale**: Cast locale to `(typeof routing.locales)[number]` when calling `setRequestLocale()`. The URL param type is `string` but next-intl requires the narrower union type.
 - **Homepage is Server Component + force-static**: `web/src/app/[locale]/page.tsx` has `export const dynamic = 'force-static'`. Do NOT add `"use client"` — it would break SSG and SEO.

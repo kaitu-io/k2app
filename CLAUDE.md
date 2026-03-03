@@ -56,7 +56,7 @@ tools/kaitu-ops-mcp/ MCP server for AI-driven node ops (TypeScript + @modelconte
   src/                 index.ts (entry), config.ts, ssh.ts, redact.ts, center-api.ts, tools/
 scripts/             dev.sh, build-macos.sh, build-mobile-*.sh, test_build.sh
 docker/scripts/      Node ops scripts (provision-node.sh, enable-ipv6.sh, etc.)
-docs/knowledge/      Distilled patterns (7 files: architecture, testing, gotchas, task-splitting, bugfix, iOS NE debug, review lessons)
+docs/knowledge/      iOS NE debug workflow (standalone reference doc)
 .claude/settings.json  Project-level Claude Code config (MCP server registration)
 .claude/skills/      Skill files for Claude Code (kaitu-node-ops.md — node ops safety guardrails)
 .github/workflows/   CI (push/PR) + Release Desktop (v* tags) + Release OpenWrt
@@ -102,6 +102,11 @@ Makefile             Build orchestration — version from package.json, k2 from 
 - **Beta channel forces debug**: When channel is "beta", ALL 3 log layers are forced to debug — user cannot override. Desktop log: `is_beta_early()` in main.rs builder. Daemon log: `set_log_level` IPC rejects non-debug. Engine log: `buildConnectConfig()` checks `_platform.updater.channel`. Switching to beta saves current log level to disk; switching back restores it.
 - **Beta auto-upload**: Every 24h, silently uploads all logs to S3 then cleans up files. `start_beta_auto_upload()` / `stop_beta_auto_upload()` in `log_upload.rs`. Started on app launch if beta, and on channel switch to beta. Cleanup: delete on macOS/Linux, truncate on Windows (tauri-plugin-log holds file handle).
 - **Pre-AppHandle channel reading**: `channel::get_channel_early()` uses `dirs::data_dir().join("io.kaitu.desktop")` to match Tauri's `app_data_dir()`. Required because tauri-plugin-log is configured in builder chain before `.setup()` provides `AppHandle`.
+- **Lazy wire connection**: `engine.Start()` "connected" means TUN+routes are ready. Wire handshake to server happens on first app dial — server-down detection is delayed until first use.
+- **Go json.Marshal escapes `&` as `\u0026`**: Tests asserting raw JSON strings with URLs will fail. Always unmarshal to `map[string]any` and assert on deserialized values.
+- **Docker on Apple Silicon**: Always `--platform linux/amd64` for server images. Go binary needs `GOARCH=amd64`. Architecture mismatch causes silent container startup failure.
+- **macOS PKG install order**: Preinstall runs OLD binary, postinstall runs NEW. Preinstall must handle missing CLI commands (fallback to raw `launchctl`). Always `launchctl unload` before overwriting plist.
+- **RegExp `/g` flag state persists**: Module-level global regex retains `lastIndex` between calls. Reset `pattern.lastIndex = 0` before each `.replace()` or alternating invocations silently skip matches.
 
 ## Tech Stack
 
@@ -154,7 +159,6 @@ web/CLAUDE.md                       Website: Next.js pages, admin dashboard, API
 desktop/CLAUDE.md                   Tauri shell, Rust modules, config
 api/CLAUDE.md                       Center API: routes, middleware, models, workers, cloudprovider
 k2/CLAUDE.md                        Go core architecture, wire protocol, daemon API
-docs/knowledge/                     Distilled patterns from all executed features
 ```
 
 ### k2 Submodule Docs (read-only, has its own word9f ecosystem)
