@@ -9,7 +9,8 @@
 //! - Windows: NSIS installer launched immediately, app exits
 //!
 //! Supports stable/beta channels — channel preference read from disk on each check.
-//! Downgrade (beta→stable) uses version_comparator(!=) to bypass semver > check.
+//! Downgrade (beta→stable) only triggered by explicit channel switch (set_update_channel),
+//! never by periodic auto-check or manual "check now".
 
 use serde::Serialize;
 use std::path::PathBuf;
@@ -33,6 +34,9 @@ const INITIAL_DELAY_SECS: u64 = 5;
 
 /// Whether an update has been downloaded and is ready to install
 static UPDATE_READY: AtomicBool = AtomicBool::new(false);
+
+/// Whether install has failed in this session (don't retry until next app launch)
+static INSTALL_FAILED: AtomicBool = AtomicBool::new(false);
 
 /// Stored update info for frontend consumption
 static UPDATE_INFO: Mutex<Option<UpdateInfo>> = Mutex::new(None);
@@ -63,10 +67,12 @@ pub fn start_auto_updater(app: AppHandle) {
         tokio::time::sleep(Duration::from_secs(INITIAL_DELAY_SECS)).await;
 
         loop {
-            if !is_update_ready() {
-                check_download_and_install(&app).await;
-            } else {
+            if is_update_ready() {
                 log::debug!("[updater] Update already ready, skipping check");
+            } else if INSTALL_FAILED.load(Ordering::SeqCst) {
+                log::debug!("[updater] Install failed earlier, skipping until restart");
+            } else {
+                check_download_and_install(&app, false).await;
             }
 
             tokio::time::sleep(Duration::from_secs(CHECK_INTERVAL_SECS)).await;
@@ -76,10 +82,10 @@ pub fn start_auto_updater(app: AppHandle) {
 
 /// Check for update, download, and prepare installation.
 ///
-/// Automatically detects downgrade scenario: if the channel is "stable" but the
-/// running version contains "-beta", uses version_comparator(!=) to trigger update
-/// even when the remote version is lower (beta→stable downgrade).
-async fn check_download_and_install(app: &AppHandle) {
+/// When `force_downgrade` is true AND channel is "stable" AND running version contains "-beta",
+/// uses version_comparator(!=) to trigger update even when the remote version is lower
+/// (beta→stable downgrade). Only `set_update_channel` passes true.
+async fn check_download_and_install(app: &AppHandle, force_downgrade: bool) {
     let ch = channel::get_channel(app);
     let endpoints = match channel::endpoints_for_channel(&ch) {
         Ok(eps) => eps,
@@ -89,9 +95,9 @@ async fn check_download_and_install(app: &AppHandle) {
         }
     };
 
-    // Auto-detect downgrade: stable channel + running beta build
+    // Only allow downgrade when explicitly requested (channel switch)
     let current_version = app.package_info().version.to_string();
-    let force_different = ch == "stable" && current_version.contains("-beta");
+    let force_different = force_downgrade && ch == "stable" && current_version.contains("-beta");
 
     log::info!("[updater] Checking for updates (channel={}, force={})", ch, force_different);
 
@@ -199,6 +205,8 @@ async fn check_download_and_install(app: &AppHandle) {
                 }
                 Err(e) => {
                     log::error!("[updater] Install failed: {}", e);
+                    INSTALL_FAILED.store(true, Ordering::SeqCst);
+                    log::info!("[updater] Marked INSTALL_FAILED, won't retry until restart");
                 }
             }
         }
@@ -246,19 +254,10 @@ pub async fn check_update_now(app: AppHandle) -> Result<String, String> {
     let ch = channel::get_channel(&app);
     let endpoints = channel::endpoints_for_channel(&ch)?;
 
-    // Auto-detect downgrade: stable channel + running beta build
-    let current_version = app.package_info().version.to_string();
-    let force_different = ch == "stable" && current_version.contains("-beta");
-
-    let mut builder = app
+    let builder = app
         .updater_builder()
         .endpoints(endpoints)
         .map_err(|e| e.to_string())?;
-
-    if force_different {
-        log::info!("[updater] Downgrade detected (stable channel, beta build), using != comparator");
-        builder = builder.version_comparator(|current, remote| remote.version != current);
-    }
 
     let updater = builder.build().map_err(|e| e.to_string())?;
 
@@ -330,7 +329,7 @@ pub fn get_update_channel(app: AppHandle) -> Result<String, String> {
 }
 
 /// IPC: Set update channel and trigger appropriate check.
-/// Downgrade detection is automatic inside check_download_and_install().
+/// Passes force_downgrade=true so beta→stable downgrade works via != comparator.
 ///
 /// When switching to beta: saves current log level, forces debug, starts auto-upload.
 /// When switching from beta: restores previous log level, stops auto-upload.
@@ -352,6 +351,7 @@ pub async fn set_update_channel(
 
     // Clear stale update state from previous channel
     UPDATE_READY.store(false, Ordering::SeqCst);
+    INSTALL_FAILED.store(false, Ordering::SeqCst);
     *UPDATE_INFO.lock().unwrap() = None;
 
     // Beta log level management
@@ -395,11 +395,10 @@ pub async fn set_update_channel(
         );
     }
 
-    // Trigger update check in background
-    // force_different is auto-detected inside check_download_and_install()
+    // Trigger update check in background (force_downgrade=true for explicit channel switch)
     let app_clone = app.clone();
     tauri::async_runtime::spawn(async move {
-        check_download_and_install(&app_clone).await;
+        check_download_and_install(&app_clone, true).await;
     });
 
     Ok(new_channel)
