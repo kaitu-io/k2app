@@ -1,0 +1,100 @@
+{
+  "hero": {
+    "title": "4步開始使用 Kaitu",
+    "subtitle": "穩定、簡單、為家庭設計嘅網絡工具",
+    "downloadButton": "立即下載",
+    "guideButton": "睇教程"
+  },
+  "whyKaitu": {
+    "title": "點解揀 Kaitu",
+    "stable": {
+      "title": "穩定流暢",
+      "description": "獨有 k2arc 擁塞控制算法，頻寬高峰都可以正常使用"
+    },
+    "simple": {
+      "title": "簡單易用",
+      "description": "唔使繁複嘅設定，登入就可以用"
+    },
+    "education": {
+      "title": "為教育場景設計",
+      "description": "即將推出青少年保護功能，幫助家長管控不良網站訪問"
+    }
+  },
+  "quickStart": {
+    "title": "快速上手",
+    "step1": {
+      "title": "下載客戶端",
+      "description": "揀你嘅裝置平台，下載對應嘅客戶端",
+      "ios": "iOS",
+      "android": "Android",
+      "macos": "macOS",
+      "windows": "Windows"
+    },
+    "step2": {
+      "title": "登入帳號",
+      "description": "用手機號或電郵，輸入驗證碼就得，唔使註冊"
+    },
+    "step3": {
+      "title": "購買訂閱",
+      "description": "揀適合你嘅方案，支援多種付款方式",
+      "button": "睇方案"
+    },
+    "step4": {
+      "title": "一鍵連接",
+      "description": "撳「連接」掣，自動揀最快線路"
+    }
+  },
+  "guides": {
+    "title": "需要更詳細嘅步驟？",
+    "mac": {
+      "title": "macOS 安裝教程",
+      "description": "適用於 macOS 系統嘅詳細安裝同使用指南"
+    },
+    "windows": {
+      "title": "Windows 安裝教程",
+      "description": "適用於 Windows 系統嘅詳細安裝同使用指南"
+    },
+    "download": "下載 PDF"
+  },
+  "faq": {
+    "title": "常見問題",
+    "items": {
+      "multiDevice": {
+        "question": "一個帳號可以幾多部裝置同時用？",
+        "answer": "每個訂閱支援最多 5 部裝置同時上線，手機、平板、電腦都得，全家共享。"
+      },
+      "connectionFailed": {
+        "question": "連唔上點算？",
+        "answer": "請試下：1. 切換去其他節點；2. 重啟客戶端；3. 檢查網絡連線係咪正常。如果問題持續，請撳下面「線上客服」聯繫我哋。"
+      },
+      "purchase": {
+        "question": "點樣買訂閱？",
+        "answer": "開客戶端或者去官網，入「購買」頁面就可以揀適合嘅方案。支援多種付款方式。"
+      },
+      "platforms": {
+        "question": "支援邊啲裝置？",
+        "answer": "支援 iOS（iPhone/iPad）、Android 手機、macOS 電腦同 Windows 電腦，一個帳號全平台通用。"
+      },
+      "childSafety": {
+        "question": "細路用呢個安全咩？",
+        "answer": "我哋即將推出青少年保護功能，幫助家長管控不良網站訪問，令細路安全上網。"
+      }
+    }
+  },
+  "contact": {
+    "title": "遇到問題？聯繫我哋",
+    "description": "我哋嘅支援團隊隨時為你提供幫助",
+    "liveChatButton": "線上客服",
+    "liveChatDescription": "撳呢度即刻同客服傾",
+    "email": {
+      "title": "電郵",
+      "description": "發電郵查詢"
+    },
+    "whatsapp": {
+      "title": "WhatsApp",
+      "description": "透過 WhatsApp 聯繫客服",
+      "link": "https://wa.me/8613421418964"
+    }
+  },
+  "backToHome": "返回首頁"
+}

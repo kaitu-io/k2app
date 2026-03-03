@@ -11,16 +11,24 @@ describe('Auth Utilities', () => {
   beforeEach(() => {
     // Mock window.location
     delete (window as { location?: Location }).location;
-    window.location = {
-      ...originalLocation,
-      href: '',
-      pathname: '/dashboard',
-      search: '',
-    } as Location;
+    Object.defineProperty(window, 'location', {
+      value: {
+        ...originalLocation,
+        href: '',
+        pathname: '/dashboard',
+        search: '',
+      },
+      writable: true,
+      configurable: true,
+    });
   });
 
   afterEach(() => {
-    window.location = originalLocation;
+    Object.defineProperty(window, 'location', {
+      value: originalLocation,
+      writable: true,
+      configurable: true,
+    });
   });
 
   describe('redirectToLogin', () => {

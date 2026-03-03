@@ -1,0 +1,100 @@
+{
+  "hero": {
+    "title": "4步开始使用 Kaitu",
+    "subtitle": "稳定、简单、为家庭设计的网络工具",
+    "downloadButton": "立即下载",
+    "guideButton": "查看教程"
+  },
+  "whyKaitu": {
+    "title": "为什么选择 Kaitu",
+    "stable": {
+      "title": "稳定流畅",
+      "description": "独有 k2arc 拥堵控制算法，带宽高峰也能正常使用"
+    },
+    "simple": {
+      "title": "简单易用",
+      "description": "不需要繁琐的设置，登录就可以使用"
+    },
+    "education": {
+      "title": "为教育场景设计",
+      "description": "即将推出青少年保护功能，帮助家长管控不良网站访问"
+    }
+  },
+  "quickStart": {
+    "title": "快速上手",
+    "step1": {
+      "title": "下载客户端",
+      "description": "选择您的设备平台，下载对应的客户端",
+      "ios": "iOS",
+      "android": "Android",
+      "macos": "macOS",
+      "windows": "Windows"
+    },
+    "step2": {
+      "title": "登录账号",
+      "description": "用手机号或邮箱，输入验证码即可，无需注册"
+    },
+    "step3": {
+      "title": "购买订阅",
+      "description": "选择适合您的套餐，支持多种支付方式",
+      "button": "查看套餐"
+    },
+    "step4": {
+      "title": "一键连接",
+      "description": "点击「连接」按钮，自动选择最快线路"
+    }
+  },
+  "guides": {
+    "title": "需要更详细的步骤？",
+    "mac": {
+      "title": "macOS 安装教程",
+      "description": "适用于 macOS 系统的详细安装和使用指南"
+    },
+    "windows": {
+      "title": "Windows 安装教程",
+      "description": "适用于 Windows 系统的详细安装和使用指南"
+    },
+    "download": "下载 PDF"
+  },
+  "faq": {
+    "title": "常见问题",
+    "items": {
+      "multiDevice": {
+        "question": "一个账号能几台设备同时用？",
+        "answer": "每个订阅支持最多 5 台设备同时在线，手机、平板、电脑都可以，全家共享。"
+      },
+      "connectionFailed": {
+        "question": "连不上怎么办？",
+        "answer": "请尝试：1. 切换到其他节点；2. 重启客户端；3. 检查网络连接是否正常。如果问题持续，请点击下方「在线客服」联系我们。"
+      },
+      "purchase": {
+        "question": "怎么购买订阅？",
+        "answer": "打开客户端或访问官网，进入「购买」页面即可选择适合的套餐。支持多种支付方式。"
+      },
+      "platforms": {
+        "question": "支持哪些设备？",
+        "answer": "支持 iOS（iPhone/iPad）、Android 手机、macOS 电脑和 Windows 电脑，一个账号全平台通用。"
+      },
+      "childSafety": {
+        "question": "孩子用这个安全吗？",
+        "answer": "我们即将推出青少年保护功能，帮助家长管控不良网站访问，让孩子安全上网。"
+      }
+    }
+  },
+  "contact": {
+    "title": "遇到问题？联系我们",
+    "description": "我们的支持团队随时为您提供帮助",
+    "liveChatButton": "在线客服",
+    "liveChatDescription": "点击立即与客服对话",
+    "email": {
+      "title": "邮箱",
+      "description": "发送邮件咨询"
+    },
+    "whatsapp": {
+      "title": "WhatsApp",
+      "description": "通过 WhatsApp 联系客服",
+      "link": "https://wa.me/8613421418964"
+    }
+  },
+  "backToHome": "返回首页"
+}

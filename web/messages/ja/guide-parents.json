@@ -1,0 +1,100 @@
+{
+  "hero": {
+    "title": "4ステップで Kaitu を始めよう",
+    "subtitle": "安定・シンプル・家族向けのネットワークツール",
+    "downloadButton": "今すぐダウンロード",
+    "guideButton": "ガイドを見る"
+  },
+  "whyKaitu": {
+    "title": "Kaitu を選ぶ理由",
+    "stable": {
+      "title": "安定＆スムーズ",
+      "description": "独自の k2arc 輻輳制御アルゴリズムにより、ピーク時でも快適に利用できます"
+    },
+    "simple": {
+      "title": "簡単に使える",
+      "description": "面倒な設定は不要 — ログインするだけで使えます"
+    },
+    "education": {
+      "title": "教育向けに設計",
+      "description": "青少年保護機能を近日公開予定。不適切なサイトへのアクセス管理を支援します"
+    }
+  },
+  "quickStart": {
+    "title": "クイックスタート",
+    "step1": {
+      "title": "アプリをダウンロード",
+      "description": "お使いのデバイスに合ったクライアントをダウンロードしてください",
+      "ios": "iOS",
+      "android": "Android",
+      "macos": "macOS",
+      "windows": "Windows"
+    },
+    "step2": {
+      "title": "ログイン",
+      "description": "電話番号またはメールアドレスで認証コードを入力するだけ。登録不要です"
+    },
+    "step3": {
+      "title": "プランを購入",
+      "description": "ご家族に合ったプランをお選びください。複数の決済方法に対応",
+      "button": "プランを見る"
+    },
+    "step4": {
+      "title": "ワンタップ接続",
+      "description": "「接続」ボタンをタップすると、最速のルートが自動選択されます"
+    }
+  },
+  "guides": {
+    "title": "もっと詳しい手順が必要ですか？",
+    "mac": {
+      "title": "macOS インストールガイド",
+      "description": "macOS 向けの詳細なインストール・使用ガイド"
+    },
+    "windows": {
+      "title": "Windows インストールガイド",
+      "description": "Windows 向けの詳細なインストール・使用ガイド"
+    },
+    "download": "PDF をダウンロード"
+  },
+  "faq": {
+    "title": "よくある質問",
+    "items": {
+      "multiDevice": {
+        "question": "1つのアカウントで何台まで同時に使えますか？",
+        "answer": "各サブスクリプションで最大5台のデバイスを同時にオンラインにできます。スマホ、タブレット、パソコンすべて対応。家族で共有できます。"
+      },
+      "connectionFailed": {
+        "question": "接続できない場合は？",
+        "answer": "以下をお試しください：1. 別のノードに切り替える；2. アプリを再起動する；3. インターネット接続を確認する。問題が続く場合は、下の「ライブチャット」からお問い合わせください。"
+      },
+      "purchase": {
+        "question": "サブスクリプションの購入方法は？",
+        "answer": "アプリまたはウェブサイトの「購入」ページから、お好みのプランをお選びください。複数の決済方法に対応しています。"
+      },
+      "platforms": {
+        "question": "対応デバイスは？",
+        "answer": "iOS（iPhone/iPad）、Android スマートフォン、macOS、Windows に対応。1つのアカウントで全プラットフォーム共通です。"
+      },
+      "childSafety": {
+        "question": "子どもが使っても安全ですか？",
+        "answer": "青少年保護機能を近日公開予定です。不適切なサイトへのアクセス管理により、お子さまの安全なインターネット利用を支援します。"
+      }
+    }
+  },
+  "contact": {
+    "title": "お困りですか？お問い合わせください",
+    "description": "サポートチームがいつでもお手伝いします",
+    "liveChatButton": "ライブチャット",
+    "liveChatDescription": "クリックしてサポートとチャット",
+    "email": {
+      "title": "メール",
+      "description": "メールでお問い合わせ"
+    },
+    "whatsapp": {
+      "title": "WhatsApp",
+      "description": "WhatsApp でお問い合わせ",
+      "link": "https://wa.me/8613421418964"
+    }
+  },
+  "backToHome": "ホームに戻る"
+}

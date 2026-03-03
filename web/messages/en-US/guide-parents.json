@@ -1,0 +1,100 @@
+{
+  "hero": {
+    "title": "Get Started with Kaitu in 4 Steps",
+    "subtitle": "Stable, simple, and designed for families",
+    "downloadButton": "Download Now",
+    "guideButton": "View Guide"
+  },
+  "whyKaitu": {
+    "title": "Why Kaitu",
+    "stable": {
+      "title": "Stable & Smooth",
+      "description": "Our proprietary k2arc congestion control algorithm keeps things running smoothly, even during peak hours"
+    },
+    "simple": {
+      "title": "Easy to Use",
+      "description": "No complicated setup — just log in and go"
+    },
+    "education": {
+      "title": "Designed for Education",
+      "description": "Child safety features coming soon to help parents manage access to inappropriate websites"
+    }
+  },
+  "quickStart": {
+    "title": "Quick Start",
+    "step1": {
+      "title": "Download the App",
+      "description": "Choose your platform and download the client",
+      "ios": "iOS",
+      "android": "Android",
+      "macos": "macOS",
+      "windows": "Windows"
+    },
+    "step2": {
+      "title": "Log In",
+      "description": "Use your phone number or email — just enter the verification code, no registration needed"
+    },
+    "step3": {
+      "title": "Purchase a Plan",
+      "description": "Choose the plan that suits your family — multiple payment methods supported",
+      "button": "View Plans"
+    },
+    "step4": {
+      "title": "One-Tap Connect",
+      "description": "Tap the Connect button and the fastest route is selected automatically"
+    }
+  },
+  "guides": {
+    "title": "Need More Detailed Steps?",
+    "mac": {
+      "title": "macOS Installation Guide",
+      "description": "Step-by-step installation and usage guide for macOS"
+    },
+    "windows": {
+      "title": "Windows Installation Guide",
+      "description": "Step-by-step installation and usage guide for Windows"
+    },
+    "download": "Download PDF"
+  },
+  "faq": {
+    "title": "Frequently Asked Questions",
+    "items": {
+      "multiDevice": {
+        "question": "How many devices can I use with one account?",
+        "answer": "Each subscription supports up to 5 devices online at the same time — phones, tablets, and computers. Share with the whole family."
+      },
+      "connectionFailed": {
+        "question": "What if I can't connect?",
+        "answer": "Try: 1. Switch to a different node; 2. Restart the app; 3. Check your internet connection. If the problem persists, click \"Live Chat\" below to contact us."
+      },
+      "purchase": {
+        "question": "How do I purchase a subscription?",
+        "answer": "Open the app or visit our website, go to the Purchase page, and choose the plan that suits you. Multiple payment methods are supported."
+      },
+      "platforms": {
+        "question": "Which devices are supported?",
+        "answer": "We support iOS (iPhone/iPad), Android phones, macOS, and Windows — one account works across all platforms."
+      },
+      "childSafety": {
+        "question": "Is this safe for my child?",
+        "answer": "We're launching child safety features soon to help parents manage access to inappropriate websites and keep children safe online."
+      }
+    }
+  },
+  "contact": {
+    "title": "Need Help? Contact Us",
+    "description": "Our support team is here to help",
+    "liveChatButton": "Live Chat",
+    "liveChatDescription": "Click to chat with support now",
+    "email": {
+      "title": "Email",
+      "description": "Send us an email"
+    },
+    "whatsapp": {
+      "title": "WhatsApp",
+      "description": "Contact us via WhatsApp",
+      "link": "https://wa.me/8613421418964"
+    }
+  },
+  "backToHome": "Back to Home"
+}

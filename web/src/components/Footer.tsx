@@ -11,7 +11,7 @@ export default function Footer() {
   return (
     <footer className="py-12 px-4 sm:px-6 lg:px-8 border-t">
       <div className="max-w-7xl mx-auto">
-        <div className="grid md:grid-cols-3 gap-8">
+        <div className="grid md:grid-cols-4 gap-8">
           <div>
             <div className="flex items-center space-x-2 mb-4">
               <Image 
@@ -49,6 +49,27 @@ export default function Footer() {
               <li>
                 <Link href="/changelog" className="hover:text-blue-600">
                   {t('changelog.title')}
+                </Link>
+              </li>
+            </ul>
+          </div>
+
+          <div>
+            <h4 className="font-semibold text-gray-900 dark:text-white mb-4">{t('nav.footer.support.title')}</h4>
+            <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-300">
+              <li>
+                <Link href="/guide/parents" className="hover:text-blue-600">
+                  {t('nav.footer.support.userGuide')}
+                </Link>
+              </li>
+              <li>
+                <Link href="/guide/parents#faq" className="hover:text-blue-600">
+                  {t('nav.footer.support.faq')}
+                </Link>
+              </li>
+              <li>
+                <Link href="/guide/parents#contact" className="hover:text-blue-600">
+                  {t('nav.footer.support.contact')}
                 </Link>
               </li>
             </ul>

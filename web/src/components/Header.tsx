@@ -30,8 +30,15 @@ export default function Header() {
             {/* Language Switcher */}
             <LanguageSwitcher />
 
-            {/* Open Source Countdown Link */}
+            {/* Intro Guide & Open Source Links */}
             <div className="hidden sm:flex items-center space-x-2">
+              <Link
+                href="/guide/parents"
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {t('nav.nav.introGuide')}
+              </Link>
+              <div className="w-px h-4 bg-border"></div>
               <Link
                 href="/k2"
                 className="text-sm text-muted-foreground hover:text-foreground transition-colors"
