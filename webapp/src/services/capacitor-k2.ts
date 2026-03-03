@@ -183,7 +183,7 @@ export async function injectCapacitorGlobals(): Promise<void> {
 
     setLogLevel: (level: string): void => {
       localStorage.setItem('k2_log_level', level);
-      // Mobile: takes effect on next connect via buildConnectConfig()
+      K2Plugin.setLogLevel({ level }).catch(() => {}); // best-effort native call
     },
   };
 

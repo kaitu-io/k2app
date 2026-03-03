@@ -57,10 +57,14 @@ export const cloudApi = {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      // 3. Build fetch options
+      // 3. Build fetch options with timeout.
+      // 15s timeout prevents indefinite hang when VPN routing breaks outbound connectivity.
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
       const fetchOptions: RequestInit = {
         method,
         headers,
+        signal: controller.signal,
       };
       if (body !== undefined) {
         fetchOptions.body = JSON.stringify(body);
@@ -68,12 +72,19 @@ export const cloudApi = {
 
       // 4. Resolve entry URL via antiblock
       const entry = await resolveEntry();
+      const fullUrl = entry + path;
 
       // 5. Make the request
-      const httpResponse = await fetch(entry + path, fetchOptions);
+      console.info('[CloudAPI]', method, fullUrl);
+      const httpResponse = await fetch(fullUrl, fetchOptions);
+      clearTimeout(timeoutId);
 
       // 6. Parse the JSON response
       const jsonResponse = await httpResponse.json() as SResponse<T>;
+      console.info('[CloudAPI] response:', method, path, 'status:', httpResponse.status, 'code:', jsonResponse.code);
+      if (jsonResponse.code !== 0) {
+        console.warn('[CloudAPI] response error:', method, path, 'code:', jsonResponse.code, 'msg:', jsonResponse.message);
+      }
 
       // 7. Handle 401: try token refresh
       if (httpResponse.status === 401 || jsonResponse.code === 401) {
@@ -88,7 +99,11 @@ export const cloudApi = {
       // 9. Return the response as SResponse
       return jsonResponse;
     } catch (error) {
-      // Network error
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        console.error('[CloudAPI] timeout (15s):', method, path);
+        return { code: -1, message: 'Request timeout' };
+      }
+      console.error('[CloudAPI] network error:', method, path, (error as Error).message || error);
       return { code: -1, message: (error as Error).message || 'Network error' };
     }
   },
@@ -143,10 +158,12 @@ export const cloudApi = {
       // Get refresh token — if null, skip refresh entirely
       const refreshToken = await authService.getRefreshToken();
       if (!refreshToken) {
+        console.warn('[CloudAPI] 401 but no refresh token available');
         await authService.clearTokens();
         useAuthStore.setState({ isAuthenticated: false });
         return { code: 401, message: 'No refresh token' } as SResponse<T>;
       }
+      console.info('[CloudAPI] 401 received, attempting token refresh...');
 
       // Concurrent 401 dedup: share a single refresh promise
       if (!_refreshPromise) {
@@ -177,11 +194,15 @@ export const cloudApi = {
     try {
       const entry = await resolveEntry();
 
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
       const refreshResponse = await fetch(entry + '/api/auth/refresh', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refreshToken }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
 
       const refreshJson = await refreshResponse.json() as SResponse<{
         token: string;

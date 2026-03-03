@@ -99,6 +99,7 @@ function loadScript(url: string, timeoutMs = 10000): Promise<AntiblockConfig | n
 
     const script = document.createElement('script');
     const timer = setTimeout(() => {
+      console.warn('[Antiblock] loadScript timeout:', url);
       script.remove();
       resolve(null);
     }, timeoutMs);
@@ -108,10 +109,14 @@ function loadScript(url: string, timeoutMs = 10000): Promise<AntiblockConfig | n
       const config = w[JSONP_GLOBAL] as AntiblockConfig | undefined;
       delete w[JSONP_GLOBAL];
       script.remove();
+      if (!config) {
+        console.warn('[Antiblock] loadScript: script loaded but no config found');
+      }
       resolve(config ?? null);
     };
-    script.onerror = () => {
+    script.onerror = (e) => {
       clearTimeout(timer);
+      console.warn('[Antiblock] loadScript error:', url, e);
       script.remove();
       resolve(null);
     };
@@ -124,18 +129,28 @@ async function fetchEntryFromCDN(): Promise<string | null> {
   for (const url of CDN_SOURCES) {
     try {
       const config = await loadScript(url);
-      if (!config || config.v !== 1 || typeof config.data !== 'string') continue;
+      if (!config || config.v !== 1 || typeof config.data !== 'string') {
+        console.warn('[Antiblock] CDN config invalid or empty from:', url, config);
+        continue;
+      }
       const plaintext = await decrypt(config.data, DECRYPTION_KEY);
-      if (!plaintext) continue;
+      if (!plaintext) {
+        console.warn('[Antiblock] decrypt failed for CDN source:', url);
+        continue;
+      }
       const parsed = JSON.parse(plaintext) as { entries?: string[] };
       if (parsed.entries && parsed.entries.length > 0) {
+        console.info('[Antiblock] resolved entry from CDN:', parsed.entries[0]);
         localStorage.setItem(STORAGE_KEY, parsed.entries[0]!);
         return parsed.entries[0]!;
       }
-    } catch {
+      console.warn('[Antiblock] CDN config has no entries:', parsed);
+    } catch (e) {
+      console.warn('[Antiblock] fetchEntryFromCDN error for:', url, e);
       continue;
     }
   }
+  console.warn('[Antiblock] all CDN sources failed');
   return null;
 }
 
@@ -146,11 +161,17 @@ async function fetchEntryFromCDN(): Promise<string | null> {
 export async function resolveEntry(): Promise<string> {
   const cached = localStorage.getItem(STORAGE_KEY);
   if (cached) {
+    console.info('[Antiblock] using cached entry:', cached);
     refreshEntryInBackground();
     return cached;
   }
+  console.info('[Antiblock] no cache, fetching from CDN...');
   const entry = await fetchEntryFromCDN();
-  return entry ?? DEFAULT_ENTRY;
+  const result = entry ?? DEFAULT_ENTRY;
+  if (!entry) {
+    console.warn('[Antiblock] CDN failed, using default:', DEFAULT_ENTRY);
+  }
+  return result;
 }
 
 function refreshEntryInBackground(): void {
