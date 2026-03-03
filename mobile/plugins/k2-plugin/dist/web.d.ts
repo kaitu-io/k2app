@@ -36,5 +36,8 @@ export declare class K2PluginWeb extends WebPlugin implements K2PluginInterface 
     installNativeUpdate(_options: {
         path: string;
     }): Promise<void>;
+    setLogLevel(_options: {
+        level: string;
+    }): Promise<void>;
     debugDump(): Promise<Record<string, unknown>>;
 }

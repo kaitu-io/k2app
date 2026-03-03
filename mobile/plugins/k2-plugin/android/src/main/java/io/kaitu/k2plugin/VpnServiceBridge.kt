@@ -9,6 +9,7 @@ import android.os.Binder
 interface VpnServiceBridge {
     fun getStatusJSON(): String
     fun setPlugin(plugin: K2Plugin)
+    fun setLogLevel(level: String)
 
     class BridgeBinder(private val bridge: VpnServiceBridge) : Binder() {
         fun getService(): VpnServiceBridge = bridge

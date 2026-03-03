@@ -28,6 +28,7 @@ export interface K2PluginInterface {
   downloadNativeUpdate(): Promise<{ path: string }>;
   installNativeUpdate(options: { path: string }): Promise<void>;
 
+  setLogLevel(options: { level: string }): Promise<void>;
   debugDump(): Promise<Record<string, unknown>>;
 
   addListener(eventName: 'vpnStateChange', handler: (data: { state: string }) => void): Promise<PluginListenerHandle>;

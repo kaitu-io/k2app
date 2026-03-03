@@ -534,6 +534,24 @@ class K2Plugin : Plugin() {
         }
     }
 
+    @PluginMethod
+    fun setLogLevel(call: PluginCall) {
+        val level = call.getString("level") ?: "info"
+        try {
+            vpnService?.setLogLevel(level)
+            Log.d(TAG, "setLogLevel: $level")
+            call.resolve()
+        } catch (e: Exception) {
+            Log.w(TAG, "setLogLevel failed: ${e.message}")
+            call.resolve() // best-effort
+        }
+    }
+
+    @PluginMethod
+    fun debugDump(call: PluginCall) {
+        call.resolve(JSObject())
+    }
+
     // ── Auto-update check ───────────────────────────────────────────
 
     private fun performAutoUpdateCheck() {

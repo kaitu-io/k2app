@@ -23,6 +23,7 @@ import appext.Appext
 import appext.Engine
 import appext.EventHandler as AppextEventHandler
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 // Pure utility functions (parseCIDR, stripPort, parseClientConfig, ParsedClientConfig)
 // are in K2VpnServiceUtils.kt for JVM unit testing.
@@ -48,6 +49,8 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector {
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private var pendingNetworkChange: Runnable? = null
+    /** Tracks whether engine was paused by onTrimMemory — reset on wake or stopVpn. */
+    private val enginePaused = AtomicBoolean(false)
     /** Single-thread executor for all blocking gomobile JNI calls — keeps them off the main thread. */
     private val engineExecutor = Executors.newSingleThreadExecutor { r ->
         Thread(r, "k2-engine").apply { isDaemon = true }
@@ -104,12 +107,33 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector {
         super.onRevoke()
     }
 
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= TRIM_MEMORY_RUNNING_LOW && engine != null && !enginePaused.get()) {
+            Log.w(TAG, "onTrimMemory: level=$level — pausing engine and freeing Go memory")
+            enginePaused.set(true)
+            engineExecutor.execute {
+                try {
+                    engine?.pause()
+                    Appext.freeMemory()
+                    Log.d(TAG, "onTrimMemory: engine paused, memory freed")
+                } catch (e: Exception) {
+                    Log.e(TAG, "onTrimMemory: pause/freeMemory failed: ${e.message}", e)
+                }
+            }
+        }
+    }
+
     override fun setPlugin(plugin: K2Plugin) {
         this.plugin = plugin
     }
 
     override fun getStatusJSON(): String {
         return engine?.statusJSON() ?: "{\"state\":\"disconnected\"}"
+    }
+
+    override fun setLogLevel(level: String) {
+        Appext.setLogLevel(level)
     }
 
     private fun startVpn(configJSON: String) {
@@ -245,8 +269,15 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector {
         }
     }
 
+    // IMPORTANT: vpnInterface.close() is critical for VPN teardown.
+    // Without it, Android keeps VPN routing active (all traffic routed into dead TUN),
+    // breaking ALL outbound network requests from the app (including WebView fetch).
+    // This manifests as: same-origin (https://localhost) works, but all external
+    // requests hang indefinitely. Only a phone reboot can recover from this state.
+    // Fixed in a3d5af5 by switching from detachFd() to fd + close().
     private fun stopVpn() {
         Log.i(TAG, "stopVpn: beginning teardown (engine=${engine != null})")
+        enginePaused.set(false)
         unregisterNetworkCallback()
         val eng = engine
         engine = null
@@ -292,6 +323,13 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector {
                 val runnable = Runnable {
                     // Run gomobile call off main thread
                     engineExecutor.execute {
+                        // If engine was paused due to memory pressure, wake it first.
+                        if (enginePaused.compareAndSet(true, false)) {
+                            Log.d(TAG, "onAvailable: waking paused engine")
+                            try { engine?.wake() } catch (e: Exception) {
+                                Log.e(TAG, "onAvailable: engine.wake() failed: ${e.message}", e)
+                            }
+                        }
                         Log.d(TAG, "Triggering engine network change reset")
                         engine?.onNetworkChanged()
                     }

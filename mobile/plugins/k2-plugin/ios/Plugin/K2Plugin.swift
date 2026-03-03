@@ -25,6 +25,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "applyWebUpdate", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "downloadNativeUpdate", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "installNativeUpdate", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setLogLevel", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "debugDump", returnType: CAPPluginReturnPromise),
     ]
 
@@ -451,6 +452,16 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             UIApplication.shared.open(url, options: [:], completionHandler: nil)
             call.resolve()
         }
+    }
+
+    // MARK: - Log Level
+
+    @objc func setLogLevel(_ call: CAPPluginCall) {
+        let level = call.getString("level") ?? "info"
+        // iOS: engine runs in NE extension (separate process).
+        // Log level takes effect via configJSON.log.level at next connect.
+        logger.info("setLogLevel: \(level) (takes effect on next connect)")
+        call.resolve()
     }
 
     // MARK: - Debug

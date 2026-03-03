@@ -238,6 +238,24 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         completionHandler()
     }
 
+    // MARK: - Memory Pressure
+
+    /// Called by iOS when the NE process should reduce memory usage.
+    /// Pauses the engine to release wire transport resources, then frees Go's heap.
+    override func sleep(completionHandler: @escaping () -> Void) {
+        logger.info("sleep: pausing engine for memory conservation")
+        engine?.pause()
+        AppextFreeMemory()
+        completionHandler()
+    }
+
+    /// Called by iOS when the NE process can resume normal operation.
+    /// Wakes the engine so it re-establishes fresh wire connections.
+    override func wake() {
+        logger.info("wake: resuming engine")
+        engine?.wake()
+    }
+
     override func handleAppMessage(_ messageData: Data, completionHandler: ((Data?) -> Void)?) {
         guard let command = String(data: messageData, encoding: .utf8) else {
             completionHandler?(nil)
