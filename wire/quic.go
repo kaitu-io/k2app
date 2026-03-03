@@ -125,18 +125,19 @@ type connUDPState struct {
 	done     chan struct{}
 }
 
-// DefaultQUICConfig returns the QUIC configuration for servers and desktop clients.
-// Uses large receive windows (matching Hysteria2) for maximum throughput.
+// DefaultQUICConfig returns the QUIC configuration.
+// Flow control windows and max streams are platform-specific (see quic_limits_*.go).
+// Desktop/server: large windows for throughput. Mobile: small windows for memory.
 func DefaultQUICConfig() *quic.Config {
 	return &quic.Config{
-		InitialStreamReceiveWindow:     8 << 20,  // 8 MB
-		MaxStreamReceiveWindow:         8 << 20,  // 8 MB
-		InitialConnectionReceiveWindow: 20 << 20, // 20 MB
-		MaxConnectionReceiveWindow:     20 << 20, // 20 MB
+		InitialStreamReceiveWindow:     quicStreamWindow,
+		MaxStreamReceiveWindow:         quicStreamWindow,
+		InitialConnectionReceiveWindow: quicConnectionWindow,
+		MaxConnectionReceiveWindow:     quicConnectionWindow,
 		EnableDatagrams:                true,
 		MaxIdleTimeout:                 30 * time.Second,
 		KeepAlivePeriod:                10 * time.Second,
-		MaxIncomingStreams:             256,
+		MaxIncomingStreams:             quicMaxStreams,
 	}
 }
 
