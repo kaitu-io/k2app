@@ -56,7 +56,6 @@ tools/kaitu-ops-mcp/ MCP server for AI-driven node ops (TypeScript + @modelconte
   src/                 index.ts (entry), config.ts, ssh.ts, redact.ts, center-api.ts, tools/
 scripts/             dev.sh, build-macos.sh, build-mobile-*.sh, test_build.sh
 docker/scripts/      Node ops scripts (provision-node.sh, enable-ipv6.sh, etc.)
-docs/knowledge/      iOS NE debug workflow (standalone reference doc)
 .claude/settings.json  Project-level Claude Code config (MCP server registration)
 .claude/skills/      Skill files for Claude Code (kaitu-node-ops.md — node ops safety guardrails)
 .github/workflows/   CI (push/PR) + Release Desktop (v* tags) + Release OpenWrt
