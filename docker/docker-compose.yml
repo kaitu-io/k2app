@@ -15,10 +15,6 @@
 networks:
   k2-internal:
     driver: bridge
-    enable_ipv6: true
-    ipam:
-      config:
-        - subnet: "fd00:2::/80"
 
 volumes:
   config:      # Shared config volume for certificates and configs
