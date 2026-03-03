@@ -36,6 +36,12 @@ const maxServerUDPSessions = 4096
 // port/5-tuple, so hopping to a new port often restores QUIC datagram path.
 const maxDatagramHops int32 = 3
 
+// datagramRecoveryInterval is the cooldown after hop exhaustion before
+// resetting the counter for another round of probes. Modeled after
+// OpenConnect's dtls_attempt_period (60s) — we use 3 minutes because
+// each recovery round costs 3 hops (3 resetConnection calls).
+const datagramRecoveryInterval = 3 * time.Minute
+
 // ============================================================================
 // UDP overflow stream — per-packet fallback for oversized datagrams
 // ============================================================================
@@ -176,8 +182,9 @@ type QUICClient struct {
 	closed    bool
 	arcSender *arc.K2ARCSender // stored for stats access
 
-	datagramHopAttempts atomic.Int32 // hop attempts before TCP-WS fallback
-	hopInProgress       atomic.Bool  // CAS guard: prevents concurrent hops
+	datagramHopAttempts  atomic.Int32 // hop attempts before TCP-WS fallback
+	datagramHopExhausted atomic.Int64 // UnixNano: when hops were exhausted (0 = not exhausted)
+	hopInProgress        atomic.Bool  // CAS guard: prevents concurrent hops
 }
 
 // NewQUICClient creates a new QUIC client transport.
@@ -284,7 +291,7 @@ func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
 	c.conn = conn
 	c.transport = transport
 	c.alloc = NewSessionIDAllocator()
-	c.udpMux = newQuicUDPMux(conn, &c.datagramHopAttempts)
+	c.udpMux = newQuicUDPMux(conn, &c.datagramHopAttempts, &c.datagramHopExhausted)
 
 	// Start accept loop for server-initiated overflow streams
 	go c.acceptOverflowStreams(conn, c.udpMux)
@@ -386,8 +393,25 @@ func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, 
 					c.tryHop() // winner resets connection; loser gets stale conn
 					continue   // both retry: connect() gives fresh conn/mux
 				}
-				// Hops exhausted (or hop not configured) → TCP-WS fallback
-				slog.Warn("QUICClient.DialUDP: datagram path unhealthy, forcing fallback",
+
+				// Hops exhausted. Record exhaustion time (once) and check
+				// if cooldown has elapsed for a recovery probe.
+				if c.hopEnabled() {
+					exAt := c.datagramHopExhausted.Load()
+					if exAt == 0 {
+						c.datagramHopExhausted.Store(time.Now().UnixNano())
+					} else if time.Since(time.Unix(0, exAt)) >= datagramRecoveryInterval {
+						// Cooldown elapsed — reset for a fresh round of hops.
+						c.datagramHopAttempts.Store(0)
+						c.datagramHopExhausted.Store(0)
+						slog.Info("QUICClient.DialUDP: datagram recovery probe, resetting hops")
+						c.tryHop()
+						continue
+					}
+				}
+
+				// Within cooldown (or hop not configured) → TCP-WS fallback
+				slog.Debug("QUICClient.DialUDP: datagram path unhealthy, using TCP-WS",
 					"addr", addr,
 					"hopAttempts", c.datagramHopAttempts.Load())
 				return nil, ErrDatagramUnhealthy
@@ -972,7 +996,8 @@ type quicUDPMux struct {
 	consecutiveTimeouts atomic.Int32
 	lastRecv            atomic.Int64 // UnixNano of last received datagram
 
-	clientHopAttempts *atomic.Int32 // shared with QUICClient; nil on server/tests
+	clientHopAttempts  *atomic.Int32 // shared with QUICClient; nil on server/tests
+	clientHopExhausted *atomic.Int64 // shared with QUICClient; nil on server/tests
 
 	// Sliding window loss rate tracking.
 	datagramSent atomic.Int64
@@ -1051,9 +1076,12 @@ func (m *quicUDPMux) evaluateLossRate() float64 {
 		m.lossRate = 1.0 - float64(deltaRecv)/float64(deltaSent)
 	}
 
-	// Reset hop counter when loss rate recovers below threshold.
+	// Reset hop counter and exhaustion timestamp when loss rate recovers.
 	if m.lossRate < datagramLossRecovered && m.clientHopAttempts != nil {
 		m.clientHopAttempts.Store(0)
+		if m.clientHopExhausted != nil {
+			m.clientHopExhausted.Store(0)
+		}
 	}
 
 	return m.lossRate
@@ -1066,13 +1094,14 @@ func (m *quicUDPMux) expireLossWindow() {
 	m.lossMu.Unlock()
 }
 
-func newQuicUDPMux(conn *quic.Conn, hopAttempts *atomic.Int32) *quicUDPMux {
+func newQuicUDPMux(conn *quic.Conn, hopAttempts *atomic.Int32, hopExhausted *atomic.Int64) *quicUDPMux {
 	return &quicUDPMux{
-		conn:              conn,
-		sessions:          make(map[uint32]chan *UDPFrame),
-		done:              make(chan struct{}),
-		clientHopAttempts: hopAttempts,
-		overflow:          &udpOverflowStream{qconn: conn},
+		conn:               conn,
+		sessions:           make(map[uint32]chan *UDPFrame),
+		done:               make(chan struct{}),
+		clientHopAttempts:  hopAttempts,
+		clientHopExhausted: hopExhausted,
+		overflow:           &udpOverflowStream{qconn: conn},
 	}
 }
 
