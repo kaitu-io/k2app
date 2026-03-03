@@ -246,35 +246,23 @@ func (tm *TransportManager) quicContext(parent context.Context, hasFallback bool
 	return context.WithTimeout(parent, budget)
 }
 
-// Resettable is an optional interface for transports that support connection reset.
-type Resettable interface {
-	resetConnection()
-}
-
 // ResetConnections resets cached connections on all transports and clears
 // fallback state, giving QUIC a fresh chance on the next dial.
 func (tm *TransportManager) ResetConnections() {
 	tm.mu.RLock()
-	quic := tm.quic
-	tcpws := tm.tcpws
+	q := tm.quic
+	t := tm.tcpws
 	tm.mu.RUnlock()
 
-	if r, ok := quic.(Resettable); ok {
-		r.resetConnection()
-	}
-	// Network change = fresh path. Reset datagram hop counter so
-	// QUIC datagrams can attempt port hopping on the new network.
-	// Not inside resetConnection() — hop logic calls resetConnection()
-	// itself, and resetting there would cause infinite hop loops.
-	if qc, ok := quic.(*QUICClient); ok {
+	if qc, ok := q.(*QUICClient); ok {
+		qc.resetConnection()
 		qc.datagramHopAttempts.Store(0)
 		qc.datagramHopExhausted.Store(0)
 	}
-	if r, ok := tcpws.(Resettable); ok {
-		r.resetConnection()
+	if tc, ok := t.(*TCPWSClient); ok {
+		tc.resetConnection()
 	}
 
-	// Clear fallback state — give QUIC a fresh chance.
 	tm.fallbackActive.Store(false)
 	tm.quicBackoffUntil.Store(0)
 	tm.quicFailCount.Store(0)

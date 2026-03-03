@@ -249,58 +249,27 @@ func TestTransportManager_DialUDP_BothDown(t *testing.T) {
 // ResetConnections tests
 // ==========================================================================
 
-// resettableMockTransport implements Dialer and Resettable for testing.
-type resettableMockTransport struct {
-	mockTransport
-	resetCalled bool
-}
-
-func (m *resettableMockTransport) resetConnection() {
-	m.resetCalled = true
-}
-
 func TestTransportManager_ResetConnections(t *testing.T) {
 	tests := []struct {
-		name          string
-		quic          Dialer
-		tcpws         Dialer
-		wantQUICReset bool
-		wantTCPWSReset bool
+		name  string
+		quic  Dialer
+		tcpws Dialer
 	}{
 		{
-			name:          "both resettable",
-			quic:          &resettableMockTransport{mockTransport: mockTransport{available: true}},
-			tcpws:         &resettableMockTransport{mockTransport: mockTransport{available: true}},
-			wantQUICReset: true,
-			wantTCPWSReset: true,
+			name:  "both transports",
+			quic:  NewQUICClient(Config{}, nil),
+			tcpws: NewTCPWSClient(Config{}, nil),
 		},
 		{
-			name:          "only quic set",
-			quic:          &resettableMockTransport{mockTransport: mockTransport{available: true}},
-			tcpws:         nil,
-			wantQUICReset: true,
-			wantTCPWSReset: false,
+			name: "only quic",
+			quic: NewQUICClient(Config{}, nil),
 		},
 		{
-			name:          "only tcpws set",
-			quic:          nil,
-			tcpws:         &resettableMockTransport{mockTransport: mockTransport{available: true}},
-			wantQUICReset: false,
-			wantTCPWSReset: true,
+			name:  "only tcpws",
+			tcpws: NewTCPWSClient(Config{}, nil),
 		},
 		{
-			name:          "non-resettable transports",
-			quic:          &mockTransport{available: true},
-			tcpws:         &mockTransport{available: true},
-			wantQUICReset: false,
-			wantTCPWSReset: false,
-		},
-		{
-			name:          "no transports",
-			quic:          nil,
-			tcpws:         nil,
-			wantQUICReset: false,
-			wantTCPWSReset: false,
+			name: "no transports",
 		},
 	}
 
@@ -314,19 +283,15 @@ func TestTransportManager_ResetConnections(t *testing.T) {
 				tm.SetTCPWS(tt.tcpws)
 			}
 
+			// Should not panic with any combination.
 			tm.ResetConnections()
 
-			if tt.wantQUICReset {
-				r := tt.quic.(*resettableMockTransport)
-				if !r.resetCalled {
-					t.Error("expected QUIC resetConnection to be called")
-				}
+			// Verify fallback state cleared.
+			if tm.fallbackActive.Load() {
+				t.Error("fallbackActive should be false after reset")
 			}
-			if tt.wantTCPWSReset {
-				r := tt.tcpws.(*resettableMockTransport)
-				if !r.resetCalled {
-					t.Error("expected TCP-WS resetConnection to be called")
-				}
+			if tm.quicBackoffUntil.Load() != 0 {
+				t.Error("quicBackoffUntil should be 0 after reset")
 			}
 		})
 	}

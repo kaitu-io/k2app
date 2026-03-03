@@ -173,21 +173,17 @@ func TestTransportManager_QuicRecovery(t *testing.T) {
 // TestTransportManager_ResetClearsFallback verifies that ResetConnections()
 // clears all fallback and backoff state.
 func TestTransportManager_ResetClearsFallback(t *testing.T) {
-	quic := &resettableMockTransport{
-		mockTransport: mockTransport{
-			available: true,
-			dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
-				return nil, errors.New("QUIC broken")
-			},
+	quic := &mockTransport{
+		available: true,
+		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
+			return nil, errors.New("QUIC broken")
 		},
 	}
-	tcpws := &resettableMockTransport{
-		mockTransport: mockTransport{
-			available: true,
-			dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
-				c, _ := net.Pipe()
-				return c, nil
-			},
+	tcpws := &mockTransport{
+		available: true,
+		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
+			c, _ := net.Pipe()
+			return c, nil
 		},
 	}
 
