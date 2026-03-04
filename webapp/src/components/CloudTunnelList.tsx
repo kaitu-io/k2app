@@ -344,7 +344,7 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
 
               {/* Vertical load bar (de-emphasized) */}
               <Box sx={{ mr: 2 }}>
-                <VerticalLoadBar load={tunnel.node.load} />
+                <VerticalLoadBar budgetScore={tunnel.instance?.budgetScore} />
               </Box>
 
               <Radio
