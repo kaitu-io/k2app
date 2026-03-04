@@ -92,6 +92,7 @@ private func findTunnelFileDescriptor() -> Int32? {
 
 class PacketTunnelProvider: NEPacketTunnelProvider {
     private var engine: AppextEngine?
+    private var memoryTimer: DispatchSourceTimer?
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
         logger.info("startTunnel called, options keys: \(options?.keys.joined(separator: ",") ?? "nil")")
@@ -180,9 +181,10 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 logger.info("Calling engine.start()")
                 try self?.engine?.start(configJSON, fd: Int(fd), cfg: engineCfg)
                 logger.info("engine.start() returned OK")
+                self?.startMemoryMonitor()
                 completionHandler(nil)
             } catch {
-                logger.error("engine.start() FAILED: \(error.localizedDescription)")
+                logger.error("engine.start() FAILED: \(error.localizedDescription, privacy: .public)")
                 completionHandler(error)
             }
         }
@@ -229,6 +231,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 
     override func stopTunnel(with reason: NEProviderStopReason, completionHandler: @escaping () -> Void) {
         logger.info("stopTunnel called, reason=\(reason.rawValue)")
+        stopMemoryMonitor()
         do {
             try engine?.stop()
         } catch {
@@ -238,12 +241,33 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         completionHandler()
     }
 
+    // MARK: - Memory Monitoring
+
+    private func startMemoryMonitor() {
+        stopMemoryMonitor()
+        let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+        timer.schedule(deadline: .now() + 10, repeating: 10)
+        timer.setEventHandler { [weak self] in
+            guard self != nil else { return }
+            let snapshot = AppextMemorySnapshot()
+            logger.notice("MEM: \(snapshot, privacy: .public)")
+        }
+        timer.resume()
+        memoryTimer = timer
+    }
+
+    private func stopMemoryMonitor() {
+        memoryTimer?.cancel()
+        memoryTimer = nil
+    }
+
     // MARK: - Memory Pressure
 
     /// Called by iOS when the NE process should reduce memory usage.
     /// Pauses the engine to release wire transport resources, then frees Go's heap.
     override func sleep(completionHandler: @escaping () -> Void) {
         logger.info("sleep: pausing engine for memory conservation")
+        stopMemoryMonitor()
         engine?.pause()
         AppextFreeMemory()
         completionHandler()
@@ -295,13 +319,13 @@ class EventBridge: NSObject, AppextEventHandlerProtocol {
             return
         }
 
-        logger.debug("onStatus: state=\(state)")
+        logger.debug("onStatus: state=\(state, privacy: .public)")
 
         if state == "disconnected" {
             if let errorObj = parsed["error"] as? [String: Any] {
                 let code = errorObj["code"] as? Int ?? 0
                 let message = errorObj["message"] as? String ?? "unknown error"
-                logger.error("Disconnected with error: code=\(code) message=\(message)")
+                logger.error("Disconnected with error: code=\(code) message=\(message, privacy: .public)")
 
                 // Write structured error JSON to App Group so K2Plugin preserves the error code.
                 // Format: {"code": 503, "message": "server unreachable"}
@@ -324,7 +348,7 @@ class EventBridge: NSObject, AppextEventHandlerProtocol {
             // Do NOT call cancelTunnelWithError — tunnel is still running.
             let code = errorObj["code"] as? Int ?? 0
             let message = errorObj["message"] as? String ?? "unknown error"
-            logger.error("Connected with wire error: code=\(code) message=\(message)")
+            logger.error("Connected with wire error: code=\(code) message=\(message, privacy: .public)")
             if let errorJSON = try? JSONSerialization.data(withJSONObject: errorObj),
                let errorStr = String(data: errorJSON, encoding: .utf8) {
                 UserDefaults(suiteName: kAppGroup)?.set(errorStr, forKey: "vpnError")
