@@ -31,26 +31,21 @@ export default function Header() {
             <LanguageSwitcher />
 
             {/* Intro Guide & Open Source Links */}
-            <div className="hidden sm:flex items-center space-x-2">
-              <Link
-                href="/guides"
-                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-              >
-                {t('nav.nav.guides')}
-              </Link>
-              <div className="w-px h-4 bg-border"></div>
+            <div className="hidden sm:flex items-center space-x-3">
               <Link
                 href="/k2"
                 className="text-sm text-muted-foreground hover:text-foreground transition-colors"
               >
                 {t('nav.nav.k2Protocol')}
               </Link>
+              <div className="w-px h-4 bg-border" />
               <Link
                 href="/routers"
                 className="text-sm text-muted-foreground hover:text-foreground transition-colors"
               >
                 {t('nav.nav.routers')}
               </Link>
+              <div className="w-px h-4 bg-border" />
               <Link
                 href="/opensource"
                 className="text-muted-foreground hover:text-foreground transition-colors"
@@ -58,7 +53,6 @@ export default function Header() {
               >
                 <Github className="w-5 h-5" />
               </Link>
-              <div className="w-px h-4 bg-border"></div>
             </div>
             
 {isAuthenticated ? (

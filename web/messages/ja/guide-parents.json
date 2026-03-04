@@ -25,9 +25,9 @@
     "step1": {
       "title": "アプリをダウンロード",
       "description": "お使いのデバイスに合ったクライアントをダウンロードしてください",
-      "ios": "iOS",
+      "ios": "iPhone / iPad",
       "android": "Android",
-      "macos": "macOS",
+      "macos": "Mac",
       "windows": "Windows"
     },
     "step2": {

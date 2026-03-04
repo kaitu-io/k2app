@@ -291,13 +291,13 @@
     "subtitle": "选择适合您设备的客户端，开始隐身网络之旅",
     "platforms": {
       "ios": "支持 iPhone 和 iPad",
-      "iosLabel": "iOS",
-      "android": "支持 Android 手机和平板",
-      "androidLabel": "Android",
+      "iosLabel": "iPhone / iPad",
+      "android": "支持安卓手机和平板",
+      "androidLabel": "安卓",
       "windows": "支持 Windows 10/11",
       "windowsLabel": "Windows",
-      "macos": "支持 macOS 12+",
-      "macosLabel": "macOS"
+      "macos": "支持苹果电脑 macOS 12+",
+      "macosLabel": "苹果电脑"
     },
     "downloadButton": "下载",
     "comingSoon": "即将推出"

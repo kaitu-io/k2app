@@ -224,7 +224,7 @@ export default function InstallClient() {
               {t('install.install.mobileComingSoon')}
             </h3>
             <p className="text-orange-200 mb-4">
-              {t('install.install.platformDevelopment', { platform: device.type === 'ios' ? 'iOS' : 'Android' })}
+              {t('install.install.platformDevelopment', { platform: device.type === 'ios' ? t('install.install.ios') : t('install.install.android') })}
             </p>
             <p className="text-sm text-orange-300">
               {t('install.install.useDesktopVersion')}
@@ -251,7 +251,7 @@ export default function InstallClient() {
               onClick={() => openDownloadInNewTab(stableLinks.windows)}
             >
               <Monitor className="w-4 h-4 mr-2" />
-              Windows .exe
+              {t('install.install.downloadExe')}
             </Button>
             <Button
               variant="outline"
@@ -259,7 +259,7 @@ export default function InstallClient() {
               onClick={() => openDownloadInNewTab(stableLinks.macos)}
             >
               <Apple className="w-4 h-4 mr-2" />
-              macOS .pkg
+              {t('install.install.downloadDmg')}
             </Button>
           </div>
         </div>

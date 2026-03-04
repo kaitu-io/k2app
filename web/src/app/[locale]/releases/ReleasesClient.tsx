@@ -80,7 +80,7 @@ function DownloadAssets({ downloads }: { downloads: VersionData['downloads'] }) 
           className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted hover:bg-muted/80 text-sm text-foreground transition-colors"
         >
           <Monitor className="w-4 h-4" />
-          Windows .exe
+          {t('releases.downloadWindows')}
         </a>
       )}
       {downloads.macos && (
@@ -89,7 +89,7 @@ function DownloadAssets({ downloads }: { downloads: VersionData['downloads'] }) 
           className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted hover:bg-muted/80 text-sm text-foreground transition-colors"
         >
           <Apple className="w-4 h-4" />
-          macOS .pkg
+          {t('releases.downloadMacOS')}
         </a>
       )}
     </div>

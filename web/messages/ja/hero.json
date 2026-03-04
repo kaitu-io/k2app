@@ -291,13 +291,13 @@
     "subtitle": "お使いのデバイスに適したクライアントを選択し、ステルスネットワークの旅を始めましょう",
     "platforms": {
       "ios": "iPhone と iPad に対応",
-      "iosLabel": "iOS",
+      "iosLabel": "iPhone / iPad",
       "android": "Android 携帯とタブレットに対応",
       "androidLabel": "Android",
       "windows": "Windows 10/11 に対応",
       "windowsLabel": "Windows",
       "macos": "macOS 12+ に対応",
-      "macosLabel": "macOS"
+      "macosLabel": "Mac"
     },
     "downloadButton": "ダウンロード",
     "comingSoon": "近日公開"

@@ -291,13 +291,13 @@
     "subtitle": "選擇適合您裝置的客戶端，開始隱身網路之旅",
     "platforms": {
       "ios": "支援 iPhone 和 iPad",
-      "iosLabel": "iOS",
-      "android": "支援 Android 手機和平板",
-      "androidLabel": "Android",
+      "iosLabel": "iPhone / iPad",
+      "android": "支援安卓手機和平板",
+      "androidLabel": "安卓",
       "windows": "支援 Windows 10/11",
       "windowsLabel": "Windows",
-      "macos": "支援 macOS 12+",
-      "macosLabel": "macOS"
+      "macos": "支援蘋果電腦 macOS 12+",
+      "macosLabel": "蘋果電腦"
     },
     "downloadButton": "下載",
     "comingSoon": "即將推出"

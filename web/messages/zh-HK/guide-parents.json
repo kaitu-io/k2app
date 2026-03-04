@@ -25,9 +25,9 @@
     "step1": {
       "title": "下載客戶端",
       "description": "揀你嘅裝置平台，下載對應嘅客戶端",
-      "ios": "iOS",
-      "android": "Android",
-      "macos": "macOS",
+      "ios": "iPhone / iPad",
+      "android": "安卓",
+      "macos": "蘋果電腦",
       "windows": "Windows"
     },
     "step2": {

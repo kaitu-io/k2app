@@ -30,7 +30,7 @@ export function detectDevice(): DeviceInfo {
   if (/iphone|ipad|ipod/.test(userAgent)) {
     return {
       type: 'ios',
-      name: 'iOS Device',
+      name: 'iPhone / iPad',
       isMobile: true,
       isDesktop: false,
       userAgent

@@ -291,13 +291,13 @@
     "subtitle": "Choose the right client for your device and start your stealth network journey",
     "platforms": {
       "ios": "Supports iPhone and iPad",
-      "iosLabel": "iOS",
+      "iosLabel": "iPhone / iPad",
       "android": "Supports Android phones and tablets",
       "androidLabel": "Android",
       "windows": "Supports Windows 10/11",
       "windowsLabel": "Windows",
       "macos": "Supports macOS 12+",
-      "macosLabel": "macOS"
+      "macosLabel": "Mac"
     },
     "downloadButton": "Download",
     "comingSoon": "Coming Soon"

@@ -1,4 +1,5 @@
-import { redirect } from 'next/navigation';
+import { redirect } from '@/i18n/routing';
+import { routing } from '@/i18n/routing';
 
 /**
  * Changelog page — redirects to /releases for backward compatibility.
@@ -16,11 +17,16 @@ export default async function ChangelogPage({
   const sp = await searchParams;
 
   // Preserve embed and theme query params through redirect
-  const queryParts: string[] = [];
-  if (sp.embed) queryParts.push(`embed=${sp.embed}`);
-  if (sp.theme) queryParts.push(`theme=${sp.theme}`);
-  if (sp.auth_token) queryParts.push(`auth_token=${sp.auth_token}`);
-  const query = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
+  const query: Record<string, string> = {};
+  if (sp.embed) query.embed = sp.embed;
+  if (sp.theme) query.theme = sp.theme;
+  if (sp.auth_token) query.auth_token = sp.auth_token;
 
-  redirect(`/${locale}/releases${query}`);
+  redirect({
+    href: {
+      pathname: '/releases',
+      query: Object.keys(query).length > 0 ? query : undefined,
+    },
+    locale: locale as (typeof routing.locales)[number],
+  });
 }

@@ -25,9 +25,9 @@
     "step1": {
       "title": "下载客户端",
       "description": "选择您的设备平台，下载对应的客户端",
-      "ios": "iOS",
-      "android": "Android",
-      "macos": "macOS",
+      "ios": "iPhone / iPad",
+      "android": "安卓",
+      "macos": "苹果电脑",
       "windows": "Windows"
     },
     "step2": {

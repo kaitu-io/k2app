@@ -25,9 +25,9 @@
     "step1": {
       "title": "Download the App",
       "description": "Choose your platform and download the client",
-      "ios": "iOS",
+      "ios": "iPhone / iPad",
       "android": "Android",
-      "macos": "macOS",
+      "macos": "Mac",
       "windows": "Windows"
     },
     "step2": {
