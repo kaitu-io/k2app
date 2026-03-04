@@ -27,6 +27,43 @@ scripts/test_build.sh            # Full build verification (14 checks)
 yarn install                     # Always run from root (workspace)
 ```
 
+## Windows k2 Test Scripts
+
+Test the k2 Go tunnel against the HK k2v5 test server. Configs and scripts are in the repo root / `scripts/`.
+
+**1. Build k2 binary** (from Git Bash, no admin):
+```bash
+cd k2 && GOOS=windows GOARCH=amd64 go build -tags nowebapp -o ../desktop/src-tauri/binaries/k2-x86_64-pc-windows-msvc.exe ./cmd/k2
+```
+
+**2. Start daemon** (requires admin — TUN mode creates virtual NIC):
+```powershell
+# From PowerShell (auto-elevates via UAC):
+.\scripts\start-k2-admin.ps1
+```
+This starts the daemon in foreground using `k2-test-config.yml` (TUN mode, global routing, debug logs to `C:\Users\david\k2-debug.log`). Press Ctrl+C to stop.
+
+**3. Control from Git Bash** (no admin needed, daemon must be running):
+```bash
+./scripts/test-k2-ctl.sh up       # Connect tunnel (sends UP to daemon API)
+./scripts/test-k2-ctl.sh status   # Connection status JSON
+./scripts/test-k2-ctl.sh down     # Disconnect
+./scripts/test-k2-ctl.sh logs     # Tail debug log
+./scripts/test-k2-ctl.sh test     # Connectivity tests (IP, Google, YouTube, speed)
+./scripts/test-k2-ctl.sh debug    # Set log level to debug
+./scripts/test-k2-ctl.sh info     # Set log level to info
+```
+
+**4. Daemon API** (port 1778 for test, 1777 for app):
+```bash
+curl -s http://127.0.0.1:1778/ping                                          # Health check
+curl -s -X POST http://127.0.0.1:1778/api/core -d '{"action":"status"}'     # Status
+```
+
+**Config files:**
+- `k2-test-config.yml` — TUN mode (admin required, full VPN, tests HandleUDP/QUIC)
+- `k2-test-proxy-config.yml` — Proxy mode (no admin, SOCKS5 on :1080, TCP only)
+
 ## Project Structure
 
 ```

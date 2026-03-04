@@ -1,0 +1,22 @@
+# k2 test client configuration (proxy mode - no admin needed)
+listen: "127.0.0.1:1778"
+server: "k2v5://test:tset@www.hunan.people.cn:443?ech=AEX-DQBB-gAgACBJydO-Rii7jcSaLNZq82ECJ4zFz1HHvrvYIHSlTeKYHwAEAAEAAQASY2xvdWRmbGFyZS1lY2guY29tAAA=&pin=sha256:ikIeFWzOscT9Tc6FTlk5vx4oCy6zJ1lHAbhY75GkHzo=,sha256:rFOuBHqNUZSo2FVLYa15-oOLYlOfvaRqoRzpW1ezAHg=&hop=40000-40019&ip=8.218.55.0"
+mode: proxy
+
+proxy:
+  listen: "127.0.0.1:1080"
+
+dns:
+  direct:
+    - "114.114.114.114:53"
+    - "223.5.5.5:53"
+  proxy:
+    - "8.8.8.8:53"
+    - "1.1.1.1:53"
+
+rule:
+  global: true
+
+log:
+  level: debug
+  output: stderr

@@ -8,6 +8,8 @@ webapp/public/version.json
 release/
 *.log
 .DS_Store
+k2-test-config.yml
+k2-client.log
 scripts/ci/setup-secrets.sh
 
 # Mobile build artifacts
