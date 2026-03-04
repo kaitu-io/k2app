@@ -126,6 +126,10 @@ export function useDraggable(options: UseDraggableOptions): UseDraggableReturn {
     const el = elementRef.current;
     if (!el) return;
 
+    // Capture pointer to prevent browser native drag (pointercancel on SVG icon).
+    // We do NOT rely on capture for event routing — document listeners handle that.
+    try { el.setPointerCapture(e.pointerId); } catch { /* ignore if capture fails */ }
+
     const scale = getBodyScale();
     const ds = dragState.current;
     ds.startPointerX = e.clientX / scale;
@@ -141,7 +145,7 @@ export function useDraggable(options: UseDraggableOptions): UseDraggableReturn {
     // Remove transition for instant position updates during drag
     el.style.transition = 'none';
 
-    // Attach document-level listeners (immune to MUI ripple stealing pointer capture)
+    // Attach document-level listeners (immune to MUI ripple releasing pointer capture)
     if (onPointerMoveRef.current) document.addEventListener('pointermove', onPointerMoveRef.current);
     if (onPointerUpRef.current) {
       document.addEventListener('pointerup', onPointerUpRef.current);
