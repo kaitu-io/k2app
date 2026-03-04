@@ -81,7 +81,7 @@ webapp/              React + MUI frontend (see webapp/CLAUDE.md)
   src/utils/         Error handling, version compare, tunnel sorting
   src/i18n/          Localization (7 locales, 15+ namespaces)
 web/                 Next.js website + admin dashboard (see web/CLAUDE.md)
-  src/app/[locale]/  Public pages (install, purchase, account, wallet, changelog)
+  src/app/[locale]/  Public pages (install, purchase, account, wallet, releases)
   src/app/(manager)/ Admin dashboard (users, orders, nodes, tunnels, EDM, cloud)
 api/                 Center API service — Go + Gin + GORM (see api/CLAUDE.md)
   cloudprovider/     Multi-cloud VPS management (AWS, Aliyun, Tencent, Bandwagon)
@@ -107,7 +107,7 @@ Makefile             Build orchestration — version from package.json, k2 from 
 - **VPN control boundary**: All VPN operations go through `window._k2.run(action, params)`. Never direct HTTP to `:1777` from webapp.
 - **Cloud API boundary**: All cloud API calls go through `cloudApi` / `k2api` in `src/services/`. Auth headers and token refresh handled automatically.
 - **Error display**: `response.message` is debug-only. Users see i18n text mapped from `response.code`. Never show raw backend messages.
-- **Version source of truth**: Root `package.json` (0.4.0). Tauri reads via `../../package.json` reference. k2 binary gets it via ldflags.
+- **Version source of truth**: Root `package.json` — `version` is beta (0.4.0-beta.1), `releaseVersion` is stable (0.3.22). Tauri reads via `../../package.json` reference. k2 binary gets it via ldflags. Web `next.config.ts` exposes both as `NEXT_PUBLIC_BETA_VERSION` and `NEXT_PUBLIC_DESKTOP_VERSION`.
 - **k2 submodule**: Read-only. Built with `-tags nowebapp` (headless mode). Binary output to `desktop/src-tauri/binaries/`.
 - **i18n**: zh-CN primary, en-US secondary, plus ja, zh-TW, zh-HK, en-AU, en-GB. 15+ namespaces. New text goes to zh-CN first.
 - **MUI dark theme**: Material-UI 5 with custom theme tokens. No light mode.

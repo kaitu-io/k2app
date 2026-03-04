@@ -32,7 +32,8 @@ web/
 │   │   │   ├── purchase/      # Subscription purchase flow
 │   │   │   ├── account/       # User profile, members, delegate, wallet
 │   │   │   ├── discovery/     # App discovery
-│   │   │   ├── changelog/     # Release notes
+│   │   │   ├── releases/      # Version history + downloads (GitHub Releases style)
+│   │   │   ├── changelog/     # Redirects to /releases (backward compat)
 │   │   │   ├── login/         # Email OTP login
 │   │   │   ├── s/[code]/      # Invite link landing
 │   │   │   ├── k2/[[...path]]/ # K2 protocol docs section (Velite + sidebar layout)
@@ -62,7 +63,8 @@ web/
 │   ├── lib/
 │   │   ├── api.ts             # API client (types + request methods + error handling)
 │   │   ├── auth.ts            # JWT decode helpers
-│   │   ├── constants.ts       # Shared constants
+│   │   ├── constants.ts       # Shared constants (BETA_VERSION, DESKTOP_VERSION, getDownloadLinks)
+│   │   ├── device-detection.ts # Device type detection for auto-download
 │   │   ├── events.ts          # App event bus (auth:unauthorized, etc.)
 │   │   ├── k2-posts.ts        # getK2Posts(locale) — Velite filter/group/sort for /k2/ sidebar
 │   │   ├── udid.ts            # Device fingerprint
@@ -74,7 +76,7 @@ web/
 │   └── en-US/                 # English content (fallback to zh-CN)
 │       └── k2/                # K2 protocol docs (en-US)
 ├── velite.config.ts           # Velite schema + collection config (order/section fields)
-├── messages/                  # i18n JSON files (7 locales × 14 namespaces)
+├── messages/                  # i18n JSON files (7 locales × 16 namespaces)
 │   └── namespaces.ts          # Namespace registry — update when adding new *.json files
 ├── tests/                     # Playwright E2E specs + vitest + build tests
 └── public/                    # Static assets, legal docs, app icons
@@ -139,7 +141,7 @@ const t = useTranslations();  // NOT const { t } = useTranslations()
 
 **Navigation**: Use `Link` from `@/i18n/routing` for internal links (auto locale prefix). Use `next/link` for external links.
 
-**Files**: `messages/{locale}/{namespace}.json` — namespaces: nav, common, auth, purchase, hero, install, discovery, invite, wallet, campaigns, changelog, admin, theme, k2.
+**Files**: `messages/{locale}/{namespace}.json` — namespaces: nav, common, auth, purchase, hero, install, discovery, invite, wallet, campaigns, changelog, admin, theme, k2, releases, guide-parents.
 
 **Namespace registry**: `messages/namespaces.ts` lists all active namespaces. When adding a new `*.json` namespace file, add its name to the `namespaces` array in `namespaces.ts` — otherwise it is never loaded and all keys return their raw key string silently.
 
@@ -166,7 +168,7 @@ Markdown files in `content/{locale}/` are processed by Velite at build time and 
 - Sidebar navigation driven by `order` + `section` frontmatter via `getK2Posts(locale)` helper
 - `getK2Posts()` is the single source: used by K2Sidebar, K2Page, and sitemap.ts
 
-**Reserved paths** (content must NOT use): 403, account, discovery, install, login, opensource, privacy, purchase, retailer, routers, s, terms, changelog, manager, k2
+**Reserved paths** (content must NOT use): 403, account, discovery, install, login, opensource, privacy, purchase, retailer, routers, s, terms, changelog, releases, manager, k2
 
 ## Routing
 
@@ -209,6 +211,9 @@ AWS Amplify (`amplify.yml`). Prebuild script (`scripts/amplify-prebuild.sh`) han
 - **next-intl IntlMessages interface**: `web/src/types/i18n.d.ts` uses an empty `interface IntlMessages {}` (permissive typing) because messages are split across namespace files loaded dynamically. This disables compile-time key checking — use runtime tests instead.
 - **Server Component pages with setRequestLocale**: Cast locale to `(typeof routing.locales)[number]` when calling `setRequestLocale()`. The URL param type is `string` but next-intl requires the narrower union type.
 - **Homepage is Server Component + force-static**: `web/src/app/[locale]/page.tsx` has `export const dynamic = 'force-static'`. Do NOT add `"use client"` — it would break SSG and SEO.
+- **redirect — use @/i18n/routing**: Inside `[locale]` pages, import `redirect` from `@/i18n/routing` (NOT `next/navigation`). ESLint enforces this. The next-intl redirect takes `{ href, locale }` object, not a plain string.
+- **Embed mode** (`?embed=true`): Pages embedded in desktop app iframe. `useEmbedMode()` hook controls Header/Footer/CTA visibility. `ChatwootWidget` and `CookieConsent` auto-hide in embed mode. Used by `/releases` and `/changelog` routes.
+- **Platform labels in i18n**: Use user-friendly names, not technical ones. iOS → "iPhone / iPad", macOS → "苹果电脑" (zh) / "Mac" (en), Android → "安卓" (zh). No file extensions (.exe/.dmg/.apk) in download button labels.
 
 ## Related Docs
 
