@@ -16,9 +16,10 @@ import (
 )
 
 // inflightTimeout bounds how long a waiter blocks for an in-flight
-// upstream DNS query. Must exceed ProxyDNSClient's worst-case
-// (5 s/server × 2 servers = 10 s).
-const inflightTimeout = 12 * time.Second
+// upstream DNS query. Must exceed ProxyDNSClient's worst-case:
+// per server = DialUDP (5s ctx) + ReadFrom (5s deadline) = 10s,
+// 2 servers sequential = 20s. Set to 22s with margin.
+const inflightTimeout = 22 * time.Second
 
 // DNSQuerier is satisfied by DirectDNSClient and ProxyDNSClient.
 type DNSQuerier interface {
@@ -213,7 +214,10 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, []byte, error) {
 			packed := cloneAndPatchID(existing.packed, query.Id)
 			return nil, packed, nil
 		case <-timer.C:
-			slog.Warn("DNS inflight dedup timeout, querying independently", "domain", domain)
+			// Clear stale entry so subsequent queries start fresh instead of
+			// hitting the same dead owner in a timeout cascade loop.
+			m.inflight.CompareAndDelete(inflightKey, existing)
+			slog.Warn("DNS inflight dedup timeout, evicted stale entry, querying independently", "domain", domain, "key", inflightKey)
 			timedOut = true
 		}
 	}
@@ -240,9 +244,11 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, []byte, error) {
 	}
 
 	// We own this query — execute and broadcast result.
+	slog.Debug("DNS inflight owner start", "domain", domain, "key", inflightKey)
 	resp, err := m.queryUpstream(domain, action, query)
 
 	if err != nil {
+		slog.Debug("DNS inflight owner failed", "domain", domain, "key", inflightKey, "err", err)
 		result.err = err
 		close(result.done)
 		m.inflight.Delete(inflightKey)
@@ -259,6 +265,7 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, []byte, error) {
 	}
 
 	// Broadcast packed bytes to waiters.
+	slog.Debug("DNS inflight owner done", "domain", domain, "key", inflightKey)
 	result.packed = packed
 	close(result.done)
 	m.inflight.Delete(inflightKey)

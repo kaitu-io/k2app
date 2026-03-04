@@ -181,6 +181,7 @@ func (tm *TransportManager) DialUDP(ctx context.Context, addr string) (net.Packe
 			// Don't call recordQuicSuccess() here. QUIC datagram success
 			// doesn't prove the TCP stream path works. Let DialTCP manage
 			// its own recovery when TCP actually succeeds.
+			slog.Debug("TransportManager: QUIC UDP success", "addr", addr)
 			return conn, nil
 		}
 		slog.Debug("TransportManager: QUIC UDP failed", "err", err)
@@ -196,6 +197,7 @@ func (tm *TransportManager) DialUDP(ctx context.Context, addr string) (net.Packe
 			if quicErr != nil && !errors.Is(quicErr, ErrDatagramUnhealthy) {
 				tm.recordQuicFailure()
 			}
+			slog.Debug("TransportManager: TCP-WS UDP success", "addr", addr)
 			return conn, nil
 		}
 		slog.Debug("TransportManager: TCP-WS UDP failed", "err", err)
