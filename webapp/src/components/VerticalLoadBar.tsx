@@ -1,24 +1,26 @@
 /**
  * VerticalLoadBar Component
  *
- * Displays a minimal vertical progress bar for node load.
- * De-emphasized UI element with color coding based on load level.
+ * Displays a minimal vertical progress bar for traffic budget status.
+ * budgetScore: [-1, +1]. Negative = under budget (green), positive = over budget (red).
  */
 
 import { Box } from '@mui/material';
 
 interface VerticalLoadBarProps {
-  /** Load percentage (0-100). Undefined renders nothing. */
-  load?: number;
+  /** Budget score (-1 to +1). Undefined renders nothing. */
+  budgetScore?: number;
 }
 
-export function VerticalLoadBar({ load }: VerticalLoadBarProps) {
-  if (load === undefined) return null;
+export function VerticalLoadBar({ budgetScore }: VerticalLoadBarProps) {
+  if (budgetScore === undefined) return null;
 
-  const clampedLoad = Math.min(load, 100);
-  const color = clampedLoad < 50
+  // Map [-1, +1] → [0, 100]
+  const percentage = Math.max(0, Math.min(100, (budgetScore + 1) * 50));
+
+  const color = percentage < 40
     ? 'success.main'
-    : clampedLoad < 80
+    : percentage < 65
       ? 'warning.main'
       : 'error.main';
 
@@ -39,7 +41,7 @@ export function VerticalLoadBar({ load }: VerticalLoadBarProps) {
         data-testid="load-bar-fill"
         sx={{
           width: '100%',
-          height: `${clampedLoad}%`,
+          height: `${percentage}%`,
           bgcolor: color,
           borderRadius: 1,
           transition: 'height 0.3s ease',
