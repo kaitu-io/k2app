@@ -322,24 +322,9 @@ export default function Invite() {
       </Box>
 
       {/* Intro Section */}
-      <Box
-        sx={(theme) => ({
-          mb: 2,
-          px: 1.5,
-          py: 1,
-          borderRadius: 2,
-          bgcolor: alpha(theme.palette.primary.main, 0.06),
-          border: '1px solid',
-          borderColor: alpha(theme.palette.primary.main, 0.12),
-        })}
-      >
-        <Typography variant="caption" fontWeight={600} component="span">
-          {t('invite:invite.introTitle')}
-        </Typography>
-        <Typography variant="caption" color="text.secondary" component="span" sx={{ ml: 0.5 }}>
-          {t('invite:invite.introBody')}
-        </Typography>
-      </Box>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.6 }}>
+        {t('invite:invite.introBody')}
+      </Typography>
 
       {/* Main Content */}
       <Box>
