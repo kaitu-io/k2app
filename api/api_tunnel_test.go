@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -278,5 +279,40 @@ func TestBuildECHConfigList(t *testing.T) {
 		decoded, err := base64.StdEncoding.DecodeString(encoded)
 		assert.NoError(t, err)
 		assert.Equal(t, echConfigList, decoded)
+	})
+}
+
+func TestBuildTunnelInstanceData_BudgetScore(t *testing.T) {
+	t.Run("computes budgetScore as trafficRatio minus timeRatio", func(t *testing.T) {
+		now := time.Now().Unix()
+		inst := &CloudInstance{
+			TrafficUsedBytes:  500,
+			TrafficTotalBytes: 1000,
+			TrafficResetAt:    now + 15*86400,
+		}
+		result := buildTunnelInstanceData(inst)
+		require.NotNil(t, result)
+
+		expected := result.TrafficRatio - result.TimeRatio
+		assert.InDelta(t, expected, result.BudgetScore, 0.001,
+			"BudgetScore must equal TrafficRatio - TimeRatio")
+	})
+
+	t.Run("returns nil for nil input", func(t *testing.T) {
+		result := buildTunnelInstanceData(nil)
+		assert.Nil(t, result)
+	})
+
+	t.Run("unlimited traffic has zero trafficRatio", func(t *testing.T) {
+		now := time.Now().Unix()
+		inst := &CloudInstance{
+			TrafficUsedBytes:  999,
+			TrafficTotalBytes: 0,
+			TrafficResetAt:    now + 15*86400,
+		}
+		result := buildTunnelInstanceData(inst)
+		require.NotNil(t, result)
+		assert.Equal(t, 0.0, result.TrafficRatio)
+		assert.LessOrEqual(t, result.BudgetScore, 0.0)
 	})
 }

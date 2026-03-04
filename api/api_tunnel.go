@@ -249,6 +249,7 @@ func buildTunnelInstanceData(inst *CloudInstance) *DataTunnelInstance {
 		TrafficRatio:      trafficRatio,
 		BillingCycleEndAt: billingCycleEndAt,
 		TimeRatio:         timeRatio,
+		BudgetScore:       trafficRatio - timeRatio,
 	}
 }
 
