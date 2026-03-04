@@ -1,15 +1,13 @@
 /**
  * Tunnel Sorting Utilities
  *
- * Sort tunnels by recommendation (route quality), with load as secondary sort.
+ * Sort tunnels by recommendation (route quality), with country as secondary sort.
  */
 
 import type { Tunnel } from '../services/api-types';
 
 /**
  * Interface for route quality lookup.
- * Supports both evaluation store (uses getRouteQuality function) and
- * legacy diagnosis store (uses Map with DiagnoseNodeResult).
  */
 export interface RouteQualityProvider {
   getRouteQuality: (domain: string) => number;
@@ -17,7 +15,7 @@ export interface RouteQualityProvider {
 
 /**
  * Sort tunnels by recommendation (route quality).
- * Higher quality tunnels appear first. If quality is equal, lower load first.
+ * Higher quality tunnels appear first. If quality is equal, sort by country alphabetically.
  *
  * @param tunnels - Array of tunnels to sort
  * @param qualityProvider - Object with getRouteQuality function
@@ -36,7 +34,7 @@ export function sortTunnelsByRecommendation(
       return qualityB - qualityA;
     }
 
-    // If same quality, lower load first
-    return (a.node.load ?? 100) - (b.node.load ?? 100);
+    // If same quality, sort by country alphabetically
+    return a.node.country.localeCompare(b.node.country);
   });
 }
