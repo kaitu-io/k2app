@@ -21,16 +21,16 @@ export default function Footer() {
                 height={32}
                 className="rounded-md"
               />
-              <span className="text-xl font-bold text-gray-900 dark:text-white">{t('nav.footer.brandName')}</span>
+              <span className="text-xl font-bold text-foreground">{t('nav.footer.brandName')}</span>
             </div>
-            <p className="text-gray-600 dark:text-gray-300 text-sm">
+            <p className="text-muted-foreground text-sm">
               {t('nav.footer.brandDescription')}
             </p>
           </div>
           
           <div>
-            <h4 className="font-semibold text-gray-900 dark:text-white mb-4">{t('nav.footer.product.title')}</h4>
-            <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-300">
+            <h4 className="font-semibold text-foreground mb-4">{t('nav.footer.product.title')}</h4>
+            <ul className="space-y-2 text-sm text-muted-foreground">
               <li>
                 <Link href="/install" className="hover:text-blue-600">
                   {t('nav.footer.product.clientDownload')}
@@ -55,8 +55,8 @@ export default function Footer() {
           </div>
 
           <div>
-            <h4 className="font-semibold text-gray-900 dark:text-white mb-4">{t('nav.footer.support.title')}</h4>
-            <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-300">
+            <h4 className="font-semibold text-foreground mb-4">{t('nav.footer.support.title')}</h4>
+            <ul className="space-y-2 text-sm text-muted-foreground">
               <li>
                 <Link href="/guides" className="hover:text-blue-600">
                   {t('nav.footer.support.userGuide')}
@@ -76,8 +76,8 @@ export default function Footer() {
           </div>
 
           <div>
-            <h4 className="font-semibold text-gray-900 dark:text-white mb-4">{t('nav.footer.legal.title')}</h4>
-            <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-300">
+            <h4 className="font-semibold text-foreground mb-4">{t('nav.footer.legal.title')}</h4>
+            <ul className="space-y-2 text-sm text-muted-foreground">
               <li>
                 <Link href="/privacy" className="hover:text-blue-600">
                   {t('discovery.privacy.title')}
@@ -92,7 +92,7 @@ export default function Footer() {
           </div>
         </div>
         
-        <div className="mt-8 pt-8 border-t text-center text-sm text-gray-600 dark:text-gray-300">
+        <div className="mt-8 pt-8 border-t text-center text-sm text-muted-foreground">
           <p className="mb-2 text-muted-foreground/60 italic">{"愿上帝为你开路"}</p>
           <p>{"©"} {COMPANY_INFO.year} {"Kaitu LLC"}{". "}{t('nav.footer.copyright')}</p>
         </div>
