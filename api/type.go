@@ -261,7 +261,7 @@ type DataSlaveNode struct {
 	Region    string `json:"region"`    // 服务器区域
 	Ipv4      string `json:"ipv4"`      // IPv4地址
 	Ipv6      string `json:"ipv6"`      // IPv6地址
-	Load      int    `json:"load"`      // 当前负载
+	Load      int    `json:"load"`      // Deprecated: to be removed. Use DataTunnelInstance.BudgetScore instead.
 	UpdatedAt int64  `json:"updatedAt"` // 最后更新时间（Unix 秒）
 
 	// Evaluation fields for tunnel scoring
@@ -276,6 +276,7 @@ type DataTunnelInstance struct {
 	TrafficRatio      float64 `json:"trafficRatio"`      // Traffic consumption ratio (0-1, e.g., 0.75 = 75% used)
 	BillingCycleEndAt int64   `json:"billingCycleEndAt"` // Billing cycle end timestamp (Unix seconds)
 	TimeRatio         float64 `json:"timeRatio"`         // Time consumption ratio (0-1, e.g., 0.5 = 50% of cycle elapsed)
+	BudgetScore       float64 `json:"budgetScore"`       // TrafficRatio - TimeRatio. [-1,+1]. Negative = under budget (recommended), positive = over budget.
 }
 
 // DataSlaveTunnel API tunnel data structure
