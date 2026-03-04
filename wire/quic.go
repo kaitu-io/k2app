@@ -395,6 +395,11 @@ func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, 
 		slog.Debug("QUICClient.DialUDP", "addr", addr, "datagramsSupported", dgSupported)
 		if dgSupported {
 			if !mux.datagramHealthy() {
+				slog.Debug("QUICClient.DialUDP: datagram unhealthy",
+					"addr", addr,
+					"consecutiveTimeouts", mux.consecutiveTimeouts.Load(),
+					"lossRate", fmt.Sprintf("%.1f%%", mux.evaluateLossRate()*100),
+					"hopAttempts", c.datagramHopAttempts.Load())
 				// Hop port before falling back to TCP-WS.
 				// tryHop() uses CAS to ensure only one goroutine hops at a time.
 				if c.hopEnabled() && c.datagramHopAttempts.Load() < maxDatagramHops {
@@ -419,9 +424,9 @@ func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, 
 				}
 
 				// Within cooldown (or hop not configured) → TCP-WS fallback
-				slog.Debug("QUICClient.DialUDP: datagram path unhealthy, using TCP-WS",
+				slog.Debug("QUICClient.DialUDP: falling back to TCP-WS",
 					"addr", addr,
-					"hopAttempts", c.datagramHopAttempts.Load())
+					"reason", "datagram unhealthy, hops exhausted")
 				return nil, ErrDatagramUnhealthy
 			}
 
@@ -1047,7 +1052,11 @@ func (m *quicUDPMux) recordSend() {
 }
 
 func (m *quicUDPMux) recordTimeout() {
-	m.consecutiveTimeouts.Add(1)
+	count := m.consecutiveTimeouts.Add(1)
+	if count == datagramTimeoutThreshold {
+		slog.Warn("quicUDPMux: datagram path marked unhealthy",
+			"consecutiveTimeouts", count)
+	}
 }
 
 func (m *quicUDPMux) datagramHealthy() bool {
