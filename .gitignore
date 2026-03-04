@@ -37,3 +37,4 @@ api/cloudprovider/test-results/
 # Webapp test artifacts
 webapp/playwright-report/
 webapp/test-results/
+.k2-dev-config.yaml

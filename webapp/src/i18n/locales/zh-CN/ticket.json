@@ -4,11 +4,8 @@
   },
   "ticket": {
     "title": "提交工单",
-    "description": "描述您遇到的问题，我们的支持团队会尽快通过邮件回复您。",
+    "description": "描述您遇到的问题，我们会通过邮件尽快回复。",
     "feedbackTitle": "问题反馈",
-    "feedbackDescription": "日志正在上传中，请描述您遇到的问题。日志将帮助我们更快定位问题。",
-    "subjectLabel": "问题标题",
-    "subjectPlaceholder": "简要描述您遇到的问题",
     "contentLabel": "问题描述",
     "contentPlaceholder": "请详细描述您遇到的问题，包括操作步骤、错误信息等，这将帮助我们更快地为您解决问题。",
     "submitButton": "提交工单",
@@ -19,18 +16,18 @@
     "nextStepHint": "请查收您的邮箱",
     "emailReplyHint": "我们的支持团队将通过邮件与您沟通，请留意邮箱中的回复。",
     "howItWorks": "工单处理流程",
-    "howItWorksDescription": "提交后，系统会将工单发送到支持邮箱，并抄送一份到您的注册邮箱。后续沟通将通过邮件进行，请确保您能收到邮件通知。",
+    "dataCollectionHint": "提交时将自动收集应用版本、系统信息和日志，以帮助开发者更快定位问题。",
+    "stepper": {
+      "step1": "描述问题",
+      "step2": "上传日志",
+      "step3": "邮件回复"
+    },
     "entryTitle": "联系客服",
     "entryDescription": "遇到问题？提交工单，我们会尽快回复",
-    "logUploadInProgress": "正在上传日志...",
-    "logUploadSuccess": "日志上传完成",
-    "logUploadFailed": "日志上传失败",
     "betaWarning": "你正在使用 Beta 版本。如果遇到问题，可以在账号设置中切回稳定版。",
     "switchToStable": "切回稳定版",
     "validation": {
-      "subjectRequired": "请输入问题标题",
       "contentRequired": "请输入问题描述",
-      "subjectTooLong": "问题标题不能超过200个字符",
       "contentTooLong": "问题描述不能超过5000个字符"
     }
   },

@@ -37,7 +37,8 @@ func api_create_ticket(c *gin.Context) {
 		return
 	}
 
-	log.Infof(ctx, "api_create_ticket: user %d creating ticket: %s", userID, req.Subject)
+	log.Infof(ctx, "api_create_ticket: user %d creating ticket, os=%s version=%s channel=%s",
+		userID, req.OS, req.AppVersion, req.Channel)
 
 	// 获取用户邮箱
 	userEmail, err := getUserEmail(ctx, userID)
@@ -52,7 +53,7 @@ func api_create_ticket(c *gin.Context) {
 	// to filter out any private user information.
 
 	// Send ticket email
-	if err := sendTicketEmail(ctx, userEmail, req.Subject, req.Content, req.FeedbackID); err != nil {
+	if err := sendTicketEmail(ctx, userEmail, req); err != nil {
 		log.Errorf(ctx, "api_create_ticket: failed to send ticket email: %v", err)
 		Error(c, ErrorSystemError, "failed to send ticket email")
 		return
@@ -60,7 +61,7 @@ func api_create_ticket(c *gin.Context) {
 
 	// Send Slack notification to #customer channel (async, don't block on failure)
 	SafeGoWithContext(ctx, func(ctx context.Context) {
-		if err := sendTicketSlackNotification(ctx, userEmail, req.Subject, req.Content, req.FeedbackID); err != nil {
+		if err := sendTicketSlackNotification(ctx, userEmail, req); err != nil {
 			log.Warnf(ctx, "api_create_ticket: failed to send slack notification: %v", err)
 		}
 	})
@@ -86,20 +87,44 @@ func getUserEmail(ctx context.Context, userID uint64) (string, error) {
 	return decEmail, nil
 }
 
+// ticketSubject 生成邮件主题：优先使用老客户端传的 Subject，否则从 content 截取前 50 字符
+func ticketSubject(req CreateTicketRequest) string {
+	if req.Subject != "" {
+		return req.Subject
+	}
+	runes := []rune(req.Content)
+	// 取第一行或前 50 字符
+	for i, r := range runes {
+		if r == '\n' {
+			runes = runes[:i]
+			break
+		}
+	}
+	if len(runes) > 50 {
+		return string(runes[:50]) + "..."
+	}
+	return string(runes)
+}
+
+// formatSystemInfo 格式化系统信息
+func formatSystemInfo(req CreateTicketRequest) string {
+	return fmt.Sprintf("OS: %s | Version: %s | Channel: %s | Language: %s | VPN: %s | Time: %s",
+		req.OS, req.AppVersion, req.Channel, req.Language, req.VPNState, req.SubmitTime)
+}
+
 // sendTicketEmail sends ticket email to support
 // Sends to support email, sets ReplyTo to user email, CC to user
-func sendTicketEmail(ctx context.Context, userEmail, subject, content, feedbackID string) error {
+func sendTicketEmail(ctx context.Context, userEmail string, req CreateTicketRequest) error {
 	supportEmail := configSupportEmail()
 
-	// Build email subject (add prefix to identify ticket)
-	emailSubject := fmt.Sprintf("[Ticket] %s", subject)
+	emailSubject := fmt.Sprintf("[Ticket] %s", ticketSubject(req))
+	sysInfo := formatSystemInfo(req)
 
-	// Build email body
 	var emailBody string
-	if feedbackID != "" {
+	if req.FeedbackID != "" {
 		emailBody = fmt.Sprintf(`New support ticket from: %s
 
-Subject: %s
+System: %s
 Feedback ID: %s (logs uploaded with this ID)
 
 ---
@@ -107,24 +132,23 @@ Feedback ID: %s (logs uploaded with this ID)
 ---
 
 Please reply to this email to respond to the user.
-`, userEmail, subject, feedbackID, content)
+`, userEmail, sysInfo, req.FeedbackID, req.Content)
 	} else {
 		emailBody = fmt.Sprintf(`New support ticket from: %s
 
-Subject: %s
+System: %s
 
 ---
 %s
 ---
 
 Please reply to this email to respond to the user.
-`, userEmail, subject, content)
+`, userEmail, sysInfo, req.Content)
 	}
 
 	log.Infof(ctx, "sendTicketEmail: sending ticket to %s, reply-to: %s, cc: %s",
 		hideEmail(supportEmail), hideEmail(userEmail), hideEmail(userEmail))
 
-	// Use qtoolkit/mail to send email
 	if err := mail.Send(&mail.Message{
 		To:      supportEmail,
 		Subject: emailSubject,
@@ -140,33 +164,27 @@ Please reply to this email to respond to the user.
 }
 
 // sendTicketSlackNotification sends a notification to #customer Slack channel
-func sendTicketSlackNotification(ctx context.Context, userEmail, subject, content, feedbackID string) error {
-	// Truncate content for Slack preview
-	contentPreview := content
-	if len(contentPreview) > 200 {
-		contentPreview = contentPreview[:200] + "..."
-	}
+func sendTicketSlackNotification(ctx context.Context, userEmail string, req CreateTicketRequest) error {
+	sysInfo := formatSystemInfo(req)
 
-	// Build Slack message
 	var message string
-	if feedbackID != "" {
+	if req.FeedbackID != "" {
 		message = fmt.Sprintf(`:ticket: *New Support Ticket*
 
-*Subject:* %s
 *User:* %s
+*System:* %s
 *Feedback ID:* `+"`%s`"+`
 
-> %s`, subject, userEmail, feedbackID, contentPreview)
+> %s`, userEmail, sysInfo, req.FeedbackID, req.Content)
 	} else {
 		message = fmt.Sprintf(`:ticket: *New Support Ticket*
 
-*Subject:* %s
 *User:* %s
+*System:* %s
 
-> %s`, subject, userEmail, contentPreview)
+> %s`, userEmail, sysInfo, req.Content)
 	}
 
-	// Send to #customer channel
 	if err := slack.Send("customer", message); err != nil {
 		return fmt.Errorf("failed to send slack notification: %w", err)
 	}

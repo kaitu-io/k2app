@@ -255,8 +255,9 @@ export default function Invite() {
       sx={{
         width: "100%",
         minHeight: "100vh",
-        backgroundColor: "background.default",
+        backgroundColor: "transparent",
       }}
+      data-tour="invite-page"
     >
       {/* Header Section */}
       <Box sx={{ mb: 2 }}>

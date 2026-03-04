@@ -502,8 +502,14 @@ export interface CreateWithdrawRequest {
 
 // 创建工单请求
 export interface CreateTicketRequest {
-  subject: string; // 问题标题（1-200字符）
   content: string; // 问题描述（1-5000字符）
+  feedbackId?: string; // 日志关联 ID
+  os?: string; // 平台
+  app_version?: string; // 应用版本
+  channel?: string; // 更新通道
+  submit_time?: string; // ISO 8601 提交时间
+  vpn_state?: string; // VPN 状态
+  language?: string; // 界面语言
 }
 
 // ==================== App 配置类型定义 ====================

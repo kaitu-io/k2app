@@ -10,11 +10,17 @@ import {
   Alert,
   Stack,
   CircularProgress,
+  Stepper,
+  Step,
+  StepLabel,
 } from "@mui/material";
 import {
   Send as SendIcon,
   Email as EmailIcon,
   CheckCircle as SuccessIcon,
+  EditNote as EditNoteIcon,
+  CloudUpload as CloudUploadIcon,
+  MarkEmailRead as MarkEmailReadIcon,
 } from "@mui/icons-material";
 import { useTranslation } from "react-i18next";
 
@@ -22,6 +28,8 @@ import BackButton from "../components/BackButton";
 import { cloudApi } from '../services/cloud-api';
 import { useAuthStore } from '../stores/auth.store';
 import { useUser } from '../hooks/useUser';
+import i18n from '../i18n/i18n';
+import type { StatusResponseData } from '../services/vpn-types';
 
 // Log upload status (internal tracking only, no UI display)
 type LogUploadStatus = 'idle' | 'uploading' | 'success' | 'error';
@@ -37,6 +45,30 @@ function generateFeedbackId(): string {
   });
 }
 
+/**
+ * Gather system info for ticket submission (best-effort)
+ */
+async function gatherSystemInfo(): Promise<Record<string, string | undefined>> {
+  const info: Record<string, string | undefined> = {
+    os: window._platform?.os,
+    app_version: window._platform?.version,
+    channel: window._platform?.updater?.channel ?? 'stable',
+    submit_time: new Date().toISOString(),
+    language: i18n.language,
+  };
+
+  try {
+    const resp = await window._k2.run<StatusResponseData>('status');
+    if (resp.code === 0 && resp.data) {
+      info.vpn_state = resp.data.state;
+    }
+  } catch {
+    // best-effort, ignore if VPN status unavailable
+  }
+
+  return info;
+}
+
 export default function SubmitTicket() {
   const { t } = useTranslation();
   const [searchParams] = useSearchParams();
@@ -50,7 +82,6 @@ export default function SubmitTicket() {
   const uploadAttemptedRef = useRef(false);
 
   // Form state
-  const [subject, setSubject] = useState("");
   const [content, setContent] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -108,17 +139,8 @@ export default function SubmitTicket() {
   }, [uploadLogs, canUploadLogs]);
 
   const handleSubmit = async () => {
-    // 验证输入
-    if (!subject.trim()) {
-      setSubmitResult({ success: false, message: t('ticket:ticket.validation.subjectRequired') });
-      return;
-    }
     if (!content.trim()) {
       setSubmitResult({ success: false, message: t('ticket:ticket.validation.contentRequired') });
-      return;
-    }
-    if (subject.length > 200) {
-      setSubmitResult({ success: false, message: t('ticket:ticket.validation.subjectTooLong') });
       return;
     }
     if (content.length > 5000) {
@@ -130,19 +152,18 @@ export default function SubmitTicket() {
     setSubmitResult(null);
 
     try {
+      const systemInfo = await gatherSystemInfo();
       const response = await cloudApi.post('/api/user/ticket', {
-        subject: subject.trim(),
         content: content.trim(),
         // Include feedbackId if logs were uploaded successfully
         ...(feedbackIdRef.current && logUploadStatus === 'success'
           ? { feedbackId: feedbackIdRef.current }
           : {}),
+        ...systemInfo,
       });
 
       if (response.code === 0) {
         setSubmitResult({ success: true, message: t('ticket:ticket.submitSuccess') });
-        // 清空表单
-        setSubject("");
         setContent("");
       } else {
         console.error('[SubmitTicket] Submit failed:', response.code, response.message);
@@ -161,8 +182,8 @@ export default function SubmitTicket() {
       width: "100%",
       height: "100%",
       position: "relative"
-    }}>
-      <BackButton to="/faq" />
+    }} data-tour="submit-ticket-page">
+      <BackButton />
 
       <Box sx={{
         width: "100%",
@@ -219,8 +240,6 @@ export default function SubmitTicket() {
           ) : (
             /* 工单表单 - 只在未成功时显示 */
             <>
-              {/* Log upload happens silently in background - no UI display */}
-
               {isBetaUser && (
                 <Alert
                   severity="warning"
@@ -246,19 +265,8 @@ export default function SubmitTicket() {
                     </Typography>
 
                     <Typography variant="body2" color="text.secondary">
-                      {isFeedbackMode ? t('ticket:ticket.feedbackDescription') : t('ticket:ticket.description')}
+                      {t('ticket:ticket.description')}
                     </Typography>
-
-                    <TextField
-                      label={t('ticket:ticket.subjectLabel')}
-                      placeholder={t('ticket:ticket.subjectPlaceholder')}
-                      value={subject}
-                      onChange={(e) => setSubject(e.target.value)}
-                      disabled={isSubmitting}
-                      fullWidth
-                      inputProps={{ maxLength: 200 }}
-                      helperText={`${subject.length}/200`}
-                    />
 
                     <TextField
                       label={t('ticket:ticket.contentLabel')}
@@ -277,7 +285,7 @@ export default function SubmitTicket() {
                       variant="contained"
                       color="primary"
                       onClick={handleSubmit}
-                      disabled={isSubmitting || !subject.trim() || !content.trim()}
+                      disabled={isSubmitting || !content.trim()}
                       startIcon={isSubmitting ? <CircularProgress size={20} color="inherit" /> : <SendIcon />}
                       fullWidth
                       size="large"
@@ -294,18 +302,38 @@ export default function SubmitTicket() {
                 </CardContent>
               </Card>
 
-              {/* 提示信息 */}
+              {/* 工单处理流程 - Stepper */}
               <Card variant="outlined">
                 <CardContent>
-                  <Stack spacing={1}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <EmailIcon color="action" fontSize="small" />
-                      <Typography variant="subtitle2" color="text.secondary">
-                        {t('ticket:ticket.howItWorks')}
-                      </Typography>
-                    </Box>
-                    <Typography variant="body2" color="text.secondary">
-                      {t('ticket:ticket.howItWorksDescription')}
+                  <Stack spacing={2}>
+                    <Typography variant="subtitle2" color="text.secondary">
+                      {t('ticket:ticket.howItWorks')}
+                    </Typography>
+                    <Stepper alternativeLabel>
+                      <Step active>
+                        <StepLabel
+                          StepIconComponent={() => <EditNoteIcon color="primary" fontSize="small" />}
+                        >
+                          {t('ticket:ticket.stepper.step1')}
+                        </StepLabel>
+                      </Step>
+                      <Step active>
+                        <StepLabel
+                          StepIconComponent={() => <CloudUploadIcon color="primary" fontSize="small" />}
+                        >
+                          {t('ticket:ticket.stepper.step2')}
+                        </StepLabel>
+                      </Step>
+                      <Step active>
+                        <StepLabel
+                          StepIconComponent={() => <MarkEmailReadIcon color="primary" fontSize="small" />}
+                        >
+                          {t('ticket:ticket.stepper.step3')}
+                        </StepLabel>
+                      </Step>
+                    </Stepper>
+                    <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center' }}>
+                      {t('ticket:ticket.dataCollectionHint')}
                     </Typography>
                   </Stack>
                 </CardContent>
