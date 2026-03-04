@@ -85,11 +85,14 @@ test-openwrt: build-openwrt-docker
 	OPENWRT_PORT=$(OPENWRT_PORT) DOCKER_IMAGE=$(DOCKER_IMAGE) \
 		bash scripts/test-openwrt.sh $(OPENWRT_BIN)
 
-dev: pre-build
-	./scripts/dev.sh
+dev-standalone: pre-build
+	./scripts/dev-standalone.sh
 
-dev-desktop: pre-build
-	./scripts/dev-desktop.sh
+dev-macos: pre-build
+	./scripts/dev-macos.sh
+
+dev-windows: pre-build
+	./scripts/dev-windows.sh
 
 # Slave node Docker images (build + push to ECR)
 publish-docker:

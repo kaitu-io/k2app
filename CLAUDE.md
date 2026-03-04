@@ -7,7 +7,9 @@ Tauri v2 desktop + Capacitor 6 mobile app wrapping the k2 Go tunnel core. React 
 ```bash
 cd web && yarn dev               # Next.js website (Turbopack)
 cd web && yarn test              # vitest + playwright
-make dev                         # k2 daemon + Vite HMR + Tauri window
+make dev-standalone               # Standalone browser dev (macOS, no Tauri)
+make dev-macos                   # Tauri desktop dev (macOS)
+make dev-windows                 # Tauri desktop dev (Windows)
 make build-macos                 # Signed macOS PKG (universal binary)
 make build-windows               # Signed Windows NSIS installer
 make build-windows-test          # Remote unsigned build on Windows VM (with MCP bridge)
