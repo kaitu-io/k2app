@@ -3,6 +3,7 @@ package arc
 
 import (
 	"log/slog"
+	"math"
 	"sync"
 	"time"
 
@@ -51,20 +52,20 @@ const (
 	// ============================================================================
 
 	// Probing epsilon: exploration step size
-	// Old: 0.05 (5%, conservative), New: 0.15 (15%, aggressive)
-	DefaultK2ARCEpsilon = 0.15
+	// History: 0.05 (initial) → 0.15 (aggressive for double CC) → 0.10 (browser QUIC blocked)
+	DefaultK2ARCEpsilon = 0.10
 
 	// Beta: latency penalty coefficient
 	// Low: throughput-prioritized for tunnel use
 	DefaultK2ARCBeta = 0.1
 
 	// EWMA smoothing factor for rate updates
-	// Old: 0.7 (70% new value), New: 0.9 (90% new value, faster response)
-	arcRateEWMAAlpha = 0.9
+	// History: 0.7 (initial) → 0.9 (faster response for double CC) → 0.8 (browser QUIC blocked)
+	arcRateEWMAAlpha = 0.8
 
 	// Slow start growth factor
-	// Old: 2.0 (double each MI), New: 2.5 (2.5x each MI, faster ramp-up)
-	arcSlowStartFactor = 2.5
+	// History: 2.0 (initial) → 2.5 (faster ramp for double CC) → 2.0 (browser QUIC blocked)
+	arcSlowStartFactor = 2.0
 
 	// ============================================================================
 	// Recovery Mechanisms
@@ -128,6 +129,45 @@ const (
 
 	// LossHistorySize is the number of loss rate samples to keep
 	LossHistorySize = 4
+
+	// ============================================================================
+	// AIMD-ε: Adaptive Exploration Step Size
+	// ============================================================================
+	//
+	// Adapts epsilon (rate probing step size) based on utility gradient signal
+	// quality. Derived from SGD optimal step theory: ε* ∝ |R-R*|^(1/3).
+	// AIMD naturally approximates this schedule with zero new user parameters.
+	//
+	// Rules:
+	//   ① Direction confirmed (counter ≥ 2):   ε += δ          [additive increase]
+	//   ② Weak signal reversal:                ε *= decay       [multiplicative decrease]
+	//   ③ Strong signal reversal:              ε = ε_default    [fast recovery]
+	//   ④ Building (counter = 1):              no change        [hold]
+
+	// epsilonMin is the lower bound for ε (convergence precision).
+	// = DefaultK2ARCEpsilon / 5
+	epsilonMin = 0.02
+
+	// epsilonMax is the upper bound for ε (exploration ceiling).
+	// = DefaultK2ARCEpsilon × 2
+	epsilonMax = 0.20
+
+	// epsilonDelta is the additive increase step for ε when direction is confirmed.
+	epsilonDelta = 0.02
+
+	// epsilonDecay is the multiplicative decrease factor on weak signal reversal.
+	epsilonDecay = 0.5
+
+	// epsilonZThreshold is the z-score for strong signal detection (95% confidence).
+	epsilonZThreshold = 1.645
+
+	// noiseEWMAAlpha is the smoothing factor for noise baseline updates.
+	// Slow-moving (10% new) to provide stable noise floor estimate.
+	noiseEWMAAlpha = 0.1
+
+	// coldStartNoise is the initial noiseEWMA value.
+	// Conservative (high) → early reversals classified as weak → starts with small ε.
+	coldStartNoise = DefaultK2ARCEpsilon * 10.0 // = 1.0
 )
 
 // K2ARCMode represents the K2ARC operating mode
@@ -318,6 +358,32 @@ func (mi *MonitorInterval) AvgRTT() time.Duration {
 	return sum / time.Duration(len(mi.RTTSamples))
 }
 
+// RTTCV returns the coefficient of variation (stddev/mean) of RTT samples.
+// Used as a UDP-native noise estimator for AIMD-ε signal classification.
+// Returns 0 if fewer than 2 samples (insufficient data for variance).
+// Single-pass: computes mean and variance together to avoid double iteration.
+func (mi *MonitorInterval) RTTCV() float64 {
+	n := len(mi.RTTSamples)
+	if n < 2 {
+		return 0
+	}
+	// Single pass: sum for mean, then variance
+	var sum int64
+	for _, rtt := range mi.RTTSamples {
+		sum += int64(rtt)
+	}
+	mean := float64(sum) / float64(n)
+	if mean == 0 {
+		return 0
+	}
+	var sumSq float64
+	for _, rtt := range mi.RTTSamples {
+		d := float64(rtt) - mean
+		sumSq += d * d
+	}
+	return math.Sqrt(sumSq/float64(n)) / mean
+}
+
 // ============================================================================
 // Utility Function
 // ============================================================================
@@ -453,7 +519,8 @@ type K2ARCState struct {
 	Mode             K2ARCMode
 	CurrentMI        *MonitorInterval
 	NextMIID         uint64
-	LastUtility      *float64
+	lastUtility      float64
+	hasLastUtility   bool
 	UtilityIncreases uint32
 	UtilityDecreases uint32
 }
@@ -467,12 +534,26 @@ func (s *K2ARCState) ensureCurrentMI(rate float64) *MonitorInterval {
 	return s.CurrentMI
 }
 
-// startNewMI starts a new Monitor Interval
+// startNewMI starts a new Monitor Interval, reusing the previous MI's
+// RTTSamples backing array to avoid a 160-byte allocation per MI rotation.
 func (s *K2ARCState) startNewMI(rate float64) *MonitorInterval {
+	var rttBuf []time.Duration
 	if s.CurrentMI != nil {
 		s.CurrentMI.Complete()
+		// Reuse RTTSamples backing array (processCompletedMI has finished reading it)
+		if cap(s.CurrentMI.RTTSamples) > 0 {
+			rttBuf = s.CurrentMI.RTTSamples[:0]
+		}
 	}
-	s.CurrentMI = NewMonitorInterval(s.NextMIID, rate)
+	if rttBuf == nil {
+		rttBuf = make([]time.Duration, 0, 20)
+	}
+	s.CurrentMI = &MonitorInterval{
+		ID:         s.NextMIID,
+		TargetRate: rate,
+		StartTime:  time.Now(),
+		RTTSamples: rttBuf,
+	}
 	s.NextMIID++
 	return s.CurrentMI
 }
@@ -501,6 +582,10 @@ type K2ARCSender struct {
 	// returns these values instead of the in-progress MI's unreliable stats.
 	lastCompletedLoss       float64
 	lastCompletedThroughput float64
+
+	// AIMD-ε: noise baseline for strong/weak signal classification.
+	// EWMA of RTT CV during inconsistent (building) periods.
+	noiseEWMA float64
 
 	mu sync.RWMutex
 }
@@ -550,6 +635,7 @@ func NewK2ARCSenderWithConfig(maxRate int64, config *K2ARCConfig) *K2ARCSender {
 		lastSendTime:   0,
 		pacingBudget:   0,
 		lastUpdateTime: 0,
+		noiseEWMA:      coldStartNoise,
 	}
 }
 
@@ -640,7 +726,7 @@ func (p *K2ARCSender) processCompletedMI(mi *MonitorInterval) {
 	switch p.state.Mode {
 	case K2ARCModeSlowStart:
 		// Check if we should exit slow start
-		if p.state.LastUtility != nil && utility < *p.state.LastUtility*0.95 {
+		if p.state.hasLastUtility && utility < p.state.lastUtility*0.95 {
 			// Utility dropped, exit slow start
 			p.state.Mode = K2ARCModeDecision
 			p.state.UtilityIncreases = 0
@@ -652,9 +738,13 @@ func (p *K2ARCSender) processCompletedMI(mi *MonitorInterval) {
 		}
 
 	case K2ARCModeDecision, K2ARCModeRateAdjusting:
-		if p.state.LastUtility != nil {
-			gradient := utility - *p.state.LastUtility
+		if p.state.hasLastUtility {
+			gradient := utility - p.state.lastUtility
 
+			// Capture previous state for AIMD-ε reversal detection
+			prevConfirmed := p.state.UtilityIncreases >= 2 || p.state.UtilityDecreases >= 2
+
+			// Update direction counters
 			if gradient > 0 {
 				p.state.UtilityIncreases++
 				p.state.UtilityDecreases = 0
@@ -663,7 +753,47 @@ func (p *K2ARCSender) processCompletedMI(mi *MonitorInterval) {
 				p.state.UtilityIncreases = 0
 			}
 
-			// Apply gradient ascent
+			// AIMD-ε: adapt exploration step size
+			nowConfirmed := p.state.UtilityIncreases >= 2 || p.state.UtilityDecreases >= 2
+
+			// Update noise baseline during inconsistent (building) periods
+			if !nowConfirmed {
+				if rttCV := mi.RTTCV(); rttCV > 0 {
+					p.noiseEWMA = p.noiseEWMA*(1-noiseEWMAAlpha) + rttCV*noiseEWMAAlpha
+				}
+			}
+
+			if nowConfirmed {
+				// ① Direction confirmed (counter ≥ 2): additive increase
+				p.state.Epsilon += epsilonDelta
+			} else if prevConfirmed {
+				// Direction just reversed — classify signal strength
+				absGrad := math.Abs(gradient)
+				utilityScale := p.state.CurrentRate / 1_000_000.0 // Mbps (same as utility)
+				if utilityScale < 1.0 {
+					utilityScale = 1.0
+				}
+				threshold := epsilonZThreshold * p.noiseEWMA * utilityScale
+
+				if absGrad > threshold {
+					// ③ Strong signal: genuine regime change → fast recovery
+					p.state.Epsilon = DefaultK2ARCEpsilon
+				} else {
+					// ② Weak signal: noise-induced reversal → multiplicative decrease
+					p.state.Epsilon *= epsilonDecay
+				}
+			}
+			// ④ Building (counter = 1, not reversal): no change (hold)
+
+			// Clamp epsilon
+			if p.state.Epsilon < epsilonMin {
+				p.state.Epsilon = epsilonMin
+			}
+			if p.state.Epsilon > epsilonMax {
+				p.state.Epsilon = epsilonMax
+			}
+
+			// Apply gradient ascent (uses adapted epsilon)
 			var adjustment float64
 			if p.state.UtilityIncreases >= 2 {
 				// Keep increasing
@@ -685,7 +815,8 @@ func (p *K2ARCSender) processCompletedMI(mi *MonitorInterval) {
 		}
 	}
 
-	p.state.LastUtility = &utility
+	p.state.lastUtility = utility
+	p.state.hasLastUtility = true
 }
 
 // ============================================================================
@@ -911,6 +1042,7 @@ type ARCSnapshot struct {
 	Cwnd        int64         // Congestion window in bytes
 	Mode        K2ARCMode     // SlowStart/Decision/RateAdjusting
 	MIID        uint64        // Current Monitor Interval ID
+	Epsilon     float64       // Current epsilon (AIMD-ε adaptive step size)
 }
 
 // minSnapshotBytes is the minimum BytesSent in the current MI before its stats
@@ -926,6 +1058,7 @@ func (p *K2ARCSender) Snapshot() ARCSnapshot {
 	defer p.mu.RUnlock()
 	s := ARCSnapshot{
 		SendingRate: p.state.CurrentRate,
+		Epsilon:     p.state.Epsilon,
 		RTT:         p.rtt,
 		MinRTT:      p.utility.MinRTT,
 		Cwnd:        int64(p.cwnd),

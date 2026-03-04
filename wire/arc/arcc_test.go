@@ -679,3 +679,197 @@ func TestK2ARCSenderAdaptiveIntegration(t *testing.T) {
 		t.Error("Congestion window should be positive")
 	}
 }
+
+// ============================================================================
+// Tests for AIMD-ε (Adaptive Epsilon)
+// ============================================================================
+
+func TestMonitorInterval_RTTCV(t *testing.T) {
+	mi := NewMonitorInterval(1, 10_000_000.0)
+
+	// No samples → 0
+	if mi.RTTCV() != 0 {
+		t.Error("RTTCV should be 0 with no samples")
+	}
+
+	// Single sample → 0 (need ≥2 for variance)
+	mi.RTTSamples = append(mi.RTTSamples, 50*time.Millisecond)
+	if mi.RTTCV() != 0 {
+		t.Error("RTTCV should be 0 with single sample")
+	}
+
+	// Identical samples → CV = 0
+	mi.RTTSamples = append(mi.RTTSamples, 50*time.Millisecond)
+	if mi.RTTCV() != 0 {
+		t.Errorf("RTTCV should be 0 for identical samples, got %f", mi.RTTCV())
+	}
+
+	// Varied samples: 40ms, 50ms, 60ms → mean=50ms, stddev≈8.16ms, CV≈0.163
+	mi.RTTSamples = []time.Duration{40 * time.Millisecond, 50 * time.Millisecond, 60 * time.Millisecond}
+	cv := mi.RTTCV()
+	if cv < 0.1 || cv > 0.25 {
+		t.Errorf("RTTCV for [40,50,60]ms should be ~0.163, got %f", cv)
+	}
+}
+
+func TestAIMDEpsilon_AdditiveIncrease(t *testing.T) {
+	// When direction is confirmed (counter ≥ 2), ε should increase by epsilonDelta.
+	// Setup: put sender in Decision mode with counter=1 and a low LastUtility,
+	// then call processCompletedMI with an MI that produces higher utility → counter=2 → AI.
+	sender := NewK2ARCSender(100_000_000)
+	sender.state.Mode = K2ARCModeDecision
+	sender.state.Epsilon = DefaultK2ARCEpsilon
+	sender.state.NextMIID = 1 // Avoid rate probing (0%10==0)
+	sender.state.UtilityIncreases = 1
+	sender.state.UtilityDecreases = 0
+
+	// Set LastUtility very low so any computed utility produces positive gradient
+	lowUtility := -100.0
+	sender.state.hasLastUtility = true; sender.state.lastUtility =lowUtility
+
+	// MI with enough data to not be app-limited (BytesSent ≈ rate * duration / 8)
+	mi := NewMonitorInterval(1, sender.state.CurrentRate)
+	mi.BytesSent = 5_000_000 // 5 MB
+	mi.BytesAcked = 5_000_000
+	mi.PacketsAcked = MinMIPackets
+	mi.RTTSamples = append(mi.RTTSamples, 50*time.Millisecond)
+	mi.StartTime = time.Now().Add(-time.Second)
+	mi.Complete()
+
+	sender.processCompletedMI(mi)
+
+	// UtilityIncreases should now be 2 → additive increase triggered
+	expected := DefaultK2ARCEpsilon + epsilonDelta
+	if sender.state.Epsilon < expected-0.001 || sender.state.Epsilon > expected+0.001 {
+		t.Errorf("ε should be %f after additive increase, got %f", expected, sender.state.Epsilon)
+	}
+}
+
+func TestAIMDEpsilon_Bounds(t *testing.T) {
+	sender := NewK2ARCSender(100_000_000)
+	sender.state.Mode = K2ARCModeDecision
+	sender.state.NextMIID = 1 // Avoid rate probing
+
+	mi := NewMonitorInterval(1, sender.state.CurrentRate)
+	mi.BytesSent = 5_000_000
+	mi.BytesAcked = 5_000_000
+	mi.PacketsAcked = MinMIPackets
+	mi.RTTSamples = append(mi.RTTSamples, 50*time.Millisecond)
+	mi.StartTime = time.Now().Add(-time.Second)
+	mi.Complete()
+
+	// Test upper bound: ε above max + confirmed direction → clamp
+	sender.state.Epsilon = epsilonMax + 0.1
+	sender.state.UtilityIncreases = 1 // will reach 2 (confirmed) → AI
+	sender.state.UtilityDecreases = 0
+	lowU := -100.0
+	sender.state.hasLastUtility = true; sender.state.lastUtility =lowU
+	sender.processCompletedMI(mi)
+
+	if sender.state.Epsilon > epsilonMax {
+		t.Errorf("ε should be clamped to max %f, got %f", epsilonMax, sender.state.Epsilon)
+	}
+
+	// Test lower bound: ε below min, set up reversal with weak signal → MD → clamp
+	sender.state.Epsilon = epsilonMin * 0.5 // 0.01, below min
+	sender.state.UtilityIncreases = 3       // confirmed
+	sender.state.UtilityDecreases = 0
+	highU := 100.0
+	sender.state.hasLastUtility = true; sender.state.lastUtility =highU
+	// Process MI with utility < highU → gradient negative → reversal
+	// Cold-start noise is high → weak signal → MD → 0.01 * 0.5 = 0.005 → clamp to min
+	sender.processCompletedMI(mi)
+	if sender.state.Epsilon < epsilonMin {
+		t.Errorf("ε should be clamped to min %f, got %f", epsilonMin, sender.state.Epsilon)
+	}
+}
+
+func TestAIMDEpsilon_ColdStart(t *testing.T) {
+	sender := NewK2ARCSender(100_000_000)
+
+	// noiseEWMA should start at coldStartNoise (conservative)
+	if sender.noiseEWMA != coldStartNoise {
+		t.Errorf("Initial noiseEWMA should be %f, got %f", coldStartNoise, sender.noiseEWMA)
+	}
+}
+
+func TestAIMDEpsilon_NoiseUpdate(t *testing.T) {
+	sender := NewK2ARCSender(100_000_000)
+	sender.state.Mode = K2ARCModeDecision
+	sender.state.NextMIID = 1 // Avoid rate probing
+	initialNoise := sender.noiseEWMA
+
+	// Set low LastUtility so gradient is positive → counter goes 0→1 (building)
+	lowU := -100.0
+	sender.state.hasLastUtility = true; sender.state.lastUtility =lowU
+	sender.state.UtilityIncreases = 0
+	sender.state.UtilityDecreases = 0
+
+	mi := NewMonitorInterval(1, sender.state.CurrentRate)
+	mi.BytesSent = 5_000_000
+	mi.BytesAcked = 5_000_000
+	mi.PacketsAcked = MinMIPackets
+	// Add varied RTT samples to produce non-zero CV
+	mi.RTTSamples = []time.Duration{
+		40 * time.Millisecond, 50 * time.Millisecond,
+		60 * time.Millisecond, 45 * time.Millisecond,
+	}
+	mi.StartTime = time.Now().Add(-time.Second)
+	mi.Complete()
+
+	sender.processCompletedMI(mi)
+
+	// Counter goes 0→1 (building, nowConfirmed=false) → noise update runs
+	if sender.noiseEWMA == initialNoise {
+		t.Error("noiseEWMA should update during building phase")
+	}
+	// Should move DOWN from coldStartNoise toward real RTT CV (~0.16)
+	if sender.noiseEWMA >= initialNoise {
+		t.Errorf("noiseEWMA should decrease from cold start %f, got %f",
+			initialNoise, sender.noiseEWMA)
+	}
+}
+
+func TestAIMDEpsilon_HoldDuringBuilding(t *testing.T) {
+	sender := NewK2ARCSender(100_000_000)
+	sender.state.Mode = K2ARCModeDecision
+	sender.state.NextMIID = 1 // Avoid rate probing
+	sender.state.Epsilon = 0.08 // non-default value
+
+	// Set up: counter = 0, first gradient (not a reversal since prev wasn't confirmed)
+	lowU := -100.0
+	sender.state.hasLastUtility = true; sender.state.lastUtility =lowU
+	sender.state.UtilityIncreases = 0
+	sender.state.UtilityDecreases = 0
+
+	epsBefore := sender.state.Epsilon
+
+	mi := NewMonitorInterval(1, sender.state.CurrentRate)
+	mi.BytesSent = 5_000_000
+	mi.BytesAcked = 5_000_000
+	mi.PacketsAcked = MinMIPackets
+	mi.RTTSamples = append(mi.RTTSamples, 50*time.Millisecond)
+	mi.StartTime = time.Now().Add(-time.Second)
+	mi.Complete()
+
+	sender.processCompletedMI(mi)
+
+	// Counter goes from 0 → 1 (building, not reversal)
+	// ε should be unchanged (hold)
+	if sender.state.Epsilon != epsBefore {
+		t.Errorf("ε should hold during building phase, was %f now %f",
+			epsBefore, sender.state.Epsilon)
+	}
+}
+
+func TestAIMDEpsilon_Snapshot(t *testing.T) {
+	sender := NewK2ARCSender(100_000_000)
+	mockRTT := &mockRTTStatsProvider{smoothedRTT: 50 * time.Millisecond}
+	sender.SetRTTStatsProvider(mockRTT)
+
+	snap := sender.Snapshot()
+	if snap.Epsilon != sender.state.Epsilon {
+		t.Errorf("Snapshot Epsilon should match state, got %f vs %f",
+			snap.Epsilon, sender.state.Epsilon)
+	}
+}
