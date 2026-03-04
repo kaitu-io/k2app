@@ -58,17 +58,17 @@ export default function Footer() {
             <h4 className="font-semibold text-gray-900 dark:text-white mb-4">{t('nav.footer.support.title')}</h4>
             <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-300">
               <li>
-                <Link href="/guide/parents" className="hover:text-blue-600">
+                <Link href="/guides" className="hover:text-blue-600">
                   {t('nav.footer.support.userGuide')}
                 </Link>
               </li>
               <li>
-                <Link href="/guide/parents#faq" className="hover:text-blue-600">
+                <Link href="/guides" className="hover:text-blue-600">
                   {t('nav.footer.support.faq')}
                 </Link>
               </li>
               <li>
-                <Link href="/guide/parents#contact" className="hover:text-blue-600">
+                <Link href="/guides" className="hover:text-blue-600">
                   {t('nav.footer.support.contact')}
                 </Link>
               </li>

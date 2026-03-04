@@ -61,16 +61,18 @@ export function generateStaticParams(): { locale: string; slug: string[] }[] {
   for (const post of publishedPosts) {
     params.push({ locale: post.locale, slug: post.slug.split('/') });
 
-    // Collect directory paths
+    // Collect directory paths (locale-agnostic for fallback support)
     const parts = post.slug.split('/');
     for (let i = 1; i < parts.length; i++) {
-      directories.add(`${post.locale}/${parts.slice(0, i).join('/')}`);
+      directories.add(parts.slice(0, i).join('/'));
     }
   }
 
+  // Generate directory params for ALL locales so fallback pages are pre-rendered
   for (const dir of directories) {
-    const [locale, ...rest] = dir.split('/');
-    params.push({ locale, slug: rest });
+    for (const locale of routing.locales) {
+      params.push({ locale, slug: dir.split('/') });
+    }
   }
 
   return params;
@@ -158,6 +160,19 @@ export default async function ContentPage({
     const fallbackPost = findPost('zh-CN', slugPath);
     if (fallbackPost) {
       return <ArticleDetail post={fallbackPost} locale={locale} />;
+    }
+
+    // 3.5 Try zh-CN fallback for directory listing
+    const fallbackDirPosts = findPostsInDirectory('zh-CN', slugPath);
+    if (fallbackDirPosts.length > 0) {
+      const dirName = slug[slug.length - 1] ?? '';
+      return (
+        <DirectoryListing
+          posts={fallbackDirPosts}
+          locale={locale}
+          dirName={dirName}
+        />
+      );
     }
   }
 
