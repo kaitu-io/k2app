@@ -44,6 +44,7 @@ const mockK2Plugin = {
   disconnect: vi.fn(),
   addListener: vi.fn(),
   installNativeUpdate: vi.fn(),
+  setLogLevel: vi.fn().mockResolvedValue(undefined),
 };
 
 vi.mock('k2-plugin', () => ({
@@ -64,6 +65,7 @@ describe('capacitor-k2', () => {
     // Default mock implementations
     mockK2Plugin.checkReady.mockResolvedValue({ ready: true, version: '0.4.0' });
     mockK2Plugin.addListener.mockResolvedValue({ remove: vi.fn() });
+    mockK2Plugin.setLogLevel.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
