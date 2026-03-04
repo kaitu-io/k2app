@@ -112,23 +112,23 @@ function LoginPageContent() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-800">
+    <div className="min-h-screen flex flex-col bg-background">
       <Header />
-      
+
       <div className="flex-1 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-        <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-lg shadow-md dark:bg-gray-800">
+        <div className="w-full max-w-md p-8 space-y-6 bg-card rounded-lg shadow-md">
           <div className="text-center mb-6">
             <div className="flex justify-center mb-4">
-              <Image 
-                src="/kaitu-icon.png" 
-                alt="Kaitu Logo" 
+              <Image
+                src="/kaitu-icon.png"
+                alt="Kaitu Logo"
                 width={48}
                 height={48}
                 className="rounded-lg"
               />
             </div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{t('auth.login.title')}</h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-2">{t('auth.login.tagline')}</p>
+            <h1 className="text-3xl font-bold text-foreground">{t('auth.login.title')}</h1>
+            <p className="text-muted-foreground mt-2">{t('auth.login.tagline')}</p>
           </div>
         {step === 1 ? (
           <div className="space-y-6">
@@ -155,8 +155,8 @@ function LoginPageContent() {
           <form onSubmit={handleLogin} className="space-y-6">
             {/* 如果用户未激活，显示提示信息 */}
             {!isActivated && (
-              <div className="p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-                <p className="text-sm text-blue-700 dark:text-blue-300">
+              <div className="p-3 bg-blue-950/20 border border-blue-800 rounded-lg">
+                <p className="text-sm text-blue-300">
                   {t('auth.login.inviteCodePrompt')}
                 </p>
               </div>
@@ -169,7 +169,7 @@ function LoginPageContent() {
                 type="email"
                 value={email}
                 readOnly
-                className="cursor-not-allowed bg-gray-100 dark:bg-gray-700"
+                className="cursor-not-allowed bg-muted"
               />
             </div>
 
@@ -182,7 +182,7 @@ function LoginPageContent() {
                 required
                 placeholder={t('auth.login.codePlaceholder')}
               />
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 {t('auth.login.checkSpamFolder')}
               </p>
             </div>
@@ -198,7 +198,7 @@ function LoginPageContent() {
                   placeholder={t('auth.login.inviteCodePlaceholder')}
                   className="uppercase"
                 />
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   {t('auth.login.inviteCodeOptional')}
                 </p>
               </div>
@@ -222,15 +222,15 @@ function LoginPageContent() {
         )}
 
         {/* Registration prompt for new users */}
-        <div className="pt-6 mt-6 border-t border-gray-200 dark:border-gray-700">
+        <div className="pt-6 mt-6 border-t border-border">
           <div className="text-center">
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+            <p className="text-sm text-muted-foreground mb-3">
               {t('auth.login.noAccountYet')}
             </p>
             <Link href="/purchase">
               <Button
                 variant="outline"
-                className="w-full border-blue-500 text-blue-600 hover:bg-blue-50 dark:border-blue-400 dark:text-blue-400 dark:hover:bg-blue-950/20"
+                className="w-full border-blue-400 text-blue-400 hover:bg-blue-950/20"
               >
                 {t('auth.login.startService')}
               </Button>
@@ -239,7 +239,7 @@ function LoginPageContent() {
         </div>
         </div>
       </div>
-      
+
       <Footer />
     </div>
   );
@@ -248,10 +248,10 @@ function LoginPageContent() {
 export default function LoginPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-800 flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
           <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600 dark:text-gray-300">{"Loading..."}</p>
+          <p className="text-muted-foreground">{"Loading..."}</p>
         </div>
       </div>
     }>

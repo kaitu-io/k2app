@@ -35,7 +35,7 @@ export default async function InstallPage({
   const t = await getTranslations({ locale, namespace: 'install' });
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white dark:from-blue-900/20 dark:to-gray-800">
+    <div className="min-h-screen bg-background">
       <Header />
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -43,11 +43,11 @@ export default async function InstallPage({
         <InstallClient />
 
         {/* Help Section — static server-rendered content */}
-        <Card className="p-6 mt-8 bg-gray-50 dark:bg-gray-800">
-          <h4 className="font-semibold text-gray-900 dark:text-white mb-3">
+        <Card className="p-6 mt-8 bg-muted">
+          <h4 className="font-semibold text-foreground mb-3">
             {t('install.needHelp')}
           </h4>
-          <ul className="text-sm text-gray-600 dark:text-gray-300 space-y-2">
+          <ul className="text-sm text-muted-foreground space-y-2">
             <li>{t('install.helpBrowserBlock')}</li>
             <li>{t('install.helpWindowsInstall')}</li>
             <li>{t('install.helpMacosInstall')}</li>

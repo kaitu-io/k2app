@@ -42,7 +42,7 @@ import { MoreActionsMenu } from "./components/MoreActionsMenu";
 
 // 分销商等级颜色映射
 const levelColors: Record<number, string> = {
-  1: '#9E9E9E',  // L1 灰色
+  1: 'var(--muted-foreground)',  // L1 灰色
   2: '#2196F3',  // L2 蓝色
   3: '#9C27B0',  // L3 紫色
   4: '#FF9800',  // L4 金色
@@ -416,7 +416,7 @@ function UserDetailContent() {
       <div className="container mx-auto p-8">
         <div className="text-center">
           <h1 className="text-2xl font-bold text-red-600 mb-4">{"错误"}</h1>
-          <p className="text-gray-600">{error}</p>
+          <p className="text-muted-foreground">{error}</p>
         </div>
       </div>
     );
@@ -428,7 +428,7 @@ function UserDetailContent() {
       <div className="container mx-auto p-8">
         <div className="text-center">
           <h1 className="text-2xl font-bold mb-4">{"用户不存在"}</h1>
-          <p className="text-gray-600">{"未找到该用户的详细信息"}</p>
+          <p className="text-muted-foreground">{"未找到该用户的详细信息"}</p>
         </div>
       </div>
     );
@@ -595,7 +595,7 @@ function UserDetailContent() {
 
                     {/* 升级进度条 */}
                     <div className="mt-3">
-                      <div className="w-full bg-gray-200 rounded-full h-2.5">
+                      <div className="w-full bg-muted rounded-full h-2.5">
                         <div
                           className="h-2.5 rounded-full transition-all duration-300"
                           style={{
@@ -615,7 +615,7 @@ function UserDetailContent() {
                 {userDetail.retailerConfig.contentProof && (
                   <div className="border-t pt-4">
                     <p className="text-sm text-muted-foreground mb-2">{"内容证明"}</p>
-                    <p className="text-sm bg-gray-50 p-2 rounded">{userDetail.retailerConfig.contentProof}</p>
+                    <p className="text-sm bg-muted p-2 rounded">{userDetail.retailerConfig.contentProof}</p>
                     {userDetail.retailerConfig.contentVerifiedAt && (
                       <p className="text-xs text-green-600 mt-1">
                         {"✓ 已审核于 "}{safeFormatDate(userDetail.retailerConfig.contentVerifiedAt)}
@@ -712,7 +712,7 @@ function UserDetailContent() {
                                   {contact.value}
                                 </a>
                               ) : (
-                                <span className="text-gray-600">{contact.value}</span>
+                                <span className="text-muted-foreground">{contact.value}</span>
                               )}
                               {contact.type === 'wechat' && url && (
                                 <span className="text-xs text-muted-foreground">{"(点击查看二维码)"}</span>
@@ -728,7 +728,7 @@ function UserDetailContent() {
                 </div>
               </div>
             ) : (
-              <p className="text-gray-500">{"该用户尚未配置分销商信息"}</p>
+              <p className="text-muted-foreground">{"该用户尚未配置分销商信息"}</p>
             )}
           </CardContent>
         </Card>
@@ -872,7 +872,7 @@ function UserDetailContent() {
               </TableBody>
             </Table>
           ) : (
-            <p className="text-gray-500 text-center py-4">{"暂无设备记录"}</p>
+            <p className="text-muted-foreground text-center py-4">{"暂无设备记录"}</p>
           )}
         </CardContent>
       </Card>
@@ -919,7 +919,7 @@ function UserDetailContent() {
               </TableBody>
             </Table>
           ) : (
-            <p className="text-gray-500 text-center py-4">{"暂无订单记录"}</p>
+            <p className="text-muted-foreground text-center py-4">{"暂无订单记录"}</p>
           )}
         </CardContent>
       </Card>
@@ -958,7 +958,7 @@ function UserDetailContent() {
               </TableBody>
             </Table>
           ) : (
-            <p className="text-gray-500 text-center py-4">
+            <p className="text-muted-foreground text-center py-4">
               {"暂无Pro会员历史记录"}
             </p>
           )}
@@ -1001,7 +1001,7 @@ function UserDetailContent() {
               </TableBody>
             </Table>
           ) : (
-            <p className="text-gray-500 text-center py-4">{"暂无邀请记录"}</p>
+            <p className="text-muted-foreground text-center py-4">{"暂无邀请记录"}</p>
           )}
         </CardContent>
       </Card>
@@ -1077,7 +1077,7 @@ function UserDetailContent() {
                     {"复制"}
                   </Button>
                 </div>
-                <div className="p-2 bg-white dark:bg-gray-900 rounded font-mono text-sm break-all">
+                <div className="p-2 bg-card rounded font-mono text-sm break-all">
                   {tokenDialog.udid || '-'}
                 </div>
               </div>
@@ -1093,7 +1093,7 @@ function UserDetailContent() {
                     {"复制"}
                   </Button>
                 </div>
-                <div className="p-2 bg-white dark:bg-gray-900 rounded font-mono text-sm break-all">
+                <div className="p-2 bg-card rounded font-mono text-sm break-all">
                   {tokenDialog.tokenResponse?.password || '-'}
                 </div>
               </div>

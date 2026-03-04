@@ -100,8 +100,8 @@ const FlagIcon: React.FC<FlagIconProps> = ({ locale, className = "w-4 h-4" }) =>
         );
       default:
         return (
-          <div className={`${className} bg-gray-300 rounded-sm flex items-center justify-center`}>
-            <span className="text-xs text-gray-600">{"?"}</span>
+          <div className={`${className} bg-muted rounded-sm flex items-center justify-center`}>
+            <span className="text-xs text-muted-foreground">{"?"}</span>
           </div>
         );
     }

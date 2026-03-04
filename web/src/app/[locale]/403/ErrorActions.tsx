@@ -21,7 +21,7 @@ export default function ErrorActions() {
         variant="outline"
         size="lg"
         onClick={() => router.back()}
-        className="w-full sm:w-auto min-w-[140px] h-12 text-base font-medium border-gray-300 hover:bg-gray-50 hover:border-gray-400 transition-colors"
+        className="w-full sm:w-auto min-w-[140px] h-12 text-base font-medium"
       >
         <ArrowLeft className="w-5 h-5 mr-2" />
         {t('purchase.error403.actions.goBack')}
@@ -29,7 +29,7 @@ export default function ErrorActions() {
       <Button
         size="lg"
         onClick={() => router.push('/')}
-        className="w-full sm:w-auto min-w-[140px] h-12 text-base font-medium bg-gray-900 hover:bg-gray-800 text-white transition-colors"
+        className="w-full sm:w-auto min-w-[140px] h-12 text-base font-medium"
       >
         <Home className="w-5 h-5 mr-2" />
         {t('purchase.error403.actions.goToDashboard')}

@@ -29,10 +29,10 @@ function EmbedAwareLayoutContent({
   const { isEmbedded, showNavigation, showFooter, compactLayout } = useEmbedMode();
 
   return (
-    <div className={`min-h-screen bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-800 ${isEmbedded ? 'embedded-mode' : ''} ${className}`}>
+    <div className={`min-h-screen bg-background ${isEmbedded ? 'embedded-mode' : ''} ${className}`}>
       {/* Navigation - Hidden in embedded mode */}
       {showNavigation && (
-        <nav className="border-b bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm sticky top-0 z-50">
+        <nav className="border-b bg-card/95 backdrop-blur-sm sticky top-0 z-50">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between items-center h-16">
               <div className="flex items-center space-x-2">
@@ -43,13 +43,13 @@ function EmbedAwareLayoutContent({
                   height={32}
                   className="rounded-md"
                 />
-                <NextLink href="/" className="text-xl font-bold text-gray-900 dark:text-white hover:text-blue-600 transition-colors">
+                <NextLink href="/" className="text-xl font-bold text-foreground hover:text-primary transition-colors">
                   {"Kaitu.io"}
                 </NextLink>
               </div>
               <div className="flex items-center space-x-4">
                 {pageBadge && (
-                  <Badge variant="outline" className="text-blue-600 border-blue-600">
+                  <Badge variant="outline" className="text-secondary border-secondary">
                     {pageBadge}
                   </Badge>
                 )}
@@ -64,7 +64,7 @@ function EmbedAwareLayoutContent({
         !compactLayout ? (
           <section className="py-16 px-4 sm:px-6 lg:px-8">
             <div className="max-w-7xl mx-auto text-center">
-              <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 dark:text-white mb-4">
+              <h1 className="text-4xl sm:text-5xl font-bold text-foreground mb-4">
                 {pageTitle}
               </h1>
             </div>
@@ -72,7 +72,7 @@ function EmbedAwareLayoutContent({
         ) : (
           <section className="py-4 px-4 sm:px-6 lg:px-8">
             <div className="max-w-7xl mx-auto text-center">
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+              <h1 className="text-2xl font-bold text-foreground mb-2">
                 {pageTitle}
               </h1>
             </div>
@@ -98,10 +98,10 @@ function EmbedAwareLayoutContent({
 export function EmbedAwareLayout(props: EmbedAwareLayoutProps) {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-800 flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600 dark:text-gray-300">{"Loading..."}</p>
+          <div className="w-8 h-8 border-4 border-secondary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-muted-foreground">{"Loading..."}</p>
         </div>
       </div>
     }>

@@ -267,10 +267,10 @@ export default function EmailSendLogsPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">{"已跳过"}</CardTitle>
-              <SkipForward className="h-4 w-4 text-gray-500" />
+              <SkipForward className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-gray-600">{stats.skippedCount.toLocaleString()}</div>
+              <div className="text-2xl font-bold text-muted-foreground">{stats.skippedCount.toLocaleString()}</div>
             </CardContent>
           </Card>
         </div>

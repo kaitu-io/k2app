@@ -63,9 +63,9 @@ export default function CountdownTimer({ targetDateISO }: CountdownTimerProps) {
     return (
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 animate-pulse">
         {['days', 'hours', 'minutes', 'seconds'].map(unit => (
-          <div key={unit} className="text-center p-6 bg-gray-100 dark:bg-gray-700 rounded-lg">
-            <div className="h-12 bg-gray-200 dark:bg-gray-600 rounded mb-2" />
-            <div className="h-4 bg-gray-200 dark:bg-gray-600 rounded w-1/2 mx-auto" />
+          <div key={unit} className="text-center p-6 bg-muted rounded-lg">
+            <div className="h-12 bg-muted rounded mb-2" />
+            <div className="h-4 bg-muted rounded w-1/2 mx-auto" />
           </div>
         ))}
       </div>
@@ -82,10 +82,10 @@ export default function CountdownTimer({ targetDateISO }: CountdownTimerProps) {
     return (
       <div className="text-center py-12">
         <Heart className="w-20 h-20 text-red-500 mx-auto mb-6 animate-pulse" />
-        <h2 className="text-4xl font-bold text-gray-900 dark:text-white mb-4">
+        <h2 className="text-4xl font-bold text-foreground mb-4">
           {t('theme.opensource.released')}
         </h2>
-        <p className="text-xl text-gray-600 dark:text-gray-300 mb-8">
+        <p className="text-xl text-muted-foreground mb-8">
           {t('theme.opensource.releasedDesc')}
         </p>
         <Button size="lg" className="bg-green-600 hover:bg-green-700">
@@ -103,7 +103,7 @@ export default function CountdownTimer({ targetDateISO }: CountdownTimerProps) {
           <div className="text-5xl font-bold text-blue-600 dark:text-blue-400 mb-2">
             {timeRemaining.days}
           </div>
-          <div className="text-sm text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+          <div className="text-sm text-muted-foreground uppercase tracking-wide">
             {t('theme.opensource.days')}
           </div>
         </div>
@@ -112,7 +112,7 @@ export default function CountdownTimer({ targetDateISO }: CountdownTimerProps) {
           <div className="text-5xl font-bold text-purple-600 dark:text-purple-400 mb-2">
             {timeRemaining.hours}
           </div>
-          <div className="text-sm text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+          <div className="text-sm text-muted-foreground uppercase tracking-wide">
             {t('theme.opensource.hours')}
           </div>
         </div>
@@ -121,7 +121,7 @@ export default function CountdownTimer({ targetDateISO }: CountdownTimerProps) {
           <div className="text-5xl font-bold text-pink-600 dark:text-pink-400 mb-2">
             {timeRemaining.minutes}
           </div>
-          <div className="text-sm text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+          <div className="text-sm text-muted-foreground uppercase tracking-wide">
             {t('theme.opensource.minutes')}
           </div>
         </div>
@@ -130,14 +130,14 @@ export default function CountdownTimer({ targetDateISO }: CountdownTimerProps) {
           <div className="text-5xl font-bold text-orange-600 dark:text-orange-400 mb-2">
             {timeRemaining.seconds}
           </div>
-          <div className="text-sm text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+          <div className="text-sm text-muted-foreground uppercase tracking-wide">
             {t('theme.opensource.seconds')}
           </div>
         </div>
       </div>
 
       <div className="text-center">
-        <div className="inline-flex items-center text-gray-600 dark:text-gray-400">
+        <div className="inline-flex items-center text-muted-foreground">
           <Clock className="w-5 h-5 mr-2" />
           <span className="text-lg font-medium">
             {t('theme.opensource.countingDown')}

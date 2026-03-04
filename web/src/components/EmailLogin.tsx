@@ -162,8 +162,8 @@ export default function EmailLogin({ onLoginSuccess, mode = 'login' }: EmailLogi
         <form onSubmit={handleLogin} className="space-y-4 sm:space-y-4">
           {/* 如果用户未激活，显示提示信息 */}
           {!isActivated && (
-            <div className="p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-              <p className="text-sm text-blue-700 dark:text-blue-300">
+            <div className="p-3 bg-muted border border-border rounded-lg">
+              <p className="text-sm text-secondary">
                 {t('auth.login.inviteCodePrompt')}
               </p>
             </div>
@@ -171,10 +171,10 @@ export default function EmailLogin({ onLoginSuccess, mode = 'login' }: EmailLogi
 
           {/* 如果用户已激活但有邀请码 cookie，显示无法获得奖励的提示 */}
           {isActivated && hasInviteCodeCookie && appConfig?.inviteReward?.purchaseRewardDays && (
-            <div className="p-3 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-lg">
+            <div className="p-3 bg-muted border border-border rounded-lg">
               <div className="flex items-start gap-2">
-                <AlertCircleIcon className="w-4 h-4 text-gray-500 dark:text-gray-400 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-gray-600 dark:text-gray-400">
+                <AlertCircleIcon className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-muted-foreground">
                   {t('auth.login.existingUserNoReward')}
                 </p>
               </div>
@@ -192,7 +192,7 @@ export default function EmailLogin({ onLoginSuccess, mode = 'login' }: EmailLogi
                 type="email"
                 value={email}
                 readOnly
-                className="cursor-not-allowed bg-gray-100 dark:bg-gray-800 text-lg sm:text-base py-3 sm:py-2 px-4 sm:px-3"
+                className="cursor-not-allowed bg-muted text-lg sm:text-base py-3 sm:py-2 px-4 sm:px-3"
               />
               <Check className="w-5 h-5 text-green-500" />
             </div>
@@ -227,7 +227,7 @@ export default function EmailLogin({ onLoginSuccess, mode = 'login' }: EmailLogi
                 placeholder={t('auth.login.inviteCodePlaceholder')}
                 className="mt-1 uppercase"
               />
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 {t('auth.login.inviteCodeOptional')}
               </p>
             </div>

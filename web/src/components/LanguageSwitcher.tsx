@@ -74,7 +74,7 @@ export default function LanguageSwitcher() {
             key={loc}
             onClick={() => switchLocale(loc)}
             className={`cursor-pointer ${
-              loc === locale ? 'bg-accent' : ''
+              loc === locale ? 'bg-accent text-accent-foreground' : ''
             }`}
           >
             <div className="flex items-center">

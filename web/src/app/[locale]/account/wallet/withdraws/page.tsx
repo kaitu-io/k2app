@@ -206,7 +206,7 @@ export default function WalletWithdrawsPage() {
         );
       case "cancelled":
         return (
-          <Badge variant="outline" className="border-gray-500 text-gray-600">
+          <Badge variant="outline" className="border-border text-muted-foreground">
             <XCircle className="h-3 w-3 mr-1" />
             {t("wallet.wallet.statusCancelled")}
           </Badge>

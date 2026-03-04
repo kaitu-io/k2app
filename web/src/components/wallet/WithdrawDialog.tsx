@@ -196,11 +196,11 @@ export function WithdrawDialog({
 
         <div className="space-y-4 py-4">
           {/* Available Balance */}
-          <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded-lg">
-            <div className="text-sm text-gray-600 dark:text-gray-400">
+          <div className="bg-muted p-3 rounded-lg">
+            <div className="text-sm text-muted-foreground">
               {t("wallet.wallet.availableBalance")}
             </div>
-            <div className="text-xl font-bold text-gray-900 dark:text-gray-100">
+            <div className="text-xl font-bold text-foreground">
               {formatAmount(availableBalance)}
             </div>
           </div>
@@ -226,12 +226,12 @@ export function WithdrawDialog({
                             {account.label || formatAccountId(account.accountId, account.accountType)}
                           </span>
                           {account.isDefault && (
-                            <span className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 px-1.5 py-0.5 rounded">
+                            <span className="text-xs bg-secondary/15 text-secondary px-1.5 py-0.5 rounded">
                               {t("wallet.wallet.defaultAccount")}
                             </span>
                           )}
                         </div>
-                        <div className="text-xs text-gray-500">
+                        <div className="text-xs text-muted-foreground">
                           {getChannelDisplayName(account.accountType, account.currency)} {"•"} {formatAccountId(account.accountId, account.accountType)}
                         </div>
                       </div>
@@ -241,7 +241,7 @@ export function WithdrawDialog({
               </Select>
             ) : (
               <div className="text-center py-4">
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                <p className="text-sm text-muted-foreground mb-3">
                   {t("wallet.wallet.noWithdrawAccounts")}
                 </p>
                 <Button
@@ -265,7 +265,7 @@ export function WithdrawDialog({
               <div className="space-y-2">
                 <Label htmlFor="amount">{t("wallet.wallet.withdrawAmount")}</Label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">{"$"}</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">{"$"}</span>
                   <Input
                     id="amount"
                     type="text"
@@ -279,7 +279,7 @@ export function WithdrawDialog({
                 {validationError && (
                   <p className="text-sm text-red-500">{validationError}</p>
                 )}
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-muted-foreground">
                   {t("wallet.wallet.withdrawMinAmount", { amount: "$10.00" })}
                 </p>
               </div>
@@ -298,9 +298,9 @@ export function WithdrawDialog({
               </div>
 
               {/* Fee Notice */}
-              <div className="flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-                <AlertCircle className="h-4 w-4 mt-0.5 text-blue-600 dark:text-blue-400" />
-                <p className="text-sm text-blue-900 dark:text-blue-100">
+              <div className="flex items-start gap-2 p-3 bg-muted border border-border rounded-lg">
+                <AlertCircle className="h-4 w-4 mt-0.5 text-secondary" />
+                <p className="text-sm text-foreground">
                   {t("wallet.wallet.withdrawFeeNotice")}
                 </p>
               </div>

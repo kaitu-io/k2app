@@ -247,7 +247,7 @@ export default function InstallClient() {
             variant="outline"
             size="sm"
             onClick={() => openDownloadInNewTab(DOWNLOAD_LINKS.windows)}
-            className={device?.type === 'windows' ? 'border-purple-500 bg-purple-50' : ''}
+            className={device?.type === 'windows' ? 'border-secondary bg-secondary/10' : ''}
           >
             <Download className="w-4 h-4 mr-2" />
             {t('install.install.downloadExe')}
@@ -265,7 +265,7 @@ export default function InstallClient() {
             variant="outline"
             size="sm"
             onClick={() => openDownloadInNewTab(DOWNLOAD_LINKS.macos)}
-            className={device?.type === 'macos' ? 'border-gray-500 bg-gray-50' : ''}
+            className={device?.type === 'macos' ? 'border-border bg-muted' : ''}
           >
             <Download className="w-4 h-4 mr-2" />
             {t('install.install.downloadDmg')}

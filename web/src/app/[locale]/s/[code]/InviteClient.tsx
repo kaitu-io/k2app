@@ -96,7 +96,7 @@ export default function InviteClient({ code }: InviteClientProps) {
     return (
       <div className="py-20 text-center">
         <Loader2 className="w-12 h-12 animate-spin mx-auto text-indigo-600" />
-        <p className="mt-4 text-gray-500">{t('invite.inviteLanding.loading')}</p>
+        <p className="mt-4 text-muted-foreground">{t('invite.inviteLanding.loading')}</p>
       </div>
     );
   }
@@ -114,7 +114,7 @@ export default function InviteClient({ code }: InviteClientProps) {
           </p>
           <Button
             onClick={() => window.location.href = '/'}
-            className="bg-gray-900 text-white hover:bg-gray-800"
+            className="bg-foreground text-background hover:bg-foreground/90"
           >
             {t('invite.inviteLanding.backToHome')}
           </Button>
@@ -136,11 +136,11 @@ export default function InviteClient({ code }: InviteClientProps) {
           <Gift className="w-10 h-10 text-pink-600" />
         </div>
 
-        <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-4">
+        <h1 className="text-4xl sm:text-5xl font-bold text-foreground mb-4">
           {t('invite.inviteLanding.welcomeTo')} <span className="text-indigo-600">{"开途"}</span>
         </h1>
 
-        <p className="text-xl text-gray-600 mb-2">
+        <p className="text-xl text-muted-foreground mb-2">
           {t('invite.inviteLanding.tagline')}
         </p>
 
@@ -155,10 +155,10 @@ export default function InviteClient({ code }: InviteClientProps) {
           <div className="inline-flex items-center justify-center p-4 bg-gradient-to-br from-pink-500 to-purple-600 rounded-full mb-4 shadow-md">
             <Gift className="w-10 h-10 text-white" />
           </div>
-          <h2 className="text-3xl font-bold text-gray-900 mb-2">
+          <h2 className="text-3xl font-bold text-foreground mb-2">
             {t('invite.inviteLanding.friendGift')}
           </h2>
-          <p className="text-base text-gray-600 max-w-2xl mx-auto">
+          <p className="text-base text-muted-foreground max-w-2xl mx-auto">
             {t('invite.inviteLanding.friendGiftDesc')}
           </p>
         </div>
@@ -174,14 +174,14 @@ export default function InviteClient({ code }: InviteClientProps) {
           </div>
 
           <div className="flex-1">
-            <h2 className="text-2xl font-bold text-gray-900 mb-3">
+            <h2 className="text-2xl font-bold text-foreground mb-3">
               {t('invite.inviteLanding.rewardTitle')}
             </h2>
 
             <div className="space-y-3">
               <div className="flex items-center space-x-3">
                 <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
-                <span className="text-lg text-gray-700">
+                <span className="text-lg text-foreground">
                   {t('invite.inviteLanding.purchaseReward')} <span className="font-bold text-indigo-600 text-xl">{rewardDays} {t('invite.inviteLanding.days')}</span> {t('invite.inviteLanding.membershipDuration')}
                 </span>
               </div>
@@ -195,14 +195,14 @@ export default function InviteClient({ code }: InviteClientProps) {
 
               <div className="flex items-center space-x-3">
                 <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
-                <span className="text-lg text-gray-700">
+                <span className="text-lg text-foreground">
                   {t('invite.inviteLanding.coreOpenSource')}
                 </span>
               </div>
 
               <div className="flex items-center space-x-3">
                 <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
-                <span className="text-lg text-gray-700">
+                <span className="text-lg text-foreground">
                   {t('invite.inviteLanding.allPlatforms')}
                 </span>
               </div>
@@ -218,11 +218,11 @@ export default function InviteClient({ code }: InviteClientProps) {
       </Card>
 
       {/* Invite Code + CTA */}
-      <Card className="p-6 mb-8 bg-white border-2 border-indigo-200 shadow-lg">
+      <Card className="p-6 mb-8 bg-card border-2 border-border shadow-lg">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center space-x-3">
-            <QrCode className="w-5 h-5 text-gray-500" />
-            <span className="text-sm text-gray-500">{t('invite.inviteLanding.inviteCodeLabel')}</span>
+            <QrCode className="w-5 h-5 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">{t('invite.inviteLanding.inviteCodeLabel')}</span>
             <code className="text-2xl font-mono font-bold text-indigo-600 tracking-wider">
               {inviteInfo.code.toUpperCase()}
             </code>
@@ -237,13 +237,13 @@ export default function InviteClient({ code }: InviteClientProps) {
             {t('invite.inviteLanding.activateNow')}
           </Button>
         </div>
-        <p className="text-sm text-center text-gray-500 mt-4">
+        <p className="text-sm text-center text-muted-foreground mt-4">
           {t('invite.inviteLanding.activateNowDesc')}
         </p>
       </Card>
 
       {/* Download Section */}
-      <Card className="p-8 mb-8 border-2 border-indigo-100 bg-white shadow-lg">
+      <Card className="p-8 mb-8 border-2 border-border bg-card shadow-lg">
         <div className="text-center">
           <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center shadow-md">
             {device?.isMobile ? (
@@ -253,11 +253,11 @@ export default function InviteClient({ code }: InviteClientProps) {
             )}
           </div>
 
-          <h3 className="text-2xl font-bold text-gray-900 mb-3">
+          <h3 className="text-2xl font-bold text-foreground mb-3">
             {t('invite.inviteLanding.downloadTitle')}
           </h3>
 
-          <p className="text-lg text-gray-600 mb-6">
+          <p className="text-lg text-muted-foreground mb-6">
             {t('invite.inviteLanding.detectedDevice')}<span className="font-semibold text-indigo-600">{platformName}</span>
           </p>
 
@@ -275,101 +275,101 @@ export default function InviteClient({ code }: InviteClientProps) {
               <p className="text-orange-600 mb-4">
                 {device?.isMobile ? t('invite.inviteLanding.mobileComingSoon') : t('invite.inviteLanding.platformComingSoon')}
               </p>
-              <Button className="bg-gray-200 text-gray-500 cursor-not-allowed" size="lg" disabled>
+              <Button className="bg-muted text-muted-foreground cursor-not-allowed" size="lg" disabled>
                 <span className="mr-2">{t('invite.inviteLanding.hourglassIcon')}</span>
                 {t('invite.inviteLanding.comingSoon')}
               </Button>
             </div>
           )}
 
-          <p className="text-sm text-gray-500 mt-6">
+          <p className="text-sm text-muted-foreground mt-6">
             {t('invite.inviteLanding.downloadInstructions')} <code className="font-mono font-bold text-indigo-600">{inviteInfo.code.toUpperCase()}</code> {t('invite.inviteLanding.registerToGetReward')}
           </p>
         </div>
       </Card>
 
       {/* Other Platforms */}
-      <Card className="p-6 bg-white shadow-sm">
-        <h4 className="text-lg font-semibold text-gray-900 mb-4 text-center">
+      <Card className="p-6 bg-card shadow-sm">
+        <h4 className="text-lg font-semibold text-foreground mb-4 text-center">
           {t('invite.inviteLanding.otherPlatforms')}
         </h4>
 
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Windows */}
-          <div className="text-center p-4 rounded-lg border border-gray-200 hover:border-indigo-200 hover:shadow-sm transition-all">
+          <div className="text-center p-4 rounded-lg border border-border hover:border-primary/30 hover:shadow-sm transition-all">
             <Monitor className="w-8 h-8 text-indigo-600 mx-auto mb-2" />
-            <h5 className="font-semibold text-gray-900 mb-1">{t('invite.inviteLanding.windows')}</h5>
-            <p className="text-xs text-gray-500 mb-3">{t('invite.inviteLanding.windowsVersion')}</p>
+            <h5 className="font-semibold text-foreground mb-1">{t('invite.inviteLanding.windows')}</h5>
+            <p className="text-xs text-muted-foreground mb-3">{t('invite.inviteLanding.windowsVersion')}</p>
             {DOWNLOAD_LINKS.windows ? (
               <Button
-                className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-indigo-300"
+                className="bg-card border border-border text-foreground hover:bg-muted hover:border-primary/30"
                 size="sm"
                 onClick={() => openDownloadInNewTab(DOWNLOAD_LINKS.windows)}
               >
                 {t('invite.inviteLanding.download')}
               </Button>
             ) : (
-              <Button className="bg-gray-100 text-gray-400 cursor-not-allowed" size="sm" disabled>
+              <Button className="bg-muted text-muted-foreground cursor-not-allowed" size="sm" disabled>
                 {t('invite.inviteLanding.comingSoon')}
               </Button>
             )}
           </div>
 
           {/* macOS */}
-          <div className="text-center p-4 rounded-lg border border-gray-200 hover:border-indigo-200 hover:shadow-sm transition-all">
-            <Monitor className="w-8 h-8 text-gray-700 mx-auto mb-2" />
-            <h5 className="font-semibold text-gray-900 mb-1">{t('invite.inviteLanding.macos')}</h5>
-            <p className="text-xs text-gray-500 mb-3">{t('invite.inviteLanding.macosVersion')}</p>
+          <div className="text-center p-4 rounded-lg border border-border hover:border-primary/30 hover:shadow-sm transition-all">
+            <Monitor className="w-8 h-8 text-foreground mx-auto mb-2" />
+            <h5 className="font-semibold text-foreground mb-1">{t('invite.inviteLanding.macos')}</h5>
+            <p className="text-xs text-muted-foreground mb-3">{t('invite.inviteLanding.macosVersion')}</p>
             {DOWNLOAD_LINKS.macos ? (
               <Button
-                className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-indigo-300"
+                className="bg-card border border-border text-foreground hover:bg-muted hover:border-primary/30"
                 size="sm"
                 onClick={() => openDownloadInNewTab(DOWNLOAD_LINKS.macos)}
               >
                 {t('invite.inviteLanding.download')}
               </Button>
             ) : (
-              <Button className="bg-gray-100 text-gray-400 cursor-not-allowed" size="sm" disabled>
+              <Button className="bg-muted text-muted-foreground cursor-not-allowed" size="sm" disabled>
                 {t('invite.inviteLanding.comingSoon')}
               </Button>
             )}
           </div>
 
           {/* iOS */}
-          <div className="text-center p-4 rounded-lg border border-gray-200 hover:border-indigo-200 hover:shadow-sm transition-all">
+          <div className="text-center p-4 rounded-lg border border-border hover:border-primary/30 hover:shadow-sm transition-all">
             <Smartphone className="w-8 h-8 text-blue-600 mx-auto mb-2" />
-            <h5 className="font-semibold text-gray-900 mb-1">{t('invite.inviteLanding.ios')}</h5>
-            <p className="text-xs text-gray-500 mb-3">{t('invite.inviteLanding.iosDevices')}</p>
+            <h5 className="font-semibold text-foreground mb-1">{t('invite.inviteLanding.ios')}</h5>
+            <p className="text-xs text-muted-foreground mb-3">{t('invite.inviteLanding.iosDevices')}</p>
             {DOWNLOAD_LINKS.ios ? (
               <Button
-                className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-indigo-300"
+                className="bg-card border border-border text-foreground hover:bg-muted hover:border-primary/30"
                 size="sm"
                 onClick={() => openDownloadInNewTab(DOWNLOAD_LINKS.ios)}
               >
                 {t('invite.inviteLanding.appStore')}
               </Button>
             ) : (
-              <Button className="bg-gray-100 text-gray-400 cursor-not-allowed" size="sm" disabled>
+              <Button className="bg-muted text-muted-foreground cursor-not-allowed" size="sm" disabled>
                 {t('invite.inviteLanding.comingSoon')}
               </Button>
             )}
           </div>
 
           {/* Android */}
-          <div className="text-center p-4 rounded-lg border border-gray-200 hover:border-indigo-200 hover:shadow-sm transition-all">
+          <div className="text-center p-4 rounded-lg border border-border hover:border-primary/30 hover:shadow-sm transition-all">
             <Smartphone className="w-8 h-8 text-green-600 mx-auto mb-2" />
-            <h5 className="font-semibold text-gray-900 mb-1">{t('invite.inviteLanding.android')}</h5>
-            <p className="text-xs text-gray-500 mb-3">{t('invite.inviteLanding.androidVersion')}</p>
+            <h5 className="font-semibold text-foreground mb-1">{t('invite.inviteLanding.android')}</h5>
+            <p className="text-xs text-muted-foreground mb-3">{t('invite.inviteLanding.androidVersion')}</p>
             {DOWNLOAD_LINKS.android ? (
               <Button
-                className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-indigo-300"
+                className="bg-card border border-border text-foreground hover:bg-muted hover:border-primary/30"
                 size="sm"
                 onClick={() => openDownloadInNewTab(DOWNLOAD_LINKS.android)}
               >
                 {t('invite.inviteLanding.download')}
               </Button>
             ) : (
-              <Button className="bg-gray-100 text-gray-400 cursor-not-allowed" size="sm" disabled>
+              <Button className="bg-muted text-muted-foreground cursor-not-allowed" size="sm" disabled>
                 {t('invite.inviteLanding.comingSoon')}
               </Button>
             )}
@@ -378,8 +378,8 @@ export default function InviteClient({ code }: InviteClientProps) {
       </Card>
 
       {/* Steps */}
-      <Card className="p-8 mt-8 bg-gray-50">
-        <h4 className="text-xl font-bold text-gray-900 mb-6 text-center">
+      <Card className="p-8 mt-8 bg-muted">
+        <h4 className="text-xl font-bold text-foreground mb-6 text-center">
           {t('invite.inviteLanding.stepsTitle')}
         </h4>
 
@@ -388,8 +388,8 @@ export default function InviteClient({ code }: InviteClientProps) {
             <div className="w-12 h-12 bg-indigo-600 text-white rounded-full flex items-center justify-center mx-auto mb-3 text-xl font-bold shadow-md">
               {"1"}
             </div>
-            <h5 className="font-semibold text-gray-900 mb-2">{t('invite.inviteLanding.step1Title')}</h5>
-            <p className="text-sm text-gray-600">
+            <h5 className="font-semibold text-foreground mb-2">{t('invite.inviteLanding.step1Title')}</h5>
+            <p className="text-sm text-muted-foreground">
               {t('invite.inviteLanding.step1Desc')}
             </p>
           </div>
@@ -398,8 +398,8 @@ export default function InviteClient({ code }: InviteClientProps) {
             <div className="w-12 h-12 bg-purple-600 text-white rounded-full flex items-center justify-center mx-auto mb-3 text-xl font-bold shadow-md">
               {"2"}
             </div>
-            <h5 className="font-semibold text-gray-900 mb-2">{t('invite.inviteLanding.step2Title')}</h5>
-            <p className="text-sm text-gray-600">
+            <h5 className="font-semibold text-foreground mb-2">{t('invite.inviteLanding.step2Title')}</h5>
+            <p className="text-sm text-muted-foreground">
               {t('invite.inviteLanding.step2Desc')} <code className="font-mono text-indigo-600">{inviteInfo.code.toUpperCase()}</code> {t('invite.inviteLanding.step2Desc2')}
             </p>
           </div>
@@ -408,8 +408,8 @@ export default function InviteClient({ code }: InviteClientProps) {
             <div className="w-12 h-12 bg-green-600 text-white rounded-full flex items-center justify-center mx-auto mb-3 text-xl font-bold shadow-md">
               {"3"}
             </div>
-            <h5 className="font-semibold text-gray-900 mb-2">{t('invite.inviteLanding.step3Title')}</h5>
-            <p className="text-sm text-gray-600">
+            <h5 className="font-semibold text-foreground mb-2">{t('invite.inviteLanding.step3Title')}</h5>
+            <p className="text-sm text-muted-foreground">
               {t('invite.inviteLanding.step3Desc')}
             </p>
           </div>

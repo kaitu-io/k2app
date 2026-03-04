@@ -5,7 +5,9 @@ export const dynamic = "force-dynamic";
 import { useEffect } from "react";
 import { useRouter } from "@/i18n/routing";
 import { useAuth } from "@/contexts/AuthContext";
-import { CircleDashed, Users, Home, CreditCard, Wallet, LogOut } from "lucide-react";
+import { CircleDashed, Users, CreditCard, Wallet, LogOut } from "lucide-react";
+import Header from "@/components/Header";
+import Footer from "@/components/Footer";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/routing";
 import { usePathname } from "@/i18n/routing";
@@ -80,17 +82,9 @@ export default function AccountLayout({
   ];
 
   return (
-    <div className="container mx-auto py-6 px-4">
-      {/* Back to Home */}
-      <div className="mb-4">
-        <Link href="/">
-          <Button variant="ghost" size="sm" className="gap-2">
-            <Home className="h-4 w-4" />
-            {t("nav.nav.backToHome")}
-          </Button>
-        </Link>
-      </div>
-
+    <div className="min-h-screen bg-background flex flex-col">
+      <Header />
+      <div className="container mx-auto py-6 px-4 flex-1">
       {/* Page Title */}
       <div className="mb-6">
         <h1 className="text-3xl font-bold">{t("admin.account.title")}</h1>
@@ -170,6 +164,8 @@ export default function AccountLayout({
         {/* Main Content */}
         <main className="flex-1 min-w-0">{children}</main>
       </div>
+      </div>
+      <Footer />
     </div>
   );
 }

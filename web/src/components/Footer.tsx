@@ -72,6 +72,11 @@ export default function Footer() {
                   {t('nav.footer.support.contact')}
                 </Link>
               </li>
+              <li>
+                <Link href="/guide/parents" className="hover:text-blue-600">
+                  {t('nav.footer.support.homeschoolGuide')}
+                </Link>
+              </li>
             </ul>
           </div>
 

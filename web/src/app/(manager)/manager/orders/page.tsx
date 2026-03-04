@@ -241,7 +241,7 @@ export default function OrdersPage() {
         <div className="flex-1">
           <label className="text-sm font-medium">{"登录类型"}</label>
           <select
-            className="w-full p-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-md"
+            className="w-full p-2 border border-border bg-muted text-foreground rounded-md"
             value={localLoginProvider}
             onChange={(e) => setLocalLoginProvider(e.target.value)}
           >
@@ -262,7 +262,7 @@ export default function OrdersPage() {
         <div className="flex-1">
           <label className="text-sm font-medium">{"支付状态"}</label>
           <select
-            className="w-full p-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-md"
+            className="w-full p-2 border border-border bg-muted text-foreground rounded-md"
             value={localIsPaid}
             onChange={(e) => setLocalIsPaid(e.target.value)}
           >

@@ -58,7 +58,7 @@ function PayResultDialog({
                 <span className="font-mono">{order?.uuid}</span>
               </div>
               <div>
-                <span className="font-semibold text-gray-700 dark:text-gray-300">
+                <span className="font-semibold text-foreground">
                   {t('purchase.purchase.paymentAmount')}{t('common.colon')}
                 </span>
                 <span className="text-xl font-bold text-emerald-600 ml-1">
@@ -446,7 +446,7 @@ export default function Purchase() {
           <div className="bg-gradient-to-r from-yellow-100 to-orange-100 border-l-4 border-orange-500 p-4 sm:p-6 rounded-r-lg">
             <div className="flex items-center">
               <TrophyIcon className="w-10 h-10 sm:w-8 sm:h-8 text-orange-500 mr-3 sm:mr-4 flex-shrink-0" />
-              <span className="font-bold text-xl sm:text-lg text-gray-800 leading-tight">
+              <span className="font-bold text-xl sm:text-lg text-foreground leading-tight">
                 {t('purchase.purchase.friendReferralBonus', { days: appConfig.inviteReward.purchaseRewardDays })}
               </span>
             </div>
@@ -455,10 +455,10 @@ export default function Purchase() {
 
         {/* Page Title */}
         <div className="text-center px-4 sm:px-0">
-          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black text-slate-800 dark:text-slate-100 mb-3 sm:mb-4 leading-tight">
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black text-foreground mb-3 sm:mb-4 leading-tight">
             {t('purchase.purchase.title')}
           </h1>
-          <p className="text-lg sm:text-xl text-slate-600 dark:text-slate-300 font-medium leading-relaxed max-w-2xl mx-auto">
+          <p className="text-lg sm:text-xl text-muted-foreground font-medium leading-relaxed max-w-2xl mx-auto">
             {t('purchase.purchase.subtitle')}
           </p>
         </div>

@@ -60,7 +60,7 @@ export default async function RoutersPage({
   const t = await getTranslations({ locale, namespace: 'hero' });
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-800">
+    <div className="min-h-screen bg-background">
       <Header />
 
       {/* Hero Section */}
@@ -68,10 +68,10 @@ export default async function RoutersPage({
         <div className="max-w-7xl mx-auto text-center">
           <div className="mb-8">
             <Router className="w-20 h-20 text-blue-600 mx-auto mb-6" />
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-gray-900 dark:text-white mb-6">
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-foreground mb-6">
               {t('routers.title')}
             </h1>
-            <p className="text-xl text-gray-600 dark:text-gray-300 mb-8 max-w-3xl mx-auto">
+            <p className="text-xl text-muted-foreground mb-8 max-w-3xl mx-auto">
               {t('routers.subtitle')}
             </p>
           </div>
@@ -93,20 +93,20 @@ export default async function RoutersPage({
 
               <div className="mb-8">
                 <Router className="w-16 h-16 text-blue-600 mb-4" />
-                <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+                <h2 className="text-2xl font-bold text-foreground mb-2">
                   {ROUTER_PRODUCTS.k2Mini.name}
                 </h2>
                 <p className="text-blue-600 font-medium mb-4">
                   {ROUTER_PRODUCTS.k2Mini.englishName}
                 </p>
-                <p className="text-gray-600 dark:text-gray-300 text-lg">
+                <p className="text-muted-foreground text-lg">
                   {ROUTER_PRODUCTS.k2Mini.tagline}
                 </p>
               </div>
 
               {/* Product Images */}
               <div className="grid grid-cols-3 gap-4 mb-8">
-                <div className="relative aspect-square bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden">
+                <div className="relative aspect-square bg-muted rounded-lg overflow-hidden">
                   <Image
                     src="/images/routers/k2-mini.jpg"
                     alt={"开途 K2 Mini 路由器"}
@@ -115,7 +115,7 @@ export default async function RoutersPage({
                     className="object-cover w-full h-full"
                   />
                 </div>
-                <div className="relative aspect-square bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden">
+                <div className="relative aspect-square bg-muted rounded-lg overflow-hidden">
                   <Image
                     src="/images/routers/k2-mini.1.jpeg"
                     alt={"开途 K2 Mini 路由器详图"}
@@ -124,7 +124,7 @@ export default async function RoutersPage({
                     className="object-cover w-full h-full"
                   />
                 </div>
-                <div className="relative aspect-square bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden">
+                <div className="relative aspect-square bg-muted rounded-lg overflow-hidden">
                   <Image
                     src="/images/routers/k2-mini.2.webp"
                     alt={"开途 K2 Mini 路由器包装"}
@@ -137,13 +137,13 @@ export default async function RoutersPage({
 
               {/* Features */}
               <div className="mb-8">
-                <h3 className="font-semibold mb-4 flex items-center text-gray-900 dark:text-white">
+                <h3 className="font-semibold mb-4 flex items-center text-foreground">
                   <CheckCircle className="w-5 h-5 mr-2 text-green-600" />
                   {t('routers.productFeatures')}
                 </h3>
                 <ul className="space-y-2">
                   {ROUTER_PRODUCTS.k2Mini.features.map((feature, index) => (
-                    <li key={index} className="flex items-center text-gray-600 dark:text-gray-300">
+                    <li key={index} className="flex items-center text-muted-foreground">
                       <Star className="w-4 h-4 mr-2 text-blue-600 flex-shrink-0" />
                       {feature}
                     </li>
@@ -156,7 +156,7 @@ export default async function RoutersPage({
                   <Mail className="w-4 h-4 mr-2" />
                   {t('routers.contactInquiry')}
                 </Button>
-                <p className="text-center text-sm text-gray-500 dark:text-gray-400">
+                <p className="text-center text-sm text-muted-foreground">
                   {t('routers.presalePriceConsult')}
                 </p>
               </div>
@@ -172,20 +172,20 @@ export default async function RoutersPage({
 
               <div className="mb-8">
                 <Router className="w-16 h-16 text-green-600 mb-4" />
-                <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+                <h2 className="text-2xl font-bold text-foreground mb-2">
                   {ROUTER_PRODUCTS.k2001.name}
                 </h2>
                 <p className="text-green-600 font-medium mb-4">
                   {ROUTER_PRODUCTS.k2001.englishName}
                 </p>
-                <p className="text-gray-600 dark:text-gray-300 text-lg">
+                <p className="text-muted-foreground text-lg">
                   {ROUTER_PRODUCTS.k2001.tagline}
                 </p>
               </div>
 
               {/* Product Images */}
               <div className="grid grid-cols-3 gap-4 mb-8">
-                <div className="relative aspect-square bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden">
+                <div className="relative aspect-square bg-muted rounded-lg overflow-hidden">
                   <Image
                     src="/images/routers/1.1.jpg"
                     alt={"开途 K2-001 路由器"}
@@ -194,7 +194,7 @@ export default async function RoutersPage({
                     className="object-cover w-full h-full"
                   />
                 </div>
-                <div className="relative aspect-square bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden">
+                <div className="relative aspect-square bg-muted rounded-lg overflow-hidden">
                   <Image
                     src="/images/routers/1.2.jpg"
                     alt={"开途 K2-001 路由器接口"}
@@ -203,7 +203,7 @@ export default async function RoutersPage({
                     className="object-cover w-full h-full"
                   />
                 </div>
-                <div className="relative aspect-square bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden">
+                <div className="relative aspect-square bg-muted rounded-lg overflow-hidden">
                   <Image
                     src="/images/routers/1.3.jpg"
                     alt={"开途 K2-001 路由器配置"}
@@ -216,13 +216,13 @@ export default async function RoutersPage({
 
               {/* Features */}
               <div className="mb-8">
-                <h3 className="font-semibold mb-4 flex items-center text-gray-900 dark:text-white">
+                <h3 className="font-semibold mb-4 flex items-center text-foreground">
                   <CheckCircle className="w-5 h-5 mr-2 text-green-600" />
                   {t('routers.productFeatures')}
                 </h3>
                 <ul className="space-y-2">
                   {ROUTER_PRODUCTS.k2001.features.map((feature, index) => (
-                    <li key={index} className="flex items-center text-gray-600 dark:text-gray-300">
+                    <li key={index} className="flex items-center text-muted-foreground">
                       <Star className="w-4 h-4 mr-2 text-green-600 flex-shrink-0" />
                       {feature}
                     </li>
@@ -235,7 +235,7 @@ export default async function RoutersPage({
                   <Mail className="w-4 h-4 mr-2" />
                   {t('routers.contactInquiry')}
                 </Button>
-                <p className="text-center text-sm text-gray-500 dark:text-gray-400">
+                <p className="text-center text-sm text-muted-foreground">
                   {t('routers.presalePriceConsultFull')}
                 </p>
               </div>
@@ -245,13 +245,13 @@ export default async function RoutersPage({
       </section>
 
       {/* Router Benefits */}
-      <section className="py-16 px-4 sm:px-6 lg:px-8 bg-gray-50 dark:bg-gray-800/50">
+      <section className="py-16 px-4 sm:px-6 lg:px-8 bg-muted">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">
+            <h2 className="text-3xl font-bold text-foreground mb-4">
               {t('routers.benefits.title')}
             </h2>
-            <p className="text-gray-600 dark:text-gray-300 text-lg max-w-2xl mx-auto">
+            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
               {t('routers.benefits.subtitle')}
             </p>
           </div>
@@ -262,7 +262,7 @@ export default async function RoutersPage({
               <h3 className="text-xl font-semibold mb-3">
                 {t('routers.benefits.items.easySetup.title')}
               </h3>
-              <p className="text-gray-600 dark:text-gray-300">
+              <p className="text-muted-foreground">
                 {t('routers.benefits.items.easySetup.description')}
               </p>
             </Card>
@@ -272,7 +272,7 @@ export default async function RoutersPage({
               <h3 className="text-xl font-semibold mb-3">
                 {t('routers.benefits.items.familyFriendly.title')}
               </h3>
-              <p className="text-gray-600 dark:text-gray-300">
+              <p className="text-muted-foreground">
                 {t('routers.benefits.items.familyFriendly.description')}
               </p>
             </Card>
@@ -282,7 +282,7 @@ export default async function RoutersPage({
               <h3 className="text-xl font-semibold mb-3">
                 {t('routers.benefits.items.alwaysOn.title')}
               </h3>
-              <p className="text-gray-600 dark:text-gray-300">
+              <p className="text-muted-foreground">
                 {t('routers.benefits.items.alwaysOn.description')}
               </p>
             </Card>
@@ -292,7 +292,7 @@ export default async function RoutersPage({
               <h3 className="text-xl font-semibold mb-3">
                 {t('routers.benefits.items.multiDevice.title')}
               </h3>
-              <p className="text-gray-600 dark:text-gray-300">
+              <p className="text-muted-foreground">
                 {t('routers.benefits.items.multiDevice.description')}
               </p>
             </Card>
@@ -302,7 +302,7 @@ export default async function RoutersPage({
               <h3 className="text-xl font-semibold mb-3">
                 {t('routers.benefits.items.techSupport.title')}
               </h3>
-              <p className="text-gray-600 dark:text-gray-300">
+              <p className="text-muted-foreground">
                 {t('routers.benefits.items.techSupport.description')}
               </p>
             </Card>
@@ -312,7 +312,7 @@ export default async function RoutersPage({
               <h3 className="text-xl font-semibold mb-3">
                 {t('routers.benefits.items.costEffective.title')}
               </h3>
-              <p className="text-gray-600 dark:text-gray-300">
+              <p className="text-muted-foreground">
                 {t('routers.benefits.items.costEffective.description')}
               </p>
             </Card>
@@ -324,10 +324,10 @@ export default async function RoutersPage({
       <section className="py-16 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">
+            <h2 className="text-3xl font-bold text-foreground mb-4">
               {t('routers.routerVsClient')}
             </h2>
-            <p className="text-gray-600 dark:text-gray-300 text-lg">
+            <p className="text-muted-foreground text-lg">
               {t('routers.whyChooseRouter')}
             </p>
           </div>
@@ -341,7 +341,7 @@ export default async function RoutersPage({
                   <p className="text-green-600 dark:text-green-400">{t('routers.recommended')}</p>
                 </div>
               </div>
-              <ul className="space-y-3 text-gray-700 dark:text-gray-300">
+              <ul className="space-y-3 text-foreground">
                 <li className="flex items-start">
                   <CheckCircle className="w-5 h-5 text-green-600 mr-2 mt-0.5 flex-shrink-0" />
                   <span>{t('routers.autoConnect')}</span>
@@ -367,31 +367,31 @@ export default async function RoutersPage({
 
             <Card className="p-8">
               <div className="flex items-center mb-6">
-                <Smartphone className="w-10 h-10 text-gray-600 mr-3" />
+                <Smartphone className="w-10 h-10 text-muted-foreground mr-3" />
                 <div>
-                  <h3 className="text-xl font-bold text-gray-800 dark:text-gray-300">{t('routers.clientSoftware')}</h3>
-                  <p className="text-gray-600 dark:text-gray-400">{t('routers.traditional')}</p>
+                  <h3 className="text-xl font-bold text-foreground">{t('routers.clientSoftware')}</h3>
+                  <p className="text-muted-foreground">{t('routers.traditional')}</p>
                 </div>
               </div>
-              <ul className="space-y-3 text-gray-600 dark:text-gray-400">
+              <ul className="space-y-3 text-muted-foreground">
                 <li className="flex items-start">
-                  <span className="w-5 h-5 text-gray-400 mr-2 mt-0.5 flex-shrink-0">{t('routers.bullet')}</span>
+                  <span className="w-5 h-5 text-muted-foreground mr-2 mt-0.5 flex-shrink-0">{t('routers.bullet')}</span>
                   <span>{t('routers.individualSetup')}</span>
                 </li>
                 <li className="flex items-start">
-                  <span className="w-5 h-5 text-gray-400 mr-2 mt-0.5 flex-shrink-0">{t('routers.bullet')}</span>
+                  <span className="w-5 h-5 text-muted-foreground mr-2 mt-0.5 flex-shrink-0">{t('routers.bullet')}</span>
                   <span>{t('routers.manualStart')}</span>
                 </li>
                 <li className="flex items-start">
-                  <span className="w-5 h-5 text-gray-400 mr-2 mt-0.5 flex-shrink-0">{t('routers.bullet')}</span>
+                  <span className="w-5 h-5 text-muted-foreground mr-2 mt-0.5 flex-shrink-0">{t('routers.bullet')}</span>
                   <span>{t('routers.deviceLimits')}</span>
                 </li>
                 <li className="flex items-start">
-                  <span className="w-5 h-5 text-gray-400 mr-2 mt-0.5 flex-shrink-0">{t('routers.bullet')}</span>
+                  <span className="w-5 h-5 text-muted-foreground mr-2 mt-0.5 flex-shrink-0">{t('routers.bullet')}</span>
                   <span>{t('routers.complexConfig')}</span>
                 </li>
                 <li className="flex items-start">
-                  <span className="w-5 h-5 text-gray-400 mr-2 mt-0.5 flex-shrink-0">{t('routers.bullet')}</span>
+                  <span className="w-5 h-5 text-muted-foreground mr-2 mt-0.5 flex-shrink-0">{t('routers.bullet')}</span>
                   <span>{t('routers.ongoing')}</span>
                 </li>
               </ul>

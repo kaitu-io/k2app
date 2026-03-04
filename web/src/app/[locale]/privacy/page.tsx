@@ -43,21 +43,21 @@ export default async function PrivacyPage({
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-800">
+    <div className="min-h-screen bg-background">
       <Header />
 
       {/* Hero Section */}
       <section className="py-16 px-4 sm:px-6 lg:px-8">
         <div className="max-w-4xl mx-auto text-center">
           <div className="flex items-center justify-center mb-6">
-            <div className="p-3 bg-blue-100 dark:bg-blue-900 rounded-full">
+            <div className="p-3 bg-secondary/15 rounded-full">
               <Shield className="w-8 h-8 text-blue-600" />
             </div>
           </div>
-          <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 dark:text-white mb-4">
+          <h1 className="text-4xl sm:text-5xl font-bold text-foreground mb-4">
             {t('discovery.privacy.title')}
           </h1>
-          <p className="text-xl text-gray-600 dark:text-gray-300 mb-8 max-w-3xl mx-auto">
+          <p className="text-xl text-muted-foreground mb-8 max-w-3xl mx-auto">
             {t('discovery.privacy.subtitle')}
           </p>
         </div>
@@ -73,10 +73,10 @@ export default async function PrivacyPage({
       {/* Contact Section */}
       <section className="py-16 px-4 sm:px-6 lg:px-8 border-t">
         <div className="max-w-4xl mx-auto text-center">
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
+          <h2 className="text-2xl font-bold text-foreground mb-4">
             {t('discovery.privacy.contact.title')}
           </h2>
-          <p className="text-gray-600 dark:text-gray-300 mb-4">
+          <p className="text-muted-foreground mb-4">
             {t('discovery.privacy.contact.content')}
           </p>
           <p className="text-blue-600 font-medium mb-8">{t('discovery.privacy.contact.email')}</p>

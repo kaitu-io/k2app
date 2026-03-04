@@ -378,7 +378,7 @@ export default function WithdrawsPage() {
         <div className="flex-1">
           <label className="text-sm font-medium">{"状态"}</label>
           <select
-            className="w-full p-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-md"
+            className="w-full p-2 border border-border bg-muted text-foreground rounded-md"
             value={localStatus}
             onChange={(e) => setLocalStatus(e.target.value)}
           >

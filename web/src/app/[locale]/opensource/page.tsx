@@ -50,7 +50,7 @@ export default async function OpenSourcePage({
   const t = await getTranslations({ locale });
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
+    <div className="min-h-screen bg-background">
       <Header />
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -60,25 +60,25 @@ export default async function OpenSourcePage({
             <Github className="w-12 h-12 text-green-600 dark:text-green-400" />
           </div>
 
-          <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 dark:text-white mb-4">
+          <h1 className="text-4xl sm:text-5xl font-bold text-foreground mb-4">
             {t('theme.opensource.title')}
           </h1>
 
-          <p className="text-xl text-gray-600 dark:text-gray-300 mb-2">
+          <p className="text-xl text-muted-foreground mb-2">
             {t('theme.opensource.subtitle')}
           </p>
 
-          <p className="text-lg text-gray-500 dark:text-gray-400">
+          <p className="text-lg text-muted-foreground">
             {t('theme.opensource.description')}
           </p>
         </div>
 
         {/* Countdown Card */}
-        <Card className="p-8 mb-8 border-2 border-blue-200 dark:border-blue-800 bg-white dark:bg-gray-800 shadow-2xl">
+        <Card className="p-8 mb-8 border-2 border-blue-200 dark:border-blue-800 bg-card shadow-2xl">
           <div className="text-center mb-8">
             <div className="flex items-center justify-center mb-4">
               <Calendar className="w-6 h-6 text-blue-600 dark:text-blue-400 mr-2" />
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+              <h2 className="text-2xl font-bold text-foreground">
                 {t('theme.opensource.targetDate')}
               </h2>
             </div>
@@ -93,7 +93,7 @@ export default async function OpenSourcePage({
 
         {/* Why Open Source */}
         <Card className="p-8 bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-900/20 dark:to-blue-900/20 border-2 border-green-200 dark:border-green-800">
-          <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-6 text-center">
+          <h3 className="text-2xl font-bold text-foreground mb-6 text-center">
             {t('theme.opensource.whyTitle')}
           </h3>
 
@@ -103,10 +103,10 @@ export default async function OpenSourcePage({
                 {"1"}
               </div>
               <div>
-                <h4 className="font-semibold text-gray-900 dark:text-white mb-2">
+                <h4 className="font-semibold text-foreground mb-2">
                   {t('theme.opensource.reason1Title')}
                 </h4>
-                <p className="text-sm text-gray-600 dark:text-gray-300">
+                <p className="text-sm text-muted-foreground">
                   {t('theme.opensource.reason1Desc')}
                 </p>
               </div>
@@ -117,10 +117,10 @@ export default async function OpenSourcePage({
                 {"2"}
               </div>
               <div>
-                <h4 className="font-semibold text-gray-900 dark:text-white mb-2">
+                <h4 className="font-semibold text-foreground mb-2">
                   {t('theme.opensource.reason2Title')}
                 </h4>
-                <p className="text-sm text-gray-600 dark:text-gray-300">
+                <p className="text-sm text-muted-foreground">
                   {t('theme.opensource.reason2Desc')}
                 </p>
               </div>
@@ -131,10 +131,10 @@ export default async function OpenSourcePage({
                 {"3"}
               </div>
               <div>
-                <h4 className="font-semibold text-gray-900 dark:text-white mb-2">
+                <h4 className="font-semibold text-foreground mb-2">
                   {t('theme.opensource.reason3Title')}
                 </h4>
-                <p className="text-sm text-gray-600 dark:text-gray-300">
+                <p className="text-sm text-muted-foreground">
                   {t('theme.opensource.reason3Desc')}
                 </p>
               </div>
@@ -145,10 +145,10 @@ export default async function OpenSourcePage({
                 {"4"}
               </div>
               <div>
-                <h4 className="font-semibold text-gray-900 dark:text-white mb-2">
+                <h4 className="font-semibold text-foreground mb-2">
                   {t('theme.opensource.reason4Title')}
                 </h4>
-                <p className="text-sm text-gray-600 dark:text-gray-300">
+                <p className="text-sm text-muted-foreground">
                   {t('theme.opensource.reason4Desc')}
                 </p>
               </div>
