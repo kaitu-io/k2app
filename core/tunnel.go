@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -152,13 +153,23 @@ func (t *ClientTunnel) TrafficBytes() (tx, rx int64) {
 	return t.txBytes.Load(), t.rxBytes.Load()
 }
 
+// acquireConnSlot reserves a connection slot. On mobile (nonBlockingAdmit=true),
+// returns false immediately if at capacity — prevents goroutine pile-up from
+// gVisor-spawned waiters. On desktop, blocks until a slot is available or ctx is canceled.
+func (t *ClientTunnel) acquireConnSlot() bool {
+	if nonBlockingAdmit {
+		return t.connSem.TryAcquire(1)
+	}
+	return t.connSem.Acquire(t.ctx, 1) == nil
+}
+
 // HandleTCP processes a TCP connection from the provider.
 func (t *ClientTunnel) HandleTCP(conn net.Conn, dest string) {
-	if err := t.connSem.Acquire(t.ctx, 1); err != nil {
+	if !t.acquireConnSlot() {
 		conn.Close()
 		return
 	}
-	defer t.connSem.Release(1)
+	defer func() { t.connSem.Release(1); onConnRelease() }()
 
 	t.wg.Add(1)
 	defer t.wg.Done()
@@ -238,11 +249,11 @@ func (t *ClientTunnel) HandleTCP(conn net.Conn, dest string) {
 
 // HandleUDP processes a UDP connection from the provider.
 func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
-	if err := t.connSem.Acquire(t.ctx, 1); err != nil {
+	if !t.acquireConnSlot() {
 		conn.Close()
 		return
 	}
-	defer t.connSem.Release(1)
+	defer func() { t.connSem.Release(1); onConnRelease() }()
 
 	t.wg.Add(1)
 	defer t.wg.Done()
@@ -408,7 +419,7 @@ func (t *ClientTunnel) handleUDPProxy(local net.PacketConn, dest string) {
 
 // Buffer pools to avoid per-connection allocations.
 var (
-	tcpBufPool  = sync.Pool{New: func() any { b := make([]byte, 32*1024); return &b }}
+	tcpBufPool  = sync.Pool{New: func() any { b := make([]byte, tcpBufSize); return &b }}
 	tcpPeekPool = sync.Pool{New: func() any { b := make([]byte, 4096); return &b }}
 	udpBufPool  = sync.Pool{New: func() any { b := make([]byte, 4096); return &b }}
 )
@@ -507,14 +518,26 @@ func pipe(a, b net.Conn, tx, rx *atomic.Int64) {
 // pipePacket forwards packets between two PacketConns.
 // destAddr is the target for local→remote; if nil, WriteTo uses nil addr.
 // Optional tx/rx counters accumulate bytes per direction (nil = no counting).
+// On mobile platforms, idle connections are closed after udpIdleTimeoutSec.
+//
+// Uses 2 goroutines (spawned + caller), matching pipe()'s pattern.
+// Each direction's exit closes the peer to unblock the other side.
 func pipePacket(local, remote net.PacketConn, destAddr net.Addr, tx, rx *atomic.Int64) {
-	done := make(chan struct{}, 2)
+	var idleTimeout time.Duration
+	if udpIdleTimeoutSec > 0 {
+		idleTimeout = time.Duration(udpIdleTimeoutSec) * time.Second
+	}
 
-	// local → remote (TX)
+	done := make(chan struct{})
+
+	// local → remote (TX) in spawned goroutine
 	go func() {
 		bp := udpBufPool.Get().(*[]byte)
 		buf := *bp
 		for {
+			if idleTimeout > 0 {
+				local.SetReadDeadline(time.Now().Add(idleTimeout))
+			}
 			n, _, err := local.ReadFrom(buf)
 			if err != nil {
 				break
@@ -527,30 +550,33 @@ func pipePacket(local, remote net.PacketConn, destAddr net.Addr, tx, rx *atomic.
 			}
 		}
 		udpBufPool.Put(bp)
-		done <- struct{}{}
+		remote.Close() // unblock remote.ReadFrom in caller
+		close(done)
 	}()
 
-	// remote → local (RX)
-	go func() {
-		bp := udpBufPool.Get().(*[]byte)
-		buf := *bp
-		for {
-			n, from, err := remote.ReadFrom(buf)
-			if err != nil {
-				slog.Debug("pipePacket: remote→local ReadFrom done", "err", err)
-				break
-			}
-			if _, err := local.WriteTo(buf[:n], from); err != nil {
-				slog.Debug("pipePacket: remote→local WriteTo failed", "from", from, "len", n, "err", err)
-				break
-			}
-			if rx != nil {
-				rx.Add(int64(n))
-			}
+	// remote → local (RX) in caller goroutine
+	bp := udpBufPool.Get().(*[]byte)
+	buf := *bp
+	for {
+		if idleTimeout > 0 {
+			remote.SetReadDeadline(time.Now().Add(idleTimeout))
 		}
-		udpBufPool.Put(bp)
-		done <- struct{}{}
-	}()
-
+		n, from, err := remote.ReadFrom(buf)
+		if err != nil {
+			if !os.IsTimeout(err) {
+				slog.Debug("pipePacket: remote→local ReadFrom done", "err", err)
+			}
+			break
+		}
+		if _, err := local.WriteTo(buf[:n], from); err != nil {
+			slog.Debug("pipePacket: remote→local WriteTo failed", "from", from, "len", n, "err", err)
+			break
+		}
+		if rx != nil {
+			rx.Add(int64(n))
+		}
+	}
+	udpBufPool.Put(bp)
+	local.Close() // unblock local.ReadFrom in goroutine
 	<-done
 }
