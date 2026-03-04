@@ -33,8 +33,8 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       return savedTheme;
     }
 
-    // 默认跟随系统
-    return 'system';
+    // 默认深色模式
+    return 'dark';
   });
 
   const [actualTheme, setActualTheme] = useState<ActualTheme>(() => {
