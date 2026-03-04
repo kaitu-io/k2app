@@ -126,6 +126,15 @@ export function useDraggable(options: UseDraggableOptions): UseDraggableReturn {
     const el = elementRef.current;
     if (!el) return;
 
+    console.info('[Drag] pointerdown', {
+      pointerId: e.pointerId,
+      hasMoveRef: !!onPointerMoveRef.current,
+      hasUpRef: !!onPointerUpRef.current,
+      bodyScale: getBodyScale(),
+      pos: `${position.x},${position.y}`,
+      windowSize: `${window.innerWidth}x${window.innerHeight}`,
+    });
+
     // Capture pointer to prevent browser native drag (pointercancel on SVG icon).
     // We do NOT rely on capture for event routing — document listeners handle that.
     try { el.setPointerCapture(e.pointerId); } catch { /* ignore if capture fails */ }
@@ -156,11 +165,13 @@ export function useDraggable(options: UseDraggableOptions): UseDraggableReturn {
   // Define pointer move/up handlers in refs (attached to document during drag)
   useEffect(() => {
     const el = elementRef.current;
+    console.info('[Drag] useEffect init', { hasEl: !!el, tagName: el?.tagName });
     if (!el) return;
 
     onPointerMoveRef.current = (e: PointerEvent) => {
       const ds = dragState.current;
       if (ds.pointerId === -1 || e.pointerId !== ds.pointerId) return;
+      if (ds.totalMovement === 0) console.info('[Drag] first pointermove', { pointerId: e.pointerId, clientX: e.clientX, clientY: e.clientY });
 
       const scale = getBodyScale();
       const logicalX = e.clientX / scale;
@@ -190,6 +201,7 @@ export function useDraggable(options: UseDraggableOptions): UseDraggableReturn {
 
     onPointerUpRef.current = (e: PointerEvent) => {
       const ds = dragState.current;
+      console.info(`[Drag] ${e.type}`, { pointerId: e.pointerId, totalMovement: ds.totalMovement, threshold: dragThreshold });
       if (ds.pointerId === -1) return;
       if (e.pointerId !== ds.pointerId) return;
 
@@ -245,7 +257,18 @@ export function useDraggable(options: UseDraggableOptions): UseDraggableReturn {
 
     el.addEventListener('touchmove', onTouchMove, { passive: false });
 
+    // DEBUG: global probe — logs if document receives ANY pointermove while our drag is active
+    let moveProbeCount = 0;
+    const moveProbe = (e: PointerEvent) => {
+      if (dragState.current.pointerId !== -1 && e.pointerId === dragState.current.pointerId) {
+        moveProbeCount++;
+        if (moveProbeCount <= 3) console.info('[Drag] probe: document received pointermove', { count: moveProbeCount });
+      }
+    };
+    document.addEventListener('pointermove', moveProbe, { capture: true });
+
     return () => {
+      document.removeEventListener('pointermove', moveProbe, { capture: true });
       el.removeEventListener('touchmove', onTouchMove);
       // Safety cleanup for document listeners (e.g. unmount during drag)
       if (onPointerMoveRef.current) document.removeEventListener('pointermove', onPointerMoveRef.current);
