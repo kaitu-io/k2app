@@ -342,7 +342,7 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
                 secondaryTypographyProps={{ fontSize: '0.75rem' }}
               />
 
-              {/* Vertical load bar (de-emphasized) */}
+              {/* Budget score bar */}
               <Box sx={{ mr: 2 }}>
                 <VerticalLoadBar budgetScore={tunnel.instance?.budgetScore} />
               </Box>
