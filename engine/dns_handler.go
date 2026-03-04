@@ -67,6 +67,11 @@ func (h *dnsHandler) serveDNS(conn net.PacketConn) {
 				continue
 			}
 			h.recordDNSFailure(err)
+			// Upstream failure: send SERVFAIL so the client retries
+			// immediately instead of waiting for a DNS timeout.
+			if sf := buildSERVFAIL(buf[:n]); sf != nil {
+				conn.WriteTo(sf, addr)
+			}
 			continue
 		}
 		h.recordDNSSuccess()
@@ -106,6 +111,13 @@ func (h *dnsHandler) serveDNSStream(conn net.Conn) {
 		if err != nil {
 			if !isDNSParseError(err) {
 				h.recordDNSFailure(err)
+			}
+			// Send SERVFAIL so the client retries immediately.
+			if sf := buildSERVFAIL(buf); sf != nil {
+				var respLen [2]byte
+				binary.BigEndian.PutUint16(respLen[:], uint16(len(sf)))
+				conn.Write(respLen[:])
+				conn.Write(sf)
 			}
 			continue
 		}

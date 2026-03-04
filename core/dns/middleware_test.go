@@ -1,6 +1,7 @@
 package dns
 
 import (
+	"fmt"
 	"net"
 	"sync"
 	"testing"
@@ -313,43 +314,89 @@ func (q *slowQuerier) Query(msg *dns.Msg) (*dns.Msg, error) {
 	return resp, nil
 }
 
-func TestInflightDedup_WaiterTimesOut(t *testing.T) {
+func TestInflightDedup_WaiterTimesOut_QueriesIndependently(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow inflight timeout test")
 	}
 	initK2Rule(t, k2rule.TargetDirect)
 
 	// Owner query blocks much longer than inflightTimeout.
-	directQ := &slowQuerier{
+	// Use a slowQuerier that blocks for a very long time as the "stuck" owner.
+	stuckQ := &slowQuerier{
 		delay: inflightTimeout + 30*time.Second,
 		resp:  buildAResponse("hang.example.com", net.ParseIP("1.2.3.4")),
 	}
 
+	// The waiter's independent query will also use this querier.
+	// After timeout, waiter calls queryUpstream independently which
+	// uses the same directDNS. The slowQuerier will block again, but
+	// we need a fast querier for the waiter's independent attempt.
+	// Solution: use a wrapper that blocks on first call but is fast on second.
+	callCount := 0
+	var mu sync.Mutex
+	adaptiveQ := &adaptiveQuerier{
+		first: stuckQ,
+		rest: &mockQuerier{
+			resp: buildAResponse("hang.example.com", net.ParseIP("9.9.9.9")),
+		},
+		callCount: &callCount,
+		mu:        &mu,
+	}
+
 	mw := NewMiddleware(MiddlewareConfig{
-		DirectDNS: directQ,
+		DirectDNS: adaptiveQ,
 		ProxyDNS:  &mockQuerier{resp: buildAResponse("hang.example.com", net.ParseIP("5.6.7.8"))},
 	})
 
 	query := buildAQuery("hang.example.com")
 
-	// Start the owning query in background.
+	// Start the owning query in background (will block in stuckQ).
 	go mw.HandleQuery(query)
 	time.Sleep(50 * time.Millisecond) // let owner register inflight entry
 
-	// Waiter query — must return within inflightTimeout + margin.
+	// Waiter query — should timeout on dedup, then query independently.
 	start := time.Now()
-	_, err := mw.HandleQuery(query)
+	respBytes, err := mw.HandleQuery(query)
 	elapsed := time.Since(start)
 
-	if err == nil {
-		t.Fatal("expected timeout error from waiter, got nil")
+	// Waiter should succeed (independent query after timeout).
+	if err != nil {
+		t.Fatalf("waiter should succeed after independent query, got: %v", err)
 	}
-	if elapsed > inflightTimeout+2*time.Second {
+	if elapsed > inflightTimeout+3*time.Second {
 		t.Errorf("waiter blocked too long: %v (expected ~%v)", elapsed, inflightTimeout)
 	}
 	if elapsed < inflightTimeout-time.Second {
 		t.Errorf("waiter returned too early: %v (expected ~%v)", elapsed, inflightTimeout)
 	}
+
+	// Verify we got a valid response.
+	var resp dns.Msg
+	if err := resp.Unpack(respBytes); err != nil {
+		t.Fatalf("unpack response: %v", err)
+	}
+	if len(resp.Answer) == 0 {
+		t.Fatal("expected answer in response")
+	}
+}
+
+// adaptiveQuerier returns different queriers for first vs subsequent calls.
+type adaptiveQuerier struct {
+	first     DNSQuerier
+	rest      DNSQuerier
+	callCount *int
+	mu        *sync.Mutex
+}
+
+func (a *adaptiveQuerier) Query(q *dns.Msg) (*dns.Msg, error) {
+	a.mu.Lock()
+	*a.callCount++
+	count := *a.callCount
+	a.mu.Unlock()
+	if count == 1 {
+		return a.first.Query(q)
+	}
+	return a.rest.Query(q)
 }
 
 func TestInflightDedup_NormalDedup(t *testing.T) {
@@ -410,5 +457,68 @@ func TestInflightDedup_NormalDedup(t *testing.T) {
 	directQ.mu.Unlock()
 	if calls != 1 {
 		t.Errorf("expected 1 upstream call (dedup), got %d", calls)
+	}
+}
+
+func TestQueryUpstream_ProxyFallbackToDirect(t *testing.T) {
+	initK2Rule(t, k2rule.TargetProxy)
+
+	directQ := &mockQuerier{
+		resp: buildAResponse("fallback.example.com", net.ParseIP("1.2.3.4")),
+	}
+	proxyQ := &mockQuerier{
+		err: fmt.Errorf("tunnel broken"),
+	}
+
+	mw := NewMiddleware(MiddlewareConfig{
+		DirectDNS: directQ,
+		ProxyDNS:  proxyQ,
+	})
+
+	query := buildAQuery("fallback.example.com")
+	respBytes, err := mw.HandleQuery(query)
+	if err != nil {
+		t.Fatalf("HandleQuery error: %v", err)
+	}
+
+	// Proxy should have been called first and failed.
+	if !proxyQ.called {
+		t.Error("expected proxyDNS to be called")
+	}
+
+	// Direct should have been called as fallback.
+	if !directQ.called {
+		t.Error("expected directDNS to be called as fallback")
+	}
+
+	// Verify response contains the direct result.
+	var resp dns.Msg
+	if err := resp.Unpack(respBytes); err != nil {
+		t.Fatalf("unpack response: %v", err)
+	}
+	if len(resp.Answer) == 0 {
+		t.Fatal("expected at least one answer")
+	}
+	a := resp.Answer[0].(*dns.A)
+	if !a.A.Equal(net.ParseIP("1.2.3.4")) {
+		t.Errorf("expected 1.2.3.4, got %s", a.A)
+	}
+}
+
+func TestQueryUpstream_ProxyAndDirectBothFail(t *testing.T) {
+	initK2Rule(t, k2rule.TargetProxy)
+
+	directQ := &mockQuerier{err: fmt.Errorf("direct also broken")}
+	proxyQ := &mockQuerier{err: fmt.Errorf("tunnel broken")}
+
+	mw := NewMiddleware(MiddlewareConfig{
+		DirectDNS: directQ,
+		ProxyDNS:  proxyQ,
+	})
+
+	query := buildAQuery("allfail.example.com")
+	_, err := mw.HandleQuery(query)
+	if err == nil {
+		t.Fatal("expected error when both proxy and direct fail")
 	}
 }

@@ -1,6 +1,7 @@
 package dns
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net"
@@ -46,37 +47,82 @@ func NewDirectDNSClient(servers []string, opts ...DirectDNSOption) *DirectDNSCli
 	return c
 }
 
-// Query sends a DNS query via direct UDP socket (bypassing TUN)
-// Tries all configured servers until one succeeds
+// Query sends a DNS query via direct UDP socket (bypassing TUN).
+// Races all configured servers in parallel and returns the first success.
+// Any valid DNS response (including NXDOMAIN) is accepted — only
+// transport-level errors (timeout, connection refused) are failures.
 func (c *DirectDNSClient) Query(query *dns.Msg) (*dns.Msg, error) {
+	if len(c.servers) == 1 {
+		return c.queryServer(query, c.servers[0])
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
+	type result struct {
+		resp *dns.Msg
+		err  error
+	}
+	ch := make(chan result, len(c.servers))
+
+	for _, server := range c.servers {
+		go func(s string) {
+			resp, err := c.queryServer(query, s)
+			ch <- result{resp, err}
+		}(server)
+	}
+
+	var lastErr error
+	for range c.servers {
+		select {
+		case r := <-ch:
+			if r.err == nil {
+				return r.resp, nil
+			}
+			lastErr = r.err
+		case <-ctx.Done():
+			if lastErr != nil {
+				return nil, fmt.Errorf("all direct DNS servers failed: %w", lastErr)
+			}
+			return nil, fmt.Errorf("all direct DNS servers timeout")
+		}
+	}
+
+	return nil, fmt.Errorf("all direct DNS servers failed: %w", lastErr)
+}
+
+// queryServer queries a single DNS server via UDP.
+// Retries over TCP if the response has the TC (truncated) flag set.
+func (c *DirectDNSClient) queryServer(query *dns.Msg, server string) (*dns.Msg, error) {
 	client := &dns.Client{
 		Net:     "udp",
 		Timeout: c.timeout,
 		Dialer:  c.dialer,
 	}
 
-	var lastErr error
+	resp, rtt, err := client.Exchange(query, server)
+	if err != nil {
+		slog.Warn("direct DNS query failed", "server", server, "err", err)
+		return nil, err
+	}
 
-	// Try each server until one succeeds.
-	// Any valid DNS response (including NXDOMAIN) is returned — only
-	// transport-level errors (timeout, connection refused) cause fallback.
-	for _, server := range c.servers {
-		resp, rtt, err := client.Exchange(query, server)
-		if err != nil {
-			slog.Warn("direct DNS query failed", "server", server, "err", err)
-			lastErr = err
-			continue
+	// RFC 1035 §4.2.1: TC flag means response was truncated.
+	// Retry over TCP to get the full response.
+	if resp.Truncated {
+		tcpClient := &dns.Client{
+			Net:     "tcp",
+			Timeout: c.timeout,
+			Dialer:  c.dialer,
 		}
-
-		slog.Debug("direct DNS query ok", "domain", extractDomain(query), "server", server, "rtt", rtt, "rcode", dns.RcodeToString[resp.Rcode])
-		return resp, nil
+		resp, rtt, err = tcpClient.Exchange(query, server)
+		if err != nil {
+			slog.Warn("direct DNS TCP retry failed", "server", server, "err", err)
+			return nil, err
+		}
 	}
 
-	if lastErr != nil {
-		return nil, fmt.Errorf("all direct DNS servers failed: %w", lastErr)
-	}
-
-	return nil, fmt.Errorf("no direct DNS servers configured")
+	slog.Debug("direct DNS query ok", "domain", extractDomain(query), "server", server, "rtt", rtt, "rcode", dns.RcodeToString[resp.Rcode])
+	return resp, nil
 }
 
 // extractDomain extracts the domain name from a DNS query

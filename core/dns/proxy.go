@@ -4,11 +4,16 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/kaitu-io/k2/wire"
 	"github.com/miekg/dns"
 )
+
+// proxyBufPool pools 4096-byte buffers for DNS UDP response reads.
+// Reduces GC pressure under high concurrency, especially on iOS NE (~15MB limit).
+var proxyBufPool = sync.Pool{New: func() any { b := make([]byte, 4096); return &b }}
 
 // ProxyDNSClient queries DNS through the wire tunnel using DialUDP.
 // Each query opens a fresh UDP session to the DNS server.
@@ -39,22 +44,50 @@ func NewProxyDNSClient(cfg ProxyDNSClientConfig) *ProxyDNSClient {
 }
 
 // Query sends a DNS query through the tunnel via wire.Dialer.DialUDP.
+// Races all configured servers in parallel and returns the first success.
 func (c *ProxyDNSClient) Query(query *dns.Msg) (*dns.Msg, error) {
 	queryBytes, err := query.Pack()
 	if err != nil {
 		return nil, fmt.Errorf("pack DNS query: %w", err)
 	}
 
-	for _, server := range c.servers {
-		resp, err := c.queryServer(server, queryBytes, query)
-		if err != nil {
-			slog.Warn("proxy DNS query failed", "server", server, "err", err)
-			continue
-		}
-		return resp, nil
+	if len(c.servers) == 1 {
+		return c.queryServer(c.servers[0], queryBytes, query)
 	}
 
-	return nil, fmt.Errorf("all proxy DNS servers failed")
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
+	type result struct {
+		resp *dns.Msg
+		err  error
+	}
+	ch := make(chan result, len(c.servers))
+
+	for _, server := range c.servers {
+		go func(s string) {
+			resp, err := c.queryServer(s, queryBytes, query)
+			ch <- result{resp, err}
+		}(server)
+	}
+
+	var lastErr error
+	for range c.servers {
+		select {
+		case r := <-ch:
+			if r.err == nil {
+				return r.resp, nil
+			}
+			lastErr = r.err
+		case <-ctx.Done():
+			if lastErr != nil {
+				return nil, fmt.Errorf("all proxy DNS servers failed: %w", lastErr)
+			}
+			return nil, fmt.Errorf("all proxy DNS servers timeout")
+		}
+	}
+
+	return nil, fmt.Errorf("all proxy DNS servers failed: %w", lastErr)
 }
 
 func (c *ProxyDNSClient) queryServer(server string, queryBytes []byte, query *dns.Msg) (*dns.Msg, error) {
@@ -71,7 +104,9 @@ func (c *ProxyDNSClient) queryServer(server string, queryBytes []byte, query *dn
 		return nil, fmt.Errorf("write query: %w", err)
 	}
 
-	buf := make([]byte, 4096)
+	bp := proxyBufPool.Get().(*[]byte)
+	defer proxyBufPool.Put(bp)
+	buf := *bp
 	conn.SetReadDeadline(time.Now().Add(c.timeout))
 	n, _, err := conn.ReadFrom(buf)
 	if err != nil {

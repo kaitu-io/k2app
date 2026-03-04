@@ -197,6 +197,7 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, []byte, error) {
 	// we wait for its result instead of issuing a duplicate query.
 	inflightKey := domain + ":" + strconv.FormatUint(uint64(query.Question[0].Qtype), 10)
 
+	timedOut := false
 	result := &inflightResult{done: make(chan struct{})}
 	if existing, loaded := m.inflight.LoadOrStore(inflightKey, result); loaded {
 		// Another goroutine is already querying — wait for its result.
@@ -212,9 +213,30 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, []byte, error) {
 			packed := cloneAndPatchID(existing.packed, query.Id)
 			return nil, packed, nil
 		case <-timer.C:
-			slog.Warn("DNS inflight dedup timeout", "domain", domain, "key", inflightKey)
-			return nil, nil, fmt.Errorf("DNS query timeout waiting for in-flight %s", inflightKey)
+			slog.Warn("DNS inflight dedup timeout, querying independently", "domain", domain)
+			timedOut = true
 		}
+	}
+
+	// Waiter timed out — query independently (owner still owns the inflight key).
+	if timedOut {
+		resp, err := m.queryUpstream(domain, action, query)
+		if err != nil {
+			return nil, nil, err
+		}
+		packed, packErr := resp.Pack()
+		if packErr != nil {
+			return nil, nil, packErr
+		}
+		if m.dnsCache != nil {
+			m.dnsCache.Add(domain, query.Question[0].Qtype, resp)
+		}
+		if resp.Rcode == dns.RcodeSuccess {
+			for _, ip := range extractIPsFromResponse(resp) {
+				k2rule.SetTmpRule(ip, action)
+			}
+		}
+		return nil, packed, nil
 	}
 
 	// We own this query — execute and broadcast result.
@@ -282,11 +304,17 @@ func (m *Middleware) queryUpstream(domain string, action k2rule.Target, query *d
 		}
 		resp, err := m.proxyDNS.Query(query)
 		if err != nil {
-			if m.metrics != nil {
-				m.metrics.IncrError()
+			slog.Warn("DNS proxy query failed, fallback to direct", "domain", domain, "err", err)
+			// Fallback: proxy failed → try direct DNS.
+			// May return polluted results in censored networks, but a response
+			// (even imperfect) is better than no response when tunnel is flaky.
+			resp, err = m.directDNS.Query(query)
+			if err != nil {
+				if m.metrics != nil {
+					m.metrics.IncrError()
+				}
+				return nil, fmt.Errorf("DNS proxy+direct fallback failed: %w", err)
 			}
-			slog.Warn("DNS proxy query failed", "domain", domain, "err", err)
-			return nil, err
 		}
 		slog.Debug("DNS routed proxy", "domain", domain)
 		return resp, nil
