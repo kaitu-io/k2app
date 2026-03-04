@@ -392,7 +392,7 @@ func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, 
 		// Safe: conn verified current under lock; ConnectionState() reads
 		// immutable handshake data set during QUIC handshake.
 		dgSupported := conn.ConnectionState().SupportsDatagrams
-		slog.Info("QUICClient.DialUDP", "addr", addr, "datagramsSupported", dgSupported)
+		slog.Debug("QUICClient.DialUDP", "addr", addr, "datagramsSupported", dgSupported)
 		if dgSupported {
 			if !mux.datagramHealthy() {
 				// Hop port before falling back to TCP-WS.

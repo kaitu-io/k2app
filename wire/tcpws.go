@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -124,7 +126,7 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 			return c.sess, nil
 		}
 		// Session dead (keepalive timeout, underlying conn closed) — clear and reconnect.
-		slog.Info("TCPWSClient: clearing dead smux session")
+		slog.Debug("TCPWSClient: clearing dead smux session")
 		if c.udpMux != nil {
 			c.udpMux.close()
 			c.udpMux = nil
@@ -298,7 +300,7 @@ func (c *TCPWSClient) DialTCP(ctx context.Context, addr string) (net.Conn, error
 // DialUDP opens a UDP proxy session through a shared smux UDP stream.
 // Returns a PacketConn backed by SmuxUDPFrame messages.
 func (c *TCPWSClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, error) {
-	slog.Info("TCPWSClient.DialUDP", "addr", addr)
+	slog.Debug("TCPWSClient.DialUDP", "addr", addr)
 	sess, err := c.connect(ctx)
 	if err != nil {
 		slog.Warn("TCPWSClient.DialUDP: connect failed", "addr", addr, "err", err)
@@ -331,7 +333,7 @@ func (c *TCPWSClient) DialUDP(ctx context.Context, addr string) (net.PacketConn,
 
 	sessionID := alloc.Next()
 	readCh := mux.register(sessionID)
-	slog.Info("TCPWSClient.DialUDP: session ready", "addr", addr, "sessionID", sessionID)
+	slog.Debug("TCPWSClient.DialUDP: session ready", "addr", addr, "sessionID", sessionID)
 
 	return &smuxUDPConn{
 		mux:        mux,
@@ -697,8 +699,13 @@ func (c *smuxUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 
 func (c *smuxUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
 	if err := c.mux.writeFrame(c.sessionID, c.targetAddr, b); err != nil {
-		slog.Warn("smuxUDPConn: WriteTo failed", "sessionID", c.sessionID,
-			"target", c.targetAddr, "len", len(b), "err", err)
+		if errors.Is(err, io.ErrClosedPipe) || errors.Is(err, net.ErrClosed) {
+			slog.Debug("smuxUDPConn: WriteTo failed (closed)", "sessionID", c.sessionID,
+				"target", c.targetAddr, "err", err)
+		} else {
+			slog.Warn("smuxUDPConn: WriteTo failed", "sessionID", c.sessionID,
+				"target", c.targetAddr, "len", len(b), "err", err)
+		}
 		return 0, err
 	}
 	slog.Debug("smuxUDPConn: WriteTo ok", "sessionID", c.sessionID,
