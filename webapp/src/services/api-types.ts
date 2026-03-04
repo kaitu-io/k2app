@@ -163,6 +163,15 @@ export interface SlaveNode {
   bandwidthUsagePercent: number; // Bandwidth usage (0-100)
 }
 
+// Cloud instance billing/traffic data (only present for cloud-managed nodes)
+export interface TunnelInstance {
+  trafficTotalBytes: number;
+  trafficRatio: number;      // 0-1, fraction of traffic allowance used
+  billingCycleEndAt: number; // Unix seconds
+  timeRatio: number;         // 0-1, fraction of billing period elapsed
+  budgetScore: number;       // trafficRatio - timeRatio. [-1,+1]. Negative = recommended.
+}
+
 // 隧道信息
 // URL 格式: k2wss://domain?addrs=node_ip:tunnel_port[&anonymity=1]
 // - domain: 仅用于 SNI/TLS，不包含端口
@@ -175,6 +184,7 @@ export interface Tunnel {
   port: number; // 隧道端口
   serverUrl?: string; // k2v5 connection URL (only present for k2v5 tunnels)
   node: SlaveNode; // 关联的物理节点
+  instance?: TunnelInstance; // Cloud instance data (only for cloud-managed nodes)
 }
 
 // 隧道列表响应
