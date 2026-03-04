@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -26,7 +27,7 @@ type dnsHandler struct {
 	consecutiveFails atomic.Int32
 }
 
-const dnsWireErrorThreshold int32 = 5
+const dnsWireErrorThreshold int32 = 30
 
 func (h *dnsHandler) HandleTCP(conn net.Conn, dest string) {
 	_, port, _ := net.SplitHostPort(dest)
@@ -56,6 +57,15 @@ func (h *dnsHandler) serveDNS(conn net.PacketConn) {
 		}
 		resp, err := h.dns.HandleQuery(buf[:n])
 		if err != nil {
+			if isDNSParseError(err) {
+				// Incoming query is malformed (not a wire/upstream issue).
+				// Send SERVFAIL so the client retries immediately instead
+				// of waiting for a DNS timeout.
+				if sf := buildSERVFAIL(buf[:n]); sf != nil {
+					conn.WriteTo(sf, addr)
+				}
+				continue
+			}
 			h.recordDNSFailure(err)
 			continue
 		}
@@ -94,7 +104,9 @@ func (h *dnsHandler) serveDNSStream(conn net.Conn) {
 
 		resp, err := h.dns.HandleQuery(buf)
 		if err != nil {
-			h.recordDNSFailure(err)
+			if !isDNSParseError(err) {
+				h.recordDNSFailure(err)
+			}
 			continue
 		}
 		h.recordDNSSuccess()
@@ -109,6 +121,33 @@ func (h *dnsHandler) serveDNSStream(conn net.Conn) {
 			return
 		}
 	}
+}
+
+// isDNSParseError returns true if the error is from parsing the incoming
+// DNS query (not an upstream/wire failure). These should not count toward
+// the wire error threshold.
+func isDNSParseError(err error) bool {
+	s := err.Error()
+	return strings.HasPrefix(s, "unpack DNS query") || s == "no domain in DNS query"
+}
+
+// buildSERVFAIL constructs a minimal DNS SERVFAIL response from raw query
+// bytes. Only the query ID (first 2 bytes) is needed. Returns nil if the
+// packet is too short to contain a valid DNS header (12 bytes).
+func buildSERVFAIL(query []byte) []byte {
+	if len(query) < 12 {
+		return nil
+	}
+	// DNS header: ID(2) + Flags(2) + QDCOUNT(2) + ANCOUNT(2) + NSCOUNT(2) + ARCOUNT(2)
+	resp := make([]byte, 12)
+	// Copy query ID
+	resp[0] = query[0]
+	resp[1] = query[1]
+	// Flags: QR=1 (response), RCODE=2 (SERVFAIL)
+	resp[2] = 0x80 // QR=1, Opcode=0
+	resp[3] = 0x02 // RCODE=SERVFAIL
+	// All counts zero (no question/answer/authority/additional sections)
+	return resp
 }
 
 func (h *dnsHandler) recordDNSFailure(err error) {
