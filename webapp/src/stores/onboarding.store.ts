@@ -39,6 +39,8 @@ interface OnboardingState {
   // Actions
   /** Start the onboarding tour */
   start: () => void;
+  /** Check storage and start if not completed */
+  tryStart: () => Promise<void>;
   /** Advance to the next phase */
   nextPhase: () => void;
   /** Skip/complete the onboarding */
@@ -74,6 +76,13 @@ export const useOnboardingStore = create<OnboardingState>()((set, get) => ({
   start: () => {
     const phases = buildPhaseList();
     set({ active: true, phase: phases[0], phases });
+  },
+
+  tryStart: async () => {
+    const completed = await window._platform?.storage.get<boolean>(STORAGE_KEY);
+    if (!completed) {
+      get().start();
+    }
   },
 
   nextPhase: () => {

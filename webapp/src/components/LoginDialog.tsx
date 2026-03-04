@@ -33,6 +33,7 @@ import { useTranslation } from "react-i18next";
 import { useAuthStore } from "../stores";
 
 import { useLoginDialogStore } from "../stores/login-dialog.store";
+import { useOnboardingStore } from "../stores/onboarding.store";
 import { useAppLinks } from "../hooks/useAppLinks";
 import { handleResponseError } from "../utils/errorCode";
 import { cloudApi } from '../services/cloud-api';
@@ -175,6 +176,11 @@ export default function LoginDialog() {
       cacheStore.clear();
       setIsAuthenticated(true);
       close();
+
+      // Trigger onboarding for first-time users (delay for Dashboard to render)
+      setTimeout(() => {
+        useOnboardingStore.getState().tryStart();
+      }, 800);
     } catch (err) {
       console.error('[LoginDialog] Failed to verify code:', err);
       setError(t("auth:auth.loginFailedRetry"));

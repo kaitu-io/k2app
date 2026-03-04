@@ -28,6 +28,7 @@ import {
 } from "@mui/icons-material";
 import { useTranslation } from "react-i18next";
 import { useAuthStore } from "../stores";
+import { useOnboardingStore } from "../stores/onboarding.store";
 import { handleResponseError } from "../utils/errorCode";
 import type { SendCodeResponse, AuthResult } from "../services/api-types";
 import { cloudApi } from '../services/cloud-api';
@@ -190,6 +191,11 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
       console.info(`Login successful for user: ${email}`);
       setIsAuthenticated(true);
       onLoginSuccess?.();
+
+      // Trigger onboarding for first-time users (delay for Dashboard to render)
+      setTimeout(() => {
+        useOnboardingStore.getState().tryStart();
+      }, 800);
     } catch (err) {
       console.error('[EmailLoginForm] Failed to verify code:', err);
       setError(t("auth:auth.loginFailedRetry"));
@@ -226,6 +232,11 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
       cacheStore.clear();
       setIsAuthenticated(true);
       onLoginSuccess?.();
+
+      // Trigger onboarding for first-time users (delay for Dashboard to render)
+      setTimeout(() => {
+        useOnboardingStore.getState().tryStart();
+      }, 800);
     } catch (err) {
       console.error('[EmailLoginForm] Password login failed:', err);
       setError(t("auth:auth.loginFailedRetry"));

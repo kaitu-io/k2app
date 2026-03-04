@@ -157,6 +157,14 @@ export const darkTheme = createTheme({
         },
       },
     },
+    MuiDialog: {
+      styleOverrides: {
+        paper: {
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
+        },
+      },
+    },
     MuiButton: {
       styleOverrides: {
         root: {
