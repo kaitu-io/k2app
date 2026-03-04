@@ -131,7 +131,7 @@ export default function WalletPage() {
       </div>
 
       {/* Balance Overview */}
-      <Card className="p-8 bg-gradient-to-br from-primary/5 via-transparent to-green-50 dark:from-primary/10 dark:via-transparent dark:to-green-950">
+      <Card className="p-8 border-primary/20 bg-gradient-to-br from-primary/10 via-primary/5 to-card">
         <div className="space-y-8">
           {/* Main Balance */}
           <div>
@@ -156,7 +156,7 @@ export default function WalletPage() {
                 <Lock className="h-4 w-4" />
                 {t("wallet.wallet.frozenBalance")}
               </div>
-              <p className="text-2xl font-semibold text-orange-600 dark:text-orange-400">
+              <p className="text-2xl font-semibold text-amber-400">
                 {formatAmount(wallet.frozenBalance)}
               </p>
             </div>
@@ -166,7 +166,7 @@ export default function WalletPage() {
                 <TrendingUp className="h-4 w-4" />
                 {t("wallet.wallet.totalIncome")}
               </div>
-              <p className="text-2xl font-semibold text-green-600 dark:text-green-400">
+              <p className="text-2xl font-semibold text-primary">
                 {formatAmount(wallet.totalIncome)}
               </p>
             </div>
@@ -176,7 +176,7 @@ export default function WalletPage() {
                 <DollarSign className="h-4 w-4" />
                 {t("wallet.wallet.totalWithdrawn")}
               </div>
-              <p className="text-2xl font-semibold text-blue-600 dark:text-blue-400">
+              <p className="text-2xl font-semibold text-secondary">
                 {formatAmount(wallet.totalWithdrawn)}
               </p>
             </div>
@@ -187,12 +187,12 @@ export default function WalletPage() {
       {/* Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Changes History Card */}
-        <Card className="p-6 hover:shadow-lg transition-shadow cursor-pointer group"
+        <Card className="p-6 hover:border-primary/30 transition-colors cursor-pointer group"
               onClick={() => router.push("/account/wallet/changes")}>
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-lg">
-                <History className="h-6 w-6 text-green-600 dark:text-green-400" />
+              <div className="p-3 bg-primary/10 rounded-lg">
+                <History className="h-6 w-6 text-primary" />
               </div>
               <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:translate-x-1 transition-transform" />
             </div>
@@ -206,12 +206,12 @@ export default function WalletPage() {
         </Card>
 
         {/* Withdraw Records Card */}
-        <Card className="p-6 hover:shadow-lg transition-shadow cursor-pointer group"
+        <Card className="p-6 hover:border-secondary/30 transition-colors cursor-pointer group"
               onClick={() => router.push("/account/wallet/withdraws")}>
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-                <FileText className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+              <div className="p-3 bg-secondary/10 rounded-lg">
+                <FileText className="h-6 w-6 text-secondary" />
               </div>
               <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:translate-x-1 transition-transform" />
             </div>
@@ -225,12 +225,12 @@ export default function WalletPage() {
         </Card>
 
         {/* Account Management Card */}
-        <Card className="p-6 hover:shadow-lg transition-shadow cursor-pointer group"
+        <Card className="p-6 hover:border-amber-400/30 transition-colors cursor-pointer group"
               onClick={() => router.push("/account/wallet/accounts")}>
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <div className="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
-                <Settings className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+              <div className="p-3 bg-amber-400/10 rounded-lg">
+                <Settings className="h-6 w-6 text-amber-400" />
               </div>
               <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:translate-x-1 transition-transform" />
             </div>

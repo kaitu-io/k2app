@@ -8,6 +8,8 @@ import Footer from '@/components/Footer';
 import { posts } from '#velite';
 import { routing } from '@/i18n/routing';
 
+export const dynamicParams = true;
+
 interface Post {
   title: string;
   date: string;

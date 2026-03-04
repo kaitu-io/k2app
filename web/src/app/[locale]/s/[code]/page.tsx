@@ -33,9 +33,24 @@ export default async function InvitePage({
   setRequestLocale(locale);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
+    <div className="min-h-screen">
       <Header />
-      <InviteClient code={code} />
+      <div
+        className="bg-gradient-to-br from-white via-blue-50/50 to-purple-50/50"
+        style={{
+          '--card': '#ffffff',
+          '--card-foreground': '#111827',
+          '--border': '#e5e7eb',
+          '--muted': '#f3f4f6',
+          '--muted-foreground': '#6b7280',
+          '--input': '#e5e7eb',
+          '--primary': '#4f46e5',
+          '--primary-foreground': '#ffffff',
+          '--ring': '#4f46e5',
+        } as React.CSSProperties}
+      >
+        <InviteClient code={code} />
+      </div>
       <Footer />
     </div>
   );
