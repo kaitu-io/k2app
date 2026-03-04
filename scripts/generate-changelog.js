@@ -4,17 +4,19 @@ const fs = require('fs');
 const path = require('path');
 
 /**
- * Generate CHANGELOG.md from client/releases/ directory
+ * Generate releases data from releases/ directory
  *
- * This script reads all version files from client/releases/ and generates
- * a single CHANGELOG.md file for the web dashboard.
+ * This script reads all version files from releases/ and generates:
+ *   - web/public/releases.json  (primary: includes downloads + channel info)
+ *   - web/public/changelog.json (backward compat copy)
+ *   - web/public/changelog.md   (concatenated markdown)
  *
  * Usage:
  *   node scripts/generate-changelog.js
- *
- * Output:
- *   web/public/changelog.md
  */
+
+const DOWNLOAD_BASE_URL = 'https://d0.all7.cc/kaitu/desktop';
+const MIN_DOWNLOAD_VERSION = { major: 0, minor: 3, patch: 22 };
 
 function parseVersion(filename) {
   // Extract version from filename (e.g., "v0.3.18.md" or "v0.4.0-beta.1.md")
@@ -77,10 +79,17 @@ function parseMarkdownSections(content) {
   return sections;
 }
 
+function isVersionGte(v, min) {
+  if (v.major !== min.major) return v.major > min.major;
+  if (v.minor !== min.minor) return v.minor > min.minor;
+  return v.patch >= min.patch;
+}
+
 function generateChangelog() {
   const releasesDir = path.join(__dirname, '../releases');
   const mdOutputPath = path.join(__dirname, '../web/public/changelog.md');
-  const jsonOutputPath = path.join(__dirname, '../web/public/changelog.json');
+  const releasesOutputPath = path.join(__dirname, '../web/public/releases.json');
+  const changelogOutputPath = path.join(__dirname, '../web/public/changelog.json');
 
   console.log('==> 📝 Generating CHANGELOG from releases/');
 
@@ -122,6 +131,8 @@ function generateChangelog() {
   // Prepare JSON data
   const jsonData = {
     generated: new Date().toISOString(),
+    latestBeta: null,
+    latestStable: null,
     versions: []
   };
 
@@ -148,12 +159,31 @@ function generateChangelog() {
     // Parse sections for JSON
     const sections = parseMarkdownSections(withoutFrontmatter);
 
+    // Determine channel and download availability
+    const channel = version.prerelease ? 'beta' : 'stable';
+    const hasDownloads = isVersionGte(version, MIN_DOWNLOAD_VERSION);
+    const downloads = hasDownloads ? {
+      windows: `${DOWNLOAD_BASE_URL}/${version.string}/Kaitu_${version.string}_x64.exe`,
+      macos: `${DOWNLOAD_BASE_URL}/${version.string}/Kaitu_${version.string}_universal.pkg`,
+    } : {};
+
+    // Track latest beta and stable
+    if (channel === 'beta' && !jsonData.latestBeta) {
+      jsonData.latestBeta = version.string;
+    }
+    if (channel === 'stable' && !jsonData.latestStable) {
+      jsonData.latestStable = version.string;
+    }
+
     // Add to JSON
     jsonData.versions.push({
       version: version.string,
       date: date,
       content: withoutFrontmatter.trim(),
-      sections: sections
+      sections: sections,
+      channel,
+      hasDownloads,
+      downloads,
     });
 
     console.log(`   ✅ Added v${version.string} (${date})`);
@@ -168,12 +198,18 @@ function generateChangelog() {
   // Write markdown file
   fs.writeFileSync(mdOutputPath, mdOutput, 'utf8');
 
-  // Write JSON file
-  fs.writeFileSync(jsonOutputPath, JSON.stringify(jsonData, null, 2), 'utf8');
+  // Write releases.json (primary output with downloads)
+  fs.writeFileSync(releasesOutputPath, JSON.stringify(jsonData, null, 2), 'utf8');
 
-  console.log(`\n==> ✅ Generated changelog with ${versions.length} versions`);
+  // Write changelog.json (backward compat — same data)
+  fs.writeFileSync(changelogOutputPath, JSON.stringify(jsonData, null, 2), 'utf8');
+
+  console.log(`\n==> ✅ Generated releases data with ${versions.length} versions`);
+  console.log(`   Latest beta: ${jsonData.latestBeta || 'none'}`);
+  console.log(`   Latest stable: ${jsonData.latestStable || 'none'}`);
   console.log(`   Markdown: ${mdOutputPath}`);
-  console.log(`   JSON: ${jsonOutputPath}`);
+  console.log(`   Releases JSON: ${releasesOutputPath}`);
+  console.log(`   Changelog JSON: ${changelogOutputPath} (backward compat)`);
 }
 
 // Main execution

@@ -69,7 +69,7 @@ export function useAppLinks() {
       walletUrl: `${baseURL}${appConfig?.appLinks?.walletPath || '/wallet'}`,
       retailerRulesUrl: `${baseURL}${appConfig?.appLinks?.retailerRulesPath || '/retailer-rules'}`,
       securitySoftwareHelpUrl: `${baseURL}${appConfig?.appLinks?.securitySoftwareHelpPath || '/help/security-software'}`,
-      changelogUrl: `${baseURL}${appConfig?.appLinks?.changelogPath || '/changelog'}`,
+      changelogUrl: `${baseURL}${appConfig?.appLinks?.changelogPath || '/releases'}`,
     };
   }, [appConfig]);
 

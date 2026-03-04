@@ -232,48 +232,40 @@ describe('test_opensource_generates_metadata', () => {
 });
 
 // ============================================================================
-// Changelog Page Tests
+// Changelog Page Tests (now redirects to /releases)
 // ============================================================================
 
-describe('test_changelog_ssr_renders_content', () => {
-  it('page component is an async function (Server Component pattern)', async () => {
+describe('test_changelog_redirects_to_releases', () => {
+  it('page component is an async function', async () => {
     const { default: ChangelogPage } = await import('../src/app/[locale]/changelog/page');
-
-    // Must be an async function to qualify as a Server Component that awaits params
     expect(ChangelogPage).toBeTypeOf('function');
-    const result = ChangelogPage({ params: Promise.resolve({ locale: 'zh-CN' }) });
-    expect(result).toBeInstanceOf(Promise);
-  });
-
-  it('page accepts params as a Promise<{ locale: string }> (Next.js 15 pattern)', async () => {
-    const { default: ChangelogPage } = await import('../src/app/[locale]/changelog/page');
-
-    // Should resolve without throwing — async params are awaited inside
-    const element = await ChangelogPage({ params: Promise.resolve({ locale: 'zh-CN' }) });
-    expect(element).not.toBeNull();
-  });
-
-  it('page renders JSX content (not null or empty)', async () => {
-    const { default: ChangelogPage } = await import('../src/app/[locale]/changelog/page');
-
-    const element = await ChangelogPage({ params: Promise.resolve({ locale: 'zh-CN' }) });
-
-    // Must return a React element (object with $$typeof or type), not null/undefined
-    expect(element).toBeDefined();
-    expect(element).not.toBeNull();
   });
 });
 
-describe('test_changelog_generates_metadata', () => {
-  it('generateMetadata is exported from the changelog page module', async () => {
-    const pageModule = await import('../src/app/[locale]/changelog/page');
+// ============================================================================
+// Releases Page Tests
+// ============================================================================
+
+describe('test_releases_ssr_renders_content', () => {
+  it('page component is an async function (Server Component pattern)', async () => {
+    const { default: ReleasesPage } = await import('../src/app/[locale]/releases/page');
+
+    expect(ReleasesPage).toBeTypeOf('function');
+    const result = ReleasesPage({ params: Promise.resolve({ locale: 'zh-CN' }) });
+    expect(result).toBeInstanceOf(Promise);
+  });
+});
+
+describe('test_releases_generates_metadata', () => {
+  it('generateMetadata is exported from the releases page module', async () => {
+    const pageModule = await import('../src/app/[locale]/releases/page');
 
     expect(pageModule.generateMetadata).toBeDefined();
     expect(pageModule.generateMetadata).toBeTypeOf('function');
   });
 
   it('generateMetadata returns an object with title field', async () => {
-    const { generateMetadata } = await import('../src/app/[locale]/changelog/page');
+    const { generateMetadata } = await import('../src/app/[locale]/releases/page');
 
     const metadata = await generateMetadata({
       params: Promise.resolve({ locale: 'zh-CN' }),
@@ -284,7 +276,7 @@ describe('test_changelog_generates_metadata', () => {
   });
 
   it('generateMetadata returns an object with description field', async () => {
-    const { generateMetadata } = await import('../src/app/[locale]/changelog/page');
+    const { generateMetadata } = await import('../src/app/[locale]/releases/page');
 
     const metadata = await generateMetadata({
       params: Promise.resolve({ locale: 'en-US' }),

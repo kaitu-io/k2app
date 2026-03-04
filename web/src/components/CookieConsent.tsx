@@ -17,6 +17,12 @@ export default function CookieConsent() {
   useEffect(() => {
     setIsClient(true);
 
+    // Skip in embed mode
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('embed') === 'true') {
+      return;
+    }
+
     // Check if user has already consented
     const consent = localStorage.getItem(COOKIE_CONSENT_KEY);
     if (!consent || consent !== COOKIE_CONSENT_VERSION) {

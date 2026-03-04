@@ -1,0 +1,25 @@
+{
+  "title": "Releases",
+  "subtitle": "View release details and downloads for all versions",
+  "latestRelease": "Latest Release",
+  "betaTag": "Beta",
+  "stableTag": "Stable",
+  "downloadWindows": "Download for Windows",
+  "downloadMacOS": "Download for macOS",
+  "downloadAssets": "Downloads",
+  "noDownloads": "No downloads available for this version",
+  "viewAllReleases": "View all releases",
+  "sections": {
+    "newFeatures": "New Features",
+    "bugFixes": "Bug Fixes",
+    "improvements": "Improvements",
+    "breakingChanges": "Breaking Changes"
+  },
+  "controls": {
+    "expandAll": "Expand all",
+    "collapseAll": "Collapse all"
+  },
+  "noData": "No release data available.",
+  "bullet": "•",
+  "comingSoon": "Coming Soon"
+}

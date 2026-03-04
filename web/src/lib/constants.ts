@@ -1,9 +1,17 @@
 // Application constants and configuration
 
-// Desktop release version from build-time environment variable
-// This reads from client/package.json:releaseVersion via next.config.ts
+// Desktop release versions from build-time environment variables (via next.config.ts)
+// DESKTOP_VERSION = stable (releaseVersion), BETA_VERSION = latest (version, may include prerelease)
 export const DESKTOP_VERSION = process.env.NEXT_PUBLIC_DESKTOP_VERSION || '0.0.0';
+export const BETA_VERSION = process.env.NEXT_PUBLIC_BETA_VERSION || '0.0.0';
 const DOWNLOAD_BASE_URL = process.env.NEXT_PUBLIC_DOWNLOAD_BASE_URL || 'https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop';
+
+export function getDownloadLinks(version: string) {
+  return {
+    windows: `${DOWNLOAD_BASE_URL}/${version}/Kaitu_${version}_x64.exe`,
+    macos: `${DOWNLOAD_BASE_URL}/${version}/Kaitu_${version}_universal.pkg`,
+  };
+}
 
 export const DOWNLOAD_LINKS = {
   // Mobile apps

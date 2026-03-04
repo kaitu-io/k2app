@@ -14,28 +14,29 @@ import * as path from 'path';
 
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
 
-// Read version from root package.json (single source of truth)
-// Uses releaseVersion if set, otherwise falls back to version
-const getDesktopVersion = () => {
+// Read versions from root package.json (single source of truth)
+// releaseVersion = stable, version = beta (may include prerelease suffix)
+const getRootPackageJson = () => {
   try {
     const packagePath = path.join(__dirname, '../package.json');
     const packageContent = fs.readFileSync(packagePath, 'utf8');
-    const packageJson = JSON.parse(packageContent);
-    // Use releaseVersion for stable releases, fallback to version if not set
-    return packageJson.releaseVersion || packageJson.version || '0.0.0';
+    return JSON.parse(packageContent);
   } catch {
-    console.warn('Could not read desktop version, using fallback: 0.0.0');
-    return '0.0.0';
+    console.warn('Could not read root package.json, using fallback versions');
+    return { version: '0.0.0', releaseVersion: '0.0.0' };
   }
 };
 
-const desktopVersion = getDesktopVersion();
-console.log(`🚀 Building with desktop version: ${desktopVersion}`);
+const rootPkg = getRootPackageJson();
+const desktopVersion = rootPkg.releaseVersion || rootPkg.version || '0.0.0';
+const betaVersion = rootPkg.version || '0.0.0';
+console.log(`🚀 Building with stable: ${desktopVersion}, beta: ${betaVersion}`);
 
 const nextConfig: NextConfig = {
   // Inject desktop version as environment variable at build time
   env: {
     NEXT_PUBLIC_DESKTOP_VERSION: desktopVersion,
+    NEXT_PUBLIC_BETA_VERSION: betaVersion,
     NEXT_PUBLIC_DOWNLOAD_BASE_URL: 'https://d0.all7.cc/kaitu/desktop',
   },
 

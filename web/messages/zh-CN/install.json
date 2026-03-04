@@ -39,6 +39,10 @@
     "helpBrowserBlock": "• 如果浏览器阻止下载，请允许从此网站下载",
     "helpWindowsInstall": "• 在 Windows 上，您可能需要通过 Windows Defender 允许该应用",
     "helpMacosInstall": "• 在 macOS 上，您可能需要在安全与隐私设置中允许该应用",
-    "helpSecurityWarning": "• 如果您看到安全警告，我们的应用是安全的 - 这是因为我们还没有进行代码签名"
+    "helpSecurityWarning": "• 如果您看到安全警告，我们的应用是安全的 - 这是因为我们还没有进行代码签名",
+    "betaVersion": "测试版 v{version}",
+    "stableVersion": "稳定版 v{version}",
+    "lookingForStable": "需要稳定版本？",
+    "viewAllReleases": "查看所有版本 →"
   }
 }

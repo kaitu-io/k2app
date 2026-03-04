@@ -39,6 +39,10 @@
     "helpBrowserBlock": "• If your browser blocks the download, please allow downloads from this website",
     "helpWindowsInstall": "• On Windows, you may need to allow the app through Windows Defender",
     "helpMacosInstall": "• On macOS, you may need to allow the app in Security & Privacy settings",
-    "helpSecurityWarning": "• If you see a security warning, our app is safe - this is because we haven't completed code signing yet"
+    "helpSecurityWarning": "• If you see a security warning, our app is safe - this is because we haven't completed code signing yet",
+    "betaVersion": "Beta v{version}",
+    "stableVersion": "Stable v{version}",
+    "lookingForStable": "Looking for the stable version?",
+    "viewAllReleases": "View all releases →"
   }
 }

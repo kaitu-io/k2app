@@ -1,0 +1,25 @@
+{
+  "title": "版本发布",
+  "subtitle": "查看所有版本的更新详情和下载",
+  "latestRelease": "最新版本",
+  "betaTag": "公测版",
+  "stableTag": "稳定版",
+  "downloadWindows": "下载 Windows 版",
+  "downloadMacOS": "下载 macOS 版",
+  "downloadAssets": "下载",
+  "noDownloads": "此版本无可下载文件",
+  "viewAllReleases": "查看所有版本",
+  "sections": {
+    "newFeatures": "新功能",
+    "bugFixes": "问题修复",
+    "improvements": "改进优化",
+    "breakingChanges": "重大变更"
+  },
+  "controls": {
+    "expandAll": "全部展开",
+    "collapseAll": "全部收起"
+  },
+  "noData": "暂无版本发布数据。",
+  "bullet": "•",
+  "comingSoon": "即将推出"
+}

@@ -39,6 +39,10 @@
     "helpBrowserBlock": "• ブラウザがダウンロードをブロックする場合は、このウェブサイトからのダウンロードを許可してください",
     "helpWindowsInstall": "• Windowsでは、Windows Defenderでアプリを許可する必要がある場合があります",
     "helpMacosInstall": "• macOSでは、セキュリティとプライバシー設定でアプリを許可する必要がある場合があります",
-    "helpSecurityWarning": "• セキュリティ警告が表示される場合がありますが、当社のアプリは安全です - これはコード署名をまだ行っていないためです"
+    "helpSecurityWarning": "• セキュリティ警告が表示される場合がありますが、当社のアプリは安全です - これはコード署名をまだ行っていないためです",
+    "betaVersion": "ベータ v{version}",
+    "stableVersion": "安定版 v{version}",
+    "lookingForStable": "安定版をお探しですか？",
+    "viewAllReleases": "すべてのバージョンを表示 →"
   }
 }

@@ -1,47 +1,26 @@
-import { getTranslations, setRequestLocale } from 'next-intl/server';
-import type { Metadata } from 'next';
-import { routing } from '@/i18n/routing';
-import ChangelogClient from './ChangelogClient';
-
-type Locale = (typeof routing.locales)[number];
-
-export const dynamic = 'force-static';
+import { redirect } from 'next/navigation';
 
 /**
- * Generate metadata for the changelog page (used by Next.js for <head> tags).
- * Requires server-side translation to produce locale-aware title/description.
- */
-export async function generateMetadata({
-  params,
-}: {
-  params: Promise<{ locale: string }>;
-}): Promise<Metadata> {
-  const { locale: rawLocale } = await params;
-  const locale = rawLocale as Locale;
-  const t = await getTranslations({ locale, namespace: 'changelog' });
-
-  return {
-    title: t('title'),
-    description: t('subtitle'),
-  };
-}
-
-/**
- * Changelog page Server Component — SSR-converted from client component.
- *
- * The server shell is minimal: sets locale and renders ChangelogClient.
- * ChangelogClient is the full page replacement — it handles runtime fetch
- * of /changelog.json, accordion expand/collapse, and embed mode detection.
- * Uses async params per Next.js 15 pattern.
+ * Changelog page — redirects to /releases for backward compatibility.
+ * v0.3.22 webapp embeds /changelog?embed=true via iframe; this redirect
+ * ensures it lands on the new /releases page with query params preserved.
  */
 export default async function ChangelogPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ locale: string }>;
+  searchParams: Promise<{ [key: string]: string | undefined }>;
 }) {
-  const { locale: rawLocale } = await params;
-  const locale = rawLocale as Locale;
-  setRequestLocale(locale);
+  const { locale } = await params;
+  const sp = await searchParams;
 
-  return <ChangelogClient />;
+  // Preserve embed and theme query params through redirect
+  const queryParts: string[] = [];
+  if (sp.embed) queryParts.push(`embed=${sp.embed}`);
+  if (sp.theme) queryParts.push(`theme=${sp.theme}`);
+  if (sp.auth_token) queryParts.push(`auth_token=${sp.auth_token}`);
+  const query = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
+
+  redirect(`/${locale}/releases${query}`);
 }

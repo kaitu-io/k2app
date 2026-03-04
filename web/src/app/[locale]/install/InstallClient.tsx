@@ -4,11 +4,9 @@ import { useEffect, useState, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { DOWNLOAD_LINKS } from '@/lib/constants';
+import { DOWNLOAD_LINKS, BETA_VERSION, DESKTOP_VERSION, getDownloadLinks } from '@/lib/constants';
 import {
   detectDevice,
-  getPrimaryDownloadLink,
-  hasAvailableDownload,
   triggerDownload,
   openDownloadInNewTab,
   DeviceInfo
@@ -19,66 +17,59 @@ import {
   AlertCircle,
   Smartphone,
   Monitor,
+  Apple,
   ExternalLink,
   RefreshCw,
   ArrowRight
 } from 'lucide-react';
-import Link from 'next/link';
+import { Link } from '@/i18n/routing';
 
 type DownloadState = 'detecting' | 'ready' | 'downloading' | 'success' | 'failed' | 'unavailable';
 
-/**
- * InstallClient — Client Component for the install page.
- *
- * Handles all browser-dependent logic:
- * - Device detection via navigator.userAgent
- * - Auto-download countdown
- * - Download button click handlers
- * - triggerDownload / openDownloadInNewTab browser APIs
- *
- * Receives translated strings and download links as props from the
- * Server Component shell (install/page.tsx).
- */
 export default function InstallClient() {
   const t = useTranslations();
   const [device, setDevice] = useState<DeviceInfo | null>(null);
   const [downloadState, setDownloadState] = useState<DownloadState>('detecting');
   const [countdown, setCountdown] = useState(5);
-  const [primaryLink, setPrimaryLink] = useState<string | null>(null);
+
+  // Beta is the primary download for desktop
+  const betaLinks = getDownloadLinks(BETA_VERSION);
+  const stableLinks = getDownloadLinks(DESKTOP_VERSION);
+
+  // Determine primary download link based on device
+  const getPrimaryLink = useCallback((deviceInfo: DeviceInfo | null) => {
+    if (!deviceInfo) return null;
+    switch (deviceInfo.type) {
+      case 'windows': return betaLinks.windows;
+      case 'macos': return betaLinks.macos;
+      case 'ios': return DOWNLOAD_LINKS.ios;
+      case 'android': return DOWNLOAD_LINKS.android;
+      default: return null;
+    }
+  }, [betaLinks]);
 
   // Detect device on mount
   useEffect(() => {
     const deviceInfo = detectDevice();
-    const primaryDownloadLink = getPrimaryDownloadLink(DOWNLOAD_LINKS);
-
     setDevice(deviceInfo);
-    setPrimaryLink(primaryDownloadLink);
 
-    if (hasAvailableDownload(DOWNLOAD_LINKS)) {
+    if (deviceInfo.isDesktop) {
       setDownloadState('ready');
-    } else {
+    } else if (deviceInfo.isMobile) {
       setDownloadState('unavailable');
     }
   }, []);
 
+  const primaryLink = getPrimaryLink(device);
+
   const startDownload = useCallback(async () => {
     if (!primaryLink) return;
-
     setDownloadState('downloading');
-
-    // Extract filename from URL
     const filename = primaryLink.split('/').pop() || undefined;
-
-    // Try automatic download
     const downloadTriggered = triggerDownload(primaryLink, filename);
-
     if (downloadTriggered) {
-      // Assume success after a short delay
-      setTimeout(() => {
-        setDownloadState('success');
-      }, 2000);
+      setTimeout(() => setDownloadState('success'), 2000);
     } else {
-      // Fallback to opening in new tab
       openDownloadInNewTab(primaryLink);
       setDownloadState('failed');
     }
@@ -87,9 +78,7 @@ export default function InstallClient() {
   // Auto-download countdown
   useEffect(() => {
     if (downloadState === 'ready' && countdown > 0) {
-      const timer = setTimeout(() => {
-        setCountdown(countdown - 1);
-      }, 1000);
+      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
       return () => clearTimeout(timer);
     } else if (downloadState === 'ready' && countdown === 0) {
       startDownload();
@@ -102,14 +91,12 @@ export default function InstallClient() {
   };
 
   const manualDownload = () => {
-    if (primaryLink) {
-      openDownloadInNewTab(primaryLink);
-    }
+    if (primaryLink) openDownloadInNewTab(primaryLink);
   };
 
   return (
     <>
-      {/* Device Detection Status */}
+      {/* Hero: Device Detection + Beta Download */}
       <Card className="p-8 mb-8">
         <div className="text-center">
           <div className="w-16 h-16 mx-auto mb-4 bg-blue-900/30 rounded-full flex items-center justify-center">
@@ -122,9 +109,15 @@ export default function InstallClient() {
             )}
           </div>
 
-          <h2 className="text-2xl font-bold text-foreground mb-2">
-            {device ? t('install.install.deviceDetected', {device: device.name}) : t('install.install.detectingDevice')}
+          <h2 className="text-2xl font-bold text-foreground mb-1">
+            {device ? t('install.install.deviceDetected', { device: device.name }) : t('install.install.detectingDevice')}
           </h2>
+
+          {device?.isDesktop && (
+            <p className="text-sm text-muted-foreground mb-2">
+              {t('install.install.betaVersion', { version: BETA_VERSION })}
+            </p>
+          )}
 
           {downloadState === 'detecting' && (
             <p className="text-muted-foreground">
@@ -143,7 +136,7 @@ export default function InstallClient() {
               {t('install.install.readyToDownload')}
             </h3>
             <p className="text-blue-200 mb-4">
-              {t('install.install.autoDownloadCountdown', {seconds: countdown})}
+              {t('install.install.autoDownloadCountdown', { seconds: countdown })}
             </p>
             <div className="flex justify-center space-x-4">
               <Button onClick={startDownload} className="bg-blue-600 hover:bg-blue-700">
@@ -222,6 +215,7 @@ export default function InstallClient() {
         </Card>
       )}
 
+      {/* Mobile unavailable */}
       {downloadState === 'unavailable' && device?.isMobile && (
         <Card className="p-8 mb-8 border-orange-800 bg-orange-900/20">
           <div className="text-center">
@@ -230,7 +224,7 @@ export default function InstallClient() {
               {t('install.install.mobileComingSoon')}
             </h3>
             <p className="text-orange-200 mb-4">
-              {t('install.install.platformDevelopment', {platform: device.type === 'ios' ? 'iOS' : 'Android'})}
+              {t('install.install.platformDevelopment', { platform: device.type === 'ios' ? 'iOS' : 'Android' })}
             </p>
             <p className="text-sm text-orange-300">
               {t('install.install.useDesktopVersion')}
@@ -239,45 +233,63 @@ export default function InstallClient() {
         </Card>
       )}
 
-      {/* Dynamic download buttons for all platform cards */}
-      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 mt-6">
-        {/* Windows dynamic button */}
-        {DOWNLOAD_LINKS.windows ? (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => openDownloadInNewTab(DOWNLOAD_LINKS.windows)}
-            className={device?.type === 'windows' ? 'border-secondary bg-secondary/10' : ''}
-          >
-            <Download className="w-4 h-4 mr-2" />
-            {t('install.install.downloadExe')}
-          </Button>
-        ) : (
-          <Button variant="outline" size="sm" disabled>
-            <span className="mr-2">{"⏳"}</span>
-            {t('install.install.comingSoon')}
-          </Button>
-        )}
+      {/* Stable version section */}
+      <Card className="p-6 mb-8 bg-muted/50">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-semibold text-foreground">
+              {t('install.install.lookingForStable')}
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              {t('install.install.stableVersion', { version: DESKTOP_VERSION })}
+            </p>
+          </div>
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => openDownloadInNewTab(stableLinks.windows)}
+            >
+              <Monitor className="w-4 h-4 mr-2" />
+              Windows .exe
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => openDownloadInNewTab(stableLinks.macos)}
+            >
+              <Apple className="w-4 h-4 mr-2" />
+              macOS .pkg
+            </Button>
+          </div>
+        </div>
+      </Card>
 
-        {/* macOS dynamic button */}
-        {DOWNLOAD_LINKS.macos ? (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => openDownloadInNewTab(DOWNLOAD_LINKS.macos)}
-            className={device?.type === 'macos' ? 'border-border bg-muted' : ''}
-          >
-            <Download className="w-4 h-4 mr-2" />
-            {t('install.install.downloadDmg')}
-          </Button>
-        ) : (
-          <Button variant="outline" size="sm" disabled>
-            <span className="mr-2">{"⏳"}</span>
-            {t('install.install.comingSoon')}
-          </Button>
-        )}
+      {/* All platforms grid */}
+      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        {/* Windows */}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => openDownloadInNewTab(betaLinks.windows)}
+          className={device?.type === 'windows' ? 'border-secondary bg-secondary/10' : ''}
+        >
+          <Download className="w-4 h-4 mr-2" />
+          {t('install.install.downloadExe')}
+        </Button>
 
-        {/* iOS dynamic button */}
+        {/* macOS */}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => openDownloadInNewTab(betaLinks.macos)}
+          className={device?.type === 'macos' ? 'border-border bg-muted' : ''}
+        >
+          <Download className="w-4 h-4 mr-2" />
+          {t('install.install.downloadDmg')}
+        </Button>
+
+        {/* iOS */}
         {DOWNLOAD_LINKS.ios ? (
           <Button
             variant="outline"
@@ -289,18 +301,12 @@ export default function InstallClient() {
             {t('install.install.appStore')}
           </Button>
         ) : (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled
-            className={device?.type === 'ios' ? 'border-blue-300' : ''}
-          >
-            <span className="mr-2">{"⏳"}</span>
+          <Button variant="outline" size="sm" disabled>
             {t('install.install.comingSoon')}
           </Button>
         )}
 
-        {/* Android dynamic button */}
+        {/* Android */}
         {DOWNLOAD_LINKS.android ? (
           <Button
             variant="outline"
@@ -312,16 +318,18 @@ export default function InstallClient() {
             {t('install.install.downloadApk')}
           </Button>
         ) : (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled
-            className={device?.type === 'android' ? 'border-green-300' : ''}
-          >
-            <span className="mr-2">{"⏳"}</span>
+          <Button variant="outline" size="sm" disabled>
             {t('install.install.comingSoon')}
           </Button>
         )}
+      </div>
+
+      {/* View all releases link */}
+      <div className="text-center mt-8">
+        <Link href="/releases" className="text-sm text-muted-foreground hover:text-foreground transition-colors inline-flex items-center gap-1">
+          {t('install.install.viewAllReleases')}
+          <ArrowRight className="w-3 h-3" />
+        </Link>
       </div>
     </>
   );
