@@ -453,7 +453,7 @@ export default function Account() {
                       {t('account:account.modifyEmail')}
                     </Button>
                   )
-                ) : (
+                ) : window._platform?.os !== 'ios' ? (
                   <Button
                     size="small"
                     variant="contained"
@@ -470,7 +470,7 @@ export default function Account() {
                   >
                     {t('account:account.proPlan')}
                   </Button>
-                )}
+                ) : null}
               </ListItemSecondaryAction>
             </ListItem>
 
