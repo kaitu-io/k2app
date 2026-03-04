@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Fab, Tooltip, useTheme, keyframes } from '@mui/material';
+import { Fab, Portal, Tooltip, useTheme, keyframes } from '@mui/material';
 import { Feedback as FeedbackIcon } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import { useDraggable } from '../hooks/useDraggable';
@@ -25,8 +25,8 @@ export default function FeedbackButton() {
 
   const { position, isDragging, bindDrag, elementRef } = useDraggable({
     storageKey: 'k2_feedback_btn_pos',
-    defaultY: 84,
-    defaultSide: 'left',
+    defaultY: Math.round(window.innerHeight * 0.65),
+    defaultSide: 'right',
     edgeMargin: 8,
     elementSize: 40, // MUI Fab size="small"
     dragThreshold: 5,
@@ -39,42 +39,44 @@ export default function FeedbackButton() {
   };
 
   return (
-    <Tooltip
-      title={t('feedback:feedback.buttonTooltip')}
-      placement={position.side === 'left' ? 'right' : 'left'}
-      arrow
-      open={isDragging ? false : undefined}
-      disableInteractive
-    >
-      <Fab
-        ref={elementRef as React.Ref<HTMLButtonElement>}
-        size="small"
-        onClick={handleClick}
-        {...bindDrag}
-        style={{
-          left: position.x,
-          top: position.y,
-        }}
-        sx={{
-          position: 'fixed',
-          zIndex: theme.zIndex.fab,
-          bgcolor: 'warning.main',
-          color: 'white',
-          touchAction: 'none',
-          userSelect: 'none',
-          animation: isDragging ? 'none' : `${pulse} 2s infinite`,
-          cursor: isDragging ? 'grabbing' : 'pointer',
-          '&:hover': isDragging ? {} : {
-            bgcolor: 'warning.dark',
-            transform: 'scale(1.1)',
-            animation: 'none',
-          },
-          transition: isDragging ? 'none' : 'transform 0.2s',
-        }}
-        aria-label={t('feedback:feedback.buttonLabel')}
+    <Portal>
+      <Tooltip
+        title={t('feedback:feedback.buttonTooltip')}
+        placement={position.side === 'left' ? 'right' : 'left'}
+        arrow
+        open={isDragging ? false : undefined}
+        disableInteractive
       >
-        <FeedbackIcon />
-      </Fab>
-    </Tooltip>
+        <Fab
+          ref={elementRef as React.Ref<HTMLButtonElement>}
+          size="small"
+          onClick={handleClick}
+          {...bindDrag}
+          style={{
+            left: position.x,
+            top: position.y,
+          }}
+          sx={{
+            position: 'fixed',
+            zIndex: theme.zIndex.fab,
+            bgcolor: 'warning.main',
+            color: 'white',
+            touchAction: 'none',
+            userSelect: 'none',
+            animation: isDragging ? 'none' : `${pulse} 2s infinite`,
+            cursor: isDragging ? 'grabbing' : 'pointer',
+            '&:hover': isDragging ? {} : {
+              bgcolor: 'warning.dark',
+              transform: 'scale(1.1)',
+              animation: 'none',
+            },
+            transition: isDragging ? 'none' : 'transform 0.2s',
+          }}
+          aria-label={t('feedback:feedback.buttonLabel')}
+        >
+          <FeedbackIcon />
+        </Fab>
+      </Tooltip>
+    </Portal>
   );
 }
