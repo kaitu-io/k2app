@@ -46,9 +46,10 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# generated changelog (source: client/releases/*.md)
+# generated changelog + releases (source: scripts/generate-changelog.js)
 /public/changelog.json
 /public/changelog.md
+/public/releases.json
 
 # velite generated output
 .velite/
