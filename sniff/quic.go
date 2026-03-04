@@ -31,85 +31,87 @@ func IsQUIC(packet []byte) bool {
 	return false
 }
 
-// SniffQUIC extracts the SNI from a QUIC Initial packet's TLS ClientHello.
-// Returns the server name, or "" if the packet is not a valid QUIC Initial
-// or contains no SNI.
-// Ported from github.com/sagernet/sing-box/common/sniff/quic.go (simplified, no ja3).
-func SniffQUIC(packet []byte) string {
+// SniffQUIC extracts the SNI and identifies the QUIC client from a QUIC Initial
+// packet's TLS ClientHello. Returns the server name (or "") and the identified
+// client. If parsing fails, returns ("", QUICClientUnknown).
+// Ported from github.com/sagernet/sing-box/common/sniff/quic.go.
+func SniffQUIC(packet []byte) (string, QUICClient) {
 	reader := bytes.NewReader(packet)
 
 	// 1. Parse QUIC long header
 	typeByte, err := reader.ReadByte()
 	if err != nil {
-		return ""
+		return "", QUICClientUnknown
 	}
 	if typeByte&0x40 == 0 { // Fixed bit must be 1 for long header
-		return ""
+		return "", QUICClientUnknown
 	}
 
 	var versionNumber uint32
 	if err := binary.Read(reader, binary.BigEndian, &versionNumber); err != nil {
-		return ""
+		return "", QUICClientUnknown
 	}
 	if versionNumber != quicVersionDraft29 && versionNumber != quicVersion1 && versionNumber != quicVersion2 {
-		return ""
+		return "", QUICClientUnknown
 	}
 
 	// Validate packet type (Initial)
 	packetType := (typeByte & 0x30) >> 4
 	if packetType == 0 && versionNumber == quicVersion2 || packetType == 2 && versionNumber != quicVersion2 || packetType > 2 {
-		return ""
+		return "", QUICClientUnknown
 	}
 
 	// Destination Connection ID
 	destConnIDLen, err := reader.ReadByte()
 	if err != nil {
-		return ""
+		return "", QUICClientUnknown
 	}
 	if destConnIDLen == 0 || destConnIDLen > 20 {
-		return ""
+		return "", QUICClientUnknown
 	}
-	destConnID := make([]byte, destConnIDLen)
+	var destConnIDBuf [20]byte // max QUIC CID is 20 bytes
+	destConnID := destConnIDBuf[:destConnIDLen]
 	if _, err := io.ReadFull(reader, destConnID); err != nil {
-		return ""
+		return "", QUICClientUnknown
 	}
 
 	// Source Connection ID (skip)
 	srcConnIDLen, err := reader.ReadByte()
 	if err != nil {
-		return ""
+		return "", QUICClientUnknown
 	}
 	if _, err := io.CopyN(io.Discard, reader, int64(srcConnIDLen)); err != nil {
-		return ""
+		return "", QUICClientUnknown
 	}
 
 	// Token (skip)
 	tokenLen, err := quicReadUvarint(reader)
 	if err != nil {
-		return ""
+		return "", QUICClientUnknown
 	}
 	if _, err := io.CopyN(io.Discard, reader, int64(tokenLen)); err != nil {
-		return ""
+		return "", QUICClientUnknown
 	}
 
 	// Packet length
 	packetLen, err := quicReadUvarint(reader)
 	if err != nil {
-		return ""
+		return "", QUICClientUnknown
 	}
 
 	hdrLen := int(reader.Size()) - reader.Len()
 	if hdrLen+int(packetLen) > len(packet) {
-		return ""
+		return "", QUICClientUnknown
 	}
 
 	// 2. Read sample for header protection (4 bytes PN + 16 bytes sample)
 	if _, err := io.CopyN(io.Discard, reader, 4); err != nil {
-		return ""
+		return "", QUICClientUnknown
 	}
-	pnBytes := make([]byte, aes.BlockSize)
+	var pnBytesBuf [aes.BlockSize]byte
+	pnBytes := pnBytesBuf[:]
 	if _, err := io.ReadFull(reader, pnBytes); err != nil {
-		return ""
+		return "", QUICClientUnknown
 	}
 
 	// 3. Derive initial secret and header protection key
@@ -137,15 +139,16 @@ func SniffQUIC(packet []byte) string {
 	// 4. Remove header protection
 	block, err := aes.NewCipher(hpKey)
 	if err != nil {
-		return ""
+		return "", QUICClientUnknown
 	}
-	mask := make([]byte, aes.BlockSize)
+	var maskBuf [aes.BlockSize]byte
+	mask := maskBuf[:]
 	block.Encrypt(mask, pnBytes)
 
 	bp := quicBufPool.Get().(*[]byte)
 	defer quicBufPool.Put(bp)
 	if len(packet) > len(*bp) {
-		return ""
+		return "", QUICClientUnknown
 	}
 	newPacket := (*bp)[:len(packet)]
 	copy(newPacket, packet)
@@ -156,7 +159,7 @@ func SniffQUIC(packet []byte) string {
 
 	packetNumberLength := newPacket[0]&0x3 + 1
 	if hdrLen+int(packetNumberLength) > int(packetLen)+hdrLen {
-		return ""
+		return "", QUICClientUnknown
 	}
 
 	var packetNumber uint32
@@ -170,7 +173,7 @@ func SniffQUIC(packet []byte) string {
 	case 4:
 		packetNumber = binary.BigEndian.Uint32(newPacket[hdrLen:])
 	default:
-		return ""
+		return "", QUICClientUnknown
 	}
 
 	extHdrLen := hdrLen + int(packetNumberLength)
@@ -191,14 +194,15 @@ func SniffQUIC(packet []byte) string {
 	key := quicHKDFExpandLabel(crypto.SHA256, secret, []byte{}, keyLabel, 16)
 	iv := quicHKDFExpandLabel(crypto.SHA256, secret, []byte{}, ivLabel, 12)
 	ciph := quicAEADAESGCM(key, iv)
-	nonce := make([]byte, ciph.NonceSize())
-	binary.BigEndian.PutUint64(nonce[len(nonce)-8:], uint64(packetNumber))
+	var nonceBuf [8]byte // xorNonceAEAD.NonceSize() == 8
+	nonce := nonceBuf[:]
+	binary.BigEndian.PutUint64(nonce, uint64(packetNumber))
 	decrypted, err := ciph.Open(newPacket[extHdrLen:extHdrLen], nonce, data, newPacket[:extHdrLen])
 	if err != nil {
-		return ""
+		return "", QUICClientUnknown
 	}
 
-	// 6. Parse QUIC frames, extract CRYPTO frame
+	// 6. Parse QUIC frames, extract CRYPTO fragments and record frame types.
 	decryptedReader := bytes.NewReader(decrypted)
 	const (
 		frameTypePadding         = 0x00
@@ -214,7 +218,8 @@ func SniffQUIC(packet []byte) string {
 		length  uint64
 		payload []byte
 	}
-	var fragments []cryptoFragment
+	fragments := make([]cryptoFragment, 0, 4)
+	frameTypes := make([]uint8, 0, 8)
 
 	for {
 		frameType, err := decryptedReader.ReadByte()
@@ -222,82 +227,88 @@ func SniffQUIC(packet []byte) string {
 			break
 		}
 		if err != nil {
-			return ""
+			return "", QUICClientUnknown
 		}
 		switch frameType {
-		case frameTypePadding, frameTypePing:
+		case frameTypePadding:
+			continue // Don't record padding
+		case frameTypePing:
+			frameTypes = append(frameTypes, frameType)
 			continue
 		case frameTypeAck, frameTypeAck2:
+			frameTypes = append(frameTypes, frameType)
 			if _, err := quicReadUvarint(decryptedReader); err != nil { // Largest Acknowledged
-				return ""
+				return "", QUICClientUnknown
 			}
 			if _, err := quicReadUvarint(decryptedReader); err != nil { // ACK Delay
-				return ""
+				return "", QUICClientUnknown
 			}
 			ackRangeCount, err := quicReadUvarint(decryptedReader) // ACK Range Count
 			if err != nil {
-				return ""
+				return "", QUICClientUnknown
 			}
 			if _, err := quicReadUvarint(decryptedReader); err != nil { // First ACK Range
-				return ""
+				return "", QUICClientUnknown
 			}
 			for i := uint64(0); i < ackRangeCount; i++ {
 				if _, err := quicReadUvarint(decryptedReader); err != nil { // Gap
-					return ""
+					return "", QUICClientUnknown
 				}
 				if _, err := quicReadUvarint(decryptedReader); err != nil { // ACK Range Length
-					return ""
+					return "", QUICClientUnknown
 				}
 			}
 			if frameType == frameTypeAck2 {
 				if _, err := quicReadUvarint(decryptedReader); err != nil { // ECT0
-					return ""
+					return "", QUICClientUnknown
 				}
 				if _, err := quicReadUvarint(decryptedReader); err != nil { // ECT1
-					return ""
+					return "", QUICClientUnknown
 				}
 				if _, err := quicReadUvarint(decryptedReader); err != nil { // ECN-CE
-					return ""
+					return "", QUICClientUnknown
 				}
 			}
 		case frameTypeCrypto:
+			frameTypes = append(frameTypes, frameType)
 			offset, err := quicReadUvarint(decryptedReader)
 			if err != nil {
-				return ""
+				return "", QUICClientUnknown
 			}
 			length, err := quicReadUvarint(decryptedReader)
 			if err != nil {
-				return ""
+				return "", QUICClientUnknown
 			}
 			index := len(decrypted) - decryptedReader.Len()
 			if index+int(length) > len(decrypted) {
-				return ""
+				return "", QUICClientUnknown
 			}
 			fragments = append(fragments, cryptoFragment{offset, length, decrypted[index : index+int(length)]})
 			if _, err := decryptedReader.Seek(int64(length), io.SeekCurrent); err != nil {
-				return ""
+				return "", QUICClientUnknown
 			}
 		case frameTypeConnectionClose:
+			frameTypes = append(frameTypes, frameType)
 			if _, err := quicReadUvarint(decryptedReader); err != nil { // Error Code
-				return ""
+				return "", QUICClientUnknown
 			}
 			if _, err := quicReadUvarint(decryptedReader); err != nil { // Frame Type
-				return ""
+				return "", QUICClientUnknown
 			}
 			length, err := quicReadUvarint(decryptedReader) // Reason Phrase Length
 			if err != nil {
-				return ""
+				return "", QUICClientUnknown
 			}
 			if _, err := decryptedReader.Seek(int64(length), io.SeekCurrent); err != nil {
-				return ""
+				return "", QUICClientUnknown
 			}
 		default:
-			return ""
+			return "", QUICClientUnknown
 		}
 	}
 
 	if len(fragments) == 0 {
-		return ""
+		return "", QUICClientUnknown
 	}
 
 	// 7. Reassemble CRYPTO fragments into a flat buffer at their stream offsets.
@@ -311,19 +322,29 @@ func SniffQUIC(packet []byte) string {
 		}
 	}
 	if maxEnd > 16384 { // TLS ClientHello max per spec
-		return ""
+		return "", QUICClientUnknown
 	}
 
 	// Single allocation: 5-byte TLS record header + reassembled CRYPTO stream.
 	buf := make([]byte, 5+maxEnd)
-	buf[0] = 0x16                              // ContentType: Handshake
+	buf[0] = 0x16                         // ContentType: Handshake
 	buf[1] = 0x03
-	buf[2] = 0x03                              // Version: TLS 1.2
+	buf[2] = 0x03                         // Version: TLS 1.2
 	buf[3] = byte(maxEnd >> 8)
-	buf[4] = byte(maxEnd)                      // Length
+	buf[4] = byte(maxEnd)                 // Length
 	for _, f := range fragments {
 		copy(buf[5+f.offset:], f.payload)
 	}
 
-	return SniffTLS(buf)
+	// 8. Parse ClientHello for SNI and fingerprinting, identify client.
+	// parseQUICClientHello handles SNI extraction directly — no need for the
+	// expensive SniffTLS fallback (which creates tls.Server + context + goroutine).
+	ch := parseQUICClientHello(buf)
+	var sni string
+	if ch != nil {
+		sni = ch.ServerName
+	}
+
+	client := identifyQUICClient(frameTypes, ch)
+	return sni, client
 }

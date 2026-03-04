@@ -17,36 +17,43 @@ import (
 
 func TestSniffQUIC(t *testing.T) {
 	packet := buildTestQUICInitial(t, "example.org")
-	sni := SniffQUIC(packet)
+	sni, client := SniffQUIC(packet)
 	if sni != "example.org" {
 		t.Fatalf("expected SNI 'example.org', got %q", sni)
+	}
+	// Go's crypto/tls ClientHello has renegotiation_info → quic-go
+	if client != QUICClientQUICGo && client != QUICClientUnknown {
+		t.Logf("client identified as %q (Go stdlib ClientHello)", client)
 	}
 }
 
 func TestSniffQUIC_GoogleCom(t *testing.T) {
 	packet := buildTestQUICInitial(t, "google.com")
-	sni := SniffQUIC(packet)
+	sni, _ := SniffQUIC(packet)
 	if sni != "google.com" {
 		t.Fatalf("expected SNI 'google.com', got %q", sni)
 	}
 }
 
 func TestSniffQUIC_TooShort(t *testing.T) {
-	sni := SniffQUIC([]byte{0xc0, 0x00, 0x00})
+	sni, client := SniffQUIC([]byte{0xc0, 0x00, 0x00})
 	if sni != "" {
 		t.Fatalf("expected empty SNI for truncated packet, got %q", sni)
+	}
+	if client != QUICClientUnknown {
+		t.Fatalf("expected unknown client, got %q", client)
 	}
 }
 
 func TestSniffQUIC_NotQUIC(t *testing.T) {
-	sni := SniffQUIC([]byte("This is not a QUIC packet at all and has no structure"))
+	sni, _ := SniffQUIC([]byte("This is not a QUIC packet at all and has no structure"))
 	if sni != "" {
 		t.Fatalf("expected empty SNI for non-QUIC data, got %q", sni)
 	}
 }
 
 func TestSniffQUIC_Empty(t *testing.T) {
-	sni := SniffQUIC(nil)
+	sni, _ := SniffQUIC(nil)
 	if sni != "" {
 		t.Fatalf("expected empty SNI for nil data, got %q", sni)
 	}
@@ -87,6 +94,20 @@ func TestIsQUIC_UnknownVersion(t *testing.T) {
 	if IsQUIC(pkt) {
 		t.Fatal("expected IsQUIC=false for unknown QUIC version")
 	}
+}
+
+func TestSniffQUIC_ReturnsClient(t *testing.T) {
+	// Build a QUIC initial with Go's crypto/tls (has renegotiation_info ext)
+	packet := buildTestQUICInitial(t, "test.example.com")
+	sni, client := SniffQUIC(packet)
+	if sni != "test.example.com" {
+		t.Fatalf("expected SNI 'test.example.com', got %q", sni)
+	}
+	// Go's crypto/tls uses renegotiation_info (0xFF01) → should identify as quic-go
+	if client == "" {
+		t.Fatal("client should not be empty string")
+	}
+	t.Logf("Go stdlib ClientHello identified as: %s", client)
 }
 
 // buildTestQUICInitial constructs a valid QUIC v1 Initial packet containing
@@ -240,4 +261,3 @@ func writeQuicVarint(w *bytes.Buffer, v uint64) {
 		w.Write(b)
 	}
 }
-

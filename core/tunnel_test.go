@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/kaitu-io/k2/provider"
+	"github.com/kaitu-io/k2/sniff"
 )
 
 // mockDialer records DialTCP/DialUDP calls and returns mock connections.
@@ -1025,4 +1026,24 @@ func TestClientTunnel_HandleUDP_QUICBlocked(t *testing.T) {
 	}
 
 	tunnel.Close()
+}
+// TestSniffQUICClient_IsBrowser_Integration verifies the sniff package's
+// IsBrowser classification works correctly end-to-end.
+func TestSniffQUICClient_IsBrowser_Integration(t *testing.T) {
+	// Verify browser clients are identified correctly
+	if !sniff.QUICClientChromium.IsBrowser() {
+		t.Error("Chromium should be browser")
+	}
+	if !sniff.QUICClientFirefox.IsBrowser() {
+		t.Error("Firefox should be browser")
+	}
+	if !sniff.QUICClientSafari.IsBrowser() {
+		t.Error("Safari should be browser")
+	}
+	if sniff.QUICClientQUICGo.IsBrowser() {
+		t.Error("quic-go should NOT be browser")
+	}
+	if sniff.QUICClientUnknown.IsBrowser() {
+		t.Error("unknown should NOT be browser")
+	}
 }

@@ -305,7 +305,7 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 				// SniffQUIC is expensive (QUIC Initial decryption), only call when needed.
 				needDomain := t.sniffSNI || (action == k2rule.TargetProxy && strings.Contains(host, ":"))
 				if needDomain {
-					meta.Domain = sniff.SniffQUIC(packet)
+					meta.Domain, _ = sniff.SniffQUIC(packet)
 				}
 			}
 
@@ -333,6 +333,7 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 					slog.Debug("tunnel: IPv6 dest rewrite", "original", host, "sni", meta.Domain)
 				}
 			}
+
 		}
 	}
 

@@ -14,7 +14,7 @@ Protocol detection and domain extraction from first packet/bytes. Used by `core/
 | `SniffTLS([]byte)` | TLS ClientHello | TCP peek | SNI hostname | DIRECT→PROXY upgrade (port 443) |
 | `SniffHTTP([]byte)` | HTTP/1.x | TCP peek | Host header value | DIRECT→PROXY upgrade (non-443) |
 | `IsQUIC([]byte)` | QUIC long header | UDP packet | bool | Protocol detection (O(1), no decrypt) |
-| `SniffQUIC([]byte)` | QUIC Initial | UDP packet | SNI hostname | Domain extraction (expensive, decrypts) |
+| `SniffQUIC([]byte)` | QUIC Initial | UDP packet | SNI, QUICClient | Domain extraction + client fingerprinting (expensive, decrypts) |
 | `IsBitTorrent(io.Reader)` | BT handshake | TCP peek | bool | PROXY→DIRECT |
 | `IsUTP([]byte)` | uTP (BT UDP) | UDP packet | bool | PROXY→DIRECT |
 | `IsUDPTracker([]byte)` | BT UDP Tracker | UDP packet | bool | PROXY→DIRECT |
@@ -25,7 +25,9 @@ Protocol detection and domain extraction from first packet/bytes. Used by `core/
 
 - `result.go` — `Result` struct and protocol constants
 - `tls.go` — TLS ClientHello SNI extraction
-- `quic.go` — `IsQUIC` (O(1) protocol check) + `SniffQUIC` (SNI extraction)
+- `quic.go` — `IsQUIC` (O(1) protocol check) + `SniffQUIC` (SNI + client fingerprinting)
+- `quic_client.go` — QUIC client identification (Chromium/Firefox/Safari/quic-go/unknown)
+- `ja3.go` — JA3-style ClientHello parser (`QUICClientHello` struct for fingerprinting)
 - `qtls.go` — Shared TLS/QUIC ClientHello parser
 - `http.go` — HTTP/1.x Host header extraction (zero-alloc hot path)
 - `bittorrent.go` — BT handshake, uTP, UDP Tracker detection
