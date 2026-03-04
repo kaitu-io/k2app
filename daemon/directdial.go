@@ -11,6 +11,7 @@ package daemon
 import (
 	"context"
 	"net"
+	"syscall"
 
 	tun "github.com/sagernet/sing-tun"
 
@@ -56,13 +57,15 @@ func (d *directDialer) interfaceName() string {
 }
 
 // controlFunc returns a socket control function that binds to the physical interface.
-// Uses sing's BindToInterfaceFunc for cross-platform binding.
+// When DefaultInterface() returns nil (transient during TUN route setup on Windows),
+// skip binding instead of passing empty name to BindToInterface0 which would fail
+// with "interface not found: ".
 func (d *directDialer) controlFunc() control.Func {
-	return control.BindToInterfaceFunc(d.finder, func(network, address string) (string, int, error) {
+	return func(network, address string, conn syscall.RawConn) error {
 		iface := d.monitor.DefaultInterface()
 		if iface == nil {
-			return "", -1, nil
+			return nil // skip binding — interface unknown during TUN route setup
 		}
-		return iface.Name, iface.Index, nil
-	})
+		return control.BindToInterface0(d.finder, conn, network, address, iface.Name, iface.Index, false)
+	}
 }

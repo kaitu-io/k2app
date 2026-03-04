@@ -26,7 +26,7 @@ func defaultTunName() string {
 	case "linux":
 		return "tun0"
 	default: // windows
-		return "sing-tun"
+		return "k2tun"
 	}
 }
 
