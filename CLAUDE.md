@@ -173,7 +173,7 @@ engine.Stop()
 
 ## Dependencies
 
-- `github.com/kaitu-io/k2rule v0.6.3` — domain/IP routing rules with unified Init API + SetTmpRule (CacheDir required, non-blocking background download, Antiporn opt-in)
+- `github.com/kaitu-io/k2rule v0.6.4` — domain/IP routing rules with unified Init API + SetTmpRule (CacheDir required, non-blocking background download, Antiporn opt-in)
 - `github.com/miekg/dns` — DNS message handling
 - `github.com/sagernet/sing-tun` — TUN device with gVisor stack
 - `github.com/apernet/quic-go` — QUIC with congestion control API

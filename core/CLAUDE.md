@@ -64,7 +64,7 @@ router.RouteAddr("example.com") → k2rule.TargetProxy
 router.RouteAddr("blocked.com") → k2rule.TargetReject
 ```
 
-**k2rule v0.6.2**: unified Init API + SetTmpRule, URL-based remote downloads (CacheDir required).
+**k2rule v0.6.4**: unified Init API + SetTmpRule, URL-based remote downloads (CacheDir required).
 
 ## Testing
 

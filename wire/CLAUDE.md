@@ -48,8 +48,10 @@ Fields: UDID, Token, Host, Port, ECH, Fingerprint, HopStart, HopEnd, Insecure, P
 - `stream.go` — QUIC varint encoding, `StreamHeader` (type 0x4B32 H3 frame), request/response
 - `udp.go` — `UDPFrame` wire format, `SessionAllocator`, `SessionMap`, smux framing
 - `quic.go` — QUIC config, `StreamConn` adapter, `QUICClient`/`QUICServer`, port hopping, datagram health tracking (`quicUDPMux`: consecutive timeouts + sliding-window loss rate → hop → recovery probe cycle)
+- `quic_limits_desktop.go` — Desktop/server QUIC flow control windows (8 MB stream / 20 MB conn / 256 streams)
+- `quic_limits_mobile.go` — Mobile QUIC flow control windows (2 MB stream / 4 MB conn / 64 streams) — iOS NE ~50 MB jetsam limit
 - `tcpws.go` — smux config, `TCPWSClient`/`TCPWSServer`
-- `transport.go` — `TransportManager`: QUIC preferred, TCP-WS fallback. `DialTCP` with QUIC backoff (30s→60s→120s). `DialUDP` with `ErrDatagramUnhealthy` fallback (not counted as transport failure). `FallbackActive` tracks QUIC→TCP-WS state for health reporting.
+- `transport.go` — `TransportManager`: QUIC preferred, TCP-WS fallback. `DialTCP` with QUIC backoff (30s→60s→120s). `DialUDP` with `ErrDatagramUnhealthy` fallback (not counted as transport failure). `FallbackActive` tracks QUIC→TCP-WS state. Direct `*QUICClient`/`*TCPWSClient` type assertions for `ResetConnections()`.
 - `ip.go` — `ProbePublicIP`, `FormatSslipHost`, `HasIPv6` (server auto-provisioning helpers)
 - `tlspad/` — TLS record padding (probe target cert length, pad server cert to match)
 - `arc/` — PCC Vivace congestion control for QUIC
@@ -74,6 +76,9 @@ Fields: UDID, Token, Host, Port, ECH, Fingerprint, HopStart, HopEnd, Insecure, P
 - `net.Pipe()` is synchronous — structure goroutines carefully in tests.
 - ECH base64 in URLs must use `base64.URLEncoding` (standard `+` corrupted by `url.Query()`).
 - uTLS forces outer SNI = ECH config's `public_name` — cannot be set independently.
+- Dead QUIC conn: `OpenStreamSync` failure caches stale connection — both `DialTCP` and `DialUDP` must call `resetConnection()` for non-context errors so next retry builds fresh conn.
+- Datagram recovery cycle: 3 port hops exhaust → fallback to TCP-WS streams for 3 min → reset hop counter → fresh QUIC round. Cycle repeats until network change or datagram recovery.
+- QUIC flow control is platform-specific (build tags `ios || android` vs desktop) — mobile uses 4× smaller windows to stay under iOS NE jetsam limit.
 
 ## Testing
 
