@@ -17,15 +17,18 @@ const path = require('path');
  */
 
 function parseVersion(filename) {
-  // Extract version from filename (e.g., "v0.3.18.md" -> [0, 3, 18])
-  const match = filename.match(/^v(\d+)\.(\d+)\.(\d+)\.md$/);
+  // Extract version from filename (e.g., "v0.3.18.md" or "v0.4.0-beta.1.md")
+  const match = filename.match(/^v(\d+)\.(\d+)\.(\d+)(?:-([a-z0-9.]+))?\.md$/);
   if (!match) return null;
 
   return {
     major: parseInt(match[1]),
     minor: parseInt(match[2]),
     patch: parseInt(match[3]),
-    string: `${match[1]}.${match[2]}.${match[3]}`
+    prerelease: match[4] || null,
+    string: match[4]
+      ? `${match[1]}.${match[2]}.${match[3]}-${match[4]}`
+      : `${match[1]}.${match[2]}.${match[3]}`
   };
 }
 
@@ -33,7 +36,12 @@ function compareVersions(a, b) {
   // Sort in descending order (newest first)
   if (a.major !== b.major) return b.major - a.major;
   if (a.minor !== b.minor) return b.minor - a.minor;
-  return b.patch - a.patch;
+  if (a.patch !== b.patch) return b.patch - a.patch;
+  // Pre-release versions sort before their release (0.4.0-beta.1 < 0.4.0)
+  if (a.prerelease && !b.prerelease) return 1;
+  if (!a.prerelease && b.prerelease) return -1;
+  if (a.prerelease && b.prerelease) return b.prerelease.localeCompare(a.prerelease);
+  return 0;
 }
 
 function parseMarkdownSections(content) {
