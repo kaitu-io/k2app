@@ -438,6 +438,7 @@ func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, 
 				sessionID:  sessionID,
 				targetAddr: addr,
 				mux:        mux,
+				created:    time.Now(),
 				readCh:     readCh,
 				done:       make(chan struct{}),
 			}, nil
@@ -1217,6 +1218,11 @@ type quicUDPConn struct {
 	done       chan struct{}
 	closeOnce  sync.Once
 	rd         readDeadline
+	created    time.Time
+	txPackets  atomic.Int64
+	txBytes    atomic.Int64
+	rxPackets  atomic.Int64
+	rxBytes    atomic.Int64
 }
 
 var _ net.PacketConn = (*quicUDPConn)(nil)
@@ -1232,6 +1238,8 @@ func (c *quicUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	select {
 	case frame := <-c.readCh:
 		n := copy(b, frame.Payload)
+		c.rxPackets.Add(1)
+		c.rxBytes.Add(int64(n))
 		slog.Debug("quicUDPConn: ReadFrom ok", "sessionID", c.sessionID, "target", c.targetAddr, "len", n)
 		addr, _ := net.ResolveUDPAddr("udp", c.targetAddr)
 		return n, addr, nil
@@ -1251,6 +1259,8 @@ func (c *quicUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
 	err := c.qconn.SendDatagram(frame)
 	put() // SendDatagram copies internally; safe to return buffer to pool
 	if err == nil {
+		c.txPackets.Add(1)
+		c.txBytes.Add(int64(len(b)))
 		c.mux.recordSend()
 		return len(b), nil
 	}
@@ -1261,6 +1271,8 @@ func (c *quicUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
 		if err2 := c.mux.overflow.send(c.sessionID, c.targetAddr, b); err2 != nil {
 			return 0, err2
 		}
+		c.txPackets.Add(1)
+		c.txBytes.Add(int64(len(b)))
 		c.mux.recordSend()
 		return len(b), nil
 	}
@@ -1275,6 +1287,16 @@ func (c *quicUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
 
 func (c *quicUDPConn) Close() error {
 	c.closeOnce.Do(func() {
+		if !c.created.IsZero() {
+			slog.Info("quicUDPConn: closed",
+				"sessionID", c.sessionID,
+				"target", c.targetAddr,
+				"duration", time.Since(c.created).Round(time.Millisecond),
+				"txPackets", c.txPackets.Load(),
+				"txBytes", c.txBytes.Load(),
+				"rxPackets", c.rxPackets.Load(),
+				"rxBytes", c.rxBytes.Load())
+		}
 		close(c.done)
 		c.mux.unregister(c.sessionID)
 	})
