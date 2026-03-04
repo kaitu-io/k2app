@@ -49,6 +49,7 @@ func SetLogLevel(level string) {
 func FreeMemory() {
 	debug.FreeOSMemory()
 }
+
 // Engine is the mobile VPN engine. It delegates all tunnel assembly and
 // lifecycle management to engine.Engine, exposing only the gomobile-compatible
 // API surface (string, int, int64 params only).
