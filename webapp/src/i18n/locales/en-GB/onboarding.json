@@ -1,0 +1,29 @@
+{
+  "onboarding": {
+    "phase1": {
+      "title": "Collapse",
+      "content": "👆 Tap the arrow to collapse"
+    },
+    "phase2": {
+      "title": "Expand",
+      "content": "👆 Tap again to expand"
+    },
+    "phase3": {
+      "title": "Report Issues",
+      "content": "👆 Report issues anytime — drag it anywhere you like\nWe take every one seriously"
+    },
+    "phase4": {
+      "title": "Invite Friends",
+      "content": "👆 Invite friends and earn free days"
+    },
+    "phase5": {
+      "title": "Get Started",
+      "content": "👆 Tap here to choose a plan"
+    },
+    "next": "Next",
+    "skip": "Skip tour",
+    "back": "Back",
+    "close": "Got it",
+    "last": "Done"
+  }
+}

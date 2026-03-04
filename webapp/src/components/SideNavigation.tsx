@@ -90,6 +90,7 @@ interface NavItem {
   path: string;
   feature: string | null;
   secondary?: boolean; // For secondary navigation items
+  dataTour?: string; // Onboarding guide target
 }
 
 function SideNavigation() {
@@ -113,12 +114,14 @@ function SideNavigation() {
         icon: <PurchaseIcon />,
         path: "/purchase",
         feature: null,
+        dataTour: "nav-purchase",
       },
       {
         label: user?.isRetailer ? t("nav:navigation.retailer") : t("nav:navigation.invite"),
         icon: <InviteIcon />,
         path: "/invite",
         feature: "invite" as const,
+        dataTour: "nav-invite",
       },
       {
         label: t("nav:navigation.discover"),
@@ -134,9 +137,16 @@ function SideNavigation() {
       },
     ];
 
-    return items.filter(
+    const filtered = items.filter(
       (item) => item.feature === null || (appConfig.features as Record<string, unknown>)[item.feature]
     );
+
+    // iOS: hide purchase entry (App Store policy)
+    if (window._platform?.os === 'ios') {
+      return filtered.filter(item => item.path !== '/purchase');
+    }
+
+    return filtered;
   }, [t, appConfig.features, user?.isRetailer]);
 
   // Secondary navigation items (additional items not shown in bottom nav)
@@ -203,7 +213,7 @@ function SideNavigation() {
       {/* Primary Navigation */}
       <List sx={{ flexGrow: 1, pt: 1 }}>
         {primaryNavItems.map((item) => (
-          <ListItem key={item.path} disablePadding>
+          <ListItem key={item.path} disablePadding data-tour={item.dataTour}>
             <StyledListItemButton
               selected={isSelected(item.path)}
               onClick={() => handleNavigation(item.path)}

@@ -51,6 +51,7 @@ export default function FeedbackButton() {
           ref={elementRef as React.Ref<HTMLButtonElement>}
           size="small"
           onClick={handleClick}
+          data-tour="feedback-button"
           {...bindDrag}
           style={{
             left: position.x,

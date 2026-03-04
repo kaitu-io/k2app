@@ -80,12 +80,14 @@ function BottomNavigation() {
         icon: <PurchaseIcon />,
         path: "/purchase",
         feature: null,
+        dataTour: "nav-purchase",
       },
       {
         label: user?.isRetailer ? t("nav:navigation.retailer") : t("nav:navigation.invite"),
         icon: <InviteIcon />,
         path: "/invite",
         feature: "invite" as const,
+        dataTour: "nav-invite",
       },
       {
         label: t("nav:navigation.discover"),
@@ -102,9 +104,16 @@ function BottomNavigation() {
     ];
 
     // Filter based on feature flags
-    return items.filter(
+    const filtered = items.filter(
       (item) => item.feature === null || appConfig.features[item.feature]
     );
+
+    // iOS: hide purchase entry (App Store policy)
+    if (window._platform?.os === 'ios') {
+      return filtered.filter(item => item.path !== '/purchase');
+    }
+
+    return filtered;
   }, [t, appConfig.features, user?.isRetailer, isAuthenticated]);
 
   // Get current active path
@@ -130,6 +139,7 @@ function BottomNavigation() {
             label={item.label}
             icon={item.icon}
             value={item.path}
+            data-tour={item.dataTour}
           />
         ))}
       </StyledBottomNavigation>

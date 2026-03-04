@@ -177,7 +177,7 @@ export function CollapsibleConnectionSection({
       </Collapse>
 
       {/* 折叠/展开切换按钮 */}
-      <CollapseToggle onClick={toggleConnectionButtonCollapsed}>
+      <CollapseToggle onClick={toggleConnectionButtonCollapsed} data-tour="collapse-toggle">
         <ToggleIconButton size="small" disableRipple>
           {connectionButtonCollapsed ? <ExpandMoreIcon /> : <ExpandLessIcon />}
         </ToggleIconButton>

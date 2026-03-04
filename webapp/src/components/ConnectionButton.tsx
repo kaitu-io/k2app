@@ -227,7 +227,7 @@ export function ConnectionButton({
     (isDisconnected && !hasTunnelSelected);
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }} data-tour="connect-button">
       <Tooltip title={statusText} arrow placement="top">
         <span>
           <StyledConnectionButton

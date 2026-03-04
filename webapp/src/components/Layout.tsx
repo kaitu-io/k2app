@@ -7,7 +7,10 @@ import SideNavigation from "./SideNavigation";
 import AnnouncementBanner from "./AnnouncementBanner";
 import ServiceAlert from "./ServiceAlert";
 import FeedbackButton from "./FeedbackButton";
+import { OnboardingGuide } from "./OnboardingGuide";
 import { useLayout } from "../stores";
+import { useAuthStore } from "../stores/auth.store";
+import { useOnboardingStore } from "../stores/onboarding.store";
 import { getCurrentAppConfig } from "../config/apps";
 import LoginRequiredGuard from "./LoginRequiredGuard";
 
@@ -70,6 +73,31 @@ export default function Layout() {
   const { isDesktop } = useLayout();
   const appConfig = getCurrentAppConfig();
   const theme = useTheme();
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated);
+  const { active: onboardingActive, init: initOnboarding, start: startOnboarding } = useOnboardingStore();
+
+  // Initialize onboarding on mount (check storage for completion)
+  useEffect(() => {
+    initOnboarding();
+  }, [initOnboarding]);
+
+  // Start onboarding when user first logs in and lands on Dashboard
+  const onboardingTriggeredRef = useState(false);
+  useEffect(() => {
+    if (isAuthenticated && location.pathname === '/' && !onboardingActive && !onboardingTriggeredRef[0]) {
+      // Small delay to let Dashboard render its elements first
+      const timer = setTimeout(() => {
+        // Re-check storage in case init hasn't completed yet
+        window._platform?.storage.get<boolean>('onboarding_completed').then(completed => {
+          if (!completed) {
+            onboardingTriggeredRef[0] = true;
+            startOnboarding();
+          }
+        });
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [isAuthenticated, location.pathname, onboardingActive, startOnboarding]);
 
   // Track which Tab pages have been mounted (for lazy loading and keep-alive)
   const [mountedTabs, setMountedTabs] = useState<Record<string, boolean>>({});
@@ -193,6 +221,9 @@ export default function Layout() {
 
       {/* Floating Feedback Button - draggable, for log collection */}
       <FeedbackButton />
+
+      {/* Onboarding Guide - first login tour */}
+      <OnboardingGuide />
     </Box>
   );
 }
