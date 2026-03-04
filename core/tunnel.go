@@ -73,8 +73,9 @@ type ClientTunnel struct {
 	router       *Router
 	directDialer wire.DirectDialer
 	wireReporter WireErrorReporter
-	sniffBT  bool // sniff BitTorrent and force direct (disabled in global mode)
-	sniffSNI bool // sniff TLS/QUIC SNI and upgrade DIRECT→PROXY (disabled in global mode)
+	sniffBT   bool // sniff BitTorrent and force direct (disabled in global mode)
+	sniffSNI  bool // sniff TLS/QUIC SNI and upgrade DIRECT→PROXY (disabled in global mode)
+	blockQUIC bool // block QUIC protocol going through proxy (prevents double-QUIC)
 
 	ctx     context.Context
 	cancel  context.CancelFunc
@@ -95,8 +96,9 @@ type ClientTunnelConfig struct {
 	Router       *Router
 	DirectDialer wire.DirectDialer
 	WireReporter WireErrorReporter
-	SniffBT  bool // enable BitTorrent sniffing (should be false in global mode)
-	SniffSNI bool // enable TLS/QUIC SNI sniffing for DIRECT→PROXY upgrade (should be false in global mode)
+	SniffBT   bool // enable BitTorrent sniffing (should be false in global mode)
+	SniffSNI  bool // enable TLS/QUIC SNI sniffing for DIRECT→PROXY upgrade (should be false in global mode)
+	BlockQUIC bool // block QUIC protocol going through proxy
 }
 
 // NewClientTunnel creates a new L4 client tunnel.
@@ -107,8 +109,9 @@ func NewClientTunnel(cfg ClientTunnelConfig) *ClientTunnel {
 		router:       cfg.Router,
 		directDialer: cfg.DirectDialer,
 		wireReporter: cfg.WireReporter,
-		sniffBT:  cfg.SniffBT,
-		sniffSNI: cfg.SniffSNI,
+		sniffBT:   cfg.SniffBT,
+		sniffSNI:  cfg.SniffSNI,
+		blockQUIC: cfg.BlockQUIC,
 		conns:        newConnTracker(),
 		connSem:      semaphore.NewWeighted(int64(maxTunnelConns)),
 	}
@@ -264,56 +267,71 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 	host, port, _ := net.SplitHostPort(dest)
 	action := t.route(dest)
 
-	// Single read for all sniffers (BT + QUIC SNI)
-	if action != k2rule.TargetReject && (t.sniffBT || t.sniffSNI) {
+	// Peek first packet for protocol detection + domain extraction.
+	// Triggers: sniffBT (BT/WebRTC), sniffSNI (domain upgrade), blockQUIC (QUIC reject).
+	if action != k2rule.TargetReject && (t.sniffBT || t.sniffSNI || t.blockQUIC) {
 		if packet, addr := peekUDP(conn); packet != nil {
 			conn = &prefixPacketConn{PacketConn: conn, first: packet, firstAddr: addr}
 
-			// BT + WebRTC: downgrade PROXY → DIRECT
+			var meta sniff.Result
+
+			// 1. BT/WebRTC: PROXY → DIRECT
 			if t.sniffBT && action == k2rule.TargetProxy {
 				if sniff.IsUTP(packet) || sniff.IsUDPTracker(packet) {
+					meta.Protocol = sniff.ProtoBitTorrent
 					action = k2rule.TargetDirect
 					slog.Debug("tunnel: BitTorrent UDP detected, forcing direct", "dest", dest)
 				} else if sniff.IsSTUN(packet) || sniff.IsDTLS(packet) {
+					if sniff.IsSTUN(packet) {
+						meta.Protocol = sniff.ProtoSTUN
+					} else {
+						meta.Protocol = sniff.ProtoDTLS
+					}
 					action = k2rule.TargetDirect
 					slog.Debug("tunnel: WebRTC detected, forcing direct", "dest", dest)
 				}
 			}
 
-			// QUIC SNI detection (port 443 only, single parse)
-			var sni string
-			if t.sniffSNI && port == "443" {
-				sni = sniff.SniffQUIC(packet)
+			// 2. QUIC protocol detection (not port-based)
+			if meta.Protocol == "" && sniff.IsQUIC(packet) {
+				meta.Protocol = sniff.ProtoQUIC
+				// Fast path: QUIC already routed to proxy → block immediately.
+				// Skips expensive SniffQUIC (HKDF + AES decrypt + ~5KB alloc).
+				if t.blockQUIC && action == k2rule.TargetProxy {
+					slog.Debug("tunnel: QUIC blocked, browser will fallback to TCP", "dest", dest)
+					return
+				}
+				// Extract domain for routing upgrade or IPv6 hostname rewrite.
+				// SniffQUIC is expensive (QUIC Initial decryption), only call when needed.
+				needDomain := t.sniffSNI || (action == k2rule.TargetProxy && strings.Contains(host, ":"))
+				if needDomain {
+					meta.Domain = sniff.SniffQUIC(packet)
+				}
 			}
 
-			// QUIC SNI: upgrade DIRECT → PROXY
-			if sni != "" && t.router != nil && action == k2rule.TargetDirect {
-				if sniAction := t.router.RouteAddr(sni); sniAction == k2rule.TargetProxy {
+			// 3. Domain-based routing: DIRECT → PROXY upgrade
+			if t.sniffSNI && meta.Domain != "" && t.router != nil && action == k2rule.TargetDirect {
+				if sniAction := t.router.RouteAddr(meta.Domain); sniAction == k2rule.TargetProxy {
 					action = k2rule.TargetProxy
-					dest = net.JoinHostPort(sni, port)
+					dest = net.JoinHostPort(meta.Domain, port)
 					k2rule.SetTmpRule(host, k2rule.TargetProxy)
-					slog.Debug("tunnel: QUIC SNI override", "dest", dest, "sni", sni)
+					slog.Debug("tunnel: QUIC SNI override", "dest", dest, "sni", meta.Domain)
 				}
 			}
 
-			// IPv6→hostname rewrite
-			if sni != "" && action == k2rule.TargetProxy && strings.Contains(host, ":") {
-				if newDest := net.JoinHostPort(sni, port); dest != newDest {
+			// 4. Block QUIC going through proxy (prevents double-QUIC tunneling).
+			// Browsers fall back to TCP/TLS which uses the tunnel's stream path.
+			if t.blockQUIC && meta.Protocol == sniff.ProtoQUIC && action == k2rule.TargetProxy {
+				slog.Debug("tunnel: QUIC blocked, browser will fallback to TCP", "dest", dest, "domain", meta.Domain)
+				return
+			}
+
+			// 5. IPv6 → hostname rewrite (server resolves via Happy Eyeballs)
+			if meta.Domain != "" && action == k2rule.TargetProxy && strings.Contains(host, ":") {
+				if newDest := net.JoinHostPort(meta.Domain, port); dest != newDest {
 					dest = newDest
-					slog.Debug("tunnel: IPv6 dest rewrite", "original", host, "sni", sni)
+					slog.Debug("tunnel: IPv6 dest rewrite", "original", host, "sni", meta.Domain)
 				}
-			}
-		}
-	}
-
-	// IPv6→hostname rewrite (global mode): sniffBT/sniffSNI disabled, but IPv6 PROXY
-	// dests still need hostname rewrite so server resolves via Happy Eyeballs
-	if !(t.sniffBT || t.sniffSNI) && action == k2rule.TargetProxy && port == "443" && strings.Contains(host, ":") {
-		if packet, addr := peekUDP(conn); packet != nil {
-			conn = &prefixPacketConn{PacketConn: conn, first: packet, firstAddr: addr}
-			if sni := sniff.SniffQUIC(packet); sni != "" {
-				dest = net.JoinHostPort(sni, port)
-				slog.Debug("tunnel: IPv6 dest rewrite", "original", host, "sni", sni)
 			}
 		}
 	}

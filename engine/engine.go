@@ -235,8 +235,9 @@ func (e *Engine) Start(cfg Config) error {
 		Dialer:       tm,
 		Router:       router,
 		WireReporter: e,
-		SniffBT:  !client.Rule.Global, // sniff BT in smart mode only
-		SniffSNI: !client.Rule.Global, // sniff TLS/QUIC SNI in smart mode only
+		SniffBT:   !client.Rule.Global, // sniff BT in smart mode only
+		SniffSNI:  !client.Rule.Global, // sniff TLS/QUIC SNI in smart mode only
+		BlockQUIC: true,                // always block QUIC proxy (prevents double-QUIC)
 	}
 	if cfg.DirectDialer != nil {
 		tunnelCfg.DirectDialer = cfg.DirectDialer

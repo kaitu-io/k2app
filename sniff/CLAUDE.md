@@ -2,13 +2,19 @@
 
 Protocol detection and domain extraction from first packet/bytes. Used by `core/tunnel.go` for routing overrides.
 
+## Types
+
+- `Result` — Protocol metadata from sniffing: `Protocol` (constant) + `Domain` (extracted hostname)
+- Protocol constants: `ProtoTLS`, `ProtoHTTP`, `ProtoQUIC`, `ProtoBitTorrent`, `ProtoSTUN`, `ProtoDTLS`
+
 ## Detectors
 
 | Function | Protocol | Input | Returns | Used for |
 |----------|----------|-------|---------|----------|
 | `SniffTLS([]byte)` | TLS ClientHello | TCP peek | SNI hostname | DIRECT→PROXY upgrade (port 443) |
 | `SniffHTTP([]byte)` | HTTP/1.x | TCP peek | Host header value | DIRECT→PROXY upgrade (non-443) |
-| `SniffQUIC([]byte)` | QUIC Initial | UDP packet | SNI hostname | DIRECT→PROXY upgrade (port 443) |
+| `IsQUIC([]byte)` | QUIC long header | UDP packet | bool | Protocol detection (O(1), no decrypt) |
+| `SniffQUIC([]byte)` | QUIC Initial | UDP packet | SNI hostname | Domain extraction (expensive, decrypts) |
 | `IsBitTorrent(io.Reader)` | BT handshake | TCP peek | bool | PROXY→DIRECT |
 | `IsUTP([]byte)` | uTP (BT UDP) | UDP packet | bool | PROXY→DIRECT |
 | `IsUDPTracker([]byte)` | BT UDP Tracker | UDP packet | bool | PROXY→DIRECT |
@@ -17,8 +23,9 @@ Protocol detection and domain extraction from first packet/bytes. Used by `core/
 
 ## Files
 
+- `result.go` — `Result` struct and protocol constants
 - `tls.go` — TLS ClientHello SNI extraction
-- `quic.go` — QUIC Initial packet SNI extraction
+- `quic.go` — `IsQUIC` (O(1) protocol check) + `SniffQUIC` (SNI extraction)
 - `qtls.go` — Shared TLS/QUIC ClientHello parser
 - `http.go` — HTTP/1.x Host header extraction (zero-alloc hot path)
 - `bittorrent.go` — BT handshake, uTP, UDP Tracker detection

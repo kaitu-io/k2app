@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"io"
@@ -981,3 +982,47 @@ func TestClientTunnel_HandleTCP_HTTPSniffReplay(t *testing.T) {
 	tunnel.Close()
 }
 
+func TestClientTunnel_HandleUDP_QUICBlocked(t *testing.T) {
+	dialer := newMockDialer()
+	prov := &mockProvider{}
+
+	tunnel := NewClientTunnel(ClientTunnelConfig{
+		Provider:  prov,
+		Dialer:    dialer,
+		BlockQUIC: true,
+		// Router nil → defaults to proxy
+	})
+
+	if err := tunnel.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Build a minimal QUIC Initial long header (version 1)
+	quicPacket := make([]byte, 32)
+	quicPacket[0] = 0xC3 // long header + fixed bit + Initial type
+	binary.BigEndian.PutUint32(quicPacket[1:5], 0x00000001) // QUIC v1
+
+	localPC := newMockPacketConn()
+	done := make(chan struct{})
+	go func() {
+		prov.handler.HandleUDP(localPC, "142.250.197.99:443")
+		close(done)
+	}()
+
+	localPC.injectRead(quicPacket, nil)
+
+	select {
+	case <-done:
+		// HandleUDP returned — QUIC was blocked
+	case <-time.After(3 * time.Second):
+		t.Fatal("HandleUDP did not return — QUIC block not working")
+	}
+
+	dialer.mu.Lock()
+	defer dialer.mu.Unlock()
+	if len(dialer.udpCalls) != 0 {
+		t.Errorf("DialUDP called %d times, want 0 (QUIC should be blocked)", len(dialer.udpCalls))
+	}
+
+	tunnel.Close()
+}

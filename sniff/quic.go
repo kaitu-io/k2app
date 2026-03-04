@@ -13,6 +13,24 @@ import (
 
 var quicBufPool = sync.Pool{New: func() any { b := make([]byte, 4096); return &b }}
 
+// IsQUIC reports whether packet is a QUIC long header (Initial/0-RTT/Handshake).
+// O(1) check: header form + fixed bit + known version. No decryption.
+func IsQUIC(packet []byte) bool {
+	if len(packet) < 5 {
+		return false
+	}
+	// Long header: Form bit (7) = 1, Fixed bit (6) = 1
+	if packet[0]&0xC0 != 0xC0 {
+		return false
+	}
+	version := binary.BigEndian.Uint32(packet[1:5])
+	switch version {
+	case quicVersion1, quicVersion2, quicVersionDraft29:
+		return true
+	}
+	return false
+}
+
 // SniffQUIC extracts the SNI from a QUIC Initial packet's TLS ClientHello.
 // Returns the server name, or "" if the packet is not a valid QUIC Initial
 // or contains no SNI.

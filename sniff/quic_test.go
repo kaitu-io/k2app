@@ -52,6 +52,43 @@ func TestSniffQUIC_Empty(t *testing.T) {
 	}
 }
 
+func TestIsQUIC(t *testing.T) {
+	packet := buildTestQUICInitial(t, "example.org")
+	if !IsQUIC(packet) {
+		t.Fatal("expected IsQUIC=true for valid QUIC Initial")
+	}
+}
+
+func TestIsQUIC_TooShort(t *testing.T) {
+	if IsQUIC([]byte{0xc0, 0x00}) {
+		t.Fatal("expected IsQUIC=false for 2-byte packet")
+	}
+}
+
+func TestIsQUIC_NotQUIC(t *testing.T) {
+	// STUN packet (not QUIC)
+	stun := make([]byte, 20)
+	binary.BigEndian.PutUint32(stun[4:8], 0x2112A442) // STUN magic
+	if IsQUIC(stun) {
+		t.Fatal("expected IsQUIC=false for STUN packet")
+	}
+}
+
+func TestIsQUIC_ShortHeader(t *testing.T) {
+	// Short header: form bit = 0
+	pkt := []byte{0x40, 0x00, 0x00, 0x00, 0x01}
+	if IsQUIC(pkt) {
+		t.Fatal("expected IsQUIC=false for short header")
+	}
+}
+
+func TestIsQUIC_UnknownVersion(t *testing.T) {
+	pkt := []byte{0xC0, 0xFF, 0xFF, 0xFF, 0xFF} // unknown version
+	if IsQUIC(pkt) {
+		t.Fatal("expected IsQUIC=false for unknown QUIC version")
+	}
+}
+
 // buildTestQUICInitial constructs a valid QUIC v1 Initial packet containing
 // a TLS ClientHello with the given SNI, encrypted with proper QUIC Initial keys.
 func buildTestQUICInitial(t *testing.T, sni string) []byte {
