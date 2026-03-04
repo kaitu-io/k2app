@@ -46,8 +46,9 @@ export default function LoginDialog() {
   const { links } = useAppLinks();
 
   // Dialog state from store
-  const { isOpen, message, close } = useLoginDialogStore();
+  const { isOpen, message, trigger, close } = useLoginDialogStore();
   const setIsAuthenticated = useAuthStore((s) => s.setIsAuthenticated);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
   // Form state
   const [email, setEmail] = useState("");
@@ -182,6 +183,15 @@ export default function LoginDialog() {
     }
   };
 
+  // Close dialog — redirect to Dashboard if opened by route guard and user is not authenticated
+  const handleClose = () => {
+    const shouldRedirect = trigger.startsWith('guard:') && !isAuthenticated;
+    close();
+    if (shouldRedirect) {
+      navigate('/');
+    }
+  };
+
   // Go back to previous step
   const handleBack = () => {
     setError("");
@@ -195,7 +205,7 @@ export default function LoginDialog() {
   return (
     <Dialog
       open={isOpen}
-      onClose={close}
+      onClose={handleClose}
       maxWidth="xs"
       fullWidth
       PaperProps={{
@@ -234,7 +244,7 @@ export default function LoginDialog() {
       </DialogTitle>
 
       <IconButton
-        onClick={close}
+        onClick={handleClose}
         sx={{
           position: "absolute",
           top: 12,
@@ -313,22 +323,26 @@ export default function LoginDialog() {
               {t("auth:auth.sendCode")}
             </Button>
 
-            <Divider sx={{ my: 1 }}>
-              <Typography variant="caption" color="text.secondary">
-                {t("common:common.or", "OR")}
-              </Typography>
-            </Divider>
+            {window._platform?.os !== 'ios' && (
+              <>
+                <Divider sx={{ my: 1 }}>
+                  <Typography variant="caption" color="text.secondary">
+                    {t("common:common.or", "OR")}
+                  </Typography>
+                </Divider>
 
-            <Button
-              fullWidth
-              variant="outlined"
-              onClick={() => {
-                close();
-                navigate("/purchase");
-              }}
-            >
-              {t("auth:auth.activateService")}
-            </Button>
+                <Button
+                  fullWidth
+                  variant="outlined"
+                  onClick={() => {
+                    close();
+                    navigate("/purchase");
+                  }}
+                >
+                  {t("auth:auth.activateService")}
+                </Button>
+              </>
+            )}
           </Stack>
         )}
 
@@ -455,7 +469,7 @@ export default function LoginDialog() {
           <Button
             fullWidth
             variant="text"
-            onClick={close}
+            onClick={handleClose}
             color="inherit"
           >
             {t("common:common.later", "Later")}

@@ -83,6 +83,10 @@ export function useDraggable(options: UseDraggableOptions): UseDraggableReturn {
   const isDraggingRef = useRef(false);
   const [isDragging, setIsDragging] = useState(false);
 
+  // Refs for document-level listeners (attached during drag, detached on pointerup)
+  const onPointerMoveRef = useRef<((e: PointerEvent) => void) | null>(null);
+  const onPointerUpRef = useRef<((e: PointerEvent) => void) | null>(null);
+
   const clampY = useCallback((y: number) => {
     const vh = getLogicalViewport().height;
     const maxY = vh - elementSize - bottomClearance;
@@ -122,8 +126,6 @@ export function useDraggable(options: UseDraggableOptions): UseDraggableReturn {
     const el = elementRef.current;
     if (!el) return;
 
-    el.setPointerCapture(e.pointerId);
-
     const scale = getBodyScale();
     const ds = dragState.current;
     ds.startPointerX = e.clientX / scale;
@@ -138,16 +140,23 @@ export function useDraggable(options: UseDraggableOptions): UseDraggableReturn {
 
     // Remove transition for instant position updates during drag
     el.style.transition = 'none';
+
+    // Attach document-level listeners (immune to MUI ripple stealing pointer capture)
+    if (onPointerMoveRef.current) document.addEventListener('pointermove', onPointerMoveRef.current);
+    if (onPointerUpRef.current) {
+      document.addEventListener('pointerup', onPointerUpRef.current);
+      document.addEventListener('pointercancel', onPointerUpRef.current);
+    }
   }, [position]);
 
-  // Attach pointer event listeners to element
+  // Define pointer move/up handlers in refs (attached to document during drag)
   useEffect(() => {
     const el = elementRef.current;
     if (!el) return;
 
-    const onPointerMove = (e: PointerEvent) => {
+    onPointerMoveRef.current = (e: PointerEvent) => {
       const ds = dragState.current;
-      if (ds.pointerId === -1 || !el.hasPointerCapture(e.pointerId)) return;
+      if (ds.pointerId === -1 || e.pointerId !== ds.pointerId) return;
 
       const scale = getBodyScale();
       const logicalX = e.clientX / scale;
@@ -175,14 +184,20 @@ export function useDraggable(options: UseDraggableOptions): UseDraggableReturn {
       });
     };
 
-    const onPointerUp = (e: PointerEvent) => {
+    onPointerUpRef.current = (e: PointerEvent) => {
       const ds = dragState.current;
       if (ds.pointerId === -1) return;
-      // Only handle the pointer we captured
       if (e.pointerId !== ds.pointerId) return;
 
       if (ds.rafId) cancelAnimationFrame(ds.rafId);
       ds.pointerId = -1;
+
+      // Detach document-level listeners
+      if (onPointerMoveRef.current) document.removeEventListener('pointermove', onPointerMoveRef.current);
+      if (onPointerUpRef.current) {
+        document.removeEventListener('pointerup', onPointerUpRef.current);
+        document.removeEventListener('pointercancel', onPointerUpRef.current);
+      }
 
       if (ds.totalMovement <= dragThreshold) {
         // Was a click, not a drag — reset
@@ -224,16 +239,16 @@ export function useDraggable(options: UseDraggableOptions): UseDraggableReturn {
       }
     };
 
-    el.addEventListener('pointermove', onPointerMove);
-    el.addEventListener('pointerup', onPointerUp);
-    el.addEventListener('pointercancel', onPointerUp);
     el.addEventListener('touchmove', onTouchMove, { passive: false });
 
     return () => {
-      el.removeEventListener('pointermove', onPointerMove);
-      el.removeEventListener('pointerup', onPointerUp);
-      el.removeEventListener('pointercancel', onPointerUp);
       el.removeEventListener('touchmove', onTouchMove);
+      // Safety cleanup for document listeners (e.g. unmount during drag)
+      if (onPointerMoveRef.current) document.removeEventListener('pointermove', onPointerMoveRef.current);
+      if (onPointerUpRef.current) {
+        document.removeEventListener('pointerup', onPointerUpRef.current);
+        document.removeEventListener('pointercancel', onPointerUpRef.current);
+      }
     };
   }, [clampY, dragThreshold, edgeMargin, elementSize, sidebarWidth, storageKey]);
 
