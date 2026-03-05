@@ -48,6 +48,10 @@ func Migrate() error {
 		&IPRouteInfo{},
 		// Cloud instance management
 		&CloudInstance{},
+		// Usage analytics
+		&StatAppOpen{},
+		&StatConnection{},
+		&StatK2sDownload{},
 	)
 	if err != nil {
 		log.Errorf(ctx, "database migration failed: %v", err)

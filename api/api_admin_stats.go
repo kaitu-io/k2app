@@ -1,10 +1,12 @@
 package center
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	db "github.com/wordgate/qtoolkit/db"
+	"github.com/wordgate/qtoolkit/log"
 )
 
 // UserStatisticsResponse contains aggregated user statistics
@@ -228,4 +230,119 @@ func api_admin_get_order_statistics(c *gin.Context) {
 	}
 
 	Success(c, &result)
+}
+
+// ========================= Usage Analytics =========================
+
+type UsageOverviewResponse struct {
+	ActiveDevices []DailyCount `json:"activeDevices"`
+	Connections   []DailyCount `json:"connections"`
+	NodeUsage     []NodeCount  `json:"nodeUsage"`
+	K2sDownloads  []DailyCount `json:"k2sDownloads"`
+}
+
+type DailyCount struct {
+	Date  string `json:"date"`
+	Count int64  `json:"count"`
+}
+
+type NodeCount struct {
+	NodeIPv4 string `json:"nodeIpv4"`
+	NodeType string `json:"nodeType"`
+	Count    int64  `json:"count"`
+}
+
+func api_admin_usage_overview(c *gin.Context) {
+	rangeParam := c.DefaultQuery("range", "30d")
+	osFilter := c.Query("os")
+
+	days, err := parseRangeDays(rangeParam)
+	if err != nil {
+		Error(c, ErrorInvalidArgument, "invalid range parameter")
+		return
+	}
+
+	since := time.Now().AddDate(0, 0, -days)
+	resp := UsageOverviewResponse{}
+
+	// 1. Active devices (DAU) — unique device_hash per day from stat_app_opens
+	{
+		query := db.Get().Model(&StatAppOpen{}).
+			Select("DATE(reported_at) as date, COUNT(DISTINCT device_hash) as count").
+			Where("reported_at >= ?", since).
+			Group("DATE(reported_at)").
+			Order("date")
+		if osFilter != "" {
+			query = query.Where("os = ?", osFilter)
+		}
+		if err := query.Find(&resp.ActiveDevices).Error; err != nil {
+			log.Errorf(c, "failed to query active devices: %v", err)
+			Error(c, ErrorSystemError, "query failed")
+			return
+		}
+	}
+
+	// 2. Connection count per day — count of connect events
+	{
+		query := db.Get().Model(&StatConnection{}).
+			Select("DATE(reported_at) as date, COUNT(*) as count").
+			Where("reported_at >= ? AND event = ?", since, "connect").
+			Group("DATE(reported_at)").
+			Order("date")
+		if osFilter != "" {
+			query = query.Where("os = ?", osFilter)
+		}
+		if err := query.Find(&resp.Connections).Error; err != nil {
+			log.Errorf(c, "failed to query connections: %v", err)
+			Error(c, ErrorSystemError, "query failed")
+			return
+		}
+	}
+
+	// 3. Node usage distribution — top nodes by connect count
+	{
+		query := db.Get().Model(&StatConnection{}).
+			Select("node_ipv4, node_type, COUNT(*) as count").
+			Where("reported_at >= ? AND event = ?", since, "connect").
+			Group("node_ipv4, node_type").
+			Order("count DESC").
+			Limit(20)
+		if osFilter != "" {
+			query = query.Where("os = ?", osFilter)
+		}
+		if err := query.Find(&resp.NodeUsage).Error; err != nil {
+			log.Errorf(c, "failed to query node usage: %v", err)
+			Error(c, ErrorSystemError, "query failed")
+			return
+		}
+	}
+
+	// 4. k2s downloads — unique IPs per day
+	{
+		query := db.Get().Model(&StatK2sDownload{}).
+			Select("DATE(created_at) as date, COUNT(DISTINCT ip_hash) as count").
+			Where("created_at >= ?", since).
+			Group("DATE(created_at)").
+			Order("date")
+		if err := query.Find(&resp.K2sDownloads).Error; err != nil {
+			log.Errorf(c, "failed to query k2s downloads: %v", err)
+			Error(c, ErrorSystemError, "query failed")
+			return
+		}
+	}
+
+	Success(c, &resp)
+}
+
+func parseRangeDays(rangeParam string) (int, error) {
+	switch rangeParam {
+	case "7d":
+		return 7, nil
+	case "30d":
+		return 30, nil
+	case "90d":
+		return 90, nil
+	default:
+		return 0, fmt.Errorf("unsupported range: %s", rangeParam)
+	}
 }

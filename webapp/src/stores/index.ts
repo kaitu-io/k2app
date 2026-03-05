@@ -58,9 +58,10 @@ export {
 
 // 内部导入（用于 initializeAllStores）
 import { initializeAuthStore } from './auth.store';
-import { initializeVPNMachine } from './vpn-machine.store';
+import { initializeVPNMachine, useVPNMachineStore } from './vpn-machine.store';
 import { initializeLayoutStore } from './layout.store';
 import { useConfigStore } from './config.store';
+import { useConnectionStore } from './connection.store';
 import { useSelfHostedStore } from './self-hosted.store';
 
 /**
@@ -79,6 +80,69 @@ export function initializeAllStores(): () => void {
   useSelfHostedStore.getState().loadTunnel(); // fire-and-forget, sets loaded=true when done
   const cleanupAuth = initializeAuthStore();
   const cleanupVPNMachine = initializeVPNMachine();
+
+  // Subscribe to VPN state changes for analytics
+  import('../services/stats').then(({ statsService }) => {
+    let connectTime: number | null = null;
+
+    // Snapshot tunnel info at connect time (before connectedTunnel gets cleared on disconnect)
+    let lastConnectedSource: 'cloud' | 'self_hosted' = 'cloud';
+    let lastNodeIpv4 = '';
+    let lastNodeRegion = '';
+    let lastRuleMode = '';
+
+    const unsubStats = useVPNMachineStore.subscribe(
+      (s) => s.state,
+      (state, prevState) => {
+        if (state === 'connected' && prevState !== 'connected') {
+          connectTime = Date.now();
+
+          // Read tunnel metadata from connection store
+          const connState = useConnectionStore.getState();
+          const configState = useConfigStore.getState();
+          lastConnectedSource = connState.selectedSource;
+          lastNodeIpv4 = connState.selectedCloudTunnel?.node?.ipv4 || '';
+          lastNodeRegion = connState.selectedCloudTunnel?.node?.country || '';
+          lastRuleMode = configState.ruleMode;
+
+          statsService.trackConnect({
+            nodeType: lastConnectedSource === 'self_hosted' ? 'self-hosted' : 'cloud',
+            nodeIpv4: lastConnectedSource === 'cloud' ? lastNodeIpv4 : '',
+            nodeRegion: lastConnectedSource === 'cloud' ? lastNodeRegion : '',
+            ruleMode: lastRuleMode,
+          });
+        }
+
+        if (state === 'idle' && prevState === 'connected') {
+          const durationSec = connectTime ? Math.floor((Date.now() - connectTime) / 1000) : 0;
+          statsService.trackDisconnect({
+            nodeType: lastConnectedSource === 'self_hosted' ? 'self-hosted' : 'cloud',
+            nodeIpv4: lastConnectedSource === 'cloud' ? lastNodeIpv4 : '',
+            nodeRegion: lastConnectedSource === 'cloud' ? lastNodeRegion : '',
+            ruleMode: lastRuleMode,
+            durationSec,
+            reason: 'user',
+          });
+          connectTime = null;
+        }
+
+        if (state === 'error' && prevState === 'connected') {
+          const durationSec = connectTime ? Math.floor((Date.now() - connectTime) / 1000) : 0;
+          statsService.trackDisconnect({
+            nodeType: lastConnectedSource === 'self_hosted' ? 'self-hosted' : 'cloud',
+            nodeIpv4: lastConnectedSource === 'cloud' ? lastNodeIpv4 : '',
+            nodeRegion: lastConnectedSource === 'cloud' ? lastNodeRegion : '',
+            ruleMode: lastRuleMode,
+            durationSec,
+            reason: 'error',
+          });
+          connectTime = null;
+        }
+      }
+    );
+
+    (window as any).__statsUnsub = unsubStats;
+  }).catch(() => {});
 
   return () => {
     cleanupVPNMachine();

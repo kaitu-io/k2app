@@ -7,6 +7,25 @@ const intlMiddleware = createMiddleware(routing);
 export default function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
+  // Track k2s download
+  if (pathname === '/i/k2s') {
+    // Fire-and-forget: record download to Center API
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+      || request.headers.get('x-real-ip')
+      || 'unknown';
+    const ua = request.headers.get('user-agent') || '';
+
+    fetch('https://k2.52j.me/api/stats/k2s-download', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ip_raw: ip, ua }),
+    }).catch(() => {
+      // Non-blocking, ignore errors
+    });
+
+    return NextResponse.next();
+  }
+
   // Skip middleware for admin and manager routes (no locale prefix needed)
   if (pathname.startsWith('/admin') || pathname.startsWith('/manager')) {
     return NextResponse.next();

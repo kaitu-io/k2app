@@ -210,6 +210,14 @@ func SetupRouter() *gin.Engine {
 			diagnosis.GET("/outbound-route", api_outbound_route)
 		}
 
+		// Usage analytics (no auth)
+		stats := api.Group("/stats")
+		log.Debugf(ctx, "registering /api/stats group")
+		{
+			stats.POST("/events", api_stats_ingest)
+			stats.POST("/k2s-download", api_stats_k2s_download)
+		}
+
 	}
 
 	admin := r.Group("/app")
@@ -330,6 +338,9 @@ func SetupRouter() *gin.Engine {
 		admin.GET("/cloud/regions", api_admin_list_cloud_regions)
 		admin.GET("/cloud/plans", api_admin_list_cloud_plans)
 		admin.GET("/cloud/images", api_admin_list_cloud_images)
+
+		// Usage analytics overview
+		admin.GET("/stats/overview", api_admin_usage_overview)
 
 		// Strategy rules management
 		strategy := admin.Group("/strategy")

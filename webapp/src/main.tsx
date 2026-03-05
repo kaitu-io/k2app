@@ -106,6 +106,11 @@ async function main() {
   const cleanupStores = initializeAllStores();
   console.info('[WebApp] Stores initialized');
 
+  // Track app open for usage analytics
+  import('./services/stats').then(({ statsService }) => {
+    statsService.trackAppOpen();
+  }).catch(() => {});
+
   // 渲染应用
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
