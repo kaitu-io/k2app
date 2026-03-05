@@ -66,23 +66,11 @@ jobs:
           echo "$NPM_GLOBAL" >> "$GITHUB_PATH"
 
       - name: Setup Go
-        if: matrix.platform == 'macOS'
         uses: actions/setup-go@v5
         with:
           go-version: '1.24'
+          cache: ${{ matrix.platform == 'macOS' }}
           cache-dependency-path: k2/go.sum
-
-      - name: Setup Go (self-hosted)
-        if: matrix.platform == 'Windows'
-        shell: bash
-        run: |
-          REQUIRED="1.24"
-          CURRENT=$(go version 2>/dev/null | grep -oP 'go\K[0-9]+\.[0-9]+' || echo "none")
-          if [[ "$CURRENT" != "$REQUIRED"* ]]; then
-            echo "::error::Go $REQUIRED not found on self-hosted runner (have: $CURRENT). Install manually."
-            exit 1
-          fi
-          echo "Go $(go version) already installed"
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
