@@ -98,8 +98,9 @@ func main() {
 		return
 	}
 
-	// Default: run as foreground daemon.
-	runDaemon(*configPath)
+	// Default: run as daemon.
+	// On Windows, dispatches between SCM service mode and foreground.
+	startDaemon(*configPath)
 }
 
 // resolveConfigPath returns cfgFlag if set, else the empty string (caller will search).
