@@ -68,6 +68,11 @@ export const APP_COLORS = {
     infoBgLighter: "rgba(33, 150, 243, 0.04)",
     infoBorder: "rgba(33, 150, 243, 0.2)",
 
+    // Accent background tokens (self-hosted styling)
+    accentBgLight: "rgba(0, 212, 255, 0.08)",
+    accentBgLighter: "rgba(0, 212, 255, 0.04)",
+    accentBorder: "rgba(0, 212, 255, 0.2)",
+
     // Selection and highlight colors
     selectedBg: "rgba(33, 150, 243, 0.1)",
     selectedBgHover: "rgba(33, 150, 243, 0.15)",
@@ -163,6 +168,11 @@ export const APP_COLORS = {
     infoBgLight: "rgba(66, 165, 245, 0.15)",
     infoBgLighter: "rgba(66, 165, 245, 0.1)",
     infoBorder: "rgba(66, 165, 245, 0.3)",
+
+    // Accent background tokens (self-hosted styling)
+    accentBgLight: "rgba(0, 255, 255, 0.12)",
+    accentBgLighter: "rgba(0, 255, 255, 0.06)",
+    accentBorder: "rgba(0, 255, 255, 0.25)",
 
     // Selection and highlight colors
     selectedBg: "rgba(66, 165, 245, 0.15)",

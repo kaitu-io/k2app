@@ -102,6 +102,7 @@
       "title": "登录获取节点",
       "description": "登录账户即可获取云端节点，享受更稳定的服务。"
     },
+    "unlockCloudNodes": "登录解锁全球节点",
     "loginBanner": {
       "message": "登录解锁更多云端节点",
       "viewPlans": "了解会员"

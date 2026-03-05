@@ -35,10 +35,11 @@ import { useLoginDialogStore } from "../stores/login-dialog.store";
 import { useSelfHostedStore, maskUriToken, parseK2v5Uri } from "../stores/self-hosted.store";
 import { getThemeColors } from "../theme/colors";
 
-const DEPLOY_COMMAND = 'curl -fsSL https://kaitu.io/i/k2s | sudo sh\nsudo k2s setup';
+const DEPLOY_COMMAND = 'curl -fsSL https://kaitu.io/i/k2s | sudo sh';
 
 export default function Tunnels() {
   const { t } = useTranslation("dashboard");
+  const { t: tc } = useTranslation("common");
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
   const colors = getThemeColors(isDark);
@@ -60,21 +61,15 @@ export default function Tunnels() {
   const storedUri = tunnel?.uri ?? "";
   const hasChanges = inputUri.trim() !== storedUri;
 
+  // Display value: show masked token when input matches stored URI
+  const displayValue = inputUri === storedUri && storedUri
+    ? maskUriToken(storedUri)
+    : inputUri;
+
   const handleSave = useCallback(async () => {
     const trimmed = inputUri.trim();
     setUriError(null);
 
-    // Empty = clear
-    if (!trimmed) {
-      setSaving(true);
-      await clearTunnel();
-      setSaving(false);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-      return;
-    }
-
-    // Validate
     const result = parseK2v5Uri(trimmed);
     if (result.error) {
       setUriError(t(`selfHosted.${result.error}`));
@@ -91,7 +86,7 @@ export default function Tunnels() {
     } finally {
       setSaving(false);
     }
-  }, [inputUri, saveTunnel, clearTunnel, t]);
+  }, [inputUri, saveTunnel, t]);
 
   const handleCopy = useCallback(async () => {
     try {
@@ -99,7 +94,6 @@ export default function Tunnels() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // fallback: try platform clipboard
       window._platform?.writeClipboard?.(DEPLOY_COMMAND);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -117,36 +111,31 @@ export default function Tunnels() {
     });
   };
 
-  // Display value: show masked token when input matches stored URI
-  const displayValue = inputUri === storedUri && storedUri
-    ? maskUriToken(storedUri)
-    : inputUri;
-
   return (
-    <Box sx={{ p: 2, pb: 6 }}>
+    <Box sx={{ p: 2 }}>
       {/* Header */}
-      <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
+      <Box sx={{ display: "flex", alignItems: "center", mb: 1.5 }}>
         <BackButton />
         <Typography variant="h6" fontWeight={600} sx={{ ml: 1 }}>
           {t("tunnels.title")}
         </Typography>
       </Box>
 
-      <Stack spacing={2}>
+      <Stack spacing={1.5}>
         {/* Self-Hosted Node */}
         <Paper
           elevation={0}
           sx={{
-            p: 2.5,
+            p: 2,
             borderRadius: 2,
-            bgcolor: isDark ? 'rgba(0, 212, 255, 0.05)' : 'rgba(0, 150, 255, 0.04)',
-            border: `1px solid ${isDark ? 'rgba(0, 212, 255, 0.2)' : 'rgba(0, 150, 255, 0.15)'}`,
+            bgcolor: colors.accentBgLighter,
+            border: `1px solid ${colors.accentBorder}`,
           }}
         >
-          <Stack spacing={2}>
+          <Stack spacing={1.5}>
             <Stack direction="row" alignItems="center" spacing={1}>
-              <TerminalIcon sx={{ fontSize: 20, color: colors.accent }} />
-              <Typography variant="subtitle1" fontWeight={600}>
+              <TerminalIcon sx={{ fontSize: 18, color: colors.accent }} />
+              <Typography variant="subtitle2" fontWeight={600}>
                 {t("selfHosted.tag")}
               </Typography>
               {tunnel && (
@@ -175,20 +164,33 @@ export default function Tunnels() {
               error={!!uriError}
               helperText={uriError}
               InputProps={{
-                sx: { fontFamily: 'monospace', fontSize: '0.85rem' },
+                sx: { fontFamily: 'monospace', fontSize: '0.82rem' },
               }}
             />
 
-            <Button
-              variant="contained"
-              size="small"
-              startIcon={saved ? <CheckIcon /> : <SaveIcon />}
-              onClick={handleSave}
-              disabled={!hasChanges || saving}
-              sx={{ alignSelf: 'flex-start' }}
-            >
-              {saved ? t("selfHosted.saved") : t("selfHosted.save")}
-            </Button>
+            <Stack direction="row" spacing={1} justifyContent="flex-end">
+              {tunnel && (
+                <Button
+                  size="small"
+                  variant="text"
+                  onClick={async () => {
+                    await clearTunnel();
+                    setInputUri("");
+                  }}
+                >
+                  {tc('common.clear')}
+                </Button>
+              )}
+              <Button
+                variant="contained"
+                size="small"
+                startIcon={saved ? <CheckIcon /> : <SaveIcon />}
+                onClick={handleSave}
+                disabled={!hasChanges || saving}
+              >
+                {saved ? t("selfHosted.saved") : t("selfHosted.save")}
+              </Button>
+            </Stack>
           </Stack>
         </Paper>
 
@@ -198,31 +200,42 @@ export default function Tunnels() {
           sx={{
             borderRadius: 2,
             overflow: 'hidden',
-            border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
+            border: `1px solid ${theme.palette.divider}`,
           }}
         >
-          <Box sx={{ px: 2.5, py: 1.5 }}>
-            <Typography variant="subtitle2" color="text.secondary">
+          {/* Terminal header with macOS dots */}
+          <Box sx={{
+            px: 2,
+            py: 1,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            borderBottom: `1px solid ${theme.palette.divider}`,
+          }}>
+            <Box sx={{ display: 'flex', gap: 0.6 }}>
+              <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: theme.palette.error.main }} />
+              <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: theme.palette.warning.main }} />
+              <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: theme.palette.success.main }} />
+            </Box>
+            <Typography variant="subtitle2" color="text.secondary" sx={{ ml: 0.5 }}>
               {t("selfHosted.deployGuide")}
             </Typography>
           </Box>
 
           <Box
             sx={{
-              bgcolor: '#1a1a2e',
-              px: 2.5,
-              py: 2,
+              bgcolor: theme.palette.background.default,
+              px: 2,
+              py: 1.5,
               fontFamily: 'monospace',
               fontSize: '0.82rem',
               lineHeight: 1.8,
-              color: '#e0e0e0',
+              color: theme.palette.text.primary,
               position: 'relative',
             }}
           >
-            <Box component="span" sx={{ color: '#4caf50' }}>$</Box>{' '}
-            curl -fsSL https://kaitu.io/i/k2s | sudo sh{'\n'}
-            <Box component="span" sx={{ color: '#4caf50' }}>$</Box>{' '}
-            sudo k2s setup
+            <Box component="span" sx={{ color: colors.success }}>$</Box>{' '}
+            curl -fsSL https://kaitu.io/i/k2s | sudo sh
 
             <Tooltip title={copied ? t("selfHosted.copied") : t("selfHosted.copyCommand")}>
               <IconButton
@@ -232,8 +245,8 @@ export default function Tunnels() {
                   position: 'absolute',
                   top: 8,
                   right: 8,
-                  color: 'rgba(255,255,255,0.5)',
-                  '&:hover': { color: 'rgba(255,255,255,0.8)' },
+                  color: 'text.secondary',
+                  '&:hover': { color: 'text.primary' },
                 }}
               >
                 {copied ? <CheckIcon fontSize="small" /> : <CopyIcon fontSize="small" />}
@@ -241,7 +254,13 @@ export default function Tunnels() {
             </Tooltip>
           </Box>
 
-          <Box sx={{ px: 2.5, py: 1.5, display: 'flex', justifyContent: 'flex-end' }}>
+          <Box sx={{
+            px: 2,
+            py: 1,
+            display: 'flex',
+            justifyContent: 'flex-end',
+            borderTop: `1px solid ${theme.palette.divider}`,
+          }}>
             <Button
               size="small"
               endIcon={<OpenInNewIcon sx={{ fontSize: '14px !important' }} />}
@@ -257,7 +276,7 @@ export default function Tunnels() {
         <Paper
           elevation={0}
           sx={{
-            p: 2.5,
+            p: 2,
             borderRadius: 2,
             textAlign: 'center',
             bgcolor: isDark ? 'rgba(76, 175, 80, 0.05)' : 'rgba(76, 175, 80, 0.04)',

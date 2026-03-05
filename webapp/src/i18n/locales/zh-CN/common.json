@@ -27,6 +27,7 @@
     "ok": "确定",
     "save": "保存",
     "delete": "删除",
+    "clear": "清空",
     "copy": "复制",
     "close": "关闭",
     "loading": "加载中...",
@@ -44,7 +45,8 @@
     "later": "稍后再说",
     "login": "登录",
     "viewDetails": "查看详情",
-    "experimental": "实验性"
+    "experimental": "实验性",
+    "edit": "编辑"
   },
   "errors": {
     "service": {

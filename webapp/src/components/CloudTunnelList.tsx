@@ -320,7 +320,7 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
                 minHeight: 64,
                 bgcolor: isSelected ? colors.selectedBg : undefined,
                 cursor: disabled ? 'not-allowed' : 'pointer',
-                opacity: disabled ? 0.6 : 1,
+                opacity: disabled ? '0.6 !important' : 1,
                 transition: 'all 0.2s ease',
                 '&:hover': {
                   bgcolor: disabled ? undefined : 'action.hover',

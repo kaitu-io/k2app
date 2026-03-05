@@ -27,6 +27,7 @@
     "ok": "確定",
     "save": "儲存",
     "delete": "刪除",
+    "clear": "清空",
     "copy": "複製",
     "close": "關閉",
     "loading": "載入中...",
@@ -44,7 +45,8 @@
     "later": "稍後再說",
     "login": "登入",
     "viewDetails": "查看詳情",
-    "experimental": "實驗性"
+    "experimental": "實驗性",
+    "edit": "編輯"
   },
   "errors": {
     "service": {

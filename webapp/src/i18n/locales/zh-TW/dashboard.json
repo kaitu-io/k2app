@@ -102,6 +102,7 @@
       "title": "登入取得節點",
       "description": "登入帳戶即可取得雲端節點，享受更穩定的服務。"
     },
+    "unlockCloudNodes": "登入解鎖全球節點",
     "loginBanner": {
       "message": "登入解鎖更多雲端節點",
       "viewPlans": "了解會員"

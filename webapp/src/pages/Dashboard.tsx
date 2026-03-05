@@ -7,11 +7,18 @@ import {
   Tooltip,
   styled,
   Collapse,
+  List,
+  ListItem,
+  ListItemIcon,
+  ListItemText,
+  Radio,
+  IconButton,
+  useTheme,
 } from "@mui/material";
 import {
-  Dns as DnsIcon,
   ExpandMore as ExpandMoreIcon,
   Settings as SettingsIcon,
+  Terminal as TerminalIcon,
 } from "@mui/icons-material";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -23,11 +30,12 @@ import { useConfigStore } from '../stores/config.store';
 import { useConnectionStore } from '../stores/connection.store';
 import { useVPNMachine } from '../stores/vpn-machine.store';
 import { useSelfHostedStore } from '../stores/self-hosted.store';
-import { EmptyState } from '../components/LoadingAndEmpty';
 import { getCurrentAppConfig } from '../config/apps';
 import { CollapsibleConnectionSection } from '../components/CollapsibleConnectionSection';
 import { useDashboard } from '../stores/dashboard.store';
 import { CloudTunnelList } from '../components/CloudTunnelList';
+import { getThemeColors } from '../theme/colors';
+import { getCountryName, getFlagIcon } from '../utils/country';
 import type { Tunnel } from '../services/api-types';
 
 // Styled Components for Modern Design
@@ -86,6 +94,11 @@ export default function Dashboard() {
 
   // VPN config from persistent store
   const { ruleMode, updateConfig } = useConfigStore();
+
+  // Theme colors
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
+  const colors = getThemeColors(isDark);
 
   // Self-hosted tunnel
   const selfHostedTunnel = useSelfHostedStore((s) => s.tunnel);
@@ -276,8 +289,15 @@ export default function Dashboard() {
         ref={scrollContainerRef}
         sx={{
           flex: 1,
-          overflowY: 'auto',
-          overflowX: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          minHeight: 0,
+          // Authenticated: this box scrolls all tunnel lists
+          // Unauthenticated: no scroll here, phantom area handles its own scroll
+          ...(!isAuthenticated ? {} : {
+            overflowY: 'auto',
+            overflowX: 'hidden',
+          }),
           '&::-webkit-scrollbar': { width: '4px' },
           '&::-webkit-scrollbar-track': { background: 'transparent' },
           '&::-webkit-scrollbar-thumb': {
@@ -302,96 +322,210 @@ export default function Dashboard() {
 
         {/* Self-hosted node — shown below cloud list for authenticated, or as primary for guests */}
         {selfHostedTunnel && (
-          <Box sx={{ px: 2, py: 1 }}>
-            <Button
-              fullWidth
-              variant={selectedSource === 'self_hosted' ? 'contained' : 'outlined'}
-              onClick={handleSelfHostedSelect}
-              disabled={isInteractive}
-              sx={{
-                justifyContent: 'flex-start',
-                textTransform: 'none',
-                py: 1.5,
-                px: 2,
-                borderRadius: 2,
-              }}
-            >
-              <Stack direction="row" spacing={1.5} alignItems="center">
-                {selfHostedTunnel.country && (
-                  <Typography variant="body2">{selfHostedTunnel.country}</Typography>
-                )}
-                <Box>
-                  <Typography variant="body2" fontWeight={600} textAlign="left">
-                    {selfHostedTunnel.name}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ opacity: 0.7 }}>
-                    {t('dashboard:selfHosted.tag')}
-                  </Typography>
-                </Box>
+          <Box sx={{ flexShrink: 0 }}>
+            {/* Section header — only for authenticated users (guests see it as primary) */}
+            {isAuthenticated && (
+              <Stack
+                direction="row"
+                spacing={1}
+                sx={{
+                  py: 1,
+                  px: 2,
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  borderBottom: `1px solid ${theme.palette.divider}`,
+                }}
+              >
+                <Typography variant="overline" fontWeight={600} color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                  <TerminalIcon sx={{ fontSize: 14, mr: 0.5, verticalAlign: 'text-bottom' }} />
+                  {t('dashboard:selfHosted.tag')}
+                </Typography>
+                <Tooltip title={t('dashboard:selfHosted.manageNode')}>
+                  <IconButton size="small" onClick={() => navigate('/tunnels')} sx={{ p: 0.5 }}>
+                    <SettingsIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                </Tooltip>
               </Stack>
-            </Button>
+            )}
+
+            <List sx={{ pt: 0.5, px: 2, pb: 1 }}>
+              <ListItem
+                onClick={handleSelfHostedSelect}
+                sx={{
+                  borderRadius: 2,
+                  minHeight: 64,
+                  bgcolor: selectedSource === 'self_hosted' ? colors.selectedBg : undefined,
+                  cursor: isInteractive ? 'not-allowed' : 'pointer',
+                  opacity: isInteractive ? '0.6 !important' : 1,
+                  transition: 'all 0.2s ease',
+                  '&:hover': {
+                    bgcolor: isInteractive ? undefined : 'action.hover',
+                    transform: isInteractive ? 'none' : 'scale(1.01)',
+                  },
+                }}
+              >
+                <ListItemIcon sx={{ minWidth: 40 }}>
+                  {selfHostedTunnel.country ? (
+                    getFlagIcon(selfHostedTunnel.country)
+                  ) : (
+                    <Box sx={{
+                      width: 32,
+                      height: 22,
+                      borderRadius: 0.5,
+                      bgcolor: colors.accentBgLight,
+                      border: `1px solid ${colors.accentBorder}`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}>
+                      <TerminalIcon sx={{ fontSize: 14, color: colors.accent }} />
+                    </Box>
+                  )}
+                </ListItemIcon>
+                <ListItemText
+                  primary={
+                    <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      {selfHostedTunnel.name}
+                      <Typography
+                        component="span"
+                        sx={{
+                          fontSize: '0.65rem',
+                          px: 0.8,
+                          py: 0.1,
+                          borderRadius: 0.5,
+                          bgcolor: colors.accentBgLighter,
+                          border: `1px solid ${colors.accentBorder}`,
+                          color: colors.accent,
+                          fontWeight: 500,
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        {t('dashboard:dashboard.selfDeployed')}
+                      </Typography>
+                    </Box>
+                  }
+                  secondary={selfHostedTunnel.country ? getCountryName(selfHostedTunnel.country) : t('dashboard:selfHosted.tag')}
+                  primaryTypographyProps={{ fontWeight: 600, fontSize: '0.9rem' }}
+                  secondaryTypographyProps={{ fontSize: '0.75rem' }}
+                />
+                <IconButton
+                  size="small"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigate('/tunnels');
+                  }}
+                  sx={{ mr: 0.5 }}
+                >
+                  <SettingsIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+                </IconButton>
+                <Radio
+                  checked={selectedSource === 'self_hosted'}
+                  color="primary"
+                  sx={{ '& .MuiSvgIcon-root': { fontSize: 24 } }}
+                />
+              </ListItem>
+            </List>
           </Box>
         )}
 
-        {/* Empty state for unauthenticated users without self-hosted tunnel */}
-        {!isAuthenticated && !selfHostedTunnel && (
-          <Box sx={{ px: 2, py: 4 }}>
-            <EmptyState
-              icon={<DnsIcon sx={{ fontSize: 48 }} />}
-              title={t('dashboard:dashboard.guestEmpty.title') || 'Login to get nodes'}
-              description={t('dashboard:dashboard.guestEmpty.description') || 'Login to access cloud nodes for stable service.'}
-              action={
-                <Stack direction="column" spacing={2} sx={{ mt: 2, alignItems: 'center' }}>
-                  <Button
-                    onClick={() => openLoginDialog({ trigger: 'dashboard-empty' })}
-                    variant="contained"
-                    color="primary"
-                    size="large"
-                    sx={{
-                      px: 6,
-                      py: 1.5,
-                      fontSize: '1rem',
-                      fontWeight: 600,
-                      borderRadius: 2,
-                    }}
-                  >
-                    {t('dashboard:dashboard.loginToGet') || 'Login'}
-                  </Button>
-                  <Button
-                    onClick={() => navigate('/tunnels')}
-                    color="inherit"
-                    variant="text"
-                    size="small"
-                    sx={{
-                      color: 'text.secondary',
-                      textTransform: 'none',
-                      fontSize: '0.75rem',
-                    }}
-                  >
-                    {t('dashboard:dashboard.selfDeploy') || 'Self-deploy'}
-                  </Button>
-                </Stack>
-              }
-              minHeight={200}
-            />
-          </Box>
-        )}
+        {/* Phantom cloud nodes for unauthenticated users */}
+        {!isAuthenticated && (
+          <Box sx={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+            {/* Scrollable blurred list — scrolls independently */}
+            <List sx={{
+              height: '100%',
+              overflowY: 'auto',
+              pt: 0.5,
+              px: 2,
+              pb: 1,
+              filter: 'blur(4px)',
+              opacity: 0.5,
+              pointerEvents: 'none',
+              userSelect: 'none',
+              '&::-webkit-scrollbar': { width: '4px' },
+              '&::-webkit-scrollbar-track': { background: 'transparent' },
+              '&::-webkit-scrollbar-thumb': {
+                background: (theme) => theme.palette.mode === 'dark'
+                  ? 'rgba(255, 255, 255, 0.2)'
+                  : 'rgba(0, 0, 0, 0.2)',
+                borderRadius: '4px',
+              },
+              scrollbarWidth: 'thin',
+            }}>
+              {[
+                { flag: 'JP', name: 'Tokyo-01', country: 'Japan' },
+                { flag: 'JP', name: 'Tokyo-02', country: 'Japan' },
+                { flag: 'SG', name: 'Singapore-01', country: 'Singapore' },
+                { flag: 'SG', name: 'Singapore-02', country: 'Singapore' },
+                { flag: 'US', name: 'Los Angeles-01', country: 'United States' },
+                { flag: 'US', name: 'San Jose-01', country: 'United States' },
+                { flag: 'HK', name: 'Hong Kong-01', country: 'Hong Kong' },
+                { flag: 'HK', name: 'Hong Kong-02', country: 'Hong Kong' },
+                { flag: 'TW', name: 'Taipei-01', country: 'Taiwan' },
+                { flag: 'KR', name: 'Seoul-01', country: 'South Korea' },
+                { flag: 'DE', name: 'Frankfurt-01', country: 'Germany' },
+                { flag: 'GB', name: 'London-01', country: 'United Kingdom' },
+                { flag: 'AU', name: 'Sydney-01', country: 'Australia' },
+                { flag: 'CA', name: 'Toronto-01', country: 'Canada' },
+                { flag: 'FR', name: 'Paris-01', country: 'France' },
+              ].map((item) => (
+                <ListItem
+                  key={item.name}
+                  sx={{
+                    borderRadius: 2,
+                    mb: 0.5,
+                    minHeight: 64,
+                    bgcolor: 'action.hover',
+                  }}
+                >
+                  <ListItemIcon sx={{ minWidth: 40, fontSize: 24 }}>
+                    {getFlagIcon(item.flag)}
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={item.name}
+                    secondary={item.country}
+                    primaryTypographyProps={{ fontWeight: 600, fontSize: '0.9rem' }}
+                    secondaryTypographyProps={{ fontSize: '0.75rem' }}
+                  />
+                  <Radio disabled color="primary" sx={{ '& .MuiSvgIcon-root': { fontSize: 24 } }} />
+                </ListItem>
+              ))}
+            </List>
 
-        {/* Cloud upgrade CTA for guests with self-hosted tunnel */}
-        {!isAuthenticated && selfHostedTunnel && (
-          <Box sx={{ px: 2, py: 1 }}>
-            <Button
-              fullWidth
-              variant="text"
-              onClick={() => openLoginDialog({ trigger: 'dashboard-upgrade' })}
-              sx={{
-                textTransform: 'none',
-                color: 'text.secondary',
-                fontSize: '0.75rem',
-              }}
-            >
-              {t('dashboard:selfHosted.upgradeTitle')} {t('dashboard:selfHosted.upgradeCta')}
-            </Button>
+            {/* Overlay — fixed in visible area, not affected by list scroll */}
+            <Box sx={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              bgcolor: `${theme.palette.background.default}99`,
+              pointerEvents: 'none',
+            }}>
+              <Stack spacing={1.5} alignItems="center" sx={{ pointerEvents: 'auto' }}>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  onClick={() => openLoginDialog({ trigger: 'dashboard-upgrade' })}
+                  sx={{ fontWeight: 600, px: 3 }}
+                >
+                  {t('dashboard:dashboard.unlockCloudNodes')}
+                </Button>
+                <Button
+                  variant="text"
+                  size="small"
+                  onClick={() => navigate('/tunnels')}
+                  sx={{
+                    color: 'text.secondary',
+                    textTransform: 'none',
+                    fontSize: '0.75rem',
+                  }}
+                >
+                  {t('dashboard:dashboard.selfDeploy')}
+                </Button>
+              </Stack>
+            </Box>
           </Box>
         )}
       </Box>
