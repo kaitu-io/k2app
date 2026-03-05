@@ -27,9 +27,14 @@
     "entryDescription": "遇到問題？提交工單，我們會盡快回覆",
     "betaWarning": "你正在使用 Beta 版本。如果遇到問題，可以在帳號設定中切回穩定版。",
     "switchToStable": "切回穩定版",
+    "emailLabel": "聯絡信箱",
+    "emailPlaceholder": "請輸入您的信箱地址，以便我們回覆",
+    "anonymousHint": "您目前未登入，提交後我們將透過郵件回覆您。",
     "validation": {
       "contentRequired": "請輸入問題描述",
-      "contentTooLong": "問題描述不能超過 5000 個字元"
+      "contentTooLong": "問題描述不能超過 5000 個字元",
+      "emailRequired": "請輸入信箱地址",
+      "emailInvalid": "請輸入有效的信箱地址"
     }
   },
   "issues": {

@@ -27,9 +27,14 @@
     "entryDescription": "問題がありますか？チケットを提出してください、できるだけ早く返信します",
     "betaWarning": "ベータ版をご使用中です。問題が発生した場合は、アカウント設定から安定版に切り替えることができます。",
     "switchToStable": "安定版に切り替える",
+    "emailLabel": "連絡先メールアドレス",
+    "emailPlaceholder": "返信用のメールアドレスを入力してください",
+    "anonymousHint": "ログインしていません。提出後、メールで返信します。",
     "validation": {
       "contentRequired": "問題の説明を入力してください",
-      "contentTooLong": "問題の説明は5000文字を超えることはできません"
+      "contentTooLong": "問題の説明は5000文字を超えることはできません",
+      "emailRequired": "メールアドレスを入力してください",
+      "emailInvalid": "有効なメールアドレスを入力してください"
     }
   },
   "issues": {

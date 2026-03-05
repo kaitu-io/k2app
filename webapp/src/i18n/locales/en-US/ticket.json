@@ -27,9 +27,14 @@
     "entryDescription": "Encountered a problem? Submit a ticket, we'll reply soon",
     "betaWarning": "You are using a Beta version. If you experience issues, you can switch back to stable in Account settings.",
     "switchToStable": "Switch to Stable",
+    "emailLabel": "Contact Email",
+    "emailPlaceholder": "Enter your email address so we can reply",
+    "anonymousHint": "You are not logged in. We will reply to you via email after submission.",
     "validation": {
       "contentRequired": "Please enter issue description",
-      "contentTooLong": "Issue description cannot exceed 5000 characters"
+      "contentTooLong": "Issue description cannot exceed 5000 characters",
+      "emailRequired": "Please enter your email address",
+      "emailInvalid": "Please enter a valid email address"
     }
   },
   "issues": {

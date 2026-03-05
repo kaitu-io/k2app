@@ -27,7 +27,6 @@ import { useTranslation } from "react-i18next";
 import BackButton from "../components/BackButton";
 import { cloudApi } from '../services/cloud-api';
 import { useAuthStore } from '../stores/auth.store';
-import { useLoginDialogStore } from '../stores/login-dialog.store';
 import { useUser } from '../hooks/useUser';
 import i18n from '../i18n/i18n';
 import type { StatusResponseData } from '../services/vpn-types';
@@ -75,7 +74,6 @@ export default function SubmitTicket() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const openLoginDialog = useLoginDialogStore((s) => s.open);
   const { user } = useUser();
 
   // Feedback mode - when navigating from FeedbackButton
@@ -85,6 +83,7 @@ export default function SubmitTicket() {
 
   // Form state
   const [content, setContent] = useState("");
+  const [email, setEmail] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<{ success: boolean; message: string } | null>(null);
 
@@ -150,12 +149,9 @@ export default function SubmitTicket() {
     }
   }, [uploadLogs, canUploadLogs]);
 
-  const handleSubmit = async () => {
-    if (!isAuthenticated) {
-      openLoginDialog({ trigger: 'submit-ticket' });
-      return;
-    }
+  const isValidEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 
+  const handleSubmit = async () => {
     if (!content.trim()) {
       setSubmitResult({ success: false, message: t('ticket:ticket.validation.contentRequired') });
       return;
@@ -163,6 +159,17 @@ export default function SubmitTicket() {
     if (content.length > 5000) {
       setSubmitResult({ success: false, message: t('ticket:ticket.validation.contentTooLong') });
       return;
+    }
+    // Anonymous: require email
+    if (!isAuthenticated) {
+      if (!email.trim()) {
+        setSubmitResult({ success: false, message: t('ticket:ticket.validation.emailRequired') });
+        return;
+      }
+      if (!isValidEmail(email.trim())) {
+        setSubmitResult({ success: false, message: t('ticket:ticket.validation.emailInvalid') });
+        return;
+      }
     }
 
     setIsSubmitting(true);
@@ -176,12 +183,15 @@ export default function SubmitTicket() {
         ...(feedbackIdRef.current && logUploadStatus === 'success'
           ? { feedbackId: feedbackIdRef.current }
           : {}),
+        // Anonymous: include email and source
+        ...(!isAuthenticated ? { email: email.trim(), source: 'anonymous' } : {}),
         ...systemInfo,
       });
 
       if (response.code === 0) {
         setSubmitResult({ success: true, message: t('ticket:ticket.submitSuccess') });
         setContent("");
+        setEmail("");
       } else {
         console.error('[SubmitTicket] Submit failed:', response.code, response.message);
         setSubmitResult({ success: false, message: t('ticket:ticket.submitFailed') });
@@ -285,6 +295,24 @@ export default function SubmitTicket() {
                       {t('ticket:ticket.description')}
                     </Typography>
 
+                    {!isAuthenticated && (
+                      <>
+                        <Alert severity="info" sx={{ mb: -1 }}>
+                          {t('ticket:ticket.anonymousHint')}
+                        </Alert>
+                        <TextField
+                          label={t('ticket:ticket.emailLabel')}
+                          placeholder={t('ticket:ticket.emailPlaceholder')}
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          disabled={isSubmitting}
+                          fullWidth
+                          type="email"
+                          inputProps={{ maxLength: 200 }}
+                        />
+                      </>
+                    )}
+
                     <TextField
                       label={t('ticket:ticket.contentLabel')}
                       placeholder={t('ticket:ticket.contentPlaceholder')}
@@ -302,16 +330,14 @@ export default function SubmitTicket() {
                       variant="contained"
                       color="primary"
                       onClick={handleSubmit}
-                      disabled={isSubmitting || (isAuthenticated && !content.trim())}
+                      disabled={isSubmitting || !content.trim() || (!isAuthenticated && !email.trim())}
                       startIcon={isSubmitting ? <CircularProgress size={20} color="inherit" /> : <SendIcon />}
                       fullWidth
                       size="large"
                     >
                       {isSubmitting
                       ? t('ticket:ticket.submitting')
-                      : !isAuthenticated
-                        ? t('ticket:ticket.loginToSubmit')
-                        : t('ticket:ticket.submitButton')}
+                      : t('ticket:ticket.submitButton')}
                     </Button>
 
                     {submitResult && !submitResult.success && (

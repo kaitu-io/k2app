@@ -744,6 +744,8 @@ type CreateTicketRequest struct {
 	Subject    string `json:"subject,omitempty"`                          // Deprecated: 老客户端仍会发送，优先使用
 	Content    string `json:"content" binding:"required,min=1,max=5000"` // Ticket content
 	FeedbackID string `json:"feedbackId,omitempty"`                      // Feedback ID for log correlation
+	Email      string `json:"email,omitempty"`                           // Guest email (when not logged in)
+	Source     string `json:"source,omitempty"`                          // Submission source: "anonymous" for unauthenticated users
 	// System info (auto-attached by client)
 	OS         string `json:"os,omitempty"`
 	AppVersion string `json:"app_version,omitempty"`

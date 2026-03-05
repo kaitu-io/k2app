@@ -27,9 +27,14 @@
     "entryDescription": "遇到问题？提交工单，我们会尽快回复",
     "betaWarning": "你正在使用 Beta 版本。如果遇到问题，可以在账号设置中切回稳定版。",
     "switchToStable": "切回稳定版",
+    "emailLabel": "联系邮箱",
+    "emailPlaceholder": "请输入您的邮箱地址，以便我们回复",
+    "anonymousHint": "您当前未登录，提交后我们将通过邮件回复您。",
     "validation": {
       "contentRequired": "请输入问题描述",
-      "contentTooLong": "问题描述不能超过5000个字符"
+      "contentTooLong": "问题描述不能超过5000个字符",
+      "emailRequired": "请输入邮箱地址",
+      "emailInvalid": "请输入有效的邮箱地址"
     }
   },
   "issues": {
