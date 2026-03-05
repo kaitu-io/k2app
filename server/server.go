@@ -269,11 +269,8 @@ func logConnectionURL(cfg *config.ServerConfig, pair *wire.CertPair, echConfigLi
 		slog.Info("server: IPv4 detected", "ip", rawIP4)
 	}
 
-	// Add ip6= raw IPv6 for dialing (preferred over IPv4 when available).
-	if rawIP6 := wire.ProbePublicIP("https://api6.ipify.org"); rawIP6 != "" {
-		connectURL += "&ip6=" + rawIP6
-		slog.Info("server: IPv6 detected", "ip6", rawIP6)
-	}
+	// IPv6 omitted from connect URL — client doesn't handle ip6= reliably yet.
+	// Re-enable when client k2v5 URL parser handles IPv6 brackets correctly.
 
 	slog.Info("Connect URL", "url", connectURL)
 
