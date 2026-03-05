@@ -23,7 +23,7 @@ import { cloudApi } from '../services/cloud-api';
 import { cacheStore } from '../services/cache-store';
 import { sortTunnelsByRecommendation } from '../utils/tunnel-sort';
 import { useAuthStore } from '../stores/auth.store';
-import { useVPNStore } from '../stores/vpn.store';
+import { useVPNMachineStore } from '../stores/vpn-machine.store';
 import type { Tunnel, TunnelListResponse } from '../services/api-types';
 
 interface CloudTunnelListProps {
@@ -51,7 +51,7 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
 
   // Subscribe to auth and service connection states for auto-refresh
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const serviceConnected = useVPNStore((s) => s.serviceConnected);
+  const serviceConnected = useVPNMachineStore((s) => s.state !== 'serviceDown');
 
   // Track previous values to detect state transitions
   const prevAuthRef = useRef(isAuthenticated);

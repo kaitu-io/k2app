@@ -2,7 +2,7 @@
  * Dashboard 页面测试
  *
  * 测试仪表盘页面的核心功能
- * 注意：Dashboard 直接使用 window._k2.run() API
+ * Uses new vpn-machine + connection stores
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, waitFor, fireEvent } from '@testing-library/react';
@@ -13,12 +13,7 @@ vi.mock('../../stores', async () => {
   const actual = await vi.importActual('../../stores');
   return {
     ...actual,
-    useVPNStatus: vi.fn(),
     useAuthStore: vi.fn(),
-    useLoginDialogStore: vi.fn(),
-    useLoginDialog: vi.fn(),
-    useDashboard: vi.fn(),
-    useDashboardStore: vi.fn(),
   };
 });
 
@@ -27,7 +22,6 @@ vi.mock('../../stores/login-dialog.store', async () => {
   return {
     ...actual,
     useLoginDialogStore: vi.fn(),
-    useLoginDialog: vi.fn(),
   };
 });
 
@@ -36,7 +30,22 @@ vi.mock('../../stores/dashboard.store', async () => {
   return {
     ...actual,
     useDashboard: vi.fn(),
-    useDashboardStore: vi.fn(),
+  };
+});
+
+vi.mock('../../stores/vpn-machine.store', async () => {
+  const actual = await vi.importActual('../../stores/vpn-machine.store');
+  return {
+    ...actual,
+    useVPNMachine: vi.fn(),
+  };
+});
+
+vi.mock('../../stores/connection.store', async () => {
+  const actual = await vi.importActual('../../stores/connection.store');
+  return {
+    ...actual,
+    useConnectionStore: vi.fn(),
   };
 });
 
@@ -62,30 +71,45 @@ vi.mock('../../components/CollapsibleConnectionSection', () => ({
 }));
 
 // Import mocked modules
-import { useVPNStatus, useAuthStore } from '../../stores';
+import { useAuthStore } from '../../stores';
 import { useLoginDialogStore } from '../../stores/login-dialog.store';
 import { useDashboard } from '../../stores/dashboard.store';
+import { useVPNMachine } from '../../stores/vpn-machine.store';
+import { useConnectionStore } from '../../stores/connection.store';
 import { useUser } from '../../hooks/useUser';
 import Dashboard from '../Dashboard';
 
 // Mock window._k2
-const mockExec = vi.fn();
+const mockRun = vi.fn();
 
-const createMockVPNStatus = (overrides = {}) => ({
-  serviceState: 'disconnected',
+const createMockVPNMachine = (overrides = {}) => ({
+  state: 'idle' as const,
   isConnected: false,
   isDisconnected: true,
-  isConnecting: false,
+  isServiceDown: false,
   isTransitioning: false,
-  isServiceRunning: false,
+  isInteractive: false,
   isRetrying: false,
-  isError: false,
   networkAvailable: true,
-  setOptimisticState: vi.fn(),
   error: null,
-  serviceConnected: true,
-  isServiceFailedLongTime: false,
-  serviceFailureDuration: 0,
+  ...overrides,
+});
+
+const mockConnect = vi.fn();
+const mockDisconnect = vi.fn();
+const mockSelectCloudTunnel = vi.fn();
+const mockSelectSelfHosted = vi.fn();
+
+const createMockConnectionStore = (overrides = {}) => ({
+  selectedSource: 'cloud' as const,
+  selectedCloudTunnel: null,
+  activeTunnel: null,
+  connectedTunnel: null,
+  connectEpoch: 0,
+  selectCloudTunnel: mockSelectCloudTunnel,
+  selectSelfHosted: mockSelectSelfHosted,
+  connect: mockConnect,
+  disconnect: mockDisconnect,
   ...overrides,
 });
 
@@ -101,25 +125,18 @@ describe('Dashboard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    // Setup window._k2 mock (VPN-only)
-    (window as any)._k2 = {
-      run: mockExec,
-    };
-
-    // Setup window._platform mock
+    // Setup window._k2 mock
+    (window as any)._k2 = { run: mockRun };
     (window as any)._platform = {
-      isDesktop: false,
       os: 'test',
       version: '1.0.0',
     };
 
-    // Default mock implementations
-    mockExec.mockImplementation(async () => {
-      return { code: 0 };
-    });
+    mockRun.mockResolvedValue({ code: 0 });
 
     // Setup default mocks
-    vi.mocked(useVPNStatus).mockReturnValue(createMockVPNStatus() as any);
+    vi.mocked(useVPNMachine).mockReturnValue(createMockVPNMachine() as any);
+    vi.mocked(useConnectionStore).mockReturnValue(createMockConnectionStore() as any);
     vi.mocked(useAuthStore).mockImplementation((selector: any) => {
       const state = { isAuthenticated: false, user: null };
       return selector(state);
@@ -149,29 +166,26 @@ describe('Dashboard', () => {
 
   describe('连接状态显示', () => {
     it('disconnected 状态应该正确传递给 ConnectionSection', async () => {
-      vi.mocked(useVPNStatus).mockReturnValue(
-        createMockVPNStatus({
-          serviceState: 'disconnected',
-          isDisconnected: true,
-        }) as any
-      );
+      vi.mocked(useVPNMachine).mockReturnValue(createMockVPNMachine({
+        state: 'idle',
+        isDisconnected: true,
+      }) as any);
 
       render(<Dashboard />);
 
       await waitFor(() => {
+        // idle maps to 'disconnected' for CollapsibleConnectionSection
         expect(screen.getByTestId('service-state')).toHaveTextContent('disconnected');
       });
     });
 
     it('connected 状态应该正确传递给 ConnectionSection', async () => {
-      vi.mocked(useVPNStatus).mockReturnValue(
-        createMockVPNStatus({
-          serviceState: 'connected',
-          isConnected: true,
-          isDisconnected: false,
-          isServiceRunning: true,
-        }) as any
-      );
+      vi.mocked(useVPNMachine).mockReturnValue(createMockVPNMachine({
+        state: 'connected',
+        isConnected: true,
+        isDisconnected: false,
+        isInteractive: true,
+      }) as any);
 
       render(<Dashboard />);
 
@@ -181,14 +195,12 @@ describe('Dashboard', () => {
     });
 
     it('connecting 状态应该正确传递', async () => {
-      vi.mocked(useVPNStatus).mockReturnValue(
-        createMockVPNStatus({
-          serviceState: 'connecting',
-          isConnecting: true,
-          isTransitioning: true,
-          isDisconnected: false,
-        }) as any
-      );
+      vi.mocked(useVPNMachine).mockReturnValue(createMockVPNMachine({
+        state: 'connecting',
+        isTransitioning: true,
+        isDisconnected: false,
+        isInteractive: true,
+      }) as any);
 
       render(<Dashboard />);
 
@@ -206,130 +218,102 @@ describe('Dashboard', () => {
         expect(screen.getByTestId('tunnel-selected')).toHaveTextContent('no');
       });
     });
+
+    it('选择隧道后应该显示 tunnel name', async () => {
+      vi.mocked(useConnectionStore).mockReturnValue(createMockConnectionStore({
+        activeTunnel: {
+          source: 'cloud',
+          domain: 'test.example.com',
+          name: 'Test Tunnel',
+          country: 'JP',
+          serverUrl: 'k2v5://test.example.com:443',
+        },
+      }) as any);
+
+      render(<Dashboard />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('tunnel-selected')).toHaveTextContent('yes');
+        expect(screen.getByTestId('tunnel-name')).toHaveTextContent('Test Tunnel');
+      });
+    });
   });
 
   describe('连接切换', () => {
-    it('点击 toggle 按钮在连接状态下应该调用 down', async () => {
-      const mockSetOptimisticState = vi.fn();
-
-      vi.mocked(useVPNStatus).mockReturnValue(
-        createMockVPNStatus({
-          serviceState: 'connected',
-          isConnected: true,
-          isDisconnected: false,
-          isServiceRunning: true,
-          setOptimisticState: mockSetOptimisticState,
-        }) as any
-      );
+    it('点击 toggle 按钮在连接状态下应该调用 disconnect', async () => {
+      vi.mocked(useVPNMachine).mockReturnValue(createMockVPNMachine({
+        state: 'connected',
+        isConnected: true,
+        isDisconnected: false,
+        isInteractive: true,
+      }) as any);
 
       render(<Dashboard />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('service-state')).toHaveTextContent('connected');
-      });
 
       const toggleBtn = screen.getByTestId('toggle-btn');
       fireEvent.click(toggleBtn);
 
       await waitFor(() => {
-        expect(mockSetOptimisticState).toHaveBeenCalledWith('disconnecting');
-        expect(mockExec).toHaveBeenCalledWith('down');
+        expect(mockDisconnect).toHaveBeenCalled();
       });
     });
 
-    it('未选择隧道时点击 toggle 不应该调用 up', async () => {
-      vi.mocked(useVPNStatus).mockReturnValue(
-        createMockVPNStatus({
-          serviceState: 'disconnected',
-          isDisconnected: true,
-        }) as any
-      );
+    it('未选择隧道时点击 toggle 不应该调用 connect', async () => {
+      vi.mocked(useVPNMachine).mockReturnValue(createMockVPNMachine({
+        state: 'idle',
+        isDisconnected: true,
+      }) as any);
 
       render(<Dashboard />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('tunnel-selected')).toHaveTextContent('no');
-      });
 
       const toggleBtn = screen.getByTestId('toggle-btn');
       fireEvent.click(toggleBtn);
 
-      // Wait a bit and verify up was not called
       await new Promise(resolve => setTimeout(resolve, 100));
-      expect(mockExec).not.toHaveBeenCalledWith('up');
+      expect(mockConnect).not.toHaveBeenCalled();
     });
 
     it('error state with tunnel should reconnect on toggle', async () => {
-      const mockSetOptimisticState = vi.fn();
+      vi.mocked(useVPNMachine).mockReturnValue(createMockVPNMachine({
+        state: 'error',
+        isDisconnected: false,
+        isRetrying: false,
+      }) as any);
 
-      vi.mocked(useVPNStatus).mockReturnValue(
-        createMockVPNStatus({
-          serviceState: 'error',
-          isError: true,
-          isDisconnected: false,
-          isRetrying: false,
-          setOptimisticState: mockSetOptimisticState,
-        }) as any
-      );
-
-      // Mock authenticated user so CloudTunnelList renders
-      vi.mocked(useAuthStore).mockImplementation((selector: any) => {
-        const state = { isAuthenticated: true };
-        return selector(state);
-      });
-
-      // Make CloudTunnelList auto-select a tunnel on mount
-      const { CloudTunnelList } = await import('../../components/CloudTunnelList');
-      vi.mocked(CloudTunnelList).mockImplementation(({ onSelect }: any) => {
-        // Trigger onSelect on first render via useEffect-like pattern
-        if (onSelect) {
-          setTimeout(() => onSelect({ domain: 'test.example.com', name: 'Test Tunnel', url: 'https://test.example.com', node: { country: 'US' } }), 0);
-        }
-        return null;
-      });
+      vi.mocked(useConnectionStore).mockReturnValue(createMockConnectionStore({
+        activeTunnel: {
+          source: 'cloud',
+          domain: 'test.example.com',
+          name: 'Test Tunnel',
+          country: 'US',
+          serverUrl: 'k2v5://test.example.com:443',
+        },
+      }) as any);
 
       render(<Dashboard />);
-
-      // Wait for the auto-selected tunnel to be reflected
-      await waitFor(() => {
-        expect(screen.getByTestId('tunnel-name')).toHaveTextContent('Test Tunnel');
-      });
 
       const toggleBtn = screen.getByTestId('toggle-btn');
       fireEvent.click(toggleBtn);
 
       await waitFor(() => {
-        expect(mockSetOptimisticState).toHaveBeenCalledWith('connecting');
-        expect(mockExec).toHaveBeenCalledWith('up', expect.any(Object));
+        expect(mockConnect).toHaveBeenCalled();
       });
     });
 
     it('error state without tunnel should not reconnect', async () => {
-      // Reset CloudTunnelList mock to default (no auto-select)
-      const { CloudTunnelList } = await import('../../components/CloudTunnelList');
-      vi.mocked(CloudTunnelList).mockImplementation(() => null);
-
-      vi.mocked(useVPNStatus).mockReturnValue(
-        createMockVPNStatus({
-          serviceState: 'error',
-          isError: true,
-          isDisconnected: false,
-          isRetrying: false,
-        }) as any
-      );
+      vi.mocked(useVPNMachine).mockReturnValue(createMockVPNMachine({
+        state: 'error',
+        isDisconnected: false,
+        isRetrying: false,
+      }) as any);
 
       render(<Dashboard />);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('toggle-btn')).toBeInTheDocument();
-      });
 
       const toggleBtn = screen.getByTestId('toggle-btn');
       fireEvent.click(toggleBtn);
 
-      // Wait a bit and verify up was not called
       await new Promise(resolve => setTimeout(resolve, 100));
-      expect(mockExec).not.toHaveBeenCalledWith('up', expect.any(Object));
+      expect(mockConnect).not.toHaveBeenCalled();
     });
   });
 
@@ -338,10 +322,8 @@ describe('Dashboard', () => {
       render(<Dashboard />);
 
       await waitFor(() => {
-        // 高级设置按钮应该存在 - 查找包含设置图标的按钮
         const settingsIcon = screen.getByTestId('SettingsIcon');
         expect(settingsIcon).toBeInTheDocument();
-        // 确保按钮包含文本
         const settingsButton = settingsIcon.closest('button');
         expect(settingsButton).toBeInTheDocument();
       });
@@ -370,18 +352,11 @@ describe('Dashboard', () => {
 
   describe('未认证用户', () => {
     it('未认证用户应该看到登录提示', async () => {
-      vi.mocked(useAuthStore).mockImplementation((selector: any) => {
-        const state = { isAuthenticated: false };
-        return selector(state);
-      });
-
       render(<Dashboard />);
 
       await waitFor(() => {
-        // 检查登录相关元素存在 - 查找 DnsIcon 表示空状态
         const dnsIcon = screen.getByTestId('DnsIcon');
         expect(dnsIcon).toBeInTheDocument();
-        // 查找登录相关按钮 (contained primary)
         const buttons = screen.getAllByRole('button');
         const loginButton = buttons.find(btn =>
           btn.classList.contains('MuiButton-containedPrimary')
@@ -409,22 +384,18 @@ describe('Dashboard', () => {
   });
 
   describe('服务故障处理', () => {
-    it('服务长时间故障时应该禁用 Dashboard', async () => {
-      vi.mocked(useVPNStatus).mockReturnValue(
-        createMockVPNStatus({
-          isServiceFailedLongTime: true,
-          serviceConnected: false,
-        }) as any
-      );
+    it('serviceDown 状态时应该禁用 Dashboard', async () => {
+      vi.mocked(useVPNMachine).mockReturnValue(createMockVPNMachine({
+        state: 'serviceDown',
+        isServiceDown: true,
+        isDisconnected: false,
+      }) as any);
 
       const { container } = render(<Dashboard />);
 
       await waitFor(() => {
-        // Dashboard 容器应该有禁用样式 - 检查 class 中包含样式
         const dashboardContainer = container.firstChild as HTMLElement;
         expect(dashboardContainer).toBeInTheDocument();
-        // MUI 的样式通过 sx prop 应用，检查 style 属性存在
-        // 由于 jsdom 限制，我们检查组件渲染成功即可
         expect(dashboardContainer.className).toContain('MuiBox-root');
       });
     });

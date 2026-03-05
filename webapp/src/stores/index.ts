@@ -12,13 +12,6 @@ export {
   useAuthChecking,
 } from './auth.store';
 
-// ============ VPN Store ============
-export {
-  useVPNStore,
-  initializeVPNStore,
-  useVPNStatus,
-} from './vpn.store';
-
 // ============ Alert Store ============
 export {
   useAlertStore,
@@ -49,12 +42,23 @@ export {
 // ============ Config Store ============
 export { useConfigStore } from './config.store';
 
+// ============ Connection Store ============
+export { useConnectionStore } from './connection.store';
+
 // ============ Self-Hosted Store ============
 export { useSelfHostedStore } from './self-hosted.store';
 
+// ============ VPN Machine Store ============
+export {
+  useVPNMachineStore,
+  useVPNMachine,
+  dispatch as vpnMachineDispatch,
+  initializeVPNMachine,
+} from './vpn-machine.store';
+
 // 内部导入（用于 initializeAllStores）
 import { initializeAuthStore } from './auth.store';
-import { initializeVPNStore } from './vpn.store';
+import { initializeVPNMachine } from './vpn-machine.store';
 import { initializeLayoutStore } from './layout.store';
 import { useConfigStore } from './config.store';
 import { useSelfHostedStore } from './self-hosted.store';
@@ -74,10 +78,10 @@ export function initializeAllStores(): () => void {
   useConfigStore.getState().loadConfig(); // fire-and-forget, sets loaded=true when done
   useSelfHostedStore.getState().loadTunnel(); // fire-and-forget, sets loaded=true when done
   const cleanupAuth = initializeAuthStore();
-  const cleanupVPN = initializeVPNStore();
+  const cleanupVPNMachine = initializeVPNMachine();
 
   return () => {
-    cleanupVPN();
+    cleanupVPNMachine();
     cleanupAuth();
     cleanupLayout();
   };

@@ -15,18 +15,19 @@ import {
 } from "@mui/icons-material";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useLocation } from "react-router-dom";
-import { useVPNStatus, useAuthStore } from "../stores";
+import { useAuthStore } from "../stores";
 import { useUser } from "../hooks/useUser";
 
 import { useLoginDialogStore } from "../stores/login-dialog.store";
 import { useConfigStore } from '../stores/config.store';
+import { useConnectionStore } from '../stores/connection.store';
+import { useVPNMachine } from '../stores/vpn-machine.store';
 import { useSelfHostedStore } from '../stores/self-hosted.store';
 import { EmptyState } from '../components/LoadingAndEmpty';
 import { getCurrentAppConfig } from '../config/apps';
 import { CollapsibleConnectionSection } from '../components/CollapsibleConnectionSection';
 import { useDashboard } from '../stores/dashboard.store';
 import { CloudTunnelList } from '../components/CloudTunnelList';
-import { authService } from '../services/auth-service';
 import type { Tunnel } from '../services/api-types';
 
 // Styled Components for Modern Design
@@ -52,33 +53,42 @@ export default function Dashboard() {
   const openLoginDialog = useLoginDialogStore((s) => s.open);
   const { user } = useUser();
 
-  // VPN status - managed globally by VPNStatusContext
+  // VPN state machine
   const {
-    serviceState,
+    state: vpnState,
     isDisconnected,
-    isError,
-    isServiceRunning,
+    isConnected,
+    isServiceDown,
+    isTransitioning,
+    isInteractive,
     isRetrying,
     networkAvailable,
-    setOptimisticState,
     error,
-    serviceConnected,
-    isServiceFailedLongTime,
-    serviceFailureDuration
-  } = useVPNStatus();
+  } = useVPNMachine();
+
+  // Connection orchestration
+  const {
+    selectedSource,
+    activeTunnel,
+    connectedTunnel,
+    selectCloudTunnel,
+    selectSelfHosted,
+    connect,
+    disconnect,
+  } = useConnectionStore();
+
+  // Display tunnel: snapshot during connection, selection otherwise
+  const displayTunnel = connectedTunnel ?? activeTunnel;
 
   // Get app-specific configuration
   const appConfig = getCurrentAppConfig();
   const proxyRuleConfig = appConfig.features.proxyRule || { visible: true, defaultValue: 'lightweight' };
 
   // VPN config from persistent store
-  const { ruleMode, updateConfig, buildConnectConfig } = useConfigStore();
+  const { ruleMode, updateConfig } = useConfigStore();
 
   // Self-hosted tunnel
   const selfHostedTunnel = useSelfHostedStore((s) => s.tunnel);
-  const [selectedSource, setSelectedSource] = useState<'cloud' | 'self_hosted'>(
-    'cloud'
-  );
 
   // Service failure alert tracking (silent mode - no UI feedback)
   const [failureAlertSent, setFailureAlertSent] = useState(false);
@@ -157,46 +167,17 @@ export default function Dashboard() {
     ];
   }, [t]);
 
-  // For CollapsibleConnectionSection - track selected cloud tunnel
-  const [selectedCloudTunnel, setSelectedCloudTunnel] = useState<Tunnel | null>(null);
-
-  // Active tunnel info derived from selected source
-  const activeTunnelInfo = useMemo(() => {
-    if (selectedSource === 'self_hosted' && selfHostedTunnel) {
-      try {
-        const parsed = new URL(selfHostedTunnel.uri.replace('k2v5://', 'https://'));
-        return {
-          domain: parsed.hostname,
-          name: selfHostedTunnel.name,
-          country: selfHostedTunnel.country || '',
-        };
-      } catch {
-        return { domain: '', name: '', country: '' };
-      }
-    }
-    if (!selectedCloudTunnel) {
-      return { domain: '', name: '', country: '' };
-    }
-    return {
-      domain: selectedCloudTunnel.domain.toLowerCase(),
-      name: selectedCloudTunnel.name || selectedCloudTunnel.domain,
-      country: selectedCloudTunnel.node?.country || '',
-    };
-  }, [selectedSource, selfHostedTunnel, selectedCloudTunnel]);
-
-  // Handle cloud tunnel selection (UI state only, no config persistence)
-  const handleCloudTunnelSelect = useCallback(async (tunnel: Tunnel, _echConfigList?: string) => {
-    if (isServiceRunning) return;
-    console.debug('[Dashboard] Selecting cloud tunnel:', tunnel.domain);
-    setSelectedCloudTunnel(tunnel);
-    setSelectedSource('cloud');
-  }, [isServiceRunning]);
+  // Handle cloud tunnel selection
+  const handleCloudTunnelSelect = useCallback((_tunnel: Tunnel, _echConfigList?: string) => {
+    if (isInteractive) return;
+    selectCloudTunnel(_tunnel);
+  }, [isInteractive, selectCloudTunnel]);
 
   // Handle self-hosted tunnel selection
   const handleSelfHostedSelect = useCallback(() => {
-    if (isServiceRunning) return;
-    setSelectedSource('self_hosted');
-  }, [isServiceRunning]);
+    if (isInteractive) return;
+    selectSelfHosted();
+  }, [isInteractive, selectSelfHosted]);
 
   // Handle rule type selection via config store
   const handleRuleTypeChange = useCallback((ruleType: string) => {
@@ -205,15 +186,15 @@ export default function Dashboard() {
 
   // Effect to detect prolonged failure and trigger silent alert
   useEffect(() => {
-    if (isServiceFailedLongTime && !failureAlertSent) {
+    if (isServiceDown && !failureAlertSent) {
       handleServiceFailureAlert();
     }
 
-    if (serviceConnected && failureAlertSent) {
+    if (!isServiceDown && failureAlertSent) {
       console.info('[Dashboard] Service recovered, resetting alert state');
       setFailureAlertSent(false);
     }
-  }, [isServiceFailedLongTime, serviceConnected, failureAlertSent]);
+  }, [isServiceDown, failureAlertSent]);
 
   // Handle service failure alert
   const handleServiceFailureAlert = useCallback(async () => {
@@ -229,7 +210,6 @@ export default function Dashboard() {
       await window._platform.uploadLogs!({
         email: isAuthenticated ? user?.loginIdentifies?.[0]?.value : null,
         reason: 'service_connection_timeout',
-        failureDurationMs: serviceFailureDuration ?? undefined,
         platform: window._platform.os,
         version: window._platform.version,
       });
@@ -238,84 +218,41 @@ export default function Dashboard() {
     } catch (error) {
       console.debug('[Dashboard] Log upload skipped:', error);
     }
-  }, [isAuthenticated, serviceFailureDuration]);
+  }, [isAuthenticated]);
 
-  // Resolve server URL: inject auth for k2v5 protocol
-  const resolveServerUrl = useCallback(async (serverUrl?: string): Promise<string | undefined> => {
-    if (!serverUrl?.startsWith('k2v5://')) return serverUrl;
-    return authService.buildTunnelUrl(serverUrl);
-  }, []);
-
-  // Resolve the server URL for the currently selected source
-  const getSelectedServerUrl = useCallback(async (): Promise<string | undefined> => {
-    if (selectedSource === 'self_hosted' && selfHostedTunnel) {
-      return selfHostedTunnel.uri; // Already has credentials
-    }
-    return resolveServerUrl(selectedCloudTunnel?.serverUrl);
-  }, [selectedSource, selfHostedTunnel, selectedCloudTunnel, resolveServerUrl]);
-
-  // Handle connection toggle
+  // Connection toggle
   const handleToggleConnection = useCallback(async () => {
-    if ((isDisconnected || isError) && !activeTunnelInfo.domain) {
-      console.warn('[Dashboard] No tunnel selected');
-      return;
-    }
-
-    try {
-      if (isError && !isRetrying) {
-        // Error state: reconnect
-        console.info('[Dashboard] Reconnecting VPN after error...');
-        setOptimisticState('connecting');
-        const serverUrl = await getSelectedServerUrl();
-        const config = buildConnectConfig(serverUrl);
-        await window._k2.run('up', config);
-        updateConfig({ server: selectedCloudTunnel?.serverUrl });
-      } else if (!isDisconnected || isRetrying) {
-        // Connected/connecting/retrying: disconnect
-        console.info('[Dashboard] Stopping VPN...');
-        setOptimisticState('disconnecting');
-        await window._k2.run('down');
-      } else {
-        // Disconnected: connect
-        console.info('[Dashboard] Starting VPN...');
-        setOptimisticState('connecting');
-        const serverUrl = await getSelectedServerUrl();
-        const config = buildConnectConfig(serverUrl);
-        await window._k2.run('up', config);
-        updateConfig({ server: selectedCloudTunnel?.serverUrl });
+    if (isConnected || isTransitioning || (vpnState === 'error' && isRetrying)) {
+      disconnect();
+    } else if (isDisconnected || (vpnState === 'error' && !isRetrying)) {
+      if (!displayTunnel) {
+        console.warn('[Dashboard] No tunnel selected');
+        return;
       }
-    } catch (err) {
-      console.error('Connection operation failed', err);
-      setOptimisticState(null);
+      connect();
     }
-  }, [isDisconnected, isError, isRetrying, activeTunnelInfo.domain, selectedCloudTunnel, buildConnectConfig, updateConfig, setOptimisticState, getSelectedServerUrl]);
+  }, [isConnected, isDisconnected, isTransitioning, vpnState, isRetrying, displayTunnel, connect, disconnect]);
 
   // Check if any tunnel is selected (cloud or self-hosted)
-  const hasTunnelSelected = !!activeTunnelInfo.domain;
+  const hasTunnelSelected = !!displayTunnel;
+
+  // Map vpnState to ServiceState for CollapsibleConnectionSection
+  const serviceState = vpnState === 'idle' ? 'disconnected'
+    : vpnState === 'serviceDown' ? 'disconnected'
+    : vpnState;
 
   // Auto-select self-hosted when it's the only option (guest with tunnel)
   useEffect(() => {
-    if (!isAuthenticated && selfHostedTunnel && selectedSource === 'cloud' && !selectedCloudTunnel) {
-      setSelectedSource('self_hosted');
+    if (!isAuthenticated && selfHostedTunnel && selectedSource === 'cloud' && !activeTunnel) {
+      selectSelfHosted();
     }
-  }, [isAuthenticated, selfHostedTunnel, selectedSource, selectedCloudTunnel]);
+  }, [isAuthenticated, selfHostedTunnel, selectedSource, activeTunnel, selectSelfHosted]);
 
   return (
     <DashboardContainer
       ref={containerRef}
-      onClickCapture={() => {
-        const el = containerRef.current;
-        const cs = el ? getComputedStyle(el) : null;
-        console.warn('[DIAG:Dashboard] click captured', {
-          pointerEvents: cs?.pointerEvents,
-          opacity: cs?.opacity,
-          isServiceFailedLongTime,
-          isServiceRunning,
-          serviceState,
-        });
-      }}
       sx={{
-        ...(isServiceFailedLongTime && {
+        ...(isServiceDown && {
           pointerEvents: 'none',
           opacity: 0.5,
           filter: 'grayscale(30%)',
@@ -326,8 +263,8 @@ export default function Dashboard() {
       <CollapsibleConnectionSection
         serviceState={serviceState}
         hasTunnelSelected={hasTunnelSelected}
-        tunnelName={activeTunnelInfo.name}
-        tunnelCountry={activeTunnelInfo.country}
+        tunnelName={displayTunnel?.name}
+        tunnelCountry={displayTunnel?.country}
         onToggle={handleToggleConnection}
         error={error}
         isRetrying={isRetrying}
@@ -356,9 +293,9 @@ export default function Dashboard() {
         {isAuthenticated && (
           <Box sx={{ mt: 2 }}>
             <CloudTunnelList
-              selectedDomain={activeTunnelInfo.domain}
+              selectedDomain={displayTunnel?.domain || ''}
               onSelect={handleCloudTunnelSelect}
-              disabled={isServiceRunning}
+              disabled={isInteractive}
             />
           </Box>
         )}
@@ -370,7 +307,7 @@ export default function Dashboard() {
               fullWidth
               variant={selectedSource === 'self_hosted' ? 'contained' : 'outlined'}
               onClick={handleSelfHostedSelect}
-              disabled={isServiceRunning}
+              disabled={isInteractive}
               sx={{
                 justifyContent: 'flex-start',
                 textTransform: 'none',
@@ -490,7 +427,7 @@ export default function Dashboard() {
             pb: 0.5,
             pt: 1,
           }}>
-            {isServiceRunning && (
+            {isInteractive && (
               <Typography variant="caption" sx={{
                 color: 'warning.main',
                 fontSize: '0.75rem',
@@ -515,8 +452,8 @@ export default function Dashboard() {
                       <Tooltip key={`proxy-rule-${rule.type}`} title={rule.description} arrow>
                         <span style={{ flex: 1, display: 'flex' }}>
                           <Button
-                            onClick={() => !isServiceRunning && handleRuleTypeChange(rule.type)}
-                            disabled={isServiceRunning}
+                            onClick={() => !isInteractive && handleRuleTypeChange(rule.type)}
+                            disabled={isInteractive}
                             variant={isActive ? "contained" : "outlined"}
                             sx={{
                               flex: 1,
