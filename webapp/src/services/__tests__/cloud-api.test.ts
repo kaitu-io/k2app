@@ -457,6 +457,102 @@ describe('Cloud API Client', () => {
     });
   });
 
+  // ==================== X-K2-Client Header ====================
+
+  describe('X-K2-Client header', () => {
+    it('should include X-K2-Client header when _platform is available', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ code: 0, data: {} }),
+      });
+      globalThis.fetch = mockFetch;
+      mockedAuthService.getToken.mockResolvedValue('token');
+
+      // Inject _platform
+      (window as any)._platform = { os: 'macos', version: '0.4.0-beta.1', arch: 'arm64' };
+
+      await cloudApi.request('GET', '/api/user/info');
+
+      const [, options] = mockFetch.mock.calls[0];
+      expect(options.headers['X-K2-Client']).toBe('kaitu-service/0.4.0-beta.1 (macos; arm64)');
+
+      delete (window as any)._platform;
+    });
+
+    it('should use unknown arch when arch is not provided', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ code: 0, data: {} }),
+      });
+      globalThis.fetch = mockFetch;
+      mockedAuthService.getToken.mockResolvedValue('token');
+
+      (window as any)._platform = { os: 'ios', version: '0.4.0' };
+
+      await cloudApi.request('GET', '/api/user/info');
+
+      const [, options] = mockFetch.mock.calls[0];
+      expect(options.headers['X-K2-Client']).toBe('kaitu-service/0.4.0 (ios; unknown)');
+
+      delete (window as any)._platform;
+    });
+
+    it('should not include X-K2-Client header when _platform is unavailable', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ code: 0, data: {} }),
+      });
+      globalThis.fetch = mockFetch;
+      mockedAuthService.getToken.mockResolvedValue('token');
+
+      delete (window as any)._platform;
+
+      await cloudApi.request('GET', '/api/user/info');
+
+      const [, options] = mockFetch.mock.calls[0];
+      expect(options.headers['X-K2-Client']).toBeUndefined();
+    });
+
+    it('should include X-K2-Client in refresh token request', async () => {
+      const mockFetch = vi.fn()
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 401,
+          json: () => Promise.resolve({ code: 401, message: 'Unauthorized' }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            code: 0,
+            data: { token: 'new', refreshToken: 'new-refresh' },
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ code: 0, data: {} }),
+        });
+      globalThis.fetch = mockFetch;
+      mockedAuthService.getToken.mockResolvedValue('expired');
+      mockedAuthService.getRefreshToken.mockResolvedValue('refresh');
+      mockedAuthService.setTokens.mockResolvedValue(undefined);
+
+      (window as any)._platform = { os: 'windows', version: '0.3.22', arch: 'amd64' };
+
+      await cloudApi.request('GET', '/api/user/info');
+
+      // Refresh call (2nd fetch) should have the header
+      const [, refreshOptions] = mockFetch.mock.calls[1];
+      expect(refreshOptions.headers['X-K2-Client']).toBe('kaitu-service/0.3.22 (windows; amd64)');
+
+      delete (window as any)._platform;
+    });
+  });
+
   // ==================== 401 Edge Cases ====================
 
   describe('401 edge cases', () => {

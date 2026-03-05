@@ -137,14 +137,14 @@ type Device struct {
 	// 设备密码（用于 k2oc 协议认证）
 	PasswordHash string `gorm:"type:varchar(255)"` // 设备密码哈希
 
-	// App 版本信息（从 User-Agent 解析）
-	AppVersion  string `gorm:"type:varchar(32)"` // 应用版本，如 "1.0.0"
-	AppPlatform string `gorm:"type:varchar(20)"` // 运行平台，如 "darwin", "windows", "linux", "ios", "android"
+	// App 版本信息（从 X-K2-Client header 解析）
+	AppVersion  string `gorm:"type:varchar(32)"` // 应用版本，如 "0.4.0-beta.1"
+	AppPlatform string `gorm:"type:varchar(20)"` // 运行平台，如 "macos", "windows", "linux", "ios", "android"
 	AppArch     string `gorm:"type:varchar(20)"` // CPU架构，如 "amd64", "arm64"
 
-	// 设备详细信息（从 User-Agent 解析）
-	OSVersion   string `gorm:"type:varchar(32)"` // 系统版本，如 "14.5", "11", "23H2"
-	DeviceModel string `gorm:"type:varchar(64)"` // 设备型号，如 "MacBookPro18,1", "iPhone15,2", "Dell XPS 15"
+	// 设备详细信息（从 X-K2-Client header 解析）
+	OSVersion   string `gorm:"type:varchar(32)"` // 系统版本，如 "macOS 14.5", "Windows 11 23H2"
+	DeviceModel string `gorm:"type:varchar(64)"` // 设备型号，如 "MacBookPro18,1", "iPhone15,2"
 }
 
 func PasswordHash(password string) (string, error) {

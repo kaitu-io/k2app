@@ -68,7 +68,7 @@ function transformStatus(raw: any): StatusResponseData {
  * Must be called before store initialization.
  */
 export async function injectTauriGlobals(): Promise<void> {
-  const platformInfo = await invoke<{ os: string; version: string }>('get_platform_info');
+  const platformInfo = await invoke<{ os: string; version: string; arch: string }>('get_platform_info');
 
   const osMap: Record<string, IPlatform['os']> = {
     macos: 'macos',
@@ -215,6 +215,7 @@ export async function injectTauriGlobals(): Promise<void> {
   const tauriPlatform: IPlatform = {
     os: osMap[platformInfo.os] ?? 'linux',
     version: platformInfo.version,
+    arch: platformInfo.arch,
 
     storage: webSecureStorage,
 
@@ -252,8 +253,8 @@ export async function injectTauriGlobals(): Promise<void> {
       return await invoke<number>('get_pid');
     },
 
-    uploadLogs: async (params): Promise<{ success: boolean; error?: string }> => {
-      return await invoke<{ success: boolean; error?: string }>('upload_service_log_command', { params });
+    uploadLogs: async (params): Promise<{ success: boolean; error?: string; s3Keys?: Array<{ name: string; s3Key: string }> }> => {
+      return await invoke<{ success: boolean; error?: string; s3Keys?: Array<{ name: string; s3Key: string }> }>('upload_service_log_command', { params });
     },
 
     setLogLevel: (level: string): void => {

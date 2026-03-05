@@ -146,6 +146,7 @@ func TestApiCORSMiddleware_PreflightReturns204(t *testing.T) {
 	assert.Equal(t, "true", w.Header().Get("Access-Control-Allow-Credentials"))
 	assert.Contains(t, w.Header().Get("Access-Control-Allow-Methods"), "GET")
 	assert.Contains(t, w.Header().Get("Access-Control-Allow-Headers"), "X-CSRF-Token")
+	assert.Contains(t, w.Header().Get("Access-Control-Allow-Headers"), "X-K2-Client")
 }
 
 func TestApiCORSMiddleware_RFC1918_172_32_Rejected(t *testing.T) {

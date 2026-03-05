@@ -217,7 +217,7 @@ fn get_udid_native() -> Result<ServiceResponse, String> {
     })
 }
 
-fn get_hardware_uuid() -> Result<String, String> {
+pub(crate) fn get_hardware_uuid() -> Result<String, String> {
     #[cfg(target_os = "macos")]
     {
         let output = Command::new("sysctl")
@@ -265,9 +265,15 @@ pub fn get_pid() -> u32 {
 /// IPC command: get platform info (no HTTP, pure local)
 #[tauri::command]
 pub fn get_platform_info() -> serde_json::Value {
+    let arch = match std::env::consts::ARCH {
+        "aarch64" => "arm64",
+        "x86_64" => "amd64",
+        other => other,
+    };
     serde_json::json!({
         "os": std::env::consts::OS,
         "version": env!("CARGO_PKG_VERSION"),
+        "arch": arch,
     })
 }
 

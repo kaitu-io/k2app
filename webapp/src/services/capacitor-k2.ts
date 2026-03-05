@@ -154,6 +154,7 @@ export async function injectCapacitorGlobals(): Promise<void> {
   const capacitorPlatform: IPlatform = {
     os: platform,
     version: appVersion,
+    arch: 'arm64',
 
     storage: webSecureStorage,
 
