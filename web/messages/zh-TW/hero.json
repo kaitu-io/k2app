@@ -131,7 +131,7 @@
       "server": {
         "title": "伺服器端（1 分鐘）",
         "step1": "# 安裝 k2s 伺服器",
-        "step2": "curl -fsSL https://kaitu.io/install.sh | sudo sh -s k2s",
+        "step2": "curl -fsSL https://kaitu.io/i/k2s | sudo sh",
         "step3": "# 啟動服務",
         "step4": "k2s run",
         "step5": "# 輸出連接 URI",
@@ -140,7 +140,7 @@
       "client": {
         "title": "客戶端（30 秒）",
         "step1": "# 安裝 k2 客戶端",
-        "step2": "curl -fsSL https://kaitu.io/install.sh | sudo sh -s k2",
+        "step2": "curl -fsSL https://kaitu.io/i/k2 | sudo sh",
         "step3": "# 連接（貼上 URI）",
         "step4": "k2 up k2v5://..."
       }

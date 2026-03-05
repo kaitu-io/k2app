@@ -131,7 +131,7 @@
       "server": {
         "title": "サーバー（1分）",
         "step1": "# k2s サーバーをインストール",
-        "step2": "curl -fsSL https://kaitu.io/install.sh | sudo sh -s k2s",
+        "step2": "curl -fsSL https://kaitu.io/i/k2s | sudo sh",
         "step3": "# サービスを起動",
         "step4": "k2s run",
         "step5": "# 接続 URI を出力",
@@ -140,7 +140,7 @@
       "client": {
         "title": "クライアント（30秒）",
         "step1": "# k2 クライアントをインストール",
-        "step2": "curl -fsSL https://kaitu.io/install.sh | sudo sh -s k2",
+        "step2": "curl -fsSL https://kaitu.io/i/k2 | sudo sh",
         "step3": "# 接続（URI を貼り付け）",
         "step4": "k2 up k2v5://..."
       }

@@ -16,7 +16,7 @@ This guide gets you up and running as quickly as possible. You need a Linux VPS 
 Run this on your server:
 
 ```bash
-curl -fsSL https://dl.k2.52j.me/install.sh | sudo sh -s k2s
+curl -fsSL https://kaitu.io/i/k2s | sudo sh
 sudo k2s run
 ```
 
