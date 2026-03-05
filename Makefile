@@ -53,7 +53,7 @@ build-macos-sysext-test:
 build-windows: pre-build build-webapp build-k2-windows
 	@if [ "$$(uname -s 2>/dev/null)" = "Darwin" ] || [ "$$(uname -s 2>/dev/null)" = "Linux" ]; then \
 		echo "ERROR: build-windows requires a Windows host (ring crate needs MSVC). Use 'make build-windows-test' to delegate to Windows VM."; exit 1; fi
-	cd desktop && yarn tauri build --target x86_64-pc-windows-msvc $(TAURI_FEATURES_ARG)
+	cd desktop && yarn tauri build --target x86_64-pc-windows-msvc --config src-tauri/tauri.bundle.conf.json $(TAURI_FEATURES_ARG)
 	@echo "--- Collecting artifacts ---"
 	@mkdir -p release/$(VERSION)
 	@cp desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/Kaitu_$(VERSION)_x64-setup.exe release/$(VERSION)/
