@@ -50,20 +50,39 @@ jobs:
         shell: bash
         run: |
           NODE_VERSION=$(cat .nvmrc)
-          nvm install "$NODE_VERSION"
+          CURRENT=$(node -v 2>/dev/null || echo "none")
+          if [ "$CURRENT" != "v${NODE_VERSION}" ]; then
+            echo "Node $CURRENT -> v${NODE_VERSION}"
+            nvm install "$NODE_VERSION"
+          fi
           nvm use "$NODE_VERSION"
-          # Persist node + npm global bin to PATH for subsequent steps
           NODE_DIR=$(dirname "$(which node)")
           echo "$NODE_DIR" >> "$GITHUB_PATH"
-          npm install -g yarn
+          # Ensure yarn is available
+          if ! command -v yarn &>/dev/null; then
+            npm install -g yarn
+          fi
           NPM_GLOBAL=$(npm prefix -g)
           echo "$NPM_GLOBAL" >> "$GITHUB_PATH"
 
       - name: Setup Go
+        if: matrix.platform == 'macOS'
         uses: actions/setup-go@v5
         with:
           go-version: '1.24'
           cache-dependency-path: k2/go.sum
+
+      - name: Setup Go (self-hosted)
+        if: matrix.platform == 'Windows'
+        shell: bash
+        run: |
+          REQUIRED="1.24"
+          CURRENT=$(go version 2>/dev/null | grep -oP 'go\K[0-9]+\.[0-9]+' || echo "none")
+          if [[ "$CURRENT" != "$REQUIRED"* ]]; then
+            echo "::error::Go $REQUIRED not found on self-hosted runner (have: $CURRENT). Install manually."
+            exit 1
+          fi
+          echo "Go $(go version) already installed"
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
