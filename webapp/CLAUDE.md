@@ -149,8 +149,8 @@ webapp/
 ├── src/
 │   ├── types/              # Type definitions (kaitu-core.ts = IK2Vpn + IPlatform + IUpdater)
 │   ├── services/           # cloudApi, k2api, authService, cacheStore, web-platform, standalone-k2
-│   ├── core/               # Core module (getK2, isK2Ready, waitForK2, polling)
-│   ├── stores/             # Zustand stores (vpn, auth, alert, layout, dashboard, login-dialog)
+│   ├── core/               # Core module (getK2, isK2Ready, waitForK2)
+│   ├── stores/             # Zustand stores (vpn-machine, connection, config, auth, alert, layout, dashboard, login-dialog, self-hosted, onboarding)
 │   ├── pages/              # Route pages
 │   ├── components/         # UI components
 │   ├── hooks/              # Custom hooks (useUser, useAppConfig, useUpdater, etc.)
@@ -197,7 +197,9 @@ Namespaces: common, dashboard, auth, purchase, invite, account, feedback, nav, r
 
 ## Key Patterns
 
-- **Store init**: `initializeAllStores()` calls layout → auth → vpn store init in order. Stores use `init()` action (not async `create()`)
+- **Store init**: `initializeAllStores()` calls layout → config.loadConfig → selfHosted.loadTunnel → auth → vpn-machine init in order. Returns cleanup function.
+- **VPN state machine**: `vpn-machine.store.ts` — explicit 7-state machine (`idle`, `connecting`, `connected`, `reconnecting`, `disconnecting`, `error`, `serviceDown`) with transition table. Module-level `dispatch(event, payload)` is the only way to change state. 3s debounce for `connected → reconnecting` is the only timer. Supports both SSE event-driven mode (desktop) and 2s polling fallback (standalone).
+- **Connection store**: `connection.store.ts` — owns tunnel selection, connect/disconnect orchestration, `connectedTunnel` snapshot (frozen at connect time for stable UI), and `connectEpoch` guard (prevents stale async ops)
 - **Keep-alive tabs**: Layout caches visited tab outlets, hides inactive with `visibility:hidden`. Tab paths: `/`, `/invite`, `/discover`, `/account`
 - **Keep-alive + GPU layers gotcha**: WebKit doesn't recomposite layers when `opacity`/`filter` are removed while an element is `visibility:hidden`. Dashboard uses a `translateZ(0)` toggle on hidden→visible transitions to force layer rebuild. Any new compositing-layer CSS changes on keep-alive tabs need similar consideration.
 - **Config store**: `useConfigStore()` in `stores/config.store.ts` persists VPN settings (ruleMode, proxyMode, logLevel, server). `buildConnectConfig(serverUrl?)` assembles `ClientConfig` from stored preferences — forces `log.level = 'debug'` when beta channel active. `updateConfig(partial)` merges and persists.

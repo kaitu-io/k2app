@@ -33,7 +33,7 @@ yarn tauri build --target universal-apple-darwin  # macOS build
   - Emits `vpn-status-changed { ...engine.Status }` on SSE status events
 - **tray.rs** — System tray: Show/Hide window, Connect (`action:up`), Disconnect (`action:down`), Quit
 - **updater.rs** — Auto-updater: 5s delay → 30min periodic check loop. `UpdateInfo` struct (currentVersion, newVersion, releaseNotes). Emits `update-ready` Tauri event. Windows: NSIS install + `app.exit(0)`. macOS/Linux: store update, apply on exit via `install_pending_update()`. Beta channel: `set_update_channel` saves/restores pre-beta log level, starts/stops auto-upload, emits `beta-log-level-override` event. Downgrade detection: stable channel + beta build → `version_comparator(!=)`.
-- **log_upload.rs** — Service log upload: reads 4 log sources (service, crash, desktop, system), sanitizes sensitive data, gzip compresses, uploads to S3, notifies Slack. Uses `spawn_blocking` for blocking HTTP. Beta auto-upload: 24h periodic cycle (`start_beta_auto_upload` / `stop_beta_auto_upload`) — uploads all logs then cleans up (delete on macOS/Linux, truncate on Windows due to file locks).
+- **log_upload.rs** — Service log upload: reads 4 log sources (service, crash, desktop, system), sanitizes sensitive data, gzip compresses, uploads to S3 (user feedback → `feedback-logs/` prefix, auto-upload → `service-logs/` prefix), notifies Slack. Uses `spawn_blocking` for blocking HTTP. Beta auto-upload: 24h periodic cycle (`start_beta_auto_upload` / `stop_beta_auto_upload`) — uploads all logs then cleans up (delete on macOS/Linux, truncate on Windows due to file locks).
 
 ## Tauri Config (`src-tauri/tauri.conf.json`)
 
@@ -83,7 +83,6 @@ yarn tauri build --target universal-apple-darwin  # macOS build
 - k2 binary must be at `binaries/k2-{arch}-{os}` for Tauri sidecar resolution
 - Event permissions require `core:event:default` in capabilities (NOT `event:default`)
 - `reqwest::blocking::Client` panics in async context — always wrap in `tokio::task::spawn_blocking()`
-- Windows updater: `update.install()` launches NSIS as child process, must call `app.exit(0)` immediately
 - macOS dual build: default = daemon mode (no NE, same as Win/Linux); `--features ne-mode` = NE mode (gomobile + sysext + NE helper). `cfg(all(target_os = "macos", feature = "ne-mode"))` gates all NE code.
 - NE helper uses DispatchSemaphore — C FFI functions in ne.rs must NOT be called from the main thread (use `tokio::task::spawn_blocking`)
 - NE appex must be codesigned with the same identity as the main app, with a separate entitlements file that includes `com.apple.developer.networking.networkextension`
