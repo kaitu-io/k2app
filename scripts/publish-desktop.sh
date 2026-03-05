@@ -75,12 +75,23 @@ if [ -z "${WINDOWS_SIG}" ]; then
 fi
 
 # Generate cloudfront.latest.json
+# All 3 macOS keys (aarch64, x86_64, universal) point to the same universal binary.
+# Tauri updater queries {os}-{arch} (e.g. darwin-aarch64) with NO fallback to darwin-universal,
+# so we must list all arch keys to support upgrades from older arch-specific builds.
 cat > "${TMPDIR}/cloudfront.latest.json" << EOF
 {
   "version": "${VERSION}",
   "notes": "See https://github.com/${REPO}/releases/tag/v${VERSION}",
   "pub_date": "${PUB_DATE}",
   "platforms": {
+    "darwin-aarch64": {
+      "url": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/${VERSION}/Kaitu.app.tar.gz",
+      "signature": "${MACOS_SIG}"
+    },
+    "darwin-x86_64": {
+      "url": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/${VERSION}/Kaitu.app.tar.gz",
+      "signature": "${MACOS_SIG}"
+    },
     "darwin-universal": {
       "url": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/${VERSION}/Kaitu.app.tar.gz",
       "signature": "${MACOS_SIG}"
@@ -100,6 +111,14 @@ cat > "${TMPDIR}/d0.latest.json" << EOF
   "notes": "See https://github.com/${REPO}/releases/tag/v${VERSION}",
   "pub_date": "${PUB_DATE}",
   "platforms": {
+    "darwin-aarch64": {
+      "url": "https://d0.all7.cc/kaitu/desktop/${VERSION}/Kaitu.app.tar.gz",
+      "signature": "${MACOS_SIG}"
+    },
+    "darwin-x86_64": {
+      "url": "https://d0.all7.cc/kaitu/desktop/${VERSION}/Kaitu.app.tar.gz",
+      "signature": "${MACOS_SIG}"
+    },
     "darwin-universal": {
       "url": "https://d0.all7.cc/kaitu/desktop/${VERSION}/Kaitu.app.tar.gz",
       "signature": "${MACOS_SIG}"
