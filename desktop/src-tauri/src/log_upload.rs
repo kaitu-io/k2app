@@ -266,13 +266,14 @@ fn generate_s3_key(log_type: &str, feedback_id: Option<&str>, udid: &str) -> Str
     let date = now.format("%Y/%m/%d");
     let timestamp = now.format("%H%M%S");
 
-    let identifier = feedback_id
-        .map(|id| id.to_string())
-        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()[..8].to_string());
+    let (prefix, identifier) = match feedback_id {
+        Some(id) => ("feedback-logs", id.to_string()),
+        None => ("service-logs", uuid::Uuid::new_v4().to_string()[..8].to_string()),
+    };
 
     format!(
-        "service-logs/{}/{}/{}-{}-{}.log.gz",
-        udid, date, log_type, timestamp, identifier
+        "{}/{}/{}/{}-{}-{}.log.gz",
+        prefix, udid, date, log_type, timestamp, identifier
     )
 }
 
@@ -609,7 +610,7 @@ mod tests {
     #[test]
     fn test_generate_s3_key_with_feedback_id() {
         let key = generate_s3_key("desktop", Some("fb-12345"), "test-udid-456");
-        assert!(key.starts_with("service-logs/test-udid-456/"));
+        assert!(key.starts_with("feedback-logs/test-udid-456/"));
         assert!(key.contains("desktop-"));
         assert!(key.contains("fb-12345"));
         assert!(key.ends_with(".log.gz"));
