@@ -3,6 +3,12 @@
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 
+/// Prevent visible console windows when spawning child processes from GUI app on Windows.
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 const DEFAULT_DAEMON_PORT: u16 = 1777;
 const REQUEST_TIMEOUT_SECS: u64 = 5;
 
@@ -228,6 +234,7 @@ fn get_hardware_uuid() -> Result<String, String> {
     {
         let output = Command::new("wmic")
             .args(["csproduct", "get", "UUID"])
+            .creation_flags(CREATE_NO_WINDOW)
             .output()
             .map_err(|e| format!("wmic failed: {}", e))?;
         let text = String::from_utf8_lossy(&output.stdout);
@@ -312,6 +319,7 @@ async fn admin_reinstall_service_windows() -> Result<String, String> {
 
     let output = Command::new("powershell")
         .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps_script])
+        .creation_flags(CREATE_NO_WINDOW)
         .output()
         .map_err(|e| format!("PowerShell failed: {}", e))?;
 
@@ -399,6 +407,7 @@ pub fn detect_old_kaitu_service() -> bool {
     {
         Command::new("sc")
             .args(["query", "kaitu-service"])
+            .creation_flags(CREATE_NO_WINDOW)
             .output()
             .map(|o| o.status.success())
             .unwrap_or(false)
@@ -430,9 +439,13 @@ pub fn cleanup_old_kaitu_service() {
     }
     #[cfg(target_os = "windows")]
     {
-        let _ = Command::new("sc").args(["stop", "kaitu-service"]).output();
+        let _ = Command::new("sc")
+            .args(["stop", "kaitu-service"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output();
         let _ = Command::new("sc")
             .args(["delete", "kaitu-service"])
+            .creation_flags(CREATE_NO_WINDOW)
             .output();
     }
 }
