@@ -179,6 +179,14 @@ export interface OrderStatisticsResponse {
   revenueByPeriod: RevenuePeriod[];
 }
 
+// Usage analytics types
+export interface UsageOverviewResponse {
+  activeDevices: { date: string; count: number }[];
+  connections: { date: string; count: number }[];
+  nodeUsage: { nodeIpv4: string; nodeType: string; count: number }[];
+  k2sDownloads: { date: string; count: number }[];
+}
+
 export interface AdminTestDeviceData {
   udid: string;
   password: string;
@@ -1719,6 +1727,14 @@ export const api = {
   // Get order statistics (aggregated counts and revenue)
   async getOrderStatistics(): Promise<OrderStatisticsResponse> {
     return this.request<OrderStatisticsResponse>('/app/orders/statistics');
+  },
+
+  // ==================== Usage Analytics ====================
+
+  async getUsageOverview(params: { range: string; os?: string }): Promise<UsageOverviewResponse> {
+    const searchParams = new URLSearchParams({ range: params.range });
+    if (params.os) searchParams.set('os', params.os);
+    return this.request<UsageOverviewResponse>(`/app/stats/overview?${searchParams}`);
   },
 
   // ==================== Admin Users ====================

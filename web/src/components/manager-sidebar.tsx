@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { Package, Users, Server, Receipt, Mail, Tag, Wallet, FileText, Activity, LogOut, Gauge, PenSquare, UserCircle, ClipboardList, Cloud } from "lucide-react";
+import { Package, Users, Server, Receipt, Mail, Tag, Wallet, FileText, Activity, LogOut, Gauge, PenSquare, UserCircle, ClipboardList, Cloud, BarChart3 } from "lucide-react";
 import Image from "next/image";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -54,6 +54,7 @@ const ManagerSidebar = () => {
     {
       title: "系统监控",
       items: [
+        { href: "/manager/usages", icon: BarChart3, label: "使用统计" },
         { href: "/manager/asynqmon", icon: Gauge, label: "任务队列监控" },
       ]
     }
