@@ -148,16 +148,6 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: make build-windows
 
-      - name: Sign Windows installer
-        if: matrix.platform == 'Windows'
-        shell: pwsh
-        run: |
-          $nsis = "desktop\src-tauri\target\x86_64-pc-windows-msvc\release\bundle\nsis"
-          Get-ChildItem "$nsis\*.exe" | ForEach-Object {
-            Write-Host "Signing: $($_.Name)"
-            & scripts\ci\windows\sign.ps1 $_.FullName
-          }
-
       # --- Upload artifacts to S3 ---
 
       - name: Upload macOS to S3

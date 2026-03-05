@@ -50,6 +50,10 @@
     },
     "externalBin": ["binaries/k2"],
     "windows": {
+      "certificateThumbprint": "5870A085CC71741A387A475188BEC8113DB4A7E3",
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "http://time.certum.pl",
+      "tsp": true,
       "nsis": {
         "installMode": "perMachine",
         "languages": ["SimpChinese", "English"]
