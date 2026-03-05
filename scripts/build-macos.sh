@@ -133,11 +133,10 @@ _SAVED_APPLE_CERTIFICATE="${APPLE_CERTIFICATE:-}"
 _SAVED_APPLE_CERTIFICATE_PASSWORD="${APPLE_CERTIFICATE_PASSWORD:-}"
 unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD
 
-TAURI_ARGS="--config src-tauri/tauri.bundle.conf.json"
 if [ "$SINGLE_ARCH" = true ]; then
-  TAURI_ARGS="--target $K2_TARGET $TAURI_ARGS"
+  TAURI_ARGS="--target $K2_TARGET"
 else
-  TAURI_ARGS="--target universal-apple-darwin $TAURI_ARGS"
+  TAURI_ARGS="--target universal-apple-darwin"
 fi
 if [ -n "$EXTRA_FEATURES" ]; then
   TAURI_ARGS="--features $EXTRA_FEATURES $TAURI_ARGS"
