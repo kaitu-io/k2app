@@ -193,5 +193,22 @@
     "unlimited": "Unlimited",
     "no": "×",
     "yes": "✓"
+  },
+  "selfHosted": {
+    "inputLabel": "Connection URI",
+    "inputPlaceholder": "Paste k2v5:// connection URI",
+    "save": "Save",
+    "saved": "Saved",
+    "invalidUri": "Please enter a valid k2v5:// URI",
+    "invalidUriNoAuth": "URI missing credentials (requires username:token@)",
+    "tag": "Self-Hosted",
+    "manageNode": "Manage Node",
+    "deployGuide": "No server yet? One-click deploy",
+    "deployGuideDoc": "Full docs",
+    "copyCommand": "Copy",
+    "copied": "Copied",
+    "upgradeTitle": "Want more nodes?",
+    "upgradeDescription": "Log in to access global cloud nodes, ready to use",
+    "upgradeCta": "Free Trial"
   }
 }

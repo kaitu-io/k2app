@@ -9,6 +9,7 @@
     "contentLabel": "問題の説明",
     "contentPlaceholder": "問題の詳細、操作手順、エラーメッセージなどを記述してください。問題の迅速な解決に役立ちます。",
     "submitButton": "チケットを提出",
+    "loginToSubmit": "ログインして提出",
     "submitting": "提出中...",
     "submitSuccess": "チケットが正常に提出されました",
     "submitSuccessTitle": "チケットの提出が成功しました！",

@@ -27,6 +27,7 @@ import { useTranslation } from "react-i18next";
 import BackButton from "../components/BackButton";
 import { cloudApi } from '../services/cloud-api';
 import { useAuthStore } from '../stores/auth.store';
+import { useLoginDialogStore } from '../stores/login-dialog.store';
 import { useUser } from '../hooks/useUser';
 import i18n from '../i18n/i18n';
 import type { StatusResponseData } from '../services/vpn-types';
@@ -74,6 +75,7 @@ export default function SubmitTicket() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const openLoginDialog = useLoginDialogStore((s) => s.open);
   const { user } = useUser();
 
   // Feedback mode - when navigating from FeedbackButton
@@ -149,6 +151,11 @@ export default function SubmitTicket() {
   }, [uploadLogs, canUploadLogs]);
 
   const handleSubmit = async () => {
+    if (!isAuthenticated) {
+      openLoginDialog({ trigger: 'submit-ticket' });
+      return;
+    }
+
     if (!content.trim()) {
       setSubmitResult({ success: false, message: t('ticket:ticket.validation.contentRequired') });
       return;
@@ -295,12 +302,16 @@ export default function SubmitTicket() {
                       variant="contained"
                       color="primary"
                       onClick={handleSubmit}
-                      disabled={isSubmitting || !content.trim()}
+                      disabled={isSubmitting || (isAuthenticated && !content.trim())}
                       startIcon={isSubmitting ? <CircularProgress size={20} color="inherit" /> : <SendIcon />}
                       fullWidth
                       size="large"
                     >
-                      {isSubmitting ? t('ticket:ticket.submitting') : t('ticket:ticket.submitButton')}
+                      {isSubmitting
+                      ? t('ticket:ticket.submitting')
+                      : !isAuthenticated
+                        ? t('ticket:ticket.loginToSubmit')
+                        : t('ticket:ticket.submitButton')}
                     </Button>
 
                     {submitResult && !submitResult.success && (

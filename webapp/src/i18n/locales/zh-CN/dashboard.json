@@ -193,5 +193,22 @@
       "addFailed": "添加失败",
       "updateFailed": "更新失败"
     }
+  },
+  "selfHosted": {
+    "inputLabel": "连接 URI",
+    "inputPlaceholder": "粘贴 k2v5:// 连接地址",
+    "save": "保存",
+    "saved": "已保存",
+    "invalidUri": "请输入有效的 k2v5:// 地址",
+    "invalidUriNoAuth": "URI 缺少认证信息（需要 username:token@）",
+    "tag": "自部署",
+    "manageNode": "管理节点",
+    "deployGuide": "还没有服务器？一键部署",
+    "deployGuideDoc": "详细文档",
+    "copyCommand": "复制",
+    "copied": "已复制",
+    "upgradeTitle": "想要更多节点？",
+    "upgradeDescription": "登录即可获取全球云端节点，开箱即用",
+    "upgradeCta": "免费试用"
   }
 }

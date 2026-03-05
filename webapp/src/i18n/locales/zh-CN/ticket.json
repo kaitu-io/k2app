@@ -9,6 +9,7 @@
     "contentLabel": "问题描述",
     "contentPlaceholder": "请详细描述您遇到的问题，包括操作步骤、错误信息等，这将帮助我们更快地为您解决问题。",
     "submitButton": "提交工单",
+    "loginToSubmit": "登录后提交",
     "submitting": "提交中...",
     "submitSuccess": "工单已提交成功",
     "submitSuccessTitle": "工单提交成功！",

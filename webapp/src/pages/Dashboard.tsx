@@ -20,6 +20,7 @@ import { useUser } from "../hooks/useUser";
 
 import { useLoginDialogStore } from "../stores/login-dialog.store";
 import { useConfigStore } from '../stores/config.store';
+import { useSelfHostedStore } from '../stores/self-hosted.store';
 import { EmptyState } from '../components/LoadingAndEmpty';
 import { getCurrentAppConfig } from '../config/apps';
 import { CollapsibleConnectionSection } from '../components/CollapsibleConnectionSection';
@@ -72,6 +73,12 @@ export default function Dashboard() {
 
   // VPN config from persistent store
   const { ruleMode, updateConfig, buildConnectConfig } = useConfigStore();
+
+  // Self-hosted tunnel
+  const selfHostedTunnel = useSelfHostedStore((s) => s.tunnel);
+  const [selectedSource, setSelectedSource] = useState<'cloud' | 'self_hosted'>(
+    'cloud'
+  );
 
   // Service failure alert tracking (silent mode - no UI feedback)
   const [failureAlertSent, setFailureAlertSent] = useState(false);
@@ -153,8 +160,20 @@ export default function Dashboard() {
   // For CollapsibleConnectionSection - track selected cloud tunnel
   const [selectedCloudTunnel, setSelectedCloudTunnel] = useState<Tunnel | null>(null);
 
-  // Active tunnel info derived from selected cloud tunnel
+  // Active tunnel info derived from selected source
   const activeTunnelInfo = useMemo(() => {
+    if (selectedSource === 'self_hosted' && selfHostedTunnel) {
+      try {
+        const parsed = new URL(selfHostedTunnel.uri.replace('k2v5://', 'https://'));
+        return {
+          domain: parsed.hostname,
+          name: selfHostedTunnel.name,
+          country: selfHostedTunnel.country || '',
+        };
+      } catch {
+        return { domain: '', name: '', country: '' };
+      }
+    }
     if (!selectedCloudTunnel) {
       return { domain: '', name: '', country: '' };
     }
@@ -163,13 +182,20 @@ export default function Dashboard() {
       name: selectedCloudTunnel.name || selectedCloudTunnel.domain,
       country: selectedCloudTunnel.node?.country || '',
     };
-  }, [selectedCloudTunnel]);
+  }, [selectedSource, selfHostedTunnel, selectedCloudTunnel]);
 
   // Handle cloud tunnel selection (UI state only, no config persistence)
   const handleCloudTunnelSelect = useCallback(async (tunnel: Tunnel, _echConfigList?: string) => {
     if (isServiceRunning) return;
     console.debug('[Dashboard] Selecting cloud tunnel:', tunnel.domain);
     setSelectedCloudTunnel(tunnel);
+    setSelectedSource('cloud');
+  }, [isServiceRunning]);
+
+  // Handle self-hosted tunnel selection
+  const handleSelfHostedSelect = useCallback(() => {
+    if (isServiceRunning) return;
+    setSelectedSource('self_hosted');
   }, [isServiceRunning]);
 
   // Handle rule type selection via config store
@@ -220,6 +246,14 @@ export default function Dashboard() {
     return authService.buildTunnelUrl(serverUrl);
   }, []);
 
+  // Resolve the server URL for the currently selected source
+  const getSelectedServerUrl = useCallback(async (): Promise<string | undefined> => {
+    if (selectedSource === 'self_hosted' && selfHostedTunnel) {
+      return selfHostedTunnel.uri; // Already has credentials
+    }
+    return resolveServerUrl(selectedCloudTunnel?.serverUrl);
+  }, [selectedSource, selfHostedTunnel, selectedCloudTunnel, resolveServerUrl]);
+
   // Handle connection toggle
   const handleToggleConnection = useCallback(async () => {
     if ((isDisconnected || isError) && !activeTunnelInfo.domain) {
@@ -232,7 +266,7 @@ export default function Dashboard() {
         // Error state: reconnect
         console.info('[Dashboard] Reconnecting VPN after error...');
         setOptimisticState('connecting');
-        const serverUrl = await resolveServerUrl(selectedCloudTunnel?.serverUrl);
+        const serverUrl = await getSelectedServerUrl();
         const config = buildConnectConfig(serverUrl);
         await window._k2.run('up', config);
         updateConfig({ server: selectedCloudTunnel?.serverUrl });
@@ -245,7 +279,7 @@ export default function Dashboard() {
         // Disconnected: connect
         console.info('[Dashboard] Starting VPN...');
         setOptimisticState('connecting');
-        const serverUrl = await resolveServerUrl(selectedCloudTunnel?.serverUrl);
+        const serverUrl = await getSelectedServerUrl();
         const config = buildConnectConfig(serverUrl);
         await window._k2.run('up', config);
         updateConfig({ server: selectedCloudTunnel?.serverUrl });
@@ -254,10 +288,17 @@ export default function Dashboard() {
       console.error('Connection operation failed', err);
       setOptimisticState(null);
     }
-  }, [isDisconnected, isError, isRetrying, activeTunnelInfo.domain, selectedCloudTunnel, buildConnectConfig, updateConfig, setOptimisticState, resolveServerUrl]);
+  }, [isDisconnected, isError, isRetrying, activeTunnelInfo.domain, selectedCloudTunnel, buildConnectConfig, updateConfig, setOptimisticState, getSelectedServerUrl]);
 
-  // Check if any tunnel is selected
+  // Check if any tunnel is selected (cloud or self-hosted)
   const hasTunnelSelected = !!activeTunnelInfo.domain;
+
+  // Auto-select self-hosted when it's the only option (guest with tunnel)
+  useEffect(() => {
+    if (!isAuthenticated && selfHostedTunnel && selectedSource === 'cloud' && !selectedCloudTunnel) {
+      setSelectedSource('self_hosted');
+    }
+  }, [isAuthenticated, selfHostedTunnel, selectedSource, selectedCloudTunnel]);
 
   return (
     <DashboardContainer
@@ -322,8 +363,41 @@ export default function Dashboard() {
           </Box>
         )}
 
-        {/* Empty state for unauthenticated users */}
-        {!isAuthenticated && (
+        {/* Self-hosted node — shown below cloud list for authenticated, or as primary for guests */}
+        {selfHostedTunnel && (
+          <Box sx={{ px: 2, py: 1 }}>
+            <Button
+              fullWidth
+              variant={selectedSource === 'self_hosted' ? 'contained' : 'outlined'}
+              onClick={handleSelfHostedSelect}
+              disabled={isServiceRunning}
+              sx={{
+                justifyContent: 'flex-start',
+                textTransform: 'none',
+                py: 1.5,
+                px: 2,
+                borderRadius: 2,
+              }}
+            >
+              <Stack direction="row" spacing={1.5} alignItems="center">
+                {selfHostedTunnel.country && (
+                  <Typography variant="body2">{selfHostedTunnel.country}</Typography>
+                )}
+                <Box>
+                  <Typography variant="body2" fontWeight={600} textAlign="left">
+                    {selfHostedTunnel.name}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ opacity: 0.7 }}>
+                    {t('dashboard:selfHosted.tag')}
+                  </Typography>
+                </Box>
+              </Stack>
+            </Button>
+          </Box>
+        )}
+
+        {/* Empty state for unauthenticated users without self-hosted tunnel */}
+        {!isAuthenticated && !selfHostedTunnel && (
           <Box sx={{ px: 2, py: 4 }}>
             <EmptyState
               icon={<DnsIcon sx={{ fontSize: 48 }} />}
@@ -363,6 +437,24 @@ export default function Dashboard() {
               }
               minHeight={200}
             />
+          </Box>
+        )}
+
+        {/* Cloud upgrade CTA for guests with self-hosted tunnel */}
+        {!isAuthenticated && selfHostedTunnel && (
+          <Box sx={{ px: 2, py: 1 }}>
+            <Button
+              fullWidth
+              variant="text"
+              onClick={() => openLoginDialog({ trigger: 'dashboard-upgrade' })}
+              sx={{
+                textTransform: 'none',
+                color: 'text.secondary',
+                fontSize: '0.75rem',
+              }}
+            >
+              {t('dashboard:selfHosted.upgradeTitle')} {t('dashboard:selfHosted.upgradeCta')}
+            </Button>
           </Box>
         )}
       </Box>

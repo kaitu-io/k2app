@@ -9,6 +9,7 @@
     "contentLabel": "Description",
     "contentPlaceholder": "Please describe your issue in detail, including steps, error messages, etc. This will help us resolve it faster.",
     "submitButton": "Submit ticket",
+    "loginToSubmit": "Log in to submit",
     "submitting": "Submitting...",
     "submitSuccess": "Ticket submitted successfully",
     "submitSuccessTitle": "Ticket submitted!",
