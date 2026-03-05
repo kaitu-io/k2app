@@ -120,6 +120,16 @@ export default function SubmitTicket() {
       if (result.success) {
         setLogUploadStatus('success');
         console.debug('[SubmitTicket] Log upload successful, feedbackId:', feedbackIdRef.current);
+        // Notify server to send Slack alert (fire-and-forget)
+        if (result.s3Keys?.length) {
+          cloudApi.post('/api/user/feedback-notify', {
+            reason: 'user_feedback_report',
+            platform: window._platform?.os,
+            version: window._platform?.version,
+            feedbackId: feedbackIdRef.current,
+            s3Keys: result.s3Keys,
+          }).catch(() => {}); // silent — best-effort notification
+        }
       } else {
         setLogUploadStatus('error');
         console.debug('[SubmitTicket] Log upload failed:', result.error);

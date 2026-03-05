@@ -1,6 +1,6 @@
 //! Service log upload module
 //!
-//! Uploads service logs to S3 and sends Slack notification.
+//! Uploads service logs to S3 for diagnostics and feedback.
 //! Runs in Tauri (not in daemon) because daemon may be crashed.
 //!
 //! Uploads 4 separate log files:
@@ -30,14 +30,6 @@ use std::time::Duration;
 /// S3 public bucket for log uploads (no authentication required)
 const S3_BUCKET_URL: &str = "https://kaitu-service-logs.s3.ap-northeast-1.amazonaws.com";
 
-/// Slack webhook URL for alerts (reversed to avoid secret scanning)
-fn slack_webhook_url() -> String {
-    "NhpdThtgH5ltRPhxpuurijsU/9HHP8GH6A0B/4GGN1BTE40T/secivres/moc.kcals.skooh//:sptth"
-        .chars()
-        .rev()
-        .collect()
-}
-
 /// Request timeout in seconds
 const REQUEST_TIMEOUT_SECS: u64 = 60;
 
@@ -59,41 +51,26 @@ pub struct UploadLogParams {
 
 /// Result of log upload (matches TS return type)
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UploadLogResult {
     pub success: bool,
     pub error: Option<String>,
+    pub s3_keys: Option<Vec<UploadedFileInfo>>,
 }
 
-/// Information about an uploaded log file (internal, for Slack notification)
+/// Information about an uploaded log file (returned to JS for server-side notification)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UploadedFileInfo {
+    pub name: String,
+    pub s3_key: String,
+}
+
+/// Internal tracking for upload progress
 #[derive(Debug, Clone)]
 struct UploadedFile {
     log_type: String,
     s3_key: String,
-    original_size: usize,
-    compressed_size: usize,
-}
-
-/// Slack message structures
-#[derive(Debug, Serialize)]
-struct SlackMessage {
-    text: String,
-    attachments: Vec<SlackAttachment>,
-}
-
-#[derive(Debug, Serialize)]
-struct SlackAttachment {
-    color: String,
-    title: String,
-    text: String,
-    fields: Vec<SlackField>,
-    ts: i64,
-}
-
-#[derive(Debug, Serialize)]
-struct SlackField {
-    title: String,
-    value: String,
-    short: bool,
 }
 
 // ============================================================================
@@ -284,7 +261,7 @@ fn compress_gzip(content: &str) -> Result<Vec<u8>, String> {
 // ============================================================================
 
 /// Generate S3 object key for a log type
-fn generate_s3_key(log_type: &str, feedback_id: Option<&str>) -> String {
+fn generate_s3_key(log_type: &str, feedback_id: Option<&str>, udid: &str) -> String {
     let now = Utc::now();
     let date = now.format("%Y/%m/%d");
     let timestamp = now.format("%H%M%S");
@@ -294,8 +271,8 @@ fn generate_s3_key(log_type: &str, feedback_id: Option<&str>) -> String {
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()[..8].to_string());
 
     format!(
-        "service-logs/{}/{}-{}-{}.log.gz",
-        date, log_type, timestamp, identifier
+        "service-logs/{}/{}/{}-{}-{}.log.gz",
+        udid, date, log_type, timestamp, identifier
     )
 }
 
@@ -333,152 +310,37 @@ fn upload_log_file(
     log_type: &str,
     content: &str,
     feedback_id: Option<&str>,
+    udid: &str,
 ) -> Result<UploadedFile, String> {
     if content.is_empty() {
         return Err(format!("{} log is empty", log_type));
     }
 
     let sanitized = sanitize_logs(content);
-    let original_size = sanitized.len();
-
     let compressed = compress_gzip(&sanitized)?;
-    let compressed_size = compressed.len();
-
-    let s3_key = generate_s3_key(log_type, feedback_id);
-    upload_to_s3(&s3_key, &compressed)?;
 
     log::info!(
-        "Uploaded {} log: {} -> {} bytes ({:.1}% compression)",
+        "Compressing {} log: {} -> {} bytes",
         log_type,
-        original_size,
-        compressed_size,
-        (compressed_size as f64 / original_size as f64) * 100.0
+        sanitized.len(),
+        compressed.len()
     );
+
+    let s3_key = generate_s3_key(log_type, feedback_id, udid);
+    upload_to_s3(&s3_key, &compressed)?;
 
     Ok(UploadedFile {
         log_type: log_type.to_string(),
         s3_key,
-        original_size,
-        compressed_size,
     })
-}
-
-// ============================================================================
-// Slack Notification
-// ============================================================================
-
-/// Send Slack alert with links to uploaded log files
-fn send_slack_alert(params: &UploadLogParams, uploaded_files: &[UploadedFile]) -> Result<(), String> {
-    let log_links: Vec<String> = uploaded_files
-        .iter()
-        .map(|f| format!("<{}/{}|{}>", S3_BUCKET_URL, f.s3_key, f.log_type))
-        .collect();
-
-    let mut fields = vec![
-        SlackField {
-            title: "Reason".to_string(),
-            value: params.reason.clone(),
-            short: false,
-        },
-        SlackField {
-            title: "Log Files".to_string(),
-            value: log_links.join(" | "),
-            short: false,
-        },
-    ];
-
-    if let Some(email) = &params.email {
-        fields.push(SlackField {
-            title: "User".to_string(),
-            value: email.clone(),
-            short: true,
-        });
-    }
-
-    if let Some(platform) = &params.platform {
-        fields.push(SlackField {
-            title: "Platform".to_string(),
-            value: platform.clone(),
-            short: true,
-        });
-    }
-
-    if let Some(version) = &params.version {
-        fields.push(SlackField {
-            title: "Version".to_string(),
-            value: version.clone(),
-            short: true,
-        });
-    }
-
-    if let Some(duration) = params.failure_duration_ms {
-        fields.push(SlackField {
-            title: "Duration".to_string(),
-            value: format!("{}ms", duration),
-            short: true,
-        });
-    }
-
-    if let Some(feedback_id) = &params.feedback_id {
-        fields.push(SlackField {
-            title: "Feedback ID".to_string(),
-            value: format!("`{}`", feedback_id),
-            short: true,
-        });
-    }
-
-    let total_original: usize = uploaded_files.iter().map(|f| f.original_size).sum();
-    let total_compressed: usize = uploaded_files.iter().map(|f| f.compressed_size).sum();
-    fields.push(SlackField {
-        title: "Log Sizes".to_string(),
-        value: format!(
-            "{} files, {} KB original, {} KB compressed",
-            uploaded_files.len(),
-            total_original / 1024,
-            total_compressed / 1024
-        ),
-        short: true,
-    });
-
-    let message = SlackMessage {
-        text: ":warning: Kaitu Service Log Report".to_string(),
-        attachments: vec![SlackAttachment {
-            color: "#ff6b6b".to_string(),
-            title: "Service Issue Reported".to_string(),
-            text: format!("A user reported an issue: {}", params.reason),
-            fields,
-            ts: Utc::now().timestamp(),
-        }],
-    };
-
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
-        .build()
-        .map_err(|e| format!("HTTP client error: {}", e))?;
-
-    let response = client
-        .post(&slack_webhook_url())
-        .header("Content-Type", "application/json")
-        .json(&message)
-        .send()
-        .map_err(|e| format!("Slack alert failed: {}", e))?;
-
-    let status = response.status();
-    if !status.is_success() {
-        let body = response.text().unwrap_or_default();
-        return Err(format!("Slack webhook failed: status={}, body={}", status, body));
-    }
-
-    log::info!("Slack alert sent");
-    Ok(())
 }
 
 // ============================================================================
 // Main upload orchestrator
 // ============================================================================
 
-/// Upload all service logs to S3 and send Slack notification
-fn upload_service_log(params: UploadLogParams) -> UploadLogResult {
+/// Upload all service logs to S3 and return S3 keys
+fn upload_service_log(params: UploadLogParams, udid: String) -> UploadLogResult {
     log::info!("Starting log upload: reason={}", params.reason);
 
     let feedback_id = params.feedback_id.as_deref();
@@ -487,7 +349,7 @@ fn upload_service_log(params: UploadLogParams) -> UploadLogResult {
 
     // 1. Service log
     let (service_content, _) = read_service_log();
-    match upload_log_file("service", &service_content, feedback_id) {
+    match upload_log_file("service", &service_content, feedback_id, &udid) {
         Ok(file) => uploaded_files.push(file),
         Err(e) => {
             log::warn!("Service log upload failed: {}", e);
@@ -498,7 +360,7 @@ fn upload_service_log(params: UploadLogParams) -> UploadLogResult {
     // 2. Crash logs
     let (crash_content, _) = read_crash_logs();
     if !crash_content.is_empty() {
-        match upload_log_file("crash", &crash_content, feedback_id) {
+        match upload_log_file("crash", &crash_content, feedback_id, &udid) {
             Ok(file) => uploaded_files.push(file),
             Err(e) => {
                 log::warn!("Crash log upload failed: {}", e);
@@ -510,7 +372,7 @@ fn upload_service_log(params: UploadLogParams) -> UploadLogResult {
     // 3. Desktop log
     let (desktop_content, _) = read_desktop_log();
     if !desktop_content.is_empty() {
-        match upload_log_file("desktop", &desktop_content, feedback_id) {
+        match upload_log_file("desktop", &desktop_content, feedback_id, &udid) {
             Ok(file) => uploaded_files.push(file),
             Err(e) => {
                 log::warn!("Desktop log upload failed: {}", e);
@@ -522,7 +384,7 @@ fn upload_service_log(params: UploadLogParams) -> UploadLogResult {
     // 4. System logs
     let (system_content, _) = read_system_logs();
     if !system_content.is_empty() {
-        match upload_log_file("system", &system_content, feedback_id) {
+        match upload_log_file("system", &system_content, feedback_id, &udid) {
             Ok(file) => uploaded_files.push(file),
             Err(e) => {
                 log::warn!("System log upload failed: {}", e);
@@ -535,18 +397,22 @@ fn upload_service_log(params: UploadLogParams) -> UploadLogResult {
         return UploadLogResult {
             success: false,
             error: Some(format!("All uploads failed: {}", errors.join("; "))),
+            s3_keys: None,
         };
-    }
-
-    // Slack notification (silent on failure)
-    if let Err(e) = send_slack_alert(&params, &uploaded_files) {
-        log::warn!("Slack alert failed: {}", e);
     }
 
     log::info!(
         "Log upload completed: {} files uploaded",
         uploaded_files.len()
     );
+
+    let s3_keys: Vec<UploadedFileInfo> = uploaded_files
+        .iter()
+        .map(|f| UploadedFileInfo {
+            name: f.log_type.clone(),
+            s3_key: f.s3_key.clone(),
+        })
+        .collect();
 
     UploadLogResult {
         success: true,
@@ -555,6 +421,7 @@ fn upload_service_log(params: UploadLogParams) -> UploadLogResult {
         } else {
             Some(format!("Partial failures: {}", errors.join("; ")))
         },
+        s3_keys: Some(s3_keys),
     }
 }
 
@@ -602,6 +469,8 @@ pub fn stop_beta_auto_upload() {
 fn upload_and_cleanup_silent() {
     log::info!("[log_upload] Beta auto-upload: starting upload cycle");
 
+    let udid = crate::service::get_hardware_uuid().unwrap_or_else(|_| "unknown".into());
+
     let params = UploadLogParams {
         email: None,
         reason: "beta-auto-upload".to_string(),
@@ -611,7 +480,7 @@ fn upload_and_cleanup_silent() {
         feedback_id: None,
     };
 
-    let result = upload_service_log(params);
+    let result = upload_service_log(params, udid);
     log::info!(
         "[log_upload] Beta auto-upload: success={}, error={:?}",
         result.success,
@@ -665,9 +534,12 @@ fn cleanup_dir_logs(dir: &std::path::Path, filter: impl Fn(&str) -> bool) {
 /// IPC: Upload service logs (runs in blocking thread)
 #[tauri::command]
 pub async fn upload_service_log_command(params: UploadLogParams) -> Result<UploadLogResult, String> {
-    tokio::task::spawn_blocking(move || upload_service_log(params))
-        .await
-        .map_err(|e| format!("Task failed: {}", e))
+    tokio::task::spawn_blocking(move || {
+        let udid = crate::service::get_hardware_uuid().unwrap_or_else(|_| "unknown".into());
+        upload_service_log(params, udid)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))
 }
 
 // ============================================================================
@@ -725,45 +597,22 @@ mod tests {
 
     #[test]
     fn test_generate_s3_key() {
-        let key = generate_s3_key("service", None);
-        assert!(key.starts_with("service-logs/"));
+        let key = generate_s3_key("service", None, "test-udid-123");
+        assert!(key.starts_with("service-logs/test-udid-123/"));
         assert!(key.contains("service-"));
         assert!(key.ends_with(".log.gz"));
-        // Format: service-logs/YYYY/MM/DD/service-HHMMSS-{uuid8}.log.gz
+        // Format: service-logs/{udid}/YYYY/MM/DD/service-HHMMSS-{uuid8}.log.gz
         let parts: Vec<&str> = key.split('/').collect();
-        assert_eq!(parts.len(), 5); // service-logs, YYYY, MM, DD, filename
+        assert_eq!(parts.len(), 6); // service-logs, udid, YYYY, MM, DD, filename
     }
 
     #[test]
     fn test_generate_s3_key_with_feedback_id() {
-        let key = generate_s3_key("desktop", Some("fb-12345"));
+        let key = generate_s3_key("desktop", Some("fb-12345"), "test-udid-456");
+        assert!(key.starts_with("service-logs/test-udid-456/"));
         assert!(key.contains("desktop-"));
         assert!(key.contains("fb-12345"));
         assert!(key.ends_with(".log.gz"));
-    }
-
-    #[test]
-    fn test_slack_message_format() {
-        let message = SlackMessage {
-            text: "test".to_string(),
-            attachments: vec![SlackAttachment {
-                color: "#ff6b6b".to_string(),
-                title: "Test".to_string(),
-                text: "test text".to_string(),
-                fields: vec![SlackField {
-                    title: "Reason".to_string(),
-                    value: "test reason".to_string(),
-                    short: false,
-                }],
-                ts: 1234567890,
-            }],
-        };
-        let json = serde_json::to_string(&message).unwrap();
-        assert!(json.contains("\"text\":\"test\""));
-        assert!(json.contains("\"color\":\"#ff6b6b\""));
-        assert!(json.contains("\"title\":\"Reason\""));
-        assert!(json.contains("\"value\":\"test reason\""));
-        assert!(json.contains("\"short\":false"));
     }
 
     #[test]
@@ -806,11 +655,21 @@ mod tests {
     }
 
     #[test]
-    fn test_slack_webhook_url_valid() {
-        let url = slack_webhook_url();
-        assert!(url.starts_with("https://"));
-        assert!(url.contains("/services/"));
-        assert_eq!(url.len(), 81);
+    fn test_upload_log_result_camel_case_serialization() {
+        let result = UploadLogResult {
+            success: true,
+            error: None,
+            s3_keys: Some(vec![UploadedFileInfo {
+                name: "service".to_string(),
+                s3_key: "service-logs/udid/2026/03/05/service-143022-abc.log.gz".to_string(),
+            }]),
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        // Tauri IPC passes JSON to JS — keys must be camelCase
+        assert!(json.contains("\"s3Keys\""), "s3_keys must serialize as s3Keys: {}", json);
+        assert!(json.contains("\"s3Key\""), "s3_key must serialize as s3Key: {}", json);
+        assert!(!json.contains("\"s3_keys\""), "must not have snake_case s3_keys: {}", json);
+        assert!(!json.contains("\"s3_key\""), "must not have snake_case s3_key: {}", json);
     }
 
     #[test]

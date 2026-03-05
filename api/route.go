@@ -138,6 +138,8 @@ func SetupRouter() *gin.Engine {
 			user.PUT("/language", AuthRequired(), api_update_user_language)
 			// 创建工单
 			user.POST("/ticket", AuthRequired(), api_create_ticket)
+			// 日志上传后通知（Slack）
+			user.POST("/feedback-notify", AuthRequired(), api_feedback_notify)
 			// 设置/更新密码
 			user.POST("/password", AuthRequired(), api_set_password)
 		}

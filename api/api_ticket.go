@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"strings"
+
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
 	"github.com/wordgate/qtoolkit/log"
@@ -161,6 +163,73 @@ Please reply to this email to respond to the user.
 
 	log.Infof(ctx, "sendTicketEmail: ticket email sent successfully")
 	return nil
+}
+
+// api_feedback_notify 接收客户端日志上传后的通知，发送 Slack 提醒
+func api_feedback_notify(c *gin.Context) {
+	ctx := c.Request.Context()
+	userID := ReqUserID(c)
+	if userID == 0 {
+		Error(c, ErrorNotLogin, "authentication required")
+		return
+	}
+
+	var req struct {
+		Reason     string `json:"reason"`
+		Platform   string `json:"platform"`
+		Version    string `json:"version"`
+		FeedbackID string `json:"feedbackId"`
+		S3Keys     []struct {
+			Name  string `json:"name"`
+			S3Key string `json:"s3Key"`
+		} `json:"s3Keys"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		Error(c, ErrorInvalidArgument, "invalid request")
+		return
+	}
+	if len(req.S3Keys) == 0 {
+		Error(c, ErrorInvalidArgument, "no s3 keys")
+		return
+	}
+
+	userEmail, err := getUserEmail(ctx, userID)
+	if err != nil {
+		log.Warnf(ctx, "api_feedback_notify: failed to get user email: %v", err)
+		userEmail = fmt.Sprintf("user#%d", userID)
+	}
+
+	SafeGoWithContext(ctx, func(ctx context.Context) {
+		sendFeedbackSlackNotification(ctx, userEmail, req.Reason, req.Platform, req.Version, req.FeedbackID, req.S3Keys)
+	})
+
+	SuccessEmpty(c)
+}
+
+const s3LogBucketURL = "https://kaitu-service-logs.s3.ap-northeast-1.amazonaws.com"
+
+func sendFeedbackSlackNotification(ctx context.Context, email, reason, platform, version, feedbackID string, s3Keys []struct {
+	Name  string `json:"name"`
+	S3Key string `json:"s3Key"`
+}) {
+	var links []string
+	for _, k := range s3Keys {
+		links = append(links, fmt.Sprintf("<%s/%s|%s>", s3LogBucketURL, k.S3Key, k.Name))
+	}
+
+	message := fmt.Sprintf(`:warning: *Service Log Report*
+
+*User:* %s
+*Platform:* %s | *Version:* %s
+*Reason:* %s
+*Feedback ID:* `+"`%s`"+`
+*Log Files:* %s`, email, platform, version, reason, feedbackID, strings.Join(links, " | "))
+
+	if err := slack.Send("customer", message); err != nil {
+		log.Warnf(ctx, "sendFeedbackSlackNotification: failed: %v", err)
+	} else {
+		log.Infof(ctx, "sendFeedbackSlackNotification: sent to #customer")
+	}
 }
 
 // sendTicketSlackNotification sends a notification to #customer Slack channel
