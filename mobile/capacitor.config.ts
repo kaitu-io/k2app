@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'io.kaitu',
-  appName: 'Kaitu',
+  appName: 'Kaitu.io',
   webDir: '../webapp/dist',
   ios: {
     contentInset: 'never',

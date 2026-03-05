@@ -83,6 +83,12 @@ if [ "$NE_MODE" != true ]; then
   if [ "$SINGLE_ARCH" = true ]; then
     cp "desktop/src-tauri/binaries/k2-universal-apple-darwin" \
        "desktop/src-tauri/binaries/k2-$K2_TARGET"
+  else
+    # Tauri universal build compiles each arch separately, each needs its own sidecar
+    cp "desktop/src-tauri/binaries/k2-universal-apple-darwin" \
+       "desktop/src-tauri/binaries/k2-aarch64-apple-darwin"
+    cp "desktop/src-tauri/binaries/k2-universal-apple-darwin" \
+       "desktop/src-tauri/binaries/k2-x86_64-apple-darwin"
   fi
 fi
 
