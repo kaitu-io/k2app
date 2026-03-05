@@ -99,6 +99,8 @@ docker/scripts/      Node ops scripts (provision-node.sh, enable-ipv6.sh, etc.)
 .claude/skills/      Skill files for Claude Code (kaitu-node-ops.md — node ops safety guardrails)
 .github/workflows/   CI (push/PR) + Release Desktop (v* tags) + Release OpenWrt
 Makefile             Build orchestration — version from package.json, k2 from submodule
+docs/plans/          Architecture design docs
+  2026-03-05-k2-router-platform-design.md  Router platform: rule engine, k2subs, DNS, build trim
 ```
 
 ## Key Conventions
@@ -179,4 +181,13 @@ k2/docs/knowledge/                  Go core patterns (5 files)
 k2/docs/contracts/                  API contracts
   webapp-daemon-api.md              Daemon HTTP API (POST /api/core actions, CORS, states)
 k2/docs/todos/                      k2 backlog (p0/p1/p2 priority)
+```
+
+### Design Plans
+
+```
+docs/plans/
+  2026-03-05-k2-router-platform-design.md
+    Router platform: sing-box rule engine, k2subs:// subscription,
+    DNS (DoH/DoT/bbolt/hosts), build trimming (no_tun), OpenRC
 ```
