@@ -152,12 +152,12 @@ main() {
     mkdir -p "$INSTALL_DIR"
     download_binary
 
-    echo ""
     echo "Installed ${NAME} to ${INSTALL_DIR}/${NAME}"
     echo ""
-    echo "Next: start server and get connection URI"
-    echo "  sudo k2s setup"
-    echo ""
+
+    # Auto-run setup: install service + start + print connect URL
+    echo "Setting up k2s service..."
+    "${INSTALL_DIR}/${NAME}" setup
 }
 
 main

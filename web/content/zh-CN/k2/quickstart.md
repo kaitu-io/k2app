@@ -17,7 +17,6 @@ draft: false
 
 ```bash
 curl -fsSL https://kaitu.io/i/k2s | sudo sh
-sudo k2s run
 ```
 
 **首次启动**会自动：

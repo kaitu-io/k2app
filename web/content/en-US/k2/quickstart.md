@@ -17,7 +17,6 @@ Run this on your server:
 
 ```bash
 curl -fsSL https://kaitu.io/i/k2s | sudo sh
-sudo k2s run
 ```
 
 On **first run**, k2s automatically:
