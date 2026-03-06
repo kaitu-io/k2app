@@ -243,6 +243,10 @@ export default function Dashboard() {
   // Connection toggle
   const handleToggleConnection = useCallback(async () => {
     console.debug('[Dashboard] handleToggleConnection: vpnState=' + vpnState + ', isConnected=' + isConnected + ', isDisconnected=' + isDisconnected + ', isTransitioning=' + isTransitioning + ', isRetrying=' + isRetrying + ', hasTunnel=' + !!displayTunnel);
+    if (vpnState === 'disconnecting') {
+      console.debug('[Dashboard] handleToggleConnection: already disconnecting, ignoring');
+      return;
+    }
     if (isConnected || isTransitioning || (vpnState === 'error' && isRetrying)) {
       console.info('[Dashboard] handleToggleConnection: → disconnect');
       disconnect();

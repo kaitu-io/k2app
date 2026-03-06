@@ -57,6 +57,8 @@ const TRANSITIONS: Record<VPNState, Partial<Record<VPNEvent, VPNState>>> = {
     SERVICE_UNREACHABLE:  'serviceDown',
   },
   connecting: {
+    USER_DISCONNECT:      'disconnecting',
+    BACKEND_RECONNECTING: 'connecting',
     BACKEND_CONNECTED:    'connected',
     BACKEND_DISCONNECTED: 'idle',
     BACKEND_ERROR:        'error',
@@ -77,6 +79,8 @@ const TRANSITIONS: Record<VPNState, Partial<Record<VPNEvent, VPNState>>> = {
     SERVICE_UNREACHABLE:  'serviceDown',
   },
   disconnecting: {
+    USER_DISCONNECT:      'disconnecting',
+    BACKEND_RECONNECTING: 'disconnecting',
     BACKEND_DISCONNECTED: 'idle',
     BACKEND_CONNECTED:    'connected',
     BACKEND_ERROR:        'idle',
