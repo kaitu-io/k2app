@@ -2,23 +2,16 @@
 
 package daemon
 
-import (
-	"os"
-	"strings"
-	"syscall"
-)
+import "golang.org/x/sys/windows"
 
 // processExists checks if a process with the given PID is alive.
-// On Windows, os.FindProcess always succeeds, so we probe with signal 0.
-// If the error is nil or "Access is denied", the process exists.
+// Signal(0) is not supported on Windows ("not supported by windows"),
+// so we use OpenProcess with PROCESS_QUERY_LIMITED_INFORMATION instead.
 func processExists(pid int) bool {
-	p, err := os.FindProcess(pid)
+	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
 	if err != nil {
 		return false
 	}
-	err = p.Signal(syscall.Signal(0))
-	if err == nil {
-		return true
-	}
-	return strings.Contains(err.Error(), "Access is denied")
+	windows.CloseHandle(h)
+	return true
 }
