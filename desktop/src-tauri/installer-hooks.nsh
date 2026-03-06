@@ -283,8 +283,11 @@
   Pop $1
 
   ; Step 5: Launch desktop application (as non-elevated user)
-  DetailPrint "Starting application..."
-  nsis_tauri_utils::RunAsUser "$INSTDIR\${MAINBINARYNAME}.exe" ""
+  ; Skip in update mode — .onInstSuccess handles restart with correct args
+  ${If} $UpdateMode <> 1
+    DetailPrint "Starting application..."
+    nsis_tauri_utils::RunAsUser "$INSTDIR\${MAINBINARYNAME}.exe" ""
+  ${EndIf}
 
   DetailPrint "============================================"
   DetailPrint "Installation completed"
