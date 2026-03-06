@@ -210,7 +210,7 @@ function BarChart({ data }: { data: { date: string; count: number }[] }) {
             key={item.date}
             className="flex-shrink-0 flex flex-col items-center gap-1"
             style={{ width: data.length > 30 ? '12px' : '24px' }}
-            title={`${item.date}: ${item.count}`}
+            title={`${item.date.slice(0, 10)}: ${item.count}`}
           >
             <div className="text-xs text-muted-foreground">{item.count > 0 ? item.count : ''}</div>
             <div
@@ -218,7 +218,7 @@ function BarChart({ data }: { data: { date: string; count: number }[] }) {
               style={{ height: `${height}%`, minHeight: item.count > 0 ? '4px' : '0' }}
             />
             <div className="text-xs text-muted-foreground rotate-45 origin-left whitespace-nowrap">
-              {item.date.slice(5)}
+              {item.date.slice(5, 10)}
             </div>
           </div>
         );
