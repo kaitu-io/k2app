@@ -76,7 +76,8 @@ async function getDeviceHash(): Promise<string> {
   try {
     const udid = await window._platform?.getUdid();
     if (udid) {
-      _deviceHash = await sha256(udid);
+      // UDID is already a 32 hex char hash from the native layer — use directly
+      _deviceHash = udid;
       return _deviceHash;
     }
   } catch {

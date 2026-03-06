@@ -28,4 +28,9 @@ internal object K2PluginUtils {
         val digest = MessageDigest.getInstance("SHA-256")
         return digest.digest(data).joinToString("") { "%02x".format(it) }
     }
+
+    /** SHA-256 hash a raw platform ID to 32 lowercase hex chars (128 bit). */
+    fun hashToUdid(raw: String): String {
+        return sha256(raw.toByteArray(Charsets.UTF_8)).substring(0, 32)
+    }
 }

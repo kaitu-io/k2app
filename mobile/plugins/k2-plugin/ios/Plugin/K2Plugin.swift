@@ -120,8 +120,16 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func getUDID(_ call: CAPPluginCall) {
-        let udid = UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
-        call.resolve(["udid": udid])
+        let raw = UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
+        call.resolve(["udid": hashToUdid(raw)])
+    }
+
+    /// SHA-256 hash a raw platform ID to 32 lowercase hex chars (128 bit).
+    private func hashToUdid(_ raw: String) -> String {
+        let data = Data(raw.utf8)
+        var hash = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+        data.withUnsafeBytes { CC_SHA256($0.baseAddress, CC_LONG(data.count), &hash) }
+        return hash.prefix(16).map { String(format: "%02x", $0) }.joined()
     }
 
     @objc func getVersion(_ call: CAPPluginCall) {

@@ -1,6 +1,7 @@
 //! Service communication module for k2 daemon
 
 use serde::{Deserialize, Serialize};
+use sha2::{Sha256, Digest};
 use std::process::Command;
 
 /// Prevent visible console windows when spawning child processes from GUI app on Windows.
@@ -196,11 +197,22 @@ pub async fn set_log_level(app: tauri::AppHandle, level: String) -> Result<Servi
         .map_err(|e| format!("Task join error: {}", e))?
 }
 
+/// SHA-256 hash a raw platform ID to 32 lowercase hex chars (128 bit).
+/// All platforms use this to produce a uniform UDID format.
+fn hash_to_udid(raw: &str) -> String {
+    let hash = Sha256::digest(raw.as_bytes());
+    // Take first 16 bytes (128 bit) → 32 hex chars
+    hash.iter().take(16).map(|b| format!("{:02x}", b)).collect()
+}
+
 /// IPC command: get device UDID.
 ///
-/// macOS: hardware UUID via `sysctl -n kern.uuid` (no daemon dependency).
-/// Windows: hardware UUID via `wmic csproduct get UUID`.
-/// Linux: reads `/etc/machine-id`.
+/// Each platform reads a single stable OS/firmware-level ID, then SHA-256 hashes
+/// it to a uniform 32 hex char string. No hardware fingerprint composition.
+///
+/// macOS: `sysctl -n kern.uuid` (IOPlatformUUID, firmware-level).
+/// Windows: WMI `Win32_ComputerSystemProduct.UUID` (SMBIOS firmware, via COM API).
+/// Linux: `/etc/machine-id` (generated at OS install).
 #[tauri::command]
 pub async fn get_udid() -> Result<ServiceResponse, String> {
     tokio::task::spawn_blocking(|| get_udid_native())
@@ -218,6 +230,12 @@ fn get_udid_native() -> Result<ServiceResponse, String> {
 }
 
 pub(crate) fn get_hardware_uuid() -> Result<String, String> {
+    let raw = get_raw_hardware_id()?;
+    Ok(hash_to_udid(&raw))
+}
+
+/// Read the raw platform-specific hardware/machine ID (before hashing).
+fn get_raw_hardware_id() -> Result<String, String> {
     #[cfg(target_os = "macos")]
     {
         let output = Command::new("sysctl")
@@ -232,19 +250,28 @@ pub(crate) fn get_hardware_uuid() -> Result<String, String> {
     }
     #[cfg(target_os = "windows")]
     {
-        let output = Command::new("wmic")
-            .args(["csproduct", "get", "UUID"])
-            .creation_flags(CREATE_NO_WINDOW)
-            .output()
-            .map_err(|e| format!("wmic failed: {}", e))?;
-        let text = String::from_utf8_lossy(&output.stdout);
-        // wmic output: "UUID\r\nXXXX-XXXX...\r\n"
-        let uuid = text.lines()
-            .nth(1)
-            .map(|s| s.trim().to_string())
+        use wmi::{COMLibrary, WMIConnection};
+
+        #[derive(serde::Deserialize)]
+        #[serde(rename = "Win32_ComputerSystemProduct")]
+        struct CsProduct {
+            #[serde(rename = "UUID")]
+            uuid: String,
+        }
+
+        let com = COMLibrary::new()
+            .map_err(|e| format!("COM init failed: {}", e))?;
+        let wmi_conn = WMIConnection::new(com)
+            .map_err(|e| format!("WMI connection failed: {}", e))?;
+        let results: Vec<CsProduct> = wmi_conn
+            .query()
+            .map_err(|e| format!("WMI query failed: {}", e))?;
+        let uuid = results
+            .first()
+            .map(|r| r.uuid.clone())
             .unwrap_or_default();
-        if uuid.is_empty() {
-            return Err("Empty UUID from wmic".to_string());
+        if uuid.is_empty() || uuid == "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF" {
+            return Err("No valid SMBIOS UUID available".to_string());
         }
         Ok(uuid)
     }
@@ -694,5 +721,44 @@ mod tests {
         let round_tripped: ServiceResponse = serde_json::from_str(&json).unwrap();
         assert_eq!(round_tripped.code, resp.code);
         assert_eq!(round_tripped.message, resp.message);
+    }
+
+    // -----------------------------------------------------------------------
+    // hash_to_udid: uniform 32 hex char output from any raw platform ID
+    // -----------------------------------------------------------------------
+    #[test]
+    fn test_hash_to_udid_format() {
+        let udid = hash_to_udid("test-input");
+        assert_eq!(udid.len(), 32, "UDID must be 32 chars");
+        assert!(udid.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+            "UDID must be lowercase hex: {}", udid);
+    }
+
+    #[test]
+    fn test_hash_to_udid_deterministic() {
+        let a = hash_to_udid("same-input");
+        let b = hash_to_udid("same-input");
+        assert_eq!(a, b, "Same input must produce same UDID");
+    }
+
+    #[test]
+    fn test_hash_to_udid_different_inputs() {
+        let a = hash_to_udid("input-a");
+        let b = hash_to_udid("input-b");
+        assert_ne!(a, b, "Different inputs must produce different UDIDs");
+    }
+
+    #[test]
+    fn test_hash_to_udid_uuid_input() {
+        // Simulate macOS/Windows UUID format
+        let udid = hash_to_udid("550E8400-E29B-41D4-A716-446655440000");
+        assert_eq!(udid.len(), 32);
+    }
+
+    #[test]
+    fn test_hash_to_udid_short_input() {
+        // Simulate Android ANDROID_ID (16 hex chars)
+        let udid = hash_to_udid("a1b2c3d4e5f6a7b8");
+        assert_eq!(udid.len(), 32);
     }
 }
