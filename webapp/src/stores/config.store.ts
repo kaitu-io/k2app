@@ -39,10 +39,16 @@ interface ConfigState {
   ruleMode: 'global' | 'chnroute';
 }
 
+export interface ConnectConfigParams {
+  serverUrl?: string;
+  isBeta?: boolean;
+  logLevel?: string;
+}
+
 interface ConfigActions {
   loadConfig: () => Promise<void>;
   updateConfig: (partial: Partial<ClientConfig>) => Promise<void>;
-  buildConnectConfig: (serverUrl?: string) => ClientConfig;
+  buildConnectConfig: (params?: ConnectConfigParams | string) => ClientConfig;
 }
 
 // ============ Helpers ============
@@ -118,17 +124,20 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
     }
   },
 
-  buildConnectConfig: (serverUrl?: string) => {
+  buildConnectConfig: (params?: ConnectConfigParams | string) => {
     const { config } = get();
     const result = deepMerge(CLIENT_CONFIG_DEFAULTS, config);
-
-    // Force defaults — mode is not user-configurable; log level from developer options
     result.mode = 'tun';
-    const isBeta = window._platform?.updater?.channel === 'beta';
-    result.log = { ...result.log, level: isBeta ? 'debug' : (localStorage.getItem('k2_log_level') || 'info') };
 
-    if (serverUrl) {
-      result.server = serverUrl;
+    if (typeof params === 'object' && params !== null) {
+      // New: buildConnectConfig({ serverUrl, isBeta, logLevel })
+      result.log = { ...result.log, level: params.isBeta ? 'debug' : (params.logLevel || 'info') };
+      if (params.serverUrl) result.server = params.serverUrl;
+    } else {
+      // Legacy: buildConnectConfig() or buildConnectConfig(serverUrl)
+      const isBeta = window._platform?.updater?.channel === 'beta';
+      result.log = { ...result.log, level: isBeta ? 'debug' : (localStorage.getItem('k2_log_level') || 'info') };
+      if (typeof params === 'string' && params) result.server = params;
     }
 
     return result;

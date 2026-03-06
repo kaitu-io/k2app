@@ -7,25 +7,35 @@ import {
   Tooltip,
   styled,
   Collapse,
+  List,
+  ListItem,
+  ListItemIcon,
+  ListItemText,
+  Radio,
+  IconButton,
+  useTheme,
 } from "@mui/material";
 import {
-  Dns as DnsIcon,
   ExpandMore as ExpandMoreIcon,
   Settings as SettingsIcon,
+  Terminal as TerminalIcon,
 } from "@mui/icons-material";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useLocation } from "react-router-dom";
-import { useVPNStatus, useAuthStore } from "../stores";
+import { useAuthStore } from "../stores";
 import { useUser } from "../hooks/useUser";
 
 import { useLoginDialogStore } from "../stores/login-dialog.store";
 import { useConfigStore } from '../stores/config.store';
-import { EmptyState } from '../components/LoadingAndEmpty';
+import { useConnectionStore } from '../stores/connection.store';
+import { useVPNMachine } from '../stores/vpn-machine.store';
+import { useSelfHostedStore } from '../stores/self-hosted.store';
 import { getCurrentAppConfig } from '../config/apps';
 import { CollapsibleConnectionSection } from '../components/CollapsibleConnectionSection';
 import { useDashboard } from '../stores/dashboard.store';
 import { CloudTunnelList } from '../components/CloudTunnelList';
-import { authService } from '../services/auth-service';
+import { getThemeColors } from '../theme/colors';
+import { getCountryName, getFlagIcon } from '../utils/country';
 import type { Tunnel } from '../services/api-types';
 
 // Styled Components for Modern Design
@@ -51,27 +61,47 @@ export default function Dashboard() {
   const openLoginDialog = useLoginDialogStore((s) => s.open);
   const { user } = useUser();
 
-  // VPN status - managed globally by VPNStatusContext
+  // VPN state machine
   const {
-    serviceState,
+    state: vpnState,
     isDisconnected,
-    isError,
-    isServiceRunning,
+    isConnected,
+    isServiceDown,
+    isTransitioning,
+    isInteractive,
     isRetrying,
     networkAvailable,
-    setOptimisticState,
     error,
-    serviceConnected,
-    isServiceFailedLongTime,
-    serviceFailureDuration
-  } = useVPNStatus();
+  } = useVPNMachine();
+
+  // Connection orchestration
+  const {
+    selectedSource,
+    activeTunnel,
+    connectedTunnel,
+    selectCloudTunnel,
+    selectSelfHosted,
+    connect,
+    disconnect,
+  } = useConnectionStore();
+
+  // Display tunnel: snapshot during connection, selection otherwise
+  const displayTunnel = connectedTunnel ?? activeTunnel;
 
   // Get app-specific configuration
   const appConfig = getCurrentAppConfig();
   const proxyRuleConfig = appConfig.features.proxyRule || { visible: true, defaultValue: 'lightweight' };
 
   // VPN config from persistent store
-  const { ruleMode, updateConfig, buildConnectConfig } = useConfigStore();
+  const { ruleMode, updateConfig } = useConfigStore();
+
+  // Theme colors
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
+  const colors = getThemeColors(isDark);
+
+  // Self-hosted tunnel
+  const selfHostedTunnel = useSelfHostedStore((s) => s.tunnel);
 
   // Service failure alert tracking (silent mode - no UI feedback)
   const [failureAlertSent, setFailureAlertSent] = useState(false);
@@ -150,27 +180,17 @@ export default function Dashboard() {
     ];
   }, [t]);
 
-  // For CollapsibleConnectionSection - track selected cloud tunnel
-  const [selectedCloudTunnel, setSelectedCloudTunnel] = useState<Tunnel | null>(null);
+  // Handle cloud tunnel selection
+  const handleCloudTunnelSelect = useCallback((_tunnel: Tunnel, _echConfigList?: string) => {
+    if (isInteractive) return;
+    selectCloudTunnel(_tunnel);
+  }, [isInteractive, selectCloudTunnel]);
 
-  // Active tunnel info derived from selected cloud tunnel
-  const activeTunnelInfo = useMemo(() => {
-    if (!selectedCloudTunnel) {
-      return { domain: '', name: '', country: '' };
-    }
-    return {
-      domain: selectedCloudTunnel.domain.toLowerCase(),
-      name: selectedCloudTunnel.name || selectedCloudTunnel.domain,
-      country: selectedCloudTunnel.node?.country || '',
-    };
-  }, [selectedCloudTunnel]);
-
-  // Handle cloud tunnel selection (UI state only, no config persistence)
-  const handleCloudTunnelSelect = useCallback(async (tunnel: Tunnel, _echConfigList?: string) => {
-    if (isServiceRunning) return;
-    console.debug('[Dashboard] Selecting cloud tunnel:', tunnel.domain);
-    setSelectedCloudTunnel(tunnel);
-  }, [isServiceRunning]);
+  // Handle self-hosted tunnel selection
+  const handleSelfHostedSelect = useCallback(() => {
+    if (isInteractive) return;
+    selectSelfHosted();
+  }, [isInteractive, selectSelfHosted]);
 
   // Handle rule type selection via config store
   const handleRuleTypeChange = useCallback((ruleType: string) => {
@@ -179,15 +199,15 @@ export default function Dashboard() {
 
   // Effect to detect prolonged failure and trigger silent alert
   useEffect(() => {
-    if (isServiceFailedLongTime && !failureAlertSent) {
+    if (isServiceDown && !failureAlertSent) {
       handleServiceFailureAlert();
     }
 
-    if (serviceConnected && failureAlertSent) {
+    if (!isServiceDown && failureAlertSent) {
       console.info('[Dashboard] Service recovered, resetting alert state');
       setFailureAlertSent(false);
     }
-  }, [isServiceFailedLongTime, serviceConnected, failureAlertSent]);
+  }, [isServiceDown, failureAlertSent]);
 
   // Handle service failure alert
   const handleServiceFailureAlert = useCallback(async () => {
@@ -203,7 +223,6 @@ export default function Dashboard() {
       await window._platform.uploadLogs!({
         email: isAuthenticated ? user?.loginIdentifies?.[0]?.value : null,
         reason: 'service_connection_timeout',
-        failureDurationMs: serviceFailureDuration ?? undefined,
         platform: window._platform.os,
         version: window._platform.version,
       });
@@ -212,69 +231,41 @@ export default function Dashboard() {
     } catch (error) {
       console.debug('[Dashboard] Log upload skipped:', error);
     }
-  }, [isAuthenticated, serviceFailureDuration]);
+  }, [isAuthenticated]);
 
-  // Resolve server URL: inject auth for k2v5 protocol
-  const resolveServerUrl = useCallback(async (serverUrl?: string): Promise<string | undefined> => {
-    if (!serverUrl?.startsWith('k2v5://')) return serverUrl;
-    return authService.buildTunnelUrl(serverUrl);
-  }, []);
-
-  // Handle connection toggle
+  // Connection toggle
   const handleToggleConnection = useCallback(async () => {
-    if ((isDisconnected || isError) && !activeTunnelInfo.domain) {
-      console.warn('[Dashboard] No tunnel selected');
-      return;
-    }
-
-    try {
-      if (isError && !isRetrying) {
-        // Error state: reconnect
-        console.info('[Dashboard] Reconnecting VPN after error...');
-        setOptimisticState('connecting');
-        const serverUrl = await resolveServerUrl(selectedCloudTunnel?.serverUrl);
-        const config = buildConnectConfig(serverUrl);
-        await window._k2.run('up', config);
-        updateConfig({ server: selectedCloudTunnel?.serverUrl });
-      } else if (!isDisconnected || isRetrying) {
-        // Connected/connecting/retrying: disconnect
-        console.info('[Dashboard] Stopping VPN...');
-        setOptimisticState('disconnecting');
-        await window._k2.run('down');
-      } else {
-        // Disconnected: connect
-        console.info('[Dashboard] Starting VPN...');
-        setOptimisticState('connecting');
-        const serverUrl = await resolveServerUrl(selectedCloudTunnel?.serverUrl);
-        const config = buildConnectConfig(serverUrl);
-        await window._k2.run('up', config);
-        updateConfig({ server: selectedCloudTunnel?.serverUrl });
+    if (isConnected || isTransitioning || (vpnState === 'error' && isRetrying)) {
+      disconnect();
+    } else if (isDisconnected || (vpnState === 'error' && !isRetrying)) {
+      if (!displayTunnel) {
+        console.warn('[Dashboard] No tunnel selected');
+        return;
       }
-    } catch (err) {
-      console.error('Connection operation failed', err);
-      setOptimisticState(null);
+      connect();
     }
-  }, [isDisconnected, isError, isRetrying, activeTunnelInfo.domain, selectedCloudTunnel, buildConnectConfig, updateConfig, setOptimisticState, resolveServerUrl]);
+  }, [isConnected, isDisconnected, isTransitioning, vpnState, isRetrying, displayTunnel, connect, disconnect]);
 
-  // Check if any tunnel is selected
-  const hasTunnelSelected = !!activeTunnelInfo.domain;
+  // Check if any tunnel is selected (cloud or self-hosted)
+  const hasTunnelSelected = !!displayTunnel;
+
+  // Map vpnState to ServiceState for CollapsibleConnectionSection
+  const serviceState = vpnState === 'idle' ? 'disconnected'
+    : vpnState === 'serviceDown' ? 'disconnected'
+    : vpnState;
+
+  // Auto-select self-hosted when it's the only option (guest with tunnel)
+  useEffect(() => {
+    if (!isAuthenticated && selfHostedTunnel && selectedSource === 'cloud' && !activeTunnel) {
+      selectSelfHosted();
+    }
+  }, [isAuthenticated, selfHostedTunnel, selectedSource, activeTunnel, selectSelfHosted]);
 
   return (
     <DashboardContainer
       ref={containerRef}
-      onClickCapture={() => {
-        const el = containerRef.current;
-        const cs = el ? getComputedStyle(el) : null;
-        console.warn('[DIAG:Dashboard] click captured', {
-          pointerEvents: cs?.pointerEvents,
-          opacity: cs?.opacity,
-          isServiceFailedLongTime,
-          isServiceRunning,
-          serviceState,
-        });
-      }}
       sx={{
-        ...(isServiceFailedLongTime && {
+        ...(isServiceDown && {
           pointerEvents: 'none',
           opacity: 0.5,
           filter: 'grayscale(30%)',
@@ -285,8 +276,8 @@ export default function Dashboard() {
       <CollapsibleConnectionSection
         serviceState={serviceState}
         hasTunnelSelected={hasTunnelSelected}
-        tunnelName={activeTunnelInfo.name}
-        tunnelCountry={activeTunnelInfo.country}
+        tunnelName={displayTunnel?.name}
+        tunnelCountry={displayTunnel?.country}
         onToggle={handleToggleConnection}
         error={error}
         isRetrying={isRetrying}
@@ -298,8 +289,15 @@ export default function Dashboard() {
         ref={scrollContainerRef}
         sx={{
           flex: 1,
-          overflowY: 'auto',
-          overflowX: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          minHeight: 0,
+          // Authenticated: this box scrolls all tunnel lists
+          // Unauthenticated: no scroll here, phantom area handles its own scroll
+          ...(!isAuthenticated ? {} : {
+            overflowY: 'auto',
+            overflowX: 'hidden',
+          }),
           '&::-webkit-scrollbar': { width: '4px' },
           '&::-webkit-scrollbar-track': { background: 'transparent' },
           '&::-webkit-scrollbar-thumb': {
@@ -315,54 +313,219 @@ export default function Dashboard() {
         {isAuthenticated && (
           <Box sx={{ mt: 2 }}>
             <CloudTunnelList
-              selectedDomain={activeTunnelInfo.domain}
+              selectedDomain={displayTunnel?.domain || ''}
               onSelect={handleCloudTunnelSelect}
-              disabled={isServiceRunning}
+              disabled={isInteractive}
             />
           </Box>
         )}
 
-        {/* Empty state for unauthenticated users */}
+        {/* Self-hosted node — shown below cloud list for authenticated, or as primary for guests */}
+        {selfHostedTunnel && (
+          <Box sx={{ flexShrink: 0 }}>
+            {/* Section header — only for authenticated users (guests see it as primary) */}
+            {isAuthenticated && (
+              <Stack
+                direction="row"
+                spacing={1}
+                sx={{
+                  py: 1,
+                  px: 2,
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  borderBottom: `1px solid ${theme.palette.divider}`,
+                }}
+              >
+                <Typography variant="overline" fontWeight={600} color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                  <TerminalIcon sx={{ fontSize: 14, mr: 0.5, verticalAlign: 'text-bottom' }} />
+                  {t('dashboard:selfHosted.tag')}
+                </Typography>
+                <Tooltip title={t('dashboard:selfHosted.manageNode')}>
+                  <IconButton size="small" onClick={() => navigate('/tunnels')} sx={{ p: 0.5 }}>
+                    <SettingsIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                </Tooltip>
+              </Stack>
+            )}
+
+            <List sx={{ pt: 0.5, px: 2, pb: 1 }}>
+              <ListItem
+                onClick={handleSelfHostedSelect}
+                sx={{
+                  borderRadius: 2,
+                  minHeight: 64,
+                  bgcolor: selectedSource === 'self_hosted' ? colors.selectedBg : undefined,
+                  cursor: isInteractive ? 'not-allowed' : 'pointer',
+                  opacity: isInteractive ? '0.6 !important' : 1,
+                  transition: 'all 0.2s ease',
+                  '&:hover': {
+                    bgcolor: isInteractive ? undefined : 'action.hover',
+                    transform: isInteractive ? 'none' : 'scale(1.01)',
+                  },
+                }}
+              >
+                <ListItemIcon sx={{ minWidth: 40 }}>
+                  {selfHostedTunnel.country ? (
+                    getFlagIcon(selfHostedTunnel.country)
+                  ) : (
+                    <Box sx={{
+                      width: 32,
+                      height: 22,
+                      borderRadius: 0.5,
+                      bgcolor: colors.accentBgLight,
+                      border: `1px solid ${colors.accentBorder}`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}>
+                      <TerminalIcon sx={{ fontSize: 14, color: colors.accent }} />
+                    </Box>
+                  )}
+                </ListItemIcon>
+                <ListItemText
+                  primary={
+                    <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      {selfHostedTunnel.name}
+                      <Typography
+                        component="span"
+                        sx={{
+                          fontSize: '0.65rem',
+                          px: 0.8,
+                          py: 0.1,
+                          borderRadius: 0.5,
+                          bgcolor: colors.accentBgLighter,
+                          border: `1px solid ${colors.accentBorder}`,
+                          color: colors.accent,
+                          fontWeight: 500,
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        {t('dashboard:dashboard.selfDeployed')}
+                      </Typography>
+                    </Box>
+                  }
+                  secondary={selfHostedTunnel.country ? getCountryName(selfHostedTunnel.country) : t('dashboard:selfHosted.tag')}
+                  primaryTypographyProps={{ fontWeight: 600, fontSize: '0.9rem' }}
+                  secondaryTypographyProps={{ fontSize: '0.75rem' }}
+                />
+                <IconButton
+                  size="small"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigate('/tunnels');
+                  }}
+                  sx={{ mr: 0.5 }}
+                >
+                  <SettingsIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+                </IconButton>
+                <Radio
+                  checked={selectedSource === 'self_hosted'}
+                  color="primary"
+                  sx={{ '& .MuiSvgIcon-root': { fontSize: 24 } }}
+                />
+              </ListItem>
+            </List>
+          </Box>
+        )}
+
+        {/* Phantom cloud nodes for unauthenticated users */}
         {!isAuthenticated && (
-          <Box sx={{ px: 2, py: 4 }}>
-            <EmptyState
-              icon={<DnsIcon sx={{ fontSize: 48 }} />}
-              title={t('dashboard:dashboard.guestEmpty.title') || 'Login to get nodes'}
-              description={t('dashboard:dashboard.guestEmpty.description') || 'Login to access cloud nodes for stable service.'}
-              action={
-                <Stack direction="column" spacing={2} sx={{ mt: 2, alignItems: 'center' }}>
-                  <Button
-                    onClick={() => openLoginDialog({ trigger: 'dashboard-empty' })}
-                    variant="contained"
-                    color="primary"
-                    size="large"
-                    sx={{
-                      px: 6,
-                      py: 1.5,
-                      fontSize: '1rem',
-                      fontWeight: 600,
-                      borderRadius: 2,
-                    }}
-                  >
-                    {t('dashboard:dashboard.loginToGet') || 'Login'}
-                  </Button>
-                  <Button
-                    onClick={() => navigate('/tunnels')}
-                    color="inherit"
-                    variant="text"
-                    size="small"
-                    sx={{
-                      color: 'text.secondary',
-                      textTransform: 'none',
-                      fontSize: '0.75rem',
-                    }}
-                  >
-                    {t('dashboard:dashboard.selfDeploy') || 'Self-deploy'}
-                  </Button>
-                </Stack>
-              }
-              minHeight={200}
-            />
+          <Box sx={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+            {/* Scrollable blurred list — scrolls independently */}
+            <List sx={{
+              height: '100%',
+              overflowY: 'auto',
+              pt: 0.5,
+              px: 2,
+              pb: 1,
+              filter: 'blur(4px)',
+              opacity: 0.5,
+              pointerEvents: 'none',
+              userSelect: 'none',
+              '&::-webkit-scrollbar': { width: '4px' },
+              '&::-webkit-scrollbar-track': { background: 'transparent' },
+              '&::-webkit-scrollbar-thumb': {
+                background: (theme) => theme.palette.mode === 'dark'
+                  ? 'rgba(255, 255, 255, 0.2)'
+                  : 'rgba(0, 0, 0, 0.2)',
+                borderRadius: '4px',
+              },
+              scrollbarWidth: 'thin',
+            }}>
+              {[
+                { flag: 'JP', name: 'Tokyo-01', country: 'Japan' },
+                { flag: 'JP', name: 'Tokyo-02', country: 'Japan' },
+                { flag: 'SG', name: 'Singapore-01', country: 'Singapore' },
+                { flag: 'SG', name: 'Singapore-02', country: 'Singapore' },
+                { flag: 'US', name: 'Los Angeles-01', country: 'United States' },
+                { flag: 'US', name: 'San Jose-01', country: 'United States' },
+                { flag: 'HK', name: 'Hong Kong-01', country: 'Hong Kong' },
+                { flag: 'HK', name: 'Hong Kong-02', country: 'Hong Kong' },
+                { flag: 'TW', name: 'Taipei-01', country: 'Taiwan' },
+                { flag: 'KR', name: 'Seoul-01', country: 'South Korea' },
+                { flag: 'DE', name: 'Frankfurt-01', country: 'Germany' },
+                { flag: 'GB', name: 'London-01', country: 'United Kingdom' },
+                { flag: 'AU', name: 'Sydney-01', country: 'Australia' },
+                { flag: 'CA', name: 'Toronto-01', country: 'Canada' },
+                { flag: 'FR', name: 'Paris-01', country: 'France' },
+              ].map((item) => (
+                <ListItem
+                  key={item.name}
+                  sx={{
+                    borderRadius: 2,
+                    mb: 0.5,
+                    minHeight: 64,
+                    bgcolor: 'action.hover',
+                  }}
+                >
+                  <ListItemIcon sx={{ minWidth: 40, fontSize: 24 }}>
+                    {getFlagIcon(item.flag)}
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={item.name}
+                    secondary={item.country}
+                    primaryTypographyProps={{ fontWeight: 600, fontSize: '0.9rem' }}
+                    secondaryTypographyProps={{ fontSize: '0.75rem' }}
+                  />
+                  <Radio disabled color="primary" sx={{ '& .MuiSvgIcon-root': { fontSize: 24 } }} />
+                </ListItem>
+              ))}
+            </List>
+
+            {/* Overlay — fixed in visible area, not affected by list scroll */}
+            <Box sx={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              bgcolor: `${theme.palette.background.default}99`,
+              pointerEvents: 'none',
+            }}>
+              <Stack spacing={1.5} alignItems="center" sx={{ pointerEvents: 'auto' }}>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  onClick={() => openLoginDialog({ trigger: 'dashboard-upgrade' })}
+                  sx={{ fontWeight: 600, px: 3 }}
+                >
+                  {t('dashboard:dashboard.unlockCloudNodes')}
+                </Button>
+                <Button
+                  variant="text"
+                  size="small"
+                  onClick={() => navigate('/tunnels')}
+                  sx={{
+                    color: 'text.secondary',
+                    textTransform: 'none',
+                    fontSize: '0.75rem',
+                  }}
+                >
+                  {t('dashboard:dashboard.selfDeploy')}
+                </Button>
+              </Stack>
+            </Box>
           </Box>
         )}
       </Box>
@@ -398,7 +561,7 @@ export default function Dashboard() {
             pb: 0.5,
             pt: 1,
           }}>
-            {isServiceRunning && (
+            {isInteractive && (
               <Typography variant="caption" sx={{
                 color: 'warning.main',
                 fontSize: '0.75rem',
@@ -423,8 +586,8 @@ export default function Dashboard() {
                       <Tooltip key={`proxy-rule-${rule.type}`} title={rule.description} arrow>
                         <span style={{ flex: 1, display: 'flex' }}>
                           <Button
-                            onClick={() => !isServiceRunning && handleRuleTypeChange(rule.type)}
-                            disabled={isServiceRunning}
+                            onClick={() => !isInteractive && handleRuleTypeChange(rule.type)}
+                            disabled={isInteractive}
                             variant={isActive ? "contained" : "outlined"}
                             sx={{
                               flex: 1,

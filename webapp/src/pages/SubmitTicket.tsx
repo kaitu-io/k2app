@@ -83,6 +83,7 @@ export default function SubmitTicket() {
 
   // Form state
   const [content, setContent] = useState("");
+  const [email, setEmail] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<{ success: boolean; message: string } | null>(null);
 
@@ -120,6 +121,16 @@ export default function SubmitTicket() {
       if (result.success) {
         setLogUploadStatus('success');
         console.debug('[SubmitTicket] Log upload successful, feedbackId:', feedbackIdRef.current);
+        // Notify server to send Slack alert (fire-and-forget)
+        if (result.s3Keys?.length) {
+          cloudApi.post('/api/user/feedback-notify', {
+            reason: 'user_feedback_report',
+            platform: window._platform?.os,
+            version: window._platform?.version,
+            feedbackId: feedbackIdRef.current,
+            s3Keys: result.s3Keys,
+          }).catch(() => {}); // silent — best-effort notification
+        }
       } else {
         setLogUploadStatus('error');
         console.debug('[SubmitTicket] Log upload failed:', result.error);
@@ -138,6 +149,8 @@ export default function SubmitTicket() {
     }
   }, [uploadLogs, canUploadLogs]);
 
+  const isValidEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+
   const handleSubmit = async () => {
     if (!content.trim()) {
       setSubmitResult({ success: false, message: t('ticket:ticket.validation.contentRequired') });
@@ -146,6 +159,17 @@ export default function SubmitTicket() {
     if (content.length > 5000) {
       setSubmitResult({ success: false, message: t('ticket:ticket.validation.contentTooLong') });
       return;
+    }
+    // Anonymous: require email
+    if (!isAuthenticated) {
+      if (!email.trim()) {
+        setSubmitResult({ success: false, message: t('ticket:ticket.validation.emailRequired') });
+        return;
+      }
+      if (!isValidEmail(email.trim())) {
+        setSubmitResult({ success: false, message: t('ticket:ticket.validation.emailInvalid') });
+        return;
+      }
     }
 
     setIsSubmitting(true);
@@ -159,12 +183,15 @@ export default function SubmitTicket() {
         ...(feedbackIdRef.current && logUploadStatus === 'success'
           ? { feedbackId: feedbackIdRef.current }
           : {}),
+        // Anonymous: include email and source
+        ...(!isAuthenticated ? { email: email.trim(), source: 'anonymous' } : {}),
         ...systemInfo,
       });
 
       if (response.code === 0) {
         setSubmitResult({ success: true, message: t('ticket:ticket.submitSuccess') });
         setContent("");
+        setEmail("");
       } else {
         console.error('[SubmitTicket] Submit failed:', response.code, response.message);
         setSubmitResult({ success: false, message: t('ticket:ticket.submitFailed') });
@@ -268,6 +295,24 @@ export default function SubmitTicket() {
                       {t('ticket:ticket.description')}
                     </Typography>
 
+                    {!isAuthenticated && (
+                      <>
+                        <Alert severity="info" sx={{ mb: -1 }}>
+                          {t('ticket:ticket.anonymousHint')}
+                        </Alert>
+                        <TextField
+                          label={t('ticket:ticket.emailLabel')}
+                          placeholder={t('ticket:ticket.emailPlaceholder')}
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          disabled={isSubmitting}
+                          fullWidth
+                          type="email"
+                          inputProps={{ maxLength: 200 }}
+                        />
+                      </>
+                    )}
+
                     <TextField
                       label={t('ticket:ticket.contentLabel')}
                       placeholder={t('ticket:ticket.contentPlaceholder')}
@@ -285,12 +330,14 @@ export default function SubmitTicket() {
                       variant="contained"
                       color="primary"
                       onClick={handleSubmit}
-                      disabled={isSubmitting || !content.trim()}
+                      disabled={isSubmitting || !content.trim() || (!isAuthenticated && !email.trim())}
                       startIcon={isSubmitting ? <CircularProgress size={20} color="inherit" /> : <SendIcon />}
                       fullWidth
                       size="large"
                     >
-                      {isSubmitting ? t('ticket:ticket.submitting') : t('ticket:ticket.submitButton')}
+                      {isSubmitting
+                      ? t('ticket:ticket.submitting')
+                      : t('ticket:ticket.submitButton')}
                     </Button>
 
                     {submitResult && !submitResult.success && (

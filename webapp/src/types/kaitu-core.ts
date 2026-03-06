@@ -133,6 +133,7 @@ export interface IPlatform {
 
   os: 'windows' | 'macos' | 'linux' | 'ios' | 'android' | 'web';
   version: string;
+  arch?: string;
 
   // ====== 核心能力 ======
 
@@ -179,7 +180,7 @@ export interface IPlatform {
     platform?: string;
     version?: string;
     feedbackId?: string;
-  }): Promise<{ success: boolean; error?: string }>;
+  }): Promise<{ success: boolean; error?: string; s3Keys?: Array<{ name: string; s3Key: string }> }>;
 }
 
 // ==================== 核心接口 ====================

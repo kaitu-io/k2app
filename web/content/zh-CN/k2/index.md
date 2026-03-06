@@ -48,11 +48,11 @@ k2 通过四层防御实现流量隐身：
 
 ```bash
 # 服务端（30 秒）
-curl -fsSL https://kaitu.io/install.sh | sudo sh -s k2s
+curl -fsSL https://kaitu.io/i/k2s | sudo sh
 sudo k2s run
 
 # 客户端（30 秒）
-curl -fsSL https://kaitu.io/install.sh | sudo sh -s k2
+curl -fsSL https://kaitu.io/i/k2 | sudo sh
 sudo k2 up k2v5://abc123:tok456@203.0.113.5:443?ech=AEX0...&pin=sha256:...
 ```
 

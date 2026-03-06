@@ -1,0 +1,163 @@
+#!/bin/sh
+# k2s server installer — installs k2s to /usr/local/bin/
+#
+# Usage: curl -fsSL https://kaitu.io/i/k2s | sudo sh
+set -e
+
+NAME="k2s"
+INSTALL_DIR="/usr/local/bin"
+CDN_PRIMARY="https://d13jc1jqzlg4yt.cloudfront.net/kaitu/k2"
+CDN_FALLBACK="https://d0.all7.cc/kaitu/k2"
+GITHUB_REPO="kaitu-io/k2"
+MANIFEST=""
+
+detect_platform() {
+    OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+    ARCH="$(uname -m)"
+
+    case "$OS" in
+        linux)  OS="linux" ;;
+        darwin) OS="darwin" ;;
+        *)      echo "Error: unsupported OS: $OS"; exit 1 ;;
+    esac
+
+    case "$ARCH" in
+        x86_64|amd64)  ARCH="amd64" ;;
+        aarch64|arm64) ARCH="arm64" ;;
+        *)             echo "Error: unsupported architecture: $ARCH"; exit 1 ;;
+    esac
+}
+
+fetch() {
+    url="$1"
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL "$url"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -qO- "$url"
+    else
+        echo "Error: curl or wget required" >&2
+        exit 1
+    fi
+}
+
+download() {
+    url="$1"
+    dest="$2"
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL -o "$dest" "$url"
+    else
+        wget -qO "$dest" "$url"
+    fi
+}
+
+sha256_cmd() {
+    if command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" | cut -d' ' -f1
+    elif command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | cut -d' ' -f1
+    else
+        echo ""
+    fi
+}
+
+get_latest_version() {
+    manifest_cf="k2s-cloudfront.latest.json"
+    manifest_d0="k2s-d0.latest.json"
+
+    MANIFEST=$(fetch "${CDN_PRIMARY}/${manifest_cf}" 2>/dev/null || true)
+    VERSION=$(echo "$MANIFEST" | grep '"version"' | head -1 | sed 's/.*"version" *: *"//;s/".*//' || true)
+
+    if [ -z "$VERSION" ]; then
+        MANIFEST=$(fetch "${CDN_FALLBACK}/${manifest_d0}" 2>/dev/null || true)
+        VERSION=$(echo "$MANIFEST" | grep '"version"' | head -1 | sed 's/.*"version" *: *"//;s/".*//' || true)
+    fi
+
+    if [ -z "$VERSION" ]; then
+        MANIFEST=""
+        VERSION=$(fetch "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>/dev/null | \
+            grep '"tag_name"' | head -1 | sed 's/.*"tag_name" *: *"//;s/".*//' || true)
+    fi
+
+    if [ -z "$VERSION" ]; then
+        echo "Error: could not determine latest version"
+        exit 1
+    fi
+}
+
+verify_checksum() {
+    file="$1"
+    platform="${OS}-${ARCH}"
+
+    expected=$(echo "$MANIFEST" | grep "\"${platform}\"" | grep "sha256:" | \
+        sed 's/.*"sha256:\([a-f0-9]*\)".*/\1/' || true)
+
+    if [ -z "$expected" ]; then
+        echo "  (checksum not available, skipping verification)"
+        return 0
+    fi
+
+    actual=$(sha256_cmd "$file")
+    if [ -z "$actual" ]; then
+        echo "  (no sha256 tool found, skipping verification)"
+        return 0
+    fi
+
+    if [ "$actual" != "$expected" ]; then
+        echo "  Error: checksum mismatch!"
+        echo "    expected: ${expected}"
+        echo "    got:      ${actual}"
+        rm -f "$file"
+        return 1
+    fi
+
+    echo "  Checksum verified (sha256)"
+}
+
+download_binary() {
+    file="${NAME}-${OS}-${ARCH}"
+    tmp="$(mktemp)"
+
+    cdn_primary_url="${CDN_PRIMARY}/${VERSION}/${file}"
+    cdn_fallback_url="${CDN_FALLBACK}/${VERSION}/${file}"
+    gh_url="https://github.com/${GITHUB_REPO}/releases/download/${VERSION}/${file}"
+
+    echo "  Downloading ${NAME} ${VERSION} (${OS}/${ARCH})..."
+    if ! download "$cdn_primary_url" "$tmp" 2>/dev/null; then
+        if ! download "$cdn_fallback_url" "$tmp" 2>/dev/null; then
+            if ! download "$gh_url" "$tmp" 2>/dev/null; then
+                echo "  Error: failed to download ${NAME}"
+                rm -f "$tmp"
+                return 1
+            fi
+        fi
+    fi
+
+    verify_checksum "$tmp"
+
+    chmod +x "$tmp"
+    mv "$tmp" "${INSTALL_DIR}/${NAME}"
+}
+
+main() {
+    if [ "$(id -u)" -ne 0 ]; then
+        echo "Error: run with sudo"
+        echo "  curl -fsSL https://kaitu.io/i/k2s | sudo sh"
+        exit 1
+    fi
+
+    detect_platform
+    get_latest_version
+
+    echo "Installing ${NAME} ${VERSION}..."
+    mkdir -p "$INSTALL_DIR"
+    download_binary
+
+    echo "Installed ${NAME} to ${INSTALL_DIR}/${NAME}"
+    echo ""
+
+    # Auto-run setup: install service + start + print connect URL
+    echo "Setting up k2s service..."
+    "${INSTALL_DIR}/${NAME}" setup
+}
+
+main

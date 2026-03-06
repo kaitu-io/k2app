@@ -16,8 +16,7 @@ draft: false
 在您的服务器上执行：
 
 ```bash
-curl -fsSL https://kaitu.io/install.sh | sudo sh -s k2s
-sudo k2s run
+curl -fsSL https://kaitu.io/i/k2s | sudo sh
 ```
 
 **首次启动**会自动：

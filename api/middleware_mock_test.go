@@ -397,27 +397,27 @@ func TestMiddleware_CSRF_PATCH_Required(t *testing.T) {
 	assertAuthFailed(t, w)
 }
 
-// ===================== User-Agent 解析测试 =====================
+// ===================== X-K2-Client header 解析测试 =====================
 
-// TestParseUserAgent_Legacy 测试旧版 User-Agent 格式
-func TestParseUserAgent_Legacy(t *testing.T) {
+// TestParseClientHeader_Basic 测试基本格式（version + platform + arch）
+func TestParseClientHeader_Basic(t *testing.T) {
 	tests := []struct {
-		name      string
-		userAgent string
-		expected  *AppInfo
+		name     string
+		header   string
+		expected *AppInfo
 	}{
 		{
-			name:      "legacy format - darwin",
-			userAgent: "kaitu-service/1.0 (darwin; amd64)",
+			name:   "macos desktop",
+			header: "kaitu-service/0.4.0-beta.1 (macos; arm64)",
 			expected: &AppInfo{
-				Version:  "1.0",
-				Platform: "darwin",
-				Arch:     "amd64",
+				Version:  "0.4.0-beta.1",
+				Platform: "macos",
+				Arch:     "arm64",
 			},
 		},
 		{
-			name:      "legacy format - windows",
-			userAgent: "kaitu-service/0.3.15 (windows; amd64)",
+			name:   "windows desktop",
+			header: "kaitu-service/0.3.15 (windows; amd64)",
 			expected: &AppInfo{
 				Version:  "0.3.15",
 				Platform: "windows",
@@ -425,11 +425,38 @@ func TestParseUserAgent_Legacy(t *testing.T) {
 			},
 		},
 		{
-			name:      "legacy format - with spaces",
-			userAgent: "kaitu-service/1.0.0 ( darwin ; arm64 )",
+			name:   "ios mobile",
+			header: "kaitu-service/0.4.0 (ios; arm64)",
+			expected: &AppInfo{
+				Version:  "0.4.0",
+				Platform: "ios",
+				Arch:     "arm64",
+			},
+		},
+		{
+			name:   "android mobile",
+			header: "kaitu-service/0.4.0 (android; arm64)",
+			expected: &AppInfo{
+				Version:  "0.4.0",
+				Platform: "android",
+				Arch:     "arm64",
+			},
+		},
+		{
+			name:   "standalone web",
+			header: "kaitu-service/standalone (web; unknown)",
+			expected: &AppInfo{
+				Version:  "standalone",
+				Platform: "web",
+				Arch:     "unknown",
+			},
+		},
+		{
+			name:   "with extra spaces",
+			header: "kaitu-service/1.0.0 ( macos ; arm64 )",
 			expected: &AppInfo{
 				Version:  "1.0.0",
-				Platform: "darwin",
+				Platform: "macos",
 				Arch:     "arm64",
 			},
 		},
@@ -437,8 +464,8 @@ func TestParseUserAgent_Legacy(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			result := parseUserAgent(tc.userAgent)
-			assert.NotNil(t, result, "parseUserAgent should not return nil")
+			result := parseClientHeader(tc.header)
+			assert.NotNil(t, result, "parseClientHeader should not return nil")
 			assert.Equal(t, tc.expected.Version, result.Version)
 			assert.Equal(t, tc.expected.Platform, result.Platform)
 			assert.Equal(t, tc.expected.Arch, result.Arch)
@@ -446,27 +473,27 @@ func TestParseUserAgent_Legacy(t *testing.T) {
 	}
 }
 
-// TestParseUserAgent_Extended 测试扩展版 User-Agent 格式（包含 OS 版本和设备型号）
-func TestParseUserAgent_Extended(t *testing.T) {
+// TestParseClientHeader_Extended 测试扩展格式（包含 OS 版本和设备型号）
+func TestParseClientHeader_Extended(t *testing.T) {
 	tests := []struct {
-		name      string
-		userAgent string
-		expected  *AppInfo
+		name     string
+		header   string
+		expected *AppInfo
 	}{
 		{
-			name:      "extended format - macOS with model",
-			userAgent: "kaitu-service/0.3.15 (darwin; arm64; macOS 14.5; MacBookPro18,1)",
+			name:   "macOS with model",
+			header: "kaitu-service/0.3.15 (macos; arm64; macOS 14.5; MacBookPro18,1)",
 			expected: &AppInfo{
 				Version:     "0.3.15",
-				Platform:    "darwin",
+				Platform:    "macos",
 				Arch:        "arm64",
 				OSVersion:   "macOS 14.5",
 				DeviceModel: "MacBookPro18,1",
 			},
 		},
 		{
-			name:      "extended format - iOS with model",
-			userAgent: "kaitu-service/0.3.15 (ios; arm64; iOS 17.4; iPhone15,2)",
+			name:   "iOS with model",
+			header: "kaitu-service/0.3.15 (ios; arm64; iOS 17.4; iPhone15,2)",
 			expected: &AppInfo{
 				Version:     "0.3.15",
 				Platform:    "ios",
@@ -476,8 +503,8 @@ func TestParseUserAgent_Extended(t *testing.T) {
 			},
 		},
 		{
-			name:      "extended format - Windows with model",
-			userAgent: "kaitu-service/0.3.15 (windows; amd64; Windows 11 23H2; Dell XPS 15)",
+			name:   "Windows with model",
+			header: "kaitu-service/0.3.15 (windows; amd64; Windows 11 23H2; Dell XPS 15)",
 			expected: &AppInfo{
 				Version:     "0.3.15",
 				Platform:    "windows",
@@ -487,8 +514,8 @@ func TestParseUserAgent_Extended(t *testing.T) {
 			},
 		},
 		{
-			name:      "extended format - only OS version",
-			userAgent: "kaitu-service/0.3.15 (linux; amd64; Ubuntu 22.04)",
+			name:   "Linux with OS version only",
+			header: "kaitu-service/0.3.15 (linux; amd64; Ubuntu 22.04)",
 			expected: &AppInfo{
 				Version:     "0.3.15",
 				Platform:    "linux",
@@ -498,8 +525,8 @@ func TestParseUserAgent_Extended(t *testing.T) {
 			},
 		},
 		{
-			name:      "extended format - Android",
-			userAgent: "kaitu-service/0.3.15 (android; arm64; Android 14; Pixel 8 Pro)",
+			name:   "Android with model",
+			header: "kaitu-service/0.3.15 (android; arm64; Android 14; Pixel 8 Pro)",
 			expected: &AppInfo{
 				Version:     "0.3.15",
 				Platform:    "android",
@@ -512,8 +539,8 @@ func TestParseUserAgent_Extended(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			result := parseUserAgent(tc.userAgent)
-			assert.NotNil(t, result, "parseUserAgent should not return nil")
+			result := parseClientHeader(tc.header)
+			assert.NotNil(t, result, "parseClientHeader should not return nil")
 			assert.Equal(t, tc.expected.Version, result.Version)
 			assert.Equal(t, tc.expected.Platform, result.Platform)
 			assert.Equal(t, tc.expected.Arch, result.Arch)
@@ -523,38 +550,99 @@ func TestParseUserAgent_Extended(t *testing.T) {
 	}
 }
 
-// TestParseUserAgent_Invalid 测试无效的 User-Agent 格式
-func TestParseUserAgent_Invalid(t *testing.T) {
+// TestParseClientHeader_Invalid 测试无效格式
+func TestParseClientHeader_Invalid(t *testing.T) {
 	tests := []struct {
-		name      string
-		userAgent string
+		name   string
+		header string
 	}{
 		{
-			name:      "empty string",
-			userAgent: "",
+			name:   "empty string",
+			header: "",
 		},
 		{
-			name:      "browser user agent",
-			userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+			name:   "browser user agent",
+			header: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
 		},
 		{
-			name:      "wrong app name",
-			userAgent: "other-app/1.0 (darwin; amd64)",
+			name:   "wrong app name",
+			header: "other-app/1.0 (macos; amd64)",
 		},
 		{
-			name:      "missing parentheses",
-			userAgent: "kaitu-service/1.0 darwin amd64",
+			name:   "missing parentheses",
+			header: "kaitu-service/1.0 macos amd64",
 		},
 		{
-			name:      "missing semicolon",
-			userAgent: "kaitu-service/1.0 (darwin amd64)",
+			name:   "missing semicolon",
+			header: "kaitu-service/1.0 (macos amd64)",
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			result := parseUserAgent(tc.userAgent)
-			assert.Nil(t, result, "parseUserAgent should return nil for invalid user agent")
+			result := parseClientHeader(tc.header)
+			assert.Nil(t, result, "parseClientHeader should return nil for invalid header")
 		})
 	}
+}
+
+// TestFillDeviceAppInfo 测试从 X-K2-Client header 填充设备信息
+func TestFillDeviceAppInfo(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("fills device fields from header", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request, _ = http.NewRequest("POST", "/api/auth/login", nil)
+		c.Request.Header.Set("X-K2-Client", "kaitu-service/0.4.0-beta.1 (macos; arm64)")
+
+		device := &Device{}
+		fillDeviceAppInfo(c, device)
+
+		assert.Equal(t, "0.4.0-beta.1", device.AppVersion)
+		assert.Equal(t, "macos", device.AppPlatform)
+		assert.Equal(t, "arm64", device.AppArch)
+	})
+
+	t.Run("no header leaves device fields empty", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request, _ = http.NewRequest("POST", "/api/auth/login", nil)
+
+		device := &Device{}
+		fillDeviceAppInfo(c, device)
+
+		assert.Empty(t, device.AppVersion)
+		assert.Empty(t, device.AppPlatform)
+		assert.Empty(t, device.AppArch)
+	})
+
+	t.Run("invalid header leaves device fields empty", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request, _ = http.NewRequest("POST", "/api/auth/login", nil)
+		c.Request.Header.Set("X-K2-Client", "Mozilla/5.0 invalid")
+
+		device := &Device{}
+		fillDeviceAppInfo(c, device)
+
+		assert.Empty(t, device.AppVersion)
+		assert.Empty(t, device.AppPlatform)
+	})
+
+	t.Run("extended header fills all fields", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request, _ = http.NewRequest("POST", "/api/auth/login", nil)
+		c.Request.Header.Set("X-K2-Client", "kaitu-service/0.3.15 (ios; arm64; iOS 17.4; iPhone15,2)")
+
+		device := &Device{}
+		fillDeviceAppInfo(c, device)
+
+		assert.Equal(t, "0.3.15", device.AppVersion)
+		assert.Equal(t, "ios", device.AppPlatform)
+		assert.Equal(t, "arm64", device.AppArch)
+		assert.Equal(t, "iOS 17.4", device.OSVersion)
+		assert.Equal(t, "iPhone15,2", device.DeviceModel)
+	})
 }

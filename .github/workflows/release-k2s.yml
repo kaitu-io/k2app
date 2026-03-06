@@ -1,0 +1,140 @@
+name: Release k2s
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Checkout k2 submodule
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.K2_DEPLOY_KEY }}
+
+      - name: Init k2 submodule
+        run: git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init --recursive
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: k2/go.sum
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Verify tag matches package.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag version ($TAG_VERSION) does not match package.json ($PKG_VERSION)"
+            exit 1
+          fi
+          echo "Tag and package.json version match: $TAG_VERSION"
+
+      - name: Build k2s binaries
+        run: |
+          # Determine version
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION=$(node -p "require('./package.json').version")
+          fi
+          COMMIT=$(cd k2 && git rev-parse --short HEAD)
+          LDFLAGS="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}"
+
+          echo "Building k2s v${VERSION} (${COMMIT})"
+          mkdir -p build
+
+          for pair in linux:amd64 linux:arm64 darwin:amd64 darwin:arm64; do
+            GOOS="${pair%%:*}"
+            GOARCH="${pair##*:}"
+            echo "  k2s-${GOOS}-${GOARCH}"
+            CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" \
+              go build -C k2 -ldflags "$LDFLAGS" -o "../build/k2s-${GOOS}-${GOARCH}" ./cmd/k2s
+          done
+
+          echo ""
+          echo "Generating checksums..."
+          (cd build && shasum -a 256 k2s-* > CHECKSUMS.txt)
+          cat build/CHECKSUMS.txt
+
+      - name: Upload to S3 and publish manifests
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ap-east-1
+        run: |
+          # Determine version
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION=$(node -p "require('./package.json').version")
+          fi
+
+          S3_VER="s3://d0.all7.cc/kaitu/k2/${VERSION}"
+          S3_ROOT="s3://d0.all7.cc/kaitu/k2"
+          CLOUDFRONT="https://d13jc1jqzlg4yt.cloudfront.net/kaitu/k2"
+          D0="https://d0.all7.cc/kaitu/k2"
+
+          # Channel detection: -beta suffix -> beta manifest path
+          if [[ "$VERSION" == *"-beta"* ]]; then
+            S3_MANIFEST="${S3_ROOT}/beta"
+            echo "Channel: beta"
+          else
+            S3_MANIFEST="${S3_ROOT}"
+            echo "Channel: stable"
+          fi
+
+          # Upload binaries + checksums
+          echo "Uploading k2s v${VERSION} to ${S3_VER}/"
+          aws s3 cp build/ "${S3_VER}/" --recursive \
+            --exclude "*" --include "k2s-*" --include "CHECKSUMS.txt"
+
+          # Generate manifest JSON files
+          node scripts/ci/generate-k2s-manifest.js "$VERSION" build/CHECKSUMS.txt /tmp/manifests
+
+          echo ""
+          echo "Publishing manifests to ${S3_MANIFEST}/"
+          aws s3 cp /tmp/manifests/k2s-cloudfront.latest.json "${S3_MANIFEST}/k2s-cloudfront.latest.json" \
+            --content-type "application/json"
+          aws s3 cp /tmp/manifests/k2s-d0.latest.json "${S3_MANIFEST}/k2s-d0.latest.json" \
+            --content-type "application/json"
+
+          echo ""
+          echo "Published k2s v${VERSION}"
+
+      - name: Notify Slack on build success
+        if: success()
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          ./scripts/ci/notify-slack.sh deploy-success \
+            --version "${VERSION}" \
+            --platforms "k2s"
+        env:
+          SLACK_WEBHOOK_RELEASE: ${{ secrets.SLACK_WEBHOOK_RELEASE }}
+
+      - name: Notify Slack on build failure
+        if: failure()
+        shell: bash
+        run: |
+          ./scripts/ci/notify-slack.sh build-failure \
+            --platform "k2s" \
+            --error "k2s release build failed. Check workflow run for details."
+        env:
+          SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_ALERT }}

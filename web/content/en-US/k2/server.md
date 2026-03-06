@@ -20,7 +20,7 @@ k2s is the server-side component of the k2 protocol. It is designed for **zero-c
 ## Installation
 
 ```bash
-curl -fsSL https://dl.k2.52j.me/install.sh | sudo sh -s k2s
+curl -fsSL https://kaitu.io/i/k2s | sudo sh
 ```
 
 Verify the installation:
@@ -146,10 +146,12 @@ You can change the listen port in the config file, though running on a non-stand
 Re-run the install script. The new binary will replace the old one while preserving configuration files:
 
 ```bash
-curl -fsSL https://dl.k2.52j.me/install.sh | sudo sh -s k2s
+curl -fsSL https://kaitu.io/i/k2s | sudo sh
 sudo systemctl restart k2s
 ```
 
 ---
 
-Next: [k2 Client Usage](/k2/client) to connect to your deployed server.
+Next:
+- [k2 Client Usage](/k2/client) — connect to your deployed server
+- [Port Hopping Configuration](/k2/hop-ports) — improve connection stability with UDP port hopping

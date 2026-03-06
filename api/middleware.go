@@ -18,29 +18,29 @@ import (
 	"gorm.io/gorm"
 )
 
-// AppInfo 从 User-Agent 解析出的应用信息
+// AppInfo 从 X-K2-Client header 解析出的应用信息
 type AppInfo struct {
 	Version     string // 应用版本，如 "1.0.0"
-	Platform    string // 运行平台，如 "darwin", "windows", "linux", "ios", "android"
+	Platform    string // 运行平台，如 "macos", "windows", "linux", "ios", "android"
 	Arch        string // CPU架构，如 "amd64", "arm64"
 	OSVersion   string // 系统版本，如 "14.5", "11", "23H2"
 	DeviceModel string // 设备型号，如 "MacBookPro18,1", "iPhone15,2"
 }
 
-// User-Agent 格式:
-// Legacy:   kaitu-service/{version} ({platform}; {arch})
-// Extended: kaitu-service/{version} ({platform}; {arch}; {os_name} {os_version}; {device_model})
+// X-K2-Client header 格式:
+// Basic:    kaitu-service/{version} ({platform}; {arch})
+// Extended: kaitu-service/{version} ({platform}; {arch}; {os_version}; {device_model})
 //
 // 示例:
-//   kaitu-service/1.0.0 (darwin; amd64)
-//   kaitu-service/0.3.15 (darwin; arm64; macOS 14.5; MacBookPro18,1)
+//   kaitu-service/0.4.0-beta.1 (macos; arm64)
+//   kaitu-service/0.3.15 (macos; arm64; macOS 14.5; MacBookPro18,1)
 //   kaitu-service/0.3.15 (ios; arm64; iOS 17.4; iPhone15,2)
 //   kaitu-service/0.3.15 (windows; amd64; Windows 11 23H2; Dell XPS 15)
-var userAgentRegex = regexp.MustCompile(`^kaitu-service/([^\s]+)\s*\(([^;)]+);\s*([^;)]+)(?:;\s*([^;)]+))?(?:;\s*([^)]+))?\)`)
+var clientHeaderRegex = regexp.MustCompile(`^kaitu-service/([^\s]+)\s*\(([^;)]+);\s*([^;)]+)(?:;\s*([^;)]+))?(?:;\s*([^)]+))?\)`)
 
-// parseUserAgent 解析 User-Agent 获取应用信息
-func parseUserAgent(userAgent string) *AppInfo {
-	matches := userAgentRegex.FindStringSubmatch(userAgent)
+// parseClientHeader 解析 X-K2-Client header 获取应用信息
+func parseClientHeader(header string) *AppInfo {
+	matches := clientHeaderRegex.FindStringSubmatch(header)
 	if len(matches) < 4 {
 		return nil
 	}
@@ -60,6 +60,19 @@ func parseUserAgent(userAgent string) *AppInfo {
 	}
 
 	return info
+}
+
+// fillDeviceAppInfo 从 X-K2-Client header 填充设备的应用版本信息（用于设备创建时）
+func fillDeviceAppInfo(c *gin.Context, device *Device) {
+	if clientHeader := c.GetHeader("X-K2-Client"); clientHeader != "" {
+		if appInfo := parseClientHeader(clientHeader); appInfo != nil {
+			device.AppVersion = appInfo.Version
+			device.AppPlatform = appInfo.Platform
+			device.AppArch = appInfo.Arch
+			device.OSVersion = appInfo.OSVersion
+			device.DeviceModel = appInfo.DeviceModel
+		}
+	}
 }
 
 // updateDeviceAppInfo 更新设备的应用版本信息（如果有变化）
@@ -316,10 +329,11 @@ func handleJWTAuth(c *gin.Context, token string) *authContext {
 		return nil
 	}
 
-	// 解析 User-Agent 并更新设备的应用版本信息
-	userAgent := c.GetHeader("User-Agent")
-	if appInfo := parseUserAgent(userAgent); appInfo != nil {
-		updateDeviceAppInfo(c, &device, appInfo)
+	// 解析 X-K2-Client header 并更新设备的应用版本信息
+	if clientHeader := c.GetHeader("X-K2-Client"); clientHeader != "" {
+		if appInfo := parseClientHeader(clientHeader); appInfo != nil {
+			updateDeviceAppInfo(c, &device, appInfo)
+		}
 	}
 
 	// 创建设备认证上下文
@@ -585,8 +599,8 @@ func isPrivateOrigin(origin string) bool {
 		return false
 	}
 
-	// localhost
-	if host == "localhost" {
+	// localhost and *.localhost (RFC 6761 — .localhost TLD always resolves to loopback)
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
 		return true
 	}
 
@@ -631,7 +645,7 @@ func ApiCORSMiddleware() gin.HandlerFunc {
 			c.Header("Access-Control-Allow-Origin", origin)
 			c.Header("Access-Control-Allow-Credentials", "true")
 			c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-			c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token")
+			c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token, X-K2-Client")
 			c.Header("Access-Control-Max-Age", "86400")
 		}
 
@@ -660,7 +674,7 @@ func CORSMiddleware() gin.HandlerFunc {
 		if allowedOrigins[origin] {
 			c.Header("Access-Control-Allow-Origin", origin)
 			c.Header("Access-Control-Allow-Credentials", "true")
-			c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token, Cookie")
+			c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token, X-K2-Client, Cookie")
 			c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 			c.Header("Access-Control-Max-Age", "86400") // 24 hours
 		}

@@ -11,9 +11,6 @@ permissions:
 
 jobs:
   release:
-    outputs:
-      channel: ${{ steps.channel.outputs.channel }}
-
     strategy:
       fail-fast: false
       matrix:
@@ -21,7 +18,7 @@ jobs:
           - runner: macos-latest
             target: universal-apple-darwin
             platform: macOS
-          - runner: windows-latest
+          - runner: [self-hosted, Windows]
             target: x86_64-pc-windows-msvc
             platform: Windows
 
@@ -42,15 +39,37 @@ jobs:
         run: git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init --recursive
 
       - name: Setup Node.js
+        if: matrix.platform == 'macOS'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'yarn'
 
+      - name: Setup Node.js (self-hosted)
+        if: matrix.platform == 'Windows'
+        shell: bash
+        run: |
+          NODE_VERSION=$(cat .nvmrc)
+          CURRENT=$(node -v 2>/dev/null || echo "none")
+          if [ "$CURRENT" != "v${NODE_VERSION}" ]; then
+            echo "Node $CURRENT -> v${NODE_VERSION}"
+            nvm install "$NODE_VERSION"
+          fi
+          nvm use "$NODE_VERSION"
+          NODE_DIR=$(dirname "$(which node)")
+          echo "$NODE_DIR" >> "$GITHUB_PATH"
+          # Ensure yarn is available
+          if ! command -v yarn &>/dev/null; then
+            npm install -g yarn
+          fi
+          NPM_GLOBAL=$(npm prefix -g)
+          echo "$NPM_GLOBAL" >> "$GITHUB_PATH"
+
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.24'
+          cache: ${{ matrix.platform == 'macOS' }}
           cache-dependency-path: k2/go.sum
 
       - name: Setup Rust
@@ -59,6 +78,7 @@ jobs:
           targets: ${{ matrix.platform == 'macOS' && 'aarch64-apple-darwin,x86_64-apple-darwin' || 'x86_64-pc-windows-msvc' }}
 
       - name: Cache Rust target directory
+        if: matrix.platform == 'macOS'
         uses: actions/cache@v4
         with:
           path: |
@@ -83,27 +103,6 @@ jobs:
             exit 1
           fi
           echo "Tag and package.json version match: $TAG_VERSION"
-
-      - name: Detect release channel
-        id: channel
-        shell: bash
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          if [[ "$VERSION" == *"-beta"* ]]; then
-            CHANNEL="beta"
-          else
-            CHANNEL="stable"
-          fi
-          echo "channel=${CHANNEL}" >> "$GITHUB_OUTPUT"
-          echo "Release channel: ${CHANNEL} (version: ${VERSION})"
-
-      - name: Run pre-build (Windows)
-        if: matrix.platform == 'Windows'
-        run: make pre-build
-
-      - name: Build webapp (Windows)
-        if: matrix.platform == 'Windows'
-        run: make build-webapp
 
       # --- macOS: code signing certificate import ---
 
@@ -146,109 +145,15 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: bash scripts/build-macos.sh
 
-      # --- Windows: build k2 + Tauri (NO signing — handled by kaitu-signer service) ---
+      # --- Windows: build via Makefile (same as local `make build-windows`) ---
 
-      - name: Build k2 for Windows
+      - name: Build Windows (k2 + webapp + tauri + NSIS)
         if: matrix.platform == 'Windows'
-        run: make build-k2 TARGET=x86_64-pc-windows-msvc
-        env:
-          GOARCH: amd64
-          GOOS: windows
-
-      - name: Build Tauri for Windows
-        if: matrix.platform == 'Windows'
+        shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: yarn tauri build --target x86_64-pc-windows-msvc
-        working-directory: desktop
-
-      # --- Windows: upload unsigned artifacts → trigger signing service → wait → download signed ---
-
-      - name: Upload unsigned artifacts to S3 signing queue
-        if: matrix.platform == 'Windows'
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ap-northeast-1
-        shell: bash
-        run: |
-          NSIS_DIR="desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis"
-          RUN_ID="${GITHUB_RUN_ID}"
-          S3_PENDING="s3://d0.all7.cc/kaitu/signing/pending/${RUN_ID}/"
-
-          echo "Uploading unsigned artifacts to ${S3_PENDING}"
-          aws s3 cp "${NSIS_DIR}/" "${S3_PENDING}" --recursive \
-            --exclude "*" \
-            --include "*.exe" --include "*.exe.sig"
-
-          # List uploaded files for SQS message
-          FILES=$(aws s3 ls "${S3_PENDING}" | awk '{print $4}' | grep '\.exe$' | head -5)
-          echo "Uploaded files:"
-          echo "${FILES}"
-
-          # Save file list for next step
-          echo "${FILES}" > "${RUNNER_TEMP}/signing-files.txt"
-
-      - name: Send SQS signing request
-        if: matrix.platform == 'Windows'
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ap-northeast-1
-          SQS_QUEUE_URL: ${{ secrets.SQS_SIGNING_QUEUE_URL }}
-        shell: bash
-        run: |
-          RUN_ID="${GITHUB_RUN_ID}"
-          FILES_JSON=$(cat "${RUNNER_TEMP}/signing-files.txt" | jq -R -s 'split("\n") | map(select(length > 0))')
-
-          MESSAGE=$(jq -n \
-            --arg run_id "${RUN_ID}" \
-            --arg s3_prefix "kaitu/signing/pending/${RUN_ID}/" \
-            --argjson files "${FILES_JSON}" \
-            --arg cert_name "Wordgate LLC" \
-            --arg timestamp_url "http://timestamp.sectigo.com" \
-            --arg completed_prefix "kaitu/signing/completed/${RUN_ID}/" \
-            '{run_id: $run_id, s3_prefix: $s3_prefix, files: $files, cert_name: $cert_name, timestamp_url: $timestamp_url, completed_prefix: $completed_prefix}')
-
-          echo "Sending SQS message:"
-          echo "${MESSAGE}" | jq .
-
-          aws sqs send-message \
-            --queue-url "${SQS_QUEUE_URL}" \
-            --message-body "${MESSAGE}"
-
-          echo "SQS message sent for run ${RUN_ID}"
-
-      - name: Wait for signing to complete
-        if: matrix.platform == 'Windows'
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ap-northeast-1
-        shell: bash
-        run: |
-          bash scripts/ci/wait-for-signing.sh "${GITHUB_RUN_ID}" "d0.all7.cc" 600
-
-      - name: Download signed artifacts
-        if: matrix.platform == 'Windows'
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ap-northeast-1
-        shell: bash
-        run: |
-          RUN_ID="${GITHUB_RUN_ID}"
-          S3_COMPLETED="s3://d0.all7.cc/kaitu/signing/completed/${RUN_ID}/"
-          LOCAL_SIGNED="signed-artifacts/"
-          mkdir -p "${LOCAL_SIGNED}"
-
-          echo "Downloading signed artifacts from ${S3_COMPLETED}"
-          aws s3 cp "${S3_COMPLETED}" "${LOCAL_SIGNED}" --recursive \
-            --exclude "status.json"
-
-          echo "Signed artifacts:"
-          ls -la "${LOCAL_SIGNED}"
+        run: make build-windows
 
       # --- Upload artifacts to S3 ---
 
@@ -273,17 +178,12 @@ jobs:
         run: |
           VERSION=$(node -p "require('./package.json').version")
           S3_BASE="s3://d0.all7.cc/kaitu/desktop/${VERSION}"
-
-          # Upload signed .exe files
-          aws s3 cp signed-artifacts/ "${S3_BASE}/" --recursive \
-            --exclude "*" \
-            --include "*.exe"
-
-          # Upload .exe.sig from original build (Tauri update signature, not code signature)
           NSIS_DIR="desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis"
+
+          # Upload signed .exe + .exe.sig (Tauri update signature)
           aws s3 cp "${NSIS_DIR}/" "${S3_BASE}/" --recursive \
             --exclude "*" \
-            --include "*.exe.sig"
+            --include "*.exe" --include "*.exe.sig"
 
       # --- Cleanup ---
 
@@ -313,38 +213,3 @@ jobs:
             --error "Release build failed on ${{ matrix.platform }}. Check workflow run for details."
         env:
           SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_ALERT }}
-
-  # Auto-publish beta manifest after both platform builds succeed
-  publish-beta:
-    needs: [release]
-    if: needs.release.outputs.channel == 'beta'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Publish beta manifest
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ap-east-1
-          GH_TOKEN: ${{ github.token }}
-        run: bash scripts/publish-desktop.sh
-
-      - name: Notify Slack
-        if: success()
-        shell: bash
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          ./scripts/ci/notify-slack.sh deploy-success \
-            --version "${VERSION}" \
-            --platforms "beta-manifest"
-        env:
-          SLACK_WEBHOOK_RELEASE: ${{ secrets.SLACK_WEBHOOK_RELEASE }}

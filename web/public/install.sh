@@ -158,8 +158,10 @@ main() {
         echo "k2 installer"
         echo ""
         echo "Usage:"
-        echo "  Server:  curl -fsSL https://kaitu.io/install.sh | sudo sh -s k2s"
-        echo "  Client:  curl -fsSL https://kaitu.io/install.sh | sudo sh -s k2"
+        echo "  Server:  curl -fsSL https://kaitu.io/i/k2s | sudo sh"
+        echo "  Client:  curl -fsSL https://kaitu.io/i/k2 | sudo sh"
+        echo ""
+        echo "Legacy:    curl -fsSL https://kaitu.io/install.sh | sudo sh -s k2s"
         exit 1
     fi
 
@@ -179,14 +181,11 @@ main() {
     echo ""
     echo "Installed ${NAME} to ${INSTALL_DIR}/${NAME}"
     echo ""
-    if [ "$NAME" = "k2s" ]; then
-        echo "Next: start server and get connection URI"
-        echo "  sudo k2s setup"
-    else
+    if [ "$NAME" = "k2" ]; then
         echo "Next: connect to server"
         echo "  sudo k2 setup <k2v5://URI>"
+        echo ""
     fi
-    echo ""
 }
 
 main "$@"

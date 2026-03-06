@@ -85,7 +85,8 @@ export default function MemberSelection({
         const allMemberUUIDs = memberList.map((member: { uuid: string }) => member.uuid);
         onSelectionChange(selectedForMyself, allMemberUUIDs);
       } else {
-        showAlert(message || t('purchase:memberSelection.getMembersFailed'), "error");
+        console.warn('[MemberSelection] Fetch members failed, code:', code, 'msg:', message);
+        showAlert(t('purchase:memberSelection.getMembersFailed'), "error");
       }
     } catch (error) {
       console.error(`Failed to fetch members: ${error}`);
@@ -130,10 +131,12 @@ export default function MemberSelection({
         showAlert(t('purchase:memberSelection.addMemberSuccess'), "success");
       } else if (code === ErrorInvalidArgument) {
         // 422 error: email already in use
-        showAlert(message || t('purchase:memberSelection.emailAlreadyInUse'), "error");
+        console.warn('[MemberSelection] Add member 422:', message);
+        showAlert(t('purchase:memberSelection.emailAlreadyInUse'), "error");
         // Keep dialog open so user can modify email
       } else {
-        showAlert(message || t('purchase:memberSelection.addMemberFailed'), "error");
+        console.warn('[MemberSelection] Add member failed, code:', code, 'msg:', message);
+        showAlert(t('purchase:memberSelection.addMemberFailed'), "error");
       }
     } catch (error) {
       console.error(`Failed to add member: ${error}`);

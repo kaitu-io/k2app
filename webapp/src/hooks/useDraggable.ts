@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, type RefCallback } from 'react';
 
 interface DraggablePosition {
   x: number;
@@ -22,7 +22,7 @@ interface UseDraggableReturn {
   position: DraggablePosition;
   isDragging: boolean;
   bindDrag: { onPointerDown: (e: React.PointerEvent) => void };
-  elementRef: React.RefObject<HTMLElement | null>;
+  elementRef: RefCallback<HTMLElement>;
 }
 
 const DESIGN_WIDTH = 430;
@@ -79,7 +79,13 @@ export function useDraggable(options: UseDraggableOptions): UseDraggableReturn {
     bottomClearance = DEFAULT_BOTTOM_CLEARANCE,
   } = options;
 
-  const elementRef = useRef<HTMLElement | null>(null);
+  // Callback ref + state: Portal defers child mounting to a second render.
+  // A plain useRef would be null when the initial useEffect runs, and since
+  // refs don't trigger re-renders the effect would never re-run.
+  const [element, setElement] = useState<HTMLElement | null>(null);
+  const elementRef: RefCallback<HTMLElement> = useCallback((node) => {
+    setElement(node);
+  }, []);
   const isDraggingRef = useRef(false);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -123,21 +129,11 @@ export function useDraggable(options: UseDraggableOptions): UseDraggableReturn {
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     if (e.button !== 0) return; // left button only
-    const el = elementRef.current;
-    if (!el) return;
-
-    console.info('[Drag] pointerdown', {
-      pointerId: e.pointerId,
-      hasMoveRef: !!onPointerMoveRef.current,
-      hasUpRef: !!onPointerUpRef.current,
-      bodyScale: getBodyScale(),
-      pos: `${position.x},${position.y}`,
-      windowSize: `${window.innerWidth}x${window.innerHeight}`,
-    });
+    if (!element) return;
 
     // Capture pointer to prevent browser native drag (pointercancel on SVG icon).
     // We do NOT rely on capture for event routing — document listeners handle that.
-    try { el.setPointerCapture(e.pointerId); } catch { /* ignore if capture fails */ }
+    try { element.setPointerCapture(e.pointerId); } catch { /* ignore if capture fails */ }
 
     const scale = getBodyScale();
     const ds = dragState.current;
@@ -152,7 +148,7 @@ export function useDraggable(options: UseDraggableOptions): UseDraggableReturn {
     ds.pointerId = e.pointerId;
 
     // Remove transition for instant position updates during drag
-    el.style.transition = 'none';
+    element.style.transition = 'none';
 
     // Attach document-level listeners (immune to MUI ripple releasing pointer capture)
     if (onPointerMoveRef.current) document.addEventListener('pointermove', onPointerMoveRef.current);
@@ -160,18 +156,16 @@ export function useDraggable(options: UseDraggableOptions): UseDraggableReturn {
       document.addEventListener('pointerup', onPointerUpRef.current);
       document.addEventListener('pointercancel', onPointerUpRef.current);
     }
-  }, [position]);
+  }, [element, position]);
 
-  // Define pointer move/up handlers in refs (attached to document during drag)
+  // Define pointer move/up handlers in refs (attached to document during drag).
+  // `element` (from callback ref) is a dependency so this re-runs when Portal mounts the child.
   useEffect(() => {
-    const el = elementRef.current;
-    console.info('[Drag] useEffect init', { hasEl: !!el, tagName: el?.tagName });
-    if (!el) return;
+    if (!element) return;
 
     onPointerMoveRef.current = (e: PointerEvent) => {
       const ds = dragState.current;
       if (ds.pointerId === -1 || e.pointerId !== ds.pointerId) return;
-      if (ds.totalMovement === 0) console.info('[Drag] first pointermove', { pointerId: e.pointerId, clientX: e.clientX, clientY: e.clientY });
 
       const scale = getBodyScale();
       const logicalX = e.clientX / scale;
@@ -194,14 +188,13 @@ export function useDraggable(options: UseDraggableOptions): UseDraggableReturn {
 
       if (ds.rafId) cancelAnimationFrame(ds.rafId);
       ds.rafId = requestAnimationFrame(() => {
-        el.style.left = `${ds.currentX}px`;
-        el.style.top = `${ds.currentY}px`;
+        element.style.left = `${ds.currentX}px`;
+        element.style.top = `${ds.currentY}px`;
       });
     };
 
     onPointerUpRef.current = (e: PointerEvent) => {
       const ds = dragState.current;
-      console.info(`[Drag] ${e.type}`, { pointerId: e.pointerId, totalMovement: ds.totalMovement, threshold: dragThreshold });
       if (ds.pointerId === -1) return;
       if (e.pointerId !== ds.pointerId) return;
 
@@ -234,8 +227,8 @@ export function useDraggable(options: UseDraggableOptions): UseDraggableReturn {
       const snapY = ds.currentY;
 
       // Animate snap
-      el.style.transition = `left ${SNAP_DURATION}ms cubic-bezier(0.25, 0.8, 0.25, 1)`;
-      el.style.left = `${snapX}px`;
+      element.style.transition = `left ${SNAP_DURATION}ms cubic-bezier(0.25, 0.8, 0.25, 1)`;
+      element.style.left = `${snapX}px`;
 
       const newPos = { x: snapX, y: snapY, side };
       setPosition(newPos);
@@ -248,28 +241,17 @@ export function useDraggable(options: UseDraggableOptions): UseDraggableReturn {
       }, SNAP_DURATION);
     };
 
-    // iOS belt-and-suspenders: prevent scroll during drag
+    // iOS: prevent scroll during drag
     const onTouchMove = (e: TouchEvent) => {
       if (isDraggingRef.current) {
         e.preventDefault();
       }
     };
 
-    el.addEventListener('touchmove', onTouchMove, { passive: false });
-
-    // DEBUG: global probe — logs if document receives ANY pointermove while our drag is active
-    let moveProbeCount = 0;
-    const moveProbe = (e: PointerEvent) => {
-      if (dragState.current.pointerId !== -1 && e.pointerId === dragState.current.pointerId) {
-        moveProbeCount++;
-        if (moveProbeCount <= 3) console.info('[Drag] probe: document received pointermove', { count: moveProbeCount });
-      }
-    };
-    document.addEventListener('pointermove', moveProbe, { capture: true });
+    element.addEventListener('touchmove', onTouchMove, { passive: false });
 
     return () => {
-      document.removeEventListener('pointermove', moveProbe, { capture: true });
-      el.removeEventListener('touchmove', onTouchMove);
+      element.removeEventListener('touchmove', onTouchMove);
       // Safety cleanup for document listeners (e.g. unmount during drag)
       if (onPointerMoveRef.current) document.removeEventListener('pointermove', onPointerMoveRef.current);
       if (onPointerUpRef.current) {
@@ -277,7 +259,7 @@ export function useDraggable(options: UseDraggableOptions): UseDraggableReturn {
         document.removeEventListener('pointercancel', onPointerUpRef.current);
       }
     };
-  }, [clampY, dragThreshold, edgeMargin, elementSize, sidebarWidth, storageKey]);
+  }, [element, clampY, dragThreshold, edgeMargin, elementSize, sidebarWidth, storageKey]);
 
   // Re-clamp on resize / orientation change
   useEffect(() => {

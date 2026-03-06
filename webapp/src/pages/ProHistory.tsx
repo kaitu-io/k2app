@@ -59,7 +59,8 @@ export default function ProHistory() {
           setPagination(data.pagination);
         }
       } else {
-        showAlert(message || t('account:proHistory.fetchFailed'), 'error');
+        console.warn('[ProHistory] Fetch failed, code:', code, 'msg:', message);
+        showAlert(t('account:proHistory.fetchFailed'), 'error');
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);

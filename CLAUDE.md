@@ -75,7 +75,7 @@ webapp/              React + MUI frontend (see webapp/CLAUDE.md)
   src/services/      Cloud API (cloudApi, k2api), auth, caching, platform fallbacks
   src/core/          K2 VPN bridge (getK2, waitForK2, polling)
   src/types/         Core interfaces (IK2Vpn, IPlatform, ISecureStorage)
-  src/stores/        Zustand state (vpn, auth, alert, layout, dashboard, login-dialog)
+  src/stores/        Zustand state (vpn-machine, connection, config, auth, alert, layout, dashboard, login-dialog, self-hosted, onboarding)
   src/pages/         Route pages (Dashboard, Purchase, Invite, Account, 15+ sub-pages)
   src/components/    Shared UI (LoginDialog, AuthGate, guards, global components)
   src/utils/         Error handling, version compare, tunnel sorting
@@ -99,6 +99,8 @@ docker/scripts/      Node ops scripts (provision-node.sh, enable-ipv6.sh, etc.)
 .claude/skills/      Skill files for Claude Code (kaitu-node-ops.md — node ops safety guardrails)
 .github/workflows/   CI (push/PR) + Release Desktop (v* tags) + Release OpenWrt
 Makefile             Build orchestration — version from package.json, k2 from submodule
+docs/plans/          Architecture design docs
+  2026-03-05-k2-router-platform-design.md  Router platform: rule engine, k2subs, DNS, build trim
 ```
 
 ## Key Conventions
@@ -114,7 +116,8 @@ Makefile             Build orchestration — version from package.json, k2 from 
 - **Webapp subagent tasks**: Always invoke `/word9f-frontend` for frontend decisions.
 - **Go→JS JSON key convention**: Go `json.Marshal` outputs snake_case. JS/TS expects camelCase. Native bridge layers (K2Plugin.swift/kt) must remap at boundary.
 - **Bridge transformStatus() mandatory**: Every bridge (`tauri-k2.ts`, `capacitor-k2.ts`) must implement `transformStatus()`. No pass-through of raw backend state. Daemon outputs `"stopped"` but webapp expects `"disconnected"`. Error synthesis (`disconnected + error → "error"`) also happens in bridge.
-- **VPN state contract**: `reconnecting` is a transient engine signal (engine state stays `connected`). `disconnecting` is UI-only optimistic state. `error` is synthesized by bridge from `disconnected + lastError`.
+- **VPN state machine**: `vpn-machine.store.ts` defines 7 explicit states (`idle`, `connecting`, `connected`, `reconnecting`, `disconnecting`, `error`, `serviceDown`) with a transition table. All state changes go through `dispatch(event, payload)`. No optimistic timeouts — state persists until a backend event changes it. `serviceDown` is an explicit state with immediate recovery via `SERVICE_REACHABLE`.
+- **VPN state contract**: `reconnecting` is a transient engine signal (engine state stays `connected`). `error` is synthesized by bridge `transformStatus()` from `disconnected + lastError`.
 - **`.gitignore` for native platforms**: Never ignore entire source directories (`mobile/ios/`, `mobile/android/`). Only ignore build artifacts.
 - **NodeNext imports**: `tools/kaitu-ops-mcp/` uses `"module": "NodeNext"`. All relative imports must use `.js` extension in `.ts` source.
 - **Lazy wire connection**: `engine.Start()` "connected" means TUN+routes are ready. Wire handshake to server happens on first app dial.
@@ -157,6 +160,7 @@ Makefile             Build orchestration — version from package.json, k2 from 
 webapp/CLAUDE.md                    Frontend: split globals, services, stores, i18n, components
 web/CLAUDE.md                       Website: Next.js pages, admin dashboard, API proxy
 desktop/CLAUDE.md                   Tauri shell, Rust modules, config
+mobile/CLAUDE.md                    Capacitor mobile, K2Plugin, iOS/Android VPN architecture
 api/CLAUDE.md                       Center API: routes, middleware, models, workers, cloudprovider
 k2/CLAUDE.md                        Go core architecture, wire protocol, daemon API
 ```
@@ -179,4 +183,18 @@ k2/docs/knowledge/                  Go core patterns (5 files)
 k2/docs/contracts/                  API contracts
   webapp-daemon-api.md              Daemon HTTP API (POST /api/core actions, CORS, states)
 k2/docs/todos/                      k2 backlog (p0/p1/p2 priority)
+```
+
+### Design Plans
+
+```
+docs/plans/
+  2026-03-04-budget-score.md              Budget score feature
+  2026-03-04-invite-page-redesign.md      Invite page redesign
+  2026-03-04-onboarding-guide-design.md   Onboarding guide
+  2026-03-05-k2-router-platform-design.md Router platform: rule engine, k2subs, DNS, build trim
+  2026-03-05-self-hosted-design.md        Self-hosted tunnel support
+  2026-03-06-webapp-architecture-refactor.md  VPN state machine + connection store refactoring
+  2026-03-06-usage-analytics-design.md    Usage analytics design
+  2026-03-06-usage-analytics-impl.md      Usage analytics implementation plan
 ```

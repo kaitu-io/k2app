@@ -1,15 +1,8 @@
 ; Kaitu Desktop - NSIS Installer Hooks
 ; Windows service lifecycle management for Tauri application
 ;
-; Service lifecycle split strategy:
-;   sc stop/start              — used directly in NSIS for precise lifecycle control
-;   sc failure/query/qc        — used for configuration and verification
-;   k2.exe service install     — sc create + sc start (k2 handles binPath + displayName)
-;   k2.exe service uninstall   — sc delete (+ idempotent sc stop)
-;
-; WHY: k2.exe service uninstall does sc stop + sc delete atomically. The SCM may
-; kill the process before VPN routes/DNS are restored. Splitting stop (NSIS sc stop)
-; from uninstall (k2.exe service uninstall) gives the engine 10s of protected cleanup.
+; CRITICAL: PREINSTALL must fully stop k2.exe process and release file lock
+; before NSIS copies new files. Diagnostic log: $TEMP\kaitu-preinstall.log
 
 ; ============================================================================
 ; Configuration - Replace these values as needed
@@ -52,60 +45,163 @@
 ; ============================================================================
 ; NSIS_HOOK_PREINSTALL - Pre-installation Cleanup
 ; ============================================================================
-; Runs before copying files
-; Stops existing service and cleans up old installation
+; Runs before copying files. Diagnostic version — writes to $TEMP\kaitu-preinstall.log
 !macro NSIS_HOOK_PREINSTALL
   DetailPrint "============================================"
   DetailPrint "Preparing for installation..."
   DetailPrint "============================================"
 
-  ; Step 1: Stop desktop application (release file handles)
+  ; === Diagnostic log: capture state at each step ===
+  FileOpen $9 "$TEMP\kaitu-preinstall.log" w
+  FileWrite $9 "=== PREINSTALL started ===$\r$\n"
+  FileWrite $9 "INSTDIR=$INSTDIR$\r$\n"
+  FileClose $9
+
+  ; Step 1: Check initial state
+  DetailPrint "Checking initial state..."
+  nsExec::ExecToStack 'sc query ${SERVICE_NAME}'
+  Pop $0
+  Pop $1
+  FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileWrite $9 "[1] sc query ${SERVICE_NAME}: exit=$0 output=$1$\r$\n"
+  FileClose $9
+
+  nsExec::ExecToStack 'tasklist /FI "IMAGENAME eq k2.exe" /NH'
+  Pop $0
+  Pop $1
+  FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileWrite $9 "[1] tasklist k2.exe: exit=$0 output=$1$\r$\n"
+  FileClose $9
+
+  ; Step 2: Stop desktop application
   DetailPrint "Stopping desktop application..."
   nsExec::ExecToStack 'taskkill /F /IM "${MAINBINARYNAME}.exe" /T'
   Pop $0
   Pop $1
 
-  ; Step 2: Wait for file handles to be released
-  DetailPrint "Waiting for file handles (3 seconds)..."
-  Sleep 3000
-
-  ; Step 3: Send stop signal — service stays registered with SCM
-  ; This triggers engine.Stop() → VPN teardown → routes/DNS restoration
-  DetailPrint "Stopping service (VPN cleanup)..."
-  nsExec::ExecToStack 'sc stop ${SERVICE_NAME}'
+  ; Step 3: Disable SCM recovery (prevent auto-restart on crash)
+  DetailPrint "Disabling service recovery..."
+  nsExec::ExecToStack 'sc failure ${SERVICE_NAME} reset= 0 actions= ///  '
   Pop $0
   Pop $1
-  DetailPrint "Service stop result: $0"
+  FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileWrite $9 "[3] sc failure ${SERVICE_NAME}: exit=$0 output=$1$\r$\n"
+  FileClose $9
 
-  ; Step 4: Wait for VPN cleanup to complete
-  ; Service is still registered, so SCM won't kill it during cleanup
-  DetailPrint "Waiting for VPN cleanup (10 seconds)..."
-  Sleep 10000
-
-  ; Step 5: Deregister service (VPN already cleaned up, safe to delete)
-  DetailPrint "Uninstalling service..."
-  nsExec::ExecToStack '"$INSTDIR\${SERVICE_EXE}" service uninstall'
+  ; Step 4: Stop service SYNCHRONOUSLY — net stop waits for full stop
+  ; (sc stop is async and returns immediately, net stop blocks until stopped)
+  DetailPrint "Stopping kaitu service (synchronous)..."
+  nsExec::ExecToStack 'net stop ${SERVICE_NAME}'
   Pop $0
   Pop $1
-  DetailPrint "Service uninstall result: $0"
+  DetailPrint "net stop ${SERVICE_NAME}: exit=$0"
+  FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileWrite $9 "[4] net stop ${SERVICE_NAME}: exit=$0 output=$1$\r$\n"
+  FileClose $9
 
-  ; Step 6: Wait for deregistration to complete
-  Sleep 2000
+  nsExec::ExecToStack 'net stop k2'
+  Pop $0
+  Pop $1
+  nsExec::ExecToStack 'net stop kaitu-service'
+  Pop $0
+  Pop $1
 
-  ; Step 7: Force kill any remaining processes (safety net)
-  DetailPrint "Cleaning up processes..."
+  ; Step 5: Check state after net stop
+  nsExec::ExecToStack 'sc query ${SERVICE_NAME}'
+  Pop $0
+  Pop $1
+  FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileWrite $9 "[5] sc query after net stop: exit=$0 output=$1$\r$\n"
+  FileClose $9
+
+  nsExec::ExecToStack 'tasklist /FI "IMAGENAME eq k2.exe" /NH'
+  Pop $0
+  Pop $1
+  FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileWrite $9 "[5] tasklist after net stop: exit=$0 output=$1$\r$\n"
+  FileClose $9
+
+  ; Step 6: Delete service records (prevent any restart)
+  DetailPrint "Deleting service records..."
+  nsExec::ExecToStack 'sc delete ${SERVICE_NAME}'
+  Pop $0
+  Pop $1
+  FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileWrite $9 "[6] sc delete ${SERVICE_NAME}: exit=$0 output=$1$\r$\n"
+  FileClose $9
+
+  nsExec::ExecToStack 'sc delete k2'
+  Pop $0
+  Pop $1
+  nsExec::ExecToStack 'sc delete kaitu-service'
+  Pop $0
+  Pop $1
+
+  ; Step 7: Force kill any remaining processes
+  DetailPrint "Force killing processes..."
   nsExec::ExecToStack 'taskkill /F /IM "k2.exe" /T'
   Pop $0
   Pop $1
-  Sleep 1000
+  FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileWrite $9 "[7] taskkill /F k2.exe: exit=$0 output=$1$\r$\n"
+  FileClose $9
 
-  ; Step 8: Delete old files to ensure clean install
+  nsExec::ExecToStack 'taskkill /F /IM "kaitu-service.exe" /T'
+  Pop $0
+  Pop $1
+
+  ; Step 8: Wait for process exit + file handle release
+  DetailPrint "Waiting for file handles (5 seconds)..."
+  Sleep 5000
+
+  ; Step 9: Verify process is gone
+  nsExec::ExecToStack 'tasklist /FI "IMAGENAME eq k2.exe" /NH'
+  Pop $0
+  Pop $1
+  FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileWrite $9 "[9] tasklist after kill+wait: exit=$0 output=$1$\r$\n"
+  FileClose $9
+
+  ; If still running, try kill again and wait more
+  nsExec::ExecToStack 'taskkill /F /IM "k2.exe"'
+  Pop $0
+  Pop $1
+  FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileWrite $9 "[9] retry taskkill: exit=$0$\r$\n"
+  FileClose $9
+  Sleep 3000
+
+  ; Step 10: Delete old files
   DetailPrint "Removing old files..."
   Delete "$INSTDIR\${MAINBINARYNAME}.exe"
   Delete "$INSTDIR\k2.exe"
+  Delete "$INSTDIR\kaitu-service.exe"
   Delete "$INSTDIR\wintun.dll"
   Delete "$INSTDIR\*.log"
   RMDir /r "$INSTDIR\_app"
+
+  ; Step 11: Verify k2.exe file is deletable
+  IfFileExists "$INSTDIR\k2.exe" 0 _pre_k2_gone
+    FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+    FileWrite $9 "[11] k2.exe STILL EXISTS after Delete — file is LOCKED$\r$\n"
+    FileClose $9
+    DetailPrint "WARNING: k2.exe still locked!"
+    ; Last resort: try again
+    nsExec::ExecToStack 'taskkill /F /IM "k2.exe"'
+    Pop $0
+    Pop $1
+    Sleep 3000
+    Delete "$INSTDIR\k2.exe"
+    Goto _pre_k2_check_done
+  _pre_k2_gone:
+    FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+    FileWrite $9 "[11] k2.exe deleted OK$\r$\n"
+    FileClose $9
+  _pre_k2_check_done:
+
+  FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileWrite $9 "=== PREINSTALL completed ===$\r$\n"
+  FileClose $9
 
   DetailPrint "============================================"
   DetailPrint "Cleanup completed"
@@ -116,45 +212,51 @@
 ; NSIS_HOOK_POSTINSTALL - Post-installation Setup
 ; ============================================================================
 ; Runs after all files are installed
-; Installs service, configures recovery, verifies configuration
+; Installs service (idempotent), verifies configuration
 !macro NSIS_HOOK_POSTINSTALL
   DetailPrint "============================================"
   DetailPrint "Configuring service..."
   DetailPrint "============================================"
 
-  ; Step 1: Install and start service
-  DetailPrint "Installing and starting ${SERVICE_NAME} service..."
+  ; Diagnostic: verify binary was written successfully
+  DetailPrint "Binary path: $INSTDIR\${SERVICE_EXE}"
+  IfFileExists "$INSTDIR\${SERVICE_EXE}" 0 _post_binary_missing
+    DetailPrint "Binary exists: YES"
+    Goto _post_binary_check_done
+  _post_binary_missing:
+    DetailPrint "Binary exists: NO — CRITICAL"
+  _post_binary_check_done:
+
+  ; Step 1: Install and start service (idempotent — handles legacy cleanup + recovery config)
+  DetailPrint "Installing ${SERVICE_NAME} service..."
   nsExec::ExecToStack '"$INSTDIR\${SERVICE_EXE}" service install'
   Pop $0
   Pop $1
-  DetailPrint "Service up result: $0"
-  Sleep 2000
+  DetailPrint "Service install exit=$0"
+  DetailPrint "Service install output=$1"
 
-  ; Step 2: Configure service recovery options (Keepalive)
-  ; - reset=86400: Reset failure count after 24 hours (86400 seconds)
-  ; - actions: restart/5000 = restart after 5 seconds
-  ;   (first failure, second failure, subsequent failures)
-  DetailPrint "Configuring service recovery (keepalive)..."
-  nsExec::ExecToStack 'sc failure ${SERVICE_NAME} reset= 86400 actions= restart/5000/restart/5000/restart/5000'
-  Pop $0
-  Pop $1
-  DetailPrint "Recovery config result: $0"
+  ; Write diagnostic file to install directory (persists after install)
+  FileOpen $9 "$INSTDIR\install-diag.log" w
+  FileWrite $9 "service_install_exit=$0$\r$\n"
+  FileWrite $9 "service_install_output=$1$\r$\n"
+  FileClose $9
 
-  ; Step 3: Verify service configuration (binPath, start type)
-  DetailPrint "Verifying service configuration..."
-  nsExec::ExecToStack 'sc qc ${SERVICE_NAME}'
-  Pop $0
-  Pop $1
-  DetailPrint "$1"
+  Sleep 3000
 
-  ; Step 4: Verify service is running
+  ; Step 2: Verify service is running
   DetailPrint "Verifying service status..."
   nsExec::ExecToStack 'sc query ${SERVICE_NAME}'
   Pop $0
   Pop $1
-  DetailPrint "$1"
+  DetailPrint "Service query exit=$0"
 
-  ; Step 5: Create taskbar shortcut
+  ; Append verification to diagnostic file
+  FileOpen $9 "$INSTDIR\install-diag.log" a
+  FileWrite $9 "post_install_sc_query_exit=$0$\r$\n"
+  FileWrite $9 "post_install_sc_query_output=$1$\r$\n"
+  FileClose $9
+
+  ; Step 3: Create taskbar shortcut
   DetailPrint "Creating taskbar shortcut..."
   ReadRegStr $0 HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders" "User Pinned"
   ${If} $0 != ""
@@ -165,7 +267,7 @@
     CreateShortCut "$0\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe" "" "$INSTDIR\${MAINBINARYNAME}.exe" 0
   ${EndIf}
 
-  ; Step 6: Clear Windows PCA records (prevents forced admin elevation)
+  ; Step 4: Clear Windows PCA records (prevents forced admin elevation)
   DetailPrint "Clearing compatibility records..."
   nsExec::ExecToStack 'reg delete "HKCU\Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Compatibility Assistant\Store" /v "$INSTDIR\${MAINBINARYNAME}.exe" /f'
   Pop $0
@@ -180,9 +282,9 @@
   Pop $0
   Pop $1
 
-  ; Step 7: Launch desktop application
+  ; Step 5: Launch desktop application (as non-elevated user)
   DetailPrint "Starting application..."
-  Exec '"$INSTDIR\${MAINBINARYNAME}.exe"'
+  nsis_tauri_utils::RunAsUser "$INSTDIR\${MAINBINARYNAME}.exe" ""
 
   DetailPrint "============================================"
   DetailPrint "Installation completed"
@@ -193,7 +295,6 @@
 ; NSIS_HOOK_PREUNINSTALL - Pre-uninstallation Cleanup
 ; ============================================================================
 ; Runs before removing files during uninstallation
-; Splits stop (VPN cleanup) from uninstall (deregistration) for safe teardown
 !macro NSIS_HOOK_PREUNINSTALL
   DetailPrint "============================================"
   DetailPrint "Preparing for uninstallation..."
@@ -205,48 +306,53 @@
   Pop $0
   Pop $1
 
-  ; Step 2: Wait for file handles
-  DetailPrint "Waiting for file handles (3 seconds)..."
-  Sleep 3000
-
-  ; Step 3: Send stop signal — service stays registered with SCM
-  DetailPrint "Stopping service (VPN cleanup)..."
-  nsExec::ExecToStack 'sc stop ${SERVICE_NAME}'
+  ; Step 2: Disable recovery + stop service synchronously
+  DetailPrint "Stopping services..."
+  nsExec::ExecToStack 'sc failure ${SERVICE_NAME} reset= 0 actions= ///  '
   Pop $0
   Pop $1
-  DetailPrint "Service stop result: $0"
-
-  ; Step 4: Wait for VPN cleanup (routes/DNS restoration)
-  DetailPrint "Waiting for VPN cleanup (10 seconds)..."
-  Sleep 10000
-
-  ; Step 5: Deregister service (VPN already cleaned up)
-  DetailPrint "Uninstalling service..."
-  nsExec::ExecToStack '"$INSTDIR\${SERVICE_EXE}" service uninstall'
+  nsExec::ExecToStack 'net stop ${SERVICE_NAME}'
   Pop $0
   Pop $1
-  DetailPrint "Service uninstall result: $0"
+  nsExec::ExecToStack 'net stop k2'
+  Pop $0
+  Pop $1
+  nsExec::ExecToStack 'net stop kaitu-service'
+  Pop $0
+  Pop $1
 
-  ; Step 6: Wait for deregistration to complete
-  Sleep 2000
+  ; Step 3: Delete service records
+  DetailPrint "Deleting service records..."
+  nsExec::ExecToStack 'sc delete ${SERVICE_NAME}'
+  Pop $0
+  Pop $1
+  nsExec::ExecToStack 'sc delete k2'
+  Pop $0
+  Pop $1
+  nsExec::ExecToStack 'sc delete kaitu-service'
+  Pop $0
+  Pop $1
 
-  ; Step 7: Force kill any remaining processes (safety net)
+  ; Step 4: Force kill remaining processes
   DetailPrint "Cleaning up processes..."
   nsExec::ExecToStack 'taskkill /F /IM "k2.exe" /T'
   Pop $0
   Pop $1
-  Sleep 1000
+  nsExec::ExecToStack 'taskkill /F /IM "kaitu-service.exe" /T'
+  Pop $0
+  Pop $1
 
-  ; Step 8: Remove shortcuts
+  ; Step 5: Wait for file handles
+  DetailPrint "Waiting for file handles (5 seconds)..."
+  Sleep 5000
+
+  ; Step 6: Remove shortcuts
   DetailPrint "Removing shortcuts..."
-  ; Desktop shortcut (current user)
   Delete "$DESKTOP\${PRODUCTNAME}.lnk"
-  ; Desktop shortcut (all users)
   SetShellVarContext all
   Delete "$DESKTOP\${PRODUCTNAME}.lnk"
   SetShellVarContext current
 
-  ; Taskbar shortcut
   ReadRegStr $0 HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders" "User Pinned"
   ${If} $0 != ""
     Delete "$0\TaskBar\${PRODUCTNAME}.lnk"

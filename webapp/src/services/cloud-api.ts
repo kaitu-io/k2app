@@ -16,6 +16,17 @@ import { useAuthStore } from '../stores/auth.store';
 import { resolveEntry } from './antiblock';
 import { cacheStore } from './cache-store';
 
+/**
+ * Build X-K2-Client header from window._platform for device version tracking.
+ * Format: kaitu-service/{version} ({platform}; {arch})
+ */
+function buildClientHeader(): string | null {
+  const p = window._platform;
+  if (!p?.version || !p?.os) return null;
+  const arch = p.arch || 'unknown';
+  return `kaitu-service/${p.version} (${p.os}; ${arch})`;
+}
+
 /** Auth paths where tokens should be auto-saved on success */
 const AUTH_TOKEN_PATHS = ['/api/auth/login', '/api/auth/register', '/api/auth/refresh'];
 
@@ -55,6 +66,11 @@ export const cloudApi = {
       };
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
+      }
+      // Attach client info for device version tracking
+      const clientHeader = buildClientHeader();
+      if (clientHeader) {
+        headers['X-K2-Client'] = clientHeader;
       }
 
       // 3. Build fetch options with timeout.
@@ -103,8 +119,9 @@ export const cloudApi = {
         console.error('[CloudAPI] timeout (15s):', method, path);
         return { code: -1, message: 'Request timeout' };
       }
+      // Log raw error for debugging, but return generic message to prevent domain leakage
       console.error('[CloudAPI] network error:', method, path, (error as Error).message || error);
-      return { code: -1, message: (error as Error).message || 'Network error' };
+      return { code: -1, message: 'Network error' };
     }
   },
 
@@ -196,9 +213,14 @@ export const cloudApi = {
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 15000);
+      const refreshHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+      const clientHeader = buildClientHeader();
+      if (clientHeader) {
+        refreshHeaders['X-K2-Client'] = clientHeader;
+      }
       const refreshResponse = await fetch(entry + '/api/auth/refresh', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: refreshHeaders,
         body: JSON.stringify({ refreshToken }),
         signal: controller.signal,
       });

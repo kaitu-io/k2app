@@ -329,13 +329,9 @@ export default async function Home({
             <div className="p-6 text-sm space-y-2" style={{ fontFamily: 'var(--font-mono), monospace' }}>
               <div>
                 <span style={{ color: 'hsl(var(--muted-foreground))' }}>$ </span>
-                <span style={{ color: 'var(--primary)' }}>curl -fsSL https://kaitu.io/install.sh | sudo sh -s k2s</span>
+                <span style={{ color: 'var(--primary)' }}>curl -fsSL https://kaitu.io/i/k2s | sudo sh</span>
               </div>
               <div style={{ color: 'hsl(var(--muted-foreground))' }}>Installing k2s...</div>
-              <div>
-                <span style={{ color: 'hsl(var(--muted-foreground))' }}>$ </span>
-                <span style={{ color: 'var(--primary)' }}>k2s run</span>
-              </div>
               <div style={{ color: 'var(--secondary)' }}>[k2s] ECH stealth tunnel started on :443</div>
               <div style={{ color: 'var(--secondary)' }}>[k2s] Connection URI:</div>
               <div className="break-all" style={{ color: 'var(--primary)' }}>k2v5://Zt8x...@your-server:443</div>

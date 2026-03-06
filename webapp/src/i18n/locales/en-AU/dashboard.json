@@ -102,6 +102,7 @@
       "title": "Login to Get Nodes",
       "description": "Login to get cloud nodes and enjoy more stable service."
     },
+    "unlockCloudNodes": "Login to unlock global nodes",
     "loginBanner": {
       "message": "Login to unlock more cloud nodes",
       "viewPlans": "View Plans"
@@ -193,5 +194,22 @@
     "unlimited": "Unlimited",
     "no": "×",
     "yes": "✓"
+  },
+  "selfHosted": {
+    "inputLabel": "Connection URI",
+    "inputPlaceholder": "Paste k2v5:// connection URI",
+    "save": "Save",
+    "saved": "Saved",
+    "invalidUri": "Please enter a valid k2v5:// URI",
+    "invalidUriNoAuth": "URI missing credentials (requires username:token@)",
+    "tag": "Self-hosted",
+    "manageNode": "Manage node",
+    "deployGuide": "No server yet? One-click deploy",
+    "deployGuideDoc": "Full docs",
+    "copyCommand": "Copy",
+    "copied": "Copied",
+    "upgradeTitle": "Want more nodes?",
+    "upgradeDescription": "Log in to access global cloud nodes, ready to use",
+    "upgradeCta": "Free trial"
   }
 }

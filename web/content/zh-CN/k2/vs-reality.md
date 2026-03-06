@@ -178,12 +178,12 @@ k2 搭载 [k2arc](/k2/protocol)，并以 QUIC/H3 作为主传输协议。
 
 ```bash
 # 服务端
-curl -fsSL https://kaitu.io/install.sh | sudo sh -s k2s
+curl -fsSL https://kaitu.io/i/k2s | sudo sh
 sudo k2s run
 # 输出即用的连接 URL
 
 # 客户端
-curl -fsSL https://kaitu.io/install.sh | sudo sh -s k2
+curl -fsSL https://kaitu.io/i/k2 | sudo sh
 sudo k2 up k2v5://USERNAME:PASSWORD@SERVER:443?ech=...&pin=...
 ```
 

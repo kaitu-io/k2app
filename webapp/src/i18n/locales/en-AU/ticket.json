@@ -9,6 +9,7 @@
     "contentLabel": "Description",
     "contentPlaceholder": "Please describe your issue in detail, including steps, error messages, etc. This will help us resolve it faster.",
     "submitButton": "Submit ticket",
+    "loginToSubmit": "Log in to submit",
     "submitting": "Submitting...",
     "submitSuccess": "Ticket submitted successfully",
     "submitSuccessTitle": "Ticket submitted!",
@@ -26,9 +27,14 @@
     "entryDescription": "Having issues? Submit a ticket and we'll reply soon",
     "betaWarning": "You're using a beta version. If you're experiencing issues, you can switch back to stable in Account settings.",
     "switchToStable": "Switch to Stable",
+    "emailLabel": "Contact email",
+    "emailPlaceholder": "Enter your email address so we can reply",
+    "anonymousHint": "You're not logged in. We'll reply to you via email after submission.",
     "validation": {
       "contentRequired": "Please enter a description",
-      "contentTooLong": "Description cannot exceed 5000 characters"
+      "contentTooLong": "Description cannot exceed 5000 characters",
+      "emailRequired": "Please enter your email address",
+      "emailInvalid": "Please enter a valid email address"
     }
   },
   "issues": {

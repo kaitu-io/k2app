@@ -137,7 +137,9 @@ func SetupRouter() *gin.Engine {
 			// 更新用户语言偏好
 			user.PUT("/language", AuthRequired(), api_update_user_language)
 			// 创建工单
-			user.POST("/ticket", AuthRequired(), api_create_ticket)
+			user.POST("/ticket", AuthOptional(), api_create_ticket)
+			// 日志上传后通知（Slack）
+			user.POST("/feedback-notify", AuthRequired(), api_feedback_notify)
 			// 设置/更新密码
 			user.POST("/password", AuthRequired(), api_set_password)
 		}
@@ -206,6 +208,14 @@ func SetupRouter() *gin.Engine {
 		{
 			// Get outbound route for a specific node
 			diagnosis.GET("/outbound-route", api_outbound_route)
+		}
+
+		// Usage analytics (no auth)
+		stats := api.Group("/stats")
+		log.Debugf(ctx, "registering /api/stats group")
+		{
+			stats.POST("/events", api_stats_ingest)
+			stats.POST("/k2s-download", api_stats_k2s_download)
 		}
 
 	}
@@ -328,6 +338,9 @@ func SetupRouter() *gin.Engine {
 		admin.GET("/cloud/regions", api_admin_list_cloud_regions)
 		admin.GET("/cloud/plans", api_admin_list_cloud_plans)
 		admin.GET("/cloud/images", api_admin_list_cloud_images)
+
+		// Usage analytics overview
+		admin.GET("/stats/overview", api_admin_usage_overview)
 
 		// Strategy rules management
 		strategy := admin.Group("/strategy")

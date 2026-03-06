@@ -48,7 +48,7 @@ export default function FeedbackButton() {
         disableInteractive
       >
         <Fab
-          ref={elementRef as React.Ref<HTMLButtonElement>}
+          ref={elementRef}
           size="small"
           onClick={handleClick}
           data-tour="feedback-button"

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"strings"
+
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
 	"github.com/wordgate/qtoolkit/log"
@@ -20,15 +22,10 @@ func configSupportEmail() string {
 	return email
 }
 
-// api_create_ticket 创建工单
+// api_create_ticket 创建工单（支持已登录和匿名提交）
 func api_create_ticket(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID := ReqUserID(c)
-	if userID == 0 {
-		log.Warnf(ctx, "api_create_ticket: user not authenticated")
-		Error(c, ErrorNotLogin, "authentication required")
-		return
-	}
 
 	var req CreateTicketRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -37,20 +34,33 @@ func api_create_ticket(c *gin.Context) {
 		return
 	}
 
-	log.Infof(ctx, "api_create_ticket: user %d creating ticket, os=%s version=%s channel=%s",
-		userID, req.OS, req.AppVersion, req.Channel)
-
-	// 获取用户邮箱
-	userEmail, err := getUserEmail(ctx, userID)
-	if err != nil {
-		log.Errorf(ctx, "api_create_ticket: failed to get user email: %v", err)
-		Error(c, ErrorSystemError, "failed to get user email")
-		return
+	// Resolve email: logged-in user from DB, anonymous user from request
+	var userEmail string
+	if userID > 0 {
+		email, err := getUserEmail(ctx, userID)
+		if err != nil {
+			log.Errorf(ctx, "api_create_ticket: failed to get user email: %v", err)
+			Error(c, ErrorSystemError, "failed to get user email")
+			return
+		}
+		userEmail = email
+		log.Infof(ctx, "api_create_ticket: user %d creating ticket, os=%s version=%s channel=%s",
+			userID, req.OS, req.AppVersion, req.Channel)
+	} else {
+		// Anonymous submission — require email
+		if req.Email == "" {
+			Error(c, ErrorInvalidArgument, "email is required for anonymous submission")
+			return
+		}
+		if !isValidEmail(req.Email) {
+			Error(c, ErrorInvalidArgument, "invalid email address")
+			return
+		}
+		userEmail = req.Email
+		req.Source = "anonymous"
+		log.Infof(ctx, "api_create_ticket: anonymous ticket from %s, os=%s version=%s channel=%s",
+			hideEmail(userEmail), req.OS, req.AppVersion, req.Channel)
 	}
-
-	// Note: GitHub Issues are NOT created automatically from tickets.
-	// Engineers will manually create issues after reviewing the ticket content
-	// to filter out any private user information.
 
 	// Send ticket email
 	if err := sendTicketEmail(ctx, userEmail, req); err != nil {
@@ -66,7 +76,11 @@ func api_create_ticket(c *gin.Context) {
 		}
 	})
 
-	log.Infof(ctx, "api_create_ticket: ticket created successfully for user %d", userID)
+	if userID > 0 {
+		log.Infof(ctx, "api_create_ticket: ticket created successfully for user %d", userID)
+	} else {
+		log.Infof(ctx, "api_create_ticket: anonymous ticket created successfully")
+	}
 	SuccessEmpty(c)
 }
 
@@ -117,7 +131,11 @@ func formatSystemInfo(req CreateTicketRequest) string {
 func sendTicketEmail(ctx context.Context, userEmail string, req CreateTicketRequest) error {
 	supportEmail := configSupportEmail()
 
-	emailSubject := fmt.Sprintf("[Ticket] %s", ticketSubject(req))
+	subjectPrefix := "[Ticket]"
+	if req.Source == "anonymous" {
+		subjectPrefix = "[Ticket][Anonymous]"
+	}
+	emailSubject := fmt.Sprintf("%s %s", subjectPrefix, ticketSubject(req))
 	sysInfo := formatSystemInfo(req)
 
 	var emailBody string
@@ -163,26 +181,98 @@ Please reply to this email to respond to the user.
 	return nil
 }
 
+// api_feedback_notify 接收客户端日志上传后的通知，发送 Slack 提醒
+func api_feedback_notify(c *gin.Context) {
+	ctx := c.Request.Context()
+	userID := ReqUserID(c)
+	if userID == 0 {
+		Error(c, ErrorNotLogin, "authentication required")
+		return
+	}
+
+	var req struct {
+		Reason     string `json:"reason"`
+		Platform   string `json:"platform"`
+		Version    string `json:"version"`
+		FeedbackID string `json:"feedbackId"`
+		S3Keys     []struct {
+			Name  string `json:"name"`
+			S3Key string `json:"s3Key"`
+		} `json:"s3Keys"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		Error(c, ErrorInvalidArgument, "invalid request")
+		return
+	}
+	if len(req.S3Keys) == 0 {
+		Error(c, ErrorInvalidArgument, "no s3 keys")
+		return
+	}
+
+	userEmail, err := getUserEmail(ctx, userID)
+	if err != nil {
+		log.Warnf(ctx, "api_feedback_notify: failed to get user email: %v", err)
+		userEmail = fmt.Sprintf("user#%d", userID)
+	}
+
+	SafeGoWithContext(ctx, func(ctx context.Context) {
+		sendFeedbackSlackNotification(ctx, userEmail, req.Reason, req.Platform, req.Version, req.FeedbackID, req.S3Keys)
+	})
+
+	SuccessEmpty(c)
+}
+
+const s3LogBucketURL = "https://kaitu-service-logs.s3.ap-northeast-1.amazonaws.com"
+
+func sendFeedbackSlackNotification(ctx context.Context, email, reason, platform, version, feedbackID string, s3Keys []struct {
+	Name  string `json:"name"`
+	S3Key string `json:"s3Key"`
+}) {
+	var links []string
+	for _, k := range s3Keys {
+		links = append(links, fmt.Sprintf("<%s/%s|%s>", s3LogBucketURL, k.S3Key, k.Name))
+	}
+
+	message := fmt.Sprintf(`:warning: *Service Log Report*
+
+*User:* %s
+*Platform:* %s | *Version:* %s
+*Reason:* %s
+*Feedback ID:* `+"`%s`"+`
+*Log Files:* %s`, email, platform, version, reason, feedbackID, strings.Join(links, " | "))
+
+	if err := slack.Send("customer", message); err != nil {
+		log.Warnf(ctx, "sendFeedbackSlackNotification: failed: %v", err)
+	} else {
+		log.Infof(ctx, "sendFeedbackSlackNotification: sent to #customer")
+	}
+}
+
 // sendTicketSlackNotification sends a notification to #customer Slack channel
 func sendTicketSlackNotification(ctx context.Context, userEmail string, req CreateTicketRequest) error {
 	sysInfo := formatSystemInfo(req)
 
+	sourceTag := ""
+	if req.Source == "anonymous" {
+		sourceTag = " :ghost: [Anonymous]"
+	}
+
 	var message string
 	if req.FeedbackID != "" {
-		message = fmt.Sprintf(`:ticket: *New Support Ticket*
+		message = fmt.Sprintf(`:ticket: *New Support Ticket*%s
 
 *User:* %s
 *System:* %s
 *Feedback ID:* `+"`%s`"+`
 
-> %s`, userEmail, sysInfo, req.FeedbackID, req.Content)
+> %s`, sourceTag, userEmail, sysInfo, req.FeedbackID, req.Content)
 	} else {
-		message = fmt.Sprintf(`:ticket: *New Support Ticket*
+		message = fmt.Sprintf(`:ticket: *New Support Ticket*%s
 
 *User:* %s
 *System:* %s
 
-> %s`, userEmail, sysInfo, req.Content)
+> %s`, sourceTag, userEmail, sysInfo, req.Content)
 	}
 
 	if err := slack.Send("customer", message); err != nil {

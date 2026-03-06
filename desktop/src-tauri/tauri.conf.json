@@ -33,6 +33,7 @@
   },
   "bundle": {
     "active": true,
+    "useLocalToolsDir": true,
     "targets": ["app", "nsis"],
     "icon": [
       "icons/32x32.png",
@@ -47,10 +48,13 @@
       "entitlements": "entitlements.plist",
       "hardenedRuntime": true
     },
+    "externalBin": ["binaries/k2"],
     "windows": {
+      "signCommand": "powershell -NoProfile -File ../../scripts/ci/windows/sign-binary.ps1 %1",
       "nsis": {
         "installMode": "perMachine",
-        "languages": ["SimpChinese", "English"]
+        "languages": ["SimpChinese", "English"],
+        "installerHooks": "installer-hooks.nsh"
       }
     },
     "createUpdaterArtifacts": true

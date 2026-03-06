@@ -23,7 +23,7 @@ import { cloudApi } from '../services/cloud-api';
 import { cacheStore } from '../services/cache-store';
 import { sortTunnelsByRecommendation } from '../utils/tunnel-sort';
 import { useAuthStore } from '../stores/auth.store';
-import { useVPNStore } from '../stores/vpn.store';
+import { useVPNMachineStore } from '../stores/vpn-machine.store';
 import type { Tunnel, TunnelListResponse } from '../services/api-types';
 
 interface CloudTunnelListProps {
@@ -51,7 +51,7 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
 
   // Subscribe to auth and service connection states for auto-refresh
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const serviceConnected = useVPNStore((s) => s.serviceConnected);
+  const serviceConnected = useVPNMachineStore((s) => s.state !== 'serviceDown');
 
   // Track previous values to detect state transitions
   const prevAuthRef = useRef(isAuthenticated);
@@ -116,7 +116,7 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
         if (response.code !== 401) {
           console.error('Failed to fetch cloud tunnels, code:', response.code, response.message);
         }
-        setError(new Error(response.message || 'Failed to load cloud tunnels'));
+        setError(new Error('Failed to load cloud tunnels'));
         // Schedule auto-retry with exponential backoff (max 5 retries, 3s/6s/12s/24s/48s)
         if (retryCountRef.current < 5) {
           const delay = Math.min(3000 * Math.pow(2, retryCountRef.current), 48000);
@@ -320,7 +320,7 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
                 minHeight: 64,
                 bgcolor: isSelected ? colors.selectedBg : undefined,
                 cursor: disabled ? 'not-allowed' : 'pointer',
-                opacity: disabled ? 0.6 : 1,
+                opacity: disabled ? '0.6 !important' : 1,
                 transition: 'all 0.2s ease',
                 '&:hover': {
                   bgcolor: disabled ? undefined : 'action.hover',

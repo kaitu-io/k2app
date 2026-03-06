@@ -64,6 +64,7 @@ export const standalonePlatform: IPlatform = {
   ...webPlatform,
   os: 'web',
   version: 'standalone',
+  arch: 'unknown',
   getUdid: getDaemonUdid,
   storage: webSecureStorage,
 };

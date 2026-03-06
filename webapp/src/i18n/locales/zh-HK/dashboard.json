@@ -96,6 +96,7 @@
       "title": "登入獲取節點",
       "description": "登入賬戶即可獲取雲端節點，享受更穩定嘅服務。"
     },
+    "unlockCloudNodes": "登入解鎖全球節點",
     "loginBanner": {
       "message": "登入解鎖更多雲端節點",
       "viewPlans": "了解會員"
@@ -193,5 +194,22 @@
     "unlimited": "無限制",
     "no": "×",
     "yes": "✓"
+  },
+  "selfHosted": {
+    "inputLabel": "連線 URI",
+    "inputPlaceholder": "貼上 k2v5:// 連線地址",
+    "save": "儲存",
+    "saved": "已儲存",
+    "invalidUri": "請輸入有效嘅 k2v5:// 地址",
+    "invalidUriNoAuth": "URI 缺少認證資訊（需要 username:token@）",
+    "tag": "自部署",
+    "manageNode": "管理節點",
+    "deployGuide": "仲未有伺服器？一鍵部署",
+    "deployGuideDoc": "詳細文件",
+    "copyCommand": "複製",
+    "copied": "已複製",
+    "upgradeTitle": "想要更多節點？",
+    "upgradeDescription": "登入即可取得全球雲端節點，開箱即用",
+    "upgradeCta": "免費試用"
   }
 }

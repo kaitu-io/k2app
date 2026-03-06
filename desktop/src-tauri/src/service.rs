@@ -3,6 +3,12 @@
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 
+/// Prevent visible console windows when spawning child processes from GUI app on Windows.
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 const DEFAULT_DAEMON_PORT: u16 = 1777;
 const REQUEST_TIMEOUT_SECS: u64 = 5;
 
@@ -211,7 +217,7 @@ fn get_udid_native() -> Result<ServiceResponse, String> {
     })
 }
 
-fn get_hardware_uuid() -> Result<String, String> {
+pub(crate) fn get_hardware_uuid() -> Result<String, String> {
     #[cfg(target_os = "macos")]
     {
         let output = Command::new("sysctl")
@@ -228,6 +234,7 @@ fn get_hardware_uuid() -> Result<String, String> {
     {
         let output = Command::new("wmic")
             .args(["csproduct", "get", "UUID"])
+            .creation_flags(CREATE_NO_WINDOW)
             .output()
             .map_err(|e| format!("wmic failed: {}", e))?;
         let text = String::from_utf8_lossy(&output.stdout);
@@ -258,9 +265,15 @@ pub fn get_pid() -> u32 {
 /// IPC command: get platform info (no HTTP, pure local)
 #[tauri::command]
 pub fn get_platform_info() -> serde_json::Value {
+    let arch = match std::env::consts::ARCH {
+        "aarch64" => "arm64",
+        "x86_64" => "amd64",
+        other => other,
+    };
     serde_json::json!({
         "os": std::env::consts::OS,
         "version": env!("CARGO_PKG_VERSION"),
+        "arch": arch,
     })
 }
 
@@ -312,6 +325,7 @@ async fn admin_reinstall_service_windows() -> Result<String, String> {
 
     let output = Command::new("powershell")
         .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps_script])
+        .creation_flags(CREATE_NO_WINDOW)
         .output()
         .map_err(|e| format!("PowerShell failed: {}", e))?;
 
@@ -399,6 +413,7 @@ pub fn detect_old_kaitu_service() -> bool {
     {
         Command::new("sc")
             .args(["query", "kaitu-service"])
+            .creation_flags(CREATE_NO_WINDOW)
             .output()
             .map(|o| o.status.success())
             .unwrap_or(false)
@@ -430,9 +445,13 @@ pub fn cleanup_old_kaitu_service() {
     }
     #[cfg(target_os = "windows")]
     {
-        let _ = Command::new("sc").args(["stop", "kaitu-service"]).output();
+        let _ = Command::new("sc")
+            .args(["stop", "kaitu-service"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output();
         let _ = Command::new("sc")
             .args(["delete", "kaitu-service"])
+            .creation_flags(CREATE_NO_WINDOW)
             .output();
     }
 }
@@ -450,15 +469,18 @@ fn wait_for_version_match(app_version: &str, timeout_ms: u64, poll_ms: u64) -> V
     }
 
     log::info!("[service] Waiting for version match (current: {:?})", last);
+    let mut poll_count = 0u32;
     while start.elapsed() < timeout {
         std::thread::sleep(interval);
         last = check_service_version(app_version);
+        poll_count += 1;
+        log::debug!("[service] Poll #{}: {:?} (elapsed: {:?})", poll_count, last, start.elapsed());
         if matches!(last, VersionCheckResult::VersionMatch) {
-            log::info!("[service] Version matched after {:?}", start.elapsed());
+            log::info!("[service] Version matched after {:?} ({} polls)", start.elapsed(), poll_count);
             return last;
         }
     }
-    log::warn!("[service] No match within {:?} (last: {:?})", timeout, last);
+    log::warn!("[service] No match within {:?} after {} polls (last: {:?})", timeout, poll_count, last);
     last
 }
 
@@ -511,9 +533,23 @@ async fn ensure_service_running_daemon(app_version: String) -> Result<(), String
         return Ok(());
     }
 
-    // Phase 2: install via osascript
+    // Phase 2: install via admin elevation
     log::info!("[service] Install needed: {:?}", check);
-    admin_reinstall_service().await?;
+
+    // Diagnostic: check if k2 binary exists
+    let exe_path = std::env::current_exe().ok();
+    if let Some(ref exe) = exe_path {
+        let k2_path = exe.parent().map(|d| d.join("k2.exe"));
+        log::info!("[service] k2 binary exists: {:?} -> {}", k2_path, k2_path.as_ref().map_or(false, |p| p.exists()));
+    }
+
+    match admin_reinstall_service().await {
+        Ok(msg) => log::info!("[service] Admin install succeeded: {}", msg),
+        Err(ref e) => {
+            log::error!("[service] Admin install failed: {}", e);
+            return Err(e.clone());
+        }
+    }
 
     // Phase 3: verify post-install
     let ver = app_version.clone();

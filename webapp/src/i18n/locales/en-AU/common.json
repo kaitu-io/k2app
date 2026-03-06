@@ -27,6 +27,7 @@
     "ok": "OK",
     "save": "Save",
     "delete": "Delete",
+    "clear": "Clear",
     "copy": "Copy",
     "close": "Close",
     "loading": "Loading...",
@@ -44,7 +45,8 @@
     "later": "Later",
     "login": "Login",
     "viewDetails": "View Details",
-    "experimental": "Experimental"
+    "experimental": "Experimental",
+    "edit": "Edit"
   },
   "errors": {
     "service": {

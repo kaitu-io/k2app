@@ -1,9 +1,10 @@
 name: Release OpenWrt
 
 on:
-  push:
-    tags:
-      - 'v*'
+  # Disabled: builds are failing, will re-enable after k2 router platform redesign
+  # push:
+  #   tags:
+  #     - 'v*'
   workflow_dispatch:
 
 permissions:

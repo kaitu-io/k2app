@@ -1,15 +1,18 @@
 //! System tray module
 //!
-//! - Left click: show window + focus
-//! - Right click: show context menu (Show, Hide, Quit)
+//! - Windows: left/right click both show context menu
+//! - macOS/Linux: left click shows window, right click shows context menu
 //! - Menu is rebuilt when locale changes
 
 use std::sync::Mutex;
 use tauri::{
     menu::{Menu, MenuItem},
-    tray::{MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    tray::TrayIconBuilder,
     State,
 };
+
+#[cfg(not(target_os = "windows"))]
+use tauri::tray::{MouseButtonState, TrayIconEvent};
 
 use crate::service;
 use crate::window;
@@ -22,11 +25,11 @@ const TRAY_ID: &str = "main-tray";
 /// Get translated tray menu text: (show, hide, quit)
 fn get_translations(locale: &str) -> (&'static str, &'static str, &'static str) {
     match locale {
-        "zh-CN" => ("显示", "隐藏", "退出"),
-        "zh-TW" | "zh-HK" => ("顯示", "隱藏", "退出"),
-        "ja" => ("表示", "非表示", "終了"),
+        "zh-CN" => ("显示窗口", "隐藏窗口", "退出"),
+        "zh-TW" | "zh-HK" => ("顯示窗口", "隱藏窗口", "退出"),
+        "ja" => ("ウィンドウを表示", "ウィンドウを非表示", "終了"),
         // en-US, en-GB, en-AU and any unknown locale
-        _ => ("Show", "Hide", "Quit"),
+        _ => ("Show Window", "Hide Window", "Quit"),
     }
 }
 
@@ -67,10 +70,9 @@ pub fn sync_locale(locale: String, state: State<'_, TrayLocale>, app: tauri::App
 pub fn init_tray(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let menu = build_tray_menu(app, "en-US")?;
 
-    let _tray = TrayIconBuilder::with_id(TRAY_ID)
+    let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .icon(app.default_window_icon().unwrap().clone())
         .menu(&menu)
-        .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "show" => {
                 window::show_window_user_action(app);
@@ -84,17 +86,31 @@ pub fn init_tray(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error
                 app.exit(0);
             }
             _ => {}
-        })
-        .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click {
-                button_state: MouseButtonState::Up,
-                ..
-            } = event
-            {
-                window::show_window_user_action(tray.app_handle());
-            }
-        })
-        .build(app)?;
+        });
+
+    // Windows: show menu on both left and right click (no direct window show)
+    // macOS/Linux: left click shows window, right click shows menu
+    #[cfg(target_os = "windows")]
+    {
+        builder = builder.show_menu_on_left_click(true);
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        builder = builder
+            .show_menu_on_left_click(false)
+            .on_tray_icon_event(|tray, event| {
+                if let TrayIconEvent::Click {
+                    button_state: MouseButtonState::Up,
+                    ..
+                } = event
+                {
+                    window::show_window_user_action(tray.app_handle());
+                }
+            });
+    }
+
+    let _tray = builder.build(app)?;
 
     Ok(())
 }

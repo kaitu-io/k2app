@@ -10,7 +10,8 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useVPNStatus, useVPNStore } from '../stores';
+import { useVPNMachine } from '../stores/vpn-machine.store';
+import { useVPNMachineStore } from '../stores/vpn-machine.store';
 import { isNetworkError } from '../services/vpn-types';
 
 interface ServiceAlertProps {
@@ -72,8 +73,8 @@ export default function ServiceAlert({ sidebarWidth = 0 }: ServiceAlertProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-  const { isServiceFailedLongTime, error } = useVPNStatus();
-  const initialization = useVPNStore((state) => state.status?.initialization);
+  const { isServiceDown, error } = useVPNMachine();
+  const initialization = useVPNMachineStore((s) => s.initialization);
   const [isResolving, setIsResolving] = useState(false);
 
   // Handle resolve button click - try to reinstall service with admin privileges
@@ -112,7 +113,7 @@ export default function ServiceAlert({ sidebarWidth = 0 }: ServiceAlertProps) {
   let alertType: AlertType | null = null;
   if (isInitializing) {
     alertType = 'initialization';
-  } else if (isServiceFailedLongTime) {
+  } else if (isServiceDown) {
     alertType = 'serviceFailure';
   } else if (hasNetworkError) {
     alertType = 'networkError';

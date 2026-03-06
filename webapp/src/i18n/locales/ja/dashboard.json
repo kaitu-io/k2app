@@ -102,6 +102,7 @@
       "title": "ログインしてノードを取得",
       "description": "ログインしてクラウドノードを取得し、より安定したサービスをお楽しみください。"
     },
+    "unlockCloudNodes": "ログインしてグローバルノードを解放",
     "loginBanner": {
       "message": "ログインしてクラウドノードを解放",
       "viewPlans": "プランを見る"
@@ -193,5 +194,22 @@
     "unlimited": "無制限",
     "no": "×",
     "yes": "✓"
+  },
+  "selfHosted": {
+    "inputLabel": "接続 URI",
+    "inputPlaceholder": "k2v5:// 接続アドレスを貼り付け",
+    "save": "保存",
+    "saved": "保存済み",
+    "invalidUri": "有効な k2v5:// アドレスを入力してください",
+    "invalidUriNoAuth": "URI に認証情報がありません（username:token@ が必要）",
+    "tag": "セルフホスト",
+    "manageNode": "ノード管理",
+    "deployGuide": "サーバーがない？ワンクリックデプロイ",
+    "deployGuideDoc": "詳細ドキュメント",
+    "copyCommand": "コピー",
+    "copied": "コピーしました",
+    "upgradeTitle": "もっとノードが必要？",
+    "upgradeDescription": "ログインすると世界中のクラウドノードをすぐに利用できます",
+    "upgradeCta": "無料体験"
   }
 }

@@ -62,6 +62,9 @@ export const ERROR_CODES = {
   // API 请求相关错误 (560-569)
   API_REQUEST_FAILED: 560,
   API_RESPONSE_FAILED: 561,
+
+  // 网络层错误 (cloudApi 返回)
+  CLOUD_NETWORK_ERROR: -1,
 } as const;
 
 /**
@@ -166,6 +169,10 @@ export function getErrorMessage(
       return t('common:errors.api.requestFailed', 'API request failed');
     case ERROR_CODES.API_RESPONSE_FAILED:
       return t('common:errors.api.responseFailed', 'API response parsing failed');
+
+    // cloudApi 网络层错误 (fetch 失败、超时)
+    case ERROR_CODES.CLOUD_NETWORK_ERROR:
+      return t('common:errors.network.unreachable', 'Network unreachable');
 
     default:
       return defaultMessage || t('common:common.unknownError', 'Unknown error');

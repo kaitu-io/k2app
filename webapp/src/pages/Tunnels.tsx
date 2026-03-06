@@ -1,33 +1,45 @@
 /**
- * Tunnels - 自部署节点管理页面
+ * Tunnels - Self-hosted node management + cloud CTA
  *
- * 功能说明：
- * - 该功能正在开发中，即将推出
- * - 目前显示"敬请期待"状态
- * - 引导用户登录使用云端节点
+ * Layout:
+ * 1. Self-hosted node: always-visible URI input, save button
+ * 2. Deploy guide: terminal-style block with curl command
+ * 3. Cloud nodes: login CTA for guests, status for authenticated users
  */
 
+import { useState, useCallback } from "react";
 import {
   Box,
   Typography,
   Button,
   Stack,
   Paper,
+  TextField,
   useTheme,
+  IconButton,
+  Tooltip,
 } from "@mui/material";
 import {
   Cloud as CloudIcon,
-  Code as CodeIcon,
+  ContentCopy as CopyIcon,
+  Check as CheckIcon,
   Login as LoginIcon,
+  Save as SaveIcon,
+  OpenInNew as OpenInNewIcon,
+  Terminal as TerminalIcon,
 } from "@mui/icons-material";
 import BackButton from "../components/BackButton";
 import { useTranslation } from "react-i18next";
 import { useAuthStore } from "../stores";
 import { useLoginDialogStore } from "../stores/login-dialog.store";
+import { useSelfHostedStore, maskUriToken, parseK2v5Uri } from "../stores/self-hosted.store";
 import { getThemeColors } from "../theme/colors";
+
+const DEPLOY_COMMAND = 'curl -fsSL https://kaitu.io/i/k2s | sudo sh';
 
 export default function Tunnels() {
   const { t } = useTranslation("dashboard");
+  const { t: tc } = useTranslation("common");
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
   const colors = getThemeColors(isDark);
@@ -35,153 +47,232 @@ export default function Tunnels() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const openLoginDialog = useLoginDialogStore((s) => s.open);
 
+  const tunnel = useSelfHostedStore((s) => s.tunnel);
+  const saveTunnel = useSelfHostedStore((s) => s.saveTunnel);
+  const clearTunnel = useSelfHostedStore((s) => s.clearTunnel);
+
+  // Input state — initialized from stored tunnel URI
+  const [inputUri, setInputUri] = useState(tunnel?.uri ?? "");
+  const [uriError, setUriError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const storedUri = tunnel?.uri ?? "";
+  const hasChanges = inputUri.trim() !== storedUri;
+
+  // Display value: show masked token when input matches stored URI
+  const displayValue = inputUri === storedUri && storedUri
+    ? maskUriToken(storedUri)
+    : inputUri;
+
+  const handleSave = useCallback(async () => {
+    const trimmed = inputUri.trim();
+    setUriError(null);
+
+    const result = parseK2v5Uri(trimmed);
+    if (result.error) {
+      setUriError(t(`selfHosted.${result.error}`));
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await saveTunnel(trimmed);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e: any) {
+      setUriError(t(`selfHosted.${e.message}`));
+    } finally {
+      setSaving(false);
+    }
+  }, [inputUri, saveTunnel, t]);
+
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(DEPLOY_COMMAND);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      window._platform?.writeClipboard?.(DEPLOY_COMMAND);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  }, []);
+
+  const handleOpenDocs = useCallback(() => {
+    window._platform?.openExternal?.('https://kaitu.io/k2/server');
+  }, []);
+
   const handleLogin = () => {
     openLoginDialog({
       trigger: "tunnels-page",
-      message: t("tunnels.loginToSync", "登录后可获取云端节点"),
+      message: t("tunnels.loginToSync"),
     });
   };
 
   return (
-    <Box sx={{ p: 2, pb: 6 }}>
+    <Box sx={{ p: 2 }}>
       {/* Header */}
-      <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
+      <Box sx={{ display: "flex", alignItems: "center", mb: 1.5 }}>
         <BackButton />
         <Typography variant="h6" fontWeight={600} sx={{ ml: 1 }}>
-          {t("tunnels.title", "节点管理")}
+          {t("tunnels.title")}
         </Typography>
       </Box>
 
-      {/* Self-Deploy Feature Card */}
-      <Paper
-        elevation={0}
-        sx={{
-          p: 2.5,
-          borderRadius: 2,
-          textAlign: 'center',
-          bgcolor: isDark ? 'rgba(0, 212, 255, 0.05)' : 'rgba(0, 150, 255, 0.04)',
-          border: `1px solid ${isDark ? 'rgba(0, 212, 255, 0.2)' : 'rgba(0, 150, 255, 0.15)'}`,
-          mb: 2,
-        }}
-      >
-        <Box
-          sx={{
-            width: 56,
-            height: 56,
-            borderRadius: '50%',
-            bgcolor: isDark ? 'rgba(0, 212, 255, 0.1)' : 'rgba(0, 150, 255, 0.1)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            mx: 'auto',
-            mb: 2,
-          }}
-        >
-          <CodeIcon sx={{ fontSize: 32, color: colors.accent }} />
-        </Box>
-
-        <Typography variant="h6" fontWeight={700} sx={{ mb: 1.5 }}>
-          {t("tunnels.selfDeploy.title", "自部署服务")}
-        </Typography>
-
-        <Typography
-          variant="body2"
-          color="text.secondary"
-          sx={{ mb: 2, maxWidth: 400, mx: 'auto', lineHeight: 1.6 }}
-        >
-          {t("tunnels.selfDeploy.description", "我们正在开发自部署功能，让您可以在自己的服务器上部署节点。此功能很快推出。")}
-        </Typography>
-
-        <Box
-          sx={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 1,
-            px: 2.5,
-            py: 1,
-            borderRadius: 1.5,
-            bgcolor: isDark ? 'rgba(255, 193, 7, 0.1)' : 'rgba(255, 193, 7, 0.15)',
-            border: `1px solid ${isDark ? 'rgba(255, 193, 7, 0.3)' : 'rgba(255, 193, 7, 0.4)'}`,
-            mb: 1.5,
-          }}
-        >
-          <Typography
-            variant="body2"
-            sx={{ color: isDark ? '#FFD54F' : '#F57C00', fontWeight: 600 }}
-          >
-            {t("tunnels.selfDeploy.comingSoon", "正在推进中，敬请期待")}
-          </Typography>
-        </Box>
-
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          sx={{ display: 'block', fontStyle: 'italic' }}
-        >
-          {t("tunnels.selfDeploy.openSourceNote", "推出后您可以自由部署和定制")}
-        </Typography>
-      </Paper>
-
-      {/* Login CTA Card - Show for guests */}
-      {!isAuthenticated && (
+      <Stack spacing={1.5}>
+        {/* Self-Hosted Node */}
         <Paper
           elevation={0}
           sx={{
-            p: 2.5,
+            p: 2,
             borderRadius: 2,
-            textAlign: 'center',
-            bgcolor: isDark ? 'rgba(76, 175, 80, 0.05)' : 'rgba(76, 175, 80, 0.04)',
-            border: `1px solid ${isDark ? 'rgba(76, 175, 80, 0.2)' : 'rgba(76, 175, 80, 0.15)'}`,
+            bgcolor: colors.accentBgLighter,
+            border: `1px solid ${colors.accentBorder}`,
           }}
         >
-          <Box
-            sx={{
-              width: 48,
-              height: 48,
-              borderRadius: '50%',
-              bgcolor: isDark ? 'rgba(76, 175, 80, 0.1)' : 'rgba(76, 175, 80, 0.1)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              mx: 'auto',
-              mb: 1.5,
-            }}
-          >
-            <CloudIcon sx={{ fontSize: 28, color: 'success.main' }} />
+          <Stack spacing={1.5}>
+            <Stack direction="row" alignItems="center" spacing={1}>
+              <TerminalIcon sx={{ fontSize: 18, color: colors.accent }} />
+              <Typography variant="subtitle2" fontWeight={600}>
+                {t("selfHosted.tag")}
+              </Typography>
+              {tunnel && (
+                <Typography variant="caption" color="text.secondary">
+                  {tunnel.country && `${tunnel.country} · `}{tunnel.name}
+                </Typography>
+              )}
+            </Stack>
+
+            <TextField
+              size="small"
+              fullWidth
+              placeholder={t("selfHosted.inputPlaceholder")}
+              value={displayValue}
+              onChange={(e) => {
+                setInputUri(e.target.value);
+                setUriError(null);
+                setSaved(false);
+              }}
+              onFocus={() => {
+                // Show raw URI when focused for editing
+                if (inputUri === storedUri && storedUri) {
+                  setInputUri(storedUri);
+                }
+              }}
+              error={!!uriError}
+              helperText={uriError}
+              InputProps={{
+                sx: { fontFamily: 'monospace', fontSize: '0.82rem' },
+              }}
+            />
+
+            <Stack direction="row" spacing={1} justifyContent="flex-end">
+              {tunnel && (
+                <Button
+                  size="small"
+                  variant="text"
+                  onClick={async () => {
+                    await clearTunnel();
+                    setInputUri("");
+                  }}
+                >
+                  {tc('common.clear')}
+                </Button>
+              )}
+              <Button
+                variant="contained"
+                size="small"
+                startIcon={saved ? <CheckIcon /> : <SaveIcon />}
+                onClick={handleSave}
+                disabled={!hasChanges || saving}
+              >
+                {saved ? t("selfHosted.saved") : t("selfHosted.save")}
+              </Button>
+            </Stack>
+          </Stack>
+        </Paper>
+
+        {/* Deploy Guide Terminal */}
+        <Paper
+          elevation={0}
+          sx={{
+            borderRadius: 2,
+            overflow: 'hidden',
+            border: `1px solid ${theme.palette.divider}`,
+          }}
+        >
+          {/* Terminal header with macOS dots */}
+          <Box sx={{
+            px: 2,
+            py: 1,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            borderBottom: `1px solid ${theme.palette.divider}`,
+          }}>
+            <Box sx={{ display: 'flex', gap: 0.6 }}>
+              <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: theme.palette.error.main }} />
+              <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: theme.palette.warning.main }} />
+              <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: theme.palette.success.main }} />
+            </Box>
+            <Typography variant="subtitle2" color="text.secondary" sx={{ ml: 0.5 }}>
+              {t("selfHosted.deployGuide")}
+            </Typography>
           </Box>
 
-          <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1 }}>
-            {t("tunnels.cloudNodes.title", "云端节点")}
-          </Typography>
-
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{ mb: 2, maxWidth: 320, mx: 'auto', fontSize: '0.875rem' }}
-          >
-            {t("tunnels.cloudNodes.description", "登录即可获取云端节点，无需自己部署，开箱即用。")}
-          </Typography>
-
-          <Button
-            variant="contained"
-            color="primary"
-            size="medium"
-            startIcon={<LoginIcon />}
-            onClick={handleLogin}
+          <Box
             sx={{
-              px: 4,
-              py: 1,
-              fontWeight: 600,
-              borderRadius: 1.5,
+              bgcolor: theme.palette.background.default,
+              px: 2,
+              py: 1.5,
+              fontFamily: 'monospace',
+              fontSize: '0.82rem',
+              lineHeight: 1.8,
+              color: theme.palette.text.primary,
+              position: 'relative',
             }}
           >
-            {t("common:common.login", "登录")}
-          </Button>
-        </Paper>
-      )}
+            <Box component="span" sx={{ color: colors.success }}>$</Box>{' '}
+            curl -fsSL https://kaitu.io/i/k2s | sudo sh
 
-      {/* Authenticated user info */}
-      {isAuthenticated && (
+            <Tooltip title={copied ? t("selfHosted.copied") : t("selfHosted.copyCommand")}>
+              <IconButton
+                size="small"
+                onClick={handleCopy}
+                sx={{
+                  position: 'absolute',
+                  top: 8,
+                  right: 8,
+                  color: 'text.secondary',
+                  '&:hover': { color: 'text.primary' },
+                }}
+              >
+                {copied ? <CheckIcon fontSize="small" /> : <CopyIcon fontSize="small" />}
+              </IconButton>
+            </Tooltip>
+          </Box>
+
+          <Box sx={{
+            px: 2,
+            py: 1,
+            display: 'flex',
+            justifyContent: 'flex-end',
+            borderTop: `1px solid ${theme.palette.divider}`,
+          }}>
+            <Button
+              size="small"
+              endIcon={<OpenInNewIcon sx={{ fontSize: '14px !important' }} />}
+              onClick={handleOpenDocs}
+              sx={{ textTransform: 'none', fontSize: '0.8rem' }}
+            >
+              {t("selfHosted.deployGuideDoc")}
+            </Button>
+          </Box>
+        </Paper>
+
+        {/* Cloud Nodes CTA */}
         <Paper
           elevation={0}
           sx={{
@@ -192,14 +283,36 @@ export default function Tunnels() {
             border: `1px solid ${isDark ? 'rgba(76, 175, 80, 0.2)' : 'rgba(76, 175, 80, 0.15)'}`,
           }}
         >
-          <Stack direction="row" spacing={1} alignItems="center" justifyContent="center">
-            <CloudIcon sx={{ fontSize: 18, color: 'success.main' }} />
-            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.875rem' }}>
-              {t("tunnels.cloudNodes.usingCloud", "您正在使用云端节点，返回主页选择节点开始使用")}
-            </Typography>
-          </Stack>
+          {isAuthenticated ? (
+            <Stack direction="row" spacing={1} alignItems="center" justifyContent="center">
+              <CloudIcon sx={{ fontSize: 18, color: 'success.main' }} />
+              <Typography variant="body2" color="text.secondary">
+                {t("tunnels.cloudNodes.usingCloud")}
+              </Typography>
+            </Stack>
+          ) : (
+            <Stack spacing={1.5} alignItems="center">
+              <CloudIcon sx={{ fontSize: 32, color: 'success.main' }} />
+              <Typography variant="subtitle1" fontWeight={600}>
+                {t("selfHosted.upgradeTitle")}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 320 }}>
+                {t("selfHosted.upgradeDescription")}
+              </Typography>
+              <Button
+                variant="contained"
+                color="primary"
+                size="medium"
+                startIcon={<LoginIcon />}
+                onClick={handleLogin}
+                sx={{ px: 4, fontWeight: 600, borderRadius: 1.5 }}
+              >
+                {t("selfHosted.upgradeCta")}
+              </Button>
+            </Stack>
+          )}
         </Paper>
-      )}
+      </Stack>
     </Box>
   );
 }

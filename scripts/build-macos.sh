@@ -83,6 +83,12 @@ if [ "$NE_MODE" != true ]; then
   if [ "$SINGLE_ARCH" = true ]; then
     cp "desktop/src-tauri/binaries/k2-universal-apple-darwin" \
        "desktop/src-tauri/binaries/k2-$K2_TARGET"
+  else
+    # Tauri universal build compiles each arch separately, each needs its own sidecar
+    cp "desktop/src-tauri/binaries/k2-universal-apple-darwin" \
+       "desktop/src-tauri/binaries/k2-aarch64-apple-darwin"
+    cp "desktop/src-tauri/binaries/k2-universal-apple-darwin" \
+       "desktop/src-tauri/binaries/k2-x86_64-apple-darwin"
   fi
 fi
 
@@ -127,11 +133,10 @@ _SAVED_APPLE_CERTIFICATE="${APPLE_CERTIFICATE:-}"
 _SAVED_APPLE_CERTIFICATE_PASSWORD="${APPLE_CERTIFICATE_PASSWORD:-}"
 unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD
 
-TAURI_ARGS="--config src-tauri/tauri.bundle.conf.json"
 if [ "$SINGLE_ARCH" = true ]; then
-  TAURI_ARGS="--target $K2_TARGET $TAURI_ARGS"
+  TAURI_ARGS="--target $K2_TARGET"
 else
-  TAURI_ARGS="--target universal-apple-darwin $TAURI_ARGS"
+  TAURI_ARGS="--target universal-apple-darwin"
 fi
 if [ -n "$EXTRA_FEATURES" ]; then
   TAURI_ARGS="--features $EXTRA_FEATURES $TAURI_ARGS"
