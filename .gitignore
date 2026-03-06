@@ -27,6 +27,7 @@ desktop/src-tauri/ne_helper/*.a
 
 .word9f
 .claude/agent-memory/
+.claude/settings.local.json
 .playwright-mcp/
 
 # API local dev data (docker volumes, config with secrets, test artifacts)
