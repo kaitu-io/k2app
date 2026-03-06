@@ -58,6 +58,8 @@ func (d *Daemon) handleCore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	slog.Debug("daemon: api request", "action", req.Action)
+
 	switch req.Action {
 	case "up":
 		d.handleUp(w, req.Params)

@@ -162,6 +162,7 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 // connectTLSWebSocket establishes TCP → uTLS → WebSocket connection.
 // Returns a net.Conn-compatible WebSocket connection ready for smux.
 func (c *TCPWSClient) connectTLSWebSocket(ctx context.Context) (net.Conn, error) {
+	connectStart := time.Now()
 	slog.Debug("TCPWSClient: connectTLSWebSocket start", "serverAddr", c.serverAddr, "hasDirectDialer", c.directDialer != nil)
 	// 1. TCP dial (use DirectDialer if set, to bypass TUN)
 	var conn net.Conn
@@ -218,7 +219,11 @@ func (c *TCPWSClient) connectTLSWebSocket(ctx context.Context) (net.Conn, error)
 		slog.Debug("TCPWSClient: uTLS handshake failed", "err", err)
 		return nil, fmt.Errorf("wire: uTLS handshake: %w", err)
 	}
-	slog.Debug("TCPWSClient: uTLS handshake success")
+	slog.Debug("wire: TCP-WS TLS details",
+		"tlsVersion", uconn.ConnectionState().Version,
+		"cipherSuite", uconn.ConnectionState().CipherSuite,
+		"negotiatedProto", uconn.ConnectionState().NegotiatedProtocol,
+	)
 
 	// 3. WebSocket upgrade over TLS connection
 	slog.Debug("TCPWSClient: starting WebSocket upgrade", "host", c.cfg.Host)
@@ -228,7 +233,13 @@ func (c *TCPWSClient) connectTLSWebSocket(ctx context.Context) (net.Conn, error)
 		slog.Debug("TCPWSClient: WebSocket upgrade failed", "err", err)
 		return nil, fmt.Errorf("wire: WebSocket upgrade: %w", err)
 	}
-	slog.Debug("TCPWSClient: WebSocket upgrade success — connection fully established")
+	slog.Info("wire: TCP-WS connected",
+		"totalMs", time.Since(connectStart).Milliseconds(),
+		"fingerprint", fmt.Sprintf("%v", clientHelloID),
+		"sni", tlsCfg.ServerName,
+		"hasECH", len(tlsCfg.EncryptedClientHelloConfigList) > 0,
+		"remoteAddr", conn.RemoteAddr().String(),
+	)
 
 	return wsConn, nil
 }

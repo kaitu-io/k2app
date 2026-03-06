@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -34,12 +35,16 @@ func (d *Daemon) handleEvents(w http.ResponseWriter, r *http.Request) {
 	// snapshot results in duplicate delivery, which is harmless (idempotent).
 	d.sseMu.Lock()
 	d.sseClients[ch] = struct{}{}
+	clientCount := len(d.sseClients)
 	d.sseMu.Unlock()
+	slog.Debug("daemon: SSE client connected", "clients", clientCount)
 
 	defer func() {
 		d.sseMu.Lock()
 		delete(d.sseClients, ch)
+		remaining := len(d.sseClients)
 		d.sseMu.Unlock()
+		slog.Debug("daemon: SSE client disconnected", "clients", remaining)
 	}()
 
 	// Send initial status snapshot.

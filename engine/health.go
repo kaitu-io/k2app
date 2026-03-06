@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -216,7 +217,12 @@ func (hm *healthMonitor) transition(level string) {
 		hm.degradedStreak = 0
 		hm.criticalStreak = 0
 		if hm.healthyStreak >= 10 && hm.health != HealthHealthy {
-			slog.Info("health: recovery", "from", hm.health)
+			slog.Info("health: recovery",
+				"from", hm.health,
+				"smoothLoss", fmt.Sprintf("%.3f", hm.smoothLoss),
+				"smoothThroughput", fmt.Sprintf("%.0f", hm.smoothThroughput),
+				"healthyStreak", hm.healthyStreak,
+			)
 			hm.health = HealthHealthy
 			hm.hopAttempts = 0
 		}
@@ -225,6 +231,11 @@ func (hm *healthMonitor) transition(level string) {
 		hm.healthyStreak = 0
 		hm.criticalStreak = 0
 		if hm.degradedStreak >= 5 && hm.health == HealthHealthy {
+			slog.Warn("health: degraded",
+				"smoothLoss", fmt.Sprintf("%.3f", hm.smoothLoss),
+				"smoothThroughput", fmt.Sprintf("%.0f", hm.smoothThroughput),
+				"streak", hm.degradedStreak,
+			)
 			hm.health = HealthDegraded
 		}
 	case HealthCritical:
@@ -232,7 +243,11 @@ func (hm *healthMonitor) transition(level string) {
 		hm.healthyStreak = 0
 		hm.degradedStreak = 0
 		if hm.criticalStreak >= 5 && hm.health != HealthCritical {
-			slog.Warn("health: critical", "streak", hm.criticalStreak)
+			slog.Warn("health: critical",
+				"streak", hm.criticalStreak,
+				"smoothLoss", fmt.Sprintf("%.3f", hm.smoothLoss),
+				"smoothThroughput", fmt.Sprintf("%.0f", hm.smoothThroughput),
+			)
 			hm.health = HealthCritical
 		}
 		if hm.health == HealthCritical {

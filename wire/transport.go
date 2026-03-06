@@ -78,9 +78,12 @@ func (tm *TransportManager) inQuicBackoff() bool {
 
 // recordQuicSuccess clears all fallback state when QUIC succeeds.
 func (tm *TransportManager) recordQuicSuccess() {
-	tm.fallbackActive.Store(false)
+	wasFallback := tm.fallbackActive.Swap(false)
 	tm.quicBackoffUntil.Store(0)
 	tm.quicFailCount.Store(0)
+	if wasFallback {
+		slog.Info("wire: QUIC recovered from fallback")
+	}
 }
 
 // recordQuicFailure sets fallback state and exponential backoff.
@@ -101,8 +104,11 @@ func (tm *TransportManager) recordQuicFailure() {
 		backoff = quicBackoffMax
 	}
 	tm.quicBackoffUntil.Store(time.Now().Add(backoff).UnixNano())
-	slog.Info("TransportManager: QUIC backoff active",
-		"failCount", count, "backoff", backoff)
+	slog.Warn("wire: QUIC backoff active",
+		"failCount", count,
+		"backoff", backoff,
+		"expiresIn", backoff.String(),
+	)
 }
 
 // FallbackActive returns whether QUIC has failed and TCP-WS is serving traffic.
@@ -251,6 +257,10 @@ func (tm *TransportManager) quicContext(parent context.Context, hasFallback bool
 // ResetConnections resets cached connections on all transports and clears
 // fallback state, giving QUIC a fresh chance on the next dial.
 func (tm *TransportManager) ResetConnections() {
+	slog.Debug("wire: connections reset",
+		"wasFallback", tm.fallbackActive.Load(),
+		"quicFailCount", tm.quicFailCount.Load(),
+	)
 	tm.mu.RLock()
 	q := tm.quic
 	t := tm.tcpws

@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -83,6 +85,12 @@ func (d *Daemon) Run(ctx context.Context, listenAddr string) error {
 		listenAddr = DefaultAddr
 	}
 	slog.Info("k2 daemon starting", "addr", listenAddr)
+	slog.Info("daemon: runtime",
+		"pid", os.Getpid(),
+		"go", runtime.Version(),
+		"os", runtime.GOOS,
+		"arch", runtime.GOARCH,
+	)
 
 	// Clean stale DNS override from previous crash (kill -9, power loss).
 	provider.CleanupStaleDNSOverride()
@@ -162,6 +170,7 @@ func (d *Daemon) closeTunnel() {
 func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 	d.opMu.Lock()
 	defer d.opMu.Unlock()
+	slog.Info("daemon: doUp", "mode", cfg.Mode, "pid", pid)
 
 	// Unconditionally tear down any existing tunnel (idempotent).
 	d.closeTunnel()
@@ -293,6 +302,7 @@ func (d *Daemon) engineConfigFromClientConfig(
 func (d *Daemon) doDown() {
 	d.opMu.Lock()
 	defer d.opMu.Unlock()
+	slog.Info("daemon: doDown")
 	d.closeTunnel()
 }
 
