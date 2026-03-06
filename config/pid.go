@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -64,11 +65,14 @@ func RemovePID(path string) {
 // DefaultPIDPath returns the platform-appropriate default PID file path for the
 // given process name.
 //
-// When running as root (uid 0) on Unix, it returns /var/run/{name}.pid.
-// Otherwise it returns ~/.config/{name}/{name}.pid.
-// On Windows (or when home dir lookup fails), it falls back to os.TempDir().
+// On Windows, returns "" — PID files are not needed (SCM tracks service processes).
+// On Unix as root, returns /var/run/{name}.pid.
+// Otherwise returns ~/.config/{name}/{name}.pid.
 func DefaultPIDPath(name string) string {
-	if os.Getuid() == 0 {
+	if runtime.GOOS == "windows" {
+		return "" // Windows: SCM tracks service, no PID file needed.
+	}
+	if IsRoot() {
 		return filepath.Join("/var/run", name+".pid")
 	}
 	if home, err := os.UserHomeDir(); err == nil {

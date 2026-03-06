@@ -94,7 +94,7 @@ func cmdSetup(args []string) {
 // setupConfigDir returns the directory where k2 setup writes the config file.
 // Uses system-wide dir when running as root; user dir otherwise.
 func setupConfigDir() string {
-	if os.Getuid() == 0 {
+	if config.IsRoot() {
 		if runtime.GOOS == "windows" {
 			if pd := os.Getenv("ProgramData"); pd != "" {
 				return filepath.Join(pd, "k2")

@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+
+	"github.com/kaitu-io/k2/config"
 )
 
 // CacheDir returns the k2 cache directory for the current user.
@@ -33,7 +35,7 @@ func cacheDir() string {
 func logDir() string {
 	switch runtime.GOOS {
 	case "darwin":
-		if os.Getuid() == 0 {
+		if config.IsRoot() {
 			return "/var/log/k2"
 		}
 		home, err := os.UserHomeDir()
@@ -43,7 +45,7 @@ func logDir() string {
 		return filepath.Join(home, "Library", "Logs", "k2")
 
 	case "linux":
-		if os.Getuid() == 0 {
+		if config.IsRoot() {
 			return "/var/log/k2"
 		}
 		// XDG_STATE_HOME or ~/.local/state
@@ -60,8 +62,11 @@ func logDir() string {
 	case "windows":
 		// SYSTEM/admin: %ProgramData%\k2\log
 		// User: %LocalAppData%\k2\log
-		programData := os.Getenv("ProgramData")
-		if programData != "" {
+		if config.IsRoot() {
+			programData := os.Getenv("ProgramData")
+			if programData == "" {
+				programData = `C:\ProgramData`
+			}
 			return filepath.Join(programData, "k2", "log")
 		}
 		base, err := os.UserCacheDir()

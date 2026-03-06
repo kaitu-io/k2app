@@ -8,36 +8,33 @@ import (
 	"testing"
 )
 
-// TestDefaultLogPath_Root verifies that when running as root,
-// DefaultLogPath returns a system-level path under /var/log/kaitu/.
-func TestDefaultLogPath_Root(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("skipping Unix-specific root path test on Windows")
-	}
-	// We can't actually run as root in tests; instead test the logic directly
-	// by calling the internal helper with root=true.
-	path := defaultLogPathForUID(0, "k2")
+// TestSystemLogPath verifies that systemLogPath returns a system-level path.
+func TestSystemLogPath(t *testing.T) {
+	path := systemLogPath("k2")
 	if !strings.HasSuffix(path, "k2.log") {
 		t.Errorf("path = %q, want suffix k2.log", path)
 	}
-	if !strings.Contains(path, "/var/log/kaitu/") {
-		t.Errorf("root path = %q, want to contain /var/log/kaitu/", path)
+	if runtime.GOOS == "windows" {
+		if !strings.Contains(path, "ProgramData") {
+			t.Errorf("Windows system path = %q, want to contain ProgramData", path)
+		}
+	} else {
+		if !strings.Contains(path, "/var/log/kaitu/") {
+			t.Errorf("Unix system path = %q, want to contain /var/log/kaitu/", path)
+		}
 	}
 }
 
-// TestDefaultLogPath_User verifies that when running as non-root,
-// DefaultLogPath returns a user-level path.
-func TestDefaultLogPath_User(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("skipping Unix-specific user path test on Windows")
-	}
-	// Use a non-zero UID to simulate non-root.
-	path := defaultLogPathForUID(1000, "k2")
+// TestUserLogPath verifies that userLogPath returns a user-level path.
+func TestUserLogPath(t *testing.T) {
+	path := userLogPath("k2")
 	if !strings.HasSuffix(path, "k2.log") {
 		t.Errorf("path = %q, want suffix k2.log", path)
 	}
-	if strings.Contains(path, "/var/log/kaitu/") {
-		t.Errorf("non-root path = %q, should not be under /var/log/kaitu/", path)
+	if runtime.GOOS != "windows" {
+		if strings.Contains(path, "/var/log/kaitu/") {
+			t.Errorf("user path = %q, should not be under /var/log/kaitu/", path)
+		}
 	}
 }
 
@@ -215,12 +212,7 @@ func TestSetupLogging_LumberjackConfig(t *testing.T) {
 
 // TestSetupLogging_K2sName verifies that name="k2s" produces a path ending in k2s.log.
 func TestSetupLogging_K2sName(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("skipping Unix-specific name test on Windows")
-	}
-
-	uid := os.Getuid()
-	path := defaultLogPathForUID(uid, "k2s")
+	path := DefaultLogPath("k2s")
 	if !strings.HasSuffix(path, "k2s.log") {
 		t.Errorf("path = %q, want suffix k2s.log", path)
 	}

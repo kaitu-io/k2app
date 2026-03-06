@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -78,8 +79,15 @@ func TestPIDStale(t *testing.T) {
 }
 
 func TestDefaultPIDPath(t *testing.T) {
-	// DefaultPIDPath should return a non-empty path containing the name.
 	path := DefaultPIDPath("k2")
+	if runtime.GOOS == "windows" {
+		// Windows: PID file disabled, should return "".
+		if path != "" {
+			t.Errorf("DefaultPIDPath on Windows = %q, want empty", path)
+		}
+		return
+	}
+	// Unix: should return a non-empty path containing the name.
 	if path == "" {
 		t.Fatal("DefaultPIDPath returned empty string")
 	}

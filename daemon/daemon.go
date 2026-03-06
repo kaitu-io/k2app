@@ -231,9 +231,9 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 	d.engineCnl = cancel
 	d.mu.Unlock()
 
-	// Start PID monitoring if requested.
+	// Start PID monitoring if requested and supported on this platform.
 	// Uses engineCtx so the goroutine stops when closeTunnel() cancels the context.
-	if pid > 0 {
+	if pid > 0 && shouldMonitorPID() {
 		go d.monitorProcess(ctx, pid)
 	}
 

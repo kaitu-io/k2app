@@ -36,8 +36,8 @@ func TestLogDir(t *testing.T) {
 	if dir == "" {
 		t.Fatal("logDir returned empty string")
 	}
-	if !strings.HasSuffix(dir, "k2") {
-		t.Fatalf("logDir = %q, want suffix 'k2'", dir)
+	if !strings.Contains(dir, "k2") {
+		t.Fatalf("logDir = %q, want to contain 'k2'", dir)
 	}
 }
 

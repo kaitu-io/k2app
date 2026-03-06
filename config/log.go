@@ -32,15 +32,6 @@ func parseLevel(level string) slog.Level {
 	}
 }
 
-// defaultLogPathForUID returns the platform-appropriate log file path for the given
-// uid and process name. uid==0 means root/system paths; non-zero means user paths.
-// This helper is used both by DefaultLogPath and in tests.
-func defaultLogPathForUID(uid int, name string) string {
-	if uid == 0 {
-		return systemLogPath(name)
-	}
-	return userLogPath(name)
-}
 
 // systemLogPath returns the system-level log path (for root/admin).
 func systemLogPath(name string) string {
@@ -85,7 +76,10 @@ func userLogPath(name string) string {
 //  1. Root on Unix / admin on Windows → system dir (/var/log/kaitu/ or %ProgramData%)
 //  2. Non-root → user dir (~/Library/Logs/kaitu/ on macOS, ~/.local/share/kaitu/logs/ on Linux, %LOCALAPPDATA% on Windows)
 func DefaultLogPath(name string) string {
-	return defaultLogPathForUID(os.Getuid(), name)
+	if IsRoot() {
+		return systemLogPath(name)
+	}
+	return userLogPath(name)
 }
 
 // SetupLogging configures the global slog default logger based on cfg.
