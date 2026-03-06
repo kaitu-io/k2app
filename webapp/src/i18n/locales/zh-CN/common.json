@@ -81,7 +81,16 @@
       "badRequest": "请求参数错误",
       "unauthorized": "请先登录",
       "forbidden": "没有权限执行此操作",
-      "notFound": "请求的资源不存在"
+      "notFound": "请求的资源不存在",
+      "paymentRequired": "会员已过期，请续费",
+      "notSupported": "功能不支持",
+      "upgradeRequired": "请升级到最新版本",
+      "conflict": "操作冲突，请重试",
+      "invalidArgument": "参数错误",
+      "tooEarly": "请稍后再试",
+      "tooManyRequests": "请求过于频繁，请稍后重试",
+      "invalidClock": "设备时间不正确，请校准系统时间",
+      "selfInvitation": "不能使用自己的邀请码"
     },
     "vpn": {
       "authFailed": "认证失败，请重新登录",

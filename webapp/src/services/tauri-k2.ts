@@ -270,11 +270,31 @@ export async function injectTauriGlobals(): Promise<void> {
   console.info(`[K2:Tauri] Injected - os=${tauriPlatform.os}, version=${tauriPlatform.version}`);
 
   // Forward WebView console.* to Tauri log system (desktop.log)
+  // JS console.info("msg") → pluginLog.info("msg") → IPC → Rust log::info! → desktop.log
   try {
-    const { attachConsole } = await import('@tauri-apps/plugin-log');
-    await attachConsole();
+    const pluginLog = await import('@tauri-apps/plugin-log');
+
+    function formatArgs(args: any[]): string {
+      return args.map(a => {
+        if (typeof a === 'string') return a;
+        if (a instanceof Error) return `${a.message}${a.stack ? '\n' + a.stack : ''}`;
+        try { return JSON.stringify(a); } catch { return String(a); }
+      }).join(' ');
+    }
+
+    const _log = console.log;
+    const _debug = console.debug;
+    const _info = console.info;
+    const _warn = console.warn;
+    const _error = console.error;
+
+    console.log = (...args: any[]) => { _log(...args); pluginLog.debug(formatArgs(args)).catch(() => {}); };
+    console.debug = (...args: any[]) => { _debug(...args); pluginLog.debug(formatArgs(args)).catch(() => {}); };
+    console.info = (...args: any[]) => { _info(...args); pluginLog.info(formatArgs(args)).catch(() => {}); };
+    console.warn = (...args: any[]) => { _warn(...args); pluginLog.warn(formatArgs(args)).catch(() => {}); };
+    console.error = (...args: any[]) => { _error(...args); pluginLog.error(formatArgs(args)).catch(() => {}); };
   } catch {
-    // plugin-log not available, skip
+    // plugin-log not available (non-Tauri env), skip
   }
 
   // Show window after frontend is fully initialized

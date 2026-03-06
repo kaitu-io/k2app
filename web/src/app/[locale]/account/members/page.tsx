@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 import { useState, useEffect, useCallback } from "react";
 import { useTranslations } from "next-intl";
 import { api, ApiError, ErrorCode, type User, type AddMemberRequest } from "@/lib/api";
+import { getApiErrorMessage } from "@/lib/api-errors";
 import { toast } from "sonner";
 import {
   Card,
@@ -167,7 +168,7 @@ export default function MembersPage() {
         if (err.code === ErrorCode.InvalidArgument) {
           toast.error(t("admin.account.members.emailAlreadyInUse"));
         } else if (!err.isUnauthorized()) {
-          toast.error(err.message || t("admin.account.members.addMemberFailed"));
+          toast.error(getApiErrorMessage(err.code, t, t("admin.account.members.addMemberFailed")));
         }
       }
     } finally {
@@ -194,7 +195,7 @@ export default function MembersPage() {
     } catch (err) {
       console.error("Failed to remove member:", err);
       if (err instanceof ApiError && !err.isUnauthorized()) {
-        toast.error(err.message || t("admin.account.members.removeMemberFailed"));
+        toast.error(getApiErrorMessage(err.code, t, t("admin.account.members.removeMemberFailed")));
       }
     } finally {
       setRemoving(false);

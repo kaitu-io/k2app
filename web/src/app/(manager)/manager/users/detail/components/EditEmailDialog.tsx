@@ -12,7 +12,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { api, ApiError, ErrorCode } from "@/lib/api";
+import { getApiErrorMessageZh } from "@/lib/api-errors";
 
 interface EditEmailDialogProps {
   open: boolean;
@@ -59,11 +60,11 @@ export function EditEmailDialog({
       onSuccess();
     } catch (error) {
       console.error("Failed to update email:", error);
-      if (error instanceof Error) {
-        if (error.message.includes("already in use")) {
+      if (error instanceof ApiError) {
+        if (error.code === ErrorCode.InvalidArgument) {
           toast.error("该邮箱已被其他用户使用");
         } else {
-          toast.error(error.message || "修改邮箱失败");
+          toast.error(getApiErrorMessageZh(error.code, "修改邮箱失败"));
         }
       } else {
         toast.error("修改邮箱失败");

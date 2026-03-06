@@ -30,7 +30,7 @@ import {
 import { useTranslation } from "react-i18next";
 
 import type { DataUser } from "../services/api-types";
-import { ErrorInvalidArgument } from "../services/api-types";
+import { ERROR_CODES } from "../utils/errorCode";
 import { formatTime } from "../utils/time";
 import { useAlert } from "../stores";
 import { LoadingCard } from "../components/LoadingAndEmpty";
@@ -187,7 +187,7 @@ export default function MemberManagement() {
         showAlert(successMsg, 'success');
         setAddDialogOpen(false);
         setNewMemberEmail("");
-      } else if (code === ErrorInvalidArgument) {
+      } else if (code === ERROR_CODES.INVALID_ARGUMENT) {
         // 422 错误：邮箱已被使用
         const errorMsg = message || t('account:memberManagement.emailAlreadyInUse');
         console.error('[MemberManagement] Invalid argument: ' + JSON.stringify({ code, message }));

@@ -387,15 +387,22 @@ export const ErrorCode = {
   PaymentRequired: 402,       // Payment required
   Forbidden: 403,             // Permission denied
   NotFound: 404,              // Not found
+  NotSupported: 405,          // Not supported
+  UpgradeRequired: 406,       // Upgrade required
   Conflict: 409,              // Conflict
   InvalidArgument: 422,       // Invalid argument
+  TooEarly: 425,              // Too early
   TooManyRequests: 429,       // Too many requests
   SystemError: 500,           // System error
   ServiceUnavailable: 503,    // Service unavailable
 
   // Custom error codes
-  InvalidCampaignCode: 400001,  // Invalid campaign code
-  InvalidClientClock: 400002,    // Invalid client timestamp
+  InvalidCampaignCode: 400001,    // Invalid campaign code
+  InvalidClientClock: 400002,      // Invalid client timestamp
+  InvalidVerificationCode: 400003, // Invalid verification code
+  InvalidInviteCode: 400004,       // Invalid invite code
+  SelfInvitation: 400005,          // Self invitation
+  InvalidCredentials: 400006,      // Invalid credentials
 } as const;
 
 export type ErrorCodeType = typeof ErrorCode[keyof typeof ErrorCode];

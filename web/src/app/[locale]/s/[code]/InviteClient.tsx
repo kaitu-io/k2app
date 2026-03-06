@@ -24,6 +24,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { api, ApiError, InviteCode, AppConfig } from '@/lib/api';
+import { getApiErrorMessage } from '@/lib/api-errors';
 
 function setCookie(name: string, value: string, days: number = 7): void {
   const expires = new Date();
@@ -58,7 +59,7 @@ export default function InviteClient({ code }: InviteClientProps) {
       } catch (err) {
         console.error('Failed to fetch data:', err);
         if (err instanceof ApiError) {
-          setError(err.message || t('invite.inviteLanding.invalidCode'));
+          setError(getApiErrorMessage(err.code, t, t('invite.inviteLanding.invalidCode')));
         } else {
           setError(t('invite.inviteLanding.invalidCode'));
         }

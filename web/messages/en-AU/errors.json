@@ -1,0 +1,22 @@
+{
+  "badRequest": "Invalid request",
+  "unauthorized": "Please log in first",
+  "paymentRequired": "Membership expired, please renew",
+  "forbidden": "No permission to perform this operation",
+  "notFound": "Resource not found",
+  "notSupported": "Feature not supported",
+  "upgradeRequired": "Please upgrade to the latest version",
+  "conflict": "Operation conflict, please try again",
+  "invalidArgument": "Invalid parameters",
+  "tooEarly": "Please wait a moment and try again",
+  "tooManyRequests": "Too many requests, please try later",
+  "serverError": "Server error, please try later",
+  "serviceUnavailable": "Server unavailable, please try later",
+  "invalidCampaignCode": "Invalid promo code",
+  "invalidClock": "Device clock is incorrect, please adjust",
+  "invalidVerificationCode": "Invalid verification code",
+  "invalidInviteCode": "Invalid invite code",
+  "selfInvitation": "Cannot use your own invite code",
+  "invalidCredentials": "Invalid login credentials",
+  "unknown": "Operation failed, please try again"
+}

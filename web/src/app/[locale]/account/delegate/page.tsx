@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { api, type Delegate, ApiError } from "@/lib/api";
+import { getApiErrorMessage } from "@/lib/api-errors";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CircleDashed, UserX, Mail, AlertTriangle } from "lucide-react";
@@ -40,7 +41,9 @@ export default function DelegatePage() {
         setDelegate(null);
       } else {
         console.error("Failed to load delegate:", err);
-        setError(err instanceof Error ? err.message : "Failed to load delegate");
+        setError(err instanceof ApiError
+          ? getApiErrorMessage(err.code, t)
+          : t("errors.unknown"));
       }
     } finally {
       setLoading(false);
@@ -60,7 +63,9 @@ export default function DelegatePage() {
       await loadDelegate();
     } catch (err) {
       console.error("Failed to reject delegate:", err);
-      toast.error(err instanceof Error ? err.message : t("admin.account.delegate.rejectFailed"));
+      toast.error(err instanceof ApiError
+        ? getApiErrorMessage(err.code, t)
+        : t("admin.account.delegate.rejectFailed"));
     } finally {
       setRejecting(false);
     }

@@ -23,7 +23,8 @@ import { useAlert, useAuthStore } from "../stores";
 import { useUser } from "../hooks/useUser";
 import { useLoginDialogStore } from "../stores/login-dialog.store";
 
-import { type Plan, type Order, type AppConfig, ErrorInvalidCampaignCode } from "../services/api-types";
+import { type Plan, type Order, type AppConfig } from "../services/api-types";
+import { ERROR_CODES } from "../utils/errorCode";
 import { LoadingState, EmptyPlans } from '../components/LoadingAndEmpty';
 import MemberSelection from '../components/MemberSelection';
 import EmailLoginForm from '../components/EmailLoginForm';
@@ -555,7 +556,7 @@ export default function Purchase() {
         }
       } else {
         // 统一错误处理逻辑
-        if (response.code === ErrorInvalidCampaignCode) {
+        if (response.code === ERROR_CODES.INVALID_CAMPAIGN_CODE) {
           console.error('[Purchase] Invalid campaign code:', response.code, response.message);
           setCampaignError(t('purchase:purchase.invalidCampaignCode'));
           // 优惠码错误时不清除订单数据，保持当前预览状态

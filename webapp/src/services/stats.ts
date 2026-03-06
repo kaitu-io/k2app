@@ -76,18 +76,35 @@ async function getDeviceHash(): Promise<string> {
   try {
     const udid = await window._platform?.getUdid();
     if (udid) {
-      // SHA-256 hash of UDID
-      const encoder = new TextEncoder();
-      const data = encoder.encode(udid);
-      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      _deviceHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      // UDID is already a 32 hex char hash from the native layer — use directly
+      _deviceHash = udid;
       return _deviceHash;
     }
   } catch {
-    // fallback
+    // getUdid failed (e.g. Windows daemon not responding)
+  }
+
+  // Fallback: generate a persistent random ID so each device is still unique
+  const FALLBACK_KEY = 'stats_device_id';
+  try {
+    let fallbackId = await window._platform?.storage?.get<string>(FALLBACK_KEY);
+    if (!fallbackId) {
+      fallbackId = crypto.randomUUID();
+      await window._platform?.storage?.set(FALLBACK_KEY, fallbackId);
+    }
+    _deviceHash = await sha256(fallbackId);
+    return _deviceHash;
+  } catch {
+    // storage also failed
   }
   return 'unknown';
+}
+
+async function sha256(input: string): Promise<string> {
+  const data = new TextEncoder().encode(input);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 // ========================= Flush =========================

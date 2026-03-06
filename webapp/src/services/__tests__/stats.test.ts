@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { cloudApi } from '../cloud-api';
-import { statsService } from '../stats';
 
 // Mock cloudApi before importing stats
 vi.mock('../cloud-api', () => ({
@@ -25,12 +24,13 @@ Object.defineProperty(window, '_platform', {
   writable: true,
 });
 
-// Mock crypto.subtle for SHA-256
+// Mock crypto.subtle for SHA-256 + randomUUID for fallback
 Object.defineProperty(globalThis, 'crypto', {
   value: {
     subtle: {
       digest: vi.fn(async () => new ArrayBuffer(32)),
     },
+    randomUUID: vi.fn(() => 'fallback-uuid-1234'),
   },
   writable: true,
 });
@@ -38,7 +38,15 @@ Object.defineProperty(globalThis, 'crypto', {
 const mockRequest = cloudApi.request as ReturnType<typeof vi.fn>;
 
 describe('statsService', () => {
-  beforeEach(() => {
+  // Re-import statsService fresh each test to reset module-level _deviceHash cache
+  let statsService: typeof import('../stats').statsService;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    // Re-import to get fresh module state (clears _deviceHash cache)
+    const mod = await import('../stats');
+    statsService = mod.statsService;
+
     mockStorage.clear();
     vi.clearAllMocks();
     // Re-set mocks cleared by vi.clearAllMocks()
@@ -69,6 +77,29 @@ describe('statsService', () => {
           expect.objectContaining({
             os: 'macos',
             app_version: '0.4.0',
+          }),
+        ]),
+      })
+    );
+  });
+
+  it('uses persistent fallback hash when getUdid fails', async () => {
+    (window._platform!.getUdid as any).mockRejectedValue(new Error('no UDID'));
+
+    await statsService.trackAppOpen();
+    await new Promise(r => setTimeout(r, 50));
+
+    // Should have generated and stored a fallback device ID
+    expect(mockStorage.get('stats_device_id')).toBe('fallback-uuid-1234');
+
+    // Should still have flushed with a hash (not "unknown")
+    expect(mockRequest).toHaveBeenCalledWith(
+      'POST',
+      '/api/stats/events',
+      expect.objectContaining({
+        app_opens: expect.arrayContaining([
+          expect.objectContaining({
+            device_hash: expect.not.stringMatching(/^unknown$/),
           }),
         ]),
       })

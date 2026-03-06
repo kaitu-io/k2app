@@ -88,9 +88,9 @@ class K2Plugin : Plugin() {
 
     @PluginMethod
     fun getUDID(call: PluginCall) {
-        val udid = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+        val raw = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
         val ret = JSObject()
-        ret.put("udid", udid)
+        ret.put("udid", K2PluginUtils.hashToUdid(raw))
         call.resolve(ret)
     }
 

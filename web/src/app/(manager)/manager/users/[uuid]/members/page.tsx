@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { api, ApiError, ErrorCode, type User, type AddMemberRequest } from "@/lib/api";
+import { getApiErrorMessageZh } from "@/lib/api-errors";
 import { toast } from "sonner";
 import {
   Card,
@@ -163,7 +164,7 @@ export default function AdminMembersPage() {
         if (err.code === ErrorCode.InvalidArgument) {
           toast.error("该邮箱已被使用");
         } else if (!err.isUnauthorized()) {
-          toast.error(err.message || "添加成员失败");
+          toast.error(getApiErrorMessageZh(err.code, "添加成员失败"));
         }
       }
     } finally {
@@ -190,7 +191,7 @@ export default function AdminMembersPage() {
     } catch (err) {
       console.error("Failed to remove member:", err);
       if (err instanceof ApiError && !err.isUnauthorized()) {
-        toast.error(err.message || "移除成员失败");
+        toast.error(getApiErrorMessageZh(err.code, "移除成员失败"));
       }
     } finally {
       setRemoving(false);
