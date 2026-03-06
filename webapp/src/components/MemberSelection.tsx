@@ -24,7 +24,7 @@ import { useTranslation } from "react-i18next";
 import { useAlert, useAuthStore } from "../stores";
 
 import type { DataUser, AddMemberRequest, ListResult } from "../services/api-types";
-import { ErrorInvalidArgument } from "../services/api-types";
+import { ERROR_CODES } from "../utils/errorCode";
 import EmailTextField from "./EmailTextField";
 import { cloudApi } from '../services/cloud-api';
 import { cacheStore } from '../services/cache-store';
@@ -129,7 +129,7 @@ export default function MemberSelection({
         setNewMemberEmail("");
         setAddDialogOpen(false);
         showAlert(t('purchase:memberSelection.addMemberSuccess'), "success");
-      } else if (code === ErrorInvalidArgument) {
+      } else if (code === ERROR_CODES.INVALID_ARGUMENT) {
         // 422 error: email already in use
         console.warn('[MemberSelection] Add member 422:', message);
         showAlert(t('purchase:memberSelection.emailAlreadyInUse'), "error");

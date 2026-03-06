@@ -230,9 +230,6 @@ export interface ProHistoryParams extends PaginationParams {
   type?: string; // 可选的类型过滤 (recharge, reward, 等)
 }
 
-export const ErrorInvalidCampaignCode = 400001;
-export const ErrorInvalidArgument = 422;
-
 // 成员管理相关类型
 export interface AddMemberRequest {
   memberEmail: string; // 成员邮箱

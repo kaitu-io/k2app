@@ -67,7 +67,26 @@ DO:
 | No i18n | Backend messages are English-only |
 | Security | Exposes internal API paths |
 
-Error code-to-i18n mapping lives in `utils/errorHandler.ts`. Use `handleResponseError()` and `getErrorMessage()` from that module. In catch blocks, log the raw error and show an i18n fallback string to the user.
+Error code-to-i18n mapping lives in `utils/errorCode.ts`. Use `handleResponseError()` and `getErrorMessage()` from that module. In catch blocks, log the raw error and show an i18n fallback string to the user.
+
+### API Error Code Constitution
+
+Every backend error code (`api/response.go`) MUST have a matching entry in `utils/errorCode.ts`.
+
+Checklist for new backend error codes:
+1. Add constant to `api/response.go`
+2. Add to `ERROR_CODES` in `utils/errorCode.ts`
+3. Add `case` in `getErrorMessage()` with i18n key
+4. Add i18n translation in all 7 locales
+5. Never duplicate error code constants outside `errorCode.ts`
+
+Code ranges:
+- `0`: Success
+- `400-503`: Backend HTTP-aligned codes (sync with `api/response.go`)
+- `400001-400999`: Backend custom business codes
+- `100-199`: Frontend-only network errors
+- `500-579`: Frontend-only VPN/action/API errors
+- `-1`: Frontend-only cloud API network failure
 
 ---
 

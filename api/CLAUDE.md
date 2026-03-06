@@ -86,6 +86,8 @@ Error(c, ErrorCode, "message")       // Error (HTTP 200, error in code field)
 | 500 | `ErrorInternal` | System exception |
 | 503 | `ErrorServiceUnavailable` | Service unavailable |
 
+> **Constitution**: Every error code added to `response.go` MUST be mirrored in `webapp/src/utils/errorCode.ts`. See `webapp/CLAUDE.md` "API Error Code Constitution" for the full checklist.
+
 ## Middleware (middleware.go)
 
 ### Auth Chain (priority order)

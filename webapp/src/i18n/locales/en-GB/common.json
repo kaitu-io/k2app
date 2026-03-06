@@ -81,7 +81,16 @@
       "badRequest": "Request parameter error",
       "unauthorized": "Please log in first",
       "forbidden": "No permission to perform this action",
-      "notFound": "Requested resource not found"
+      "notFound": "Requested resource not found",
+      "paymentRequired": "Membership expired, please renew",
+      "notSupported": "Feature not supported",
+      "upgradeRequired": "Please upgrade to the latest version",
+      "conflict": "Operation conflict, please try again",
+      "invalidArgument": "Invalid parameters",
+      "tooEarly": "Please wait a moment and try again",
+      "tooManyRequests": "Too many requests, please try later",
+      "invalidClock": "Device clock is incorrect, please adjust",
+      "selfInvitation": "Cannot use your own invite code"
     },
     "vpn": {
       "authFailed": "Authentication failed, please re-login",

@@ -6,17 +6,39 @@
 import { TFunction } from 'i18next';
 
 /**
- * Standard error codes from backend
- * 与 Go 后端 types.go 中的 ErrCode* 常量保持同步
+ * Error codes — backend API codes synced with api/response.go,
+ * plus frontend-only codes for VPN/network/action errors.
+ *
+ * Constitution: Every backend error code MUST have an entry here
+ * and a corresponding case in getErrorMessage().
  */
 export const ERROR_CODES = {
   SUCCESS: 0,
-  INVALID_VERIFICATION_CODE: 400003,
+
+  // === Backend API codes (sync with api/response.go) ===
+  INVALID_OPERATION: 400,
   UNAUTHORIZED: 401,
+  PAYMENT_REQUIRED: 402,
   FORBIDDEN: 403,
   NOT_FOUND: 404,
+  NOT_SUPPORTED: 405,
+  UPGRADE_REQUIRED: 406,
+  CONFLICT: 409,
+  INVALID_ARGUMENT: 422,
+  TOO_EARLY: 425,
+  TOO_MANY_REQUESTS: 429,
   INTERNAL_SERVER_ERROR: 500,
-  NOT_IMPLEMENTED: 501,
+  SERVICE_UNAVAILABLE: 503,
+
+  // Backend custom codes (400000+ range, sync with api/response.go)
+  INVALID_CAMPAIGN_CODE: 400001,
+  INVALID_CLIENT_CLOCK: 400002,
+  INVALID_VERIFICATION_CODE: 400003,
+  INVALID_INVITE_CODE: 400004,
+  SELF_INVITATION: 400005,
+  INVALID_CREDENTIALS: 400006,
+
+  // === Frontend-only codes (NOT from backend API) ===
 
   // 网络错误 (100-109) - 来自 classifyNetworkError
   NETWORK_TIMEOUT: 100,
@@ -38,14 +60,14 @@ export const ERROR_CODES = {
   VPN_TIMEOUT: 513,
 
   // 网络修复相关错误 (520-529)
-  NETWORK_REPAIR_FAILED: 520,     // 网络修复失败
-  NETWORK_REPAIR_DNS: 521,        // DNS 修复失败
-  NETWORK_REPAIR_ROUTE: 522,      // 路由修复失败
-  NETWORK_REPAIR_PRE_FAILED: 523, // 网络修复前置操作失败
+  NETWORK_REPAIR_FAILED: 520,
+  NETWORK_REPAIR_DNS: 521,
+  NETWORK_REPAIR_ROUTE: 522,
+  NETWORK_REPAIR_PRE_FAILED: 523,
 
   // 连接错误 (570-579)
-  CONNECTION_FATAL: 570,          // 致命连接错误
-  ALL_ADDRS_FAILED: 571,          // 所有地址连接失败
+  CONNECTION_FATAL: 570,
+  ALL_ADDRS_FAILED: 571,
 
   // 认证相关错误 (530-539)
   LOGOUT_FAILED: 530,
@@ -83,11 +105,16 @@ export function getErrorMessage(
     case ERROR_CODES.SUCCESS:
       return t('common:common.success', 'Success');
 
-    case ERROR_CODES.INVALID_VERIFICATION_CODE:
-      return t('auth:auth.invalidVerificationCode', 'Invalid verification code');
+    // === Backend API codes (sync with api/response.go) ===
+
+    case ERROR_CODES.INVALID_OPERATION:
+      return t('common:errors.client.badRequest', 'Invalid operation');
 
     case ERROR_CODES.UNAUTHORIZED:
       return t('auth:auth.unauthorized', 'Authentication required');
+
+    case ERROR_CODES.PAYMENT_REQUIRED:
+      return t('common:errors.client.paymentRequired', 'Membership expired, please renew');
 
     case ERROR_CODES.FORBIDDEN:
       return t('auth:auth.forbidden', 'Permission denied');
@@ -95,8 +122,49 @@ export function getErrorMessage(
     case ERROR_CODES.NOT_FOUND:
       return t('common:common.notFound', 'Resource not found');
 
+    case ERROR_CODES.NOT_SUPPORTED:
+      return t('common:errors.client.notSupported', 'Feature not supported');
+
+    case ERROR_CODES.UPGRADE_REQUIRED:
+      return t('common:errors.client.upgradeRequired', 'Please upgrade to the latest version');
+
+    case ERROR_CODES.CONFLICT:
+      return t('common:errors.client.conflict', 'Operation conflict, please try again');
+
+    case ERROR_CODES.INVALID_ARGUMENT:
+      return t('common:errors.client.invalidArgument', 'Invalid parameters');
+
+    case ERROR_CODES.TOO_EARLY:
+      return t('common:errors.client.tooEarly', 'Please wait a moment and try again');
+
+    case ERROR_CODES.TOO_MANY_REQUESTS:
+      return t('common:errors.client.tooManyRequests', 'Too many requests, please try later');
+
     case ERROR_CODES.INTERNAL_SERVER_ERROR:
       return t('common:common.serverError', 'Internal server error');
+
+    case ERROR_CODES.SERVICE_UNAVAILABLE:
+      return t('common:errors.server.unavailable', 'Server unavailable');
+
+    // Backend custom codes (400000+ range)
+
+    case ERROR_CODES.INVALID_CAMPAIGN_CODE:
+      return t('purchase:purchase.invalidCampaignCode', 'Invalid promo code');
+
+    case ERROR_CODES.INVALID_CLIENT_CLOCK:
+      return t('common:errors.client.invalidClock', 'Device clock is incorrect, please adjust');
+
+    case ERROR_CODES.INVALID_VERIFICATION_CODE:
+      return t('auth:auth.invalidVerificationCode', 'Invalid verification code');
+
+    case ERROR_CODES.INVALID_INVITE_CODE:
+      return t('auth:auth.inviteCodeIncorrect', 'Invalid invite code');
+
+    case ERROR_CODES.SELF_INVITATION:
+      return t('common:errors.client.selfInvitation', 'Cannot use your own invite code');
+
+    case ERROR_CODES.INVALID_CREDENTIALS:
+      return t('auth:auth.loginFailed', 'Login failed');
 
     // 网络错误 (100-109)
     case ERROR_CODES.NETWORK_TIMEOUT:
