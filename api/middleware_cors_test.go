@@ -118,6 +118,36 @@ func TestApiCORSMiddleware_CapacitorOriginAllowed(t *testing.T) {
 	assert.Equal(t, "true", w.Header().Get("Access-Control-Allow-Credentials"))
 }
 
+func TestApiCORSMiddleware_TauriLocalhostAllowed(t *testing.T) {
+	router := createApiCORSRouter()
+
+	// Tauri v2 WebView2 on Windows uses http://tauri.localhost as origin
+	req, _ := http.NewRequest("GET", "/api/plans", nil)
+	req.Header.Set("Origin", "http://tauri.localhost")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, 200, w.Code)
+	assert.Equal(t, "http://tauri.localhost", w.Header().Get("Access-Control-Allow-Origin"))
+	assert.Equal(t, "true", w.Header().Get("Access-Control-Allow-Credentials"))
+}
+
+func TestApiCORSMiddleware_SubdomainLocalhostAllowed(t *testing.T) {
+	router := createApiCORSRouter()
+
+	// Any *.localhost subdomain (RFC 6761 reserved TLD)
+	req, _ := http.NewRequest("GET", "/api/plans", nil)
+	req.Header.Set("Origin", "http://foo.localhost:3000")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, 200, w.Code)
+	assert.Equal(t, "http://foo.localhost:3000", w.Header().Get("Access-Control-Allow-Origin"))
+	assert.Equal(t, "true", w.Header().Get("Access-Control-Allow-Credentials"))
+}
+
 func TestApiCORSMiddleware_PublicOriginRejected(t *testing.T) {
 	router := createApiCORSRouter()
 

@@ -599,8 +599,8 @@ func isPrivateOrigin(origin string) bool {
 		return false
 	}
 
-	// localhost
-	if host == "localhost" {
+	// localhost and *.localhost (RFC 6761 — .localhost TLD always resolves to loopback)
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
 		return true
 	}
 
