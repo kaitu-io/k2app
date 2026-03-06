@@ -34,11 +34,19 @@ for arg in "$@"; do
     esac
 done
 
+# Channel detection: -beta suffix -> beta manifest path (same as publish-desktop.sh)
+if [[ "$VERSION" == *"-beta"* ]]; then
+    S3_MANIFEST="${S3_ROOT}/beta"
+else
+    S3_MANIFEST="${S3_ROOT}"
+fi
+
 PLATFORMS=("linux-amd64" "linux-arm64" "darwin-amd64" "darwin-arm64")
 BINARIES=("k2" "k2s")
 
 echo "Publishing k2 standalone v${VERSION}"
-echo "S3: ${S3_VER}/"
+echo "S3 version path: ${S3_VER}/"
+echo "S3 manifest path: ${S3_MANIFEST}/"
 echo ""
 
 # Verify all artifacts + CHECKSUMS.txt exist
@@ -194,17 +202,17 @@ cat "${TMPDIR}/cloudfront.latest.json"
 echo ""
 
 if [ "$DRY_RUN" = true ]; then
-    echo "[dry-run] Would upload 4 latest.json files to ${S3_ROOT}/"
+    echo "[dry-run] Would upload 4 latest.json files to ${S3_MANIFEST}/"
 else
-    aws s3 cp "${TMPDIR}/cloudfront.latest.json" "${S3_ROOT}/cloudfront.latest.json" \
+    aws s3 cp "${TMPDIR}/cloudfront.latest.json" "${S3_MANIFEST}/cloudfront.latest.json" \
         --content-type "application/json"
-    aws s3 cp "${TMPDIR}/d0.latest.json" "${S3_ROOT}/d0.latest.json" \
+    aws s3 cp "${TMPDIR}/d0.latest.json" "${S3_MANIFEST}/d0.latest.json" \
         --content-type "application/json"
-    aws s3 cp "${TMPDIR}/k2s-cloudfront.latest.json" "${S3_ROOT}/k2s-cloudfront.latest.json" \
+    aws s3 cp "${TMPDIR}/k2s-cloudfront.latest.json" "${S3_MANIFEST}/k2s-cloudfront.latest.json" \
         --content-type "application/json"
-    aws s3 cp "${TMPDIR}/k2s-d0.latest.json" "${S3_ROOT}/k2s-d0.latest.json" \
+    aws s3 cp "${TMPDIR}/k2s-d0.latest.json" "${S3_MANIFEST}/k2s-d0.latest.json" \
         --content-type "application/json"
-    echo "4 latest.json files uploaded"
+    echo "4 latest.json files uploaded to ${S3_MANIFEST}/"
 fi
 
 echo ""

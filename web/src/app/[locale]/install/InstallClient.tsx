@@ -26,15 +26,24 @@ import { Link } from '@/i18n/routing';
 
 type DownloadState = 'detecting' | 'ready' | 'downloading' | 'success' | 'failed' | 'unavailable';
 
-export default function InstallClient() {
+interface InstallClientProps {
+  betaVersion: string | null;
+  stableVersion: string | null;
+}
+
+export default function InstallClient({ betaVersion: serverBeta, stableVersion: serverStable }: InstallClientProps) {
   const t = useTranslations();
   const [device, setDevice] = useState<DeviceInfo | null>(null);
   const [downloadState, setDownloadState] = useState<DownloadState>('detecting');
   const [countdown, setCountdown] = useState(5);
 
+  // Server-fetched version takes priority, build-time env var as fallback
+  const effectiveBeta = serverBeta || BETA_VERSION;
+  const effectiveStable = serverStable || DESKTOP_VERSION;
+
   // Beta is the primary download for desktop
-  const betaLinks = getDownloadLinks(BETA_VERSION);
-  const stableLinks = getDownloadLinks(DESKTOP_VERSION);
+  const betaLinks = getDownloadLinks(effectiveBeta);
+  const stableLinks = getDownloadLinks(effectiveStable);
 
   // Determine primary download link based on device
   const getPrimaryLink = useCallback((deviceInfo: DeviceInfo | null) => {
@@ -115,7 +124,7 @@ export default function InstallClient() {
 
           {device?.isDesktop && (
             <p className="text-sm text-muted-foreground mb-2">
-              {t('install.install.betaVersion', { version: BETA_VERSION })}
+              {t('install.install.betaVersion', { version: effectiveBeta })}
             </p>
           )}
 
@@ -241,7 +250,7 @@ export default function InstallClient() {
               {t('install.install.lookingForStable')}
             </h3>
             <p className="text-sm text-muted-foreground">
-              {t('install.install.stableVersion', { version: DESKTOP_VERSION })}
+              {t('install.install.stableVersion', { version: effectiveStable })}
             </p>
           </div>
           <div className="flex gap-3">

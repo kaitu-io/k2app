@@ -8,7 +8,22 @@ import InstallClient from '@/app/[locale]/install/InstallClient';
 
 type Locale = (typeof routing.locales)[number];
 
-export const dynamic = 'force-static';
+export const revalidate = 300; // 5 min ISR — fetch latest version from CDN manifests
+
+async function fetchDesktopVersion(channel: 'beta' | 'stable'): Promise<string | null> {
+  const path = channel === 'beta' ? '/beta/cloudfront.latest.json' : '/cloudfront.latest.json';
+  try {
+    const res = await fetch(
+      `https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop${path}`,
+      { next: { revalidate: 300 } }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.version || null;
+  } catch {
+    return null;
+  }
+}
 
 export async function generateMetadata({
   params,
@@ -34,13 +49,18 @@ export default async function InstallPage({
   setRequestLocale(locale);
   const t = await getTranslations({ locale, namespace: 'install' });
 
+  const [betaVersion, stableVersion] = await Promise.all([
+    fetchDesktopVersion('beta'),
+    fetchDesktopVersion('stable'),
+  ]);
+
   return (
     <div className="min-h-screen bg-background">
       <Header />
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         {/* Client island: device detection, download countdown, download state cards */}
-        <InstallClient />
+        <InstallClient betaVersion={betaVersion} stableVersion={stableVersion} />
 
         {/* Help Section — static server-rendered content */}
         <Card className="p-6 mt-8 bg-muted">
