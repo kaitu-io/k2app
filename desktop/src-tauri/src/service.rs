@@ -469,15 +469,18 @@ fn wait_for_version_match(app_version: &str, timeout_ms: u64, poll_ms: u64) -> V
     }
 
     log::info!("[service] Waiting for version match (current: {:?})", last);
+    let mut poll_count = 0u32;
     while start.elapsed() < timeout {
         std::thread::sleep(interval);
         last = check_service_version(app_version);
+        poll_count += 1;
+        log::debug!("[service] Poll #{}: {:?} (elapsed: {:?})", poll_count, last, start.elapsed());
         if matches!(last, VersionCheckResult::VersionMatch) {
-            log::info!("[service] Version matched after {:?}", start.elapsed());
+            log::info!("[service] Version matched after {:?} ({} polls)", start.elapsed(), poll_count);
             return last;
         }
     }
-    log::warn!("[service] No match within {:?} (last: {:?})", timeout, last);
+    log::warn!("[service] No match within {:?} after {} polls (last: {:?})", timeout, poll_count, last);
     last
 }
 
@@ -530,9 +533,23 @@ async fn ensure_service_running_daemon(app_version: String) -> Result<(), String
         return Ok(());
     }
 
-    // Phase 2: install via osascript
+    // Phase 2: install via admin elevation
     log::info!("[service] Install needed: {:?}", check);
-    admin_reinstall_service().await?;
+
+    // Diagnostic: check if k2 binary exists
+    let exe_path = std::env::current_exe().ok();
+    if let Some(ref exe) = exe_path {
+        let k2_path = exe.parent().map(|d| d.join("k2.exe"));
+        log::info!("[service] k2 binary exists: {:?} -> {}", k2_path, k2_path.as_ref().map_or(false, |p| p.exists()));
+    }
+
+    match admin_reinstall_service().await {
+        Ok(msg) => log::info!("[service] Admin install succeeded: {}", msg),
+        Err(ref e) => {
+            log::error!("[service] Admin install failed: {}", e);
+            return Err(e.clone());
+        }
+    }
 
     // Phase 3: verify post-install
     let ver = app_version.clone();

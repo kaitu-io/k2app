@@ -1,15 +1,8 @@
 ; Kaitu Desktop - NSIS Installer Hooks
 ; Windows service lifecycle management for Tauri application
 ;
-; Service management uses k2.exe binary commands:
-;   k2.exe service install     — idempotent: cleanup legacy + stop + delete + create + recovery + start
-;   k2.exe service uninstall   — stop + delete (+ legacy cleanup)
-;
-; IMPORTANT: k2.exe service install handles everything including:
-;   - Cleaning up legacy service names (k2, kaitu-service)
-;   - Stopping and deleting existing service if present
-;   - Configuring SCM recovery options (auto-restart on failure)
-;   - Starting the new service
+; CRITICAL: PREINSTALL must fully stop k2.exe process and release file lock
+; before NSIS copies new files. Diagnostic log: $TEMP\kaitu-preinstall.log
 
 ; ============================================================================
 ; Configuration - Replace these values as needed
@@ -52,70 +45,133 @@
 ; ============================================================================
 ; NSIS_HOOK_PREINSTALL - Pre-installation Cleanup
 ; ============================================================================
-; Runs before copying files
-; Stops existing service and cleans up old installation
+; Runs before copying files. Diagnostic version — writes to $TEMP\kaitu-preinstall.log
 !macro NSIS_HOOK_PREINSTALL
   DetailPrint "============================================"
   DetailPrint "Preparing for installation..."
   DetailPrint "============================================"
 
-  ; Step 1: Stop desktop application (release file handles)
+  ; === Diagnostic log: capture state at each step ===
+  FileOpen $9 "$TEMP\kaitu-preinstall.log" w
+  FileWrite $9 "=== PREINSTALL started ===$\r$\n"
+  FileWrite $9 "INSTDIR=$INSTDIR$\r$\n"
+  FileClose $9
+
+  ; Step 1: Check initial state
+  DetailPrint "Checking initial state..."
+  nsExec::ExecToStack 'sc query ${SERVICE_NAME}'
+  Pop $0
+  Pop $1
+  FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileWrite $9 "[1] sc query ${SERVICE_NAME}: exit=$0 output=$1$\r$\n"
+  FileClose $9
+
+  nsExec::ExecToStack 'tasklist /FI "IMAGENAME eq k2.exe" /NH'
+  Pop $0
+  Pop $1
+  FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileWrite $9 "[1] tasklist k2.exe: exit=$0 output=$1$\r$\n"
+  FileClose $9
+
+  ; Step 2: Stop desktop application
   DetailPrint "Stopping desktop application..."
   nsExec::ExecToStack 'taskkill /F /IM "${MAINBINARYNAME}.exe" /T'
   Pop $0
   Pop $1
 
-  ; Step 2: Wait for file handles to be released
-  DetailPrint "Waiting for file handles (3 seconds)..."
-  Sleep 3000
-
-  ; Step 3: Stop all possible service names (current + legacy)
-  ; sc stop sends SERVICE_CONTROL_STOP — triggers VPN cleanup (routes/DNS restoration)
-  DetailPrint "Stopping services (VPN cleanup)..."
-  nsExec::ExecToStack 'sc stop ${SERVICE_NAME}'
+  ; Step 3: Disable SCM recovery (prevent auto-restart on crash)
+  DetailPrint "Disabling service recovery..."
+  nsExec::ExecToStack 'sc failure ${SERVICE_NAME} reset= 0 actions= ///  '
   Pop $0
   Pop $1
-  nsExec::ExecToStack 'sc stop k2'
+  FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileWrite $9 "[3] sc failure ${SERVICE_NAME}: exit=$0 output=$1$\r$\n"
+  FileClose $9
+
+  ; Step 4: Stop service SYNCHRONOUSLY — net stop waits for full stop
+  ; (sc stop is async and returns immediately, net stop blocks until stopped)
+  DetailPrint "Stopping kaitu service (synchronous)..."
+  nsExec::ExecToStack 'net stop ${SERVICE_NAME}'
   Pop $0
   Pop $1
-  nsExec::ExecToStack 'sc stop kaitu-service'
+  DetailPrint "net stop ${SERVICE_NAME}: exit=$0"
+  FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileWrite $9 "[4] net stop ${SERVICE_NAME}: exit=$0 output=$1$\r$\n"
+  FileClose $9
+
+  nsExec::ExecToStack 'net stop k2'
+  Pop $0
+  Pop $1
+  nsExec::ExecToStack 'net stop kaitu-service'
   Pop $0
   Pop $1
 
-  ; Step 4: Wait for VPN cleanup to complete
-  DetailPrint "Waiting for VPN cleanup (10 seconds)..."
-  Sleep 10000
-
-  ; Step 5: Uninstall service using OLD binary (handles stop + delete + legacy cleanup)
-  DetailPrint "Uninstalling service..."
-  nsExec::ExecToStack '"$INSTDIR\${SERVICE_EXE}" service uninstall'
+  ; Step 5: Check state after net stop
+  nsExec::ExecToStack 'sc query ${SERVICE_NAME}'
   Pop $0
   Pop $1
-  DetailPrint "Service uninstall result: $0"
+  FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileWrite $9 "[5] sc query after net stop: exit=$0 output=$1$\r$\n"
+  FileClose $9
 
-  ; Step 6: Fallback — delete legacy services via sc (in case binary didn't exist)
+  nsExec::ExecToStack 'tasklist /FI "IMAGENAME eq k2.exe" /NH'
+  Pop $0
+  Pop $1
+  FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileWrite $9 "[5] tasklist after net stop: exit=$0 output=$1$\r$\n"
+  FileClose $9
+
+  ; Step 6: Delete service records (prevent any restart)
+  DetailPrint "Deleting service records..."
+  nsExec::ExecToStack 'sc delete ${SERVICE_NAME}'
+  Pop $0
+  Pop $1
+  FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileWrite $9 "[6] sc delete ${SERVICE_NAME}: exit=$0 output=$1$\r$\n"
+  FileClose $9
+
   nsExec::ExecToStack 'sc delete k2'
   Pop $0
   Pop $1
   nsExec::ExecToStack 'sc delete kaitu-service'
   Pop $0
   Pop $1
-  nsExec::ExecToStack 'sc delete ${SERVICE_NAME}'
-  Pop $0
-  Pop $1
-  Sleep 2000
 
-  ; Step 7: Force kill any remaining processes (safety net)
-  DetailPrint "Cleaning up processes..."
+  ; Step 7: Force kill any remaining processes
+  DetailPrint "Force killing processes..."
   nsExec::ExecToStack 'taskkill /F /IM "k2.exe" /T'
   Pop $0
   Pop $1
+  FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileWrite $9 "[7] taskkill /F k2.exe: exit=$0 output=$1$\r$\n"
+  FileClose $9
+
   nsExec::ExecToStack 'taskkill /F /IM "kaitu-service.exe" /T'
   Pop $0
   Pop $1
-  Sleep 1000
 
-  ; Step 8: Delete old files to ensure clean install
+  ; Step 8: Wait for process exit + file handle release
+  DetailPrint "Waiting for file handles (5 seconds)..."
+  Sleep 5000
+
+  ; Step 9: Verify process is gone
+  nsExec::ExecToStack 'tasklist /FI "IMAGENAME eq k2.exe" /NH'
+  Pop $0
+  Pop $1
+  FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileWrite $9 "[9] tasklist after kill+wait: exit=$0 output=$1$\r$\n"
+  FileClose $9
+
+  ; If still running, try kill again and wait more
+  nsExec::ExecToStack 'taskkill /F /IM "k2.exe"'
+  Pop $0
+  Pop $1
+  FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileWrite $9 "[9] retry taskkill: exit=$0$\r$\n"
+  FileClose $9
+  Sleep 3000
+
+  ; Step 10: Delete old files
   DetailPrint "Removing old files..."
   Delete "$INSTDIR\${MAINBINARYNAME}.exe"
   Delete "$INSTDIR\k2.exe"
@@ -123,6 +179,29 @@
   Delete "$INSTDIR\wintun.dll"
   Delete "$INSTDIR\*.log"
   RMDir /r "$INSTDIR\_app"
+
+  ; Step 11: Verify k2.exe file is deletable
+  IfFileExists "$INSTDIR\k2.exe" 0 _pre_k2_gone
+    FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+    FileWrite $9 "[11] k2.exe STILL EXISTS after Delete — file is LOCKED$\r$\n"
+    FileClose $9
+    DetailPrint "WARNING: k2.exe still locked!"
+    ; Last resort: try again
+    nsExec::ExecToStack 'taskkill /F /IM "k2.exe"'
+    Pop $0
+    Pop $1
+    Sleep 3000
+    Delete "$INSTDIR\k2.exe"
+    Goto _pre_k2_check_done
+  _pre_k2_gone:
+    FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+    FileWrite $9 "[11] k2.exe deleted OK$\r$\n"
+    FileClose $9
+  _pre_k2_check_done:
+
+  FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+  FileWrite $9 "=== PREINSTALL completed ===$\r$\n"
+  FileClose $9
 
   DetailPrint "============================================"
   DetailPrint "Cleanup completed"
@@ -139,12 +218,29 @@
   DetailPrint "Configuring service..."
   DetailPrint "============================================"
 
+  ; Diagnostic: verify binary was written successfully
+  DetailPrint "Binary path: $INSTDIR\${SERVICE_EXE}"
+  IfFileExists "$INSTDIR\${SERVICE_EXE}" 0 _post_binary_missing
+    DetailPrint "Binary exists: YES"
+    Goto _post_binary_check_done
+  _post_binary_missing:
+    DetailPrint "Binary exists: NO — CRITICAL"
+  _post_binary_check_done:
+
   ; Step 1: Install and start service (idempotent — handles legacy cleanup + recovery config)
   DetailPrint "Installing ${SERVICE_NAME} service..."
   nsExec::ExecToStack '"$INSTDIR\${SERVICE_EXE}" service install'
   Pop $0
   Pop $1
-  DetailPrint "Service install result: $0"
+  DetailPrint "Service install exit=$0"
+  DetailPrint "Service install output=$1"
+
+  ; Write diagnostic file to install directory (persists after install)
+  FileOpen $9 "$INSTDIR\install-diag.log" w
+  FileWrite $9 "service_install_exit=$0$\r$\n"
+  FileWrite $9 "service_install_output=$1$\r$\n"
+  FileClose $9
+
   Sleep 3000
 
   ; Step 2: Verify service is running
@@ -152,7 +248,13 @@
   nsExec::ExecToStack 'sc query ${SERVICE_NAME}'
   Pop $0
   Pop $1
-  DetailPrint "$1"
+  DetailPrint "Service query exit=$0"
+
+  ; Append verification to diagnostic file
+  FileOpen $9 "$INSTDIR\install-diag.log" a
+  FileWrite $9 "post_install_sc_query_exit=$0$\r$\n"
+  FileWrite $9 "post_install_sc_query_output=$1$\r$\n"
+  FileClose $9
 
   ; Step 3: Create taskbar shortcut
   DetailPrint "Creating taskbar shortcut..."
@@ -204,43 +306,34 @@
   Pop $0
   Pop $1
 
-  ; Step 2: Wait for file handles
-  DetailPrint "Waiting for file handles (3 seconds)..."
-  Sleep 3000
-
-  ; Step 3: Stop all possible service names (current + legacy)
-  DetailPrint "Stopping services (VPN cleanup)..."
-  nsExec::ExecToStack 'sc stop ${SERVICE_NAME}'
+  ; Step 2: Disable recovery + stop service synchronously
+  DetailPrint "Stopping services..."
+  nsExec::ExecToStack 'sc failure ${SERVICE_NAME} reset= 0 actions= ///  '
   Pop $0
   Pop $1
-  nsExec::ExecToStack 'sc stop k2'
+  nsExec::ExecToStack 'net stop ${SERVICE_NAME}'
   Pop $0
   Pop $1
-  nsExec::ExecToStack 'sc stop kaitu-service'
+  nsExec::ExecToStack 'net stop k2'
+  Pop $0
+  Pop $1
+  nsExec::ExecToStack 'net stop kaitu-service'
   Pop $0
   Pop $1
 
-  ; Step 4: Wait for VPN cleanup (routes/DNS restoration)
-  DetailPrint "Waiting for VPN cleanup (10 seconds)..."
-  Sleep 10000
-
-  ; Step 5: Uninstall service using binary (handles stop + delete + legacy)
-  DetailPrint "Uninstalling service..."
-  nsExec::ExecToStack '"$INSTDIR\${SERVICE_EXE}" service uninstall'
+  ; Step 3: Delete service records
+  DetailPrint "Deleting service records..."
+  nsExec::ExecToStack 'sc delete ${SERVICE_NAME}'
   Pop $0
   Pop $1
-  DetailPrint "Service uninstall result: $0"
-
-  ; Step 6: Fallback — delete legacy services via sc
   nsExec::ExecToStack 'sc delete k2'
   Pop $0
   Pop $1
   nsExec::ExecToStack 'sc delete kaitu-service'
   Pop $0
   Pop $1
-  Sleep 2000
 
-  ; Step 7: Force kill any remaining processes (safety net)
+  ; Step 4: Force kill remaining processes
   DetailPrint "Cleaning up processes..."
   nsExec::ExecToStack 'taskkill /F /IM "k2.exe" /T'
   Pop $0
@@ -248,18 +341,18 @@
   nsExec::ExecToStack 'taskkill /F /IM "kaitu-service.exe" /T'
   Pop $0
   Pop $1
-  Sleep 1000
 
-  ; Step 8: Remove shortcuts
+  ; Step 5: Wait for file handles
+  DetailPrint "Waiting for file handles (5 seconds)..."
+  Sleep 5000
+
+  ; Step 6: Remove shortcuts
   DetailPrint "Removing shortcuts..."
-  ; Desktop shortcut (current user)
   Delete "$DESKTOP\${PRODUCTNAME}.lnk"
-  ; Desktop shortcut (all users)
   SetShellVarContext all
   Delete "$DESKTOP\${PRODUCTNAME}.lnk"
   SetShellVarContext current
 
-  ; Taskbar shortcut
   ReadRegStr $0 HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders" "User Pinned"
   ${If} $0 != ""
     Delete "$0\TaskBar\${PRODUCTNAME}.lnk"

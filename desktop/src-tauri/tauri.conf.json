@@ -53,7 +53,8 @@
       "signCommand": "powershell -NoProfile -File ../../scripts/ci/windows/sign-binary.ps1 %1",
       "nsis": {
         "installMode": "perMachine",
-        "languages": ["SimpChinese", "English"]
+        "languages": ["SimpChinese", "English"],
+        "installerHooks": "installer-hooks.nsh"
       }
     },
     "createUpdaterArtifacts": true
