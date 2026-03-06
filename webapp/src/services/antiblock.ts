@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'k2_entry_url';
-export const DEFAULT_ENTRY = 'https://w.app.52j.me';
+export const DEFAULT_ENTRY = 'https://k2.52j.me';
 export const DECRYPTION_KEY =
   '9e3573184d5e5b3034a087c33fa2cdb76bd0126238ed08f54d1de8c6ae0eb4ba';
 export const CDN_SOURCES = [

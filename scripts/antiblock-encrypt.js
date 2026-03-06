@@ -159,7 +159,7 @@ function truncate(str, len = 80) {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_KEY = '9e3573184d5e5b3034a087c33fa2cdb76bd0126238ed08f54d1de8c6ae0eb4ba';
-const DEFAULT_ENTRIES = ['https://d1l0lk9fcyd6r8.cloudfront.net', 'https://w.app.52j.me'];
+const DEFAULT_ENTRIES = ['https://d1l0lk9fcyd6r8.cloudfront.net', 'https://k2.52j.me'];
 
 if (require.main === module && !process.argv.includes('--test')) {
   const entriesRaw = process.env.ENTRIES;
