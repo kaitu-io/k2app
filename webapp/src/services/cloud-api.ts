@@ -119,8 +119,9 @@ export const cloudApi = {
         console.error('[CloudAPI] timeout (15s):', method, path);
         return { code: -1, message: 'Request timeout' };
       }
+      // Log raw error for debugging, but return generic message to prevent domain leakage
       console.error('[CloudAPI] network error:', method, path, (error as Error).message || error);
-      return { code: -1, message: (error as Error).message || 'Network error' };
+      return { code: -1, message: 'Network error' };
     }
   },
 

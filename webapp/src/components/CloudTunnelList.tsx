@@ -116,7 +116,7 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
         if (response.code !== 401) {
           console.error('Failed to fetch cloud tunnels, code:', response.code, response.message);
         }
-        setError(new Error(response.message || 'Failed to load cloud tunnels'));
+        setError(new Error('Failed to load cloud tunnels'));
         // Schedule auto-retry with exponential backoff (max 5 retries, 3s/6s/12s/24s/48s)
         if (retryCountRef.current < 5) {
           const delay = Math.min(3000 * Math.pow(2, retryCountRef.current), 48000);

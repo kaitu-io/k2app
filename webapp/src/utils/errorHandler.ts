@@ -72,7 +72,8 @@ export function showErrorToast(error: unknown, t: TFunction): void {
 
   if (isApiError(error)) {
     const code = error.code || ERROR_CODES.INTERNAL_SERVER_ERROR;
-    const message = getErrorMessage(code, t, error.message);
+    // Never pass raw error.message as fallback — it may contain internal API domains
+    const message = getErrorMessage(code, t);
     showAlert(message, 'error');
   } else if (error instanceof Error) {
     showAlert(t('common:common.unknownError'), 'error');
@@ -117,11 +118,10 @@ export function isApiError(error: unknown): error is ApiError {
  */
 export function getErrorMessageText(error: unknown, t: TFunction, fallback?: string): string {
   if (isApiError(error) && error.code !== undefined) {
-    return getErrorMessage(error.code, t, error.message);
+    // Never pass raw error.message as fallback — it may contain internal API domains
+    return getErrorMessage(error.code, t, fallback);
   }
-  if (error instanceof Error) {
-    return error.message;
-  }
+  // Don't expose raw Error.message to users — may contain URLs or technical details
   return fallback || t('common:common.unknownError');
 }
 
@@ -129,7 +129,8 @@ export function getErrorMessageText(error: unknown, t: TFunction, fallback?: str
  * Create API error from response
  */
 export function createApiError(response: SResponse, defaultMessage: string): ApiError {
-  const error = new Error(response.message || defaultMessage) as ApiError;
+  // Use defaultMessage (i18n) for Error.message, never raw response.message
+  const error = new Error(defaultMessage) as ApiError;
   error.code = response.code;
   error.response = response;
   return error;
@@ -192,13 +193,10 @@ export async function handleError<T>(
 
       // No more retries, handle error
       if (!silent) {
-        if (errorMessage) {
-          const { showAlert } = useAlertStore.getState();
-          showAlert(errorMessage, 'error');
-        } else if (error instanceof Error) {
-          const { showAlert } = useAlertStore.getState();
-          showAlert(error.message, 'error');
-        }
+        const { showAlert } = useAlertStore.getState();
+        // Always use provided errorMessage; never show raw error.message to users
+        // (may contain internal API domains or technical details)
+        showAlert(errorMessage || 'Operation failed', 'error');
       }
 
       onError?.(lastError);
@@ -225,7 +223,8 @@ export function validateResponse<T>(
   defaultError: string
 ): T {
   if (response.code !== ERROR_CODES.SUCCESS) {
-    const message = getErrorMessage(response.code, t, response.message || defaultError);
+    // Never pass response.message as fallback — it may contain internal API domains
+    const message = getErrorMessage(response.code, t, defaultError);
     const error = new Error(message) as ApiError;
     error.code = response.code;
     error.response = response;
