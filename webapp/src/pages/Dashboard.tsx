@@ -182,15 +182,22 @@ export default function Dashboard() {
 
   // Handle cloud tunnel selection
   const handleCloudTunnelSelect = useCallback((_tunnel: Tunnel, _echConfigList?: string) => {
-    if (isInteractive) return;
+    console.debug('[Dashboard] handleCloudTunnelSelect: tunnel=' + _tunnel.domain + ', isInteractive=' + isInteractive);
+    if (isInteractive) {
+      console.warn('[Dashboard] handleCloudTunnelSelect: blocked by isInteractive (vpnState=' + vpnState + ')');
+      return;
+    }
     selectCloudTunnel(_tunnel);
-  }, [isInteractive, selectCloudTunnel]);
+  }, [isInteractive, vpnState, selectCloudTunnel]);
 
   // Handle self-hosted tunnel selection
   const handleSelfHostedSelect = useCallback(() => {
-    if (isInteractive) return;
+    if (isInteractive) {
+      console.warn('[Dashboard] handleSelfHostedSelect: blocked by isInteractive (vpnState=' + vpnState + ')');
+      return;
+    }
     selectSelfHosted();
-  }, [isInteractive, selectSelfHosted]);
+  }, [isInteractive, vpnState, selectSelfHosted]);
 
   // Handle rule type selection via config store
   const handleRuleTypeChange = useCallback((ruleType: string) => {
@@ -235,14 +242,19 @@ export default function Dashboard() {
 
   // Connection toggle
   const handleToggleConnection = useCallback(async () => {
+    console.debug('[Dashboard] handleToggleConnection: vpnState=' + vpnState + ', isConnected=' + isConnected + ', isDisconnected=' + isDisconnected + ', isTransitioning=' + isTransitioning + ', isRetrying=' + isRetrying + ', hasTunnel=' + !!displayTunnel);
     if (isConnected || isTransitioning || (vpnState === 'error' && isRetrying)) {
+      console.info('[Dashboard] handleToggleConnection: → disconnect');
       disconnect();
     } else if (isDisconnected || (vpnState === 'error' && !isRetrying)) {
       if (!displayTunnel) {
-        console.warn('[Dashboard] No tunnel selected');
+        console.warn('[Dashboard] handleToggleConnection: no tunnel selected, aborting');
         return;
       }
+      console.info('[Dashboard] handleToggleConnection: → connect (tunnel=' + displayTunnel.domain + ')');
       connect();
+    } else {
+      console.warn('[Dashboard] handleToggleConnection: no matching branch (vpnState=' + vpnState + ', isRetrying=' + isRetrying + ')');
     }
   }, [isConnected, isDisconnected, isTransitioning, vpnState, isRetrying, displayTunnel, connect, disconnect]);
 

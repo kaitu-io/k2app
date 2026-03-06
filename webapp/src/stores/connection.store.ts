@@ -90,6 +90,7 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
 
   // Actions
   selectCloudTunnel: (tunnel) => {
+    console.info('[Connection] selectCloudTunnel: domain=' + tunnel.domain + ', name=' + (tunnel.name || tunnel.domain));
     set({
       selectedSource: 'cloud',
       selectedCloudTunnel: tunnel,
@@ -98,17 +99,23 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
   },
 
   selectSelfHosted: () => {
+    const tunnel = computeSelfHostedActiveTunnel();
+    console.info('[Connection] selectSelfHosted: domain=' + (tunnel?.domain ?? 'null'));
     set({
       selectedSource: 'self_hosted',
-      activeTunnel: computeSelfHostedActiveTunnel(),
+      activeTunnel: tunnel,
     });
   },
 
   connect: async () => {
     const { selectedSource, selectedCloudTunnel, activeTunnel, connectEpoch } = get();
-    if (!activeTunnel) return;
+    if (!activeTunnel) {
+      console.warn('[Connection] connect: no activeTunnel, aborting');
+      return;
+    }
 
     const myEpoch = connectEpoch + 1;
+    console.info('[Connection] connect: source=' + selectedSource + ', tunnel=' + activeTunnel.domain + ', epoch=' + connectEpoch + '→' + myEpoch);
     set({ connectedTunnel: activeTunnel, connectEpoch: myEpoch });
 
     // Resolve server URL
@@ -118,36 +125,43 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     } else if (selectedCloudTunnel?.serverUrl) {
       serverUrl = await authService.buildTunnelUrl(selectedCloudTunnel.serverUrl);
     }
+    console.debug('[Connection] connect: resolved serverUrl=' + (serverUrl ?? 'undefined'));
 
     // Epoch guard: bail if user disconnected or started new connect
-    if (get().connectEpoch !== myEpoch) return;
+    if (get().connectEpoch !== myEpoch) {
+      console.warn('[Connection] connect: epoch mismatch (mine=' + myEpoch + ', current=' + get().connectEpoch + '), aborting');
+      return;
+    }
 
     // Build config with explicit params
     const { buildConnectConfig, updateConfig } = useConfigStore.getState();
     const isBeta = window._platform?.updater?.channel === 'beta';
     const logLevel = localStorage.getItem('k2_log_level') || 'info';
     const config = buildConnectConfig({ serverUrl, isBeta, logLevel });
+    console.debug('[Connection] connect: config built, server=' + (config.server ?? 'none') + ', rule=' + (config.rule?.global ? 'global' : 'chnroute') + ', logLevel=' + config.log?.level);
 
     // Persist BEFORE _k2.run so crash doesn't lose config
     await updateConfig({ server: serverUrl });
 
     // Dispatch state machine event and execute
+    console.info('[Connection] connect: dispatching USER_CONNECT, calling _k2.run("up")');
     vpnDispatch('USER_CONNECT');
     try {
       await window._k2.run('up', config);
     } catch (err) {
-      console.error('[ConnectionStore] connect failed:', err);
+      console.error('[Connection] connect failed:', err);
     }
   },
 
   disconnect: async () => {
     // Bump epoch to cancel any in-flight connect
+    console.info('[Connection] disconnect: bumping epoch, dispatching USER_DISCONNECT');
     set((s) => ({ connectedTunnel: null, connectEpoch: s.connectEpoch + 1 }));
     vpnDispatch('USER_DISCONNECT');
     try {
       await window._k2.run('down');
     } catch (err) {
-      console.error('[ConnectionStore] disconnect failed:', err);
+      console.error('[Connection] disconnect failed:', err);
     }
   },
 }));
