@@ -198,11 +198,21 @@ jobs:
         shell: bash
         run: |
           VERSION=$(node -p "require('./package.json').version")
+          CDN_BASE="https://d0.all7.cc/kaitu/desktop/${VERSION}"
+
+          if [ "${PLATFORM}" = "macOS" ]; then
+            DOWNLOAD_URL="<${CDN_BASE}/Kaitu-${VERSION}.pkg|macOS PKG>"
+          else
+            DOWNLOAD_URL="<${CDN_BASE}/Kaitu_${VERSION}_x64-setup.exe|Windows Setup>"
+          fi
+
           ./scripts/ci/notify-slack.sh deploy-success \
             --version "${VERSION}" \
-            --platforms "${{ matrix.platform }}"
+            --platforms "${PLATFORM}" \
+            --download-url "${DOWNLOAD_URL}"
         env:
           SLACK_WEBHOOK_RELEASE: ${{ secrets.SLACK_WEBHOOK_RELEASE }}
+          PLATFORM: ${{ matrix.platform }}
 
       - name: Notify Slack on build failure
         if: failure()

@@ -45,6 +45,7 @@ LOG_FILE=""
 ERROR_MESSAGE=""
 VERSION=""
 PLATFORMS=""
+DOWNLOAD_URL=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -66,6 +67,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --platforms)
             PLATFORMS="$2"
+            shift 2
+            ;;
+        --download-url)
+            DOWNLOAD_URL="$2"
             shift 2
             ;;
         *)
@@ -302,6 +307,21 @@ EOF
     deploy-success)
         echo -e "${GREEN}Sending deployment success notification...${NC}"
 
+        # Build download links section if URL provided
+        DOWNLOAD_SECTION=""
+        if [ -n "$DOWNLOAD_URL" ]; then
+            DOWNLOAD_SECTION=$(cat <<DLEOF
+    ,{
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Download:*\n${DOWNLOAD_URL}"
+      }
+    }
+DLEOF
+)
+        fi
+
         PAYLOAD=$(cat <<EOF
 {
   "text": "✅ Desktop Release v${VERSION} Complete",
@@ -336,7 +356,7 @@ EOF
           "text": "*Commit:*\n\`${COMMIT_SHORT}\`"
         }
       ]
-    },
+    }${DOWNLOAD_SECTION},
     {
       "type": "actions",
       "elements": [
