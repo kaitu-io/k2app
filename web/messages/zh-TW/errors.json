@@ -1,0 +1,22 @@
+{
+  "badRequest": "請求參數錯誤",
+  "unauthorized": "請先登入",
+  "paymentRequired": "會員已過期，請續費",
+  "forbidden": "沒有權限執行此操作",
+  "notFound": "請求的資源不存在",
+  "notSupported": "功能不支援",
+  "upgradeRequired": "請升級到最新版本",
+  "conflict": "操作衝突，請重試",
+  "invalidArgument": "參數錯誤",
+  "tooEarly": "請稍後再試",
+  "tooManyRequests": "請求過於頻繁，請稍後重試",
+  "serverError": "伺服器錯誤，請稍後重試",
+  "serviceUnavailable": "伺服器不可用，請稍後重試",
+  "invalidCampaignCode": "活動碼無效",
+  "invalidClock": "裝置時間不正確，請校準系統時間",
+  "invalidVerificationCode": "驗證碼錯誤",
+  "invalidInviteCode": "邀請碼不正確",
+  "selfInvitation": "不能使用自己的邀請碼",
+  "invalidCredentials": "登入憑證無效",
+  "unknown": "操作失敗，請重試"
+}

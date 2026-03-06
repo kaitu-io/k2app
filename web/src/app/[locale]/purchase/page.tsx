@@ -15,14 +15,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { api } from "@/lib/api";
+import { api, ApiError, ErrorCode } from "@/lib/api";
+import type { Plan, Order, CreateOrderRequest } from "@/lib/api";
+import { getApiErrorMessage } from "@/lib/api-errors";
 import { useAppConfig } from "@/contexts/AppConfigContext";
 import PurchaseStep1 from "@/components/PurchaseStep1";
 import PurchaseStep2 from "@/components/PurchaseStep2";
 import PurchaseStep3 from "@/components/PurchaseStep3";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
-import type { Plan, Order, CreateOrderRequest } from "@/lib/api";
 import {
   TrophyIcon,
   AlertTriangleIcon,
@@ -235,8 +236,7 @@ export default function Purchase() {
     } catch (error: unknown) {
       console.error('[Purchase] Preview exception:', error);
 
-      // Check if it's a campaign code error
-      if (error instanceof Error && error.message && error.message.includes('400001')) {
+      if (error instanceof ApiError && error.code === ErrorCode.InvalidCampaignCode) {
         setCampaignError(t('purchase.purchase.invalidCampaignCode'));
       } else {
         setCampaignError("");
@@ -286,13 +286,14 @@ export default function Purchase() {
     } catch (error: unknown) {
       console.error('[Purchase] Create order exception:', error);
 
-      // Check if it's a campaign code error
-      if (error instanceof Error && error.message && error.message.includes('400001')) {
+      if (error instanceof ApiError && error.code === ErrorCode.InvalidCampaignCode) {
         setCampaignError(t('purchase.purchase.invalidCampaignCode'));
       } else {
         setCampaignError("");
         setOrderData(null);
-        toast.error(error instanceof Error ? error.message : t('purchase.purchase.createOrderFailed'));
+        toast.error(error instanceof ApiError
+          ? getApiErrorMessage(error.code, t)
+          : t('purchase.purchase.createOrderFailed'));
       }
     } finally {
       setIsLoading(false);

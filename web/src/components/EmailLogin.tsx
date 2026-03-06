@@ -4,7 +4,8 @@ import { useState, FormEvent, useEffect } from "react";
 import { useTranslations } from "next-intl";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAppConfig } from "@/contexts/AppConfigContext";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
+import { getApiErrorMessage } from "@/lib/api-errors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -84,7 +85,11 @@ export default function EmailLogin({ onLoginSuccess, mode = 'login' }: EmailLogi
       toast.success(t('auth.login.codeSuccess'));
       setStep(2);
     } catch (error) {
-      console.error(error);
+      if (error instanceof ApiError) {
+        toast.error(getApiErrorMessage(error.code, t));
+      } else {
+        toast.error(t('auth.login.loginFailed'));
+      }
     } finally {
       setIsLoading(false);
     }
@@ -114,7 +119,11 @@ export default function EmailLogin({ onLoginSuccess, mode = 'login' }: EmailLogi
       login(user);
       onLoginSuccess?.();
     } catch (error) {
-      console.error(error);
+      if (error instanceof ApiError) {
+        toast.error(getApiErrorMessage(error.code, t));
+      } else {
+        toast.error(t('auth.login.loginFailed'));
+      }
     } finally {
       setIsLoading(false);
     }

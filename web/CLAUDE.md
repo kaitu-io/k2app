@@ -67,6 +67,7 @@ web/
 │   │   ├── device-detection.ts # Device type detection for auto-download
 │   │   ├── events.ts          # App event bus (auth:unauthorized, etc.)
 │   │   ├── k2-posts.ts        # getK2Posts(locale) — Velite filter/group/sort for /k2/ sidebar
+│   │   ├── api-errors.ts      # Error code→i18n mapping (getApiErrorMessage + getApiErrorMessageZh)
 │   │   ├── udid.ts            # Device fingerprint
 │   │   └── utils.ts           # cn() helper (clsx + tailwind-merge)
 │   └── middleware.ts          # next-intl locale detection + manager bypass
@@ -112,6 +113,8 @@ Public pages call `/api/*` and `/app/*` which Next.js proxies to the Center API 
 
 `ApiError` class with error codes matching `api/response.go`. On 401, emits `auth:unauthorized` event and auto-redirects to login (configurable via `autoRedirectToAuth` option).
 
+Error code-to-i18n mapping lives in `lib/api-errors.ts`. Use `getApiErrorMessage(code, t)` in public `[locale]` pages and `getApiErrorMessageZh(code)` in manager pages. Never show `error.message` to users — it contains raw backend debug text.
+
 ## Authentication
 
 - **Web auth**: HttpOnly cookie (`access_token`) + CSRF token. Cookies sent via `credentials: 'include'`.
@@ -141,7 +144,7 @@ const t = useTranslations();  // NOT const { t } = useTranslations()
 
 **Navigation**: Use `Link` from `@/i18n/routing` for internal links (auto locale prefix). Use `next/link` for external links.
 
-**Files**: `messages/{locale}/{namespace}.json` — namespaces: nav, common, auth, purchase, hero, install, discovery, invite, wallet, campaigns, changelog, admin, theme, k2, releases, guide-parents.
+**Files**: `messages/{locale}/{namespace}.json` — namespaces: nav, common, auth, purchase, hero, install, discovery, invite, wallet, campaigns, changelog, admin, theme, k2, releases, guide-parents, errors.
 
 **Namespace registry**: `messages/namespaces.ts` lists all active namespaces. When adding a new `*.json` namespace file, add its name to the `namespaces` array in `namespaces.ts` — otherwise it is never loaded and all keys return their raw key string silently.
 

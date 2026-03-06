@@ -5,7 +5,8 @@ import { useRouter, Link } from "@/i18n/routing";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTranslations } from "next-intl";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
+import { getApiErrorMessage } from "@/lib/api-errors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -62,8 +63,11 @@ function LoginPageContent() {
       toast.success(t('auth.login.codeSuccess'));
       setStep(2);
     } catch (error) {
-      // Error is handled by api wrapper
-      console.error(error);
+      if (error instanceof ApiError) {
+        toast.error(getApiErrorMessage(error.code, t));
+      } else {
+        toast.error(t('auth.login.loginFailed'));
+      }
     } finally {
       setIsLoading(false);
     }
@@ -99,13 +103,11 @@ function LoginPageContent() {
         router.push(next);
       }
     } catch (error) {
-      // Show error message to user
-      if (error instanceof Error) {
-        toast.error(error.message);
+      if (error instanceof ApiError) {
+        toast.error(getApiErrorMessage(error.code, t));
       } else {
         toast.error(t('auth.login.loginFailed'));
       }
-      console.error(error);
     } finally {
       setIsLoading(false);
     }
