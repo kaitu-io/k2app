@@ -54,6 +54,9 @@ func main() {
 		case "service":
 			cmdService(args[1:])
 			return
+		case "upgrade":
+			cmdUpgrade(args[1:])
+			return
 		case "demo-config":
 			fmt.Print(demoConfig)
 			return
@@ -124,6 +127,9 @@ Usage:
   k2s setup                    Install service + start + print connect URL
   k2s service install          Install system service
   k2s service uninstall        Remove system service
+  k2s upgrade [--check]        Check for and install updates
+  k2s upgrade --channel=beta   Switch to beta update channel
+  k2s upgrade --channel=stable Switch to stable update channel
   k2s demo-config              Print example server config (YAML)
   k2s version                  Show version info
 

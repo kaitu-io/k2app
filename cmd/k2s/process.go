@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/kaitu-io/k2/config"
@@ -25,6 +26,14 @@ func runServer(configPath string) {
 		os.Exit(1)
 	}
 	defer cleanup()
+
+	// Beta build activates beta channel unconditionally (mirrors desktop behavior).
+	if strings.Contains(version, "-beta") && readChannel() != "beta" {
+		_ = saveChannel("beta")
+		slog.Info("Beta build detected, activated beta channel")
+	}
+
+	go checkVersionAsync()
 
 	// 1. Load config.
 	cfg, cfgPathUsed, err := loadOrDefaultServerConfig(configPath)
