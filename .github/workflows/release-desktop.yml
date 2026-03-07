@@ -14,6 +14,10 @@ jobs:
   test-gate:
     runs-on: macos-latest
     timeout-minutes: 15
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: sccache
+      CARGO_INCREMENTAL: "0"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -41,16 +45,18 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Rust target directory
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.6
+
+      - name: Cache cargo registry
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            desktop/src-tauri/target
-          key: rust-release-gate-${{ runner.os }}-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}
           restore-keys: |
-            rust-release-gate-${{ runner.os }}-
+            cargo-registry-${{ runner.os }}-
 
       - name: Install Node dependencies
         run: yarn install --frozen-lockfile
@@ -92,10 +98,14 @@ jobs:
 
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
+    env:
+      CARGO_INCREMENTAL: "0"
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          clean: ${{ matrix.platform != 'Windows' }}
 
       - name: Checkout k2 submodule
         uses: webfactory/ssh-agent@v0.9.0
@@ -145,17 +155,44 @@ jobs:
         with:
           targets: ${{ matrix.platform == 'macOS' && 'aarch64-apple-darwin,x86_64-apple-darwin' || 'x86_64-pc-windows-msvc' }}
 
-      - name: Cache Rust target directory
+      - name: Setup sccache
+        if: matrix.platform == 'macOS'
+        uses: mozilla-actions/sccache-action@v0.0.6
+
+      - name: Set sccache env (macOS)
+        if: matrix.platform == 'macOS'
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+
+      - name: Set persistent cache paths (Windows)
+        if: matrix.platform == 'Windows'
+        shell: bash
+        run: |
+          echo "CARGO_HOME=C:/cache/cargo" >> "$GITHUB_ENV"
+          echo "GOMODCACHE=C:/cache/gomod" >> "$GITHUB_ENV"
+          echo "SCCACHE_DIR=C:/cache/sccache" >> "$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          echo "C:/cache/cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Setup sccache (Windows local disk)
+        if: matrix.platform == 'Windows'
+        shell: bash
+        run: |
+          if ! command -v sccache &>/dev/null; then
+            cargo install sccache --locked
+          fi
+
+      - name: Cache cargo registry
         if: matrix.platform == 'macOS'
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            desktop/src-tauri/target
-          key: rust-release-${{ runner.os }}-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}
           restore-keys: |
-            rust-release-${{ runner.os }}-
+            cargo-registry-${{ runner.os }}-
 
       - name: Install Node dependencies
         run: yarn install --frozen-lockfile --network-timeout 600000 --network-concurrency 4
