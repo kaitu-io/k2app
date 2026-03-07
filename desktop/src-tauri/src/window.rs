@@ -193,3 +193,108 @@ pub fn hide_window(app: &AppHandle) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_window_size_1080p() {
+        let (width, height) = calculate_window_size(1080);
+
+        assert!(width >= MIN_WIDTH, "width {} below MIN_WIDTH {}", width, MIN_WIDTH);
+        assert!(width <= MAX_WIDTH, "width {} above MAX_WIDTH {}", width, MAX_WIDTH);
+        assert!(height >= MIN_HEIGHT, "height {} below MIN_HEIGHT {}", height, MIN_HEIGHT);
+
+        let max_allowed = (1080_f64 * MAX_HEIGHT_RATIO) as u32;
+        assert!(height <= max_allowed, "height {} exceeds max allowed {}", height, max_allowed);
+    }
+
+    #[test]
+    fn test_window_size_768p() {
+        let (width, height) = calculate_window_size(768);
+
+        let max_allowed = (768_f64 * MAX_HEIGHT_RATIO) as u32;
+        assert!(
+            height <= max_allowed,
+            "height {} exceeds MAX_HEIGHT_RATIO limit {} for 768p screen",
+            height,
+            max_allowed
+        );
+        assert!(width <= MAX_WIDTH, "width {} above MAX_WIDTH {}", width, MAX_WIDTH);
+
+        // On 768p, MAX_HEIGHT_RATIO constraint dominates: capping height to 652
+        // recalculates width to 293, which falls below MIN_WIDTH (320).
+        // This is expected — the function prioritizes not exceeding screen height
+        // over maintaining minimum width on low-res screens.
+        assert_eq!(height, max_allowed, "768p should be height-capped by MAX_HEIGHT_RATIO");
+        assert!(
+            width < MIN_WIDTH,
+            "768p is expected to produce width {} below MIN_WIDTH {} due to height cap priority",
+            width,
+            MIN_WIDTH
+        );
+    }
+
+    #[test]
+    fn test_window_size_4k() {
+        let (width, height) = calculate_window_size(2160);
+
+        assert!(
+            width <= MAX_WIDTH,
+            "4K screen produced width {} exceeding MAX_WIDTH {}",
+            width,
+            MAX_WIDTH
+        );
+        assert!(height >= MIN_HEIGHT, "height {} below MIN_HEIGHT {}", height, MIN_HEIGHT);
+
+        let max_allowed = (2160_f64 * MAX_HEIGHT_RATIO) as u32;
+        assert!(height <= max_allowed, "height {} exceeds max allowed {}", height, max_allowed);
+    }
+
+    #[test]
+    fn test_window_size_small_screen() {
+        let (width, height) = calculate_window_size(600);
+
+        let max_allowed = (600_f64 * MAX_HEIGHT_RATIO) as u32;
+        assert!(
+            height <= max_allowed,
+            "height {} exceeds max allowed {} for 600p screen",
+            height,
+            max_allowed
+        );
+
+        // On a 600p screen, the MAX_HEIGHT_RATIO constraint caps height to 510,
+        // which gives width = 510 * 0.45 = 229. This is below MIN_WIDTH (320)
+        // but the function correctly prioritizes staying within screen bounds.
+        assert_eq!(height, max_allowed, "600p should be height-capped by MAX_HEIGHT_RATIO");
+        assert!(
+            width < MIN_WIDTH,
+            "600p is expected to produce width {} below MIN_WIDTH {} due to height cap priority",
+            width,
+            MIN_WIDTH
+        );
+    }
+
+    #[test]
+    fn test_window_size_aspect_ratio_maintained() {
+        let screen_heights = [600, 768, 900, 1080, 1440, 2160];
+        let tolerance = 0.02; // Allow 2% deviation due to integer truncation
+
+        for &screen_h in &screen_heights {
+            let (width, height) = calculate_window_size(screen_h);
+            let actual_ratio = width as f64 / height as f64;
+            let deviation = (actual_ratio - ASPECT_RATIO).abs();
+
+            assert!(
+                deviation < tolerance,
+                "screen_height={}: ratio {:.4} deviates from ASPECT_RATIO {:.4} by {:.4} (tolerance {:.4})",
+                screen_h,
+                actual_ratio,
+                ASPECT_RATIO,
+                deviation,
+                tolerance
+            );
+        }
+    }
+}

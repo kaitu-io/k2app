@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -120,3 +121,156 @@ jobs:
       - name: Go test API (mock-only)
         run: go test ./...
         working-directory: api
+
+  # --- Platform-dependent tests (Windows) ---
+  test-windows:
+    runs-on: [self-hosted, Windows]
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup SSH for private submodule
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.K2_DEPLOY_KEY }}
+
+      - name: Init k2 submodule
+        shell: bash
+        run: git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init --recursive
+
+      - name: Setup Node.js (self-hosted)
+        shell: bash
+        run: |
+          NODE_VERSION=$(cat .nvmrc)
+          CURRENT=$(node -v 2>/dev/null || echo "none")
+          if [ "$CURRENT" != "v${NODE_VERSION}" ]; then
+            echo "Node $CURRENT -> v${NODE_VERSION}"
+            nvm install "$NODE_VERSION"
+          fi
+          nvm use "$NODE_VERSION"
+          NODE_DIR=$(dirname "$(which node)")
+          echo "$NODE_DIR" >> "$GITHUB_PATH"
+          # Ensure yarn is available
+          if ! command -v yarn &>/dev/null; then
+            npm install -g yarn
+          fi
+          NPM_GLOBAL=$(npm prefix -g)
+          echo "$NPM_GLOBAL" >> "$GITHUB_PATH"
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: false
+          cache-dependency-path: k2/go.sum
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install Node dependencies
+        shell: bash
+        run: yarn install --frozen-lockfile --network-timeout 600000
+
+      - name: Run webapp tests (vitest)
+        shell: bash
+        run: yarn test
+        working-directory: webapp
+
+      - name: Type-check webapp (tsc)
+        shell: bash
+        run: npx tsc --noEmit
+        working-directory: webapp
+
+      - name: Cargo check (Tauri)
+        shell: bash
+        run: cargo check
+        working-directory: desktop/src-tauri
+
+      - name: Cargo test (Tauri)
+        shell: bash
+        run: cargo test
+        working-directory: desktop/src-tauri
+
+      - name: Go test (k2)
+        shell: bash
+        run: go test ./sniff/... ./core/... ./engine/... ./config/... ./daemon/... ./provider/... ./cmd/k2/... -count=1 -short
+        working-directory: k2
+
+      - name: Build k2 Windows binary
+        shell: bash
+        run: make build-k2-windows
+
+      - name: Verify k2 binary exists
+        shell: bash
+        run: test -f desktop/src-tauri/binaries/k2-x86_64-pc-windows-msvc.exe
+
+  # --- Windows build verification (main only) ---
+  build-windows:
+    runs-on: [self-hosted, Windows]
+    needs: test-windows
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup SSH for private submodule
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.K2_DEPLOY_KEY }}
+
+      - name: Init k2 submodule
+        shell: bash
+        run: git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init --recursive
+
+      - name: Setup Node.js (self-hosted)
+        shell: bash
+        run: |
+          nvm use
+          NODE_DIR=$(dirname "$(which node)")
+          echo "$NODE_DIR" >> "$GITHUB_PATH"
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: false
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install Node dependencies
+        shell: bash
+        run: yarn install --frozen-lockfile --network-timeout 600000
+
+      - name: Build Windows installer
+        shell: bash
+        run: make build-windows
+
+      - name: Verify NSIS installer exists
+        shell: bash
+        run: ls -la desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+
+      - name: Verify k2 binary exists
+        shell: bash
+        run: test -f desktop/src-tauri/binaries/k2-x86_64-pc-windows-msvc.exe
+
+      - name: Verify version alignment
+        shell: bash
+        run: |
+          CARGO_VERSION=$(grep '^version' desktop/src-tauri/Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          echo "Cargo.toml version: $CARGO_VERSION"
+          echo "package.json version: $PKG_VERSION"
+          if [ "$CARGO_VERSION" != "$PKG_VERSION" ]; then
+            echo "ERROR: Version mismatch! Cargo.toml ($CARGO_VERSION) != package.json ($PKG_VERSION)"
+            exit 1
+          fi
+          echo "Versions match."
