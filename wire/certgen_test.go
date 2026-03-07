@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -110,14 +111,16 @@ func TestCertPairSaveLoad(t *testing.T) {
 		t.Error("ECPinHash mismatch after save/load")
 	}
 
-	// Verify key file permissions
-	for _, name := range []string{"k2s-rsa.key", "k2s-ec.key"} {
-		info, err := os.Stat(filepath.Join(dir, name))
-		if err != nil {
-			t.Fatalf("stat %s: %v", name, err)
-		}
-		if perm := info.Mode().Perm(); perm != 0600 {
-			t.Errorf("%s permissions = %o, want 0600", name, perm)
+	// Verify key file permissions (Unix only — Windows doesn't support POSIX modes)
+	if runtime.GOOS != "windows" {
+		for _, name := range []string{"k2s-rsa.key", "k2s-ec.key"} {
+			info, err := os.Stat(filepath.Join(dir, name))
+			if err != nil {
+				t.Fatalf("stat %s: %v", name, err)
+			}
+			if perm := info.Mode().Perm(); perm != 0600 {
+				t.Errorf("%s permissions = %o, want 0600", name, perm)
+			}
 		}
 	}
 }

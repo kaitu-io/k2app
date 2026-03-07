@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -78,6 +79,9 @@ func TestEnsureAuth_LoadsExisting(t *testing.T) {
 }
 
 func TestEnsureAuth_FilePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file permissions not applicable on Windows")
+	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "auth.json")
 
