@@ -9,7 +9,7 @@ const DOWNLOAD_BASE_URL = process.env.NEXT_PUBLIC_DOWNLOAD_BASE_URL || 'https://
 export function getDownloadLinks(version: string) {
   return {
     windows: `${DOWNLOAD_BASE_URL}/${version}/Kaitu_${version}_x64.exe`,
-    macos: `${DOWNLOAD_BASE_URL}/${version}/Kaitu_${version}_universal.pkg`,
+    macos: `${DOWNLOAD_BASE_URL}/${version}/Kaitu-${version}.pkg`,
   };
 }
 
@@ -20,7 +20,7 @@ export const DOWNLOAD_LINKS = {
 
   // Desktop apps - dynamically generated from environment variables
   windows: `${DOWNLOAD_BASE_URL}/${DESKTOP_VERSION}/Kaitu_${DESKTOP_VERSION}_x64.exe`,
-  macos: `${DOWNLOAD_BASE_URL}/${DESKTOP_VERSION}/Kaitu_${DESKTOP_VERSION}_universal.pkg`,
+  macos: `${DOWNLOAD_BASE_URL}/${DESKTOP_VERSION}/Kaitu-${DESKTOP_VERSION}.pkg`,
 } as const;
 
 export const ROUTER_PRODUCTS = {
