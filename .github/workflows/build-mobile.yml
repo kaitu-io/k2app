@@ -71,6 +71,8 @@ jobs:
         with:
           path: mobile/ios/App/Pods
           key: pods-${{ hashFiles('mobile/ios/App/Podfile') }}
+          restore-keys: |
+            pods-
 
       - name: Import Apple code signing certificate
         env:
@@ -224,6 +226,8 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
           key: gradle-${{ hashFiles('mobile/android/**/*.gradle*') }}
+          restore-keys: |
+            gradle-
 
       - name: Compile Android (interface verification)
         run: |

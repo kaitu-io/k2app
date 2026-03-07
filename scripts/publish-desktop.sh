@@ -143,6 +143,14 @@ aws s3 cp "${TMPDIR}/cloudfront.latest.json" "${S3_MANIFEST}/cloudfront.latest.j
 aws s3 cp "${TMPDIR}/d0.latest.json" "${S3_MANIFEST}/d0.latest.json"
 echo "latest.json files uploaded to ${S3_MANIFEST}/"
 
+# Beta channel is a superset of stable — sync stable release to beta manifest
+if [ "$CHANNEL" = "stable" ]; then
+  echo "Syncing stable release to beta channel..."
+  aws s3 cp "${TMPDIR}/cloudfront.latest.json" "${S3_ROOT}/beta/cloudfront.latest.json"
+  aws s3 cp "${TMPDIR}/d0.latest.json" "${S3_ROOT}/beta/d0.latest.json"
+  echo "Beta manifest updated to stable v${VERSION}"
+fi
+
 # Create GitHub Release (stable only — beta skips GitHub Release)
 if [ "$CHANNEL" = "stable" ]; then
   gh release create "v${VERSION}" \

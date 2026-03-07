@@ -208,7 +208,6 @@ func (s *Sidecar) buildTunnelConfigs() []sidecar.TunnelConfig {
 		if data, err := os.ReadFile(connectURLPath); err == nil {
 			serverURL = sidecar.BuildServerURL(strings.TrimSpace(string(data)),
 				s.config.Tunnel.Domain, s.config.Tunnel.Port,
-				s.config.Tunnel.HopPortStart, s.config.Tunnel.HopPortEnd,
 				s.nodeInstance.IPv4, s.nodeInstance.IPv6)
 			if serverURL != "" {
 				slog.Info("Built k2v5 server URL", "component", "sidecar", "url", serverURL)
@@ -268,43 +267,51 @@ func (s *Sidecar) buildTunnelConfigs() []sidecar.TunnelConfig {
 // readConnectURL reads connect-url.txt from the given directory and builds a
 // clean server URL using BuildServerURL. Returns empty string if the file
 // doesn't exist or doesn't contain usable parameters.
-func readConnectURL(dir, domain string, port, hopStart, hopEnd int, ipv4, ipv6 string) string {
+func readConnectURL(dir, domain string, port int, ipv4, ipv6 string) string {
 	data, err := os.ReadFile(filepath.Join(dir, "connect-url.txt"))
 	if err != nil {
 		return ""
 	}
-	return sidecar.BuildServerURL(strings.TrimSpace(string(data)), domain, port, hopStart, hopEnd, ipv4, ipv6)
+	return sidecar.BuildServerURL(strings.TrimSpace(string(data)), domain, port, ipv4, ipv6)
 }
 
 // pollAndRegisterK2V5ConnectURL polls for /etc/k2v5/connect-url.txt and
 // re-registers with Center once the file appears. k2v5 writes this file
 // after startup, which happens after sidecar's initial registration.
 func (s *Sidecar) pollAndRegisterK2V5ConnectURL() {
+	const connectURLDir = "/etc/k2v5"
+	const connectURLFile = "connect-url.txt"
 	const pollInterval = 5 * time.Second
 	const logEvery = 6 // log "waiting" every 6 polls (30s)
 
+	// Only accept connect-url.txt written AFTER this timestamp.
+	// The k2v5-data volume persists across restarts, so a stale file
+	// from a previous k2v5 run would be found immediately and cause
+	// registration with outdated data (e.g. missing hop params).
+	pollStart := time.Now()
+
 	iteration := 0
 	for {
-		serverURL := readConnectURL("/etc/k2v5",
-			s.config.Tunnel.Domain, s.config.Tunnel.Port,
-			s.config.Tunnel.HopPortStart, s.config.Tunnel.HopPortEnd,
-			s.nodeInstance.IPv4, s.nodeInstance.IPv6)
+		if info, err := os.Stat(filepath.Join(connectURLDir, connectURLFile)); err == nil && info.ModTime().After(pollStart) {
+			serverURL := readConnectURL(connectURLDir,
+				s.config.Tunnel.Domain, s.config.Tunnel.Port,
+				s.nodeInstance.IPv4, s.nodeInstance.IPv6)
 
-		if serverURL != "" {
-			// Rebuild tunnel configs with the discovered serverURL
-			tunnels := s.buildTunnelConfigs()
-			for i := range tunnels {
-				if tunnels[i].Domain == s.config.Tunnel.Domain {
-					tunnels[i].ServerURL = serverURL
+			if serverURL != "" {
+				tunnels := s.buildTunnelConfigs()
+				for i := range tunnels {
+					if tunnels[i].Domain == s.config.Tunnel.Domain {
+						tunnels[i].ServerURL = serverURL
+					}
 				}
-			}
 
-			if _, err := s.nodeInstance.Register(tunnels); err != nil {
-				slog.Error("Failed to re-register with k2v5 serverURL", "component", "sidecar", "err", err)
-			} else {
-				slog.Info("Updated k2v5 serverURL", "component", "sidecar", "url", serverURL)
+				if _, err := s.nodeInstance.Register(tunnels); err != nil {
+					slog.Error("Failed to re-register with k2v5 serverURL", "component", "sidecar", "err", err)
+				} else {
+					slog.Info("Updated k2v5 serverURL", "component", "sidecar", "url", serverURL)
+				}
+				return
 			}
-			return
 		}
 
 		iteration++
@@ -443,6 +450,8 @@ type K2V5ConfigData struct {
 	LogLevel     string
 	HasOCDomain  bool
 	UsersFile    string
+	HopStart     int
+	HopEnd       int
 }
 
 const k2v5ConfigTemplate = `listen: ":443"
@@ -463,6 +472,10 @@ local_routes:
 {{- end}}
 log:
   level: "{{.LogLevel}}"
+{{- if and .HopStart .HopEnd}}
+hop_start: {{.HopStart}}
+hop_end: {{.HopEnd}}
+{{- end}}
 `
 
 // generateK2V5Config generates k2v5-config.yaml for k2s server
@@ -505,6 +518,8 @@ func (s *Sidecar) generateK2V5Config() error {
 		LogLevel:    logLevel,
 		HasOCDomain: s.config.OC.Domain != "",
 		UsersFile:   k2v5DataDir + "/users",
+		HopStart:    s.config.Tunnel.HopPortStart,
+		HopEnd:      s.config.Tunnel.HopPortEnd,
 	}
 
 	return s.generateConfigFromTemplate("k2v5-config.yaml", k2v5ConfigTemplate, outputPath, data)

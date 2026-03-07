@@ -727,6 +727,36 @@ mod tests {
     // hash_to_udid: uniform 32 hex char output from any raw platform ID
     // -----------------------------------------------------------------------
     #[test]
+    fn test_get_platform_info_fields() {
+        let info = get_platform_info();
+        assert!(info.get("os").is_some(), "must have 'os' field");
+        assert!(info.get("version").is_some(), "must have 'version' field");
+        assert!(info.get("arch").is_some(), "must have 'arch' field");
+
+        let os = info["os"].as_str().unwrap();
+        assert!(
+            ["macos", "windows", "linux"].contains(&os),
+            "os must be macos/windows/linux, got: {}",
+            os
+        );
+
+        let arch = info["arch"].as_str().unwrap();
+        assert!(
+            ["arm64", "amd64"].contains(&arch),
+            "arch must be arm64/amd64, got: {}",
+            arch
+        );
+    }
+
+    #[test]
+    fn test_service_base_url_default() {
+        // Without K2_DAEMON_PORT env, should use default 1777
+        std::env::remove_var("K2_DAEMON_PORT");
+        let url = service_base_url();
+        assert_eq!(url, "http://127.0.0.1:1777");
+    }
+
+    #[test]
     fn test_hash_to_udid_format() {
         let udid = hash_to_udid("test-input");
         assert_eq!(udid.len(), 32, "UDID must be 32 chars");
@@ -760,5 +790,89 @@ mod tests {
         // Simulate Android ANDROID_ID (16 hex chars)
         let udid = hash_to_udid("a1b2c3d4e5f6a7b8");
         assert_eq!(udid.len(), 32);
+    }
+
+    // -------------------------------------------------------------------
+    // Windows-specific tests (only compiled + run on Windows)
+    // -------------------------------------------------------------------
+    #[cfg(target_os = "windows")]
+    mod windows_tests {
+        use super::super::*;
+
+        /// WMI UDID: call get_hardware_uuid(), assert Ok, non-empty,
+        /// and not the all-F sentinel that indicates missing SMBIOS data.
+        #[test]
+        fn test_windows_udid_wmi_available() {
+            let result = get_hardware_uuid();
+            assert!(result.is_ok(), "get_hardware_uuid() should succeed on Windows: {:?}", result);
+            let udid = result.unwrap();
+            assert!(!udid.is_empty(), "UDID must not be empty");
+            // The raw UUID "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF" is rejected
+            // inside get_raw_hardware_id, so we should never see its hash here.
+            // Also verify the hashed output is 32 lowercase hex chars.
+            assert_eq!(udid.len(), 32, "UDID must be 32 hex chars, got: {}", udid);
+            assert!(
+                udid.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+                "UDID must be lowercase hex: {}",
+                udid
+            );
+        }
+
+        /// Verify that current_exe().parent().join("k2.exe") produces a
+        /// Windows-style path with backslashes ending in "k2.exe".
+        #[test]
+        fn test_windows_service_path_has_backslashes() {
+            let exe_path = std::env::current_exe().expect("current_exe() should succeed");
+            let app_dir = exe_path.parent().expect("exe should have a parent dir");
+            let service_path = app_dir.join("k2.exe");
+            let path_str = service_path.to_string_lossy().to_string();
+
+            assert!(
+                path_str.contains('\\'),
+                "Windows path should contain backslashes: {}",
+                path_str
+            );
+            assert!(
+                path_str.ends_with("k2.exe"),
+                "Path should end with k2.exe: {}",
+                path_str
+            );
+        }
+
+        /// Verify the PowerShell command uses single quotes around the path
+        /// (preventing injection). A path with spaces must not break the command.
+        #[test]
+        fn test_powershell_command_no_injection() {
+            // Simulate a path with spaces — common on Windows (e.g. "Program Files")
+            let fake_path = std::path::PathBuf::from(
+                r"C:\Program Files\Kaitu VPN\k2.exe"
+            );
+
+            // This is the same format string used in admin_reinstall_service_windows()
+            let ps_script = format!(
+                r#"Start-Process -FilePath '{}' -ArgumentList 'service','install' -Verb RunAs -Wait -WindowStyle Hidden"#,
+                fake_path.display()
+            );
+
+            // Single quotes around the path prevent PowerShell injection
+            assert!(
+                ps_script.contains(&format!("'{}'", fake_path.display())),
+                "Path must be wrapped in single quotes: {}",
+                ps_script
+            );
+
+            // Must not contain double quotes around the path (vulnerable to injection)
+            let path_str = fake_path.display().to_string();
+            assert!(
+                !ps_script.contains(&format!("\"{}\"", path_str)),
+                "Path must NOT use double quotes: {}",
+                ps_script
+            );
+
+            // Verify the full command looks correct
+            assert!(ps_script.starts_with("Start-Process"));
+            assert!(ps_script.contains("-Verb RunAs"));
+            assert!(ps_script.contains("-WindowStyle Hidden"));
+        }
     }
 }

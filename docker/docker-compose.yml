@@ -109,8 +109,6 @@ services:
       - ./users:/etc/k2v5/users
     environment:
       - TZ=Asia/Singapore
-      - K2_HOP_PORT_MIN=${K2_JUMP_PORT_MIN:-40000}
-      - K2_HOP_PORT_MAX=${K2_JUMP_PORT_MAX:-40019}
       - K2_LOG_LEVEL=${K2_LOG_LEVEL:-info}
     logging:
       driver: journald

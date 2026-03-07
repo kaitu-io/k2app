@@ -97,6 +97,7 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
     try {
       const stored = await window._platform.storage.get<ClientConfig>(STORAGE_KEY);
       const config = stored ?? {};
+      console.info('[ConfigStore] Config loaded: rule=' + (config.rule?.global ? 'global' : 'chnroute'));
       set({
         config,
         loaded: true,
@@ -140,6 +141,7 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
       if (typeof params === 'string' && params) result.server = params;
     }
 
+    console.debug('[ConfigStore] buildConnectConfig: server=' + (result.server ?? 'none') + ', rule=' + (result.rule?.global ? 'global' : 'chnroute') + ', logLevel=' + result.log?.level + ', mode=' + result.mode);
     return result;
   },
 }));

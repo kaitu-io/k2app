@@ -57,6 +57,8 @@ const TRANSITIONS: Record<VPNState, Partial<Record<VPNEvent, VPNState>>> = {
     SERVICE_UNREACHABLE:  'serviceDown',
   },
   connecting: {
+    USER_DISCONNECT:      'disconnecting',
+    BACKEND_RECONNECTING: 'connecting',
     BACKEND_CONNECTED:    'connected',
     BACKEND_DISCONNECTED: 'idle',
     BACKEND_ERROR:        'error',
@@ -77,6 +79,8 @@ const TRANSITIONS: Record<VPNState, Partial<Record<VPNEvent, VPNState>>> = {
     SERVICE_UNREACHABLE:  'serviceDown',
   },
   disconnecting: {
+    USER_DISCONNECT:      'disconnecting',
+    BACKEND_RECONNECTING: 'disconnecting',
     BACKEND_DISCONNECTED: 'idle',
     BACKEND_CONNECTED:    'connected',
     BACKEND_ERROR:        'idle',
@@ -134,15 +138,21 @@ export function dispatch(event: VPNEvent, payload?: DispatchPayload): void {
   if (event === 'BACKEND_CONNECTED' || event === 'BACKEND_DISCONNECTED' ||
       event === 'BACKEND_ERROR' || event === 'USER_DISCONNECT' ||
       event === 'SERVICE_UNREACHABLE') {
+    if (reconnectDebounceTimer) {
+      console.debug('[VPNMachine] dispatch: reconnect debounce cancelled by', event);
+    }
     clearReconnectDebounce();
   }
 
   // Special: debounce connected → reconnecting
   if (currentState === 'connected' && event === 'BACKEND_RECONNECTING') {
     if (reconnectDebounceTimer) return; // already debouncing
+    console.debug('[VPNMachine] dispatch: reconnect debounce started (3s)');
     reconnectDebounceTimer = setTimeout(() => {
       reconnectDebounceTimer = null;
-      if (useVPNMachineStore.getState().state === 'connected') {
+      const s = useVPNMachineStore.getState().state;
+      console.debug('[VPNMachine] dispatch: debounced reconnect fired, state=' + s);
+      if (s === 'connected') {
         useVPNMachineStore.setState({ state: 'reconnecting' });
       }
     }, RECONNECT_DEBOUNCE_MS);
@@ -150,7 +160,10 @@ export function dispatch(event: VPNEvent, payload?: DispatchPayload): void {
   }
 
   const nextState = TRANSITIONS[currentState]?.[event];
-  if (!nextState) return; // invalid transition — silently ignore
+  if (!nextState) {
+    console.warn('[VPNMachine] dispatch: ' + currentState + ' + ' + event + ' → (no transition)');
+    return;
+  }
 
   // Build state update
   const update: Partial<VPNMachineState> = { state: nextState };
@@ -167,21 +180,25 @@ export function dispatch(event: VPNEvent, payload?: DispatchPayload): void {
     update.isRetrying = false;
   }
 
+  console.debug('[VPNMachine] dispatch: ' + currentState + ' + ' + event + ' → ' + nextState);
   useVPNMachineStore.setState(update);
 }
 
 // ============ Backend Status → Event Mapping ============
 
 export function backendStatusToEvent(status: StatusResponseData): VPNEvent {
+  let event: VPNEvent;
   switch (status.state) {
-    case 'connected':     return 'BACKEND_CONNECTED';
-    case 'disconnected':  return 'BACKEND_DISCONNECTED';
+    case 'connected':     event = 'BACKEND_CONNECTED'; break;
+    case 'disconnected':  event = 'BACKEND_DISCONNECTED'; break;
     case 'connecting':
-    case 'reconnecting':  return 'BACKEND_RECONNECTING';
-    case 'error':         return 'BACKEND_ERROR';
-    case 'disconnecting': return 'BACKEND_DISCONNECTED';
-    default:              return 'BACKEND_DISCONNECTED';
+    case 'reconnecting':  event = 'BACKEND_RECONNECTING'; break;
+    case 'error':         event = 'BACKEND_ERROR'; break;
+    case 'disconnecting': event = 'BACKEND_DISCONNECTED'; break;
+    default:              event = 'BACKEND_DISCONNECTED'; break;
   }
+  console.debug('[VPNMachine] statusToEvent: ' + status.state + ' → ' + event);
+  return event;
 }
 
 // ============ Initialization ============
@@ -199,17 +216,21 @@ export function initializeVPNMachine(): () => void {
 
   // Event-driven mode (desktop/mobile with SSE or native events)
   if (window._k2?.onServiceStateChange && window._k2?.onStatusChange) {
+    console.info('[VPNMachine] Initializing in event-driven mode (SSE)');
     const unsubService = window._k2.onServiceStateChange((available) => {
+      console.debug('[VPNMachine] SSE service state: available=' + available);
       dispatch(available ? 'SERVICE_REACHABLE' : 'SERVICE_UNREACHABLE');
     });
 
     const unsubStatus = window._k2.onStatusChange((status) => {
+      console.debug('[VPNMachine] SSE status event: state=' + status.state + ', error=' + (status.error?.code ?? 'none') + ', retrying=' + (status.retrying ?? false));
       dispatchStatus(status);
     });
 
     // Bridge initial gap — one-time status query
     window._k2.run('status').then((resp: any) => {
       if (resp.code === 0 && resp.data) {
+        console.debug('[VPNMachine] Initial status query: state=' + resp.data.state);
         dispatchStatus(resp.data);
       }
     }).catch(() => {});
@@ -223,10 +244,12 @@ export function initializeVPNMachine(): () => void {
   }
 
   // Polling fallback (standalone/web)
+  console.info('[VPNMachine] Initializing in polling mode (2s)');
   const poll = async () => {
     try {
       const resp = await window._k2.run('status') as any;
       if (resp.code === 0 && resp.data) {
+        console.debug('[VPNMachine] Poll result: state=' + resp.data.state + ', error=' + (resp.data.error?.code ?? 'none'));
         dispatchStatus(resp.data);
         dispatch('SERVICE_REACHABLE');
       } else {

@@ -2,21 +2,38 @@ const S3_BUCKET_URL = "https://kaitu-service-logs.s3.ap-northeast-1.amazonaws.co
 
 /**
  * Parse log metadata from S3 event record.
- * Expected key format: service-logs/{udid}/YYYY/MM/DD/{type}-HHMMSS-{id}.log.gz
+ * Supported key formats:
+ *   {prefix}/{udid}/YYYY/MM/DD/{type}-HHMMSS-{id}.log.gz  (6+ parts)
+ *   {prefix}/YYYY/MM/DD/{type}-HHMMSS-{id}.log.gz         (5 parts, no UDID)
+ * where prefix is "service-logs" or "feedback-logs"
  */
 export function parseS3Record(record) {
-  const s3Key = decodeURIComponent(record.s3.key.replace(/\+/g, " "));
+  const s3Key = decodeURIComponent(record.s3.object.key.replace(/\+/g, " "));
   const size = record.s3?.object?.size ?? 0;
 
   const parts = s3Key.split("/");
-  if (parts.length < 6 || parts[0] !== "service-logs") return null;
+  const prefix = parts[0];
+  if (prefix !== "service-logs" && prefix !== "feedback-logs") return null;
 
-  const udid = parts[1];
-  const date = `${parts[2]}/${parts[3]}/${parts[4]}`;
-  const filename = parts[5];
+  let udid, date, filename;
+
+  if (parts.length >= 6) {
+    // {prefix}/{udid}/YYYY/MM/DD/{filename}
+    udid = parts[1];
+    date = `${parts[2]}/${parts[3]}/${parts[4]}`;
+    filename = parts[5];
+  } else if (parts.length === 5 && /^\d{4}$/.test(parts[1])) {
+    // {prefix}/YYYY/MM/DD/{filename} (empty UDID)
+    udid = "unknown";
+    date = `${parts[1]}/${parts[2]}/${parts[3]}`;
+    filename = parts[4];
+  } else {
+    return null;
+  }
+
   const logType = filename.split("-")[0];
-
-  return { s3Key, udid, date, filename, logType, size };
+  const source = prefix === "feedback-logs" ? "feedback" : "auto";
+  return { s3Key, udid, date, filename, logType, size, source };
 }
 
 /**
@@ -25,7 +42,7 @@ export function parseS3Record(record) {
 export function formatSlackMessage(meta) {
   return {
     text: [
-      `:file_folder: *S3 Log Uploaded*`,
+      `:file_folder: *S3 Log Uploaded* (${meta.source})`,
       ``,
       `*UDID:* \`${meta.udid}\``,
       `*Date:* ${meta.date}`,

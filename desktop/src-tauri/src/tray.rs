@@ -1,7 +1,6 @@
 //! System tray module
 //!
-//! - Windows: left/right click both show context menu
-//! - macOS/Linux: left click shows window, right click shows context menu
+//! - All platforms: left click shows window, right click shows context menu
 //! - Menu is rebuilt when locale changes
 
 use std::sync::Mutex;
@@ -11,7 +10,6 @@ use tauri::{
     State,
 };
 
-#[cfg(not(target_os = "windows"))]
 use tauri::tray::{MouseButtonState, TrayIconEvent};
 
 use crate::service;
@@ -88,27 +86,18 @@ pub fn init_tray(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error
             _ => {}
         });
 
-    // Windows: show menu on both left and right click (no direct window show)
-    // macOS/Linux: left click shows window, right click shows menu
-    #[cfg(target_os = "windows")]
-    {
-        builder = builder.show_menu_on_left_click(true);
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        builder = builder
-            .show_menu_on_left_click(false)
-            .on_tray_icon_event(|tray, event| {
-                if let TrayIconEvent::Click {
-                    button_state: MouseButtonState::Up,
-                    ..
-                } = event
-                {
-                    window::show_window_user_action(tray.app_handle());
-                }
-            });
-    }
+    // All platforms: left click shows window, right click shows menu
+    builder = builder
+        .show_menu_on_left_click(false)
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                window::show_window_user_action(tray.app_handle());
+            }
+        });
 
     let _tray = builder.build(app)?;
 

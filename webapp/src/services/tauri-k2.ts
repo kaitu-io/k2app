@@ -53,6 +53,8 @@ function transformStatus(raw: any): StatusResponseData {
     startAt = Math.floor(new Date(raw.connected_at).getTime() / 1000);
   }
 
+  console.debug('[K2:Tauri] transformStatus: raw.state=' + (raw.state ?? 'undefined') + ' → state=' + state + ', error=' + (error?.code ?? 'none') + ', retrying=' + retrying);
+
   return {
     state,
     running,
@@ -78,6 +80,7 @@ export async function injectTauriGlobals(): Promise<void> {
 
   const tauriK2: IK2Vpn = {
     run: async <T = any>(action: string, params?: any): Promise<SResponse<T>> => {
+      console.debug('[K2:Tauri] run: action=' + action);
       try {
         // Daemon handleUp expects params.config + pid for lifecycle monitoring
         let wrappedParams: any = params ?? null;
@@ -89,6 +92,7 @@ export async function injectTauriGlobals(): Promise<void> {
           action,
           params: wrappedParams,
         });
+        console.debug('[K2:Tauri] run: action=' + action + ' → code=' + response.code);
         // Transform status response to normalize daemon state values
         if (action === 'status' && response.code === 0 && response.data) {
           const transformed = transformStatus(response.data);
@@ -104,6 +108,7 @@ export async function injectTauriGlobals(): Promise<void> {
           data: response.data as T,
         };
       } catch (error) {
+        console.warn('[K2:Tauri] run: action=' + action + ' → error:', error);
         return {
           code: -1,
           message: error instanceof Error ? error.message : String(error),
@@ -126,6 +131,7 @@ export async function injectTauriGlobals(): Promise<void> {
     onStatusChange: (callback: (status: StatusResponseData) => void): (() => void) => {
       let unlisten: (() => void) | null = null;
       listen<any>('vpn-status-changed', (event) => {
+        console.debug('[K2:Tauri] vpn-status-changed event received');
         callback(transformStatus(event.payload));
       }).then((fn) => {
         unlisten = fn;
@@ -302,6 +308,6 @@ export async function injectTauriGlobals(): Promise<void> {
   try {
     await invoke('show_window');
   } catch (error) {
-    console.warn('[TauriK2] Failed to show window:', error);
+    console.warn('[K2:Tauri] Failed to show window:', error);
   }
 }

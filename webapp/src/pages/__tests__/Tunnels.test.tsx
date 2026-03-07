@@ -164,7 +164,7 @@ describe('Tunnels', () => {
       });
     });
 
-    it('calls clearTunnel when saving empty input', async () => {
+    it('calls clearTunnel when clicking clear button', async () => {
       setupMocks({
         tunnel: {
           uri: 'k2v5://user:pass@host:443',
@@ -174,12 +174,9 @@ describe('Tunnels', () => {
       mockClearTunnel.mockResolvedValue(undefined);
       render(<Tunnels />);
 
-      const input = screen.getByRole('textbox');
-      fireEvent.focus(input);
-      fireEvent.change(input, { target: { value: '' } });
-
-      const saveButton = screen.getByText(/^save$|^保存$/i).closest('button')!;
-      fireEvent.click(saveButton);
+      // Clear button (清空) is rendered when tunnel exists
+      const clearButton = screen.getByText(/^clear$|^清空$/i).closest('button')!;
+      fireEvent.click(clearButton);
 
       await waitFor(() => {
         expect(mockClearTunnel).toHaveBeenCalled();
@@ -193,7 +190,7 @@ describe('Tunnels', () => {
       render(<Tunnels />);
 
       expect(screen.getByText(/curl -fsSL/)).toBeInTheDocument();
-      expect(screen.getByText(/k2s setup/)).toBeInTheDocument();
+      expect(screen.getByText(/sudo sh/)).toBeInTheDocument();
     });
   });
 

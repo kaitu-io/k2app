@@ -28,7 +28,7 @@ async function encryptForTest(
   const rawKey = hexToBytes(keyHex);
   const key = await crypto.subtle.importKey(
     'raw',
-    rawKey.buffer as ArrayBuffer,
+    rawKey,
     'AES-GCM',
     false,
     ['encrypt'],
@@ -36,9 +36,9 @@ async function encryptForTest(
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const encoded = new TextEncoder().encode(plaintext);
   const ciphertext = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: iv.buffer as ArrayBuffer },
+    { name: 'AES-GCM', iv },
     key,
-    encoded.buffer as ArrayBuffer,
+    encoded,
   );
   const result = new Uint8Array(iv.length + ciphertext.byteLength);
   result.set(iv);

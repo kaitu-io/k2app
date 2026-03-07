@@ -628,22 +628,34 @@ mod tests {
 
     #[test]
     fn test_cleanup_dir_logs_removes_matching_files() {
-        let dir = std::env::temp_dir().join("k2app-test-cleanup-logs");
-        let _ = std::fs::create_dir_all(&dir);
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path();
 
         // Create test files
-        std::fs::write(dir.join("k2.log"), "test log").unwrap();
-        std::fs::write(dir.join("panic-2024.log"), "test panic").unwrap();
-        std::fs::write(dir.join("keep.txt"), "keep me").unwrap();
+        std::fs::write(dir_path.join("k2.log"), "test log").unwrap();
+        std::fs::write(dir_path.join("panic-2024.log"), "test panic").unwrap();
+        std::fs::write(dir_path.join("keep.txt"), "keep me").unwrap();
 
-        cleanup_dir_logs(&dir, |name| name.ends_with(".log"));
+        cleanup_dir_logs(dir_path, |name| name.ends_with(".log"));
 
-        // .log files should be removed, .txt should remain
-        assert!(!dir.join("k2.log").exists());
-        assert!(!dir.join("panic-2024.log").exists());
-        assert!(dir.join("keep.txt").exists());
+        // .txt should remain regardless of platform
+        assert!(dir_path.join("keep.txt").exists());
 
-        let _ = std::fs::remove_dir_all(&dir);
+        #[cfg(target_os = "windows")]
+        {
+            // Windows: log files are truncated (exist but empty)
+            assert!(dir_path.join("k2.log").exists());
+            assert!(dir_path.join("panic-2024.log").exists());
+            assert!(std::fs::read_to_string(dir_path.join("k2.log")).unwrap().is_empty());
+            assert!(std::fs::read_to_string(dir_path.join("panic-2024.log")).unwrap().is_empty());
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            // macOS/Linux: log files are deleted
+            assert!(!dir_path.join("k2.log").exists());
+            assert!(!dir_path.join("panic-2024.log").exists());
+        }
     }
 
     #[test]
@@ -684,5 +696,80 @@ mod tests {
     fn test_stop_beta_auto_upload_no_crash() {
         stop_beta_auto_upload();
         assert!(!BETA_UPLOAD_ACTIVE.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn test_cleanup_dir_logs_behavior() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path();
+
+        // Create test files: two log files and one unrelated file
+        std::fs::write(dir_path.join("desktop.log"), "log content A").unwrap();
+        std::fs::write(dir_path.join("desktop.log.1"), "log content B").unwrap();
+        std::fs::write(dir_path.join("other.txt"), "keep me").unwrap();
+
+        // Filter matches files containing both "desktop" and "log"
+        cleanup_dir_logs(dir_path, |name| {
+            name.contains("desktop") && name.contains("log")
+        });
+
+        // "other.txt" must survive regardless of platform
+        assert!(
+            dir_path.join("other.txt").exists(),
+            "other.txt should not be touched by cleanup"
+        );
+        let other_content = std::fs::read_to_string(dir_path.join("other.txt")).unwrap();
+        assert_eq!(other_content, "keep me");
+
+        // Platform-conditional assertions
+        #[cfg(target_os = "windows")]
+        {
+            // Windows: log files should still exist but be truncated (0 bytes)
+            assert!(
+                dir_path.join("desktop.log").exists(),
+                "desktop.log should exist (truncated) on Windows"
+            );
+            assert!(
+                dir_path.join("desktop.log.1").exists(),
+                "desktop.log.1 should exist (truncated) on Windows"
+            );
+            let content_a = std::fs::read_to_string(dir_path.join("desktop.log")).unwrap();
+            let content_b = std::fs::read_to_string(dir_path.join("desktop.log.1")).unwrap();
+            assert!(
+                content_a.is_empty(),
+                "desktop.log should be empty after truncation, got: {:?}",
+                content_a
+            );
+            assert!(
+                content_b.is_empty(),
+                "desktop.log.1 should be empty after truncation, got: {:?}",
+                content_b
+            );
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            // macOS/Linux: log files should be deleted
+            assert!(
+                !dir_path.join("desktop.log").exists(),
+                "desktop.log should be deleted on non-Windows"
+            );
+            assert!(
+                !dir_path.join("desktop.log.1").exists(),
+                "desktop.log.1 should be deleted on non-Windows"
+            );
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_windows_log_dir_uses_programdata() {
+        let log_dir = get_log_dir();
+        let path_lower = log_dir.to_string_lossy().to_lowercase();
+        assert!(
+            path_lower.contains("programdata") || path_lower.contains("kaitu"),
+            "Windows log dir should contain 'programdata' or 'kaitu', got: {}",
+            log_dir.display()
+        );
     }
 }

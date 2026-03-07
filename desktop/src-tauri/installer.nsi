@@ -229,20 +229,9 @@ Var AppStartMenuFolder
 ; 7. Installation page
 !insertmacro MUI_PAGE_INSTFILES
 
-; 8. Finish page — always skipped for streamlined install
-; Desktop shortcut and app launch are handled automatically below
-!define MUI_FINISHPAGE_NOAUTOCLOSE
-!define MUI_FINISHPAGE_SHOWREADME
-!define MUI_FINISHPAGE_SHOWREADME_TEXT "$(createDesktop)"
-!define MUI_FINISHPAGE_SHOWREADME_FUNCTION CreateOrUpdateDesktopShortcut
-!define MUI_FINISHPAGE_RUN
-!define MUI_FINISHPAGE_RUN_FUNCTION RunMainBinary
+; 8. Finish page — skipped, app launch handled by POSTINSTALL hook
 !define MUI_PAGE_CUSTOMFUNCTION_PRE Skip
 !insertmacro MUI_PAGE_FINISH
-
-Function RunMainBinary
-  nsis_tauri_utils::RunAsUser "$INSTDIR\${MAINBINARYNAME}.exe" ""
-FunctionEnd
 
 ; Uninstaller Pages
 ; 1. Confirm uninstall page
