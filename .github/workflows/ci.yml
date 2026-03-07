@@ -145,7 +145,7 @@ jobs:
   # --- Platform-dependent tests (Windows) ---
   test-windows:
     runs-on: [self-hosted, Windows]
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Checkout repository
@@ -190,6 +190,22 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
+
+      - name: Set persistent cache paths (Windows)
+        shell: bash
+        run: |
+          echo "CARGO_HOME=C:/cache/cargo" >> "$GITHUB_ENV"
+          echo "GOMODCACHE=C:/cache/gomod" >> "$GITHUB_ENV"
+          echo "SCCACHE_DIR=C:/cache/sccache" >> "$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          echo "C:/cache/cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Setup sccache (Windows local disk)
+        shell: bash
+        run: |
+          if ! command -v sccache &>/dev/null; then
+            cargo install sccache --locked
+          fi
 
       - name: Install Node dependencies
         shell: bash
@@ -282,6 +298,22 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
+
+      - name: Set persistent cache paths (Windows)
+        shell: bash
+        run: |
+          echo "CARGO_HOME=C:/cache/cargo" >> "$GITHUB_ENV"
+          echo "GOMODCACHE=C:/cache/gomod" >> "$GITHUB_ENV"
+          echo "SCCACHE_DIR=C:/cache/sccache" >> "$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          echo "C:/cache/cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Setup sccache (Windows local disk)
+        shell: bash
+        run: |
+          if ! command -v sccache &>/dev/null; then
+            cargo install sccache --locked
+          fi
 
       - name: Install Node dependencies
         shell: bash
