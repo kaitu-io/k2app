@@ -10,7 +10,75 @@ permissions:
   contents: write
 
 jobs:
+  # --- Test gate: must pass before any build starts ---
+  test-gate:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup SSH for private submodule
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.K2_DEPLOY_KEY }}
+
+      - name: Init k2 submodule
+        run: git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init --recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: k2/go.sum
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust target directory
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            desktop/src-tauri/target
+          key: rust-release-gate-${{ runner.os }}-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            rust-release-gate-${{ runner.os }}-
+
+      - name: Install Node dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Version consistency check
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          CARGO_VERSION=$(grep '^version' desktop/src-tauri/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+          if [ "$PKG_VERSION" != "$CARGO_VERSION" ]; then
+            echo "::error::Version mismatch: package.json ($PKG_VERSION) != Cargo.toml ($CARGO_VERSION)"
+            exit 1
+          fi
+          echo "Versions consistent: $PKG_VERSION"
+
+      - name: Webapp tests (vitest)
+        run: yarn test
+        working-directory: webapp
+
+      - name: Cargo test (Tauri)
+        run: cargo test
+        working-directory: desktop/src-tauri
+
+      - name: Go test k2 core
+        run: go test ./...
+        working-directory: k2
+
   release:
+    needs: test-gate
     strategy:
       fail-fast: false
       matrix:

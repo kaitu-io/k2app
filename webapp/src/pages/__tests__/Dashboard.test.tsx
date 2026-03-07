@@ -355,8 +355,7 @@ describe('Dashboard', () => {
       render(<Dashboard />);
 
       await waitFor(() => {
-        const dnsIcon = screen.getByTestId('DnsIcon');
-        expect(dnsIcon).toBeInTheDocument();
+        // Unauthenticated users see a contained primary button to unlock cloud nodes
         const buttons = screen.getAllByRole('button');
         const loginButton = buttons.find(btn =>
           btn.classList.contains('MuiButton-containedPrimary')

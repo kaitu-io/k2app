@@ -267,6 +267,16 @@ describe('tauri-k2', () => {
       expect(result.data.running).toBe(true);
     });
 
+    it('passes through reconnecting state', async () => {
+      mockInvoke.mockResolvedValueOnce({
+        code: 0, message: 'ok',
+        data: { state: 'reconnecting' },
+      });
+      const result = await window._k2.run('status');
+      expect(result.data.state).toBe('reconnecting');
+      expect(result.data.running).toBe(false);
+    });
+
     it('stopped without error stays disconnected', async () => {
       mockInvoke.mockResolvedValueOnce({
         code: 0, message: 'ok',

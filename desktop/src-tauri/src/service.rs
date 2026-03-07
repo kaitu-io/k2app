@@ -727,6 +727,36 @@ mod tests {
     // hash_to_udid: uniform 32 hex char output from any raw platform ID
     // -----------------------------------------------------------------------
     #[test]
+    fn test_get_platform_info_fields() {
+        let info = get_platform_info();
+        assert!(info.get("os").is_some(), "must have 'os' field");
+        assert!(info.get("version").is_some(), "must have 'version' field");
+        assert!(info.get("arch").is_some(), "must have 'arch' field");
+
+        let os = info["os"].as_str().unwrap();
+        assert!(
+            ["macos", "windows", "linux"].contains(&os),
+            "os must be macos/windows/linux, got: {}",
+            os
+        );
+
+        let arch = info["arch"].as_str().unwrap();
+        assert!(
+            ["arm64", "amd64"].contains(&arch),
+            "arch must be arm64/amd64, got: {}",
+            arch
+        );
+    }
+
+    #[test]
+    fn test_service_base_url_default() {
+        // Without K2_DAEMON_PORT env, should use default 1777
+        std::env::remove_var("K2_DAEMON_PORT");
+        let url = service_base_url();
+        assert_eq!(url, "http://127.0.0.1:1777");
+    }
+
+    #[test]
     fn test_hash_to_udid_format() {
         let udid = hash_to_udid("test-input");
         assert_eq!(udid.len(), 32, "UDID must be 32 chars");
