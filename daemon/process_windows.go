@@ -5,8 +5,8 @@ package daemon
 import "golang.org/x/sys/windows"
 
 // shouldMonitorPID reports whether PID monitoring is supported on this platform.
-// Windows: disabled — daemon runs as service, Signal(0) unreliable across sessions.
-func shouldMonitorPID() bool { return false }
+// Windows: enabled — uses OpenProcess (Signal(0) is not supported on Windows).
+func shouldMonitorPID() bool { return true }
 
 // processExists checks if a process with the given PID is alive.
 // Signal(0) is not supported on Windows ("not supported by windows"),
