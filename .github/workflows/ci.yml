@@ -114,7 +114,8 @@ jobs:
 
       - name: Create sidecar placeholder for cargo check
         run: |
-          TRIPLE=$(rustc -vV | grep host | cut -d' ' -f2)
+          TRIPLE=$(RUSTC_WRAPPER= rustc -vV | grep host | cut -d' ' -f2)
+          mkdir -p desktop/src-tauri/binaries
           touch "desktop/src-tauri/binaries/k2-${TRIPLE}"
 
       - name: Cargo check (Tauri)
@@ -199,7 +200,8 @@ jobs:
       - name: Create sidecar placeholder for cargo check
         shell: bash
         run: |
-          TRIPLE=$(rustc -vV | grep host | cut -d' ' -f2)
+          TRIPLE=$(RUSTC_WRAPPER= rustc -vV | grep host | cut -d' ' -f2)
+          mkdir -p desktop/src-tauri/binaries
           touch "desktop/src-tauri/binaries/k2-${TRIPLE}.exe"
 
       - name: Cargo check (Tauri)
