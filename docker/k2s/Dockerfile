@@ -4,16 +4,13 @@
 
 FROM alpine:3.20
 
-RUN apk add --no-cache ca-certificates iptables
+RUN apk add --no-cache ca-certificates
 
 WORKDIR /app
 
 COPY k2s .
 COPY entrypoint.sh .
 RUN chmod +x entrypoint.sh k2s
-
-ENV K2_HOP_PORT_MIN=10020 \
-    K2_HOP_PORT_MAX=10119
 
 EXPOSE 443
 

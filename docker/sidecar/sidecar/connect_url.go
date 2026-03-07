@@ -15,7 +15,7 @@ import (
 // Output: k2v5://domain:port?ech=base64url&pin=sha256:base64[&hop=start-end][&ip=x.x.x.x][&ip6=xxxx]
 //
 // Returns empty string if connectURLContent is empty or unparseable.
-func BuildServerURL(connectURLContent, domain string, port, hopStart, hopEnd int, ipv4, ipv6 string) string {
+func BuildServerURL(connectURLContent, domain string, port int, ipv4, ipv6 string) string {
 	if connectURLContent == "" {
 		return ""
 	}
@@ -40,8 +40,8 @@ func BuildServerURL(connectURLContent, domain string, port, hopStart, hopEnd int
 	if pin != "" {
 		params = append(params, "pin="+pin)
 	}
-	if hopStart > 0 && hopEnd > 0 {
-		params = append(params, fmt.Sprintf("hop=%d-%d", hopStart, hopEnd))
+	if hop := u.Query().Get("hop"); hop != "" {
+		params = append(params, "hop="+hop)
 	}
 	if ipv4 != "" {
 		params = append(params, "ip="+ipv4)
