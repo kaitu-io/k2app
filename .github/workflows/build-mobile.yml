@@ -58,21 +58,35 @@ jobs:
           go-version: '1.24'
           cache-dependency-path: k2/go.sum
 
+      - name: Cache Go tools (gomobile)
+        uses: actions/cache@v4
+        with:
+          path: ~/go/bin
+          key: gobin-${{ runner.os }}-gomobile-latest
+
       - name: Install gomobile
         run: |
-          go install golang.org/x/mobile/cmd/gomobile@latest
+          if ! command -v gomobile &>/dev/null; then
+            go install golang.org/x/mobile/cmd/gomobile@latest
+          fi
           gomobile init
 
       - name: Install Node dependencies
         run: yarn install --frozen-lockfile --network-timeout 600000
 
+      - name: Cache gomobile bind output
+        uses: actions/cache@v4
+        with:
+          path: k2/build
+          key: gomobile-${{ runner.os }}-ios-${{ hashFiles('k2/**/*.go', 'k2/go.sum') }}
+
       - name: Setup CocoaPods cache
         uses: actions/cache@v4
         with:
           path: mobile/ios/App/Pods
-          key: pods-${{ hashFiles('mobile/ios/App/Podfile') }}
+          key: pods-${{ runner.os }}-${{ hashFiles('mobile/ios/App/Podfile.lock') }}
           restore-keys: |
-            pods-
+            pods-${{ runner.os }}-
 
       - name: Import Apple code signing certificate
         env:
@@ -102,9 +116,24 @@ jobs:
           APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
         run: |
+          if [ -z "$APP_STORE_CONNECT_API_KEY" ]; then
+            echo "::error::Secret APP_STORE_CONNECT_API_KEY_BASE64 is not set"
+            exit 1
+          fi
           mkdir -p ~/private_keys
           echo "$APP_STORE_CONNECT_API_KEY" | base64 --decode \
             > ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8
+
+      - name: Verify tag matches package.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag version ($TAG_VERSION) != package.json ($PKG_VERSION)"
+            exit 1
+          fi
+          echo "Version match: $TAG_VERSION"
 
       - name: Build iOS
         env:
@@ -159,9 +188,31 @@ jobs:
           AWS_DEFAULT_REGION: ap-northeast-1
         run: bash scripts/ci/upload-mobile-s3.sh --web --ios --channel=${{ steps.channel.outputs.channel }}
 
+      - name: Invalidate CloudFront CDN cache
+        if: success()
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ap-northeast-1
+          DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          aws cloudfront create-invalidation \
+            --distribution-id "$DISTRIBUTION_ID" \
+            --paths "/kaitu/web/*" "/kaitu/ios/*"
+
       - name: Clean up keychain
         if: always()
         run: security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" || true
+
+      - name: Notify Slack on failure
+        if: failure()
+        run: |
+          ./scripts/ci/notify-slack.sh build-failure \
+            --platform "iOS" \
+            --error "Mobile iOS build failed. Check workflow run for details."
+        env:
+          SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_ALERT }}
 
   build-android:
     if: >-
@@ -206,12 +257,28 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Cache Android NDK
+        id: ndk-cache
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/lib/android/sdk/ndk/26.1.10909125
+          key: android-ndk-26.1.10909125
+
       - name: Install Android NDK
+        if: steps.ndk-cache.outputs.cache-hit != 'true'
         run: sdkmanager --install "ndk;26.1.10909125"
+
+      - name: Cache Go tools (gomobile)
+        uses: actions/cache@v4
+        with:
+          path: ~/go/bin
+          key: gobin-${{ runner.os }}-gomobile-latest
 
       - name: Install gomobile
         run: |
-          go install golang.org/x/mobile/cmd/gomobile@latest
+          if ! command -v gomobile &>/dev/null; then
+            go install golang.org/x/mobile/cmd/gomobile@latest
+          fi
           gomobile init
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
@@ -219,20 +286,32 @@ jobs:
       - name: Install Node dependencies
         run: yarn install --frozen-lockfile --network-timeout 600000
 
+      - name: Cache gomobile bind output
+        uses: actions/cache@v4
+        with:
+          path: k2/build
+          key: gomobile-${{ runner.os }}-android-${{ hashFiles('k2/**/*.go', 'k2/go.sum') }}
+
       - name: Cache Gradle
         uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-${{ hashFiles('mobile/android/**/*.gradle*') }}
+          key: gradle-${{ runner.os }}-${{ hashFiles('mobile/android/**/*.gradle*') }}
           restore-keys: |
-            gradle-
+            gradle-${{ runner.os }}-
 
-      - name: Compile Android (interface verification)
+      - name: Verify tag matches package.json
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          cd mobile/android
-          ./gradlew :app:compileDebugKotlin :k2-plugin:compileDebugKotlin --no-daemon
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag version ($TAG_VERSION) != package.json ($PKG_VERSION)"
+            exit 1
+          fi
+          echo "Version match: $TAG_VERSION"
 
       - name: Build Android
         run: bash scripts/build-mobile-android.sh
@@ -265,3 +344,25 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ap-northeast-1
         run: bash scripts/ci/upload-mobile-s3.sh --android --channel=${{ steps.channel.outputs.channel }}
+
+      - name: Invalidate CloudFront CDN cache
+        if: success()
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ap-northeast-1
+          DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          aws cloudfront create-invalidation \
+            --distribution-id "$DISTRIBUTION_ID" \
+            --paths "/kaitu/android/*"
+
+      - name: Notify Slack on failure
+        if: failure()
+        run: |
+          ./scripts/ci/notify-slack.sh build-failure \
+            --platform "Android" \
+            --error "Mobile Android build failed. Check workflow run for details."
+        env:
+          SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_ALERT }}
