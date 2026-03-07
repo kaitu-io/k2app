@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"strings"
 	"sync"
@@ -167,6 +168,10 @@ func (h *dnsHandler) recordDNSFailure(err error) {
 		return
 	}
 	if h.consecutiveFails.Add(1) == dnsWireErrorThreshold {
+		slog.Warn("dns: consecutive failure threshold reached",
+			"threshold", dnsWireErrorThreshold,
+			"lastErr", err.Error(),
+		)
 		h.engine.ReportWireError(fmt.Errorf("DNS: %d consecutive failures: %w",
 			dnsWireErrorThreshold, err))
 	}
@@ -176,7 +181,8 @@ func (h *dnsHandler) recordDNSSuccess() {
 	if h.engine == nil {
 		return
 	}
-	if h.consecutiveFails.Swap(0) >= dnsWireErrorThreshold {
+	if prev := h.consecutiveFails.Swap(0); prev >= dnsWireErrorThreshold {
+		slog.Info("dns: recovered after consecutive failures", "previousFails", prev)
 		h.engine.ClearWireError()
 	}
 }

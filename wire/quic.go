@@ -277,17 +277,22 @@ func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
 
 	qcfg := DefaultQUICConfig()
 
+	dialStart := time.Now()
 	conn, err := transport.Dial(ctx, udpAddr, tlsCfg, qcfg)
 	if err != nil {
 		transport.Close()
 		return nil, fmt.Errorf("wire: QUIC dial: %w", err)
 	}
+	slog.Info("wire: QUIC connected",
+		"dialMs", time.Since(dialStart).Milliseconds(),
+		"remoteAddr", conn.RemoteAddr().String(),
+	)
 
 	// Set K2ARC congestion control (replaces default Cubic)
 	sender := arc.NewArcSenderGFWMode(arc.DefaultMaxRate)
 	conn.SetCongestionControl(sender)
 	c.arcSender = sender
-	slog.Info("wire: QUIC client K2ARC enabled", "maxRateMbps", arc.DefaultMaxRate/1_000_000)
+	slog.Info("wire: QUIC K2ARC enabled", "maxRateMbps", arc.DefaultMaxRate/1_000_000)
 
 	c.conn = conn
 	c.transport = transport

@@ -92,12 +92,24 @@ func (e *Engine) Start(cfg Config) error {
 	e.setState(StateConnecting)
 	e.mu.Unlock()
 
+	startTime := time.Now()
+	slog.Info("engine: start",
+		"server", extractServerHost(client.Server),
+		"mode", client.Mode,
+		"ruleGlobal", client.Rule.Global,
+		"dnsDirect", client.DNS.Direct,
+		"dnsProxy", client.DNS.Proxy,
+		"fd", cfg.FileDescriptor,
+		"hasDirectDialer", cfg.DirectDialer != nil,
+		"hasNetworkMonitor", cfg.NetworkMonitor != nil,
+	)
+
 	// 1. Rule config — built directly from client.Rule.
 	ruleCfg := buildRuleConfig(client)
 	if err := k2rule.Init(ruleCfg); err != nil {
 		slog.Warn("engine: k2rule init failed, continuing with defaults", "err", err)
 	}
-	slog.Info("engine: step 1 - k2rule init done")
+	slog.Info("engine: step 1 - k2rule init done", "elapsed", time.Since(startTime))
 
 	// 2. Parse k2v5:// URL.
 	wireCfg, err := wire.ParseURL(client.Server)
@@ -129,7 +141,7 @@ func (e *Engine) Start(cfg Config) error {
 	} else {
 		slog.Warn("engine: k2v5 URL missing ip= parameter, using Host for dial (deprecated)")
 	}
-	slog.Info("engine: step 3 - dial address resolved", "addr", wireCfg.DialAddr)
+	slog.Info("engine: step 3 - dial address resolved", "addr", wireCfg.DialAddr, "elapsed", time.Since(startTime))
 
 	// 4. Build transports.
 	quicClient := wire.NewQUICClient(wireCfg, nil)
@@ -150,12 +162,17 @@ func (e *Engine) Start(cfg Config) error {
 		tm.SetQUIC(quicClient)
 		tm.SetTCPWS(tcpwsClient)
 	}
+	slog.Debug("engine: step 4 - transports configured",
+		"transport", wireCfg.Transport,
+		"hasQUIC", quicClient != nil,
+		"hasTCPWS", tcpwsClient != nil,
+	)
 
 	// 4.5 Verify wire connectivity before setting up TUN/provider.
 	// Without this check, engine reports "connected" after TUN starts even if
 	// wire server is unreachable — DNS handler silently absorbs wire failures
 	// and ReportWireError() never triggers (no TCP connections created).
-	slog.Info("engine: step 4.5 - wire connectivity probe")
+	slog.Info("engine: step 4.5 - wire connectivity probe", "elapsed", time.Since(startTime))
 	probeCtx, probeCancel := context.WithTimeout(ctx, 15*time.Second)
 	probeConn, probeErr := tm.DialTCP(probeCtx, "1.1.1.1:443")
 	probeCancel()
@@ -168,7 +185,7 @@ func (e *Engine) Start(cfg Config) error {
 		return e.fail(fmt.Errorf("wire probe: %w", probeErr))
 	}
 	probeConn.Close()
-	slog.Info("engine: step 4.5 - wire probe ok")
+	slog.Info("engine: step 4.5 - wire probe ok", "elapsed", time.Since(startTime))
 
 	// 4.6 Optional UDP probe — non-fatal, logs warning if UDP broken.
 	// Runtime datagram health tracking (Step 2) handles fallback.
@@ -179,7 +196,7 @@ func (e *Engine) Start(cfg Config) error {
 		slog.Warn("engine: wire UDP probe failed (DNS will use fallback)", "err", udpErr)
 	} else {
 		udpConn.Close()
-		slog.Info("engine: step 4.6 - wire UDP probe ok")
+		slog.Info("engine: step 4.6 - wire UDP probe ok", "elapsed", time.Since(startTime))
 	}
 
 	// 5. Router.
@@ -219,6 +236,8 @@ func (e *Engine) Start(cfg Config) error {
 			IPv6Address:      client.Tun.IPv6,
 		})
 	}
+
+	slog.Debug("engine: step 6 - provider created", "provider", prov.Name(), "mode", client.Mode, "elapsed", time.Since(startTime))
 
 	// Check cancellation before starting the tunnel (the expensive part).
 	if ctx.Err() != nil {
@@ -306,6 +325,7 @@ func (e *Engine) Start(cfg Config) error {
 
 	e.setState(StateConnected)
 	e.mu.Unlock()
+	slog.Info("engine: connected", "totalMs", time.Since(startTime).Milliseconds())
 
 	// Network monitor already started in step 4.1 (before wire probe).
 
@@ -325,6 +345,7 @@ func (e *Engine) OnNetworkChanged() {
 	handler := e.handler
 	tm := e.tm
 	e.mu.Unlock()
+	slog.Info("engine: network changed")
 
 	// Notify handler of transient reconnecting state (for UI feedback).
 	if handler != nil {
@@ -348,6 +369,10 @@ func (e *Engine) OnNetworkChanged() {
 	// Auth errors survive — WiFi→cellular doesn't fix expired subscriptions.
 	e.mu.Lock()
 	if e.lastError != nil && e.lastError.Category != CategoryClient {
+		slog.Debug("engine: network change cleared stale error",
+			"prevCode", e.lastError.Code,
+			"prevCategory", e.lastError.Category,
+		)
 		e.lastError = nil
 	}
 	s := e.buildStatusLocked()
@@ -368,6 +393,7 @@ func (e *Engine) Pause() {
 		return
 	}
 	e.paused = true
+	slog.Info("engine: paused")
 	handler := e.handler
 	tm := e.tm
 	e.mu.Unlock()
@@ -388,6 +414,7 @@ func (e *Engine) Wake() {
 		return
 	}
 	e.paused = false
+	slog.Info("engine: woke")
 	handler := e.handler
 	tm := e.tm
 	s := e.buildStatusLocked()
@@ -409,6 +436,10 @@ func (e *Engine) Stop() error {
 	if e.state == StateDisconnected {
 		return nil
 	}
+	slog.Info("engine: stop",
+		"previousState", e.state,
+		"hadError", e.lastError != nil,
+	)
 
 	// Stop health monitor first — its goroutine reads tm and tunnel.
 	if e.health != nil {
@@ -501,6 +532,11 @@ func (e *Engine) fail(err error) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.lastError = ClassifyError(err)
+	slog.Warn("engine: fail",
+		"code", e.lastError.Code,
+		"category", e.lastError.Category,
+		"message", e.lastError.Message,
+	)
 	if e.networkMonitor != nil {
 		e.networkMonitor.Close()
 		e.networkMonitor = nil
@@ -607,6 +643,11 @@ func (e *Engine) ReportWireError(err error) {
 		// auth error upgrades existing network error — fall through
 	}
 	e.lastError = newErr
+	slog.Warn("engine: wire error",
+		"code", newErr.Code,
+		"category", newErr.Category,
+		"message", newErr.Message,
+	)
 	handler := e.handler
 	status := e.buildStatusLocked()
 	e.mu.Unlock()
@@ -624,6 +665,7 @@ func (e *Engine) ClearWireError() {
 		return
 	}
 	e.lastError = nil
+	slog.Info("engine: wire error cleared")
 	handler := e.handler
 	status := e.buildStatusLocked()
 	e.mu.Unlock()
