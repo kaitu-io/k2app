@@ -83,6 +83,12 @@ jobs:
         run: yarn test
         working-directory: webapp
 
+      - name: Create sidecar placeholder for cargo test
+        run: |
+          TRIPLE=$(RUSTC_WRAPPER= rustc -vV | grep host | cut -d' ' -f2)
+          mkdir -p desktop/src-tauri/binaries
+          touch "desktop/src-tauri/binaries/k2-${TRIPLE}"
+
       - name: Cargo test (Tauri)
         run: cargo test
         working-directory: desktop/src-tauri
