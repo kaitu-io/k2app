@@ -145,7 +145,7 @@ jobs:
   # --- Platform-dependent tests (Windows) ---
   test-windows:
     runs-on: [self-hosted, Windows]
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Checkout repository
