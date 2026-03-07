@@ -188,7 +188,7 @@ jobs:
 
       - name: Type-check webapp (tsc)
         shell: bash
-        run: npx tsc --noEmit
+        run: yarn tsc --noEmit
         working-directory: webapp
 
       - name: Cargo check (Tauri)
