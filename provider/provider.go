@@ -21,6 +21,13 @@ type ConnectionHandler interface {
 	HandleUDP(conn net.PacketConn, dest string)
 }
 
+// UDPRejecter sends ICMP Port Unreachable for a UDP connection.
+// Implemented by TUN-backed connections (singPacketConn).
+// Non-TUN providers (Proxy, TProxy) don't implement this — type assert fails gracefully.
+type UDPRejecter interface {
+	RejectHandshake() error
+}
+
 // ProviderConfig holds configuration for creating a Provider.
 type ProviderConfig struct {
 	Mode           string       // "tun" (default), "proxy", or "tproxy"

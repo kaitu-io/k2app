@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"syscall"
 	"time"
 
 	"github.com/sagernet/sing/common/buf"
@@ -81,6 +82,12 @@ func (c *singPacketConn) LocalAddr() net.Addr                { return c.conn.Loc
 func (c *singPacketConn) SetDeadline(t time.Time) error      { return c.conn.SetDeadline(t) }
 func (c *singPacketConn) SetReadDeadline(t time.Time) error  { return c.conn.SetReadDeadline(t) }
 func (c *singPacketConn) SetWriteDeadline(t time.Time) error { return c.conn.SetWriteDeadline(t) }
+
+// RejectHandshake sends ICMP Port Unreachable via gVisor's UDPBackWriter.
+// This makes Chrome immediately fallback from QUIC to TCP.
+func (c *singPacketConn) RejectHandshake() error {
+	return N.ReportHandshakeFailure(c.conn, syscall.ECONNREFUSED)
+}
 
 // slogTunLogger adapts Go's slog to sing's logger.Logger interface.
 type slogTunLogger struct{}

@@ -42,6 +42,11 @@ const maxDatagramHops int32 = 3
 // each recovery round costs 3 hops (3 resetConnection calls).
 const datagramRecoveryInterval = 3 * time.Minute
 
+// tcpHealthWindow is how recently TCP must have succeeded to suppress a datagram hop.
+// Matches QUIC MaxIdleTimeout (30s) — if TCP worked within one idle cycle, the
+// connection itself is fine and datagram loss is likely normal packet loss.
+const tcpHealthWindow = 30 * time.Second
+
 // ============================================================================
 // UDP overflow stream — per-packet fallback for oversized datagrams
 // ============================================================================
@@ -186,6 +191,7 @@ type QUICClient struct {
 	datagramHopAttempts  atomic.Int32 // hop attempts before TCP-WS fallback
 	datagramHopExhausted atomic.Int64 // UnixNano: when hops were exhausted (0 = not exhausted)
 	hopInProgress        atomic.Bool  // CAS guard: prevents concurrent hops
+	lastTCPSuccess       atomic.Int64 // UnixNano of last successful DialTCP (0 = unknown)
 }
 
 // NewQUICClient creates a new QUIC client transport.
@@ -221,6 +227,17 @@ func (c *QUICClient) hopEnabled() bool {
 // hopPort returns a random port in the hop range.
 func (c *QUICClient) hopPort() int {
 	return c.hopStart + rand.Intn(c.hopEnd-c.hopStart)
+}
+
+// tcpRecentlyHealthy returns true if a TCP stream succeeded within the given window.
+// Used by DialUDP to skip destructive port hops when TCP streams are healthy
+// (indicating normal packet loss, not ISP port blocking).
+func (c *QUICClient) tcpRecentlyHealthy(window time.Duration) bool {
+	ts := c.lastTCPSuccess.Load()
+	if ts == 0 {
+		return false
+	}
+	return time.Since(time.Unix(0, ts)) < window
 }
 
 // connect establishes a QUIC connection if not already connected.
@@ -359,6 +376,7 @@ func (c *QUICClient) DialTCP(ctx context.Context, addr string) (net.Conn, error)
 	}
 
 	slog.Debug("QUICClient.DialTCP: success", "addr", addr)
+	c.lastTCPSuccess.Store(time.Now().UnixNano())
 	return &quicStreamConn{
 		Stream: stream,
 		local:  conn.LocalAddr(),
@@ -405,6 +423,14 @@ func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, 
 					"consecutiveTimeouts", mux.consecutiveTimeouts.Load(),
 					"lossRate", fmt.Sprintf("%.1f%%", mux.evaluateLossRate()*100),
 					"hopAttempts", c.datagramHopAttempts.Load())
+				// TCP health gate: if TCP streams work, datagram loss is normal
+				// packet loss (not ISP port blocking). Skip hop to protect TCP streams.
+				if c.tcpRecentlyHealthy(tcpHealthWindow) {
+					slog.Debug("QUICClient.DialUDP: TCP healthy, skipping hop",
+						"addr", addr,
+						"sinceTCP", time.Since(time.Unix(0, c.lastTCPSuccess.Load())).Round(time.Millisecond))
+					return nil, ErrDatagramUnhealthy
+				}
 				// Hop port before falling back to TCP-WS.
 				// tryHop() uses CAS to ensure only one goroutine hops at a time.
 				if c.hopEnabled() && c.datagramHopAttempts.Load() < maxDatagramHops {
@@ -630,6 +656,7 @@ func (c *QUICClient) resetConnection() {
 	}
 	c.alloc = nil
 	c.arcSender = nil
+	c.lastTCPSuccess.Store(0)
 	// NOTE: do NOT set c.closed = true — client must remain usable
 }
 

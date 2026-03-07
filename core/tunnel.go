@@ -271,6 +271,7 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 	// Triggers: sniffBT (BT/WebRTC), sniffSNI (domain upgrade), blockQUIC (QUIC reject).
 	if action != k2rule.TargetReject && (t.sniffBT || t.sniffSNI || t.blockQUIC) {
 		if packet, addr := peekUDP(conn); packet != nil {
+			origConn := conn // save before wrapping — prefixPacketConn hides UDPRejecter
 			conn = &prefixPacketConn{PacketConn: conn, first: packet, firstAddr: addr}
 
 			var meta sniff.Result
@@ -298,7 +299,10 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 				// Fast path: QUIC already routed to proxy → block immediately.
 				// Skips expensive SniffQUIC (HKDF + AES decrypt + ~5KB alloc).
 				if t.blockQUIC && action == k2rule.TargetProxy {
-					slog.Debug("tunnel: QUIC blocked, browser will fallback to TCP", "dest", dest)
+					slog.Debug("tunnel: QUIC blocked, sending ICMP unreachable", "dest", dest)
+					if r, ok := origConn.(provider.UDPRejecter); ok {
+						r.RejectHandshake()
+					}
 					return
 				}
 				// Extract domain for routing upgrade or IPv6 hostname rewrite.
@@ -322,7 +326,10 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 			// 4. Block QUIC going through proxy (prevents double-QUIC tunneling).
 			// Browsers fall back to TCP/TLS which uses the tunnel's stream path.
 			if t.blockQUIC && meta.Protocol == sniff.ProtoQUIC && action == k2rule.TargetProxy {
-				slog.Debug("tunnel: QUIC blocked, browser will fallback to TCP", "dest", dest, "domain", meta.Domain)
+				slog.Debug("tunnel: QUIC blocked, sending ICMP unreachable", "dest", dest, "domain", meta.Domain)
+				if r, ok := origConn.(provider.UDPRejecter); ok {
+					r.RejectHandshake()
+				}
 				return
 			}
 

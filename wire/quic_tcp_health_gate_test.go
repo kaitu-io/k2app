@@ -1,0 +1,55 @@
+package wire
+
+import (
+	"testing"
+	"time"
+)
+
+// ==========================================================================
+// Tests for TCP health gate on QUICClient
+//
+// When TCP streams recently succeeded (within tcpHealthWindow), DialUDP skips
+// destructive port hops and returns ErrDatagramUnhealthy instead. This prevents
+// normal datagram packet loss from killing healthy TCP streams.
+// ==========================================================================
+
+func TestTCPHealthGate_NoHopWhenTCPHealthy(t *testing.T) {
+	c := &QUICClient{}
+	// Simulate recent TCP success
+	c.lastTCPSuccess.Store(time.Now().UnixNano())
+
+	if !c.tcpRecentlyHealthy(tcpHealthWindow) {
+		t.Fatal("should report TCP healthy immediately after success")
+	}
+}
+
+func TestTCPHealthGate_HopStillWorksWhenTCPFailing(t *testing.T) {
+	c := &QUICClient{}
+	// No TCP success recorded (zero value)
+	if c.tcpRecentlyHealthy(tcpHealthWindow) {
+		t.Fatal("should not report TCP healthy when no TCP success recorded")
+	}
+}
+
+func TestTCPHealthGate_HopAfterTCPHealthExpiry(t *testing.T) {
+	c := &QUICClient{}
+	// Simulate TCP success that's older than the health window
+	c.lastTCPSuccess.Store(time.Now().Add(-tcpHealthWindow - time.Second).UnixNano())
+
+	if c.tcpRecentlyHealthy(tcpHealthWindow) {
+		t.Fatal("should not report TCP healthy after window expires")
+	}
+}
+
+func TestTCPHealthGate_ResetConnectionClearsLastTCPSuccess(t *testing.T) {
+	c := &QUICClient{
+		cfg: Config{Host: "test", Port: 443},
+	}
+	c.lastTCPSuccess.Store(time.Now().UnixNano())
+
+	c.resetConnection()
+
+	if c.lastTCPSuccess.Load() != 0 {
+		t.Fatal("resetConnection should clear lastTCPSuccess")
+	}
+}

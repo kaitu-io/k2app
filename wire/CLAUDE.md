@@ -79,6 +79,7 @@ Fields: UDID, Token, Host, Port, ECH, Fingerprint, HopStart, HopEnd, Insecure, P
 - Dead QUIC conn: `OpenStreamSync` failure caches stale connection — both `DialTCP` and `DialUDP` must call `resetConnection()` for non-context errors so next retry builds fresh conn.
 - Datagram recovery cycle: 3 port hops exhaust → fallback to TCP-WS streams for 3 min → reset hop counter → fresh QUIC round. Cycle repeats until network change or datagram recovery.
 - QUIC flow control is platform-specific (build tags `ios || android` vs desktop) — mobile uses 4× smaller windows to stay under iOS NE jetsam limit.
+- TCP health gate: `DialUDP` checks `lastTCPSuccess` before port hop. If TCP succeeded within 30s, returns `ErrDatagramUnhealthy` (TCP-WS fallback) instead of hop (which kills all TCP streams). Prevents normal DNS packet loss from triggering destructive connection resets.
 
 ## Testing
 
