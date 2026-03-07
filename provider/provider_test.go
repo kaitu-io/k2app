@@ -174,7 +174,7 @@ func TestProxyProvider_SOCKS5Connect(t *testing.T) {
 		if call.dest != "example.com:80" {
 			t.Errorf("dest = %q, want example.com:80", call.dest)
 		}
-	default:
+	case <-time.After(2 * time.Second):
 		t.Fatal("handler.HandleTCP not called")
 	}
 }
@@ -215,7 +215,7 @@ func TestProxyProvider_SOCKS5Connect_IPv4(t *testing.T) {
 		if call.dest != "93.184.216.34:443" {
 			t.Errorf("dest = %q, want 93.184.216.34:443", call.dest)
 		}
-	default:
+	case <-time.After(2 * time.Second):
 		t.Fatal("handler.HandleTCP not called")
 	}
 }
@@ -255,7 +255,7 @@ func TestProxyProvider_HTTPConnect(t *testing.T) {
 		if call.dest != "example.com:443" {
 			t.Errorf("dest = %q, want example.com:443", call.dest)
 		}
-	default:
+	case <-time.After(2 * time.Second):
 		t.Fatal("handler.HandleTCP not called")
 	}
 }
@@ -287,7 +287,7 @@ func TestProxyProvider_HTTPConnect_NoPort(t *testing.T) {
 		if call.dest != "example.com:443" {
 			t.Errorf("dest = %q, want example.com:443", call.dest)
 		}
-	default:
+	case <-time.After(2 * time.Second):
 		t.Fatal("handler.HandleTCP not called")
 	}
 }
