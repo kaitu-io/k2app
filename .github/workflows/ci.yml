@@ -258,9 +258,19 @@ jobs:
       - name: Setup Node.js (self-hosted)
         shell: bash
         run: |
-          nvm use
+          NODE_VERSION=$(cat .nvmrc)
+          CURRENT=$(node -v 2>/dev/null || echo "none")
+          if [ "$CURRENT" != "v${NODE_VERSION}" ]; then
+            nvm install "$NODE_VERSION"
+          fi
+          nvm use "$NODE_VERSION"
           NODE_DIR=$(dirname "$(which node)")
           echo "$NODE_DIR" >> "$GITHUB_PATH"
+          if ! command -v yarn &>/dev/null; then
+            npm install -g yarn
+          fi
+          NPM_GLOBAL=$(npm prefix -g)
+          echo "$NPM_GLOBAL" >> "$GITHUB_PATH"
 
       - name: Setup Go
         uses: actions/setup-go@v5
