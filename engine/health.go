@@ -261,6 +261,15 @@ func (hm *healthMonitor) maybeAct() {
 	if time.Since(hm.lastAction) < actionCooldown {
 		return
 	}
+
+	// TCP health gate: if TCP streams recently succeeded, the connection is
+	// functional despite high datagram/ARC loss. Skip destructive hop to
+	// protect active streams (e.g. YouTube video).
+	if hm.tm.TCPRecentlyHealthy(30 * time.Second) {
+		slog.Debug("health: TCP healthy, skipping hop")
+		return
+	}
+
 	hm.lastAction = time.Now()
 	hm.hopAttempts++
 

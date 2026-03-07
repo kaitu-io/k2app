@@ -281,6 +281,18 @@ func (tm *TransportManager) ResetConnections() {
 	tm.freshAfterReset.Store(true)
 }
 
+// TCPRecentlyHealthy returns true if a TCP stream succeeded within the given window.
+// Used by health monitor to skip destructive port hops when TCP is working fine.
+func (tm *TransportManager) TCPRecentlyHealthy(window time.Duration) bool {
+	tm.mu.RLock()
+	q := tm.quic
+	tm.mu.RUnlock()
+	if qc, ok := q.(*QUICClient); ok {
+		return qc.tcpRecentlyHealthy(window)
+	}
+	return false
+}
+
 // WireStats returns stats from the active transport.
 // When in fallback mode, reports TCP-WS stats with Fallback flag set.
 func (tm *TransportManager) WireStats() WireStats {
