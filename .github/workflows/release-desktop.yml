@@ -15,8 +15,6 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 15
     env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: sccache
       CARGO_INCREMENTAL: "0"
     steps:
       - name: Checkout repository
@@ -47,6 +45,16 @@ jobs:
 
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.6
+
+      - name: Verify sccache works
+        run: |
+          export SCCACHE_GHA_ENABLED=true
+          if sccache rustc -vV >/dev/null 2>&1; then
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+            echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          else
+            echo "::warning::sccache GHA backend unavailable, compiling without cache"
+          fi
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -159,11 +167,16 @@ jobs:
         if: matrix.platform == 'macOS'
         uses: mozilla-actions/sccache-action@v0.0.6
 
-      - name: Set sccache env (macOS)
+      - name: Verify sccache works (macOS)
         if: matrix.platform == 'macOS'
         run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          export SCCACHE_GHA_ENABLED=true
+          if sccache rustc -vV >/dev/null 2>&1; then
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+            echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          else
+            echo "::warning::sccache GHA backend unavailable, compiling without cache"
+          fi
 
       - name: Set persistent cache paths (Windows)
         if: matrix.platform == 'Windows'
