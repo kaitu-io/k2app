@@ -63,15 +63,15 @@ export async function decrypt(
     const rawKey = hexToBytes(keyHex);
     const key = await crypto.subtle.importKey(
       'raw',
-      rawKey.buffer as ArrayBuffer,
+      rawKey,
       'AES-GCM',
       false,
       ['decrypt'],
     );
     const plain = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: iv.buffer as ArrayBuffer },
+      { name: 'AES-GCM', iv },
       key,
-      ciphertext.buffer as ArrayBuffer,
+      ciphertext,
     );
     return new TextDecoder().decode(plain);
   } catch {

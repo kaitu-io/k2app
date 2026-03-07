@@ -112,6 +112,11 @@ jobs:
       - name: Install Node dependencies
         run: yarn install --frozen-lockfile
 
+      - name: Create sidecar placeholder for cargo check
+        run: |
+          TRIPLE=$(rustc -vV | grep host | cut -d' ' -f2)
+          touch "desktop/src-tauri/binaries/k2-${TRIPLE}"
+
       - name: Cargo check (Tauri)
         run: cargo check
         working-directory: desktop/src-tauri
@@ -190,6 +195,12 @@ jobs:
         shell: bash
         run: yarn tsc --noEmit
         working-directory: webapp
+
+      - name: Create sidecar placeholder for cargo check
+        shell: bash
+        run: |
+          TRIPLE=$(rustc -vV | grep host | cut -d' ' -f2)
+          touch "desktop/src-tauri/binaries/k2-${TRIPLE}.exe"
 
       - name: Cargo check (Tauri)
         shell: bash
