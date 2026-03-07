@@ -193,7 +193,7 @@ jobs:
         shell: bash
         run: |
           if ! command -v sccache &>/dev/null; then
-            cargo install sccache --locked
+            RUSTC_WRAPPER= cargo install sccache --locked
           fi
 
       - name: Cache cargo registry
