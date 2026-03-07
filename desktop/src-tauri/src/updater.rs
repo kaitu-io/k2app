@@ -23,7 +23,6 @@ use tauri::Manager;
 use tauri_plugin_updater::UpdaterExt;
 
 use crate::channel;
-use crate::log_upload;
 use crate::service;
 
 /// Check interval: 30 minutes
@@ -338,7 +337,7 @@ pub async fn set_update_channel(
     app: AppHandle,
     channel: String,
     current_log_level: Option<String>,
-) -> Result<String, String> {
+) -> Result<serde_json::Value, String> {
     let old_channel = channel::get_channel(&app);
     channel::save_channel(&app, &channel)?;
     let new_channel = channel::get_channel(&app); // re-read to get normalized value
@@ -355,6 +354,7 @@ pub async fn set_update_channel(
     *UPDATE_INFO.lock().unwrap() = None;
 
     // Beta log level management
+    let effective_level;
     if new_channel == "beta" && old_channel != "beta" {
         // Switching TO beta: save current log level and force debug
         let level_to_save = current_log_level.unwrap_or_else(|| "info".to_string());
@@ -366,15 +366,7 @@ pub async fn set_update_channel(
 
         // Force daemon to debug level
         let _ = tokio::task::spawn_blocking(|| service::set_log_level_internal("debug")).await;
-
-        // Start beta auto-upload
-        log_upload::start_beta_auto_upload(app.clone());
-
-        // Notify frontend to update localStorage
-        let _ = app.emit(
-            "beta-log-level-override",
-            serde_json::json!({"level": "debug"}),
-        );
+        effective_level = "debug".to_string();
     } else if new_channel != "beta" && old_channel == "beta" {
         // Switching FROM beta: restore previous log level
         let restored = read_pre_beta_log_level(&app).unwrap_or_else(|| "info".to_string());
@@ -384,15 +376,9 @@ pub async fn set_update_channel(
         let _ =
             tokio::task::spawn_blocking(move || service::set_log_level_internal(&restored_clone))
                 .await;
-
-        // Stop beta auto-upload
-        log_upload::stop_beta_auto_upload();
-
-        // Notify frontend to restore localStorage
-        let _ = app.emit(
-            "beta-log-level-override",
-            serde_json::json!({"level": restored}),
-        );
+        effective_level = restored;
+    } else {
+        effective_level = current_log_level.unwrap_or_else(|| "info".to_string());
     }
 
     // Trigger update check in background (force_downgrade=true for explicit channel switch)
@@ -401,7 +387,10 @@ pub async fn set_update_channel(
         check_download_and_install(&app_clone, true).await;
     });
 
-    Ok(new_channel)
+    Ok(serde_json::json!({
+        "channel": new_channel,
+        "logLevel": effective_level,
+    }))
 }
 
 // ============================================================================
