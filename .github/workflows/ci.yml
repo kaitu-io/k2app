@@ -240,7 +240,7 @@ jobs:
 
       - name: Go test (k2)
         shell: bash
-        run: go test ./sniff/... ./core/... ./engine/... ./config/... ./daemon/... ./provider/... ./cmd/k2/... -count=1 -short
+        run: go test ./sniff/... ./core/... ./engine/... ./config/... ./daemon/ ./provider/... -count=1 -short
         working-directory: k2
 
       - name: Build k2 Windows binary
