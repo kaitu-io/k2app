@@ -358,14 +358,25 @@ func (c *QUICClient) DialTCP(ctx context.Context, addr string) (net.Conn, error)
 	}
 	slog.Debug("QUICClient.DialTCP: header written, waiting for response", "addr", addr)
 
-	// Read response
+	// Read response with timeout. Server dial timeout is 10s — allow 15s total
+	// for dial + response write. Without this, a half-dead QUIC connection
+	// (streams open but data never arrives) hangs forever.
+	stream.SetReadDeadline(time.Now().Add(15 * time.Second))
 	br := bufio.NewReader(stream)
 	ok, errCode, errMsg, err := ReadStreamResponse(br)
 	if err != nil {
-		slog.Debug("QUICClient.DialTCP: read response failed", "addr", addr, "err", err)
+		slog.Warn("QUICClient.DialTCP: read response failed", "addr", addr, "err", err)
 		stream.Close()
+		// Timeout or EOF reading response means the QUIC connection is likely
+		// half-dead (streams open but data never arrives). Reset so next
+		// attempt builds a fresh connection instead of reusing this broken one.
+		if nErr, ok := err.(net.Error); ok && nErr.Timeout() {
+			slog.Warn("QUICClient.DialTCP: stream response timeout, resetting connection", "addr", addr)
+			c.resetConnection()
+		}
 		return nil, fmt.Errorf("wire: read response: %w", err)
 	}
+	stream.SetReadDeadline(time.Time{}) // clear deadline for data transfer
 	if !ok {
 		slog.Debug("QUICClient.DialTCP: stream rejected", "addr", addr, "errCode", errCode, "errMsg", errMsg)
 		stream.Close()
@@ -776,8 +787,10 @@ func (s *QUICServer) handleConn(conn *quic.Conn) {
 		for {
 			stream, err := conn.AcceptStream(context.Background())
 			if err != nil {
+				slog.Info("QUICServer: AcceptStream done", "remote", conn.RemoteAddr(), "err", err)
 				return
 			}
+			slog.Debug("QUICServer: accepted stream", "remote", conn.RemoteAddr(), "streamID", stream.StreamID())
 			go func() {
 				defer func() {
 					if r := recover(); r != nil {
@@ -808,7 +821,7 @@ func (s *QUICServer) handleStream(qconn *quic.Conn, stream *quic.Stream, state *
 	// Read H3 frame type marker
 	frameType, _, err := ReadVarint(br)
 	if err != nil {
-		slog.Debug("QUICServer.handleStream: read frame type failed", "remote", qconn.RemoteAddr(), "err", err)
+		slog.Warn("QUICServer.handleStream: read frame type failed", "remote", qconn.RemoteAddr(), "err", err)
 		stream.Close()
 		return
 	}
@@ -821,12 +834,12 @@ func (s *QUICServer) handleStream(qconn *quic.Conn, stream *quic.Stream, state *
 	// Read stream header
 	streamType, addr, err := ReadStreamHeader(br)
 	if err != nil {
-		slog.Debug("QUICServer.handleStream: read header failed", "remote", qconn.RemoteAddr(), "err", err)
+		slog.Warn("QUICServer.handleStream: read header failed", "remote", qconn.RemoteAddr(), "err", err)
 		stream.Close()
 		return
 	}
 
-	slog.Debug("QUICServer.handleStream: parsed", "streamType", streamType, "addr", addr, "remote", qconn.RemoteAddr())
+	slog.Info("QUICServer.handleStream: parsed", "streamType", streamType, "addr", addr, "remote", qconn.RemoteAddr())
 
 	switch streamType {
 	case StreamTypeTCP:

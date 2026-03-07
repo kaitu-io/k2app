@@ -74,7 +74,7 @@ func NewProxyHandler() *ProxyHandler {
 // Writes a stream response, then pipes data bidirectionally.
 func (h *ProxyHandler) HandleTCP(conn net.Conn, addr string) {
 	defer conn.Close()
-	slog.Debug("server: HandleTCP enter", "addr", addr)
+	slog.Info("server: HandleTCP", "addr", addr)
 
 	if !h.AllowPrivateIP {
 		if err := checkAddr(addr); err != nil {
@@ -85,17 +85,18 @@ func (h *ProxyHandler) HandleTCP(conn net.Conn, addr string) {
 	}
 
 	slog.Debug("server: HandleTCP dialing target", "addr", addr)
+	dialStart := time.Now()
 	target, err := net.DialTimeout("tcp4", addr, h.DialTimeout)
 	if err != nil {
 		wire.WriteStreamResponse(conn, &wire.StreamError{Code: 502, Message: err.Error()})
-		slog.Error("server: TCP proxy dial", "addr", addr, "err", err)
+		slog.Error("server: TCP proxy dial", "addr", addr, "err", err, "elapsed", time.Since(dialStart))
 		return
 	}
 	defer target.Close()
-	slog.Debug("server: HandleTCP target connected, writing response", "addr", addr)
+	slog.Debug("server: HandleTCP target connected", "addr", addr, "elapsed", time.Since(dialStart))
 
 	if err := wire.WriteStreamResponse(conn, nil); err != nil {
-		slog.Debug("server: HandleTCP write response failed", "addr", addr, "err", err)
+		slog.Warn("server: HandleTCP write response failed", "addr", addr, "err", err)
 		return
 	}
 
