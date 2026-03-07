@@ -10,7 +10,7 @@ use tauri::{
     State,
 };
 
-use tauri::tray::{MouseButtonState, TrayIconEvent};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
 
 use crate::service;
 use crate::window;
@@ -91,6 +91,7 @@ pub fn init_tray(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error
         .show_menu_on_left_click(false)
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click {
+                button: MouseButton::Left,
                 button_state: MouseButtonState::Up,
                 ..
             } = event

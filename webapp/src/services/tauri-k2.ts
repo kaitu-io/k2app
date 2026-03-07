@@ -192,12 +192,13 @@ export async function injectTauriGlobals(): Promise<void> {
     },
 
     setChannel: async (channel: 'stable' | 'beta'): Promise<string> => {
-      const result = await invoke<string>('set_update_channel', {
+      const result = await invoke<{ channel: string; logLevel: string }>('set_update_channel', {
         channel,
         currentLogLevel: localStorage.getItem('k2_log_level') || 'info',
       });
-      updaterState.channel = result === 'beta' ? 'beta' : 'stable';
-      return result;
+      updaterState.channel = result.channel === 'beta' ? 'beta' : 'stable';
+      localStorage.setItem('k2_log_level', result.logLevel);
+      return result.channel;
     },
   };
 
@@ -211,12 +212,6 @@ export async function injectTauriGlobals(): Promise<void> {
   } catch {
     // Updater not available, leave defaults
   }
-
-  // Listen for beta log level override events from Rust
-  listen<{ level: string }>('beta-log-level-override', (event) => {
-    localStorage.setItem('k2_log_level', event.payload.level);
-    console.info(`[K2:Tauri] Beta log level override: ${event.payload.level}`);
-  });
 
   const tauriPlatform: IPlatform = {
     os: osMap[platformInfo.os] ?? 'linux',

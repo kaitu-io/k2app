@@ -138,6 +138,8 @@ func SetupRouter() *gin.Engine {
 			user.PUT("/language", AuthRequired(), api_update_user_language)
 			// 创建工单
 			user.POST("/ticket", AuthOptional(), api_create_ticket)
+			// 注册设备日志元数据（S3 上传后调用）
+			user.POST("/device-log", AuthOptional(), api_register_device_log)
 			// 日志上传后通知（Slack）
 			user.POST("/feedback-notify", AuthRequired(), api_feedback_notify)
 			// 设置/更新密码
@@ -338,6 +340,12 @@ func SetupRouter() *gin.Engine {
 		admin.GET("/cloud/regions", api_admin_list_cloud_regions)
 		admin.GET("/cloud/plans", api_admin_list_cloud_plans)
 		admin.GET("/cloud/images", api_admin_list_cloud_images)
+
+		// Device logs & feedback tickets
+		admin.GET("/device-logs", api_admin_list_device_logs)
+		admin.GET("/feedback-tickets", api_admin_list_feedback_tickets)
+		admin.PUT("/feedback-tickets/:id/resolve", api_admin_resolve_feedback_ticket)
+		admin.PUT("/feedback-tickets/:id/close", api_admin_close_feedback_ticket)
 
 		// Usage analytics overview
 		admin.GET("/stats/overview", api_admin_usage_overview)

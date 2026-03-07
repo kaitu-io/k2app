@@ -48,6 +48,9 @@ func Migrate() error {
 		&IPRouteInfo{},
 		// Cloud instance management
 		&CloudInstance{},
+		// Device log & feedback ticket
+		&DeviceLog{},
+		&FeedbackTicket{},
 		// Usage analytics
 		&StatAppOpen{},
 		&StatConnection{},

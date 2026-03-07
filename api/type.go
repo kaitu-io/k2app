@@ -755,6 +755,54 @@ type CreateTicketRequest struct {
 	Language   string `json:"language,omitempty"`
 }
 
+// ========================= Device Log & Feedback Ticket Types =========================
+
+// RegisterDeviceLogRequest 客户端上传日志后注册元数据
+type RegisterDeviceLogRequest struct {
+	UDID       string `json:"udid" binding:"required"`
+	FeedbackID string `json:"feedbackId,omitempty"`
+	S3Keys     []struct {
+		Name  string `json:"name" binding:"required"`  // log type: service/crash/desktop/system
+		S3Key string `json:"s3Key" binding:"required"`
+	} `json:"s3Keys" binding:"required,min=1"`
+	Reason string         `json:"reason" binding:"required"`
+	Meta   map[string]any `json:"meta,omitempty"` // {email,os,appVersion,channel,fileSize,...}
+}
+
+// ResolveFeedbackTicketRequest 管理员解决工单
+type ResolveFeedbackTicketRequest struct {
+	ResolvedBy string `json:"resolvedBy" binding:"required"`
+}
+
+// DeviceLogResponse admin 查询日志响应
+type DeviceLogResponse struct {
+	ID         uint64  `json:"id"`
+	UDID       string  `json:"udid"`
+	UserID     *uint64 `json:"userId,omitempty"`
+	FeedbackID *string `json:"feedbackId,omitempty"`
+	S3Key      string  `json:"s3Key"`
+	LogType    string  `json:"logType"`
+	Reason     string  `json:"reason"`
+	Meta       string  `json:"meta,omitempty"`
+	CreatedAt  int64   `json:"createdAt"`
+}
+
+// FeedbackTicketResponse admin 查询工单响应
+type FeedbackTicketResponse struct {
+	ID         uint64  `json:"id"`
+	FeedbackID string  `json:"feedbackId"`
+	UDID       string  `json:"udid"`
+	UserID     *uint64 `json:"userId,omitempty"`
+	Email      string  `json:"email"`
+	Content    string  `json:"content"`
+	Status     string  `json:"status"`
+	ResolvedBy *string `json:"resolvedBy,omitempty"`
+	ResolvedAt *int64  `json:"resolvedAt,omitempty"`
+	Meta       string  `json:"meta,omitempty"`
+	CreatedAt  int64   `json:"createdAt"`
+	LogCount   int64   `json:"logCount"` // 关联的日志数量
+}
+
 // ========================= Device Statistics Types =========================
 
 // PlatformCount represents device count for a specific platform

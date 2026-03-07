@@ -191,11 +191,6 @@ fn main() {
             // Start auto-updater
             updater::start_auto_updater(app.handle().clone());
 
-            // Start beta auto-upload if on beta channel
-            if channel::get_channel(app.handle()) == "beta" {
-                log_upload::start_beta_auto_upload(app.handle().clone());
-            }
-
             Ok(())
         })
         .build(tauri::generate_context!())

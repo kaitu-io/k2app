@@ -2,12 +2,14 @@ package center
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
+	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
 	"github.com/wordgate/qtoolkit/mail"
 	"github.com/wordgate/qtoolkit/slack"
@@ -75,6 +77,42 @@ func api_create_ticket(c *gin.Context) {
 			log.Warnf(ctx, "api_create_ticket: failed to send slack notification: %v", err)
 		}
 	})
+
+	// Save feedback ticket to database (if feedbackId provided)
+	if req.FeedbackID != "" {
+		var userIDPtr *uint64
+		if userID > 0 {
+			userIDPtr = &userID
+		}
+
+		// Pack system info into meta JSON
+		meta := map[string]any{
+			"os":         req.OS,
+			"appVersion": req.AppVersion,
+			"channel":    req.Channel,
+			"vpnState":   req.VPNState,
+			"language":   req.Language,
+			"source":     req.Source,
+			"submitTime": req.SubmitTime,
+		}
+		metaBytes, _ := json.Marshal(meta)
+
+		ticket := FeedbackTicket{
+			FeedbackID: req.FeedbackID,
+			UDID:       "", // UDID not available in ticket request, will be linked via device_log
+			UserID:     userIDPtr,
+			Email:      userEmail,
+			Content:    req.Content,
+			Status:     "open",
+			Meta:       string(metaBytes),
+		}
+		if err := db.Get().Create(&ticket).Error; err != nil {
+			// Non-blocking: log error but don't fail the request
+			log.Warnf(ctx, "api_create_ticket: failed to save feedback ticket to db: %v", err)
+		} else {
+			log.Infof(ctx, "api_create_ticket: feedback ticket saved, feedbackId=%s", req.FeedbackID)
+		}
+	}
 
 	if userID > 0 {
 		log.Infof(ctx, "api_create_ticket: ticket created successfully for user %d", userID)

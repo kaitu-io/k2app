@@ -415,17 +415,18 @@ describe('tauri-k2', () => {
     });
 
     it('setChannel calls set_update_channel IPC and updates local state', async () => {
-      mockInvoke.mockResolvedValueOnce('beta');
+      mockInvoke.mockResolvedValueOnce({ channel: 'beta', logLevel: 'debug' });
 
       const result = await window._platform.updater!.setChannel!('beta');
 
       expect(mockInvoke).toHaveBeenCalledWith('set_update_channel', { channel: 'beta', currentLogLevel: 'info' });
       expect(result).toBe('beta');
       expect(window._platform.updater!.channel).toBe('beta');
+      expect(localStorage.getItem('k2_log_level')).toBe('debug');
     });
 
     it('setChannel normalizes unknown response to stable', async () => {
-      mockInvoke.mockResolvedValueOnce('unknown');
+      mockInvoke.mockResolvedValueOnce({ channel: 'unknown', logLevel: 'info' });
 
       await window._platform.updater!.setChannel!('stable');
 

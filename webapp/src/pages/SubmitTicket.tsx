@@ -121,8 +121,23 @@ export default function SubmitTicket() {
       if (result.success) {
         setLogUploadStatus('success');
         console.debug('[SubmitTicket] Log upload successful, feedbackId:', feedbackIdRef.current);
-        // Notify server to send Slack alert (fire-and-forget)
         if (result.s3Keys?.length) {
+          // Register log metadata in database (fire-and-forget)
+          window._platform.getUdid().then((udid) => {
+            cloudApi.post('/api/user/device-log', {
+              udid,
+              feedbackId: feedbackIdRef.current,
+              s3Keys: result.s3Keys,
+              reason: 'user_feedback_report',
+              meta: {
+                email: isAuthenticated ? user?.loginIdentifies?.[0]?.value : null,
+                os: window._platform?.os,
+                appVersion: window._platform?.version,
+                channel: window._platform?.updater?.channel ?? 'stable',
+              },
+            }).catch(() => {});
+          }).catch(() => {});
+          // Notify server to send Slack alert (fire-and-forget)
           cloudApi.post('/api/user/feedback-notify', {
             reason: 'user_feedback_report',
             platform: window._platform?.os,

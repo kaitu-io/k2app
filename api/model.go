@@ -924,6 +924,38 @@ func (r *IPRouteInfo) SetRouteMap(routeMap map[string]string) error {
 	return nil
 }
 
+// ========================= Device Log & Feedback Ticket =========================
+
+// DeviceLog 设备日志上传记录（索引元数据，内容留在 S3）
+type DeviceLog struct {
+	ID         uint64         `gorm:"primarykey" json:"id"`
+	CreatedAt  time.Time      `gorm:"index" json:"createdAt"`
+	DeletedAt  gorm.DeletedAt `gorm:"index" json:"-"`
+	UDID       string         `gorm:"column:udid;type:varchar(64);index;not null" json:"udid"`
+	UserID     *uint64        `gorm:"index" json:"userId,omitempty"`
+	FeedbackID *string        `gorm:"type:varchar(36);index" json:"feedbackId,omitempty"`
+	S3Key      string         `gorm:"type:varchar(512);not null" json:"s3Key"`
+	LogType    string         `gorm:"type:varchar(32);not null" json:"logType"` // service/crash/desktop/system
+	Reason     string         `gorm:"type:varchar(64);not null" json:"reason"`  // user_feedback_report/beta-auto-upload
+	Meta       string         `gorm:"type:json" json:"meta,omitempty"`          // {email,os,appVersion,channel,fileSize,...}
+}
+
+// FeedbackTicket 用户反馈工单
+type FeedbackTicket struct {
+	ID         uint64         `gorm:"primarykey" json:"id"`
+	CreatedAt  time.Time      `gorm:"index" json:"createdAt"`
+	DeletedAt  gorm.DeletedAt `gorm:"index" json:"-"`
+	FeedbackID string         `gorm:"type:varchar(36);uniqueIndex;not null" json:"feedbackId"`
+	UDID       string         `gorm:"column:udid;type:varchar(64);index;not null" json:"udid"`
+	UserID     *uint64        `gorm:"index" json:"userId,omitempty"`
+	Email      string         `gorm:"type:varchar(255);index" json:"email"`
+	Content    string         `gorm:"type:text;not null" json:"content"`
+	Status     string         `gorm:"type:varchar(16);not null;default:'open';index" json:"status"` // open/resolved/closed
+	ResolvedBy *string        `gorm:"type:varchar(64)" json:"resolvedBy,omitempty"`
+	ResolvedAt *time.Time     `json:"resolvedAt,omitempty"`
+	Meta       string         `gorm:"type:json" json:"meta,omitempty"` // {os,appVersion,channel,vpnState,language,source,...}
+}
+
 // ========================= Cloud Instance Management =========================
 
 // CloudInstance represents a VPS instance from cloud providers
