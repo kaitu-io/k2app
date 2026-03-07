@@ -272,6 +272,10 @@ func logConnectionURL(cfg *config.ServerConfig, pair *wire.CertPair, echConfigLi
 	// IPv6 omitted from connect URL — client doesn't handle ip6= reliably yet.
 	// Re-enable when client k2v5 URL parser handles IPv6 brackets correctly.
 
+	if cfg.HopStart > 0 && cfg.HopEnd > 0 {
+		connectURL += fmt.Sprintf("&hop=%d-%d", cfg.HopStart, cfg.HopEnd)
+	}
+
 	slog.Info("Connect URL", "url", connectURL)
 
 	// Save connect URL to file for k2s run smart mode to read.

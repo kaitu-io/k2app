@@ -55,6 +55,8 @@ type ServerConfig struct {
 	Auth        AuthConfig        `yaml:"auth"`
 	Log         LogConfig         `yaml:"log"`
 	PIDFile     string            `yaml:"pid_file"` // path to PID file (empty = no PID file)
+	HopStart    int               `yaml:"hop_start"` // hop port range start (0 = no hop)
+	HopEnd      int               `yaml:"hop_end"`   // hop port range end (0 = no hop)
 }
 
 // DNSConfig contains DNS resolver configuration.
