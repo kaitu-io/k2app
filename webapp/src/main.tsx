@@ -111,6 +111,11 @@ async function main() {
     statsService.trackAppOpen();
   }).catch(() => {});
 
+  // Start beta auto-upload timer (no-op if not on beta channel)
+  import('./services/beta-auto-upload').then(({ startBetaAutoUpload }) => {
+    startBetaAutoUpload();
+  }).catch(() => {});
+
   // 渲染应用
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>

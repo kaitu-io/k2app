@@ -14,6 +14,10 @@ import { registerListNodes } from './tools/list-nodes.js'
 import { registerExecOnNode } from './tools/exec-on-node.js'
 import { registerPingNode } from './tools/ping-node.js'
 import { registerDeleteNode } from './tools/delete-node.js'
+import { registerQueryDeviceLogs } from './tools/query-device-logs.js'
+import { registerDownloadDeviceLog } from './tools/download-device-log.js'
+import { registerQueryFeedbackTickets } from './tools/query-feedback-tickets.js'
+import { registerResolveFeedbackTicket } from './tools/resolve-feedback-ticket.js'
 
 /**
  * Creates and configures the MCP server with all tools registered.
@@ -36,6 +40,10 @@ export async function createServer(config: Config): Promise<McpServer> {
   registerExecOnNode(server, config.ssh)
   registerPingNode(server, config.ssh)
   registerDeleteNode(server, apiClient)
+  registerQueryDeviceLogs(server, apiClient)
+  registerDownloadDeviceLog(server)
+  registerQueryFeedbackTickets(server, apiClient)
+  registerResolveFeedbackTicket(server, apiClient)
 
   return server
 }
