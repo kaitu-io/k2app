@@ -47,6 +47,27 @@ export interface K2PluginInterface {
     installNativeUpdate(options: {
         path: string;
     }): Promise<void>;
+    appendLogs(options: {
+        entries: Array<{
+            level: string;
+            message: string;
+            timestamp: number;
+        }>;
+    }): Promise<void>;
+    uploadLogs(options: {
+        email?: string;
+        reason: string;
+        feedbackId?: string;
+        platform?: string;
+        version?: string;
+    }): Promise<{
+        success: boolean;
+        error?: string;
+        s3Keys?: Array<{
+            name: string;
+            s3Key: string;
+        }>;
+    }>;
     setLogLevel(options: {
         level: string;
     }): Promise<void>;

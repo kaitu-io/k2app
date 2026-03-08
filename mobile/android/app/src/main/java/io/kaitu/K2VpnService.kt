@@ -17,6 +17,7 @@ import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import io.kaitu.k2plugin.K2Plugin
+import io.kaitu.k2plugin.NativeLogger
 import io.kaitu.k2plugin.VpnServiceBridge
 import org.json.JSONObject
 import appext.Appext
@@ -93,6 +94,7 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector {
 
     override fun onRevoke() {
         Log.w(TAG, "onRevoke: VPN permission revoked by system")
+        NativeLogger.log("WARN", "onRevoke: VPN permission revoked")
         // Synthesize a status event for revocation (engine won't emit this).
         // Use code 403 (Forbidden) to indicate permission issue.
         val revokeStatus = JSONObject().apply {
@@ -111,6 +113,7 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector {
         super.onTrimMemory(level)
         if (level >= TRIM_MEMORY_RUNNING_LOW && engine != null && !enginePaused.get()) {
             Log.w(TAG, "onTrimMemory: level=$level — pausing engine and freeing Go memory")
+            NativeLogger.log("WARN", "onTrimMemory: level=$level — pausing engine")
             enginePaused.set(true)
             engineExecutor.execute {
                 try {
@@ -138,6 +141,7 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector {
 
     private fun startVpn(configJSON: String) {
         Log.i(TAG, "startVpn: configJSON length=${configJSON.length}")
+        NativeLogger.log("INFO", "startVpn: configJSON length=${configJSON.length}")
         if (engine != null) {
             Log.w(TAG, "startVpn: engine already exists — stopping before reconnect")
             stopVpn()
@@ -160,6 +164,7 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector {
              */
             override fun onStatus(statusJSON: String?) {
                 Log.d(TAG, "onStatus: $statusJSON")
+                NativeLogger.log("DEBUG", "onStatus: ${statusJSON ?: "null"}")
                 if (statusJSON == null) {
                     Log.w(TAG, "onStatus called with null JSON — ignoring")
                     return
@@ -241,17 +246,24 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector {
 
         // Run blocking gomobile engine.start() off the main thread to prevent ANR.
         val cachePath = cacheDir.absolutePath
+        val logsDir = java.io.File(filesDir, "logs").also { it.mkdirs() }
+        val logsDirPath = logsDir.absolutePath
+        NativeLogger.setup(logsDir)
         engineExecutor.execute {
             try {
                 Log.d(TAG, "Starting engine with fd=$rawFd (background thread)")
                 val engineCfg = Appext.newEngineConfig()
                 engineCfg.cacheDir = cachePath
+                engineCfg.logDir = logsDirPath
+                Log.d(TAG, "EngineConfig logDir=$logsDirPath")
                 engineCfg.socketProtector = this@K2VpnService
                 engine?.start(configJSON, rawFd.toLong(), engineCfg)
                 Log.d(TAG, "Engine started successfully")
+                NativeLogger.log("INFO", "startVpn: engine started successfully")
                 mainHandler.post { registerNetworkCallback() }
             } catch (e: Exception) {
                 Log.e(TAG, "Engine start failed: ${e.message}", e)
+                NativeLogger.log("ERROR", "startVpn: engine start failed: ${e.message}")
                 mainHandler.post {
                     // Engine may have already emitted onStatus with error before throwing.
                     // This is a safety net — synthesize status for unhandled start failures.
@@ -277,6 +289,7 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector {
     // Fixed in a3d5af5 by switching from detachFd() to fd + close().
     private fun stopVpn() {
         Log.i(TAG, "stopVpn: beginning teardown (engine=${engine != null})")
+        NativeLogger.log("INFO", "stopVpn: beginning teardown")
         enginePaused.set(false)
         unregisterNetworkCallback()
         val eng = engine
@@ -319,6 +332,7 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector {
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 Log.d(TAG, "Network available: $network")
+                NativeLogger.log("DEBUG", "onAvailable: network change")
                 pendingNetworkChange?.let { mainHandler.removeCallbacks(it) }
                 val runnable = Runnable {
                     // Run gomobile call off main thread
@@ -340,6 +354,7 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector {
 
             override fun onLost(network: Network) {
                 Log.d(TAG, "Network lost: $network — clearing dead connections immediately")
+                NativeLogger.log("DEBUG", "onLost: network lost")
                 pendingNetworkChange?.let { mainHandler.removeCallbacks(it) }
                 pendingNetworkChange = null
                 // Run gomobile call off main thread

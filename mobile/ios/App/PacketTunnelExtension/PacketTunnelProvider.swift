@@ -178,13 +178,33 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                     }
                 }
 
+                // Create logs directory for Go engine (k2.log) and NativeLogger (native.log)
+                let logsDir = containerURL?.appendingPathComponent("logs")
+                if let logsPath = logsDir?.path {
+                    do {
+                        try FileManager.default.createDirectory(atPath: logsPath, withIntermediateDirectories: true)
+                    } catch {
+                        logger.warning("Failed to create logsDir: \(error)")
+                    }
+                    engineCfg.logDir = logsPath
+                    logger.info("EngineConfig logDir=\(logsPath)")
+                }
+
+                // Initialize NativeLogger for native-layer file logging
+                if let logsDir = logsDir {
+                    NativeLogger.shared.setup(logsDir: logsDir)
+                    NativeLogger.shared.log("INFO", "startTunnel: NativeLogger initialized")
+                }
+
                 logger.info("Calling engine.start()")
                 try self?.engine?.start(configJSON, fd: Int(fd), cfg: engineCfg)
                 logger.info("engine.start() returned OK")
+                NativeLogger.shared.log("INFO", "startTunnel: engine started successfully")
                 self?.startMemoryMonitor()
                 completionHandler(nil)
             } catch {
                 logger.error("engine.start() FAILED: \(error.localizedDescription, privacy: .public)")
+                NativeLogger.shared.log("ERROR", "startTunnel: engine.start() failed: \(error.localizedDescription)")
                 completionHandler(error)
             }
         }
@@ -231,13 +251,16 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 
     override func stopTunnel(with reason: NEProviderStopReason, completionHandler: @escaping () -> Void) {
         logger.info("stopTunnel called, reason=\(reason.rawValue)")
+        NativeLogger.shared.log("INFO", "stopTunnel: reason=\(reason.rawValue)")
         stopMemoryMonitor()
         do {
             try engine?.stop()
+            NativeLogger.shared.log("INFO", "stopTunnel: engine stopped")
         } catch {
             logger.warning("engine.stop() failed: \(error)")
         }
         engine = nil
+        NativeLogger.shared.close()
         completionHandler()
     }
 
@@ -267,6 +290,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     /// Pauses the engine to release wire transport resources, then frees Go's heap.
     override func sleep(completionHandler: @escaping () -> Void) {
         logger.info("sleep: pausing engine for memory conservation")
+        NativeLogger.shared.log("INFO", "sleep: pausing engine for memory conservation")
         stopMemoryMonitor()
         engine?.pause()
         AppextFreeMemory()
@@ -277,6 +301,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     /// Wakes the engine so it re-establishes fresh wire connections.
     override func wake() {
         logger.info("wake: resuming engine")
+        NativeLogger.shared.log("INFO", "wake: resuming engine")
         engine?.wake()
     }
 
@@ -320,12 +345,14 @@ class EventBridge: NSObject, AppextEventHandlerProtocol {
         }
 
         logger.debug("onStatus: state=\(state, privacy: .public)")
+        NativeLogger.shared.log("DEBUG", "onStatus: \(json)")
 
         if state == "disconnected" {
             if let errorObj = parsed["error"] as? [String: Any] {
                 let code = errorObj["code"] as? Int ?? 0
                 let message = errorObj["message"] as? String ?? "unknown error"
                 logger.error("Disconnected with error: code=\(code) message=\(message, privacy: .public)")
+                NativeLogger.shared.log("ERROR", "onStatus: disconnected with error code=\(code) message=\(message)")
 
                 // Write structured error JSON to App Group so K2Plugin preserves the error code.
                 // Format: {"code": 503, "message": "server unreachable"}
@@ -341,6 +368,7 @@ class EventBridge: NSObject, AppextEventHandlerProtocol {
                 provider?.cancelTunnelWithError(nsError)
             } else {
                 logger.info("Normal disconnect")
+                NativeLogger.shared.log("INFO", "onStatus: normal disconnect")
                 provider?.cancelTunnelWithError(nil)
             }
         } else if state == "connected", let errorObj = parsed["error"] as? [String: Any] {
@@ -355,6 +383,7 @@ class EventBridge: NSObject, AppextEventHandlerProtocol {
             }
         } else if state == "connected" {
             // Wire recovered — clear any stale error from App Group
+            NativeLogger.shared.log("INFO", "onStatus: connected")
             UserDefaults(suiteName: kAppGroup)?.removeObject(forKey: "vpnError")
         }
         // Other states (connecting, reconnecting, paused) are transient — log only

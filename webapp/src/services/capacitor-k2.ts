@@ -182,6 +182,17 @@ export async function injectCapacitorGlobals(): Promise<void> {
 
     updater,
 
+    uploadLogs: async (params) => {
+      const result = await K2Plugin.uploadLogs({
+        email: params.email ?? undefined,
+        reason: params.reason,
+        feedbackId: params.feedbackId,
+        platform: params.platform,
+        version: params.version,
+      });
+      return result;
+    },
+
     setLogLevel: (level: string): void => {
       localStorage.setItem('k2_log_level', level);
       K2Plugin.setLogLevel({ level }).catch(() => {}); // best-effort native call
@@ -247,4 +258,61 @@ export async function injectCapacitorGlobals(): Promise<void> {
   });
 
   console.info(`[K2:Capacitor] Injected - os=${platform}, version=${appVersion}`);
+
+  // Forward WebView console.* to native file logging (webapp.log)
+  // Buffers entries and flushes to K2Plugin.appendLogs() on threshold/timer/visibility
+  try {
+    function formatArgs(args: any[]): string {
+      return args.map(a => {
+        if (typeof a === 'string') return a;
+        if (a instanceof Error) return `${a.message}${a.stack ? '\n' + a.stack : ''}`;
+        try { return JSON.stringify(a); } catch { return String(a); }
+      }).join(' ');
+    }
+
+    let buffer: Array<{ level: string; message: string; timestamp: number }> = [];
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    const FLUSH_THRESHOLD = 50;
+    const FLUSH_INTERVAL = 3000;
+
+    function flushBuffer() {
+      if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+      if (buffer.length === 0) return;
+      const entries = buffer;
+      buffer = [];
+      K2Plugin.appendLogs?.({ entries })?.catch?.(() => {});
+    }
+
+    function scheduleFlush() {
+      if (flushTimer) return;
+      flushTimer = setTimeout(flushBuffer, FLUSH_INTERVAL);
+    }
+
+    function pushEntry(level: string, args: any[]) {
+      buffer.push({ level, message: formatArgs(args), timestamp: Date.now() });
+      if (buffer.length >= FLUSH_THRESHOLD) {
+        flushBuffer();
+      } else {
+        scheduleFlush();
+      }
+    }
+
+    const _log = console.log;
+    const _debug = console.debug;
+    const _info = console.info;
+    const _warn = console.warn;
+    const _error = console.error;
+
+    console.log = (...args: any[]) => { _log(...args); pushEntry('log', args); };
+    console.debug = (...args: any[]) => { _debug(...args); pushEntry('debug', args); };
+    console.info = (...args: any[]) => { _info(...args); pushEntry('info', args); };
+    console.warn = (...args: any[]) => { _warn(...args); pushEntry('warn', args); flushBuffer(); };
+    console.error = (...args: any[]) => { _error(...args); pushEntry('error', args); flushBuffer(); };
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') flushBuffer();
+    });
+  } catch {
+    // Console interceptor setup failed, skip
+  }
 }

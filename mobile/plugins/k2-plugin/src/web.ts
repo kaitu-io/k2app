@@ -51,6 +51,14 @@ export class K2PluginWeb extends WebPlugin implements K2PluginInterface {
     throw this.unavailable('K2Plugin is not available on web');
   }
 
+  async appendLogs(_options: { entries: Array<{ level: string; message: string; timestamp: number }> }): Promise<void> {
+    throw this.unavailable('K2Plugin is not available on web');
+  }
+
+  async uploadLogs(_options: { email?: string; reason: string; feedbackId?: string; platform?: string; version?: string }): Promise<{ success: boolean; error?: string; s3Keys?: Array<{ name: string; s3Key: string }> }> {
+    throw this.unavailable('K2Plugin is not available on web');
+  }
+
   async setLogLevel(_options: { level: string }): Promise<void> {
     throw this.unavailable('K2Plugin is not available on web');
   }

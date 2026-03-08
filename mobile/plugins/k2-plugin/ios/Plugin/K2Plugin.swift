@@ -25,12 +25,17 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "applyWebUpdate", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "downloadNativeUpdate", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "installNativeUpdate", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "appendLogs", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "uploadLogs", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setLogLevel", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "debugDump", returnType: CAPPluginReturnPromise),
     ]
 
     private var vpnManager: NETunnelProviderManager?
     private var statusObserver: NSObjectProtocol?
+    private var logsDir: URL?
+    private var webappLogHandle: FileHandle?
+    private let webappLogQueue = DispatchQueue(label: "io.kaitu.webapp-log")
 
     private let webManifestEndpoints = [
         "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/web/latest.json",
@@ -58,6 +63,24 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                 } catch {
                     logger.warning("Failed to remove corrupt OTA dir: \(error)")
                 }
+            }
+        }
+
+        // Initialize App Group logs directory for webapp.log writes
+        if let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: kAppGroup) {
+            let logsURL = containerURL.appendingPathComponent("logs")
+            do {
+                try FileManager.default.createDirectory(at: logsURL, withIntermediateDirectories: true)
+                self.logsDir = logsURL
+                // Open webapp.log FileHandle for append
+                let webappLogURL = logsURL.appendingPathComponent("webapp.log")
+                if !FileManager.default.fileExists(atPath: webappLogURL.path) {
+                    FileManager.default.createFile(atPath: webappLogURL.path, contents: nil)
+                }
+                self.webappLogHandle = try FileHandle(forWritingTo: webappLogURL)
+                self.webappLogHandle?.seekToEndOfFile()
+            } catch {
+                logger.warning("Failed to init logs dir: \(error)")
             }
         }
 
@@ -462,6 +485,199 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    // MARK: - Logging
+
+    private let maxWebappLogSize: UInt64 = 50 * 1024 * 1024 // 50MB
+    private let isoFormatter = ISO8601DateFormatter()
+
+    @objc func appendLogs(_ call: CAPPluginCall) {
+        guard let entries = call.getArray("entries") as? [[String: Any]] else {
+            call.resolve()
+            return
+        }
+        webappLogQueue.async { [weak self] in
+            guard let self = self, let handle = self.webappLogHandle,
+                  let logURL = self.logsDir?.appendingPathComponent("webapp.log") else { return }
+
+            // Check size, truncate if over limit
+            if let attrs = try? FileManager.default.attributesOfItem(atPath: logURL.path),
+               let size = attrs[.size] as? UInt64, size > self.maxWebappLogSize {
+                handle.truncateFile(atOffset: 0)
+            }
+
+            for entry in entries {
+                let level = (entry["level"] as? String)?.uppercased() ?? "LOG"
+                let message = entry["message"] as? String ?? ""
+                let ts = entry["timestamp"] as? Double ?? Date().timeIntervalSince1970 * 1000
+                let date = Date(timeIntervalSince1970: ts / 1000)
+                let line = "[\(self.isoFormatter.string(from: date))] [\(level)] \(message)\n"
+                if let data = line.data(using: .utf8) {
+                    handle.write(data)
+                }
+            }
+        }
+        call.resolve()
+    }
+
+    @objc func uploadLogs(_ call: CAPPluginCall) {
+        let reason = call.getString("reason") ?? "manual"
+        let email = call.getString("email")
+        let feedbackId = call.getString("feedbackId")
+        let platform = call.getString("platform") ?? "ios"
+        let version = call.getString("version") ?? (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown")
+
+        Task {
+            do {
+                guard let logsDir = self.logsDir else {
+                    await MainActor.run { call.reject("Logs directory not initialized") }
+                    return
+                }
+
+                // Get UDID for S3 key
+                let raw = UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
+                let udid = hashToUdid(raw)
+
+                let logTypes = ["k2", "native", "webapp"]
+                var uploadedFiles: [[String: String]] = []
+                var errors: [String] = []
+
+                for logType in logTypes {
+                    let logFile = logsDir.appendingPathComponent("\(logType).log")
+                    guard FileManager.default.fileExists(atPath: logFile.path) else { continue }
+                    guard let content = try? String(contentsOf: logFile, encoding: .utf8), !content.isEmpty else { continue }
+
+                    do {
+                        let sanitized = self.sanitizeLogs(content)
+                        guard let inputData = sanitized.data(using: .utf8) else { continue }
+                        let compressed = try self.gzipCompress(inputData)
+
+                        let s3Key = self.generateS3Key(logType: logType, feedbackId: feedbackId, udid: udid)
+                        try await self.uploadToS3(s3Key: s3Key, data: compressed)
+
+                        uploadedFiles.append(["name": logType, "s3Key": s3Key])
+                    } catch {
+                        errors.append("\(logType): \(error.localizedDescription)")
+                    }
+                }
+
+                // Truncate only successfully uploaded files.
+                // Use FileHandle.truncateFile to preserve inodes — NE process holds
+                // open handles to k2.log and native.log in a separate process.
+                for uploaded in uploadedFiles {
+                    guard let name = uploaded["name"] else { continue }
+                    let logFile = logsDir.appendingPathComponent("\(name).log")
+                    if let handle = try? FileHandle(forWritingTo: logFile) {
+                        handle.truncateFile(atOffset: 0)
+                        handle.closeFile()
+                    }
+                }
+                // Re-seek webapp log handle after truncation
+                self.webappLogQueue.sync {
+                    self.webappLogHandle?.seekToEndOfFile()
+                }
+
+                if uploadedFiles.isEmpty {
+                    let result: [String: Any] = [
+                        "success": false,
+                        "error": "All uploads failed: \(errors.joined(separator: "; "))"
+                    ]
+                    await MainActor.run { call.resolve(result) }
+                } else {
+                    var result: [String: Any] = [
+                        "success": true,
+                        "s3Keys": uploadedFiles.map { ["name": $0["name"]!, "s3Key": $0["s3Key"]!] }
+                    ]
+                    if !errors.isEmpty {
+                        result["error"] = "Partial failures: \(errors.joined(separator: "; "))"
+                    }
+                    await MainActor.run { call.resolve(result) }
+                }
+        }
+    }
+
+    private let s3BucketURL = "https://kaitu-service-logs.s3.ap-northeast-1.amazonaws.com"
+
+    private func sanitizeLogs(_ content: String) -> String {
+        var result = content
+        let patterns: [(String, String)] = [
+            ("\"token\":\"", "\"token\":\"***\""),
+            ("\"password\":\"", "\"password\":\"***\""),
+            ("\"secret\":\"", "\"secret\":\"***\""),
+            ("Authorization: Bearer ", "Authorization: Bearer ***"),
+            ("X-K2-Token: ", "X-K2-Token: ***"),
+        ]
+        for (needle, replacement) in patterns {
+            result = result.replacingOccurrences(of: needle, with: replacement)
+        }
+        return result
+    }
+
+    private func gzipCompress(_ data: Data) throws -> Data {
+        guard let zlibData = try? (data as NSData).compressed(using: .zlib) as Data else {
+            throw NSError(domain: "K2Plugin", code: -1, userInfo: [NSLocalizedDescriptionKey: "gzip compression failed"])
+        }
+        // NSData.compressed(.zlib) outputs zlib format (2-byte header + deflate + 4-byte adler32).
+        // Strip header/trailer to get raw deflate, then wrap in gzip envelope.
+        guard zlibData.count > 6 else {
+            throw NSError(domain: "K2Plugin", code: -1, userInfo: [NSLocalizedDescriptionKey: "compressed data too short"])
+        }
+        let rawDeflate = zlibData.dropFirst(2).dropLast(4)
+
+        var gzip = Data()
+        // Gzip header: magic, method(deflate), flags, mtime, xfl, OS(unix)
+        gzip.append(contentsOf: [0x1f, 0x8b, 0x08, 0x00])
+        gzip.append(contentsOf: [0x00, 0x00, 0x00, 0x00])
+        gzip.append(contentsOf: [0x00, 0x03])
+        gzip.append(rawDeflate)
+        // Gzip trailer: CRC32 + original size (little-endian)
+        var crc = CRC32.checksum(data: data)
+        gzip.append(Data(bytes: &crc, count: 4))
+        var size = UInt32(data.count & 0xffffffff)
+        gzip.append(Data(bytes: &size, count: 4))
+        return gzip
+    }
+
+    private func generateS3Key(logType: String, feedbackId: String?, udid: String) -> String {
+        let now = Date()
+        let dateFmt = DateFormatter()
+        dateFmt.dateFormat = "yyyy/MM/dd"
+        dateFmt.timeZone = TimeZone(identifier: "UTC")
+        let timeFmt = DateFormatter()
+        timeFmt.dateFormat = "HHmmss"
+        timeFmt.timeZone = TimeZone(identifier: "UTC")
+
+        let date = dateFmt.string(from: now)
+        let timestamp = timeFmt.string(from: now)
+
+        let prefix: String
+        let identifier: String
+        if let fbId = feedbackId {
+            prefix = "feedback-logs"
+            identifier = fbId
+        } else {
+            prefix = "service-logs"
+            identifier = String(UUID().uuidString.prefix(8)).lowercased()
+        }
+
+        return "\(prefix)/\(udid)/\(date)/\(logType)-\(timestamp)-\(identifier).log.gz"
+    }
+
+    private func uploadToS3(s3Key: String, data: Data) async throws {
+        let url = URL(string: "\(s3BucketURL)/\(s3Key)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("application/gzip", forHTTPHeaderField: "Content-Type")
+        request.setValue("\(data.count)", forHTTPHeaderField: "Content-Length")
+        request.timeoutInterval = 60
+
+        let (_, response) = try await URLSession.shared.upload(for: request, from: data)
+        guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
+            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+            throw NSError(domain: "K2Plugin", code: status, userInfo: [NSLocalizedDescriptionKey: "S3 upload failed: HTTP \(status)"])
+        }
+        logger.info("Uploaded to S3: \(s3Key)")
+    }
+
     // MARK: - Log Level
 
     @objc func setLogLevel(_ call: CAPPluginCall) {
@@ -639,5 +855,28 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             overwrite: true,
             password: nil
         )
+    }
+}
+
+// MARK: - CRC32 Helper
+
+private enum CRC32 {
+    private static let table: [UInt32] = {
+        (0..<256).map { i -> UInt32 in
+            var c = UInt32(i)
+            for _ in 0..<8 {
+                c = (c & 1 == 1) ? (0xEDB88320 ^ (c >> 1)) : (c >> 1)
+            }
+            return c
+        }
+    }()
+
+    static func checksum(data: Data) -> UInt32 {
+        var crc: UInt32 = 0xFFFFFFFF
+        for byte in data {
+            let index = Int((crc ^ UInt32(byte)) & 0xFF)
+            crc = table[index] ^ (crc >> 8)
+        }
+        return crc ^ 0xFFFFFFFF
     }
 }

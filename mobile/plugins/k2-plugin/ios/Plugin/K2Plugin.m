@@ -9,4 +9,6 @@ CAP_PLUGIN(K2Plugin, "K2Plugin",
     CAP_PLUGIN_METHOD(getConfig, CAPPluginReturnPromise);
     CAP_PLUGIN_METHOD(connect, CAPPluginReturnPromise);
     CAP_PLUGIN_METHOD(disconnect, CAPPluginReturnPromise);
+    CAP_PLUGIN_METHOD(appendLogs, CAPPluginReturnPromise);
+    CAP_PLUGIN_METHOD(uploadLogs, CAPPluginReturnPromise);
 )

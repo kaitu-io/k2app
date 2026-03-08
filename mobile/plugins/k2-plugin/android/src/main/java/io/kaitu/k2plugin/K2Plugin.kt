@@ -21,10 +21,17 @@ import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.ActivityCallback
 import com.getcapacitor.annotation.CapacitorPlugin
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
+import java.util.UUID
+import java.util.zip.GZIPOutputStream
 import java.util.zip.ZipInputStream
 
 @CapacitorPlugin(name = "K2Plugin")
@@ -45,6 +52,10 @@ class K2Plugin : Plugin() {
     private var vpnService: VpnServiceBridge? = null
     private var serviceConnection: ServiceConnection? = null
     private val vpnServiceClassName = "io.kaitu.K2VpnService"
+    private var logsDir: File? = null
+    private val webappLogLock = Any()
+    private val S3_BUCKET_URL = "https://kaitu-service-logs.s3.ap-northeast-1.amazonaws.com"
+    private val MAX_WEBAPP_LOG_SIZE = 50L * 1024 * 1024 // 50MB
 
     override fun load() {
         Log.d(TAG, "load: K2Plugin initializing")
@@ -59,6 +70,9 @@ class K2Plugin : Plugin() {
             Log.w(TAG, "load: corrupt OTA web dir (no index.html) — removing")
             webUpdateDir.deleteRecursively()
         }
+
+        // Initialize logs directory for webapp.log writes
+        logsDir = File(context.filesDir, "logs").also { it.mkdirs() }
 
         bindToService()
 
@@ -532,6 +546,174 @@ class K2Plugin : Plugin() {
         } catch (e: Exception) {
             call.reject("Failed to install update: ${e.message}", e)
         }
+    }
+
+    @PluginMethod
+    fun appendLogs(call: PluginCall) {
+        val entries = call.getArray("entries") ?: run { call.resolve(); return }
+        val dir = logsDir ?: run { call.resolve(); return }
+        val webappLog = File(dir, "webapp.log")
+
+        try {
+            val dateFmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
+            dateFmt.timeZone = TimeZone.getTimeZone("UTC")
+
+            val sb = StringBuilder()
+            for (i in 0 until entries.length()) {
+                val entry = entries.getJSONObject(i)
+                val level = entry.optString("level", "LOG").uppercase()
+                val message = entry.optString("message", "")
+                val ts = entry.optDouble("timestamp", System.currentTimeMillis().toDouble())
+                val timestamp = dateFmt.format(Date(ts.toLong()))
+                sb.append("[$timestamp] [$level] $message\n")
+            }
+            synchronized(webappLogLock) {
+                // Truncate if over size limit
+                if (webappLog.exists() && webappLog.length() > MAX_WEBAPP_LOG_SIZE) {
+                    webappLog.writeText("")
+                }
+                webappLog.appendText(sb.toString())
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "appendLogs failed: ${e.message}")
+        }
+        call.resolve()
+    }
+
+    @PluginMethod
+    fun uploadLogs(call: PluginCall) {
+        val reason = call.getString("reason") ?: "manual"
+        val feedbackId = call.getString("feedbackId")
+        val platform = call.getString("platform") ?: "android"
+        val version = call.getString("version")
+            ?: (context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "unknown")
+
+        Thread {
+            try {
+                val dir = logsDir
+                if (dir == null || !dir.exists()) {
+                    val ret = JSObject()
+                    ret.put("success", false)
+                    ret.put("error", "Logs directory not initialized")
+                    call.resolve(ret)
+                    return@Thread
+                }
+
+                val raw = android.provider.Settings.Secure.getString(context.contentResolver, android.provider.Settings.Secure.ANDROID_ID)
+                val udid = K2PluginUtils.hashToUdid(raw)
+
+                val logTypes = listOf("k2", "native", "webapp")
+                val uploadedFiles = mutableListOf<JSONObject>()
+                val errors = mutableListOf<String>()
+
+                for (logType in logTypes) {
+                    val logFile = File(dir, "$logType.log")
+                    if (!logFile.exists()) continue
+                    val content = logFile.readText()
+                    if (content.isEmpty()) continue
+
+                    val sanitized = sanitizeLogContent(content)
+                    val compressed = gzipCompress(sanitized.toByteArray(Charsets.UTF_8))
+
+                    val s3Key = generateS3Key(logType, feedbackId, udid)
+                    try {
+                        uploadToS3(s3Key, compressed)
+                        uploadedFiles.add(JSONObject().apply {
+                            put("name", logType)
+                            put("s3Key", s3Key)
+                        })
+                    } catch (e: Exception) {
+                        errors.add("$logType: ${e.message}")
+                    }
+                }
+
+                // Truncate only successfully uploaded files
+                for (f in uploadedFiles) {
+                    val name = f.optString("name") ?: continue
+                    val logFile = File(dir, "$name.log")
+                    if (logFile.exists()) {
+                        logFile.writeText("")
+                    }
+                }
+
+                val ret = JSObject()
+                if (uploadedFiles.isNotEmpty()) {
+                    ret.put("success", true)
+                    val keysArray = org.json.JSONArray()
+                    for (f in uploadedFiles) keysArray.put(f)
+                    ret.put("s3Keys", keysArray)
+                } else {
+                    ret.put("success", false)
+                    ret.put("error", "All uploads failed: ${errors.joinToString("; ")}")
+                }
+                call.resolve(ret)
+            } catch (e: Exception) {
+                val ret = JSObject()
+                ret.put("success", false)
+                ret.put("error", e.message ?: "Upload failed")
+                call.resolve(ret)
+            }
+        }.start()
+    }
+
+    private fun sanitizeLogContent(content: String): String {
+        var result = content
+        val patterns = listOf(
+            "\"token\":\"" to "\"token\":\"***\"",
+            "\"password\":\"" to "\"password\":\"***\"",
+            "\"secret\":\"" to "\"secret\":\"***\"",
+            "Authorization: Bearer " to "Authorization: Bearer ***",
+            "X-K2-Token: " to "X-K2-Token: ***",
+        )
+        for ((needle, replacement) in patterns) {
+            result = result.replace(needle, replacement)
+        }
+        return result
+    }
+
+    private fun gzipCompress(data: ByteArray): ByteArray {
+        val bos = ByteArrayOutputStream()
+        GZIPOutputStream(bos).use { it.write(data) }
+        return bos.toByteArray()
+    }
+
+    private fun generateS3Key(logType: String, feedbackId: String?, udid: String): String {
+        val dateFmt = SimpleDateFormat("yyyy/MM/dd", Locale.US)
+        dateFmt.timeZone = TimeZone.getTimeZone("UTC")
+        val timeFmt = SimpleDateFormat("HHmmss", Locale.US)
+        timeFmt.timeZone = TimeZone.getTimeZone("UTC")
+        val now = Date()
+        val date = dateFmt.format(now)
+        val timestamp = timeFmt.format(now)
+
+        val prefix: String
+        val identifier: String
+        if (feedbackId != null) {
+            prefix = "feedback-logs"
+            identifier = feedbackId
+        } else {
+            prefix = "service-logs"
+            identifier = UUID.randomUUID().toString().take(8)
+        }
+
+        return "$prefix/$udid/$date/$logType-$timestamp-$identifier.log.gz"
+    }
+
+    private fun uploadToS3(s3Key: String, data: ByteArray) {
+        val url = URL("$S3_BUCKET_URL/$s3Key")
+        val conn = url.openConnection() as HttpURLConnection
+        conn.requestMethod = "PUT"
+        conn.setRequestProperty("Content-Type", "application/gzip")
+        conn.setRequestProperty("Content-Length", data.size.toString())
+        conn.connectTimeout = 60000
+        conn.readTimeout = 60000
+        conn.doOutput = true
+        conn.outputStream.use { it.write(data) }
+        val code = conn.responseCode
+        if (code !in 200..299) {
+            throw java.io.IOException("S3 upload failed: HTTP $code")
+        }
+        Log.d(TAG, "Uploaded to S3: $s3Key")
     }
 
     @PluginMethod
