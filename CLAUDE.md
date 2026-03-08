@@ -120,6 +120,7 @@ docs/plans/          Architecture design docs
 - **VPN state contract**: `reconnecting` is a transient engine signal (engine state stays `connected`). `error` is synthesized by bridge `transformStatus()` from `disconnected + lastError`.
 - **`.gitignore` for native platforms**: Never ignore entire source directories (`mobile/ios/`, `mobile/android/`). Only ignore build artifacts.
 - **NodeNext imports**: `tools/kaitu-ops-mcp/` uses `"module": "NodeNext"`. All relative imports must use `.js` extension in `.ts` source.
+- **MCP tools save-to-file**: `download_device_log` saves to `/tmp/kaitu-device-logs/` and returns file path + metadata (no content). `exec_on_node` saves stdout > 4k chars to `/tmp/kaitu-exec-output/`. Use Read tool to inspect files.
 - **Lazy wire connection**: `engine.Start()` "connected" means TUN+routes are ready. Wire handshake to server happens on first app dial.
 - **Go json.Marshal escapes `&` as `\u0026`**: Tests asserting raw JSON strings with URLs will fail. Unmarshal to `map[string]any` and assert on deserialized values.
 - **Docker on Apple Silicon**: Always `--platform linux/amd64` for server images. Go binary needs `GOARCH=amd64`.
@@ -197,4 +198,5 @@ docs/plans/
   2026-03-06-webapp-architecture-refactor.md  VPN state machine + connection store refactoring
   2026-03-06-usage-analytics-design.md    Usage analytics design
   2026-03-06-usage-analytics-impl.md      Usage analytics implementation plan
+  2026-03-08-device-log-verification.md   Device log & feedback ticket E2E verification
 ```

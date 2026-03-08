@@ -167,11 +167,11 @@ React 18, Material-UI 5, React Router 7, i18next, Vite 6, Zustand, TypeScript.
 webapp/
 ├── src/
 │   ├── types/              # Type definitions (kaitu-core.ts = IK2Vpn + IPlatform + IUpdater)
-│   ├── services/           # cloudApi, k2api, authService, cacheStore, web-platform, standalone-k2
+│   ├── services/           # cloudApi, k2api, authService, cacheStore, web-platform, standalone-k2, beta-auto-upload
 │   ├── core/               # Core module (getK2, isK2Ready, waitForK2)
 │   ├── stores/             # Zustand stores (vpn-machine, connection, config, auth, alert, layout, dashboard, login-dialog, self-hosted, onboarding)
-│   ├── pages/              # Route pages
-│   ├── components/         # UI components
+│   ├── pages/              # Route pages (Dashboard, SubmitTicket, FAQ, Purchase, Invite, Account, etc.)
+│   ├── components/         # UI components (LoginDialog, AuthGate, FeedbackButton, etc.)
 │   ├── hooks/              # Custom hooks (useUser, useAppConfig, useUpdater, etc.)
 │   ├── i18n/locales/       # Locale files (zh-CN, en-US, ja, zh-TW, zh-HK, en-AU, en-GB)
 │   ├── utils/              # Utilities (errorHandler, versionCompare, tunnel-sort, country, time)
@@ -210,7 +210,7 @@ webapp/
 | `en-AU` | English (AU) | Manual translation |
 | `en-GB` | English (GB) | Manual translation |
 
-Namespaces: common, dashboard, auth, purchase, invite, account, feedback, nav, retailer, startup, theme, ticket, wallet
+Namespaces: account, auth, common, dashboard, feedback, invite, nav, onboarding, purchase, retailer, startup, theme, ticket, wallet
 
 ---
 
