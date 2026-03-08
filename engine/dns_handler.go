@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/kaitu-io/k2/core/dns"
 	"github.com/kaitu-io/k2/provider"
@@ -17,13 +19,18 @@ import (
 // dnsBufPool pools 4096-byte buffers for DNS TCP message reads.
 var dnsBufPool = sync.Pool{New: func() any { b := make([]byte, 4096); return &b }}
 
+// dnsQueryTimeout is the per-query context timeout.
+// Each DNS query gets its own bounded context derived from the engine context.
+const dnsQueryTimeout = 30 * time.Second
+
 // dnsHandler wraps a ConnectionHandler to intercept DNS queries (port 53).
 // Both TCP and UDP packets destined for port 53 are handled locally by the
 // DNS middleware instead of being forwarded through the tunnel.
 type dnsHandler struct {
 	inner  provider.ConnectionHandler
 	dns    *dns.Middleware
-	engine *Engine // for wire error reporting (same package); nil in tests
+	ctx    context.Context // engine context — cancelled on Stop()
+	engine *Engine         // for wire error reporting (same package); nil in tests
 
 	consecutiveFails atomic.Int32
 }
@@ -48,6 +55,14 @@ func (h *dnsHandler) HandleUDP(conn net.PacketConn, dest string) {
 	h.inner.HandleUDP(conn, dest)
 }
 
+func (h *dnsHandler) queryCtx() (context.Context, context.CancelFunc) {
+	ctx := h.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithTimeout(ctx, dnsQueryTimeout)
+}
+
 func (h *dnsHandler) serveDNS(conn net.PacketConn) {
 	defer conn.Close()
 	buf := make([]byte, 4096)
@@ -56,7 +71,9 @@ func (h *dnsHandler) serveDNS(conn net.PacketConn) {
 		if err != nil {
 			return
 		}
-		resp, err := h.dns.HandleQuery(buf[:n])
+		ctx, cancel := h.queryCtx()
+		resp, err := h.dns.HandleQuery(ctx, buf[:n])
+		cancel()
 		if err != nil {
 			if isDNSParseError(err) {
 				// Incoming query is malformed (not a wire/upstream issue).
@@ -108,7 +125,9 @@ func (h *dnsHandler) serveDNSStream(conn net.Conn) {
 			return
 		}
 
-		resp, err := h.dns.HandleQuery(buf)
+		ctx, cancel := h.queryCtx()
+		resp, err := h.dns.HandleQuery(ctx, buf)
+		cancel()
 		if err != nil {
 			if !isDNSParseError(err) {
 				h.recordDNSFailure(err)

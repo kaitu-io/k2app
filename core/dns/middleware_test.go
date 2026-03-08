@@ -1,6 +1,7 @@
 package dns
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"sync"
@@ -18,7 +19,7 @@ type mockQuerier struct {
 	called bool
 }
 
-func (m *mockQuerier) Query(q *dns.Msg) (*dns.Msg, error) {
+func (m *mockQuerier) Query(ctx context.Context, q *dns.Msg) (*dns.Msg, error) {
 	m.called = true
 	if m.err != nil {
 		return nil, m.err
@@ -90,7 +91,7 @@ func TestHandleQuery_DirectDomain(t *testing.T) {
 	})
 
 	query := buildAQuery("direct.example.com")
-	respBytes, err := mw.HandleQuery(query)
+	respBytes, err := mw.HandleQuery(context.Background(), query)
 	if err != nil {
 		t.Fatalf("HandleQuery error: %v", err)
 	}
@@ -140,7 +141,7 @@ func TestHandleQuery_ProxyDomain(t *testing.T) {
 	})
 
 	query := buildAQuery("proxy.example.com")
-	respBytes, err := mw.HandleQuery(query)
+	respBytes, err := mw.HandleQuery(context.Background(), query)
 	if err != nil {
 		t.Fatalf("HandleQuery error: %v", err)
 	}
@@ -183,7 +184,7 @@ func TestHandleQuery_RejectDomain(t *testing.T) {
 	})
 
 	query := buildAQuery("reject.example.com")
-	respBytes, err := mw.HandleQuery(query)
+	respBytes, err := mw.HandleQuery(context.Background(), query)
 	if err != nil {
 		t.Fatalf("HandleQuery error: %v", err)
 	}
@@ -223,9 +224,11 @@ func TestHandleQuery_CacheHit(t *testing.T) {
 		DNSCache:  cache,
 	})
 
+	ctx := context.Background()
+
 	// First query -- should call upstream
 	query := buildAQuery("cached.example.com")
-	_, err := mw.HandleQuery(query)
+	_, err := mw.HandleQuery(ctx, query)
 	if err != nil {
 		t.Fatalf("First HandleQuery error: %v", err)
 	}
@@ -237,7 +240,7 @@ func TestHandleQuery_CacheHit(t *testing.T) {
 	directQ.called = false
 
 	// Second query -- should hit cache, NOT call upstream
-	respBytes, err := mw.HandleQuery(query)
+	respBytes, err := mw.HandleQuery(ctx, query)
 	if err != nil {
 		t.Fatalf("Second HandleQuery error: %v", err)
 	}
@@ -257,7 +260,7 @@ func TestHandleQuery_CacheHit(t *testing.T) {
 func TestHandleQuery_InvalidBytes(t *testing.T) {
 	mw := NewMiddleware(MiddlewareConfig{})
 
-	_, err := mw.HandleQuery([]byte{0xff, 0xfe, 0x00})
+	_, err := mw.HandleQuery(context.Background(), []byte{0xff, 0xfe, 0x00})
 	if err == nil {
 		t.Fatal("Expected error for invalid bytes")
 	}
@@ -278,7 +281,7 @@ func TestHandleQuery_NilWriter(t *testing.T) {
 	})
 
 	query := buildAQuery("l4.example.com")
-	respBytes, err := mw.HandleQuery(query)
+	respBytes, err := mw.HandleQuery(context.Background(), query)
 	if err != nil {
 		t.Fatalf("HandleQuery with nil writer should work: %v", err)
 	}
@@ -301,11 +304,17 @@ type slowQuerier struct {
 	calls int
 }
 
-func (q *slowQuerier) Query(msg *dns.Msg) (*dns.Msg, error) {
+func (q *slowQuerier) Query(ctx context.Context, msg *dns.Msg) (*dns.Msg, error) {
 	q.mu.Lock()
 	q.calls++
 	q.mu.Unlock()
-	time.Sleep(q.delay)
+
+	select {
+	case <-time.After(q.delay):
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+
 	if q.err != nil {
 		return nil, q.err
 	}
@@ -314,89 +323,103 @@ func (q *slowQuerier) Query(msg *dns.Msg) (*dns.Msg, error) {
 	return resp, nil
 }
 
-func TestInflightDedup_WaiterTimesOut_QueriesIndependently(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping slow inflight timeout test")
-	}
+func TestInflightDedup_WaiterCtxCancelled_ReturnsStaleOrError(t *testing.T) {
 	initK2Rule(t, k2rule.TargetDirect)
 
-	// Owner query blocks much longer than inflightTimeout.
-	// Use a slowQuerier that blocks for a very long time as the "stuck" owner.
-	stuckQ := &slowQuerier{
-		delay: inflightTimeout + 30*time.Second,
+	// Slow owner blocks for a long time.
+	slowQ := &slowQuerier{
+		delay: 60 * time.Second,
 		resp:  buildAResponse("hang.example.com", net.ParseIP("1.2.3.4")),
 	}
 
-	// The waiter's independent query will also use this querier.
-	// After timeout, waiter calls queryUpstream independently which
-	// uses the same directDNS. The slowQuerier will block again, but
-	// we need a fast querier for the waiter's independent attempt.
-	// Solution: use a wrapper that blocks on first call but is fast on second.
-	callCount := 0
-	var mu sync.Mutex
-	adaptiveQ := &adaptiveQuerier{
-		first: stuckQ,
-		rest: &mockQuerier{
-			resp: buildAResponse("hang.example.com", net.ParseIP("9.9.9.9")),
-		},
-		callCount: &callCount,
-		mu:        &mu,
-	}
-
 	mw := NewMiddleware(MiddlewareConfig{
-		DirectDNS: adaptiveQ,
+		DirectDNS: slowQ,
 		ProxyDNS:  &mockQuerier{resp: buildAResponse("hang.example.com", net.ParseIP("5.6.7.8"))},
 	})
 
 	query := buildAQuery("hang.example.com")
 
-	// Start the owning query in background (will block in stuckQ).
-	go mw.HandleQuery(query)
+	// Start the owning query in background (will block in slowQ).
+	ownerCtx, ownerCancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer ownerCancel()
+	go mw.HandleQuery(ownerCtx, query)
 	time.Sleep(50 * time.Millisecond) // let owner register inflight entry
 
-	// Waiter query — should timeout on dedup, then query independently.
+	// Waiter query with short context — should return error promptly (sing-box pattern).
+	waiterCtx, waiterCancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer waiterCancel()
+
 	start := time.Now()
-	respBytes, err := mw.HandleQuery(query)
+	_, err := mw.HandleQuery(waiterCtx, query)
 	elapsed := time.Since(start)
 
-	// Waiter should succeed (independent query after timeout).
+	// Waiter should get context error (no stale data available).
+	if err == nil {
+		t.Fatal("expected error from waiter context cancellation")
+	}
+	if elapsed > 2*time.Second {
+		t.Errorf("waiter blocked too long: %v (expected ~500ms)", elapsed)
+	}
+}
+
+func TestInflightDedup_WaiterCtxCancelled_ReturnsStale(t *testing.T) {
+	initK2Rule(t, k2rule.TargetDirect)
+
+	cache := NewDNSCache(DNSCacheConfig{
+		MinTTL:   1 * time.Second,
+		MaxTTL:   1 * time.Second,
+		StaleFor: 5 * time.Minute,
+	})
+
+	// Populate cache.
+	fastQ := &mockQuerier{resp: buildAResponse("stale-waiter.example.com", net.ParseIP("1.2.3.4"))}
+	mw := NewMiddleware(MiddlewareConfig{
+		DirectDNS: fastQ,
+		ProxyDNS:  &mockQuerier{resp: buildAResponse("stale-waiter.example.com", net.ParseIP("5.6.7.8"))},
+		DNSCache:  cache,
+	})
+	query := buildAQuery("stale-waiter.example.com")
+	_, err := mw.HandleQuery(context.Background(), query)
 	if err != nil {
-		t.Fatalf("waiter should succeed after independent query, got: %v", err)
-	}
-	if elapsed > inflightTimeout+3*time.Second {
-		t.Errorf("waiter blocked too long: %v (expected ~%v)", elapsed, inflightTimeout)
-	}
-	if elapsed < inflightTimeout-time.Second {
-		t.Errorf("waiter returned too early: %v (expected ~%v)", elapsed, inflightTimeout)
+		t.Fatalf("populate cache: %v", err)
 	}
 
-	// Verify we got a valid response.
+	// Wait for cache to expire.
+	time.Sleep(1500 * time.Millisecond)
+
+	// Now use a slow querier — owner will block.
+	slowQ := &slowQuerier{
+		delay: 60 * time.Second,
+		resp:  buildAResponse("stale-waiter.example.com", net.ParseIP("9.9.9.9")),
+	}
+	mw2 := NewMiddleware(MiddlewareConfig{
+		DirectDNS: slowQ,
+		ProxyDNS:  &mockQuerier{resp: buildAResponse("stale-waiter.example.com", net.ParseIP("5.6.7.8"))},
+		DNSCache:  cache,
+	})
+
+	// Owner blocks in background.
+	ownerCtx, ownerCancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer ownerCancel()
+	go mw2.HandleQuery(ownerCtx, query)
+	time.Sleep(50 * time.Millisecond)
+
+	// Waiter with short context — should get stale data.
+	waiterCtx, waiterCancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer waiterCancel()
+
+	respBytes, err := mw2.HandleQuery(waiterCtx, query)
+	if err != nil {
+		t.Fatalf("expected stale fallback, got error: %v", err)
+	}
+
 	var resp dns.Msg
 	if err := resp.Unpack(respBytes); err != nil {
-		t.Fatalf("unpack response: %v", err)
+		t.Fatalf("unpack: %v", err)
 	}
 	if len(resp.Answer) == 0 {
-		t.Fatal("expected answer in response")
+		t.Fatal("expected stale answer")
 	}
-}
-
-// adaptiveQuerier returns different queriers for first vs subsequent calls.
-type adaptiveQuerier struct {
-	first     DNSQuerier
-	rest      DNSQuerier
-	callCount *int
-	mu        *sync.Mutex
-}
-
-func (a *adaptiveQuerier) Query(q *dns.Msg) (*dns.Msg, error) {
-	a.mu.Lock()
-	*a.callCount++
-	count := *a.callCount
-	a.mu.Unlock()
-	if count == 1 {
-		return a.first.Query(q)
-	}
-	return a.rest.Query(q)
 }
 
 func TestInflightDedup_NormalDedup(t *testing.T) {
@@ -413,6 +436,7 @@ func TestInflightDedup_NormalDedup(t *testing.T) {
 	})
 
 	query := buildAQuery("dedup.example.com")
+	ctx := context.Background()
 
 	// Fire two concurrent queries for the same domain.
 	var wg sync.WaitGroup
@@ -423,7 +447,7 @@ func TestInflightDedup_NormalDedup(t *testing.T) {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			resps[idx], errs[idx] = mw.HandleQuery(query)
+			resps[idx], errs[idx] = mw.HandleQuery(ctx, query)
 		}(i)
 	}
 	wg.Wait()
@@ -481,9 +505,11 @@ func TestHandleQuery_StaleOnUpstreamError(t *testing.T) {
 		Metrics:   metrics,
 	})
 
+	ctx := context.Background()
+
 	// First query — succeeds and populates cache
 	query := buildAQuery("stale.example.com")
-	_, err := mw.HandleQuery(query)
+	_, err := mw.HandleQuery(ctx, query)
 	if err != nil {
 		t.Fatalf("first query: %v", err)
 	}
@@ -496,7 +522,7 @@ func TestHandleQuery_StaleOnUpstreamError(t *testing.T) {
 	proxyQ.resp = nil
 
 	// Second query — upstream fails, should return stale data
-	respBytes, err := mw.HandleQuery(query)
+	respBytes, err := mw.HandleQuery(ctx, query)
 	if err != nil {
 		t.Fatalf("expected stale fallback, got error: %v", err)
 	}
@@ -533,8 +559,9 @@ func TestHandleQuery_StaleOnUpstreamError_Waiter(t *testing.T) {
 		Metrics:   metrics,
 	})
 
+	ctx := context.Background()
 	query := buildAQuery("waiter-stale.example.com")
-	_, err := mw.HandleQuery(query)
+	_, err := mw.HandleQuery(ctx, query)
 	if err != nil {
 		t.Fatalf("populate cache: %v", err)
 	}
@@ -563,7 +590,7 @@ func TestHandleQuery_StaleOnUpstreamError_Waiter(t *testing.T) {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			resps[idx], errs[idx] = mw2.HandleQuery(query)
+			resps[idx], errs[idx] = mw2.HandleQuery(ctx, query)
 		}(i)
 	}
 	wg.Wait()
@@ -595,7 +622,7 @@ func TestHandleQuery_NoStale_WhenCacheEmpty(t *testing.T) {
 	})
 
 	query := buildAQuery("empty.example.com")
-	_, err := mw.HandleQuery(query)
+	_, err := mw.HandleQuery(context.Background(), query)
 	if err == nil {
 		t.Fatal("expected error when no stale data available")
 	}
@@ -636,9 +663,11 @@ func TestHandleQuery_NoStale_ForNXDOMAIN(t *testing.T) {
 		Metrics:   metrics,
 	})
 
+	ctx := context.Background()
+
 	// First query — NXDOMAIN gets cached in negative cache
 	query := buildAQuery("gone.example.com")
-	_, err := mw.HandleQuery(query)
+	_, err := mw.HandleQuery(ctx, query)
 	if err != nil {
 		t.Fatalf("first query: %v", err)
 	}
@@ -651,7 +680,7 @@ func TestHandleQuery_NoStale_ForNXDOMAIN(t *testing.T) {
 	proxyQ.resp = nil
 
 	// Should get error, not stale NXDOMAIN
-	_, err = mw.HandleQuery(query)
+	_, err = mw.HandleQuery(ctx, query)
 	if err == nil {
 		t.Fatal("expected error, not stale NXDOMAIN")
 	}
@@ -678,16 +707,17 @@ func TestHandleQuery_FreshCacheHit_Unchanged(t *testing.T) {
 		Metrics:   metrics,
 	})
 
+	ctx := context.Background()
 	query := buildAQuery("fresh.example.com")
 
 	// First query — populates cache
-	_, err := mw.HandleQuery(query)
+	_, err := mw.HandleQuery(ctx, query)
 	if err != nil {
 		t.Fatalf("first query: %v", err)
 	}
 
 	// Second query — fresh cache hit (no stale involved)
-	respBytes, err := mw.HandleQuery(query)
+	respBytes, err := mw.HandleQuery(ctx, query)
 	if err != nil {
 		t.Fatalf("second query: %v", err)
 	}
@@ -724,7 +754,7 @@ func TestQueryUpstream_ProxyFailNoFallback(t *testing.T) {
 	})
 
 	query := buildAQuery("fallback.example.com")
-	_, err := mw.HandleQuery(query)
+	_, err := mw.HandleQuery(context.Background(), query)
 
 	// Proxy should have been called and failed.
 	if !proxyQ.called {
@@ -739,5 +769,86 @@ func TestQueryUpstream_ProxyFailNoFallback(t *testing.T) {
 	// Must return error, not poisoned direct DNS results.
 	if err == nil {
 		t.Fatal("expected error when proxy DNS fails, got nil (no fallback allowed)")
+	}
+}
+
+func TestInflightDedup_OwnerPanic_WaitersRecover(t *testing.T) {
+	initK2Rule(t, k2rule.TargetDirect)
+
+	panicQ := &panicQuerier{
+		resp: buildAResponse("panic.example.com", net.ParseIP("1.2.3.4")),
+	}
+
+	mw := NewMiddleware(MiddlewareConfig{
+		DirectDNS: panicQ,
+		ProxyDNS:  &mockQuerier{resp: buildAResponse("panic.example.com", net.ParseIP("5.6.7.8"))},
+	})
+
+	query := buildAQuery("panic.example.com")
+	ctx := context.Background()
+
+	// Start owner query — will panic in queryUpstream.
+	ownerDone := make(chan struct{})
+	go func() {
+		defer close(ownerDone)
+		defer func() { recover() }() // catch the panic
+		mw.HandleQuery(ctx, query)
+	}()
+	time.Sleep(50 * time.Millisecond)
+
+	// Waiter query — should not hang forever.
+	waiterCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	_, err := mw.HandleQuery(waiterCtx, query)
+	// Waiter should either get an error or a valid response, but not hang.
+	<-ownerDone
+	_ = err // either outcome is acceptable — the important thing is no deadlock
+}
+
+// panicQuerier panics on first call.
+type panicQuerier struct {
+	resp *dns.Msg
+	once sync.Once
+}
+
+func (q *panicQuerier) Query(ctx context.Context, msg *dns.Msg) (*dns.Msg, error) {
+	q.once.Do(func() {
+		panic("simulated panic in DNS query")
+	})
+	resp := q.resp.Copy()
+	resp.Id = msg.Id
+	return resp, nil
+}
+
+func TestHandleQuery_ContextCancellation(t *testing.T) {
+	initK2Rule(t, k2rule.TargetProxy)
+
+	// Slow querier that respects context cancellation.
+	slowQ := &slowQuerier{
+		delay: 10 * time.Second,
+		resp:  buildAResponse("cancel.example.com", net.ParseIP("10.0.0.1")),
+	}
+
+	mw := NewMiddleware(MiddlewareConfig{
+		DirectDNS: &mockQuerier{resp: buildAResponse("cancel.example.com", net.ParseIP("1.2.3.4"))},
+		ProxyDNS:  slowQ,
+	})
+
+	query := buildAQuery("cancel.example.com")
+
+	// Cancel context quickly.
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, err := mw.HandleQuery(ctx, query)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected error from context cancellation")
+	}
+	if elapsed > 2*time.Second {
+		t.Errorf("query took too long despite cancellation: %v", elapsed)
 	}
 }

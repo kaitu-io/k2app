@@ -1,6 +1,7 @@
 package dns
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -15,15 +16,14 @@ import (
 	"github.com/miekg/dns"
 )
 
-// inflightTimeout bounds how long a waiter blocks for an in-flight
-// upstream DNS query. Must exceed ProxyDNSClient's worst-case:
-// per server = DialUDP (5s ctx) + ReadFrom (5s deadline) = 10s,
-// 2 servers sequential = 20s. Set to 22s with margin.
-const inflightTimeout = 22 * time.Second
+// upstreamTimeout bounds how long a single queryUpstream call may take.
+// Separate from the per-query timeout (30s in dnsHandler) to allow room
+// for stale-fallback and inflight dedup overhead.
+const upstreamTimeout = 15 * time.Second
 
 // DNSQuerier is satisfied by DirectDNSClient and ProxyDNSClient.
 type DNSQuerier interface {
-	Query(query *dns.Msg) (*dns.Msg, error)
+	Query(ctx context.Context, query *dns.Msg) (*dns.Msg, error)
 }
 
 // inflightResult is the shared result of an in-flight upstream DNS query.
@@ -84,7 +84,7 @@ func NewMiddleware(cfg MiddlewareConfig) *Middleware {
 
 // HandleQuery processes raw DNS query bytes through the full pipeline.
 // Returns raw DNS response bytes. This is the L4-friendly entry point.
-func (m *Middleware) HandleQuery(query []byte) ([]byte, error) {
+func (m *Middleware) HandleQuery(ctx context.Context, query []byte) ([]byte, error) {
 	// Track total queries
 	m.metrics.IncrTotal()
 
@@ -96,7 +96,7 @@ func (m *Middleware) HandleQuery(query []byte) ([]byte, error) {
 	}
 
 	// 2-12. Full pipeline (hosts, filter, cache, k2rule, upstream, SetTmpRule)
-	resp, packed, err := m.processQuery(&msg)
+	resp, packed, err := m.processQuery(ctx, &msg)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +117,7 @@ func (m *Middleware) HandleQuery(query []byte) ([]byte, error) {
 // processQuery runs the DNS pipeline on a parsed message.
 // Returns (resp, nil, nil) for non-hot paths (HandleQuery will Pack),
 // or (nil, packed, nil) for cache hits and inflight dedup (pre-packed bytes).
-func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, []byte, error) {
+func (m *Middleware) processQuery(ctx context.Context, query *dns.Msg) (*dns.Msg, []byte, error) {
 	// 1. Extract domain from query
 	domain := extractQueryDomain(query)
 	if domain == "" {
@@ -188,13 +188,10 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, []byte, error) {
 	// we wait for its result instead of issuing a duplicate query.
 	inflightKey := domain + ":" + strconv.FormatUint(uint64(query.Question[0].Qtype), 10)
 
-	timedOut := false
 	result := &inflightResult{done: make(chan struct{})}
 	if existing, loaded := m.inflight.LoadOrStore(inflightKey, result); loaded {
 		// Another goroutine is already querying — wait for its result.
 		existing := existing.(*inflightResult)
-		timer := time.NewTimer(inflightTimeout)
-		defer timer.Stop()
 		select {
 		case <-existing.done:
 			if existing.err != nil {
@@ -203,62 +200,37 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, []byte, error) {
 			// Copy packed bytes and patch caller's query ID.
 			packed := cloneAndPatchID(existing.packed, query.Id)
 			return nil, packed, nil
-		case <-timer.C:
-			// Clear stale entry so subsequent queries start fresh instead of
-			// hitting the same dead owner in a timeout cascade loop.
-			m.inflight.CompareAndDelete(inflightKey, existing)
-			slog.Warn("DNS inflight dedup timeout, evicted stale entry, querying independently", "domain", domain, "key", inflightKey)
-			timedOut = true
+		case <-ctx.Done():
+			// Parent cancelled (shutdown/timeout) — return stale or error (sing-box pattern).
+			// The owner is still running and will broadcast when done.
+			return m.returnStaleOrError(stalePacked, ctx.Err())
 		}
-	}
-
-	// Waiter timed out — query independently (owner still owns the inflight key).
-	if timedOut {
-		resp, err := m.queryUpstream(domain, action, query)
-		if err != nil {
-			return m.returnStaleOrError(stalePacked, err)
-		}
-		packed, packErr := resp.Pack()
-		if packErr != nil {
-			return nil, nil, packErr
-		}
-		if m.dnsCache != nil {
-			m.dnsCache.Add(domain, query.Question[0].Qtype, resp)
-		}
-		if resp.Rcode == dns.RcodeSuccess {
-			for _, ip := range extractIPsFromResponse(resp) {
-				k2rule.SetTmpRule(ip, action)
-			}
-		}
-		return nil, packed, nil
 	}
 
 	// We own this query — execute and broadcast result.
+	// defer guarantees cleanup even on panic (sing-box pattern).
 	slog.Debug("DNS inflight owner start", "domain", domain, "key", inflightKey)
-	resp, err := m.queryUpstream(domain, action, query)
+	defer func() {
+		m.inflight.Delete(inflightKey)
+		close(result.done)
+	}()
 
+	resp, err := m.queryUpstream(ctx, domain, action, query)
 	if err != nil {
 		slog.Debug("DNS inflight owner failed", "domain", domain, "key", inflightKey, "err", err)
 		result.err = err
-		close(result.done)
-		m.inflight.Delete(inflightKey)
 		return m.returnStaleOrError(stalePacked, err)
 	}
 
-	// Pack response for inflight waiters and our return value.
 	packed, packErr := resp.Pack()
 	if packErr != nil {
 		result.err = packErr
-		close(result.done)
-		m.inflight.Delete(inflightKey)
 		return nil, nil, packErr
 	}
 
 	// Broadcast packed bytes to waiters.
 	slog.Debug("DNS inflight owner done", "domain", domain, "key", inflightKey)
 	result.packed = packed
-	close(result.done)
-	m.inflight.Delete(inflightKey)
 
 	// 9. Cache DNS message (uses *dns.Msg for TTL optimization, packs internally)
 	if m.dnsCache != nil {
@@ -266,10 +238,8 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, []byte, error) {
 	}
 
 	// 10. Store DNS-learned IP routes as temporary rules.
-	// SetTmpRule skips storage when static rules already agree (built-in optimization).
 	if resp.Rcode == dns.RcodeSuccess {
-		ips := extractIPsFromResponse(resp)
-		for _, ip := range ips {
+		for _, ip := range extractIPsFromResponse(resp) {
 			k2rule.SetTmpRule(ip, action)
 		}
 	}
@@ -287,11 +257,14 @@ func (m *Middleware) returnStaleOrError(stalePacked []byte, err error) (*dns.Msg
 }
 
 // queryUpstream sends a DNS query to the appropriate upstream (direct or proxy).
-func (m *Middleware) queryUpstream(domain string, action k2rule.Target, query *dns.Msg) (*dns.Msg, error) {
+func (m *Middleware) queryUpstream(ctx context.Context, domain string, action k2rule.Target, query *dns.Msg) (*dns.Msg, error) {
+	ctx, cancel := context.WithTimeout(ctx, upstreamTimeout)
+	defer cancel()
+
 	switch action {
 	case k2rule.TargetDirect:
 		m.metrics.IncrDirect()
-		resp, err := m.directDNS.Query(query)
+		resp, err := m.directDNS.Query(ctx, query)
 		if err != nil {
 			m.metrics.IncrError()
 			slog.Warn("DNS direct query failed", "domain", domain, "err", err)
@@ -302,7 +275,7 @@ func (m *Middleware) queryUpstream(domain string, action k2rule.Target, query *d
 
 	case k2rule.TargetProxy:
 		m.metrics.IncrProxy()
-		resp, err := m.proxyDNS.Query(query)
+		resp, err := m.proxyDNS.Query(ctx, query)
 		if err != nil {
 			// No fallback to direct DNS — poisoned results in censored networks
 			// cause certificate errors and security violations. (2026-03-08 incident)
@@ -319,7 +292,7 @@ func (m *Middleware) queryUpstream(domain string, action k2rule.Target, query *d
 
 // HandleDNSQuery processes a DNS query from L3 packets (TUN device).
 // Extracts UDP payload, runs the pipeline via HandleQuery, wraps response in IP packet.
-func (m *Middleware) HandleDNSQuery(pkt []byte, info packet.Info) error {
+func (m *Middleware) HandleDNSQuery(ctx context.Context, pkt []byte, info packet.Info) error {
 	// 1. Extract UDP payload
 	udpPayload, err := packet.ExtractUDPPayload(pkt)
 	if err != nil {
@@ -329,7 +302,7 @@ func (m *Middleware) HandleDNSQuery(pkt []byte, info packet.Info) error {
 	}
 
 	// 2-12. Run full pipeline via HandleQuery
-	respBytes, err := m.HandleQuery(udpPayload)
+	respBytes, err := m.HandleQuery(ctx, udpPayload)
 	if err != nil {
 		return err
 	}

@@ -2,38 +2,34 @@ package dns
 
 import (
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/miekg/dns"
+	"github.com/sagernet/sing/contrab/freelru"
+	"github.com/sagernet/sing/contrab/maphash"
 )
 
-// cachedEntry stores a pre-packed DNS response with expiration.
+// cachedEntry stores a pre-packed DNS response with original expiration.
 // Storing packed bytes instead of *dns.Msg eliminates dns.Msg.Copy() on
 // every cache hit and lets callers skip resp.Pack() entirely.
 type cachedEntry struct {
 	packed   []byte
-	expireAt time.Time
+	expireAt time.Time // original TTL expiry (for fresh/stale distinction)
 }
 
-// DNSCache implements DNS message caching with negative caching (RFC 2308)
+// DNSCache implements DNS message caching with negative caching (RFC 2308).
+// Uses freelru (sharded LRU with per-entry TTL) for lock-free concurrent access.
 type DNSCache struct {
-	mu sync.RWMutex
+	// Positive cache: domain:qtype → pre-packed DNS response
+	messages freelru.Cache[string, *cachedEntry]
 
-	// Positive cache: domain+qtype → pre-packed DNS response
-	messages map[string]cachedEntry
-
-	// Negative cache: domain+qtype → pre-packed NXDOMAIN response
-	negative map[string]cachedEntry
+	// Negative cache: domain:qtype → pre-packed NXDOMAIN response
+	negative freelru.Cache[string, *cachedEntry]
 
 	// Configuration
-	minTTL     time.Duration // Minimum TTL (user requirement: 10 minutes)
-	maxTTL     time.Duration // Maximum TTL
-	maxEntries int           // Max cache entries (LRU eviction)
-	staleFor   time.Duration // Stale-while-revalidate window (RFC 8767)
-
-	// Lifecycle
-	stopCleanup chan struct{}
+	minTTL   time.Duration
+	maxTTL   time.Duration
+	staleFor time.Duration
 }
 
 // DNSCacheConfig contains DNS cache configuration
@@ -59,14 +55,18 @@ func NewDNSCache(cfg DNSCacheConfig) *DNSCache {
 		cfg.StaleFor = 5 * time.Minute
 	}
 
+	hasher := maphash.NewHasher[string]()
+	hashFn := func(key string) uint32 { return hasher.Hash32(key) }
+
+	messages, _ := freelru.NewSharded[string, *cachedEntry](uint32(cfg.MaxEntries), hashFn)
+	negative, _ := freelru.NewSharded[string, *cachedEntry](256, hashFn)
+
 	return &DNSCache{
-		messages:    make(map[string]cachedEntry, cfg.MaxEntries),
-		negative:    make(map[string]cachedEntry, 256),
-		minTTL:      cfg.MinTTL,
-		maxTTL:      cfg.MaxTTL,
-		maxEntries:  cfg.MaxEntries,
-		staleFor:    cfg.StaleFor,
-		stopCleanup: make(chan struct{}),
+		messages: messages,
+		negative: negative,
+		minTTL:   cfg.MinTTL,
+		maxTTL:   cfg.MaxTTL,
+		staleFor: cfg.StaleFor,
 	}
 }
 
@@ -75,25 +75,21 @@ func NewDNSCache(cfg DNSCacheConfig) *DNSCache {
 // This is the fast path: pure memcpy, no dns.Msg.Copy() or Pack().
 func (c *DNSCache) GetPacked(domain string, qtype uint16, queryID uint16) ([]byte, bool) {
 	key := cacheKey(domain, qtype)
-
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	now := time.Now()
-
-	// Check negative cache first
-	if entry, found := c.negative[key]; found {
-		if now.Before(entry.expireAt) {
-			return cloneAndPatchID(entry.packed, queryID), true
-		}
+	// Check negative cache first.
+	// freelru auto-expires, so if we get it, it's within TTL.
+	if entry, ok := c.negative.Get(key); ok {
+		return cloneAndPatchID(entry.packed, queryID), true
 	}
 
-	// Check positive cache
-	entry, found := c.messages[key]
-	if !found {
+	// Check positive cache — stored with lifetime = ttl + staleFor,
+	// so Get() returns the entry during both fresh and stale windows.
+	// We check entry.expireAt to distinguish fresh from stale.
+	entry, ok := c.messages.Get(key)
+	if !ok {
 		return nil, false
 	}
-	if now.After(entry.expireAt) {
+	if time.Now().After(entry.expireAt) {
+		// Expired original TTL — stale, not fresh.
 		return nil, false
 	}
 
@@ -106,17 +102,16 @@ func (c *DNSCache) GetPacked(domain string, qtype uint16, queryID uint16) ([]byt
 func (c *DNSCache) GetStalePacked(domain string, qtype uint16, queryID uint16) ([]byte, bool) {
 	key := cacheKey(domain, qtype)
 
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	entry, found := c.messages[key]
-	if !found {
+	// Entry is stored with lifetime = ttl + staleFor. Get() returns the entry
+	// if it's within that extended lifetime. We check entry.expireAt to see
+	// if the original TTL has expired (making it stale but still servable).
+	entry, ok := c.messages.Get(key)
+	if !ok {
 		return nil, false
 	}
 
-	now := time.Now()
-	// Must be expired but within stale window
-	if now.After(entry.expireAt) && now.Before(entry.expireAt.Add(c.staleFor)) {
+	// Must be past original TTL expiry (stale) but still within freelru lifetime.
+	if time.Now().After(entry.expireAt) {
 		return cloneAndPatchID(entry.packed, queryID), true
 	}
 
@@ -156,9 +151,6 @@ func (c *DNSCache) Add(domain string, qtype uint16, msg *dns.Msg) {
 
 	key := cacheKey(domain, qtype)
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	// Handle NXDOMAIN (negative caching per RFC 2308)
 	if msg.Rcode == dns.RcodeNameError {
 		ttl := c.extractNegativeTTL(msg)
@@ -168,7 +160,10 @@ func (c *DNSCache) Add(domain string, qtype uint16, msg *dns.Msg) {
 		if err != nil {
 			return
 		}
-		c.negative[key] = cachedEntry{packed: packed, expireAt: time.Now().Add(ttl)}
+		c.negative.AddWithLifetime(key, &cachedEntry{
+			packed:   packed,
+			expireAt: time.Now().Add(ttl),
+		}, ttl)
 		return
 	}
 
@@ -189,13 +184,12 @@ func (c *DNSCache) Add(domain string, qtype uint16, msg *dns.Msg) {
 	// Calculate expiration based on minimum answer TTL
 	ttl := c.extractTTL(msg)
 
-	// Evict a random entry if cache is full
-	if len(c.messages) >= c.maxEntries {
-		c.evictOne()
-	}
-
-	// Store pre-packed response
-	c.messages[key] = cachedEntry{packed: packed, expireAt: time.Now().Add(ttl)}
+	// Store with extended lifetime (ttl + staleFor) so entry survives
+	// in freelru during the stale-while-revalidate window.
+	c.messages.AddWithLifetime(key, &cachedEntry{
+		packed:   packed,
+		expireAt: time.Now().Add(ttl),
+	}, ttl+c.staleFor)
 }
 
 // optimizeTTL enforces minimum and maximum TTL on all RRs
@@ -284,75 +278,15 @@ func (c *DNSCache) extractNegativeTTL(msg *dns.Msg) time.Duration {
 	return c.minTTL
 }
 
-// evictOne removes a random cache entry. Go map iteration order is randomized,
-// so deleting the first iterated key gives O(1) random eviction. This is
-// sufficient for DNS caches where most entries have similar TTLs (minTTL=10min)
-// and expired entries are cleaned up by the background goroutine.
-func (c *DNSCache) evictOne() {
-	for key := range c.messages {
-		delete(c.messages, key)
-		return
-	}
-}
-
-// StartCleanup starts background cleanup of expired entries.
-// The goroutine stops when Close() is called.
-func (c *DNSCache) StartCleanup(interval time.Duration) {
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				c.cleanup()
-			case <-c.stopCleanup:
-				return
-			}
-		}
-	}()
-}
-
-// Close stops the cleanup goroutine and releases cached entries.
+// Close releases cached entries.
 func (c *DNSCache) Close() {
-	select {
-	case <-c.stopCleanup:
-	default:
-		close(c.stopCleanup)
-	}
-
-	c.mu.Lock()
-	clear(c.messages)
-	clear(c.negative)
-	c.mu.Unlock()
-}
-
-// cleanup removes all expired entries
-func (c *DNSCache) cleanup() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	now := time.Now()
-
-	// Clean positive cache — preserve entries within stale window
-	for key, entry := range c.messages {
-		if now.After(entry.expireAt.Add(c.staleFor)) {
-			delete(c.messages, key)
-		}
-	}
-
-	// Clean negative cache
-	for key, entry := range c.negative {
-		if now.After(entry.expireAt) {
-			delete(c.negative, key)
-		}
-	}
+	c.messages.Purge()
+	c.negative.Purge()
 }
 
 // Size returns current cache size
 func (c *DNSCache) Size() (positive, negative int) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return len(c.messages), len(c.negative)
+	return c.messages.Len(), c.negative.Len()
 }
 
 // cacheKey creates a cache key from domain and query type

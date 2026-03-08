@@ -51,12 +51,12 @@ func NewDirectDNSClient(servers []string, opts ...DirectDNSOption) *DirectDNSCli
 // Races all configured servers in parallel and returns the first success.
 // Any valid DNS response (including NXDOMAIN) is accepted — only
 // transport-level errors (timeout, connection refused) are failures.
-func (c *DirectDNSClient) Query(query *dns.Msg) (*dns.Msg, error) {
+func (c *DirectDNSClient) Query(ctx context.Context, query *dns.Msg) (*dns.Msg, error) {
 	if len(c.servers) == 1 {
-		return c.queryServer(query, c.servers[0])
+		return c.queryServer(ctx, query, c.servers[0])
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
 	type result struct {
@@ -67,7 +67,7 @@ func (c *DirectDNSClient) Query(query *dns.Msg) (*dns.Msg, error) {
 
 	for _, server := range c.servers {
 		go func(s string) {
-			resp, err := c.queryServer(query, s)
+			resp, err := c.queryServer(ctx, query, s)
 			ch <- result{resp, err}
 		}(server)
 	}
@@ -93,14 +93,22 @@ func (c *DirectDNSClient) Query(query *dns.Msg) (*dns.Msg, error) {
 
 // queryServer queries a single DNS server via UDP.
 // Retries over TCP if the response has the TC (truncated) flag set.
-func (c *DirectDNSClient) queryServer(query *dns.Msg, server string) (*dns.Msg, error) {
+func (c *DirectDNSClient) queryServer(ctx context.Context, query *dns.Msg, server string) (*dns.Msg, error) {
+	// Derive timeout from parent context, capped at c.timeout.
+	timeout := c.timeout
+	if deadline, ok := ctx.Deadline(); ok {
+		if remaining := time.Until(deadline); remaining < timeout {
+			timeout = remaining
+		}
+	}
+
 	client := &dns.Client{
 		Net:     "udp",
-		Timeout: c.timeout,
+		Timeout: timeout,
 		Dialer:  c.dialer,
 	}
 
-	resp, rtt, err := client.Exchange(query, server)
+	resp, rtt, err := client.ExchangeContext(ctx, query, server)
 	if err != nil {
 		slog.Warn("direct DNS query failed", "server", server, "err", err)
 		return nil, err
@@ -111,10 +119,10 @@ func (c *DirectDNSClient) queryServer(query *dns.Msg, server string) (*dns.Msg, 
 	if resp.Truncated {
 		tcpClient := &dns.Client{
 			Net:     "tcp",
-			Timeout: c.timeout,
+			Timeout: timeout,
 			Dialer:  c.dialer,
 		}
-		resp, rtt, err = tcpClient.Exchange(query, server)
+		resp, rtt, err = tcpClient.ExchangeContext(ctx, query, server)
 		if err != nil {
 			slog.Warn("direct DNS TCP retry failed", "server", server, "err", err)
 			return nil, err

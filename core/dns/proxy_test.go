@@ -43,24 +43,22 @@ func (d *mockDialer) Close() error { return nil }
 // mockPacketConn that returns a pre-set DNS response.
 type mockPacketConn struct {
 	writeCh   chan []byte
-	readResp  []byte
-	readOnce  sync.Once
-	readReady chan struct{}
+	readBuf   chan []byte // channel of response bytes to deliver
 	closed    chan struct{}
 }
 
 func newMockPacketConn() *mockPacketConn {
 	return &mockPacketConn{
-		writeCh:   make(chan []byte, 1),
-		readReady: make(chan struct{}),
-		closed:    make(chan struct{}),
+		writeCh: make(chan []byte, 10),
+		readBuf: make(chan []byte, 10),
+		closed:  make(chan struct{}),
 	}
 }
 
 func (c *mockPacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	select {
-	case <-c.readReady:
-		n := copy(b, c.readResp)
+	case data := <-c.readBuf:
+		n := copy(b, data)
 		return n, nil, nil
 	case <-c.closed:
 		return 0, nil, net.ErrClosed
@@ -70,13 +68,15 @@ func (c *mockPacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
 func (c *mockPacketConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 	data := make([]byte, len(b))
 	copy(data, b)
-	c.writeCh <- data
+	select {
+	case c.writeCh <- data:
+	default:
+	}
 	return len(b), nil
 }
 
-func (c *mockPacketConn) setResponse(data []byte) {
-	c.readResp = data
-	c.readOnce.Do(func() { close(c.readReady) })
+func (c *mockPacketConn) enqueueResponse(data []byte) {
+	c.readBuf <- data
 }
 
 func (c *mockPacketConn) Close() error {
@@ -114,15 +114,21 @@ func TestProxyDNSClient_Query(t *testing.T) {
 		Hdr: dns.RR_Header{Name: "example.com.", Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300},
 		A:   net.ParseIP("93.184.216.34"),
 	})
-	respBytes, _ := resp.Pack()
 
-	// When the client writes the query, set the response
+	// When the client writes the query, read it and send back response with matching ID.
 	go func() {
-		<-pc.writeCh // Wait for query to be written
-		pc.setResponse(respBytes)
+		queryBytes := <-pc.writeCh
+		// Parse the query to get the assigned ID.
+		var outQuery dns.Msg
+		outQuery.Unpack(queryBytes)
+		// Build response with matching ID.
+		respCopy := resp.Copy()
+		respCopy.Id = outQuery.Id
+		respBytes, _ := respCopy.Pack()
+		pc.enqueueResponse(respBytes)
 	}()
 
-	got, err := client.Query(query)
+	got, err := client.Query(context.Background(), query)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,11 +148,98 @@ func TestProxyDNSClient_Query(t *testing.T) {
 		t.Errorf("A = %s, want 93.184.216.34", a.A.String())
 	}
 
-	// Verify DialUDP was called
+	// Verify DialUDP was called (once for persistent connection).
 	dialer.mu.Lock()
 	defer dialer.mu.Unlock()
 	if len(dialer.udpCalls) != 1 || dialer.udpCalls[0] != "8.8.8.8:53" {
 		t.Errorf("udpCalls = %v, want [8.8.8.8:53]", dialer.udpCalls)
 	}
+
+	// Cleanup.
+	client.Close()
 }
 
+func TestProxyDNSClient_ConnectionReuse(t *testing.T) {
+	pc := newMockPacketConn()
+	dialer := &mockDialer{conns: make(chan net.PacketConn, 1)}
+	dialer.conns <- pc
+
+	client := NewProxyDNSClient(ProxyDNSClientConfig{
+		Dialer:  dialer,
+		Servers: []string{"8.8.8.8:53"},
+	})
+
+	// Respond to queries in background.
+	go func() {
+		for {
+			select {
+			case queryBytes := <-pc.writeCh:
+				var outQuery dns.Msg
+				outQuery.Unpack(queryBytes)
+				resp := new(dns.Msg)
+				resp.SetReply(&outQuery)
+				resp.Answer = append(resp.Answer, &dns.A{
+					Hdr: dns.RR_Header{Name: outQuery.Question[0].Name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300},
+					A:   net.ParseIP("1.2.3.4"),
+				})
+				respBytes, _ := resp.Pack()
+				pc.enqueueResponse(respBytes)
+			case <-pc.closed:
+				return
+			}
+		}
+	}()
+
+	ctx := context.Background()
+
+	// Multiple queries should reuse the same connection.
+	for i := 0; i < 3; i++ {
+		query := new(dns.Msg)
+		query.SetQuestion("example.com.", dns.TypeA)
+		_, err := client.Query(ctx, query)
+		if err != nil {
+			t.Fatalf("query %d: %v", i, err)
+		}
+	}
+
+	// Should have only dialed once.
+	dialer.mu.Lock()
+	calls := len(dialer.udpCalls)
+	dialer.mu.Unlock()
+	if calls != 1 {
+		t.Errorf("expected 1 DialUDP call (connection reuse), got %d", calls)
+	}
+
+	client.Close()
+}
+
+func TestProxyDNSClient_ContextCancellation(t *testing.T) {
+	pc := newMockPacketConn()
+	dialer := &mockDialer{conns: make(chan net.PacketConn, 1)}
+	dialer.conns <- pc
+
+	client := NewProxyDNSClient(ProxyDNSClientConfig{
+		Dialer:  dialer,
+		Servers: []string{"8.8.8.8:53"},
+	})
+
+	// Don't send any response — let context cancel.
+	query := new(dns.Msg)
+	query.SetQuestion("slow.example.com.", dns.TypeA)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, err := client.Query(ctx, query)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected error from context cancellation")
+	}
+	if elapsed > 2*time.Second {
+		t.Errorf("query took too long: %v", elapsed)
+	}
+
+	client.Close()
+}

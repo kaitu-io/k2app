@@ -1,6 +1,7 @@
 package dns
 
 import (
+	"context"
 	"testing"
 
 	"github.com/miekg/dns"
@@ -38,7 +39,7 @@ func TestDirectDNSClient_Query(t *testing.T) {
 	query := new(dns.Msg)
 	query.SetQuestion(dns.Fqdn("example.com"), dns.TypeA)
 
-	resp, err := client.Query(query)
+	resp, err := client.Query(context.Background(), query)
 	if err != nil {
 		t.Fatalf("Query failed: %v", err)
 	}
@@ -68,7 +69,7 @@ func TestDirectDNSClient_QueryFailover(t *testing.T) {
 	query := new(dns.Msg)
 	query.SetQuestion(dns.Fqdn("example.com"), dns.TypeA)
 
-	resp, err := client.Query(query)
+	resp, err := client.Query(context.Background(), query)
 	if err != nil {
 		t.Fatalf("Query failed: %v", err)
 	}

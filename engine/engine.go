@@ -283,7 +283,7 @@ func (e *Engine) Start(cfg Config) error {
 			DNSCache:  dns.NewDNSCache(dns.DNSCacheConfig{}),
 			Filter:    dns.NewFilter(dns.FilterConfig{}),
 		})
-		if err := tunnel.StartWithHandler(ctx, &dnsHandler{inner: tunnel, dns: dnsMW, engine: e}); err != nil {
+		if err := tunnel.StartWithHandler(ctx, &dnsHandler{inner: tunnel, dns: dnsMW, ctx: ctx, engine: e}); err != nil {
 			if cfg.NetworkMonitor != nil {
 				cfg.NetworkMonitor.Close()
 			}

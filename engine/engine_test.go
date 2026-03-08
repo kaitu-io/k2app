@@ -110,7 +110,7 @@ func (m *mockConnectionHandler) getUDPCalls() []string {
 // Returns a canned A record response for any query.
 type mockDNSQuerier struct{}
 
-func (q *mockDNSQuerier) Query(query *mdns.Msg) (*mdns.Msg, error) {
+func (q *mockDNSQuerier) Query(ctx context.Context, query *mdns.Msg) (*mdns.Msg, error) {
 	if len(query.Question) == 0 {
 		return nil, fmt.Errorf("no question")
 	}

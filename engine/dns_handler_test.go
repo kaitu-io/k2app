@@ -2,6 +2,7 @@ package engine
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"net"
@@ -15,7 +16,7 @@ import (
 // failingMiddleware returns an error for every query.
 type failingMiddleware struct{}
 
-func (f *failingMiddleware) HandleQuery(query []byte) ([]byte, error) {
+func (f *failingMiddleware) HandleQuery(ctx context.Context, query []byte) ([]byte, error) {
 	return nil, fmt.Errorf("upstream unreachable")
 }
 
@@ -161,7 +162,7 @@ func TestServeDNSStream_UpstreamFailure_ReturnsSERVFAIL(t *testing.T) {
 // alwaysFailQuerier implements dns.DNSQuerier and always returns an error.
 type alwaysFailQuerier struct{}
 
-func (q *alwaysFailQuerier) Query(msg *mdns.Msg) (*mdns.Msg, error) {
+func (q *alwaysFailQuerier) Query(ctx context.Context, msg *mdns.Msg) (*mdns.Msg, error) {
 	return nil, fmt.Errorf("upstream unreachable")
 }
 

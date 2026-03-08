@@ -105,7 +105,7 @@ Platform Shell (daemon/appext) assembles `engine.Config` with platform-specific 
 - `provider.ConnectionHandler`: HandleTCP(conn, dest), HandleUDP(conn, dest) (implemented by ClientTunnel, dnsHandler)
 - `engine.EventHandler`: OnStatus(Status), OnStats(tx, rx) (implemented by daemon, appext.eventBridge)
 - `engine.NetworkChangeNotifier`: Start(callback func()) error, Close() error (implemented by daemon.singTunMonitor, appext.nePlatform)
-- `dns.DNSQuerier`: Query(*dns.Msg) (*dns.Msg, error) (implemented by DirectDNSClient, ProxyDNSClient)
+- `dns.DNSQuerier`: Query(ctx, *dns.Msg) (*dns.Msg, error) (implemented by DirectDNSClient, ProxyDNSClient)
 
 ### Binary Split
 
