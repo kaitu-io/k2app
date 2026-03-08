@@ -57,7 +57,7 @@ export function parseK2v5Uri(uri: string): { tunnel?: SelfHostedTunnel; error?: 
 
     const name = parsed.hash
       ? decodeURIComponent(parsed.hash.slice(1))
-      : parsed.hostname;
+      : parsed.searchParams.get('ip') || parsed.hostname;
 
     const country = parsed.searchParams.get('country') || undefined;
 
