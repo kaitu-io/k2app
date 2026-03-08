@@ -24,6 +24,10 @@ Steps: parse → validate → hosts lookup → filter (RFC 6761 + noise) → cac
 - `direct.go` — `DirectDNSClient`: raw UDP to upstream (bypasses TUN, NXDOMAIN is valid response)
 - `proxy.go` — `ProxyDNSClient`: DNS via tunnel
 
+## Constitutional Rules (never violate)
+
+- **No proxy→direct DNS fallback**: When k2rule routes a domain to `TargetProxy`, DNS resolution MUST only use proxy DNS servers (via tunnel). If proxy DNS fails, return error — NEVER fall back to direct DNS. Direct DNS in censored networks returns GFW-poisoned IPs, causing certificate errors and security violations. A failed response is better than a poisoned response. (2026-03-08 incident)
+
 ## Gotchas
 
 - `DirectDNSClient` only falls back to next server on transport errors (timeout, connection refused). NXDOMAIN is a valid response and is returned as-is.

@@ -460,7 +460,7 @@ func TestInflightDedup_NormalDedup(t *testing.T) {
 	}
 }
 
-func TestQueryUpstream_ProxyFallbackToDirect(t *testing.T) {
+func TestQueryUpstream_ProxyFailNoFallback(t *testing.T) {
 	initK2Rule(t, k2rule.TargetProxy)
 
 	directQ := &mockQuerier{
@@ -476,49 +476,20 @@ func TestQueryUpstream_ProxyFallbackToDirect(t *testing.T) {
 	})
 
 	query := buildAQuery("fallback.example.com")
-	respBytes, err := mw.HandleQuery(query)
-	if err != nil {
-		t.Fatalf("HandleQuery error: %v", err)
-	}
+	_, err := mw.HandleQuery(query)
 
-	// Proxy should have been called first and failed.
+	// Proxy should have been called and failed.
 	if !proxyQ.called {
 		t.Error("expected proxyDNS to be called")
 	}
 
-	// Direct should have been called as fallback.
-	if !directQ.called {
-		t.Error("expected directDNS to be called as fallback")
+	// Direct must NOT be called — no fallback for proxy-routed domains.
+	if directQ.called {
+		t.Error("directDNS must not be called as fallback for proxy-routed domains")
 	}
 
-	// Verify response contains the direct result.
-	var resp dns.Msg
-	if err := resp.Unpack(respBytes); err != nil {
-		t.Fatalf("unpack response: %v", err)
-	}
-	if len(resp.Answer) == 0 {
-		t.Fatal("expected at least one answer")
-	}
-	a := resp.Answer[0].(*dns.A)
-	if !a.A.Equal(net.ParseIP("1.2.3.4")) {
-		t.Errorf("expected 1.2.3.4, got %s", a.A)
-	}
-}
-
-func TestQueryUpstream_ProxyAndDirectBothFail(t *testing.T) {
-	initK2Rule(t, k2rule.TargetProxy)
-
-	directQ := &mockQuerier{err: fmt.Errorf("direct also broken")}
-	proxyQ := &mockQuerier{err: fmt.Errorf("tunnel broken")}
-
-	mw := NewMiddleware(MiddlewareConfig{
-		DirectDNS: directQ,
-		ProxyDNS:  proxyQ,
-	})
-
-	query := buildAQuery("allfail.example.com")
-	_, err := mw.HandleQuery(query)
+	// Must return error, not poisoned direct DNS results.
 	if err == nil {
-		t.Fatal("expected error when both proxy and direct fail")
+		t.Fatal("expected error when proxy DNS fails, got nil (no fallback allowed)")
 	}
 }

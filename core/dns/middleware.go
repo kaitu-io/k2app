@@ -311,17 +311,12 @@ func (m *Middleware) queryUpstream(domain string, action k2rule.Target, query *d
 		}
 		resp, err := m.proxyDNS.Query(query)
 		if err != nil {
-			slog.Warn("DNS proxy query failed, fallback to direct", "domain", domain, "err", err)
-			// Fallback: proxy failed → try direct DNS.
-			// May return polluted results in censored networks, but a response
-			// (even imperfect) is better than no response when tunnel is flaky.
-			resp, err = m.directDNS.Query(query)
-			if err != nil {
-				if m.metrics != nil {
-					m.metrics.IncrError()
-				}
-				return nil, fmt.Errorf("DNS proxy+direct fallback failed: %w", err)
+			// No fallback to direct DNS — poisoned results in censored networks
+			// cause certificate errors and security violations. (2026-03-08 incident)
+			if m.metrics != nil {
+				m.metrics.IncrError()
 			}
+			return nil, fmt.Errorf("DNS proxy query failed for %s: %w", domain, err)
 		}
 		slog.Debug("DNS routed proxy", "domain", domain)
 		return resp, nil
