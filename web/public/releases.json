@@ -1,5 +1,5 @@
 {
-  "generated": "2026-03-06T02:19:09.557Z",
+  "generated": "2026-03-08T05:26:27.653Z",
   "latestBeta": "0.4.0-beta.1",
   "latestStable": "0.3.21",
   "versions": [
@@ -45,8 +45,10 @@
       "channel": "beta",
       "hasDownloads": true,
       "downloads": {
-        "windows": "https://d0.all7.cc/kaitu/desktop/0.4.0-beta.1/Kaitu_0.4.0-beta.1_x64.exe",
-        "macos": "https://d0.all7.cc/kaitu/desktop/0.4.0-beta.1/Kaitu-0.4.0-beta.1.pkg"
+        "windows": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/0.4.0-beta.1/Kaitu_0.4.0-beta.1_x64.exe",
+        "windowsBackup": "https://d0.all7.cc/kaitu/desktop/0.4.0-beta.1/Kaitu_0.4.0-beta.1_x64.exe",
+        "macos": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/0.4.0-beta.1/Kaitu-0.4.0-beta.1.pkg",
+        "macosBackup": "https://d0.all7.cc/kaitu/desktop/0.4.0-beta.1/Kaitu-0.4.0-beta.1.pkg"
       }
     },
     {

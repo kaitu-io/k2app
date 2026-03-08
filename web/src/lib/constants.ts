@@ -4,23 +4,29 @@
 // DESKTOP_VERSION = stable (releaseVersion), BETA_VERSION = latest (version, may include prerelease)
 export const DESKTOP_VERSION = process.env.NEXT_PUBLIC_DESKTOP_VERSION || '0.0.0';
 export const BETA_VERSION = process.env.NEXT_PUBLIC_BETA_VERSION || '0.0.0';
-const DOWNLOAD_BASE_URL = process.env.NEXT_PUBLIC_DOWNLOAD_BASE_URL || 'https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop';
+export const CDN_PRIMARY = 'https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop';
+export const CDN_BACKUP = 'https://d0.all7.cc/kaitu/desktop';
 
 export function getDownloadLinks(version: string) {
   return {
-    windows: `${DOWNLOAD_BASE_URL}/${version}/Kaitu_${version}_x64.exe`,
-    macos: `${DOWNLOAD_BASE_URL}/${version}/Kaitu-${version}.pkg`,
+    windows: {
+      primary: `${CDN_PRIMARY}/${version}/Kaitu_${version}_x64.exe`,
+      backup: `${CDN_BACKUP}/${version}/Kaitu_${version}_x64.exe`,
+    },
+    macos: {
+      primary: `${CDN_PRIMARY}/${version}/Kaitu-${version}.pkg`,
+      backup: `${CDN_BACKUP}/${version}/Kaitu-${version}.pkg`,
+    },
   };
 }
 
 export const DOWNLOAD_LINKS = {
+  // Desktop apps — primary CDN links (used by homepage, invite page)
+  windows: `${CDN_PRIMARY}/${BETA_VERSION}/Kaitu_${BETA_VERSION}_x64.exe`,
+  macos: `${CDN_PRIMARY}/${BETA_VERSION}/Kaitu-${BETA_VERSION}.pkg`,
   // Mobile apps
   ios: 'https://apps.apple.com/app/id6448744655',
   android: 'https://d13jc1jqzlg4yt.cloudfront.net/waymaker/waymaker-3.0.2-release.apk',
-
-  // Desktop apps - dynamically generated from environment variables
-  windows: `${DOWNLOAD_BASE_URL}/${DESKTOP_VERSION}/Kaitu_${DESKTOP_VERSION}_x64.exe`,
-  macos: `${DOWNLOAD_BASE_URL}/${DESKTOP_VERSION}/Kaitu-${DESKTOP_VERSION}.pkg`,
 } as const;
 
 export const ROUTER_PRODUCTS = {

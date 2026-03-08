@@ -5,6 +5,7 @@ import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { Card } from '@/components/ui/card';
 import InstallClient from '@/app/[locale]/install/InstallClient';
+import { CDN_PRIMARY, CDN_BACKUP } from '@/lib/constants';
 
 type Locale = (typeof routing.locales)[number];
 
@@ -12,17 +13,16 @@ export const revalidate = 300; // 5 min ISR — fetch latest version from CDN ma
 
 async function fetchDesktopVersion(channel: 'beta' | 'stable'): Promise<string | null> {
   const path = channel === 'beta' ? '/beta/cloudfront.latest.json' : '/cloudfront.latest.json';
-  try {
-    const res = await fetch(
-      `https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop${path}`,
-      { next: { revalidate: 300 } }
-    );
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data.version || null;
-  } catch {
-    return null;
+  for (const base of [CDN_PRIMARY, CDN_BACKUP]) {
+    try {
+      const res = await fetch(`${base}${path}`, { next: { revalidate: 300 } });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.version) return data.version;
+      }
+    } catch {}
   }
+  return null;
 }
 
 export async function generateMetadata({
@@ -77,6 +77,32 @@ export default async function InstallPage({
       </div>
 
       <Footer />
+
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'SoftwareApplication',
+            name: 'Kaitu',
+            applicationCategory: 'NetworkingApplication',
+            operatingSystem: 'Windows 10, Windows 11, macOS',
+            softwareVersion: stableVersion || betaVersion || undefined,
+            downloadUrl: 'https://kaitu.io/install',
+            url: 'https://kaitu.io/install',
+            publisher: {
+              '@type': 'Organization',
+              name: 'Kaitu',
+              url: 'https://kaitu.io',
+            },
+            offers: {
+              '@type': 'Offer',
+              price: '0',
+              priceCurrency: 'USD',
+            },
+          }),
+        }}
+      />
     </div>
   );
 }
