@@ -18,6 +18,7 @@ func TestMetrics_Counters(t *testing.T) {
 	m.IncrLocalDomainHit()
 	m.IncrNoiseFiltered()
 	m.IncrMessageCacheHit()
+	m.IncrStaleCacheHit()
 	m.IncrError()
 
 	if m.TotalQueries != 2 {
@@ -43,6 +44,9 @@ func TestMetrics_Counters(t *testing.T) {
 	}
 	if m.MessageCacheHits != 1 {
 		t.Errorf("MessageCacheHits = %d, want 1", m.MessageCacheHits)
+	}
+	if m.StaleCacheHits != 1 {
+		t.Errorf("StaleCacheHits = %d, want 1", m.StaleCacheHits)
 	}
 	if m.Errors != 1 {
 		t.Errorf("Errors = %d, want 1", m.Errors)
@@ -110,6 +114,35 @@ func TestMetrics_UpstreamRate(t *testing.T) {
 	rate := m.UpstreamRate()
 	if rate != 50.0 {
 		t.Errorf("UpstreamRate() = %.1f, want 50.0", rate)
+	}
+}
+
+func TestMetrics_NilReceiver(t *testing.T) {
+	// All methods must be safe to call on nil *Metrics.
+	var m *Metrics
+	m.IncrTotal()
+	m.IncrDirect()
+	m.IncrProxy()
+	m.IncrHostsHit()
+	m.IncrSpecialUseHit()
+	m.IncrLocalDomainHit()
+	m.IncrNoiseFiltered()
+	m.IncrMessageCacheHit()
+	m.IncrStaleCacheHit()
+	m.IncrError()
+	m.Reset()
+
+	if r := m.FilterRate(); r != 0 {
+		t.Errorf("FilterRate() on nil = %f, want 0", r)
+	}
+	if r := m.CacheHitRate(); r != 0 {
+		t.Errorf("CacheHitRate() on nil = %f, want 0", r)
+	}
+	if r := m.UpstreamRate(); r != 0 {
+		t.Errorf("UpstreamRate() on nil = %f, want 0", r)
+	}
+	if s := m.String(); s != "DNS Metrics: <nil>" {
+		t.Errorf("String() on nil = %q, want %q", s, "DNS Metrics: <nil>")
 	}
 }
 

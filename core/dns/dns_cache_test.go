@@ -283,6 +283,157 @@ func TestDNSCache_Size(t *testing.T) {
 	}
 }
 
+func TestDNSCache_GetStalePacked_ReturnsExpiredEntry(t *testing.T) {
+	cache := NewDNSCache(DNSCacheConfig{
+		MinTTL:     1 * time.Second,
+		MaxTTL:     10 * time.Second,
+		MaxEntries: 100,
+		StaleFor:   5 * time.Minute,
+	})
+
+	msg := &dns.Msg{
+		Question: []dns.Question{{Name: "example.com.", Qtype: dns.TypeA, Qclass: dns.ClassINET}},
+		Answer: []dns.RR{&dns.A{
+			Hdr: dns.RR_Header{Name: "example.com.", Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 1},
+			A:   []byte{192, 0, 2, 1},
+		}},
+	}
+	cache.Add("example.com", dns.TypeA, msg)
+
+	// Wait for entry to expire
+	time.Sleep(1500 * time.Millisecond)
+
+	// Fresh lookup should miss
+	_, found := cache.GetPacked("example.com", dns.TypeA, 1234)
+	if found {
+		t.Error("Expected GetPacked to miss for expired entry")
+	}
+
+	// Stale lookup should hit
+	packed, found := cache.GetStalePacked("example.com", dns.TypeA, 1234)
+	if !found {
+		t.Fatal("Expected GetStalePacked to return expired entry within stale window")
+	}
+	if packed == nil {
+		t.Fatal("Expected non-nil packed bytes")
+	}
+}
+
+func TestDNSCache_GetStalePacked_NotForFreshEntry(t *testing.T) {
+	cache := NewDNSCache(DNSCacheConfig{
+		MinTTL:     10 * time.Minute,
+		MaxEntries: 100,
+		StaleFor:   5 * time.Minute,
+	})
+
+	msg := &dns.Msg{
+		Question: []dns.Question{{Name: "fresh.com.", Qtype: dns.TypeA, Qclass: dns.ClassINET}},
+		Answer: []dns.RR{&dns.A{
+			Hdr: dns.RR_Header{Name: "fresh.com.", Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 600},
+			A:   []byte{1, 2, 3, 4},
+		}},
+	}
+	cache.Add("fresh.com", dns.TypeA, msg)
+
+	// Entry is fresh — stale should return false
+	_, found := cache.GetStalePacked("fresh.com", dns.TypeA, 1234)
+	if found {
+		t.Error("Expected GetStalePacked to return false for fresh entry")
+	}
+}
+
+func TestDNSCache_GetStalePacked_NotPastStaleWindow(t *testing.T) {
+	cache := NewDNSCache(DNSCacheConfig{
+		MinTTL:     1 * time.Second,
+		MaxTTL:     10 * time.Second,
+		MaxEntries: 100,
+		StaleFor:   1 * time.Millisecond, // Tiny stale window
+	})
+
+	msg := &dns.Msg{
+		Question: []dns.Question{{Name: "old.com.", Qtype: dns.TypeA, Qclass: dns.ClassINET}},
+		Answer: []dns.RR{&dns.A{
+			Hdr: dns.RR_Header{Name: "old.com.", Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 1},
+			A:   []byte{1, 2, 3, 4},
+		}},
+	}
+	cache.Add("old.com", dns.TypeA, msg)
+
+	// Wait for both TTL and stale window to expire
+	time.Sleep(1500 * time.Millisecond)
+
+	_, found := cache.GetStalePacked("old.com", dns.TypeA, 1234)
+	if found {
+		t.Error("Expected GetStalePacked to return false past stale window")
+	}
+}
+
+func TestDNSCache_GetStalePacked_NeverReturnsNXDOMAIN(t *testing.T) {
+	cache := NewDNSCache(DNSCacheConfig{
+		MinTTL:     1 * time.Second,
+		MaxTTL:     10 * time.Second,
+		MaxEntries: 100,
+		StaleFor:   5 * time.Minute,
+	})
+
+	// Add NXDOMAIN to negative cache
+	nxMsg := &dns.Msg{
+		Question: []dns.Question{{Name: "gone.com.", Qtype: dns.TypeA, Qclass: dns.ClassINET}},
+		Ns: []dns.RR{&dns.SOA{
+			Hdr:    dns.RR_Header{Name: "com.", Rrtype: dns.TypeSOA, Class: dns.ClassINET, Ttl: 1},
+			Ns:     "ns.com.", Mbox: "admin.com.",
+			Serial: 1, Refresh: 3600, Retry: 600, Expire: 86400, Minttl: 1,
+		}},
+	}
+	nxMsg.Rcode = dns.RcodeNameError
+	cache.Add("gone.com", dns.TypeA, nxMsg)
+
+	// Wait for negative cache entry to expire
+	time.Sleep(1500 * time.Millisecond)
+
+	// Stale should never return NXDOMAIN entries
+	_, found := cache.GetStalePacked("gone.com", dns.TypeA, 1234)
+	if found {
+		t.Error("Expected GetStalePacked to never return NXDOMAIN entries")
+	}
+}
+
+func TestDNSCache_Cleanup_PreservesStaleEntries(t *testing.T) {
+	cache := NewDNSCache(DNSCacheConfig{
+		MinTTL:     1 * time.Second,
+		MaxTTL:     10 * time.Second,
+		MaxEntries: 100,
+		StaleFor:   5 * time.Minute,
+	})
+
+	msg := &dns.Msg{
+		Question: []dns.Question{{Name: "stale.com.", Qtype: dns.TypeA, Qclass: dns.ClassINET}},
+		Answer: []dns.RR{&dns.A{
+			Hdr: dns.RR_Header{Name: "stale.com.", Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 1},
+			A:   []byte{10, 0, 0, 1},
+		}},
+	}
+	cache.Add("stale.com", dns.TypeA, msg)
+
+	// Wait for TTL to expire (but still within stale window)
+	time.Sleep(1500 * time.Millisecond)
+
+	// Run cleanup
+	cache.cleanup()
+
+	// Entry should still be in cache (within stale window)
+	positive, _ := cache.Size()
+	if positive != 1 {
+		t.Errorf("Expected cleanup to preserve stale entry, got %d positive entries", positive)
+	}
+
+	// Stale lookup should still work
+	_, found := cache.GetStalePacked("stale.com", dns.TypeA, 1234)
+	if !found {
+		t.Error("Expected stale entry to survive cleanup")
+	}
+}
+
 func TestDNSCache_LRUEviction(t *testing.T) {
 	cache := NewDNSCache(DNSCacheConfig{
 		MaxEntries: 3, // Very small cache

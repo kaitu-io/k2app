@@ -51,7 +51,7 @@ type Middleware struct {
 	hosts  *HostsFile // /etc/hosts lookup
 	filter *Filter    // RFC 6761 + noise filtering
 
-	// Metrics
+	// Metrics (nil-safe — all methods handle nil receiver)
 	metrics *Metrics
 
 	// Writer for sending raw IP packet responses (L3 mode, nil for L4)
@@ -86,16 +86,12 @@ func NewMiddleware(cfg MiddlewareConfig) *Middleware {
 // Returns raw DNS response bytes. This is the L4-friendly entry point.
 func (m *Middleware) HandleQuery(query []byte) ([]byte, error) {
 	// Track total queries
-	if m.metrics != nil {
-		m.metrics.IncrTotal()
-	}
+	m.metrics.IncrTotal()
 
 	// 1. Parse DNS query
 	var msg dns.Msg
 	if err := msg.Unpack(query); err != nil {
-		if m.metrics != nil {
-			m.metrics.IncrError()
-		}
+		m.metrics.IncrError()
 		return nil, fmt.Errorf("unpack DNS query: %w", err)
 	}
 
@@ -125,9 +121,7 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, []byte, error) {
 	// 1. Extract domain from query
 	domain := extractQueryDomain(query)
 	if domain == "" {
-		if m.metrics != nil {
-			m.metrics.IncrError()
-		}
+		m.metrics.IncrError()
 		return nil, nil, fmt.Errorf("no domain in DNS query")
 	}
 
@@ -137,27 +131,21 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, []byte, error) {
 	// 2. Check hosts file first (OS behavior)
 	if m.hosts != nil {
 		if ips, found := m.hosts.Lookup(domain); found {
-			if m.metrics != nil {
-				m.metrics.IncrHostsHit()
-			}
+			m.metrics.IncrHostsHit()
 			return m.createHostsResponse(query, ips), nil, nil
 		}
 	}
 
 	// 3. Check RFC 6761 special-use domains
 	if m.filter != nil && m.filter.IsSpecialUse(domain) {
-		if m.metrics != nil {
-			m.metrics.IncrSpecialUseHit()
-		}
+		m.metrics.IncrSpecialUseHit()
 		slog.Debug("DNS special-use filtered", "domain", domain)
 		return m.filter.HandleSpecialUse(query), nil, nil
 	}
 
 	// 4. Check local domains (.local, .lan, etc.)
 	if m.filter != nil && m.filter.IsLocalDomain(domain) {
-		if m.metrics != nil {
-			m.metrics.IncrLocalDomainHit()
-		}
+		m.metrics.IncrLocalDomainHit()
 		slog.Debug("DNS local domain NXDOMAIN", "domain", domain)
 		return m.filter.CreateNXDOMAIN(query), nil, nil
 	}
@@ -165,9 +153,7 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, []byte, error) {
 	// 5. Noise filtering (PTR, AAAA, WPAD)
 	if m.filter != nil {
 		if isNoise, noiseResp := m.filter.TryFilterNoise(query); isNoise {
-			if m.metrics != nil {
-				m.metrics.IncrNoiseFiltered()
-			}
+			m.metrics.IncrNoiseFiltered()
 			slog.Debug("DNS noise filtered", "domain", domain)
 			return noiseResp, nil, nil
 		}
@@ -176,12 +162,16 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, []byte, error) {
 	// 6. Check DNS message cache — fast path returns pre-packed bytes.
 	if m.dnsCache != nil {
 		if packed, found := m.dnsCache.GetPacked(domain, query.Question[0].Qtype, query.Id); found {
-			if m.metrics != nil {
-				m.metrics.IncrMessageCacheHit()
-			}
+			m.metrics.IncrMessageCacheHit()
 			slog.Debug("DNS cache hit", "domain", domain)
 			return nil, packed, nil
 		}
+	}
+
+	// 6b. Pre-fetch stale entry for fallback on upstream failure (RFC 8767).
+	var stalePacked []byte
+	if m.dnsCache != nil {
+		stalePacked, _ = m.dnsCache.GetStalePacked(domain, query.Question[0].Qtype, query.Id)
 	}
 
 	// 7. Domain-based routing (k2rule)
@@ -208,7 +198,7 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, []byte, error) {
 		select {
 		case <-existing.done:
 			if existing.err != nil {
-				return nil, nil, existing.err
+				return m.returnStaleOrError(stalePacked, existing.err)
 			}
 			// Copy packed bytes and patch caller's query ID.
 			packed := cloneAndPatchID(existing.packed, query.Id)
@@ -226,7 +216,7 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, []byte, error) {
 	if timedOut {
 		resp, err := m.queryUpstream(domain, action, query)
 		if err != nil {
-			return nil, nil, err
+			return m.returnStaleOrError(stalePacked, err)
 		}
 		packed, packErr := resp.Pack()
 		if packErr != nil {
@@ -252,7 +242,7 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, []byte, error) {
 		result.err = err
 		close(result.done)
 		m.inflight.Delete(inflightKey)
-		return nil, nil, err
+		return m.returnStaleOrError(stalePacked, err)
 	}
 
 	// Pack response for inflight waiters and our return value.
@@ -287,18 +277,23 @@ func (m *Middleware) processQuery(query *dns.Msg) (*dns.Msg, []byte, error) {
 	return nil, packed, nil
 }
 
+// returnStaleOrError returns stale cached data if available, otherwise the error.
+func (m *Middleware) returnStaleOrError(stalePacked []byte, err error) (*dns.Msg, []byte, error) {
+	if stalePacked != nil {
+		m.metrics.IncrStaleCacheHit()
+		return nil, stalePacked, nil
+	}
+	return nil, nil, err
+}
+
 // queryUpstream sends a DNS query to the appropriate upstream (direct or proxy).
 func (m *Middleware) queryUpstream(domain string, action k2rule.Target, query *dns.Msg) (*dns.Msg, error) {
 	switch action {
 	case k2rule.TargetDirect:
-		if m.metrics != nil {
-			m.metrics.IncrDirect()
-		}
+		m.metrics.IncrDirect()
 		resp, err := m.directDNS.Query(query)
 		if err != nil {
-			if m.metrics != nil {
-				m.metrics.IncrError()
-			}
+			m.metrics.IncrError()
 			slog.Warn("DNS direct query failed", "domain", domain, "err", err)
 			return nil, err
 		}
@@ -306,16 +301,12 @@ func (m *Middleware) queryUpstream(domain string, action k2rule.Target, query *d
 		return resp, nil
 
 	case k2rule.TargetProxy:
-		if m.metrics != nil {
-			m.metrics.IncrProxy()
-		}
+		m.metrics.IncrProxy()
 		resp, err := m.proxyDNS.Query(query)
 		if err != nil {
 			// No fallback to direct DNS — poisoned results in censored networks
 			// cause certificate errors and security violations. (2026-03-08 incident)
-			if m.metrics != nil {
-				m.metrics.IncrError()
-			}
+			m.metrics.IncrError()
 			return nil, fmt.Errorf("DNS proxy query failed for %s: %w", domain, err)
 		}
 		slog.Debug("DNS routed proxy", "domain", domain)
@@ -332,10 +323,8 @@ func (m *Middleware) HandleDNSQuery(pkt []byte, info packet.Info) error {
 	// 1. Extract UDP payload
 	udpPayload, err := packet.ExtractUDPPayload(pkt)
 	if err != nil {
-		if m.metrics != nil {
-			m.metrics.IncrTotal()
-			m.metrics.IncrError()
-		}
+		m.metrics.IncrTotal()
+		m.metrics.IncrError()
 		return fmt.Errorf("extract UDP payload: %w", err)
 	}
 

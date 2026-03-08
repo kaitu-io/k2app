@@ -30,6 +30,7 @@ type DNSCache struct {
 	minTTL     time.Duration // Minimum TTL (user requirement: 10 minutes)
 	maxTTL     time.Duration // Maximum TTL
 	maxEntries int           // Max cache entries (LRU eviction)
+	staleFor   time.Duration // Stale-while-revalidate window (RFC 8767)
 
 	// Lifecycle
 	stopCleanup chan struct{}
@@ -40,6 +41,7 @@ type DNSCacheConfig struct {
 	MinTTL     time.Duration // Minimum TTL (default: 10 minutes)
 	MaxTTL     time.Duration // Maximum TTL (default: 4 hours)
 	MaxEntries int           // Max cache entries (default: 5000)
+	StaleFor   time.Duration // Serve stale entries for this long after expiry (default: 5 minutes, 0 disables)
 }
 
 // NewDNSCache creates a new DNS message cache
@@ -53,6 +55,9 @@ func NewDNSCache(cfg DNSCacheConfig) *DNSCache {
 	if cfg.MaxEntries == 0 {
 		cfg.MaxEntries = 5000
 	}
+	if cfg.StaleFor == 0 {
+		cfg.StaleFor = 5 * time.Minute
+	}
 
 	return &DNSCache{
 		messages:    make(map[string]cachedEntry, cfg.MaxEntries),
@@ -60,6 +65,7 @@ func NewDNSCache(cfg DNSCacheConfig) *DNSCache {
 		minTTL:      cfg.MinTTL,
 		maxTTL:      cfg.MaxTTL,
 		maxEntries:  cfg.MaxEntries,
+		staleFor:    cfg.StaleFor,
 		stopCleanup: make(chan struct{}),
 	}
 }
@@ -92,6 +98,29 @@ func (c *DNSCache) GetPacked(domain string, qtype uint16, queryID uint16) ([]byt
 	}
 
 	return cloneAndPatchID(entry.packed, queryID), true
+}
+
+// GetStalePacked returns an expired-but-within-stale-window entry from positive
+// cache only. Negative cache (NXDOMAIN) entries are never returned stale because
+// the domain may have recovered. Returns packed bytes with queryID patched.
+func (c *DNSCache) GetStalePacked(domain string, qtype uint16, queryID uint16) ([]byte, bool) {
+	key := cacheKey(domain, qtype)
+
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	entry, found := c.messages[key]
+	if !found {
+		return nil, false
+	}
+
+	now := time.Now()
+	// Must be expired but within stale window
+	if now.After(entry.expireAt) && now.Before(entry.expireAt.Add(c.staleFor)) {
+		return cloneAndPatchID(entry.packed, queryID), true
+	}
+
+	return nil, false
 }
 
 // Get retrieves a cached DNS message (convenience wrapper, unpacks internally).
@@ -304,9 +333,9 @@ func (c *DNSCache) cleanup() {
 
 	now := time.Now()
 
-	// Clean positive cache
+	// Clean positive cache — preserve entries within stale window
 	for key, entry := range c.messages {
-		if now.After(entry.expireAt) {
+		if now.After(entry.expireAt.Add(c.staleFor)) {
 			delete(c.messages, key)
 		}
 	}
