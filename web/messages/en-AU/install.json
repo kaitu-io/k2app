@@ -43,6 +43,13 @@
     "betaVersion": "Beta v{version}",
     "stableVersion": "Stable v{version}",
     "lookingForStable": "Looking for the stable version?",
-    "viewAllReleases": "View all releases →"
+    "viewAllReleases": "View all releases →",
+    "backupDownload": "Backup",
+    "waymakerApp": "Waymaker",
+    "kaituMobileComingSoon": "Kaitu coming soon",
+    "latestVersion": "Latest v{version}",
+    "recommended": "Recommended",
+    "downloadCancelled": "Auto-download cancelled",
+    "clickToDownload": "Click to download"
   }
 }

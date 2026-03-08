@@ -37,7 +37,6 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_DESKTOP_VERSION: desktopVersion,
     NEXT_PUBLIC_BETA_VERSION: betaVersion,
-    NEXT_PUBLIC_DOWNLOAD_BASE_URL: 'https://d0.all7.cc/kaitu/desktop',
   },
 
   // Force SSR mode - explicitly disable static export

@@ -128,10 +128,14 @@ Sliding expiration: cookie auth auto-renews token if remaining lifetime < 7 days
 | `/api/strategy/*` | Auth + Device | Routing strategy rules |
 | `/api/telemetry/*` | Auth + Device | Client telemetry |
 | `/api/issues/*` | Auth | GitHub Issues proxy |
+| `/api/device-logs` | Auth + Device | Device log upload registration |
+| `/api/feedback-tickets` | Auth/Anonymous | Feedback ticket submission |
 | `/api/app/config` | None | Frontend app config |
 | `/api/ech/config` | None | ECH config |
 | `/api/ca` | None | CA certificate |
-| `/app/*` | Admin | All admin endpoints |
+| `/app/device-logs` | Admin | Device log list (filter by udid/reason/time) |
+| `/app/feedback-tickets` | Admin | Feedback ticket list + resolve/close |
+| `/app/*` | Admin | All other admin endpoints |
 | `/slave/*` | Slave | Node management, status reporting |
 | `/csr/*` | None | Certificate signing requests |
 

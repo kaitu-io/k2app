@@ -15,7 +15,8 @@ const path = require('path');
  *   node scripts/generate-changelog.js
  */
 
-const DOWNLOAD_BASE_URL = 'https://d0.all7.cc/kaitu/desktop';
+const CDN_PRIMARY = 'https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop';
+const CDN_BACKUP = 'https://d0.all7.cc/kaitu/desktop';
 const MIN_DOWNLOAD_VERSION = { major: 0, minor: 3, patch: 22 };
 
 function parseVersion(filename) {
@@ -163,8 +164,10 @@ function generateChangelog() {
     const channel = version.prerelease ? 'beta' : 'stable';
     const hasDownloads = isVersionGte(version, MIN_DOWNLOAD_VERSION);
     const downloads = hasDownloads ? {
-      windows: `${DOWNLOAD_BASE_URL}/${version.string}/Kaitu_${version.string}_x64.exe`,
-      macos: `${DOWNLOAD_BASE_URL}/${version.string}/Kaitu_${version.string}_universal.pkg`,
+      windows: `${CDN_PRIMARY}/${version.string}/Kaitu_${version.string}_x64.exe`,
+      windowsBackup: `${CDN_BACKUP}/${version.string}/Kaitu_${version.string}_x64.exe`,
+      macos: `${CDN_PRIMARY}/${version.string}/Kaitu-${version.string}.pkg`,
+      macosBackup: `${CDN_BACKUP}/${version.string}/Kaitu-${version.string}.pkg`,
     } : {};
 
     // Track latest beta and stable

@@ -32,6 +32,8 @@ interface VersionData {
   downloads: {
     windows?: string;
     macos?: string;
+    windowsBackup?: string;
+    macosBackup?: string;
   };
 }
 
@@ -75,22 +77,46 @@ function DownloadAssets({ downloads }: { downloads: VersionData['downloads'] }) 
         {t('releases.downloadAssets')}:
       </span>
       {downloads.windows && (
-        <a
-          href={downloads.windows}
-          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted hover:bg-muted/80 text-sm text-foreground transition-colors"
-        >
-          <Monitor className="w-4 h-4" />
-          {t('releases.downloadWindows')}
-        </a>
+        <div className="flex items-center gap-2">
+          <a
+            href={downloads.windows}
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted hover:bg-muted/80 text-sm text-foreground transition-colors"
+          >
+            <Monitor className="w-4 h-4" />
+            {t('releases.downloadWindows')}
+          </a>
+          {downloads.windowsBackup && (
+            <a
+              href={downloads.windowsBackup}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+            >
+              {t('releases.backupDownload')}
+            </a>
+          )}
+        </div>
       )}
       {downloads.macos && (
-        <a
-          href={downloads.macos}
-          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted hover:bg-muted/80 text-sm text-foreground transition-colors"
-        >
-          <Apple className="w-4 h-4" />
-          {t('releases.downloadMacOS')}
-        </a>
+        <div className="flex items-center gap-2">
+          <a
+            href={downloads.macos}
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted hover:bg-muted/80 text-sm text-foreground transition-colors"
+          >
+            <Apple className="w-4 h-4" />
+            {t('releases.downloadMacOS')}
+          </a>
+          {downloads.macosBackup && (
+            <a
+              href={downloads.macosBackup}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+            >
+              {t('releases.backupDownload')}
+            </a>
+          )}
+        </div>
       )}
     </div>
   );

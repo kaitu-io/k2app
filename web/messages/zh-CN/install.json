@@ -43,6 +43,13 @@
     "betaVersion": "公测版 v{version}",
     "stableVersion": "稳定版 v{version}",
     "lookingForStable": "需要稳定版本？",
-    "viewAllReleases": "查看所有版本 →"
+    "viewAllReleases": "查看所有版本 →",
+    "backupDownload": "备用下载",
+    "waymakerApp": "开路者",
+    "kaituMobileComingSoon": "Kaitu 版即将推出",
+    "latestVersion": "最新版本 v{version}",
+    "recommended": "推荐",
+    "downloadCancelled": "自动下载已取消",
+    "clickToDownload": "点击下载"
   }
 }

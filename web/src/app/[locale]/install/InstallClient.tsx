@@ -15,20 +15,73 @@ import {
   Download,
   CheckCircle,
   AlertCircle,
-  Smartphone,
-  Monitor,
-  Apple,
-  ExternalLink,
   RefreshCw,
-  ArrowRight
+  ArrowRight,
+  ExternalLink,
 } from 'lucide-react';
 import { Link } from '@/i18n/routing';
+import Image from 'next/image';
 
-type DownloadState = 'detecting' | 'ready' | 'downloading' | 'success' | 'failed' | 'unavailable';
+type DownloadState = 'detecting' | 'ready' | 'downloading' | 'success' | 'failed' | 'cancelled' | 'unavailable';
 
 interface InstallClientProps {
   betaVersion: string | null;
   stableVersion: string | null;
+}
+
+function isPrerelease(version: string): boolean {
+  return /-(alpha|beta|rc|dev)/.test(version);
+}
+
+function DownloadButton({ href, backupHref, label, t, variant = 'default' }: {
+  href: string;
+  backupHref: string;
+  label: string;
+  t: ReturnType<typeof useTranslations>;
+  variant?: 'default' | 'outline';
+}) {
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <Button
+        variant={variant}
+        size="sm"
+        className={variant === 'default' ? 'bg-blue-600 hover:bg-blue-700 w-full' : 'w-full'}
+        onClick={() => openDownloadInNewTab(href)}
+      >
+        <Download className="w-4 h-4 mr-2" />
+        {label}
+      </Button>
+      <a
+        href={backupHref}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-xs text-muted-foreground hover:text-foreground hover:underline transition-colors"
+      >
+        {t('install.install.backupDownload')}
+      </a>
+    </div>
+  );
+}
+
+function PlatformCard({ icon, name, subtitle, children, isDetected }: {
+  icon: string;
+  name: string;
+  subtitle?: string;
+  children: React.ReactNode;
+  isDetected?: boolean;
+}) {
+  return (
+    <Card className={`p-5 flex flex-col items-center text-center gap-3 ${isDetected ? 'border-blue-600 ring-1 ring-blue-600' : ''}`}>
+      <Image src={icon} alt={name} width={40} height={40} className="opacity-80" />
+      <div>
+        <h4 className="font-semibold text-foreground">{name}</h4>
+        {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
+      </div>
+      <div className="w-full space-y-2 mt-auto">
+        {children}
+      </div>
+    </Card>
+  );
 }
 
 export default function InstallClient({ betaVersion: serverBeta, stableVersion: serverStable }: InstallClientProps) {
@@ -37,34 +90,31 @@ export default function InstallClient({ betaVersion: serverBeta, stableVersion: 
   const [downloadState, setDownloadState] = useState<DownloadState>('detecting');
   const [countdown, setCountdown] = useState(5);
 
-  // Server-fetched version takes priority, build-time env var as fallback
   const effectiveBeta = serverBeta || BETA_VERSION;
   const effectiveStable = serverStable || DESKTOP_VERSION;
 
-  // Beta is the primary download for desktop
-  const betaLinks = getDownloadLinks(effectiveBeta);
-  const stableLinks = getDownloadLinks(effectiveStable);
+  const betaIsPrerelease = isPrerelease(effectiveBeta);
+  const showBetaAndStable = betaIsPrerelease && effectiveStable !== effectiveBeta;
 
-  // Determine primary download link based on device
+  const betaLinks = getDownloadLinks(effectiveBeta);
+  const stableLinks = showBetaAndStable ? getDownloadLinks(effectiveStable) : null;
+
+  // Determine primary download link based on device (beta preferred)
   const getPrimaryLink = useCallback((deviceInfo: DeviceInfo | null) => {
     if (!deviceInfo) return null;
     switch (deviceInfo.type) {
-      case 'windows': return betaLinks.windows;
-      case 'macos': return betaLinks.macos;
-      case 'ios': return DOWNLOAD_LINKS.ios;
-      case 'android': return DOWNLOAD_LINKS.android;
+      case 'windows': return betaLinks.windows.primary;
+      case 'macos': return betaLinks.macos.primary;
       default: return null;
     }
   }, [betaLinks]);
 
-  // Detect device on mount
   useEffect(() => {
     const deviceInfo = detectDevice();
     setDevice(deviceInfo);
-
     if (deviceInfo.isDesktop) {
       setDownloadState('ready');
-    } else if (deviceInfo.isMobile) {
+    } else {
       setDownloadState('unavailable');
     }
   }, []);
@@ -84,7 +134,6 @@ export default function InstallClient({ betaVersion: serverBeta, stableVersion: 
     }
   }, [primaryLink]);
 
-  // Auto-download countdown
   useEffect(() => {
     if (downloadState === 'ready' && countdown > 0) {
       const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
@@ -99,24 +148,24 @@ export default function InstallClient({ betaVersion: serverBeta, stableVersion: 
     setDownloadState('ready');
   };
 
-  const manualDownload = () => {
-    if (primaryLink) openDownloadInNewTab(primaryLink);
-  };
+  const versionLabel = showBetaAndStable
+    ? t('install.install.betaVersion', { version: effectiveBeta })
+    : t('install.install.latestVersion', { version: effectiveBeta });
 
   return (
     <>
-      {/* Hero: Device Detection + Beta Download */}
+      {/* Hero: Device Detection + Auto Download */}
       <Card className="p-8 mb-8">
         <div className="text-center">
-          <div className="w-16 h-16 mx-auto mb-4 bg-blue-900/30 rounded-full flex items-center justify-center">
-            {device?.isMobile ? (
-              <Smartphone className="w-8 h-8 text-blue-600" />
-            ) : device?.isDesktop ? (
-              <Monitor className="w-8 h-8 text-blue-600" />
-            ) : (
-              <Download className="w-8 h-8 text-blue-600" />
-            )}
-          </div>
+          {device && (
+            <Image
+              src={`/icons/platforms/${device.type === 'windows' ? 'windows' : device.type === 'macos' ? 'macos' : device.type === 'ios' ? 'ios' : device.type === 'android' ? 'android' : 'windows'}.svg`}
+              alt={device.name}
+              width={48}
+              height={48}
+              className="mx-auto mb-4 opacity-70"
+            />
+          )}
 
           <h2 className="text-2xl font-bold text-foreground mb-1">
             {device ? t('install.install.deviceDetected', { device: device.name }) : t('install.install.detectingDevice')}
@@ -124,14 +173,17 @@ export default function InstallClient({ betaVersion: serverBeta, stableVersion: 
 
           {device?.isDesktop && (
             <p className="text-sm text-muted-foreground mb-2">
-              {t('install.install.betaVersion', { version: effectiveBeta })}
+              {versionLabel}
+              {showBetaAndStable && (
+                <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/15 text-blue-400">
+                  {t('install.install.recommended')}
+                </span>
+              )}
             </p>
           )}
 
           {downloadState === 'detecting' && (
-            <p className="text-muted-foreground">
-              {t('install.install.analyzingDevice')}
-            </p>
+            <p className="text-muted-foreground">{t('install.install.analyzingDevice')}</p>
           )}
         </div>
       </Card>
@@ -152,7 +204,7 @@ export default function InstallClient({ betaVersion: serverBeta, stableVersion: 
                 <Download className="w-4 h-4 mr-2" />
                 {t('install.install.downloadNow')}
               </Button>
-              <Button variant="outline" onClick={() => setDownloadState('unavailable')}>
+              <Button variant="outline" onClick={() => setDownloadState('cancelled')}>
                 {t('install.install.cancelAutoDownload')}
               </Button>
             </div>
@@ -167,9 +219,7 @@ export default function InstallClient({ betaVersion: serverBeta, stableVersion: 
             <h3 className="text-xl font-bold text-foreground mb-2">
               {t('install.install.downloading')}
             </h3>
-            <p className="text-yellow-200">
-              {t('install.install.checkDownloadLocation')}
-            </p>
+            <p className="text-yellow-200">{t('install.install.checkDownloadLocation')}</p>
           </div>
         </Card>
       )}
@@ -181,9 +231,7 @@ export default function InstallClient({ betaVersion: serverBeta, stableVersion: 
             <h3 className="text-xl font-bold text-foreground mb-2">
               {t('install.install.downloadSuccess')}
             </h3>
-            <p className="text-green-200 mb-4">
-              {t('install.install.runInstaller')}
-            </p>
+            <p className="text-green-200 mb-4">{t('install.install.runInstaller')}</p>
             <div className="flex justify-center space-x-4">
               <Button onClick={retryDownload} variant="outline">
                 <RefreshCw className="w-4 h-4 mr-2" />
@@ -207,11 +255,9 @@ export default function InstallClient({ betaVersion: serverBeta, stableVersion: 
             <h3 className="text-xl font-bold text-foreground mb-2">
               {t('install.install.downloadFailed')}
             </h3>
-            <p className="text-red-200 mb-4">
-              {t('install.install.downloadFailedMessage')}
-            </p>
+            <p className="text-red-200 mb-4">{t('install.install.downloadFailedMessage')}</p>
             <div className="flex justify-center space-x-4">
-              <Button onClick={manualDownload} className="bg-red-600 hover:bg-red-700">
+              <Button onClick={() => primaryLink && openDownloadInNewTab(primaryLink)} className="bg-red-600 hover:bg-red-700">
                 <ExternalLink className="w-4 h-4 mr-2" />
                 {t('install.install.manualDownload')}
               </Button>
@@ -224,113 +270,139 @@ export default function InstallClient({ betaVersion: serverBeta, stableVersion: 
         </Card>
       )}
 
-      {/* Mobile unavailable */}
-      {downloadState === 'unavailable' && device?.isMobile && (
-        <Card className="p-8 mb-8 border-orange-800 bg-orange-900/20">
+      {/* Cancelled -- desktop user can still download manually */}
+      {downloadState === 'cancelled' && device?.isDesktop && primaryLink && (
+        <Card className="p-8 mb-8">
           <div className="text-center">
-            <Smartphone className="w-12 h-12 text-orange-600 mx-auto mb-4" />
-            <h3 className="text-xl font-bold text-foreground mb-2">
-              {t('install.install.mobileComingSoon')}
+            <h3 className="text-lg font-semibold text-foreground mb-2">
+              {t('install.install.downloadCancelled')}
             </h3>
-            <p className="text-orange-200 mb-4">
-              {t('install.install.platformDevelopment', { platform: device.type === 'ios' ? t('install.install.ios') : t('install.install.android') })}
-            </p>
-            <p className="text-sm text-orange-300">
-              {t('install.install.useDesktopVersion')}
-            </p>
+            <p className="text-sm text-muted-foreground mb-4">{versionLabel}</p>
+            <Button onClick={startDownload} className="bg-blue-600 hover:bg-blue-700">
+              <Download className="w-4 h-4 mr-2" />
+              {t('install.install.clickToDownload')}
+            </Button>
           </div>
         </Card>
       )}
 
-      {/* Stable version section */}
-      <Card className="p-6 mb-8 bg-muted/50">
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div>
-            <h3 className="text-lg font-semibold text-foreground">
-              {t('install.install.lookingForStable')}
+      {/* Mobile unavailable */}
+      {downloadState === 'unavailable' && device?.isMobile && (
+        <Card className="p-8 mb-8 border-orange-800 bg-orange-900/20">
+          <div className="text-center">
+            <h3 className="text-xl font-bold text-foreground mb-2">
+              {t('install.install.mobileComingSoon')}
             </h3>
-            <p className="text-sm text-muted-foreground">
-              {t('install.install.stableVersion', { version: effectiveStable })}
+            <p className="text-orange-200 mb-4">
+              {t('install.install.platformDevelopment', {
+                platform: device.type === 'ios' ? t('install.install.ios') : t('install.install.android')
+              })}
             </p>
+            <p className="text-sm text-orange-300">{t('install.install.useDesktopVersion')}</p>
           </div>
-          <div className="flex gap-3">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => openDownloadInNewTab(stableLinks.windows)}
-            >
-              <Monitor className="w-4 h-4 mr-2" />
-              {t('install.install.downloadExe')}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => openDownloadInNewTab(stableLinks.macos)}
-            >
-              <Apple className="w-4 h-4 mr-2" />
-              {t('install.install.downloadDmg')}
-            </Button>
-          </div>
-        </div>
-      </Card>
+        </Card>
+      )}
 
-      {/* All platforms grid */}
-      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      {/* All Platforms Grid */}
+      <h3 className="text-lg font-semibold text-foreground mb-4 mt-8">
+        {t('install.install.allDownloadOptions')}
+      </h3>
+      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         {/* Windows */}
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => openDownloadInNewTab(betaLinks.windows)}
-          className={device?.type === 'windows' ? 'border-secondary bg-secondary/10' : ''}
+        <PlatformCard
+          icon="/icons/platforms/windows.svg"
+          name={t('install.install.windows')}
+          subtitle={t('install.install.windowsVersion')}
+          isDetected={device?.type === 'windows'}
         >
-          <Download className="w-4 h-4 mr-2" />
-          {t('install.install.downloadExe')}
-        </Button>
+          <DownloadButton
+            href={betaLinks.windows.primary}
+            backupHref={betaLinks.windows.backup}
+            label={showBetaAndStable
+              ? t('install.install.betaVersion', { version: effectiveBeta })
+              : t('install.install.latestVersion', { version: effectiveBeta })}
+            t={t}
+          />
+          {showBetaAndStable && stableLinks && (
+            <DownloadButton
+              href={stableLinks.windows.primary}
+              backupHref={stableLinks.windows.backup}
+              label={t('install.install.stableVersion', { version: effectiveStable })}
+              t={t}
+              variant="outline"
+            />
+          )}
+        </PlatformCard>
 
         {/* macOS */}
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => openDownloadInNewTab(betaLinks.macos)}
-          className={device?.type === 'macos' ? 'border-border bg-muted' : ''}
+        <PlatformCard
+          icon="/icons/platforms/macos.svg"
+          name={t('install.install.macos')}
+          subtitle={t('install.install.macosVersion')}
+          isDetected={device?.type === 'macos'}
         >
-          <Download className="w-4 h-4 mr-2" />
-          {t('install.install.downloadDmg')}
-        </Button>
+          <DownloadButton
+            href={betaLinks.macos.primary}
+            backupHref={betaLinks.macos.backup}
+            label={showBetaAndStable
+              ? t('install.install.betaVersion', { version: effectiveBeta })
+              : t('install.install.latestVersion', { version: effectiveBeta })}
+            t={t}
+          />
+          {showBetaAndStable && stableLinks && (
+            <DownloadButton
+              href={stableLinks.macos.primary}
+              backupHref={stableLinks.macos.backup}
+              label={t('install.install.stableVersion', { version: effectiveStable })}
+              t={t}
+              variant="outline"
+            />
+          )}
+        </PlatformCard>
 
         {/* iOS */}
-        {DOWNLOAD_LINKS.ios ? (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => openDownloadInNewTab(DOWNLOAD_LINKS.ios)}
-            className={device?.type === 'ios' ? 'border-blue-500 bg-blue-50' : ''}
-          >
-            <ExternalLink className="w-4 h-4 mr-2" />
-            {t('install.install.appStore')}
-          </Button>
-        ) : (
-          <Button variant="outline" size="sm" disabled>
-            {t('install.install.comingSoon')}
-          </Button>
-        )}
+        <PlatformCard
+          icon="/icons/platforms/ios.svg"
+          name={t('install.install.ios')}
+          subtitle={t('install.install.iosDevices')}
+          isDetected={device?.type === 'ios'}
+        >
+          {DOWNLOAD_LINKS.ios && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() => openDownloadInNewTab(DOWNLOAD_LINKS.ios)}
+            >
+              <ExternalLink className="w-4 h-4 mr-2" />
+              {t('install.install.appStore')}
+              <span className="ml-1 text-muted-foreground">({t('install.install.waymakerApp')})</span>
+            </Button>
+          )}
+          <p className="text-xs text-muted-foreground">{t('install.install.kaituMobileComingSoon')}</p>
+        </PlatformCard>
 
         {/* Android */}
-        {DOWNLOAD_LINKS.android ? (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => openDownloadInNewTab(DOWNLOAD_LINKS.android)}
-            className={device?.type === 'android' ? 'border-green-500 bg-green-50' : ''}
-          >
-            <Download className="w-4 h-4 mr-2" />
-            {t('install.install.downloadApk')}
-          </Button>
-        ) : (
-          <Button variant="outline" size="sm" disabled>
-            {t('install.install.comingSoon')}
-          </Button>
-        )}
+        <PlatformCard
+          icon="/icons/platforms/android.svg"
+          name={t('install.install.android')}
+          subtitle={t('install.install.androidVersion')}
+          isDetected={device?.type === 'android'}
+        >
+          {DOWNLOAD_LINKS.android && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() => openDownloadInNewTab(DOWNLOAD_LINKS.android)}
+            >
+              <Download className="w-4 h-4 mr-2" />
+              {t('install.install.downloadApk')}
+              <span className="ml-1 text-muted-foreground">({t('install.install.waymakerApp')})</span>
+            </Button>
+          )}
+          <p className="text-xs text-muted-foreground">{t('install.install.kaituMobileComingSoon')}</p>
+        </PlatformCard>
       </div>
 
       {/* View all releases link */}

@@ -43,6 +43,13 @@
     "betaVersion": "ベータ v{version}",
     "stableVersion": "安定版 v{version}",
     "lookingForStable": "安定版をお探しですか？",
-    "viewAllReleases": "すべてのバージョンを表示 →"
+    "viewAllReleases": "すべてのバージョンを表示 →",
+    "backupDownload": "バックアップ",
+    "waymakerApp": "Waymaker",
+    "kaituMobileComingSoon": "Kaitu版は近日公開予定",
+    "latestVersion": "最新バージョン v{version}",
+    "recommended": "おすすめ",
+    "downloadCancelled": "自動ダウンロードがキャンセルされました",
+    "clickToDownload": "クリックしてダウンロード"
   }
 }

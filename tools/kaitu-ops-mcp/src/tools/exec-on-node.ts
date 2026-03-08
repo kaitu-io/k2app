@@ -12,6 +12,8 @@
  */
 
 import * as fs from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import type { SshConfig } from '../config.js'
@@ -19,8 +21,8 @@ import { sshExec, sshExecWithStdin } from '../ssh.js'
 import { redactStdout } from '../redact.js'
 import { audit } from '../audit.js'
 
-/** Maximum characters of stdout to return before truncation. */
-const STDOUT_TRUNCATE_LIMIT = 10000
+/** Maximum characters of stdout to return inline before saving to file. */
+const STDOUT_TRUNCATE_LIMIT = 4000
 
 /** Maximum characters of stderr to return before truncation (shorter — supplementary info). */
 const STDERR_TRUNCATE_LIMIT = 2000
@@ -108,8 +110,13 @@ export function registerExecOnNode(server: McpServer, sshConfig: SshConfig): voi
       let truncated = false
       let stderrTruncated = false
 
-      // Truncate stdout if it exceeds the limit
+      // Save large stdout to file instead of truncating
+      let stdoutFile: string | undefined
       if (stdout.length > STDOUT_TRUNCATE_LIMIT) {
+        const outDir = join(tmpdir(), 'kaitu-exec-output')
+        fs.mkdirSync(outDir, { recursive: true })
+        stdoutFile = join(outDir, `${ip}-${Date.now()}.log`)
+        fs.writeFileSync(stdoutFile, stdout, 'utf-8')
         stdout = stdout.slice(0, STDOUT_TRUNCATE_LIMIT)
         truncated = true
       }
@@ -141,6 +148,7 @@ export function registerExecOnNode(server: McpServer, sshConfig: SshConfig): voi
               exitCode: result.exitCode,
               truncated,
               stderrTruncated,
+              ...(stdoutFile ? { stdoutFile } : {}),
             }),
           },
         ],

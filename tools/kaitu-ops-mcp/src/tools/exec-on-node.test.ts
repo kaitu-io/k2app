@@ -131,7 +131,7 @@ describe('exec_on_node tool', () => {
     expect(parsed.exitCode).toBe(-1)
   })
 
-  it('truncates stdout at 10000 chars', async () => {
+  it('truncates stdout at 4000 chars and saves full output to file', async () => {
     const longOutput = 'x'.repeat(15000)
     mockSshExec.mockResolvedValue({ stdout: longOutput, stderr: '', exitCode: 0 })
 
@@ -139,7 +139,8 @@ describe('exec_on_node tool', () => {
     const parsed = parseResult(result)
 
     expect(parsed.truncated).toBe(true)
-    expect(parsed.stdout!.length).toBe(10000)
+    expect(parsed.stdout!.length).toBe(4000)
+    expect(parsed.stdoutFile).toBeDefined()
   })
 
   it('does not truncate stdout under limit', async () => {
