@@ -165,6 +165,16 @@ async fn check_download_and_install(app: &AppHandle, force_downgrade: bool) {
                 bytes.len()
             );
 
+            // Guard: discard stale download if channel changed during download
+            let current_ch = channel::get_channel(app);
+            if current_ch != ch {
+                log::info!(
+                    "[updater] Channel changed during download ({} -> {}), discarding stale update {}",
+                    ch, current_ch, new_version
+                );
+                return;
+            }
+
             match update.install(&bytes) {
                 Ok(()) => {
                     log::info!("[updater] Update {} installed", new_version);
