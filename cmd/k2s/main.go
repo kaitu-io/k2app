@@ -54,6 +54,9 @@ func main() {
 		case "service":
 			cmdService(args[1:])
 			return
+		case "user":
+			cmdUser(args[1:])
+			return
 		case "upgrade":
 			cmdUpgrade(args[1:])
 			return
@@ -124,7 +127,12 @@ Usage:
   k2s -s stop|reload           Send signal to running server
   k2s -v                       Show version and exit
 
-  k2s setup                    Install service + start + print connect URL
+  k2s setup                    Interactive setup wizard (config + service + URL)
+  k2s setup --reset            Re-run wizard (preserves certs and users)
+  k2s user add <name>          Add user and print connect URL
+  k2s user list                List all users
+  k2s user del <name>          Delete user
+  k2s user reset <name>        Regenerate token for user
   k2s service install          Install system service
   k2s service uninstall        Remove system service
   k2s upgrade [--check]        Check for and install updates

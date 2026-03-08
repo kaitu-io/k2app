@@ -22,13 +22,9 @@ func k2sUnitPath() string {
 // ExecStart uses only the binary path — the binary itself is the foreground
 // server process (nginx-style, no "run --foreground" args needed).
 func installService() error {
-	exe, err := os.Executable()
+	exe, err := resolveExecutable()
 	if err != nil {
-		return fmt.Errorf("find executable: %w", err)
-	}
-	exe, err = filepath.Abs(exe)
-	if err != nil {
-		return fmt.Errorf("resolve path: %w", err)
+		return err
 	}
 
 	unit := fmt.Sprintf(`[Unit]
@@ -92,4 +88,44 @@ func isServiceRunning() bool {
 // startService starts the k2s systemd service.
 func startService() error {
 	return exec.Command("systemctl", "start", k2sServiceUnit).Run()
+}
+
+// stopRunningService stops the k2s service if running.
+func stopRunningService() {
+	_ = exec.Command("systemctl", "stop", k2sServiceUnit).Run()
+}
+
+// installServiceWithConfig installs k2s as a systemd service with -c config flag and starts it.
+func installServiceWithConfig(configPath string) error {
+	exe, err := resolveExecutable()
+	if err != nil {
+		return err
+	}
+
+	unit := fmt.Sprintf(`[Unit]
+Description=k2s network tunnel server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%s -c %s
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+`, exe, configPath)
+
+	if err := os.WriteFile(k2sUnitPath(), []byte(unit), 0644); err != nil {
+		return fmt.Errorf("write unit: %w", err)
+	}
+
+	if err := exec.Command("systemctl", "daemon-reload").Run(); err != nil {
+		return fmt.Errorf("daemon-reload: %w", err)
+	}
+	if err := exec.Command("systemctl", "enable", "--now", k2sServiceUnit).Run(); err != nil {
+		return fmt.Errorf("enable service: %w", err)
+	}
+
+	return nil
 }

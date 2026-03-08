@@ -5,9 +5,7 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 )
 
 const k2sServiceName = "k2s"
@@ -16,13 +14,9 @@ const k2sServiceName = "k2s"
 // The binPath contains only the executable path — the binary itself is the
 // foreground server process (nginx-style, no "run --foreground" args needed).
 func installService() error {
-	exe, err := os.Executable()
+	exe, err := resolveExecutable()
 	if err != nil {
-		return fmt.Errorf("find executable: %w", err)
-	}
-	exe, err = filepath.Abs(exe)
-	if err != nil {
-		return fmt.Errorf("resolve path: %w", err)
+		return err
 	}
 
 	err = exec.Command("sc", "create", k2sServiceName,
@@ -69,4 +63,36 @@ func isServiceRunning() bool {
 // startService starts the k2s Windows service.
 func startService() error {
 	return exec.Command("sc", "start", k2sServiceName).Run()
+}
+
+// stopRunningService stops the k2s service if running.
+func stopRunningService() {
+	_ = exec.Command("sc", "stop", k2sServiceName).Run()
+}
+
+// installServiceWithConfig installs k2s as a Windows service with -c config flag and starts it.
+func installServiceWithConfig(configPath string) error {
+	exe, err := resolveExecutable()
+	if err != nil {
+		return err
+	}
+
+	// Stop and delete existing service if any
+	_ = exec.Command("sc", "stop", k2sServiceName).Run()
+	_ = exec.Command("sc", "delete", k2sServiceName).Run()
+
+	err = exec.Command("sc", "create", k2sServiceName,
+		"binPath=", fmt.Sprintf(`"%s" -c "%s"`, exe, configPath),
+		"start=", "auto",
+		"DisplayName=", "k2s network tunnel server",
+	).Run()
+	if err != nil {
+		return fmt.Errorf("sc create: %w", err)
+	}
+
+	if err := exec.Command("sc", "start", k2sServiceName).Run(); err != nil {
+		return fmt.Errorf("sc start: %w", err)
+	}
+
+	return nil
 }

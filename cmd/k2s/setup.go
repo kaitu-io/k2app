@@ -2,66 +2,186 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/kaitu-io/k2/config"
+	"gopkg.in/yaml.v3"
 )
 
-// cmdSetup handles "k2s setup": ensures k2s is installed as a system service,
-// starts it if needed, waits for the connect URL, and prints it.
+// cmdSetup handles "k2s setup [--reset]":
 //
-// This is the explicit replacement for the old "k2s run" smart-install default.
+// If config.yml already exists (and no --reset): skip wizard, install/start service, print URL.
+// Otherwise: run interactive wizard → generate config.yml → create first user → configure firewall → install/start service.
 func cmdSetup(args []string) {
 	certDir := config.DefaultServerConfig().CertDir
+	configPath := filepath.Join(certDir, "config.yml")
+	usersPath := filepath.Join(certDir, "users")
 	urlPath := filepath.Join(certDir, "connect-url.txt")
 
-	// Already running? Just print the URL.
-	if isServiceRunning() {
-		if url := readConnectURL(urlPath); url != "" {
-			fmt.Println(url)
-			return
+	// Handle --reset: delete config.yml (preserve certs and users)
+	reset := false
+	for _, arg := range args {
+		if arg == "--reset" {
+			reset = true
 		}
-		fmt.Println("k2s is running but connect URL not yet available. Waiting...")
-		if url := waitForConnectURL(urlPath, 30*time.Second); url != "" {
-			fmt.Println(url)
-			return
+	}
+	if reset {
+		os.Remove(configPath)
+		biPrint("配置已重置，重新运行向导", "Config reset, re-running wizard")
+		fmt.Println()
+	}
+
+	// If config exists and service is running → just print URL
+	if fileExists(configPath) && !reset {
+		if isServiceRunning() {
+			if url := readConnectURL(urlPath); url != "" {
+				fmt.Println(url)
+				return
+			}
+			biPrint("k2s 正在运行，等待连接 URL...", "k2s is running, waiting for connect URL...")
+			if url := waitForConnectURL(urlPath, 30*time.Second); url != "" {
+				fmt.Println(url)
+				return
+			}
+			fmt.Fprintln(os.Stderr, "Timed out waiting for connect URL.")
+			os.Exit(1)
 		}
-		fmt.Fprintln(os.Stderr, "Timed out waiting for connect URL.")
-		fmt.Fprintf(os.Stderr, "Check logs or run: k2s\n")
+
+		// Config exists but service not running → start it
+		biPrint("检测到已有配置，启动服务...", "Existing config found, starting service...")
+		startServiceWithConfig(configPath)
+		waitAndPrintURL(urlPath)
+		return
+	}
+
+	// No config → run interactive wizard
+	runWizard(certDir, configPath, usersPath, urlPath)
+}
+
+// runWizard runs the 5-step interactive setup wizard.
+func runWizard(certDir, configPath, usersPath, urlPath string) {
+	// Ensure cert dir exists
+	if err := os.MkdirAll(certDir, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating config directory %s: %v\n", certDir, err)
 		os.Exit(1)
 	}
 
-	// Not installed → install.
-	if !isServiceInstalled() {
-		fmt.Println("Installing k2s service...")
-		if err := installService(); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to install service: %v\n", err)
-			fmt.Fprintf(os.Stderr, "Try running with sudo, or use: k2s\n")
-			os.Exit(1)
-		}
-		fmt.Println("Service installed.")
-	} else {
-		// Installed but not running → start.
-		fmt.Println("Starting k2s service...")
-		if err := startService(); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to start service: %v\n", err)
-			fmt.Fprintf(os.Stderr, "Try running with sudo, or use: k2s\n")
-			os.Exit(1)
-		}
-	}
+	printHeader()
 
-	// Wait for connect URL to appear.
-	fmt.Println("Waiting for server to start...")
+	// Step 1: Listen Port
+	port := promptPort("监听端口", "Listen port", 443)
+	fmt.Println()
+
+	// Step 2: Port Hopping
+	hopStart, hopEnd := promptHopRange()
+	fmt.Println()
+
+	// Step 3: Username
+	username, token, err := addFirstUser(usersPath, "prince")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println()
+
+	// Step 4: Firewall
+	runFirewallSetup(port, hopStart, hopEnd)
+	fmt.Println()
+
+	// Step 5: Generate config + start
+	biPrint("正在生成配置...", "Generating config...")
+
+	cfg := buildMinimalConfig(port, hopStart, hopEnd, usersPath)
+	if err := writeConfigYAML(configPath, cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "Error writing config: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("✔ 配置文件 / Config: %s\n", configPath)
+	fmt.Printf("✔ 用户文件 / Users: %s\n", usersPath)
+
+	fmt.Println()
+	biPrint("正在启动服务...", "Starting service...")
+
+	startServiceWithConfig(configPath)
+
+	// Wait for URL
 	url := waitForConnectURL(urlPath, 30*time.Second)
 	if url == "" {
 		fmt.Fprintln(os.Stderr, "Timed out waiting for server to start.")
-		fmt.Fprintf(os.Stderr, "Check logs or run: k2s\n")
+		fmt.Fprintf(os.Stderr, "Check logs: sudo journalctl -u k2s -f\n")
 		os.Exit(1)
 	}
 
+	// Replace auto-generated credentials in URL with wizard user
+	url, err = replaceURLCredentials(url, username, token)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error replacing URL credentials: %v\n", err)
+		os.Exit(1)
+	}
+
+	printComplete(configPath, url, hopStart > 0)
+}
+
+// buildMinimalConfig creates a minimal config map with only user-chosen fields.
+func buildMinimalConfig(port, hopStart, hopEnd int, usersPath string) map[string]any {
+	cfg := map[string]any{
+		"listen": fmt.Sprintf(":%d", port),
+		"auth": map[string]any{
+			"users_file": usersPath,
+		},
+		"log": map[string]any{
+			"level": "info",
+		},
+	}
+	if hopStart > 0 && hopEnd > 0 {
+		cfg["hop_start"] = hopStart
+		cfg["hop_end"] = hopEnd
+	}
+	return cfg
+}
+
+// writeConfigYAML writes a config map to a YAML file.
+func writeConfigYAML(path string, cfg map[string]any) error {
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+
+	header := "# k2s config — generated by k2s setup\n"
+	return writeFileAtomic(path, []byte(header+string(data)), 0644)
+}
+
+// startServiceWithConfig installs (if needed) and starts the service
+// with the given config file.
+func startServiceWithConfig(configPath string) {
+	// Stop existing service first if running
+	if isServiceRunning() {
+		stopRunningService()
+	}
+
+	// Install or update service with -c flag
+	if err := installServiceWithConfig(configPath); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to install service: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Try running with sudo, or use: k2s -c %s\n", configPath)
+		os.Exit(1)
+	}
+	fmt.Println("✔ 服务已安装并启动 / Service installed and started")
+}
+
+// waitAndPrintURL waits for the connect URL and prints it.
+func waitAndPrintURL(urlPath string) {
+	fmt.Println()
+	biPrint("等待服务启动...", "Waiting for server to start...")
+	url := waitForConnectURL(urlPath, 30*time.Second)
+	if url == "" {
+		fmt.Fprintln(os.Stderr, "Timed out waiting for server to start.")
+		fmt.Fprintf(os.Stderr, "Check logs: sudo journalctl -u k2s -f\n")
+		os.Exit(1)
+	}
 	fmt.Println()
 	fmt.Println("k2s is running. Share this URL with clients:")
 	fmt.Println()
@@ -89,3 +209,20 @@ func waitForConnectURL(path string, timeout time.Duration) string {
 	}
 	return ""
 }
+
+// replaceURLCredentials replaces the UDID:TOKEN in a k2v5:// URL with username:token.
+func replaceURLCredentials(rawURL, username, token string) (string, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("parse URL: %w", err)
+	}
+	u.User = url.UserPassword(username, token)
+	return u.String(), nil
+}
+
+// fileExists checks if a file exists.
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+

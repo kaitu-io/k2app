@@ -49,7 +49,8 @@ func TestNoLegacyLogCalls(t *testing.T) {
 func TestNoBareLegacyLogImport(t *testing.T) {
 	dir := filepath.Join(".")
 
-	// Matches: import "log" or "log" in import block (not log/slog).
+	// Match "log" only within import blocks — extract import(...) then check for bare "log".
+	importBlock := regexp.MustCompile(`(?s)import\s*\(([^)]+)\)`)
 	bareLogImport := regexp.MustCompile(`"log"`)
 
 	entries, err := os.ReadDir(dir)
@@ -73,8 +74,10 @@ func TestNoBareLegacyLogImport(t *testing.T) {
 			continue
 		}
 
-		if bareLogImport.Match(content) {
-			t.Errorf("file %s imports bare \"log\" package — use \"log/slog\" instead", name)
+		for _, match := range importBlock.FindAllSubmatch(content, -1) {
+			if bareLogImport.Match(match[1]) {
+				t.Errorf("file %s imports bare \"log\" package — use \"log/slog\" instead", name)
+			}
 		}
 	}
 }

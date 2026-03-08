@@ -24,13 +24,9 @@ func k2sPlistPath() string {
 // Log output is handled by Go-level logging (lumberjack); launchd log
 // redirection (StandardOutPath/StandardErrorPath) is intentionally omitted.
 func installService() error {
-	exe, err := os.Executable()
+	exe, err := resolveExecutable()
 	if err != nil {
-		return fmt.Errorf("find executable: %w", err)
-	}
-	exe, err = filepath.Abs(exe)
-	if err != nil {
-		return fmt.Errorf("resolve path: %w", err)
+		return err
 	}
 
 	plist := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
@@ -92,4 +88,50 @@ func isServiceRunning() bool {
 // startService starts the k2s launchd service.
 func startService() error {
 	return exec.Command("launchctl", "start", k2sServiceLabel).Run()
+}
+
+// stopRunningService stops the k2s service if running.
+func stopRunningService() {
+	_ = exec.Command("launchctl", "stop", k2sServiceLabel).Run()
+}
+
+// installServiceWithConfig installs k2s as a launchd daemon with -c config flag and starts it.
+func installServiceWithConfig(configPath string) error {
+	exe, err := resolveExecutable()
+	if err != nil {
+		return err
+	}
+
+	plist := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>%s</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>%s</string>
+        <string>-c</string>
+        <string>%s</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>
+`, k2sServiceLabel, exe, configPath)
+
+	// Unload existing if any
+	_ = exec.Command("launchctl", "unload", k2sPlistPath()).Run()
+
+	if err := os.WriteFile(k2sPlistPath(), []byte(plist), 0644); err != nil {
+		return fmt.Errorf("write plist: %w", err)
+	}
+
+	if err := exec.Command("launchctl", "load", k2sPlistPath()).Run(); err != nil {
+		return fmt.Errorf("launchctl load: %w", err)
+	}
+
+	return nil
 }
