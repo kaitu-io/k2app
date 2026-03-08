@@ -39,7 +39,6 @@ import {
   CheckCircle as CheckCircleIcon,
   Error as ErrorIcon,
   AccountBalanceWallet as WalletIcon,
-  Lock as LockIcon,
 } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -57,7 +56,6 @@ import { getThemeColors } from '../theme/colors';
 import { useAppLinks } from "../hooks/useAppLinks";
 import VersionItem from "../components/VersionItem";
 import BetaChannelToggle from "../components/BetaChannelToggle";
-import PasswordDialog from "../components/PasswordDialog";
 
 export default function Account() {
   const { user, loading, isMembership, isExpired, fetchUser } = useUser();
@@ -70,7 +68,6 @@ export default function Account() {
   const { links } = useAppLinks();
   const [appVersion, setAppVersion] = useState<string>("");
   const [selectedLanguage, setSelectedLanguage] = useState<LanguageCode>(i18n.language as LanguageCode || 'zh-CN');
-  const [showPasswordDialog, setShowPasswordDialog] = useState(false);
 
   useEffect(() => {
     setAppVersion(window._platform!.version);
@@ -493,35 +490,6 @@ export default function Account() {
             <Divider />
 
             <ListItem
-              button
-              onClick={() => setShowPasswordDialog(true)}
-              disabled={!isAuthenticated}
-              sx={{
-                py: 1.5,
-                cursor: 'pointer',
-                '&:hover': {
-                  backgroundColor: 'action.hover',
-                }
-              }}
-            >
-              <ListItemIcon>
-                <LockIcon />
-              </ListItemIcon>
-              <ListItemText
-                primary={
-                  <Typography variant="body2" sx={{ fontWeight: 500, fontSize: '0.9rem' }}>
-                    {t('account:password.setPassword')}
-                  </Typography>
-                }
-              />
-              <ListItemSecondaryAction>
-                <ChevronRightIcon color="action" />
-              </ListItemSecondaryAction>
-            </ListItem>
-
-            <Divider />
-
-            <ListItem
               button={true}
               onClick={() => navigate("/devices")}
               sx={{
@@ -817,13 +785,6 @@ export default function Account() {
         </Box>
       )}
 
-      <PasswordDialog
-        open={showPasswordDialog}
-        onClose={() => setShowPasswordDialog(false)}
-        onSuccess={() => {
-          console.info('Password set successfully');
-        }}
-      />
     </Box>
   );
 }

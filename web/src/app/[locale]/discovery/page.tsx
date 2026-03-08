@@ -15,8 +15,6 @@ import {
   Tv,
   Newspaper
 } from 'lucide-react';
-import Header from '@/components/Header';
-import Footer from '@/components/Footer';
 import DiscoveryClient from './DiscoveryClient';
 
 type Locale = (typeof routing.locales)[number];
@@ -412,9 +410,7 @@ export default async function DiscoveryPage({
   const t = await getTranslations({ locale });
 
   return (
-    <div className="min-h-screen bg-background">
-      <Header />
-      <DiscoveryClient>
+    <DiscoveryClient>
 
         {/* Hero Section */}
         <section className="py-16 px-4 sm:px-6 lg:px-8">
@@ -840,7 +836,5 @@ export default async function DiscoveryPage({
           </div>
         </section>
       </DiscoveryClient>
-      <Footer />
-    </div>
   );
 }

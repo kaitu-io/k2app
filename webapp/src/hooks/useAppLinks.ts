@@ -63,7 +63,7 @@ export function useAppLinks() {
   const links = useMemo<AppLinks>(() => {
     const baseURL = appConfig?.appLinks?.baseURL || 'https://kaitu.io';
     return {
-      discoveryUrl: `${baseURL}${appConfig?.appLinks?.discoveryPath || '/discovery'}`,
+      discoveryUrl: `${baseURL}${appConfig?.appLinks?.discoveryPath || '/discovery'}?embed=true&theme=dark`,
       privacyPolicyUrl: `${baseURL}${appConfig?.appLinks?.privacyPath || '/privacy'}`,
       termsOfServiceUrl: `${baseURL}${appConfig?.appLinks?.termsPath || '/terms'}`,
       walletUrl: `${baseURL}${appConfig?.appLinks?.walletPath || '/wallet'}`,

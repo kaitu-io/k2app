@@ -89,6 +89,8 @@ async function main() {
       console.info('[WebApp] Capacitor native detected, injecting Capacitor bridge...');
       const { injectCapacitorGlobals } = await import('./services/capacitor-k2');
       await injectCapacitorGlobals();
+      // Scale UI for mobile screens narrower than design width
+      setupViewportScaling();
     } else if (!window._k2 || !window._platform) {
       console.warn('[WebApp] Globals missing, injecting standalone implementation...');
       const { ensureK2Injected } = await import('./services/standalone-k2');

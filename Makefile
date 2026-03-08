@@ -156,8 +156,10 @@ build-mobile-android: pre-build build-webapp mobile-android
 	cd mobile && npx cap sync android
 	cd mobile/android && ./gradlew assembleRelease
 
+IOS_DEVICE ?= $(shell xcrun xctrace list devices 2>/dev/null | grep 'iPhone' | grep -v 'Simulator' | sed 's/.*(\([0-9A-Fa-f-]\{25,\}\)).*/\1/' | head -1)
+
 dev-ios: pre-build build-webapp
-	cd mobile && npx cap sync ios && npx cap run ios
+	cd mobile && npx cap sync ios && npx cap run ios $(if $(IOS_DEVICE),--target $(IOS_DEVICE),)
 
 dev-android: pre-build build-webapp mobile-android
 	mkdir -p mobile/android/app/libs
