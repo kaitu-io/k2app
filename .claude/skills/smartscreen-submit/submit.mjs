@@ -40,16 +40,21 @@ const ADDITIONAL_INFO = `This is our officially signed Windows desktop installer
 This is a legitimate VPN application. We are submitting for SmartScreen reputation review as a software developer to ensure our users don't receive false-positive warnings during installation.`;
 
 async function main() {
-  // Step 1: Download exe
-  console.log(`Downloading ${CDN_URL} ...`);
+  // Step 1: Find or download exe
   try {
-    execFileSync('curl', ['-sfL', '-o', EXE_PATH, CDN_URL], { stdio: 'ignore' });
-    const stat = statSync(EXE_PATH);
-    if (stat.size === 0) throw new Error('Downloaded file is empty');
-    console.log(`Downloaded: ${(stat.size / 1024 / 1024).toFixed(1)} MB`);
-  } catch (e) {
-    console.error(`Download failed: ${e.message}`);
-    process.exit(1);
+    statSync(EXE_PATH);
+    console.log(`Using existing: ${EXE_PATH}`);
+  } catch {
+    console.log(`Downloading ${CDN_URL} ...`);
+    try {
+      execFileSync('curl', ['-sfL', '-o', EXE_PATH, CDN_URL], { stdio: 'ignore' });
+      const stat = statSync(EXE_PATH);
+      if (stat.size === 0) throw new Error('Downloaded file is empty');
+      console.log(`Downloaded: ${(stat.size / 1024 / 1024).toFixed(1)} MB`);
+    } catch (e) {
+      console.error(`Download failed: ${e.message}`);
+      process.exit(1);
+    }
   }
 
   // Step 2: Launch persistent browser
