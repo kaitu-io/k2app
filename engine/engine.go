@@ -162,6 +162,9 @@ func (e *Engine) Start(cfg Config) error {
 		tm.SetQUIC(quicClient)
 		tm.SetTCPWS(tcpwsClient)
 	}
+	// Start background QUIC recovery probe (active during TCP-WS fallback).
+	tm.StartQuicProbe(ctx)
+
 	slog.Debug("engine: step 4 - transports configured",
 		"transport", wireCfg.Transport,
 		"hasQUIC", quicClient != nil,

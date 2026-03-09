@@ -321,7 +321,7 @@ func TestQUICClient_DialUDP_HopRecoveryAfterCooldown(t *testing.T) {
 		t.Fatalf("connect: %v", err)
 	}
 
-	// Simulate hop exhaustion that happened 4 minutes ago (past 3min cooldown)
+	// Simulate hop exhaustion that happened 4 minutes ago (past 30s cooldown)
 	client.datagramHopAttempts.Store(maxDatagramHops)
 	client.datagramHopExhausted.Store(time.Now().Add(-4 * time.Minute).UnixNano())
 
@@ -364,7 +364,7 @@ func TestQUICClient_DialUDP_HopRecoveryBlockedDuringCooldown(t *testing.T) {
 		t.Fatalf("connect: %v", err)
 	}
 
-	// Simulate hop exhaustion that just happened (well within 3min cooldown)
+	// Simulate hop exhaustion that just happened (well within 30s cooldown)
 	client.datagramHopAttempts.Store(maxDatagramHops)
 	client.datagramHopExhausted.Store(time.Now().UnixNano())
 
