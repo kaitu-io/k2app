@@ -6,8 +6,8 @@ import Gzip
 import SSZipArchive
 import os.log
 
-private let kAppGroup = "group.io.kaitu"
-private let logger = Logger(subsystem: "io.kaitu", category: "K2Plugin")
+private let kAppGroup = "group.waymaker"
+private let logger = Logger(subsystem: "com.allnationconnect.anc.wgios", category: "K2Plugin")
 
 extension Notification.Name {
     static let k2DevEnabledChanged = Notification.Name("k2DevEnabledChanged")
@@ -41,7 +41,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
     private var statusObserver: NSObjectProtocol?
     private var logsDir: URL?
     private var webappLogHandle: FileHandle?
-    private let webappLogQueue = DispatchQueue(label: "io.kaitu.webapp-log")
+    private let webappLogQueue = DispatchQueue(label: "com.allnationconnect.anc.wgios.webapp-log")
 
     private let webManifestEndpoints = [
         "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/web/latest.json",
@@ -228,7 +228,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             }
 
             let proto = (manager.protocolConfiguration as? NETunnelProviderProtocol) ?? NETunnelProviderProtocol()
-            proto.providerBundleIdentifier = "io.kaitu.PacketTunnelExtension"
+            proto.providerBundleIdentifier = "com.allnationconnect.anc.wgios.ThePacketTunnel"
             proto.serverAddress = "Kaitu VPN"
             proto.providerConfiguration = ["configJSON": config]
             manager.protocolConfiguration = proto
@@ -737,7 +737,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
 
     private func loadVPNManager(completion: ((NETunnelProviderManager?) -> Void)? = nil) {
         NETunnelProviderManager.loadAllFromPreferences { [weak self] managers, error in
-            let bundleId = "io.kaitu.PacketTunnelExtension"
+            let bundleId = "com.allnationconnect.anc.wgios.ThePacketTunnel"
             let manager = managers?.first(where: {
                 ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier == bundleId
             }) ?? NETunnelProviderManager()

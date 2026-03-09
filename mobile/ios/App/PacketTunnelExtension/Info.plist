@@ -22,6 +22,6 @@
     <key>CFBundleDisplayName</key>
     <string>Kaitu VPN Tunnel</string>
     <key>CFBundleIdentifier</key>
-    <string>io.kaitu.PacketTunnelExtension</string>
+    <string>com.allnationconnect.anc.wgios.ThePacketTunnel</string>
 </dict>
 </plist>

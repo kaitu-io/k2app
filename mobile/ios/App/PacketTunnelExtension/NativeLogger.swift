@@ -7,7 +7,7 @@ import os.log
 final class NativeLogger {
     static let shared = NativeLogger()
 
-    private let queue = DispatchQueue(label: "io.kaitu.native-logger")
+    private let queue = DispatchQueue(label: "com.allnationconnect.anc.wgios.native-logger")
     private var fileHandle: FileHandle?
     private var logFileURL: URL?
     private let maxFileSize: UInt64 = 50 * 1024 * 1024 // 50MB

@@ -2,7 +2,7 @@ import UIKit
 import Capacitor
 import os.log
 
-private let logger = Logger(subsystem: "io.kaitu", category: "AppBridge")
+private let logger = Logger(subsystem: "com.allnationconnect.anc.wgios", category: "AppBridge")
 
 /// Fix for CapacitorRouter empty-path bug:
 /// URL(fileURLWithPath: "") resolves to cwd, whose pathExtension may not be empty,

@@ -2,8 +2,8 @@ import NetworkExtension
 import K2Mobile  // gomobile xcframework (appext/ package)
 import os.log
 
-private let kAppGroup = "group.io.kaitu"
-private let logger = Logger(subsystem: "io.kaitu", category: "NE")
+private let kAppGroup = "group.waymaker"
+private let logger = Logger(subsystem: "com.allnationconnect.anc.wgios", category: "NE")
 
 private struct ClientConfigSubset: Codable {
     var tun: TunConfig?
@@ -106,7 +106,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             configJSON = config
         } else {
             logger.error("Missing configJSON in both options and providerConfiguration")
-            completionHandler(NSError(domain: "io.kaitu", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing configJSON"]))
+            completionHandler(NSError(domain: "com.allnationconnect.anc.wgios", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing configJSON"]))
             return
         }
 
@@ -152,7 +152,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 logger.info("Got TUN fd=\(fd) (fd scan)")
             } else {
                 logger.error("Failed to get TUN fd (both KVC and fd scan failed)")
-                let err = NSError(domain: "io.kaitu", code: 2,
+                let err = NSError(domain: "com.allnationconnect.anc.wgios", code: 2,
                                   userInfo: [NSLocalizedDescriptionKey: "Failed to get TUN fd"])
                 completionHandler(err)
                 return
@@ -162,7 +162,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 // Build EngineConfig with platform paths
                 guard let engineCfg = AppextNewEngineConfig() else {
                     logger.error("Failed to create EngineConfig")
-                    let err = NSError(domain: "io.kaitu", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to create EngineConfig"])
+                    let err = NSError(domain: "com.allnationconnect.anc.wgios", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to create EngineConfig"])
                     completionHandler(err)
                     return
                 }
@@ -363,7 +363,7 @@ class EventBridge: NSObject, AppextEventHandlerProtocol {
                     UserDefaults(suiteName: kAppGroup)?.set(message, forKey: "vpnError")
                 }
 
-                let nsError = NSError(domain: "io.kaitu", code: code,
+                let nsError = NSError(domain: "com.allnationconnect.anc.wgios", code: code,
                                       userInfo: [NSLocalizedDescriptionKey: message])
                 provider?.cancelTunnelWithError(nsError)
             } else {
