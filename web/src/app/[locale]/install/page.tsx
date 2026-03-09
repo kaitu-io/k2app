@@ -35,7 +35,7 @@ export async function generateMetadata({
   const t = await getTranslations({ locale, namespace: 'install' });
   return {
     title: t('install.title'),
-    description: t('install.allDownloadOptions'),
+    description: t('install.metaDescription'),
   };
 }
 
@@ -59,6 +59,13 @@ export default async function InstallPage({
       <Header />
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <h1 className="text-3xl sm:text-4xl font-bold text-foreground text-center mb-2">
+          {t('install.title')}
+        </h1>
+        <p className="text-muted-foreground text-center mb-8">
+          {t('install.allDownloadOptions')}
+        </p>
+
         {/* Client island: device detection, download countdown, download state cards */}
         <InstallClient betaVersion={betaVersion} stableVersion={stableVersion} />
 
@@ -86,7 +93,7 @@ export default async function InstallPage({
             '@type': 'SoftwareApplication',
             name: 'Kaitu',
             applicationCategory: 'NetworkingApplication',
-            operatingSystem: 'Windows 10, Windows 11, macOS',
+            operatingSystem: 'Windows, macOS, iOS, Android',
             softwareVersion: stableVersion || betaVersion || undefined,
             downloadUrl: 'https://kaitu.io/install',
             url: 'https://kaitu.io/install',

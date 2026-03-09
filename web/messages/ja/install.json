@@ -52,6 +52,7 @@
     "latestVersion": "最新バージョン v{version}",
     "recommended": "おすすめ",
     "downloadCancelled": "自動ダウンロードがキャンセルされました",
-    "clickToDownload": "クリックしてダウンロード"
+    "clickToDownload": "クリックしてダウンロード",
+    "metaDescription": "Kaitu k2 クライアントをダウンロード — Windows、macOS、iOS、Android 対応。k2arc 適応型レート制御で、30% パケットロスでもフルスピードのステルストンネル。"
   }
 }

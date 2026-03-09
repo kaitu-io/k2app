@@ -52,6 +52,7 @@
     "latestVersion": "Latest v{version}",
     "recommended": "Recommended",
     "downloadCancelled": "Auto-download cancelled",
-    "clickToDownload": "Click to download"
+    "clickToDownload": "Click to download",
+    "metaDescription": "Download Kaitu k2 client for Windows, macOS, iOS, Android. k2arc adaptive rate control — full speed stealth tunnel through 30% packet loss."
   }
 }
