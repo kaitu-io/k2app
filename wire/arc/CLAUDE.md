@@ -20,9 +20,9 @@ Gradient ascent on utility function: `U = Throughput - α * LossRate * Throughpu
 ## Key Parameters
 
 - `DefaultMaxRate`: 500 Mbps upper bound
-- `DefaultK2ARCEpsilon`: 0.10 (base exploration step size, AIMD-ε adapts within [0.02, 0.20])
-- `GFWK2CCAlpha`: 5.0 (GFW loss penalty — high enough for congestion gradient, tolerates constant 5% GFW loss)
-- `DefaultK2CCBeta`: 1.0 (latency penalty — 10ms ΔRtt = 10 utility signal, same magnitude as loss)
+- `defaultEpsilon`: 0.10 (base exploration step size, AIMD-ε adapts within [0.02, 0.20])
+- `gfwAlpha`: 5.0 (GFW loss penalty — high enough for congestion gradient, tolerates constant 5% GFW loss)
+- `defaultBeta`: 1.0 (latency penalty — 10ms ΔRtt = 10 utility signal, same magnitude as loss)
 - `arcMinRate`: 10 Mbps (upload floor), `arcMinDownloadRate`: 30 Mbps (download floor)
 - `noiseEWMA`: EWMA of RTT coefficient of variation, cold-starts at 1.0 (conservative)
 
@@ -73,7 +73,7 @@ Clamp: `ε ∈ [ε_min, ε_max]`
 
 | Symbol | Constant | Value | Derivation |
 |--------|----------|-------|------------|
-| ε₀ | `DefaultK2ARCEpsilon` | 0.10 | Base step size |
+| ε₀ | `defaultEpsilon` | 0.10 | Base step size |
 | ε_min | `epsilonMin` | 0.02 | ε₀ / 5 (convergence precision) |
 | ε_max | `epsilonMax` | 0.20 | ε₀ × 2 (exploration ceiling) |
 | δ | `epsilonDelta` | 0.02 | = ε_min (one AI step = one precision unit) |
@@ -125,14 +125,14 @@ from `OnCongestionEventEx`. Independent of per-MI loss attribution. Observabilit
 ## Files
 
 - `arc.go` — `K2ARC` struct, MI-based rate control, utility gradient computation, AIMD-ε, `ARCSnapshot`/`Snapshot()`
-- `arcc_test.go` — ~56 test functions (convergence, loss tolerance, rate bounds, stale loss filtering, snapshot fallback, AIMD-ε, ackRate tracker, CongestionControlEx, throughput anchor, ceiling hold, α clamping)
+- `arcc_test.go` — ~45 test functions (convergence, loss tolerance, rate bounds, stale loss filtering, snapshot fallback, AIMD-ε, ackRate tracker, CongestionControlEx, throughput anchor, ceiling hold, α clamping)
 - `arc_integration_test.go` — QUIC integration tests: real client+server bulk transfer with UDP relay (delay, loss, rate limiting), MI completion hook for per-MI diagnostics
 - `helpers_test.go` — test fixtures
 
 ## Testing
 
 ```bash
-go test ./wire/arc/...                                    # all tests (~60)
+go test ./wire/arc/...                                    # all tests (~50)
 go test ./wire/arc/... -run TestIntegration -v            # integration tests only
 go test ./wire/arc/... -run TestIntegration_WithLoss -v   # loss matrix (0-20%)
 ```

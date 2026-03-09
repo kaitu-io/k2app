@@ -28,168 +28,77 @@ import (
 
 // Constants for K2CC algorithm
 const (
-	// Default max rate for K2CC (500 Mbps — generous upper bound)
+	// DefaultMaxRate is the upper bound for CC target rate (500 Mbps).
 	DefaultMaxRate = int64(500_000_000)
 
-	// Minimum congestion window (10 packets worth)
-	arcMinWindow = congestion.ByteCount(14720) // 10 × 1472 (typical MTU)
+	// Congestion window bounds
+	arcMinWindow = congestion.ByteCount(14720)      // 10 × 1472 (typical MTU)
+	arcMaxWindow = congestion.ByteCount(1_000_000_000) // 1 GB
 
-	// Maximum congestion window (1GB)
-	arcMaxWindow = congestion.ByteCount(1_000_000_000)
+	// Rate boundaries
+	arcMinRate         = 10_000_000.0 // 10 Mbps (upload floor)
+	arcMinDownloadRate = 30_000_000.0 // 30 Mbps (download floor, when maxRate >= 30M)
 
-	// ============================================================================
-	// Rate Boundaries - Aligned with realistic bandwidth constraints
-	// ============================================================================
+	// Algorithm parameters
+	defaultAlpha       = 10.0 // Loss penalty — standard mode
+	gfwAlpha           = 5.0  // Loss penalty — GFW mode (tolerates non-congestion loss)
+	defaultBeta        = 1.0  // Latency penalty (throughput-prioritized for tunnel)
+	defaultEpsilon     = 0.10 // Probing step size
+	arcRateEWMAAlpha   = 0.8  // EWMA smoothing for rate updates
+	arcSlowStartFactor = 2.0  // Slow start growth multiplier
+	arcCwndMultiplier  = 2.0  // BDP multiplier for cwnd (matches BBR's cwnd gain)
 
-	// Minimum upload rate (10 Mbps - realistic home upload minimum)
-	arcMinRate = 10_000_000.0 // 10 Mbps
+	// Rate probing: periodic recovery by probing higher rate
+	rateProbingInterval = uint64(10) // Probe every N MIs
+	rateProbingIncrease = 0.2        // +20% probe
 
-	// Minimum download rate (30 Mbps - realistic home download minimum)
-	// Used when maxRate >= 30 Mbps (download scenarios)
-	arcMinDownloadRate = 30_000_000.0 // 30 Mbps
+	// MI completion conditions
+	minMIPackets          = uint64(10)        // Minimum ACKs for standard completion
+	maxMIDuration         = 60 * time.Second  // Force-complete timeout
+	minMIDurationRelaxed  = 30 * time.Second  // Relaxed completion minimum duration
+	minMIPacketsRelaxed   = uint64(3)         // Relaxed completion minimum ACKs
 
-	// ============================================================================
-	// Performance Tuning - Optimized for fast convergence
-	// ============================================================================
+	// Slow start thresholds
+	slowStartExitRatio   = 0.99 // Exit slow start when rate >= maxRate × this
+	slowStartDropRatio   = 0.95 // Exit slow start when utility drops below previous × this
 
-	// Probing epsilon: exploration step size
-	// History: 0.05 (initial) → 0.15 (aggressive for double CC) → 0.10 (browser QUIC blocked)
-	DefaultK2CCEpsilon = 0.10
+	// App-limited detection: BytesSent < TargetBytes × this → app-limited
+	appLimitedThreshold = 0.5
 
-	// Beta: latency penalty coefficient
-	// Low: throughput-prioritized for tunnel use
-	DefaultK2CCBeta = 1.0
+	// Bandwidth estimation floor: ignore throughput samples below this
+	// to avoid poisoning bwEstimate during connection establishment.
+	bwEstimateLossMax = 0.95 // Ignore samples with loss >= 95%
 
-	// EWMA smoothing factor for rate updates
-	// History: 0.7 (initial) → 0.9 (faster response for double CC) → 0.8 (browser QUIC blocked)
-	arcRateEWMAAlpha = 0.8
+	// Utility function clamp: prevent extreme negative values
+	utilityFloor = -10.0
 
-	// Slow start growth factor
-	// History: 2.0 (initial) → 2.5 (faster ramp for double CC) → 2.0 (browser QUIC blocked)
-	arcSlowStartFactor = 2.0
+	// Initial rate = maxRate × this
+	initialRateFactor = 0.3
 
-	// ============================================================================
-	// Recovery Mechanisms
-	// ============================================================================
+	// Initial RTT assumption (before rttStats provides real measurements)
+	initialRTT = 100 * time.Millisecond
 
-	// Rate probing interval: probe higher rate every N MIs
-	// Frequency: every 10 MIs (was 20 - now probe 2x more often)
-	RateProbingInterval = uint64(10)
-
-	// Rate probing increase percentage
-	// Old: 10%, New: 20% (more aggressive recovery)
-	RateProbingIncrease = 0.2
-
-	// ============================================================================
-	// MI Completion Conditions
-	// ============================================================================
-
-	// Minimum packets to complete an MI
-	MinMIPackets = uint64(10)
-
-	// Maximum MI duration before forced completion (prevent long-running MIs)
-	MaxMIDuration = 60 * time.Second
-
-	// Minimum MI duration for relaxed completion
-	MinMIDurationForRelaxed = 30 * time.Second
-
-	// Minimum packets for relaxed completion (when MI is long-running)
-	MinMIPacketsRelaxed = uint64(3)
-
-	// Default alpha (loss penalty) - standard mode
-	DefaultK2CCAlpha = 10.0
-
-	// Alpha for GFW/aggressive mode (low loss penalty)
-	GFWK2CCAlpha = 5.0
-
-	// Congestion window multiplier (for rate to cwnd conversion)
-	// 2.0× BDP matches BBR's cwnd gain, provides headroom for bursty ACK patterns
-	arcCwndMultiplier = 2.0
-
-	// ============================================================================
-	// Adaptive Alpha Constants
-	// ============================================================================
-
-	// AdaptiveBaseAlpha is the base value for adaptive alpha calculation
-	AdaptiveBaseAlpha = 10.0
-
-	// AdaptiveSensitivity is the loss sensitivity coefficient
-	AdaptiveSensitivity = 50.0
-
-	// InitialAlpha is the starting alpha value for adaptive mode
-	InitialAlpha = 2.0
-
-	// AlphaEWMA is the EWMA coefficient for alpha updates (30% new value weight)
-	AlphaEWMA = 0.3
-
-	// MinAlpha is the minimum alpha value (lower bound)
-	MinAlpha = 0.1
-
-	// MaxAlpha is the maximum alpha value (upper bound)
-	MaxAlpha = 10.0
-
-	// LossHistorySize is the number of loss rate samples to keep
-	LossHistorySize = 4
-
-	// ============================================================================
 	// AIMD-ε: Adaptive Exploration Step Size
-	// ============================================================================
 	//
-	// Adapts epsilon (rate probing step size) based on utility gradient signal
-	// quality. Derived from SGD optimal step theory: ε* ∝ |R-R*|^(1/3).
-	// AIMD naturally approximates this schedule with zero new user parameters.
-	//
+	// Adapts epsilon based on utility gradient signal quality.
 	// Rules:
-	//   ① Direction confirmed (counter ≥ 2):   ε += δ          [additive increase]
-	//   ② Weak signal reversal:                ε *= decay       [multiplicative decrease]
-	//   ③ Strong signal reversal:              ε = ε_default    [fast recovery]
-	//   ④ Building (counter = 1):              no change        [hold]
+	//   ① Direction confirmed (counter ≥ 2):  ε += δ       [additive increase]
+	//   ② Weak signal reversal:               ε *= decay    [multiplicative decrease]
+	//   ③ Strong signal reversal:             ε = ε₀        [fast recovery]
+	//   ④ Building (counter = 1):             no change     [hold]
+	epsilonMin        = 0.02  // ε₀ / 5 (convergence precision)
+	epsilonMax        = 0.20  // ε₀ × 2 (exploration ceiling)
+	epsilonDelta      = 0.02  // AI step = one precision unit
+	epsilonDecay      = 0.5   // MD halving
+	epsilonZThreshold = 1.645 // 95% one-sided z-score
+	noiseEWMAAlpha    = 0.1   // Noise baseline smoothing (10% new)
+	coldStartNoise    = 1.0   // Conservative initial noise (10× ε₀)
 
-	// epsilonMin is the lower bound for ε (convergence precision).
-	// = DefaultK2CCEpsilon / 5
-	epsilonMin = 0.02
-
-	// epsilonMax is the upper bound for ε (exploration ceiling).
-	// = DefaultK2CCEpsilon × 2
-	epsilonMax = 0.20
-
-	// epsilonDelta is the additive increase step for ε when direction is confirmed.
-	epsilonDelta = 0.02
-
-	// epsilonDecay is the multiplicative decrease factor on weak signal reversal.
-	epsilonDecay = 0.5
-
-	// epsilonZThreshold is the z-score for strong signal detection (95% confidence).
-	epsilonZThreshold = 1.645
-
-	// noiseEWMAAlpha is the smoothing factor for noise baseline updates.
-	// Slow-moving (10% new) to provide stable noise floor estimate.
-	noiseEWMAAlpha = 0.1
-
-	// coldStartNoise is the initial noiseEWMA value.
-	// Conservative (high) → early reversals classified as weak → starts with small ε.
-	coldStartNoise = DefaultK2CCEpsilon * 10.0 // = 1.0
-
-	// ============================================================================
 	// Bandwidth Estimation (Throughput Anchor)
-	// ============================================================================
-
-	// bwEstimateEWMA is the EWMA weight for new bandwidth samples.
-	// 0.3 = responsive to changes while filtering noise.
-	bwEstimateEWMA = 0.3
-
-	// ceilingHoldThresholdFactor: gradient magnitude below bwEstimate × this
-	// factor is considered "at ceiling" (zero-gradient zone).
-	ceilingHoldThresholdFactor = 0.05
-
-	// ceilingHoldThroughputFactor: throughput must be ≥ bwEstimate × this
-	// factor to qualify for ceiling hold.
-	ceilingHoldThroughputFactor = 0.9
-
-	// alphaMaxLossPenalty: maximum value for α×L. When α×L > this,
-	// α is dynamically clamped to prevent utility inversion.
-	// 0.8 ensures (1-αL) ≥ 0.2 — utility stays positive.
-	alphaMaxLossPenalty = 0.8
+	bwEstimateEWMA             = 0.3  // EWMA weight for new bandwidth samples
+	ceilingHoldThresholdFactor = 0.05 // Gradient below bwEstimate×this = at ceiling
+	ceilingHoldThroughputFactor = 0.9 // Throughput must be ≥ bwEstimate×this for ceiling hold
+	alphaMaxLossPenalty        = 0.8  // Max α×L before dynamic clamping (keeps 1-αL ≥ 0.2)
 )
 
 // K2CCMode represents the K2CC operating mode
@@ -222,64 +131,11 @@ func (m K2CCMode) String() string {
 // K2CC Configuration
 // ============================================================================
 
-// K2CCConfig holds configuration for K2CC algorithm
+// K2CCConfig holds configuration for K2CC algorithm.
 type K2CCConfig struct {
-	// Alpha is the loss penalty coefficient
-	// Standard: 10.0-100.0 (loss-sensitive)
-	// GFW mode: 0.1-2.0 (ignore non-congestion loss)
-	// Adaptive: starts at InitialAlpha, adjusts based on loss
-	Alpha float64
-
-	// Beta is the latency penalty coefficient
-	Beta float64
-
-	// Epsilon is the probing rate change percentage
-	Epsilon float64
-
-	// AggressiveMode tolerates packet loss (for GFW/lossy networks)
-	AggressiveMode bool
-
-	// AdaptiveAlpha enables adaptive alpha mode
-	// When true, alpha is automatically adjusted based on observed loss rate
-	AdaptiveAlpha bool
-
-	// InitialAlpha is the starting alpha value for adaptive mode
-	InitialAlpha float64
-}
-
-// DefaultK2CCConfig returns default K2CC configuration
-func DefaultK2CCConfig() *K2CCConfig {
-	return &K2CCConfig{
-		Alpha:          DefaultK2CCAlpha,
-		Beta:           DefaultK2CCBeta,
-		Epsilon:        DefaultK2CCEpsilon,
-		AggressiveMode: false,
-	}
-}
-
-// GFWK2CCConfig returns K2CC configuration optimized for GFW/lossy networks
-func GFWK2CCConfig() *K2CCConfig {
-	return &K2CCConfig{
-		Alpha:          GFWK2CCAlpha,
-		Beta:           DefaultK2CCBeta,
-		Epsilon:        DefaultK2CCEpsilon,
-		AggressiveMode: true,
-		AdaptiveAlpha:  false,
-		InitialAlpha:   InitialAlpha,
-	}
-}
-
-// NewK2CCConfigAdaptive returns K2CC configuration with adaptive alpha mode
-// Alpha is automatically adjusted based on observed loss rate
-func NewK2CCConfigAdaptive() *K2CCConfig {
-	return &K2CCConfig{
-		Alpha:          InitialAlpha,
-		Beta:           DefaultK2CCBeta,
-		Epsilon:        DefaultK2CCEpsilon,
-		AggressiveMode: false,
-		AdaptiveAlpha:  true,
-		InitialAlpha:   InitialAlpha,
-	}
+	Alpha   float64 // Loss penalty coefficient
+	Beta    float64 // Latency penalty coefficient
+	Epsilon float64 // Probing rate change step size
 }
 
 // ============================================================================
@@ -330,7 +186,7 @@ func NewMonitorInterval(id uint64, targetRate float64) *MonitorInterval {
 // QUIC loss detection can report losses for packets sent in this MI.
 func (mi *MonitorInterval) IsComplete() bool {
 	// Timeout protection: force complete after 60 seconds (always overrides)
-	if mi.Duration() >= MaxMIDuration {
+	if mi.Duration() >= maxMIDuration {
 		return true
 	}
 
@@ -341,12 +197,12 @@ func (mi *MonitorInterval) IsComplete() bool {
 	}
 
 	// Standard condition: >= 10 ACKs + RTT samples
-	standardCondition := mi.PacketsAcked >= MinMIPackets && len(mi.RTTSamples) > 0
+	standardCondition := mi.PacketsAcked >= minMIPackets && len(mi.RTTSamples) > 0
 
 	// Relaxed condition: >= 3 ACKs + >= 30 seconds (for low-rate scenarios)
-	relaxedCondition := mi.PacketsAcked >= MinMIPacketsRelaxed &&
+	relaxedCondition := mi.PacketsAcked >= minMIPacketsRelaxed &&
 		len(mi.RTTSamples) > 0 &&
-		mi.Duration() >= MinMIDurationForRelaxed
+		mi.Duration() >= minMIDurationRelaxed
 
 	return standardCondition || relaxedCondition
 }
@@ -375,10 +231,9 @@ func (mi *MonitorInterval) Throughput() float64 {
 	}
 	throughput := float64(mi.BytesAcked) * 8.0 / durationSecs
 
-	// Detect app-limited state: if actual sending is < 50% of target rate
+	// Detect app-limited state: actual sending < threshold of target rate
 	expectedBytes := mi.TargetRate * durationSecs / 8.0
-	actualBytes := float64(mi.BytesSent)
-	if actualBytes < expectedBytes*0.5 {
+	if float64(mi.BytesSent) < expectedBytes*appLimitedThreshold {
 		mi.IsAppLimited = true
 	}
 
@@ -510,112 +365,41 @@ func (tr *ackRateTracker) AckRate() float64 {
 // Utility Function
 // ============================================================================
 
-// UtilityFunction calculates K2CC utility
+// UtilityFunction calculates K2CC utility: U = T(1-αL) - β·ΔRtt
 type UtilityFunction struct {
-	Alpha        float64
-	Beta         float64
-	MinRTT       time.Duration
-	adaptiveMode bool
-	lossHistory  []float64
+	Alpha  float64
+	Beta   float64
+	MinRTT time.Duration
 }
 
-// NewUtilityFunction creates a new utility function
+// NewUtilityFunction creates a new utility function.
 func NewUtilityFunction(alpha, beta float64) *UtilityFunction {
 	return &UtilityFunction{
-		Alpha:        alpha,
-		Beta:         beta,
-		MinRTT:       time.Second, // Will be updated
-		adaptiveMode: false,
-		lossHistory:  nil,
+		Alpha:  alpha,
+		Beta:   beta,
+		MinRTT: time.Second, // Updated as real RTT samples arrive
 	}
 }
 
-// NewUtilityFunctionAdaptive creates a new adaptive utility function
-func NewUtilityFunctionAdaptive(initialAlpha, beta float64) *UtilityFunction {
-	return &UtilityFunction{
-		Alpha:        initialAlpha,
-		Beta:         beta,
-		MinRTT:       time.Second,
-		adaptiveMode: true,
-		lossHistory:  make([]float64, 0, LossHistorySize),
-	}
-}
-
-// LossHistoryLen returns the number of loss rate samples in history
-func (uf *UtilityFunction) LossHistoryLen() int {
-	return len(uf.lossHistory)
-}
-
-// computeAdaptiveAlpha calculates adaptive alpha based on loss rate
-// Formula: α = BASE_ALPHA / (1 + SENSITIVITY × avg_loss_rate)
-func (uf *UtilityFunction) computeAdaptiveAlpha(currentLossRate float64) float64 {
-	// Use average of historical loss rates for stability
-	avgLoss := currentLossRate
-	if len(uf.lossHistory) > 0 {
-		sum := currentLossRate
-		for _, l := range uf.lossHistory {
-			sum += l
-		}
-		avgLoss = sum / float64(len(uf.lossHistory)+1)
-	}
-
-	// Inverse formula: higher loss -> lower alpha
-	computed := AdaptiveBaseAlpha / (1.0 + AdaptiveSensitivity*avgLoss)
-
-	// Clamp to bounds
-	if computed < MinAlpha {
-		return MinAlpha
-	}
-	if computed > MaxAlpha {
-		return MaxAlpha
-	}
-	return computed
-}
-
-// UpdateAdaptiveAlpha updates alpha based on observed loss rate from a completed MI
-func (uf *UtilityFunction) UpdateAdaptiveAlpha(mi *MonitorInterval) {
-	if !uf.adaptiveMode {
-		return
-	}
-
-	lossRate := mi.LossRate()
-
-	// Update history
-	uf.lossHistory = append(uf.lossHistory, lossRate)
-	if len(uf.lossHistory) > LossHistorySize {
-		uf.lossHistory = uf.lossHistory[1:]
-	}
-
-	// Compute new alpha
-	newAlpha := uf.computeAdaptiveAlpha(lossRate)
-
-	// EWMA smoothing: alpha = alpha * (1 - EWMA) + new_alpha * EWMA
-	uf.Alpha = uf.Alpha*(1.0-AlphaEWMA) + newAlpha*AlphaEWMA
-}
-
-// UpdateMinRTT updates minimum RTT if sample is lower
+// UpdateMinRTT updates minimum RTT if sample is lower.
 func (uf *UtilityFunction) UpdateMinRTT(rtt time.Duration) {
 	if rtt < uf.MinRTT && rtt > 0 {
 		uf.MinRTT = rtt
 	}
 }
 
-// Calculate computes utility for a Monitor Interval
+// Calculate computes utility for a Monitor Interval.
 // U = Throughput - α * LossRate * Throughput - β * ΔRtt
 func (uf *UtilityFunction) Calculate(mi *MonitorInterval) float64 {
 	throughput := mi.Throughput()
 	lossRate := mi.LossRate()
 
-	// Calculate RTT gradient (deviation from min)
+	// RTT gradient: deviation from minimum
 	var deltaRTT float64
-	avgRTT := mi.AvgRTT()
-	if avgRTT > 0 {
-		delta := max(avgRTT-uf.MinRTT, 0)
-		deltaRTT = delta.Seconds() * 1000.0 // Convert to ms for scaling
+	if avgRTT := mi.AvgRTT(); avgRTT > 0 {
+		deltaRTT = max(avgRTT-uf.MinRTT, 0).Seconds() * 1000.0
 	}
 
-	// U = Throughput - α * LossRate * Throughput - β * ΔRtt
-	// Scale throughput to Mbps for reasonable utility values
 	throughputMbps := throughput / 1_000_000.0
 
 	// Dynamic α clamping: prevent utility inversion at high loss.
@@ -624,17 +408,9 @@ func (uf *UtilityFunction) Calculate(mi *MonitorInterval) float64 {
 	if lossRate > 0 && alpha*lossRate > alphaMaxLossPenalty {
 		alpha = alphaMaxLossPenalty / lossRate
 	}
-	lossPenalty := alpha * lossRate * throughputMbps
-	latencyPenalty := uf.Beta * deltaRTT
 
-	utility := throughputMbps - lossPenalty - latencyPenalty
-
-	// Clamp utility to prevent extreme negative values
-	if utility < -10.0 {
-		utility = -10.0
-	}
-
-	return utility
+	utility := throughputMbps - alpha*lossRate*throughputMbps - uf.Beta*deltaRTT
+	return max(utility, utilityFloor)
 }
 
 // ============================================================================
@@ -734,53 +510,38 @@ type K2CCSender struct {
 	mu sync.RWMutex
 }
 
-// NewK2CCSender creates a new K2CC sender with default config
+// NewK2CCSender creates a new K2CC sender with default (standard) config.
 func NewK2CCSender(maxRate int64) *K2CCSender {
-	return NewK2CCSenderWithConfig(maxRate, DefaultK2CCConfig())
+	return NewK2CCSenderWithConfig(maxRate, &K2CCConfig{
+		Alpha: defaultAlpha, Beta: defaultBeta, Epsilon: defaultEpsilon,
+	})
 }
 
-// NewCCSenderGFWMode creates a new K2CC sender optimized for GFW/lossy networks
+// NewCCSenderGFWMode creates a new K2CC sender optimized for GFW/lossy networks.
 func NewCCSenderGFWMode(maxRate int64) *K2CCSender {
-	return NewK2CCSenderWithConfig(maxRate, GFWK2CCConfig())
+	return NewK2CCSenderWithConfig(maxRate, &K2CCConfig{
+		Alpha: gfwAlpha, Beta: defaultBeta, Epsilon: defaultEpsilon,
+	})
 }
 
-// NewK2CCSenderAdaptive creates a new K2CC sender with adaptive alpha mode
-func NewK2CCSenderAdaptive(maxRate int64) *K2CCSender {
-	return NewK2CCSenderWithConfig(maxRate, NewK2CCConfigAdaptive())
-}
-
-// NewK2CCSenderWithConfig creates a new K2CC sender with custom config
+// NewK2CCSenderWithConfig creates a new K2CC sender with custom config.
 func NewK2CCSenderWithConfig(maxRate int64, config *K2CCConfig) *K2CCSender {
-	// Start at 30% of max (fast ramp via slow start)
-	initialRate := float64(maxRate) * 0.3
-
-	state := &K2CCState{
-		CurrentRate: initialRate,
-		Epsilon:     config.Epsilon,
-		Mode:        K2CCModeSlowStart,
-	}
-
-	// Create utility function based on mode
-	var utility *UtilityFunction
-	if config.AdaptiveAlpha {
-		utility = NewUtilityFunctionAdaptive(config.InitialAlpha, config.Beta)
-	} else {
-		utility = NewUtilityFunction(config.Alpha, config.Beta)
-	}
+	rate := float64(maxRate) * initialRateFactor
 
 	return &K2CCSender{
-		config:         config,
-		state:          state,
-		utility:        utility,
-		maxRate:        maxRate,
-		cwnd:           rateToCwnd(initialRate, 100*time.Millisecond),
-		maxSize:        congestion.ByteCount(1350),
-		rtt:            100 * time.Millisecond,
-		lastSendTime:   0,
-		pacingBudget:   0,
-		lastUpdateTime: 0,
-		noiseEWMA:      coldStartNoise,
-		ackRate:        newAckRateTracker(),
+		config:  config,
+		state: &K2CCState{
+			CurrentRate: rate,
+			Epsilon:     config.Epsilon,
+			Mode:        K2CCModeSlowStart,
+		},
+		utility:   NewUtilityFunction(config.Alpha, config.Beta),
+		maxRate:   maxRate,
+		cwnd:      rateToCwnd(rate, initialRTT),
+		maxSize:   congestion.ByteCount(1350),
+		rtt:       initialRTT,
+		noiseEWMA: coldStartNoise,
+		ackRate:   newAckRateTracker(),
 	}
 }
 
@@ -839,17 +600,12 @@ func (p *K2CCSender) updateRate(newRate float64) {
 	p.cwnd = rateToCwnd(p.state.CurrentRate, p.rtt)
 }
 
-// IsAdaptive returns whether the sender is in adaptive alpha mode
-func (p *K2CCSender) IsAdaptive() bool {
-	return p.config.AdaptiveAlpha
-}
-
-// processCompletedMI processes a completed Monitor Interval
+// processCompletedMI processes a completed Monitor Interval.
 func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 	// Rate probing (BEFORE app-limited check)
 	// Every N MIs, probe higher rate to recover from previous reductions
-	if p.state.NextMIID%RateProbingInterval == 0 {
-		probeRate := p.state.CurrentRate * (1.0 + RateProbingIncrease)
+	if p.state.NextMIID%rateProbingInterval == 0 {
+		probeRate := p.state.CurrentRate * (1.0 + rateProbingIncrease)
 		if probeRate <= float64(p.maxRate) {
 			p.updateRate(probeRate)
 			// Reset utility counters to give new rate a fair chance
@@ -873,7 +629,7 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 	minRate := arcMinDownloadRate // 30 Mbps
 	if throughput >= minRate {
 		bEst := throughput
-		if lossRate := mi.LossRate(); lossRate < 0.95 {
+		if lossRate := mi.LossRate(); lossRate < bwEstimateLossMax {
 			bEst = throughput / (1.0 - lossRate)
 		}
 		if p.bwEstimate == 0 {
@@ -925,25 +681,21 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 		p.utility.UpdateMinRTT(avgRTT)
 	}
 
-	// Update adaptive alpha if in adaptive mode
-	p.utility.UpdateAdaptiveAlpha(mi)
-
-	// Calculate utility (uses potentially updated alpha)
+	// Calculate utility
 	utility := p.utility.Calculate(mi)
 
 	switch p.state.Mode {
 	case K2CCModeSlowStart:
 		// Exit slow start if rate has reached maxRate — no room to grow.
-		// Use 99% threshold because EWMA smoothing in updateRate means
-		// CurrentRate asymptotically approaches but never equals maxRate.
-		if p.state.CurrentRate >= float64(p.maxRate)*0.99 {
+		// EWMA smoothing means CurrentRate asymptotically approaches maxRate.
+		if p.state.CurrentRate >= float64(p.maxRate)*slowStartExitRatio {
 			p.state.Mode = K2CCModeDecision
 			p.state.UtilityIncreases = 0
 			p.state.UtilityDecreases = 0
 			break
 		}
 		// Check if we should exit slow start
-		if p.state.hasLastUtility && utility < p.state.lastUtility*0.95 {
+		if p.state.hasLastUtility && utility < p.state.lastUtility*slowStartDropRatio {
 			// Utility dropped, exit slow start
 			p.state.Mode = K2CCModeDecision
 			p.state.UtilityIncreases = 0
@@ -1016,7 +768,7 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 
 				if absGrad > threshold {
 					// ③ Strong signal: genuine regime change → fast recovery
-					p.state.Epsilon = DefaultK2CCEpsilon
+					p.state.Epsilon = defaultEpsilon
 				} else {
 					// ② Weak signal: noise-induced reversal → multiplicative decrease
 					p.state.Epsilon *= epsilonDecay
@@ -1299,7 +1051,7 @@ func (p *K2CCSender) getCongestionWindowLocked() congestion.ByteCount {
 		}
 	}
 	if rtt == 0 {
-		rtt = 100 * time.Millisecond
+		rtt = initialRTT
 	}
 
 	cwnd := rateToCwnd(p.state.CurrentRate, rtt)

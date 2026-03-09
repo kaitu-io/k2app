@@ -26,8 +26,8 @@ func TestNewK2CCSender(t *testing.T) {
 	}
 
 	// Verify default config
-	if sender.config.Alpha != DefaultK2CCAlpha {
-		t.Errorf("expected default alpha=%f, got %f", DefaultK2CCAlpha, sender.config.Alpha)
+	if sender.config.Alpha != defaultAlpha {
+		t.Errorf("expected default alpha=%f, got %f", defaultAlpha, sender.config.Alpha)
 	}
 }
 
@@ -40,12 +40,8 @@ func TestNewCCSenderGFWMode(t *testing.T) {
 	}
 
 	// GFW mode should have low alpha
-	if sender.config.Alpha > GFWK2CCAlpha*2 {
-		t.Errorf("expected GFW alpha around %f, got %f", GFWK2CCAlpha, sender.config.Alpha)
-	}
-
-	if !sender.config.AggressiveMode {
-		t.Error("GFW mode should be aggressive")
+	if sender.config.Alpha != gfwAlpha {
+		t.Errorf("expected GFW alpha %f, got %f", gfwAlpha, sender.config.Alpha)
 	}
 }
 
@@ -79,7 +75,7 @@ func TestMonitorInterval_IsComplete(t *testing.T) {
 	}
 
 	// Add enough data
-	mi.PacketsAcked = MinMIPackets
+	mi.PacketsAcked = minMIPackets
 	mi.RTTSamples = append(mi.RTTSamples, 50*time.Millisecond)
 
 	if !mi.IsComplete() {
@@ -143,7 +139,7 @@ func TestMonitorInterval_AvgRTT(t *testing.T) {
 // ============================================================================
 
 func TestUtilityFunction_Calculate(t *testing.T) {
-	uf := NewUtilityFunction(DefaultK2CCAlpha, DefaultK2CCBeta)
+	uf := NewUtilityFunction(defaultAlpha, defaultBeta)
 
 	mi := NewMonitorInterval(1, 10_000_000.0)
 	mi.BytesSent = 125000
@@ -162,7 +158,7 @@ func TestUtilityFunction_Calculate(t *testing.T) {
 }
 
 func TestUtilityFunction_LossPenalty(t *testing.T) {
-	uf := NewUtilityFunction(DefaultK2CCAlpha, DefaultK2CCBeta)
+	uf := NewUtilityFunction(defaultAlpha, defaultBeta)
 
 	// Create two MIs: one with loss, one without
 	miNoLoss := NewMonitorInterval(1, 10_000_000.0)
@@ -191,8 +187,8 @@ func TestUtilityFunction_LossPenalty(t *testing.T) {
 }
 
 func TestUtilityFunction_GFWModeToleratesLoss(t *testing.T) {
-	standard := NewUtilityFunction(DefaultK2CCAlpha, DefaultK2CCBeta)
-	gfw := NewUtilityFunction(GFWK2CCAlpha, DefaultK2CCBeta)
+	standard := NewUtilityFunction(defaultAlpha, defaultBeta)
+	gfw := NewUtilityFunction(gfwAlpha, defaultBeta)
 
 	mi := NewMonitorInterval(1, 10_000_000.0)
 	mi.BytesSent = 125000
@@ -324,162 +320,19 @@ func TestK2CCSender_OnCongestionEvent_RecordsLoss(t *testing.T) {
 // ============================================================================
 
 func TestK2CCConfig_Default(t *testing.T) {
-	config := DefaultK2CCConfig()
-
-	if config.Alpha != DefaultK2CCAlpha {
-		t.Errorf("expected alpha=%f, got %f", DefaultK2CCAlpha, config.Alpha)
+	sender := NewK2CCSender(100_000_000)
+	if sender.config.Alpha != defaultAlpha {
+		t.Errorf("expected alpha=%f, got %f", defaultAlpha, sender.config.Alpha)
 	}
-	if config.Beta != DefaultK2CCBeta {
-		t.Errorf("expected beta=%f, got %f", DefaultK2CCBeta, config.Beta)
-	}
-	if config.AggressiveMode {
-		t.Error("default should not be aggressive mode")
+	if sender.config.Beta != defaultBeta {
+		t.Errorf("expected beta=%f, got %f", defaultBeta, sender.config.Beta)
 	}
 }
 
 func TestK2CCConfig_GFWMode(t *testing.T) {
-	config := GFWK2CCConfig()
-
-	if config.Alpha != GFWK2CCAlpha {
-		t.Errorf("expected alpha=%f, got %f", GFWK2CCAlpha, config.Alpha)
-	}
-	if !config.AggressiveMode {
-		t.Error("GFW mode should be aggressive")
-	}
-}
-
-// ============================================================================
-// Adaptive Alpha Tests (TDD - these should fail until implementation)
-// ============================================================================
-
-func TestAdaptiveAlphaCalculation(t *testing.T) {
-	// Formula: α = BASE_ALPHA / (1 + SENSITIVITY × loss_rate)
-	// With AdaptiveBaseAlpha = 10.0, AdaptiveSensitivity = 50.0
-	utility := NewUtilityFunctionAdaptive(InitialAlpha, DefaultK2CCBeta)
-
-	// 0% loss -> alpha = 10.0 / (1 + 50 * 0) = 10.0
-	alpha0 := utility.computeAdaptiveAlpha(0.0)
-	if diff := alpha0 - 10.0; diff < -0.01 || diff > 0.01 {
-		t.Errorf("0%% loss: expected 10.0, got %f", alpha0)
-	}
-
-	// 10% loss -> alpha = 10.0 / (1 + 50 * 0.1) = 10.0 / 6.0 = 1.67
-	alpha10 := utility.computeAdaptiveAlpha(0.1)
-	if diff := alpha10 - 1.67; diff < -0.1 || diff > 0.1 {
-		t.Errorf("10%% loss: expected 1.67, got %f", alpha10)
-	}
-
-	// 20% loss -> alpha = 10.0 / (1 + 50 * 0.2) = 10.0 / 11.0 = 0.91
-	alpha20 := utility.computeAdaptiveAlpha(0.2)
-	if diff := alpha20 - 0.91; diff < -0.1 || diff > 0.1 {
-		t.Errorf("20%% loss: expected 0.91, got %f", alpha20)
-	}
-
-	// 30% loss -> alpha = 10.0 / (1 + 50 * 0.3) = 10.0 / 16.0 = 0.625
-	alpha30 := utility.computeAdaptiveAlpha(0.3)
-	if diff := alpha30 - 0.625; diff < -0.1 || diff > 0.1 {
-		t.Errorf("30%% loss: expected 0.625, got %f", alpha30)
-	}
-}
-
-func TestAdaptiveAlphaBounds(t *testing.T) {
-	utility := NewUtilityFunctionAdaptive(InitialAlpha, DefaultK2CCBeta)
-
-	// Very high loss should be clamped to MinAlpha (0.1)
-	alphaExtreme := utility.computeAdaptiveAlpha(1.0) // 100% loss
-	if alphaExtreme < MinAlpha {
-		t.Errorf("Expected alpha >= %f (MinAlpha), got %f", MinAlpha, alphaExtreme)
-	}
-
-	// Zero loss should be clamped to MaxAlpha (10.0)
-	alphaZero := utility.computeAdaptiveAlpha(0.0)
-	if alphaZero > MaxAlpha {
-		t.Errorf("Expected alpha <= %f (MaxAlpha), got %f", MaxAlpha, alphaZero)
-	}
-}
-
-func TestAdaptiveAlphaEWMASmoothing(t *testing.T) {
-	utility := NewUtilityFunctionAdaptive(InitialAlpha, DefaultK2CCBeta)
-
-	// Initial alpha should be InitialAlpha (2.0)
-	if diff := utility.Alpha - InitialAlpha; diff < -0.01 || diff > 0.01 {
-		t.Errorf("Initial alpha should be %f, got %f", InitialAlpha, utility.Alpha)
-	}
-
-	// Create MI with 10% loss
-	mi := NewMonitorInterval(1, 10_000_000.0)
-	mi.BytesSent = 10000
-	mi.BytesAcked = 9000
-	mi.BytesLost = 1000 // 10% loss
-	mi.PacketsAcked = MinMIPackets
-	mi.RTTSamples = append(mi.RTTSamples, 50*time.Millisecond)
-	mi.EndTime = mi.StartTime.Add(time.Second)
-
-	// Update alpha with MI
-	utility.UpdateAdaptiveAlpha(mi)
-
-	// Alpha should move toward computed value but not jump there
-	// EWMA with 0.3 weight: new_alpha = 2.0 * 0.7 + 1.67 * 0.3 ≈ 1.9
-	if utility.Alpha <= 1.5 || utility.Alpha >= 2.5 {
-		t.Errorf("Alpha should be smoothed (between 1.5 and 2.5), got %f", utility.Alpha)
-	}
-
-	// After several updates with same loss, alpha should converge
-	for i := 0; i < 10; i++ {
-		utility.UpdateAdaptiveAlpha(mi)
-	}
-
-	// Should converge toward 1.67 (the computed value for 10% loss)
-	if diff := utility.Alpha - 1.67; diff < -0.3 || diff > 0.3 {
-		t.Errorf("Alpha should converge to ~1.67, got %f", utility.Alpha)
-	}
-}
-
-func TestAdaptiveAlphaLossHistory(t *testing.T) {
-	utility := NewUtilityFunctionAdaptive(InitialAlpha, DefaultK2CCBeta)
-
-	// Create MIs with varying loss rates
-	lossRates := []float64{0.05, 0.10, 0.15, 0.20, 0.25}
-
-	for i, lossRate := range lossRates {
-		mi := NewMonitorInterval(uint64(i), 10_000_000.0)
-		lost := uint64(10000.0 * lossRate)
-		mi.BytesSent = 10000
-		mi.BytesAcked = 10000 - lost
-		mi.BytesLost = lost
-		mi.PacketsAcked = MinMIPackets
-		mi.RTTSamples = append(mi.RTTSamples, 50*time.Millisecond)
-		mi.EndTime = mi.StartTime.Add(time.Second)
-
-		utility.UpdateAdaptiveAlpha(mi)
-	}
-
-	// History should be limited to 4 entries
-	if utility.LossHistoryLen() > LossHistorySize {
-		t.Errorf("Loss history should be limited to %d, got %d", LossHistorySize, utility.LossHistoryLen())
-	}
-}
-
-func TestAdaptiveConfig(t *testing.T) {
-	// Test NewK2CCConfigAdaptive() constructor
-	config := NewK2CCConfigAdaptive()
-
-	if !config.AdaptiveAlpha {
-		t.Error("AdaptiveAlpha should be true")
-	}
-	if diff := config.InitialAlpha - InitialAlpha; diff < -0.01 || diff > 0.01 {
-		t.Errorf("InitialAlpha should be %f, got %f", InitialAlpha, config.InitialAlpha)
-	}
-	if diff := config.Alpha - InitialAlpha; diff < -0.01 || diff > 0.01 {
-		t.Errorf("Alpha should start at %f, got %f", InitialAlpha, config.Alpha)
-	}
-}
-
-func TestK2CCSenderAdaptiveMode(t *testing.T) {
-	sender := NewK2CCSenderAdaptive(100_000_000) // 100 Mbps
-
-	if !sender.IsAdaptive() {
-		t.Error("Sender should be in adaptive mode")
+	sender := NewCCSenderGFWMode(100_000_000)
+	if sender.config.Alpha != gfwAlpha {
+		t.Errorf("expected alpha=%f, got %f", gfwAlpha, sender.config.Alpha)
 	}
 }
 
@@ -586,7 +439,7 @@ func TestK2CCSender_Snapshot_UpdatesLastCompletedOnMICompletion(t *testing.T) {
 	sender.state.CurrentMI.StartTime = time.Now().Add(-200 * time.Millisecond)
 	sender.mu.Unlock()
 
-	// Ack enough packets to trigger MI completion (MinMIPackets = 10)
+	// Ack enough packets to trigger MI completion (minMIPackets = 10)
 	for i := 0; i < 12; i++ {
 		sender.OnPacketAcked(congestion.PacketNumber(i), 1472, 0, 0)
 	}
@@ -621,7 +474,7 @@ func TestOnCongestionEvent_StaleLossFiltering(t *testing.T) {
 	sender.state.CurrentMI.StartTime = time.Now().Add(-200 * time.Millisecond)
 	sender.mu.Unlock()
 
-	// Ack enough to complete MI #0 (MinMIPackets=10) → starts MI #1
+	// Ack enough to complete MI #0 (minMIPackets=10) → starts MI #1
 	for i := 0; i < 12; i++ {
 		sender.OnPacketAcked(congestion.PacketNumber(i), 1472, 0, 0)
 	}
@@ -680,31 +533,6 @@ func TestParams_Beta1(t *testing.T) {
 	}
 }
 
-func TestK2CCSenderAdaptiveIntegration(t *testing.T) {
-	sender := NewK2CCSenderAdaptive(100_000_000) // 100 Mbps
-	mockRTT := &mockRTTStatsProvider{smoothedRTT: 100 * time.Millisecond}
-	sender.SetRTTStatsProvider(mockRTT)
-
-	// Simulate sending packets
-	for i := 0; i < 20; i++ {
-		sender.OnPacketSent(0, 0, congestion.PacketNumber(i), 1472, true)
-	}
-
-	// Simulate 15 acks (25% loss implicit)
-	for i := 0; i < 15; i++ {
-		sender.OnPacketAcked(congestion.PacketNumber(i), 1472, 0, 0)
-	}
-
-	// Simulate 5 lost packets
-	sender.OnCongestionEvent(15, 1472*5, 0)
-
-	// After processing, verify sender is still functional
-	cwnd := sender.GetCongestionWindow()
-	if cwnd <= 0 {
-		t.Error("Congestion window should be positive")
-	}
-}
-
 // ============================================================================
 // Tests for AIMD-ε (Adaptive Epsilon)
 // ============================================================================
@@ -743,7 +571,7 @@ func TestAIMDEpsilon_AdditiveIncrease(t *testing.T) {
 	// then call processCompletedMI with an MI that produces higher utility → counter=2 → AI.
 	sender := NewK2CCSender(100_000_000)
 	sender.state.Mode = K2CCModeDecision
-	sender.state.Epsilon = DefaultK2CCEpsilon
+	sender.state.Epsilon = defaultEpsilon
 	sender.state.NextMIID = 1 // Avoid rate probing (0%10==0)
 	sender.state.UtilityIncreases = 1
 	sender.state.UtilityDecreases = 0
@@ -756,7 +584,7 @@ func TestAIMDEpsilon_AdditiveIncrease(t *testing.T) {
 	mi := NewMonitorInterval(1, sender.state.CurrentRate)
 	mi.BytesSent = 5_000_000 // 5 MB
 	mi.BytesAcked = 5_000_000
-	mi.PacketsAcked = MinMIPackets
+	mi.PacketsAcked = minMIPackets
 	mi.RTTSamples = append(mi.RTTSamples, 50*time.Millisecond)
 	mi.StartTime = time.Now().Add(-time.Second)
 	mi.Complete()
@@ -764,7 +592,7 @@ func TestAIMDEpsilon_AdditiveIncrease(t *testing.T) {
 	sender.processCompletedMI(mi)
 
 	// UtilityIncreases should now be 2 → additive increase triggered
-	expected := DefaultK2CCEpsilon + epsilonDelta
+	expected := defaultEpsilon + epsilonDelta
 	if sender.state.Epsilon < expected-0.001 || sender.state.Epsilon > expected+0.001 {
 		t.Errorf("ε should be %f after additive increase, got %f", expected, sender.state.Epsilon)
 	}
@@ -778,7 +606,7 @@ func TestAIMDEpsilon_Bounds(t *testing.T) {
 	mi := NewMonitorInterval(1, sender.state.CurrentRate)
 	mi.BytesSent = 5_000_000
 	mi.BytesAcked = 5_000_000
-	mi.PacketsAcked = MinMIPackets
+	mi.PacketsAcked = minMIPackets
 	mi.RTTSamples = append(mi.RTTSamples, 50*time.Millisecond)
 	mi.StartTime = time.Now().Add(-time.Second)
 	mi.Complete()
@@ -833,7 +661,7 @@ func TestAIMDEpsilon_NoiseUpdate(t *testing.T) {
 	mi := NewMonitorInterval(1, sender.state.CurrentRate)
 	mi.BytesSent = 5_000_000
 	mi.BytesAcked = 5_000_000
-	mi.PacketsAcked = MinMIPackets
+	mi.PacketsAcked = minMIPackets
 	// Add varied RTT samples to produce non-zero CV
 	mi.RTTSamples = []time.Duration{
 		40 * time.Millisecond, 50 * time.Millisecond,
@@ -872,7 +700,7 @@ func TestAIMDEpsilon_HoldDuringBuilding(t *testing.T) {
 	mi := NewMonitorInterval(1, sender.state.CurrentRate)
 	mi.BytesSent = 5_000_000
 	mi.BytesAcked = 5_000_000
-	mi.PacketsAcked = MinMIPackets
+	mi.PacketsAcked = minMIPackets
 	mi.RTTSamples = append(mi.RTTSamples, 50*time.Millisecond)
 	mi.StartTime = time.Now().Add(-time.Second)
 	mi.Complete()
@@ -913,7 +741,7 @@ func TestMI_NotCompleteBeforeMinDuration(t *testing.T) {
 	mi := NewMonitorInterval(1, 400_000_000.0) // 400 Mbps
 	mi.MinDuration = 100 * time.Millisecond     // simulate 100ms RTT
 
-	// Feed 20 ACKs (well above MinMIPackets=10) — but instantly
+	// Feed 20 ACKs (well above minMIPackets=10) — but instantly
 	mi.PacketsAcked = 20
 	mi.RTTSamples = make([]time.Duration, 20)
 
@@ -1005,7 +833,7 @@ func TestSlowStart_ExitsAtMaxRate(t *testing.T) {
 		mi := NewMonitorInterval(uint64(i), rate)
 		mi.BytesSent = 5_000_000 // 5 MB — well above app-limited threshold
 		mi.BytesAcked = 5_000_000
-		mi.PacketsAcked = MinMIPackets
+		mi.PacketsAcked = minMIPackets
 		mi.RTTSamples = append(mi.RTTSamples, 50*time.Millisecond)
 		mi.StartTime = time.Now().Add(-200 * time.Millisecond)
 		mi.Complete()
@@ -1247,7 +1075,7 @@ func TestCeilingHold_ZeroGradient(t *testing.T) {
 	sender.state.Mode = K2CCModeDecision
 	sender.bwEstimate = 100_000_000
 	sender.rtt = 30 * time.Millisecond
-	sender.state.Epsilon = DefaultK2CCEpsilon
+	sender.state.Epsilon = defaultEpsilon
 	sender.state.hasLastUtility = true
 	sender.state.lastUtility = 100.0 // utility ≈ throughput at 0% loss
 	sender.state.NextMIID = 3        // avoid rate probing (every 10 MIs)
@@ -1303,7 +1131,7 @@ func TestAlphaClamping_HighLoss(t *testing.T) {
 
 func TestAlphaClamping_Utility(t *testing.T) {
 	// Verify utility stays positive even at high loss
-	uf := NewUtilityFunction(GFWK2CCAlpha, DefaultK2CCBeta) // α=5.0
+	uf := NewUtilityFunction(gfwAlpha, defaultBeta) // α=5.0
 	uf.MinRTT = 30 * time.Millisecond
 
 	mi := NewMonitorInterval(0, 100_000_000)
