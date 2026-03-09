@@ -43,6 +43,7 @@ type Engine struct {
 	prov           provider.Provider
 	networkMonitor NetworkChangeNotifier
 	health         *healthMonitor
+	probe          *recoveryProbe
 }
 
 // New creates a new Engine in the disconnected state.
@@ -326,6 +327,9 @@ func (e *Engine) Start(cfg Config) error {
 	hm.start()
 	e.health = hm
 
+	// Recovery probe: actively verifies wire connectivity after network changes.
+	e.probe = newRecoveryProbe(tm, e)
+
 	e.setState(StateConnected)
 	e.mu.Unlock()
 	slog.Info("engine: connected", "totalMs", time.Since(startTime).Milliseconds())
@@ -366,6 +370,14 @@ func (e *Engine) OnNetworkChanged() {
 	e.mu.Unlock()
 	if hm != nil {
 		hm.resetCounters()
+	}
+
+	// Trigger recovery probe to actively verify wire connectivity.
+	e.mu.Lock()
+	probe := e.probe
+	e.mu.Unlock()
+	if probe != nil {
+		probe.trigger()
 	}
 
 	// Clear non-client wire errors (network errors are stale after network change).
@@ -448,6 +460,11 @@ func (e *Engine) Stop() error {
 	if e.health != nil {
 		e.health.stop()
 		e.health = nil
+	}
+	// Stop recovery probe — its goroutine reads tm.
+	if e.probe != nil {
+		e.probe.stop()
+		e.probe = nil
 	}
 	if e.networkMonitor != nil {
 		e.networkMonitor.Close()
