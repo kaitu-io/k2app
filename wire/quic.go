@@ -265,7 +265,15 @@ func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
 		return nil, ErrNotConnected
 	}
 	if c.conn != nil {
-		return c.conn, nil
+		select {
+		case <-c.conn.Context().Done():
+			// Connection died (idle timeout, transport error, peer close).
+			// quic-go KeepAlive (10s) + MaxIdleTimeout (30s) detected it.
+			slog.Info("QUICClient: cached connection dead, rebuilding")
+			c.closeConnLocked()
+		default:
+			return c.conn, nil
+		}
 	}
 
 	addr := c.serverAddr
@@ -353,14 +361,9 @@ func (c *QUICClient) DialTCP(ctx context.Context, addr string) (net.Conn, error)
 	slog.Debug("QUICClient.DialTCP: opening stream", "addr", addr)
 	stream, err := conn.OpenStreamSync(ctx)
 	if err != nil {
-		// Non-context errors mean the connection is dead (idle timeout,
-		// peer close, transport error). Reset so next connect() builds
-		// a fresh connection instead of retrying on this dead one.
-		if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
-			slog.Warn("QUICClient.DialTCP: stream open failed, resetting connection",
-				"addr", addr, "err", err)
-			c.resetConnection()
-		}
+		// Dead connections are detected by connect() via conn.Context().Done().
+		// No manual resetConnection() needed here.
+		slog.Debug("QUICClient.DialTCP: stream open failed", "addr", addr, "err", err)
 		return nil, fmt.Errorf("wire: open stream: %w", err)
 	}
 	slog.Debug("QUICClient.DialTCP: stream opened", "addr", addr, "streamID", stream.StreamID())
@@ -376,21 +379,22 @@ func (c *QUICClient) DialTCP(ctx context.Context, addr string) (net.Conn, error)
 	}
 	slog.Debug("QUICClient.DialTCP: header written, waiting for response", "addr", addr)
 
-	// Read response with timeout. Server dial timeout is 10s — allow 15s total
-	// for dial + response write. Without this, a half-dead QUIC connection
-	// (streams open but data never arrives) hangs forever.
-	stream.SetReadDeadline(time.Now().Add(15 * time.Second))
+	// Read response with timeout. Server dial timeout is 5s — allow 5s for
+	// dial + response write. Successful dials complete in <1s; 5s is generous.
+	// Without this, a half-dead QUIC connection hangs forever.
+	stream.SetReadDeadline(time.Now().Add(5 * time.Second))
 	br := bufio.NewReader(stream)
 	ok, errCode, errMsg, err := ReadStreamResponse(br)
 	if err != nil {
 		slog.Warn("QUICClient.DialTCP: read response failed", "addr", addr, "err", err)
 		stream.Close()
-		// Timeout or EOF reading response means the QUIC connection is likely
-		// half-dead (streams open but data never arrives). Reset so next
-		// attempt builds a fresh connection instead of reusing this broken one.
+		// Stream response timeout means the server's upstream net.Dial is
+		// slow/failing — NOT a QUIC transport issue (OpenStreamSync succeeded).
+		// Don't resetConnection() — the QUIC connection is healthy.
+		// Don't increment consecConnFails — TCP-WS fallback won't help
+		// (same server, same upstream reachability problem).
 		if nErr, ok := err.(net.Error); ok && nErr.Timeout() {
-			slog.Warn("QUICClient.DialTCP: stream response timeout, resetting connection", "addr", addr)
-			c.resetConnection()
+			slog.Warn("QUICClient.DialTCP: stream response timeout (server upstream slow)", "addr", addr)
 		}
 		return nil, fmt.Errorf("wire: read response: %w", err)
 	}
@@ -521,12 +525,8 @@ func (c *QUICClient) dialUDPStream(ctx context.Context, conn *quic.Conn, addr st
 		stream, err := conn.OpenStreamSync(ctx)
 		if err != nil {
 			c.mu.Unlock()
-			// Same pattern as DialTCP: non-context errors mean dead connection.
-			if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
-				slog.Warn("QUICClient.dialUDPStream: stream open failed, resetting connection",
-					"addr", addr, "err", err)
-				c.resetConnection()
-			}
+			// Dead connections are detected by connect() via conn.Context().Done().
+			slog.Debug("QUICClient.dialUDPStream: stream open failed", "addr", addr, "err", err)
 			return nil, fmt.Errorf("wire: open UDP stream: %w", err)
 		}
 		// Write H3 frame type + UDP stream header
@@ -664,19 +664,14 @@ func (c *QUICClient) tryHop() bool {
 	return true
 }
 
-// resetConnection closes cached connection resources without marking client as closed.
-// After reset, the next DialTCP/DialUDP will establish a fresh connection.
-func (c *QUICClient) resetConnection() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+// closeConnLocked releases cached connection resources. Caller must hold c.mu.
+func (c *QUICClient) closeConnLocked() {
 	if c.udpMux != nil {
 		c.udpMux.close()
 		c.udpMux = nil
 	}
 	if c.conn != nil {
-		if err := c.conn.CloseWithError(0, "network changed"); err != nil {
-			slog.Debug("QUICClient: resetConnection close error", "err", err)
-		}
+		c.conn.CloseWithError(0, "connection reset")
 		c.conn = nil
 	}
 	if c.transport != nil {
@@ -686,7 +681,15 @@ func (c *QUICClient) resetConnection() {
 	c.alloc = nil
 	c.arcSender = nil
 	c.lastTCPSuccess.Store(0)
-	// NOTE: do NOT set c.closed = true — client must remain usable
+}
+
+// resetConnection closes cached connection resources without marking client as closed.
+// Used only for intentional resets (port hop, network change) — NOT for error recovery.
+// Dead connections are detected by connect() via conn.Context().Done().
+func (c *QUICClient) resetConnection() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.closeConnLocked()
 }
 
 // Close closes the QUIC connection and underlying transport.

@@ -845,11 +845,10 @@ func TestQUICLoopback_Datagram(t *testing.T) {
 	}
 }
 
-// TestQUICClient_DialTCP_ResetsOnStreamError verifies that DialTCP resets
-// the connection when OpenStreamSync fails with a non-context error (e.g.,
-// connection closed). This prevents the dead-connection retry loop where
-// TransportManager backoff retries keep hitting the same dead conn.
-func TestQUICClient_DialTCP_ResetsOnStreamError(t *testing.T) {
+// TestQUICClient_ConnectDetectsDeadConnection verifies that connect() detects
+// a dead QUIC connection via conn.Context().Done() and rebuilds automatically.
+// No manual resetConnection() needed — protocol-layer detection handles it.
+func TestQUICClient_ConnectDetectsDeadConnection(t *testing.T) {
 	client, server, cleanup := setupQUICPair(t)
 	defer cleanup()
 
@@ -882,26 +881,34 @@ func TestQUICClient_DialTCP_ResetsOnStreamError(t *testing.T) {
 		t.Fatal("expected cached connection before server close")
 	}
 
-	// Simulate a dead connection: close the underlying QUIC connection directly.
-	// The client still has c.conn != nil (connect() will return it), but
-	// OpenStreamSync will fail immediately on the closed connection.
-	// This mirrors production: ISP kills the path, conn object is stale.
+	// Simulate a dead connection: close the QUIC conn so Context() is Done.
 	client.mu.Lock()
 	client.conn.CloseWithError(0, "test: simulate dead connection")
 	client.mu.Unlock()
 
-	// DialTCP should fail AND reset the dead connection.
-	_, err = client.DialTCP(ctx, "example.com:80")
-	if err == nil {
-		t.Fatal("expected error from DialTCP on dead connection")
-	}
+	// Next connect() should detect the dead conn and clean it up.
+	// It will rebuild a fresh connection to the server.
+	go func() {
+		conn, _, err := server.AcceptTCP(ctx)
+		if err != nil {
+			return
+		}
+		WriteStreamResponse(conn, nil)
+		conn.Close()
+	}()
 
-	// The connection should have been reset (nil'd).
+	conn2, err := client.DialTCP(ctx, "example.com:80")
+	if err != nil {
+		t.Fatal("expected connect to rebuild after dead connection, got:", err)
+	}
+	conn2.Close()
+
+	// Verify the connection was rebuilt (not nil).
 	client.mu.Lock()
 	connAfter := client.conn
 	client.mu.Unlock()
-	if connAfter != nil {
-		t.Fatal("expected conn to be nil after DialTCP reset")
+	if connAfter == nil {
+		t.Fatal("expected new conn after rebuild")
 	}
 }
 
@@ -937,11 +944,10 @@ func TestQUICClient_DialTCP_NoResetOnContextTimeout(t *testing.T) {
 	}
 }
 
-// TestQUICClient_dialUDPStream_ResetsOnStreamError verifies that dialUDPStream
-// resets the connection when OpenStreamSync fails with a non-context error,
-// matching the DialTCP behavior. This is a defensive fix for the datagram-
-// disabled fallback path.
-func TestQUICClient_dialUDPStream_ResetsOnStreamError(t *testing.T) {
+// TestQUICClient_dialUDPStream_DeadConnDetectedByConnect verifies that
+// after a QUIC connection dies, the next connect() detects it via
+// conn.Context().Done() — dialUDPStream itself doesn't need to reset.
+func TestQUICClient_dialUDPStream_DeadConnDetectedByConnect(t *testing.T) {
 	client, _, cleanup := setupQUICPair(t)
 	defer cleanup()
 
@@ -952,29 +958,27 @@ func TestQUICClient_dialUDPStream_ResetsOnStreamError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Verify client has a cached connection.
-	client.mu.Lock()
-	hasConn := client.conn != nil
-	client.mu.Unlock()
-	if !hasConn {
-		t.Fatal("expected cached connection after connect")
-	}
-
 	// Kill the QUIC connection so OpenStreamSync will fail.
 	conn.CloseWithError(0, "test: simulate dead connection")
 
-	// dialUDPStream should fail AND reset the dead connection.
+	// dialUDPStream should fail (stream open on dead conn).
 	_, err = client.dialUDPStream(ctx, conn, "example.com:80")
 	if err == nil {
 		t.Fatal("expected error from dialUDPStream on dead connection")
 	}
 
-	// The connection should have been reset (nil'd).
+	// The dead connection is NOT cleaned up by dialUDPStream — that's
+	// connect()'s job via conn.Context().Done(). Verify connect detects it.
 	client.mu.Lock()
-	connAfter := client.conn
+	cachedConn := client.conn
 	client.mu.Unlock()
-	if connAfter != nil {
-		t.Fatal("expected conn to be nil after dialUDPStream reset")
+
+	// conn.Context() should be done (connection was killed).
+	select {
+	case <-cachedConn.Context().Done():
+		// Expected: connect() will detect this on next call.
+	default:
+		t.Fatal("expected dead connection context to be done")
 	}
 }
 

@@ -77,10 +77,11 @@ Fields: UDID, Token, Host, Port, ECH, Fingerprint, HopStart, HopEnd, Insecure, P
 - `net.Pipe()` is synchronous — structure goroutines carefully in tests.
 - ECH base64 in URLs must use `base64.URLEncoding` (standard `+` corrupted by `url.Query()`).
 - uTLS forces outer SNI = ECH config's `public_name` — cannot be set independently.
-- Dead QUIC conn: `OpenStreamSync` failure caches stale connection — both `DialTCP` and `DialUDP` must call `resetConnection()` for non-context errors so next retry builds fresh conn.
+- QUIC connection liveness: quic-go's KeepAlive (10s) + MaxIdleTimeout (30s) detect dead connections at protocol level. `conn.Context().Done()` fires when connection dies. `connect()` checks this before reusing cached conn — no manual `resetConnection()` needed on error paths. Only datagram hop (intentional port change) calls `resetConnection()` directly.
+- Stream response timeout ≠ transport failure: A 5s stream response timeout means the server's upstream `net.Dial` to the destination is slow/failing — NOT that QUIC transport is broken (OpenStreamSync succeeded = transport is alive). Do NOT increment `consecConnFails` or trigger TCP-WS fallback on stream timeouts. `consecConnFails` is strictly for QUIC handshake failures (UDP blocked by firewall).
 - Datagram recovery cycle: 3 port hops exhaust → fallback to TCP-WS streams for 30s → reset hop counter → fresh QUIC round. Cycle repeats until network change or datagram recovery.
 - QUIC flow control is platform-specific (build tags `ios || android` vs desktop) — mobile uses smaller windows (2 MB stream / 8 MB conn vs 8 MB / 20 MB desktop) to stay under iOS NE jetsam limit.
-- QUIC stream responses have 15s timeout to prevent indefinite blocking on slow/dead servers.
+- QUIC stream responses have 5s timeout to prevent indefinite blocking on slow/dead servers.
 - TCP health gate: `DialUDP` checks `lastTCPSuccess` before port hop. If TCP succeeded within 30s, returns `ErrDatagramUnhealthy` (TCP-WS fallback) instead of hop (which kills all TCP streams). Prevents normal DNS packet loss from triggering destructive connection resets.
 
 ## Testing

@@ -67,7 +67,7 @@ type ProxyHandler struct {
 
 // NewProxyHandler creates a proxy handler with default settings.
 func NewProxyHandler() *ProxyHandler {
-	return &ProxyHandler{DialTimeout: 10 * time.Second}
+	return &ProxyHandler{DialTimeout: 5 * time.Second}
 }
 
 // HandleTCP proxies a TCP stream to the target address.
