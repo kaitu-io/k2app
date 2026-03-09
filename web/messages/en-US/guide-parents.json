@@ -9,7 +9,7 @@
     "title": "Why Kaitu",
     "stable": {
       "title": "Stable & Smooth",
-      "description": "Our proprietary k2arc congestion control algorithm keeps things running smoothly, even during peak hours"
+      "description": "Our proprietary k2cc congestion control algorithm keeps things running smoothly, even during peak hours"
     },
     "simple": {
       "title": "Easy to Use",

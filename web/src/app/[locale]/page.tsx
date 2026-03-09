@@ -50,7 +50,7 @@ const JSON_LD_CONTENT = JSON.stringify({
   applicationCategory: 'NetworkingApplication',
   operatingSystem: 'Windows, macOS, iOS, Android, Linux',
   description:
-    'ECH-based stealth tunnel protocol powered by k2arc adaptive rate control. QUIC+TCP-WS dual-stack transport with zero CT log exposure and one-command deployment.',
+    'ECH-based stealth tunnel protocol powered by k2cc adaptive rate control. QUIC+TCP-WS dual-stack transport with zero CT log exposure and one-command deployment.',
   url: 'https://kaitu.io',
   publisher: {
     '@type': 'Organization',
@@ -65,7 +65,7 @@ const JSON_LD_CONTENT = JSON.stringify({
   featureList: [
     'ECH (Encrypted Client Hello) stealth',
     'QUIC + TCP-WebSocket dual-stack transport',
-    'k2arc adaptive rate control',
+    'k2cc adaptive rate control',
     'Reverse proxy camouflage',
     'Self-signed certificate + certificate pinning',
     'Zero CT log exposure',

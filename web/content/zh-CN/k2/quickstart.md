@@ -1,7 +1,7 @@
 ---
 title: 1 分钟快速开始
 date: 2026-02-22
-summary: 一分钟内启动 k2s 服务端并通过 k2 客户端完成首次连接。零配置——服务端自动生成密钥，k2arc 自动探测最优速率。
+summary: 一分钟内启动 k2s 服务端并通过 k2 客户端完成首次连接。零配置——服务端自动生成密钥，k2cc 自动探测最优速率。
 section: getting-started
 order: 2
 draft: false
@@ -41,9 +41,9 @@ curl -fsSL https://kaitu.io/install.sh | sudo sh -s k2
 sudo k2 up k2v5://abc123:tok456@203.0.113.5:443?ech=AEX0...&pin=sha256:...
 ```
 
-连接成功后，**k2arc**会自动探测网络最优速率——无需手动指定带宽参数。所有流量通过 k2 隧道加密传输。
+连接成功后，**k2cc**会自动探测网络最优速率——无需手动指定带宽参数。所有流量通过 k2 隧道加密传输。
 
-> 与 Hysteria2 不同，k2 不需要配置 `up_mbps` / `down_mbps`。k2arc 根据实时网络状况自动调整发送速率，无需手动配置带宽参数。
+> 与 Hysteria2 不同，k2 不需要配置 `up_mbps` / `down_mbps`。k2cc 根据实时网络状况自动调整发送速率，无需手动配置带宽参数。
 
 ## 常用命令
 

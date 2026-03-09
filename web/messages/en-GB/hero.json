@@ -2,7 +2,7 @@
   "hero": {
     "title": "30% Packet Loss. Full Speed.",
     "subtitle": "It shouldn't work — but k2 does it.",
-    "description": "k2arc rewrites the rules of congestion control. Where other protocols collapse under heavy packet loss, k2 maintains stable, high throughput. Built on ECH stealth encryption + QUIC/TCP-WS dual-stack transport, deploy in one command.",
+    "description": "k2cc rewrites the rules of congestion control. Where other protocols collapse under heavy packet loss, k2 maintains stable, high throughput. Built on ECH stealth encryption + QUIC/TCP-WS dual-stack transport, deploy in one command.",
     "cta_primary": "Subscribe & Renew",
     "cta_secondary": "Download Client",
     "terminalTitle": "Self-hosted Server",
@@ -27,8 +27,8 @@
         "icon": "🔀"
       },
       "congestion": {
-        "title": "k2arc Adaptive Rate Control",
-        "description": "Proprietary k2arc algorithm automatically finds optimal send rates. Censorship-aware mechanism distinguishes censorship drops from congestion. Far outperforms BBR under GFW high-loss conditions",
+        "title": "k2cc Adaptive Rate Control",
+        "description": "Proprietary k2cc algorithm automatically finds optimal send rates. Censorship-aware mechanism distinguishes censorship drops from congestion. Far outperforms BBR under GFW high-loss conditions",
         "icon": "📈"
       },
       "reverseProxy": {
@@ -148,7 +148,7 @@
   },
   "security": {
     "title": "k2v5 Protocol — Next-Generation Stealth Tunnel",
-    "description": "k2v5 is built on ECH (Encrypted Client Hello), completely solving SNI leakage. Powered by k2arc adaptive rate control combined with QUIC low-latency transport, it achieves stable high throughput in high-loss, poor network conditions.",
+    "description": "k2v5 is built on ECH (Encrypted Client Hello), completely solving SNI leakage. Powered by k2cc adaptive rate control combined with QUIC low-latency transport, it achieves stable high throughput in high-loss, poor network conditions.",
     "icon": "🛡️",
     "caTech": {
       "title": "ECH Stealth Tunnel Technology",
@@ -157,7 +157,7 @@
         "title": "Core Features",
         "item1": "ECH encrypts SNI — TLS handshake undetectable",
         "item2": "QUIC-first transport — low latency, high throughput",
-        "item3": "k2arc adaptive rate control — far outperforms BBR under censorship",
+        "item3": "k2cc adaptive rate control — far outperforms BBR under censorship",
         "item4": "Reverse proxy camouflage — active probe defence",
         "bullet": "•"
       },
@@ -183,8 +183,8 @@
         "icon": "🔀"
       },
       "smartRouting": {
-        "title": "k2arc Adaptive Rate Control",
-        "description": "k2arc automatically finds optimal send rates. Censorship-aware mechanism distinguishes censorship drops. Far outperforms BBR under high-loss conditions",
+        "title": "k2cc Adaptive Rate Control",
+        "description": "k2cc automatically finds optimal send rates. Censorship-aware mechanism distinguishes censorship drops. Far outperforms BBR under high-loss conditions",
         "icon": "📈"
       },
       "disguise": {
@@ -210,7 +210,7 @@
       "keyDerivation": "Transport Protocol",
       "keyDerivationValue": "QUIC / TCP-WebSocket Dual Stack",
       "transport": "Congestion Control",
-      "transportValue": "k2arc Adaptive Rate Control",
+      "transportValue": "k2cc Adaptive Rate Control",
       "multiplexing": "Certificate Strategy",
       "multiplexingValue": "Self-Signed + Certificate Pin (Zero CT Log)",
       "heartbeat": "Deployment",
@@ -234,7 +234,7 @@
       "kaitu": {
         "letter": "K",
         "name": "k2v5",
-        "tech": "ECH stealth + QUIC+TCP-WS dual stack + k2arc adaptive rate control"
+        "tech": "ECH stealth + QUIC+TCP-WS dual stack + k2cc adaptive rate control"
       },
       "trojan": {
         "letter": "W",
@@ -283,7 +283,7 @@
         "failedPath": "Fallback Path",
         "optimalNode": "Optimal Node"
       },
-      "description": "k2v5 uses ECH to encrypt SNI during the TLS handshake, preventing firewalls from identifying the target domain. Data is transmitted via QUIC (preferred) or TCP-WebSocket (fallback). k2arc maintains stable throughput on high-loss networks. The server's built-in reverse proxy forwards non-k2 traffic to a real website, making active probing indistinguishable."
+      "description": "k2v5 uses ECH to encrypt SNI during the TLS handshake, preventing firewalls from identifying the target domain. Data is transmitted via QUIC (preferred) or TCP-WebSocket (fallback). k2cc maintains stable throughput on high-loss networks. The server's built-in reverse proxy forwards non-k2 traffic to a real website, making active probing indistinguishable."
     }
   },
   "download": {

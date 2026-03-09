@@ -9,7 +9,7 @@
     "title": "为什么选择 Kaitu",
     "stable": {
       "title": "稳定流畅",
-      "description": "独有 k2arc 拥堵控制算法，带宽高峰也能正常使用"
+      "description": "独有 k2cc 拥堵控制算法，带宽高峰也能正常使用"
     },
     "simple": {
       "title": "简单易用",

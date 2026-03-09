@@ -34,13 +34,13 @@ export function generateMetadata(
   };
 
   const descriptions: Record<string, string> = {
-    'zh-CN': 'k2arc 重写拥塞控制规则，30% 丢包依然满速。ECH 加密隐身 + QUIC/TCP-WS 双栈传输，一行命令部署，CT 日志零暴露。',
-    'zh-TW': 'k2arc 重寫擁塞控制規則，30% 丟包依然滿速。ECH 加密隱身 + QUIC/TCP-WS 雙棧傳輸，一行命令部署，CT 日誌零暴露。',
-    'zh-HK': 'k2arc 重寫擁塞控制規則，30% 丟包依然滿速。ECH 加密隱身 + QUIC/TCP-WS 雙棧傳輸，一行命令部署，CT 日誌零暴露。',
-    'en-US': 'k2arc rewrites congestion control — full speed at 30% packet loss. ECH stealth encryption + QUIC/TCP-WS dual-stack transport, one-command deployment, zero CT log exposure.',
-    'en-GB': 'k2arc rewrites congestion control — full speed at 30% packet loss. ECH stealth encryption + QUIC/TCP-WS dual-stack transport, one-command deployment, zero CT log exposure.',
-    'en-AU': 'k2arc rewrites congestion control — full speed at 30% packet loss. ECH stealth encryption + QUIC/TCP-WS dual-stack transport, one-command deployment, zero CT log exposure.',
-    'ja': 'k2arc が輻輳制御のルールを書き換え、30% パケットロスでもフルスピード。ECH ステルス暗号化 + QUIC/TCP-WS デュアルスタック転送、1コマンドデプロイ、CT ログゼロ露出。'
+    'zh-CN': 'k2cc 重写拥塞控制规则，30% 丢包依然满速。ECH 加密隐身 + QUIC/TCP-WS 双栈传输，一行命令部署，CT 日志零暴露。',
+    'zh-TW': 'k2cc 重寫擁塞控制規則，30% 丟包依然滿速。ECH 加密隱身 + QUIC/TCP-WS 雙棧傳輸，一行命令部署，CT 日誌零暴露。',
+    'zh-HK': 'k2cc 重寫擁塞控制規則，30% 丟包依然滿速。ECH 加密隱身 + QUIC/TCP-WS 雙棧傳輸，一行命令部署，CT 日誌零暴露。',
+    'en-US': 'k2cc rewrites congestion control — full speed at 30% packet loss. ECH stealth encryption + QUIC/TCP-WS dual-stack transport, one-command deployment, zero CT log exposure.',
+    'en-GB': 'k2cc rewrites congestion control — full speed at 30% packet loss. ECH stealth encryption + QUIC/TCP-WS dual-stack transport, one-command deployment, zero CT log exposure.',
+    'en-AU': 'k2cc rewrites congestion control — full speed at 30% packet loss. ECH stealth encryption + QUIC/TCP-WS dual-stack transport, one-command deployment, zero CT log exposure.',
+    'ja': 'k2cc が輻輳制御のルールを書き換え、30% パケットロスでもフルスピード。ECH ステルス暗号化 + QUIC/TCP-WS デュアルスタック転送、1コマンドデプロイ、CT ログゼロ露出。'
   };
 
   const title = overrides.title || titles[locale] || titles['zh-CN'];
