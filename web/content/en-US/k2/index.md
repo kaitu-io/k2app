@@ -1,38 +1,73 @@
 ---
 title: k2 Protocol Overview
 date: 2026-02-21
-summary: k2 is Kaitu's proprietary stealth tunnel protocol. QUIC+H3 primary transport, TCP-WebSocket fallback, Encrypted Client Hello, TLS fingerprint mimicry, certificate pinning.
-section: getting-started
+summary: k2 is Kaitu's proprietary stealth tunnel protocol family. The current version, k2v5, features k2arc adaptive rate control, QUIC+H3 primary transport, TCP-WebSocket fallback, Encrypted Client Hello, and TLS fingerprint mimicry.
+section: overview
 order: 1
 draft: false
 ---
 
 # k2 Protocol Overview
 
-k2 is Kaitu's proprietary stealth network tunnel protocol, designed for use in high-censorship environments. It uses **QUIC/HTTP3** as its primary transport and automatically falls back to **TCP-WebSocket** when QUIC is blocked.
+**k2** is Kaitu's proprietary stealth network tunnel protocol family, designed for high-censorship environments. The protocol evolves across major versions, each representing a generation of core architecture. **k2v5** is the current production version — connection URLs start with `k2v5://`, and all Kaitu clients and the k2 CLI use k2v5 by default.
 
-## Core Features
+k2v5 features **k2arc (Adaptive Rate Control)**, a proprietary congestion control algorithm that automatically finds the optimal sending rate in high-loss, high-latency networks — no manual bandwidth configuration needed. It uses **QUIC/HTTP3** as the primary transport, with automatic **TCP-WebSocket** fallback when QUIC is blocked, combined with ECH encrypted SNI and TLS fingerprint mimicry to make tunnel traffic indistinguishable from real HTTPS browsing.
+
+## k2v5 Core Features
+
+### k2arc Adaptive Rate Control
+
+k2arc is k2v5's key differentiator. Unlike traditional congestion control algorithms, k2arc **automatically discovers** the optimal sending rate:
+
+| Capability | k2arc (k2v5) | Traditional (e.g. Brutal) |
+|------------|------------|--------------------------|
+| Bandwidth config | Fully automatic, zero-config | Manual bandwidth specification |
+| Packet loss response | Distinguishes congestion from censorship loss | Ignores all loss signals |
+| Latency control | RTT-aware, suppresses bufferbloat | Fixed rate, causes queue buildup |
+| Network adaptation | Real-time bandwidth tracking | No dynamic probing |
+| Fairness | Coexists peacefully with other traffic | Crowds out other connections |
+
+k2arc's core innovation is **censorship-aware loss handling**: in high-censorship networks, most packet loss comes from firewalls actively dropping packets rather than true congestion. k2arc automatically distinguishes censorship-induced loss from congestion loss, avoiding unnecessary rate reduction and maintaining throughput far above traditional algorithms under GFW-like conditions.
+
+For details, see [k2arc Adaptive Rate Control](/k2/protocol). For performance benchmarks, see [k2 vs Hysteria2](/k2/vs-hysteria2).
 
 ### Stealth Transport
 
-- **ECH (Encrypted Client Hello)**: The real destination hostname (SNI) is encrypted inside the ECH extension of the TLS handshake. DPI systems only see the public hostname `cloudflare-ech.com`
-- **TLS Fingerprint Mimicry**: Using the uTLS library, k2 mimics the TLS handshake of a real Chrome browser, making traffic indistinguishable from ordinary HTTPS browsing
-- **Self-Signed Certificate + Pinning**: The server uses a self-signed certificate. Clients verify it via SHA-256 hash pinning — no CA trust chain required, and no Certificate Transparency log exposure
-- **Active Probe Resistance**: Connections without ECH are transparently forwarded to the real website, so probers receive a valid HTTPS response
+k2v5 achieves traffic stealth through four layers of defense:
 
-### Transport Layer
+- **ECH (Encrypted Client Hello)**: Encrypts the real destination hostname inside the TLS handshake; DPI only sees a major CDN's public hostname
+- **TLS Fingerprint Mimicry**: Uses uTLS to replicate Chrome/Firefox/Safari TLS handshake signatures
+- **Traffic Pattern Matching**: TLS record padding lengths match real Cloudflare server responses exactly
+- **Active Probe Resistance**: Non-ECH connections are transparently forwarded to the real website
 
-- **QUIC/H3 Primary**: Native QUIC multiplexing, low latency, excellent performance on lossy networks
-- **TCP-WebSocket Fallback**: Automatic switchover when QUIC is blocked; smux multiplexes streams over a single WebSocket connection
-- **Single Port :443**: QUIC and TCP share the same port, minimizing the attack surface
-- **UDP Port Hopping**: The `hop=START-END` parameter causes the client to randomly rotate UDP ports, defeating port-based QoS throttling
-- **Proprietary Adaptive Congestion Control**: Optimized for high packet-loss networks (mobile data, cross-border links)
+For details, see [Stealth Camouflage](/k2/stealth).
 
-### Identity and Authentication
+### Zero-Config Deployment
 
-- **k2v5 URL**: All connection parameters are encoded in a single URL: `k2v5://UDID:TOKEN@HOST:PORT?ech=...&pin=...`
-- **Three-Layer Identity**: TCP destination IP (plaintext) → Outer SNI (plaintext, `cloudflare-ech.com`) → Inner SNI (ECH-encrypted)
-- **Zero-Config Server**: On first run, k2s auto-generates all keys and certificates and prints a ready-to-use connection URL
+One command starts the server — it auto-generates all keys and certificates and prints a ready-to-use connection URL. One command connects the client — k2arc automatically finds the optimal rate. No manual configuration needed.
+
+```bash
+# Server (30 seconds)
+curl -fsSL https://kaitu.io/i/k2s | sudo sh
+sudo k2s run
+
+# Client (30 seconds)
+curl -fsSL https://kaitu.io/i/k2 | sudo sh
+sudo k2 up k2v5://abc123:tok456@203.0.113.5:443?ech=AEX0...&pin=sha256:...
+```
+
+## Transport Layer
+
+- **QUIC/H3 Primary**: Native multiplexing, no head-of-line blocking, k2arc maintains high throughput on lossy networks
+- **TCP-WebSocket Fallback**: Auto-switches when QUIC is blocked; smux provides stream multiplexing
+- **Single Port :443**: QUIC and TCP share the same port, minimizing exposure
+- **UDP Port Hopping**: `hop=START-END` parameter rotates UDP ports to defeat port-based QoS throttling
+
+## Identity and Authentication
+
+- **k2v5 URL**: All parameters in a single URL: `k2v5://UDID:TOKEN@HOST:PORT?ech=...&pin=...`
+- **Three-Layer Identity**: TCP destination IP (plaintext) → Outer SNI (plaintext, CDN public hostname) → Inner SNI (ECH-encrypted)
+- **Zero-Config Server**: Auto-generates all keys and certificates on first run, prints a ready-to-use URL
 
 ## Quick Navigation
 
@@ -41,11 +76,13 @@ k2 is Kaitu's proprietary stealth network tunnel protocol, designed for use in h
 | [1-Minute Quickstart](/k2/quickstart) | Start the server and connect in under a minute |
 | [k2s Server Deployment](/k2/server) | Detailed server installation and configuration |
 | [k2 Client Usage](/k2/client) | Client installation and common commands |
-| [Protocol Technical Details](/k2/protocol) | Deep dive into the k2v5 protocol implementation |
+| [k2arc Rate Control](/k2/protocol) | k2arc core capabilities, censorship awareness, auto rate probing |
 | [Stealth Camouflage](/k2/stealth) | ECH, TLS fingerprinting, and active probe resistance |
+| [k2 vs Hysteria2](/k2/vs-hysteria2) | k2arc vs Brutal/BBR congestion control comparison |
+| [k2 vs VLESS+Reality](/k2/vs-reality) | Stealth approach and anti-blocking comparison |
 
 ## Supported Platforms
 
-The k2 command-line client runs on **Linux** and **macOS**. The Kaitu desktop client (macOS/Windows) and mobile client (iOS/Android) ship with k2 built-in — no separate installation needed.
+The k2 CLI runs on **Linux** and **macOS**. The Kaitu desktop client (macOS/Windows) and mobile client (iOS/Android) ship with k2 built-in — no separate installation needed.
 
 Visit the [download page](/install) to get the Kaitu client.
