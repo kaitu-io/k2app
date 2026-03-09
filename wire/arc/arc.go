@@ -169,6 +169,27 @@ const (
 	// coldStartNoise is the initial noiseEWMA value.
 	// Conservative (high) → early reversals classified as weak → starts with small ε.
 	coldStartNoise = DefaultK2CCEpsilon * 10.0 // = 1.0
+
+	// ============================================================================
+	// Bandwidth Estimation (Throughput Anchor)
+	// ============================================================================
+
+	// bwEstimateEWMA is the EWMA weight for new bandwidth samples.
+	// 0.3 = responsive to changes while filtering noise.
+	bwEstimateEWMA = 0.3
+
+	// ceilingHoldThresholdFactor: gradient magnitude below bwEstimate × this
+	// factor is considered "at ceiling" (zero-gradient zone).
+	ceilingHoldThresholdFactor = 0.05
+
+	// ceilingHoldThroughputFactor: throughput must be ≥ bwEstimate × this
+	// factor to qualify for ceiling hold.
+	ceilingHoldThroughputFactor = 0.9
+
+	// alphaMaxLossPenalty: maximum value for α×L. When α×L > this,
+	// α is dynamically clamped to prevent utility inversion.
+	// 0.8 ensures (1-αL) ≥ 0.2 — utility stays positive.
+	alphaMaxLossPenalty = 0.8
 )
 
 // K2CCMode represents the K2CC operating mode
@@ -596,7 +617,14 @@ func (uf *UtilityFunction) Calculate(mi *MonitorInterval) float64 {
 	// U = Throughput - α * LossRate * Throughput - β * ΔRtt
 	// Scale throughput to Mbps for reasonable utility values
 	throughputMbps := throughput / 1_000_000.0
-	lossPenalty := uf.Alpha * lossRate * throughputMbps
+
+	// Dynamic α clamping: prevent utility inversion at high loss.
+	// When α×L > 0.8, reduce α so (1-αL) stays ≥ 0.2.
+	alpha := uf.Alpha
+	if lossRate > 0 && alpha*lossRate > alphaMaxLossPenalty {
+		alpha = alphaMaxLossPenalty / lossRate
+	}
+	lossPenalty := alpha * lossRate * throughputMbps
 	latencyPenalty := uf.Beta * deltaRTT
 
 	utility := throughputMbps - lossPenalty - latencyPenalty
@@ -691,6 +719,10 @@ type K2CCSender struct {
 	// AIMD-ε: noise baseline for strong/weak signal classification.
 	// EWMA of RTT CV during inconsistent (building) periods.
 	noiseEWMA float64
+
+	// Bandwidth estimation: EWMA of T/(1-L) from completed MIs.
+	// Used by Throughput Anchor to reset rate when app-limited.
+	bwEstimate float64
 
 	// Sliding-window ack rate tracker — fed by OnCongestionEventEx.
 	// Observability only (debug logging). Does not drive decisions.
@@ -815,9 +847,50 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 		}
 	}
 
-	// Check if app-limited (calculate throughput triggers detection)
-	_ = mi.Throughput()
+	// Calculate throughput and detect app-limited state
+	throughput := mi.Throughput()
+
+	// Bandwidth estimation: B_est = T / (1-L)
+	// Works even under loss — recovers true link capacity
+	if throughput > 0 {
+		bEst := throughput
+		if lossRate := mi.LossRate(); lossRate < 0.95 {
+			bEst = throughput / (1.0 - lossRate)
+		}
+		if p.bwEstimate == 0 {
+			p.bwEstimate = bEst
+		} else {
+			p.bwEstimate = p.bwEstimate*(1.0-bwEstimateEWMA) + bEst*bwEstimateEWMA
+		}
+	}
+
+	// Throughput Anchor: when app-limited (R >> B), reset rate to estimated bandwidth.
+	// This brings CC back into the gradient-effective zone where R ≈ B.
 	if mi.IsAppLimited {
+		if p.bwEstimate > 0 {
+			p.state.CurrentRate = p.bwEstimate
+			p.cwnd = rateToCwnd(p.state.CurrentRate, p.rtt)
+		}
+		// Exit slow start — it overshot bandwidth, decision mode can fine-tune
+		if p.state.Mode == K2CCModeSlowStart {
+			p.state.Mode = K2CCModeDecision
+		}
+		p.state.UtilityIncreases = 0
+		p.state.UtilityDecreases = 0
+		p.state.hasLastUtility = false
+
+		// Update snapshot fallback values
+		p.lastCompletedLoss = mi.LossRate()
+		p.lastCompletedThroughput = throughput
+
+		slog.Debug("k2cc: anchor",
+			"mi", mi.ID,
+			"rate", fmt.Sprintf("%.1fM", p.state.CurrentRate/1_000_000),
+			"bwEstimate", fmt.Sprintf("%.1fM", p.bwEstimate/1_000_000),
+			"throughput", fmt.Sprintf("%.1fM", throughput/1_000_000),
+			"loss", fmt.Sprintf("%.1f%%", mi.LossRate()*100),
+			"mode", p.state.Mode.String(),
+		)
 		return
 	}
 
@@ -859,6 +932,28 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 	case K2CCModeDecision, K2CCModeRateAdjusting:
 		if p.state.hasLastUtility {
 			gradient := utility - p.state.lastUtility
+
+			// Ceiling Hold: at bandwidth ceiling, gradient ≈ 0 but throughput
+			// is near estimated bandwidth. Hold rate instead of probing/drifting.
+			if p.bwEstimate > 0 {
+				absGrad := math.Abs(gradient)
+				gradThreshold := p.bwEstimate / 1_000_000.0 * ceilingHoldThresholdFactor
+				throughputNearCeiling := throughput >= p.bwEstimate*ceilingHoldThroughputFactor
+
+				if absGrad < gradThreshold && throughputNearCeiling {
+					p.state.lastUtility = utility
+					p.state.hasLastUtility = true
+					p.lastCompletedLoss = mi.LossRate()
+					p.lastCompletedThroughput = throughput
+					slog.Debug("k2cc: ceiling hold",
+						"mi", mi.ID,
+						"rate", fmt.Sprintf("%.1fM", p.state.CurrentRate/1_000_000),
+						"bwEstimate", fmt.Sprintf("%.1fM", p.bwEstimate/1_000_000),
+						"gradient", fmt.Sprintf("%.4f", gradient),
+					)
+					break
+				}
+			}
 
 			// Capture previous state for AIMD-ε reversal detection
 			prevConfirmed := p.state.UtilityIncreases >= 2 || p.state.UtilityDecreases >= 2
@@ -956,6 +1051,7 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 		"mode", p.state.Mode.String(),
 		"dir", dir,
 		"ackRate", fmt.Sprintf("%.3f", p.ackRate.AckRate()),
+		"bwEst", fmt.Sprintf("%.1fM", p.bwEstimate/1_000_000),
 	)
 }
 
@@ -1206,6 +1302,7 @@ type CCSnapshot struct {
 	MIID        uint64        // Current Monitor Interval ID
 	Epsilon     float64       // Current epsilon (AIMD-ε adaptive step size)
 	AckRate     float64       // Global sliding-window ack rate (0.0-1.0), observability only
+	BwEstimate  float64       // Estimated link bandwidth in bps (0 = no estimate)
 }
 
 // minSnapshotBytes is the minimum BytesSent in the current MI before its stats
@@ -1227,6 +1324,7 @@ func (p *K2CCSender) Snapshot() CCSnapshot {
 		Cwnd:        int64(p.cwnd),
 		Mode:        p.state.Mode,
 	}
+	s.BwEstimate = p.bwEstimate
 	if p.ackRate != nil {
 		s.AckRate = p.ackRate.AckRate()
 	}

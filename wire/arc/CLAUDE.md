@@ -86,6 +86,32 @@ Clamp: `ε ∈ [ε_min, ε_max]`
 
 `noiseEWMA` initializes at 1.0 (10× ε₀), making the threshold very high. All early reversals classify as **weak** → ε decreases via MD → conservative small probes. As real RTT CV data arrives (typically 0.05–0.20), noiseEWMA decays toward true noise floor, enabling accurate strong/weak classification.
 
+## Throughput Anchor + Ceiling Hold
+
+Fixes app-limited blindness when CC target rate R >> link bandwidth B.
+
+### Problem
+
+Slow start doubles rate past link bandwidth → app-limited detection (BytesSent < 50% expected) → `processCompletedMI` returns early → CC never works. Users with 100M/200M links permanently stuck at overshoot rate.
+
+### Throughput Anchor
+
+When app-limited MI detected:
+1. Estimate bandwidth: `B_est = T / (1-L)` (EWMA, α=0.3)
+2. Set `CurrentRate = bwEstimate` directly (bypass rate EWMA)
+3. Exit slow start → decision mode
+4. Reset direction counters
+
+Convergence: 2-3 MIs (60-90ms at 30ms RTT).
+
+### Ceiling Hold
+
+At bandwidth ceiling, utility gradient ≈ 0 → probing alternates without confirmation → rate drifts. When `|gradient| < bwEstimate × 0.05` AND `throughput ≥ bwEstimate × 0.9`: hold rate, skip direction update.
+
+### Dynamic α Clamping
+
+With α=5.0, when loss > 20%: `1-αL < 0` → utility inverts → CC minimizes throughput. Fix: `α_eff = min(α, 0.8/L)` ensures `(1-αL) ≥ 0.2`.
+
 ## Global Ack Rate Tracker
 
 Sliding-window tracker (5-second window, 1-second buckets) recording global ack/loss ratio
@@ -94,7 +120,7 @@ from `OnCongestionEventEx`. Independent of per-MI loss attribution. Observabilit
 
 ## Observability
 
-`Snapshot()` returns `CCSnapshot` (SendingRate, LossRate, Throughput, RTT, MinRTT, Cwnd, Mode, MIID, Epsilon, AckRate) under `RLock`. Used by `QUICClient.WireStats()` for external metric access. Young MI (BytesSent < 100KB) uses `lastCompleted` values to avoid MI boundary artifacts (throughput/loss spikes from incomplete data).
+`Snapshot()` returns `CCSnapshot` (SendingRate, LossRate, Throughput, RTT, MinRTT, Cwnd, Mode, MIID, Epsilon, AckRate, BwEstimate) under `RLock`. Used by `QUICClient.WireStats()` for external metric access. Young MI (BytesSent < 100KB) uses `lastCompleted` values to avoid MI boundary artifacts (throughput/loss spikes from incomplete data).
 
 ## Files
 
