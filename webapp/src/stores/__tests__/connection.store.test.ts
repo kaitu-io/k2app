@@ -205,7 +205,7 @@ describe('Connection Store - Connect', () => {
   });
 
   it('connectEpoch guards against stale connect', async () => {
-    const { useConnectionStore } = await getStores();
+    const { useConnectionStore, vpn } = await getStores();
 
     // Select a cloud tunnel
     useConnectionStore.getState().selectCloudTunnel({
@@ -227,6 +227,10 @@ describe('Connection Store - Connect', () => {
 
     // Start connect
     const connectPromise = useConnectionStore.getState().connect();
+
+    // connect() dispatches USER_CONNECT after auth resolves, so VPN state is
+    // still idle here. Manually move to 'connecting' so disconnect guard passes.
+    vpn.dispatch('USER_CONNECT');
 
     // While auth is resolving, user disconnects (bumps epoch)
     await useConnectionStore.getState().disconnect();
@@ -306,5 +310,107 @@ describe('Connection Store - Config Persistence', () => {
     await useConnectionStore.getState().connect();
 
     expect(persistOrder).toEqual(['persist', 'run_up']);
+  });
+});
+
+// ==================== State Guard Tests ====================
+
+describe('Connection Store - State Guards', () => {
+  it('connect rejects when VPN is already connecting (double-click)', async () => {
+    const { useConnectionStore, vpn } = await getStores();
+    mockRun.mockResolvedValue({ code: 0 });
+
+    useConnectionStore.getState().selectCloudTunnel({
+      id: 1, domain: 'test.com', name: 'Test', protocol: 'k2v5',
+      port: 443, serverUrl: 'k2v5://test.com:443', node: { country: 'US' },
+    } as any);
+
+    // Put VPN into connecting state
+    vpn.dispatch('USER_CONNECT');
+    expect(vpn.useVPNMachineStore.getState().state).toBe('connecting');
+
+    await useConnectionStore.getState().connect();
+
+    // _k2.run should NOT have been called — guard rejected
+    expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  it('connect rejects when VPN is connected', async () => {
+    const { useConnectionStore, vpn } = await getStores();
+    mockRun.mockResolvedValue({ code: 0 });
+
+    useConnectionStore.getState().selectCloudTunnel({
+      id: 1, domain: 'test.com', name: 'Test', protocol: 'k2v5',
+      port: 443, serverUrl: 'k2v5://test.com:443', node: { country: 'US' },
+    } as any);
+
+    vpn.dispatch('USER_CONNECT');
+    vpn.dispatch('BACKEND_CONNECTED');
+    expect(vpn.useVPNMachineStore.getState().state).toBe('connected');
+
+    await useConnectionStore.getState().connect();
+    expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  it('connect rejects when VPN is disconnecting', async () => {
+    const { useConnectionStore, vpn } = await getStores();
+    mockRun.mockResolvedValue({ code: 0 });
+
+    useConnectionStore.getState().selectCloudTunnel({
+      id: 1, domain: 'test.com', name: 'Test', protocol: 'k2v5',
+      port: 443, serverUrl: 'k2v5://test.com:443', node: { country: 'US' },
+    } as any);
+
+    vpn.dispatch('USER_CONNECT');
+    vpn.dispatch('BACKEND_CONNECTED');
+    vpn.dispatch('USER_DISCONNECT');
+    expect(vpn.useVPNMachineStore.getState().state).toBe('disconnecting');
+
+    await useConnectionStore.getState().connect();
+    expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  it('connect allowed from error state', async () => {
+    const { useConnectionStore, vpn } = await getStores();
+    mockRun.mockResolvedValue({ code: 0 });
+
+    useConnectionStore.getState().selectCloudTunnel({
+      id: 1, domain: 'test.com', name: 'Test', protocol: 'k2v5',
+      port: 443, serverUrl: 'k2v5://test.com:443', node: { country: 'US' },
+    } as any);
+
+    const { authService } = await import('../../services/auth-service');
+    vi.mocked(authService.buildTunnelUrl).mockResolvedValue('k2v5://u:t@test.com:443');
+
+    // Put VPN into error state
+    vpn.dispatch('USER_CONNECT');
+    vpn.dispatch('BACKEND_ERROR', { code: 502, message: 'fail' });
+    expect(vpn.useVPNMachineStore.getState().state).toBe('error');
+
+    await useConnectionStore.getState().connect();
+    expect(mockRun).toHaveBeenCalledWith('up', expect.anything());
+  });
+
+  it('disconnect rejects when already idle', async () => {
+    const { useConnectionStore, vpn } = await getStores();
+    mockRun.mockResolvedValue({ code: 0 });
+
+    expect(vpn.useVPNMachineStore.getState().state).toBe('idle');
+
+    await useConnectionStore.getState().disconnect();
+    expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  it('disconnect rejects when already disconnecting (double-click)', async () => {
+    const { useConnectionStore, vpn } = await getStores();
+    mockRun.mockResolvedValue({ code: 0 });
+
+    vpn.dispatch('USER_CONNECT');
+    vpn.dispatch('BACKEND_CONNECTED');
+    vpn.dispatch('USER_DISCONNECT');
+    expect(vpn.useVPNMachineStore.getState().state).toBe('disconnecting');
+
+    await useConnectionStore.getState().disconnect();
+    expect(mockRun).not.toHaveBeenCalled();
   });
 });

@@ -20,7 +20,7 @@ import type { Tunnel } from '../services/api-types';
 import { authService } from '../services/auth-service';
 import { useSelfHostedStore } from './self-hosted.store';
 import { useConfigStore } from './config.store';
-import { dispatch as vpnDispatch } from './vpn-machine.store';
+import { useVPNMachineStore, dispatch as vpnDispatch } from './vpn-machine.store';
 
 // ============ Types ============
 
@@ -108,6 +108,15 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
   },
 
   connect: async () => {
+    // State guard: reject if already connecting/connected/reconnecting/disconnecting.
+    // Prevents double-click sending duplicate _k2.run('up') — daemon's opMu serializes
+    // but would cause unnecessary disconnect+reconnect cycle.
+    const vpnState = useVPNMachineStore.getState().state;
+    if (vpnState !== 'idle' && vpnState !== 'error' && vpnState !== 'serviceDown') {
+      console.warn('[Connection] connect: rejected (vpnState=' + vpnState + ')');
+      return;
+    }
+
     const { selectedSource, selectedCloudTunnel, activeTunnel, connectEpoch } = get();
     if (!activeTunnel) {
       console.warn('[Connection] connect: no activeTunnel, aborting');
@@ -154,6 +163,13 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
   },
 
   disconnect: async () => {
+    // State guard: reject if already disconnecting or idle.
+    const vpnState = useVPNMachineStore.getState().state;
+    if (vpnState === 'disconnecting' || vpnState === 'idle') {
+      console.warn('[Connection] disconnect: rejected (vpnState=' + vpnState + ')');
+      return;
+    }
+
     // Bump epoch to cancel any in-flight connect
     console.info('[Connection] disconnect: bumping epoch, dispatching USER_DISCONNECT');
     set((s) => ({ connectedTunnel: null, connectEpoch: s.connectEpoch + 1 }));
