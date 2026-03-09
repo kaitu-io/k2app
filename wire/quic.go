@@ -456,43 +456,11 @@ func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, 
 				slog.Debug("QUICClient.DialUDP: relay UDP unhealthy",
 					"addr", addr,
 					"relayTimeouts", mux.relayTimeouts.Load(),
-					"lossRate", fmt.Sprintf("%.1f%%", mux.evaluateRelayLossRate()*100),
-					"hopAttempts", c.portHopAttempts.Load())
-				// TCP health gate: if TCP streams work, datagram loss is normal
-				// packet loss (not ISP port blocking). Skip hop to protect TCP streams.
-				if c.tcpRecentlyHealthy(tcpHealthWindow) {
-					slog.Debug("QUICClient.DialUDP: TCP healthy, skipping hop",
-						"addr", addr,
-						"sinceTCP", time.Since(time.Unix(0, c.lastTCPSuccessAt.Load())).Round(time.Millisecond))
-					return nil, ErrRelayUDPUnhealthy
-				}
-				// Hop port before falling back to TCP-WS.
-				// tryHop() uses CAS to ensure only one goroutine hops at a time.
-				if c.hopEnabled() && c.portHopAttempts.Load() < maxPortHops {
-					c.tryHop() // winner resets connection; loser gets stale conn
-					continue   // both retry: connect() gives fresh conn/mux
-				}
-
-				// Hops exhausted. Record exhaustion time (once) and check
-				// if cooldown has elapsed for a recovery probe.
-				if c.hopEnabled() {
-					exAt := c.portHopExhaustedAt.Load()
-					if exAt == 0 {
-						c.portHopExhaustedAt.Store(time.Now().UnixNano())
-					} else if time.Since(time.Unix(0, exAt)) >= portHopRecoveryInterval {
-						// Cooldown elapsed — reset for a fresh round of hops.
-						c.portHopAttempts.Store(0)
-						c.portHopExhaustedAt.Store(0)
-						slog.Info("QUICClient.DialUDP: datagram recovery probe, resetting hops")
-						c.tryHop()
-						continue
-					}
-				}
-
-				// Within cooldown (or hop not configured) → TCP-WS fallback
-				slog.Debug("QUICClient.DialUDP: falling back to TCP-WS",
-					"addr", addr,
-					"reason", "relay UDP unhealthy, hops exhausted")
+					"lossRate", fmt.Sprintf("%.1f%%", mux.evaluateRelayLossRate()*100))
+				// Relay-layer metrics (sent/recv ratio) are observability only.
+				// They must never drive wire-layer decisions (port hop, reconnect).
+				// TransportManager handles wire-layer recovery via QUIC handshake
+				// failure detection and background probe.
 				return nil, ErrRelayUDPUnhealthy
 			}
 

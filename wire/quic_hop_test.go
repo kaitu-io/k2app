@@ -28,14 +28,14 @@ func setupQUICPairWithHop(t *testing.T) (*QUICClient, *QUICServer, func()) {
 	return client, server, cleanup
 }
 
-// TestQUICClient_DialUDP_HopBeforeFallback verifies that when datagrams become
-// unhealthy, DialUDP hops port (resetConnection + reconnect) instead of
-// immediately returning ErrRelayUDPUnhealthy.
-func TestQUICClient_DialUDP_HopBeforeFallback(t *testing.T) {
+// TestQUICClient_DialUDP_RelayUnhealthy_ReturnsFallback verifies that when
+// relay datagrams become unhealthy, DialUDP returns ErrRelayUDPUnhealthy
+// without attempting port hops. Relay-layer metrics must not drive wire-layer
+// decisions (port hop, reconnect).
+func TestQUICClient_DialUDP_RelayUnhealthy_ReturnsFallback(t *testing.T) {
 	client, _, cleanup := setupQUICPairWithHop(t)
 	defer cleanup()
 
-	// Establish initial connection
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if _, err := client.connect(ctx); err != nil {
@@ -53,51 +53,34 @@ func TestQUICClient_DialUDP_HopBeforeFallback(t *testing.T) {
 		t.Fatal("mux should be unhealthy")
 	}
 
-	// DialUDP should hop (reset + reconnect) instead of returning error
-	pc, err := client.DialUDP(ctx, "8.8.8.8:53")
-	if err != nil {
-		t.Fatalf("DialUDP should succeed after hop, got: %v", err)
+	// DialUDP should return ErrRelayUDPUnhealthy (no hop)
+	_, err := client.DialUDP(ctx, "8.8.8.8:53")
+	if !errors.Is(err, ErrRelayUDPUnhealthy) {
+		t.Fatalf("DialUDP = %v, want ErrRelayUDPUnhealthy", err)
 	}
-	defer pc.Close()
 
-	if client.portHopAttempts.Load() != 1 {
-		t.Fatalf("portHopAttempts = %d, want 1", client.portHopAttempts.Load())
+	if client.portHopAttempts.Load() != 0 {
+		t.Fatalf("portHopAttempts = %d, want 0 (relay metrics must not trigger hop)", client.portHopAttempts.Load())
 	}
 }
 
-// TestQUICClient_DialUDP_HopExhausted verifies that after maxPortHops
-// unsuccessful hops, DialUDP returns ErrRelayUDPUnhealthy.
-func TestQUICClient_DialUDP_HopExhausted(t *testing.T) {
+// TestQUICClient_DialUDP_RelayUnhealthy_HopStateUntouched verifies that
+// relay unhealthy DialUDP never modifies the hop counter, regardless of
+// current hop state.
+func TestQUICClient_DialUDP_RelayUnhealthy_HopStateUntouched(t *testing.T) {
 	client, _, cleanup := setupQUICPairWithHop(t)
 	defer cleanup()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-
-	// Each iteration: connect → poison mux → DialUDP triggers hop
-	for i := int32(0); i < maxPortHops; i++ {
-		if _, err := client.connect(ctx); err != nil {
-			t.Fatalf("connect (hop %d): %v", i, err)
-		}
-		client.mu.Lock()
-		mux := client.udpMux
-		client.mu.Unlock()
-		for j := int32(0); j < relayTimeoutThreshold; j++ {
-			mux.recordTimeout()
-		}
-	}
-
-	// Now hops are at maxPortHops-1 from previous rounds, but the connect
-	// above established a new healthy mux. We need to poison it one more time.
-	// Actually, let's re-think: each DialUDP call in the loop above would do
-	// the hop. Let me use a simpler approach.
-
-	// Reset and do it properly: pre-set hop attempts to max
-	client.portHopAttempts.Store(maxPortHops)
 
 	if _, err := client.connect(ctx); err != nil {
 		t.Fatalf("connect: %v", err)
 	}
+
+	// Pre-set hop state to some value
+	client.portHopAttempts.Store(2)
+
 	client.mu.Lock()
 	mux := client.udpMux
 	client.mu.Unlock()
@@ -105,14 +88,14 @@ func TestQUICClient_DialUDP_HopExhausted(t *testing.T) {
 		mux.recordTimeout()
 	}
 
-	// DialUDP should return ErrRelayUDPUnhealthy (hops exhausted)
+	// DialUDP should return ErrRelayUDPUnhealthy without touching hop state
 	_, err := client.DialUDP(ctx, "8.8.8.8:53")
 	if !errors.Is(err, ErrRelayUDPUnhealthy) {
 		t.Fatalf("DialUDP = %v, want ErrRelayUDPUnhealthy", err)
 	}
 
-	if client.portHopAttempts.Load() != maxPortHops {
-		t.Fatalf("portHopAttempts = %d, want %d", client.portHopAttempts.Load(), maxPortHops)
+	if client.portHopAttempts.Load() != 2 {
+		t.Fatalf("portHopAttempts = %d, want 2 (unchanged)", client.portHopAttempts.Load())
 	}
 }
 
@@ -275,6 +258,42 @@ func TestQuicUDPConn_WriteTo_LargePayloadUsesOverflow(t *testing.T) {
 	}
 }
 
+// TestQUICClient_DialUDP_UnhealthyRelay_NoHop verifies that when relay UDP is
+// unhealthy, DialUDP always returns ErrRelayUDPUnhealthy regardless of TCP
+// health status. Relay-layer metrics must never drive wire-layer port hops.
+func TestQUICClient_DialUDP_UnhealthyRelay_NoHop(t *testing.T) {
+	client, _, cleanup := setupQUICPairWithHop(t)
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := client.connect(ctx); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+
+	// Make datagram path unhealthy
+	client.mu.Lock()
+	mux := client.udpMux
+	client.mu.Unlock()
+	for i := int32(0); i < relayTimeoutThreshold; i++ {
+		mux.recordTimeout()
+	}
+
+	// Ensure TCP is NOT recently healthy (no lastTCPSuccessAt)
+	client.lastTCPSuccessAt.Store(0)
+
+	// DialUDP should return ErrRelayUDPUnhealthy, NOT trigger hop
+	_, err := client.DialUDP(ctx, "8.8.8.8:53")
+	if !errors.Is(err, ErrRelayUDPUnhealthy) {
+		t.Fatalf("DialUDP = %v, want ErrRelayUDPUnhealthy", err)
+	}
+
+	// No hop should have been attempted
+	if client.portHopAttempts.Load() != 0 {
+		t.Fatalf("portHopAttempts = %d, want 0 (relay metrics must never trigger hop)", client.portHopAttempts.Load())
+	}
+}
+
 // TestQUICClient_DialUDP_NoHopWithoutConfig verifies that without hop config,
 // unhealthy datagrams immediately return ErrRelayUDPUnhealthy (no hop attempt).
 func TestQUICClient_DialUDP_NoHopWithoutConfig(t *testing.T) {
@@ -306,22 +325,21 @@ func TestQUICClient_DialUDP_NoHopWithoutConfig(t *testing.T) {
 	}
 }
 
-// TestQUICClient_DialUDP_HopRecoveryAfterCooldown verifies that after hop
-// exhaustion + cooldown elapsed, the hop counter resets and QUIC gets a fresh
-// round of probes (OpenConnect-style periodic recovery).
-func TestQUICClient_DialUDP_HopRecoveryAfterCooldown(t *testing.T) {
+// TestQUICClient_DialUDP_RelayUnhealthy_NoRecoveryProbe verifies that relay
+// UDP unhealthy state always returns ErrRelayUDPUnhealthy regardless of prior
+// hop exhaustion state. Relay metrics never trigger hop or recovery probes.
+func TestQUICClient_DialUDP_RelayUnhealthy_NoRecoveryProbe(t *testing.T) {
 	client, _, cleanup := setupQUICPairWithHop(t)
 	defer cleanup()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Establish connection
 	if _, err := client.connect(ctx); err != nil {
 		t.Fatalf("connect: %v", err)
 	}
 
-	// Simulate hop exhaustion that happened 4 minutes ago (past 30s cooldown)
+	// Simulate prior hop exhaustion (doesn't matter anymore — relay never hops)
 	client.portHopAttempts.Store(maxPortHops)
 	client.portHopExhaustedAt.Store(time.Now().Add(-4 * time.Minute).UnixNano())
 
@@ -333,27 +351,23 @@ func TestQUICClient_DialUDP_HopRecoveryAfterCooldown(t *testing.T) {
 		mux.recordTimeout()
 	}
 
-	// DialUDP should trigger recovery: reset hops → hop → reconnect → succeed
-	pc, err := client.DialUDP(ctx, "8.8.8.8:53")
-	if err != nil {
-		t.Fatalf("DialUDP should succeed after recovery probe, got: %v", err)
+	// DialUDP should return ErrRelayUDPUnhealthy (no hop, no recovery probe)
+	_, err := client.DialUDP(ctx, "8.8.8.8:53")
+	if !errors.Is(err, ErrRelayUDPUnhealthy) {
+		t.Fatalf("DialUDP = %v, want ErrRelayUDPUnhealthy", err)
 	}
-	defer pc.Close()
 
-	// Recovery resets to 0, then hop increments to 1
-	if got := client.portHopAttempts.Load(); got != 1 {
-		t.Fatalf("portHopAttempts = %d, want 1 (reset + one hop)", got)
-	}
-	// Exhaustion timestamp cleared by recovery
-	if got := client.portHopExhaustedAt.Load(); got != 0 {
-		t.Fatalf("portHopExhaustedAt = %d, want 0 (cleared by recovery)", got)
+	// Hop state should be unchanged (relay path doesn't touch it)
+	if got := client.portHopAttempts.Load(); got != maxPortHops {
+		t.Fatalf("portHopAttempts = %d, want %d (relay path must not modify hop state)", got, maxPortHops)
 	}
 }
 
-// TestQUICClient_DialUDP_HopRecoveryBlockedDuringCooldown verifies that within
-// the recovery cooldown period, hops stay exhausted and ErrRelayUDPUnhealthy
-// is returned (TCP-WS continues serving).
-func TestQUICClient_DialUDP_HopRecoveryBlockedDuringCooldown(t *testing.T) {
+// TestQUICClient_DialUDP_RelayUnhealthy_AlwaysFallback verifies that relay
+// UDP unhealthy always returns ErrRelayUDPUnhealthy, regardless of hop config
+// or exhaustion state. This is the simplest case — relay metrics never trigger
+// any wire-layer action.
+func TestQUICClient_DialUDP_RelayUnhealthy_AlwaysFallback(t *testing.T) {
 	client, _, cleanup := setupQUICPairWithHop(t)
 	defer cleanup()
 
@@ -364,11 +378,7 @@ func TestQUICClient_DialUDP_HopRecoveryBlockedDuringCooldown(t *testing.T) {
 		t.Fatalf("connect: %v", err)
 	}
 
-	// Simulate hop exhaustion that just happened (well within 30s cooldown)
-	client.portHopAttempts.Store(maxPortHops)
-	client.portHopExhaustedAt.Store(time.Now().UnixNano())
-
-	// Make datagram path unhealthy
+	// Make datagram path unhealthy with both timeout and loss
 	client.mu.Lock()
 	mux := client.udpMux
 	client.mu.Unlock()
@@ -376,15 +386,9 @@ func TestQUICClient_DialUDP_HopRecoveryBlockedDuringCooldown(t *testing.T) {
 		mux.recordTimeout()
 	}
 
-	// DialUDP should return ErrRelayUDPUnhealthy (cooldown not elapsed)
 	_, err := client.DialUDP(ctx, "8.8.8.8:53")
 	if !errors.Is(err, ErrRelayUDPUnhealthy) {
-		t.Fatalf("DialUDP = %v, want ErrRelayUDPUnhealthy (within cooldown)", err)
-	}
-
-	// Hop counter should be unchanged
-	if got := client.portHopAttempts.Load(); got != maxPortHops {
-		t.Fatalf("portHopAttempts = %d, want %d (unchanged during cooldown)", got, maxPortHops)
+		t.Fatalf("DialUDP = %v, want ErrRelayUDPUnhealthy", err)
 	}
 }
 
