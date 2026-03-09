@@ -728,6 +728,9 @@ type K2CCSender struct {
 	// Observability only (debug logging). Does not drive decisions.
 	ackRate *ackRateTracker
 
+	// Test-only hook: called when an MI completes (inside mu lock).
+	miCompletedHook func(mi *MonitorInterval, throughput float64, isAppLimited bool)
+
 	mu sync.RWMutex
 }
 
@@ -793,6 +796,14 @@ func rateToCwnd(rateBps float64, rtt time.Duration) congestion.ByteCount {
 	return cwnd
 }
 
+// SetMICompletedHook sets a callback invoked when each MI completes.
+// Test use only. The hook is called under the sender's lock.
+func (p *K2CCSender) SetMICompletedHook(hook func(mi *MonitorInterval, throughput float64, isAppLimited bool)) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.miCompletedHook = hook
+}
+
 // SetRTTStatsProvider sets the RTT statistics provider
 func (p *K2CCSender) SetRTTStatsProvider(provider congestion.RTTStatsProvider) {
 	p.mu.Lock()
@@ -850,6 +861,11 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 	// Calculate throughput and detect app-limited state
 	throughput := mi.Throughput()
 
+	// Test observability hook
+	if p.miCompletedHook != nil {
+		p.miCompletedHook(mi, throughput, mi.IsAppLimited)
+	}
+
 	// Bandwidth estimation: B_est = T / (1-L)
 	// Works even under loss — recovers true link capacity.
 	// Ignore samples below minRate — connection establishment produces
@@ -894,6 +910,11 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 			"throughput", fmt.Sprintf("%.1fM", throughput/1_000_000),
 			"loss", fmt.Sprintf("%.1f%%", mi.LossRate()*100),
 			"mode", p.state.Mode.String(),
+			"bytesSent", mi.BytesSent,
+			"bytesAcked", mi.BytesAcked,
+			"pktsAcked", mi.PacketsAcked,
+			"duration", mi.Duration(),
+			"targetRate", fmt.Sprintf("%.1fM", mi.TargetRate/1_000_000),
 		)
 		return
 	}
