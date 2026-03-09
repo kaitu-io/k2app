@@ -64,7 +64,6 @@ type healthMonitor struct {
 	healthyStreak  int
 	lastAction     time.Time
 	peakThroughput float64
-	hopAttempts    int
 
 	// EWMA-smoothed metrics for health decisions.
 	// Raw values are still reported in HealthSnapshot for observability.
@@ -234,7 +233,6 @@ func (hm *healthMonitor) transition(level string) (action func()) {
 				"healthyStreak", hm.healthyStreak,
 			)
 			hm.health = HealthHealthy
-			hm.hopAttempts = 0
 		}
 	case HealthDegraded:
 		hm.degradedStreak++
@@ -269,30 +267,23 @@ func (hm *healthMonitor) transition(level string) (action func()) {
 
 // maybeAct decides on corrective action with cooldown.
 // Returns the action to execute outside hm.mu, or nil if no action needed.
+// Only action is full reconnect — wire layer owns port hop decisions.
 func (hm *healthMonitor) maybeAct() func() {
 	if time.Since(hm.lastAction) < actionCooldown {
 		return nil
 	}
 
 	// TCP health gate: if TCP streams recently succeeded, the connection is
-	// functional despite high datagram/ARC loss. Skip destructive hop to
-	// protect active streams (e.g. YouTube video).
+	// functional despite high wire loss. Skip reconnect to protect active
+	// streams (e.g. YouTube video).
 	if hm.tm.TCPRecentlyHealthy(30 * time.Second) {
-		slog.Debug("health: TCP healthy, skipping hop")
+		slog.Debug("health: TCP healthy, skipping reconnect")
 		return nil
 	}
 
 	hm.lastAction = time.Now()
-	hm.hopAttempts++
-
-	if hm.hopAttempts > 3 {
-		hm.hopAttempts = 0
-		slog.Warn("health: full reconnect")
-		return hm.onReconnect
-	}
-	// Port hop: reset cached connections.
-	slog.Warn("health: port hop", "attempt", hm.hopAttempts)
-	return func() { hm.tm.ResetConnections() }
+	slog.Warn("health: full reconnect (wire quality critical)")
+	return hm.onReconnect
 }
 
 // resetCounters clears all health streaks and corrective action state.
@@ -304,7 +295,6 @@ func (hm *healthMonitor) resetCounters() {
 	hm.degradedStreak = 0
 	hm.criticalStreak = 0
 	hm.healthyStreak = 0
-	hm.hopAttempts = 0
 	hm.peakThroughput = 0
 	hm.smoothWireLoss = 0
 	hm.smoothWireThroughput = 0

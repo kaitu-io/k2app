@@ -32,10 +32,9 @@ func TestDeadlock_HealthMonitorSampleAndResetCounters(t *testing.T) {
 		hm.resetCounters()
 	})
 
-	// Force critical state with exhausted hops → onReconnect fires.
+	// Force critical state → onReconnect fires.
 	hm.mu.Lock()
 	hm.health = HealthCritical
-	hm.hopAttempts = 3
 	hm.lastAction = time.Time{}
 	hm.smoothWireLoss = 0.5
 	hm.ewmaInitialized = true
@@ -77,7 +76,6 @@ func TestDeadlock_EngineStopVsHealthGoroutine(t *testing.T) {
 	// Force critical state so onReconnect fires from health goroutine.
 	hm.mu.Lock()
 	hm.health = HealthCritical
-	hm.hopAttempts = 3
 	hm.lastAction = time.Time{}
 	hm.smoothWireLoss = 0.5
 	hm.ewmaInitialized = true

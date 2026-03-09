@@ -135,23 +135,20 @@ func TestHealthCooldown(t *testing.T) {
 	// Force into critical state.
 	hm.health = HealthCritical
 
-	// First action should return a port hop func.
+	// First action should return onReconnect.
 	action := hm.maybeAct()
 	if action == nil {
 		t.Fatal("expected action, got nil")
 	}
-	action() // execute deferred action
-	if hm.hopAttempts != 1 {
-		t.Fatalf("expected 1 hop attempt, got %d", hm.hopAttempts)
+	action()
+	if actionCount != 1 {
+		t.Fatalf("expected 1 reconnect, got %d", actionCount)
 	}
 
 	// Immediate retry should be blocked by cooldown.
 	action = hm.maybeAct()
 	if action != nil {
 		t.Fatal("cooldown should block action")
-	}
-	if hm.hopAttempts != 1 {
-		t.Fatalf("cooldown should block: expected 1, got %d", hm.hopAttempts)
 	}
 
 	// After cooldown expires, should fire again.
@@ -161,8 +158,8 @@ func TestHealthCooldown(t *testing.T) {
 		t.Fatal("expected action after cooldown, got nil")
 	}
 	action()
-	if hm.hopAttempts != 2 {
-		t.Fatalf("expected 2 hop attempts, got %d", hm.hopAttempts)
+	if actionCount != 2 {
+		t.Fatalf("expected 2 reconnects, got %d", actionCount)
 	}
 }
 
@@ -199,18 +196,16 @@ func TestHealthEscalation(t *testing.T) {
 	var reconnectCount int
 	hm := newHealthMonitor(tm, tunnel, nil, func() { reconnectCount++ })
 
-	// Simulate 4 hop attempts (>3 triggers escalation to reconnect).
+	// Every maybeAct in critical state returns onReconnect (no hop escalation).
 	hm.health = HealthCritical
-	for i := 0; i < 4; i++ {
-		hm.lastAction = time.Time{} // bypass cooldown
-		action := hm.maybeAct()
-		if action != nil {
-			action() // execute deferred action
-		}
+	hm.lastAction = time.Time{} // bypass cooldown
+	action := hm.maybeAct()
+	if action != nil {
+		action()
 	}
 
 	if reconnectCount != 1 {
-		t.Fatalf("expected 1 reconnect after >3 hops, got %d", reconnectCount)
+		t.Fatalf("expected 1 reconnect, got %d", reconnectCount)
 	}
 }
 
@@ -224,7 +219,6 @@ func TestHealthMonitor_ResetCounters(t *testing.T) {
 	hm.degradedStreak = 5
 	hm.criticalStreak = 3
 	hm.healthyStreak = 0
-	hm.hopAttempts = 2
 	hm.peakThroughput = 100.0
 	hm.smoothWireLoss = 0.5
 	hm.smoothWireThroughput = 50000
@@ -238,9 +232,6 @@ func TestHealthMonitor_ResetCounters(t *testing.T) {
 	if hm.degradedStreak != 0 || hm.criticalStreak != 0 || hm.healthyStreak != 0 {
 		t.Fatalf("streaks not zeroed: degraded=%d critical=%d healthy=%d",
 			hm.degradedStreak, hm.criticalStreak, hm.healthyStreak)
-	}
-	if hm.hopAttempts != 0 {
-		t.Fatalf("hopAttempts = %d, want 0", hm.hopAttempts)
 	}
 	if hm.peakThroughput != 0 {
 		t.Fatalf("peakThroughput = %f, want 0", hm.peakThroughput)
@@ -399,8 +390,29 @@ func TestHealthMonitor_PeakTracksSmoothedNotRaw(t *testing.T) {
 }
 
 // ============================================================================
-// Tests for connection-level fallback
+// Tests for corrective actions
 // ============================================================================
+
+func TestHealthMonitor_CriticalTriggersReconnect(t *testing.T) {
+	// When health goes critical, maybeAct should return onReconnect directly.
+	// No port hop escalation — wire layer owns hop decisions.
+	tm := mockTransportManager()
+	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
+
+	var reconnected bool
+	hm := newHealthMonitor(tm, tunnel, nil, func() { reconnected = true })
+	hm.health = HealthCritical
+
+	// First maybeAct should return onReconnect (not a port hop)
+	action := hm.maybeAct()
+	if action == nil {
+		t.Fatal("expected reconnect action, got nil")
+	}
+	action()
+	if !reconnected {
+		t.Fatal("maybeAct should return onReconnect directly, not port hop")
+	}
+}
 
 // ============================================================================
 // Deadlock regression tests
@@ -417,23 +429,10 @@ func TestHealthMonitor_MaybeActReturnsAction(t *testing.T) {
 	hm := newHealthMonitor(tm, tunnel, nil, func() { called = true })
 	hm.health = HealthCritical
 
-	// Exhaust 3 port hops to reach full reconnect.
-	for i := 0; i < 3; i++ {
-		hm.lastAction = time.Time{}
-		action := hm.maybeAct()
-		if action != nil {
-			action()
-		}
-	}
-	if called {
-		t.Fatal("onReconnect should not be called during port hops")
-	}
-
-	// 4th attempt should return onReconnect without calling it.
-	hm.lastAction = time.Time{}
+	// maybeAct should return onReconnect without calling it.
 	action := hm.maybeAct()
 	if action == nil {
-		t.Fatal("4th attempt should return full reconnect action")
+		t.Fatal("expected reconnect action")
 	}
 	if called {
 		t.Fatal("onReconnect should not be called yet (deferred)")
@@ -454,9 +453,8 @@ func TestHealthMonitor_TransitionReturnsDeferredAction(t *testing.T) {
 	var called bool
 	hm := newHealthMonitor(tm, tunnel, nil, func() { called = true })
 
-	// Force critical state and exhaust port hops.
+	// Force critical state.
 	hm.health = HealthCritical
-	hm.hopAttempts = 3
 	hm.lastAction = time.Time{} // bypass cooldown
 
 	action := hm.transition(HealthCritical)
@@ -492,10 +490,9 @@ func TestHealthMonitor_NoConcurrentDeadlock(t *testing.T) {
 		sharedMu.Unlock()
 	})
 
-	// Force critical state with exhausted hops so onReconnect will fire.
+	// Force critical state so onReconnect will fire.
 	hm.mu.Lock()
 	hm.health = HealthCritical
-	hm.hopAttempts = 3
 	hm.lastAction = time.Time{}
 	hm.smoothWireLoss = 0.5
 	hm.ewmaInitialized = true
