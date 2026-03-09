@@ -125,11 +125,22 @@ from `OnCongestionEventEx`. Independent of per-MI loss attribution. Observabilit
 ## Files
 
 - `arc.go` — `K2ARC` struct, MI-based rate control, utility gradient computation, AIMD-ε, `ARCSnapshot`/`Snapshot()`
-- `arcc_test.go` — ~50 test functions (convergence, loss tolerance, rate bounds, stale loss filtering, snapshot fallback, AIMD-ε, ackRate tracker, CongestionControlEx)
+- `arcc_test.go` — ~56 test functions (convergence, loss tolerance, rate bounds, stale loss filtering, snapshot fallback, AIMD-ε, ackRate tracker, CongestionControlEx, throughput anchor, ceiling hold, α clamping)
+- `arc_integration_test.go` — QUIC integration tests: real client+server bulk transfer with UDP relay (delay, loss, rate limiting), MI completion hook for per-MI diagnostics
 - `helpers_test.go` — test fixtures
 
 ## Testing
 
 ```bash
-go test ./wire/arc/...    # ~50 tests
+go test ./wire/arc/...                                    # all tests (~60)
+go test ./wire/arc/... -run TestIntegration -v            # integration tests only
+go test ./wire/arc/... -run TestIntegration_WithLoss -v   # loss matrix (0-20%)
 ```
+
+### Integration Test Architecture
+
+`arc_integration_test.go` uses a UDP relay between QUIC client and server to simulate realistic network conditions:
+- **Delay**: Configurable one-way delay (15ms = 30ms RTT by default)
+- **Loss**: Configurable packet drop rate on both directions
+- **Rate limiting**: Server write rate can be capped to simulate upstream bandwidth
+- **MI hook**: `SetMICompletedHook()` collects per-MI data (BytesSent, BytesAcked, duration, throughput, app-limited) for analysis without parsing logs
