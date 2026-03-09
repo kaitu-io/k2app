@@ -32,6 +32,79 @@ docker compose up --build           # Docker: server + init container (docker/)
 - **Error wrapping**: Always `fmt.Errorf("context: %w", err)`
 - **Trust protocol semantics**: When a protocol (QUIC, TLS, smux) provides built-in state management (keepalive, idle timeout, connection liveness), use its native mechanisms — don't layer application-level health checks or manual state tracking on top. Duplicating protocol-layer responsibilities in application code causes misclassification bugs (e.g. conflating "server can't reach destination" with "transport is broken") and unnecessary complexity.
 
+## Concurrency Rules (Constitutional — never violate)
+
+### Lock Ordering Graph
+
+Documented lock acquisition order. **Always acquire in this order; never reverse.**
+
+```
+engine.mu
+  → healthMonitor.mu
+  → daemon.mu → daemon.sseMu
+  → TransportManager.mu → QUICClient.mu
+  → recoveryProbe.mu
+```
+
+Every new mutex must be added to this graph with its position documented.
+
+### Three Forbidden Patterns
+
+**1. No callback under lock** — NEVER call a callback/closure/interface method while holding a mutex. Callbacks can acquire arbitrary locks, creating invisible lock ordering inversions.
+```go
+// WRONG: callback under lock → deadlock risk
+mu.Lock()
+onAction()       // onAction might acquire another lock
+mu.Unlock()
+
+// RIGHT: collect decision under lock, act outside
+mu.Lock()
+shouldAct := needsAction
+mu.Unlock()
+if shouldAct {
+    onAction()   // no lock held
+}
+```
+
+**2. No blocking I/O under lock** — NEVER hold a mutex across network I/O, `OpenStreamSync`, TLS handshake, or any potentially-blocking operation. Other goroutines waiting for the lock starve.
+```go
+// WRONG: network I/O under lock → lock starvation
+mu.Lock()
+conn, err := transport.Dial(ctx, addr)  // can block 5-30s
+mu.Unlock()
+
+// RIGHT: lock only for state check/update
+mu.Lock()
+if closed { mu.Unlock(); return }
+mu.Unlock()
+conn, err := transport.Dial(ctx, addr)  // no lock held
+mu.Lock()
+// re-validate state after re-acquiring
+```
+
+**3. No wg.Wait() under lock** — NEVER call `WaitGroup.Wait()` or `channel receive` while holding a mutex if the goroutine being waited on might need that same mutex.
+```go
+// WRONG: deadlock if goroutine needs e.mu to exit
+e.mu.Lock()
+e.health.stop()  // stop() calls wg.Wait()
+e.mu.Unlock()
+
+// RIGHT: stop outside the lock, or ensure goroutine never needs the lock
+hm := e.health
+e.health = nil
+e.mu.Unlock()
+hm.stop()        // wg.Wait() outside lock
+e.mu.Lock()
+```
+
+### Review Checklist (for any PR touching sync.Mutex / sync.WaitGroup)
+
+- [ ] Does any `Lock()` call site invoke a callback, closure, or interface method?
+- [ ] Does any `Lock()` call site perform network I/O or blocking operations?
+- [ ] Does any `Lock()` call site wait on a goroutine (`wg.Wait`, `<-chan`)?
+- [ ] Is the lock ordering consistent with the graph above?
+- [ ] Are `defer mu.Unlock()` scopes as narrow as possible?
+
 ## Layer Docs (read on demand)
 
 ```
@@ -154,6 +227,8 @@ engine.Stop()
 
 ## Critical Gotchas
 
+- **Known deadlock: healthMonitor.sample() → onAction → resetCounters**: `sample()` holds `hm.mu`, calls `onAction()` which calls `e.OnNetworkChanged()` which calls `hm.resetCounters()` which tries `hm.mu` → self-deadlock. Trigger: ~35s sustained network disruption. Fix: move `onAction()` call outside `hm.mu`. See Concurrency Rules above.
+- **Known deadlock: Engine.Stop() vs health goroutine**: `Stop()` holds `e.mu` + calls `health.stop()` (wg.Wait). Health goroutine in `sample()` → `onAction()` → `OnNetworkChanged()` → needs `e.mu` → cross-deadlock. Fix: release `e.mu` before `health.stop()`.
 - QUIC stream `Close()` only sends FIN (write direction). Must also call `CancelRead()` to release stream slot — `quicStreamConn.Close()` handles both
 - sing-tun gVisor stack owns connections — handler must defer close, not close prematurely
 - `ReadStreamHeader`/`ReadStreamResponse` require `io.ByteReader` — wrap `net.Conn` with `bufio.NewReader(conn)`

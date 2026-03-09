@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -134,21 +135,32 @@ func TestHealthCooldown(t *testing.T) {
 	// Force into critical state.
 	hm.health = HealthCritical
 
-	// First action should fire.
-	hm.maybeAct()
+	// First action should return a port hop func.
+	action := hm.maybeAct()
+	if action == nil {
+		t.Fatal("expected action, got nil")
+	}
+	action() // execute deferred action
 	if hm.hopAttempts != 1 {
 		t.Fatalf("expected 1 hop attempt, got %d", hm.hopAttempts)
 	}
 
 	// Immediate retry should be blocked by cooldown.
-	hm.maybeAct()
+	action = hm.maybeAct()
+	if action != nil {
+		t.Fatal("cooldown should block action")
+	}
 	if hm.hopAttempts != 1 {
 		t.Fatalf("cooldown should block: expected 1, got %d", hm.hopAttempts)
 	}
 
 	// After cooldown expires, should fire again.
 	hm.lastAction = time.Now().Add(-actionCooldown - time.Second)
-	hm.maybeAct()
+	action = hm.maybeAct()
+	if action == nil {
+		t.Fatal("expected action after cooldown, got nil")
+	}
+	action()
 	if hm.hopAttempts != 2 {
 		t.Fatalf("expected 2 hop attempts, got %d", hm.hopAttempts)
 	}
@@ -191,7 +203,10 @@ func TestHealthEscalation(t *testing.T) {
 	hm.health = HealthCritical
 	for i := 0; i < 4; i++ {
 		hm.lastAction = time.Time{} // bypass cooldown
-		hm.maybeAct()
+		action := hm.maybeAct()
+		if action != nil {
+			action() // execute deferred action
+		}
 	}
 
 	if reconnectCount != 1 {
@@ -386,6 +401,129 @@ func TestHealthMonitor_PeakTracksSmoothedNotRaw(t *testing.T) {
 // ============================================================================
 // Tests for connection-level fallback
 // ============================================================================
+
+// ============================================================================
+// Deadlock regression tests
+// ============================================================================
+
+func TestHealthMonitor_MaybeActReturnsAction(t *testing.T) {
+	// Regression: maybeAct must return the action without executing it.
+	// Before fix, maybeAct called onAction() inline while hm.mu was held,
+	// causing self-deadlock when onAction → OnNetworkChanged → resetCounters → hm.mu.Lock().
+	tm := mockTransportManager()
+	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
+
+	var called bool
+	hm := newHealthMonitor(tm, tunnel, nil, func() { called = true })
+	hm.health = HealthCritical
+
+	// Exhaust 3 port hops to reach full reconnect.
+	for i := 0; i < 3; i++ {
+		hm.lastAction = time.Time{}
+		action := hm.maybeAct()
+		if action != nil {
+			action()
+		}
+	}
+	if called {
+		t.Fatal("onAction should not be called during port hops")
+	}
+
+	// 4th attempt should return onAction without calling it.
+	hm.lastAction = time.Time{}
+	action := hm.maybeAct()
+	if action == nil {
+		t.Fatal("4th attempt should return full reconnect action")
+	}
+	if called {
+		t.Fatal("onAction should not be called yet (deferred)")
+	}
+
+	// Execute the returned action.
+	action()
+	if !called {
+		t.Fatal("onAction should be called after executing returned action")
+	}
+}
+
+func TestHealthMonitor_TransitionReturnsDeferredAction(t *testing.T) {
+	// Regression: transition must return the action, not execute it inline.
+	tm := mockTransportManager()
+	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
+
+	var called bool
+	hm := newHealthMonitor(tm, tunnel, nil, func() { called = true })
+
+	// Force critical state and exhaust port hops.
+	hm.health = HealthCritical
+	hm.hopAttempts = 3
+	hm.lastAction = time.Time{} // bypass cooldown
+
+	action := hm.transition(HealthCritical)
+	if action == nil {
+		t.Fatal("transition should return action for full reconnect")
+	}
+	if called {
+		t.Fatal("onAction must not be called inside transition")
+	}
+
+	action()
+	if !called {
+		t.Fatal("onAction should fire when returned action is executed")
+	}
+}
+
+func TestHealthMonitor_NoConcurrentDeadlock(t *testing.T) {
+	// Regression: sample() + stop() must not deadlock.
+	// Before fix, Stop() held e.mu and called hm.stop() (wg.Wait),
+	// while sample()'s onAction callback needed e.mu → cross-deadlock.
+	//
+	// This test simulates the scenario: onAction acquires a shared mutex
+	// (simulating e.mu), while stop() is called from a goroutine that
+	// also holds that mutex.
+	tm := mockTransportManager()
+	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
+
+	var sharedMu sync.Mutex
+	hm := newHealthMonitor(tm, tunnel, nil, func() {
+		// Simulate OnNetworkChanged acquiring e.mu briefly.
+		sharedMu.Lock()
+		time.Sleep(time.Millisecond)
+		sharedMu.Unlock()
+	})
+
+	// Force critical state with exhausted hops so onAction will fire.
+	hm.mu.Lock()
+	hm.health = HealthCritical
+	hm.hopAttempts = 3
+	hm.lastAction = time.Time{}
+	hm.smoothLoss = 0.5
+	hm.ewmaInitialized = true
+	hm.mu.Unlock()
+
+	hm.start()
+
+	// Deadline: if this test doesn't complete in 5s, it's a deadlock.
+	done := make(chan struct{})
+	go func() {
+		// Wait for health goroutine to potentially enter onAction.
+		time.Sleep(1500 * time.Millisecond)
+
+		// Simulate Stop() pattern: acquire shared lock, then stop health.
+		// Before fix, this would deadlock if health goroutine was inside onAction.
+		sharedMu.Lock()
+		hm.stop()
+		sharedMu.Unlock()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Success — no deadlock.
+	case <-time.After(5 * time.Second):
+		t.Fatal("deadlock: stop() blocked while health goroutine holds shared lock")
+	}
+}
 
 // applyEWMA applies EWMA smoothing to healthMonitor fields.
 // This is the logic that sample() applies before calling assess().

@@ -122,7 +122,6 @@ func (hm *healthMonitor) sample() {
 	tx, rx := hm.tunnel.TrafficBytes()
 
 	hm.mu.Lock()
-	defer hm.mu.Unlock()
 
 	// EWMA smoothing: dampens MI boundary artifacts (lossRate spikes,
 	// throughput spikes) that cause false health degradation.
@@ -147,7 +146,7 @@ func (hm *healthMonitor) sample() {
 
 	// Assess health from smoothed metrics.
 	level := hm.assess(ws)
-	hm.transition(level)
+	action := hm.transition(level)
 
 	snap := HealthSnapshot{
 		Timestamp:   time.Now(),
@@ -176,9 +175,17 @@ func (hm *healthMonitor) sample() {
 		hm.ringFull = true
 	}
 
-	// Push snapshot (non-blocking via caller's buffered channel).
-	if hm.onSnapshot != nil {
-		hm.onSnapshot(snap)
+	onSnapshot := hm.onSnapshot
+	hm.mu.Unlock()
+
+	// Side effects outside lock — onAction calls e.OnNetworkChanged() which
+	// re-acquires hm.mu via resetCounters(). Calling with hm.mu held would
+	// self-deadlock (Go mutexes are non-reentrant).
+	if action != nil {
+		action()
+	}
+	if onSnapshot != nil {
+		onSnapshot(snap)
 	}
 }
 
@@ -209,8 +216,9 @@ func (hm *healthMonitor) assess(ws wire.WireStats) string {
 	return HealthHealthy
 }
 
-// transition updates health state and streaks, taking action when critical.
-func (hm *healthMonitor) transition(level string) {
+// transition updates health state and streaks.
+// Returns a deferred action (port hop or full reconnect) to execute outside hm.mu.
+func (hm *healthMonitor) transition(level string) (action func()) {
 	switch level {
 	case HealthHealthy:
 		hm.healthyStreak++
@@ -251,15 +259,17 @@ func (hm *healthMonitor) transition(level string) {
 			hm.health = HealthCritical
 		}
 		if hm.health == HealthCritical {
-			hm.maybeAct()
+			action = hm.maybeAct()
 		}
 	}
+	return
 }
 
-// maybeAct takes corrective action with cooldown.
-func (hm *healthMonitor) maybeAct() {
+// maybeAct decides on corrective action with cooldown.
+// Returns the action to execute outside hm.mu, or nil if no action needed.
+func (hm *healthMonitor) maybeAct() func() {
 	if time.Since(hm.lastAction) < actionCooldown {
-		return
+		return nil
 	}
 
 	// TCP health gate: if TCP streams recently succeeded, the connection is
@@ -267,7 +277,7 @@ func (hm *healthMonitor) maybeAct() {
 	// protect active streams (e.g. YouTube video).
 	if hm.tm.TCPRecentlyHealthy(30 * time.Second) {
 		slog.Debug("health: TCP healthy, skipping hop")
-		return
+		return nil
 	}
 
 	hm.lastAction = time.Now()
@@ -276,14 +286,11 @@ func (hm *healthMonitor) maybeAct() {
 	if hm.hopAttempts > 3 {
 		hm.hopAttempts = 0
 		slog.Warn("health: full reconnect")
-		if hm.onAction != nil {
-			hm.onAction()
-		}
-	} else {
-		// Port hop: reset cached connections.
-		slog.Warn("health: port hop", "attempt", hm.hopAttempts)
-		hm.tm.ResetConnections()
+		return hm.onAction
 	}
+	// Port hop: reset cached connections.
+	slog.Warn("health: port hop", "attempt", hm.hopAttempts)
+	return func() { hm.tm.ResetConnections() }
 }
 
 // resetCounters clears all health streaks and corrective action state.

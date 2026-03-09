@@ -446,9 +446,8 @@ func (e *Engine) Wake() {
 // Stop tears down the tunnel and returns the engine to disconnected.
 func (e *Engine) Stop() error {
 	e.mu.Lock()
-	defer e.mu.Unlock()
-
 	if e.state == StateDisconnected {
+		e.mu.Unlock()
 		return nil
 	}
 	slog.Info("engine: stop",
@@ -456,16 +455,31 @@ func (e *Engine) Stop() error {
 		"hadError", e.lastError != nil,
 	)
 
-	// Stop health monitor first — its goroutine reads tm and tunnel.
-	if e.health != nil {
-		e.health.stop()
-		e.health = nil
+	// Mark disconnected immediately — blocks OnNetworkChanged from starting
+	// new work (it checks state != StateConnected and returns early).
+	e.state = StateDisconnected
+
+	// Extract goroutine owners whose callbacks may need e.mu.
+	hm := e.health
+	e.health = nil
+	probe := e.probe
+	e.probe = nil
+	e.mu.Unlock()
+
+	// Stop goroutines WITHOUT holding e.mu — health monitor's onAction
+	// callback calls OnNetworkChanged() which briefly acquires e.mu.
+	// Holding e.mu here would cross-deadlock with hm.wg.Wait().
+	if hm != nil {
+		hm.stop()
 	}
-	// Stop recovery probe — its goroutine reads tm.
-	if e.probe != nil {
-		e.probe.stop()
-		e.probe = nil
+	if probe != nil {
+		probe.stop()
 	}
+
+	// Re-acquire for resource cleanup.
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	if e.networkMonitor != nil {
 		e.networkMonitor.Close()
 		e.networkMonitor = nil
