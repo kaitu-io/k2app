@@ -133,9 +133,11 @@ func (c *ProxyDNSClient) queryServer(ctx context.Context, server string, query *
 	case <-pc.done:
 		return nil, fmt.Errorf("connection to %s closed: %w", server, pc.err)
 	case <-ctx.Done():
-		// Fail-fast (sing-box pattern): assume connection is unhealthy,
-		// tear it down so next query redials instead of hitting a zombie.
-		c.closeConn(server, pc)
+		// Fail-fast on genuine timeout only — connection is likely a zombie.
+		// Don't close on Canceled (race loser or engine shutdown — Close() handles that).
+		if ctx.Err() == context.DeadlineExceeded {
+			c.closeConn(server, pc)
+		}
 		return nil, ctx.Err()
 	}
 }
