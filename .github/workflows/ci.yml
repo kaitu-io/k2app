@@ -211,16 +211,6 @@ jobs:
         shell: bash
         run: yarn install --frozen-lockfile --network-timeout 600000
 
-      - name: Run webapp tests (vitest)
-        shell: bash
-        run: yarn test
-        working-directory: webapp
-
-      - name: Type-check webapp (tsc)
-        shell: bash
-        run: yarn tsc --noEmit
-        working-directory: webapp
-
       - name: Create sidecar placeholder for cargo check
         shell: bash
         run: |

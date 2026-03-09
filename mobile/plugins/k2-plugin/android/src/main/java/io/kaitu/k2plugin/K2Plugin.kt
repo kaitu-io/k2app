@@ -731,7 +731,7 @@ class K2Plugin : Plugin() {
 
     @PluginMethod
     fun setDevEnabled(call: PluginCall) {
-        val enabled = call.getBoolean("enabled", false)
+        val enabled = call.getBoolean("enabled", false) ?: false
         android.webkit.WebView.setWebContentsDebuggingEnabled(enabled)
         call.resolve()
     }
