@@ -2,7 +2,8 @@
 
 Rate-based congestion control for QUIC, optimized for GFW environments.
 
-Implements `quic-go`'s `CongestionControl` interface via `github.com/apernet/quic-go`.
+Implements `quic-go`'s `CongestionControlEx` interface (extended with `OnCongestionEventEx`).
+quic-go auto-detects the extended interface and provides batched ACK+loss data per ACK frame.
 
 ## Algorithm
 
@@ -11,7 +12,7 @@ Gradient ascent on utility function: `U = Throughput - α * LossRate * Throughpu
 - **Rate-based** (not window-based like Cubic)
 - **Monitor Intervals (MI)**: probe network capacity by sending at `rate ± ε`
 - **AIMD-ε**: Adaptive step size via Additive Increase Multiplicative Decrease on ε. See [AIMD-ε section](#aimd-ε-adaptive-exploration-step-size) below.
-- **GFW mode**: low α tolerates non-congestion packet loss (random drops by firewall)
+- **GFW mode**: α=5.0 balances GFW loss tolerance with congestion sensitivity; β=1.0 makes RTT gradient effective
 - **Stale loss filtering**: MI tracks `FirstPacketNumber`/`LastPacketNumber`. `OnCongestionEvent` skips loss events where packet number < current MI's `FirstPacketNumber` (belongs to previous MI). Prevents MI boundary artifacts (LossRate > 100%) when loss notifications arrive after MI rotation.
 - **LossRate clamp**: `LossRate()` capped at 1.0 — defensive guard against residual stale attribution
 - Reference: PCC Vivace (NSDI '18)
@@ -20,7 +21,8 @@ Gradient ascent on utility function: `U = Throughput - α * LossRate * Throughpu
 
 - `DefaultMaxRate`: 500 Mbps upper bound
 - `DefaultK2ARCEpsilon`: 0.10 (base exploration step size, AIMD-ε adapts within [0.02, 0.20])
-- `DefaultK2ARCBeta`: 0.1 (latency penalty — low for throughput-prioritized tunnel use)
+- `GFWK2CCAlpha`: 5.0 (GFW loss penalty — high enough for congestion gradient, tolerates constant 5% GFW loss)
+- `DefaultK2CCBeta`: 1.0 (latency penalty — 10ms ΔRtt = 10 utility signal, same magnitude as loss)
 - `arcMinRate`: 10 Mbps (upload floor), `arcMinDownloadRate`: 30 Mbps (download floor)
 - `noiseEWMA`: EWMA of RTT coefficient of variation, cold-starts at 1.0 (conservative)
 
@@ -84,18 +86,24 @@ Clamp: `ε ∈ [ε_min, ε_max]`
 
 `noiseEWMA` initializes at 1.0 (10× ε₀), making the threshold very high. All early reversals classify as **weak** → ε decreases via MD → conservative small probes. As real RTT CV data arrives (typically 0.05–0.20), noiseEWMA decays toward true noise floor, enabling accurate strong/weak classification.
 
+## Global Ack Rate Tracker
+
+Sliding-window tracker (5-second window, 1-second buckets) recording global ack/loss ratio
+from `OnCongestionEventEx`. Independent of per-MI loss attribution. Observability only
+(debug logging via `CCSnapshot.AckRate`) — does not drive rate decisions.
+
 ## Observability
 
-`Snapshot()` returns `ARCSnapshot` (SendingRate, LossRate, Throughput, RTT, MinRTT, Cwnd, Mode, MIID, Epsilon) under `RLock`. Used by `QUICClient.WireStats()` for external metric access. Young MI (BytesSent < 100KB) uses `lastCompleted` values to avoid MI boundary artifacts (throughput/loss spikes from incomplete data).
+`Snapshot()` returns `CCSnapshot` (SendingRate, LossRate, Throughput, RTT, MinRTT, Cwnd, Mode, MIID, Epsilon, AckRate) under `RLock`. Used by `QUICClient.WireStats()` for external metric access. Young MI (BytesSent < 100KB) uses `lastCompleted` values to avoid MI boundary artifacts (throughput/loss spikes from incomplete data).
 
 ## Files
 
 - `arc.go` — `K2ARC` struct, MI-based rate control, utility gradient computation, AIMD-ε, `ARCSnapshot`/`Snapshot()`
-- `arcc_test.go` — 36 test functions (convergence, loss tolerance, rate bounds, stale loss filtering, snapshot fallback, AIMD-ε)
+- `arcc_test.go` — ~50 test functions (convergence, loss tolerance, rate bounds, stale loss filtering, snapshot fallback, AIMD-ε, ackRate tracker, CongestionControlEx)
 - `helpers_test.go` — test fixtures
 
 ## Testing
 
 ```bash
-go test ./wire/arc/...    # 36 tests
+go test ./wire/arc/...    # ~50 tests
 ```
