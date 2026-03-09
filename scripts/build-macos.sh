@@ -96,7 +96,7 @@ if [ "$NE_MODE" = true ]; then
   # --- Build gomobile macOS xcframework (NE mode only) ---
   echo ""
   echo "--- Building gomobile macOS xcframework ---"
-  make mobile-macos
+  make appext-macos
 
   # --- Build libk2_ne_helper.a (NE mode only) ---
   echo ""

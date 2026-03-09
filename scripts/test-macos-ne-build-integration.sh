@@ -24,7 +24,7 @@ fail() {
 # ---------------------------------------------------------------------------
 # test_build_script_has_ne_steps
 # Verify build-macos.sh contains:
-#   - gomobile macOS xcframework step (make mobile-macos)
+#   - gomobile macOS xcframework step (make appext-macos)
 #   - NE helper static library step (ne_helper/build.sh)
 #   - NE_HELPER_LIB_DIR export
 #   - KaituTunnel.appex compilation step (swiftc)
@@ -35,8 +35,8 @@ fail() {
 test_build_script_has_ne_steps() {
     local script="$ROOT_DIR/scripts/build-macos.sh"
 
-    if ! grep -q "mobile-macos" "$script"; then
-        fail "test_build_script_has_ne_steps" "build-macos.sh missing 'make mobile-macos' step"
+    if ! grep -q "appext-macos" "$script"; then
+        fail "test_build_script_has_ne_steps" "build-macos.sh missing 'make appext-macos' step"
         return
     fi
 

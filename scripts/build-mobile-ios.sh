@@ -33,7 +33,7 @@ make build-webapp
 # --- gomobile bind → xcframework ---
 echo ""
 echo "--- Building K2Mobile.xcframework (gomobile bind) ---"
-make mobile-ios
+make appext-ios
 
 # --- Copy xcframework into iOS project ---
 echo ""

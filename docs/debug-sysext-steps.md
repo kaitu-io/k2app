@@ -89,7 +89,7 @@ make build-macos-fast     # 签名，跳过公证（本地开发）
 ```
 1. make build-webapp                           → webapp/dist
 2. make build-k2 (arm64 + x86_64 + lipo)      → k2 universal binary
-3. make mobile-macos                           → K2MobileMacOS.xcframework
+3. make appext-macos                           → K2MobileMacOS.xcframework
 4. ne_helper/build.sh --arch universal         → libk2_ne_helper.a
 5. yarn tauri build --target universal         → Kaitu.app (未签名)
 6. swiftc PacketTunnelProvider.swift           → KaituTunnel executable
@@ -126,7 +126,7 @@ swiftc \
 #### 场景 B: 改了 Go 代码（k2/ 子模块）
 
 ```bash
-cd $ROOT_DIR && make mobile-macos
+cd $ROOT_DIR && make appext-macos
 # 内部执行: gomobile bind -tags with_gvisor -target=macos ...
 # 产出: k2/build/K2MobileMacOS.xcframework
 # 然后执行场景 A 的 swiftc 编译

@@ -127,22 +127,22 @@ publish-mobile:
 	bash scripts/publish-mobile.sh $(VERSION)
 
 # --- Mobile (delegates to k2/Makefile) ---
-mobile-deps:
+appext-deps:
 	cd k2 && go get golang.org/x/mobile/bind@latest
 
-mobile-ios:
+appext-ios:
 	cd k2 && make appext-ios
 
-mobile-macos:
+appext-macos:
 	cd k2 && make appext-macos
 
-build-macos-ne-lib: mobile-macos
+build-macos-ne-lib: appext-macos
 	@echo "macOS NE xcframework ready: k2/build/K2MobileMacOS.xcframework"
 
-mobile-android: mobile-deps
+appext-android: appext-deps
 	cd k2 && make appext-android
 
-build-mobile-ios: pre-build build-webapp mobile-ios
+build-mobile-ios: pre-build build-webapp appext-ios
 	cp -r k2/build/K2Mobile.xcframework mobile/ios/App/
 	cd mobile && npx cap sync ios
 	cd mobile/ios/App && xcodebuild -workspace App.xcworkspace \
@@ -150,7 +150,7 @@ build-mobile-ios: pre-build build-webapp mobile-ios
 		-destination 'generic/platform=iOS' \
 		-archivePath build/App.xcarchive archive
 
-build-mobile-android: pre-build build-webapp mobile-android
+build-mobile-android: pre-build build-webapp appext-android
 	mkdir -p mobile/android/app/libs
 	cp k2/build/k2mobile.aar mobile/android/app/libs/
 	cd mobile && npx cap sync android
@@ -158,10 +158,10 @@ build-mobile-android: pre-build build-webapp mobile-android
 
 IOS_DEVICE ?= $(shell xcrun xctrace list devices 2>/dev/null | grep 'iPhone' | grep -v 'Simulator' | sed 's/.*(\([0-9A-Fa-f-]\{25,\}\)).*/\1/' | head -1)
 
-dev-ios: pre-build build-webapp mobile-ios
+dev-ios: pre-build build-webapp appext-ios
 	cd mobile && npx cap sync ios && npx cap run ios $(if $(IOS_DEVICE),--target $(IOS_DEVICE),)
 
-dev-android: pre-build build-webapp mobile-android
+dev-android: pre-build build-webapp appext-android
 	mkdir -p mobile/android/app/libs
 	cp k2/build/k2mobile.aar mobile/android/app/libs/
 	cd mobile && npx cap sync android && npx cap run android

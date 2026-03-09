@@ -33,7 +33,7 @@ make build-webapp
 # --- gomobile bind → AAR ---
 echo ""
 echo "--- Building k2mobile.aar (gomobile bind) ---"
-make mobile-android
+make appext-android
 
 # --- Copy AAR into Android project ---
 echo ""

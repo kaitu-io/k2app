@@ -6,7 +6,7 @@ set -euo pipefail
 # by gomobile bind -target=macos.
 #
 # Usage: bash scripts/test-macos-ne-build.sh
-# Expected: exits 0 after a successful `make mobile-macos` run
+# Expected: exits 0 after a successful `make appext-macos` run
 # Expected: exits non-zero (RED) when run before the build
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -54,7 +54,7 @@ MACOS_SLICE_DIR="${XCFRAMEWORK_DIR}/macos-arm64"
 if [ -d "$XCFRAMEWORK_DIR" ]; then
   pass "xcframework root exists: $XCFRAMEWORK_DIR"
 else
-  fail "xcframework root missing: $XCFRAMEWORK_DIR (run: make mobile-macos)"
+  fail "xcframework root missing: $XCFRAMEWORK_DIR (run: make appext-macos)"
 fi
 
 if [ -d "$MACOS_SLICE_DIR" ]; then

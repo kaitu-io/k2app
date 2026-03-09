@@ -19,7 +19,7 @@ echo "=== Building K2MobileMacOS.xcframework v${VERSION} for macOS NE ==="
 # --- Build xcframework via Makefile target ---
 echo ""
 echo "--- Building gomobile macOS xcframework ---"
-make mobile-macos
+make appext-macos
 
 # --- Verify output ---
 echo ""
