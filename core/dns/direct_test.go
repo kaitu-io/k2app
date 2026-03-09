@@ -10,20 +10,20 @@ import (
 func TestDirectDNSClient_New(t *testing.T) {
 	// Test with custom servers
 	client := NewDirectDNSClient([]string{"8.8.8.8:53", "1.1.1.1:53"})
-	if len(client.servers) != 2 {
-		t.Errorf("Expected 2 servers, got %d", len(client.servers))
+	if len(client.resolver.servers) != 2 {
+		t.Errorf("Expected 2 servers, got %d", len(client.resolver.servers))
 	}
-	if client.servers[0] != "8.8.8.8:53" {
-		t.Errorf("Expected first server 8.8.8.8:53, got %s", client.servers[0])
+	if client.resolver.servers[0].addr != "8.8.8.8:53" {
+		t.Errorf("Expected first server 8.8.8.8:53, got %s", client.resolver.servers[0].addr)
 	}
 
 	// Test with empty servers (should use defaults)
 	client = NewDirectDNSClient(nil)
-	if len(client.servers) != 2 {
-		t.Errorf("Expected 2 default servers, got %d", len(client.servers))
+	if len(client.resolver.servers) != 6 {
+		t.Errorf("Expected 6 default servers, got %d", len(client.resolver.servers))
 	}
-	if client.servers[0] != "114.114.114.114:53" {
-		t.Errorf("Expected default server 114.114.114.114:53, got %s", client.servers[0])
+	if client.resolver.servers[0].addr != "114.114.114.114:53" {
+		t.Errorf("Expected default server 114.114.114.114:53, got %s", client.resolver.servers[0].addr)
 	}
 }
 

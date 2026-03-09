@@ -2,7 +2,6 @@ package dns
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net"
 	"time"
@@ -13,9 +12,9 @@ import (
 // DirectDNSClient queries DNS via raw UDP socket (bypasses TUN device)
 // This prevents DNS query loops where queries get routed back through the TUN
 type DirectDNSClient struct {
-	servers []string // DNS server addresses (e.g., "114.114.114.114:53")
-	timeout time.Duration
-	dialer  *net.Dialer // optional: protected dialer for mobile socket protection
+	resolver *racingResolver
+	timeout  time.Duration
+	dialer   *net.Dialer // optional: protected dialer for mobile socket protection
 }
 
 // DirectDNSOption configures a DirectDNSClient.
@@ -30,65 +29,33 @@ func WithDialer(d *net.Dialer) DirectDNSOption {
 // NewDirectDNSClient creates a new direct DNS client
 func NewDirectDNSClient(servers []string, opts ...DirectDNSOption) *DirectDNSClient {
 	if len(servers) == 0 {
-		// Default to common CN DNS servers
+		// Defense-in-depth defaults; normally populated by config.SetDefaults().
+		// Keep in sync with config.SetDefaults() and proxy.go defaults.
 		servers = []string{
-			"114.114.114.114:53",
-			"223.5.5.5:53",
+			"114.114.114.114:53", "114.114.115.115:53",
+			"223.5.5.5:53", "223.6.6.6:53",
+			"119.29.29.29:53", "119.28.28.28:53",
 		}
 	}
 
 	c := &DirectDNSClient{
-		servers: servers,
 		timeout: 5 * time.Second,
 	}
 	for _, opt := range opts {
 		opt(c)
 	}
+	c.resolver = newRacingResolver(servers, func(ctx context.Context, server string, query *dns.Msg) (*dns.Msg, error) {
+		return c.queryServer(ctx, query, server)
+	}, defaultRaceN, c.timeout, "direct")
 	return c
 }
 
 // Query sends a DNS query via direct UDP socket (bypassing TUN).
-// Races all configured servers in parallel and returns the first success.
+// Races the healthiest servers in parallel and returns the first success.
 // Any valid DNS response (including NXDOMAIN) is accepted — only
 // transport-level errors (timeout, connection refused) are failures.
 func (c *DirectDNSClient) Query(ctx context.Context, query *dns.Msg) (*dns.Msg, error) {
-	if len(c.servers) == 1 {
-		return c.queryServer(ctx, query, c.servers[0])
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, c.timeout)
-	defer cancel()
-
-	type result struct {
-		resp *dns.Msg
-		err  error
-	}
-	ch := make(chan result, len(c.servers))
-
-	for _, server := range c.servers {
-		go func(s string) {
-			resp, err := c.queryServer(ctx, query, s)
-			ch <- result{resp, err}
-		}(server)
-	}
-
-	var lastErr error
-	for range c.servers {
-		select {
-		case r := <-ch:
-			if r.err == nil {
-				return r.resp, nil
-			}
-			lastErr = r.err
-		case <-ctx.Done():
-			if lastErr != nil {
-				return nil, fmt.Errorf("all direct DNS servers failed: %w", lastErr)
-			}
-			return nil, fmt.Errorf("all direct DNS servers timeout")
-		}
-	}
-
-	return nil, fmt.Errorf("all direct DNS servers failed: %w", lastErr)
+	return c.resolver.Query(ctx, query)
 }
 
 // queryServer queries a single DNS server via UDP.

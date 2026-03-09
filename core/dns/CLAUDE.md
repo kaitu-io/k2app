@@ -25,9 +25,17 @@ Uses freelru (`github.com/sagernet/sing/contrab/freelru`) — sharded LRU with p
 - `GetPacked`: returns fresh entries only (checks `entry.expireAt`)
 - `GetStalePacked`: returns expired-but-within-stale-window entries from positive cache only
 
+## Racing Resolver (racing.go)
+
+Shared health-aware server racing used by both DirectDNSClient and ProxyDNSClient. Each client creates a `racingResolver` with its transport-specific `queryServer()` as the query function, then delegates `Query()` to it.
+
+- **Server selection** (`pick()`): Races top-N healthy servers sorted by EWMA latency. Untested servers sort last among healthy. If fewer than N healthy, adds one degraded server due for probe (30s interval). If all degraded, falls back to racing all servers.
+- **Health tracking** (`serverHealth`): Lock-free via `sync/atomic`. Records EWMA latency (α=0.3) on success, increments consecutive failure count on failure. Server degrades after 3 consecutive failures, recovers on first success.
+- **Default servers**: 6 per category (3 providers × primary + backup). Direct: 114DNS, AliDNS, DNSPod. Proxy: Google, Cloudflare, Quad9.
+
 ## Proxy DNS (proxy.go)
 
-Uses persistent UDP connections with message-ID-based multiplexing (sing-box pattern). A single UDP connection per server handles all queries via callback registry, avoiding per-query DialUDP overhead.
+Uses persistent UDP connections with message-ID-based multiplexing (sing-box pattern). A single UDP connection per server handles all queries via callback registry, avoiding per-query DialUDP overhead. Delegates `Query()` to `racingResolver`.
 
 ## Files
 
@@ -36,8 +44,9 @@ Uses persistent UDP connections with message-ID-based multiplexing (sing-box pat
 - `filter.go` — `Filter`: RFC 6761 special-use domains + noise detection
 - `hosts.go` — `HostsFile`: /etc/hosts integration
 - `metrics.go` — `Metrics`: query/cache/filter/upstream counters
-- `direct.go` — `DirectDNSClient`: raw UDP to upstream (bypasses TUN, NXDOMAIN is valid response)
-- `proxy.go` — `ProxyDNSClient`: DNS via tunnel with persistent connection pooling
+- `racing.go` — `racingResolver`: health-aware server racing for DNS upstreams (EWMA latency sorting, degradation after 3 consecutive failures, 30s probe interval). Both DirectDNSClient and ProxyDNSClient delegate Query() here.
+- `direct.go` — `DirectDNSClient`: raw UDP to upstream (bypasses TUN, NXDOMAIN is valid response), delegates to racingResolver
+- `proxy.go` — `ProxyDNSClient`: DNS via tunnel with persistent connection pooling, delegates to racingResolver
 
 ## Constitutional Rules (never violate)
 

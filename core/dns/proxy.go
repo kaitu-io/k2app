@@ -20,9 +20,9 @@ import (
 // A single UDP connection per server handles all queries, avoiding per-query
 // DialUDP overhead (expensive: QUIC stream or smux session creation).
 type ProxyDNSClient struct {
-	dialer  wire.Dialer
-	servers []string
-	timeout time.Duration
+	resolver *racingResolver
+	dialer   wire.Dialer
+	timeout  time.Duration
 
 	// Connection pool: server → persistent connection.
 	mu    deadlock.Mutex
@@ -59,57 +59,28 @@ type ProxyDNSClientConfig struct {
 func NewProxyDNSClient(cfg ProxyDNSClientConfig) *ProxyDNSClient {
 	servers := cfg.Servers
 	if len(servers) == 0 {
-		servers = []string{"8.8.8.8:53", "1.1.1.1:53"}
-	}
-
-	return &ProxyDNSClient{
-		dialer:  cfg.Dialer,
-		servers: servers,
-		timeout: 5 * time.Second,
-		conns:   make(map[string]*proxyConn),
-	}
-}
-
-// Query sends a DNS query through the tunnel via persistent connections.
-// Races all configured servers in parallel and returns the first success.
-func (c *ProxyDNSClient) Query(ctx context.Context, query *dns.Msg) (*dns.Msg, error) {
-	if len(c.servers) == 1 {
-		return c.queryServer(ctx, c.servers[0], query)
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, c.timeout)
-	defer cancel()
-
-	type result struct {
-		resp *dns.Msg
-		err  error
-	}
-	ch := make(chan result, len(c.servers))
-
-	for _, server := range c.servers {
-		go func(s string) {
-			resp, err := c.queryServer(ctx, s, query)
-			ch <- result{resp, err}
-		}(server)
-	}
-
-	var lastErr error
-	for range c.servers {
-		select {
-		case r := <-ch:
-			if r.err == nil {
-				return r.resp, nil
-			}
-			lastErr = r.err
-		case <-ctx.Done():
-			if lastErr != nil {
-				return nil, fmt.Errorf("all proxy DNS servers failed: %w", lastErr)
-			}
-			return nil, fmt.Errorf("all proxy DNS servers timeout")
+		// Defense-in-depth defaults; normally populated by config.SetDefaults().
+		// Keep in sync with config.SetDefaults() and direct.go defaults.
+		servers = []string{
+			"8.8.8.8:53", "8.8.4.4:53",
+			"1.1.1.1:53", "1.0.0.1:53",
+			"9.9.9.9:53", "149.112.112.112:53",
 		}
 	}
 
-	return nil, fmt.Errorf("all proxy DNS servers failed: %w", lastErr)
+	c := &ProxyDNSClient{
+		dialer:  cfg.Dialer,
+		timeout: 5 * time.Second,
+		conns:   make(map[string]*proxyConn),
+	}
+	c.resolver = newRacingResolver(servers, c.queryServer, defaultRaceN, c.timeout, "proxy")
+	return c
+}
+
+// Query sends a DNS query through the tunnel via persistent connections.
+// Races the healthiest servers in parallel and returns the first success.
+func (c *ProxyDNSClient) Query(ctx context.Context, query *dns.Msg) (*dns.Msg, error) {
+	return c.resolver.Query(ctx, query)
 }
 
 // queryServer sends a query to a single server using a persistent connection.

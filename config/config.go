@@ -153,10 +153,18 @@ func SetDefaults(cfg *ClientConfig) {
 		cfg.Proxy.Listen = "127.0.0.1:1080"
 	}
 	if len(cfg.DNS.Direct) == 0 {
-		cfg.DNS.Direct = []string{"114.114.114.114:53", "223.5.5.5:53"}
+		cfg.DNS.Direct = []string{
+			"114.114.114.114:53", "114.114.115.115:53",
+			"223.5.5.5:53", "223.6.6.6:53",
+			"119.29.29.29:53", "119.28.28.28:53",
+		}
 	}
 	if len(cfg.DNS.Proxy) == 0 {
-		cfg.DNS.Proxy = []string{"8.8.8.8:53", "1.1.1.1:53"}
+		cfg.DNS.Proxy = []string{
+			"8.8.8.8:53", "8.8.4.4:53",
+			"1.1.1.1:53", "1.0.0.1:53",
+			"9.9.9.9:53", "149.112.112.112:53",
+		}
 	}
 	if cfg.Log.Level == "" {
 		cfg.Log.Level = "info"
