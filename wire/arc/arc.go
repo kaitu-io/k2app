@@ -851,8 +851,11 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 	throughput := mi.Throughput()
 
 	// Bandwidth estimation: B_est = T / (1-L)
-	// Works even under loss — recovers true link capacity
-	if throughput > 0 {
+	// Works even under loss — recovers true link capacity.
+	// Ignore samples below minRate — connection establishment produces
+	// near-zero throughput that would poison the EWMA.
+	minRate := arcMinDownloadRate // 30 Mbps
+	if throughput >= minRate {
 		bEst := throughput
 		if lossRate := mi.LossRate(); lossRate < 0.95 {
 			bEst = throughput / (1.0 - lossRate)
@@ -866,8 +869,9 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 
 	// Throughput Anchor: when app-limited (R >> B), reset rate to estimated bandwidth.
 	// This brings CC back into the gradient-effective zone where R ≈ B.
+	// Only anchor when we have a meaningful bandwidth estimate.
 	if mi.IsAppLimited {
-		if p.bwEstimate > 0 {
+		if p.bwEstimate >= minRate {
 			p.state.CurrentRate = p.bwEstimate
 			p.cwnd = rateToCwnd(p.state.CurrentRate, p.rtt)
 		}
