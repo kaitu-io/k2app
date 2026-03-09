@@ -1123,3 +1123,47 @@ func TestAckRateTracker_EmptySlots(t *testing.T) {
 		t.Errorf("expected ackRate 0.50, got %f", rate)
 	}
 }
+
+// ============================================================================
+// Tests for OnCongestionEventEx (CongestionControlEx interface)
+// ============================================================================
+
+func TestOnCongestionEventEx_RecordsAckRate(t *testing.T) {
+	sender := NewK2CCSender(100_000_000)
+	sender.SetRTTStatsProvider(&mockRTTStatsProvider{smoothedRTT: 50 * time.Millisecond})
+
+	for i := range 20 {
+		sender.OnPacketSent(0, 0, congestion.PacketNumber(i), 1400, true)
+	}
+
+	acked := make([]congestion.AckedPacketInfo, 18)
+	for i := range acked {
+		acked[i] = congestion.AckedPacketInfo{PacketNumber: congestion.PacketNumber(i), BytesAcked: 1400}
+	}
+	lost := []congestion.LostPacketInfo{
+		{PacketNumber: 18, BytesLost: 1400},
+		{PacketNumber: 19, BytesLost: 1400},
+	}
+
+	sender.OnCongestionEventEx(0, congestion.Time(500*time.Second), acked, lost)
+
+	snap := sender.Snapshot()
+	// 18 acks, 2 losses → 90%
+	if snap.AckRate < 0.89 || snap.AckRate > 0.91 {
+		t.Errorf("expected AckRate ~0.90, got %f", snap.AckRate)
+	}
+}
+
+func TestOnCongestionEventEx_NilPackets(t *testing.T) {
+	sender := NewK2CCSender(100_000_000)
+	sender.OnCongestionEventEx(0, 0, nil, nil)
+
+	snap := sender.Snapshot()
+	if snap.AckRate != 1.0 {
+		t.Errorf("expected AckRate=1.0 with no data, got %f", snap.AckRate)
+	}
+}
+
+func TestCongestionControlEx_InterfaceCompliance(t *testing.T) {
+	var _ congestion.CongestionControlEx = (*K2CCSender)(nil)
+}

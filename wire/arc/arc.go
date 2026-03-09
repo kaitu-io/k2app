@@ -692,6 +692,10 @@ type K2CCSender struct {
 	// EWMA of RTT CV during inconsistent (building) periods.
 	noiseEWMA float64
 
+	// Sliding-window ack rate tracker — fed by OnCongestionEventEx.
+	// Observability only (debug logging). Does not drive decisions.
+	ackRate *ackRateTracker
+
 	mu sync.RWMutex
 }
 
@@ -741,6 +745,7 @@ func NewK2CCSenderWithConfig(maxRate int64, config *K2CCConfig) *K2CCSender {
 		pacingBudget:   0,
 		lastUpdateTime: 0,
 		noiseEWMA:      coldStartNoise,
+		ackRate:        newAckRateTracker(),
 	}
 }
 
@@ -950,6 +955,7 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 		"alpha", fmt.Sprintf("%.2f", p.utility.Alpha),
 		"mode", p.state.Mode.String(),
 		"dir", dir,
+		"ackRate", fmt.Sprintf("%.3f", p.ackRate.AckRate()),
 	)
 }
 
@@ -1115,6 +1121,28 @@ func (p *K2CCSender) OnCongestionEvent(
 	// The utility function handles this via low alpha
 }
 
+// OnCongestionEventEx is the batched congestion event callback (CongestionControlEx).
+// Called by quic-go AFTER individual OnCongestionEvent + OnPacketAcked in the same
+// ACK frame. Records global ack/loss counts in the sliding-window ackRate tracker
+// for debug observability.
+func (p *K2CCSender) OnCongestionEventEx(
+	priorInFlight congestion.ByteCount,
+	eventTime congestion.Time,
+	ackedPackets []congestion.AckedPacketInfo,
+	lostPackets []congestion.LostPacketInfo,
+) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	acks := uint64(len(ackedPackets))
+	losses := uint64(len(lostPackets))
+	if acks == 0 && losses == 0 {
+		return
+	}
+
+	p.ackRate.record(time.Duration(eventTime), acks, losses)
+}
+
 // OnRetransmissionTimeout is called when RTO expires
 func (p *K2CCSender) OnRetransmissionTimeout(packetsRetransmitted bool) {
 	// K2CC doesn't reduce cwnd on timeout
@@ -1177,6 +1205,7 @@ type CCSnapshot struct {
 	Mode        K2CCMode     // SlowStart/Decision/RateAdjusting
 	MIID        uint64        // Current Monitor Interval ID
 	Epsilon     float64       // Current epsilon (AIMD-ε adaptive step size)
+	AckRate     float64       // Global sliding-window ack rate (0.0-1.0), observability only
 }
 
 // minSnapshotBytes is the minimum BytesSent in the current MI before its stats
@@ -1198,6 +1227,9 @@ func (p *K2CCSender) Snapshot() CCSnapshot {
 		Cwnd:        int64(p.cwnd),
 		Mode:        p.state.Mode,
 	}
+	if p.ackRate != nil {
+		s.AckRate = p.ackRate.AckRate()
+	}
 	if mi := p.state.CurrentMI; mi != nil {
 		if mi.BytesSent >= minSnapshotBytes {
 			s.LossRate = mi.LossRate()
@@ -1213,4 +1245,4 @@ func (p *K2CCSender) Snapshot() CCSnapshot {
 }
 
 // Verify K2CCSender implements CongestionControl interface
-var _ congestion.CongestionControl = (*K2CCSender)(nil)
+var _ congestion.CongestionControlEx = (*K2CCSender)(nil)
