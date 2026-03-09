@@ -103,7 +103,7 @@ function PlatformCard({ platform, name, subtitle, children, isDetected }: {
   );
 }
 
-export default function InstallClient({ betaVersion: serverBeta, stableVersion: serverStable }: InstallClientProps) {
+export default function InstallClient({ stableVersion: serverStable }: InstallClientProps) {
   const t = useTranslations();
   const [device, setDevice] = useState<DeviceInfo | null>(null);
   const [downloadState, setDownloadState] = useState<DownloadState>('detecting');
