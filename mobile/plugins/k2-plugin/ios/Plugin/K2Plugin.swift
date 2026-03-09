@@ -738,8 +738,19 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
     private func loadVPNManager(completion: ((NETunnelProviderManager?) -> Void)? = nil) {
         NETunnelProviderManager.loadAllFromPreferences { [weak self] managers, error in
             let bundleId = "com.allnationconnect.anc.wgios.ThePacketTunnel"
+
+            // Remove stale VPN configs (old Kaitu io.kaitu.* or legacy WayMaker with same bundle ID).
+            // Keep only configs created by this app (localizedDescription == "Kaitu VPN").
+            for m in managers ?? [] {
+                if m.localizedDescription != "Kaitu VPN" {
+                    logger.info("Removing stale VPN config: \(m.localizedDescription ?? "nil")")
+                    m.removeFromPreferences(completionHandler: nil)
+                }
+            }
+
             let manager = managers?.first(where: {
                 ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier == bundleId
+                && $0.localizedDescription == "Kaitu VPN"
             }) ?? NETunnelProviderManager()
             self?.vpnManager = manager
             self?.registerStatusObserver()
