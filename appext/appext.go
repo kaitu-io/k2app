@@ -169,7 +169,13 @@ func (e *Engine) Start(configJSON string, fd int, cfg *EngineConfig) (err error)
 	// Note: once engine.Start is called, the FD may be consumed by sing-tun.
 	// We do NOT close it on error — sing-tun handles cleanup if it took ownership,
 	// and a single leaked FD on early failure is harmless vs. a double-close risk.
-	return e.inner.Start(ecfg)
+	if err := e.inner.Start(ecfg); err != nil {
+		return err
+	}
+	// Reclaim init-time allocations (config parsing, k2rule loading, provider setup).
+	// On iOS NE with ~50MB jetsam, every MB counts.
+	debug.FreeOSMemory()
+	return nil
 }
 
 // Pause releases wire transport resources for memory conservation (iOS).
