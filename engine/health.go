@@ -30,6 +30,7 @@ type HealthSnapshot struct {
 	MinRTTMs       float64   `json:"min_rtt_ms"`
 	Cwnd           int64     `json:"cwnd"`
 	Mode           int       `json:"mode"`
+	Epsilon        float64   `json:"epsilon"`
 	TxBytes        int64     `json:"tx_bytes"`
 	RxBytes        int64     `json:"rx_bytes"`
 	Health         string    `json:"health"`
@@ -159,6 +160,7 @@ func (hm *healthMonitor) sample() {
 		MinRTTMs:       float64(ws.MinRTT) / float64(time.Millisecond),
 		Cwnd:           ws.Cwnd,
 		Mode:           ws.Mode,
+		Epsilon:        ws.Epsilon,
 		TxBytes:        tx,
 		RxBytes:        rx,
 		Health:         hm.health,

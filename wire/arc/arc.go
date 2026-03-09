@@ -2,6 +2,7 @@
 package arc
 
 import (
+	"fmt"
 	"log/slog"
 	"math"
 	"sync"
@@ -181,6 +182,20 @@ const (
 	// K2CCModeRateAdjusting - applying gradient updates
 	K2CCModeRateAdjusting
 )
+
+// String returns a human-readable name for the K2CC mode.
+func (m K2CCMode) String() string {
+	switch m {
+	case K2CCModeSlowStart:
+		return "slow-start"
+	case K2CCModeDecision:
+		return "decision"
+	case K2CCModeRateAdjusting:
+		return "rate-adjusting"
+	default:
+		return "unknown"
+	}
+}
 
 // ============================================================================
 // K2CC Configuration
@@ -817,6 +832,26 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 
 	p.state.lastUtility = utility
 	p.state.hasLastUtility = true
+
+	// Log completed MI for K2CC observability (benchmarking, GFW analysis).
+	// Direction: "+1" = rate increasing, "-1" = rate decreasing, "probe" = undecided.
+	dir := "probe"
+	if p.state.UtilityIncreases >= 2 {
+		dir = "+1"
+	} else if p.state.UtilityDecreases >= 2 {
+		dir = "-1"
+	}
+	slog.Debug("k2cc: MI complete",
+		"mi", mi.ID,
+		"rate", fmt.Sprintf("%.1fM", p.state.CurrentRate/1_000_000),
+		"throughput", fmt.Sprintf("%.1fM", mi.Throughput()/1_000_000),
+		"loss", fmt.Sprintf("%.1f%%", mi.LossRate()*100),
+		"rtt", mi.AvgRTT(),
+		"epsilon", fmt.Sprintf("%.3f", p.state.Epsilon),
+		"alpha", fmt.Sprintf("%.2f", p.utility.Alpha),
+		"mode", p.state.Mode.String(),
+		"dir", dir,
+	)
 }
 
 // ============================================================================

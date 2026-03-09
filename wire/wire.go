@@ -45,6 +45,7 @@ type WireStats struct {
 	Cwnd           int64         // bytes (QUIC only)
 	Mode           int           // K2CCMode (QUIC only)
 	MIID           uint64        // Monitor Interval ID (QUIC only)
+	Epsilon        float64       // AIMD-ε adaptive step size (QUIC only)
 	TxBytes        int64
 	RxBytes        int64
 	WireFallback   bool // TCP-WS serving traffic due to QUIC failure

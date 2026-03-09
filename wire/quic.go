@@ -533,6 +533,7 @@ func (c *QUICClient) WireStats() WireStats {
 		s.Cwnd = snap.Cwnd
 		s.Mode = int(snap.Mode)
 		s.MIID = snap.MIID
+		s.Epsilon = snap.Epsilon
 	}
 	if mux != nil {
 		s.RelayUDPLossRate = mux.evaluateRelayLossRate()
