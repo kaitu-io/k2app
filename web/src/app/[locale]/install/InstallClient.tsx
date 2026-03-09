@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { DOWNLOAD_LINKS, BETA_VERSION, DESKTOP_VERSION, getDownloadLinks } from '@/lib/constants';
+import { DOWNLOAD_LINKS, DESKTOP_VERSION, getDownloadLinks } from '@/lib/constants';
 import {
   detectDevice,
   triggerDownload,
@@ -58,10 +58,6 @@ interface InstallClientProps {
   stableVersion: string | null;
 }
 
-function isPrerelease(version: string): boolean {
-  return /-(alpha|beta|rc|dev)/.test(version);
-}
-
 function DownloadButton({ href, label, channelLabel, variant = 'default' }: {
   href: string;
   label: string;
@@ -113,14 +109,11 @@ export default function InstallClient({ betaVersion: serverBeta, stableVersion: 
   const [downloadState, setDownloadState] = useState<DownloadState>('detecting');
   const [countdown, setCountdown] = useState(5);
 
-  const effectiveBeta = serverBeta || BETA_VERSION;
+  // TODO: Temporarily hide beta channel — show only stable version
   const effectiveStable = serverStable || DESKTOP_VERSION;
-
-  const betaIsPrerelease = isPrerelease(effectiveBeta);
-  const showBetaAndStable = betaIsPrerelease && effectiveStable !== effectiveBeta;
-
-  const betaLinks = getDownloadLinks(effectiveBeta);
-  const stableLinks = showBetaAndStable ? getDownloadLinks(effectiveStable) : null;
+  const showBetaAndStable = false;
+  const betaLinks = getDownloadLinks(effectiveStable); // Use stable version as primary
+  const stableLinks = null as ReturnType<typeof getDownloadLinks> | null;
 
   // Determine primary download link based on device (beta preferred)
   const getPrimaryLink = useCallback((deviceInfo: DeviceInfo | null) => {
@@ -171,9 +164,7 @@ export default function InstallClient({ betaVersion: serverBeta, stableVersion: 
     setDownloadState('ready');
   };
 
-  const versionLabel = showBetaAndStable
-    ? t('install.install.betaVersion', { version: effectiveBeta })
-    : t('install.install.latestVersion', { version: effectiveBeta });
+  const versionLabel = t('install.install.latestVersion', { version: effectiveStable });
 
   return (
     <>
@@ -334,7 +325,7 @@ export default function InstallClient({ betaVersion: serverBeta, stableVersion: 
         >
           <DownloadButton
             href={betaLinks.windows.primary}
-            label={`v${effectiveBeta}`}
+            label={`v${effectiveStable}`}
             channelLabel={showBetaAndStable ? t('install.install.recommended') : undefined}
           />
           {showBetaAndStable && stableLinks && (
@@ -356,7 +347,7 @@ export default function InstallClient({ betaVersion: serverBeta, stableVersion: 
         >
           <DownloadButton
             href={betaLinks.macos.primary}
-            label={`v${effectiveBeta}`}
+            label={`v${effectiveStable}`}
             channelLabel={showBetaAndStable ? t('install.install.recommended') : undefined}
           />
           {showBetaAndStable && stableLinks && (
