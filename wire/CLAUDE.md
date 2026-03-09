@@ -47,14 +47,15 @@ Fields: UDID, Token, Host, Port, ECH, Fingerprint, HopStart, HopEnd, Insecure, P
 - `certgen.go` — `GenerateCertPair` (RSA-2048 + EC P-256), `EnsureCertPair`, pin hash generation
 - `stream.go` — QUIC varint encoding, `StreamHeader` (type 0x4B32 H3 frame), request/response
 - `udp.go` — `UDPFrame` wire format, `SessionAllocator`, `SessionMap`, smux framing
-- `quic.go` — QUIC config, `StreamConn` adapter, `QUICClient`/`QUICServer`, port hopping, datagram health tracking (`quicUDPMux`: consecutive timeouts + sliding-window loss rate → hop → recovery probe cycle)
+- `quic.go` — QUIC config, `StreamConn` adapter, `QUICClient`/`QUICServer`, relay UDP health tracking (`quicUDPMux`: consecutive timeouts + sliding-window loss rate → `ErrRelayUDPUnhealthy` for TCP-WS fallback)
 - `quic_limits_desktop.go` — Desktop/server QUIC flow control windows (8 MB stream / 20 MB conn / 256 streams)
 - `quic_limits_mobile.go` — Mobile QUIC flow control windows (2 MB stream / 8 MB conn / 64 streams) — iOS NE ~50 MB jetsam limit
 - `tcpws.go` — smux config, `TCPWSClient`/`TCPWSServer`
-- `transport.go` — `TransportManager`: QUIC strongly preferred, TCP-WS last-resort fallback. Consecutive handshake failure threshold (3) activates fallback — no exponential backoff. Background QUIC probe loop (30s interval) actively tests recovery during fallback. `DialTCP` tries QUIC first (with context budget 3-5s), falls back to TCP-WS on failure. `DialUDP` checks `QUICClient.consecConnFails` counter. `FallbackActive` tracks QUIC→TCP-WS state. Direct `*QUICClient`/`*TCPWSClient` type assertions for `ResetConnections()`.
+- `transport.go` — `TransportManager`: QUIC strongly preferred, TCP-WS last-resort fallback. Consecutive handshake failure threshold (3, `handshakeFailStreak`) activates fallback — no exponential backoff. Background QUIC probe loop (30s interval) actively tests recovery during fallback. `DialTCP` tries QUIC first (with context budget 3-5s), falls back to TCP-WS on failure. `FallbackActive` tracks QUIC→TCP-WS state. Direct `*QUICClient`/`*TCPWSClient` type assertions for `ResetConnections()`.
 - `ip.go` — `ProbePublicIP`, `FormatSslipHost`, `HasIPv6` (server auto-provisioning helpers)
 - `tlspad/` — TLS record padding (probe target cert length, pad server cert to match)
-- `arc/` — PCC Vivace congestion control for QUIC
+- `arc/` — K2CC (PCC Vivace) congestion control for QUIC
+- `VOCABULARY.md` — Three-layer vocabulary convention (Wire/Relay/Tunnel)
 
 ## ECH Rotation Flow
 
@@ -77,12 +78,11 @@ Fields: UDID, Token, Host, Port, ECH, Fingerprint, HopStart, HopEnd, Insecure, P
 - `net.Pipe()` is synchronous — structure goroutines carefully in tests.
 - ECH base64 in URLs must use `base64.URLEncoding` (standard `+` corrupted by `url.Query()`).
 - uTLS forces outer SNI = ECH config's `public_name` — cannot be set independently.
-- QUIC connection liveness: quic-go's KeepAlive (10s) + MaxIdleTimeout (30s) detect dead connections at protocol level. `conn.Context().Done()` fires when connection dies. `connect()` checks this before reusing cached conn — no manual `resetConnection()` needed on error paths. Only datagram hop (intentional port change) calls `resetConnection()` directly.
-- Stream response timeout ≠ transport failure: A 5s stream response timeout means the server's upstream `net.Dial` to the destination is slow/failing — NOT that QUIC transport is broken (OpenStreamSync succeeded = transport is alive). Do NOT increment `consecConnFails` or trigger TCP-WS fallback on stream timeouts. `consecConnFails` is strictly for QUIC handshake failures (UDP blocked by firewall).
-- Datagram recovery cycle: 3 port hops exhaust → fallback to TCP-WS streams for 30s → reset hop counter → fresh QUIC round. Cycle repeats until network change or datagram recovery.
+- QUIC connection liveness: quic-go's KeepAlive (10s) + MaxIdleTimeout (30s) detect dead connections at protocol level. `conn.Context().Done()` fires when connection dies. `connect()` checks this before reusing cached conn — no manual `resetConnection()` needed on error paths.
+- Stream response timeout ≠ transport failure: A 5s stream response timeout means the server's upstream `net.Dial` to the destination is slow/failing — NOT that QUIC transport is broken (OpenStreamSync succeeded = transport is alive). Do NOT increment `handshakeFailStreak` or trigger TCP-WS fallback on stream timeouts. `handshakeFailStreak` is strictly for QUIC handshake failures (UDP blocked by firewall).
+- Relay UDP unhealthy → `ErrRelayUDPUnhealthy`: When relay datagram path has high loss or consecutive timeouts, `DialUDP` returns `ErrRelayUDPUnhealthy` for per-request TCP-WS fallback. Relay-layer metrics never trigger wire-layer actions (port hop, reconnect). See `VOCABULARY.md`.
 - QUIC flow control is platform-specific (build tags `ios || android` vs desktop) — mobile uses smaller windows (2 MB stream / 8 MB conn vs 8 MB / 20 MB desktop) to stay under iOS NE jetsam limit.
 - QUIC stream responses have 5s timeout to prevent indefinite blocking on slow/dead servers.
-- TCP health gate: `DialUDP` checks `lastTCPSuccess` before port hop. If TCP succeeded within 30s, returns `ErrDatagramUnhealthy` (TCP-WS fallback) instead of hop (which kills all TCP streams). Prevents normal DNS packet loss from triggering destructive connection resets.
 
 ## Testing
 

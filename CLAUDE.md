@@ -228,8 +228,8 @@ engine.Stop()
 
 ## Critical Gotchas
 
-- **Known deadlock: healthMonitor.sample() → onAction → resetCounters**: `sample()` holds `hm.mu`, calls `onAction()` which calls `e.OnNetworkChanged()` which calls `hm.resetCounters()` which tries `hm.mu` → self-deadlock. Trigger: ~35s sustained network disruption. Fix: move `onAction()` call outside `hm.mu`. See Concurrency Rules above.
-- **Known deadlock: Engine.Stop() vs health goroutine**: `Stop()` holds `e.mu` + calls `health.stop()` (wg.Wait). Health goroutine in `sample()` → `onAction()` → `OnNetworkChanged()` → needs `e.mu` → cross-deadlock. Fix: release `e.mu` before `health.stop()`.
+- **Known deadlock: healthMonitor.sample() → onReconnect → resetCounters**: `sample()` holds `hm.mu`, calls `onReconnect()` which calls `e.OnNetworkChanged()` which calls `hm.resetCounters()` which tries `hm.mu` → self-deadlock. Trigger: ~35s sustained network disruption. Fix: move `onReconnect()` call outside `hm.mu`. See Concurrency Rules above.
+- **Known deadlock: Engine.Stop() vs health goroutine**: `Stop()` holds `e.mu` + calls `health.stop()` (wg.Wait). Health goroutine in `sample()` → `onReconnect()` → `OnNetworkChanged()` → needs `e.mu` → cross-deadlock. Fix: release `e.mu` before `health.stop()`.
 - QUIC stream `Close()` only sends FIN (write direction). Must also call `CancelRead()` to release stream slot — `quicStreamConn.Close()` handles both
 - sing-tun gVisor stack owns connections — handler must defer close, not close prematurely
 - `ReadStreamHeader`/`ReadStreamResponse` require `io.ByteReader` — wrap `net.Conn` with `bufio.NewReader(conn)`
@@ -271,7 +271,7 @@ docs/todos/p2-*.md     Nice to have
 
 ## Status
 
-**Done**: Full L4 architecture, wire protocol (QUIC+TCP-WS), DNS middleware (L3+L4 + RFC 8767 stale-while-revalidate + sing-box persistent UDP pooling), auth, ECH (DNS-based forging + config rotation), TLS record padding, dual certs (RSA+EC), client CA pool (system + Kaitu CA - Chinese CAs), PCC, client tunnel, server handlers, e2e tests, zero-config server startup, k2/k2s binaries (k2s interactive wizard + upgrade command + beta channel), appext SDK (gomobile, macOS sysext+iOS+Android, iOS GOGC=10 memory optimization), tproxy provider (OpenWRT/Linux), OpenWRT service management (init.d/procd), wire observability (K2ARC metrics + TX/RX counting + HealthMonitor FSM + TCP health gate + background QUIC probe), protocol sniffing (TLS SNI, QUIC SNI, HTTP Host, BitTorrent, STUN, DTLS + QUIC blocking with ICMP Port Unreachable), Happy Eyeballs (RFC 8305 IPv6/IPv4 address selection)
+**Done**: Full L4 architecture, wire protocol (QUIC+TCP-WS), DNS middleware (L3+L4 + RFC 8767 stale-while-revalidate + sing-box persistent UDP pooling), auth, ECH (DNS-based forging + config rotation), TLS record padding, dual certs (RSA+EC), client CA pool (system + Kaitu CA - Chinese CAs), PCC, client tunnel, server handlers, e2e tests, zero-config server startup, k2/k2s binaries (k2s interactive wizard + upgrade command + beta channel), appext SDK (gomobile, macOS sysext+iOS+Android, iOS GOGC=10 memory optimization), tproxy provider (OpenWRT/Linux), OpenWRT service management (init.d/procd), wire observability (K2CC metrics + TX/RX counting + HealthMonitor FSM + TCP health gate + background QUIC probe), protocol sniffing (TLS SNI, QUIC SNI, HTTP Host, BitTorrent, STUN, DTLS + QUIC blocking with ICMP Port Unreachable), Happy Eyeballs (RFC 8305 IPv6/IPv4 address selection)
 
 ## Platform Mapping
 
