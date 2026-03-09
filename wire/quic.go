@@ -33,20 +33,9 @@ var (
 // incrementing session IDs in datagrams or stream-based UDP frames.
 const maxServerUDPSessions = 4096
 
-// maxPortHops is the number of port hops to attempt when datagrams become
-// unhealthy before falling back to TCP-WS. ISP QoS typically matches on
-// port/5-tuple, so hopping to a new port often restores QUIC datagram path.
-const maxPortHops int32 = 3
-
-// portHopRecoveryInterval is the cooldown after hop exhaustion before
-// resetting the counter for another round of probes. UDP probe cost is
-// negligible (port hop reset, no data transfer), so 30s is aggressive
-// enough to recover quickly without excessive churn.
-const portHopRecoveryInterval = 30 * time.Second
-
-// tcpHealthWindow is how recently TCP must have succeeded to suppress a datagram hop.
-// Matches QUIC MaxIdleTimeout (30s) — if TCP worked within one idle cycle, the
-// connection itself is fine and datagram loss is likely normal packet loss.
+// tcpHealthWindow is how recently TCP must have succeeded to consider the
+// connection usable. Matches QUIC MaxIdleTimeout (30s). Used by health
+// monitor to skip reconnect when TCP streams are working.
 const tcpHealthWindow = 30 * time.Second
 
 // ============================================================================
@@ -202,7 +191,6 @@ type QUICClient struct {
 
 	portHopAttempts  atomic.Int32 // hop attempts before TCP-WS fallback
 	portHopExhaustedAt atomic.Int64 // UnixNano: when hops were exhausted (0 = not exhausted)
-	hopInProgress        atomic.Bool  // CAS guard: prevents concurrent hops
 	lastTCPSuccessAt       atomic.Int64 // UnixNano of last successful DialTCP (0 = unknown)
 	handshakeFailStreak      atomic.Int32 // consecutive connect() handshake failures across different hop ports
 }
@@ -423,10 +411,9 @@ func (c *QUICClient) DialTCP(ctx context.Context, addr string) (net.Conn, error)
 // DialUDP opens a UDP proxy session through QUIC datagrams or stream fallback.
 // Returns a PacketConn backed by QUIC datagrams with a unique session ID.
 //
-// When the datagram path is unhealthy (3 consecutive ReadFrom timeouts) and
-// port hopping is configured, DialUDP hops to a new port (resetConnection +
-// reconnect) up to maxPortHops times before returning ErrRelayUDPUnhealthy.
-// This gives QUIC a chance to recover from ISP QoS that blocks specific ports.
+// When the relay UDP path is unhealthy (consecutive timeouts or high loss),
+// returns ErrRelayUDPUnhealthy for TCP-WS fallback. Relay-layer metrics
+// never trigger wire-layer actions (port hop, reconnect).
 func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, error) {
 	for {
 		conn, err := c.connect(ctx)
@@ -617,21 +604,6 @@ func (c *QUICClient) handleServerOverflowStream(stream *quic.Stream, mux *quicUD
 			}
 		}
 	}
-}
-
-// tryHop attempts a single datagram port hop. Returns true if this goroutine
-// won the race and executed the hop. Concurrent callers get false immediately.
-func (c *QUICClient) tryHop() bool {
-	if !c.hopInProgress.CompareAndSwap(false, true) {
-		return false
-	}
-	defer c.hopInProgress.Store(false)
-
-	attempt := c.portHopAttempts.Add(1)
-	slog.Warn("QUICClient: relay UDP unhealthy, hopping port",
-		"hopAttempt", attempt, "maxHops", maxPortHops)
-	c.resetConnection()
-	return true
 }
 
 // closeConnLocked releases cached connection resources. Caller must hold c.mu.

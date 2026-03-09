@@ -5,8 +5,6 @@ import (
 	"errors"
 	"net"
 	"strconv"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -174,43 +172,6 @@ func TestQUICClient_DialUDP_HopNotResetWithHighLoss(t *testing.T) {
 	}
 }
 
-// TestQUICClient_ConcurrentHopRace verifies that when multiple goroutines
-// detect relayUDPHealthy()=false simultaneously, only one actually executes
-// a hop. Without the CAS guard, N goroutines would each Add(1) + resetConnection(),
-// burning N hops in a single unhealthy event.
-func TestQUICClient_ConcurrentHopRace(t *testing.T) {
-	client, _, cleanup := setupQUICPairWithHop(t)
-	defer cleanup()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if _, err := client.connect(ctx); err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-
-	// 10 goroutines all try to hop simultaneously.
-	// Only 1 should win; the rest should get false from tryHop().
-	var winners atomic.Int32
-	var wg sync.WaitGroup
-	for i := 0; i < 10; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if client.tryHop() {
-				winners.Add(1)
-			}
-		}()
-	}
-	wg.Wait()
-
-	if winners.Load() != 1 {
-		t.Fatalf("hop winners = %d, want exactly 1", winners.Load())
-	}
-	if client.portHopAttempts.Load() != 1 {
-		t.Fatalf("portHopAttempts = %d, want 1", client.portHopAttempts.Load())
-	}
-}
-
 // TestQuicUDPConn_WriteTo_LargePayloadUsesOverflow verifies that when SendDatagram
 // returns DatagramTooLargeError, the packet is transparently sent via the overflow
 // stream instead of failing. The send is counted in relaySent (for throughput
@@ -340,7 +301,7 @@ func TestQUICClient_DialUDP_RelayUnhealthy_NoRecoveryProbe(t *testing.T) {
 	}
 
 	// Simulate prior hop exhaustion (doesn't matter anymore — relay never hops)
-	client.portHopAttempts.Store(maxPortHops)
+	client.portHopAttempts.Store(int32(3))
 	client.portHopExhaustedAt.Store(time.Now().Add(-4 * time.Minute).UnixNano())
 
 	// Make datagram path unhealthy
@@ -358,8 +319,8 @@ func TestQUICClient_DialUDP_RelayUnhealthy_NoRecoveryProbe(t *testing.T) {
 	}
 
 	// Hop state should be unchanged (relay path doesn't touch it)
-	if got := client.portHopAttempts.Load(); got != maxPortHops {
-		t.Fatalf("portHopAttempts = %d, want %d (relay path must not modify hop state)", got, maxPortHops)
+	if got := client.portHopAttempts.Load(); got != int32(3) {
+		t.Fatalf("portHopAttempts = %d, want %d (relay path must not modify hop state)", got, int32(3))
 	}
 }
 
@@ -400,7 +361,7 @@ func TestQUICClient_DialUDP_HopRecoveryResetOnNetworkChange(t *testing.T) {
 	defer cleanup()
 
 	// Simulate a prior exhaustion
-	client.portHopAttempts.Store(maxPortHops)
+	client.portHopAttempts.Store(int32(3))
 	client.portHopExhaustedAt.Store(time.Now().Add(-1 * time.Minute).UnixNano())
 
 	// Network change → ResetConnections
