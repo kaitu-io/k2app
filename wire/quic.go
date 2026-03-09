@@ -37,10 +37,10 @@ const maxServerUDPSessions = 4096
 const maxDatagramHops int32 = 3
 
 // datagramRecoveryInterval is the cooldown after hop exhaustion before
-// resetting the counter for another round of probes. Modeled after
-// OpenConnect's dtls_attempt_period (60s) — we use 3 minutes because
-// each recovery round costs 3 hops (3 resetConnection calls).
-const datagramRecoveryInterval = 3 * time.Minute
+// resetting the counter for another round of probes. UDP probe cost is
+// negligible (port hop reset, no data transfer), so 30s is aggressive
+// enough to recover quickly without excessive churn.
+const datagramRecoveryInterval = 30 * time.Second
 
 // tcpHealthWindow is how recently TCP must have succeeded to suppress a datagram hop.
 // Matches QUIC MaxIdleTimeout (30s) — if TCP worked within one idle cycle, the
@@ -192,6 +192,7 @@ type QUICClient struct {
 	datagramHopExhausted atomic.Int64 // UnixNano: when hops were exhausted (0 = not exhausted)
 	hopInProgress        atomic.Bool  // CAS guard: prevents concurrent hops
 	lastTCPSuccess       atomic.Int64 // UnixNano of last successful DialTCP (0 = unknown)
+	consecConnFails      atomic.Int32 // consecutive connect() handshake failures across different hop ports
 }
 
 // NewQUICClient creates a new QUIC client transport.
@@ -227,6 +228,11 @@ func (c *QUICClient) hopEnabled() bool {
 // hopPort returns a random port in the hop range.
 func (c *QUICClient) hopPort() int {
 	return c.hopStart + rand.Intn(c.hopEnd-c.hopStart)
+}
+
+// ConsecConnFails returns the number of consecutive connection handshake failures.
+func (c *QUICClient) ConsecConnFails() int32 {
+	return c.consecConnFails.Load()
 }
 
 // tcpRecentlyHealthy returns true if a TCP stream succeeded within the given window.
@@ -298,8 +304,10 @@ func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
 	conn, err := transport.Dial(ctx, udpAddr, tlsCfg, qcfg)
 	if err != nil {
 		transport.Close()
+		c.consecConnFails.Add(1)
 		return nil, fmt.Errorf("wire: QUIC dial: %w", err)
 	}
+	c.consecConnFails.Store(0)
 	slog.Info("wire: QUIC connected",
 		"dialMs", time.Since(dialStart).Milliseconds(),
 		"remoteAddr", conn.RemoteAddr().String(),

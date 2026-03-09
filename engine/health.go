@@ -274,9 +274,8 @@ func (hm *healthMonitor) maybeAct() {
 	hm.hopAttempts++
 
 	if hm.hopAttempts > 3 {
-		// Escalate: full reconnect.
-		slog.Warn("health: full reconnect", "hopAttempts", hm.hopAttempts)
 		hm.hopAttempts = 0
+		slog.Warn("health: full reconnect")
 		if hm.onAction != nil {
 			hm.onAction()
 		}

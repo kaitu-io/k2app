@@ -184,18 +184,18 @@ func TestHealthEscalation(t *testing.T) {
 	tm := mockTransportManager()
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
 
-	var reconnectCalled bool
-	hm := newHealthMonitor(tm, tunnel, nil, func() { reconnectCalled = true })
+	var reconnectCount int
+	hm := newHealthMonitor(tm, tunnel, nil, func() { reconnectCount++ })
 
-	// Simulate 4 hop attempts (>3 triggers escalation).
+	// Simulate 4 hop attempts (>3 triggers escalation to reconnect).
 	hm.health = HealthCritical
 	for i := 0; i < 4; i++ {
 		hm.lastAction = time.Time{} // bypass cooldown
 		hm.maybeAct()
 	}
 
-	if !reconnectCalled {
-		t.Fatal("expected escalation to full reconnect after >3 hops")
+	if reconnectCount != 1 {
+		t.Fatalf("expected 1 reconnect after >3 hops, got %d", reconnectCount)
 	}
 }
 
@@ -382,6 +382,10 @@ func TestHealthMonitor_PeakTracksSmoothedNotRaw(t *testing.T) {
 		t.Errorf("Peak should be ~335K, got %f", hm.peakThroughput)
 	}
 }
+
+// ============================================================================
+// Tests for connection-level fallback
+// ============================================================================
 
 // applyEWMA applies EWMA smoothing to healthMonitor fields.
 // This is the logic that sample() applies before calling assess().

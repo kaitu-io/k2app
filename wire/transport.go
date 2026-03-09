@@ -2,7 +2,6 @@ package wire
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -26,29 +25,35 @@ func (e *MultiTransportError) Unwrap() []error {
 	return []error{e.QUICErr, e.TCPWSErr}
 }
 
-// QUIC backoff constants for fallback recovery.
 const (
-	quicBackoffBase = 30 * time.Second  // initial backoff after first QUIC failure
-	quicBackoffMax  = 120 * time.Second // maximum backoff cap
+	// quicProbeInterval is how often the background probe attempts QUIC
+	// recovery while TCP-WS fallback is active.
+	quicProbeInterval = 30 * time.Second
+
+	// quicConnFailThreshold is how many consecutive QUIC connection (handshake)
+	// failures to different hop ports before activating TCP-WS fallback.
+	quicConnFailThreshold int32 = 3
 )
 
 // TransportManager manages QUIC and TCP-WS transports.
-// QUIC is preferred; TCP-WS is used as fallback.
-// Implements the Dialer interface.
+// QUIC is strongly preferred; TCP-WS is used as last-resort fallback only
+// when QUIC is genuinely unavailable (UDP blocked). ISPs rarely block UDP,
+// so even with 40%+ packet loss, QUIC with port hopping outperforms TCP-WS.
 type TransportManager struct {
 	mu    sync.RWMutex
 	quic  Dialer
 	tcpws Dialer
 
 	// Fallback state: tracks QUIC→TCP-WS transport-level fallback.
-	// Set when QUIC fails and TCP-WS successfully serves traffic.
-	// Cleared on QUIC recovery or ResetConnections().
-	fallbackActive   atomic.Bool
-	quicBackoffUntil atomic.Int64 // UnixNano: skip QUIC until this time
-	quicFailCount    atomic.Int32 // consecutive QUIC dial failures
+	// Set when consecutive QUIC handshake failures reach quicConnFailThreshold.
+	// Cleared on QUIC recovery, ResetConnections(), or successful probe.
+	fallbackActive atomic.Bool
 
 	// Post-reset grace: first QUIC dial after ResetConnections gets extended budget.
 	freshAfterReset atomic.Bool
+
+	// Background QUIC probe: actively tests QUIC recovery during fallback.
+	probeCancel context.CancelFunc
 }
 
 // NewTransportManager creates a new transport manager.
@@ -70,45 +75,29 @@ func (tm *TransportManager) SetTCPWS(d Dialer) {
 	tm.tcpws = d
 }
 
-// inQuicBackoff returns true if QUIC should be skipped (backoff period active).
-func (tm *TransportManager) inQuicBackoff() bool {
-	until := tm.quicBackoffUntil.Load()
-	return until > 0 && time.Now().UnixNano() < until
-}
-
-// recordQuicSuccess clears all fallback state when QUIC succeeds.
+// recordQuicSuccess clears fallback state when QUIC succeeds.
 func (tm *TransportManager) recordQuicSuccess() {
+	tm.mu.RLock()
+	if qc, ok := tm.quic.(*QUICClient); ok {
+		qc.consecConnFails.Store(0)
+	}
+	tm.mu.RUnlock()
+
 	wasFallback := tm.fallbackActive.Swap(false)
-	tm.quicBackoffUntil.Store(0)
-	tm.quicFailCount.Store(0)
 	if wasFallback {
 		slog.Info("wire: QUIC recovered from fallback")
 	}
 }
 
-// recordQuicFailure sets fallback state and exponential backoff.
-// Backoff schedule: 30s → 60s → 120s (cap).
-// Deduplicates concurrent goroutines: if backoff was just set by another
-// goroutine in the same failure burst, skip to prevent count inflation.
-func (tm *TransportManager) recordQuicFailure() {
-	tm.fallbackActive.Store(true)
-	if tm.inQuicBackoff() {
-		return
+// SetFallbackActive sets or clears the QUIC→TCP-WS fallback flag.
+func (tm *TransportManager) SetFallbackActive(active bool) {
+	if active {
+		if tm.fallbackActive.CompareAndSwap(false, true) {
+			slog.Warn("wire: QUIC fallback activated")
+		}
+	} else {
+		tm.fallbackActive.Store(false)
 	}
-	count := tm.quicFailCount.Add(1)
-	backoff := quicBackoffBase
-	for i := int32(1); i < count && backoff < quicBackoffMax; i++ {
-		backoff *= 2
-	}
-	if backoff > quicBackoffMax {
-		backoff = quicBackoffMax
-	}
-	tm.quicBackoffUntil.Store(time.Now().Add(backoff).UnixNano())
-	slog.Warn("wire: QUIC backoff active",
-		"failCount", count,
-		"backoff", backoff,
-		"expiresIn", backoff.String(),
-	)
 }
 
 // FallbackActive returns whether QUIC has failed and TCP-WS is serving traffic.
@@ -128,8 +117,8 @@ func (tm *TransportManager) DialTCP(ctx context.Context, addr string) (net.Conn,
 
 	var quicErr error
 
-	// Try QUIC first (preferred), skip if in backoff period.
-	if quic != nil && !tm.inQuicBackoff() {
+	// Try QUIC first (preferred), skip if fallback is active.
+	if quic != nil && !tm.fallbackActive.Load() {
 		quicCtx, quicCancel := tm.quicContext(ctx, tcpws != nil)
 		slog.Debug("TransportManager: trying QUIC first")
 		conn, err := quic.DialTCP(quicCtx, addr)
@@ -140,6 +129,11 @@ func (tm *TransportManager) DialTCP(ctx context.Context, addr string) (net.Conn,
 		}
 		slog.Debug("TransportManager: QUIC failed", "err", err)
 		quicErr = err
+		if qc, ok := quic.(*QUICClient); ok && qc.ConsecConnFails() >= quicConnFailThreshold {
+			tm.SetFallbackActive(true)
+		}
+	} else if quic != nil {
+		slog.Debug("TransportManager: QUIC skipped, fallback active")
 	}
 
 	// Fall back to TCP-WS
@@ -147,9 +141,6 @@ func (tm *TransportManager) DialTCP(ctx context.Context, addr string) (net.Conn,
 		slog.Debug("TransportManager: trying TCP-WS fallback")
 		conn, err := tcpws.DialTCP(ctx, addr)
 		if err == nil {
-			if quicErr != nil {
-				tm.recordQuicFailure()
-			}
 			return conn, nil
 		}
 		slog.Debug("TransportManager: TCP-WS failed", "err", err)
@@ -178,7 +169,7 @@ func (tm *TransportManager) DialUDP(ctx context.Context, addr string) (net.Packe
 
 	var quicErr error
 
-	if quic != nil && !tm.inQuicBackoff() {
+	if quic != nil && !tm.fallbackActive.Load() {
 		quicCtx, quicCancel := tm.quicContext(ctx, tcpws != nil)
 		slog.Debug("TransportManager: trying QUIC for UDP")
 		conn, err := quic.DialUDP(quicCtx, addr)
@@ -192,17 +183,17 @@ func (tm *TransportManager) DialUDP(ctx context.Context, addr string) (net.Packe
 		}
 		slog.Debug("TransportManager: QUIC UDP failed", "err", err)
 		quicErr = err
+		if qc, ok := quic.(*QUICClient); ok && qc.ConsecConnFails() >= quicConnFailThreshold {
+			tm.SetFallbackActive(true)
+		}
+	} else if quic != nil {
+		slog.Debug("TransportManager: QUIC UDP skipped, fallback active")
 	}
 
 	if tcpws != nil {
 		slog.Debug("TransportManager: trying TCP-WS for UDP fallback")
 		conn, err := tcpws.DialUDP(ctx, addr)
 		if err == nil {
-			// ErrDatagramUnhealthy means QUIC works but datagrams are bad.
-			// F1 hop logic handles this — don't count as transport failure.
-			if quicErr != nil && !errors.Is(quicErr, ErrDatagramUnhealthy) {
-				tm.recordQuicFailure()
-			}
 			slog.Debug("TransportManager: TCP-WS UDP success", "addr", addr)
 			return conn, nil
 		}
@@ -221,15 +212,16 @@ func (tm *TransportManager) DialUDP(ctx context.Context, addr string) (net.Packe
 
 // quicContext returns a sub-context for QUIC with a time budget.
 // When TCP-WS fallback exists, QUIC gets at most half the remaining time
-// (capped at 3s) so TCP-WS always has a fair chance to connect.
-// When QUIC is the only transport, it gets the full parent context.
+// (capped at 5s) so TCP-WS still has a chance if QUIC is truly dead.
+// Budget is generous because we trust QUIC — even a congested QUIC path
+// is better than falling back to TCP-WS.
 func (tm *TransportManager) quicContext(parent context.Context, hasFallback bool) (context.Context, context.CancelFunc) {
 	if !hasFallback {
 		return context.WithCancel(parent)
 	}
 
 	const (
-		maxQUICBudget  = 3 * time.Second // steady-state: cached connection
+		maxQUICBudget   = 5 * time.Second // steady-state: trust QUIC, give it time
 		reconnectBudget = 8 * time.Second // post-reset: full handshake needs more time
 	)
 
@@ -254,12 +246,64 @@ func (tm *TransportManager) quicContext(parent context.Context, hasFallback bool
 	return context.WithTimeout(parent, budget)
 }
 
+// StartQuicProbe starts a background goroutine that actively probes QUIC
+// recovery while TCP-WS fallback is active. The probe resets the cached
+// QUIC connection and attempts a fresh handshake every quicProbeInterval.
+// Call this after SetQUIC/SetTCPWS. Stopped by Close() or ResetConnections().
+func (tm *TransportManager) StartQuicProbe(ctx context.Context) {
+	// Cancel any existing probe.
+	if tm.probeCancel != nil {
+		tm.probeCancel()
+	}
+	probeCtx, cancel := context.WithCancel(ctx)
+	tm.probeCancel = cancel
+	go tm.quicProbeLoop(probeCtx)
+}
+
+func (tm *TransportManager) quicProbeLoop(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(quicProbeInterval):
+		}
+
+		if !tm.fallbackActive.Load() {
+			continue
+		}
+
+		tm.mu.RLock()
+		q := tm.quic
+		tm.mu.RUnlock()
+
+		qc, ok := q.(*QUICClient)
+		if !ok || qc == nil {
+			continue
+		}
+
+		// Reset stale QUIC connection before probing — existing conn is dead.
+		qc.resetConnection()
+
+		probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		_, err := qc.connect(probeCtx)
+		cancel()
+
+		if err == nil {
+			slog.Info("wire: QUIC probe succeeded, clearing fallback")
+			tm.recordQuicSuccess()
+		} else {
+			slog.Debug("wire: QUIC probe failed", "err", err)
+			// connect() increments consecConnFails, but that's harmless —
+			// fallbackActive is already true, so the threshold check is a no-op.
+		}
+	}
+}
+
 // ResetConnections resets cached connections on all transports and clears
 // fallback state, giving QUIC a fresh chance on the next dial.
 func (tm *TransportManager) ResetConnections() {
 	slog.Debug("wire: connections reset",
 		"wasFallback", tm.fallbackActive.Load(),
-		"quicFailCount", tm.quicFailCount.Load(),
 	)
 	tm.mu.RLock()
 	q := tm.quic
@@ -270,14 +314,13 @@ func (tm *TransportManager) ResetConnections() {
 		qc.resetConnection()
 		qc.datagramHopAttempts.Store(0)
 		qc.datagramHopExhausted.Store(0)
+		qc.consecConnFails.Store(0)
 	}
 	if tc, ok := t.(*TCPWSClient); ok {
 		tc.resetConnection()
 	}
 
 	tm.fallbackActive.Store(false)
-	tm.quicBackoffUntil.Store(0)
-	tm.quicFailCount.Store(0)
 	tm.freshAfterReset.Store(true)
 }
 
@@ -317,8 +360,13 @@ func (tm *TransportManager) WireStats() WireStats {
 	return WireStats{}
 }
 
-// Close closes both transports.
+// Close closes both transports and stops the probe goroutine.
 func (tm *TransportManager) Close() error {
+	if tm.probeCancel != nil {
+		tm.probeCancel()
+		tm.probeCancel = nil
+	}
+
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
 

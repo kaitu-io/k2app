@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"net"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -290,9 +288,6 @@ func TestTransportManager_ResetConnections(t *testing.T) {
 			if tm.fallbackActive.Load() {
 				t.Error("fallbackActive should be false after reset")
 			}
-			if tm.quicBackoffUntil.Load() != 0 {
-				t.Error("quicBackoffUntil should be 0 after reset")
-			}
 		})
 	}
 }
@@ -315,46 +310,167 @@ func TestResetConnections_ClearsDatagramHopAttempts(t *testing.T) {
 	}
 }
 
-func TestRecordQuicFailure_ConcurrentDedup(t *testing.T) {
+func TestTransportManager_SetFallbackActive(t *testing.T) {
 	tm := NewTransportManager()
 
-	// Simulate 50 concurrent goroutines all calling recordQuicFailure.
-	var wg sync.WaitGroup
-	for i := 0; i < 50; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			tm.recordQuicFailure()
-		}()
+	if tm.FallbackActive() {
+		t.Fatal("should not be in fallback initially")
 	}
-	wg.Wait()
 
-	// With dedup, count should be very small (1-2, due to nanosecond race window).
-	count := tm.quicFailCount.Load()
-	if count > 3 {
-		t.Fatalf("quicFailCount = %d after 50 concurrent failures, want ≤ 3 (dedup)", count)
+	tm.SetFallbackActive(true)
+	if !tm.FallbackActive() {
+		t.Fatal("fallback should be active after SetFallbackActive(true)")
 	}
-	if !tm.fallbackActive.Load() {
-		t.Fatal("fallbackActive should be true")
+
+	tm.SetFallbackActive(false)
+	if tm.FallbackActive() {
+		t.Fatal("fallback should be cleared after SetFallbackActive(false)")
 	}
 }
 
-func TestRecordQuicFailure_EscalatesAcrossEvents(t *testing.T) {
-	tm := NewTransportManager()
-
-	// First failure event: count=1, backoff=30s.
-	tm.recordQuicFailure()
-	if tm.quicFailCount.Load() != 1 {
-		t.Fatalf("count = %d, want 1", tm.quicFailCount.Load())
+func TestTransportManager_FallbackSkipsQUIC(t *testing.T) {
+	var quicCalled bool
+	quic := &mockTransport{
+		available: true,
+		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
+			quicCalled = true
+			c, _ := net.Pipe()
+			return c, nil
+		},
+	}
+	tcpws := &mockTransport{
+		available: true,
+		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
+			c, _ := net.Pipe()
+			return c, nil
+		},
 	}
 
-	// Simulate backoff expiry.
-	tm.quicBackoffUntil.Store(0)
+	tm := NewTransportManager()
+	tm.SetQUIC(quic)
+	tm.SetTCPWS(tcpws)
+	tm.SetFallbackActive(true)
 
-	// Second failure event: count=2, backoff=60s.
-	tm.recordQuicFailure()
-	if tm.quicFailCount.Load() != 2 {
-		t.Fatalf("count = %d, want 2", tm.quicFailCount.Load())
+	conn, err := tm.DialTCP(context.Background(), "8.8.8.8:53")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.Close()
+
+	if quicCalled {
+		t.Fatal("QUIC should be skipped when fallbackActive=true")
+	}
+}
+
+func TestTransportManager_QUICFailNoFallback(t *testing.T) {
+	// QUIC fails via mockTransport (not QUICClient) → fallbackActive should NOT
+	// be set because consecConnFails check only applies to *QUICClient.
+	quic := &mockTransport{
+		available: true,
+		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
+			return nil, errors.New("QUIC broken")
+		},
+	}
+	tcpws := &mockTransport{
+		available: true,
+		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
+			c, _ := net.Pipe()
+			return c, nil
+		},
+	}
+
+	tm := NewTransportManager()
+	tm.SetQUIC(quic)
+	tm.SetTCPWS(tcpws)
+
+	// Multiple QUIC failures — should NOT auto-activate fallback.
+	for range 10 {
+		conn, err := tm.DialTCP(context.Background(), "8.8.8.8:53")
+		if err != nil {
+			t.Fatal(err)
+		}
+		conn.Close()
+	}
+
+	if tm.FallbackActive() {
+		t.Fatal("fallbackActive should NOT be set by per-request QUIC failures (non-QUICClient)")
+	}
+}
+
+func TestTransportManager_ConsecConnFailsFallback(t *testing.T) {
+	// Use real QUICClient (closed=true to force DialTCP failure) with
+	// consecConnFails pre-set to simulate accumulated handshake failures.
+	qc := NewQUICClient(Config{}, nil)
+	qc.closed = true // force connect() to return ErrNotConnected
+
+	tcpws := &mockTransport{
+		available: true,
+		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
+			c, _ := net.Pipe()
+			return c, nil
+		},
+	}
+
+	tm := NewTransportManager()
+	tm.SetQUIC(qc)
+	tm.SetTCPWS(tcpws)
+
+	// Below threshold: no fallback.
+	qc.consecConnFails.Store(quicConnFailThreshold - 1)
+	conn, err := tm.DialTCP(context.Background(), "8.8.8.8:53")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.Close()
+	if tm.FallbackActive() {
+		t.Fatal("fallbackActive should NOT be set below threshold")
+	}
+
+	// At threshold: fallback activated.
+	qc.consecConnFails.Store(quicConnFailThreshold)
+	conn, err = tm.DialTCP(context.Background(), "8.8.8.8:53")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.Close()
+	if !tm.FallbackActive() {
+		t.Fatal("fallbackActive should be set after consecConnFails >= threshold")
+	}
+
+	// Next DialTCP should skip QUIC entirely (fallbackActive=true).
+	conn, err = tm.DialTCP(context.Background(), "8.8.8.8:53")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.Close()
+}
+
+func TestTransportManager_ConsecConnFailsReset(t *testing.T) {
+	qc := NewQUICClient(Config{}, nil)
+
+	tcpws := &mockTransport{
+		available: true,
+		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
+			c, _ := net.Pipe()
+			return c, nil
+		},
+	}
+
+	tm := NewTransportManager()
+	tm.SetQUIC(qc)
+	tm.SetTCPWS(tcpws)
+
+	// 2 failures, then recordQuicSuccess resets counter.
+	qc.consecConnFails.Store(2)
+	tm.recordQuicSuccess()
+	if got := qc.ConsecConnFails(); got != 0 {
+		t.Fatalf("consecConnFails = %d after success, want 0", got)
+	}
+
+	// 2 more failures: still below threshold (3), no fallback.
+	qc.consecConnFails.Store(2)
+	if tm.FallbackActive() {
+		t.Fatal("fallbackActive should not be set with only 2 failures")
 	}
 }
 
@@ -375,7 +491,7 @@ func TestQuicContext_ExtendedBudgetAfterReset(t *testing.T) {
 		t.Fatalf("post-reset budget = %v, want ~8s", budget)
 	}
 
-	// Second call: should be back to normal (~3s).
+	// Second call: should be back to normal (~5s).
 	qCtx2, cancel2 := tm.quicContext(ctx, true)
 	defer cancel2()
 	deadline2, ok := qCtx2.Deadline()
@@ -383,115 +499,8 @@ func TestQuicContext_ExtendedBudgetAfterReset(t *testing.T) {
 		t.Fatal("expected deadline on context")
 	}
 	budget2 := time.Until(deadline2)
-	if budget2 < 2*time.Second || budget2 > 4*time.Second {
-		t.Fatalf("normal budget = %v, want ~3s", budget2)
+	if budget2 < 4*time.Second || budget2 > 6*time.Second {
+		t.Fatalf("normal budget = %v, want ~5s", budget2)
 	}
 }
 
-// TestTransportManager_DialUDP_DoesNotClearTCPBackoff verifies that QUIC
-// datagram success does not clear transport-level fallback state.
-// Scenario: DialTCP fails → fallback+backoff set → backoff expires → next
-// DialUDP goes through QUIC (datagrams work). The fallback flag must persist
-// because datagram success doesn't prove the TCP stream path is fixed.
-func TestTransportManager_DialUDP_DoesNotClearTCPBackoff(t *testing.T) {
-	quic := &mockTransport{
-		available: true,
-		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
-			return nil, errors.New("QUIC TCP broken")
-		},
-		dialUDPFn: func(ctx context.Context, addr string) (net.PacketConn, error) {
-			return newWorkingPacketConn(), nil
-		},
-	}
-	tcpws := &mockTransport{
-		available: true,
-		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
-			c, _ := net.Pipe()
-			return c, nil
-		},
-	}
-
-	tm := NewTransportManager()
-	tm.SetQUIC(quic)
-	tm.SetTCPWS(tcpws)
-
-	// Trigger TCP fallback: QUIC TCP fails, TCP-WS succeeds → backoff set
-	conn, err := tm.DialTCP(context.Background(), "1.1.1.1:443")
-	if err != nil {
-		t.Fatalf("DialTCP: %v", err)
-	}
-	conn.Close()
-	if !tm.FallbackActive() {
-		t.Fatal("should be in fallback after QUIC TCP failure")
-	}
-	if tm.quicFailCount.Load() != 1 {
-		t.Fatalf("quicFailCount = %d, want 1", tm.quicFailCount.Load())
-	}
-
-	// Simulate backoff expiry so QUIC is tried again for UDP
-	tm.quicBackoffUntil.Store(time.Now().Add(-time.Second).UnixNano())
-
-	// DialUDP succeeds through QUIC datagrams
-	pconn, err := tm.DialUDP(context.Background(), "8.8.8.8:53")
-	if err != nil {
-		t.Fatalf("DialUDP: %v", err)
-	}
-	pconn.Close()
-
-	// fallbackActive and failCount must NOT be cleared
-	if !tm.FallbackActive() {
-		t.Fatal("DialUDP success should not clear TCP fallback state")
-	}
-	if tm.quicFailCount.Load() != 1 {
-		t.Fatalf("quicFailCount = %d, want 1 (DialUDP should not reset)", tm.quicFailCount.Load())
-	}
-}
-
-// TestTransportManager_ConcurrentSuccessFailure exercises concurrent DialTCP
-// where QUIC alternates success/failure. Two goroutines may interleave
-// recordQuicSuccess() and recordQuicFailure() — both use atomics without
-// mutex. This verifies no panic/race and final state is valid.
-func TestTransportManager_ConcurrentSuccessFailure(t *testing.T) {
-	// QUIC: alternates success and failure
-	var calls atomic.Int32
-	quic := &mockTransport{
-		available: true,
-		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
-			if calls.Add(1)%2 == 0 {
-				c, _ := net.Pipe()
-				return c, nil
-			}
-			return nil, errors.New("QUIC flaky")
-		},
-	}
-	tcpws := &mockTransport{
-		available: true,
-		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
-			c, _ := net.Pipe()
-			return c, nil
-		},
-	}
-
-	tm := NewTransportManager()
-	tm.SetQUIC(quic)
-	tm.SetTCPWS(tcpws)
-
-	var wg sync.WaitGroup
-	for range 50 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			conn, err := tm.DialTCP(context.Background(), "1.1.1.1:443")
-			if err == nil {
-				conn.Close()
-			}
-		}()
-	}
-	wg.Wait()
-
-	// No panic, no race = pass. Final state is valid if:
-	count := tm.quicFailCount.Load()
-	if count < 0 {
-		t.Fatalf("negative quicFailCount: %d", count)
-	}
-}

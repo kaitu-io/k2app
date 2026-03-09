@@ -885,3 +885,40 @@ func TestQUICClient_dialUDPStream_ResetsOnStreamError(t *testing.T) {
 		t.Fatal("expected conn to be nil after dialUDPStream reset")
 	}
 }
+
+func TestQUICClient_ConsecConnFails(t *testing.T) {
+	// Test that connect() failures increment consecConnFails and success resets it.
+	qc := NewQUICClient(Config{Host: "127.0.0.1", Port: 1}, nil)
+	qc.SetTLSConfig(&tls.Config{
+		InsecureSkipVerify: true,
+		NextProtos:         []string{"h3"},
+	})
+
+	// connect() to unreachable port should fail (timeout) and increment counter.
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	_, err := qc.connect(ctx)
+	cancel()
+	if err == nil {
+		t.Fatal("expected connect to fail")
+	}
+	if got := qc.ConsecConnFails(); got != 1 {
+		t.Fatalf("consecConnFails = %d after 1 failure, want 1", got)
+	}
+
+	// Second failure increments again.
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	_, err = qc.connect(ctx2)
+	cancel2()
+	if err == nil {
+		t.Fatal("expected connect to fail")
+	}
+	if got := qc.ConsecConnFails(); got != 2 {
+		t.Fatalf("consecConnFails = %d after 2 failures, want 2", got)
+	}
+
+	// Manual reset (simulating success in a real scenario).
+	qc.consecConnFails.Store(0)
+	if got := qc.ConsecConnFails(); got != 0 {
+		t.Fatalf("consecConnFails = %d after reset, want 0", got)
+	}
+}
