@@ -46,7 +46,8 @@ mobile/
 │   │   ├── AppDelegate.swift    # Standard Capacitor delegate
 │   │   └── App.entitlements     # NE + App Group entitlements
 │   └── PacketTunnelExtension/
-│       ├── PacketTunnelProvider.swift  # iOS NE provider (engine lifecycle, memory pressure)
+│       ├── PacketTunnelProvider.swift  # iOS NE provider (engine lifecycle, memory monitor, sleep/wake)
+│       ├── NativeLogger.swift   # File logger for native layer events (logs to native.log)
 │       ├── NEHelpers.swift      # Pure helpers (parseIPv4CIDR, parseIPv6CIDR, stripPort)
 │       └── Info.plist           # Extension plist (must have CFBundleExecutable + CFBundleVersion)
 ```
@@ -116,12 +117,35 @@ Two-layer panic protection in `k2/appext/appext.go`:
 
 ### iOS: `NETunnelProvider.sleep()` / `wake()`
 - Apple's official NE resource conservation hooks
-- `sleep()`: `engine.pause()` + `AppextFreeMemory()`
+- `sleep()`: stops memory monitor → `engine.pause()` → `AppextFreeMemory()`
 - `wake()`: `engine.wake()` (re-establishes wire connections)
+- Memory monitor: 10s timer logs `AppextMemorySnapshot()` for diagnostics (per-component heap breakdown)
+
+### iOS: Go Memory Optimization (appext)
+- `GOGC=10`: aggressive GC at 10% heap growth (sing-box strategy)
+- `SetMemoryLimit(35MB)`: hard ceiling, 15MB headroom for C/ObjC/system
+- `FreeOSMemory()` after `Start()`: reclaims init-time allocations
+- Platform limits: 512 max connections, 8KB TCP buffers, 15s UDP idle timeout
+- Sampled GC: every 8 connection releases, force GC if HeapInuse > 20MB
 
 ### Go: `FreeMemory()`
 - `debug.FreeOSMemory()` — forces GC + returns freed pages to OS
 - gomobile exports: `Appext.freeMemory()` (Java) / `AppextFreeMemory()` (ObjC)
+
+## File Logging & Upload
+
+Three-layer logging system across platforms:
+
+| Layer | File | Source |
+|-------|------|--------|
+| Go engine | `{LogDir}/k2.log` | slog via `config.SetupLogging()` |
+| Native | `{LogDir}/native.log` | `NativeLogger` (Swift/Kotlin) |
+| Webapp | `{LogDir}/webapp.log` | `K2Plugin.appendLogs(entries)` from JS |
+
+- **iOS LogDir**: `{AppGroup}/logs/` (NE process writes via App Group container)
+- **Android LogDir**: `{filesDir}/logs/`
+- **Upload**: `K2Plugin.uploadLogs()` — gzip compress all logs → PUT to S3. iOS uses GzipSwift for reliable compression.
+- **Redaction**: Token, password, Bearer, X-K2-Token patterns stripped before upload
 
 ## Log Level Control
 

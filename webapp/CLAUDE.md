@@ -227,6 +227,9 @@ Namespaces: account, auth, common, dashboard, feedback, invite, nav, onboarding,
 - **Dev proxy**: Vite proxies `/api/*` and `/ping` to `:1777`. Production uses absolute URL
 - **Config-driven connect**: `_k2.run('up', config)` where config is assembled from server + user preferences
 - **AuthGate**: Wraps all routes — checks service readiness + version match before rendering
+- **Viewport scaling**: Uses CSS `zoom` (not `transform:scale()`) to avoid breaking `position:fixed` elements (react-joyride spotlight, MUI Portals)
+- **Onboarding**: Button-driven flow (Next/Done/Skip) with step indicator. Includes invite share phase (navigates to /invite)
+- **Dev mode**: `_platform.setDevEnabled?.(true)` enables WebView inspection (iOS `isInspectable`, Android `WebContentsDebugging`). State persisted to localStorage, auto-restored on launch
 
 ---
 
