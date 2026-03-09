@@ -5,10 +5,9 @@
  * 通过 _platform.storage 持久化完成标记，跨平台可靠。
  *
  * Phase 流程:
- *   1: 折叠 → 2: 展开 → 3: 反馈FAB
- *   → 4: 邀请导航 → 5: 购买导航（非iOS）
- *
- * 所有 phase 都在 / 路由，点击目标元素推进，导航类点击被拦截。
+ *   1: 折叠面板 → 3: 反馈按钮
+ *   → 4: 邀请导航(/) → 5: 分享按钮(/invite)
+ *   → 6: 购买导航(/，非iOS)
  */
 
 import { create } from 'zustand';
@@ -17,19 +16,19 @@ import { isFeatureEnabled } from '../config/apps';
 const STORAGE_KEY = 'onboarding_completed';
 
 /** All possible phases */
-type Phase = 1 | 2 | 3 | 4 | 5;
+type Phase = 1 | 3 | 4 | 5 | 6;
 
 /** Route each phase expects */
 const PHASE_ROUTE: Record<Phase, string> = {
   1: '/',
-  2: '/',
   3: '/',
   4: '/',
-  5: '/',
+  5: '/invite',
+  6: '/',
 };
 
 interface OnboardingState {
-  /** Current phase (1-5) */
+  /** Current phase */
   phase: Phase;
   /** Whether onboarding is actively running */
   active: boolean;
@@ -55,14 +54,14 @@ function buildPhaseList(): Phase[] {
   const isIOS = window._platform?.os === 'ios';
   const hasInvite = isFeatureEnabled('invite');
 
-  const phases: Phase[] = [1, 2, 3];
+  const phases: Phase[] = [1, 3];
 
   if (hasInvite) {
-    phases.push(4);
+    phases.push(4, 5);
   }
 
   if (!isIOS) {
-    phases.push(5);
+    phases.push(6);
   }
 
   return phases;

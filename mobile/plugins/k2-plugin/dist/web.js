@@ -45,6 +45,9 @@ export class K2PluginWeb extends WebPlugin {
     async setLogLevel(_options) {
         throw this.unavailable('K2Plugin is not available on web');
     }
+    async setDevEnabled(_options) {
+        throw this.unavailable('K2Plugin is not available on web');
+    }
     async debugDump() {
         throw this.unavailable('K2Plugin is not available on web');
     }

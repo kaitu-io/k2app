@@ -9,6 +9,10 @@ import os.log
 private let kAppGroup = "group.io.kaitu"
 private let logger = Logger(subsystem: "io.kaitu", category: "K2Plugin")
 
+extension Notification.Name {
+    static let k2DevEnabledChanged = Notification.Name("k2DevEnabledChanged")
+}
+
 @objc(K2Plugin)
 public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "K2Plugin"
@@ -29,6 +33,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "appendLogs", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "uploadLogs", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setLogLevel", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setDevEnabled", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "debugDump", returnType: CAPPluginReturnPromise),
     ]
 
@@ -670,6 +675,18 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         // iOS: engine runs in NE extension (separate process).
         // Log level takes effect via configJSON.log.level at next connect.
         logger.info("setLogLevel: \(level) (takes effect on next connect)")
+        call.resolve()
+    }
+
+    // MARK: - Dev Tools
+
+    @objc func setDevEnabled(_ call: CAPPluginCall) {
+        let enabled = call.getBool("enabled") ?? false
+        logger.info("setDevEnabled: enabled=\(enabled), thread=\(Thread.isMainThread ? "main" : "background")")
+        UserDefaults.standard.set(enabled, forKey: "k2_dev_enabled")
+        logger.info("setDevEnabled: UserDefaults set, posting notification")
+        NotificationCenter.default.post(name: .k2DevEnabledChanged, object: nil, userInfo: ["enabled": enabled])
+        logger.info("setDevEnabled: notification posted")
         call.resolve()
     }
 

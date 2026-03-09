@@ -195,7 +195,11 @@ export async function injectCapacitorGlobals(): Promise<void> {
 
     setLogLevel: (level: string): void => {
       localStorage.setItem('k2_log_level', level);
-      K2Plugin.setLogLevel({ level }).catch(() => {}); // best-effort native call
+      K2Plugin.setLogLevel({ level }).catch(() => {});
+    },
+
+    setDevEnabled: (enabled: boolean): void => {
+      K2Plugin.setDevEnabled({ enabled }).catch(() => {});
     },
   };
 
@@ -258,6 +262,11 @@ export async function injectCapacitorGlobals(): Promise<void> {
   });
 
   console.info(`[K2:Capacitor] Injected - os=${platform}, version=${appVersion}`);
+
+  // Auto-restore dev mode from previous session
+  if (localStorage.getItem('k2_developer_mode') === 'true') {
+    K2Plugin.setDevEnabled({ enabled: true }).catch(() => {});
+  }
 
   // Forward WebView console.* to native file logging (webapp.log)
   // Buffers entries and flushes to K2Plugin.appendLogs() on threshold/timer/visibility

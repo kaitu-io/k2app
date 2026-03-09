@@ -35,6 +35,14 @@
       "contentTooLong": "問題の説明は5000文字を超えることはできません",
       "emailRequired": "メールアドレスを入力してください",
       "emailInvalid": "有効なメールアドレスを入力してください"
+    },
+    "quickIssue": {
+      "label": "クイック選択",
+      "cannotConnect": "接続できない",
+      "unstable": "接続が不安定",
+      "slow": "速度が遅い",
+      "crash": "アプリのクラッシュ",
+      "subscription": "サブスクリプションの問題"
     }
   },
   "issues": {

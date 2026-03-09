@@ -233,7 +233,7 @@ export function ConnectionButton({
           <StyledConnectionButton
             visualStatus={visualStatus}
             buttonSize={size}
-            onClick={onToggle}
+            onClick={() => { setIsHovered(false); onToggle(); }}
             disabled={isButtonDisabled}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}

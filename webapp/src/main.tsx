@@ -17,8 +17,9 @@ const DESIGN_WIDTH = 430;
  * Setup viewport scaling for narrow windows.
  * When window is smaller than design size, scale the UI proportionally.
  *
- * Applies transform to body instead of #root so that MUI Portals (Dialogs, Popovers, etc.)
- * are also scaled - they render as direct children of body.
+ * Uses CSS zoom (not transform) so that position:fixed elements (react-joyride
+ * overlays, ServiceAlert, MUI Portals) stay relative to the viewport.
+ * CSS transform creates a new containing block which breaks fixed positioning.
  */
 function setupViewportScaling() {
   function applyScale() {
@@ -32,19 +33,18 @@ function setupViewportScaling() {
     const scale = Math.min(scaleX, 1);
 
     if (scale < 1) {
-      // Apply to body so Portal content (MUI Dialogs) is also scaled
+      // Use zoom instead of transform: zoom doesn't create a containing block,
+      // so position:fixed children remain relative to viewport
       document.body.style.width = `${DESIGN_WIDTH}px`;
       document.body.style.height = `${windowHeight / scale}px`;
-      document.body.style.transform = `scale(${scale})`;
-      document.body.style.transformOrigin = "top left";
+      document.body.style.zoom = `${scale}`;
 
       console.info(`[Viewport] Scaling UI: ${scale.toFixed(4)}x (window: ${windowWidth}x${windowHeight}, design width: ${DESIGN_WIDTH})`);
     } else {
       // No scaling needed
       document.body.style.width = "";
       document.body.style.height = "";
-      document.body.style.transform = "";
-      document.body.style.transformOrigin = "";
+      document.body.style.zoom = "";
     }
   }
 

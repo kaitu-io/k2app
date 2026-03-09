@@ -60,5 +60,8 @@ export declare class K2PluginWeb extends WebPlugin implements K2PluginInterface 
     setLogLevel(_options: {
         level: string;
     }): Promise<void>;
+    setDevEnabled(_options: {
+        enabled: boolean;
+    }): Promise<void>;
     debugDump(): Promise<Record<string, unknown>>;
 }

@@ -172,6 +172,9 @@ export interface IPlatform {
   /** 设置日志级别（开发者模式） */
   setLogLevel?(level: 'debug' | 'info' | 'warn' | 'error'): void;
 
+  /** 启用/禁用开发者工具（WebView 调试） */
+  setDevEnabled?(enabled: boolean): void;
+
   /** 上传服务日志用于诊断/反馈 */
   uploadLogs?(params: {
     email?: string | null;

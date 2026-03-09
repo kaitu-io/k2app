@@ -35,6 +35,14 @@
       "contentTooLong": "问题描述不能超过5000个字符",
       "emailRequired": "请输入邮箱地址",
       "emailInvalid": "请输入有效的邮箱地址"
+    },
+    "quickIssue": {
+      "label": "快捷选择",
+      "cannotConnect": "无法连接",
+      "unstable": "连接不稳定",
+      "slow": "速度慢",
+      "crash": "应用崩溃",
+      "subscription": "订阅问题"
     }
   },
   "issues": {

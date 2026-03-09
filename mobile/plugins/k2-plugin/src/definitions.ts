@@ -32,6 +32,7 @@ export interface K2PluginInterface {
   uploadLogs(options: { email?: string; reason: string; feedbackId?: string; platform?: string; version?: string }): Promise<{ success: boolean; error?: string; s3Keys?: Array<{ name: string; s3Key: string }> }>;
 
   setLogLevel(options: { level: string }): Promise<void>;
+  setDevEnabled(options: { enabled: boolean }): Promise<void>;
   debugDump(): Promise<Record<string, unknown>>;
 
   addListener(eventName: 'vpnStateChange', handler: (data: { state: string }) => void): Promise<PluginListenerHandle>;

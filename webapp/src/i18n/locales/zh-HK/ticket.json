@@ -35,6 +35,14 @@
       "contentTooLong": "問題描述唔可以超過5000個字符",
       "emailRequired": "請輸入電郵地址",
       "emailInvalid": "請輸入有效嘅電郵地址"
+    },
+    "quickIssue": {
+      "label": "快速選擇",
+      "cannotConnect": "無法連線",
+      "unstable": "連線不穩定",
+      "slow": "速度慢",
+      "crash": "應用程式當機",
+      "subscription": "訂閱問題"
     }
   },
   "issues": {

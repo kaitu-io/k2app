@@ -31,10 +31,9 @@ const DEFAULT_BOTTOM_CLEARANCE = 90;
 const SNAP_DURATION = 300;
 
 function getBodyScale(): number {
-  const t = document.body.style.transform;
-  if (!t) return 1;
-  const m = t.match(/scale\(([\d.]+)\)/);
-  return m ? parseFloat(m[1]) : 1;
+  const z = document.body.style.zoom;
+  if (!z || z === '1') return 1;
+  return parseFloat(z) || 1;
 }
 
 function getLogicalViewport(): { width: number; height: number } {

@@ -1,24 +1,24 @@
 {
   "onboarding": {
     "phase1": {
-      "title": "Collapse",
-      "content": "👆 Tap the arrow to collapse"
-    },
-    "phase2": {
-      "title": "Expand",
-      "content": "👆 Tap again to expand"
+      "title": "Collapse Panel",
+      "content": "Tap the arrow to collapse the connection panel and save screen space"
     },
     "phase3": {
-      "title": "Report Issues",
-      "content": "👆 Report issues anytime — drag it anywhere you like\nWe take every one seriously"
+      "title": "Feedback",
+      "content": "Tap the feedback button to report issues anytime\nYou can also drag it to a preferred position"
     },
     "phase4": {
       "title": "Invite Friends",
-      "content": "👆 Invite friends and earn free days"
+      "content": "Invite friends to sign up and both of you earn free days"
     },
     "phase5": {
-      "title": "Get Started",
-      "content": "👆 Tap here to choose a plan"
+      "title": "Share with Friends",
+      "content": "Tap the share button to send your invite link to friends"
+    },
+    "phase6": {
+      "title": "Choose a Plan",
+      "content": "Find the plan that works best for you here"
     },
     "next": "Next",
     "skip": "Skip tour",

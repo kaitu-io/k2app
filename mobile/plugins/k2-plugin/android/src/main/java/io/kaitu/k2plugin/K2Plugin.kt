@@ -730,6 +730,13 @@ class K2Plugin : Plugin() {
     }
 
     @PluginMethod
+    fun setDevEnabled(call: PluginCall) {
+        val enabled = call.getBoolean("enabled", false)
+        android.webkit.WebView.setWebContentsDebuggingEnabled(enabled)
+        call.resolve()
+    }
+
+    @PluginMethod
     fun debugDump(call: PluginCall) {
         call.resolve(JSObject())
     }

@@ -4,25 +4,18 @@
  * 在 Layout 层渲染，根据当前 phase + route 决定显示哪些 steps。
  * Controlled mode: 由 onboarding store 驱动 stepIndex。
  *
- * 所有 phase 都是交互式：用户点击实际目标元素推进。
- * 导航类目标（FAB、导航项）的点击被拦截，防止离开当前页面。
- * 视觉: 青色发光边框 + 脉冲动画 + 弹跳箭头。
+ * 使用 tooltip 内的「下一步」按钮推进，不依赖点击目标元素。
+ * 部分 phase 需要导航到其他页面（如 /invite），由 navigateTo 字段控制。
+ * 视觉: 青色发光边框 + 脉冲动画。
  */
 
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Joyride, { ACTIONS, STATUS } from 'react-joyride';
 import type { CallBackProps, Step, Styles, TooltipRenderProps } from 'react-joyride';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Box, Paper, Typography, useTheme } from '@mui/material';
-import { keyframes } from '@mui/system';
+import { Box, Button, Paper, Typography, useTheme } from '@mui/material';
 import { useOnboardingStore } from '../stores/onboarding.store';
-
-/** Bouncing arrow animation */
-const bounce = keyframes`
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-6px); }
-`;
 
 /** Inject global keyframes for spotlight pulse (react-joyride uses inline styles) */
 const PULSE_STYLE_ID = 'onboarding-pulse-style';
@@ -39,60 +32,49 @@ function ensurePulseStyle() {
   document.head.appendChild(style);
 }
 
-/** Arrow emoji based on tooltip placement relative to target */
-function getArrowEmoji(placement: string | undefined): string {
-  switch (placement) {
-    case 'top':
-    case 'top-start':
-    case 'top-end':
-      return '👇';
-    case 'left':
-    case 'left-start':
-    case 'left-end':
-      return '👉';
-    case 'right':
-    case 'right-start':
-    case 'right-end':
-      return '👈';
-    default:
-      return '👆';
-  }
-}
-
 interface PhaseConfig {
   target: string;
   placement: Step['placement'];
   route: string;
-  /** Whether to intercept click and prevent navigation */
-  preventClick: boolean;
   /** Target element uses position:fixed */
   isFixed?: boolean;
-  /** Delay (ms) before advancing, for animated targets */
-  advanceDelay?: number;
+  /** Navigate to this path when "Next" is clicked (before advancing phase) */
+  navigateTo?: string;
 }
 
-/** Map phase → target + placement. All phases on route '/', all interactive. */
+/** Map phase → target + placement */
 const PHASE_CONFIG: Record<number, PhaseConfig> = {
-  1: { target: '[data-tour="collapse-toggle"]', placement: 'bottom', route: '/', preventClick: false, advanceDelay: 350 },
-  2: { target: '[data-tour="collapse-toggle"]', placement: 'bottom', route: '/', preventClick: false },
-  3: { target: '[data-tour="feedback-button"]', placement: 'left', route: '/', preventClick: true, isFixed: true },
-  4: { target: '[data-tour="nav-invite"]', placement: 'right', route: '/', preventClick: true },
-  5: { target: '[data-tour="nav-purchase"]', placement: 'right', route: '/', preventClick: true },
+  1: { target: '[data-tour="collapse-toggle"]', placement: 'bottom', route: '/' },
+  3: { target: '[data-tour="feedback-button"]', placement: 'left', route: '/', isFixed: true },
+  4: { target: '[data-tour="nav-invite"]', placement: 'top', route: '/', navigateTo: '/invite' },
+  5: { target: '[data-tour="invite-share"]', placement: 'top', route: '/invite', navigateTo: '/' },
+  6: { target: '[data-tour="nav-purchase"]', placement: 'top', route: '/' },
 };
 
-/** Compact interactive tooltip — bouncing arrow + skip link */
-function OnboardingTooltip({ step, skipProps, tooltipProps }: TooltipRenderProps) {
+/** Professional tooltip with Next button + step indicator */
+function OnboardingTooltip({ step, tooltipProps }: TooltipRenderProps) {
   const { t } = useTranslation('onboarding');
-  const arrow = getArrowEmoji(step.placement);
+  const { phase, phases, nextPhase, complete } = useOnboardingStore();
+  const navigate = useNavigate();
+  const currentIndex = phases.indexOf(phase);
+  const totalSteps = phases.length;
+  const isLast = currentIndex === totalSteps - 1;
+  const currentConfig = PHASE_CONFIG[phase];
+
+  const handleNext = () => {
+    if (currentConfig?.navigateTo) {
+      navigate(currentConfig.navigateTo);
+    }
+    nextPhase();
+  };
 
   return (
     <Paper
       {...tooltipProps}
       sx={{
-        p: '12px 16px',
-        maxWidth: 260,
-        borderRadius: 3,
-        textAlign: 'center',
+        p: '14px 18px',
+        maxWidth: 280,
+        borderRadius: 2,
       }}
     >
       {step.title && (
@@ -100,18 +82,15 @@ function OnboardingTooltip({ step, skipProps, tooltipProps }: TooltipRenderProps
           {step.title}
         </Typography>
       )}
-      <Typography variant="body2" sx={{ lineHeight: 1.6, whiteSpace: 'pre-line' }}>
+      <Typography variant="body2" sx={{ lineHeight: 1.6, whiteSpace: 'pre-line', color: 'text.secondary' }}>
         {step.content}
       </Typography>
 
-      <Box sx={{ mt: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
-        <Box sx={{ fontSize: '1.2rem', animation: `${bounce} 1s infinite` }}>
-          {arrow}
-        </Box>
+      <Box sx={{ mt: 1.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <Typography
           component="button"
           variant="caption"
-          {...skipProps}
+          onClick={() => complete()}
           sx={{
             color: 'text.disabled',
             cursor: 'pointer',
@@ -124,6 +103,20 @@ function OnboardingTooltip({ step, skipProps, tooltipProps }: TooltipRenderProps
         >
           {t('onboarding.skip')}
         </Typography>
+
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography variant="caption" sx={{ color: 'text.disabled', fontSize: '0.7rem' }}>
+            {currentIndex + 1}/{totalSteps}
+          </Typography>
+          <Button
+            size="small"
+            variant="contained"
+            onClick={handleNext}
+            sx={{ minWidth: 64, textTransform: 'none', fontSize: '0.8rem' }}
+          >
+            {isLast ? t('onboarding.last') : t('onboarding.next')}
+          </Button>
+        </Box>
       </Box>
     </Paper>
   );
@@ -132,38 +125,38 @@ function OnboardingTooltip({ step, skipProps, tooltipProps }: TooltipRenderProps
 export function OnboardingGuide() {
   const theme = useTheme();
   const location = useLocation();
-  const { active, phase, nextPhase, complete } = useOnboardingStore();
+  const { active, phase, complete } = useOnboardingStore();
 
   const currentConfig = PHASE_CONFIG[phase];
   const isOnCorrectRoute = currentConfig && location.pathname === currentConfig.route;
   const shouldRun = active && isOnCorrectRoute;
 
+  // Wait for target element to exist (handles lazy-loaded pages like InviteHub)
+  const [targetReady, setTargetReady] = useState(false);
+  useEffect(() => {
+    if (!shouldRun || !currentConfig) {
+      setTargetReady(false);
+      return;
+    }
+    // Check immediately
+    if (document.querySelector(currentConfig.target)) {
+      setTargetReady(true);
+      return;
+    }
+    // Poll until target appears (e.g. after lazy load + data fetch)
+    const interval = setInterval(() => {
+      if (document.querySelector(currentConfig.target)) {
+        setTargetReady(true);
+        clearInterval(interval);
+      }
+    }, 200);
+    return () => clearInterval(interval);
+  }, [shouldRun, currentConfig]);
+
   // Inject global pulse animation
   useEffect(() => {
-    if (shouldRun) ensurePulseStyle();
-  }, [shouldRun]);
-
-  // Click listener on target element — advances phase, optionally prevents navigation
-  useEffect(() => {
-    if (!shouldRun || !currentConfig) return;
-    const el = document.querySelector(currentConfig.target);
-    if (!el) return;
-
-    const handler = (e: Event) => {
-      if (currentConfig.preventClick) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
-      if (currentConfig.advanceDelay) {
-        setTimeout(nextPhase, currentConfig.advanceDelay);
-      } else {
-        nextPhase();
-      }
-    };
-
-    el.addEventListener('click', handler, { capture: true, once: true });
-    return () => el.removeEventListener('click', handler, { capture: true } as EventListenerOptions);
-  }, [shouldRun, phase, currentConfig, nextPhase]);
+    if (shouldRun && targetReady) ensurePulseStyle();
+  }, [shouldRun, targetReady]);
 
   const { t } = useTranslation('onboarding');
   const phaseKey = `phase${phase}` as const;
@@ -178,7 +171,7 @@ export function OnboardingGuide() {
       placement: currentConfig.placement,
       disableBeacon: true,
       disableOverlayClose: true,
-      spotlightClicks: true,
+      spotlightClicks: false,
       hideFooter: true,
       showSkipButton: false,
       isFixed: currentConfig.isFixed ?? false,
@@ -222,7 +215,7 @@ export function OnboardingGuide() {
     }
   }, [complete]);
 
-  if (!shouldRun || steps.length === 0) {
+  if (!shouldRun || !targetReady || steps.length === 0) {
     return null;
   }
 

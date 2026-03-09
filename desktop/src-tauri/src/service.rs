@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
 use std::process::Command;
+use tauri::Manager;
 
 /// Prevent visible console windows when spawning child processes from GUI app on Windows.
 #[cfg(target_os = "windows")]
@@ -281,6 +282,21 @@ fn get_raw_hardware_id() -> Result<String, String> {
             .map(|s| s.trim().to_string())
             .map_err(|e| format!("Failed to read machine-id: {}", e))
     }
+}
+
+/// IPC command: toggle WebView devtools.
+#[tauri::command]
+pub async fn set_dev_enabled(enabled: bool, app: tauri::AppHandle) -> Result<(), String> {
+    if enabled {
+        if let Some(window) = app.get_webview_window("main") {
+            window.open_devtools();
+        }
+    } else {
+        if let Some(window) = app.get_webview_window("main") {
+            window.close_devtools();
+        }
+    }
+    Ok(())
 }
 
 /// IPC command: get current process PID

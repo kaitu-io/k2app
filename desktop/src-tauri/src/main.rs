@@ -113,6 +113,7 @@ fn main() {
             updater::set_update_channel,
             tray::sync_locale,
             service::get_pid,
+            service::set_dev_enabled,
             log_upload::upload_service_log_command,
         ]);
 

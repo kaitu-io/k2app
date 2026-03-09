@@ -9,6 +9,7 @@ import {
   Button,
   Alert,
   Stack,
+  Chip,
   CircularProgress,
   Stepper,
   Step,
@@ -236,14 +237,15 @@ export default function SubmitTicket() {
         pt: 9
       }}>
         <Box sx={{
-          width: 500,
+          maxWidth: 500,
+          width: '100%',
           display: "flex",
           flexDirection: "column",
           gap: 2,
           overflow: "auto",
           height: "100%",
-          pr: 0.5,
-          pb: 4,
+          px: 2,
+          pb: 8,
           '&::-webkit-scrollbar': {
             width: '8px',
           },
@@ -309,6 +311,23 @@ export default function SubmitTicket() {
                     <Typography variant="body2" color="text.secondary">
                       {t('ticket:ticket.description')}
                     </Typography>
+
+                    {/* Quick issue chips */}
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                      {(['cannotConnect', 'unstable', 'slow', 'crash', 'subscription'] as const).map((key) => (
+                        <Chip
+                          key={key}
+                          label={t(`ticket:ticket.quickIssue.${key}`)}
+                          onClick={() => {
+                            const label = t(`ticket:ticket.quickIssue.${key}`);
+                            setContent(prev => prev ? label + '\n' + prev : label);
+                          }}
+                          variant="outlined"
+                          size="small"
+                          disabled={isSubmitting}
+                        />
+                      ))}
+                    </Box>
 
                     {!isAuthenticated && (
                       <>

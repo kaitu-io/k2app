@@ -59,6 +59,10 @@ export default function VersionItem({ appVersion }: VersionItemProps) {
       tapCountRef.current = 0;
       localStorage.setItem(DEV_MODE_KEY, 'true');
       setIsDeveloperMode(true);
+      window._platform?.setDevEnabled?.(true);
+      window._platform?.setLogLevel?.('debug');
+      localStorage.setItem(LOG_LEVEL_KEY, 'debug');
+      setLogLevel('debug');
       useAlertStore.getState().showAlert(t('developerModeActivated'), 'success');
     }
   }, [isDeveloperMode, t]);

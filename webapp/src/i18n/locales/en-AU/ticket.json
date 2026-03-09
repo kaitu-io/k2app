@@ -35,6 +35,14 @@
       "contentTooLong": "Description cannot exceed 5000 characters",
       "emailRequired": "Please enter your email address",
       "emailInvalid": "Please enter a valid email address"
+    },
+    "quickIssue": {
+      "label": "Quick select",
+      "cannotConnect": "Cannot connect",
+      "unstable": "Unstable connection",
+      "slow": "Slow speed",
+      "crash": "App crash",
+      "subscription": "Subscription issue"
     }
   },
   "issues": {

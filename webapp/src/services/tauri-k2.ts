@@ -261,7 +261,11 @@ export async function injectTauriGlobals(): Promise<void> {
     setLogLevel: (level: string): void => {
       const effectiveLevel = updaterState.channel === 'beta' ? 'debug' : level;
       localStorage.setItem('k2_log_level', effectiveLevel);
-      invoke('set_log_level', { level: effectiveLevel }).catch(() => {}); // best-effort, daemon may be down
+      invoke('set_log_level', { level: effectiveLevel }).catch(() => {});
+    },
+
+    setDevEnabled: (enabled: boolean): void => {
+      invoke('set_dev_enabled', { enabled }).catch(() => {});
     },
   };
 
@@ -269,6 +273,11 @@ export async function injectTauriGlobals(): Promise<void> {
   (window as any)._platform = tauriPlatform;
 
   console.info(`[K2:Tauri] Injected - os=${tauriPlatform.os}, version=${tauriPlatform.version}`);
+
+  // Auto-restore dev mode from previous session
+  if (localStorage.getItem('k2_developer_mode') === 'true') {
+    invoke('set_dev_enabled', { enabled: true }).catch(() => {});
+  }
 
   // Forward WebView console.* to Tauri log system (desktop.log)
   // JS console.info("msg") → pluginLog.info("msg") → IPC → Rust log::info! → desktop.log

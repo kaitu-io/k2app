@@ -67,6 +67,7 @@ export const standalonePlatform: IPlatform = {
   arch: 'unknown',
   getUdid: getDaemonUdid,
   storage: webSecureStorage,
+  setDevEnabled: () => {},
 };
 
 export function isK2Injected(): boolean {
