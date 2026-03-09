@@ -612,7 +612,7 @@
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				MARKETING_VERSION = 0.4.0-beta.1;
+				MARKETING_VERSION = 0.4.0-beta.2;
 				OTHER_SWIFT_FLAGS = "$(inherited) \"-D\" \"COCOAPODS\" \"-DDEBUG\"";
 				PRODUCT_BUNDLE_IDENTIFIER = io.kaitu;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -634,7 +634,7 @@
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				MARKETING_VERSION = 0.4.0-beta.1;
+				MARKETING_VERSION = 0.4.0-beta.2;
 				PRODUCT_BUNDLE_IDENTIFIER = io.kaitu;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
@@ -675,7 +675,7 @@
 				INFOPLIST_FILE = PacketTunnelExtension/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
-				MARKETING_VERSION = 0.4.0-beta.1;
+				MARKETING_VERSION = 0.4.0-beta.2;
 				PRODUCT_BUNDLE_IDENTIFIER = io.kaitu.PacketTunnelExtension;
 				PRODUCT_NAME = PacketTunnelExtension;
 				SDKROOT = iphoneos;
@@ -698,7 +698,7 @@
 				INFOPLIST_FILE = PacketTunnelExtension/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
-				MARKETING_VERSION = 0.4.0-beta.1;
+				MARKETING_VERSION = 0.4.0-beta.2;
 				PRODUCT_BUNDLE_IDENTIFIER = io.kaitu.PacketTunnelExtension;
 				PRODUCT_NAME = PacketTunnelExtension;
 				SDKROOT = iphoneos;
