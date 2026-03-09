@@ -308,7 +308,7 @@ func TestK2CCSender_OnCongestionEvent_RecordsLoss(t *testing.T) {
 	sender.SetRTTStatsProvider(mockRTT)
 
 	// Ensure there's a current MI
-	sender.state.ensureCurrentMI(sender.state.CurrentRate)
+	sender.state.ensureCurrentMI(sender.state.CurrentRate, 0)
 
 	// Simulate loss
 	sender.OnCongestionEvent(1, 1472, 10000)
@@ -529,7 +529,7 @@ func TestK2CCSender_Snapshot_UsesLastCompletedOnBoundary(t *testing.T) {
 	sender.lastCompletedThroughput = 5_000_000.0
 
 	// Set up CurrentMI with very few bytes (MI boundary state)
-	sender.state.ensureCurrentMI(sender.state.CurrentRate)
+	sender.state.ensureCurrentMI(sender.state.CurrentRate, 0)
 	sender.state.CurrentMI.BytesSent = 500 // << minSnapshotBytes (100000)
 	sender.state.CurrentMI.BytesLost = 300 // Would produce 60% loss — garbage
 	sender.state.CurrentMI.BytesAcked = 200
@@ -580,6 +580,11 @@ func TestK2CCSender_Snapshot_UpdatesLastCompletedOnMICompletion(t *testing.T) {
 	// Add some loss
 	sender.OnCongestionEvent(15, 1472*2, 0)
 
+	// Backdate MI start so MinDuration gate doesn't block completion
+	sender.mu.Lock()
+	sender.state.CurrentMI.StartTime = time.Now().Add(-200 * time.Millisecond)
+	sender.mu.Unlock()
+
 	// Ack enough packets to trigger MI completion (MinMIPackets = 10)
 	for i := 0; i < 12; i++ {
 		sender.OnPacketAcked(congestion.PacketNumber(i), 1472, 0, 0)
@@ -609,6 +614,11 @@ func TestOnCongestionEvent_StaleLossFiltering(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		sender.OnPacketSent(0, 0, congestion.PacketNumber(i), 1472, true)
 	}
+
+	// Backdate MI start so MinDuration gate doesn't block completion
+	sender.mu.Lock()
+	sender.state.CurrentMI.StartTime = time.Now().Add(-200 * time.Millisecond)
+	sender.mu.Unlock()
 
 	// Ack enough to complete MI #0 (MinMIPackets=10) → starts MI #1
 	for i := 0; i < 12; i++ {
@@ -652,6 +662,20 @@ func TestOnCongestionEvent_StaleLossFiltering(t *testing.T) {
 
 	if lostAfterValid == lostBefore {
 		t.Error("Loss from current MI's packet (pkt 25) should be counted")
+	}
+}
+
+func TestGFWParams_Alpha5(t *testing.T) {
+	sender := NewCCSenderGFWMode(100_000_000)
+	if sender.config.Alpha != 5.0 {
+		t.Errorf("GFW alpha should be 5.0, got %f", sender.config.Alpha)
+	}
+}
+
+func TestParams_Beta1(t *testing.T) {
+	sender := NewK2CCSender(100_000_000)
+	if sender.config.Beta != 1.0 {
+		t.Errorf("beta should be 1.0, got %f", sender.config.Beta)
 	}
 }
 
@@ -871,5 +895,127 @@ func TestAIMDEpsilon_Snapshot(t *testing.T) {
 	if snap.Epsilon != sender.state.Epsilon {
 		t.Errorf("Snapshot Epsilon should match state, got %f vs %f",
 			snap.Epsilon, sender.state.Epsilon)
+	}
+}
+
+// ============================================================================
+// Tests for MI minimum duration (loss visibility fix)
+// ============================================================================
+
+func TestMI_NotCompleteBeforeMinDuration(t *testing.T) {
+	// At high rates, MI completes after just 10 ACKs (a few ms).
+	// QUIC loss detection takes ~1 RTT. If MI completes before that,
+	// all loss events land in the next MI and get filtered as "stale".
+	//
+	// Fix: MI must last at least 1 smoothed RTT before completing.
+
+	mi := NewMonitorInterval(1, 400_000_000.0) // 400 Mbps
+	mi.MinDuration = 100 * time.Millisecond     // simulate 100ms RTT
+
+	// Feed 20 ACKs (well above MinMIPackets=10) — but instantly
+	mi.PacketsAcked = 20
+	mi.RTTSamples = make([]time.Duration, 20)
+
+	// MI should NOT be complete because MinDuration hasn't elapsed
+	if mi.IsComplete() {
+		t.Error("MI should not complete before MinDuration, even with enough ACKs")
+	}
+}
+
+func TestMI_CompletesAfterMinDuration(t *testing.T) {
+	// After MinDuration has passed and ACK threshold met, MI should complete.
+	mi := NewMonitorInterval(1, 400_000_000.0)
+	mi.MinDuration = 50 * time.Millisecond
+
+	mi.PacketsAcked = 15
+	mi.RTTSamples = make([]time.Duration, 15)
+	// Backdate start so duration > MinDuration
+	mi.StartTime = time.Now().Add(-100 * time.Millisecond)
+
+	if !mi.IsComplete() {
+		t.Error("MI should complete when both ACK threshold and MinDuration are met")
+	}
+}
+
+func TestMI_TimeoutOverridesMinDuration(t *testing.T) {
+	// The 60s timeout should still force-complete even if MinDuration
+	// somehow isn't met (safety valve).
+	mi := NewMonitorInterval(1, 400_000_000.0)
+	mi.MinDuration = 200 * time.Second // absurdly high
+
+	mi.StartTime = time.Now().Add(-61 * time.Second)
+
+	if !mi.IsComplete() {
+		t.Error("60s timeout should override MinDuration")
+	}
+}
+
+func TestSender_SetsMinDurationFromRTT(t *testing.T) {
+	// When K2CCSender creates a new MI via startNewMI, it should set
+	// MinDuration = current smoothed RTT.
+	sender := NewK2CCSender(500_000_000) // 500 Mbps
+	mockRTT := &mockRTTStatsProvider{smoothedRTT: 120 * time.Millisecond}
+	sender.SetRTTStatsProvider(mockRTT)
+
+	// MI #0: created by ensureCurrentMI in OnPacketSent with initial rtt (100ms).
+	// Send and ACK enough packets to complete MI #0 and trigger startNewMI.
+	// Backdate MI start so MinDuration gate doesn't block completion.
+	for i := 0; i < 20; i++ {
+		sender.OnPacketSent(0, 0, congestion.PacketNumber(i), 1472, true)
+	}
+	sender.mu.Lock()
+	sender.state.CurrentMI.StartTime = time.Now().Add(-200 * time.Millisecond)
+	sender.mu.Unlock()
+
+	for i := 0; i < 15; i++ {
+		sender.OnPacketAcked(congestion.PacketNumber(i), 1472, 0, 0)
+	}
+
+	// MI #1: created by startNewMI with p.rtt = 120ms (from mockRTT).
+	sender.mu.RLock()
+	mi := sender.state.CurrentMI
+	minDur := mi.MinDuration
+	miID := mi.ID
+	sender.mu.RUnlock()
+
+	if miID == 0 {
+		t.Fatal("expected MI #1 to be current (MI #0 should have completed)")
+	}
+	if minDur != 120*time.Millisecond {
+		t.Errorf("new MI MinDuration should be smoothed RTT (120ms), got %v", minDur)
+	}
+}
+
+func TestHighRate_LossVisibleWithMinDuration(t *testing.T) {
+	// Integration test: at high rate with RTT-based MinDuration,
+	// loss events should be recorded in the MI (not filtered as stale).
+	sender := NewK2CCSender(500_000_000) // 500 Mbps
+	mockRTT := &mockRTTStatsProvider{smoothedRTT: 100 * time.Millisecond}
+	sender.SetRTTStatsProvider(mockRTT)
+
+	// Send 100 packets (simulating high-rate burst)
+	for i := 0; i < 100; i++ {
+		sender.OnPacketSent(0, 0, congestion.PacketNumber(i), 1472, true)
+	}
+
+	// ACK 15 packets — would complete MI under old logic (≥10 ACKs),
+	// but with MinDuration=100ms the MI should stay open.
+	for i := 0; i < 15; i++ {
+		sender.OnPacketAcked(congestion.PacketNumber(i), 1472, 0, 0)
+	}
+
+	// Loss event for packet 50 — should land in CURRENT MI, not be stale
+	sender.OnCongestionEvent(congestion.PacketNumber(50), 1472, 0)
+
+	sender.mu.RLock()
+	lost := sender.state.CurrentMI.BytesLost
+	miID := sender.state.CurrentMI.ID
+	sender.mu.RUnlock()
+
+	if miID != 0 {
+		t.Errorf("MI should still be #0 (not rotated), got MI #%d", miID)
+	}
+	if lost == 0 {
+		t.Error("loss for packet 50 should be recorded in current MI, not filtered as stale")
 	}
 }

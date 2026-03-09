@@ -58,7 +58,7 @@ const (
 
 	// Beta: latency penalty coefficient
 	// Low: throughput-prioritized for tunnel use
-	DefaultK2CCBeta = 0.1
+	DefaultK2CCBeta = 1.0
 
 	// EWMA smoothing factor for rate updates
 	// History: 0.7 (initial) → 0.9 (faster response for double CC) → 0.8 (browser QUIC blocked)
@@ -100,7 +100,7 @@ const (
 	DefaultK2CCAlpha = 10.0
 
 	// Alpha for GFW/aggressive mode (low loss penalty)
-	GFWK2CCAlpha = 0.5
+	GFWK2CCAlpha = 5.0
 
 	// Congestion window multiplier (for rate to cwnd conversion)
 	// 2.0× BDP matches BBR's cwnd gain, provides headroom for bursty ACK patterns
@@ -282,6 +282,13 @@ type MonitorInterval struct {
 	FirstPacketNumber int64 // set on first OnPacketSent
 	LastPacketNumber  int64 // updated on every OnPacketSent
 
+	// MinDuration is the minimum time this MI must survive before completing.
+	// Set to smoothed RTT so that QUIC loss detection (which takes ~1 RTT)
+	// has time to report losses for packets sent in this MI.
+	// Without this, high-rate MIs complete in a few ms (10 ACKs) and all
+	// loss events arrive after MI rotation → filtered as "stale" → loss=0%.
+	MinDuration time.Duration
+
 	// IsAppLimited indicates if this MI was application-limited
 	// (application not sending at full rate, e.g., idle period)
 	IsAppLimited bool
@@ -297,20 +304,30 @@ func NewMonitorInterval(id uint64, targetRate float64) *MonitorInterval {
 	}
 }
 
-// IsComplete checks if this MI has enough data
+// IsComplete checks if this MI has enough data.
+// The MinDuration constraint ensures the MI survives at least 1 RTT so that
+// QUIC loss detection can report losses for packets sent in this MI.
 func (mi *MonitorInterval) IsComplete() bool {
+	// Timeout protection: force complete after 60 seconds (always overrides)
+	if mi.Duration() >= MaxMIDuration {
+		return true
+	}
+
+	// MinDuration gate: MI must live at least 1 RTT for loss visibility.
+	// At high rates, 10 ACKs arrive in ~1ms but loss detection takes ~1 RTT.
+	if mi.MinDuration > 0 && mi.Duration() < mi.MinDuration {
+		return false
+	}
+
 	// Standard condition: >= 10 ACKs + RTT samples
 	standardCondition := mi.PacketsAcked >= MinMIPackets && len(mi.RTTSamples) > 0
-
-	// Timeout protection: force complete after 60 seconds
-	timeoutCondition := mi.Duration() >= MaxMIDuration
 
 	// Relaxed condition: >= 3 ACKs + >= 30 seconds (for low-rate scenarios)
 	relaxedCondition := mi.PacketsAcked >= MinMIPacketsRelaxed &&
 		len(mi.RTTSamples) > 0 &&
 		mi.Duration() >= MinMIDurationForRelaxed
 
-	return standardCondition || timeoutCondition || relaxedCondition
+	return standardCondition || relaxedCondition
 }
 
 // Complete marks this MI as complete
@@ -540,10 +557,12 @@ type K2CCState struct {
 	UtilityDecreases uint32
 }
 
-// ensureCurrentMI ensures there's a current MI
-func (s *K2CCState) ensureCurrentMI(rate float64) *MonitorInterval {
+// ensureCurrentMI ensures there's a current MI.
+// rtt sets MinDuration on newly created MIs for loss visibility.
+func (s *K2CCState) ensureCurrentMI(rate float64, rtt time.Duration) *MonitorInterval {
 	if s.CurrentMI == nil {
 		s.CurrentMI = NewMonitorInterval(s.NextMIID, rate)
+		s.CurrentMI.MinDuration = rtt
 		s.NextMIID++
 	}
 	return s.CurrentMI
@@ -551,7 +570,8 @@ func (s *K2CCState) ensureCurrentMI(rate float64) *MonitorInterval {
 
 // startNewMI starts a new Monitor Interval, reusing the previous MI's
 // RTTSamples backing array to avoid a 160-byte allocation per MI rotation.
-func (s *K2CCState) startNewMI(rate float64) *MonitorInterval {
+// rtt is the current smoothed RTT, used as MinDuration for loss visibility.
+func (s *K2CCState) startNewMI(rate float64, rtt time.Duration) *MonitorInterval {
 	var rttBuf []time.Duration
 	if s.CurrentMI != nil {
 		s.CurrentMI.Complete()
@@ -564,10 +584,11 @@ func (s *K2CCState) startNewMI(rate float64) *MonitorInterval {
 		rttBuf = make([]time.Duration, 0, 20)
 	}
 	s.CurrentMI = &MonitorInterval{
-		ID:         s.NextMIID,
-		TargetRate: rate,
-		StartTime:  time.Now(),
-		RTTSamples: rttBuf,
+		ID:          s.NextMIID,
+		TargetRate:  rate,
+		StartTime:   time.Now(),
+		RTTSamples:  rttBuf,
+		MinDuration: rtt,
 	}
 	s.NextMIID++
 	return s.CurrentMI
@@ -924,7 +945,7 @@ func (p *K2CCSender) OnPacketSent(
 		p.pacingBudget = 0
 	}
 
-	mi := p.state.ensureCurrentMI(p.state.CurrentRate)
+	mi := p.state.ensureCurrentMI(p.state.CurrentRate, p.rtt)
 	mi.BytesSent += uint64(bytes)
 	mi.PacketsSent++
 	if mi.PacketsSent == 1 {
@@ -962,7 +983,7 @@ func (p *K2CCSender) OnPacketAcked(
 	}
 
 	// Record in current MI
-	mi := p.state.ensureCurrentMI(p.state.CurrentRate)
+	mi := p.state.ensureCurrentMI(p.state.CurrentRate, p.rtt)
 	mi.BytesAcked += uint64(ackedBytes)
 	mi.PacketsAcked++
 	mi.RTTSamples = append(mi.RTTSamples, p.rtt)
@@ -979,8 +1000,8 @@ func (p *K2CCSender) OnPacketAcked(
 		// Process the completed MI
 		p.processCompletedMI(&miCopy)
 
-		// Start new MI
-		p.state.startNewMI(p.state.CurrentRate)
+		// Start new MI with MinDuration = current smoothed RTT
+		p.state.startNewMI(p.state.CurrentRate, p.rtt)
 	}
 
 	// Update cwnd
@@ -999,7 +1020,7 @@ func (p *K2CCSender) OnCongestionEvent(
 	// Record loss in current MI — but skip stale losses from previous MI.
 	// QUIC reports loss for packets sent in old MI after new MI has started.
 	// Without filtering: BytesLost >> BytesSent → LossRate 300-900% → false CRITICAL.
-	mi := p.state.ensureCurrentMI(p.state.CurrentRate)
+	mi := p.state.ensureCurrentMI(p.state.CurrentRate, p.rtt)
 
 	if mi.PacketsSent > 0 && int64(number) < mi.FirstPacketNumber {
 		// Stale loss: packet belongs to a previous MI. Don't pollute current MI.
