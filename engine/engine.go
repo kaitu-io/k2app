@@ -466,7 +466,7 @@ func (e *Engine) Stop() error {
 	e.probe = nil
 	e.mu.Unlock()
 
-	// Stop goroutines WITHOUT holding e.mu — health monitor's onAction
+	// Stop goroutines WITHOUT holding e.mu — health monitor's onReconnect
 	// callback calls OnNetworkChanged() which briefly acquires e.mu.
 	// Holding e.mu here would cross-deadlock with hm.wg.Wait().
 	if hm != nil {

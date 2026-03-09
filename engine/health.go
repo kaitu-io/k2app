@@ -68,8 +68,8 @@ type healthMonitor struct {
 
 	// EWMA-smoothed metrics for health decisions.
 	// Raw values are still reported in HealthSnapshot for observability.
-	smoothLoss       float64
-	smoothThroughput float64
+	smoothWireLoss       float64
+	smoothWireThroughput float64
 	ewmaInitialized  bool
 	ewmaSamples      int // warm-up counter: peakThroughput not updated until stabilized
 
@@ -78,21 +78,21 @@ type healthMonitor struct {
 	ringFull bool
 
 	onSnapshot func(HealthSnapshot) // push to daemon SSE
-	onAction   func()               // triggers OnNetworkChanged for full reconnect
+	onReconnect   func()               // triggers OnNetworkChanged for full reconnect
 }
 
 func newHealthMonitor(
 	tm *wire.TransportManager,
 	tunnel *core.ClientTunnel,
 	onSnapshot func(HealthSnapshot),
-	onAction func(),
+	onReconnect func(),
 ) *healthMonitor {
 	return &healthMonitor{
 		tm:         tm,
 		tunnel:     tunnel,
 		health:     HealthHealthy,
 		onSnapshot: onSnapshot,
-		onAction:   onAction,
+		onReconnect:   onReconnect,
 		done:       make(chan struct{}),
 	}
 }
@@ -128,13 +128,13 @@ func (hm *healthMonitor) sample() {
 	// EWMA smoothing: dampens MI boundary artifacts (lossRate spikes,
 	// throughput spikes) that cause false health degradation.
 	if !hm.ewmaInitialized {
-		hm.smoothLoss = ws.PacketLossRate
-		hm.smoothThroughput = ws.Throughput
+		hm.smoothWireLoss = ws.PacketLossRate
+		hm.smoothWireThroughput = ws.Throughput
 		hm.ewmaInitialized = true
 		hm.ewmaSamples = 1
 	} else {
-		hm.smoothLoss = ewmaAlpha*ws.PacketLossRate + (1-ewmaAlpha)*hm.smoothLoss
-		hm.smoothThroughput = ewmaAlpha*ws.Throughput + (1-ewmaAlpha)*hm.smoothThroughput
+		hm.smoothWireLoss = ewmaAlpha*ws.PacketLossRate + (1-ewmaAlpha)*hm.smoothWireLoss
+		hm.smoothWireThroughput = ewmaAlpha*ws.Throughput + (1-ewmaAlpha)*hm.smoothWireThroughput
 		hm.ewmaSamples++
 	}
 
@@ -142,8 +142,8 @@ func (hm *healthMonitor) sample() {
 	// Skip peak tracking during warm-up to avoid inflating peak from init burst
 	// (QUIC handshake produces astronomical throughput in the first MI).
 	hm.peakThroughput *= peakDecayPerSample
-	if hm.ewmaSamples >= ewmaWarmupSamples && hm.smoothThroughput > hm.peakThroughput {
-		hm.peakThroughput = hm.smoothThroughput
+	if hm.ewmaSamples >= ewmaWarmupSamples && hm.smoothWireThroughput > hm.peakThroughput {
+		hm.peakThroughput = hm.smoothWireThroughput
 	}
 
 	// Assess health from smoothed metrics.
@@ -180,7 +180,7 @@ func (hm *healthMonitor) sample() {
 	onSnapshot := hm.onSnapshot
 	hm.mu.Unlock()
 
-	// Side effects outside lock — onAction calls e.OnNetworkChanged() which
+	// Side effects outside lock — onReconnect calls e.OnNetworkChanged() which
 	// re-acquires hm.mu via resetCounters(). Calling with hm.mu held would
 	// self-deadlock (Go mutexes are non-reentrant).
 	if action != nil {
@@ -205,8 +205,8 @@ func (hm *healthMonitor) assess(ws wire.WireStats) string {
 		return HealthDegraded
 	}
 
-	highLoss := hm.smoothLoss > 0.05
-	veryHighLoss := hm.smoothLoss > 0.25
+	highLoss := hm.smoothWireLoss > 0.05
+	veryHighLoss := hm.smoothWireLoss > 0.25
 	highRTT := ws.MinRTT > 0 && ws.RTT > 3*ws.MinRTT
 
 	if veryHighLoss {
@@ -229,8 +229,8 @@ func (hm *healthMonitor) transition(level string) (action func()) {
 		if hm.healthyStreak >= 10 && hm.health != HealthHealthy {
 			slog.Info("health: recovery",
 				"from", hm.health,
-				"smoothLoss", fmt.Sprintf("%.3f", hm.smoothLoss),
-				"smoothThroughput", fmt.Sprintf("%.0f", hm.smoothThroughput),
+				"smoothWireLoss", fmt.Sprintf("%.3f", hm.smoothWireLoss),
+				"smoothWireThroughput", fmt.Sprintf("%.0f", hm.smoothWireThroughput),
 				"healthyStreak", hm.healthyStreak,
 			)
 			hm.health = HealthHealthy
@@ -242,8 +242,8 @@ func (hm *healthMonitor) transition(level string) (action func()) {
 		hm.criticalStreak = 0
 		if hm.degradedStreak >= 5 && hm.health == HealthHealthy {
 			slog.Warn("health: degraded",
-				"smoothLoss", fmt.Sprintf("%.3f", hm.smoothLoss),
-				"smoothThroughput", fmt.Sprintf("%.0f", hm.smoothThroughput),
+				"smoothWireLoss", fmt.Sprintf("%.3f", hm.smoothWireLoss),
+				"smoothWireThroughput", fmt.Sprintf("%.0f", hm.smoothWireThroughput),
 				"streak", hm.degradedStreak,
 			)
 			hm.health = HealthDegraded
@@ -255,8 +255,8 @@ func (hm *healthMonitor) transition(level string) (action func()) {
 		if hm.criticalStreak >= 5 && hm.health != HealthCritical {
 			slog.Warn("health: critical",
 				"streak", hm.criticalStreak,
-				"smoothLoss", fmt.Sprintf("%.3f", hm.smoothLoss),
-				"smoothThroughput", fmt.Sprintf("%.0f", hm.smoothThroughput),
+				"smoothWireLoss", fmt.Sprintf("%.3f", hm.smoothWireLoss),
+				"smoothWireThroughput", fmt.Sprintf("%.0f", hm.smoothWireThroughput),
 			)
 			hm.health = HealthCritical
 		}
@@ -288,7 +288,7 @@ func (hm *healthMonitor) maybeAct() func() {
 	if hm.hopAttempts > 3 {
 		hm.hopAttempts = 0
 		slog.Warn("health: full reconnect")
-		return hm.onAction
+		return hm.onReconnect
 	}
 	// Port hop: reset cached connections.
 	slog.Warn("health: port hop", "attempt", hm.hopAttempts)
@@ -306,8 +306,8 @@ func (hm *healthMonitor) resetCounters() {
 	hm.healthyStreak = 0
 	hm.hopAttempts = 0
 	hm.peakThroughput = 0
-	hm.smoothLoss = 0
-	hm.smoothThroughput = 0
+	hm.smoothWireLoss = 0
+	hm.smoothWireThroughput = 0
 	hm.ewmaInitialized = false
 	hm.ewmaSamples = 0
 }
