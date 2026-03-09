@@ -52,6 +52,17 @@ make appext-android   # Android aar (gomobile bind)
 
 Requires `golang.org/x/mobile` in go.mod (gobind uses `go list`).
 
+## iOS Memory Optimization
+
+iOS NE has ~50 MB jetsam limit. Two-layer GC strategy (sing-box pattern):
+- `memlimit_ios.go`: `SetGCPercent(10)` (aggressive — GC at 10% heap growth) + `SetMemoryLimit(35MB)` (hard ceiling, 15MB headroom for C/ObjC)
+- `appext.go`: `FreeOSMemory()` after `Start()` succeeds — reclaims init-time allocations (config parsing, k2rule loading)
+- `memprofile.go`: `MemorySnapshot()` — per-component heap breakdown (exported as `AppextMemorySnapshot` for iOS/Android diagnostics)
+
+Additional platform-specific controls in `core/`:
+- `limits_ios.go`: 512 max connections (non-blocking drop), 8KB TCP buffers, 15s UDP idle timeout
+- `gc_ios.go`: sampled GC every 8 connection releases if HeapInuse > 20MB
+
 ## Testing
 
 ```bash

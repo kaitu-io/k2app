@@ -9,7 +9,11 @@ k2s                      Zero-config mode (auto-generates certs, ECH, auth, prin
 k2s -c <yaml>            Server with explicit config
 k2s -t                   Test config and exit
 k2s -s stop|reload       Send signal to running server
-k2s setup                Install service + wait for connect URL + print it
+k2s setup                Interactive wizard: certs → ECH → user → firewall → service → URL
+k2s setup --reset        Re-run wizard, preserving existing certs and users
+k2s upgrade              Check for and install updates
+k2s upgrade --check      Check only (no install)
+k2s upgrade --channel=beta|stable  Switch update channel
 k2s service install      Install as system service (root required)
 k2s service uninstall    Remove system service
 k2s demo-config          Print example server YAML to stdout
@@ -19,10 +23,11 @@ k2s version              Version info
 ## Files
 
 - `main.go` — entry point, subcommand dispatch, top-level flags (`-c`, `-t`, `-s`, `-v`)
-- `setup.go` — `k2s setup`: install service if needed, wait for connect-url.txt, print URL
+- `setup.go` — `k2s setup`: 5-step interactive wizard (config → certs/ECH → user creation → firewall → service install → print URL). `--reset` re-runs preserving existing assets.
+- `upgrade.go` — `k2s upgrade`: CloudFront manifest check, binary download+replace, service restart. Beta builds auto-activate beta channel.
 - `service.go` — `k2s service`: install/uninstall system service
 - `service_darwin.go` / `service_linux.go` / `service_windows.go` — Platform-specific service management
-- `process.go` — PID file helpers
+- `process.go` — PID file helpers, `IsRoot()` (platform-aware admin detection)
 - `signal.go` / `signal_windows.go` — Signal dispatch (`-s stop|reload`)
 
 ## Architecture

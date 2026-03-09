@@ -22,7 +22,8 @@ Platform Shell (daemon/appext)
               ├── 7. ClientTunnel
               ├── 8. DNS middleware (TUN/TProxy mode only)
               ├── 9. Commit → StateConnected
-              └── 10. HealthMonitor start (1Hz wire stats + health FSM)
+              ├── 10. HealthMonitor start (1Hz wire stats + health FSM)
+              └── 11. Background QUIC probe (active during TCP-WS fallback, 30s interval)
 ```
 
 ## State Machine
@@ -71,7 +72,7 @@ HTTP-aligned error codes for frontend consumption:
 - `status.go` — `Status` struct, custom `MarshalJSON` (computes `uptime_seconds` dynamically)
 - `event.go` — `EventHandler` interface (`OnStatus(Status)` + `OnStats`), state constants
 - `error.go` — `EngineError`, `ClassifyError` (HTTP-aligned error codes, MultiTransportError handling)
-- `health.go` — `healthMonitor` (1Hz sampling, ring buffer 300s, EWMA smoothing α=0.3 on loss/throughput, peakThroughput decay half-life ~693s with 10-sample warm-up, health FSM: healthy→degraded(≥5 streak)→critical(≥5 streak), corrective actions: port hop ×3 then full reconnect with 10s cooldown)
+- `health.go` — `healthMonitor` (1Hz sampling, ring buffer 300s, EWMA smoothing α=0.3 on loss/throughput, peakThroughput decay half-life ~693s with 10-sample warm-up, health FSM: healthy→degraded(≥5 streak)→critical(≥5 streak), corrective actions: port hop ×3 then full reconnect with 10s cooldown). TCP health gate: `tcpRecentlyHealthy()` (30s window) suppresses hop when TCP streams are working — prevents DNS packet loss from triggering destructive QUIC resets.
 - `health_test.go` — Health monitor tests (EWMA smoothing, peak decay, transitions, reset)
 - `happy_eyeballs.go` — `resolveDialAddr`, `happyEyeballs` (RFC 8305 IPv6/IPv4 race with 250ms head start)
 - `dns_handler.go` — `dnsHandler` (port 53 TCP+UDP interception, RFC 1035 TCP framing)
