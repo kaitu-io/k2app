@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import {
   Box,
@@ -14,6 +14,7 @@ import {
   Stepper,
   Step,
   StepLabel,
+  IconButton,
 } from "@mui/material";
 import {
   Send as SendIcon,
@@ -22,18 +23,15 @@ import {
   EditNote as EditNoteIcon,
   CloudUpload as CloudUploadIcon,
   MarkEmailRead as MarkEmailReadIcon,
+  ArrowBack as ArrowBackIcon,
 } from "@mui/icons-material";
 import { useTranslation } from "react-i18next";
 
-import BackButton from "../components/BackButton";
 import { cloudApi } from '../services/cloud-api';
 import { useAuthStore } from '../stores/auth.store';
 import { useUser } from '../hooks/useUser';
 import i18n from '../i18n/i18n';
 import type { StatusResponseData } from '../services/vpn-types';
-
-// Log upload status (internal tracking only, no UI display)
-type LogUploadStatus = 'idle' | 'uploading' | 'success' | 'error';
 
 /**
  * Generate a unique feedback ID (UUID v4)
@@ -80,7 +78,6 @@ export default function SubmitTicket() {
   // Feedback mode - when navigating from FeedbackButton
   const isFeedbackMode = searchParams.get('feedback') === 'true';
   const feedbackIdRef = useRef<string | null>(null);
-  const uploadAttemptedRef = useRef(false);
 
   // Form state
   const [content, setContent] = useState("");
@@ -88,27 +85,18 @@ export default function SubmitTicket() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<{ success: boolean; message: string } | null>(null);
 
-  // Log upload state (silent, no UI display)
-  const [logUploadStatus, setLogUploadStatus] = useState<LogUploadStatus>('idle');
-
   // Check platform capabilities
   const canUploadLogs = !!window._platform?.uploadLogs;
   const isBetaUser = window._platform?.updater?.channel === 'beta' ||
     window._platform?.version?.includes('-beta');
 
-  // Upload logs silently (no UI feedback)
+  // Upload logs silently (best-effort, called during submit)
   const uploadLogs = useCallback(async () => {
-    if (!canUploadLogs) {
-      setLogUploadStatus('error');
-      return;
-    }
+    if (!canUploadLogs) return;
 
-    // Generate feedbackId if not already generated
     if (!feedbackIdRef.current) {
       feedbackIdRef.current = generateFeedbackId();
     }
-
-    setLogUploadStatus('uploading');
 
     try {
       const result = await window._platform.uploadLogs!({
@@ -120,7 +108,6 @@ export default function SubmitTicket() {
       });
 
       if (result.success) {
-        setLogUploadStatus('success');
         console.debug('[SubmitTicket] Log upload successful, feedbackId:', feedbackIdRef.current);
         if (result.s3Keys?.length) {
           // Register log metadata in database (fire-and-forget)
@@ -145,25 +132,15 @@ export default function SubmitTicket() {
             version: window._platform?.version,
             feedbackId: feedbackIdRef.current,
             s3Keys: result.s3Keys,
-          }).catch(() => {}); // silent — best-effort notification
+          }).catch(() => {});
         }
       } else {
-        setLogUploadStatus('error');
         console.debug('[SubmitTicket] Log upload failed:', result.error);
       }
     } catch (error) {
       console.error('[SubmitTicket] Failed to upload logs:', error);
-      setLogUploadStatus('error');
     }
   }, [canUploadLogs, isAuthenticated, user]);
-
-  // Auto-upload logs when entering the page (always, for better support)
-  useEffect(() => {
-    if (!uploadAttemptedRef.current && canUploadLogs) {
-      uploadAttemptedRef.current = true;
-      uploadLogs();
-    }
-  }, [uploadLogs, canUploadLogs]);
 
   const isValidEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 
@@ -192,11 +169,16 @@ export default function SubmitTicket() {
     setSubmitResult(null);
 
     try {
+      // Upload logs first (silent, best-effort)
+      if (canUploadLogs) {
+        await uploadLogs();
+      }
+
       const systemInfo = await gatherSystemInfo();
       const response = await cloudApi.post('/api/user/ticket', {
         content: content.trim(),
-        // Include feedbackId if logs were uploaded successfully
-        ...(feedbackIdRef.current && logUploadStatus === 'success'
+        // Include feedbackId if logs were uploaded
+        ...(feedbackIdRef.current
           ? { feedbackId: feedbackIdRef.current }
           : {}),
         // Anonymous: include email and source
@@ -224,17 +206,60 @@ export default function SubmitTicket() {
     <Box sx={{
       width: "100%",
       height: "100%",
-      position: "relative"
+      display: "flex",
+      flexDirection: "column",
     }} data-tour="submit-ticket-page">
-      <BackButton />
+      {/* Header row: back button + title */}
+      <Box sx={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 1,
+        px: 2,
+        pt: 2,
+        pb: 1,
+        flexShrink: 0,
+      }}>
+        <IconButton
+          onClick={() => navigate(-1)}
+          size="small"
+          sx={{
+            bgcolor: (theme) => theme.palette.mode === 'dark'
+              ? 'rgba(255, 255, 255, 0.08)'
+              : 'rgba(0, 0, 0, 0.04)',
+            '&:hover': {
+              bgcolor: (theme) => theme.palette.mode === 'dark'
+                ? 'rgba(255, 255, 255, 0.12)'
+                : 'rgba(0, 0, 0, 0.08)',
+            },
+          }}
+        >
+          <ArrowBackIcon />
+        </IconButton>
+        <Typography variant="h6">
+          {isFeedbackMode ? t('ticket:ticket.feedbackTitle') : t('ticket:ticket.title')}
+        </Typography>
+      </Box>
 
       <Box sx={{
         width: "100%",
-        height: "100%",
+        flex: 1,
+        overflow: "auto",
         display: "flex",
         justifyContent: "center",
         alignItems: "flex-start",
-        pt: 9
+        '&::-webkit-scrollbar': {
+          width: '8px',
+        },
+        '&::-webkit-scrollbar-track': {
+          background: 'transparent',
+        },
+        '&::-webkit-scrollbar-thumb': {
+          background: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)',
+          borderRadius: '4px',
+        },
+        '&::-webkit-scrollbar-thumb:hover': {
+          background: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)',
+        },
       }}>
         <Box sx={{
           maxWidth: 500,
@@ -242,23 +267,8 @@ export default function SubmitTicket() {
           display: "flex",
           flexDirection: "column",
           gap: 2,
-          overflow: "auto",
-          height: "100%",
           px: 2,
           pb: 8,
-          '&::-webkit-scrollbar': {
-            width: '8px',
-          },
-          '&::-webkit-scrollbar-track': {
-            background: 'transparent',
-          },
-          '&::-webkit-scrollbar-thumb': {
-            background: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)',
-            borderRadius: '4px',
-          },
-          '&::-webkit-scrollbar-thumb:hover': {
-            background: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)',
-          },
         }}>
           {submitResult?.success ? (
             /* 成功提示 - 独立显示，隐藏表单 */
@@ -304,10 +314,6 @@ export default function SubmitTicket() {
               <Card>
                 <CardContent>
                   <Stack spacing={3}>
-                    <Typography variant="h6">
-                      {isFeedbackMode ? t('ticket:ticket.feedbackTitle') : t('ticket:ticket.title')}
-                    </Typography>
-
                     <Typography variant="body2" color="text.secondary">
                       {t('ticket:ticket.description')}
                     </Typography>
