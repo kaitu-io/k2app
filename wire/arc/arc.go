@@ -417,6 +417,75 @@ func (mi *MonitorInterval) RTTCV() float64 {
 }
 
 // ============================================================================
+// Sliding-Window Ack Rate Tracker
+// ============================================================================
+//
+// Tracks global ack/loss ratio over a 5-second sliding window using 1-second
+// buckets. Inspired by Hysteria's Brutal CC. Independent of the per-MI loss
+// attribution system — immune to MI boundary artifacts and stale loss filtering.
+//
+// Fed by OnCongestionEventEx (batched ACK+loss callback from quic-go).
+// Exposed via CCSnapshot.AckRate for observability (debug logging only).
+
+const (
+	// ackRateSlotCount is the number of 1-second slots in the sliding window.
+	ackRateSlotCount = 5
+)
+
+// ackRateSlot holds packet counts for a 1-second time slot.
+type ackRateSlot struct {
+	Timestamp int64  // Unix-ish second (from monotonic time)
+	AckCount  uint64
+	LossCount uint64
+}
+
+// ackRateTracker maintains a sliding-window ack rate.
+type ackRateTracker struct {
+	slots [ackRateSlotCount]ackRateSlot
+}
+
+// newAckRateTracker creates a tracker. Initial ackRate is 1.0 (all slots empty).
+func newAckRateTracker() *ackRateTracker {
+	return &ackRateTracker{}
+}
+
+// record adds ack and loss counts for the given monotonic time.
+// Called from OnCongestionEventEx under the sender's mutex.
+func (tr *ackRateTracker) record(eventTime time.Duration, acks, losses uint64) {
+	ts := int64(eventTime / time.Second)
+	slot := ts % ackRateSlotCount
+	if tr.slots[slot].Timestamp == ts {
+		tr.slots[slot].AckCount += acks
+		tr.slots[slot].LossCount += losses
+	} else {
+		tr.slots[slot] = ackRateSlot{
+			Timestamp: ts,
+			AckCount:  acks,
+			LossCount: losses,
+		}
+	}
+}
+
+// AckRate returns the ack rate over the sliding window.
+// Returns 1.0 if no data.
+func (tr *ackRateTracker) AckRate() float64 {
+	var totalAck, totalLoss uint64
+	for i := range tr.slots {
+		totalAck += tr.slots[i].AckCount
+		totalLoss += tr.slots[i].LossCount
+	}
+	total := totalAck + totalLoss
+	if total == 0 {
+		return 1.0
+	}
+	rate := float64(totalAck) / float64(total)
+	if rate > 1.0 {
+		return 1.0
+	}
+	return rate
+}
+
+// ============================================================================
 // Utility Function
 // ============================================================================
 

@@ -1055,3 +1055,71 @@ func TestHighRate_LossVisibleWithMinDuration(t *testing.T) {
 		t.Error("loss for packet 50 should be recorded in current MI, not filtered as stale")
 	}
 }
+
+// ============================================================================
+// Tests for ackRateTracker (sliding-window loss rate)
+// ============================================================================
+
+func TestAckRateTracker_NewTracker(t *testing.T) {
+	tr := newAckRateTracker()
+	if tr.AckRate() != 1.0 {
+		t.Errorf("new tracker should return ackRate=1.0, got %f", tr.AckRate())
+	}
+}
+
+func TestAckRateTracker_SingleSlot(t *testing.T) {
+	tr := newAckRateTracker()
+	now := time.Duration(1000) * time.Second
+	tr.record(now, 90, 10)
+
+	rate := tr.AckRate()
+	if rate < 0.89 || rate > 0.91 {
+		t.Errorf("expected ackRate ~0.90, got %f", rate)
+	}
+}
+
+func TestAckRateTracker_SlidingWindow(t *testing.T) {
+	tr := newAckRateTracker()
+
+	for sec := int64(100); sec < 105; sec++ {
+		tr.record(time.Duration(sec)*time.Second, 100, 0)
+	}
+	if tr.AckRate() != 1.0 {
+		t.Errorf("expected ackRate=1.0 with no loss, got %f", tr.AckRate())
+	}
+
+	// Slide: second 105 has heavy loss
+	tr.record(time.Duration(105)*time.Second, 50, 50)
+
+	// Window: seconds 101-105. Acks: 4*100+50=450, Losses: 50, Total=500
+	rate := tr.AckRate()
+	expected := 450.0 / 500.0 // 0.90
+	if rate < expected-0.01 || rate > expected+0.01 {
+		t.Errorf("expected ackRate ~%.2f, got %f", expected, rate)
+	}
+}
+
+func TestAckRateTracker_SlotOverwrite(t *testing.T) {
+	tr := newAckRateTracker()
+	now := time.Duration(200) * time.Second
+	tr.record(now, 10, 2)
+	tr.record(now, 20, 3)
+
+	rate := tr.AckRate()
+	expected := 30.0 / 35.0 // 0.857
+	if rate < expected-0.01 || rate > expected+0.01 {
+		t.Errorf("expected ackRate ~%.3f, got %f", expected, rate)
+	}
+}
+
+func TestAckRateTracker_EmptySlots(t *testing.T) {
+	tr := newAckRateTracker()
+	tr.record(time.Duration(400)*time.Second, 100, 0)
+	tr.record(time.Duration(410)*time.Second, 50, 50)
+
+	// Only second 410 in window (400 expired). 50/100 = 0.50.
+	rate := tr.AckRate()
+	if rate != 0.5 {
+		t.Errorf("expected ackRate 0.50, got %f", rate)
+	}
+}
