@@ -986,6 +986,42 @@ func TestSender_SetsMinDurationFromRTT(t *testing.T) {
 	}
 }
 
+func TestSlowStart_ExitsAtMaxRate(t *testing.T) {
+	maxRate := int64(100_000_000) // 100 Mbps
+	sender := NewCCSenderGFWMode(maxRate)
+	rttStats := &mockRTTStatsProvider{smoothedRTT: 50 * time.Millisecond}
+	sender.SetRTTStatsProvider(rttStats)
+
+	if !sender.InSlowStart() {
+		t.Fatal("should start in slow start")
+	}
+
+	// Directly drive processCompletedMI with well-formed MIs to avoid
+	// app-limited detection and MinDuration issues in test harness.
+	// Initial rate is 30% of maxRate = 30 Mbps.
+	for i := 0; i < 20; i++ {
+		rate := sender.state.CurrentRate
+		mi := NewMonitorInterval(uint64(i), rate)
+		mi.BytesSent = 5_000_000 // 5 MB — well above app-limited threshold
+		mi.BytesAcked = 5_000_000
+		mi.PacketsAcked = MinMIPackets
+		mi.RTTSamples = append(mi.RTTSamples, 50*time.Millisecond)
+		mi.StartTime = time.Now().Add(-200 * time.Millisecond)
+		mi.Complete()
+
+		sender.mu.Lock()
+		sender.processCompletedMI(mi)
+		sender.state.NextMIID++
+		sender.mu.Unlock()
+
+		if !sender.InSlowStart() {
+			return // exited — test passes
+		}
+	}
+
+	t.Error("slow start should exit when rate reaches maxRate")
+}
+
 func TestHighRate_LossVisibleWithMinDuration(t *testing.T) {
 	// Integration test: at high rate with RTT-based MinDuration,
 	// loss events should be recorded in the MI (not filtered as stale).

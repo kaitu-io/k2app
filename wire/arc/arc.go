@@ -761,6 +761,15 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 
 	switch p.state.Mode {
 	case K2CCModeSlowStart:
+		// Exit slow start if rate has reached maxRate — no room to grow.
+		// Use 99% threshold because EWMA smoothing in updateRate means
+		// CurrentRate asymptotically approaches but never equals maxRate.
+		if p.state.CurrentRate >= float64(p.maxRate)*0.99 {
+			p.state.Mode = K2CCModeDecision
+			p.state.UtilityIncreases = 0
+			p.state.UtilityDecreases = 0
+			break
+		}
 		// Check if we should exit slow start
 		if p.state.hasLastUtility && utility < p.state.lastUtility*0.95 {
 			// Utility dropped, exit slow start
