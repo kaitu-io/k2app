@@ -16,6 +16,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/sasha-s/go-deadlock"
+
 	"github.com/apernet/quic-go"
 	"github.com/kaitu-io/k2/wire/arc"
 )
@@ -60,8 +62,8 @@ const tcpHealthWindow = 30 * time.Second
 // init and I/O, keeping mutex hold time minimal on the data plane.
 type udpOverflowStream struct {
 	qconn   *quic.Conn
-	initMu  sync.Mutex
-	writeMu sync.Mutex
+	initMu  deadlock.Mutex
+	writeMu deadlock.Mutex
 	stream  *quic.Stream
 	initErr error
 	opened  bool
@@ -124,7 +126,7 @@ func (o *udpOverflowStream) close() {
 // Both the datagram reader and overflow stream reader share this state so that
 // packets from the same session ID are delivered to the same serverUDPConn.
 type connUDPState struct {
-	mu       sync.Mutex
+	mu       deadlock.Mutex
 	sessions map[uint32]*serverUDPConn
 	overflow *udpOverflowStream
 	done     chan struct{}
@@ -190,7 +192,7 @@ type QUICClient struct {
 	tlsConfig    *tls.Config // override for testing (bypasses BuildClientTLSConfig)
 	directDialer DirectDialer
 
-	mu        sync.Mutex
+	mu        deadlock.Mutex
 	conn      *quic.Conn
 	transport *quic.Transport
 	alloc     *SessionIDAllocator
@@ -733,7 +735,7 @@ type tcpAcceptResult struct {
 type QUICServer struct {
 	store *TicketStore
 
-	mu    sync.Mutex
+	mu    deadlock.Mutex
 	ln    *quic.Listener
 	tcpCh chan tcpAcceptResult
 	udpH  UDPHandler
@@ -1070,7 +1072,7 @@ func (s *QUICServer) Close() error {
 
 type quicUDPMux struct {
 	conn      *quic.Conn
-	mu        sync.Mutex
+	mu        deadlock.Mutex
 	sessions  map[uint32]chan *UDPFrame
 	done      chan struct{}
 	started   bool
@@ -1090,7 +1092,7 @@ type quicUDPMux struct {
 	datagramRecv atomic.Int64
 
 	// Cached loss rate (lazy evaluation per window).
-	lossMu       sync.Mutex
+	lossMu       deadlock.Mutex
 	lossRate     float64
 	lossTime     int64 // UnixNano of last evaluation
 	lossPrevSent int64
@@ -1460,7 +1462,7 @@ func (c *serverUDPConn) SetWriteDeadline(time.Time) error    { return nil }
 
 type quicStreamWriter struct {
 	stream  *quic.Stream
-	writeMu sync.Mutex
+	writeMu deadlock.Mutex
 }
 
 func (w *quicStreamWriter) writeFrame(sessionID uint32, addr string, payload []byte) error {
@@ -1542,8 +1544,8 @@ type quicStreamUDPMux struct {
 	stream   *quic.Stream
 	qconn    *quic.Conn
 	br       *bufio.Reader
-	writeMu  sync.Mutex
-	mu       sync.Mutex
+	writeMu  deadlock.Mutex
+	mu       deadlock.Mutex
 	sessions map[uint32]chan *UDPFrame
 	done     chan struct{}
 	started  bool

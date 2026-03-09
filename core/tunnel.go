@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/sasha-s/go-deadlock"
+
 	"github.com/kaitu-io/k2rule"
 	"github.com/kaitu-io/k2/provider"
 	"github.com/kaitu-io/k2/sniff"
@@ -25,7 +27,7 @@ const closeTimeout = 5 * time.Second
 
 // connTracker tracks active connections for forceful close during shutdown.
 type connTracker struct {
-	mu    sync.Mutex
+	mu    deadlock.Mutex
 	conns map[io.Closer]struct{}
 }
 

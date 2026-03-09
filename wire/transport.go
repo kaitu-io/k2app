@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/sasha-s/go-deadlock"
 )
 
 // MultiTransportError is returned when both QUIC and TCP-WS transports fail.
@@ -40,7 +41,7 @@ const (
 // when QUIC is genuinely unavailable (UDP blocked). ISPs rarely block UDP,
 // so even with 40%+ packet loss, QUIC with port hopping outperforms TCP-WS.
 type TransportManager struct {
-	mu    sync.RWMutex
+	mu    deadlock.RWMutex
 	quic  Dialer
 	tcpws Dialer
 

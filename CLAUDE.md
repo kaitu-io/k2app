@@ -31,6 +31,7 @@ docker compose up --build           # Docker: server + init container (docker/)
 - **Stdlib first**: `os.Args` + `flag.NewFlagSet` for CLI, `net/http` for HTTP
 - **Error wrapping**: Always `fmt.Errorf("context: %w", err)`
 - **Trust protocol semantics**: When a protocol (QUIC, TLS, smux) provides built-in state management (keepalive, idle timeout, connection liveness), use its native mechanisms — don't layer application-level health checks or manual state tracking on top. Duplicating protocol-layer responsibilities in application code causes misclassification bugs (e.g. conflating "server can't reach destination" with "transport is broken") and unnecessary complexity.
+- **Deadlock detection**: All mutexes use `deadlock.Mutex`/`deadlock.RWMutex` from `github.com/sasha-s/go-deadlock`. Production builds use `-tags=deadlock_disable` for zero overhead. Tests run with detection enabled (5s timeout). New mutex fields must use `deadlock.Mutex`, never `sync.Mutex`. `sync.WaitGroup`, `sync.Once`, `sync.Pool` stay as stdlib.
 
 ## Concurrency Rules (Constitutional — never violate)
 

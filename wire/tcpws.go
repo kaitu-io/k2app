@@ -15,6 +15,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sasha-s/go-deadlock"
+
 	utls "github.com/metacubex/utls"
 	smux "github.com/xtaci/smux/v2"
 	"github.com/coder/websocket"
@@ -75,7 +77,7 @@ type TCPWSClient struct {
 	testConn     net.Conn    // override for testing (bypasses TCP+TLS+WS)
 	directDialer DirectDialer
 
-	mu     sync.Mutex
+	mu     deadlock.Mutex
 	sess   *smux.Session
 	udpMux *smuxUDPMux
 	alloc  *SessionIDAllocator
@@ -401,7 +403,7 @@ func (c *TCPWSClient) Close() error {
 type TCPWSServer struct {
 	store *TicketStore
 
-	mu    sync.Mutex
+	mu    deadlock.Mutex
 	tcpCh chan tcpAcceptResult
 	udpH  UDPHandler
 	done  chan struct{}
@@ -585,8 +587,8 @@ func (s *TCPWSServer) Close() error {
 type smuxUDPMux struct {
 	stream   *smux.Stream
 	br       *bufio.Reader
-	writeMu  sync.Mutex
-	mu       sync.Mutex
+	writeMu  deadlock.Mutex
+	mu       deadlock.Mutex
 	sessions map[uint32]chan *UDPFrame
 	done     chan struct{}
 	started  bool
@@ -743,7 +745,7 @@ func (c *smuxUDPConn) SetWriteDeadline(time.Time) error       { return nil }
 
 type serverSmuxWriter struct {
 	stream  *smux.Stream
-	writeMu sync.Mutex
+	writeMu deadlock.Mutex
 }
 
 func (w *serverSmuxWriter) writeFrame(sessionID uint32, addr string, payload []byte) error {

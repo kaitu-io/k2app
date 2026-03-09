@@ -4,8 +4,9 @@ import (
 	"context"
 	"log/slog"
 	"net"
-	"sync"
 	"time"
+
+	"github.com/sasha-s/go-deadlock"
 
 	"github.com/kaitu-io/k2/wire"
 )
@@ -34,7 +35,7 @@ type recoveryProbe struct {
 	dialer probeDialer
 	engine *Engine
 
-	mu     sync.Mutex
+	mu     deadlock.Mutex
 	cancel context.CancelFunc
 }
 

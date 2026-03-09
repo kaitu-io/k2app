@@ -8,10 +8,10 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
-	"sync"
 	"time"
 
 	"github.com/kaitu-io/k2rule"
+	"github.com/sasha-s/go-deadlock"
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/core"
@@ -29,7 +29,7 @@ import (
 // EventHandler implementations must NOT call back into engine while holding
 // their own lock.
 type Engine struct {
-	mu          sync.Mutex
+	mu          deadlock.Mutex
 	state       string
 	paused      bool
 	client      *config.ClientConfig

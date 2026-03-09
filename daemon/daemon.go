@@ -8,8 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sync"
 	"time"
+
+	"github.com/sasha-s/go-deadlock"
 
 	tun "github.com/sagernet/sing-tun"
 
@@ -32,8 +33,8 @@ const DefaultAddr = "127.0.0.1:1777"
 //   - mu protects field reads/writes (fine-grained data lock)
 //   - sseMu protects SSE client map
 type Daemon struct {
-	opMu sync.Mutex   // serializes doUp/doDown operations
-	mu   sync.RWMutex // protects field access
+	opMu deadlock.Mutex   // serializes doUp/doDown operations
+	mu   deadlock.RWMutex // protects field access
 
 	// lastStatus is updated by engine's OnStatus callback — single source of truth.
 	lastStatus engine.Status
@@ -67,7 +68,7 @@ type Daemon struct {
 
 	// SSE client channels for real-time status push.
 	sseClients map[chan string]struct{}
-	sseMu      sync.RWMutex
+	sseMu      deadlock.RWMutex
 }
 
 // New creates a new daemon.

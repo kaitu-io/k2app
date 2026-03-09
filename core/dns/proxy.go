@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/sasha-s/go-deadlock"
+
 	"github.com/kaitu-io/k2/wire"
 	"github.com/miekg/dns"
 )
@@ -23,7 +25,7 @@ type ProxyDNSClient struct {
 	timeout time.Duration
 
 	// Connection pool: server → persistent connection.
-	mu    sync.Mutex
+	mu    deadlock.Mutex
 	conns map[string]*proxyConn
 }
 
@@ -32,7 +34,7 @@ type ProxyDNSClient struct {
 type proxyConn struct {
 	conn net.PacketConn
 
-	mu        sync.RWMutex
+	mu        deadlock.RWMutex
 	queryID   atomic.Uint32 // monotonic query ID counter
 	callbacks map[uint16]*dnsCallback
 

@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sasha-s/go-deadlock"
+
 	"github.com/kaitu-io/k2/core"
 	"github.com/kaitu-io/k2/wire"
 )
@@ -50,7 +52,7 @@ const (
 // healthMonitor samples wire stats at 1Hz, maintains a ring buffer,
 // detects health degradation trends, and takes corrective action.
 type healthMonitor struct {
-	mu     sync.Mutex
+	mu     deadlock.Mutex
 	tm     *wire.TransportManager
 	tunnel *core.ClientTunnel
 	done   chan struct{}
