@@ -2,6 +2,7 @@ import Foundation
 import Capacitor
 import NetworkExtension
 import CommonCrypto
+import Gzip
 import SSZipArchive
 import os.log
 
@@ -592,6 +593,11 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                     }
                     await MainActor.run { call.resolve(result) }
                 }
+            } catch {
+                await MainActor.run {
+                    call.resolve(["success": false, "error": error.localizedDescription])
+                }
+            }
         }
     }
 
@@ -613,28 +619,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func gzipCompress(_ data: Data) throws -> Data {
-        guard let zlibData = try? (data as NSData).compressed(using: .zlib) as Data else {
-            throw NSError(domain: "K2Plugin", code: -1, userInfo: [NSLocalizedDescriptionKey: "gzip compression failed"])
-        }
-        // NSData.compressed(.zlib) outputs zlib format (2-byte header + deflate + 4-byte adler32).
-        // Strip header/trailer to get raw deflate, then wrap in gzip envelope.
-        guard zlibData.count > 6 else {
-            throw NSError(domain: "K2Plugin", code: -1, userInfo: [NSLocalizedDescriptionKey: "compressed data too short"])
-        }
-        let rawDeflate = zlibData.dropFirst(2).dropLast(4)
-
-        var gzip = Data()
-        // Gzip header: magic, method(deflate), flags, mtime, xfl, OS(unix)
-        gzip.append(contentsOf: [0x1f, 0x8b, 0x08, 0x00])
-        gzip.append(contentsOf: [0x00, 0x00, 0x00, 0x00])
-        gzip.append(contentsOf: [0x00, 0x03])
-        gzip.append(rawDeflate)
-        // Gzip trailer: CRC32 + original size (little-endian)
-        var crc = CRC32.checksum(data: data)
-        gzip.append(Data(bytes: &crc, count: 4))
-        var size = UInt32(data.count & 0xffffffff)
-        gzip.append(Data(bytes: &size, count: 4))
-        return gzip
+        return try data.gzipped()
     }
 
     private func generateS3Key(logType: String, feedbackId: String?, udid: String) -> String {
@@ -855,28 +840,5 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             overwrite: true,
             password: nil
         )
-    }
-}
-
-// MARK: - CRC32 Helper
-
-private enum CRC32 {
-    private static let table: [UInt32] = {
-        (0..<256).map { i -> UInt32 in
-            var c = UInt32(i)
-            for _ in 0..<8 {
-                c = (c & 1 == 1) ? (0xEDB88320 ^ (c >> 1)) : (c >> 1)
-            }
-            return c
-        }
-    }()
-
-    static func checksum(data: Data) -> UInt32 {
-        var crc: UInt32 = 0xFFFFFFFF
-        for byte in data {
-            let index = Int((crc ^ UInt32(byte)) & 0xFF)
-            crc = table[index] ^ (crc >> 8)
-        }
-        return crc ^ 0xFFFFFFFF
     }
 }

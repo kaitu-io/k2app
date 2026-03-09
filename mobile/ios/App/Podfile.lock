@@ -10,8 +10,10 @@ PODS:
   - CapacitorCordova (6.2.1)
   - CapacitorStatusBar (6.0.3):
     - Capacitor
+  - GzipSwift (5.1.1)
   - K2Plugin (0.1.0):
     - Capacitor
+    - GzipSwift (~> 5.1)
     - SSZipArchive (~> 2.5)
   - SSZipArchive (2.6.0)
 
@@ -26,6 +28,7 @@ DEPENDENCIES:
 
 SPEC REPOS:
   trunk:
+    - GzipSwift
     - SSZipArchive
 
 EXTERNAL SOURCES:
@@ -51,7 +54,8 @@ SPEC CHECKSUMS:
   CapacitorClipboard: b65bdab75c7f944fdd51d4fa4faa84b8da054d47
   CapacitorCordova: 8d93e14982f440181be7304aa9559ca631d77fff
   CapacitorStatusBar: 38665f1a18c55677098367a29f6b42126b72dc65
-  K2Plugin: 51b634dace0d84572053ec44ff339a4398c4fa93
+  GzipSwift: 893f3e48e597a1a4f62fafcb6514220fcf8287fa
+  K2Plugin: 6417bb0881f846831ac5f066a27fb5879d7fb47b
   SSZipArchive: 8a6ee5677c8e304bebc109e39cf0da91ccef22ea
 
 PODFILE CHECKSUM: 58f5568c13237560fb05d110b598f2c19a373196

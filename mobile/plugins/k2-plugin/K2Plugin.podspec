@@ -10,5 +10,6 @@ Pod::Spec.new do |s|
   s.ios.deployment_target = '16.0'
   s.dependency 'Capacitor'
   s.dependency 'SSZipArchive', '~> 2.5'
+  s.dependency 'GzipSwift', '~> 5.1'
   s.swift_version = '5.9'
 end

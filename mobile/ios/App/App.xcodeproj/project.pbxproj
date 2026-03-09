@@ -18,17 +18,18 @@
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		51EF5EA20E6D3E5FA88D67A4 /* PacketTunnelExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = B3E4F1BB9F484E6F4766ADD2 /* PacketTunnelExtension.appex */; };
+		55CA6CCC9845CD52722202CC /* NativeLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13241B00605BFFDAF811223D /* NativeLogger.swift */; };
 		65E4ECC2D32A657AC351C764 /* K2Mobile.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = BBCE1198135DD938090D5E41 /* K2Mobile.xcframework */; };
 		70874F7C1F94F5C55643C066 /* K2HelpersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF81A8541F041F2827C75E09 /* K2HelpersTests.swift */; };
 		7C62EE0757ADF7F3C8CB6E54 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D08300DE0A8C33C607A9BC3E /* Foundation.framework */; };
 		9ECB53766821BE46A6517C18 /* PacketTunnelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDF0660D7E007B680F0370F8 /* PacketTunnelProvider.swift */; };
 		A084ECDBA7D38E1E42DFC39D /* Pods_App.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */; };
+		AA10000000000000000000A1 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000A0 /* InfoPlist.strings */; };
 		AB10000000000000000000F1 /* AppBridgeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10000000000000000000F2 /* AppBridgeViewController.swift */; };
 		AC809A99C72119A8BD87D2F2 /* K2Mobile.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = BBCE1198135DD938090D5E41 /* K2Mobile.xcframework */; };
 		D36F09BE5D71D847D49AC01B /* Pods_PacketTunnelExtension.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 233A3F316C4F467CA6A1A8A2 /* Pods_PacketTunnelExtension.framework */; };
 		D936F650E10A1AAA3C1291AD /* NEHelpersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8FBC8B200147C902DEE140F /* NEHelpersTests.swift */; };
 		FCBE94BC67556466AB9AA049 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D08300DE0A8C33C607A9BC3E /* Foundation.framework */; };
-		AA10000000000000000000A1 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000A0 /* InfoPlist.strings */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -64,6 +65,7 @@
 
 /* Begin PBXFileReference section */
 		10F65EE64D38B428B1B21F29 /* NEHelpers.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NEHelpers.swift; sourceTree = "<group>"; };
+		13241B00605BFFDAF811223D /* NativeLogger.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NativeLogger.swift; sourceTree = "<group>"; };
 		1BA01B94F08FAC328D94CDED /* Pods-PacketTunnelExtension.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-PacketTunnelExtension.debug.xcconfig"; path = "Pods/Target Support Files/Pods-PacketTunnelExtension/Pods-PacketTunnelExtension.debug.xcconfig"; sourceTree = "<group>"; };
 		233A3F316C4F467CA6A1A8A2 /* Pods_PacketTunnelExtension.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_PacketTunnelExtension.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
@@ -76,6 +78,10 @@
 		504EC3111FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
+		AA10000000000000000000B1 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		AA10000000000000000000B2 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
+		AA10000000000000000000B3 /* zh-Hant */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hant"; path = "zh-Hant.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
+		AA10000000000000000000B4 /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		AB10000000000000000000F2 /* AppBridgeViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppBridgeViewController.swift; sourceTree = "<group>"; };
 		AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_App.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		AF51FD2D460BCFE21FA515B2 /* Pods-App.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-App.release.xcconfig"; path = "Pods/Target Support Files/Pods-App/Pods-App.release.xcconfig"; sourceTree = "<group>"; };
@@ -88,10 +94,6 @@
 		DDF0660D7E007B680F0370F8 /* PacketTunnelProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PacketTunnelProvider.swift; sourceTree = "<group>"; };
 		E8FBC8B200147C902DEE140F /* NEHelpersTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NEHelpersTests.swift; sourceTree = "<group>"; };
 		FC68EB0AF532CFC21C3344DD /* Pods-App.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-App.debug.xcconfig"; path = "Pods/Target Support Files/Pods-App/Pods-App.debug.xcconfig"; sourceTree = "<group>"; };
-		AA10000000000000000000B1 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
-		AA10000000000000000000B2 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
-		AA10000000000000000000B3 /* zh-Hant */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hant"; path = "zh-Hant.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
-		AA10000000000000000000B4 /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -141,6 +143,7 @@
 			children = (
 				DDF0660D7E007B680F0370F8 /* PacketTunnelProvider.swift */,
 				10F65EE64D38B428B1B21F29 /* NEHelpers.swift */,
+				13241B00605BFFDAF811223D /* NativeLogger.swift */,
 			);
 			name = PacketTunnelExtension;
 			path = PacketTunnelExtension;
@@ -427,6 +430,7 @@
 			files = (
 				9ECB53766821BE46A6517C18 /* PacketTunnelProvider.swift in Sources */,
 				3781D684BB9C96059E40EA5D /* NEHelpers.swift in Sources */,
+				55CA6CCC9845CD52722202CC /* NativeLogger.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
