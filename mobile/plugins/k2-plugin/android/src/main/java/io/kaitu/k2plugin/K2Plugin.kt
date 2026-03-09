@@ -582,11 +582,7 @@ class K2Plugin : Plugin() {
 
     @PluginMethod
     fun uploadLogs(call: PluginCall) {
-        val reason = call.getString("reason") ?: "manual"
         val feedbackId = call.getString("feedbackId")
-        val platform = call.getString("platform") ?: "android"
-        val version = call.getString("version")
-            ?: (context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "unknown")
 
         Thread {
             try {
@@ -602,9 +598,13 @@ class K2Plugin : Plugin() {
                 val raw = android.provider.Settings.Secure.getString(context.contentResolver, android.provider.Settings.Secure.ANDROID_ID)
                 val udid = K2PluginUtils.hashToUdid(raw)
 
+                // 1. Create staging dir
+                val stagingDir = File(context.cacheDir, "kaitu-log-upload-${System.currentTimeMillis()}")
+                stagingDir.mkdirs()
+
+                // 2. Copy log files to staging and sanitize
                 val logTypes = listOf("k2", "native", "webapp")
-                val uploadedFiles = mutableListOf<JSONObject>()
-                val errors = mutableListOf<String>()
+                val sourceFiles = mutableListOf<File>()
 
                 for (logType in logTypes) {
                     val logFile = File(dir, "$logType.log")
@@ -613,39 +613,50 @@ class K2Plugin : Plugin() {
                     if (content.isEmpty()) continue
 
                     val sanitized = sanitizeLogContent(content)
-                    val compressed = gzipCompress(sanitized.toByteArray(Charsets.UTF_8))
-
-                    val s3Key = generateS3Key(logType, feedbackId, udid)
-                    try {
-                        uploadToS3(s3Key, compressed)
-                        uploadedFiles.add(JSONObject().apply {
-                            put("name", logType)
-                            put("s3Key", s3Key)
-                        })
-                    } catch (e: Exception) {
-                        errors.add("$logType: ${e.message}")
-                    }
+                    File(stagingDir, "$logType.log").writeText(sanitized)
+                    sourceFiles.add(logFile)
                 }
 
-                // Truncate only successfully uploaded files
-                for (f in uploadedFiles) {
-                    val name = f.optString("name") ?: continue
-                    val logFile = File(dir, "$name.log")
-                    if (logFile.exists()) {
-                        logFile.writeText("")
+                if (sourceFiles.isEmpty()) {
+                    stagingDir.deleteRecursively()
+                    val ret = JSObject()
+                    ret.put("success", false)
+                    ret.put("error", "No log files found")
+                    call.resolve(ret)
+                    return@Thread
+                }
+
+                // 3. Create zip archive using JDK ZipOutputStream
+                val zipFile = File(stagingDir, "logs.zip")
+                java.util.zip.ZipOutputStream(zipFile.outputStream()).use { zos ->
+                    stagingDir.listFiles()?.filter { it.isFile && it.name != "logs.zip" }?.forEach { file ->
+                        zos.putNextEntry(java.util.zip.ZipEntry(file.name))
+                        file.inputStream().use { it.copyTo(zos) }
+                        zos.closeEntry()
                     }
                 }
+                val archiveData = zipFile.readBytes()
+
+                // 4. Upload single archive
+                val s3Key = generateS3Key(feedbackId, udid)
+                uploadToS3(s3Key, archiveData)
+
+                // 5. Truncate source files (preserves file handles)
+                for (logFile in sourceFiles) {
+                    java.io.RandomAccessFile(logFile, "rw").use { it.setLength(0) }
+                }
+
+                // 6. Clean up staging dir
+                stagingDir.deleteRecursively()
 
                 val ret = JSObject()
-                if (uploadedFiles.isNotEmpty()) {
-                    ret.put("success", true)
-                    val keysArray = org.json.JSONArray()
-                    for (f in uploadedFiles) keysArray.put(f)
-                    ret.put("s3Keys", keysArray)
-                } else {
-                    ret.put("success", false)
-                    ret.put("error", "All uploads failed: ${errors.joinToString("; ")}")
-                }
+                ret.put("success", true)
+                val keysArray = org.json.JSONArray()
+                keysArray.put(JSONObject().apply {
+                    put("name", "logs")
+                    put("s3Key", s3Key)
+                })
+                ret.put("s3Keys", keysArray)
                 call.resolve(ret)
             } catch (e: Exception) {
                 val ret = JSObject()
@@ -677,7 +688,7 @@ class K2Plugin : Plugin() {
         return bos.toByteArray()
     }
 
-    private fun generateS3Key(logType: String, feedbackId: String?, udid: String): String {
+    private fun generateS3Key(feedbackId: String?, udid: String): String {
         val dateFmt = SimpleDateFormat("yyyy/MM/dd", Locale.US)
         dateFmt.timeZone = TimeZone.getTimeZone("UTC")
         val timeFmt = SimpleDateFormat("HHmmss", Locale.US)
@@ -696,14 +707,15 @@ class K2Plugin : Plugin() {
             identifier = UUID.randomUUID().toString().take(8)
         }
 
-        return "$prefix/$udid/$date/$logType-$timestamp-$identifier.log.gz"
+        return "$prefix/$udid/$date/logs-$timestamp-$identifier.zip"
     }
 
     private fun uploadToS3(s3Key: String, data: ByteArray) {
         val url = URL("$S3_BUCKET_URL/$s3Key")
         val conn = url.openConnection() as HttpURLConnection
         conn.requestMethod = "PUT"
-        conn.setRequestProperty("Content-Type", "application/gzip")
+        val contentType = if (s3Key.endsWith(".zip")) "application/zip" else "application/gzip"
+        conn.setRequestProperty("Content-Type", contentType)
         conn.setRequestProperty("Content-Length", data.size.toString())
         conn.connectTimeout = 60000
         conn.readTimeout = 60000

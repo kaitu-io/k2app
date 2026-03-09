@@ -526,11 +526,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func uploadLogs(_ call: CAPPluginCall) {
-        let reason = call.getString("reason") ?? "manual"
-        let email = call.getString("email")
         let feedbackId = call.getString("feedbackId")
-        let platform = call.getString("platform") ?? "ios"
-        let version = call.getString("version") ?? (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown")
 
         Task {
             do {
@@ -543,35 +539,49 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                 let raw = UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
                 let udid = hashToUdid(raw)
 
+                // 1. Create staging dir
+                let stagingDir = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("kaitu-log-upload-\(Int(Date().timeIntervalSince1970))")
+                try FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+
+                // 2. Copy log files to staging and sanitize
                 let logTypes = ["k2", "native", "webapp"]
-                var uploadedFiles: [[String: String]] = []
-                var errors: [String] = []
+                var sourceFiles: [URL] = []
 
                 for logType in logTypes {
                     let logFile = logsDir.appendingPathComponent("\(logType).log")
                     guard FileManager.default.fileExists(atPath: logFile.path) else { continue }
                     guard let content = try? String(contentsOf: logFile, encoding: .utf8), !content.isEmpty else { continue }
 
-                    do {
-                        let sanitized = self.sanitizeLogs(content)
-                        guard let inputData = sanitized.data(using: .utf8) else { continue }
-                        let compressed = try self.gzipCompress(inputData)
-
-                        let s3Key = self.generateS3Key(logType: logType, feedbackId: feedbackId, udid: udid)
-                        try await self.uploadToS3(s3Key: s3Key, data: compressed)
-
-                        uploadedFiles.append(["name": logType, "s3Key": s3Key])
-                    } catch {
-                        errors.append("\(logType): \(error.localizedDescription)")
-                    }
+                    let sanitized = self.sanitizeLogs(content)
+                    let destFile = stagingDir.appendingPathComponent("\(logType).log")
+                    try sanitized.write(to: destFile, atomically: true, encoding: .utf8)
+                    sourceFiles.append(logFile)
                 }
 
-                // Truncate only successfully uploaded files.
-                // Use FileHandle.truncateFile to preserve inodes — NE process holds
-                // open handles to k2.log and native.log in a separate process.
-                for uploaded in uploadedFiles {
-                    guard let name = uploaded["name"] else { continue }
-                    let logFile = logsDir.appendingPathComponent("\(name).log")
+                if sourceFiles.isEmpty {
+                    try? FileManager.default.removeItem(at: stagingDir)
+                    let result: [String: Any] = ["success": false, "error": "No log files found"]
+                    await MainActor.run { call.resolve(result) }
+                    return
+                }
+
+                // 3. Create zip archive using SSZipArchive (mature library)
+                let zipPath = stagingDir.appendingPathComponent("logs.zip").path
+                let filePaths = try FileManager.default.contentsOfDirectory(
+                    at: stagingDir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
+                ).filter { !$0.hasDirectoryPath }.map { $0.path }
+                guard SSZipArchive.createZipFile(atPath: zipPath, withFilesAtPaths: filePaths) else {
+                    throw NSError(domain: "K2Plugin", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to create zip archive"])
+                }
+                let archiveData = try Data(contentsOf: URL(fileURLWithPath: zipPath))
+
+                // 4. Upload single archive
+                let s3Key = self.generateS3Key(feedbackId: feedbackId, udid: udid)
+                try await self.uploadToS3(s3Key: s3Key, data: archiveData)
+
+                // 5. Truncate source files (preserves inodes for NE process)
+                for logFile in sourceFiles {
                     if let handle = try? FileHandle(forWritingTo: logFile) {
                         handle.truncateFile(atOffset: 0)
                         handle.closeFile()
@@ -582,22 +592,14 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                     self.webappLogHandle?.seekToEndOfFile()
                 }
 
-                if uploadedFiles.isEmpty {
-                    let result: [String: Any] = [
-                        "success": false,
-                        "error": "All uploads failed: \(errors.joined(separator: "; "))"
-                    ]
-                    await MainActor.run { call.resolve(result) }
-                } else {
-                    var result: [String: Any] = [
-                        "success": true,
-                        "s3Keys": uploadedFiles.map { ["name": $0["name"]!, "s3Key": $0["s3Key"]!] }
-                    ]
-                    if !errors.isEmpty {
-                        result["error"] = "Partial failures: \(errors.joined(separator: "; "))"
-                    }
-                    await MainActor.run { call.resolve(result) }
-                }
+                // 6. Clean up staging dir
+                try? FileManager.default.removeItem(at: stagingDir)
+
+                let result: [String: Any] = [
+                    "success": true,
+                    "s3Keys": [["name": "logs", "s3Key": s3Key]]
+                ]
+                await MainActor.run { call.resolve(result) }
             } catch {
                 await MainActor.run {
                     call.resolve(["success": false, "error": error.localizedDescription])
@@ -627,7 +629,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         return try data.gzipped()
     }
 
-    private func generateS3Key(logType: String, feedbackId: String?, udid: String) -> String {
+    private func generateS3Key(feedbackId: String?, udid: String) -> String {
         let now = Date()
         let dateFmt = DateFormatter()
         dateFmt.dateFormat = "yyyy/MM/dd"
@@ -649,14 +651,15 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             identifier = String(UUID().uuidString.prefix(8)).lowercased()
         }
 
-        return "\(prefix)/\(udid)/\(date)/\(logType)-\(timestamp)-\(identifier).log.gz"
+        return "\(prefix)/\(udid)/\(date)/logs-\(timestamp)-\(identifier).zip"
     }
 
     private func uploadToS3(s3Key: String, data: Data) async throws {
         let url = URL(string: "\(s3BucketURL)/\(s3Key)")!
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"
-        request.setValue("application/gzip", forHTTPHeaderField: "Content-Type")
+        let contentType = s3Key.hasSuffix(".zip") ? "application/zip" : "application/gzip"
+        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
         request.setValue("\(data.count)", forHTTPHeaderField: "Content-Length")
         request.timeoutInterval = 60
 
@@ -859,3 +862,4 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         )
     }
 }
+
