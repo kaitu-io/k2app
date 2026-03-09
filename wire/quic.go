@@ -166,6 +166,16 @@ func (c *quicStreamConn) Read(b []byte) (int, error) {
 	return c.Stream.Read(b)
 }
 
+// Close closes both read and write directions of the QUIC stream.
+// quic-go's Stream.Close() only sends FIN (write direction).
+// Without CancelRead, the receive half never completes and the
+// stream slot is never released — causing slot exhaustion under
+// rapid short-lived connections (e.g. YouTube Shorts scrolling).
+func (c *quicStreamConn) Close() error {
+	c.Stream.CancelRead(0)
+	return c.Stream.Close()
+}
+
 // ============================================================================
 // QUICClient — implements wire.Dialer
 // ============================================================================

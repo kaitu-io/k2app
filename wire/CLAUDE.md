@@ -72,6 +72,7 @@ Fields: UDID, Token, Host, Port, ECH, Fingerprint, HopStart, HopEnd, Insecure, P
 
 ## Gotchas
 
+- `quicStreamConn.Close()` must call both `CancelRead(0)` and `Stream.Close()`. quic-go's `Stream.Close()` only closes the write direction (FIN). Without `CancelRead`, the receive half never completes and the stream slot leaks — causing `OpenStreamSync` to block at `MAX_STREAMS`. Fixed in the custom `Close()` method.
 - `ReadStreamHeader`/`ReadStreamResponse` need `io.ByteReader` — wrap conn with `bufio.NewReader(conn)`.
 - `net.Pipe()` is synchronous — structure goroutines carefully in tests.
 - ECH base64 in URLs must use `base64.URLEncoding` (standard `+` corrupted by `url.Query()`).

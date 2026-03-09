@@ -188,6 +188,98 @@ func setupQUICPair(t *testing.T) (*QUICClient, *QUICServer, func()) {
 	return client, server, cleanup
 }
 
+// TestQUICStreamSlotLeak verifies that QUIC stream slots are released after
+// Close(). quic-go's Stream.Close() only closes the write direction (FIN).
+// Without CancelRead, the receive half never completes and the stream slot
+// leaks — causing OpenStreamSync to block once MAX_STREAMS is reached.
+func TestQUICStreamSlotLeak(t *testing.T) {
+	cert := generateTestCert(t)
+
+	// Server with very low stream limit to expose the leak quickly.
+	serverUDP, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer serverUDP.Close()
+
+	serverTransport := &quic.Transport{Conn: serverUDP}
+	defer serverTransport.Close()
+
+	serverCfg := DefaultQUICConfig()
+	serverCfg.MaxIncomingStreams = 4
+
+	ln, err := serverTransport.Listen(&tls.Config{
+		Certificates: []tls.Certificate{cert},
+		NextProtos:   []string{"h3"},
+	}, serverCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	// Server: accept streams, echo, close write side (mimics server pipe behavior).
+	go func() {
+		conn, err := ln.Accept(context.Background())
+		if err != nil {
+			return
+		}
+		for {
+			stream, err := conn.AcceptStream(context.Background())
+			if err != nil {
+				return
+			}
+			go func(s *quic.Stream) {
+				sc := &quicStreamConn{Stream: s} // production uses quicStreamConn
+				buf := make([]byte, 256)
+				sc.Read(buf)
+				sc.Write([]byte("OK"))
+				sc.Close()
+			}(stream)
+		}
+	}()
+
+	// Client connects.
+	clientUDP, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clientUDP.Close()
+
+	clientTransport := &quic.Transport{Conn: clientUDP}
+	defer clientTransport.Close()
+
+	conn, err := clientTransport.Dial(
+		context.Background(),
+		serverUDP.LocalAddr().(*net.UDPAddr),
+		&tls.Config{InsecureSkipVerify: true, NextProtos: []string{"h3"}},
+		DefaultQUICConfig(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.CloseWithError(0, "")
+
+	// Open 8 streams sequentially (> MaxIncomingStreams=4).
+	// Each mimics pipe() lifecycle: write → read → Close().
+	// If stream slots leak, the 5th OpenStreamSync blocks and times out.
+	const totalStreams = 8
+	for i := 0; i < totalStreams; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		stream, err := conn.OpenStreamSync(ctx)
+		cancel()
+		if err != nil {
+			t.Fatalf("stream %d: OpenStreamSync failed (stream slot leak): %v", i, err)
+		}
+
+		// Wrap in quicStreamConn to test its Close() behavior.
+		sc := &quicStreamConn{Stream: stream}
+		sc.Write([]byte("hello"))
+		buf := make([]byte, 256)
+		sc.Read(buf)
+		sc.Close()
+	}
+}
+
 func TestQUICClient_DialTCP(t *testing.T) {
 	client, server, cleanup := setupQUICPair(t)
 	defer cleanup()

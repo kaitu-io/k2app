@@ -153,6 +153,7 @@ engine.Stop()
 
 ## Critical Gotchas
 
+- QUIC stream `Close()` only sends FIN (write direction). Must also call `CancelRead()` to release stream slot — `quicStreamConn.Close()` handles both
 - sing-tun gVisor stack owns connections — handler must defer close, not close prematurely
 - `ReadStreamHeader`/`ReadStreamResponse` require `io.ByteReader` — wrap `net.Conn` with `bufio.NewReader(conn)`
 - `net.Pipe()` is synchronous — writes block until reads happen on other end
