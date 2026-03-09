@@ -30,7 +30,7 @@ func setupQUICPairWithHop(t *testing.T) (*QUICClient, *QUICServer, func()) {
 
 // TestQUICClient_DialUDP_HopBeforeFallback verifies that when datagrams become
 // unhealthy, DialUDP hops port (resetConnection + reconnect) instead of
-// immediately returning ErrDatagramUnhealthy.
+// immediately returning ErrRelayUDPUnhealthy.
 func TestQUICClient_DialUDP_HopBeforeFallback(t *testing.T) {
 	client, _, cleanup := setupQUICPairWithHop(t)
 	defer cleanup()
@@ -46,10 +46,10 @@ func TestQUICClient_DialUDP_HopBeforeFallback(t *testing.T) {
 	client.mu.Lock()
 	mux := client.udpMux
 	client.mu.Unlock()
-	for i := int32(0); i < datagramTimeoutThreshold; i++ {
+	for i := int32(0); i < relayTimeoutThreshold; i++ {
 		mux.recordTimeout()
 	}
-	if mux.datagramHealthy() {
+	if mux.relayUDPHealthy() {
 		t.Fatal("mux should be unhealthy")
 	}
 
@@ -60,13 +60,13 @@ func TestQUICClient_DialUDP_HopBeforeFallback(t *testing.T) {
 	}
 	defer pc.Close()
 
-	if client.datagramHopAttempts.Load() != 1 {
-		t.Fatalf("datagramHopAttempts = %d, want 1", client.datagramHopAttempts.Load())
+	if client.portHopAttempts.Load() != 1 {
+		t.Fatalf("portHopAttempts = %d, want 1", client.portHopAttempts.Load())
 	}
 }
 
-// TestQUICClient_DialUDP_HopExhausted verifies that after maxDatagramHops
-// unsuccessful hops, DialUDP returns ErrDatagramUnhealthy.
+// TestQUICClient_DialUDP_HopExhausted verifies that after maxPortHops
+// unsuccessful hops, DialUDP returns ErrRelayUDPUnhealthy.
 func TestQUICClient_DialUDP_HopExhausted(t *testing.T) {
 	client, _, cleanup := setupQUICPairWithHop(t)
 	defer cleanup()
@@ -75,25 +75,25 @@ func TestQUICClient_DialUDP_HopExhausted(t *testing.T) {
 	defer cancel()
 
 	// Each iteration: connect → poison mux → DialUDP triggers hop
-	for i := int32(0); i < maxDatagramHops; i++ {
+	for i := int32(0); i < maxPortHops; i++ {
 		if _, err := client.connect(ctx); err != nil {
 			t.Fatalf("connect (hop %d): %v", i, err)
 		}
 		client.mu.Lock()
 		mux := client.udpMux
 		client.mu.Unlock()
-		for j := int32(0); j < datagramTimeoutThreshold; j++ {
+		for j := int32(0); j < relayTimeoutThreshold; j++ {
 			mux.recordTimeout()
 		}
 	}
 
-	// Now hops are at maxDatagramHops-1 from previous rounds, but the connect
+	// Now hops are at maxPortHops-1 from previous rounds, but the connect
 	// above established a new healthy mux. We need to poison it one more time.
 	// Actually, let's re-think: each DialUDP call in the loop above would do
 	// the hop. Let me use a simpler approach.
 
 	// Reset and do it properly: pre-set hop attempts to max
-	client.datagramHopAttempts.Store(maxDatagramHops)
+	client.portHopAttempts.Store(maxPortHops)
 
 	if _, err := client.connect(ctx); err != nil {
 		t.Fatalf("connect: %v", err)
@@ -101,18 +101,18 @@ func TestQUICClient_DialUDP_HopExhausted(t *testing.T) {
 	client.mu.Lock()
 	mux := client.udpMux
 	client.mu.Unlock()
-	for j := int32(0); j < datagramTimeoutThreshold; j++ {
+	for j := int32(0); j < relayTimeoutThreshold; j++ {
 		mux.recordTimeout()
 	}
 
-	// DialUDP should return ErrDatagramUnhealthy (hops exhausted)
+	// DialUDP should return ErrRelayUDPUnhealthy (hops exhausted)
 	_, err := client.DialUDP(ctx, "8.8.8.8:53")
-	if !errors.Is(err, ErrDatagramUnhealthy) {
-		t.Fatalf("DialUDP = %v, want ErrDatagramUnhealthy", err)
+	if !errors.Is(err, ErrRelayUDPUnhealthy) {
+		t.Fatalf("DialUDP = %v, want ErrRelayUDPUnhealthy", err)
 	}
 
-	if client.datagramHopAttempts.Load() != maxDatagramHops {
-		t.Fatalf("datagramHopAttempts = %d, want %d", client.datagramHopAttempts.Load(), maxDatagramHops)
+	if client.portHopAttempts.Load() != maxPortHops {
+		t.Fatalf("portHopAttempts = %d, want %d", client.portHopAttempts.Load(), maxPortHops)
 	}
 }
 
@@ -129,8 +129,8 @@ func TestQUICClient_DialUDP_HopResetOnLossRecovery(t *testing.T) {
 		t.Fatalf("connect: %v", err)
 	}
 
-	client.datagramHopAttempts.Store(2)
-	client.datagramHopExhausted.Store(time.Now().Add(-1 * time.Minute).UnixNano())
+	client.portHopAttempts.Store(2)
+	client.portHopExhaustedAt.Store(time.Now().Add(-1 * time.Minute).UnixNano())
 
 	client.mu.Lock()
 	mux := client.udpMux
@@ -138,8 +138,8 @@ func TestQUICClient_DialUDP_HopResetOnLossRecovery(t *testing.T) {
 
 	// A single recv should NOT reset hop counter
 	mux.recordRecv()
-	if client.datagramHopAttempts.Load() != 2 {
-		t.Fatalf("hopAttempts = %d, want 2 (single recv must not reset)", client.datagramHopAttempts.Load())
+	if client.portHopAttempts.Load() != 2 {
+		t.Fatalf("hopAttempts = %d, want 2 (single recv must not reset)", client.portHopAttempts.Load())
 	}
 
 	// Simulate good traffic (0% loss) with enough samples
@@ -148,13 +148,13 @@ func TestQUICClient_DialUDP_HopResetOnLossRecovery(t *testing.T) {
 		mux.recordRecv()
 	}
 	mux.expireLossWindow()
-	mux.evaluateLossRate() // triggers hop reset (loss < 15%)
+	mux.evaluateRelayLossRate() // triggers hop reset (loss < 15%)
 
-	if client.datagramHopAttempts.Load() != 0 {
-		t.Fatalf("hopAttempts = %d, want 0 after loss recovery", client.datagramHopAttempts.Load())
+	if client.portHopAttempts.Load() != 0 {
+		t.Fatalf("hopAttempts = %d, want 0 after loss recovery", client.portHopAttempts.Load())
 	}
-	if client.datagramHopExhausted.Load() != 0 {
-		t.Fatalf("datagramHopExhausted = %d, want 0 after loss recovery", client.datagramHopExhausted.Load())
+	if client.portHopExhaustedAt.Load() != 0 {
+		t.Fatalf("portHopExhaustedAt = %d, want 0 after loss recovery", client.portHopExhaustedAt.Load())
 	}
 }
 
@@ -170,7 +170,7 @@ func TestQUICClient_DialUDP_HopNotResetWithHighLoss(t *testing.T) {
 		t.Fatalf("connect: %v", err)
 	}
 
-	client.datagramHopAttempts.Store(2)
+	client.portHopAttempts.Store(2)
 
 	client.mu.Lock()
 	mux := client.udpMux
@@ -184,15 +184,15 @@ func TestQUICClient_DialUDP_HopNotResetWithHighLoss(t *testing.T) {
 		}
 	}
 	mux.expireLossWindow()
-	mux.evaluateLossRate()
+	mux.evaluateRelayLossRate()
 
-	if client.datagramHopAttempts.Load() != 2 {
-		t.Fatalf("hopAttempts = %d, want 2 (30%% loss above recovery threshold)", client.datagramHopAttempts.Load())
+	if client.portHopAttempts.Load() != 2 {
+		t.Fatalf("hopAttempts = %d, want 2 (30%% loss above recovery threshold)", client.portHopAttempts.Load())
 	}
 }
 
 // TestQUICClient_ConcurrentHopRace verifies that when multiple goroutines
-// detect datagramHealthy()=false simultaneously, only one actually executes
+// detect relayUDPHealthy()=false simultaneously, only one actually executes
 // a hop. Without the CAS guard, N goroutines would each Add(1) + resetConnection(),
 // burning N hops in a single unhealthy event.
 func TestQUICClient_ConcurrentHopRace(t *testing.T) {
@@ -223,15 +223,15 @@ func TestQUICClient_ConcurrentHopRace(t *testing.T) {
 	if winners.Load() != 1 {
 		t.Fatalf("hop winners = %d, want exactly 1", winners.Load())
 	}
-	if client.datagramHopAttempts.Load() != 1 {
-		t.Fatalf("datagramHopAttempts = %d, want 1", client.datagramHopAttempts.Load())
+	if client.portHopAttempts.Load() != 1 {
+		t.Fatalf("portHopAttempts = %d, want 1", client.portHopAttempts.Load())
 	}
 }
 
 // TestQuicUDPConn_WriteTo_LargePayloadUsesOverflow verifies that when SendDatagram
 // returns DatagramTooLargeError, the packet is transparently sent via the overflow
-// stream instead of failing. The send is counted in datagramSent (for throughput
-// tracking) but NOT in consecutiveTimeouts (it's not a network problem).
+// stream instead of failing. The send is counted in relaySent (for throughput
+// tracking) but NOT in relayTimeouts (it's not a network problem).
 func TestQuicUDPConn_WriteTo_LargePayloadUsesOverflow(t *testing.T) {
 	client, _, cleanup := setupQUICPair(t)
 	defer cleanup()
@@ -250,8 +250,8 @@ func TestQuicUDPConn_WriteTo_LargePayloadUsesOverflow(t *testing.T) {
 	client.mu.Lock()
 	mux := client.udpMux
 	client.mu.Unlock()
-	sentBefore := mux.datagramSent.Load()
-	timeoutsBefore := mux.consecutiveTimeouts.Load()
+	sentBefore := mux.relaySent.Load()
+	timeoutsBefore := mux.relayTimeouts.Load()
 
 	// Send a payload that exceeds the peer's MaxDatagramFrameSize.
 	// quic-go caps MaxDatagramFrameSize at MaxPacketBufferSize (~64KB).
@@ -264,19 +264,19 @@ func TestQuicUDPConn_WriteTo_LargePayloadUsesOverflow(t *testing.T) {
 	}
 
 	// Verify: send was counted but NOT as a timeout (overflow is not a network failure)
-	sentAfter := mux.datagramSent.Load()
-	timeoutsAfter := mux.consecutiveTimeouts.Load()
+	sentAfter := mux.relaySent.Load()
+	timeoutsAfter := mux.relayTimeouts.Load()
 
 	if sentAfter != sentBefore+1 {
-		t.Fatalf("datagramSent: before=%d after=%d, want +1", sentBefore, sentAfter)
+		t.Fatalf("relaySent: before=%d after=%d, want +1", sentBefore, sentAfter)
 	}
 	if timeoutsAfter != timeoutsBefore {
-		t.Fatalf("consecutiveTimeouts: before=%d after=%d, want unchanged (overflow is not a timeout)", timeoutsBefore, timeoutsAfter)
+		t.Fatalf("relayTimeouts: before=%d after=%d, want unchanged (overflow is not a timeout)", timeoutsBefore, timeoutsAfter)
 	}
 }
 
 // TestQUICClient_DialUDP_NoHopWithoutConfig verifies that without hop config,
-// unhealthy datagrams immediately return ErrDatagramUnhealthy (no hop attempt).
+// unhealthy datagrams immediately return ErrRelayUDPUnhealthy (no hop attempt).
 func TestQUICClient_DialUDP_NoHopWithoutConfig(t *testing.T) {
 	client, _, cleanup := setupQUICPair(t) // no hop config
 	defer cleanup()
@@ -291,18 +291,18 @@ func TestQUICClient_DialUDP_NoHopWithoutConfig(t *testing.T) {
 	client.mu.Lock()
 	mux := client.udpMux
 	client.mu.Unlock()
-	for i := int32(0); i < datagramTimeoutThreshold; i++ {
+	for i := int32(0); i < relayTimeoutThreshold; i++ {
 		mux.recordTimeout()
 	}
 
-	// Should immediately return ErrDatagramUnhealthy (no hop)
+	// Should immediately return ErrRelayUDPUnhealthy (no hop)
 	_, err := client.DialUDP(ctx, "8.8.8.8:53")
-	if !errors.Is(err, ErrDatagramUnhealthy) {
-		t.Fatalf("DialUDP = %v, want ErrDatagramUnhealthy", err)
+	if !errors.Is(err, ErrRelayUDPUnhealthy) {
+		t.Fatalf("DialUDP = %v, want ErrRelayUDPUnhealthy", err)
 	}
 
-	if client.datagramHopAttempts.Load() != 0 {
-		t.Fatalf("datagramHopAttempts = %d, want 0 (no hop without config)", client.datagramHopAttempts.Load())
+	if client.portHopAttempts.Load() != 0 {
+		t.Fatalf("portHopAttempts = %d, want 0 (no hop without config)", client.portHopAttempts.Load())
 	}
 }
 
@@ -322,14 +322,14 @@ func TestQUICClient_DialUDP_HopRecoveryAfterCooldown(t *testing.T) {
 	}
 
 	// Simulate hop exhaustion that happened 4 minutes ago (past 30s cooldown)
-	client.datagramHopAttempts.Store(maxDatagramHops)
-	client.datagramHopExhausted.Store(time.Now().Add(-4 * time.Minute).UnixNano())
+	client.portHopAttempts.Store(maxPortHops)
+	client.portHopExhaustedAt.Store(time.Now().Add(-4 * time.Minute).UnixNano())
 
 	// Make datagram path unhealthy
 	client.mu.Lock()
 	mux := client.udpMux
 	client.mu.Unlock()
-	for i := int32(0); i < datagramTimeoutThreshold; i++ {
+	for i := int32(0); i < relayTimeoutThreshold; i++ {
 		mux.recordTimeout()
 	}
 
@@ -341,17 +341,17 @@ func TestQUICClient_DialUDP_HopRecoveryAfterCooldown(t *testing.T) {
 	defer pc.Close()
 
 	// Recovery resets to 0, then hop increments to 1
-	if got := client.datagramHopAttempts.Load(); got != 1 {
-		t.Fatalf("datagramHopAttempts = %d, want 1 (reset + one hop)", got)
+	if got := client.portHopAttempts.Load(); got != 1 {
+		t.Fatalf("portHopAttempts = %d, want 1 (reset + one hop)", got)
 	}
 	// Exhaustion timestamp cleared by recovery
-	if got := client.datagramHopExhausted.Load(); got != 0 {
-		t.Fatalf("datagramHopExhausted = %d, want 0 (cleared by recovery)", got)
+	if got := client.portHopExhaustedAt.Load(); got != 0 {
+		t.Fatalf("portHopExhaustedAt = %d, want 0 (cleared by recovery)", got)
 	}
 }
 
 // TestQUICClient_DialUDP_HopRecoveryBlockedDuringCooldown verifies that within
-// the recovery cooldown period, hops stay exhausted and ErrDatagramUnhealthy
+// the recovery cooldown period, hops stay exhausted and ErrRelayUDPUnhealthy
 // is returned (TCP-WS continues serving).
 func TestQUICClient_DialUDP_HopRecoveryBlockedDuringCooldown(t *testing.T) {
 	client, _, cleanup := setupQUICPairWithHop(t)
@@ -365,49 +365,49 @@ func TestQUICClient_DialUDP_HopRecoveryBlockedDuringCooldown(t *testing.T) {
 	}
 
 	// Simulate hop exhaustion that just happened (well within 30s cooldown)
-	client.datagramHopAttempts.Store(maxDatagramHops)
-	client.datagramHopExhausted.Store(time.Now().UnixNano())
+	client.portHopAttempts.Store(maxPortHops)
+	client.portHopExhaustedAt.Store(time.Now().UnixNano())
 
 	// Make datagram path unhealthy
 	client.mu.Lock()
 	mux := client.udpMux
 	client.mu.Unlock()
-	for i := int32(0); i < datagramTimeoutThreshold; i++ {
+	for i := int32(0); i < relayTimeoutThreshold; i++ {
 		mux.recordTimeout()
 	}
 
-	// DialUDP should return ErrDatagramUnhealthy (cooldown not elapsed)
+	// DialUDP should return ErrRelayUDPUnhealthy (cooldown not elapsed)
 	_, err := client.DialUDP(ctx, "8.8.8.8:53")
-	if !errors.Is(err, ErrDatagramUnhealthy) {
-		t.Fatalf("DialUDP = %v, want ErrDatagramUnhealthy (within cooldown)", err)
+	if !errors.Is(err, ErrRelayUDPUnhealthy) {
+		t.Fatalf("DialUDP = %v, want ErrRelayUDPUnhealthy (within cooldown)", err)
 	}
 
 	// Hop counter should be unchanged
-	if got := client.datagramHopAttempts.Load(); got != maxDatagramHops {
-		t.Fatalf("datagramHopAttempts = %d, want %d (unchanged during cooldown)", got, maxDatagramHops)
+	if got := client.portHopAttempts.Load(); got != maxPortHops {
+		t.Fatalf("portHopAttempts = %d, want %d (unchanged during cooldown)", got, maxPortHops)
 	}
 }
 
 // TestQUICClient_DialUDP_HopRecoveryResetOnNetworkChange verifies that
-// ResetConnections() clears the datagramHopExhausted timestamp along with
+// ResetConnections() clears the portHopExhaustedAt timestamp along with
 // the hop counter, giving QUIC a fully fresh start on the new network.
 func TestQUICClient_DialUDP_HopRecoveryResetOnNetworkChange(t *testing.T) {
 	client, _, cleanup := setupQUICPairWithHop(t)
 	defer cleanup()
 
 	// Simulate a prior exhaustion
-	client.datagramHopAttempts.Store(maxDatagramHops)
-	client.datagramHopExhausted.Store(time.Now().Add(-1 * time.Minute).UnixNano())
+	client.portHopAttempts.Store(maxPortHops)
+	client.portHopExhaustedAt.Store(time.Now().Add(-1 * time.Minute).UnixNano())
 
 	// Network change → ResetConnections
 	tm := NewTransportManager()
 	tm.SetQUIC(client)
 	tm.ResetConnections()
 
-	if got := client.datagramHopAttempts.Load(); got != 0 {
-		t.Fatalf("datagramHopAttempts = %d, want 0 (cleared by ResetConnections)", got)
+	if got := client.portHopAttempts.Load(); got != 0 {
+		t.Fatalf("portHopAttempts = %d, want 0 (cleared by ResetConnections)", got)
 	}
-	if got := client.datagramHopExhausted.Load(); got != 0 {
-		t.Fatalf("datagramHopExhausted = %d, want 0 (cleared by ResetConnections)", got)
+	if got := client.portHopExhaustedAt.Load(); got != 0 {
+		t.Fatalf("portHopExhaustedAt = %d, want 0 (cleared by ResetConnections)", got)
 	}
 }

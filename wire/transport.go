@@ -80,7 +80,7 @@ func (tm *TransportManager) SetTCPWS(d Dialer) {
 func (tm *TransportManager) recordQuicSuccess() {
 	tm.mu.RLock()
 	if qc, ok := tm.quic.(*QUICClient); ok {
-		qc.consecConnFails.Store(0)
+		qc.handshakeFailStreak.Store(0)
 	}
 	tm.mu.RUnlock()
 
@@ -159,7 +159,7 @@ func (tm *TransportManager) DialTCP(ctx context.Context, addr string) (net.Conn,
 
 // DialUDP opens a UDP proxy connection.
 // Prefers QUIC (datagram), falls back to TCP-WS (smux stream).
-// ErrDatagramUnhealthy is not counted as a QUIC transport failure (F1 handles it).
+// ErrRelayUDPUnhealthy is not counted as a QUIC transport failure (F1 handles it).
 func (tm *TransportManager) DialUDP(ctx context.Context, addr string) (net.PacketConn, error) {
 	tm.mu.RLock()
 	quic := tm.quic
@@ -294,7 +294,7 @@ func (tm *TransportManager) quicProbeLoop(ctx context.Context) {
 			tm.recordQuicSuccess()
 		} else {
 			slog.Debug("wire: QUIC probe failed", "err", err)
-			// connect() increments consecConnFails, but that's harmless —
+			// connect() increments handshakeFailStreak, but that's harmless —
 			// fallbackActive is already true, so the threshold check is a no-op.
 		}
 	}
@@ -313,9 +313,9 @@ func (tm *TransportManager) ResetConnections() {
 
 	if qc, ok := q.(*QUICClient); ok {
 		qc.resetConnection()
-		qc.datagramHopAttempts.Store(0)
-		qc.datagramHopExhausted.Store(0)
-		qc.consecConnFails.Store(0)
+		qc.portHopAttempts.Store(0)
+		qc.portHopExhaustedAt.Store(0)
+		qc.handshakeFailStreak.Store(0)
 	}
 	if tc, ok := t.(*TCPWSClient); ok {
 		tc.resetConnection()
@@ -338,7 +338,7 @@ func (tm *TransportManager) TCPRecentlyHealthy(window time.Duration) bool {
 }
 
 // WireStats returns stats from the active transport.
-// When in fallback mode, reports TCP-WS stats with Fallback flag set.
+// When in fallback mode, reports TCP-WS stats with WireFallback flag set.
 func (tm *TransportManager) WireStats() WireStats {
 	tm.mu.RLock()
 	q, t := tm.quic, tm.tcpws
@@ -347,7 +347,7 @@ func (tm *TransportManager) WireStats() WireStats {
 	if tm.fallbackActive.Load() {
 		if sp, ok := t.(StatsProvider); ok {
 			ws := sp.WireStats()
-			ws.Fallback = true
+			ws.WireFallback = true
 			return ws
 		}
 	}

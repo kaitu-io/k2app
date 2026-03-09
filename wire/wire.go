@@ -17,7 +17,7 @@ import (
 var (
 	ErrNotConnected      = errors.New("wire: not connected")
 	ErrUDPNotSupported   = errors.New("wire: UDP not supported by server")
-	ErrDatagramUnhealthy = errors.New("wire: QUIC datagram path unhealthy")
+	ErrRelayUDPUnhealthy = errors.New("wire: QUIC relay UDP path unhealthy")
 )
 
 // DirectDialer is the interface for physical-interface-bound dialing.
@@ -37,22 +37,22 @@ type DialerController interface {
 // WireStats is a point-in-time snapshot of wire transport metrics.
 type WireStats struct {
 	Transport   string        // "quic" or "tcpws"
-	LossRate    float64       // 0.0-1.0 (QUIC only)
-	Throughput  float64       // bps (QUIC only)
-	SendingRate float64       // bps (QUIC only)
-	RTT         time.Duration // smoothed (QUIC only)
-	MinRTT      time.Duration // minimum observed (QUIC only)
-	Cwnd        int64         // bytes (QUIC only)
-	Mode        int           // K2ARCMode (QUIC only)
-	MIID        uint64        // Monitor Interval ID (QUIC only)
-	TxBytes     int64
-	RxBytes     int64
-	Fallback    bool // TCP-WS serving traffic due to QUIC failure
+	PacketLossRate float64       // 0.0-1.0 (QUIC only)
+	Throughput     float64       // bps (QUIC only)
+	SendingRate    float64       // bps (QUIC only)
+	RTT            time.Duration // smoothed (QUIC only)
+	MinRTT         time.Duration // minimum observed (QUIC only)
+	Cwnd           int64         // bytes (QUIC only)
+	Mode           int           // K2CCMode (QUIC only)
+	MIID           uint64        // Monitor Interval ID (QUIC only)
+	TxBytes        int64
+	RxBytes        int64
+	WireFallback   bool // TCP-WS serving traffic due to QUIC failure
 
-	// Datagram health (QUIC only, zero when not in use).
-	DatagramLossRate    float64 // 0.0-1.0 sliding window
-	DatagramTimeouts    int32   // consecutive timeout count
-	DatagramHopAttempts int32   // port hop attempts
+	// Relay-layer observability (NOT for wire-layer decisions).
+	RelayUDPLossRate float64 // 0.0-1.0 sliding window
+	RelayUDPTimeouts int32   // consecutive timeout count
+	PortHopAttempts  int32   // port hop attempts
 }
 
 // StatsProvider is an optional interface for Dialers that expose metrics.

@@ -64,8 +64,8 @@ func TestTransportManager_FallbackTracking(t *testing.T) {
 	if ws.Transport != "tcpws" {
 		t.Fatalf("WireStats.Transport = %q, want tcpws in fallback", ws.Transport)
 	}
-	if !ws.Fallback {
-		t.Fatal("WireStats.Fallback should be true")
+	if !ws.WireFallback {
+		t.Fatal("WireStats.WireFallback should be true")
 	}
 
 	// DialTCP should skip QUIC
@@ -137,7 +137,7 @@ func TestTransportManager_ResetClearsFallback(t *testing.T) {
 // clears the consecutive connection failure counter.
 func TestResetConnections_ClearsConsecConnFails(t *testing.T) {
 	qc := NewQUICClient(Config{}, nil)
-	qc.consecConnFails.Store(2)
+	qc.handshakeFailStreak.Store(2)
 
 	tm := NewTransportManager()
 	tm.SetQUIC(qc)
@@ -145,17 +145,17 @@ func TestResetConnections_ClearsConsecConnFails(t *testing.T) {
 	tm.ResetConnections()
 
 	if got := qc.ConsecConnFails(); got != 0 {
-		t.Fatalf("consecConnFails = %d after ResetConnections, want 0", got)
+		t.Fatalf("handshakeFailStreak = %d after ResetConnections, want 0", got)
 	}
 }
 
-// TestTransportManager_DatagramUnhealthyNotFallback verifies that
-// ErrDatagramUnhealthy does not trigger transport-level fallback.
-func TestTransportManager_DatagramUnhealthyNotFallback(t *testing.T) {
+// TestTransportManager_RelayUDPUnhealthyNotFallback verifies that
+// ErrRelayUDPUnhealthy does not trigger transport-level fallback.
+func TestTransportManager_RelayUDPUnhealthyNotFallback(t *testing.T) {
 	quic := &mockTransport{
 		available: true,
 		dialUDPFn: func(ctx context.Context, addr string) (net.PacketConn, error) {
-			return nil, ErrDatagramUnhealthy
+			return nil, ErrRelayUDPUnhealthy
 		},
 	}
 	tcpws := &mockTransport{
@@ -176,6 +176,6 @@ func TestTransportManager_DatagramUnhealthyNotFallback(t *testing.T) {
 	conn.Close()
 
 	if tm.FallbackActive() {
-		t.Fatal("ErrDatagramUnhealthy should not set fallbackActive")
+		t.Fatal("ErrRelayUDPUnhealthy should not set fallbackActive")
 	}
 }

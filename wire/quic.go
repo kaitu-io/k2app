@@ -33,16 +33,16 @@ var (
 // incrementing session IDs in datagrams or stream-based UDP frames.
 const maxServerUDPSessions = 4096
 
-// maxDatagramHops is the number of port hops to attempt when datagrams become
+// maxPortHops is the number of port hops to attempt when datagrams become
 // unhealthy before falling back to TCP-WS. ISP QoS typically matches on
 // port/5-tuple, so hopping to a new port often restores QUIC datagram path.
-const maxDatagramHops int32 = 3
+const maxPortHops int32 = 3
 
-// datagramRecoveryInterval is the cooldown after hop exhaustion before
+// portHopRecoveryInterval is the cooldown after hop exhaustion before
 // resetting the counter for another round of probes. UDP probe cost is
 // negligible (port hop reset, no data transfer), so 30s is aggressive
 // enough to recover quickly without excessive churn.
-const datagramRecoveryInterval = 30 * time.Second
+const portHopRecoveryInterval = 30 * time.Second
 
 // tcpHealthWindow is how recently TCP must have succeeded to suppress a datagram hop.
 // Matches QUIC MaxIdleTimeout (30s) — if TCP worked within one idle cycle, the
@@ -198,13 +198,13 @@ type QUICClient struct {
 	alloc     *SessionIDAllocator
 	udpMux    *quicUDPMux
 	closed    bool
-	arcSender *arc.K2ARCSender // stored for stats access
+	ccSender *arc.K2CCSender // stored for stats access
 
-	datagramHopAttempts  atomic.Int32 // hop attempts before TCP-WS fallback
-	datagramHopExhausted atomic.Int64 // UnixNano: when hops were exhausted (0 = not exhausted)
+	portHopAttempts  atomic.Int32 // hop attempts before TCP-WS fallback
+	portHopExhaustedAt atomic.Int64 // UnixNano: when hops were exhausted (0 = not exhausted)
 	hopInProgress        atomic.Bool  // CAS guard: prevents concurrent hops
-	lastTCPSuccess       atomic.Int64 // UnixNano of last successful DialTCP (0 = unknown)
-	consecConnFails      atomic.Int32 // consecutive connect() handshake failures across different hop ports
+	lastTCPSuccessAt       atomic.Int64 // UnixNano of last successful DialTCP (0 = unknown)
+	handshakeFailStreak      atomic.Int32 // consecutive connect() handshake failures across different hop ports
 }
 
 // NewQUICClient creates a new QUIC client transport.
@@ -244,14 +244,14 @@ func (c *QUICClient) hopPort() int {
 
 // ConsecConnFails returns the number of consecutive connection handshake failures.
 func (c *QUICClient) ConsecConnFails() int32 {
-	return c.consecConnFails.Load()
+	return c.handshakeFailStreak.Load()
 }
 
 // tcpRecentlyHealthy returns true if a TCP stream succeeded within the given window.
 // Used by DialUDP to skip destructive port hops when TCP streams are healthy
 // (indicating normal packet loss, not ISP port blocking).
 func (c *QUICClient) tcpRecentlyHealthy(window time.Duration) bool {
-	ts := c.lastTCPSuccess.Load()
+	ts := c.lastTCPSuccessAt.Load()
 	if ts == 0 {
 		return false
 	}
@@ -324,25 +324,25 @@ func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
 	conn, err := transport.Dial(ctx, udpAddr, tlsCfg, qcfg)
 	if err != nil {
 		transport.Close()
-		c.consecConnFails.Add(1)
+		c.handshakeFailStreak.Add(1)
 		return nil, fmt.Errorf("wire: QUIC dial: %w", err)
 	}
-	c.consecConnFails.Store(0)
+	c.handshakeFailStreak.Store(0)
 	slog.Info("wire: QUIC connected",
 		"dialMs", time.Since(dialStart).Milliseconds(),
 		"remoteAddr", conn.RemoteAddr().String(),
 	)
 
-	// Set K2ARC congestion control (replaces default Cubic)
-	sender := arc.NewArcSenderGFWMode(arc.DefaultMaxRate)
+	// Set K2CC congestion control (replaces default Cubic)
+	sender := arc.NewCCSenderGFWMode(arc.DefaultMaxRate)
 	conn.SetCongestionControl(sender)
-	c.arcSender = sender
-	slog.Info("wire: QUIC K2ARC enabled", "maxRateMbps", arc.DefaultMaxRate/1_000_000)
+	c.ccSender = sender
+	slog.Info("wire: QUIC K2CC enabled", "maxRateMbps", arc.DefaultMaxRate/1_000_000)
 
 	c.conn = conn
 	c.transport = transport
 	c.alloc = NewSessionIDAllocator()
-	c.udpMux = newQuicUDPMux(conn, &c.datagramHopAttempts, &c.datagramHopExhausted)
+	c.udpMux = newQuicUDPMux(conn, &c.portHopAttempts, &c.portHopExhaustedAt)
 
 	// Start accept loop for server-initiated overflow streams
 	go c.acceptOverflowStreams(conn, c.udpMux)
@@ -393,7 +393,7 @@ func (c *QUICClient) DialTCP(ctx context.Context, addr string) (net.Conn, error)
 		// Stream response timeout means the server's upstream net.Dial is
 		// slow/failing — NOT a QUIC transport issue (OpenStreamSync succeeded).
 		// Don't resetConnection() — the QUIC connection is healthy.
-		// Don't increment consecConnFails — TCP-WS fallback won't help
+		// Don't increment handshakeFailStreak — TCP-WS fallback won't help
 		// (same server, same upstream reachability problem).
 		if nErr, ok := err.(net.Error); ok && nErr.Timeout() {
 			slog.Warn("QUICClient.DialTCP: stream response timeout (server upstream slow)", "addr", addr)
@@ -411,7 +411,7 @@ func (c *QUICClient) DialTCP(ctx context.Context, addr string) (net.Conn, error)
 	}
 
 	slog.Debug("QUICClient.DialTCP: success", "addr", addr)
-	c.lastTCPSuccess.Store(time.Now().UnixNano())
+	c.lastTCPSuccessAt.Store(time.Now().UnixNano())
 	return &quicStreamConn{
 		Stream: stream,
 		local:  conn.LocalAddr(),
@@ -425,7 +425,7 @@ func (c *QUICClient) DialTCP(ctx context.Context, addr string) (net.Conn, error)
 //
 // When the datagram path is unhealthy (3 consecutive ReadFrom timeouts) and
 // port hopping is configured, DialUDP hops to a new port (resetConnection +
-// reconnect) up to maxDatagramHops times before returning ErrDatagramUnhealthy.
+// reconnect) up to maxPortHops times before returning ErrRelayUDPUnhealthy.
 // This gives QUIC a chance to recover from ISP QoS that blocks specific ports.
 func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, error) {
 	for {
@@ -452,23 +452,23 @@ func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, 
 		dgSupported := conn.ConnectionState().SupportsDatagrams
 		slog.Debug("QUICClient.DialUDP", "addr", addr, "datagramsSupported", dgSupported)
 		if dgSupported {
-			if !mux.datagramHealthy() {
-				slog.Debug("QUICClient.DialUDP: datagram unhealthy",
+			if !mux.relayUDPHealthy() {
+				slog.Debug("QUICClient.DialUDP: relay UDP unhealthy",
 					"addr", addr,
-					"consecutiveTimeouts", mux.consecutiveTimeouts.Load(),
-					"lossRate", fmt.Sprintf("%.1f%%", mux.evaluateLossRate()*100),
-					"hopAttempts", c.datagramHopAttempts.Load())
+					"relayTimeouts", mux.relayTimeouts.Load(),
+					"lossRate", fmt.Sprintf("%.1f%%", mux.evaluateRelayLossRate()*100),
+					"hopAttempts", c.portHopAttempts.Load())
 				// TCP health gate: if TCP streams work, datagram loss is normal
 				// packet loss (not ISP port blocking). Skip hop to protect TCP streams.
 				if c.tcpRecentlyHealthy(tcpHealthWindow) {
 					slog.Debug("QUICClient.DialUDP: TCP healthy, skipping hop",
 						"addr", addr,
-						"sinceTCP", time.Since(time.Unix(0, c.lastTCPSuccess.Load())).Round(time.Millisecond))
-					return nil, ErrDatagramUnhealthy
+						"sinceTCP", time.Since(time.Unix(0, c.lastTCPSuccessAt.Load())).Round(time.Millisecond))
+					return nil, ErrRelayUDPUnhealthy
 				}
 				// Hop port before falling back to TCP-WS.
 				// tryHop() uses CAS to ensure only one goroutine hops at a time.
-				if c.hopEnabled() && c.datagramHopAttempts.Load() < maxDatagramHops {
+				if c.hopEnabled() && c.portHopAttempts.Load() < maxPortHops {
 					c.tryHop() // winner resets connection; loser gets stale conn
 					continue   // both retry: connect() gives fresh conn/mux
 				}
@@ -476,13 +476,13 @@ func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, 
 				// Hops exhausted. Record exhaustion time (once) and check
 				// if cooldown has elapsed for a recovery probe.
 				if c.hopEnabled() {
-					exAt := c.datagramHopExhausted.Load()
+					exAt := c.portHopExhaustedAt.Load()
 					if exAt == 0 {
-						c.datagramHopExhausted.Store(time.Now().UnixNano())
-					} else if time.Since(time.Unix(0, exAt)) >= datagramRecoveryInterval {
+						c.portHopExhaustedAt.Store(time.Now().UnixNano())
+					} else if time.Since(time.Unix(0, exAt)) >= portHopRecoveryInterval {
 						// Cooldown elapsed — reset for a fresh round of hops.
-						c.datagramHopAttempts.Store(0)
-						c.datagramHopExhausted.Store(0)
+						c.portHopAttempts.Store(0)
+						c.portHopExhaustedAt.Store(0)
 						slog.Info("QUICClient.DialUDP: datagram recovery probe, resetting hops")
 						c.tryHop()
 						continue
@@ -492,8 +492,8 @@ func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, 
 				// Within cooldown (or hop not configured) → TCP-WS fallback
 				slog.Debug("QUICClient.DialUDP: falling back to TCP-WS",
 					"addr", addr,
-					"reason", "datagram unhealthy, hops exhausted")
-				return nil, ErrDatagramUnhealthy
+					"reason", "relay UDP unhealthy, hops exhausted")
+				return nil, ErrRelayUDPUnhealthy
 			}
 
 			sessionID := alloc.Next()
@@ -560,17 +560,17 @@ func (c *QUICClient) dialUDPStream(ctx context.Context, conn *quic.Conn, addr st
 	}, nil
 }
 
-// WireStats returns a snapshot of QUIC transport metrics including K2ARC state.
+// WireStats returns a snapshot of QUIC transport metrics including K2CC state.
 func (c *QUICClient) WireStats() WireStats {
 	c.mu.Lock()
-	sender := c.arcSender
+	sender := c.ccSender
 	mux := c.udpMux
 	c.mu.Unlock()
 
 	s := WireStats{Transport: "quic"}
 	if sender != nil {
 		snap := sender.Snapshot()
-		s.LossRate = snap.LossRate
+		s.PacketLossRate = snap.LossRate
 		s.Throughput = snap.Throughput
 		s.SendingRate = snap.SendingRate
 		s.RTT = snap.RTT
@@ -580,10 +580,10 @@ func (c *QUICClient) WireStats() WireStats {
 		s.MIID = snap.MIID
 	}
 	if mux != nil {
-		s.DatagramLossRate = mux.evaluateLossRate()
-		s.DatagramTimeouts = mux.consecutiveTimeouts.Load()
+		s.RelayUDPLossRate = mux.evaluateRelayLossRate()
+		s.RelayUDPTimeouts = mux.relayTimeouts.Load()
 	}
-	s.DatagramHopAttempts = c.datagramHopAttempts.Load()
+	s.PortHopAttempts = c.portHopAttempts.Load()
 	return s
 }
 
@@ -659,9 +659,9 @@ func (c *QUICClient) tryHop() bool {
 	}
 	defer c.hopInProgress.Store(false)
 
-	attempt := c.datagramHopAttempts.Add(1)
-	slog.Warn("QUICClient: datagram unhealthy, hopping port",
-		"hopAttempt", attempt, "maxHops", maxDatagramHops)
+	attempt := c.portHopAttempts.Add(1)
+	slog.Warn("QUICClient: relay UDP unhealthy, hopping port",
+		"hopAttempt", attempt, "maxHops", maxPortHops)
 	c.resetConnection()
 	return true
 }
@@ -681,8 +681,8 @@ func (c *QUICClient) closeConnLocked() {
 		c.transport = nil
 	}
 	c.alloc = nil
-	c.arcSender = nil
-	c.lastTCPSuccess.Store(0)
+	c.ccSender = nil
+	c.lastTCPSuccessAt.Store(0)
 }
 
 // resetConnection closes cached connection resources without marking client as closed.
@@ -779,8 +779,8 @@ func (s *QUICServer) acceptLoop() {
 			return
 		}
 		slog.Debug("QUICServer: accepted connection", "remote", conn.RemoteAddr())
-		// Set K2ARC congestion control for server-side sending (critical for download speed)
-		conn.SetCongestionControl(arc.NewArcSenderGFWMode(arc.DefaultMaxRate))
+		// Set K2CC congestion control for server-side sending (critical for download speed)
+		conn.SetCongestionControl(arc.NewCCSenderGFWMode(arc.DefaultMaxRate))
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -1081,108 +1081,108 @@ type quicUDPMux struct {
 
 	// Datagram health tracking: consecutive ReadFrom timeouts indicate
 	// a broken QUIC datagram path (e.g. ISP QoS dropping UDP).
-	consecutiveTimeouts atomic.Int32
-	lastRecv            atomic.Int64 // UnixNano of last received datagram
+	relayTimeouts atomic.Int32
+	lastRelayRecvAt            atomic.Int64 // UnixNano of last received datagram
 
 	clientHopAttempts  *atomic.Int32 // shared with QUICClient; nil on server/tests
 	clientHopExhausted *atomic.Int64 // shared with QUICClient; nil on server/tests
 
 	// Sliding window loss rate tracking.
-	datagramSent atomic.Int64
-	datagramRecv atomic.Int64
+	relaySent atomic.Int64
+	relayRecv atomic.Int64
 
 	// Cached loss rate (lazy evaluation per window).
-	lossMu       deadlock.Mutex
-	lossRate     float64
-	lossTime     int64 // UnixNano of last evaluation
-	lossPrevSent int64
-	lossPrevRecv int64
+	lossMu         deadlock.Mutex
+	relayLossRate  float64
+	relayLossEvalAt     int64 // UnixNano of last evaluation
+	relayPrevSent int64
+	relayPrevRecv int64
 }
 
 const (
-	datagramTimeoutThreshold int32 = 3
+	relayTimeoutThreshold int32 = 3
 
-	datagramLossWindow    = 5 * time.Second
-	datagramLossUnhealthy = 0.40 // 40% loss → unhealthy
-	datagramLossRecovered = 0.15 // <15% → recovered (hop reset)
-	datagramMinSamples    = 10   // min packets in window to evaluate
+	relayLossWindow    = 5 * time.Second
+	relayLossUnhealthy = 0.40 // 40% loss → unhealthy
+	relayLossRecovered = 0.15 // <15% → recovered (hop reset)
+	relayMinSamples    = 10   // min packets in window to evaluate
 )
 
 func (m *quicUDPMux) recordRecv() {
-	m.consecutiveTimeouts.Store(0)
-	m.lastRecv.Store(time.Now().UnixNano())
-	m.datagramRecv.Add(1)
-	// Hop counter reset moved to evaluateLossRate() — requires sustained
+	m.relayTimeouts.Store(0)
+	m.lastRelayRecvAt.Store(time.Now().UnixNano())
+	m.relayRecv.Add(1)
+	// Hop counter reset moved to evaluateRelayLossRate() — requires sustained
 	// low loss rate, not just a single lucky packet.
 }
 
 func (m *quicUDPMux) recordSend() {
-	m.datagramSent.Add(1)
+	m.relaySent.Add(1)
 }
 
 func (m *quicUDPMux) recordTimeout() {
-	count := m.consecutiveTimeouts.Add(1)
-	if count == datagramTimeoutThreshold {
-		slog.Warn("quicUDPMux: datagram path marked unhealthy",
-			"consecutiveTimeouts", count)
+	count := m.relayTimeouts.Add(1)
+	if count == relayTimeoutThreshold {
+		slog.Warn("quicUDPMux: relay UDP path marked unhealthy",
+			"relayTimeouts", count)
 	}
 }
 
-func (m *quicUDPMux) datagramHealthy() bool {
-	if m.consecutiveTimeouts.Load() >= datagramTimeoutThreshold {
+func (m *quicUDPMux) relayUDPHealthy() bool {
+	if m.relayTimeouts.Load() >= relayTimeoutThreshold {
 		return false
 	}
-	if m.evaluateLossRate() >= datagramLossUnhealthy {
+	if m.evaluateRelayLossRate() >= relayLossUnhealthy {
 		return false
 	}
 	return true
 }
 
-// evaluateLossRate computes datagram loss rate from sent/received deltas.
-// Lazy evaluation: caches result for datagramLossWindow, recomputes on expiry.
-func (m *quicUDPMux) evaluateLossRate() float64 {
+// evaluateRelayLossRate computes datagram loss rate from sent/received deltas.
+// Lazy evaluation: caches result for relayLossWindow, recomputes on expiry.
+func (m *quicUDPMux) evaluateRelayLossRate() float64 {
 	m.lossMu.Lock()
 	defer m.lossMu.Unlock()
 
 	now := time.Now().UnixNano()
-	if m.lossTime > 0 && now-m.lossTime < datagramLossWindow.Nanoseconds() {
-		return m.lossRate // cached within window
+	if m.relayLossEvalAt > 0 && now-m.relayLossEvalAt < relayLossWindow.Nanoseconds() {
+		return m.relayLossRate // cached within window
 	}
 
-	sent := m.datagramSent.Load()
-	recv := m.datagramRecv.Load()
-	deltaSent := sent - m.lossPrevSent
-	deltaRecv := recv - m.lossPrevRecv
+	sent := m.relaySent.Load()
+	recv := m.relayRecv.Load()
+	deltaSent := sent - m.relayPrevSent
+	deltaRecv := recv - m.relayPrevRecv
 
-	m.lossPrevSent = sent
-	m.lossPrevRecv = recv
-	m.lossTime = now
+	m.relayPrevSent = sent
+	m.relayPrevRecv = recv
+	m.relayLossEvalAt = now
 
-	if deltaSent < datagramMinSamples {
-		return m.lossRate // not enough data
+	if deltaSent < relayMinSamples {
+		return m.relayLossRate // not enough data
 	}
 
 	if deltaRecv >= deltaSent {
-		m.lossRate = 0
+		m.relayLossRate = 0
 	} else {
-		m.lossRate = 1.0 - float64(deltaRecv)/float64(deltaSent)
+		m.relayLossRate = 1.0 - float64(deltaRecv)/float64(deltaSent)
 	}
 
 	// Reset hop counter and exhaustion timestamp when loss rate recovers.
-	if m.lossRate < datagramLossRecovered && m.clientHopAttempts != nil {
+	if m.relayLossRate < relayLossRecovered && m.clientHopAttempts != nil {
 		m.clientHopAttempts.Store(0)
 		if m.clientHopExhausted != nil {
 			m.clientHopExhausted.Store(0)
 		}
 	}
 
-	return m.lossRate
+	return m.relayLossRate
 }
 
-// expireLossWindow forces next evaluateLossRate to recompute. Test helper.
+// expireLossWindow forces next evaluateRelayLossRate to recompute. Test helper.
 func (m *quicUDPMux) expireLossWindow() {
 	m.lossMu.Lock()
-	m.lossTime = time.Now().Add(-2 * datagramLossWindow).UnixNano()
+	m.relayLossEvalAt = time.Now().Add(-2 * relayLossWindow).UnixNano()
 	m.lossMu.Unlock()
 }
 

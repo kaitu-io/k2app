@@ -1,4 +1,4 @@
-// K2ARC Vivace tests
+// K2CC Vivace tests
 package arc
 
 import (
@@ -9,12 +9,12 @@ import (
 )
 
 // ============================================================================
-// Tests for K2ARCSender - K2ARC Vivace Congestion Control
+// Tests for K2CCSender - K2CC Vivace Congestion Control
 // ============================================================================
 
-func TestNewK2ARCSender(t *testing.T) {
+func TestNewK2CCSender(t *testing.T) {
 	maxRate := int64(100_000_000) // 100 Mbps
-	sender := NewK2ARCSender(maxRate)
+	sender := NewK2CCSender(maxRate)
 
 	if sender == nil {
 		t.Fatal("sender should not be nil")
@@ -25,22 +25,22 @@ func TestNewK2ARCSender(t *testing.T) {
 	}
 
 	// Verify default config
-	if sender.config.Alpha != DefaultK2ARCAlpha {
-		t.Errorf("expected default alpha=%f, got %f", DefaultK2ARCAlpha, sender.config.Alpha)
+	if sender.config.Alpha != DefaultK2CCAlpha {
+		t.Errorf("expected default alpha=%f, got %f", DefaultK2CCAlpha, sender.config.Alpha)
 	}
 }
 
-func TestNewArcSenderGFWMode(t *testing.T) {
+func TestNewCCSenderGFWMode(t *testing.T) {
 	maxRate := int64(100_000_000)
-	sender := NewArcSenderGFWMode(maxRate)
+	sender := NewCCSenderGFWMode(maxRate)
 
 	if sender == nil {
 		t.Fatal("sender should not be nil")
 	}
 
 	// GFW mode should have low alpha
-	if sender.config.Alpha > GFWK2ARCAlpha*2 {
-		t.Errorf("expected GFW alpha around %f, got %f", GFWK2ARCAlpha, sender.config.Alpha)
+	if sender.config.Alpha > GFWK2CCAlpha*2 {
+		t.Errorf("expected GFW alpha around %f, got %f", GFWK2CCAlpha, sender.config.Alpha)
 	}
 
 	if !sender.config.AggressiveMode {
@@ -142,7 +142,7 @@ func TestMonitorInterval_AvgRTT(t *testing.T) {
 // ============================================================================
 
 func TestUtilityFunction_Calculate(t *testing.T) {
-	uf := NewUtilityFunction(DefaultK2ARCAlpha, DefaultK2ARCBeta)
+	uf := NewUtilityFunction(DefaultK2CCAlpha, DefaultK2CCBeta)
 
 	mi := NewMonitorInterval(1, 10_000_000.0)
 	mi.BytesSent = 125000
@@ -161,7 +161,7 @@ func TestUtilityFunction_Calculate(t *testing.T) {
 }
 
 func TestUtilityFunction_LossPenalty(t *testing.T) {
-	uf := NewUtilityFunction(DefaultK2ARCAlpha, DefaultK2ARCBeta)
+	uf := NewUtilityFunction(DefaultK2CCAlpha, DefaultK2CCBeta)
 
 	// Create two MIs: one with loss, one without
 	miNoLoss := NewMonitorInterval(1, 10_000_000.0)
@@ -190,8 +190,8 @@ func TestUtilityFunction_LossPenalty(t *testing.T) {
 }
 
 func TestUtilityFunction_GFWModeToleratesLoss(t *testing.T) {
-	standard := NewUtilityFunction(DefaultK2ARCAlpha, DefaultK2ARCBeta)
-	gfw := NewUtilityFunction(GFWK2ARCAlpha, DefaultK2ARCBeta)
+	standard := NewUtilityFunction(DefaultK2CCAlpha, DefaultK2CCBeta)
+	gfw := NewUtilityFunction(GFWK2CCAlpha, DefaultK2CCBeta)
 
 	mi := NewMonitorInterval(1, 10_000_000.0)
 	mi.BytesSent = 125000
@@ -211,11 +211,11 @@ func TestUtilityFunction_GFWModeToleratesLoss(t *testing.T) {
 }
 
 // ============================================================================
-// Tests for K2ARCSender Congestion Window
+// Tests for K2CCSender Congestion Window
 // ============================================================================
 
-func TestK2ARCSender_GetCongestionWindow(t *testing.T) {
-	sender := NewK2ARCSender(100_000_000) // 100 Mbps max
+func TestK2CCSender_GetCongestionWindow(t *testing.T) {
+	sender := NewK2CCSender(100_000_000) // 100 Mbps max
 
 	// Set up mock RTT provider
 	mockRTT := &mockRTTStatsProvider{smoothedRTT: 100 * time.Millisecond}
@@ -234,8 +234,8 @@ func TestK2ARCSender_GetCongestionWindow(t *testing.T) {
 	}
 }
 
-func TestK2ARCSender_CanSend(t *testing.T) {
-	sender := NewK2ARCSender(100_000_000)
+func TestK2CCSender_CanSend(t *testing.T) {
+	sender := NewK2CCSender(100_000_000)
 	mockRTT := &mockRTTStatsProvider{smoothedRTT: 100 * time.Millisecond}
 	sender.SetRTTStatsProvider(mockRTT)
 
@@ -251,8 +251,8 @@ func TestK2ARCSender_CanSend(t *testing.T) {
 	}
 }
 
-func TestK2ARCSender_InSlowStart(t *testing.T) {
-	sender := NewK2ARCSender(100_000_000)
+func TestK2CCSender_InSlowStart(t *testing.T) {
+	sender := NewK2CCSender(100_000_000)
 
 	// Should start in slow start mode
 	if !sender.InSlowStart() {
@@ -264,7 +264,7 @@ func TestK2ARCSender_InSlowStart(t *testing.T) {
 // Tests for Rate Adjustment (Gradient Ascent)
 // ============================================================================
 
-func TestK2ARCSender_RateToCwnd(t *testing.T) {
+func TestK2CCSender_RateToCwnd(t *testing.T) {
 	// Test rate to cwnd conversion
 	// cwnd = (rate_bps / 8) * RTT_seconds * multiplier
 	rate := 10_000_000.0 // 10 Mbps
@@ -281,8 +281,8 @@ func TestK2ARCSender_RateToCwnd(t *testing.T) {
 	}
 }
 
-func TestK2ARCSender_OnPacketAcked_UpdatesState(t *testing.T) {
-	sender := NewK2ARCSender(100_000_000)
+func TestK2CCSender_OnPacketAcked_UpdatesState(t *testing.T) {
+	sender := NewK2CCSender(100_000_000)
 	mockRTT := &mockRTTStatsProvider{smoothedRTT: 100 * time.Millisecond}
 	sender.SetRTTStatsProvider(mockRTT)
 
@@ -302,8 +302,8 @@ func TestK2ARCSender_OnPacketAcked_UpdatesState(t *testing.T) {
 	}
 }
 
-func TestK2ARCSender_OnCongestionEvent_RecordsLoss(t *testing.T) {
-	sender := NewK2ARCSender(100_000_000)
+func TestK2CCSender_OnCongestionEvent_RecordsLoss(t *testing.T) {
+	sender := NewK2CCSender(100_000_000)
 	mockRTT := &mockRTTStatsProvider{smoothedRTT: 100 * time.Millisecond}
 	sender.SetRTTStatsProvider(mockRTT)
 
@@ -319,28 +319,28 @@ func TestK2ARCSender_OnCongestionEvent_RecordsLoss(t *testing.T) {
 }
 
 // ============================================================================
-// Tests for K2ARC Config
+// Tests for K2CC Config
 // ============================================================================
 
-func TestK2ARCConfig_Default(t *testing.T) {
-	config := DefaultK2ARCConfig()
+func TestK2CCConfig_Default(t *testing.T) {
+	config := DefaultK2CCConfig()
 
-	if config.Alpha != DefaultK2ARCAlpha {
-		t.Errorf("expected alpha=%f, got %f", DefaultK2ARCAlpha, config.Alpha)
+	if config.Alpha != DefaultK2CCAlpha {
+		t.Errorf("expected alpha=%f, got %f", DefaultK2CCAlpha, config.Alpha)
 	}
-	if config.Beta != DefaultK2ARCBeta {
-		t.Errorf("expected beta=%f, got %f", DefaultK2ARCBeta, config.Beta)
+	if config.Beta != DefaultK2CCBeta {
+		t.Errorf("expected beta=%f, got %f", DefaultK2CCBeta, config.Beta)
 	}
 	if config.AggressiveMode {
 		t.Error("default should not be aggressive mode")
 	}
 }
 
-func TestK2ARCConfig_GFWMode(t *testing.T) {
-	config := GFWK2ARCConfig()
+func TestK2CCConfig_GFWMode(t *testing.T) {
+	config := GFWK2CCConfig()
 
-	if config.Alpha != GFWK2ARCAlpha {
-		t.Errorf("expected alpha=%f, got %f", GFWK2ARCAlpha, config.Alpha)
+	if config.Alpha != GFWK2CCAlpha {
+		t.Errorf("expected alpha=%f, got %f", GFWK2CCAlpha, config.Alpha)
 	}
 	if !config.AggressiveMode {
 		t.Error("GFW mode should be aggressive")
@@ -354,7 +354,7 @@ func TestK2ARCConfig_GFWMode(t *testing.T) {
 func TestAdaptiveAlphaCalculation(t *testing.T) {
 	// Formula: α = BASE_ALPHA / (1 + SENSITIVITY × loss_rate)
 	// With AdaptiveBaseAlpha = 10.0, AdaptiveSensitivity = 50.0
-	utility := NewUtilityFunctionAdaptive(InitialAlpha, DefaultK2ARCBeta)
+	utility := NewUtilityFunctionAdaptive(InitialAlpha, DefaultK2CCBeta)
 
 	// 0% loss -> alpha = 10.0 / (1 + 50 * 0) = 10.0
 	alpha0 := utility.computeAdaptiveAlpha(0.0)
@@ -382,7 +382,7 @@ func TestAdaptiveAlphaCalculation(t *testing.T) {
 }
 
 func TestAdaptiveAlphaBounds(t *testing.T) {
-	utility := NewUtilityFunctionAdaptive(InitialAlpha, DefaultK2ARCBeta)
+	utility := NewUtilityFunctionAdaptive(InitialAlpha, DefaultK2CCBeta)
 
 	// Very high loss should be clamped to MinAlpha (0.1)
 	alphaExtreme := utility.computeAdaptiveAlpha(1.0) // 100% loss
@@ -398,7 +398,7 @@ func TestAdaptiveAlphaBounds(t *testing.T) {
 }
 
 func TestAdaptiveAlphaEWMASmoothing(t *testing.T) {
-	utility := NewUtilityFunctionAdaptive(InitialAlpha, DefaultK2ARCBeta)
+	utility := NewUtilityFunctionAdaptive(InitialAlpha, DefaultK2CCBeta)
 
 	// Initial alpha should be InitialAlpha (2.0)
 	if diff := utility.Alpha - InitialAlpha; diff < -0.01 || diff > 0.01 {
@@ -435,7 +435,7 @@ func TestAdaptiveAlphaEWMASmoothing(t *testing.T) {
 }
 
 func TestAdaptiveAlphaLossHistory(t *testing.T) {
-	utility := NewUtilityFunctionAdaptive(InitialAlpha, DefaultK2ARCBeta)
+	utility := NewUtilityFunctionAdaptive(InitialAlpha, DefaultK2CCBeta)
 
 	// Create MIs with varying loss rates
 	lossRates := []float64{0.05, 0.10, 0.15, 0.20, 0.25}
@@ -460,8 +460,8 @@ func TestAdaptiveAlphaLossHistory(t *testing.T) {
 }
 
 func TestAdaptiveConfig(t *testing.T) {
-	// Test NewK2ARCConfigAdaptive() constructor
-	config := NewK2ARCConfigAdaptive()
+	// Test NewK2CCConfigAdaptive() constructor
+	config := NewK2CCConfigAdaptive()
 
 	if !config.AdaptiveAlpha {
 		t.Error("AdaptiveAlpha should be true")
@@ -474,8 +474,8 @@ func TestAdaptiveConfig(t *testing.T) {
 	}
 }
 
-func TestK2ARCSenderAdaptiveMode(t *testing.T) {
-	sender := NewK2ARCSenderAdaptive(100_000_000) // 100 Mbps
+func TestK2CCSenderAdaptiveMode(t *testing.T) {
+	sender := NewK2CCSenderAdaptive(100_000_000) // 100 Mbps
 
 	if !sender.IsAdaptive() {
 		t.Error("Sender should be in adaptive mode")
@@ -517,10 +517,10 @@ func TestMonitorInterval_LossRate_Clamped(t *testing.T) {
 	}
 }
 
-func TestK2ARCSender_Snapshot_UsesLastCompletedOnBoundary(t *testing.T) {
+func TestK2CCSender_Snapshot_UsesLastCompletedOnBoundary(t *testing.T) {
 	// When CurrentMI has insufficient data (BytesSent < minSnapshotBytes),
 	// Snapshot() should return the last completed MI's loss/throughput.
-	sender := NewK2ARCSender(100_000_000)
+	sender := NewK2CCSender(100_000_000)
 	mockRTT := &mockRTTStatsProvider{smoothedRTT: 50 * time.Millisecond}
 	sender.SetRTTStatsProvider(mockRTT)
 
@@ -562,9 +562,9 @@ func TestK2ARCSender_Snapshot_UsesLastCompletedOnBoundary(t *testing.T) {
 	}
 }
 
-func TestK2ARCSender_Snapshot_UpdatesLastCompletedOnMICompletion(t *testing.T) {
+func TestK2CCSender_Snapshot_UpdatesLastCompletedOnMICompletion(t *testing.T) {
 	// When MI completes via OnPacketAcked, lastCompleted fields should update.
-	sender := NewK2ARCSender(100_000_000)
+	sender := NewK2CCSender(100_000_000)
 	mockRTT := &mockRTTStatsProvider{smoothedRTT: 50 * time.Millisecond}
 	sender.SetRTTStatsProvider(mockRTT)
 
@@ -601,7 +601,7 @@ func TestOnCongestionEvent_StaleLossFiltering(t *testing.T) {
 	// Confirmed root cause: OnCongestionEvent receives loss events for packets
 	// sent in the PREVIOUS MI, inflating the new MI's BytesLost (e.g., 947% LossRate).
 	// 86 stale events in 3 minutes observed in production diagnostic run.
-	sender := NewK2ARCSender(100_000_000)
+	sender := NewK2CCSender(100_000_000)
 	mockRTT := &mockRTTStatsProvider{smoothedRTT: 50 * time.Millisecond}
 	sender.SetRTTStatsProvider(mockRTT)
 
@@ -655,8 +655,8 @@ func TestOnCongestionEvent_StaleLossFiltering(t *testing.T) {
 	}
 }
 
-func TestK2ARCSenderAdaptiveIntegration(t *testing.T) {
-	sender := NewK2ARCSenderAdaptive(100_000_000) // 100 Mbps
+func TestK2CCSenderAdaptiveIntegration(t *testing.T) {
+	sender := NewK2CCSenderAdaptive(100_000_000) // 100 Mbps
 	mockRTT := &mockRTTStatsProvider{smoothedRTT: 100 * time.Millisecond}
 	sender.SetRTTStatsProvider(mockRTT)
 
@@ -716,9 +716,9 @@ func TestAIMDEpsilon_AdditiveIncrease(t *testing.T) {
 	// When direction is confirmed (counter ≥ 2), ε should increase by epsilonDelta.
 	// Setup: put sender in Decision mode with counter=1 and a low LastUtility,
 	// then call processCompletedMI with an MI that produces higher utility → counter=2 → AI.
-	sender := NewK2ARCSender(100_000_000)
-	sender.state.Mode = K2ARCModeDecision
-	sender.state.Epsilon = DefaultK2ARCEpsilon
+	sender := NewK2CCSender(100_000_000)
+	sender.state.Mode = K2CCModeDecision
+	sender.state.Epsilon = DefaultK2CCEpsilon
 	sender.state.NextMIID = 1 // Avoid rate probing (0%10==0)
 	sender.state.UtilityIncreases = 1
 	sender.state.UtilityDecreases = 0
@@ -739,15 +739,15 @@ func TestAIMDEpsilon_AdditiveIncrease(t *testing.T) {
 	sender.processCompletedMI(mi)
 
 	// UtilityIncreases should now be 2 → additive increase triggered
-	expected := DefaultK2ARCEpsilon + epsilonDelta
+	expected := DefaultK2CCEpsilon + epsilonDelta
 	if sender.state.Epsilon < expected-0.001 || sender.state.Epsilon > expected+0.001 {
 		t.Errorf("ε should be %f after additive increase, got %f", expected, sender.state.Epsilon)
 	}
 }
 
 func TestAIMDEpsilon_Bounds(t *testing.T) {
-	sender := NewK2ARCSender(100_000_000)
-	sender.state.Mode = K2ARCModeDecision
+	sender := NewK2CCSender(100_000_000)
+	sender.state.Mode = K2CCModeDecision
 	sender.state.NextMIID = 1 // Avoid rate probing
 
 	mi := NewMonitorInterval(1, sender.state.CurrentRate)
@@ -785,7 +785,7 @@ func TestAIMDEpsilon_Bounds(t *testing.T) {
 }
 
 func TestAIMDEpsilon_ColdStart(t *testing.T) {
-	sender := NewK2ARCSender(100_000_000)
+	sender := NewK2CCSender(100_000_000)
 
 	// noiseEWMA should start at coldStartNoise (conservative)
 	if sender.noiseEWMA != coldStartNoise {
@@ -794,8 +794,8 @@ func TestAIMDEpsilon_ColdStart(t *testing.T) {
 }
 
 func TestAIMDEpsilon_NoiseUpdate(t *testing.T) {
-	sender := NewK2ARCSender(100_000_000)
-	sender.state.Mode = K2ARCModeDecision
+	sender := NewK2CCSender(100_000_000)
+	sender.state.Mode = K2CCModeDecision
 	sender.state.NextMIID = 1 // Avoid rate probing
 	initialNoise := sender.noiseEWMA
 
@@ -831,8 +831,8 @@ func TestAIMDEpsilon_NoiseUpdate(t *testing.T) {
 }
 
 func TestAIMDEpsilon_HoldDuringBuilding(t *testing.T) {
-	sender := NewK2ARCSender(100_000_000)
-	sender.state.Mode = K2ARCModeDecision
+	sender := NewK2CCSender(100_000_000)
+	sender.state.Mode = K2CCModeDecision
 	sender.state.NextMIID = 1 // Avoid rate probing
 	sender.state.Epsilon = 0.08 // non-default value
 
@@ -863,7 +863,7 @@ func TestAIMDEpsilon_HoldDuringBuilding(t *testing.T) {
 }
 
 func TestAIMDEpsilon_Snapshot(t *testing.T) {
-	sender := NewK2ARCSender(100_000_000)
+	sender := NewK2CCSender(100_000_000)
 	mockRTT := &mockRTTStatsProvider{smoothedRTT: 50 * time.Millisecond}
 	sender.SetRTTStatsProvider(mockRTT)
 

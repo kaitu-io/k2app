@@ -159,13 +159,13 @@ func TestTransportManager_DialTCP_FallbackWorks(t *testing.T) {
 }
 
 // TestTransportManager_DialUDP_FallbackAfterHealthDegradation demonstrates the fix:
-// After datagramTimeoutThreshold consecutive ReadFrom timeouts, QUICClient.DialUDP
-// returns ErrDatagramUnhealthy, triggering TransportManager fallback to TCP-WS.
+// After relayTimeoutThreshold consecutive ReadFrom timeouts, QUICClient.DialUDP
+// returns ErrRelayUDPUnhealthy, triggering TransportManager fallback to TCP-WS.
 //
 // Sequence:
 //  1. First DialUDP → QUIC returns broken conn (silent success — first query may timeout)
 //  2. ReadFrom timeouts accumulate on the mux health tracker
-//  3. Subsequent DialUDP → QUIC returns ErrDatagramUnhealthy → TransportManager falls back to TCP-WS
+//  3. Subsequent DialUDP → QUIC returns ErrRelayUDPUnhealthy → TransportManager falls back to TCP-WS
 func TestTransportManager_DialUDP_FallbackAfterHealthDegradation(t *testing.T) {
 	var tcpwsUsed atomic.Bool
 	var dialCount atomic.Int32
@@ -175,12 +175,12 @@ func TestTransportManager_DialUDP_FallbackAfterHealthDegradation(t *testing.T) {
 		available: true,
 		dialUDPFn: func(ctx context.Context, addr string) (net.PacketConn, error) {
 			n := dialCount.Add(1)
-			if n <= datagramTimeoutThreshold {
+			if n <= relayTimeoutThreshold {
 				// Silent success — broken path not detectable at dial time
 				return &brokenPacketConn{closed: make(chan struct{})}, nil
 			}
 			// Health gate kicks in after threshold timeouts detected
-			return nil, ErrDatagramUnhealthy
+			return nil, ErrRelayUDPUnhealthy
 		},
 	}
 
@@ -198,7 +198,7 @@ func TestTransportManager_DialUDP_FallbackAfterHealthDegradation(t *testing.T) {
 	tm.SetTCPWS(tcpws)
 
 	// Simulate threshold broken connections (these succeed but are broken)
-	for i := int32(0); i < datagramTimeoutThreshold; i++ {
+	for i := int32(0); i < relayTimeoutThreshold; i++ {
 		conn, err := tm.DialUDP(context.Background(), "8.8.8.8:53")
 		if err != nil {
 			t.Fatalf("early DialUDP #%d should succeed: %v", i+1, err)
@@ -329,8 +329,8 @@ func TestTransportManager_DialUDP_Asymmetry(t *testing.T) {
 		tm.SetQUIC(&mockTransport{
 			available: true,
 			dialUDPFn: func(ctx context.Context, addr string) (net.PacketConn, error) {
-				if dialCount.Add(1) > datagramTimeoutThreshold {
-					return nil, ErrDatagramUnhealthy
+				if dialCount.Add(1) > relayTimeoutThreshold {
+					return nil, ErrRelayUDPUnhealthy
 				}
 				return &brokenPacketConn{closed: make(chan struct{})}, nil
 			},
@@ -344,7 +344,7 @@ func TestTransportManager_DialUDP_Asymmetry(t *testing.T) {
 		})
 
 		// Exhaust QUIC health budget
-		for i := int32(0); i < datagramTimeoutThreshold; i++ {
+		for i := int32(0); i < relayTimeoutThreshold; i++ {
 			conn, err := tm.DialUDP(context.Background(), "8.8.8.8:53")
 			if err != nil {
 				t.Fatalf("early DialUDP: %v", err)

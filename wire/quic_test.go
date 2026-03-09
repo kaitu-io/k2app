@@ -983,7 +983,7 @@ func TestQUICClient_dialUDPStream_DeadConnDetectedByConnect(t *testing.T) {
 }
 
 func TestQUICClient_ConsecConnFails(t *testing.T) {
-	// Test that connect() failures increment consecConnFails and success resets it.
+	// Test that connect() failures increment handshakeFailStreak and success resets it.
 	qc := NewQUICClient(Config{Host: "127.0.0.1", Port: 1}, nil)
 	qc.SetTLSConfig(&tls.Config{
 		InsecureSkipVerify: true,
@@ -998,7 +998,7 @@ func TestQUICClient_ConsecConnFails(t *testing.T) {
 		t.Fatal("expected connect to fail")
 	}
 	if got := qc.ConsecConnFails(); got != 1 {
-		t.Fatalf("consecConnFails = %d after 1 failure, want 1", got)
+		t.Fatalf("handshakeFailStreak = %d after 1 failure, want 1", got)
 	}
 
 	// Second failure increments again.
@@ -1009,12 +1009,12 @@ func TestQUICClient_ConsecConnFails(t *testing.T) {
 		t.Fatal("expected connect to fail")
 	}
 	if got := qc.ConsecConnFails(); got != 2 {
-		t.Fatalf("consecConnFails = %d after 2 failures, want 2", got)
+		t.Fatalf("handshakeFailStreak = %d after 2 failures, want 2", got)
 	}
 
 	// Manual reset (simulating success in a real scenario).
-	qc.consecConnFails.Store(0)
+	qc.handshakeFailStreak.Store(0)
 	if got := qc.ConsecConnFails(); got != 0 {
-		t.Fatalf("consecConnFails = %d after reset, want 0", got)
+		t.Fatalf("handshakeFailStreak = %d after reset, want 0", got)
 	}
 }

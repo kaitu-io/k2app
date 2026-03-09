@@ -296,17 +296,17 @@ func TestTransportManager_ResetConnections(t *testing.T) {
 // Network change recovery tests
 // ==========================================================================
 
-func TestResetConnections_ClearsDatagramHopAttempts(t *testing.T) {
+func TestResetConnections_ClearsPortHopAttempts(t *testing.T) {
 	client := NewQUICClient(Config{HopStart: 1000, HopEnd: 2000}, nil)
-	client.datagramHopAttempts.Store(3) // exhausted
+	client.portHopAttempts.Store(3) // exhausted
 
 	tm := NewTransportManager()
 	tm.SetQUIC(client)
 
 	tm.ResetConnections()
 
-	if got := client.datagramHopAttempts.Load(); got != 0 {
-		t.Fatalf("datagramHopAttempts = %d after ResetConnections, want 0", got)
+	if got := client.portHopAttempts.Load(); got != 0 {
+		t.Fatalf("portHopAttempts = %d after ResetConnections, want 0", got)
 	}
 }
 
@@ -364,7 +364,7 @@ func TestTransportManager_FallbackSkipsQUIC(t *testing.T) {
 
 func TestTransportManager_QUICFailNoFallback(t *testing.T) {
 	// QUIC fails via mockTransport (not QUICClient) → fallbackActive should NOT
-	// be set because consecConnFails check only applies to *QUICClient.
+	// be set because handshakeFailStreak check only applies to *QUICClient.
 	quic := &mockTransport{
 		available: true,
 		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
@@ -399,7 +399,7 @@ func TestTransportManager_QUICFailNoFallback(t *testing.T) {
 
 func TestTransportManager_ConsecConnFailsFallback(t *testing.T) {
 	// Use real QUICClient (closed=true to force DialTCP failure) with
-	// consecConnFails pre-set to simulate accumulated handshake failures.
+	// handshakeFailStreak pre-set to simulate accumulated handshake failures.
 	qc := NewQUICClient(Config{}, nil)
 	qc.closed = true // force connect() to return ErrNotConnected
 
@@ -416,7 +416,7 @@ func TestTransportManager_ConsecConnFailsFallback(t *testing.T) {
 	tm.SetTCPWS(tcpws)
 
 	// Below threshold: no fallback.
-	qc.consecConnFails.Store(quicConnFailThreshold - 1)
+	qc.handshakeFailStreak.Store(quicConnFailThreshold - 1)
 	conn, err := tm.DialTCP(context.Background(), "8.8.8.8:53")
 	if err != nil {
 		t.Fatal(err)
@@ -427,14 +427,14 @@ func TestTransportManager_ConsecConnFailsFallback(t *testing.T) {
 	}
 
 	// At threshold: fallback activated.
-	qc.consecConnFails.Store(quicConnFailThreshold)
+	qc.handshakeFailStreak.Store(quicConnFailThreshold)
 	conn, err = tm.DialTCP(context.Background(), "8.8.8.8:53")
 	if err != nil {
 		t.Fatal(err)
 	}
 	conn.Close()
 	if !tm.FallbackActive() {
-		t.Fatal("fallbackActive should be set after consecConnFails >= threshold")
+		t.Fatal("fallbackActive should be set after handshakeFailStreak >= threshold")
 	}
 
 	// Next DialTCP should skip QUIC entirely (fallbackActive=true).
@@ -461,14 +461,14 @@ func TestTransportManager_ConsecConnFailsReset(t *testing.T) {
 	tm.SetTCPWS(tcpws)
 
 	// 2 failures, then recordQuicSuccess resets counter.
-	qc.consecConnFails.Store(2)
+	qc.handshakeFailStreak.Store(2)
 	tm.recordQuicSuccess()
 	if got := qc.ConsecConnFails(); got != 0 {
-		t.Fatalf("consecConnFails = %d after success, want 0", got)
+		t.Fatalf("handshakeFailStreak = %d after success, want 0", got)
 	}
 
 	// 2 more failures: still below threshold (3), no fallback.
-	qc.consecConnFails.Store(2)
+	qc.handshakeFailStreak.Store(2)
 	if tm.FallbackActive() {
 		t.Fatal("fallbackActive should not be set with only 2 failures")
 	}

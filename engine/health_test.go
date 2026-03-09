@@ -173,7 +173,7 @@ func TestHealthTransitions_Fallback(t *testing.T) {
 
 	// Fallback stats → assess returns degraded (not critical).
 	for i := 0; i < 5; i++ {
-		level := hm.assess(wire.WireStats{Transport: "tcpws", Fallback: true})
+		level := hm.assess(wire.WireStats{Transport: "tcpws", WireFallback: true})
 		hm.transition(level)
 	}
 	if hm.health != HealthDegraded {
@@ -272,7 +272,7 @@ func TestHealthMonitor_EWMASmoothing(t *testing.T) {
 
 	// Simulate calling sample-like EWMA logic manually
 	// (since sample() calls tm.WireStats() which returns zeros)
-	ws := wire.WireStats{Transport: "quic", LossRate: 0.0, Throughput: 100000}
+	ws := wire.WireStats{Transport: "quic", PacketLossRate: 0.0, Throughput: 100000}
 	applyEWMA(hm, ws)
 
 	if hm.smoothLoss != 0.0 {
@@ -283,7 +283,7 @@ func TestHealthMonitor_EWMASmoothing(t *testing.T) {
 	}
 
 	// Single spike: lossRate=0.96 from 0.0 baseline
-	ws2 := wire.WireStats{Transport: "quic", LossRate: 0.96, Throughput: 50000}
+	ws2 := wire.WireStats{Transport: "quic", PacketLossRate: 0.96, Throughput: 50000}
 	applyEWMA(hm, ws2)
 
 	// EWMA α=0.3: smoothLoss = 0.3 * 0.96 + 0.7 * 0.0 = 0.288
@@ -293,7 +293,7 @@ func TestHealthMonitor_EWMASmoothing(t *testing.T) {
 
 	// After spike ends: 5 samples of 0.0 loss → smoothLoss decays
 	for i := 0; i < 5; i++ {
-		applyEWMA(hm, wire.WireStats{Transport: "quic", LossRate: 0.0, Throughput: 100000})
+		applyEWMA(hm, wire.WireStats{Transport: "quic", PacketLossRate: 0.0, Throughput: 100000})
 	}
 	if hm.smoothLoss > 0.05 {
 		t.Errorf("After decay: smoothLoss should be < 0.05, got %f", hm.smoothLoss)
@@ -327,7 +327,7 @@ func TestHealthMonitor_EWMAPreventsFalseCritical(t *testing.T) {
 
 	// Inject 5-second spike of moderate loss (0.15) — realistic post-Layer-1 noise
 	for i := 0; i < 5; i++ {
-		ws := wire.WireStats{Transport: "quic", LossRate: 0.15, Throughput: 50000}
+		ws := wire.WireStats{Transport: "quic", PacketLossRate: 0.15, Throughput: 50000}
 		applyEWMA(hm, ws)
 		level := hm.assess(wire.WireStats{Transport: "quic"})
 		hm.transition(level)
@@ -380,7 +380,7 @@ func TestHealthMonitor_PeakTracksSmoothedNotRaw(t *testing.T) {
 	hm.peakThroughput = 50000
 
 	// Inject a single raw throughput spike of 1e6 (MI boundary artifact)
-	ws := wire.WireStats{Transport: "quic", LossRate: 0, Throughput: 1e6}
+	ws := wire.WireStats{Transport: "quic", PacketLossRate: 0, Throughput: 1e6}
 	applyEWMA(hm, ws)
 
 	// Update peak from smoothed (in sample)
@@ -529,11 +529,11 @@ func TestHealthMonitor_NoConcurrentDeadlock(t *testing.T) {
 // This is the logic that sample() applies before calling assess().
 func applyEWMA(hm *healthMonitor, ws wire.WireStats) {
 	if !hm.ewmaInitialized {
-		hm.smoothLoss = ws.LossRate
+		hm.smoothLoss = ws.PacketLossRate
 		hm.smoothThroughput = ws.Throughput
 		hm.ewmaInitialized = true
 	} else {
-		hm.smoothLoss = ewmaAlpha*ws.LossRate + (1-ewmaAlpha)*hm.smoothLoss
+		hm.smoothLoss = ewmaAlpha*ws.PacketLossRate + (1-ewmaAlpha)*hm.smoothLoss
 		hm.smoothThroughput = ewmaAlpha*ws.Throughput + (1-ewmaAlpha)*hm.smoothThroughput
 	}
 }

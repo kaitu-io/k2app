@@ -23,22 +23,22 @@ const (
 type HealthSnapshot struct {
 	Timestamp   time.Time `json:"ts"`
 	Transport   string    `json:"transport"`
-	LossRate    float64   `json:"loss_rate"`
-	Throughput  float64   `json:"throughput"`
-	SendingRate float64   `json:"sending_rate"`
-	RTTMs       float64   `json:"rtt_ms"`
-	MinRTTMs    float64   `json:"min_rtt_ms"`
-	Cwnd        int64     `json:"cwnd"`
-	Mode        int       `json:"mode"`
-	TxBytes     int64     `json:"tx_bytes"`
-	RxBytes     int64     `json:"rx_bytes"`
-	Health      string    `json:"health"`
-	Fallback    bool      `json:"fallback"` // TCP-WS serving due to QUIC failure
+	PacketLossRate float64   `json:"packet_loss_rate"`
+	Throughput     float64   `json:"throughput"`
+	SendingRate    float64   `json:"sending_rate"`
+	RTTMs          float64   `json:"rtt_ms"`
+	MinRTTMs       float64   `json:"min_rtt_ms"`
+	Cwnd           int64     `json:"cwnd"`
+	Mode           int       `json:"mode"`
+	TxBytes        int64     `json:"tx_bytes"`
+	RxBytes        int64     `json:"rx_bytes"`
+	Health         string    `json:"health"`
+	WireFallback   bool      `json:"wire_fallback"` // TCP-WS serving due to QUIC failure
 
-	// Datagram health
-	DatagramLossRate    float64 `json:"dg_loss_rate"`
-	DatagramTimeouts    int32   `json:"dg_timeouts"`
-	DatagramHopAttempts int32   `json:"dg_hops"`
+	// Relay-layer observability (NOT for wire-layer decisions).
+	RelayUDPLossRate float64 `json:"relay_udp_loss_rate"`
+	RelayUDPTimeouts int32   `json:"relay_udp_timeouts"`
+	PortHopAttempts  int32   `json:"port_hop_attempts"`
 }
 
 const (
@@ -128,12 +128,12 @@ func (hm *healthMonitor) sample() {
 	// EWMA smoothing: dampens MI boundary artifacts (lossRate spikes,
 	// throughput spikes) that cause false health degradation.
 	if !hm.ewmaInitialized {
-		hm.smoothLoss = ws.LossRate
+		hm.smoothLoss = ws.PacketLossRate
 		hm.smoothThroughput = ws.Throughput
 		hm.ewmaInitialized = true
 		hm.ewmaSamples = 1
 	} else {
-		hm.smoothLoss = ewmaAlpha*ws.LossRate + (1-ewmaAlpha)*hm.smoothLoss
+		hm.smoothLoss = ewmaAlpha*ws.PacketLossRate + (1-ewmaAlpha)*hm.smoothLoss
 		hm.smoothThroughput = ewmaAlpha*ws.Throughput + (1-ewmaAlpha)*hm.smoothThroughput
 		hm.ewmaSamples++
 	}
@@ -153,21 +153,21 @@ func (hm *healthMonitor) sample() {
 	snap := HealthSnapshot{
 		Timestamp:   time.Now(),
 		Transport:   ws.Transport,
-		LossRate:    ws.LossRate,
-		Throughput:  ws.Throughput,
-		SendingRate: ws.SendingRate,
-		RTTMs:       float64(ws.RTT) / float64(time.Millisecond),
-		MinRTTMs:    float64(ws.MinRTT) / float64(time.Millisecond),
-		Cwnd:        ws.Cwnd,
-		Mode:        ws.Mode,
-		TxBytes:     tx,
-		RxBytes:     rx,
-		Health:      hm.health,
-		Fallback:    ws.Fallback,
+		PacketLossRate: ws.PacketLossRate,
+		Throughput:     ws.Throughput,
+		SendingRate:    ws.SendingRate,
+		RTTMs:          float64(ws.RTT) / float64(time.Millisecond),
+		MinRTTMs:       float64(ws.MinRTT) / float64(time.Millisecond),
+		Cwnd:           ws.Cwnd,
+		Mode:           ws.Mode,
+		TxBytes:        tx,
+		RxBytes:        rx,
+		Health:         hm.health,
+		WireFallback:   ws.WireFallback,
 
-		DatagramLossRate:    ws.DatagramLossRate,
-		DatagramTimeouts:    ws.DatagramTimeouts,
-		DatagramHopAttempts: ws.DatagramHopAttempts,
+		RelayUDPLossRate: ws.RelayUDPLossRate,
+		RelayUDPTimeouts: ws.RelayUDPTimeouts,
+		PortHopAttempts:  ws.PortHopAttempts,
 	}
 
 	// Write to ring buffer.
@@ -201,7 +201,7 @@ func (hm *healthMonitor) assess(ws wire.WireStats) string {
 	// In fallback: TCP-WS working but suboptimal. Treat as degraded
 	// so HealthMonitor reflects reality without triggering aggressive
 	// corrective actions that would disrupt the working TCP-WS path.
-	if ws.Fallback {
+	if ws.WireFallback {
 		return HealthDegraded
 	}
 
