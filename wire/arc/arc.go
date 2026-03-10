@@ -43,8 +43,8 @@ const (
 	defaultAlpha       = 10.0 // Loss penalty — standard mode
 	gfwAlpha           = 5.0  // Loss penalty — GFW mode (tolerates non-congestion loss)
 	defaultBeta        = 1.0  // Latency penalty (throughput-prioritized for tunnel)
-	defaultEpsilon     = 0.10 // Probing step size
-	arcRateEWMAAlpha   = 0.8  // EWMA smoothing for rate updates
+	defaultEpsilon     = 0.12 // Probing step size (was 0.10)
+	arcRateEWMAAlpha   = 0.9  // EWMA smoothing for rate updates (was 0.8)
 	arcSlowStartFactor = 2.0  // Slow start growth multiplier
 	arcCwndMultiplier  = 2.0  // BDP multiplier for cwnd (matches BBR's cwnd gain)
 
@@ -65,10 +65,6 @@ const (
 	// App-limited detection: BytesSent < TargetBytes × this → app-limited
 	appLimitedThreshold = 0.5
 
-	// Bandwidth estimation floor: ignore throughput samples below this
-	// to avoid poisoning bwEstimate during connection establishment.
-	bwEstimateLossMax = 0.95 // Ignore samples with loss >= 95%
-
 	// Utility function clamp: prevent extreme negative values
 	utilityFloor = -10.0
 
@@ -86,19 +82,28 @@ const (
 	//   ② Weak signal reversal:               ε *= decay    [multiplicative decrease]
 	//   ③ Strong signal reversal:             ε = ε₀        [fast recovery]
 	//   ④ Building (counter = 1):             no change     [hold]
-	epsilonMin        = 0.02  // ε₀ / 5 (convergence precision)
-	epsilonMax        = 0.20  // ε₀ × 2 (exploration ceiling)
-	epsilonDelta      = 0.02  // AI step = one precision unit
+	epsilonMin        = 0.03  // ε₀ / 4 (convergence precision)
+	epsilonMax        = 0.25  // ε₀ × 2 (exploration ceiling)
+	epsilonDelta      = 0.03  // AI step (was 0.02)
 	epsilonDecay      = 0.5   // MD halving
 	epsilonZThreshold = 1.645 // 95% one-sided z-score
 	noiseEWMAAlpha    = 0.1   // Noise baseline smoothing (10% new)
-	coldStartNoise    = 1.0   // Conservative initial noise (10× ε₀)
+	coldStartNoise    = 1.2   // Conservative initial noise (10× ε₀)
 
-	// Bandwidth Estimation (Throughput Anchor)
-	bwEstimateEWMA             = 0.3  // EWMA weight for new bandwidth samples
-	ceilingHoldThresholdFactor = 0.05 // Gradient below bwEstimate×this = at ceiling
-	ceilingHoldThroughputFactor = 0.9 // Throughput must be ≥ bwEstimate×this for ceiling hold
-	alphaMaxLossPenalty        = 0.8  // Max α×L before dynamic clamping (keeps 1-αL ≥ 0.2)
+	// App-limited anchor: max loss rate for bandwidth recovery formula T/(1-L)
+	appLimitedMaxLoss = 0.5
+
+	// ackRate cwnd compensation: floor to prevent cwnd explosion (same as Brutal)
+	minAckRate = 0.8
+
+	// Slow start throughput saturation detection
+	// Throughput growth < rate growth × this → link saturated, exit slow start.
+	// With slowStartFactor=2.0: threshold=1.4, so throughput must grow 40%+
+	// to continue. Flat throughput (growth=1.0) correctly triggers exit.
+	slowStartSaturationRatio = 0.7
+
+	// Dynamic α clamping
+	alphaMaxLossPenalty = 0.8 // Max α×L before dynamic clamping (keeps 1-αL ≥ 0.2)
 )
 
 // K2CCMode represents the K2CC operating mode
@@ -428,6 +433,9 @@ type K2CCState struct {
 	hasLastUtility   bool
 	UtilityIncreases uint32
 	UtilityDecreases uint32
+
+	// Slow start: throughput from previous MI for saturation detection
+	lastSlowStartThroughput float64
 }
 
 // ensureCurrentMI ensures there's a current MI.
@@ -496,12 +504,13 @@ type K2CCSender struct {
 	// EWMA of RTT CV during inconsistent (building) periods.
 	noiseEWMA float64
 
-	// Bandwidth estimation: EWMA of T/(1-L) from completed MIs.
-	// Used by Throughput Anchor to reset rate when app-limited.
-	bwEstimate float64
+	// Stable probing: base rate around which undecided probes alternate.
+	// Prevents EWMA-induced drift during probing (R+ε, R-ε cycles).
+	// Updated when direction is confirmed (counter ≥ 2).
+	probeBaseRate float64
 
 	// Sliding-window ack rate tracker — fed by OnCongestionEventEx.
-	// Observability only (debug logging). Does not drive decisions.
+	// Used for cwnd ackRate compensation (Brutal-style) + debug logging.
 	ackRate *ackRateTracker
 
 	// Test-only hook: called when an MI completes (inside mu lock).
@@ -537,7 +546,7 @@ func NewK2CCSenderWithConfig(maxRate int64, config *K2CCConfig) *K2CCSender {
 		},
 		utility:   NewUtilityFunction(config.Alpha, config.Beta),
 		maxRate:   maxRate,
-		cwnd:      rateToCwnd(rate, initialRTT),
+		cwnd:      rateToCwnd(rate, initialRTT, 1.0),
 		maxSize:   congestion.ByteCount(1350),
 		rtt:       initialRTT,
 		noiseEWMA: coldStartNoise,
@@ -545,12 +554,23 @@ func NewK2CCSenderWithConfig(maxRate int64, config *K2CCConfig) *K2CCSender {
 	}
 }
 
-// rateToCwnd converts sending rate to congestion window
-func rateToCwnd(rateBps float64, rtt time.Duration) congestion.ByteCount {
-	// cwnd = (rate_bps / 8) * rtt_seconds * multiplier
+// clampedAckRate returns the ack rate clamped to [minAckRate, 1.0].
+// Prevents cwnd explosion when ack rate is very low.
+func (p *K2CCSender) clampedAckRate() float64 {
+	rate := p.ackRate.AckRate()
+	if rate < minAckRate {
+		return minAckRate
+	}
+	return rate
+}
+
+// rateToCwnd converts sending rate to congestion window with ack rate compensation.
+// ackRate < 1.0 enlarges cwnd to compensate for packet loss (Brutal-style).
+func rateToCwnd(rateBps float64, rtt time.Duration, ackRate float64) congestion.ByteCount {
+	// cwnd = (rate_bps / 8) * rtt_seconds * multiplier / ackRate
 	bytesPerSec := rateBps / 8.0
 	rttSecs := rtt.Seconds()
-	cwnd := congestion.ByteCount(bytesPerSec * rttSecs * arcCwndMultiplier)
+	cwnd := congestion.ByteCount(bytesPerSec * rttSecs * arcCwndMultiplier / ackRate)
 
 	cwnd = max(cwnd, arcMinWindow)
 	cwnd = min(cwnd, arcMaxWindow)
@@ -597,20 +617,18 @@ func (p *K2CCSender) updateRate(newRate float64) {
 	}
 
 	// Update cwnd
-	p.cwnd = rateToCwnd(p.state.CurrentRate, p.rtt)
+	p.cwnd = rateToCwnd(p.state.CurrentRate, p.rtt, p.clampedAckRate())
 }
 
 // processCompletedMI processes a completed Monitor Interval.
 func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
-	// Rate probing (BEFORE app-limited check)
-	// Every N MIs, probe higher rate to recover from previous reductions
+	// Rate probing: every N MIs, probe higher rate to recover from local minima.
+	// Do NOT reset direction counters — let AIMD-ε evaluate the probe result
+	// through normal gradient processing.
 	if p.state.NextMIID%rateProbingInterval == 0 {
 		probeRate := p.state.CurrentRate * (1.0 + rateProbingIncrease)
 		if probeRate <= float64(p.maxRate) {
 			p.updateRate(probeRate)
-			// Reset utility counters to give new rate a fair chance
-			p.state.UtilityIncreases = 0
-			p.state.UtilityDecreases = 0
 		}
 	}
 
@@ -622,55 +640,46 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 		p.miCompletedHook(mi, throughput, mi.IsAppLimited)
 	}
 
-	// Bandwidth estimation: B_est = T / (1-L)
-	// Works even under loss — recovers true link capacity.
-	// Ignore samples below minRate — connection establishment produces
-	// near-zero throughput that would poison the EWMA.
-	minRate := arcMinDownloadRate // 30 Mbps
-	if throughput >= minRate {
-		bEst := throughput
-		if lossRate := mi.LossRate(); lossRate < bwEstimateLossMax {
-			bEst = throughput / (1.0 - lossRate)
-		}
-		if p.bwEstimate == 0 {
-			p.bwEstimate = bEst
-		} else {
-			p.bwEstimate = p.bwEstimate*(1.0-bwEstimateEWMA) + bEst*bwEstimateEWMA
-		}
-	}
-
-	// Throughput Anchor: when app-limited (R >> B), reset rate to estimated bandwidth.
-	// This brings CC back into the gradient-effective zone where R ≈ B.
-	// Only anchor when we have a meaningful bandwidth estimate.
+	// App-limited: rate exceeds link capacity. Anchor to observed throughput.
+	// Stateless: computes B_est = T/(1-L) inline, no persistent EWMA needed.
 	if mi.IsAppLimited {
-		if p.bwEstimate >= minRate {
-			p.state.CurrentRate = p.bwEstimate
-			p.cwnd = rateToCwnd(p.state.CurrentRate, p.rtt)
+		if throughput > 0 {
+			anchorRate := throughput
+			if lossRate := mi.LossRate(); lossRate > 0 && lossRate < appLimitedMaxLoss {
+				anchorRate = throughput / (1.0 - lossRate)
+			}
+			// Apply same floor as updateRate() to prevent collapse from
+			// end-of-transfer noise (low BytesSent ≠ link saturation).
+			minRate := arcMinRate
+			if float64(p.maxRate) >= arcMinDownloadRate {
+				minRate = arcMinDownloadRate
+			}
+			if anchorRate < minRate {
+				anchorRate = minRate
+			}
+			p.state.CurrentRate = anchorRate
+			p.cwnd = rateToCwnd(p.state.CurrentRate, p.rtt, p.clampedAckRate())
 		}
-		// Exit slow start — it overshot bandwidth, decision mode can fine-tune
 		if p.state.Mode == K2CCModeSlowStart {
 			p.state.Mode = K2CCModeDecision
 		}
+		// Reset direction counters (rate jumped), but preserve gradient context
+		// so next MI can compute gradient immediately (no blind probing period).
 		p.state.UtilityIncreases = 0
 		p.state.UtilityDecreases = 0
-		p.state.hasLastUtility = false
+		p.state.lastUtility = p.utility.Calculate(mi)
+		p.state.hasLastUtility = true
+		p.probeBaseRate = p.state.CurrentRate
 
-		// Update snapshot fallback values
 		p.lastCompletedLoss = mi.LossRate()
 		p.lastCompletedThroughput = throughput
 
-		slog.Debug("k2cc: anchor",
+		slog.Debug("k2cc: app-limited anchor",
 			"mi", mi.ID,
 			"rate", fmt.Sprintf("%.1fM", p.state.CurrentRate/1_000_000),
-			"bwEstimate", fmt.Sprintf("%.1fM", p.bwEstimate/1_000_000),
 			"throughput", fmt.Sprintf("%.1fM", throughput/1_000_000),
 			"loss", fmt.Sprintf("%.1f%%", mi.LossRate()*100),
 			"mode", p.state.Mode.String(),
-			"bytesSent", mi.BytesSent,
-			"bytesAcked", mi.BytesAcked,
-			"pktsAcked", mi.PacketsAcked,
-			"duration", mi.Duration(),
-			"targetRate", fmt.Sprintf("%.1fM", mi.TargetRate/1_000_000),
 		)
 		return
 	}
@@ -686,63 +695,67 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 
 	switch p.state.Mode {
 	case K2CCModeSlowStart:
-		// Exit slow start if rate has reached maxRate — no room to grow.
-		// EWMA smoothing means CurrentRate asymptotically approaches maxRate.
+		// Exit condition 1: rate has reached maxRate — no room to grow.
 		if p.state.CurrentRate >= float64(p.maxRate)*slowStartExitRatio {
 			p.state.Mode = K2CCModeDecision
 			p.state.UtilityIncreases = 0
 			p.state.UtilityDecreases = 0
 			break
 		}
-		// Check if we should exit slow start
+
+		// Exit condition 2: utility dropped significantly.
 		if p.state.hasLastUtility && utility < p.state.lastUtility*slowStartDropRatio {
-			// Utility dropped, exit slow start
 			p.state.Mode = K2CCModeDecision
 			p.state.UtilityIncreases = 0
 			p.state.UtilityDecreases = 0
-		} else {
-			// Continue slow start: multiply by growth factor
-			newRate := p.state.CurrentRate * arcSlowStartFactor
-			p.updateRate(newRate)
+			break
 		}
+
+		// Exit condition 3: throughput saturation.
+		// Rate doubled but throughput didn't grow proportionally → link is full.
+		// Set rate to actual throughput so gradient ascent starts near optimum.
+		if p.state.lastSlowStartThroughput > 0 && throughput > 0 {
+			tputGrowth := throughput / p.state.lastSlowStartThroughput
+			if tputGrowth < arcSlowStartFactor*slowStartSaturationRatio {
+				p.state.CurrentRate = throughput
+				p.cwnd = rateToCwnd(p.state.CurrentRate, p.rtt, p.clampedAckRate())
+				p.state.Mode = K2CCModeDecision
+				p.state.UtilityIncreases = 0
+				p.state.UtilityDecreases = 0
+				p.probeBaseRate = p.state.CurrentRate
+				slog.Debug("k2cc: slow start saturated",
+					"mi", mi.ID,
+					"throughput", fmt.Sprintf("%.1fM", throughput/1_000_000),
+					"prevThroughput", fmt.Sprintf("%.1fM", p.state.lastSlowStartThroughput/1_000_000),
+					"growth", fmt.Sprintf("%.2f", tputGrowth),
+				)
+				break
+			}
+		}
+		p.state.lastSlowStartThroughput = throughput
+
+		// Continue slow start: multiply by growth factor
+		newRate := p.state.CurrentRate * arcSlowStartFactor
+		p.updateRate(newRate)
 
 	case K2CCModeDecision, K2CCModeRateAdjusting:
 		if p.state.hasLastUtility {
 			gradient := utility - p.state.lastUtility
 
-			// Ceiling Hold: at bandwidth ceiling, gradient ≈ 0 but throughput
-			// is near estimated bandwidth. Hold rate instead of probing/drifting.
-			if p.bwEstimate > 0 {
-				absGrad := math.Abs(gradient)
-				gradThreshold := p.bwEstimate / 1_000_000.0 * ceilingHoldThresholdFactor
-				throughputNearCeiling := throughput >= p.bwEstimate*ceilingHoldThroughputFactor
-
-				if absGrad < gradThreshold && throughputNearCeiling {
-					p.state.lastUtility = utility
-					p.state.hasLastUtility = true
-					p.lastCompletedLoss = mi.LossRate()
-					p.lastCompletedThroughput = throughput
-					slog.Debug("k2cc: ceiling hold",
-						"mi", mi.ID,
-						"rate", fmt.Sprintf("%.1fM", p.state.CurrentRate/1_000_000),
-						"bwEstimate", fmt.Sprintf("%.1fM", p.bwEstimate/1_000_000),
-						"gradient", fmt.Sprintf("%.4f", gradient),
-					)
-					break
-				}
-			}
-
 			// Capture previous state for AIMD-ε reversal detection
 			prevConfirmed := p.state.UtilityIncreases >= 2 || p.state.UtilityDecreases >= 2
 
-			// Update direction counters
+			// Update direction counters.
+			// Zero gradient = no signal (utility is flat) — don't update counters.
+			// Only clear signals drive direction confirmation.
 			if gradient > 0 {
 				p.state.UtilityIncreases++
 				p.state.UtilityDecreases = 0
-			} else {
+			} else if gradient < 0 {
 				p.state.UtilityDecreases++
 				p.state.UtilityIncreases = 0
 			}
+			// gradient == 0: ambiguous, keep current counter state
 
 			// AIMD-ε: adapt exploration step size
 			nowConfirmed := p.state.UtilityIncreases >= 2 || p.state.UtilityDecreases >= 2
@@ -760,7 +773,7 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 			} else if prevConfirmed {
 				// Direction just reversed — classify signal strength
 				absGrad := math.Abs(gradient)
-				utilityScale := p.state.CurrentRate / 1_000_000.0 // Mbps (same as utility)
+				utilityScale := p.state.CurrentRate / 1_000_000.0
 				if utilityScale < 1.0 {
 					utilityScale = 1.0
 				}
@@ -784,33 +797,42 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 				p.state.Epsilon = epsilonMax
 			}
 
-			// Apply gradient ascent (uses adapted epsilon)
-			var adjustment float64
+			// Apply gradient ascent with stable probing.
+			// Confirmed direction: move base rate via EWMA.
+			// Undecided probing: alternate around fixed probeBaseRate (no drift).
 			if p.state.UtilityIncreases >= 2 {
-				// Keep increasing
-				adjustment = p.state.CurrentRate * p.state.Epsilon
+				p.updateRate(p.state.CurrentRate * (1.0 + p.state.Epsilon))
+				p.probeBaseRate = p.state.CurrentRate
 			} else if p.state.UtilityDecreases >= 2 {
-				// Reverse direction
-				adjustment = -p.state.CurrentRate * p.state.Epsilon
+				p.updateRate(p.state.CurrentRate * (1.0 - p.state.Epsilon))
+				p.probeBaseRate = p.state.CurrentRate
 			} else {
-				// Probing: alternate high/low
+				// Probing: alternate around probeBaseRate to avoid EWMA drift
+				if p.probeBaseRate == 0 {
+					p.probeBaseRate = p.state.CurrentRate
+				}
 				sign := 1.0
 				if p.state.NextMIID%2 == 1 {
 					sign = -1.0
 				}
-				adjustment = sign * p.state.CurrentRate * p.state.Epsilon
+				probeRate := p.probeBaseRate * (1.0 + sign*p.state.Epsilon)
+				// Clamp without EWMA — probing doesn't shift the base rate
+				if probeRate < arcMinRate {
+					probeRate = arcMinRate
+				}
+				if probeRate > float64(p.maxRate) {
+					probeRate = float64(p.maxRate)
+				}
+				p.state.CurrentRate = probeRate
+				p.cwnd = rateToCwnd(probeRate, p.rtt, p.clampedAckRate())
 			}
-
-			newRate := p.state.CurrentRate + adjustment
-			p.updateRate(newRate)
 		}
 	}
 
 	p.state.lastUtility = utility
 	p.state.hasLastUtility = true
 
-	// Log completed MI for K2CC observability (benchmarking, GFW analysis).
-	// Direction: "+1" = rate increasing, "-1" = rate decreasing, "probe" = undecided.
+	// Log completed MI for observability.
 	dir := "probe"
 	if p.state.UtilityIncreases >= 2 {
 		dir = "+1"
@@ -820,15 +842,13 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 	slog.Debug("k2cc: MI complete",
 		"mi", mi.ID,
 		"rate", fmt.Sprintf("%.1fM", p.state.CurrentRate/1_000_000),
-		"throughput", fmt.Sprintf("%.1fM", mi.Throughput()/1_000_000),
+		"throughput", fmt.Sprintf("%.1fM", throughput/1_000_000),
 		"loss", fmt.Sprintf("%.1f%%", mi.LossRate()*100),
 		"rtt", mi.AvgRTT(),
 		"epsilon", fmt.Sprintf("%.3f", p.state.Epsilon),
-		"alpha", fmt.Sprintf("%.2f", p.utility.Alpha),
 		"mode", p.state.Mode.String(),
 		"dir", dir,
 		"ackRate", fmt.Sprintf("%.3f", p.ackRate.AckRate()),
-		"bwEst", fmt.Sprintf("%.1fM", p.bwEstimate/1_000_000),
 	)
 }
 
@@ -962,7 +982,7 @@ func (p *K2CCSender) OnPacketAcked(
 	}
 
 	// Update cwnd
-	p.cwnd = rateToCwnd(p.state.CurrentRate, p.rtt)
+	p.cwnd = rateToCwnd(p.state.CurrentRate, p.rtt, p.clampedAckRate())
 }
 
 // OnCongestionEvent is called when congestion is detected
@@ -1054,7 +1074,7 @@ func (p *K2CCSender) getCongestionWindowLocked() congestion.ByteCount {
 		rtt = initialRTT
 	}
 
-	cwnd := rateToCwnd(p.state.CurrentRate, rtt)
+	cwnd := rateToCwnd(p.state.CurrentRate, rtt, p.clampedAckRate())
 	cwnd = max(cwnd, p.maxSize)
 	return cwnd
 }
@@ -1079,7 +1099,6 @@ type CCSnapshot struct {
 	MIID        uint64        // Current Monitor Interval ID
 	Epsilon     float64       // Current epsilon (AIMD-ε adaptive step size)
 	AckRate     float64       // Global sliding-window ack rate (0.0-1.0), observability only
-	BwEstimate  float64       // Estimated link bandwidth in bps (0 = no estimate)
 }
 
 // minSnapshotBytes is the minimum BytesSent in the current MI before its stats
@@ -1101,7 +1120,6 @@ func (p *K2CCSender) Snapshot() CCSnapshot {
 		Cwnd:        int64(p.cwnd),
 		Mode:        p.state.Mode,
 	}
-	s.BwEstimate = p.bwEstimate
 	if p.ackRate != nil {
 		s.AckRate = p.ackRate.AckRate()
 	}

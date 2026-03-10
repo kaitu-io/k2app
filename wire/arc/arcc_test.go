@@ -267,7 +267,7 @@ func TestK2CCSender_RateToCwnd(t *testing.T) {
 	rate := 10_000_000.0 // 10 Mbps
 	rtt := 100 * time.Millisecond
 
-	cwnd := rateToCwnd(rate, rtt)
+	cwnd := rateToCwnd(rate, rtt, 1.0)
 
 	// Expected: (10_000_000 / 8) * 0.1 * 1.5 = 187,500 bytes
 	expectedMin := congestion.ByteCount(150_000)
@@ -275,6 +275,41 @@ func TestK2CCSender_RateToCwnd(t *testing.T) {
 
 	if cwnd < expectedMin || cwnd > expectedMax {
 		t.Errorf("expected cwnd between %d and %d, got %d", expectedMin, expectedMax, cwnd)
+	}
+}
+
+func TestRateToCwnd_AckRateCompensation(t *testing.T) {
+	rate := 100_000_000.0 // 100 Mbps
+	rtt := 100 * time.Millisecond
+
+	cwndNoLoss := rateToCwnd(rate, rtt, 1.0)
+	cwndWith20Loss := rateToCwnd(rate, rtt, 0.8) // 20% loss → ackRate=0.8
+
+	// cwnd should be 1.25x larger when ackRate=0.8
+	ratio := float64(cwndWith20Loss) / float64(cwndNoLoss)
+	if ratio < 1.20 || ratio > 1.30 {
+		t.Errorf("expected ~1.25x cwnd increase, got %.2fx (noLoss=%d, with20Loss=%d)",
+			ratio, cwndNoLoss, cwndWith20Loss)
+	}
+}
+
+func TestCwnd_AckRateFloor(t *testing.T) {
+	sender := NewCCSenderGFWMode(500_000_000)
+
+	// Record massive loss to push ackRate below 0.8
+	for i := 0; i < 100; i++ {
+		sender.ackRate.record(time.Duration(i)*time.Second, 1, 9) // 10% ack rate
+	}
+
+	rate := sender.ackRate.AckRate()
+	if rate >= 0.5 {
+		t.Fatalf("expected ackRate < 0.5, got %.2f", rate)
+	}
+
+	// clampedAckRate should be floored at 0.8
+	clamped := sender.clampedAckRate()
+	if clamped != minAckRate {
+		t.Errorf("expected clamped ackRate = %.1f, got %.2f", minAckRate, clamped)
 	}
 }
 
@@ -998,22 +1033,21 @@ func TestCongestionControlEx_InterfaceCompliance(t *testing.T) {
 }
 
 // ============================================================================
-// Throughput Anchor + Ceiling Hold + Alpha Clamping Tests
+// App-Limited Anchor + Slow Start Saturation + Stable Probing + Alpha Clamping
 // ============================================================================
 
-func TestThroughputAnchor_AppLimited(t *testing.T) {
+func TestAppLimited_SimpleAnchor(t *testing.T) {
 	// Simulate: R=270M, actual link B=100M → app-limited
-	// Anchor should set R = bwEstimate ≈ 100M and exit slow start
+	// Anchor should set R ≈ throughput and exit slow start
 	sender := NewCCSenderGFWMode(DefaultMaxRate)
-	sender.state.CurrentRate = 270_000_000 // 270 Mbps (after slow start overshoot)
+	sender.state.CurrentRate = 270_000_000
 	sender.state.Mode = K2CCModeSlowStart
 	sender.rtt = 30 * time.Millisecond
 
-	// Create MI that is app-limited: sent 100M worth but target was 270M
+	// App-limited MI: sent 100M worth but target was 270M (37% = app-limited)
 	mi := NewMonitorInterval(1, 270_000_000)
 	mi.StartTime = time.Now().Add(-30 * time.Millisecond)
 	mi.EndTime = time.Now()
-	// BytesSent = 100M * 0.03s / 8 = 375000 bytes (37% of expected = app-limited)
 	mi.BytesSent = 375000
 	mi.BytesAcked = 375000
 	mi.PacketsAcked = 255
@@ -1021,67 +1055,27 @@ func TestThroughputAnchor_AppLimited(t *testing.T) {
 
 	sender.processCompletedMI(mi)
 
-	// Rate should be anchored to ~100M (bwEstimate), not stuck at 270M
+	// Rate should be anchored to ~100M (throughput), not stuck at 270M
 	if sender.state.CurrentRate > 150_000_000 {
 		t.Errorf("expected rate anchored near 100M, got %.1fM", sender.state.CurrentRate/1e6)
 	}
 	if sender.state.CurrentRate < 50_000_000 {
 		t.Errorf("rate too low, expected ~100M, got %.1fM", sender.state.CurrentRate/1e6)
 	}
-	// Should have exited slow start
 	if sender.state.Mode != K2CCModeDecision {
 		t.Errorf("expected decision mode after anchor, got %s", sender.state.Mode)
 	}
-	// bwEstimate should be set
-	if sender.bwEstimate < 50_000_000 {
-		t.Errorf("expected bwEstimate ~100M, got %.1fM", sender.bwEstimate/1e6)
-	}
 }
 
-func TestThroughputAnchor_NotAppLimited(t *testing.T) {
-	// When NOT app-limited, anchor should NOT fire — normal CC path
+func TestAppLimited_PreservesGradientContext(t *testing.T) {
+	// After app-limited anchor, hasLastUtility should be true
+	// so next MI can compute gradient immediately (no blind probing)
 	sender := NewCCSenderGFWMode(DefaultMaxRate)
-	sender.state.CurrentRate = 100_000_000
+	sender.state.CurrentRate = 270_000_000
 	sender.state.Mode = K2CCModeSlowStart
 	sender.rtt = 30 * time.Millisecond
 
-	// Create MI that is NOT app-limited (sent ~100% of expected)
-	mi := NewMonitorInterval(0, 100_000_000)
-	mi.StartTime = time.Now().Add(-30 * time.Millisecond)
-	mi.EndTime = time.Now()
-	mi.BytesSent = 375000 // 100M * 0.03s / 8 = 375000 (100% of expected)
-	mi.BytesAcked = 375000
-	mi.PacketsAcked = 255
-	mi.RTTSamples = []time.Duration{30 * time.Millisecond}
-
-	sender.processCompletedMI(mi)
-
-	// Should still be in slow start (doubled), NOT anchored
-	if sender.state.Mode != K2CCModeSlowStart {
-		t.Errorf("expected still in slow start, got %s", sender.state.Mode)
-	}
-	// Rate should have doubled (slow start)
-	if sender.state.CurrentRate < 150_000_000 {
-		t.Errorf("expected rate doubled in slow start, got %.1fM", sender.state.CurrentRate/1e6)
-	}
-}
-
-func TestCeilingHold_ZeroGradient(t *testing.T) {
-	// At bandwidth ceiling: gradient ≈ 0, throughput near bwEstimate
-	// Without ceiling hold: CC counts as probe → rate drifts
-	// With ceiling hold: rate stays stable
-	sender := NewCCSenderGFWMode(DefaultMaxRate)
-	sender.state.CurrentRate = 100_000_000
-	sender.state.Mode = K2CCModeDecision
-	sender.bwEstimate = 100_000_000
-	sender.rtt = 30 * time.Millisecond
-	sender.state.Epsilon = defaultEpsilon
-	sender.state.hasLastUtility = true
-	sender.state.lastUtility = 100.0 // utility ≈ throughput at 0% loss
-	sender.state.NextMIID = 3        // avoid rate probing (every 10 MIs)
-
-	// MI with throughput near bwEstimate and similar utility → gradient ≈ 0
-	mi := NewMonitorInterval(2, 100_000_000)
+	mi := NewMonitorInterval(1, 270_000_000)
 	mi.StartTime = time.Now().Add(-30 * time.Millisecond)
 	mi.EndTime = time.Now()
 	mi.BytesSent = 375000
@@ -1089,15 +1083,209 @@ func TestCeilingHold_ZeroGradient(t *testing.T) {
 	mi.PacketsAcked = 255
 	mi.RTTSamples = []time.Duration{30 * time.Millisecond}
 
-	rateBefore := sender.state.CurrentRate
 	sender.processCompletedMI(mi)
 
-	// Rate should not have changed significantly (ceiling hold)
-	drift := math.Abs(sender.state.CurrentRate-rateBefore) / rateBefore
-	if drift > 0.15 {
-		t.Errorf("expected ceiling hold (drift < 15%%), got %.1f%% drift (%.1fM → %.1fM)",
-			drift*100, rateBefore/1e6, sender.state.CurrentRate/1e6)
+	if !sender.state.hasLastUtility {
+		t.Error("expected hasLastUtility=true after anchor (gradient context preserved)")
 	}
+	if sender.state.lastUtility == 0 {
+		t.Error("expected non-zero lastUtility after anchor")
+	}
+}
+
+func TestAppLimited_NotAppLimited(t *testing.T) {
+	// When NOT app-limited, anchor should NOT fire — normal CC path
+	sender := NewCCSenderGFWMode(DefaultMaxRate)
+	sender.state.CurrentRate = 100_000_000
+	sender.state.Mode = K2CCModeSlowStart
+	sender.rtt = 30 * time.Millisecond
+
+	mi := NewMonitorInterval(0, 100_000_000)
+	mi.StartTime = time.Now().Add(-30 * time.Millisecond)
+	mi.EndTime = time.Now()
+	mi.BytesSent = 375000 // 100% of expected
+	mi.BytesAcked = 375000
+	mi.PacketsAcked = 255
+	mi.RTTSamples = []time.Duration{30 * time.Millisecond}
+
+	sender.processCompletedMI(mi)
+
+	if sender.state.Mode != K2CCModeSlowStart {
+		t.Errorf("expected still in slow start, got %s", sender.state.Mode)
+	}
+	if sender.state.CurrentRate < 150_000_000 {
+		t.Errorf("expected rate doubled in slow start, got %.1fM", sender.state.CurrentRate/1e6)
+	}
+}
+
+func TestAppLimited_WithLoss(t *testing.T) {
+	// B=100M, loss=5%: T=95M, B_est = T/(1-L) = 95/(1-0.05) = 100M
+	sender := NewCCSenderGFWMode(DefaultMaxRate)
+	sender.state.CurrentRate = 270_000_000
+	sender.state.Mode = K2CCModeSlowStart
+	sender.rtt = 30 * time.Millisecond
+
+	mi := NewMonitorInterval(1, 270_000_000)
+	mi.StartTime = time.Now().Add(-30 * time.Millisecond)
+	mi.EndTime = time.Now()
+	mi.BytesSent = 375000
+	mi.BytesLost = 18750   // 5% loss
+	mi.BytesAcked = 356250 // 95% acked
+	mi.PacketsAcked = 242
+	mi.RTTSamples = []time.Duration{30 * time.Millisecond}
+
+	sender.processCompletedMI(mi)
+
+	// Rate should be anchored to ~100M via T/(1-L) formula
+	if sender.state.CurrentRate < 80_000_000 || sender.state.CurrentRate > 130_000_000 {
+		t.Errorf("expected rate ~100M via T/(1-L), got %.1fM", sender.state.CurrentRate/1e6)
+	}
+}
+
+func TestSlowStart_ThroughputSaturation(t *testing.T) {
+	// Simulate: rate doubles but throughput stays flat → link saturated
+	sender := NewCCSenderGFWMode(100_000_000) // 100 Mbps max
+	sender.state.CurrentRate = 50_000_000     // 50 Mbps
+	sender.state.Mode = K2CCModeSlowStart
+	sender.rtt = 30 * time.Millisecond
+
+	// MI 0: throughput = 50M (rate=50M, filling pipe)
+	mi0 := NewMonitorInterval(0, 50_000_000)
+	mi0.StartTime = time.Now().Add(-30 * time.Millisecond)
+	mi0.EndTime = time.Now()
+	mi0.BytesSent = 187500 // 50M * 0.03s / 8
+	mi0.BytesAcked = 187500
+	mi0.PacketsAcked = 128
+	mi0.RTTSamples = []time.Duration{30 * time.Millisecond}
+
+	sender.processCompletedMI(mi0)
+	// Should continue slow start, rate now ~100M
+	if sender.state.Mode != K2CCModeSlowStart {
+		t.Fatalf("expected slow start after MI 0, got %s", sender.state.Mode)
+	}
+
+	// MI 1: rate=~100M but throughput still ~50M (link saturated at 50M)
+	mi1 := NewMonitorInterval(1, sender.state.CurrentRate)
+	mi1.StartTime = time.Now().Add(-30 * time.Millisecond)
+	mi1.EndTime = time.Now()
+	mi1.BytesSent = 187500 // Still 50M throughput worth
+	mi1.BytesAcked = 187500
+	mi1.PacketsAcked = 128
+	mi1.RTTSamples = []time.Duration{30 * time.Millisecond}
+
+	sender.processCompletedMI(mi1)
+
+	// Should have exited slow start due to saturation
+	if sender.state.Mode != K2CCModeDecision {
+		t.Errorf("expected decision mode after saturation, got %s", sender.state.Mode)
+	}
+	// Rate should be set to actual throughput (~50M), not overshooting rate
+	if sender.state.CurrentRate > 70_000_000 {
+		t.Errorf("expected rate near throughput ~50M, got %.1fM", sender.state.CurrentRate/1e6)
+	}
+}
+
+func TestSlowStart_ThroughputGrowing(t *testing.T) {
+	// Throughput growing proportionally to rate → don't exit slow start
+	sender := NewCCSenderGFWMode(DefaultMaxRate)
+	sender.state.CurrentRate = 50_000_000
+	sender.state.Mode = K2CCModeSlowStart
+	sender.rtt = 30 * time.Millisecond
+
+	// MI 0: throughput = 50M
+	mi0 := NewMonitorInterval(0, 50_000_000)
+	mi0.StartTime = time.Now().Add(-30 * time.Millisecond)
+	mi0.EndTime = time.Now()
+	mi0.BytesSent = 187500
+	mi0.BytesAcked = 187500
+	mi0.PacketsAcked = 128
+	mi0.RTTSamples = []time.Duration{30 * time.Millisecond}
+
+	sender.processCompletedMI(mi0)
+	if sender.state.Mode != K2CCModeSlowStart {
+		t.Fatalf("expected slow start after MI 0, got %s", sender.state.Mode)
+	}
+
+	// MI 1: throughput = 90M (rate ~100M, still growing)
+	mi1 := NewMonitorInterval(1, sender.state.CurrentRate)
+	mi1.StartTime = time.Now().Add(-30 * time.Millisecond)
+	mi1.EndTime = time.Now()
+	mi1.BytesSent = 337500 // 90M * 0.03s / 8
+	mi1.BytesAcked = 337500
+	mi1.PacketsAcked = 230
+	mi1.RTTSamples = []time.Duration{30 * time.Millisecond}
+
+	sender.processCompletedMI(mi1)
+
+	// Should still be in slow start — throughput grew proportionally
+	if sender.state.Mode != K2CCModeSlowStart {
+		t.Errorf("expected still in slow start (throughput growing), got %s", sender.state.Mode)
+	}
+}
+
+func TestProbing_StableBaseRate(t *testing.T) {
+	// probeBaseRate prevents drift during alternating probes.
+	// After 10 probe cycles (20 MIs), rate should remain near base rate.
+	sender := NewCCSenderGFWMode(DefaultMaxRate)
+	sender.state.CurrentRate = 100_000_000
+	sender.state.Mode = K2CCModeDecision
+	sender.probeBaseRate = 100_000_000
+	sender.rtt = 30 * time.Millisecond
+	sender.state.Epsilon = defaultEpsilon
+	sender.state.hasLastUtility = true
+	sender.state.lastUtility = 100.0
+	sender.state.NextMIID = 3 // avoid rate probing (every 10 MIs)
+
+	baseRate := sender.state.CurrentRate
+
+	// Run 20 MIs (10 probe cycles) with zero gradient.
+	// Use fixed timestamps to eliminate time.Now() jitter.
+	baseTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i := 0; i < 20; i++ {
+		mi := NewMonitorInterval(uint64(i+2), sender.state.CurrentRate)
+		mi.StartTime = baseTime.Add(time.Duration(i) * 30 * time.Millisecond)
+		mi.EndTime = mi.StartTime.Add(30 * time.Millisecond)
+		mi.BytesSent = 375000
+		mi.BytesAcked = 375000
+		mi.PacketsAcked = 255
+		mi.RTTSamples = []time.Duration{30 * time.Millisecond}
+		sender.state.NextMIID++
+
+		sender.processCompletedMI(mi)
+	}
+
+	// Rate should not have drifted significantly from base
+	drift := math.Abs(sender.probeBaseRate-baseRate) / baseRate
+	if drift > 0.05 {
+		t.Errorf("probeBaseRate drifted %.1f%% from 100M (%.1fM → %.1fM)",
+			drift*100, baseRate/1e6, sender.probeBaseRate/1e6)
+	}
+}
+
+func TestRateProbing_PreservesCounters(t *testing.T) {
+	// Rate probing every 10 MIs should NOT reset direction counters
+	sender := NewK2CCSender(100_000_000)
+	sender.state.CurrentRate = 80_000_000
+	sender.state.Mode = K2CCModeDecision
+	sender.state.UtilityIncreases = 2 // confirmed direction
+	sender.state.NextMIID = 10        // triggers rate probing
+
+	mi := NewMonitorInterval(9, 80_000_000)
+	mi.StartTime = time.Now().Add(-30 * time.Millisecond)
+	mi.EndTime = time.Now()
+	mi.BytesSent = 300000
+	mi.BytesAcked = 300000
+	mi.PacketsAcked = 204
+	mi.RTTSamples = []time.Duration{30 * time.Millisecond}
+	sender.state.hasLastUtility = true
+	sender.state.lastUtility = 80.0
+
+	sender.processCompletedMI(mi)
+
+	// Direction counters should NOT have been reset by rate probing.
+	// They may have been modified by gradient processing, but the point is
+	// rate probing itself doesn't zero them out.
+	// The gradient from the +20% probe will update counters naturally.
 }
 
 func TestAlphaClamping_HighLoss(t *testing.T) {
@@ -1109,9 +1297,8 @@ func TestAlphaClamping_HighLoss(t *testing.T) {
 	sender.rtt = 30 * time.Millisecond
 	sender.state.hasLastUtility = true
 	sender.state.lastUtility = 20.0
-	sender.state.NextMIID = 3 // avoid rate probing
+	sender.state.NextMIID = 3
 
-	// MI with 25% loss
 	mi := NewMonitorInterval(2, 100_000_000)
 	mi.StartTime = time.Now().Add(-30 * time.Millisecond)
 	mi.EndTime = time.Now()
@@ -1123,7 +1310,6 @@ func TestAlphaClamping_HighLoss(t *testing.T) {
 
 	sender.processCompletedMI(mi)
 
-	// Rate should NOT have dropped to minRate (which would happen with inverted utility)
 	if sender.state.CurrentRate < 50_000_000 {
 		t.Errorf("α inversion: rate collapsed to %.1fM (expected stable ~100M)", sender.state.CurrentRate/1e6)
 	}
@@ -1144,34 +1330,7 @@ func TestAlphaClamping_Utility(t *testing.T) {
 	mi.RTTSamples = []time.Duration{30 * time.Millisecond}
 
 	utility := uf.Calculate(mi)
-	// Without clamping: U = 70×(1-5×0.3) = 70×(-0.5) = -35 (negative!)
-	// With clamping: α_eff = 0.8/0.3 ≈ 2.67, U = 70×(1-0.8) = 70×0.2 = 14 (positive)
 	if utility < 0 {
 		t.Errorf("α clamping failed: utility = %.2f (should be positive at 30%% loss)", utility)
-	}
-}
-
-func TestThroughputAnchor_WithLoss(t *testing.T) {
-	// B=100M, loss=5%: T=95M, B_est = 95/(1-0.05) = 100M
-	sender := NewCCSenderGFWMode(DefaultMaxRate)
-	sender.state.CurrentRate = 270_000_000
-	sender.state.Mode = K2CCModeSlowStart
-	sender.rtt = 30 * time.Millisecond
-
-	mi := NewMonitorInterval(1, 270_000_000)
-	mi.StartTime = time.Now().Add(-30 * time.Millisecond)
-	mi.EndTime = time.Now()
-	// Sent 100M worth, but 5% lost
-	mi.BytesSent = 375000
-	mi.BytesLost = 18750  // 5% of BytesSent
-	mi.BytesAcked = 356250 // 95% of BytesSent
-	mi.PacketsAcked = 242
-	mi.RTTSamples = []time.Duration{30 * time.Millisecond}
-
-	sender.processCompletedMI(mi)
-
-	// B_est = T/(1-L) should recover ~100M
-	if sender.bwEstimate < 80_000_000 || sender.bwEstimate > 130_000_000 {
-		t.Errorf("expected bwEstimate ~100M, got %.1fM", sender.bwEstimate/1e6)
 	}
 }

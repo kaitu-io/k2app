@@ -15,16 +15,19 @@ Gradient ascent on utility function: `U = Throughput - α * LossRate * Throughpu
 - **GFW mode**: α=5.0 balances GFW loss tolerance with congestion sensitivity; β=1.0 makes RTT gradient effective
 - **Stale loss filtering**: MI tracks `FirstPacketNumber`/`LastPacketNumber`. `OnCongestionEvent` skips loss events where packet number < current MI's `FirstPacketNumber` (belongs to previous MI). Prevents MI boundary artifacts (LossRate > 100%) when loss notifications arrive after MI rotation.
 - **LossRate clamp**: `LossRate()` capped at 1.0 — defensive guard against residual stale attribution
+- **Zero gradient = no signal**: `gradient == 0` does not update direction counters (neither increase nor decrease). Only clear positive/negative signals drive direction confirmation.
 - Reference: PCC Vivace (NSDI '18)
 
 ## Key Parameters
 
 - `DefaultMaxRate`: 500 Mbps upper bound
-- `defaultEpsilon`: 0.10 (base exploration step size, AIMD-ε adapts within [0.02, 0.20])
+- `defaultEpsilon`: 0.12 (base exploration step size, AIMD-ε adapts within [0.03, 0.25])
+- `arcRateEWMAAlpha`: 0.9 (rate EWMA smoothing — high for fast response)
 - `gfwAlpha`: 5.0 (GFW loss penalty — high enough for congestion gradient, tolerates constant 5% GFW loss)
 - `defaultBeta`: 1.0 (latency penalty — 10ms ΔRtt = 10 utility signal, same magnitude as loss)
 - `arcMinRate`: 10 Mbps (upload floor), `arcMinDownloadRate`: 30 Mbps (download floor)
-- `noiseEWMA`: EWMA of RTT coefficient of variation, cold-starts at 1.0 (conservative)
+- `noiseEWMA`: EWMA of RTT coefficient of variation, cold-starts at 1.2 (conservative)
+- `slowStartSaturationRatio`: 0.7 (throughput growth < 70% of rate growth × slow start factor → link saturated)
 
 ## AIMD-ε: Adaptive Exploration Step Size
 
@@ -36,7 +39,7 @@ SGD optimal step size theory: `ε* ∝ |R - R*|^(1/3)` where R is current rate, 
 
 **Utility gradient**: `∇U = U(MIₙ) - U(MIₙ₋₁)`
 
-**Direction counters**: consecutive same-sign gradients. `confirmed` when counter ≥ 2.
+**Direction counters**: consecutive same-sign gradients. `confirmed` when counter ≥ 2. Zero gradient does not update counters.
 
 **RTT Coefficient of Variation** (UDP-native noise estimator, no TCP HoL pollution):
 
@@ -69,78 +72,96 @@ threshold = z × noiseEWMA × max(R / 1Mbps, 1.0)     z = 1.645
 
 Clamp: `ε ∈ [ε_min, ε_max]`
 
-### Constants (all derived from `ε₀ = DefaultK2ARCEpsilon = 0.10`)
+### Constants (all derived from `ε₀ = DefaultK2ARCEpsilon = 0.12`)
 
 | Symbol | Constant | Value | Derivation |
 |--------|----------|-------|------------|
-| ε₀ | `defaultEpsilon` | 0.10 | Base step size |
-| ε_min | `epsilonMin` | 0.02 | ε₀ / 5 (convergence precision) |
-| ε_max | `epsilonMax` | 0.20 | ε₀ × 2 (exploration ceiling) |
-| δ | `epsilonDelta` | 0.02 | = ε_min (one AI step = one precision unit) |
+| ε₀ | `defaultEpsilon` | 0.12 | Base step size |
+| ε_min | `epsilonMin` | 0.03 | ε₀ / 4 (convergence precision) |
+| ε_max | `epsilonMax` | 0.25 | ε₀ × 2 (exploration ceiling) |
+| δ | `epsilonDelta` | 0.03 | AI step size |
 | γ | `epsilonDecay` | 0.5 | Standard MD halving |
 | z | `epsilonZThreshold` | 1.645 | 95% one-sided z-score |
 | α | `noiseEWMAAlpha` | 0.1 | Slow-moving (10% new sample weight) |
-| — | `coldStartNoise` | 1.0 | ε₀ × 10 (conservative → early reversals = weak → small ε) |
+| — | `coldStartNoise` | 1.2 | ε₀ × 10 (conservative → early reversals = weak → small ε) |
 
 ### Cold Start Behavior
 
-`noiseEWMA` initializes at 1.0 (10× ε₀), making the threshold very high. All early reversals classify as **weak** → ε decreases via MD → conservative small probes. As real RTT CV data arrives (typically 0.05–0.20), noiseEWMA decays toward true noise floor, enabling accurate strong/weak classification.
+`noiseEWMA` initializes at 1.2 (10× ε₀), making the threshold very high. All early reversals classify as **weak** → ε decreases via MD → conservative small probes. As real RTT CV data arrives (typically 0.05–0.20), noiseEWMA decays toward true noise floor, enabling accurate strong/weak classification.
 
-## Throughput Anchor + Ceiling Hold
+## Slow Start Saturation Detection
 
-Fixes app-limited blindness when CC target rate R >> link bandwidth B.
+Slow start has 3 exit conditions:
+1. **Rate ceiling**: `CurrentRate >= maxRate * 0.95` — no room to grow
+2. **Utility drop**: `utility < lastUtility * 0.95` — congestion detected
+3. **Throughput saturation**: `throughputGrowth < slowStartFactor * 0.7` — rate doubled but throughput didn't follow → link is full. Sets `CurrentRate = throughput` so gradient ascent starts near optimum.
 
-### Problem
+Condition 3 fixes the core issue: when `maxRate=500M` and actual link is 50M, slow start previously overshot to 500M in 2 MIs (all subsequent MIs app-limited). Now it exits at the actual bandwidth.
 
-Slow start doubles rate past link bandwidth → app-limited detection (BytesSent < 50% expected) → `processCompletedMI` returns early → CC never works. Users with 100M/200M links permanently stuck at overshoot rate.
+## App-Limited Anchor (Stateless)
 
-### Throughput Anchor
+When MI is app-limited (BytesSent < 50% expected):
+1. Compute `anchorRate = T / (1-L)` inline (no persistent EWMA state)
+2. Apply `minRate` floor (prevents collapse from end-of-transfer noise)
+3. Set `CurrentRate = anchorRate`, exit slow start if active
+4. Reset direction counters, preserve gradient context (`hasLastUtility = true`)
+5. Update `probeBaseRate` to anchor rate
 
-When app-limited MI detected:
-1. Estimate bandwidth: `B_est = T / (1-L)` (EWMA, α=0.3)
-2. Set `CurrentRate = bwEstimate` directly (bypass rate EWMA)
-3. Exit slow start → decision mode
-4. Reset direction counters
+**Key difference from old bwEstimate**: No persistent state, no EWMA decay issues, no stale bandwidth memory. Each app-limited event is independently assessed.
 
-Convergence: 2-3 MIs (60-90ms at 30ms RTT).
+## Stable Probing (probeBaseRate)
 
-### Ceiling Hold
+During gradient ascent, when direction is not yet confirmed (counter < 2), probes alternate around a fixed `probeBaseRate`:
+- Even MI: `rate = probeBaseRate * (1 + ε)`
+- Odd MI: `rate = probeBaseRate * (1 - ε)`
 
-At bandwidth ceiling, utility gradient ≈ 0 → probing alternates without confirmation → rate drifts. When `|gradient| < bwEstimate × 0.05` AND `throughput ≥ bwEstimate × 0.9`: hold rate, skip direction update.
+This prevents EWMA-induced drift: without `probeBaseRate`, alternating `+ε` and `-ε` through `updateRate()` EWMA produces a net ~0.64% decrease per cycle, causing steady rate decay.
 
-### Dynamic α Clamping
+`probeBaseRate` is updated only when direction is confirmed (counter ≥ 2) and the rate actually moves.
+
+## Dynamic α Clamping
 
 With α=5.0, when loss > 20%: `1-αL < 0` → utility inverts → CC minimizes throughput. Fix: `α_eff = min(α, 0.8/L)` ensures `(1-αL) ≥ 0.2`.
 
 ## Global Ack Rate Tracker
 
 Sliding-window tracker (5-second window, 1-second buckets) recording global ack/loss ratio
-from `OnCongestionEventEx`. Independent of per-MI loss attribution. Observability only
-(debug logging via `CCSnapshot.AckRate`) — does not drive rate decisions.
+from `OnCongestionEventEx`. Independent of per-MI loss attribution.
+
+**cwnd compensation** (Brutal-style): `rateToCwnd` divides by `ackRate` so that cwnd enlarges under loss to compensate for dropped packets. `clampedAckRate()` floors at 0.8 (same as Hysteria Brutal) to prevent cwnd explosion. At 20% loss → cwnd × 1.25, at 0% loss → no change.
 
 ## Observability
 
-`Snapshot()` returns `CCSnapshot` (SendingRate, LossRate, Throughput, RTT, MinRTT, Cwnd, Mode, MIID, Epsilon, AckRate, BwEstimate) under `RLock`. Used by `QUICClient.WireStats()` for external metric access. Young MI (BytesSent < 100KB) uses `lastCompleted` values to avoid MI boundary artifacts (throughput/loss spikes from incomplete data).
+`Snapshot()` returns `CCSnapshot` (SendingRate, LossRate, Throughput, RTT, MinRTT, Cwnd, Mode, MIID, Epsilon, AckRate) under `RLock`. Used by `QUICClient.WireStats()` for external metric access. Young MI (BytesSent < 100KB) uses `lastCompleted` values to avoid MI boundary artifacts (throughput/loss spikes from incomplete data).
 
 ## Files
 
 - `arc.go` — `K2ARC` struct, MI-based rate control, utility gradient computation, AIMD-ε, `ARCSnapshot`/`Snapshot()`
-- `arcc_test.go` — ~45 test functions (convergence, loss tolerance, rate bounds, stale loss filtering, snapshot fallback, AIMD-ε, ackRate tracker, CongestionControlEx, throughput anchor, ceiling hold, α clamping)
+- `arcc_test.go` — ~50 test functions (convergence, loss tolerance, rate bounds, stale loss filtering, snapshot fallback, AIMD-ε, ackRate tracker, CongestionControlEx, app-limited anchor, stable probing, slow start saturation, α clamping)
 - `arc_integration_test.go` — QUIC integration tests: real client+server bulk transfer with UDP relay (delay, loss, rate limiting), MI completion hook for per-MI diagnostics
 - `helpers_test.go` — test fixtures
 
 ## Testing
 
 ```bash
-go test ./wire/arc/...                                    # all tests (~50)
+go test ./wire/arc/...                                    # all tests (~60)
 go test ./wire/arc/... -run TestIntegration -v            # integration tests only
-go test ./wire/arc/... -run TestIntegration_WithLoss -v   # loss matrix (0-20%)
+go test ./wire/arc/... -run TestConvergence_Benchmark -v  # convergence: loss × RTT matrix (17 scenarios)
+go test ./wire/arc/... -run TestDescent_Benchmark -v      # descent: rate starts above bandwidth (13 scenarios)
 ```
 
 ### Integration Test Architecture
 
 `arc_integration_test.go` uses a UDP relay between QUIC client and server to simulate realistic network conditions:
-- **Delay**: Configurable one-way delay (15ms = 30ms RTT by default)
+- **Delay**: `delayFunc` abstraction — `stableDelay(d)` for fixed, `jitterDelay(base, maxJitter)` for ±segment-based jitter (100ms segments to avoid QUIC reordering false-positives)
 - **Loss**: Configurable packet drop rate on both directions
 - **Rate limiting**: Server write rate can be capped to simulate upstream bandwidth
 - **MI hook**: `SetMICompletedHook()` collects per-MI data (BytesSent, BytesAcked, duration, throughput, app-limited) for analysis without parsing logs
+
+### Convergence Benchmark (`TestConvergence_Benchmark`)
+
+17 scenarios: 3 RTT profiles × loss matrix (0-35%). Measures convergence speed (MI count) and throughput efficiency (aggregate throughput / goodput). RTT profiles: near (HK 30ms), mid (JP/SG 150ms), far (US/EU 300ms) with ±20% jitter.
+
+### Descent Benchmark (`TestDescent_Benchmark`)
+
+13 scenarios: bandwidth caps (10-100M) × RTT × loss. Verifies algorithm descends from initial rate (150M) to actual bandwidth. Measures descent speed (MI count to ≤ 2× bandwidth) and throughput efficiency.
