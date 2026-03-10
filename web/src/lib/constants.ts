@@ -14,8 +14,8 @@ export function getDownloadLinks(version: string) {
       backup: `${CDN_BACKUP}/${version}/Kaitu_${version}_x64.exe`,
     },
     macos: {
-      primary: `${CDN_PRIMARY}/${version}/Kaitu-${version}.pkg`,
-      backup: `${CDN_BACKUP}/${version}/Kaitu-${version}.pkg`,
+      primary: `${CDN_PRIMARY}/${version}/Kaitu_${version}_universal.pkg`,
+      backup: `${CDN_BACKUP}/${version}/Kaitu_${version}_universal.pkg`,
     },
   };
 }
@@ -23,7 +23,7 @@ export function getDownloadLinks(version: string) {
 export const DOWNLOAD_LINKS = {
   // Desktop apps — primary CDN links (used by homepage, invite page)
   windows: `${CDN_PRIMARY}/${BETA_VERSION}/Kaitu_${BETA_VERSION}_x64.exe`,
-  macos: `${CDN_PRIMARY}/${BETA_VERSION}/Kaitu-${BETA_VERSION}.pkg`,
+  macos: `${CDN_PRIMARY}/${BETA_VERSION}/Kaitu_${BETA_VERSION}_universal.pkg`,
   // Mobile apps
   ios: 'https://apps.apple.com/app/id6448744655',
   android: 'https://d13jc1jqzlg4yt.cloudfront.net/waymaker/waymaker-3.0.2-release.apk',
