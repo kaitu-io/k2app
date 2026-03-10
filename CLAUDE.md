@@ -12,6 +12,8 @@ go build -o k2 ./cmd/k2            # Build client
 go build -o k2s ./cmd/k2s          # Build server
 go test ./...                      # All tests (wire + core + dns + appext + daemon + server + e2e)
 go test -short ./...               # Fast: skip live DNS/network tests
+make quick-check                   # go vet + golangci-lint + go test -short -race
+make pre-release                   # quick-check + full tests + contract tests + cross-compile
 make appext-ios                    # iOS xcframework (gomobile bind)
 make appext-android                # Android aar (gomobile bind)
 k2 setup <k2v5://URL>              # First-time: generate config + install service + start
@@ -121,6 +123,7 @@ provider/CLAUDE.md             Provider interface (TUN, Proxy, TProxy, iOS, Andr
 server/CLAUDE.md               Server listener orchestration, TCP/UDP handlers
 wire/CLAUDE.md                 k2v5 wire protocol, Dialer/Listener interfaces
 wire/k2v5-protocol-spec.md    k2v5 protocol specification (TLS, ECH, camouflage, framing)
+wire/VOCABULARY.md             Three-layer vocabulary convention (Wire/Relay/Tunnel)
 wire/arc/CLAUDE.md             PCC Vivace congestion control
 appext/CLAUDE.md               App extension shell: gomobile SDK (macOS sysext, iOS, Android)
 test/CLAUDE.md                 E2E integration tests
@@ -271,7 +274,7 @@ docs/todos/p2-*.md     Nice to have
 
 ## Status
 
-**Done**: Full L4 architecture, wire protocol (QUIC+TCP-WS), DNS middleware (L3+L4 + RFC 8767 stale-while-revalidate + sing-box persistent UDP pooling), auth, ECH (DNS-based forging + config rotation), TLS record padding, dual certs (RSA+EC), client CA pool (system + Kaitu CA - Chinese CAs), PCC, client tunnel, server handlers, e2e tests, zero-config server startup, k2/k2s binaries (k2s interactive wizard + upgrade command + beta channel), appext SDK (gomobile, macOS sysext+iOS+Android, iOS GOGC=10 memory optimization), tproxy provider (OpenWRT/Linux), OpenWRT service management (init.d/procd), wire observability (K2CC metrics + TX/RX counting + HealthMonitor FSM + TCP health gate + background QUIC probe), protocol sniffing (TLS SNI, QUIC SNI, HTTP Host, BitTorrent, STUN, DTLS + QUIC blocking with ICMP Port Unreachable), Happy Eyeballs (RFC 8305 IPv6/IPv4 address selection)
+**Done**: Full L4 architecture, wire protocol (QUIC+TCP-WS), DNS middleware (L3+L4 + RFC 8767 stale-while-revalidate + sing-box persistent UDP pooling), auth, ECH (DNS-based forging + config rotation), TLS record padding, dual certs (RSA+EC), client CA pool (system + Kaitu CA - Chinese CAs), PCC, client tunnel, server handlers, e2e tests, zero-config server startup, k2/k2s binaries (k2s interactive wizard + upgrade command + beta channel), appext SDK (gomobile, macOS sysext+iOS+Android, iOS GOGC=10 memory optimization), tproxy provider (OpenWRT/Linux), OpenWRT service management (init.d/procd), wire observability (K2CC metrics + TX/RX counting + HealthMonitor FSM + TCP health gate + background QUIC probe), protocol sniffing (TLS SNI, QUIC SNI, HTTP Host, BitTorrent, STUN, DTLS + QUIC blocking with ICMP Port Unreachable), Happy Eyeballs (RFC 8305 IPv6/IPv4 address selection), transport behavior contract tests (12 scenarios in wire/ + engine/), quality gates (`make quick-check` / `make pre-release`), goleak goroutine leak detection
 
 ## Platform Mapping
 

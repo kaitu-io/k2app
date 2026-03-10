@@ -74,6 +74,9 @@ HTTP-aligned error codes for frontend consumption:
 - `error.go` — `EngineError`, `ClassifyError` (HTTP-aligned error codes, MultiTransportError handling)
 - `health.go` — `healthMonitor` (1Hz sampling, ring buffer 300s, EWMA smoothing α=0.3 on smoothWireLoss/smoothWireThroughput, peakThroughput decay half-life ~693s with 10-sample warm-up, health FSM: healthy→degraded(≥5 streak)→critical(≥5 streak), corrective action: full reconnect with 10s cooldown). TCP health gate: `tcpRecentlyHealthy()` (30s window) suppresses reconnect when TCP streams are working. Wire-layer metrics only — relay metrics are observability (see `wire/VOCABULARY.md`).
 - `health_test.go` — Health monitor tests (EWMA smoothing, peak decay, transitions, reset)
+- `recovery_probe.go` — Background QUIC probe during TCP-WS fallback (3-attempt limit, 3s initial delay, stops on client/auth errors)
+- `recovery_probe_test.go` — Recovery probe tests
+- `contract_test.go` — 4 transport behavior contract tests (TCP health gate, server unreachable stop, auth no-retry, timing)
 - `happy_eyeballs.go` — `resolveDialAddr`, `happyEyeballs` (RFC 8305 IPv6/IPv4 race with 250ms head start)
 - `dns_handler.go` — `dnsHandler` (port 53 TCP+UDP interception, RFC 1035 TCP framing)
 - `network.go` — `NetworkChangeNotifier` interface
@@ -81,5 +84,6 @@ HTTP-aligned error codes for frontend consumption:
 ## Testing
 
 ```bash
-go test ./engine/...    # Engine + error classification tests
+go test ./engine/...                          # Engine + error classification tests
+go test -run TestContract -v ./engine/...     # contract tests only
 ```

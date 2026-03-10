@@ -214,8 +214,10 @@ func TestE2E_ClientServerConnect(t *testing.T) {
 	env := setupQUICEnv(t)
 	defer env.Close()
 
-	// Just verify we can establish a connection and open a stream.
-	conn, err := env.quicClient.DialTCP(context.Background(), "example.com:80")
+	// Use a local echo server — no external network dependency.
+	echoAddr := startTCPEchoServer(t)
+
+	conn, err := env.quicClient.DialTCP(context.Background(), echoAddr)
 	if err != nil {
 		t.Fatal(err)
 	}

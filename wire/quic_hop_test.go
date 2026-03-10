@@ -27,7 +27,7 @@ func setupQUICPairWithHop(t *testing.T) (*QUICClient, *QUICServer, func()) {
 }
 
 // TestQUICClient_DialUDP_RelayUnhealthy_ReturnsFallback verifies that when
-// relay datagrams become unhealthy, DialUDP returns ErrRelayUDPUnhealthy
+// relay datagrams become unhealthy, DialUDP returns ErrDatagramRelayUnhealthy
 // without attempting port hops. Relay-layer metrics must not drive wire-layer
 // decisions (port hop, reconnect).
 func TestQUICClient_DialUDP_RelayUnhealthy_ReturnsFallback(t *testing.T) {
@@ -47,14 +47,14 @@ func TestQUICClient_DialUDP_RelayUnhealthy_ReturnsFallback(t *testing.T) {
 	for i := int32(0); i < relayTimeoutThreshold; i++ {
 		mux.recordTimeout()
 	}
-	if mux.relayUDPHealthy() {
+	if mux.datagramRelayHealthy() {
 		t.Fatal("mux should be unhealthy")
 	}
 
-	// DialUDP should return ErrRelayUDPUnhealthy (no hop)
+	// DialUDP should return ErrDatagramRelayUnhealthy (no hop)
 	_, err := client.DialUDP(ctx, "8.8.8.8:53")
-	if !errors.Is(err, ErrRelayUDPUnhealthy) {
-		t.Fatalf("DialUDP = %v, want ErrRelayUDPUnhealthy", err)
+	if !errors.Is(err, ErrDatagramRelayUnhealthy) {
+		t.Fatalf("DialUDP = %v, want ErrDatagramRelayUnhealthy", err)
 	}
 
 	if client.portHopAttempts.Load() != 0 {
@@ -86,10 +86,10 @@ func TestQUICClient_DialUDP_RelayUnhealthy_HopStateUntouched(t *testing.T) {
 		mux.recordTimeout()
 	}
 
-	// DialUDP should return ErrRelayUDPUnhealthy without touching hop state
+	// DialUDP should return ErrDatagramRelayUnhealthy without touching hop state
 	_, err := client.DialUDP(ctx, "8.8.8.8:53")
-	if !errors.Is(err, ErrRelayUDPUnhealthy) {
-		t.Fatalf("DialUDP = %v, want ErrRelayUDPUnhealthy", err)
+	if !errors.Is(err, ErrDatagramRelayUnhealthy) {
+		t.Fatalf("DialUDP = %v, want ErrDatagramRelayUnhealthy", err)
 	}
 
 	if client.portHopAttempts.Load() != 2 {
@@ -220,7 +220,7 @@ func TestQuicUDPConn_WriteTo_LargePayloadUsesOverflow(t *testing.T) {
 }
 
 // TestQUICClient_DialUDP_UnhealthyRelay_NoHop verifies that when relay UDP is
-// unhealthy, DialUDP always returns ErrRelayUDPUnhealthy regardless of TCP
+// unhealthy, DialUDP always returns ErrDatagramRelayUnhealthy regardless of TCP
 // health status. Relay-layer metrics must never drive wire-layer port hops.
 func TestQUICClient_DialUDP_UnhealthyRelay_NoHop(t *testing.T) {
 	client, _, cleanup := setupQUICPairWithHop(t)
@@ -243,10 +243,10 @@ func TestQUICClient_DialUDP_UnhealthyRelay_NoHop(t *testing.T) {
 	// Ensure TCP is NOT recently healthy (no lastTCPSuccessAt)
 	client.lastTCPSuccessAt.Store(0)
 
-	// DialUDP should return ErrRelayUDPUnhealthy, NOT trigger hop
+	// DialUDP should return ErrDatagramRelayUnhealthy, NOT trigger hop
 	_, err := client.DialUDP(ctx, "8.8.8.8:53")
-	if !errors.Is(err, ErrRelayUDPUnhealthy) {
-		t.Fatalf("DialUDP = %v, want ErrRelayUDPUnhealthy", err)
+	if !errors.Is(err, ErrDatagramRelayUnhealthy) {
+		t.Fatalf("DialUDP = %v, want ErrDatagramRelayUnhealthy", err)
 	}
 
 	// No hop should have been attempted
@@ -256,7 +256,7 @@ func TestQUICClient_DialUDP_UnhealthyRelay_NoHop(t *testing.T) {
 }
 
 // TestQUICClient_DialUDP_NoHopWithoutConfig verifies that without hop config,
-// unhealthy datagrams immediately return ErrRelayUDPUnhealthy (no hop attempt).
+// unhealthy datagrams immediately return ErrDatagramRelayUnhealthy (no hop attempt).
 func TestQUICClient_DialUDP_NoHopWithoutConfig(t *testing.T) {
 	client, _, cleanup := setupQUICPair(t) // no hop config
 	defer cleanup()
@@ -275,10 +275,10 @@ func TestQUICClient_DialUDP_NoHopWithoutConfig(t *testing.T) {
 		mux.recordTimeout()
 	}
 
-	// Should immediately return ErrRelayUDPUnhealthy (no hop)
+	// Should immediately return ErrDatagramRelayUnhealthy (no hop)
 	_, err := client.DialUDP(ctx, "8.8.8.8:53")
-	if !errors.Is(err, ErrRelayUDPUnhealthy) {
-		t.Fatalf("DialUDP = %v, want ErrRelayUDPUnhealthy", err)
+	if !errors.Is(err, ErrDatagramRelayUnhealthy) {
+		t.Fatalf("DialUDP = %v, want ErrDatagramRelayUnhealthy", err)
 	}
 
 	if client.portHopAttempts.Load() != 0 {
@@ -287,7 +287,7 @@ func TestQUICClient_DialUDP_NoHopWithoutConfig(t *testing.T) {
 }
 
 // TestQUICClient_DialUDP_RelayUnhealthy_NoRecoveryProbe verifies that relay
-// UDP unhealthy state always returns ErrRelayUDPUnhealthy regardless of prior
+// UDP unhealthy state always returns ErrDatagramRelayUnhealthy regardless of prior
 // hop exhaustion state. Relay metrics never trigger hop or recovery probes.
 func TestQUICClient_DialUDP_RelayUnhealthy_NoRecoveryProbe(t *testing.T) {
 	client, _, cleanup := setupQUICPairWithHop(t)
@@ -312,10 +312,10 @@ func TestQUICClient_DialUDP_RelayUnhealthy_NoRecoveryProbe(t *testing.T) {
 		mux.recordTimeout()
 	}
 
-	// DialUDP should return ErrRelayUDPUnhealthy (no hop, no recovery probe)
+	// DialUDP should return ErrDatagramRelayUnhealthy (no hop, no recovery probe)
 	_, err := client.DialUDP(ctx, "8.8.8.8:53")
-	if !errors.Is(err, ErrRelayUDPUnhealthy) {
-		t.Fatalf("DialUDP = %v, want ErrRelayUDPUnhealthy", err)
+	if !errors.Is(err, ErrDatagramRelayUnhealthy) {
+		t.Fatalf("DialUDP = %v, want ErrDatagramRelayUnhealthy", err)
 	}
 
 	// Hop state should be unchanged (relay path doesn't touch it)
@@ -325,7 +325,7 @@ func TestQUICClient_DialUDP_RelayUnhealthy_NoRecoveryProbe(t *testing.T) {
 }
 
 // TestQUICClient_DialUDP_RelayUnhealthy_AlwaysFallback verifies that relay
-// UDP unhealthy always returns ErrRelayUDPUnhealthy, regardless of hop config
+// UDP unhealthy always returns ErrDatagramRelayUnhealthy, regardless of hop config
 // or exhaustion state. This is the simplest case — relay metrics never trigger
 // any wire-layer action.
 func TestQUICClient_DialUDP_RelayUnhealthy_AlwaysFallback(t *testing.T) {
@@ -348,8 +348,8 @@ func TestQUICClient_DialUDP_RelayUnhealthy_AlwaysFallback(t *testing.T) {
 	}
 
 	_, err := client.DialUDP(ctx, "8.8.8.8:53")
-	if !errors.Is(err, ErrRelayUDPUnhealthy) {
-		t.Fatalf("DialUDP = %v, want ErrRelayUDPUnhealthy", err)
+	if !errors.Is(err, ErrDatagramRelayUnhealthy) {
+		t.Fatalf("DialUDP = %v, want ErrDatagramRelayUnhealthy", err)
 	}
 }
 

@@ -235,6 +235,12 @@ func (c *QUICClient) ConsecConnFails() int32 {
 	return c.handshakeFailStreak.Load()
 }
 
+// RecordTCPSuccess marks the current time as a successful TCP stream.
+// Exported for testing — allows engine tests to set TCP health state.
+func (c *QUICClient) RecordTCPSuccess() {
+	c.lastTCPSuccessAt.Store(time.Now().UnixNano())
+}
+
 // tcpRecentlyHealthy returns true if a TCP stream succeeded within the given window.
 // Used by DialUDP to skip destructive port hops when TCP streams are healthy
 // (indicating normal packet loss, not ISP port blocking).
@@ -411,8 +417,8 @@ func (c *QUICClient) DialTCP(ctx context.Context, addr string) (net.Conn, error)
 // DialUDP opens a UDP proxy session through QUIC datagrams or stream fallback.
 // Returns a PacketConn backed by QUIC datagrams with a unique session ID.
 //
-// When the relay UDP path is unhealthy (consecutive timeouts or high loss),
-// returns ErrRelayUDPUnhealthy for TCP-WS fallback. Relay-layer metrics
+// When the datagram relay path is unhealthy (consecutive timeouts or high loss),
+// returns ErrDatagramRelayUnhealthy for TCP-WS fallback. Relay-layer metrics
 // never trigger wire-layer actions (port hop, reconnect).
 func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, error) {
 	for {
@@ -439,8 +445,8 @@ func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, 
 		dgSupported := conn.ConnectionState().SupportsDatagrams
 		slog.Debug("QUICClient.DialUDP", "addr", addr, "datagramsSupported", dgSupported)
 		if dgSupported {
-			if !mux.relayUDPHealthy() {
-				slog.Debug("QUICClient.DialUDP: relay UDP unhealthy",
+			if !mux.datagramRelayHealthy() {
+				slog.Debug("QUICClient.DialUDP: datagram relay unhealthy",
 					"addr", addr,
 					"relayTimeouts", mux.relayTimeouts.Load(),
 					"lossRate", fmt.Sprintf("%.1f%%", mux.evaluateRelayLossRate()*100))
@@ -448,7 +454,7 @@ func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, 
 				// They must never drive wire-layer decisions (port hop, reconnect).
 				// TransportManager handles wire-layer recovery via QUIC handshake
 				// failure detection and background probe.
-				return nil, ErrRelayUDPUnhealthy
+				return nil, ErrDatagramRelayUnhealthy
 			}
 
 			sessionID := alloc.Next()
@@ -1064,12 +1070,12 @@ func (m *quicUDPMux) recordSend() {
 func (m *quicUDPMux) recordTimeout() {
 	count := m.relayTimeouts.Add(1)
 	if count == relayTimeoutThreshold {
-		slog.Warn("quicUDPMux: relay UDP path marked unhealthy",
+		slog.Warn("quicUDPMux: datagram relay path marked unhealthy",
 			"relayTimeouts", count)
 	}
 }
 
-func (m *quicUDPMux) relayUDPHealthy() bool {
+func (m *quicUDPMux) datagramRelayHealthy() bool {
 	if m.relayTimeouts.Load() >= relayTimeoutThreshold {
 		return false
 	}

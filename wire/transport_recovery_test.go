@@ -150,12 +150,12 @@ func TestResetConnections_ClearsConsecConnFails(t *testing.T) {
 }
 
 // TestTransportManager_RelayUDPUnhealthyNotFallback verifies that
-// ErrRelayUDPUnhealthy does not trigger transport-level fallback.
+// ErrDatagramRelayUnhealthy does not trigger transport-level fallback.
 func TestTransportManager_RelayUDPUnhealthyNotFallback(t *testing.T) {
 	quic := &mockTransport{
 		available: true,
 		dialUDPFn: func(ctx context.Context, addr string) (net.PacketConn, error) {
-			return nil, ErrRelayUDPUnhealthy
+			return nil, ErrDatagramRelayUnhealthy
 		},
 	}
 	tcpws := &mockTransport{
@@ -176,6 +176,6 @@ func TestTransportManager_RelayUDPUnhealthyNotFallback(t *testing.T) {
 	conn.Close()
 
 	if tm.FallbackActive() {
-		t.Fatal("ErrRelayUDPUnhealthy should not set fallbackActive")
+		t.Fatal("ErrDatagramRelayUnhealthy should not set fallbackActive")
 	}
 }

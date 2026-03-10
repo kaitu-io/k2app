@@ -160,12 +160,12 @@ func TestTransportManager_DialTCP_FallbackWorks(t *testing.T) {
 
 // TestTransportManager_DialUDP_FallbackAfterHealthDegradation demonstrates the fix:
 // After relayTimeoutThreshold consecutive ReadFrom timeouts, QUICClient.DialUDP
-// returns ErrRelayUDPUnhealthy, triggering TransportManager fallback to TCP-WS.
+// returns ErrDatagramRelayUnhealthy, triggering TransportManager fallback to TCP-WS.
 //
 // Sequence:
 //  1. First DialUDP → QUIC returns broken conn (silent success — first query may timeout)
 //  2. ReadFrom timeouts accumulate on the mux health tracker
-//  3. Subsequent DialUDP → QUIC returns ErrRelayUDPUnhealthy → TransportManager falls back to TCP-WS
+//  3. Subsequent DialUDP → QUIC returns ErrDatagramRelayUnhealthy → TransportManager falls back to TCP-WS
 func TestTransportManager_DialUDP_FallbackAfterHealthDegradation(t *testing.T) {
 	var tcpwsUsed atomic.Bool
 	var dialCount atomic.Int32
@@ -180,7 +180,7 @@ func TestTransportManager_DialUDP_FallbackAfterHealthDegradation(t *testing.T) {
 				return &brokenPacketConn{closed: make(chan struct{})}, nil
 			}
 			// Health gate kicks in after threshold timeouts detected
-			return nil, ErrRelayUDPUnhealthy
+			return nil, ErrDatagramRelayUnhealthy
 		},
 	}
 
@@ -330,7 +330,7 @@ func TestTransportManager_DialUDP_Asymmetry(t *testing.T) {
 			available: true,
 			dialUDPFn: func(ctx context.Context, addr string) (net.PacketConn, error) {
 				if dialCount.Add(1) > relayTimeoutThreshold {
-					return nil, ErrRelayUDPUnhealthy
+					return nil, ErrDatagramRelayUnhealthy
 				}
 				return &brokenPacketConn{closed: make(chan struct{})}, nil
 			},

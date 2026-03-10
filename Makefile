@@ -1,7 +1,8 @@
 .PHONY: build test generate clean netem-test \
 	build-darwin-arm64 build-darwin-amd64 build-darwin-universal \
 	build-windows-amd64 build-linux-amd64 build-linux-arm64 \
-	appext-ios appext-macos appext-android
+	appext-ios appext-macos appext-android \
+	quick-check pre-release build-all-platforms
 
 VERSION ?= dev
 COMMIT  ?= $(shell git rev-parse --short HEAD)
@@ -81,6 +82,24 @@ appext-android:
 # --- Network degradation tests (Docker netem) ---
 netem-test:
 	SCENARIO=$(or $(SCENARIO),all) test/netem/run.sh
+
+# --- Quality gates ---
+
+# Phase 1+2: fast checks for local development (~2min)
+quick-check:
+	go vet ./...
+	@command -v golangci-lint >/dev/null 2>&1 && golangci-lint run || echo "SKIP: golangci-lint not installed"
+	go test -short -race -count=1 ./...
+
+# Full pre-release gate: CI and release builds call this single target.
+pre-release: quick-check
+	go test -race -count=1 ./...
+	go test -run TestContract -v ./wire/... ./engine/...
+	$(MAKE) build-all-platforms
+
+# Cross-compile all platforms (compiles = no broken imports).
+build-all-platforms: build-darwin-arm64 build-linux-amd64 build-linux-arm64 build-windows-amd64 build-server-linux
+	@echo "All platform builds OK"
 
 clean:
 	rm -rf build/

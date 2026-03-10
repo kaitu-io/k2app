@@ -105,6 +105,7 @@ func setupQUICEnv(t *testing.T) *testEnv {
 	env.quicSrv = wire.NewQUICServer(env.store)
 	env.quicSrv.Listen(ln)
 	env.handler = server.NewProxyHandler()
+	env.handler.AllowPrivateIP = true // echo servers run on localhost
 
 	env.quicAddr = serverUDP.LocalAddr().String()
 
@@ -165,6 +166,7 @@ func setupTCPWSEnv(t *testing.T) *testEnv {
 
 	env.tcpwsSrv = wire.NewTCPWSServer(env.store)
 	env.handler = server.NewProxyHandler()
+	env.handler.AllowPrivateIP = true // echo servers run on localhost
 
 	// Accept TCP connections and feed to TCP-WS server
 	env.wg.Add(1)

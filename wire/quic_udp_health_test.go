@@ -9,8 +9,8 @@ import (
 // Tests for datagram health tracking on quicUDPMux
 //
 // The mux tracks consecutive ReadFrom timeouts. After relayTimeoutThreshold
-// consecutive timeouts, relayUDPHealthy() returns false, causing
-// QUICClient.DialUDP to return ErrRelayUDPUnhealthy, triggering TCP-WS fallback.
+// consecutive timeouts, datagramRelayHealthy() returns false, causing
+// QUICClient.DialUDP to return ErrDatagramRelayUnhealthy, triggering TCP-WS fallback.
 // ==========================================================================
 
 func TestQuicUDPMux_DatagramHealthy_Default(t *testing.T) {
@@ -18,7 +18,7 @@ func TestQuicUDPMux_DatagramHealthy_Default(t *testing.T) {
 		sessions: make(map[uint32]chan *UDPFrame),
 		done:     make(chan struct{}),
 	}
-	if !mux.relayUDPHealthy() {
+	if !mux.datagramRelayHealthy() {
 		t.Fatal("new mux should be healthy by default")
 	}
 }
@@ -31,13 +31,13 @@ func TestQuicUDPMux_DatagramHealthy_AfterTimeouts(t *testing.T) {
 
 	// Record timeouts up to threshold
 	for i := int32(0); i < relayTimeoutThreshold; i++ {
-		if i > 0 && mux.relayUDPHealthy() {
+		if i > 0 && mux.datagramRelayHealthy() {
 			// Still healthy before reaching threshold
 		}
 		mux.recordTimeout()
 	}
 
-	if mux.relayUDPHealthy() {
+	if mux.datagramRelayHealthy() {
 		t.Fatalf("mux should be unhealthy after %d consecutive timeouts", relayTimeoutThreshold)
 	}
 }
@@ -52,13 +52,13 @@ func TestQuicUDPMux_DatagramHealthy_ResetOnRecv(t *testing.T) {
 	for i := int32(0); i < relayTimeoutThreshold; i++ {
 		mux.recordTimeout()
 	}
-	if mux.relayUDPHealthy() {
+	if mux.datagramRelayHealthy() {
 		t.Fatal("should be unhealthy")
 	}
 
 	// Receive a datagram → resets to healthy
 	mux.recordRecv()
-	if !mux.relayUDPHealthy() {
+	if !mux.datagramRelayHealthy() {
 		t.Fatal("should be healthy after receiving datagram")
 	}
 }
@@ -73,7 +73,7 @@ func TestQuicUDPMux_DatagramHealthy_BelowThreshold(t *testing.T) {
 	for i := int32(0); i < relayTimeoutThreshold-1; i++ {
 		mux.recordTimeout()
 	}
-	if !mux.relayUDPHealthy() {
+	if !mux.datagramRelayHealthy() {
 		t.Fatal("should still be healthy below threshold")
 	}
 }
@@ -139,7 +139,7 @@ func TestQuicUDPMux_DatagramHealthy_LossRateUnhealthy(t *testing.T) {
 		}
 	}
 	mux.expireLossWindow()
-	if mux.relayUDPHealthy() {
+	if mux.datagramRelayHealthy() {
 		t.Fatal("should be unhealthy with 50% loss rate")
 	}
 }

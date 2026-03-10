@@ -159,7 +159,7 @@ func (tm *TransportManager) DialTCP(ctx context.Context, addr string) (net.Conn,
 
 // DialUDP opens a UDP proxy connection.
 // Prefers QUIC (datagram), falls back to TCP-WS (smux stream).
-// ErrRelayUDPUnhealthy is not counted as a QUIC transport failure (F1 handles it).
+// ErrDatagramRelayUnhealthy is not counted as a QUIC transport failure (F1 handles it).
 func (tm *TransportManager) DialUDP(ctx context.Context, addr string) (net.PacketConn, error) {
 	tm.mu.RLock()
 	quic := tm.quic

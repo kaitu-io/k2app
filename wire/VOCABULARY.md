@@ -10,6 +10,10 @@ Three-layer model for metrics, naming, and decision ownership.
 | **Relay** | Application traffic through the tunnel to target IPs | UDP relay sent/recv ratio, relay timeouts | `Relay*` |
 | **Tunnel** | Overall tunnel health assessment (engine layer) | smoothed wire loss, health level FSM | `Tunnel*` |
 
+## Terminology
+
+- **Datagram Relay**: The QUIC datagram-based path for forwarding user UDP packets. Distinct from QUIC's own wire-layer UDP transport. `ErrDatagramRelayUnhealthy` signals this path has degraded; `datagramRelayHealthy()` evaluates health from loss rate and timeout counters.
+
 ## Key Rule
 
 > **Wire-layer decisions (port hop, reconnect, fallback) must only be driven by Wire-layer metrics (K2CC packet loss, QUIC handshake failure).** Relay-layer metrics (datagram sent/recv ratio) are observability only.

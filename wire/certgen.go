@@ -14,6 +14,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"math/big"
+	"net"
 	"os"
 	"path/filepath"
 	"time"
@@ -224,7 +225,8 @@ type TargetProfile struct {
 
 // ProbeTarget connects to host:443, completes TLS handshake, returns profile.
 func ProbeTarget(host string) (*TargetProfile, error) {
-	conn, err := tls.Dial("tcp", host+":443", &tls.Config{
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	conn, err := tls.DialWithDialer(dialer, "tcp", host+":443", &tls.Config{
 		InsecureSkipVerify: true,
 	})
 	if err != nil {

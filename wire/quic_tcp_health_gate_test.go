@@ -9,7 +9,7 @@ import (
 // Tests for TCP health gate on QUICClient
 //
 // When TCP streams recently succeeded (within tcpHealthWindow), DialUDP skips
-// destructive port hops and returns ErrRelayUDPUnhealthy instead. This prevents
+// destructive port hops and returns ErrDatagramRelayUnhealthy instead. This prevents
 // normal datagram packet loss from killing healthy TCP streams.
 // ==========================================================================
 
