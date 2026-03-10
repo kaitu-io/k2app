@@ -3,12 +3,14 @@ package engine
 import (
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"sync"
 	"time"
 
 	"github.com/sasha-s/go-deadlock"
 
 	"github.com/kaitu-io/k2/core"
+	"github.com/kaitu-io/k2/safego"
 	"github.com/kaitu-io/k2/wire"
 )
 
@@ -99,7 +101,7 @@ func newHealthMonitor(
 
 func (hm *healthMonitor) start() {
 	hm.wg.Add(1)
-	go func() {
+	safego.Go(func() {
 		defer hm.wg.Done()
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
@@ -108,10 +110,21 @@ func (hm *healthMonitor) start() {
 			case <-hm.done:
 				return
 			case <-ticker.C:
-				hm.sample()
+				hm.sampleSafe()
 			}
 		}
+	})
+}
+
+// sampleSafe wraps sample() with panic recovery so the health monitor loop survives.
+func (hm *healthMonitor) sampleSafe() {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("health: sample panic recovered", "panic", r,
+				"stack", string(debug.Stack()))
+		}
 	}()
+	hm.sample()
 }
 
 func (hm *healthMonitor) stop() {

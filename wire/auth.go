@@ -4,10 +4,14 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"log/slog"
 	"net/http"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/kaitu-io/k2/safego"
 )
 
 const (
@@ -130,18 +134,29 @@ func (s *TicketStore) Remaining(token string) int {
 // StartCleanup starts a background goroutine that periodically removes expired
 // tickets and grace tokens. The goroutine stops when done is closed.
 func (s *TicketStore) StartCleanup(interval time.Duration, done chan struct{}) {
-	go func() {
+	safego.Go(func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
-				s.cleanup()
+				s.cleanupSafe()
 			case <-done:
 				return
 			}
 		}
+	})
+}
+
+// cleanupSafe wraps cleanup() with panic recovery so the cleanup loop survives.
+func (s *TicketStore) cleanupSafe() {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("auth: cleanup panic recovered", "panic", r,
+				"stack", string(debug.Stack()))
+		}
 	}()
+	s.cleanup()
 }
 
 // cleanup removes expired tickets and grace tokens.

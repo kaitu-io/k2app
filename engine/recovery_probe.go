@@ -8,6 +8,7 @@ import (
 
 	"github.com/sasha-s/go-deadlock"
 
+	"github.com/kaitu-io/k2/safego"
 	"github.com/kaitu-io/k2/wire"
 )
 
@@ -53,7 +54,7 @@ func (p *recoveryProbe) trigger() {
 	p.cancel = cancel
 	p.mu.Unlock()
 
-	go p.run(ctx)
+	safego.Go(func() { p.run(ctx) })
 }
 
 // stop cancels any in-flight probe. Safe to call multiple times.

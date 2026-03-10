@@ -17,6 +17,7 @@ import (
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/engine"
 	"github.com/kaitu-io/k2/provider"
+	"github.com/kaitu-io/k2/safego"
 )
 
 // DefaultAddr is the daemon HTTP listen address.
@@ -114,11 +115,11 @@ func (d *Daemon) Run(ctx context.Context, listenAddr string) error {
 	d.tryAutoReconnect(ctx)
 
 	errCh := make(chan error, 1)
-	go func() {
+	safego.Go(func() {
 		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 			errCh <- err
 		}
-	}()
+	})
 
 	slog.Info("k2 daemon ready")
 
@@ -327,7 +328,7 @@ func (d *Daemon) tryAutoReconnect(ctx context.Context) {
 	}
 
 	slog.Info("auto-reconnect: reconnecting with saved config")
-	go func() {
+	safego.Go(func() {
 		// Delay 5s to let daemon fully start; abort if daemon shuts down.
 		select {
 		case <-time.After(5 * time.Second):
@@ -342,7 +343,7 @@ func (d *Daemon) tryAutoReconnect(ctx context.Context) {
 		if err := d.doUp(st.Config, 0); err != nil {
 			slog.Error("auto-reconnect failed", "err", err)
 		}
-	}()
+	})
 }
 
 // statusInfo returns current status as a map for the HTTP poll endpoint.

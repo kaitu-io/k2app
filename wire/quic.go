@@ -77,11 +77,13 @@ func (o *udpOverflowStream) init() error {
 
 	// Write H3 frame type + StreamTypeUDPOverflow header
 	if err := WriteH3ProxyFrameType(stream); err != nil {
+		stream.CancelRead(0)
 		stream.Close()
 		o.initErr = fmt.Errorf("wire: write overflow H3 frame: %w", err)
 		return o.initErr
 	}
 	if err := WriteStreamHeader(stream, StreamTypeUDPOverflow, ""); err != nil {
+		stream.CancelRead(0)
 		stream.Close()
 		o.initErr = fmt.Errorf("wire: write overflow header: %w", err)
 		return o.initErr
@@ -107,6 +109,7 @@ func (o *udpOverflowStream) close() {
 	o.initMu.Lock()
 	defer o.initMu.Unlock()
 	if o.stream != nil {
+		o.stream.CancelRead(0)
 		o.stream.Close()
 	}
 }

@@ -155,12 +155,27 @@ func buildTestQUICInitial(t *testing.T, sni string) []byte {
 	// 5. Encrypt payload with QUIC Initial keys.
 	salt := quicSaltV1
 	initialSecret := hkdf.Extract(crypto.SHA256.New, destConnID, salt)
-	secret := quicHKDFExpandLabel(crypto.SHA256, initialSecret, []byte{}, "client in", crypto.SHA256.Size())
-	key := quicHKDFExpandLabel(crypto.SHA256, secret, []byte{}, "quic key", 16)
-	iv := quicHKDFExpandLabel(crypto.SHA256, secret, []byte{}, "quic iv", 12)
-	hpKey := quicHKDFExpandLabel(crypto.SHA256, secret, []byte{}, "quic hp", 16)
+	secret, err := quicHKDFExpandLabel(crypto.SHA256, initialSecret, []byte{}, "client in", crypto.SHA256.Size())
+	if err != nil {
+		t.Fatalf("expand client in: %v", err)
+	}
+	key, err := quicHKDFExpandLabel(crypto.SHA256, secret, []byte{}, "quic key", 16)
+	if err != nil {
+		t.Fatalf("expand key: %v", err)
+	}
+	iv, err := quicHKDFExpandLabel(crypto.SHA256, secret, []byte{}, "quic iv", 12)
+	if err != nil {
+		t.Fatalf("expand iv: %v", err)
+	}
+	hpKey, err := quicHKDFExpandLabel(crypto.SHA256, secret, []byte{}, "quic hp", 16)
+	if err != nil {
+		t.Fatalf("expand hp: %v", err)
+	}
 
-	ciph := quicAEADAESGCM(key, iv)
+	ciph, err := quicAEADAESGCM(key, iv)
+	if err != nil {
+		t.Fatalf("AEAD: %v", err)
+	}
 	nonce := make([]byte, ciph.NonceSize()) // all zeros for PN=0
 	aad := header.Bytes()
 	encrypted := ciph.Seal(nil, nonce, payload, aad)

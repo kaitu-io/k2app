@@ -7,6 +7,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"encoding/binary"
+	"fmt"
 	"io"
 
 	"golang.org/x/crypto/hkdf"
@@ -33,21 +34,21 @@ const (
 	hkdfLabelHeaderProtectionV2 = "quicv2 hp"
 )
 
-func quicAEADAESGCM(key, nonceMask []byte) cipher.AEAD {
+func quicAEADAESGCM(key, nonceMask []byte) (cipher.AEAD, error) {
 	if len(nonceMask) != 12 {
-		panic("tls: internal error: wrong nonce length")
+		return nil, fmt.Errorf("wrong nonce length: %d", len(nonceMask))
 	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	aead, err := cipher.NewGCM(block)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	ret := &xorNonceAEAD{aead: aead}
 	copy(ret.nonceMask[:], nonceMask)
-	return ret
+	return ret, nil
 }
 
 type xorNonceAEAD struct {
@@ -80,7 +81,7 @@ func (f *xorNonceAEAD) Open(out, nonce, ciphertext, additionalData []byte) ([]by
 	return result, err
 }
 
-func quicHKDFExpandLabel(hash crypto.Hash, secret, context []byte, label string, length int) []byte {
+func quicHKDFExpandLabel(hash crypto.Hash, secret, context []byte, label string, length int) ([]byte, error) {
 	b := make([]byte, 3, 3+6+len(label)+1+len(context))
 	binary.BigEndian.PutUint16(b, uint16(length))
 	b[2] = uint8(6 + len(label))
@@ -91,10 +92,13 @@ func quicHKDFExpandLabel(hash crypto.Hash, secret, context []byte, label string,
 	b = append(b, context...)
 	out := make([]byte, length)
 	n, err := hkdf.Expand(hash.New, secret, b).Read(out)
-	if err != nil || n != length {
-		panic("quic: HKDF-Expand-Label invocation failed unexpectedly")
+	if err != nil {
+		return nil, fmt.Errorf("HKDF-Expand-Label failed: read %d/%d: %w", n, length, err)
 	}
-	return out
+	if n != length {
+		return nil, fmt.Errorf("HKDF-Expand-Label: short read %d/%d", n, length)
+	}
+	return out, nil
 }
 
 func quicReadUvarint(r io.ByteReader) (uint64, error) {

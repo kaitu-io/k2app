@@ -133,8 +133,14 @@ func SniffQUIC(packet []byte) (string, QUICClient) {
 	}
 
 	initialSecret := hkdf.Extract(crypto.SHA256.New, destConnID, salt)
-	secret := quicHKDFExpandLabel(crypto.SHA256, initialSecret, []byte{}, "client in", crypto.SHA256.Size())
-	hpKey := quicHKDFExpandLabel(crypto.SHA256, secret, []byte{}, hpLabel, 16)
+	secret, err := quicHKDFExpandLabel(crypto.SHA256, initialSecret, []byte{}, "client in", crypto.SHA256.Size())
+	if err != nil {
+		return "", QUICClientUnknown
+	}
+	hpKey, err := quicHKDFExpandLabel(crypto.SHA256, secret, []byte{}, hpLabel, 16)
+	if err != nil {
+		return "", QUICClientUnknown
+	}
 
 	// 4. Remove header protection
 	block, err := aes.NewCipher(hpKey)
@@ -191,9 +197,18 @@ func SniffQUIC(packet []byte) (string, QUICClient) {
 		ivLabel = hkdfLabelIVV1
 	}
 
-	key := quicHKDFExpandLabel(crypto.SHA256, secret, []byte{}, keyLabel, 16)
-	iv := quicHKDFExpandLabel(crypto.SHA256, secret, []byte{}, ivLabel, 12)
-	ciph := quicAEADAESGCM(key, iv)
+	key, err := quicHKDFExpandLabel(crypto.SHA256, secret, []byte{}, keyLabel, 16)
+	if err != nil {
+		return "", QUICClientUnknown
+	}
+	iv, err := quicHKDFExpandLabel(crypto.SHA256, secret, []byte{}, ivLabel, 12)
+	if err != nil {
+		return "", QUICClientUnknown
+	}
+	ciph, err := quicAEADAESGCM(key, iv)
+	if err != nil {
+		return "", QUICClientUnknown
+	}
 	var nonceBuf [8]byte // xorNonceAEAD.NonceSize() == 8
 	nonce := nonceBuf[:]
 	binary.BigEndian.PutUint64(nonce, uint64(packetNumber))

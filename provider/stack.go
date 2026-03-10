@@ -13,6 +13,8 @@ import (
 	N "github.com/sagernet/sing/common/network"
 
 	"github.com/sagernet/sing-tun"
+
+	"github.com/kaitu-io/k2/safego"
 )
 
 // handlerAdapter wraps ConnectionHandler to implement sing-tun's Handler interface.
@@ -28,22 +30,26 @@ func (h *handlerAdapter) PrepareConnection(network string, source M.Socksaddr, d
 
 func (h *handlerAdapter) NewConnectionEx(ctx context.Context, conn net.Conn, source M.Socksaddr, destination M.Socksaddr, onClose N.CloseHandlerFunc) {
 	dest := destination.String()
-	go func() {
+	safego.Go(func() {
+		defer func() {
+			if onClose != nil {
+				onClose(nil)
+			}
+		}()
 		h.handler.HandleTCP(conn, dest)
-		if onClose != nil {
-			onClose(nil)
-		}
-	}()
+	})
 }
 
 func (h *handlerAdapter) NewPacketConnectionEx(ctx context.Context, conn N.PacketConn, source M.Socksaddr, destination M.Socksaddr, onClose N.CloseHandlerFunc) {
 	dest := destination.String()
-	go func() {
+	safego.Go(func() {
+		defer func() {
+			if onClose != nil {
+				onClose(nil)
+			}
+		}()
 		h.handler.HandleUDP(&singPacketConn{conn: conn}, dest)
-		if onClose != nil {
-			onClose(nil)
-		}
-	}()
+	})
 }
 
 // singPacketConn wraps sing's N.PacketConn into standard net.PacketConn.
