@@ -6,7 +6,7 @@ import Gzip
 import SSZipArchive
 import os.log
 
-private let kAppGroup = "group.waymaker"
+private let kAppGroup = "group.io.kaitu"
 private let logger = Logger(subsystem: "com.allnationconnect.anc.wgios", category: "K2Plugin")
 
 extension Notification.Name {
@@ -232,11 +232,11 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
 
             let proto = (manager.protocolConfiguration as? NETunnelProviderProtocol) ?? NETunnelProviderProtocol()
             proto.providerBundleIdentifier = "com.allnationconnect.anc.wgios.ThePacketTunnel"
-            proto.serverAddress = "Kaitu VPN"
+            proto.serverAddress = "kaitu.io"
             proto.providerConfiguration = ["configJSON": config]
             manager.protocolConfiguration = proto
             manager.isEnabled = true
-            manager.localizedDescription = "Kaitu VPN"
+            manager.localizedDescription = "kaitu.io"
 
             logger.info("connect: saving preferences...")
             manager.saveToPreferences { error in
@@ -769,12 +769,12 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                 logger.info("loadVPNManager: [\(i)] description=\(m.localizedDescription ?? "nil"), bundleId=\(protoBundleId), enabled=\(m.isEnabled), status=\(m.connection.status.rawValue)")
             }
 
-            // Identify stale configs to remove
-            let staleManagers = allManagers.filter { $0.localizedDescription != "Kaitu VPN" }
+            // Identify stale configs to remove (wrong name OR wrong bundleId)
             let matchingManager = allManagers.first(where: {
                 ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier == bundleId
-                && $0.localizedDescription == "Kaitu VPN"
+                && $0.localizedDescription == "kaitu.io"
             })
+            let staleManagers = allManagers.filter { $0 !== matchingManager }
 
             if staleManagers.isEmpty {
                 // No cleanup needed — proceed immediately

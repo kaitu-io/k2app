@@ -20,7 +20,7 @@
         <string>$(PRODUCT_MODULE_NAME).PacketTunnelProvider</string>
     </dict>
     <key>CFBundleDisplayName</key>
-    <string>Kaitu VPN Tunnel</string>
+    <string>kaitu.io</string>
     <key>CFBundleIdentifier</key>
     <string>com.allnationconnect.anc.wgios.ThePacketTunnel</string>
 </dict>

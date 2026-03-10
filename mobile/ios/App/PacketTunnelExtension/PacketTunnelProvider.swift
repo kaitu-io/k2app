@@ -2,7 +2,7 @@ import NetworkExtension
 import K2Mobile  // gomobile xcframework (appext/ package)
 import os.log
 
-private let kAppGroup = "group.waymaker"
+private let kAppGroup = "group.io.kaitu"
 private let logger = Logger(subsystem: "com.allnationconnect.anc.wgios", category: "NE")
 
 private struct ClientConfigSubset: Codable {
