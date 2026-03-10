@@ -705,10 +705,7 @@ func (m *smuxUDPMux) reapIdleSessions() {
 			m.mu.Lock()
 			for id, ts := range m.lastActive {
 				if now-ts.Load() > int64(udpSessionIdleTimeout/time.Second) {
-					if ch, ok := m.sessions[id]; ok {
-						close(ch)
-						delete(m.sessions, id)
-					}
+					delete(m.sessions, id)
 					delete(m.lastActive, id)
 					slog.Debug("smuxUDPMux: reaped idle session", "sessionID", id)
 				}

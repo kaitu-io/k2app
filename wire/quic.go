@@ -1177,9 +1177,10 @@ func (m *quicUDPMux) start() {
 	go m.reapIdleSessions()
 }
 
-// reapIdleSessions periodically removes UDP sessions that have been idle
-// longer than udpSessionIdleTimeout. Closing the session channel causes
-// the corresponding quicUDPConn.ReadFrom to return net.ErrClosed.
+// reapIdleSessions periodically removes idle UDP sessions from the mux maps.
+// Removed sessions stop receiving new datagrams. The corresponding
+// quicUDPConn.ReadFrom will hit its read deadline or pipePacket idle timeout
+// and close naturally — no channel close needed (which would cause nil panic).
 func (m *quicUDPMux) reapIdleSessions() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
@@ -1190,10 +1191,7 @@ func (m *quicUDPMux) reapIdleSessions() {
 			m.mu.Lock()
 			for id, ts := range m.lastActive {
 				if now-ts.Load() > int64(udpSessionIdleTimeout/time.Second) {
-					if ch, ok := m.sessions[id]; ok {
-						close(ch)
-						delete(m.sessions, id)
-					}
+					delete(m.sessions, id)
 					delete(m.lastActive, id)
 					slog.Debug("quicUDPMux: reaped idle session", "sessionID", id)
 				}
@@ -1658,10 +1656,7 @@ func (m *quicStreamUDPMux) reapIdleSessions() {
 			m.mu.Lock()
 			for id, ts := range m.lastActive {
 				if now-ts.Load() > int64(udpSessionIdleTimeout/time.Second) {
-					if ch, ok := m.sessions[id]; ok {
-						close(ch)
-						delete(m.sessions, id)
-					}
+					delete(m.sessions, id)
 					delete(m.lastActive, id)
 					slog.Debug("quicStreamUDPMux: reaped idle session", "sessionID", id)
 				}
