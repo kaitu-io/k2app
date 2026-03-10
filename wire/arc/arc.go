@@ -37,7 +37,7 @@ const (
 
 	// Rate boundaries
 	arcMinRate         = 10_000_000.0 // 10 Mbps (upload floor)
-	arcMinDownloadRate = 30_000_000.0 // 30 Mbps (download floor, when maxRate >= 30M)
+	arcMinDownloadRate = 50_000_000.0 // 50 Mbps (download floor, when maxRate >= 50M)
 
 	// Algorithm parameters
 	defaultAlpha       = 10.0 // Loss penalty — standard mode
@@ -817,8 +817,12 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 				}
 				probeRate := p.probeBaseRate * (1.0 + sign*p.state.Epsilon)
 				// Clamp without EWMA — probing doesn't shift the base rate
-				if probeRate < arcMinRate {
-					probeRate = arcMinRate
+				probeMinRate := arcMinRate
+				if float64(p.maxRate) >= arcMinDownloadRate {
+					probeMinRate = arcMinDownloadRate
+				}
+				if probeRate < probeMinRate {
+					probeRate = probeMinRate
 				}
 				if probeRate > float64(p.maxRate) {
 					probeRate = float64(p.maxRate)

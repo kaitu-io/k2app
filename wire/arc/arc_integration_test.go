@@ -848,7 +848,7 @@ func TestDescent_Benchmark(t *testing.T) {
 	scenarios := []descentExpect{
 		// ── Near RTT (30ms) — different bandwidths ──
 		// Descent should be fast: 1-3 MIs via slow start saturation + app-limited anchor.
-		// near_bw10: minRate=30M floor means rate can't reach ≤ 2×10M=20M → skip descent check.
+		// near_bw10: minRate=50M floor means rate can't reach ≤ 2×10M=20M → skip descent check.
 		{"near_bw10",     bw10,  10e6,  0.00, near[0], near[1], nearSize, "30ms",  0,  0.50},
 		{"near_bw30",     bw30,  30e6,  0.00, near[0], near[1], nearSize, "30ms",  5,  0.60},
 		{"near_bw50",     bw50,  50e6,  0.00, near[0], near[1], nearSize, "30ms",  5,  0.55},
