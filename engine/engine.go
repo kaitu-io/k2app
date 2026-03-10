@@ -323,7 +323,7 @@ func (e *Engine) Start(cfg Config) error {
 	e.networkMonitor = cfg.NetworkMonitor
 
 	// Start health monitor (1Hz wire stats sampling + health FSM).
-	hm := newHealthMonitor(tm, tunnel, cfg.HealthCallback, func() { e.OnNetworkChanged() })
+	hm := newHealthMonitor(tm, tunnel, cfg.HealthCallback, func() { e.onHealthCritical() })
 	hm.start()
 	e.health = hm
 
@@ -339,20 +339,18 @@ func (e *Engine) Start(cfg Config) error {
 	return nil
 }
 
-// OnNetworkChanged should be called by the platform layer when a network
-// change is detected (e.g., WiFi to cellular). If the engine is connected,
-// it resets wire transport connections to force fresh connections on the
-// next dial attempt, avoiding dead cached connections.
-func (e *Engine) OnNetworkChanged() {
+// reconnect resets wire transport connections and triggers recovery probe.
+// Shared by OnNetworkChanged (network switch) and onHealthCritical (quality degradation).
+// Returns true if reconnect was performed (engine was connected and not paused).
+func (e *Engine) reconnect() bool {
 	e.mu.Lock()
 	if e.state != StateConnected || e.paused {
 		e.mu.Unlock()
-		return
+		return false
 	}
 	handler := e.handler
 	tm := e.tm
 	e.mu.Unlock()
-	slog.Info("engine: network changed")
 
 	// Notify handler of transient reconnecting state (for UI feedback).
 	if handler != nil {
@@ -364,7 +362,7 @@ func (e *Engine) OnNetworkChanged() {
 		tm.ResetConnections()
 	}
 
-	// Reset health monitor — stale streaks from old network are irrelevant.
+	// Reset health monitor — stale data from old connection is irrelevant.
 	e.mu.Lock()
 	hm := e.health
 	e.mu.Unlock()
@@ -379,10 +377,22 @@ func (e *Engine) OnNetworkChanged() {
 	if probe != nil {
 		probe.trigger()
 	}
+	return true
+}
 
-	// Clear non-client wire errors (network errors are stale after network change).
-	// Auth errors survive — WiFi→cellular doesn't fix expired subscriptions.
+// OnNetworkChanged should be called by the platform layer when a network
+// change is detected (e.g., WiFi to cellular). Resets wire transports and
+// clears stale network errors. Auth errors survive (WiFi→cellular doesn't
+// fix expired subscriptions).
+func (e *Engine) OnNetworkChanged() {
+	slog.Info("engine: network changed")
+	if !e.reconnect() {
+		return
+	}
+
+	// Clear non-client wire errors — network errors are stale after network change.
 	e.mu.Lock()
+	handler := e.handler
 	if e.lastError != nil && e.lastError.Category != CategoryClient {
 		slog.Debug("engine: network change cleared stale error",
 			"prevCode", e.lastError.Code,
@@ -392,8 +402,24 @@ func (e *Engine) OnNetworkChanged() {
 	}
 	s := e.buildStatusLocked()
 	e.mu.Unlock()
+	if handler != nil {
+		handler.OnStatus(s)
+	}
+}
 
-	// Notify handler we're back to connected with full status snapshot.
+// onHealthCritical is called by healthMonitor when wire quality is critically degraded.
+// Unlike OnNetworkChanged, it does NOT clear wire errors (degradation ≠ network switch).
+func (e *Engine) onHealthCritical() {
+	slog.Warn("engine: health critical, reconnecting")
+	if !e.reconnect() {
+		return
+	}
+
+	// Rebuild and broadcast status (reconnecting → connected).
+	e.mu.Lock()
+	handler := e.handler
+	s := e.buildStatusLocked()
+	e.mu.Unlock()
 	if handler != nil {
 		handler.OnStatus(s)
 	}

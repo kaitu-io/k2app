@@ -16,8 +16,8 @@ func init() {
 
 // TestDeadlock_HealthMonitorSampleAndResetCounters validates that the
 // healthMonitor self-deadlock (#1) is fixed: sample() must not call
-// onReconnect under hm.mu, because onReconnect → OnNetworkChanged → resetCounters
-// re-acquires hm.mu. go-deadlock's timeout detection catches this.
+// onReconnect under hm.mu, because onReconnect → onHealthCritical → reconnect
+// → resetCounters re-acquires hm.mu. go-deadlock's timeout detection catches this.
 //
 // If the bug were reintroduced (onReconnect called under hm.mu), the 5s
 // deadlock timeout would trigger a panic during this test.
@@ -54,7 +54,7 @@ func TestDeadlock_HealthMonitorSampleAndResetCounters(t *testing.T) {
 
 // TestDeadlock_EngineStopVsHealthGoroutine validates the cross-deadlock (#2)
 // fix: Engine.Stop must release e.mu before calling hm.stop() (wg.Wait).
-// Otherwise, the health goroutine's onReconnect → OnNetworkChanged → e.mu
+// Otherwise, the health goroutine's onReconnect → onHealthCritical → e.mu
 // would deadlock with Stop() holding e.mu + waiting for wg.
 //
 // go-deadlock ordering detection catches: goroutine A holds e.mu then

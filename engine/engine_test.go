@@ -1294,6 +1294,67 @@ func TestEngine_OnNetworkChanged_ClearsNetworkError(t *testing.T) {
 	e.mu.Unlock()
 }
 
+func TestEngine_OnHealthCritical_DoesNotClearError(t *testing.T) {
+	e := New()
+	h := &mockEventHandler{}
+	e.SetEventHandler(h)
+
+	tm := &wire.TransportManager{}
+	e.mu.Lock()
+	e.state = StateConnected
+	e.tm = tm
+	e.lastError = &EngineError{Code: 503, Category: CategoryServer, Message: "refused"}
+	e.mu.Unlock()
+
+	e.onHealthCritical()
+
+	// Unlike OnNetworkChanged, health critical does NOT clear wire errors.
+	e.mu.Lock()
+	if e.lastError == nil || e.lastError.Code != 503 {
+		t.Errorf("wire error should persist after onHealthCritical, got %+v", e.lastError)
+	}
+	e.mu.Unlock()
+}
+
+func TestEngine_OnHealthCritical_WhenConnected(t *testing.T) {
+	e := New()
+	h := &mockEventHandler{}
+	e.SetEventHandler(h)
+
+	tm := &wire.TransportManager{}
+	e.mu.Lock()
+	e.state = StateConnected
+	e.tm = tm
+	e.mu.Unlock()
+
+	e.onHealthCritical()
+
+	statuses := h.getStatuses()
+	if len(statuses) < 2 {
+		t.Fatalf("expected at least 2 status updates (reconnecting + connected), got %d", len(statuses))
+	}
+	if statuses[0].State != "reconnecting" {
+		t.Fatalf("first state = %q, want %q", statuses[0].State, "reconnecting")
+	}
+	if statuses[len(statuses)-1].State != "connected" {
+		t.Fatalf("last state = %q, want %q", statuses[len(statuses)-1].State, "connected")
+	}
+}
+
+func TestEngine_OnHealthCritical_WhenDisconnected(t *testing.T) {
+	e := New()
+	h := &mockEventHandler{}
+	e.SetEventHandler(h)
+
+	// Not connected — onHealthCritical should be a no-op.
+	e.onHealthCritical()
+
+	statuses := h.getStatuses()
+	if len(statuses) != 0 {
+		t.Fatalf("expected 0 status updates when not connected, got %d", len(statuses))
+	}
+}
+
 func TestEngine_Stop_ClearsAuthError(t *testing.T) {
 	e := New()
 
