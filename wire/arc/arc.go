@@ -37,7 +37,7 @@ const (
 
 	// Rate boundaries
 	arcMinRate         = 10_000_000.0 // 10 Mbps (upload floor)
-	arcMinDownloadRate = 50_000_000.0 // 50 Mbps (download floor, when maxRate >= 50M)
+	arcMinDownloadRate = 30_000_000.0 // 30 Mbps (download floor, when maxRate >= 30M)
 
 	// Algorithm parameters
 	defaultAlpha       = 10.0 // Loss penalty — standard mode

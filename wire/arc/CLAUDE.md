@@ -25,7 +25,7 @@ Gradient ascent on utility function: `U = Throughput - α * LossRate * Throughpu
 - `arcRateEWMAAlpha`: 0.9 (rate EWMA smoothing — high for fast response)
 - `gfwAlpha`: 5.0 (GFW loss penalty — high enough for congestion gradient, tolerates constant 5% GFW loss)
 - `defaultBeta`: 1.0 (latency penalty — 10ms ΔRtt = 10 utility signal, same magnitude as loss)
-- `arcMinRate`: 10 Mbps (upload floor), `arcMinDownloadRate`: 50 Mbps (download floor)
+- `arcMinRate`: 10 Mbps (upload floor), `arcMinDownloadRate`: 30 Mbps (download floor)
 - `noiseEWMA`: EWMA of RTT coefficient of variation, cold-starts at 1.2 (conservative)
 - `slowStartSaturationRatio`: 0.7 (throughput growth < 70% of rate growth × slow start factor → link saturated)
 
