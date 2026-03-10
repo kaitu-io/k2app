@@ -697,17 +697,10 @@ class K2Plugin : Plugin() {
         val date = dateFmt.format(now)
         val timestamp = timeFmt.format(now)
 
-        val prefix: String
-        val identifier: String
-        if (feedbackId != null) {
-            prefix = "feedback-logs"
-            identifier = feedbackId
-        } else {
-            prefix = "service-logs"
-            identifier = UUID.randomUUID().toString().take(8)
-        }
+        val identifier = feedbackId ?: UUID.randomUUID().toString().take(8)
 
-        return "$prefix/$udid/$date/logs-$timestamp-$identifier.zip"
+        val version = context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "unknown"
+        return "mobile/$version/$udid/$date/logs-$timestamp-$identifier.zip"
     }
 
     private fun uploadToS3(s3Key: String, data: ByteArray) {

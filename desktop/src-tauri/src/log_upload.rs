@@ -350,22 +350,19 @@ fn create_tar_gz(dir: &Path) -> Result<Vec<u8>, String> {
 // ============================================================================
 
 /// Generate S3 object key for the log archive.
-fn generate_s3_key(feedback_id: Option<&str>, udid: &str) -> String {
+fn generate_s3_key(feedback_id: Option<&str>, version: &str, udid: &str) -> String {
     let now = Utc::now();
     let date = now.format("%Y/%m/%d");
     let timestamp = now.format("%H%M%S");
 
-    let (prefix, identifier) = match feedback_id {
-        Some(id) => ("feedback-logs", id.to_string()),
-        None => (
-            "service-logs",
-            uuid::Uuid::new_v4().to_string()[..8].to_string(),
-        ),
+    let identifier = match feedback_id {
+        Some(id) => id.to_string(),
+        None => uuid::Uuid::new_v4().to_string()[..8].to_string(),
     };
 
     format!(
-        "{}/{}/{}/logs-{}-{}.tar.gz",
-        prefix, udid, date, timestamp, identifier
+        "desktop/{}/{}/{}/logs-{}-{}.tar.gz",
+        version, udid, date, timestamp, identifier
     )
 }
 
@@ -471,7 +468,8 @@ fn upload_service_log(params: UploadLogParams, udid: String) -> UploadLogResult 
     };
 
     // 4. Upload to S3
-    let s3_key = generate_s3_key(feedback_id, &udid);
+    let version = env!("CARGO_PKG_VERSION");
+    let s3_key = generate_s3_key(feedback_id, version, &udid);
     if let Err(e) = upload_to_s3(&s3_key, &archive_data) {
         cleanup_staging_dir(&staging_dir);
         return UploadLogResult {
@@ -586,21 +584,23 @@ mod tests {
 
     #[test]
     fn test_generate_s3_key_no_feedback() {
-        let key = generate_s3_key(None, "test-udid-123");
-        assert!(key.starts_with("service-logs/test-udid-123/"));
+        let key = generate_s3_key(None, "0.4.1", "test-udid-123");
+        assert!(key.starts_with("desktop/0.4.1/test-udid-123/"));
         assert!(key.contains("logs-"));
         assert!(key.ends_with(".tar.gz"));
         let parts: Vec<&str> = key.split('/').collect();
-        assert_eq!(parts.len(), 6);
+        assert_eq!(parts.len(), 7);
     }
 
     #[test]
     fn test_generate_s3_key_with_feedback() {
-        let key = generate_s3_key(Some("fb-12345"), "test-udid-456");
-        assert!(key.starts_with("feedback-logs/test-udid-456/"));
+        let key = generate_s3_key(Some("fb-12345"), "0.4.1", "test-udid-456");
+        assert!(key.starts_with("desktop/0.4.1/test-udid-456/"));
         assert!(key.contains("logs-"));
         assert!(key.contains("fb-12345"));
         assert!(key.ends_with(".tar.gz"));
+        let parts: Vec<&str> = key.split('/').collect();
+        assert_eq!(parts.len(), 7);
     }
 
     #[test]
@@ -620,7 +620,7 @@ mod tests {
             error: None,
             s3_keys: Some(vec![UploadedFileInfo {
                 name: "logs".to_string(),
-                s3_key: "service-logs/udid/2026/03/05/logs-143022-abc.tar.gz".to_string(),
+                s3_key: "desktop/0.3.22/udid/2026/03/05/logs-143022-abc.tar.gz".to_string(),
             }]),
         };
         let json = serde_json::to_string(&result).unwrap();

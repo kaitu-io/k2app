@@ -227,6 +227,9 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
 
+            logger.info("connect: manager loaded, isEnabled=\(manager.isEnabled), description=\(manager.localizedDescription ?? "nil")")
+            logger.info("connect: connection type=\(type(of: manager.connection)), status=\(manager.connection.status.rawValue)")
+
             let proto = (manager.protocolConfiguration as? NETunnelProviderProtocol) ?? NETunnelProviderProtocol()
             proto.providerBundleIdentifier = "com.allnationconnect.anc.wgios.ThePacketTunnel"
             proto.serverAddress = "Kaitu VPN"
@@ -235,24 +238,42 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             manager.isEnabled = true
             manager.localizedDescription = "Kaitu VPN"
 
+            logger.info("connect: saving preferences...")
             manager.saveToPreferences { error in
                 if let error = error {
+                    logger.error("connect: saveToPreferences FAILED: \(error.localizedDescription)")
                     call.reject("Failed to save VPN config: \(error.localizedDescription)")
                     return
                 }
+                logger.info("connect: saveToPreferences OK, reloading...")
                 manager.loadFromPreferences { error in
                     if let error = error {
+                        logger.error("connect: loadFromPreferences FAILED: \(error.localizedDescription)")
                         call.reject("Failed to reload config: \(error.localizedDescription)")
                         return
                     }
+
+                    // Log manager state after reload
+                    let reloadedProto = manager.protocolConfiguration as? NETunnelProviderProtocol
+                    logger.info("connect: reloaded, isEnabled=\(manager.isEnabled), protoBundleId=\(reloadedProto?.providerBundleIdentifier ?? "nil")")
+                    logger.info("connect: connection type=\(type(of: manager.connection)), status=\(manager.connection.status.rawValue)")
+
+                    guard let session = manager.connection as? NETunnelProviderSession else {
+                        logger.error("connect: manager.connection is NOT NETunnelProviderSession — type=\(type(of: manager.connection))")
+                        call.reject("VPN session unavailable (connection type: \(type(of: manager.connection)))")
+                        return
+                    }
+
                     do {
-                        try (manager.connection as? NETunnelProviderSession)?.startVPNTunnel(options: [
+                        try session.startVPNTunnel(options: [
                             "configJSON": NSString(string: config)
                         ])
+                        logger.info("connect: startVPNTunnel called OK, status=\(session.status.rawValue)")
                         // Save config to App Group for NE access
                         UserDefaults(suiteName: kAppGroup)?.set(config, forKey: "configJSON")
                         call.resolve()
                     } catch {
+                        logger.error("connect: startVPNTunnel FAILED: \(error.localizedDescription)")
                         call.reject("Failed to start tunnel: \(error.localizedDescription)")
                     }
                 }
@@ -641,17 +662,15 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         let date = dateFmt.string(from: now)
         let timestamp = timeFmt.string(from: now)
 
-        let prefix: String
         let identifier: String
         if let fbId = feedbackId {
-            prefix = "feedback-logs"
             identifier = fbId
         } else {
-            prefix = "service-logs"
             identifier = String(UUID().uuidString.prefix(8)).lowercased()
         }
 
-        return "\(prefix)/\(udid)/\(date)/logs-\(timestamp)-\(identifier).zip"
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+        return "mobile/\(version)/\(udid)/\(date)/logs-\(timestamp)-\(identifier).zip"
     }
 
     private func uploadToS3(s3Key: String, data: Data) async throws {
@@ -737,24 +756,55 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
 
     private func loadVPNManager(completion: ((NETunnelProviderManager?) -> Void)? = nil) {
         NETunnelProviderManager.loadAllFromPreferences { [weak self] managers, error in
-            let bundleId = "com.allnationconnect.anc.wgios.ThePacketTunnel"
-
-            // Remove stale VPN configs (old Kaitu io.kaitu.* or legacy WayMaker with same bundle ID).
-            // Keep only configs created by this app (localizedDescription == "Kaitu VPN").
-            for m in managers ?? [] {
-                if m.localizedDescription != "Kaitu VPN" {
-                    logger.info("Removing stale VPN config: \(m.localizedDescription ?? "nil")")
-                    m.removeFromPreferences(completionHandler: nil)
-                }
+            if let error = error {
+                logger.error("loadVPNManager: loadAllFromPreferences error: \(error.localizedDescription)")
             }
 
-            let manager = managers?.first(where: {
+            let bundleId = "com.allnationconnect.anc.wgios.ThePacketTunnel"
+            let allManagers = managers ?? []
+            logger.info("loadVPNManager: found \(allManagers.count) VPN config(s)")
+
+            for (i, m) in allManagers.enumerated() {
+                let protoBundleId = (m.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier ?? "nil"
+                logger.info("loadVPNManager: [\(i)] description=\(m.localizedDescription ?? "nil"), bundleId=\(protoBundleId), enabled=\(m.isEnabled), status=\(m.connection.status.rawValue)")
+            }
+
+            // Identify stale configs to remove
+            let staleManagers = allManagers.filter { $0.localizedDescription != "Kaitu VPN" }
+            let matchingManager = allManagers.first(where: {
                 ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier == bundleId
                 && $0.localizedDescription == "Kaitu VPN"
-            }) ?? NETunnelProviderManager()
-            self?.vpnManager = manager
-            self?.registerStatusObserver()
-            completion?(manager)
+            })
+
+            if staleManagers.isEmpty {
+                // No cleanup needed — proceed immediately
+                let manager = matchingManager ?? NETunnelProviderManager()
+                logger.info("loadVPNManager: using \(matchingManager != nil ? "existing" : "new") manager")
+                self?.vpnManager = manager
+                self?.registerStatusObserver()
+                completion?(manager)
+            } else {
+                // Remove stale configs and wait for all removals to complete
+                logger.info("loadVPNManager: removing \(staleManagers.count) stale config(s)")
+                let group = DispatchGroup()
+                for m in staleManagers {
+                    group.enter()
+                    logger.info("loadVPNManager: removing stale config: \(m.localizedDescription ?? "nil")")
+                    m.removeFromPreferences { error in
+                        if let error = error {
+                            logger.warning("loadVPNManager: removeFromPreferences error: \(error.localizedDescription)")
+                        }
+                        group.leave()
+                    }
+                }
+                group.notify(queue: .main) {
+                    let manager = matchingManager ?? NETunnelProviderManager()
+                    logger.info("loadVPNManager: stale removal done, using \(matchingManager != nil ? "existing" : "new") manager")
+                    self?.vpnManager = manager
+                    self?.registerStatusObserver()
+                    completion?(manager)
+                }
+            }
         }
     }
 
