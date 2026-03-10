@@ -13,6 +13,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sasha-s/go-deadlock"
@@ -42,7 +43,8 @@ func DefaultSmuxConfig() *smux.Config {
 // smuxStreamConn wraps a smux.Stream with a buffered reader for post-header reads.
 type smuxStreamConn struct {
 	*smux.Stream
-	br *bufio.Reader
+	br        *bufio.Reader
+	closeOnce sync.Once
 }
 
 // Read uses the buffered reader if present.
@@ -51,6 +53,21 @@ func (c *smuxStreamConn) Read(b []byte) (int, error) {
 		return c.br.Read(b)
 	}
 	return c.Stream.Read(b)
+}
+
+// CloseWrite closes only the write direction (sends FIN).
+// smux Stream.Close() is inherently write-only, so this is a direct delegate.
+// Used by pipe() for half-close; full cleanup is the caller's defer Close().
+func (c *smuxStreamConn) CloseWrite() error {
+	return c.Stream.Close()
+}
+
+// Close closes the stream. Idempotent via sync.Once — safe to call after CloseWrite().
+func (c *smuxStreamConn) Close() error {
+	c.closeOnce.Do(func() {
+		c.Stream.Close()
+	})
+	return nil
 }
 
 // ============================================================================
@@ -585,21 +602,23 @@ func (s *TCPWSServer) Close() error {
 // ============================================================================
 
 type smuxUDPMux struct {
-	stream   *smux.Stream
-	br       *bufio.Reader
-	writeMu  deadlock.Mutex
-	mu       deadlock.Mutex
-	sessions map[uint32]chan *UDPFrame
-	done     chan struct{}
-	started  bool
+	stream     *smux.Stream
+	br         *bufio.Reader
+	writeMu    deadlock.Mutex
+	mu         deadlock.Mutex
+	sessions   map[uint32]chan *UDPFrame
+	lastActive map[uint32]*atomic.Int64
+	done       chan struct{}
+	started    bool
 }
 
 func newSmuxUDPMux(stream *smux.Stream) *smuxUDPMux {
 	return &smuxUDPMux{
-		stream:   stream,
-		br:       bufio.NewReader(stream),
-		sessions: make(map[uint32]chan *UDPFrame),
-		done:     make(chan struct{}),
+		stream:     stream,
+		br:         bufio.NewReader(stream),
+		sessions:   make(map[uint32]chan *UDPFrame),
+		lastActive: make(map[uint32]*atomic.Int64),
+		done:       make(chan struct{}),
 	}
 }
 
@@ -612,6 +631,7 @@ func (m *smuxUDPMux) start() {
 	m.started = true
 	m.mu.Unlock()
 	go m.readLoop()
+	go m.reapIdleSessions()
 }
 
 func (m *smuxUDPMux) readLoop() {
@@ -632,6 +652,7 @@ func (m *smuxUDPMux) readLoop() {
 		ch, ok := m.sessions[frame.SessionID]
 		m.mu.Unlock()
 		if ok {
+			m.touchSession(frame.SessionID)
 			select {
 			case ch <- frame:
 			default:
@@ -648,8 +669,11 @@ func (m *smuxUDPMux) writeFrame(sessionID uint32, addr string, payload []byte) e
 
 func (m *smuxUDPMux) register(sessionID uint32) chan *UDPFrame {
 	ch := make(chan *UDPFrame, 32)
+	ts := &atomic.Int64{}
+	ts.Store(time.Now().Unix())
 	m.mu.Lock()
 	m.sessions[sessionID] = ch
+	m.lastActive[sessionID] = ts
 	m.mu.Unlock()
 	m.start()
 	return ch
@@ -658,7 +682,42 @@ func (m *smuxUDPMux) register(sessionID uint32) chan *UDPFrame {
 func (m *smuxUDPMux) unregister(sessionID uint32) {
 	m.mu.Lock()
 	delete(m.sessions, sessionID)
+	delete(m.lastActive, sessionID)
 	m.mu.Unlock()
+}
+
+func (m *smuxUDPMux) touchSession(sessionID uint32) {
+	m.mu.Lock()
+	ts := m.lastActive[sessionID]
+	m.mu.Unlock()
+	if ts != nil {
+		ts.Store(time.Now().Unix())
+	}
+}
+
+func (m *smuxUDPMux) reapIdleSessions() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			now := time.Now().Unix()
+			m.mu.Lock()
+			for id, ts := range m.lastActive {
+				if now-ts.Load() > int64(udpSessionIdleTimeout/time.Second) {
+					if ch, ok := m.sessions[id]; ok {
+						close(ch)
+						delete(m.sessions, id)
+					}
+					delete(m.lastActive, id)
+					slog.Debug("smuxUDPMux: reaped idle session", "sessionID", id)
+				}
+			}
+			m.mu.Unlock()
+		case <-m.done:
+			return
+		}
+	}
 }
 
 func (m *smuxUDPMux) close() {

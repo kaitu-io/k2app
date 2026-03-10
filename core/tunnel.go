@@ -25,6 +25,13 @@ import (
 // after all tracked connections have been forcefully closed.
 const closeTimeout = 5 * time.Second
 
+// closeWriter is implemented by connections that support half-close (write-only FIN).
+// pipe() uses this to send FIN without killing the read direction,
+// allowing the peer to finish sending data before full close.
+type closeWriter interface {
+	CloseWrite() error
+}
+
 // connTracker tracks active connections for forceful close during shutdown.
 type connTracker struct {
 	mu    deadlock.Mutex
@@ -519,19 +526,26 @@ func peekUDP(conn net.PacketConn) (packet []byte, addr net.Addr) {
 }
 
 // pipe copies data bidirectionally between two connections.
-// Each direction's completion closes the peer to unblock the other.
+// Each direction uses CloseWrite (half-close) to send FIN without killing
+// the other direction. Full close is the caller's responsibility via defer.
 // Optional tx/rx counters accumulate bytes per direction (nil = no counting).
 func pipe(a, b net.Conn, tx, rx *atomic.Int64) {
 	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		bp := tcpBufPool.Get().(*[]byte)
 		n, _ := io.CopyBuffer(b, a, *bp) // a→b = TX
 		tcpBufPool.Put(bp)
 		if tx != nil {
 			tx.Add(n)
 		}
-		b.Close()
-		close(done)
+		// Half-close: send FIN only, let peer finish sending data.
+		// Full close delegated to caller's defer.
+		if cw, ok := b.(closeWriter); ok {
+			cw.CloseWrite()
+		} else {
+			b.Close()
+		}
 	}()
 	bp := tcpBufPool.Get().(*[]byte)
 	n, _ := io.CopyBuffer(a, b, *bp) // b→a = RX
@@ -539,7 +553,11 @@ func pipe(a, b net.Conn, tx, rx *atomic.Int64) {
 	if rx != nil {
 		rx.Add(n)
 	}
-	a.Close()
+	if cw, ok := a.(closeWriter); ok {
+		cw.CloseWrite()
+	} else {
+		a.Close()
+	}
 	<-done
 }
 

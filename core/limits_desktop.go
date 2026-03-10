@@ -9,8 +9,9 @@ const maxTunnelConns = 4096
 // nonBlockingAdmit=false keeps blocking semaphore on desktop (ample memory).
 const nonBlockingAdmit = false
 
-// udpIdleTimeoutSec disables UDP idle timeout on desktop (0 = no timeout).
-const udpIdleTimeoutSec = 0
+// udpIdleTimeoutSec is the max seconds a UDP pipe can be idle before cleanup.
+// 60s on all platforms to prevent session leaks on desktop.
+const udpIdleTimeoutSec = 60
 
 // tcpBufSize is the buffer size for TCP io.CopyBuffer (per direction).
 const tcpBufSize = 32 * 1024

@@ -14,8 +14,9 @@ const maxTunnelConns = 512
 const nonBlockingAdmit = true
 
 // udpIdleTimeoutSec is the max seconds a UDP pipe can be idle before cleanup.
-// 15s on iOS for faster slot reclamation during burst traffic (e.g. YouTube Shorts).
-const udpIdleTimeoutSec = 15
+// 60s unified across all platforms. Previous 15s was too short for DNS-over-QUIC.
+// iOS memory impact to be tuned separately if needed.
+const udpIdleTimeoutSec = 60
 
 // tcpBufSize is the buffer size for TCP io.CopyBuffer (per direction).
 // 8KB on iOS: 24KB/conn total (8KB stacks + 16KB bufs). Negligible throughput

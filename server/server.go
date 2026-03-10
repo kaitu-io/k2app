@@ -394,6 +394,7 @@ func (s *Server) Run(ctx context.Context) error {
 	slog.Info("k2s server shutting down")
 
 	close(s.done)
+	s.handler.Close() // force-close all active proxy connections
 	s.quicSrv.Close()
 	s.tcpwsSrv.Close()
 

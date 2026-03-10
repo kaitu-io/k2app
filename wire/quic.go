@@ -143,9 +143,11 @@ func DefaultQUICConfig() *quic.Config {
 // quicStreamConn wraps a quic.Stream to satisfy net.Conn.
 type quicStreamConn struct {
 	*quic.Stream
-	local  net.Addr
-	remote net.Addr
-	br     *bufio.Reader // set after parsing stream header
+	local     net.Addr
+	remote    net.Addr
+	br        *bufio.Reader // set after parsing stream header
+	closeOnce sync.Once
+	closeErr  error
 }
 
 func (c *quicStreamConn) LocalAddr() net.Addr  { return c.local }
@@ -160,14 +162,25 @@ func (c *quicStreamConn) Read(b []byte) (int, error) {
 	return c.Stream.Read(b)
 }
 
+// CloseWrite closes only the write direction (sends FIN).
+// The read direction stays open so the peer can finish sending data.
+// Used by pipe() for half-close; full cleanup is the caller's defer Close().
+func (c *quicStreamConn) CloseWrite() error {
+	return c.Stream.Close() // FIN only, no CancelRead
+}
+
 // Close closes both read and write directions of the QUIC stream.
 // quic-go's Stream.Close() only sends FIN (write direction).
 // Without CancelRead, the receive half never completes and the
 // stream slot is never released — causing slot exhaustion under
 // rapid short-lived connections (e.g. YouTube Shorts scrolling).
+// Idempotent via sync.Once — safe to call after CloseWrite().
 func (c *quicStreamConn) Close() error {
-	c.Stream.CancelRead(0)
-	return c.Stream.Close()
+	c.closeOnce.Do(func() {
+		c.Stream.CancelRead(0)
+		c.closeErr = c.Stream.Close()
+	})
+	return c.closeErr
 }
 
 // ============================================================================
@@ -1021,13 +1034,14 @@ func (s *QUICServer) Close() error {
 // ============================================================================
 
 type quicUDPMux struct {
-	conn      *quic.Conn
-	mu        deadlock.Mutex
-	sessions  map[uint32]chan *UDPFrame
-	done      chan struct{}
-	started   bool
-	streamMux *quicStreamUDPMux // stream-based UDP fallback
-	overflow  *udpOverflowStream // per-packet overflow for oversized datagrams
+	conn       *quic.Conn
+	mu         deadlock.Mutex
+	sessions   map[uint32]chan *UDPFrame
+	lastActive map[uint32]*atomic.Int64 // unix seconds per session
+	done       chan struct{}
+	started    bool
+	streamMux  *quicStreamUDPMux // stream-based UDP fallback
+	overflow   *udpOverflowStream // per-packet overflow for oversized datagrams
 
 	// Datagram health tracking: consecutive ReadFrom timeouts indicate
 	// a broken QUIC datagram path (e.g. ISP QoS dropping UDP).
@@ -1140,12 +1154,16 @@ func newQuicUDPMux(conn *quic.Conn, hopAttempts *atomic.Int32, hopExhausted *ato
 	return &quicUDPMux{
 		conn:               conn,
 		sessions:           make(map[uint32]chan *UDPFrame),
+		lastActive:         make(map[uint32]*atomic.Int64),
 		done:               make(chan struct{}),
 		clientHopAttempts:  hopAttempts,
 		clientHopExhausted: hopExhausted,
 		overflow:           &udpOverflowStream{qconn: conn},
 	}
 }
+
+// udpSessionIdleTimeout is the max idle duration before a UDP session is reaped.
+const udpSessionIdleTimeout = 60 * time.Second
 
 func (m *quicUDPMux) start() {
 	m.mu.Lock()
@@ -1156,6 +1174,35 @@ func (m *quicUDPMux) start() {
 	m.started = true
 	m.mu.Unlock()
 	go m.readLoop()
+	go m.reapIdleSessions()
+}
+
+// reapIdleSessions periodically removes UDP sessions that have been idle
+// longer than udpSessionIdleTimeout. Closing the session channel causes
+// the corresponding quicUDPConn.ReadFrom to return net.ErrClosed.
+func (m *quicUDPMux) reapIdleSessions() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			now := time.Now().Unix()
+			m.mu.Lock()
+			for id, ts := range m.lastActive {
+				if now-ts.Load() > int64(udpSessionIdleTimeout/time.Second) {
+					if ch, ok := m.sessions[id]; ok {
+						close(ch)
+						delete(m.sessions, id)
+					}
+					delete(m.lastActive, id)
+					slog.Debug("quicUDPMux: reaped idle session", "sessionID", id)
+				}
+			}
+			m.mu.Unlock()
+		case <-m.done:
+			return
+		}
+	}
 }
 
 func (m *quicUDPMux) readLoop() {
@@ -1186,6 +1233,7 @@ func (m *quicUDPMux) readLoop() {
 			slog.Debug("quicUDPMux: no session for datagram", "sessionID", frame.SessionID, "addr", frame.Addr, "payloadLen", len(frame.Payload))
 			continue
 		}
+		m.touchSession(frame.SessionID)
 		select {
 		case ch <- frame:
 		default:
@@ -1196,8 +1244,11 @@ func (m *quicUDPMux) readLoop() {
 
 func (m *quicUDPMux) register(sessionID uint32) chan *UDPFrame {
 	ch := make(chan *UDPFrame, 32)
+	ts := &atomic.Int64{}
+	ts.Store(time.Now().Unix())
 	m.mu.Lock()
 	m.sessions[sessionID] = ch
+	m.lastActive[sessionID] = ts
 	m.mu.Unlock()
 	m.start()
 	return ch
@@ -1206,7 +1257,18 @@ func (m *quicUDPMux) register(sessionID uint32) chan *UDPFrame {
 func (m *quicUDPMux) unregister(sessionID uint32) {
 	m.mu.Lock()
 	delete(m.sessions, sessionID)
+	delete(m.lastActive, sessionID)
 	m.mu.Unlock()
+}
+
+// touchSession updates the lastActive timestamp for a session (lock-free).
+func (m *quicUDPMux) touchSession(sessionID uint32) {
+	m.mu.Lock()
+	ts := m.lastActive[sessionID]
+	m.mu.Unlock()
+	if ts != nil {
+		ts.Store(time.Now().Unix())
+	}
 }
 
 func (m *quicUDPMux) close() {
@@ -1491,23 +1553,25 @@ func (c *quicStreamServerUDPConn) SetWriteDeadline(time.Time) error    { return 
 // ============================================================================
 
 type quicStreamUDPMux struct {
-	stream   *quic.Stream
-	qconn    *quic.Conn
-	br       *bufio.Reader
-	writeMu  deadlock.Mutex
-	mu       deadlock.Mutex
-	sessions map[uint32]chan *UDPFrame
-	done     chan struct{}
-	started  bool
+	stream     *quic.Stream
+	qconn      *quic.Conn
+	br         *bufio.Reader
+	writeMu    deadlock.Mutex
+	mu         deadlock.Mutex
+	sessions   map[uint32]chan *UDPFrame
+	lastActive map[uint32]*atomic.Int64
+	done       chan struct{}
+	started    bool
 }
 
 func newQuicStreamUDPMux(stream *quic.Stream, qconn *quic.Conn) *quicStreamUDPMux {
 	return &quicStreamUDPMux{
-		stream:   stream,
-		qconn:    qconn,
-		br:       bufio.NewReader(stream),
-		sessions: make(map[uint32]chan *UDPFrame),
-		done:     make(chan struct{}),
+		stream:     stream,
+		qconn:      qconn,
+		br:         bufio.NewReader(stream),
+		sessions:   make(map[uint32]chan *UDPFrame),
+		lastActive: make(map[uint32]*atomic.Int64),
+		done:       make(chan struct{}),
 	}
 }
 
@@ -1520,6 +1584,7 @@ func (m *quicStreamUDPMux) start() {
 	m.started = true
 	m.mu.Unlock()
 	go m.readLoop()
+	go m.reapIdleSessions()
 }
 
 func (m *quicStreamUDPMux) readLoop() {
@@ -1540,6 +1605,7 @@ func (m *quicStreamUDPMux) readLoop() {
 		ch, ok := m.sessions[frame.SessionID]
 		m.mu.Unlock()
 		if ok {
+			m.touchSession(frame.SessionID)
 			select {
 			case ch <- frame:
 			default:
@@ -1556,8 +1622,11 @@ func (m *quicStreamUDPMux) writeFrame(sessionID uint32, addr string, payload []b
 
 func (m *quicStreamUDPMux) register(sessionID uint32) chan *UDPFrame {
 	ch := make(chan *UDPFrame, 32)
+	ts := &atomic.Int64{}
+	ts.Store(time.Now().Unix())
 	m.mu.Lock()
 	m.sessions[sessionID] = ch
+	m.lastActive[sessionID] = ts
 	m.mu.Unlock()
 	m.start()
 	return ch
@@ -1566,7 +1635,42 @@ func (m *quicStreamUDPMux) register(sessionID uint32) chan *UDPFrame {
 func (m *quicStreamUDPMux) unregister(sessionID uint32) {
 	m.mu.Lock()
 	delete(m.sessions, sessionID)
+	delete(m.lastActive, sessionID)
 	m.mu.Unlock()
+}
+
+func (m *quicStreamUDPMux) touchSession(sessionID uint32) {
+	m.mu.Lock()
+	ts := m.lastActive[sessionID]
+	m.mu.Unlock()
+	if ts != nil {
+		ts.Store(time.Now().Unix())
+	}
+}
+
+func (m *quicStreamUDPMux) reapIdleSessions() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			now := time.Now().Unix()
+			m.mu.Lock()
+			for id, ts := range m.lastActive {
+				if now-ts.Load() > int64(udpSessionIdleTimeout/time.Second) {
+					if ch, ok := m.sessions[id]; ok {
+						close(ch)
+						delete(m.sessions, id)
+					}
+					delete(m.lastActive, id)
+					slog.Debug("quicStreamUDPMux: reaped idle session", "sessionID", id)
+				}
+			}
+			m.mu.Unlock()
+		case <-m.done:
+			return
+		}
+	}
 }
 
 func (m *quicStreamUDPMux) close() {

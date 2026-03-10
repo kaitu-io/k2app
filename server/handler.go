@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sasha-s/go-deadlock"
+
 	"github.com/kaitu-io/k2/wire"
 )
 
@@ -59,21 +61,59 @@ func checkAddr(addr string) error {
 	return nil
 }
 
+// connTracker tracks active connections for forceful close during shutdown.
+type connTracker struct {
+	mu    deadlock.Mutex
+	conns map[io.Closer]struct{}
+}
+
+func (ct *connTracker) track(c io.Closer) func() {
+	ct.mu.Lock()
+	ct.conns[c] = struct{}{}
+	ct.mu.Unlock()
+	return func() {
+		ct.mu.Lock()
+		delete(ct.conns, c)
+		ct.mu.Unlock()
+	}
+}
+
+func (ct *connTracker) closeAll() {
+	ct.mu.Lock()
+	conns := ct.conns
+	ct.conns = make(map[io.Closer]struct{})
+	ct.mu.Unlock()
+	for c := range conns {
+		c.Close()
+	}
+}
+
 // ProxyHandler processes TCP and UDP proxy requests from k2v5 clients.
 type ProxyHandler struct {
 	DialTimeout    time.Duration
 	AllowPrivateIP bool // for testing only; default false blocks reserved IPs
+	conns          connTracker
 }
 
 // NewProxyHandler creates a proxy handler with default settings.
 func NewProxyHandler() *ProxyHandler {
-	return &ProxyHandler{DialTimeout: 5 * time.Second}
+	return &ProxyHandler{
+		DialTimeout: 5 * time.Second,
+		conns:       connTracker{conns: make(map[io.Closer]struct{})},
+	}
+}
+
+// Close forcefully closes all active connections, unblocking handlers.
+func (h *ProxyHandler) Close() {
+	h.conns.closeAll()
 }
 
 // HandleTCP proxies a TCP stream to the target address.
 // Writes a stream response, then pipes data bidirectionally.
 func (h *ProxyHandler) HandleTCP(conn net.Conn, addr string) {
 	defer conn.Close()
+	untrackConn := h.conns.track(conn)
+	defer untrackConn()
 	slog.Info("server: HandleTCP", "addr", addr)
 
 	if !h.AllowPrivateIP {
@@ -93,6 +133,8 @@ func (h *ProxyHandler) HandleTCP(conn net.Conn, addr string) {
 		return
 	}
 	defer target.Close()
+	untrackTarget := h.conns.track(target)
+	defer untrackTarget()
 	slog.Debug("server: HandleTCP target connected", "addr", addr, "elapsed", time.Since(dialStart))
 
 	if err := wire.WriteStreamResponse(conn, nil); err != nil {
@@ -108,6 +150,8 @@ func (h *ProxyHandler) HandleTCP(conn net.Conn, addr string) {
 // Implements wire.UDPHandler.
 func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 	slog.Info("server: HandleUDP start", "addr", addr)
+	untrackConn := h.conns.track(conn)
+	defer untrackConn()
 	if !h.AllowPrivateIP {
 		if err := checkAddr(addr); err != nil {
 			slog.Error("server: UDP proxy blocked", "addr", addr, "err", err)
@@ -129,6 +173,8 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 		conn.Close()
 		return
 	}
+	untrackTarget := h.conns.track(target)
+	defer untrackTarget()
 
 	done := make(chan struct{})
 
@@ -156,7 +202,7 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 	bp := udpBufPool.Get().(*[]byte)
 	buf := *bp
 	for {
-		target.SetReadDeadline(time.Now().Add(30 * time.Second))
+		target.SetReadDeadline(time.Now().Add(60 * time.Second))
 		n, err := target.Read(buf)
 		if err != nil {
 			slog.Debug("server: HandleUDP target->client Read done", "addr", addr, "err", err)
@@ -176,20 +222,34 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 	slog.Debug("server: HandleUDP done", "addr", addr)
 }
 
+// closeWriter is implemented by connections that support half-close (write-only FIN).
+type closeWriter interface {
+	CloseWrite() error
+}
+
 // pipe copies data bidirectionally between two connections.
-// Each direction's completion closes the peer to unblock the other.
+// Each direction uses CloseWrite (half-close) to send FIN without killing
+// the other direction. Full close is the caller's responsibility via defer.
 func pipe(a, b net.Conn) {
 	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		bp := tcpBufPool.Get().(*[]byte)
 		io.CopyBuffer(b, a, *bp)
 		tcpBufPool.Put(bp)
-		b.Close()
-		close(done)
+		if cw, ok := b.(closeWriter); ok {
+			cw.CloseWrite()
+		} else {
+			b.Close()
+		}
 	}()
 	bp := tcpBufPool.Get().(*[]byte)
 	io.CopyBuffer(a, b, *bp)
 	tcpBufPool.Put(bp)
-	a.Close()
+	if cw, ok := a.(closeWriter); ok {
+		cw.CloseWrite()
+	} else {
+		a.Close()
+	}
 	<-done
 }
