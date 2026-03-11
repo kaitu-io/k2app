@@ -51,9 +51,13 @@ build-macos-sysext-test:
 	bash scripts/build-macos.sh --ne-mode --single-arch --skip-notarization
 
 build-windows: pre-build build-webapp build-k2-windows
-	@if [ "$$(uname -s 2>/dev/null)" = "Darwin" ] || [ "$$(uname -s 2>/dev/null)" = "Linux" ]; then \
-		echo "ERROR: build-windows requires a Windows host (ring crate needs MSVC). Use 'make build-windows-test' to delegate to Windows VM."; exit 1; fi
-	cd desktop && yarn tauri build --target x86_64-pc-windows-msvc $(TAURI_FEATURES_ARG)
+	@if [ "$$(uname -s)" = "Darwin" ] || [ "$$(uname -s)" = "Linux" ]; then \
+		echo "--- Cross-compiling Windows from $$(uname -s) via cargo-xwin ---"; \
+		command -v cargo-xwin >/dev/null 2>&1 || { echo "ERROR: cargo-xwin not found. Install: cargo install --locked cargo-xwin"; exit 1; }; \
+		cd desktop && yarn tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc $(TAURI_FEATURES_ARG); \
+	else \
+		cd desktop && yarn tauri build --target x86_64-pc-windows-msvc $(TAURI_FEATURES_ARG); \
+	fi
 	@echo "--- Collecting artifacts ---"
 	@mkdir -p release/$(VERSION)
 	@cp desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/Kaitu_$(VERSION)_x64-setup.exe release/$(VERSION)/
