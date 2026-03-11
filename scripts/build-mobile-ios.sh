@@ -26,7 +26,12 @@ VERSION=$(node -p "require('./package.json').version")
 # Scheme: major*10000 + minor*100 + patch for release, + beta_num for pre-release.
 # e.g. 0.4.0 → 400, 0.4.0-beta.2 → 402, 1.2.3 → 10203, 1.2.3-beta.5 → 10208
 MARKETING_VERSION="${VERSION%%-*}"  # strip everything after first hyphen
-IFS='.' read -r V_MAJOR V_MINOR V_PATCH <<< "$MARKETING_VERSION"
+# iOS App Store: strip leading "0." — previous app version was 3.0.1,
+# so 0.x.y would be rejected as a downgrade. 0.4.0 → 4.0, 0.5.1 → 5.1.
+if [[ "$MARKETING_VERSION" == 0.* ]]; then
+  MARKETING_VERSION="${MARKETING_VERSION#0.}"
+fi
+IFS='.' read -r V_MAJOR V_MINOR V_PATCH <<< "${VERSION%%-*}"
 BUILD_NUMBER=$(( V_MAJOR * 10000 + V_MINOR * 100 + V_PATCH ))
 if [[ "$VERSION" == *"-beta."* ]]; then
   BETA_NUM="${VERSION##*-beta.}"
