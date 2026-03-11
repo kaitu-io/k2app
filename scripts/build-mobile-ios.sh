@@ -19,7 +19,23 @@ for arg in "$@"; do
 done
 
 VERSION=$(node -p "require('./package.json').version")
+
+# Derive iOS-compatible version numbers.
+# App Store Connect requires MARKETING_VERSION to be pure X.Y.Z (no pre-release suffix).
+# CURRENT_PROJECT_VERSION is a monotonically increasing integer build number.
+# Scheme: major*10000 + minor*100 + patch for release, + beta_num for pre-release.
+# e.g. 0.4.0 → 400, 0.4.0-beta.2 → 402, 1.2.3 → 10203, 1.2.3-beta.5 → 10208
+MARKETING_VERSION="${VERSION%%-*}"  # strip everything after first hyphen
+IFS='.' read -r V_MAJOR V_MINOR V_PATCH <<< "$MARKETING_VERSION"
+BUILD_NUMBER=$(( V_MAJOR * 10000 + V_MINOR * 100 + V_PATCH ))
+if [[ "$VERSION" == *"-beta."* ]]; then
+  BETA_NUM="${VERSION##*-beta.}"
+  BUILD_NUMBER=$(( BUILD_NUMBER + BETA_NUM ))
+fi
+
 echo "=== Building Kaitu $VERSION for iOS ==="
+echo "  MARKETING_VERSION: $MARKETING_VERSION"
+echo "  CURRENT_PROJECT_VERSION: $BUILD_NUMBER"
 
 # --- Pre-build + webapp ---
 echo ""
@@ -71,6 +87,8 @@ XCODEBUILD_ARGS=(
   -configuration Release
   -destination 'generic/platform=iOS'
   -archivePath build/App.xcarchive
+  "MARKETING_VERSION=$MARKETING_VERSION"
+  "CURRENT_PROJECT_VERSION=$BUILD_NUMBER"
   archive
 )
 
