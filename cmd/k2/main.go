@@ -140,8 +140,3 @@ func printCommandHelp(cmd string) {
 	}
 }
 
-// cmdConnect is a placeholder until Task 4 implements it.
-func cmdConnect(args []string) int {
-	fmt.Fprintf(os.Stderr, "k2 connect: not yet implemented\n")
-	return 1
-}
