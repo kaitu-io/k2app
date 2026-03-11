@@ -116,6 +116,9 @@ func (e *Engine) Start(configJSON string, fd int, cfg *EngineConfig) (err error)
 	logCfg := config.LogConfig{Level: clientCfg.Log.Level, Output: "stderr"}
 	if cfg.LogDir != "" {
 		logCfg.Output = filepath.Join(cfg.LogDir, "k2.log")
+		if cfg.Debug {
+			logCfg.ExtraWriter = os.Stderr // dual output: file + stderr (Xcode console / logcat)
+		}
 	}
 	if _, err := config.SetupLogging(logCfg, "k2"); err != nil {
 		slog.Warn("appext: SetupLogging failed, using defaults", "err", err)

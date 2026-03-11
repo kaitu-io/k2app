@@ -1,6 +1,7 @@
 package config
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -98,8 +99,9 @@ type RuleConfig struct {
 
 // LogConfig contains logging configuration.
 type LogConfig struct {
-	Level  string `yaml:"level"  json:"level"`  // debug, info, warn, error
-	Output string `yaml:"output" json:"output"` // stderr, stdout, or file path
+	Level       string    `yaml:"level"  json:"level"`  // debug, info, warn, error
+	Output      string    `yaml:"output" json:"output"` // stderr, stdout, or file path
+	ExtraWriter io.Writer `yaml:"-" json:"-"`           // optional: additional output (e.g. os.Stderr for debug dual-output)
 }
 
 // LoadClient loads a client config from a YAML file.

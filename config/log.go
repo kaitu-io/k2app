@@ -134,7 +134,11 @@ func SetupLogging(cfg LogConfig, name string) (func(), error) {
 			MaxBackups: 3,
 			MaxAge:     30, // days
 		}
-		writer = lj
+		if cfg.ExtraWriter != nil {
+			writer = io.MultiWriter(lj, cfg.ExtraWriter)
+		} else {
+			writer = lj
+		}
 		closeFn = func() {
 			lj.Close() //nolint:errcheck
 		}
