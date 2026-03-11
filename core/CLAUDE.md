@@ -23,8 +23,8 @@ Provider ──► ClientTunnel.HandleTCP/HandleUDP
 1. Parse dest → get domain/IP
 2. Router.Route → Direct/Proxy/Reject
 3. Sniff (single peek): BT → force DIRECT; TLS SNI (443) / HTTP Host (non-443) → upgrade DIRECT→PROXY; IPv6→hostname rewrite
-4. Direct: `net.Dial("tcp", dest)` + bidirectional pipe
-5. Proxy: `wire.DialTCP(dest)` + bidirectional pipe
+4. Direct: `net.Dial("tcp", dest)` + bidirectional pipe (peeked bytes replayed via `prefixConn`)
+5. Proxy: peek first bytes as `earlyData` (even without sniffing in global mode) → `wire.DialTCP(dest, earlyData)` + bidirectional pipe. Early data saves 1 RTT by sending peeked bytes alongside wire stream header before waiting for server response.
 6. Reject: close connection silently
 
 **HandleUDP(conn, dest)**:

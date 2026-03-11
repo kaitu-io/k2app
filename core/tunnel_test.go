@@ -760,6 +760,67 @@ func TestClientTunnel_HandleTCP_EarlyData(t *testing.T) {
 	tunnel.Close()
 }
 
+// TestClientTunnel_HandleTCP_EarlyDataGlobalMode verifies early data works in
+// global mode (sniffBT=false, sniffSNI=false). The PROXY path should still peek
+// and send earlyData even without sniffing.
+func TestClientTunnel_HandleTCP_EarlyDataGlobalMode(t *testing.T) {
+	dialer := newMockDialer()
+	prov := &mockProvider{}
+
+	tunnel := NewClientTunnel(ClientTunnelConfig{
+		Provider: prov,
+		Dialer:   dialer,
+		SniffBT:  false, // global mode
+		SniffSNI: false,
+	})
+
+	if err := tunnel.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	remoteConn, clientConn := net.Pipe()
+	dialer.tcpConns <- remoteConn
+
+	localConn, providerConn := net.Pipe()
+
+	done := make(chan struct{})
+	go func() {
+		prov.handler.HandleTCP(localConn, "example.com:443")
+		close(done)
+	}()
+
+	// Send TLS ClientHello
+	tlsHello := []byte{0x16, 0x03, 0x01, 0x00, 0x05, 0x01, 0x00, 0x00, 0x01, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+	providerConn.Write(tlsHello)
+
+	// Read earlyData from remote side
+	buf := make([]byte, 256)
+	n, err := clientConn.Read(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(buf[:n], tlsHello) {
+		t.Errorf("earlyData mismatch: got %d bytes, want %d", n, len(tlsHello))
+	}
+
+	providerConn.Close()
+	clientConn.Close()
+	<-done
+
+	// Verify earlyData was passed to DialTCP
+	dialer.mu.Lock()
+	defer dialer.mu.Unlock()
+	if len(dialer.tcpEarlyDatas) != 1 {
+		t.Fatalf("DialTCP called %d times, expected 1", len(dialer.tcpEarlyDatas))
+	}
+	if !bytes.Equal(dialer.tcpEarlyDatas[0], tlsHello) {
+		t.Errorf("earlyData in global mode = %v, want TLS hello", dialer.tcpEarlyDatas[0])
+	}
+
+	tunnel.Close()
+}
+
 func TestClientTunnel_HandleUDP_UTPForcedDirect(t *testing.T) {
 	// Start a real UDP listener as the direct target
 	directListener, err := net.ListenPacket("udp", "127.0.0.1:0")
