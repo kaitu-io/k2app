@@ -257,7 +257,11 @@ func (t *ClientTunnel) HandleTCP(conn net.Conn, dest string) {
 	case k2rule.TargetDirect:
 		t.handleTCPDirect(conn, dest)
 	case k2rule.TargetProxy:
-		// For PROXY: unwrap prefixConn — peeked bytes go as wire early data,
+		// Peek for early data if not already done (e.g. global mode skips sniffing).
+		if len(earlyData) == 0 {
+			earlyData = peekTCP(conn)
+		}
+		// Unwrap prefixConn — peeked bytes go as wire early data,
 		// not replayed via pipe (which would double-send them).
 		if pc, ok := conn.(*prefixConn); ok && len(earlyData) > 0 {
 			conn = pc.Conn

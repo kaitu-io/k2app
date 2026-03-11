@@ -1,6 +1,7 @@
 package wire
 
 import (
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -79,120 +80,80 @@ func TestQuicUDPMux_DatagramHealthy_BelowThreshold(t *testing.T) {
 }
 
 // ==========================================================================
-// Tests for sliding-window datagram loss rate tracking
+// Tests for consecutive-recv hop counter recovery
 // ==========================================================================
 
-func TestQuicUDPMux_LossRate_NoData(t *testing.T) {
-	mux := newQuicUDPMux(nil, nil, nil)
-	rate := mux.evaluateRelayLossRate()
-	if rate != 0 {
-		t.Fatalf("loss rate with no data = %f, want 0", rate)
-	}
-}
+func TestQuicUDPMux_ConsecutiveRecvs_HopReset(t *testing.T) {
+	hopAttempts := &atomic.Int32{}
+	hopExhausted := &atomic.Int64{}
+	hopAttempts.Store(2)
+	hopExhausted.Store(time.Now().UnixNano())
 
-func TestQuicUDPMux_LossRate_AllReceived(t *testing.T) {
-	mux := newQuicUDPMux(nil, nil, nil)
-	for i := 0; i < 20; i++ {
-		mux.recordSend()
+	mux := newQuicUDPMux(nil, hopAttempts, hopExhausted)
+
+	// Single recv must NOT reset hop counter
+	mux.recordRecv()
+	if hopAttempts.Load() != 2 {
+		t.Fatalf("hopAttempts = %d, want 2 (single recv must not reset)", hopAttempts.Load())
+	}
+
+	// N-1 more recvs (total = relayRecoveryRecvs - 1) — still not enough
+	for i := int32(1); i < relayRecoveryRecvs-1; i++ {
 		mux.recordRecv()
 	}
-	mux.expireLossWindow()
-	rate := mux.evaluateRelayLossRate()
-	if rate != 0 {
-		t.Fatalf("loss rate = %f, want 0", rate)
+	if hopAttempts.Load() != 2 {
+		t.Fatalf("hopAttempts = %d, want 2 (below threshold)", hopAttempts.Load())
+	}
+
+	// One more recv reaches threshold → reset
+	mux.recordRecv()
+	if hopAttempts.Load() != 0 {
+		t.Fatalf("hopAttempts = %d, want 0 after %d consecutive recvs", hopAttempts.Load(), relayRecoveryRecvs)
+	}
+	if hopExhausted.Load() != 0 {
+		t.Fatalf("hopExhausted = %d, want 0 after recovery", hopExhausted.Load())
 	}
 }
 
-func TestQuicUDPMux_LossRate_PartialLoss(t *testing.T) {
-	mux := newQuicUDPMux(nil, nil, nil)
-	for i := 0; i < 20; i++ {
-		mux.recordSend()
-		if i%2 == 0 {
-			mux.recordRecv() // 50% recv = 50% loss
-		}
-	}
-	mux.expireLossWindow()
-	rate := mux.evaluateRelayLossRate()
-	if rate < 0.45 || rate > 0.55 {
-		t.Fatalf("loss rate = %f, want ~0.5", rate)
-	}
-}
+func TestQuicUDPMux_ConsecutiveRecvs_TimeoutBreaksStreak(t *testing.T) {
+	hopAttempts := &atomic.Int32{}
+	hopAttempts.Store(2)
 
-func TestQuicUDPMux_LossRate_BelowMinSamples(t *testing.T) {
-	mux := newQuicUDPMux(nil, nil, nil)
-	for i := 0; i < 5; i++ {
-		mux.recordSend() // only 5, below relayMinSamples
-	}
-	mux.expireLossWindow()
-	rate := mux.evaluateRelayLossRate()
-	if rate != 0 {
-		t.Fatal("should return 0 with insufficient samples")
-	}
-}
+	mux := newQuicUDPMux(nil, hopAttempts, nil)
 
-func TestQuicUDPMux_DatagramHealthy_LossRateUnhealthy(t *testing.T) {
-	mux := newQuicUDPMux(nil, nil, nil)
-	for i := 0; i < 20; i++ {
-		mux.recordSend()
-		if i%2 == 0 {
-			mux.recordRecv() // 50% loss > 40% threshold
-		}
-	}
-	mux.expireLossWindow()
-	if mux.datagramRelayHealthy() {
-		t.Fatal("should be unhealthy with 50% loss rate")
-	}
-}
-
-func TestQuicUDPMux_LossRate_WindowCaching(t *testing.T) {
-	mux := newQuicUDPMux(nil, nil, nil)
-	for i := 0; i < 20; i++ {
-		mux.recordSend()
+	// Build up streak to threshold - 2
+	for i := int32(0); i < relayRecoveryRecvs-2; i++ {
 		mux.recordRecv()
 	}
-	mux.expireLossWindow()
-	rate1 := mux.evaluateRelayLossRate()
-	if rate1 != 0 {
-		t.Fatalf("first evaluation = %f, want 0", rate1)
+
+	// Timeout breaks streak
+	mux.recordTimeout()
+
+	// Need full threshold again from scratch
+	for i := int32(0); i < relayRecoveryRecvs-1; i++ {
+		mux.recordRecv()
+	}
+	if hopAttempts.Load() != 2 {
+		t.Fatalf("hopAttempts = %d, want 2 (streak broken by timeout)", hopAttempts.Load())
 	}
 
-	// Add more loss within same window — should return cached value
-	for i := 0; i < 20; i++ {
-		mux.recordSend()
-		// no recv → 100% loss in this batch
-	}
-	rate2 := mux.evaluateRelayLossRate()
-	if rate2 != rate1 {
-		t.Fatalf("within window: got %f, want cached %f", rate2, rate1)
-	}
-
-	// Expire window — now should see the new loss
-	mux.expireLossWindow()
-	rate3 := mux.evaluateRelayLossRate()
-	if rate3 < 0.9 {
-		t.Fatalf("after window expire: got %f, want ~1.0", rate3)
+	// One more completes the new streak
+	mux.recordRecv()
+	if hopAttempts.Load() != 0 {
+		t.Fatal("hopAttempts should be 0 after new full streak")
 	}
 }
 
-// expireLossWindowForTest verifies the helper actually forces re-evaluation.
-func TestQuicUDPMux_ExpireLossWindow(t *testing.T) {
-	mux := newQuicUDPMux(nil, nil, nil)
-	// Evaluate once to set relayLossEvalAt
-	mux.evaluateRelayLossRate()
+func TestQuicUDPMux_ConsecutiveRecvs_NoHopNoReset(t *testing.T) {
+	// When hopAttempts is 0, consecutive recvs don't try to reset
+	hopAttempts := &atomic.Int32{}
+	mux := newQuicUDPMux(nil, hopAttempts, nil)
 
-	mux.lossMu.Lock()
-	before := mux.relayLossEvalAt
-	mux.lossMu.Unlock()
-
-	mux.expireLossWindow()
-
-	mux.lossMu.Lock()
-	after := mux.relayLossEvalAt
-	mux.lossMu.Unlock()
-
-	if after >= before {
-		t.Fatal("expireLossWindow should set relayLossEvalAt to the past")
+	for i := int32(0); i < relayRecoveryRecvs+5; i++ {
+		mux.recordRecv()
 	}
-
-	_ = time.Now() // use time import
+	// Should not panic or misbehave
+	if hopAttempts.Load() != 0 {
+		t.Fatal("hopAttempts should remain 0")
+	}
 }

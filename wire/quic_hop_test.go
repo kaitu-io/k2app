@@ -97,10 +97,10 @@ func TestQUICClient_DialUDP_RelayUnhealthy_HopStateUntouched(t *testing.T) {
 	}
 }
 
-// TestQUICClient_DialUDP_HopResetOnLossRecovery verifies that hop counter
-// resets only when sliding-window loss rate recovers below threshold,
+// TestQUICClient_DialUDP_HopResetOnSustainedRecovery verifies that hop counter
+// resets only after relayRecoveryRecvs consecutive receives without timeout,
 // not on a single successful receive.
-func TestQUICClient_DialUDP_HopResetOnLossRecovery(t *testing.T) {
+func TestQUICClient_DialUDP_HopResetOnSustainedRecovery(t *testing.T) {
 	client, _, cleanup := setupQUICPairWithHop(t)
 	defer cleanup()
 
@@ -123,25 +123,22 @@ func TestQUICClient_DialUDP_HopResetOnLossRecovery(t *testing.T) {
 		t.Fatalf("hopAttempts = %d, want 2 (single recv must not reset)", client.portHopAttempts.Load())
 	}
 
-	// Simulate good traffic (0% loss) with enough samples
-	for i := 0; i < 20; i++ {
-		mux.recordSend()
+	// Sustained recovery: relayRecoveryRecvs consecutive recvs
+	for i := int32(1); i < relayRecoveryRecvs; i++ {
 		mux.recordRecv()
 	}
-	mux.expireLossWindow()
-	mux.evaluateRelayLossRate() // triggers hop reset (loss < 15%)
 
 	if client.portHopAttempts.Load() != 0 {
-		t.Fatalf("hopAttempts = %d, want 0 after loss recovery", client.portHopAttempts.Load())
+		t.Fatalf("hopAttempts = %d, want 0 after sustained recovery", client.portHopAttempts.Load())
 	}
 	if client.portHopExhaustedAt.Load() != 0 {
-		t.Fatalf("portHopExhaustedAt = %d, want 0 after loss recovery", client.portHopExhaustedAt.Load())
+		t.Fatalf("portHopExhaustedAt = %d, want 0 after recovery", client.portHopExhaustedAt.Load())
 	}
 }
 
-// TestQUICClient_DialUDP_HopNotResetWithHighLoss verifies that hop counter
-// stays elevated when loss rate remains above recovery threshold.
-func TestQUICClient_DialUDP_HopNotResetWithHighLoss(t *testing.T) {
+// TestQUICClient_DialUDP_HopNotResetWithTimeoutInterruption verifies that hop
+// counter stays elevated when consecutive recvs are interrupted by timeouts.
+func TestQUICClient_DialUDP_HopNotResetWithTimeoutInterruption(t *testing.T) {
 	client, _, cleanup := setupQUICPairWithHop(t)
 	defer cleanup()
 
@@ -157,25 +154,20 @@ func TestQUICClient_DialUDP_HopNotResetWithHighLoss(t *testing.T) {
 	mux := client.udpMux
 	client.mu.Unlock()
 
-	// Simulate 30% loss (above 15% recovery threshold)
-	for i := 0; i < 20; i++ {
-		mux.recordSend()
-		if i%10 < 7 {
-			mux.recordRecv() // 70% recv = 30% loss
-		}
+	// Recvs interrupted by timeout — should not reset
+	for i := int32(0); i < relayRecoveryRecvs-2; i++ {
+		mux.recordRecv()
 	}
-	mux.expireLossWindow()
-	mux.evaluateRelayLossRate()
+	mux.recordTimeout() // breaks streak
 
 	if client.portHopAttempts.Load() != 2 {
-		t.Fatalf("hopAttempts = %d, want 2 (30%% loss above recovery threshold)", client.portHopAttempts.Load())
+		t.Fatalf("hopAttempts = %d, want 2 (streak broken by timeout)", client.portHopAttempts.Load())
 	}
 }
 
 // TestQuicUDPConn_WriteTo_LargePayloadUsesOverflow verifies that when SendDatagram
 // returns DatagramTooLargeError, the packet is transparently sent via the overflow
-// stream instead of failing. The send is counted in relaySent (for throughput
-// tracking) but NOT in relayTimeouts (it's not a network problem).
+// stream instead of failing. Overflow is NOT counted as a timeout (it's not a network problem).
 func TestQuicUDPConn_WriteTo_LargePayloadUsesOverflow(t *testing.T) {
 	client, _, cleanup := setupQUICPair(t)
 	defer cleanup()
@@ -194,7 +186,6 @@ func TestQuicUDPConn_WriteTo_LargePayloadUsesOverflow(t *testing.T) {
 	client.mu.Lock()
 	mux := client.udpMux
 	client.mu.Unlock()
-	sentBefore := mux.relaySent.Load()
 	timeoutsBefore := mux.relayTimeouts.Load()
 
 	// Send a payload that exceeds the peer's MaxDatagramFrameSize.
@@ -207,13 +198,8 @@ func TestQuicUDPConn_WriteTo_LargePayloadUsesOverflow(t *testing.T) {
 		t.Fatalf("WriteTo should succeed via overflow, got: %v", werr)
 	}
 
-	// Verify: send was counted but NOT as a timeout (overflow is not a network failure)
-	sentAfter := mux.relaySent.Load()
+	// Verify: overflow is NOT counted as a timeout (it's not a network failure)
 	timeoutsAfter := mux.relayTimeouts.Load()
-
-	if sentAfter != sentBefore+1 {
-		t.Fatalf("relaySent: before=%d after=%d, want +1", sentBefore, sentAfter)
-	}
 	if timeoutsAfter != timeoutsBefore {
 		t.Fatalf("relayTimeouts: before=%d after=%d, want unchanged (overflow is not a timeout)", timeoutsBefore, timeoutsAfter)
 	}

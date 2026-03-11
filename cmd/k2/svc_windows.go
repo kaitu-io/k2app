@@ -63,6 +63,8 @@ func (s *kaituService) Execute(args []string, r <-chan svc.ChangeRequest, change
 	go checkVersionAsync()
 
 	d := daemon.New()
+	d.Version = version
+	d.Commit = commit
 	if cfgPathUsed != "" {
 		d.ConfigPath = cfgPathUsed
 	}

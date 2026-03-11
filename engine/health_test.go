@@ -70,8 +70,8 @@ func TestHealthMonitor_HistoryOrder(t *testing.T) {
 
 func TestHealthTransitions(t *testing.T) {
 	// Test the assess + transition logic directly.
-	// assess() reads smoothWireLoss/smoothWireThroughput from hm, so we set them
-	// directly to unit-test the decision logic independent of EWMA.
+	// assess() reads smoothWireLoss from hm, so we set it directly
+	// to unit-test the decision logic independent of EWMA.
 	tm := mockTransportManager()
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
 	hm := newHealthMonitor(tm, tunnel, nil, nil)
@@ -84,7 +84,6 @@ func TestHealthTransitions(t *testing.T) {
 	// Simulate 5 consecutive high-loss samples → degraded.
 	for i := 0; i < 5; i++ {
 		hm.smoothWireLoss = 0.10
-		hm.smoothWireThroughput = 0
 		level := hm.assess(wire.WireStats{Transport: "quic"})
 		hm.transition(level)
 	}
@@ -94,10 +93,8 @@ func TestHealthTransitions(t *testing.T) {
 
 	// Simulate 5 consecutive very-high-loss → critical.
 	// 4 consecutive should NOT trigger critical (filters MI boundary noise ~2-3s).
-	hm.peakThroughput = 100e6
 	for i := 0; i < 4; i++ {
 		hm.smoothWireLoss = 0.30
-		hm.smoothWireThroughput = 10e6
 		level := hm.assess(wire.WireStats{Transport: "quic"})
 		hm.transition(level)
 	}
@@ -106,7 +103,6 @@ func TestHealthTransitions(t *testing.T) {
 	}
 	// 5th sample triggers critical.
 	hm.smoothWireLoss = 0.30
-	hm.smoothWireThroughput = 10e6
 	level := hm.assess(wire.WireStats{Transport: "quic"})
 	hm.transition(level)
 	if hm.health != HealthCritical {
@@ -116,7 +112,6 @@ func TestHealthTransitions(t *testing.T) {
 	// Simulate 10 consecutive healthy samples → healthy.
 	for i := 0; i < 10; i++ {
 		hm.smoothWireLoss = 0.01
-		hm.smoothWireThroughput = 80e6
 		level := hm.assess(wire.WireStats{Transport: "quic"})
 		hm.transition(level)
 	}
@@ -180,7 +175,6 @@ func TestHealthTransitions_Fallback(t *testing.T) {
 	// Fallback recovery: QUIC comes back with good stats → healthy after 10 samples.
 	for i := 0; i < 10; i++ {
 		hm.smoothWireLoss = 0.01
-		hm.smoothWireThroughput = 80e6
 		level := hm.assess(wire.WireStats{Transport: "quic"})
 		hm.transition(level)
 	}
@@ -219,9 +213,7 @@ func TestHealthMonitor_ResetCounters(t *testing.T) {
 	hm.degradedStreak = 5
 	hm.criticalStreak = 3
 	hm.healthyStreak = 0
-	hm.peakThroughput = 100.0
 	hm.smoothWireLoss = 0.5
-	hm.smoothWireThroughput = 50000
 	hm.ewmaInitialized = true
 
 	hm.resetCounters()
@@ -233,14 +225,8 @@ func TestHealthMonitor_ResetCounters(t *testing.T) {
 		t.Fatalf("streaks not zeroed: degraded=%d critical=%d healthy=%d",
 			hm.degradedStreak, hm.criticalStreak, hm.healthyStreak)
 	}
-	if hm.peakThroughput != 0 {
-		t.Fatalf("peakThroughput = %f, want 0", hm.peakThroughput)
-	}
 	if hm.smoothWireLoss != 0 {
 		t.Fatalf("smoothWireLoss = %f, want 0", hm.smoothWireLoss)
-	}
-	if hm.smoothWireThroughput != 0 {
-		t.Fatalf("smoothWireThroughput = %f, want 0", hm.smoothWireThroughput)
 	}
 	if hm.ewmaInitialized {
 		t.Fatal("ewmaInitialized should be false after reset")
@@ -248,7 +234,7 @@ func TestHealthMonitor_ResetCounters(t *testing.T) {
 }
 
 // ============================================================================
-// Tests for EWMA smoothing + peakThroughput decay
+// Tests for EWMA smoothing
 // ============================================================================
 
 func TestHealthMonitor_EWMASmoothing(t *testing.T) {
@@ -258,7 +244,6 @@ func TestHealthMonitor_EWMASmoothing(t *testing.T) {
 
 	// First sample initializes EWMA
 	hm.smoothWireLoss = 0
-	hm.smoothWireThroughput = 0
 	hm.ewmaInitialized = false
 
 	// Simulate calling sample-like EWMA logic manually
@@ -268,9 +253,6 @@ func TestHealthMonitor_EWMASmoothing(t *testing.T) {
 
 	if hm.smoothWireLoss != 0.0 {
 		t.Errorf("First sample: smoothWireLoss should be 0.0, got %f", hm.smoothWireLoss)
-	}
-	if hm.smoothWireThroughput != 100000 {
-		t.Errorf("First sample: smoothWireThroughput should be 100000, got %f", hm.smoothWireThroughput)
 	}
 
 	// Single spike: lossRate=0.96 from 0.0 baseline
@@ -304,9 +286,7 @@ func TestHealthMonitor_EWMAPreventsFalseCritical(t *testing.T) {
 
 	// Initialize with healthy baseline
 	hm.smoothWireLoss = 0.01
-	hm.smoothWireThroughput = 100000
 	hm.ewmaInitialized = true
-	hm.peakThroughput = 200000
 
 	for i := 0; i < 10; i++ {
 		level := hm.assess(wire.WireStats{Transport: "quic"})
@@ -334,58 +314,6 @@ func TestHealthMonitor_EWMAPreventsFalseCritical(t *testing.T) {
 	}
 	if hm.smoothWireLoss > 0.25 {
 		t.Errorf("smoothWireLoss should be < 0.25 after 5 samples of 0.15 from baseline 0.01, got %f", hm.smoothWireLoss)
-	}
-}
-
-func TestHealthMonitor_PeakThroughputDecay(t *testing.T) {
-	tm := mockTransportManager()
-	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
-	hm := newHealthMonitor(tm, tunnel, nil, nil)
-
-	hm.peakThroughput = 1e6 // 1 Mbps
-	hm.ewmaInitialized = true
-	hm.smoothWireThroughput = 0
-
-	// Simulate 700 samples with 0 throughput (decay only)
-	for i := 0; i < 700; i++ {
-		hm.peakThroughput *= peakDecayPerSample
-	}
-
-	// Half-life of 0.999 decay ≈ 693 samples → peak should be roughly halved
-	if hm.peakThroughput > 0.55e6 {
-		t.Errorf("After 700 samples of decay, peak should be ~0.5e6, got %f", hm.peakThroughput)
-	}
-	if hm.peakThroughput < 0.45e6 {
-		t.Errorf("After 700 samples of decay, peak should be ~0.5e6, got %f", hm.peakThroughput)
-	}
-}
-
-func TestHealthMonitor_PeakTracksSmoothedNotRaw(t *testing.T) {
-	tm := mockTransportManager()
-	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
-	hm := newHealthMonitor(tm, tunnel, nil, nil)
-
-	// Initialize with moderate throughput
-	hm.ewmaInitialized = true
-	hm.smoothWireThroughput = 50000
-	hm.peakThroughput = 50000
-
-	// Inject a single raw throughput spike of 1e6 (MI boundary artifact)
-	ws := wire.WireStats{Transport: "quic", PacketLossRate: 0, Throughput: 1e6}
-	applyEWMA(hm, ws)
-
-	// Update peak from smoothed (in sample)
-	if hm.smoothWireThroughput > hm.peakThroughput {
-		hm.peakThroughput = hm.smoothWireThroughput
-	}
-
-	// peakThroughput should NOT jump to 1e6 — should reflect smoothed value
-	// smoothWireThroughput = 0.3 * 1e6 + 0.7 * 50000 = 335000
-	if hm.peakThroughput > 400000 {
-		t.Errorf("Peak should track smoothed (~335K), not raw (1M), got %f", hm.peakThroughput)
-	}
-	if hm.peakThroughput < 250000 {
-		t.Errorf("Peak should be ~335K, got %f", hm.peakThroughput)
 	}
 }
 
@@ -527,10 +455,8 @@ func TestHealthMonitor_NoConcurrentDeadlock(t *testing.T) {
 func applyEWMA(hm *healthMonitor, ws wire.WireStats) {
 	if !hm.ewmaInitialized {
 		hm.smoothWireLoss = ws.PacketLossRate
-		hm.smoothWireThroughput = ws.Throughput
 		hm.ewmaInitialized = true
 	} else {
 		hm.smoothWireLoss = ewmaAlpha*ws.PacketLossRate + (1-ewmaAlpha)*hm.smoothWireLoss
-		hm.smoothWireThroughput = ewmaAlpha*ws.Throughput + (1-ewmaAlpha)*hm.smoothWireThroughput
 	}
 }

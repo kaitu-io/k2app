@@ -38,6 +38,22 @@ const maxServerUDPSessions = 4096
 // monitor to skip reconnect when TCP streams are working.
 const tcpHealthWindow = 30 * time.Second
 
+// ErrDatagramSendTimeout is returned when SendDatagram blocks longer than sendDatagramTimeout.
+var ErrDatagramSendTimeout = errors.New("wire: SendDatagram timeout")
+
+// sendDatagramTimeout is the maximum time to wait for SendDatagram to enqueue.
+// When the 32-frame datagram queue is full and K2CC pacing is slow,
+// SendDatagram blocks indefinitely. This timeout converts block into drop —
+// acceptable for unreliable DATAGRAM semantics.
+const sendDatagramTimeout = 2 * time.Second
+
+// datagramSender abstracts the QUIC connection methods used by quicUDPConn
+// and serverUDPConn. Enables testing with mock connections.
+type datagramSender interface {
+	SendDatagram(p []byte) error
+	LocalAddr() net.Addr
+}
+
 // ============================================================================
 // UDP overflow stream — per-packet fallback for oversized datagrams
 // ============================================================================
@@ -474,12 +490,7 @@ func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, 
 			if !mux.datagramRelayHealthy() {
 				slog.Debug("QUICClient.DialUDP: datagram relay unhealthy",
 					"addr", addr,
-					"relayTimeouts", mux.relayTimeouts.Load(),
-					"lossRate", fmt.Sprintf("%.1f%%", mux.evaluateRelayLossRate()*100))
-				// Relay-layer metrics (sent/recv ratio) are observability only.
-				// They must never drive wire-layer decisions (port hop, reconnect).
-				// TransportManager handles wire-layer recovery via QUIC handshake
-				// failure detection and background probe.
+					"relayTimeouts", mux.relayTimeouts.Load())
 				return nil, ErrDatagramRelayUnhealthy
 			}
 
@@ -568,7 +579,6 @@ func (c *QUICClient) WireStats() WireStats {
 		s.Epsilon = snap.Epsilon
 	}
 	if mux != nil {
-		s.RelayUDPLossRate = mux.evaluateRelayLossRate()
 		s.RelayUDPTimeouts = mux.relayTimeouts.Load()
 	}
 	s.PortHopAttempts = c.portHopAttempts.Load()
@@ -1056,45 +1066,40 @@ type quicUDPMux struct {
 	// Datagram health tracking: consecutive ReadFrom timeouts indicate
 	// a broken QUIC datagram path (e.g. ISP QoS dropping UDP).
 	relayTimeouts atomic.Int32
-	lastRelayRecvAt            atomic.Int64 // UnixNano of last received datagram
-
 	clientHopAttempts  *atomic.Int32 // shared with QUICClient; nil on server/tests
 	clientHopExhausted *atomic.Int64 // shared with QUICClient; nil on server/tests
 
-	// Sliding window loss rate tracking.
-	relaySent atomic.Int64
-	relayRecv atomic.Int64
-
-	// Cached loss rate (lazy evaluation per window).
-	lossMu         deadlock.Mutex
-	relayLossRate  float64
-	relayLossEvalAt     int64 // UnixNano of last evaluation
-	relayPrevSent int64
-	relayPrevRecv int64
+	// Sustained recovery tracking: consecutive recvs without timeout.
+	// After relayRecoveryRecvs consecutive receives, hop counters reset.
+	consecutiveRecvs atomic.Int32
 }
 
 const (
 	relayTimeoutThreshold int32 = 3
 
-	relayLossWindow    = 5 * time.Second
-	relayLossUnhealthy = 0.40 // 40% loss → unhealthy
-	relayLossRecovered = 0.15 // <15% → recovered (hop reset)
-	relayMinSamples    = 10   // min packets in window to evaluate
+	relayRecoveryRecvs int32 = 10 // consecutive recvs to confirm recovery → reset hop counter
 )
 
 func (m *quicUDPMux) recordRecv() {
 	m.relayTimeouts.Store(0)
-	m.lastRelayRecvAt.Store(time.Now().UnixNano())
-	m.relayRecv.Add(1)
-	// Hop counter reset moved to evaluateRelayLossRate() — requires sustained
-	// low loss rate, not just a single lucky packet.
-}
 
-func (m *quicUDPMux) recordSend() {
-	m.relaySent.Add(1)
+	// Sustained recovery: N consecutive recvs without timeout → reset hop counter.
+	// Prevents single lucky packet from resetting (requires sustained evidence).
+	if m.clientHopAttempts != nil && m.clientHopAttempts.Load() > 0 {
+		if m.consecutiveRecvs.Add(1) >= relayRecoveryRecvs {
+			m.clientHopAttempts.Store(0)
+			if m.clientHopExhausted != nil {
+				m.clientHopExhausted.Store(0)
+			}
+			m.consecutiveRecvs.Store(0)
+			slog.Debug("quicUDPMux: hop counter reset after sustained recovery",
+				"threshold", relayRecoveryRecvs)
+		}
+	}
 }
 
 func (m *quicUDPMux) recordTimeout() {
+	m.consecutiveRecvs.Store(0) // any timeout breaks recovery streak
 	count := m.relayTimeouts.Add(1)
 	if count == relayTimeoutThreshold {
 		slog.Warn("quicUDPMux: datagram relay path marked unhealthy",
@@ -1103,61 +1108,7 @@ func (m *quicUDPMux) recordTimeout() {
 }
 
 func (m *quicUDPMux) datagramRelayHealthy() bool {
-	if m.relayTimeouts.Load() >= relayTimeoutThreshold {
-		return false
-	}
-	if m.evaluateRelayLossRate() >= relayLossUnhealthy {
-		return false
-	}
-	return true
-}
-
-// evaluateRelayLossRate computes datagram loss rate from sent/received deltas.
-// Lazy evaluation: caches result for relayLossWindow, recomputes on expiry.
-func (m *quicUDPMux) evaluateRelayLossRate() float64 {
-	m.lossMu.Lock()
-	defer m.lossMu.Unlock()
-
-	now := time.Now().UnixNano()
-	if m.relayLossEvalAt > 0 && now-m.relayLossEvalAt < relayLossWindow.Nanoseconds() {
-		return m.relayLossRate // cached within window
-	}
-
-	sent := m.relaySent.Load()
-	recv := m.relayRecv.Load()
-	deltaSent := sent - m.relayPrevSent
-	deltaRecv := recv - m.relayPrevRecv
-
-	m.relayPrevSent = sent
-	m.relayPrevRecv = recv
-	m.relayLossEvalAt = now
-
-	if deltaSent < relayMinSamples {
-		return m.relayLossRate // not enough data
-	}
-
-	if deltaRecv >= deltaSent {
-		m.relayLossRate = 0
-	} else {
-		m.relayLossRate = 1.0 - float64(deltaRecv)/float64(deltaSent)
-	}
-
-	// Reset hop counter and exhaustion timestamp when loss rate recovers.
-	if m.relayLossRate < relayLossRecovered && m.clientHopAttempts != nil {
-		m.clientHopAttempts.Store(0)
-		if m.clientHopExhausted != nil {
-			m.clientHopExhausted.Store(0)
-		}
-	}
-
-	return m.relayLossRate
-}
-
-// expireLossWindow forces next evaluateRelayLossRate to recompute. Test helper.
-func (m *quicUDPMux) expireLossWindow() {
-	m.lossMu.Lock()
-	m.relayLossEvalAt = time.Now().Add(-2 * relayLossWindow).UnixNano()
-	m.lossMu.Unlock()
+	return m.relayTimeouts.Load() < relayTimeoutThreshold
 }
 
 func newQuicUDPMux(conn *quic.Conn, hopAttempts *atomic.Int32, hopExhausted *atomic.Int64) *quicUDPMux {
@@ -1298,7 +1249,7 @@ func (m *quicUDPMux) close() {
 // ============================================================================
 
 type quicUDPConn struct {
-	qconn      *quic.Conn
+	qconn      datagramSender
 	sessionID  uint32
 	targetAddr string
 	mux        *quicUDPMux
@@ -1344,12 +1295,30 @@ func (c *quicUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 
 func (c *quicUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
 	frame, put := MarshalUDPFrame(c.sessionID, c.targetAddr, b)
-	err := c.qconn.SendDatagram(frame)
+
+	// SendDatagram may block indefinitely when the 32-frame datagram queue
+	// is full. Use a timeout to convert blocking into dropping — DATAGRAM
+	// semantics are unreliable, so dropping is protocol-correct.
+	type sendResult struct{ err error }
+	ch := make(chan sendResult, 1)
+	go func() {
+		ch <- sendResult{c.qconn.SendDatagram(frame)}
+	}()
+
+	var err error
+	select {
+	case r := <-ch:
+		err = r.err
+	case <-time.After(sendDatagramTimeout):
+		put()
+		c.mux.recordTimeout()
+		return 0, ErrDatagramSendTimeout
+	}
 	put() // SendDatagram copies internally; safe to return buffer to pool
+
 	if err == nil {
 		c.txPackets.Add(1)
 		c.txBytes.Add(int64(len(b)))
-		c.mux.recordSend()
 		return len(b), nil
 	}
 
@@ -1361,14 +1330,12 @@ func (c *quicUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
 		}
 		c.txPackets.Add(1)
 		c.txBytes.Add(int64(len(b)))
-		c.mux.recordSend()
 		return len(b), nil
 	}
 
 	// Other errors: track for health monitoring
 	slog.Warn("quicUDPConn: SendDatagram failed", "sessionID", c.sessionID,
 		"target", c.targetAddr, "payloadLen", len(b), "err", err)
-	c.mux.recordSend()
 	c.mux.recordTimeout()
 	return 0, err
 }
@@ -1401,7 +1368,7 @@ func (c *quicUDPConn) SetWriteDeadline(time.Time) error    { return nil }
 // ============================================================================
 
 type serverUDPConn struct {
-	qconn     *quic.Conn
+	qconn     datagramSender
 	sessionID uint32
 	addr      string
 	readCh    chan []byte
@@ -1443,8 +1410,23 @@ func (c *serverUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 func (c *serverUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
 	// Empty addr for response frames (client already knows the target)
 	frame, put := MarshalUDPFrame(c.sessionID, "", b)
-	err := c.qconn.SendDatagram(frame)
-	put() // SendDatagram copies internally; safe to return buffer to pool
+
+	type sendResult struct{ err error }
+	ch := make(chan sendResult, 1)
+	go func() {
+		ch <- sendResult{c.qconn.SendDatagram(frame)}
+	}()
+
+	var err error
+	select {
+	case r := <-ch:
+		err = r.err
+	case <-time.After(sendDatagramTimeout):
+		put()
+		return 0, ErrDatagramSendTimeout
+	}
+	put()
+
 	if err == nil {
 		return len(b), nil
 	}

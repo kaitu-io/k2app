@@ -760,6 +760,67 @@ func TestClientTunnel_HandleTCP_EarlyData(t *testing.T) {
 	tunnel.Close()
 }
 
+// TestClientTunnel_HandleTCP_EarlyDataGlobalMode verifies early data works in
+// global mode (sniffBT=false, sniffSNI=false). The PROXY path should still peek
+// and send earlyData even without sniffing.
+func TestClientTunnel_HandleTCP_EarlyDataGlobalMode(t *testing.T) {
+	dialer := newMockDialer()
+	prov := &mockProvider{}
+
+	tunnel := NewClientTunnel(ClientTunnelConfig{
+		Provider: prov,
+		Dialer:   dialer,
+		SniffBT:  false, // global mode
+		SniffSNI: false,
+	})
+
+	if err := tunnel.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	remoteConn, clientConn := net.Pipe()
+	dialer.tcpConns <- remoteConn
+
+	localConn, providerConn := net.Pipe()
+
+	done := make(chan struct{})
+	go func() {
+		prov.handler.HandleTCP(localConn, "example.com:443")
+		close(done)
+	}()
+
+	// Send TLS ClientHello
+	tlsHello := []byte{0x16, 0x03, 0x01, 0x00, 0x05, 0x01, 0x00, 0x00, 0x01, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+	providerConn.Write(tlsHello)
+
+	// Read earlyData from remote side
+	buf := make([]byte, 256)
+	n, err := clientConn.Read(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(buf[:n], tlsHello) {
+		t.Errorf("earlyData mismatch: got %d bytes, want %d", n, len(tlsHello))
+	}
+
+	providerConn.Close()
+	clientConn.Close()
+	<-done
+
+	// Verify earlyData was passed to DialTCP
+	dialer.mu.Lock()
+	defer dialer.mu.Unlock()
+	if len(dialer.tcpEarlyDatas) != 1 {
+		t.Fatalf("DialTCP called %d times, expected 1", len(dialer.tcpEarlyDatas))
+	}
+	if !bytes.Equal(dialer.tcpEarlyDatas[0], tlsHello) {
+		t.Errorf("earlyData in global mode = %v, want TLS hello", dialer.tcpEarlyDatas[0])
+	}
+
+	tunnel.Close()
+}
+
 func TestClientTunnel_HandleUDP_UTPForcedDirect(t *testing.T) {
 	// Start a real UDP listener as the direct target
 	directListener, err := net.ListenPacket("udp", "127.0.0.1:0")
@@ -1130,4 +1191,60 @@ func TestSniffQUICClient_IsBrowser_Integration(t *testing.T) {
 	if sniff.QUICClientUnknown.IsBrowser() {
 		t.Error("unknown should NOT be browser")
 	}
+}
+
+func TestClientTunnel_HandleUDP_QUICPassthrough(t *testing.T) {
+	dialer := newMockDialer()
+	prov := &mockProvider{}
+
+	tunnel := NewClientTunnel(ClientTunnelConfig{
+		Provider:  prov,
+		Dialer:    dialer,
+		BlockQUIC: false, // Allow QUIC through
+		// Router nil → defaults to proxy
+	})
+
+	if err := tunnel.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Build a minimal QUIC Initial long header (version 1)
+	quicPacket := make([]byte, 32)
+	quicPacket[0] = 0xC3 // long header + fixed bit + Initial type
+	binary.BigEndian.PutUint32(quicPacket[1:5], 0x00000001) // QUIC v1
+
+	// Provide a mock UDP conn for DialUDP to return
+	mockRemote := newMockPacketConn()
+	dialer.udpConns <- mockRemote
+
+	localPC := newMockPacketConn()
+	done := make(chan struct{})
+	go func() {
+		prov.handler.HandleUDP(localPC, "142.250.197.99:443")
+		close(done)
+	}()
+
+	localPC.injectRead(quicPacket, nil)
+
+	// DialUDP should be called (QUIC forwarded, not blocked)
+	deadline := time.After(3 * time.Second)
+	for {
+		dialer.mu.Lock()
+		n := len(dialer.udpCalls)
+		dialer.mu.Unlock()
+		if n > 0 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("DialUDP not called — QUIC was blocked instead of forwarded")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	// Clean up
+	localPC.Close()
+	mockRemote.Close()
+	<-done
+	tunnel.Close()
 }

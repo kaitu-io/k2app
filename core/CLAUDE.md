@@ -23,8 +23,8 @@ Provider ──► ClientTunnel.HandleTCP/HandleUDP
 1. Parse dest → get domain/IP
 2. Router.Route → Direct/Proxy/Reject
 3. Sniff (single peek): BT → force DIRECT; TLS SNI (443) / HTTP Host (non-443) → upgrade DIRECT→PROXY; IPv6→hostname rewrite
-4. Direct: `net.Dial("tcp", dest)` + bidirectional pipe
-5. Proxy: `wire.DialTCP(dest)` + bidirectional pipe
+4. Direct: `net.Dial("tcp", dest)` + bidirectional pipe (peeked bytes replayed via `prefixConn`)
+5. Proxy: peek first bytes as `earlyData` (even without sniffing in global mode) → `wire.DialTCP(dest, earlyData)` + bidirectional pipe. Early data saves 1 RTT by sending peeked bytes alongside wire stream header before waiting for server response.
 6. Reject: close connection silently
 
 **HandleUDP(conn, dest)**:
@@ -36,6 +36,7 @@ Provider ──► ClientTunnel.HandleTCP/HandleUDP
 **Sniff flags** (set by engine, disabled in global mode):
 - `sniffBT` — BT/WebRTC detection: PROXY→DIRECT (BitTorrent TCP, uTP, UDPTracker, STUN, DTLS)
 - `sniffSNI` — domain extraction: DIRECT→PROXY (TLS SNI on 443, HTTP Host on non-443, QUIC SNI on 443)
+- `blockQUIC` — block browser QUIC via ICMP reject (default: false = allow through DATAGRAM path, set via `ClientConfig.BlockQUIC`)
 - `rewriteIPv6` — replace IPv6 PROXY dests with hostname via SNI (when server lacks IPv6, works in all modes)
 
 **Traffic counting**: `txBytes`/`rxBytes` `atomic.Int64` fields count all bytes through `pipe()`/`pipePacket()`. `TrafficBytes()` returns cumulative TX/RX.

@@ -242,6 +242,8 @@ engine.Stop()
 - `net.Pipe()` is synchronous — writes block until reads happen on other end
 - TUN device requires root. `k2 setup` or `k2 service install` installs daemon as root via launchd/systemd/Windows Service
 - QUIC datagrams may not be supported — wire.DialUDP falls back to stream-based UDP
+- `blockQUIC` defaults to `false` — browser QUIC flows through DATAGRAM path (unreliable, no retransmission at tunnel layer). Inner browser QUIC CC (BBR/Cubic) adapts to outer K2CC throughput. Set `block_quic: true` in client config to restore ICMP-reject behavior.
+- `SendDatagram` has 2s timeout (`sendDatagramTimeout`) — prevents goroutine starvation when datagram queue blocks under congestion. Timeout drops the packet (DATAGRAM semantics are unreliable). Inner protocol retransmits as needed.
 - smux needs buffer tuning for VPN traffic (default 4MB too small, use 16MB)
 - ECH requires X25519 keys (not P-256) — Go's crypto/tls only supports DHKEM(X25519)
 - DNS queries need trailing dot (FQDN) — `crypto.cloudflare.com.` not `crypto.cloudflare.com`

@@ -51,7 +51,6 @@ type WireStats struct {
 	WireFallback   bool // TCP-WS serving traffic due to QUIC failure
 
 	// Relay-layer observability (NOT for wire-layer decisions).
-	RelayUDPLossRate float64 // 0.0-1.0 sliding window
 	RelayUDPTimeouts int32   // consecutive timeout count
 	PortHopAttempts  int32   // port hop attempts
 }

@@ -12,7 +12,7 @@ Three-layer model for metrics, naming, and decision ownership.
 
 ## Terminology
 
-- **Datagram Relay**: The QUIC datagram-based path for forwarding user UDP packets. Distinct from QUIC's own wire-layer UDP transport. `ErrDatagramRelayUnhealthy` signals this path has degraded; `datagramRelayHealthy()` evaluates health from loss rate and timeout counters.
+- **Datagram Relay**: The QUIC datagram-based path for forwarding user UDP packets. Distinct from QUIC's own wire-layer UDP transport. `ErrDatagramRelayUnhealthy` signals this path has degraded; `datagramRelayHealthy()` evaluates health from consecutive timeout counters.
 
 ## Key Rule
 
@@ -21,12 +21,11 @@ Three-layer model for metrics, naming, and decision ownership.
 ## Naming Conventions
 
 - `PacketLossRate` — Wire-layer loss from K2CC (ACK-based, per monitor interval)
-- `RelayUDPLossRate` — Relay-layer loss (sent vs received ratio over sliding window)
 - `RelayUDPTimeouts` — Relay-layer consecutive timeout count
 - `PortHopAttempts` — Wire-layer port hop counter (not relay-specific)
 - `WireFallback` — TCP-WS serving traffic due to QUIC failure
 - `handshakeFailStreak` — Consecutive QUIC handshake failures (drives fallback)
-- `smoothWireLoss` / `smoothWireThroughput` — EWMA-smoothed wire metrics in healthMonitor
+- `smoothWireLoss` — EWMA-smoothed wire loss in healthMonitor
 - `onReconnect` — healthMonitor callback for full reconnect (the only corrective action)
 - `K2CC*` — Congestion Control symbols (formerly K2ARC)
 - `CCSnapshot` — Point-in-time CC state (formerly ARCSnapshot)

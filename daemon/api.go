@@ -126,16 +126,20 @@ func (d *Daemon) handleStatus(w http.ResponseWriter) {
 }
 
 func (d *Daemon) handleVersion(w http.ResponseWriter) {
-	writeJSON(w, Response{
-		Code:    0,
-		Message: "ok",
-		Data: map[string]any{
-			"version": "dev",
-			"go":      runtime.Version(),
-			"os":      runtime.GOOS,
-			"arch":    runtime.GOARCH,
-		},
-	})
+	v := d.Version
+	if v == "" {
+		v = "dev"
+	}
+	data := map[string]any{
+		"version": v,
+		"go":      runtime.Version(),
+		"os":      runtime.GOOS,
+		"arch":    runtime.GOARCH,
+	}
+	if d.Commit != "" {
+		data["commit"] = d.Commit
+	}
+	writeJSON(w, Response{Code: 0, Message: "ok", Data: data})
 }
 
 func (d *Daemon) handleStats(w http.ResponseWriter, r *http.Request) {

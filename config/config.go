@@ -21,7 +21,8 @@ type ClientConfig struct {
 	DNS     DNSConfig   `yaml:"dns"      json:"dns"`
 	Rule    RuleConfig  `yaml:"rule"     json:"rule"`
 	Log     LogConfig   `yaml:"log"      json:"log"`
-	PIDFile string      `yaml:"pid_file" json:"pid_file"` // path to PID file (empty = no PID file)
+	PIDFile   string      `yaml:"pid_file"   json:"pid_file"`   // path to PID file (empty = no PID file)
+	BlockQUIC bool        `yaml:"block_quic" json:"block_quic"` // block browser QUIC via ICMP reject (default: false = allow through DATAGRAM)
 }
 
 // TunConfig contains TUN device configuration.
