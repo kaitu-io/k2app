@@ -66,9 +66,6 @@ build-windows: pre-build build-webapp build-k2-windows
 	@echo "Release artifacts in release/$(VERSION)/:"
 	@ls -la release/$(VERSION)/
 
-build-windows-test:
-	bash scripts/build-windows-test.sh
-
 build-openwrt: pre-build
 	bash scripts/build-openwrt.sh
 
