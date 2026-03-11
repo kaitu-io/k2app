@@ -151,6 +151,9 @@ export interface IPlatform {
   /** 读取剪贴板 */
   readClipboard(): Promise<string>;
 
+  /** 系统分享（移动端原生分享面板） */
+  share?(params: { text: string; title?: string; url?: string }): Promise<void>;
+
   /** 同步语言设置到原生层（Tauri: tray 菜单, Mobile: no-op） */
   syncLocale(locale: string): Promise<void>;
 
