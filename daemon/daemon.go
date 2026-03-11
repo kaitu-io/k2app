@@ -54,6 +54,11 @@ type Daemon struct {
 	engineCtx context.Context
 	engineCnl context.CancelFunc
 
+	// Version and Commit are set by main via ldflags.
+	// Used by handleVersion to report the running binary's identity.
+	Version string
+	Commit  string
+
 	// ConfigPath is the path to the YAML config file loaded at startup.
 	// When set, Reload() re-reads this file and applies dynamic field changes.
 	ConfigPath string
@@ -89,7 +94,7 @@ func (d *Daemon) Run(ctx context.Context, listenAddr string) error {
 	if listenAddr == "" {
 		listenAddr = DefaultAddr
 	}
-	slog.Info("k2 daemon starting", "addr", listenAddr)
+	slog.Info("k2 daemon starting", "addr", listenAddr, "version", d.Version, "commit", d.Commit)
 	slog.Info("daemon: runtime",
 		"pid", os.Getpid(),
 		"go", runtime.Version(),

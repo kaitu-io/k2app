@@ -76,6 +76,8 @@ func runDaemon(configPath string) {
 
 	// 6. Create and configure daemon.
 	d := daemon.New()
+	d.Version = version
+	d.Commit = commit
 	if cfgPathUsed != "" {
 		d.ConfigPath = cfgPathUsed
 	}
