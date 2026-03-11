@@ -159,6 +159,7 @@ build-mobile-android: pre-build build-webapp appext-android
 IOS_DEVICE ?= $(shell xcrun xctrace list devices 2>/dev/null | grep 'iPhone' | grep -v 'Simulator' | sed 's/.*(\([0-9A-Fa-f-]\{25,\}\)).*/\1/' | head -1)
 
 dev-ios: pre-build build-webapp appext-ios
+	cp -r k2/build/K2Mobile.xcframework mobile/ios/App/
 	cd mobile && rm -rf node_modules/k2-plugin && yarn install --force && npx cap sync ios && npx cap run ios $(if $(IOS_DEVICE),--target $(IOS_DEVICE),)
 
 dev-android: pre-build build-webapp appext-android
