@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"net/url"
 	"os"
@@ -12,117 +13,215 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// cmdSetup handles "k2s setup [--reset]":
+// cmdSetup handles "k2s setup [flags]":
 //
-// If config.yml already exists (and no --reset): skip wizard, install/start service, print URL.
-// Otherwise: run interactive wizard → generate config.yml → create first user → configure firewall → install/start service.
+// No flags: interactive wizard.
+// All required flags (--port, --username, --no-firewall): fully automated (no prompts).
+// Partial flags: prompt only for missing values.
 func cmdSetup(args []string) {
+	fs := flag.NewFlagSet("k2s setup", flag.ExitOnError)
+	portFlag := fs.Int("port", 0, "listen port (default: prompt or 443)")
+	usernameFlag := fs.String("username", "", "first user to create (default: prompt or prince)")
+	hopFlag := fs.String("hop", "", "port hop range, e.g. 50000-50100 (default: disabled)")
+	noFirewall := fs.Bool("no-firewall", false, "skip firewall configuration")
+	reset := fs.Bool("reset", false, "re-run setup (preserves certs and users)")
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, `Set up k2s server.
+
+Usage: k2s setup [flags]
+
+  No flags: interactive wizard.
+  All flags: fully automated (no prompts).
+
+Flags:
+`)
+		fs.PrintDefaults()
+		fmt.Fprintf(os.Stderr, `
+Examples:
+  k2s setup                                            # interactive wizard
+  k2s setup --port 443 --username alice --no-firewall  # fully automated
+  k2s setup --port 8443                                # prompt only for missing
+`)
+	}
+	fs.Parse(args)
+
 	certDir := config.DefaultServerConfig().CertDir
 	configPath := filepath.Join(certDir, "config.yml")
 	usersPath := filepath.Join(certDir, "users")
 	urlPath := filepath.Join(certDir, "connect-url.txt")
 
-	// Handle --reset: delete config.yml (preserve certs and users)
-	reset := false
-	for _, arg := range args {
-		if arg == "--reset" {
-			reset = true
-		}
-	}
-	if reset {
+	if *reset {
 		os.Remove(configPath)
-		fmt.Println("Config reset, re-running wizard")
+		fmt.Println("Config reset, re-running setup")
 		fmt.Println()
 	}
 
-	// If config exists and service is running → just print URL
-	if fileExists(configPath) && !reset {
+	// If config exists and not reset → start service / print URL.
+	if fileExists(configPath) && !*reset {
 		if isServiceRunning() {
-			if url := readConnectURL(urlPath); url != "" {
-				fmt.Println(url)
+			url := readConnectURL(urlPath)
+			if url == "" {
+				url = waitForConnectURL(urlPath, 30*time.Second)
+			}
+			if url != "" {
+				out.printResult(url)
+				out.ok(map[string]string{"url": url})
 				return
 			}
-			fmt.Println("k2s is running, waiting for connect URL...")
-			if url := waitForConnectURL(urlPath, 30*time.Second); url != "" {
-				fmt.Println(url)
-				return
-			}
-			fmt.Fprintln(os.Stderr, "Timed out waiting for connect URL.")
-			os.Exit(1)
+			out.fail("TIMEOUT", "timed out waiting for connect URL", "")
+			os.Exit(2)
 		}
-
-		// Config exists but service not running → start it
 		fmt.Println("Existing config found, starting service...")
 		startServiceWithConfig(configPath)
 		waitAndPrintURL(urlPath)
 		return
 	}
 
-	// No config → run interactive wizard
-	runWizard(certDir, configPath, usersPath, urlPath)
+	// Parse hop range if given.
+	hopStart, hopEnd := 0, 0
+	if *hopFlag != "" {
+		var err error
+		hopStart, hopEnd, err = parseRange(*hopFlag)
+		if err != nil {
+			out.fail("INVALID_HOP", err.Error(), "expected format: 50000-50100")
+			os.Exit(1)
+		}
+	}
+
+	// Non-interactive if all required params given.
+	if *portFlag > 0 && *usernameFlag != "" && *noFirewall {
+		runNonInteractiveSetup(certDir, configPath, usersPath, urlPath,
+			*portFlag, *usernameFlag, hopStart, hopEnd)
+		return
+	}
+
+	// Interactive: prompt for missing params.
+	runInteractiveSetup(certDir, configPath, usersPath, urlPath,
+		*portFlag, *usernameFlag, hopStart, hopEnd, *noFirewall)
 }
 
-// runWizard runs the 5-step interactive setup wizard.
-func runWizard(certDir, configPath, usersPath, urlPath string) {
-	// Ensure cert dir exists
+// runNonInteractiveSetup runs fully automated setup with all parameters provided.
+func runNonInteractiveSetup(certDir, configPath, usersPath, urlPath string,
+	port int, username string, hopStart, hopEnd int) {
+
 	if err := os.MkdirAll(certDir, 0755); err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating config directory %s: %v\n", certDir, err)
+		out.fail("DIR_FAILED", err.Error(), "")
+		os.Exit(2)
+	}
+
+	token, err := generateToken()
+	if err != nil {
+		out.fail("TOKEN_FAILED", err.Error(), "")
+		os.Exit(2)
+	}
+	hash, err := hashToken(token)
+	if err != nil {
+		out.fail("HASH_FAILED", err.Error(), "")
+		os.Exit(2)
+	}
+	if err := appendUser(usersPath, username, hash); err != nil {
+		out.fail("USER_FAILED", err.Error(), "")
+		os.Exit(2)
+	}
+
+	cfg := buildMinimalConfig(port, hopStart, hopEnd, usersPath)
+	if err := writeConfigYAML(configPath, cfg); err != nil {
+		out.fail("CONFIG_FAILED", err.Error(), "")
+		os.Exit(2)
+	}
+
+	startServiceWithConfig(configPath)
+
+	url := waitForConnectURL(urlPath, 30*time.Second)
+	if url == "" {
+		out.fail("TIMEOUT", "timed out waiting for server", "check: sudo journalctl -u k2s -f")
+		os.Exit(2)
+	}
+
+	url, err = replaceURLCredentials(url, username, token)
+	if err != nil {
+		out.fail("URL_FAILED", err.Error(), "")
+		os.Exit(2)
+	}
+
+	out.printf("Config: %s\n", configPath)
+	out.printf("Service: started\n")
+	out.printf("URL: %s\n", url)
+	out.ok(map[string]any{"url": url, "config": configPath, "username": username})
+}
+
+// runInteractiveSetup prompts for missing parameters and runs setup.
+// Values already provided via flags are used directly without prompting.
+func runInteractiveSetup(certDir, configPath, usersPath, urlPath string,
+	portGiven int, usernameGiven string, hopStart, hopEnd int, noFirewall bool) {
+
+	if err := os.MkdirAll(certDir, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating directory %s: %v\n", certDir, err)
 		os.Exit(1)
 	}
 
 	printHeader()
 
-	// Step 1: Listen Port
-	port := promptPort("Listen port", 443)
+	// Step 1: Port
+	port := portGiven
+	if port == 0 {
+		port = promptPort("Listen port", 443)
+	} else {
+		fmt.Printf("Port: %d\n", port)
+	}
 	fmt.Println()
 
-	// Step 2: Port Hopping
-	hopStart, hopEnd := promptHopRange()
+	// Step 2: Hop
+	if hopStart == 0 && hopEnd == 0 {
+		hopStart, hopEnd = promptHopRange()
+	}
 	fmt.Println()
 
 	// Step 3: Username
-	username, token, err := addFirstUser(usersPath, "prince")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+	var username, token string
+	var err error
+	if usernameGiven != "" {
+		username = usernameGiven
+		token, err = generateToken()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		hash, _ := hashToken(token)
+		appendUser(usersPath, username, hash)
+		fmt.Printf("User: %s (token auto-generated)\n", username)
+	} else {
+		username, token, err = addFirstUser(usersPath, "prince")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
 	}
 	fmt.Println()
 
 	// Step 4: Firewall
-	runFirewallSetup(port, hopStart, hopEnd)
+	if !noFirewall {
+		runFirewallSetup(port, hopStart, hopEnd)
+	}
 	fmt.Println()
 
-	// Step 5: Generate config + start
+	// Step 5: Config + start
 	fmt.Println("Generating config...")
-
 	cfg := buildMinimalConfig(port, hopStart, hopEnd, usersPath)
 	if err := writeConfigYAML(configPath, cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "Error writing config: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("Config: %s\n", configPath)
-	fmt.Printf("Users: %s\n", usersPath)
-
-	fmt.Println()
-	fmt.Println("Starting service...")
 
 	startServiceWithConfig(configPath)
 
-	// Wait for URL
 	url := waitForConnectURL(urlPath, 30*time.Second)
 	if url == "" {
 		fmt.Fprintln(os.Stderr, "Timed out waiting for server to start.")
-		fmt.Fprintf(os.Stderr, "Check logs: sudo journalctl -u k2s -f\n")
 		os.Exit(1)
 	}
 
-	// Replace auto-generated credentials in URL with wizard user
-	url, err = replaceURLCredentials(url, username, token)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error replacing URL credentials: %v\n", err)
-		os.Exit(1)
-	}
-
+	url, _ = replaceURLCredentials(url, username, token)
 	printComplete(configPath, url, hopStart > 0)
 }
 
