@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http/httptest"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -362,5 +363,65 @@ func TestAutoReconnectWithSavedConfig(t *testing.T) {
 	}
 	if loaded.Config.Server != "k2v5://test:token@host:443" {
 		t.Fatalf("Config.Server = %q, want k2v5://test:token@host:443", loaded.Config.Server)
+	}
+}
+
+// ==========================================================================
+// doUp abort tests
+// ==========================================================================
+
+func TestDoUpAbortedByDown(t *testing.T) {
+	// Channel-gated StartFunc: blocks until we release it.
+	gate := make(chan struct{})
+	d := New()
+	d.StartFunc = func(eng *engine.Engine, cfg engine.Config) error {
+		<-gate // block until test signals
+		eng.ForceConnected()
+		return nil
+	}
+
+	cfg := config.ClientFromURL("k2v5://test:tok@host:443")
+
+	var wg sync.WaitGroup
+	var upErr error
+
+	// Launch doUp in background — it will block on gate.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		upErr = d.doUp(cfg, 0)
+	}()
+
+	// Give doUp time to acquire opMu and reach the gate.
+	time.Sleep(50 * time.Millisecond)
+
+	// doDown signals abort and queues behind opMu.
+	go d.doDown()
+
+	// Give doDown time to set abortUp and start waiting on opMu.
+	time.Sleep(50 * time.Millisecond)
+
+	// Release the gate — engine.Start completes, doUp checks abortUp.
+	close(gate)
+
+	// Wait for doUp to finish.
+	wg.Wait()
+
+	// doUp should have been aborted.
+	if upErr == nil {
+		t.Fatal("expected doUp to return error when aborted by doDown")
+	}
+
+	// Engine should NOT be installed (aborted after start).
+	d.mu.RLock()
+	eng := d.engine
+	d.mu.RUnlock()
+	if eng != nil {
+		t.Fatal("expected engine to be nil after aborted doUp")
+	}
+
+	// State should be disconnected.
+	if d.State() != engine.StateDisconnected {
+		t.Fatalf("expected disconnected, got %s", d.State())
 	}
 }

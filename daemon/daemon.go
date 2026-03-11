@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync/atomic"
 	"time"
 
 	"github.com/sasha-s/go-deadlock"
@@ -31,11 +32,13 @@ const DefaultAddr = "127.0.0.1:1777"
 //
 // Concurrency model:
 //   - opMu serializes doUp/doDown (coarse lifecycle lock)
+//   - abortUp signals doUp to abort after engine.Start returns (set by doDown before opMu)
 //   - mu protects field reads/writes (fine-grained data lock)
 //   - sseMu protects SSE client map
 type Daemon struct {
-	opMu deadlock.Mutex   // serializes doUp/doDown operations
-	mu   deadlock.RWMutex // protects field access
+	opMu    deadlock.Mutex   // serializes doUp/doDown operations
+	abortUp atomic.Bool      // doDown sets before opMu.Lock; doUp checks after Start
+	mu      deadlock.RWMutex // protects field access
 
 	// lastStatus is updated by engine's OnStatus callback — single source of truth.
 	lastStatus engine.Status
@@ -172,6 +175,7 @@ func (d *Daemon) closeTunnel() {
 func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 	d.opMu.Lock()
 	defer d.opMu.Unlock()
+	d.abortUp.Store(false) // reset on new up
 	slog.Info("daemon: doUp", "mode", cfg.Mode, "pid", pid)
 
 	// Unconditionally tear down any existing tunnel (idempotent).
@@ -214,6 +218,12 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 	eng := engine.New()
 	eng.SetEventHandler(d)
 
+	// Early abort: doDown arrived while we were setting up (before expensive Start).
+	if d.abortUp.Load() {
+		slog.Info("daemon: doUp aborted before start")
+		return fmt.Errorf("aborted before start")
+	}
+
 	startFn := d.StartFunc
 	if startFn == nil {
 		startFn = defaultStartFunc
@@ -232,6 +242,16 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 		d.broadcastStatus(s)
 		slog.Error("engine start failed", "err", err)
 		return err
+	}
+
+	// Post-start abort: doDown arrived while engine.Start was running.
+	// Engine started successfully but user wants down — tear it down immediately
+	// within the same opMu critical section (route atomicity guaranteed).
+	if d.abortUp.Load() {
+		slog.Info("daemon: doUp aborted after start")
+		eng.Stop()
+		saveState(persistedState{State: engine.StateDisconnected, Timestamp: time.Now()})
+		return fmt.Errorf("aborted by pending down")
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -301,9 +321,14 @@ func (d *Daemon) engineConfigFromClientConfig(
 }
 
 // doDown disconnects the tunnel.
+// Sets abortUp before acquiring opMu so an in-progress doUp can detect
+// the pending down and abort after engine.Start returns, avoiding a
+// wasteful connect→immediate-disconnect cycle with transient route changes.
 func (d *Daemon) doDown() {
+	d.abortUp.Store(true)
 	d.opMu.Lock()
 	defer d.opMu.Unlock()
+	d.abortUp.Store(false)
 	slog.Info("daemon: doDown")
 	d.closeTunnel()
 }
