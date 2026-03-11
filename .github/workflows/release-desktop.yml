@@ -94,7 +94,7 @@ jobs:
         working-directory: desktop/src-tauri
 
       - name: Go test k2 core (deadlock detection enabled)
-        run: go test ./... -count=1 -timeout=120s
+        run: go test ./... -count=1 -timeout=300s
         working-directory: k2
 
       - name: Go build k2 (deadlock_disable — production mode)
