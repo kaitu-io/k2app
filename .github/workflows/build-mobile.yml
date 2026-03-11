@@ -205,6 +205,16 @@ jobs:
         if: always()
         run: security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" || true
 
+      - name: Notify Slack on success
+        if: success()
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          ./scripts/ci/notify-slack.sh deploy-success \
+            --version "${VERSION}" \
+            --platforms "iOS"
+        env:
+          SLACK_WEBHOOK_RELEASE: ${{ secrets.SLACK_WEBHOOK_RELEASE }}
+
       - name: Notify Slack on failure
         if: failure()
         run: |
@@ -357,6 +367,16 @@ jobs:
           aws cloudfront create-invalidation \
             --distribution-id "$DISTRIBUTION_ID" \
             --paths "/kaitu/android/*"
+
+      - name: Notify Slack on success
+        if: success()
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          ./scripts/ci/notify-slack.sh deploy-success \
+            --version "${VERSION}" \
+            --platforms "Android"
+        env:
+          SLACK_WEBHOOK_RELEASE: ${{ secrets.SLACK_WEBHOOK_RELEASE }}
 
       - name: Notify Slack on failure
         if: failure()
