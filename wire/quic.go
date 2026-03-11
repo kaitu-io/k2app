@@ -38,6 +38,22 @@ const maxServerUDPSessions = 4096
 // monitor to skip reconnect when TCP streams are working.
 const tcpHealthWindow = 30 * time.Second
 
+// ErrDatagramSendTimeout is returned when SendDatagram blocks longer than sendDatagramTimeout.
+var ErrDatagramSendTimeout = errors.New("wire: SendDatagram timeout")
+
+// sendDatagramTimeout is the maximum time to wait for SendDatagram to enqueue.
+// When the 32-frame datagram queue is full and K2CC pacing is slow,
+// SendDatagram blocks indefinitely. This timeout converts block into drop —
+// acceptable for unreliable DATAGRAM semantics.
+const sendDatagramTimeout = 2 * time.Second
+
+// datagramSender abstracts the QUIC connection methods used by quicUDPConn
+// and serverUDPConn. Enables testing with mock connections.
+type datagramSender interface {
+	SendDatagram(p []byte) error
+	LocalAddr() net.Addr
+}
+
 // ============================================================================
 // UDP overflow stream — per-packet fallback for oversized datagrams
 // ============================================================================
@@ -1298,7 +1314,7 @@ func (m *quicUDPMux) close() {
 // ============================================================================
 
 type quicUDPConn struct {
-	qconn      *quic.Conn
+	qconn      datagramSender
 	sessionID  uint32
 	targetAddr string
 	mux        *quicUDPMux
@@ -1344,8 +1360,28 @@ func (c *quicUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 
 func (c *quicUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
 	frame, put := MarshalUDPFrame(c.sessionID, c.targetAddr, b)
-	err := c.qconn.SendDatagram(frame)
+
+	// SendDatagram may block indefinitely when the 32-frame datagram queue
+	// is full. Use a timeout to convert blocking into dropping — DATAGRAM
+	// semantics are unreliable, so dropping is protocol-correct.
+	type sendResult struct{ err error }
+	ch := make(chan sendResult, 1)
+	go func() {
+		ch <- sendResult{c.qconn.SendDatagram(frame)}
+	}()
+
+	var err error
+	select {
+	case r := <-ch:
+		err = r.err
+	case <-time.After(sendDatagramTimeout):
+		put()
+		c.mux.recordSend()
+		c.mux.recordTimeout()
+		return 0, ErrDatagramSendTimeout
+	}
 	put() // SendDatagram copies internally; safe to return buffer to pool
+
 	if err == nil {
 		c.txPackets.Add(1)
 		c.txBytes.Add(int64(len(b)))
@@ -1401,7 +1437,7 @@ func (c *quicUDPConn) SetWriteDeadline(time.Time) error    { return nil }
 // ============================================================================
 
 type serverUDPConn struct {
-	qconn     *quic.Conn
+	qconn     datagramSender
 	sessionID uint32
 	addr      string
 	readCh    chan []byte
@@ -1443,8 +1479,23 @@ func (c *serverUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 func (c *serverUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
 	// Empty addr for response frames (client already knows the target)
 	frame, put := MarshalUDPFrame(c.sessionID, "", b)
-	err := c.qconn.SendDatagram(frame)
-	put() // SendDatagram copies internally; safe to return buffer to pool
+
+	type sendResult struct{ err error }
+	ch := make(chan sendResult, 1)
+	go func() {
+		ch <- sendResult{c.qconn.SendDatagram(frame)}
+	}()
+
+	var err error
+	select {
+	case r := <-ch:
+		err = r.err
+	case <-time.After(sendDatagramTimeout):
+		put()
+		return 0, ErrDatagramSendTimeout
+	}
+	put()
+
 	if err == nil {
 		return len(b), nil
 	}

@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestClientConfig_Defaults(t *testing.T) {
@@ -391,6 +393,25 @@ func TestClientConfig_EmptyTun_Defaults(t *testing.T) {
 	}
 	if cfg.Tun.IPv6 != DefaultTunIPv6 {
 		t.Errorf("Tun.IPv6 = %q, want %q", cfg.Tun.IPv6, DefaultTunIPv6)
+	}
+}
+
+func TestClientConfig_BlockQUIC_Default(t *testing.T) {
+	// Zero value = false (QUIC allowed through tunnel)
+	var cfg ClientConfig
+	if cfg.BlockQUIC {
+		t.Error("BlockQUIC zero value should be false")
+	}
+}
+
+func TestClientConfig_BlockQUIC_YAML(t *testing.T) {
+	yamlData := []byte("block_quic: true\nserver: k2v5://test\n")
+	var cfg ClientConfig
+	if err := yaml.Unmarshal(yamlData, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.BlockQUIC {
+		t.Error("BlockQUIC should be true after YAML unmarshal")
 	}
 }
 

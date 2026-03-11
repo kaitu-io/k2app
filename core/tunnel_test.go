@@ -1192,3 +1192,59 @@ func TestSniffQUICClient_IsBrowser_Integration(t *testing.T) {
 		t.Error("unknown should NOT be browser")
 	}
 }
+
+func TestClientTunnel_HandleUDP_QUICPassthrough(t *testing.T) {
+	dialer := newMockDialer()
+	prov := &mockProvider{}
+
+	tunnel := NewClientTunnel(ClientTunnelConfig{
+		Provider:  prov,
+		Dialer:    dialer,
+		BlockQUIC: false, // Allow QUIC through
+		// Router nil → defaults to proxy
+	})
+
+	if err := tunnel.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Build a minimal QUIC Initial long header (version 1)
+	quicPacket := make([]byte, 32)
+	quicPacket[0] = 0xC3 // long header + fixed bit + Initial type
+	binary.BigEndian.PutUint32(quicPacket[1:5], 0x00000001) // QUIC v1
+
+	// Provide a mock UDP conn for DialUDP to return
+	mockRemote := newMockPacketConn()
+	dialer.udpConns <- mockRemote
+
+	localPC := newMockPacketConn()
+	done := make(chan struct{})
+	go func() {
+		prov.handler.HandleUDP(localPC, "142.250.197.99:443")
+		close(done)
+	}()
+
+	localPC.injectRead(quicPacket, nil)
+
+	// DialUDP should be called (QUIC forwarded, not blocked)
+	deadline := time.After(3 * time.Second)
+	for {
+		dialer.mu.Lock()
+		n := len(dialer.udpCalls)
+		dialer.mu.Unlock()
+		if n > 0 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("DialUDP not called — QUIC was blocked instead of forwarded")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	// Clean up
+	localPC.Close()
+	mockRemote.Close()
+	<-done
+	tunnel.Close()
+}
