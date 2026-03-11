@@ -54,6 +54,10 @@ func cmdUser(args []string) {
 		}
 		cmdUserReset(usersPath, urlPath, args[1])
 
+	case "--help", "-h":
+		printUserUsage()
+		return
+
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown user subcommand: %s\n\n", args[0])
 		printUserUsage()
@@ -136,14 +140,14 @@ func cmdUserAdd(usersPath, urlPath, username string) {
 	// Print connect URL with plaintext token
 	url := buildUserURL(urlPath, username, token)
 	fmt.Println()
-	biPrint("用户已添加", "User added")
-	fmt.Printf("  %s: %s\n", "用户名 / Username", username)
+	fmt.Println("User added")
+	fmt.Printf("  Username: %s\n", username)
 	fmt.Println()
 	if url != "" {
-		fmt.Println("连接 URL / Connect URL:")
+		fmt.Println("Connect URL:")
 		fmt.Printf("  %s\n", url)
 	} else {
-		biPrint("⚠️  服务器尚未启动，请先运行 `k2s setup`", "⚠️  Server not started yet, run `k2s setup` first")
+		fmt.Println("Server not started yet, run `k2s setup` first")
 	}
 	fmt.Println()
 }
@@ -155,16 +159,16 @@ func cmdUserList(usersPath string) {
 		os.Exit(1)
 	}
 	if len(users) == 0 {
-		biPrint("暂无用户", "No users found")
+		fmt.Println("No users found")
 		return
 	}
 
 	fmt.Println()
-	biPrint("用户列表", "Users")
+	fmt.Println("Users:")
 	for name := range users {
 		fmt.Printf("  • %s\n", name)
 	}
-	fmt.Printf("\n%s: %d\n", "总计 / Total", len(users))
+	fmt.Printf("\nTotal: %d\n", len(users))
 }
 
 func cmdUserDel(usersPath, username string) {
@@ -183,7 +187,7 @@ func cmdUserDel(usersPath, username string) {
 		os.Exit(1)
 	}
 
-	biPrintf("用户 %s 已删除", "User %s deleted", username)
+	fmt.Printf("User %s deleted\n", username)
 }
 
 func cmdUserReset(usersPath, urlPath, username string) {
@@ -216,10 +220,10 @@ func cmdUserReset(usersPath, urlPath, username string) {
 
 	url := buildUserURL(urlPath, username, token)
 	fmt.Println()
-	biPrintf("用户 %s 的 Token 已重置", "Token reset for user %s", username)
+	fmt.Printf("Token reset for user %s\n", username)
 	fmt.Println()
 	if url != "" {
-		fmt.Println("连接 URL / Connect URL:")
+		fmt.Println("Connect URL:")
 		fmt.Printf("  %s\n", url)
 	}
 	fmt.Println()
@@ -295,7 +299,7 @@ func buildUserURL(urlPath, username, token string) string {
 // addFirstUser creates the first user during setup wizard.
 // Returns (username, plaintext_token, error).
 func addFirstUser(usersPath, defaultName string) (string, string, error) {
-	username := promptString("用户名", "Username", defaultName)
+	username := promptString("Username", defaultName)
 	if err := validateUsername(username); err != nil {
 		return "", "", err
 	}
@@ -314,6 +318,6 @@ func addFirstUser(usersPath, defaultName string) (string, string, error) {
 		return "", "", err
 	}
 
-	fmt.Printf("✔ 用户名 / Username: %s, Token 已自动生成 / Token auto-generated\n", username)
+	fmt.Printf("Username: %s, token auto-generated\n", username)
 	return username, token, nil
 }

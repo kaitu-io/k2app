@@ -31,7 +31,7 @@ func cmdSetup(args []string) {
 	}
 	if reset {
 		os.Remove(configPath)
-		biPrint("配置已重置，重新运行向导", "Config reset, re-running wizard")
+		fmt.Println("Config reset, re-running wizard")
 		fmt.Println()
 	}
 
@@ -42,7 +42,7 @@ func cmdSetup(args []string) {
 				fmt.Println(url)
 				return
 			}
-			biPrint("k2s 正在运行，等待连接 URL...", "k2s is running, waiting for connect URL...")
+			fmt.Println("k2s is running, waiting for connect URL...")
 			if url := waitForConnectURL(urlPath, 30*time.Second); url != "" {
 				fmt.Println(url)
 				return
@@ -52,7 +52,7 @@ func cmdSetup(args []string) {
 		}
 
 		// Config exists but service not running → start it
-		biPrint("检测到已有配置，启动服务...", "Existing config found, starting service...")
+		fmt.Println("Existing config found, starting service...")
 		startServiceWithConfig(configPath)
 		waitAndPrintURL(urlPath)
 		return
@@ -73,7 +73,7 @@ func runWizard(certDir, configPath, usersPath, urlPath string) {
 	printHeader()
 
 	// Step 1: Listen Port
-	port := promptPort("监听端口", "Listen port", 443)
+	port := promptPort("Listen port", 443)
 	fmt.Println()
 
 	// Step 2: Port Hopping
@@ -93,18 +93,18 @@ func runWizard(certDir, configPath, usersPath, urlPath string) {
 	fmt.Println()
 
 	// Step 5: Generate config + start
-	biPrint("正在生成配置...", "Generating config...")
+	fmt.Println("Generating config...")
 
 	cfg := buildMinimalConfig(port, hopStart, hopEnd, usersPath)
 	if err := writeConfigYAML(configPath, cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "Error writing config: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("✔ 配置文件 / Config: %s\n", configPath)
-	fmt.Printf("✔ 用户文件 / Users: %s\n", usersPath)
+	fmt.Printf("Config: %s\n", configPath)
+	fmt.Printf("Users: %s\n", usersPath)
 
 	fmt.Println()
-	biPrint("正在启动服务...", "Starting service...")
+	fmt.Println("Starting service...")
 
 	startServiceWithConfig(configPath)
 
@@ -166,16 +166,16 @@ func startServiceWithConfig(configPath string) {
 	// Install or update service with -c flag
 	if err := installServiceWithConfig(configPath); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to install service: %v\n", err)
-		fmt.Fprintf(os.Stderr, "Try running with sudo, or use: k2s -c %s\n", configPath)
+		fmt.Fprintf(os.Stderr, "Try running with sudo, or use: k2s run -c %s\n", configPath)
 		os.Exit(1)
 	}
-	fmt.Println("✔ 服务已安装并启动 / Service installed and started")
+	fmt.Println("Service installed and started")
 }
 
 // waitAndPrintURL waits for the connect URL and prints it.
 func waitAndPrintURL(urlPath string) {
 	fmt.Println()
-	biPrint("等待服务启动...", "Waiting for server to start...")
+	fmt.Println("Waiting for server to start...")
 	url := waitForConnectURL(urlPath, 30*time.Second)
 	if url == "" {
 		fmt.Fprintln(os.Stderr, "Timed out waiting for server to start.")
@@ -225,4 +225,3 @@ func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
-

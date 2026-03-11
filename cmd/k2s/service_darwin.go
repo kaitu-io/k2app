@@ -19,8 +19,6 @@ func k2sPlistPath() string {
 }
 
 // installService installs k2s as a launchd daemon and starts it.
-// The ProgramArguments array contains only the executable path — the binary
-// itself is the foreground server process (nginx-style).
 // Log output is handled by Go-level logging (lumberjack); launchd log
 // redirection (StandardOutPath/StandardErrorPath) is intentionally omitted.
 func installService() error {
@@ -38,6 +36,8 @@ func installService() error {
     <key>ProgramArguments</key>
     <array>
         <string>%s</string>
+        <string>run</string>
+        <string>--foreground</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -111,6 +111,8 @@ func installServiceWithConfig(configPath string) error {
     <key>ProgramArguments</key>
     <array>
         <string>%s</string>
+        <string>run</string>
+        <string>--foreground</string>
         <string>-c</string>
         <string>%s</string>
     </array>

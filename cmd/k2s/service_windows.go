@@ -11,8 +11,6 @@ import (
 const k2sServiceName = "k2s"
 
 // installService installs k2s as a Windows service and starts it.
-// The binPath contains only the executable path — the binary itself is the
-// foreground server process (nginx-style, no "run --foreground" args needed).
 func installService() error {
 	exe, err := resolveExecutable()
 	if err != nil {
@@ -20,7 +18,7 @@ func installService() error {
 	}
 
 	err = exec.Command("sc", "create", k2sServiceName,
-		"binPath=", fmt.Sprintf(`"%s"`, exe),
+		"binPath=", fmt.Sprintf(`"%s" run --foreground`, exe),
 		"start=", "auto",
 		"DisplayName=", "k2s network tunnel server",
 	).Run()
@@ -82,7 +80,7 @@ func installServiceWithConfig(configPath string) error {
 	_ = exec.Command("sc", "delete", k2sServiceName).Run()
 
 	err = exec.Command("sc", "create", k2sServiceName,
-		"binPath=", fmt.Sprintf(`"%s" -c "%s"`, exe, configPath),
+		"binPath=", fmt.Sprintf(`"%s" run --foreground -c "%s"`, exe, configPath),
 		"start=", "auto",
 		"DisplayName=", "k2s network tunnel server",
 	).Run()
