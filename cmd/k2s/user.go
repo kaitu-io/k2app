@@ -27,12 +27,12 @@ func cmdUser(args []string) {
 	switch args[0] {
 	case "add":
 		if len(args) < 2 {
-			fmt.Fprintf(os.Stderr, "Usage: k2s user add <username>\n")
+			out.fail("MISSING_ARG", "username required", "k2s user add <username>")
 			os.Exit(1)
 		}
 		username := args[1]
 		if err := validateUsername(username); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			out.fail("INVALID_USERNAME", err.Error(), "")
 			os.Exit(1)
 		}
 		cmdUserAdd(usersPath, urlPath, username)
@@ -42,25 +42,34 @@ func cmdUser(args []string) {
 
 	case "del":
 		if len(args) < 2 {
-			fmt.Fprintf(os.Stderr, "Usage: k2s user del <username>\n")
+			out.fail("MISSING_ARG", "username required", "k2s user del <username>")
 			os.Exit(1)
 		}
-		cmdUserDel(usersPath, args[1])
+		username := args[1]
+		if err := validateUsername(username); err != nil {
+			out.fail("INVALID_USERNAME", err.Error(), "")
+			os.Exit(1)
+		}
+		cmdUserDel(usersPath, username)
 
 	case "reset":
 		if len(args) < 2 {
-			fmt.Fprintf(os.Stderr, "Usage: k2s user reset <username>\n")
+			out.fail("MISSING_ARG", "username required", "k2s user reset <username>")
 			os.Exit(1)
 		}
-		cmdUserReset(usersPath, urlPath, args[1])
+		username := args[1]
+		if err := validateUsername(username); err != nil {
+			out.fail("INVALID_USERNAME", err.Error(), "")
+			os.Exit(1)
+		}
+		cmdUserReset(usersPath, urlPath, username)
 
 	case "--help", "-h":
 		printUserUsage()
 		return
 
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown user subcommand: %s\n\n", args[0])
-		printUserUsage()
+		out.fail("UNKNOWN_COMMAND", fmt.Sprintf("unknown user subcommand: %s", args[0]), "k2s user --help")
 		os.Exit(1)
 	}
 }
@@ -108,65 +117,73 @@ func hashToken(token string) (string, error) {
 }
 
 func cmdUserAdd(usersPath, urlPath, username string) {
-	// Check if user already exists
 	users, err := loadUsers(usersPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		out.fail("LOAD_FAILED", err.Error(), "")
 		os.Exit(1)
 	}
 	if _, exists := users[username]; exists {
-		fmt.Fprintf(os.Stderr, "Error: user %q already exists. Use `k2s user reset %s` to regenerate token.\n", username, username)
+		out.fail("USER_EXISTS", fmt.Sprintf("user %q already exists", username), fmt.Sprintf("k2s user reset %s", username))
 		os.Exit(1)
 	}
 
 	token, err := generateToken()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		out.fail("TOKEN_FAILED", err.Error(), "")
 		os.Exit(1)
 	}
 
 	hash, err := hashToken(token)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		out.fail("HASH_FAILED", err.Error(), "")
 		os.Exit(1)
 	}
 
-	// Append to users file
 	if err := appendUser(usersPath, username, hash); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		out.fail("WRITE_FAILED", err.Error(), "")
 		os.Exit(1)
 	}
 
-	// Print connect URL with plaintext token
 	url := buildUserURL(urlPath, username, token)
-	fmt.Println()
-	fmt.Println("User added")
-	fmt.Printf("  Username: %s\n", username)
-	fmt.Println()
-	if url != "" {
-		fmt.Println("Connect URL:")
-		fmt.Printf("  %s\n", url)
-	} else {
-		fmt.Println("Server not started yet, run `k2s setup` first")
+	if out.json {
+		data := map[string]string{"username": username, "token": token}
+		if url != "" {
+			data["url"] = url
+		}
+		out.ok(data)
+		return
 	}
-	fmt.Println()
+	fmt.Printf("\nUser added: %s\n", username)
+	if url != "" {
+		fmt.Printf("\nConnect URL:\n  %s\n\n", url)
+	} else {
+		fmt.Println("Server not started yet, run 'k2s setup' first")
+	}
 }
 
 func cmdUserList(usersPath string) {
 	users, err := loadUsers(usersPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		out.fail("LOAD_FAILED", err.Error(), "")
 		os.Exit(1)
 	}
+
+	if out.json {
+		names := make([]string, 0, len(users))
+		for name := range users {
+			names = append(names, name)
+		}
+		out.ok(map[string]any{"users": names, "count": len(names)})
+		return
+	}
+
 	if len(users) == 0 {
 		fmt.Println("No users found")
 		return
 	}
-
-	fmt.Println()
-	fmt.Println("Users:")
+	fmt.Println("\nUsers:")
 	for name := range users {
-		fmt.Printf("  • %s\n", name)
+		fmt.Printf("  - %s\n", name)
 	}
 	fmt.Printf("\nTotal: %d\n", len(users))
 }
@@ -174,59 +191,64 @@ func cmdUserList(usersPath string) {
 func cmdUserDel(usersPath, username string) {
 	users, err := loadUsers(usersPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		out.fail("LOAD_FAILED", err.Error(), "")
 		os.Exit(1)
 	}
 	if _, exists := users[username]; !exists {
-		fmt.Fprintf(os.Stderr, "Error: user %q not found\n", username)
+		out.fail("NOT_FOUND", fmt.Sprintf("user %q not found", username), "")
 		os.Exit(1)
 	}
 
 	if err := removeUser(usersPath, username); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		out.fail("WRITE_FAILED", err.Error(), "")
 		os.Exit(1)
 	}
 
-	fmt.Printf("User %s deleted\n", username)
+	out.printf("User %s deleted\n", username)
+	out.ok(map[string]string{"username": username, "deleted": "true"})
 }
 
 func cmdUserReset(usersPath, urlPath, username string) {
 	users, err := loadUsers(usersPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		out.fail("LOAD_FAILED", err.Error(), "")
 		os.Exit(1)
 	}
 	if _, exists := users[username]; !exists {
-		fmt.Fprintf(os.Stderr, "Error: user %q not found\n", username)
+		out.fail("NOT_FOUND", fmt.Sprintf("user %q not found", username), "")
 		os.Exit(1)
 	}
 
 	token, err := generateToken()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		out.fail("TOKEN_FAILED", err.Error(), "")
 		os.Exit(1)
 	}
 
 	hash, err := hashToken(token)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		out.fail("HASH_FAILED", err.Error(), "")
 		os.Exit(1)
 	}
 
 	if err := updateUser(usersPath, username, hash); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		out.fail("WRITE_FAILED", err.Error(), "")
 		os.Exit(1)
 	}
 
 	url := buildUserURL(urlPath, username, token)
-	fmt.Println()
-	fmt.Printf("Token reset for user %s\n", username)
-	fmt.Println()
-	if url != "" {
-		fmt.Println("Connect URL:")
-		fmt.Printf("  %s\n", url)
+	if out.json {
+		data := map[string]string{"username": username, "token": token}
+		if url != "" {
+			data["url"] = url
+		}
+		out.ok(data)
+		return
 	}
-	fmt.Println()
+	fmt.Printf("\nToken reset for user %s\n", username)
+	if url != "" {
+		fmt.Printf("\nConnect URL:\n  %s\n\n", url)
+	}
 }
 
 // loadUsers reads the users file via wire.LoadUsersFile (single source of truth).
