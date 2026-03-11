@@ -160,9 +160,12 @@ jobs:
           node-version: '20'
           cache: 'yarn'
 
-      - name: Verify Node.js (self-hosted macOS)
+      - name: Verify tools (self-hosted macOS)
         if: matrix.platform == 'Windows'
         run: |
+          # Ensure Go is on PATH (self-hosted runner)
+          export PATH="/usr/local/go/bin:$PATH"
+          echo "/usr/local/go/bin" >> "$GITHUB_PATH"
           echo "Node: $(node -v)"
           echo "Yarn: $(yarn -v)"
           echo "Go:   $(go version)"

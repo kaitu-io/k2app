@@ -24,6 +24,10 @@ jobs:
       - name: Init k2 submodule
         run: git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init --recursive
 
+      - name: Setup PATH (self-hosted)
+        run: |
+          echo "/usr/local/go/bin" >> "$GITHUB_PATH"
+
       - name: Verify build tools
         run: |
           echo "=== Environment ==="
