@@ -579,7 +579,6 @@ func (c *QUICClient) WireStats() WireStats {
 		s.Epsilon = snap.Epsilon
 	}
 	if mux != nil {
-		s.RelayUDPLossRate = 0 // loss rate tracking removed; timeout-only health
 		s.RelayUDPTimeouts = mux.relayTimeouts.Load()
 	}
 	s.PortHopAttempts = c.portHopAttempts.Load()
@@ -1067,8 +1066,6 @@ type quicUDPMux struct {
 	// Datagram health tracking: consecutive ReadFrom timeouts indicate
 	// a broken QUIC datagram path (e.g. ISP QoS dropping UDP).
 	relayTimeouts atomic.Int32
-	lastRelayRecvAt            atomic.Int64 // UnixNano of last received datagram
-
 	clientHopAttempts  *atomic.Int32 // shared with QUICClient; nil on server/tests
 	clientHopExhausted *atomic.Int64 // shared with QUICClient; nil on server/tests
 
@@ -1085,7 +1082,6 @@ const (
 
 func (m *quicUDPMux) recordRecv() {
 	m.relayTimeouts.Store(0)
-	m.lastRelayRecvAt.Store(time.Now().UnixNano())
 
 	// Sustained recovery: N consecutive recvs without timeout → reset hop counter.
 	// Prevents single lucky packet from resetting (requires sustained evidence).
