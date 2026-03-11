@@ -256,11 +256,11 @@ describe('VPN Machine Transitions', () => {
       expect(useVPNMachineStore.getState().state).toBe('idle');
     });
 
-    it('BACKEND_CONNECTED → connected (race: engine reconnected before down)', async () => {
+    it('BACKEND_CONNECTED → disconnecting (abort: stay disconnecting until backend confirms down)', async () => {
       const { useVPNMachineStore, dispatch } = await enterDisconnecting();
 
       dispatch('BACKEND_CONNECTED');
-      expect(useVPNMachineStore.getState().state).toBe('connected');
+      expect(useVPNMachineStore.getState().state).toBe('disconnecting');
     });
 
     it('BACKEND_ERROR → idle (error during shutdown)', async () => {

@@ -82,7 +82,7 @@ const TRANSITIONS: Record<VPNState, Partial<Record<VPNEvent, VPNState>>> = {
     USER_DISCONNECT:      'disconnecting',
     BACKEND_RECONNECTING: 'disconnecting',
     BACKEND_DISCONNECTED: 'idle',
-    BACKEND_CONNECTED:    'connected',
+    BACKEND_CONNECTED:    'disconnecting',
     BACKEND_ERROR:        'idle',
     SERVICE_UNREACHABLE:  'serviceDown',
   },

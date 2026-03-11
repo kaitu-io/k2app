@@ -12,7 +12,8 @@ use std::os::windows::process::CommandExt;
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 const DEFAULT_DAEMON_PORT: u16 = 1777;
-const REQUEST_TIMEOUT_SECS: u64 = 5;
+const TIMEOUT_SECS_DEFAULT: u64 = 5;    // status, version, log-level
+const TIMEOUT_SECS_LIFECYCLE: u64 = 30;  // up, down (engine start can take 8s+, stop 5s+)
 
 fn service_base_url() -> String {
     let port = std::env::var("K2_DAEMON_PORT")
@@ -45,10 +46,14 @@ pub fn core_action(action: &str, params: Option<serde_json::Value>) -> Result<Se
         params,
     };
 
-    log::debug!("Calling core action: {}", action);
+    let timeout_secs = match action {
+        "up" | "down" => TIMEOUT_SECS_LIFECYCLE,
+        _ => TIMEOUT_SECS_DEFAULT,
+    };
+    log::debug!("Calling core action: {} (timeout={}s)", action, timeout_secs);
 
     let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
+        .timeout(std::time::Duration::from_secs(timeout_secs))
         .no_proxy()
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
@@ -156,7 +161,7 @@ pub async fn daemon_exec(
 pub fn set_log_level_internal(level: &str) -> Result<ServiceResponse, String> {
     let url = format!("{}/api/log-level", service_base_url());
     let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
+        .timeout(std::time::Duration::from_secs(TIMEOUT_SECS_DEFAULT))
         .no_proxy()
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
