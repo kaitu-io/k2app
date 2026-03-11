@@ -101,6 +101,27 @@ jobs:
         run: go build -tags=deadlock_disable ./...
         working-directory: k2
 
+      # --- Notifications ---
+
+      - name: Notify Slack on test-gate success
+        if: success()
+        shell: bash
+        run: |
+          ./scripts/ci/notify-slack.sh test-success \
+            --platform "Release Desktop"
+        env:
+          SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_RELEASE }}
+
+      - name: Notify Slack on test-gate failure
+        if: failure()
+        shell: bash
+        run: |
+          ./scripts/ci/notify-slack.sh test-failure \
+            --platform "Release Desktop" \
+            --error "Test gate failed — release build blocked. Check workflow run for details."
+        env:
+          SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_RELEASE }}
+
   release:
     needs: test-gate
     strategy:
@@ -364,4 +385,4 @@ jobs:
             --platform "${{ matrix.platform }}" \
             --error "Release build failed on ${{ matrix.platform }}. Check workflow run for details."
         env:
-          SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_ALERT }}
+          SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_RELEASE }}
