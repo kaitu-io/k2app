@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -162,6 +164,52 @@ func daemonPIDPath(cfg *config.ClientConfig) string {
 // defaultPIDPath returns the platform-default PID file path.
 func defaultPIDPath() string {
 	return config.DefaultPIDPath("k2")
+}
+
+func cmdRun(args []string) {
+	fs := flag.NewFlagSet("k2 run", flag.ExitOnError)
+	configPath := fs.String("c", "", "config file path")
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, `Start daemon (system service entry point).
+
+Usage: k2 run [-c config]
+
+Flags:
+`)
+		fs.PrintDefaults()
+	}
+	fs.Parse(args)
+	startDaemon(*configPath)
+}
+
+func cmdConfig(args []string) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprintf(os.Stderr, "Usage: k2 config <test|show>\n\n  test  Test configuration\n  show  Print example config\n")
+		if len(args) == 0 {
+			return 1
+		}
+		return 0
+	}
+	switch args[0] {
+	case "test":
+		fs := flag.NewFlagSet("k2 config test", flag.ExitOnError)
+		cfgPath := fs.String("c", "", "config file path")
+		fs.Parse(args[1:])
+		var buf bytes.Buffer
+		if err := runTestConfig(resolveConfigPath(*cfgPath), &buf); err != nil {
+			out.fail("INVALID_CONFIG", err.Error(), "")
+			return 2
+		}
+		out.printResult(buf.String())
+		out.ok(map[string]string{"status": "ok"})
+		return 0
+	case "show":
+		fmt.Print(demoConfig)
+		return 0
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown config subcommand: %s\n", args[0])
+		return 1
+	}
 }
 
 // runTestConfig loads and validates the config at cfgPath, writing results to w.

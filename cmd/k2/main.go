@@ -1,106 +1,82 @@
 package main
 
 import (
-	"bytes"
 	_ "embed"
-	"flag"
 	"fmt"
 	"os"
+	"strings"
 )
 
 //go:embed client.demo.yml
 var demoConfig string
 
-// Version info (set by build flags)
 var (
 	version = "dev"
 	commit  = "none"
 )
 
 func main() {
-	// Define top-level flags (nginx-style: flags come before subcommands).
-	fs := flag.NewFlagSet("k2", flag.ContinueOnError)
-	configPath := fs.String("c", "", "config file path")
-	testConfig := fs.Bool("t", false, "test configuration and exit")
-	sendSignal := fs.String("s", "", "send signal to daemon: stop|reload")
-	showVersion := fs.Bool("v", false, "show version and exit")
-	fs.Usage = printUsage
-
-	// Parse flags stopping at first non-flag argument (subcommand).
-	if err := fs.Parse(os.Args[1:]); err != nil {
-		if err == flag.ErrHelp {
-			os.Exit(0)
-		}
+	if len(os.Args) < 2 {
+		printUsage()
 		os.Exit(1)
 	}
 
-	// -v: print version and exit.
-	if *showVersion {
-		fmt.Printf("k2 %s (%s)\n", version, commit)
-		return
-	}
-
-	// Check remaining args for subcommand.
-	args := fs.Args()
-
-	if len(args) > 0 {
+	args := os.Args[1:]
+	for len(args) > 0 && strings.HasPrefix(args[0], "--") {
 		switch args[0] {
-		case "version":
-			fmt.Printf("k2 %s (%s)\n", version, commit)
-			return
-		case "ctl":
-			cmdCtl(args[1:])
-			return
-		case "setup":
-			cmdSetup(args[1:])
-			return
-		case "service":
-			cmdService(args[1:])
-			return
-		case "upgrade":
-			cmdUpgrade(args[1:])
-			return
-		case "demo-config":
-			fmt.Print(demoConfig)
-			return
-		case "-h", "--help", "help":
+		case "--json":
+			out.json = true
+			args = args[1:]
+		case "--quiet":
+			args = args[1:]
+		case "--help", "-h":
 			printUsage()
 			return
 		default:
-			fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", args[0])
+			fmt.Fprintf(os.Stderr, "Unknown flag: %s\nRun 'k2 help' for usage.\n", args[0])
+			os.Exit(1)
+		}
+	}
+
+	if len(args) == 0 {
+		printUsage()
+		os.Exit(1)
+	}
+
+	cmd := args[0]
+	rest := args[1:]
+
+	switch cmd {
+	case "connect":
+		os.Exit(cmdConnect(rest))
+	case "up":
+		os.Exit(cmdUp(rest))
+	case "down":
+		os.Exit(cmdDown(rest))
+	case "status":
+		os.Exit(cmdStatus(rest))
+	case "setup":
+		cmdSetup(rest)
+	case "run":
+		cmdRun(rest)
+	case "config":
+		os.Exit(cmdConfig(rest))
+	case "service":
+		cmdService(rest)
+	case "upgrade":
+		cmdUpgrade(rest)
+	case "version":
+		fmt.Printf("k2 %s (%s)\n", version, commit)
+	case "help", "--help", "-h":
+		if len(rest) > 0 {
+			printCommandHelp(rest[0])
+		} else {
 			printUsage()
-			os.Exit(1)
 		}
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\nRun 'k2 help' for usage.\n", cmd)
+		os.Exit(1)
 	}
-
-	// No subcommand — handle flags-only invocations.
-
-	// -t: test config and exit.
-	if *testConfig {
-		var out bytes.Buffer
-		if err := runTestConfig(resolveConfigPath(*configPath), &out); err != nil {
-			fmt.Fprintf(os.Stderr, "Configuration test failed: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Print(out.String())
-		return
-	}
-
-	// -s: send signal.
-	if *sendSignal != "" {
-		pidPath := resolvePIDPath(*configPath)
-		var out bytes.Buffer
-		if err := runSignal(*sendSignal, pidPath, &out); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Print(out.String())
-		return
-	}
-
-	// Default: run as daemon.
-	// On Windows, dispatches between SCM service mode and foreground.
-	startDaemon(*configPath)
 }
 
 // resolveConfigPath returns cfgFlag if set, else the empty string (caller will search).
@@ -122,27 +98,50 @@ func resolvePIDPath(cfgFlag string) string {
 func printUsage() {
 	fmt.Fprintf(os.Stderr, `k2 — Kaitu network tunnel
 
-Usage:
-  k2 [-c config]              Start daemon (foreground)
-  k2 -t [-c config]           Test configuration and exit
-  k2 -s stop|reload           Send signal to running daemon
-  k2 -v                       Show version and exit
+Quick start:
+  k2 connect <URL>          Connect (foreground, no setup needed)
+  k2 setup <URL>            Install as system service + connect
 
-  k2 ctl up [URL|config]      Connect tunnel
-  k2 ctl down                 Disconnect tunnel
-  k2 ctl status               Show connection status
+Commands:
+  connect   Connect to server (foreground)
+  up        Connect via background daemon
+  down      Disconnect
+  status    Connection status
 
-  k2 setup [URL]              Generate config + install service + start
-  k2 setup -c config.yaml     Install service from existing config
+  setup     First-time setup                          [root]
+  run       Start daemon (service entry point)        [root for TUN]
 
-  k2 service install          Install system service
-  k2 service uninstall        Remove system service
+  config    Configuration (test, show)
+  service   System service (install, uninstall)       [root]
+  upgrade   Self-update
+  version   Version info
 
-  k2 upgrade [--check]        Download and install latest version
-  k2 demo-config              Print example client config (YAML)
-  k2 version                  Show version info
-
-Server: use k2s binary for server deployment.
+Flags:
+  --json    Machine-readable JSON output
+  --quiet   Minimal output
+  --help    Help for any command
 `)
 }
 
+func printCommandHelp(cmd string) {
+	switch cmd {
+	case "connect":
+		cmdConnect([]string{"--help"})
+	case "up":
+		cmdUp([]string{"--help"})
+	case "setup":
+		cmdSetup([]string{"--help"})
+	case "config":
+		cmdConfig([]string{"--help"})
+	case "service":
+		cmdService([]string{"--help"})
+	default:
+		fmt.Fprintf(os.Stderr, "No help for %q. Run 'k2 help' for command list.\n", cmd)
+	}
+}
+
+// cmdConnect is a placeholder until Task 4 implements it.
+func cmdConnect(args []string) int {
+	fmt.Fprintf(os.Stderr, "k2 connect: not yet implemented\n")
+	return 1
+}

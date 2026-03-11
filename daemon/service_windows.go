@@ -50,7 +50,7 @@ func installService() error {
 		s, err = m.CreateService(serviceName, exe, mgr.Config{
 			DisplayName: "Kaitu Network Service",
 			StartType:   mgr.StartAutomatic,
-		})
+		}, "run")
 		if err == nil {
 			break
 		}
