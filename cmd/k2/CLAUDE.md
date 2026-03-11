@@ -5,34 +5,45 @@ Entry point: `main.go` — `os.Args` dispatch, no framework.
 ## Subcommands
 
 ```
-k2                                   Daemon mode (service entry point, no subcommand)
-k2 -c <config.yaml>                 Daemon with explicit config
-k2 -t                               Test config and exit
-k2 -s stop|reload                   Send signal to running daemon
-k2 ctl up [URL|config.yaml] [--pid] Connect tunnel (IPC to daemon)
-k2 ctl up                           Reconnect with saved config
-k2 ctl down                         Disconnect
-k2 ctl status                       Connection status JSON
-k2 setup [URL]                      Generate config + install service + start
-k2 setup -c <config.yaml>           Copy config + install service + start
-k2 service install                  Install as system service (launchd/systemd/Windows)
-k2 service uninstall                Remove system service
-k2 upgrade [--check]                Self-update from releases.kaitu.io
-k2 demo-config                      Print example client YAML to stdout
-k2 version                          Version + commit info
+k2 connect <URL>                 Direct connect (foreground, proxy mode, no root)
+k2 up [URL|config.yaml]         Connect via background daemon
+k2 down                         Disconnect
+k2 status                       Connection status
+
+k2 setup <URL>                  First-time: generate config + install service + start
+k2 run                          Start daemon (service entry point)
+
+k2 config test [-c file]        Test configuration
+k2 config show                  Print example YAML
+
+k2 service install              Install as system service
+k2 service uninstall            Remove system service
+k2 upgrade [--check]            Self-update
+
+k2 version                      Version + commit info
+k2 help [command]               Help for any command
+```
+
+## Global Flags
+
+```
+--json    Machine-readable JSON output
+--quiet   Minimal output
+--help    Help for any command
 ```
 
 ## Files
 
-- `main.go` — Subcommand dispatch (`switch cmd`), top-level flags (`-c`, `-t`, `-s`, `-v`)
-- `ctl.go` — `k2 ctl`: IPC client (up/down/status via daemon HTTP API)
-- `ctl_hint_darwin.go` / `ctl_hint_linux.go` / `ctl_hint_windows.go` — Platform-specific "daemon not running" hints
-- `setup.go` — `k2 setup`: first-time config generation + service install
+- `main.go` — Subcommand dispatch, global flags (--json, --quiet, --help)
+- `output.go` — Output layer (human vs JSON switching)
+- `connect.go` — `k2 connect`: direct foreground tunnel (no daemon)
+- `ctl.go` — `k2 up/down/status`: IPC to daemon HTTP API
+- `ctl_hint_darwin.go` / `ctl_hint_linux.go` / `ctl_hint_windows.go` — Platform "daemon not running" hints
+- `setup.go` — `k2 setup`: first-time config + service install
 - `service.go` — `k2 service`: install/uninstall system service
+- `process.go` — Daemon start, PID monitoring
 - `upgrade.go` — `k2 upgrade`: self-update binary from CDN
-- `process.go` — PID monitoring helpers
-- `signal.go` / `signal_windows.go` — Signal dispatch (`-s stop|reload`)
 
 ## Pattern
 
-Each subcommand file uses `flag.NewFlagSet` for its flags. IPC commands use `daemon.NewClient("127.0.0.1:1777")` to talk to the daemon's HTTP API.
+Each subcommand file uses `flag.NewFlagSet` for its flags. IPC commands use `daemon.NewClient("127.0.0.1:1777")` to talk to the daemon's HTTP API. Output uses `out.ok()`/`out.fail()`/`out.printf()` for JSON/human switching.
