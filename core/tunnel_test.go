@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -1190,6 +1191,66 @@ func TestSniffQUICClient_IsBrowser_Integration(t *testing.T) {
 	}
 	if sniff.QUICClientUnknown.IsBrowser() {
 		t.Error("unknown should NOT be browser")
+	}
+}
+
+// waitForGoroutineCount polls until runtime.NumGoroutine() drops to maxCount
+// or below, returning true on success. Returns false if timeout expires.
+func waitForGoroutineCount(t *testing.T, maxCount int, timeout time.Duration) bool {
+	t.Helper()
+	deadline := time.After(timeout)
+	for {
+		if runtime.NumGoroutine() <= maxCount {
+			return true
+		}
+		select {
+		case <-deadline:
+			return false
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+}
+
+// TestTunnelClose_Timeout_GoroutineEventuallyExits verifies that the wg.Wait
+// goroutine spawned by Close() eventually exits after the slow handler
+// completes — even though Close() itself returned early due to closeTimeout.
+func TestTunnelClose_Timeout_GoroutineEventuallyExits(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tunnel := NewClientTunnel(ClientTunnelConfig{
+		// Minimal config — we only need wg and conns for Close()
+	})
+	tunnel.ctx, tunnel.cancel = ctx, cancel
+
+	// Simulate a slow handler by adding to wg without completing yet.
+	handlerDone := make(chan struct{})
+	tunnel.wg.Add(1)
+	go func() {
+		<-handlerDone
+		tunnel.wg.Done()
+	}()
+
+	baseline := runtime.NumGoroutine()
+
+	// Close should return after closeTimeout (~5s) even though handler is stuck.
+	start := time.Now()
+	tunnel.Close()
+	elapsed := time.Since(start)
+
+	// Verify Close returned via timeout, not handler completion.
+	if elapsed < 4*time.Second {
+		t.Fatalf("Close returned too quickly (%v), handler wasn't blocking", elapsed)
+	}
+
+	// wg.Wait goroutine is still alive. Release the handler.
+	close(handlerDone)
+
+	// Wait for the orphaned goroutine to drain.
+	// Allow baseline+3 for runtime jitter.
+	if !waitForGoroutineCount(t, baseline+3, 3*time.Second) {
+		t.Fatalf("wg.Wait goroutine leaked: baseline=%d, current=%d",
+			baseline, runtime.NumGoroutine())
 	}
 }
 
