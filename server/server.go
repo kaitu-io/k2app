@@ -744,10 +744,23 @@ func (l *singleConnListener) Accept() (net.Conn, error) {
 	var accepted bool
 	l.once.Do(func() { accepted = true })
 	if accepted {
-		return l.conn, nil
+		return &singleConnListenerConn{Conn: l.conn, ln: l}, nil
 	}
 	<-l.done
 	return nil, net.ErrClosed
+}
+
+// singleConnListenerConn wraps the connection to signal the listener when closed.
+// Without this, the second Accept() call blocks forever (goroutine leak).
+type singleConnListenerConn struct {
+	net.Conn
+	ln   *singleConnListener
+	once sync.Once
+}
+
+func (c *singleConnListenerConn) Close() error {
+	c.once.Do(func() { c.ln.Close() })
+	return c.Conn.Close()
 }
 
 func (l *singleConnListener) Close() error {
