@@ -178,7 +178,7 @@ func (e *Engine) Start(cfg Config) error {
 	// and ReportWireError() never triggers (no TCP connections created).
 	slog.Info("engine: step 4.5 - wire connectivity probe", "elapsed", time.Since(startTime))
 	probeCtx, probeCancel := context.WithTimeout(ctx, 15*time.Second)
-	probeConn, probeErr := tm.DialTCP(probeCtx, "1.1.1.1:443")
+	probeConn, probeErr := tm.DialTCP(probeCtx, "1.1.1.1:443", nil)
 	probeCancel()
 	if probeErr != nil {
 		slog.Warn("engine: wire probe failed", "err", probeErr)

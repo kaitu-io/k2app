@@ -328,7 +328,7 @@ func TestIntegration_TransportManager_Failover(t *testing.T) {
 
 	quic := &mockTransport{
 		available: true,
-		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
+		dialTCPFn: func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 			mu.Lock()
 			callLog = append(callLog, "quic:"+addr)
 			mu.Unlock()
@@ -338,7 +338,7 @@ func TestIntegration_TransportManager_Failover(t *testing.T) {
 	}
 	tcpws := &mockTransport{
 		available: true,
-		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
+		dialTCPFn: func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 			mu.Lock()
 			callLog = append(callLog, "tcpws:"+addr)
 			mu.Unlock()
@@ -352,7 +352,7 @@ func TestIntegration_TransportManager_Failover(t *testing.T) {
 	tm.SetTCPWS(tcpws)
 
 	// First call: QUIC preferred
-	conn1, err := tm.DialTCP(context.Background(), "1.1.1.1:443")
+	conn1, err := tm.DialTCP(context.Background(), "1.1.1.1:443", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -362,7 +362,7 @@ func TestIntegration_TransportManager_Failover(t *testing.T) {
 	quic.available = false
 
 	// Second call: falls back to TCP-WS
-	conn2, err := tm.DialTCP(context.Background(), "8.8.8.8:53")
+	conn2, err := tm.DialTCP(context.Background(), "8.8.8.8:53", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -373,7 +373,7 @@ func TestIntegration_TransportManager_Failover(t *testing.T) {
 	tm.ResetConnections()
 
 	// Third call: QUIC again
-	conn3, err := tm.DialTCP(context.Background(), "9.9.9.9:443")
+	conn3, err := tm.DialTCP(context.Background(), "9.9.9.9:443", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

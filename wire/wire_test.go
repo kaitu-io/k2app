@@ -13,7 +13,7 @@ var _ UDPHandler = (*mockUDPHandler)(nil)
 
 type mockDialer struct{}
 
-func (m *mockDialer) DialTCP(ctx context.Context, addr string) (net.Conn, error) {
+func (m *mockDialer) DialTCP(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 	return nil, nil
 }
 func (m *mockDialer) DialUDP(ctx context.Context, addr string) (net.PacketConn, error) {

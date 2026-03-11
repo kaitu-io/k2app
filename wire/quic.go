@@ -362,7 +362,7 @@ func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
 
 // DialTCP opens a TCP proxy stream through the QUIC connection.
 // Writes H3 frame type + stream header, reads response, returns the stream.
-func (c *QUICClient) DialTCP(ctx context.Context, addr string) (net.Conn, error) {
+func (c *QUICClient) DialTCP(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 	slog.Debug("QUICClient.DialTCP: connecting", "addr", addr)
 	conn, err := c.connect(ctx)
 	if err != nil {
@@ -389,7 +389,17 @@ func (c *QUICClient) DialTCP(ctx context.Context, addr string) (net.Conn, error)
 		stream.Close()
 		return nil, fmt.Errorf("wire: write stream header: %w", err)
 	}
-	slog.Debug("QUICClient.DialTCP: header written, waiting for response", "addr", addr)
+	// Write early data (e.g. TLS ClientHello) before waiting for server response.
+	// Server's bufio.Reader buffers this during header parsing; pipe() consumes it
+	// after upstream dial succeeds. Saves one RTT on high-latency links.
+	if len(earlyData) > 0 {
+		if _, err := stream.Write(earlyData); err != nil {
+			stream.CancelRead(0)
+			stream.Close()
+			return nil, fmt.Errorf("wire: write early data: %w", err)
+		}
+	}
+	slog.Debug("QUICClient.DialTCP: header written, waiting for response", "addr", addr, "earlyDataLen", len(earlyData))
 
 	// Read response with timeout. Server dial timeout is 5s — allow 5s for
 	// dial + response write. Successful dials complete in <1s; 5s is generous.

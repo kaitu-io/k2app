@@ -18,7 +18,7 @@ type mockDialer struct {
 	dialErr  error
 }
 
-func (d *mockDialer) DialTCP(ctx context.Context, addr string) (net.Conn, error) {
+func (d *mockDialer) DialTCP(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 	return nil, nil
 }
 

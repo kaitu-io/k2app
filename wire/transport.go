@@ -108,7 +108,7 @@ func (tm *TransportManager) FallbackActive() bool {
 
 // DialTCP opens a TCP proxy connection.
 // Prefers QUIC, falls back to TCP-WS. Tracks fallback state for recovery.
-func (tm *TransportManager) DialTCP(ctx context.Context, addr string) (net.Conn, error) {
+func (tm *TransportManager) DialTCP(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 	tm.mu.RLock()
 	quic := tm.quic
 	tcpws := tm.tcpws
@@ -122,7 +122,7 @@ func (tm *TransportManager) DialTCP(ctx context.Context, addr string) (net.Conn,
 	if quic != nil && !tm.fallbackActive.Load() {
 		quicCtx, quicCancel := tm.quicContext(ctx, tcpws != nil)
 		slog.Debug("TransportManager: trying QUIC first")
-		conn, err := quic.DialTCP(quicCtx, addr)
+		conn, err := quic.DialTCP(quicCtx, addr, earlyData)
 		quicCancel()
 		if err == nil {
 			tm.recordQuicSuccess()
@@ -140,7 +140,7 @@ func (tm *TransportManager) DialTCP(ctx context.Context, addr string) (net.Conn,
 	// Fall back to TCP-WS
 	if tcpws != nil {
 		slog.Debug("TransportManager: trying TCP-WS fallback")
-		conn, err := tcpws.DialTCP(ctx, addr)
+		conn, err := tcpws.DialTCP(ctx, addr, earlyData)
 		if err == nil {
 			return conn, nil
 		}

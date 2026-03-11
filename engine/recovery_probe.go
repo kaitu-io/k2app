@@ -22,7 +22,7 @@ const (
 
 // probeDialer is the subset of wire.TransportManager needed by recoveryProbe.
 type probeDialer interface {
-	DialTCP(ctx context.Context, addr string) (net.Conn, error)
+	DialTCP(ctx context.Context, addr string, earlyData []byte) (net.Conn, error)
 }
 
 // Compile-time check: TransportManager satisfies probeDialer.
@@ -94,7 +94,7 @@ func (p *recoveryProbe) run(ctx context.Context) {
 
 		slog.Info("recovery: probing wire connectivity", "attempt", attempt)
 		probeCtx, probeCancel := context.WithTimeout(ctx, probeDialTimeout)
-		conn, err := p.dialer.DialTCP(probeCtx, probeTarget)
+		conn, err := p.dialer.DialTCP(probeCtx, probeTarget, nil)
 		probeCancel()
 
 		if ctx.Err() != nil {

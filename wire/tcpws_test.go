@@ -124,7 +124,7 @@ func TestTCPWSClient_DialTCP(t *testing.T) {
 	}()
 
 	// Client: dial TCP
-	conn, err := client.DialTCP(context.Background(), "example.com:80")
+	conn, err := client.DialTCP(context.Background(), "example.com:80", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +171,7 @@ func TestTCPWSClient_DialTCP_Multiple(t *testing.T) {
 
 	addrs := []string{"a.com:80", "b.com:443", "c.com:8080"}
 	for _, addr := range addrs {
-		conn, err := client.DialTCP(context.Background(), addr)
+		conn, err := client.DialTCP(context.Background(), addr, nil)
 		if err != nil {
 			t.Fatalf("DialTCP(%s): %v", addr, err)
 		}
@@ -780,7 +780,7 @@ func TestTCPWSClient_FullFlow_WS(t *testing.T) {
 	defer cancel()
 
 	// Open TCP stream through client
-	conn, err := client.DialTCP(ctx, "example.com:80")
+	conn, err := client.DialTCP(ctx, "example.com:80", nil)
 	if err != nil {
 		t.Fatalf("DialTCP failed: %v", err)
 	}
@@ -1044,7 +1044,7 @@ func TestTCPWSClient_ProbeContextCancellation(t *testing.T) {
 
 	// === Phase 1: Probe DialTCP — simulates engine wire probe ===
 	probeCtx, probeCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	probeConn, err := client.DialTCP(probeCtx, "1.1.1.1:443")
+	probeConn, err := client.DialTCP(probeCtx, "1.1.1.1:443", nil)
 	if err != nil {
 		t.Fatalf("probe DialTCP failed: %v", err)
 	}
@@ -1060,7 +1060,7 @@ func TestTCPWSClient_ProbeContextCancellation(t *testing.T) {
 	realCtx, realCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer realCancel()
 
-	conn, err := client.DialTCP(realCtx, "example.com:80")
+	conn, err := client.DialTCP(realCtx, "example.com:80", nil)
 	if err != nil {
 		t.Fatalf("post-probe DialTCP failed (session killed by probe context cancel): %v", err)
 	}

@@ -26,7 +26,7 @@ func TestTransportManager_FallbackTracking(t *testing.T) {
 	quic := &mockStatsTransport{
 		mockTransport: mockTransport{
 			available: true,
-			dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
+			dialTCPFn: func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 				quicCalled = true
 				return nil, errors.New("QUIC broken")
 			},
@@ -36,7 +36,7 @@ func TestTransportManager_FallbackTracking(t *testing.T) {
 	tcpws := &mockStatsTransport{
 		mockTransport: mockTransport{
 			available: true,
-			dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
+			dialTCPFn: func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 				c, _ := net.Pipe()
 				return c, nil
 			},
@@ -69,7 +69,7 @@ func TestTransportManager_FallbackTracking(t *testing.T) {
 	}
 
 	// DialTCP should skip QUIC
-	conn, err := tm.DialTCP(context.Background(), "8.8.8.8:53")
+	conn, err := tm.DialTCP(context.Background(), "8.8.8.8:53", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,14 +83,14 @@ func TestTransportManager_FallbackTracking(t *testing.T) {
 func TestTransportManager_QuicRecovery(t *testing.T) {
 	quic := &mockTransport{
 		available: true,
-		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
+		dialTCPFn: func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 			c, _ := net.Pipe()
 			return c, nil
 		},
 	}
 	tcpws := &mockTransport{
 		available: true,
-		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
+		dialTCPFn: func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 			c, _ := net.Pipe()
 			return c, nil
 		},

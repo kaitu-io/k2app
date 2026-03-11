@@ -18,9 +18,10 @@ import (
 
 // mockDialer records DialTCP/DialUDP calls and returns mock connections.
 type mockDialer struct {
-	mu       sync.Mutex
-	tcpCalls []string
-	udpCalls []string
+	mu            sync.Mutex
+	tcpCalls      []string
+	udpCalls      []string
+	tcpEarlyDatas [][]byte // earlyData passed to each DialTCP call
 
 	tcpConns chan net.Conn
 	udpConns chan net.PacketConn
@@ -34,9 +35,10 @@ func newMockDialer() *mockDialer {
 	}
 }
 
-func (d *mockDialer) DialTCP(ctx context.Context, addr string) (net.Conn, error) {
+func (d *mockDialer) DialTCP(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 	d.mu.Lock()
 	d.tcpCalls = append(d.tcpCalls, addr)
+	d.tcpEarlyDatas = append(d.tcpEarlyDatas, earlyData)
 	d.mu.Unlock()
 
 	if d.dialErr != nil {
@@ -45,6 +47,14 @@ func (d *mockDialer) DialTCP(ctx context.Context, addr string) (net.Conn, error)
 
 	select {
 	case conn := <-d.tcpConns:
+		// Write early data into the conn to simulate server-side behavior:
+		// server receives earlyData via wire, then pipes it to upstream target.
+		if len(earlyData) > 0 {
+			if _, err := conn.Write(earlyData); err != nil {
+				conn.Close()
+				return nil, err
+			}
+		}
 		return conn, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -671,6 +681,80 @@ func TestClientTunnel_HandleTCP_BTNotSniffedInGlobalMode(t *testing.T) {
 	defer dialer.mu.Unlock()
 	if len(dialer.tcpCalls) != 1 {
 		t.Errorf("DialTCP called %d times, expected 1 (global mode should proxy BT)", len(dialer.tcpCalls))
+	}
+
+	tunnel.Close()
+}
+
+// TestClientTunnel_HandleTCP_EarlyData verifies the early data optimization:
+// peeked bytes (TLS ClientHello) are sent as earlyData to DialTCP instead of
+// being replayed through pipe(), preventing double-send.
+func TestClientTunnel_HandleTCP_EarlyData(t *testing.T) {
+	dialer := newMockDialer()
+	prov := &mockProvider{}
+
+	tunnel := NewClientTunnel(ClientTunnelConfig{
+		Provider: prov,
+		Dialer:   dialer,
+		SniffBT:  true,
+		SniffSNI: true,
+	})
+
+	if err := tunnel.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	remoteConn, clientConn := net.Pipe()
+	dialer.tcpConns <- remoteConn
+
+	localConn, providerConn := net.Pipe()
+
+	done := make(chan struct{})
+	go func() {
+		prov.handler.HandleTCP(localConn, "example.com:443")
+		close(done)
+	}()
+
+	// Send TLS ClientHello — should be captured as earlyData for PROXY path
+	tlsHello := []byte{0x16, 0x03, 0x01, 0x00, 0x05, 0x01, 0x00, 0x00, 0x01, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+	providerConn.Write(tlsHello)
+
+	// Read earlyData from remote side (mock dialer writes it into conn)
+	buf := make([]byte, 256)
+	n, err := clientConn.Read(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(buf[:n], tlsHello) {
+		t.Errorf("earlyData mismatch: got %d bytes starting with 0x%02x, want %d bytes starting with 0x16",
+			n, buf[0], len(tlsHello))
+	}
+
+	// Send follow-up data through providerConn — this goes through pipe(), not earlyData
+	followUp := []byte("GET / HTTP/1.1\r\nHost: example.com\r\n\r\n")
+	providerConn.Write(followUp)
+
+	n, err = clientConn.Read(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(buf[:n], followUp) {
+		t.Errorf("follow-up data mismatch: got %q, want %q", buf[:n], followUp)
+	}
+
+	providerConn.Close()
+	clientConn.Close()
+	<-done
+
+	// Verify earlyData was passed to DialTCP (not nil)
+	dialer.mu.Lock()
+	defer dialer.mu.Unlock()
+	if len(dialer.tcpEarlyDatas) != 1 {
+		t.Fatalf("DialTCP called %d times, expected 1", len(dialer.tcpEarlyDatas))
+	}
+	if !bytes.Equal(dialer.tcpEarlyDatas[0], tlsHello) {
+		t.Errorf("earlyData passed to DialTCP = %v, want TLS hello", dialer.tcpEarlyDatas[0])
 	}
 
 	tunnel.Close()

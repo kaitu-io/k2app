@@ -217,7 +217,7 @@ func TestE2E_ClientServerConnect(t *testing.T) {
 	// Use a local echo server — no external network dependency.
 	echoAddr := startTCPEchoServer(t)
 
-	conn, err := env.quicClient.DialTCP(context.Background(), echoAddr)
+	conn, err := env.quicClient.DialTCP(context.Background(), echoAddr, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

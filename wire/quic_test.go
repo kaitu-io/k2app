@@ -318,7 +318,7 @@ func TestQUICClient_DialTCP(t *testing.T) {
 	}()
 
 	// Client: dial TCP
-	conn, err := client.DialTCP(context.Background(), "example.com:80")
+	conn, err := client.DialTCP(context.Background(), "example.com:80", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -424,7 +424,7 @@ func TestQUICServer_AcceptTCP_MultipleStreams(t *testing.T) {
 
 	// Client: open 2 TCP connections
 	for _, addr := range []string{"a.com:80", "b.com:443"} {
-		conn, err := client.DialTCP(context.Background(), addr)
+		conn, err := client.DialTCP(context.Background(), addr, nil)
 		if err != nil {
 			t.Fatalf("DialTCP(%s): %v", addr, err)
 		}
@@ -866,7 +866,7 @@ func TestQUICClient_ConnectDetectsDeadConnection(t *testing.T) {
 		serverDone <- nil
 	}()
 
-	conn, err := client.DialTCP(ctx, "example.com:80")
+	conn, err := client.DialTCP(ctx, "example.com:80", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -897,7 +897,7 @@ func TestQUICClient_ConnectDetectsDeadConnection(t *testing.T) {
 		conn.Close()
 	}()
 
-	conn2, err := client.DialTCP(ctx, "example.com:80")
+	conn2, err := client.DialTCP(ctx, "example.com:80", nil)
 	if err != nil {
 		t.Fatal("expected connect to rebuild after dead connection, got:", err)
 	}
@@ -930,7 +930,7 @@ func TestQUICClient_DialTCP_NoResetOnContextTimeout(t *testing.T) {
 	expiredCtx, cancel := context.WithTimeout(ctx, 0)
 	cancel()
 
-	_, err = client.DialTCP(expiredCtx, "example.com:80")
+	_, err = client.DialTCP(expiredCtx, "example.com:80", nil)
 	if err == nil {
 		t.Fatal("expected error from DialTCP with expired context")
 	}

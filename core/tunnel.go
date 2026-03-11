@@ -192,9 +192,12 @@ func (t *ClientTunnel) HandleTCP(conn net.Conn, dest string) {
 	host, port, _ := net.SplitHostPort(dest)
 	action := t.route(dest)
 
+	var earlyData []byte // peeked bytes sent as wire early data for PROXY path
+
 	// Single peek for all sniffers (BT + SNI)
 	if action != k2rule.TargetReject && (t.sniffBT || t.sniffSNI) {
 		if peeked := peekTCP(conn); len(peeked) > 0 {
+			earlyData = peeked
 			conn = &prefixConn{Conn: conn, reader: io.MultiReader(bytes.NewReader(peeked), conn)}
 
 			// BT: downgrade PROXY → DIRECT
@@ -239,6 +242,7 @@ func (t *ClientTunnel) HandleTCP(conn net.Conn, dest string) {
 	// dests still need hostname rewrite so server resolves via Happy Eyeballs
 	if !(t.sniffBT || t.sniffSNI) && action == k2rule.TargetProxy && port == "443" && strings.Contains(host, ":") {
 		if peeked := peekTCP(conn); len(peeked) > 0 {
+			earlyData = peeked
 			conn = &prefixConn{Conn: conn, reader: io.MultiReader(bytes.NewReader(peeked), conn)}
 			if sni := sniff.SniffTLS(peeked); sni != "" {
 				dest = net.JoinHostPort(sni, port)
@@ -253,7 +257,12 @@ func (t *ClientTunnel) HandleTCP(conn net.Conn, dest string) {
 	case k2rule.TargetDirect:
 		t.handleTCPDirect(conn, dest)
 	case k2rule.TargetProxy:
-		t.handleTCPProxy(conn, dest)
+		// For PROXY: unwrap prefixConn — peeked bytes go as wire early data,
+		// not replayed via pipe (which would double-send them).
+		if pc, ok := conn.(*prefixConn); ok && len(earlyData) > 0 {
+			conn = pc.Conn
+		}
+		t.handleTCPProxy(conn, dest, earlyData)
 	case k2rule.TargetReject:
 		// Silently drop
 	}
@@ -392,8 +401,8 @@ func (t *ClientTunnel) handleTCPDirect(local net.Conn, dest string) {
 	pipe(local, remote, &t.txBytes, &t.rxBytes)
 }
 
-func (t *ClientTunnel) handleTCPProxy(local net.Conn, dest string) {
-	remote, err := t.dialer.DialTCP(t.ctx, dest)
+func (t *ClientTunnel) handleTCPProxy(local net.Conn, dest string, earlyData []byte) {
+	remote, err := t.dialer.DialTCP(t.ctx, dest, earlyData)
 	if err != nil {
 		slog.Warn("tunnel: proxy TCP dial failed", "dest", dest, "err", err)
 		if t.wireReporter != nil {

@@ -188,7 +188,7 @@ func (p *mockProvider) Name() string { return "mock" }
 // mockDialer implements wire.Dialer for testing.
 type mockDialer struct{}
 
-func (d *mockDialer) DialTCP(ctx context.Context, addr string) (net.Conn, error) {
+func (d *mockDialer) DialTCP(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 	return nil, nil
 }
 func (d *mockDialer) DialUDP(ctx context.Context, addr string) (net.PacketConn, error) {

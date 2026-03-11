@@ -13,17 +13,17 @@ import (
 // mockProbeDialer implements probeDialer for testing.
 type mockProbeDialer struct {
 	mu       sync.Mutex
-	dialFunc func(ctx context.Context, addr string) (net.Conn, error)
+	dialFunc func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error)
 	calls    int32 // atomic for race-safe reads
 }
 
-func (m *mockProbeDialer) DialTCP(ctx context.Context, addr string) (net.Conn, error) {
+func (m *mockProbeDialer) DialTCP(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 	atomic.AddInt32(&m.calls, 1)
 	m.mu.Lock()
 	fn := m.dialFunc
 	m.mu.Unlock()
 	if fn != nil {
-		return fn(ctx, addr)
+		return fn(ctx, addr, earlyData)
 	}
 	// Default: succeed with a pipe conn.
 	c1, c2 := net.Pipe()
@@ -35,7 +35,7 @@ func (m *mockProbeDialer) getCalls() int {
 	return int(atomic.LoadInt32(&m.calls))
 }
 
-func (m *mockProbeDialer) setDialFunc(fn func(ctx context.Context, addr string) (net.Conn, error)) {
+func (m *mockProbeDialer) setDialFunc(fn func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error)) {
 	m.mu.Lock()
 	m.dialFunc = fn
 	m.mu.Unlock()
@@ -97,7 +97,7 @@ func TestRecoveryProbe_Success(t *testing.T) {
 func TestRecoveryProbe_FailsThenRetries(t *testing.T) {
 	e, _ := newConnectedEngine()
 	dialer := &mockProbeDialer{}
-	dialer.setDialFunc(func(ctx context.Context, addr string) (net.Conn, error) {
+	dialer.setDialFunc(func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 		return nil, fmt.Errorf("wire: TCP dial: connection refused")
 	})
 
@@ -189,7 +189,7 @@ func TestRecoveryProbe_NewTriggerCancelsOld(t *testing.T) {
 	e, _ := newConnectedEngine()
 	var callCount atomic.Int32
 	dialer := &mockProbeDialer{}
-	dialer.setDialFunc(func(ctx context.Context, addr string) (net.Conn, error) {
+	dialer.setDialFunc(func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 		callCount.Add(1)
 		c1, c2 := net.Pipe()
 		c2.Close()
@@ -238,7 +238,7 @@ func TestRecoveryProbe_StopsOnClientErrorFromServer(t *testing.T) {
 	e, _ := newConnectedEngine()
 	dialer := &mockProbeDialer{}
 	callNum := atomic.Int32{}
-	dialer.setDialFunc(func(ctx context.Context, addr string) (net.Conn, error) {
+	dialer.setDialFunc(func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 		n := callNum.Add(1)
 		if n == 1 {
 			// First attempt: server rejects auth.

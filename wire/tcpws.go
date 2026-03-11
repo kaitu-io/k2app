@@ -294,7 +294,7 @@ func (c *TCPWSClient) upgradeWebSocket(ctx context.Context, tlsConn net.Conn) (n
 }
 
 // DialTCP opens a TCP proxy stream through the smux session.
-func (c *TCPWSClient) DialTCP(ctx context.Context, addr string) (net.Conn, error) {
+func (c *TCPWSClient) DialTCP(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 	sess, err := c.connect(ctx)
 	if err != nil {
 		return nil, err
@@ -308,6 +308,14 @@ func (c *TCPWSClient) DialTCP(ctx context.Context, addr string) (net.Conn, error
 	if err := WriteStreamHeader(stream, StreamTypeTCP, addr); err != nil {
 		stream.Close()
 		return nil, fmt.Errorf("wire: write stream header: %w", err)
+	}
+
+	// Write early data before waiting for server response (same as QUIC path).
+	if len(earlyData) > 0 {
+		if _, err := stream.Write(earlyData); err != nil {
+			stream.Close()
+			return nil, fmt.Errorf("wire: write early data: %w", err)
+		}
 	}
 
 	br := bufio.NewReader(stream)

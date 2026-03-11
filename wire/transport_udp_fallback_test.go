@@ -130,13 +130,13 @@ func TestTransportManager_DialTCP_FallbackWorks(t *testing.T) {
 
 	quic := &mockTransport{
 		available: true,
-		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
+		dialTCPFn: func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 			return nil, errors.New("QUIC stream broken")
 		},
 	}
 	tcpws := &mockTransport{
 		available: true,
-		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
+		dialTCPFn: func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 			tcpwsUsed.Store(true)
 			c, _ := net.Pipe()
 			return c, nil
@@ -147,7 +147,7 @@ func TestTransportManager_DialTCP_FallbackWorks(t *testing.T) {
 	tm.SetQUIC(quic)
 	tm.SetTCPWS(tcpws)
 
-	conn, err := tm.DialTCP(context.Background(), "1.1.1.1:443")
+	conn, err := tm.DialTCP(context.Background(), "1.1.1.1:443", nil)
 	if err != nil {
 		t.Fatalf("DialTCP should succeed via fallback, got: %v", err)
 	}
@@ -296,20 +296,20 @@ func TestTransportManager_DialUDP_Asymmetry(t *testing.T) {
 		tm := NewTransportManager()
 		tm.SetQUIC(&mockTransport{
 			available: true,
-			dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
+			dialTCPFn: func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 				return nil, errors.New("QUIC broken")
 			},
 		})
 		tm.SetTCPWS(&mockTransport{
 			available: true,
-			dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
+			dialTCPFn: func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 				fallbackUsed.Store(true)
 				c, _ := net.Pipe()
 				return c, nil
 			},
 		})
 
-		conn, err := tm.DialTCP(context.Background(), "1.1.1.1:443")
+		conn, err := tm.DialTCP(context.Background(), "1.1.1.1:443", nil)
 		if err != nil {
 			t.Fatalf("DialTCP: %v", err)
 		}

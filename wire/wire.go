@@ -66,7 +66,7 @@ type StatsProvider interface {
 // It manages both QUIC and TCP-WS transports internally.
 // Transport selection is transparent to callers.
 type Dialer interface {
-	DialTCP(ctx context.Context, addr string) (net.Conn, error)
+	DialTCP(ctx context.Context, addr string, earlyData []byte) (net.Conn, error)
 	DialUDP(ctx context.Context, addr string) (net.PacketConn, error)
 	Close() error
 }

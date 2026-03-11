@@ -33,7 +33,7 @@ func TestContract_StartupQUICFirst(t *testing.T) {
 
 	quic := &mockTransport{
 		available: true,
-		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
+		dialTCPFn: func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 			quicCalled = true
 			c, _ := net.Pipe()
 			return c, nil
@@ -41,7 +41,7 @@ func TestContract_StartupQUICFirst(t *testing.T) {
 	}
 	tcpws := &mockTransport{
 		available: true,
-		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
+		dialTCPFn: func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 			tcpwsCalled = true
 			c, _ := net.Pipe()
 			return c, nil
@@ -52,7 +52,7 @@ func TestContract_StartupQUICFirst(t *testing.T) {
 	tm.SetQUIC(quic)
 	tm.SetTCPWS(tcpws)
 
-	conn, err := tm.DialTCP(context.Background(), "1.1.1.1:443")
+	conn, err := tm.DialTCP(context.Background(), "1.1.1.1:443", nil)
 	if err != nil {
 		t.Fatalf("DialTCP: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestContract_NormalTCPviaQUIC_UDPviaDatagram(t *testing.T) {
 
 	quic := &mockTransport{
 		available: true,
-		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
+		dialTCPFn: func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 			quicTCPCalled = true
 			c, _ := net.Pipe()
 			return c, nil
@@ -89,7 +89,7 @@ func TestContract_NormalTCPviaQUIC_UDPviaDatagram(t *testing.T) {
 	}
 	tcpws := &mockTransport{
 		available: true,
-		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
+		dialTCPFn: func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 			tcpwsTCPCalled = true
 			c, _ := net.Pipe()
 			return c, nil
@@ -104,7 +104,7 @@ func TestContract_NormalTCPviaQUIC_UDPviaDatagram(t *testing.T) {
 	tm.SetQUIC(quic)
 	tm.SetTCPWS(tcpws)
 
-	conn, err := tm.DialTCP(context.Background(), "1.1.1.1:443")
+	conn, err := tm.DialTCP(context.Background(), "1.1.1.1:443", nil)
 	if err != nil {
 		t.Fatalf("DialTCP: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestContract_QUICBlocked_FallbackTCPWS(t *testing.T) {
 
 	tcpws := &mockTransport{
 		available: true,
-		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
+		dialTCPFn: func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 			tcpwsCalled = true
 			c, _ := net.Pipe()
 			return c, nil
@@ -154,7 +154,7 @@ func TestContract_QUICBlocked_FallbackTCPWS(t *testing.T) {
 	tm.SetTCPWS(tcpws)
 	tm.SetFallbackActive(true)
 
-	conn, err := tm.DialTCP(context.Background(), "1.1.1.1:443")
+	conn, err := tm.DialTCP(context.Background(), "1.1.1.1:443", nil)
 	if err != nil {
 		t.Fatalf("DialTCP: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestContract_QUICRecover_ProbeSuccess(t *testing.T) {
 
 	quic := &mockTransport{
 		available: true,
-		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
+		dialTCPFn: func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 			quicCalled = true
 			c, _ := net.Pipe()
 			return c, nil
@@ -184,7 +184,7 @@ func TestContract_QUICRecover_ProbeSuccess(t *testing.T) {
 	}
 	tcpws := &mockTransport{
 		available: true,
-		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
+		dialTCPFn: func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 			c, _ := net.Pipe()
 			return c, nil
 		},
@@ -205,7 +205,7 @@ func TestContract_QUICRecover_ProbeSuccess(t *testing.T) {
 	}
 
 	// Next DialTCP should go through QUIC.
-	conn, err := tm.DialTCP(context.Background(), "1.1.1.1:443")
+	conn, err := tm.DialTCP(context.Background(), "1.1.1.1:443", nil)
 	if err != nil {
 		t.Fatalf("DialTCP: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestContract_DatagramLossHigh_DegradeToStream(t *testing.T) {
 
 	quic := &mockTransport{
 		available: true,
-		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
+		dialTCPFn: func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 			quicTCPCalled = true
 			c, _ := net.Pipe()
 			return c, nil
@@ -258,7 +258,7 @@ func TestContract_DatagramLossHigh_DegradeToStream(t *testing.T) {
 	}
 
 	// TCP should still go through QUIC (transport is fine).
-	conn, err := tm.DialTCP(context.Background(), "1.1.1.1:443")
+	conn, err := tm.DialTCP(context.Background(), "1.1.1.1:443", nil)
 	if err != nil {
 		t.Fatalf("DialTCP: %v", err)
 	}
@@ -300,13 +300,13 @@ func TestContract_NetworkSwitch_ResetAll(t *testing.T) {
 func TestContract_SlowUpstream_NoFallback(t *testing.T) {
 	quic := &mockTransport{
 		available: true,
-		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
+		dialTCPFn: func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 			return nil, &contractTimeoutError{msg: "dial tcp 93.184.216.34:443: i/o timeout"}
 		},
 	}
 	tcpws := &mockTransport{
 		available: true,
-		dialTCPFn: func(ctx context.Context, addr string) (net.Conn, error) {
+		dialTCPFn: func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 			c, _ := net.Pipe()
 			return c, nil
 		},
@@ -317,7 +317,7 @@ func TestContract_SlowUpstream_NoFallback(t *testing.T) {
 	tm.SetTCPWS(tcpws)
 
 	// DialTCP may succeed via TCP-WS per-request (QUIC error falls through).
-	conn, err := tm.DialTCP(context.Background(), "93.184.216.34:443")
+	conn, err := tm.DialTCP(context.Background(), "93.184.216.34:443", nil)
 	if err != nil {
 		t.Fatalf("DialTCP: %v", err)
 	}

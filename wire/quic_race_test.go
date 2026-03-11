@@ -96,7 +96,7 @@ func TestQUICClient_DialTCP_ResetRace(t *testing.T) {
 			defer wg.Done()
 			for range 10 {
 				dctx, dcancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-				conn, err := client.DialTCP(dctx, "8.8.8.8:53")
+				conn, err := client.DialTCP(dctx, "8.8.8.8:53", nil)
 				dcancel()
 				if err != nil {
 					continue
