@@ -187,6 +187,9 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                         logger.warning("Failed to create logsDir: \(error)")
                     }
                     engineCfg.logDir = logsPath
+                    #if DEBUG
+                    engineCfg.debug = true
+                    #endif
                     logger.info("EngineConfig logDir=\(logsPath)")
                 }
 

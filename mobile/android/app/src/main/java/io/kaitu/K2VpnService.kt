@@ -255,7 +255,10 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector {
                 val engineCfg = Appext.newEngineConfig()
                 engineCfg.cacheDir = cachePath
                 engineCfg.logDir = logsDirPath
-                Log.d(TAG, "EngineConfig logDir=$logsDirPath")
+                if (BuildConfig.DEBUG) {
+                    engineCfg.debug = true
+                }
+                Log.d(TAG, "EngineConfig logDir=$logsDirPath debug=${engineCfg.debug}")
                 engineCfg.socketProtector = this@K2VpnService
                 engine?.start(configJSON, rawFd.toLong(), engineCfg)
                 Log.d(TAG, "Engine started successfully")
