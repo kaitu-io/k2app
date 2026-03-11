@@ -10,11 +10,6 @@ set -e
 PKCS11_MODULE="/usr/local/lib/SimplySignPKCS/SimplySignPKCS-MS-1.1.24.dylib"
 MAX_LOGIN_ATTEMPTS=3
 
-if [ -z "$SIMPLISIGN_TOTP_URI" ]; then
-    echo "ERROR: SIMPLISIGN_TOTP_URI not set" >&2
-    exit 1
-fi
-
 # --- Helpers ---
 
 get_menu_items() {
@@ -156,6 +151,21 @@ EOF
 
 echo "=== SimplySign Auto-Login ==="
 
+# Fast path: check PKCS#11 token directly (works even from non-GUI sessions)
+if has_pkcs11_token; then
+    echo "PKCS#11 token already available. Done!"
+    exit 0
+fi
+
+echo "PKCS#11 token not available. Attempting GUI login..."
+
+# GUI login requires SIMPLISIGN_TOTP_URI
+if [ -z "$SIMPLISIGN_TOTP_URI" ]; then
+    echo "ERROR: SIMPLISIGN_TOTP_URI not set and PKCS#11 token not available." >&2
+    echo "Either log in to SimplySign Desktop manually, or set SIMPLISIGN_TOTP_URI." >&2
+    exit 1
+fi
+
 # Ensure app is running
 if ! pgrep -f "SimplySign Desktop" > /dev/null; then
     echo "Starting SimplySign Desktop..."
@@ -163,13 +173,9 @@ if ! pgrep -f "SimplySign Desktop" > /dev/null; then
     sleep 3
 fi
 
-# Already connected?
+# Already connected via menu bar?
 if is_connected; then
     echo "Already connected."
-    if has_pkcs11_token; then
-        echo "PKCS#11 token ready."
-        exit 0
-    fi
     echo "Waiting for PKCS#11 token..."
     for i in $(seq 1 10); do sleep 1; has_pkcs11_token && echo "Ready." && exit 0; done
     echo "WARNING: Connected but no PKCS#11 token." >&2
