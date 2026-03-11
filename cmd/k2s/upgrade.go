@@ -1,9 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -22,13 +22,7 @@ var releaseEndpoints = []string{
 	"https://d0.all7.cc/kaitu/k2",
 }
 
-type latestInfo struct {
-	Version   string            `json:"version"`
-	Binaries  map[string]string `json:"binaries"`            // "linux-amd64" -> download URL
-	Checksums map[string]string `json:"checksums,omitempty"` // "linux-amd64" -> "sha256:abc..."
-}
-
-// Channel preference persistence — mirrors desktop/src-tauri/src/channel.rs pattern.
+// Channel preference persistence.
 // Stored in certDir (default ~/.k2s/) alongside certs and config.
 
 func channelFilePath() string {
@@ -55,11 +49,12 @@ func saveChannel(ch string) error {
 	return os.WriteFile(path, []byte(ch), 0644)
 }
 
-func manifestPath(channel string) string {
+// latestPath returns the CDN path for the LATEST version file.
+func latestPath(channel string) string {
 	if channel == "beta" {
-		return "/beta/k2s-cloudfront.latest.json"
+		return "/beta/LATEST"
 	}
-	return "/k2s-cloudfront.latest.json"
+	return "/LATEST"
 }
 
 func cmdUpgrade(args []string) {
@@ -81,48 +76,48 @@ func cmdUpgrade(args []string) {
 	}
 
 	ch := readChannel()
-	info, err := fetchLatest(ch)
+	latest, err := fetchLatestVersion(ch)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to check for updates: %v\n", err)
 		os.Exit(1)
 	}
 
-	if info.Version == version {
+	if latest == version {
 		fmt.Printf("Already up to date: %s (channel: %s)\n", version, ch)
 		return
 	}
 
-	fmt.Printf("New version available: %s (current: %s, channel: %s)\n", info.Version, version, ch)
+	fmt.Printf("New version available: %s (current: %s, channel: %s)\n", latest, version, ch)
 
 	if *check {
 		return
 	}
 
-	key := fmt.Sprintf("%s-%s", runtime.GOOS, runtime.GOARCH)
-	downloadURL, ok := info.Binaries[key]
-	if !ok {
-		fmt.Fprintf(os.Stderr, "No binary available for %s\n", key)
+	binary := fmt.Sprintf("k2s-%s-%s", runtime.GOOS, runtime.GOARCH)
+	expectedHash, err := fetchChecksum(latest, binary)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to fetch checksum: %v\n", err)
 		os.Exit(1)
 	}
 
-	expectedHash := ""
-	if info.Checksums != nil {
-		if cs, ok := info.Checksums[key]; ok {
-			expectedHash = strings.TrimPrefix(cs, "sha256:")
-		}
-	}
-
-	if err := downloadAndReplace(downloadURL, expectedHash); err != nil {
+	url := downloadURL(latest, binary)
+	if err := downloadAndReplace(url, expectedHash); err != nil {
 		fmt.Fprintf(os.Stderr, "Upgrade failed: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Upgraded to %s\n", info.Version)
+	// Auto-activate beta channel for beta versions.
+	if strings.Contains(latest, "-beta") && ch != "beta" {
+		saveChannel("beta")
+	}
+
+	fmt.Printf("Upgraded to %s\n", latest)
 }
 
-func fetchLatest(channel string) (*latestInfo, error) {
+// fetchLatestVersion fetches the LATEST file from CDN endpoints.
+func fetchLatestVersion(channel string) (string, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
-	path := manifestPath(channel)
+	path := latestPath(channel)
 
 	var lastErr error
 	for _, endpoint := range releaseEndpoints {
@@ -131,21 +126,74 @@ func fetchLatest(channel string) (*latestInfo, error) {
 			lastErr = err
 			continue
 		}
-		defer resp.Body.Close()
-
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			lastErr = err
+			continue
+		}
 		if resp.StatusCode != http.StatusOK {
 			lastErr = fmt.Errorf("HTTP %d from %s", resp.StatusCode, endpoint)
 			continue
 		}
+		v := strings.TrimSpace(string(body))
+		if v == "" {
+			lastErr = fmt.Errorf("empty LATEST from %s", endpoint)
+			continue
+		}
+		return v, nil
+	}
+	return "", fmt.Errorf("all endpoints failed: %w", lastErr)
+}
 
-		var info latestInfo
-		if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+// fetchChecksum fetches checksums.txt and returns the hash for the given binary.
+func fetchChecksum(ver, binary string) (string, error) {
+	client := &http.Client{Timeout: 10 * time.Second}
+	path := fmt.Sprintf("/%s/checksums.txt", ver)
+
+	var lastErr error
+	for _, endpoint := range releaseEndpoints {
+		resp, err := client.Get(endpoint + path)
+		if err != nil {
 			lastErr = err
 			continue
 		}
-		return &info, nil
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			lastErr = fmt.Errorf("HTTP %d from %s", resp.StatusCode, endpoint)
+			continue
+		}
+		hash, err := parseChecksum(resp.Body, binary)
+		resp.Body.Close()
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		return hash, nil
 	}
-	return nil, fmt.Errorf("all endpoints failed: %w", lastErr)
+	return "", fmt.Errorf("all endpoints failed: %w", lastErr)
+}
+
+// parseChecksum reads checksums.txt content and finds the hash for binary.
+func parseChecksum(r io.Reader, binary string) (string, error) {
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		line := scanner.Text()
+		// Format: "hash  filename"
+		parts := strings.Fields(line)
+		if len(parts) == 2 && parts[1] == binary {
+			return parts[0], nil
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("read checksums: %w", err)
+	}
+	return "", fmt.Errorf("no checksum for %s", binary)
+}
+
+// downloadURL returns the CDN URL for a versioned binary.
+func downloadURL(ver, binary string) string {
+	return releaseEndpoints[0] + "/" + ver + "/" + binary
 }
 
 func downloadAndReplace(url string, expectedHash string) error {
@@ -217,28 +265,11 @@ func downloadAndReplace(url string, expectedHash string) error {
 // Non-blocking, meant to be called in a goroutine at server startup.
 func checkVersionAsync() {
 	ch := readChannel()
-	client := &http.Client{Timeout: 5 * time.Second}
-	path := manifestPath(ch)
-
-	for _, endpoint := range releaseEndpoints {
-		resp, err := client.Get(endpoint + path)
-		if err != nil {
-			continue
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			continue
-		}
-
-		var info latestInfo
-		if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
-			continue
-		}
-
-		if info.Version != "" && info.Version != version {
-			fmt.Printf("New version available: %s (run 'k2s upgrade' to update)\n", info.Version)
-		}
+	latest, err := fetchLatestVersion(ch)
+	if err != nil {
 		return
+	}
+	if latest != "" && latest != version {
+		fmt.Printf("New version available: %s (run 'k2s upgrade' to update)\n", latest)
 	}
 }

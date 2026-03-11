@@ -3,8 +3,6 @@
 Minimalist VPN tunnel with k2v5 composite wire protocol (QUIC+H3+PCC primary, TCP-WS+smux fallback).
 Two binaries: `k2` (client) and `k2s` (server). Client has daemon architecture with HTTP localhost API.
 
-Used as a read-only submodule in k2app. See parent `CLAUDE.md` for integration context.
-
 ## Quick Commands
 
 ```bash
@@ -27,6 +25,7 @@ k2s setup                          # Server: interactive setup wizard
 k2s setup --port 443 --username alice --no-firewall  # Automated setup
 k2s user add <name>                # Add user, print connect URL
 docker compose up --build           # Docker: server + init container (docker/)
+make release VERSION=1.0.0         # Build all platforms + upload to S3
 ```
 
 ## Code Style
@@ -133,6 +132,7 @@ test/CLAUDE.md                 E2E integration tests
 docs/features/                 Feature specs (cloud-webapp, mobile-sdk, private-ip-guard, etc.)
 docs/knowledge/                Distilled patterns (architecture, bugfix, gotchas, testing, tasks)
 docs/contracts/                API contracts (webapp-daemon-api)
+scripts/                       Install scripts (install-k2s.sh, install-k2.sh) + release pipeline (release.sh)
 ```
 
 ## Architecture
@@ -290,6 +290,8 @@ docs/todos/p2-*.md     Nice to have
 - Happy Eyeballs (RFC 8305), transport behavior contract tests (20 scenarios in wire/ + engine/)
 - Quality gates (`make quick-check` / `make pre-release`), goleak goroutine leak detection
 - safego package (panic-safe goroutine launcher), daemon doUp abort mechanism
+- CLI redesign (pure subcommand dispatch, --json output, non-interactive k2s setup)
+- Unified release pipeline (LATEST + checksums.txt, S3 upload, install scripts, CI)
 
 ## Platform Mapping
 

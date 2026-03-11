@@ -39,7 +39,7 @@ k2s help                            Usage info
 - `setup.go` — `k2s setup`: wizard + non-interactive mode
 - `wizard.go` — Interactive prompts (port, hop range, username)
 - `user.go` — `k2s user`: add/list/del/reset with --json support
-- `upgrade.go` — `k2s upgrade`: CloudFront manifest + binary download
+- `upgrade.go` — `k2s upgrade`: LATEST + checksums.txt from CDN, beta channel support
 - `service.go` — `k2s service`: install/uninstall
 - `service_darwin.go` / `service_linux.go` / `service_windows.go` — Platform service management
 - `process.go` — PID helpers, `IsRoot()`

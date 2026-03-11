@@ -2,7 +2,7 @@
 	build-darwin-arm64 build-darwin-amd64 build-darwin-universal \
 	build-windows-amd64 build-linux-amd64 build-linux-arm64 \
 	appext-ios appext-macos appext-android \
-	quick-check pre-release build-all-platforms
+	quick-check pre-release build-all-platforms release
 
 VERSION ?= dev
 COMMIT  ?= $(shell git rev-parse --short HEAD)
@@ -54,8 +54,6 @@ build-server-darwin:
 	mkdir -p build
 	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build $(PROD_TAGS) -ldflags "$(LDFLAGS)" -o build/k2s-darwin-amd64 ./cmd/k2s
 	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build $(PROD_TAGS) -ldflags "$(LDFLAGS)" -o build/k2s-darwin-arm64 ./cmd/k2s
-	lipo -create -output build/k2s-darwin-universal build/k2s-darwin-amd64 build/k2s-darwin-arm64
-	rm -f build/k2s-darwin-amd64 build/k2s-darwin-arm64
 
 build-server-windows: generate
 	mkdir -p build
@@ -100,6 +98,14 @@ pre-release: quick-check
 # Cross-compile all platforms (compiles = no broken imports).
 build-all-platforms: build-darwin-arm64 build-linux-amd64 build-linux-arm64 build-windows-amd64 build-server-linux
 	@echo "All platform builds OK"
+
+# --- Release ---
+release:
+	@test -n "$(VERSION)" || (echo "Usage: make VERSION=1.0.0 release"; exit 1)
+	@test "$(VERSION)" != "dev" || (echo "Error: set VERSION"; exit 1)
+	$(MAKE) VERSION=$(VERSION) build-server-linux build-server-darwin \
+		build-linux-amd64 build-linux-arm64 build-darwin-arm64 build-darwin-amd64
+	scripts/release.sh $(VERSION)
 
 clean:
 	rm -rf build/
