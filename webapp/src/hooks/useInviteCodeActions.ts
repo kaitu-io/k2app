@@ -17,9 +17,6 @@ export function useInviteCodeActions() {
   const { getShareLink, loading: shareLinkLoading } = useShareLink();
 
 
-  // 检测平台类型（基于 os 判断）
-  const isMobile = ['ios', 'android'].includes(window._platform!.os) || /Mobile|Android|iPhone|iPad/i.test(navigator.userAgent);
-
   /**
    * 分享邀请内容（模糊文案，不含产品名和 VPN 词汇）
    * 移动端使用系统分享，桌面端复制到剪贴板
@@ -33,15 +30,12 @@ export function useInviteCodeActions() {
 
     const copyContent = t('invite:invite.shareGiftText', { link: shareLink });
 
-    const canShare = typeof navigator.share === 'function';
-
-    if (isMobile && canShare) {
+    if (window._platform?.share) {
       try {
-        await navigator.share({ text: copyContent });
-        showAlert(t('invite:invite.shareSuccess'), "success");
+        await window._platform.share({ text: copyContent });
+        // Native share sheet is its own feedback — no toast needed
         return;
       } catch (error) {
-        if ((error as Error).name === 'AbortError') return;
         console.warn('Native share failed, falling back to clipboard:', error);
       }
     }
@@ -143,22 +137,14 @@ ${rewardText}
 📱 ${t('invite:invite.downloadApp')}: ${shareLink}
 🏷️ ${t('invite:invite.inviteCodeLabel')}: ${inviteCode.code.toUpperCase()}`;
 
-    // 检测是否支持系统分享
-    const canShare = typeof navigator.share === 'function';
-
-    // 移动设备优先使用系统分享对话框
-    if (isMobile && canShare) {
+    if (window._platform?.share) {
       try {
-        await navigator.share({
+        await window._platform.share({
           title: t('invite:invite.inviteYouToUse'),
           text: copyContent,
         });
-        showAlert(t('invite:invite.shareSuccess'), "success");
         return;
       } catch (error) {
-        if ((error as Error).name === 'AbortError') {
-          return;
-        }
         console.warn('Native share failed, falling back to clipboard:', error);
       }
     }
