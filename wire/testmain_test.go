@@ -19,8 +19,7 @@ func TestMain(m *testing.M) {
 		goleak.IgnoreTopFunction("github.com/xtaci/smux/v2.(*Session).recvLoop"),
 		goleak.IgnoreTopFunction("github.com/xtaci/smux/v2.(*Session).shaperLoop"),
 		// net/http transport dial goroutines — ECH provider DNS-over-HTTPS cleanup lag.
-		goleak.IgnoreTopFunction("net/http.(*Transport).dialConnFor"),
-		goleak.IgnoreTopFunction("net/http.(*Transport).startDialConnForLocked.func1"),
-		goleak.IgnoreTopFunction("net.(*netFD).connect.func2"),
+		// Use IgnoreAnyFunction because the goroutine top may be internal/poll.runtime_pollWait.
+		goleak.IgnoreAnyFunction("net/http.(*Transport).dialConnFor"),
 	)
 }
