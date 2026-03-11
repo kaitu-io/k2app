@@ -142,10 +142,11 @@ Three-layer logging system across platforms:
 | Native | `{LogDir}/native.log` | `NativeLogger` (Swift/Kotlin) |
 | Webapp | `{LogDir}/webapp.log` | `K2Plugin.appendLogs(entries)` from JS |
 
-- **iOS LogDir**: `{AppGroup}/logs/` (NE process writes via App Group container)
+- **iOS LogDir**: `{AppGroup}/logs/` — App Group `group.io.kaitu` shared between App process and NE process
 - **Android LogDir**: `{filesDir}/logs/`
-- **Upload**: `K2Plugin.uploadLogs()` — gzip compress all logs → PUT to S3. iOS uses GzipSwift for reliable compression.
+- **Upload**: `K2Plugin.uploadLogs()` — compress all logs → ZIP → PUT to S3 with `mobile/{version}/{udid}/{date}/logs-{ts}-{id}.zip` key format.
 - **Redaction**: Token, password, Bearer, X-K2-Token patterns stripped before upload
+- **Debug dual output**: `EngineConfig.Debug = true` enables `io.MultiWriter(file, stderr)` so Go engine logs appear in Xcode console / logcat. Set via `#if DEBUG` (Swift) / `BuildConfig.DEBUG` (Kotlin).
 
 ## Log Level Control
 
@@ -179,6 +180,9 @@ Go package `k2/appext/` → gomobile naming:
 - **Android `VpnService.protect()` scope**: Must protect wire transport (QUIC UDP, TCP-WS TCP), direct DNS (raw UDP), and direct tunnel connections (smart routing bypass). Uses `syscall.RawConn.Control()` in Go's `net.Dialer.Control`. gomobile requires `int32` fd parameter (not `int`).
 - **iOS log level is cross-process**: `K2Plugin.setLogLevel()` only logs — NE runs in separate process. Level applied via `configJSON.log.level` on next `startVPNTunnel`. Android plugin and VPN service share a process so it takes effect immediately.
 - **Mobile auto-update on cold start**: K2Plugin checks for updates on `load()` (plugin initialization) — every app launch, no explicit trigger needed.
+- **VPN display name**: User-visible VPN name is `"kaitu.io"` across iOS (NE `localizedDescription`, `serverAddress`, Info.plist `CFBundleDisplayName`) and Android (`setSession()`, notification title).
+- **iOS stale VPN config cleanup**: `loadVPNManager()` removes stale NE configs with wrong `providerBundleIdentifier` or `localizedDescription` on every load. Prevents "Found 0 registrations" after bundle ID migration.
+- **iOS App Group**: `kAppGroup = "group.io.kaitu"` — used by both `K2Plugin.swift` and `PacketTunnelProvider.swift`. Changed from `group.waymaker` in March 2026.
 
 ## Related Docs
 

@@ -126,6 +126,10 @@ docs/plans/          Architecture design docs
 - **Docker on Apple Silicon**: Always `--platform linux/amd64` for server images. Go binary needs `GOARCH=amd64`.
 - **macOS PKG install order**: Preinstall runs OLD binary, postinstall runs NEW. Always `launchctl unload` before overwriting plist.
 - **RegExp `/g` flag state persists**: Module-level global regex retains `lastIndex` between calls. Reset before each `.replace()`.
+- **EngineConfig.Debug dual log output**: `appext.EngineConfig.Debug = true` enables `io.MultiWriter(file, stderr)` so Go engine logs appear in Xcode console / logcat. Native side sets via `#if DEBUG` (Swift) / `BuildConfig.DEBUG` (Kotlin). Release builds default false.
+- **K2Plugin local sync**: `file:` plugins are copied (not symlinked) to `node_modules/`. Makefile `dev-ios`/`dev-android`/`build-mobile-*` targets auto-run `rm -rf node_modules/k2-plugin && yarn install --force` before `cap sync`.
+- **iOS App Group**: `group.io.kaitu` — shared container for App process + NE process logs. Both `K2Plugin.swift` and `PacketTunnelProvider.swift` use `kAppGroup = "group.io.kaitu"`.
+- **S3 log upload prefix**: Desktop uses `desktop/{version}/{udid}/{date}/logs-{ts}-{id}.tar.gz`, mobile uses `mobile/.../.zip`. Legacy `service-logs/`/`feedback-logs/` prefixes still supported by Lambda.
 
 ## Tech Stack
 
