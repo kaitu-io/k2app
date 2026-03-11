@@ -85,6 +85,7 @@ Fields: UDID, Token, Host, Port, ECH, Fingerprint, HopStart, HopEnd, Insecure, P
 - Relay UDP unhealthy → `ErrDatagramRelayUnhealthy`: When relay datagram path has high loss or consecutive timeouts, `DialUDP` returns `ErrDatagramRelayUnhealthy` for per-request TCP-WS fallback. Relay-layer metrics never trigger wire-layer actions (port hop, reconnect). See `VOCABULARY.md`.
 - QUIC flow control is platform-specific (build tags `ios || android` vs desktop) — mobile uses smaller windows (2 MB stream / 8 MB conn vs 8 MB / 20 MB desktop) to stay under iOS NE jetsam limit.
 - QUIC stream responses have 5s timeout to prevent indefinite blocking on slow/dead servers.
+- `SendDatagram` has 2s timeout (`sendDatagramTimeout`, `ErrDatagramSendTimeout`) — quic-go's 32-frame datagram queue blocks indefinitely under congestion. Timeout converts blocking into dropping (protocol-correct for unreliable DATAGRAM). Applies to both client `quicUDPConn.WriteTo` and server `serverUDPConn.WriteTo`.
 
 ## Testing
 

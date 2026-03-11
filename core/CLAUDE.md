@@ -36,6 +36,7 @@ Provider ──► ClientTunnel.HandleTCP/HandleUDP
 **Sniff flags** (set by engine, disabled in global mode):
 - `sniffBT` — BT/WebRTC detection: PROXY→DIRECT (BitTorrent TCP, uTP, UDPTracker, STUN, DTLS)
 - `sniffSNI` — domain extraction: DIRECT→PROXY (TLS SNI on 443, HTTP Host on non-443, QUIC SNI on 443)
+- `blockQUIC` — block browser QUIC via ICMP reject (default: false = allow through DATAGRAM path, set via `ClientConfig.BlockQUIC`)
 - `rewriteIPv6` — replace IPv6 PROXY dests with hostname via SNI (when server lacks IPv6, works in all modes)
 
 **Traffic counting**: `txBytes`/`rxBytes` `atomic.Int64` fields count all bytes through `pipe()`/`pipePacket()`. `TrafficBytes()` returns cumulative TX/RX.

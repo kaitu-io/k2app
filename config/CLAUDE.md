@@ -21,6 +21,7 @@ rule:
   geoip_url: ""    # remote GeoIP .mmdb URL ("" = CDN default)
   porn_url: ""     # remote porn list URL ("" = CDN default)
   cache_dir: ""    # set by platform shell (daemon/appext)
+block_quic: false  # true = ICMP-reject browser QUIC (default: false = allow through DATAGRAM)
 log:
   level: info      # debug, info, warn, error
 ```
@@ -49,7 +50,7 @@ log:
 
 ## Types
 
-- `ClientConfig` — Server, Mode, Tun, Proxy, DNS, Rule, Log, Listen, PIDFile
+- `ClientConfig` — Server, Mode, Tun, Proxy, DNS, Rule, Log, Listen, PIDFile, BlockQUIC
   - Sub-types: `TunConfig`, `ProxyConfig`, `DNSConfig`, `RuleConfig`, `LogConfig`
 - `ServerConfig` — Listen, Host, TLS, ECH, CertDir, PCC, Rate, Auth, Log
 - `LoadClient(path)` / `LoadServer(path)` — YAML loaders
