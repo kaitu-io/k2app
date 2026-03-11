@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 )
 
 //go:embed server.demo.yml
@@ -18,88 +19,57 @@ var (
 )
 
 func main() {
-	// Define top-level flags (nginx-style: flags come before subcommands).
-	fs := flag.NewFlagSet("k2s", flag.ContinueOnError)
-	configPath := fs.String("c", "", "config file path")
-	testConfig := fs.Bool("t", false, "test configuration and exit")
-	sendSignal := fs.String("s", "", "send signal to server: stop|reload")
-	showVersion := fs.Bool("v", false, "show version and exit")
-	fs.Usage = printUsage
-
-	// Parse flags stopping at first non-flag argument (subcommand).
-	if err := fs.Parse(os.Args[1:]); err != nil {
-		if err == flag.ErrHelp {
-			os.Exit(0)
-		}
+	if len(os.Args) < 2 {
+		printUsage()
 		os.Exit(1)
 	}
 
-	// -v: print version and exit.
-	if *showVersion {
-		fmt.Printf("k2s %s (%s)\n", version, commit)
-		return
-	}
-
-	// Check remaining args for subcommand.
-	args := fs.Args()
-
-	if len(args) > 0 {
+	args := os.Args[1:]
+	for len(args) > 0 && strings.HasPrefix(args[0], "--") {
 		switch args[0] {
-		case "version":
-			fmt.Printf("k2s %s (%s)\n", version, commit)
-			return
-		case "setup":
-			cmdSetup(args[1:])
-			return
-		case "service":
-			cmdService(args[1:])
-			return
-		case "user":
-			cmdUser(args[1:])
-			return
-		case "upgrade":
-			cmdUpgrade(args[1:])
-			return
-		case "demo-config":
-			fmt.Print(demoConfig)
-			return
-		case "-h", "--help", "help":
+		case "--json":
+			out.json = true
+			args = args[1:]
+		case "--quiet":
+			args = args[1:]
+		case "--help", "-h":
 			printUsage()
 			return
 		default:
-			fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", args[0])
-			printUsage()
+			fmt.Fprintf(os.Stderr, "Unknown flag: %s\nRun 'k2s help' for usage.\n", args[0])
 			os.Exit(1)
 		}
 	}
 
-	// No subcommand — handle flags-only invocations.
-
-	// -t: test config and exit.
-	if *testConfig {
-		var out bytes.Buffer
-		if err := runTestConfig(resolveConfigPath(*configPath), &out); err != nil {
-			fmt.Fprintf(os.Stderr, "Configuration test failed: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Print(out.String())
-		return
+	if len(args) == 0 {
+		printUsage()
+		os.Exit(1)
 	}
 
-	// -s: send signal.
-	if *sendSignal != "" {
-		pidPath := resolvePIDPath(*configPath)
-		var out bytes.Buffer
-		if err := runSignal(*sendSignal, pidPath, &out); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Print(out.String())
-		return
-	}
+	cmd := args[0]
+	rest := args[1:]
 
-	// Default: run as foreground server.
-	runServer(*configPath)
+	switch cmd {
+	case "run":
+		cmdRun(rest)
+	case "setup":
+		cmdSetup(rest)
+	case "user":
+		cmdUser(rest)
+	case "config":
+		os.Exit(cmdConfig(rest))
+	case "service":
+		cmdService(rest)
+	case "upgrade":
+		cmdUpgrade(rest)
+	case "version":
+		fmt.Printf("k2s %s (%s)\n", version, commit)
+	case "help", "--help", "-h":
+		printUsage()
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\nRun 'k2s help' for usage.\n", cmd)
+		os.Exit(1)
+	}
 }
 
 // resolveConfigPath returns cfgFlag if set, else the empty string (caller will search).
@@ -121,27 +91,75 @@ func resolvePIDPath(cfgFlag string) string {
 func printUsage() {
 	fmt.Fprintf(os.Stderr, `k2s — Kaitu network tunnel server
 
-Usage:
-  k2s [-c config]              Start server (foreground)
-  k2s -t [-c config]           Test configuration and exit
-  k2s -s stop|reload           Send signal to running server
-  k2s -v                       Show version and exit
+Quick start:
+  k2s run                   Deploy server (prints connect URL)
 
-  k2s setup                    Interactive setup wizard (config + service + URL)
-  k2s setup --reset            Re-run wizard (preserves certs and users)
-  k2s user add <name>          Add user and print connect URL
-  k2s user list                List all users
-  k2s user del <name>          Delete user
-  k2s user reset <name>        Regenerate token for user
-  k2s service install          Install system service
-  k2s service uninstall        Remove system service
-  k2s upgrade [--check]        Check for and install updates
-  k2s upgrade --channel=beta   Switch to beta update channel
-  k2s upgrade --channel=stable Switch to stable update channel
-  k2s demo-config              Print example server config (YAML)
-  k2s version                  Show version info
+Commands:
+  run       Start/deploy server
+  setup     Setup wizard (or --port/--username for automation)
+  user      User management (add, list, del, reset)
 
-Client: use k2 binary for client deployment.
+  config    Configuration (test, show)
+  service   System service (install, uninstall)       [root]
+  upgrade   Self-update
+  version   Version info
+
+Flags:
+  --json    Machine-readable JSON output
+  --quiet   Minimal output
+  --help    Help for any command
 `)
 }
 
+// cmdRun handles "k2s run [--foreground] [-c config]".
+func cmdRun(args []string) {
+	fs := flag.NewFlagSet("k2s run", flag.ExitOnError)
+	foreground := fs.Bool("foreground", false, "stay in foreground (for service managers)")
+	configPath := fs.String("c", "", "config file path")
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, `Start or deploy k2s server.
+
+Usage: k2s run [flags]
+
+  Without --foreground: run server in foreground (default for now).
+  With --foreground: same behavior, explicit for service manager usage.
+
+Flags:
+`)
+		fs.PrintDefaults()
+	}
+	fs.Parse(args)
+	_ = *foreground // Both paths run foreground for now
+	runServer(*configPath)
+}
+
+// cmdConfig handles "k2s config <test|show>".
+func cmdConfig(args []string) int {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprintf(os.Stderr, "Usage: k2s config <test|show>\n\n  test  Test configuration\n  show  Print example config\n")
+		if len(args) == 0 {
+			return 1
+		}
+		return 0
+	}
+	switch args[0] {
+	case "test":
+		fs := flag.NewFlagSet("k2s config test", flag.ExitOnError)
+		cfgPath := fs.String("c", "", "config file path")
+		fs.Parse(args[1:])
+		var buf bytes.Buffer
+		if err := runTestConfig(resolveConfigPath(*cfgPath), &buf); err != nil {
+			out.fail("INVALID_CONFIG", err.Error(), "")
+			return 2
+		}
+		out.printResult(buf.String())
+		out.ok(map[string]string{"status": "ok"})
+		return 0
+	case "show":
+		fmt.Print(demoConfig)
+		return 0
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown config subcommand: %s\n", args[0])
+		return 1
+	}
+}

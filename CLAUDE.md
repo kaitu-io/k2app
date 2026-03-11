@@ -16,14 +16,16 @@ make quick-check                   # go vet + golangci-lint + go test -short -ra
 make pre-release                   # quick-check + full tests + contract tests + cross-compile
 make appext-ios                    # iOS xcframework (gomobile bind)
 make appext-android                # Android aar (gomobile bind)
+k2 connect <k2v5://URL>            # Direct connect (foreground, proxy mode)
 k2 setup <k2v5://URL>              # First-time: generate config + install service + start
-k2 ctl up                          # Connect (uses saved config)
-k2 ctl status                      # Connection status JSON
-k2 ctl down                        # Disconnect
-k2 service install                 # Install as system service
-k2 service uninstall               # Remove system service
-k2s setup                          # Server: install service + print connect URL
-k2s -c server.yaml                 # Server with explicit config (foreground)
+k2 up                              # Connect (via daemon, uses saved config)
+k2 down                            # Disconnect
+k2 status                          # Connection status
+k2 run                             # Start daemon (service entry point)
+k2s run                            # Deploy server (auto-config, prints URL)
+k2s setup                          # Server: interactive setup wizard
+k2s setup --port 443 --username alice --no-firewall  # Automated setup
+k2s user add <name>                # Add user, print connect URL
 docker compose up --build           # Docker: server + init container (docker/)
 ```
 

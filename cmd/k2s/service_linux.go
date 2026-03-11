@@ -19,8 +19,6 @@ func k2sUnitPath() string {
 }
 
 // installService installs k2s as a systemd service and starts it.
-// ExecStart uses only the binary path — the binary itself is the foreground
-// server process (nginx-style, no "run --foreground" args needed).
 func installService() error {
 	exe, err := resolveExecutable()
 	if err != nil {
@@ -33,7 +31,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=%s
+ExecStart=%s run --foreground
 Restart=always
 RestartSec=5
 
@@ -108,7 +106,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=%s -c %s
+ExecStart=%s run --foreground -c %s
 Restart=always
 RestartSec=5
 
