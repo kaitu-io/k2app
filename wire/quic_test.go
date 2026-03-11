@@ -8,9 +8,11 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"math/big"
 	"net"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1016,5 +1018,97 @@ func TestQUICClient_ConsecConnFails(t *testing.T) {
 	qc.handshakeFailStreak.Store(0)
 	if got := qc.ConsecConnFails(); got != 0 {
 		t.Fatalf("handshakeFailStreak = %d after reset, want 0", got)
+	}
+}
+
+// ============================================================================
+// SendDatagram timeout tests (Tasks 4 & 5)
+// ============================================================================
+
+// blockingDatagramSender is a mock datagramSender whose SendDatagram blocks
+// until stop is closed. This allows tests to clean up the goroutine after timeout.
+type blockingDatagramSender struct {
+	stop chan struct{}
+}
+
+func newBlockingDatagramSender() *blockingDatagramSender {
+	return &blockingDatagramSender{stop: make(chan struct{})}
+}
+
+func (b *blockingDatagramSender) SendDatagram([]byte) error {
+	<-b.stop
+	return errors.New("stopped")
+}
+
+func (b *blockingDatagramSender) LocalAddr() net.Addr {
+	return &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0}
+}
+
+// TestQuicUDPConn_WriteTo_SendDatagramTimeout verifies that when SendDatagram
+// blocks forever (congested 32-frame queue), WriteTo returns ErrDatagramSendTimeout
+// after ~2s instead of blocking indefinitely.
+func TestQuicUDPConn_WriteTo_SendDatagramTimeout(t *testing.T) {
+	mux := &quicUDPMux{
+		sessions:   make(map[uint32]chan *UDPFrame),
+		lastActive: make(map[uint32]*atomic.Int64),
+		done:       make(chan struct{}),
+	}
+
+	sender := newBlockingDatagramSender()
+	defer close(sender.stop)
+
+	conn := &quicUDPConn{
+		qconn:      sender,
+		sessionID:  1,
+		targetAddr: "8.8.8.8:53",
+		mux:        mux,
+		readCh:     make(chan *UDPFrame, 1),
+		done:       make(chan struct{}),
+	}
+
+	start := time.Now()
+	n, err := conn.WriteTo([]byte("hello"), nil)
+	elapsed := time.Since(start)
+
+	if err != ErrDatagramSendTimeout {
+		t.Fatalf("WriteTo err = %v, want ErrDatagramSendTimeout", err)
+	}
+	if n != 0 {
+		t.Fatalf("WriteTo n = %d, want 0", n)
+	}
+	// Timeout should be ~2s (sendDatagramTimeout). Allow 1.5s–4s window.
+	if elapsed < 1500*time.Millisecond || elapsed > 4*time.Second {
+		t.Fatalf("WriteTo took %v, want ~2s", elapsed)
+	}
+}
+
+// TestServerUDPConn_WriteTo_SendDatagramTimeout verifies that when SendDatagram
+// blocks forever on the server side, WriteTo returns ErrDatagramSendTimeout
+// after ~2s instead of blocking indefinitely.
+func TestServerUDPConn_WriteTo_SendDatagramTimeout(t *testing.T) {
+	sender := newBlockingDatagramSender()
+	defer close(sender.stop)
+
+	conn := &serverUDPConn{
+		qconn:     sender,
+		sessionID: 1,
+		addr:      "192.168.1.1:1234",
+		readCh:    make(chan []byte, 1),
+		done:      make(chan struct{}),
+	}
+
+	start := time.Now()
+	n, err := conn.WriteTo([]byte("hello"), nil)
+	elapsed := time.Since(start)
+
+	if err != ErrDatagramSendTimeout {
+		t.Fatalf("WriteTo err = %v, want ErrDatagramSendTimeout", err)
+	}
+	if n != 0 {
+		t.Fatalf("WriteTo n = %d, want 0", n)
+	}
+	// Timeout should be ~2s (sendDatagramTimeout). Allow 1.5s–4s window.
+	if elapsed < 1500*time.Millisecond || elapsed > 4*time.Second {
+		t.Fatalf("WriteTo took %v, want ~2s", elapsed)
 	}
 }
