@@ -137,14 +137,14 @@ from `OnCongestionEventEx`. Independent of per-MI loss attribution.
 ## Files
 
 - `arc.go` — `K2ARC` struct, MI-based rate control, utility gradient computation, AIMD-ε, `ARCSnapshot`/`Snapshot()`
-- `arcc_test.go` — ~50 test functions (convergence, loss tolerance, rate bounds, stale loss filtering, snapshot fallback, AIMD-ε, ackRate tracker, CongestionControlEx, app-limited anchor, stable probing, slow start saturation, α clamping)
+- `arcc_test.go` — ~57 test functions (convergence, loss tolerance, rate bounds, stale loss filtering, snapshot fallback, AIMD-ε, ackRate tracker, CongestionControlEx, app-limited anchor, stable probing, slow start saturation, α clamping)
 - `arc_integration_test.go` — QUIC integration tests: real client+server bulk transfer with UDP relay (delay, loss, rate limiting), MI completion hook for per-MI diagnostics
 - `helpers_test.go` — test fixtures
 
 ## Testing
 
 ```bash
-go test ./wire/arc/...                                    # all tests (~60)
+go test ./wire/arc/...                                    # all tests (~63)
 go test ./wire/arc/... -run TestIntegration -v            # integration tests only
 go test ./wire/arc/... -run TestConvergence_Benchmark -v  # convergence: loss × RTT matrix (17 scenarios)
 go test ./wire/arc/... -run TestDescent_Benchmark -v      # descent: rate starts above bandwidth (13 scenarios)

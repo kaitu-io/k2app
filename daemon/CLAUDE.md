@@ -12,9 +12,10 @@ State values: `disconnected`, `connecting`, `connected`, `reconnecting`, `paused
 
 ## Concurrency Model
 
-- `opMu sync.Mutex` — serializes doUp/doDown (coarse lifecycle lock)
-- `mu sync.RWMutex` — protects field access (fine-grained data lock)
-- `sseMu sync.RWMutex` — protects SSE client map
+- `opMu deadlock.Mutex` — serializes doUp/doDown (coarse lifecycle lock)
+- `abortUp atomic.Bool` — doDown sets before opMu.Lock; doUp checks after Start
+- `mu deadlock.RWMutex` — protects field access (fine-grained data lock)
+- `sseMu deadlock.RWMutex` — protects SSE client map
 - `closeTunnel()` — idempotent teardown, caller must hold opMu
 
 ## API
@@ -54,18 +55,24 @@ Request/Response: `daemon.Request{Action, Params}` / `daemon.Response{Code, Mess
 
 **doUp(cfg *ClientConfig, pid int)**:
 1. `opMu.Lock()` — serialize with other doUp/doDown
-2. `closeTunnel()` — unconditional teardown (engine.Stop fires OnStatus(disconnected))
-3. `eng := engine.New()` + `eng.SetEventHandler(d)` — daemon receives events from this point
-4. `engineConfigFromClientConfig(cfg)` — assemble `engine.Config` with platform fields
-5. `d.StartFunc(eng, cfg)` — engine fires OnStatus(connecting), then OnStatus(connected) or error
-6. Start PID monitor if requested
-7. Persist state for auto-reconnect
+2. `abortUp.Store(false)` — reset on new up
+3. `closeTunnel()` — unconditional teardown (engine.Stop fires OnStatus(disconnected))
+4. Network monitor + directdial setup
+5. `engineConfigFromClientConfig(cfg)` — assemble `engine.Config` with platform fields
+6. `eng := engine.New()` + `eng.SetEventHandler(d)` — daemon receives events from this point
+7. **Early abort check**: if `abortUp.Load()` → return error (doDown arrived during setup)
+8. `d.StartFunc(eng, cfg)` — engine fires OnStatus(connecting), then OnStatus(connected) or error
+9. **Post-start abort check**: if `abortUp.Load()` → `eng.Stop()` + return error (doDown arrived during Start)
+10. Install engine, start PID monitor, persist state for auto-reconnect
 
 Error path: engine's fail() fires OnStatus(disconnected+error) → daemon's lastStatus updated automatically.
+Abort path: both Start and Stop happen within the same opMu critical section — route atomicity guaranteed.
 
 **doDown()**:
-1. `opMu.Lock()` — serialize
-2. `closeTunnel()` — `engine.Stop()` fires OnStatus(disconnected)
+1. `abortUp.Store(true)` — signal before acquiring lock (doUp can detect pending down)
+2. `opMu.Lock()` — serialize (blocks until doUp releases)
+3. `abortUp.Store(false)` — reset after acquiring
+4. `closeTunnel()` — `engine.Stop()` fires OnStatus(disconnected)
 
 ## Files
 
@@ -85,12 +92,14 @@ Error path: engine's fail() fires OnStatus(disconnected+error) → daemon's last
 - `service_darwin.go` — macOS launchd plist (`io.kaitu.k2`)
 - `service_linux.go` — Linux systemd unit (`k2.service`) + OpenWRT init.d/procd (auto-detected)
 - `service_windows.go` — Windows Service
-- `directdial.go` — `directDialer` (implements `wire.DirectDialer`, sing-tun interface binding)
-- `paths.go` — `cacheDir()`, `logDir()` (platform-specific cache/log directories)
+- `directdial.go` / `directdial_test.go` — `directDialer` (implements `wire.DirectDialer`, sing-tun interface binding)
+- `network_monitor.go` / `network_monitor_test.go` — Desktop network change detection (WiFi/cellular switch)
+- `paths.go` / `paths_test.go` — `cacheDir()`, `logDir()` (platform-specific cache/log directories)
+- `slog_migration_test.go` — Guard: no old `log.Printf` calls in daemon package
 - `wintun/` — wintun.dll embedding (amd64 + arm64) + runtime arch detection via `IsWow64Process2`
 
 ## Testing
 
 ```bash
-go test ./daemon/...    # Tests for api, state, process, rlimit
+go test ./daemon/...    # Tests for api, state, process, rlimit, abort
 ```

@@ -1,6 +1,6 @@
 # Wire Layer (wire/ — k2v5 composite protocol)
 
-~260 test functions. QUIC/H3 primary, TCP-WS/smux fallback.
+~330 test functions. QUIC/H3 primary, TCP-WS/smux fallback.
 
 ## Interfaces (wire.go)
 
@@ -89,6 +89,6 @@ Fields: UDID, Token, Host, Port, ECH, Fingerprint, HopStart, HopEnd, Insecure, P
 ## Testing
 
 ```bash
-go test ./wire/...                          # ~260 tests (unit + integration + contract + rotation + CA)
+go test ./wire/...                          # ~330 tests (unit + integration + contract + rotation + CA)
 go test -run TestContract -v ./wire/...     # contract tests only
 ```

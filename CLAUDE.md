@@ -126,6 +126,7 @@ wire/k2v5-protocol-spec.md    k2v5 protocol specification (TLS, ECH, camouflage,
 wire/VOCABULARY.md             Three-layer vocabulary convention (Wire/Relay/Tunnel)
 wire/arc/CLAUDE.md             PCC Vivace congestion control
 appext/CLAUDE.md               App extension shell: gomobile SDK (macOS sysext, iOS, Android)
+safego/                        Panic-safe goroutine launcher (Go() wraps recover + slog)
 test/CLAUDE.md                 E2E integration tests
 docs/features/                 Feature specs (cloud-webapp, mobile-sdk, private-ip-guard, etc.)
 docs/knowledge/                Distilled patterns (architecture, bugfix, gotchas, testing, tasks)
@@ -274,7 +275,19 @@ docs/todos/p2-*.md     Nice to have
 
 ## Status
 
-**Done**: Full L4 architecture, wire protocol (QUIC+TCP-WS), DNS middleware (L3+L4 + RFC 8767 stale-while-revalidate + sing-box persistent UDP pooling), auth, ECH (DNS-based forging + config rotation), TLS record padding, dual certs (RSA+EC), client CA pool (system + Kaitu CA - Chinese CAs), PCC, client tunnel, server handlers, e2e tests, zero-config server startup, k2/k2s binaries (k2s interactive wizard + upgrade command + beta channel), appext SDK (gomobile, macOS sysext+iOS+Android, iOS GOGC=10 memory optimization), tproxy provider (OpenWRT/Linux), OpenWRT service management (init.d/procd), wire observability (K2CC metrics + TX/RX counting + HealthMonitor FSM + TCP health gate + background QUIC probe), protocol sniffing (TLS SNI, QUIC SNI, HTTP Host, BitTorrent, STUN, DTLS + QUIC blocking with ICMP Port Unreachable), Happy Eyeballs (RFC 8305 IPv6/IPv4 address selection), transport behavior contract tests (12 scenarios in wire/ + engine/), quality gates (`make quick-check` / `make pre-release`), goleak goroutine leak detection
+**Done**:
+- L4 architecture, wire protocol (QUIC+TCP-WS), DNS middleware (L3+L4, stale-while-revalidate, persistent UDP pooling)
+- Auth, ECH (DNS-based forging + config rotation), TLS record padding, dual certs (RSA+EC), CA pool (system + Kaitu CA - Chinese CAs)
+- PCC (K2CC Vivace congestion control with AIMD-ε, ackRate cwnd compensation)
+- Client tunnel, server handlers, e2e tests, zero-config server startup
+- k2/k2s binaries (k2s interactive wizard + upgrade command + beta channel)
+- appext SDK (gomobile, macOS sysext+iOS+Android, iOS GOGC=10 memory optimization)
+- tproxy provider (OpenWRT/Linux), OpenWRT service management (init.d/procd)
+- Wire observability (K2CC metrics + TX/RX counting + HealthMonitor FSM + TCP health gate + background QUIC probe)
+- Protocol sniffing (TLS/QUIC/HTTP/BT/STUN/DTLS + QUIC blocking with ICMP Port Unreachable)
+- Happy Eyeballs (RFC 8305), transport behavior contract tests (20 scenarios in wire/ + engine/)
+- Quality gates (`make quick-check` / `make pre-release`), goleak goroutine leak detection
+- safego package (panic-safe goroutine launcher), daemon doUp abort mechanism
 
 ## Platform Mapping
 

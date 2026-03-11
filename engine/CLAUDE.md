@@ -28,7 +28,8 @@ Platform Shell (daemon/appext)
 
 ## State Machine
 
-4 states: `disconnected`, `connecting`, `connected`, `paused`
+4 engine states: `disconnected`, `connecting`, `connected`, `paused`
+2 handler-only transient values: `reconnecting`, `paused` (engine.state stays `connected`)
 
 - `Start()`: disconnected → connecting → connected (or disconnected on error)
 - `Stop()`: any → disconnected (idempotent, resets `paused`)
@@ -80,6 +81,9 @@ HTTP-aligned error codes for frontend consumption:
 - `happy_eyeballs.go` — `resolveDialAddr`, `happyEyeballs` (RFC 8305 IPv6/IPv4 race with 250ms head start)
 - `dns_handler.go` — `dnsHandler` (port 53 TCP+UDP interception, RFC 1035 TCP framing)
 - `network.go` — `NetworkChangeNotifier` interface
+- `engine_test.go` — Engine lifecycle tests
+- `deadlock_test.go` — Deadlock detection tests (Stop vs health goroutine)
+- `slog_migration_test.go` — Guard: no old `log.Printf` calls
 
 ## Testing
 
