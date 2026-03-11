@@ -86,7 +86,7 @@ Fields: UDID, Token, Host, Port, ECH, Fingerprint, HopStart, HopEnd, Insecure, P
 - QUIC flow control is platform-specific (build tags `ios || android` vs desktop) — mobile uses smaller windows (2 MB stream / 8 MB conn vs 8 MB / 20 MB desktop) to stay under iOS NE jetsam limit.
 - QUIC stream responses have 5s timeout to prevent indefinite blocking on slow/dead servers.
 - `DialTCP(ctx, addr, earlyData)` sends earlyData after stream header, before reading server response. Server's `bufio.Reader` naturally buffers it during header parsing; `pipe()` consumes it after upstream dial. Saves 1 RTT on high-latency links. Backward compatible — old servers handle it without changes. Pass `nil` for no early data.
-- `SendDatagram` has 2s timeout (`sendDatagramTimeout`, `ErrDatagramSendTimeout`) — quic-go's 32-frame datagram queue blocks indefinitely under congestion. Timeout converts blocking into dropping (protocol-correct for unreliable DATAGRAM). Applies to both client `quicUDPConn.WriteTo` and server `serverUDPConn.WriteTo`.
+- `SendDatagram` uses atomic inflight counter (`maxDatagramInflight=32`, `ErrDatagramSendTimeout`) — quic-go's 32-frame datagram queue blocks indefinitely under congestion. When concurrent SendDatagram calls exceed the limit, excess packets are dropped immediately (protocol-correct for unreliable DATAGRAM). No goroutine spawned — avoids leak when SendDatagram blocks. Applies to both client `quicUDPConn.WriteTo` (via `quicUDPMux.sendInflight`) and server `serverUDPConn.WriteTo` (via `connUDPState.sendInflight`).
 
 ## Testing
 

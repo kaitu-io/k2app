@@ -38,14 +38,13 @@ const maxServerUDPSessions = 4096
 // monitor to skip reconnect when TCP streams are working.
 const tcpHealthWindow = 30 * time.Second
 
-// ErrDatagramSendTimeout is returned when SendDatagram blocks longer than sendDatagramTimeout.
-var ErrDatagramSendTimeout = errors.New("wire: SendDatagram timeout")
+// ErrDatagramSendTimeout is returned when concurrent SendDatagram calls exceed maxDatagramInflight.
+var ErrDatagramSendTimeout = errors.New("wire: SendDatagram queue saturated")
 
-// sendDatagramTimeout is the maximum time to wait for SendDatagram to enqueue.
-// When the 32-frame datagram queue is full and K2CC pacing is slow,
-// SendDatagram blocks indefinitely. This timeout converts block into drop —
-// acceptable for unreliable DATAGRAM semantics.
-const sendDatagramTimeout = 2 * time.Second
+// maxDatagramInflight caps concurrent SendDatagram calls per connection.
+// Matches quic-go's 32-frame datagram queue. Beyond this limit, packets
+// are dropped immediately — protocol-correct for unreliable DATAGRAM.
+const maxDatagramInflight int32 = 32
 
 // datagramSender abstracts the QUIC connection methods used by quicUDPConn
 // and serverUDPConn. Enables testing with mock connections.
@@ -134,10 +133,11 @@ func (o *udpOverflowStream) close() {
 // Both the datagram reader and overflow stream reader share this state so that
 // packets from the same session ID are delivered to the same serverUDPConn.
 type connUDPState struct {
-	mu       deadlock.Mutex
-	sessions map[uint32]*serverUDPConn
-	overflow *udpOverflowStream
-	done     chan struct{}
+	mu           deadlock.Mutex
+	sessions     map[uint32]*serverUDPConn
+	overflow     *udpOverflowStream
+	done         chan struct{}
+	sendInflight atomic.Int32 // concurrent SendDatagram calls in progress
 }
 
 // DefaultQUICConfig returns the QUIC configuration.
@@ -948,12 +948,13 @@ func (s *QUICServer) deliverToSession(state *connUDPState, conn *quic.Conn, fram
 			return
 		}
 		sess = &serverUDPConn{
-			qconn:     conn,
-			sessionID: frame.SessionID,
-			addr:      frame.Addr,
-			readCh:    make(chan []byte, 32),
-			done:      make(chan struct{}),
-			overflow:  state.overflow,
+			qconn:        conn,
+			sessionID:    frame.SessionID,
+			addr:         frame.Addr,
+			readCh:       make(chan []byte, 32),
+			done:         make(chan struct{}),
+			overflow:     state.overflow,
+			sendInflight: &state.sendInflight,
 		}
 		state.sessions[frame.SessionID] = sess
 
@@ -1072,6 +1073,8 @@ type quicUDPMux struct {
 	// Sustained recovery tracking: consecutive recvs without timeout.
 	// After relayRecoveryRecvs consecutive receives, hop counters reset.
 	consecutiveRecvs atomic.Int32
+
+	sendInflight atomic.Int32 // concurrent SendDatagram calls in progress
 }
 
 const (
@@ -1296,25 +1299,17 @@ func (c *quicUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 func (c *quicUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
 	frame, put := MarshalUDPFrame(c.sessionID, c.targetAddr, b)
 
-	// SendDatagram may block indefinitely when the 32-frame datagram queue
-	// is full. Use a timeout to convert blocking into dropping — DATAGRAM
-	// semantics are unreliable, so dropping is protocol-correct.
-	type sendResult struct{ err error }
-	ch := make(chan sendResult, 1)
-	go func() {
-		ch <- sendResult{c.qconn.SendDatagram(frame)}
-	}()
-
-	var err error
-	select {
-	case r := <-ch:
-		err = r.err
-	case <-time.After(sendDatagramTimeout):
+	// Atomic inflight check: drop immediately when queue is saturated.
+	// No goroutine spawned — avoids leak when SendDatagram blocks indefinitely.
+	if c.mux.sendInflight.Add(1) > maxDatagramInflight {
+		c.mux.sendInflight.Add(-1)
 		put()
 		c.mux.recordTimeout()
 		return 0, ErrDatagramSendTimeout
 	}
-	put() // SendDatagram copies internally; safe to return buffer to pool
+	err := c.qconn.SendDatagram(frame)
+	c.mux.sendInflight.Add(-1)
+	put()
 
 	if err == nil {
 		c.txPackets.Add(1)
@@ -1368,14 +1363,15 @@ func (c *quicUDPConn) SetWriteDeadline(time.Time) error    { return nil }
 // ============================================================================
 
 type serverUDPConn struct {
-	qconn     datagramSender
-	sessionID uint32
-	addr      string
-	readCh    chan []byte
-	done      chan struct{}
-	closeOnce sync.Once
-	rd        readDeadline
-	overflow  *udpOverflowStream // per-packet overflow for oversized datagrams
+	qconn        datagramSender
+	sessionID    uint32
+	addr         string
+	readCh       chan []byte
+	done         chan struct{}
+	closeOnce    sync.Once
+	rd           readDeadline
+	overflow     *udpOverflowStream // per-packet overflow for oversized datagrams
+	sendInflight *atomic.Int32      // shared across all sessions on this connection
 }
 
 var _ net.PacketConn = (*serverUDPConn)(nil)
@@ -1411,20 +1407,14 @@ func (c *serverUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
 	// Empty addr for response frames (client already knows the target)
 	frame, put := MarshalUDPFrame(c.sessionID, "", b)
 
-	type sendResult struct{ err error }
-	ch := make(chan sendResult, 1)
-	go func() {
-		ch <- sendResult{c.qconn.SendDatagram(frame)}
-	}()
-
-	var err error
-	select {
-	case r := <-ch:
-		err = r.err
-	case <-time.After(sendDatagramTimeout):
+	// Atomic inflight check: drop immediately when queue is saturated.
+	if c.sendInflight.Add(1) > maxDatagramInflight {
+		c.sendInflight.Add(-1)
 		put()
 		return 0, ErrDatagramSendTimeout
 	}
+	err := c.qconn.SendDatagram(frame)
+	c.sendInflight.Add(-1)
 	put()
 
 	if err == nil {
