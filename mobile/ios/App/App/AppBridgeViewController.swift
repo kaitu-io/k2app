@@ -29,11 +29,11 @@ class AppBridgeViewController: CAPBridgeViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        // DIAGNOSTIC: unconditionally enable isInspectable to test if Safari can see the WebView
+        #if DEBUG
         if #available(iOS 16.4, *) {
             webView?.isInspectable = true
-            NSLog("[AppBridge] viewDidLoad: FORCED isInspectable=true, webView=%@", webView != nil ? "exists" : "nil")
         }
+        #endif
         NotificationCenter.default.addObserver(self, selector: #selector(handleDevEnabledChanged(_:)), name: Notification.Name("k2DevEnabledChanged"), object: nil)
     }
 
