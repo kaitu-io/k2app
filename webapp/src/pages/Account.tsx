@@ -75,23 +75,8 @@ export default function Account() {
   const [selectedLanguage, setSelectedLanguage] = useState<LanguageCode>(i18n.language as LanguageCode || 'zh-CN');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
-  const [shouldShowSlogan, setShouldShowSlogan] = useState(false);
-
   useEffect(() => {
     setAppVersion(window._platform!.version);
-
-    // Slogan delay: show after 7 days from first launch
-    const FIRST_LAUNCH_KEY = 'k2_first_launch';
-    const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
-    const stored = localStorage.getItem(FIRST_LAUNCH_KEY);
-    if (!stored) {
-      localStorage.setItem(FIRST_LAUNCH_KEY, Date.now().toString());
-    } else {
-      const elapsed = Date.now() - parseInt(stored);
-      if (elapsed >= SEVEN_DAYS_MS) {
-        setShouldShowSlogan(true);
-      }
-    }
   }, []);
 
   const maskEmail = (email: string) => {
@@ -246,19 +231,17 @@ export default function Account() {
           >
             Kaitu.io 开途
           </Typography>
-          {shouldShowSlogan && (
-            <Typography
-              variant="caption"
-              sx={{
-                color: 'rgba(255, 255, 255, 0.85)',
-                fontSize: '0.7rem',
-                mt: 0.5,
-                display: 'block'
-              }}
-            >
-              {t('common:brand.slogan')}
-            </Typography>
-          )}
+          <Typography
+            variant="caption"
+            sx={{
+              color: 'rgba(255, 255, 255, 0.85)',
+              fontSize: '0.7rem',
+              mt: 0.5,
+              display: 'block'
+            }}
+          >
+            {t('common:brand.slogan')}
+          </Typography>
         </CardContent>
       </Card>
 

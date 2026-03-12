@@ -84,7 +84,8 @@ export default function MemberSelection({
         // Select all members by default
         const allMemberUUIDs = memberList.map((member: { uuid: string }) => member.uuid);
         onSelectionChange(selectedForMyself, allMemberUUIDs);
-      } else {
+      } else if (code !== 401) {
+        // 401 is handled by cloudApi (token refresh / auth redirect), don't show alert
         console.warn('[MemberSelection] Fetch members failed, code:', code, 'msg:', message);
         showAlert(t('purchase:memberSelection.getMembersFailed'), "error");
       }

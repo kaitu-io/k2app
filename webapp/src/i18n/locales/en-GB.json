@@ -138,8 +138,7 @@
   },
   "brand": {
     "name": "drive a vehicle",
-    "slogan": "Part the Red Sea, from Egypt flee, set my people free",
-    "subtitle": "Enterprise-grade secure tunnels connecting every corner of the world"
+    "slogan": "Thrives where networks struggle"
   },
   "common": {
     "actionParseFailed": "Request resolution failure",
@@ -170,7 +169,7 @@
     "advancedOptionsInfo": "Click for detailed instructions",
     "advancedSettings": "Advanced Settings",
     "allLocations": "All locations",
-    "anonymityDescription": "## Connect to servers and visit websites using different IP addresses## to protect your real location from being tracked. It's like wearing a double mask for more secure privacy. Note: May slightly affect the speed, Pro exclusive features.",
+    "anonymityDescription": "## Connect to servers and visit websites using different IP addresses## to protect your real location from being tracked. It's like wearing a double mask for more secure privacy. Note: May slightly affect the speed, membership exclusive features.",
     "autoSelect": "Auto Select",
     "autoSwitch": "Auto Switch",
     "autoSwitchAlwaysEnabled": "Intelligent switching is enabled",
@@ -179,7 +178,7 @@
     "autoSwitchInCountry": "Smart Switch",
     "autoSwitchInfo": "The system automatically switches to other available nodes in the country depending on the network conditions",
     "autoSwitchLabel": "Automatically switch to other nodes in this country based on network conditions",
-    "concurrentDescription": "##Use multiple nodes ### at the same time to make connections faster and more stable. It's like travelling on multiple roads at the same time, when one is blocked there are other roads to travel on. Especially effective when the ## network is limited ## Pro Exclusive feature.",
+    "concurrentDescription": "##Use multiple nodes ### at the same time to make connections faster and more stable. It's like travelling on multiple roads at the same time, when one is blocked there are other roads to travel on. Especially effective when the ## network is limited ## membership exclusive feature.",
     "connectionRetrying": "Server connection failed, trying to retry...",
     "currentSelectedNode": "Current Selected Node",
     "disconnectToModify": "Please disconnect first to modify",
@@ -296,10 +295,10 @@
     "unknown": "Unknown error, please try again later",
     "unknownError": "unknown error",
     "vpn": {
-      "reconnectFailed": "Failed to reconnect VPN",
-      "startFailed": "Failed to start VPN",
-      "stopFailed": "Failed to stop VPN",
-      "timeout": "VPN operation timed out"
+      "reconnectFailed": "Failed to reconnect",
+      "startFailed": "Failed to start service",
+      "stopFailed": "Failed to stop service",
+      "timeout": "Operation timed out"
     }
   },
   "faq": {
@@ -608,9 +607,9 @@
     "paymentFailed": "Payment Failed",
     "paymentResultConfirm": "Payment Result Confirmation",
     "paymentSuccess": "Payment Successful",
-    "proAuthorization": "Pro Authorisation {{months}} months",
-    "proAuthorizationMultiple": "Pro Authorisation {{months}} months × {{count}} users",
-    "proMemberBenefits": "Pro Member Exclusive Benefits",
+    "memberAuthorization": "Membership {{months}} months",
+    "memberAuthorizationMultiple": "Membership {{months}} months × {{count}} users",
+    "memberBenefits": "Member Benefits",
     "refreshUserProfileFailed": "Failed to refresh user profile",
     "saveAmount": "Save ${{amount}}",
     "selectAtLeastOneTarget": "Please select at least one payment target",
@@ -809,7 +808,7 @@
   },
   "troubleshooting": {
     "securitySoftware": {
-      "description": "If the VPN connection is blocked by security software such as 360, Tencent Butler, etc., please check the setup guide",
+      "description": "If the connection is blocked by security software such as 360, Tencent Butler, etc., please check the setup guide",
       "title": "Security software whitelist settings"
     },
     "serverList": {
@@ -857,7 +856,7 @@
     "multiThreading": "Multi-threading",
     "no": "×",
     "oneDevice": "1 Device",
-    "proVersion": "Pro Version",
+    "memberVersion": "Member Version",
     "techSupport": "Technical Support",
     "twoHours": "2 Hours",
     "unlimited": "Unlimited",

@@ -42,10 +42,10 @@ const levelColors: Record<number, string> = {
 // 获取等级的本地化名称
 const getLevelName = (level: number, t: (key: string) => string): string => {
   const levelKeys: Record<number, string> = {
-    1: 'retailerStats.levelL1',
-    2: 'retailerStats.levelL2',
-    3: 'retailerStats.levelL3',
-    4: 'retailerStats.levelL4',
+    1: 'retailer:retailerStats.levelL1',
+    2: 'retailer:retailerStats.levelL2',
+    3: 'retailer:retailerStats.levelL3',
+    4: 'retailer:retailerStats.levelL4',
   };
   return t(levelKeys[level] || levelKeys[1]);
 };

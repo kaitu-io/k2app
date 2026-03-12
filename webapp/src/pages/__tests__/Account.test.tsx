@@ -265,40 +265,11 @@ describe('Account', () => {
     // Slogan text from zh-CN common.json brand.slogan
     const findSlogan = () => {
       // The slogan is rendered inside a Typography, search by partial match
-      const sloganElements = screen.queryAllByText(/开红海/);
+      const sloganElements = screen.queryAllByText(/越拥堵/);
       return sloganElements.length > 0 ? sloganElements[0] : null;
     };
 
-    it('首次启动不应显示 slogan', () => {
-      render(<Account />);
-      expect(findSlogan()).toBeNull();
-    });
-
-    it('首次启动应写入 k2_first_launch 时间戳', () => {
-      render(<Account />);
-      expect(localStorage.getItem('k2_first_launch')).not.toBeNull();
-    });
-
-    it('7天内不应显示 slogan', () => {
-      const threeDaysAgo = Date.now() - 3 * 24 * 60 * 60 * 1000;
-      localStorage.setItem('k2_first_launch', threeDaysAgo.toString());
-
-      render(<Account />);
-      expect(findSlogan()).toBeNull();
-    });
-
-    it('超过7天应显示 slogan', () => {
-      const eightDaysAgo = Date.now() - 8 * 24 * 60 * 60 * 1000;
-      localStorage.setItem('k2_first_launch', eightDaysAgo.toString());
-
-      render(<Account />);
-      expect(findSlogan()).not.toBeNull();
-    });
-
-    it('恰好7天应显示 slogan', () => {
-      const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-      localStorage.setItem('k2_first_launch', sevenDaysAgo.toString());
-
+    it('应始终显示 slogan', () => {
       render(<Account />);
       expect(findSlogan()).not.toBeNull();
     });

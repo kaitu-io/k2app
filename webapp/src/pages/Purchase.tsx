@@ -27,6 +27,7 @@ import { type Plan, type Order, type AppConfig } from "../services/api-types";
 import { ERROR_CODES } from "../utils/errorCode";
 import { LoadingState, EmptyPlans } from '../components/LoadingAndEmpty';
 import MemberSelection from '../components/MemberSelection';
+import MembershipBenefits from '../components/MembershipBenefits';
 import EmailLoginForm from '../components/EmailLoginForm';
 import {
   Warning as WarningIcon,
@@ -789,7 +790,10 @@ export default function Purchase() {
           </Box>
         )}
 
-        {/* Step 1: 登录/注册或成员选择 */}
+        {/* 会员权益 — 先展示价值，再要求行动 */}
+        <MembershipBenefits />
+
+        {/* 登录/注册或成员选择 */}
         <Box>
           {!isAuthenticated ? (
             <>
@@ -812,7 +816,7 @@ export default function Purchase() {
           )}
         </Box>
 
-        {/* 总价展示前，插入显著横幅 */}
+        {/* 邀请奖励横幅 */}
         {user?.inviteCode && appConfig?.inviteReward && (
           <Box sx={{
             mb: 1,
@@ -872,9 +876,9 @@ export default function Purchase() {
                     const planMonths = plans.find(p => p.pid === plan)?.month || 0;
                     const targetCount = (selectedForMyself ? 1 : 0) + selectedMemberUUIDs.length;
                     if (targetCount === 1) {
-                      return t('purchase:purchase.proAuthorization', { months: planMonths });
+                      return t('purchase:purchase.memberAuthorization', { months: planMonths });
                     } else {
-                      return t('purchase:purchase.proAuthorizationMultiple', { months: planMonths, count: targetCount });
+                      return t('purchase:purchase.memberAuthorizationMultiple', { months: planMonths, count: targetCount });
                     }
                   })()}
                   {user?.inviteCode && appConfig?.inviteReward && (

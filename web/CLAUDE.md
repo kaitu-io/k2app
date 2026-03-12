@@ -195,6 +195,39 @@ No special environment variables required. Build-time config (desktop version, d
 
 AWS Amplify (`amplify.yml`). Prebuild script (`scripts/amplify-prebuild.sh`) handles env setup.
 
+## SEO & GEO Constitutional Rules
+
+### SEO (Search Engine Optimization)
+
+Every public `[locale]` page MUST follow these rules. Violations directly harm organic traffic.
+
+**Technical SEO:**
+- Every public page must export `generateMetadata()` returning title, description, canonical URL, and Open Graph tags. No page ships without metadata.
+- Structured data (JSON-LD) required on all public pages: `Organization` (footer/layout), `SoftwareApplication` (install), `FAQPage` (support/guides), `BreadcrumbList` (content pages).
+- `sitemap.ts` must include all locale variants with `hreflang` alternates. New public routes must be added to sitemap.
+- Images must use `next/image` (auto WebP/AVIF, lazy loading) with descriptive `alt` text. Never use raw `<img>`.
+- Heading hierarchy must be strict: one `<h1>` per page, `<h2>` > `<h3>` nested logically. Never skip levels.
+- Meta descriptions: 120-160 characters, include primary keyword naturally. No keyword stuffing.
+- URLs must be semantic English short words (`/install`, `/purchase`, `/support`). No version suffixes, no IDs.
+- Internal linking: every public page reachable within 3 clicks from homepage.
+
+**Content SEO:**
+- Page titles follow pattern: `{Page Topic} | Kaitu` (zh) / `{Page Topic} | Kaitu` (en). Max 60 characters.
+- Every content page (Velite markdown) must have frontmatter with `title`, `description`. Description used for meta.
+- Brand keyword consistency: product is "Kaitu" (en) / "开途" (zh), protocol is "k2v5", congestion control is "k2cc". Never deviate.
+
+### GEO (Generative Engine Optimization — AI Search)
+
+Optimizing for AI search engines (Google AI Overview, Perplexity, ChatGPT Search). These rules ensure content is extractable and citable by LLMs.
+
+- **Citable facts over marketing**: Technical content must use factual statements + data that AI can directly quote. "k2cc maintains stable throughput under high packet loss" > "blazing fast speeds".
+- **FAQ with structured data**: Feature pages and support pages must have FAQ sections marked with `FAQPage` JSON-LD. Questions in natural language ("What is the difference between k2 and Clash?").
+- **Comparison tables in semantic HTML**: Protocol comparison tables must use `<table>` with `<thead>`/`<tbody>`. AI parsers extract tabular data. Never use CSS grid for comparison data.
+- **E-E-A-T signals**: Link to GitHub repo, changelog, technical docs. Show team/org info. These authority signals determine whether AI cites your content.
+- **Long-tail query coverage**: Create content pages answering specific technical queries ("What is ECH encryption?", "How does k2cc congestion control work?"). These are the queries AI search surfaces.
+- **Schema.org SoftwareApplication**: Install page must include `SoftwareApplication` schema with `name`, `operatingSystem`, `downloadUrl`, `applicationCategory`.
+- **Direct answers first**: Content pages should lead with a concise 1-2 sentence answer, then expand. AI extracts the first definitive statement.
+
 ## Gotchas
 
 - **`useTranslations()` pattern**: Must use `const t = useTranslations()` — destructuring `const { t }` does NOT work with next-intl.
