@@ -1081,6 +1081,58 @@ func TestTCPWSClient_ProbeContextCancellation(t *testing.T) {
 	}
 }
 
+// TestSmuxUDPMuxConcurrentClose verifies that calling smuxUDPMux.close()
+// concurrently from multiple goroutines does not panic (double-close of done channel).
+// This reproduces the race between readLoop defer and explicit close() during reconnect.
+func TestSmuxUDPMuxConcurrentClose(t *testing.T) {
+	server, client := net.Pipe()
+	defer server.Close()
+
+	serverDone := make(chan struct{})
+	go func() {
+		defer close(serverDone)
+		sSess, err := smux.Server(server, DefaultSmuxConfig())
+		if err != nil {
+			return
+		}
+		defer sSess.Close()
+		for {
+			s, err := sSess.AcceptStream()
+			if err != nil {
+				return
+			}
+			s.Close()
+		}
+	}()
+
+	sess, err := smux.Client(client, DefaultSmuxConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sess.Close()
+
+	stream, err := sess.OpenStream()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mux := newSmuxUDPMux(stream)
+	mux.start()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			mux.close()
+		}()
+	}
+	wg.Wait()
+
+	server.Close()
+	<-serverDone
+}
+
 // TestTCPWSClient_DialUDP_AfterReset verifies that after resetConnection(),
 // TCPWSClient.DialUDP can rebuild a new smux session and udpMux.
 // This simulates a network change: old session dies, new connection is established.

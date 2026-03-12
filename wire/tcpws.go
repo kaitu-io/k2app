@@ -708,6 +708,7 @@ type smuxUDPMux struct {
 	sessions   map[uint32]chan *UDPFrame
 	lastActive map[uint32]*atomic.Int64
 	done       chan struct{}
+	closeOnce  sync.Once
 	started    bool
 }
 
@@ -733,14 +734,12 @@ func (m *smuxUDPMux) start() {
 	go m.reapIdleSessions()
 }
 
+func (m *smuxUDPMux) closeDone() {
+	m.closeOnce.Do(func() { close(m.done) })
+}
+
 func (m *smuxUDPMux) readLoop() {
-	defer func() {
-		select {
-		case <-m.done:
-		default:
-			close(m.done)
-		}
-	}()
+	defer m.closeDone()
 	for {
 		frame, err := ReadSmuxUDPFrame(m.br)
 		if err != nil {
@@ -817,11 +816,7 @@ func (m *smuxUDPMux) reapIdleSessions() {
 }
 
 func (m *smuxUDPMux) close() {
-	select {
-	case <-m.done:
-	default:
-		close(m.done)
-	}
+	m.closeDone()
 	m.stream.Close()
 }
 
