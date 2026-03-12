@@ -59,7 +59,7 @@
     "connectionRetrying": "伺服器連線失敗，正在重試...",
     "serviceFailure": {
       "title": "服務連線失敗",
-      "message": "無法連線到 VPN 服務。請檢查服務是否正在執行。",
+      "message": "無法連線到加速服務。請檢查服務是否正在執行。",
       "resolve": "解決",
       "resolving": "正在解決...",
       "more": "更多",
@@ -68,11 +68,11 @@
     },
     "serviceError": {
       "title": "服務異常",
-      "subtitle": "VPN 核心服務未能正常運作",
+      "subtitle": "核心服務未能正常運作",
       "reason1Title": "自動更新未完成",
       "reason1Desc": "應用程式可能在更新過程中出現異常，導致服務元件未能正確安裝。",
       "reason2Title": "安全軟體攔截",
-      "reason2Desc": "360、騰訊管家等安全軟體可能誤將 VPN 服務識別為風險程式並阻止其執行。",
+      "reason2Desc": "360、騰訊管家等安全軟體可能誤將加速服務識別為風險程式並阻止其執行。",
       "solutionTitle": "解決方案",
       "solutionDesc": "請前往官網重新下載並安裝最新版本，即可修復此問題。",
       "downloadButton": "前往下載",
@@ -164,7 +164,7 @@
     "subtitle": "透過網速測試和網路修復來診斷網路連線問題",
     "securitySoftware": {
       "title": "安全軟體白名單設定",
-      "description": "如果 VPN 連線被 360、騰訊管家等安全軟體攔截，請查看設定指南"
+      "description": "如果連線被 360、騰訊管家等安全軟體攔截，請查看設定指南"
     },
     "serverList": {
       "show": "查看所有伺服器",

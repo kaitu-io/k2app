@@ -59,7 +59,7 @@
     "connectionRetrying": "Server connection failed, retrying...",
     "serviceFailure": {
       "title": "Service Connection Failed",
-      "message": "Unable to connect to VPN service. Please check if the service is running.",
+      "message": "Unable to connect to tunnel service. Please check if the service is running.",
       "resolve": "Resolve",
       "resolving": "Resolving...",
       "more": "More",
@@ -68,11 +68,11 @@
     },
     "serviceError": {
       "title": "Service Error",
-      "subtitle": "The VPN core service is not running properly",
+      "subtitle": "The core service is not running properly",
       "reason1Title": "Auto-Update Incomplete",
       "reason1Desc": "The application may have encountered an issue during update, causing service components to not install correctly.",
       "reason2Title": "Blocked by Security Software",
-      "reason2Desc": "Security software like 360 or Tencent PC Manager may have mistakenly identified the VPN service as a risk and blocked it.",
+      "reason2Desc": "Security software like 360 or Tencent PC Manager may have mistakenly identified the tunnel service as a risk and blocked it.",
       "solutionTitle": "Solution",
       "solutionDesc": "Please visit our website to download and reinstall the latest version to fix this issue.",
       "downloadButton": "Go to Download",
@@ -164,7 +164,7 @@
     "subtitle": "Diagnose network connection issues through speed test and network repair",
     "securitySoftware": {
       "title": "Security Software Whitelist Setup",
-      "description": "If VPN connection is blocked by security software like 360 or Tencent PC Manager, please check setup guide"
+      "description": "If connection is blocked by security software like 360 or Tencent PC Manager, please check setup guide"
     },
     "serverList": {
       "show": "Show All Servers",

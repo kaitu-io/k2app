@@ -7,7 +7,7 @@
     <key>CFBundleName</key>
     <string>KaituTunnel</string>
     <key>CFBundleDisplayName</key>
-    <string>Kaitu VPN Tunnel</string>
+    <string>Kaitu Tunnel</string>
     <key>CFBundleIdentifier</key>
     <string>io.kaitu.desktop.tunnel</string>
     <key>CFBundleVersion</key>
