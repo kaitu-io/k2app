@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/kaitu-io/k2/config"
@@ -18,8 +19,29 @@ type persistedState struct {
 }
 
 func stateFilePath() string {
-	dir := os.TempDir()
-	return filepath.Join(dir, "k2", "state.json")
+	return filepath.Join(stateDir(), "state.json")
+}
+
+// stateDir returns a platform-secure directory for persisted state.
+// Windows SYSTEM: %ProgramData%\k2 (admin-only ACL).
+// Windows user: %LocalAppData%\k2 (per-user).
+// macOS/Linux: os.TempDir()/k2 (per-user, 0700 enforced by OS).
+func stateDir() string {
+	if runtime.GOOS == "windows" {
+		if config.IsRoot() {
+			programData := os.Getenv("ProgramData")
+			if programData == "" {
+				programData = `C:\ProgramData`
+			}
+			return filepath.Join(programData, "k2")
+		}
+		base, err := os.UserCacheDir()
+		if err != nil {
+			return filepath.Join(os.TempDir(), "k2")
+		}
+		return filepath.Join(base, "k2")
+	}
+	return filepath.Join(os.TempDir(), "k2")
 }
 
 func saveState(st persistedState) {
