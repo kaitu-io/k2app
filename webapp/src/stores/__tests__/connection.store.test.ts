@@ -414,3 +414,211 @@ describe('Connection Store - State Guards', () => {
     expect(mockRun).not.toHaveBeenCalled();
   });
 });
+
+// ==================== VPN State Lifecycle Tests ====================
+
+describe('Connection Store - VPN State Lifecycle', () => {
+  it('clears connectedTunnel when VPN transitions to idle (daemon restart)', async () => {
+    const { useConnectionStore, vpn } = await getStores();
+
+    // Simulate: user was connected
+    vpn.dispatch('USER_CONNECT');
+    vpn.dispatch('BACKEND_CONNECTED');
+    useConnectionStore.setState({
+      connectedTunnel: {
+        source: 'cloud',
+        domain: 'tokyo.example.com',
+        name: 'Tokyo',
+        country: 'JP',
+        serverUrl: 'k2v5://tokyo.example.com:443',
+      },
+    });
+
+    // Initialize lifecycle subscription
+    const { initializeConnectionStore } = await import('../connection.store');
+    const cleanup = initializeConnectionStore();
+
+    // Simulate: daemon restart → backend reports disconnected
+    vpn.dispatch('BACKEND_DISCONNECTED');
+    expect(vpn.useVPNMachineStore.getState().state).toBe('idle');
+
+    // connectedTunnel should be cleared
+    expect(useConnectionStore.getState().connectedTunnel).toBeNull();
+
+    cleanup();
+  });
+
+  it('clears connectedTunnel when VPN transitions to idle from error state', async () => {
+    const { useConnectionStore, vpn } = await getStores();
+
+    vpn.dispatch('USER_CONNECT');
+    vpn.dispatch('BACKEND_ERROR', { error: { code: 570, message: 'fatal' } });
+    useConnectionStore.setState({
+      connectedTunnel: {
+        source: 'cloud',
+        domain: 'tokyo.example.com',
+        name: 'Tokyo',
+        country: 'JP',
+        serverUrl: 'k2v5://tokyo.example.com:443',
+      },
+    });
+
+    const { initializeConnectionStore } = await import('../connection.store');
+    const cleanup = initializeConnectionStore();
+
+    // Error → idle (backend finally reports disconnected)
+    vpn.dispatch('BACKEND_DISCONNECTED');
+    expect(vpn.useVPNMachineStore.getState().state).toBe('idle');
+
+    expect(useConnectionStore.getState().connectedTunnel).toBeNull();
+
+    cleanup();
+  });
+
+  it('clears connectedTunnel when VPN transitions to idle from serviceDown recovery', async () => {
+    const { useConnectionStore, vpn } = await getStores();
+
+    vpn.dispatch('USER_CONNECT');
+    vpn.dispatch('BACKEND_CONNECTED');
+    useConnectionStore.setState({
+      connectedTunnel: {
+        source: 'cloud',
+        domain: 'tokyo.example.com',
+        name: 'Tokyo',
+        country: 'JP',
+        serverUrl: 'k2v5://tokyo.example.com:443',
+      },
+    });
+
+    const { initializeConnectionStore } = await import('../connection.store');
+    const cleanup = initializeConnectionStore();
+
+    // Daemon crash → serviceDown → daemon restart → idle
+    vpn.dispatch('SERVICE_UNREACHABLE');
+    expect(useConnectionStore.getState().connectedTunnel).not.toBeNull(); // still set during serviceDown
+
+    vpn.dispatch('SERVICE_REACHABLE');
+    expect(vpn.useVPNMachineStore.getState().state).toBe('idle');
+    expect(useConnectionStore.getState().connectedTunnel).toBeNull();
+
+    cleanup();
+  });
+
+  it('does NOT clear connectedTunnel in non-idle states (error, reconnecting)', async () => {
+    const { useConnectionStore, vpn } = await getStores();
+
+    vpn.dispatch('USER_CONNECT');
+    vpn.dispatch('BACKEND_CONNECTED');
+    const tunnel = {
+      source: 'cloud' as const,
+      domain: 'tokyo.example.com',
+      name: 'Tokyo',
+      country: 'JP',
+      serverUrl: 'k2v5://tokyo.example.com:443',
+    };
+    useConnectionStore.setState({ connectedTunnel: tunnel });
+
+    const { initializeConnectionStore } = await import('../connection.store');
+    const cleanup = initializeConnectionStore();
+
+    // connected → error (should keep connectedTunnel for retry context)
+    vpn.dispatch('BACKEND_ERROR', { error: { code: 570, message: 'fatal' } });
+    expect(useConnectionStore.getState().connectedTunnel).toEqual(tunnel);
+
+    cleanup();
+  });
+
+  it('is idempotent with user-initiated disconnect (connectedTunnel already null)', async () => {
+    const { useConnectionStore, vpn } = await getStores();
+    mockRun.mockResolvedValue({ code: 0 });
+
+    vpn.dispatch('USER_CONNECT');
+    vpn.dispatch('BACKEND_CONNECTED');
+    useConnectionStore.setState({
+      connectedTunnel: {
+        source: 'cloud',
+        domain: 'tokyo.example.com',
+        name: 'Tokyo',
+        country: 'JP',
+        serverUrl: 'k2v5://tokyo.example.com:443',
+      },
+    });
+
+    const { initializeConnectionStore } = await import('../connection.store');
+    const cleanup = initializeConnectionStore();
+
+    // User-initiated disconnect clears connectedTunnel first
+    await useConnectionStore.getState().disconnect();
+    expect(useConnectionStore.getState().connectedTunnel).toBeNull();
+
+    // VPN transitions to idle — subscription fires but connectedTunnel is already null (no-op)
+    vpn.dispatch('BACKEND_DISCONNECTED');
+    expect(useConnectionStore.getState().connectedTunnel).toBeNull();
+
+    cleanup();
+  });
+
+  it('cleanup function unsubscribes from VPN state changes', async () => {
+    const { useConnectionStore, vpn } = await getStores();
+
+    vpn.dispatch('USER_CONNECT');
+    vpn.dispatch('BACKEND_CONNECTED');
+    const tunnel = {
+      source: 'cloud' as const,
+      domain: 'tokyo.example.com',
+      name: 'Tokyo',
+      country: 'JP',
+      serverUrl: 'k2v5://tokyo.example.com:443',
+    };
+    useConnectionStore.setState({ connectedTunnel: tunnel });
+
+    const { initializeConnectionStore } = await import('../connection.store');
+    const cleanup = initializeConnectionStore();
+    cleanup(); // unsubscribe
+
+    // After cleanup, VPN going idle should NOT clear connectedTunnel
+    vpn.dispatch('BACKEND_DISCONNECTED');
+    expect(useConnectionStore.getState().connectedTunnel).toEqual(tunnel);
+  });
+
+  it('tunnel selection works after unexpected disconnect (end-to-end bug scenario)', async () => {
+    const { useConnectionStore, vpn } = await getStores();
+
+    // Phase 1: User connects to tunnel A
+    const tunnelA = {
+      id: 1, domain: 'www.yunnan.people.cn', name: 'AU 3187',
+      protocol: 'k2v5', port: 443, serverUrl: 'k2v5://yunnan:443',
+      node: { country: 'AU' },
+    } as any;
+    useConnectionStore.getState().selectCloudTunnel(tunnelA);
+
+    vpn.dispatch('USER_CONNECT');
+    vpn.dispatch('BACKEND_CONNECTED');
+    useConnectionStore.setState({
+      connectedTunnel: useConnectionStore.getState().activeTunnel,
+    });
+
+    const { initializeConnectionStore } = await import('../connection.store');
+    const cleanup = initializeConnectionStore();
+
+    // Phase 2: Daemon restarts (sleep/wake) → VPN goes idle
+    vpn.dispatch('BACKEND_DISCONNECTED');
+    expect(vpn.useVPNMachineStore.getState().state).toBe('idle');
+    expect(useConnectionStore.getState().connectedTunnel).toBeNull();
+
+    // Phase 3: User clicks tunnel B
+    const tunnelB = {
+      id: 2, domain: 'www.jiangxi.people.cn', name: 'AU 3188',
+      protocol: 'k2v5', port: 443, serverUrl: 'k2v5://jiangxi:443',
+      node: { country: 'AU' },
+    } as any;
+    useConnectionStore.getState().selectCloudTunnel(tunnelB);
+
+    // displayTunnel = connectedTunnel ?? activeTunnel — should now be tunnel B
+    const { connectedTunnel, activeTunnel } = useConnectionStore.getState();
+    const displayTunnel = connectedTunnel ?? activeTunnel;
+    expect(displayTunnel?.domain).toBe('www.jiangxi.people.cn');
+
+    cleanup();
+  });
+});

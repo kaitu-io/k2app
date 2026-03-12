@@ -181,3 +181,25 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     }
   },
 }));
+
+// ============ Lifecycle ============
+
+export function initializeConnectionStore(): () => void {
+  // Clear stale connectedTunnel when VPN reaches idle.
+  // Covers: daemon restart, sleep/wake recovery, network change, serviceDown→recovery.
+  // Idempotent with user-initiated disconnect() which pre-clears connectedTunnel.
+  const unsub = useVPNMachineStore.subscribe(
+    (s) => s.state,
+    (state) => {
+      if (state === 'idle') {
+        const { connectedTunnel } = useConnectionStore.getState();
+        if (connectedTunnel) {
+          console.info('[Connection] VPN idle — clearing stale connectedTunnel');
+          useConnectionStore.setState({ connectedTunnel: null });
+        }
+      }
+    },
+  );
+
+  return unsub;
+}
