@@ -34,7 +34,12 @@
     "expiryDate": "過期日期",
     "upgradeToPro": "升級到Pro",
     "renewNow": "立即續費",
-    "exitApp": "退出應用"
+    "exitApp": "退出應用",
+    "deleteAccount": "註銷帳號",
+    "deleteAccountTitle": "註銷帳號",
+    "deleteAccountWarning": "註銷後帳號資料將被刪除，此操作不可撤銷。確認要註銷嗎？",
+    "deleteAccountSuccess": "帳號已註銷",
+    "deleteAccountFailed": "註銷失敗，請重試"
   },
   "developerModeActivated": "開發者模式已開啟",
   "logLevel": "日誌級別",
