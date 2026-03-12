@@ -191,13 +191,20 @@ func (r *udpRelay) relayLoop() {
 			dstAddr = r.serverAddr
 		}
 
-		// Send with delay
+		// Send with delay — use timer+select so goroutines exit on close
 		d := r.delay(r.rng)
 		if d > 0 {
 			dst := dstAddr // capture for goroutine
+			r.wg.Add(1)
 			go func() {
-				time.Sleep(d)
-				r.conn.WriteToUDP(pkt, dst)
+				defer r.wg.Done()
+				t := time.NewTimer(d)
+				defer t.Stop()
+				select {
+				case <-t.C:
+					r.conn.WriteToUDP(pkt, dst)
+				case <-r.closed:
+				}
 			}()
 		} else {
 			r.conn.WriteToUDP(pkt, dstAddr)

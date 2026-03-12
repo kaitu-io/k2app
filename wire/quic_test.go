@@ -8,7 +8,6 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"errors"
 	"fmt"
 	"math/big"
 	"net"
@@ -1022,43 +1021,30 @@ func TestQUICClient_ConsecConnFails(t *testing.T) {
 }
 
 // ============================================================================
-// SendDatagram timeout tests (Tasks 4 & 5)
+// SendDatagram inflight limit tests
 // ============================================================================
 
-// blockingDatagramSender is a mock datagramSender whose SendDatagram blocks
-// until stop is closed. This allows tests to clean up the goroutine after timeout.
-type blockingDatagramSender struct {
-	stop chan struct{}
-}
+// immediateDatagramSender is a mock that returns immediately from SendDatagram.
+type immediateDatagramSender struct{}
 
-func newBlockingDatagramSender() *blockingDatagramSender {
-	return &blockingDatagramSender{stop: make(chan struct{})}
-}
-
-func (b *blockingDatagramSender) SendDatagram([]byte) error {
-	<-b.stop
-	return errors.New("stopped")
-}
-
-func (b *blockingDatagramSender) LocalAddr() net.Addr {
+func (immediateDatagramSender) SendDatagram([]byte) error { return nil }
+func (immediateDatagramSender) LocalAddr() net.Addr {
 	return &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0}
 }
 
-// TestQuicUDPConn_WriteTo_SendDatagramTimeout verifies that when SendDatagram
-// blocks forever (congested 32-frame queue), WriteTo returns ErrDatagramSendTimeout
-// after ~2s instead of blocking indefinitely.
-func TestQuicUDPConn_WriteTo_SendDatagramTimeout(t *testing.T) {
+// TestQuicUDPConn_WriteTo_InflightDrop verifies that when the inflight counter
+// exceeds maxDatagramInflight, WriteTo returns ErrDatagramSendTimeout immediately.
+func TestQuicUDPConn_WriteTo_InflightDrop(t *testing.T) {
 	mux := &quicUDPMux{
 		sessions:   make(map[uint32]chan *UDPFrame),
 		lastActive: make(map[uint32]*atomic.Int64),
 		done:       make(chan struct{}),
 	}
-
-	sender := newBlockingDatagramSender()
-	defer close(sender.stop)
+	// Pre-fill inflight to the limit
+	mux.sendInflight.Store(maxDatagramInflight)
 
 	conn := &quicUDPConn{
-		qconn:      sender,
+		qconn:      immediateDatagramSender{},
 		sessionID:  1,
 		targetAddr: "8.8.8.8:53",
 		mux:        mux,
@@ -1076,25 +1062,28 @@ func TestQuicUDPConn_WriteTo_SendDatagramTimeout(t *testing.T) {
 	if n != 0 {
 		t.Fatalf("WriteTo n = %d, want 0", n)
 	}
-	// Timeout should be ~2s (sendDatagramTimeout). Allow 1.5s–4s window.
-	if elapsed < 1500*time.Millisecond || elapsed > 4*time.Second {
-		t.Fatalf("WriteTo took %v, want ~2s", elapsed)
+	if elapsed > 50*time.Millisecond {
+		t.Fatalf("WriteTo took %v, want immediate return", elapsed)
+	}
+	// Counter should be back at limit (Add(1) then Add(-1))
+	if got := mux.sendInflight.Load(); got != maxDatagramInflight {
+		t.Fatalf("sendInflight = %d, want %d", got, maxDatagramInflight)
 	}
 }
 
-// TestServerUDPConn_WriteTo_SendDatagramTimeout verifies that when SendDatagram
-// blocks forever on the server side, WriteTo returns ErrDatagramSendTimeout
-// after ~2s instead of blocking indefinitely.
-func TestServerUDPConn_WriteTo_SendDatagramTimeout(t *testing.T) {
-	sender := newBlockingDatagramSender()
-	defer close(sender.stop)
+// TestServerUDPConn_WriteTo_InflightDrop verifies the same inflight limit
+// on the server side.
+func TestServerUDPConn_WriteTo_InflightDrop(t *testing.T) {
+	var inflight atomic.Int32
+	inflight.Store(maxDatagramInflight)
 
 	conn := &serverUDPConn{
-		qconn:     sender,
-		sessionID: 1,
-		addr:      "192.168.1.1:1234",
-		readCh:    make(chan []byte, 1),
-		done:      make(chan struct{}),
+		qconn:        immediateDatagramSender{},
+		sessionID:    1,
+		addr:         "192.168.1.1:1234",
+		readCh:       make(chan []byte, 1),
+		done:         make(chan struct{}),
+		sendInflight: &inflight,
 	}
 
 	start := time.Now()
@@ -1107,8 +1096,41 @@ func TestServerUDPConn_WriteTo_SendDatagramTimeout(t *testing.T) {
 	if n != 0 {
 		t.Fatalf("WriteTo n = %d, want 0", n)
 	}
-	// Timeout should be ~2s (sendDatagramTimeout). Allow 1.5s–4s window.
-	if elapsed < 1500*time.Millisecond || elapsed > 4*time.Second {
-		t.Fatalf("WriteTo took %v, want ~2s", elapsed)
+	if elapsed > 50*time.Millisecond {
+		t.Fatalf("WriteTo took %v, want immediate return", elapsed)
+	}
+	if got := inflight.Load(); got != maxDatagramInflight {
+		t.Fatalf("sendInflight = %d, want %d", got, maxDatagramInflight)
+	}
+}
+
+// TestQuicUDPConn_WriteTo_NormalPath verifies that when inflight is below
+// the limit, SendDatagram is called synchronously and succeeds.
+func TestQuicUDPConn_WriteTo_NormalPath(t *testing.T) {
+	mux := &quicUDPMux{
+		sessions:   make(map[uint32]chan *UDPFrame),
+		lastActive: make(map[uint32]*atomic.Int64),
+		done:       make(chan struct{}),
+	}
+
+	conn := &quicUDPConn{
+		qconn:      immediateDatagramSender{},
+		sessionID:  1,
+		targetAddr: "8.8.8.8:53",
+		mux:        mux,
+		readCh:     make(chan *UDPFrame, 1),
+		done:       make(chan struct{}),
+	}
+
+	payload := []byte("hello")
+	n, err := conn.WriteTo(payload, nil)
+	if err != nil {
+		t.Fatalf("WriteTo err = %v, want nil", err)
+	}
+	if n != len(payload) {
+		t.Fatalf("WriteTo n = %d, want %d", n, len(payload))
+	}
+	if got := mux.sendInflight.Load(); got != 0 {
+		t.Fatalf("sendInflight = %d after WriteTo, want 0", got)
 	}
 }

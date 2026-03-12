@@ -208,7 +208,11 @@ func TestRacingResolver_FirstSuccessWins(t *testing.T) {
 	query := buildTestQuery()
 	fn := func(ctx context.Context, server string, q *dns.Msg) (*dns.Msg, error) {
 		if server == "slow:53" {
-			time.Sleep(500 * time.Millisecond)
+			select {
+			case <-time.After(500 * time.Millisecond):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
 		}
 		return buildTestResponse(q), nil
 	}

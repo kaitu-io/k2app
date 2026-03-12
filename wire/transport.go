@@ -362,23 +362,30 @@ func (tm *TransportManager) WireStats() WireStats {
 }
 
 // Close closes both transports and stops the probe goroutine.
+// probeCancel is accessed without tm.mu — safe because engine state machine
+// guarantees Start/Close serialization (no concurrent callers).
 func (tm *TransportManager) Close() error {
 	if tm.probeCancel != nil {
 		tm.probeCancel()
 		tm.probeCancel = nil
 	}
 
+	// Extract refs under lock, nil them, close outside (Rule #4).
 	tm.mu.Lock()
-	defer tm.mu.Unlock()
+	quic := tm.quic
+	tm.quic = nil
+	tcpws := tm.tcpws
+	tm.tcpws = nil
+	tm.mu.Unlock()
 
 	var firstErr error
-	if tm.quic != nil {
-		if err := tm.quic.Close(); err != nil && firstErr == nil {
+	if quic != nil {
+		if err := quic.Close(); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
-	if tm.tcpws != nil {
-		if err := tm.tcpws.Close(); err != nil && firstErr == nil {
+	if tcpws != nil {
+		if err := tcpws.Close(); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}

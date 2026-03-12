@@ -94,8 +94,10 @@ type TCPWSClient struct {
 	testConn     net.Conn    // override for testing (bypasses TCP+TLS+WS)
 	directDialer DirectDialer
 
-	mu     deadlock.Mutex
-	sess   *smux.Session
+	mu        deadlock.Mutex
+	connectMu deadlock.Mutex // serializes expensive connect path; ordering: connectMu → mu
+	initUDPMu deadlock.Mutex // serializes UDP mux lazy init; ordering: initUDPMu → mu
+	sess      *smux.Session
 	udpMux *smuxUDPMux
 	alloc  *SessionIDAllocator
 	closed bool
@@ -133,33 +135,70 @@ func (c *TCPWSClient) SetDirectDialer(d DirectDialer) {
 }
 
 // connect establishes a smux session if not already connected.
+// Uses check-release-connect-reacquire pattern to avoid holding mu
+// during blocking I/O (TCP dial, TLS handshake, WebSocket upgrade).
 func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
+	// Fast path: return cached live session under mu.
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	if c.closed {
+		c.mu.Unlock()
 		return nil, ErrNotConnected
 	}
+	var mux *smuxUDPMux
+	var deadSess *smux.Session
 	if c.sess != nil {
 		if !c.sess.IsClosed() {
-			return c.sess, nil
+			sess := c.sess
+			c.mu.Unlock()
+			return sess, nil
 		}
-		// Session dead (keepalive timeout, underlying conn closed) — clear and reconnect.
 		slog.Debug("TCPWSClient: clearing dead smux session")
-		if c.udpMux != nil {
-			c.udpMux.close()
-			c.udpMux = nil
-		}
-		c.sess = nil
-		c.alloc = nil
+		mux, deadSess = c.extractSessionLocked()
+	}
+	testConn := c.testConn // read under lock (set during construction only)
+	c.mu.Unlock()
+	// Close dead session resources outside lock (Rule #4).
+	if mux != nil {
+		mux.close()
+	}
+	if deadSess != nil {
+		deadSess.Close()
 	}
 
+	// Serialize expensive connect attempts.
+	c.connectMu.Lock()
+	defer c.connectMu.Unlock()
+
+	// Re-check: another goroutine may have connected while we waited.
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return nil, ErrNotConnected
+	}
+	var mux2 *smuxUDPMux
+	var deadSess2 *smux.Session
+	if c.sess != nil {
+		if !c.sess.IsClosed() {
+			sess := c.sess
+			c.mu.Unlock()
+			return sess, nil
+		}
+		mux2, deadSess2 = c.extractSessionLocked()
+	}
+	c.mu.Unlock()
+	// Close dead session resources outside lock (Rule #4).
+	if mux2 != nil {
+		mux2.close()
+	}
+	if deadSess2 != nil {
+		deadSess2.Close()
+	}
+
+	// --- All blocking I/O below — NO lock held ---
 	var conn net.Conn
-	if c.testConn != nil {
-		// Test mode: bypass TCP+TLS+WS, direct smux
-		conn = c.testConn
+	if testConn != nil {
+		conn = testConn
 	} else {
-		// Production mode: TCP → uTLS → WebSocket → smux
 		var err error
 		conn, err = c.connectTLSWebSocket(ctx)
 		if err != nil {
@@ -173,6 +212,14 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 		return nil, fmt.Errorf("wire: smux client: %w", err)
 	}
 
+	// --- Store result under lock ---
+	// concurrency:allow — closing locally-owned sess not yet stored in struct
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		sess.Close()
+		return nil, ErrNotConnected
+	}
 	c.sess = sess
 	c.alloc = NewSessionIDAllocator()
 	return sess, nil
@@ -337,6 +384,7 @@ func (c *TCPWSClient) DialTCP(ctx context.Context, addr string, earlyData []byte
 
 // DialUDP opens a UDP proxy session through a shared smux UDP stream.
 // Returns a PacketConn backed by SmuxUDPFrame messages.
+// Uses check-release-act-reacquire to avoid holding mu during blocking I/O.
 func (c *TCPWSClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, error) {
 	slog.Debug("TCPWSClient.DialUDP", "addr", addr)
 	sess, err := c.connect(ctx)
@@ -345,77 +393,120 @@ func (c *TCPWSClient) DialUDP(ctx context.Context, addr string) (net.PacketConn,
 		return nil, err
 	}
 
-	// Ensure shared UDP stream and mux exist.
-	// Check alloc first — nil means resetConnection() ran (network change).
+	// Fast path: mux already initialized.
 	c.mu.Lock()
 	if c.alloc == nil {
 		c.mu.Unlock()
 		return nil, ErrNotConnected
 	}
-	if c.udpMux == nil {
-		stream, err := sess.OpenStream()
-		if err != nil {
-			c.mu.Unlock()
-			return nil, fmt.Errorf("wire: open UDP stream: %w", err)
-		}
-		if err := WriteStreamHeader(stream, StreamTypeUDP, ""); err != nil {
-			stream.Close()
-			c.mu.Unlock()
-			return nil, fmt.Errorf("wire: write UDP stream header: %w", err)
-		}
-		c.udpMux = newSmuxUDPMux(stream)
+	if c.udpMux != nil {
+		mux := c.udpMux
+		alloc := c.alloc
+		c.mu.Unlock()
+		return c.newSmuxUDPConn(mux, alloc, addr), nil
 	}
+	c.mu.Unlock()
+
+	// Slow path: initialize UDP mux. Serialized by initUDPMu.
+	c.initUDPMu.Lock()
+	defer c.initUDPMu.Unlock()
+
+	// Re-check: another goroutine may have initialized while we waited.
+	c.mu.Lock()
+	if c.alloc == nil {
+		c.mu.Unlock()
+		return nil, ErrNotConnected
+	}
+	if c.udpMux != nil {
+		mux := c.udpMux
+		alloc := c.alloc
+		c.mu.Unlock()
+		return c.newSmuxUDPConn(mux, alloc, addr), nil
+	}
+	c.mu.Unlock()
+
+	// Blocking I/O — no lock held.
+	stream, err := sess.OpenStream()
+	if err != nil {
+		return nil, fmt.Errorf("wire: open UDP stream: %w", err)
+	}
+	if err := WriteStreamHeader(stream, StreamTypeUDP, ""); err != nil {
+		stream.Close()
+		return nil, fmt.Errorf("wire: write UDP stream header: %w", err)
+	}
+
+	// Store result under lock. Re-check for concurrent resetConnection.
+	c.mu.Lock()
+	if c.alloc == nil {
+		c.mu.Unlock()
+		stream.Close()
+		return nil, ErrNotConnected
+	}
+	c.udpMux = newSmuxUDPMux(stream)
 	mux := c.udpMux
 	alloc := c.alloc
 	c.mu.Unlock()
 
+	return c.newSmuxUDPConn(mux, alloc, addr), nil
+}
+
+// newSmuxUDPConn creates a smuxUDPConn with a new session ID.
+func (c *TCPWSClient) newSmuxUDPConn(mux *smuxUDPMux, alloc *SessionIDAllocator, addr string) *smuxUDPConn {
 	sessionID := alloc.Next()
 	readCh := mux.register(sessionID)
 	slog.Debug("TCPWSClient.DialUDP: session ready", "addr", addr, "sessionID", sessionID)
-
 	return &smuxUDPConn{
 		mux:        mux,
 		sessionID:  sessionID,
 		targetAddr: addr,
 		readCh:     readCh,
 		done:       make(chan struct{}),
-	}, nil
+	}
+}
+
+// extractSessionLocked nils all session resource fields and returns them.
+// Caller must hold c.mu. Resources must be closed OUTSIDE the lock.
+func (c *TCPWSClient) extractSessionLocked() (mux *smuxUDPMux, sess *smux.Session) {
+	mux = c.udpMux
+	c.udpMux = nil
+	sess = c.sess
+	c.sess = nil
+	c.alloc = nil
+	return
 }
 
 // resetConnection closes cached session resources without marking client as closed.
 // After reset, the next DialTCP/DialUDP will establish a fresh connection.
 func (c *TCPWSClient) resetConnection() {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.udpMux != nil {
-		c.udpMux.close()
-		c.udpMux = nil
+	mux, sess := c.extractSessionLocked()
+	c.mu.Unlock()
+	// NOTE: do NOT set c.closed = true — client must remain usable
+	if mux != nil {
+		mux.close()
 	}
-	if c.sess != nil {
-		if err := c.sess.Close(); err != nil {
+	if sess != nil {
+		if err := sess.Close(); err != nil {
 			slog.Debug("TCPWSClient: resetConnection close error", "err", err)
 		}
-		c.sess = nil
 	}
-	c.alloc = nil
-	// NOTE: do NOT set c.closed = true — client must remain usable
 }
 
 // Close closes the smux session and underlying connection.
 func (c *TCPWSClient) Close() error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	if c.closed {
+		c.mu.Unlock()
 		return nil
 	}
 	c.closed = true
-
-	if c.udpMux != nil {
-		c.udpMux.close()
+	mux, sess := c.extractSessionLocked()
+	c.mu.Unlock()
+	if mux != nil {
+		mux.close()
 	}
-	if c.sess != nil {
-		return c.sess.Close()
+	if sess != nil {
+		return sess.Close()
 	}
 	return nil
 }

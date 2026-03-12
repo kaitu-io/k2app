@@ -1,9 +1,9 @@
 package main
 
 import (
-	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -20,122 +20,83 @@ var releaseEndpoints = []string{
 	"https://d0.all7.cc/kaitu/k2",
 }
 
+type latestInfo struct {
+	Version   string            `json:"version"`
+	Binaries  map[string]string `json:"binaries"`            // "darwin-arm64" -> download URL
+	Checksums map[string]string `json:"checksums,omitempty"` // "darwin-arm64" -> "sha256:abc..."
+}
+
 func cmdUpgrade(args []string) {
 	fs := flag.NewFlagSet("upgrade", flag.ExitOnError)
 	check := fs.Bool("check", false, "check for updates without installing")
 	fs.Parse(args)
 
-	latest, err := fetchLatestVersion()
+	info, err := fetchLatest()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to check for updates: %v\n", err)
 		os.Exit(1)
 	}
 
-	if latest == version {
+	if info.Version == version {
 		fmt.Printf("Already up to date: %s\n", version)
 		return
 	}
 
-	fmt.Printf("New version available: %s (current: %s)\n", latest, version)
+	fmt.Printf("New version available: %s (current: %s)\n", info.Version, version)
 
 	if *check {
 		return
 	}
 
-	binary := fmt.Sprintf("k2-%s-%s", runtime.GOOS, runtime.GOARCH)
-	expectedHash, err := fetchChecksum(latest, binary)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to fetch checksum: %v\n", err)
+	key := fmt.Sprintf("%s-%s", runtime.GOOS, runtime.GOARCH)
+	downloadURL, ok := info.Binaries[key]
+	if !ok {
+		fmt.Fprintf(os.Stderr, "No binary available for %s\n", key)
 		os.Exit(1)
 	}
 
-	url := downloadURL(latest, binary)
-	if err := downloadAndReplace(url, expectedHash); err != nil {
+	expectedHash := ""
+	if info.Checksums != nil {
+		if cs, ok := info.Checksums[key]; ok {
+			expectedHash = strings.TrimPrefix(cs, "sha256:")
+		}
+	}
+
+	if err := downloadAndReplace(downloadURL, expectedHash); err != nil {
 		fmt.Fprintf(os.Stderr, "Upgrade failed: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Upgraded to %s\n", latest)
+	fmt.Printf("Upgraded to %s\n", info.Version)
 }
 
-// fetchLatestVersion fetches the LATEST file from CDN endpoints.
-func fetchLatestVersion() (string, error) {
+func fetchLatest() (*latestInfo, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
 
 	var lastErr error
 	for _, endpoint := range releaseEndpoints {
-		resp, err := client.Get(endpoint + "/LATEST")
+		resp, err := client.Get(endpoint + "/cloudfront.latest.json")
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		if resp.StatusCode != http.StatusOK {
-			lastErr = fmt.Errorf("HTTP %d from %s", resp.StatusCode, endpoint)
-			continue
-		}
-		v := strings.TrimSpace(string(body))
-		if v == "" {
-			lastErr = fmt.Errorf("empty LATEST from %s", endpoint)
-			continue
-		}
-		return v, nil
-	}
-	return "", fmt.Errorf("all endpoints failed: %w", lastErr)
-}
 
-// fetchChecksum fetches checksums.txt and returns the hash for the given binary.
-func fetchChecksum(ver, binary string) (string, error) {
-	client := &http.Client{Timeout: 10 * time.Second}
-	path := fmt.Sprintf("/%s/checksums.txt", ver)
-
-	var lastErr error
-	for _, endpoint := range releaseEndpoints {
-		resp, err := client.Get(endpoint + path)
-		if err != nil {
-			lastErr = err
-			continue
-		}
 		if resp.StatusCode != http.StatusOK {
 			resp.Body.Close()
 			lastErr = fmt.Errorf("HTTP %d from %s", resp.StatusCode, endpoint)
 			continue
 		}
-		hash, err := parseChecksum(resp.Body, binary)
-		resp.Body.Close()
-		if err != nil {
+
+		var info latestInfo
+		if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+			resp.Body.Close()
 			lastErr = err
 			continue
 		}
-		return hash, nil
+		resp.Body.Close()
+		return &info, nil
 	}
-	return "", fmt.Errorf("all endpoints failed: %w", lastErr)
-}
-
-// parseChecksum reads checksums.txt content and finds the hash for binary.
-func parseChecksum(r io.Reader, binary string) (string, error) {
-	scanner := bufio.NewScanner(r)
-	for scanner.Scan() {
-		line := scanner.Text()
-		parts := strings.Fields(line)
-		if len(parts) == 2 && parts[1] == binary {
-			return parts[0], nil
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("read checksums: %w", err)
-	}
-	return "", fmt.Errorf("no checksum for %s", binary)
-}
-
-// downloadURL returns the CDN URL for a versioned binary.
-func downloadURL(ver, binary string) string {
-	return releaseEndpoints[0] + "/" + ver + "/" + binary
+	return nil, fmt.Errorf("all endpoints failed: %w", lastErr)
 }
 
 func downloadAndReplace(url string, expectedHash string) error {
@@ -159,6 +120,7 @@ func downloadAndReplace(url string, expectedHash string) error {
 		return fmt.Errorf("download: HTTP %d", resp.StatusCode)
 	}
 
+	// Write to temp file in same directory for atomic rename.
 	dir := filepath.Dir(self)
 	tmp, err := os.CreateTemp(dir, "k2-upgrade-*")
 	if err != nil {
@@ -166,6 +128,7 @@ func downloadAndReplace(url string, expectedHash string) error {
 	}
 	tmpPath := tmp.Name()
 
+	// Hash while downloading.
 	h := sha256.New()
 	reader := io.TeeReader(resp.Body, h)
 
@@ -176,6 +139,7 @@ func downloadAndReplace(url string, expectedHash string) error {
 	}
 	tmp.Close()
 
+	// Verify checksum if available.
 	if expectedHash != "" {
 		actualHash := hex.EncodeToString(h.Sum(nil))
 		if actualHash != expectedHash {
@@ -185,6 +149,7 @@ func downloadAndReplace(url string, expectedHash string) error {
 		fmt.Println("Checksum verified (sha256)")
 	}
 
+	// Copy permissions from current binary.
 	fi, err := os.Stat(self)
 	if err != nil {
 		os.Remove(tmpPath)
@@ -195,6 +160,16 @@ func downloadAndReplace(url string, expectedHash string) error {
 		return fmt.Errorf("chmod: %w", err)
 	}
 
+	// Replace binary. On Windows, a running executable cannot be deleted
+	// but can be renamed. Move the current binary aside first.
+	if runtime.GOOS == "windows" {
+		oldPath := self + ".old"
+		os.Remove(oldPath) // clean up from previous upgrade
+		if err := os.Rename(self, oldPath); err != nil {
+			os.Remove(tmpPath)
+			return fmt.Errorf("rename current binary: %w", err)
+		}
+	}
 	if err := os.Rename(tmpPath, self); err != nil {
 		os.Remove(tmpPath)
 		return fmt.Errorf("replace: %w", err)
@@ -206,11 +181,29 @@ func downloadAndReplace(url string, expectedHash string) error {
 // checkVersionAsync prints a message if a newer version is available.
 // Non-blocking, meant to be called in a goroutine at daemon startup.
 func checkVersionAsync() {
-	latest, err := fetchLatestVersion()
-	if err != nil {
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	for _, endpoint := range releaseEndpoints {
+		resp, err := client.Get(endpoint + "/cloudfront.latest.json")
+		if err != nil {
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			continue
+		}
+
+		var info latestInfo
+		if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+			resp.Body.Close()
+			continue
+		}
+		resp.Body.Close()
+
+		if info.Version != "" && info.Version != version {
+			fmt.Printf("New version available: %s (run 'k2 upgrade' to update)\n", info.Version)
+		}
 		return
-	}
-	if latest != "" && latest != version {
-		fmt.Printf("New version available: %s (run 'k2 upgrade' to update)\n", latest)
 	}
 }

@@ -387,11 +387,16 @@ func (d *dnsOverride) set() error {
 
 // reapply ensures the current primary service's Setup:/ DNS points to TUN.
 // Handles user overrides (System Preferences) and network switches.
+// Uses read-copy-act: lock only for field access, CGo/I/O outside lock.
 func (d *dnsOverride) reapply() {
-	d.mu.Lock()
-	defer d.mu.Unlock()
+	// Guard: skip if stop is in progress (handles timer-triggered reapply after stop).
+	select {
+	case <-d.stopCh:
+		return
+	default:
+	}
 
-	// Check if primary service changed (network switch).
+	// Step 1: CGo read — no lock.
 	csvc := C.k2GetPrimaryServiceID()
 	if csvc == nil {
 		// Network switch in progress — PrimaryService temporarily NULL.
@@ -403,45 +408,58 @@ func (d *dnsOverride) reapply() {
 	newSvc := C.GoString(csvc)
 	C.free(unsafe.Pointer(csvc))
 
+	// Step 2: Check state under lock.
+	d.mu.Lock()
+	oldSvc := d.serviceID
+	tunDNS := d.tunDNS
+	needSwitch := newSvc != oldSvc
+	if needSwitch {
+		d.serviceID = newSvc
+	}
+	d.mu.Unlock()
+
 	cid := C.CString(newSvc)
 	defer C.free(unsafe.Pointer(cid))
 
-	if newSvc != d.serviceID {
-		// Remove override from old service.
-		oldID := C.CString(d.serviceID)
+	// Step 3: Handle service switch — all CGo outside lock.
+	if needSwitch {
+		oldID := C.CString(oldSvc)
 		C.k2RemoveSetupDNS(oldID)
 		C.free(unsafe.Pointer(oldID))
 
 		// Save new service's DHCP DNS.
 		cstr := C.k2GetStateDNS(cid)
+		var newOrigDNS string
 		if cstr != nil {
-			d.origDNS = C.GoString(cstr)
+			newOrigDNS = C.GoString(cstr)
 			C.free(unsafe.Pointer(cstr))
 		}
-		slog.Info("provider: primary service changed",
-			"old", d.serviceID, "new", newSvc, "origDNS", d.origDNS)
-		d.serviceID = newSvc
 
-		// Update saved file for crash recovery.
+		d.mu.Lock()
+		d.origDNS = newOrigDNS
+		d.mu.Unlock()
+
+		slog.Info("provider: primary service changed",
+			"old", oldSvc, "new", newSvc, "origDNS", newOrigDNS)
 		os.WriteFile(dnsServiceFile(), []byte(newSvc), 0o644)
 	}
 
-	// Check if Setup:/ DNS is still ours.
+	// Step 4: Check if Setup:/ DNS is still ours — CGo outside lock.
 	cstr := C.k2GetSetupDNS(cid)
 	if cstr != nil {
 		current := C.GoString(cstr)
 		C.free(unsafe.Pointer(cstr))
-		if current == d.tunDNS {
+		if current == tunDNS {
 			return // still ours, no-op (prevents callback loop)
 		}
 		slog.Info("provider: DNS overwritten, reapplying", "was", current)
 	}
 
-	cs := C.CString(d.tunDNS)
+	cs := C.CString(tunDNS)
 	defer C.free(unsafe.Pointer(cs))
 	C.k2SetSetupDNS(cid, cs)
 	flushDNSCache()
-	slog.Info("provider: DNS override reapplied", "dns", d.tunDNS, "service", d.serviceID)
+	slog.Info("provider: DNS override reapplied", "dns", tunDNS, "service", newSvc)
 }
 
 // monitor runs the SCDynamicStore CFRunLoop on a dedicated OS thread.
@@ -464,21 +482,25 @@ func (d *dnsOverride) monitor() {
 }
 
 // stop removes the Setup:/ DNS override, restoring DHCP State:/ DNS.
+// Lock only for field reads; CGo/I/O outside lock.
 func (d *dnsOverride) stop() {
 	close(d.stopCh)
 	<-d.stopped
 
 	d.mu.Lock()
-	defer d.mu.Unlock()
+	serviceID := d.serviceID
+	d.serviceID = ""
+	origDNS := d.origDNS
+	d.mu.Unlock()
 
-	if d.serviceID != "" {
-		cid := C.CString(d.serviceID)
-		defer C.free(unsafe.Pointer(cid))
+	if serviceID != "" {
+		cid := C.CString(serviceID)
 		C.k2RemoveSetupDNS(cid)
+		C.free(unsafe.Pointer(cid))
 	}
 	os.Remove(dnsServiceFile())
 	flushDNSCache()
-	slog.Info("provider: macOS DNS override removed", "restored", d.origDNS)
+	slog.Info("provider: macOS DNS override removed", "restored", origDNS)
 }
 
 func flushDNSCache() {

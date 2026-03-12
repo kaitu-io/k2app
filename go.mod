@@ -12,6 +12,7 @@ require (
 	github.com/sagernet/sing-tun v0.7.11
 	github.com/sasha-s/go-deadlock v0.3.7
 	github.com/xtaci/smux/v2 v2.1.0
+	go.uber.org/goleak v1.3.0
 	golang.org/x/crypto v0.48.0
 	golang.org/x/mobile v0.0.0-20260217195705-b56b3793a9c4
 	golang.org/x/sync v0.19.0
@@ -41,7 +42,6 @@ require (
 	github.com/sagernet/netlink v0.0.0-20240612041022-b9a21c07ac6a // indirect
 	github.com/sagernet/nftables v0.3.0-beta.4 // indirect
 	github.com/vishvananda/netns v0.0.4 // indirect
-	go.uber.org/goleak v1.3.0 // indirect
 	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba // indirect
 	golang.org/x/exp v0.0.0-20240904232852-e7e105dedf7e // indirect
 	golang.org/x/mod v0.33.0 // indirect

@@ -175,6 +175,7 @@ func (c *ProxyDNSClient) open(ctx context.Context, server string) (*proxyConn, e
 		done:      make(chan struct{}),
 	}
 
+	// concurrency:allow — Close() below is after Unlock (inside select/default branch)
 	c.mu.Lock()
 	// Double-check: another goroutine may have dialed concurrently.
 	if existing, ok := c.conns[server]; ok {

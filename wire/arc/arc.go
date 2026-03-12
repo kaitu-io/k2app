@@ -863,6 +863,7 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 // TimeUntilSend returns when the next packet can be sent
 func (p *K2CCSender) TimeUntilSend(bytesInFlight congestion.ByteCount) congestion.Time {
 	p.mu.RLock()
+	// concurrency:allow — pure arithmetic on struct fields, no I/O or external calls
 	defer p.mu.RUnlock()
 
 	// If we have budget, send immediately
@@ -884,6 +885,7 @@ func (p *K2CCSender) TimeUntilSend(bytesInFlight congestion.ByteCount) congestio
 // HasPacingBudget returns true if we have pacing budget to send
 func (p *K2CCSender) HasPacingBudget(now congestion.Time) bool {
 	p.mu.Lock()
+	// concurrency:allow — pure arithmetic on struct fields, no I/O or external calls
 	defer p.mu.Unlock()
 
 	// Calculate time since last update
@@ -916,6 +918,7 @@ func (p *K2CCSender) OnPacketSent(
 	isRetransmittable bool,
 ) {
 	p.mu.Lock()
+	// concurrency:allow — pure arithmetic on struct fields, no I/O or external calls
 	defer p.mu.Unlock()
 
 	// Update pacing state
@@ -953,6 +956,7 @@ func (p *K2CCSender) OnPacketAcked(
 	eventTime congestion.Time,
 ) {
 	p.mu.Lock()
+	// concurrency:allow — pure arithmetic on struct fields, no I/O or external calls
 	defer p.mu.Unlock()
 
 	// Update RTT from stats provider
@@ -996,6 +1000,7 @@ func (p *K2CCSender) OnCongestionEvent(
 	priorInFlight congestion.ByteCount,
 ) {
 	p.mu.Lock()
+	// concurrency:allow — pure arithmetic on struct fields, no I/O or external calls
 	defer p.mu.Unlock()
 
 	// Record loss in current MI — but skip stale losses from previous MI.
@@ -1115,6 +1120,7 @@ const minSnapshotBytes = uint64(100000) // 100KB
 // Snapshot returns a point-in-time copy of K2CC state.
 func (p *K2CCSender) Snapshot() CCSnapshot {
 	p.mu.RLock()
+	// concurrency:allow — pure arithmetic on struct fields, no I/O or external calls
 	defer p.mu.RUnlock()
 	s := CCSnapshot{
 		SendingRate: p.state.CurrentRate,

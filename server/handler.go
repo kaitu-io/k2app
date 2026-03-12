@@ -181,6 +181,7 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 	// client -> target
 	go func() {
 		defer close(done)
+		defer target.Close() // unblock target→client Read when client is gone
 		bp := udpBufPool.Get().(*[]byte)
 		buf := *bp
 		for {

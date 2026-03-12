@@ -25,9 +25,8 @@ import (
 // connection lifecycle for both desktop and mobile platforms.
 //
 // Lock ordering: engine.mu must be acquired before any EventHandler lock
-// (e.g. daemon.mu). setState/fail call handler.OnStatus under engine.mu.
-// EventHandler implementations must NOT call back into engine while holding
-// their own lock.
+// (e.g. daemon.mu). See CLAUDE.md Lock Ordering Graph.
+// handler.OnStatus is called OUTSIDE engine.mu (read-copy-act pattern).
 type Engine struct {
 	mu          deadlock.Mutex
 	state       string
@@ -90,8 +89,13 @@ func (e *Engine) Start(cfg Config) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	e.cancel = cancel
 
-	e.setState(StateConnecting)
+	e.setStateLocked(StateConnecting)
+	handler := e.handler
+	status := e.buildStatusLocked()
 	e.mu.Unlock()
+	if handler != nil {
+		handler.OnStatus(status)
+	}
 
 	startTime := time.Now()
 	slog.Info("engine: start",
@@ -330,8 +334,13 @@ func (e *Engine) Start(cfg Config) error {
 	// Recovery probe: actively verifies wire connectivity after network changes.
 	e.probe = newRecoveryProbe(tm, e)
 
-	e.setState(StateConnected)
+	e.setStateLocked(StateConnected)
+	handler = e.handler
+	status = e.buildStatusLocked()
 	e.mu.Unlock()
+	if handler != nil {
+		handler.OnStatus(status)
+	}
 	slog.Info("engine: connected", "totalMs", time.Since(startTime).Milliseconds())
 
 	// Network monitor already started in step 4.1 (before wire probe).
@@ -502,40 +511,54 @@ func (e *Engine) Stop() error {
 		probe.stop()
 	}
 
-	// Re-acquire for resource cleanup.
+	// Extract remaining resources under lock, nil them out, fire status,
+	// then close everything OUTSIDE the lock. This prevents deadlock:
+	// prov.Close() can block on dnsOverride CGo, tunnel.Close() drains
+	// handlers that call ReportWireError() which needs e.mu.
 	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	if e.networkMonitor != nil {
-		e.networkMonitor.Close()
-		e.networkMonitor = nil
-	}
-	if e.cancel != nil {
-		e.cancel()
-		e.cancel = nil
-	}
-	// Close provider and transport first — this forces in-flight pipe/pipePacket
-	// goroutines to error out on the closed connections and exit.
-	if e.prov != nil {
-		e.prov.Close()
-		e.prov = nil
-	}
-	if e.tm != nil {
-		e.tm.Close()
-		e.tm = nil
-	}
-	if e.tunnel != nil {
-		// tunnel.Close() only drains handler goroutines (connTracker.closeAll + wg.Wait).
-		// Provider and dialer are owned by engine and already closed above.
-		e.tunnel.Close()
-		e.tunnel = nil
-	}
+	nm := e.networkMonitor
+	e.networkMonitor = nil
+	cancel := e.cancel
+	e.cancel = nil
+	prov := e.prov
+	e.prov = nil
+	tm := e.tm
+	e.tm = nil
+	tunnel := e.tunnel
+	e.tunnel = nil
 	e.client = nil
 	e.connectedAt = time.Time{}
 	e.paused = false
 	e.lastError = nil // unconditional clear on stop
+	e.setStateLocked(StateDisconnected)
+	stopHandler := e.handler
+	stopStatus := e.buildStatusLocked()
+	e.mu.Unlock()
+	if stopHandler != nil {
+		stopHandler.OnStatus(stopStatus)
+	}
 
-	e.setState(StateDisconnected)
+	// Teardown outside lock — ordering per Resource Ownership Rules:
+	// networkMonitor first (fires callbacks), cancel context, provider
+	// (stops new TUN packets + DNS override), transport (drops wire),
+	// tunnel last (drains in-flight handlers — they fail fast because
+	// prov/tm are closed, and ReportWireError returns early since
+	// e.state is already StateDisconnected).
+	if nm != nil {
+		nm.Close()
+	}
+	if cancel != nil {
+		cancel()
+	}
+	if prov != nil {
+		prov.Close()
+	}
+	if tm != nil {
+		tm.Close()
+	}
+	if tunnel != nil {
+		tunnel.Close()
+	}
 	return nil
 }
 
@@ -573,16 +596,13 @@ func (e *Engine) StatusJSON() string {
 	return string(b)
 }
 
-// setState updates state and notifies the EventHandler with a full status snapshot.
-// Must be called with e.mu held.
-func (e *Engine) setState(s string) {
+// setStateLocked updates state fields only. Must be called with e.mu held.
+// Caller is responsible for notifying handler OUTSIDE the lock.
+func (e *Engine) setStateLocked(s string) {
 	if s == StateConnected {
 		e.connectedAt = time.Now()
 	}
 	e.state = s
-	if e.handler != nil {
-		e.handler.OnStatus(e.buildStatusLocked())
-	}
 }
 
 // fail records an error, cancels any in-flight context, resets to
@@ -590,22 +610,31 @@ func (e *Engine) setState(s string) {
 // the disconnected state and the classified error atomically.
 func (e *Engine) fail(err error) error {
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	e.lastError = ClassifyError(err)
 	slog.Warn("engine: fail",
 		"code", e.lastError.Code,
 		"category", e.lastError.Category,
 		"message", e.lastError.Message,
 	)
-	if e.networkMonitor != nil {
-		e.networkMonitor.Close()
-		e.networkMonitor = nil
-	}
+	// Extract resources under lock (Rule #4: no Close under state lock).
+	nm := e.networkMonitor
+	e.networkMonitor = nil
 	if e.cancel != nil {
 		e.cancel()
 		e.cancel = nil
 	}
-	e.setState(StateDisconnected)
+	e.setStateLocked(StateDisconnected)
+	handler := e.handler
+	status := e.buildStatusLocked()
+	e.mu.Unlock()
+
+	// External calls outside lock.
+	if handler != nil {
+		handler.OnStatus(status)
+	}
+	if nm != nil {
+		nm.Close()
+	}
 	return err
 }
 

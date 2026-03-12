@@ -38,14 +38,13 @@ const maxServerUDPSessions = 4096
 // monitor to skip reconnect when TCP streams are working.
 const tcpHealthWindow = 30 * time.Second
 
-// ErrDatagramSendTimeout is returned when SendDatagram blocks longer than sendDatagramTimeout.
-var ErrDatagramSendTimeout = errors.New("wire: SendDatagram timeout")
+// ErrDatagramSendTimeout is returned when concurrent SendDatagram calls exceed maxDatagramInflight.
+var ErrDatagramSendTimeout = errors.New("wire: SendDatagram queue saturated")
 
-// sendDatagramTimeout is the maximum time to wait for SendDatagram to enqueue.
-// When the 32-frame datagram queue is full and K2CC pacing is slow,
-// SendDatagram blocks indefinitely. This timeout converts block into drop —
-// acceptable for unreliable DATAGRAM semantics.
-const sendDatagramTimeout = 2 * time.Second
+// maxDatagramInflight caps concurrent SendDatagram calls per connection.
+// Matches quic-go's 32-frame datagram queue. Beyond this limit, packets
+// are dropped immediately — protocol-correct for unreliable DATAGRAM.
+const maxDatagramInflight int32 = 32
 
 // datagramSender abstracts the QUIC connection methods used by quicUDPConn
 // and serverUDPConn. Enables testing with mock connections.
@@ -134,10 +133,11 @@ func (o *udpOverflowStream) close() {
 // Both the datagram reader and overflow stream reader share this state so that
 // packets from the same session ID are delivered to the same serverUDPConn.
 type connUDPState struct {
-	mu       deadlock.Mutex
-	sessions map[uint32]*serverUDPConn
-	overflow *udpOverflowStream
-	done     chan struct{}
+	mu           deadlock.Mutex
+	sessions     map[uint32]*serverUDPConn
+	overflow     *udpOverflowStream
+	done         chan struct{}
+	sendInflight atomic.Int32 // concurrent SendDatagram calls in progress
 }
 
 // DefaultQUICConfig returns the QUIC configuration.
@@ -214,6 +214,8 @@ type QUICClient struct {
 	directDialer DirectDialer
 
 	mu        deadlock.Mutex
+	connectMu deadlock.Mutex // serializes expensive connect path; ordering: connectMu → mu
+	initUDPMu deadlock.Mutex // serializes UDP mux lazy init; ordering: initUDPMu → mu
 	conn      *quic.Conn
 	transport *quic.Transport
 	alloc     *SessionIDAllocator
@@ -285,30 +287,73 @@ func (c *QUICClient) tcpRecentlyHealthy(window time.Duration) bool {
 }
 
 // connect establishes a QUIC connection if not already connected.
+// Uses check-release-connect-reacquire pattern to avoid holding mu
+// during blocking I/O (DNS, UDP bind, QUIC handshake). connectMu
+// serializes the expensive connect path so only one goroutine dials.
 func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
+	// Fast path: return cached live connection under mu.
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	if c.closed {
+		c.mu.Unlock()
 		return nil, ErrNotConnected
 	}
 	if c.conn != nil {
 		select {
 		case <-c.conn.Context().Done():
-			// Connection died (idle timeout, transport error, peer close).
-			// quic-go KeepAlive (10s) + MaxIdleTimeout (30s) detected it.
 			slog.Info("QUICClient: cached connection dead, rebuilding")
-			c.closeConnLocked()
+			mux, oldConn, tr := c.extractConnLocked()
+			c.mu.Unlock()
+			closeQUICResources(mux, oldConn, tr, "connection reset")
+			goto serialize
 		default:
-			return c.conn, nil
+			conn := c.conn
+			c.mu.Unlock()
+			return conn, nil
 		}
 	}
+	c.mu.Unlock()
 
-	addr := c.serverAddr
-	if c.hopEnabled() {
-		dialHost := c.cfg.Host
-		if c.cfg.DialAddr != "" {
-			dialHost = c.cfg.DialAddr
+serialize:
+	// Serialize expensive connect attempts — only one goroutine dials.
+	c.connectMu.Lock()
+	defer c.connectMu.Unlock()
+
+	// Re-check: another goroutine may have connected while we waited.
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return nil, ErrNotConnected
+	}
+	if c.conn != nil {
+		select {
+		case <-c.conn.Context().Done():
+			mux, oldConn, tr := c.extractConnLocked()
+			c.mu.Unlock()
+			closeQUICResources(mux, oldConn, tr, "connection reset")
+			c.mu.Lock()
+			if c.closed {
+				c.mu.Unlock()
+				return nil, ErrNotConnected
+			}
+		default:
+			conn := c.conn
+			c.mu.Unlock()
+			return conn, nil
+		}
+	}
+	// Read immutable config fields under mu for address computation.
+	cfg := c.cfg
+	directDialer := c.directDialer
+	tlsConfig := c.tlsConfig
+	c.mu.Unlock()
+
+	// --- All blocking I/O below — NO lock held ---
+
+	addr := c.serverAddr // immutable after construction
+	if c.hopEnabled() {  // reads atomics, no lock needed
+		dialHost := cfg.Host
+		if cfg.DialAddr != "" {
+			dialHost = cfg.DialAddr
 		}
 		addr = net.JoinHostPort(dialHost, strconv.Itoa(c.hopPort()))
 	}
@@ -319,8 +364,8 @@ func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
 	}
 
 	var udpConn net.PacketConn
-	if c.directDialer != nil {
-		udpConn, err = c.directDialer.ListenPacket("udp", ":0")
+	if directDialer != nil {
+		udpConn, err = directDialer.ListenPacket("udp", ":0")
 	} else {
 		udpConn, err = net.ListenUDP("udp", &net.UDPAddr{})
 	}
@@ -331,10 +376,10 @@ func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
 	transport := &quic.Transport{Conn: udpConn}
 
 	var tlsCfg *tls.Config
-	if c.tlsConfig != nil {
-		tlsCfg = c.tlsConfig.Clone()
+	if tlsConfig != nil {
+		tlsCfg = tlsConfig.Clone()
 	} else {
-		tlsCfg, _, err = BuildClientTLSConfig(c.cfg)
+		tlsCfg, _, err = BuildClientTLSConfig(cfg)
 		if err != nil {
 			transport.Close()
 			return nil, err
@@ -362,11 +407,21 @@ func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
 	// Set K2CC congestion control (replaces default Cubic)
 	sender := arc.NewCCSenderGFWMode(arc.DefaultMaxRate)
 	conn.SetCongestionControl(sender)
-	c.ccSender = sender
 	slog.Info("wire: QUIC K2CC enabled", "maxRateMbps", arc.DefaultMaxRate/1_000_000)
 
+	// --- Store result under lock ---
+	// concurrency:allow — closing locally-owned conn/transport not yet stored in struct;
+	// defer scope: mu acquired at tail of function, actual critical section is ~15 lines
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		conn.CloseWithError(0, "closed during connect")
+		transport.Close()
+		return nil, ErrNotConnected
+	}
 	c.conn = conn
 	c.transport = transport
+	c.ccSender = sender
 	c.alloc = NewSessionIDAllocator()
 	c.udpMux = newQuicUDPMux(conn, &c.portHopAttempts, &c.portHopExhaustedAt)
 
@@ -514,48 +569,82 @@ func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, 
 }
 
 // dialUDPStream opens a QUIC stream for UDP and returns a stream-based PacketConn.
+// Uses check-release-act-reacquire to avoid holding mu during blocking I/O
+// (OpenStreamSync, WriteH3ProxyFrameType, WriteStreamHeader).
 func (c *QUICClient) dialUDPStream(ctx context.Context, conn *quic.Conn, addr string) (net.PacketConn, error) {
-	// Ensure shared UDP stream and mux exist
+	// Fast path: mux already initialized.
 	c.mu.Lock()
 	if c.udpMux == nil || c.alloc == nil {
 		c.mu.Unlock()
 		return nil, ErrNotConnected
 	}
-	if c.udpMux.streamMux == nil {
-		stream, err := conn.OpenStreamSync(ctx)
-		if err != nil {
-			c.mu.Unlock()
-			// Dead connections are detected by connect() via conn.Context().Done().
-			slog.Debug("QUICClient.dialUDPStream: stream open failed", "addr", addr, "err", err)
-			return nil, fmt.Errorf("wire: open UDP stream: %w", err)
-		}
-		// Write H3 frame type + UDP stream header
-		if err := WriteH3ProxyFrameType(stream); err != nil {
-			stream.Close()
-			c.mu.Unlock()
-			return nil, fmt.Errorf("wire: write H3 frame type: %w", err)
-		}
-		if err := WriteStreamHeader(stream, StreamTypeUDP, ""); err != nil {
-			stream.Close()
-			c.mu.Unlock()
-			return nil, fmt.Errorf("wire: write UDP stream header: %w", err)
-		}
-		c.udpMux.streamMux = newQuicStreamUDPMux(stream, conn)
+	if c.udpMux.streamMux != nil {
+		mux := c.udpMux.streamMux
+		alloc := c.alloc
+		c.mu.Unlock()
+		return c.newStreamUDPConn(mux, alloc, addr), nil
 	}
+	c.mu.Unlock()
+
+	// Slow path: initialize UDP stream mux. Serialized by initUDPMu.
+	c.initUDPMu.Lock()
+	defer c.initUDPMu.Unlock()
+
+	// Re-check: another goroutine may have initialized while we waited.
+	c.mu.Lock()
+	if c.udpMux == nil || c.alloc == nil {
+		c.mu.Unlock()
+		return nil, ErrNotConnected
+	}
+	if c.udpMux.streamMux != nil {
+		mux := c.udpMux.streamMux
+		alloc := c.alloc
+		c.mu.Unlock()
+		return c.newStreamUDPConn(mux, alloc, addr), nil
+	}
+	c.mu.Unlock()
+
+	// Blocking I/O — no lock held.
+	stream, err := conn.OpenStreamSync(ctx)
+	if err != nil {
+		slog.Debug("QUICClient.dialUDPStream: stream open failed", "addr", addr, "err", err)
+		return nil, fmt.Errorf("wire: open UDP stream: %w", err)
+	}
+	if err := WriteH3ProxyFrameType(stream); err != nil {
+		stream.Close()
+		return nil, fmt.Errorf("wire: write H3 frame type: %w", err)
+	}
+	if err := WriteStreamHeader(stream, StreamTypeUDP, ""); err != nil {
+		stream.Close()
+		return nil, fmt.Errorf("wire: write UDP stream header: %w", err)
+	}
+
+	// Store result under lock. Re-check for concurrent resetConnection.
+	c.mu.Lock()
+	if c.udpMux == nil {
+		c.mu.Unlock()
+		stream.Close()
+		return nil, ErrNotConnected
+	}
+	c.udpMux.streamMux = newQuicStreamUDPMux(stream, conn)
 	mux := c.udpMux.streamMux
 	alloc := c.alloc
 	c.mu.Unlock()
 
+	return c.newStreamUDPConn(mux, alloc, addr), nil
+}
+
+// newStreamUDPConn creates a quicStreamUDPConn with a new session ID.
+func (c *QUICClient) newStreamUDPConn(mux *quicStreamUDPMux, alloc *SessionIDAllocator, addr string) *quicStreamUDPConn {
 	sessionID := alloc.Next()
 	readCh := mux.register(sessionID)
-
 	return &quicStreamUDPConn{
 		mux:        mux,
 		sessionID:  sessionID,
 		targetAddr: addr,
 		readCh:     readCh,
 		done:       make(chan struct{}),
-	}, nil
+	}
 }
 
 // WireStats returns a snapshot of QUIC transport metrics including K2CC state.
@@ -649,23 +738,33 @@ func (c *QUICClient) handleServerOverflowStream(stream *quic.Stream, mux *quicUD
 	}
 }
 
-// closeConnLocked releases cached connection resources. Caller must hold c.mu.
-func (c *QUICClient) closeConnLocked() {
-	if c.udpMux != nil {
-		c.udpMux.close()
-		c.udpMux = nil
-	}
-	if c.conn != nil {
-		c.conn.CloseWithError(0, "connection reset")
-		c.conn = nil
-	}
-	if c.transport != nil {
-		c.transport.Close()
-		c.transport = nil
-	}
+// extractConnLocked nils all connection resource fields and returns them.
+// Caller must hold c.mu. Resources must be closed OUTSIDE the lock.
+func (c *QUICClient) extractConnLocked() (mux *quicUDPMux, conn *quic.Conn, tr *quic.Transport) {
+	mux = c.udpMux
+	c.udpMux = nil
+	conn = c.conn
+	c.conn = nil
+	tr = c.transport
+	c.transport = nil
 	c.alloc = nil
 	c.ccSender = nil
 	c.lastTCPSuccessAt.Store(0)
+	return
+}
+
+// closeQUICResources closes extracted QUIC connection resources.
+// Safe to call with nil arguments. Must be called WITHOUT holding c.mu.
+func closeQUICResources(mux *quicUDPMux, conn *quic.Conn, tr *quic.Transport, reason string) {
+	if mux != nil {
+		mux.close()
+	}
+	if conn != nil {
+		conn.CloseWithError(0, reason)
+	}
+	if tr != nil {
+		tr.Close()
+	}
 }
 
 // resetConnection closes cached connection resources without marking client as closed.
@@ -673,35 +772,23 @@ func (c *QUICClient) closeConnLocked() {
 // Dead connections are detected by connect() via conn.Context().Done().
 func (c *QUICClient) resetConnection() {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.closeConnLocked()
+	mux, conn, tr := c.extractConnLocked()
+	c.mu.Unlock()
+	closeQUICResources(mux, conn, tr, "connection reset")
 }
 
 // Close closes the QUIC connection and underlying transport.
 func (c *QUICClient) Close() error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	if c.closed {
+		c.mu.Unlock()
 		return nil
 	}
 	c.closed = true
-
-	var firstErr error
-	if c.udpMux != nil {
-		c.udpMux.close()
-	}
-	if c.conn != nil {
-		if err := c.conn.CloseWithError(0, "client close"); err != nil && firstErr == nil {
-			firstErr = err
-		}
-	}
-	if c.transport != nil {
-		if err := c.transport.Close(); err != nil && firstErr == nil {
-			firstErr = err
-		}
-	}
-	return firstErr
+	mux, conn, tr := c.extractConnLocked()
+	c.mu.Unlock()
+	closeQUICResources(mux, conn, tr, "client close")
+	return nil
 }
 
 // ============================================================================
@@ -814,6 +901,7 @@ func (s *QUICServer) handleConn(conn *quic.Conn) {
 	// Cleanup: close all UDP sessions and overflow stream
 	close(state.done)
 	state.overflow.close()
+	// concurrency:allow — sess.close() is closeOnce.Do(func(){ close(done) }), pure memory op
 	state.mu.Lock()
 	for _, sess := range state.sessions {
 		sess.close()
@@ -948,12 +1036,13 @@ func (s *QUICServer) deliverToSession(state *connUDPState, conn *quic.Conn, fram
 			return
 		}
 		sess = &serverUDPConn{
-			qconn:     conn,
-			sessionID: frame.SessionID,
-			addr:      frame.Addr,
-			readCh:    make(chan []byte, 32),
-			done:      make(chan struct{}),
-			overflow:  state.overflow,
+			qconn:        conn,
+			sessionID:    frame.SessionID,
+			addr:         frame.Addr,
+			readCh:       make(chan []byte, 32),
+			done:         make(chan struct{}),
+			overflow:     state.overflow,
+			sendInflight: &state.sendInflight,
 		}
 		state.sessions[frame.SessionID] = sess
 
@@ -1033,6 +1122,7 @@ func (s *QUICServer) ServeUDP(ctx context.Context, handler UDPHandler) error {
 
 // Close stops the server and closes the listener.
 func (s *QUICServer) Close() error {
+	// concurrency:allow — server-side, ln.Close() is fast (no protocol drain)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1072,6 +1162,8 @@ type quicUDPMux struct {
 	// Sustained recovery tracking: consecutive recvs without timeout.
 	// After relayRecoveryRecvs consecutive receives, hop counters reset.
 	consecutiveRecvs atomic.Int32
+
+	sendInflight atomic.Int32 // concurrent SendDatagram calls in progress
 }
 
 const (
@@ -1296,25 +1388,17 @@ func (c *quicUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 func (c *quicUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
 	frame, put := MarshalUDPFrame(c.sessionID, c.targetAddr, b)
 
-	// SendDatagram may block indefinitely when the 32-frame datagram queue
-	// is full. Use a timeout to convert blocking into dropping — DATAGRAM
-	// semantics are unreliable, so dropping is protocol-correct.
-	type sendResult struct{ err error }
-	ch := make(chan sendResult, 1)
-	go func() {
-		ch <- sendResult{c.qconn.SendDatagram(frame)}
-	}()
-
-	var err error
-	select {
-	case r := <-ch:
-		err = r.err
-	case <-time.After(sendDatagramTimeout):
+	// Atomic inflight check: drop immediately when queue is saturated.
+	// No goroutine spawned — avoids leak when SendDatagram blocks indefinitely.
+	if c.mux.sendInflight.Add(1) > maxDatagramInflight {
+		c.mux.sendInflight.Add(-1)
 		put()
 		c.mux.recordTimeout()
 		return 0, ErrDatagramSendTimeout
 	}
-	put() // SendDatagram copies internally; safe to return buffer to pool
+	err := c.qconn.SendDatagram(frame)
+	c.mux.sendInflight.Add(-1)
+	put()
 
 	if err == nil {
 		c.txPackets.Add(1)
@@ -1368,14 +1452,15 @@ func (c *quicUDPConn) SetWriteDeadline(time.Time) error    { return nil }
 // ============================================================================
 
 type serverUDPConn struct {
-	qconn     datagramSender
-	sessionID uint32
-	addr      string
-	readCh    chan []byte
-	done      chan struct{}
-	closeOnce sync.Once
-	rd        readDeadline
-	overflow  *udpOverflowStream // per-packet overflow for oversized datagrams
+	qconn        datagramSender
+	sessionID    uint32
+	addr         string
+	readCh       chan []byte
+	done         chan struct{}
+	closeOnce    sync.Once
+	rd           readDeadline
+	overflow     *udpOverflowStream // per-packet overflow for oversized datagrams
+	sendInflight *atomic.Int32      // shared across all sessions on this connection
 }
 
 var _ net.PacketConn = (*serverUDPConn)(nil)
@@ -1411,20 +1496,14 @@ func (c *serverUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
 	// Empty addr for response frames (client already knows the target)
 	frame, put := MarshalUDPFrame(c.sessionID, "", b)
 
-	type sendResult struct{ err error }
-	ch := make(chan sendResult, 1)
-	go func() {
-		ch <- sendResult{c.qconn.SendDatagram(frame)}
-	}()
-
-	var err error
-	select {
-	case r := <-ch:
-		err = r.err
-	case <-time.After(sendDatagramTimeout):
+	// Atomic inflight check: drop immediately when queue is saturated.
+	if c.sendInflight.Add(1) > maxDatagramInflight {
+		c.sendInflight.Add(-1)
 		put()
 		return 0, ErrDatagramSendTimeout
 	}
+	err := c.qconn.SendDatagram(frame)
+	c.sendInflight.Add(-1)
 	put()
 
 	if err == nil {

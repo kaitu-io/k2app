@@ -346,9 +346,12 @@ func (d *Daemon) tryAutoReconnect(ctx context.Context) {
 		return
 	}
 
-	// Only auto-reconnect if disconnected less than 1 hour ago.
-	if time.Since(st.Timestamp) > 1*time.Hour {
-		slog.Info("auto-reconnect: stale state, skipping", "age", ">1h")
+	// Only auto-reconnect if disconnected less than 7 days ago.
+	// State=="connected" means previous daemon didn't shut down gracefully
+	// (crash or kill), so reconnect is appropriate. 7-day window covers
+	// overnight sleep, weekend, and vacation scenarios.
+	if time.Since(st.Timestamp) > 7*24*time.Hour {
+		slog.Info("auto-reconnect: stale state, skipping", "age", ">7d")
 		return
 	}
 

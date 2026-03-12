@@ -12,10 +12,15 @@ func TestMain(m *testing.M) {
 		goleak.IgnoreTopFunction("github.com/apernet/quic-go.(*packetHandlerMap).listen"),
 		goleak.IgnoreTopFunction("github.com/apernet/quic-go.(*Transport).listen"),
 		goleak.IgnoreTopFunction("github.com/apernet/quic-go.(*Transport).runReceiveLoop"),
+		goleak.IgnoreTopFunction("github.com/apernet/quic-go.(*Transport).runSendQueue"),
 		// smux session background goroutines — keepalive and shapers.
 		goleak.IgnoreTopFunction("github.com/xtaci/smux/v2.(*Session).keepalive"),
 		goleak.IgnoreTopFunction("github.com/xtaci/smux/v2.(*Session).sendLoop"),
 		goleak.IgnoreTopFunction("github.com/xtaci/smux/v2.(*Session).recvLoop"),
 		goleak.IgnoreTopFunction("github.com/xtaci/smux/v2.(*Session).shaperLoop"),
+		// net/http transport dial goroutines — ECH provider DNS-over-HTTPS cleanup lag.
+		// Two goroutines: the dial itself and the connect context watcher.
+		goleak.IgnoreAnyFunction("net/http.(*Transport).dialConnFor"),
+		goleak.IgnoreTopFunction("net.(*netFD).connect.func2"),
 	)
 }

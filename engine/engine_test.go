@@ -1035,7 +1035,7 @@ func TestEngineStartStopRace(t *testing.T) {
 		e.mu.Lock()
 		ctx, cancel := context.WithCancel(context.Background())
 		e.cancel = cancel
-		e.setState(StateConnecting)
+		e.setStateLocked(StateConnecting)
 		e.mu.Unlock()
 
 		// Signal: we're in the gap (lock released, resources not yet committed).
@@ -1056,7 +1056,7 @@ func TestEngineStartStopRace(t *testing.T) {
 			cancel()
 			return
 		}
-		e.setState(StateConnected)
+		e.setStateLocked(StateConnected)
 		e.mu.Unlock()
 	}()
 

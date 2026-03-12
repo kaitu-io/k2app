@@ -55,11 +55,11 @@ func TestAutoReconnectSkipsStale(t *testing.T) {
 	cfg := &config.ClientConfig{Server: "k2v5://test:tok@host:443"}
 	config.SetDefaults(cfg)
 
-	// Save stale state (2 hours ago).
+	// Save stale state (8 days ago — exceeds 7-day auto-reconnect window).
 	saveState(persistedState{
 		Config:    cfg,
 		State:     engine.StateConnected,
-		Timestamp: time.Now().Add(-2 * time.Hour),
+		Timestamp: time.Now().Add(-8 * 24 * time.Hour),
 	})
 
 	d := New()

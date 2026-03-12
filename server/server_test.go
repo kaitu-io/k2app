@@ -665,14 +665,13 @@ func TestServer_WSUpgrade(t *testing.T) {
 	}
 
 	// WebSocket dial over the TLS connection.
-	wsDialOpts := &websocket.DialOptions{
-		HTTPClient: &http.Client{
-			Transport: &http.Transport{
-				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-					return tlsConn, nil
-				},
-			},
+	httpTransport := &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return tlsConn, nil
 		},
+	}
+	wsDialOpts := &websocket.DialOptions{
+		HTTPClient: &http.Client{Transport: httpTransport},
 	}
 
 	ws, _, err := websocket.Dial(ctx, "ws://localhost/k2v5/tunnel", wsDialOpts)
@@ -722,6 +721,9 @@ func TestServer_WSUpgrade(t *testing.T) {
 	}
 
 	stream.Close()
+	sess.Close()
+	httpTransport.CloseIdleConnections()
+	clientRaw.Close() // kill h2 read loop
 	cancel()
 	wg.Wait()
 }
