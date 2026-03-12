@@ -106,6 +106,30 @@ func containsPIDName(path, name string) bool {
 	return false
 }
 
+func TestIsProcessAlive_Self(t *testing.T) {
+	// Current process should always be alive — works on all platforms.
+	pid := os.Getpid()
+	if !IsProcessAlive(pid) {
+		t.Errorf("IsProcessAlive(%d) = false for current process", pid)
+	}
+}
+
+func TestIsProcessAlive_Dead(t *testing.T) {
+	// A very large PID should not exist on any platform.
+	if IsProcessAlive(999999999) {
+		t.Error("IsProcessAlive(999999999) = true, expected false")
+	}
+}
+
+func TestIsProcessAlive_Invalid(t *testing.T) {
+	if IsProcessAlive(0) {
+		t.Error("IsProcessAlive(0) = true, expected false")
+	}
+	if IsProcessAlive(-1) {
+		t.Error("IsProcessAlive(-1) = true, expected false")
+	}
+}
+
 func TestPIDCleanup(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.pid")
