@@ -60,7 +60,9 @@ func CleanupStaleDNSOverride() {
 	path := dnsStateFilePath()
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return // no marker, nothing to clean
+		// No marker — still probe for stale interface as safety net.
+		probeStaleTunInterface()
+		return
 	}
 
 	var state windowsDNSState
@@ -97,6 +99,21 @@ func CleanupStaleDNSOverride() {
 
 	os.Remove(path)
 	slog.Info("recovery: Windows network cleanup complete")
+}
+
+// probeStaleTunInterface checks for a stale sing-tun interface even when
+// the DNS state marker file is missing (e.g. crash between removeDNSState
+// and actual TUN close). This is a safety net for edge cases.
+func probeStaleTunInterface() {
+	iface, err := net.InterfaceByName("sing-tun")
+	if err != nil {
+		return // no stale interface — normal case
+	}
+	slog.Warn("recovery: found stale sing-tun interface without marker",
+		"index", iface.Index)
+	resetInterfaceDNS(iface.Index)
+	deleteStaleRoutes(iface.Index)
+	flushDNSCache()
 }
 
 // resetInterfaceDNS resets DNS settings to DHCP for the given interface.

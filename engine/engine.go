@@ -312,13 +312,15 @@ func (e *Engine) Start(cfg Config) error {
 	// 9. Commit — verify not cancelled before saving resources.
 	e.mu.Lock()
 	if ctx.Err() != nil {
-		// Stop() was called during Start() — clean up started resources.
+		// Stop() was called during Start() — clean up ALL started resources.
+		// Order follows resource ownership: prov → tm → tunnel (same as Stop()).
 		e.mu.Unlock()
 		if cfg.NetworkMonitor != nil {
 			cfg.NetworkMonitor.Close()
 		}
 		prov.Close()
 		tm.Close()
+		tunnel.Close()
 		return ctx.Err()
 	}
 	e.tunnel = tunnel

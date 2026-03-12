@@ -83,7 +83,9 @@ func (o *udpOverflowStream) init() error {
 	}
 	o.opened = true
 
-	stream, err := o.qconn.OpenStreamSync(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	stream, err := o.qconn.OpenStreamSync(ctx)
 	if err != nil {
 		o.initErr = fmt.Errorf("wire: open overflow stream: %w", err)
 		slog.Warn("udpOverflowStream: open failed", "err", o.initErr)
@@ -126,6 +128,7 @@ func (o *udpOverflowStream) close() {
 	if o.stream != nil {
 		o.stream.CancelRead(0)
 		o.stream.Close()
+		o.stream = nil
 	}
 }
 

@@ -8,7 +8,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 )
 
 // WritePID writes the current process PID to the specified file.
@@ -43,19 +42,7 @@ func ReadPID(path string) (int, error) {
 }
 
 // IsProcessAlive reports whether the process with the given PID is running.
-// On Unix, it uses signal 0 to probe the process without sending a real signal.
-func IsProcessAlive(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	process, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	// os.FindProcess on Unix always succeeds — use signal 0 to probe.
-	err = process.Signal(syscall.Signal(0))
-	return err == nil
-}
+// Platform-specific: see pid_unix.go (signal 0) and pid_windows.go (OpenProcess).
 
 // RemovePID removes the PID file. Ignores any errors (best-effort cleanup).
 func RemovePID(path string) {

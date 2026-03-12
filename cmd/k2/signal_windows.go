@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"syscall"
 
 	"github.com/kaitu-io/k2/config"
 )
@@ -38,13 +37,15 @@ func runSignal(sig string, pidPath string, w io.Writer) error {
 		return fmt.Errorf("k2 is not running (stale pid %d, file removed)", pid)
 	}
 
-	// Send SIGTERM (Windows equivalent for graceful stop).
+	// On Windows, os.Process.Signal only supports os.Interrupt (CTRL_BREAK_EVENT)
+	// and os.Kill (TerminateProcess). syscall.SIGTERM is not supported.
+	// Use os.Interrupt for graceful stop — the daemon's signal handler catches it.
 	process, err := os.FindProcess(pid)
 	if err != nil {
 		return fmt.Errorf("find process %d: %w", pid, err)
 	}
-	if err := process.Signal(syscall.SIGTERM); err != nil {
-		return fmt.Errorf("send signal to pid %d: %w", pid, err)
+	if err := process.Signal(os.Interrupt); err != nil {
+		return fmt.Errorf("send stop signal to pid %d: %w", pid, err)
 	}
 
 	fmt.Fprintf(w, "Sent stop signal to k2 (PID %d)\n", pid)
