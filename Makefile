@@ -50,7 +50,14 @@ build-macos-sysext-fast:
 build-macos-sysext-test:
 	bash scripts/build-macos.sh --ne-mode --single-arch --skip-notarization
 
-build-windows: pre-build build-webapp build-k2-windows
+simplisign-login:
+	@if [ "$$(uname -s)" = "Darwin" ]; then \
+		bash scripts/ci/macos/simplisign-login.sh; \
+	else \
+		echo "simplisign-login is macOS only, skipping"; \
+	fi
+
+build-windows: pre-build build-webapp build-k2-windows simplisign-login
 	@if [ "$$(uname -s)" = "Darwin" ] || [ "$$(uname -s)" = "Linux" ]; then \
 		echo "--- Cross-compiling Windows from $$(uname -s) via cargo-xwin ---"; \
 		command -v cargo-xwin >/dev/null 2>&1 || { echo "ERROR: cargo-xwin not found. Install: cargo install --locked cargo-xwin"; exit 1; }; \
