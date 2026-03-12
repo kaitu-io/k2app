@@ -98,8 +98,8 @@
     "advancedOptionsInfo": "点击查看详细说明",
     "advancedOptionsHelp": "高级选项说明",
     "muxDescription": "##延迟更低，速度更快##。一条通道同时传输多个请求，就像高速公路上开辟多条车道，##减少排队等待时间##。适合观看视频、游戏等场景。",
-    "concurrentDescription": "##同时使用多个节点##，让连接更快更稳定。就像同时走多条路，一条堵了还有其他路可走。在##网络受限时特别有效##，Pro 专属功能。",
-    "anonymityDescription": "##连接服务器和访问网站使用不同的 IP 地址##，保护您的真实位置不被追踪。就像戴上双重面具，隐私更安全。注意：可能略微影响速度，Pro 专属功能。",
+    "concurrentDescription": "##同时使用多个节点##，让连接更快更稳定。就像同时走多条路，一条堵了还有其他路可走。在##网络受限时特别有效##，会员专属功能。",
+    "anonymityDescription": "##连接服务器和访问网站使用不同的 IP 地址##，保护您的真实位置不被追踪。就像戴上双重面具，隐私更安全。注意：可能略微影响速度，会员专属功能。",
     "recentLocations": "最近使用",
     "favorites": "收藏的服务器",
     "allLocations": "所有位置",
@@ -184,10 +184,10 @@
       "notFound": "请求的资源不存在"
     },
     "vpn": {
-      "stopFailed": "VPN 停止失败",
-      "startFailed": "VPN 启动失败",
-      "reconnectFailed": "VPN 重连失败",
-      "timeout": "VPN 操作超时"
+      "stopFailed": "服务停止失败",
+      "startFailed": "服务启动失败",
+      "reconnectFailed": "重连失败",
+      "timeout": "操作超时"
     },
     "tunnel": {
       "listFailed": "获取隧道列表失败",
@@ -470,7 +470,7 @@
   },
   "purchase": {
     "title": "购买套餐",
-    "proMemberBenefits": "Pro 会员专享权益",
+    "memberBenefits": "会员权益",
     "paymentResultConfirm": "支付结果确认",
     "orderNumber": "订单号",
     "paymentAmount": "支付金额",
@@ -487,7 +487,7 @@
     "totalPrice": "总价",
     "saveAmount": "立省${{amount}}",
     "total": "总计",
-    "proAuthorization": "Pro授权 {{months}} 个月",
+    "memberAuthorization": "会员授权 {{months}} 个月",
     "friendReferralGift": "+{{days}}天好友推荐赠送",
     "havePromoCode": "我有优惠活动码",
     "clear": "清除",
@@ -516,7 +516,7 @@
     "createOrderFailed": "创建订单失败，请重试",
     "createOrderFailedNetwork": "创建订单失败，请检查网络连接后重试",
     "refreshUserProfileFailed": "刷新用户资料失败",
-    "proAuthorizationMultiple": "Pro授权 {{months}} 个月 × {{count}} 用户",
+    "memberAuthorizationMultiple": "会员授权 {{months}} 个月 × {{count}} 用户",
     "selectTarget": "选择付费对象",
     "selectAtLeastOneTarget": "请至少选择一个付费对象",
     "operationFailed": "操作失败"
@@ -608,8 +608,7 @@
   },
   "brand": {
     "name": "开途",
-    "slogan": "开红海，出埃及，得自由",
-    "subtitle": "企业级安全隧道，连接世界每一个角落"
+    "slogan": "越拥堵，越从容"
   },
   "features": {
     "fastConnect": "极速连接",
@@ -732,7 +731,7 @@
     "subtitle": "通过网速测试和网络修复来诊断网络连接问题",
     "securitySoftware": {
       "title": "安全软件白名单设置",
-      "description": "如果VPN连接被360、腾讯管家等安全软件拦截，请查看设置指南"
+      "description": "如果连接被360、腾讯管家等安全软件拦截，请查看设置指南"
     },
     "serverList": {
       "show": "查看所有服务器",
@@ -758,7 +757,7 @@
   },
   "versionComparison": {
     "freeVersion": "免费版",
-    "proVersion": "Pro版",
+    "memberVersion": "会员版",
     "deviceCount": "设备数量",
     "dailyUsage": "每日使用时长",
     "adBlock": "去广告",

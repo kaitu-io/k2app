@@ -138,8 +138,7 @@
   },
   "brand": {
     "name": "开途",
-    "slogan": "開紅海，出埃及，得自由",
-    "subtitle": "企业级安全隧道，连接世界每一个角落"
+    "slogan": "越擁堵，越從容"
   },
   "common": {
     "actionParseFailed": "請求解析失敗",
@@ -170,7 +169,7 @@
     "advancedOptionsInfo": "点击查看详细说明",
     "advancedSettings": "高级设置",
     "allLocations": "所有位置",
-    "anonymityDescription": "##连接服务器和访问网站使用不同的 IP 地址##，保护您的真实位置不被追踪。就像戴上双重面具，隐私更安全。注意：可能略微影响速度，Pro 专属功能。",
+    "anonymityDescription": "##连接服务器和访问网站使用不同的 IP 地址##，保护您的真实位置不被追踪。就像戴上双重面具，隐私更安全。注意：可能略微影响速度，會員專屬功能。",
     "autoSelect": "自動選擇",
     "autoSwitch": "自動切換",
     "autoSwitchAlwaysEnabled": "智能切换已启用",
@@ -179,7 +178,7 @@
     "autoSwitchInCountry": "同國家智能切換",
     "autoSwitchInfo": "系统会根据网络状况自动切换到该国家的其他可用节点",
     "autoSwitchLabel": "根據網路狀況自動切換到該國家的其他節點",
-    "concurrentDescription": "##同时使用多个节点##，让连接更快更稳定。就像同时走多条路，一条堵了还有其他路可走。在##网络受限时特别有效##，Pro 专属功能。",
+    "concurrentDescription": "##同时使用多个节点##，让连接更快更稳定。就像同时走多条路，一条堵了还有其他路可走。在##网络受限时特别有效##，會員專屬功能。",
     "connectionRetrying": "服务器连接失败，正在重试...",
     "currentSelectedNode": "目前選擇節點",
     "disconnectToModify": "請先中斷連線後修改",
@@ -296,10 +295,10 @@
     "unknown": "未知错误，请稍后重试",
     "unknownError": "未知错误",
     "vpn": {
-      "reconnectFailed": "VPN 重新連線失敗",
-      "startFailed": "VPN 啟動失敗",
-      "stopFailed": "VPN 停止失敗",
-      "timeout": "VPN 操作逾時"
+      "reconnectFailed": "重新連線失敗",
+      "startFailed": "服務啟動失敗",
+      "stopFailed": "服務停止失敗",
+      "timeout": "操作逾時"
     }
   },
   "faq": {
@@ -608,9 +607,9 @@
     "paymentFailed": "支付失敗",
     "paymentResultConfirm": "支付結果確認",
     "paymentSuccess": "支付成功",
-    "proAuthorization": "Pro授權 {{months}} 個月",
-    "proAuthorizationMultiple": "Pro授权 {{months}} 个月 × {{count}} 用戶",
-    "proMemberBenefits": "Pro 會員專享權益",
+    "memberAuthorization": "會員授權 {{months}} 個月",
+    "memberAuthorizationMultiple": "會員授權 {{months}} 個月 × {{count}} 用戶",
+    "memberBenefits": "會員權益",
     "refreshUserProfileFailed": "重新整理用戶資料失敗",
     "saveAmount": "立省${{amount}}",
     "selectAtLeastOneTarget": "请至少選擇一个付費对象",
@@ -809,7 +808,7 @@
   },
   "troubleshooting": {
     "securitySoftware": {
-      "description": "如果VPN连接被360、腾讯管家等安全软件拦截，请查看设置指南",
+      "description": "如果连接被360、腾讯管家等安全软件拦截，请查看设置指南",
       "title": "安全软件白名单设置"
     },
     "serverList": {
@@ -857,7 +856,7 @@
     "multiThreading": "多路併發",
     "no": "×",
     "oneDevice": "1台",
-    "proVersion": "Pro版",
+    "memberVersion": "會員版",
     "techSupport": "技術支援",
     "twoHours": "2小時",
     "unlimited": "無限制",

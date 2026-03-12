@@ -71,7 +71,7 @@ export default function VersionComparison() {
                 <Typography variant="subtitle1" fontWeight="bold" component="span">{t('dashboard:versionComparison.freeVersion')}</Typography>
               </TableCell>
               <TableCell align="center" sx={{ width: '30%' }}>
-                <Typography variant="subtitle1" fontWeight="bold" component="span">{t('dashboard:versionComparison.proVersion')}</Typography>
+                <Typography variant="subtitle1" fontWeight="bold" component="span">{t('dashboard:versionComparison.memberVersion')}</Typography>
               </TableCell>
             </TableRow>
           </TableHead>

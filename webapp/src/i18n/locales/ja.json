@@ -138,8 +138,7 @@
   },
   "brand": {
     "name": "車を走らせる",
-    "slogan": "紅海を開き、エジプトを出で、自由を得よ",
-    "subtitle": "世界各地を結ぶエンタープライズグレードのセキュアなトンネル"
+    "slogan": "混雑するほど、余裕が生まれる"
   },
   "common": {
     "actionParseFailed": "リクエストの解析に失敗しました",
@@ -296,10 +295,10 @@
     "unknown": "不明なエラーが発生しました。",
     "unknownError": "未知のエラー",
     "vpn": {
-      "reconnectFailed": "VPNの再接続に失敗しました",
-      "startFailed": "VPNの開始に失敗しました",
-      "stopFailed": "VPNの停止に失敗しました",
-      "timeout": "VPN操作がタイムアウトしました"
+      "reconnectFailed": "再接続に失敗しました",
+      "startFailed": "サービスの開始に失敗しました",
+      "stopFailed": "サービスの停止に失敗しました",
+      "timeout": "操作がタイムアウトしました"
     }
   },
   "faq": {
@@ -608,9 +607,9 @@
     "paymentFailed": "支払い失敗",
     "paymentResultConfirm": "支払い結果の確認",
     "paymentSuccess": "支払い成功",
-    "proAuthorization": "Pro認証 {{months}}ヶ月",
-    "proAuthorizationMultiple": "Pro授权 {{months}} 个月 × {{count}} ユーザー",
-    "proMemberBenefits": "Proメンバー限定特典",
+    "memberAuthorization": "会員認証 {{months}}ヶ月",
+    "memberAuthorizationMultiple": "会員認証 {{months}}ヶ月 × {{count}} ユーザー",
+    "memberBenefits": "会員特典",
     "refreshUserProfileFailed": "ユーザープロファイルの更新に失敗しました",
     "saveAmount": "${{amount}}節約",
     "selectAtLeastOneTarget": "请至少選択一个有料对象",
@@ -809,7 +808,7 @@
   },
   "troubleshooting": {
     "securitySoftware": {
-      "description": "360、Tencent ButlerなどのセキュリティソフトによってVPN接続がブロックされている場合は、セットアップガイドをご確認ください。",
+      "description": "360、Tencent Butlerなどのセキュリティソフトによって接続がブロックされている場合は、セットアップガイドをご確認ください。",
       "title": "セキュリティソフトのホワイトリスト設定"
     },
     "serverList": {
@@ -857,7 +856,7 @@
     "multiThreading": "マルチスレッド",
     "no": "×",
     "oneDevice": "1台",
-    "proVersion": "Pro版",
+    "memberVersion": "会員版",
     "techSupport": "技術サポート",
     "twoHours": "2時間",
     "unlimited": "無制限",

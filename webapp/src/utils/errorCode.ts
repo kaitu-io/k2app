@@ -190,13 +190,13 @@ export function getErrorMessage(
 
     // VPN 服务相关错误 (510-519)
     case ERROR_CODES.VPN_STOP_FAILED:
-      return t('common:errors.vpn.stopFailed', 'Failed to stop VPN');
+      return t('common:errors.vpn.stopFailed', 'Failed to stop service');
     case ERROR_CODES.VPN_START_FAILED:
-      return t('common:errors.vpn.startFailed', 'Failed to start VPN');
+      return t('common:errors.vpn.startFailed', 'Failed to start service');
     case ERROR_CODES.VPN_RECONNECT_FAILED:
-      return t('common:errors.vpn.reconnectFailed', 'Failed to reconnect VPN');
+      return t('common:errors.vpn.reconnectFailed', 'Failed to reconnect');
     case ERROR_CODES.VPN_TIMEOUT:
-      return t('common:errors.vpn.timeout', 'VPN operation timed out');
+      return t('common:errors.vpn.timeout', 'Operation timed out');
 
     // 网络修复相关错误 (520-529)
     case ERROR_CODES.NETWORK_REPAIR_FAILED:

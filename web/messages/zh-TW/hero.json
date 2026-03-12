@@ -1,7 +1,7 @@
 {
   "hero": {
-    "title": "30% 丟包，滿速。",
-    "subtitle": "這不科學——但 k2 做到了。",
+    "title": "別人斷線，你滿速。",
+    "subtitle": "越擁堵，越從容。",
     "description": "k2cc 重寫了擁塞控制的規則。在高丟包弱網環境中，k2 依然保持遠超傳統協議的穩定吞吐。基於 ECH 加密隱身 + QUIC/TCP-WS 雙棧傳輸，一行命令部署。",
     "cta_primary": "開通和續費",
     "cta_secondary": "下載客戶端",
