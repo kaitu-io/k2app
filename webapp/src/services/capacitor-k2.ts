@@ -10,6 +10,7 @@
 import { Capacitor } from '@capacitor/core';
 import { Browser } from '@capacitor/browser';
 import { Clipboard } from '@capacitor/clipboard';
+import { Share } from '@capacitor/share';
 import { K2Plugin } from 'k2-plugin';
 import type { IK2Vpn, IPlatform, IUpdater, UpdateInfo, SResponse } from '../types/kaitu-core';
 import type { StatusResponseData, ControlError, ServiceState } from './vpn-types';
@@ -174,6 +175,15 @@ export async function injectCapacitorGlobals(): Promise<void> {
     readClipboard: async (): Promise<string> => {
       const result = await Clipboard.read();
       return result.value ?? '';
+    },
+
+    share: async (params: { text: string; title?: string; url?: string }): Promise<void> => {
+      await Share.share({
+        title: params.title,
+        text: params.text,
+        url: params.url,
+        dialogTitle: params.title,
+      });
     },
 
     syncLocale: async (_locale: string): Promise<void> => {
