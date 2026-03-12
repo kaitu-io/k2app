@@ -143,7 +143,7 @@ func findCloseViolations(t *testing.T, fset *token.FileSet, stmt ast.Stmt, path 
 		if !ok {
 			return true
 		}
-		if sel.Sel.Name == "Close" || sel.Sel.Name == "CloseWithError" {
+		if sel.Sel.Name == "Close" || sel.Sel.Name == "CloseWithError" || sel.Sel.Name == "close" {
 			relPath, _ := filepath.Rel(findModuleRootCached(), path)
 			if relPath == "" {
 				relPath = path

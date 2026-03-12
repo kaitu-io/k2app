@@ -144,6 +144,8 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 		c.mu.Unlock()
 		return nil, ErrNotConnected
 	}
+	var mux *smuxUDPMux
+	var deadSess *smux.Session
 	if c.sess != nil {
 		if !c.sess.IsClosed() {
 			sess := c.sess
@@ -151,15 +153,17 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 			return sess, nil
 		}
 		slog.Debug("TCPWSClient: clearing dead smux session")
-		if c.udpMux != nil {
-			c.udpMux.close()
-			c.udpMux = nil
-		}
-		c.sess = nil
-		c.alloc = nil
+		mux, deadSess = c.extractSessionLocked()
 	}
 	testConn := c.testConn // read under lock (set during construction only)
 	c.mu.Unlock()
+	// Close dead session resources outside lock (Rule #4).
+	if mux != nil {
+		mux.close()
+	}
+	if deadSess != nil {
+		deadSess.Close()
+	}
 
 	// Serialize expensive connect attempts.
 	c.connectMu.Lock()
@@ -171,20 +175,24 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 		c.mu.Unlock()
 		return nil, ErrNotConnected
 	}
+	var mux2 *smuxUDPMux
+	var deadSess2 *smux.Session
 	if c.sess != nil {
 		if !c.sess.IsClosed() {
 			sess := c.sess
 			c.mu.Unlock()
 			return sess, nil
 		}
-		if c.udpMux != nil {
-			c.udpMux.close()
-			c.udpMux = nil
-		}
-		c.sess = nil
-		c.alloc = nil
+		mux2, deadSess2 = c.extractSessionLocked()
 	}
 	c.mu.Unlock()
+	// Close dead session resources outside lock (Rule #4).
+	if mux2 != nil {
+		mux2.close()
+	}
+	if deadSess2 != nil {
+		deadSess2.Close()
+	}
 
 	// --- All blocking I/O below — NO lock held ---
 	var conn net.Conn

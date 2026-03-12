@@ -80,18 +80,20 @@ func fetchLatest() (*latestInfo, error) {
 			lastErr = err
 			continue
 		}
-		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
 			lastErr = fmt.Errorf("HTTP %d from %s", resp.StatusCode, endpoint)
 			continue
 		}
 
 		var info latestInfo
 		if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+			resp.Body.Close()
 			lastErr = err
 			continue
 		}
+		resp.Body.Close()
 		return &info, nil
 	}
 	return nil, fmt.Errorf("all endpoints failed: %w", lastErr)
@@ -158,7 +160,16 @@ func downloadAndReplace(url string, expectedHash string) error {
 		return fmt.Errorf("chmod: %w", err)
 	}
 
-	// Atomic replace.
+	// Replace binary. On Windows, a running executable cannot be deleted
+	// but can be renamed. Move the current binary aside first.
+	if runtime.GOOS == "windows" {
+		oldPath := self + ".old"
+		os.Remove(oldPath) // clean up from previous upgrade
+		if err := os.Rename(self, oldPath); err != nil {
+			os.Remove(tmpPath)
+			return fmt.Errorf("rename current binary: %w", err)
+		}
+	}
 	if err := os.Rename(tmpPath, self); err != nil {
 		os.Remove(tmpPath)
 		return fmt.Errorf("replace: %w", err)
@@ -177,16 +188,18 @@ func checkVersionAsync() {
 		if err != nil {
 			continue
 		}
-		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
 			continue
 		}
 
 		var info latestInfo
 		if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+			resp.Body.Close()
 			continue
 		}
+		resp.Body.Close()
 
 		if info.Version != "" && info.Version != version {
 			fmt.Printf("New version available: %s (run 'k2 upgrade' to update)\n", info.Version)

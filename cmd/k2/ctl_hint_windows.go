@@ -8,7 +8,7 @@ func daemonNotRunningHint() string {
 	return `Error: daemon not running
 
   First time?     k2 setup <URL>
-  Already set up? sc start k2
+  Already set up? sc start kaitu
 
 `
 }

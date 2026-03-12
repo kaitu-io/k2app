@@ -417,6 +417,7 @@ func (r *udpRelay) close() {
 	r.closeOnce.Do(func() {
 		close(r.done)
 		r.udpConn.Close()
+		// concurrency:allow — sess.close() is closeOnce.Do(func(){ close(done) }), pure memory op
 		r.mu.Lock()
 		for _, sess := range r.sessions {
 			sess.close()

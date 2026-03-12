@@ -901,6 +901,7 @@ func (s *QUICServer) handleConn(conn *quic.Conn) {
 	// Cleanup: close all UDP sessions and overflow stream
 	close(state.done)
 	state.overflow.close()
+	// concurrency:allow — sess.close() is closeOnce.Do(func(){ close(done) }), pure memory op
 	state.mu.Lock()
 	for _, sess := range state.sessions {
 		sess.close()
