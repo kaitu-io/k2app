@@ -73,7 +73,7 @@ export default function Footer() {
                 </Link>
               </li>
               <li>
-                <Link href="/guide/parents" className="hover:text-blue-600">
+                <Link href="/support" className="hover:text-blue-600">
                   {t('nav.footer.support.homeschoolGuide')}
                 </Link>
               </li>

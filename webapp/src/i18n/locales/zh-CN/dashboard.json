@@ -59,7 +59,7 @@
     "connectionRetrying": "服务器连接失败，正在重试...",
     "serviceFailure": {
       "title": "服务连接失败",
-      "message": "无法连接到 VPN 服务。请检查服务是否正在运行。",
+      "message": "无法连接到加速服务。请检查服务是否正在运行。",
       "resolve": "解决",
       "resolving": "正在解决...",
       "more": "更多",
@@ -68,11 +68,11 @@
     },
     "serviceError": {
       "title": "服务异常",
-      "subtitle": "VPN 核心服务未能正常运行",
+      "subtitle": "核心服务未能正常运行",
       "reason1Title": "自动更新未完成",
       "reason1Desc": "应用可能在更新过程中出现异常，导致服务组件未能正确安装。",
       "reason2Title": "安全软件拦截",
-      "reason2Desc": "360、腾讯管家等安全软件可能误将 VPN 服务识别为风险程序并阻止其运行。",
+      "reason2Desc": "360、腾讯管家等安全软件可能误将加速服务识别为风险程序并阻止其运行。",
       "solutionTitle": "解决方案",
       "solutionDesc": "请访问官网重新下载并安装最新版本，即可修复此问题。",
       "downloadButton": "前往下载",
@@ -113,7 +113,7 @@
     "subtitle": "通过网速测试和网络修复来诊断网络连接问题",
     "securitySoftware": {
       "title": "安全软件白名单设置",
-      "description": "如果VPN连接被360、腾讯管家等安全软件拦截，请查看设置指南"
+      "description": "如果连接被360、腾讯管家等安全软件拦截，请查看设置指南"
     },
     "serverList": {
       "show": "查看所有服务器",
