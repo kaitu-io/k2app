@@ -185,18 +185,20 @@ func (p *TUNProvider) Close() error {
 		p.dnsOverride.stop()
 		p.dnsOverride = nil
 	}
-	// Remove DNS state marker — clean shutdown means no crash recovery needed.
-	removeDNSState()
 	if p.stack != nil {
 		p.stack.Close()
 		p.stack = nil
 	}
+	var err error
 	if p.tunIf != nil {
-		err := p.tunIf.Close()
+		err = p.tunIf.Close()
 		p.tunIf = nil
-		return err
 	}
-	return nil
+	// Remove DNS state marker AFTER TUN is fully closed.
+	// If we crash before this point, the marker survives and
+	// CleanupStaleDNSOverride() will clean up on next startup.
+	removeDNSState()
+	return err
 }
 
 func (p *TUNProvider) Name() string {
