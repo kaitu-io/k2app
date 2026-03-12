@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"net"
 	"sync"
 	"testing"
@@ -411,6 +412,27 @@ func TestStreamTypeUDPOverflow_BackwardCompat(t *testing.T) {
 	}
 
 	overflow.close()
+}
+
+// TestUDPOverflowStreamInitCachedError verifies that init() returns the cached
+// error on subsequent calls after an initial failure.
+func TestUDPOverflowStreamInitCachedError(t *testing.T) {
+	o := &udpOverflowStream{}
+	o.opened = true
+	o.initErr = errors.New("simulated init failure")
+
+	err := o.init()
+	if err == nil || err.Error() != "simulated init failure" {
+		t.Errorf("init() = %v, want cached error", err)
+	}
+}
+
+// TestUDPOverflowStreamCloseIdempotent verifies that close() is safe to call
+// multiple times and on a zero-value struct (nil stream).
+func TestUDPOverflowStreamCloseIdempotent(t *testing.T) {
+	o := &udpOverflowStream{}
+	o.close() // should not panic on nil stream
+	o.close() // double close should not panic
 }
 
 // TestUDPOverflowStream_ConcurrentSend verifies that concurrent sends are serialized.
