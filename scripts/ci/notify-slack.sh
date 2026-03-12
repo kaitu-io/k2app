@@ -324,20 +324,20 @@ DLEOF
 
         PAYLOAD=$(cat <<EOF
 {
-  "text": "✅ Desktop Release v${VERSION} Complete",
+  "text": "✅ Release v${VERSION} (${PLATFORMS}) Complete",
   "blocks": [
     {
       "type": "header",
       "text": {
         "type": "plain_text",
-        "text": "✅ Desktop Release v${VERSION} Published"
+        "text": "✅ Release v${VERSION} (${PLATFORMS}) Published"
       }
     },
     {
       "type": "section",
       "text": {
         "type": "mrkdwn",
-        "text": "Successfully built and deployed desktop applications"
+        "text": "Successfully built and deployed"
       }
     },
     {

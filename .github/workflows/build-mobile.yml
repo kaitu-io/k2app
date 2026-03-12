@@ -205,7 +205,19 @@ jobs:
         if: always()
         run: security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" || true
 
-      - name: Notify Slack on failure
+      - name: Notify Slack on iOS success
+        if: success()
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          CDN_BASE="https://d0.all7.cc/kaitu/ios"
+          ./scripts/ci/notify-slack.sh deploy-success \
+            --version "${VERSION}" \
+            --platforms "iOS" \
+            --download-url "<${CDN_BASE}/Kaitu-${VERSION}.ipa|iOS IPA>"
+        env:
+          SLACK_WEBHOOK_RELEASE: ${{ secrets.SLACK_WEBHOOK_RELEASE }}
+
+      - name: Notify Slack on iOS failure
         if: failure()
         run: |
           ./scripts/ci/notify-slack.sh build-failure \
@@ -358,7 +370,19 @@ jobs:
             --distribution-id "$DISTRIBUTION_ID" \
             --paths "/kaitu/android/*"
 
-      - name: Notify Slack on failure
+      - name: Notify Slack on Android success
+        if: success()
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          CDN_BASE="https://d0.all7.cc/kaitu/android"
+          ./scripts/ci/notify-slack.sh deploy-success \
+            --version "${VERSION}" \
+            --platforms "Android" \
+            --download-url "<${CDN_BASE}/Kaitu-${VERSION}.apk|Android APK>"
+        env:
+          SLACK_WEBHOOK_RELEASE: ${{ secrets.SLACK_WEBHOOK_RELEASE }}
+
+      - name: Notify Slack on Android failure
         if: failure()
         run: |
           ./scripts/ci/notify-slack.sh build-failure \

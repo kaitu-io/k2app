@@ -131,7 +131,7 @@ jobs:
           - runner: macos-latest
             target: universal-apple-darwin
             platform: macOS
-          - runner: [self-hosted, Windows]
+          - runner: [self-hosted, macOS, ARM64]
             target: x86_64-pc-windows-msvc
             platform: Windows
 
@@ -143,8 +143,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          clean: ${{ matrix.platform != 'Windows' }}
 
       - name: Checkout k2 submodule
         uses: webfactory/ssh-agent@v0.9.0
@@ -162,37 +160,40 @@ jobs:
           node-version: '20'
           cache: 'yarn'
 
-      - name: Setup Node.js (self-hosted)
+      - name: Verify tools (self-hosted macOS)
         if: matrix.platform == 'Windows'
-        shell: bash
         run: |
-          NODE_VERSION=$(cat .nvmrc)
-          CURRENT=$(node -v 2>/dev/null || echo "none")
-          if [ "$CURRENT" != "v${NODE_VERSION}" ]; then
-            echo "Node $CURRENT -> v${NODE_VERSION}"
-            nvm install "$NODE_VERSION"
-          fi
-          nvm use "$NODE_VERSION"
-          NODE_DIR=$(dirname "$(which node)")
-          echo "$NODE_DIR" >> "$GITHUB_PATH"
-          # Ensure yarn is available
-          if ! command -v yarn &>/dev/null; then
-            npm install -g yarn
-          fi
-          NPM_GLOBAL=$(npm prefix -g)
-          echo "$NPM_GLOBAL" >> "$GITHUB_PATH"
+          # Ensure Go is on PATH (self-hosted runner)
+          export PATH="/usr/local/go/bin:$PATH"
+          echo "/usr/local/go/bin" >> "$GITHUB_PATH"
+          echo "Node: $(node -v)"
+          echo "Yarn: $(yarn -v)"
+          echo "Go:   $(go version)"
+          echo "Rust: $(rustup show active-toolchain)"
+          command -v cargo-xwin || { echo "ERROR: cargo-xwin not found"; exit 1; }
+          command -v makensis || { echo "ERROR: makensis (NSIS) not found"; exit 1; }
+          command -v osslsigncode || { echo "ERROR: osslsigncode not found"; exit 1; }
 
       - name: Setup Go
+        if: matrix.platform == 'macOS'
         uses: actions/setup-go@v5
         with:
           go-version: '1.24'
-          cache: ${{ matrix.platform == 'macOS' }}
           cache-dependency-path: k2/go.sum
 
-      - name: Setup Rust
+      - name: Setup Rust (macOS)
+        if: matrix.platform == 'macOS'
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macOS' && 'aarch64-apple-darwin,x86_64-apple-darwin' || 'x86_64-pc-windows-msvc' }}
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Verify Rust Windows target (self-hosted)
+        if: matrix.platform == 'Windows'
+        run: |
+          rustup target list --installed | grep -q x86_64-pc-windows-msvc || {
+            echo "Adding x86_64-pc-windows-msvc target..."
+            rustup target add x86_64-pc-windows-msvc
+          }
 
       - name: Setup sccache
         if: matrix.platform == 'macOS'
@@ -207,24 +208,6 @@ jobs:
             echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
           else
             echo "::warning::sccache GHA backend unavailable, compiling without cache"
-          fi
-
-      - name: Set persistent cache paths (Windows)
-        if: matrix.platform == 'Windows'
-        shell: bash
-        run: |
-          echo "CARGO_HOME=C:/cache/cargo" >> "$GITHUB_ENV"
-          echo "GOMODCACHE=C:/cache/gomod" >> "$GITHUB_ENV"
-          echo "SCCACHE_DIR=C:/cache/sccache" >> "$GITHUB_ENV"
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-          echo "C:/cache/cargo/bin" >> "$GITHUB_PATH"
-
-      - name: Setup sccache (Windows local disk)
-        if: matrix.platform == 'Windows'
-        shell: bash
-        run: |
-          if ! command -v sccache &>/dev/null; then
-            RUSTC_WRAPPER= cargo install sccache --locked
           fi
 
       - name: Cache cargo registry
@@ -294,11 +277,16 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: bash scripts/build-macos.sh
 
-      # --- Windows: build via Makefile (same as local `make build-windows`) ---
+      # --- Windows: cross-compile on macOS via cargo-xwin + osslsigncode ---
 
-      - name: Build Windows (k2 + webapp + tauri + NSIS)
+      - name: SimplySign PKCS#11 login
         if: matrix.platform == 'Windows'
-        shell: bash
+        env:
+          SIMPLISIGN_TOTP_URI: ${{ secrets.SIMPLISIGN_TOTP_URI }}
+        run: bash scripts/ci/macos/simplisign-login.sh
+
+      - name: Build Windows (k2 + webapp + cargo-xwin + NSIS + Authenticode)
+        if: matrix.platform == 'Windows'
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -323,14 +311,10 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ap-northeast-1
-        shell: bash
         run: |
           VERSION=$(node -p "require('./package.json').version")
           S3_BASE="s3://d0.all7.cc/kaitu/desktop/${VERSION}"
-          NSIS_DIR="desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis"
-
-          # Upload signed .exe + .exe.sig (Tauri update signature)
-          aws s3 cp "${NSIS_DIR}/" "${S3_BASE}/" --recursive \
+          aws s3 cp "release/${VERSION}/" "${S3_BASE}/" --recursive \
             --exclude "*" \
             --include "*.exe" --include "*.exe.sig"
 
