@@ -124,6 +124,8 @@ fill_totp_and_login() {
     osascript << EOF 2>&1
 tell application "System Events"
     tell process "SimplySign Desktop"
+        set frontmost to true
+        delay 0.2
         tell window "SimplySign Desktop"
             tell scroll area 1
                 set wa to first UI element whose role is "AXWebArea"
@@ -131,8 +133,18 @@ tell application "System Events"
                 if (count of fields) < 2 then
                     return "error:no_fields"
                 end if
-                set value of item 2 of fields to "${code}"
+                -- Click field to focus (set value doesn't fire DOM events in WebKit)
+                set tokenField to item 2 of fields
+                perform action "AXPress" of tokenField
                 delay 0.3
+                -- Select all + delete + type code via keystrokes
+                keystroke "a" using command down
+                delay 0.1
+                key code 51
+                delay 0.1
+                keystroke "${code}"
+                delay 0.5
+                -- Click Login button
                 set btns to every UI element of wa whose role is "AXButton"
                 if (count of btns) > 0 then
                     perform action "AXPress" of item 1 of btns
