@@ -50,7 +50,7 @@
     },
     "externalBin": ["binaries/k2"],
     "windows": {
-      "signCommand": "powershell -NoProfile -File ../../scripts/ci/windows/sign-binary.ps1 %1",
+      "signCommand": "bash windows-sign.sh %1",
       "nsis": {
         "installMode": "perMachine",
         "languages": ["SimpChinese", "English"],

@@ -11,8 +11,7 @@ make dev-standalone               # Standalone browser dev (macOS, no Tauri)
 make dev-macos                   # Tauri desktop dev (macOS)
 make dev-windows                 # Tauri desktop dev (Windows)
 make build-macos                 # Signed macOS PKG (universal binary)
-make build-windows               # Signed Windows NSIS installer
-make build-windows-test          # Remote unsigned build on Windows VM (with MCP bridge)
+make build-windows               # Signed Windows NSIS installer (cross-compiled on macOS via cargo-xwin)
 make build-mobile-android        # gomobile bind + cap sync + assembleRelease
 make build-mobile-ios            # gomobile bind + cap sync + xcodebuild archive
 make publish-mobile VERSION=x.y.z  # Generate + upload mobile latest.json (phase 2 release)
