@@ -289,17 +289,24 @@ fn get_raw_hardware_id() -> Result<String, String> {
     }
 }
 
-/// IPC command: toggle WebView devtools.
+/// IPC command: toggle WebView devtools (debug builds only).
 #[tauri::command]
 pub async fn set_dev_enabled(enabled: bool, app: tauri::AppHandle) -> Result<(), String> {
-    if enabled {
-        if let Some(window) = app.get_webview_window("main") {
-            window.open_devtools();
+    #[cfg(debug_assertions)]
+    {
+        if enabled {
+            if let Some(window) = app.get_webview_window("main") {
+                window.open_devtools();
+            }
+        } else {
+            if let Some(window) = app.get_webview_window("main") {
+                window.close_devtools();
+            }
         }
-    } else {
-        if let Some(window) = app.get_webview_window("main") {
-            window.close_devtools();
-        }
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = (enabled, &app);
     }
     Ok(())
 }

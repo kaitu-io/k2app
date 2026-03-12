@@ -18,6 +18,11 @@ import {
   Card,
   CardContent,
   Stack,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
   useTheme as useMuiTheme,
 } from "@mui/material";
 import {
@@ -68,9 +73,25 @@ export default function Account() {
   const { links } = useAppLinks();
   const [appVersion, setAppVersion] = useState<string>("");
   const [selectedLanguage, setSelectedLanguage] = useState<LanguageCode>(i18n.language as LanguageCode || 'zh-CN');
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [shouldShowSlogan, setShouldShowSlogan] = useState(false);
 
   useEffect(() => {
     setAppVersion(window._platform!.version);
+
+    // Slogan delay: show after 7 days from first launch
+    const FIRST_LAUNCH_KEY = 'k2_first_launch';
+    const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+    const stored = localStorage.getItem(FIRST_LAUNCH_KEY);
+    if (!stored) {
+      localStorage.setItem(FIRST_LAUNCH_KEY, Date.now().toString());
+    } else {
+      const elapsed = Date.now() - parseInt(stored);
+      if (elapsed >= SEVEN_DAYS_MS) {
+        setShouldShowSlogan(true);
+      }
+    }
   }, []);
 
   const maskEmail = (email: string) => {
@@ -92,6 +113,23 @@ export default function Account() {
       console.info(t('common:messages.logoutSuccess'));
     } catch (err) {
       console.error(t('common:messages.logoutFailed'), err);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    setDeleteLoading(true);
+    try {
+      await cloudApi.request('DELETE', '/api/user/delete-account');
+      setDeleteDialogOpen(false);
+      // Same logout logic as handleLogout
+      await window._k2.run('down');
+      await cloudApi.post('/api/auth/logout');
+      setIsAuthenticated(false);
+    } catch (err) {
+      console.error('Delete account failed:', err);
+      alert(t('account:account.deleteAccountFailed'));
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -208,17 +246,19 @@ export default function Account() {
           >
             Kaitu.io 开途
           </Typography>
-          <Typography
-            variant="caption"
-            sx={{
-              color: 'rgba(255, 255, 255, 0.85)',
-              fontSize: '0.7rem',
-              mt: 0.5,
-              display: 'block'
-            }}
-          >
-            {t('common:brand.slogan')}
-          </Typography>
+          {shouldShowSlogan && (
+            <Typography
+              variant="caption"
+              sx={{
+                color: 'rgba(255, 255, 255, 0.85)',
+                fontSize: '0.7rem',
+                mt: 0.5,
+                display: 'block'
+              }}
+            >
+              {t('common:brand.slogan')}
+            </Typography>
+          )}
         </CardContent>
       </Card>
 
@@ -341,7 +381,7 @@ export default function Account() {
                   {t('common:common.retry')}
                 </Button>
               )}
-              {!isNotLoggedIn && !hasError && isExpired && (
+              {!isNotLoggedIn && !hasError && isExpired && window._platform?.os !== 'ios' && (
                 <Button
                   variant="contained"
                   color="primary"
@@ -784,6 +824,45 @@ export default function Account() {
           </Button>
         </Box>
       )}
+
+      {/* 注销账号按钮 - 仅登录状态显示 */}
+      {isAuthenticated && (
+        <Box sx={{ mt: 1, display: "flex", justifyContent: "center" }}>
+          <Button
+            color="inherit"
+            onClick={() => setDeleteDialogOpen(true)}
+            sx={{
+              color: 'text.disabled',
+              textTransform: 'none',
+              fontSize: '0.8rem',
+            }}
+          >
+            {t('account:account.deleteAccount')}
+          </Button>
+        </Box>
+      )}
+
+      {/* 注销账号确认对话框 */}
+      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
+        <DialogTitle>{t('account:account.deleteAccountTitle')}</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            {t('account:account.deleteAccountWarning')}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteDialogOpen(false)} disabled={deleteLoading}>
+            {t('common:common.cancel')}
+          </Button>
+          <Button
+            onClick={handleDeleteAccount}
+            color="error"
+            disabled={deleteLoading}
+          >
+            {deleteLoading ? <CircularProgress size={20} /> : t('common:common.confirm')}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
     </Box>
   );

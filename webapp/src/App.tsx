@@ -56,7 +56,9 @@ function AppRoutes() {
 
           {/* Non-Tab routes */}
           {/* Purchase 移出 keep-alive，每次访问重新渲染（避免与 LoginRequiredGuard 冲突） */}
-          <Route path="purchase" element={<Purchase />} />
+          {window._platform?.os !== 'ios' && (
+            <Route path="purchase" element={<Purchase />} />
+          )}
           <Route path="tunnels" element={<Tunnels />} />
           <Route path="changelog" element={<Changelog />} />
           <Route path="service-error" element={<ServiceError />} />

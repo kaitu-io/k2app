@@ -7,6 +7,15 @@
         "KAITU_CENTER_URL": "${KAITU_CENTER_URL}",
         "KAITU_ACCESS_KEY": "${KAITU_ACCESS_KEY}"
       }
+    },
+    "asc": {
+      "command": "npx",
+      "args": ["asc-mcp"],
+      "env": {
+        "APP_STORE_CONNECT_KEY_ID": "${APP_STORE_CONNECT_KEY_ID}",
+        "APP_STORE_CONNECT_ISSUER_ID": "${APP_STORE_CONNECT_ISSUER_ID}",
+        "APP_STORE_CONNECT_P8_PATH": "${APP_STORE_CONNECT_P8_PATH}"
+      }
     }
   }
 }

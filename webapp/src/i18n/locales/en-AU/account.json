@@ -34,7 +34,12 @@
     "expiryDate": "Expiry date",
     "upgradeToPro": "Upgrade to Pro",
     "renewNow": "Renew now",
-    "exitApp": "Exit app"
+    "exitApp": "Exit app",
+    "deleteAccount": "Delete Account",
+    "deleteAccountTitle": "Delete Account",
+    "deleteAccountWarning": "Your account data will be permanently deleted. This action cannot be undone. Are you sure?",
+    "deleteAccountSuccess": "Account deleted",
+    "deleteAccountFailed": "Failed to delete account, please try again"
   },
   "developerModeActivated": "Developer mode enabled",
   "logLevel": "Log level",
