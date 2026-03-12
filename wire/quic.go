@@ -214,6 +214,7 @@ type QUICClient struct {
 	directDialer DirectDialer
 
 	mu        deadlock.Mutex
+	connectMu deadlock.Mutex // serializes expensive connect path; ordering: connectMu → mu
 	conn      *quic.Conn
 	transport *quic.Transport
 	alloc     *SessionIDAllocator
@@ -285,30 +286,62 @@ func (c *QUICClient) tcpRecentlyHealthy(window time.Duration) bool {
 }
 
 // connect establishes a QUIC connection if not already connected.
+// Uses check-release-connect-reacquire pattern to avoid holding mu
+// during blocking I/O (DNS, UDP bind, QUIC handshake). connectMu
+// serializes the expensive connect path so only one goroutine dials.
 func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
+	// Fast path: return cached live connection under mu.
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	if c.closed {
+		c.mu.Unlock()
 		return nil, ErrNotConnected
 	}
 	if c.conn != nil {
 		select {
 		case <-c.conn.Context().Done():
-			// Connection died (idle timeout, transport error, peer close).
-			// quic-go KeepAlive (10s) + MaxIdleTimeout (30s) detected it.
 			slog.Info("QUICClient: cached connection dead, rebuilding")
 			c.closeConnLocked()
 		default:
-			return c.conn, nil
+			conn := c.conn
+			c.mu.Unlock()
+			return conn, nil
 		}
 	}
+	c.mu.Unlock()
 
-	addr := c.serverAddr
-	if c.hopEnabled() {
-		dialHost := c.cfg.Host
-		if c.cfg.DialAddr != "" {
-			dialHost = c.cfg.DialAddr
+	// Serialize expensive connect attempts — only one goroutine dials.
+	c.connectMu.Lock()
+	defer c.connectMu.Unlock()
+
+	// Re-check: another goroutine may have connected while we waited.
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return nil, ErrNotConnected
+	}
+	if c.conn != nil {
+		select {
+		case <-c.conn.Context().Done():
+			c.closeConnLocked()
+		default:
+			conn := c.conn
+			c.mu.Unlock()
+			return conn, nil
+		}
+	}
+	// Read immutable config fields under mu for address computation.
+	cfg := c.cfg
+	directDialer := c.directDialer
+	tlsConfig := c.tlsConfig
+	c.mu.Unlock()
+
+	// --- All blocking I/O below — NO lock held ---
+
+	addr := c.serverAddr // immutable after construction
+	if c.hopEnabled() {  // reads atomics, no lock needed
+		dialHost := cfg.Host
+		if cfg.DialAddr != "" {
+			dialHost = cfg.DialAddr
 		}
 		addr = net.JoinHostPort(dialHost, strconv.Itoa(c.hopPort()))
 	}
@@ -319,8 +352,8 @@ func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
 	}
 
 	var udpConn net.PacketConn
-	if c.directDialer != nil {
-		udpConn, err = c.directDialer.ListenPacket("udp", ":0")
+	if directDialer != nil {
+		udpConn, err = directDialer.ListenPacket("udp", ":0")
 	} else {
 		udpConn, err = net.ListenUDP("udp", &net.UDPAddr{})
 	}
@@ -331,10 +364,10 @@ func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
 	transport := &quic.Transport{Conn: udpConn}
 
 	var tlsCfg *tls.Config
-	if c.tlsConfig != nil {
-		tlsCfg = c.tlsConfig.Clone()
+	if tlsConfig != nil {
+		tlsCfg = tlsConfig.Clone()
 	} else {
-		tlsCfg, _, err = BuildClientTLSConfig(c.cfg)
+		tlsCfg, _, err = BuildClientTLSConfig(cfg)
 		if err != nil {
 			transport.Close()
 			return nil, err
@@ -362,11 +395,19 @@ func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
 	// Set K2CC congestion control (replaces default Cubic)
 	sender := arc.NewCCSenderGFWMode(arc.DefaultMaxRate)
 	conn.SetCongestionControl(sender)
-	c.ccSender = sender
 	slog.Info("wire: QUIC K2CC enabled", "maxRateMbps", arc.DefaultMaxRate/1_000_000)
 
+	// --- Store result under lock ---
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		conn.CloseWithError(0, "closed during connect")
+		transport.Close()
+		return nil, ErrNotConnected
+	}
 	c.conn = conn
 	c.transport = transport
+	c.ccSender = sender
 	c.alloc = NewSessionIDAllocator()
 	c.udpMux = newQuicUDPMux(conn, &c.portHopAttempts, &c.portHopExhaustedAt)
 

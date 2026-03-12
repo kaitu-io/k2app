@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -8,6 +10,7 @@ import (
 	"github.com/sasha-s/go-deadlock"
 
 	"github.com/kaitu-io/k2/core"
+	"github.com/kaitu-io/k2/provider"
 )
 
 func init() {
@@ -132,4 +135,109 @@ func TestDeadlock_LockOrderingEngineThenHealth(t *testing.T) {
 	}()
 
 	wg.Wait()
+}
+
+// slowProvider simulates a provider whose Close() blocks for a duration,
+// like dnsOverride.stop() CGo blocking on CFRunLoop exit.
+type slowProvider struct {
+	closeDelay time.Duration
+}
+
+func (p *slowProvider) Start(ctx context.Context, handler provider.ConnectionHandler) error {
+	return nil
+}
+func (p *slowProvider) Close() error {
+	time.Sleep(p.closeDelay)
+	return nil
+}
+func (p *slowProvider) Name() string { return "slow-test" }
+
+// TestDeadlock_StopVsReportWireError validates that Engine.Stop() does not
+// deadlock with concurrent ReportWireError() calls. Stop() must release e.mu
+// before calling prov.Close()/tunnel.Close(), because those drain handlers
+// that call ReportWireError() which needs e.mu.
+func TestDeadlock_StopVsReportWireError(t *testing.T) {
+	e := New()
+
+	// Set engine to connected state with a slow provider.
+	e.mu.Lock()
+	e.state = StateConnected
+	e.prov = &slowProvider{closeDelay: 500 * time.Millisecond}
+	e.tunnel = core.NewClientTunnel(core.ClientTunnelConfig{})
+	e.mu.Unlock()
+
+	// Spawn goroutines that continuously call ReportWireError.
+	// Before the fix, these would deadlock with Stop() holding e.mu.
+	var wg sync.WaitGroup
+	done := make(chan struct{})
+	for i := 0; i < 3; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-done:
+					return
+				default:
+					e.ReportWireError(errors.New("test wire error"))
+					time.Sleep(time.Millisecond)
+				}
+			}
+		}()
+	}
+
+	// Stop should complete without deadlock despite concurrent ReportWireError.
+	// go-deadlock's 5s timeout would catch any lock ordering violation.
+	err := e.Stop()
+	if err != nil {
+		t.Fatalf("Stop() returned error: %v", err)
+	}
+
+	close(done)
+	wg.Wait()
+}
+
+// TestDeadlock_StopVsSlowProviderClose validates that Stop() completes
+// even when provider.Close() blocks (simulating dnsOverride.stop() CGo).
+// The key invariant: e.mu is NOT held during prov.Close().
+func TestDeadlock_StopVsSlowProviderClose(t *testing.T) {
+	e := New()
+
+	e.mu.Lock()
+	e.state = StateConnected
+	e.prov = &slowProvider{closeDelay: 2 * time.Second}
+	e.tunnel = core.NewClientTunnel(core.ClientTunnelConfig{})
+	e.mu.Unlock()
+
+	// Stop should complete — prov.Close() blocks but e.mu is released.
+	stopDone := make(chan error, 1)
+	go func() {
+		stopDone <- e.Stop()
+	}()
+
+	// While Stop() is in progress (prov.Close blocking), verify e.mu is free
+	// by acquiring it from another goroutine.
+	time.Sleep(100 * time.Millisecond) // let Stop() start
+	lockAcquired := make(chan struct{})
+	go func() {
+		e.mu.Lock()
+		e.mu.Unlock()
+		close(lockAcquired)
+	}()
+
+	select {
+	case <-lockAcquired:
+		// Good — e.mu was free during prov.Close()
+	case <-time.After(3 * time.Second):
+		t.Fatal("e.mu blocked during prov.Close() — deadlock regression")
+	}
+
+	select {
+	case err := <-stopDone:
+		if err != nil {
+			t.Fatalf("Stop() returned error: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Stop() timed out")
+	}
 }

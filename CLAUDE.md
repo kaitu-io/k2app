@@ -12,6 +12,7 @@ go build -o k2 ./cmd/k2            # Build client
 go build -o k2s ./cmd/k2s          # Build server
 go test ./...                      # All tests (wire + core + dns + appext + daemon + server + e2e)
 go test -short ./...               # Fast: skip live DNS/network tests
+go test -race -timeout 300s ./wire/...  # Wire tests with race (needs 300s+ timeout)
 make quick-check                   # go vet + golangci-lint + go test -short -race
 make pre-release                   # quick-check + full tests + contract tests + cross-compile
 make appext-ios                    # iOS xcframework (gomobile bind)
@@ -45,7 +46,8 @@ Documented lock acquisition order. **Always acquire in this order; never reverse
 engine.mu
   → healthMonitor.mu
   → daemon.mu → daemon.sseMu
-  → TransportManager.mu → QUICClient.mu
+  → TransportManager.mu → QUICClient.connectMu → QUICClient.mu
+  →                        TCPWSClient.connectMu → TCPWSClient.mu
   → recoveryProbe.mu
 ```
 
@@ -234,6 +236,8 @@ engine.Stop()
 
 - **Known deadlock: healthMonitor.sample() → onReconnect → resetCounters**: `sample()` holds `hm.mu`, calls `onReconnect()` which calls `e.OnNetworkChanged()` which calls `hm.resetCounters()` which tries `hm.mu` → self-deadlock. Trigger: ~35s sustained network disruption. Fix: move `onReconnect()` call outside `hm.mu`. See Concurrency Rules above.
 - **Known deadlock: Engine.Stop() vs health goroutine**: `Stop()` holds `e.mu` + calls `health.stop()` (wg.Wait). Health goroutine in `sample()` → `onReconnect()` → `OnNetworkChanged()` → needs `e.mu` → cross-deadlock. Fix: release `e.mu` before `health.stop()`.
+- **Race test timeout**: `go test -race ./wire/...` needs `>300s` (arc integration benchmarks are slow). Use `-timeout 300s` or `-short` to skip long-running tests.
+- **QUICClient/TCPWSClient connect lock pattern**: `connect()` uses check-release-connect-reacquire with `connectMu` to serialize expensive dials. Never hold `mu` during DNS/TLS/QUIC handshake — go-deadlock's 30s threshold kills the process.
 - QUIC stream `Close()` only sends FIN (write direction). Must also call `CancelRead()` to release stream slot — `quicStreamConn.Close()` handles both
 - sing-tun gVisor stack owns connections — handler must defer close, not close prematurely
 - `ReadStreamHeader`/`ReadStreamResponse` require `io.ByteReader` — wrap `net.Conn` with `bufio.NewReader(conn)`

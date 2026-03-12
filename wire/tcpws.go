@@ -94,8 +94,9 @@ type TCPWSClient struct {
 	testConn     net.Conn    // override for testing (bypasses TCP+TLS+WS)
 	directDialer DirectDialer
 
-	mu     deadlock.Mutex
-	sess   *smux.Session
+	mu        deadlock.Mutex
+	connectMu deadlock.Mutex // serializes expensive connect path; ordering: connectMu → mu
+	sess      *smux.Session
 	udpMux *smuxUDPMux
 	alloc  *SessionIDAllocator
 	closed bool
@@ -133,18 +134,21 @@ func (c *TCPWSClient) SetDirectDialer(d DirectDialer) {
 }
 
 // connect establishes a smux session if not already connected.
+// Uses check-release-connect-reacquire pattern to avoid holding mu
+// during blocking I/O (TCP dial, TLS handshake, WebSocket upgrade).
 func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
+	// Fast path: return cached live session under mu.
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	if c.closed {
+		c.mu.Unlock()
 		return nil, ErrNotConnected
 	}
 	if c.sess != nil {
 		if !c.sess.IsClosed() {
-			return c.sess, nil
+			sess := c.sess
+			c.mu.Unlock()
+			return sess, nil
 		}
-		// Session dead (keepalive timeout, underlying conn closed) — clear and reconnect.
 		slog.Debug("TCPWSClient: clearing dead smux session")
 		if c.udpMux != nil {
 			c.udpMux.close()
@@ -153,13 +157,39 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 		c.sess = nil
 		c.alloc = nil
 	}
+	testConn := c.testConn // read under lock (set during construction only)
+	c.mu.Unlock()
 
+	// Serialize expensive connect attempts.
+	c.connectMu.Lock()
+	defer c.connectMu.Unlock()
+
+	// Re-check: another goroutine may have connected while we waited.
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return nil, ErrNotConnected
+	}
+	if c.sess != nil {
+		if !c.sess.IsClosed() {
+			sess := c.sess
+			c.mu.Unlock()
+			return sess, nil
+		}
+		if c.udpMux != nil {
+			c.udpMux.close()
+			c.udpMux = nil
+		}
+		c.sess = nil
+		c.alloc = nil
+	}
+	c.mu.Unlock()
+
+	// --- All blocking I/O below — NO lock held ---
 	var conn net.Conn
-	if c.testConn != nil {
-		// Test mode: bypass TCP+TLS+WS, direct smux
-		conn = c.testConn
+	if testConn != nil {
+		conn = testConn
 	} else {
-		// Production mode: TCP → uTLS → WebSocket → smux
 		var err error
 		conn, err = c.connectTLSWebSocket(ctx)
 		if err != nil {
@@ -173,6 +203,13 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 		return nil, fmt.Errorf("wire: smux client: %w", err)
 	}
 
+	// --- Store result under lock ---
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		sess.Close()
+		return nil, ErrNotConnected
+	}
 	c.sess = sess
 	c.alloc = NewSessionIDAllocator()
 	return sess, nil
