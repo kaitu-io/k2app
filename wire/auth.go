@@ -76,6 +76,7 @@ func (s *TicketStore) Issue(deviceID string, udpEnabled bool) (*AuthTicket, erro
 	}
 
 	s.mu.Lock()
+	// concurrency:allow — pure in-memory map operations, no I/O or external calls
 	defer s.mu.Unlock()
 
 	// Move old ticket to grace period
@@ -93,6 +94,7 @@ func (s *TicketStore) Issue(deviceID string, udpEnabled bool) (*AuthTicket, erro
 // Validate checks if a ticket is valid and returns it.
 func (s *TicketStore) Validate(token string) (*AuthTicket, bool) {
 	s.mu.RLock()
+	// concurrency:allow — pure in-memory map operations, no I/O or external calls
 	defer s.mu.RUnlock()
 
 	now := time.Now()
@@ -162,6 +164,7 @@ func (s *TicketStore) cleanupSafe() {
 // cleanup removes expired tickets and grace tokens.
 func (s *TicketStore) cleanup() {
 	s.mu.Lock()
+	// concurrency:allow — pure in-memory map operations, no I/O or external calls
 	defer s.mu.Unlock()
 
 	now := time.Now()

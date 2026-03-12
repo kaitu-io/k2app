@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -239,5 +240,55 @@ func TestDeadlock_StopVsSlowProviderClose(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("Stop() timed out")
+	}
+}
+
+// lockProbeHandler implements EventHandler and tries to acquire e.mu in OnStatus.
+// If handler.OnStatus is called under e.mu, this will deadlock (go-deadlock 5s panic).
+// If the fix is correct, OnStatus runs outside e.mu so the lock probe succeeds.
+type lockProbeHandler struct {
+	mu       *deadlock.Mutex // pointer to engine.mu
+	acquired atomic.Int32    // count of successful lock probes
+}
+
+func (h *lockProbeHandler) OnStatus(s Status)              { h.mu.Lock(); h.mu.Unlock(); h.acquired.Add(1) }
+func (h *lockProbeHandler) OnStats(txBytes, rxBytes int64) {}
+
+// TestDeadlock_SetStateNotUnderLock validates that handler.OnStatus is called
+// outside e.mu after the setState→setStateLocked refactor (B1/B2).
+// The handler tries to acquire e.mu — if OnStatus were called under e.mu,
+// go-deadlock's 5s timeout would trigger a panic.
+func TestDeadlock_SetStateNotUnderLock(t *testing.T) {
+	e := New()
+	h := &lockProbeHandler{mu: &e.mu}
+	e.SetEventHandler(h)
+
+	// Simulate Start() path: lock, set connecting, unlock → OnStatus fires outside lock.
+	e.mu.Lock()
+	e.setStateLocked(StateConnecting)
+	handler := e.handler
+	status := e.buildStatusLocked()
+	e.mu.Unlock()
+	if handler != nil {
+		handler.OnStatus(status)
+	}
+
+	// Simulate fail() path: triggers OnStatus(disconnected) outside lock.
+	e.mu.Lock()
+	e.state = StateConnecting // reset for fail path
+	e.mu.Unlock()
+	e.fail(errors.New("test error"))
+
+	// Simulate Stop() path.
+	e.mu.Lock()
+	e.state = StateConnected
+	e.prov = &slowProvider{closeDelay: 100 * time.Millisecond}
+	e.tunnel = core.NewClientTunnel(core.ClientTunnelConfig{})
+	e.mu.Unlock()
+	e.Stop()
+
+	// All three paths should have notified the handler without deadlock.
+	if got := h.acquired.Load(); got < 3 {
+		t.Fatalf("expected at least 3 handler notifications, got %d", got)
 	}
 }

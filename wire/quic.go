@@ -215,6 +215,7 @@ type QUICClient struct {
 
 	mu        deadlock.Mutex
 	connectMu deadlock.Mutex // serializes expensive connect path; ordering: connectMu → mu
+	initUDPMu deadlock.Mutex // serializes UDP mux lazy init; ordering: initUDPMu → mu
 	conn      *quic.Conn
 	transport *quic.Transport
 	alloc     *SessionIDAllocator
@@ -300,7 +301,10 @@ func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
 		select {
 		case <-c.conn.Context().Done():
 			slog.Info("QUICClient: cached connection dead, rebuilding")
-			c.closeConnLocked()
+			mux, oldConn, tr := c.extractConnLocked()
+			c.mu.Unlock()
+			closeQUICResources(mux, oldConn, tr, "connection reset")
+			goto serialize
 		default:
 			conn := c.conn
 			c.mu.Unlock()
@@ -309,6 +313,7 @@ func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
 	}
 	c.mu.Unlock()
 
+serialize:
 	// Serialize expensive connect attempts — only one goroutine dials.
 	c.connectMu.Lock()
 	defer c.connectMu.Unlock()
@@ -322,7 +327,14 @@ func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
 	if c.conn != nil {
 		select {
 		case <-c.conn.Context().Done():
-			c.closeConnLocked()
+			mux, oldConn, tr := c.extractConnLocked()
+			c.mu.Unlock()
+			closeQUICResources(mux, oldConn, tr, "connection reset")
+			c.mu.Lock()
+			if c.closed {
+				c.mu.Unlock()
+				return nil, ErrNotConnected
+			}
 		default:
 			conn := c.conn
 			c.mu.Unlock()
@@ -398,6 +410,8 @@ func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
 	slog.Info("wire: QUIC K2CC enabled", "maxRateMbps", arc.DefaultMaxRate/1_000_000)
 
 	// --- Store result under lock ---
+	// concurrency:allow — closing locally-owned conn/transport not yet stored in struct;
+	// defer scope: mu acquired at tail of function, actual critical section is ~15 lines
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closed {
@@ -555,48 +569,82 @@ func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, 
 }
 
 // dialUDPStream opens a QUIC stream for UDP and returns a stream-based PacketConn.
+// Uses check-release-act-reacquire to avoid holding mu during blocking I/O
+// (OpenStreamSync, WriteH3ProxyFrameType, WriteStreamHeader).
 func (c *QUICClient) dialUDPStream(ctx context.Context, conn *quic.Conn, addr string) (net.PacketConn, error) {
-	// Ensure shared UDP stream and mux exist
+	// Fast path: mux already initialized.
 	c.mu.Lock()
 	if c.udpMux == nil || c.alloc == nil {
 		c.mu.Unlock()
 		return nil, ErrNotConnected
 	}
-	if c.udpMux.streamMux == nil {
-		stream, err := conn.OpenStreamSync(ctx)
-		if err != nil {
-			c.mu.Unlock()
-			// Dead connections are detected by connect() via conn.Context().Done().
-			slog.Debug("QUICClient.dialUDPStream: stream open failed", "addr", addr, "err", err)
-			return nil, fmt.Errorf("wire: open UDP stream: %w", err)
-		}
-		// Write H3 frame type + UDP stream header
-		if err := WriteH3ProxyFrameType(stream); err != nil {
-			stream.Close()
-			c.mu.Unlock()
-			return nil, fmt.Errorf("wire: write H3 frame type: %w", err)
-		}
-		if err := WriteStreamHeader(stream, StreamTypeUDP, ""); err != nil {
-			stream.Close()
-			c.mu.Unlock()
-			return nil, fmt.Errorf("wire: write UDP stream header: %w", err)
-		}
-		c.udpMux.streamMux = newQuicStreamUDPMux(stream, conn)
+	if c.udpMux.streamMux != nil {
+		mux := c.udpMux.streamMux
+		alloc := c.alloc
+		c.mu.Unlock()
+		return c.newStreamUDPConn(mux, alloc, addr), nil
 	}
+	c.mu.Unlock()
+
+	// Slow path: initialize UDP stream mux. Serialized by initUDPMu.
+	c.initUDPMu.Lock()
+	defer c.initUDPMu.Unlock()
+
+	// Re-check: another goroutine may have initialized while we waited.
+	c.mu.Lock()
+	if c.udpMux == nil || c.alloc == nil {
+		c.mu.Unlock()
+		return nil, ErrNotConnected
+	}
+	if c.udpMux.streamMux != nil {
+		mux := c.udpMux.streamMux
+		alloc := c.alloc
+		c.mu.Unlock()
+		return c.newStreamUDPConn(mux, alloc, addr), nil
+	}
+	c.mu.Unlock()
+
+	// Blocking I/O — no lock held.
+	stream, err := conn.OpenStreamSync(ctx)
+	if err != nil {
+		slog.Debug("QUICClient.dialUDPStream: stream open failed", "addr", addr, "err", err)
+		return nil, fmt.Errorf("wire: open UDP stream: %w", err)
+	}
+	if err := WriteH3ProxyFrameType(stream); err != nil {
+		stream.Close()
+		return nil, fmt.Errorf("wire: write H3 frame type: %w", err)
+	}
+	if err := WriteStreamHeader(stream, StreamTypeUDP, ""); err != nil {
+		stream.Close()
+		return nil, fmt.Errorf("wire: write UDP stream header: %w", err)
+	}
+
+	// Store result under lock. Re-check for concurrent resetConnection.
+	c.mu.Lock()
+	if c.udpMux == nil {
+		c.mu.Unlock()
+		stream.Close()
+		return nil, ErrNotConnected
+	}
+	c.udpMux.streamMux = newQuicStreamUDPMux(stream, conn)
 	mux := c.udpMux.streamMux
 	alloc := c.alloc
 	c.mu.Unlock()
 
+	return c.newStreamUDPConn(mux, alloc, addr), nil
+}
+
+// newStreamUDPConn creates a quicStreamUDPConn with a new session ID.
+func (c *QUICClient) newStreamUDPConn(mux *quicStreamUDPMux, alloc *SessionIDAllocator, addr string) *quicStreamUDPConn {
 	sessionID := alloc.Next()
 	readCh := mux.register(sessionID)
-
 	return &quicStreamUDPConn{
 		mux:        mux,
 		sessionID:  sessionID,
 		targetAddr: addr,
 		readCh:     readCh,
 		done:       make(chan struct{}),
-	}, nil
+	}
 }
 
 // WireStats returns a snapshot of QUIC transport metrics including K2CC state.
@@ -690,23 +738,33 @@ func (c *QUICClient) handleServerOverflowStream(stream *quic.Stream, mux *quicUD
 	}
 }
 
-// closeConnLocked releases cached connection resources. Caller must hold c.mu.
-func (c *QUICClient) closeConnLocked() {
-	if c.udpMux != nil {
-		c.udpMux.close()
-		c.udpMux = nil
-	}
-	if c.conn != nil {
-		c.conn.CloseWithError(0, "connection reset")
-		c.conn = nil
-	}
-	if c.transport != nil {
-		c.transport.Close()
-		c.transport = nil
-	}
+// extractConnLocked nils all connection resource fields and returns them.
+// Caller must hold c.mu. Resources must be closed OUTSIDE the lock.
+func (c *QUICClient) extractConnLocked() (mux *quicUDPMux, conn *quic.Conn, tr *quic.Transport) {
+	mux = c.udpMux
+	c.udpMux = nil
+	conn = c.conn
+	c.conn = nil
+	tr = c.transport
+	c.transport = nil
 	c.alloc = nil
 	c.ccSender = nil
 	c.lastTCPSuccessAt.Store(0)
+	return
+}
+
+// closeQUICResources closes extracted QUIC connection resources.
+// Safe to call with nil arguments. Must be called WITHOUT holding c.mu.
+func closeQUICResources(mux *quicUDPMux, conn *quic.Conn, tr *quic.Transport, reason string) {
+	if mux != nil {
+		mux.close()
+	}
+	if conn != nil {
+		conn.CloseWithError(0, reason)
+	}
+	if tr != nil {
+		tr.Close()
+	}
 }
 
 // resetConnection closes cached connection resources without marking client as closed.
@@ -714,35 +772,23 @@ func (c *QUICClient) closeConnLocked() {
 // Dead connections are detected by connect() via conn.Context().Done().
 func (c *QUICClient) resetConnection() {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.closeConnLocked()
+	mux, conn, tr := c.extractConnLocked()
+	c.mu.Unlock()
+	closeQUICResources(mux, conn, tr, "connection reset")
 }
 
 // Close closes the QUIC connection and underlying transport.
 func (c *QUICClient) Close() error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	if c.closed {
+		c.mu.Unlock()
 		return nil
 	}
 	c.closed = true
-
-	var firstErr error
-	if c.udpMux != nil {
-		c.udpMux.close()
-	}
-	if c.conn != nil {
-		if err := c.conn.CloseWithError(0, "client close"); err != nil && firstErr == nil {
-			firstErr = err
-		}
-	}
-	if c.transport != nil {
-		if err := c.transport.Close(); err != nil && firstErr == nil {
-			firstErr = err
-		}
-	}
-	return firstErr
+	mux, conn, tr := c.extractConnLocked()
+	c.mu.Unlock()
+	closeQUICResources(mux, conn, tr, "client close")
+	return nil
 }
 
 // ============================================================================
@@ -1075,6 +1121,7 @@ func (s *QUICServer) ServeUDP(ctx context.Context, handler UDPHandler) error {
 
 // Close stops the server and closes the listener.
 func (s *QUICServer) Close() error {
+	// concurrency:allow — server-side, ln.Close() is fast (no protocol drain)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

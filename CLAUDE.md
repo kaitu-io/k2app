@@ -38,77 +38,188 @@ docker compose up --build           # Docker: server + init container (docker/)
 
 ## Concurrency Rules (Constitutional — never violate)
 
+### Core Principle
+
+**A critical section is a pure function of in-memory state.**
+
+Between `Lock()` and `Unlock()`, the only operations allowed are reads and writes to fields on the struct the mutex protects. Nothing else. No function calls that leave the struct boundary, no I/O, no waiting. If you can't describe the critical section as "read/write these fields," it's wrong.
+
+Go mutexes are non-reentrant, have no ownership tracking, and provide no priority inheritance. `go-deadlock` detects locks held >30s at runtime, but runtime detection is a safety net — **not a substitute for correct design**. A deadlock path that exists will eventually be reached given enough runtime.
+
+### Two Lock Categories
+
+**State lock** (`mu`) — protects struct fields. Critical section: read/write fields only. Duration: microseconds.
+
+**Serialization lock** (`writeMu`, `connectMu`) — serializes access to a non-thread-safe resource (stream writer, expensive connect path). May hold across I/O intentionally. Must NEVER be nested inside a state lock.
+
+All rules below apply to **state locks**. Serialization locks have their own constraints: they must not be acquired while holding any state lock, and their ordering must be documented.
+
 ### Lock Ordering Graph
 
-Documented lock acquisition order. **Always acquire in this order; never reverse.**
+**Always acquire in this order; never reverse.** Every new mutex must be added here.
 
 ```
-engine.mu
-  → healthMonitor.mu
-  → daemon.mu → daemon.sseMu
-  → TransportManager.mu → QUICClient.connectMu → QUICClient.mu
-  →                        TCPWSClient.connectMu → TCPWSClient.mu
-  → recoveryProbe.mu
+engine.mu (state)
+  → healthMonitor.mu (state)
+  → daemon.mu (state) → daemon.sseMu (state)
+  → TransportManager.mu (state) → QUICClient.mu (state)
+  →                                TCPWSClient.mu (state)
+  → recoveryProbe.mu (state)
+  → dnsOverride.mu (state)
+  → connTracker.mu (state)
+
+Serialization locks (never nested inside any state lock above):
+  QUICClient.connectMu → QUICClient.mu
+  QUICClient.initUDPMu → QUICClient.mu
+  TCPWSClient.connectMu → TCPWSClient.mu
+  TCPWSClient.initUDPMu → TCPWSClient.mu
+  smuxUDPMux.writeMu (standalone)
+  quicStreamUDPMux.writeMu (standalone)
+  udpOverflowStream.initMu → udpOverflowStream.writeMu
 ```
 
-Every new mutex must be added to this graph with its position documented.
+### The Five Forbidden Patterns
 
-### Three Forbidden Patterns
-
-**1. No callback under lock** — NEVER call a callback/closure/interface method while holding a mutex. Callbacks can acquire arbitrary locks, creating invisible lock ordering inversions.
+**1. No external calls under lock** — NEVER call interface methods, methods on other structs, callbacks, or closures while holding a state lock. This includes: `handler.OnStatus()`, `resource.Close()`, any func parameter or captured closure. The callee's implementation is outside your control. Pure stdlib value functions (`time.Now`, `fmt.Sprintf`, `errors.New`, `math.Max`) and same-struct field-only helpers (no I/O, no additional locks) are allowed.
 ```go
-// WRONG: callback under lock → deadlock risk
-mu.Lock()
-onAction()       // onAction might acquire another lock
-mu.Unlock()
+// WRONG: handler.OnStatus() is an external call
+e.mu.Lock()
+e.state = StateConnected
+e.handler.OnStatus(e.buildStatusLocked())  // external call under lock
+e.mu.Unlock()
 
-// RIGHT: collect decision under lock, act outside
-mu.Lock()
-shouldAct := needsAction
-mu.Unlock()
-if shouldAct {
-    onAction()   // no lock held
+// RIGHT: build snapshot under lock, notify outside
+e.mu.Lock()
+e.state = StateConnected
+handler := e.handler
+status := e.buildStatusLocked()
+e.mu.Unlock()
+if handler != nil {
+    handler.OnStatus(status)  // no lock held
 }
 ```
 
-**2. No blocking I/O under lock** — NEVER hold a mutex across network I/O, `OpenStreamSync`, TLS handshake, or any potentially-blocking operation. Other goroutines waiting for the lock starve.
+**2. No I/O under lock** — NEVER hold a state lock across any operation with unbounded duration: network I/O, DNS resolution, TLS/QUIC handshake, `OpenStreamSync`, CGo/FFI calls (SCDynamicStore, CFRunLoop), `exec.Command`, file I/O on network mounts, `resource.Close()` (may flush, do protocol teardown, or CGo cleanup).
 ```go
-// WRONG: network I/O under lock → lock starvation
+// WRONG: QUIC dial blocks 5-30s under lock
 mu.Lock()
-conn, err := transport.Dial(ctx, addr)  // can block 5-30s
+conn, err := transport.Dial(ctx, addr)
 mu.Unlock()
 
-// RIGHT: lock only for state check/update
+// RIGHT: check-release-act-reacquire
 mu.Lock()
 if closed { mu.Unlock(); return }
 mu.Unlock()
 conn, err := transport.Dial(ctx, addr)  // no lock held
 mu.Lock()
-// re-validate state after re-acquiring
+if closed { /* cleanup conn */ mu.Unlock(); return }
+// store result
+mu.Unlock()
 ```
 
-**3. No wg.Wait() under lock** — NEVER call `WaitGroup.Wait()` or `channel receive` while holding a mutex if the goroutine being waited on might need that same mutex.
+**3. No waiting under lock** — NEVER call `wg.Wait()`, `<-chan`, `sync.Cond.Wait()`, or any blocking receive while holding a state lock. If the goroutine being waited on needs the same lock, deadlock is guaranteed.
 ```go
-// WRONG: deadlock if goroutine needs e.mu to exit
+// WRONG: health goroutine needs e.mu to exit
 e.mu.Lock()
-e.health.stop()  // stop() calls wg.Wait()
+e.health.stop()  // calls wg.Wait()
 e.mu.Unlock()
 
-// RIGHT: stop outside the lock, or ensure goroutine never needs the lock
+// RIGHT: extract, nil, release, then wait
+e.mu.Lock()
 hm := e.health
 e.health = nil
 e.mu.Unlock()
-hm.stop()        // wg.Wait() outside lock
-e.mu.Lock()
+hm.stop()  // wg.Wait() with no lock held
 ```
 
-### Review Checklist (for any PR touching sync.Mutex / sync.WaitGroup)
+**4. No Close() under state lock** — `Close()` is a special case that combines I/O + external call. It may block on protocol teardown (QUIC connection drain), CGo cleanup (CFRunLoop stop), buffered write flush, or internal wg.Wait(). Always extract the reference under lock, nil the field, release the lock, then close.
+```go
+// WRONG: prov.Close() blocks on dnsOverride CGo
+e.mu.Lock()
+e.prov.Close()
+e.prov = nil
+e.mu.Unlock()
 
-- [ ] Does any `Lock()` call site invoke a callback, closure, or interface method?
-- [ ] Does any `Lock()` call site perform network I/O or blocking operations?
-- [ ] Does any `Lock()` call site wait on a goroutine (`wg.Wait`, `<-chan`)?
-- [ ] Is the lock ordering consistent with the graph above?
-- [ ] Are `defer mu.Unlock()` scopes as narrow as possible?
+// RIGHT: nil under lock, close outside
+e.mu.Lock()
+prov := e.prov
+e.prov = nil
+e.mu.Unlock()
+if prov != nil {
+    prov.Close()  // no lock held, may block safely
+}
+```
+
+**5. No defer Unlock() across large scope** — `defer mu.Unlock()` at the top of a function makes the critical section the entire function body. As the function grows, new code added inside silently inherits the lock. Use explicit Unlock() at the earliest safe point.
+```go
+// WRONG: any future edit to this function is under lock
+func (c *Client) connect(ctx context.Context) error {
+    c.mu.Lock()
+    defer c.mu.Unlock()  // hundreds of lines under lock
+    // ... 50 lines of setup, I/O, error handling ...
+}
+
+// RIGHT: narrow critical sections with explicit unlock
+func (c *Client) connect(ctx context.Context) error {
+    c.mu.Lock()
+    if c.closed { c.mu.Unlock(); return ErrClosed }
+    c.mu.Unlock()
+    // ... I/O with no lock ...
+    c.mu.Lock()
+    c.conn = newConn
+    c.mu.Unlock()
+}
+```
+
+Exception: `defer mu.Unlock()` is fine for short functions (≤10 lines) that only read/write fields.
+
+### Accepted Exceptions
+
+**slog under state lock** — `slog.Info/Warn/Debug` calls under state lock are permitted. The stdlib slog handler uses its own internal lock with no application-lock dependency. This exception holds ONLY because the project uses stdlib handlers. If a custom `slog.Handler` is ever registered, it MUST NOT acquire any application mutex. This exception does NOT extend to other logging libraries or `log.Printf`.
+
+### Safe Patterns
+
+**Read-copy-act**: Lock, copy references/build snapshot, unlock, act on copies.
+```go
+e.mu.Lock()
+handler := e.handler
+status := e.buildStatusLocked()
+e.mu.Unlock()
+if handler != nil { handler.OnStatus(status) }
+```
+
+**Check-release-act-reacquire**: Lock, check preconditions, unlock, do expensive work, re-lock, re-validate, store result.
+```go
+c.mu.Lock()
+if c.conn != nil { c.mu.Unlock(); return c.conn, nil }
+c.mu.Unlock()
+conn := expensiveDial()  // no lock
+c.mu.Lock()
+if c.closed { c.mu.Unlock(); conn.Close(); return nil, ErrClosed }
+c.conn = conn
+c.mu.Unlock()
+```
+
+**Extract-nil-release-close**: Lock, save reference, nil field, unlock, close outside.
+```go
+e.mu.Lock()
+prov := e.prov; e.prov = nil
+tm := e.tm;     e.tm = nil
+e.mu.Unlock()
+if prov != nil { prov.Close() }
+if tm != nil   { tm.Close() }
+```
+
+### Review Checklist (for any PR touching deadlock.Mutex / sync.WaitGroup)
+
+- [ ] Is every Lock()→Unlock() section a pure read/write of struct fields?
+- [ ] Does any Lock() scope call a method on another struct, interface, or closure?
+- [ ] Does any Lock() scope do I/O (network, CGo, file, DNS, TLS, QUIC)?
+- [ ] Does any Lock() scope call Close() on any resource?
+- [ ] Does any Lock() scope wait on a goroutine (wg.Wait, <-chan)?
+- [ ] Does any `defer mu.Unlock()` span more than 10 lines?
+- [ ] Is every new mutex added to the Lock Ordering Graph?
+- [ ] Is every serialization lock acquired WITHOUT holding any state lock?
 
 ## Layer Docs (read on demand)
 
@@ -234,10 +345,7 @@ engine.Stop()
 
 ## Critical Gotchas
 
-- **Known deadlock: healthMonitor.sample() → onReconnect → resetCounters**: `sample()` holds `hm.mu`, calls `onReconnect()` which calls `e.OnNetworkChanged()` which calls `hm.resetCounters()` which tries `hm.mu` → self-deadlock. Trigger: ~35s sustained network disruption. Fix: move `onReconnect()` call outside `hm.mu`. See Concurrency Rules above.
-- **Known deadlock: Engine.Stop() vs health goroutine**: `Stop()` holds `e.mu` + calls `health.stop()` (wg.Wait). Health goroutine in `sample()` → `onReconnect()` → `OnNetworkChanged()` → needs `e.mu` → cross-deadlock. Fix: release `e.mu` before `health.stop()`.
 - **Race test timeout**: `go test -race ./wire/...` needs `>300s` (arc integration benchmarks are slow). Use `-timeout 300s` or `-short` to skip long-running tests.
-- **QUICClient/TCPWSClient connect lock pattern**: `connect()` uses check-release-connect-reacquire with `connectMu` to serialize expensive dials. Never hold `mu` during DNS/TLS/QUIC handshake — go-deadlock's 30s threshold kills the process.
 - QUIC stream `Close()` only sends FIN (write direction). Must also call `CancelRead()` to release stream slot — `quicStreamConn.Close()` handles both
 - sing-tun gVisor stack owns connections — handler must defer close, not close prematurely
 - `ReadStreamHeader`/`ReadStreamResponse` require `io.ByteReader` — wrap `net.Conn` with `bufio.NewReader(conn)`

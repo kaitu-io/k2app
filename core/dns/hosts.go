@@ -31,6 +31,7 @@ func (h *HostsFile) Load(path string) error {
 	defer file.Close()
 
 	h.mu.Lock()
+	// concurrency:allow — file I/O only at startup, no concurrent mutation risk
 	defer h.mu.Unlock()
 
 	h.entries = make(map[string][]net.IP)

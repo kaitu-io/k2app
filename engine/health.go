@@ -295,6 +295,7 @@ func (hm *healthMonitor) resetCounters() {
 // History returns the ring buffer contents oldest-first.
 func (hm *healthMonitor) History() []HealthSnapshot {
 	hm.mu.Lock()
+	// concurrency:allow — pure field read returning a copy, no I/O or external calls
 	defer hm.mu.Unlock()
 
 	var n int
