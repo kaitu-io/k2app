@@ -204,12 +204,13 @@
     "invalidUriNoAuth": "URI 缺少認證資訊（需要 username:token@）",
     "tag": "自部署",
     "manageNode": "管理節點",
-    "deployGuide": "仲未有伺服器？一鍵部署",
+    "deployGuide": "一鍵部署伺服器",
     "deployGuideDoc": "詳細文件",
     "copyCommand": "複製",
     "copied": "已複製",
+    "uriHelp": "部署完成後，將取得嘅 k2v5:// 地址貼到下方",
     "upgradeTitle": "想要更多節點？",
     "upgradeDescription": "登入即可取得全球雲端節點，開箱即用",
-    "upgradeCta": "免費試用"
+    "upgradeCta": "開通雲節點"
   }
 }

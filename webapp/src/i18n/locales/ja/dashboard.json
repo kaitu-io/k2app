@@ -204,12 +204,13 @@
     "invalidUriNoAuth": "URI に認証情報がありません（username:token@ が必要）",
     "tag": "セルフホスト",
     "manageNode": "ノード管理",
-    "deployGuide": "サーバーがない？ワンクリックデプロイ",
+    "deployGuide": "サーバーをデプロイ",
     "deployGuideDoc": "詳細ドキュメント",
     "copyCommand": "コピー",
     "copied": "コピーしました",
+    "uriHelp": "デプロイ後、取得した k2v5:// アドレスを下に貼り付けてください",
     "upgradeTitle": "もっとノードが必要？",
     "upgradeDescription": "ログインすると世界中のクラウドノードをすぐに利用できます",
-    "upgradeCta": "無料体験"
+    "upgradeCta": "クラウドノードを利用"
   }
 }

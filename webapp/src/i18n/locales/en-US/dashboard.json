@@ -204,12 +204,13 @@
     "invalidUriNoAuth": "URI missing credentials (requires username:token@)",
     "tag": "Self-Hosted",
     "manageNode": "Manage Node",
-    "deployGuide": "No server yet? One-click deploy",
+    "deployGuide": "Deploy server",
     "deployGuideDoc": "Full docs",
     "copyCommand": "Copy",
     "copied": "Copied",
+    "uriHelp": "After deployment, paste the k2v5:// URI below",
     "upgradeTitle": "Want more nodes?",
     "upgradeDescription": "Log in to access global cloud nodes, ready to use",
-    "upgradeCta": "Free Trial"
+    "upgradeCta": "Get Cloud Nodes"
   }
 }
