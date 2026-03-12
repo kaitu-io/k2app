@@ -19,3 +19,15 @@ target 'PacketTunnelExtension' do
   use_frameworks! :linkage => :static
   # NE target only needs gomobile xcframework — NO Capacitor
 end
+
+# Replace Capacitor's empty PrivacyInfo with our App-level privacy manifest
+# (Pods Copy Resources copies Capacitor's PrivacyInfo.xcprivacy into App.app,
+#  so we overwrite it with ours which declares actual API usage and data collection)
+post_install do |installer|
+  app_privacy = File.join(__dir__, 'App', 'PrivacyInfo.xcprivacy')
+  capacitor_privacy = File.join(__dir__, '..', '..', '..', 'node_modules', '@capacitor', 'ios', 'Capacitor', 'Capacitor', 'PrivacyInfo.xcprivacy')
+  if File.exist?(app_privacy) && File.exist?(capacitor_privacy)
+    FileUtils.cp(app_privacy, capacitor_privacy)
+    Pod::UI.puts "Replaced Capacitor PrivacyInfo.xcprivacy with App privacy manifest"
+  end
+end

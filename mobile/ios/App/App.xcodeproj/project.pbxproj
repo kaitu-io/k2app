@@ -30,6 +30,7 @@
 		D36F09BE5D71D847D49AC01B /* Pods_PacketTunnelExtension.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 233A3F316C4F467CA6A1A8A2 /* Pods_PacketTunnelExtension.framework */; };
 		D936F650E10A1AAA3C1291AD /* NEHelpersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8FBC8B200147C902DEE140F /* NEHelpersTests.swift */; };
 		FCBE94BC67556466AB9AA049 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D08300DE0A8C33C607A9BC3E /* Foundation.framework */; };
+		FF10000000000000000000A1 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = FF10000000000000000000A2 /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -94,6 +95,7 @@
 		DDF0660D7E007B680F0370F8 /* PacketTunnelProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PacketTunnelProvider.swift; sourceTree = "<group>"; };
 		E8FBC8B200147C902DEE140F /* NEHelpersTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NEHelpersTests.swift; sourceTree = "<group>"; };
 		FC68EB0AF532CFC21C3344DD /* Pods-App.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-App.debug.xcconfig"; path = "Pods/Target Support Files/Pods-App/Pods-App.debug.xcconfig"; sourceTree = "<group>"; };
+		FF10000000000000000000A2 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -190,6 +192,7 @@
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
 				504EC3131FED79650016851F /* Info.plist */,
+				FF10000000000000000000A2 /* PrivacyInfo.xcprivacy */,
 				AA10000000000000000000A0 /* InfoPlist.strings */,
 				2FAD9762203C412B000D30F8 /* config.xml */,
 				50B271D01FEDC1A000F3C39B /* public */,
