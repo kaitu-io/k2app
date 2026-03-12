@@ -47,7 +47,12 @@
     "expiryDate": "过期日期",
     "upgradeToPro": "升级到Pro",
     "renewNow": "立即续费",
-    "exitApp": "退出应用"
+    "exitApp": "退出应用",
+    "deleteAccount": "注销账号",
+    "deleteAccountTitle": "注销账号",
+    "deleteAccountWarning": "注销后账号数据将被删除，此操作不可撤销。确认要注销吗？",
+    "deleteAccountSuccess": "账号已注销",
+    "deleteAccountFailed": "注销失败，请重试"
   },
   "betaProgram": {
     "title": "Beta 测试计划",

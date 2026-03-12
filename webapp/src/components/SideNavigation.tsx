@@ -196,6 +196,12 @@ function SideNavigation() {
     <StyledDrawer variant="permanent" anchor="left">
       {/* Logo / App Name */}
       <Logo>
+        <Box
+          component="img"
+          src="/favicon.png"
+          alt="Kaitu"
+          sx={{ width: 32, height: 32, mr: 1, borderRadius: '6px' }}
+        />
         <Typography
           variant="h6"
           sx={{

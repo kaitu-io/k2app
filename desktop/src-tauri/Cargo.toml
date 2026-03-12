@@ -4,7 +4,7 @@ version = "0.4.0-beta.2"
 edition = "2021"
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon", "devtools"] }
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-localhost = "2"
 tauri-plugin-log = "2"
 tauri-plugin-updater = "2"

@@ -47,7 +47,12 @@
     "expiryDate": "Expiry Date",
     "upgradeToPro": "Upgrade to Pro",
     "renewNow": "Renew Now",
-    "exitApp": "Exit App"
+    "exitApp": "Exit App",
+    "deleteAccount": "Delete Account",
+    "deleteAccountTitle": "Delete Account",
+    "deleteAccountWarning": "Your account data will be permanently deleted. This action cannot be undone. Are you sure?",
+    "deleteAccountSuccess": "Account deleted",
+    "deleteAccountFailed": "Failed to delete account, please try again"
   },
   "betaProgram": {
     "title": "Beta Program",
