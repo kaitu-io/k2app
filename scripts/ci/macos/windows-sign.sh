@@ -65,10 +65,21 @@ if [ ! -f "$PKCS11_MODULE" ]; then
     exit 1
 fi
 
-# Verify PKCS#11 token is available
+# Verify PKCS#11 token is available — auto-login if not
 if ! pkcs11-tool --module "$PKCS11_MODULE" --list-slots 2>&1 | grep -q "token label"; then
-    echo "ERROR: PKCS#11 token not available. Run simplisign-login.sh first." >&2
-    exit 1
+    echo "PKCS#11 token not available, attempting auto-login..."
+    LOGIN_SCRIPT="$SCRIPT_DIR/simplisign-login.sh"
+    if [ -f "$LOGIN_SCRIPT" ]; then
+        bash "$LOGIN_SCRIPT"
+    else
+        echo "ERROR: PKCS#11 token not available and login script not found at $LOGIN_SCRIPT" >&2
+        exit 1
+    fi
+    # Re-check after login
+    if ! pkcs11-tool --module "$PKCS11_MODULE" --list-slots 2>&1 | grep -q "token label"; then
+        echo "ERROR: PKCS#11 token still not available after login attempt." >&2
+        exit 1
+    fi
 fi
 
 # --- Sign ---
