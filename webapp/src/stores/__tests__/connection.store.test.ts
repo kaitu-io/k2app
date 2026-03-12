@@ -581,6 +581,100 @@ describe('Connection Store - VPN State Lifecycle', () => {
     expect(useConnectionStore.getState().connectedTunnel).toEqual(tunnel);
   });
 
+  it('clears connectedTunnel when VPN transitions to idle from connecting (fast auth rejection)', async () => {
+    const { useConnectionStore, vpn } = await getStores();
+
+    // connect() sets connectedTunnel before dispatching USER_CONNECT
+    vpn.dispatch('USER_CONNECT');
+    useConnectionStore.setState({
+      connectedTunnel: {
+        source: 'cloud',
+        domain: 'tokyo.example.com',
+        name: 'Tokyo',
+        country: 'JP',
+        serverUrl: 'k2v5://tokyo.example.com:443',
+      },
+    });
+    expect(vpn.useVPNMachineStore.getState().state).toBe('connecting');
+
+    const { initializeConnectionStore } = await import('../connection.store');
+    const cleanup = initializeConnectionStore();
+
+    // Backend immediately rejects → idle
+    vpn.dispatch('BACKEND_DISCONNECTED');
+    expect(vpn.useVPNMachineStore.getState().state).toBe('idle');
+    expect(useConnectionStore.getState().connectedTunnel).toBeNull();
+
+    cleanup();
+  });
+
+  it('clears connectedTunnel when VPN transitions to idle from reconnecting', async () => {
+    const { useConnectionStore, vpn } = await getStores();
+    vi.useFakeTimers();
+
+    vpn.dispatch('USER_CONNECT');
+    vpn.dispatch('BACKEND_CONNECTED');
+    vpn.dispatch('BACKEND_RECONNECTING');
+    vi.advanceTimersByTime(3000); // let debounce fire
+    expect(vpn.useVPNMachineStore.getState().state).toBe('reconnecting');
+
+    useConnectionStore.setState({
+      connectedTunnel: {
+        source: 'cloud',
+        domain: 'tokyo.example.com',
+        name: 'Tokyo',
+        country: 'JP',
+        serverUrl: 'k2v5://tokyo.example.com:443',
+      },
+    });
+
+    const { initializeConnectionStore } = await import('../connection.store');
+    const cleanup = initializeConnectionStore();
+
+    // Reconnect fails permanently → idle
+    vpn.dispatch('BACKEND_DISCONNECTED');
+    expect(vpn.useVPNMachineStore.getState().state).toBe('idle');
+    expect(useConnectionStore.getState().connectedTunnel).toBeNull();
+
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it('handles rapid state cycling (idle → connecting → idle → connecting → idle)', async () => {
+    const { useConnectionStore, vpn } = await getStores();
+
+    const tunnel = {
+      source: 'cloud' as const,
+      domain: 'tokyo.example.com',
+      name: 'Tokyo',
+      country: 'JP',
+      serverUrl: 'k2v5://tokyo.example.com:443',
+    };
+
+    const { initializeConnectionStore } = await import('../connection.store');
+    const cleanup = initializeConnectionStore();
+
+    // Cycle 1: connect attempt fails immediately
+    useConnectionStore.setState({ connectedTunnel: tunnel });
+    vpn.dispatch('USER_CONNECT');
+    vpn.dispatch('BACKEND_DISCONNECTED');
+    expect(useConnectionStore.getState().connectedTunnel).toBeNull();
+
+    // Cycle 2: another connect attempt fails
+    useConnectionStore.setState({ connectedTunnel: tunnel });
+    vpn.dispatch('USER_CONNECT');
+    vpn.dispatch('BACKEND_DISCONNECTED');
+    expect(useConnectionStore.getState().connectedTunnel).toBeNull();
+
+    // Cycle 3: connect succeeds — connectedTunnel should persist
+    useConnectionStore.setState({ connectedTunnel: tunnel });
+    vpn.dispatch('USER_CONNECT');
+    vpn.dispatch('BACKEND_CONNECTED');
+    expect(useConnectionStore.getState().connectedTunnel).toEqual(tunnel);
+
+    cleanup();
+  });
+
   it('tunnel selection works after unexpected disconnect (end-to-end bug scenario)', async () => {
     const { useConnectionStore, vpn } = await getStores();
 

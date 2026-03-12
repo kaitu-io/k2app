@@ -43,7 +43,7 @@ export {
 export { useConfigStore } from './config.store';
 
 // ============ Connection Store ============
-export { useConnectionStore } from './connection.store';
+export { useConnectionStore, initializeConnectionStore } from './connection.store';
 
 // ============ Self-Hosted Store ============
 export { useSelfHostedStore } from './self-hosted.store';
@@ -61,7 +61,7 @@ import { initializeAuthStore } from './auth.store';
 import { initializeVPNMachine, useVPNMachineStore } from './vpn-machine.store';
 import { initializeLayoutStore } from './layout.store';
 import { useConfigStore } from './config.store';
-import { useConnectionStore } from './connection.store';
+import { initializeConnectionStore, useConnectionStore } from './connection.store';
 import { useSelfHostedStore } from './self-hosted.store';
 
 /**
@@ -80,6 +80,7 @@ export function initializeAllStores(): () => void {
   useSelfHostedStore.getState().loadTunnel(); // fire-and-forget, sets loaded=true when done
   const cleanupAuth = initializeAuthStore();
   const cleanupVPNMachine = initializeVPNMachine();
+  const cleanupConnection = initializeConnectionStore();
 
   // Subscribe to VPN state changes for analytics
   import('../services/stats').then(({ statsService }) => {
@@ -145,6 +146,7 @@ export function initializeAllStores(): () => void {
   }).catch(() => {});
 
   return () => {
+    cleanupConnection();
     cleanupVPNMachine();
     cleanupAuth();
     cleanupLayout();
