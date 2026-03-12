@@ -7,6 +7,7 @@ def capacitor_pods
   pod 'CapacitorApp', :path => '../../../node_modules/@capacitor/app'
   pod 'CapacitorBrowser', :path => '../../../node_modules/@capacitor/browser'
   pod 'CapacitorClipboard', :path => '../../../node_modules/@capacitor/clipboard'
+  pod 'CapacitorShare', :path => '../../../node_modules/@capacitor/share'
   pod 'CapacitorStatusBar', :path => '../../../node_modules/@capacitor/status-bar'
   pod 'K2Plugin', :path => '../../../node_modules/k2-plugin'
 end
