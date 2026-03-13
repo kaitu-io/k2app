@@ -301,6 +301,138 @@ if tm != nil   { tm.Close() }
 - [ ] Is every new mutex added to the Lock Ordering Graph?
 - [ ] Is every serialization lock acquired WITHOUT holding any state lock?
 
+## Error Ownership Rules (Constitutional — never violate)
+
+### Core Principle
+
+**The producer classifies; the consumer queries an interface.**
+
+The code that creates an error has full context about what failed. The code that receives an error should never reverse-engineer classification by enumerating concrete types. If a consumer needs to distinguish error categories, the producer must implement a classification interface.
+
+### The Rule
+
+When a function returns an error, it must classify that error at the point of creation — not leave it to callers to pattern-match. Callers check classification via interface assertion (`errors.As` on a behavior interface), never via type enumeration or string matching.
+
+```go
+// WRONG: consumer enumerates types (breaks when new error types are added)
+func isProxyLayerError(err error) bool {
+    var se *StreamError
+    if errors.As(err, &se) { return true }
+    if errors.Is(err, ErrStreamRejected) { return true }
+    return false // new error types silently misclassified
+}
+
+// RIGHT: producer marks, consumer asks interface
+type proxyLayerErr interface { IsProxyLayer() bool }
+
+func isProxyLayerError(err error) bool {
+    var pe proxyLayerErr
+    return errors.As(err, &pe) && pe.IsProxyLayer()
+}
+```
+
+### Why This Matters
+
+A consumer-side whitelist is correct on the day it's written. When a new error type is added (by a different developer, months later), the whitelist silently misclassifies it — defaulting to the wrong category. The compiler gives no warning. The bug manifests as incorrect fallback behavior under production load.
+
+### Review Checklist
+
+- [ ] Does any error consumer switch on concrete error types to decide behavior?
+- [ ] Does every error classification have a corresponding interface implemented by the producer?
+- [ ] Does `errors.As` traverse the full Unwrap chain correctly?
+
+## Encapsulation Rules (Constitutional — never violate)
+
+### Core Principle
+
+**Never write another struct's fields. Call its methods.**
+
+A struct owns its fields — including `atomic` fields and unexported state. External code must interact through methods, even for simple operations like resetting a counter. `atomic` provides concurrency safety, not encapsulation safety.
+
+### The Rule
+
+Do not directly read or write fields on another struct, even if they are exported or atomic. Instead, the owning struct exposes methods that encapsulate the operation.
+
+```go
+// WRONG: TransportManager directly writes QUICClient's internal atomic
+func (tm *TransportManager) recordQuicSuccess() {
+    if qc, ok := tm.quic.(*QUICClient); ok {
+        qc.handshakeFailStreak.Store(0) // reaches into QC internals
+    }
+}
+
+// RIGHT: QUICClient exposes a method
+func (c *QUICClient) RecordSuccess() {
+    c.handshakeFailStreak.Store(0)
+}
+func (tm *TransportManager) recordQuicSuccess() {
+    if qc, ok := tm.quic.(*QUICClient); ok {
+        qc.RecordSuccess()
+    }
+}
+```
+
+### Why This Matters
+
+When a field is renamed, its semantics change, or additional side effects are needed (logging, metrics), the compiler finds all method call sites but NOT all direct field accesses from external structs. The owning struct is the single authority on how its state is mutated.
+
+### Review Checklist
+
+- [ ] Does any code outside a struct directly `.Store()` / `.Load()` on that struct's atomic fields?
+- [ ] Does any code outside a struct directly assign to that struct's fields?
+- [ ] Could the operation be encapsulated in a method on the owning struct?
+
+## Layer Boundary Rules (Constitutional — never violate)
+
+### Core Principle
+
+**Lower layers do not know upper layers exist. Upper layers use lower layers through interfaces, not concrete types.**
+
+The layer model (Platform Shell → Engine → Core → Provider → Wire) defines a strict dependency direction. Each layer depends only on the layer directly below it, through interfaces defined in the lower layer's package.
+
+### The Rule
+
+1. **No upward dependencies**: A lower-layer package must never import an upper-layer package. Wire must not import engine. Core must not import daemon.
+2. **No concrete type assertions on layer interfaces**: When a layer receives an interface from below (e.g., `wire.Dialer`), it must not type-assert to the concrete implementation (e.g., `*QUICClient`) to access capabilities beyond the interface contract.
+3. **Optional capabilities use registered interfaces**: If an upper layer needs an optional capability from a lower layer, the lower layer defines and documents the capability interface (e.g., `StatsProvider`). The upper layer type-asserts to the *interface*, not the concrete type.
+
+```go
+// WRONG: upper layer type-asserts to concrete type
+if qc, ok := tm.quic.(*QUICClient); ok {
+    qc.resetConnection()
+    qc.portHopAttempts.Store(0)
+}
+
+// RIGHT: lower layer defines capability interface
+type Resettable interface {
+    Reset()
+}
+// upper layer asserts on interface
+if r, ok := tm.quic.(Resettable); ok {
+    r.Reset()
+}
+```
+
+### Registered Optional Interfaces
+
+All optional capability interfaces that upper layers may type-assert on must be listed here:
+
+| Interface | Package | Implemented by | Asserted by |
+|-----------|---------|----------------|-------------|
+| `StatsProvider` | wire | QUICClient, TCPWSClient | engine (stats collection) |
+
+When adding a new optional interface, add it to this table.
+
+### Why This Matters
+
+Concrete type assertions create hidden coupling. If a third transport is added (or a mock in tests), every assertion site silently becomes a no-op — the code compiles but the behavior changes. Interface assertions fail explicitly and are discoverable via `grep`.
+
+### Review Checklist
+
+- [ ] Does any code type-assert a layer interface to a concrete type from the layer below?
+- [ ] Are all optional capability interfaces listed in the Registered Optional Interfaces table?
+- [ ] Does any lower-layer package import an upper-layer package?
+
 ## Layer Docs (read on demand)
 
 ```
