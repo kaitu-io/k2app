@@ -272,6 +272,12 @@ func (c *QUICClient) ConsecConnFails() int32 {
 	return c.handshakeFailStreak.Load()
 }
 
+// RecordSuccess clears the handshake failure streak after a successful QUIC dial.
+// Called by TransportManager when QUIC DialTCP succeeds.
+func (c *QUICClient) RecordSuccess() {
+	c.handshakeFailStreak.Store(0)
+}
+
 // RecordTCPSuccess marks the current time as a successful TCP stream.
 // Exported for testing — allows engine tests to set TCP health state.
 func (c *QUICClient) RecordTCPSuccess() {
@@ -781,6 +787,17 @@ func (c *QUICClient) resetConnection() {
 	mux, conn, tr := c.extractConnLocked()
 	c.mu.Unlock()
 	closeQUICResources(mux, conn, tr, "connection reset")
+}
+
+// Reset closes cached connections and clears all fallback/hop state.
+// Called by TransportManager.ResetConnections() on network change.
+// After Reset(), the next DialTCP/DialUDP will establish a fresh connection
+// with a clean handshake failure streak and hop counter.
+func (c *QUICClient) Reset() {
+	c.resetConnection()
+	c.handshakeFailStreak.Store(0)
+	c.portHopAttempts.Store(0)
+	c.portHopExhaustedAt.Store(0)
 }
 
 // Close closes the QUIC connection and underlying transport.

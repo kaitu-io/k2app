@@ -503,6 +503,13 @@ func (c *TCPWSClient) resetConnection() {
 	}
 }
 
+// Reset closes cached connections and clears session state.
+// Called by TransportManager.ResetConnections() on network change.
+// After Reset(), the next DialTCP/DialUDP will establish a fresh connection.
+func (c *TCPWSClient) Reset() {
+	c.resetConnection()
+}
+
 // Close closes the smux session and underlying connection.
 func (c *TCPWSClient) Close() error {
 	c.mu.Lock()

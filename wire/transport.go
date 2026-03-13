@@ -107,7 +107,7 @@ func (tm *TransportManager) SetTCPWS(d Dialer) {
 func (tm *TransportManager) recordQuicSuccess() {
 	tm.mu.RLock()
 	if qc, ok := tm.quic.(*QUICClient); ok {
-		qc.handshakeFailStreak.Store(0)
+		qc.RecordSuccess()
 	}
 	tm.mu.RUnlock()
 
@@ -354,13 +354,10 @@ func (tm *TransportManager) ResetConnections() {
 	tm.mu.RUnlock()
 
 	if qc, ok := q.(*QUICClient); ok {
-		qc.resetConnection()
-		qc.portHopAttempts.Store(0)
-		qc.portHopExhaustedAt.Store(0)
-		qc.handshakeFailStreak.Store(0)
+		qc.Reset()
 	}
 	if tc, ok := t.(*TCPWSClient); ok {
-		tc.resetConnection()
+		tc.Reset()
 	}
 
 	tm.fallbackActive.Store(false)
