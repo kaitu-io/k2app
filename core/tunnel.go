@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"io"
 	"log/slog"
 	"net"
@@ -288,6 +289,7 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 
 	host, port, _ := net.SplitHostPort(dest)
 	action := t.route(dest)
+	slog.Debug("tunnel: route UDP", "dest", dest, "action", action)
 
 	// Peek first packet for protocol detection + domain extraction.
 	// Triggers: sniffBT (BT/WebRTC), sniffSNI (domain upgrade), blockQUIC (QUIC reject).
@@ -299,19 +301,28 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 			var meta sniff.Result
 
 			// 1. BT/WebRTC: PROXY → DIRECT
+			// Priority: STUN/DTLS first (strict magic cookie / header checks),
+			// then uTP/UDPTracker (loose first-byte heuristic, prone to false positives).
 			if t.sniffBT && action == k2rule.TargetProxy {
-				if sniff.IsUTP(packet) || sniff.IsUDPTracker(packet) {
+				if sniff.IsSTUN(packet) {
+					meta.Protocol = sniff.ProtoSTUN
+					action = k2rule.TargetDirect
+					slog.Debug("tunnel: STUN detected, forcing direct", "dest", dest)
+				} else if sniff.IsDTLS(packet) {
+					meta.Protocol = sniff.ProtoDTLS
+					action = k2rule.TargetDirect
+					slog.Debug("tunnel: DTLS detected, forcing direct", "dest", dest)
+				} else if sniff.IsUTP(packet) || sniff.IsUDPTracker(packet) {
 					meta.Protocol = sniff.ProtoBitTorrent
 					action = k2rule.TargetDirect
 					slog.Debug("tunnel: BitTorrent UDP detected, forcing direct", "dest", dest)
-				} else if sniff.IsSTUN(packet) || sniff.IsDTLS(packet) {
-					if sniff.IsSTUN(packet) {
-						meta.Protocol = sniff.ProtoSTUN
-					} else {
-						meta.Protocol = sniff.ProtoDTLS
+				}
+				if meta.Protocol == "" {
+					pktHead := packet
+					if len(pktHead) > 20 {
+						pktHead = pktHead[:20]
 					}
-					action = k2rule.TargetDirect
-					slog.Debug("tunnel: WebRTC detected, forcing direct", "dest", dest)
+					slog.Debug("tunnel: UDP sniff no match", "dest", dest, "len", len(packet), "head", hex.EncodeToString(pktHead))
 				}
 			}
 
