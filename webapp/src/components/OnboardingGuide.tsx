@@ -2,11 +2,11 @@
  * OnboardingGuide — 交互式引导组件
  *
  * 在 Layout 层渲染。通过 selector 追踪目标 DOM，完全解耦业务逻辑。
- * 用户点击目标元素推进引导（无 Next 按钮）。
+ * 用户可通过点击高亮区域 或 StepCard「下一步」按钮推进引导。
  *
  * 架构:
  *   SpotlightOverlay (position:fixed SVG) — 暗色遮罩 + evenodd 挖洞
- *   OnboardingTooltip (MUI Popper + virtual element) — 提示气泡
+ *   OnboardingTooltip (MUI Popper + virtual element) — StepCard 气泡
  *   useTargetRect (RAF polling) — 每帧追踪目标 viewport 坐标
  *
  * position:fixed 元素不受 CSS body zoom 影响，彻底解决 Windows 缩放错位问题。
@@ -18,30 +18,33 @@ import { getPhaseConfig } from '../stores/onboarding.store';
 import { useTargetRect } from './onboarding/useTargetRect';
 import SpotlightOverlay from './onboarding/SpotlightOverlay';
 import OnboardingTooltip from './onboarding/OnboardingTooltip';
+import { ONBOARDING } from './onboarding/tokens';
 
 const STYLE_ID = 'onboarding-pulse-style';
+
+const g = ONBOARDING.glow;
 const PULSE_CSS = `
 @keyframes onboarding-pulse {
-  0%, 100% { box-shadow: 0 0 0 3px rgba(0,212,255,0.8), 0 0 20px rgba(0,212,255,0.4); }
-  50% { box-shadow: 0 0 0 5px rgba(0,212,255,0.6), 0 0 30px rgba(0,212,255,0.3); }
+  0%, 100% { box-shadow: 0 0 0 ${g.ringWidth[0]}px ${g.color.replace('{a}', '0.8')}, 0 0 ${g.spreadRadius[0]}px ${g.color.replace('{a}', '0.4')}; }
+  50% { box-shadow: 0 0 0 ${g.ringWidth[1]}px ${g.color.replace('{a}', '0.6')}, 0 0 ${g.spreadRadius[1]}px ${g.color.replace('{a}', '0.3')}; }
 }
 .onboarding-target-glow {
   animation: onboarding-pulse 2s ease-in-out infinite;
   border-radius: 12px;
   position: relative;
-  z-index: 1310;
+  z-index: ${ONBOARDING.z.glow};
 }
 .onboarding-target-glow-fixed {
   animation: onboarding-pulse 2s ease-in-out infinite;
   border-radius: 12px;
-  z-index: 1310;
+  z-index: ${ONBOARDING.z.glow};
 }
 `;
 
 export function OnboardingGuide() {
   const { active, phase, phases, nextPhase, complete } = useOnboardingStore();
   const config = active && phase ? getPhaseConfig(phase) : null;
-  const { rect, element } = useTargetRect(config?.target ?? null);
+  const { rect, element } = useTargetRect(config?.targets ?? null);
   const prevElementRef = useRef<HTMLElement | null>(null);
   const [showTooltip, setShowTooltip] = useState(true);
 
@@ -129,6 +132,7 @@ export function OnboardingGuide() {
           currentIndex={currentIndex}
           totalSteps={totalSteps}
           onSkip={complete}
+          onNext={nextPhase}
         />
       )}
     </>

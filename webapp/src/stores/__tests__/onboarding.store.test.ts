@@ -53,7 +53,7 @@ import { useOnboardingStore, getPhaseConfig } from '../onboarding.store';
 describe('onboarding.store', () => {
   beforeEach(() => {
     // Reset store state
-    useOnboardingStore.setState({ phase: 1, active: false, phases: [] });
+    useOnboardingStore.setState({ phase: 1, active: false, phases: [], _advancing: false });
     vi.clearAllMocks();
     mockFeature.mockReturnValue(true);
     mockPlatform.os = 'windows';
@@ -113,14 +113,19 @@ describe('onboarding.store', () => {
   describe('getPhaseConfig', () => {
     it('returns dashboard target for phase 6 on all platforms', () => {
       const config = getPhaseConfig(6);
-      expect(config.target).toBe('[data-tour="nav-dashboard"]');
+      expect(config.targets).toContain('[data-tour="nav-dashboard"]');
       expect(config.i18nKey).toBe('phase6');
     });
 
     it('returns correct config for each phase', () => {
-      expect(getPhaseConfig(1).target).toBe('[data-tour="collapse-toggle"]');
-      expect(getPhaseConfig(3).target).toBe('[data-tour="feedback-button"]');
-      expect(getPhaseConfig(4).target).toBe('[data-tour="nav-invite"]');
+      expect(getPhaseConfig(1).targets).toContain('[data-tour="collapse-toggle"]');
+      expect(getPhaseConfig(3).targets).toContain('[data-tour="feedback-button"]');
+      expect(getPhaseConfig(4).targets).toContain('[data-tour="nav-invite"]');
+    });
+
+    it('phase 5 has fallback targets for desktop and mobile', () => {
+      const config = getPhaseConfig(5);
+      expect(config.targets).toEqual(['[data-tour="invite-share"]', '[data-tour="invite-copy"]']);
     });
   });
 

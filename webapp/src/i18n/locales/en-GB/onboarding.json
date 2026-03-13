@@ -1,29 +1,14 @@
 {
   "onboarding": {
-    "phase1": {
-      "title": "Collapse Panel",
-      "content": "Tap the arrow to collapse the connection panel\nMake room for the node list"
-    },
-    "phase2": {
-      "title": "Expand Panel",
-      "content": "Tap the arrow again to expand the panel\nRestore the connection buttons"
-    },
-    "phase3": {
-      "title": "Send Feedback",
-      "content": "Having issues? Tap this button\nto submit feedback anytime"
-    },
-    "phase4": {
-      "title": "Invite Friends",
-      "content": "Tap here to open the invite page\nBoth you and your friend get free time"
-    },
-    "phase5": {
-      "title": "Share with Friends",
-      "content": "Tap the share button\nto send the invite link to friends"
-    },
-    "phase6": {
-      "title": "Back to Dashboard",
-      "content": "Tap here to return to the dashboard\nSelect a node to connect"
-    },
-    "skip": "Skip Guide"
+    "phase1": { "title": "Collapse Panel", "content": "Hide the panel to make room for the server list" },
+    "phase2": { "title": "Expand Panel", "content": "Tap again to bring back the connect button" },
+    "phase3": { "title": "Feedback", "content": "Having issues? Let us know anytime" },
+    "phase4": { "title": "Invite Friends", "content": "Both you and your friend get free time" },
+    "phase5": { "title": "Share Link", "content": "Send your invite link to a friend" },
+    "phase6": { "title": "Get Started", "content": "Head back and pick a server to connect" },
+    "skip": "Skip Guide",
+    "hint": "Tap highlighted area, or",
+    "next": "Next",
+    "done": "Done"
   }
 }

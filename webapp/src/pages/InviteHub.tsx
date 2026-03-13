@@ -597,6 +597,7 @@ export default function Invite() {
                     variant="contained"
                     size="large"
                     fullWidth
+                    data-tour="invite-copy"
                     startIcon={shareLinkLoading ? <CircularProgress size={20} color="inherit" /> : <CopyIcon />}
                     onClick={handleCopyShareContent}
                     disabled={shareLinkLoading}
