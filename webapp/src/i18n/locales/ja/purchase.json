@@ -105,6 +105,8 @@
     "usbTrustPrompt": "スマホの画面で「USBデバッグを許可」をタップしてください",
     "otherBrandHint": "一般的な手順：設定 → デバイス情報 → ビルド番号を7回タップ → 設定に戻る → 開発者オプション → USBデバッグを有効にする",
     "guideImageAlt": "ステップ{{step}}のスクリーンショット",
+    "huaweiWarningTitle": "HarmonyOS NEXTはAndroidアプリのインストールに対応していません",
+    "huaweiWarningDesc": "Huaweiスマホのバージョンを確認してください：「設定」→「端末情報」を開きます。「HarmonyOS NEXT」と表示される場合、ADBインストールはできません。「EMUI」または「HarmonyOS 4.0以下」のデバイスは正常にインストールできます。",
     "huawei_step1": "「設定」を開き、一番下までスクロールして「端末情報」をタップ",
     "huawei_step2": "「HarmonyOSバージョン」を7回タップし、開発者モードが有効になるまで続ける",
     "huawei_step3": "「設定」に戻り→「システムと更新」",

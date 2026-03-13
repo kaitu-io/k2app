@@ -156,6 +156,17 @@ export default function AndroidInstallStepper({ name, icon, desc, apkUrl }: Prop
             />
           </Stack>
 
+          {selectedBrand === 'huawei' && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>
+                {t('purchase:androidInstall.huaweiWarningTitle')}
+              </Typography>
+              <Typography variant="body2">
+                {t('purchase:androidInstall.huaweiWarningDesc')}
+              </Typography>
+            </Alert>
+          )}
+
           {selectedBrand && selectedBrand !== 'other' && (
             <BrandGuideImages brandId={selectedBrand} />
           )}
