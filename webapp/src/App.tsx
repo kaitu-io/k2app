@@ -13,6 +13,7 @@ import Layout from "./components/Layout";
 import MyInviteCodeList from "./pages/MyInviteCodeList";
 import Devices from "./pages/Devices";
 import DeviceInstall from "./pages/DeviceInstall";
+import AndroidInstall from "./pages/android-install/AndroidInstall";
 import UpdateLoginEmail from "./pages/UpdateLoginEmail";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import AuthGate from "./components/AuthGate";
@@ -79,6 +80,9 @@ function AppRoutes() {
 
           {appConfig.features.deviceInstall && (
             <Route path="device-install" element={<DeviceInstall />} />
+          )}
+          {appConfig.features.androidInstall && (
+            <Route path="android-install" element={<AndroidInstall />} />
           )}
 
           {appConfig.features.feedback && (

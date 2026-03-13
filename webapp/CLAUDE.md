@@ -224,7 +224,8 @@ Namespaces: account, auth, common, dashboard, feedback, invite, nav, onboarding,
 - **Config store**: `useConfigStore()` in `stores/config.store.ts` persists VPN settings (ruleMode, proxyMode, logLevel, server). `buildConnectConfig(serverUrl?)` assembles `ClientConfig` from stored preferences — forces `log.level = 'debug'` when beta channel active. `updateConfig(partial)` merges and persists.
 - **LoginDialog**: Global modal via `login-dialog.store`. Guards call `openLoginDialog()` instead of redirecting
 - **Feature flags**: `getCurrentAppConfig().features` controls route/tab visibility
-- **Dev proxy**: Vite proxies `/api/*` and `/ping` to `:1777`. Production uses absolute URL
+- **Dev proxy**: Vite proxies `/api/core`, `/api/helper`, `/api/device`, `/ping` to `:1777` (or `K2_DAEMON_PORT`). Production uses absolute URL
+- **Helper API routing**: `adb-*` actions route to `/api/helper` (not `/api/core`). Tauri bridge uses `daemon_helper_exec` IPC command. Standalone bridge checks `action.startsWith('adb-')` to pick endpoint. New daemon helper actions must follow this pattern.
 - **Config-driven connect**: `_k2.run('up', config)` where config is assembled from server + user preferences
 - **AuthGate**: Wraps all routes — checks service readiness + version match before rendering
 - **Viewport scaling**: Uses CSS `zoom` (not `transform:scale()`) to avoid breaking `position:fixed` elements (react-joyride spotlight, MUI Portals)

@@ -88,7 +88,9 @@ export async function injectTauriGlobals(): Promise<void> {
           const pid = await window._platform?.getPid?.();
           wrappedParams = { config: params, ...(pid != null && { pid }) };
         }
-        const response = await invoke<ServiceResponse>('daemon_exec', {
+        // Route adb-* actions to the helper daemon endpoint
+        const command = action.startsWith('adb-') ? 'daemon_helper_exec' : 'daemon_exec';
+        const response = await invoke<ServiceResponse>(command, {
           action,
           params: wrappedParams,
         });

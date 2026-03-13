@@ -29,6 +29,8 @@ export interface AppConfig {
     feedback?: boolean;
     /** Device install guide */
     deviceInstall?: boolean;
+    /** Android USB install via ADB */
+    androidInstall?: boolean;
     /** Update login email */
     updateLoginEmail?: boolean;
     /** Bridge test page (development only) */
@@ -73,6 +75,7 @@ const KAITU_CONFIG: AppConfig = {
     proHistory: true,
     feedback: true,
     deviceInstall: true,
+    androidInstall: true,
     updateLoginEmail: true,
     bridgeTest: true,
     proxyRule: {
