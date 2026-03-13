@@ -125,7 +125,7 @@ fill_totp_and_login() {
 tell application "System Events"
     tell process "SimplySign Desktop"
         set frontmost to true
-        delay 0.2
+        delay 0.5
         tell window "SimplySign Desktop"
             tell scroll area 1
                 set wa to first UI element whose role is "AXWebArea"
@@ -133,18 +133,21 @@ tell application "System Events"
                 if (count of fields) < 2 then
                     return "error:no_fields"
                 end if
-                -- Click field to focus (set value doesn't fire DOM events in WebKit)
+                -- Focus token field (AXPress unreliable for WebKit inputs)
                 set tokenField to item 2 of fields
+                set focused of tokenField to true
+                delay 0.5
+                -- Click to ensure cursor is in field
                 perform action "AXPress" of tokenField
-                delay 0.3
+                delay 0.5
                 -- Select all + delete + type code via keystrokes
                 keystroke "a" using command down
-                delay 0.1
+                delay 0.3
                 key code 51
-                delay 0.1
+                delay 0.3
                 keystroke "${code}"
-                delay 0.5
-                -- Click Login button
+                delay 2.0
+                -- Click Login button (WebView needs time to process input and enable button)
                 set btns to every UI element of wa whose role is "AXButton"
                 if (count of btns) > 0 then
                     perform action "AXPress" of item 1 of btns
@@ -283,22 +286,36 @@ EOF
         if has_login_window; then
             echo "Clicking Close..."
             close_window
-            sleep 3
+            sleep 5
         fi
 
-        # Verify
-        if is_connected; then
-            echo "SimplySign connected!"
-            for i in $(seq 1 15); do
-                if has_pkcs11_token; then
-                    echo "PKCS#11 token ready. Done!"
-                    exit 0
-                fi
-                sleep 1
-            done
-            echo "WARNING: Connected but PKCS#11 token slow to appear."
-            exit 0
-        fi
+        # Verify connection (menu bar may take time to update)
+        echo "Verifying connection..."
+        for i in $(seq 1 10); do
+            if is_connected; then
+                echo "SimplySign connected!"
+                for j in $(seq 1 15); do
+                    if has_pkcs11_token; then
+                        echo "PKCS#11 token ready. Done!"
+                        exit 0
+                    fi
+                    sleep 1
+                done
+                echo "WARNING: Connected but PKCS#11 token slow to appear."
+                exit 0
+            fi
+            sleep 2
+        done
+        echo "WARNING: Login succeeded but connection not verified via menu bar."
+
+        # Fallback: check PKCS#11 token directly (menu bar may be unreliable)
+        for i in $(seq 1 10); do
+            if has_pkcs11_token; then
+                echo "PKCS#11 token ready (detected via fallback). Done!"
+                exit 0
+            fi
+            sleep 1
+        done
     fi
 
     echo "Attempt $attempt failed."

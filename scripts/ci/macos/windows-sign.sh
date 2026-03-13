@@ -81,6 +81,7 @@ osslsigncode sign \
     -pkcs11module "$PKCS11_MODULE" \
     -pkcs11cert "$PKCS11_CERT" \
     -key "$PKCS11_KEY" \
+    -ac "$SCRIPT_DIR/certum-chain.pem" \
     -h sha256 \
     -n "Kaitu Desktop" \
     -ts "$TIMESTAMP_URL" \
