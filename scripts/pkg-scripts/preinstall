@@ -46,4 +46,16 @@ pkill -9 -x k2 2>/dev/null || true
 # 5. Wait for cleanup
 sleep 1
 
+# 6. Clear WebKit cache (prevents stale webapp assets after upgrade)
+#    Must run AFTER app is killed (step 1) to avoid file locks.
+#    Preserves: ~/Library/Application Support/io.kaitu.desktop/ (update-channel, pre-beta-log-level)
+CONSOLE_USER=$(stat -f "%Su" /dev/console 2>/dev/null)
+if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ]; then
+    USER_HOME=$(dscl . -read /Users/"$CONSOLE_USER" NFSHomeDirectory 2>/dev/null | awk '{print $2}')
+    if [ -n "$USER_HOME" ] && [ -d "$USER_HOME/Library" ]; then
+        rm -rf "$USER_HOME/Library/Caches/io.kaitu.desktop" 2>/dev/null || true
+        rm -rf "$USER_HOME/Library/WebKit/io.kaitu.desktop" 2>/dev/null || true
+    fi
+fi
+
 exit 0

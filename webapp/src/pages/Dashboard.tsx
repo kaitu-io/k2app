@@ -314,15 +314,6 @@ export default function Dashboard() {
             overflowY: 'auto',
             overflowX: 'hidden',
           }),
-          '&::-webkit-scrollbar': { width: '4px' },
-          '&::-webkit-scrollbar-track': { background: 'transparent' },
-          '&::-webkit-scrollbar-thumb': {
-            background: (theme) => theme.palette.mode === 'dark'
-              ? 'rgba(255, 255, 255, 0.2)'
-              : 'rgba(0, 0, 0, 0.2)',
-            borderRadius: '4px',
-          },
-          scrollbarWidth: 'thin',
         }}
       >
         {/* Cloud Tunnels - Only for authenticated users */}
@@ -458,15 +449,6 @@ export default function Dashboard() {
               opacity: 0.5,
               pointerEvents: 'none',
               userSelect: 'none',
-              '&::-webkit-scrollbar': { width: '4px' },
-              '&::-webkit-scrollbar-track': { background: 'transparent' },
-              '&::-webkit-scrollbar-thumb': {
-                background: (theme) => theme.palette.mode === 'dark'
-                  ? 'rgba(255, 255, 255, 0.2)'
-                  : 'rgba(0, 0, 0, 0.2)',
-                borderRadius: '4px',
-              },
-              scrollbarWidth: 'thin',
             }}>
               {[
                 { flag: 'JP', name: 'Tokyo-01', country: 'Japan' },
