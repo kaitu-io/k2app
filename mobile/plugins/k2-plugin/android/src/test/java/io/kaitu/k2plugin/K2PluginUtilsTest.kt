@@ -47,6 +47,66 @@ class K2PluginUtilsTest {
         assertFalse(K2PluginUtils.isNewerVersion("abc", "1.0.0"))
     }
 
+    // ==================== isNewerVersion beta suffix ====================
+
+    @Test
+    fun isNewerVersion_stable_greater_than_same_beta() {
+        assertTrue(K2PluginUtils.isNewerVersion("0.5.0", "0.5.0-beta.1"))
+    }
+
+    @Test
+    fun isNewerVersion_beta_less_than_same_stable() {
+        assertFalse(K2PluginUtils.isNewerVersion("0.5.0-beta.1", "0.5.0"))
+    }
+
+    @Test
+    fun isNewerVersion_beta_increment() {
+        assertTrue(K2PluginUtils.isNewerVersion("0.5.0-beta.2", "0.5.0-beta.1"))
+    }
+
+    @Test
+    fun isNewerVersion_same_beta_equal() {
+        assertFalse(K2PluginUtils.isNewerVersion("0.5.0-beta.1", "0.5.0-beta.1"))
+    }
+
+    @Test
+    fun isNewerVersion_cross_version_beta_greater() {
+        assertTrue(K2PluginUtils.isNewerVersion("0.5.0-beta.1", "0.4.0"))
+    }
+
+    @Test
+    fun isNewerVersion_new_stable_greater_than_old_beta() {
+        assertTrue(K2PluginUtils.isNewerVersion("0.6.0", "0.5.0-beta.1"))
+    }
+
+    // ==================== manifestEndpoints ====================
+
+    @Test
+    fun androidManifestEndpoints_stable() {
+        val endpoints = K2PluginUtils.androidManifestEndpoints("stable")
+        assertTrue(endpoints[0].endsWith("/android/latest.json"))
+        assertFalse(endpoints[0].contains("/beta/"))
+    }
+
+    @Test
+    fun androidManifestEndpoints_beta() {
+        val endpoints = K2PluginUtils.androidManifestEndpoints("beta")
+        assertTrue(endpoints[0].endsWith("/android/beta/latest.json"))
+    }
+
+    @Test
+    fun webManifestEndpoints_stable() {
+        val endpoints = K2PluginUtils.webManifestEndpoints("stable")
+        assertTrue(endpoints[0].endsWith("/web/latest.json"))
+        assertFalse(endpoints[0].contains("/beta/"))
+    }
+
+    @Test
+    fun webManifestEndpoints_beta() {
+        val endpoints = K2PluginUtils.webManifestEndpoints("beta")
+        assertTrue(endpoints[0].endsWith("/web/beta/latest.json"))
+    }
+
     // ==================== resolveDownloadURL ====================
 
     @Test

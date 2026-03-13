@@ -126,6 +126,7 @@
   "betaProgram": {
     "title": "Beta 測試計畫",
     "description": "搶先體驗新功能，協助改進產品",
+    "descriptionIos": "搶先體驗新功能，幫助改進產品。開啟後，新測試版本發佈時你將收到郵件邀請加入 TestFlight 測試。",
     "enableWarning": "Beta 版本可能不穩定，可能影響正常使用。你可以隨時切回穩定版。",
     "enableConfirm": "啟用 Beta",
     "disableWarning": "將立即下載並安裝目前的穩定版本，安裝後應用程式會重新啟動。",

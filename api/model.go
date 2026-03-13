@@ -73,6 +73,10 @@ type User struct {
 	// 语言偏好
 	Language string `gorm:"type:varchar(10);not null;default:'en-US'" json:"language"` // 用户语言偏好：en-US, zh-CN, ja 等
 
+	// Beta channel subscription
+	BetaOptedIn *bool `gorm:"default:false"`            // 是否订阅 beta 更新通知
+	BetaOptedAt int64 `gorm:"not null;default:0;index"` // 订阅时间戳（关闭时保留历史）
+
 	// Password authentication
 	PasswordHash           string `gorm:"type:varchar(255)"`    // bcrypt hashed password
 	PasswordFailedAttempts int    `gorm:"not null;default:0"`   // Failed login attempts counter

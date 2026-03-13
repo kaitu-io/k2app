@@ -64,4 +64,12 @@ export declare class K2PluginWeb extends WebPlugin implements K2PluginInterface 
         enabled: boolean;
     }): Promise<void>;
     debugDump(): Promise<Record<string, unknown>>;
+    getUpdateChannel(): Promise<{
+        channel: string;
+    }>;
+    setUpdateChannel(_options: {
+        channel: string;
+    }): Promise<{
+        channel: string;
+    }>;
 }

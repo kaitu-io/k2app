@@ -4,17 +4,54 @@ import java.security.MessageDigest
 
 internal object K2PluginUtils {
 
+    private const val CDN_PRIMARY = "https://d13jc1jqzlg4yt.cloudfront.net/kaitu"
+    private const val CDN_FALLBACK = "https://d0.all7.cc/kaitu"
+
     fun isNewerVersion(remote: String, local: String): Boolean {
-        val r = remote.split(".").map { it.toIntOrNull() ?: 0 }
-        val l = local.split(".").map { it.toIntOrNull() ?: 0 }
-        val maxLen = maxOf(r.size, l.size)
+        val (rBase, rPre) = splitVersion(remote)
+        val (lBase, lPre) = splitVersion(local)
+        val baseCmp = compareSegments(rBase, lBase)
+        if (baseCmp != 0) return baseCmp > 0
+        if (rPre == null && lPre != null) return true
+        if (rPre != null && lPre == null) return false
+        if (rPre == null && lPre == null) return false
+        return compareSegments(
+            rPre!!.split(".").map { it.toIntOrNull() ?: 0 },
+            lPre!!.split(".").map { it.toIntOrNull() ?: 0 }
+        ) > 0
+    }
+
+    internal fun splitVersion(v: String): Pair<List<Int>, String?> {
+        val parts = v.split("-", limit = 2)
+        val base = parts[0].split(".").map { it.toIntOrNull() ?: 0 }
+        val pre = if (parts.size > 1) parts[1] else null
+        return Pair(base, pre)
+    }
+
+    internal fun compareSegments(a: List<Int>, b: List<Int>): Int {
+        val maxLen = maxOf(a.size, b.size)
         for (i in 0 until maxLen) {
-            val rv = r.getOrElse(i) { 0 }
-            val lv = l.getOrElse(i) { 0 }
-            if (rv > lv) return true
-            if (rv < lv) return false
+            val av = a.getOrElse(i) { 0 }
+            val bv = b.getOrElse(i) { 0 }
+            if (av != bv) return av.compareTo(bv)
         }
-        return false
+        return 0
+    }
+
+    fun androidManifestEndpoints(channel: String): List<String> {
+        val prefix = if (channel == "beta") "beta/" else ""
+        return listOf(
+            "$CDN_PRIMARY/android/${prefix}latest.json",
+            "$CDN_FALLBACK/android/${prefix}latest.json"
+        )
+    }
+
+    fun webManifestEndpoints(channel: String): List<String> {
+        val prefix = if (channel == "beta") "beta/" else ""
+        return listOf(
+            "$CDN_PRIMARY/web/${prefix}latest.json",
+            "$CDN_FALLBACK/web/${prefix}latest.json"
+        )
     }
 
     fun resolveDownloadURL(url: String, baseURL: String): String {

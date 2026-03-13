@@ -136,6 +136,8 @@ func SetupRouter() *gin.Engine {
 			user.POST("/access-key/regenerate", AuthRequired(), api_regenerate_access_key)
 			// 更新用户语言偏好
 			user.PUT("/language", AuthRequired(), api_update_user_language)
+			// 更新 beta channel 订阅状态
+			user.PUT("/beta-channel", AuthRequired(), api_update_user_beta_channel)
 			// 创建工单
 			user.POST("/ticket", AuthOptional(), api_create_ticket)
 			// 注册设备日志元数据（S3 上传后调用）

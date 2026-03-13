@@ -882,6 +882,7 @@ export interface UserFilter {
   // 分销商等级筛选（多选）
   // 1: L1 推荐者, 2: L2 分销商, 3: L3 优质分销商, 4: L4 合伙人
   retailerLevels: number[]; // Empty array = no filter
+  betaOptedIn?: boolean; // true = only beta subscribers, undefined = no filter
 }
 
 // User search interfaces

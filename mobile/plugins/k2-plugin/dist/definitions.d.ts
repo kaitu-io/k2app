@@ -75,6 +75,14 @@ export interface K2PluginInterface {
         enabled: boolean;
     }): Promise<void>;
     debugDump(): Promise<Record<string, unknown>>;
+    getUpdateChannel(): Promise<{
+        channel: string;
+    }>;
+    setUpdateChannel(options: {
+        channel: string;
+    }): Promise<{
+        channel: string;
+    }>;
     addListener(eventName: 'vpnStateChange', handler: (data: {
         state: string;
     }) => void): Promise<PluginListenerHandle>;
