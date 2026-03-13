@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"syscall"
+	"time"
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/engine"
@@ -128,6 +129,39 @@ func (e *Engine) Start(configJSON string, fd int, cfg *EngineConfig) (err error)
 	}
 	if _, err := config.SetupLogging(logCfg, "k2"); err != nil {
 		slog.Warn("appext: SetupLogging failed, using defaults", "err", err)
+	}
+
+	// Diagnostic: verify k2.log is writable after SetupLogging.
+	// Write results to native.log (known to be uploadable) instead of stderr.
+	if cfg.LogDir != "" {
+		k2logPath := filepath.Join(cfg.LogDir, "k2.log")
+		nativeLogPath := filepath.Join(cfg.LogDir, "native.log")
+		diagLog := func(msg string) {
+			// Append to native.log in NativeLogger-compatible format
+			if f, err := os.OpenFile(nativeLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
+				fmt.Fprintf(f, "[%s] [INFO] %s\n", time.Now().UTC().Format(time.RFC3339), msg)
+				f.Close()
+			}
+			fmt.Fprintf(os.Stderr, "appext: %s\n", msg)
+		}
+
+		if info, statErr := os.Stat(k2logPath); statErr != nil {
+			diagLog(fmt.Sprintf("DIAG k2.log stat failed: %v", statErr))
+		} else {
+			diagLog(fmt.Sprintf("DIAG k2.log exists size=%d mode=%s", info.Size(), info.Mode()))
+		}
+		// Direct write test to verify POSIX file I/O in iOS sandbox
+		if f, openErr := os.OpenFile(k2logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); openErr != nil {
+			diagLog(fmt.Sprintf("DIAG k2.log open FAILED: %v", openErr))
+		} else {
+			_, writeErr := f.WriteString("appext: DIAG direct write test\n")
+			f.Close()
+			if writeErr != nil {
+				diagLog(fmt.Sprintf("DIAG k2.log write FAILED: %v", writeErr))
+			} else {
+				diagLog("DIAG k2.log direct write OK")
+			}
+		}
 	}
 
 	// Inject platform cache dir for k2rule.
