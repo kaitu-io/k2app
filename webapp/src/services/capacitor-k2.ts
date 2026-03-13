@@ -15,7 +15,6 @@ import { K2Plugin } from 'k2-plugin';
 import type { IK2Vpn, IPlatform, IUpdater, UpdateInfo, SResponse } from '../types/kaitu-core';
 import type { StatusResponseData, ControlError, ServiceState } from './vpn-types';
 import { webSecureStorage } from './secure-storage';
-import { dispatch as vpnDispatch, backendStatusToEvent } from '../stores/vpn-machine.store';
 
 /**
  * Check if running inside a Capacitor native environment.
@@ -122,6 +121,42 @@ export async function injectCapacitorGlobals(): Promise<void> {
         };
       }
     },
+
+    // Event-driven mode: wire native K2Plugin events to VPN machine store.
+    // This prevents the 2s polling fallback which causes stale BACKEND_DISCONNECTED
+    // to interrupt the connecting state (flash-to-disconnected race condition).
+    onServiceStateChange: (callback: (available: boolean) => void): (() => void) => {
+      // K2Plugin is always available in native context
+      setTimeout(() => callback(true), 0);
+      return () => {};
+    },
+
+    onStatusChange: (callback: (status: StatusResponseData) => void): (() => void) => {
+      // Wire vpnStateChange native events through the VPN machine's event-driven path
+      const handle = K2Plugin.addListener('vpnStateChange', (event: any) => {
+        console.debug('[K2:Capacitor] vpnStateChange:', event.state,
+          event.connectedAt ? `connectedAt=${event.connectedAt}` : '');
+        callback(transformStatus(event));
+      });
+
+      // Also wire vpnError events — synthesize error status for the VPN machine
+      const errorHandle = K2Plugin.addListener('vpnError', (event: any) => {
+        console.warn('[K2:Capacitor] vpnError:', event.code ?? 'no-code', event.message ?? event);
+        const errorCode = typeof event.code === 'number' ? event.code : 570;
+        callback({
+          state: 'error',
+          running: false,
+          networkAvailable: true,
+          error: { code: errorCode, message: event.message ?? String(event) },
+          retrying: false,
+        });
+      });
+
+      return () => {
+        handle.then(h => h.remove());
+        errorHandle.then(h => h.remove());
+      };
+    },
   };
 
   // Build updater: native update support
@@ -217,37 +252,9 @@ export async function injectCapacitorGlobals(): Promise<void> {
   (window as any)._k2 = capacitorK2;
   (window as any)._platform = capacitorPlatform;
 
-  // Register event listeners — wire native events to VPN machine store.
-  // Events provide immediate feedback; polling is fallback.
-  K2Plugin.addListener('vpnStateChange', (event: any) => {
-    console.debug('[K2:Capacitor] vpnStateChange:', event.state,
-      event.connectedAt ? `connectedAt=${event.connectedAt}` : '');
-    try {
-      const status = transformStatus(event);
-      const machineEvent = backendStatusToEvent(status);
-      vpnDispatch(machineEvent, {
-        error: status.error ?? null,
-        isRetrying: status.retrying ?? false,
-        networkAvailable: status.networkAvailable ?? true,
-      });
-    } catch (e) {
-      // Store may not be initialized yet during startup — polling will catch up
-    }
-  });
-
-  K2Plugin.addListener('vpnError', (event: any) => {
-    console.warn('[K2:Capacitor] vpnError:', event.code ?? 'no-code', event.message ?? event);
-    try {
-      const errorCode = typeof event.code === 'number' ? event.code : 570;
-      vpnDispatch('BACKEND_ERROR', {
-        error: { code: errorCode, message: event.message ?? String(event) },
-        isRetrying: false,
-        networkAvailable: true,
-      });
-    } catch (e) {
-      // Store may not be initialized yet — polling will catch up
-    }
-  });
+  // Native event listeners (vpnStateChange, vpnError) are now registered
+  // via onStatusChange() above, wired through VPN machine's event-driven mode.
+  // This eliminates the 2s polling fallback and prevents stale-status race conditions.
 
   K2Plugin.addListener('nativeUpdateReady', (event: any) => {
     storedPath = event.path;

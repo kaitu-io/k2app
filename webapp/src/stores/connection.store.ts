@@ -108,10 +108,12 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
   },
 
   connect: async () => {
+    const t0 = Date.now();
     // State guard: reject if already connecting/connected/reconnecting/disconnecting.
     // Prevents double-click sending duplicate _k2.run('up') — daemon's opMu serializes
     // but would cause unnecessary disconnect+reconnect cycle.
     const vpnState = useVPNMachineStore.getState().state;
+    console.warn('[Connection] TRACE connect START t=' + t0 + ' vpnState=' + vpnState);
     if (vpnState !== 'idle' && vpnState !== 'error' && vpnState !== 'serviceDown') {
       console.warn('[Connection] connect: rejected (vpnState=' + vpnState + ')');
       return;
@@ -126,6 +128,7 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     const myEpoch = connectEpoch + 1;
     console.info('[Connection] connect: source=' + selectedSource + ', tunnel=' + activeTunnel.domain + ', epoch=' + connectEpoch + '→' + myEpoch);
     set({ connectedTunnel: activeTunnel, connectEpoch: myEpoch });
+    console.warn('[Connection] TRACE connectedTunnel set t=' + Date.now() + ' (+' + (Date.now() - t0) + 'ms)');
 
     // Resolve server URL
     let serverUrl: string | undefined;
@@ -134,7 +137,7 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     } else if (selectedCloudTunnel?.serverUrl) {
       serverUrl = await authService.buildTunnelUrl(selectedCloudTunnel.serverUrl);
     }
-    console.debug('[Connection] connect: resolved serverUrl=' + (serverUrl ?? 'undefined'));
+    console.warn('[Connection] TRACE buildTunnelUrl done t=' + Date.now() + ' (+' + (Date.now() - t0) + 'ms)');
 
     // Epoch guard: bail if user disconnected or started new connect
     if (get().connectEpoch !== myEpoch) {
@@ -151,12 +154,14 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
 
     // Persist BEFORE _k2.run so crash doesn't lose config
     await updateConfig({ server: serverUrl });
+    console.warn('[Connection] TRACE updateConfig done t=' + Date.now() + ' (+' + (Date.now() - t0) + 'ms)');
 
     // Dispatch state machine event and execute
-    console.info('[Connection] connect: dispatching USER_CONNECT, calling _k2.run("up")');
+    console.warn('[Connection] TRACE USER_CONNECT dispatch t=' + Date.now() + ' (+' + (Date.now() - t0) + 'ms)');
     vpnDispatch('USER_CONNECT');
     try {
       await window._k2.run('up', config);
+      console.warn('[Connection] TRACE _k2.run(up) returned t=' + Date.now() + ' (+' + (Date.now() - t0) + 'ms)');
     } catch (err) {
       console.error('[Connection] connect failed:', err);
     }

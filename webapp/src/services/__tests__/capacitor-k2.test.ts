@@ -101,17 +101,112 @@ describe('capacitor-k2', () => {
       expect(window._platform.version).toBe('0.4.0');
     });
 
-    it('test_injectCapacitorGlobals_registers_event_listeners', async () => {
+    it('test_injectCapacitorGlobals_provides_event_driven_hooks', async () => {
       const { injectCapacitorGlobals } = await import('../capacitor-k2');
 
       await injectCapacitorGlobals();
 
-      // Should register listeners for vpnStateChange and vpnError
-      const listenerCalls = mockK2Plugin.addListener.mock.calls.map(
-        (call: any[]) => call[0],
+      // _k2 should expose onServiceStateChange and onStatusChange for event-driven mode
+      expect(typeof window._k2.onServiceStateChange).toBe('function');
+      expect(typeof window._k2.onStatusChange).toBe('function');
+    });
+
+    it('test_onServiceStateChange_calls_back_true', async () => {
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      const callback = vi.fn();
+      window._k2.onServiceStateChange!(callback);
+
+      // Callback is async (setTimeout 0)
+      await new Promise((r) => setTimeout(r, 10));
+      expect(callback).toHaveBeenCalledWith(true);
+    });
+
+    it('test_onStatusChange_registers_native_listeners', async () => {
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      // Before calling onStatusChange, vpnStateChange/vpnError are NOT registered
+      const preListeners = mockK2Plugin.addListener.mock.calls
+        .map((c: any[]) => c[0])
+        .filter((name: string) => name === 'vpnStateChange' || name === 'vpnError');
+      expect(preListeners).toHaveLength(0);
+
+      // Call onStatusChange to wire up native listeners
+      const statusCallback = vi.fn();
+      window._k2.onStatusChange!(statusCallback);
+
+      const postListeners = mockK2Plugin.addListener.mock.calls
+        .map((c: any[]) => c[0])
+        .filter((name: string) => name === 'vpnStateChange' || name === 'vpnError');
+      expect(postListeners).toContain('vpnStateChange');
+      expect(postListeners).toContain('vpnError');
+    });
+
+    it('test_onStatusChange_vpnStateChange_transforms_and_calls_back', async () => {
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      const statusCallback = vi.fn();
+      window._k2.onStatusChange!(statusCallback);
+
+      // Find the vpnStateChange handler registered with K2Plugin
+      const vpnStateCall = mockK2Plugin.addListener.mock.calls.find(
+        (c: any[]) => c[0] === 'vpnStateChange',
       );
-      expect(listenerCalls).toContain('vpnStateChange');
-      expect(listenerCalls).toContain('vpnError');
+      expect(vpnStateCall).toBeDefined();
+      const handler = vpnStateCall![1];
+
+      // Simulate native vpnStateChange event
+      handler({ state: 'connected', connectedAt: '2024-01-01T00:00:00Z' });
+
+      expect(statusCallback).toHaveBeenCalledTimes(1);
+      const status = statusCallback.mock.calls[0][0];
+      expect(status.state).toBe('connected');
+      expect(status.running).toBe(true);
+    });
+
+    it('test_onStatusChange_vpnError_synthesizes_error_status', async () => {
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      const statusCallback = vi.fn();
+      window._k2.onStatusChange!(statusCallback);
+
+      // Find the vpnError handler
+      const vpnErrorCall = mockK2Plugin.addListener.mock.calls.find(
+        (c: any[]) => c[0] === 'vpnError',
+      );
+      expect(vpnErrorCall).toBeDefined();
+      const handler = vpnErrorCall![1];
+
+      // Simulate native vpnError event
+      handler({ code: 503, message: 'server unreachable' });
+
+      expect(statusCallback).toHaveBeenCalledTimes(1);
+      const status = statusCallback.mock.calls[0][0];
+      expect(status.state).toBe('error');
+      expect(status.error).toEqual({ code: 503, message: 'server unreachable' });
+      expect(status.retrying).toBe(false);
+    });
+
+    it('test_onStatusChange_unsubscribe_removes_listeners', async () => {
+      const mockRemove = vi.fn();
+      mockK2Plugin.addListener.mockResolvedValue({ remove: mockRemove });
+
+      const { injectCapacitorGlobals } = await import('../capacitor-k2');
+      await injectCapacitorGlobals();
+
+      const statusCallback = vi.fn();
+      const unsub = window._k2.onStatusChange!(statusCallback);
+
+      // Call unsubscribe
+      unsub();
+
+      // Wait for async handle.then(h => h.remove()) to resolve
+      await new Promise((r) => setTimeout(r, 10));
+      expect(mockRemove).toHaveBeenCalledTimes(2); // vpnStateChange + vpnError
     });
   });
 
