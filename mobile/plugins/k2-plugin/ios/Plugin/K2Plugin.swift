@@ -569,10 +569,33 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                 let logTypes = ["k2", "native", "webapp"]
                 var sourceFiles: [URL] = []
 
+                // Diagnostic helper: append to native.log (known to be uploadable)
+                let nativeLogFile = logsDir.appendingPathComponent("native.log")
+                func diagLog(_ msg: String) {
+                    logger.info("\(msg)")
+                    let ts = ISO8601DateFormatter().string(from: Date())
+                    let line = "[\(ts)] [INFO] [K2Plugin] \(msg)\n"
+                    if let handle = try? FileHandle(forWritingTo: nativeLogFile) {
+                        handle.seekToEndOfFile()
+                        handle.write(line.data(using: .utf8) ?? Data())
+                        handle.closeFile()
+                    }
+                }
+
                 for logType in logTypes {
                     let logFile = logsDir.appendingPathComponent("\(logType).log")
-                    guard FileManager.default.fileExists(atPath: logFile.path) else { continue }
-                    guard let content = try? String(contentsOf: logFile, encoding: .utf8), !content.isEmpty else { continue }
+                    let exists = FileManager.default.fileExists(atPath: logFile.path)
+                    if !exists {
+                        diagLog("uploadLogs: \(logType).log not found at \(logFile.path)")
+                        continue
+                    }
+                    let attrs = try? FileManager.default.attributesOfItem(atPath: logFile.path)
+                    let fileSize = (attrs?[.size] as? Int) ?? -1
+                    guard let content = try? String(contentsOf: logFile, encoding: .utf8), !content.isEmpty else {
+                        diagLog("uploadLogs: \(logType).log exists (size=\(fileSize)) but empty or unreadable as UTF-8")
+                        continue
+                    }
+                    diagLog("uploadLogs: \(logType).log included (size=\(fileSize), contentLen=\(content.count))")
 
                     let sanitized = self.sanitizeLogs(content)
                     let destFile = stagingDir.appendingPathComponent("\(logType).log")
