@@ -2,28 +2,28 @@
   "onboarding": {
     "phase1": {
       "title": "Collapse Panel",
-      "content": "Tap the arrow to collapse the connection panel and save screen space"
+      "content": "Tap the arrow to collapse the connection panel\nMake room for the node list"
+    },
+    "phase2": {
+      "title": "Expand Panel",
+      "content": "Tap the arrow again to expand the panel\nRestore the connection buttons"
     },
     "phase3": {
-      "title": "Feedback",
-      "content": "Tap the feedback button to report issues anytime\nYou can also drag it to a preferred position"
+      "title": "Send Feedback",
+      "content": "Having issues? Tap this button\nto submit feedback anytime"
     },
     "phase4": {
       "title": "Invite Friends",
-      "content": "Invite friends to sign up and both of you earn free days"
+      "content": "Tap here to open the invite page\nBoth you and your friend get free time"
     },
     "phase5": {
       "title": "Share with Friends",
-      "content": "Tap the share button to send your invite link to friends"
+      "content": "Tap the share button\nto send the invite link to friends"
     },
     "phase6": {
-      "title": "Choose a Plan",
-      "content": "Find the plan that works best for you here"
+      "title": "Back to Dashboard",
+      "content": "Tap here to return to the dashboard\nSelect a node to connect"
     },
-    "next": "Next",
-    "skip": "Skip tour",
-    "back": "Back",
-    "close": "Got it",
-    "last": "Done"
+    "skip": "Skip Guide"
   }
 }
