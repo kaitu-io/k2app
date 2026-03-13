@@ -36,6 +36,86 @@ docker compose up --build           # Docker: server + init container (docker/)
 - **Trust protocol semantics**: When a protocol (QUIC, TLS, smux) provides built-in state management (keepalive, idle timeout, connection liveness), use its native mechanisms — don't layer application-level health checks or manual state tracking on top. Duplicating protocol-layer responsibilities in application code causes misclassification bugs (e.g. conflating "server can't reach destination" with "transport is broken") and unnecessary complexity.
 - **Deadlock detection**: All mutexes use `deadlock.Mutex`/`deadlock.RWMutex` from `github.com/sasha-s/go-deadlock`. Production builds use `-tags=deadlock_disable` for zero overhead. Tests run with detection enabled (5s timeout). New mutex fields must use `deadlock.Mutex`, never `sync.Mutex`. `sync.WaitGroup`, `sync.Once`, `sync.Pool` stay as stdlib.
 
+## Diagnostic Logging Constitution (never violate)
+
+All diagnostic logs use `log/slog` (stdlib). The `DIAG:` prefix is reserved for operational diagnostic logs that enable field troubleshooting without DEBUG mode.
+
+### Three Layers
+
+| Layer | Level | Trigger | Purpose | grep |
+|-------|-------|---------|---------|------|
+| 1. Heartbeat | INFO | Every 30s (healthMonitor) | "Is the tunnel alive and healthy?" | `grep "DIAG: heartbeat"` |
+| 2. Events | INFO/WARN | On anomaly (threshold-based) | "What went wrong?" | `grep "DIAG:" \| grep -v heartbeat` |
+| 3. Full trace | DEBUG | All operations (existing logs) | "Exactly what happened?" | Switch level at runtime |
+
+### Layer 1 Rules — Heartbeat
+
+- Emitted every 30 seconds from `healthMonitor.sample()`.
+- Fixed prefix: `"DIAG: heartbeat"`.
+- Required fields: `health`, `transport`, `loss` (smoothed), `rttMs`, `minRttMs`, `txMB`, `rxMB`, `tcpConns`, `udpConns`, `uptimeS`, `fallback`.
+- Human-readable sizes (MB) and durations (ms/s).
+- MUST NOT log at 1Hz — only every 30 samples.
+
+### Layer 2 Rules — Events
+
+Every Layer 2 log MUST:
+1. Use `"DIAG: <event-name>"` as the message (e.g. `"DIAG: dns-slow"`, `"DIAG: proxy-dial-fail"`).
+2. Include context fields that answer "where" and "why" (domain, addr, transport, error, latency).
+3. Use INFO for performance observations, WARN for failures.
+4. Be threshold-gated — do NOT log every slow query, only above threshold.
+
+Reserved event names:
+
+| Event | Level | Threshold | Fields |
+|-------|-------|-----------|--------|
+| `DIAG: dns-slow` | INFO | latency > 500ms | domain, upstream, latencyMs |
+| `DIAG: dns-fail` | WARN | on error | domain, upstream, err |
+| `DIAG: proxy-dial-fail` | WARN | on error | dest, transport, err |
+| `DIAG: proxy-dial-slow` | INFO | latency > 3s | dest, transport, latencyMs |
+| `DIAG: quic-handshake-fail` | WARN | on handshake error | addr, consecutiveFails, err |
+| `DIAG: transport-switch` | WARN | on QUIC↔TCP-WS transition | from, to, reason |
+| `DIAG: udp-relay-timeout` | WARN | consecutive > 2 | consecutiveCount, threshold |
+| `DIAG: conn-highwater` | INFO | active > 100 | tcpCount, udpCount |
+| `DIAG: connected` | INFO | engine connected | server, mode, dialMs |
+| `DIAG: session-end` | INFO | engine stop | uptimeS, txMB, rxMB |
+| `DIAG: wire-error` | WARN | on classified error | code, category, message |
+
+### Layer 3 Rules — Full Trace
+
+- Switch at runtime: `curl -X POST http://127.0.0.1:1778/api/log-level -d '{"level":"debug"}'`
+- No changes to existing DEBUG logs. They are already comprehensive.
+- When adding new code, use DEBUG for per-operation details, DIAG for threshold-gated observations.
+
+### grep Playbook
+
+```bash
+# Quick health check (is it working?)
+grep "DIAG: heartbeat" k2.log | tail -20
+
+# Find problems (what went wrong?)
+grep "DIAG:" k2.log | grep -v heartbeat
+
+# DNS layer issues
+grep "DIAG: dns" k2.log
+
+# Transport layer issues
+grep "DIAG: quic\|DIAG: transport" k2.log
+
+# Session summary
+grep "DIAG: connected\|DIAG: session-end" k2.log
+
+# All WARN-level diagnostics
+grep "level=WARN" k2.log | grep "DIAG:"
+```
+
+### Adding New DIAG Events
+
+1. Pick a descriptive event name (kebab-case, 2-3 words).
+2. Add to the reserved event names table above.
+3. Gate with a threshold — never log on every occurrence.
+4. Include "where" + "why" fields.
+5. Use INFO for observations, WARN for failures.
+
 ## Concurrency Rules (Constitutional — never violate)
 
 ### Core Principle

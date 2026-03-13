@@ -261,14 +261,21 @@ func (m *Middleware) queryUpstream(ctx context.Context, domain string, action k2
 	ctx, cancel := context.WithTimeout(ctx, upstreamTimeout)
 	defer cancel()
 
+	start := time.Now()
+
 	switch action {
 	case k2rule.TargetDirect:
 		m.metrics.IncrDirect()
 		resp, err := m.directDNS.Query(ctx, query)
+		elapsed := time.Since(start)
 		if err != nil {
 			m.metrics.IncrError()
 			slog.Warn("DNS direct query failed", "domain", domain, "err", err)
+			slog.Warn("DIAG: dns-fail", "domain", domain, "upstream", "direct", "err", err)
 			return nil, err
+		}
+		if elapsed > 500*time.Millisecond {
+			slog.Info("DIAG: dns-slow", "domain", domain, "upstream", "direct", "latencyMs", elapsed.Milliseconds())
 		}
 		slog.Debug("DNS routed direct", "domain", domain)
 		return resp, nil
@@ -276,11 +283,16 @@ func (m *Middleware) queryUpstream(ctx context.Context, domain string, action k2
 	case k2rule.TargetProxy:
 		m.metrics.IncrProxy()
 		resp, err := m.proxyDNS.Query(ctx, query)
+		elapsed := time.Since(start)
 		if err != nil {
 			// No fallback to direct DNS — poisoned results in censored networks
 			// cause certificate errors and security violations. (2026-03-08 incident)
 			m.metrics.IncrError()
+			slog.Warn("DIAG: dns-fail", "domain", domain, "upstream", "proxy", "err", err)
 			return nil, fmt.Errorf("DNS proxy query failed for %s: %w", domain, err)
+		}
+		if elapsed > 500*time.Millisecond {
+			slog.Info("DIAG: dns-slow", "domain", domain, "upstream", "proxy", "latencyMs", elapsed.Milliseconds())
 		}
 		slog.Debug("DNS routed proxy", "domain", domain)
 		return resp, nil

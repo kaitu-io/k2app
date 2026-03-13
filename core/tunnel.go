@@ -95,6 +95,9 @@ type ClientTunnel struct {
 
 	txBytes atomic.Int64 // total bytes sent (local→remote)
 	rxBytes atomic.Int64 // total bytes received (remote→local)
+
+	activeTCP atomic.Int64 // currently active TCP handler goroutines
+	activeUDP atomic.Int64 // currently active UDP handler goroutines
 }
 
 var _ provider.ConnectionHandler = (*ClientTunnel)(nil)
@@ -166,6 +169,11 @@ func (t *ClientTunnel) TrafficBytes() (tx, rx int64) {
 	return t.txBytes.Load(), t.rxBytes.Load()
 }
 
+// ActiveConns returns the number of currently active TCP and UDP handler goroutines.
+func (t *ClientTunnel) ActiveConns() (tcp, udp int64) {
+	return t.activeTCP.Load(), t.activeUDP.Load()
+}
+
 // acquireConnSlot reserves a connection slot. On mobile (nonBlockingAdmit=true),
 // returns false immediately if at capacity — prevents goroutine pile-up from
 // gVisor-spawned waiters. On desktop, blocks until a slot is available or ctx is canceled.
@@ -185,6 +193,8 @@ func (t *ClientTunnel) HandleTCP(conn net.Conn, dest string) {
 	defer func() { t.connSem.Release(1); onConnRelease() }()
 
 	t.wg.Add(1)
+	t.activeTCP.Add(1)
+	defer t.activeTCP.Add(-1)
 	defer t.wg.Done()
 	defer conn.Close()
 	untrack := t.conns.track(conn)
@@ -282,6 +292,8 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 	defer func() { t.connSem.Release(1); onConnRelease() }()
 
 	t.wg.Add(1)
+	t.activeUDP.Add(1)
+	defer t.activeUDP.Add(-1)
 	defer t.wg.Done()
 	defer conn.Close()
 	untrack := t.conns.track(conn)
@@ -417,13 +429,19 @@ func (t *ClientTunnel) handleTCPDirect(local net.Conn, dest string) {
 }
 
 func (t *ClientTunnel) handleTCPProxy(local net.Conn, dest string, earlyData []byte) {
+	start := time.Now()
 	remote, err := t.dialer.DialTCP(t.ctx, dest, earlyData)
+	dialLatency := time.Since(start)
 	if err != nil {
 		slog.Warn("tunnel: proxy TCP dial failed", "dest", dest, "err", err)
+		slog.Warn("DIAG: proxy-dial-fail", "dest", dest, "transport", "tcp", "err", err)
 		if t.wireReporter != nil {
 			t.wireReporter.ReportWireError(err)
 		}
 		return
+	}
+	if dialLatency > 3*time.Second {
+		slog.Info("DIAG: proxy-dial-slow", "dest", dest, "transport", "tcp", "latencyMs", dialLatency.Milliseconds())
 	}
 	if t.wireReporter != nil {
 		t.wireReporter.ClearWireError()
@@ -459,13 +477,19 @@ func (t *ClientTunnel) handleUDPDirect(local net.PacketConn, dest string) {
 }
 
 func (t *ClientTunnel) handleUDPProxy(local net.PacketConn, dest string) {
+	start := time.Now()
 	remote, err := t.dialer.DialUDP(t.ctx, dest)
+	dialLatency := time.Since(start)
 	if err != nil {
 		slog.Warn("tunnel: proxy UDP dial failed", "dest", dest, "err", err)
+		slog.Warn("DIAG: proxy-dial-fail", "dest", dest, "transport", "udp", "err", err)
 		if t.wireReporter != nil {
 			t.wireReporter.ReportWireError(err)
 		}
 		return
+	}
+	if dialLatency > 3*time.Second {
+		slog.Info("DIAG: proxy-dial-slow", "dest", dest, "transport", "udp", "latencyMs", dialLatency.Milliseconds())
 	}
 	if t.wireReporter != nil {
 		t.wireReporter.ClearWireError()

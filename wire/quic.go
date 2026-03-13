@@ -399,6 +399,11 @@ serialize:
 	if err != nil {
 		transport.Close()
 		c.handshakeFailStreak.Add(1)
+		slog.Warn("DIAG: quic-handshake-fail",
+			"addr", addr,
+			"consecutiveFails", c.handshakeFailStreak.Load(),
+			"err", err,
+		)
 		return nil, fmt.Errorf("wire: QUIC dial: %w", err)
 	}
 	c.handshakeFailStreak.Store(0)

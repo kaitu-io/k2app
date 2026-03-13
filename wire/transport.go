@@ -87,6 +87,7 @@ func (tm *TransportManager) recordQuicSuccess() {
 	wasFallback := tm.fallbackActive.Swap(false)
 	if wasFallback {
 		slog.Info("wire: QUIC recovered from fallback")
+		slog.Info("DIAG: transport-switch", "from", "tcpws", "to", "quic", "reason", "quic-recovered")
 	}
 }
 
@@ -95,6 +96,7 @@ func (tm *TransportManager) SetFallbackActive(active bool) {
 	if active {
 		if tm.fallbackActive.CompareAndSwap(false, true) {
 			slog.Warn("wire: QUIC fallback activated")
+			slog.Warn("DIAG: transport-switch", "from", "quic", "to", "tcpws", "reason", "quic-handshake-threshold")
 		}
 	} else {
 		tm.fallbackActive.Store(false)

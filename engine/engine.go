@@ -329,7 +329,7 @@ func (e *Engine) Start(cfg Config) error {
 	e.networkMonitor = cfg.NetworkMonitor
 
 	// Start health monitor (1Hz wire stats sampling + health FSM).
-	hm := newHealthMonitor(tm, tunnel, cfg.HealthCallback, func() { e.onHealthCritical() })
+	hm := newHealthMonitor(tm, tunnel, cfg.HealthCallback, func() { e.onHealthCritical() }, time.Now())
 	hm.start()
 	e.health = hm
 
@@ -344,6 +344,12 @@ func (e *Engine) Start(cfg Config) error {
 		handler.OnStatus(status)
 	}
 	slog.Info("engine: connected", "totalMs", time.Since(startTime).Milliseconds())
+	slog.Info("DIAG: connected",
+		"server", extractServerHost(client.Server),
+		"mode", client.Mode,
+		"ruleGlobal", client.Rule.Global,
+		"dialMs", time.Since(startTime).Milliseconds(),
+	)
 
 	// Network monitor already started in step 4.1 (before wire probe).
 
@@ -492,6 +498,16 @@ func (e *Engine) Stop() error {
 		"hadError", e.lastError != nil,
 	)
 
+	// Capture session metrics before teardown (fields still valid under e.mu).
+	var sessionUptime time.Duration
+	var sessionTx, sessionRx int64
+	if !e.connectedAt.IsZero() {
+		sessionUptime = time.Since(e.connectedAt)
+	}
+	if e.tunnel != nil {
+		sessionTx, sessionRx = e.tunnel.TrafficBytes()
+	}
+
 	// Mark disconnected immediately — blocks OnNetworkChanged from starting
 	// new work (it checks state != StateConnected and returns early).
 	e.state = StateDisconnected
@@ -560,6 +576,13 @@ func (e *Engine) Stop() error {
 	}
 	if tunnel != nil {
 		tunnel.Close()
+	}
+	if sessionUptime > 0 {
+		slog.Info("DIAG: session-end",
+			"uptimeS", int(sessionUptime.Seconds()),
+			"txMB", fmt.Sprintf("%.1f", float64(sessionTx)/(1024*1024)),
+			"rxMB", fmt.Sprintf("%.1f", float64(sessionRx)/(1024*1024)),
+		)
 	}
 	return nil
 }
@@ -735,6 +758,11 @@ func (e *Engine) ReportWireError(err error) {
 	}
 	e.lastError = newErr
 	slog.Warn("engine: wire error",
+		"code", newErr.Code,
+		"category", newErr.Category,
+		"message", newErr.Message,
+	)
+	slog.Warn("DIAG: wire-error",
 		"code", newErr.Code,
 		"category", newErr.Category,
 		"message", newErr.Message,

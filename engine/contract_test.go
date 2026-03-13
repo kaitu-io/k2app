@@ -32,7 +32,7 @@ func TestContract_PoorSignal_TCPHealthGate(t *testing.T) {
 	var reconnectCalled bool
 	hm := newHealthMonitor(tm, tunnel, nil, func() {
 		reconnectCalled = true
-	})
+	}, time.Now())
 
 	// Drive health monitor into critical state via direct assess/transition.
 	// 5 critical samples transitions to critical, then maybeAct considers action.
@@ -99,7 +99,7 @@ func TestContract_PoorSignal_TCPHealthGate_Timing(t *testing.T) {
 	var reconnectCalled bool
 	hm := newHealthMonitor(tm, tunnel, nil, func() {
 		reconnectCalled = true
-	})
+	}, time.Now())
 
 	// Drive to critical and allow enough time for action.
 	hm.smoothWireLoss = 0.30
