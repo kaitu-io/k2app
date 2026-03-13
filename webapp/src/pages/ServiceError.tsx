@@ -56,16 +56,6 @@ export default function ServiceError() {
           overflow: "auto",
           height: "100%",
           pb: 4,
-          '&::-webkit-scrollbar': {
-            width: '8px',
-          },
-          '&::-webkit-scrollbar-track': {
-            background: 'transparent',
-          },
-          '&::-webkit-scrollbar-thumb': {
-            background: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)',
-            borderRadius: '4px',
-          },
         }}>
           {/* Header */}
           <Box sx={{ textAlign: "center", mb: 2 }}>

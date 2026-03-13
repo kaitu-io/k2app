@@ -199,6 +199,22 @@
     FileClose $9
   _pre_k2_check_done:
 
+  ; Step 12: Clear WebView2 cache (prevents stale webapp assets after upgrade)
+  ; Preserves user preferences: update-channel, pre-beta-log-level
+  DetailPrint "Clearing WebView2 cache..."
+  RMDir /r "$LOCALAPPDATA\io.kaitu.desktop\EBWebView"
+  IfFileExists "$LOCALAPPDATA\io.kaitu.desktop\EBWebView" 0 _pre_webview_cleared
+    FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+    FileWrite $9 "[12] EBWebView directory STILL EXISTS after RMDir$\r$\n"
+    FileClose $9
+    DetailPrint "WARNING: WebView2 cache not fully cleared"
+    Goto _pre_webview_check_done
+  _pre_webview_cleared:
+    FileOpen $9 "$TEMP\kaitu-preinstall.log" a
+    FileWrite $9 "[12] EBWebView cleared OK$\r$\n"
+    FileClose $9
+  _pre_webview_check_done:
+
   FileOpen $9 "$TEMP\kaitu-preinstall.log" a
   FileWrite $9 "=== PREINSTALL completed ===$\r$\n"
   FileClose $9

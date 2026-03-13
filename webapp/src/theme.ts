@@ -29,6 +29,12 @@ const sharedThemeConfig: ThemeOptions = {
           caret-color: auto;
           cursor: text;
         }
+        * {
+          scrollbar-width: none;
+        }
+        *::-webkit-scrollbar {
+          display: none;
+        }
       `,
     },
     MuiDrawer: {
