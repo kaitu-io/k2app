@@ -225,9 +225,18 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 	return sess, nil
 }
 
+// tcpwsConnectTimeout bounds the total TCP+TLS+WebSocket dial sequence.
+// Without this, TCP SYN retransmit timeout (75-127s on macOS) can hold
+// connectMu beyond go-deadlock's 30s threshold. Aligned with QUIC's
+// reconnectBudget (8s), with extra margin for TLS+WS overhead.
+const tcpwsConnectTimeout = 10 * time.Second
+
 // connectTLSWebSocket establishes TCP → uTLS → WebSocket connection.
 // Returns a net.Conn-compatible WebSocket connection ready for smux.
 func (c *TCPWSClient) connectTLSWebSocket(ctx context.Context) (net.Conn, error) {
+	connectCtx, cancel := context.WithTimeout(ctx, tcpwsConnectTimeout)
+	defer cancel()
+
 	connectStart := time.Now()
 	slog.Debug("TCPWSClient: connectTLSWebSocket start", "serverAddr", c.serverAddr, "hasDirectDialer", c.directDialer != nil)
 	// 1. TCP dial (use DirectDialer if set, to bypass TUN)
@@ -235,11 +244,11 @@ func (c *TCPWSClient) connectTLSWebSocket(ctx context.Context) (net.Conn, error)
 	var err error
 	if c.directDialer != nil {
 		slog.Debug("TCPWSClient: using directDialer for TCP dial")
-		conn, err = c.directDialer.DialContext(ctx, "tcp", c.serverAddr)
+		conn, err = c.directDialer.DialContext(connectCtx, "tcp", c.serverAddr)
 	} else {
 		slog.Debug("TCPWSClient: using default dialer for TCP dial")
 		var d net.Dialer
-		conn, err = d.DialContext(ctx, "tcp", c.serverAddr)
+		conn, err = d.DialContext(connectCtx, "tcp", c.serverAddr)
 	}
 	if err != nil {
 		slog.Debug("TCPWSClient: TCP dial failed", "serverAddr", c.serverAddr, "err", err)
@@ -280,7 +289,7 @@ func (c *TCPWSClient) connectTLSWebSocket(ctx context.Context) (net.Conn, error)
 	// Create uTLS connection with fingerprint
 	slog.Debug("TCPWSClient: starting uTLS handshake", "sni", tlsCfg.ServerName, "fingerprint", fmt.Sprintf("%v", clientHelloID))
 	uconn := utls.UClient(conn, utlsCfg, clientHelloID)
-	if err := uconn.HandshakeContext(ctx); err != nil {
+	if err := uconn.HandshakeContext(connectCtx); err != nil {
 		conn.Close()
 		slog.Debug("TCPWSClient: uTLS handshake failed", "err", err)
 		return nil, fmt.Errorf("wire: uTLS handshake: %w", err)
@@ -293,7 +302,7 @@ func (c *TCPWSClient) connectTLSWebSocket(ctx context.Context) (net.Conn, error)
 
 	// 3. WebSocket upgrade over TLS connection
 	slog.Debug("TCPWSClient: starting WebSocket upgrade", "host", c.cfg.Host)
-	wsConn, err := c.upgradeWebSocket(ctx, uconn)
+	wsConn, err := c.upgradeWebSocket(connectCtx, uconn)
 	if err != nil {
 		uconn.Close()
 		slog.Debug("TCPWSClient: WebSocket upgrade failed", "err", err)
@@ -365,18 +374,20 @@ func (c *TCPWSClient) DialTCP(ctx context.Context, addr string, earlyData []byte
 		}
 	}
 
+	// Past this point, the request has been sent to the server. The wire
+	// transport is proven working. All errors are proxy-layer.
 	br := bufio.NewReader(stream)
 	ok, errCode, errMsg, err := ReadStreamResponse(br)
 	if err != nil {
 		stream.Close()
-		return nil, fmt.Errorf("wire: read response: %w", err)
+		return nil, &ProxyLayerError{Err: fmt.Errorf("wire: read response: %w", err)}
 	}
 	if !ok {
 		stream.Close()
 		if errCode > 0 {
 			return nil, &StreamError{Code: errCode, Message: errMsg}
 		}
-		return nil, fmt.Errorf("%w: %s", ErrStreamRejected, errMsg)
+		return nil, &ProxyLayerError{Err: fmt.Errorf("%w: %s", ErrStreamRejected, errMsg)}
 	}
 
 	return &smuxStreamConn{Stream: stream, br: br}, nil

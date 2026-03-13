@@ -56,7 +56,7 @@ Fields: UDID, Token, Host, Port, ECH, Fingerprint, HopStart, HopEnd, Insecure, P
 - `tlspad/` — TLS record padding (probe target cert length, pad server cert to match)
 - `arc/` — K2CC (PCC Vivace) congestion control for QUIC
 - `VOCABULARY.md` — Three-layer vocabulary convention (Wire/Relay/Tunnel)
-- `contract_test.go` — 8 transport behavior contract tests (startup, fallback, recovery, datagram degradation, network switch, slow upstream)
+- `contract_test.go` — 11 transport behavior contract tests (startup, fallback, recovery, datagram degradation, network switch, slow upstream, proxy error, stream rejection, read-response timeout)
 - `testmain_test.go` — goleak `TestMain` with quic-go and smux ignore patterns
 
 ## ECH Rotation Flow
@@ -82,6 +82,7 @@ Fields: UDID, Token, Host, Port, ECH, Fingerprint, HopStart, HopEnd, Insecure, P
 - uTLS forces outer SNI = ECH config's `public_name` — cannot be set independently.
 - QUIC connection liveness: quic-go's KeepAlive (10s) + MaxIdleTimeout (30s) detect dead connections at protocol level. `conn.Context().Done()` fires when connection dies. `connect()` checks this before reusing cached conn — no manual `resetConnection()` needed on error paths.
 - Stream response timeout ≠ transport failure: A 5s stream response timeout means the server's upstream `net.Dial` to the destination is slow/failing — NOT that QUIC transport is broken (OpenStreamSync succeeded = transport is alive). Do NOT increment `handshakeFailStreak` or trigger TCP-WS fallback on stream timeouts. `handshakeFailStreak` is strictly for QUIC handshake failures (UDP blocked by firewall).
+- Proxy-layer errors skip TCP-WS fallback: Dialer marks errors as proxy-layer after the request is sent (stream opened + header written). `ProxyLayerError` wrapper and `StreamError` both implement `IsProxyLayer() bool`. `TransportManager` checks via interface (`proxyLayerErr`), not type enumeration. Covers: `StreamError` (server error code), `ErrStreamRejected` (server rejection), `ReadStreamResponse` timeout (server processing). Only transport-layer errors (handshake failure, stream open failure, write failure) trigger per-request fallback.
 - Relay UDP unhealthy → `ErrDatagramRelayUnhealthy`: When relay datagram path has consecutive ReadFrom timeouts (threshold: 3), `DialUDP` returns `ErrDatagramRelayUnhealthy` for per-request TCP-WS fallback. Loss rate tracking was removed (DNS racing inflated false positives). Hop counter resets after 10 consecutive recvs without timeout. Relay-layer metrics never trigger wire-layer actions (port hop, reconnect). See `VOCABULARY.md`.
 - QUIC flow control is platform-specific (build tags `ios || android` vs desktop) — mobile uses smaller windows (2 MB stream / 8 MB conn vs 8 MB / 20 MB desktop) to stay under iOS NE jetsam limit.
 - QUIC stream responses have 5s timeout to prevent indefinite blocking on slow/dead servers.

@@ -485,19 +485,17 @@ func (c *QUICClient) DialTCP(ctx context.Context, addr string, earlyData []byte)
 	// Without this, a half-dead QUIC connection hangs forever.
 	stream.SetReadDeadline(time.Now().Add(5 * time.Second))
 	br := bufio.NewReader(stream)
+	// Past this point, the request has been sent to the server. The wire
+	// transport (k2 ↔ k2s) is proven working. All errors are proxy-layer
+	// (server processing) — TCP-WS fallback to the same server won't help.
 	ok, errCode, errMsg, err := ReadStreamResponse(br)
 	if err != nil {
 		slog.Warn("QUICClient.DialTCP: read response failed", "addr", addr, "err", err)
 		stream.Close()
-		// Stream response timeout means the server's upstream net.Dial is
-		// slow/failing — NOT a QUIC transport issue (OpenStreamSync succeeded).
-		// Don't resetConnection() — the QUIC connection is healthy.
-		// Don't increment handshakeFailStreak — TCP-WS fallback won't help
-		// (same server, same upstream reachability problem).
 		if nErr, ok := err.(net.Error); ok && nErr.Timeout() {
 			slog.Warn("QUICClient.DialTCP: stream response timeout (server upstream slow)", "addr", addr)
 		}
-		return nil, fmt.Errorf("wire: read response: %w", err)
+		return nil, &ProxyLayerError{Err: fmt.Errorf("wire: read response: %w", err)}
 	}
 	stream.SetReadDeadline(time.Time{}) // clear deadline for data transfer
 	if !ok {
@@ -506,7 +504,7 @@ func (c *QUICClient) DialTCP(ctx context.Context, addr string, earlyData []byte)
 		if errCode > 0 {
 			return nil, &StreamError{Code: errCode, Message: errMsg}
 		}
-		return nil, fmt.Errorf("%w: %s", ErrStreamRejected, errMsg)
+		return nil, &ProxyLayerError{Err: fmt.Errorf("%w: %s", ErrStreamRejected, errMsg)}
 	}
 
 	slog.Debug("QUICClient.DialTCP: success", "addr", addr)

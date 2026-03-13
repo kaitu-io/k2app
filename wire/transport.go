@@ -2,6 +2,7 @@ package wire
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -10,6 +11,32 @@ import (
 
 	"github.com/sasha-s/go-deadlock"
 )
+
+// proxyLayerErr is implemented by errors where the wire transport
+// (k2 ↔ k2s) was proven working. TCP-WS fallback connects to the
+// same server — it won't help with proxy-layer problems.
+type proxyLayerErr interface {
+	IsProxyLayer() bool
+}
+
+// ProxyLayerError wraps any error that occurred after the request
+// was successfully sent to the server (stream opened + header written).
+// The wire transport worked; TCP-WS fallback to the same server won't help.
+type ProxyLayerError struct {
+	Err error
+}
+
+func (e *ProxyLayerError) Error() string      { return e.Err.Error() }
+func (e *ProxyLayerError) Unwrap() error      { return e.Err }
+func (e *ProxyLayerError) IsProxyLayer() bool  { return true }
+
+// isProxyLayerError returns true when the Dialer has marked the error
+// as proxy-layer (server responded, transport worked). Checked via
+// interface — no type enumeration needed.
+func isProxyLayerError(err error) bool {
+	var pe proxyLayerErr
+	return errors.As(err, &pe) && pe.IsProxyLayer()
+}
 
 // MultiTransportError is returned when both QUIC and TCP-WS transports fail.
 // Unwrap returns the TCP-WS error (last-resort transport) for classification.
@@ -130,7 +157,14 @@ func (tm *TransportManager) DialTCP(ctx context.Context, addr string, earlyData 
 			tm.recordQuicSuccess()
 			return conn, nil
 		}
-		slog.Debug("TransportManager: QUIC failed", "err", err)
+		// Server responded with error — transport worked, proxy layer failed.
+		// TCP-WS hits the same server; fallback won't help.
+		if isProxyLayerError(err) {
+			slog.Debug("TransportManager: QUIC proxy error, skipping TCP-WS", "err", err)
+			return nil, err
+		}
+
+		slog.Debug("TransportManager: QUIC transport error, trying TCP-WS", "err", err)
 		quicErr = err
 		if qc, ok := quic.(*QUICClient); ok && qc.ConsecConnFails() >= quicConnFailThreshold {
 			tm.SetFallbackActive(true)
@@ -184,7 +218,13 @@ func (tm *TransportManager) DialUDP(ctx context.Context, addr string) (net.Packe
 			slog.Debug("TransportManager: QUIC UDP success", "addr", addr)
 			return conn, nil
 		}
-		slog.Debug("TransportManager: QUIC UDP failed", "err", err)
+		// Server responded with error — transport worked, proxy layer failed.
+		if isProxyLayerError(err) {
+			slog.Debug("TransportManager: QUIC UDP proxy error, skipping TCP-WS", "err", err)
+			return nil, err
+		}
+
+		slog.Debug("TransportManager: QUIC UDP transport error, trying TCP-WS", "err", err)
 		quicErr = err
 		if qc, ok := quic.(*QUICClient); ok && qc.ConsecConnFails() >= quicConnFailThreshold {
 			tm.SetFallbackActive(true)
