@@ -316,6 +316,12 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 			// Priority: STUN/DTLS first (strict magic cookie / header checks),
 			// then uTP/UDPTracker (loose first-byte heuristic, prone to false positives).
 			if t.sniffBT && action == k2rule.TargetProxy {
+				pktHead := packet
+				if len(pktHead) > 20 {
+					pktHead = pktHead[:20]
+				}
+				slog.Debug("tunnel: UDP sniff peek", "dest", dest, "len", len(packet), "head", hex.EncodeToString(pktHead))
+
 				if sniff.IsSTUN(packet) {
 					meta.Protocol = sniff.ProtoSTUN
 					action = k2rule.TargetDirect
@@ -330,11 +336,7 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 					slog.Debug("tunnel: BitTorrent UDP detected, forcing direct", "dest", dest)
 				}
 				if meta.Protocol == "" {
-					pktHead := packet
-					if len(pktHead) > 20 {
-						pktHead = pktHead[:20]
-					}
-					slog.Debug("tunnel: UDP sniff no match", "dest", dest, "len", len(packet), "head", hex.EncodeToString(pktHead))
+					slog.Debug("tunnel: UDP sniff no match", "dest", dest)
 				}
 			}
 
