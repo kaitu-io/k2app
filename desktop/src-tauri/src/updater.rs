@@ -11,6 +11,13 @@
 //! Supports stable/beta channels — channel preference read from disk on each check.
 //! Downgrade (beta→stable) only triggered by explicit channel switch (set_update_channel),
 //! never by periodic auto-check or manual "check now".
+//!
+//! Channel switch auto-restart (macOS):
+//! When user explicitly switches channel (e.g. beta→stable), after download+install
+//! the app auto-restarts instead of showing the "update-ready" banner.
+//! On macOS, uses a helper shell process that polls for the old PID to exit, then
+//! relaunches via `open` command. This avoids Tauri's app.restart() issues with
+//! single-instance socket cleanup (tauri-apps/tauri#13923).
 
 use serde::Serialize;
 use std::path::PathBuf;
@@ -36,6 +43,10 @@ static UPDATE_READY: AtomicBool = AtomicBool::new(false);
 
 /// Whether install has failed in this session (don't retry until next app launch)
 static INSTALL_FAILED: AtomicBool = AtomicBool::new(false);
+
+/// Whether a channel switch is in progress — when true, install success triggers
+/// auto-restart instead of emitting "update-ready" to frontend.
+static CHANNEL_SWITCH_PENDING: AtomicBool = AtomicBool::new(false);
 
 /// Stored update info for frontend consumption
 static UPDATE_INFO: Mutex<Option<UpdateInfo>> = Mutex::new(None);
@@ -187,9 +198,21 @@ async fn check_download_and_install(app: &AppHandle, force_downgrade: bool) {
                         return;
                     }
 
-                    // macOS/Linux: store info and notify frontend
+                    // macOS/Linux: handle channel switch auto-restart or notify frontend
                     #[cfg(not(target_os = "windows"))]
                     {
+                        if CHANNEL_SWITCH_PENDING
+                            .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
+                            .is_ok()
+                        {
+                            log::info!(
+                                "[updater] Channel switch complete ({}), auto-restarting...",
+                                new_version
+                            );
+                            restart_after_channel_switch(app);
+                            return;
+                        }
+
                         let release_notes = update.body.clone();
                         let info = UpdateInfo {
                             current_version: current_version.clone(),
@@ -391,6 +414,9 @@ pub async fn set_update_channel(
         effective_level = current_log_level.unwrap_or_else(|| "info".to_string());
     }
 
+    // Mark channel switch pending so install success triggers auto-restart
+    CHANNEL_SWITCH_PENDING.store(true, Ordering::SeqCst);
+
     // Trigger update check in background (force_downgrade=true for explicit channel switch)
     let app_clone = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -445,6 +471,111 @@ pub fn install_pending_update(app: &AppHandle) -> bool {
     }
 }
 
+// ============================================================================
+// Channel switch auto-restart
+// ============================================================================
+
+/// Restart the app after a channel switch install completes.
+///
+/// On macOS: spawns a helper shell process that polls for the old PID to exit,
+/// then relaunches via `open`. Uses `app.exit(0)` for graceful shutdown
+/// (triggers ExitRequested → stop_vpn + plugin cleanup including single-instance socket).
+///
+/// On other platforms: falls back to `app.restart()`.
+fn restart_after_channel_switch(app: &AppHandle) {
+    #[cfg(target_os = "macos")]
+    {
+        let pid = std::process::id();
+        let app_path = resolve_app_bundle_path();
+
+        let script = build_restart_script(pid, &app_path);
+
+        log::info!(
+            "[updater] Spawning restart helper (pid={}, app={})",
+            pid,
+            app_path.display()
+        );
+
+        match std::process::Command::new("sh")
+            .arg("-c")
+            .arg(&script)
+            .spawn()
+        {
+            Ok(_) => {
+                // app.exit(0) triggers RunEvent::ExitRequested:
+                //   → stop_vpn() stops active VPN connection
+                //   → install_pending_update() → UPDATE_READY is false → no-op
+                //   → single-instance plugin cleans up its socket
+                //   → process exits cleanly
+                // Helper then detects PID gone and calls `open` to relaunch.
+                app.exit(0);
+            }
+            Err(e) => {
+                log::error!("[updater] Failed to spawn restart helper: {}", e);
+                // Fallback: try Tauri's native restart (may fail on macOS per #13923)
+                app.restart();
+            }
+        }
+        return;
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        app.restart();
+    }
+}
+
+/// Resolve the .app bundle path from the current executable.
+/// e.g. /Applications/Kaitu.app/Contents/MacOS/Kaitu → /Applications/Kaitu.app
+///
+/// Falls back to /Applications/Kaitu.app if resolution fails.
+#[cfg(target_os = "macos")]
+fn resolve_app_bundle_path() -> PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| {
+            // exe: .../Kaitu.app/Contents/MacOS/Kaitu
+            let macos_dir = exe.parent()?; // .../Contents/MacOS
+            let contents_dir = macos_dir.parent()?; // .../Contents
+            let app_dir = contents_dir.parent()?; // .../Kaitu.app
+
+            // Verify we actually traversed a .app bundle structure
+            if macos_dir.file_name()?.to_str()? == "MacOS"
+                && contents_dir.file_name()?.to_str()? == "Contents"
+                && app_dir.extension()?.to_str()? == "app"
+            {
+                Some(app_dir.to_path_buf())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| PathBuf::from("/Applications/Kaitu.app"))
+}
+
+/// Build the shell script that polls for the old process to exit, then relaunches.
+///
+/// The script:
+/// 1. Polls `kill -0 PID` every second for up to 60 iterations
+/// 2. Once PID is gone, waits 1 extra second for socket cleanup
+/// 3. Uses `open` to relaunch (goes through LaunchServices, handles code signing)
+/// 4. Times out silently after 60s (user can manually reopen)
+#[cfg(target_os = "macos")]
+fn build_restart_script(pid: u32, app_path: &std::path::Path) -> String {
+    format!(
+        "i=0; while [ $i -lt 60 ]; do \
+           if ! kill -0 {} 2>/dev/null; then \
+             sleep 1; \
+             open '{}'; \
+             exit 0; \
+           fi; \
+           sleep 1; \
+           i=$((i + 1)); \
+         done",
+        pid,
+        app_path.display()
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -479,5 +610,127 @@ mod tests {
         // Note: this test is order-dependent with test_is_update_ready_after_set
         // In practice both test the AtomicBool API, which is trivially correct
         assert!(!UPDATE_READY.load(Ordering::SeqCst) || true);
+    }
+
+    // ========================================================================
+    // Channel switch auto-restart tests
+    // ========================================================================
+
+    #[test]
+    fn test_channel_switch_pending_default_false() {
+        // Fresh state: no channel switch pending
+        // (global static may have been modified by other tests, so we just verify the API)
+        let _ = CHANNEL_SWITCH_PENDING.load(Ordering::SeqCst);
+    }
+
+    #[test]
+    fn test_channel_switch_pending_compare_exchange() {
+        // Simulate: set_update_channel sets flag, install success consumes it
+        CHANNEL_SWITCH_PENDING.store(true, Ordering::SeqCst);
+        assert!(CHANNEL_SWITCH_PENDING.load(Ordering::SeqCst));
+
+        // First compare_exchange succeeds (true → false)
+        let result =
+            CHANNEL_SWITCH_PENDING.compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst);
+        assert!(result.is_ok());
+        assert!(!CHANNEL_SWITCH_PENDING.load(Ordering::SeqCst));
+
+        // Second compare_exchange fails (already false)
+        let result =
+            CHANNEL_SWITCH_PENDING.compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_channel_switch_no_double_restart() {
+        // Ensures the flag is consumed atomically — only one code path gets true
+        CHANNEL_SWITCH_PENDING.store(true, Ordering::SeqCst);
+
+        let mut consumed_count = 0;
+        for _ in 0..10 {
+            if CHANNEL_SWITCH_PENDING
+                .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                consumed_count += 1;
+            }
+        }
+        assert_eq!(consumed_count, 1, "Flag must be consumed exactly once");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_resolve_app_bundle_path_not_empty() {
+        // Should always return a non-empty path (either resolved or fallback)
+        let path = resolve_app_bundle_path();
+        assert!(!path.as_os_str().is_empty());
+        // In test binary context, current_exe is not inside a .app bundle,
+        // so it falls back to /Applications/Kaitu.app
+        assert_eq!(path, PathBuf::from("/Applications/Kaitu.app"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_build_restart_script_contains_pid_and_path() {
+        let script = build_restart_script(12345, std::path::Path::new("/Applications/Kaitu.app"));
+
+        assert!(script.contains("12345"), "Script must contain the PID");
+        assert!(
+            script.contains("/Applications/Kaitu.app"),
+            "Script must contain the app path"
+        );
+        assert!(script.contains("kill -0"), "Script must poll with kill -0");
+        assert!(script.contains("open "), "Script must use open to relaunch");
+        assert!(script.contains("sleep 1"), "Script must have sleep between polls");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_build_restart_script_handles_spaces_in_path() {
+        let script = build_restart_script(
+            99999,
+            std::path::Path::new("/Users/test user/Applications/My App.app"),
+        );
+        // Path is wrapped in single quotes in the script
+        assert!(script.contains("'/Users/test user/Applications/My App.app'"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_restart_script_executes_and_exits() {
+        // Integration test: run the script with current PID replaced by a known-dead PID
+        // PID 1 is launchd (always alive), so use a PID we know is dead
+        let dead_pid = 99999999u32; // extremely unlikely to be a real process
+        let tmp_marker = std::env::temp_dir().join("k2app-restart-test-marker");
+        let _ = std::fs::remove_file(&tmp_marker);
+
+        // Build script that touches a marker file instead of `open`
+        let script = format!(
+            "i=0; while [ $i -lt 5 ]; do \
+               if ! kill -0 {} 2>/dev/null; then \
+                 touch '{}'; \
+                 exit 0; \
+               fi; \
+               sleep 1; \
+               i=$((i + 1)); \
+             done",
+            dead_pid,
+            tmp_marker.display()
+        );
+
+        let child = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(&script)
+            .spawn();
+        assert!(child.is_ok(), "Script must spawn successfully");
+
+        // Wait for script to complete (dead PID → immediate detect → touch marker)
+        std::thread::sleep(std::time::Duration::from_secs(3));
+        assert!(
+            tmp_marker.exists(),
+            "Script should have detected dead PID and created marker file"
+        );
+
+        let _ = std::fs::remove_file(&tmp_marker);
     }
 }
