@@ -30,11 +30,6 @@ vi.mock('../../services/cloud-api', () => ({
   },
 }));
 
-const mockUseUser = vi.fn().mockReturnValue({ user: null, loading: false });
-vi.mock('../../hooks/useUser', () => ({
-  useUser: () => mockUseUser(),
-}));
-
 describe('BetaChannelToggle', () => {
   let originalPlatform: any;
 
@@ -48,18 +43,16 @@ describe('BetaChannelToggle', () => {
     vi.clearAllMocks();
   });
 
-  it('renders nothing when user is not logged in', () => {
-    mockUseUser.mockReturnValue({ user: null, loading: false });
+  it('always renders toggle regardless of auth', () => {
     (window as any)._platform = {
       updater: { channel: 'stable', isUpdateReady: false, updateInfo: null, isChecking: false, error: null, applyUpdateNow: vi.fn(), setChannel: vi.fn() },
     };
 
-    const { container } = render(<BetaChannelToggle />);
-    expect(container.innerHTML).toBe('');
+    render(<BetaChannelToggle />);
+    expect(screen.getByRole('checkbox')).toBeDefined();
   });
 
   it('renders toggle on desktop with setChannel', () => {
-    mockUseUser.mockReturnValue({ user: { uuid: '1', betaOptedIn: false }, loading: false });
     (window as any)._platform = {
       os: 'macos',
       updater: {
@@ -78,7 +71,6 @@ describe('BetaChannelToggle', () => {
   });
 
   it('renders toggle on iOS without setChannel', () => {
-    mockUseUser.mockReturnValue({ user: { uuid: '1', betaOptedIn: false }, loading: false });
     (window as any)._platform = {
       os: 'ios',
       updater: {
@@ -96,7 +88,6 @@ describe('BetaChannelToggle', () => {
   });
 
   it('renders toggle on Android with setChannel', () => {
-    mockUseUser.mockReturnValue({ user: { uuid: '1', betaOptedIn: false }, loading: false });
     (window as any)._platform = {
       os: 'android',
       updater: {
@@ -115,7 +106,6 @@ describe('BetaChannelToggle', () => {
   });
 
   it('shows iOS-specific description on iOS', () => {
-    mockUseUser.mockReturnValue({ user: { uuid: '1', betaOptedIn: false }, loading: false });
     (window as any)._platform = {
       os: 'ios',
       updater: {
@@ -133,7 +123,6 @@ describe('BetaChannelToggle', () => {
   });
 
   it('shows standard description on non-iOS', () => {
-    mockUseUser.mockReturnValue({ user: { uuid: '1', betaOptedIn: false }, loading: false });
     (window as any)._platform = {
       os: 'macos',
       updater: {
@@ -153,7 +142,6 @@ describe('BetaChannelToggle', () => {
 
   it('calls setChannel AND API on desktop enable', async () => {
     const mockSetChannel = vi.fn().mockResolvedValue('beta');
-    mockUseUser.mockReturnValue({ user: { uuid: '1', betaOptedIn: false }, loading: false });
     (window as any)._platform = {
       os: 'macos',
       updater: {
@@ -184,7 +172,6 @@ describe('BetaChannelToggle', () => {
   });
 
   it('calls only API (no setChannel) on iOS enable', async () => {
-    mockUseUser.mockReturnValue({ user: { uuid: '1', betaOptedIn: false }, loading: false });
     (window as any)._platform = {
       os: 'ios',
       updater: {
@@ -215,7 +202,6 @@ describe('BetaChannelToggle', () => {
   it('API failure does not block local channel switch', async () => {
     const mockSetChannel = vi.fn().mockResolvedValue('beta');
     mockCloudApiRequest.mockRejectedValue(new Error('network error'));
-    mockUseUser.mockReturnValue({ user: { uuid: '1', betaOptedIn: false }, loading: false });
     (window as any)._platform = {
       os: 'macos',
       updater: {
@@ -245,8 +231,7 @@ describe('BetaChannelToggle', () => {
     expect(checkbox.checked).toBe(true);
   });
 
-  it('uses user.betaOptedIn for initial state on iOS', () => {
-    mockUseUser.mockReturnValue({ user: { uuid: '1', betaOptedIn: true }, loading: false });
+  it('defaults to false on iOS (no local channel)', () => {
     (window as any)._platform = {
       os: 'ios',
       updater: {
@@ -261,6 +246,40 @@ describe('BetaChannelToggle', () => {
 
     render(<BetaChannelToggle />);
     const checkbox = screen.getByRole('checkbox') as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
+  });
+
+  it('does NOT call API on disable (one-way opt-in)', async () => {
+    const mockSetChannel = vi.fn().mockResolvedValue('stable');
+    (window as any)._platform = {
+      os: 'macos',
+      updater: {
+        channel: 'beta',
+        isUpdateReady: false,
+        updateInfo: null,
+        isChecking: false,
+        error: null,
+        applyUpdateNow: vi.fn(),
+        setChannel: mockSetChannel,
+      },
+    };
+
+    render(<BetaChannelToggle />);
+    // Toggle starts checked (channel=beta), click to disable
+    const checkbox = screen.getByRole('checkbox') as HTMLInputElement;
     expect(checkbox.checked).toBe(true);
+
+    fireEvent.click(checkbox);
+
+    const buttons = screen.getAllByRole('button');
+    const confirmButton = buttons.find(b => b.textContent === 'betaProgram.disableConfirm');
+    fireEvent.click(confirmButton!);
+
+    await waitFor(() => {
+      expect(mockSetChannel).toHaveBeenCalledWith('stable');
+    });
+
+    // API should NOT be called when disabling
+    expect(mockCloudApiRequest).not.toHaveBeenCalled();
   });
 });

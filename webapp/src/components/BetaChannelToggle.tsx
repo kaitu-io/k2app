@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import {
   ListItem,
   ListItemIcon,
@@ -17,33 +17,17 @@ import {
 import { Science as ScienceIcon } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import { cloudApi } from '../services/cloud-api';
-import { useUser } from '../hooks/useUser';
 
 export default function BetaChannelToggle() {
   const { t } = useTranslation('account');
   const updater = window._platform?.updater;
   const platform = window._platform;
-  const { user } = useUser();
 
-  // Initial state: desktop/android use local updater.channel, iOS uses server-side betaOptedIn
-  const getInitialBeta = () => {
-    if (updater?.setChannel) return updater.channel === 'beta';
-    return user?.betaOptedIn ?? false;
-  };
-
-  const [isBeta, setIsBeta] = useState(getInitialBeta);
+  const [isBeta, setIsBeta] = useState(() =>
+    updater?.setChannel ? updater.channel === 'beta' : false
+  );
   const [dialogOpen, setDialogOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
-
-  // Sync from server when user data updates (SWR background revalidate)
-  useEffect(() => {
-    if (!updater?.setChannel && user) {
-      setIsBeta(user.betaOptedIn ?? false);
-    }
-  }, [user?.betaOptedIn]);
-
-  // Don't render if user is not logged in
-  if (!user) return null;
 
   const isIos = platform?.os === 'ios';
   const description = isIos ? t('betaProgram.descriptionIos') : t('betaProgram.description');
@@ -65,10 +49,12 @@ export default function BetaChannelToggle() {
       }
       setIsBeta(newBeta);
 
-      // API sync (all platforms, fire-and-forget)
-      cloudApi.request('PUT', '/api/user/beta-channel', { opted_in: newBeta }).catch((e: any) => {
-        console.warn('[BetaToggle] Failed to sync beta status to API:', e);
-      });
+      // API opt-in only (one-way: enable notifies server, disable does not)
+      if (newBeta) {
+        cloudApi.request('PUT', '/api/user/beta-channel', { opted_in: true }).catch((e: any) => {
+          console.warn('[BetaToggle] Failed to sync beta opt-in to API:', e);
+        });
+      }
     } catch (e) {
       console.error('[BetaToggle] Failed to switch channel:', e);
     } finally {
