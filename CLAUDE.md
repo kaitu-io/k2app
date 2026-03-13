@@ -129,6 +129,10 @@ docs/plans/          Architecture design docs
 - **K2Plugin local sync**: `file:` plugins are copied (not symlinked) to `node_modules/`. Makefile `dev-ios`/`dev-android`/`build-mobile-*` targets auto-run `rm -rf node_modules/k2-plugin && yarn install --force` before `cap sync`.
 - **iOS App Group**: `group.io.kaitu` — shared container for App process + NE process logs. Both `K2Plugin.swift` and `PacketTunnelProvider.swift` use `kAppGroup = "group.io.kaitu"`.
 - **S3 log upload prefix**: Desktop uses `desktop/{version}/{udid}/{date}/logs-{ts}-{id}.tar.gz`, mobile uses `mobile/.../.zip`. Legacy `service-logs/`/`feedback-logs/` prefixes still supported by Lambda.
+- **Android APK signing**: Keystore at `mobile/android/app/kaitu-release.jks.enc` (AES-256-CBC encrypted). Decrypt via `make decrypt-keystore` with `KAITU_ANDROID_STORE_PASSWORD` env var (also GH secret). Alias: `kaitu`, RSA 2048. Gradle `signingConfigs.release` reads password from same env var.
+- **Android S3 CDN structure**: `d13jc1jqzlg4yt.cloudfront.net/kaitu/android/` — `latest.json` (stable APK manifest), `beta/latest.json`, `tools/tools.json` (adb binaries). `scripts/publish-mobile.sh` always updates stable `android/latest.json` since Android install reads stable channel.
+- **Daemon helper API routing**: `adb-*` actions use `/api/helper` endpoint (not `/api/core`). Tauri bridge routes via `daemon_helper_exec` IPC. Standalone bridge routes by URL prefix check. Vite dev proxy must include `/api/helper`.
+- **Root daemon adb discovery**: Daemon runs as root → different `$PATH` and `$HOME`. `findAdbCandidates()` scans all `/Users/*/Library/Android/sdk/`, Homebrew paths, before CDN fallback. Uses `gadb` (pure Go ADB TCP client) for device ops.
 
 ## Tech Stack
 

@@ -38,6 +38,38 @@ struct CoreRequest {
     params: Option<serde_json::Value>,
 }
 
+/// Call k2 helper API: POST /api/helper with JSON body
+pub fn helper_action(action: &str, params: Option<serde_json::Value>) -> Result<ServiceResponse, String> {
+    let url = format!("{}/api/helper", service_base_url());
+    let body = CoreRequest {
+        action: action.to_string(),
+        params,
+    };
+
+    log::debug!("Calling helper action: {} (timeout={}s)", action, TIMEOUT_SECS_DEFAULT);
+
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(TIMEOUT_SECS_DEFAULT))
+        .no_proxy()
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+    let response = client
+        .post(&url)
+        .json(&body)
+        .send()
+        .map_err(|e| format!("Failed to call helper action {}: {}", action, e))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("Helper action {} failed with status: {}", action, status));
+    }
+
+    response
+        .json::<ServiceResponse>()
+        .map_err(|e| format!("Failed to parse response: {}", e))
+}
+
 /// Call k2 core API: POST /api/core with JSON body
 pub fn core_action(action: &str, params: Option<serde_json::Value>) -> Result<ServiceResponse, String> {
     let url = format!("{}/api/core", service_base_url());
@@ -153,6 +185,18 @@ pub async fn daemon_exec(
             .await
             .map_err(|e| format!("Task join error: {}", e))?
     }
+}
+
+/// IPC command: proxy helper action to k2 daemon POST /api/helper.
+/// Called from webapp as window.__TAURI__.core.invoke('daemon_helper_exec', {action, params})
+#[tauri::command]
+pub async fn daemon_helper_exec(
+    action: String,
+    params: Option<serde_json::Value>,
+) -> Result<ServiceResponse, String> {
+    tokio::task::spawn_blocking(move || helper_action(&action, params))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Internal: set daemon log level via HTTP (no IPC, no channel check).

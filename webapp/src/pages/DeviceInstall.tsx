@@ -13,8 +13,11 @@ import {
   Computer as WindowsIcon,
   Laptop as MacIcon,
   Download as DownloadIcon,
+  Usb as UsbIcon,
+  ChevronRight as ChevronRightIcon,
 } from "@mui/icons-material";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import QRCode from "qrcode";
 import { useAlert } from "../stores";
 
@@ -30,6 +33,8 @@ export default function DeviceInstall() {
   const [qrCode, setQrCode] = useState<string>("");
   const [installURL, setInstallURL] = useState<string>(DEFAULT_INSTALL_URL);
   const { showAlert } = useAlert();
+  const navigate = useNavigate();
+  const isDesktop = window._platform?.os === 'macos' || window._platform?.os === 'windows' || window._platform?.os === 'linux';
 
   // 获取应用配置并生成二维码
   useEffect(() => {
@@ -116,6 +121,55 @@ export default function DeviceInstall() {
             width: "100%",
           }}
         >
+          {/* 安卓 USB 安装入口 - 仅桌面端，置顶 */}
+          {isDesktop && (
+            <Box
+              onClick={() => navigate('/android-install')}
+              sx={{
+                mb: 2,
+                p: 2,
+                borderRadius: 3,
+                border: '2px solid',
+                borderColor: (theme) => theme.palette.mode === 'dark'
+                  ? 'rgba(52, 199, 89, 0.3)'
+                  : 'rgba(52, 199, 89, 0.2)',
+                bgcolor: (theme) => theme.palette.background.paper,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 2,
+                transition: 'all 0.3s ease',
+                '&:hover': {
+                  borderColor: 'rgba(52, 199, 89, 0.5)',
+                  boxShadow: '0 4px 16px rgba(52, 199, 89, 0.15)',
+                  transform: 'translateY(-2px)',
+                },
+              }}
+            >
+              <Box sx={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 48,
+                height: 48,
+                borderRadius: '50%',
+                bgcolor: 'rgba(52, 199, 89, 0.15)',
+                flexShrink: 0,
+              }}>
+                <UsbIcon sx={{ fontSize: 24, color: '#34C759' }} />
+              </Box>
+              <Box sx={{ flex: 1 }}>
+                <Typography variant="body1" fontWeight={600}>
+                  {t('purchase:deviceInstall.androidInstallCard')}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {t('purchase:deviceInstall.androidInstallCardDesc')}
+                </Typography>
+              </Box>
+              <ChevronRightIcon sx={{ color: 'text.secondary' }} />
+            </Box>
+          )}
+
           {/* 客户端下载卡片 */}
           <Box
             sx={{

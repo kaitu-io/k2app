@@ -42,3 +42,6 @@ api/cloudprovider/test-results/
 webapp/playwright-report/
 webapp/test-results/
 .k2-dev-config.yaml
+
+# adb platform-tools (Google original zips, managed via S3)
+tools/adb-platform-tools/*.zip

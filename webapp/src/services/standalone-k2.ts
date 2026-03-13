@@ -14,10 +14,13 @@ import { webSecureStorage } from './secure-storage';
 import { webPlatform } from './web-platform';
 
 const CORE_ENDPOINT = '/api/core';
+const HELPER_ENDPOINT = '/api/helper';
 
 async function coreExec<T = any>(action: string, params?: any): Promise<SResponse<T>> {
   try {
-    const response = await fetch(CORE_ENDPOINT, {
+    // Route adb-* actions to the helper endpoint
+    const endpoint = action.startsWith('adb-') ? HELPER_ENDPOINT : CORE_ENDPOINT;
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action, params: params ?? {} }),

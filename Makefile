@@ -34,8 +34,12 @@ build-k2-linux:
 	mkdir -p $(K2_BIN)
 	cp k2/build/k2-linux-amd64 $(K2_BIN)/k2-x86_64-unknown-linux-gnu
 
+# --- adb tools sync ---
+sync-adb-tools:
+	@bash scripts/sync-adb-tools.sh
+
 # --- Desktop builds ---
-build-macos:
+build-macos: sync-adb-tools
 	bash scripts/build-macos.sh
 
 build-macos-test:
@@ -57,7 +61,7 @@ simplisign-login:
 		echo "simplisign-login is macOS only, skipping"; \
 	fi
 
-build-windows: pre-build build-webapp build-k2-windows simplisign-login
+build-windows: pre-build build-webapp build-k2-windows sync-adb-tools simplisign-login
 	@if [ "$$(uname -s)" = "Darwin" ] || [ "$$(uname -s)" = "Linux" ]; then \
 		echo "--- Cross-compiling Windows from $$(uname -s) via cargo-xwin ---"; \
 		command -v cargo-xwin >/dev/null 2>&1 || { echo "ERROR: cargo-xwin not found. Install: cargo install --locked cargo-xwin"; exit 1; }; \
@@ -158,11 +162,23 @@ build-mobile-ios: pre-build build-webapp appext-ios
 		-destination 'generic/platform=iOS' \
 		-archivePath build/App.xcarchive archive
 
-build-mobile-android: pre-build build-webapp appext-android
+build-mobile-android: pre-build build-webapp appext-android decrypt-keystore
 	mkdir -p mobile/android/app/libs
 	cp k2/build/k2mobile.aar mobile/android/app/libs/
 	cd mobile && rm -rf node_modules/k2-plugin && yarn install --force && npx cap sync android
-	cd mobile/android && ./gradlew assembleRelease
+	cd mobile/android && KAITU_ANDROID_STORE_PASSWORD="$$KAITU_ANDROID_STORE_PASSWORD" ./gradlew assembleRelease
+
+decrypt-keystore:
+	@if [ ! -f mobile/android/app/kaitu-release.jks ]; then \
+		if [ -z "$$KAITU_ANDROID_STORE_PASSWORD" ]; then \
+			echo "❌ KAITU_ANDROID_STORE_PASSWORD not set. Run: export KAITU_ANDROID_STORE_PASSWORD=<password>"; exit 1; \
+		fi; \
+		openssl enc -aes-256-cbc -d -pbkdf2 -iter 100000 \
+			-in mobile/android/app/kaitu-release.jks.enc \
+			-out mobile/android/app/kaitu-release.jks \
+			-pass pass:$$KAITU_ANDROID_STORE_PASSWORD; \
+		echo "Keystore decrypted."; \
+	fi
 
 IOS_DEVICE ?= $(shell xcrun xctrace list devices 2>/dev/null | grep 'iPhone' | grep -v 'Simulator' | sed 's/.*(\([0-9A-Fa-f-]\{25,\}\)).*/\1/' | head -1)
 

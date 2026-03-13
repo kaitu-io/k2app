@@ -1,6 +1,7 @@
 import { Box, LinearProgress } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useKaituBridge } from '../hooks/useKaituBridge';
 import { useAuth } from "../stores";
 import { useAppLinks } from '../hooks/useAppLinks';
@@ -9,6 +10,7 @@ export default function Discover() {
   const { t } = useTranslation();
   const { isAuthenticated } = useAuth();
   const { links } = useAppLinks();
+  const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(true);
   const [progress, setProgress] = useState(0);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -90,6 +92,13 @@ export default function Discover() {
       if (event.data?.type === 'external-link' && event.data?.url) {
         // 使用bridge在默认浏览器中打开链接
         window._platform!.openExternal?.(event.data.url).catch(console.error);
+      }
+
+      // 内部路由导航 (e.g. /android-install with app params)
+      if (event.data?.type === 'bridge_navigate' && event.data?.path) {
+        const { path, params } = event.data;
+        const search = params ? `?${new URLSearchParams(params)}` : '';
+        navigate(`${path}${search}`);
       }
     };
 

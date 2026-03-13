@@ -140,17 +140,23 @@ generate_manifest() {
   "url": "${rel_url}",
   "hash": "${hash}",
   "size": ${size},
-  "released_at": "${RELEASED_AT}"
+  "released_at": "${RELEASED_AT}",
+  "min_android": 26
 }
 MANIFEST_EOF
 
-    # Upload (beta → channel/beta/latest.json, stable → channel/latest.json)
+    # Upload manifests
     if [ "$CHANNEL" = "beta" ]; then
         upload_manifest "${channel}/beta/latest.json" "$manifest"
         echo "  Published ${channel}/beta/latest.json"
     else
         upload_manifest "${channel}/latest.json" "$manifest"
         echo "  Published ${channel}/latest.json"
+    fi
+    # Android install always reads stable path — keep it updated for both channels
+    if [ "$channel" = "android" ]; then
+        upload_manifest "android/latest.json" "$manifest"
+        echo "  Published android/latest.json (stable path for android-install)"
     fi
 }
 

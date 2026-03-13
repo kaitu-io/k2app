@@ -37,6 +37,7 @@ export default defineConfig({
         '/core': daemon,
         '/ping': daemon,
         '/api/core': daemon,
+        '/api/helper': daemon,
         '/api/device': daemon,
       };
     })(),

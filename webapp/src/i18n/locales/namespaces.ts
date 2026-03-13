@@ -31,6 +31,7 @@ export const namespaceMapping: Record<string, Namespace> = {
   "plan": "purchase",
   "memberSelection": "purchase",
   "deviceInstall": "purchase",
+  "androidInstall": "purchase",
   "invite": "invite",
   "inviteCodeList": "invite",
   "retailer": "retailer",

@@ -103,6 +103,7 @@ fn main() {
             service::admin_reinstall_service,
             service::ensure_service_running,
             service::daemon_exec,
+            service::daemon_helper_exec,
             service::set_log_level,
             service::get_udid,
             service::get_platform_info,
