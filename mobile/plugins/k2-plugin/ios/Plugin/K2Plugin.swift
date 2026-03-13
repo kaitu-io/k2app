@@ -53,6 +53,15 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
     ]
     private let appStoreURL = "https://apps.apple.com/app/id6759199298"
 
+    /// Real semantic version (e.g. "0.4.0-beta.3") embedded at build time via K2_APP_VERSION.
+    /// Falls back to CFBundleShortVersionString for dev builds (where K2_APP_VERSION is unset).
+    private var appVersion: String {
+        if let v = Bundle.main.infoDictionary?["K2AppVersion"] as? String, !v.isEmpty {
+            return v
+        }
+        return Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+    }
+
     override public func load() {
         // Check for OTA web update
         let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
@@ -144,8 +153,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
     // MARK: - VPN Methods
 
     @objc func checkReady(_ call: CAPPluginCall) {
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
-        call.resolve(["ready": true, "version": version])
+        call.resolve(["ready": true, "version": appVersion])
     }
 
     @objc func getUDID(_ call: CAPPluginCall) {
@@ -162,9 +170,8 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func getVersion(_ call: CAPPluginCall) {
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
         call.resolve([
-            "version": version,
+            "version": appVersion,
             "go": "embedded",
             "os": "ios",
             "arch": "arm64"
@@ -348,7 +355,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                let storedVersion = try? String(contentsOf: versionFile, encoding: .utf8) {
                 localVersion = storedVersion.trimmingCharacters(in: .whitespacesAndNewlines)
             } else {
-                localVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+                localVersion = appVersion
             }
 
             if isNewerVersion(remoteVersion, than: localVersion) {
@@ -376,7 +383,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
 
-            let localVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+            let localVersion = appVersion
 
             if isNewerVersion(remoteVersion, than: localVersion) {
                 var result: [String: Any] = [
@@ -692,8 +699,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             identifier = String(UUID().uuidString.prefix(8)).lowercased()
         }
 
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
-        return "mobile/\(version)/\(udid)/\(date)/logs-\(timestamp)-\(identifier).zip"
+        return "mobile/\(appVersion)/\(udid)/\(date)/logs-\(timestamp)-\(identifier).zip"
     }
 
     private func uploadToS3(s3Key: String, data: Data) async throws {
@@ -751,7 +757,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             "vpnManager_enabled": vpnManager?.isEnabled ?? false,
             "vpnManager_status": vpnManager != nil ? mapVPNStatus(vpnManager!.connection.status) : "no_manager",
             "vpnManager_protoBundleId": (vpnManager?.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier ?? "nil",
-            "appVersion": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown",
+            "appVersion": appVersion,
             "buildNumber": Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown",
             "deviceId": UIDevice.current.identifierForVendor?.uuidString ?? "nil",
         ]
@@ -878,8 +884,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                 if let (data, _) = await fetchManifest(endpoints: iosManifestEndpoints),
                    let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let remoteVersion = json["version"] as? String {
-                    let localVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
-                    if isNewerVersion(remoteVersion, than: localVersion) {
+                    if isNewerVersion(remoteVersion, than: appVersion) {
                         let storeUrl = (json["appstore_url"] as? String) ?? appStoreURL
                         await MainActor.run {
                             self.notifyListeners("nativeUpdateAvailable", data: [
@@ -908,7 +913,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                    let storedVersion = try? String(contentsOf: versionFile, encoding: .utf8) {
                     localVersion = storedVersion.trimmingCharacters(in: .whitespacesAndNewlines)
                 } else {
-                    localVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+                    localVersion = appVersion
                 }
 
                 guard isNewerVersion(remoteVersion, than: localVersion) else { return }
