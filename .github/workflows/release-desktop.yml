@@ -370,3 +370,59 @@ jobs:
             --error "Release build failed on ${{ matrix.platform }}. Check workflow run for details."
         env:
           SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_RELEASE }}
+
+  # --- Catch-all: notify on infrastructure failures (runner offline, DNS, etc.) ---
+  # Runs on GitHub-hosted runner so it works even when self-hosted runner is down.
+  notify-infra-failure:
+    needs: [release]
+    if: failure()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Notify Slack on release infrastructure failure
+        shell: bash
+        run: |
+          WORKFLOW_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          COMMIT_SHORT="${GITHUB_SHA:0:7}"
+          PAYLOAD=$(cat <<EOF
+          {
+            "text": "🛑 Release Desktop failed (infrastructure)",
+            "blocks": [
+              {
+                "type": "header",
+                "text": {
+                  "type": "plain_text",
+                  "text": "🛑 Release Desktop Infrastructure Failure"
+                }
+              },
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": "One or more release jobs failed — possibly runner offline, DNS failure, or network issue.\n*Commit:* \`${COMMIT_SHORT}\` | *Triggered by:* ${GITHUB_ACTOR}"
+                }
+              },
+              {
+                "type": "actions",
+                "elements": [
+                  {
+                    "type": "button",
+                    "text": {
+                      "type": "plain_text",
+                      "text": "View Workflow Run"
+                    },
+                    "url": "${WORKFLOW_URL}",
+                    "style": "danger"
+                  }
+                ]
+              }
+            ]
+          }
+          EOF
+          )
+          curl -X POST "$SLACK_WEBHOOK" \
+            -H 'Content-Type: application/json' \
+            -d "$PAYLOAD" \
+            --silent --show-error --fail
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_RELEASE }}
