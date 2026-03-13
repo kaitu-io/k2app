@@ -65,7 +65,7 @@ aws s3 cp "${S3_VER}/" "${TMPDIR}/" --recursive \
   --exclude "*" --include "*.sig"
 
 MACOS_SIG=$(cat "${TMPDIR}"/*.app.tar.gz.sig 2>/dev/null || echo "")
-WINDOWS_SIG=$(cat "${TMPDIR}"/*_x64-setup.exe.sig 2>/dev/null || echo "")
+WINDOWS_SIG=$(cat "${TMPDIR}"/*_x64.exe.sig 2>/dev/null || echo "")
 
 if [ -z "${MACOS_SIG}" ]; then
   echo "WARNING: macOS signature not found"
@@ -85,19 +85,19 @@ cat > "${TMPDIR}/cloudfront.latest.json" << EOF
   "pub_date": "${PUB_DATE}",
   "platforms": {
     "darwin-aarch64": {
-      "url": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/${VERSION}/Kaitu.app.tar.gz",
+      "url": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/${VERSION}/Kaitu_${VERSION}_universal.app.tar.gz",
       "signature": "${MACOS_SIG}"
     },
     "darwin-x86_64": {
-      "url": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/${VERSION}/Kaitu.app.tar.gz",
+      "url": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/${VERSION}/Kaitu_${VERSION}_universal.app.tar.gz",
       "signature": "${MACOS_SIG}"
     },
     "darwin-universal": {
-      "url": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/${VERSION}/Kaitu.app.tar.gz",
+      "url": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/${VERSION}/Kaitu_${VERSION}_universal.app.tar.gz",
       "signature": "${MACOS_SIG}"
     },
     "windows-x86_64": {
-      "url": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/${VERSION}/Kaitu_${VERSION}_x64-setup.exe",
+      "url": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/${VERSION}/Kaitu_${VERSION}_x64.exe",
       "signature": "${WINDOWS_SIG}"
     }
   }
@@ -112,19 +112,19 @@ cat > "${TMPDIR}/d0.latest.json" << EOF
   "pub_date": "${PUB_DATE}",
   "platforms": {
     "darwin-aarch64": {
-      "url": "https://d0.all7.cc/kaitu/desktop/${VERSION}/Kaitu.app.tar.gz",
+      "url": "https://d0.all7.cc/kaitu/desktop/${VERSION}/Kaitu_${VERSION}_universal.app.tar.gz",
       "signature": "${MACOS_SIG}"
     },
     "darwin-x86_64": {
-      "url": "https://d0.all7.cc/kaitu/desktop/${VERSION}/Kaitu.app.tar.gz",
+      "url": "https://d0.all7.cc/kaitu/desktop/${VERSION}/Kaitu_${VERSION}_universal.app.tar.gz",
       "signature": "${MACOS_SIG}"
     },
     "darwin-universal": {
-      "url": "https://d0.all7.cc/kaitu/desktop/${VERSION}/Kaitu.app.tar.gz",
+      "url": "https://d0.all7.cc/kaitu/desktop/${VERSION}/Kaitu_${VERSION}_universal.app.tar.gz",
       "signature": "${MACOS_SIG}"
     },
     "windows-x86_64": {
-      "url": "https://d0.all7.cc/kaitu/desktop/${VERSION}/Kaitu_${VERSION}_x64-setup.exe",
+      "url": "https://d0.all7.cc/kaitu/desktop/${VERSION}/Kaitu_${VERSION}_x64.exe",
       "signature": "${WINDOWS_SIG}"
     }
   }

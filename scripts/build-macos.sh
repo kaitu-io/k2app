@@ -307,8 +307,8 @@ echo "--- Creating .pkg installer ---"
 RELEASE_DIR="release/$VERSION"
 mkdir -p "$RELEASE_DIR"
 
-PKG_UNSIGNED="$RELEASE_DIR/Kaitu-${VERSION}-unsigned.pkg"
-PKG_SIGNED="$RELEASE_DIR/Kaitu-${VERSION}.pkg"
+PKG_UNSIGNED="$RELEASE_DIR/Kaitu_${VERSION}_universal-unsigned.pkg"
+PKG_SIGNED="$RELEASE_DIR/Kaitu_${VERSION}_universal.pkg"
 
 # Stage only the .app for pkgbuild (exclude updater artifacts)
 PKG_STAGE=$(mktemp -d /tmp/k2app-pkg-stage.XXXXXX)
@@ -387,16 +387,17 @@ fi
 echo ""
 echo "--- Collecting artifacts ---"
 
+# Tauri generates Kaitu.app.tar.gz — rename to Kaitu_{VERSION}_universal.app.tar.gz
 APP_TAR_GZ=$(find "$BUNDLE_DIR" -name '*.app.tar.gz' -maxdepth 1 2>/dev/null | head -1)
 if [ -n "$APP_TAR_GZ" ]; then
-  cp "$APP_TAR_GZ" "$RELEASE_DIR/"
-  echo "Copied: $(basename "$APP_TAR_GZ")"
+  cp "$APP_TAR_GZ" "$RELEASE_DIR/Kaitu_${VERSION}_universal.app.tar.gz"
+  echo "Renamed: $(basename "$APP_TAR_GZ") → Kaitu_${VERSION}_universal.app.tar.gz"
 fi
 
 APP_SIG=$(find "$BUNDLE_DIR" -name '*.app.tar.gz.sig' -maxdepth 1 2>/dev/null | head -1)
 if [ -n "$APP_SIG" ]; then
-  cp "$APP_SIG" "$RELEASE_DIR/"
-  echo "Copied: $(basename "$APP_SIG")"
+  cp "$APP_SIG" "$RELEASE_DIR/Kaitu_${VERSION}_universal.app.tar.gz.sig"
+  echo "Renamed: $(basename "$APP_SIG") → Kaitu_${VERSION}_universal.app.tar.gz.sig"
 fi
 
 # --- Summary ---
