@@ -474,8 +474,9 @@ When a user reports a problem, use these tools to find and analyze their device 
 2. **Find feedback tickets** — `query_feedback_tickets(email="user@example.com")` or `query_feedback_tickets(udid="...")`
 3. **Find associated logs** — `query_device_logs(feedback_id="...")` using the feedbackId from the ticket
 4. **Download and read logs** — `download_device_log(s3_key="...")` for each log file (service, crash, desktop, system)
-5. **Analyze** — Look for errors, panics, connection failures in the logs
-6. **Resolve** — `resolve_feedback_ticket(id=123, resolved_by="claude")` when troubleshooting is complete
+5. **Run quick diagnosis** — Execute `bash scripts/k2-quick-diag.sh <downloaded-log-path>` on any k2.log file. The script auto-extracts DIAG events, heartbeats, failures, and gives a verdict (OK/WARN/CRITICAL/PANIC). Use its output to guide deeper investigation.
+6. **Deep dive if needed** — Use the DIAG grep patterns in Step 12.1 for targeted analysis based on the script's findings
+7. **Resolve** — `resolve_feedback_ticket(id=123, resolved_by="claude")` when troubleshooting is complete
 
 ### Log Types
 
@@ -499,3 +500,78 @@ When a user reports a problem, use these tools to find and analyze their device 
 - Large logs are truncated to 50k chars; focus on recent entries (end of file)
 - Cross-reference `feedback_id` between tickets and logs to find related data
 - Time filters (`from`, `to`) use RFC3339 format: `2026-03-08T00:00:00Z`
+
+### DIAG Log Analysis (k2 client logs)
+
+k2 client uses a three-layer diagnostic logging system. All diagnostic logs use the `DIAG:` prefix. When analyzing downloaded `service` logs (k2.log), use this triage workflow:
+
+**Step 1: Quick health scan** — Is the tunnel running and healthy?
+```bash
+grep "DIAG: heartbeat" <logfile> | tail -20
+```
+Each heartbeat (every 30s) shows: `health`, `transport`, `loss`, `rttMs`, `txMB`, `rxMB`, `tcpConns`, `udpConns`, `uptimeS`, `fallback`.
+
+**Step 2: Find problems** — What went wrong?
+```bash
+grep "DIAG:" <logfile> | grep -v heartbeat
+```
+This shows all event-driven diagnostics (dns-slow, dns-fail, proxy-dial-fail, transport-switch, wire-error, etc.).
+
+**Step 3: Layer-specific drill-down**
+
+| Layer | grep | What it shows |
+|-------|------|---------------|
+| Connection | `grep "DIAG: connected\|DIAG: session-end"` | Session lifecycle + total traffic |
+| DNS | `grep "DIAG: dns"` | Slow (>500ms) or failed DNS queries |
+| Transport | `grep "DIAG: quic\|DIAG: transport"` | QUIC handshake failures, QUIC↔TCP-WS switches |
+| Proxy | `grep "DIAG: proxy-dial"` | Failed or slow (>3s) proxy dial attempts |
+| Wire | `grep "DIAG: wire-error"` | Classified engine errors (auth, timeout, unreachable) |
+| Health | `grep "health: degraded\|health: critical"` | Health state transitions (existing logs) |
+
+**DIAG Event Reference:**
+
+| Event | Level | Meaning |
+|-------|-------|---------|
+| `DIAG: heartbeat` | INFO | 30s periodic health snapshot |
+| `DIAG: connected` | INFO | Tunnel established (server, mode, dial time) |
+| `DIAG: session-end` | INFO | Tunnel torn down (uptime, total tx/rx) |
+| `DIAG: dns-slow` | INFO | DNS query took >500ms |
+| `DIAG: dns-fail` | WARN | DNS upstream query failed |
+| `DIAG: proxy-dial-fail` | WARN | Wire proxy dial failed (TCP or UDP) |
+| `DIAG: proxy-dial-slow` | INFO | Wire proxy dial took >3s |
+| `DIAG: quic-handshake-fail` | WARN | QUIC handshake failed (UDP may be blocked) |
+| `DIAG: transport-switch` | WARN | Transport changed (QUIC→TCP-WS or back) |
+| `DIAG: wire-error` | WARN | Classified engine error with code/category |
+
+**Common diagnosis patterns:**
+
+| Symptom in heartbeat | Likely cause | Next step |
+|---------------------|-------------|-----------|
+| `health=degraded`, `loss>0.05` | Packet loss on network path | Check `DIAG: quic-handshake-fail` count |
+| `health=critical`, `loss>0.25` | Severe packet loss / UDP blocking | Check `DIAG: transport-switch` for fallback |
+| `fallback=true` | QUIC blocked, using TCP-WS | Check `DIAG: quic-handshake-fail` for root cause |
+| `tcpConns=0`, `udpConns=0` | No traffic flowing | Check `DIAG: proxy-dial-fail` for wire errors |
+| `rttMs` very high (>500) | High latency path | May be normal for distant servers |
+
+**Use the quick-diag script** (`scripts/k2-quick-diag.sh`) to automate this analysis — see Step 13.
+
+## Step 13: Client Log Quick Diagnosis Script
+
+**ALWAYS run this script first** when analyzing any k2 client log. It replaces manual grep triage.
+
+```bash
+# After download_device_log saves to /tmp/kaitu-device-logs/:
+bash scripts/k2-quick-diag.sh /tmp/kaitu-device-logs/k2.log
+
+# For local daemon logs (auto-detects macOS/Linux path):
+bash scripts/k2-quick-diag.sh
+```
+
+The script outputs:
+1. **Session info** — Last connected/disconnected timestamps
+2. **Recent heartbeats** — Last 5 DIAG heartbeats with health/transport/loss
+3. **Problem events** — All non-heartbeat DIAG events (failures, slow queries, transport switches)
+4. **Event summary** — Counts of each DIAG event type
+5. **Health transitions** — degraded/critical/recovery state changes
+6. **Panics** — Any panic stack traces
+7. **Verdict** — Overall assessment (OK / WARN / CRITICAL / PANIC)
