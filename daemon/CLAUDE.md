@@ -42,6 +42,22 @@ Heartbeat every 15s. Buffered per client (cap 8), slow clients get dropped.
 Hot-switch global slog log level at runtime. Body: `{"level": "debug"}`.
 Valid levels: `debug`, `info`, `warn`, `error`. Uses `config.SetLogLevel()` (LevelVar).
 
+### POST /api/helper
+
+Android ADB install helper. Separate endpoint from `/api/core`.
+
+| Action | Params | Description |
+|--------|--------|-------------|
+| `adb-detect` | — | Prepare adb + list connected Android devices (serial, model, state) |
+| `adb-install` | `serial`, `url` (optional) | Push + install APK to device. Async — poll `adb-status` |
+| `adb-status` | — | Current install state: phase/progress/version/error |
+
+Phases: `idle` → `prepare_adb` → `downloading` → `pushing` → `installing` → `done` | `error`
+
+**adb discovery** (`findAdbCandidates`): When daemon runs as root, `$PATH` differs from user. Searches: `exec.LookPath`, Android SDK in all `/Users/*/`, Homebrew paths. Falls back to CDN download from `tools/tools.json`.
+
+**Webapp routing**: Tauri bridge routes `adb-*` actions to Rust IPC `daemon_helper_exec`. Standalone bridge routes to `/api/helper` (not `/api/core`).
+
 ### Other
 
 - `GET /ping` — Health check (returns `{"code":0,"message":"pong"}`)
@@ -97,6 +113,9 @@ Abort path: both Start and Stop happen within the same opMu critical section —
 - `paths.go` / `paths_test.go` — `cacheDir()`, `logDir()` (platform-specific cache/log directories)
 - `slog_migration_test.go` — Guard: no old `log.Printf` calls in daemon package
 - `wintun/` — wintun.dll embedding (amd64 + arm64) + runtime arch detection via `IsWow64Process2`
+- `helper.go` — `/api/helper` HTTP handler, routes adb-detect/adb-install/adb-status
+- `helper_adb.go` — `AndroidHelper`: adb binary management (system discovery + CDN download), gadb device detection, APK download + push + install
+- `helper_test.go` — Tests for helper API, install phases, APK URL resolution
 
 ## Testing
 

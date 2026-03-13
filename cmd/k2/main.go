@@ -60,6 +60,9 @@ func main() {
 		case "upgrade":
 			cmdUpgrade(args[1:])
 			return
+		case "android-install":
+			cmdAndroidInstall(args[1:])
+			return
 		case "demo-config":
 			fmt.Print(demoConfig)
 			return
@@ -139,6 +142,7 @@ Usage:
   k2 service uninstall        Remove system service
 
   k2 upgrade [--check]        Download and install latest version
+  k2 android-install [url]    Install APK to USB-connected Android phone
   k2 demo-config              Print example client config (YAML)
   k2 version                  Show version info
 

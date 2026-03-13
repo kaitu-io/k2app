@@ -19,6 +19,7 @@ k2 service install                  Install as system service (launchd/systemd/W
 k2 service uninstall                Remove system service
 k2 upgrade [--check]                Self-update from releases.kaitu.io
 k2 demo-config                      Print example client YAML to stdout
+k2 android-install [--url URL]      Interactive Android APK install via USB (gadb)
 k2 version                          Version + commit info
 ```
 
@@ -32,6 +33,7 @@ k2 version                          Version + commit info
 - `upgrade.go` — `k2 upgrade`: self-update binary from CDN
 - `process.go` — PID monitoring helpers
 - `signal.go` / `signal_windows.go` — Signal dispatch (`-s stop|reload`)
+- `android_install.go` — `k2 android-install`: interactive CLI for USB APK install (adb detect → download → push → pm install)
 
 ## Pattern
 
