@@ -9,6 +9,7 @@ cd src-tauri && cargo check     # Rust compilation check
 cd src-tauri && cargo test      # Rust tests (43 tests)
 yarn tauri dev                  # Dev mode (expects Vite on :1420)
 yarn tauri build --target universal-apple-darwin  # macOS build
+yarn tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc  # Windows cross-build from macOS
 ```
 
 ## Rust Modules (`src-tauri/src/`)
@@ -92,3 +93,5 @@ yarn tauri build --target universal-apple-darwin  # macOS build
 - Windows updater: `update.install()` launches NSIS as child process, must call `app.exit(0)` immediately — NSIS needs old process to exit to overwrite binaries.
 - Beta channel forces ALL 3 log layers to debug: desktop log (tauri-plugin-log via `is_beta_early()`), daemon log (HTTP via `set_log_level_internal`), engine log (`buildConnectConfig()` in webapp). User cannot override while on beta.
 - Pre-beta log level stored in `{app_data_dir}/pre-beta-log-level` file. Frontend passes `currentLogLevel` (from localStorage) when calling `set_update_channel` IPC since Rust cannot read browser localStorage.
+- Windows Authenticode signing requires intermediate CA chain: `osslsigncode` must use `-ac scripts/ci/macos/certum-chain.pem` (Certum Code Signing 2021 CA). Without it, Windows UAC shows "Publisher: Unknown" because it can't trace Wordgate LLC cert to a trusted root. SimplySign PKCS#11 token must be logged in first (`make simplisign-login`).
+- Windows cross-build from macOS: requires `cargo-xwin`, `makensis`, `osslsigncode`, `libp11`. See `docs/plans/2026-03-11-windows-build-on-macos.md` for full setup.

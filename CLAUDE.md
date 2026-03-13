@@ -201,5 +201,16 @@ docs/plans/
   2026-03-06-webapp-architecture-refactor.md  VPN state machine + connection store refactoring
   2026-03-06-usage-analytics-design.md    Usage analytics design
   2026-03-06-usage-analytics-impl.md      Usage analytics implementation plan
-  2026-03-08-device-log-verification.md   Device log & feedback ticket E2E verification
+  2026-03-07-macos-layered-testing-design.md  macOS layered testing
+  2026-03-07-windows-quality-assurance-design.md  Windows QA design
+  2026-03-07-windows-quality-assurance-impl.md    Windows QA implementation
+  2026-03-08-mobile-logging-design.md     Mobile three-layer logging
+  2026-03-09-viewport-scaling-fix.md      Viewport CSS zoom fix
+  2026-03-11-windows-build-on-macos.md    Windows cross-build from macOS (cargo-xwin + osslsigncode)
+  2026-03-12-ios-app-store-submission.md  iOS App Store submission
+  2026-03-12-ios-compliance-submission.md  iOS compliance resubmission
+  2026-03-12-k2-pre-production-bugfix.md  k2 pre-production bugfix
+  2026-03-13-android-adb-install-helper.md  Android ADB install helper
+  2026-03-13-android-adb-verification.md  Android ADB verification
+  2026-03-13-beta-channel-subscription.md Beta channel subscription
 ```
