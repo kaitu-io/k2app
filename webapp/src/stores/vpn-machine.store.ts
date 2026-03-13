@@ -161,8 +161,18 @@ export function dispatch(event: VPNEvent, payload?: DispatchPayload): void {
 
   const nextState = TRANSITIONS[currentState]?.[event];
   if (!nextState) {
-    console.warn('[VPNMachine] dispatch: ' + currentState + ' + ' + event + ' → (no transition)');
+    // TRACE: log all no-transition cases involving connecting/idle for flash diagnosis
+    if (currentState === 'connecting' || currentState === 'idle') {
+      console.warn('[VPNMachine] TRACE t=' + Date.now() + ': ' + currentState + ' + ' + event + ' → (no transition)');
+    } else {
+      console.warn('[VPNMachine] dispatch: ' + currentState + ' + ' + event + ' → (no transition)');
+    }
     return;
+  }
+
+  // TRACE: log all transitions involving connecting/idle for flash diagnosis
+  if (currentState === 'connecting' || nextState === 'connecting' || currentState === 'idle' || nextState === 'idle') {
+    console.warn('[VPNMachine] TRACE t=' + Date.now() + ': ' + currentState + ' + ' + event + ' → ' + nextState);
   }
 
   // Build state update
@@ -214,9 +224,9 @@ export function initializeVPNMachine(): () => void {
     });
   };
 
-  // Event-driven mode (desktop/mobile with SSE or native events)
+  // Event-driven mode (desktop SSE or mobile native events)
   if (window._k2?.onServiceStateChange && window._k2?.onStatusChange) {
-    console.info('[VPNMachine] Initializing in event-driven mode (SSE)');
+    console.info('[VPNMachine] Initializing in event-driven mode');
     const unsubService = window._k2.onServiceStateChange((available) => {
       console.debug('[VPNMachine] SSE service state: available=' + available);
       dispatch(available ? 'SERVICE_REACHABLE' : 'SERVICE_UNREACHABLE');
