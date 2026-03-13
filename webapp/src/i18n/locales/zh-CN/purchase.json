@@ -105,6 +105,8 @@
     "usbTrustPrompt": "请在手机屏幕上点击「允许 USB 调试」",
     "otherBrandHint": "通用步骤：设置 → 关于手机 → 连续点击版本号 7 次 → 返回设置 → 开发者选项 → 开启 USB 调试",
     "guideImageAlt": "第 {{step}} 步截图",
+    "huaweiWarningTitle": "HarmonyOS NEXT 纯鸿蒙系统不支持安装 Android 应用",
+    "huaweiWarningDesc": "请先确认你的华为手机系统版本：打开「设置」→「关于手机」。如果显示「HarmonyOS NEXT」，则无法通过 ADB 安装。显示「EMUI」或「HarmonyOS 4.0 及以下」的设备可以正常安装。",
     "huawei_step1": "打开「设置」，滑到底部点击「关于手机」",
     "huawei_step2": "连续点击「HarmonyOS 版本」7 次，直到提示已进入开发者模式",
     "huawei_step3": "返回「设置」→「系统和更新」",

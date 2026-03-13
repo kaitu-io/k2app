@@ -105,6 +105,8 @@
     "usbTrustPrompt": "Please tap \"Allow USB Debugging\" on your phone screen",
     "otherBrandHint": "General steps: Settings → About Phone → Tap Build Number 7 times → Back to Settings → Developer Options → Enable USB Debugging",
     "guideImageAlt": "Step {{step}} screenshot",
+    "huaweiWarningTitle": "HarmonyOS NEXT does not support Android app installation",
+    "huaweiWarningDesc": "Please check your Huawei phone's OS version: go to \"Settings\" → \"About Phone\". If it shows \"HarmonyOS NEXT\", ADB installation is not possible. Devices showing \"EMUI\" or \"HarmonyOS 4.0 or below\" can install normally.",
     "huawei_step1": "Open \"Settings\", scroll to bottom and tap \"About Phone\"",
     "huawei_step2": "Tap \"HarmonyOS Version\" 7 times until you see developer mode enabled",
     "huawei_step3": "Go back to \"Settings\" → \"System & Updates\"",
