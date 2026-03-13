@@ -1,5 +1,6 @@
 import React from 'react';
 import type { TargetRect } from './useTargetRect';
+import { ONBOARDING } from './tokens';
 
 interface SpotlightOverlayProps {
   rect: TargetRect;
@@ -37,7 +38,7 @@ const SpotlightOverlay: React.FC<SpotlightOverlayProps> = ({
     >
       <path
         fillRule="evenodd"
-        fill="rgba(0,0,0,0.65)"
+        fill={ONBOARDING.overlayColor}
         pointerEvents="auto"
         d={`M0,0 H${window.innerWidth} V${window.innerHeight} H0 Z M${x + r},${y} H${x + w - r} Q${x + w},${y} ${x + w},${y + r} V${y + h - r} Q${x + w},${y + h} ${x + w - r},${y + h} H${x + r} Q${x},${y + h} ${x},${y + h - r} V${y + r} Q${x},${y} ${x + r},${y} Z`}
       />

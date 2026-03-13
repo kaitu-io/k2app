@@ -9,9 +9,10 @@ export interface TargetRect {
 
 /**
  * Tracks a DOM element's viewport-coordinate bounding rect every animation frame.
- * Returns null when selector matches nothing (also handles lazy-loaded elements).
+ * Accepts an array of CSS selectors tried in order (platform fallback).
+ * Returns null when no selector matches (also handles lazy-loaded elements).
  */
-export function useTargetRect(selector: string | null): {
+export function useTargetRect(selectors: string[] | null): {
   rect: TargetRect | null;
   element: HTMLElement | null;
 } {
@@ -19,8 +20,11 @@ export function useTargetRect(selector: string | null): {
   const [element, setElement] = useState<HTMLElement | null>(null);
   const rafRef = useRef<number>(0);
 
+  // Stable serialised key for the dependency array
+  const selectorsKey = selectors ? selectors.join('||') : '';
+
   useEffect(() => {
-    if (!selector) {
+    if (!selectors || selectors.length === 0) {
       setRect(null);
       setElement(null);
       return;
@@ -33,7 +37,12 @@ export function useTargetRect(selector: string | null): {
     let prevEl: HTMLElement | null = null;
 
     const tick = () => {
-      const el = document.querySelector<HTMLElement>(selector);
+      // Try selectors in order until one matches
+      let el: HTMLElement | null = null;
+      for (const sel of selectors) {
+        el = document.querySelector<HTMLElement>(sel);
+        if (el) break;
+      }
 
       if (!el) {
         if (prevEl !== null) {
@@ -70,7 +79,8 @@ export function useTargetRect(selector: string | null): {
 
     rafRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [selector]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectorsKey]);
 
   return { rect, element };
 }

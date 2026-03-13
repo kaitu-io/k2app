@@ -20,22 +20,23 @@ export type Phase = 1 | 2 | 3 | 4 | 5 | 6;
 
 /** Phase configuration for the guide UI */
 export interface PhaseConfig {
-  target: string;
+  /** CSS selectors tried in order until one matches (supports platform fallback) */
+  targets: string[];
   placement: 'top' | 'bottom' | 'left' | 'right';
   /** Tooltip i18n key suffix: `onboarding.${i18nKey}.title/content` */
   i18nKey: string;
 }
 
 const PHASE_CONFIG: Record<Phase, PhaseConfig> = {
-  1: { target: '[data-tour="collapse-toggle"]', placement: 'bottom', i18nKey: 'phase1' },
-  2: { target: '[data-tour="collapse-toggle"]', placement: 'bottom', i18nKey: 'phase2' },
-  3: { target: '[data-tour="feedback-button"]', placement: 'left', i18nKey: 'phase3' },
-  4: { target: '[data-tour="nav-invite"]', placement: 'top', i18nKey: 'phase4' },
-  5: { target: '[data-tour="invite-share"]', placement: 'bottom', i18nKey: 'phase5' },
-  6: { target: '[data-tour="nav-dashboard"]', placement: 'top', i18nKey: 'phase6' },
+  1: { targets: ['[data-tour="collapse-toggle"]'], placement: 'bottom', i18nKey: 'phase1' },
+  2: { targets: ['[data-tour="collapse-toggle"]'], placement: 'bottom', i18nKey: 'phase2' },
+  3: { targets: ['[data-tour="feedback-button"]'], placement: 'left', i18nKey: 'phase3' },
+  4: { targets: ['[data-tour="nav-invite"]'], placement: 'top', i18nKey: 'phase4' },
+  5: { targets: ['[data-tour="invite-share"]', '[data-tour="invite-copy"]'], placement: 'bottom', i18nKey: 'phase5' },
+  6: { targets: ['[data-tour="nav-dashboard"]'], placement: 'top', i18nKey: 'phase6' },
 };
 
-/** Get phase config (no platform-specific overrides needed) */
+/** Get phase config */
 export function getPhaseConfig(phase: Phase): PhaseConfig {
   return PHASE_CONFIG[phase];
 }
@@ -47,6 +48,8 @@ interface OnboardingState {
   active: boolean;
   /** Ordered list of phases for this platform */
   phases: Phase[];
+  /** Internal: prevents double-advance in same tick */
+  _advancing: boolean;
   // Actions
   /** Start the onboarding tour */
   start: () => void;
@@ -79,6 +82,7 @@ export const useOnboardingStore = create<OnboardingState>()((set, get) => ({
   phase: 1,
   active: false,
   phases: [],
+  _advancing: false,
   start: () => {
     const phases = buildPhaseList();
     set({ active: true, phase: phases[0], phases });
@@ -92,18 +96,20 @@ export const useOnboardingStore = create<OnboardingState>()((set, get) => ({
   },
 
   nextPhase: () => {
+    if (get()._advancing) return;
+    set({ _advancing: true });
+
     const { phase, phases } = get();
     const currentIndex = phases.indexOf(phase);
     if (currentIndex < phases.length - 1) {
-      set({ phase: phases[currentIndex + 1] });
+      set({ phase: phases[currentIndex + 1], _advancing: false });
     } else {
-      // Last phase done
       get().complete();
     }
   },
 
   complete: () => {
-    set({ active: false });
+    set({ active: false, _advancing: false });
     // Persist completion
     window._platform?.storage.set(STORAGE_KEY, true).catch(() => {});
   },
