@@ -74,6 +74,7 @@ function BottomNavigation() {
         icon: <DashboardIcon />,
         path: "/",
         feature: null,
+        dataTour: "nav-dashboard",
       },
       {
         label: isAuthenticated ? t("nav:navigation.purchase") : t("nav:navigation.activate"),

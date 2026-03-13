@@ -5,9 +5,9 @@
  * 通过 _platform.storage 持久化完成标记，跨平台可靠。
  *
  * Phase 流程:
- *   1: 折叠面板 → 3: 反馈按钮
+ *   1: 折叠面板 → 2: 展开面板 → 3: 反馈按钮
  *   → 4: 邀请导航(/) → 5: 分享按钮(/invite)
- *   → 6: 购买导航(/，非iOS)
+ *   → 6: 回到仪表板(所有平台)
  */
 
 import { create } from 'zustand';
@@ -16,16 +16,29 @@ import { isFeatureEnabled } from '../config/apps';
 const STORAGE_KEY = 'onboarding_completed';
 
 /** All possible phases */
-type Phase = 1 | 3 | 4 | 5 | 6;
+export type Phase = 1 | 2 | 3 | 4 | 5 | 6;
 
-/** Route each phase expects */
-const PHASE_ROUTE: Record<Phase, string> = {
-  1: '/',
-  3: '/',
-  4: '/',
-  5: '/invite',
-  6: '/',
+/** Phase configuration for the guide UI */
+export interface PhaseConfig {
+  target: string;
+  placement: 'top' | 'bottom' | 'left' | 'right';
+  /** Tooltip i18n key suffix: `onboarding.${i18nKey}.title/content` */
+  i18nKey: string;
+}
+
+const PHASE_CONFIG: Record<Phase, PhaseConfig> = {
+  1: { target: '[data-tour="collapse-toggle"]', placement: 'bottom', i18nKey: 'phase1' },
+  2: { target: '[data-tour="collapse-toggle"]', placement: 'bottom', i18nKey: 'phase2' },
+  3: { target: '[data-tour="feedback-button"]', placement: 'left', i18nKey: 'phase3' },
+  4: { target: '[data-tour="nav-invite"]', placement: 'top', i18nKey: 'phase4' },
+  5: { target: '[data-tour="invite-share"]', placement: 'bottom', i18nKey: 'phase5' },
+  6: { target: '[data-tour="nav-dashboard"]', placement: 'top', i18nKey: 'phase6' },
 };
+
+/** Get phase config (no platform-specific overrides needed) */
+export function getPhaseConfig(phase: Phase): PhaseConfig {
+  return PHASE_CONFIG[phase];
+}
 
 interface OnboardingState {
   /** Current phase */
@@ -34,7 +47,6 @@ interface OnboardingState {
   active: boolean;
   /** Ordered list of phases for this platform */
   phases: Phase[];
-
   // Actions
   /** Start the onboarding tour */
   start: () => void;
@@ -44,25 +56,21 @@ interface OnboardingState {
   nextPhase: () => void;
   /** Skip/complete the onboarding */
   complete: () => void;
-  /** Get the expected route for the current phase */
-  getExpectedRoute: () => string;
   /** Initialize: check storage for completion */
   init: () => Promise<void>;
 }
 
 function buildPhaseList(): Phase[] {
-  const isIOS = window._platform?.os === 'ios';
   const hasInvite = isFeatureEnabled('invite');
 
-  const phases: Phase[] = [1, 3];
+  const phases: Phase[] = [1, 2, 3];
 
   if (hasInvite) {
     phases.push(4, 5);
   }
 
-  if (!isIOS) {
-    phases.push(6);
-  }
+  // All platforms get final step (iOS targets dashboard, others target purchase)
+  phases.push(6);
 
   return phases;
 }
@@ -71,7 +79,6 @@ export const useOnboardingStore = create<OnboardingState>()((set, get) => ({
   phase: 1,
   active: false,
   phases: [],
-
   start: () => {
     const phases = buildPhaseList();
     set({ active: true, phase: phases[0], phases });
@@ -99,10 +106,6 @@ export const useOnboardingStore = create<OnboardingState>()((set, get) => ({
     set({ active: false });
     // Persist completion
     window._platform?.storage.set(STORAGE_KEY, true).catch(() => {});
-  },
-
-  getExpectedRoute: () => {
-    return PHASE_ROUTE[get().phase];
   },
 
   init: async () => {
