@@ -133,6 +133,7 @@ docs/plans/          Architecture design docs
 - **Android S3 CDN structure**: `d13jc1jqzlg4yt.cloudfront.net/kaitu/android/` — `latest.json` (stable APK manifest), `beta/latest.json`, `tools/tools.json` (adb binaries). `scripts/publish-mobile.sh` always updates stable `android/latest.json` since Android install reads stable channel.
 - **Daemon helper API routing**: `adb-*` actions use `/api/helper` endpoint (not `/api/core`). Tauri bridge routes via `daemon_helper_exec` IPC. Standalone bridge routes by URL prefix check. Vite dev proxy must include `/api/helper`.
 - **Root daemon adb discovery**: Daemon runs as root → different `$PATH` and `$HOME`. `findAdbCandidates()` scans all `/Users/*/Library/Android/sdk/`, Homebrew paths, before CDN fallback. Uses `gadb` (pure Go ADB TCP client) for device ops.
+- **Desktop artifact naming**: `Kaitu_{VERSION}_{ARCH}.{EXT}` — underscore-separated. macOS: `_universal.pkg` / `_universal.app.tar.gz` / `.sig`. Windows: `_x64.exe` / `.sig`. S3 path: `kaitu/desktop/{VERSION}/`. Never use hyphen separator (`Kaitu-`) or `-setup` suffix.
 
 ## Tech Stack
 

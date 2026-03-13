@@ -348,9 +348,9 @@ jobs:
           CDN_BASE="https://d0.all7.cc/kaitu/desktop/${VERSION}"
 
           if [ "${PLATFORM}" = "macOS" ]; then
-            DOWNLOAD_URL="<${CDN_BASE}/Kaitu-${VERSION}.pkg|macOS PKG>"
+            DOWNLOAD_URL="<${CDN_BASE}/Kaitu_${VERSION}_universal.pkg|macOS PKG>"
           else
-            DOWNLOAD_URL="<${CDN_BASE}/Kaitu_${VERSION}_x64-setup.exe|Windows Setup>"
+            DOWNLOAD_URL="<${CDN_BASE}/Kaitu_${VERSION}_x64.exe|Windows Setup>"
           fi
 
           ./scripts/ci/notify-slack.sh deploy-success \

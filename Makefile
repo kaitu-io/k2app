@@ -71,8 +71,8 @@ build-windows: pre-build build-webapp build-k2-windows sync-adb-tools simplisign
 	fi
 	@echo "--- Collecting artifacts ---"
 	@mkdir -p release/$(VERSION)
-	@cp desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/Kaitu_$(VERSION)_x64-setup.exe release/$(VERSION)/
-	@cp desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/Kaitu_$(VERSION)_x64-setup.exe.sig release/$(VERSION)/ 2>/dev/null || true
+	@cp desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/Kaitu_$(VERSION)_x64-setup.exe release/$(VERSION)/Kaitu_$(VERSION)_x64.exe
+	@cp desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/Kaitu_$(VERSION)_x64-setup.exe.sig release/$(VERSION)/Kaitu_$(VERSION)_x64.exe.sig 2>/dev/null || true
 	@echo "=== Build complete ==="
 	@echo "Release artifacts in release/$(VERSION)/:"
 	@ls -la release/$(VERSION)/
