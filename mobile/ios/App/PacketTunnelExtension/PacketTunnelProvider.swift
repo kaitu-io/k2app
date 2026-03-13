@@ -93,9 +93,22 @@ private func findTunnelFileDescriptor() -> Int32? {
 class PacketTunnelProvider: NEPacketTunnelProvider {
     private var engine: AppextEngine?
     private var memoryTimer: DispatchSourceTimer?
+    private var engineStartTime: Date?
+    private var lastSleepTime: Date?
+    private var lastWakeTime: Date?
+    private let neDefaults = UserDefaults(suiteName: kAppGroup)
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
         logger.info("startTunnel called, options keys: \(options?.keys.joined(separator: ",") ?? "nil")")
+
+        // Detect jetsam: if previous session wrote "engineRunning=true" but never set it to false,
+        // the NE process was killed by iOS (jetsam/memory pressure) without calling stopTunnel.
+        if neDefaults?.bool(forKey: "engineRunning") == true {
+            let prevStart = neDefaults?.object(forKey: "engineStartTime") as? Date
+            let uptime = prevStart.map { Int(Date().timeIntervalSince($0)) } ?? -1
+            logger.warning("startTunnel: previous session did NOT call stopTunnel (likely jetsam), uptime=\(uptime)s")
+            NativeLogger.shared.log("WARN", "startTunnel: previous session ended without stopTunnel (jetsam?), uptime=\(uptime)s")
+        }
 
         let configJSON: String
         if let config = options?["configJSON"] as? String {
@@ -203,6 +216,10 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 try self?.engine?.start(configJSON, fd: Int(fd), cfg: engineCfg)
                 logger.info("engine.start() returned OK")
                 NativeLogger.shared.log("INFO", "startTunnel: engine started successfully")
+                let now = Date()
+                self?.engineStartTime = now
+                self?.neDefaults?.set(true, forKey: "engineRunning")
+                self?.neDefaults?.set(now, forKey: "engineStartTime")
                 self?.startMemoryMonitor()
                 completionHandler(nil)
             } catch {
@@ -253,18 +270,47 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 
     override func stopTunnel(with reason: NEProviderStopReason, completionHandler: @escaping () -> Void) {
-        logger.info("stopTunnel called, reason=\(reason.rawValue)")
-        NativeLogger.shared.log("INFO", "stopTunnel: reason=\(reason.rawValue)")
+        let reasonName = stopReasonName(reason)
+        let uptime = engineStartTime.map { Int(Date().timeIntervalSince($0)) } ?? -1
+        logger.info("stopTunnel: reason=\(reasonName)(\(reason.rawValue)) uptime=\(uptime)s")
+        NativeLogger.shared.log("INFO", "stopTunnel: reason=\(reasonName)(\(reason.rawValue)) uptime=\(uptime)s")
+        neDefaults?.set(false, forKey: "engineRunning")
         stopMemoryMonitor()
         do {
             try engine?.stop()
             NativeLogger.shared.log("INFO", "stopTunnel: engine stopped")
         } catch {
             logger.warning("engine.stop() failed: \(error)")
+            NativeLogger.shared.log("ERROR", "stopTunnel: engine.stop() failed: \(error)")
         }
         engine = nil
+        engineStartTime = nil
+        neDefaults?.removeObject(forKey: "engineStartTime")
         NativeLogger.shared.close()
         completionHandler()
+    }
+
+    private func stopReasonName(_ reason: NEProviderStopReason) -> String {
+        switch reason {
+        case .none: return "none"
+        case .userInitiated: return "userInitiated"
+        case .providerFailed: return "providerFailed"
+        case .noNetworkAvailable: return "noNetworkAvailable"
+        case .unrecoverableNetworkChange: return "unrecoverableNetworkChange"
+        case .providerDisabled: return "providerDisabled"
+        case .authenticationCanceled: return "authenticationCanceled"
+        case .configurationFailed: return "configurationFailed"
+        case .idleTimeout: return "idleTimeout"
+        case .configurationDisabled: return "configurationDisabled"
+        case .configurationRemoved: return "configurationRemoved"
+        case .superceded: return "superceded"
+        case .userLogout: return "userLogout"
+        case .userSwitch: return "userSwitch"
+        case .connectionFailed: return "connectionFailed"
+        case .sleep: return "sleep"
+        case .appUpdate: return "appUpdate"
+        @unknown default: return "unknown(\(reason.rawValue))"
+        }
     }
 
     // MARK: - Memory Monitoring
@@ -292,8 +338,11 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     /// Called by iOS when the NE process should reduce memory usage.
     /// Pauses the engine to release wire transport resources, then frees Go's heap.
     override func sleep(completionHandler: @escaping () -> Void) {
-        logger.info("sleep: pausing engine for memory conservation")
-        NativeLogger.shared.log("INFO", "sleep: pausing engine for memory conservation")
+        let sinceWake = lastWakeTime.map { String(format: "%.1f", Date().timeIntervalSince($0)) } ?? "n/a"
+        let mem = AppextMemorySnapshot()
+        logger.info("sleep: pausing engine (sinceWake=\(sinceWake)s, mem=\(mem, privacy: .public))")
+        NativeLogger.shared.log("INFO", "sleep: pausing engine (sinceWake=\(sinceWake)s)")
+        lastSleepTime = Date()
         stopMemoryMonitor()
         engine?.pause()
         AppextFreeMemory()
@@ -303,8 +352,10 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     /// Called by iOS when the NE process can resume normal operation.
     /// Wakes the engine so it re-establishes fresh wire connections.
     override func wake() {
-        logger.info("wake: resuming engine")
-        NativeLogger.shared.log("INFO", "wake: resuming engine")
+        let sinceSleep = lastSleepTime.map { String(format: "%.1f", Date().timeIntervalSince($0)) } ?? "n/a"
+        logger.info("wake: resuming engine (sinceSleep=\(sinceSleep)s)")
+        NativeLogger.shared.log("INFO", "wake: resuming engine (sinceSleep=\(sinceSleep)s)")
+        lastWakeTime = Date()
         engine?.wake()
     }
 
@@ -353,9 +404,10 @@ class EventBridge: NSObject, AppextEventHandlerProtocol {
         if state == "disconnected" {
             if let errorObj = parsed["error"] as? [String: Any] {
                 let code = errorObj["code"] as? Int ?? 0
+                let category = errorObj["category"] as? String ?? ""
                 let message = errorObj["message"] as? String ?? "unknown error"
-                logger.error("Disconnected with error: code=\(code) message=\(message, privacy: .public)")
-                NativeLogger.shared.log("ERROR", "onStatus: disconnected with error code=\(code) message=\(message)")
+                logger.error("Disconnected with error: code=\(code) category=\(category, privacy: .public) message=\(message, privacy: .public)")
+                NativeLogger.shared.log("ERROR", "onStatus: disconnected with error code=\(code) category=\(category) message=\(message)")
 
                 // Write structured error JSON to App Group so K2Plugin preserves the error code.
                 // Format: {"code": 503, "message": "server unreachable"}

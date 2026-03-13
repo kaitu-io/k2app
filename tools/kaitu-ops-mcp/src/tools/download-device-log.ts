@@ -12,7 +12,7 @@
  */
 
 import { z } from 'zod'
-import { gunzipSync } from 'node:zlib'
+import { gunzipSync, inflateRawSync } from 'node:zlib'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join, basename } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -91,8 +91,7 @@ export function extractZip(zipBuffer: Buffer): Array<{ name: string; data: Buffe
         data = Buffer.from(compressedData)
       } else if (compressionMethod === 8) {
         // Deflate — use raw inflate (no zlib/gzip header)
-        const { inflateRawSync } = require('node:zlib')
-        data = inflateRawSync(compressedData)
+        data = inflateRawSync(compressedData) as Buffer
       } else {
         // Unknown compression — skip
         offset = dataStart + compressedSize
