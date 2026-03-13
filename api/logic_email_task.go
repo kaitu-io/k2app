@@ -127,6 +127,12 @@ func getTargetUsersForEmailTask(ctx context.Context, filters UserFilter) ([]User
 		log.Infof(ctx, "[EDM] Filtering by retailer levels: %v", filters.RetailerLevels)
 	}
 
+	// ==================== Beta 订阅筛选（SQL层） ====================
+	if filters.BetaOptedIn != nil && *filters.BetaOptedIn {
+		query = query.Where("beta_opted_in = ?", true)
+		log.Infof(ctx, "[EDM] Filtering by beta_opted_in = true")
+	}
+
 	// ==================== 执行查询 ====================
 	var users []User
 	if err := query.Find(&users).Error; err != nil {

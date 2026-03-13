@@ -3,6 +3,7 @@ package center
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	db "github.com/wordgate/qtoolkit/db"
@@ -371,6 +372,33 @@ func api_update_user_language(c *gin.Context) {
 	Success(c, dataUser)
 }
 
+// api_update_user_beta_channel 更新用户 beta channel 订阅状态
+func api_update_user_beta_channel(c *gin.Context) {
+	userID := ReqUserID(c)
+
+	var req UpdateBetaChannelRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		Error(c, ErrorInvalidArgument, err.Error())
+		return
+	}
+
+	updates := map[string]any{
+		"beta_opted_in": req.OptedIn,
+	}
+	if req.OptedIn {
+		updates["beta_opted_at"] = time.Now().Unix()
+	}
+
+	if err := db.Get().Model(&User{}).Where(&User{ID: userID}).Updates(updates).Error; err != nil {
+		log.Errorf(c, "failed to update beta channel for user %d: %v", userID, err)
+		Error(c, ErrorSystemError, "failed to update beta channel")
+		return
+	}
+
+	log.Infof(c, "user %d updated beta channel: opted_in=%v", userID, req.OptedIn)
+	SuccessEmpty(c)
+}
+
 // SetPasswordRequest request body for setting user password
 type SetPasswordRequest struct {
 	Password        string `json:"password" binding:"required"`
@@ -472,5 +500,6 @@ func buildDataUserWithDevice(user *User, device *DataDevice) *DataUser {
 		Language:         user.Language,
 		IsRetailer:       user.IsRetailer != nil && *user.IsRetailer,
 		Roles:            user.Roles,
+		BetaOptedIn:     user.BetaOptedIn != nil && *user.BetaOptedIn,
 	}
 }

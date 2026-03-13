@@ -28,14 +28,35 @@ func mapVPNStatusString(_ rawValue: Int) -> String {
 }
 
 /// Semantic version comparison: true if remote > local.
+/// Handles -beta.N pre-release suffixes correctly.
 func isNewerVersion(_ remote: String, than local: String) -> Bool {
-    let r = remote.split(separator: ".").compactMap { Int($0) }
-    let l = local.split(separator: ".").compactMap { Int($0) }
-    for i in 0..<max(r.count, l.count) {
-        let rv = i < r.count ? r[i] : 0
-        let lv = i < l.count ? l[i] : 0
-        if rv > lv { return true }
-        if rv < lv { return false }
+    let (rBase, rPre) = splitVersion(remote)
+    let (lBase, lPre) = splitVersion(local)
+    let baseCmp = compareSegments(rBase, lBase)
+    if baseCmp != 0 { return baseCmp > 0 }
+    // Same base: stable (no pre-release) > beta (has pre-release)
+    if rPre == nil && lPre != nil { return true }
+    if rPre != nil && lPre == nil { return false }
+    if rPre == nil && lPre == nil { return false }
+    // Both have pre-release: compare segments
+    let rPreSegs = rPre!.split(separator: ".").map { Int($0) ?? 0 }
+    let lPreSegs = lPre!.split(separator: ".").map { Int($0) ?? 0 }
+    return compareSegments(rPreSegs, lPreSegs) > 0
+}
+
+private func splitVersion(_ v: String) -> (base: [Int], pre: String?) {
+    let parts = v.split(separator: "-", maxSplits: 1)
+    let base = parts[0].split(separator: ".").map { Int($0) ?? 0 }
+    let pre = parts.count > 1 ? String(parts[1]) : nil
+    return (base, pre)
+}
+
+private func compareSegments(_ a: [Int], _ b: [Int]) -> Int {
+    let maxLen = max(a.count, b.count)
+    for i in 0..<maxLen {
+        let av = i < a.count ? a[i] : 0
+        let bv = i < b.count ? b[i] : 0
+        if av != bv { return av < bv ? -1 : 1 }
     }
-    return false
+    return 0
 }

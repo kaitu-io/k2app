@@ -39,14 +39,6 @@ class K2Plugin : Plugin() {
 
     companion object {
         private const val TAG = "K2Plugin"
-        private val WEB_MANIFEST_ENDPOINTS = listOf(
-            "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/web/latest.json",
-            "https://d0.all7.cc/kaitu/web/latest.json"
-        )
-        private val ANDROID_MANIFEST_ENDPOINTS = listOf(
-            "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/android/latest.json",
-            "https://d0.all7.cc/kaitu/android/latest.json"
-        )
     }
 
     private var vpnService: VpnServiceBridge? = null
@@ -297,7 +289,7 @@ class K2Plugin : Plugin() {
     fun checkWebUpdate(call: PluginCall) {
         Thread {
             try {
-                val result = fetchManifest(WEB_MANIFEST_ENDPOINTS)
+                val result = fetchManifest(K2PluginUtils.webManifestEndpoints(getChannel()))
                 if (result == null) {
                     val ret = JSObject()
                     ret.put("available", false)
@@ -337,7 +329,7 @@ class K2Plugin : Plugin() {
     fun checkNativeUpdate(call: PluginCall) {
         Thread {
             try {
-                val result = fetchManifest(ANDROID_MANIFEST_ENDPOINTS)
+                val result = fetchManifest(K2PluginUtils.androidManifestEndpoints(getChannel()))
                 if (result == null) {
                     val ret = JSObject()
                     ret.put("available", false)
@@ -378,7 +370,7 @@ class K2Plugin : Plugin() {
             val webBackupDir = File(context.filesDir, "web-backup")
             try {
                 // Fetch manifest to get URL and hash
-                val result = fetchManifest(WEB_MANIFEST_ENDPOINTS)
+                val result = fetchManifest(K2PluginUtils.webManifestEndpoints(getChannel()))
                     ?: throw java.io.IOException("All web manifest endpoints failed")
                 val (manifest, baseURL) = result
                 val zipUrl = resolveDownloadURL(manifest.getString("url"), baseURL)
@@ -449,7 +441,7 @@ class K2Plugin : Plugin() {
         Thread {
             try {
                 // Fetch manifest to get APK URL
-                val result = fetchManifest(ANDROID_MANIFEST_ENDPOINTS)
+                val result = fetchManifest(K2PluginUtils.androidManifestEndpoints(getChannel()))
                     ?: throw java.io.IOException("All Android manifest endpoints failed")
                 val (manifest, baseURL) = result
                 val apkUrl = resolveDownloadURL(manifest.getString("url"), baseURL)
@@ -746,12 +738,43 @@ class K2Plugin : Plugin() {
         call.resolve(JSObject())
     }
 
+    @PluginMethod
+    fun getUpdateChannel(call: PluginCall) {
+        val ret = JSObject()
+        ret.put("channel", getChannel())
+        call.resolve(ret)
+    }
+
+    @PluginMethod
+    fun setUpdateChannel(call: PluginCall) {
+        val channel = call.getString("channel") ?: "stable"
+        val oldChannel = getChannel()
+        saveChannel(channel)
+        val ret = JSObject()
+        ret.put("channel", channel)
+        call.resolve(ret)
+        if (oldChannel == "beta" && channel == "stable") {
+            performAutoUpdateCheck(forceDowngrade = true)
+        } else {
+            performAutoUpdateCheck()
+        }
+    }
+
+    private fun getChannel(): String =
+        context.getSharedPreferences("k2_prefs", Context.MODE_PRIVATE)
+            .getString("update_channel", "stable") ?: "stable"
+
+    private fun saveChannel(channel: String) =
+        context.getSharedPreferences("k2_prefs", Context.MODE_PRIVATE)
+            .edit().putString("update_channel", channel).apply()
+
     // ── Auto-update check ───────────────────────────────────────────
 
-    private fun performAutoUpdateCheck() {
+    private fun performAutoUpdateCheck(forceDowngrade: Boolean = false) {
         try {
+            val channel = getChannel()
             // 1. Check native update first
-            val nativeResult = fetchManifest(ANDROID_MANIFEST_ENDPOINTS)
+            val nativeResult = fetchManifest(K2PluginUtils.androidManifestEndpoints(channel))
             if (nativeResult != null) {
                 val (manifest, baseURL) = nativeResult
                 val remoteVersion = manifest.getString("version")
@@ -761,7 +784,13 @@ class K2Plugin : Plugin() {
                 val localVersion = context.packageManager
                     .getPackageInfo(context.packageName, 0).versionName ?: "0.0.0"
 
-                if (isNewerVersion(remoteVersion, localVersion) && Build.VERSION.SDK_INT >= minAndroid) {
+                val shouldUpdate = if (forceDowngrade && localVersion.contains("-beta")) {
+                    remoteVersion != localVersion
+                } else {
+                    isNewerVersion(remoteVersion, localVersion)
+                }
+
+                if (shouldUpdate && Build.VERSION.SDK_INT >= minAndroid) {
                     // Download APK in background
                     val apkFile = File(context.cacheDir, "update-$remoteVersion.apk")
 
@@ -800,7 +829,7 @@ class K2Plugin : Plugin() {
             }
 
             // 2. No native update — check web OTA
-            val webResult = fetchManifest(WEB_MANIFEST_ENDPOINTS)
+            val webResult = fetchManifest(K2PluginUtils.webManifestEndpoints(channel))
             if (webResult != null) {
                 val (manifest, baseURL) = webResult
                 val remoteVersion = manifest.getString("version")

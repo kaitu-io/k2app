@@ -70,4 +70,12 @@ export class K2PluginWeb extends WebPlugin implements K2PluginInterface {
   async debugDump(): Promise<Record<string, unknown>> {
     throw this.unavailable('K2Plugin is not available on web');
   }
+
+  async getUpdateChannel(): Promise<{ channel: string }> {
+    throw this.unavailable('K2Plugin is not available on web');
+  }
+
+  async setUpdateChannel(_options: { channel: string }): Promise<{ channel: string }> {
+    throw this.unavailable('K2Plugin is not available on web');
+  }
 }

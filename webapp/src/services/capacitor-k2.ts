@@ -186,6 +186,22 @@ export async function injectCapacitorGlobals(): Promise<void> {
     },
   };
 
+  // Android: initialize channel from native + provide setChannel
+  if (Capacitor.getPlatform() === 'android') {
+    try {
+      const channelResult = await K2Plugin.getUpdateChannel();
+      updater.channel = channelResult.channel as 'stable' | 'beta';
+    } catch {
+      // getUpdateChannel not available (old plugin version), default stable
+    }
+    updater.setChannel = async (channel: 'stable' | 'beta') => {
+      await K2Plugin.setUpdateChannel({ channel });
+      updater.channel = channel;
+      return channel;
+    };
+  }
+  // iOS: no setChannel — beta is API-only subscription
+
   // Build _platform: mobile capabilities
   const capacitorPlatform: IPlatform = {
     os: platform,

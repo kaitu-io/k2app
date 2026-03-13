@@ -81,6 +81,7 @@ type DataUser struct {
 	RetailerConfig   *DataRetailerConfig  `json:"retailerConfig,omitempty"` // 分销商配置（仅管理员可见）
 	Wallet           *DataWallet          `json:"wallet,omitempty"`         // 钱包信息（仅管理员可见）
 	Roles            uint64               `json:"roles"`                    // 角色位掩码
+	BetaOptedIn      bool                 `json:"betaOptedIn"`              // 是否订阅 beta
 }
 
 // DataRetailerConfig 分销商配置数据结构
@@ -623,6 +624,9 @@ type UserFilter struct {
 	// - 4: L4 合伙人
 	// 空数组表示不筛选分销商等级
 	RetailerLevels []int `json:"retailerLevels"`
+
+	// Beta 订阅筛选
+	BetaOptedIn *bool `json:"betaOptedIn,omitempty"` // true=仅beta用户, nil=不筛选
 }
 
 
@@ -631,6 +635,13 @@ type UserFilter struct {
 // UpdateLanguageRequest 更新用户语言偏好请求
 type UpdateLanguageRequest struct {
 	Language string `json:"language" binding:"required"` // 语言代码：en-US, zh-CN, ja 等
+}
+
+// ========================= Beta Channel 相关类型定义 =========================
+
+// UpdateBetaChannelRequest 更新用户 beta channel 订阅状态
+type UpdateBetaChannelRequest struct {
+	OptedIn bool `json:"opted_in"`
 }
 
 // ========================= 钱包相关类型定义 =========================

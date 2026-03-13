@@ -362,6 +362,7 @@ export interface DataUser {
   deviceCount: number;
   isRetailer?: boolean; // 是否为分销商
   retailerConfig?: DataRetailerConfig; // 分销商配置
+  betaOptedIn?: boolean;
 }
 
 // 分销商配置更新请求

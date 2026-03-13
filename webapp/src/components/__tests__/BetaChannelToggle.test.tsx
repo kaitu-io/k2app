@@ -23,28 +23,45 @@ vi.mock('@mui/material', async () => {
   };
 });
 
+const mockCloudApiRequest = vi.fn().mockResolvedValue({ code: 0 });
+vi.mock('../../services/cloud-api', () => ({
+  cloudApi: {
+    request: (...args: any[]) => mockCloudApiRequest(...args),
+  },
+}));
+
+const mockUseUser = vi.fn().mockReturnValue({ user: null, loading: false });
+vi.mock('../../hooks/useUser', () => ({
+  useUser: () => mockUseUser(),
+}));
+
 describe('BetaChannelToggle', () => {
   let originalPlatform: any;
 
   beforeEach(() => {
     originalPlatform = window._platform;
+    mockCloudApiRequest.mockResolvedValue({ code: 0 });
   });
 
   afterEach(() => {
     (window as any)._platform = originalPlatform;
+    vi.clearAllMocks();
   });
 
-  it('renders nothing when updater.setChannel is not available', () => {
+  it('renders nothing when user is not logged in', () => {
+    mockUseUser.mockReturnValue({ user: null, loading: false });
     (window as any)._platform = {
-      updater: { channel: 'stable', isUpdateReady: false, updateInfo: null, isChecking: false, error: null, applyUpdateNow: vi.fn() },
+      updater: { channel: 'stable', isUpdateReady: false, updateInfo: null, isChecking: false, error: null, applyUpdateNow: vi.fn(), setChannel: vi.fn() },
     };
 
     const { container } = render(<BetaChannelToggle />);
     expect(container.innerHTML).toBe('');
   });
 
-  it('renders toggle when setChannel is available', () => {
+  it('renders toggle on desktop with setChannel', () => {
+    mockUseUser.mockReturnValue({ user: { uuid: '1', betaOptedIn: false }, loading: false });
     (window as any)._platform = {
+      os: 'macos',
       updater: {
         channel: 'stable',
         isUpdateReady: false,
@@ -60,8 +77,28 @@ describe('BetaChannelToggle', () => {
     expect(screen.getByRole('checkbox')).toBeDefined();
   });
 
-  it('shows switch unchecked when channel is stable', () => {
+  it('renders toggle on iOS without setChannel', () => {
+    mockUseUser.mockReturnValue({ user: { uuid: '1', betaOptedIn: false }, loading: false });
     (window as any)._platform = {
+      os: 'ios',
+      updater: {
+        channel: 'stable',
+        isUpdateReady: false,
+        updateInfo: null,
+        isChecking: false,
+        error: null,
+        applyUpdateNow: vi.fn(),
+      },
+    };
+
+    render(<BetaChannelToggle />);
+    expect(screen.getByRole('checkbox')).toBeDefined();
+  });
+
+  it('renders toggle on Android with setChannel', () => {
+    mockUseUser.mockReturnValue({ user: { uuid: '1', betaOptedIn: false }, loading: false });
+    (window as any)._platform = {
+      os: 'android',
       updater: {
         channel: 'stable',
         isUpdateReady: false,
@@ -74,30 +111,31 @@ describe('BetaChannelToggle', () => {
     };
 
     render(<BetaChannelToggle />);
-    const checkbox = screen.getByRole('checkbox') as HTMLInputElement;
-    expect(checkbox.checked).toBe(false);
+    expect(screen.getByRole('checkbox')).toBeDefined();
   });
 
-  it('shows switch checked when channel is beta', () => {
+  it('shows iOS-specific description on iOS', () => {
+    mockUseUser.mockReturnValue({ user: { uuid: '1', betaOptedIn: false }, loading: false });
     (window as any)._platform = {
+      os: 'ios',
       updater: {
-        channel: 'beta',
+        channel: 'stable',
         isUpdateReady: false,
         updateInfo: null,
         isChecking: false,
         error: null,
         applyUpdateNow: vi.fn(),
-        setChannel: vi.fn(),
       },
     };
 
     render(<BetaChannelToggle />);
-    const checkbox = screen.getByRole('checkbox') as HTMLInputElement;
-    expect(checkbox.checked).toBe(true);
+    expect(screen.getByText('betaProgram.descriptionIos')).toBeDefined();
   });
 
-  it('opens confirmation dialog on toggle click', () => {
+  it('shows standard description on non-iOS', () => {
+    mockUseUser.mockReturnValue({ user: { uuid: '1', betaOptedIn: false }, loading: false });
     (window as any)._platform = {
+      os: 'macos',
       updater: {
         channel: 'stable',
         isUpdateReady: false,
@@ -110,15 +148,14 @@ describe('BetaChannelToggle', () => {
     };
 
     render(<BetaChannelToggle />);
-    fireEvent.click(screen.getByRole('checkbox'));
-
-    // Dialog should appear
-    expect(screen.getByRole('dialog')).toBeDefined();
+    expect(screen.getByText('betaProgram.description')).toBeDefined();
   });
 
-  it('calls setChannel(beta) on confirm when currently stable', async () => {
+  it('calls setChannel AND API on desktop enable', async () => {
     const mockSetChannel = vi.fn().mockResolvedValue('beta');
+    mockUseUser.mockReturnValue({ user: { uuid: '1', betaOptedIn: false }, loading: false });
     (window as any)._platform = {
+      os: 'macos',
       updater: {
         channel: 'stable',
         isUpdateReady: false,
@@ -133,7 +170,6 @@ describe('BetaChannelToggle', () => {
     render(<BetaChannelToggle />);
     fireEvent.click(screen.getByRole('checkbox'));
 
-    // Click the confirm button in dialog
     const buttons = screen.getAllByRole('button');
     const confirmButton = buttons.find(b => b.textContent === 'betaProgram.enableConfirm');
     fireEvent.click(confirmButton!);
@@ -141,19 +177,23 @@ describe('BetaChannelToggle', () => {
     await waitFor(() => {
       expect(mockSetChannel).toHaveBeenCalledWith('beta');
     });
+
+    await waitFor(() => {
+      expect(mockCloudApiRequest).toHaveBeenCalledWith('PUT', '/api/user/beta-channel', { opted_in: true });
+    });
   });
 
-  it('calls setChannel(stable) on confirm when currently beta', async () => {
-    const mockSetChannel = vi.fn().mockResolvedValue('stable');
+  it('calls only API (no setChannel) on iOS enable', async () => {
+    mockUseUser.mockReturnValue({ user: { uuid: '1', betaOptedIn: false }, loading: false });
     (window as any)._platform = {
+      os: 'ios',
       updater: {
-        channel: 'beta',
+        channel: 'stable',
         isUpdateReady: false,
         updateInfo: null,
         isChecking: false,
         error: null,
         applyUpdateNow: vi.fn(),
-        setChannel: mockSetChannel,
       },
     };
 
@@ -161,17 +201,23 @@ describe('BetaChannelToggle', () => {
     fireEvent.click(screen.getByRole('checkbox'));
 
     const buttons = screen.getAllByRole('button');
-    const confirmButton = buttons.find(b => b.textContent === 'betaProgram.disableConfirm');
+    const confirmButton = buttons.find(b => b.textContent === 'betaProgram.enableConfirm');
     fireEvent.click(confirmButton!);
 
     await waitFor(() => {
-      expect(mockSetChannel).toHaveBeenCalledWith('stable');
+      expect(mockCloudApiRequest).toHaveBeenCalledWith('PUT', '/api/user/beta-channel', { opted_in: true });
     });
+
+    // No setChannel on iOS
+    expect((window as any)._platform.updater.setChannel).toBeUndefined();
   });
 
-  it('closes dialog without switching on cancel', async () => {
-    const mockSetChannel = vi.fn();
+  it('API failure does not block local channel switch', async () => {
+    const mockSetChannel = vi.fn().mockResolvedValue('beta');
+    mockCloudApiRequest.mockRejectedValue(new Error('network error'));
+    mockUseUser.mockReturnValue({ user: { uuid: '1', betaOptedIn: false }, loading: false });
     (window as any)._platform = {
+      os: 'macos',
       updater: {
         channel: 'stable',
         isUpdateReady: false,
@@ -186,10 +232,35 @@ describe('BetaChannelToggle', () => {
     render(<BetaChannelToggle />);
     fireEvent.click(screen.getByRole('checkbox'));
 
-    // Click cancel — t('common:common.cancel', '取消') returns fallback '取消'
-    const cancelButton = screen.getAllByRole('button').find(b => b.textContent === '取消');
-    fireEvent.click(cancelButton!);
+    const buttons = screen.getAllByRole('button');
+    const confirmButton = buttons.find(b => b.textContent === 'betaProgram.enableConfirm');
+    fireEvent.click(confirmButton!);
 
-    expect(mockSetChannel).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(mockSetChannel).toHaveBeenCalledWith('beta');
+    });
+
+    // Switch still checked despite API failure
+    const checkbox = screen.getByRole('checkbox') as HTMLInputElement;
+    expect(checkbox.checked).toBe(true);
+  });
+
+  it('uses user.betaOptedIn for initial state on iOS', () => {
+    mockUseUser.mockReturnValue({ user: { uuid: '1', betaOptedIn: true }, loading: false });
+    (window as any)._platform = {
+      os: 'ios',
+      updater: {
+        channel: 'stable',
+        isUpdateReady: false,
+        updateInfo: null,
+        isChecking: false,
+        error: null,
+        applyUpdateNow: vi.fn(),
+      },
+    };
+
+    render(<BetaChannelToggle />);
+    const checkbox = screen.getByRole('checkbox') as HTMLInputElement;
+    expect(checkbox.checked).toBe(true);
   });
 });

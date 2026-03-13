@@ -293,6 +293,7 @@ export default function EDMPage() {
         expireDays: "",
         specificUsers: [],
         retailerLevels: [],
+        betaOptedIn: undefined,
       };
       handleFiltersUpdate(emptyFilters);
     }
@@ -772,6 +773,28 @@ export default function EDMPage() {
                             </div>
                           </div>
                         ))}
+                      </div>
+                    </div>
+
+                    {/* Beta 订阅筛选 */}
+                    <div>
+                      <Label className="text-sm font-medium">{"Beta 测试用户"}</Label>
+                      <p className="text-xs text-muted-foreground mb-3">{"筛选 Beta 频道订阅用户"}</p>
+                      <div className="flex items-start space-x-2">
+                        <Checkbox
+                          id="beta-opted-in"
+                          checked={formData.userFilters.betaOptedIn === true}
+                          onCheckedChange={(checked) => {
+                            handleFilterChange('betaOptedIn', checked ? true : undefined);
+                          }}
+                          className="mt-1"
+                        />
+                        <div className="flex-1">
+                          <Label htmlFor="beta-opted-in" className="text-sm font-medium cursor-pointer">
+                            {"仅 Beta 订阅用户"}
+                          </Label>
+                          <p className="text-xs text-muted-foreground">{"只发送给已订阅 Beta 频道的用户"}</p>
+                        </div>
                       </div>
                     </div>
 
