@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"net/netip"
 	"os"
 	"strings"
 	"sync"
@@ -201,6 +202,14 @@ func (t *ClientTunnel) HandleTCP(conn net.Conn, dest string) {
 	defer untrack()
 
 	host, port, _ := net.SplitHostPort(dest)
+
+	// Block IPv6 destinations: k2 server doesn't support IPv6,
+	// fast-fail so Happy Eyeballs falls back to IPv4.
+	if addr, err := netip.ParseAddr(host); err == nil && addr.Is6() {
+		slog.Debug("tunnel: reject IPv6 dest", "dest", dest)
+		return // defer conn.Close() → gVisor sends RST
+	}
+
 	action := t.route(dest)
 
 	var earlyData []byte // peeked bytes sent as wire early data for PROXY path
@@ -300,6 +309,17 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 	defer untrack()
 
 	host, port, _ := net.SplitHostPort(dest)
+
+	// Block IPv6 destinations: k2 server doesn't support IPv6,
+	// fast-fail so Happy Eyeballs falls back to IPv4.
+	if addr, err := netip.ParseAddr(host); err == nil && addr.Is6() {
+		slog.Debug("tunnel: reject IPv6 dest", "dest", dest)
+		if r, ok := conn.(provider.UDPRejecter); ok {
+			r.RejectHandshake()
+		}
+		return
+	}
+
 	action := t.route(dest)
 	slog.Debug("tunnel: route UDP", "dest", dest, "action", action)
 
