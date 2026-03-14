@@ -120,7 +120,7 @@ docs/plans/          Architecture design docs
 - **`.gitignore` for native platforms**: Never ignore entire source directories (`mobile/ios/`, `mobile/android/`). Only ignore build artifacts.
 - **NodeNext imports**: `tools/kaitu-ops-mcp/` uses `"module": "NodeNext"`. All relative imports must use `.js` extension in `.ts` source.
 - **MCP tools save-to-file**: `download_device_log` saves to `/tmp/kaitu-device-logs/` and returns file path + metadata (no content). `exec_on_node` saves stdout > 4k chars to `/tmp/kaitu-exec-output/`. Use Read tool to inspect files.
-- **Lazy wire connection**: `engine.Start()` "connected" means TUN+routes are ready. Wire handshake to server happens on first app dial.
+- **Wire handshake probe**: `engine.Start()` step 4.5 completes QUIC/TCP-WS handshake (client↔server) before creating TUN. "connected" means handshake + TUN + routes are all ready. The cached wire connection is reused by first app dial (fast path).
 - **Go json.Marshal escapes `&` as `\u0026`**: Tests asserting raw JSON strings with URLs will fail. Unmarshal to `map[string]any` and assert on deserialized values.
 - **Docker on Apple Silicon**: Always `--platform linux/amd64` for server images. Go binary needs `GOARCH=amd64`.
 - **macOS PKG install order**: Preinstall runs OLD binary, postinstall runs NEW. Always `launchctl unload` before overwriting plist.
@@ -160,7 +160,7 @@ docs/plans/          Architecture design docs
 - **LoginDialog** — Global modal for all auth flows (no `/login` route)
 - **Center** — Backend API service (`api/`): auth, user management, orders, tunnels, cloud management
 - **transformStatus()** — Bridge normalization: `"stopped"`→`"disconnected"`, synthesizes `"error"` from `disconnected + lastError`. Handles both structured `{code, message}` and legacy string errors.
-- **EngineError** — Structured error type (`k2/engine/error.go`): `{Code int, Message string}`. HTTP-aligned codes: 400 (BadConfig), 401 (AuthRejected), 403 (Forbidden), 408 (Timeout), 502 (ProtocolError), 503 (ServerUnreachable), 570 (ConnectionFatal).
+- **EngineError** — Structured error type (`k2/engine/error.go`): `{Code int, Message string}`. HTTP-aligned codes: 101 (NetworkUnavailable), 400 (BadConfig), 401 (AuthRejected), 402 (PaymentRequired), 403 (Forbidden), 408 (Timeout), 502 (ProtocolError), 503 (ServerUnreachable), 570 (ConnectionFatal).
 - **OnNetworkChanged()** — gomobile-exported method that resets wire connections after network change. Emits transient `"reconnecting"` then `"connected"`. State stays `StateConnected`.
 
 ## Layer Docs (read on demand)
