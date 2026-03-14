@@ -364,7 +364,9 @@ func (h *ProxyHandler) handleDNSUDP(conn net.PacketConn, addr string) {
 	}
 	udpBufPool.Put(bp)
 
-	conn.Close()
+	// conn.Close() handled by defer at top of function.
+	// Explicit close here would be redundant (wire PacketConn uses sync.Once,
+	// so it's safe but unnecessary).
 	<-done
 	slog.Debug("server: DNS UDP done", "addr", addr)
 }

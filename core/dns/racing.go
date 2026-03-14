@@ -27,7 +27,7 @@ type serverHealth struct {
 	latencyNs       atomic.Int64 // EWMA nanoseconds, used by pick() for ranking
 	lastSuccess     atomic.Int64 // UnixNano, for observability (not used in selection)
 	lastProbe       atomic.Int64 // UnixNano, rate-limits degraded server probing
-	probeAttempts   atomic.Int32 // consecutive failed probes, drives exponential backoff
+	probeAttempts   atomic.Int32 // incremented on probe schedule, reset to 0 on success; drives exponential backoff
 }
 
 func (s *serverHealth) recordSuccess(latencyNs int64) {
