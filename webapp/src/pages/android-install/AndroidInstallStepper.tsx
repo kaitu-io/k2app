@@ -46,35 +46,61 @@ interface DeviceInfo {
   model: string;
 }
 
+interface DetectResponse {
+  adb_ready: boolean;
+  devices: DeviceInfo[];
+  installing_driver: boolean;
+}
+
 export default function AndroidInstallStepper({ name, icon, desc, apkUrl }: Props) {
   const { t } = useTranslation();
   const [activeStep, setActiveStep] = useState(0);
   const [selectedBrand, setSelectedBrand] = useState<string | null>(null);
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
   const [detecting, setDetecting] = useState(false);
+  const [installingDriver, setInstallingDriver] = useState(false);
   const [installStatus, setInstallStatus] = useState<InstallStatus>({
     phase: 'idle', progress: 0, version: '', error: '',
   });
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const detectPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const detectingRef = useRef(false);
 
-  // Step 3: Detect devices
+  // Step 2: Detect devices with concurrency guard
   const detectDevices = useCallback(async () => {
-    if (!window._k2) return;
+    if (!window._k2 || detectingRef.current) return;
+    detectingRef.current = true;
     setDetecting(true);
     try {
-      const resp = await window._k2.run<{ adb_ready: boolean; devices: DeviceInfo[] }>('adb-detect', {});
+      const resp = await window._k2.run<DetectResponse>('adb-detect', {});
       if (resp.code === 0 && resp.data) {
         setDevices(resp.data.devices || []);
+        setInstallingDriver(resp.data.installing_driver || false);
         if (resp.data.devices?.length > 0) {
-          setActiveStep(2); // Auto-advance to install step
+          stopDetectPolling();
+          setActiveStep(2);
         }
       }
     } catch (e) {
       console.error('detect failed', e);
     } finally {
+      detectingRef.current = false;
       setDetecting(false);
     }
   }, []);
+
+  const stopDetectPolling = useCallback(() => {
+    if (detectPollRef.current) {
+      clearInterval(detectPollRef.current);
+      detectPollRef.current = null;
+    }
+  }, []);
+
+  const startDetectPolling = useCallback(() => {
+    stopDetectPolling();
+    detectDevices();
+    detectPollRef.current = setInterval(detectDevices, 3000);
+  }, [detectDevices, stopDetectPolling]);
 
   // Step 4: Start install
   const startInstall = useCallback(async () => {
@@ -100,10 +126,21 @@ export default function AndroidInstallStepper({ name, icon, desc, apkUrl }: Prop
     }
   }, [devices, apkUrl]);
 
-  // Cleanup polling on unmount
+  // Auto-poll when on Step 2
+  useEffect(() => {
+    if (activeStep === 1) {
+      startDetectPolling();
+    } else {
+      stopDetectPolling();
+    }
+    return stopDetectPolling;
+  }, [activeStep, startDetectPolling, stopDetectPolling]);
+
+  // Cleanup all polling on unmount
   useEffect(() => {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
+      if (detectPollRef.current) clearInterval(detectPollRef.current);
     };
   }, []);
 
@@ -186,7 +223,7 @@ export default function AndroidInstallStepper({ name, icon, desc, apkUrl }: Prop
       ),
     },
 
-    // Step 2: USB Connect & Authorize
+    // Step 2: USB Connect & Authorize (auto-polls every 3s)
     {
       label: t('purchase:androidInstall.step2Title'),
       content: (
@@ -198,19 +235,16 @@ export default function AndroidInstallStepper({ name, icon, desc, apkUrl }: Prop
             {t('purchase:androidInstall.usbTrustPrompt')}
           </Typography>
 
-          <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
-            <Button variant="text" onClick={() => setActiveStep(0)}>
-              {t('common:common.back', '上一步')}
-            </Button>
-            <Button
-              variant="outlined"
-              startIcon={detecting ? <CircularProgress size={16} /> : <UsbIcon />}
-              onClick={detectDevices}
-              disabled={detecting}
-            >
-              {detecting ? t('purchase:androidInstall.detectingDevice') : t('purchase:androidInstall.detectingDevice').replace('...', '')}
-            </Button>
-          </Stack>
+          {devices.length === 0 && (
+            <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 2 }}>
+              <CircularProgress size={20} />
+              <Typography variant="body2" color="text.secondary">
+                {installingDriver
+                  ? t('purchase:androidInstall.installingDriver')
+                  : t('purchase:androidInstall.scanningDevice')}
+              </Typography>
+            </Stack>
+          )}
 
           {devices.length > 0 && (
             <Stack spacing={1} sx={{ mb: 2 }}>
@@ -226,11 +260,22 @@ export default function AndroidInstallStepper({ name, icon, desc, apkUrl }: Prop
             </Stack>
           )}
 
-          {devices.length === 0 && !detecting && (
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              {t('purchase:androidInstall.noDeviceHint')}
-            </Typography>
-          )}
+          <Stack direction="row" spacing={1}>
+            <Button variant="text" onClick={() => setActiveStep(0)}>
+              {t('common:common.back', '上一步')}
+            </Button>
+            {devices.length === 0 && (
+              <Button
+                variant="outlined"
+                startIcon={<UsbIcon />}
+                onClick={detectDevices}
+                disabled={detecting}
+                size="small"
+              >
+                {t('purchase:androidInstall.rescan')}
+              </Button>
+            )}
+          </Stack>
         </Box>
       ),
     },
