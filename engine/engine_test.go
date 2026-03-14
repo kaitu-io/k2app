@@ -311,8 +311,8 @@ func TestEngineStart_WireProbeFailure(t *testing.T) {
 	}
 
 	// Error should originate from wire probe.
-	if !strings.Contains(err.Error(), "wire probe") {
-		t.Errorf("error = %q, want to contain 'wire probe'", err.Error())
+	if !strings.Contains(err.Error(), "wire handshake") {
+		t.Errorf("error = %q, want to contain 'wire handshake'", err.Error())
 	}
 
 	// EventHandler should receive classified error.
