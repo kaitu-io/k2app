@@ -45,3 +45,9 @@ webapp/test-results/
 
 # adb platform-tools (Google original zips, managed via S3)
 tools/adb-platform-tools/*.zip
+
+# OS-generated files
+Thumbs.db
+
+# Capacitor plugin build cache
+mobile/plugins/k2-plugin/android/.gradle/

@@ -15,19 +15,7 @@ export interface BrandGuide {
 const BASE = '/images/adb-guide';
 
 export const brandGuides: BrandGuide[] = [
-  {
-    id: 'huawei',
-    nameKey: 'brandHuawei',
-    steps: [
-      { image: `${BASE}/huawei/01-settings.webp`, titleKey: 'huawei_step1' },
-      { image: `${BASE}/huawei/02-about-phone.webp`, titleKey: 'huawei_step2' },
-      { image: `${BASE}/huawei/03-system-update.webp`, titleKey: 'huawei_step3' },
-      { image: `${BASE}/huawei/04-developer-options-entry.webp`, titleKey: 'huawei_step4' },
-      { image: `${BASE}/huawei/05-developer-options.webp`, titleKey: 'huawei_step5' },
-      { image: `${BASE}/huawei/06-usb-debugging.webp`, titleKey: 'huawei_step6' },
-    ],
-  },
-  {
+{
     id: 'xiaomi',
     nameKey: 'brandXiaomi',
     steps: [
