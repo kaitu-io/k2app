@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"runtime"
 	"sync"
 
 	"github.com/electricbubble/gadb"
@@ -12,9 +13,10 @@ import (
 // AndroidHelper manages ADB-based Android app installation.
 // It handles adb binary download, device detection, and APK installation.
 type AndroidHelper struct {
-	mu      sync.Mutex
-	adbPath string       // path to cached adb binary
-	state   InstallState // current install progress
+	mu             sync.Mutex
+	adbPath        string       // path to cached adb binary
+	state          InstallState // current install progress
+	driverScanDone bool         // pnputil scan triggered once per daemon lifetime
 }
 
 // InstallState tracks the progress of an APK installation.
@@ -65,35 +67,41 @@ type deviceInfo struct {
 
 // handleDetect returns adb readiness and connected device list.
 // When adb is not yet prepared, it triggers preparation first.
+// On Windows, triggers pnputil driver scan when no devices are found.
 func (h *AndroidHelper) handleDetect(w http.ResponseWriter) {
-	// Try to prepare adb (no-op if already cached).
 	if err := h.prepareAdb(); err != nil {
 		slog.Warn("helper: adb prepare failed during detect", "error", err)
 		writeJSON(w, Response{
 			Code: 0,
 			Data: map[string]any{
-				"adb_ready": false,
-				"devices":   []deviceInfo{},
+				"adb_ready":         false,
+				"devices":           []deviceInfo{},
+				"installing_driver": false,
 			},
 		})
 		return
 	}
 
-	// Connect to adb server via gadb TCP client.
 	devices := h.listDevices()
+	installingDriver := false
+
+	if len(devices) == 0 && runtime.GOOS == "windows" {
+		installingDriver = h.triggerDriverScan()
+	}
 
 	writeJSON(w, Response{
 		Code: 0,
 		Data: map[string]any{
-			"adb_ready": true,
-			"devices":   devices,
+			"adb_ready":         true,
+			"devices":           devices,
+			"installing_driver": installingDriver,
 		},
 	})
 }
 
 // listDevices queries the adb server for connected devices via gadb.
 func (h *AndroidHelper) listDevices() []deviceInfo {
-	client, err := gadb.NewClient()
+	client, err := gadb.NewClientWith("localhost", adbServerPort)
 	if err != nil {
 		slog.Warn("helper: gadb client failed", "error", err)
 		return []deviceInfo{}

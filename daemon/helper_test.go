@@ -56,6 +56,9 @@ func TestHandleHelperDetectReturnsResponse(t *testing.T) {
 	if _, exists := data["adb_ready"]; !exists {
 		t.Fatal("expected adb_ready field in response")
 	}
+	if _, exists := data["installing_driver"]; !exists {
+		t.Fatal("expected installing_driver field in response")
+	}
 }
 
 func TestHandleHelperStatusReturnsIdleByDefault(t *testing.T) {

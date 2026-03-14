@@ -13,11 +13,16 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/electricbubble/gadb"
 )
+
+// adbServerPort is the port used for our private adb server instance.
+// We use 5038 instead of the default 5037 to avoid conflicts with Android Studio.
+const adbServerPort = 5038
 
 // androidEndpoints is the CDN fallback list for Android-related downloads.
 // Both tools/tools.json and latest.json are fetched from these endpoints in order.
@@ -57,79 +62,6 @@ func (pr *progressReader) Read(p []byte) (n int, err error) {
 	return
 }
 
-// findAdbCandidates returns a list of adb binary paths to try, checking
-// system PATH, well-known SDK locations, and Homebrew paths.
-// When running as root (daemon), os.UserHomeDir() returns /var/root,
-// so we also check common user home directories.
-func findAdbCandidates() []string {
-	var candidates []string
-	adbName := "adb"
-	if runtime.GOOS == "windows" {
-		adbName = "adb.exe"
-	}
-
-	// 1. PATH lookup
-	if p, err := exec.LookPath(adbName); err == nil {
-		candidates = append(candidates, p)
-	}
-
-	// 2. Well-known SDK locations
-	var homes []string
-	if h, err := os.UserHomeDir(); err == nil {
-		homes = append(homes, h)
-	}
-	// When running as root on macOS, also check /Users/*
-	if runtime.GOOS == "darwin" && os.Getuid() == 0 {
-		entries, _ := os.ReadDir("/Users")
-		for _, e := range entries {
-			if e.IsDir() && e.Name() != "Shared" && !strings.HasPrefix(e.Name(), ".") {
-				homes = append(homes, filepath.Join("/Users", e.Name()))
-			}
-		}
-	}
-
-	for _, home := range homes {
-		sdkPaths := []string{
-			filepath.Join(home, "Library", "Android", "sdk", "platform-tools", adbName),      // macOS default
-			filepath.Join(home, "Android", "Sdk", "platform-tools", adbName),                  // Linux default
-			filepath.Join(home, "AppData", "Local", "Android", "Sdk", "platform-tools", adbName), // Windows default
-		}
-		for _, p := range sdkPaths {
-			if _, err := os.Stat(p); err == nil {
-				candidates = append(candidates, p)
-			}
-		}
-	}
-
-	// 3. Homebrew paths (macOS)
-	if runtime.GOOS == "darwin" {
-		brewPaths := []string{
-			"/opt/homebrew/bin/adb",  // Apple Silicon
-			"/usr/local/bin/adb",     // Intel
-		}
-		for _, p := range brewPaths {
-			if _, err := os.Stat(p); err == nil {
-				candidates = append(candidates, p)
-			}
-		}
-	}
-
-	// Deduplicate
-	seen := make(map[string]bool)
-	var unique []string
-	for _, c := range candidates {
-		if !seen[c] {
-			seen[c] = true
-			unique = append(unique, c)
-		}
-	}
-
-	if len(unique) > 0 {
-		slog.Info("helper: adb candidates found", "paths", unique)
-	}
-	return unique
-}
-
 // adbCacheDir returns the directory for cached adb tools.
 func adbCacheDir(version string) string {
 	return filepath.Join(cacheDir(), "tools", "adb-"+version)
@@ -141,7 +73,7 @@ func apkCacheDir() string {
 }
 
 // prepareAdb ensures the adb binary is available and the server is running.
-// It tries system adb first, then downloads from CDN.
+// It downloads adb from CDN and starts on port 5038 to avoid conflicts with other adb instances.
 func (h *AndroidHelper) prepareAdb() error {
 	h.mu.Lock()
 	if h.adbPath != "" {
@@ -150,13 +82,6 @@ func (h *AndroidHelper) prepareAdb() error {
 		return nil
 	}
 	h.mu.Unlock()
-
-	// Try system adb first (e.g. Android Studio, Homebrew)
-	for _, candidate := range findAdbCandidates() {
-		if err := h.startAdbServer(candidate); err == nil {
-			return nil
-		}
-	}
 
 	// Fetch tools.json to find version and download URL
 	manifest, err := fetchToolsManifest()
@@ -207,20 +132,17 @@ func (h *AndroidHelper) prepareAdb() error {
 	return h.startAdbServer(adbPath)
 }
 
-// startAdbServer starts the adb server and stores the path.
+// startAdbServer starts the adb server on port 5038 and stores the path.
 func (h *AndroidHelper) startAdbServer(adbPath string) error {
-	// Try connecting to existing adb server first (e.g. Android Studio)
-	// If that fails, start our own server
-
-	// Try to start/connect
-	cmd := exec.Command(adbPath, "start-server")
+	port := strconv.Itoa(adbServerPort)
+	cmd := exec.Command(adbPath, "-P", port, "start-server")
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 	if err := cmd.Run(); err != nil {
 		slog.Warn("helper: adb start-server failed", "error", err)
 		// Try kill-server then start again (stale server)
-		exec.Command(adbPath, "kill-server").Run()
-		if err := exec.Command(adbPath, "start-server").Run(); err != nil {
+		exec.Command(adbPath, "-P", port, "kill-server").Run()
+		if err := exec.Command(adbPath, "-P", port, "start-server").Run(); err != nil {
 			return fmt.Errorf("start adb server: %w", err)
 		}
 	}
@@ -229,8 +151,23 @@ func (h *AndroidHelper) startAdbServer(adbPath string) error {
 	h.adbPath = adbPath
 	h.mu.Unlock()
 
-	slog.Info("helper: adb server ready", "path", adbPath)
+	slog.Info("helper: adb server ready", "path", adbPath, "port", adbServerPort)
 	return nil
+}
+
+// stopAdbServer kills the adb server on port 5038 during daemon shutdown.
+func (h *AndroidHelper) stopAdbServer() {
+	h.mu.Lock()
+	adbPath := h.adbPath
+	h.mu.Unlock()
+	if adbPath == "" {
+		return
+	}
+	cmd := exec.Command(adbPath, "-P", strconv.Itoa(adbServerPort), "kill-server")
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
+	_ = cmd.Run()
+	slog.Info("helper: adb server stopped", "port", adbServerPort)
 }
 
 // fetchToolsManifest fetches tools/tools.json from CDN with fallback.
@@ -571,7 +508,7 @@ func (h *AndroidHelper) doInstall(serial, apkURL string) {
 	defer os.Remove(apkPath)
 
 	// Find target device
-	client, err := gadb.NewClient()
+	client, err := gadb.NewClientWith("localhost", adbServerPort)
 	if err != nil {
 		h.setError(fmt.Sprintf("connect to adb: %s", err))
 		return
@@ -663,4 +600,28 @@ func resolveDevice(client gadb.Client, serial string) (gadb.Device, error) {
 		}
 	}
 	return gadb.Device{}, fmt.Errorf("device %s not found", serial)
+}
+
+// triggerDriverScan runs pnputil /scan-devices on Windows.
+// Returns true on first call (scan triggered), false on subsequent calls.
+// pnputil /scan-devices returns in ~20ms; actual driver download is async via Windows Update.
+func (h *AndroidHelper) triggerDriverScan() bool {
+	h.mu.Lock()
+	if h.driverScanDone {
+		h.mu.Unlock()
+		return false
+	}
+	h.driverScanDone = true
+	h.mu.Unlock()
+
+	slog.Info("helper: triggering Windows driver scan via pnputil")
+	cmd := exec.Command("pnputil", "/scan-devices")
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
+	if err := cmd.Run(); err != nil {
+		slog.Warn("helper: pnputil scan failed", "error", err)
+		return false
+	}
+	slog.Info("helper: pnputil scan completed")
+	return true
 }

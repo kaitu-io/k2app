@@ -65,7 +65,7 @@ func cmdAndroidInstall(args []string) {
 	var device gadb.Device
 	for {
 		fmt.Print("  检测中...")
-		client, err := gadb.NewClient()
+		client, err := gadb.NewClientWith("localhost", 5038)
 		if err != nil {
 			fmt.Printf(" 未检测到设备 (adb server: %s)\n", err)
 			fmt.Print("  按 Enter 重试...")
@@ -193,18 +193,8 @@ func cmdAndroidInstall(args []string) {
 	_ = adbPath
 }
 
-// cliPrepareAdb ensures adb is available and the server is running.
+// cliPrepareAdb ensures adb is available and the server is running on port 5038.
 func cliPrepareAdb() (string, error) {
-	// Try system adb first
-	if path, err := exec.LookPath("adb"); err == nil {
-		cmd := exec.Command(path, "start-server")
-		cmd.Stdout = io.Discard
-		cmd.Stderr = io.Discard
-		if err := cmd.Run(); err == nil {
-			return path, nil
-		}
-	}
-
 	// Download from CDN
 	manifest, err := cliFetchToolsManifest()
 	if err != nil {
@@ -230,7 +220,7 @@ func cliPrepareAdb() (string, error) {
 
 	// Check cache
 	if _, err := os.Stat(adbPath); err == nil {
-		cmd := exec.Command(adbPath, "start-server")
+		cmd := exec.Command(adbPath, "-P", "5038", "start-server")
 		cmd.Stdout = io.Discard
 		cmd.Stderr = io.Discard
 		if err := cmd.Run(); err == nil {
@@ -258,7 +248,7 @@ func cliPrepareAdb() (string, error) {
 		os.Chmod(adbPath, 0755)
 	}
 
-	cmd := exec.Command(adbPath, "start-server")
+	cmd := exec.Command(adbPath, "-P", "5038", "start-server")
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 	if err := cmd.Run(); err != nil {

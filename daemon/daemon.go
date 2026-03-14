@@ -140,6 +140,7 @@ func (d *Daemon) Run(ctx context.Context, listenAddr string) error {
 	select {
 	case <-ctx.Done():
 		slog.Info("daemon shutting down")
+		d.helper.stopAdbServer()
 		d.doDown()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
