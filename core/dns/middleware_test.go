@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -819,6 +820,194 @@ func (q *panicQuerier) Query(ctx context.Context, msg *dns.Msg) (*dns.Msg, error
 	resp := q.resp.Copy()
 	resp.Id = msg.Id
 	return resp, nil
+}
+
+// countingQuerier implements DNSQuerier and counts calls.
+type countingQuerier struct {
+	resp  *dns.Msg
+	err   error
+	count *atomic.Int32
+}
+
+func (q *countingQuerier) Query(ctx context.Context, msg *dns.Msg) (*dns.Msg, error) {
+	q.count.Add(1)
+	if q.err != nil {
+		return nil, q.err
+	}
+	resp := q.resp.Copy()
+	resp.Id = msg.Id
+	return resp, nil
+}
+
+// slowCountingQuerier implements DNSQuerier with a configurable delay.
+type slowCountingQuerier struct {
+	delay time.Duration
+	resp  *dns.Msg
+	count *atomic.Int32
+}
+
+func (q *slowCountingQuerier) Query(ctx context.Context, msg *dns.Msg) (*dns.Msg, error) {
+	q.count.Add(1)
+	select {
+	case <-time.After(q.delay):
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	resp := q.resp.Copy()
+	resp.Id = msg.Id
+	return resp, nil
+}
+
+func TestHandleQuery_PrefreshTriggered(t *testing.T) {
+	initK2Rule(t, k2rule.TargetDirect)
+
+	callCount := atomic.Int32{}
+	countQ := &countingQuerier{
+		resp:  buildAResponse("prefresh.example.com", net.ParseIP("1.2.3.4")),
+		count: &callCount,
+	}
+
+	cache := NewDNSCache(DNSCacheConfig{
+		MinTTL:   4 * time.Second,
+		MaxTTL:   4 * time.Second,
+		StaleFor: 5 * time.Minute,
+	})
+	metrics := NewMetrics()
+
+	mw := NewMiddleware(MiddlewareConfig{
+		DirectDNS: countQ,
+		ProxyDNS:  &mockQuerier{resp: buildAResponse("prefresh.example.com", net.ParseIP("5.6.7.8"))},
+		DNSCache:  cache,
+		Metrics:   metrics,
+		EngineCtx: context.Background(),
+	})
+
+	ctx := context.Background()
+	query := buildAQuery("prefresh.example.com")
+
+	// First query — populates cache
+	_, err := mw.HandleQuery(ctx, query)
+	if err != nil {
+		t.Fatalf("first query: %v", err)
+	}
+	if callCount.Load() != 1 {
+		t.Fatalf("expected 1 upstream call, got %d", callCount.Load())
+	}
+
+	// Query while fresh — pure cache hit, no prefresh
+	_, err = mw.HandleQuery(ctx, query)
+	if err != nil {
+		t.Fatalf("second query: %v", err)
+	}
+	if callCount.Load() != 1 {
+		t.Error("expected no additional upstream call while cache is fresh")
+	}
+
+	// Wait until near expiry (> 75% of 4s TTL elapsed)
+	time.Sleep(3200 * time.Millisecond)
+
+	// Query near expiry — should return cached AND trigger background refresh
+	respBytes, err := mw.HandleQuery(ctx, query)
+	if err != nil {
+		t.Fatalf("near-expiry query: %v", err)
+	}
+	var resp dns.Msg
+	if err := resp.Unpack(respBytes); err != nil {
+		t.Fatalf("unpack: %v", err)
+	}
+	if len(resp.Answer) == 0 {
+		t.Fatal("expected cached answer")
+	}
+
+	// Wait for background refresh
+	time.Sleep(500 * time.Millisecond)
+
+	if callCount.Load() != 2 {
+		t.Errorf("expected background refresh, total calls = %d, want 2", callCount.Load())
+	}
+	if metrics.PrefreshTriggered != 1 {
+		t.Errorf("PrefreshTriggered = %d, want 1", metrics.PrefreshTriggered)
+	}
+}
+
+func TestHandleQuery_PrefreshDedup(t *testing.T) {
+	initK2Rule(t, k2rule.TargetDirect)
+
+	callCount := atomic.Int32{}
+	// Slow querier so prefresh goroutine stays alive during second query
+	slowCountQ := &slowCountingQuerier{
+		delay: 500 * time.Millisecond,
+		resp:  buildAResponse("dedup-prefresh.example.com", net.ParseIP("1.2.3.4")),
+		count: &callCount,
+	}
+
+	cache := NewDNSCache(DNSCacheConfig{
+		MinTTL:   4 * time.Second,
+		MaxTTL:   4 * time.Second,
+		StaleFor: 5 * time.Minute,
+	})
+
+	mw := NewMiddleware(MiddlewareConfig{
+		DirectDNS: slowCountQ,
+		ProxyDNS:  &mockQuerier{resp: buildAResponse("dedup-prefresh.example.com", net.ParseIP("5.6.7.8"))},
+		DNSCache:  cache,
+		Metrics:   NewMetrics(),
+		EngineCtx: context.Background(),
+	})
+
+	ctx := context.Background()
+	query := buildAQuery("dedup-prefresh.example.com")
+
+	// Populate cache (slow querier takes 500ms)
+	_, _ = mw.HandleQuery(ctx, query)
+	// Wait until near expiry
+	time.Sleep(3200 * time.Millisecond)
+
+	// Fire two near-expiry queries rapidly — only one prefresh should trigger
+	_, _ = mw.HandleQuery(ctx, query)
+	_, _ = mw.HandleQuery(ctx, query)
+
+	// Wait for prefresh to complete
+	time.Sleep(1 * time.Second)
+
+	// 1 initial + 1 prefresh = 2 (not 3 — dedup prevented second prefresh)
+	if callCount.Load() != 2 {
+		t.Errorf("expected dedup to prevent duplicate prefresh, calls = %d, want 2", callCount.Load())
+	}
+}
+
+func TestHandleQuery_PrefreshDisabledWithoutEngineCtx(t *testing.T) {
+	initK2Rule(t, k2rule.TargetDirect)
+
+	callCount := atomic.Int32{}
+	countQ := &countingQuerier{
+		resp:  buildAResponse("no-prefresh.example.com", net.ParseIP("1.2.3.4")),
+		count: &callCount,
+	}
+
+	cache := NewDNSCache(DNSCacheConfig{
+		MinTTL: 4 * time.Second,
+		MaxTTL: 4 * time.Second,
+	})
+
+	// No EngineCtx → prefresh disabled
+	mw := NewMiddleware(MiddlewareConfig{
+		DirectDNS: countQ,
+		ProxyDNS:  &mockQuerier{resp: buildAResponse("no-prefresh.example.com", net.ParseIP("5.6.7.8"))},
+		DNSCache:  cache,
+	})
+
+	ctx := context.Background()
+	query := buildAQuery("no-prefresh.example.com")
+
+	_, _ = mw.HandleQuery(ctx, query)
+	time.Sleep(3200 * time.Millisecond)
+	_, _ = mw.HandleQuery(ctx, query)
+	time.Sleep(500 * time.Millisecond)
+
+	if callCount.Load() != 1 {
+		t.Errorf("expected no prefresh without EngineCtx, calls = %d", callCount.Load())
+	}
 }
 
 func TestHandleQuery_ContextCancellation(t *testing.T) {

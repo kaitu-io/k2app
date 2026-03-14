@@ -1,6 +1,7 @@
 package dns
 
 import (
+	"net"
 	"sync"
 	"testing"
 	"time"
@@ -430,6 +431,82 @@ func TestDNSCache_LRUEviction(t *testing.T) {
 	positive, _ := cache.Size()
 	if positive > 3 {
 		t.Errorf("Expected cache size <= 3 after eviction, got %d", positive)
+	}
+}
+
+func buildAResponseForCache(domain string, ip net.IP) *dns.Msg {
+	resp := new(dns.Msg)
+	q := new(dns.Msg)
+	q.SetQuestion(dns.Fqdn(domain), dns.TypeA)
+	resp.SetReply(q)
+	resp.Answer = append(resp.Answer, &dns.A{
+		Hdr: dns.RR_Header{
+			Name:   dns.Fqdn(domain),
+			Rrtype: dns.TypeA,
+			Class:  dns.ClassINET,
+			Ttl:    300,
+		},
+		A: ip.To4(),
+	})
+	return resp
+}
+
+func TestDNSCache_GetPackedNearExpiry_ReturnsFreshAndAge(t *testing.T) {
+	cache := NewDNSCache(DNSCacheConfig{
+		MinTTL: 4 * time.Second,
+		MaxTTL: 4 * time.Second,
+	})
+
+	resp := buildAResponseForCache("age.example.com", net.ParseIP("1.2.3.4"))
+	cache.Add("age.example.com", dns.TypeA, resp)
+
+	// Immediately: should be fresh, not near expiry
+	packed, nearExpiry := cache.GetPackedNearExpiry("age.example.com", dns.TypeA, 1234, 0.25)
+	if packed == nil {
+		t.Fatal("expected cached entry")
+	}
+	if nearExpiry {
+		t.Error("should NOT be near expiry immediately after add")
+	}
+
+	// Wait until ~80% of TTL elapsed (3.2s of 4s → 0.8s left = 20% < 25%)
+	time.Sleep(3300 * time.Millisecond)
+
+	packed, nearExpiry = cache.GetPackedNearExpiry("age.example.com", dns.TypeA, 1234, 0.25)
+	if packed == nil {
+		t.Fatal("expected cached entry still fresh")
+	}
+	if !nearExpiry {
+		t.Error("should be near expiry with < 25% TTL remaining")
+	}
+}
+
+func TestDNSCache_GetPackedNearExpiry_NegativeCache_NeverNearExpiry(t *testing.T) {
+	cache := NewDNSCache(DNSCacheConfig{
+		MinTTL: 4 * time.Second,
+		MaxTTL: 4 * time.Second,
+	})
+
+	// Add NXDOMAIN response
+	nxResp := new(dns.Msg)
+	q := new(dns.Msg)
+	q.SetQuestion(dns.Fqdn("gone.example.com"), dns.TypeA)
+	nxResp.SetReply(q)
+	nxResp.Rcode = dns.RcodeNameError
+	nxResp.Ns = []dns.RR{&dns.SOA{
+		Hdr:    dns.RR_Header{Name: "example.com.", Rrtype: dns.TypeSOA, Class: dns.ClassINET, Ttl: 4},
+		Ns:     "ns.example.com.", Mbox: "admin.example.com.",
+		Serial: 1, Refresh: 3600, Retry: 600, Expire: 86400, Minttl: 4,
+	}}
+	cache.Add("gone.example.com", dns.TypeA, nxResp)
+
+	// NXDOMAIN should return packed but never nearExpiry (no prefresh for negative cache)
+	packed, nearExpiry := cache.GetPackedNearExpiry("gone.example.com", dns.TypeA, 1234, 0.25)
+	if packed == nil {
+		t.Fatal("expected negative cache entry")
+	}
+	if nearExpiry {
+		t.Error("NXDOMAIN should never be marked near-expiry")
 	}
 }
 

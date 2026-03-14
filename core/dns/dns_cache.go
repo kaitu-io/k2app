@@ -13,8 +13,9 @@ import (
 // Storing packed bytes instead of *dns.Msg eliminates dns.Msg.Copy() on
 // every cache hit and lets callers skip resp.Pack() entirely.
 type cachedEntry struct {
-	packed   []byte
-	expireAt time.Time // original TTL expiry (for fresh/stale distinction)
+	packed      []byte
+	expireAt    time.Time     // original TTL expiry (for fresh/stale distinction)
+	originalTTL time.Duration // original TTL duration (for prefresh threshold calc)
 }
 
 // DNSCache implements DNS message caching with negative caching (RFC 2308).
@@ -118,6 +119,41 @@ func (c *DNSCache) GetStalePacked(domain string, qtype uint16, queryID uint16) (
 	return nil, false
 }
 
+// GetPackedNearExpiry retrieves a fresh cached entry and reports whether it is
+// near expiry (remaining TTL < threshold fraction of original TTL).
+// Returns (nil, false) on cache miss or expired entry.
+// Returns (packed, false) for fresh entries with plenty of TTL.
+// Returns (packed, true) for fresh entries nearing expiry.
+// Negative cache (NXDOMAIN) never returns nearExpiry=true.
+func (c *DNSCache) GetPackedNearExpiry(domain string, qtype uint16, queryID uint16, threshold float64) ([]byte, bool) {
+	key := cacheKey(domain, qtype)
+
+	// Check negative cache first — never triggers prefresh.
+	if entry, ok := c.negative.Get(key); ok {
+		return cloneAndPatchID(entry.packed, queryID), false
+	}
+
+	entry, ok := c.messages.Get(key)
+	if !ok {
+		return nil, false
+	}
+
+	now := time.Now()
+	if now.After(entry.expireAt) {
+		return nil, false // expired — not fresh
+	}
+
+	// Check if near expiry.
+	remaining := entry.expireAt.Sub(now)
+	if entry.originalTTL <= 0 {
+		// Defensive: no originalTTL → treat as not near expiry.
+		return cloneAndPatchID(entry.packed, queryID), false
+	}
+
+	nearExpiry := float64(remaining)/float64(entry.originalTTL) < threshold
+	return cloneAndPatchID(entry.packed, queryID), nearExpiry
+}
+
 // Get retrieves a cached DNS message (convenience wrapper, unpacks internally).
 // Production hot paths should use GetPacked instead.
 func (c *DNSCache) Get(domain string, qtype uint16) (*dns.Msg, bool) {
@@ -187,8 +223,9 @@ func (c *DNSCache) Add(domain string, qtype uint16, msg *dns.Msg) {
 	// Store with extended lifetime (ttl + staleFor) so entry survives
 	// in freelru during the stale-while-revalidate window.
 	c.messages.AddWithLifetime(key, &cachedEntry{
-		packed:   packed,
-		expireAt: time.Now().Add(ttl),
+		packed:      packed,
+		expireAt:    time.Now().Add(ttl),
+		originalTTL: ttl,
 	}, ttl+c.staleFor)
 }
 

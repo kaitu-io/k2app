@@ -283,6 +283,7 @@ func (e *Engine) Start(cfg Config) error {
 			DirectDNS: dns.NewDirectDNSClient(client.DNS.Direct, dnsOpts...),
 			DNSCache:  dns.NewDNSCache(dns.DNSCacheConfig{}),
 			Filter:    dns.NewFilter(dns.FilterConfig{}),
+			EngineCtx: ctx, // engine context — cancelled on Stop()
 		})
 		if err := tunnel.StartWithHandler(ctx, &dnsHandler{inner: tunnel, dns: dnsMW, ctx: ctx, engine: e}); err != nil {
 			if cfg.NetworkMonitor != nil {
