@@ -618,7 +618,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.4.0-beta.3;
+				MARKETING_VERSION = 0.4.0-beta.4;
 				OTHER_SWIFT_FLAGS = "$(inherited) \"-D\" \"COCOAPODS\" \"-DDEBUG\"";
 				PRODUCT_BUNDLE_IDENTIFIER = com.allnationconnect.anc.wgios;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -646,7 +646,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.4.0-beta.3;
+				MARKETING_VERSION = 0.4.0-beta.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.allnationconnect.anc.wgios;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -693,7 +693,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 0.4.0-beta.3;
+				MARKETING_VERSION = 0.4.0-beta.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.allnationconnect.anc.wgios.ThePacketTunnel;
 				PRODUCT_NAME = PacketTunnelExtension;
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -722,7 +722,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 0.4.0-beta.3;
+				MARKETING_VERSION = 0.4.0-beta.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.allnationconnect.anc.wgios.ThePacketTunnel;
 				PRODUCT_NAME = PacketTunnelExtension;
 				PROVISIONING_PROFILE_SPECIFIER = "";
