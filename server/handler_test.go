@@ -5,10 +5,12 @@ import (
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/kaitu-io/k2/wire"
+	"github.com/miekg/dns"
 )
 
 func TestIsReservedIP(t *testing.T) {
@@ -297,3 +299,179 @@ func (c *testPacketConn) LocalAddr() net.Addr                { return nil }
 func (c *testPacketConn) SetDeadline(time.Time) error        { return nil }
 func (c *testPacketConn) SetReadDeadline(time.Time) error    { return nil }
 func (c *testPacketConn) SetWriteDeadline(time.Time) error   { return nil }
+
+// --- DNS cache tests ---
+
+func buildDNSQuery(t *testing.T, domain string, qtype uint16, id uint16) []byte {
+	t.Helper()
+	q := new(dns.Msg)
+	q.SetQuestion(domain, qtype)
+	q.Id = id
+	packed, err := q.Pack()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return packed
+}
+
+// startFakeDNSServer starts a UDP DNS server that returns A records and counts calls.
+func startFakeDNSServer(t *testing.T, calls *atomic.Int32) net.PacketConn {
+	t.Helper()
+	conn, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			n, addr, err := conn.ReadFrom(buf)
+			if err != nil {
+				return
+			}
+			calls.Add(1)
+			var query dns.Msg
+			if err := query.Unpack(buf[:n]); err != nil {
+				continue
+			}
+			resp := new(dns.Msg)
+			resp.SetReply(&query)
+			if len(query.Question) > 0 {
+				resp.Answer = append(resp.Answer, &dns.A{
+					Hdr: dns.RR_Header{
+						Name: query.Question[0].Name, Rrtype: dns.TypeA,
+						Class: dns.ClassINET, Ttl: 300,
+					},
+					A: net.ParseIP("93.184.216.34").To4(),
+				})
+			}
+			packed, _ := resp.Pack()
+			conn.WriteTo(packed, addr)
+		}
+	}()
+	return conn
+}
+
+// sendDNSViaHandler sends a DNS query through handleDNSUDP and returns the response.
+// Uses handleDNSUDP directly (bypassing isDNSPort check) since fake DNS listens on random port.
+// Closes the testPacketConn after receiving to avoid goroutine leaks.
+func sendDNSViaHandler(t *testing.T, h *ProxyHandler, addr string, query []byte) *dns.Msg {
+	t.Helper()
+	pc := newTestPacketConn()
+	done := make(chan struct{})
+	go func() {
+		h.handleDNSUDP(pc, addr)
+		close(done)
+	}()
+
+	pc.readCh <- query // client → handler
+
+	select {
+	case resp := <-pc.writeCh: // handler → client
+		pc.Close() // trigger handler shutdown
+		<-done     // wait for handleDNSUDP to return
+		var msg dns.Msg
+		if err := msg.Unpack(resp); err != nil {
+			t.Fatalf("unpack: %v", err)
+		}
+		return &msg
+	case <-time.After(5 * time.Second):
+		pc.Close()
+		t.Fatal("timeout waiting for DNS response")
+		return nil
+	}
+}
+
+func TestHandleUDP_DNSCache_Hit(t *testing.T) {
+	upstreamCalls := atomic.Int32{}
+	fakeDNS := startFakeDNSServer(t, &upstreamCalls)
+	defer fakeDNS.Close()
+
+	h := NewProxyHandler()
+	h.AllowPrivateIP = true
+
+	// Query 1: cache miss → upstream
+	resp1 := sendDNSViaHandler(t, h, fakeDNS.LocalAddr().String(), buildDNSQuery(t, "example.com.", dns.TypeA, 1001))
+	if resp1.Rcode != dns.RcodeSuccess {
+		t.Fatalf("query 1: got %s", dns.RcodeToString[resp1.Rcode])
+	}
+	if upstreamCalls.Load() != 1 {
+		t.Fatalf("query 1: upstream calls = %d, want 1", upstreamCalls.Load())
+	}
+
+	// Query 2: cache hit → no upstream
+	resp2 := sendDNSViaHandler(t, h, fakeDNS.LocalAddr().String(), buildDNSQuery(t, "example.com.", dns.TypeA, 1002))
+	if resp2.Rcode != dns.RcodeSuccess {
+		t.Fatalf("query 2: got %s", dns.RcodeToString[resp2.Rcode])
+	}
+	if resp2.Id != 1002 {
+		t.Errorf("query 2: ID = %d, want 1002 (patched)", resp2.Id)
+	}
+	if upstreamCalls.Load() != 1 {
+		t.Errorf("query 2: upstream calls = %d, want 1 (cache hit)", upstreamCalls.Load())
+	}
+}
+
+func TestHandleUDP_DNSCache_DifferentDomains(t *testing.T) {
+	upstreamCalls := atomic.Int32{}
+	fakeDNS := startFakeDNSServer(t, &upstreamCalls)
+	defer fakeDNS.Close()
+
+	h := NewProxyHandler()
+	h.AllowPrivateIP = true
+
+	sendDNSViaHandler(t, h, fakeDNS.LocalAddr().String(), buildDNSQuery(t, "a.com.", dns.TypeA, 1))
+	sendDNSViaHandler(t, h, fakeDNS.LocalAddr().String(), buildDNSQuery(t, "b.com.", dns.TypeA, 2))
+
+	if upstreamCalls.Load() != 2 {
+		t.Errorf("different domains: upstream calls = %d, want 2", upstreamCalls.Load())
+	}
+}
+
+func TestHandleUDP_NonDNS_NotIntercepted(t *testing.T) {
+	// Non-port-53 traffic should bypass DNS cache entirely.
+	echoServer, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer echoServer.Close()
+
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			n, addr, err := echoServer.ReadFrom(buf)
+			if err != nil {
+				return
+			}
+			echoServer.WriteTo(buf[:n], addr)
+		}
+	}()
+
+	h := NewProxyHandler()
+	h.AllowPrivateIP = true
+	pc := newTestPacketConn()
+	go h.HandleUDP(pc, echoServer.LocalAddr().String())
+
+	pc.readCh <- []byte("hello")
+	select {
+	case resp := <-pc.writeCh:
+		if string(resp) != "hello" {
+			t.Errorf("expected echo, got %q", resp)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout")
+	}
+
+	pc.Close()
+}
+
+func TestIsDNSPort(t *testing.T) {
+	if !isDNSPort("8.8.8.8:53") {
+		t.Error("8.8.8.8:53 should be DNS")
+	}
+	if isDNSPort("8.8.8.8:443") {
+		t.Error("8.8.8.8:443 should not be DNS")
+	}
+	if isDNSPort("invalid") {
+		t.Error("invalid should not be DNS")
+	}
+}
