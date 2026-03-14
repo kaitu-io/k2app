@@ -12,12 +12,13 @@ import {
   Tooltip,
   Button,
   useTheme,
+  Skeleton,
 } from '@mui/material';
 import { Refresh as RefreshIcon, CloudOff as CloudOffIcon } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import { getCountryName, getFlagIcon } from '../utils/country';
 import { getThemeColors } from '../theme/colors';
-import { LoadingState, EmptyState } from './LoadingAndEmpty';
+import { EmptyState } from './LoadingAndEmpty';
 import { VerticalLoadBar } from './VerticalLoadBar';
 import { cloudApi } from '../services/cloud-api';
 import { cacheStore } from '../services/cache-store';
@@ -88,11 +89,17 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
         // Background revalidate
         cloudApi.get<TunnelListResponse>('/api/tunnels/k2v4').then(res => {
           if (res.code === 0 && res.data) {
-            cacheStore.set('api:tunnels', res.data, { ttl: 10 });
+            cacheStore.set('api:tunnels', res.data);
             setTunnels(res.data.items || []);
             setEchConfigList(res.data.echConfigList);
             onTunnelsLoadedRef.current?.(res.data.items || []);
+          } else {
+            console.warn('[CloudTunnelList] Background refresh failed (code=%d), using cached tunnels (%d items)', res.code, cached.items?.length ?? 0);
+            setError(new Error('Background refresh failed'));
           }
+        }).catch(err => {
+          console.warn('[CloudTunnelList] Background refresh network error, using cached tunnels', err);
+          setError(new Error('Background refresh failed'));
         });
         return;
       }
@@ -104,7 +111,7 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
         setTunnels(loadedTunnels);
         // Store ECH config list for K2v4 connections
         setEchConfigList(response.data.echConfigList);
-        cacheStore.set('api:tunnels', response.data, { ttl: 10 });
+        cacheStore.set('api:tunnels', response.data);
         console.debug('[CloudTunnelList] ECH config from API:', response.data.echConfigList ? `present (len=${response.data.echConfigList.length})` : 'empty');
         // Reset retry count on success
         retryCountRef.current = 0;
@@ -179,8 +186,30 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
 
   if (loading && tunnels.length === 0) {
     return (
-      <Box sx={{ px: 2, py: 1 }}>
-        <LoadingState message={t('dashboard:dashboard.loadingNodes')} minHeight={100} />
+      <Box>
+        {/* Skeleton header — matches real header structure */}
+        <Stack direction="row" sx={{ py: 1, px: 2, alignItems: 'center', justifyContent: 'space-between' }}>
+          <Skeleton variant="text" width={100} height={20} />
+          <Skeleton variant="circular" width={18} height={18} />
+        </Stack>
+        {/* Skeleton tunnel items — matches real ListItem structure */}
+        <List sx={{ pt: 0.5, px: 2, pb: 1 }}>
+          {[0, 1, 2].map((i) => (
+            <ListItem key={i} sx={{ borderRadius: 2, mb: 0.5, minHeight: 64 }}>
+              <ListItemIcon sx={{ minWidth: 40 }}>
+                <Skeleton variant="rounded" width={32} height={22} />
+              </ListItemIcon>
+              <ListItemText
+                primary={<Skeleton variant="text" width={`${60 - i * 10}%`} />}
+                secondary={<Skeleton variant="text" width={80} />}
+              />
+              <Box sx={{ mr: 2 }}>
+                <Skeleton variant="rounded" width={4} height={28} />
+              </Box>
+              <Skeleton variant="circular" width={24} height={24} />
+            </ListItem>
+          ))}
+        </List>
       </Box>
     );
   }
