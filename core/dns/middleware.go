@@ -291,10 +291,8 @@ func (m *Middleware) triggerPrefresh(domain string, qtype uint16, action k2rule.
 	go func() {
 		defer m.prefreshing.Delete(key)
 
-		ctx, cancel := context.WithTimeout(m.engineCtx, upstreamTimeout)
-		defer cancel()
-
-		resp, err := m.queryUpstream(ctx, domain, action, query)
+		// queryUpstream applies its own upstreamTimeout internally.
+		resp, err := m.queryUpstream(m.engineCtx, domain, action, query)
 		if err != nil {
 			slog.Debug("DNS prefresh failed", "domain", domain, "err", err)
 			return

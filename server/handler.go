@@ -272,6 +272,10 @@ func (h *ProxyHandler) handleDNSUDP(conn net.PacketConn, addr string) {
 	var pendingMu sync.Mutex
 	pending := make(map[uint16]*pendingQuery)
 
+	// writeToMu serializes writes to conn — cache-hit path (client→target goroutine)
+	// and upstream-response path (target→client goroutine) both call conn.WriteTo.
+	var writeToMu sync.Mutex
+
 	done := make(chan struct{})
 
 	// client → cache/target
@@ -303,7 +307,9 @@ func (h *ProxyHandler) handleDNSUDP(conn net.PacketConn, addr string) {
 
 			// Cache lookup.
 			if packed, found := h.dnsCache.GetPacked(domain, qtype, query.Id); found {
+				writeToMu.Lock()
 				conn.WriteTo(packed, nil)
+				writeToMu.Unlock()
 				slog.Debug("server: DNS cache hit", "domain", domain)
 				continue
 			}
@@ -349,7 +355,10 @@ func (h *ProxyHandler) handleDNSUDP(conn net.PacketConn, addr string) {
 			}
 		}
 
-		if _, err := conn.WriteTo(buf[:n], nil); err != nil {
+		writeToMu.Lock()
+		_, werr := conn.WriteTo(buf[:n], nil)
+		writeToMu.Unlock()
+		if werr != nil {
 			break
 		}
 	}

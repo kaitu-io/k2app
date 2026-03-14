@@ -124,13 +124,17 @@ func (r *racingResolver) pick() []*serverHealth {
 	selected := make([]*serverHealth, n)
 	copy(selected, healthy[:n])
 
-	// Add one degraded server due for probe (if room or healthy insufficient)
+	// Add one degraded server due for probe (if room or healthy insufficient).
+	// CAS on lastProbe prevents concurrent pick() from double-scheduling.
 	if len(selected) < r.raceN {
 		now := time.Now().UnixNano()
 		for _, s := range degraded {
 			backoff := s.probeBackoffDuration()
-			if now-s.lastProbe.Load() >= backoff.Nanoseconds() {
-				s.lastProbe.Store(now)
+			old := s.lastProbe.Load()
+			if now-old >= backoff.Nanoseconds() {
+				if !s.lastProbe.CompareAndSwap(old, now) {
+					continue // another goroutine already scheduled this probe
+				}
 				s.recordProbeAttempt()
 				selected = append(selected, s)
 				break
