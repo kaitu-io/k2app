@@ -256,7 +256,9 @@ func downloadWithFallback(path, destPath, expectedHash string, expectedSize int6
 	return fmt.Errorf("all endpoints failed: %w", lastErr)
 }
 
-// extractAdbFromZip extracts only the needed adb files from a platform-tools zip.
+// extractAdbFromZip extracts all top-level files from platform-tools/ in the zip.
+// Google bundles matched dependencies (DLLs, etc.), so we extract everything
+// rather than maintaining a fragile whitelist of individual files.
 func extractAdbFromZip(zipPath, destDir string) error {
 	r, err := zip.OpenReader(zipPath)
 	if err != nil {
@@ -268,24 +270,22 @@ func extractAdbFromZip(zipPath, destDir string) error {
 		return fmt.Errorf("create dir: %w", err)
 	}
 
-	// Files to extract (basename → keep)
-	needed := map[string]bool{
-		"adb": true,
-	}
-	if runtime.GOOS == "windows" {
-		needed["adb.exe"] = true
-		needed["AdbWinApi.dll"] = true
-		needed["AdbWinUsbApi.dll"] = true
-		delete(needed, "adb")
-	}
-
+	const prefix = "platform-tools/"
 	extracted := 0
 	for _, f := range r.File {
-		base := filepath.Base(f.Name)
-		if !needed[base] {
+		if f.FileInfo().IsDir() {
+			continue
+		}
+		if !strings.HasPrefix(f.Name, prefix) {
+			continue
+		}
+		// Only top-level files in platform-tools/, skip subdirectories
+		rel := strings.TrimPrefix(f.Name, prefix)
+		if strings.Contains(rel, "/") {
 			continue
 		}
 
+		base := filepath.Base(f.Name)
 		destPath := filepath.Join(destDir, base)
 		out, err := os.Create(destPath)
 		if err != nil {

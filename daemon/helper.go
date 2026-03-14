@@ -100,6 +100,9 @@ func (h *AndroidHelper) handleDetect(w http.ResponseWriter) {
 }
 
 // listDevices queries the adb server for connected devices via gadb.
+// DeviceList (host:devices-l) requires 4+ fields per line, so unauthorized
+// devices are silently skipped. We supplement with DeviceSerialList
+// (host:devices, 2+ fields) to detect unauthorized devices.
 func (h *AndroidHelper) listDevices() []deviceInfo {
 	client, err := gadb.NewClientWith("localhost", adbServerPort)
 	if err != nil {
@@ -107,21 +110,35 @@ func (h *AndroidHelper) listDevices() []deviceInfo {
 		return []deviceInfo{}
 	}
 
-	devs, err := client.DeviceList()
-	if err != nil {
-		slog.Warn("helper: gadb device list failed", "error", err)
-		return []deviceInfo{}
-	}
+	// DeviceList returns only authorized devices (host:devices-l requires 4+ fields)
+	devs, _ := client.DeviceList()
 
-	result := make([]deviceInfo, 0, len(devs))
+	// DeviceSerialList returns ALL serials including unauthorized (host:devices, 2+ fields)
+	allSerials, _ := client.DeviceSerialList()
+
+	// Build set of serials already in devs
+	seen := map[string]bool{}
+	result := make([]deviceInfo, 0, len(allSerials))
 	for _, d := range devs {
 		model, _ := d.Model()
 		state, _ := d.State()
+		seen[d.Serial()] = true
 		result = append(result, deviceInfo{
 			Serial: d.Serial(),
 			State:  string(state),
 			Model:  model,
 		})
+	}
+
+	// Append unauthorized devices (in allSerials but not in devs)
+	for _, serial := range allSerials {
+		if !seen[serial] {
+			result = append(result, deviceInfo{
+				Serial: serial,
+				State:  "unauthorized",
+				Model:  "",
+			})
+		}
 	}
 	return result
 }
