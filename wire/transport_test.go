@@ -504,3 +504,91 @@ func TestQuicContext_ExtendedBudgetAfterReset(t *testing.T) {
 	}
 }
 
+// ==========================================================================
+// Handshake tests
+// ==========================================================================
+
+func TestTransportManager_Handshake_BothFail(t *testing.T) {
+	qc := NewQUICClient(Config{}, nil)
+	qc.closed = true // forces connect() to return ErrNotConnected
+
+	tc := NewTCPWSClient(Config{}, nil)
+	tc.closed = true // forces connect() to return ErrNotConnected
+
+	tm := NewTransportManager()
+	tm.SetQUIC(qc)
+	tm.SetTCPWS(tc)
+
+	err := tm.Handshake(context.Background())
+	if err == nil {
+		t.Fatal("expected error when both transports fail")
+	}
+	var mte *MultiTransportError
+	if !errors.As(err, &mte) {
+		t.Fatalf("expected MultiTransportError, got %T: %v", err, err)
+	}
+}
+
+func TestTransportManager_Handshake_FallbackSkipsQUIC(t *testing.T) {
+	qc := NewQUICClient(Config{}, nil)
+	// Don't set closed — if QUIC were attempted, connect() would try a real
+	// handshake. But fallbackActive skips it entirely.
+
+	tc := NewTCPWSClient(Config{}, nil)
+	tc.closed = true // TCP-WS will fail, proving it was attempted
+
+	tm := NewTransportManager()
+	tm.SetQUIC(qc)
+	tm.SetTCPWS(tc)
+	tm.SetFallbackActive(true)
+
+	err := tm.Handshake(context.Background())
+	if err == nil {
+		t.Fatal("expected error from TCP-WS failure")
+	}
+	// Should be a plain TCP-WS error (no MultiTransportError, since QUIC was skipped).
+	var mte *MultiTransportError
+	if errors.As(err, &mte) {
+		t.Fatal("should not be MultiTransportError when QUIC is skipped")
+	}
+	// Verify QUIC handshake streak was NOT incremented (it was skipped).
+	if got := qc.ConsecConnFails(); got != 0 {
+		t.Fatalf("QUIC ConsecConnFails = %d, want 0 (QUIC should be skipped)", got)
+	}
+}
+
+func TestTransportManager_Handshake_NoTransports(t *testing.T) {
+	tm := NewTransportManager()
+
+	err := tm.Handshake(context.Background())
+	if !errors.Is(err, ErrNotConnected) {
+		t.Fatalf("err = %v, want ErrNotConnected", err)
+	}
+}
+
+func TestTransportManager_Handshake_ConsecFailsFallback(t *testing.T) {
+	qc := NewQUICClient(Config{}, nil)
+	qc.closed = true // forces connect() to fail
+
+	// Pre-set streak to threshold so the Handshake call triggers fallback.
+	qc.handshakeFailStreak.Store(quicConnFailThreshold)
+
+	tc := NewTCPWSClient(Config{}, nil)
+	tc.closed = true // TCP-WS also fails, but we only care about fallbackActive
+
+	tm := NewTransportManager()
+	tm.SetQUIC(qc)
+	tm.SetTCPWS(tc)
+
+	err := tm.Handshake(context.Background())
+	if err == nil {
+		t.Fatal("expected error when both transports fail")
+	}
+
+	// connect() increments the streak further, so it's above threshold.
+	// Handshake should have activated fallback.
+	if !tm.FallbackActive() {
+		t.Fatal("fallbackActive should be set after ConsecConnFails >= threshold")
+	}
+}
+

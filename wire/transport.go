@@ -253,6 +253,69 @@ func (tm *TransportManager) DialUDP(ctx context.Context, addr string) (net.Packe
 	return nil, ErrNotConnected
 }
 
+// Handshake verifies wire connectivity by completing the transport handshake
+// (QUIC or TCP-WS) without opening a proxy stream or dialing any target.
+// The cached connection is reused by subsequent DialTCP/DialUDP calls.
+//
+// Follows the same QUIC-preferred, TCP-WS-fallback logic as DialTCP:
+// - Try QUIC connect first (skip if fallback active)
+// - On QUIC failure, track handshake streak + try TCP-WS
+// - Return MultiTransportError if both fail
+func (tm *TransportManager) Handshake(ctx context.Context) error {
+	tm.mu.RLock()
+	quic := tm.quic
+	tcpws := tm.tcpws
+	tm.mu.RUnlock()
+
+	slog.Debug("TransportManager: Handshake", "hasQUIC", quic != nil, "hasTCPWS", tcpws != nil)
+
+	var quicErr error
+
+	// Try QUIC first (preferred), skip if fallback is active.
+	if quic != nil && !tm.fallbackActive.Load() {
+		quicCtx, quicCancel := tm.quicContext(ctx, tcpws != nil)
+		slog.Debug("TransportManager: Handshake trying QUIC")
+		if qc, ok := quic.(*QUICClient); ok {
+			_, err := qc.connect(quicCtx)
+			quicCancel()
+			if err == nil {
+				tm.recordQuicSuccess()
+				slog.Info("TransportManager: Handshake QUIC ok")
+				return nil
+			}
+			slog.Debug("TransportManager: Handshake QUIC failed", "err", err)
+			quicErr = err
+			if qc.ConsecConnFails() >= quicConnFailThreshold {
+				tm.SetFallbackActive(true)
+			}
+		} else {
+			quicCancel()
+		}
+	}
+
+	// Fall back to TCP-WS.
+	if tcpws != nil {
+		slog.Debug("TransportManager: Handshake trying TCP-WS")
+		if tc, ok := tcpws.(*TCPWSClient); ok {
+			_, err := tc.connect(ctx)
+			if err == nil {
+				slog.Info("TransportManager: Handshake TCP-WS ok")
+				return nil
+			}
+			slog.Debug("TransportManager: Handshake TCP-WS failed", "err", err)
+			if quicErr != nil {
+				return &MultiTransportError{QUICErr: quicErr, TCPWSErr: err}
+			}
+			return fmt.Errorf("TCP-WS: %w", err)
+		}
+	}
+
+	if quicErr != nil {
+		return fmt.Errorf("QUIC: %w", quicErr)
+	}
+	return ErrNotConnected
+}
+
 // quicContext returns a sub-context for QUIC with a time budget.
 // When TCP-WS fallback exists, QUIC gets at most half the remaining time
 // (capped at 5s) so TCP-WS still has a chance if QUIC is truly dead.
