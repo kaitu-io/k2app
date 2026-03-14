@@ -13,7 +13,7 @@ import (
 
 const (
 	probeInitialDelay  = 3 * time.Second  // wait for network stack + DHCP + routes
-	probeDialTimeout   = 5 * time.Second  // per-attempt DialTCP timeout
+	probeDialTimeout   = 5 * time.Second  // per-attempt Handshake timeout
 	probeRetryInterval = 10 * time.Second // between failed attempts
 	probeMaxAttempts   = 3                // give up after this many failures
 )
