@@ -183,11 +183,14 @@ func (e *Engine) Start(cfg Config) error {
 	// and the health monitor sees no transport data, creating a ~15s false-connected window.
 	// The cached connection is reused by subsequent DialTCP/DialUDP (fast path).
 	slog.Info("engine: step 4.5 - wire handshake probe", "elapsed", time.Since(startTime))
+	hsStart := time.Now()
 	hsCtx, hsCancel := context.WithTimeout(ctx, 15*time.Second)
 	hsErr := tm.Handshake(hsCtx)
 	hsCancel()
+	hsMs := time.Since(hsStart).Milliseconds()
 	if hsErr != nil {
 		slog.Warn("engine: wire handshake failed", "err", hsErr)
+		slog.Warn("DIAG: wire-handshake-fail", "handshakeMs", hsMs, "err", hsErr)
 		if cfg.NetworkMonitor != nil {
 			cfg.NetworkMonitor.Close()
 		}
@@ -195,6 +198,7 @@ func (e *Engine) Start(cfg Config) error {
 		return e.fail(fmt.Errorf("wire handshake: %w", hsErr))
 	}
 	slog.Info("engine: step 4.5 - wire handshake ok", "elapsed", time.Since(startTime))
+	slog.Info("DIAG: wire-handshake", "handshakeMs", hsMs, "transport", tm.WireStats().Transport)
 
 	// 5. Router.
 	router := core.NewRouter()

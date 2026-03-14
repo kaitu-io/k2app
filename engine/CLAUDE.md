@@ -28,8 +28,8 @@ Platform Shell (daemon/appext)
 
 ## State Machine
 
-4 engine states: `disconnected`, `connecting`, `connected`, `paused`
-2 handler-only transient values: `reconnecting`, `paused` (engine.state stays `connected`)
+5 engine states: `disconnected`, `connecting`, `connected`, `paused`, `reconnecting`
+Note: `reconnecting` and `paused` are transient — engine.state stays `connected`, these are handler-only broadcasts
 
 - `Start()`: disconnected → connecting → connected (or disconnected on error)
 - `Stop()`: any → disconnected (idempotent, resets `paused`)

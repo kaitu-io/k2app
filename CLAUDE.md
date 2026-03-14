@@ -76,6 +76,8 @@ Reserved event names:
 | `DIAG: transport-switch` | WARN | on QUIC↔TCP-WS transition | from, to, reason |
 | `DIAG: udp-relay-timeout` | WARN | consecutive > 2 | consecutiveCount, threshold |
 | `DIAG: conn-highwater` | INFO | active > 100 | tcpCount, udpCount |
+| `DIAG: wire-handshake` | INFO | handshake probe ok | handshakeMs, transport |
+| `DIAG: wire-handshake-fail` | WARN | handshake probe failed | handshakeMs, err |
 | `DIAG: connected` | INFO | engine connected | server, mode, dialMs |
 | `DIAG: session-end` | INFO | engine stop | uptimeS, txMB, rxMB |
 | `DIAG: wire-error` | WARN | on classified error | code, category, message |
