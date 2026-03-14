@@ -21,6 +21,7 @@ import {
   CheckCircle as CheckIcon,
   Refresh as RetryIcon,
   Error as ErrorIcon,
+  Warning as WarningIcon,
 } from '@mui/icons-material';
 import { brandGuides } from './adb-guide-data';
 
@@ -66,6 +67,12 @@ export default function AndroidInstallStepper({ name, icon, desc, apkUrl }: Prop
   const detectPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const detectingRef = useRef(false);
 
+  // Derived device states
+  const authorizedDevices = devices.filter(d => d.state === 'online' || d.state === 'device');
+  const unauthorizedDevices = devices.filter(d => d.state === 'unauthorized');
+  const hasAuthorized = authorizedDevices.length > 0;
+  const hasUnauthorized = unauthorizedDevices.length > 0;
+
   // Step 2: Detect devices with concurrency guard
   const detectDevices = useCallback(async () => {
     if (!window._k2 || detectingRef.current) return;
@@ -74,9 +81,12 @@ export default function AndroidInstallStepper({ name, icon, desc, apkUrl }: Prop
     try {
       const resp = await window._k2.run<DetectResponse>('adb-detect', {});
       if (resp.code === 0 && resp.data) {
-        setDevices(resp.data.devices || []);
+        const devs = resp.data.devices || [];
+        setDevices(devs);
         setInstallingDriver(resp.data.installing_driver || false);
-        if (resp.data.devices?.length > 0) {
+        // Auto-advance only when an authorized device is found
+        const hasOnline = devs.some(d => d.state === 'online' || d.state === 'device');
+        if (hasOnline) {
           stopDetectPolling();
           setActiveStep(2);
         }
@@ -102,29 +112,33 @@ export default function AndroidInstallStepper({ name, icon, desc, apkUrl }: Prop
     detectPollRef.current = setInterval(detectDevices, 3000);
   }, [detectDevices, stopDetectPolling]);
 
-  // Step 4: Start install
+  // Step 3: Start install
   const startInstall = useCallback(async () => {
     if (!window._k2) return;
-    const serial = devices.length === 1 ? devices[0].serial : '';
+    const serial = authorizedDevices.length === 1 ? authorizedDevices[0].serial : '';
     try {
       const resp = await window._k2.run('adb-install', { url: apkUrl, serial });
       if (resp.code === 0) {
-        // Start polling status
-        pollRef.current = setInterval(async () => {
-          const statusResp = await window._k2!.run<InstallStatus>('adb-status', {});
-          if (statusResp.code === 0 && statusResp.data) {
-            setInstallStatus(statusResp.data);
-            if (statusResp.data.phase === 'done' || statusResp.data.phase === 'error') {
-              if (pollRef.current) clearInterval(pollRef.current);
-              pollRef.current = null;
-            }
-          }
-        }, 500);
+        startStatusPolling();
       }
     } catch (e) {
       console.error('install failed', e);
     }
-  }, [devices, apkUrl]);
+  }, [authorizedDevices, apkUrl]);
+
+  const startStatusPolling = useCallback(() => {
+    if (pollRef.current) return;
+    pollRef.current = setInterval(async () => {
+      const statusResp = await window._k2!.run<InstallStatus>('adb-status', {});
+      if (statusResp.code === 0 && statusResp.data) {
+        setInstallStatus(statusResp.data);
+        if (statusResp.data.phase === 'done' || statusResp.data.phase === 'error') {
+          if (pollRef.current) clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+      }
+    }, 500);
+  }, []);
 
   // Auto-poll when on Step 2
   useEffect(() => {
@@ -135,6 +149,29 @@ export default function AndroidInstallStepper({ name, icon, desc, apkUrl }: Prop
     }
     return stopDetectPolling;
   }, [activeStep, startDetectPolling, stopDetectPolling]);
+
+  // Step 3 interrupt recovery: check if install is already in progress on mount
+  useEffect(() => {
+    if (activeStep !== 2 || !window._k2) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await window._k2!.run<InstallStatus>('adb-status', {});
+        if (cancelled) return;
+        if (resp.code === 0 && resp.data) {
+          const { phase } = resp.data;
+          if (phase !== 'idle' && phase !== 'done' && phase !== 'error') {
+            // Install already in progress — resume showing progress
+            setInstallStatus(resp.data);
+            startStatusPolling();
+          }
+        }
+      } catch {
+        // ignore
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeStep, startStatusPolling]);
 
   // Cleanup all polling on unmount
   useEffect(() => {
@@ -193,17 +230,6 @@ export default function AndroidInstallStepper({ name, icon, desc, apkUrl }: Prop
             />
           </Stack>
 
-          {selectedBrand === 'huawei' && (
-            <Alert severity="warning" sx={{ mb: 2 }}>
-              <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>
-                {t('purchase:androidInstall.huaweiWarningTitle')}
-              </Typography>
-              <Typography variant="body2">
-                {t('purchase:androidInstall.huaweiWarningDesc')}
-              </Typography>
-            </Alert>
-          )}
-
           {selectedBrand && selectedBrand !== 'other' && (
             <BrandGuideImages brandId={selectedBrand} />
           )}
@@ -223,32 +249,84 @@ export default function AndroidInstallStepper({ name, icon, desc, apkUrl }: Prop
       ),
     },
 
-    // Step 2: USB Connect & Authorize (auto-polls every 3s)
+    // Step 2: USB Connect & Authorize (three-state: no device / unauthorized / authorized)
     {
       label: t('purchase:androidInstall.step2Title'),
       content: (
         <Box>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            {t('purchase:androidInstall.step2Desc')}
-          </Typography>
-          <Typography variant="body2" color="warning.main" sx={{ mb: 2 }}>
-            {t('purchase:androidInstall.usbTrustPrompt')}
-          </Typography>
-
+          {/* State A: No devices — scanning + troubleshooting checklist */}
           {devices.length === 0 && (
-            <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 2 }}>
-              <CircularProgress size={20} />
-              <Typography variant="body2" color="text.secondary">
-                {installingDriver
-                  ? t('purchase:androidInstall.installingDriver')
-                  : t('purchase:androidInstall.scanningDevice')}
+            <>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                {t('purchase:androidInstall.step2Desc')}
               </Typography>
-            </Stack>
+
+              <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 2 }}>
+                <CircularProgress size={20} />
+                <Typography variant="body2" color="text.secondary">
+                  {installingDriver
+                    ? t('purchase:androidInstall.installingDriver')
+                    : t('purchase:androidInstall.scanningDevice')}
+                </Typography>
+              </Stack>
+
+              <Alert severity="warning" icon={<WarningIcon />} sx={{ mb: 2 }}>
+                <Typography variant="body2" fontWeight={500} sx={{ mb: 0.5 }}>
+                  {t('purchase:androidInstall.noDeviceChecklist')}
+                </Typography>
+                <Box component="ul" sx={{ m: 0, pl: 2 }}>
+                  <li><Typography variant="body2">{t('purchase:androidInstall.checkCable')}</Typography></li>
+                  <li><Typography variant="body2">{t('purchase:androidInstall.checkMtp')}</Typography></li>
+                  <li><Typography variant="body2">{t('purchase:androidInstall.checkUsbDebug')}</Typography></li>
+                  <li><Typography variant="body2">{t('purchase:androidInstall.checkXiaomiSecurity')}</Typography></li>
+                </Box>
+              </Alert>
+            </>
           )}
 
-          {devices.length > 0 && (
+          {/* State B: Unauthorized devices — prompt user to allow on phone */}
+          {!hasAuthorized && hasUnauthorized && (
+            <>
+              <Alert severity="success" sx={{ mb: 2 }}>
+                <Typography variant="body2" fontWeight={600}>
+                  {t('purchase:androidInstall.deviceDetectedUnauthorized')}
+                </Typography>
+              </Alert>
+
+              <Stack spacing={1} sx={{ mb: 2 }}>
+                {unauthorizedDevices.map((d) => (
+                  <Chip
+                    key={d.serial}
+                    icon={<PhoneIcon />}
+                    label={d.serial}
+                    color="warning"
+                    variant="outlined"
+                  />
+                ))}
+              </Stack>
+
+              <Alert severity="info" sx={{ mb: 2 }}>
+                <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>
+                  {t('purchase:androidInstall.tapAllowOnPhone')}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {t('purchase:androidInstall.tapAllowDetail')}
+                </Typography>
+              </Alert>
+
+              <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 2 }}>
+                <CircularProgress size={16} />
+                <Typography variant="caption" color="text.secondary">
+                  {t('purchase:androidInstall.scanningDevice')}
+                </Typography>
+              </Stack>
+            </>
+          )}
+
+          {/* State C: Authorized device found — shown briefly before auto-advance */}
+          {hasAuthorized && (
             <Stack spacing={1} sx={{ mb: 2 }}>
-              {devices.map((d) => (
+              {authorizedDevices.map((d) => (
                 <Chip
                   key={d.serial}
                   icon={<PhoneIcon />}
@@ -264,7 +342,7 @@ export default function AndroidInstallStepper({ name, icon, desc, apkUrl }: Prop
             <Button variant="text" onClick={() => setActiveStep(0)}>
               {t('common:common.back', '上一步')}
             </Button>
-            {devices.length === 0 && (
+            {!hasAuthorized && (
               <Button
                 variant="outlined"
                 startIcon={<UsbIcon />}
@@ -306,7 +384,7 @@ export default function AndroidInstallStepper({ name, icon, desc, apkUrl }: Prop
                 variant="contained"
                 color="primary"
                 onClick={startInstall}
-                disabled={devices.length === 0}
+                disabled={authorizedDevices.length === 0}
               >
                 {t('purchase:androidInstall.startInstall')}
               </Button>
