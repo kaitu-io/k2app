@@ -315,6 +315,89 @@ func TestRacingResolver_HealthDegradation(t *testing.T) {
 	}
 }
 
+func TestServerHealth_ProbeBackoff_Initial(t *testing.T) {
+	s := &serverHealth{addr: "a:53"}
+	for i := 0; i < 3; i++ {
+		s.recordFailure()
+	}
+	if got := s.probeBackoffDuration(); got != 30*time.Second {
+		t.Errorf("initial probe backoff = %v, want 30s", got)
+	}
+}
+
+func TestServerHealth_ProbeBackoff_Doubles(t *testing.T) {
+	s := &serverHealth{addr: "a:53"}
+	for i := 0; i < 3; i++ {
+		s.recordFailure()
+	}
+	s.recordProbeAttempt()
+	if got := s.probeBackoffDuration(); got != 60*time.Second {
+		t.Errorf("after 1 probe = %v, want 60s", got)
+	}
+	s.recordProbeAttempt()
+	if got := s.probeBackoffDuration(); got != 120*time.Second {
+		t.Errorf("after 2 probes = %v, want 120s", got)
+	}
+	s.recordProbeAttempt()
+	if got := s.probeBackoffDuration(); got != 240*time.Second {
+		t.Errorf("after 3 probes = %v, want 240s", got)
+	}
+	s.recordProbeAttempt()
+	if got := s.probeBackoffDuration(); got != 300*time.Second {
+		t.Errorf("after 4 probes = %v, want 300s (capped)", got)
+	}
+}
+
+func TestServerHealth_ProbeBackoff_ResetsOnSuccess(t *testing.T) {
+	s := &serverHealth{addr: "a:53"}
+	for i := 0; i < 3; i++ {
+		s.recordFailure()
+	}
+	s.recordProbeAttempt()
+	s.recordProbeAttempt()
+	s.recordProbeAttempt()
+	s.recordSuccess(10_000_000)
+	if got := s.probeBackoffDuration(); got != 30*time.Second {
+		t.Errorf("after success = %v, want 30s (reset)", got)
+	}
+}
+
+func TestPick_DegradedProbeRespectsBackoff(t *testing.T) {
+	r := newRacingResolver(
+		[]string{"a:53", "b:53"},
+		nil, 2, 5*time.Second, "test",
+	)
+	// a degraded, probed once (backoff=60s), probed 35s ago → NOT due
+	r.servers[0].consecutiveFail.Store(3)
+	r.servers[0].probeAttempts.Store(1) // backoff = 60s
+	r.servers[0].lastProbe.Store(time.Now().Add(-35 * time.Second).UnixNano())
+	r.servers[1].latencyNs.Store(10_000_000)
+
+	selected := r.pick()
+	if len(selected) != 1 {
+		t.Fatalf("len = %d, want 1 (a should not be probed yet)", len(selected))
+	}
+}
+
+func TestPick_DegradedProbeDueWithBackoff(t *testing.T) {
+	r := newRacingResolver(
+		[]string{"a:53", "b:53", "c:53"},
+		nil, 2, 5*time.Second, "test",
+	)
+	// a degraded, probed once (backoff=60s), probed 65s ago → due
+	r.servers[0].consecutiveFail.Store(3)
+	r.servers[0].probeAttempts.Store(1) // backoff = 60s
+	r.servers[0].lastProbe.Store(time.Now().Add(-65 * time.Second).UnixNano())
+	r.servers[1].latencyNs.Store(10_000_000)
+	r.servers[2].latencyNs.Store(20_000_000)
+
+	selected := r.pick()
+	// 2 healthy (b, c) ≥ raceN → a NOT probed (probe only when healthy < raceN)
+	if len(selected) != 2 {
+		t.Fatalf("len = %d, want 2", len(selected))
+	}
+}
+
 func TestRacingResolver_ConcurrentSafety(t *testing.T) {
 	var calls atomic.Int32
 	fn := func(ctx context.Context, server string, q *dns.Msg) (*dns.Msg, error) {
