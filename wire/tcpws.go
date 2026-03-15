@@ -461,6 +461,12 @@ func (c *TCPWSClient) DialUDP(ctx context.Context, addr string) (net.PacketConn,
 	return c.newSmuxUDPConn(mux, alloc, addr), nil
 }
 
+// DialStreamUDP opens a stream-backed UDP session.
+// TCPWSClient already uses smux streams for all UDP, so this is identical to DialUDP.
+func (c *TCPWSClient) DialStreamUDP(ctx context.Context, addr string) (net.PacketConn, error) {
+	return c.DialUDP(ctx, addr)
+}
+
 // newSmuxUDPConn creates a smuxUDPConn with a new session ID.
 func (c *TCPWSClient) newSmuxUDPConn(mux *smuxUDPMux, alloc *SessionIDAllocator, addr string) *smuxUDPConn {
 	sessionID := alloc.Next()

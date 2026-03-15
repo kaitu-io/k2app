@@ -37,6 +37,10 @@ func (m *mockTransport) DialUDP(ctx context.Context, addr string) (net.PacketCon
 	return nil, ErrUDPNotSupported
 }
 
+func (m *mockTransport) DialStreamUDP(ctx context.Context, addr string) (net.PacketConn, error) {
+	return m.DialUDP(ctx, addr)
+}
+
 func (m *mockTransport) Close() error {
 	m.closed = true
 	return nil

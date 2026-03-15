@@ -67,6 +67,10 @@ type StatsProvider interface {
 type Dialer interface {
 	DialTCP(ctx context.Context, addr string, earlyData []byte) (net.Conn, error)
 	DialUDP(ctx context.Context, addr string) (net.PacketConn, error)
+	// DialStreamUDP opens a stream-backed UDP session (reliable, congestion-controlled).
+	// Used for DNS queries where reliability matters more than low overhead.
+	// QUIC: uses QUIC stream (not DATAGRAM). TCP-WS: same as DialUDP (already stream-based).
+	DialStreamUDP(ctx context.Context, addr string) (net.PacketConn, error)
 	Close() error
 }
 

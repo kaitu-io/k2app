@@ -253,6 +253,52 @@ func (tm *TransportManager) DialUDP(ctx context.Context, addr string) (net.Packe
 	return nil, ErrNotConnected
 }
 
+// DialStreamUDP opens a stream-backed UDP session (reliable).
+// Prefers QUIC stream, falls back to TCP-WS (already stream-based).
+func (tm *TransportManager) DialStreamUDP(ctx context.Context, addr string) (net.PacketConn, error) {
+	tm.mu.RLock()
+	quic := tm.quic
+	tcpws := tm.tcpws
+	tm.mu.RUnlock()
+
+	slog.Debug("TransportManager: DialStreamUDP", "addr", addr, "hasQUIC", quic != nil, "hasTCPWS", tcpws != nil)
+
+	var quicErr error
+
+	if quic != nil && !tm.fallbackActive.Load() {
+		quicCtx, quicCancel := tm.quicContext(ctx, tcpws != nil)
+		conn, err := quic.DialStreamUDP(quicCtx, addr)
+		quicCancel()
+		if err == nil {
+			return conn, nil
+		}
+		if isProxyLayerError(err) {
+			return nil, err
+		}
+		slog.Debug("TransportManager: QUIC stream UDP failed, trying TCP-WS", "err", err)
+		quicErr = err
+		if qc, ok := quic.(*QUICClient); ok && qc.ConsecConnFails() >= quicConnFailThreshold {
+			tm.SetFallbackActive(true)
+		}
+	}
+
+	if tcpws != nil {
+		conn, err := tcpws.DialStreamUDP(ctx, addr)
+		if err == nil {
+			return conn, nil
+		}
+		if quicErr != nil {
+			return nil, &MultiTransportError{QUICErr: quicErr, TCPWSErr: err}
+		}
+		return nil, fmt.Errorf("TCP-WS: %w", err)
+	}
+
+	if quicErr != nil {
+		return nil, fmt.Errorf("QUIC: %w", quicErr)
+	}
+	return nil, ErrNotConnected
+}
+
 // Handshake verifies wire connectivity by completing the transport handshake
 // (QUIC or TCP-WS) without opening a proxy stream or dialing any target.
 // The cached connection is reused by subsequent DialTCP/DialUDP calls.

@@ -614,6 +614,18 @@ func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, 
 	}
 }
 
+// DialStreamUDP opens a stream-backed UDP session through QUIC streams.
+// Unlike DialUDP which prefers DATAGRAM (unreliable), this always uses streams
+// (reliable, congestion-controlled). Used for DNS queries where packet loss
+// causes 5s timeouts.
+func (c *QUICClient) DialStreamUDP(ctx context.Context, addr string) (net.PacketConn, error) {
+	conn, err := c.connect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return c.dialUDPStream(ctx, conn, addr)
+}
+
 // dialUDPStream opens a QUIC stream for UDP and returns a stream-based PacketConn.
 // Uses check-release-act-reacquire to avoid holding mu during blocking I/O
 // (OpenStreamSync, WriteH3ProxyFrameType, WriteStreamHeader).
