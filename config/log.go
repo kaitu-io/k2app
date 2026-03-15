@@ -150,10 +150,11 @@ func SetupLogging(cfg LogConfig, name string) (func(), error) {
 		// Redirect os.Stderr to lumberjack so go-deadlock output,
 		// runtime panics, and CGo crashes appear inline in k2.log.
 		var stderrDone chan struct{}
+		var restoreStderr func()
 		stderrR, stderrW, pipeErr := os.Pipe()
 		if pipeErr == nil {
 			os.Stderr = stderrW
-			_ = redirectStderrFD(stderrW) // also redirect fd 2 for runtime/CGo
+			restoreStderr, _ = redirectStderrFD(stderrW) // also redirect fd 2 for runtime/CGo
 			stderrDone = make(chan struct{})
 			ljForStderr := lj // capture for goroutine
 			go func() {
@@ -177,13 +178,20 @@ func SetupLogging(cfg LogConfig, name string) (func(), error) {
 			writer = lj
 		}
 		closeFn = func() {
-			// Close stderr pipe first, drain goroutine, then close lumberjack.
-			// Order matters: stderrW.Close() → goroutine reads EOF → <-done → lj.Close()
+			// Cleanup order matters:
+			// 1. Restore fd 2 to original (removes dup'd reference to pipe write end)
+			// 2. Close stderrW (now pipe write end has zero references → EOF)
+			// 3. Wait for goroutine to drain and exit
+			// 4. Close stderrR
+			// 5. Close lumberjack (goroutine is done, no write-after-close)
+			if restoreStderr != nil {
+				restoreStderr()
+			}
 			if stderrW != nil {
 				stderrW.Close()
 			}
 			if stderrDone != nil {
-				<-stderrDone // wait for goroutine to finish writing to lj
+				<-stderrDone
 			}
 			if stderrR != nil {
 				stderrR.Close()
