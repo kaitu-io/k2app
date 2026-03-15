@@ -15,9 +15,16 @@ import (
 // SetLogLevel changes it at runtime without recreating the handler.
 var LogLevel slog.LevelVar
 
+// BuildDebugLogging forces debug-level logging in all builds.    // BUILD_DEBUG_SWITCH
+// Set to false for production release.
+const BuildDebugLogging = true
+
 // parseLevel converts a string log level to slog.Level.
 // Defaults to slog.LevelInfo for unknown values.
 func parseLevel(level string) slog.Level {
+	if level == "" && BuildDebugLogging { // BUILD_DEBUG_SWITCH
+		return slog.LevelDebug
+	}
 	switch level {
 	case "debug":
 		return slog.LevelDebug
@@ -130,9 +137,10 @@ func SetupLogging(cfg LogConfig, name string) (func(), error) {
 		}
 		lj := &lumberjack.Logger{
 			Filename:   logPath,
-			MaxSize:    50, // MB
+			MaxSize:    20, // MB
 			MaxBackups: 3,
-			MaxAge:     30, // days
+			MaxAge:     7, // days
+			Compress:   true,
 		}
 		if cfg.ExtraWriter != nil {
 			writer = io.MultiWriter(lj, cfg.ExtraWriter)
