@@ -1,5 +1,7 @@
 VERSION := $(shell node -p "require('./package.json').version")
-K2_VARS  = VERSION=$(VERSION)
+K2_BUILD_LOG_LEVEL ?= debug
+export K2_BUILD_LOG_LEVEL  # Rust option_env!() and Vite process.env read this
+K2_VARS  = VERSION=$(VERSION) K2_BUILD_LOG_LEVEL=$(K2_BUILD_LOG_LEVEL)
 K2_BIN   = desktop/src-tauri/binaries
 FEATURES ?=
 TAURI_FEATURES_ARG := $(if $(FEATURES),--features $(FEATURES),)

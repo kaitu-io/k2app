@@ -64,6 +64,9 @@ export default defineConfig({
     //   html: './test-results/index.html',
     // },
   },
+  define: {
+    '__K2_BUILD_LOG_LEVEL__': JSON.stringify(process.env.K2_BUILD_LOG_LEVEL || 'debug'),
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

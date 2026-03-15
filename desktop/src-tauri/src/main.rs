@@ -67,9 +67,14 @@ fn main() {
         .plugin(tauri_plugin_localhost::Builder::new(14580).build())
         .plugin({
             let log_dir = resolve_log_dir();
-            // BUILD_DEBUG_SWITCH — change to conditional for production
+            // K2_BUILD_LOG_LEVEL env var at compile time (default: debug)
             tauri_plugin_log::Builder::new()
-                .level(log::LevelFilter::Debug)
+                .level(match option_env!("K2_BUILD_LOG_LEVEL") {
+                    Some("info") => log::LevelFilter::Info,
+                    Some("warn") => log::LevelFilter::Warn,
+                    Some("error") => log::LevelFilter::Error,
+                    _ => log::LevelFilter::Debug,
+                })
                 .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
                 .filter(|metadata| !metadata.target().starts_with("reqwest"))
                 .target(tauri_plugin_log::Target::new(

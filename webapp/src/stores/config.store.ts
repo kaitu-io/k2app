@@ -23,6 +23,9 @@
 import { create } from 'zustand';
 
 import type { ClientConfig } from '../types/client-config';
+
+/** Build-time log level from K2_BUILD_LOG_LEVEL env var (default: 'debug'). Injected by Vite define. */
+declare const __K2_BUILD_LOG_LEVEL__: string;
 import { CLIENT_CONFIG_DEFAULTS } from '../types/client-config';
 
 // ============ Constants ============
@@ -131,11 +134,11 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
 
     if (typeof params === 'object' && params !== null) {
       // New: buildConnectConfig({ serverUrl, isBeta })
-      result.log = { ...result.log, level: 'debug' }; // BUILD_DEBUG_SWITCH — change to 'info' for production
+      result.log = { ...result.log, level: __K2_BUILD_LOG_LEVEL__ };
       if (params.serverUrl) result.server = params.serverUrl;
     } else {
       // Legacy: buildConnectConfig() or buildConnectConfig(serverUrl)
-      result.log = { ...result.log, level: 'debug' }; // BUILD_DEBUG_SWITCH — change to 'info' for production
+      result.log = { ...result.log, level: __K2_BUILD_LOG_LEVEL__ };
       if (typeof params === 'string' && params) result.server = params;
     }
 
