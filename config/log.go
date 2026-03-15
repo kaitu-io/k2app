@@ -15,15 +15,19 @@ import (
 // SetLogLevel changes it at runtime without recreating the handler.
 var LogLevel slog.LevelVar
 
-// BuildDebugLogging forces debug-level logging in all builds.    // BUILD_DEBUG_SWITCH
-// Set to false for production release.
-const BuildDebugLogging = true
+// buildLogLevel is the default log level when none is explicitly configured.
+// Set at build time via ldflags:
+//
+//	go build -ldflags "-X github.com/kaitu-io/k2/config.buildLogLevel=info"
+//
+// Default "debug" for development. CI/Makefile passes K2_BUILD_LOG_LEVEL env.
+var buildLogLevel = "debug"
 
 // parseLevel converts a string log level to slog.Level.
-// Defaults to slog.LevelInfo for unknown values.
+// When level is empty, falls back to buildLogLevel (set via ldflags).
 func parseLevel(level string) slog.Level {
-	if level == "" && BuildDebugLogging { // BUILD_DEBUG_SWITCH
-		return slog.LevelDebug
+	if level == "" {
+		level = buildLogLevel
 	}
 	switch level {
 	case "debug":

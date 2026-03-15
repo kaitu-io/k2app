@@ -6,7 +6,8 @@
 
 VERSION ?= dev
 COMMIT  ?= $(shell git rev-parse --short HEAD)
-LDFLAGS  = -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)
+K2_BUILD_LOG_LEVEL ?= debug
+LDFLAGS  = -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X github.com/kaitu-io/k2/config.buildLogLevel=$(K2_BUILD_LOG_LEVEL)
 # Production builds disable go-deadlock for zero overhead.
 PROD_TAGS = -tags=deadlock_disable
 
