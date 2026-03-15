@@ -2,6 +2,7 @@ package wire
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -10,6 +11,32 @@ import (
 
 	"github.com/sasha-s/go-deadlock"
 )
+
+// proxyLayerErr is implemented by errors where the wire transport
+// (k2 ↔ k2s) was proven working. TCP-WS fallback connects to the
+// same server — it won't help with proxy-layer problems.
+type proxyLayerErr interface {
+	IsProxyLayer() bool
+}
+
+// ProxyLayerError wraps any error that occurred after the request
+// was successfully sent to the server (stream opened + header written).
+// The wire transport worked; TCP-WS fallback to the same server won't help.
+type ProxyLayerError struct {
+	Err error
+}
+
+func (e *ProxyLayerError) Error() string      { return e.Err.Error() }
+func (e *ProxyLayerError) Unwrap() error      { return e.Err }
+func (e *ProxyLayerError) IsProxyLayer() bool  { return true }
+
+// isProxyLayerError returns true when the Dialer has marked the error
+// as proxy-layer (server responded, transport worked). Checked via
+// interface — no type enumeration needed.
+func isProxyLayerError(err error) bool {
+	var pe proxyLayerErr
+	return errors.As(err, &pe) && pe.IsProxyLayer()
+}
 
 // MultiTransportError is returned when both QUIC and TCP-WS transports fail.
 // Unwrap returns the TCP-WS error (last-resort transport) for classification.
@@ -80,13 +107,14 @@ func (tm *TransportManager) SetTCPWS(d Dialer) {
 func (tm *TransportManager) recordQuicSuccess() {
 	tm.mu.RLock()
 	if qc, ok := tm.quic.(*QUICClient); ok {
-		qc.handshakeFailStreak.Store(0)
+		qc.RecordSuccess()
 	}
 	tm.mu.RUnlock()
 
 	wasFallback := tm.fallbackActive.Swap(false)
 	if wasFallback {
 		slog.Info("wire: QUIC recovered from fallback")
+		slog.Info("DIAG: transport-switch", "from", "tcpws", "to", "quic", "reason", "quic-recovered")
 	}
 }
 
@@ -95,6 +123,7 @@ func (tm *TransportManager) SetFallbackActive(active bool) {
 	if active {
 		if tm.fallbackActive.CompareAndSwap(false, true) {
 			slog.Warn("wire: QUIC fallback activated")
+			slog.Warn("DIAG: transport-switch", "from", "quic", "to", "tcpws", "reason", "quic-handshake-threshold")
 		}
 	} else {
 		tm.fallbackActive.Store(false)
@@ -128,7 +157,14 @@ func (tm *TransportManager) DialTCP(ctx context.Context, addr string, earlyData 
 			tm.recordQuicSuccess()
 			return conn, nil
 		}
-		slog.Debug("TransportManager: QUIC failed", "err", err)
+		// Server responded with error — transport worked, proxy layer failed.
+		// TCP-WS hits the same server; fallback won't help.
+		if isProxyLayerError(err) {
+			slog.Debug("TransportManager: QUIC proxy error, skipping TCP-WS", "err", err)
+			return nil, err
+		}
+
+		slog.Debug("TransportManager: QUIC transport error, trying TCP-WS", "err", err)
 		quicErr = err
 		if qc, ok := quic.(*QUICClient); ok && qc.ConsecConnFails() >= quicConnFailThreshold {
 			tm.SetFallbackActive(true)
@@ -182,7 +218,13 @@ func (tm *TransportManager) DialUDP(ctx context.Context, addr string) (net.Packe
 			slog.Debug("TransportManager: QUIC UDP success", "addr", addr)
 			return conn, nil
 		}
-		slog.Debug("TransportManager: QUIC UDP failed", "err", err)
+		// Server responded with error — transport worked, proxy layer failed.
+		if isProxyLayerError(err) {
+			slog.Debug("TransportManager: QUIC UDP proxy error, skipping TCP-WS", "err", err)
+			return nil, err
+		}
+
+		slog.Debug("TransportManager: QUIC UDP transport error, trying TCP-WS", "err", err)
 		quicErr = err
 		if qc, ok := quic.(*QUICClient); ok && qc.ConsecConnFails() >= quicConnFailThreshold {
 			tm.SetFallbackActive(true)
@@ -209,6 +251,69 @@ func (tm *TransportManager) DialUDP(ctx context.Context, addr string) (net.Packe
 		return nil, fmt.Errorf("QUIC: %w", quicErr)
 	}
 	return nil, ErrNotConnected
+}
+
+// Handshake verifies wire connectivity by completing the transport handshake
+// (QUIC or TCP-WS) without opening a proxy stream or dialing any target.
+// The cached connection is reused by subsequent DialTCP/DialUDP calls.
+//
+// Follows the same QUIC-preferred, TCP-WS-fallback logic as DialTCP:
+// - Try QUIC connect first (skip if fallback active)
+// - On QUIC failure, track handshake streak + try TCP-WS
+// - Return MultiTransportError if both fail
+func (tm *TransportManager) Handshake(ctx context.Context) error {
+	tm.mu.RLock()
+	quic := tm.quic
+	tcpws := tm.tcpws
+	tm.mu.RUnlock()
+
+	slog.Debug("TransportManager: Handshake", "hasQUIC", quic != nil, "hasTCPWS", tcpws != nil)
+
+	var quicErr error
+
+	// Try QUIC first (preferred), skip if fallback is active.
+	if quic != nil && !tm.fallbackActive.Load() {
+		quicCtx, quicCancel := tm.quicContext(ctx, tcpws != nil)
+		slog.Debug("TransportManager: Handshake trying QUIC")
+		if qc, ok := quic.(*QUICClient); ok {
+			_, err := qc.connect(quicCtx)
+			quicCancel()
+			if err == nil {
+				tm.recordQuicSuccess()
+				slog.Info("TransportManager: Handshake QUIC ok")
+				return nil
+			}
+			slog.Debug("TransportManager: Handshake QUIC failed", "err", err)
+			quicErr = err
+			if qc.ConsecConnFails() >= quicConnFailThreshold {
+				tm.SetFallbackActive(true)
+			}
+		} else {
+			quicCancel()
+		}
+	}
+
+	// Fall back to TCP-WS.
+	if tcpws != nil {
+		slog.Debug("TransportManager: Handshake trying TCP-WS")
+		if tc, ok := tcpws.(*TCPWSClient); ok {
+			_, err := tc.connect(ctx)
+			if err == nil {
+				slog.Info("TransportManager: Handshake TCP-WS ok")
+				return nil
+			}
+			slog.Debug("TransportManager: Handshake TCP-WS failed", "err", err)
+			if quicErr != nil {
+				return &MultiTransportError{QUICErr: quicErr, TCPWSErr: err}
+			}
+			return fmt.Errorf("TCP-WS: %w", err)
+		}
+	}
+
+	if quicErr != nil {
+		return fmt.Errorf("QUIC: %w", quicErr)
+	}
+	return ErrNotConnected
 }
 
 // quicContext returns a sub-context for QUIC with a time budget.
@@ -312,13 +417,10 @@ func (tm *TransportManager) ResetConnections() {
 	tm.mu.RUnlock()
 
 	if qc, ok := q.(*QUICClient); ok {
-		qc.resetConnection()
-		qc.portHopAttempts.Store(0)
-		qc.portHopExhaustedAt.Store(0)
-		qc.handshakeFailStreak.Store(0)
+		qc.Reset()
 	}
 	if tc, ok := t.(*TCPWSClient); ok {
-		tc.resetConnection()
+		tc.Reset()
 	}
 
 	tm.fallbackActive.Store(false)

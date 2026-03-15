@@ -485,7 +485,12 @@ func (d *dnsOverride) monitor() {
 // Lock only for field reads; CGo/I/O outside lock.
 func (d *dnsOverride) stop() {
 	close(d.stopCh)
-	<-d.stopped
+	select {
+	case <-d.stopped:
+		// Normal: CFRunLoop stopped cleanly.
+	case <-time.After(5 * time.Second):
+		slog.Warn("provider: DNS monitor stop timed out, proceeding with cleanup")
+	}
 
 	d.mu.Lock()
 	serviceID := d.serviceID

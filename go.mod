@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/apernet/quic-go v0.57.2-0.20260111184307-eec823306178
 	github.com/coder/websocket v1.8.14
+	github.com/electricbubble/gadb v0.1.0
 	github.com/kaitu-io/k2rule v0.6.4
 	github.com/metacubex/utls v1.8.4
 	github.com/miekg/dns v1.1.72

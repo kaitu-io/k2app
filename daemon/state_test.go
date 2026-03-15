@@ -3,12 +3,35 @@ package daemon
 import (
 	"context"
 	"os"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/engine"
 )
+
+func TestStateFilePath_NotInSystemTempDir(t *testing.T) {
+	path := stateFilePath()
+
+	if runtime.GOOS == "windows" {
+		winTemp := os.Getenv("SystemRoot")
+		if winTemp != "" {
+			systemTemp := winTemp + `\Temp`
+			if strings.HasPrefix(strings.ToLower(path), strings.ToLower(systemTemp)) {
+				t.Errorf("stateFilePath() = %q, must not be under system temp %q", path, systemTemp)
+			}
+		}
+	}
+
+	if path == "" {
+		t.Fatal("stateFilePath() returned empty string")
+	}
+	if !strings.Contains(path, "k2") {
+		t.Errorf("stateFilePath() = %q, should contain 'k2'", path)
+	}
+}
 
 func TestStatePersistence(t *testing.T) {
 	// Clean up.

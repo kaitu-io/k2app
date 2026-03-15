@@ -16,7 +16,7 @@ Platform Shell (daemon/appext)
               ├── 2.5. Start NetworkMonitor (DirectDialer needs DefaultInterface)
               ├── 3. Happy Eyeballs address resolution (RFC 8305)
               ├── 4. Build transports (QUIC + TCP-WS)
-              ├── 4.5. Wire connectivity probe (TCP + UDP)
+              ├── 4.5. Wire handshake probe (QUIC/TCP-WS handshake only, no target dial)
               ├── 5. Router (k2rule)
               ├── 6. Provider (TUN/Proxy/TProxy/appext FD)
               ├── 7. ClientTunnel
@@ -28,8 +28,8 @@ Platform Shell (daemon/appext)
 
 ## State Machine
 
-4 engine states: `disconnected`, `connecting`, `connected`, `paused`
-2 handler-only transient values: `reconnecting`, `paused` (engine.state stays `connected`)
+5 engine states: `disconnected`, `connecting`, `connected`, `paused`, `reconnecting`
+Note: `reconnecting` and `paused` are transient — engine.state stays `connected`, these are handler-only broadcasts
 
 - `Start()`: disconnected → connecting → connected (or disconnected on error)
 - `Stop()`: any → disconnected (idempotent, resets `paused`)
@@ -73,7 +73,7 @@ HTTP-aligned error codes for frontend consumption:
 - `status.go` — `Status` struct, custom `MarshalJSON` (computes `uptime_seconds` dynamically)
 - `event.go` — `EventHandler` interface (`OnStatus(Status)` + `OnStats`), state constants
 - `error.go` — `EngineError`, `ClassifyError` (HTTP-aligned error codes, MultiTransportError handling)
-- `health.go` — `healthMonitor` (1Hz sampling, ring buffer 300s, EWMA smoothing α=0.3 on smoothWireLoss, health FSM: healthy→degraded(≥5 streak)→critical(≥5 streak), corrective action: full reconnect with 10s cooldown). TCP health gate: `tcpRecentlyHealthy()` (30s window) suppresses reconnect when TCP streams are working. Wire-layer metrics only — relay metrics are observability (see `wire/VOCABULARY.md`).
+- `health.go` — `healthMonitor` (1Hz sampling, ring buffer 300s, EWMA smoothing α=0.3 on smoothWireLoss, health FSM: healthy→degraded(≥5 streak)→critical(≥5 streak), corrective action: full reconnect with 10s cooldown). TCP health gate: `tcpRecentlyHealthy()` (30s window) suppresses reconnect when TCP streams are working. Wire-layer metrics only — relay metrics are observability (see `wire/VOCABULARY.md`). `DIAG: wake` event emitted when wall-clock gap > 5s between samples (detects macOS sleep/wake — Go runtime suspends during sleep, so heartbeat timer freezes).
 - `health_test.go` — Health monitor tests (EWMA smoothing, transitions, reset)
 - `recovery_probe.go` — Background QUIC probe during TCP-WS fallback (3-attempt limit, 3s initial delay, stops on client/auth errors)
 - `recovery_probe_test.go` — Recovery probe tests

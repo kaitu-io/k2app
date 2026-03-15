@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"runtime"
@@ -118,7 +119,7 @@ func TestSetupLogging_LevelDebug(t *testing.T) {
 	defer cleanup()
 
 	handler := slog.Default().Handler()
-	if !handler.Enabled(nil, slog.LevelDebug) {
+	if !handler.Enabled(context.Background(), slog.LevelDebug) {
 		t.Error("debug level should be enabled, but handler rejected it")
 	}
 }
@@ -133,10 +134,10 @@ func TestSetupLogging_LevelError(t *testing.T) {
 	defer cleanup()
 
 	handler := slog.Default().Handler()
-	if handler.Enabled(nil, slog.LevelInfo) {
+	if handler.Enabled(context.Background(), slog.LevelInfo) {
 		t.Error("info level should be disabled when level is error")
 	}
-	if !handler.Enabled(nil, slog.LevelError) {
+	if !handler.Enabled(context.Background(), slog.LevelError) {
 		t.Error("error level should be enabled when level is error")
 	}
 }
@@ -153,22 +154,22 @@ func TestSetLogLevel_HotSwitch(t *testing.T) {
 
 	// Initially info — debug should be disabled.
 	handler := slog.Default().Handler()
-	if handler.Enabled(nil, slog.LevelDebug) {
+	if handler.Enabled(context.Background(), slog.LevelDebug) {
 		t.Fatal("debug should be disabled at info level")
 	}
 
 	// Hot-switch to debug.
 	SetLogLevel("debug")
-	if !handler.Enabled(nil, slog.LevelDebug) {
+	if !handler.Enabled(context.Background(), slog.LevelDebug) {
 		t.Error("after SetLogLevel(debug), debug should be enabled")
 	}
 
 	// Hot-switch to error.
 	SetLogLevel("error")
-	if handler.Enabled(nil, slog.LevelInfo) {
+	if handler.Enabled(context.Background(), slog.LevelInfo) {
 		t.Error("after SetLogLevel(error), info should be disabled")
 	}
-	if !handler.Enabled(nil, slog.LevelError) {
+	if !handler.Enabled(context.Background(), slog.LevelError) {
 		t.Error("after SetLogLevel(error), error should be enabled")
 	}
 

@@ -43,6 +43,7 @@ type Engine struct {
 	networkMonitor NetworkChangeNotifier
 	health         *healthMonitor
 	probe          *recoveryProbe
+	proxyDNS       *dns.ProxyDNSClient // proxy DNS connection pool (nil in proxy mode)
 }
 
 // New creates a new Engine in the disconnected state.
@@ -176,36 +177,29 @@ func (e *Engine) Start(cfg Config) error {
 		"hasTCPWS", tcpwsClient != nil,
 	)
 
-	// 4.5 Verify wire connectivity before setting up TUN/provider.
+	// 4.5 Verify wire handshake (client ↔ server) before setting up TUN/provider.
+	// Completes QUIC or TCP-WS handshake only — does NOT proxy to any target.
 	// Without this check, engine reports "connected" after TUN starts even if
-	// wire server is unreachable — DNS handler silently absorbs wire failures
-	// and ReportWireError() never triggers (no TCP connections created).
-	slog.Info("engine: step 4.5 - wire connectivity probe", "elapsed", time.Since(startTime))
-	probeCtx, probeCancel := context.WithTimeout(ctx, 15*time.Second)
-	probeConn, probeErr := tm.DialTCP(probeCtx, "1.1.1.1:443", nil)
-	probeCancel()
-	if probeErr != nil {
-		slog.Warn("engine: wire probe failed", "err", probeErr)
+	// the server is unreachable. DNS failures are silently accumulated (threshold=30)
+	// and the health monitor sees no transport data, creating a ~15s false-connected window.
+	// The cached connection is reused by subsequent DialTCP/DialUDP (fast path).
+	slog.Info("engine: step 4.5 - wire handshake probe", "elapsed", time.Since(startTime))
+	hsStart := time.Now()
+	hsCtx, hsCancel := context.WithTimeout(ctx, 15*time.Second)
+	hsErr := tm.Handshake(hsCtx)
+	hsCancel()
+	hsMs := time.Since(hsStart).Milliseconds()
+	if hsErr != nil {
+		slog.Warn("engine: wire handshake failed", "err", hsErr)
+		slog.Warn("DIAG: wire-handshake-fail", "handshakeMs", hsMs, "err", hsErr)
 		if cfg.NetworkMonitor != nil {
 			cfg.NetworkMonitor.Close()
 		}
 		tm.Close()
-		return e.fail(fmt.Errorf("wire probe: %w", probeErr))
+		return e.fail(fmt.Errorf("wire handshake: %w", hsErr))
 	}
-	probeConn.Close()
-	slog.Info("engine: step 4.5 - wire probe ok", "elapsed", time.Since(startTime))
-
-	// 4.6 Optional UDP probe — non-fatal, logs warning if UDP broken.
-	// Runtime datagram health tracking (Step 2) handles fallback.
-	udpProbeCtx, udpProbeCancel := context.WithTimeout(ctx, 5*time.Second)
-	udpConn, udpErr := tm.DialUDP(udpProbeCtx, "8.8.8.8:53")
-	udpProbeCancel()
-	if udpErr != nil {
-		slog.Warn("engine: wire UDP probe failed (DNS will use fallback)", "err", udpErr)
-	} else {
-		udpConn.Close()
-		slog.Info("engine: step 4.6 - wire UDP probe ok", "elapsed", time.Since(startTime))
-	}
+	slog.Info("engine: step 4.5 - wire handshake ok", "elapsed", time.Since(startTime))
+	slog.Info("DIAG: wire-handshake", "handshakeMs", hsMs, "transport", tm.WireStats().Transport)
 
 	// 5. Router.
 	router := core.NewRouter()
@@ -272,6 +266,7 @@ func (e *Engine) Start(cfg Config) error {
 	tunnel := core.NewClientTunnel(tunnelCfg)
 
 	// 8. Start.
+	var proxyDNS *dns.ProxyDNSClient // non-nil in TUN mode; stored in Engine for reconnect reset
 	if client.Mode != "proxy" {
 		// TUN mode (mobile or desktop): intercept DNS at port 53.
 		// If DirectDialer implements DialerController, use its control func
@@ -282,14 +277,16 @@ func (e *Engine) Start(cfg Config) error {
 				Control: dc.ControlFunc(),
 			}))
 		}
+		proxyDNS = dns.NewProxyDNSClient(dns.ProxyDNSClientConfig{
+			Dialer:  tm,
+			Servers: client.DNS.Proxy,
+		})
 		dnsMW := dns.NewMiddleware(dns.MiddlewareConfig{
-			ProxyDNS: dns.NewProxyDNSClient(dns.ProxyDNSClientConfig{
-				Dialer:  tm,
-				Servers: client.DNS.Proxy,
-			}),
+			ProxyDNS: proxyDNS,
 			DirectDNS: dns.NewDirectDNSClient(client.DNS.Direct, dnsOpts...),
 			DNSCache:  dns.NewDNSCache(dns.DNSCacheConfig{}),
 			Filter:    dns.NewFilter(dns.FilterConfig{}),
+			EngineCtx: ctx, // engine context — cancelled on Stop()
 		})
 		if err := tunnel.StartWithHandler(ctx, &dnsHandler{inner: tunnel, dns: dnsMW, ctx: ctx, engine: e}); err != nil {
 			if cfg.NetworkMonitor != nil {
@@ -312,22 +309,25 @@ func (e *Engine) Start(cfg Config) error {
 	// 9. Commit — verify not cancelled before saving resources.
 	e.mu.Lock()
 	if ctx.Err() != nil {
-		// Stop() was called during Start() — clean up started resources.
+		// Stop() was called during Start() — clean up ALL started resources.
+		// Order follows resource ownership: prov → tm → tunnel (same as Stop()).
 		e.mu.Unlock()
 		if cfg.NetworkMonitor != nil {
 			cfg.NetworkMonitor.Close()
 		}
 		prov.Close()
 		tm.Close()
+		tunnel.Close()
 		return ctx.Err()
 	}
 	e.tunnel = tunnel
 	e.tm = tm
 	e.prov = prov
+	e.proxyDNS = proxyDNS
 	e.networkMonitor = cfg.NetworkMonitor
 
 	// Start health monitor (1Hz wire stats sampling + health FSM).
-	hm := newHealthMonitor(tm, tunnel, cfg.HealthCallback, func() { e.onHealthCritical() })
+	hm := newHealthMonitor(tm, tunnel, cfg.HealthCallback, func() { e.onHealthCritical() }, time.Now())
 	hm.start()
 	e.health = hm
 
@@ -342,6 +342,12 @@ func (e *Engine) Start(cfg Config) error {
 		handler.OnStatus(status)
 	}
 	slog.Info("engine: connected", "totalMs", time.Since(startTime).Milliseconds())
+	slog.Info("DIAG: connected",
+		"server", extractServerHost(client.Server),
+		"mode", client.Mode,
+		"ruleGlobal", client.Rule.Global,
+		"dialMs", time.Since(startTime).Milliseconds(),
+	)
 
 	// Network monitor already started in step 4.1 (before wire probe).
 
@@ -359,6 +365,7 @@ func (e *Engine) reconnect() bool {
 	}
 	handler := e.handler
 	tm := e.tm
+	pdns := e.proxyDNS
 	e.mu.Unlock()
 
 	// Notify handler of transient reconnecting state (for UI feedback).
@@ -369,6 +376,11 @@ func (e *Engine) reconnect() bool {
 	// Reset cached connections — next dial will create fresh ones.
 	if tm != nil {
 		tm.ResetConnections()
+	}
+	// Flush proxy DNS connection pool — stale UDP sessions through
+	// the old wire transport would timeout on next query otherwise.
+	if pdns != nil {
+		pdns.ResetConnections()
 	}
 
 	// Reset health monitor — stale data from old connection is irrelevant.
@@ -446,10 +458,14 @@ func (e *Engine) Pause() {
 	slog.Info("engine: paused")
 	handler := e.handler
 	tm := e.tm
+	pdns := e.proxyDNS
 	e.mu.Unlock()
 
 	if tm != nil {
 		tm.ResetConnections()
+	}
+	if pdns != nil {
+		pdns.ResetConnections()
 	}
 	if handler != nil {
 		handler.OnStatus(Status{State: StatePaused})
@@ -467,11 +483,15 @@ func (e *Engine) Wake() {
 	slog.Info("engine: woke")
 	handler := e.handler
 	tm := e.tm
+	pdns := e.proxyDNS
 	s := e.buildStatusLocked()
 	e.mu.Unlock()
 
 	if tm != nil {
 		tm.ResetConnections()
+	}
+	if pdns != nil {
+		pdns.ResetConnections()
 	}
 	if handler != nil {
 		handler.OnStatus(s)
@@ -489,6 +509,16 @@ func (e *Engine) Stop() error {
 		"previousState", e.state,
 		"hadError", e.lastError != nil,
 	)
+
+	// Capture session metrics before teardown (fields still valid under e.mu).
+	var sessionUptime time.Duration
+	var sessionTx, sessionRx int64
+	if !e.connectedAt.IsZero() {
+		sessionUptime = time.Since(e.connectedAt)
+	}
+	if e.tunnel != nil {
+		sessionTx, sessionRx = e.tunnel.TrafficBytes()
+	}
 
 	// Mark disconnected immediately — blocks OnNetworkChanged from starting
 	// new work (it checks state != StateConnected and returns early).
@@ -526,6 +556,7 @@ func (e *Engine) Stop() error {
 	e.tm = nil
 	tunnel := e.tunnel
 	e.tunnel = nil
+	e.proxyDNS = nil // no explicit close needed — tm.Close() cascades
 	e.client = nil
 	e.connectedAt = time.Time{}
 	e.paused = false
@@ -558,6 +589,13 @@ func (e *Engine) Stop() error {
 	}
 	if tunnel != nil {
 		tunnel.Close()
+	}
+	if sessionUptime > 0 {
+		slog.Info("DIAG: session-end",
+			"uptimeS", int(sessionUptime.Seconds()),
+			"txMB", fmt.Sprintf("%.1f", float64(sessionTx)/(1024*1024)),
+			"rxMB", fmt.Sprintf("%.1f", float64(sessionRx)/(1024*1024)),
+		)
 	}
 	return nil
 }
@@ -733,6 +771,11 @@ func (e *Engine) ReportWireError(err error) {
 	}
 	e.lastError = newErr
 	slog.Warn("engine: wire error",
+		"code", newErr.Code,
+		"category", newErr.Category,
+		"message", newErr.Message,
+	)
+	slog.Warn("DIAG: wire-error",
 		"code", newErr.Code,
 		"category", newErr.Category,
 		"message", newErr.Message,

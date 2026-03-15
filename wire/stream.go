@@ -230,4 +230,5 @@ type StreamError struct {
 	Message string
 }
 
-func (e *StreamError) Error() string { return e.Message }
+func (e *StreamError) Error() string      { return e.Message }
+func (e *StreamError) IsProxyLayer() bool  { return true }

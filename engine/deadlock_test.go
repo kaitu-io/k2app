@@ -34,7 +34,7 @@ func TestDeadlock_HealthMonitorSampleAndResetCounters(t *testing.T) {
 	hm = newHealthMonitor(tm, tunnel, nil, func() {
 		// Simulate OnNetworkChanged: acquires hm.mu via resetCounters.
 		hm.resetCounters()
-	})
+	}, time.Now())
 
 	// Force critical state → onReconnect fires.
 	hm.mu.Lock()
@@ -75,7 +75,7 @@ func TestDeadlock_EngineStopVsHealthGoroutine(t *testing.T) {
 		e.mu.Lock()
 		time.Sleep(time.Millisecond)
 		e.mu.Unlock()
-	})
+	}, time.Now())
 
 	// Force critical state so onReconnect fires from health goroutine.
 	hm.mu.Lock()
@@ -108,7 +108,7 @@ func TestDeadlock_LockOrderingEngineThenHealth(t *testing.T) {
 	tm := mockTransportManager()
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
 
-	hm := newHealthMonitor(tm, tunnel, nil, nil)
+	hm := newHealthMonitor(tm, tunnel, nil, nil, time.Now())
 
 	// Goroutine 1: engine.mu → health.mu (correct order)
 	var wg sync.WaitGroup

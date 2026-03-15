@@ -22,6 +22,9 @@ type Metrics struct {
 	MessageCacheHits uint64
 	StaleCacheHits   uint64
 
+	// Prefresh
+	PrefreshTriggered uint64
+
 	// Errors
 	Errors uint64
 }
@@ -106,6 +109,14 @@ func (m *Metrics) IncrStaleCacheHit() {
 	atomic.AddUint64(&m.StaleCacheHits, 1)
 }
 
+// IncrPrefreshTriggered increments the prefresh trigger count
+func (m *Metrics) IncrPrefreshTriggered() {
+	if m == nil {
+		return
+	}
+	atomic.AddUint64(&m.PrefreshTriggered, 1)
+}
+
 // IncrError increments error count
 func (m *Metrics) IncrError() {
 	if m == nil {
@@ -179,14 +190,15 @@ func (m *Metrics) String() string {
 	noise := atomic.LoadUint64(&m.NoiseFiltered)
 	msgCache := atomic.LoadUint64(&m.MessageCacheHits)
 	staleCache := atomic.LoadUint64(&m.StaleCacheHits)
+	prefresh := atomic.LoadUint64(&m.PrefreshTriggered)
 	errors := atomic.LoadUint64(&m.Errors)
 
 	return fmt.Sprintf(
 		"DNS Metrics: Total=%d Direct=%d Proxy=%d | "+
-			"Filters: Hosts=%d Special=%d Local=%d Noise=%d Cache=%d Stale=%d | "+
+			"Filters: Hosts=%d Special=%d Local=%d Noise=%d Cache=%d Stale=%d Prefresh=%d | "+
 			"Rates: Filter=%.1f%% Upstream=%.1f%% Errors=%d",
 		total, direct, proxy,
-		hosts, special, local, noise, msgCache, staleCache,
+		hosts, special, local, noise, msgCache, staleCache, prefresh,
 		m.FilterRate(), m.UpstreamRate(), errors,
 	)
 }
@@ -205,5 +217,6 @@ func (m *Metrics) Reset() {
 	atomic.StoreUint64(&m.NoiseFiltered, 0)
 	atomic.StoreUint64(&m.MessageCacheHits, 0)
 	atomic.StoreUint64(&m.StaleCacheHits, 0)
+	atomic.StoreUint64(&m.PrefreshTriggered, 0)
 	atomic.StoreUint64(&m.Errors, 0)
 }

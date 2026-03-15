@@ -8,6 +8,10 @@ Server-side listener orchestration, auto-provisioning, and TCP/UDP proxy handler
 - `handler.go` — TCP/UDP proxy handlers (AcceptTCP → net.Dial → pipe)
 - `*_test.go` — unit tests for TLS peek, handlers, auto-provisioning
 
+## Server DNS Cache
+
+`HandleUDP` transparently caches DNS responses for port-53 traffic using `core/dns.DNSCache` (freelru, 10k entries, 5min–4hr TTL, 30min stale window). Cache hit: respond directly from cache, no upstream query. Cache miss: forward to upstream, cache response, respond to client. Truncated (TC) responses forwarded but not cached. Non-DNS UDP (port != 53) unchanged. `writeToMu` serializes `conn.WriteTo` calls from cache-hit goroutine and upstream-response goroutine.
+
 ## Architecture
 
 ```

@@ -3,6 +3,7 @@ package dns
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sort"
 	"sync/atomic"
 	"time"
@@ -14,7 +15,8 @@ type queryFunc func(ctx context.Context, server string, query *dns.Msg) (*dns.Ms
 
 const (
 	degradedThreshold int32 = 3
-	probeInterval           = 30 * time.Second
+	baseProbeInterval       = 30 * time.Second
+	maxProbeInterval        = 5 * time.Minute
 	latencyEWMAAlpha        = 0.3
 	defaultRaceN            = 2
 )
@@ -25,10 +27,12 @@ type serverHealth struct {
 	latencyNs       atomic.Int64 // EWMA nanoseconds, used by pick() for ranking
 	lastSuccess     atomic.Int64 // UnixNano, for observability (not used in selection)
 	lastProbe       atomic.Int64 // UnixNano, rate-limits degraded server probing
+	probeAttempts   atomic.Int32 // incremented on probe schedule, reset to 0 on success; drives exponential backoff
 }
 
 func (s *serverHealth) recordSuccess(latencyNs int64) {
 	s.consecutiveFail.Store(0)
+	s.probeAttempts.Store(0) // reset backoff on success
 	s.lastSuccess.Store(time.Now().UnixNano())
 	// Benign race: concurrent updates may lose one sample; acceptable for ranking heuristic.
 	old := s.latencyNs.Load()
@@ -37,6 +41,25 @@ func (s *serverHealth) recordSuccess(latencyNs int64) {
 	} else {
 		s.latencyNs.Store(int64(latencyEWMAAlpha*float64(latencyNs) + (1-latencyEWMAAlpha)*float64(old)))
 	}
+}
+
+// probeBackoffDuration returns the current probe interval with exponential backoff.
+// Base 30s doubles per probe attempt: 30s → 60s → 120s → 240s → 300s (cap).
+func (s *serverHealth) probeBackoffDuration() time.Duration {
+	attempts := s.probeAttempts.Load()
+	interval := baseProbeInterval
+	for i := int32(0); i < attempts; i++ {
+		interval *= 2
+		if interval >= maxProbeInterval {
+			return maxProbeInterval
+		}
+	}
+	return interval
+}
+
+// recordProbeAttempt increments the probe attempt counter for backoff.
+func (s *serverHealth) recordProbeAttempt() {
+	s.probeAttempts.Add(1)
 }
 
 func (s *serverHealth) recordFailure() {
@@ -101,12 +124,18 @@ func (r *racingResolver) pick() []*serverHealth {
 	selected := make([]*serverHealth, n)
 	copy(selected, healthy[:n])
 
-	// Add one degraded server due for probe (if room or healthy insufficient)
+	// Add one degraded server due for probe (if room or healthy insufficient).
+	// CAS on lastProbe prevents concurrent pick() from double-scheduling.
 	if len(selected) < r.raceN {
 		now := time.Now().UnixNano()
 		for _, s := range degraded {
-			if now-s.lastProbe.Load() >= probeInterval.Nanoseconds() {
-				s.lastProbe.Store(now)
+			backoff := s.probeBackoffDuration()
+			old := s.lastProbe.Load()
+			if now-old >= backoff.Nanoseconds() {
+				if !s.lastProbe.CompareAndSwap(old, now) {
+					continue // another goroutine already scheduled this probe
+				}
+				s.recordProbeAttempt()
 				selected = append(selected, s)
 				break
 			}
@@ -170,6 +199,11 @@ func (r *racingResolver) queryAndTrack(ctx context.Context, s *serverHealth, que
 	resp, err := r.queryFn(ctx, s.addr, query)
 	if err != nil {
 		s.recordFailure()
+		if !s.healthy() {
+			slog.Debug("DNS server degraded", "server", s.addr, "label", r.label,
+				"consecutiveFail", s.consecutiveFail.Load(),
+				"nextProbeIn", s.probeBackoffDuration().String())
+		}
 		return nil, err
 	}
 	s.recordSuccess(time.Since(start).Nanoseconds())

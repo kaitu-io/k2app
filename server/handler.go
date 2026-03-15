@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	k2dns "github.com/kaitu-io/k2/core/dns"
+	"github.com/miekg/dns"
 	"github.com/sasha-s/go-deadlock"
 
 	"github.com/kaitu-io/k2/wire"
@@ -93,6 +95,7 @@ type ProxyHandler struct {
 	DialTimeout    time.Duration
 	AllowPrivateIP bool // for testing only; default false blocks reserved IPs
 	conns          connTracker
+	dnsCache       *k2dns.DNSCache // shared DNS cache for port-53 UDP
 }
 
 // NewProxyHandler creates a proxy handler with default settings.
@@ -100,7 +103,19 @@ func NewProxyHandler() *ProxyHandler {
 	return &ProxyHandler{
 		DialTimeout: 5 * time.Second,
 		conns:       connTracker{conns: make(map[io.Closer]struct{})},
+		dnsCache: k2dns.NewDNSCache(k2dns.DNSCacheConfig{
+			MinTTL:     5 * time.Minute,
+			MaxTTL:     4 * time.Hour,
+			MaxEntries: 10000,
+			StaleFor:   30 * time.Minute,
+		}),
 	}
+}
+
+// isDNSPort returns true if addr targets port 53.
+func isDNSPort(addr string) bool {
+	_, port, err := net.SplitHostPort(addr)
+	return err == nil && port == "53"
 }
 
 // Close forcefully closes all active connections, unblocking handlers.
@@ -158,6 +173,12 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 			conn.Close()
 			return
 		}
+	}
+
+	// DNS interception: cache responses for port 53 to reduce upstream load.
+	if h.dnsCache != nil && isDNSPort(addr) {
+		h.handleDNSUDP(conn, addr)
+		return
 	}
 
 	targetAddr, err := net.ResolveUDPAddr("udp4", addr)
@@ -221,6 +242,133 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 	target.Close()
 	<-done
 	slog.Debug("server: HandleUDP done", "addr", addr)
+}
+
+// handleDNSUDP handles DNS UDP sessions with transparent caching.
+// Cache hit: respond directly without upstream query.
+// Cache miss: forward to upstream, cache response, respond to client.
+func (h *ProxyHandler) handleDNSUDP(conn net.PacketConn, addr string) {
+	defer conn.Close()
+
+	targetAddr, err := net.ResolveUDPAddr("udp4", addr)
+	if err != nil {
+		slog.Error("server: DNS UDP resolve", "addr", addr, "err", err)
+		return
+	}
+
+	target, err := net.DialUDP("udp4", nil, targetAddr)
+	if err != nil {
+		slog.Error("server: DNS UDP dial", "addr", addr, "err", err)
+		return
+	}
+	defer target.Close()
+	untrackTarget := h.conns.track(target)
+	defer untrackTarget()
+
+	type pendingQuery struct {
+		domain string
+		qtype  uint16
+	}
+	var pendingMu sync.Mutex
+	pending := make(map[uint16]*pendingQuery)
+
+	// writeToMu serializes writes to conn — cache-hit path (client→target goroutine)
+	// and upstream-response path (target→client goroutine) both call conn.WriteTo.
+	var writeToMu sync.Mutex
+
+	done := make(chan struct{})
+
+	// client → cache/target
+	go func() {
+		defer close(done)
+		defer target.Close() // unblock target→client Read
+		bp := udpBufPool.Get().(*[]byte)
+		buf := *bp
+		for {
+			n, _, err := conn.ReadFrom(buf)
+			if err != nil {
+				break
+			}
+
+			var query dns.Msg
+			if err := query.Unpack(buf[:n]); err != nil {
+				// Not valid DNS — forward as-is (defensive).
+				target.Write(buf[:n])
+				continue
+			}
+
+			if len(query.Question) == 0 {
+				target.Write(buf[:n])
+				continue
+			}
+
+			domain := query.Question[0].Name
+			qtype := query.Question[0].Qtype
+
+			// Cache lookup.
+			if packed, found := h.dnsCache.GetPacked(domain, qtype, query.Id); found {
+				writeToMu.Lock()
+				conn.WriteTo(packed, nil)
+				writeToMu.Unlock()
+				slog.Debug("server: DNS cache hit", "domain", domain)
+				continue
+			}
+
+			// Cache miss — track and forward.
+			pendingMu.Lock()
+			pending[query.Id] = &pendingQuery{domain: domain, qtype: qtype}
+			pendingMu.Unlock()
+
+			if _, err := target.Write(buf[:n]); err != nil {
+				pendingMu.Lock()
+				delete(pending, query.Id)
+				pendingMu.Unlock()
+				break
+			}
+		}
+		udpBufPool.Put(bp)
+	}()
+
+	// target → cache + client
+	bp := udpBufPool.Get().(*[]byte)
+	buf := *bp
+	for {
+		target.SetReadDeadline(time.Now().Add(60 * time.Second))
+		n, err := target.Read(buf)
+		if err != nil {
+			break
+		}
+
+		var resp dns.Msg
+		if err := resp.Unpack(buf[:n]); err == nil {
+			pendingMu.Lock()
+			pq, ok := pending[resp.Id]
+			if ok {
+				delete(pending, resp.Id)
+			}
+			pendingMu.Unlock()
+
+			// Cache response (skip truncated — incomplete data).
+			if ok && !resp.Truncated {
+				h.dnsCache.Add(pq.domain, pq.qtype, &resp)
+				slog.Debug("server: DNS cached", "domain", pq.domain)
+			}
+		}
+
+		writeToMu.Lock()
+		_, werr := conn.WriteTo(buf[:n], nil)
+		writeToMu.Unlock()
+		if werr != nil {
+			break
+		}
+	}
+	udpBufPool.Put(bp)
+
+	// conn.Close() handled by defer at top of function.
+	// Explicit close here would be redundant (wire PacketConn uses sync.Once,
+	// so it's safe but unnecessary).
+	<-done
+	slog.Debug("server: DNS UDP done", "addr", addr)
 }
 
 // closeWriter is implemented by connections that support half-close (write-only FIN).

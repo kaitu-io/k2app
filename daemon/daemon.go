@@ -78,6 +78,10 @@ type Daemon struct {
 	// SSE client channels for real-time status push.
 	sseClients map[chan string]struct{}
 	sseMu      deadlock.RWMutex
+
+	// Helper for non-VPN device management (ADB install, etc.).
+	// Initialized by registerHelperRoutes() in Run().
+	helper *AndroidHelper
 }
 
 // New creates a new daemon.
@@ -85,6 +89,7 @@ func New() *Daemon {
 	return &Daemon{
 		lastStatus: engine.Status{State: engine.StateDisconnected},
 		sseClients: make(map[chan string]struct{}),
+		helper:     &AndroidHelper{state: InstallState{Phase: "idle"}},
 	}
 }
 
@@ -113,6 +118,7 @@ func (d *Daemon) Run(ctx context.Context, listenAddr string) error {
 	mux.HandleFunc("/api/events", d.handleEvents)
 	mux.HandleFunc("/api/stats", d.handleStats)
 	mux.HandleFunc("/stats", d.handleStatsPage)
+	d.registerHelperRoutes(mux)
 
 	srv := &http.Server{
 		Addr:    listenAddr,
@@ -134,6 +140,7 @@ func (d *Daemon) Run(ctx context.Context, listenAddr string) error {
 	select {
 	case <-ctx.Done():
 		slog.Info("daemon shutting down")
+		d.helper.stopAdbServer()
 		d.doDown()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

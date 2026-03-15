@@ -83,7 +83,9 @@ func (o *udpOverflowStream) init() error {
 	}
 	o.opened = true
 
-	stream, err := o.qconn.OpenStreamSync(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	stream, err := o.qconn.OpenStreamSync(ctx)
 	if err != nil {
 		o.initErr = fmt.Errorf("wire: open overflow stream: %w", err)
 		slog.Warn("udpOverflowStream: open failed", "err", o.initErr)
@@ -126,6 +128,7 @@ func (o *udpOverflowStream) close() {
 	if o.stream != nil {
 		o.stream.CancelRead(0)
 		o.stream.Close()
+		o.stream = nil
 	}
 }
 
@@ -223,10 +226,11 @@ type QUICClient struct {
 	closed    bool
 	ccSender *arc.K2CCSender // stored for stats access
 
-	portHopAttempts  atomic.Int32 // hop attempts before TCP-WS fallback
+	portHopAttempts    atomic.Int32 // hop attempts before TCP-WS fallback
 	portHopExhaustedAt atomic.Int64 // UnixNano: when hops were exhausted (0 = not exhausted)
-	lastTCPSuccessAt       atomic.Int64 // UnixNano of last successful DialTCP (0 = unknown)
-	handshakeFailStreak      atomic.Int32 // consecutive connect() handshake failures across different hop ports
+	lastTCPSuccessAt   atomic.Int64 // UnixNano of last successful DialTCP (0 = unknown)
+	handshakeFailStreak atomic.Int32 // consecutive connect() handshake failures across different hop ports
+	lastConnectWall    atomic.Int64 // UnixNano wall clock of last connect() return — detects macOS sleep (Go timers freeze but wall clock advances)
 }
 
 // NewQUICClient creates a new QUIC client transport.
@@ -269,6 +273,12 @@ func (c *QUICClient) ConsecConnFails() int32 {
 	return c.handshakeFailStreak.Load()
 }
 
+// RecordSuccess clears the handshake failure streak after a successful QUIC dial.
+// Called by TransportManager when QUIC DialTCP succeeds.
+func (c *QUICClient) RecordSuccess() {
+	c.handshakeFailStreak.Store(0)
+}
+
 // RecordTCPSuccess marks the current time as a successful TCP stream.
 // Exported for testing — allows engine tests to set TCP health state.
 func (c *QUICClient) RecordTCPSuccess() {
@@ -298,6 +308,20 @@ func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
 		return nil, ErrNotConnected
 	}
 	if c.conn != nil {
+		// Wall-clock staleness: Go timers freeze during macOS sleep but wall clock
+		// advances. If the gap exceeds MaxIdleTimeout (30s), the server has definitely
+		// closed this connection (its idle timer kept running while we slept).
+		if last := c.lastConnectWall.Load(); last > 0 {
+			if time.Since(time.Unix(0, last)) > 30*time.Second {
+				slog.Warn("DIAG: wake-stale-conn",
+					"wallGapS", int(time.Since(time.Unix(0, last)).Seconds()),
+				)
+				mux, oldConn, tr := c.extractConnLocked()
+				c.mu.Unlock()
+				closeQUICResources(mux, oldConn, tr, "wall-clock stale")
+				goto serialize
+			}
+		}
 		select {
 		case <-c.conn.Context().Done():
 			slog.Info("QUICClient: cached connection dead, rebuilding")
@@ -307,6 +331,7 @@ func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
 			goto serialize
 		default:
 			conn := c.conn
+			c.lastConnectWall.Store(time.Now().UnixNano())
 			c.mu.Unlock()
 			return conn, nil
 		}
@@ -325,20 +350,37 @@ serialize:
 		return nil, ErrNotConnected
 	}
 	if c.conn != nil {
-		select {
-		case <-c.conn.Context().Done():
+		// Wall-clock staleness re-check (same logic as fast path).
+		wallStale := false
+		if last := c.lastConnectWall.Load(); last > 0 {
+			wallStale = time.Since(time.Unix(0, last)) > 30*time.Second
+		}
+		if wallStale {
 			mux, oldConn, tr := c.extractConnLocked()
 			c.mu.Unlock()
-			closeQUICResources(mux, oldConn, tr, "connection reset")
+			closeQUICResources(mux, oldConn, tr, "wall-clock stale")
 			c.mu.Lock()
 			if c.closed {
 				c.mu.Unlock()
 				return nil, ErrNotConnected
 			}
-		default:
-			conn := c.conn
-			c.mu.Unlock()
-			return conn, nil
+		} else {
+			select {
+			case <-c.conn.Context().Done():
+				mux, oldConn, tr := c.extractConnLocked()
+				c.mu.Unlock()
+				closeQUICResources(mux, oldConn, tr, "connection reset")
+				c.mu.Lock()
+				if c.closed {
+					c.mu.Unlock()
+					return nil, ErrNotConnected
+				}
+			default:
+				conn := c.conn
+				c.lastConnectWall.Store(time.Now().UnixNano())
+				c.mu.Unlock()
+				return conn, nil
+			}
 		}
 	}
 	// Read immutable config fields under mu for address computation.
@@ -396,6 +438,11 @@ serialize:
 	if err != nil {
 		transport.Close()
 		c.handshakeFailStreak.Add(1)
+		slog.Warn("DIAG: quic-handshake-fail",
+			"addr", addr,
+			"consecutiveFails", c.handshakeFailStreak.Load(),
+			"err", err,
+		)
 		return nil, fmt.Errorf("wire: QUIC dial: %w", err)
 	}
 	c.handshakeFailStreak.Store(0)
@@ -424,6 +471,7 @@ serialize:
 	c.ccSender = sender
 	c.alloc = NewSessionIDAllocator()
 	c.udpMux = newQuicUDPMux(conn, &c.portHopAttempts, &c.portHopExhaustedAt)
+	c.lastConnectWall.Store(time.Now().UnixNano())
 
 	// Start accept loop for server-initiated overflow streams
 	go c.acceptOverflowStreams(conn, c.udpMux)
@@ -477,19 +525,17 @@ func (c *QUICClient) DialTCP(ctx context.Context, addr string, earlyData []byte)
 	// Without this, a half-dead QUIC connection hangs forever.
 	stream.SetReadDeadline(time.Now().Add(5 * time.Second))
 	br := bufio.NewReader(stream)
+	// Past this point, the request has been sent to the server. The wire
+	// transport (k2 ↔ k2s) is proven working. All errors are proxy-layer
+	// (server processing) — TCP-WS fallback to the same server won't help.
 	ok, errCode, errMsg, err := ReadStreamResponse(br)
 	if err != nil {
 		slog.Warn("QUICClient.DialTCP: read response failed", "addr", addr, "err", err)
 		stream.Close()
-		// Stream response timeout means the server's upstream net.Dial is
-		// slow/failing — NOT a QUIC transport issue (OpenStreamSync succeeded).
-		// Don't resetConnection() — the QUIC connection is healthy.
-		// Don't increment handshakeFailStreak — TCP-WS fallback won't help
-		// (same server, same upstream reachability problem).
 		if nErr, ok := err.(net.Error); ok && nErr.Timeout() {
 			slog.Warn("QUICClient.DialTCP: stream response timeout (server upstream slow)", "addr", addr)
 		}
-		return nil, fmt.Errorf("wire: read response: %w", err)
+		return nil, &ProxyLayerError{Err: fmt.Errorf("wire: read response: %w", err)}
 	}
 	stream.SetReadDeadline(time.Time{}) // clear deadline for data transfer
 	if !ok {
@@ -498,7 +544,7 @@ func (c *QUICClient) DialTCP(ctx context.Context, addr string, earlyData []byte)
 		if errCode > 0 {
 			return nil, &StreamError{Code: errCode, Message: errMsg}
 		}
-		return nil, fmt.Errorf("%w: %s", ErrStreamRejected, errMsg)
+		return nil, &ProxyLayerError{Err: fmt.Errorf("%w: %s", ErrStreamRejected, errMsg)}
 	}
 
 	slog.Debug("QUICClient.DialTCP: success", "addr", addr)
@@ -775,6 +821,17 @@ func (c *QUICClient) resetConnection() {
 	mux, conn, tr := c.extractConnLocked()
 	c.mu.Unlock()
 	closeQUICResources(mux, conn, tr, "connection reset")
+}
+
+// Reset closes cached connections and clears all fallback/hop state.
+// Called by TransportManager.ResetConnections() on network change.
+// After Reset(), the next DialTCP/DialUDP will establish a fresh connection
+// with a clean handshake failure streak and hop counter.
+func (c *QUICClient) Reset() {
+	c.resetConnection()
+	c.handshakeFailStreak.Store(0)
+	c.portHopAttempts.Store(0)
+	c.portHopExhaustedAt.Store(0)
 }
 
 // Close closes the QUIC connection and underlying transport.

@@ -13,6 +13,7 @@ package wire
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"testing"
 )
@@ -294,9 +295,13 @@ func TestContract_NetworkSwitch_ResetAll(t *testing.T) {
 	}
 }
 
-// TestContract_SlowUpstream_NoFallback verifies that a timeout from the upstream
-// destination (slow server) does NOT trigger transport-level fallback.
-// User scenario: user connects to a slow website; QUIC transport itself is fine.
+// TestContract_SlowUpstream_NoFallback verifies that a raw timeout (not wrapped
+// in ProxyLayerError) does NOT trigger persistent transport-level fallback.
+// This simulates a transport-layer timeout (e.g., connect timeout) — ambiguous
+// whether transport or proxy. Per-request TCP-WS fallback IS allowed (the error
+// falls through). Only errors wrapped in ProxyLayerError by the Dialer skip
+// fallback entirely (see TestContract_ReadResponseTimeout_NoFallback).
+// User scenario: QUIC connect timeout, TCP-WS might work via different path.
 func TestContract_SlowUpstream_NoFallback(t *testing.T) {
 	quic := &mockTransport{
 		available: true,
@@ -327,6 +332,132 @@ func TestContract_SlowUpstream_NoFallback(t *testing.T) {
 	// A timeout is a destination problem, not a QUIC transport problem.
 	if tm.FallbackActive() {
 		t.Fatal("contract: upstream timeout must not trigger transport-level fallback")
+	}
+}
+
+// TestContract_ServerProxyError_NoFallback verifies that when the server
+// responds with a proxy error (e.g., 502 — target unreachable), TCP-WS
+// fallback is NOT attempted. The transport worked; the problem is server-side.
+// User scenario: server can't reach target.com but QUIC transport is fine.
+func TestContract_ServerProxyError_NoFallback(t *testing.T) {
+	tcpwsCalled := false
+	quic := &mockTransport{
+		available: true,
+		dialTCPFn: func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
+			return nil, &StreamError{Code: 502, Message: "dial tcp4 target.com:443: connection refused"}
+		},
+	}
+	tcpws := &mockTransport{
+		available: true,
+		dialTCPFn: func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
+			tcpwsCalled = true
+			c, _ := net.Pipe()
+			return c, nil
+		},
+	}
+
+	tm := NewTransportManager()
+	tm.SetQUIC(quic)
+	tm.SetTCPWS(tcpws)
+
+	_, err := tm.DialTCP(context.Background(), "target.com:443", nil)
+	if err == nil {
+		t.Fatal("expected error from proxy layer")
+	}
+
+	var se *StreamError
+	if !errors.As(err, &se) {
+		t.Fatalf("expected StreamError, got %T: %v", err, err)
+	}
+	if se.Code != 502 {
+		t.Fatalf("expected code 502, got %d", se.Code)
+	}
+	if tcpwsCalled {
+		t.Fatal("contract: server proxy error must NOT trigger TCP-WS fallback")
+	}
+	if tm.FallbackActive() {
+		t.Fatal("contract: proxy error must not activate persistent fallback")
+	}
+}
+
+// TestContract_ServerRejected_NoFallback verifies that ErrStreamRejected
+// (server rejects the stream without a coded error) also skips TCP-WS fallback.
+// User scenario: server policy rejects the connection target.
+func TestContract_ServerRejected_NoFallback(t *testing.T) {
+	tcpwsCalled := false
+	quic := &mockTransport{
+		available: true,
+		dialTCPFn: func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
+			// Dialer marks proxy-layer errors — simulates real QUICClient/TCPWSClient behavior.
+			return nil, &ProxyLayerError{Err: fmt.Errorf("%w: policy violation", ErrStreamRejected)}
+		},
+	}
+	tcpws := &mockTransport{
+		available: true,
+		dialTCPFn: func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
+			tcpwsCalled = true
+			c, _ := net.Pipe()
+			return c, nil
+		},
+	}
+
+	tm := NewTransportManager()
+	tm.SetQUIC(quic)
+	tm.SetTCPWS(tcpws)
+
+	_, err := tm.DialTCP(context.Background(), "blocked.com:443", nil)
+	if err == nil {
+		t.Fatal("expected error from stream rejection")
+	}
+	if !errors.Is(err, ErrStreamRejected) {
+		t.Fatalf("expected ErrStreamRejected, got: %v", err)
+	}
+	if tcpwsCalled {
+		t.Fatal("contract: stream rejection must NOT trigger TCP-WS fallback")
+	}
+	if tm.FallbackActive() {
+		t.Fatal("contract: stream rejection must not activate persistent fallback")
+	}
+}
+
+// TestContract_ReadResponseTimeout_NoFallback verifies that when
+// ReadStreamResponse times out (request sent, server processing),
+// TCP-WS fallback is NOT attempted. The transport worked (stream opened,
+// header written); the timeout is server-side.
+// User scenario: server's upstream net.Dial to target is slow.
+func TestContract_ReadResponseTimeout_NoFallback(t *testing.T) {
+	tcpwsCalled := false
+	quic := &mockTransport{
+		available: true,
+		dialTCPFn: func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
+			// Simulate: stream opened, header written, response timed out.
+			// Real QUICClient wraps this in ProxyLayerError after writes succeed.
+			return nil, &ProxyLayerError{Err: fmt.Errorf("wire: read response: %w",
+				&contractTimeoutError{msg: "i/o timeout"})}
+		},
+	}
+	tcpws := &mockTransport{
+		available: true,
+		dialTCPFn: func(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
+			tcpwsCalled = true
+			c, _ := net.Pipe()
+			return c, nil
+		},
+	}
+
+	tm := NewTransportManager()
+	tm.SetQUIC(quic)
+	tm.SetTCPWS(tcpws)
+
+	_, err := tm.DialTCP(context.Background(), "slow.example.com:443", nil)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if tcpwsCalled {
+		t.Fatal("contract: read-response timeout must NOT trigger TCP-WS fallback")
+	}
+	if tm.FallbackActive() {
+		t.Fatal("contract: read-response timeout must not activate persistent fallback")
 	}
 }
 

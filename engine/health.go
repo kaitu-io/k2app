@@ -75,6 +75,10 @@ type healthMonitor struct {
 
 	onSnapshot func(HealthSnapshot) // push to daemon SSE
 	onReconnect   func()               // triggers OnNetworkChanged for full reconnect
+
+	diagCounter   int       // samples since last DIAG heartbeat (fires at 30)
+	connectedAt   time.Time // engine connected timestamp for uptime calc
+	lastSampleWall time.Time // wall clock of previous sample — detects sleep/wake gaps
 }
 
 func newHealthMonitor(
@@ -82,14 +86,16 @@ func newHealthMonitor(
 	tunnel *core.ClientTunnel,
 	onSnapshot func(HealthSnapshot),
 	onReconnect func(),
+	connectedAt time.Time,
 ) *healthMonitor {
 	return &healthMonitor{
-		tm:         tm,
-		tunnel:     tunnel,
-		health:     HealthHealthy,
-		onSnapshot: onSnapshot,
-		onReconnect:   onReconnect,
-		done:       make(chan struct{}),
+		tm:          tm,
+		tunnel:      tunnel,
+		health:      HealthHealthy,
+		onSnapshot:  onSnapshot,
+		onReconnect: onReconnect,
+		connectedAt: connectedAt,
+		done:        make(chan struct{}),
 	}
 }
 
@@ -130,7 +136,25 @@ func (hm *healthMonitor) sample() {
 	ws := hm.tm.WireStats()
 	tx, rx := hm.tunnel.TrafficBytes()
 
+	now := time.Now()
+
 	hm.mu.Lock()
+
+	// DIAG: wake — detect wall clock jump indicating macOS sleep/wake.
+	// Go runtime suspends during sleep, so ticker fires immediately on wake
+	// with a large wall clock gap but only 1s of Go-time elapsed.
+	if !hm.lastSampleWall.IsZero() {
+		wallGap := now.Sub(hm.lastSampleWall)
+		if wallGap > 5*time.Second {
+			slog.Warn("DIAG: wake",
+				"sleepS", int(wallGap.Seconds()),
+				"health", hm.health,
+				"transport", ws.Transport,
+				"uptimeS", int(time.Since(hm.connectedAt).Seconds()),
+			)
+		}
+	}
+	hm.lastSampleWall = now
 
 	// EWMA smoothing: dampens MI boundary artifacts (lossRate spikes)
 	// that cause false health degradation.
@@ -170,6 +194,26 @@ func (hm *healthMonitor) sample() {
 	hm.ringIdx = (hm.ringIdx + 1) % ringSize
 	if hm.ringIdx == 0 {
 		hm.ringFull = true
+	}
+
+	// Layer 1 DIAG heartbeat — every 30 seconds.
+	hm.diagCounter++
+	if hm.diagCounter >= 30 {
+		hm.diagCounter = 0
+		tcp, udp := hm.tunnel.ActiveConns()
+		slog.Info("DIAG: heartbeat",
+			"health", hm.health,
+			"transport", ws.Transport,
+			"loss", fmt.Sprintf("%.3f", hm.smoothWireLoss),
+			"rttMs", fmt.Sprintf("%.0f", float64(ws.RTT)/float64(time.Millisecond)),
+			"minRttMs", fmt.Sprintf("%.0f", float64(ws.MinRTT)/float64(time.Millisecond)),
+			"txMB", fmt.Sprintf("%.1f", float64(tx)/(1024*1024)),
+			"rxMB", fmt.Sprintf("%.1f", float64(rx)/(1024*1024)),
+			"tcpConns", tcp,
+			"udpConns", udp,
+			"uptimeS", int(time.Since(hm.connectedAt).Seconds()),
+			"fallback", ws.WireFallback,
+		)
 	}
 
 	onSnapshot := hm.onSnapshot

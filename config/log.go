@@ -15,9 +15,16 @@ import (
 // SetLogLevel changes it at runtime without recreating the handler.
 var LogLevel slog.LevelVar
 
+// BuildDebugLogging forces debug-level logging in all builds.    // BUILD_DEBUG_SWITCH
+// Set to false for production release.
+const BuildDebugLogging = true
+
 // parseLevel converts a string log level to slog.Level.
 // Defaults to slog.LevelInfo for unknown values.
 func parseLevel(level string) slog.Level {
+	if level == "" && BuildDebugLogging { // BUILD_DEBUG_SWITCH
+		return slog.LevelDebug
+	}
 	switch level {
 	case "debug":
 		return slog.LevelDebug
@@ -130,10 +137,39 @@ func SetupLogging(cfg LogConfig, name string) (func(), error) {
 		}
 		lj := &lumberjack.Logger{
 			Filename:   logPath,
-			MaxSize:    50, // MB
+			MaxSize:    20, // MB
 			MaxBackups: 3,
-			MaxAge:     30, // days
+			MaxAge:     7, // days
+			Compress:   true,
 		}
+
+		// Redirect os.Stderr to lumberjack so go-deadlock output,
+		// runtime panics, and CGo crashes appear inline in k2.log.
+		stderrR, stderrW, pipeErr := os.Pipe()
+		if pipeErr == nil {
+			os.Stderr = stderrW
+			_ = redirectStderrFD(stderrW) // also redirect fd 2 for runtime/CGo
+			ljForStderr := lj             // capture for goroutine
+			go func() {
+				buf := make([]byte, 4096)
+				for {
+					n, err := stderrR.Read(buf)
+					if n > 0 {
+						ljForStderr.Write(buf[:n]) //nolint:errcheck
+					}
+					if err != nil {
+						return
+					}
+				}
+			}()
+			prevCloseFn := closeFn
+			closeFn = func() {
+				stderrW.Close()
+				stderrR.Close()
+				prevCloseFn()
+			}
+		}
+
 		if cfg.ExtraWriter != nil {
 			writer = io.MultiWriter(lj, cfg.ExtraWriter)
 		} else {

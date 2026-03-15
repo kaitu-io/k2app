@@ -9,14 +9,21 @@ import (
 )
 
 // CacheDir returns the k2 cache directory for the current user.
-// Based on os.UserCacheDir():
 //
 //	macOS root:   /var/root/Library/Caches/k2
 //	macOS user:   ~/Library/Caches/k2
 //	Linux root:   /root/.cache/k2
 //	Linux user:   ~/.cache/k2
-//	Windows:      %LocalAppData%\k2\cache
+//	Windows SYSTEM: %ProgramData%\Kaitu\cache  (avoids system32 DLL search issues)
+//	Windows user:   %LocalAppData%\k2\cache
 func cacheDir() string {
+	if runtime.GOOS == "windows" && config.IsRoot() {
+		programData := os.Getenv("ProgramData")
+		if programData == "" {
+			programData = `C:\ProgramData`
+		}
+		return filepath.Join(programData, "Kaitu", "cache")
+	}
 	base, err := os.UserCacheDir()
 	if err != nil {
 		base = os.TempDir()

@@ -65,6 +65,10 @@ func main() {
 		cmdService(rest)
 	case "upgrade":
 		cmdUpgrade(rest)
+	case "android-install":
+		cmdAndroidInstall(rest)
+	case "demo-config":
+		fmt.Print(demoConfig)
 	case "version":
 		fmt.Printf("k2 %s (%s)\n", version, commit)
 	case "help", "--help", "-h":
@@ -115,6 +119,9 @@ Commands:
   service   System service (install, uninstall)       [root]
   upgrade   Self-update
   version   Version info
+
+  android-install             Install APK to USB-connected Android phone
+  demo-config                 Print example client config (YAML)
 
 Flags:
   --json    Machine-readable JSON output

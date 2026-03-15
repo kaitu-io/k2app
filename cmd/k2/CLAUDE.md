@@ -19,6 +19,7 @@ k2 config show                  Print example YAML
 k2 service install              Install as system service
 k2 service uninstall            Remove system service
 k2 upgrade [--check]            Self-update
+k2 android-install [--url URL]  Interactive Android APK install via USB (gadb)
 
 k2 version                      Version + commit info
 k2 help [command]               Help for any command
@@ -43,6 +44,7 @@ k2 help [command]               Help for any command
 - `service.go` — `k2 service`: install/uninstall system service
 - `process.go` — Daemon start, PID monitoring
 - `upgrade.go` — `k2 upgrade`: self-update binary from CDN
+- `android_install.go` — `k2 android-install`: interactive CLI for USB APK install (adb detect → download → push → pm install)
 
 ## Pattern
 

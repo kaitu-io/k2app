@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"syscall"
+	"time"
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/engine"
@@ -85,10 +86,15 @@ func (e *Engine) Status() string {
 // descriptor provided by the platform (iOS NEPacketTunnelProvider /
 // Android VpnService); cfg provides platform-specific paths (CacheDir, LogDir).
 func (e *Engine) Start(configJSON string, fd int, cfg *EngineConfig) (err error) {
+	// Track dup'd FD for cleanup on early failure (before engine.Start takes ownership).
+	dupFd := -1
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Error("appext: panic in Start", "panic", r, "stack", string(debug.Stack()))
 			err = fmt.Errorf("engine: panic in Start: %v", r)
+		}
+		if err != nil && dupFd >= 0 {
+			syscall.Close(dupFd)
 		}
 	}()
 	if cfg == nil {
@@ -99,11 +105,12 @@ func (e *Engine) Start(configJSON string, fd int, cfg *EngineConfig) (err error)
 	// The native side (NEPacketTunnelProvider / VpnService) may close its copy
 	// at any time; dup isolates us from that lifecycle.
 	if fd > 0 {
-		newFd, err := syscall.Dup(fd)
-		if err != nil {
-			return fmt.Errorf("dup TUN fd: %w", err)
+		newFd, dupErr := syscall.Dup(fd)
+		if dupErr != nil {
+			return fmt.Errorf("dup TUN fd: %w", dupErr)
 		}
 		fd = newFd
+		dupFd = newFd
 	}
 
 	var clientCfg config.ClientConfig
@@ -122,6 +129,39 @@ func (e *Engine) Start(configJSON string, fd int, cfg *EngineConfig) (err error)
 	}
 	if _, err := config.SetupLogging(logCfg, "k2"); err != nil {
 		slog.Warn("appext: SetupLogging failed, using defaults", "err", err)
+	}
+
+	// Diagnostic: verify k2.log is writable after SetupLogging.
+	// Write results to native.log (known to be uploadable) instead of stderr.
+	if cfg.LogDir != "" {
+		k2logPath := filepath.Join(cfg.LogDir, "k2.log")
+		nativeLogPath := filepath.Join(cfg.LogDir, "native.log")
+		diagLog := func(msg string) {
+			// Append to native.log in NativeLogger-compatible format
+			if f, err := os.OpenFile(nativeLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
+				fmt.Fprintf(f, "[%s] [INFO] %s\n", time.Now().UTC().Format(time.RFC3339), msg)
+				f.Close()
+			}
+			fmt.Fprintf(os.Stderr, "appext: %s\n", msg)
+		}
+
+		if info, statErr := os.Stat(k2logPath); statErr != nil {
+			diagLog(fmt.Sprintf("DIAG k2.log stat failed: %v", statErr))
+		} else {
+			diagLog(fmt.Sprintf("DIAG k2.log exists size=%d mode=%s", info.Size(), info.Mode()))
+		}
+		// Direct write test to verify POSIX file I/O in iOS sandbox
+		if f, openErr := os.OpenFile(k2logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); openErr != nil {
+			diagLog(fmt.Sprintf("DIAG k2.log open FAILED: %v", openErr))
+		} else {
+			_, writeErr := f.WriteString("appext: DIAG direct write test\n")
+			f.Close()
+			if writeErr != nil {
+				diagLog(fmt.Sprintf("DIAG k2.log write FAILED: %v", writeErr))
+			} else {
+				diagLog("DIAG k2.log direct write OK")
+			}
+		}
 	}
 
 	// Inject platform cache dir for k2rule.
@@ -169,9 +209,10 @@ func (e *Engine) Start(configJSON string, fd int, cfg *EngineConfig) (err error)
 		"hasInterfaceMonitor", ecfg.InterfaceMonitor != nil,
 		"isNE", isNetworkExtension)
 
-	// Note: once engine.Start is called, the FD may be consumed by sing-tun.
-	// We do NOT close it on error — sing-tun handles cleanup if it took ownership,
-	// and a single leaked FD on early failure is harmless vs. a double-close risk.
+	// Ownership transfers to engine.Start — it passes the FD to sing-tun which
+	// may or may not consume it before returning an error. Clear dupFd so the
+	// deferred cleanup does NOT double-close a potentially reused FD.
+	dupFd = -1
 	if err := e.inner.Start(ecfg); err != nil {
 		return err
 	}

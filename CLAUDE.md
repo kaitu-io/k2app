@@ -37,6 +37,99 @@ make release VERSION=1.0.0         # Build all platforms + upload to S3
 - **Trust protocol semantics**: When a protocol (QUIC, TLS, smux) provides built-in state management (keepalive, idle timeout, connection liveness), use its native mechanisms — don't layer application-level health checks or manual state tracking on top. Duplicating protocol-layer responsibilities in application code causes misclassification bugs (e.g. conflating "server can't reach destination" with "transport is broken") and unnecessary complexity.
 - **Deadlock detection**: All mutexes use `deadlock.Mutex`/`deadlock.RWMutex` from `github.com/sasha-s/go-deadlock`. Production builds use `-tags=deadlock_disable` for zero overhead. Tests run with detection enabled (5s timeout). New mutex fields must use `deadlock.Mutex`, never `sync.Mutex`. `sync.WaitGroup`, `sync.Once`, `sync.Pool` stay as stdlib.
 
+## Diagnostic Logging Constitution (never violate)
+
+All diagnostic logs use `log/slog` (stdlib). The `DIAG:` prefix is reserved for operational diagnostic logs that enable field troubleshooting without DEBUG mode.
+
+### Three Layers
+
+| Layer | Level | Trigger | Purpose | grep |
+|-------|-------|---------|---------|------|
+| 1. Heartbeat | INFO | Every 30s (healthMonitor) | "Is the tunnel alive and healthy?" | `grep "DIAG: heartbeat"` |
+| 2. Events | INFO/WARN | On anomaly (threshold-based) | "What went wrong?" | `grep "DIAG:" \| grep -v heartbeat` |
+| 3. Full trace | DEBUG | All operations (existing logs) | "Exactly what happened?" | Switch level at runtime |
+
+### Layer 1 Rules — Heartbeat
+
+- Emitted every 30 seconds from `healthMonitor.sample()`.
+- Fixed prefix: `"DIAG: heartbeat"`.
+- Required fields: `health`, `transport`, `loss` (smoothed), `rttMs`, `minRttMs`, `txMB`, `rxMB`, `tcpConns`, `udpConns`, `uptimeS`, `fallback`.
+- Human-readable sizes (MB) and durations (ms/s).
+- MUST NOT log at 1Hz — only every 30 samples.
+
+### Layer 2 Rules — Events
+
+Every Layer 2 log MUST:
+1. Use `"DIAG: <event-name>"` as the message (e.g. `"DIAG: dns-slow"`, `"DIAG: proxy-dial-fail"`).
+2. Include context fields that answer "where" and "why" (domain, addr, transport, error, latency).
+3. Use INFO for performance observations, WARN for failures.
+4. Be threshold-gated — do NOT log every slow query, only above threshold.
+
+Reserved event names:
+
+| Event | Level | Threshold | Fields |
+|-------|-------|-----------|--------|
+| `DIAG: dns-slow` | INFO | latency > 500ms | domain, upstream, latencyMs |
+| `DIAG: dns-fail` | WARN | on error | domain, upstream, err |
+| `DIAG: proxy-dial-fail` | WARN | on error | dest, transport, err |
+| `DIAG: proxy-dial-slow` | INFO | latency > 3s | dest, transport, latencyMs |
+| `DIAG: quic-handshake-fail` | WARN | on handshake error | addr, consecutiveFails, err |
+| `DIAG: transport-switch` | WARN | on QUIC↔TCP-WS transition | from, to, reason |
+| `DIAG: udp-relay-timeout` | WARN | consecutive > 2 | consecutiveCount, threshold |
+| `DIAG: conn-highwater` | INFO | active > 100 | tcpCount, udpCount |
+| `DIAG: wire-handshake` | INFO | handshake probe ok | handshakeMs, transport |
+| `DIAG: wire-handshake-fail` | WARN | handshake probe failed | handshakeMs, err |
+| `DIAG: connected` | INFO | engine connected | server, mode, dialMs |
+| `DIAG: session-end` | INFO | engine stop | uptimeS, txMB, rxMB |
+| `DIAG: wire-error` | WARN | on classified error | code, category, message |
+| `DIAG: wake` | WARN | wall clock jump > 5s | sleepS, health, transport, uptimeS |
+| `DIAG: dns-proxy-timeout` | WARN | proxy DNS 5s timeout | server, domain, connAgeS, isNewConn |
+| `DIAG: dns-proxy-write-fail` | WARN | WriteTo failed | server, domain, connAgeS, isNewConn, err |
+| `DIAG: dns-proxy-conn-dead` | WARN | recv loop died | server, domain, connAgeS, isNewConn, err |
+| `DIAG: dns-proxy-dial-fail` | WARN | DialUDP failed | server, domain, err |
+
+### Layer 3 Rules — Full Trace
+
+- Switch at runtime: `curl -X POST http://127.0.0.1:1778/api/log-level -d '{"level":"debug"}'`
+- No changes to existing DEBUG logs. They are already comprehensive.
+- When adding new code, use DEBUG for per-operation details, DIAG for threshold-gated observations.
+
+### grep Playbook
+
+```bash
+# Quick health check (is it working?)
+grep "DIAG: heartbeat" k2.log | tail -20
+
+# Find problems (what went wrong?)
+grep "DIAG:" k2.log | grep -v heartbeat
+
+# DNS layer issues
+grep "DIAG: dns" k2.log
+
+# Transport layer issues
+grep "DIAG: quic\|DIAG: transport" k2.log
+
+# Sleep/wake events
+grep "DIAG: wake" k2.log
+
+# Proxy DNS failure breakdown (which layer failed?)
+grep "DIAG: dns-proxy" k2.log
+
+# Session summary
+grep "DIAG: connected\|DIAG: session-end" k2.log
+
+# All WARN-level diagnostics
+grep "level=WARN" k2.log | grep "DIAG:"
+```
+
+### Adding New DIAG Events
+
+1. Pick a descriptive event name (kebab-case, 2-3 words).
+2. Add to the reserved event names table above.
+3. Gate with a threshold — never log on every occurrence.
+4. Include "where" + "why" fields.
+5. Use INFO for observations, WARN for failures.
+
 ## Concurrency Rules (Constitutional — never violate)
 
 ### Core Principle
@@ -221,6 +314,138 @@ if tm != nil   { tm.Close() }
 - [ ] Does any `defer mu.Unlock()` span more than 10 lines?
 - [ ] Is every new mutex added to the Lock Ordering Graph?
 - [ ] Is every serialization lock acquired WITHOUT holding any state lock?
+
+## Error Ownership Rules (Constitutional — never violate)
+
+### Core Principle
+
+**The producer classifies; the consumer queries an interface.**
+
+The code that creates an error has full context about what failed. The code that receives an error should never reverse-engineer classification by enumerating concrete types. If a consumer needs to distinguish error categories, the producer must implement a classification interface.
+
+### The Rule
+
+When a function returns an error, it must classify that error at the point of creation — not leave it to callers to pattern-match. Callers check classification via interface assertion (`errors.As` on a behavior interface), never via type enumeration or string matching.
+
+```go
+// WRONG: consumer enumerates types (breaks when new error types are added)
+func isProxyLayerError(err error) bool {
+    var se *StreamError
+    if errors.As(err, &se) { return true }
+    if errors.Is(err, ErrStreamRejected) { return true }
+    return false // new error types silently misclassified
+}
+
+// RIGHT: producer marks, consumer asks interface
+type proxyLayerErr interface { IsProxyLayer() bool }
+
+func isProxyLayerError(err error) bool {
+    var pe proxyLayerErr
+    return errors.As(err, &pe) && pe.IsProxyLayer()
+}
+```
+
+### Why This Matters
+
+A consumer-side whitelist is correct on the day it's written. When a new error type is added (by a different developer, months later), the whitelist silently misclassifies it — defaulting to the wrong category. The compiler gives no warning. The bug manifests as incorrect fallback behavior under production load.
+
+### Review Checklist
+
+- [ ] Does any error consumer switch on concrete error types to decide behavior?
+- [ ] Does every error classification have a corresponding interface implemented by the producer?
+- [ ] Does `errors.As` traverse the full Unwrap chain correctly?
+
+## Encapsulation Rules (Constitutional — never violate)
+
+### Core Principle
+
+**Never write another struct's fields. Call its methods.**
+
+A struct owns its fields — including `atomic` fields and unexported state. External code must interact through methods, even for simple operations like resetting a counter. `atomic` provides concurrency safety, not encapsulation safety.
+
+### The Rule
+
+Do not directly read or write fields on another struct, even if they are exported or atomic. Instead, the owning struct exposes methods that encapsulate the operation.
+
+```go
+// WRONG: TransportManager directly writes QUICClient's internal atomic
+func (tm *TransportManager) recordQuicSuccess() {
+    if qc, ok := tm.quic.(*QUICClient); ok {
+        qc.handshakeFailStreak.Store(0) // reaches into QC internals
+    }
+}
+
+// RIGHT: QUICClient exposes a method
+func (c *QUICClient) RecordSuccess() {
+    c.handshakeFailStreak.Store(0)
+}
+func (tm *TransportManager) recordQuicSuccess() {
+    if qc, ok := tm.quic.(*QUICClient); ok {
+        qc.RecordSuccess()
+    }
+}
+```
+
+### Why This Matters
+
+When a field is renamed, its semantics change, or additional side effects are needed (logging, metrics), the compiler finds all method call sites but NOT all direct field accesses from external structs. The owning struct is the single authority on how its state is mutated.
+
+### Review Checklist
+
+- [ ] Does any code outside a struct directly `.Store()` / `.Load()` on that struct's atomic fields?
+- [ ] Does any code outside a struct directly assign to that struct's fields?
+- [ ] Could the operation be encapsulated in a method on the owning struct?
+
+## Layer Boundary Rules (Constitutional — never violate)
+
+### Core Principle
+
+**Lower layers do not know upper layers exist. Upper layers use lower layers through interfaces, not concrete types.**
+
+The layer model (Platform Shell → Engine → Core → Provider → Wire) defines a strict dependency direction. Each layer depends only on the layer directly below it, through interfaces defined in the lower layer's package.
+
+### The Rule
+
+1. **No upward dependencies**: A lower-layer package must never import an upper-layer package. Wire must not import engine. Core must not import daemon.
+2. **No concrete type assertions on layer interfaces**: When a layer receives an interface from below (e.g., `wire.Dialer`), it must not type-assert to the concrete implementation (e.g., `*QUICClient`) to access capabilities beyond the interface contract.
+3. **Optional capabilities use registered interfaces**: If an upper layer needs an optional capability from a lower layer, the lower layer defines and documents the capability interface (e.g., `StatsProvider`). The upper layer type-asserts to the *interface*, not the concrete type.
+
+```go
+// WRONG: upper layer type-asserts to concrete type
+if qc, ok := tm.quic.(*QUICClient); ok {
+    qc.resetConnection()
+    qc.portHopAttempts.Store(0)
+}
+
+// RIGHT: lower layer defines capability interface
+type Resettable interface {
+    Reset()
+}
+// upper layer asserts on interface
+if r, ok := tm.quic.(Resettable); ok {
+    r.Reset()
+}
+```
+
+### Registered Optional Interfaces
+
+All optional capability interfaces that upper layers may type-assert on must be listed here:
+
+| Interface | Package | Implemented by | Asserted by |
+|-----------|---------|----------------|-------------|
+| `StatsProvider` | wire | QUICClient, TCPWSClient | engine (stats collection) |
+
+When adding a new optional interface, add it to this table.
+
+### Why This Matters
+
+Concrete type assertions create hidden coupling. If a third transport is added (or a mock in tests), every assertion site silently becomes a no-op — the code compiles but the behavior changes. Interface assertions fail explicitly and are discoverable via `grep`.
+
+### Review Checklist
+
+- [ ] Does any code type-assert a layer interface to a concrete type from the layer below?
+- [ ] Are all optional capability interfaces listed in the Registered Optional Interfaces table?
+- [ ] Does any lower-layer package import an upper-layer package?
 
 ## Layer Docs (read on demand)
 

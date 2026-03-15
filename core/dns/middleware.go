@@ -16,10 +16,16 @@ import (
 	"github.com/miekg/dns"
 )
 
-// upstreamTimeout bounds how long a single queryUpstream call may take.
-// Separate from the per-query timeout (30s in dnsHandler) to allow room
-// for stale-fallback and inflight dedup overhead.
-const upstreamTimeout = 15 * time.Second
+const (
+	// upstreamTimeout bounds how long a single queryUpstream call may take.
+	// Separate from the per-query timeout (30s in dnsHandler) to allow room
+	// for stale-fallback and inflight dedup overhead.
+	upstreamTimeout = 15 * time.Second
+
+	// prefreshThreshold is the fraction of original TTL remaining below which
+	// a cache entry is considered "near expiry" and triggers background refresh.
+	prefreshThreshold = 0.25
+)
 
 // DNSQuerier is satisfied by DirectDNSClient and ProxyDNSClient.
 type DNSQuerier interface {
@@ -47,6 +53,9 @@ type Middleware struct {
 	// Prevents duplicate upstream queries for the same question.
 	inflight sync.Map
 
+	// Prefresh dedup: domain:qtype → struct{}, at most one refresh per key.
+	prefreshing sync.Map
+
 	// Filters
 	hosts  *HostsFile // /etc/hosts lookup
 	filter *Filter    // RFC 6761 + noise filtering
@@ -56,6 +65,9 @@ type Middleware struct {
 
 	// Writer for sending raw IP packet responses (L3 mode, nil for L4)
 	writer io.Writer
+
+	// Engine root context for background prefresh (nil disables prefresh)
+	engineCtx context.Context
 }
 
 // MiddlewareConfig contains configuration for DNS middleware
@@ -66,7 +78,8 @@ type MiddlewareConfig struct {
 	Hosts     *HostsFile
 	Filter    *Filter
 	Metrics   *Metrics
-	Writer    io.Writer // nil for L4-only usage
+	Writer    io.Writer       // nil for L4-only usage
+	EngineCtx context.Context // engine root context for background prefresh (nil disables)
 }
 
 // NewMiddleware creates a new DNS middleware
@@ -79,6 +92,7 @@ func NewMiddleware(cfg MiddlewareConfig) *Middleware {
 		filter:    cfg.Filter,
 		metrics:   cfg.Metrics,
 		writer:    cfg.Writer,
+		engineCtx: cfg.EngineCtx,
 	}
 }
 
@@ -160,10 +174,18 @@ func (m *Middleware) processQuery(ctx context.Context, query *dns.Msg) (*dns.Msg
 	}
 
 	// 6. Check DNS message cache — fast path returns pre-packed bytes.
+	// Active SWR: if near expiry, return cache AND trigger background refresh.
 	if m.dnsCache != nil {
-		if packed, found := m.dnsCache.GetPacked(domain, query.Question[0].Qtype, query.Id); found {
+		packed, nearExpiry := m.dnsCache.GetPackedNearExpiry(domain, query.Question[0].Qtype, query.Id, prefreshThreshold)
+		if packed != nil {
+			if nearExpiry {
+				// Lazy k2rule.Match — only on near-expiry, not every cache hit.
+				action := k2rule.Match(domain)
+				if action != k2rule.TargetReject {
+					m.triggerPrefresh(domain, query.Question[0].Qtype, action)
+				}
+			}
 			m.metrics.IncrMessageCacheHit()
-			slog.Debug("DNS cache hit", "domain", domain)
 			return nil, packed, nil
 		}
 	}
@@ -247,6 +269,51 @@ func (m *Middleware) processQuery(ctx context.Context, query *dns.Msg) (*dns.Msg
 	return nil, packed, nil
 }
 
+// triggerPrefresh launches a background goroutine to refresh a near-expiry cache entry.
+// Deduped via prefreshing sync.Map — at most one refresh per domain:qtype at a time.
+// Uses engineCtx (not caller's ctx) so the refresh outlives the triggering query.
+func (m *Middleware) triggerPrefresh(domain string, qtype uint16, action k2rule.Target) {
+	if m.engineCtx == nil {
+		return
+	}
+
+	key := domain + ":" + strconv.FormatUint(uint64(qtype), 10)
+	if _, loaded := m.prefreshing.LoadOrStore(key, struct{}{}); loaded {
+		return // already prefreshing this domain:qtype
+	}
+
+	m.metrics.IncrPrefreshTriggered()
+
+	// Build a synthetic query for upstream.
+	query := new(dns.Msg)
+	query.SetQuestion(dns.Fqdn(domain), qtype)
+
+	go func() {
+		defer m.prefreshing.Delete(key)
+
+		// queryUpstream applies its own upstreamTimeout internally.
+		resp, err := m.queryUpstream(m.engineCtx, domain, action, query)
+		if err != nil {
+			slog.Debug("DNS prefresh failed", "domain", domain, "err", err)
+			return
+		}
+
+		// Update cache with fresh response.
+		if m.dnsCache != nil {
+			m.dnsCache.Add(domain, qtype, resp)
+		}
+
+		// Update temporary routing rules.
+		if resp.Rcode == dns.RcodeSuccess {
+			for _, ip := range extractIPsFromResponse(resp) {
+				k2rule.SetTmpRule(ip, action)
+			}
+		}
+
+		slog.Debug("DNS prefresh ok", "domain", domain)
+	}()
+}
+
 // returnStaleOrError returns stale cached data if available, otherwise the error.
 func (m *Middleware) returnStaleOrError(stalePacked []byte, err error) (*dns.Msg, []byte, error) {
 	if stalePacked != nil {
@@ -261,14 +328,21 @@ func (m *Middleware) queryUpstream(ctx context.Context, domain string, action k2
 	ctx, cancel := context.WithTimeout(ctx, upstreamTimeout)
 	defer cancel()
 
+	start := time.Now()
+
 	switch action {
 	case k2rule.TargetDirect:
 		m.metrics.IncrDirect()
 		resp, err := m.directDNS.Query(ctx, query)
+		elapsed := time.Since(start)
 		if err != nil {
 			m.metrics.IncrError()
 			slog.Warn("DNS direct query failed", "domain", domain, "err", err)
+			slog.Warn("DIAG: dns-fail", "domain", domain, "upstream", "direct", "err", err)
 			return nil, err
+		}
+		if elapsed > 500*time.Millisecond {
+			slog.Info("DIAG: dns-slow", "domain", domain, "upstream", "direct", "latencyMs", elapsed.Milliseconds())
 		}
 		slog.Debug("DNS routed direct", "domain", domain)
 		return resp, nil
@@ -276,11 +350,16 @@ func (m *Middleware) queryUpstream(ctx context.Context, domain string, action k2
 	case k2rule.TargetProxy:
 		m.metrics.IncrProxy()
 		resp, err := m.proxyDNS.Query(ctx, query)
+		elapsed := time.Since(start)
 		if err != nil {
 			// No fallback to direct DNS — poisoned results in censored networks
 			// cause certificate errors and security violations. (2026-03-08 incident)
 			m.metrics.IncrError()
+			slog.Warn("DIAG: dns-fail", "domain", domain, "upstream", "proxy", "err", err)
 			return nil, fmt.Errorf("DNS proxy query failed for %s: %w", domain, err)
+		}
+		if elapsed > 500*time.Millisecond {
+			slog.Info("DIAG: dns-slow", "domain", domain, "upstream", "proxy", "latencyMs", elapsed.Milliseconds())
 		}
 		slog.Debug("DNS routed proxy", "domain", domain)
 		return resp, nil

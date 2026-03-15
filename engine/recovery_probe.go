@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"log/slog"
-	"net"
 	"time"
 
 	"github.com/sasha-s/go-deadlock"
@@ -14,15 +13,14 @@ import (
 
 const (
 	probeInitialDelay  = 3 * time.Second  // wait for network stack + DHCP + routes
-	probeDialTimeout   = 5 * time.Second  // per-attempt DialTCP timeout
+	probeDialTimeout   = 5 * time.Second  // per-attempt Handshake timeout
 	probeRetryInterval = 10 * time.Second // between failed attempts
 	probeMaxAttempts   = 3                // give up after this many failures
-	probeTarget        = "1.1.1.1:443"    // same as Start() step 4.5
 )
 
 // probeDialer is the subset of wire.TransportManager needed by recoveryProbe.
 type probeDialer interface {
-	DialTCP(ctx context.Context, addr string, earlyData []byte) (net.Conn, error)
+	Handshake(ctx context.Context) error
 }
 
 // Compile-time check: TransportManager satisfies probeDialer.
@@ -94,7 +92,7 @@ func (p *recoveryProbe) run(ctx context.Context) {
 
 		slog.Info("recovery: probing wire connectivity", "attempt", attempt)
 		probeCtx, probeCancel := context.WithTimeout(ctx, probeDialTimeout)
-		conn, err := p.dialer.DialTCP(probeCtx, probeTarget, nil)
+		err := p.dialer.Handshake(probeCtx)
 		probeCancel()
 
 		if ctx.Err() != nil {
@@ -102,7 +100,6 @@ func (p *recoveryProbe) run(ctx context.Context) {
 		}
 
 		if err == nil {
-			conn.Close()
 			slog.Info("recovery: probe succeeded", "attempt", attempt)
 			p.engine.ClearWireError()
 			return
