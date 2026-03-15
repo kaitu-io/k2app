@@ -194,6 +194,9 @@ func (d *mockDialer) DialTCP(ctx context.Context, addr string, earlyData []byte)
 func (d *mockDialer) DialUDP(ctx context.Context, addr string) (net.PacketConn, error) {
 	return nil, nil
 }
+func (d *mockDialer) DialStreamUDP(ctx context.Context, addr string) (net.PacketConn, error) {
+	return nil, nil
+}
 func (d *mockDialer) Close() error { return nil }
 
 // blockingPacketConn is a PacketConn whose ReadFrom blocks until Close.
@@ -234,6 +237,9 @@ func (d *mockWireDialer) DialTCP(ctx context.Context, addr string, earlyData []b
 	return nil, nil
 }
 func (d *mockWireDialer) DialUDP(ctx context.Context, addr string) (net.PacketConn, error) {
+	return d.pc, nil
+}
+func (d *mockWireDialer) DialStreamUDP(ctx context.Context, addr string) (net.PacketConn, error) {
 	return d.pc, nil
 }
 func (d *mockWireDialer) Close() error { return nil }

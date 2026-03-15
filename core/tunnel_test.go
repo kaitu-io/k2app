@@ -79,6 +79,10 @@ func (d *mockDialer) DialUDP(ctx context.Context, addr string) (net.PacketConn, 
 	}
 }
 
+func (d *mockDialer) DialStreamUDP(ctx context.Context, addr string) (net.PacketConn, error) {
+	return d.DialUDP(ctx, addr)
+}
+
 func (d *mockDialer) Close() error { return nil }
 
 // mockProvider calls handler methods directly.

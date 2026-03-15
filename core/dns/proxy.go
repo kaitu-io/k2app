@@ -196,7 +196,7 @@ func (c *ProxyDNSClient) open(ctx context.Context, server string) (*proxyConn, e
 	dialCtx, dialCancel := context.WithTimeout(ctx, c.timeout)
 	defer dialCancel()
 
-	conn, err := c.dialer.DialUDP(dialCtx, server)
+	conn, err := c.dialer.DialStreamUDP(dialCtx, server)
 	if err != nil {
 		return nil, fmt.Errorf("dial UDP %s: %w", server, err)
 	}
