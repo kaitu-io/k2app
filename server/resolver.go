@@ -5,32 +5,25 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"time"
 
 	k2dns "github.com/kaitu-io/k2/core/dns"
 	"github.com/miekg/dns"
 )
 
-// Resolver resolves domain names using the shared DNS cache.
+// Resolver resolves domain names using the shared DNS cache and a DNS querier.
 // Cache hit: unpack A records from cached response (no network I/O).
-// Cache miss: query upstream via raw UDP, cache response, return IPs.
+// Cache miss: query upstream via DNSQuerier (DirectDNSClient with health-aware
+// racing, EWMA latency tracking, degradation recovery, and TC→TCP retry).
 // Shared cache means handleDNSUDP and Resolver benefit from each other's queries.
 type Resolver struct {
-	cache   *k2dns.DNSCache
-	servers []string
-	timeout time.Duration
+	cache  *k2dns.DNSCache
+	client k2dns.DNSQuerier
 }
 
 // NewResolver creates a Resolver that shares the given DNS cache.
-func NewResolver(cache *k2dns.DNSCache, servers []string) *Resolver {
-	if len(servers) == 0 {
-		servers = []string{"8.8.8.8:53", "1.1.1.1:53"}
-	}
-	return &Resolver{
-		cache:   cache,
-		servers: servers,
-		timeout: 3 * time.Second,
-	}
+// The client is typically a DirectDNSClient configured with global DNS servers.
+func NewResolver(cache *k2dns.DNSCache, client k2dns.DNSQuerier) *Resolver {
+	return &Resolver{cache: cache, client: client}
 }
 
 // LookupHost resolves a hostname to IP addresses.
@@ -44,7 +37,7 @@ func (r *Resolver) LookupHost(ctx context.Context, host string) ([]string, error
 
 	fqdn := dns.Fqdn(host) // ensure trailing dot
 
-	// Cache lookup: unpack A records from cached packed bytes.
+	// Cache lookup: unpack A records from cached response.
 	if msg, ok := r.cache.Get(fqdn, dns.TypeA); ok {
 		ips := extractARecords(msg)
 		if len(ips) > 0 {
@@ -53,12 +46,12 @@ func (r *Resolver) LookupHost(ctx context.Context, host string) ([]string, error
 		}
 	}
 
-	// Cache miss: query upstream.
+	// Cache miss: query upstream via DNSQuerier.
 	query := new(dns.Msg)
 	query.SetQuestion(fqdn, dns.TypeA)
 	query.RecursionDesired = true
 
-	resp, server, err := r.queryUpstream(ctx, query)
+	resp, err := r.client.Query(ctx, query)
 	if err != nil {
 		slog.Warn("DIAG: dns-resolve-fail", "host", host, "err", err)
 		return nil, fmt.Errorf("resolve %s: %w", host, err)
@@ -77,50 +70,8 @@ func (r *Resolver) LookupHost(ctx context.Context, host string) ([]string, error
 		return nil, fmt.Errorf("resolve %s: no A records", host)
 	}
 
-	slog.Info("DIAG: dns-resolve-ok", "host", host, "ips", ips, "server", server)
+	slog.Info("DIAG: dns-resolve-ok", "host", host, "ips", ips)
 	return ips, nil
-}
-
-// queryUpstream races configured DNS servers, returns first successful response.
-func (r *Resolver) queryUpstream(ctx context.Context, query *dns.Msg) (*dns.Msg, string, error) {
-	ctx, cancel := context.WithTimeout(ctx, r.timeout)
-	defer cancel()
-
-	type result struct {
-		resp   *dns.Msg
-		server string
-		err    error
-	}
-
-	// Race up to 2 servers.
-	n := min(len(r.servers), 2)
-	ch := make(chan result, n)
-
-	for i := range n {
-		go func(srv string) {
-			c := new(dns.Client)
-			c.Net = "udp"
-			resp, _, err := c.ExchangeContext(ctx, query, srv)
-			ch <- result{resp, srv, err}
-		}(r.servers[i])
-	}
-
-	var lastErr error
-	for range n {
-		select {
-		case res := <-ch:
-			if res.err == nil {
-				return res.resp, res.server, nil
-			}
-			lastErr = res.err
-		case <-ctx.Done():
-			if lastErr != nil {
-				return nil, "", lastErr
-			}
-			return nil, "", ctx.Err()
-		}
-	}
-	return nil, "", fmt.Errorf("all DNS servers failed: %w", lastErr)
 }
 
 // extractARecords extracts IPv4 addresses from DNS A records.

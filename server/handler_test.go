@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	k2dns "github.com/kaitu-io/k2/core/dns"
 	"github.com/kaitu-io/k2/wire"
 	"github.com/miekg/dns"
 )
@@ -96,7 +97,7 @@ func TestCheckAddr_UsesResolver(t *testing.T) {
 	defer fakeDNS.Close()
 
 	h := NewProxyHandler()
-	h.resolver = NewResolver(h.dnsCache, []string{fakeDNS.LocalAddr().String()})
+	h.resolver = NewResolver(h.dnsCache, k2dns.NewDirectDNSClient([]string{fakeDNS.LocalAddr().String()}))
 
 	// Domain that resolves to public IP → allowed.
 	if err := h.checkAddr("example.com:443"); err != nil {
@@ -497,7 +498,7 @@ func TestResolveAddr_Domain(t *testing.T) {
 	defer fakeDNS.Close()
 
 	h := NewProxyHandler()
-	h.resolver = NewResolver(h.dnsCache, []string{fakeDNS.LocalAddr().String()})
+	h.resolver = NewResolver(h.dnsCache, k2dns.NewDirectDNSClient([]string{fakeDNS.LocalAddr().String()}))
 
 	resolved, err := h.resolveAddr("example.com:443")
 	if err != nil {

@@ -15,11 +15,13 @@ import (
 func newTestResolver(t *testing.T, upstreamAddr string) *Resolver {
 	t.Helper()
 	cache := k2dns.NewDNSCache(k2dns.DNSCacheConfig{})
-	return NewResolver(cache, []string{upstreamAddr})
+	client := k2dns.NewDirectDNSClient([]string{upstreamAddr})
+	return NewResolver(cache, client)
 }
 
 func TestResolver_LookupHost_IPLiteral(t *testing.T) {
-	r := newTestResolver(t, "127.0.0.1:0")
+	cache := k2dns.NewDNSCache(k2dns.DNSCacheConfig{})
+	r := NewResolver(cache, k2dns.NewDirectDNSClient(nil))
 	ips, err := r.LookupHost(context.Background(), "8.8.8.8")
 	if err != nil {
 		t.Fatal(err)
@@ -80,23 +82,22 @@ func TestResolver_LookupHost_SharedCache(t *testing.T) {
 	defer fakeDNS.Close()
 
 	cache := k2dns.NewDNSCache(k2dns.DNSCacheConfig{})
+	client := k2dns.NewDirectDNSClient([]string{fakeDNS.LocalAddr().String()})
 	h := &ProxyHandler{
 		DialTimeout:    5 * time.Second,
 		AllowPrivateIP: true,
 		conns:          connTracker{conns: make(map[io.Closer]struct{})},
 		dnsCache:       cache,
+		resolver:       NewResolver(cache, client),
 	}
-	r := NewResolver(cache, []string{fakeDNS.LocalAddr().String()})
 
-	// Prime cache via handleDNSUDP.
 	sendDNSViaHandler(t, h, fakeDNS.LocalAddr().String(),
 		buildDNSQuery(t, "shared.example.com.", dns.TypeA, 42))
 	if calls.Load() != 1 {
 		t.Fatalf("handleDNSUDP: upstream calls = %d, want 1", calls.Load())
 	}
 
-	// Resolver should find it in shared cache.
-	ips, err := r.LookupHost(context.Background(), "shared.example.com")
+	ips, err := h.resolver.LookupHost(context.Background(), "shared.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,12 +148,13 @@ func TestResolver_LookupHost_Timeout(t *testing.T) {
 	defer blackhole.Close()
 
 	cache := k2dns.NewDNSCache(k2dns.DNSCacheConfig{})
-	r := &Resolver{
-		cache:   cache,
-		servers: []string{blackhole.LocalAddr().String()},
-		timeout: 200 * time.Millisecond,
-	}
-	_, err = r.LookupHost(context.Background(), "timeout.example.com")
+	client := k2dns.NewDirectDNSClient([]string{blackhole.LocalAddr().String()})
+	r := NewResolver(cache, client)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	_, err = r.LookupHost(ctx, "timeout.example.com")
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}

@@ -116,6 +116,14 @@ type ProxyHandler struct {
 	resolver       *Resolver
 }
 
+// Global DNS servers for server-side domain resolution.
+// 3 providers × 2 servers, covering all node regions (HK, JP, SG, US, CA, AU, KR).
+var defaultResolverServers = []string{
+	"8.8.8.8:53", "8.8.4.4:53",         // Google
+	"1.1.1.1:53", "1.0.0.1:53",         // Cloudflare
+	"9.9.9.9:53", "149.112.112.112:53", // Quad9
+}
+
 // NewProxyHandler creates a proxy handler with default settings.
 func NewProxyHandler() *ProxyHandler {
 	cache := k2dns.NewDNSCache(k2dns.DNSCacheConfig{
@@ -128,7 +136,7 @@ func NewProxyHandler() *ProxyHandler {
 		DialTimeout: 5 * time.Second,
 		conns:       connTracker{conns: make(map[io.Closer]struct{})},
 		dnsCache:    cache,
-		resolver:    NewResolver(cache, nil),
+		resolver:    NewResolver(cache, k2dns.NewDirectDNSClient(defaultResolverServers)),
 	}
 }
 
