@@ -305,6 +305,19 @@
     nsis_tauri_utils::RunAsUser "$INSTDIR\${MAINBINARYNAME}.exe" ""
   ${EndIf}
 
+  ; Step 6: Add installation directory to system PATH
+  ;         Enables `k2` command in new terminal sessions
+  DetailPrint "Adding to system PATH..."
+  ReadRegStr $R0 HKLM "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "Path"
+  ${StrLoc} $R1 "$R0" "$INSTDIR" ">"
+  ${If} $R1 == ""
+    WriteRegExpandStr HKLM "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "Path" "$R0;$INSTDIR"
+    SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=5000
+    DetailPrint "Added $INSTDIR to system PATH"
+  ${Else}
+    DetailPrint "$INSTDIR already in system PATH"
+  ${EndIf}
+
   DetailPrint "============================================"
   DetailPrint "Installation completed"
   DetailPrint "============================================"
