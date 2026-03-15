@@ -266,8 +266,9 @@ func (h *ProxyHandler) handleDNSUDP(conn net.PacketConn, addr string) {
 	defer untrackTarget()
 
 	type pendingQuery struct {
-		domain string
-		qtype  uint16
+		domain  string
+		qtype   uint16
+		sentAt  time.Time
 	}
 	var pendingMu sync.Mutex
 	pending := make(map[uint16]*pendingQuery)
@@ -310,13 +311,14 @@ func (h *ProxyHandler) handleDNSUDP(conn net.PacketConn, addr string) {
 				writeToMu.Lock()
 				conn.WriteTo(packed, nil)
 				writeToMu.Unlock()
-				slog.Debug("server: DNS cache hit", "domain", domain)
+				slog.Info("DIAG: dns-cache-hit", "domain", domain, "qtype", qtype)
 				continue
 			}
 
 			// Cache miss — track and forward.
+			slog.Info("DIAG: dns-cache-miss", "domain", domain, "qtype", qtype, "upstream", addr)
 			pendingMu.Lock()
-			pending[query.Id] = &pendingQuery{domain: domain, qtype: qtype}
+			pending[query.Id] = &pendingQuery{domain: domain, qtype: qtype, sentAt: time.Now()}
 			pendingMu.Unlock()
 
 			if _, err := target.Write(buf[:n]); err != nil {
@@ -351,7 +353,11 @@ func (h *ProxyHandler) handleDNSUDP(conn net.PacketConn, addr string) {
 			// Cache response (skip truncated — incomplete data).
 			if ok && !resp.Truncated {
 				h.dnsCache.Add(pq.domain, pq.qtype, &resp)
-				slog.Debug("server: DNS cached", "domain", pq.domain)
+				rttMs := time.Since(pq.sentAt).Milliseconds()
+				slog.Info("DIAG: dns-upstream-ok", "domain", pq.domain, "qtype", pq.qtype, "rcode", resp.Rcode, "rttMs", rttMs, "upstream", addr)
+				if rttMs > 500 {
+					slog.Warn("DIAG: dns-upstream-slow", "domain", pq.domain, "qtype", pq.qtype, "rttMs", rttMs, "upstream", addr)
+				}
 			}
 		}
 

@@ -45,6 +45,13 @@ func runServer(configPath string) {
 		slog.Info("Using config", "path", cfgPathUsed)
 	}
 
+	// K2_LOG_LEVEL env var overrides config file's log level.
+	// This allows Docker Compose to control log level via .env without
+	// modifying the sidecar-generated config file.
+	if envLevel := os.Getenv("K2_LOG_LEVEL"); envLevel != "" {
+		cfg.Log.Level = envLevel
+	}
+
 	// Phase 2: Re-configure logging with the settings from the loaded config.
 	cleanup2, err := config.SetupLogging(cfg.Log, "k2s")
 	if err != nil {
