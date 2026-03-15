@@ -59,7 +59,7 @@ listen: "$K2_DEV_ADDR"
 YAML
 
 echo "[dev-windows] Starting k2 daemon on $K2_DEV_ADDR..."
-"$K2_BIN" -c "$K2_DEV_CONFIG" &
+"$K2_BIN" run -c "$K2_DEV_CONFIG" &
 PIDS+=($!)
 
 # Brief wait for daemon to bind the port

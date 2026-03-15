@@ -42,4 +42,4 @@ echo "[INFO] Config file found: $CONFIG_FILE"
 # =============================================================================
 
 echo "[INFO] Starting k2s with config: $CONFIG_FILE"
-exec ./k2s -c "$CONFIG_FILE"
+exec ./k2s run -c "$CONFIG_FILE"

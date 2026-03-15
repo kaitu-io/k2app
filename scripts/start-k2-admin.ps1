@@ -42,7 +42,7 @@ Write-Host ""
 Remove-Item $k2Log -ErrorAction SilentlyContinue
 
 # Run k2 daemon (foreground, blocks until Ctrl+C)
-& $k2Bin -c $k2Cfg
+& $k2Bin run -c $k2Cfg
 
 Write-Host ""
 Write-Host "K2 daemon stopped." -ForegroundColor Red

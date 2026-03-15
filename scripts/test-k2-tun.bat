@@ -32,7 +32,7 @@ echo.
 del /f "C:\Users\david\k2-debug.log" 2>nul
 
 :: Run k2 daemon in foreground (blocks until Ctrl+C)
-"%K2_BIN%" -c "%K2_CFG%"
+"%K2_BIN%" run -c "%K2_CFG%"
 
 echo.
 echo K2 daemon stopped.

@@ -81,7 +81,7 @@ k2 up --mode proxy k2v5://...
 如果您需要使用配置文件而非 URL，可以生成示例配置：
 
 ```bash
-k2 demo-config > client.yml
+k2 config show > client.yml
 ```
 
 编辑配置文件后，通过配置文件连接：

@@ -103,7 +103,7 @@ Default port mappings:
 Generate a commented example configuration file:
 
 ```bash
-k2s demo-config > server.yml
+k2s config show > server.yml
 ```
 
 Common configuration options:

@@ -18,8 +18,8 @@ ssh -N -L 19223:127.0.0.1:9223 david@10.211.55.6
 ## Debug Commands
 
 ```powershell
-sc query k2                              # Windows Service status
-sc qc k2                                 # Service config (binary path, start type)
+sc query kaitu                           # Windows Service status
+sc qc kaitu                              # Service config (binary path, start type)
 netstat -an | findstr 1777               # Daemon port
 tasklist | findstr "k2\|Kaitu"           # Process list
 curl.exe http://127.0.0.1:1777/ping      # Daemon health
@@ -37,8 +37,8 @@ type "%ProgramFiles%\Kaitu\logs\k2.log"
 
 **Precondition**: No previous Kaitu installation. Remove if exists:
 ```powershell
-sc stop k2 2>NUL & sc delete k2 2>NUL
-taskkill /F /IM Kaitu.exe 2>NUL & taskkill /F /IM k2.exe 2>NUL
+sc stop kaitu 2>NUL & sc delete kaitu 2>NUL & sc stop k2 2>NUL & sc delete k2 2>NUL & sc stop kaitu-service 2>NUL & sc delete kaitu-service 2>NUL
+taskkill /F /IM Kaitu.exe 2>NUL & taskkill /F /IM k2.exe 2>NUL & taskkill /F /IM kaitu-service.exe 2>NUL
 rmdir /S /Q "C:\Program Files\Kaitu" 2>NUL
 ```
 
@@ -51,7 +51,7 @@ rmdir /S /Q "C:\Program Files\Kaitu" 2>NUL
 6. Service starts on :1777
 
 **Verify**:
-- [ ] `sc query k2` → RUNNING
+- [ ] `sc query kaitu` → RUNNING
 - [ ] `curl 127.0.0.1:1777/ping` → `{"code":0}`
 - [ ] SSE status stream connected (check Tauri logs)
 - [ ] Webapp shows dashboard (no ServiceAlert)
@@ -75,7 +75,7 @@ rmdir /S /Q "C:\Program Files\Kaitu" 2>NUL
 
 **Steps**:
 1. App running normally, service connected
-2. Manually stop: `sc stop k2`
+2. Manually stop: `sc stop kaitu`
 3. SSE stream disconnects → `service-state-changed { available: false }`
 4. After 10s → `isServiceFailedLongTime` = true → ServiceAlert (red banner)
 5. Click "Resolve" → UAC → `k2.exe service install` → service restarts

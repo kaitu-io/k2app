@@ -253,7 +253,7 @@ cd webapp && npx tsc --noEmit            # Type check
 |---------|-------|
 | `window._k2` is undefined | Platform injection not running. Desktop: check Tauri inject. Web: check standalone-k2 fallback. |
 | `window._platform` is undefined | Platform injection not running. Check bootstrap in main.tsx → ensureK2Injected(). |
-| VPN operations fail | Is kaitu-service running? Check service logs and network permissions. |
+| VPN operations fail | Is k2 daemon running? (`sc query kaitu` on Windows, `launchctl list kaitu` on macOS). Check service logs and network permissions. |
 | API calls fail | Token expired? Check network. Check browser Network panel. |
 | Service reachable? | `curl http://127.0.0.1:1777/ping` |
 | White flash on app start | `index.html` must use `background: #0f0f13` directly on `html, body` WITHOUT `@media (prefers-color-scheme: dark)`. Media query causes 100-300ms white flash on light-mode OS before MUI loads. |

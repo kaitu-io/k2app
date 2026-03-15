@@ -105,7 +105,7 @@ docker compose up --build
 生成默认配置文件后手动编辑：
 
 ```bash
-k2s demo-config > server.yml
+k2s config show > server.yml
 ```
 
 常用配置项：

@@ -68,7 +68,7 @@ YAML
 
 echo "[dev-desktop] Starting k2 daemon on $K2_DEV_ADDR..."
 # k2 needs root for TUN device (actual VPN connection). Run with sudo.
-sudo "$K2_BIN" -c "$K2_DEV_CONFIG" &
+sudo "$K2_BIN" run -c "$K2_DEV_CONFIG" &
 PIDS+=($!)
 
 # ── 5. Start Vite dev server ──

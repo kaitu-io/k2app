@@ -82,7 +82,7 @@ Configure your system or application to use `socks5://127.0.0.1:1080`.
 For environments where passing a URL is inconvenient, generate a config file:
 
 ```bash
-k2 demo-config > client.yml
+k2 config show > client.yml
 ```
 
 Connect using the config file:

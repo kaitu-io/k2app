@@ -67,7 +67,7 @@
 | # | Phase | Description | Root Cause | Fix | Status |
 |---|-------|-------------|------------|-----|--------|
 | I1 | 1 | `dev-desktop.sh` skips k2 daemon on macOS | Script assumed NE mode (`uname -s == Darwin` → skip) | Removed platform check, always start daemon | FIXED |
-| I2 | 1 | k2 `run -l` command not found | k2 CLI changed: `run` removed, daemon starts with `k2 -c config` | Create `.k2-dev-config.yaml` with listen addr | FIXED |
+| I2 | 1 | k2 `run -l` command not found | k2 CLI changed: daemon starts with `k2 -c config` (later restored to `k2 run -c config` in cli-redesign) | Create `.k2-dev-config.yaml` with listen addr | FIXED |
 | I3 | 1 | `get_udid` daemon endpoint removed | k2 daemon no longer has `/api/device/udid` | Use native sysctl/wmic/machine-id per platform | FIXED |
 | I4 | 1 | Vite proxy → :1777 but daemon on :11777 | `K2_DAEMON_PORT` exported after Vite start | Export env before Vite launch | FIXED |
 | I5 | 2 | TUN mode `down` blocks 30s+ and state stays `connected` | `engine.Stop()` blocks in `tunnel.Close()` → `wg.Wait()`: TUN/gVisor goroutines don't exit cleanly when provider is closed on macOS. Proxy mode disconnect works fine. | k2 submodule fix needed: add timeout to `tunnel.Close()` or context-based cancellation for waitgroup | OPEN (k2) |
