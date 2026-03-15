@@ -2,11 +2,15 @@ package config
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
+
+	"go.uber.org/goleak"
 )
 
 // TestSystemLogPath verifies that systemLogPath returns a system-level path.
@@ -216,5 +220,109 @@ func TestSetupLogging_K2sName(t *testing.T) {
 	path := DefaultLogPath("k2s")
 	if !strings.HasSuffix(path, "k2s.log") {
 		t.Errorf("path = %q, want suffix k2s.log", path)
+	}
+}
+
+// TestSetupLogging_IdempotentStderrRedirect verifies that calling SetupLogging
+// multiple times with file output does not leak goroutines. Each call should
+// auto-clean the previous stderr redirect before creating a new one.
+func TestSetupLogging_IdempotentStderrRedirect(t *testing.T) {
+	defer goleak.VerifyNone(t,
+		goleak.IgnoreTopFunction("gopkg.in/lumberjack%2ev2.(*Logger).millRun"),
+	)
+
+	dir := t.TempDir()
+
+	// Call SetupLogging 3 times with file output — each creates a stderr redirect goroutine.
+	// Without idempotency, this leaks 2 goroutines (first two never cleaned up).
+	for i := 0; i < 3; i++ {
+		logPath := dir + "/test-idempotent.log"
+		cfg := LogConfig{Level: "info", Output: logPath}
+		cleanup, err := SetupLogging(cfg, "k2")
+		if err != nil {
+			t.Fatalf("SetupLogging call %d: %v", i, err)
+		}
+		_ = cleanup // intentionally not calling cleanup — simulates appext behavior
+	}
+
+	// CloseLogging cleans up the last active stderr redirect.
+	CloseLogging()
+}
+
+// TestCloseLogging verifies that CloseLogging stops the active stderr redirect
+// goroutine and is safe to call multiple times (idempotent).
+func TestCloseLogging(t *testing.T) {
+	defer goleak.VerifyNone(t,
+		goleak.IgnoreTopFunction("gopkg.in/lumberjack%2ev2.(*Logger).millRun"),
+	)
+
+	dir := t.TempDir()
+	logPath := dir + "/test-close.log"
+
+	cfg := LogConfig{Level: "info", Output: logPath}
+	_, err := SetupLogging(cfg, "k2")
+	if err != nil {
+		t.Fatalf("SetupLogging: %v", err)
+	}
+
+	slog.Info("message before close")
+
+	// First call cleans up the goroutine.
+	CloseLogging()
+
+	// Second call is a no-op (idempotent).
+	CloseLogging()
+
+	// Give goroutine time to exit (the pipe read goroutine exits on stderrW close).
+	time.Sleep(50 * time.Millisecond)
+}
+
+// TestSetupLogging_StaleCleanupIsNoop verifies that a cleanup function returned
+// by a previous SetupLogging call becomes a no-op once a newer SetupLogging has
+// replaced the active stderr redirect. The stale cleanup must NOT close the
+// new redirect — it only owns the one it created.
+func TestSetupLogging_StaleCleanupIsNoop(t *testing.T) {
+	defer goleak.VerifyNone(t,
+		goleak.IgnoreTopFunction("gopkg.in/lumberjack%2ev2.(*Logger).millRun"),
+	)
+
+	dir := t.TempDir()
+
+	// Setup 1: create redirect, keep cleanup handle.
+	cfg1 := LogConfig{Level: "info", Output: dir + "/stale1.log"}
+	cleanup1, err := SetupLogging(cfg1, "k2")
+	if err != nil {
+		t.Fatalf("SetupLogging 1: %v", err)
+	}
+
+	// Setup 2: replaces redirect 1. cleanup1 is now stale.
+	cfg2 := LogConfig{Level: "info", Output: dir + "/stale2.log"}
+	cleanup2, err := SetupLogging(cfg2, "k2")
+	if err != nil {
+		t.Fatalf("SetupLogging 2: %v", err)
+	}
+
+	// Calling stale cleanup1 should NOT close redirect 2.
+	cleanup1()
+
+	// Redirect 2 should still be functional: write raw bytes to os.Stderr
+	// (the redirected pipe). If cleanup1 wrongly killed redirect 2, this
+	// write goes to original stderr instead of stale2.log.
+	marker := "OWNERSHIP_PROOF_MARKER_" + t.Name()
+	fmt.Fprintln(os.Stderr, marker)
+
+	// Give the pipe goroutine time to flush.
+	time.Sleep(50 * time.Millisecond)
+
+	// Now properly close redirect 2.
+	cleanup2()
+
+	// Verify marker appeared in stale2.log (proving redirect 2 was alive).
+	data, err := os.ReadFile(dir + "/stale2.log")
+	if err != nil {
+		t.Fatalf("read stale2.log: %v", err)
+	}
+	if !strings.Contains(string(data), marker) {
+		t.Fatalf("stale2.log does not contain marker %q — stale cleanup1 killed redirect 2", marker)
 	}
 }

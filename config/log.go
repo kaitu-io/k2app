@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 
 	"gopkg.in/lumberjack.v2"
 )
@@ -22,6 +23,33 @@ var LogLevel slog.LevelVar
 //
 // Default "debug" for development. CI/Makefile passes K2_BUILD_LOG_LEVEL env.
 var buildLogLevel = "debug"
+
+// activeStderrRedirect holds the cleanup function for the current stderr→lumberjack
+// redirect goroutine. Since fd2 is process-global (one per process), only one
+// redirect can be active. SetupLogging auto-cleans the previous one before
+// creating a new one; CloseLogging cleans the current one for process shutdown.
+var (
+	stderrMu              sync.Mutex
+	activeStderrCleanupFn func() // nil when no redirect is active
+	stderrGeneration      uint64 // incremented each time a new redirect is created
+)
+
+// closeActiveStderr tears down the current stderr redirect goroutine if one exists.
+// Must be called with stderrMu held.
+func closeActiveStderr() {
+	if activeStderrCleanupFn != nil {
+		activeStderrCleanupFn()
+		activeStderrCleanupFn = nil
+	}
+}
+
+// CloseLogging tears down the active stderr→lumberjack redirect goroutine.
+// Safe to call multiple times (idempotent). Use in process shutdown or test cleanup.
+func CloseLogging() {
+	stderrMu.Lock()
+	defer stderrMu.Unlock()
+	closeActiveStderr()
+}
 
 // parseLevel converts a string log level to slog.Level.
 // When level is empty, falls back to buildLogLevel (set via ldflags).
@@ -149,6 +177,12 @@ func SetupLogging(cfg LogConfig, name string) (func(), error) {
 
 		// Redirect os.Stderr to lumberjack so go-deadlock output,
 		// runtime panics, and CGo crashes appear inline in k2.log.
+		//
+		// fd2 is process-global, so only one redirect can be active.
+		// Auto-clean previous redirect before creating a new one.
+		stderrMu.Lock()
+		closeActiveStderr()
+
 		var stderrDone chan struct{}
 		var restoreStderr func()
 		stderrR, stderrW, pipeErr := os.Pipe()
@@ -170,7 +204,20 @@ func SetupLogging(cfg LogConfig, name string) (func(), error) {
 					}
 				}
 			}()
+			stderrGeneration++
+			activeStderrCleanupFn = func() {
+				if restoreStderr != nil {
+					restoreStderr()
+				}
+				stderrW.Close()
+				<-stderrDone
+				stderrR.Close()
+			}
 		}
+		// Capture the generation while still holding stderrMu to avoid a
+		// data race with concurrent SetupLogging calls.
+		myGen := stderrGeneration
+		stderrMu.Unlock()
 
 		if cfg.ExtraWriter != nil {
 			writer = io.MultiWriter(lj, cfg.ExtraWriter)
@@ -178,24 +225,12 @@ func SetupLogging(cfg LogConfig, name string) (func(), error) {
 			writer = lj
 		}
 		closeFn = func() {
-			// Cleanup order matters:
-			// 1. Restore fd 2 to original (removes dup'd reference to pipe write end)
-			// 2. Close stderrW (now pipe write end has zero references → EOF)
-			// 3. Wait for goroutine to drain and exit
-			// 4. Close stderrR
-			// 5. Close lumberjack (goroutine is done, no write-after-close)
-			if restoreStderr != nil {
-				restoreStderr()
+			stderrMu.Lock()
+			if stderrGeneration == myGen && activeStderrCleanupFn != nil {
+				activeStderrCleanupFn()
+				activeStderrCleanupFn = nil
 			}
-			if stderrW != nil {
-				stderrW.Close()
-			}
-			if stderrDone != nil {
-				<-stderrDone
-			}
-			if stderrR != nil {
-				stderrR.Close()
-			}
+			stderrMu.Unlock()
 			lj.Close() //nolint:errcheck
 		}
 	}
