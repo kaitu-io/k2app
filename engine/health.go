@@ -141,10 +141,13 @@ func (hm *healthMonitor) sample() {
 	hm.mu.Lock()
 
 	// DIAG: wake — detect wall clock jump indicating macOS sleep/wake.
-	// Go runtime suspends during sleep, so ticker fires immediately on wake
-	// with a large wall clock gap but only 1s of Go-time elapsed.
+	// Go runtime suspends during sleep, so ticker fires immediately on wake.
+	// Must use Round(0) to strip monotonic reading (freezes during sleep).
 	if !hm.lastSampleWall.IsZero() {
-		wallGap := now.Sub(hm.lastSampleWall)
+		// Round(0) strips monotonic reading — forces wall-clock-only subtraction.
+		// Monotonic clock freezes during macOS sleep, so now.Sub(prev) with mono
+		// would give ~1s (Go-time elapsed). Wall-clock shows the real gap.
+		wallGap := now.Round(0).Sub(hm.lastSampleWall.Round(0))
 		if wallGap > 5*time.Second {
 			slog.Warn("DIAG: wake",
 				"sleepS", int(wallGap.Seconds()),
