@@ -5,6 +5,11 @@
 K2="/Applications/Kaitu.app/Contents/MacOS/k2"
 NE_SYSEXT="/Applications/Kaitu.app/Contents/Library/SystemExtensions/io.kaitu.desktop.tunnel.systemextension"
 
+# 0. Create CLI symlink so `k2` is available in terminal
+if [ -x "$K2" ]; then
+    ln -sf "$K2" /usr/local/bin/k2
+fi
+
 # 1. Install daemon service (NE mode: skip — NE profile installed by app at runtime)
 if [ -d "$NE_SYSEXT" ]; then
     # NE mode: KaituTunnel.appex is present — Network Extension handles VPN,
