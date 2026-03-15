@@ -142,6 +142,34 @@ func SetupLogging(cfg LogConfig, name string) (func(), error) {
 			MaxAge:     7, // days
 			Compress:   true,
 		}
+
+		// Redirect os.Stderr to lumberjack so go-deadlock output,
+		// runtime panics, and CGo crashes appear inline in k2.log.
+		stderrR, stderrW, pipeErr := os.Pipe()
+		if pipeErr == nil {
+			os.Stderr = stderrW
+			_ = redirectStderrFD(stderrW) // also redirect fd 2 for runtime/CGo
+			ljForStderr := lj             // capture for goroutine
+			go func() {
+				buf := make([]byte, 4096)
+				for {
+					n, err := stderrR.Read(buf)
+					if n > 0 {
+						ljForStderr.Write(buf[:n]) //nolint:errcheck
+					}
+					if err != nil {
+						return
+					}
+				}
+			}()
+			prevCloseFn := closeFn
+			closeFn = func() {
+				stderrW.Close()
+				stderrR.Close()
+				prevCloseFn()
+			}
+		}
+
 		if cfg.ExtraWriter != nil {
 			writer = io.MultiWriter(lj, cfg.ExtraWriter)
 		} else {
