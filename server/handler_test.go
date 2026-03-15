@@ -56,6 +56,8 @@ func TestIsReservedIP(t *testing.T) {
 }
 
 func TestCheckAddr(t *testing.T) {
+	h := NewProxyHandler()
+
 	// IP literals that should be blocked.
 	blockedAddrs := []string{
 		"127.0.0.1:80",
@@ -65,7 +67,7 @@ func TestCheckAddr(t *testing.T) {
 		"100.64.0.1:8080",
 	}
 	for _, addr := range blockedAddrs {
-		if err := checkAddr(addr); err == nil {
+		if err := h.checkAddr(addr); err == nil {
 			t.Errorf("expected %s to be blocked", addr)
 		}
 	}
@@ -77,14 +79,39 @@ func TestCheckAddr(t *testing.T) {
 		"[2001:4860:4860::8888]:53",
 	}
 	for _, addr := range allowedAddrs {
-		if err := checkAddr(addr); err != nil {
+		if err := h.checkAddr(addr); err != nil {
 			t.Errorf("expected %s to be allowed, got: %v", addr, err)
 		}
 	}
 
 	// Invalid addresses.
-	if err := checkAddr("no-port"); err == nil {
+	if err := h.checkAddr("no-port"); err == nil {
 		t.Error("expected error for missing port")
+	}
+}
+
+func TestCheckAddr_UsesResolver(t *testing.T) {
+	var calls atomic.Int32
+	fakeDNS := startFakeDNSServer(t, &calls)
+	defer fakeDNS.Close()
+
+	h := NewProxyHandler()
+	h.resolver = NewResolver(h.dnsCache, []string{fakeDNS.LocalAddr().String()})
+
+	// Domain that resolves to public IP → allowed.
+	if err := h.checkAddr("example.com:443"); err != nil {
+		t.Fatalf("expected allowed, got: %v", err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("expected 1 upstream call, got %d", calls.Load())
+	}
+
+	// Second call: cache hit → no new upstream call.
+	if err := h.checkAddr("example.com:443"); err != nil {
+		t.Fatalf("expected allowed (cached), got: %v", err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("expected 1 upstream call (cached), got %d", calls.Load())
 	}
 }
 

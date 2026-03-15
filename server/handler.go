@@ -36,7 +36,7 @@ func isReservedIP(ip net.IP) bool {
 }
 
 // checkAddr resolves addr (host:port) and returns an error if the target IP is reserved.
-func checkAddr(addr string) error {
+func (h *ProxyHandler) checkAddr(addr string) error {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		return fmt.Errorf("invalid address %q: %w", addr, err)
@@ -50,8 +50,8 @@ func checkAddr(addr string) error {
 		return nil
 	}
 
-	// Host is a domain — resolve and check all IPs.
-	ips, err := net.DefaultResolver.LookupHost(context.TODO(), host)
+	// Host is a domain — resolve via our DNS cache + upstream.
+	ips, err := h.resolver.LookupHost(context.TODO(), host)
 	if err != nil {
 		return fmt.Errorf("resolve %s: %w", host, err)
 	}
@@ -96,19 +96,22 @@ type ProxyHandler struct {
 	AllowPrivateIP bool // for testing only; default false blocks reserved IPs
 	conns          connTracker
 	dnsCache       *k2dns.DNSCache // shared DNS cache for port-53 UDP
+	resolver       *Resolver
 }
 
 // NewProxyHandler creates a proxy handler with default settings.
 func NewProxyHandler() *ProxyHandler {
+	cache := k2dns.NewDNSCache(k2dns.DNSCacheConfig{
+		MinTTL:     5 * time.Minute,
+		MaxTTL:     4 * time.Hour,
+		MaxEntries: 10000,
+		StaleFor:   30 * time.Minute,
+	})
 	return &ProxyHandler{
 		DialTimeout: 5 * time.Second,
 		conns:       connTracker{conns: make(map[io.Closer]struct{})},
-		dnsCache: k2dns.NewDNSCache(k2dns.DNSCacheConfig{
-			MinTTL:     5 * time.Minute,
-			MaxTTL:     4 * time.Hour,
-			MaxEntries: 10000,
-			StaleFor:   30 * time.Minute,
-		}),
+		dnsCache:    cache,
+		resolver:    NewResolver(cache, nil),
 	}
 }
 
@@ -132,7 +135,7 @@ func (h *ProxyHandler) HandleTCP(conn net.Conn, addr string) {
 	slog.Info("server: HandleTCP", "addr", addr)
 
 	if !h.AllowPrivateIP {
-		if err := checkAddr(addr); err != nil {
+		if err := h.checkAddr(addr); err != nil {
 			wire.WriteStreamResponse(conn, &wire.StreamError{Code: 403, Message: err.Error()})
 			slog.Error("server: TCP proxy blocked", "addr", addr, "err", err)
 			return
@@ -168,7 +171,7 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 	untrackConn := h.conns.track(conn)
 	defer untrackConn()
 	if !h.AllowPrivateIP {
-		if err := checkAddr(addr); err != nil {
+		if err := h.checkAddr(addr); err != nil {
 			slog.Error("server: UDP proxy blocked", "addr", addr, "err", err)
 			conn.Close()
 			return
