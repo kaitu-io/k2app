@@ -23,6 +23,9 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  K2_BUILD_LOG_LEVEL: debug  # debug for beta phase; change to info for production
+
 jobs:
   build-ios:
     if: >-

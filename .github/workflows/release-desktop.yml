@@ -9,6 +9,9 @@ on:
 permissions:
   contents: write
 
+env:
+  K2_BUILD_LOG_LEVEL: debug  # debug for beta phase; change to info for production
+
 jobs:
   # --- Test gate: must pass before any build starts ---
   test-gate:
