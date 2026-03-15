@@ -394,11 +394,22 @@
 
   ; Step 7: Remove installation directory from system PATH
   DetailPrint "Removing from system PATH..."
-  nsExec::ExecToStack `powershell -NoProfile -Command "$$p = [Environment]::GetEnvironmentVariable('Path','Machine'); if ($$p) { $$parts = $$p.Split(';') | Where-Object { $$_ -and $$_.TrimEnd('\') -ne '$INSTDIR'.TrimEnd('\') }; [Environment]::SetEnvironmentVariable('Path', ($$parts -join ';'), 'Machine') }"`
-  Pop $0
-  Pop $1
-  SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=5000
-  DetailPrint "Removed $INSTDIR from system PATH"
+  ReadRegStr $R0 HKLM "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "Path"
+  ; Remove ";$INSTDIR" (middle or end entry)
+  ${UnStrRep} $R1 "$R0" ";$INSTDIR" ""
+  ; Remove "$INSTDIR;" (first entry with others after)
+  ${UnStrRep} $R1 "$R1" "$INSTDIR;" ""
+  ; Remove "$INSTDIR" alone (sole entry — unlikely but safe)
+  ${UnStrRep} $R1 "$R1" "$INSTDIR" ""
+  ; Only write back if PATH actually changed
+  StrCmp $R1 $R0 _path_unchanged
+    WriteRegExpandStr HKLM "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "Path" "$R1"
+    SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=5000
+    DetailPrint "Removed $INSTDIR from system PATH"
+    Goto _path_remove_done
+  _path_unchanged:
+    DetailPrint "$INSTDIR not found in system PATH"
+  _path_remove_done:
 
   DetailPrint "============================================"
   DetailPrint "Cleanup completed"

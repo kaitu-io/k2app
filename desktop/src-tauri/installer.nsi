@@ -38,6 +38,7 @@ ManifestDPIAwareness PerMonitorV2
 !include "StrFunc.nsh"
 ${StrCase}
 ${StrLoc}
+${UnStrRep}
 
 {{#if installer_hooks}}
 !include "{{installer_hooks}}"
