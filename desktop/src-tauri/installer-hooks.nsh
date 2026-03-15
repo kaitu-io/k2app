@@ -392,6 +392,14 @@
     Delete "$APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\${PRODUCTNAME}.lnk"
   ${EndIf}
 
+  ; Step 7: Remove installation directory from system PATH
+  DetailPrint "Removing from system PATH..."
+  nsExec::ExecToStack `powershell -NoProfile -Command "$$p = [Environment]::GetEnvironmentVariable('Path','Machine'); if ($$p) { $$parts = $$p.Split(';') | Where-Object { $$_ -and $$_.TrimEnd('\') -ne '$INSTDIR'.TrimEnd('\') }; [Environment]::SetEnvironmentVariable('Path', ($$parts -join ';'), 'Machine') }"`
+  Pop $0
+  Pop $1
+  SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=5000
+  DetailPrint "Removed $INSTDIR from system PATH"
+
   DetailPrint "============================================"
   DetailPrint "Cleanup completed"
   DetailPrint "============================================"
