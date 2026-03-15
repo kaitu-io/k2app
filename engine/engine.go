@@ -43,6 +43,7 @@ type Engine struct {
 	networkMonitor NetworkChangeNotifier
 	health         *healthMonitor
 	probe          *recoveryProbe
+	proxyDNS       *dns.ProxyDNSClient // proxy DNS connection pool (nil in proxy mode)
 }
 
 // New creates a new Engine in the disconnected state.
@@ -265,6 +266,7 @@ func (e *Engine) Start(cfg Config) error {
 	tunnel := core.NewClientTunnel(tunnelCfg)
 
 	// 8. Start.
+	var proxyDNS *dns.ProxyDNSClient // non-nil in TUN mode; stored in Engine for reconnect reset
 	if client.Mode != "proxy" {
 		// TUN mode (mobile or desktop): intercept DNS at port 53.
 		// If DirectDialer implements DialerController, use its control func
@@ -275,11 +277,12 @@ func (e *Engine) Start(cfg Config) error {
 				Control: dc.ControlFunc(),
 			}))
 		}
+		proxyDNS = dns.NewProxyDNSClient(dns.ProxyDNSClientConfig{
+			Dialer:  tm,
+			Servers: client.DNS.Proxy,
+		})
 		dnsMW := dns.NewMiddleware(dns.MiddlewareConfig{
-			ProxyDNS: dns.NewProxyDNSClient(dns.ProxyDNSClientConfig{
-				Dialer:  tm,
-				Servers: client.DNS.Proxy,
-			}),
+			ProxyDNS: proxyDNS,
 			DirectDNS: dns.NewDirectDNSClient(client.DNS.Direct, dnsOpts...),
 			DNSCache:  dns.NewDNSCache(dns.DNSCacheConfig{}),
 			Filter:    dns.NewFilter(dns.FilterConfig{}),
@@ -320,6 +323,7 @@ func (e *Engine) Start(cfg Config) error {
 	e.tunnel = tunnel
 	e.tm = tm
 	e.prov = prov
+	e.proxyDNS = proxyDNS
 	e.networkMonitor = cfg.NetworkMonitor
 
 	// Start health monitor (1Hz wire stats sampling + health FSM).
@@ -361,6 +365,7 @@ func (e *Engine) reconnect() bool {
 	}
 	handler := e.handler
 	tm := e.tm
+	pdns := e.proxyDNS
 	e.mu.Unlock()
 
 	// Notify handler of transient reconnecting state (for UI feedback).
@@ -371,6 +376,11 @@ func (e *Engine) reconnect() bool {
 	// Reset cached connections — next dial will create fresh ones.
 	if tm != nil {
 		tm.ResetConnections()
+	}
+	// Flush proxy DNS connection pool — stale UDP sessions through
+	// the old wire transport would timeout on next query otherwise.
+	if pdns != nil {
+		pdns.ResetConnections()
 	}
 
 	// Reset health monitor — stale data from old connection is irrelevant.
@@ -448,10 +458,14 @@ func (e *Engine) Pause() {
 	slog.Info("engine: paused")
 	handler := e.handler
 	tm := e.tm
+	pdns := e.proxyDNS
 	e.mu.Unlock()
 
 	if tm != nil {
 		tm.ResetConnections()
+	}
+	if pdns != nil {
+		pdns.ResetConnections()
 	}
 	if handler != nil {
 		handler.OnStatus(Status{State: StatePaused})
@@ -469,11 +483,15 @@ func (e *Engine) Wake() {
 	slog.Info("engine: woke")
 	handler := e.handler
 	tm := e.tm
+	pdns := e.proxyDNS
 	s := e.buildStatusLocked()
 	e.mu.Unlock()
 
 	if tm != nil {
 		tm.ResetConnections()
+	}
+	if pdns != nil {
+		pdns.ResetConnections()
 	}
 	if handler != nil {
 		handler.OnStatus(s)
@@ -538,6 +556,7 @@ func (e *Engine) Stop() error {
 	e.tm = nil
 	tunnel := e.tunnel
 	e.tunnel = nil
+	e.proxyDNS = nil // no explicit close needed — tm.Close() cascades
 	e.client = nil
 	e.connectedAt = time.Time{}
 	e.paused = false

@@ -255,6 +255,21 @@ func (pc *proxyConn) closeWithErr(err error) {
 	})
 }
 
+// ResetConnections closes all persistent connections so the next query
+// dials fresh ones through the current wire transport. Safe to call
+// concurrently — in-flight queries receive an error and retry with
+// a new connection on the next attempt.
+func (c *ProxyDNSClient) ResetConnections() {
+	c.mu.Lock()
+	conns := c.conns
+	c.conns = make(map[string]*proxyConn)
+	c.mu.Unlock()
+
+	for _, pc := range conns {
+		pc.closeWithErr(fmt.Errorf("connections reset"))
+	}
+}
+
 // Close closes all persistent connections. Called when the wire dialer is torn down.
 func (c *ProxyDNSClient) Close() {
 	c.mu.Lock()

@@ -213,6 +213,77 @@ func TestProxyDNSClient_ConnectionReuse(t *testing.T) {
 	client.Close()
 }
 
+func TestProxyDNSClient_ResetConnections(t *testing.T) {
+	dialer := &mockDialer{conns: make(chan net.PacketConn, 3)}
+	pc1 := newMockPacketConn()
+	pc2 := newMockPacketConn()
+	dialer.conns <- pc1
+	dialer.conns <- pc2
+
+	client := NewProxyDNSClient(ProxyDNSClientConfig{
+		Dialer:  dialer,
+		Servers: []string{"8.8.8.8:53"},
+	})
+
+	// Warm the connection pool.
+	conn1, err := client.open(context.Background(), "8.8.8.8:53")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+
+	// Verify reuse.
+	conn1b, err := client.open(context.Background(), "8.8.8.8:53")
+	if err != nil {
+		t.Fatalf("open reuse: %v", err)
+	}
+	if conn1b != conn1 {
+		t.Fatal("expected same connection on reuse")
+	}
+
+	dialer.mu.Lock()
+	if len(dialer.udpCalls) != 1 {
+		t.Fatalf("expected 1 dial, got %d", len(dialer.udpCalls))
+	}
+	dialer.mu.Unlock()
+
+	// Reset.
+	client.ResetConnections()
+
+	// Old connection's done channel must be closed.
+	select {
+	case <-conn1.done:
+	default:
+		t.Fatal("old connection's done channel should be closed after reset")
+	}
+
+	// Next open must dial fresh.
+	conn2, err := client.open(context.Background(), "8.8.8.8:53")
+	if err != nil {
+		t.Fatalf("open after reset: %v", err)
+	}
+	if conn2 == conn1 {
+		t.Fatal("expected new connection after reset")
+	}
+
+	dialer.mu.Lock()
+	if len(dialer.udpCalls) != 2 {
+		t.Fatalf("expected 2 dials after reset, got %d", len(dialer.udpCalls))
+	}
+	dialer.mu.Unlock()
+
+	client.Close()
+}
+
+func TestProxyDNSClient_ResetConnections_Empty(t *testing.T) {
+	// ResetConnections on empty pool must not panic.
+	client := NewProxyDNSClient(ProxyDNSClientConfig{
+		Dialer:  &mockDialer{conns: make(chan net.PacketConn, 1)},
+		Servers: []string{"8.8.8.8:53"},
+	})
+	client.ResetConnections() // should be a no-op
+	client.ResetConnections() // idempotent
+}
+
 func TestProxyDNSClient_ContextCancellation(t *testing.T) {
 	pc := newMockPacketConn()
 	dialer := &mockDialer{conns: make(chan net.PacketConn, 1)}
