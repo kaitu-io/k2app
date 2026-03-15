@@ -149,12 +149,15 @@ func SetupLogging(cfg LogConfig, name string) (func(), error) {
 
 		// Redirect os.Stderr to lumberjack so go-deadlock output,
 		// runtime panics, and CGo crashes appear inline in k2.log.
+		var stderrDone chan struct{}
 		stderrR, stderrW, pipeErr := os.Pipe()
 		if pipeErr == nil {
 			os.Stderr = stderrW
 			_ = redirectStderrFD(stderrW) // also redirect fd 2 for runtime/CGo
-			ljForStderr := lj             // capture for goroutine
+			stderrDone = make(chan struct{})
+			ljForStderr := lj // capture for goroutine
 			go func() {
+				defer close(stderrDone)
 				buf := make([]byte, 4096)
 				for {
 					n, err := stderrR.Read(buf)
@@ -166,12 +169,6 @@ func SetupLogging(cfg LogConfig, name string) (func(), error) {
 					}
 				}
 			}()
-			prevCloseFn := closeFn
-			closeFn = func() {
-				stderrW.Close()
-				stderrR.Close()
-				prevCloseFn()
-			}
 		}
 
 		if cfg.ExtraWriter != nil {
@@ -180,6 +177,17 @@ func SetupLogging(cfg LogConfig, name string) (func(), error) {
 			writer = lj
 		}
 		closeFn = func() {
+			// Close stderr pipe first, drain goroutine, then close lumberjack.
+			// Order matters: stderrW.Close() → goroutine reads EOF → <-done → lj.Close()
+			if stderrW != nil {
+				stderrW.Close()
+			}
+			if stderrDone != nil {
+				<-stderrDone // wait for goroutine to finish writing to lj
+			}
+			if stderrR != nil {
+				stderrR.Close()
+			}
 			lj.Close() //nolint:errcheck
 		}
 	}
