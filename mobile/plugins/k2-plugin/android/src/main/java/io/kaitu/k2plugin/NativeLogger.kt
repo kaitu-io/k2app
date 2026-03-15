@@ -13,7 +13,7 @@ import java.util.TimeZone
 object NativeLogger {
     private var logFile: File? = null
     private val lock = Any()
-    private const val MAX_FILE_SIZE = 50L * 1024 * 1024 // 50MB
+    private const val MAX_FILE_SIZE = 20L * 1024 * 1024 // 20 MB (was 50 MB)
 
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
         timeZone = TimeZone.getTimeZone("UTC")

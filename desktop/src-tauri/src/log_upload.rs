@@ -7,8 +7,8 @@
 //! stages them in a temp dir, creates a single tar.gz archive,
 //! and uploads it to S3.
 //!
-//! After successful upload, source log files are TRUNCATED (not deleted)
-//! to preserve active file handles (lumberjack, tauri-plugin-log).
+//! Upload is read-only — source files are never modified.
+//! Log size is controlled by lumberjack rotation and tauri-plugin-log rotation.
 
 use chrono::Utc;
 use flate2::write::GzEncoder;
@@ -124,14 +124,13 @@ fn dir_label(dir: &Path) -> &str {
 // ============================================================================
 
 /// Collect all log files into a staging directory.
-/// Returns (staging_dir, list_of_source_files_to_truncate).
-fn collect_logs_to_staging() -> Result<(PathBuf, Vec<PathBuf>), String> {
+/// Returns the staging directory path.
+fn collect_logs_to_staging() -> Result<PathBuf, String> {
     let timestamp = Utc::now().format("%Y%m%d-%H%M%S");
     let staging_dir = std::env::temp_dir().join(format!("kaitu-log-upload-{}", timestamp));
     std::fs::create_dir_all(&staging_dir)
         .map_err(|e| format!("Create staging dir: {}", e))?;
 
-    let mut source_files: Vec<PathBuf> = Vec::new();
     let mut staged_count = 0;
 
     // 1. Service logs from all possible directories
@@ -150,7 +149,20 @@ fn collect_logs_to_staging() -> Result<(PathBuf, Vec<PathBuf>), String> {
                     entry.file_name().unwrap_or_default().to_string_lossy()
                 );
                 if copy_file_to_staging(&entry, &staging_dir.join(&dest_name)) {
-                    source_files.push(entry);
+                    staged_count += 1;
+                }
+            }
+        }
+
+        // k2*.log.gz — lumberjack rotated compressed files
+        if let Ok(entries) = glob::glob(&dir.join("k2*.log.gz").to_string_lossy()) {
+            for entry in entries.flatten() {
+                let dest_name = format!(
+                    "{}--{}",
+                    label,
+                    entry.file_name().unwrap_or_default().to_string_lossy()
+                );
+                if copy_file_to_staging(&entry, &staging_dir.join(&dest_name)) {
                     staged_count += 1;
                 }
             }
@@ -165,21 +177,11 @@ fn collect_logs_to_staging() -> Result<(PathBuf, Vec<PathBuf>), String> {
                     entry.file_name().unwrap_or_default().to_string_lossy()
                 );
                 if copy_file_to_staging(&entry, &staging_dir.join(&dest_name)) {
-                    source_files.push(entry);
                     staged_count += 1;
                 }
             }
         }
 
-        // k2-stderr.log — macOS launchd stderr capture
-        let stderr_log = dir.join("k2-stderr.log");
-        if stderr_log.exists() {
-            let dest_name = format!("{}--k2-stderr.log", label);
-            if copy_file_to_staging(&stderr_log, &staging_dir.join(&dest_name)) {
-                source_files.push(stderr_log);
-                staged_count += 1;
-            }
-        }
     }
 
     // 2. Desktop logs (Tauri app logs)
@@ -193,7 +195,6 @@ fn collect_logs_to_staging() -> Result<(PathBuf, Vec<PathBuf>), String> {
                     .to_string_lossy()
                     .to_string();
                 if copy_file_to_staging(&entry, &staging_dir.join(&dest_name)) {
-                    source_files.push(entry);
                     staged_count += 1;
                 }
             }
@@ -218,7 +219,7 @@ fn collect_logs_to_staging() -> Result<(PathBuf, Vec<PathBuf>), String> {
         staging_dir.display()
     );
 
-    Ok((staging_dir, source_files))
+    Ok(staging_dir)
 }
 
 /// Copy a file to staging. Returns true if successful and file had content.
@@ -288,6 +289,11 @@ fn sanitize_staging_dir(dir: &Path) -> Result<(), String> {
     for entry in entries.flatten() {
         let path = entry.path();
         if !path.is_file() {
+            continue;
+        }
+        // Skip binary/compressed files — can't sanitize and don't need to
+        let name = path.file_name().unwrap_or_default().to_string_lossy();
+        if name.ends_with(".gz") {
             continue;
         }
         match std::fs::read_to_string(&path) {
@@ -398,9 +404,47 @@ fn upload_to_s3(s3_key: &str, data: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
-// ============================================================================
-// Log cleanup — truncate, never delete
-// ============================================================================
+/// Check if an S3 object exists via HEAD request.
+fn s3_object_exists(s3_key: &str) -> bool {
+    let url = format!("{}/{}", S3_BUCKET_URL, s3_key);
+    let client = match reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    match client.head(&url).send() {
+        Ok(resp) => resp.status().is_success(),
+        Err(_) => false,
+    }
+}
+
+/// Upload a single file to S3.
+fn upload_file_to_s3(s3_key: &str, file_path: &Path) -> Result<(), String> {
+    let data =
+        std::fs::read(file_path).map_err(|e| format!("Read {}: {}", file_path.display(), e))?;
+    let content_type = if s3_key.ends_with(".gz") {
+        "application/gzip"
+    } else {
+        "text/plain; charset=utf-8"
+    };
+    let url = format!("{}/{}", S3_BUCKET_URL, s3_key);
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| format!("HTTP client: {}", e))?;
+    let response = client
+        .put(&url)
+        .header("Content-Type", content_type)
+        .body(data)
+        .send()
+        .map_err(|e| format!("S3 PUT: {}", e))?;
+    if !response.status().is_success() {
+        return Err(format!("S3 PUT failed: {}", response.status()));
+    }
+    Ok(())
+}
 
 /// Clean up the staging directory.
 fn cleanup_staging_dir(dir: &Path) {
@@ -424,8 +468,8 @@ fn upload_service_log(params: UploadLogParams, udid: String) -> UploadLogResult 
     let feedback_id = params.feedback_id.as_deref();
 
     // 1. Collect all logs into staging dir
-    let (staging_dir, _source_files) = match collect_logs_to_staging() {
-        Ok(result) => result,
+    let staging_dir = match collect_logs_to_staging() {
+        Ok(dir) => dir,
         Err(e) => {
             return UploadLogResult {
                 success: false,
@@ -495,62 +539,140 @@ fn upload_service_log(params: UploadLogParams, udid: String) -> UploadLogResult 
 }
 
 // ============================================================================
+// Per-file auto-upload (beta)
+// ============================================================================
+
+/// Per-file upload for beta auto-upload.
+/// Active .log files: always PUT (overwrite). Rotated .gz: HEAD check, skip if exists.
+fn upload_auto(udid: &str) -> UploadLogResult {
+    log::info!("[log_upload] Starting auto-upload (per-file mode)");
+    let mut uploaded: Vec<UploadedFileInfo> = Vec::new();
+
+    for dir in get_all_service_log_dirs() {
+        if !dir.exists() {
+            continue;
+        }
+        upload_auto_dir(&dir, udid, &mut uploaded);
+    }
+    let desktop_dir = crate::get_desktop_log_dir();
+    if desktop_dir.exists() {
+        upload_auto_dir(&desktop_dir, udid, &mut uploaded);
+    }
+
+    if uploaded.is_empty() {
+        return UploadLogResult {
+            success: false,
+            error: Some("No log files found".into()),
+            s3_keys: None,
+        };
+    }
+    log::info!(
+        "[log_upload] Auto-upload complete: {} files",
+        uploaded.len()
+    );
+    UploadLogResult {
+        success: true,
+        error: None,
+        s3_keys: Some(uploaded),
+    }
+}
+
+fn upload_auto_dir(dir: &Path, udid: &str, uploaded: &mut Vec<UploadedFileInfo>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let name = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+
+        // Only process log-related files
+        let is_log = name.ends_with(".log")
+            && (name.starts_with("k2")
+                || name.starts_with("desktop")
+                || name.starts_with("panic"));
+        let is_gz = name.ends_with(".log.gz") && name.starts_with("k2");
+        if !is_log && !is_gz {
+            continue;
+        }
+
+        // Skip empty files
+        if let Ok(meta) = std::fs::metadata(&path) {
+            if meta.len() == 0 {
+                continue;
+            }
+        }
+
+        let s3_key = format!("auto/{}/{}", udid, name);
+
+        if is_gz {
+            // Rotated .gz: HEAD check — skip if already uploaded
+            if s3_object_exists(&s3_key) {
+                log::debug!("[log_upload] Auto: skip (exists) {}", name);
+                continue;
+            }
+            // Upload .gz as-is (already compressed, no sanitization)
+            match upload_file_to_s3(&s3_key, &path) {
+                Ok(()) => {
+                    log::info!("[log_upload] Auto: uploaded {}", s3_key);
+                    uploaded.push(UploadedFileInfo {
+                        name: name.clone(),
+                        s3_key,
+                    });
+                }
+                Err(e) => log::warn!("[log_upload] Auto: failed {}: {}", name, e),
+            }
+        } else {
+            // Active .log: sanitize content, write to temp file, then PUT (overwrite)
+            match std::fs::read_to_string(&path) {
+                Ok(content) => {
+                    let sanitized = sanitize_content(&content);
+                    let tmp = std::env::temp_dir().join(format!("kaitu-auto-{}", name));
+                    if std::fs::write(&tmp, sanitized).is_ok() {
+                        match upload_file_to_s3(&s3_key, &tmp) {
+                            Ok(()) => {
+                                log::info!("[log_upload] Auto: uploaded {}", s3_key);
+                                uploaded.push(UploadedFileInfo {
+                                    name: name.clone(),
+                                    s3_key,
+                                });
+                            }
+                            Err(e) => log::warn!("[log_upload] Auto: failed {}: {}", name, e),
+                        }
+                        let _ = std::fs::remove_file(&tmp);
+                    }
+                }
+                Err(_) => {} // Binary/unreadable — skip
+            }
+        }
+    }
+}
+
+// ============================================================================
 // Tauri Command
 // ============================================================================
 
 /// IPC: Upload service logs (runs in blocking thread).
-/// Auto-truncates log files after successful beta-auto-upload.
 #[tauri::command]
 pub async fn upload_service_log_command(
     params: UploadLogParams,
 ) -> Result<UploadLogResult, String> {
     tokio::task::spawn_blocking(move || {
-        let should_cleanup = params.reason == "beta-auto-upload";
         let udid = crate::service::get_hardware_uuid().unwrap_or_else(|_| "unknown".into());
-        let result = upload_service_log(params, udid);
-        if should_cleanup && result.success {
-            log::info!("[log_upload] Auto-truncating logs after beta upload");
-            // Re-collect source files for truncation (upload already cleaned staging dir)
-            for dir in get_all_service_log_dirs() {
-                truncate_log_files_in_dir(&dir);
-            }
-            truncate_log_files_in_dir(&crate::get_desktop_log_dir());
+        if params.reason == "beta-auto-upload" {
+            upload_auto(&udid)
+        } else {
+            upload_service_log(params, udid)
         }
-        result
     })
     .await
     .map_err(|e| format!("Task failed: {}", e))
-}
-
-/// Truncate all log files in a directory.
-fn truncate_log_files_in_dir(dir: &Path) {
-    if !dir.exists() {
-        return;
-    }
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let name = entry.file_name().to_string_lossy().to_string();
-        if name.ends_with(".log") || (name.contains("log") && name.contains("desktop")) {
-            match std::fs::OpenOptions::new()
-                .write(true)
-                .truncate(true)
-                .open(entry.path())
-            {
-                Ok(_) => {
-                    log::info!("[log_upload] Truncated: {}", entry.path().display());
-                }
-                Err(e) => {
-                    log::warn!(
-                        "[log_upload] Failed to truncate {}: {}",
-                        entry.path().display(),
-                        e
-                    );
-                }
-            }
-        }
-    }
 }
 
 // ============================================================================
@@ -686,6 +808,12 @@ mod tests {
         .unwrap();
         std::fs::write(staging_path.join("desktop.log"), "test desktop log content")
             .unwrap();
+        // Simulate a lumberjack rotated compressed file
+        std::fs::write(
+            staging_path.join("system--k2-2026-03-15T00-00-00.000.log.gz"),
+            b"\x1f\x8b\x08\x00compressed-data",
+        )
+        .unwrap();
 
         // Create tar.gz
         let archive_data = create_tar_gz(staging_path).unwrap();
@@ -712,46 +840,8 @@ mod tests {
         assert!(entries.contains(&"system--k2.log".to_string()));
         assert!(entries.contains(&"user--panic-20260309.log".to_string()));
         assert!(entries.contains(&"desktop.log".to_string()));
-        assert_eq!(entries.len(), 3);
-    }
-
-    #[test]
-    fn test_truncate_log_files_in_dir() {
-        let dir = tempfile::tempdir().unwrap();
-        let dir_path = dir.path();
-
-        // Create test files
-        std::fs::write(dir_path.join("k2.log"), "service log").unwrap();
-        std::fs::write(dir_path.join("panic-2024.log"), "panic log").unwrap();
-        std::fs::write(dir_path.join("keep.txt"), "keep me").unwrap();
-
-        truncate_log_files_in_dir(dir_path);
-
-        // .log files should be truncated but still exist
-        assert!(dir_path.join("k2.log").exists());
-        assert!(dir_path.join("panic-2024.log").exists());
-        assert!(
-            std::fs::read_to_string(dir_path.join("k2.log"))
-                .unwrap()
-                .is_empty()
-        );
-        assert!(
-            std::fs::read_to_string(dir_path.join("panic-2024.log"))
-                .unwrap()
-                .is_empty()
-        );
-
-        // .txt should be untouched
-        assert_eq!(
-            std::fs::read_to_string(dir_path.join("keep.txt")).unwrap(),
-            "keep me"
-        );
-    }
-
-    #[test]
-    fn test_truncate_log_files_nonexistent_dir() {
-        // Should not crash on nonexistent directory
-        truncate_log_files_in_dir(&std::env::temp_dir().join("k2app-nonexistent-dir-12345"));
+        assert!(entries.contains(&"system--k2-2026-03-15T00-00-00.000.log.gz".to_string()));
+        assert_eq!(entries.len(), 4);
     }
 
     #[test]

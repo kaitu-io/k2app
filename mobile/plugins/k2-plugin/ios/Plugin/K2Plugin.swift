@@ -572,9 +572,9 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                     .appendingPathComponent("kaitu-log-upload-\(Int(Date().timeIntervalSince1970))")
                 try FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
 
-                // 2. Copy log files to staging and sanitize
-                let logTypes = ["k2", "native", "webapp"]
+                // 2. Scan log directory for all log files
                 var sourceFiles: [URL] = []
+                let fileManager = FileManager.default
 
                 // Diagnostic helper: append to native.log (known to be uploadable)
                 let nativeLogFile = logsDir.appendingPathComponent("native.log")
@@ -589,25 +589,35 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                     }
                 }
 
-                for logType in logTypes {
-                    let logFile = logsDir.appendingPathComponent("\(logType).log")
-                    let exists = FileManager.default.fileExists(atPath: logFile.path)
-                    if !exists {
-                        diagLog("uploadLogs: \(logType).log not found at \(logFile.path)")
-                        continue
-                    }
-                    let attrs = try? FileManager.default.attributesOfItem(atPath: logFile.path)
-                    let fileSize = (attrs?[.size] as? Int) ?? -1
-                    guard let content = try? String(contentsOf: logFile, encoding: .utf8), !content.isEmpty else {
-                        diagLog("uploadLogs: \(logType).log exists (size=\(fileSize)) but empty or unreadable as UTF-8")
-                        continue
-                    }
-                    diagLog("uploadLogs: \(logType).log included (size=\(fileSize), contentLen=\(content.count))")
+                if let contents = try? fileManager.contentsOfDirectory(
+                    at: logsDir, includingPropertiesForKeys: [.fileSizeKey],
+                    options: [.skipsHiddenFiles]
+                ) {
+                    for fileURL in contents {
+                        let name = fileURL.lastPathComponent
+                        guard name.hasSuffix(".log") || name.hasSuffix(".log.gz") else { continue }
+                        guard let attrs = try? fileURL.resourceValues(forKeys: [.fileSizeKey]),
+                              let size = attrs.fileSize, size > 0 else { continue }
 
-                    let sanitized = self.sanitizeLogs(content)
-                    let destFile = stagingDir.appendingPathComponent("\(logType).log")
-                    try sanitized.write(to: destFile, atomically: true, encoding: .utf8)
-                    sourceFiles.append(logFile)
+                        if name.hasSuffix(".log.gz") {
+                            // .gz files: copy as binary (no sanitization — already compressed)
+                            let destFile = stagingDir.appendingPathComponent(name)
+                            try? fileManager.copyItem(at: fileURL, to: destFile)
+                            diagLog("uploadLogs: \(name) included (binary, size=\(size))")
+                        } else {
+                            // .log files: read as UTF-8, sanitize
+                            guard let content = try? String(contentsOf: fileURL, encoding: .utf8),
+                                  !content.isEmpty else {
+                                diagLog("uploadLogs: \(name) exists (size=\(size)) but empty or unreadable")
+                                continue
+                            }
+                            diagLog("uploadLogs: \(name) included (size=\(size), contentLen=\(content.count))")
+                            let sanitized = self.sanitizeLogs(content)
+                            let destFile = stagingDir.appendingPathComponent(name)
+                            try sanitized.write(to: destFile, atomically: true, encoding: .utf8)
+                        }
+                        sourceFiles.append(fileURL)
+                    }
                 }
 
                 if sourceFiles.isEmpty {
@@ -631,19 +641,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                 let s3Key = self.generateS3Key(feedbackId: feedbackId, udid: udid)
                 try await self.uploadToS3(s3Key: s3Key, data: archiveData)
 
-                // 5. Truncate source files (preserves inodes for NE process)
-                for logFile in sourceFiles {
-                    if let handle = try? FileHandle(forWritingTo: logFile) {
-                        handle.truncateFile(atOffset: 0)
-                        handle.closeFile()
-                    }
-                }
-                // Re-seek webapp log handle after truncation
-                self.webappLogQueue.sync {
-                    self.webappLogHandle?.seekToEndOfFile()
-                }
-
-                // 6. Clean up staging dir
+                // 5. Clean up staging dir
                 try? FileManager.default.removeItem(at: stagingDir)
 
                 let result: [String: Any] = [

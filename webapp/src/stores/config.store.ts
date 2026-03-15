@@ -42,7 +42,6 @@ interface ConfigState {
 export interface ConnectConfigParams {
   serverUrl?: string;
   isBeta?: boolean;
-  logLevel?: string;
 }
 
 interface ConfigActions {
@@ -131,13 +130,12 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
     result.mode = 'tun';
 
     if (typeof params === 'object' && params !== null) {
-      // New: buildConnectConfig({ serverUrl, isBeta, logLevel })
-      result.log = { ...result.log, level: params.isBeta ? 'debug' : (params.logLevel || 'info') };
+      // New: buildConnectConfig({ serverUrl, isBeta })
+      result.log = { ...result.log, level: 'debug' }; // BUILD_DEBUG_SWITCH — change to 'info' for production
       if (params.serverUrl) result.server = params.serverUrl;
     } else {
       // Legacy: buildConnectConfig() or buildConnectConfig(serverUrl)
-      const isBeta = window._platform?.updater?.channel === 'beta';
-      result.log = { ...result.log, level: isBeta ? 'debug' : (localStorage.getItem('k2_log_level') || 'info') };
+      result.log = { ...result.log, level: 'debug' }; // BUILD_DEBUG_SWITCH — change to 'info' for production
       if (typeof params === 'string' && params) result.server = params;
     }
 

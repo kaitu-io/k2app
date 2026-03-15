@@ -594,18 +594,26 @@ class K2Plugin : Plugin() {
                 val stagingDir = File(context.cacheDir, "kaitu-log-upload-${System.currentTimeMillis()}")
                 stagingDir.mkdirs()
 
-                // 2. Copy log files to staging and sanitize
-                val logTypes = listOf("k2", "native", "webapp")
+                // 2. Scan log directory for all log files
                 val sourceFiles = mutableListOf<File>()
+                dir.listFiles()?.filter {
+                    it.isFile && (it.name.endsWith(".log") || it.name.endsWith(".log.gz"))
+                }?.forEach { logFile ->
+                    if (logFile.length() == 0L) return@forEach
 
-                for (logType in logTypes) {
-                    val logFile = File(dir, "$logType.log")
-                    if (!logFile.exists()) continue
-                    val content = logFile.readText()
-                    if (content.isEmpty()) continue
-
-                    val sanitized = sanitizeLogContent(content)
-                    File(stagingDir, "$logType.log").writeText(sanitized)
+                    if (logFile.name.endsWith(".log.gz")) {
+                        // .gz files: copy as binary (no sanitization)
+                        val destFile = File(stagingDir, logFile.name)
+                        logFile.copyTo(destFile, overwrite = true)
+                        Log.d(TAG, "uploadLogs: ${logFile.name} included (binary, size=${logFile.length()})")
+                    } else {
+                        // .log files: read as UTF-8, sanitize
+                        val content = try { logFile.readText() } catch (e: Exception) { return@forEach }
+                        if (content.isEmpty()) return@forEach
+                        val sanitized = sanitizeLogContent(content)
+                        File(stagingDir, logFile.name).writeText(sanitized)
+                        Log.d(TAG, "uploadLogs: ${logFile.name} included (size=${logFile.length()})")
+                    }
                     sourceFiles.add(logFile)
                 }
 
@@ -633,12 +641,7 @@ class K2Plugin : Plugin() {
                 val s3Key = generateS3Key(feedbackId, udid)
                 uploadToS3(s3Key, archiveData)
 
-                // 5. Truncate source files (preserves file handles)
-                for (logFile in sourceFiles) {
-                    java.io.RandomAccessFile(logFile, "rw").use { it.setLength(0) }
-                }
-
-                // 6. Clean up staging dir
+                // 5. Clean up staging dir
                 stagingDir.deleteRecursively()
 
                 val ret = JSObject()

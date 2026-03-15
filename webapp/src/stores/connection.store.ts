@@ -147,9 +147,7 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
 
     // Build config with explicit params
     const { buildConnectConfig, updateConfig } = useConfigStore.getState();
-    const isBeta = window._platform?.updater?.channel === 'beta';
-    const logLevel = localStorage.getItem('k2_log_level') || 'info';
-    const config = buildConnectConfig({ serverUrl, isBeta, logLevel });
+    const config = buildConnectConfig({ serverUrl });
     console.debug('[Connection] connect: config built, server=' + (config.server ?? 'none') + ', rule=' + (config.rule?.global ? 'global' : 'chnroute') + ', logLevel=' + config.log?.level);
 
     // Persist BEFORE _k2.run so crash doesn't lose config

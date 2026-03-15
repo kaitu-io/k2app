@@ -159,7 +159,7 @@ describe('Config Store', () => {
       expect(result.server).toBe('k2v5://example');
       expect(result.rule?.global).toBe(true);
       expect(result.mode).toBe('tun');
-      expect(result.log?.level).toBe('info');
+      expect(result.log?.level).toBe('debug');
     });
 
     it('uses stored server when no serverUrl argument provided', async () => {
@@ -193,7 +193,7 @@ describe('Config Store', () => {
       localStorage.removeItem('k2_log_level');
     });
 
-    it('defaults to info when k2_log_level is not set', async () => {
+    it('always uses debug level (BUILD_DEBUG_SWITCH)', async () => {
       mockStorage.get.mockResolvedValue(null);
       localStorage.removeItem('k2_log_level');
 
@@ -201,20 +201,17 @@ describe('Config Store', () => {
       await useConfigStore.getState().loadConfig();
 
       const result = useConfigStore.getState().buildConnectConfig('k2v5://example');
-      expect(result.log?.level).toBe('info');
+      expect(result.log?.level).toBe('debug');
     });
 
-    it('overrides stored config log level with localStorage value', async () => {
+    it('overrides stored config log level with debug (BUILD_DEBUG_SWITCH)', async () => {
       mockStorage.get.mockResolvedValue({ log: { level: 'warn' } });
-      localStorage.setItem('k2_log_level', 'error');
 
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
 
       const result = useConfigStore.getState().buildConnectConfig();
-      expect(result.log?.level).toBe('error');
-
-      localStorage.removeItem('k2_log_level');
+      expect(result.log?.level).toBe('debug');
     });
   });
 

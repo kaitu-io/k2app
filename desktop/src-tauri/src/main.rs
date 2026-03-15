@@ -67,13 +67,9 @@ fn main() {
         .plugin(tauri_plugin_localhost::Builder::new(14580).build())
         .plugin({
             let log_dir = resolve_log_dir();
-            let level = if channel::is_beta_early() || cfg!(debug_assertions) {
-                log::LevelFilter::Debug
-            } else {
-                log::LevelFilter::Info
-            };
+            // BUILD_DEBUG_SWITCH — change to conditional for production
             tauri_plugin_log::Builder::new()
-                .level(level)
+                .level(log::LevelFilter::Debug)
                 .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
                 .filter(|metadata| !metadata.target().starts_with("reqwest"))
                 .target(tauri_plugin_log::Target::new(
@@ -82,8 +78,8 @@ fn main() {
                         file_name: Some("desktop".into()),
                     },
                 ))
-                .max_file_size(50_000_000) // 50 MB
-                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepAll)
+                .max_file_size(20_000_000) // 20 MB
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
                 .build()
         })
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
