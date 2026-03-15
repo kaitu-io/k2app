@@ -491,6 +491,45 @@ func TestHandleUDP_NonDNS_NotIntercepted(t *testing.T) {
 	pc.Close()
 }
 
+func TestResolveAddr_Domain(t *testing.T) {
+	var calls atomic.Int32
+	fakeDNS := startFakeDNSServer(t, &calls)
+	defer fakeDNS.Close()
+
+	h := NewProxyHandler()
+	h.resolver = NewResolver(h.dnsCache, []string{fakeDNS.LocalAddr().String()})
+
+	resolved, err := h.resolveAddr("example.com:443")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved != "93.184.216.34:443" {
+		t.Fatalf("got %q, want 93.184.216.34:443", resolved)
+	}
+}
+
+func TestResolveAddr_IP(t *testing.T) {
+	h := NewProxyHandler()
+	resolved, err := h.resolveAddr("8.8.8.8:53")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved != "8.8.8.8:53" {
+		t.Fatalf("got %q, want 8.8.8.8:53", resolved)
+	}
+}
+
+func TestResolveAddr_IPv6(t *testing.T) {
+	h := NewProxyHandler()
+	resolved, err := h.resolveAddr("[::1]:443")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved != "[::1]:443" {
+		t.Fatalf("got %q, want [::1]:443", resolved)
+	}
+}
+
 func TestIsDNSPort(t *testing.T) {
 	if !isDNSPort("8.8.8.8:53") {
 		t.Error("8.8.8.8:53 should be DNS")

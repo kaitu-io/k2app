@@ -63,6 +63,23 @@ func (h *ProxyHandler) checkAddr(addr string) error {
 	return nil
 }
 
+// resolveAddr resolves the host portion of addr if it's a domain name.
+// Returns addr unchanged if host is already an IP literal.
+func (h *ProxyHandler) resolveAddr(addr string) (string, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr, nil
+	}
+	if net.ParseIP(host) != nil {
+		return addr, nil
+	}
+	ips, err := h.resolver.LookupHost(context.TODO(), host)
+	if err != nil {
+		return "", err
+	}
+	return net.JoinHostPort(ips[0], port), nil
+}
+
 // connTracker tracks active connections for forceful close during shutdown.
 type connTracker struct {
 	mu    deadlock.Mutex
@@ -142,9 +159,17 @@ func (h *ProxyHandler) HandleTCP(conn net.Conn, addr string) {
 		}
 	}
 
-	slog.Debug("server: HandleTCP dialing target", "addr", addr)
+	// Resolve domain to IP before dialing (uses shared DNS cache).
+	dialAddr, err := h.resolveAddr(addr)
+	if err != nil {
+		wire.WriteStreamResponse(conn, &wire.StreamError{Code: 502, Message: err.Error()})
+		slog.Error("server: TCP proxy resolve", "addr", addr, "err", err)
+		return
+	}
+
+	slog.Debug("server: HandleTCP dialing target", "addr", addr, "resolved", dialAddr)
 	dialStart := time.Now()
-	target, err := net.DialTimeout("tcp4", addr, h.DialTimeout)
+	target, err := net.DialTimeout("tcp4", dialAddr, h.DialTimeout)
 	if err != nil {
 		wire.WriteStreamResponse(conn, &wire.StreamError{Code: 502, Message: err.Error()})
 		slog.Error("server: TCP proxy dial", "addr", addr, "err", err, "elapsed", time.Since(dialStart))
@@ -184,9 +209,17 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 		return
 	}
 
-	targetAddr, err := net.ResolveUDPAddr("udp4", addr)
+	// Resolve domain to IP before dialing (uses shared DNS cache).
+	resolvedAddr, err := h.resolveAddr(addr)
 	if err != nil {
-		slog.Error("server: UDP resolve", "addr", addr, "err", err)
+		slog.Error("server: UDP resolve domain", "addr", addr, "err", err)
+		conn.Close()
+		return
+	}
+
+	targetAddr, err := net.ResolveUDPAddr("udp4", resolvedAddr)
+	if err != nil {
+		slog.Error("server: UDP resolve", "addr", resolvedAddr, "err", err)
 		conn.Close()
 		return
 	}
@@ -253,9 +286,15 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 func (h *ProxyHandler) handleDNSUDP(conn net.PacketConn, addr string) {
 	defer conn.Close()
 
-	targetAddr, err := net.ResolveUDPAddr("udp4", addr)
+	resolvedAddr, err := h.resolveAddr(addr)
 	if err != nil {
-		slog.Error("server: DNS UDP resolve", "addr", addr, "err", err)
+		slog.Error("server: DNS UDP resolve domain", "addr", addr, "err", err)
+		return
+	}
+
+	targetAddr, err := net.ResolveUDPAddr("udp4", resolvedAddr)
+	if err != nil {
+		slog.Error("server: DNS UDP resolve", "addr", resolvedAddr, "err", err)
 		return
 	}
 
