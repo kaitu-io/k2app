@@ -226,10 +226,11 @@ type QUICClient struct {
 	closed    bool
 	ccSender *arc.K2CCSender // stored for stats access
 
-	portHopAttempts  atomic.Int32 // hop attempts before TCP-WS fallback
+	portHopAttempts    atomic.Int32 // hop attempts before TCP-WS fallback
 	portHopExhaustedAt atomic.Int64 // UnixNano: when hops were exhausted (0 = not exhausted)
-	lastTCPSuccessAt       atomic.Int64 // UnixNano of last successful DialTCP (0 = unknown)
-	handshakeFailStreak      atomic.Int32 // consecutive connect() handshake failures across different hop ports
+	lastTCPSuccessAt   atomic.Int64 // UnixNano of last successful DialTCP (0 = unknown)
+	handshakeFailStreak atomic.Int32 // consecutive connect() handshake failures across different hop ports
+	lastConnectWall    atomic.Int64 // UnixNano wall clock of last connect() return — detects macOS sleep (Go timers freeze but wall clock advances)
 }
 
 // NewQUICClient creates a new QUIC client transport.
@@ -307,6 +308,20 @@ func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
 		return nil, ErrNotConnected
 	}
 	if c.conn != nil {
+		// Wall-clock staleness: Go timers freeze during macOS sleep but wall clock
+		// advances. If the gap exceeds MaxIdleTimeout (30s), the server has definitely
+		// closed this connection (its idle timer kept running while we slept).
+		if last := c.lastConnectWall.Load(); last > 0 {
+			if time.Since(time.Unix(0, last)) > 30*time.Second {
+				slog.Warn("DIAG: wake-stale-conn",
+					"wallGapS", int(time.Since(time.Unix(0, last)).Seconds()),
+				)
+				mux, oldConn, tr := c.extractConnLocked()
+				c.mu.Unlock()
+				closeQUICResources(mux, oldConn, tr, "wall-clock stale")
+				goto serialize
+			}
+		}
 		select {
 		case <-c.conn.Context().Done():
 			slog.Info("QUICClient: cached connection dead, rebuilding")
@@ -316,6 +331,7 @@ func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
 			goto serialize
 		default:
 			conn := c.conn
+			c.lastConnectWall.Store(time.Now().UnixNano())
 			c.mu.Unlock()
 			return conn, nil
 		}
@@ -334,20 +350,37 @@ serialize:
 		return nil, ErrNotConnected
 	}
 	if c.conn != nil {
-		select {
-		case <-c.conn.Context().Done():
+		// Wall-clock staleness re-check (same logic as fast path).
+		wallStale := false
+		if last := c.lastConnectWall.Load(); last > 0 {
+			wallStale = time.Since(time.Unix(0, last)) > 30*time.Second
+		}
+		if wallStale {
 			mux, oldConn, tr := c.extractConnLocked()
 			c.mu.Unlock()
-			closeQUICResources(mux, oldConn, tr, "connection reset")
+			closeQUICResources(mux, oldConn, tr, "wall-clock stale")
 			c.mu.Lock()
 			if c.closed {
 				c.mu.Unlock()
 				return nil, ErrNotConnected
 			}
-		default:
-			conn := c.conn
-			c.mu.Unlock()
-			return conn, nil
+		} else {
+			select {
+			case <-c.conn.Context().Done():
+				mux, oldConn, tr := c.extractConnLocked()
+				c.mu.Unlock()
+				closeQUICResources(mux, oldConn, tr, "connection reset")
+				c.mu.Lock()
+				if c.closed {
+					c.mu.Unlock()
+					return nil, ErrNotConnected
+				}
+			default:
+				conn := c.conn
+				c.lastConnectWall.Store(time.Now().UnixNano())
+				c.mu.Unlock()
+				return conn, nil
+			}
 		}
 	}
 	// Read immutable config fields under mu for address computation.
@@ -438,6 +471,7 @@ serialize:
 	c.ccSender = sender
 	c.alloc = NewSessionIDAllocator()
 	c.udpMux = newQuicUDPMux(conn, &c.portHopAttempts, &c.portHopExhaustedAt)
+	c.lastConnectWall.Store(time.Now().UnixNano())
 
 	// Start accept loop for server-initiated overflow streams
 	go c.acceptOverflowStreams(conn, c.udpMux)

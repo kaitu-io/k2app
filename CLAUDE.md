@@ -81,6 +81,11 @@ Reserved event names:
 | `DIAG: connected` | INFO | engine connected | server, mode, dialMs |
 | `DIAG: session-end` | INFO | engine stop | uptimeS, txMB, rxMB |
 | `DIAG: wire-error` | WARN | on classified error | code, category, message |
+| `DIAG: wake` | WARN | wall clock jump > 5s | sleepS, health, transport, uptimeS |
+| `DIAG: dns-proxy-timeout` | WARN | proxy DNS 5s timeout | server, domain, connAgeS, isNewConn |
+| `DIAG: dns-proxy-write-fail` | WARN | WriteTo failed | server, domain, connAgeS, isNewConn, err |
+| `DIAG: dns-proxy-conn-dead` | WARN | recv loop died | server, domain, connAgeS, isNewConn, err |
+| `DIAG: dns-proxy-dial-fail` | WARN | DialUDP failed | server, domain, err |
 
 ### Layer 3 Rules — Full Trace
 
@@ -102,6 +107,12 @@ grep "DIAG: dns" k2.log
 
 # Transport layer issues
 grep "DIAG: quic\|DIAG: transport" k2.log
+
+# Sleep/wake events
+grep "DIAG: wake" k2.log
+
+# Proxy DNS failure breakdown (which layer failed?)
+grep "DIAG: dns-proxy" k2.log
 
 # Session summary
 grep "DIAG: connected\|DIAG: session-end" k2.log

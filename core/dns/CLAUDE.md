@@ -39,7 +39,7 @@ Shared health-aware server racing used by both DirectDNSClient and ProxyDNSClien
 
 ## Proxy DNS (proxy.go)
 
-Uses persistent UDP connections with message-ID-based multiplexing (sing-box pattern). A single UDP connection per server handles all queries via callback registry, avoiding per-query DialUDP overhead. Delegates `Query()` to `racingResolver`.
+Uses persistent UDP connections with message-ID-based multiplexing (sing-box pattern). A single UDP connection per server handles all queries via callback registry, avoiding per-query DialUDP overhead. Delegates `Query()` to `racingResolver`. `ResetConnections()` closes all pooled connections (called on network change so next query dials through fresh wire). Per-query DIAG events on failure: `dns-proxy-timeout` (5s timeout, includes `connAgeS`/`isNewConn`), `dns-proxy-write-fail`, `dns-proxy-conn-dead`, `dns-proxy-dial-fail`.
 
 ## Files
 

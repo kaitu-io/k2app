@@ -76,8 +76,9 @@ type healthMonitor struct {
 	onSnapshot func(HealthSnapshot) // push to daemon SSE
 	onReconnect   func()               // triggers OnNetworkChanged for full reconnect
 
-	diagCounter int       // samples since last DIAG heartbeat (fires at 30)
-	connectedAt time.Time // engine connected timestamp for uptime calc
+	diagCounter   int       // samples since last DIAG heartbeat (fires at 30)
+	connectedAt   time.Time // engine connected timestamp for uptime calc
+	lastSampleWall time.Time // wall clock of previous sample — detects sleep/wake gaps
 }
 
 func newHealthMonitor(
@@ -135,7 +136,25 @@ func (hm *healthMonitor) sample() {
 	ws := hm.tm.WireStats()
 	tx, rx := hm.tunnel.TrafficBytes()
 
+	now := time.Now()
+
 	hm.mu.Lock()
+
+	// DIAG: wake — detect wall clock jump indicating macOS sleep/wake.
+	// Go runtime suspends during sleep, so ticker fires immediately on wake
+	// with a large wall clock gap but only 1s of Go-time elapsed.
+	if !hm.lastSampleWall.IsZero() {
+		wallGap := now.Sub(hm.lastSampleWall)
+		if wallGap > 5*time.Second {
+			slog.Warn("DIAG: wake",
+				"sleepS", int(wallGap.Seconds()),
+				"health", hm.health,
+				"transport", ws.Transport,
+				"uptimeS", int(time.Since(hm.connectedAt).Seconds()),
+			)
+		}
+	}
+	hm.lastSampleWall = now
 
 	// EWMA smoothing: dampens MI boundary artifacts (lossRate spikes)
 	// that cause false health degradation.

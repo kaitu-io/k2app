@@ -32,7 +32,8 @@ type ProxyDNSClient struct {
 // proxyConn is a persistent UDP connection to a single DNS server.
 // Multiple queries share the connection via message ID multiplexing.
 type proxyConn struct {
-	conn net.PacketConn
+	conn      net.PacketConn
+	createdAt time.Time // for DIAG: connection age tracking
 
 	mu        deadlock.RWMutex
 	queryID   atomic.Uint32 // monotonic query ID counter
@@ -85,9 +86,20 @@ func (c *ProxyDNSClient) Query(ctx context.Context, query *dns.Msg) (*dns.Msg, e
 
 // queryServer sends a query to a single server using a persistent connection.
 func (c *ProxyDNSClient) queryServer(ctx context.Context, server string, query *dns.Msg) (*dns.Msg, error) {
+	isNewConn := false
 	pc, err := c.open(ctx, server)
 	if err != nil {
+		slog.Warn("DIAG: dns-proxy-dial-fail",
+			"server", server,
+			"domain", extractDomain(query),
+			"err", err,
+		)
 		return nil, fmt.Errorf("open connection to %s: %w", server, err)
+	}
+	connAgeS := int(time.Since(pc.createdAt).Seconds())
+	// A connection created within this call's lifetime is "new".
+	if connAgeS == 0 {
+		isNewConn = true
 	}
 
 	// Assign unique query ID and register callback.
@@ -117,6 +129,13 @@ func (c *ProxyDNSClient) queryServer(ctx context.Context, server string, query *
 	if _, err := pc.conn.WriteTo(queryBytes, nil); err != nil {
 		// Connection broken — close and remove so next query redials.
 		c.closeConn(server, pc)
+		slog.Warn("DIAG: dns-proxy-write-fail",
+			"server", server,
+			"domain", extractDomain(query),
+			"connAgeS", connAgeS,
+			"isNewConn", isNewConn,
+			"err", err,
+		)
 		return nil, fmt.Errorf("write query to %s: %w", server, err)
 	}
 
@@ -131,11 +150,24 @@ func (c *ProxyDNSClient) queryServer(ctx context.Context, server string, query *
 		slog.Debug("proxy DNS query ok", "domain", extractDomain(query), "server", server)
 		return cb.message, nil
 	case <-pc.done:
+		slog.Warn("DIAG: dns-proxy-conn-dead",
+			"server", server,
+			"domain", extractDomain(query),
+			"connAgeS", connAgeS,
+			"isNewConn", isNewConn,
+			"err", pc.err,
+		)
 		return nil, fmt.Errorf("connection to %s closed: %w", server, pc.err)
 	case <-ctx.Done():
 		// Fail-fast on genuine timeout only — connection is likely a zombie.
 		// Don't close on Canceled (race loser or engine shutdown — Close() handles that).
 		if ctx.Err() == context.DeadlineExceeded {
+			slog.Warn("DIAG: dns-proxy-timeout",
+				"server", server,
+				"domain", extractDomain(query),
+				"connAgeS", connAgeS,
+				"isNewConn", isNewConn,
+			)
 			c.closeConn(server, pc)
 		}
 		return nil, ctx.Err()
@@ -171,6 +203,7 @@ func (c *ProxyDNSClient) open(ctx context.Context, server string) (*proxyConn, e
 
 	pc := &proxyConn{
 		conn:      conn,
+		createdAt: time.Now(),
 		callbacks: make(map[uint16]*dnsCallback),
 		done:      make(chan struct{}),
 	}
