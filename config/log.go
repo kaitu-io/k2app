@@ -15,15 +15,19 @@ import (
 // SetLogLevel changes it at runtime without recreating the handler.
 var LogLevel slog.LevelVar
 
-// BuildDebugLogging forces debug-level logging in all builds.    // BUILD_DEBUG_SWITCH
-// Set to false for production release.
-const BuildDebugLogging = true
+// buildLogLevel is the default log level when none is explicitly configured.
+// Set at build time via ldflags:
+//
+//	go build -ldflags "-X github.com/kaitu-io/k2/config.buildLogLevel=info"
+//
+// Default "debug" for development. CI/Makefile passes K2_BUILD_LOG_LEVEL env.
+var buildLogLevel = "debug"
 
 // parseLevel converts a string log level to slog.Level.
-// Defaults to slog.LevelInfo for unknown values.
+// When level is empty, falls back to buildLogLevel (set via ldflags).
 func parseLevel(level string) slog.Level {
-	if level == "" && BuildDebugLogging { // BUILD_DEBUG_SWITCH
-		return slog.LevelDebug
+	if level == "" {
+		level = buildLogLevel
 	}
 	switch level {
 	case "debug":
@@ -145,12 +149,16 @@ func SetupLogging(cfg LogConfig, name string) (func(), error) {
 
 		// Redirect os.Stderr to lumberjack so go-deadlock output,
 		// runtime panics, and CGo crashes appear inline in k2.log.
+		var stderrDone chan struct{}
+		var restoreStderr func()
 		stderrR, stderrW, pipeErr := os.Pipe()
 		if pipeErr == nil {
 			os.Stderr = stderrW
-			_ = redirectStderrFD(stderrW) // also redirect fd 2 for runtime/CGo
-			ljForStderr := lj             // capture for goroutine
+			restoreStderr, _ = redirectStderrFD(stderrW) // also redirect fd 2 for runtime/CGo
+			stderrDone = make(chan struct{})
+			ljForStderr := lj // capture for goroutine
 			go func() {
+				defer close(stderrDone)
 				buf := make([]byte, 4096)
 				for {
 					n, err := stderrR.Read(buf)
@@ -162,12 +170,6 @@ func SetupLogging(cfg LogConfig, name string) (func(), error) {
 					}
 				}
 			}()
-			prevCloseFn := closeFn
-			closeFn = func() {
-				stderrW.Close()
-				stderrR.Close()
-				prevCloseFn()
-			}
 		}
 
 		if cfg.ExtraWriter != nil {
@@ -176,6 +178,24 @@ func SetupLogging(cfg LogConfig, name string) (func(), error) {
 			writer = lj
 		}
 		closeFn = func() {
+			// Cleanup order matters:
+			// 1. Restore fd 2 to original (removes dup'd reference to pipe write end)
+			// 2. Close stderrW (now pipe write end has zero references → EOF)
+			// 3. Wait for goroutine to drain and exit
+			// 4. Close stderrR
+			// 5. Close lumberjack (goroutine is done, no write-after-close)
+			if restoreStderr != nil {
+				restoreStderr()
+			}
+			if stderrW != nil {
+				stderrW.Close()
+			}
+			if stderrDone != nil {
+				<-stderrDone
+			}
+			if stderrR != nil {
+				stderrR.Close()
+			}
 			lj.Close() //nolint:errcheck
 		}
 	}
