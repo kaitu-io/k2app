@@ -143,7 +143,7 @@ type connUDPState struct {
 	sendInflight atomic.Int32 // concurrent SendDatagram calls in progress
 }
 
-// DefaultQUICConfig returns the QUIC configuration.
+// DefaultQUICConfig returns the QUIC configuration for clients.
 // Flow control windows and max streams are platform-specific (see quic_limits_*.go).
 // Desktop/server: large windows for throughput. Mobile: small windows for memory.
 func DefaultQUICConfig() *quic.Config {
@@ -157,6 +157,18 @@ func DefaultQUICConfig() *quic.Config {
 		KeepAlivePeriod:                10 * time.Second,
 		MaxIncomingStreams:             quicMaxStreams,
 	}
+}
+
+// ServerQUICConfig returns the QUIC configuration for servers.
+// Server uses a longer idle timeout (90s) than client (30s) so that under
+// packet loss the CLIENT always times out first. This ensures the client
+// detects the dead connection via conn.Context().Done() in connect() and
+// rebuilds immediately, instead of the server closing first and the client
+// opening streams into a dead connection (EOF) for 30-100s.
+func ServerQUICConfig() *quic.Config {
+	cfg := DefaultQUICConfig()
+	cfg.MaxIdleTimeout = 90 * time.Second
+	return cfg
 }
 
 // quicStreamConn wraps a quic.Stream to satisfy net.Conn.

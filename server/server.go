@@ -342,7 +342,7 @@ func (s *Server) Run(ctx context.Context) error {
 	quicTransport := &quic.Transport{Conn: udpConn}
 	defer quicTransport.Close()
 
-	quicLn, err := quicTransport.Listen(s.TLSConfig.Clone(), wire.DefaultQUICConfig())
+	quicLn, err := quicTransport.Listen(s.TLSConfig.Clone(), wire.ServerQUICConfig())
 	if err != nil {
 		return fmt.Errorf("QUIC listen: %w", err)
 	}
