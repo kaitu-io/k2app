@@ -1583,7 +1583,15 @@ type quicStreamWriter struct {
 func (w *quicStreamWriter) writeFrame(sessionID uint32, addr string, payload []byte) error {
 	w.writeMu.Lock()
 	defer w.writeMu.Unlock()
-	return WriteSmuxUDPFrame(w.stream, sessionID, addr, payload)
+	start := time.Now()
+	err := WriteSmuxUDPFrame(w.stream, sessionID, addr, payload)
+	writeMs := time.Since(start).Milliseconds()
+	if err != nil {
+		slog.Warn("DIAG: stream-writer-fail", "sessionID", sessionID, "len", len(payload), "writeMs", writeMs, "err", err)
+	} else if writeMs > 100 {
+		slog.Warn("DIAG: stream-writer-slow", "sessionID", sessionID, "len", len(payload), "writeMs", writeMs)
+	}
+	return err
 }
 
 // ============================================================================
@@ -1711,8 +1719,12 @@ func (m *quicStreamUDPMux) readLoop() {
 			m.touchSession(frame.SessionID)
 			select {
 			case ch <- frame:
+				slog.Debug("DIAG: stream-mux-recv", "sessionID", frame.SessionID, "len", len(frame.Payload))
 			default:
+				slog.Warn("DIAG: stream-mux-drop", "sessionID", frame.SessionID, "len", len(frame.Payload), "chanLen", len(ch))
 			}
+		} else {
+			slog.Warn("DIAG: stream-mux-no-session", "sessionID", frame.SessionID, "len", len(frame.Payload))
 		}
 	}
 }
