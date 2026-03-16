@@ -54,7 +54,7 @@ Fields: UDID, Token, Host, Port, ECH, Fingerprint, HopStart, HopEnd, Insecure, P
 - `transport.go` — `TransportManager`: QUIC strongly preferred, TCP-WS last-resort fallback. Consecutive handshake failure threshold (3, `handshakeFailStreak`) activates fallback — no exponential backoff. Background QUIC probe loop (30s interval) actively tests recovery during fallback. `DialTCP` tries QUIC first (with context budget 3-5s), falls back to TCP-WS on failure. `FallbackActive` tracks QUIC→TCP-WS state. Direct `*QUICClient`/`*TCPWSClient` type assertions for `ResetConnections()`.
 - `ip.go` — `ProbePublicIP`, `FormatSslipHost`, `HasIPv6` (server auto-provisioning helpers)
 - `tlspad/` — TLS record padding (probe target cert length, pad server cert to match)
-- `arc/` — K2CC (PCC Vivace) congestion control for QUIC
+- `k2cc/` — K2CC (PCC Vivace) congestion control for QUIC
 - `VOCABULARY.md` — Three-layer vocabulary convention (Wire/Relay/Tunnel)
 - `contract_test.go` — 11 transport behavior contract tests (startup, fallback, recovery, datagram degradation, network switch, slow upstream, proxy error, stream rejection, read-response timeout)
 - `testmain_test.go` — goleak `TestMain` with quic-go and smux ignore patterns

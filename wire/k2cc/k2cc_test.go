@@ -1,5 +1,5 @@
 // K2CC Vivace tests
-package arc
+package k2cc
 
 import (
 	"math"

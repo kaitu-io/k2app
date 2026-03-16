@@ -19,7 +19,7 @@ import (
 	"github.com/sasha-s/go-deadlock"
 
 	"github.com/apernet/quic-go"
-	"github.com/kaitu-io/k2/wire/arc"
+	"github.com/kaitu-io/k2/wire/k2cc"
 )
 
 // Compile-time interface checks.
@@ -236,7 +236,7 @@ type QUICClient struct {
 	alloc     *SessionIDAllocator
 	udpMux    *quicUDPMux
 	closed    bool
-	ccSender *arc.K2CCSender // stored for stats access
+	ccSender *k2cc.K2CCSender // stored for stats access
 
 	portHopAttempts    atomic.Int32 // hop attempts before TCP-WS fallback
 	portHopExhaustedAt atomic.Int64 // UnixNano: when hops were exhausted (0 = not exhausted)
@@ -431,9 +431,9 @@ serialize:
 	)
 
 	// Set K2CC congestion control (replaces default Cubic)
-	sender := arc.NewCCSenderGFWMode(arc.DefaultMaxRate)
+	sender := k2cc.NewCCSenderGFWMode(k2cc.DefaultMaxRate)
 	conn.SetCongestionControl(sender)
-	slog.Info("wire: QUIC K2CC enabled", "maxRateMbps", arc.DefaultMaxRate/1_000_000)
+	slog.Info("wire: QUIC K2CC enabled", "maxRateMbps", k2cc.DefaultMaxRate/1_000_000)
 
 	// --- Store result under lock ---
 	// concurrency:allow — closing locally-owned conn/transport not yet stored in struct;
@@ -896,7 +896,7 @@ func (s *QUICServer) acceptLoop() {
 		}
 		slog.Debug("QUICServer: accepted connection", "remote", conn.RemoteAddr())
 		// Set K2CC congestion control for server-side sending (critical for download speed)
-		conn.SetCongestionControl(arc.NewCCSenderGFWMode(arc.DefaultMaxRate))
+		conn.SetCongestionControl(k2cc.NewCCSenderGFWMode(k2cc.DefaultMaxRate))
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {

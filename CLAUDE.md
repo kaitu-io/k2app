@@ -463,7 +463,7 @@ server/CLAUDE.md               Server listener orchestration, TCP/UDP handlers
 wire/CLAUDE.md                 k2v5 wire protocol, Dialer/Listener interfaces
 wire/k2v5-protocol-spec.md    k2v5 protocol specification (TLS, ECH, camouflage, framing)
 wire/VOCABULARY.md             Three-layer vocabulary convention (Wire/Relay/Tunnel)
-wire/arc/CLAUDE.md             PCC Vivace congestion control
+wire/k2cc/CLAUDE.md            K2CC Vivace congestion control
 appext/CLAUDE.md               App extension shell: gomobile SDK (macOS sysext, iOS, Android)
 safego/                        Panic-safe goroutine launcher (Go() wraps recover + slog)
 test/CLAUDE.md                 E2E integration tests

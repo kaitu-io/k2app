@@ -1,5 +1,5 @@
 // K2CC Vivace - Performance-oriented Congestion Control
-package arc
+package k2cc
 
 import (
 	"fmt"
