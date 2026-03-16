@@ -33,6 +33,9 @@ func TestDefaultQUICConfig(t *testing.T) {
 	if cfg.MaxIncomingStreams != 256 {
 		t.Errorf("MaxIncomingStreams = %d, want 256", cfg.MaxIncomingStreams)
 	}
+	if cfg.InitialPacketSize != 1400 {
+		t.Errorf("InitialPacketSize = %d, want 1400", cfg.InitialPacketSize)
+	}
 }
 
 func TestQUICStreamConn(t *testing.T) {

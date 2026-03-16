@@ -156,6 +156,7 @@ func DefaultQUICConfig() *quic.Config {
 		MaxIdleTimeout:                 30 * time.Second,
 		KeepAlivePeriod:                10 * time.Second,
 		MaxIncomingStreams:             quicMaxStreams,
+		InitialPacketSize:             1400,
 	}
 }
 
