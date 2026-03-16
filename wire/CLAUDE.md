@@ -88,6 +88,7 @@ Fields: UDID, Token, Host, Port, ECH, Fingerprint, HopStart, HopEnd, Insecure, P
 - QUIC stream responses have 5s timeout to prevent indefinite blocking on slow/dead servers.
 - `DialTCP(ctx, addr, earlyData)` sends earlyData after stream header, before reading server response. Server's `bufio.Reader` naturally buffers it during header parsing; `pipe()` consumes it after upstream dial. Saves 1 RTT on high-latency links. Backward compatible — old servers handle it without changes. Pass `nil` for no early data.
 - `SendDatagram` uses atomic inflight counter (`maxDatagramInflight=32`, `ErrDatagramSendTimeout`) — quic-go's 32-frame datagram queue blocks indefinitely under congestion. When concurrent SendDatagram calls exceed the limit, excess packets are dropped immediately (protocol-correct for unreliable DATAGRAM). No goroutine spawned — avoids leak when SendDatagram blocks. Applies to both client `quicUDPConn.WriteTo` (via `quicUDPMux.sendInflight`) and server `serverUDPConn.WriteTo` (via `connUDPState.sendInflight`).
+- `InitialPacketSize = 1400` (not quic-go default 1280): QUIC DATAGRAM frames must fit in a single packet. Browser QUIC Initial packets (1250 bytes payload) create UDPFrame of 1274 bytes. With default 1280, `currentMTUEstimate = 1243 < 1274` → `DatagramTooLargeError` → silent overflow stream fallback, defeating datagram relay's QUIC-over-QUIC design. 1400 gives estimate 1363, safe for all standard Ethernet paths (IPv4 packet = 1428 < 1500). PMTU discovery handles rare sub-1400 paths.
 
 ## Testing
 
