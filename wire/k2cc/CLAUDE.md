@@ -108,12 +108,15 @@ Condition 3 fixes the core issue: when `maxRate=500M` and actual link is 50M, sl
 
 When MI is app-limited (BytesSent < 50% expected):
 1. Compute `anchorRate = T / (1-L)` inline (no persistent EWMA state)
-2. Apply `minRate` floor (prevents collapse from end-of-transfer noise)
+2. Apply `minRate` floor — BW-aware:
+   - Transitional (BytesSent < 10KB): `arcMinRate` (5M)
+   - BW known (`bwEst.valid()`): `bwEst / (1 - bgLoss)` (actual link capacity)
+   - Cold start (no bwEst): `arcMinDownloadRate` (30M) for fast ramp-up
 3. Set `CurrentRate = anchorRate`, exit slow start if active
 4. Reset direction counters, preserve gradient context (`hasLastUtility = true`)
 5. Update `probeBaseRate` to anchor rate
 
-**Key difference from old bwEstimate**: No persistent state, no EWMA decay issues, no stale bandwidth memory. Each app-limited event is independently assessed.
+**BW-aware floor**: The 30M cold-start floor caused catastrophic over-sending on GFW-throttled links (~5M capacity) — 85% self-inflicted loss, DATAGRAM delivery dies, UDP relay fails. With BW estimator active, the floor tracks actual link capacity.
 
 ## Stable Probing (probeBaseRate)
 

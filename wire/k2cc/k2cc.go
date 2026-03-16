@@ -759,14 +759,22 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 			if lossRate := mi.LossRate(); lossRate > 0 && lossRate < appLimitedMaxLoss {
 				anchorRate = throughput / (1.0 - lossRate)
 			}
-			// Anchor floor: use 30M for real app-limited, 5M for transitional.
-			// After slow start exit, in-flight backlog from old rate blocks new
-			// sends → BytesSent is just a few packets. This is NOT true app-limited
-			// (application is still sending). Use arcMinRate to avoid overriding
-			// the slow start exit's throughput-based rate anchor.
+			// Anchor floor: prevents rate collapse from transient low throughput.
+			// - Transitional (post-slow-start, tiny BytesSent): use arcMinRate (5M)
+			// - BW known (bwEst valid): use bgLoss-corrected bwEst (actual link capacity)
+			//   Without this, the 30M floor causes 6x overshoot on 5M links → 85% loss
+			//   → DATAGRAM delivery dies → UDP relay fails → "巨慢"
+			// - Cold start (no bwEst): use arcMinDownloadRate (30M) for fast ramp-up
 			minRate := arcMinRate
 			if float64(p.maxRate) >= arcMinDownloadRate && mi.BytesSent >= 10000 {
-				minRate = arcMinDownloadRate
+				if p.bwEst.valid() {
+					minRate = p.bwEst.estimate()
+					if p.bgLossEWMA > 0.01 {
+						minRate = minRate / (1.0 - p.bgLossEWMA)
+					}
+				} else {
+					minRate = arcMinDownloadRate
+				}
 			}
 			if anchorRate < minRate {
 				anchorRate = minRate

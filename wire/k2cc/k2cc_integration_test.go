@@ -630,10 +630,10 @@ func TestIntegration_BulkTransfer_WithLoss(t *testing.T) {
 			t.Logf("Final: rate=%.1fM mode=%s epsilon=%.4f",
 				snap.SendingRate/1e6, snap.Mode, snap.Epsilon)
 
-			// Rate should stay above the download floor (30 Mbps) at any tested loss rate.
-			// The α clamping ensures utility stays positive even at 35% loss.
-			if snap.SendingRate < 10_000_000 {
-				t.Errorf("rate collapsed to %.1f Mbps (expected >= 10 Mbps at %.0f%% loss)",
+			// Rate should stay above arcMinRate (5M). The BW estimator constrains
+			// app-limited anchor to actual link capacity (not the 30M cold-start floor).
+			if snap.SendingRate < 3_000_000 {
+				t.Errorf("rate collapsed to %.1f Mbps (expected >= 3 Mbps at %.0f%% loss)",
 					snap.SendingRate/1e6, tc.lossRate*100)
 			}
 		})
