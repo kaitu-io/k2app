@@ -1051,13 +1051,15 @@ func (s *QUICServer) handleUDPStream(stream *quic.Stream, br *bufio.Reader) {
 
 func (s *QUICServer) handleDatagrams(conn *quic.Conn, state *connUDPState) {
 	slog.Info("QUICServer: handleDatagrams started", "remote", conn.RemoteAddr())
+	var totalReceived int64
 
 	for {
 		data, err := conn.ReceiveDatagram(context.Background())
 		if err != nil {
-			slog.Info("QUICServer: handleDatagrams exiting", "remote", conn.RemoteAddr(), "err", err)
+			slog.Warn("DIAG: datagram-recv-exit", "remote", conn.RemoteAddr(), "totalReceived", totalReceived, "err", err)
 			return
 		}
+		totalReceived++
 
 		frame, err := ReadUDPFrame(bytes.NewReader(data))
 		if err != nil {
@@ -1089,6 +1091,7 @@ func (s *QUICServer) deliverToSession(state *connUDPState, conn *quic.Conn, fram
 			done:         make(chan struct{}),
 			overflow:     state.overflow,
 			sendInflight: &state.sendInflight,
+			created:      time.Now(),
 		}
 		state.sessions[frame.SessionID] = sess
 
@@ -1311,16 +1314,19 @@ func (m *quicUDPMux) readLoop() {
 		}
 	}()
 	slog.Info("quicUDPMux: readLoop started")
+	var totalReceived int64
 	for {
 		data, err := m.conn.ReceiveDatagram(context.Background())
 		if err != nil {
-			slog.Warn("quicUDPMux: readLoop exiting", "err", err)
+			slog.Warn("DIAG: datagram-readloop-exit", "totalReceived", totalReceived, "err", err)
 			return
 		}
+		totalReceived++
 		m.recordRecv()
 		slog.Debug("quicUDPMux: received datagram", "len", len(data))
 		frame, err := ReadUDPFrame(bytes.NewReader(data))
 		if err != nil {
+			slog.Warn("quicUDPMux: datagram parse failed", "len", len(data), "err", err)
 			continue
 		}
 		m.mu.Lock()
@@ -1507,6 +1513,11 @@ type serverUDPConn struct {
 	rd           readDeadline
 	overflow     *udpOverflowStream // per-packet overflow for oversized datagrams
 	sendInflight *atomic.Int32      // shared across all sessions on this connection
+	created      time.Time
+	txPackets    atomic.Int64
+	txBytes      atomic.Int64
+	txErrors     atomic.Int64
+	rxPackets    atomic.Int64
 }
 
 var _ net.PacketConn = (*serverUDPConn)(nil)
@@ -1515,6 +1526,10 @@ func (c *serverUDPConn) deliver(payload []byte) {
 	select {
 	case c.readCh <- payload:
 	case <-c.done:
+	default:
+		// Drop: handler exited or too slow. Protocol-correct for unreliable datagrams.
+		// Without default, a full readCh with open done channel blocks handleDatagrams
+		// forever — freezing ALL datagram processing on this connection.
 	}
 }
 
@@ -1529,6 +1544,7 @@ func (c *serverUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	select {
 	case payload := <-c.readCh:
 		n := copy(b, payload)
+		c.rxPackets.Add(1)
 		addr, _ := net.ResolveUDPAddr("udp", c.addr)
 		return n, addr, nil
 	case <-c.done:
@@ -1546,6 +1562,7 @@ func (c *serverUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
 	if c.sendInflight.Add(1) > maxDatagramInflight {
 		c.sendInflight.Add(-1)
 		put()
+		c.txErrors.Add(1)
 		return 0, ErrDatagramSendTimeout
 	}
 	err := c.qconn.SendDatagram(frame)
@@ -1553,6 +1570,8 @@ func (c *serverUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
 	put()
 
 	if err == nil {
+		c.txPackets.Add(1)
+		c.txBytes.Add(int64(len(b)))
 		return len(b), nil
 	}
 
@@ -1560,17 +1579,33 @@ func (c *serverUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
 	var tooLarge *quic.DatagramTooLargeError
 	if errors.As(err, &tooLarge) && c.overflow != nil {
 		if err2 := c.overflow.send(c.sessionID, "", b); err2 != nil {
+			c.txErrors.Add(1)
 			return 0, err2
 		}
+		c.txPackets.Add(1)
+		c.txBytes.Add(int64(len(b)))
 		return len(b), nil
 	}
 
+	c.txErrors.Add(1)
 	slog.Warn("serverUDPConn: SendDatagram failed", "sessionID", c.sessionID, "addr", c.addr, "err", err)
 	return 0, err
 }
 
 func (c *serverUDPConn) close() {
-	c.closeOnce.Do(func() { close(c.done) })
+	c.closeOnce.Do(func() {
+		if !c.created.IsZero() {
+			slog.Info("serverUDPConn: closed",
+				"sessionID", c.sessionID,
+				"addr", c.addr,
+				"duration", time.Since(c.created).Round(time.Millisecond),
+				"rxPackets", c.rxPackets.Load(),
+				"txPackets", c.txPackets.Load(),
+				"txBytes", c.txBytes.Load(),
+				"txErrors", c.txErrors.Load())
+		}
+		close(c.done)
+	})
 }
 
 func (c *serverUDPConn) Close() error {
