@@ -25,7 +25,7 @@ services:
   # Generates config files and certificates into the shared config volume.
   # Provides RADIUS proxy for k2-oc authentication.
   k2-sidecar:
-    image: public.ecr.aws/d6n9t2r2/k2-sidecar:latest
+    image: public.ecr.aws/d6n9t2r2/k2-sidecar:${K2_VERSION:-latest}
     container_name: k2-sidecar
     restart: unless-stopped
     networks:
@@ -72,7 +72,7 @@ services:
   # - No ECH, SNI match: forward to k2v4-slave or k2-oc via local_routes (Docker DNS)
   # - Unknown SNI: camouflage reverse proxy to real site
   k2v5:
-    image: public.ecr.aws/d6n9t2r2/k2v5:latest
+    image: public.ecr.aws/d6n9t2r2/k2v5:${K2_VERSION:-latest}
     container_name: k2v5
     restart: unless-stopped
     networks:
@@ -107,6 +107,7 @@ services:
       - config:/etc/kaitu:ro
       - k2v5-data:/etc/k2v5
       - ./users:/etc/k2v5/users
+      - ./logs:/var/log/kaitu
     environment:
       - TZ=Asia/Singapore
       - K2_LOG_LEVEL=${K2V5_LOG_LEVEL:-info}
