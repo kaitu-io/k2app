@@ -7,12 +7,12 @@ quic-go auto-detects the extended interface and provides batched ACK+loss data p
 
 ## Algorithm
 
-Gradient ascent on utility function: `U = Throughput - α * LossRate * Throughput - β * ΔRtt`
+Gradient ascent on utility function: `U = Throughput - α * LossRate * SendRate - β * ΔRtt`
 
-- **Rate-based** (not window-based like Cubic)
-- **Monitor Intervals (MI)**: probe network capacity by sending at `rate ± ε`
+- **Rate-based** (not window-based like Cubic). Pacing via `TimeUntilSend` at `CurrentRate`; cwnd is burst ceiling only (1.2× BDP)
+- **Monitor Intervals (MI)**: probe network capacity by sending at `rate ± ε`. MinDuration = 2×RTT for QUIC loss detection visibility
 - **AIMD-ε**: Adaptive step size via Additive Increase Multiplicative Decrease on ε. See [AIMD-ε section](#aimd-ε-adaptive-exploration-step-size) below.
-- **GFW mode**: α=5.0 balances GFW loss tolerance with congestion sensitivity; β=1.0 makes RTT gradient effective
+- **GFW mode**: α=4.0 tolerates 25% background loss; β=1.0 makes RTT gradient effective
 - **Stale loss filtering**: MI tracks `FirstPacketNumber`/`LastPacketNumber`. `OnCongestionEvent` skips loss events where packet number < current MI's `FirstPacketNumber` (belongs to previous MI). Prevents MI boundary artifacts (LossRate > 100%) when loss notifications arrive after MI rotation.
 - **LossRate clamp**: `LossRate()` capped at 1.0 — defensive guard against residual stale attribution
 - **Zero gradient = no signal**: `gradient == 0` does not update direction counters (neither increase nor decrease). Only clear positive/negative signals drive direction confirmation.
@@ -23,9 +23,11 @@ Gradient ascent on utility function: `U = Throughput - α * LossRate * Throughpu
 - `DefaultMaxRate`: 500 Mbps upper bound
 - `defaultEpsilon`: 0.12 (base exploration step size, AIMD-ε adapts within [0.03, 0.25])
 - `arcRateEWMAAlpha`: 0.9 (rate EWMA smoothing — high for fast response)
-- `gfwAlpha`: 5.0 (GFW loss penalty — high enough for congestion gradient, tolerates constant 5% GFW loss)
+- `gfwAlpha`: 4.0 (GFW loss penalty — tolerates constant 25% background loss before gradient goes flat)
 - `defaultBeta`: 1.0 (latency penalty — 10ms ΔRtt = 10 utility signal, same magnitude as loss)
-- `arcMinRate`: 10 Mbps (upload floor), `arcMinDownloadRate`: 30 Mbps (download floor)
+- `arcCwndMultiplier`: 1.2 (burst headroom only — K2CC paces via `TimeUntilSend`, cwnd is burst ceiling not rate control)
+- `minAckRate`: 0.95 (minimal ackRate cwnd compensation — K2CC is adaptive, not Brutal-style fixed-rate)
+- `arcMinRate`: 5 Mbps (rate floor for all directions)
 - `noiseEWMA`: EWMA of RTT coefficient of variation, cold-starts at 1.2 (conservative)
 - `slowStartSaturationRatio`: 0.7 (throughput growth < 70% of rate growth × slow start factor → link saturated)
 
@@ -119,16 +121,16 @@ This prevents EWMA-induced drift: without `probeBaseRate`, alternating `+ε` and
 
 `probeBaseRate` is updated only when direction is confirmed (counter ≥ 2) and the rate actually moves.
 
-## Dynamic α Clamping
+## Rate-Based Utility (not throughput-based)
 
-With α=5.0, when loss > 20%: `1-αL < 0` → utility inverts → CC minimizes throughput. Fix: `α_eff = min(α, 0.8/L)` ensures `(1-αL) ≥ 0.2`.
+Utility function: `U = T - α * L * sendRate - β * ΔRtt` where `sendRate` is MI actual sending rate (`BytesSent*8/Duration`), not `TargetRate`. This ensures cwnd inflation is accounted for in the loss penalty — prevents feedback loop where cwnd sends more than CC rate → loss penalty underestimated → rate increases.
 
 ## Global Ack Rate Tracker
 
 Sliding-window tracker (5-second window, 1-second buckets) recording global ack/loss ratio
 from `OnCongestionEventEx`. Independent of per-MI loss attribution.
 
-**cwnd compensation** (Brutal-style): `rateToCwnd` divides by `ackRate` so that cwnd enlarges under loss to compensate for dropped packets. `clampedAckRate()` floors at 0.8 (same as Hysteria Brutal) to prevent cwnd explosion. At 20% loss → cwnd × 1.25, at 0% loss → no change.
+**cwnd compensation** (minimal): `rateToCwnd` divides by `ackRate` but `clampedAckRate()` floors at 0.95 (max 5% compensation). K2CC is adaptive — it handles loss through utility gradient, not cwnd inflation. Previous Brutal-style floor (0.8, 25% compensation) fought the CC algorithm.
 
 ## Observability
 

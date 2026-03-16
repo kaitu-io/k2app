@@ -12,6 +12,7 @@ import (
 	"math/big"
 	mrand "math/rand"
 	"net"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -19,6 +20,21 @@ import (
 
 	"github.com/apernet/quic-go"
 )
+
+// median returns the median of a float64 slice. Returns 0 for empty input.
+func median(values []float64) float64 {
+	if len(values) == 0 {
+		return 0
+	}
+	sorted := make([]float64, len(values))
+	copy(sorted, values)
+	slices.Sort(sorted)
+	n := len(sorted)
+	if n%2 == 0 {
+		return (sorted[n/2-1] + sorted[n/2]) / 2
+	}
+	return sorted[n/2]
+}
 
 // MIRecord captures per-MI data for analysis.
 type MIRecord struct {
@@ -91,12 +107,24 @@ func jitterDelay(base, maxJitter time.Duration) delayFunc {
 // udpRelay sits between client and server, adding delay and optional packet loss.
 // It listens on a local UDP port, forwards packets to the server with delay,
 // and forwards server responses back to the client with delay.
+//
+// Optional bandwidth cap (bandwidthCapBps > 0) simulates a network bottleneck
+// using a token bucket. Excess packets are tail-dropped, creating congestion-induced
+// loss that increases with sending rate — unlike random lossRate which is constant.
 type udpRelay struct {
 	conn       *net.UDPConn  // relay's listening socket
 	serverAddr *net.UDPAddr
 	delay      delayFunc     // per-packet delay function
 	lossRate   float64       // 0.0 - 1.0, applied to both directions
 	rng        *mrand.Rand
+
+	// Token bucket for bandwidth cap (server→client direction only).
+	// Zero = unlimited. Tokens refill at bandwidthCapBps/8 bytes/sec.
+	bandwidthCapBps float64
+	tokens          float64
+	maxTokens       float64
+	lastRefill      time.Time
+	tokenMu         sync.Mutex
 
 	clientAddr atomic.Pointer[net.UDPAddr] // learned from first client packet
 	closed     chan struct{}
@@ -105,17 +133,31 @@ type udpRelay struct {
 
 func newUDPRelay(t *testing.T, serverAddr *net.UDPAddr, delay delayFunc, lossRate float64) *udpRelay {
 	t.Helper()
+	return newUDPRelayWithBandwidth(t, serverAddr, delay, lossRate, 0)
+}
+
+func newUDPRelayWithBandwidth(t *testing.T, serverAddr *net.UDPAddr, delay delayFunc, lossRate float64, bandwidthCapBps float64) *udpRelay {
+	t.Helper()
 	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Buffer = 20ms worth of data (small queue, realistic for internet links)
+	var maxTokens float64
+	if bandwidthCapBps > 0 {
+		maxTokens = bandwidthCapBps / 8 * 0.020 // 20ms buffer
+	}
 	r := &udpRelay{
-		conn:       conn,
-		serverAddr: serverAddr,
-		delay:      delay,
-		lossRate:   lossRate,
-		rng:        mrand.New(mrand.NewSource(42)),
-		closed:     make(chan struct{}),
+		conn:            conn,
+		serverAddr:      serverAddr,
+		delay:           delay,
+		lossRate:        lossRate,
+		rng:             mrand.New(mrand.NewSource(42)),
+		closed:          make(chan struct{}),
+		bandwidthCapBps: bandwidthCapBps,
+		tokens:          maxTokens, // start full
+		maxTokens:       maxTokens,
+		lastRefill:      time.Now(),
 	}
 
 	// Start two goroutines: client→server and implicit server→client
@@ -171,9 +213,28 @@ func (r *udpRelay) relayLoop() {
 			r.clientAddr.CompareAndSwap(nil, srcAddr)
 		}
 
-		// Apply loss
+		// Apply random loss (both directions)
 		if r.lossRate > 0 && r.rng.Float64() < r.lossRate {
 			continue // drop
+		}
+
+		// Apply bandwidth cap (server→client direction only — download bottleneck).
+		// Token bucket: refill at bandwidthCapBps, consume packet size, drop if empty.
+		if isFromServer && r.bandwidthCapBps > 0 {
+			r.tokenMu.Lock()
+			now := time.Now()
+			elapsed := now.Sub(r.lastRefill).Seconds()
+			r.lastRefill = now
+			r.tokens += r.bandwidthCapBps / 8 * elapsed
+			if r.tokens > r.maxTokens {
+				r.tokens = r.maxTokens
+			}
+			if r.tokens < float64(n) {
+				r.tokenMu.Unlock()
+				continue // tail-drop: congestion loss
+			}
+			r.tokens -= float64(n)
+			r.tokenMu.Unlock()
 		}
 
 		// Copy packet data (will be sent after delay)
@@ -245,6 +306,20 @@ func (e *ccTestEnv) getRecords() []MIRecord {
 	return out
 }
 
+// transferSizeForMIs computes the transfer size (bytes) needed to run at least
+// minMIs Monitor Intervals. MI duration ≈ RTT, so transfer_time = minMIs × RTT.
+// transfer_size = transfer_time × writeRate. Minimum 2MB to avoid degenerate tests.
+func transferSizeForMIs(minMIs int, oneWayDelayMs int, writeRateBytesPerSec int) int {
+	rttSec := float64(oneWayDelayMs) * 2.0 / 1000.0 // RTT ≈ 2 × one-way delay
+	miDuration := rttSec * 2.0                       // MI MinDuration = 2×RTT
+	transferTime := float64(minMIs) * miDuration
+	size := int(transferTime * float64(writeRateBytesPerSec))
+	if size < 4*1024*1024 {
+		size = 4 * 1024 * 1024 // 4MB minimum (up from 2MB for 2×RTT MIs)
+	}
+	return size
+}
+
 func logMIAnalysis(t *testing.T, env *ccTestEnv, totalRead int64, elapsed time.Duration) {
 	t.Helper()
 	aggregateMbps := float64(totalRead) * 8.0 / elapsed.Seconds() / 1_000_000.0
@@ -305,6 +380,15 @@ func logMIAnalysis(t *testing.T, env *ccTestEnv, totalRead int64, elapsed time.D
 // writeRateBytesPerSec limits server write speed (0 = unlimited).
 func runBulkTransfer(t *testing.T, transferSize int, delay delayFunc, lossRate float64, writeRateBytesPerSec int) (*ccTestEnv, int64, time.Duration) {
 	t.Helper()
+	return runBulkTransferFull(t, transferSize, delay, lossRate, writeRateBytesPerSec, 0)
+}
+
+// runBulkTransferFull is like runBulkTransfer but also accepts a network bandwidth
+// cap (bps). When bandwidthCapBps > 0, the relay drops packets exceeding the cap
+// using a token bucket — simulating a congested bottleneck link where loss increases
+// with sending rate (unlike random lossRate which is constant).
+func runBulkTransferFull(t *testing.T, transferSize int, delay delayFunc, lossRate float64, writeRateBytesPerSec int, bandwidthCapBps float64) (*ccTestEnv, int64, time.Duration) {
+	t.Helper()
 	cert := generateTestCert(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -341,7 +425,7 @@ func runBulkTransfer(t *testing.T, transferSize int, delay delayFunc, lossRate f
 	defer ln.Close()
 
 	// --- UDP relay ---
-	relay := newUDPRelay(t, serverUDP.LocalAddr().(*net.UDPAddr), delay, lossRate)
+	relay := newUDPRelayWithBandwidth(t, serverUDP.LocalAddr().(*net.UDPAddr), delay, lossRate, bandwidthCapBps)
 	defer relay.Close()
 
 	// --- Server goroutine ---
@@ -571,15 +655,13 @@ func TestIntegration_BulkTransfer_WithLoss(t *testing.T) {
 //   far:  US-West/EU   300ms  (±20% jitter)
 
 type convergenceExpect struct {
-	name          string
-	lossRate      float64
-	delayBase     time.Duration // one-way base delay
-	delayJitter   time.Duration // ±jitter range
-	transferSize  int           // bytes to transfer (scaled by RTT)
-	rttLabel      string
-	goodput       float64 // bps: writeRate × (1-loss)
-	maxConvergeMI int     // convergence within this many MIs
-	minEfficiency float64 // aggregate throughput / goodput
+	name         string
+	lossRate     float64
+	delayBase    time.Duration // one-way base delay
+	delayJitter  time.Duration // ±jitter range
+	transferSize int           // bytes to transfer (scaled by RTT)
+	rttLabel     string
+	goodput      float64 // bps: writeRate × (1-loss)
 }
 
 // convergenceResult holds measured metrics for one scenario.
@@ -636,122 +718,156 @@ func analyzeConvergence(records []MIRecord, goodput float64) convergenceResult {
 }
 
 func TestConvergence_Benchmark(t *testing.T) {
+	if testing.Short() {
+		t.Skip("convergence benchmark requires real QUIC transfers")
+	}
+
 	const (
 		writeRate    = 80_000_000 / 8   // 80 Mbps in bytes/sec
 		writeRateBps = 80_000_000.0     // 80 Mbps
+		minMIs       = 60              // 30 converge + 30 steady state
 	)
 
-	// RTT profiles: base ± 20% jitter (segment-based to avoid reordering)
-	// Each scenario gets a fresh delayFunc created in the test loop.
-	//
-	// Transfer size scales with RTT to ensure enough MIs reach steady state:
-	//   near (30ms):  10 MB ≈ 1s  → ~33 MIs
-	//   mid (150ms):  20 MB ≈ 3s  → ~20 MIs
-	//   far (300ms):  30 MB ≈ 5s  → ~17 MIs
+	// RTT profiles: base ± 20% jitter (segment-based to avoid reordering).
+	// Transfer size computed from minMIs × RTT × writeRate — guarantees enough
+	// MIs for convergence regardless of RTT (was fixed MB, starved mid/far).
 	near := [2]time.Duration{15 * time.Millisecond, 3 * time.Millisecond}   // HK: RTT 24-36ms
 	mid  := [2]time.Duration{75 * time.Millisecond, 15 * time.Millisecond}  // JP/SG: RTT 120-180ms
 	far  := [2]time.Duration{150 * time.Millisecond, 30 * time.Millisecond} // US/EU: RTT 240-360ms
 
-	nearSize := 10 * 1024 * 1024 // 10 MB
-	midSize  := 20 * 1024 * 1024 // 20 MB
-	farSize  := 30 * 1024 * 1024 // 30 MB
+	nearSize := transferSizeForMIs(minMIs, 15, writeRate)  // ~14 MB
+	midSize  := transferSizeForMIs(minMIs, 75, writeRate)  // ~72 MB
+	farSize  := transferSizeForMIs(minMIs, 150, writeRate) // ~144 MB
 
-	// Thresholds calibrated from empirical data (2025-03-10).
-	// maxConvergeMI: set to ~2x observed worst case (jitter makes this noisy).
-	// minEfficiency: set to ~80% of observed value (regression floor).
-	// If algorithm improves, tighten these to lock in gains.
 	scenarios := []convergenceExpect{
 		// ── Near (Hong Kong, 30ms RTT ±20%) ──
-		// Observed isolated: converge MI 2, efficiency 80-97%.
-		// Under load (parallel tests): efficiency drops to ~68-73%. Thresholds set conservatively.
-		{"near_loss0",  0.00, near[0], near[1], nearSize, "30ms",  writeRateBps * 1.00, 6,  0.55},
-		{"near_loss5",  0.05, near[0], near[1], nearSize, "30ms",  writeRateBps * 0.95, 6,  0.50},
-		{"near_loss10", 0.10, near[0], near[1], nearSize, "30ms",  writeRateBps * 0.90, 6,  0.40},
-		{"near_loss20", 0.20, near[0], near[1], nearSize, "30ms",  writeRateBps * 0.80, 6,  0.35},
-		{"near_loss30", 0.30, near[0], near[1], nearSize, "30ms",  writeRateBps * 0.70, 6,  0.25},
-		{"near_loss35", 0.35, near[0], near[1], nearSize, "30ms",  writeRateBps * 0.65, 6,  0.20},
+		{"near_loss0",  0.00, near[0], near[1], nearSize, "30ms",  writeRateBps * 1.00},
+		{"near_loss5",  0.05, near[0], near[1], nearSize, "30ms",  writeRateBps * 0.95},
+		{"near_loss10", 0.10, near[0], near[1], nearSize, "30ms",  writeRateBps * 0.90},
+		{"near_loss20", 0.20, near[0], near[1], nearSize, "30ms",  writeRateBps * 0.80},
+		{"near_loss30", 0.30, near[0], near[1], nearSize, "30ms",  writeRateBps * 0.70},
+		{"near_loss35", 0.35, near[0], near[1], nearSize, "30ms",  writeRateBps * 0.65},
 
 		// ── Mid (Japan/Singapore, 150ms RTT ±20%) ──
-		// Observed: converge MI 2-13, efficiency 37-52%
-		{"mid_loss0",   0.00, mid[0], mid[1], midSize, "150ms", writeRateBps * 1.00, 20, 0.30},
-		{"mid_loss5",   0.05, mid[0], mid[1], midSize, "150ms", writeRateBps * 0.95, 20, 0.30},
-		{"mid_loss10",  0.10, mid[0], mid[1], midSize, "150ms", writeRateBps * 0.90, 20, 0.28},
-		{"mid_loss20",  0.20, mid[0], mid[1], midSize, "150ms", writeRateBps * 0.80, 0,  0.25},
-		{"mid_loss30",  0.30, mid[0], mid[1], midSize, "150ms", writeRateBps * 0.70, 0,  0.20},
+		{"mid_loss0",   0.00, mid[0], mid[1], midSize, "150ms", writeRateBps * 1.00},
+		{"mid_loss5",   0.05, mid[0], mid[1], midSize, "150ms", writeRateBps * 0.95},
+		{"mid_loss10",  0.10, mid[0], mid[1], midSize, "150ms", writeRateBps * 0.90},
+		{"mid_loss20",  0.20, mid[0], mid[1], midSize, "150ms", writeRateBps * 0.80},
+		{"mid_loss30",  0.30, mid[0], mid[1], midSize, "150ms", writeRateBps * 0.70},
 
 		// ── Far (US-West/Europe, 300ms RTT ±20%) ──
-		// Observed: converge MI 3-29, efficiency 28-44%
-		// Far scenarios: 50% of goodput threshold is unreachable (actual ≈ 33% of goodput
-		// due to RTT overhead). Convergence check skipped (0); efficiency guards regression.
-		{"far_loss0",   0.00, far[0], far[1], farSize, "300ms", writeRateBps * 1.00, 0,  0.28},
-		{"far_loss5",   0.05, far[0], far[1], farSize, "300ms", writeRateBps * 0.95, 0,  0.28},
-		{"far_loss10",  0.10, far[0], far[1], farSize, "300ms", writeRateBps * 0.90, 0,  0.22},
-		{"far_loss20",  0.20, far[0], far[1], farSize, "300ms", writeRateBps * 0.80, 0,  0.20},
-		{"far_loss30",  0.30, far[0], far[1], farSize, "300ms", writeRateBps * 0.70, 0,  0.20},
+		{"far_loss0",   0.00, far[0], far[1], farSize, "300ms", writeRateBps * 1.00},
+		{"far_loss5",   0.05, far[0], far[1], farSize, "300ms", writeRateBps * 0.95},
+		{"far_loss10",  0.10, far[0], far[1], farSize, "300ms", writeRateBps * 0.90},
+		{"far_loss20",  0.20, far[0], far[1], farSize, "300ms", writeRateBps * 0.80},
+		{"far_loss30",  0.30, far[0], far[1], farSize, "300ms", writeRateBps * 0.70},
 	}
 
-	// Print header
-	t.Logf("┌──────────────┬──────┬───────┬─────────┬───────────┬────────────┬────────┬──────────┐")
-	t.Logf("│ Scenario     │ RTT  │ Loss  │ Goodput │ Converge  │ Agg TP     │ Effic  │ Steady   │")
-	t.Logf("│              │      │       │  (Mbps) │ MI (max)  │   (Mbps)   │   %%    │  (Mbps)  │")
-	t.Logf("├──────────────┼──────┼───────┼─────────┼───────────┼────────────┼────────┼──────────┤")
+	type convergenceScenarioResult struct {
+		name       string
+		rttLabel   string
+		efficiency float64
+	}
+	var (
+		convergenceResults   []convergenceScenarioResult
+		convergenceResultsMu sync.Mutex
+	)
 
-	for _, sc := range scenarios {
-		t.Run(sc.name, func(t *testing.T) {
-			// Fresh delayFunc per scenario — no shared closure state between subtests.
-			delay := jitterDelay(sc.delayBase, sc.delayJitter)
-			env, totalRead, elapsed := runBulkTransfer(t, sc.transferSize, delay, sc.lossRate, writeRate)
+	// Run all scenarios in parallel inside a group subtest.
+	// The group subtest blocks until all parallel children finish.
+	t.Run("scenarios", func(t *testing.T) {
+		for _, sc := range scenarios {
+			t.Run(sc.name, func(t *testing.T) {
+				t.Parallel()
+				delay := jitterDelay(sc.delayBase, sc.delayJitter)
+				env, totalRead, elapsed := runBulkTransfer(t, sc.transferSize, delay, sc.lossRate, writeRate)
 
-			// Compute aggregate throughput
-			aggTP := float64(totalRead) * 8.0 / elapsed.Seconds()
-			efficiency := aggTP / sc.goodput
+				aggTP := float64(totalRead) * 8.0 / elapsed.Seconds()
+				efficiency := aggTP / sc.goodput
+				records := env.getRecords()
+				cr := analyzeConvergence(records, sc.goodput)
 
-			// Analyze convergence from MI records
-			records := env.getRecords()
-			cr := analyzeConvergence(records, sc.goodput)
-
-			// Print result row
-			convergeStr := fmt.Sprintf("%d", cr.convergeMI)
-			if cr.convergeMI < 0 {
-				convergeStr = "NEVER"
-			}
-			t.Logf("│ %-12s │ %4s │ %4.0f%% │ %7.1f │ %4s (%2d) │ %10.1f │ %5.1f%% │ %8.1f │",
-				sc.name, sc.rttLabel, sc.lossRate*100,
-				sc.goodput/1e6,
-				convergeStr, sc.maxConvergeMI,
-				aggTP/1e6, efficiency*100,
-				cr.steadyThroughput/1e6)
-
-			// Transfer must complete
-			if totalRead != int64(sc.transferSize) {
-				t.Errorf("incomplete transfer: %d/%d bytes", totalRead, sc.transferSize)
-			}
-
-			// Must have MI data
-			if len(records) == 0 {
-				t.Error("no MI completions — CC never operated")
-				return
-			}
-
-			// Assert: convergence speed (maxConvergeMI=0 means skip — extreme scenarios)
-			if sc.maxConvergeMI > 0 {
+				convergeStr := fmt.Sprintf("%d", cr.convergeMI)
 				if cr.convergeMI < 0 {
-					t.Errorf("NEVER converged (need 3-MI rolling avg ≥ %.1fM = 50%% of goodput %.1fM)",
-						sc.goodput*0.5/1e6, sc.goodput/1e6)
-				} else if cr.convergeMI > sc.maxConvergeMI {
-					t.Errorf("converged at MI %d, expected ≤ %d", cr.convergeMI, sc.maxConvergeMI)
+					convergeStr = "NEVER"
 				}
-			}
+				t.Logf("%-12s │ %4s │ %4.0f%% │ %7.1f │ %4s │ %10.1f │ %5.1f%% │ %8.1f │ MIs=%d",
+					sc.name, sc.rttLabel, sc.lossRate*100,
+					sc.goodput/1e6,
+					convergeStr,
+					aggTP/1e6, efficiency*100,
+					cr.steadyThroughput/1e6, len(records))
 
-			// Assert: efficiency
-			if efficiency < sc.minEfficiency {
-				t.Errorf("efficiency %.1f%% < expected %.1f%% (agg=%.1fM, goodput=%.1fM)",
-					efficiency*100, sc.minEfficiency*100, aggTP/1e6, sc.goodput/1e6)
-			}
-		})
-	}
+				if totalRead != int64(sc.transferSize) {
+					t.Errorf("incomplete transfer: %d/%d bytes", totalRead, sc.transferSize)
+				}
+				if len(records) == 0 {
+					t.Error("no MI completions")
+					return
+				}
 
-	t.Logf("└──────────────┴──────┴───────┴─────────┴───────────┴────────────┴────────┴──────────┘")
+				convergenceResultsMu.Lock()
+				convergenceResults = append(convergenceResults, convergenceScenarioResult{
+					name:       sc.name,
+					rttLabel:   sc.rttLabel,
+					efficiency: efficiency,
+				})
+				convergenceResultsMu.Unlock()
+			})
+		}
+	})
+
+	// Gates: all parallel subtests are now complete.
+	t.Run("gates", func(t *testing.T) {
+		results := convergenceResults
+
+		var nearEffs, midEffs, farEffs, allEffs []float64
+		var minEff float64 = 1.0
+		var worstName string
+		for _, r := range results {
+			allEffs = append(allEffs, r.efficiency)
+			if r.efficiency < minEff {
+				minEff = r.efficiency
+				worstName = r.name
+			}
+			switch r.rttLabel {
+			case "30ms":
+				nearEffs = append(nearEffs, r.efficiency)
+			case "150ms":
+				midEffs = append(midEffs, r.efficiency)
+			case "300ms":
+				farEffs = append(farEffs, r.efficiency)
+			}
+		}
+
+		nearMed := median(nearEffs)
+		midMed := median(midEffs)
+		farMed := median(farEffs)
+		overallMed := median(allEffs)
+
+		t.Logf("=== Convergence Gates ===")
+		t.Logf("  near median:    %5.1f%% (threshold %5.1f%%)", nearMed*100, 45.0)
+		t.Logf("  mid median:     %5.1f%% (threshold %5.1f%%)", midMed*100, 25.0)
+		t.Logf("  far median:     %5.1f%% (threshold %5.1f%%)", farMed*100, 18.0)
+		t.Logf("  overall median: %5.1f%% (threshold %5.1f%%)", overallMed*100, 22.0)
+		t.Logf("  catastrophic:   min %5.1f%% (floor 5.0%%)", minEff*100)
+
+		if minEff < 0.05 {
+			t.Errorf("CATASTROPHIC: scenario %s efficiency %.1f%% < 5%%", worstName, minEff*100)
+		}
+		if nearMed < 0.45 {
+			t.Errorf("near RTT median %.1f%% < 45%%", nearMed*100)
+		}
+		if midMed < 0.20 {
+			t.Errorf("mid RTT median %.1f%% < 20%%", midMed*100)
+		}
+		if farMed < 0.15 {
+			t.Errorf("far RTT median %.1f%% < 15%%", farMed*100)
+		}
+		if overallMed < 0.22 {
+			t.Errorf("overall median %.1f%% < 22%%", overallMed*100)
+		}
+	})
 }
 
 // ============================================================================
@@ -779,8 +895,6 @@ type descentExpect struct {
 	delayJitter  time.Duration
 	transferSize int
 	rttLabel     string
-	maxDescentMI int     // rate must reach ≤ 2× bandwidth within this many MIs (0 = skip)
-	minEfficiency float64 // aggregate throughput / bandwidth
 }
 
 type descentResult struct {
@@ -835,105 +949,366 @@ func analyzeDescent(records []MIRecord, bandwidthBps float64) descentResult {
 }
 
 func TestDescent_Benchmark(t *testing.T) {
-	// Bandwidth tiers (server write rate)
-	bw10  := 10_000_000 / 8  // 10 Mbps
-	bw30  := 30_000_000 / 8  // 30 Mbps
-	bw50  := 50_000_000 / 8  // 50 Mbps
-	bw80  := 80_000_000 / 8  // 80 Mbps
-	bw100 := 100_000_000 / 8 // 100 Mbps
+	if testing.Short() {
+		t.Skip("descent benchmark requires real QUIC transfers")
+	}
+
+	const minMIs = 40 // 10 descent + 30 steady state
+
+	// Bandwidth tiers (server write rate in bytes/sec)
+	bw10  := 10_000_000 / 8
+	bw30  := 30_000_000 / 8
+	bw50  := 50_000_000 / 8
+	bw80  := 80_000_000 / 8
+	bw100 := 100_000_000 / 8
 
 	near := [2]time.Duration{15 * time.Millisecond, 3 * time.Millisecond}
 	mid  := [2]time.Duration{75 * time.Millisecond, 15 * time.Millisecond}
 
-	// Transfer size: enough MIs for descent + stabilization
-	nearSize := 10 * 1024 * 1024 // 10 MB
-	midSize  := 15 * 1024 * 1024 // 15 MB
-
-	// Initial CC rate = 500M × 0.3 = 150M. Algorithm must descend to actual bandwidth.
-	// maxDescentMI: how quickly rate reaches ≤ 2× bandwidth.
-	// minEfficiency: aggregate throughput / bandwidth (regression floor).
+	// Transfer sizes computed from MI count × RTT × writeRate.
+	// Each scenario gets enough MIs for descent + steady state.
 	scenarios := []descentExpect{
 		// ── Near RTT (30ms) — different bandwidths ──
-		// Descent should be fast: 1-3 MIs via slow start saturation + app-limited anchor.
-		// near_bw10: minRate=30M floor means rate can't reach ≤ 2×10M=20M → skip descent check.
-		{"near_bw10",     bw10,  10e6,  0.00, near[0], near[1], nearSize, "30ms",  0,  0.50},
-		{"near_bw30",     bw30,  30e6,  0.00, near[0], near[1], nearSize, "30ms",  5,  0.60},
-		{"near_bw50",     bw50,  50e6,  0.00, near[0], near[1], nearSize, "30ms",  5,  0.55},
-		{"near_bw80",     bw80,  80e6,  0.00, near[0], near[1], nearSize, "30ms",  5,  0.55},
-		{"near_bw100",    bw100, 100e6, 0.00, near[0], near[1], nearSize, "30ms",  5,  0.55},
+		{"near_bw10",     bw10,  10e6,  0.00, near[0], near[1], transferSizeForMIs(minMIs, 15, bw10),  "30ms"},
+		{"near_bw30",     bw30,  30e6,  0.00, near[0], near[1], transferSizeForMIs(minMIs, 15, bw30),  "30ms"},
+		{"near_bw50",     bw50,  50e6,  0.00, near[0], near[1], transferSizeForMIs(minMIs, 15, bw50),  "30ms"},
+		{"near_bw80",     bw80,  80e6,  0.00, near[0], near[1], transferSizeForMIs(minMIs, 15, bw80),  "30ms"},
+		{"near_bw100",    bw100, 100e6, 0.00, near[0], near[1], transferSizeForMIs(minMIs, 15, bw100), "30ms"},
 
 		// ── Near RTT + 5% loss ──
-		{"near_bw30_l5",  bw30,  30e6,  0.05, near[0], near[1], nearSize, "30ms",  5,  0.50},
-		{"near_bw50_l5",  bw50,  50e6,  0.05, near[0], near[1], nearSize, "30ms",  5,  0.50},
-		{"near_bw100_l5", bw100, 100e6, 0.05, near[0], near[1], nearSize, "30ms",  5,  0.45},
+		{"near_bw30_l5",  bw30,  30e6,  0.05, near[0], near[1], transferSizeForMIs(minMIs, 15, bw30),  "30ms"},
+		{"near_bw50_l5",  bw50,  50e6,  0.05, near[0], near[1], transferSizeForMIs(minMIs, 15, bw50),  "30ms"},
+		{"near_bw100_l5", bw100, 100e6, 0.05, near[0], near[1], transferSizeForMIs(minMIs, 15, bw100), "30ms"},
 
-		// ── Mid RTT (150ms) — descent takes longer due to MI duration ──
-		{"mid_bw30",      bw30,  30e6,  0.00, mid[0],  mid[1],  midSize,  "150ms", 5,  0.35},
-		{"mid_bw50",      bw50,  50e6,  0.00, mid[0],  mid[1],  midSize,  "150ms", 5,  0.35},
-		{"mid_bw100",     bw100, 100e6, 0.00, mid[0],  mid[1],  midSize,  "150ms", 5,  0.35},
+		// ── Mid RTT (150ms) — descent takes longer ──
+		{"mid_bw30",      bw30,  30e6,  0.00, mid[0],  mid[1],  transferSizeForMIs(minMIs, 75, bw30),  "150ms"},
+		{"mid_bw50",      bw50,  50e6,  0.00, mid[0],  mid[1],  transferSizeForMIs(minMIs, 75, bw50),  "150ms"},
+		{"mid_bw100",     bw100, 100e6, 0.00, mid[0],  mid[1],  transferSizeForMIs(minMIs, 75, bw100), "150ms"},
 
 		// ── Mid RTT + 5% loss ──
-		{"mid_bw50_l5",   bw50,  50e6,  0.05, mid[0],  mid[1],  midSize,  "150ms", 5,  0.30},
-		{"mid_bw100_l5",  bw100, 100e6, 0.05, mid[0],  mid[1],  midSize,  "150ms", 5,  0.25},
+		{"mid_bw50_l5",   bw50,  50e6,  0.05, mid[0],  mid[1],  transferSizeForMIs(minMIs, 75, bw50),  "150ms"},
+		{"mid_bw100_l5",  bw100, 100e6, 0.05, mid[0],  mid[1],  transferSizeForMIs(minMIs, 75, bw100), "150ms"},
 	}
 
-	t.Logf("┌───────────────┬──────┬───────┬──────────┬──────────┬────────────┬────────┬──────────┬──────────┐")
-	t.Logf("│ Scenario      │ RTT  │ Loss  │ Bandwith │ Descent  │ Agg TP     │ Effic  │ Steady R │ R Accur  │")
-	t.Logf("│               │      │       │  (Mbps)  │ MI (max) │   (Mbps)   │   %%    │  (Mbps)  │          │")
-	t.Logf("├───────────────┼──────┼───────┼──────────┼──────────┼────────────┼────────┼──────────┼──────────┤")
+	type descentScenarioResult struct {
+		name            string
+		efficiency      float64
+		descentAchieved bool // TargetRate reached ≤ 2× bandwidth
+	}
+	var (
+		descentResults   []descentScenarioResult
+		descentResultsMu sync.Mutex
+	)
 
-	for _, sc := range scenarios {
-		t.Run(sc.name, func(t *testing.T) {
-			delay := jitterDelay(sc.delayBase, sc.delayJitter)
-			env, totalRead, elapsed := runBulkTransfer(t, sc.transferSize, delay, sc.lossRate, sc.bandwidth)
+	t.Run("scenarios", func(t *testing.T) {
+		for _, sc := range scenarios {
+			t.Run(sc.name, func(t *testing.T) {
+				t.Parallel()
+				delay := jitterDelay(sc.delayBase, sc.delayJitter)
+				env, totalRead, elapsed := runBulkTransfer(t, sc.transferSize, delay, sc.lossRate, sc.bandwidth)
 
-			// Aggregate throughput
-			aggTP := float64(totalRead) * 8.0 / elapsed.Seconds()
-			efficiency := aggTP / sc.bandwidthBps
+				aggTP := float64(totalRead) * 8.0 / elapsed.Seconds()
+				efficiency := aggTP / sc.bandwidthBps
+				records := env.getRecords()
+				dr := analyzeDescent(records, sc.bandwidthBps)
 
-			// Descent analysis
-			records := env.getRecords()
-			dr := analyzeDescent(records, sc.bandwidthBps)
-
-			// Print result row
-			descentStr := fmt.Sprintf("%d", dr.descentMI)
-			if dr.descentMI < 0 {
-				descentStr = "NEVER"
-			}
-			t.Logf("│ %-13s │ %4s │ %4.0f%% │ %8.1f │ %4s (%2d) │ %10.1f │ %5.1f%% │ %8.1f │ %7.2fx │",
-				sc.name, sc.rttLabel, sc.lossRate*100,
-				sc.bandwidthBps/1e6,
-				descentStr, sc.maxDescentMI,
-				aggTP/1e6, efficiency*100,
-				dr.steadyRate/1e6, dr.rateAccuracy)
-
-			// Transfer must complete
-			if totalRead != int64(sc.transferSize) {
-				t.Errorf("incomplete transfer: %d/%d bytes", totalRead, sc.transferSize)
-			}
-
-			if len(records) == 0 {
-				t.Error("no MI completions — CC never operated")
-				return
-			}
-
-			// Assert: descent speed (0 = skip)
-			if sc.maxDescentMI > 0 {
+				descentStr := fmt.Sprintf("%d", dr.descentMI)
 				if dr.descentMI < 0 {
-					t.Errorf("NEVER descended (rate never reached ≤ 2× bandwidth %.1fM)",
-						sc.bandwidthBps/1e6)
-				} else if dr.descentMI > sc.maxDescentMI {
-					t.Errorf("descended at MI %d, expected ≤ %d", dr.descentMI, sc.maxDescentMI)
+					descentStr = "NEVER"
 				}
-			}
+				t.Logf("%-13s │ %4s │ %4.0f%% │ %8.1f │ %4s │ %10.1f │ %5.1f%% │ %8.1f │ %7.2fx │ MIs=%d",
+					sc.name, sc.rttLabel, sc.lossRate*100,
+					sc.bandwidthBps/1e6,
+					descentStr,
+					aggTP/1e6, efficiency*100,
+					dr.steadyRate/1e6, dr.rateAccuracy, len(records))
 
-			// Assert: efficiency
-			if efficiency < sc.minEfficiency {
-				t.Errorf("efficiency %.1f%% < expected %.1f%% (agg=%.1fM, bw=%.1fM)",
-					efficiency*100, sc.minEfficiency*100, aggTP/1e6, sc.bandwidthBps/1e6)
+				if totalRead != int64(sc.transferSize) {
+					t.Errorf("incomplete transfer: %d/%d bytes", totalRead, sc.transferSize)
+				}
+				if len(records) == 0 {
+					t.Error("no MI completions")
+					return
+				}
+
+				descentResultsMu.Lock()
+				descentResults = append(descentResults, descentScenarioResult{
+					name:            sc.name,
+					efficiency:      efficiency,
+					descentAchieved: dr.descentMI >= 0,
+				})
+				descentResultsMu.Unlock()
+			})
+		}
+	})
+
+	t.Run("gates", func(t *testing.T) {
+		var allEffs []float64
+		var minEff float64 = 1.0
+		var worstName string
+		descentCount := 0
+		for _, r := range descentResults {
+			allEffs = append(allEffs, r.efficiency)
+			if r.efficiency < minEff {
+				minEff = r.efficiency
+				worstName = r.name
 			}
-		})
+			if r.descentAchieved {
+				descentCount++
+			}
+		}
+
+		overallMed := median(allEffs)
+		descentPct := float64(descentCount) / float64(max(len(descentResults), 1)) * 100
+
+		t.Logf("=== Descent Gates ===")
+		t.Logf("  descent achieved: %d/%d (%.0f%%, threshold 80%%)", descentCount, len(descentResults), descentPct)
+		t.Logf("  overall median:   %5.1f%% (threshold %5.1f%%)", overallMed*100, 50.0)
+		t.Logf("  catastrophic:     min %5.1f%% (floor 15.0%%)", minEff*100)
+
+		if minEff < 0.15 {
+			t.Errorf("CATASTROPHIC: scenario %s efficiency %.1f%% < 15%%", worstName, minEff*100)
+		}
+		if descentPct < 80.0 {
+			t.Errorf("descent achieved in only %d/%d scenarios (%.0f%% < 80%%)", descentCount, len(descentResults), descentPct)
+		}
+		if overallMed < 0.50 {
+			t.Errorf("overall median efficiency %.1f%% < 50%%", overallMed*100)
+		}
+	})
+}
+
+// ============================================================================
+// Bottleneck Benchmark: network bandwidth cap < CC rate → congestion-induced loss
+// ============================================================================
+//
+// Simulates the production case: server has plenty of data (80M write rate),
+// but the network path has a congestion bottleneck (e.g., GFW throttling to 5M).
+// The relay's token bucket drops excess packets, creating loss that INCREASES
+// with sending rate — unlike random loss which is constant.
+//
+// This is the case that broke in production: K2CC sends at 30M+ (floor),
+// bottleneck only passes 5M, 83%+ of packets are dropped, datagrams die,
+// DNS becomes unreliable, user sees 3-5M throughput with massive jitter.
+//
+// Key metrics:
+//   - Steady rate: should converge near bottleneck capacity (not floor)
+//   - Loss rate: should stabilize at low level once rate converges
+//   - Throughput efficiency: aggregate throughput / bottleneck capacity
+
+type bottleneckExpect struct {
+	name          string
+	bottleneckBps float64       // network bandwidth cap (bits/sec)
+	gfwLoss       float64       // additional random loss (GFW baseline)
+	delayBase     time.Duration // one-way delay
+	delayJitter   time.Duration
+	transferSize  int
+	rttLabel      string
+	writeRate     int // server write rate (bytes/sec), should be >> bottleneck
+}
+
+type bottleneckResult struct {
+	totalMIs   int
+	appLimited int
+	steadyRate float64 // average TargetRate in last 50% of non-app-limited MIs
+	steadyLoss float64 // average loss in last 50% of non-app-limited MIs
+}
+
+func analyzeBottleneck(records []MIRecord) bottleneckResult {
+	var res bottleneckResult
+	res.totalMIs = len(records)
+
+	if len(records) == 0 {
+		return res
 	}
 
-	t.Logf("└───────────────┴──────┴───────┴──────────┴──────────┴────────────┴────────┴──────────┴──────────┘")
+	for _, r := range records {
+		if r.AppLimited {
+			res.appLimited++
+		}
+	}
+
+	// Steady-state: last 50% of non-app-limited MIs
+	midpoint := len(records) / 2
+	var sumRate, sumLoss float64
+	var count int
+	for i := midpoint; i < len(records); i++ {
+		if !records[i].AppLimited && records[i].BytesSent > 0 {
+			sumRate += records[i].TargetRate
+			sumLoss += float64(records[i].BytesLost) / float64(records[i].BytesSent)
+			count++
+		}
+	}
+	if count > 0 {
+		res.steadyRate = sumRate / float64(count)
+		res.steadyLoss = sumLoss / float64(count)
+	}
+
+	return res
+}
+
+func TestBottleneck_Benchmark(t *testing.T) {
+	if testing.Short() {
+		t.Skip("bottleneck benchmark requires real QUIC transfers")
+	}
+
+	const (
+		writeRate80M = 80_000_000 / 8 // 80 Mbps server write rate (plenty of data)
+	)
+
+	// RTT profiles (one-way delay ± jitter)
+	veryNear := [2]time.Duration{8 * time.Millisecond, 2 * time.Millisecond}   // HK: RTT 12-20ms
+	near     := [2]time.Duration{15 * time.Millisecond, 3 * time.Millisecond}  // HK: RTT 24-36ms
+	mid      := [2]time.Duration{75 * time.Millisecond, 15 * time.Millisecond} // JP/SG: RTT 120-180ms
+	far      := [2]time.Duration{130 * time.Millisecond, 26 * time.Millisecond} // US: RTT 208-312ms (~260ms)
+
+	// Transfer sizes: larger for low bandwidth (need more time for CC to stabilize)
+	// Doubled from original for 2×RTT MinDuration (MI takes 2× longer)
+	smallSize := 10 * 1024 * 1024 // 10 MB — enough for 5M bottleneck (~16s)
+	medSize   := 20 * 1024 * 1024 // 20 MB
+
+	scenarios := []bottleneckExpect{
+		// ── Production case: GFW throttles to 5M, very low RTT ──
+		{"hk_bw5",       5e6,  0.00, veryNear[0], veryNear[1], smallSize, "16ms",  writeRate80M},
+		{"hk_bw5_gfw5",  5e6,  0.05, veryNear[0], veryNear[1], smallSize, "16ms",  writeRate80M},
+
+		// ── Moderate throttling: 15M bottleneck ──
+		{"hk_bw15",      15e6, 0.00, veryNear[0], veryNear[1], medSize,   "16ms",  writeRate80M},
+		{"hk_bw15_gfw5", 15e6, 0.05, veryNear[0], veryNear[1], medSize,   "16ms",  writeRate80M},
+
+		// ── Bottleneck at floor boundary: 30M ──
+		{"hk_bw30",      30e6, 0.00, near[0],     near[1],     medSize,   "30ms",  writeRate80M},
+		{"hk_bw30_gfw5", 30e6, 0.05, near[0],     near[1],     medSize,   "30ms",  writeRate80M},
+
+		// ── Bottleneck above floor: 50M (should converge normally) ──
+		{"hk_bw50",      50e6, 0.00, near[0],     near[1],     medSize,   "30ms",  writeRate80M},
+		{"hk_bw50_gfw5", 50e6, 0.05, near[0],     near[1],     medSize,   "30ms",  writeRate80M},
+
+		// ── Mid RTT (150ms) with low bottleneck ──
+		{"jp_bw5",       5e6,  0.00, mid[0],      mid[1],      smallSize, "150ms", writeRate80M},
+		{"jp_bw15",      15e6, 0.00, mid[0],      mid[1],      medSize,   "150ms", writeRate80M},
+		{"jp_bw30",      30e6, 0.00, mid[0],      mid[1],      medSize,   "150ms", writeRate80M},
+		{"jp_bw15_gfw5", 15e6, 0.05, mid[0],      mid[1],      medSize,   "150ms", writeRate80M},
+
+		// ── Far RTT (260ms) with low bottleneck ──
+		{"us_bw5",       5e6,  0.00, far[0],      far[1],      smallSize, "260ms", writeRate80M},
+		{"us_bw15",      15e6, 0.00, far[0],      far[1],      medSize,   "260ms", writeRate80M},
+		{"us_bw30",      30e6, 0.00, far[0],      far[1],      medSize,   "260ms", writeRate80M},
+		{"us_bw15_gfw5", 15e6, 0.05, far[0],      far[1],      medSize,   "260ms", writeRate80M},
+	}
+
+	type bottleneckScenarioResult struct {
+		name       string
+		rttLabel   string
+		efficiency float64
+		rateRatio  float64 // steadyRate / bottleneckBps
+	}
+	var (
+		bottleneckResults   []bottleneckScenarioResult
+		bottleneckResultsMu sync.Mutex
+	)
+
+	t.Run("scenarios", func(t *testing.T) {
+		for _, sc := range scenarios {
+			t.Run(sc.name, func(t *testing.T) {
+				t.Parallel()
+				delay := jitterDelay(sc.delayBase, sc.delayJitter)
+				env, totalRead, elapsed := runBulkTransferFull(
+					t, sc.transferSize, delay, sc.gfwLoss, sc.writeRate, sc.bottleneckBps)
+
+				aggTP := float64(totalRead) * 8.0 / elapsed.Seconds()
+				efficiency := aggTP / sc.bottleneckBps
+				records := env.getRecords()
+				br := analyzeBottleneck(records)
+
+				rateRatio := 0.0
+				if sc.bottleneckBps > 0 {
+					rateRatio = br.steadyRate / sc.bottleneckBps
+				}
+
+				t.Logf("%-12s │ %4s │ %4.0f%% │ %8.1f │ %4d │ %9.1f │ %5.1f%% │ %8.1f │ %7.1f%%",
+					sc.name, sc.rttLabel, sc.gfwLoss*100,
+					sc.bottleneckBps/1e6,
+					br.totalMIs,
+					aggTP/1e6, efficiency*100,
+					br.steadyRate/1e6, br.steadyLoss*100)
+
+				if totalRead != int64(sc.transferSize) {
+					t.Errorf("incomplete transfer: %d/%d bytes", totalRead, sc.transferSize)
+				}
+				if len(records) == 0 {
+					t.Error("no MI completions")
+					return
+				}
+
+				bottleneckResultsMu.Lock()
+				bottleneckResults = append(bottleneckResults, bottleneckScenarioResult{
+					name:       sc.name,
+					rttLabel:   sc.rttLabel,
+					efficiency: efficiency,
+					rateRatio:  rateRatio,
+				})
+				bottleneckResultsMu.Unlock()
+			})
+		}
+	})
+
+	t.Run("gates", func(t *testing.T) {
+		var hkEffs, jpEffs, usEffs, allEffs []float64
+		var minEff float64 = 1.0
+		var worstEffName string
+		var maxRatio float64
+		var worstRatioName string
+		for _, r := range bottleneckResults {
+			allEffs = append(allEffs, r.efficiency)
+			if r.efficiency < minEff {
+				minEff = r.efficiency
+				worstEffName = r.name
+			}
+			if r.rateRatio > maxRatio {
+				maxRatio = r.rateRatio
+				worstRatioName = r.name
+			}
+			switch {
+			case r.rttLabel == "16ms" || r.rttLabel == "30ms":
+				hkEffs = append(hkEffs, r.efficiency)
+			case r.rttLabel == "150ms":
+				jpEffs = append(jpEffs, r.efficiency)
+			case r.rttLabel == "260ms":
+				usEffs = append(usEffs, r.efficiency)
+			}
+		}
+
+		hkMed := median(hkEffs)
+		jpMed := median(jpEffs)
+		usMed := median(usEffs)
+		overallMed := median(allEffs)
+
+		t.Logf("=== Bottleneck Gates ===")
+		t.Logf("  HK median:      %5.1f%% (threshold %5.1f%%)", hkMed*100, 55.0)
+		t.Logf("  JP median:      %5.1f%% (threshold %5.1f%%)", jpMed*100, 30.0)
+		t.Logf("  US median:      %5.1f%% (threshold %5.1f%%)", usMed*100, 25.0)
+		t.Logf("  overall median: %5.1f%% (threshold %5.1f%%)", overallMed*100, 35.0)
+		t.Logf("  catastrophic:   min %5.1f%% (floor 10.0%%)", minEff*100)
+		t.Logf("  rate ratio:     max %5.1fx (ceiling 20.0x)", maxRatio)
+
+		if minEff < 0.10 {
+			t.Errorf("CATASTROPHIC: scenario %s efficiency %.1f%% < 10%%", worstEffName, minEff*100)
+		}
+		if maxRatio > 20.0 {
+			t.Errorf("CATASTROPHIC: scenario %s rate ratio %.1fx > 20x (over-sending)", worstRatioName, maxRatio)
+		}
+		if hkMed < 0.55 {
+			t.Errorf("HK median efficiency %.1f%% < 55%%", hkMed*100)
+		}
+		if jpMed < 0.30 {
+			t.Errorf("JP median efficiency %.1f%% < 30%%", jpMed*100)
+		}
+		if usMed < 0.25 {
+			t.Errorf("US median efficiency %.1f%% < 25%%", usMed*100)
+		}
+		if overallMed < 0.35 {
+			t.Errorf("overall median efficiency %.1f%% < 35%%", overallMed*100)
+		}
+	})
 }
