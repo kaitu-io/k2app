@@ -1036,13 +1036,27 @@ func (p *K2CCSender) OnCongestionEventEx(
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	// Filter stale losses — same logic as OnCongestionEvent.
+	// Without this, losses from previous MIs inflate the ackRate denominator,
+	// producing ackRate=2-3% when real loss is much lower.
+	mi := p.state.CurrentMI
+	var filteredLosses uint64
+	if mi != nil && mi.PacketsSent > 0 {
+		for i := range lostPackets {
+			if int64(lostPackets[i].PacketNumber) >= mi.FirstPacketNumber {
+				filteredLosses++
+			}
+		}
+	} else {
+		filteredLosses = uint64(len(lostPackets))
+	}
+
 	acks := uint64(len(ackedPackets))
-	losses := uint64(len(lostPackets))
-	if acks == 0 && losses == 0 {
+	if acks == 0 && filteredLosses == 0 {
 		return
 	}
 
-	p.ackRate.record(time.Duration(eventTime), acks, losses)
+	p.ackRate.record(time.Duration(eventTime), acks, filteredLosses)
 }
 
 // OnRetransmissionTimeout is called when RTO expires
