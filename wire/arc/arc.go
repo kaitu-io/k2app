@@ -103,6 +103,19 @@ const (
 	// to continue. Flat throughput (growth=1.0) correctly triggers exit.
 	slowStartSaturationRatio = 0.7
 
+	// BW Estimator: BBR-style bandwidth anchoring.
+	// When bwEst is valid, rate probes around measured BW (Cruise/ProbeUp/Drain cycle)
+	// instead of PCC gradient ascent. PCC logic preserved as fallback.
+	bwWindowSize      = 8                  // Sliding window = 1 full probe cycle
+	bwCruiseGain      = 0.95               // 5% below BW: zero congestion loss
+	bwProbeUpGain     = 1.10               // 10% above BW: detect BW increase
+	bwDrainGain       = 0.75               // Drain queue + measure BG loss
+	bwCruiseLength    = 6                  // Cruise MIs per cycle (+ 1 ProbeUp + 1 Drain = 8)
+	bwMinValidCount   = 2                  // Minimum samples for valid estimate
+	bwDropThreshold   = 0.5                // throughput < expected × this → BW dropped
+	bwRiseThreshold   = 1.05               // ProbeUp throughput > corrected BW × this → BW rose
+	bgLossAlpha       = 0.2                // BG loss EWMA smoothing
+	bwAnchoredMinRate = 1_000_000.0        // 1 Mbps floor for BW-anchored mode
 )
 
 // K2CCMode represents the K2CC operating mode
@@ -115,6 +128,15 @@ const (
 	K2CCModeDecision
 	// K2CCModeRateAdjusting - applying gradient updates
 	K2CCModeRateAdjusting
+)
+
+// bwProbePhase represents the BW-anchored probing phase.
+type bwProbePhase int
+
+const (
+	bwPhaseCruise  bwProbePhase = iota
+	bwPhaseProbeUp
+	bwPhaseDrain
 )
 
 // String returns a human-readable name for the K2CC mode.
@@ -375,6 +397,53 @@ func (tr *ackRateTracker) AckRate() float64 {
 	return rate
 }
 
+// bwEstimator maintains a sliding-window max of throughput samples.
+// Similar to BBR's BtlBw: captures bottleneck bandwidth when CC rate >= BW.
+type bwEstimator struct {
+	samples [bwWindowSize]float64
+	head    int
+	count   int
+}
+
+// addSample adds a throughput measurement to the sliding window.
+func (e *bwEstimator) addSample(throughput float64) {
+	e.samples[e.head] = throughput
+	e.head = (e.head + 1) % bwWindowSize
+	if e.count < bwWindowSize {
+		e.count++
+	}
+}
+
+// estimate returns the maximum throughput in the sliding window.
+func (e *bwEstimator) estimate() float64 {
+	if e.count == 0 {
+		return 0
+	}
+	maxVal := 0.0
+	for i := range e.count {
+		if e.samples[i] > maxVal {
+			maxVal = e.samples[i]
+		}
+	}
+	return maxVal
+}
+
+// valid returns true when enough samples exist for a reliable estimate.
+func (e *bwEstimator) valid() bool {
+	return e.count >= bwMinValidCount
+}
+
+// reset replaces all samples with a new value (BW drop recovery).
+func (e *bwEstimator) reset(throughput float64) {
+	for i := range e.samples {
+		e.samples[i] = throughput
+	}
+	e.head = 1
+	if e.count < bwMinValidCount {
+		e.count = bwMinValidCount
+	}
+}
+
 // ============================================================================
 // Utility Function
 // ============================================================================
@@ -527,6 +596,13 @@ type K2CCSender struct {
 	// Used for cwnd ackRate compensation (Brutal-style) + debug logging.
 	ackRate *ackRateTracker
 
+	// BW Estimator: BBR-style bandwidth anchoring.
+	// When bwEst.valid(), rate probes around measured BW instead of PCC gradient.
+	bwEst          bwEstimator
+	bgLossEWMA     float64      // Background loss from Drain phases
+	bwPhase        bwProbePhase // Cruise / ProbeUp / Drain
+	bwCruiseRemain int          // Remaining Cruise MIs in current cycle
+
 	// Test-only hook: called when an MI completes (inside mu lock).
 	miCompletedHook func(mi *MonitorInterval, throughput float64, isAppLimited bool)
 
@@ -631,17 +707,39 @@ func (p *K2CCSender) updateRate(newRate float64) {
 	p.cwnd = rateToCwnd(p.state.CurrentRate, p.rtt, p.clampedAckRate())
 }
 
+// setRateAnchored sets rate for BW-anchored mode with lower floor than PCC.
+// Drain at 0.75×BW can go below the PCC 5M floor on low-bandwidth links.
+func (p *K2CCSender) setRateAnchored(newRate float64) {
+	if newRate < bwAnchoredMinRate {
+		newRate = bwAnchoredMinRate
+	}
+	if newRate > float64(p.maxRate) {
+		newRate = float64(p.maxRate)
+	}
+	p.state.CurrentRate = p.state.CurrentRate*(1.0-arcRateEWMAAlpha) + newRate*arcRateEWMAAlpha
+	if p.state.CurrentRate < bwAnchoredMinRate {
+		p.state.CurrentRate = bwAnchoredMinRate
+	}
+	p.cwnd = rateToCwnd(p.state.CurrentRate, p.rtt, p.clampedAckRate())
+}
+
 // processCompletedMI processes a completed Monitor Interval.
 func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 	// Calculate throughput and detect app-limited state
 	throughput := mi.Throughput()
+
+	// Feed BW estimator (always, except app-limited)
+	if !mi.IsAppLimited && throughput > 0 {
+		p.bwEst.addSample(throughput)
+	}
 
 	// Rate probing: every N MIs, probe higher rate to recover from local minima.
 	// Do NOT reset direction counters — let AIMD-ε evaluate the probe result
 	// through normal gradient processing.
 	// Skip probe when loss is high — probing into congestion just wastes bandwidth
 	// and prevents convergence on bottleneck-limited links.
-	if p.state.NextMIID%rateProbingInterval == 0 && mi.LossRate() < 0.30 {
+	// Skip when BW-anchored mode is active (ProbeUp serves this purpose).
+	if !p.bwEst.valid() && p.state.NextMIID%rateProbingInterval == 0 && mi.LossRate() < 0.30 {
 		probeRate := p.state.CurrentRate * (1.0 + rateProbingIncrease)
 		if probeRate <= float64(p.maxRate) {
 			p.updateRate(probeRate)
@@ -717,6 +815,11 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 			p.state.Mode = K2CCModeDecision
 			p.state.UtilityIncreases = 0
 			p.state.UtilityDecreases = 0
+			// Initialize BW-anchored probing if estimator is ready
+			if p.bwEst.valid() {
+				p.bwPhase = bwPhaseCruise
+				p.bwCruiseRemain = bwCruiseLength
+			}
 			break
 		}
 
@@ -733,6 +836,11 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 			p.state.Mode = K2CCModeDecision
 			p.state.UtilityIncreases = 0
 			p.state.UtilityDecreases = 0
+			// Initialize BW-anchored probing if estimator is ready
+			if p.bwEst.valid() {
+				p.bwPhase = bwPhaseCruise
+				p.bwCruiseRemain = bwCruiseLength
+			}
 			break
 		}
 
@@ -748,6 +856,11 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 				p.state.UtilityIncreases = 0
 				p.state.UtilityDecreases = 0
 				p.probeBaseRate = p.state.CurrentRate
+				// Initialize BW-anchored probing if estimator is ready
+				if p.bwEst.valid() {
+					p.bwPhase = bwPhaseCruise
+					p.bwCruiseRemain = bwCruiseLength
+				}
 				slog.Debug("k2cc: slow start saturated",
 					"mi", mi.ID,
 					"throughput", fmt.Sprintf("%.1fM", throughput/1_000_000),
@@ -764,7 +877,11 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 		p.updateRate(newRate)
 
 	case K2CCModeDecision, K2CCModeRateAdjusting:
-		if p.state.hasLastUtility {
+		// BW-anchored mode: when bandwidth estimate is valid, probe around
+		// measured BW instead of using PCC gradient ascent.
+		if p.bwEst.valid() {
+			p.processBWAnchored(mi, throughput)
+		} else if p.state.hasLastUtility {
 			gradient := utility - p.state.lastUtility
 
 			// Capture previous state for AIMD-ε reversal detection
@@ -874,6 +991,89 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 		"mode", p.state.Mode.String(),
 		"dir", dir,
 		"ackRate", fmt.Sprintf("%.3f", p.ackRate.AckRate()),
+	)
+}
+
+// processBWAnchored implements BBR-style BW-anchored rate control.
+// Called from processCompletedMI when bwEst is valid.
+// Cycle: 6 × Cruise → 1 × ProbeUp → 1 × Drain → repeat.
+func (p *K2CCSender) processBWAnchored(mi *MonitorInterval, throughput float64) {
+	bw := p.bwEst.estimate()
+
+	// Correct BW estimate for background loss
+	if p.bgLossEWMA > 0.01 {
+		bw = bw / (1.0 - p.bgLossEWMA)
+	}
+
+	if bw <= 0 {
+		p.bwEst = bwEstimator{} // Invalid — fall back to PCC
+		return
+	}
+
+	switch p.bwPhase {
+	case bwPhaseCruise:
+		// BW decrease detection: throughput much lower than expected
+		expectedThroughput := bw * bwCruiseGain
+		if p.bgLossEWMA > 0.01 {
+			expectedThroughput *= (1.0 - p.bgLossEWMA)
+		}
+		if throughput > 0 && throughput < expectedThroughput*bwDropThreshold {
+			newBW := throughput
+			if p.bgLossEWMA > 0.01 {
+				newBW = throughput / (1.0 - p.bgLossEWMA)
+			}
+			p.bwEst.reset(newBW)
+			bw = newBW
+			slog.Debug("k2cc: bw-anchor BW drop detected",
+				"mi", mi.ID,
+				"throughput", fmt.Sprintf("%.1fM", throughput/1e6),
+				"newBW", fmt.Sprintf("%.1fM", bw/1e6),
+			)
+		}
+
+		p.bwCruiseRemain--
+		if p.bwCruiseRemain <= 0 {
+			p.bwPhase = bwPhaseProbeUp
+		}
+		p.setRateAnchored(bw * bwCruiseGain)
+
+	case bwPhaseProbeUp:
+		// BW increase detection
+		correctedBW := bw
+		if p.bgLossEWMA > 0.01 {
+			correctedBW = bw * (1.0 - p.bgLossEWMA)
+		}
+		if throughput > correctedBW*bwRiseThreshold {
+			p.bwEst.addSample(throughput)
+			slog.Debug("k2cc: bw-anchor BW rise detected",
+				"mi", mi.ID,
+				"throughput", fmt.Sprintf("%.1fM", throughput/1e6),
+				"prevBW", fmt.Sprintf("%.1fM", bw/1e6),
+			)
+		}
+
+		p.bwPhase = bwPhaseDrain
+		p.setRateAnchored(bw * bwProbeUpGain)
+
+	case bwPhaseDrain:
+		// BG loss measurement: rate well below BW → any loss is background
+		if lossRate := mi.LossRate(); lossRate > 0.005 {
+			p.bgLossEWMA = p.bgLossEWMA*(1-bgLossAlpha) + lossRate*bgLossAlpha
+		} else if p.bgLossEWMA > 0.001 {
+			p.bgLossEWMA *= (1 - bgLossAlpha)
+		}
+
+		p.bwPhase = bwPhaseCruise
+		p.bwCruiseRemain = bwCruiseLength
+		p.setRateAnchored(bw * bwDrainGain)
+	}
+
+	slog.Debug("k2cc: bw-anchor",
+		"mi", mi.ID,
+		"phase", []string{"cruise", "probeUp", "drain"}[p.bwPhase],
+		"bw", fmt.Sprintf("%.1fM", bw/1e6),
+		"rate", fmt.Sprintf("%.1fM", p.state.CurrentRate/1e6),
+		"bgLoss", fmt.Sprintf("%.1f%%", p.bgLossEWMA*100),
 	)
 }
 

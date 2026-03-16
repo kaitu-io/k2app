@@ -30,6 +30,10 @@ Gradient ascent on utility function: `U = Throughput - α * LossRate * SendRate 
 - `arcMinRate`: 5 Mbps (rate floor for all directions)
 - `noiseEWMA`: EWMA of RTT coefficient of variation, cold-starts at 1.2 (conservative)
 - `slowStartSaturationRatio`: 0.7 (throughput growth < 70% of rate growth × slow start factor → link saturated)
+- `bwCruiseGain`: 0.95 (5% below BW — zero congestion loss in cruise)
+- `bwProbeUpGain`: 1.10 (10% above BW — detect increases)
+- `bwDrainGain`: 0.75 (drain queue + measure BG loss)
+- `bwWindowSize`: 8 (one full Cruise+ProbeUp+Drain probe cycle)
 
 ## AIMD-ε: Adaptive Exploration Step Size
 
@@ -124,6 +128,20 @@ This prevents EWMA-induced drift: without `probeBaseRate`, alternating `+ε` and
 ## Rate-Based Utility (not throughput-based)
 
 Utility function: `U = T - α * L * sendRate - β * ΔRtt` where `sendRate` is MI actual sending rate (`BytesSent*8/Duration`), not `TargetRate`. This ensures cwnd inflation is accounted for in the loss penalty — prevents feedback loop where cwnd sends more than CC rate → loss penalty underestimated → rate increases.
+
+## BW Estimator (BBR-style Bandwidth Anchoring)
+
+Sliding-window max filter over MI throughput (window = 8 MIs = 1 probe cycle). When valid (≥2 samples), replaces PCC gradient ascent with controlled BW-anchored probing:
+
+- **Cruise** (6 MI): `rate = bwEst × 0.95` — 5% below measured BW, zero congestion loss
+- **ProbeUp** (1 MI): `rate = bwEst × 1.10` — detect BW increases
+- **Drain** (1 MI): `rate = bwEst × 0.75` — drain ProbeUp queue + measure background loss
+
+BG loss detection: Drain phase rate << BW → any loss is pure background (GFW). `bgLossEWMA` corrects bwEst: `effectiveBW = maxThroughput / (1 - bgLoss)`.
+
+BW decrease detection: Cruise throughput < expected × 0.5 → immediate bwEst reset (1 MI recovery).
+
+PCC gradient logic preserved as fallback when bwEst is invalid (cold start, BW regime change).
 
 ## Global Ack Rate Tracker
 

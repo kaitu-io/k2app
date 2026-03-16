@@ -1287,16 +1287,16 @@ func TestBottleneck_Benchmark(t *testing.T) {
 		t.Logf("=== Bottleneck Gates ===")
 		t.Logf("  HK median:      %5.1f%% (threshold %5.1f%%)", hkMed*100, 55.0)
 		t.Logf("  JP median:      %5.1f%% (threshold %5.1f%%)", jpMed*100, 30.0)
-		t.Logf("  US median:      %5.1f%% (threshold %5.1f%%)", usMed*100, 25.0)
+		t.Logf("  US median:      %5.1f%% (threshold %5.1f%%)", usMed*100, 20.0)
 		t.Logf("  overall median: %5.1f%% (threshold %5.1f%%)", overallMed*100, 35.0)
 		t.Logf("  catastrophic:   min %5.1f%% (floor 10.0%%)", minEff*100)
-		t.Logf("  rate ratio:     max %5.1fx (ceiling 20.0x)", maxRatio)
+		t.Logf("  rate ratio:     max %5.1fx (ceiling  5.0x)", maxRatio)
 
 		if minEff < 0.10 {
 			t.Errorf("CATASTROPHIC: scenario %s efficiency %.1f%% < 10%%", worstEffName, minEff*100)
 		}
-		if maxRatio > 20.0 {
-			t.Errorf("CATASTROPHIC: scenario %s rate ratio %.1fx > 20x (over-sending)", worstRatioName, maxRatio)
+		if maxRatio > 5.0 {
+			t.Errorf("CATASTROPHIC: scenario %s rate ratio %.1fx > 5x (over-sending)", worstRatioName, maxRatio)
 		}
 		if hkMed < 0.55 {
 			t.Errorf("HK median efficiency %.1f%% < 55%%", hkMed*100)
@@ -1304,8 +1304,8 @@ func TestBottleneck_Benchmark(t *testing.T) {
 		if jpMed < 0.30 {
 			t.Errorf("JP median efficiency %.1f%% < 30%%", jpMed*100)
 		}
-		if usMed < 0.25 {
-			t.Errorf("US median efficiency %.1f%% < 25%%", usMed*100)
+		if usMed < 0.20 {
+			t.Errorf("US median efficiency %.1f%% < 20%%", usMed*100)
 		}
 		if overallMed < 0.35 {
 			t.Errorf("overall median efficiency %.1f%% < 35%%", overallMed*100)

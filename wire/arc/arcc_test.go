@@ -681,6 +681,7 @@ func TestAIMDEpsilon_Bounds(t *testing.T) {
 	}
 
 	// Test lower bound: ε below min, set up reversal with weak signal → MD → clamp
+	sender.bwEst = bwEstimator{} // Reset BW estimator so PCC gradient path is taken
 	sender.state.Epsilon = epsilonMin * 0.5 // 0.01, below min
 	sender.state.UtilityIncreases = 3       // confirmed
 	sender.state.UtilityDecreases = 0
@@ -1562,4 +1563,247 @@ func TestUtilityGradient_ProductionCase(t *testing.T) {
 	}
 
 	t.Logf("Production case: U(30M)=%.2f, U(15M)=%.2f, U(6M)=%.2f", u30, u15, u6)
+}
+
+// ============================================================================
+// Tests for BW Estimator
+// ============================================================================
+
+func TestBWEstimator_Empty(t *testing.T) {
+	var est bwEstimator
+	if est.valid() {
+		t.Error("empty estimator should not be valid")
+	}
+	if est.estimate() != 0 {
+		t.Errorf("empty estimator should return 0, got %f", est.estimate())
+	}
+}
+
+func TestBWEstimator_AddSamples(t *testing.T) {
+	var est bwEstimator
+	est.addSample(5_000_000)
+	if est.valid() {
+		t.Error("1 sample should not be valid (need bwMinValidCount=2)")
+	}
+	est.addSample(4_500_000)
+	if !est.valid() {
+		t.Error("2 samples should be valid")
+	}
+	if est.estimate() != 5_000_000 {
+		t.Errorf("expected estimate=5M, got %f", est.estimate())
+	}
+}
+
+func TestBWEstimator_SlidingWindowMax(t *testing.T) {
+	var est bwEstimator
+	for i := 0; i < bwWindowSize; i++ {
+		est.addSample(5_000_000)
+	}
+	if est.estimate() != 5_000_000 {
+		t.Errorf("expected 5M, got %f", est.estimate())
+	}
+	for i := 0; i < bwWindowSize; i++ {
+		est.addSample(3_000_000)
+	}
+	if est.estimate() != 3_000_000 {
+		t.Errorf("expected 3M after aging, got %f", est.estimate())
+	}
+}
+
+func TestBWEstimator_Reset(t *testing.T) {
+	var est bwEstimator
+	est.addSample(50_000_000)
+	est.addSample(50_000_000)
+	est.reset(5_000_000)
+	if !est.valid() {
+		t.Error("reset should keep valid state")
+	}
+	if est.estimate() != 5_000_000 {
+		t.Errorf("expected 5M after reset, got %f", est.estimate())
+	}
+}
+
+func TestBWAnchored_PhaseConstants(t *testing.T) {
+	if bwCruiseLength+2 != bwWindowSize {
+		t.Errorf("phase cycle (%d+2=%d) must equal window size (%d)",
+			bwCruiseLength, bwCruiseLength+2, bwWindowSize)
+	}
+	if !(bwDrainGain < bwCruiseGain && bwCruiseGain < 1.0 && 1.0 < bwProbeUpGain) {
+		t.Errorf("gain ordering violated: drain=%.2f cruise=%.2f probeUp=%.2f",
+			bwDrainGain, bwCruiseGain, bwProbeUpGain)
+	}
+}
+
+func TestBWAnchored_SenderHasFields(t *testing.T) {
+	sender := NewCCSenderGFWMode(500_000_000)
+	if sender.bwEst.valid() {
+		t.Error("new sender bwEst should not be valid")
+	}
+	if sender.bwPhase != bwPhaseCruise {
+		t.Errorf("expected initial phase=Cruise, got %d", sender.bwPhase)
+	}
+}
+
+func TestBWAnchored_CruiseRate(t *testing.T) {
+	sender := NewCCSenderGFWMode(500_000_000)
+	mockRTT := &mockRTTStatsProvider{smoothedRTT: 16 * time.Millisecond}
+	sender.SetRTTStatsProvider(mockRTT)
+
+	sender.bwEst.addSample(5_000_000)
+	sender.bwEst.addSample(5_000_000)
+	sender.bwPhase = bwPhaseCruise
+	sender.bwCruiseRemain = 3
+	sender.state.Mode = K2CCModeDecision
+	sender.state.CurrentRate = 4_750_000
+
+	mi := &MonitorInterval{
+		ID: 10, TargetRate: 4_750_000,
+		BytesSent: 19000, BytesAcked: 19000, BytesLost: 0,
+		PacketsSent: 13, PacketsAcked: 13,
+		StartTime: time.Now().Add(-32 * time.Millisecond), EndTime: time.Now(),
+		FirstPacketNumber: 100, LastPacketNumber: 112,
+	}
+
+	sender.processCompletedMI(mi)
+
+	expectedTarget := 5_000_000.0 * bwCruiseGain
+	if sender.state.CurrentRate < expectedTarget*0.8 || sender.state.CurrentRate > expectedTarget*1.2 {
+		t.Errorf("expected rate near %.0f, got %.0f", expectedTarget, sender.state.CurrentRate)
+	}
+	if sender.bwCruiseRemain != 2 {
+		t.Errorf("expected cruiseRemain=2, got %d", sender.bwCruiseRemain)
+	}
+}
+
+func TestBWAnchored_CruiseDetectsBWDrop(t *testing.T) {
+	sender := NewCCSenderGFWMode(500_000_000)
+	mockRTT := &mockRTTStatsProvider{smoothedRTT: 16 * time.Millisecond}
+	sender.SetRTTStatsProvider(mockRTT)
+
+	sender.bwEst.addSample(50_000_000)
+	sender.bwEst.addSample(50_000_000)
+	sender.bwPhase = bwPhaseCruise
+	sender.bwCruiseRemain = 3
+	sender.state.Mode = K2CCModeDecision
+	sender.state.CurrentRate = 47_500_000
+
+	mi := &MonitorInterval{
+		ID: 10, TargetRate: 47_500_000,
+		BytesSent: 190000, BytesAcked: 20000, BytesLost: 170000,
+		PacketsSent: 130, PacketsAcked: 14,
+		StartTime: time.Now().Add(-32 * time.Millisecond), EndTime: time.Now(),
+		FirstPacketNumber: 100, LastPacketNumber: 229,
+	}
+
+	sender.processCompletedMI(mi)
+
+	est := sender.bwEst.estimate()
+	if est > 10_000_000 {
+		t.Errorf("bwEst should have reset to ~5M after BW drop, got %.0f", est)
+	}
+	if sender.state.CurrentRate > 10_000_000 {
+		t.Errorf("rate should have dropped to ~5M, got %.0f", sender.state.CurrentRate)
+	}
+}
+
+func TestBWAnchored_FullCycle(t *testing.T) {
+	sender := NewCCSenderGFWMode(500_000_000)
+	mockRTT := &mockRTTStatsProvider{smoothedRTT: 16 * time.Millisecond}
+	sender.SetRTTStatsProvider(mockRTT)
+
+	sender.bwEst.addSample(10_000_000)
+	sender.bwEst.addSample(10_000_000)
+	sender.bwPhase = bwPhaseCruise
+	sender.bwCruiseRemain = 1
+	sender.state.Mode = K2CCModeDecision
+	sender.state.CurrentRate = 9_500_000
+
+	makeMI := func(id uint64, bytesAcked uint64) *MonitorInterval {
+		bytesLost := uint64(1472) // 1 packet lost
+		return &MonitorInterval{
+			ID: id, TargetRate: sender.state.CurrentRate,
+			BytesSent: bytesAcked + bytesLost, BytesAcked: bytesAcked, BytesLost: bytesLost,
+			PacketsSent: uint64(bytesAcked/1472) + 1, PacketsAcked: uint64(bytesAcked / 1472),
+			StartTime: time.Now().Add(-32 * time.Millisecond), EndTime: time.Now(),
+			FirstPacketNumber: int64(id * 20), LastPacketNumber: int64(id*20 + 19),
+		}
+	}
+
+	// Last Cruise MI → should transition to ProbeUp
+	sender.processCompletedMI(makeMI(1, 38000))
+	if sender.bwPhase != bwPhaseProbeUp {
+		t.Errorf("after last Cruise MI, expected ProbeUp, got %d", sender.bwPhase)
+	}
+
+	// ProbeUp MI → should transition to Drain
+	sender.processCompletedMI(makeMI(2, 38000))
+	if sender.bwPhase != bwPhaseDrain {
+		t.Errorf("after ProbeUp MI, expected Drain, got %d", sender.bwPhase)
+	}
+
+	// Drain MI → should transition to Cruise with cruiseRemain=6
+	sender.processCompletedMI(makeMI(3, 30000))
+	if sender.bwPhase != bwPhaseCruise {
+		t.Errorf("after Drain MI, expected Cruise, got %d", sender.bwPhase)
+	}
+	if sender.bwCruiseRemain != bwCruiseLength {
+		t.Errorf("expected cruiseRemain=%d, got %d", bwCruiseLength, sender.bwCruiseRemain)
+	}
+}
+
+func TestBWAnchored_BGLossDetection(t *testing.T) {
+	sender := NewCCSenderGFWMode(500_000_000)
+	mockRTT := &mockRTTStatsProvider{smoothedRTT: 16 * time.Millisecond}
+	sender.SetRTTStatsProvider(mockRTT)
+
+	sender.bwEst.addSample(5_000_000)
+	sender.bwEst.addSample(5_000_000)
+	sender.bwPhase = bwPhaseDrain
+	sender.state.Mode = K2CCModeDecision
+	sender.state.CurrentRate = 3_750_000
+
+	mi := &MonitorInterval{
+		ID: 10, TargetRate: 3_750_000,
+		BytesSent: 15000, BytesAcked: 14250, BytesLost: 750,
+		PacketsSent: 11, PacketsAcked: 10,
+		StartTime: time.Now().Add(-32 * time.Millisecond), EndTime: time.Now(),
+		FirstPacketNumber: 100, LastPacketNumber: 110,
+	}
+
+	sender.processCompletedMI(mi)
+
+	if sender.bgLossEWMA < 0.005 {
+		t.Errorf("expected bgLossEWMA > 0.5%% after drain with loss, got %.3f%%", sender.bgLossEWMA*100)
+	}
+}
+
+func TestBWAnchored_FallbackToPCC(t *testing.T) {
+	sender := NewCCSenderGFWMode(500_000_000)
+	mockRTT := &mockRTTStatsProvider{smoothedRTT: 100 * time.Millisecond}
+	sender.SetRTTStatsProvider(mockRTT)
+
+	// bwEst NOT valid → PCC gradient path
+	sender.state.Mode = K2CCModeDecision
+	sender.state.CurrentRate = 50_000_000
+	sender.state.hasLastUtility = true
+	sender.state.lastUtility = 10.0
+
+	mi := &MonitorInterval{
+		ID: 5, TargetRate: 50_000_000,
+		BytesSent: 50000, BytesAcked: 45000, BytesLost: 5000,
+		PacketsSent: 35, PacketsAcked: 31,
+		StartTime: time.Now().Add(-100 * time.Millisecond), EndTime: time.Now(),
+		FirstPacketNumber: 100, LastPacketNumber: 134,
+	}
+
+	sender.processCompletedMI(mi)
+
+	// Should NOT have entered BW-anchored — bwEst gets 1 sample from this MI
+	// but needs 2 for valid. So PCC path ran.
+	if sender.bwPhase != bwPhaseCruise {
+		t.Errorf("with invalid bwEst, should stay in default phase")
+	}
+	if !sender.state.hasLastUtility {
+		t.Error("PCC path should have set hasLastUtility")
+	}
 }
