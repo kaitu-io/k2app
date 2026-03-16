@@ -416,6 +416,7 @@ func TestHandleUDP_DNSCache_Hit(t *testing.T) {
 
 	h := NewProxyHandler()
 	h.AllowPrivateIP = true
+	h.dnsUpstream = fakeDNS.LocalAddr().String()
 
 	// Query 1: cache miss → upstream
 	resp1 := sendDNSViaHandler(t, h, fakeDNS.LocalAddr().String(), buildDNSQuery(t, "example.com.", dns.TypeA, 1001))
@@ -446,6 +447,7 @@ func TestHandleUDP_DNSCache_DifferentDomains(t *testing.T) {
 
 	h := NewProxyHandler()
 	h.AllowPrivateIP = true
+	h.dnsUpstream = fakeDNS.LocalAddr().String()
 
 	sendDNSViaHandler(t, h, fakeDNS.LocalAddr().String(), buildDNSQuery(t, "a.com.", dns.TypeA, 1))
 	sendDNSViaHandler(t, h, fakeDNS.LocalAddr().String(), buildDNSQuery(t, "b.com.", dns.TypeA, 2))
@@ -528,6 +530,42 @@ func TestResolveAddr_IPv6(t *testing.T) {
 	}
 	if resolved != "[::1]:443" {
 		t.Fatalf("got %q, want [::1]:443", resolved)
+	}
+}
+
+func TestNewProxyHandler_SystemResolver(t *testing.T) {
+	h := NewProxyHandler()
+	if h.dnsUpstream != "127.0.0.11:53" {
+		t.Fatalf("dnsUpstream = %q, want 127.0.0.11:53", h.dnsUpstream)
+	}
+}
+
+func TestHandleUDP_DNS_UsesSystemResolver(t *testing.T) {
+	// Start a fake DNS server (simulates system resolver).
+	var systemCalls atomic.Int32
+	systemDNS := startFakeDNSServer(t, &systemCalls)
+	defer systemDNS.Close()
+
+	// Start another fake DNS server (simulates client-specified upstream).
+	var clientCalls atomic.Int32
+	clientDNS := startFakeDNSServer(t, &clientCalls)
+	defer clientDNS.Close()
+
+	h := NewProxyHandler()
+	h.AllowPrivateIP = true
+	h.dnsUpstream = systemDNS.LocalAddr().String() // override to fake system resolver
+
+	// Client sends DNS to "clientDNS" addr, but server should use systemDNS.
+	resp := sendDNSViaHandler(t, h, clientDNS.LocalAddr().String(), buildDNSQuery(t, "test.example.", dns.TypeA, 2001))
+	if resp.Rcode != dns.RcodeSuccess {
+		t.Fatalf("got %s", dns.RcodeToString[resp.Rcode])
+	}
+
+	if systemCalls.Load() != 1 {
+		t.Errorf("system resolver calls = %d, want 1", systemCalls.Load())
+	}
+	if clientCalls.Load() != 0 {
+		t.Errorf("client-specified upstream calls = %d, want 0", clientCalls.Load())
 	}
 }
 

@@ -114,6 +114,7 @@ type ProxyHandler struct {
 	conns          connTracker
 	dnsCache       *k2dns.DNSCache // shared DNS cache for port-53 UDP
 	resolver       *Resolver
+	dnsUpstream    string // system DNS upstream (default: Docker resolver)
 }
 
 // Global DNS servers for server-side domain resolution.
@@ -137,6 +138,7 @@ func NewProxyHandler() *ProxyHandler {
 		conns:       connTracker{conns: make(map[io.Closer]struct{})},
 		dnsCache:    cache,
 		resolver:    NewResolver(cache, k2dns.NewDirectDNSClient(defaultResolverServers)),
+		dnsUpstream: "127.0.0.11:53",
 	}
 }
 
@@ -294,21 +296,17 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 func (h *ProxyHandler) handleDNSUDP(conn net.PacketConn, addr string) {
 	defer conn.Close()
 
-	resolvedAddr, err := h.resolveAddr(addr)
+	// Use system resolver instead of client-specified upstream.
+	upstream := h.dnsUpstream
+	targetAddr, err := net.ResolveUDPAddr("udp4", upstream)
 	if err != nil {
-		slog.Error("server: DNS UDP resolve domain", "addr", addr, "err", err)
-		return
-	}
-
-	targetAddr, err := net.ResolveUDPAddr("udp4", resolvedAddr)
-	if err != nil {
-		slog.Error("server: DNS UDP resolve", "addr", resolvedAddr, "err", err)
+		slog.Error("server: DNS UDP resolve", "upstream", upstream, "err", err)
 		return
 	}
 
 	target, err := net.DialUDP("udp4", nil, targetAddr)
 	if err != nil {
-		slog.Error("server: DNS UDP dial", "addr", addr, "err", err)
+		slog.Error("server: DNS UDP dial", "upstream", upstream, "err", err)
 		return
 	}
 	defer target.Close()
@@ -366,7 +364,7 @@ func (h *ProxyHandler) handleDNSUDP(conn net.PacketConn, addr string) {
 			}
 
 			// Cache miss — track and forward.
-			slog.Info("DIAG: dns-cache-miss", "domain", domain, "qtype", qtype, "upstream", addr)
+			slog.Info("DIAG: dns-cache-miss", "domain", domain, "qtype", qtype, "upstream", upstream, "clientAddr", addr)
 			pendingMu.Lock()
 			pending[query.Id] = &pendingQuery{domain: domain, qtype: qtype, sentAt: time.Now()}
 			pendingMu.Unlock()
@@ -404,9 +402,9 @@ func (h *ProxyHandler) handleDNSUDP(conn net.PacketConn, addr string) {
 			if ok && !resp.Truncated {
 				h.dnsCache.Add(pq.domain, pq.qtype, &resp)
 				rttMs := time.Since(pq.sentAt).Milliseconds()
-				slog.Info("DIAG: dns-upstream-ok", "domain", pq.domain, "qtype", pq.qtype, "rcode", resp.Rcode, "rttMs", rttMs, "upstream", addr)
+				slog.Info("DIAG: dns-upstream-ok", "domain", pq.domain, "qtype", pq.qtype, "rcode", resp.Rcode, "rttMs", rttMs, "upstream", upstream)
 				if rttMs > 500 {
-					slog.Warn("DIAG: dns-upstream-slow", "domain", pq.domain, "qtype", pq.qtype, "rttMs", rttMs, "upstream", addr)
+					slog.Warn("DIAG: dns-upstream-slow", "domain", pq.domain, "qtype", pq.qtype, "rttMs", rttMs, "upstream", upstream)
 				}
 			}
 		}
@@ -415,8 +413,10 @@ func (h *ProxyHandler) handleDNSUDP(conn net.PacketConn, addr string) {
 		_, werr := conn.WriteTo(buf[:n], nil)
 		writeToMu.Unlock()
 		if werr != nil {
+			slog.Warn("DIAG: dns-stream-write-fail", "addr", addr, "err", werr, "len", n)
 			break
 		}
+		slog.Debug("DIAG: dns-stream-write-ok", "addr", addr, "len", n)
 	}
 	udpBufPool.Put(bp)
 
