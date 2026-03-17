@@ -3,6 +3,7 @@ set -euo pipefail
 
 # Kaitu Linux Desktop Installer
 # Usage: curl -fsSL https://kaitu.io/install-linux.sh | sudo bash
+#        curl -fsSL https://kaitu.io/install-linux.sh | sudo bash -s -- --channel=stable
 #
 # Installs:
 #   - /opt/kaitu/Kaitu.AppImage (GUI app)
@@ -62,8 +63,29 @@ check_webkit2gtk() {
   error "Install webkit2gtk-4.1 and re-run this script."
 }
 
+check_libfuse2() {
+  if ldconfig -p 2>/dev/null | grep -q "libfuse.so.2"; then
+    return 0
+  fi
+
+  echo ""
+  echo "libfuse2 is required to run AppImage but not installed."
+  echo ""
+  echo "Install it for your distribution:"
+  echo "  Ubuntu 22.04:   sudo apt install libfuse2"
+  echo "  Ubuntu 24.04:   sudo apt install libfuse2t64"
+  echo "  Fedora:         sudo dnf install fuse-libs"
+  echo "  Arch:           sudo pacman -S fuse2"
+  echo ""
+  error "Install libfuse2 and re-run this script."
+}
+
 get_latest_version() {
-  local manifest_url="${CDN_BASE}/desktop/cloudfront.latest.json"
+  local manifest_path="desktop"
+  if [ "$CHANNEL" = "beta" ]; then
+    manifest_path="desktop/beta"
+  fi
+  local manifest_url="${CDN_BASE}/${manifest_path}/cloudfront.latest.json"
   local version
   version=$(curl -fsSL "$manifest_url" 2>/dev/null | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
   if [ -z "$version" ]; then
@@ -75,6 +97,18 @@ get_latest_version() {
 # --- Main ---
 
 check_root
+
+# Channel selection (default: beta during beta phase)
+CHANNEL="beta"
+for arg in "$@"; do
+  case "$arg" in
+    --channel=*) CHANNEL="${arg#*=}" ;;
+  esac
+done
+if [ "$CHANNEL" != "stable" ] && [ "$CHANNEL" != "beta" ]; then
+  error "Invalid channel '${CHANNEL}'. Must be 'stable' or 'beta'."
+fi
+
 ARCH=$(detect_arch)
 info "Detected architecture: ${ARCH}"
 
@@ -84,6 +118,7 @@ if [ "$ARCH" != "amd64" ]; then
 fi
 
 check_webkit2gtk
+check_libfuse2
 
 VERSION=$(get_latest_version)
 info "Latest version: ${VERSION}"
@@ -97,7 +132,7 @@ chmod +x "${INSTALL_DIR}/Kaitu.AppImage"
 
 # Download k2 binary
 info "Downloading k2 daemon..."
-curl -fSL "${CDN_BASE}/k2/${VERSION}/k2-linux-amd64" \
+curl -fSL "${CDN_BASE}/desktop/${VERSION}/k2-linux-amd64" \
   -o "${INSTALL_DIR}/k2"
 chmod +x "${INSTALL_DIR}/k2"
 
