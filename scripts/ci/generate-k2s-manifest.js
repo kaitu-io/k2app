@@ -13,7 +13,7 @@ const path = require('path');
 
 const CLOUDFRONT = 'https://d13jc1jqzlg4yt.cloudfront.net/kaitu/k2';
 const D0 = 'https://d0.all7.cc/kaitu/k2';
-const PLATFORMS = ['linux-amd64', 'linux-arm64', 'darwin-amd64', 'darwin-arm64'];
+const PLATFORMS = ['linux-amd64', 'linux-arm64'];
 
 const [version, checksumsFile, outDir] = process.argv.slice(2);
 
