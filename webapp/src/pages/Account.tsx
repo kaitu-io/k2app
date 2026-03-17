@@ -76,7 +76,13 @@ export default function Account() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   useEffect(() => {
-    setAppVersion(window._platform!.version);
+    let version = window._platform!.version;
+    // iOS App Store 审核要求：版本号不能包含 beta 后缀（如 0.4.0-beta.4），
+    // 否则会被视为未完成的测试版本而被拒绝。仅影响显示，不影响实际版本逻辑。
+    if (window._platform?.os === 'ios') {
+      version = version.replace(/-beta.*$/, '');
+    }
+    setAppVersion(version);
   }, []);
 
   const maskEmail = (email: string) => {
