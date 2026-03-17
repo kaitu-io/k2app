@@ -1,12 +1,15 @@
-# dl.kaitu.io 下载域名迁移
+# dl.kaitu.io 下载域名迁移 + 统一安装脚本
 
 ## 背景
 
 安装包托管在 S3 bucket `d0.all7.cc`，通过 CloudFront `d13jc1jqzlg4yt.cloudfront.net` 分发。用户下载时浏览器显示第三方 CDN 域名，Windows SmartScreen 对非官网域名的下载信任度较低，容易触发拦截警告。
 
+同时，Linux 安装脚本 `scripts/install-linux.sh` 未部署到 `web/public/`，且 macOS 缺少命令行安装方式。需要统一为 `kaitu.io/i/k2`。
+
 ## 目标
 
-将用户手动下载链接从 CDN 域名改为 `dl.kaitu.io`（与官网同根域），提升 SmartScreen 信任度，减少用户困扰。
+1. 将用户手动下载链接从 CDN 域名改为 `dl.kaitu.io`（与官网同根域），提升 SmartScreen 信任度，减少用户困扰。
+2. 创建统一安装脚本 `web/public/i/k2`，根据 OS 自动分流安装桌面客户端。
 
 ## 覆盖范围
 
@@ -58,6 +61,71 @@ dl.kaitu.io/kaitu/guides/*.pdf                          # PDF guides
 
 `d0.all7.cc` 作为 S3 bucket origin 继续存在，但不再出现在用户可见的下载链接中。
 
+## 统一安装脚本 `web/public/i/k2`
+
+### 现状
+- `web/public/install.sh` — 旧版 k2/k2s CLI 安装脚本（只装 binary 到 `/usr/local/bin/`）
+- `web/public/i/k2s` — k2s 服务端安装脚本（独立文件）
+- `scripts/install-linux.sh` — Linux 桌面安装脚本（AppImage + daemon + systemd），**未部署**到 web/public/
+- `web/public/i/k2` — **不存在**，但 `install.sh` 帮助信息已指向此路径
+
+### 设计
+
+创建 `web/public/i/k2` 作为桌面客户端统一安装入口：
+
+```
+curl -fsSL https://kaitu.io/i/k2 | sudo bash
+```
+
+脚本内部通过 `uname -s` 判断 OS，分流处理：
+
+| OS | 行为 |
+|---|---|
+| Linux | 下载 AppImage + k2 daemon，安装 systemd service，创建 desktop entry（合并自 `scripts/install-linux.sh`）|
+| macOS | 下载 PKG，通过 `installer -pkg` 安装 |
+| Windows | 不适用（`curl \| bash` 不是 Windows 场景）|
+
+Windows 用户通过网站 install 页面下载 EXE，浏览器直接触发下载。
+
+### 脚本结构
+
+```bash
+#!/bin/sh
+set -e
+
+CDN_PRIMARY="https://dl.kaitu.io/kaitu"
+CDN_FALLBACK="https://d13jc1jqzlg4yt.cloudfront.net/kaitu"
+
+detect_platform()  # uname -s → linux/darwin, uname -m → amd64/arm64
+
+get_latest_version()  # 从 CDN manifest 获取最新版本
+
+install_linux()
+  # 检查 webkit2gtk-4.1, libfuse2
+  # 下载 AppImage → /opt/kaitu/Kaitu.AppImage
+  # 下载 k2 daemon → /opt/kaitu/k2, symlink /usr/local/bin/k2
+  # 安装 systemd service (k2 service install)
+  # 创建 desktop entry
+  # 创建 kaitu-uninstall
+
+install_macos()
+  # 下载 PKG → /tmp/
+  # installer -pkg /tmp/Kaitu_xxx.pkg -target /
+  # 清理临时文件
+
+main()
+  detect_platform
+  get_latest_version
+  case $OS in
+    linux)  install_linux ;;
+    darwin) install_macos ;;
+  esac
+```
+
+### 废弃
+- `scripts/install-linux.sh` — 逻辑合并到 `web/public/i/k2` 后可删除
+- `web/public/install.sh` — 保留作为旧 URL 兼容（`kaitu.io/install.sh`），帮助信息已指向新路径
+
 ## 代码变更
 
 ### web/src/lib/constants.ts
@@ -85,17 +153,13 @@ const CDN_PRIMARY = 'https://dl.kaitu.io/kaitu/desktop';
 const CDN_BACKUP = 'https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop';
 ```
 
-### scripts/install-linux.sh
-添加 fallback 变量（原脚本只有一个 CDN，无容错）：
-```bash
-# Before
-CDN_BASE="https://d0.all7.cc/kaitu"
+### web/public/i/k2（新建）
+统一桌面客户端安装脚本，合并 `scripts/install-linux.sh` 的 Linux 逻辑 + 新增 macOS PKG 安装。
+使用 `dl.kaitu.io` 作为 primary CDN，`d13jc1jqzlg4yt.cloudfront.net` 作为 fallback。
+详见上方「统一安装脚本」章节。
 
-# After
-CDN_PRIMARY="https://dl.kaitu.io/kaitu"
-CDN_FALLBACK="https://d13jc1jqzlg4yt.cloudfront.net/kaitu"
-```
-脚本内所有 `${CDN_BASE}` 引用改为先尝试 `CDN_PRIMARY`，失败回退 `CDN_FALLBACK`。
+### scripts/install-linux.sh（删除）
+逻辑已合并到 `web/public/i/k2`，删除此文件。
 
 ### web/public/install.sh
 ```bash
