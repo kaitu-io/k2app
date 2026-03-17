@@ -4,6 +4,13 @@
 ; CRITICAL: PREINSTALL must fully stop k2.exe process and release file lock
 ; before NSIS copies new files. Diagnostic log: $TEMP\kaitu-preinstall.log
 
+; StrFunc declarations — StrFunc.nsh is already included by Tauri's built-in
+; template before this hooks file. Declare StrRep (installer) + UnStrRep
+; (uninstaller), then ${Using:StrFunc} so UnStrRep works inside !macro.
+${StrRep}
+${UnStrRep}
+${Using:StrFunc} UnStrRep
+
 ; ============================================================================
 ; Configuration - Replace these values as needed
 ; ============================================================================

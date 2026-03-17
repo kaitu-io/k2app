@@ -51,3 +51,5 @@ Thumbs.db
 
 # Capacitor plugin build cache
 mobile/plugins/k2-plugin/android/.gradle/
+
+.worktrees/
