@@ -44,12 +44,13 @@ export class PulseRenderer {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   tick(timestamp: number, _progress: number): void {
     if (this.startTime === 0) this.startTime = timestamp
     const time = (timestamp - this.startTime) / 1000
     const cycleTime = time % CYCLE_SECONDS
     const phase = cycleTime / CYCLE_SECONDS
-    const { ctx, config } = this
+    const { ctx } = this
 
     // --- Clear ---
     ctx.save()

@@ -1,13 +1,9 @@
 'use client'
 
-import { useRef, useEffect, useCallback } from 'react'
+import { useRef, useEffect } from 'react'
 import { BREAKPOINTS } from './constants'
-import { useAudioBurst } from './useAudioBurst'
 import { PulseRenderer } from './renderer'
 import type { RenderConfig } from './types'
-
-/** Cycle duration in seconds */
-const CYCLE_DURATION = 12
 
 function getRenderConfig(width: number, height: number): RenderConfig {
   const isMobile = width < BREAKPOINTS.mobile
@@ -32,11 +28,6 @@ function getRenderConfig(width: number, height: number): RenderConfig {
 export function K2ccPulseCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rafRef = useRef<number>(0)
-  const { ensureContext, checkTrigger } = useAudioBurst()
-
-  const handleInteraction = useCallback(() => {
-    ensureContext()
-  }, [ensureContext])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -99,22 +90,13 @@ export function K2ccPulseCanvas() {
 
     // Visibility
     let paused = false
-    document.addEventListener('visibilitychange', () => { paused = document.hidden })
+    const handleVisibility = () => { paused = document.hidden }
+    document.addEventListener('visibilitychange', handleVisibility)
 
-    // Audio activation
-    window.addEventListener('click', handleInteraction, { once: true })
-    window.addEventListener('scroll', handleInteraction, { once: true, passive: true })
-    window.addEventListener('touchstart', handleInteraction, { once: true })
-
-    // Time-driven cycle: progress = time % cycleDuration / cycleDuration
-    let prevProgress = 0
+    // rAF loop — time-driven, no scroll dependency
     const tick = (timestamp: number) => {
       if (!paused) {
-        const timeSeconds = timestamp / 1000
-        const progress = (timeSeconds % CYCLE_DURATION) / CYCLE_DURATION
-        renderer.tick(timestamp, progress)
-        checkTrigger(progress, prevProgress)
-        prevProgress = progress
+        renderer.tick(timestamp, 0)
       }
       rafRef.current = requestAnimationFrame(tick)
     }
@@ -123,9 +105,10 @@ export function K2ccPulseCanvas() {
     return () => {
       cancelAnimationFrame(rafRef.current)
       observer.disconnect()
+      document.removeEventListener('visibilitychange', handleVisibility)
       clearTimeout(resizeTimer)
     }
-  }, [checkTrigger, handleInteraction])
+  }, [])
 
   return (
     <canvas
