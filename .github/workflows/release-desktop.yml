@@ -374,9 +374,13 @@ jobs:
         run: |
           VERSION=$(node -p "require('./package.json').version")
           S3_BASE="s3://d0.all7.cc/kaitu/desktop/${VERSION}"
+          # Upload AppImage + signature
           aws s3 cp "release/${VERSION}/" "${S3_BASE}/" --recursive \
             --exclude "*" \
             --include "*.AppImage" --include "*.AppImage.sig"
+          # Upload k2 binary alongside AppImage (used by install-linux.sh)
+          aws s3 cp "desktop/src-tauri/binaries/k2-x86_64-unknown-linux-gnu" \
+            "${S3_BASE}/k2-linux-amd64"
 
       - name: Invalidate CloudFront CDN cache
         if: success()
