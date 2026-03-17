@@ -36,6 +36,9 @@ CHANNEL=""
 CDN_PRIMARY="https://d13jc1jqzlg4yt.cloudfront.net/kaitu"
 APPSTORE_URL="https://apps.apple.com/app/id6759199298"
 
+# Read min native version from webapp package.json (optional field)
+MIN_NATIVE=$(node -p "require('./webapp/package.json').minNativeVersion || ''" 2>/dev/null || echo "")
+
 # Parse arguments
 shift || true
 for arg in "$@"; do
@@ -170,6 +173,13 @@ generate_manifest() {
     # Relative URL: VERSION/filename (resolved against manifest baseURL by client)
     local rel_url="${VERSION}/${filename}"
 
+    # Build optional min_native field (for web OTA compatibility check)
+    local min_native_field=""
+    if [ -n "$MIN_NATIVE" ]; then
+        min_native_field=",
+  \"min_native\": \"${MIN_NATIVE}\""
+    fi
+
     # Generate latest.json
     local manifest="$WORK_TMPDIR/${channel}-latest.json"
     cat > "$manifest" <<MANIFEST_EOF
@@ -178,7 +188,7 @@ generate_manifest() {
   "url": "${rel_url}",
   "hash": "${hash}",
   "size": ${size},
-  "released_at": "${RELEASED_AT}"${extra_fields}
+  "released_at": "${RELEASED_AT}"${min_native_field}${extra_fields}
 }
 MANIFEST_EOF
 
