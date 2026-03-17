@@ -23,6 +23,7 @@ import org.json.JSONObject
 import appext.Appext
 import appext.Engine
 import appext.EventHandler as AppextEventHandler
+import engine.NetEvent
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -347,8 +348,19 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector {
                                 Log.e(TAG, "onAvailable: engine.wake() failed: ${e.message}", e)
                             }
                         }
-                        Log.d(TAG, "Triggering engine network change reset")
-                        engine?.onNetworkChanged()
+                        Log.d(TAG, "Triggering engine network available")
+                        val caps = cm.getNetworkCapabilities(network)
+                        val lp = cm.getLinkProperties(network)
+                        val event = NetEvent().apply {
+                            signal = "available"
+                            interfaceName = lp?.interfaceName ?: ""
+                            isWifi = caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+                            isCellular = caps?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true
+                            hasIPv4 = lp?.linkAddresses?.any { it.address is java.net.Inet4Address } == true
+                            hasIPv6 = lp?.linkAddresses?.any { it.address is java.net.Inet6Address } == true
+                            source = "connectivity"
+                        }
+                        engine?.notifyNetEvent(event)
                     }
                 }
                 pendingNetworkChange = runnable
@@ -362,7 +374,11 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector {
                 pendingNetworkChange = null
                 // Run gomobile call off main thread
                 engineExecutor.execute {
-                    engine?.onNetworkChanged()
+                    val event = NetEvent().apply {
+                        signal = "unavailable"
+                        source = "connectivity"
+                    }
+                    engine?.notifyNetEvent(event)
                 }
             }
         }
