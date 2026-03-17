@@ -18,9 +18,6 @@
     "downloadFailedMessage": "自动下载失败，请尝试手动下载。",
     "manualDownload": "手动下载",
     "retryAutoDownload": "重试自动下载",
-    "mobileComingSoon": "移动应用即将推出",
-    "platformDevelopment": "{platform} 版本目前正在开发中",
-    "useDesktopVersion": "请暂时使用桌面版本",
     "allDownloadOptions": "所有下载选项",
     "windows": "Windows",
     "windowsVersion": "Windows 10/11",
@@ -30,11 +27,8 @@
     "downloadDmg": "苹果电脑版",
     "ios": "iPhone / iPad",
     "iosDevices": "iPhone 和 iPad",
-    "appStore": "iPhone / iPad",
     "android": "安卓",
     "androidVersion": "Android 7.0+",
-    "downloadApk": "安卓手机版",
-    "comingSoon": "即将推出",
     "needHelp": "需要帮助？",
     "helpBrowserBlock": "• 如果浏览器阻止下载，请允许从此网站下载",
     "helpWindowsInstall": "• 在 Windows 上，您可能需要通过 Windows Defender 允许该应用",
@@ -46,9 +40,6 @@
     "lookingForStable": "需要稳定版本？",
     "viewAllReleases": "查看所有版本 →",
     "backupDownload": "备用下载",
-    "waymakerApp": "开路者",
-    "waymakerNote": "当前为开路者 (Waymaker) 应用",
-    "kaituMobileComingSoon": "开途移动版即将推出",
     "latestVersion": "最新版本 v{version}",
     "recommended": "推荐",
     "downloadCancelled": "自动下载已取消",
@@ -62,6 +53,60 @@
     "copied": "已复制",
     "beta": "公测版",
     "alsoAvailableStable": "也可以下载稳定版 v{version}",
-    "linuxCliRecommended": "推荐使用命令行安装，自动检查依赖"
+    "linuxCliRecommended": "推荐使用命令行安装，自动检查依赖",
+    "otherPlatforms": "其他平台",
+    "terminalInstall": "或通过终端一键安装",
+    "downloadButton": "下载安装包",
+    "mobileDownloads": "移动端",
+    "kaituIos": "开途 iOS 版",
+    "kaituAndroid": "开途安卓版",
+    "heroTitle": {
+      "windows": "为你的 Windows 准备好了",
+      "macos": "为你的 Mac 准备好了",
+      "linux": "为你的 Linux 准备好了",
+      "ios": "开途 iOS 版",
+      "android": "开途安卓版",
+      "unknown": "选择你的平台"
+    },
+    "installSteps": {
+      "title": "安装步骤",
+      "windows": {
+        "1": "打开下载的 .exe 安装文件",
+        "2": "如果提示「Windows 已保护你的电脑」，点击「更多信息」→「仍要运行」",
+        "3": "按提示完成安装，首次启动需要管理员权限"
+      },
+      "macos": {
+        "1": "打开下载的 .pkg 安装文件",
+        "2": "按提示完成安装",
+        "3": "首次打开时，在「系统设置 → 隐私与安全性」中允许系统扩展"
+      },
+      "linux": {
+        "1": "给 AppImage 添加执行权限：chmod +x Kaitu_*.AppImage",
+        "2": "双击运行或在终端执行 ./Kaitu_*.AppImage",
+        "3": "推荐使用命令行安装以自动处理依赖"
+      },
+      "android": {
+        "1": "在「设置 → 安全」中允许安装未知来源应用",
+        "2": "打开下载的 APK 文件完成安装"
+      }
+    },
+    "faq": {
+      "browserBlock": {
+        "question": "浏览器阻止了下载怎么办？",
+        "answer": "部分浏览器会拦截 .exe 或 .pkg 文件的下载。请在浏览器下载栏中选择「保留」或「仍要下载」。如果使用 Chrome，可以在下载页面（chrome://downloads）找到被拦截的文件。"
+      },
+      "windowsSmartScreen": {
+        "question": "Windows 提示「已保护你的电脑」怎么办？",
+        "answer": "这是 Windows SmartScreen 对新应用的默认提示。点击「更多信息」，然后点击「仍要运行」即可。开途客户端已通过 EV 代码签名，安装后不会再出现此提示。"
+      },
+      "macosGatekeeper": {
+        "question": "macOS 提示「无法验证开发者」怎么办？",
+        "answer": "首次安装后，打开「系统设置 → 隐私与安全性」，在底部找到关于开途的提示，点击「仍要打开」。后续启动不会再提示。如需启用系统扩展（VPN 模式），系统会引导你到「隐私与安全性 → 通用」中允许。"
+      },
+      "security": {
+        "question": "开途客户端安全吗？",
+        "answer": "开途客户端已通过 Apple 公证和 Windows EV 代码签名。所有安装包通过 HTTPS 分发，可验证 SHA-256 校验和。k2 协议核心代码计划开源。"
+      }
+    }
   }
 }

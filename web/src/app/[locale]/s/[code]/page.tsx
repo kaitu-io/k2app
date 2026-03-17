@@ -4,10 +4,11 @@ import { routing } from '@/i18n/routing';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import InviteClient from '@/app/[locale]/s/[code]/InviteClient';
+import { fetchAllDownloadLinks, flattenToRecord } from '@/lib/downloads';
 
 type Locale = (typeof routing.locales)[number];
 
-export const dynamic = 'force-static';
+export const revalidate = 300;
 
 export async function generateMetadata({
   params,
@@ -32,6 +33,8 @@ export default async function InvitePage({
   const locale = rawLocale as Locale;
   setRequestLocale(locale);
 
+  const all = await fetchAllDownloadLinks();
+
   return (
     <div className="min-h-screen">
       <Header />
@@ -49,7 +52,7 @@ export default async function InvitePage({
           '--ring': '#4f46e5',
         } as React.CSSProperties}
       >
-        <InviteClient code={code} />
+        <InviteClient code={code} downloadLinks={flattenToRecord(all)} />
       </div>
       <Footer />
     </div>

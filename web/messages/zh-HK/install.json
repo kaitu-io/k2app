@@ -18,9 +18,6 @@
     "downloadFailedMessage": "自動下載失敗，請嘗試手動下載。",
     "manualDownload": "手動下載",
     "retryAutoDownload": "重試自動下載",
-    "mobileComingSoon": "流動應用即將推出",
-    "platformDevelopment": "{platform} 版本目前正在開發中",
-    "useDesktopVersion": "請暫時使用桌面版本",
     "allDownloadOptions": "所有下載選項",
     "windows": "Windows",
     "windowsVersion": "Windows 10/11",
@@ -30,11 +27,8 @@
     "downloadDmg": "蘋果電腦版",
     "ios": "iPhone / iPad",
     "iosDevices": "iPhone 同 iPad",
-    "appStore": "iPhone / iPad",
     "android": "安卓",
     "androidVersion": "Android 7.0+",
-    "downloadApk": "安卓手機版",
-    "comingSoon": "即將推出",
     "needHelp": "需要幫助？",
     "helpBrowserBlock": "• 如果瀏覽器阻止下載，請允許從此網站下載",
     "helpWindowsInstall": "• 喺 Windows 上，您可能需要透過 Windows Defender 允許該應用",
@@ -46,9 +40,6 @@
     "lookingForStable": "需要穩定版本？",
     "viewAllReleases": "查看所有版本 →",
     "backupDownload": "備用下載",
-    "waymakerApp": "開路者",
-    "waymakerNote": "當前為開路者 (Waymaker) 應用",
-    "kaituMobileComingSoon": "開途移動版即將推出",
     "latestVersion": "最新版本 v{version}",
     "recommended": "推薦",
     "downloadCancelled": "自動下載已取消",
@@ -56,12 +47,66 @@
     "metaDescription": "下載開途 k2cc 客戶端 — 支援 Windows、macOS、iOS、安卓。k2cc 自適應速率控制，高丟包依然滿速的隱身隧道。",
     "linux": "Linux",
     "linuxVersion": "Ubuntu / Fedora / Arch",
-    "downloadAppImage": "Linux Desktop",
-    "cliInstall": "Or install via command line",
+    "downloadAppImage": "Linux 桌面版",
+    "cliInstall": "或透過命令列安裝",
     "cliCommand": "curl -fsSL https://kaitu.io/i/k2 | sudo bash",
-    "copied": "Copied",
-    "beta": "Beta",
-    "alsoAvailableStable": "Stable version v{version} also available",
-    "linuxCliRecommended": "CLI install recommended — auto-checks dependencies"
+    "copied": "已複製",
+    "beta": "公測版",
+    "alsoAvailableStable": "也可以下載穩定版 v{version}",
+    "linuxCliRecommended": "推薦使用命令列安裝，自動檢查依賴",
+    "otherPlatforms": "其他平台",
+    "terminalInstall": "或透過終端一鍵安裝",
+    "downloadButton": "下載安裝包",
+    "mobileDownloads": "流動裝置",
+    "kaituIos": "開途 iOS 版",
+    "kaituAndroid": "開途安卓版",
+    "heroTitle": {
+      "windows": "為你嘅 Windows 準備好咗",
+      "macos": "為你嘅 Mac 準備好咗",
+      "linux": "為你嘅 Linux 準備好咗",
+      "ios": "開途 iOS 版",
+      "android": "開途安卓版",
+      "unknown": "揀選你嘅平台"
+    },
+    "installSteps": {
+      "title": "安裝步驟",
+      "windows": {
+        "1": "開啟下載嘅 .exe 安裝檔案",
+        "2": "如果提示「Windows 已保護你的電腦」，撳「更多資訊」→「仍要執行」",
+        "3": "按提示完成安裝，首次啟動需要管理員權限"
+      },
+      "macos": {
+        "1": "開啟下載嘅 .pkg 安裝檔案",
+        "2": "按提示完成安裝",
+        "3": "首次開啟時，喺「系統設定 → 私隱與安全性」入面允許系統延伸功能"
+      },
+      "linux": {
+        "1": "畀 AppImage 加執行權限：chmod +x Kaitu_*.AppImage",
+        "2": "雙擊執行或喺終端執行 ./Kaitu_*.AppImage",
+        "3": "推薦使用命令列安裝以自動處理依賴"
+      },
+      "android": {
+        "1": "喺「設定 → 安全性」入面允許安裝未知來源應用",
+        "2": "開啟下載嘅 APK 檔案完成安裝"
+      }
+    },
+    "faq": {
+      "browserBlock": {
+        "question": "瀏覽器阻擋咗下載點算？",
+        "answer": "部分瀏覽器會攔截 .exe 或 .pkg 檔案嘅下載。請喺瀏覽器下載列入面揀「保留」或「仍要下載」。如果用 Chrome，可以喺下載頁面（chrome://downloads）搵到被攔截嘅檔案。"
+      },
+      "windowsSmartScreen": {
+        "question": "Windows 提示「已保護你的電腦」點算？",
+        "answer": "呢個係 Windows SmartScreen 對新應用嘅預設提示。撳「更多資訊」，然後撳「仍要執行」就得。開途客戶端已通過 EV 代碼簽署，安裝後唔會再出現呢個提示。"
+      },
+      "macosGatekeeper": {
+        "question": "macOS 提示「無法驗證開發者」點算？",
+        "answer": "首次安裝後，開啟「系統設定 → 私隱與安全性」，喺底部搵到關於開途嘅提示，撳「仍要開啟」。之後啟動唔會再提示。如需啟用系統延伸功能（VPN 模式），系統會引導你到「私隱與安全性 → 一般」入面允許。"
+      },
+      "security": {
+        "question": "開途客戶端安全咩？",
+        "answer": "開途客戶端已通過 Apple 公證同 Windows EV 代碼簽署。所有安裝包透過 HTTPS 分發，可驗證 SHA-256 校驗和。k2 協議核心代碼計劃開源。"
+      }
+    }
   }
 }

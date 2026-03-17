@@ -1,9 +1,5 @@
 // Application constants and configuration
 
-// Desktop release versions from build-time environment variables (via next.config.ts)
-// DESKTOP_VERSION = stable (releaseVersion), BETA_VERSION = latest (version, may include prerelease)
-export const DESKTOP_VERSION = process.env.NEXT_PUBLIC_DESKTOP_VERSION || '0.0.0';
-export const BETA_VERSION = process.env.NEXT_PUBLIC_BETA_VERSION || '0.0.0';
 export const CDN_PRIMARY = 'https://dl.kaitu.io/kaitu/desktop';
 export const CDN_BACKUP = 'https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop';
 
@@ -24,14 +20,6 @@ export function getDownloadLinks(version: string) {
   };
 }
 
-export const DOWNLOAD_LINKS = {
-  // Desktop apps — primary CDN links (used by homepage, invite page)
-  windows: `${CDN_PRIMARY}/${BETA_VERSION}/Kaitu_${BETA_VERSION}_x64.exe`,
-  macos: `${CDN_PRIMARY}/${BETA_VERSION}/Kaitu_${BETA_VERSION}_universal.pkg`,
-  // Mobile apps
-  ios: 'https://apps.apple.com/app/id6448744655',
-  android: 'https://d13jc1jqzlg4yt.cloudfront.net/waymaker/waymaker-3.0.2-release.apk',
-} as const;
 
 export const ROUTER_PRODUCTS = {
   k2Mini: {

@@ -18,9 +18,6 @@
     "downloadFailedMessage": "自動ダウンロードに失敗しました。手動ダウンロードをお試しください。",
     "manualDownload": "手動ダウンロード",
     "retryAutoDownload": "自動ダウンロードを再試行",
-    "mobileComingSoon": "モバイルアプリ近日公開",
-    "platformDevelopment": "{platform}版は現在開発中です",
-    "useDesktopVersion": "当面はデスクトップ版をご利用ください",
     "allDownloadOptions": "すべてのダウンロードオプション",
     "windows": "Windows",
     "windowsVersion": "Windows 10/11",
@@ -30,11 +27,8 @@
     "downloadDmg": "Mac",
     "ios": "iPhone / iPad",
     "iosDevices": "iPhoneとiPad",
-    "appStore": "iPhone / iPad",
     "android": "Android",
     "androidVersion": "Android 7.0以上",
-    "downloadApk": "Android",
-    "comingSoon": "近日公開",
     "needHelp": "サポートが必要ですか？",
     "helpBrowserBlock": "• ブラウザがダウンロードをブロックする場合は、このウェブサイトからのダウンロードを許可してください",
     "helpWindowsInstall": "• Windowsでは、Windows Defenderでアプリを許可する必要がある場合があります",
@@ -46,9 +40,6 @@
     "lookingForStable": "安定版をお探しですか？",
     "viewAllReleases": "すべてのバージョンを表示 →",
     "backupDownload": "バックアップ",
-    "waymakerApp": "Waymaker",
-    "waymakerNote": "現在は Waymaker アプリです",
-    "kaituMobileComingSoon": "Kaitu モバイル版は近日公開予定",
     "latestVersion": "最新バージョン v{version}",
     "recommended": "おすすめ",
     "downloadCancelled": "自動ダウンロードがキャンセルされました",
@@ -56,12 +47,66 @@
     "metaDescription": "Kaitu k2 クライアントをダウンロード — Windows、macOS、iOS、Android 対応。k2cc 適応型レート制御で、高パケットロスでもフルスピードのステルストンネル。",
     "linux": "Linux",
     "linuxVersion": "Ubuntu / Fedora / Arch",
-    "downloadAppImage": "Linux Desktop",
-    "cliInstall": "Or install via command line",
+    "downloadAppImage": "Linux デスクトップ",
+    "cliInstall": "またはコマンドラインでインストール",
     "cliCommand": "curl -fsSL https://kaitu.io/i/k2 | sudo bash",
-    "copied": "Copied",
-    "beta": "Beta",
-    "alsoAvailableStable": "Stable version v{version} also available",
-    "linuxCliRecommended": "CLI install recommended — auto-checks dependencies"
+    "copied": "コピーしました",
+    "beta": "ベータ",
+    "alsoAvailableStable": "安定版 v{version} もダウンロード可能",
+    "linuxCliRecommended": "CLIインストール推奨 — 依存関係を自動チェック",
+    "otherPlatforms": "その他のプラットフォーム",
+    "terminalInstall": "またはターミナルでワンクリックインストール",
+    "downloadButton": "インストーラーをダウンロード",
+    "mobileDownloads": "モバイル",
+    "kaituIos": "Kaitu iOS版",
+    "kaituAndroid": "Kaitu Android版",
+    "heroTitle": {
+      "windows": "あなたのWindowsに対応",
+      "macos": "あなたのMacに対応",
+      "linux": "あなたのLinuxに対応",
+      "ios": "Kaitu iOS版",
+      "android": "Kaitu Android版",
+      "unknown": "プラットフォームを選択"
+    },
+    "installSteps": {
+      "title": "インストール手順",
+      "windows": {
+        "1": "ダウンロードした .exe インストーラーを開く",
+        "2": "「WindowsによってPCが保護されました」と表示された場合、「詳細情報」→「実行」をクリック",
+        "3": "画面の指示に従ってインストールを完了。初回起動時に管理者権限が必要です"
+      },
+      "macos": {
+        "1": "ダウンロードした .pkg インストーラーを開く",
+        "2": "画面の指示に従ってインストールを完了",
+        "3": "初回起動時、「システム設定 → プライバシーとセキュリティ」でシステム拡張機能を許可"
+      },
+      "linux": {
+        "1": "AppImageに実行権限を付与：chmod +x Kaitu_*.AppImage",
+        "2": "ダブルクリックで実行、またはターミナルで ./Kaitu_*.AppImage を実行",
+        "3": "依存関係の自動処理にはCLIインストールを推奨"
+      },
+      "android": {
+        "1": "「設定 → セキュリティ」で提供元不明のアプリのインストールを許可",
+        "2": "ダウンロードしたAPKファイルを開いてインストール"
+      }
+    },
+    "faq": {
+      "browserBlock": {
+        "question": "ブラウザがダウンロードをブロックした場合は？",
+        "answer": "一部のブラウザはデフォルトで .exe や .pkg ファイルのダウンロードをブロックします。ブラウザのダウンロードバーで「保存」または「ダウンロードを続行」を選択してください。Chromeの場合は、ダウンロードページ（chrome://downloads）でブロックされたファイルを見つけることができます。"
+      },
+      "windowsSmartScreen": {
+        "question": "Windowsが「PCが保護されました」と表示した場合は？",
+        "answer": "これはWindows SmartScreenによる新しいアプリへのデフォルトの警告です。「詳細情報」をクリックし、「実行」をクリックしてください。KaituはEVコード署名済みで、インストール後はこの警告は表示されません。"
+      },
+      "macosGatekeeper": {
+        "question": "macOSが「開発元を確認できません」と表示した場合は？",
+        "answer": "初回インストール後、「システム設定 → プライバシーとセキュリティ」を開き、下部にあるKaituに関する通知を見つけ、「このまま開く」をクリックしてください。以降の起動では表示されません。VPNモードの場合、システム拡張機能の許可に案内されます。"
+      },
+      "security": {
+        "question": "Kaituは安全ですか？",
+        "answer": "KaituはApple公証済みおよびWindows EVコード署名済みです。すべてのインストーラーはHTTPS経由で配布され、SHA-256チェックサムで検証可能です。k2プロトコルのコアコードはオープンソース化を予定しています。"
+      }
+    }
   }
 }

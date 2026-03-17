@@ -5,7 +5,6 @@ import { useTranslations } from 'next-intl';
 import { useRouter } from '@/i18n/routing';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { DOWNLOAD_LINKS } from '@/lib/constants';
 import {
   detectDevice,
   getPrimaryDownloadLink,
@@ -34,9 +33,10 @@ function setCookie(name: string, value: string, days: number = 7): void {
 
 interface InviteClientProps {
   code: string;
+  downloadLinks: Record<string, string>;
 }
 
-export default function InviteClient({ code }: InviteClientProps) {
+export default function InviteClient({ code, downloadLinks }: InviteClientProps) {
   const t = useTranslations();
   const router = useRouter();
 
@@ -75,7 +75,7 @@ export default function InviteClient({ code }: InviteClientProps) {
 
   useEffect(() => {
     const deviceInfo = detectDevice();
-    const primaryDownloadLink = getPrimaryDownloadLink(DOWNLOAD_LINKS);
+    const primaryDownloadLink = getPrimaryDownloadLink(downloadLinks);
     setDevice(deviceInfo);
     setPrimaryLink(primaryDownloadLink);
   }, []);
@@ -301,11 +301,11 @@ export default function InviteClient({ code }: InviteClientProps) {
             <Monitor className="w-8 h-8 text-indigo-600 mx-auto mb-2" />
             <h5 className="font-semibold text-foreground mb-1">{t('invite.inviteLanding.windows')}</h5>
             <p className="text-xs text-muted-foreground mb-3">{t('invite.inviteLanding.windowsVersion')}</p>
-            {DOWNLOAD_LINKS.windows ? (
+            {downloadLinks.windows ? (
               <Button
                 className="bg-card border border-border text-foreground hover:bg-muted hover:border-primary/30"
                 size="sm"
-                onClick={() => openDownloadInNewTab(DOWNLOAD_LINKS.windows)}
+                onClick={() => openDownloadInNewTab(downloadLinks.windows)}
               >
                 {t('invite.inviteLanding.download')}
               </Button>
@@ -321,11 +321,11 @@ export default function InviteClient({ code }: InviteClientProps) {
             <Monitor className="w-8 h-8 text-foreground mx-auto mb-2" />
             <h5 className="font-semibold text-foreground mb-1">{t('invite.inviteLanding.macos')}</h5>
             <p className="text-xs text-muted-foreground mb-3">{t('invite.inviteLanding.macosVersion')}</p>
-            {DOWNLOAD_LINKS.macos ? (
+            {downloadLinks.macos ? (
               <Button
                 className="bg-card border border-border text-foreground hover:bg-muted hover:border-primary/30"
                 size="sm"
-                onClick={() => openDownloadInNewTab(DOWNLOAD_LINKS.macos)}
+                onClick={() => openDownloadInNewTab(downloadLinks.macos)}
               >
                 {t('invite.inviteLanding.download')}
               </Button>
@@ -341,11 +341,11 @@ export default function InviteClient({ code }: InviteClientProps) {
             <Smartphone className="w-8 h-8 text-blue-600 mx-auto mb-2" />
             <h5 className="font-semibold text-foreground mb-1">{t('invite.inviteLanding.ios')}</h5>
             <p className="text-xs text-muted-foreground mb-3">{t('invite.inviteLanding.iosDevices')}</p>
-            {DOWNLOAD_LINKS.ios ? (
+            {downloadLinks.ios ? (
               <Button
                 className="bg-card border border-border text-foreground hover:bg-muted hover:border-primary/30"
                 size="sm"
-                onClick={() => openDownloadInNewTab(DOWNLOAD_LINKS.ios)}
+                onClick={() => openDownloadInNewTab(downloadLinks.ios)}
               >
                 {t('invite.inviteLanding.appStore')}
               </Button>
@@ -361,11 +361,11 @@ export default function InviteClient({ code }: InviteClientProps) {
             <Smartphone className="w-8 h-8 text-green-600 mx-auto mb-2" />
             <h5 className="font-semibold text-foreground mb-1">{t('invite.inviteLanding.android')}</h5>
             <p className="text-xs text-muted-foreground mb-3">{t('invite.inviteLanding.androidVersion')}</p>
-            {DOWNLOAD_LINKS.android ? (
+            {downloadLinks.android ? (
               <Button
                 className="bg-card border border-border text-foreground hover:bg-muted hover:border-primary/30"
                 size="sm"
-                onClick={() => openDownloadInNewTab(DOWNLOAD_LINKS.android)}
+                onClick={() => openDownloadInNewTab(downloadLinks.android)}
               >
                 {t('invite.inviteLanding.download')}
               </Button>

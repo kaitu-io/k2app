@@ -48,13 +48,38 @@ vi.mock('@/components/Footer', () => ({
 
 // Mock @/lib/constants
 vi.mock('@/lib/constants', () => ({
-  DOWNLOAD_LINKS: {
-    windows: 'https://example.com/kaitu_windows.exe',
-    macos: 'https://example.com/kaitu_macos.pkg',
-    ios: 'https://apps.apple.com/app/id12345',
-    android: 'https://example.com/kaitu.apk',
-  },
-  DESKTOP_VERSION: '0.3.22',
+  CDN_PRIMARY: 'https://cdn-primary.test/kaitu/desktop',
+  CDN_BACKUP: 'https://cdn-backup.test/kaitu/desktop',
+  getDownloadLinks: (version: string) => ({
+    windows: { primary: `https://cdn/${version}/win.exe`, backup: `https://backup/${version}/win.exe` },
+    macos: { primary: `https://cdn/${version}/mac.pkg`, backup: `https://backup/${version}/mac.pkg` },
+    linux: { primary: `https://cdn/${version}/linux.AppImage`, backup: `https://backup/${version}/linux.AppImage` },
+  }),
+}));
+
+// Mock @/lib/downloads
+vi.mock('@/lib/downloads', () => ({
+  fetchAllDownloadLinks: vi.fn().mockResolvedValue({
+    desktop: {
+      beta: { version: '0.4.0-beta.1', links: {
+        windows: { primary: 'https://cdn/win.exe', backup: '' },
+        macos: { primary: 'https://cdn/mac.pkg', backup: '' },
+        linux: { primary: 'https://cdn/linux.AppImage', backup: '' },
+      }},
+      stable: { version: '0.3.22', links: {
+        windows: { primary: 'https://cdn/win.exe', backup: '' },
+        macos: { primary: 'https://cdn/mac.pkg', backup: '' },
+        linux: { primary: 'https://cdn/linux.AppImage', backup: '' },
+      }},
+    },
+    mobile: { ios: 'https://apps.apple.com/app/id123', android: 'https://cdn/android.apk' },
+  }),
+  flattenToRecord: vi.fn().mockReturnValue({
+    windows: 'https://cdn/win.exe',
+    macos: 'https://cdn/mac.pkg',
+    ios: 'https://apps.apple.com/app/id123',
+    android: 'https://cdn/android.apk',
+  }),
 }));
 
 // Mock @/lib/device-detection

@@ -9,36 +9,10 @@ if (!process.env.VELITE_STARTED && (isDev || isBuild)) {
 
 import createNextIntlPlugin from 'next-intl/plugin';
 import type { NextConfig } from 'next';
-import * as fs from 'fs';
-import * as path from 'path';
 
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
 
-// Read versions from root package.json (single source of truth)
-// releaseVersion = stable, version = beta (may include prerelease suffix)
-const getRootPackageJson = () => {
-  try {
-    const packagePath = path.join(__dirname, '../package.json');
-    const packageContent = fs.readFileSync(packagePath, 'utf8');
-    return JSON.parse(packageContent);
-  } catch {
-    console.warn('Could not read root package.json, using fallback versions');
-    return { version: '0.0.0', releaseVersion: '0.0.0' };
-  }
-};
-
-const rootPkg = getRootPackageJson();
-const desktopVersion = rootPkg.releaseVersion || rootPkg.version || '0.0.0';
-const betaVersion = rootPkg.version || '0.0.0';
-console.log(`🚀 Building with stable: ${desktopVersion}, beta: ${betaVersion}`);
-
 const nextConfig: NextConfig = {
-  // Inject desktop version as environment variable at build time
-  env: {
-    NEXT_PUBLIC_DESKTOP_VERSION: desktopVersion,
-    NEXT_PUBLIC_BETA_VERSION: betaVersion,
-  },
-
   // Force SSR mode - explicitly disable static export
   output: 'standalone',
   trailingSlash: false,

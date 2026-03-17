@@ -30,6 +30,14 @@
     "reason3Title": "Security Assurance",
     "reason3Desc": "More eyes mean faster discovery and fixing of security vulnerabilities. Open source software is often more secure than closed source.",
     "reason4Title": "Knowledge Sharing",
-    "reason4Desc": "We believe technology should benefit everyone. Open source allows everyone to learn and use advanced network technologies."
+    "reason4Desc": "We believe technology should benefit everyone. Open source allows everyone to learn and use advanced network technologies.",
+    "whoTitle": "Who Can Initiate an Audit?",
+    "whoDesc": "Audit requests must be verified by Kaitu before they can proceed. The following three types of entities are authorized to initiate a formal audit:",
+    "who1Title": "Oversight Committee",
+    "who1Desc": "A standing body composed of independent security experts that can proactively initiate audits by authority, without additional application. Audit findings are mandatorily published.",
+    "who2Title": "Partners",
+    "who2Desc": "Operators and enterprise clients who have signed partnership agreements with Kaitu can submit audit requests through the partner channel. Findings are shared within the scope of the agreement.",
+    "who3Title": "Trusted Certified Security Organizations",
+    "who3Desc": "Third-party organizations holding internationally recognized security certifications (such as ISO 27001, CREST, or OWASP-certified bodies) can initiate specialized audits after credential verification."
   }
 }

@@ -18,9 +18,6 @@
     "downloadFailedMessage": "Auto download failed, please try manual download.",
     "manualDownload": "Manual Download",
     "retryAutoDownload": "Retry Auto Download",
-    "mobileComingSoon": "Mobile apps coming soon",
-    "platformDevelopment": "{platform} version is currently in development",
-    "useDesktopVersion": "Please use the desktop version for now",
     "allDownloadOptions": "All Download Options",
     "windows": "Windows",
     "windowsVersion": "Windows 10/11",
@@ -30,11 +27,8 @@
     "downloadDmg": "Mac",
     "ios": "iPhone / iPad",
     "iosDevices": "iPhone and iPad",
-    "appStore": "iPhone / iPad",
     "android": "Android",
     "androidVersion": "Android 7.0+",
-    "downloadApk": "Android",
-    "comingSoon": "Coming Soon",
     "needHelp": "Need Help?",
     "helpBrowserBlock": "• If your browser blocks the download, please allow downloads from this site",
     "helpWindowsInstall": "• On Windows, you may need to allow the app through Windows Defender",
@@ -46,9 +40,6 @@
     "lookingForStable": "Looking for the stable version?",
     "viewAllReleases": "View all releases →",
     "backupDownload": "Backup",
-    "waymakerApp": "Waymaker",
-    "waymakerNote": "Currently the Waymaker app",
-    "kaituMobileComingSoon": "Kaitu mobile coming soon",
     "latestVersion": "Latest v{version}",
     "recommended": "Recommended",
     "downloadCancelled": "Auto-download cancelled",
@@ -62,6 +53,60 @@
     "copied": "Copied",
     "beta": "Beta",
     "alsoAvailableStable": "Stable version v{version} also available",
-    "linuxCliRecommended": "CLI install recommended — auto-checks dependencies"
+    "linuxCliRecommended": "CLI install recommended — auto-checks dependencies",
+    "otherPlatforms": "Other Platforms",
+    "terminalInstall": "Or install via terminal",
+    "downloadButton": "Download Installer",
+    "mobileDownloads": "Mobile",
+    "kaituIos": "Kaitu for iOS",
+    "kaituAndroid": "Kaitu for Android",
+    "heroTitle": {
+      "windows": "Ready for your Windows",
+      "macos": "Ready for your Mac",
+      "linux": "Ready for your Linux",
+      "ios": "Kaitu for iOS",
+      "android": "Kaitu for Android",
+      "unknown": "Choose your platform"
+    },
+    "installSteps": {
+      "title": "Installation Steps",
+      "windows": {
+        "1": "Open the downloaded .exe installer",
+        "2": "If 'Windows protected your PC' appears, click 'More info' then 'Run anyway'",
+        "3": "Follow the prompts to complete installation. Admin privileges required on first launch."
+      },
+      "macos": {
+        "1": "Open the downloaded .pkg installer",
+        "2": "Follow the prompts to complete installation",
+        "3": "On first launch, allow the system extension in System Settings then Privacy and Security"
+      },
+      "linux": {
+        "1": "Make the AppImage executable: chmod +x Kaitu_*.AppImage",
+        "2": "Double-click to run or execute ./Kaitu_*.AppImage in terminal",
+        "3": "CLI install recommended for automatic dependency handling"
+      },
+      "android": {
+        "1": "Allow installing from unknown sources in Settings then Security",
+        "2": "Open the downloaded APK to install"
+      }
+    },
+    "faq": {
+      "browserBlock": {
+        "question": "Browser blocked the download?",
+        "answer": "Some browsers block .exe or .pkg downloads by default. Click 'Keep' or 'Download anyway' in the browser download bar. In Chrome, visit chrome://downloads to find blocked files."
+      },
+      "windowsSmartScreen": {
+        "question": "Windows says 'Windows protected your PC'?",
+        "answer": "This is Windows SmartScreen's default prompt for new apps. Click 'More info', then 'Run anyway'. Kaitu is EV code-signed and this prompt won't appear after installation."
+      },
+      "macosGatekeeper": {
+        "question": "macOS says 'cannot verify the developer'?",
+        "answer": "After first install, go to System Settings then Privacy and Security, find the Kaitu prompt at the bottom, and click 'Open Anyway'. Subsequent launches won't show this. For VPN mode, you'll be guided to allow the system extension."
+      },
+      "security": {
+        "question": "Is Kaitu safe?",
+        "answer": "Kaitu is Apple notarized and Windows EV code-signed. All installers are distributed via HTTPS with verifiable SHA-256 checksums. The k2 protocol core is planned for open source."
+      }
+    }
   }
 }
