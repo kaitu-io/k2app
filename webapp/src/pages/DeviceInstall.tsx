@@ -4,14 +4,13 @@ import {
   Typography,
   Button,
   Stack,
+  Chip,
   alpha,
+  SvgIcon,
 } from "@mui/material";
 import {
   ContentCopy as CopyIcon,
-  PhoneIphone as IOSIcon,
-  PhoneAndroid as AndroidIcon,
-  Computer as WindowsIcon,
-  Laptop as MacIcon,
+  Share as ShareIcon,
   Download as DownloadIcon,
   Usb as UsbIcon,
   ChevronRight as ChevronRightIcon,
@@ -28,6 +27,31 @@ import { cloudApi } from '../services/cloud-api';
 // 默认的下载链接
 const DEFAULT_INSTALL_URL = "https://kaitu.io/install";
 
+// Brand SVG icons
+function AppleIcon(props: React.ComponentProps<typeof SvgIcon>) {
+  return (
+    <SvgIcon {...props} viewBox="0 0 24 24">
+      <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z" />
+    </SvgIcon>
+  );
+}
+
+function AndroidIcon(props: React.ComponentProps<typeof SvgIcon>) {
+  return (
+    <SvgIcon {...props} viewBox="0 0 24 24">
+      <path d="M17.6 9.48l1.84-3.18c.16-.31.04-.69-.26-.85-.29-.15-.65-.06-.83.22l-1.88 3.24C14.86 8.32 13.47 8 12 8s-2.86.32-4.47.91L5.65 5.67c-.18-.28-.54-.37-.83-.22-.3.16-.42.54-.26.85L6.4 9.48C3.3 11.25 1.28 14.44 1 18h22c-.28-3.56-2.3-6.75-5.4-8.52zM7 15.25a1.25 1.25 0 110-2.5 1.25 1.25 0 010 2.5zm10 0a1.25 1.25 0 110-2.5 1.25 1.25 0 010 2.5z" />
+    </SvgIcon>
+  );
+}
+
+function WindowsIcon(props: React.ComponentProps<typeof SvgIcon>) {
+  return (
+    <SvgIcon {...props} viewBox="0 0 24 24">
+      <path d="M3 12V6.75l6-1.32v6.48L3 12zm17-9v8.75l-10 .08V5.21L20 3zM3 13l6 .09v6.81l-6-1.15V13zm17 .25V22l-10-1.91V13.1l10 .15z" />
+    </SvgIcon>
+  );
+}
+
 export default function DeviceInstall() {
   const { t } = useTranslation();
   const [qrCode, setQrCode] = useState<string>("");
@@ -40,7 +64,6 @@ export default function DeviceInstall() {
   useEffect(() => {
     const loadAppConfig = async () => {
       try {
-        // 获取应用配置
         const response = await cloudApi.get<AppConfig>('/api/app/config');
         if (response.code === 0 && response.data?.appLinks) {
           const { baseURL, installPath } = response.data.appLinks;
@@ -52,50 +75,73 @@ export default function DeviceInstall() {
         }
       } catch (error) {
         console.error('Failed to load app config:', error);
-        // 使用默认链接
       }
     };
 
-    const initialize = async () => {
-      await loadAppConfig();
-      // 在状态更新后生成二维码
+    loadAppConfig();
+  }, []);
+
+  // 桌面端才需要二维码
+  useEffect(() => {
+    if (!isDesktop || !installURL) return;
+
+    const generateQRCode = async () => {
+      try {
+        const qrCodeDataURL = await QRCode.toDataURL(installURL, {
+          width: 200,
+          margin: 2,
+          color: {
+            dark: "#1976d2",
+            light: "#FFFFFF"
+          }
+        });
+        setQrCode(qrCodeDataURL);
+      } catch (error) {
+        console.error('QR code generation failed:', error);
+      }
     };
 
-    initialize();
-  }, [t]);
-
-  // 当installURL变化时重新生成二维码
-  useEffect(() => {
-    if (installURL) {
-      const generateQRCode = async () => {
-        try {
-          const qrCodeDataURL = await QRCode.toDataURL(installURL, {
-            width: 200,
-            margin: 2,
-            color: {
-              dark: "#1976d2",
-              light: "#FFFFFF"
-            }
-          });
-          setQrCode(qrCodeDataURL);
-        } catch (error) {
-          console.error(t('common:common.error'), error);
-        }
-      };
-
-      generateQRCode();
-    }
-  }, [installURL, t]);
+    generateQRCode();
+  }, [installURL, isDesktop]);
 
   const handleCopyLink = async () => {
     try {
-      await window._platform!.writeClipboard?.(installURL);
+      await window._platform?.writeClipboard?.(installURL);
       showAlert(t('common:messages.copySuccess'), "success");
     } catch (error) {
       console.error(t('common:messages.copyFailed'));
       showAlert(t('common:messages.copyFailed'), "error");
     }
   };
+
+  const handleShare = async () => {
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: 'Kaitu',
+          text: t('purchase:deviceInstall.shareText'),
+          url: installURL,
+        });
+      } else {
+        // fallback: copy full share text with link
+        const fallbackText = `${t('purchase:deviceInstall.shareText')} ${installURL}`;
+        await window._platform?.writeClipboard?.(fallbackText);
+        showAlert(t('common:messages.copySuccess'), "success");
+      }
+    } catch (error) {
+      // user cancelled share — ignore AbortError
+      if (error instanceof Error && error.name !== 'AbortError') {
+        console.error('Share failed:', error);
+      }
+    }
+  };
+
+  const platforms = [
+    { icon: <AppleIcon />, color: "#999999", name: "iOS" },
+    { icon: <AndroidIcon />, color: "#3DDC84", name: "Android" },
+    { icon: <WindowsIcon />, color: "#0078D4", name: "Windows" },
+    { icon: <AppleIcon />, color: "#999999", name: "macOS" },
+  ];
 
   return (
     <Box
@@ -159,9 +205,23 @@ export default function DeviceInstall() {
                 <UsbIcon sx={{ fontSize: 24, color: '#34C759' }} />
               </Box>
               <Box sx={{ flex: 1 }}>
-                <Typography variant="body1" fontWeight={600}>
-                  {t('purchase:deviceInstall.androidInstallCard')}
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography variant="body1" fontWeight={600}>
+                    {t('purchase:deviceInstall.androidInstallCard')}
+                  </Typography>
+                  <Chip
+                    label={t('common:common.experimental')}
+                    size="small"
+                    sx={{
+                      height: 20,
+                      fontSize: '0.7rem',
+                      fontWeight: 600,
+                      bgcolor: 'rgba(255, 152, 0, 0.15)',
+                      color: '#FF9800',
+                      border: '1px solid rgba(255, 152, 0, 0.3)',
+                    }}
+                  />
+                </Box>
                 <Typography variant="body2" color="text.secondary">
                   {t('purchase:deviceInstall.androidInstallCardDesc')}
                 </Typography>
@@ -234,50 +294,57 @@ export default function DeviceInstall() {
                     </Typography>
                   </Box>
 
-                  {/* 平台图标 */}
+                  {/* 平台图标 + 名称 */}
                   <Box
                     sx={{
                       display: "flex",
-                      gap: 1.5,
+                      gap: 2,
                       flexWrap: "wrap",
                       justifyContent: "center",
                     }}
                   >
-                    {[
-                      { icon: <IOSIcon />, color: "#007AFF", name: "iOS" },
-                      { icon: <AndroidIcon />, color: "#34C759", name: "Android" },
-                      { icon: <WindowsIcon />, color: "#0078D4", name: "Windows" },
-                      { icon: <MacIcon />, color: "#666666", name: "macOS" },
-                    ].map((platform) => (
+                    {platforms.map((platform) => (
                       <Box
                         key={platform.name}
                         sx={{
-                          width: 48,
-                          height: 48,
-                          borderRadius: 2,
-                          bgcolor: alpha(platform.color, 0.1),
                           display: "flex",
+                          flexDirection: "column",
                           alignItems: "center",
-                          justifyContent: "center",
-                          color: platform.color,
-                          border: `2px solid ${alpha(platform.color, 0.2)}`,
-                          transition: 'all 0.2s',
-                          '&:hover': {
-                            transform: 'scale(1.1)',
-                            boxShadow: `0 4px 12px ${alpha(platform.color, 0.3)}`,
-                          },
-                          "& svg": {
-                            fontSize: 24,
-                          },
+                          gap: 0.5,
                         }}
                       >
-                        {platform.icon}
+                        <Box
+                          sx={{
+                            width: 48,
+                            height: 48,
+                            borderRadius: 2,
+                            bgcolor: alpha(platform.color, 0.1),
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            color: platform.color,
+                            border: `2px solid ${alpha(platform.color, 0.2)}`,
+                            transition: 'all 0.2s',
+                            '&:hover': {
+                              transform: 'scale(1.1)',
+                              boxShadow: `0 4px 12px ${alpha(platform.color, 0.3)}`,
+                            },
+                            "& svg": {
+                              fontSize: 24,
+                            },
+                          }}
+                        >
+                          {platform.icon}
+                        </Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                          {platform.name}
+                        </Typography>
                       </Box>
                     ))}
                   </Box>
                 </Box>
 
-                {/* 二维码和下载链接 - 移动端布局 */}
+                {/* 二维码（桌面端）或 分享按钮（移动端） */}
                 <Box sx={{
                   display: "flex",
                   alignItems: "stretch",
@@ -289,8 +356,8 @@ export default function DeviceInstall() {
                     ? 'rgba(255, 255, 255, 0.02)'
                     : 'rgba(0, 0, 0, 0.02)',
                 }}>
-                  {/* 二维码 */}
-                  {qrCode && (
+                  {/* 桌面端：二维码 */}
+                  {isDesktop && qrCode && (
                     <Box sx={{
                       textAlign: "center",
                       display: "flex",
@@ -325,56 +392,94 @@ export default function DeviceInstall() {
                     </Box>
                   )}
 
-                  {/* 下载链接 */}
-                  <Box sx={{
-                    width: "100%",
-                  }}>
-                    <Typography
-                      variant="body2"
-                      color="text.secondary"
-                      sx={(theme) => ({
-                        fontFamily: "monospace",
-                        wordBreak: "break-all",
-                        bgcolor: theme.palette.mode === 'dark'
-                          ? alpha("#fff", 0.08)
-                          : alpha("#000", 0.04),
-                        p: 1.5,
-                        borderRadius: 2,
-                        mb: 1.5,
-                        textAlign: "center",
-                        border: '1px dashed',
-                        borderColor: theme.palette.mode === 'dark'
-                          ? 'rgba(255, 255, 255, 0.1)'
-                          : 'rgba(0, 0, 0, 0.1)',
-                        fontSize: '0.85rem',
-                      })}
-                    >
-                      {installURL}
-                    </Typography>
+                  {/* 操作按钮 */}
+                  <Box sx={{ width: "100%" }}>
+                    {/* 桌面端显示链接文本 */}
+                    {isDesktop && (
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        sx={(theme) => ({
+                          fontFamily: "monospace",
+                          wordBreak: "break-all",
+                          bgcolor: theme.palette.mode === 'dark'
+                            ? alpha("#fff", 0.08)
+                            : alpha("#000", 0.04),
+                          p: 1.5,
+                          borderRadius: 2,
+                          mb: 1.5,
+                          textAlign: "center",
+                          border: '1px dashed',
+                          borderColor: theme.palette.mode === 'dark'
+                            ? 'rgba(255, 255, 255, 0.1)'
+                            : 'rgba(0, 0, 0, 0.1)',
+                          fontSize: '0.85rem',
+                        })}
+                      >
+                        {installURL}
+                      </Typography>
+                    )}
 
-                    <Button
-                      variant="contained"
-                      fullWidth
-                      startIcon={<CopyIcon />}
-                      onClick={handleCopyLink}
-                      sx={{
-                        background: 'linear-gradient(135deg, #1976d2 0%, #42a5f5 100%)',
-                        "&:hover": {
-                          background: 'linear-gradient(135deg, #1565c0 0%, #1976d2 100%)',
-                          boxShadow: '0 4px 12px rgba(25, 118, 210, 0.4)',
-                          transform: 'translateY(-2px)',
-                        },
-                        textTransform: "none",
-                        fontWeight: 700,
-                        borderRadius: 2,
-                        py: 1.25,
-                        fontSize: '0.95rem',
-                        boxShadow: '0 2px 8px rgba(25, 118, 210, 0.3)',
-                        transition: 'all 0.3s ease',
-                      }}
-                    >
-                      {t('purchase:deviceInstall.copyDownloadLink')}
-                    </Button>
+                    <Stack spacing={1.5}>
+                      {/* 移动端：分享按钮（主按钮） */}
+                      {!isDesktop && (
+                        <Button
+                          variant="contained"
+                          fullWidth
+                          startIcon={<ShareIcon />}
+                          onClick={handleShare}
+                          sx={{
+                            background: 'linear-gradient(135deg, #1976d2 0%, #42a5f5 100%)',
+                            "&:hover": {
+                              background: 'linear-gradient(135deg, #1565c0 0%, #1976d2 100%)',
+                              boxShadow: '0 4px 12px rgba(25, 118, 210, 0.4)',
+                              transform: 'translateY(-2px)',
+                            },
+                            textTransform: "none",
+                            fontWeight: 700,
+                            borderRadius: 2,
+                            py: 1.25,
+                            fontSize: '0.95rem',
+                            boxShadow: '0 2px 8px rgba(25, 118, 210, 0.3)',
+                            transition: 'all 0.3s ease',
+                          }}
+                        >
+                          {t('purchase:deviceInstall.shareToFriends')}
+                        </Button>
+                      )}
+
+                      {/* 复制链接按钮 */}
+                      <Button
+                        variant={isDesktop ? "contained" : "outlined"}
+                        fullWidth
+                        startIcon={<CopyIcon />}
+                        onClick={handleCopyLink}
+                        sx={isDesktop ? {
+                          background: 'linear-gradient(135deg, #1976d2 0%, #42a5f5 100%)',
+                          "&:hover": {
+                            background: 'linear-gradient(135deg, #1565c0 0%, #1976d2 100%)',
+                            boxShadow: '0 4px 12px rgba(25, 118, 210, 0.4)',
+                            transform: 'translateY(-2px)',
+                          },
+                          textTransform: "none",
+                          fontWeight: 700,
+                          borderRadius: 2,
+                          py: 1.25,
+                          fontSize: '0.95rem',
+                          boxShadow: '0 2px 8px rgba(25, 118, 210, 0.3)',
+                          transition: 'all 0.3s ease',
+                        } : {
+                          textTransform: "none",
+                          fontWeight: 600,
+                          borderRadius: 2,
+                          py: 1,
+                          fontSize: '0.9rem',
+                          transition: 'all 0.3s ease',
+                        }}
+                      >
+                        {t('purchase:deviceInstall.copyDownloadLink')}
+                      </Button>
+                    </Stack>
                   </Box>
                 </Box>
               </Stack>

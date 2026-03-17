@@ -68,7 +68,9 @@
     "copyDownloadLink": "ダウンロードリンクをコピー",
     "multiDeviceSync": "異なるデバイスで同じアカウントでログインすると、複数デバイスの同期サービスをご利用いただけます",
     "contactSupport": "技術サポートが必要な場合は、カスタマーサポートにお問い合わせください",
-    "androidInstallCard": "Androidスマホへインストール（Xiaomi/vivo/OPPO/Samsung）",
+    "shareToFriends": "友達にシェア",
+    "shareText": "Kaitu — 安全で高速な VPN、ダウンロードはこちら",
+    "androidInstallCard": "Androidスマホへインストール",
     "androidInstallCardDesc": "USB接続で簡単ガイド付き、ワンタッチ自動インストール"
   },
   "androidInstall": {

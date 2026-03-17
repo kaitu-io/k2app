@@ -68,7 +68,9 @@
     "copyDownloadLink": "复制下载链接",
     "multiDeviceSync": "在不同设备上使用相同的账号登录，可享受多设备同步服务",
     "contactSupport": "如需技术支持，请联系客服",
-    "androidInstallCard": "安卓手机安装（小米/vivo/OPPO/三星）",
+    "shareToFriends": "分享给好友",
+    "shareText": "Kaitu — 安全快速的 VPN，下载安装",
+    "androidInstallCard": "安卓手机安装",
     "androidInstallCardDesc": "USB 连接电脑，保姆级引导，一键自动安装到手机"
   },
   "androidInstall": {
