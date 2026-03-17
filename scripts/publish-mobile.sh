@@ -6,6 +6,16 @@ set -euo pipefail
 # Phase 2 (this script): validates artifacts exist, computes hashes, generates latest.json
 # Channel is auto-detected from version string: -beta suffix → beta channel.
 #
+# Beta is a superset of stable. Stable releases are published to BOTH channels.
+# Artifacts are copied to the beta directory so relative URLs resolve correctly.
+#
+# Directory structure:
+#   android/0.5.0/Kaitu-0.5.0.apk              ← stable artifact
+#   android/latest.json                          ← stable manifest
+#   android/beta/0.5.0/Kaitu-0.5.0.apk          ← copy for beta channel
+#   android/beta/0.5.0-beta.1/Kaitu-...apk      ← beta artifact
+#   android/beta/latest.json                     ← beta manifest
+#
 # Usage:
 #   scripts/publish-mobile.sh VERSION [--s3-base=PATH] [--dry-run] [--channel=stable|beta]
 #
@@ -77,24 +87,39 @@ download_artifact() {
     fi
 }
 
-# Upload manifest
-upload_manifest() {
+# Upload file (manifest or artifact copy)
+upload_file() {
     local path="$1"
     local src="$2"
+    local content_type="${3:-application/json}"
     if use_local; then
         mkdir -p "$(dirname "$S3_BASE/$path")"
         cp "$src" "$S3_BASE/$path"
     elif [ "$DRY_RUN" = true ]; then
         echo "[dry-run] Would upload $src to s3://$S3_BUCKET/$path"
     else
-        aws s3 cp "$src" "s3://$S3_BUCKET/$path" --content-type "application/json"
+        aws s3 cp "$src" "s3://$S3_BUCKET/$path" --content-type "$content_type"
+    fi
+}
+
+# Copy artifact within S3 (or local)
+copy_s3() {
+    local src_path="$1"
+    local dst_path="$2"
+    if use_local; then
+        mkdir -p "$(dirname "$S3_BASE/$dst_path")"
+        cp "$S3_BASE/$src_path" "$S3_BASE/$dst_path"
+    elif [ "$DRY_RUN" = true ]; then
+        echo "[dry-run] Would copy s3://$S3_BUCKET/$src_path → s3://$S3_BUCKET/$dst_path"
+    else
+        aws s3 cp "s3://$S3_BUCKET/$src_path" "s3://$S3_BUCKET/$dst_path"
     fi
 }
 
 WORK_TMPDIR=$(mktemp -d)
 trap 'rm -rf "$WORK_TMPDIR"' EXIT
 
-# Define artifact paths per channel
+# Define artifact paths (CI always uploads to {channel}/{VERSION}/)
 android_artifact="android/${VERSION}/Kaitu-${VERSION}.apk"
 web_artifact="web/${VERSION}/webapp.zip"
 
@@ -113,7 +138,7 @@ if [ "$MISSING" = true ]; then
     exit 1
 fi
 
-# Generate manifest for a channel
+# Generate and publish manifests for a channel type (android/web)
 generate_manifest() {
     local channel="$1"
     local artifact="$2"
@@ -129,7 +154,8 @@ generate_manifest() {
     local size
     size=$(stat -f%z "$local_file" 2>/dev/null || stat -c%s "$local_file" 2>/dev/null)
 
-    # Relative URL: VERSION/filename
+    # Relative URL: always VERSION/filename (works for both stable and beta
+    # because artifacts are copied into each channel's directory)
     local rel_url="${VERSION}/${filename}"
 
     # Generate latest.json
@@ -145,18 +171,21 @@ generate_manifest() {
 }
 MANIFEST_EOF
 
-    # Upload manifests
+    # Copy artifact to beta directory (beta is superset of stable)
+    local beta_artifact_path="${channel}/beta/${VERSION}/${filename}"
+    copy_s3 "$artifact" "$beta_artifact_path"
+    echo "  Copied artifact → $beta_artifact_path"
+
     if [ "$CHANNEL" = "beta" ]; then
-        upload_manifest "${channel}/beta/latest.json" "$manifest"
+        # Beta: only update beta manifest
+        upload_file "${channel}/beta/latest.json" "$manifest"
         echo "  Published ${channel}/beta/latest.json"
     else
-        upload_manifest "${channel}/latest.json" "$manifest"
+        # Stable: update both stable and beta manifests
+        upload_file "${channel}/latest.json" "$manifest"
         echo "  Published ${channel}/latest.json"
-    fi
-    # Android install always reads stable path — keep it updated for both channels
-    if [ "$channel" = "android" ]; then
-        upload_manifest "android/latest.json" "$manifest"
-        echo "  Published android/latest.json (stable path for android-install)"
+        upload_file "${channel}/beta/latest.json" "$manifest"
+        echo "  Published ${channel}/beta/latest.json"
     fi
 }
 

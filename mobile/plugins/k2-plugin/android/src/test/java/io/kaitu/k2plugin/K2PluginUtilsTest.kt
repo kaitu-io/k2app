@@ -133,6 +133,30 @@ class K2PluginUtilsTest {
         )
     }
 
+    @Test
+    fun resolveDownloadURL_stable_relative() {
+        // Stable: manifest at /android/latest.json, APK at /android/VERSION/
+        assertEquals(
+            "https://cdn.example.com/kaitu/android/0.5.0/Kaitu-0.5.0.apk",
+            K2PluginUtils.resolveDownloadURL(
+                "0.5.0/Kaitu-0.5.0.apk",
+                "https://cdn.example.com/kaitu/android"
+            )
+        )
+    }
+
+    @Test
+    fun resolveDownloadURL_beta_relative() {
+        // Beta: manifest at /android/beta/latest.json, APK at /android/beta/VERSION/
+        assertEquals(
+            "https://cdn.example.com/kaitu/android/beta/0.5.0-beta.1/Kaitu-0.5.0-beta.1.apk",
+            K2PluginUtils.resolveDownloadURL(
+                "0.5.0-beta.1/Kaitu-0.5.0-beta.1.apk",
+                "https://cdn.example.com/kaitu/android/beta"
+            )
+        )
+    }
+
     // ==================== sha256 ====================
 
     @Test
