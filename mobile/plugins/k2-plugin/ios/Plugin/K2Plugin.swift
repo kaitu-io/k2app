@@ -66,18 +66,22 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         // Check for OTA web update
         let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let webUpdatePath = documentsPath.appendingPathComponent("web-update")
-        if FileManager.default.fileExists(atPath: webUpdatePath.path) {
-            let indexPath = webUpdatePath.appendingPathComponent("index.html")
+        let bootPending = webUpdatePath.appendingPathComponent(".boot-pending")
+        let indexPath = webUpdatePath.appendingPathComponent("index.html")
+
+        if FileManager.default.fileExists(atPath: webUpdatePath.path) && FileManager.default.fileExists(atPath: bootPending.path) {
+            // OTA webapp failed to call checkReady() last time — rollback
+            logger.warning("load: OTA boot verification failed — rolling back to bundled webapp")
+            let webBackupPath = documentsPath.appendingPathComponent("web-backup")
+            try? FileManager.default.removeItem(at: webUpdatePath)
+            try? FileManager.default.removeItem(at: webBackupPath)
+        } else if FileManager.default.fileExists(atPath: webUpdatePath.path) {
             if FileManager.default.fileExists(atPath: indexPath.path) {
+                FileManager.default.createFile(atPath: bootPending.path, contents: nil)
                 bridge?.setServerBasePath(webUpdatePath.path)
             } else {
-                // Corrupt OTA dir, remove it
-                do {
-                    try FileManager.default.removeItem(at: webUpdatePath)
-                    logger.info("Removed corrupt OTA dir")
-                } catch {
-                    logger.warning("Failed to remove corrupt OTA dir: \(error)")
-                }
+                try? FileManager.default.removeItem(at: webUpdatePath)
+                logger.info("Removed corrupt OTA dir")
             }
         }
 
@@ -153,6 +157,14 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
     // MARK: - VPN Methods
 
     @objc func checkReady(_ call: CAPPluginCall) {
+        // Clear OTA boot-pending marker (webapp loaded successfully)
+        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let bootPending = documentsPath.appendingPathComponent("web-update/.boot-pending")
+        if FileManager.default.fileExists(atPath: bootPending.path) {
+            try? FileManager.default.removeItem(at: bootPending)
+            logger.info("checkReady: OTA boot verified — cleared .boot-pending")
+        }
+
         call.resolve(["ready": true, "version": appVersion])
     }
 
@@ -347,6 +359,14 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
 
+            // Check min_native compatibility
+            let minNative = json["min_native"] as? String ?? ""
+            if !minNative.isEmpty && isNewerVersion(minNative, than: appVersion) {
+                logger.info("Web OTA skipped: min_native=\(minNative) > app=\(appVersion)")
+                await MainActor.run { call.resolve(["available": false, "reason": "native_too_old"]) }
+                return
+            }
+
             // Read installed web version, fall back to app version
             let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
             let versionFile = documentsPath.appendingPathComponent("web-update/version.txt")
@@ -488,6 +508,11 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             // Write version for future comparison
             try remoteVersion.write(to: webUpdatePath.appendingPathComponent("version.txt"),
                                     atomically: true, encoding: .utf8)
+
+            // Mark boot-pending for verification on next cold start
+            FileManager.default.createFile(
+                atPath: webUpdatePath.appendingPathComponent(".boot-pending").path,
+                contents: nil)
 
             await MainActor.run { completion(.success(())) }
         } catch {
@@ -901,6 +926,13 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                 guard let (manifestData, _) = await fetchManifest(endpoints: webManifestEndpoints),
                       let json = try JSONSerialization.jsonObject(with: manifestData) as? [String: Any],
                       let remoteVersion = json["version"] as? String else {
+                    return
+                }
+
+                // Check min_native compatibility
+                let minNative = json["min_native"] as? String ?? ""
+                if !minNative.isEmpty && isNewerVersion(minNative, than: appVersion) {
+                    logger.info("Auto web OTA skipped: min_native=\(minNative) > app=\(appVersion)")
                     return
                 }
 
