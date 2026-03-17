@@ -290,6 +290,11 @@ func (m *Middleware) triggerPrefresh(domain string, qtype uint16, action k2rule.
 
 	go func() {
 		defer m.prefreshing.Delete(key)
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("DNS prefresh panic", "domain", domain, "panic", fmt.Sprint(r))
+			}
+		}()
 
 		// queryUpstream applies its own upstreamTimeout internally.
 		resp, err := m.queryUpstream(m.engineCtx, domain, action, query)
