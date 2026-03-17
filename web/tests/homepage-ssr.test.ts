@@ -41,14 +41,22 @@ vi.mock('@/components/Footer', () => ({
   default: () => null,
 }));
 
-// Mock @/lib/constants
-vi.mock('@/lib/constants', () => ({
-  DOWNLOAD_LINKS: {
-    ios: null,
-    android: null,
-    windows: 'https://example.com/windows',
-    macos: 'https://example.com/macos',
-  },
+// Mock HomeClient (canvas animation — no SSR)
+vi.mock('../src/app/[locale]/HomeClient', () => ({
+  default: () => null,
+}));
+
+// Mock new section components
+vi.mock('@/components/home/HeroSection', () => ({
+  default: () => null,
+}));
+
+vi.mock('@/components/home/FeaturesSection', () => ({
+  default: () => null,
+}));
+
+vi.mock('@/components/home/DownloadCTA', () => ({
+  default: () => null,
 }));
 
 // Mock lucide-react icons
@@ -66,10 +74,6 @@ vi.mock('lucide-react', () => ({
 // Mock shadcn/ui components
 vi.mock('@/components/ui/button', () => ({
   Button: ({ children }: { children: React.ReactNode }) => children,
-}));
-
-vi.mock('@/components/ui/card', () => ({
-  Card: ({ children }: { children: React.ReactNode }) => children,
 }));
 
 describe('test_homepage_ssr_renders_content', () => {
