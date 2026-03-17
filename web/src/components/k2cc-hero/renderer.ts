@@ -12,17 +12,17 @@ import type { RenderConfig } from './types'
  * No lightning. The climax is a clean white flash — heartbeat dawn.
  */
 
-const CYCLE_SECONDS = 10
+const CYCLE_SECONDS = 6
 
 const PHASE = {
   CHARGE_START: 0,
-  CHARGE_END: 0.12,
-  WAVE_START: 0.12,
-  WAVE_END: 0.50,
-  FLASH_START: 0.50,   // dawn flash
-  FLASH_PEAK: 0.52,    // max brightness
-  FLASH_END: 0.70,     // fully faded back to dark
-  // 0.70-1.0 = calm baseline before next cycle
+  CHARGE_END: 0.15,
+  WAVE_START: 0.15,
+  WAVE_END: 0.55,
+  FLASH_START: 0.55,   // dawn flash
+  FLASH_PEAK: 0.58,    // max brightness
+  FLASH_END: 0.92,     // still fading when next cycle starts — overlapping glow
+  // Next cycle charge begins at 0.0, flash still lingering from ~0.85+
 }
 
 export class PulseRenderer {
