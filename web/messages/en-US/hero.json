@@ -147,12 +147,12 @@
     }
   },
   "security": {
-    "title": "k2v5 Protocol — Next-Generation Stealth Tunnel",
-    "description": "k2v5 is built on ECH (Encrypted Client Hello), completely solving SNI leakage. Powered by k2cc adaptive rate control combined with QUIC low-latency transport, it achieves stable high throughput in high-loss, poor network conditions.",
+    "title": "k2cc — Congestion Control Built to Defeat QoS",
+    "description": "k2cc adaptive rate control is purpose-built to counter censorship QoS throttling and probabilistic packet loss. It automatically distinguishes congestion from censorship-induced drops, maintaining effective throughput under GFW's 26% loss rate. Combined with ECH stealth and QUIC transport — speed and stealth in one.",
     "icon": "🛡️",
     "caTech": {
-      "title": "ECH Stealth Tunnel Technology",
-      "description": "k2v5 uses ECH (Encrypted Client Hello) to encrypt the SNI field in the TLS handshake. DPI cannot identify the target domain. Active probing returns legitimate website responses. Undetectable at the protocol layer.",
+      "title": "k2cc Anti-QoS Congestion Control",
+      "description": "k2cc automatically distinguishes congestion-induced packet loss from censorship infrastructure actively dropping packets. Under QoS throttling and probabilistic loss, it maintains throughput near link capacity. Zero-config, no manual bandwidth settings — far exceeds BBR and Brutal in censored networks.",
       "advantages": {
         "title": "Core Features",
         "item1": "ECH encrypts SNI — TLS handshake undetectable",

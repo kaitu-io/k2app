@@ -32,7 +32,7 @@ eeat_score: High
 
 ## Internal Links
 
-- /k2/protocol#k2cc-自适应速率控制
+- /k2/k2cc
 - /k2/stealth
 - /k2/vs-hysteria2
 - /k2/quickstart

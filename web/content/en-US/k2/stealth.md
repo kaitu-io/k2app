@@ -3,7 +3,7 @@ title: Stealth Camouflage
 date: 2026-02-21
 summary: How k2 stays invisible — ECH encrypted SNI, TLS fingerprint mimicry, traffic characteristic hiding, and active probe resistance. With threat model analysis.
 section: technical
-order: 6
+order: 7
 draft: false
 ---
 
@@ -101,6 +101,24 @@ k2v5://...@server:443?hop=10000-20000&...
 
 The client rotates its UDP port periodically, rendering fixed-port filtering rules ineffective.
 
+## FAQ
+
+**Does active probe resistance actually work?**
+
+Yes. When the GFW sends a TLS connection without ECH to k2s, the server transparently forwards it to the real CDN. The GFW receives a legitimate HTTPS response — identical to connecting directly to that CDN. Automated probing scripts cannot distinguish k2s from a real CDN server. VLESS+Reality has a similar mechanism, but its TLS Session ID authentication data has been identified by academic research (USENIX Security 2025).
+
+**Can TLS fingerprints be detected?**
+
+Extremely unlikely. k2 uses uTLS to byte-level replicate real browser ClientHello characteristics. JA3/JA4 fingerprint analysis tools cannot distinguish k2 traffic from real Chrome/Firefox/Safari traffic. This is more robust than VLESS+Reality's fingerprint approach, which relies on borrowing real website certificates.
+
+**What if the GFW blocks the ECH protocol entirely?**
+
+Blocking ECH would affect all CDN services using ECH (Cloudflare, Google, etc.), causing massive collateral damage. The GFW's current strategy targets ECH key distribution via DNS. k2's countermeasure: the `ech=...` URL parameter contains the ECH key directly, completely bypassing DNS-based interference.
+
+**Are self-signed certificates secure?**
+
+Fully secure. k2 uses certificate pinning (`pin=sha256:HASH`) — the client directly verifies the server certificate's SHA-256 hash without relying on CA trust chains. Self-signed certificates never enter Certificate Transparency logs, avoiding detection via CT scanning — a stealth advantage over CA-issued certificates.
+
 ---
 
-For the underlying implementation details behind these mechanisms, see [Protocol Technical Details](/k2/protocol).
+For the underlying implementation details, see [k2v5 Protocol Architecture](/k2/k2v5) and [k2cc Adaptive Rate Control](/k2/k2cc).

@@ -279,7 +279,7 @@ export default async function Home({
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs mb-6"
             style={{ backgroundColor: 'rgba(0,255,136,0.1)', color: 'var(--primary)', border: '1px solid rgba(0,255,136,0.3)', fontFamily: 'var(--font-mono), monospace' }}>
             <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: 'var(--primary)' }}></span>
-            k2v5 — ECH Stealth Tunnel
+            k2v5 — k2cc Anti-QoS Congestion Control
           </div>
 
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6 leading-tight"

@@ -131,6 +131,24 @@ sudo k2 down
 sudo rm /usr/local/bin/k2
 ```
 
+## 常见问题
+
+**k2 支持哪些操作系统？**
+
+k2 命令行客户端支持 Linux（x86_64 / arm64）和 macOS（Intel / Apple Silicon）。Kaitu 桌面客户端支持 macOS、Windows、Linux，移动客户端支持 iOS 和 Android——覆盖全部五大平台。
+
+**TUN 模式和代理模式有什么区别？**
+
+TUN 模式创建虚拟网卡，拦截所有系统流量（全局代理），需要 root 权限。代理模式在 `127.0.0.1:1080` 启动 SOCKS5 代理，不需要 root，只代理配置了该代理的应用。推荐使用 TUN 模式获得最佳体验。
+
+**k2cc 会自动调整速率吗？**
+
+是的。k2cc 在连接建立后立即开始自动探测最优速率，并持续实时跟踪网络条件变化。你不需要配置任何带宽参数——这是 k2 与 Hysteria2 Brutal 的根本区别。
+
+**支持哪些 TLS 指纹？**
+
+支持 Chrome、Firefox、Safari 三种浏览器指纹，以及 `random` 随机指纹。通过 `?fp=chrome` 参数指定。默认使用 Chrome 指纹，与全球最广泛使用的浏览器一致，隐身效果最好。
+
 ---
 
-接下来阅读：[k2cc 自适应速率控制](/k2/protocol) 了解 k2cc 的核心能力。
+接下来阅读：[k2cc 自适应速率控制](/k2/k2cc) 了解拥塞控制算法，[k2v5 协议架构](/k2/k2v5) 了解协议技术细节。

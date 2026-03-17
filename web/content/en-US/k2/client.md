@@ -132,6 +132,24 @@ sudo k2 down
 sudo rm /usr/local/bin/k2
 ```
 
+## FAQ
+
+**What operating systems does k2 support?**
+
+The k2 CLI supports Linux (x86_64 / arm64) and macOS (Intel / Apple Silicon). The Kaitu desktop client supports macOS, Windows, and Linux. Mobile clients support iOS and Android — covering all five major platforms.
+
+**What's the difference between TUN mode and proxy mode?**
+
+TUN mode creates a virtual network interface that intercepts all system traffic (global proxy), requiring root privileges. Proxy mode starts a SOCKS5 proxy on `127.0.0.1:1080` without root, but only proxies applications configured to use it. TUN mode is recommended for the best experience.
+
+**Does k2cc automatically adjust the sending rate?**
+
+Yes. k2cc begins probing for the optimal rate immediately after connection and continuously tracks network conditions in real time. You never need to configure bandwidth parameters — this is the fundamental difference from Hysteria2 Brutal.
+
+**Which TLS fingerprints are supported?**
+
+Chrome, Firefox, and Safari fingerprints, plus a `random` option. Specified via the `?fp=chrome` parameter. Chrome is the default — matching the world's most widely used browser for best stealth.
+
 ---
 
-Next: [Protocol Technical Details](/k2/protocol) to understand how k2v5 works under the hood.
+Next: [k2cc Adaptive Rate Control](/k2/k2cc) for the congestion control algorithm, or [k2v5 Protocol Architecture](/k2/k2v5) for protocol technical details.

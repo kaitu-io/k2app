@@ -3,7 +3,7 @@ title: "k2 vs Hysteria2: Congestion Control Comparison"
 date: 2026-02-21
 summary: "An in-depth comparison of k2's proprietary adaptive congestion control algorithm versus Hysteria2's Brutal fixed-rate sending mechanism, analyzed across four dimensions: packet loss recovery, latency stability, bandwidth utilization, and fairness."
 section: comparison
-order: 7
+order: 8
 draft: false
 ---
 
@@ -111,6 +111,26 @@ Hysteria2's Brutal strategy has significant fairness problems in multi-flow scen
 | Latency Stability | RTT-aware + rate pacing; suppresses bufferbloat | Fixed rate; prone to queue buildup |
 | Bandwidth Utilization | Automatic optimal rate probing; no manual config needed | Requires manual setting; no dynamic probing |
 | Fairness | Rate-adaptive; coexists peacefully with other flows | Fixed rate; tends to crowd out other traffic |
+
+---
+
+## FAQ
+
+**Isn't Brutal with 1Gbps declared bandwidth faster?**
+
+On ideal networks, high declared bandwidth saturates the link quickly. But on real cross-border networks, bandwidth exceeding link capacity becomes retransmissions. Worse, Brutal cannot adapt to peak-hour bandwidth drops — when 100Mbps drops to 30Mbps, 70% of data needs retransmission. k2cc automatically tracks actual available bandwidth, always maintaining optimal throughput.
+
+**BBR is also adaptive — how is k2cc different?**
+
+BBR has no censorship awareness. Under GFW's 26% probabilistic loss, BBR misinterprets censorship-induced drops as congestion, severely underestimating available bandwidth. k2cc distinguishes congestion from censorship loss, maintaining far higher throughput. See [k2cc vs BBR](/k2/vs-bbr) for details.
+
+**How are the 14 test scenarios defined?**
+
+Based on academic research: T0-T5 cover ideal to hostile standard networks, T6-T8 simulate GFW censorship (including USENIX Security 2023's measured 26% loss rate), C1-C5 model real conditions from China's three major ISPs to Japan. The framework is open source — anyone can verify with identical conditions.
+
+**Should I choose k2cc or Brutal?**
+
+If your network has censorship interference (e.g., China mainland outbound), choose k2cc — Brutal triggers retransmission storms under censorship loss. If you're on an uncensored LAN with known exact bandwidth, Brutal can work. But k2cc is never worse than Brutal in any scenario, and requires zero configuration.
 
 ---
 

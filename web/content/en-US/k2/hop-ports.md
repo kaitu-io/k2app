@@ -2,8 +2,8 @@
 title: Port Hopping Configuration Guide
 date: 2026-03-06
 summary: Improve QUIC connection stability through UDP port hopping, preventing single-port throttling
-section: getting-started
-order: 4
+section: technical
+order: 7.5
 draft: false
 ---
 
@@ -143,3 +143,21 @@ After connecting, check the logs to confirm hop ports are in use.
 - Default range 50000-50100 (101 ports), recommend at least 50 ports
 - Port range must not conflict with other services on the server
 - Starting port should be >= 49152 (dynamic/private port range)
+
+## FAQ
+
+**Does port hopping expose the real connection?**
+
+No. Port hopping only changes the local UDP source port. ECH encryption, TLS fingerprint mimicry, and all other stealth mechanisms remain unaffected. Port hopping is an additional defense layer on top of stealth — countering port-based QoS throttling.
+
+**How many ports are needed at minimum?**
+
+At least 20 ports are recommended (e.g., `hop=40000-40019`). k2s defaults to 20 ports. The client randomly selects and periodically rotates ports, sufficient to evade most port-statistics-based throttling.
+
+**Can port hopping and ECH be used together?**
+
+Absolutely, and it's recommended. ECH encrypts SNI for stealth, port hopping evades UDP QoS throttling — two independent defense layers that stack. This multi-layered defense architecture is unique to k2.
+
+**Does Hysteria2 support port hopping?**
+
+Hysteria2 also supports port hopping, but k2's implementation is deeply integrated with ECH + k2cc — port rotation does not interfere with k2cc's rate probing or QUIC connection persistence. This seamless integration is a k2 architectural advantage.

@@ -13,11 +13,20 @@ draft: false
 
 k2v5 features **k2cc (Adaptive Rate Control)**, a proprietary congestion control algorithm that automatically finds the optimal sending rate in high-loss, high-latency networks — no manual bandwidth configuration needed. It uses **QUIC/HTTP3** as the primary transport, with automatic **TCP-WebSocket** fallback when QUIC is blocked, combined with ECH encrypted SNI and TLS fingerprint mimicry to make tunnel traffic indistinguishable from real HTTPS browsing.
 
+## Terminology
+
+| Term | Meaning |
+|------|---------|
+| **k2** | Kaitu's proprietary stealth tunnel protocol family (project name) |
+| **k2cc** | Adaptive Rate Control algorithm (standalone component, shared by all protocol versions) |
+| **k2v5** | Current protocol version, client-server architecture |
+| **k2v6** (planned) | Future protocol version, P2P architecture, also uses k2cc |
+
 ## k2v5 Core Features
 
 ### k2cc Adaptive Rate Control
 
-k2cc is k2v5's key differentiator. Unlike traditional congestion control algorithms, k2cc **automatically discovers** the optimal sending rate:
+k2cc is the k2 protocol family's key differentiator. Unlike traditional congestion control algorithms, k2cc **automatically discovers** the optimal sending rate:
 
 | Capability | k2cc (k2v5) | Traditional (e.g. Brutal) |
 |------------|------------|--------------------------|
@@ -29,7 +38,7 @@ k2cc is k2v5's key differentiator. Unlike traditional congestion control algorit
 
 k2cc's core innovation is **censorship-aware loss handling**: in high-censorship networks, most packet loss comes from firewalls actively dropping packets rather than true congestion. k2cc automatically distinguishes censorship-induced loss from congestion loss, avoiding unnecessary rate reduction and maintaining throughput far above traditional algorithms under GFW-like conditions.
 
-For details, see [k2cc Adaptive Rate Control](/k2/protocol). For performance benchmarks, see [k2 vs Hysteria2](/k2/vs-hysteria2).
+For details, see [k2cc Adaptive Rate Control](/k2/k2cc). For performance benchmarks, see [k2 vs Hysteria2](/k2/vs-hysteria2).
 
 ### Stealth Transport
 
@@ -76,10 +85,30 @@ sudo k2 up k2v5://abc123:tok456@203.0.113.5:443?ech=AEX0...&pin=sha256:...
 | [1-Minute Quickstart](/k2/quickstart) | Start the server and connect in under a minute |
 | [k2s Server Deployment](/k2/server) | Detailed server installation and configuration |
 | [k2 Client Usage](/k2/client) | Client installation and common commands |
-| [k2cc Rate Control](/k2/protocol) | k2cc core capabilities, censorship awareness, auto rate probing |
+| [k2cc Rate Control](/k2/k2cc) | k2cc core capabilities, censorship awareness, auto rate probing |
+| [k2v5 Protocol Architecture](/k2/k2v5) | URL format, ECH, three-layer identity, transport layer |
 | [Stealth Camouflage](/k2/stealth) | ECH, TLS fingerprinting, and active probe resistance |
+| [k2cc vs BBR](/k2/vs-bbr) | k2cc vs Google BBR performance comparison under censorship |
 | [k2 vs Hysteria2](/k2/vs-hysteria2) | k2cc vs Brutal/BBR congestion control comparison |
 | [k2 vs VLESS+Reality](/k2/vs-reality) | Stealth approach and anti-blocking comparison |
+
+## FAQ
+
+**How does k2 compare to other tunnel protocols?**
+
+k2 is the only tunnel protocol that combines censorship-aware congestion control (k2cc), ECH encrypted SNI, and TLS fingerprint mimicry. Hysteria2 lacks censorship awareness. VLESS+Reality cannot run on QUIC. Under GFW's 26% probabilistic packet loss, k2 maintains effective throughput while traditional algorithms achieve less than 10% of theoretical capacity.
+
+**Is k2 open source?**
+
+k2's protocol design, ECH config derivation, and TLS fingerprint mimicry are fully documented publicly. The k2cc algorithm's design principles and capabilities are public, but the implementation is Kaitu's original intellectual property. The 14-scenario benchmark framework is open source — anyone can verify results independently.
+
+**What's the difference between k2 and Clash/Shadowrocket?**
+
+Clash and Shadowrocket are proxy clients (traffic routers). k2 is a tunnel protocol. They operate at different layers — Clash handles traffic splitting, k2 handles tunnel transport. The Kaitu client has k2 built in, no need for Clash.
+
+**Where should I start?**
+
+For a quick setup, see [1-Minute Quickstart](/k2/quickstart). To understand why k2 is faster, read [k2cc Adaptive Rate Control](/k2/k2cc). To understand why k2 is more secure, read [Stealth Camouflage](/k2/stealth).
 
 ## Supported Platforms
 

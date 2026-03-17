@@ -8,7 +8,7 @@
  * 1. Post with slug 'k2/vs-hysteria2' exists and contains non-empty content with "Hysteria2"
  * 2. Content does NOT disclose PCC, Vivace, or full algorithm name
  * 3. All 4 comparison dimensions are present in the content
- * 4. Frontmatter has correct title, section="comparison", order=7
+ * 4. Frontmatter has correct title, section="comparison", order=8
  */
 import { describe, it, expect, vi, beforeAll } from 'vitest';
 import { readFileSync } from 'fs';
@@ -34,7 +34,7 @@ vi.mock('#velite', () => ({
       filePath: 'zh-CN/k2/vs-hysteria2',
       locale: 'zh-CN',
       slug: 'k2/vs-hysteria2',
-      order: 7,
+      order: 8,
       section: 'comparison',
     },
     {
@@ -48,7 +48,7 @@ vi.mock('#velite', () => ({
       filePath: 'en-US/k2/vs-hysteria2',
       locale: 'en-US',
       slug: 'k2/vs-hysteria2',
-      order: 7,
+      order: 8,
       section: 'comparison',
     },
   ],
@@ -197,7 +197,7 @@ describe('test_vs_hysteria2_has_frontmatter', () => {
     expect(post!.section).toBe('comparison');
   });
 
-  it('zh-CN post from Velite has order=7', async () => {
+  it('zh-CN post from Velite has order=8', async () => {
     const { posts } = await import('#velite');
 
     const post = (posts as Array<{
@@ -207,7 +207,7 @@ describe('test_vs_hysteria2_has_frontmatter', () => {
     }>).find((p) => p.slug === 'k2/vs-hysteria2' && p.locale === 'zh-CN');
 
     expect(post).toBeDefined();
-    expect(post!.order).toBe(7);
+    expect(post!.order).toBe(8);
   });
 
   it('zh-CN markdown frontmatter contains section: comparison', () => {
@@ -216,10 +216,9 @@ describe('test_vs_hysteria2_has_frontmatter', () => {
     expect(content).toContain('comparison');
   });
 
-  it('zh-CN markdown frontmatter contains order: 7', () => {
+  it('zh-CN markdown frontmatter contains order: 8', () => {
     const content = readContentFile('content/zh-CN/k2/vs-hysteria2.md');
-    expect(content).toContain('order:');
-    expect(content).toContain('7');
+    expect(content).toContain('order: 8');
   });
 
   it('en-US markdown frontmatter contains section: comparison', () => {
@@ -228,9 +227,8 @@ describe('test_vs_hysteria2_has_frontmatter', () => {
     expect(content).toContain('comparison');
   });
 
-  it('en-US markdown frontmatter contains order: 7', () => {
+  it('en-US markdown frontmatter contains order: 8', () => {
     const content = readContentFile('content/en-US/k2/vs-hysteria2.md');
-    expect(content).toContain('order:');
-    expect(content).toContain('7');
+    expect(content).toContain('order: 8');
   });
 });

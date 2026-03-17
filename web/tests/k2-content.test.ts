@@ -5,7 +5,7 @@
  * RED phase: tests fail because the content files don't exist yet.
  *
  * Tests verify:
- * 1. All 12 k2/ content files exist on disk and are non-empty
+ * 1. All 14 k2/ content files exist on disk and are non-empty
  * 2. Each file has required frontmatter (title, section, order)
  * 3. Overview page has correct title (contains "k2") and no MPTCP
  * 4. Quickstart page has required commands (k2s run, k2 up)
@@ -22,7 +22,7 @@ import path from 'path';
 const CONTENT_DIR = path.resolve(__dirname, '../content');
 
 /** Slugs for each k2/ doc page */
-const EXPECTED_SLUGS = ['index', 'quickstart', 'server', 'client', 'protocol', 'stealth'];
+const EXPECTED_SLUGS = ['index', 'quickstart', 'server', 'client', 'k2cc', 'k2v5', 'stealth'];
 
 /** Locales that must have all k2/ content */
 const EXPECTED_LOCALES = ['zh-CN', 'en-US'];
@@ -64,7 +64,7 @@ function parseBody(content: string): string {
 }
 
 describe('test_k2_content_files_parse', () => {
-  it('all 12 k2/ markdown files exist on disk', () => {
+  it('all 14 k2/ markdown files exist on disk', () => {
     const missing: string[] = [];
     for (const locale of EXPECTED_LOCALES) {
       for (const slug of EXPECTED_SLUGS) {
@@ -144,7 +144,7 @@ describe('test_k2_content_has_required_frontmatter', () => {
   });
 
   it('section values are one of the allowed sections', () => {
-    const allowedSections = new Set(['getting-started', 'technical']);
+    const allowedSections = new Set(['overview', 'getting-started', 'technical']);
     for (const locale of EXPECTED_LOCALES) {
       for (const slug of EXPECTED_SLUGS) {
         const raw = readMd(locale, slug);
@@ -157,14 +157,15 @@ describe('test_k2_content_has_required_frontmatter', () => {
     }
   });
 
-  it('order values match spec: index=1, quickstart=2, server=3, client=4, protocol=5, stealth=6', () => {
+  it('order values match spec: index=1, quickstart=2, server=3, client=4, k2cc=5, k2v5=6, stealth=7', () => {
     const expectedOrders: Record<string, number> = {
       index: 1,
       quickstart: 2,
       server: 3,
       client: 4,
-      protocol: 5,
-      stealth: 6,
+      k2cc: 5,
+      k2v5: 6,
+      stealth: 7,
     };
     for (const locale of EXPECTED_LOCALES) {
       for (const slug of EXPECTED_SLUGS) {

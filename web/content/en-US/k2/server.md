@@ -150,6 +150,28 @@ curl -fsSL https://kaitu.io/i/k2s | sudo sh
 sudo systemctl restart k2s
 ```
 
+## FAQ
+
+**How many server resources does k2s need?**
+
+Very few. k2s compiles to a single binary (~50MB), with typical runtime memory usage of 50-100MB. A single 2-core, 4GB VPS can support 100+ concurrent connections. Lighter than multi-process solutions like Xray/V2Ray.
+
+**Is the server really zero-config?**
+
+Yes. On first start, k2s auto-generates ECH key pairs, self-signed certificates (EC + RSA dual certificates), and HPKE configuration, then prints a ready-to-use connection URL. No config file editing required. Even Hysteria2's server requires manually obtaining ACME certificates or preparing self-signed certificates.
+
+**Can the ECH outer domain (public_name) be customized?**
+
+Yes. Modify the `public_name` field in `/etc/k2s/config.yml`. Choose a major CDN domain popular in your server's region for best camouflage credibility.
+
+**What if port 443 is already in use?**
+
+You can change the listening port, but 443 is strongly recommended — non-standard ports (e.g., 8443) reduce stealth effectiveness because DPI pays more attention to HTTPS traffic on unusual ports.
+
+**Is Docker deployment supported?**
+
+Yes. k2s provides official Docker images. But for most users, direct binary installation is simpler — the install script automatically registers a systemd service with auto-start on boot.
+
 ---
 
 Next:

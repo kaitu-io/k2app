@@ -64,3 +64,17 @@ Proxy mode starts a local SOCKS5 proxy at `socks5://127.0.0.1:1080`. No system r
 ---
 
 Next: [k2s Server Deployment](/k2/server) for advanced configuration and Docker deployment.
+
+## FAQ
+
+**Does the whole process really take just one minute?**
+
+Yes. Server install + start takes ~30 seconds, client install + connect takes ~30 seconds. k2cc begins automatically probing for the optimal rate immediately after connection, with zero configuration needed.
+
+**Do I need to configure bandwidth manually?**
+
+No. This is a key difference from Hysteria2 — Hysteria2's Brutal mode requires manual `up_mbps`/`down_mbps` settings, and incorrect values severely degrade performance. k2cc discovers the optimal rate automatically.
+
+**Can I share the connection URL with others?**
+
+Yes. The connection URL contains authentication credentials and can be safely shared with other users connecting to the same server.

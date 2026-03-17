@@ -147,12 +147,12 @@
     }
   },
   "security": {
-    "title": "k2v5 协议 — 下一代隐身隧道",
-    "description": "k2v5 基于 ECH（加密客户端问候）构建，彻底解决 SNI 泄漏问题。搭载 k2cc 自适应速率控制，结合 QUIC 低延迟传输，在高丢包弱网环境下实现稳定高吞吐。",
+    "title": "k2cc — 专为抗 QoS 设计的拥塞控制",
+    "description": "k2cc 自适应速率控制算法，专门对抗审查网络的 QoS 限速和概率性丢包。自动区分拥塞丢包与审查丢包，在 GFW 26% 丢包率下仍维持有效传输。搭配 ECH 隐身 + QUIC 低延迟传输，隐身与速度兼得。",
     "icon": "🛡️",
     "caTech": {
-      "title": "ECH 隐身隧道技术",
-      "description": "k2v5 采用 ECH（Encrypted Client Hello）加密 TLS 握手的 SNI 字段，DPI 深度包检测无法识别目标域名，主动探测返回合法网站响应，从协议层实现不可检测。",
+      "title": "k2cc 抗 QoS 拥塞控制",
+      "description": "k2cc 自动区分网络拥塞丢包与审查基础设施主动丢弃的数据包，在 QoS 限速和概率性丢包环境下维持接近链路容量的吞吐量。零配置，无需手动设定带宽——审查网络中吞吐量远超 BBR 和 Brutal。",
       "advantages": {
         "title": "核心特性",
         "item1": "ECH 加密 SNI，TLS 握手不可检测",

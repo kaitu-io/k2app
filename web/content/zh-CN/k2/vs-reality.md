@@ -3,7 +3,7 @@ title: "k2 vs VLESS+Reality：隐身与抗封锁对比"
 date: 2026-02-22
 summary: "k2（ECH + k2cc）与 VLESS+Reality 的技术对比：TLS 指纹伪装、GFW 检测对抗、拥塞控制、QUIC 支持，基于学术研究的深度分析。"
 section: comparison
-order: 8
+order: 9
 draft: false
 ---
 
@@ -150,7 +150,7 @@ USENIX Security 2024 论文证明嵌套 TLS 握手会在数据包大小和时序
 
 VLESS+Reality **没有应用层拥塞控制机制**。它完全依赖操作系统内核的 TCP 拥塞控制（通常配置为 BBR），且**无法运行在 QUIC 上**——Reality 的认证信息存储在 TLS Session ID 字段中，而 QUIC TLS 的 Session ID 长度为 0，无法承载认证数据。
 
-k2 搭载 [k2cc](/k2/protocol)，并以 QUIC/H3 作为主传输协议。
+k2 搭载 [k2cc](/k2/k2cc)，并以 QUIC/H3 作为主传输协议。
 
 | 传输维度 | k2 | VLESS+Reality |
 |---------|-----|---------------|
