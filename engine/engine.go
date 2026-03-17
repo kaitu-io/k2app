@@ -43,6 +43,8 @@ type Engine struct {
 	networkMonitor NetworkChangeNotifier
 	health         *healthMonitor
 	probe          *recoveryProbe
+	netCoord       *netCoordinator
+	dnsH           *dnsHandler // for counter reset on network recovery
 	proxyDNS       *dns.ProxyDNSClient // proxy DNS connection pool (nil in proxy mode)
 }
 
@@ -127,7 +129,14 @@ func (e *Engine) Start(cfg Config) error {
 	// for interface-bound dialing. Must start before Happy Eyeballs (step 3).
 	// Safe: OnNetworkChanged() early-returns when state != connected.
 	if cfg.NetworkMonitor != nil {
-		if err := cfg.NetworkMonitor.Start(func() { e.OnNetworkChanged() }); err != nil {
+		if err := cfg.NetworkMonitor.Start(func() {
+			e.mu.Lock()
+			nc := e.netCoord
+			e.mu.Unlock()
+			if nc != nil {
+				nc.handleEvent(&NetEvent{Signal: SignalChanged, Source: "singtun"})
+			}
+		}); err != nil {
 			slog.Warn("engine: network monitor start failed (non-fatal)", "err", err)
 		}
 	}
@@ -267,6 +276,7 @@ func (e *Engine) Start(cfg Config) error {
 
 	// 8. Start.
 	var proxyDNS *dns.ProxyDNSClient // non-nil in TUN mode; stored in Engine for reconnect reset
+	var dh *dnsHandler // non-nil in TUN mode; stored in Engine for DNS counter reset
 	if client.Mode != "proxy" {
 		// TUN mode (mobile or desktop): intercept DNS at port 53.
 		// If DirectDialer implements DialerController, use its control func
@@ -288,7 +298,8 @@ func (e *Engine) Start(cfg Config) error {
 			Filter:    dns.NewFilter(dns.FilterConfig{}),
 			EngineCtx: ctx, // engine context — cancelled on Stop()
 		})
-		if err := tunnel.StartWithHandler(ctx, &dnsHandler{inner: tunnel, dns: dnsMW, ctx: ctx, engine: e}); err != nil {
+		dh = &dnsHandler{inner: tunnel, dns: dnsMW, ctx: ctx, engine: e}
+		if err := tunnel.StartWithHandler(ctx, dh); err != nil {
 			if cfg.NetworkMonitor != nil {
 				cfg.NetworkMonitor.Close()
 			}
@@ -333,6 +344,19 @@ func (e *Engine) Start(cfg Config) error {
 
 	// Recovery probe: actively verifies wire connectivity after network changes.
 	e.probe = newRecoveryProbe(tm, e)
+
+	e.dnsH = dh
+	e.netCoord = newNetCoordinator(
+		func() { e.doNetworkReconnect() },
+		func() {
+			e.mu.Lock()
+			p := e.probe
+			e.mu.Unlock()
+			if p != nil {
+				p.stop()
+			}
+		},
+	)
 
 	e.setStateLocked(StateConnected)
 	handler = e.handler
@@ -401,12 +425,20 @@ func (e *Engine) reconnect() bool {
 	return true
 }
 
-// OnNetworkChanged should be called by the platform layer when a network
-// change is detected (e.g., WiFi to cellular). Resets wire transports and
-// clears stale network errors. Auth errors survive (WiFi→cellular doesn't
-// fix expired subscriptions).
-func (e *Engine) OnNetworkChanged() {
-	slog.Info("engine: network changed")
+// doNetworkReconnect performs a full reconnect with DNS counter reset
+// and stale error clearing. Called by netCoordinator on network recovery
+// or interface change.
+func (e *Engine) doNetworkReconnect() {
+	slog.Info("engine: network reconnect")
+
+	// Reset DNS failure counter — old failures are stale after network change.
+	e.mu.Lock()
+	dh := e.dnsH
+	e.mu.Unlock()
+	if dh != nil {
+		dh.ResetCounter()
+	}
+
 	if !e.reconnect() {
 		return
 	}
@@ -428,9 +460,45 @@ func (e *Engine) OnNetworkChanged() {
 	}
 }
 
+// OnNetworkChanged should be called by the platform layer when a network
+// change is detected (e.g., WiFi to cellular). Resets wire transports and
+// clears stale network errors. Auth errors survive (WiFi→cellular doesn't
+// fix expired subscriptions).
+func (e *Engine) OnNetworkChanged() {
+	e.mu.Lock()
+	nc := e.netCoord
+	e.mu.Unlock()
+	if nc != nil {
+		nc.handleEvent(&NetEvent{Signal: SignalChanged, Source: "singtun"})
+		return
+	}
+	// Fallback when netCoord not initialized.
+	e.doNetworkReconnect()
+}
+
+// OnNetEvent receives a network state change from the platform layer.
+// Called from appext (gomobile bridge) with platform-specific information.
+func (e *Engine) OnNetEvent(event *NetEvent) {
+	e.mu.Lock()
+	nc := e.netCoord
+	e.mu.Unlock()
+	if nc != nil {
+		nc.handleEvent(event)
+	}
+}
+
 // onHealthCritical is called by healthMonitor when wire quality is critically degraded.
 // Unlike OnNetworkChanged, it does NOT clear wire errors (degradation ≠ network switch).
 func (e *Engine) onHealthCritical() {
+	// Skip reconnect if network is known to be down — avoids futile work.
+	e.mu.Lock()
+	nc := e.netCoord
+	e.mu.Unlock()
+	if nc != nil && !nc.isNetworkUp() {
+		slog.Debug("engine: health critical but network is down, skipping reconnect")
+		return
+	}
+
 	slog.Warn("engine: health critical, reconnecting")
 	if !e.reconnect() {
 		return
@@ -529,6 +597,8 @@ func (e *Engine) Stop() error {
 	e.health = nil
 	probe := e.probe
 	e.probe = nil
+	e.netCoord = nil
+	e.dnsH = nil
 	e.mu.Unlock()
 
 	// Stop goroutines WITHOUT holding e.mu — health monitor's onReconnect
