@@ -1,4 +1,5 @@
 import NetworkExtension
+import Network
 import K2Mobile  // gomobile xcframework (appext/ package)
 import os.log
 
@@ -96,6 +97,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     private var engineStartTime: Date?
     private var lastSleepTime: Date?
     private var lastWakeTime: Date?
+    private var pathMonitor: NWPathMonitor?
     private let neDefaults = UserDefaults(suiteName: kAppGroup)
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
@@ -221,6 +223,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 self?.neDefaults?.set(true, forKey: "engineRunning")
                 self?.neDefaults?.set(now, forKey: "engineStartTime")
                 self?.startMemoryMonitor()
+                self?.startPathMonitor()
                 completionHandler(nil)
             } catch {
                 logger.error("engine.start() FAILED: \(error.localizedDescription, privacy: .public)")
@@ -276,6 +279,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         NativeLogger.shared.log("INFO", "stopTunnel: reason=\(reasonName)(\(reason.rawValue)) uptime=\(uptime)s")
         neDefaults?.set(false, forKey: "engineRunning")
         stopMemoryMonitor()
+        stopPathMonitor()
         do {
             try engine?.stop()
             NativeLogger.shared.log("INFO", "stopTunnel: engine stopped")
@@ -446,5 +450,41 @@ class EventBridge: NSObject, AppextEventHandlerProtocol {
 
     func onStats(_ txBytes: Int64, rxBytes: Int64) {
         // Stats tracking if needed
+    }
+
+    // MARK: - Network Path Monitor
+
+    private func startPathMonitor() {
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            guard let self = self else { return }
+            let event = EngineNetEvent()
+            event.source = "nwpath"
+            event.isWifi = path.usesInterfaceType(.wifi) || path.usesInterfaceType(.wiredEthernet)
+            event.isCellular = path.usesInterfaceType(.cellular)
+            event.hasIPv4 = path.supportsIPVersion(.v4)
+            event.hasIPv6 = path.supportsIPVersion(.v6)
+            if let iface = path.availableInterfaces.first {
+                event.interfaceName = iface.name
+                event.interfaceIndex = iface.index
+            }
+            if path.status == .satisfied {
+                event.signal = "available"
+                logger.info("pathMonitor: available iface=\(event.interfaceName) wifi=\(event.isWifi) cell=\(event.isCellular)")
+                NativeLogger.shared.log("INFO", "pathMonitor: available iface=\(event.interfaceName)")
+            } else {
+                event.signal = "unavailable"
+                logger.info("pathMonitor: unavailable (status=\(path.status))")
+                NativeLogger.shared.log("INFO", "pathMonitor: unavailable")
+            }
+            self.engine?.notifyNetEvent(event)
+        }
+        monitor.start(queue: .main)
+        pathMonitor = monitor
+    }
+
+    private func stopPathMonitor() {
+        pathMonitor?.cancel()
+        pathMonitor = nil
     }
 }
