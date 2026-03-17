@@ -1,142 +1,114 @@
-'use client';
+'use client'
 
-import { useRef, useEffect, useCallback } from 'react';
-import { useScrollProgress } from './useScrollProgress';
-import { useAudioBurst } from './useAudioBurst';
-import { tick, type TickContext } from './renderer';
-import { createParticlePool } from './particles';
-import { getEnergyParams } from './energy';
-import type { RenderState } from './types';
-import { PARTICLE_POOL_DESKTOP, PARTICLE_POOL_MOBILE, MAX_DPR_DESKTOP } from './constants';
+import { useRef, useEffect } from 'react'
+import { BREAKPOINTS } from './constants'
+import { PulseRenderer } from './renderer'
+import type { RenderConfig } from './types'
 
-export default function K2ccPulseCanvas() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const rafRef = useRef<number>(0);
-  const stateRef = useRef<RenderState | null>(null);
-  const particlesRef = useRef(createParticlePool(PARTICLE_POOL_DESKTOP));
-  const { getProgress } = useScrollProgress();
-  const { play: playSound } = useAudioBurst();
-  const lastTimeRef = useRef(0);
+function getRenderConfig(width: number, height: number): RenderConfig {
+  const isMobile = width < BREAKPOINTS.mobile
+  const isTablet = width >= BREAKPOINTS.mobile && width < BREAKPOINTS.tablet
+  const dpr = Math.min(window.devicePixelRatio, isMobile ? 2 : window.devicePixelRatio)
 
-  const isMobileRef = useRef(false);
-  const reducedMotionRef = useRef(false);
+  return {
+    width,
+    height,
+    dpr,
+    lineY: height * 0.4,
+    wordmarkY: height * 0.22,
+    wordmarkScale: isMobile ? 0.6 : 1.2,
+    visibleCycles: isMobile ? 2 : 3,
+    maxArcCount: isMobile ? 2 : isTablet ? 3 : 4,
+    maxArcDepth: isMobile ? 4 : 5,
+    maxParticles: isMobile ? 10 : isTablet ? 15 : 20,
+    useRadialGlow: !isMobile,
+  }
+}
 
-  const setupCanvas = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return null;
-
-    const rect = canvas.getBoundingClientRect();
-    const dpr = Math.min(window.devicePixelRatio, MAX_DPR_DESKTOP);
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
-    ctx.scale(dpr, dpr);
-
-    isMobileRef.current = rect.width < 768;
-    if (isMobileRef.current) {
-      particlesRef.current = createParticlePool(PARTICLE_POOL_MOBILE);
-    }
-
-    return { ctx, width: rect.width, height: rect.height };
-  }, []);
+export function K2ccPulseCanvas() {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const rafRef = useRef<number>(0)
 
   useEffect(() => {
-    reducedMotionRef.current = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const canvas = canvasRef.current
+    if (!canvas) return
 
-    const setup = setupCanvas();
-    if (!setup) return;
-
-    stateRef.current = {
-      scrollProgress: 0,
-      smoothProgress: 0,
-      scrollDirection: 'down',
-      time: 0,
-      beat: 'rest',
-      energy: getEnergyParams(0),
-      glitch: { phase: 'idle', framesLeft: 0, cooldownLeft: 0, offset: 0, width: 0 },
-      particles: particlesRef.current,
-      shakeX: 0,
-      shakeY: 0,
-      hasPlayedSound: false,
-      wordmarkOpacity: 0,
-    };
-
-    let resizeTimeout: ReturnType<typeof setTimeout>;
-    const observer = new ResizeObserver(() => {
-      clearTimeout(resizeTimeout);
-      resizeTimeout = setTimeout(() => setupCanvas(), 100);
-    });
-    if (canvasRef.current) observer.observe(canvasRef.current);
-
-    let visible = true;
-    const onVisibility = () => {
-      visible = !document.hidden;
-      if (visible) lastTimeRef.current = 0;
-    };
-    document.addEventListener('visibilitychange', onVisibility);
-
-    const loop = (timestamp: number) => {
-      if (!visible || !stateRef.current || !canvasRef.current) {
-        rafRef.current = requestAnimationFrame(loop);
-        return;
+    // Reduced motion: static green line
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      const rect = canvas.getBoundingClientRect()
+      const dpr = Math.min(window.devicePixelRatio, 2)
+      canvas.width = rect.width * dpr
+      canvas.height = rect.height * dpr
+      const staticCtx = canvas.getContext('2d')
+      if (staticCtx) {
+        staticCtx.scale(dpr, dpr)
+        const lineY = rect.height * 0.4
+        staticCtx.strokeStyle = '#00ff88'
+        staticCtx.lineWidth = 1.5
+        staticCtx.globalAlpha = 0.6
+        staticCtx.beginPath()
+        staticCtx.moveTo(0, lineY)
+        staticCtx.lineTo(rect.width, lineY)
+        staticCtx.stroke()
+        staticCtx.shadowColor = '#00ff88'
+        staticCtx.shadowBlur = 4
+        staticCtx.stroke()
+        staticCtx.shadowBlur = 0
+        staticCtx.globalAlpha = 1
       }
+      return
+    }
 
-      const deltaTime = lastTimeRef.current ? timestamp - lastTimeRef.current : 16;
-      lastTimeRef.current = timestamp;
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
 
-      const progress = getProgress();
-      stateRef.current.scrollProgress = progress.raw;
-      stateRef.current.smoothProgress = progress.smooth;
-      stateRef.current.scrollDirection = progress.direction;
+    const rect = canvas.getBoundingClientRect()
+    const config = getRenderConfig(rect.width, rect.height)
+    canvas.width = rect.width * config.dpr
+    canvas.height = rect.height * config.dpr
+    ctx.scale(config.dpr, config.dpr)
 
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        rafRef.current = requestAnimationFrame(loop);
-        return;
+    const renderer = new PulseRenderer(ctx, config)
+
+    // ResizeObserver
+    let resizeTimer: ReturnType<typeof setTimeout>
+    const observer = new ResizeObserver((entries) => {
+      clearTimeout(resizeTimer)
+      resizeTimer = setTimeout(() => {
+        const entry = entries[0]
+        if (!entry) return
+        const { width, height } = entry.contentRect
+        const newConfig = getRenderConfig(width, height)
+        canvas.width = width * newConfig.dpr
+        canvas.height = height * newConfig.dpr
+        ctx.setTransform(1, 0, 0, 1, 0, 0)
+        ctx.scale(newConfig.dpr, newConfig.dpr)
+        renderer.updateConfig(newConfig)
+      }, 100)
+    })
+    observer.observe(canvas)
+
+    // Visibility
+    let paused = false
+    const handleVisibility = () => { paused = document.hidden }
+    document.addEventListener('visibilitychange', handleVisibility)
+
+    // rAF loop — time-driven, no scroll dependency
+    const tick = (timestamp: number) => {
+      if (!paused) {
+        renderer.tick(timestamp, 0)
       }
-
-      const rect = canvas.getBoundingClientRect();
-
-      if (reducedMotionRef.current) {
-        ctx.save();
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.restore();
-        ctx.strokeStyle = '#00ff88';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        const y = rect.height * 0.4;
-        ctx.moveTo(0, y);
-        ctx.lineTo(rect.width, y);
-        ctx.stroke();
-      } else {
-        const tickCtx: TickContext = {
-          ctx,
-          width: rect.width,
-          height: rect.height,
-          isMobile: isMobileRef.current,
-          particles: particlesRef.current,
-          playSound,
-        };
-
-        stateRef.current = tick(tickCtx, stateRef.current, deltaTime);
-      }
-
-      rafRef.current = requestAnimationFrame(loop);
-    };
-
-    rafRef.current = requestAnimationFrame(loop);
+      rafRef.current = requestAnimationFrame(tick)
+    }
+    rafRef.current = requestAnimationFrame(tick)
 
     return () => {
-      cancelAnimationFrame(rafRef.current);
-      clearTimeout(resizeTimeout);
-      observer.disconnect();
-      document.removeEventListener('visibilitychange', onVisibility);
-    };
-  }, [setupCanvas, getProgress, playSound]);
+      cancelAnimationFrame(rafRef.current)
+      observer.disconnect()
+      document.removeEventListener('visibilitychange', handleVisibility)
+      clearTimeout(resizeTimer)
+    }
+  }, [])
 
   return (
     <canvas
@@ -145,5 +117,5 @@ export default function K2ccPulseCanvas() {
       style={{ zIndex: 0 }}
       aria-hidden="true"
     />
-  );
+  )
 }

@@ -1,99 +1,141 @@
-import type { GlitchState } from './types';
+import type { GlitchState } from './types'
 
-function fade(t: number): number { return t * t * t * (t * (t * 6 - 15) + 10); }
-function grad(hash: number, x: number): number { return (hash & 1) === 0 ? x : -x; }
-
-const PERM = new Uint8Array(512);
-(function initPerm() {
-  const p = new Uint8Array(256);
-  for (let i = 0; i < 256; i++) p[i] = i;
-  let seed = 42;
-  const seededRandom = () => {
-    seed = (seed * 16807 + 0) % 2147483647;
-    return (seed - 1) / 2147483646;
-  };
-  for (let i = 255; i > 0; i--) {
-    const j = Math.floor(seededRandom() * (i + 1));
-    [p[i], p[j]] = [p[j], p[i]];
-  }
-  for (let i = 0; i < 512; i++) PERM[i] = p[i & 255];
-})();
-
-export function perlin1d(x: number): number {
-  const xi = Math.floor(x) & 255;
-  const xf = x - Math.floor(x);
-  const u = fade(xf);
-  return grad(PERM[xi], xf) * (1 - u) + grad(PERM[xi + 1], xf - 1) * u;
+// --- Gaussian helper ---
+function gaussian(x: number, mean: number, sigma: number): number {
+  const d = x - mean
+  return Math.exp(-(d * d) / (2 * sigma * sigma))
 }
 
-function gaussian(x: number, center: number, width: number): number {
-  const d = (x - center) / width;
-  return Math.exp(-0.5 * d * d);
-}
-
+// --- PQRST template (normalized t in [0, 1]) ---
 export function pqrst(t: number): number {
-  const tn = ((t % 1) + 1) % 1;
-  if (tn < 0.12) return 0.15 * Math.sin(Math.PI * tn / 0.12);
-  if (tn < 0.20) return 0;
-  if (tn < 0.24) return -0.1 * gaussian(tn, 0.22, 0.01);
-  if (tn < 0.32) return 1.2 * gaussian(tn, 0.28, 0.015);
-  if (tn < 0.36) return -0.15 * gaussian(tn, 0.33, 0.01);
-  if (tn < 0.50) return 0;
-  if (tn < 0.68) return 0.3 * Math.sin(Math.PI * (tn - 0.50) / 0.18);
-  return 0;
+  t = ((t % 1) + 1) % 1 // wrap to [0, 1)
+
+  if (t < 0.12) {
+    // P wave
+    return 0.15 * Math.sin(Math.PI * t / 0.12)
+  } else if (t < 0.20) {
+    // PQ segment
+    return 0
+  } else if (t < 0.36) {
+    // QRS complex: Q dip + R spike + S dip
+    return (
+      -0.1 * gaussian(t, 0.22, 0.01) +
+       1.2 * gaussian(t, 0.28, 0.015) +
+      -0.15 * gaussian(t, 0.33, 0.01)
+    )
+  } else if (t < 0.50) {
+    // ST segment
+    return 0
+  } else if (t < 0.68) {
+    // T wave
+    return 0.3 * Math.sin(Math.PI * (t - 0.50) / 0.18)
+  } else {
+    // Baseline
+    return 0
+  }
 }
 
-export function rPeakSwell(phase: number): number {
-  const smoothstep = (edge0: number, edge1: number, x: number) => {
-    const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
-    return t * t * (3 - 2 * t);
-  };
-  return smoothstep(0.26, 0.28, phase) * smoothstep(0.30, 0.28, phase);
+// --- Simplified 1D Perlin noise ---
+// Hash-based with cosine interpolation, no library needed.
+const PERLIN_SIZE = 256
+const perlinTable: number[] = []
+for (let i = 0; i < PERLIN_SIZE; i++) {
+  perlinTable[i] = Math.random() * 2 - 1
 }
 
-export function updateGlitch(state: GlitchState, scrollProgress: number): GlitchState {
-  const inGlitchRange = scrollProgress >= 0.20 && scrollProgress <= 0.65;
+function perlinHash(i: number): number {
+  return perlinTable[((i % PERLIN_SIZE) + PERLIN_SIZE) % PERLIN_SIZE]
+}
+
+export function perlinNoise1D(x: number): number {
+  const xi = Math.floor(x)
+  const xf = x - xi
+  const u = xf * xf * (3 - 2 * xf) // smoothstep
+  return perlinHash(xi) * (1 - u) + perlinHash(xi + 1) * u
+}
+
+// --- Glitch state machine ---
+export function createGlitchState(): GlitchState {
+  return {
+    phase: 'idle',
+    startX: 0,
+    width: 0,
+    displacement: 0,
+    framesRemaining: 0,
+    cooldownRemaining: 0,
+  }
+}
+
+export function updateGlitch(state: GlitchState, canTrigger: boolean, viewportWidth: number): GlitchState {
   switch (state.phase) {
     case 'idle':
-      if (inGlitchRange && Math.random() < 0.003) {
+      if (canTrigger && Math.random() < 0.003) {
         return {
           phase: 'active',
-          framesLeft: 2 + Math.floor(Math.random() * 2),
-          cooldownLeft: 0,
-          offset: (Math.random() * 2 - 1) * 15,
+          startX: Math.random() * viewportWidth * 0.8,
           width: 80 + Math.random() * 120,
-        };
+          displacement: (Math.random() > 0.5 ? 1 : -1) * (5 + Math.random() * 15),
+          framesRemaining: 2 + Math.floor(Math.random() * 2),
+          cooldownRemaining: 0,
+        }
       }
-      return state;
+      return state
     case 'active':
-      if (state.framesLeft <= 0) {
-        return { ...state, phase: 'cooldown', cooldownLeft: 60 + Math.floor(Math.random() * 60) };
+      if (state.framesRemaining <= 0) {
+        return { ...state, phase: 'cooldown', cooldownRemaining: 60 + Math.floor(Math.random() * 60) }
       }
-      return { ...state, framesLeft: state.framesLeft - 1 };
+      return { ...state, framesRemaining: state.framesRemaining - 1 }
     case 'cooldown':
-      if (state.cooldownLeft <= 0) {
-        return { phase: 'idle', framesLeft: 0, cooldownLeft: 0, offset: 0, width: 0 };
+      if (state.cooldownRemaining <= 0) {
+        return { ...state, phase: 'idle' }
       }
-      return { ...state, cooldownLeft: state.cooldownLeft - 1 };
+      return { ...state, cooldownRemaining: state.cooldownRemaining - 1 }
     default:
-      return state;
+      return state
   }
 }
 
+// --- Full waveform synthesis ---
 export function waveform(
   x: number,
   time: number,
   amplitude: number,
   frequency: number,
   noiseIntensity: number,
-  viewportWidth: number,
-  visibleCycles: number,
+  wavelength: number,
+  glitch: GlitchState,
 ): number {
-  const wavelength = viewportWidth / visibleCycles;
-  const phase = ((x / wavelength + time * frequency) % 1 + 1) % 1;
-  let y = pqrst(phase) * amplitude;
-  if (noiseIntensity > 0) {
-    y += perlin1d(x * 0.01 + time * 2.0) * noiseIntensity * amplitude * 0.5;
+  // Apply glitch displacement
+  let effectiveX = x
+  if (glitch.phase === 'active' && x >= glitch.startX && x <= glitch.startX + glitch.width) {
+    effectiveX += glitch.displacement
   }
-  return y;
+
+  const phase = ((effectiveX / wavelength + time * frequency) % 1 + 1) % 1
+  let y = pqrst(phase) * amplitude
+
+  // Add Perlin noise
+  if (noiseIntensity > 0) {
+    y += perlinNoise1D(x * 0.01 + time * 2.0) * noiseIntensity * amplitude * 0.3
+  }
+
+  return y
+}
+
+// --- R-peak detection for glow and micro-swell ---
+export function isRPeak(phase: number): boolean {
+  return phase > 0.26 && phase < 0.30
+}
+
+export function rPeakSwell(phase: number, baseWidth: number): number {
+  if (phase < 0.26 || phase > 0.30) return baseWidth
+  // smoothstep up from 0.26 to 0.28, then down from 0.28 to 0.30
+  const up = smoothstep(0.26, 0.28, phase)
+  const down = smoothstep(0.30, 0.28, phase)
+  return baseWidth + 1.0 * up * down
+}
+
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)))
+  return t * t * (3 - 2 * t)
 }

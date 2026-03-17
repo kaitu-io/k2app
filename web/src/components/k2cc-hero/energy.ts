@@ -1,100 +1,126 @@
-import type { EnergyParams, BeatName } from './types';
-import {
-  BEAT_REST_END, BEAT_SENSE_END, BEAT_SILENCE_END,
-  BEAT_BUILDUP_END, BEAT_BURST_END,
-  COLOR_PRIMARY, COLOR_SILENCE, COLOR_WHITE,
-} from './constants';
+import { BEAT, BEAT_PARAMS, BRAND_GREEN_RGB, DIM_GREEN_RGB, WHITE_RGB } from './constants'
+import type { EnergyParams } from './types'
 
 function easeInOutCubic(t: number): number {
-  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
 }
 
-function lerp(a: number, b: number, t: number): number {
-  return a + (b - a) * t;
+function lerpNum(a: number, b: number, t: number): number {
+  return a + (b - a) * t
 }
 
-function lerpColor(a: string, b: string, t: number): string {
-  const parseHex = (h: string) => [
-    parseInt(h.slice(1, 3), 16),
-    parseInt(h.slice(3, 5), 16),
-    parseInt(h.slice(5, 7), 16),
-  ];
-  const [ar, ag, ab] = parseHex(a);
-  const [br, bg, bb] = parseHex(b);
-  const r = Math.round(lerp(ar, br, t));
-  const g = Math.round(lerp(ag, bg, t));
-  const bv = Math.round(lerp(ab, bb, t));
-  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${bv.toString(16).padStart(2, '0')}`;
+function lerpColor(a: [number, number, number], b: [number, number, number], t: number): [number, number, number] {
+  return [
+    Math.round(lerpNum(a[0], b[0], t)),
+    Math.round(lerpNum(a[1], b[1], t)),
+    Math.round(lerpNum(a[2], b[2], t)),
+  ]
 }
 
-interface BeatDef {
-  name: BeatName;
-  start: number;
-  end: number;
-  params: EnergyParams;
+function rgbToHex(rgb: [number, number, number]): string {
+  return '#' + rgb.map(c => c.toString(16).padStart(2, '0')).join('')
 }
 
-const BEATS: BeatDef[] = [
-  {
-    name: 'rest', start: 0, end: BEAT_REST_END,
-    params: { amplitude: 30, frequency: 0.8, glowRadius: 15, color: COLOR_PRIMARY, noiseIntensity: 0, lineWidth: 1.5 },
-  },
-  {
-    name: 'sense', start: BEAT_REST_END, end: BEAT_SENSE_END,
-    params: { amplitude: 80, frequency: 2.0, glowRadius: 80, color: COLOR_PRIMARY, noiseIntensity: 0.6, lineWidth: 2 },
-  },
-  {
-    name: 'silence', start: BEAT_SENSE_END, end: BEAT_SILENCE_END,
-    params: { amplitude: 12, frequency: 0.4, glowRadius: 5, color: COLOR_SILENCE, noiseIntensity: 0, lineWidth: 1 },
-  },
-  {
-    name: 'buildup', start: BEAT_SILENCE_END, end: BEAT_BUILDUP_END,
-    params: { amplitude: 150, frequency: 3.5, glowRadius: 200, color: COLOR_WHITE, noiseIntensity: 0.3, lineWidth: 2.5 },
-  },
-  {
-    name: 'burst', start: BEAT_BUILDUP_END, end: BEAT_BURST_END,
-    params: { amplitude: 0, frequency: 0, glowRadius: 9999, color: COLOR_WHITE, noiseIntensity: 0, lineWidth: 0 },
-  },
-  {
-    name: 'aftermath', start: BEAT_BURST_END, end: 1.0,
-    params: { amplitude: 30, frequency: 0.8, glowRadius: 15, color: COLOR_PRIMARY, noiseIntensity: 0, lineWidth: 1.5 },
-  },
-];
-
-export function getBeat(progress: number): BeatName {
-  for (const beat of BEATS) {
-    if (progress < beat.end) return beat.name;
-  }
-  return 'aftermath';
-}
-
-export function getEnergyParams(progress: number): EnergyParams {
-  const clampedProgress = Math.max(0, Math.min(1, progress));
-
-  let currentIdx = 0;
-  for (let i = 0; i < BEATS.length; i++) {
-    if (clampedProgress < BEATS[i].end) {
-      currentIdx = i;
-      break;
+/** Beat index: 0=rest, 1=sense, 2=silence, 3=buildup, 4=burst, 5=aftermath */
+function getBeatAndProgress(sp: number): [number, number] {
+  const boundaries = [0, BEAT.REST_END, BEAT.SENSE_END, BEAT.SILENCE_END, BEAT.BUILDUP_END, BEAT.BURST_END, 1.0]
+  for (let i = 0; i < 6; i++) {
+    if (sp <= boundaries[i + 1]) {
+      const range = boundaries[i + 1] - boundaries[i]
+      const local = range > 0 ? (sp - boundaries[i]) / range : 0
+      return [i, local]
     }
-    if (i === BEATS.length - 1) currentIdx = i;
+  }
+  return [5, 1.0]
+}
+
+// Color keyframes per beat: [startColor, endColor]
+const COLOR_KEYFRAMES: Array<[[number, number, number], [number, number, number]]> = [
+  [BRAND_GREEN_RGB, BRAND_GREEN_RGB],       // rest: solid green
+  [BRAND_GREEN_RGB, BRAND_GREEN_RGB],       // sense: solid green
+  [BRAND_GREEN_RGB, DIM_GREEN_RGB],         // silence: green -> dim
+  [DIM_GREEN_RGB, WHITE_RGB],               // buildup: dim -> white
+  [WHITE_RGB, WHITE_RGB],                   // burst: solid white
+  [WHITE_RGB, BRAND_GREEN_RGB],             // aftermath: white -> green
+]
+
+export function getEnergyParams(scrollProgress: number): EnergyParams {
+  const sp = Math.max(0, Math.min(1, scrollProgress))
+  const [beat, localProgress] = getBeatAndProgress(sp)
+  const t = easeInOutCubic(localProgress)
+
+  // Interpolate from current beat's value toward next beat's value across the
+  // full beat range. This ensures smooth transitions with no hard jumps at
+  // beat boundaries (spec: "no hard cuts").
+  const nextBeat = Math.min(beat + 1, 5)
+
+  function param(key: keyof typeof BEAT_PARAMS): number {
+    const current = BEAT_PARAMS[key][beat]
+    const next = BEAT_PARAMS[key][nextBeat]
+    return lerpNum(current, next, t)
   }
 
-  const current = BEATS[currentIdx];
-  const next = BEATS[Math.min(currentIdx + 1, BEATS.length - 1)];
+  const [colorStart, colorEnd] = COLOR_KEYFRAMES[beat]
+  const colorRgb = lerpColor(colorStart, colorEnd, t)
 
-  const beatRange = current.end - current.start;
-  const beatProgress = beatRange > 0 ? (clampedProgress - current.start) / beatRange : 0;
+  // Burst-phase wordmark progressive light-up: 0.65->0.75 ramps 0->1
+  let wordmarkOpacity = 0
+  if (beat === 4) {
+    // Within burst (0.65-0.80), light up from 0->1 in first 2/3 of phase
+    wordmarkOpacity = Math.min(1, localProgress / 0.67)
+  } else if (beat === 5) {
+    // Aftermath: stays lit until 0.93 (sub-phase localProgress ~0.65), then fades
+    const fadeStart = 0.65 // maps to scrollProgress ~0.93
+    const fadeEnd = 0.80   // maps to scrollProgress ~0.96
+    if (localProgress < fadeStart) {
+      wordmarkOpacity = 1
+    } else if (localProgress < fadeEnd) {
+      wordmarkOpacity = 1 - (localProgress - fadeStart) / (fadeEnd - fadeStart)
+    } else {
+      wordmarkOpacity = 0
+    }
+  }
 
-  const blendFactor = beatProgress > 0.5 ? (beatProgress - 0.5) * 2 : 0;
-  const blendEased = easeInOutCubic(blendFactor);
+  // Aftermath sub-phase tracking (spec: shatter/collapse/dissipate/reset)
+  let aftermathSubPhase = 0
+  let aftermathLocalProgress = 0
+  if (beat === 5) {
+    // 0.80-0.88 = shatter (localProgress 0-0.40)
+    // 0.88-0.93 = collapse (localProgress 0.40-0.65)
+    // 0.93-0.96 = dissipate (localProgress 0.65-0.80)
+    // 0.96-1.00 = reset (localProgress 0.80-1.00)
+    if (localProgress < 0.40) {
+      aftermathSubPhase = 0
+      aftermathLocalProgress = localProgress / 0.40
+    } else if (localProgress < 0.65) {
+      aftermathSubPhase = 1
+      aftermathLocalProgress = (localProgress - 0.40) / 0.25
+    } else if (localProgress < 0.80) {
+      aftermathSubPhase = 2
+      aftermathLocalProgress = (localProgress - 0.65) / 0.15
+    } else {
+      aftermathSubPhase = 3
+      aftermathLocalProgress = (localProgress - 0.80) / 0.20
+    }
+  }
 
   return {
-    amplitude: lerp(current.params.amplitude, next.params.amplitude, blendEased),
-    frequency: lerp(current.params.frequency, next.params.frequency, blendEased),
-    glowRadius: lerp(current.params.glowRadius, next.params.glowRadius, blendEased),
-    color: lerpColor(current.params.color, next.params.color, blendEased),
-    noiseIntensity: lerp(current.params.noiseIntensity, next.params.noiseIntensity, blendEased),
-    lineWidth: lerp(current.params.lineWidth, next.params.lineWidth, blendEased),
-  };
+    amplitude: param('amplitude'),
+    frequency: param('frequency'),
+    glowRadius: param('glowRadius'),
+    glowIntensity: param('glowIntensity'),
+    lineWidth: param('lineWidth'),
+    noiseIntensity: param('noiseIntensity'),
+    color: rgbToHex(colorRgb),
+    colorRgb,
+    branchCount: Math.round(param('branchCount')),
+    arcCount: Math.round(param('arcCount')),
+    arcDepth: Math.round(param('arcDepth')),
+    particleSpawnRate: param('branchCount') > 0 ? 0.3 : 0,
+    screenShake: param('screenShake'),
+    wordmarkOpacity,
+    isBurst: beat === 4,
+    aftermathSubPhase,
+    aftermathLocalProgress,
+  }
 }
