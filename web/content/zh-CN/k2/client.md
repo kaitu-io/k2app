@@ -15,7 +15,7 @@ k2 命令行客户端支持 **Linux**（x86_64 / arm64）和 **macOS**（Intel /
 ## 安装
 
 ```bash
-curl -fsSL https://kaitu.io/install.sh | sudo sh -s k2
+curl -fsSL https://kaitu.io/i/k2 | sudo bash
 ```
 
 验证安装：

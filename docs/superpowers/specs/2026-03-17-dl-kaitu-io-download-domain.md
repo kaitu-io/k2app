@@ -209,6 +209,18 @@ CDN_BASE="https://dl.kaitu.io/kaitu/android"
 node scripts/generate-changelog.js
 ```
 
+### web/content/ — k2 文档安装链接修复
+以下文件中的旧安装链接已更新为 `kaitu.io/i/k2 | sudo bash`：
+- `zh-CN/k2/client.md`：`kaitu.io/install.sh | sudo sh -s k2` → `kaitu.io/i/k2 | sudo bash`
+- `en-US/k2/client.md`：`dl.k2.52j.me/install.sh | sudo sh -s k2` → `kaitu.io/i/k2 | sudo bash`
+- `zh-CN/k2/quickstart.md`：同上
+- `en-US/k2/quickstart.md`：`dl.k2.52j.me/install.sh | sudo sh -s k2` → `kaitu.io/i/k2 | sudo bash`
+
+已正确无需修改：`index.md`、`vs-reality.md`、`server.md` 中的 `kaitu.io/i/k2` 和 `kaitu.io/i/k2s`。
+
+### web/public/install.sh（删除）
+旧版 k2/k2s CLI 安装脚本。k2 CLI 不单独发布，功能由 `web/public/i/k2`（桌面客户端）和 `web/public/i/k2s`（服务端）覆盖。
+
 ### web/src/lib/constants.ts — DOWNLOAD_LINKS.android 补充说明
 `DOWNLOAD_LINKS.android` 当前指向 `/waymaker/` 路径（旧产品 APK），不在本次范围内。待 Android 正式发布后使用 `getDownloadLinks()` 动态生成链接时统一切换。
 

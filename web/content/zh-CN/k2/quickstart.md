@@ -37,7 +37,7 @@ k2v5://abc123:tok456@203.0.113.5:443?ech=AEX0...&pin=sha256:...
 在您的客户端机器上执行（将 URL 替换为上一步输出的实际 URL）：
 
 ```bash
-curl -fsSL https://kaitu.io/install.sh | sudo sh -s k2
+curl -fsSL https://kaitu.io/i/k2 | sudo bash
 sudo k2 up k2v5://abc123:tok456@203.0.113.5:443?ech=AEX0...&pin=sha256:...
 ```
 

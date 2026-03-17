@@ -16,7 +16,7 @@ If you prefer a graphical interface, the [Kaitu desktop client](/install) has k2
 ## Installation
 
 ```bash
-curl -fsSL https://dl.k2.52j.me/install.sh | sudo sh -s k2
+curl -fsSL https://kaitu.io/i/k2 | sudo bash
 ```
 
 Verify:
