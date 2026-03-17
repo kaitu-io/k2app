@@ -348,11 +348,14 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector {
                                 Log.e(TAG, "onAvailable: engine.wake() failed: ${e.message}", e)
                             }
                         }
-                        Log.d(TAG, "Triggering engine network available")
+                        Log.d(TAG, "Triggering engine network change")
                         val caps = cm.getNetworkCapabilities(network)
                         val lp = cm.getLinkProperties(network)
                         val event = NetEvent().apply {
-                            signal = "available"
+                            // Use "changed" not "available" — Android onAvailable means
+                            // "a network joined the set", not "network recovered from nothing".
+                            // WiFi→cellular handoff fires onAvailable(cellular) without onLost(WiFi).
+                            signal = "changed"
                             interfaceName = lp?.interfaceName ?: ""
                             isWifi = caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
                             isCellular = caps?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true
@@ -374,9 +377,20 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector {
                 pendingNetworkChange = null
                 // Run gomobile call off main thread
                 engineExecutor.execute {
+                    // Check if ANY network is still active before declaring unavailable.
+                    // onLost fires per-network — if WiFi lost but cellular up, don't say unavailable.
+                    val activeNet = cm.activeNetwork
+                    val signal = if (activeNet == null) "unavailable" else "changed"
                     val event = NetEvent().apply {
-                        signal = "unavailable"
+                        this.signal = signal
                         source = "connectivity"
+                        if (activeNet != null) {
+                            val activeCaps = cm.getNetworkCapabilities(activeNet)
+                            val activeLp = cm.getLinkProperties(activeNet)
+                            interfaceName = activeLp?.interfaceName ?: ""
+                            isWifi = activeCaps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+                            isCellular = activeCaps?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true
+                        }
                     }
                     engine?.notifyNetEvent(event)
                 }
