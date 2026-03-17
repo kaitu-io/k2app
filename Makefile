@@ -81,6 +81,16 @@ build-windows: pre-build build-webapp build-k2-windows sync-adb-tools simplisign
 	@echo "Release artifacts in release/$(VERSION)/:"
 	@ls -la release/$(VERSION)/
 
+build-linux: pre-build build-webapp build-k2-linux
+	cd desktop && yarn tauri build --bundles appimage
+	@echo "--- Collecting artifacts ---"
+	@mkdir -p release/$(VERSION)
+	@cp desktop/src-tauri/target/release/bundle/appimage/*.AppImage release/$(VERSION)/Kaitu_$(VERSION)_amd64.AppImage
+	@cp desktop/src-tauri/target/release/bundle/appimage/*.AppImage.sig release/$(VERSION)/Kaitu_$(VERSION)_amd64.AppImage.sig 2>/dev/null || true
+	@echo "=== Linux build complete ==="
+	@echo "Release artifacts in release/$(VERSION)/:"
+	@ls -la release/$(VERSION)/
+
 build-openwrt: pre-build
 	bash scripts/build-openwrt.sh
 
