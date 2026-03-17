@@ -12,6 +12,7 @@ make dev-macos                   # Tauri desktop dev (macOS)
 make dev-windows                 # Tauri desktop dev (Windows)
 make build-macos                 # Signed macOS PKG (universal binary)
 make build-windows               # Signed Windows NSIS installer (cross-compiled on macOS via cargo-xwin)
+make build-linux                  # AppImage (CI only — requires Linux host + webkit2gtk)
 make build-mobile-android        # gomobile bind + cap sync + assembleRelease
 make build-mobile-ios            # gomobile bind + cap sync + xcodebuild archive
 make publish-mobile VERSION=x.y.z  # Generate + upload mobile latest.json (phase 2 release)
@@ -137,6 +138,8 @@ docs/plans/          Architecture design docs
 - **Daemon helper API routing**: `adb-*` actions use `/api/helper` endpoint (not `/api/core`). Tauri bridge routes via `daemon_helper_exec` IPC. Standalone bridge routes by URL prefix check. Vite dev proxy must include `/api/helper`.
 - **Root daemon adb discovery**: Daemon runs as root → different `$PATH` and `$HOME`. `findAdbCandidates()` scans all `/Users/*/Library/Android/sdk/`, Homebrew paths, before CDN fallback. Uses `gadb` (pure Go ADB TCP client) for device ops.
 - **Desktop artifact naming**: `Kaitu_{VERSION}_{ARCH}.{EXT}` — underscore-separated. macOS: `_universal.pkg` / `_universal.app.tar.gz` / `.sig`. Windows: `_x64.exe` / `.sig`. S3 path: `kaitu/desktop/{VERSION}/`. Never use hyphen separator (`Kaitu-`) or `-setup` suffix.
+- **Linux AppImage**: webkit2gtk-4.1 is dynamically linked (not bundled). Install script checks for it. Only amd64 initially. Auto-update via `tauri-plugin-updater` (AppImage only format that supports it).
+- **Linux admin elevation**: `pkexec` for graphical password dialog. Returns `"pkexec_unavailable"` error if pkexec missing — frontend shows manual `sudo k2 service install` instructions.
 
 ## Tech Stack
 

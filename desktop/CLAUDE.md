@@ -10,6 +10,7 @@ cd src-tauri && cargo test      # Rust tests (43 tests)
 yarn tauri dev                  # Dev mode (expects Vite on :1420)
 yarn tauri build --target universal-apple-darwin  # macOS build
 yarn tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc  # Windows cross-build from macOS
+yarn tauri build --bundles appimage  # Linux AppImage (requires Linux host)
 ```
 
 ## Rust Modules (`src-tauri/src/`)
