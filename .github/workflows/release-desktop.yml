@@ -116,6 +116,9 @@ jobs:
           - runner: [self-hosted, macOS, ARM64]
             target: x86_64-pc-windows-msvc
             platform: Windows
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            platform: Linux
 
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
@@ -156,6 +159,17 @@ jobs:
           command -v makensis || { echo "ERROR: makensis (NSIS) not found"; exit 1; }
           command -v osslsigncode || { echo "ERROR: osslsigncode not found"; exit 1; }
 
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            patchelf
+
       - name: Setup Go
         if: matrix.platform == 'macOS'
         uses: actions/setup-go@v5
@@ -176,6 +190,50 @@ jobs:
             echo "Adding x86_64-pc-windows-msvc target..."
             rustup target add x86_64-pc-windows-msvc
           }
+
+      - name: Setup Node.js (Linux)
+        if: matrix.platform == 'Linux'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+
+      - name: Setup Go (Linux)
+        if: matrix.platform == 'Linux'
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: k2/go.sum
+
+      - name: Setup Rust (Linux)
+        if: matrix.platform == 'Linux'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup sccache (Linux)
+        if: matrix.platform == 'Linux'
+        uses: mozilla-actions/sccache-action@v0.0.6
+
+      - name: Verify sccache works (Linux)
+        if: matrix.platform == 'Linux'
+        run: |
+          export SCCACHE_GHA_ENABLED=true
+          if sccache rustc -vV >/dev/null 2>&1; then
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+            echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          else
+            echo "::warning::sccache GHA backend unavailable, compiling without cache"
+          fi
+
+      - name: Cache cargo registry (Linux)
+        if: matrix.platform == 'Linux'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-Linux-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-Linux-
 
       - name: Setup sccache
         if: matrix.platform == 'macOS'
@@ -274,6 +332,13 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: make build-windows
 
+      - name: Build Linux (k2 + webapp + AppImage)
+        if: matrix.platform == 'Linux'
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: make build-linux
+
       # --- Upload artifacts to S3 ---
 
       - name: Upload macOS to S3
@@ -299,6 +364,19 @@ jobs:
           aws s3 cp "release/${VERSION}/" "${S3_BASE}/" --recursive \
             --exclude "*" \
             --include "*.exe" --include "*.exe.sig"
+
+      - name: Upload Linux to S3
+        if: matrix.platform == 'Linux'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ap-northeast-1
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          S3_BASE="s3://d0.all7.cc/kaitu/desktop/${VERSION}"
+          aws s3 cp "release/${VERSION}/" "${S3_BASE}/" --recursive \
+            --exclude "*" \
+            --include "*.AppImage" --include "*.AppImage.sig"
 
       - name: Invalidate CloudFront CDN cache
         if: success()
@@ -331,6 +409,8 @@ jobs:
 
           if [ "${PLATFORM}" = "macOS" ]; then
             DOWNLOAD_URL="<${CDN_BASE}/Kaitu_${VERSION}_universal.pkg|macOS PKG>"
+          elif [ "${PLATFORM}" = "Linux" ]; then
+            DOWNLOAD_URL="<${CDN_BASE}/Kaitu_${VERSION}_amd64.AppImage|Linux AppImage>"
           else
             DOWNLOAD_URL="<${CDN_BASE}/Kaitu_${VERSION}_x64.exe|Windows Setup>"
           fi
