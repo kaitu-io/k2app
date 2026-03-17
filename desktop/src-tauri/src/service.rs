@@ -373,6 +373,7 @@ pub fn get_platform_info() -> serde_json::Value {
         "os": std::env::consts::OS,
         "version": env!("CARGO_PKG_VERSION"),
         "arch": arch,
+        "commit": option_env!("K2_COMMIT").unwrap_or(""),
     })
 }
 

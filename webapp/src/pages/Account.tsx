@@ -782,7 +782,7 @@ export default function Account() {
 
             <BetaChannelToggle />
 
-            <VersionItem appVersion={appVersion} />
+            <VersionItem appVersion={appVersion} commit={window._platform?.commit} />
           </List>
       </Box>
 

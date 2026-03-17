@@ -9,6 +9,8 @@
  *   window._platform = { os, storage, getUdid, ... }    (platform capabilities)
  */
 
+declare const __K2_BUILD_COMMIT__: string;
+
 import type { IK2Vpn, IPlatform, SResponse } from '../types/kaitu-core';
 import { webSecureStorage } from './secure-storage';
 import { webPlatform } from './web-platform';
@@ -68,6 +70,7 @@ export const standalonePlatform: IPlatform = {
   os: 'web',
   version: 'standalone',
   arch: 'unknown',
+  commit: typeof __K2_BUILD_COMMIT__ !== 'undefined' ? __K2_BUILD_COMMIT__ : '',
   getUdid: getDaemonUdid,
   storage: webSecureStorage,
   setDevEnabled: () => {},

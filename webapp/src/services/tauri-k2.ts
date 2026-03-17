@@ -70,7 +70,7 @@ function transformStatus(raw: any): StatusResponseData {
  * Must be called before store initialization.
  */
 export async function injectTauriGlobals(): Promise<void> {
-  const platformInfo = await invoke<{ os: string; version: string; arch: string }>('get_platform_info');
+  const platformInfo = await invoke<{ os: string; version: string; arch: string; commit?: string }>('get_platform_info');
 
   const osMap: Record<string, IPlatform['os']> = {
     macos: 'macos',
@@ -219,6 +219,7 @@ export async function injectTauriGlobals(): Promise<void> {
     os: osMap[platformInfo.os] ?? 'linux',
     version: platformInfo.version,
     arch: platformInfo.arch,
+    commit: platformInfo.commit || '',
 
     storage: webSecureStorage,
 

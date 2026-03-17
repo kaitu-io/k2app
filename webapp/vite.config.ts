@@ -70,5 +70,6 @@ export default defineConfig({
     'import.meta.env.VITE_USE_MOCK': JSON.stringify(process.env.VITE_USE_MOCK || 'false'),
     'import.meta.env.VITE_CLIENT_IS_ROUTER': JSON.stringify(process.env.VITE_CLIENT_IS_ROUTER || 'false'),
     '__K2_BUILD_LOG_LEVEL__': JSON.stringify(process.env.K2_BUILD_LOG_LEVEL || 'debug'),
+    '__K2_BUILD_COMMIT__': JSON.stringify(process.env.K2_COMMIT || ''),
   }
 });

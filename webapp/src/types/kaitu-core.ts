@@ -134,6 +134,7 @@ export interface IPlatform {
   os: 'windows' | 'macos' | 'linux' | 'ios' | 'android' | 'web';
   version: string;
   arch?: string;
+  commit?: string;
 
   // ====== 核心能力 ======
 

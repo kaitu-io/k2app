@@ -7,6 +7,8 @@
  * Detection: Capacitor.isNativePlatform() returns true in native context.
  */
 
+declare const __K2_BUILD_COMMIT__: string;
+
 import { Capacitor } from '@capacitor/core';
 import { Browser } from '@capacitor/browser';
 import { Clipboard } from '@capacitor/clipboard';
@@ -207,6 +209,7 @@ export async function injectCapacitorGlobals(): Promise<void> {
     os: platform,
     version: appVersion,
     arch: 'arm64',
+    commit: typeof __K2_BUILD_COMMIT__ !== 'undefined' ? __K2_BUILD_COMMIT__ : '',
 
     storage: webSecureStorage,
 

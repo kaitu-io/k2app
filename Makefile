@@ -1,7 +1,9 @@
 VERSION := $(shell node -p "require('./package.json').version")
+K2_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "")
 K2_BUILD_LOG_LEVEL ?= debug
 export K2_BUILD_LOG_LEVEL  # Rust option_env!() and Vite process.env read this
-K2_VARS  = VERSION=$(VERSION) K2_BUILD_LOG_LEVEL=$(K2_BUILD_LOG_LEVEL)
+export K2_COMMIT
+K2_VARS  = VERSION=$(VERSION) K2_BUILD_LOG_LEVEL=$(K2_BUILD_LOG_LEVEL) K2_COMMIT=$(K2_COMMIT)
 K2_BIN   = desktop/src-tauri/binaries
 FEATURES ?=
 TAURI_FEATURES_ARG := $(if $(FEATURES),--features $(FEATURES),)
@@ -11,7 +13,7 @@ sync-version:
 
 pre-build: sync-version
 	mkdir -p webapp/public
-	echo '{"version":"$(VERSION)"}' > webapp/public/version.json
+	echo '{"version":"$(VERSION)","commit":"$(K2_COMMIT)"}' > webapp/public/version.json
 
 build-k2-plugin:
 	cd mobile/plugins/k2-plugin && npm run build

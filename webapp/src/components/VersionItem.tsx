@@ -29,9 +29,10 @@ type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 interface VersionItemProps {
   appVersion: string;
+  commit?: string;
 }
 
-export default function VersionItem({ appVersion }: VersionItemProps) {
+export default function VersionItem({ appVersion, commit }: VersionItemProps) {
   const { t } = useTranslation('account');
   const navigate = useNavigate();
   const tapCountRef = useRef(0);
@@ -99,7 +100,7 @@ export default function VersionItem({ appVersion }: VersionItemProps) {
                 onClick={handleVersionTap}
                 sx={{ fontWeight: 500, fontSize: '0.75rem', userSelect: 'none' }}
               >
-                {appVersion}
+                {appVersion}{commit ? ` (${commit})` : ''}
               </Typography>
               {(window._platform?.updater?.channel === 'beta' || appVersion.includes('-beta')) && (
                 <Chip
