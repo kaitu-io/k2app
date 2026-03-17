@@ -20,6 +20,7 @@ k2 service install              Install as system service
 k2 service uninstall            Remove system service
 k2 upgrade [--check]            Self-update
 k2 android-install [--url URL]  Interactive Android APK install via USB (gadb)
+  healthcheck               External health check (internal, used by launchd)
 
 k2 version                      Version + commit info
 k2 help [command]               Help for any command
@@ -45,6 +46,9 @@ k2 help [command]               Help for any command
 - `process.go` — Daemon start, PID monitoring
 - `upgrade.go` — `k2 upgrade`: self-update binary from CDN
 - `android_install.go` — `k2 android-install`: interactive CLI for USB APK install (adb detect → download → push → pm install)
+- `healthcheck.go` — `k2 healthcheck`: external watchdog for launchd (ping daemon, failure counting, DNS cleanup + kill)
+- `healthcheck_unix.go` / `healthcheck_windows.go` — Platform process management (isProcessAlive, killProcess)
+- `healthcheck_test.go` — Unit tests for health evaluation logic
 
 ## Pattern
 
