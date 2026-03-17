@@ -157,6 +157,39 @@ class K2PluginUtilsTest {
         )
     }
 
+    // ==================== isCompatibleNativeVersion ====================
+
+    @Test
+    fun compatibleNativeVersion_nullMinNative() {
+        assertTrue(K2PluginUtils.isCompatibleNativeVersion(null, "0.4.0"))
+    }
+
+    @Test
+    fun compatibleNativeVersion_emptyMinNative() {
+        assertTrue(K2PluginUtils.isCompatibleNativeVersion("", "0.4.0"))
+    }
+
+    @Test
+    fun compatibleNativeVersion_exact() {
+        assertTrue(K2PluginUtils.isCompatibleNativeVersion("0.4.0", "0.4.0"))
+    }
+
+    @Test
+    fun compatibleNativeVersion_newer() {
+        assertTrue(K2PluginUtils.isCompatibleNativeVersion("0.4.0", "0.5.0"))
+    }
+
+    @Test
+    fun compatibleNativeVersion_older() {
+        assertFalse(K2PluginUtils.isCompatibleNativeVersion("0.5.0", "0.4.0"))
+    }
+
+    @Test
+    fun compatibleNativeVersion_betaApp() {
+        assertTrue(K2PluginUtils.isCompatibleNativeVersion("0.4.0", "0.4.0-beta.6"))
+        assertFalse(K2PluginUtils.isCompatibleNativeVersion("0.5.0", "0.4.0-beta.6"))
+    }
+
     // ==================== sha256 ====================
 
     @Test

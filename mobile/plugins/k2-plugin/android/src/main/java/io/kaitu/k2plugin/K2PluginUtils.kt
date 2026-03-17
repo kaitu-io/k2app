@@ -21,6 +21,16 @@ internal object K2PluginUtils {
         ) > 0
     }
 
+    /**
+     * Check if the current native app version meets the minimum required by a webapp.
+     * Returns true if appVersion >= minNative (using semantic version comparison).
+     * Returns true if minNative is null or empty (backwards compat — old manifests without field).
+     */
+    fun isCompatibleNativeVersion(minNative: String?, appVersion: String): Boolean {
+        if (minNative.isNullOrBlank()) return true
+        return !isNewerVersion(minNative, appVersion)
+    }
+
     internal fun splitVersion(v: String): Pair<List<Int>, String?> {
         val parts = v.split("-", limit = 2)
         val base = parts[0].split(".").map { it.toIntOrNull() ?: 0 }

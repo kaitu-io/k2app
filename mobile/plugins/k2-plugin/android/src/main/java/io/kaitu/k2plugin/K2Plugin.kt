@@ -52,11 +52,20 @@ class K2Plugin : Plugin() {
     override fun load() {
         Log.d(TAG, "load: K2Plugin initializing")
 
-        // Check for OTA web update
+        // Check for OTA web update with boot verification
         val webUpdateDir = File(context.filesDir, "web-update")
+        val bootPending = File(webUpdateDir, ".boot-pending")
         val indexFile = File(webUpdateDir, "index.html")
-        if (webUpdateDir.exists() && indexFile.exists()) {
+
+        if (webUpdateDir.exists() && bootPending.exists()) {
+            // OTA webapp failed to call checkReady() last time — rollback
+            Log.w(TAG, "load: OTA boot verification failed — rolling back to bundled webapp")
+            val webBackupDir = File(context.filesDir, "web-backup")
+            webUpdateDir.deleteRecursively()
+            webBackupDir.deleteRecursively()
+        } else if (webUpdateDir.exists() && indexFile.exists()) {
             Log.d(TAG, "load: OTA web update found, setting server base path: ${webUpdateDir.absolutePath}")
+            bootPending.createNewFile()
             bridge.setServerBasePath(webUpdateDir.absolutePath)
         } else if (webUpdateDir.exists()) {
             Log.w(TAG, "load: corrupt OTA web dir (no index.html) — removing")
@@ -85,6 +94,13 @@ class K2Plugin : Plugin() {
 
     @PluginMethod
     fun checkReady(call: PluginCall) {
+        // Clear OTA boot-pending marker (webapp loaded successfully)
+        val bootPending = File(context.filesDir, "web-update/.boot-pending")
+        if (bootPending.exists()) {
+            bootPending.delete()
+            Log.d(TAG, "checkReady: OTA boot verified — cleared .boot-pending")
+        }
+
         val version = context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "unknown"
         val ret = JSObject()
         ret.put("ready", true)
@@ -300,6 +316,19 @@ class K2Plugin : Plugin() {
                 val remoteVersion = manifest.getString("version")
                 val remoteSize = manifest.optLong("size", 0)
 
+                // Check min_native compatibility
+                val minNative = manifest.optString("min_native", "")
+                val appVersion = context.packageManager
+                    .getPackageInfo(context.packageName, 0).versionName ?: "0.0.0"
+                if (!K2PluginUtils.isCompatibleNativeVersion(minNative, appVersion)) {
+                    Log.w(TAG, "Web OTA skipped: min_native=$minNative > app=$appVersion")
+                    val ret = JSObject()
+                    ret.put("available", false)
+                    ret.put("reason", "native_too_old")
+                    call.resolve(ret)
+                    return@Thread
+                }
+
                 // Read installed web version, fall back to app version
                 val webVersionFile = File(File(context.filesDir, "web-update"), "version.txt")
                 val localVersion = if (webVersionFile.exists()) {
@@ -423,6 +452,9 @@ class K2Plugin : Plugin() {
 
                 // Write version for future comparison
                 File(webUpdateDir, "version.txt").writeText(remoteVersion)
+
+                // Mark boot-pending for verification on next cold start
+                File(webUpdateDir, ".boot-pending").createNewFile()
 
                 call.resolve()
             } catch (e: Exception) {
@@ -840,6 +872,15 @@ class K2Plugin : Plugin() {
                 val rawHash = manifest.getString("hash")
                 val expectedHash = if (rawHash.startsWith("sha256:")) rawHash.removePrefix("sha256:") else rawHash
 
+                // Check min_native compatibility
+                val minNative = manifest.optString("min_native", "")
+                val appVersionForCompat = context.packageManager
+                    .getPackageInfo(context.packageName, 0).versionName ?: "0.0.0"
+                if (!K2PluginUtils.isCompatibleNativeVersion(minNative, appVersionForCompat)) {
+                    Log.w(TAG, "Auto web OTA skipped: min_native=$minNative > app=$appVersionForCompat")
+                    return
+                }
+
                 val webVersionFile = File(File(context.filesDir, "web-update"), "version.txt")
                 val localVersion = if (webVersionFile.exists()) {
                     webVersionFile.readText().trim()
@@ -891,6 +932,7 @@ class K2Plugin : Plugin() {
 
                     // Write version for future comparison
                     File(webUpdateDir, "version.txt").writeText(remoteVersion)
+                    File(webUpdateDir, ".boot-pending").createNewFile()
                     Log.d(TAG, "Auto-update web OTA applied: $remoteVersion")
                 }
             }
