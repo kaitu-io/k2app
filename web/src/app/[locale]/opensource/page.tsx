@@ -2,7 +2,7 @@ import { getTranslations, setRequestLocale } from 'next-intl/server';
 import type { Metadata } from 'next';
 import { routing } from '@/i18n/routing';
 import { Card } from '@/components/ui/card';
-import { Github, Calendar } from 'lucide-react';
+import { Shield, Calendar, Users, Handshake, BadgeCheck } from 'lucide-react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import CountdownTimer from './CountdownTimer';
@@ -57,7 +57,7 @@ export default async function OpenSourcePage({
         {/* Hero Section */}
         <div className="text-center mb-12">
           <div className="inline-flex items-center justify-center p-4 bg-gradient-to-br from-green-100 to-blue-100 dark:from-green-900/30 dark:to-blue-900/30 rounded-full mb-6">
-            <Github className="w-12 h-12 text-green-600 dark:text-green-400" />
+            <Shield className="w-12 h-12 text-green-600 dark:text-green-400" />
           </div>
 
           <h1 className="text-4xl sm:text-5xl font-bold text-foreground mb-4">
@@ -91,8 +91,8 @@ export default async function OpenSourcePage({
           <CountdownTimer targetDateISO={OPENSOURCE_DATE_ISO} />
         </Card>
 
-        {/* Why Open Source */}
-        <Card className="p-8 bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-900/20 dark:to-blue-900/20 border-2 border-green-200 dark:border-green-800">
+        {/* Why Security Audit */}
+        <Card className="p-8 mb-8 bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-900/20 dark:to-blue-900/20 border-2 border-green-200 dark:border-green-800">
           <h3 className="text-2xl font-bold text-foreground mb-6 text-center">
             {t('theme.opensource.whyTitle')}
           </h3>
@@ -152,6 +152,54 @@ export default async function OpenSourcePage({
                   {t('theme.opensource.reason4Desc')}
                 </p>
               </div>
+            </div>
+          </div>
+        </Card>
+
+        {/* Who Can Initiate Audit */}
+        <Card className="p-8 border-2 border-purple-200 dark:border-purple-800 bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-900/20 dark:to-indigo-900/20">
+          <h3 className="text-2xl font-bold text-foreground mb-2 text-center">
+            {t('theme.opensource.whoTitle')}
+          </h3>
+          <p className="text-sm text-muted-foreground text-center mb-8">
+            {t('theme.opensource.whoDesc')}
+          </p>
+
+          <div className="grid md:grid-cols-3 gap-6">
+            <div className="flex flex-col items-center text-center space-y-3 p-4 rounded-xl bg-white/60 dark:bg-white/5">
+              <div className="w-14 h-14 aspect-square shrink-0 bg-purple-600 rounded-full flex items-center justify-center">
+                <Users className="w-7 h-7 text-white" />
+              </div>
+              <h4 className="font-semibold text-foreground">
+                {t('theme.opensource.who1Title')}
+              </h4>
+              <p className="text-sm text-muted-foreground">
+                {t('theme.opensource.who1Desc')}
+              </p>
+            </div>
+
+            <div className="flex flex-col items-center text-center space-y-3 p-4 rounded-xl bg-white/60 dark:bg-white/5">
+              <div className="w-14 h-14 aspect-square shrink-0 bg-blue-600 rounded-full flex items-center justify-center">
+                <Handshake className="w-7 h-7 text-white" />
+              </div>
+              <h4 className="font-semibold text-foreground">
+                {t('theme.opensource.who2Title')}
+              </h4>
+              <p className="text-sm text-muted-foreground">
+                {t('theme.opensource.who2Desc')}
+              </p>
+            </div>
+
+            <div className="flex flex-col items-center text-center space-y-3 p-4 rounded-xl bg-white/60 dark:bg-white/5">
+              <div className="w-14 h-14 aspect-square shrink-0 bg-green-600 rounded-full flex items-center justify-center">
+                <BadgeCheck className="w-7 h-7 text-white" />
+              </div>
+              <h4 className="font-semibold text-foreground">
+                {t('theme.opensource.who3Title')}
+              </h4>
+              <p className="text-sm text-muted-foreground">
+                {t('theme.opensource.who3Desc')}
+              </p>
             </div>
           </div>
         </Card>
