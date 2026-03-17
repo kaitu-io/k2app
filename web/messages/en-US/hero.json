@@ -3,7 +3,7 @@
     "title": "Others Drop. You Don't.",
     "subtitle": "Thrives where networks struggle.",
     "description": "k2cc rewrites the rules of congestion control. Where other protocols collapse under heavy packet loss, k2 maintains stable, high throughput. Built on ECH stealth encryption + QUIC/TCP-WS dual-stack transport, deploy in one command.",
-    "cta_primary": "Subscribe & Renew",
+    "cta_primary": "Subscribe",
     "cta_secondary": "Download Client",
     "terminalTitle": "Self-hosted Server",
     "downloadClient": "Download Client",
@@ -125,6 +125,12 @@
       ],
       "yes": "✓",
       "no": "✗"
+    },
+    "downloadCta": {
+      "title": "Download Client",
+      "subtitle": "Available on Windows, macOS, Linux, iOS, and Android",
+      "button": "Go to Downloads",
+      "platforms": "Windows · macOS · Linux · iOS · Android"
     },
     "quickstart": {
       "title": "Deploy in One Minute",

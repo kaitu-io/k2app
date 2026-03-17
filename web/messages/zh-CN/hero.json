@@ -3,7 +3,7 @@
     "title": "别人断线，你满速。",
     "subtitle": "越拥堵，越从容。",
     "description": "k2cc 重写了拥塞控制的规则。在高丢包弱网环境中，k2 依然保持远超传统协议的稳定吞吐。基于 ECH 加密隐身 + QUIC/TCP-WS 双栈传输，一行命令部署。",
-    "cta_primary": "开通和续费",
+    "cta_primary": "我要买",
     "cta_secondary": "下载客户端",
     "terminalTitle": "服务端自部署",
     "downloadClient": "下载客户端",
@@ -125,6 +125,12 @@
       ],
       "yes": "✓",
       "no": "✗"
+    },
+    "downloadCta": {
+      "title": "下载客户端",
+      "subtitle": "支持 Windows、macOS、Linux、iOS、Android 全平台",
+      "button": "前往下载页",
+      "platforms": "Windows · macOS · Linux · iOS · Android"
     },
     "quickstart": {
       "title": "一分钟极速部署",

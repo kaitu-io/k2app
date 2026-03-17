@@ -11,7 +11,9 @@
     "introGuide": "保護者ガイド",
     "guides": "ガイド",
     "k2Protocol": "k2プロトコル",
-    "routers": "ルーター"
+    "routers": "ルーター",
+    "download": "ダウンロード",
+    "quickstart": "クイックスタート"
   },
   "footer": {
     "brandName": "Kaitu",

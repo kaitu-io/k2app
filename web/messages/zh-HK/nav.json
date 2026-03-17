@@ -11,7 +11,9 @@
     "introGuide": "家長指引",
     "guides": "用戶指南",
     "k2Protocol": "k2協議",
-    "routers": "路由器"
+    "routers": "路由器",
+    "download": "下載",
+    "quickstart": "快速開始"
   },
   "footer": {
     "brandName": "開途 Kaitu",
