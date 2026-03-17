@@ -186,11 +186,10 @@ jobs:
         if: success()
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          CDN_BASE="https://d0.all7.cc/kaitu/ios"
           ./scripts/ci/notify-slack.sh deploy-success \
             --version "${VERSION}" \
             --platforms "iOS" \
-            --download-url "<${CDN_BASE}/Kaitu-${VERSION}.ipa|iOS IPA>"
+            --download-url "<https://apps.apple.com/app/id6759199298|App Store>"
         env:
           SLACK_WEBHOOK_RELEASE: ${{ secrets.SLACK_WEBHOOK_RELEASE }}
 
@@ -335,11 +334,11 @@ jobs:
         if: success()
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          CDN_BASE="https://d0.all7.cc/kaitu/android"
+          CDN_BASE="https://d13jc1jqzlg4yt.cloudfront.net/kaitu/android"
           ./scripts/ci/notify-slack.sh deploy-success \
             --version "${VERSION}" \
             --platforms "Android" \
-            --download-url "<${CDN_BASE}/Kaitu-${VERSION}.apk|Android APK>"
+            --download-url "<${CDN_BASE}/${VERSION}/Kaitu-${VERSION}.apk|Android APK>"
         env:
           SLACK_WEBHOOK_RELEASE: ${{ secrets.SLACK_WEBHOOK_RELEASE }}
 
