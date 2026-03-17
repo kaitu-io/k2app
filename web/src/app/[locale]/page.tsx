@@ -51,35 +51,84 @@ export async function generateMetadata({
  * Static JSON-LD structured data for the k2 stealth tunnel application.
  * Content is a hardcoded constant — not user input — so dangerouslySetInnerHTML is safe here.
  */
-const JSON_LD_CONTENT = JSON.stringify({
-  '@context': 'https://schema.org',
-  '@type': 'SoftwareApplication',
-  name: 'Kaitu k2',
-  applicationCategory: 'NetworkingApplication',
-  operatingSystem: 'Windows, macOS, iOS, Android, Linux',
-  description:
-    'ECH-based stealth tunnel protocol powered by k2cc adaptive rate control. QUIC+TCP-WS dual-stack transport with zero CT log exposure and one-command deployment.',
-  url: 'https://kaitu.io',
-  publisher: {
+const JSON_LD_CONTENT = JSON.stringify([
+  {
+    '@context': 'https://schema.org',
+    '@type': 'SoftwareApplication',
+    name: 'Kaitu k2',
+    applicationCategory: 'NetworkingApplication',
+    operatingSystem: 'Windows, macOS, iOS, Android, Linux',
+    description:
+      'ECH-based stealth tunnel protocol powered by k2cc adaptive rate control. QUIC+TCP-WS dual-stack transport with zero CT log exposure and one-command deployment.',
+    url: 'https://kaitu.io',
+    publisher: { '@type': 'Organization', name: 'Kaitu', url: 'https://kaitu.io' },
+    offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+    featureList: [
+      'ECH (Encrypted Client Hello) stealth',
+      'QUIC + TCP-WebSocket dual-stack transport',
+      'k2cc adaptive rate control',
+      'Reverse proxy camouflage',
+      'Self-signed certificate + certificate pinning',
+      'Zero CT log exposure',
+      'One-command deployment',
+    ],
+  },
+  {
+    '@context': 'https://schema.org',
     '@type': 'Organization',
     name: 'Kaitu',
     url: 'https://kaitu.io',
+    logo: 'https://kaitu.io/kaitu-icon.png',
+    sameAs: ['https://github.com/kaitu-io'],
+    contactPoint: { '@type': 'ContactPoint', email: 'support@kaitu.me', contactType: 'customer support' },
   },
-  offers: {
-    '@type': 'Offer',
-    price: '0',
-    priceCurrency: 'USD',
+  {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: [
+      {
+        '@type': 'Question',
+        name: 'What is k2cc congestion control?',
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: 'k2cc is an adaptive rate control algorithm that distinguishes censorship-induced packet drops from normal congestion. It maintains stable throughput under QoS throttling and high packet loss conditions where traditional algorithms like BBR degrade significantly.',
+        },
+      },
+      {
+        '@type': 'Question',
+        name: 'What is ECH and how does k2 use it?',
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: 'ECH (Encrypted Client Hello) encrypts the SNI field in TLS handshakes, making it impossible for deep packet inspection to identify the destination. k2v5 uses ECH as its primary stealth mechanism, combined with reverse proxy camouflage for active probe defense.',
+        },
+      },
+      {
+        '@type': 'Question',
+        name: 'How do I install k2 server?',
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: 'Run: curl -fsSL https://kaitu.io/i/k2s | sudo sh — this installs the k2s server and auto-generates a k2v5:// connection URI. No manual certificate configuration needed.',
+        },
+      },
+      {
+        '@type': 'Question',
+        name: 'What platforms does Kaitu k2 support?',
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: 'Kaitu k2 supports Windows 10/11, macOS 12+, Linux (AppImage), iOS (iPhone/iPad), and Android. Desktop clients are available for direct download, mobile apps via App Store and APK.',
+        },
+      },
+      {
+        '@type': 'Question',
+        name: 'How does k2 compare to VLESS+Reality and Hysteria2?',
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: 'k2v5 is the only protocol combining ECH stealth, QUIC+TCP-WS dual-stack, adaptive congestion control (k2cc), zero CT log exposure, and one-command deployment. VLESS+Reality lacks ECH and congestion control. Hysteria2 has QUIC and congestion control but no ECH stealth or TCP fallback.',
+        },
+      },
+    ],
   },
-  featureList: [
-    'ECH (Encrypted Client Hello) stealth',
-    'QUIC + TCP-WebSocket dual-stack transport',
-    'k2cc adaptive rate control',
-    'Reverse proxy camouflage',
-    'Self-signed certificate + certificate pinning',
-    'Zero CT log exposure',
-    'One-command deployment',
-  ],
-});
+]);
 
 export default async function Home({
   params,
