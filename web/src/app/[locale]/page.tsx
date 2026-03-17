@@ -7,6 +7,7 @@ import HeroSection from '@/components/home/HeroSection';
 import FeaturesSection from '@/components/home/FeaturesSection';
 import DownloadCTA from '@/components/home/DownloadCTA';
 import HomeClient from './HomeClient';
+import { generateMetadata as generateBaseMetadata } from './metadata';
 
 type Locale = (typeof routing.locales)[number];
 
@@ -23,11 +24,26 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { locale: rawLocale } = await params;
   const locale = rawLocale as Locale;
+  const base = generateBaseMetadata(locale);
   const t = await getTranslations({ locale, namespace: 'hero' });
 
+  const title = `${t('hero.title')} | Kaitu k2`;
+  const description = t('hero.description');
+
   return {
-    title: `${t('hero.title')} Kaitu k2`,
-    description: t('hero.description'),
+    ...base,
+    title,
+    description,
+    openGraph: {
+      ...(base.openGraph as Record<string, unknown>),
+      title,
+      description,
+    },
+    twitter: {
+      ...(base.twitter as Record<string, unknown>),
+      title,
+      description,
+    },
   };
 }
 
