@@ -361,7 +361,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
 
             // Check min_native compatibility
             let minNative = json["min_native"] as? String ?? ""
-            if !minNative.isEmpty && isNewerVersion(minNative, than: appVersion) {
+            if !isCompatibleNativeVersion(minNative, appVersion: appVersion) {
                 logger.info("Web OTA skipped: min_native=\(minNative) > app=\(appVersion)")
                 await MainActor.run { call.resolve(["available": false, "reason": "native_too_old"]) }
                 return
@@ -931,7 +931,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
 
                 // Check min_native compatibility
                 let minNative = json["min_native"] as? String ?? ""
-                if !minNative.isEmpty && isNewerVersion(minNative, than: appVersion) {
+                if !isCompatibleNativeVersion(minNative, appVersion: appVersion) {
                     logger.info("Auto web OTA skipped: min_native=\(minNative) > app=\(appVersion)")
                     return
                 }

@@ -44,6 +44,15 @@ func isNewerVersion(_ remote: String, than local: String) -> Bool {
     return compareSegments(rPreSegs, lPreSegs) > 0
 }
 
+/// Check if appVersion's base version >= minNative's base version.
+/// Ignores pre-release: 0.4.0-beta.6 satisfies min_native=0.4.0.
+func isCompatibleNativeVersion(_ minNative: String?, appVersion: String) -> Bool {
+    guard let minNative = minNative, !minNative.isEmpty else { return true }
+    let (minBase, _) = splitVersion(minNative)
+    let (appBase, _) = splitVersion(appVersion)
+    return compareSegments(appBase, minBase) >= 0
+}
+
 private func splitVersion(_ v: String) -> (base: [Int], pre: String?) {
     let parts = v.split(separator: "-", maxSplits: 1)
     let base = parts[0].split(separator: ".").map { Int($0) ?? 0 }
