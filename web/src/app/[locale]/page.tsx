@@ -7,6 +7,7 @@ import { Link } from '@/i18n/routing';
 import { routing } from '@/i18n/routing';
 import NextLink from 'next/link';
 import Header from '@/components/Header';
+import HomeClient from './HomeClient';
 import Footer from '@/components/Footer';
 import {
   ExternalLink,
@@ -264,7 +265,7 @@ export default async function Home({
   ];
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: 'var(--background)', color: 'var(--foreground)' }}>
+    <div className="min-h-screen" style={{ backgroundColor: '#050508', color: 'var(--foreground)' }}>
       {/* JSON-LD SoftwareApplication structured data — static content, safe to inject */}
       <script
         type="application/ld+json"
@@ -272,6 +273,7 @@ export default async function Home({
         dangerouslySetInnerHTML={{ __html: JSON_LD_CONTENT }}
       />
       <Header />
+      <HomeClient />
 
       {/* Hero Section */}
       <section className="py-20 px-4 sm:px-6 lg:px-8">
@@ -342,7 +344,7 @@ export default async function Home({
 
       {/* Feature Cards Section */}
       <section className="py-20 px-4 sm:px-6 lg:px-8"
-        style={{ backgroundColor: 'rgba(17,17,24,0.5)' }}>
+        style={{ backgroundColor: 'rgba(5,5,8,0.6)', backdropFilter: 'blur(8px)' }}>
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-14">
             <h2 className="text-3xl font-bold mb-4"
@@ -375,7 +377,8 @@ export default async function Home({
       </section>
 
       {/* Comparison Table Section */}
-      <section className="py-20 px-4 sm:px-6 lg:px-8">
+      <section className="py-20 px-4 sm:px-6 lg:px-8"
+        style={{ backgroundColor: 'rgba(5,5,8,0.4)', backdropFilter: 'blur(8px)' }}>
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-14">
             <h2 className="text-3xl font-bold mb-4"
@@ -441,7 +444,8 @@ export default async function Home({
       </section>
 
       {/* Download Section */}
-      <section className="py-16 px-4 sm:px-6 lg:px-8">
+      <section className="py-16 px-4 sm:px-6 lg:px-8"
+        style={{ backgroundColor: 'rgba(5,5,8,0.4)', backdropFilter: 'blur(8px)' }}>
         <div className="max-w-7xl mx-auto text-center">
           <h2 className="text-3xl font-bold mb-4"
             style={{ fontFamily: 'var(--font-mono), monospace' }}>
