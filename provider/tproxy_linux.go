@@ -97,7 +97,15 @@ func (p *TProxyProvider) Start(ctx context.Context, handler ConnectionHandler) e
 			// Original destination is preserved by TPROXY — the conn's
 			// local address IS the original destination.
 			dest := conn.LocalAddr().String()
-			go handler.HandleTCP(conn, dest)
+			go func(c net.Conn, d string) {
+				defer func() {
+					if r := recover(); r != nil {
+						slog.Error("tproxy: HandleTCP panic", "panic", fmt.Sprint(r), "dest", d)
+						c.Close()
+					}
+				}()
+				handler.HandleTCP(c, d)
+			}(conn, dest)
 		}
 	}()
 
@@ -115,7 +123,15 @@ func (p *TProxyProvider) Start(ctx context.Context, handler ConnectionHandler) e
 				}
 			}
 			pconn := newTProxyUDPConn(p.udpConn, src, dst, buf[:n])
-			go handler.HandleUDP(pconn, dst.String())
+			go func(pc net.PacketConn, d string) {
+				defer func() {
+					if r := recover(); r != nil {
+						slog.Error("tproxy: HandleUDP panic", "panic", fmt.Sprint(r), "dest", d)
+						pc.Close()
+					}
+				}()
+				handler.HandleUDP(pc, d)
+			}(pconn, dst.String())
 		}
 	}()
 
