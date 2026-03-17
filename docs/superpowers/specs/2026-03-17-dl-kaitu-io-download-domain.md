@@ -148,9 +148,8 @@ main()
 2. 300 秒后后台 revalidation → 失败则**继续使用上一次成功的缓存**
 3. 只有首次部署时 CDN 完全不可达才会返回 null
 
-当 betaVersion 和 stableVersion 都为 null 时（极端情况）：
-- 不显示版本号
-- 下载按钮引导到 `/releases` 页面
+当 betaVersion 和 stableVersion 都为 null 时（仅首次部署 CDN 不可达）：
+- 直接构建失败 / 500，部署后手动访问一次确保 ISR 缓存生效即可
 
 > **后续优化**：首页 `page.tsx` 和邀请页 `InviteClient.tsx` 的 `DOWNLOAD_LINKS` 仍使用 build-time `BETA_VERSION`，不在本次范围内。后续应改为 ISR 或从 install 页面同源获取。
 
@@ -164,7 +163,7 @@ main()
 ```typescript
 // 删除 showBetaAndStable、DESKTOP_VERSION 兜底、所有 TODO hack
 // 新逻辑：
-const displayVersion = betaVersion || stableVersion || null;
+const displayVersion = betaVersion || stableVersion!; // CDN manifest is the single source of truth
 const isBeta = !!(betaVersion && betaVersion !== stableVersion);
 const downloadLinks = displayVersion ? getDownloadLinks(displayVersion) : null;
 // stable 链接（仅在 beta 存在时显示为备选）
