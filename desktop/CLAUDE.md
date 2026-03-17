@@ -61,6 +61,7 @@ yarn tauri build --bundles appimage  # Linux AppImage (requires Linux host)
 |---------|--------|---------|
 | `daemon_exec` (daemon mode) | service | Proxy VPN actions (up/down/status/version) to k2 daemon HTTP |
 | `daemon_exec` (NE mode) | ne | VPN actions routed to NE helper via C FFI (`ne_action()`) |
+| `daemon_helper_exec` | service | Proxy `adb-*` actions to k2 daemon `/api/helper` (not `/api/core`) |
 | `get_platform_info` | service | Returns `{ os, version }` |
 | `get_udid` (daemon mode) | service | Returns device UDID from daemon |
 | `get_udid` (NE mode) | ne | Hardware UUID via `sysctl -n kern.uuid` (no daemon) |
