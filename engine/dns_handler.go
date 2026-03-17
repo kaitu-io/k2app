@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"encoding/binary"
-	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -186,13 +185,15 @@ func (h *dnsHandler) recordDNSFailure(err error) {
 	if h.engine == nil {
 		return
 	}
-	if h.consecutiveFails.Add(1) == dnsWireErrorThreshold {
+	count := h.consecutiveFails.Add(1)
+	if count == dnsWireErrorThreshold {
+		// Log for diagnostics, but do NOT report as wire error.
+		// DNS failure is a symptom (local network down, remote DNS broken, etc.),
+		// not a wire transport diagnosis. Wire errors come from proxy dial and probe.
 		slog.Warn("dns: consecutive failure threshold reached",
 			"threshold", dnsWireErrorThreshold,
 			"lastErr", err.Error(),
 		)
-		h.engine.ReportWireError(fmt.Errorf("DNS: %d consecutive failures: %w",
-			dnsWireErrorThreshold, err))
 	}
 }
 
@@ -202,6 +203,13 @@ func (h *dnsHandler) recordDNSSuccess() {
 	}
 	if prev := h.consecutiveFails.Swap(0); prev >= dnsWireErrorThreshold {
 		slog.Info("dns: recovered after consecutive failures", "previousFails", prev)
-		h.engine.ClearWireError()
+	}
+}
+
+// ResetCounter resets the consecutive DNS failure counter.
+// Called on network recovery — old failures from the outage are stale.
+func (h *dnsHandler) ResetCounter() {
+	if prev := h.consecutiveFails.Swap(0); prev > 0 {
+		slog.Debug("dns: failure counter reset", "previousFails", prev)
 	}
 }
