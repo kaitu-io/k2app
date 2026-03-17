@@ -139,21 +139,34 @@ main()
 
 不做通道选择 UI。用户只看到一个主下载按钮。
 
+### 版本真理源
+
+**唯一真理源：S3 CDN manifest**（`cloudfront.latest.json`、`beta/cloudfront.latest.json`）。
+
+删除 `DESKTOP_VERSION` 作为 install 页面的兜底。ISR 缓存机制本身提供了 server-side fallback：
+1. ISR 首次 fetch CDN manifest → 成功则缓存
+2. 300 秒后后台 revalidation → 失败则**继续使用上一次成功的缓存**
+3. 只有首次部署时 CDN 完全不可达才会返回 null
+
+当 betaVersion 和 stableVersion 都为 null 时（极端情况）：
+- 不显示版本号
+- 下载按钮引导到 `/releases` 页面
+
+> **后续优化**：首页 `page.tsx` 和邀请页 `InviteClient.tsx` 的 `DOWNLOAD_LINKS` 仍使用 build-time `BETA_VERSION`，不在本次范围内。后续应改为 ISR 或从 install 页面同源获取。
+
 逻辑（`page.tsx` 从 CDN manifest 获取 betaVersion 和 stableVersion）：
 - **beta 存在且比 stable 新** → 显示 beta 版本，版本号旁标 `Beta` 徽章，底部灰字链接到 stable
 - **只有 stable** → 显示 stable 版本，无徽章
-- **两者都没有** → 使用 `package.json` 硬编码版本兜底
-
-理由：产品整体处于 beta 阶段（0.4.x-beta），所有用户本质上都是 beta 测试者。一个大按钮减少决策负担。想要 stable 的 power user 自己能找到。
+- **两者都没有** → 不显示版本号，引导到 `/releases`
 
 ### `InstallClient.tsx` 版本逻辑重写
 
 ```typescript
-// 删除 showBetaAndStable 和所有 TODO hack
+// 删除 showBetaAndStable、DESKTOP_VERSION 兜底、所有 TODO hack
 // 新逻辑：
-const displayVersion = betaVersion || stableVersion || DESKTOP_VERSION;
-const isBeta = betaVersion && betaVersion !== stableVersion;
-const downloadLinks = getDownloadLinks(displayVersion);
+const displayVersion = betaVersion || stableVersion || null;
+const isBeta = !!(betaVersion && betaVersion !== stableVersion);
+const downloadLinks = displayVersion ? getDownloadLinks(displayVersion) : null;
 // stable 链接（仅在 beta 存在时显示为备选）
 const stableDownloadLinks = isBeta && stableVersion ? getDownloadLinks(stableVersion) : null;
 ```

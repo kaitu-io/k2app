@@ -640,15 +640,20 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
   const [countdown, setCountdown] = useState(5);
   const [copied, setCopied] = useState(false);
 
-  // Version logic: beta preferred, stable as fallback
-  const effectiveStable = serverStable || DESKTOP_VERSION;
-  const displayVersion = betaVersion || effectiveStable;
-  const isBeta = !!(betaVersion && betaVersion !== effectiveStable);
-  const downloadLinks = getDownloadLinks(displayVersion);
-  const stableDownloadLinks = isBeta && effectiveStable ? getDownloadLinks(effectiveStable) : null;
+  // Single source of truth: CDN manifest. No build-time fallback.
+  const displayVersion = betaVersion || serverStable || null;
+  const isBeta = !!(betaVersion && betaVersion !== serverStable);
+  const downloadLinks = displayVersion ? getDownloadLinks(displayVersion) : null;
+  const stableDownloadLinks = isBeta && serverStable ? getDownloadLinks(serverStable) : null;
 ```
 
-Delete `showBetaAndStable`, `betaLinks`, `stableLinks` variables entirely.
+Delete `showBetaAndStable`, `betaLinks`, `stableLinks`, `effectiveStable` variables entirely.
+Remove `DESKTOP_VERSION` import from constants (no longer used by this file).
+
+When `displayVersion` is null (CDN unreachable on first deploy):
+- Hero shows "latest version" text without version number
+- Download buttons link to `/releases` page instead of direct download
+- Platform cards show "View releases" instead of version-specific download buttons
 
 - [ ] **Step 3: Update `getPrimaryLink` to handle Linux**
 
