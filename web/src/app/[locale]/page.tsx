@@ -265,7 +265,7 @@ export default async function Home({
   ];
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#050508', color: 'var(--foreground)' }}>
+    <div className="min-h-screen relative" style={{ backgroundColor: 'transparent', color: 'var(--foreground)' }}>
       {/* JSON-LD SoftwareApplication structured data — static content, safe to inject */}
       <script
         type="application/ld+json"
@@ -393,7 +393,7 @@ export default async function Home({
           <div className="overflow-x-auto rounded-lg"
             style={{ border: '1px solid rgba(0,255,136,0.2)' }}>
             <table className="w-full text-sm"
-              style={{ backgroundColor: 'var(--card)', fontFamily: 'var(--font-mono), monospace' }}>
+              style={{ backgroundColor: 'rgba(17,17,24,0.7)', fontFamily: 'var(--font-mono), monospace' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid rgba(0,255,136,0.2)', backgroundColor: 'rgba(0,255,136,0.05)' }}>
                   <th className="text-left px-4 py-3" style={{ color: 'hsl(var(--muted-foreground))' }}>
