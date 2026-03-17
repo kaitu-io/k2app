@@ -66,12 +66,16 @@ aws s3 cp "${S3_VER}/" "${TMPDIR}/" --recursive \
 
 MACOS_SIG=$(cat "${TMPDIR}"/*.app.tar.gz.sig 2>/dev/null || echo "")
 WINDOWS_SIG=$(cat "${TMPDIR}"/*_x64.exe.sig 2>/dev/null || echo "")
+LINUX_SIG=$(cat "${TMPDIR}"/*.AppImage.sig 2>/dev/null || echo "")
 
 if [ -z "${MACOS_SIG}" ]; then
   echo "WARNING: macOS signature not found"
 fi
 if [ -z "${WINDOWS_SIG}" ]; then
   echo "WARNING: Windows signature not found"
+fi
+if [ -z "${LINUX_SIG}" ]; then
+  echo "WARNING: Linux signature not found"
 fi
 
 # Generate cloudfront.latest.json
@@ -99,6 +103,10 @@ cat > "${TMPDIR}/cloudfront.latest.json" << EOF
     "windows-x86_64": {
       "url": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/${VERSION}/Kaitu_${VERSION}_x64.exe",
       "signature": "${WINDOWS_SIG}"
+    },
+    "linux-x86_64": {
+      "url": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/${VERSION}/Kaitu_${VERSION}_amd64.AppImage",
+      "signature": "${LINUX_SIG}"
     }
   }
 }
@@ -126,6 +134,10 @@ cat > "${TMPDIR}/d0.latest.json" << EOF
     "windows-x86_64": {
       "url": "https://d0.all7.cc/kaitu/desktop/${VERSION}/Kaitu_${VERSION}_x64.exe",
       "signature": "${WINDOWS_SIG}"
+    },
+    "linux-x86_64": {
+      "url": "https://d0.all7.cc/kaitu/desktop/${VERSION}/Kaitu_${VERSION}_amd64.AppImage",
+      "signature": "${LINUX_SIG}"
     }
   }
 }
@@ -161,6 +173,7 @@ if [ "$CHANNEL" = "stable" ]; then
 |----------|-----------|-------------|
 | **macOS** (Universal) | \`.pkg\` | \`.app.tar.gz\` |
 | **Windows** (x64) | \`.exe\` | \`.exe\` (auto-update) |
+| **Linux** (x86_64) | \`.AppImage\` | \`.AppImage\` (auto-update) |
 "
   echo ""
   echo "Done! Published Kaitu Desktop v${VERSION} (stable + GitHub Release)"
