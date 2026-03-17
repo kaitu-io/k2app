@@ -500,18 +500,10 @@ fn admin_reinstall_service_macos() -> Result<String, String> {
     }
 }
 
-/// Linux daemon mode: install k2 service with pkexec for privilege escalation.
-/// pkexec shows a graphical password dialog on desktop environments.
-/// Falls back to error with manual sudo instructions if pkexec is unavailable.
+/// Find k2 binary from Tauri sidecar (relative to current exe).
+/// On Linux AppImage, this is inside the FUSE mount directory.
 #[cfg(target_os = "linux")]
-fn find_k2_binary_linux() -> Result<std::path::PathBuf, String> {
-    // 1. Check /usr/local/bin/k2 (install script symlink)
-    let system_path = std::path::Path::new("/usr/local/bin/k2");
-    if system_path.exists() {
-        return Ok(system_path.to_path_buf());
-    }
-
-    // 2. Check sidecar path relative to current exe
+fn find_k2_from_sidecar() -> Result<std::path::PathBuf, String> {
     let exe_path = std::env::current_exe()
         .map_err(|e| format!("Failed to get exe path: {}", e))?;
     let app_dir = exe_path.parent().ok_or("Failed to get app directory")?;
@@ -533,14 +525,20 @@ fn find_k2_binary_linux() -> Result<std::path::PathBuf, String> {
         }
     }
 
-    Err(format!("k2 binary not found in /usr/local/bin or {:?}", app_dir))
+    Err(format!("k2 sidecar not found in {:?}", app_dir))
 }
 
+/// Linux daemon mode: copy sidecar k2 to /opt/kaitu/k2 (persistent path),
+/// then install systemd service via pkexec.
+///
+/// This two-step approach is necessary because AppImage contents are only
+/// accessible via a transient FUSE mount (/tmp/.mount_XxxXXX/). The systemd
+/// unit's ExecStart must reference a persistent path that survives reboots.
 #[cfg(target_os = "linux")]
 fn admin_reinstall_service_linux() -> Result<String, String> {
-    let k2_path = find_k2_binary_linux()?;
-    let k2_str = k2_path.to_string_lossy();
-    log::info!("[service] Linux: installing via pkexec: {}", k2_str);
+    let source_k2 = find_k2_from_sidecar()?;
+    let source_str = source_k2.to_string_lossy();
+    log::info!("[service] Linux: source k2 binary: {}", source_str);
 
     // Check if pkexec is available
     let pkexec_available = Command::new("which")
@@ -554,8 +552,16 @@ fn admin_reinstall_service_linux() -> Result<String, String> {
         return Err("pkexec_unavailable: run 'sudo k2 service install' manually".to_string());
     }
 
+    // Copy sidecar k2 to persistent path, then install service.
+    // pkexec runs the entire sequence as root.
+    let script = format!(
+        "mkdir -p /opt/kaitu && cp '{}' /opt/kaitu/k2 && chmod +x /opt/kaitu/k2 && \
+         ln -sf /opt/kaitu/k2 /usr/local/bin/k2 && /opt/kaitu/k2 service install",
+        source_str
+    );
+
     let output = Command::new("pkexec")
-        .args([&*k2_str, "service", "install"])
+        .args(["bash", "-c", &script])
         .output()
         .map_err(|e| format!("pkexec failed: {}", e))?;
 
@@ -1038,9 +1044,10 @@ mod tests {
     mod linux_tests {
         use super::super::*;
 
+        /// Verify find_k2_from_sidecar() looks for k2 relative to current exe.
         #[test]
-        fn test_linux_k2_binary_lookup() {
-            let result = find_k2_binary_linux();
+        fn test_linux_k2_sidecar_lookup() {
+            let result = find_k2_from_sidecar();
             match result {
                 Ok(path) => {
                     let path_str = path.to_string_lossy();
