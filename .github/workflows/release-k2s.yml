@@ -60,7 +60,7 @@ jobs:
           echo "Building k2s v${VERSION} (${COMMIT})"
           mkdir -p build
 
-          for pair in linux:amd64 linux:arm64 darwin:amd64 darwin:arm64; do
+          for pair in linux:amd64 linux:arm64; do
             GOOS="${pair%%:*}"
             GOARCH="${pair##*:}"
             echo "  k2s-${GOOS}-${GOARCH}"
