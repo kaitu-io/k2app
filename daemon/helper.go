@@ -5,15 +5,14 @@ import (
 	"log/slog"
 	"net/http"
 	"runtime"
-	"sync"
-
 	"github.com/electricbubble/gadb"
+	"github.com/sasha-s/go-deadlock"
 )
 
 // AndroidHelper manages ADB-based Android app installation.
 // It handles adb binary download, device detection, and APK installation.
 type AndroidHelper struct {
-	mu             sync.Mutex
+	mu             deadlock.Mutex
 	adbPath        string       // path to cached adb binary
 	state          InstallState // current install progress
 	driverScanDone bool         // pnputil scan triggered once per daemon lifetime

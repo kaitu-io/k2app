@@ -233,8 +233,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 	"sync/atomic"
+
+	"github.com/sasha-s/go-deadlock"
 	"time"
 	"unsafe"
 )
@@ -293,7 +294,7 @@ type dnsOverride struct {
 	origDNS   string // saved original DNS from State:/ (DHCP-assigned)
 	serviceID string // primary service ID being overridden
 
-	mu      sync.Mutex
+	mu      deadlock.Mutex
 	stopCh  chan struct{}
 	stopped chan struct{}
 }

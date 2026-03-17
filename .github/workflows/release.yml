@@ -49,7 +49,7 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: |
           LDFLAGS="-s -w -X main.version=$VERSION -X main.commit=$COMMIT"
-          TAGS="-tags=deadlock_disable"
+          TAGS=""  # Desktop: lock-ordering detection enabled (mobile uses deadlock_disable in Makefile)
           mkdir -p build
           go build $TAGS -ldflags "$LDFLAGS" -o "build/k2s-${GOOS}-${GOARCH}" ./cmd/k2s
           go build $TAGS -ldflags "$LDFLAGS" -o "build/k2-${GOOS}-${GOARCH}" ./cmd/k2
