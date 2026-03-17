@@ -1,15 +1,16 @@
-# dl.kaitu.io 下载域名迁移 + 统一安装脚本
+# dl.kaitu.io 下载域名迁移 + 安装页面改进
 
 ## 背景
 
 安装包托管在 S3 bucket `d0.all7.cc`，通过 CloudFront `d13jc1jqzlg4yt.cloudfront.net` 分发。用户下载时浏览器显示第三方 CDN 域名，Windows SmartScreen 对非官网域名的下载信任度较低，容易触发拦截警告。
 
-同时，Linux 安装脚本 `scripts/install-linux.sh` 未部署到 `web/public/`，且 macOS 缺少命令行安装方式。需要统一为 `kaitu.io/i/k2`。
+同时，Linux 安装脚本 `scripts/install-linux.sh` 未部署到 `web/public/`，macOS 缺少命令行安装方式，install 页面缺少 Linux 平台、beta 版本优先逻辑混乱。
 
 ## 目标
 
-1. 将用户手动下载链接从 CDN 域名改为 `dl.kaitu.io`（与官网同根域），提升 SmartScreen 信任度，减少用户困扰。
+1. 将用户手动下载链接从 CDN 域名改为 `dl.kaitu.io`（与官网同根域），提升 SmartScreen 信任度。
 2. 创建统一安装脚本 `web/public/i/k2`，根据 OS 自动分流安装桌面客户端。
+3. 改进 `/install` 页面：beta 优先、添加 Linux 平台、CLI 安装命令。
 
 ## 覆盖范围
 
@@ -122,9 +123,124 @@ main()
   esac
 ```
 
-### 废弃
-- `scripts/install-linux.sh` — 逻辑合并到 `web/public/i/k2` 后可删除
-- `web/public/install.sh` — 保留作为旧 URL 兼容（`kaitu.io/install.sh`），帮助信息已指向新路径
+### 废弃（删除）
+- `scripts/install-linux.sh` — 逻辑合并到 `web/public/i/k2` 后删除
+- `web/public/install.sh` — k2 CLI 不单独发布，功能由 `i/k2`（桌面客户端）和 `i/k2s`（服务端）覆盖，删除
+
+## Install 页面改进
+
+### 现存问题
+1. **版本逻辑混乱**：`showBetaAndStable = false` 硬编码关闭，`betaLinks` 变量名误导（实际用 stable 版本）
+2. **无 Linux 平台**：平台网格只有 Windows/macOS/iOS/Android 四列，Linux 用户无下载入口
+3. **Linux 自动下载失败**：`getPrimaryLink()` 只处理 windows/macos，Linux 检测为 desktop 但返回 null
+4. **无 CLI 安装方式**：macOS/Linux 用户看不到 `curl | bash` 安装命令
+
+### 版本策略：单按钮，beta 优先
+
+不做通道选择 UI。用户只看到一个主下载按钮。
+
+逻辑（`page.tsx` 从 CDN manifest 获取 betaVersion 和 stableVersion）：
+- **beta 存在且比 stable 新** → 显示 beta 版本，版本号旁标 `Beta` 徽章，底部灰字链接到 stable
+- **只有 stable** → 显示 stable 版本，无徽章
+- **两者都没有** → 使用 `package.json` 硬编码版本兜底
+
+理由：产品整体处于 beta 阶段（0.4.x-beta），所有用户本质上都是 beta 测试者。一个大按钮减少决策负担。想要 stable 的 power user 自己能找到。
+
+### `InstallClient.tsx` 版本逻辑重写
+
+```typescript
+// 删除 showBetaAndStable 和所有 TODO hack
+// 新逻辑：
+const displayVersion = betaVersion || stableVersion || DESKTOP_VERSION;
+const isBeta = betaVersion && betaVersion !== stableVersion;
+const downloadLinks = getDownloadLinks(displayVersion);
+// stable 链接（仅在 beta 存在时显示为备选）
+const stableDownloadLinks = isBeta && stableVersion ? getDownloadLinks(stableVersion) : null;
+```
+
+### 平台网格：5 列，增加 Linux
+
+```
+[ Windows ] [ macOS ] [ Linux ] [ iOS ] [ Android ]
+```
+
+响应式：桌面 5 列，平板 3 列，手机 2 列。
+
+各平台卡片内容：
+
+| 平台 | 主按钮 | 附加内容 |
+|------|--------|---------|
+| Windows | `下载 EXE vX.Y.Z` | beta 徽章（如适用）|
+| macOS | `下载 PKG vX.Y.Z` | CLI 安装命令 |
+| Linux | `下载 AppImage vX.Y.Z` | CLI 安装命令（**主推**）|
+| iOS | `App Store` | — |
+| Android | `下载 APK` | — |
+
+macOS 和 Linux 卡片底部显示可复制的命令：
+```
+curl -fsSL https://kaitu.io/i/k2 | sudo bash
+```
+带复制按钮（点击复制到剪贴板）。
+
+### `constants.ts` `getDownloadLinks()` 添加 Linux
+
+```typescript
+export function getDownloadLinks(version: string) {
+  return {
+    windows: {
+      primary: `${CDN_PRIMARY}/${version}/Kaitu_${version}_x64.exe`,
+      backup: `${CDN_BACKUP}/${version}/Kaitu_${version}_x64.exe`,
+    },
+    macos: {
+      primary: `${CDN_PRIMARY}/${version}/Kaitu_${version}_universal.pkg`,
+      backup: `${CDN_BACKUP}/${version}/Kaitu_${version}_universal.pkg`,
+    },
+    linux: {
+      primary: `${CDN_PRIMARY}/${version}/Kaitu_${version}_amd64.AppImage`,
+      backup: `${CDN_BACKUP}/${version}/Kaitu_${version}_amd64.AppImage`,
+    },
+  };
+}
+```
+
+### Hero 区域自动下载行为
+
+| 检测到的 OS | Hero 行为 |
+|------------|----------|
+| Windows | 5 秒倒计时 → 自动下载 EXE |
+| macOS | 5 秒倒计时 → 自动下载 PKG |
+| Linux | **不自动下载**。显示 CLI 安装命令 + 复制按钮为主推，AppImage 下载按钮为备选 |
+| iOS / Android | 不下载，引导到 App Store / APK |
+
+Linux 不做自动下载的原因：Linux 用户更习惯命令行安装，且 AppImage 依赖 webkit2gtk + libfuse2，CLI 脚本会自动检查依赖。
+
+### `getPrimaryLink()` 修复
+
+```typescript
+const getPrimaryLink = useCallback((deviceInfo: DeviceInfo | null) => {
+  if (!deviceInfo) return null;
+  switch (deviceInfo.type) {
+    case 'windows': return downloadLinks.windows.primary;
+    case 'macos': return downloadLinks.macos.primary;
+    case 'linux': return downloadLinks.linux.primary;
+    default: return null;
+  }
+}, [downloadLinks]);
+```
+
+### 稳定版备选链接
+
+当展示 beta 版本时，hero 卡片底部和平台网格底部显示：
+
+```
+也可以下载稳定版 v0.3.22：Windows · macOS · Linux
+```
+
+灰色小字，每个平台名是 stable 版本的下载链接。
+
+### 备用下载链接
+
+页面底部保留现有的备用下载链接区域，但更新为 backup CDN 链接（`d13jc1jqzlg4yt.cloudfront.net`）。
 
 ## 代码变更
 
@@ -160,17 +276,6 @@ const CDN_BACKUP = 'https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop';
 
 ### scripts/install-linux.sh（删除）
 逻辑已合并到 `web/public/i/k2`，删除此文件。
-
-### web/public/install.sh
-```bash
-# Before
-CDN_PRIMARY="https://d13jc1jqzlg4yt.cloudfront.net/kaitu/k2"
-CDN_FALLBACK="https://d0.all7.cc/kaitu/k2"
-
-# After
-CDN_PRIMARY="https://dl.kaitu.io/kaitu/k2"
-CDN_FALLBACK="https://d13jc1jqzlg4yt.cloudfront.net/kaitu/k2"
-```
 
 ### web/public/i/k2s
 ```bash
@@ -217,9 +322,6 @@ node scripts/generate-changelog.js
 - `en-US/k2/quickstart.md`：`dl.k2.52j.me/install.sh | sudo sh -s k2` → `kaitu.io/i/k2 | sudo bash`
 
 已正确无需修改：`index.md`、`vs-reality.md`、`server.md` 中的 `kaitu.io/i/k2` 和 `kaitu.io/i/k2s`。
-
-### web/public/install.sh（删除）
-旧版 k2/k2s CLI 安装脚本。k2 CLI 不单独发布，功能由 `web/public/i/k2`（桌面客户端）和 `web/public/i/k2s`（服务端）覆盖。
 
 ### web/src/lib/constants.ts — DOWNLOAD_LINKS.android 补充说明
 `DOWNLOAD_LINKS.android` 当前指向 `/waymaker/` 路径（旧产品 APK），不在本次范围内。待 Android 正式发布后使用 `getDownloadLinks()` 动态生成链接时统一切换。
