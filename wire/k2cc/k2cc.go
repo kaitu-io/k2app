@@ -1261,21 +1261,8 @@ func (p *K2CCSender) OnCongestionEventEx(
 	lostPackets []congestion.LostPacketInfo,
 ) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	// Filter stale losses — same logic as OnCongestionEvent.
-	// PacketsSent == 0: no sends in this MI yet, all losses are stale.
-	// Otherwise: only count losses with PacketNumber >= FirstPacketNumber.
-	mi := p.state.CurrentMI
-	var filteredLosses uint64
-	if mi != nil && mi.PacketsSent > 0 {
-		for i := range lostPackets {
-			if int64(lostPackets[i].PacketNumber) >= mi.FirstPacketNumber {
-				filteredLosses++
-			}
-		}
-	}
-	// When mi == nil or PacketsSent == 0: filteredLosses stays 0 (all stale)
+	filteredLosses := p.countFreshLossesLocked(lostPackets)
+	p.mu.Unlock()
 
 	acks := uint64(len(ackedPackets))
 	if acks == 0 && filteredLosses == 0 {
@@ -1283,6 +1270,24 @@ func (p *K2CCSender) OnCongestionEventEx(
 	}
 
 	p.ackRate.record(time.Duration(eventTime), acks, filteredLosses)
+}
+
+// countFreshLossesLocked filters stale losses — same logic as OnCongestionEvent.
+// PacketsSent == 0: no sends in this MI yet, all losses are stale.
+// Otherwise: only count losses with PacketNumber >= FirstPacketNumber.
+// Caller must hold p.mu.
+func (p *K2CCSender) countFreshLossesLocked(lostPackets []congestion.LostPacketInfo) uint64 {
+	mi := p.state.CurrentMI
+	if mi == nil || mi.PacketsSent == 0 {
+		return 0
+	}
+	var count uint64
+	for i := range lostPackets {
+		if int64(lostPackets[i].PacketNumber) >= mi.FirstPacketNumber {
+			count++
+		}
+	}
+	return count
 }
 
 // OnRetransmissionTimeout is called when RTO expires
