@@ -509,10 +509,8 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             try remoteVersion.write(to: webUpdatePath.appendingPathComponent("version.txt"),
                                     atomically: true, encoding: .utf8)
 
-            // Mark boot-pending for verification on next cold start
-            FileManager.default.createFile(
-                atPath: webUpdatePath.appendingPathComponent(".boot-pending").path,
-                contents: nil)
+            // Note: .boot-pending is NOT created here — load() creates it on next cold start.
+            // This ensures the OTA gets a chance to load before verification kicks in.
 
             await MainActor.run { completion(.success(())) }
         } catch {

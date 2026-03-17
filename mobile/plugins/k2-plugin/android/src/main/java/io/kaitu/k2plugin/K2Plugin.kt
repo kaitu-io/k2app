@@ -452,9 +452,8 @@ class K2Plugin : Plugin() {
 
                 // Write version for future comparison
                 File(webUpdateDir, "version.txt").writeText(remoteVersion)
-
-                // Mark boot-pending for verification on next cold start
-                File(webUpdateDir, ".boot-pending").createNewFile()
+                // Note: .boot-pending is NOT created here — load() creates it on next cold start.
+                // This ensures the OTA gets a chance to load before verification kicks in.
 
                 call.resolve()
             } catch (e: Exception) {
@@ -932,7 +931,6 @@ class K2Plugin : Plugin() {
 
                     // Write version for future comparison
                     File(webUpdateDir, "version.txt").writeText(remoteVersion)
-                    File(webUpdateDir, ".boot-pending").createNewFile()
                     Log.d(TAG, "Auto-update web OTA applied: $remoteVersion")
                 }
             }
