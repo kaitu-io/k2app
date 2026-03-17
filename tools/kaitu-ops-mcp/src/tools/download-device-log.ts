@@ -61,46 +61,87 @@ export function extractTar(tarBuffer: Buffer): Array<{ name: string; data: Buffe
   return entries
 }
 
-/** Extract files from a ZIP buffer using Node.js built-in zlib for deflate. */
+/**
+ * Extract files from a ZIP buffer using Node.js built-in zlib for deflate.
+ *
+ * Reads from the Central Directory (always has correct sizes) rather than
+ * local file headers, because:
+ * - Android ZipOutputStream sets Data Descriptor flag (bit 3) → sizes=0 in local headers
+ * - iOS SSZipArchive uses ZIP64 extensions → sizes=0xFFFFFFFF in standard fields,
+ *   real sizes in ZIP64 extra field (header ID 0x0001)
+ */
 export function extractZip(zipBuffer: Buffer): Array<{ name: string; data: Buffer }> {
   const entries: Array<{ name: string; data: Buffer }> = []
-  let offset = 0
 
-  while (offset + 30 <= zipBuffer.length) {
-    // Local file header signature = 0x04034b50
-    const sig = zipBuffer.readUInt32LE(offset)
-    if (sig !== 0x04034b50) break
+  // 1. Find End of Central Directory record (scan backwards)
+  //    EOCD signature = 0x06054b50, minimum EOCD size = 22 bytes
+  let eocdOffset = -1
+  for (let i = zipBuffer.length - 22; i >= 0; i--) {
+    if (zipBuffer.readUInt32LE(i) === 0x06054b50) {
+      eocdOffset = i
+      break
+    }
+  }
+  if (eocdOffset === -1) return entries
 
-    const compressionMethod = zipBuffer.readUInt16LE(offset + 8)
-    const compressedSize = zipBuffer.readUInt32LE(offset + 18)
-    const uncompressedSize = zipBuffer.readUInt32LE(offset + 22)
-    const nameLen = zipBuffer.readUInt16LE(offset + 26)
-    const extraLen = zipBuffer.readUInt16LE(offset + 28)
+  // 2. Read Central Directory location from EOCD
+  const cdOffset = zipBuffer.readUInt32LE(eocdOffset + 16)
+  const cdSize = zipBuffer.readUInt32LE(eocdOffset + 12)
 
-    const rawName = zipBuffer.subarray(offset + 30, offset + 30 + nameLen).toString('utf-8')
-    // Sanitize: strip directory traversal
+  // 3. Walk Central Directory entries (signature = 0x02014b50)
+  let pos = cdOffset
+  const cdEnd = cdOffset + cdSize
+  while (pos + 46 <= cdEnd && pos + 46 <= zipBuffer.length) {
+    if (zipBuffer.readUInt32LE(pos) !== 0x02014b50) break
+
+    const compressionMethod = zipBuffer.readUInt16LE(pos + 10)
+    let compressedSize = zipBuffer.readUInt32LE(pos + 20)
+    let uncompressedSize = zipBuffer.readUInt32LE(pos + 24)
+    const nameLen = zipBuffer.readUInt16LE(pos + 28)
+    const extraLen = zipBuffer.readUInt16LE(pos + 30)
+    const commentLen = zipBuffer.readUInt16LE(pos + 32)
+    const localHeaderOffset = zipBuffer.readUInt32LE(pos + 42)
+
+    const rawName = zipBuffer.subarray(pos + 46, pos + 46 + nameLen).toString('utf-8')
     const name = basename(rawName)
 
-    const dataStart = offset + 30 + nameLen + extraLen
-    const compressedData = zipBuffer.subarray(dataStart, dataStart + compressedSize)
-
-    if (name && uncompressedSize > 0) {
-      let data: Buffer
-      if (compressionMethod === 0) {
-        // Stored (no compression)
-        data = Buffer.from(compressedData)
-      } else if (compressionMethod === 8) {
-        // Deflate — use raw inflate (no zlib/gzip header)
-        data = inflateRawSync(compressedData) as Buffer
-      } else {
-        // Unknown compression — skip
-        offset = dataStart + compressedSize
-        continue
+    // Parse ZIP64 extra field from Central Directory if sizes are 0xFFFFFFFF
+    if (compressedSize === 0xFFFFFFFF || uncompressedSize === 0xFFFFFFFF) {
+      const extraStart = pos + 46 + nameLen
+      const extraEnd = extraStart + extraLen
+      let ePos = extraStart
+      while (ePos + 4 <= extraEnd) {
+        const headerId = zipBuffer.readUInt16LE(ePos)
+        const dataSize = zipBuffer.readUInt16LE(ePos + 2)
+        if (headerId === 0x0001 && dataSize >= 16 && ePos + 4 + 16 <= zipBuffer.length) {
+          // ZIP64 extended information: uncompressedSize (8 bytes) + compressedSize (8 bytes)
+          // Safe to use Number() — log files won't exceed Number.MAX_SAFE_INTEGER (9 PB)
+          uncompressedSize = Number(zipBuffer.readBigUInt64LE(ePos + 4))
+          compressedSize = Number(zipBuffer.readBigUInt64LE(ePos + 12))
+          break
+        }
+        ePos += 4 + dataSize
       }
-      entries.push({ name, data })
     }
 
-    offset = dataStart + compressedSize
+    // Advance past this central directory entry
+    pos += 46 + nameLen + extraLen + commentLen
+
+    if (!name || uncompressedSize === 0) continue
+
+    // 4. Locate compressed data via the local file header
+    //    Local header has its own nameLen/extraLen (may differ from CD)
+    const localNameLen = zipBuffer.readUInt16LE(localHeaderOffset + 26)
+    const localExtraLen = zipBuffer.readUInt16LE(localHeaderOffset + 28)
+    const dataStart = localHeaderOffset + 30 + localNameLen + localExtraLen
+    const compressedData = zipBuffer.subarray(dataStart, dataStart + compressedSize)
+
+    if (compressionMethod === 0) {
+      entries.push({ name, data: Buffer.from(compressedData) })
+    } else if (compressionMethod === 8) {
+      entries.push({ name, data: inflateRawSync(compressedData) as Buffer })
+    }
+    // Unknown compression methods silently skipped
   }
 
   return entries
