@@ -162,7 +162,7 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 		mux.close()
 	}
 	if deadSess != nil {
-		deadSess.Close()
+		closeSmuxSessionSafe(deadSess)
 	}
 
 	// Serialize expensive connect attempts.
@@ -191,7 +191,7 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 		mux2.close()
 	}
 	if deadSess2 != nil {
-		deadSess2.Close()
+		closeSmuxSessionSafe(deadSess2)
 	}
 
 	// --- All blocking I/O below — NO lock held ---
@@ -223,6 +223,27 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 	c.sess = sess
 	c.alloc = NewSessionIDAllocator()
 	return sess, nil
+}
+
+// smuxCloseTimeout bounds smux.Session.Close. TLS connections in IO wait
+// state may block Close indefinitely when the network is dead. 5s is 50x
+// normal close time.
+const smuxCloseTimeout = 5 * time.Second
+
+// closeSmuxSessionSafe closes a smux session with a bounded timeout.
+// If Close blocks (underlying TLS conn stuck in IO wait on dead network),
+// the goroutine is orphaned and the function returns after timeout.
+func closeSmuxSessionSafe(sess *smux.Session) {
+	done := make(chan struct{})
+	go func() {
+		sess.Close()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(smuxCloseTimeout):
+		slog.Warn("wire: smux session close timed out, orphaning goroutine")
+	}
 }
 
 // tcpwsConnectTimeout bounds the total TCP+TLS+WebSocket dial sequence.
@@ -503,9 +524,7 @@ func (c *TCPWSClient) resetConnection() {
 		mux.close()
 	}
 	if sess != nil {
-		if err := sess.Close(); err != nil {
-			slog.Debug("TCPWSClient: resetConnection close error", "err", err)
-		}
+		closeSmuxSessionSafe(sess)
 	}
 }
 
@@ -530,7 +549,7 @@ func (c *TCPWSClient) Close() error {
 		mux.close()
 	}
 	if sess != nil {
-		return sess.Close()
+		closeSmuxSessionSafe(sess)
 	}
 	return nil
 }

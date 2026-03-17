@@ -175,7 +175,20 @@ func (d *Daemon) closeTunnel() {
 		cancel()
 	}
 	if eng != nil {
-		eng.Stop() // fires OnStatus(disconnected) → d.lastStatus updated via EventHandler
+		// Engine.Stop() calls tm.Close() → wire Close which may block on
+		// quic-go/smux cleanup. Wire layer has 5s timeout, but add an outer
+		// 10s bound as defense-in-depth against other blocking paths
+		// (CGo dnsOverride cleanup, sing-tun provider.Close).
+		done := make(chan struct{})
+		go func() {
+			eng.Stop()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			slog.Warn("daemon: engine.Stop timed out after 10s, orphaning")
+		}
 	}
 
 	saveState(persistedState{State: engine.StateDisconnected, Timestamp: time.Now()})

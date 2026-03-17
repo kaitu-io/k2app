@@ -442,7 +442,7 @@ serialize:
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closed {
-		conn.CloseWithError(0, "closed during connect")
+		closeQUICConnSafe(conn, "closed during connect")
 		transport.Close()
 		return nil, ErrNotConnected
 	}
@@ -789,6 +789,31 @@ func (c *QUICClient) extractConnLocked() (mux *quicUDPMux, conn *quic.Conn, tr *
 	return
 }
 
+// quicCloseTimeout bounds quic.Conn.CloseWithError and quic.Transport.Close.
+// quic-go's Conn.destroy() waits for its run loop via <-c.ctx.Done(), which
+// blocks indefinitely when the network is unreachable (sendQueue.Run stuck
+// on a dead UDP write). 5s is 50x normal close time (<100ms).
+const quicCloseTimeout = 5 * time.Second
+
+// closeQUICConnSafe closes a QUIC connection with a bounded timeout.
+// If CloseWithError blocks (quic-go Conn.destroy bug when network is dead),
+// the goroutine is orphaned and the function returns after timeout.
+// The orphaned goroutine is harmless — it holds only quic-go internal state
+// and will be collected when the process exits.
+func closeQUICConnSafe(conn *quic.Conn, reason string) {
+	done := make(chan struct{})
+	go func() {
+		conn.CloseWithError(0, reason)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(quicCloseTimeout):
+		slog.Warn("wire: QUIC conn close timed out, orphaning goroutine",
+			"reason", reason, "timeout", quicCloseTimeout)
+	}
+}
+
 // closeQUICResources closes extracted QUIC connection resources.
 // Safe to call with nil arguments. Must be called WITHOUT holding c.mu.
 func closeQUICResources(mux *quicUDPMux, conn *quic.Conn, tr *quic.Transport, reason string) {
@@ -796,10 +821,19 @@ func closeQUICResources(mux *quicUDPMux, conn *quic.Conn, tr *quic.Transport, re
 		mux.close()
 	}
 	if conn != nil {
-		conn.CloseWithError(0, reason)
+		closeQUICConnSafe(conn, reason)
 	}
 	if tr != nil {
-		tr.Close()
+		done := make(chan struct{})
+		go func() {
+			tr.Close()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(quicCloseTimeout):
+			slog.Warn("wire: QUIC transport close timed out", "reason", reason)
+		}
 	}
 }
 

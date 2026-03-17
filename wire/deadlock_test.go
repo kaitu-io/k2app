@@ -192,3 +192,39 @@ func TestDeadlock_TransportManagerCloseMuFree(t *testing.T) {
 
 	<-closeDone
 }
+
+// TestCloseQUICConnSafe_TimeoutBounds verifies quicCloseTimeout is within
+// safe bounds: ≥1s (avoid false positives on slow CI), ≤10s (stay under
+// go-deadlock's 30s threshold with margin).
+func TestCloseQUICConnSafe_TimeoutBounds(t *testing.T) {
+	if quicCloseTimeout > 10*time.Second {
+		t.Fatalf("quicCloseTimeout too large: %v (max 10s)", quicCloseTimeout)
+	}
+	if quicCloseTimeout < 1*time.Second {
+		t.Fatalf("quicCloseTimeout too small: %v (min 1s)", quicCloseTimeout)
+	}
+}
+
+// TestCloseSmuxSessionSafe_TimeoutBounds verifies smuxCloseTimeout is within
+// safe bounds.
+func TestCloseSmuxSessionSafe_TimeoutBounds(t *testing.T) {
+	if smuxCloseTimeout > 10*time.Second {
+		t.Fatalf("smuxCloseTimeout too large: %v (max 10s)", smuxCloseTimeout)
+	}
+	if smuxCloseTimeout < 1*time.Second {
+		t.Fatalf("smuxCloseTimeout too small: %v (min 1s)", smuxCloseTimeout)
+	}
+}
+
+// TestCloseQUICResources_NilSafe verifies closeQUICResources handles all-nil args.
+func TestCloseQUICResources_NilSafe(t *testing.T) {
+	closeQUICResources(nil, nil, nil, "test")
+}
+
+// TestCloseSmuxSessionSafe_NilGuard verifies TCPWSClient methods handle nil
+// session gracefully (no-op resetConnection and Close).
+func TestCloseSmuxSessionSafe_NilGuard(t *testing.T) {
+	tc := &TCPWSClient{}
+	tc.resetConnection()
+	tc.Close()
+}
