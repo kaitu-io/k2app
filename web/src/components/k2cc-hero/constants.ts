@@ -62,10 +62,14 @@ export const LIGHTNING = {
 } as const
 
 export const K2CC_PATH: Array<[number, number][]> = [
-  [],
-  [],
-  [],
-  [],
+  // 'k' — vertical stroke + upper diagonal + lower diagonal
+  [[0, 20], [0, 50], [0, 80], [0, 50], [22, 20], [0, 50], [22, 80]],
+  // '2' — curved top + diagonal + horizontal base
+  [[26, 30], [30, 22], [38, 20], [44, 24], [46, 32], [44, 38], [26, 78], [26, 80], [48, 80]],
+  // 'c' — open arc (semicircle opening right)
+  [[70, 30], [64, 24], [58, 22], [54, 28], [52, 40], [52, 60], [54, 72], [58, 78], [64, 76], [70, 70]],
+  // 'c' — open arc (semicircle opening right)
+  [[92, 30], [86, 24], [80, 22], [76, 28], [74, 40], [74, 60], [76, 72], [80, 78], [86, 76], [92, 70]],
 ]
 
 export const PARTICLE = {
