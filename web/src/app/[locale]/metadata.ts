@@ -24,13 +24,13 @@ export function generateMetadata(
   overrides: MetadataOverrides = {}
 ): Metadata {
   const titles: Record<string, string> = {
-    'zh-CN': '开途 k2 — 30% 丢包照样满速的隐身隧道',
-    'zh-TW': '開途 k2 — 30% 丟包照樣滿速的隱身隧道',
-    'zh-HK': '開途 k2 — 30% 丟包照樣滿速的隱身隧道',
-    'en-US': 'Kaitu k2 — Full Speed Through 30% Packet Loss',
-    'en-GB': 'Kaitu k2 — Full Speed Through 30% Packet Loss',
-    'en-AU': 'Kaitu k2 — Full Speed Through 30% Packet Loss',
-    'ja': 'Kaitu k2 — 30% パケットロスでもフルスピード'
+    'zh-CN': '开途 k2cc — 30% 丢包照样满速的隐身隧道',
+    'zh-TW': '開途 k2cc — 30% 丟包照樣滿速的隱身隧道',
+    'zh-HK': '開途 k2cc — 30% 丟包照樣滿速的隱身隧道',
+    'en-US': 'Kaitu k2cc — Full Speed Through 30% Packet Loss',
+    'en-GB': 'Kaitu k2cc — Full Speed Through 30% Packet Loss',
+    'en-AU': 'Kaitu k2cc — Full Speed Through 30% Packet Loss',
+    'ja': 'Kaitu k2cc — 30% パケットロスでもフルスピード'
   };
 
   const descriptions: Record<string, string> = {
@@ -60,7 +60,7 @@ export function generateMetadata(
     url: `${baseUrl}/${locale}${pathname}`,
     siteName: 'Kaitu',
     locale: locale.replace('-', '_'),
-    images: [{ url: ogImageUrl, width: 1200, height: 630, alt: typeof title === 'string' ? title : 'Kaitu k2' }],
+    images: [{ url: ogImageUrl, width: 1200, height: 630, alt: typeof title === 'string' ? title : 'Kaitu k2cc' }],
   };
 
   const openGraph: Metadata['openGraph'] = ogType === 'article' && overrides.article

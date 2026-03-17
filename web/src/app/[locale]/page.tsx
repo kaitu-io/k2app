@@ -27,7 +27,7 @@ export async function generateMetadata({
   const base = generateBaseMetadata(locale);
   const t = await getTranslations({ locale, namespace: 'hero' });
 
-  const title = `${t('hero.title')} | Kaitu k2`;
+  const title = `${t('hero.title')} | Kaitu k2cc`;
   const description = t('hero.description');
 
   return {
@@ -55,7 +55,7 @@ const JSON_LD_CONTENT = JSON.stringify([
   {
     '@context': 'https://schema.org',
     '@type': 'SoftwareApplication',
-    name: 'Kaitu k2',
+    name: 'Kaitu k2cc',
     applicationCategory: 'NetworkingApplication',
     operatingSystem: 'Windows, macOS, iOS, Android, Linux',
     description:
@@ -112,10 +112,10 @@ const JSON_LD_CONTENT = JSON.stringify([
       },
       {
         '@type': 'Question',
-        name: 'What platforms does Kaitu k2 support?',
+        name: 'What platforms does Kaitu k2cc support?',
         acceptedAnswer: {
           '@type': 'Answer',
-          text: 'Kaitu k2 supports Windows 10/11, macOS 12+, Linux (AppImage), iOS (iPhone/iPad), and Android. Desktop clients are available for direct download, mobile apps via App Store and APK.',
+          text: 'Kaitu k2cc supports Windows 10/11, macOS 12+, Linux (AppImage), iOS (iPhone/iPad), and Android. Desktop clients are available for direct download, mobile apps via App Store and APK.',
         },
       },
       {
