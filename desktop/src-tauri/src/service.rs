@@ -401,9 +401,11 @@ pub async fn admin_reinstall_service() -> Result<String, String> {
         admin_reinstall_service_windows().await
     }
 
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(target_os = "linux")]
     {
-        Err("Not supported on this platform".to_string())
+        tokio::task::spawn_blocking(admin_reinstall_service_linux)
+            .await
+            .map_err(|e| format!("Task join error: {}", e))?
     }
 }
 
@@ -498,6 +500,82 @@ fn admin_reinstall_service_macos() -> Result<String, String> {
     }
 }
 
+/// Linux daemon mode: install k2 service with pkexec for privilege escalation.
+/// pkexec shows a graphical password dialog on desktop environments.
+/// Falls back to error with manual sudo instructions if pkexec is unavailable.
+#[cfg(target_os = "linux")]
+fn find_k2_binary_linux() -> Result<std::path::PathBuf, String> {
+    // 1. Check /usr/local/bin/k2 (install script symlink)
+    let system_path = std::path::Path::new("/usr/local/bin/k2");
+    if system_path.exists() {
+        return Ok(system_path.to_path_buf());
+    }
+
+    // 2. Check sidecar path relative to current exe
+    let exe_path = std::env::current_exe()
+        .map_err(|e| format!("Failed to get exe path: {}", e))?;
+    let app_dir = exe_path.parent().ok_or("Failed to get app directory")?;
+
+    // Try plain `k2` first, then `k2-*` (target-triple variant)
+    let k2_path = app_dir.join("k2");
+    if k2_path.exists() {
+        return Ok(k2_path);
+    }
+
+    // Find k2-{target-triple} in the same directory
+    if let Ok(entries) = std::fs::read_dir(app_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if name_str.starts_with("k2-") && !name_str.contains('.') {
+                return Ok(entry.path());
+            }
+        }
+    }
+
+    Err(format!("k2 binary not found in /usr/local/bin or {:?}", app_dir))
+}
+
+#[cfg(target_os = "linux")]
+fn admin_reinstall_service_linux() -> Result<String, String> {
+    let k2_path = find_k2_binary_linux()?;
+    let k2_str = k2_path.to_string_lossy();
+    log::info!("[service] Linux: installing via pkexec: {}", k2_str);
+
+    // Check if pkexec is available
+    let pkexec_available = Command::new("which")
+        .arg("pkexec")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    if !pkexec_available {
+        log::warn!("[service] pkexec not available");
+        return Err("pkexec_unavailable: run 'sudo k2 service install' manually".to_string());
+    }
+
+    let output = Command::new("pkexec")
+        .args([&*k2_str, "service", "install"])
+        .output()
+        .map_err(|e| format!("pkexec failed: {}", e))?;
+
+    if output.status.success() {
+        log::info!("[service] Service installed successfully via pkexec");
+        Ok("Service installed and started".to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr_str = stderr.trim();
+        // pkexec returns 126 when user dismisses the dialog
+        if output.status.code() == Some(126) {
+            log::info!("[service] User cancelled pkexec prompt");
+            Err("User cancelled".to_string())
+        } else {
+            log::error!("[service] pkexec failed: {}", stderr_str);
+            Err(format!("Failed to install service: {}", stderr_str))
+        }
+    }
+}
+
 /// Detect old kaitu-service
 pub fn detect_old_kaitu_service() -> bool {
     #[cfg(all(target_os = "macos", not(feature = "ne-mode")))]
@@ -518,9 +596,9 @@ pub fn detect_old_kaitu_service() -> bool {
             .map(|o| o.status.success())
             .unwrap_or(false)
     }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(target_os = "linux")]
     {
-        false
+        std::path::Path::new("/etc/systemd/system/kaitu-service.service").exists()
     }
 }
 
@@ -553,6 +631,12 @@ pub fn cleanup_old_kaitu_service() {
             .args(["delete", "kaitu-service"])
             .creation_flags(CREATE_NO_WINDOW)
             .output();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = Command::new("systemctl").args(["stop", "kaitu-service"]).output();
+        let _ = Command::new("systemctl").args(["disable", "kaitu-service"]).output();
+        let _ = std::fs::remove_file("/etc/systemd/system/kaitu-service.service");
     }
 }
 
@@ -639,7 +723,8 @@ async fn ensure_service_running_daemon(app_version: String) -> Result<(), String
     // Diagnostic: check if k2 binary exists
     let exe_path = std::env::current_exe().ok();
     if let Some(ref exe) = exe_path {
-        let k2_path = exe.parent().map(|d| d.join("k2.exe"));
+        let k2_name = if cfg!(windows) { "k2.exe" } else { "k2" };
+        let k2_path = exe.parent().map(|d| d.join(k2_name));
         log::info!("[service] k2 binary exists: {:?} -> {}", k2_path, k2_path.as_ref().map_or(false, |p| p.exists()));
     }
 
@@ -946,6 +1031,33 @@ mod tests {
             assert!(ps_script.starts_with("Start-Process"));
             assert!(ps_script.contains("-Verb RunAs"));
             assert!(ps_script.contains("-WindowStyle Hidden"));
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    mod linux_tests {
+        use super::super::*;
+
+        #[test]
+        fn test_linux_k2_binary_lookup() {
+            let result = find_k2_binary_linux();
+            match result {
+                Ok(path) => {
+                    let path_str = path.to_string_lossy();
+                    assert!(
+                        path_str.contains("k2"),
+                        "Path should contain 'k2': {}",
+                        path_str
+                    );
+                }
+                Err(e) => {
+                    assert!(
+                        e.contains("not found"),
+                        "Error should indicate k2 not found: {}",
+                        e
+                    );
+                }
+            }
         }
     }
 }
