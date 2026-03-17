@@ -146,7 +146,7 @@ function SmartScreenGuide({ filename, publisher }: { filename: string; publisher
 }
 
 function MacOSAllowGuide({ publisher }: { publisher: string }) {
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#1c1c1e;font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:11px}.tb{background:#2c2c2e;padding:8px 12px;display:flex;align-items:center;gap:6px;border-bottom:1px solid #3a3a3c}.d{width:10px;height:10px;border-radius:50%}.r{background:#ff5f57}.y{background:#febc2e}.g{background:#28c840}.main{display:flex}.sb{width:150px;background:#262628;border-right:1px solid #3a3a3c;padding:10px}.search{background:#3a3a3c;border-radius:5px;padding:5px 8px;display:flex;align-items:center;gap:4px;margin-bottom:8px;border:2px solid #3478f6}.search span{color:#98989d;font-size:9px}.search .t{color:#e5e5e7;flex:1}.si{background:#3478f6;border-radius:5px;padding:5px 8px;display:flex;align-items:center;gap:5px}.si span{font-size:9px;color:#fff}.ct{flex:1;padding:14px}.ch{padding:8px 0 10px;display:flex;align-items:center;gap:6px;border-bottom:1px solid #3a3a3c;margin-bottom:12px}.ch span{color:#3478f6;font-size:14px}.ch .t{flex:1;font-size:11px;font-weight:600;color:#e5e5e7}.st{font-size:10px;font-weight:600;color:#e5e5e7;margin-bottom:8px}.bx{background:#2c2c2e;border-radius:8px;padding:10px;margin-bottom:8px}.rl{color:#e5e5e7;font-size:10px;margin-bottom:6px}.rd{display:flex;align-items:center;gap:5px;margin-bottom:3px}.roff{width:12px;height:12px;border-radius:50%;border:1.5px solid #58585a}.ron{width:12px;height:12px;border-radius:50%;background:#3478f6;position:relative}.ron::after{content:'';position:absolute;top:3px;left:3px;width:6px;height:6px;border-radius:50%;background:#fff}.rl2{font-size:9px;color:#98989d}.rl2.sel{color:#e5e5e7}.at{color:#98989d;font-size:10px;line-height:1.5}strong{color:#e5e5e7}.ba{float:right;background:#48484a;color:#e5e5e7;border:none;padding:3px 12px;border-radius:5px;font-size:9px;margin-top:6px;border:2px solid #ff4444}.ba::after{content:' 👈';color:#ffcc00;font-size:9px;font-weight:600}.cf::after{content:'';display:table;clear:both}</style></head><body><div class="tb"><div class="d r"></div><div class="d y"></div><div class="d g"></div></div><div class="main"><div class="sb"><div class="search"><span>🔍</span><span class="t">隐私与安全</span></div><div class="si"><span>🤚</span><span>隐私与安全性</span></div></div><div class="ct"><div class="ch"><span>‹</span><span>›</span><span class="t">隐私与安全性</span></div><div class="st">安全性</div><div class="bx"><div class="rl">允许从以下位置下载的应用程序</div><div class="rd"><div class="roff"></div><span class="rl2">App Store</span></div><div class="rd"><div class="ron"></div><span class="rl2 sel">App Store 和被认可的开发者</span></div></div><div class="bx cf"><p class="at">来自开发者 <strong>"${publisher}"</strong> 的系统软件已被阻止载入。</p><button class="ba">允许</button></div></div></div></body></html>`;
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#1c1c1e;font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:11px}.tb{background:#2c2c2e;padding:8px 12px;display:flex;align-items:center;gap:6px;border-bottom:1px solid #3a3a3c}.d{width:10px;height:10px;border-radius:50%}.r{background:#ff5f57}.y{background:#febc2e}.g{background:#28c840}.main{display:flex}.sb{width:150px;background:#262628;border-right:1px solid #3a3a3c;padding:10px}.search{background:#3a3a3c;border-radius:12px;padding:5px 8px;display:flex;align-items:center;gap:4px;margin-bottom:8px;border:2px solid #ff4444;box-shadow:0 0 6px rgba(255,68,68,0.4)}.search span{color:#98989d;font-size:9px}.search .t{color:#e5e5e7;flex:1}.si{background:#3478f6;border-radius:5px;padding:5px 8px;display:flex;align-items:center;gap:5px}.si span{font-size:9px;color:#fff}.ct{flex:1;padding:14px}.ch{padding:8px 0 10px;display:flex;align-items:center;gap:6px;border-bottom:1px solid #3a3a3c;margin-bottom:12px}.ch span{color:#3478f6;font-size:14px}.ch .t{flex:1;font-size:11px;font-weight:600;color:#e5e5e7}.st{font-size:10px;font-weight:600;color:#e5e5e7;margin-bottom:8px}.bx{background:#2c2c2e;border-radius:8px;padding:10px;margin-bottom:8px}.rl{color:#e5e5e7;font-size:10px;margin-bottom:6px}.rd{display:flex;align-items:center;gap:5px;margin-bottom:3px}.roff{width:12px;height:12px;border-radius:50%;border:1.5px solid #58585a}.ron{width:12px;height:12px;border-radius:50%;background:#3478f6;position:relative}.ron::after{content:'';position:absolute;top:3px;left:3px;width:6px;height:6px;border-radius:50%;background:#fff}.rl2{font-size:9px;color:#98989d}.rl2.sel{color:#e5e5e7}.at{color:#98989d;font-size:10px;line-height:1.5}strong{color:#e5e5e7}.ba{float:right;background:#48484a;color:#e5e5e7;border:none;padding:3px 12px;border-radius:5px;font-size:9px;margin-top:6px;border:2px solid #ff4444}.ba::after{content:' 👈';color:#ffcc00;font-size:9px;font-weight:600}.cf::after{content:'';display:table;clear:both}</style></head><body><div class="tb"><div class="d r"></div><div class="d y"></div><div class="d g"></div></div><div class="main"><div class="sb"><div class="search"><span>🔍</span><span class="t">隐私与安全</span></div><div class="si"><span>🤚</span><span>隐私与安全性</span></div></div><div class="ct"><div class="ch"><span>‹</span><span>›</span><span class="t">隐私与安全性</span></div><div class="st">安全性</div><div class="bx"><div class="rl">允许从以下位置下载的应用程序</div><div class="rd"><div class="roff"></div><span class="rl2">App Store</span></div><div class="rd"><div class="ron"></div><span class="rl2 sel">App Store 和被认可的开发者</span></div></div><div class="bx cf"><p class="at">来自开发者 <strong>"${publisher}"</strong> 的系统软件已被阻止载入。</p><button class="ba">允许</button></div></div></div></body></html>`;
 
   return (
     <div>
@@ -410,7 +410,6 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
             <Download className="w-8 h-8 text-primary mx-auto animate-bounce" />
             <p className="text-sm font-medium text-foreground">{t('install.install.downloading')}</p>
             <p className="text-xs text-muted-foreground">{t('install.install.checkDownloadLocation')}</p>
-            <DownloadTips device={device} t={t} version={displayVersion} browser={debugBrowser} />
           </div>
         );
 
@@ -421,7 +420,6 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
               <CheckCircle className="w-5 h-5" />
               <span className="text-sm font-medium">{t('install.install.downloadSuccess')}</span>
             </div>
-            <DownloadTips device={device} t={t} version={displayVersion} browser={debugBrowser} />
             <div className="flex justify-center gap-3 mt-4">
               <Button onClick={retryDownload}>
                 <RefreshCw className="w-4 h-4 mr-2" />
@@ -617,9 +615,14 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
   return (
     <>
       {/* Section 1: Smart Hero */}
-      <div className="py-8 mb-8">
+      <div className="py-8 mb-4">
         {renderHero()}
       </div>
+
+      {/* Install guide — always visible for desktop platforms */}
+      {device?.isDesktop && (
+        <DownloadTips device={device} t={t} version={displayVersion} browser={debugBrowser} />
+      )}
 
       {/* Section 2: Platform List — clickable rows */}
       <h3 className="text-lg font-semibold text-foreground mb-3">
