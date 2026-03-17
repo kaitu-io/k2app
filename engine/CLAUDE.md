@@ -33,7 +33,8 @@ Note: `reconnecting` and `paused` are transient — engine.state stays `connecte
 
 - `Start()`: disconnected → connecting → connected (or disconnected on error)
 - `Stop()`: any → disconnected (idempotent, resets `paused`)
-- `OnNetworkChanged()`: connected (not paused) → reconnecting → connected (resets wire transports)
+- `OnNetworkChanged()`: routes through netCoordinator as SignalChanged → reconnect if network is up
+- `OnNetEvent(event)`: routes through netCoordinator — "unavailable" stops probe, "available" triggers doNetworkReconnect, "changed" reconnects if up
 - `Pause()`: connected → paused (releases wire transports, provider stays alive — iOS memory pressure)
 - `Wake()`: paused → connected (forces fresh wire transport connections)
 - `fail()`: any → disconnected + classified error
@@ -68,7 +69,9 @@ HTTP-aligned error codes for frontend consumption:
 
 ## Files
 
-- `engine.go` — `Engine` struct, `Start`/`Stop`/`OnNetworkChanged`, assembly pipeline
+- `engine.go` — `Engine` struct, `Start`/`Stop`/`OnNetworkChanged`/`OnNetEvent`/`doNetworkReconnect`, assembly pipeline
+- `netmon.go` — `NetEvent` (gomobile-compatible network event struct, 8 primitive fields) + `netCoordinator` (fuses sing-tun + platform signals: suppress reconnect when network down, full reconnect on recovery, 500ms debounce)
+- `netmon_test.go` — netCoordinator unit tests (6 scenarios)
 - `config.go` — `Config` struct (platform-unified tunnel parameters, uses `wire.DirectDialer` interface)
 - `status.go` — `Status` struct, custom `MarshalJSON` (computes `uptime_seconds` dynamically)
 - `event.go` — `EventHandler` interface (`OnStatus(Status)` + `OnStats`), state constants
