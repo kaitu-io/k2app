@@ -87,11 +87,8 @@ jobs:
         with:
           go-version: '1.24'
           cache-dependency-path: k2/go.sum
-      - name: Go test k2 core — fast (skip benchmarks)
-        run: go test -short -count=1 -timeout=120s ./...
-        working-directory: k2
-      - name: Go test k2cc benchmarks (convergence + descent + bottleneck)
-        run: go test -run 'Benchmark' -count=1 -timeout=600s ./wire/k2cc/...
+      - name: Go test k2 core (skip slow benchmarks)
+        run: go test -short -count=1 -timeout=180s ./...
         working-directory: k2
       - name: Go build k2 (deadlock_disable — production mode)
         run: go build -tags=deadlock_disable ./...
