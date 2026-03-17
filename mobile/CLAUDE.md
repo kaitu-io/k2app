@@ -183,6 +183,8 @@ Go package `k2/appext/` → gomobile naming:
 - **VPN display name**: User-visible VPN name is `"kaitu.io"` across iOS (NE `localizedDescription`, `serverAddress`, Info.plist `CFBundleDisplayName`) and Android (`setSession()`, notification title).
 - **iOS stale VPN config cleanup**: `loadVPNManager()` removes stale NE configs with wrong `providerBundleIdentifier` or `localizedDescription` on every load. Prevents "Found 0 registrations" after bundle ID migration.
 - **iOS App Group**: `kAppGroup = "group.io.kaitu"` — used by both `K2Plugin.swift` and `PacketTunnelProvider.swift`. Changed from `group.waymaker` in March 2026.
+- **Web OTA min_native**: Manifest `min_native` field prevents applying webapp that requires a newer native app. Source: `webapp/package.json` → `minNativeVersion`. Bump this when webapp adds new native bridge dependencies. Comparison uses BASE version only (ignores pre-release): `0.4.0-beta.6` satisfies `min_native=0.4.0`.
+- **Web OTA boot verification**: `.boot-pending` marker in `web-update/` dir. Created on OTA apply, cleared by `checkReady()`. If present on cold start → OTA crashed → rollback to bundled webapp.
 
 ## AEO Constitutional Rules (App Store Optimization)
 
