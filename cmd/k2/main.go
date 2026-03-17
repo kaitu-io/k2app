@@ -67,6 +67,8 @@ func main() {
 		cmdUpgrade(rest)
 	case "android-install":
 		cmdAndroidInstall(rest)
+	case "healthcheck":
+		cmdHealthcheck()
 	case "demo-config":
 		fmt.Print(demoConfig)
 	case "version":
