@@ -6,6 +6,7 @@ import Footer from '@/components/Footer';
 import HeroSection from '@/components/home/HeroSection';
 import FeaturesSection from '@/components/home/FeaturesSection';
 import DownloadCTA from '@/components/home/DownloadCTA';
+import HomeClient from './HomeClient';
 
 type Locale = (typeof routing.locales)[number];
 
@@ -83,6 +84,7 @@ export default async function Home({
         dangerouslySetInnerHTML={{ __html: JSON_LD_CONTENT }}
       />
       <Header />
+      <HomeClient />
 
       <HeroSection
         title={t('hero.title')}

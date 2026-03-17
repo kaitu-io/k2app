@@ -1,7 +1,12 @@
-"use client";
+'use client';
 
-import { K2ccPulseCanvas } from '@/components/k2cc-hero/K2ccPulseCanvas'
+import dynamic from 'next/dynamic';
 
-export default function HomeClient(): React.ReactElement {
-  return <K2ccPulseCanvas />
+const K2ccPulseCanvas = dynamic(
+  () => import('@/components/k2cc-hero/K2ccPulseCanvas'),
+  { ssr: false },
+);
+
+export default function HomeClient() {
+  return <K2ccPulseCanvas />;
 }
