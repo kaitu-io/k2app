@@ -13,65 +13,18 @@ env:
   K2_BUILD_LOG_LEVEL: debug  # debug for beta phase; change to info for production
 
 jobs:
-  # --- Test gate: must pass before any build starts ---
-  test-gate:
-    runs-on: macos-latest
-    timeout-minutes: 15
-    env:
-      CARGO_INCREMENTAL: "0"
+  # --- Test gates: 3 parallel jobs, all must pass before release ---
+
+  test-webapp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup SSH for private submodule
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.K2_DEPLOY_KEY }}
-
-      - name: Init k2 submodule
-        run: git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init --recursive
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'yarn'
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.24'
-          cache-dependency-path: k2/go.sum
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Setup sccache
-        uses: mozilla-actions/sccache-action@v0.0.6
-
-      - name: Verify sccache works
-        run: |
-          export SCCACHE_GHA_ENABLED=true
-          if sccache rustc -vV >/dev/null 2>&1; then
-            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-            echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
-          else
-            echo "::warning::sccache GHA backend unavailable, compiling without cache"
-          fi
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: cargo-registry-${{ runner.os }}-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}
-          restore-keys: |
-            cargo-registry-${{ runner.os }}-
-
-      - name: Install Node dependencies
-        run: yarn install --frozen-lockfile
-
+      - run: yarn install --frozen-lockfile
       - name: Version consistency check
         run: |
           PKG_VERSION=$(node -p "require('./package.json').version")
@@ -81,41 +34,70 @@ jobs:
             exit 1
           fi
           echo "Versions consistent: $PKG_VERSION"
-
       - name: Webapp tests (vitest)
         run: yarn test
         working-directory: webapp
 
+  test-cargo:
+    runs-on: macos-latest
+    timeout-minutes: 10
+    env:
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: mozilla-actions/sccache-action@v0.0.6
+      - name: Verify sccache works
+        run: |
+          export SCCACHE_GHA_ENABLED=true
+          if sccache rustc -vV >/dev/null 2>&1; then
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+            echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          else
+            echo "::warning::sccache GHA backend unavailable, compiling without cache"
+          fi
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-
       - name: Create sidecar placeholder for cargo test
         run: |
           TRIPLE=$(RUSTC_WRAPPER= rustc -vV | grep host | cut -d' ' -f2)
           mkdir -p desktop/src-tauri/binaries
           touch "desktop/src-tauri/binaries/k2-${TRIPLE}"
-
       - name: Cargo test (Tauri)
         run: cargo test
         working-directory: desktop/src-tauri
 
-      - name: Go test k2 core (deadlock detection enabled)
-        run: go test ./... -count=1 -timeout=300s
+  test-go:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.K2_DEPLOY_KEY }}
+      - name: Init k2 submodule
+        run: git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init --recursive
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: k2/go.sum
+      - name: Go test k2 core — fast (skip benchmarks)
+        run: go test -short -count=1 -timeout=120s ./...
         working-directory: k2
-
+      - name: Go test k2cc benchmarks (convergence + descent + bottleneck)
+        run: go test -run 'Benchmark' -count=1 -timeout=600s ./wire/k2cc/...
+        working-directory: k2
       - name: Go build k2 (deadlock_disable — production mode)
         run: go build -tags=deadlock_disable ./...
         working-directory: k2
 
-      # --- Notifications ---
-
-      - name: Notify Slack on test-gate success
-        if: success()
-        shell: bash
-        run: |
-          ./scripts/ci/notify-slack.sh test-success \
-            --platform "Release Desktop"
-        env:
-          SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_RELEASE }}
-
-      - name: Notify Slack on test-gate failure
+      - name: Notify Slack on test failure
         if: failure()
         shell: bash
         run: |
@@ -126,7 +108,7 @@ jobs:
           SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_RELEASE }}
 
   release:
-    needs: test-gate
+    needs: [test-webapp, test-cargo, test-go]
     strategy:
       fail-fast: false
       matrix:
