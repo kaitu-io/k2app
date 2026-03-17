@@ -171,38 +171,12 @@ jobs:
             --apiKey "$APP_STORE_CONNECT_KEY_ID" \
             --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID"
 
-      - name: Detect release channel
-        id: channel
-        shell: bash
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          if [[ "$VERSION" == *"-beta"* ]]; then
-            CHANNEL="beta"
-          else
-            CHANNEL="stable"
-          fi
-          echo "channel=${CHANNEL}" >> "$GITHUB_OUTPUT"
-          echo "Release channel: ${CHANNEL} (version: ${VERSION})"
-
-      - name: Upload Web OTA + iOS manifest to S3
+      - name: Upload Web OTA to S3
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ap-northeast-1
-        run: bash scripts/ci/upload-mobile-s3.sh --web --ios --channel=${{ steps.channel.outputs.channel }}
-
-      - name: Invalidate CloudFront CDN cache
-        if: success()
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ap-northeast-1
-          DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          aws cloudfront create-invalidation \
-            --distribution-id "$DISTRIBUTION_ID" \
-            --paths "/kaitu/web/*" "/kaitu/ios/*"
+        run: bash scripts/ci/upload-mobile-s3.sh --web
 
       - name: Clean up keychain
         if: always()
@@ -350,38 +324,12 @@ jobs:
           path: release/*/Kaitu-*.apk
           retention-days: 30
 
-      - name: Detect release channel
-        id: channel
-        shell: bash
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          if [[ "$VERSION" == *"-beta"* ]]; then
-            CHANNEL="beta"
-          else
-            CHANNEL="stable"
-          fi
-          echo "channel=${CHANNEL}" >> "$GITHUB_OUTPUT"
-          echo "Release channel: ${CHANNEL} (version: ${VERSION})"
-
       - name: Upload Android APK to S3
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ap-northeast-1
-        run: bash scripts/ci/upload-mobile-s3.sh --android --channel=${{ steps.channel.outputs.channel }}
-
-      - name: Invalidate CloudFront CDN cache
-        if: success()
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ap-northeast-1
-          DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          aws cloudfront create-invalidation \
-            --distribution-id "$DISTRIBUTION_ID" \
-            --paths "/kaitu/android/*"
+        run: bash scripts/ci/upload-mobile-s3.sh --android
 
       - name: Notify Slack on Android success
         if: success()
