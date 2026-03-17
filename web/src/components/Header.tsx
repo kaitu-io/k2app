@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { useTranslations } from 'next-intl';
 import { Link } from '@/i18n/routing';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
-import { Github } from 'lucide-react';
+import { Github, Download } from 'lucide-react';
 import Image from 'next/image';
 
 export default function Header() {
@@ -40,6 +40,13 @@ export default function Header() {
               </Link>
               <div className="w-px h-4 bg-border" />
               <Link
+                href="/k2/quickstart"
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {t('nav.nav.quickstart')}
+              </Link>
+              <div className="w-px h-4 bg-border" />
+              <Link
                 href="/routers"
                 className="text-sm text-muted-foreground hover:text-foreground transition-colors"
               >
@@ -52,6 +59,13 @@ export default function Header() {
                 title={t('nav.nav.openSource')}
               >
                 <Github className="w-5 h-5" />
+              </Link>
+              <div className="w-px h-4 bg-border" />
+              <Link href="/install">
+                <Button variant="outline" size="sm" className="border-primary text-primary hover:bg-primary/10 hover:text-primary font-mono text-xs">
+                  <Download className="w-3.5 h-3.5 mr-1" />
+                  {t('nav.nav.download')}
+                </Button>
               </Link>
             </div>
             
