@@ -46,6 +46,17 @@ vi.mock('../src/app/[locale]/HomeClient', () => ({
   default: () => null,
 }));
 
+// Mock metadata.ts (layout metadata generator used by page's generateMetadata)
+vi.mock('../src/app/[locale]/metadata', () => ({
+  generateMetadata: () => ({
+    title: 'Test Title',
+    description: 'Test Description',
+    openGraph: { title: 'Test', description: 'Test' },
+    twitter: { title: 'Test', description: 'Test' },
+  }),
+  baseUrl: 'https://kaitu.io',
+}));
+
 // Mock new section components
 vi.mock('@/components/home/HeroSection', () => ({
   default: () => null,

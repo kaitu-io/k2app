@@ -1,7 +1,10 @@
-import { createCanvas } from '@napi-rs/canvas';
+import { createCanvas, GlobalFonts } from '@napi-rs/canvas';
 import { writeFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+
+// Register system Chinese font (macOS PingFang)
+GlobalFonts.registerFromPath('/System/Library/Fonts/PingFang.ttc', 'PingFang SC');
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -33,7 +36,7 @@ ctx.stroke();
 
 // Main title — Chinese slogan
 ctx.fillStyle = '#ffffff';
-ctx.font = 'bold 72px sans-serif';
+ctx.font = 'bold 72px "PingFang SC", sans-serif';
 ctx.textAlign = 'center';
 ctx.textBaseline = 'middle';
 ctx.fillText('别人断线，你满速。', WIDTH / 2, HEIGHT * 0.30);
@@ -45,7 +48,7 @@ ctx.fillText("Others Drop. You Don't.", WIDTH / 2, HEIGHT * 0.44);
 
 // Tagline
 ctx.fillStyle = '#9ca3af';
-ctx.font = '24px sans-serif';
+ctx.font = '24px "PingFang SC", sans-serif';
 ctx.fillText('k2cc — 越拥堵，越从容', WIDTH / 2, HEIGHT * 0.75);
 
 // Domain
