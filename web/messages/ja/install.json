@@ -53,6 +53,15 @@
     "recommended": "おすすめ",
     "downloadCancelled": "自動ダウンロードがキャンセルされました",
     "clickToDownload": "クリックしてダウンロード",
-    "metaDescription": "Kaitu k2 クライアントをダウンロード — Windows、macOS、iOS、Android 対応。k2cc 適応型レート制御で、高パケットロスでもフルスピードのステルストンネル。"
+    "metaDescription": "Kaitu k2 クライアントをダウンロード — Windows、macOS、iOS、Android 対応。k2cc 適応型レート制御で、高パケットロスでもフルスピードのステルストンネル。",
+    "linux": "Linux",
+    "linuxVersion": "Ubuntu / Fedora / Arch",
+    "downloadAppImage": "Linux Desktop",
+    "cliInstall": "Or install via command line",
+    "cliCommand": "curl -fsSL https://kaitu.io/i/k2 | sudo bash",
+    "copied": "Copied",
+    "beta": "Beta",
+    "alsoAvailableStable": "Stable version v{version} also available",
+    "linuxCliRecommended": "CLI install recommended — auto-checks dependencies"
   }
 }

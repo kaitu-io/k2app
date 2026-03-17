@@ -6,8 +6,8 @@ set -e
 
 NAME="k2s"
 INSTALL_DIR="/usr/local/bin"
-CDN_PRIMARY="https://d13jc1jqzlg4yt.cloudfront.net/kaitu/k2"
-CDN_FALLBACK="https://d0.all7.cc/kaitu/k2"
+CDN_PRIMARY="https://dl.kaitu.io/kaitu/k2"
+CDN_FALLBACK="https://d13jc1jqzlg4yt.cloudfront.net/kaitu/k2"
 GITHUB_REPO="kaitu-io/k2"
 MANIFEST=""
 

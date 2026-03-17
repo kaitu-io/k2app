@@ -15,8 +15,8 @@ const path = require('path');
  *   node scripts/generate-changelog.js
  */
 
-const CDN_PRIMARY = 'https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop';
-const CDN_BACKUP = 'https://d0.all7.cc/kaitu/desktop';
+const CDN_PRIMARY = 'https://dl.kaitu.io/kaitu/desktop';
+const CDN_BACKUP = 'https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop';
 const MIN_DOWNLOAD_VERSION = { major: 0, minor: 3, patch: 22 };
 
 function parseVersion(filename) {

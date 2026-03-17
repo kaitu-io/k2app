@@ -4,8 +4,8 @@
 // DESKTOP_VERSION = stable (releaseVersion), BETA_VERSION = latest (version, may include prerelease)
 export const DESKTOP_VERSION = process.env.NEXT_PUBLIC_DESKTOP_VERSION || '0.0.0';
 export const BETA_VERSION = process.env.NEXT_PUBLIC_BETA_VERSION || '0.0.0';
-export const CDN_PRIMARY = 'https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop';
-export const CDN_BACKUP = 'https://d0.all7.cc/kaitu/desktop';
+export const CDN_PRIMARY = 'https://dl.kaitu.io/kaitu/desktop';
+export const CDN_BACKUP = 'https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop';
 
 export function getDownloadLinks(version: string) {
   return {
@@ -16,6 +16,10 @@ export function getDownloadLinks(version: string) {
     macos: {
       primary: `${CDN_PRIMARY}/${version}/Kaitu_${version}_universal.pkg`,
       backup: `${CDN_BACKUP}/${version}/Kaitu_${version}_universal.pkg`,
+    },
+    linux: {
+      primary: `${CDN_PRIMARY}/${version}/Kaitu_${version}_amd64.AppImage`,
+      backup: `${CDN_BACKUP}/${version}/Kaitu_${version}_amd64.AppImage`,
     },
   };
 }

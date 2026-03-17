@@ -334,7 +334,7 @@ jobs:
         if: success()
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          CDN_BASE="https://d13jc1jqzlg4yt.cloudfront.net/kaitu/android"
+          CDN_BASE="https://dl.kaitu.io/kaitu/android"
           ./scripts/ci/notify-slack.sh deploy-success \
             --version "${VERSION}" \
             --platforms "Android" \

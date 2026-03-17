@@ -1,41 +1,8 @@
 {
-  "generated": "2026-03-17T06:00:00.000Z",
-  "latestBeta": "0.4.0-beta.6",
+  "generated": "2026-03-17T10:09:53.009Z",
+  "latestBeta": "0.4.0-beta.1",
   "latestStable": "0.3.21",
   "versions": [
-    {
-      "version": "0.4.0-beta.6",
-      "date": "2026-03-17",
-      "content": "v0.4.0-beta.6 带来 **Linux 桌面版首发**、k2cc 拥塞控制核心优化、以及全面的连接稳定性增强。Kaitu 现已覆盖 macOS、Windows、Linux、iOS、Android **五大平台**。\n\n## New Features\n- **Linux 桌面版**: 首次支持 Linux 平台，AppImage 格式 + 一键安装脚本，支持 beta 通道自动更新\n- **命令行工具**: macOS/Windows 安装后可直接在终端使用 `k2` 命令，方便高级用户和脚本集成\n- **Android 安装助手优化**: 设备检测三状态 UI，未授权设备自动识别并引导操作\n\n## Bug Fixes\n- 修复特定场景下 QUIC 数据报中继的包大小问题\n- 修复死锁检测机制在桌面端的兼容性问题\n- 修复 Windows 卸载后残留 PATH 环境变量的问题\n\n## Improvements\n- **k2cc 拥塞控制优化**: 自研拥塞控制算法持续调优，改善高丢包场景下的速率恢复和稳定性\n- **DNS 全链路增强**: DNS 查询升级为流式 UDP 传输，新增服务端共享缓存，解析更快更可靠\n- **macOS 网络恢复增强**: 新增 DNS 崩溃自动恢复和外部看门狗机制，断网后恢复更迅速\n- **升级体验优化**: 登录状态在 macOS PKG / Windows NSIS 重装后自动保留，无需重新登录\n- **统一日志架构**: 全平台统一构建时日志级别控制，诊断日志更完整",
-      "sections": {
-        "newFeatures": [
-          "**Linux 桌面版**: 首次支持 Linux 平台，AppImage 格式 + 一键安装脚本，支持 beta 通道自动更新",
-          "**命令行工具**: macOS/Windows 安装后可直接在终端使用 `k2` 命令，方便高级用户和脚本集成",
-          "**Android 安装助手优化**: 设备检测三状态 UI，未授权设备自动识别并引导操作"
-        ],
-        "bugFixes": [
-          "修复特定场景下 QUIC 数据报中继的包大小问题",
-          "修复死锁检测机制在桌面端的兼容性问题",
-          "修复 Windows 卸载后残留 PATH 环境变量的问题"
-        ],
-        "improvements": [
-          "**k2cc 拥塞控制优化**: 自研拥塞控制算法持续调优，改善高丢包场景下的速率恢复和稳定性",
-          "**DNS 全链路增强**: DNS 查询升级为流式 UDP 传输，新增服务端共享缓存，解析更快更可靠",
-          "**macOS 网络恢复增强**: 新增 DNS 崩溃自动恢复和外部看门狗机制，断网后恢复更迅速",
-          "**升级体验优化**: 登录状态在 macOS PKG / Windows NSIS 重装后自动保留，无需重新登录",
-          "**统一日志架构**: 全平台统一构建时日志级别控制，诊断日志更完整"
-        ],
-        "breakingChanges": []
-      },
-      "channel": "beta",
-      "hasDownloads": true,
-      "downloads": {
-        "windows": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/0.4.0-beta.6/Kaitu_0.4.0-beta.6_x64.exe",
-        "windowsBackup": "https://d0.all7.cc/kaitu/desktop/0.4.0-beta.6/Kaitu_0.4.0-beta.6_x64.exe",
-        "macos": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/0.4.0-beta.6/Kaitu_0.4.0-beta.6_universal.pkg",
-        "macosBackup": "https://d0.all7.cc/kaitu/desktop/0.4.0-beta.6/Kaitu_0.4.0-beta.6_universal.pkg"
-      }
-    },
     {
       "version": "0.4.0-beta.1",
       "date": "2026-03-04",
@@ -78,10 +45,10 @@
       "channel": "beta",
       "hasDownloads": true,
       "downloads": {
-        "windows": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/0.4.0-beta.1/Kaitu_0.4.0-beta.1_x64.exe",
-        "windowsBackup": "https://d0.all7.cc/kaitu/desktop/0.4.0-beta.1/Kaitu_0.4.0-beta.1_x64.exe",
-        "macos": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/0.4.0-beta.1/Kaitu_0.4.0-beta.1_universal.pkg",
-        "macosBackup": "https://d0.all7.cc/kaitu/desktop/0.4.0-beta.1/Kaitu_0.4.0-beta.1_universal.pkg"
+        "windows": "https://dl.kaitu.io/kaitu/desktop/0.4.0-beta.1/Kaitu_0.4.0-beta.1_x64.exe",
+        "windowsBackup": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/0.4.0-beta.1/Kaitu_0.4.0-beta.1_x64.exe",
+        "macos": "https://dl.kaitu.io/kaitu/desktop/0.4.0-beta.1/Kaitu-0.4.0-beta.1.pkg",
+        "macosBackup": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/0.4.0-beta.1/Kaitu-0.4.0-beta.1.pkg"
       }
     },
     {

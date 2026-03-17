@@ -53,6 +53,15 @@
     "recommended": "推荐",
     "downloadCancelled": "自动下载已取消",
     "clickToDownload": "点击下载",
-    "metaDescription": "下载开途 k2 客户端 — 支持 Windows、macOS、iOS、安卓。k2cc 自适应速率控制，高丢包依然满速的隐身隧道。"
+    "metaDescription": "下载开途 k2 客户端 — 支持 Windows、macOS、iOS、安卓。k2cc 自适应速率控制，高丢包依然满速的隐身隧道。",
+    "linux": "Linux",
+    "linuxVersion": "Ubuntu / Fedora / Arch",
+    "downloadAppImage": "Linux 桌面版",
+    "cliInstall": "或通过命令行安装",
+    "cliCommand": "curl -fsSL https://kaitu.io/i/k2 | sudo bash",
+    "copied": "已复制",
+    "beta": "公测版",
+    "alsoAvailableStable": "也可以下载稳定版 v{version}",
+    "linuxCliRecommended": "推荐使用命令行安装，自动检查依赖"
   }
 }

@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { DOWNLOAD_LINKS, DESKTOP_VERSION, getDownloadLinks } from '@/lib/constants';
+import { DOWNLOAD_LINKS, getDownloadLinks } from '@/lib/constants';
 import {
   detectDevice,
   triggerDownload,
@@ -18,6 +18,7 @@ import {
   RefreshCw,
   ArrowRight,
   ExternalLink,
+  Copy,
 } from 'lucide-react';
 import { Link } from '@/i18n/routing';
 
@@ -30,6 +31,11 @@ const platformIcons: Record<string, React.FC<{ className?: string }>> = {
   macos: ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="currentColor" className={className}>
       <path d="M39.6 25.2c-.1-4.4 3.6-6.5 3.8-6.6-2.1-3-5.3-3.5-6.4-3.5-2.7-.3-5.4 1.6-6.7 1.6-1.4 0-3.5-1.6-5.8-1.5-3 0-5.7 1.7-7.3 4.4-3.1 5.4-.8 13.5 2.2 17.9 1.5 2.1 3.3 4.6 5.6 4.5 2.2-.1 3.1-1.5 5.8-1.5 2.7 0 3.5 1.5 5.8 1.4 2.4 0 4-2.2 5.4-4.3 1.7-2.5 2.4-4.9 2.5-5-.1 0-4.7-1.8-4.9-7.4zM35.1 11.9c1.2-1.5 2.1-3.5 1.8-5.5-1.8.1-3.9 1.2-5.2 2.7-1.1 1.3-2.1 3.4-1.9 5.4 2 .2 4-1 5.3-2.6z"/>
+    </svg>
+  ),
+  linux: ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="currentColor" className={className}>
+      <path d="M24 2C17.4 2 12 7.4 12 14v6c-2.2 1.6-4 4.2-4 7.2 0 2.8 1.2 5 3.2 6.6C12.8 38 16 42 20 44h8c4-2 7.2-6 8.8-10.2C38.8 32.2 40 30 40 27.2c0-3-1.8-5.6-4-7.2v-6C36 7.4 30.6 2 24 2zm-4 14c0-2.2 1.8-4 4-4s4 1.8 4 4v2h-8v-2zm-4 12a2 2 0 110-4 2 2 0 010 4zm16 0a2 2 0 110-4 2 2 0 010 4zm-8 8c-2.2 0-4-1.8-4-4h8c0 2.2-1.8 4-4 4z"/>
     </svg>
   ),
   ios: ({ className }) => (
@@ -58,26 +64,36 @@ interface InstallClientProps {
   stableVersion: string | null;
 }
 
-function DownloadButton({ href, label, channelLabel, variant = 'default' }: {
+function DownloadButton({ href, label, variant = 'default' }: {
   href: string;
   label: string;
-  channelLabel?: string;
   variant?: 'default' | 'outline';
 }) {
   return (
-    <div className="flex flex-col items-center gap-0.5">
-      {channelLabel && (
-        <span className="text-[10px] text-muted-foreground">{channelLabel}</span>
-      )}
-      <Button
-        variant={variant}
-        size="sm"
-        className="w-full text-xs"
-        onClick={() => openDownloadInNewTab(href)}
-      >
-        <Download className="w-3.5 h-3.5 mr-1.5 shrink-0" />
-        <span className="truncate">{label}</span>
-      </Button>
+    <Button
+      variant={variant}
+      size="sm"
+      className="w-full text-xs"
+      onClick={() => openDownloadInNewTab(href)}
+    >
+      <Download className="w-3.5 h-3.5 mr-1.5 shrink-0" />
+      <span className="truncate">{label}</span>
+    </Button>
+  );
+}
+
+function CliCommand({ label, onCopy, copied }: { label: string; onCopy: () => void; copied: boolean }) {
+  return (
+    <div className="mt-2 text-[10px] text-muted-foreground">
+      <p>{label}</p>
+      <div className="flex items-center gap-1 mt-1 bg-muted rounded px-2 py-1">
+        <code className="text-[9px] font-mono break-all flex-1">
+          curl -fsSL https://kaitu.io/i/k2 | sudo bash
+        </code>
+        <button onClick={onCopy} className="shrink-0 p-0.5 hover:text-foreground transition-colors">
+          {copied ? <CheckCircle className="w-3 h-3 text-success" /> : <Copy className="w-3 h-3" />}
+        </button>
+      </div>
     </div>
   );
 }
@@ -103,32 +119,36 @@ function PlatformCard({ platform, name, subtitle, children, isDetected }: {
   );
 }
 
-export default function InstallClient({ stableVersion: serverStable }: InstallClientProps) {
+export default function InstallClient({ betaVersion, stableVersion: serverStable }: InstallClientProps) {
   const t = useTranslations();
   const [device, setDevice] = useState<DeviceInfo | null>(null);
   const [downloadState, setDownloadState] = useState<DownloadState>('detecting');
   const [countdown, setCountdown] = useState(5);
+  const [copied, setCopied] = useState(false);
 
-  // TODO: Temporarily hide beta channel — show only stable version
-  const effectiveStable = serverStable || DESKTOP_VERSION;
-  const showBetaAndStable = false;
-  const betaLinks = getDownloadLinks(effectiveStable); // Use stable version as primary
-  const stableLinks = null as ReturnType<typeof getDownloadLinks> | null;
+  // Single source of truth: CDN manifest. No build-time fallback.
+  // ISR guarantees at least one successful fetch is cached.
+  const displayVersion = betaVersion || serverStable!;
+  const isBeta = !!(betaVersion && betaVersion !== serverStable);
+  const downloadLinks = getDownloadLinks(displayVersion);
+  const stableDownloadLinks = isBeta && serverStable ? getDownloadLinks(serverStable) : null;
 
-  // Determine primary download link based on device (beta preferred)
   const getPrimaryLink = useCallback((deviceInfo: DeviceInfo | null) => {
     if (!deviceInfo) return null;
     switch (deviceInfo.type) {
-      case 'windows': return betaLinks.windows.primary;
-      case 'macos': return betaLinks.macos.primary;
+      case 'windows': return downloadLinks.windows.primary;
+      case 'macos': return downloadLinks.macos.primary;
+      case 'linux': return downloadLinks.linux.primary;
       default: return null;
     }
-  }, [betaLinks]);
+  }, [downloadLinks]);
 
   useEffect(() => {
     const deviceInfo = detectDevice();
     setDevice(deviceInfo);
-    if (deviceInfo.isDesktop) {
+    if (deviceInfo.type === 'linux') {
+      setDownloadState('cancelled'); // Linux: show CLI command, not auto-download
+    } else if (deviceInfo.isDesktop) {
       setDownloadState('ready');
     } else {
       setDownloadState('unavailable');
@@ -164,7 +184,17 @@ export default function InstallClient({ stableVersion: serverStable }: InstallCl
     setDownloadState('ready');
   };
 
-  const versionLabel = t('install.install.latestVersion', { version: effectiveStable });
+  const copyCliCommand = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText('curl -fsSL https://kaitu.io/i/k2 | sudo bash');
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard API unavailable
+    }
+  }, []);
+
+  const versionLabel = t('install.install.latestVersion', { version: displayVersion });
 
   return (
     <>
@@ -182,9 +212,9 @@ export default function InstallClient({ stableVersion: serverStable }: InstallCl
           {device?.isDesktop && (
             <p className="text-sm text-muted-foreground mb-2">
               {versionLabel}
-              {showBetaAndStable && (
+              {isBeta && (
                 <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary/15 text-primary">
-                  {t('install.install.recommended')}
+                  {t('install.install.beta')}
                 </span>
               )}
             </p>
@@ -195,6 +225,30 @@ export default function InstallClient({ stableVersion: serverStable }: InstallCl
           )}
         </div>
       </Card>
+
+      {/* Linux: CLI install as primary */}
+      {device?.type === 'linux' && (
+        <Card className="p-8 mb-8">
+          <div className="text-center">
+            <h3 className="text-lg font-semibold text-foreground mb-2">
+              {t('install.install.cliInstall')}
+            </h3>
+            <p className="text-xs text-muted-foreground mb-3">
+              {t('install.install.linuxCliRecommended')}
+            </p>
+            <div className="flex items-center justify-center gap-2 bg-muted rounded-lg px-4 py-3 mb-4 font-mono text-sm">
+              <code>curl -fsSL https://kaitu.io/i/k2 | sudo bash</code>
+              <Button variant="ghost" size="sm" onClick={copyCliCommand}>
+                {copied ? <CheckCircle className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4" />}
+              </Button>
+            </div>
+            <Button variant="outline" onClick={startDownload}>
+              <Download className="w-4 h-4 mr-2" />
+              {t('install.install.downloadAppImage')}
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {/* Download State Cards */}
       {downloadState === 'ready' && (
@@ -278,8 +332,8 @@ export default function InstallClient({ stableVersion: serverStable }: InstallCl
         </Card>
       )}
 
-      {/* Cancelled -- desktop user can still download manually */}
-      {downloadState === 'cancelled' && device?.isDesktop && primaryLink && (
+      {/* Cancelled — non-Linux desktop user can still download manually */}
+      {downloadState === 'cancelled' && device?.type !== 'linux' && device?.isDesktop && primaryLink && (
         <Card className="p-8 mb-8">
           <div className="text-center">
             <h3 className="text-lg font-semibold text-foreground mb-2">
@@ -315,7 +369,7 @@ export default function InstallClient({ stableVersion: serverStable }: InstallCl
       <h3 className="text-lg font-semibold text-foreground mb-4 mt-8">
         {t('install.install.allDownloadOptions')}
       </h3>
-      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8 items-stretch">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-8 items-stretch">
         {/* Windows */}
         <PlatformCard
           platform="windows"
@@ -323,19 +377,7 @@ export default function InstallClient({ stableVersion: serverStable }: InstallCl
           subtitle={t('install.install.windowsVersion')}
           isDetected={device?.type === 'windows'}
         >
-          <DownloadButton
-            href={betaLinks.windows.primary}
-            label={`v${effectiveStable}`}
-            channelLabel={showBetaAndStable ? t('install.install.recommended') : undefined}
-          />
-          {showBetaAndStable && stableLinks && (
-            <DownloadButton
-              href={stableLinks.windows.primary}
-              label={`v${effectiveStable}`}
-              channelLabel={t('install.install.stableChannel')}
-              variant="outline"
-            />
-          )}
+          <DownloadButton href={downloadLinks.windows.primary} label={`v${displayVersion}`} />
         </PlatformCard>
 
         {/* macOS */}
@@ -345,19 +387,19 @@ export default function InstallClient({ stableVersion: serverStable }: InstallCl
           subtitle={t('install.install.macosVersion')}
           isDetected={device?.type === 'macos'}
         >
-          <DownloadButton
-            href={betaLinks.macos.primary}
-            label={`v${effectiveStable}`}
-            channelLabel={showBetaAndStable ? t('install.install.recommended') : undefined}
-          />
-          {showBetaAndStable && stableLinks && (
-            <DownloadButton
-              href={stableLinks.macos.primary}
-              label={`v${effectiveStable}`}
-              channelLabel={t('install.install.stableChannel')}
-              variant="outline"
-            />
-          )}
+          <DownloadButton href={downloadLinks.macos.primary} label={`v${displayVersion}`} />
+          <CliCommand label={t('install.install.cliInstall')} onCopy={copyCliCommand} copied={copied} />
+        </PlatformCard>
+
+        {/* Linux */}
+        <PlatformCard
+          platform="linux"
+          name={t('install.install.linux')}
+          subtitle={t('install.install.linuxVersion')}
+          isDetected={device?.type === 'linux'}
+        >
+          <DownloadButton href={downloadLinks.linux.primary} label={`v${displayVersion}`} />
+          <CliCommand label={t('install.install.cliInstall')} onCopy={copyCliCommand} copied={copied} />
         </PlatformCard>
 
         {/* iOS */}
@@ -409,50 +451,35 @@ export default function InstallClient({ stableVersion: serverStable }: InstallCl
         </PlatformCard>
       </div>
 
-      {/* Backup download note + View all releases */}
+      {/* Stable version alternative */}
+      {isBeta && stableDownloadLinks && (
+        <p className="text-xs text-muted-foreground text-center mt-2">
+          {t('install.install.alsoAvailableStable', { version: serverStable! })}
+          {': '}
+          <a href={stableDownloadLinks.windows.primary} target="_blank" rel="noopener noreferrer"
+             className="hover:text-foreground hover:underline">Windows</a>
+          {' · '}
+          <a href={stableDownloadLinks.macos.primary} target="_blank" rel="noopener noreferrer"
+             className="hover:text-foreground hover:underline">macOS</a>
+          {' · '}
+          <a href={stableDownloadLinks.linux.primary} target="_blank" rel="noopener noreferrer"
+             className="hover:text-foreground hover:underline">Linux</a>
+        </p>
+      )}
+
+      {/* Backup download + View all releases */}
       <div className="text-center mt-6 space-y-2">
         <p className="text-xs text-muted-foreground">
           {t('install.install.backupDownload')}
           {': '}
-          <a
-            href={betaLinks.windows.backup}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-foreground hover:underline"
-          >
-            {'Windows'}
-          </a>
+          <a href={downloadLinks.windows.backup} target="_blank" rel="noopener noreferrer"
+             className="hover:text-foreground hover:underline">Windows</a>
           {' · '}
-          <a
-            href={betaLinks.macos.backup}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-foreground hover:underline"
-          >
-            {'macOS'}
-          </a>
-          {showBetaAndStable && stableLinks && (
-            <>
-              {' · '}
-              <a
-                href={stableLinks.windows.backup}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="hover:text-foreground hover:underline"
-              >
-                {`Windows v${effectiveStable}`}
-              </a>
-              {' · '}
-              <a
-                href={stableLinks.macos.backup}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="hover:text-foreground hover:underline"
-              >
-                {`macOS v${effectiveStable}`}
-              </a>
-            </>
-          )}
+          <a href={downloadLinks.macos.backup} target="_blank" rel="noopener noreferrer"
+             className="hover:text-foreground hover:underline">macOS</a>
+          {' · '}
+          <a href={downloadLinks.linux.backup} target="_blank" rel="noopener noreferrer"
+             className="hover:text-foreground hover:underline">Linux</a>
         </p>
         <Link href="/releases" className="text-sm text-muted-foreground hover:text-foreground transition-colors inline-flex items-center gap-1">
           {t('install.install.viewAllReleases')}

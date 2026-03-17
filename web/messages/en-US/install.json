@@ -53,6 +53,15 @@
     "recommended": "Recommended",
     "downloadCancelled": "Auto-download cancelled",
     "clickToDownload": "Click to download",
-    "metaDescription": "Download Kaitu k2 client for Windows, macOS, iOS, Android. k2cc adaptive rate control — full speed stealth tunnel through heavy packet loss."
+    "metaDescription": "Download Kaitu k2 client for Windows, macOS, iOS, Android. k2cc adaptive rate control — full speed stealth tunnel through heavy packet loss.",
+    "linux": "Linux",
+    "linuxVersion": "Ubuntu / Fedora / Arch",
+    "downloadAppImage": "Linux Desktop",
+    "cliInstall": "Or install via command line",
+    "cliCommand": "curl -fsSL https://kaitu.io/i/k2 | sudo bash",
+    "copied": "Copied",
+    "beta": "Beta",
+    "alsoAvailableStable": "Stable version v{version} also available",
+    "linuxCliRecommended": "CLI install recommended — auto-checks dependencies"
   }
 }

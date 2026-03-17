@@ -1,0 +1,247 @@
+#!/bin/sh
+# Kaitu Desktop Client Installer
+# Linux: AppImage + k2 daemon + systemd service
+# macOS: PKG installer
+#
+# Usage: curl -fsSL https://kaitu.io/i/k2 | sudo bash
+set -e
+
+CDN_PRIMARY="https://dl.kaitu.io/kaitu"
+CDN_FALLBACK="https://d13jc1jqzlg4yt.cloudfront.net/kaitu"
+MANIFEST=""
+
+# --- Helpers ---
+
+info()  { echo "[kaitu] $*"; }
+error() { echo "[kaitu] ERROR: $*" >&2; exit 1; }
+
+fetch() {
+    url="$1"
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL "$url"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -qO- "$url"
+    else
+        echo "Error: curl or wget required" >&2
+        exit 1
+    fi
+}
+
+download() {
+    url="$1"; dest="$2"
+    if command -v curl >/dev/null 2>&1; then
+        curl -fSL -o "$dest" "$url"
+    else
+        wget -qO "$dest" "$url"
+    fi
+}
+
+download_with_fallback() {
+    dest="$1"; primary="$2"; fallback="$3"
+    if ! download "$primary" "$dest" 2>/dev/null; then
+        if ! download "$fallback" "$dest" 2>/dev/null; then
+            error "Failed to download from both CDN endpoints"
+        fi
+    fi
+}
+
+detect_platform() {
+    OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+    ARCH="$(uname -m)"
+    case "$OS" in
+        linux)  OS="linux" ;;
+        darwin) OS="darwin" ;;
+        *)      error "Unsupported OS: $OS. Use https://kaitu.io/install for Windows." ;;
+    esac
+    case "$ARCH" in
+        x86_64|amd64)  ARCH="amd64" ;;
+        aarch64|arm64) ARCH="arm64" ;;
+        *)             error "Unsupported architecture: $ARCH" ;;
+    esac
+}
+
+get_latest_version() {
+    channel="beta"
+    for arg in "$@"; do
+        case "$arg" in
+            --channel=*) channel="${arg#*=}" ;;
+        esac
+    done
+
+    manifest_path="desktop"
+    if [ "$channel" = "beta" ]; then
+        manifest_path="desktop/beta"
+    fi
+
+    MANIFEST=$(fetch "${CDN_PRIMARY}/${manifest_path}/cloudfront.latest.json" 2>/dev/null || true)
+    VERSION=$(echo "$MANIFEST" | grep '"version"' | head -1 | sed 's/.*"version" *: *"//;s/".*//' || true)
+
+    if [ -z "$VERSION" ]; then
+        MANIFEST=$(fetch "${CDN_FALLBACK}/${manifest_path}/cloudfront.latest.json" 2>/dev/null || true)
+        VERSION=$(echo "$MANIFEST" | grep '"version"' | head -1 | sed 's/.*"version" *: *"//;s/".*//' || true)
+    fi
+
+    if [ -z "$VERSION" ]; then
+        error "Could not determine latest version"
+    fi
+}
+
+# --- Linux ---
+
+check_linux_deps() {
+    # webkit2gtk-4.1
+    if ! (ldconfig -p 2>/dev/null | grep -q "libwebkit2gtk-4.1") && \
+       ! (command -v pkg-config >/dev/null 2>&1 && pkg-config --exists webkit2gtk-4.1 2>/dev/null); then
+        echo ""
+        echo "webkit2gtk-4.1 is required but not installed."
+        echo ""
+        echo "Install it for your distribution:"
+        echo "  Ubuntu/Debian:  sudo apt install libwebkit2gtk-4.1-0"
+        echo "  Fedora:         sudo dnf install webkit2gtk4.1"
+        echo "  Arch:           sudo pacman -S webkit2gtk-4.1"
+        echo "  openSUSE:       sudo zypper install webkit2gtk-4.1"
+        echo ""
+        error "Install webkit2gtk-4.1 and re-run this script."
+    fi
+
+    # libfuse2
+    if ! ldconfig -p 2>/dev/null | grep -q "libfuse.so.2"; then
+        echo ""
+        echo "libfuse2 is required to run AppImage but not installed."
+        echo ""
+        echo "Install it for your distribution:"
+        echo "  Ubuntu 22.04:   sudo apt install libfuse2"
+        echo "  Ubuntu 24.04:   sudo apt install libfuse2t64"
+        echo "  Fedora:         sudo dnf install fuse-libs"
+        echo "  Arch:           sudo pacman -S fuse2"
+        echo ""
+        error "Install libfuse2 and re-run this script."
+    fi
+}
+
+install_linux() {
+    if [ "$ARCH" != "amd64" ]; then
+        error "Linux desktop currently only supports amd64."
+    fi
+
+    check_linux_deps
+
+    INSTALL_DIR="/opt/kaitu"
+    mkdir -p "$INSTALL_DIR"
+
+    info "Downloading Kaitu AppImage v${VERSION}..."
+    download_with_fallback "${INSTALL_DIR}/Kaitu.AppImage" \
+        "${CDN_PRIMARY}/desktop/${VERSION}/Kaitu_${VERSION}_amd64.AppImage" \
+        "${CDN_FALLBACK}/desktop/${VERSION}/Kaitu_${VERSION}_amd64.AppImage"
+    chmod +x "${INSTALL_DIR}/Kaitu.AppImage"
+
+    info "Downloading k2 daemon..."
+    download_with_fallback "${INSTALL_DIR}/k2" \
+        "${CDN_PRIMARY}/desktop/${VERSION}/k2-linux-amd64" \
+        "${CDN_FALLBACK}/desktop/${VERSION}/k2-linux-amd64"
+    chmod +x "${INSTALL_DIR}/k2"
+
+    ln -sf "${INSTALL_DIR}/k2" /usr/local/bin/k2
+    info "k2 available at /usr/local/bin/k2"
+
+    info "Installing k2 systemd service..."
+    "${INSTALL_DIR}/k2" service install
+
+    # Desktop entry
+    REAL_USER="${SUDO_USER:-$(whoami)}"
+    REAL_HOME=$(eval echo "~${REAL_USER}")
+    DESKTOP_DIR="${REAL_HOME}/.local/share/applications"
+    mkdir -p "$DESKTOP_DIR"
+
+    cat > "${DESKTOP_DIR}/kaitu.desktop" << ENTRY
+[Desktop Entry]
+Name=Kaitu
+Comment=Kaitu VPN
+Exec=${INSTALL_DIR}/Kaitu.AppImage
+Icon=${INSTALL_DIR}/kaitu.png
+Type=Application
+Categories=Network;VPN;
+StartupWMClass=kaitu
+ENTRY
+    chown "${REAL_USER}:" "${DESKTOP_DIR}/kaitu.desktop"
+
+    # Extract icon (best-effort)
+    (
+        cd /tmp
+        "${INSTALL_DIR}/Kaitu.AppImage" --appimage-extract "*.png" 2>/dev/null || true
+        ICON=$(find squashfs-root -name "*.png" -path "*/256x256/*" -print -quit 2>/dev/null)
+        [ -z "$ICON" ] && ICON=$(find squashfs-root -maxdepth 1 -name "*.png" -print -quit 2>/dev/null)
+        [ -n "$ICON" ] && cp "$ICON" "${INSTALL_DIR}/kaitu.png"
+        rm -rf squashfs-root
+    ) 2>/dev/null || true
+
+    # Uninstaller
+    cat > /usr/local/bin/kaitu-uninstall << 'UNINSTALL'
+#!/usr/bin/env bash
+set -euo pipefail
+if [ "$(id -u)" -ne 0 ]; then echo "Run with sudo: sudo kaitu-uninstall"; exit 1; fi
+echo "Uninstalling Kaitu..."
+systemctl stop k2 2>/dev/null || true
+systemctl disable k2 2>/dev/null || true
+/opt/kaitu/k2 service uninstall 2>/dev/null || true
+rm -rf /opt/kaitu
+rm -f /usr/local/bin/k2 /usr/local/bin/kaitu-uninstall
+for home_dir in /home/*/; do rm -f "${home_dir}.local/share/applications/kaitu.desktop" 2>/dev/null || true; done
+rm -f /root/.local/share/applications/kaitu.desktop 2>/dev/null || true
+if [ "${1:-}" = "--purge" ]; then
+  for home_dir in /home/*/; do rm -rf "${home_dir}.local/share/kaitu" "${home_dir}.cache/k2" 2>/dev/null || true; done
+  rm -rf /var/log/k2 2>/dev/null || true
+  echo "Purged all data and logs."
+fi
+echo "Kaitu uninstalled."
+UNINSTALL
+    chmod +x /usr/local/bin/kaitu-uninstall
+
+    info ""
+    info "=== Installation complete ==="
+    info "  GUI:       ${INSTALL_DIR}/Kaitu.AppImage"
+    info "  CLI:       k2 (in PATH)"
+    info "  Service:   systemctl status k2"
+    info "  Uninstall: sudo kaitu-uninstall"
+    info ""
+    info "Launch Kaitu from your application menu or run:"
+    info "  ${INSTALL_DIR}/Kaitu.AppImage"
+}
+
+# --- macOS ---
+
+install_macos() {
+    info "Downloading Kaitu PKG v${VERSION}..."
+    TMP_PKG="/tmp/Kaitu_${VERSION}_universal.pkg"
+    download_with_fallback "$TMP_PKG" \
+        "${CDN_PRIMARY}/desktop/${VERSION}/Kaitu_${VERSION}_universal.pkg" \
+        "${CDN_FALLBACK}/desktop/${VERSION}/Kaitu_${VERSION}_universal.pkg"
+
+    info "Installing Kaitu..."
+    installer -pkg "$TMP_PKG" -target /
+    rm -f "$TMP_PKG"
+
+    info ""
+    info "=== Installation complete ==="
+    info "  Launch Kaitu from Applications or Spotlight."
+}
+
+# --- Main ---
+
+main() {
+    if [ "$(id -u)" -ne 0 ]; then
+        error "Run with sudo: curl -fsSL https://kaitu.io/i/k2 | sudo bash"
+    fi
+
+    detect_platform
+    get_latest_version "$@"
+
+    info "Installing Kaitu v${VERSION} (${OS}/${ARCH})..."
+
+    case "$OS" in
+        linux)  install_linux ;;
+        darwin) install_macos ;;
+    esac
+}
+
+main "$@"
