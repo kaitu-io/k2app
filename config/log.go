@@ -191,6 +191,11 @@ func SetupLogging(cfg LogConfig, name string) (func(), error) {
 			restoreStderr, _ = redirectStderrFD(stderrW) // also redirect fd 2 for runtime/CGo
 			stderrDone = make(chan struct{})
 			ljForStderr := lj // capture for goroutine
+			// NO recover() here — intentional. If this goroutine panics, the process
+			// should crash rather than leave a dead pipe reader. A dead reader causes
+			// the pipe buffer (64KB) to fill, blocking ALL stderr writes including
+			// Go runtime fatal error output, turning the process into a zombie.
+			// lumberjack.Write() does not panic in practice (pure file I/O + mutex).
 			go func() {
 				defer close(stderrDone)
 				buf := make([]byte, 4096)

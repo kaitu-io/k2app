@@ -471,6 +471,10 @@ func (d *dnsOverride) monitor() {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
+	// NO recover() here — intentional. C.k2StopMonitor() is a pure CGo call:
+	// C-layer crashes (segfault) bypass Go recover entirely (OS signal → process death).
+	// Go-layer panics cannot occur (only a channel recv + one CGo call).
+	// If k2StopMonitor blocks, dnsOverride.stop() has a 5s timeout fallback.
 	go func() {
 		<-d.stopCh
 		C.k2StopMonitor()
