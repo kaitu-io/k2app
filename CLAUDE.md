@@ -128,6 +128,7 @@ docs/plans/          Architecture design docs
 - **RegExp `/g` flag state persists**: Module-level global regex retains `lastIndex` between calls. Reset before each `.replace()`.
 - **netCoordinator 网络信号融合**: Engine 内部 `netCoordinator` 融合 sing-tun 接口变化（`SignalChanged`）+ 平台精确状态（iOS NWPathMonitor `SignalAvailable/Unavailable`、Android ConnectivityManager）。网络断开时停止无效重连和 probe，网络恢复时全面重连 + 重置 DNS counter + 清除 stale wire error。Desktop 只走 sing-tun `SignalChanged` 路径，行为不变。`NetEvent` 结构体携带 8 个原始字段（gomobile 兼容），为未来精细化处理预留空间。
 - **DNS 失败不是 wire 错误**: `dnsHandler.recordDNSFailure()` 不调用 `ReportWireError`。DNS 失败是症状（本地网络断、服务端 DNS 挂），不是 wire 传输层诊断。只有 proxy dial 失败和 recovery probe 失败才报告 wire error。
+- **三方归责 (three-party blame)**: Error 分三类 — `client`（本地问题）、`server`（k2s 不可达）、`target`（目标站不可达）。k2s 回复了 StreamError 说明 wire 是通的，错误是目标站的（DNS 解析失败、连接拒绝、IP 被封）。`CategoryTarget` 不触发 `ReportWireError`，不影响隧道健康状态。`tunnel.go` 的 `isProxyLayerError()` 在调用侧过滤，用 `IsProxyLayer()` 接口而非类型枚举。Auth/payment 错误走 `ErrStreamRejected`（连接级拒绝），不走 `StreamError`。
 - **EngineConfig.Debug dual log output**: `appext.EngineConfig.Debug = true` enables `io.MultiWriter(file, stderr)` so Go engine logs appear in Xcode console / logcat. Native side sets via `#if DEBUG` (Swift) / `BuildConfig.DEBUG` (Kotlin). Release builds default false.
 - **K2Plugin local sync**: `file:` plugins are copied (not symlinked) to `node_modules/`. Makefile `dev-ios`/`dev-android`/`build-mobile-*` targets auto-run `rm -rf node_modules/k2-plugin && yarn install --force` before `cap sync`.
 - **iOS App Group**: `group.io.kaitu` — shared container for App process + NE process logs. Both `K2Plugin.swift` and `PacketTunnelProvider.swift` use `kAppGroup = "group.io.kaitu"`.
@@ -168,7 +169,7 @@ docs/plans/          Architecture design docs
 - **LoginDialog** — Global modal for all auth flows (no `/login` route)
 - **Center** — Backend API service (`api/`): auth, user management, orders, tunnels, cloud management
 - **transformStatus()** — Bridge normalization: `"stopped"`→`"disconnected"`, synthesizes `"error"` from `disconnected + lastError`. Handles both structured `{code, message}` and legacy string errors.
-- **EngineError** — Structured error type (`k2/engine/error.go`): `{Code int, Message string}`. HTTP-aligned codes: 101 (NetworkUnavailable), 400 (BadConfig), 401 (AuthRejected), 402 (PaymentRequired), 403 (Forbidden), 408 (Timeout), 502 (ProtocolError), 503 (ServerUnreachable), 570 (ConnectionFatal).
+- **EngineError** — Structured error type (`k2/engine/error.go`): `{Code int, Category string, Message string}`. HTTP-aligned codes: 101 (NetworkUnavailable), 400 (BadConfig), 401 (AuthRejected), 402 (PaymentRequired), 403 (Forbidden), 408 (Timeout), 502 (ProtocolError), 503 (ServerUnreachable), 570 (ConnectionFatal). Categories: `client` (user action needed), `network` (transient, auto-retry), `server` (k2s issue), `target` (destination-specific, wire healthy).
 - **OnNetworkChanged()** — gomobile-exported method that routes through `netCoordinator` as `SignalChanged`. Legacy path — new code should use `NotifyNetEvent(*NetEvent)`.
 - **netCoordinator** — Engine 内部网络状态协调器，融合 sing-tun + 平台 API 信号，区分"网络断了"/"网络恢复"/"接口变了"三种场景。网络断时停止无效 reconnect，网络恢复时全面重连。
 - **NetEvent** — 网络状态变化事件结构体（Signal + 7 个平台信息字段），由平台层构造，gomobile 导出为 `EngineNetEvent`（iOS）/ `engine.NetEvent`（Android）
