@@ -1,6 +1,6 @@
 #!/bin/sh
 # Kaitu Desktop Client Installer
-# Linux: AppImage + k2 daemon + systemd service
+# Linux: tar.gz + k2 daemon + systemd service
 # macOS: PKG installer
 #
 # Usage: curl -fsSL https://kaitu.io/i/k2 | sudo bash
@@ -88,35 +88,28 @@ get_latest_version() {
 
 # --- Linux ---
 
-check_linux_deps() {
-    # webkit2gtk-4.1
-    if ! (ldconfig -p 2>/dev/null | grep -q "libwebkit2gtk-4.1") && \
-       ! (command -v pkg-config >/dev/null 2>&1 && pkg-config --exists webkit2gtk-4.1 2>/dev/null); then
-        echo ""
-        echo "webkit2gtk-4.1 is required but not installed."
-        echo ""
-        echo "Install it for your distribution:"
-        echo "  Ubuntu/Debian:  sudo apt install libwebkit2gtk-4.1-0"
-        echo "  Fedora:         sudo dnf install webkit2gtk4.1"
-        echo "  Arch:           sudo pacman -S webkit2gtk-4.1"
-        echo "  openSUSE:       sudo zypper install webkit2gtk-4.1"
-        echo ""
-        error "Install webkit2gtk-4.1 and re-run this script."
+install_webkit2gtk() {
+    # Check if already installed
+    if (ldconfig -p 2>/dev/null | grep -q "libwebkit2gtk-4.1") || \
+       (command -v pkg-config >/dev/null 2>&1 && pkg-config --exists webkit2gtk-4.1 2>/dev/null); then
+        info "webkit2gtk-4.1 already installed."
+        return 0
     fi
 
-    # libfuse2
-    if ! ldconfig -p 2>/dev/null | grep -q "libfuse.so.2"; then
-        echo ""
-        echo "libfuse2 is required to run AppImage but not installed."
-        echo ""
-        echo "Install it for your distribution:"
-        echo "  Ubuntu 22.04:   sudo apt install libfuse2"
-        echo "  Ubuntu 24.04:   sudo apt install libfuse2t64"
-        echo "  Fedora:         sudo dnf install fuse-libs"
-        echo "  Arch:           sudo pacman -S fuse2"
-        echo ""
-        error "Install libfuse2 and re-run this script."
+    info "Installing webkit2gtk-4.1..."
+    if command -v apt-get >/dev/null 2>&1; then
+        apt-get update -qq && apt-get install -y -qq libwebkit2gtk-4.1-0
+    elif command -v dnf >/dev/null 2>&1; then
+        dnf install -y webkit2gtk4.1
+    elif command -v pacman >/dev/null 2>&1; then
+        pacman -Sy --noconfirm webkit2gtk-4.1
+    elif command -v zypper >/dev/null 2>&1; then
+        zypper install -y webkit2gtk-4.1
+    else
+        error "Unsupported package manager. Install webkit2gtk-4.1 manually and re-run."
     fi
+
+    info "webkit2gtk-4.1 installed."
 }
 
 install_linux() {
@@ -124,21 +117,22 @@ install_linux() {
         error "Linux desktop currently only supports amd64."
     fi
 
-    check_linux_deps
+    install_webkit2gtk
 
     INSTALL_DIR="/opt/kaitu"
+    TMP_TGZ="/tmp/Kaitu_${VERSION}_amd64.tar.gz"
+
+    info "Downloading Kaitu v${VERSION}..."
+    download_with_fallback "$TMP_TGZ" \
+        "${CDN_PRIMARY}/desktop/${VERSION}/Kaitu_${VERSION}_amd64.tar.gz" \
+        "${CDN_FALLBACK}/desktop/${VERSION}/Kaitu_${VERSION}_amd64.tar.gz"
+
+    info "Extracting to ${INSTALL_DIR}..."
     mkdir -p "$INSTALL_DIR"
+    tar xzf "$TMP_TGZ" -C "$INSTALL_DIR"
+    rm -f "$TMP_TGZ"
 
-    info "Downloading Kaitu AppImage v${VERSION}..."
-    download_with_fallback "${INSTALL_DIR}/Kaitu.AppImage" \
-        "${CDN_PRIMARY}/desktop/${VERSION}/Kaitu_${VERSION}_amd64.AppImage" \
-        "${CDN_FALLBACK}/desktop/${VERSION}/Kaitu_${VERSION}_amd64.AppImage"
-    chmod +x "${INSTALL_DIR}/Kaitu.AppImage"
-
-    info "Downloading k2 daemon..."
-    download_with_fallback "${INSTALL_DIR}/k2" \
-        "${CDN_PRIMARY}/desktop/${VERSION}/k2-linux-amd64" \
-        "${CDN_FALLBACK}/desktop/${VERSION}/k2-linux-amd64"
+    chmod +x "${INSTALL_DIR}/k2app"
     chmod +x "${INSTALL_DIR}/k2"
 
     ln -sf "${INSTALL_DIR}/k2" /usr/local/bin/k2
@@ -157,23 +151,13 @@ install_linux() {
 [Desktop Entry]
 Name=Kaitu
 Comment=Kaitu VPN
-Exec=${INSTALL_DIR}/Kaitu.AppImage
+Exec=${INSTALL_DIR}/k2app
 Icon=${INSTALL_DIR}/kaitu.png
 Type=Application
 Categories=Network;VPN;
 StartupWMClass=kaitu
 ENTRY
     chown "${REAL_USER}:" "${DESKTOP_DIR}/kaitu.desktop"
-
-    # Extract icon (best-effort)
-    (
-        cd /tmp
-        "${INSTALL_DIR}/Kaitu.AppImage" --appimage-extract "*.png" 2>/dev/null || true
-        ICON=$(find squashfs-root -name "*.png" -path "*/256x256/*" -print -quit 2>/dev/null)
-        [ -z "$ICON" ] && ICON=$(find squashfs-root -maxdepth 1 -name "*.png" -print -quit 2>/dev/null)
-        [ -n "$ICON" ] && cp "$ICON" "${INSTALL_DIR}/kaitu.png"
-        rm -rf squashfs-root
-    ) 2>/dev/null || true
 
     # Uninstaller
     cat > /usr/local/bin/kaitu-uninstall << 'UNINSTALL'
@@ -199,13 +183,13 @@ UNINSTALL
 
     info ""
     info "=== Installation complete ==="
-    info "  GUI:       ${INSTALL_DIR}/Kaitu.AppImage"
+    info "  GUI:       ${INSTALL_DIR}/k2app"
     info "  CLI:       k2 (in PATH)"
     info "  Service:   systemctl status k2"
     info "  Uninstall: sudo kaitu-uninstall"
     info ""
     info "Launch Kaitu from your application menu or run:"
-    info "  ${INSTALL_DIR}/Kaitu.AppImage"
+    info "  ${INSTALL_DIR}/k2app"
 }
 
 # --- macOS ---

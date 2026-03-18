@@ -332,12 +332,30 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: make build-windows
 
-      - name: Build Linux (k2 + webapp + AppImage)
+      - name: Build Linux (k2 + webapp + tar.gz)
+        if: matrix.platform == 'Linux'
+        run: make build-linux
+
+      - name: Install minisign (Linux)
+        if: matrix.platform == 'Linux'
+        run: cargo install minisign --locked
+
+      - name: Sign Linux tar.gz
         if: matrix.platform == 'Linux'
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: make build-linux
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          # Decode Tauri's base64-encoded minisign private key
+          echo "$TAURI_SIGNING_PRIVATE_KEY" | base64 -d > /tmp/minisign.key
+          echo "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" | minisign -S -s /tmp/minisign.key \
+            -m "release/${VERSION}/Kaitu_${VERSION}_amd64.tar.gz"
+          # Base64-encode the .minisig file to match Tauri's .sig format
+          # (Tauri stores signatures as base64 in latest.json; raw minisign is multiline text)
+          base64 -w0 < "release/${VERSION}/Kaitu_${VERSION}_amd64.tar.gz.minisig" \
+            > "release/${VERSION}/Kaitu_${VERSION}_amd64.tar.gz.sig"
+          rm -f /tmp/minisign.key "release/${VERSION}/Kaitu_${VERSION}_amd64.tar.gz.minisig"
 
       # --- Upload artifacts to S3 ---
 
@@ -374,11 +392,11 @@ jobs:
         run: |
           VERSION=$(node -p "require('./package.json').version")
           S3_BASE="s3://d0.all7.cc/kaitu/desktop/${VERSION}"
-          # Upload AppImage + signature
+          # Upload tar.gz + signature
           aws s3 cp "release/${VERSION}/" "${S3_BASE}/" --recursive \
             --exclude "*" \
-            --include "*.AppImage" --include "*.AppImage.sig"
-          # Upload k2 binary alongside AppImage (used by install-linux.sh)
+            --include "*.tar.gz" --include "*.tar.gz.sig"
+          # Upload k2 binary alongside tar.gz (used by install-linux.sh)
           aws s3 cp "desktop/src-tauri/binaries/k2-x86_64-unknown-linux-gnu" \
             "${S3_BASE}/k2-linux-amd64"
 
@@ -414,7 +432,7 @@ jobs:
           if [ "${PLATFORM}" = "macOS" ]; then
             DOWNLOAD_URL="<${CDN_BASE}/Kaitu_${VERSION}_universal.pkg|macOS PKG>"
           elif [ "${PLATFORM}" = "Linux" ]; then
-            DOWNLOAD_URL="<${CDN_BASE}/Kaitu_${VERSION}_amd64.AppImage|Linux AppImage>"
+            DOWNLOAD_URL="<${CDN_BASE}/Kaitu_${VERSION}_amd64.tar.gz|Linux tar.gz>"
           else
             DOWNLOAD_URL="<${CDN_BASE}/Kaitu_${VERSION}_x64.exe|Windows Setup>"
           fi

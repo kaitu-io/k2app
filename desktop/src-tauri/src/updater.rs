@@ -39,17 +39,17 @@ const CHECK_INTERVAL_SECS: u64 = 30 * 60;
 const INITIAL_DELAY_SECS: u64 = 5;
 
 /// Whether an update has been downloaded and is ready to install
-static UPDATE_READY: AtomicBool = AtomicBool::new(false);
+pub(crate) static UPDATE_READY: AtomicBool = AtomicBool::new(false);
 
 /// Whether install has failed in this session (don't retry until next app launch)
-static INSTALL_FAILED: AtomicBool = AtomicBool::new(false);
+pub(crate) static INSTALL_FAILED: AtomicBool = AtomicBool::new(false);
 
 /// Whether a channel switch is in progress — when true, install success triggers
 /// auto-restart instead of emitting "update-ready" to frontend.
-static CHANNEL_SWITCH_PENDING: AtomicBool = AtomicBool::new(false);
+pub(crate) static CHANNEL_SWITCH_PENDING: AtomicBool = AtomicBool::new(false);
 
 /// Stored update info for frontend consumption
-static UPDATE_INFO: Mutex<Option<UpdateInfo>> = Mutex::new(None);
+pub(crate) static UPDATE_INFO: Mutex<Option<UpdateInfo>> = Mutex::new(None);
 
 /// Update information sent to frontend
 #[derive(Clone, Debug, Serialize)]
@@ -96,6 +96,12 @@ pub fn start_auto_updater(app: AppHandle) {
 /// uses version_comparator(!=) to trigger update even when the remote version is lower
 /// (beta→stable downgrade). Only `set_update_channel` passes true.
 async fn check_download_and_install(app: &AppHandle, force_downgrade: bool) {
+    #[cfg(target_os = "linux")]
+    {
+        crate::linux_updater::check_and_download(app, force_downgrade).await;
+        return;
+    }
+
     let ch = channel::get_channel(app);
     let endpoints = match channel::endpoints_for_channel(&ch) {
         Ok(eps) => eps,
@@ -262,12 +268,20 @@ pub fn get_update_status() -> Result<Option<UpdateInfo>, String> {
 #[tauri::command]
 #[allow(unreachable_code)]
 pub fn apply_update_now(app: AppHandle) -> Result<(), String> {
-    if is_update_ready() {
+    if !is_update_ready() {
+        return Err("No update available".to_string());
+    }
+    #[cfg(target_os = "linux")]
+    {
+        log::info!("[updater] Linux: applying update and relaunching...");
+        crate::linux_updater::apply_update(&app);
+        return Ok(());
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
         log::info!("[updater] User requested update, restarting...");
         app.restart();
         Ok(())
-    } else {
-        Err("No update available".to_string())
     }
 }
 
@@ -275,6 +289,11 @@ pub fn apply_update_now(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn check_update_now(app: AppHandle) -> Result<String, String> {
     log::info!("[updater] Manual update check triggered");
+
+    #[cfg(target_os = "linux")]
+    {
+        return crate::linux_updater::check_now(&app).await;
+    }
 
     // If update already ready, return status
     if is_update_ready() {
@@ -462,12 +481,18 @@ fn read_pre_beta_log_level(app: &AppHandle) -> Option<String> {
 /// Called from RunEvent::ExitRequested in main.rs
 #[allow(unreachable_code)]
 pub fn install_pending_update(app: &AppHandle) -> bool {
-    if is_update_ready() {
+    if !is_update_ready() {
+        return false;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        return false; // Linux updates applied via apply_update_now, not on exit
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
         log::info!("[updater] Applying pending update on exit...");
         app.restart();
         true
-    } else {
-        false
     }
 }
 

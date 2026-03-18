@@ -82,11 +82,15 @@ build-windows: pre-build build-webapp build-k2-windows sync-adb-tools simplisign
 	@ls -la release/$(VERSION)/
 
 build-linux: pre-build build-webapp build-k2-linux
-	cd desktop && yarn tauri build --bundles appimage
-	@echo "--- Collecting artifacts ---"
-	@mkdir -p release/$(VERSION)
-	@cp desktop/src-tauri/target/release/bundle/appimage/*.AppImage release/$(VERSION)/Kaitu_$(VERSION)_amd64.AppImage
-	@cp desktop/src-tauri/target/release/bundle/appimage/*.AppImage.sig release/$(VERSION)/Kaitu_$(VERSION)_amd64.AppImage.sig 2>/dev/null || true
+	cd desktop && yarn tauri build --no-bundle
+	@echo "--- Packaging tar.gz ---"
+	@mkdir -p release/$(VERSION)/linux-pkg
+	@cp desktop/src-tauri/target/release/k2app release/$(VERSION)/linux-pkg/k2app
+	@cp $(K2_BIN)/k2-x86_64-unknown-linux-gnu release/$(VERSION)/linux-pkg/k2
+	@cp desktop/src-tauri/icons/128x128.png release/$(VERSION)/linux-pkg/kaitu.png
+	@chmod +x release/$(VERSION)/linux-pkg/k2app release/$(VERSION)/linux-pkg/k2
+	@cd release/$(VERSION)/linux-pkg && tar czf ../Kaitu_$(VERSION)_amd64.tar.gz k2app k2 kaitu.png
+	@rm -rf release/$(VERSION)/linux-pkg
 	@echo "=== Linux build complete ==="
 	@echo "Release artifacts in release/$(VERSION)/:"
 	@ls -la release/$(VERSION)/
