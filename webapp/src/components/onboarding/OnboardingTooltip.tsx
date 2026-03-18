@@ -98,13 +98,19 @@ const OnboardingTooltip: React.FC<OnboardingTooltipProps> = ({
   const kf = arrowKeyframes(actualPlacement);
   const animName = `ob-bounce-${actualPlacement}`;
 
+  // Counteract body CSS zoom. Popper reads viewport coords from getBoundingClientRect
+  // but sets CSS top/left on an element inside the zoomed body. Without inverse zoom,
+  // the tooltip drifts by position × (1 - zoom) — ~26px at y=300 with zoom=0.914.
+  const bodyZoom = parseFloat(document.body.style.zoom || '1');
+  const inverseZoom = bodyZoom !== 0 ? 1 / bodyZoom : 1;
+
   return (
     <Popper
       open
       anchorEl={virtualAnchor}
       placement={placement}
       modifiers={modifiers}
-      style={{ zIndex: ONBOARDING.z.card }}
+      style={{ zIndex: ONBOARDING.z.card, zoom: inverseZoom }}
     >
       {/* Inject arrow keyframes */}
       <style>{`@keyframes ${animName}{${kf}}`}</style>
