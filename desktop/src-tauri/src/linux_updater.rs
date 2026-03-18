@@ -501,7 +501,7 @@ fn extract_via_pkexec(tarball: &Path) -> Result<(), String> {
     // Use pkexec to copy staging contents to /opt/kaitu/
     // First remove old installation, then copy new files
     let script = format!(
-        "rm -rf /opt/kaitu && cp -a '{}'/. /opt/kaitu && chmod -R 755 /opt/kaitu",
+        "mkdir -p /opt/kaitu && cp -af '{}'/. /opt/kaitu/ && chmod +x /opt/kaitu/k2app /opt/kaitu/k2 && systemctl restart k2 2>/dev/null || true",
         staging_dir.display()
     );
 
@@ -556,7 +556,7 @@ fn relaunch_app(app: &AppHandle) {
         "i=0; while [ $i -lt 60 ]; do \
            if ! kill -0 {} 2>/dev/null; then \
              sleep 1; \
-             nohup /opt/kaitu/k2app > /dev/null 2>&1 &; \
+             nohup /opt/kaitu/k2app > /dev/null 2>&1 & \
              exit 0; \
            fi; \
            sleep 1; \
