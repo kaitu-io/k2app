@@ -176,8 +176,28 @@ if [ "$CHANNEL" = "stable" ]; then
 | **Linux** (x86_64) | \`.AppImage\` | \`.AppImage\` (auto-update) |
 "
   echo ""
-  echo "Done! Published Kaitu Desktop v${VERSION} (stable + GitHub Release)"
+  echo "GitHub Release created for v${VERSION}"
+fi
+
+# --- CloudFront CDN invalidation ---
+DISTRIBUTION_ID="${CLOUDFRONT_DISTRIBUTION_ID:-}"
+if [ -n "$DISTRIBUTION_ID" ]; then
+  echo ""
+  echo "Invalidating CloudFront cache..."
+  aws cloudfront create-invalidation \
+    --distribution-id "$DISTRIBUTION_ID" \
+    --paths "/kaitu/desktop/cloudfront.latest.json" \
+            "/kaitu/desktop/beta/cloudfront.latest.json" \
+    --no-cli-pager
+  echo "CDN cache invalidated."
 else
   echo ""
+  echo "Note: Set CLOUDFRONT_DISTRIBUTION_ID env var to auto-invalidate CDN cache."
+fi
+
+echo ""
+if [ "$CHANNEL" = "stable" ]; then
+  echo "Done! Published Kaitu Desktop v${VERSION} (stable + GitHub Release)"
+else
   echo "Done! Published Kaitu Desktop v${VERSION} (beta channel only, no GitHub Release)"
 fi
