@@ -1,3 +1,4 @@
+/* eslint-disable react/jsx-no-literals */
 "use client";
 
 import { Button } from '@/components/ui/button';
@@ -18,7 +19,7 @@ import { openDownloadInNewTab } from '@/lib/device-detection';
 // ---------------------------------------------------------------------------
 
 interface PlatformPanelProps {
-  t: (key: string) => string;
+  t: (key: string, params?: Record<string, string | number>) => string;
   version: string;
   isBeta: boolean;
 }
@@ -78,8 +79,7 @@ export function WindowsPanel({
   isBeta,
   primaryLink,
   backupLink,
-  browser,
-}: DesktopPanelProps & { browser?: string | null }) {
+}: DesktopPanelProps) {
   const filename = `Kaitu_${version}_x64.exe`;
   const publisher = 'ALL NATION CONNECT TECHNOLOGY PTE. LTD.';
 

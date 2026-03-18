@@ -153,7 +153,6 @@ export default async function K2Page({
   };
 
   // Content is Velite-processed Markdown (trusted build-time source)
-  /* eslint-disable react/no-danger */
   return (
     <>
       <script
@@ -169,5 +168,4 @@ export default async function K2Page({
       </article>
     </>
   );
-  /* eslint-enable react/no-danger */
 }

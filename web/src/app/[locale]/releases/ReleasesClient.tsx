@@ -74,7 +74,7 @@ function DownloadAssets({ downloads }: { downloads: VersionData['downloads'] }) 
   return (
     <div className="flex flex-wrap gap-3 mt-4 pt-4 border-t border-border">
       <span className="text-sm font-medium text-muted-foreground self-center">
-        {t('releases.downloadAssets')}:
+        {t('releases.downloadAssets')}{':'}
       </span>
       {downloads.windows && (
         <div className="flex items-center gap-2">
@@ -142,7 +142,6 @@ function SectionList({
           <li key={idx} className="text-sm text-foreground/80 flex items-start">
             <span className="mr-2">{bullet}</span>
             {/* Content is from our own releases.json, not user input */}
-            {/* eslint-disable-next-line react/no-danger */}
             <span dangerouslySetInnerHTML={{ __html: renderItemText(item) }} />
           </li>
         ))}
@@ -182,7 +181,7 @@ function ReleaseCard({
               <div className="flex items-center gap-2">
                 <Package className="w-5 h-5 text-secondary" />
                 <h3 className="text-xl font-bold text-foreground">
-                  v{version.version}
+                  {'v'}{version.version}
                 </h3>
               </div>
               <ChannelBadge channel={version.channel} />

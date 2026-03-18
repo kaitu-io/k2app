@@ -127,7 +127,6 @@ function VersionCard({
                     <li key={idx} className="text-sm text-foreground/80 flex items-start">
                       <span className="mr-2">{t('changelog.bullet')}</span>
                       {/* Content is from our own changelog.json, not user input */}
-                      {/* eslint-disable-next-line react/no-danger */}
                       <span dangerouslySetInnerHTML={{ __html: renderItemText(feature) }} />
                     </li>
                   ))}

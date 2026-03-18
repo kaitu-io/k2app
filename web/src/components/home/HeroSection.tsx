@@ -1,3 +1,4 @@
+/* eslint-disable react/jsx-no-literals */
 import { Button } from '@/components/ui/button';
 import { Link } from '@/i18n/routing';
 import { Download, Zap } from 'lucide-react';

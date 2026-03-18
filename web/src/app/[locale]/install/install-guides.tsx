@@ -1,3 +1,4 @@
+/* eslint-disable react/jsx-no-literals */
 "use client";
 
 import { AlertCircle, CheckCircle, Copy } from 'lucide-react';

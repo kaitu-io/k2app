@@ -120,7 +120,6 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
   const t = useTranslations();
   const [selectedPlatform, setSelectedPlatform] = useState<PlatformId>('windows');
   const [copied, setCopied] = useState(false);
-  const [debugBrowser, setDebugBrowser] = useState<string | null>(null);
 
   const displayVersion = betaVersion || serverStable!;
   const isBeta = !!(betaVersion && betaVersion !== serverStable);
@@ -131,11 +130,8 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const platformParam = params.get('platform') as DeviceType | null;
-    const browserParam = params.get('browser');
     const noAutoDownload = params.get('nodownload') !== null;
     const validPlatforms: DeviceType[] = ['windows', 'macos', 'linux', 'ios', 'android'];
-
-    if (browserParam) setDebugBrowser(browserParam);
 
     let detectedType: DeviceType;
     if (platformParam && validPlatforms.includes(platformParam)) {
@@ -194,7 +190,6 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
             isBeta={isBeta}
             primaryLink={downloadLinks.windows.primary}
             backupLink={downloadLinks.windows.backup}
-            browser={debugBrowser}
           />
         </TabsContent>
         <TabsContent value="macos">
@@ -241,9 +236,9 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
         <p className="text-xs text-muted-foreground text-center mt-6">
           {t('install.install.alsoAvailableStable', { version: serverStable! })}
           {': '}
-          <a href={stableDownloadLinks.windows.primary} target="_blank" rel="noopener noreferrer" className="hover:text-foreground hover:underline">Windows</a>
+          <a href={stableDownloadLinks.windows.primary} target="_blank" rel="noopener noreferrer" className="hover:text-foreground hover:underline">{'Windows'}</a>
           {' \u00B7 '}
-          <a href={stableDownloadLinks.macos.primary} target="_blank" rel="noopener noreferrer" className="hover:text-foreground hover:underline">macOS</a>
+          <a href={stableDownloadLinks.macos.primary} target="_blank" rel="noopener noreferrer" className="hover:text-foreground hover:underline">{'macOS'}</a>
         </p>
       )}
 

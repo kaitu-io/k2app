@@ -18,6 +18,7 @@ export default function UsagesPage() {
 
   useEffect(() => {
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range, os]);
 
   async function loadData() {

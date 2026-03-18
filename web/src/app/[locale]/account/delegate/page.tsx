@@ -27,6 +27,7 @@ export default function DelegatePage() {
 
   useEffect(() => {
     loadDelegate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadDelegate = async () => {

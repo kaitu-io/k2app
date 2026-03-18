@@ -78,6 +78,7 @@ export default function InviteClient({ code, downloadLinks }: InviteClientProps)
     const primaryDownloadLink = getPrimaryDownloadLink(downloadLinks);
     setDevice(deviceInfo);
     setPrimaryLink(primaryDownloadLink);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleDownload = () => {
