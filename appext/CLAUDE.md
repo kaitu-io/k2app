@@ -15,8 +15,7 @@ e := appext.NewEngine()
 e.SetEventHandler(handler)     // EventHandler: OnStatus(statusJSON), OnStats(tx, rx)
 e.Start(configJSON, fd, cfg)   // JSON config + TUN FD + EngineConfig
 e.Stop()
-e.OnNetworkChanged()           // Called by platform on WiFi/cellular switch
-e.NotifyNetEvent(ev)           // Structured replacement for OnNetworkChanged (platform has network event details)
+e.NotifyNetEvent(ev)           // Network state change from platform (WiFi/cell, available/unavailable)
 e.StatusJSON() string          // JSON status (matches daemon API format)
 ```
 

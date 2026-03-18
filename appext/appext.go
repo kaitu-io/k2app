@@ -258,17 +258,6 @@ func (e *Engine) Stop() (err error) {
 	return
 }
 
-// OnNetworkChanged notifies the engine of a network change.
-// Call from platform layer (Android NetworkCallback, iOS NWPathMonitor).
-func (e *Engine) OnNetworkChanged() {
-	defer func() {
-		if r := recover(); r != nil {
-			slog.Error("appext: panic in OnNetworkChanged", "panic", r, "stack", string(debug.Stack()))
-		}
-	}()
-	e.inner.OnNetworkChanged()
-}
-
 // NotifyNetEvent receives a network state change from the platform layer.
 // Call from iOS NWPathMonitor or Android ConnectivityManager.
 // event.Signal: "available", "unavailable", or "changed".
