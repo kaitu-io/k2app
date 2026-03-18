@@ -64,9 +64,9 @@ trap 'rm -rf "${TMPDIR}"' EXIT
 aws s3 cp "${S3_VER}/" "${TMPDIR}/" --recursive \
   --exclude "*" --include "*.sig"
 
-MACOS_SIG=$(cat "${TMPDIR}"/*.app.tar.gz.sig 2>/dev/null || echo "")
-WINDOWS_SIG=$(cat "${TMPDIR}"/*_x64.exe.sig 2>/dev/null || echo "")
-LINUX_SIG=$(cat "${TMPDIR}"/*.AppImage.sig 2>/dev/null || echo "")
+MACOS_SIG=$(cat "${TMPDIR}/Kaitu_${VERSION}_universal.app.tar.gz.sig" 2>/dev/null || echo "")
+WINDOWS_SIG=$(cat "${TMPDIR}/Kaitu_${VERSION}_x64.exe.sig" 2>/dev/null || echo "")
+LINUX_SIG=$(cat "${TMPDIR}/Kaitu_${VERSION}_amd64.AppImage.sig" 2>/dev/null || echo "")
 
 if [ -z "${MACOS_SIG}" ]; then
   echo "WARNING: macOS signature not found"
