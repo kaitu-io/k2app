@@ -144,6 +144,14 @@ if [[ "${FALLBACK_COUNT:-0}" -gt 0 ]]; then
     echo -e "${YELLOW}WARN: Running in TCP-WS fallback — QUIC may be blocked${NC}"
     HAS_PROBLEMS=true
 fi
+
+# Memory check (heapMB field in heartbeats, if present)
+HIGH_HEAP_COUNT=$(grep "DIAG: heartbeat" "$LOGFILE" | grep -oP 'heapMB=\K[0-9.]+' | awk '$1 > 30 {count++} END {print count+0}' 2>/dev/null || true)
+if [[ "$HIGH_HEAP_COUNT" -gt 0 ]]; then
+    echo -e "${YELLOW}WARN: $HIGH_HEAP_COUNT heartbeats with heapMB > 30 — NE memory pressure risk${NC}"
+    HAS_PROBLEMS=true
+fi
+
 if [[ "$HAS_PROBLEMS" == false ]]; then
     echo -e "${GREEN}OK: No significant issues detected${NC}"
 fi
