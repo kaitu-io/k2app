@@ -23,7 +23,7 @@ import org.json.JSONObject
 import appext.Appext
 import appext.Engine
 import appext.EventHandler as AppextEventHandler
-import engine.NetEvent
+import appext.NetEvent
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
