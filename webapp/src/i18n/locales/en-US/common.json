@@ -106,7 +106,8 @@
       "membershipExpired": "Membership expired, please renew",
       "forbidden": "Server certificate verification failed",
       "protocolError": "Protocol handshake failed, please try another node",
-      "connectionFatal": "Connection failed, please retry or switch node"
+      "connectionFatal": "Connection failed, please retry or switch node",
+      "permissionDenied": "VPN permission denied. Please enable VPN in system settings."
     },
     "action": {
       "timeout": "Operation timed out, please try again",

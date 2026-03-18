@@ -98,7 +98,8 @@
       "membershipExpired": "会員資格が期限切れです、更新してください",
       "forbidden": "サーバー証明書の検証に失敗しました",
       "protocolError": "プロトコルハンドシェイクに失敗しました、別のノードをお試しください",
-      "connectionFatal": "接続に失敗しました、再試行するかノードを変更してください"
+      "connectionFatal": "接続に失敗しました、再試行するかノードを変更してください",
+      "permissionDenied": "VPN権限が許可されていません。システム設定でVPN接続を許可してください。"
     },
     "auth": {
       "logoutFailed": "ログアウトに失敗しました。もう一度お試しください",

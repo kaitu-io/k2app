@@ -69,6 +69,9 @@ export const ERROR_CODES = {
   CONNECTION_FATAL: 570,
   ALL_ADDRS_FAILED: 571,
 
+  // VPN 权限错误 (580-589)
+  VPN_PERMISSION_DENIED: 580,
+
   // 认证相关错误 (530-539)
   LOGOUT_FAILED: 530,
   TOKEN_REFRESH_FAILED: 531,
@@ -213,6 +216,10 @@ export function getErrorMessage(
       return t('common:errors.vpn.connectionFatal', 'Connection failed');
     case ERROR_CODES.ALL_ADDRS_FAILED:
       return t('common:errors.vpn.allAddrsFailed', 'All server addresses failed');
+
+    // VPN 权限错误 (580-589)
+    case ERROR_CODES.VPN_PERMISSION_DENIED:
+      return t('common:errors.vpn.permissionDenied', 'VPN permission denied. Please enable VPN in system settings.');
 
     // 认证相关错误 (530-539)
     case ERROR_CODES.LOGOUT_FAILED:

@@ -99,8 +99,17 @@ export async function injectCapacitorGlobals(): Promise<void> {
             if (!params) {
               return { code: -1, message: 'Config is required for connect' };
             }
-            await K2Plugin.connect({ config: JSON.stringify(params) });
-            return { code: 0, message: 'ok' };
+            try {
+              await K2Plugin.connect({ config: JSON.stringify(params) });
+              return { code: 0, message: 'ok' };
+            } catch (connectErr) {
+              const msg = connectErr instanceof Error ? connectErr.message : String(connectErr);
+              // Detect VPN permission denial from native plugin rejection
+              const isPermissionDenied = /permission|denied|revoked|not granted/i.test(msg);
+              const code = isPermissionDenied ? 580 : -1;
+              console.warn('[K2:Capacitor] connect rejected:', code, msg);
+              return { code, message: msg };
+            }
           }
 
           case 'down': {

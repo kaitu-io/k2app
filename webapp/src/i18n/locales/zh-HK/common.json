@@ -98,7 +98,8 @@
       "membershipExpired": "會員已過期，請續費",
       "forbidden": "伺服器憑證驗證失敗",
       "protocolError": "協議握手失敗，請更換節點",
-      "connectionFatal": "連線失敗，請重試或更換節點"
+      "connectionFatal": "連線失敗，請重試或更換節點",
+      "permissionDenied": "VPN 權限未授予，請喺系統設定中允許 VPN 連線"
     },
     "auth": {
       "logoutFailed": "登出失敗，請重試",

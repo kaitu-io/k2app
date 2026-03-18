@@ -63,6 +63,11 @@ function getNotificationConfig(error: ControlError): NotificationConfig {
     return { type: 'error' };
   }
 
+  // 580 系列：权限错误（用户可操作）
+  if (code >= 580 && code <= 589) {
+    return { type: 'warning' };
+  }
+
   // 其他错误
   return { type: 'error' };
 }

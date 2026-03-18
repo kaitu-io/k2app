@@ -27,6 +27,9 @@ export const ErrCodeServerUnreachable = 503;  // TCP dial failed, connection ref
 // Fallback
 export const ErrCodeConnectionFatal = 570;    // Unclassified connection error
 
+// Permission (frontend-only, mobile VPN permission denied)
+export const ErrCodeVPNPermissionDenied = 580;
+
 /**
  * Whether the error is a network-level error (timeout or unreachable)
  */
@@ -61,6 +64,7 @@ export function getErrorI18nKey(code: number): string {
     [ErrCodeProtocolError]: 'errors.vpn.protocolError',
     [ErrCodeServerUnreachable]: 'errors.network.unreachable',
     [ErrCodeConnectionFatal]: 'errors.vpn.connectionFatal',
+    [ErrCodeVPNPermissionDenied]: 'errors.vpn.permissionDenied',
   };
   return errorMap[code] || 'errors.unknown';
 }

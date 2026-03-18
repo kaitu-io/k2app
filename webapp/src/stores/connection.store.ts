@@ -158,10 +158,23 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     console.warn('[Connection] TRACE USER_CONNECT dispatch t=' + Date.now() + ' (+' + (Date.now() - t0) + 'ms)');
     vpnDispatch('USER_CONNECT');
     try {
-      await window._k2.run('up', config);
-      console.warn('[Connection] TRACE _k2.run(up) returned t=' + Date.now() + ' (+' + (Date.now() - t0) + 'ms)');
+      const resp = await window._k2.run('up', config);
+      console.warn('[Connection] TRACE _k2.run(up) returned t=' + Date.now() + ' (+' + (Date.now() - t0) + 'ms) code=' + resp.code);
+      // If the connect call itself failed (e.g. VPN permission denied),
+      // dispatch BACKEND_ERROR so the state machine exits 'connecting'.
+      if (resp.code !== 0) {
+        const errorCode = resp.code > 0 ? resp.code : 570;
+        vpnDispatch('BACKEND_ERROR', {
+          error: { code: errorCode, message: resp.message || 'Connect failed' },
+          isRetrying: false,
+        });
+      }
     } catch (err) {
       console.error('[Connection] connect failed:', err);
+      vpnDispatch('BACKEND_ERROR', {
+        error: { code: 570, message: err instanceof Error ? err.message : String(err) },
+        isRetrying: false,
+      });
     }
   },
 
