@@ -156,20 +156,27 @@ function MacOSAllowGuide({ publisher }: { publisher: string }) {
   );
 }
 
+function AndroidInstallGuide() {
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>*{margin:0;padding:0;box-sizing:border-box}body{background:#1a1a2e;padding:14px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;color:#e0e0e0}.steps{display:flex;flex-direction:column;gap:10px}.step{display:flex;align-items:flex-start;gap:10px;background:#16213e;border-radius:8px;padding:10px 12px}.num{background:#0f3460;color:#e94560;font-weight:700;font-size:13px;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0}.content{flex:1}.title{font-size:12px;font-weight:600;color:#fff;margin-bottom:2px}.desc{font-size:10px;color:#999;line-height:1.4}.hl{background:#e94560;color:#fff;padding:1px 5px;border-radius:3px;font-size:10px;font-weight:600}</style></head><body><div class="steps"><div class="step"><div class="num">1</div><div class="content"><div class="title">📥 下载 APK 安装包</div><div class="desc">浏览器可能提示「有害文件」，选择 <span class="hl">保留</span></div></div></div><div class="step"><div class="num">2</div><div class="content"><div class="title">✈️ 开启飞行模式</div><div class="desc">安装前开启飞行模式，避免手机安全中心联网云检测拦截安装</div></div></div><div class="step"><div class="num">3</div><div class="content"><div class="title">📲 安装 APK</div><div class="desc">打开 APK → 允许「安装未知应用」→ 点击 <span class="hl">安装</span></div></div></div><div class="step"><div class="num">4</div><div class="content"><div class="title">📶 关闭飞行模式</div><div class="desc">安装完成后关闭飞行模式，恢复网络</div></div></div><div class="step"><div class="num">5</div><div class="content"><div class="title">🚀 打开开途</div><div class="desc">首次启动会请求 VPN 权限，点击 <span class="hl">允许</span> 即可</div></div></div></div></body></html>`;
+  return <GuideIframe srcdoc={html} height={310} />;
+}
+
 function DownloadTips({ device, t, version, browser }: { device: DeviceInfo; t: (key: string) => string; version: string; browser?: string | null }) {
-  const filename = device.type === 'windows' ? `Kaitu_${version}_x64.exe` : device.type === 'macos' ? `Kaitu_${version}_universal.pkg` : `Kaitu_${version}_amd64.AppImage`;
+  const filename = device.type === 'windows' ? `Kaitu_${version}_x64.exe` : device.type === 'macos' ? `Kaitu_${version}_universal.pkg` : device.type === 'android' ? `Kaitu-${version}.apk` : `Kaitu_${version}_amd64.AppImage`;
   const publisher = 'ALL NATION CONNECT TECHNOLOGY PTE. LTD.';
 
   return (
     <div className="mt-6 max-w-xl mx-auto space-y-4">
-      {/* Tip 1: Browser may block */}
-      <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3">
-        <p className="text-xs font-medium text-yellow-500 mb-2 flex items-center gap-1.5">
-          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-          {t('install.install.faq.browserBlock.question')}
-        </p>
-        <BrowserBlockedGuide filename={filename} browser={browser} />
-      </div>
+      {/* Browser block tip — desktop only */}
+      {device.isDesktop && (
+        <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3">
+          <p className="text-xs font-medium text-yellow-500 mb-2 flex items-center gap-1.5">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+            {t('install.install.faq.browserBlock.question')}
+          </p>
+          <BrowserBlockedGuide filename={filename} browser={browser} />
+        </div>
+      )}
 
       {/* Windows SmartScreen */}
       {device.type === 'windows' && (
@@ -192,6 +199,17 @@ function DownloadTips({ device, t, version, browser }: { device: DeviceInfo; t: 
           <MacOSAllowGuide publisher={publisher} />
         </div>
       )}
+
+      {/* Android Play Protect */}
+      {device.type === 'android' && (
+        <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3">
+          <p className="text-xs font-medium text-yellow-500 mb-2 flex items-center gap-1.5">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+            {t('install.install.faq.androidInstallBlock.question')}
+          </p>
+          <AndroidInstallGuide />
+        </div>
+      )}
     </div>
   );
 }
@@ -200,12 +218,13 @@ function DownloadTips({ device, t, version, browser }: { device: DeviceInfo; t: 
 // FAQ Section
 // ---------------------------------------------------------------------------
 
-const FAQ_ITEMS = ['browserBlock', 'windowsSmartScreen', 'macosGatekeeper', 'security'] as const;
+const FAQ_ITEMS = ['browserBlock', 'windowsSmartScreen', 'macosGatekeeper', 'androidInstallBlock', 'security'] as const;
 
 function getDefaultFaqItem(deviceType: string): string | undefined {
   switch (deviceType) {
     case 'macos': return 'macosGatekeeper';
     case 'windows': return 'windowsSmartScreen';
+    case 'android': return 'androidInstallBlock';
     default: return undefined;
   }
 }
@@ -509,7 +528,7 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
               </Button>
             )}
             {device.type === 'android' && mobileLinks?.android && (
-              <Button size="lg" onClick={() => openDownloadInNewTab(mobileLinks.android)}>
+              <Button size="lg" onClick={() => openDownloadInNewTab(mobileLinks.android.primary)}>
                 <Download className="w-5 h-5 mr-2" />
                 {t('install.install.downloadButton')}
               </Button>
@@ -619,8 +638,8 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
         {renderHero()}
       </div>
 
-      {/* Install guide — always visible for desktop platforms */}
-      {device?.isDesktop && (
+      {/* Install guide — desktop + Android */}
+      {(device?.isDesktop || device?.type === 'android') && (
         <DownloadTips device={device} t={t} version={displayVersion} browser={debugBrowser} />
       )}
 
@@ -630,18 +649,26 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
       </h3>
       <div className="border rounded-lg divide-y divide-border mb-8">
         {/* Windows */}
-        <button
-          onClick={() => openDownloadInNewTab(downloadLinks.windows.primary)}
-          className={`w-full flex items-center gap-3 px-4 py-3.5 hover:bg-muted/50 transition-colors text-left ${device?.type === 'windows' ? 'bg-primary/5' : ''}`}
-        >
-          <PlatformIcon type="windows" className="w-5 h-5 text-foreground opacity-70 shrink-0" />
-          <span className="text-sm font-medium text-foreground">{t('install.install.windows')}</span>
-          <span className="text-xs text-muted-foreground">{t('install.install.windowsVersion')}</span>
-          <span className="ml-auto text-xs text-primary flex items-center gap-1 shrink-0">
-            <Download className="w-3.5 h-3.5" />
-            .exe
-          </span>
-        </button>
+        <div className={`${device?.type === 'windows' ? 'bg-primary/5' : ''}`}>
+          <button
+            onClick={() => openDownloadInNewTab(downloadLinks.windows.primary)}
+            className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-muted/50 transition-colors text-left"
+          >
+            <PlatformIcon type="windows" className="w-5 h-5 text-foreground opacity-70 shrink-0" />
+            <span className="text-sm font-medium text-foreground">{t('install.install.windows')}</span>
+            <span className="text-xs text-muted-foreground">{t('install.install.windowsVersion')}</span>
+            <span className="ml-auto text-xs text-primary flex items-center gap-1 shrink-0">
+              <Download className="w-3.5 h-3.5" />
+              .exe
+            </span>
+          </button>
+          <div className="px-4 pb-2 -mt-1">
+            <a href={downloadLinks.windows.backup} target="_blank" rel="noopener noreferrer"
+               className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">
+              {t('install.install.backupDownload')} (CDN)
+            </a>
+          </div>
+        </div>
 
         {/* macOS */}
         <div className={`${device?.type === 'macos' ? 'bg-primary/5' : ''}`}>
@@ -659,7 +686,7 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
               </span>
             </span>
           </button>
-          <div className="px-4 pb-3 -mt-1">
+          <div className="px-4 pb-3 -mt-1 flex items-center gap-3">
             <button
               onClick={copyCliCommand}
               className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
@@ -667,6 +694,10 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
               {copied ? <CheckCircle className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
               {copied ? t('install.install.copied') : t('install.install.cliInstall')}
             </button>
+            <a href={downloadLinks.macos.backup} target="_blank" rel="noopener noreferrer"
+               className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">
+              {t('install.install.backupDownload')} (CDN)
+            </a>
           </div>
         </div>
 
@@ -684,7 +715,7 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
               .AppImage
             </span>
           </button>
-          <div className="px-4 pb-3 -mt-1">
+          <div className="px-4 pb-3 -mt-1 flex items-center gap-3">
             <button
               onClick={copyCliCommand}
               className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
@@ -692,6 +723,10 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
               {copied ? <CheckCircle className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
               {copied ? t('install.install.copied') : t('install.install.cliInstall')}
             </button>
+            <a href={downloadLinks.linux.backup} target="_blank" rel="noopener noreferrer"
+               className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">
+              {t('install.install.backupDownload')} (CDN)
+            </a>
           </div>
         </div>
 
@@ -715,20 +750,28 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
 
         {/* Android */}
         {mobileLinks?.android && (
-          <a
-            href={mobileLinks.android}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-3 px-4 py-3.5 hover:bg-muted/50 transition-colors"
-          >
-            <PlatformIcon type="android" className="w-5 h-5 text-foreground opacity-70 shrink-0" />
-            <span className="text-sm font-medium text-foreground">{t('install.install.android')}</span>
-            <span className="text-xs text-muted-foreground">{t('install.install.androidVersion')}</span>
-            <span className="ml-auto text-xs text-primary flex items-center gap-1 shrink-0">
-              <Download className="w-3.5 h-3.5" />
-              APK
-            </span>
-          </a>
+          <div className={`${device?.type === 'android' ? 'bg-primary/5' : ''}`}>
+            <a
+              href={mobileLinks.android.primary}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-3 px-4 py-3.5 hover:bg-muted/50 transition-colors"
+            >
+              <PlatformIcon type="android" className="w-5 h-5 text-foreground opacity-70 shrink-0" />
+              <span className="text-sm font-medium text-foreground">{t('install.install.android')}</span>
+              <span className="text-xs text-muted-foreground">{t('install.install.androidVersion')}</span>
+              <span className="ml-auto text-xs text-primary flex items-center gap-1 shrink-0">
+                <Download className="w-3.5 h-3.5" />
+                APK
+              </span>
+            </a>
+            <div className="px-4 pb-2 -mt-1">
+              <a href={mobileLinks.android.backup} target="_blank" rel="noopener noreferrer"
+                 className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">
+                {t('install.install.backupDownload')} (CDN)
+              </a>
+            </div>
+          </div>
         )}
       </div>
 
@@ -763,6 +806,13 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
           {' \u00B7 '}
           <a href={downloadLinks.linux.backup} target="_blank" rel="noopener noreferrer"
              className="hover:text-foreground hover:underline">Linux</a>
+          {mobileLinks?.android && (
+            <>
+              {' \u00B7 '}
+              <a href={mobileLinks.android.backup} target="_blank" rel="noopener noreferrer"
+                 className="hover:text-foreground hover:underline">Android</a>
+            </>
+          )}
         </p>
         <Link href="/releases" className="text-sm text-muted-foreground hover:text-foreground transition-colors inline-flex items-center gap-1">
           {t('install.install.viewAllReleases')}

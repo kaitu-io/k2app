@@ -1,7 +1,11 @@
 // Application constants and configuration
 
-export const CDN_PRIMARY = 'https://dl.kaitu.io/kaitu/desktop';
-export const CDN_BACKUP = 'https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop';
+export const CDN_BASE_PRIMARY = 'https://dl.kaitu.io/kaitu';
+export const CDN_BASE_BACKUP = 'https://d13jc1jqzlg4yt.cloudfront.net/kaitu';
+
+// Legacy aliases used by downloads.ts
+export const CDN_PRIMARY = `${CDN_BASE_PRIMARY}/desktop`;
+export const CDN_BACKUP = `${CDN_BASE_BACKUP}/desktop`;
 
 export function getDownloadLinks(version: string) {
   return {
@@ -17,6 +21,13 @@ export function getDownloadLinks(version: string) {
       primary: `${CDN_PRIMARY}/${version}/Kaitu_${version}_amd64.AppImage`,
       backup: `${CDN_BACKUP}/${version}/Kaitu_${version}_amd64.AppImage`,
     },
+  };
+}
+
+export function getAndroidDownloadLinks(version: string) {
+  return {
+    primary: `${CDN_BASE_PRIMARY}/android/${version}/Kaitu-${version}.apk`,
+    backup: `${CDN_BASE_BACKUP}/android/${version}/Kaitu-${version}.apk`,
   };
 }
 

@@ -86,8 +86,11 @@
         "3": "CLI install recommended for automatic dependency handling"
       },
       "android": {
-        "1": "Allow installing from unknown sources in Settings then Security",
-        "2": "Open the downloaded APK to install"
+        "1": "Download the APK file. If the browser warns, tap 'Keep'",
+        "2": "Turn on Airplane Mode before installing (prevents security cloud scan blocking)",
+        "3": "Open the APK → Allow 'Install unknown apps' → Install",
+        "4": "Turn off Airplane Mode after installation",
+        "5": "Open Kaitu and allow VPN permission"
       }
     },
     "faq": {
@@ -102,6 +105,10 @@
       "macosGatekeeper": {
         "question": "macOS says 'cannot verify the developer'?",
         "answer": "After first install, go to System Settings then Privacy and Security, find the Kaitu prompt at the bottom, and click 'Open Anyway'. Subsequent launches won't show this. For VPN mode, you'll be guided to allow the system extension."
+      },
+      "androidInstallBlock": {
+        "question": "Android phone blocks APK installation?",
+        "answer": "Some Android phone brands (Huawei, Xiaomi, OPPO, vivo, etc.) run cloud-based security checks during APK installation that may block non-store apps. Solution: after downloading the APK, turn on Airplane Mode before installing. Install offline, then turn off Airplane Mode after completion."
       },
       "security": {
         "question": "Is Kaitu safe?",

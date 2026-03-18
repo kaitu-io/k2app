@@ -1,5 +1,5 @@
 // web/src/lib/downloads.ts
-import { CDN_PRIMARY, CDN_BACKUP, getDownloadLinks } from './constants';
+import { CDN_PRIMARY, CDN_BACKUP, getDownloadLinks, getAndroidDownloadLinks } from './constants';
 
 const CDN_MOBILE_BASES = [
   'https://dl.kaitu.io/kaitu',
@@ -8,7 +8,7 @@ const CDN_MOBILE_BASES = [
 
 export interface MobileLinks {
   ios: string;
-  android: string;
+  android: { primary: string; backup: string };
 }
 
 export interface DesktopChannel {
@@ -30,7 +30,7 @@ export function flattenToRecord(all: AllDownloadLinks): Record<string, string> {
     windows: ver?.links.windows.primary ?? '',
     macos: ver?.links.macos.primary ?? '',
     ios: all.mobile?.ios ?? '',
-    android: all.mobile?.android ?? '',
+    android: all.mobile?.android.primary ?? '',
   };
 }
 
@@ -60,7 +60,7 @@ async function fetchMobileLinks(): Promise<MobileLinks | null> {
         const android = await androidRes.json();
         return {
           ios: ios.appstore_url,
-          android: android.url,
+          android: getAndroidDownloadLinks(android.version),
         };
       }
     } catch {}

@@ -20,7 +20,7 @@ export default function HeroSection({
   terminalTitle,
 }: HeroSectionProps) {
   return (
-    <section className="relative z-10 py-20 px-4 sm:px-6 lg:px-8">
+    <section className="relative z-10 min-h-[100dvh] flex flex-col justify-center px-4 sm:px-6 lg:px-8 py-10 sm:py-20">
       <div className="max-w-7xl mx-auto text-center">
         {/* Badge */}
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs mb-6 bg-primary/10 text-primary border border-primary/30 font-mono">
@@ -56,8 +56,8 @@ export default function HeroSection({
           </Link>
         </div>
 
-        {/* Terminal preview */}
-        <div className="mt-14 max-w-2xl mx-auto rounded-lg overflow-hidden text-left bg-card border border-primary/20">
+        {/* Terminal preview — hidden on mobile to keep hero clean */}
+        <div className="hidden sm:block mt-14 max-w-2xl mx-auto rounded-lg overflow-hidden text-left bg-card border border-primary/20">
           <div className="flex items-center gap-2 px-4 py-3 bg-primary/5 border-b border-primary/10">
             <span className="w-3 h-3 rounded-full bg-red-500 opacity-70" />
             <span className="w-3 h-3 rounded-full bg-yellow-500 opacity-70" />

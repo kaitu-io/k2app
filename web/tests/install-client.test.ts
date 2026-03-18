@@ -68,7 +68,7 @@ describe('InstallClient', () => {
       createElement(InstallClient, {
         betaVersion: '0.4.0-beta.1',
         stableVersion: '0.3.22',
-        mobileLinks: { ios: 'https://apps.apple.com/test', android: 'https://cdn/android.apk' },
+        mobileLinks: { ios: 'https://apps.apple.com/test', android: { primary: 'https://cdn/android.apk', backup: 'https://cdn-backup/android.apk' } },
       })
     );
     expect(container.innerHTML).not.toBe('');
@@ -90,7 +90,7 @@ describe('InstallClient', () => {
       createElement(InstallClient, {
         betaVersion: '0.4.0-beta.1',
         stableVersion: '0.3.22',
-        mobileLinks: { ios: 'https://apps.apple.com/test', android: 'https://cdn/android.apk' },
+        mobileLinks: { ios: 'https://apps.apple.com/test', android: { primary: 'https://cdn/android.apk', backup: 'https://cdn-backup/android.apk' } },
       })
     );
     expect(container.innerHTML).not.toContain('Waymaker');
@@ -102,7 +102,7 @@ describe('InstallClient', () => {
       createElement(InstallClient, {
         betaVersion: '0.4.0-beta.1',
         stableVersion: '0.3.22',
-        mobileLinks: { ios: 'https://apps.apple.com/test', android: 'https://cdn/android.apk' },
+        mobileLinks: { ios: 'https://apps.apple.com/test', android: { primary: 'https://cdn/android.apk', backup: 'https://cdn-backup/android.apk' } },
       })
     );
     expect(container.querySelector('[data-testid="accordion"]')).not.toBeNull();
@@ -113,7 +113,7 @@ describe('InstallClient', () => {
       createElement(InstallClient, {
         betaVersion: '0.4.0-beta.1',
         stableVersion: '0.3.22',
-        mobileLinks: { ios: 'https://apps.apple.com/test', android: 'https://cdn/android.apk' },
+        mobileLinks: { ios: 'https://apps.apple.com/test', android: { primary: 'https://cdn/android.apk', backup: 'https://cdn-backup/android.apk' } },
       })
     );
     const allCards = container.querySelectorAll('[data-testid="card"]');
@@ -122,15 +122,15 @@ describe('InstallClient', () => {
     expect(hasIosCard).toBe(false);
   });
 
-  it('renders 4 FAQ items', () => {
+  it('renders 5 FAQ items', () => {
     const { container } = render(
       createElement(InstallClient, {
         betaVersion: '0.4.0-beta.1',
         stableVersion: '0.3.22',
-        mobileLinks: { ios: 'https://apps.apple.com/test', android: 'https://cdn/android.apk' },
+        mobileLinks: { ios: 'https://apps.apple.com/test', android: { primary: 'https://cdn/android.apk', backup: 'https://cdn-backup/android.apk' } },
       })
     );
     const items = container.querySelectorAll('[data-testid="accordion-item"]');
-    expect(items.length).toBe(4);
+    expect(items.length).toBe(5);
   });
 });
