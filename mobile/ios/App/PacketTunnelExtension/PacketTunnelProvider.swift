@@ -119,8 +119,13 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         } else if let config = (protocolConfiguration as? NETunnelProviderProtocol)?.providerConfiguration?["configJSON"] as? String {
             logger.info("Got configJSON from providerConfiguration (\(config.count) bytes)")
             configJSON = config
+        } else if let config = neDefaults?.string(forKey: "configJSON"), !config.isEmpty {
+            // On-demand restart: system calls startTunnel without options.
+            // Config was saved to App Group by K2Plugin.connect().
+            logger.info("Got configJSON from App Group (\(config.count) bytes)")
+            configJSON = config
         } else {
-            logger.error("Missing configJSON in both options and providerConfiguration")
+            logger.error("Missing configJSON in options, providerConfiguration, and App Group")
             completionHandler(NSError(domain: "com.allnationconnect.anc.wgios", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing configJSON"]))
             return
         }
@@ -389,6 +394,14 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         let monitor = NWPathMonitor()
         monitor.pathUpdateHandler = { [weak self] path in
             guard let self = self else { return }
+
+            // Set reasserting BEFORE engine notify — protects NE from iOS kill
+            // during WiFi transitions. iOS 17+: 5-min timeout before auto-disconnect.
+            if path.status != .satisfied {
+                self.reasserting = true
+                NativeLogger.shared.log("INFO", "reasserting: true (network unsatisfied)")
+            }
+
             guard let event = AppextNewNetEvent() else { return }
             event.source = "nwpath"
             event.isWifi = path.usesInterfaceType(.wifi) || path.usesInterfaceType(.wiredEthernet)
@@ -401,6 +414,12 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 event.signal = "unavailable"
             }
             self.engine?.notify(event)
+
+            // Clear reasserting AFTER engine notify — engine starts reconnecting first
+            if path.status == .satisfied {
+                self.reasserting = false
+                NativeLogger.shared.log("INFO", "reasserting: false (network satisfied)")
+            }
         }
         monitor.start(queue: .main)
         pathMonitor = monitor

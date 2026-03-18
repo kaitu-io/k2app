@@ -257,6 +257,11 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             manager.isEnabled = true
             manager.localizedDescription = "kaitu.io"
 
+            // On-demand: auto-restart NE after iOS kills it (jetsam, network loss).
+            // System calls startVPNTunnel() when network becomes available.
+            manager.isOnDemandEnabled = true
+            manager.onDemandRules = [NEOnDemandRuleConnect()]
+
             logger.info("connect: saving preferences...")
             manager.saveToPreferences { error in
                 if let error = error {
@@ -301,10 +306,11 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func disconnect(_ call: CAPPluginCall) {
-        guard let connection = vpnManager?.connection else {
+        guard let manager = vpnManager else {
             call.resolve()
             return
         }
+        let connection = manager.connection
 
         // Already disconnected
         if connection.status == .disconnected {
@@ -312,40 +318,47 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
-        var disconnectObserver: NSObjectProtocol?
-        var timeoutWork: DispatchWorkItem?
+        // Disable on-demand BEFORE stopping — prevents system auto-reconnect.
+        // Must save first, then stop in completion handler (strict sequencing).
+        manager.isOnDemandEnabled = false
+        manager.saveToPreferences { [weak self] _ in
+            _ = self // prevent unused warning
 
-        let cleanup: () -> Void = {
-            if let obs = disconnectObserver {
-                NotificationCenter.default.removeObserver(obs)
-                disconnectObserver = nil
+            var disconnectObserver: NSObjectProtocol?
+            var timeoutWork: DispatchWorkItem?
+
+            let cleanup: () -> Void = {
+                if let obs = disconnectObserver {
+                    NotificationCenter.default.removeObserver(obs)
+                    disconnectObserver = nil
+                }
+                timeoutWork?.cancel()
+                timeoutWork = nil
             }
-            timeoutWork?.cancel()
-            timeoutWork = nil
-        }
 
-        // One-time observer for .disconnected
-        disconnectObserver = NotificationCenter.default.addObserver(
-            forName: .NEVPNStatusDidChange,
-            object: connection,
-            queue: .main
-        ) { notification in
-            guard let conn = notification.object as? NEVPNConnection,
-                  conn.status == .disconnected else { return }
-            cleanup()
-            call.resolve()
-        }
+            // One-time observer for .disconnected
+            disconnectObserver = NotificationCenter.default.addObserver(
+                forName: .NEVPNStatusDidChange,
+                object: connection,
+                queue: .main
+            ) { notification in
+                guard let conn = notification.object as? NEVPNConnection,
+                      conn.status == .disconnected else { return }
+                cleanup()
+                call.resolve()
+            }
 
-        // 5s timeout fallback
-        let timeout = DispatchWorkItem {
-            cleanup()
-            call.resolve()
-        }
-        timeoutWork = timeout
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0, execute: timeout)
+            // 5s timeout fallback
+            let timeout = DispatchWorkItem {
+                cleanup()
+                call.resolve()
+            }
+            timeoutWork = timeout
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0, execute: timeout)
 
-        // Trigger the disconnect
-        connection.stopVPNTunnel()
+            // Stop AFTER on-demand is disabled
+            connection.stopVPNTunnel()
+        }
     }
 
     // MARK: - Update Methods
