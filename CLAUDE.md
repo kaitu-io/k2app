@@ -53,7 +53,7 @@ All diagnostic logs use `log/slog` (stdlib). The `DIAG:` prefix is reserved for 
 
 - Emitted every 30 seconds from `healthMonitor.sample()`.
 - Fixed prefix: `"DIAG: heartbeat"`.
-- Required fields: `health`, `transport`, `loss` (smoothed), `rttMs`, `minRttMs`, `txMB`, `rxMB`, `tcpConns`, `udpConns`, `uptimeS`, `fallback`.
+- Required fields: `health`, `transport`, `loss` (smoothed), `rttMs`, `minRttMs`, `txMB`, `rxMB`, `tcpConns`, `udpConns`, `uptimeS`, `fallback`, `heapMB`, `sysMB`, `goroutines`.
 - Human-readable sizes (MB) and durations (ms/s).
 - MUST NOT log at 1Hz — only every 30 samples.
 

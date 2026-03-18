@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"log/slog"
+	"runtime"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -203,6 +204,8 @@ func (hm *healthMonitor) sample() {
 	hm.diagCounter++
 	if hm.diagCounter >= 30 {
 		hm.diagCounter = 0
+		var ms runtime.MemStats
+		runtime.ReadMemStats(&ms)
 		tcp, udp := hm.tunnel.ActiveConns()
 		slog.Info("DIAG: heartbeat",
 			"health", hm.health,
@@ -216,6 +219,9 @@ func (hm *healthMonitor) sample() {
 			"udpConns", udp,
 			"uptimeS", int(time.Since(hm.connectedAt).Seconds()),
 			"fallback", ws.WireFallback,
+			"heapMB", fmt.Sprintf("%.1f", float64(ms.HeapInuse)/(1024*1024)),
+			"sysMB", fmt.Sprintf("%.1f", float64(ms.Sys)/(1024*1024)),
+			"goroutines", runtime.NumGoroutine(),
 		)
 	}
 
