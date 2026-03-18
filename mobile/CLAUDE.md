@@ -7,8 +7,8 @@ Capacitor 6 mobile app wrapping the k2 Go tunnel core via gomobile. K2Plugin bri
 ```bash
 make dev-android                 # gomobile bind + cap sync + cap run android
 make dev-ios                     # cap sync + cap run ios (gomobile bind manual)
-make build-mobile-android        # gomobile bind + cap sync + assembleRelease
-make build-mobile-ios            # gomobile bind + cap sync + xcodebuild archive
+make build-android               # gomobile bind + cap sync + assembleRelease
+make build-ios                   # gomobile bind + cap sync + xcodebuild archive
 cd plugins/k2-plugin && npm run build  # Rebuild K2Plugin dist/ (required after src/ edits)
 ```
 

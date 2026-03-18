@@ -360,62 +360,15 @@ jobs:
             > "release/${VERSION}/Kaitu_${VERSION}_amd64.tar.gz.sig"
           rm -f /tmp/minisign.key "release/${VERSION}/Kaitu_${VERSION}_amd64.tar.gz.minisig"
 
-      # --- Upload artifacts to S3 ---
+      # --- Upload artifacts to S3 + CDN invalidation ---
 
-      - name: Upload macOS to S3
-        if: matrix.platform == 'macOS'
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ap-northeast-1
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          S3_BASE="s3://d0.all7.cc/kaitu/desktop/${VERSION}"
-          aws s3 cp release/${VERSION}/ "${S3_BASE}/" --recursive
-
-      - name: Upload Windows to S3
-        if: matrix.platform == 'Windows'
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ap-northeast-1
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          S3_BASE="s3://d0.all7.cc/kaitu/desktop/${VERSION}"
-          aws s3 cp "release/${VERSION}/" "${S3_BASE}/" --recursive \
-            --exclude "*" \
-            --include "*.exe" --include "*.exe.sig"
-
-      - name: Upload Linux to S3
-        if: matrix.platform == 'Linux'
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ap-northeast-1
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          S3_BASE="s3://d0.all7.cc/kaitu/desktop/${VERSION}"
-          # Upload tar.gz + signature
-          aws s3 cp "release/${VERSION}/" "${S3_BASE}/" --recursive \
-            --exclude "*" \
-            --include "*.tar.gz" --include "*.tar.gz.sig"
-          # Upload k2 binary alongside tar.gz (used by install-linux.sh)
-          aws s3 cp "desktop/src-tauri/binaries/k2-x86_64-unknown-linux-gnu" \
-            "${S3_BASE}/k2-linux-amd64"
-
-      - name: Invalidate CloudFront CDN cache
+      - name: Upload to S3 + invalidate CDN
         if: success()
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ap-northeast-1
-          DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
-        shell: bash
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          aws cloudfront create-invalidation \
-            --distribution-id "$DISTRIBUTION_ID" \
-            --paths "/kaitu/desktop/${VERSION}/*"
+        run: bash scripts/ci/upload-release.sh --desktop
 
       # --- Cleanup ---
 

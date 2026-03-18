@@ -183,16 +183,21 @@ if [ "$CHANNEL" = "stable" ]; then
   fi
 fi
 
-# --- CloudFront CDN invalidation ---
-DISTRIBUTION_ID="${CLOUDFRONT_DISTRIBUTION_ID:-E3W144CRNT652P}"
+# --- CDN invalidation (both distributions) ---
+CDN_ID_D0="${CLOUDFRONT_DISTRIBUTION_ID:-E3W144CRNT652P}"
+CDN_ID_DL="E34P52R7B93FSC"
 echo ""
-echo "Invalidating CloudFront cache..."
-aws cloudfront create-invalidation \
-  --distribution-id "$DISTRIBUTION_ID" \
-  --paths "/kaitu/desktop/cloudfront.latest.json" \
-          "/kaitu/desktop/beta/cloudfront.latest.json" \
-  --no-cli-pager
-echo "CDN cache invalidated."
+echo "Invalidating CDN caches..."
+for DIST_ID in "$CDN_ID_D0" "$CDN_ID_DL"; do
+  aws cloudfront create-invalidation \
+    --distribution-id "$DIST_ID" \
+    --paths "/kaitu/desktop/cloudfront.latest.json" \
+            "/kaitu/desktop/beta/cloudfront.latest.json" \
+            "/kaitu/desktop/d0.latest.json" \
+            "/kaitu/desktop/beta/d0.latest.json" \
+    --no-cli-pager --output text > /dev/null
+done
+echo "CDN invalidated: d0.all7.cc + dl.kaitu.io"
 
 echo ""
 if [ "$CHANNEL" = "stable" ]; then

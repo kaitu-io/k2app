@@ -80,6 +80,7 @@ build-windows: pre-build build-webapp build-k2-windows sync-adb-tools simplisign
 	@echo "=== Build complete ==="
 	@echo "Release artifacts in release/$(VERSION)/:"
 	@ls -la release/$(VERSION)/
+	bash scripts/ci/upload-release.sh --desktop
 
 build-linux:
 	@if [ "$$(uname -s)" = "Linux" ]; then \
@@ -99,9 +100,11 @@ _build-linux-native: pre-build build-webapp build-k2-linux
 	@chmod +x release/$(VERSION)/linux-pkg/k2app release/$(VERSION)/linux-pkg/k2
 	@cd release/$(VERSION)/linux-pkg && tar czf ../Kaitu_$(VERSION)_amd64.tar.gz k2app k2 kaitu.png
 	@rm -rf release/$(VERSION)/linux-pkg
+	@cp $(K2_BIN)/k2-x86_64-unknown-linux-gnu release/$(VERSION)/k2-linux-amd64
 	@echo "=== Linux build complete ==="
 	@echo "Release artifacts in release/$(VERSION)/:"
 	@ls -la release/$(VERSION)/
+	bash scripts/ci/upload-release.sh --desktop
 
 build-openwrt: pre-build
 	bash scripts/build-openwrt.sh
@@ -178,9 +181,9 @@ build-macos-ne-lib: appext-macos
 	@echo "macOS NE xcframework ready: k2/build/K2MobileMacOS.xcframework"
 
 appext-android: appext-deps
-	cd k2 && make appext-android
+	cd k2 && mkdir -p build && gomobile bind -tags "with_gvisor deadlock_disable" -target=android/arm64 -o build/k2mobile.aar -androidapi 24 ./appext/
 
-build-mobile-ios: pre-build build-webapp appext-ios
+build-ios: pre-build build-webapp appext-ios
 	cp -r k2/build/K2Mobile.xcframework mobile/ios/App/
 	cd mobile && rm -rf node_modules/k2-plugin && yarn install --force && npx cap sync ios
 	cd mobile/ios/App && xcodebuild -workspace App.xcworkspace \
@@ -188,11 +191,19 @@ build-mobile-ios: pre-build build-webapp appext-ios
 		-destination 'generic/platform=iOS' \
 		-archivePath build/App.xcarchive archive
 
-build-mobile-android: pre-build build-webapp appext-android decrypt-keystore
+build-android: pre-build build-webapp appext-android decrypt-keystore
 	mkdir -p mobile/android/app/libs
 	cp k2/build/k2mobile.aar mobile/android/app/libs/
 	cd mobile && rm -rf node_modules/k2-plugin && yarn install --force && npx cap sync android
 	cd mobile/android && KAITU_ANDROID_STORE_PASSWORD="$$KAITU_ANDROID_STORE_PASSWORD" ./gradlew assembleRelease
+	@echo "--- Collecting artifacts ---"
+	@mkdir -p release/$(VERSION)
+	@cp mobile/android/app/build/outputs/apk/release/app-release.apk release/$(VERSION)/Kaitu-$(VERSION).apk
+	@echo "=== Build complete ==="
+	@echo "Release artifacts in release/$(VERSION)/:"
+	@ls -la release/$(VERSION)/Kaitu-$(VERSION).apk
+	bash scripts/ci/upload-release.sh --android
+
 
 decrypt-keystore:
 	@if [ ! -f mobile/android/app/kaitu-release.jks ]; then \

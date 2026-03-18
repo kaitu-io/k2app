@@ -13,8 +13,8 @@ make dev-windows                 # Tauri desktop dev (Windows)
 make build-macos                 # Signed macOS PKG (universal binary)
 make build-windows               # Signed Windows NSIS installer (cross-compiled on macOS via cargo-xwin)
 make build-linux                  # AppImage (CI only — requires Linux host + webkit2gtk)
-make build-mobile-android        # gomobile bind + cap sync + assembleRelease
-make build-mobile-ios            # gomobile bind + cap sync + xcodebuild archive
+make build-android               # gomobile bind + cap sync + assembleRelease
+make build-ios                   # gomobile bind + cap sync + xcodebuild archive
 make publish-mobile VERSION=x.y.z  # Generate + upload mobile latest.json (phase 2 release)
 make dev-android                 # gomobile bind + cap sync + cap run android
 make dev-ios                     # cap sync + cap run ios

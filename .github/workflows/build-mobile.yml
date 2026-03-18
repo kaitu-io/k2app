@@ -176,7 +176,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ap-northeast-1
-        run: bash scripts/ci/upload-mobile-s3.sh --web
+        run: bash scripts/ci/upload-release.sh --web
 
       - name: Clean up keychain
         if: always()
@@ -328,7 +328,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ap-northeast-1
-        run: bash scripts/ci/upload-mobile-s3.sh --android
+        run: bash scripts/ci/upload-release.sh --android
 
       - name: Notify Slack on Android success
         if: success()

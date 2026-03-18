@@ -223,9 +223,9 @@ if [ -f "$CI_WORKFLOW" ]; then
 import sys
 content = open('$CI_WORKFLOW').read()
 # Check that the workflow calls the S3 upload script
-has_s3_upload = 'upload-mobile-s3.sh' in content
+has_s3_upload = 'upload-release.sh' in content
 if not has_s3_upload:
-    print('  CI workflow does not reference upload-mobile-s3.sh', file=sys.stderr)
+    print('  CI workflow does not reference upload-release.sh', file=sys.stderr)
     sys.exit(1)
 # Check both android and web+ios paths exist
 has_android = '--android' in content
@@ -247,7 +247,7 @@ fi
 # Test 10: CI upload script writes to versioned S3 paths (not root)
 # ---------------------------------------------------------------------------
 echo "--- Test 10: CI upload uses versioned S3 paths ---"
-UPLOAD_SCRIPT="$ROOT_DIR/scripts/ci/upload-mobile-s3.sh"
+UPLOAD_SCRIPT="$ROOT_DIR/scripts/ci/upload-release.sh"
 if [ -f "$UPLOAD_SCRIPT" ]; then
     python3 -c "
 import sys

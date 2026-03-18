@@ -405,3 +405,8 @@ echo ""
 echo "=== Build complete ==="
 echo "Release artifacts in $RELEASE_DIR/:"
 ls -la "$RELEASE_DIR/"
+
+# --- Upload to S3 + CDN invalidation ---
+echo ""
+echo "--- Uploading to S3 ---"
+bash "$ROOT_DIR/scripts/ci/upload-release.sh" --desktop
