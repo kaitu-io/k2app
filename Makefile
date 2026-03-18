@@ -81,7 +81,15 @@ build-windows: pre-build build-webapp build-k2-windows sync-adb-tools simplisign
 	@echo "Release artifacts in release/$(VERSION)/:"
 	@ls -la release/$(VERSION)/
 
-build-linux: pre-build build-webapp build-k2-linux
+build-linux:
+	@if [ "$$(uname -s)" = "Linux" ]; then \
+		$(MAKE) _build-linux-native; \
+	else \
+		echo "Not on Linux — building via Docker"; \
+		bash scripts/build-linux.sh; \
+	fi
+
+_build-linux-native: pre-build build-webapp build-k2-linux
 	cd desktop && yarn tauri build --no-bundle
 	@echo "--- Packaging tar.gz ---"
 	@mkdir -p release/$(VERSION)/linux-pkg

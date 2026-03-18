@@ -95,6 +95,7 @@ pub fn start_auto_updater(app: AppHandle) {
 /// When `force_downgrade` is true AND channel is "stable" AND running version contains "-beta",
 /// uses version_comparator(!=) to trigger update even when the remote version is lower
 /// (beta→stable downgrade). Only `set_update_channel` passes true.
+#[allow(unreachable_code)]
 async fn check_download_and_install(app: &AppHandle, force_downgrade: bool) {
     #[cfg(target_os = "linux")]
     {
@@ -287,6 +288,7 @@ pub fn apply_update_now(app: AppHandle) -> Result<(), String> {
 
 /// IPC: Manual update check — reads channel from disk, checks appropriate endpoints
 #[tauri::command]
+#[allow(unreachable_code)]
 pub async fn check_update_now(app: AppHandle) -> Result<String, String> {
     log::info!("[updater] Manual update check triggered");
 

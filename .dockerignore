@@ -1,0 +1,13 @@
+# Docker build context exclusions (Dockerfile.linux-build doesn't COPY anything)
+node_modules/
+target/
+build/
+release/
+dist/
+.worktrees/
+.git/
+k2/build/
+mobile/android/.gradle/
+mobile/android/app/build/
+mobile/ios/DerivedData/
+web/.next/
