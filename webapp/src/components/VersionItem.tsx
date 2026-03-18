@@ -102,7 +102,7 @@ export default function VersionItem({ appVersion, commit }: VersionItemProps) {
               >
                 {appVersion}{commit ? ` (${commit})` : ''}
               </Typography>
-              {(window._platform?.updater?.channel === 'beta' || appVersion.includes('-beta')) && (
+              {appVersion.includes('-beta') && (
                 <Chip
                   label={t('betaProgram.badge')}
                   color="warning"

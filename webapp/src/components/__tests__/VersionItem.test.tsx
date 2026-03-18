@@ -39,7 +39,13 @@ describe('VersionItem', () => {
     expect(screen.getByText('0.4.0')).toBeDefined();
   });
 
-  it('shows Beta badge when updater channel is beta', () => {
+  it('shows Beta badge when version string contains -beta', () => {
+    (window as any)._platform = { updater: undefined };
+    renderWithRouter('0.5.0-beta.2');
+    expect(screen.getByText('betaProgram.badge')).toBeDefined();
+  });
+
+  it('does NOT show Beta badge for stable version even when channel is beta', () => {
     (window as any)._platform = {
       updater: {
         channel: 'beta',
@@ -50,14 +56,8 @@ describe('VersionItem', () => {
         applyUpdateNow: vi.fn(),
       },
     };
-    renderWithRouter('0.5.0-beta.1');
-    expect(screen.getByText('betaProgram.badge')).toBeDefined();
-  });
-
-  it('shows Beta badge when version string contains -beta', () => {
-    (window as any)._platform = { updater: undefined };
-    renderWithRouter('0.5.0-beta.2');
-    expect(screen.getByText('betaProgram.badge')).toBeDefined();
+    renderWithRouter('0.4.0');
+    expect(screen.queryByText('betaProgram.badge')).toBeNull();
   });
 
   it('does NOT show Beta badge for stable version and stable channel', () => {
