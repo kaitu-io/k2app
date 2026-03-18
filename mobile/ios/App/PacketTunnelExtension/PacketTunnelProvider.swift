@@ -458,7 +458,7 @@ class EventBridge: NSObject, AppextEventHandlerProtocol {
         let monitor = NWPathMonitor()
         monitor.pathUpdateHandler = { [weak self] path in
             guard let self = self else { return }
-            let event = EngineNetEvent()
+            let event = AppextNetEvent()
             event.source = "nwpath"
             event.isWifi = path.usesInterfaceType(.wifi) || path.usesInterfaceType(.wiredEthernet)
             event.isCellular = path.usesInterfaceType(.cellular)
