@@ -25,6 +25,11 @@ const (
 	// prefreshThreshold is the fraction of original TTL remaining below which
 	// a cache entry is considered "near expiry" and triggers background refresh.
 	prefreshThreshold = 0.25
+
+	// maxConcurrentUpstream limits concurrent upstream DNS queries.
+	// Prevents memory spikes when 50+ domains query simultaneously
+	// (e.g., after network recovery on iOS where all apps retry at once).
+	maxConcurrentUpstream = 8
 )
 
 // DNSQuerier is satisfied by DirectDNSClient and ProxyDNSClient.
@@ -68,6 +73,18 @@ type Middleware struct {
 
 	// Engine root context for background prefresh (nil disables prefresh)
 	engineCtx context.Context
+
+	// Epoch-based cancellation for in-flight upstream queries.
+	// CancelInflight() cancels epochCtx, causing all pending upstream queries
+	// to abort immediately (stale sockets released). A new epoch starts.
+	epochMu     sync.Mutex
+	epochCtx    context.Context
+	epochCancel context.CancelFunc
+
+	// querySem limits concurrent upstream DNS queries.
+	// Prevents memory spikes when 50+ domains query simultaneously
+	// (e.g., after network recovery on iOS).
+	querySem chan struct{}
 }
 
 // MiddlewareConfig contains configuration for DNS middleware
@@ -84,7 +101,7 @@ type MiddlewareConfig struct {
 
 // NewMiddleware creates a new DNS middleware
 func NewMiddleware(cfg MiddlewareConfig) *Middleware {
-	return &Middleware{
+	m := &Middleware{
 		directDNS: cfg.DirectDNS,
 		proxyDNS:  cfg.ProxyDNS,
 		dnsCache:  cfg.DNSCache,
@@ -93,6 +110,26 @@ func NewMiddleware(cfg MiddlewareConfig) *Middleware {
 		metrics:   cfg.Metrics,
 		writer:    cfg.Writer,
 		engineCtx: cfg.EngineCtx,
+		querySem:  make(chan struct{}, maxConcurrentUpstream),
+	}
+	if cfg.EngineCtx != nil {
+		m.epochCtx, m.epochCancel = context.WithCancel(cfg.EngineCtx)
+	}
+	return m
+}
+
+// CancelInflight cancels all pending upstream DNS queries and starts a new epoch.
+// Called on network change — stale queries hold old UDP sockets that will never
+// receive responses. Cancelling them releases memory immediately instead of
+// waiting for 5-15s timeouts.
+func (m *Middleware) CancelInflight() {
+	m.epochMu.Lock()
+	defer m.epochMu.Unlock()
+	if m.epochCancel != nil {
+		m.epochCancel()
+	}
+	if m.engineCtx != nil {
+		m.epochCtx, m.epochCancel = context.WithCancel(m.engineCtx)
 	}
 }
 
@@ -330,8 +367,32 @@ func (m *Middleware) returnStaleOrError(stalePacked []byte, err error) (*dns.Msg
 
 // queryUpstream sends a DNS query to the appropriate upstream (direct or proxy).
 func (m *Middleware) queryUpstream(ctx context.Context, domain string, action k2rule.Target, query *dns.Msg) (*dns.Msg, error) {
-	ctx, cancel := context.WithTimeout(ctx, upstreamTimeout)
-	defer cancel()
+	// Derive from epoch context — CancelInflight() aborts all pending queries.
+	m.epochMu.Lock()
+	epochCtx := m.epochCtx
+	m.epochMu.Unlock()
+
+	if epochCtx != nil {
+		qctx, qcancel := context.WithTimeout(epochCtx, upstreamTimeout)
+		defer qcancel()
+		// Also cancel if caller's context is done (engine shutdown).
+		stop := context.AfterFunc(ctx, qcancel)
+		defer stop()
+		ctx = qctx
+	} else {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, upstreamTimeout)
+		defer cancel()
+	}
+
+	// Limit concurrent upstream queries — prevents memory spikes from
+	// burst DNS (e.g., 50+ domains after iOS network recovery).
+	select {
+	case m.querySem <- struct{}{}:
+		defer func() { <-m.querySem }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 
 	start := time.Now()
 

@@ -1010,6 +1010,107 @@ func TestHandleQuery_PrefreshDisabledWithoutEngineCtx(t *testing.T) {
 	}
 }
 
+func TestCancelInflight(t *testing.T) {
+	initK2Rule(t, k2rule.TargetDirect)
+
+	slowDNS := &slowQuerier{
+		delay: 10 * time.Second,
+		resp:  buildAResponse("cancel-inflight.example.com", net.ParseIP("1.2.3.4")),
+	}
+	mw := NewMiddleware(MiddlewareConfig{
+		DirectDNS: slowDNS,
+		ProxyDNS:  &mockQuerier{resp: buildAResponse("cancel-inflight.example.com", net.ParseIP("5.6.7.8"))},
+		DNSCache:  NewDNSCache(DNSCacheConfig{}),
+		Filter:    NewFilter(FilterConfig{}),
+		EngineCtx: context.Background(),
+	})
+
+	// Start a query in background.
+	errCh := make(chan error, 1)
+	go func() {
+		query := buildAQuery("cancel-inflight.example.com")
+		_, err := mw.HandleQuery(context.Background(), query)
+		errCh <- err
+	}()
+
+	// Wait for query to reach upstream.
+	time.Sleep(50 * time.Millisecond)
+
+	// Cancel all inflight.
+	mw.CancelInflight()
+
+	// Query should return quickly with error.
+	select {
+	case err := <-errCh:
+		if err == nil {
+			t.Fatal("expected error after CancelInflight")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("query did not return after CancelInflight")
+	}
+}
+
+func TestQueryUpstreamConcurrencyLimit(t *testing.T) {
+	initK2Rule(t, k2rule.TargetDirect)
+
+	var concurrent atomic.Int32
+	var maxSeen atomic.Int32
+
+	trackingDNS := &trackingQuerier{
+		fn: func(ctx context.Context, query *dns.Msg) (*dns.Msg, error) {
+			n := concurrent.Add(1)
+			defer concurrent.Add(-1)
+			for {
+				old := maxSeen.Load()
+				if n <= old || maxSeen.CompareAndSwap(old, n) {
+					break
+				}
+			}
+			time.Sleep(100 * time.Millisecond)
+			resp := new(dns.Msg)
+			resp.SetReply(query)
+			resp.Answer = append(resp.Answer, &dns.A{
+				Hdr: dns.RR_Header{Name: query.Question[0].Name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60},
+				A:   net.ParseIP("1.2.3.4"),
+			})
+			return resp, nil
+		},
+	}
+
+	mw := NewMiddleware(MiddlewareConfig{
+		DirectDNS: trackingDNS,
+		DNSCache:  NewDNSCache(DNSCacheConfig{}),
+		Filter:    NewFilter(FilterConfig{}),
+		EngineCtx: context.Background(),
+	})
+
+	// Launch 20 queries for different domains concurrently.
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			query := new(dns.Msg)
+			query.SetQuestion(fmt.Sprintf("domain%d.example.com.", i), dns.TypeA)
+			packed, _ := query.Pack()
+			mw.HandleQuery(context.Background(), packed)
+		}(i)
+	}
+	wg.Wait()
+
+	if max := maxSeen.Load(); max > int32(maxConcurrentUpstream) {
+		t.Errorf("max concurrent upstream queries = %d, want <= %d", max, maxConcurrentUpstream)
+	}
+}
+
+type trackingQuerier struct {
+	fn func(context.Context, *dns.Msg) (*dns.Msg, error)
+}
+
+func (tq *trackingQuerier) Query(ctx context.Context, query *dns.Msg) (*dns.Msg, error) {
+	return tq.fn(ctx, query)
+}
+
 func TestHandleQuery_ContextCancellation(t *testing.T) {
 	initK2Rule(t, k2rule.TargetProxy)
 
