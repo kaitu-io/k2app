@@ -98,6 +98,14 @@
         "question": "Browser blocked the download?",
         "answer": "Some browsers block .exe or .pkg downloads by default. Click 'Keep' or 'Download anyway' in the browser download bar. In Chrome, visit chrome://downloads to find blocked files."
       },
+      "edgeBlock": {
+        "question": "Edge blocked the download?",
+        "answer": "Edge may warn that the file 'is not commonly downloaded'. Click the ··· menu next to the file, then select 'Keep'."
+      },
+      "chromeBlock": {
+        "question": "Chrome blocked the download?",
+        "answer": "Chrome may warn the file 'is not commonly downloaded'. Click 'Keep' in the download bar at the bottom."
+      },
       "windowsSmartScreen": {
         "question": "Windows says 'Windows protected your PC'?",
         "answer": "This is Windows SmartScreen's default prompt for new apps. Click 'More info', then 'Run anyway'. Kaitu is EV code-signed and this prompt won't appear after installation."
@@ -110,9 +118,13 @@
         "question": "Android phone blocks APK installation?",
         "answer": "Some Android phone brands (Huawei, Xiaomi, OPPO, vivo, etc.) run cloud-based security checks during APK installation that may block non-store apps. Solution: after downloading the APK, turn on Airplane Mode before installing. Install offline, then turn off Airplane Mode after completion."
       },
+      "androidUsbInstall": {
+        "question": "Android install blocked and need help?",
+        "answer": "Open the Kaitu desktop app, go to Account → Other Device Install → Android Phone Install, connect your phone via USB cable, and follow the wizard to install automatically."
+      },
       "security": {
         "question": "Is Kaitu safe?",
-        "answer": "Kaitu is Apple notarized and Windows EV code-signed. All installers are distributed via HTTPS with verifiable SHA-256 checksums. The k2 protocol core is planned for open source."
+        "answer": "Kaitu is Apple notarized and Windows EV code-signed. All installers are distributed via HTTPS with verifiable SHA-256 checksums. The k2 protocol core is under an independent security audit programme."
       }
     }
   }

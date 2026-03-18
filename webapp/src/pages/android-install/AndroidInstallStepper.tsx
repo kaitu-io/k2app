@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Stepper,
@@ -22,6 +23,7 @@ import {
   Refresh as RetryIcon,
   Error as ErrorIcon,
   Warning as WarningIcon,
+  ReportProblem as ReportIcon,
 } from '@mui/icons-material';
 import { brandGuides } from './adb-guide-data';
 
@@ -55,6 +57,7 @@ interface DetectResponse {
 
 export default function AndroidInstallStepper({ name, icon, desc, apkUrl }: Props) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [activeStep, setActiveStep] = useState(0);
   const [selectedBrand, setSelectedBrand] = useState<string | null>(null);
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
@@ -244,6 +247,15 @@ export default function AndroidInstallStepper({ name, icon, desc, apkUrl }: Prop
             <Button variant="contained" onClick={() => setActiveStep(1)}>
               {t('common:common.next', '下一步')}
             </Button>
+            <Button
+              variant="text"
+              color="error"
+              size="small"
+              startIcon={<ReportIcon />}
+              onClick={() => navigate('/submit-ticket')}
+            >
+              {t('purchase:androidInstall.installFailed')}
+            </Button>
           </Stack>
         </Box>
       ),
@@ -353,6 +365,15 @@ export default function AndroidInstallStepper({ name, icon, desc, apkUrl }: Prop
                 {t('purchase:androidInstall.rescan')}
               </Button>
             )}
+            <Button
+              variant="text"
+              color="error"
+              size="small"
+              startIcon={<ReportIcon />}
+              onClick={() => navigate('/submit-ticket')}
+            >
+              {t('purchase:androidInstall.installFailed')}
+            </Button>
           </Stack>
         </Box>
       ),
@@ -388,6 +409,15 @@ export default function AndroidInstallStepper({ name, icon, desc, apkUrl }: Prop
               >
                 {t('purchase:androidInstall.startInstall')}
               </Button>
+              <Button
+                variant="text"
+                color="error"
+                size="small"
+                startIcon={<ReportIcon />}
+                onClick={() => navigate('/submit-ticket')}
+              >
+                {t('purchase:androidInstall.installFailed')}
+              </Button>
             </Stack>
           )}
 
@@ -417,16 +447,26 @@ export default function AndroidInstallStepper({ name, icon, desc, apkUrl }: Prop
               <Alert icon={<ErrorIcon />} severity="error" sx={{ mb: 1 }}>
                 {installStatus.error || t('purchase:androidInstall.installFailed')}
               </Alert>
-              <Button
-                variant="outlined"
-                startIcon={<RetryIcon />}
-                onClick={() => {
-                  setInstallStatus({ phase: 'idle', progress: 0, version: '', error: '' });
-                  startInstall();
-                }}
-              >
-                {t('purchase:androidInstall.retry')}
-              </Button>
+              <Stack direction="row" spacing={1}>
+                <Button
+                  variant="outlined"
+                  startIcon={<RetryIcon />}
+                  onClick={() => {
+                    setInstallStatus({ phase: 'idle', progress: 0, version: '', error: '' });
+                    startInstall();
+                  }}
+                >
+                  {t('purchase:androidInstall.retry')}
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="error"
+                  startIcon={<ReportIcon />}
+                  onClick={() => navigate('/submit-ticket')}
+                >
+                  {t('purchase:androidInstall.reportProblem')}
+                </Button>
+              </Stack>
             </Box>
           )}
         </Box>

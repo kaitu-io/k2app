@@ -98,6 +98,14 @@
         "question": "浏览器阻止了下载怎么办？",
         "answer": "部分浏览器会拦截 .exe 或 .pkg 文件的下载。请在浏览器下载栏中选择「保留」或「仍要下载」。如果使用 Chrome，可以在下载页面（chrome://downloads）找到被拦截的文件。"
       },
+      "edgeBlock": {
+        "question": "Edge 浏览器阻止了下载？",
+        "answer": "Edge 会提示「通常不会下载此文件」。点击文件右侧的 ··· 菜单，选择「保留」即可。"
+      },
+      "chromeBlock": {
+        "question": "Chrome 浏览器阻止了下载？",
+        "answer": "Chrome 会提示文件「不是常见的下载文件」。在底部下载栏中点击「保留」即可。"
+      },
       "windowsSmartScreen": {
         "question": "Windows 提示「已保护你的电脑」怎么办？",
         "answer": "这是 Windows SmartScreen 对新应用的默认提示。点击「更多信息」，然后点击「仍要运行」即可。开途客户端已通过 EV 代码签名，安装后不会再出现此提示。"
@@ -110,9 +118,13 @@
         "question": "安卓手机安装被拦截怎么办？",
         "answer": "华为、小米、OPPO、vivo 等手机的安全中心会在安装时联网进行云检测，可能拦截非应用商店来源的 APK。解决方法：下载 APK 后先开启飞行模式，断网状态下安装，安装完成后再关闭飞行模式即可。"
       },
+      "androidUsbInstall": {
+        "question": "安卓手机安装被拦截，我不会安装怎么办？",
+        "answer": "在电脑上打开开途客户端，进入「账户 → 其他设备安装 → 安卓手机安装」，用 USB 数据线连接手机，按向导操作即可自动安装到手机。"
+      },
       "security": {
         "question": "开途客户端安全吗？",
-        "answer": "开途客户端已通过 Apple 公证和 Windows EV 代码签名。所有安装包通过 HTTPS 分发，可验证 SHA-256 校验和。k2 协议核心代码计划开源。"
+        "answer": "开途客户端已通过 Apple 公证和 Windows EV 代码签名。所有安装包通过 HTTPS 分发，可验证 SHA-256 校验和。k2 协议核心已纳入独立安全审查计划。"
       }
     }
   }

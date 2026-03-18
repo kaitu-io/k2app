@@ -94,6 +94,7 @@
     "installComplete": "Install Complete",
     "installFailed": "Install Failed",
     "retry": "Retry",
+    "reportProblem": "Report Problem",
     "detectingDevice": "Detecting device...",
     "noDeviceFound": "No device detected",
     "noDeviceHint": "Please check that USB cable is connected and debugging is authorised on your phone",

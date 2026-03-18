@@ -116,16 +116,15 @@ export default function DeviceInstall() {
 
   const handleShare = async () => {
     try {
-      if (navigator.share) {
-        await navigator.share({
-          title: 'Kaitu',
-          text: t('purchase:deviceInstall.shareText'),
-          url: installURL,
-        });
+      const shareText = `${t('purchase:deviceInstall.shareText')} ${installURL}`;
+      // Prefer platform share (native share sheet on mobile)
+      if (window._platform?.share) {
+        await window._platform.share({ title: 'Kaitu', text: shareText, url: installURL });
+      } else if (navigator.share) {
+        await navigator.share({ title: 'Kaitu', text: t('purchase:deviceInstall.shareText'), url: installURL });
       } else {
         // fallback: copy full share text with link
-        const fallbackText = `${t('purchase:deviceInstall.shareText')} ${installURL}`;
-        await window._platform?.writeClipboard?.(fallbackText);
+        await window._platform?.writeClipboard?.(shareText);
         showAlert(t('common:messages.copySuccess'), "success");
       }
     } catch (error) {

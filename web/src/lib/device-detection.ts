@@ -169,6 +169,23 @@ export function triggerDownload(url: string, filename?: string): boolean {
 }
 
 /**
+ * Trigger auto-download via hidden iframe (not blocked by popup blockers).
+ * Use this for programmatic downloads outside user gesture context (e.g. on page load).
+ * The iframe loads the URL silently — browsers treat binary file responses as downloads.
+ */
+export function triggerAutoDownload(url: string): void {
+  if (typeof window === 'undefined') return;
+  const iframe = document.createElement('iframe');
+  iframe.style.display = 'none';
+  iframe.src = url;
+  document.body.appendChild(iframe);
+  // Clean up after 60s (download should have started by then)
+  setTimeout(() => {
+    try { document.body.removeChild(iframe); } catch { /* already removed */ }
+  }, 60000);
+}
+
+/**
  * Open download in new tab as fallback
  */
 export function openDownloadInNewTab(url: string): void {

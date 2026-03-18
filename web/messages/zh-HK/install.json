@@ -98,6 +98,14 @@
         "question": "瀏覽器阻擋咗下載點算？",
         "answer": "部分瀏覽器會攔截 .exe 或 .pkg 檔案嘅下載。請喺瀏覽器下載列入面揀「保留」或「仍要下載」。如果用 Chrome，可以喺下載頁面（chrome://downloads）搵到被攔截嘅檔案。"
       },
+      "edgeBlock": {
+        "question": "Edge 瀏覽器阻擋咗下載？",
+        "answer": "Edge 會提示「通常唔會下載呢個檔案」。撳檔案右邊嘅 ··· 選單，揀「保留」就得。"
+      },
+      "chromeBlock": {
+        "question": "Chrome 瀏覽器阻擋咗下載？",
+        "answer": "Chrome 會提示檔案「唔係常見嘅下載檔案」。喺底部下載列撳「保留」就得。"
+      },
       "windowsSmartScreen": {
         "question": "Windows 提示「已保護你的電腦」點算？",
         "answer": "呢個係 Windows SmartScreen 對新應用嘅預設提示。撳「更多資訊」，然後撳「仍要執行」就得。開途客戶端已通過 EV 代碼簽署，安裝後唔會再出現呢個提示。"
@@ -110,9 +118,13 @@
         "question": "安卓手機安裝被攔截點算？",
         "answer": "華為、小米、OPPO、vivo 等手機嘅安全中心會喺安裝時聯網進行雲端檢測，可能攔截非應用商店來源嘅 APK。解決方法：下載 APK 後先開啟飛行模式，斷網狀態下安裝，安裝完成後再關閉飛行模式就得。"
       },
+      "androidUsbInstall": {
+        "question": "安卓手機安裝被攔截，我唔識裝點算？",
+        "answer": "喺電腦打開開途客戶端，入去「帳戶 → 其他設備安裝 → 安卓手機安裝」，用 USB 數據線連接手機，跟住嚮導操作就可以自動裝到手機。"
+      },
       "security": {
         "question": "開途客戶端安全咩？",
-        "answer": "開途客戶端已通過 Apple 公證同 Windows EV 代碼簽署。所有安裝包透過 HTTPS 分發，可驗證 SHA-256 校驗和。k2 協議核心代碼計劃開源。"
+        "answer": "開途客戶端已通過 Apple 公證同 Windows EV 代碼簽署。所有安裝包透過 HTTPS 分發，可驗證 SHA-256 校驗和。k2 協議核心已納入獨立安全審查計劃。"
       }
     }
   }

@@ -94,6 +94,7 @@
     "installComplete": "安装完成",
     "installFailed": "安装失败",
     "retry": "重试",
+    "reportProblem": "问题反馈",
     "detectingDevice": "正在检测设备...",
     "noDeviceFound": "未检测到设备",
     "noDeviceHint": "请确认 USB 数据线已连接，且已在手机上授权调试",

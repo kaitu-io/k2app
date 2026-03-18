@@ -131,6 +131,6 @@ describe('InstallClient', () => {
       })
     );
     const items = container.querySelectorAll('[data-testid="accordion-item"]');
-    expect(items.length).toBe(5);
+    expect(items.length).toBe(6);
   });
 });

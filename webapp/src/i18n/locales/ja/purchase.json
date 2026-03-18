@@ -94,6 +94,7 @@
     "installComplete": "インストール完了",
     "installFailed": "インストール失敗",
     "retry": "再試行",
+    "reportProblem": "問題を報告",
     "detectingDevice": "デバイスを検出中...",
     "noDeviceFound": "デバイスが検出されませんでした",
     "noDeviceHint": "USBケーブルが接続されており、スマホでデバッグが認証されていることを確認してください",
