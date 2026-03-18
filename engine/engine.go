@@ -390,11 +390,18 @@ func (e *Engine) reconnect() bool {
 	handler := e.handler
 	tm := e.tm
 	pdns := e.proxyDNS
+	dh := e.dnsH
 	e.mu.Unlock()
 
 	// Notify handler of transient reconnecting state (for UI feedback).
 	if handler != nil {
 		handler.OnStatus(Status{State: StateReconnecting})
+	}
+
+	// Cancel pending DNS queries — they hold stale UDP sockets that
+	// will never receive responses from the old network path.
+	if dh != nil {
+		dh.CancelInflight()
 	}
 
 	// Reset cached connections — next dial will create fresh ones.

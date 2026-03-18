@@ -206,6 +206,14 @@ func (h *dnsHandler) recordDNSSuccess() {
 	}
 }
 
+// CancelInflight cancels all pending upstream DNS queries.
+// Called on network change — stale queries hold old sockets.
+func (h *dnsHandler) CancelInflight() {
+	if h.dns != nil {
+		h.dns.CancelInflight()
+	}
+}
+
 // ResetCounter resets the consecutive DNS failure counter.
 // Called on network recovery — old failures from the outage are stale.
 func (h *dnsHandler) ResetCounter() {
