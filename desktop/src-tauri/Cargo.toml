@@ -32,6 +32,11 @@ sha2 = "0.10"
 [target.'cfg(target_os = "windows")'.dependencies]
 wmi = "0.14"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+minisign-verify = "0.2"
+semver = "1"
+base64 = "0.22"
+
 [features]
 mcp-bridge = ["dep:tauri-plugin-mcp-bridge"]
 ne-mode = []
