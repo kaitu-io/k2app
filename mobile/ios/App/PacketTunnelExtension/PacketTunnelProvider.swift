@@ -382,6 +382,34 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             completionHandler?(nil)
         }
     }
+
+    // MARK: - Network Path Monitor
+
+    private func startPathMonitor() {
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            guard let self = self else { return }
+            guard let event = AppextNewNetEvent() else { return }
+            event.source = "nwpath"
+            event.isWifi = path.usesInterfaceType(.wifi) || path.usesInterfaceType(.wiredEthernet)
+            event.isCellular = path.usesInterfaceType(.cellular)
+            event.hasIPv4 = path.supportsIPv4
+            event.hasIPv6 = path.supportsIPv6
+            if path.status == .satisfied {
+                event.signal = "available"
+            } else {
+                event.signal = "unavailable"
+            }
+            self.engine?.notify(event)
+        }
+        monitor.start(queue: .main)
+        pathMonitor = monitor
+    }
+
+    private func stopPathMonitor() {
+        pathMonitor?.cancel()
+        pathMonitor = nil
+    }
 }
 
 // MARK: - EventBridge
@@ -450,41 +478,5 @@ class EventBridge: NSObject, AppextEventHandlerProtocol {
 
     func onStats(_ txBytes: Int64, rxBytes: Int64) {
         // Stats tracking if needed
-    }
-
-    // MARK: - Network Path Monitor
-
-    private func startPathMonitor() {
-        let monitor = NWPathMonitor()
-        monitor.pathUpdateHandler = { [weak self] path in
-            guard let self = self else { return }
-            let event = AppextNetEvent()
-            event.source = "nwpath"
-            event.isWifi = path.usesInterfaceType(.wifi) || path.usesInterfaceType(.wiredEthernet)
-            event.isCellular = path.usesInterfaceType(.cellular)
-            event.hasIPv4 = path.supportsIPVersion(.v4)
-            event.hasIPv6 = path.supportsIPVersion(.v6)
-            if let iface = path.availableInterfaces.first {
-                event.interfaceName = iface.name
-                event.interfaceIndex = iface.index
-            }
-            if path.status == .satisfied {
-                event.signal = "available"
-                logger.info("pathMonitor: available iface=\(event.interfaceName) wifi=\(event.isWifi) cell=\(event.isCellular)")
-                NativeLogger.shared.log("INFO", "pathMonitor: available iface=\(event.interfaceName)")
-            } else {
-                event.signal = "unavailable"
-                logger.info("pathMonitor: unavailable (status=\(path.status))")
-                NativeLogger.shared.log("INFO", "pathMonitor: unavailable")
-            }
-            self.engine?.notifyNetEvent(event)
-        }
-        monitor.start(queue: .main)
-        pathMonitor = monitor
-    }
-
-    private func stopPathMonitor() {
-        pathMonitor?.cancel()
-        pathMonitor = nil
     }
 }
