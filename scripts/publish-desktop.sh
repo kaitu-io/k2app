@@ -185,19 +185,14 @@ fi
 
 # --- CloudFront CDN invalidation ---
 DISTRIBUTION_ID="${CLOUDFRONT_DISTRIBUTION_ID:-E3W144CRNT652P}"
-if [ -n "$DISTRIBUTION_ID" ]; then
-  echo ""
-  echo "Invalidating CloudFront cache..."
-  aws cloudfront create-invalidation \
-    --distribution-id "$DISTRIBUTION_ID" \
-    --paths "/kaitu/desktop/cloudfront.latest.json" \
-            "/kaitu/desktop/beta/cloudfront.latest.json" \
-    --no-cli-pager
-  echo "CDN cache invalidated."
-else
-  echo ""
-  echo "Note: Set CLOUDFRONT_DISTRIBUTION_ID env var to auto-invalidate CDN cache."
-fi
+echo ""
+echo "Invalidating CloudFront cache..."
+aws cloudfront create-invalidation \
+  --distribution-id "$DISTRIBUTION_ID" \
+  --paths "/kaitu/desktop/cloudfront.latest.json" \
+          "/kaitu/desktop/beta/cloudfront.latest.json" \
+  --no-cli-pager
+echo "CDN cache invalidated."
 
 echo ""
 if [ "$CHANNEL" = "stable" ]; then

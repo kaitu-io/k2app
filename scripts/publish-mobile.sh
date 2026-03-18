@@ -243,19 +243,14 @@ fi
 # --- CloudFront CDN invalidation ---
 
 if [ "$DRY_RUN" = false ] && ! use_local; then
-    DISTRIBUTION_ID="${CLOUDFRONT_DISTRIBUTION_ID:-}"
-    if [ -n "$DISTRIBUTION_ID" ]; then
-        echo ""
-        echo "Invalidating CloudFront cache..."
-        aws cloudfront create-invalidation \
-            --distribution-id "$DISTRIBUTION_ID" \
-            --paths "/kaitu/android/*" "/kaitu/web/*" "/kaitu/ios/*" \
-            --no-cli-pager
-        echo "CDN cache invalidated."
-    else
-        echo ""
-        echo "Note: Set CLOUDFRONT_DISTRIBUTION_ID env var to auto-invalidate CDN cache."
-    fi
+    DISTRIBUTION_ID="${CLOUDFRONT_DISTRIBUTION_ID:-E3W144CRNT652P}"
+    echo ""
+    echo "Invalidating CloudFront cache..."
+    aws cloudfront create-invalidation \
+        --distribution-id "$DISTRIBUTION_ID" \
+        --paths "/kaitu/android/*" "/kaitu/web/*" "/kaitu/ios/*" \
+        --no-cli-pager
+    echo "CDN cache invalidated."
 fi
 
 echo ""
