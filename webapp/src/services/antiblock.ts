@@ -2,8 +2,16 @@ const STORAGE_KEY = 'k2_entry_url';
 export const DEFAULT_ENTRY = 'https://k2.52j.me';
 export const DECRYPTION_KEY =
   '9e3573184d5e5b3034a087c33fa2cdb76bd0126238ed08f54d1de8c6ae0eb4ba';
+
+// jsdelivr mirrors — raced simultaneously (Happy Eyeballs)
+// Same repo path, different edge networks for redundancy in blocked regions
 export const CDN_SOURCES = [
   'https://cdn.jsdelivr.net/gh/kaitu-io/ui-theme@dist/config.js',
+  'https://fastly.jsdelivr.net/gh/kaitu-io/ui-theme@dist/config.js',
+  'https://testingcf.jsdelivr.net/gh/kaitu-io/ui-theme@dist/config.js',
+  'https://gcore.jsdelivr.net/gh/kaitu-io/ui-theme@dist/config.js',
+  'https://cdn.jsdmirror.com/gh/kaitu-io/ui-theme@dist/config.js',
+  'https://jsd.onmicrosoft.cn/gh/kaitu-io/ui-theme@dist/config.js',
 ];
 
 // ---------------------------------------------------------------------------
@@ -91,7 +99,7 @@ interface AntiblockConfig {
   data: string;
 }
 
-function loadScript(url: string, timeoutMs = 10000): Promise<AntiblockConfig | null> {
+function loadScript(url: string, timeoutMs = 5000): Promise<AntiblockConfig | null> {
   return new Promise((resolve) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const w = window as any;
@@ -125,33 +133,56 @@ function loadScript(url: string, timeoutMs = 10000): Promise<AntiblockConfig | n
   });
 }
 
-async function fetchEntryFromCDN(): Promise<string | null> {
-  for (const url of CDN_SOURCES) {
-    try {
-      const config = await loadScript(url);
-      if (!config || config.v !== 1 || typeof config.data !== 'string') {
-        console.warn('[Antiblock] CDN config invalid or empty from:', url, config);
-        continue;
-      }
-      const plaintext = await decrypt(config.data, DECRYPTION_KEY);
-      if (!plaintext) {
-        console.warn('[Antiblock] decrypt failed for CDN source:', url);
-        continue;
-      }
-      const parsed = JSON.parse(plaintext) as { entries?: string[] };
-      if (parsed.entries && parsed.entries.length > 0) {
-        console.info('[Antiblock] resolved entry from CDN:', parsed.entries[0]);
-        localStorage.setItem(STORAGE_KEY, parsed.entries[0]!);
-        return parsed.entries[0]!;
-      }
-      console.warn('[Antiblock] CDN config has no entries:', parsed);
-    } catch (e) {
-      console.warn('[Antiblock] fetchEntryFromCDN error for:', url, e);
-      continue;
-    }
-  }
-  console.warn('[Antiblock] all CDN sources failed');
+// ---------------------------------------------------------------------------
+// Happy Eyeballs — race all CDN mirrors, first valid config wins
+// ---------------------------------------------------------------------------
+
+async function decryptConfig(config: AntiblockConfig): Promise<string | null> {
+  if (!config || config.v !== 1 || typeof config.data !== 'string') return null;
+  const plaintext = await decrypt(config.data, DECRYPTION_KEY);
+  if (!plaintext) return null;
+  const parsed = JSON.parse(plaintext) as { entries?: string[] };
+  if (parsed.entries && parsed.entries.length > 0) return parsed.entries[0]!;
   return null;
+}
+
+// Promise.any polyfill — target is ES2020, Promise.any requires ES2021
+function promiseAny<T>(promises: Promise<T>[]): Promise<T> {
+  return new Promise((resolve, reject) => {
+    let remaining = promises.length;
+    if (remaining === 0) {
+      reject(new Error('All promises were rejected'));
+      return;
+    }
+    promises.forEach((p) => {
+      p.then(resolve, () => {
+        if (--remaining === 0) reject(new Error('All promises were rejected'));
+      });
+    });
+  });
+}
+
+async function fetchEntryFromCDN(): Promise<string | null> {
+  const candidates = CDN_SOURCES.map((url) =>
+    loadScript(url).then(async (config) => {
+      if (!config) throw new Error(`no config from ${url}`);
+      const entry = await decryptConfig(config);
+      if (!entry) throw new Error(`decrypt failed from ${url}`);
+      console.info('[Antiblock] resolved entry from:', url);
+      return entry;
+    }),
+  );
+
+  if (candidates.length === 0) return null;
+
+  try {
+    const entry = await promiseAny(candidates);
+    localStorage.setItem(STORAGE_KEY, entry);
+    return entry;
+  } catch {
+    console.warn('[Antiblock] all CDN sources failed');
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------

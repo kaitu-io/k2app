@@ -178,7 +178,7 @@ describe('antiblock — AES-256-GCM decryption', () => {
 
       // Wait a tick for the background refresh to fire
       await new Promise((r) => setTimeout(r, 10));
-      // Background refresh should inject a <script> tag
+      // Background refresh should inject <script> tags for all CDN sources
       const scriptCalls = appendSpy.mock.calls.filter(
         ([node]) => node instanceof HTMLScriptElement,
       );
@@ -188,12 +188,15 @@ describe('antiblock — AES-256-GCM decryption', () => {
 
   // ── Static analysis tests ───────────────────────────────────────────────
 
-  it('test_cdn_sources_are_github_urls', () => {
-    const hasJsdelivrGh = CDN_SOURCES.some((url) =>
-      url.includes('jsdelivr.net/gh/kaitu-io/ui-theme'),
-    );
-    expect(hasJsdelivrGh).toBe(true);
-    expect(CDN_SOURCES.length).toBeGreaterThan(0);
+  it('test_cdn_sources_have_multiple_mirrors', () => {
+    expect(CDN_SOURCES.length).toBeGreaterThanOrEqual(3);
+    expect(CDN_SOURCES.some((u) => u.includes('cdn.jsdelivr.net'))).toBe(true);
+    expect(CDN_SOURCES.some((u) => u.includes('fastly.jsdelivr.net'))).toBe(true);
+    expect(CDN_SOURCES.some((u) => u.includes('gcore.jsdelivr.net'))).toBe(true);
+  });
+
+  it('test_happy_eyeballs_uses_promise_any', () => {
+    expect(sourceCode).toContain('promiseAny');
   });
 
   it('test_no_atob_in_source', () => {
