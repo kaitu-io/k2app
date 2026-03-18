@@ -10,9 +10,13 @@ interface SpotlightOverlayProps {
 
 /**
  * Full-viewport SVG overlay with a rounded-rect cutout (spotlight hole).
- * position:fixed — immune to CSS body zoom.
  * evenodd fill rule: outer rect + inner rect = transparent hole.
  * pointerEvents on path blocks clicks on dark area; cutout allows clicks through.
+ *
+ * CSS zoom on body scales all children including position:fixed elements.
+ * We apply inverse zoom so the SVG covers the full physical viewport.
+ * Coordinates from getBoundingClientRect() are in viewport space and remain
+ * correct after inverse zoom since the net zoom is 1.0.
  */
 const SpotlightOverlay: React.FC<SpotlightOverlayProps> = ({
   rect,
@@ -25,6 +29,11 @@ const SpotlightOverlay: React.FC<SpotlightOverlayProps> = ({
   const h = rect.height + padding * 2;
   const r = Math.min(borderRadius, w / 2, h / 2);
 
+  // Counteract body CSS zoom so overlay covers full physical viewport.
+  // body.zoom = 0.914 → inverseZoom = 1.094 → net zoom = 1.0.
+  const bodyZoom = parseFloat(document.body.style.zoom || '1');
+  const inverseZoom = bodyZoom !== 0 ? 1 / bodyZoom : 1;
+
   return (
     <svg
       style={{
@@ -34,6 +43,7 @@ const SpotlightOverlay: React.FC<SpotlightOverlayProps> = ({
         height: '100vh',
         zIndex: 1300,
         pointerEvents: 'none',
+        zoom: inverseZoom,
       }}
     >
       <path
