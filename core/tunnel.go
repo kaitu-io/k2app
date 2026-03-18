@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -457,7 +458,9 @@ func (t *ClientTunnel) handleTCPProxy(local net.Conn, dest string, earlyData []b
 	if err != nil {
 		slog.Warn("tunnel: proxy TCP dial failed", "dest", dest, "err", err)
 		slog.Warn("DIAG: proxy-dial-fail", "dest", dest, "transport", "tcp", "err", err)
-		if t.wireReporter != nil {
+		// Only report wire transport errors. Proxy-layer errors (IsProxyLayer)
+		// mean the server received and responded — the wire is healthy.
+		if t.wireReporter != nil && !isProxyLayerError(err) {
 			t.wireReporter.ReportWireError(err)
 		}
 		return
@@ -505,7 +508,7 @@ func (t *ClientTunnel) handleUDPProxy(local net.PacketConn, dest string) {
 	if err != nil {
 		slog.Warn("tunnel: proxy UDP dial failed", "dest", dest, "err", err)
 		slog.Warn("DIAG: proxy-dial-fail", "dest", dest, "transport", "udp", "err", err)
-		if t.wireReporter != nil {
+		if t.wireReporter != nil && !isProxyLayerError(err) {
 			t.wireReporter.ReportWireError(err)
 		}
 		return
@@ -520,6 +523,15 @@ func (t *ClientTunnel) handleUDPProxy(local net.PacketConn, dest string) {
 	untrack := t.conns.track(remote)
 	defer untrack()
 	pipePacket(local, remote, nil, &t.txBytes, &t.rxBytes)
+}
+
+// isProxyLayerError returns true if the error originated from the server's
+// application layer (the server received the request and responded). This means
+// the wire transport is healthy — the error is about the specific target, not
+// the transport. Uses the same IsProxyLayer() interface as TransportManager.
+func isProxyLayerError(err error) bool {
+	var ple interface{ IsProxyLayer() bool }
+	return errors.As(err, &ple) && ple.IsProxyLayer()
 }
 
 // Buffer pools to avoid per-connection allocations.

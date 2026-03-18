@@ -817,8 +817,10 @@ func extractServerHost(wireURL string) string {
 	return u.Hostname()
 }
 
-// ReportWireError reports a runtime wire transport error (proxy dial failure).
-// Called by tunnel's handleTCPProxy/handleUDPProxy on proxy dial failure.
+// ReportWireError reports a runtime wire transport error.
+// Called by tunnel's handleTCPProxy/handleUDPProxy on wire transport failure,
+// and by recovery probe on probe failure. Proxy-layer errors (server responded
+// to the request) are filtered at the call site — see tunnel.go.
 // Debounces: first error fires OnStatus, subsequent non-auth errors are no-ops.
 // Auth errors (client category) can upgrade existing network errors.
 func (e *Engine) ReportWireError(err error) {

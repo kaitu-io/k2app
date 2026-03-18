@@ -23,11 +23,22 @@ const (
 	ErrCodeConnectionFatal    = 570 // Unclassified connection error (fallback)
 )
 
-// Error categories for frontend blame attribution.
+// Error categories — three-party blame attribution.
+//
+//	k2 (client) ◄──wire──► k2s (server) ──dial──► target
+//	     │                      │                    │
+//	 client error          server error         target error
+//
+// client:  k2's responsibility — local network, bad config, auth, payment, pin mismatch.
+// network: k2's responsibility — transient local network issues (auto-retry subset of client).
+// server:  k2s's responsibility — unreachable, protocol error, connection fatal.
+// target:  destination's responsibility — blocked IP, target DNS fail, target connection refused.
+//          Per-request, does NOT affect tunnel health.
 const (
 	CategoryClient  = "client"  // User action needed (re-auth, reconfigure, renew)
 	CategoryNetwork = "network" // Transient, auto-retry or wait
 	CategoryServer  = "server"  // Server-side issue (suggest update)
+	CategoryTarget  = "target"  // Target-specific (k2s→target failed, wire is healthy)
 	CategoryUnknown = "unknown" // Unclassified
 )
 
@@ -64,10 +75,13 @@ func (e *EngineError) Error() string {
 // ClassifyError maps a wire/engine error to an HTTP-aligned error code with category.
 // Priority: StreamError (server-provided code) → MultiTransportError → timeout → string pattern → fallback 570.
 func ClassifyError(err error) *EngineError {
-	// Priority 0: StreamError with server-provided code — use directly.
+	// Priority 0: StreamError — server responded to a proxy request about a
+	// specific target. The wire is healthy (server received and responded).
+	// Always CategoryTarget regardless of code. Auth/payment errors use
+	// stream rejection (ErrStreamRejected), not StreamError.
 	var se *wire.StreamError
 	if errors.As(err, &se) && se.Code > 0 {
-		return newEngineError(se.Code, se.Message)
+		return &EngineError{Code: se.Code, Category: CategoryTarget, Message: se.Message}
 	}
 
 	// Priority 1: MultiTransportError — classify by primary (TCP-WS) error,
