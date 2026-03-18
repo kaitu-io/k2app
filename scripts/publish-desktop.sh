@@ -165,9 +165,12 @@ fi
 
 # Create GitHub Release (stable only — beta skips GitHub Release)
 if [ "$CHANNEL" = "stable" ]; then
-  gh release create "v${VERSION}" \
-    --title "Kaitu v${VERSION}" \
-    --notes "## Kaitu Desktop v${VERSION}
+  if gh release view "v${VERSION}" &>/dev/null; then
+    echo "GitHub Release v${VERSION} already exists, skipping."
+  else
+    gh release create "v${VERSION}" \
+      --title "Kaitu v${VERSION}" \
+      --notes "## Kaitu Desktop v${VERSION}
 
 | Platform | Installer | Auto-Update |
 |----------|-----------|-------------|
@@ -175,12 +178,13 @@ if [ "$CHANNEL" = "stable" ]; then
 | **Windows** (x64) | \`.exe\` | \`.exe\` (auto-update) |
 | **Linux** (x86_64) | \`.AppImage\` | \`.AppImage\` (auto-update) |
 "
-  echo ""
-  echo "GitHub Release created for v${VERSION}"
+    echo ""
+    echo "GitHub Release created for v${VERSION}"
+  fi
 fi
 
 # --- CloudFront CDN invalidation ---
-DISTRIBUTION_ID="${CLOUDFRONT_DISTRIBUTION_ID:-}"
+DISTRIBUTION_ID="${CLOUDFRONT_DISTRIBUTION_ID:-E3W144CRNT652P}"
 if [ -n "$DISTRIBUTION_ID" ]; then
   echo ""
   echo "Invalidating CloudFront cache..."
