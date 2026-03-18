@@ -552,12 +552,19 @@ fn admin_reinstall_service_linux() -> Result<String, String> {
         return Err("pkexec_unavailable: run 'sudo k2 service install' manually".to_string());
     }
 
-    // Copy sidecar k2 to persistent path, then install service.
-    // pkexec runs the entire sequence as root.
+    // AppImage FUSE mount is user-private (allow_other=false by default).
+    // pkexec runs as root and cannot access /tmp/.mount_Kaitu_xxx/.
+    // Fix: copy k2 binary to /tmp as current user first, then pkexec from there.
+    let tmp_k2 = "/tmp/kaitu-k2-install";
+    std::fs::copy(&source_k2, tmp_k2).map_err(|e| {
+        format!("Failed to stage k2 binary to {}: {}", tmp_k2, e)
+    })?;
+    log::info!("[service] Linux: staged k2 binary to {}", tmp_k2);
+
     let script = format!(
         "mkdir -p /opt/kaitu && cp '{}' /opt/kaitu/k2 && chmod +x /opt/kaitu/k2 && \
-         ln -sf /opt/kaitu/k2 /usr/local/bin/k2 && /opt/kaitu/k2 service install",
-        source_str
+         ln -sf /opt/kaitu/k2 /usr/local/bin/k2 && /opt/kaitu/k2 service install && rm -f '{}'",
+        tmp_k2, tmp_k2
     );
 
     let output = Command::new("pkexec")
