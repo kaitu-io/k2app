@@ -11,7 +11,7 @@ type Locale = (typeof routing.locales)[number];
 
 export const dynamic = 'force-static';
 
-const OPENSOURCE_DATE_ISO = '2026-06-04T00:00:00Z';
+const OPENSOURCE_DATE_ISO = '2026-04-14T00:00:00Z';
 
 /**
  * Generate metadata for the opensource page (used by Next.js for <head> tags).
@@ -106,7 +106,7 @@ export default async function OpenSourcePage({
                 <h4 className="font-semibold text-foreground mb-2">
                   {t('theme.opensource.reason1Title')}
                 </h4>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-slate-600 dark:text-slate-400">
                   {t('theme.opensource.reason1Desc')}
                 </p>
               </div>
@@ -120,7 +120,7 @@ export default async function OpenSourcePage({
                 <h4 className="font-semibold text-foreground mb-2">
                   {t('theme.opensource.reason2Title')}
                 </h4>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-slate-600 dark:text-slate-400">
                   {t('theme.opensource.reason2Desc')}
                 </p>
               </div>
@@ -134,7 +134,7 @@ export default async function OpenSourcePage({
                 <h4 className="font-semibold text-foreground mb-2">
                   {t('theme.opensource.reason3Title')}
                 </h4>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-slate-600 dark:text-slate-400">
                   {t('theme.opensource.reason3Desc')}
                 </p>
               </div>
@@ -148,7 +148,7 @@ export default async function OpenSourcePage({
                 <h4 className="font-semibold text-foreground mb-2">
                   {t('theme.opensource.reason4Title')}
                 </h4>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-slate-600 dark:text-slate-400">
                   {t('theme.opensource.reason4Desc')}
                 </p>
               </div>
@@ -161,7 +161,7 @@ export default async function OpenSourcePage({
           <h3 className="text-2xl font-bold text-foreground mb-2 text-center">
             {t('theme.opensource.whoTitle')}
           </h3>
-          <p className="text-sm text-muted-foreground text-center mb-8">
+          <p className="text-sm text-slate-600 dark:text-slate-400 text-center mb-8">
             {t('theme.opensource.whoDesc')}
           </p>
 
@@ -173,7 +173,7 @@ export default async function OpenSourcePage({
               <h4 className="font-semibold text-foreground">
                 {t('theme.opensource.who1Title')}
               </h4>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-slate-600 dark:text-slate-400">
                 {t('theme.opensource.who1Desc')}
               </p>
             </div>
@@ -185,7 +185,7 @@ export default async function OpenSourcePage({
               <h4 className="font-semibold text-foreground">
                 {t('theme.opensource.who2Title')}
               </h4>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-slate-600 dark:text-slate-400">
                 {t('theme.opensource.who2Desc')}
               </p>
             </div>
@@ -197,7 +197,7 @@ export default async function OpenSourcePage({
               <h4 className="font-semibold text-foreground">
                 {t('theme.opensource.who3Title')}
               </h4>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-slate-600 dark:text-slate-400">
                 {t('theme.opensource.who3Desc')}
               </p>
             </div>
