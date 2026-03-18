@@ -16,6 +16,7 @@ e.SetEventHandler(handler)     // EventHandler: OnStatus(statusJSON), OnStats(tx
 e.Start(configJSON, fd, cfg)   // JSON config + TUN FD + EngineConfig
 e.Stop()
 e.OnNetworkChanged()           // Called by platform on WiFi/cellular switch
+e.NotifyNetEvent(ev)           // Structured replacement for OnNetworkChanged (platform has network event details)
 e.StatusJSON() string          // JSON status (matches daemon API format)
 ```
 
@@ -23,6 +24,7 @@ e.StatusJSON() string          // JSON status (matches daemon API format)
 
 - `appext.go` — `Engine` struct, `Start`/`Stop`/`OnNetworkChanged`/`StatusJSON`
 - `event.go` — `EventHandler` interface, `eventBridge` (appext→engine adapter), state constants
+- `net_event.go` — `NetEvent` struct (mirrors `engine.NetEvent` for gomobile export), `NewNetEvent` constructor
 - `config.go` — `EngineConfig` (CacheDir, LogDir, SocketProtector)
 - `protector.go` — `SocketProtector` interface (Android VpnService.protect)
 - `protect.go` — `protectedDialer` (implements `wire.DirectDialer` + `wire.DialerController`) — Android only
