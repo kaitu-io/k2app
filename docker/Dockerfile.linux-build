@@ -1,0 +1,63 @@
+# Dockerfile for cross-compiling k2app Tauri binary to x86_64 Linux.
+# Runs natively on ARM64 (Apple Silicon) — NO QEMU emulation.
+# Uses multiarch to install x86_64 webkit2gtk libs + cross-linker.
+#
+# Build: docker build -t k2app-linux-builder -f docker/Dockerfile.linux-build .
+# Run:   docker run --rm -v $PWD:/src ... k2app-linux-builder
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Enable amd64 multiarch and add x86_64 apt sources
+# ARM64 Ubuntu uses ports.ubuntu.com (no amd64 packages).
+# We add archive.ubuntu.com for amd64 packages alongside the ARM64 sources.
+RUN dpkg --add-architecture amd64 && \
+    cat > /etc/apt/sources.list.d/amd64-cross.list <<'EOF'
+deb [arch=amd64] http://archive.ubuntu.com/ubuntu jammy main restricted universe multiverse
+deb [arch=amd64] http://archive.ubuntu.com/ubuntu jammy-updates main restricted universe multiverse
+deb [arch=amd64] http://archive.ubuntu.com/ubuntu jammy-security main restricted universe multiverse
+EOF
+
+# Pin the default sources to native arch only (avoid conflicts)
+RUN sed -i 's/^deb /deb [arch=arm64] /' /etc/apt/sources.list 2>/dev/null || true
+
+# Install native build tools + cross-compilation toolchain
+RUN apt-get update && apt-get install -y \
+    curl git build-essential pkg-config \
+    gcc-x86-64-linux-gnu g++-x86-64-linux-gnu \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install x86_64 target libraries (Tauri dependencies)
+RUN apt-get update && apt-get install -y \
+    libwebkit2gtk-4.1-dev:amd64 \
+    libayatana-appindicator3-dev:amd64 \
+    librsvg2-dev:amd64 \
+    libssl-dev:amd64 \
+    patchelf \
+    && rm -rf /var/lib/apt/lists/*
+
+# Node.js 20 (for `yarn tauri build` CLI — runs natively on ARM64)
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && npm install -g yarn \
+    && rm -rf /var/lib/apt/lists/*
+
+# Rust stable + x86_64 target
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+ENV PATH="/root/.cargo/bin:${PATH}"
+RUN rustup target add x86_64-unknown-linux-gnu
+
+# Configure cargo to use x86_64 cross-linker
+RUN mkdir -p /root/.cargo && printf '\n\
+[target.x86_64-unknown-linux-gnu]\n\
+linker = "x86_64-linux-gnu-gcc"\n\
+' >> /root/.cargo/config.toml
+
+# Configure pkg-config for cross-compilation
+ENV PKG_CONFIG_PATH="/usr/lib/x86_64-linux-gnu/pkgconfig"
+ENV PKG_CONFIG_SYSROOT_DIR="/"
+ENV PKG_CONFIG_ALLOW_CROSS="1"
+
+WORKDIR /src
+
+ENTRYPOINT ["bash", "docker/linux-build-inner.sh"]
