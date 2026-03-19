@@ -343,8 +343,12 @@ github.com/wordgate/qtoolkit/asynq v1.5.11 h1:Pkh/9RHWC+rT5KSk0NVzSFRkoZcYwIkmub
 github.com/wordgate/qtoolkit/asynq v1.5.11/go.mod h1:1g/dYBPpC4zztGsxnZZYt8bGJ54gEv0ul6ln8JAim4Q=
 github.com/wordgate/qtoolkit/aws/ses v1.5.11 h1:g4CK3rgAb2lIJ9+OK0JyJiwfN79NV75RPg4H/HGPlBA=
 github.com/wordgate/qtoolkit/aws/ses v1.5.11/go.mod h1:SBYze7oa2B/iFJCEXRSGNR3Pf3hHZq7yZ6R4NYe1z7k=
+github.com/wordgate/qtoolkit/chatwoot v1.5.14 h1:3gM3Atm5pib1/aFpbBzmeX7LjTb0dhblkggkBFLPz30=
+github.com/wordgate/qtoolkit/chatwoot v1.5.14/go.mod h1:XWT6zgvpR3eC4kXYgrj3wlap9mDRbc1LW2MxQYDxbxg=
 github.com/wordgate/qtoolkit/db v1.5.11 h1:cepXyMcMBh7eFPhqDJt/8nyJ4n1OWoGozzSh+74TBEo=
 github.com/wordgate/qtoolkit/db v1.5.11/go.mod h1:wwVxI5MLL5wekQhdDH0+f+0GbBOV7NO/NtP7M4kLz2I=
+github.com/wordgate/qtoolkit/fastgpt v1.5.14 h1:mFzPJdI18hik86HmEq5XvQ2idqvyYp9AFog1DFxhiTc=
+github.com/wordgate/qtoolkit/fastgpt v1.5.14/go.mod h1:cKWY/RpoWuYWa1ZpJ/PvbYNqXFuvYwFFUhKcFhsSr20=
 github.com/wordgate/qtoolkit/github/issue v1.5.11 h1:We0M9FbE3zY5l9uD3qKGOxPe+ovEzuvQU63r05rnbts=
 github.com/wordgate/qtoolkit/github/issue v1.5.11/go.mod h1:OVMV2VzBRKO8aWj6iIVA1xi2rWNP9HI8kUeoo8ZjBgI=
 github.com/wordgate/qtoolkit/log v1.5.11 h1:qFTt1z+sZpRxfT4zf5pc8rQ2Zw8A/rI/FMsI6/sT78E=
