@@ -24,8 +24,9 @@ import (
 
 // Compile-time interface checks.
 var (
-	_ Dialer   = (*QUICClient)(nil)
-	_ Listener = (*QUICServer)(nil)
+	_ Dialer    = (*QUICClient)(nil)
+	_ Listener  = (*QUICServer)(nil)
+	_ EchoProber = (*QUICClient)(nil)
 )
 
 // maxServerUDPSessions caps per-connection UDP session count on the server.
@@ -295,6 +296,18 @@ func (c *QUICClient) RecordSuccess() {
 // Exported for testing — allows engine tests to set TCP health state.
 func (c *QUICClient) RecordTCPSuccess() {
 	c.lastTCPSuccessAt.Store(time.Now().UnixNano())
+}
+
+// RunEchoProbe implements EchoProber for data-path verification.
+func (c *QUICClient) RunEchoProbe(ctx context.Context) error {
+	c.mu.Lock()
+	conn := c.conn
+	c.mu.Unlock()
+	if conn == nil {
+		return errors.New("no cached connection")
+	}
+	_, err := EchoProbe(ctx, conn)
+	return err
 }
 
 // tcpRecentlyHealthy returns true if a TCP stream succeeded within the given window.
