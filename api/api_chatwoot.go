@@ -69,15 +69,9 @@ func handleChatwootEvent(ctx context.Context, event chatwoot.Event) {
 
 	opts := buildAskOpts(history, event)
 	result, err := filesearch.Ask(ctx, "crm", event.Content, opts...)
-	if err != nil {
-		log.Errorf(ctx, "filesearch error: conversation=%d err=%v", event.ConversationID, err)
-		chatwoot.Reply(ctx, event.ConversationID, "抱歉，系统暂时无法处理您的消息，请稍后再试。")
-		return
-	}
-
-	if strings.TrimSpace(result.Content) == "" {
-		log.Warnf(ctx, "filesearch returned empty content: conversation=%d", event.ConversationID)
-		chatwoot.Reply(ctx, event.ConversationID, "抱歉，系统暂时无法处理您的消息，请稍后再试。")
+	if err != nil || strings.TrimSpace(result.Content) == "" {
+		log.Errorf(ctx, "filesearch failed: conversation=%d err=%v", event.ConversationID, err)
+		handleTransferHuman(ctx, event.ConversationID, "", event.Content)
 		return
 	}
 
