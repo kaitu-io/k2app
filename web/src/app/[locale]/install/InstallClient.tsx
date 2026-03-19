@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import {
@@ -16,6 +16,8 @@ import { PlatformIcon, PLATFORM_COLORS, PLATFORM_IDS, type PlatformId } from './
 import { WindowsPanel, MacOSPanel, LinuxPanel, IOSPanel, AndroidPanel } from './platform-panels';
 import { ArrowRight } from 'lucide-react';
 import { Link } from '@/i18n/routing';
+
+const AUTO_DOWNLOAD_SECONDS = 5;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -120,11 +122,29 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
   const t = useTranslations();
   const [selectedPlatform, setSelectedPlatform] = useState<PlatformId>('windows');
   const [copied, setCopied] = useState(false);
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const autoDownloadLinkRef = useRef<string | null>(null);
 
   const displayVersion = betaVersion || serverStable!;
   const isBeta = !!(betaVersion && betaVersion !== serverStable);
   const downloadLinks = getDownloadLinks(displayVersion);
   const stableDownloadLinks = isBeta && serverStable ? getDownloadLinks(serverStable) : null;
+
+  const cancelAutoDownload = useCallback(() => {
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+      countdownRef.current = null;
+    }
+    setCountdown(null);
+    autoDownloadLinkRef.current = null;
+  }, []);
+
+  // Cancel auto-download when user switches platform tab
+  const handlePlatformSelect = useCallback((id: PlatformId) => {
+    cancelAutoDownload();
+    setSelectedPlatform(id);
+  }, [cancelAutoDownload]);
 
   // Device detection -> auto-select tab + auto-download for desktop/android
   useEffect(() => {
@@ -147,19 +167,38 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
 
     // Auto-download for desktop platforms and Android (skip iOS/Linux/unknown)
     if (!noAutoDownload) {
-      const autoDownloadLink =
+      const link =
         detectedType === 'windows' ? downloadLinks.windows.primary :
         detectedType === 'macos' ? downloadLinks.macos.primary :
         detectedType === 'android' ? (mobileLinks?.android.primary ?? null) :
         null;
 
-      if (autoDownloadLink) {
-        // Small delay so the page renders first, user sees the tab before download starts.
-        // Uses hidden iframe to avoid popup blocker (window.open in setTimeout gets blocked).
-        const timer = setTimeout(() => triggerAutoDownload(autoDownloadLink), 800);
-        return () => clearTimeout(timer);
+      if (link) {
+        autoDownloadLinkRef.current = link;
+        setCountdown(AUTO_DOWNLOAD_SECONDS);
+        countdownRef.current = setInterval(() => {
+          setCountdown((prev) => {
+            if (prev === null || prev <= 1) {
+              clearInterval(countdownRef.current!);
+              countdownRef.current = null;
+              if (autoDownloadLinkRef.current) {
+                triggerAutoDownload(autoDownloadLinkRef.current);
+                autoDownloadLinkRef.current = null;
+              }
+              return null;
+            }
+            return prev - 1;
+          });
+        }, 1000);
       }
     }
+
+    return () => {
+      if (countdownRef.current) {
+        clearInterval(countdownRef.current);
+        countdownRef.current = null;
+      }
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const copyCliCommand = useCallback(async () => {
@@ -179,10 +218,23 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
   return (
     <>
       {/* Platform Tab Bar */}
-      <PlatformTabBar selected={selectedPlatform} onSelect={setSelectedPlatform} t={t} />
+      <PlatformTabBar selected={selectedPlatform} onSelect={handlePlatformSelect} t={t} />
+
+      {/* Auto-download countdown */}
+      {countdown !== null && (
+        <div className="flex items-center justify-center gap-3 mb-6 text-sm text-muted-foreground">
+          <span>{t('install.install.autoDownloadCountdown', { seconds: countdown })}</span>
+          <button
+            onClick={cancelAutoDownload}
+            className="text-xs text-muted-foreground/70 hover:text-foreground underline underline-offset-2 transition-colors"
+          >
+            {t('install.install.cancelAutoDownload')}
+          </button>
+        </div>
+      )}
 
       {/* Tab Content — panels handle their own hero, download button, and install guides */}
-      <Tabs value={selectedPlatform} onValueChange={(v) => setSelectedPlatform(v as PlatformId)}>
+      <Tabs value={selectedPlatform} onValueChange={(v) => handlePlatformSelect(v as PlatformId)}>
         <TabsContent value="windows">
           <WindowsPanel
             t={t}
