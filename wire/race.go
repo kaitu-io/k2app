@@ -218,9 +218,9 @@ func buildTCPWSCandidate(ctx context.Context, cfg Config, dialAddr string, dd Di
 
 	// For insecure mode without ECH (testing/dev), set TLS config directly.
 	if cfg.Insecure && cfg.ECH == "" {
-		tc.tlsConfig = &tls.Config{
+		tc.SetTLSConfig(&tls.Config{
 			InsecureSkipVerify: true,
-		}
+		})
 	}
 
 	_, err := tc.connect(ctx)

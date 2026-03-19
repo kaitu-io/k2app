@@ -352,6 +352,7 @@ func (hm *healthMonitor) resetCounters() {
 	hm.healthyStreak = 0
 	hm.smoothWireLoss = 0
 	hm.ewmaInitialized = false
+	hm.echoFails.Store(0)
 }
 
 // echoLoop periodically runs echo probes on the primary transport to verify

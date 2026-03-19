@@ -193,6 +193,8 @@ func (e *Engine) Start(cfg Config) error {
 		tm.SetTCPWS(tcpwsClient)
 	}
 	// Start background QUIC recovery probe (active during TCP-WS fallback).
+	// Complements echoLoop: quicProbeLoop handles handshake-level failure (UDP fully blocked),
+	// echoLoop handles data-path failure (Short Header dropped). No overlap.
 	tm.StartQuicProbe(ctx)
 
 	slog.Info("engine: step 4 - transport race winner",

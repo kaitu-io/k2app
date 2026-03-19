@@ -129,6 +129,11 @@ func (c *TCPWSClient) SetTestConn(conn net.Conn) {
 	c.testConn = conn
 }
 
+// SetTLSConfig overrides the TLS config for testing (bypasses BuildClientTLSConfig).
+func (c *TCPWSClient) SetTLSConfig(cfg *tls.Config) {
+	c.tlsConfig = cfg
+}
+
 // SetDirectDialer sets a physical-interface-bound dialer for bypassing TUN.
 func (c *TCPWSClient) SetDirectDialer(d DirectDialer) {
 	c.directDialer = d
