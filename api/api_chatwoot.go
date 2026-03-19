@@ -65,7 +65,7 @@ func handleChatwootEvent(ctx context.Context, event chatwoot.Event) {
 	time.Sleep(1 * time.Second)
 
 	// Fetch conversation history from Chatwoot (source of truth)
-	history, err := chatwoot.GetMessages(ctx, event.ConversationID, 10)
+	history, err := chatwoot.GetMessages(ctx, event.ConversationID, 0)
 	if err != nil {
 		log.Warnf(ctx, "failed to get history: conversation=%d err=%v", event.ConversationID, err)
 		// Degrade to single-turn: no history, just current question
