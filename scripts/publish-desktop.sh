@@ -78,6 +78,46 @@ if [ -z "${LINUX_SIG}" ]; then
   echo "WARNING: Linux signature not found"
 fi
 
+# --- Pre-publish signature verification ---
+# Download actual artifacts from S3 (no CDN cache) and verify each .sig matches.
+# This prevents publishing a latest.json with stale signatures after artifact rebuilds.
+PUBKEY=$(node -p "require('./desktop/src-tauri/tauri.conf.json').plugins.updater.pubkey" | base64 -d | tail -1)
+echo "Updater pubkey: ${PUBKEY}"
+echo ""
+
+VERIFY_DIR="${TMPDIR}/verify"
+mkdir -p "${VERIFY_DIR}"
+
+verify_signature() {
+  local NAME="$1" SIG_VAR="$2" PLATFORM="$3"
+  if [ -z "${SIG_VAR}" ]; then
+    echo "  SKIP ${PLATFORM}: no signature"
+    return 0
+  fi
+  echo "  Downloading ${NAME}..."
+  aws s3 cp "${S3_VER}/${NAME}" "${VERIFY_DIR}/${NAME}" --quiet
+  echo "${SIG_VAR}" | base64 -d > "${VERIFY_DIR}/${NAME}.minisig"
+  if minisign -V -P "${PUBKEY}" -m "${VERIFY_DIR}/${NAME}" -x "${VERIFY_DIR}/${NAME}.minisig" -q 2>/dev/null; then
+    echo "  PASS ${PLATFORM}: ${NAME}"
+  elif minisign -V -H -P "${PUBKEY}" -m "${VERIFY_DIR}/${NAME}" -x "${VERIFY_DIR}/${NAME}.minisig" -q 2>/dev/null; then
+    echo "  PASS ${PLATFORM}: ${NAME} (prehashed)"
+  else
+    echo "  FAIL ${PLATFORM}: signature does not match ${NAME}"
+    echo ""
+    echo "ERROR: Signature verification failed for ${PLATFORM}."
+    echo "The .sig on S3 does not match the artifact. Was the artifact rebuilt without re-signing?"
+    exit 1
+  fi
+  rm -f "${VERIFY_DIR}/${NAME}" "${VERIFY_DIR}/${NAME}.minisig"
+}
+
+echo "Verifying signatures against S3 artifacts..."
+verify_signature "Kaitu_${VERSION}_universal.app.tar.gz" "${MACOS_SIG}" "macOS"
+verify_signature "Kaitu_${VERSION}_x64.exe" "${WINDOWS_SIG}" "Windows"
+verify_signature "Kaitu_${VERSION}_amd64.tar.gz" "${LINUX_SIG}" "Linux"
+echo "All signatures verified."
+echo ""
+
 # Generate cloudfront.latest.json
 # All 3 macOS keys (aarch64, x86_64, universal) point to the same universal binary.
 # Tauri updater queries {os}-{arch} (e.g. darwin-aarch64) with NO fallback to darwin-universal,
