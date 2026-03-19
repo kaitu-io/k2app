@@ -133,7 +133,7 @@ func handleTransferHuman(ctx context.Context, conversationID int, aiReply string
 
 	slackMsg := fmt.Sprintf("[Chatwoot] 客户需要人工客服 — 会话 #%d\n客户消息: %s",
 		conversationID, truncateString(customerMsg, 200))
-	if err := slack.Send("support", slackMsg); err != nil {
+	if err := slack.Send("customer", slackMsg); err != nil {
 		log.Errorf(ctx, "slack notify error: %v", err)
 	}
 
