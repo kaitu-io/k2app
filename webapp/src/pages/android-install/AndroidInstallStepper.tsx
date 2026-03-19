@@ -254,7 +254,7 @@ export default function AndroidInstallStepper({ name, icon, desc, apkUrl }: Prop
               startIcon={<ReportIcon />}
               onClick={() => navigate('/submit-ticket')}
             >
-              {t('purchase:androidInstall.installFailed')}
+              {t('purchase:androidInstall.reportProblem')}
             </Button>
           </Stack>
         </Box>
@@ -372,7 +372,7 @@ export default function AndroidInstallStepper({ name, icon, desc, apkUrl }: Prop
               startIcon={<ReportIcon />}
               onClick={() => navigate('/submit-ticket')}
             >
-              {t('purchase:androidInstall.installFailed')}
+              {t('purchase:androidInstall.reportProblem')}
             </Button>
           </Stack>
         </Box>
