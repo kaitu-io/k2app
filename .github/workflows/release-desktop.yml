@@ -368,7 +368,14 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ap-northeast-1
-        run: bash scripts/ci/upload-release.sh --desktop
+        run: |
+          PLATFORM_FLAG=""
+          case "${{ matrix.platform }}" in
+            macOS)   PLATFORM_FLAG="--macos" ;;
+            Windows) PLATFORM_FLAG="--windows" ;;
+            Linux)   PLATFORM_FLAG="--linux" ;;
+          esac
+          bash scripts/ci/upload-release.sh $PLATFORM_FLAG
 
       # --- Cleanup ---
 

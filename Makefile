@@ -80,7 +80,7 @@ build-windows: pre-build build-webapp build-k2-windows sync-adb-tools simplisign
 	@echo "=== Build complete ==="
 	@echo "Release artifacts in release/$(VERSION)/:"
 	@ls -la release/$(VERSION)/
-	bash scripts/ci/upload-release.sh --desktop
+	bash scripts/ci/upload-release.sh --windows
 
 build-linux:
 	@if [ "$$(uname -s)" = "Linux" ]; then \
@@ -104,7 +104,7 @@ _build-linux-native: pre-build build-webapp build-k2-linux
 	@echo "=== Linux build complete ==="
 	@echo "Release artifacts in release/$(VERSION)/:"
 	@ls -la release/$(VERSION)/
-	bash scripts/ci/upload-release.sh --desktop
+	bash scripts/ci/upload-release.sh --linux
 
 build-openwrt: pre-build
 	bash scripts/build-openwrt.sh

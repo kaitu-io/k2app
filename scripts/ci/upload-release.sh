@@ -5,14 +5,14 @@ set -euo pipefail
 # Called by build scripts (local) and CI workflows.
 #
 # Usage:
-#   bash scripts/ci/upload-release.sh --desktop          # Upload release/{VER}/ → desktop/{VER}/
-#   bash scripts/ci/upload-release.sh --android           # Upload release/{VER}/ → android/{VER}/
-#   bash scripts/ci/upload-release.sh --web               # Zip webapp/dist → web/{VER}/webapp.zip
-#   bash scripts/ci/upload-release.sh --desktop --skip-cdn  # Upload only, no CDN invalidation
+#   bash scripts/ci/upload-release.sh --windows            # Upload Windows exe + sig
+#   bash scripts/ci/upload-release.sh --macos              # Upload macOS pkg + app.tar.gz + sig
+#   bash scripts/ci/upload-release.sh --linux              # Upload Linux tar.gz + sig + k2 binary
+#   bash scripts/ci/upload-release.sh --android            # Upload Android APK
+#   bash scripts/ci/upload-release.sh --web                # Zip webapp/dist → web/{VER}/webapp.zip
+#   bash scripts/ci/upload-release.sh --windows --skip-cdn # Upload only, no CDN invalidation
 #
-# Desktop uploads everything in release/{VERSION}/ (pkg, tar.gz, sig, exe).
-# Android uploads Kaitu-{VERSION}.apk from release/{VERSION}/.
-# Web zips webapp/dist/ and uploads as webapp.zip.
+# Each platform flag uploads ONLY its own artifacts, preventing cross-platform contamination.
 #
 # Skips gracefully if AWS credentials are not configured (local dev without AWS).
 #
@@ -36,7 +36,10 @@ SKIP_CDN=false
 
 for arg in "$@"; do
   case "$arg" in
-    --desktop)  PLATFORM="desktop" ;;
+    --windows)  PLATFORM="windows" ;;
+    --macos)    PLATFORM="macos" ;;
+    --linux)    PLATFORM="linux" ;;
+    --desktop)  echo "ERROR: --desktop is deprecated. Use --windows, --macos, or --linux." >&2; exit 1 ;;
     --android)  PLATFORM="android" ;;
     --web)      PLATFORM="web" ;;
     --skip-cdn) SKIP_CDN=true ;;
@@ -45,7 +48,7 @@ for arg in "$@"; do
 done
 
 if [ -z "$PLATFORM" ]; then
-  echo "Usage: $0 --desktop|--android|--web [--skip-cdn]" >&2
+  echo "Usage: $0 --windows|--macos|--linux|--android|--web [--skip-cdn]" >&2
   exit 1
 fi
 
@@ -56,21 +59,43 @@ if ! aws sts get-caller-identity &>/dev/null; then
   exit 0
 fi
 
-S3_DEST="${S3_BUCKET}/${PLATFORM}/${VERSION}"
-INVALIDATION_PATH="/kaitu/${PLATFORM}/${VERSION}/*"
+RELEASE_DIR="release/${VERSION}"
+S3_DEST="${S3_BUCKET}/desktop/${VERSION}"
+INVALIDATION_PATH="/kaitu/desktop/${VERSION}/*"
+
+upload_file() {
+  local FILE="$1"
+  if [ ! -f "$FILE" ]; then
+    echo "WARNING: $FILE not found, skipping" >&2
+    return 0
+  fi
+  aws s3 cp "$FILE" "${S3_DEST}/$(basename "$FILE")"
+}
 
 echo "=== Uploading ${PLATFORM} v${VERSION} to S3 ==="
 
 case "$PLATFORM" in
-  desktop)
-    if [ ! -d "release/${VERSION}" ]; then
-      echo "ERROR: release/${VERSION}/ not found. Run build first." >&2; exit 1
-    fi
-    aws s3 cp "release/${VERSION}/" "${S3_DEST}/" --recursive
-    echo "Uploaded: desktop/${VERSION}/"
+  windows)
+    upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_x64.exe"
+    upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_x64.exe.sig"
+    echo "Uploaded: Windows artifacts"
+    ;;
+  macos)
+    upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_universal.pkg"
+    upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_universal.app.tar.gz"
+    upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_universal.app.tar.gz.sig"
+    echo "Uploaded: macOS artifacts"
+    ;;
+  linux)
+    upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_amd64.tar.gz"
+    upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_amd64.tar.gz.sig"
+    upload_file "${RELEASE_DIR}/k2-linux-amd64"
+    echo "Uploaded: Linux artifacts"
     ;;
   android)
-    APK="release/${VERSION}/Kaitu-${VERSION}.apk"
+    S3_DEST="${S3_BUCKET}/android/${VERSION}"
+    INVALIDATION_PATH="/kaitu/android/${VERSION}/*"
+    APK="${RELEASE_DIR}/Kaitu-${VERSION}.apk"
     if [ ! -f "$APK" ]; then
       echo "ERROR: $APK not found. Run 'make build-android' first." >&2; exit 1
     fi
@@ -78,6 +103,8 @@ case "$PLATFORM" in
     echo "Uploaded: android/${VERSION}/Kaitu-${VERSION}.apk"
     ;;
   web)
+    S3_DEST="${S3_BUCKET}/web/${VERSION}"
+    INVALIDATION_PATH="/kaitu/web/${VERSION}/*"
     if [ ! -d "webapp/dist" ]; then
       echo "ERROR: webapp/dist not found. Run 'make build-webapp' first." >&2; exit 1
     fi
