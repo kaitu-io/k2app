@@ -1043,6 +1043,8 @@ func (s *QUICServer) handleStream(qconn *quic.Conn, stream *quic.Stream, state *
 		s.handleUDPStream(stream, br)
 	case StreamTypeUDPOverflow:
 		s.handleUDPOverflowStream(br, state)
+	case StreamTypeEcho:
+		HandleEchoStream(stream, br)
 	default:
 		slog.Debug("QUICServer.handleStream: unknown stream type", "streamType", streamType)
 		stream.Close()

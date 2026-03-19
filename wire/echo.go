@@ -1,6 +1,7 @@
 package wire
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"errors"
@@ -77,15 +78,15 @@ func EchoProbe(ctx context.Context, conn *quic.Conn) (time.Duration, error) {
 }
 
 // HandleEchoStream handles a server-side echo probe stream.
-// Reads echoNonceLen bytes and writes them back.
-func HandleEchoStream(stream *quic.Stream) {
+// Reads echoNonceLen bytes from br (buffered reader) and writes them back to stream.
+func HandleEchoStream(stream *quic.Stream, br *bufio.Reader) {
 	defer func() {
 		stream.CancelRead(0)
 		stream.Close()
 	}()
 
 	var buf [echoNonceLen]byte
-	if _, err := io.ReadFull(stream, buf[:]); err != nil {
+	if _, err := io.ReadFull(br, buf[:]); err != nil {
 		slog.Debug("echo: read failed", "err", err)
 		return
 	}

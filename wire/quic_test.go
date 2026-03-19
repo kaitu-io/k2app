@@ -1137,3 +1137,29 @@ func TestQuicUDPConn_WriteTo_NormalPath(t *testing.T) {
 		t.Fatalf("sendInflight = %d after WriteTo, want 0", got)
 	}
 }
+
+// TestQUICServer_EchoStream verifies that QUICServer handles StreamTypeEcho
+// by calling HandleEchoStream, which echoes back the nonce.
+func TestQUICServer_EchoStream(t *testing.T) {
+	client, server, cleanup := setupQUICPair(t)
+	defer cleanup()
+	_ = server // server is running via Listen()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// connect() returns *quic.Conn
+	conn, err := client.connect(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rtt, err := EchoProbe(ctx, conn)
+	if err != nil {
+		t.Fatalf("EchoProbe through QUICServer failed: %v", err)
+	}
+	if rtt <= 0 {
+		t.Errorf("expected positive RTT, got %v", rtt)
+	}
+	t.Logf("echo RTT through server: %v", rtt)
+}
