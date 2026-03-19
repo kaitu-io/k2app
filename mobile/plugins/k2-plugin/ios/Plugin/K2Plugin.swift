@@ -51,7 +51,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/ios/latest.json",
         "https://d0.all7.cc/kaitu/ios/latest.json"
     ]
-    private let appStoreURL = "https://apps.apple.com/app/id6759199298"
+    private let appStoreURL = "https://apps.apple.com/app/id6448744655"
 
     /// Real semantic version (e.g. "0.4.0-beta.3") embedded at build time via K2_APP_VERSION.
     /// Falls back to CFBundleShortVersionString for dev builds (where K2_APP_VERSION is unset).

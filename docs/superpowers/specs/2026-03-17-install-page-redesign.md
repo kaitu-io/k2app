@@ -140,7 +140,7 @@ text-sm text-muted-foreground:
 - export const DOWNLOAD_LINKS = {
 -   windows: `${CDN_PRIMARY}/${BETA_VERSION}/Kaitu_${BETA_VERSION}_x64.exe`,
 -   macos: `${CDN_PRIMARY}/${BETA_VERSION}/Kaitu_${BETA_VERSION}_universal.pkg`,
--   ios: 'https://apps.apple.com/app/id6759199298',
+-   ios: 'https://apps.apple.com/app/id6448744655',
 -   android: 'https://d13jc1jqzlg4yt.cloudfront.net/kaitu/android/0.0.0/Kaitu-0.0.0.apk',
 - } as const;
 ```

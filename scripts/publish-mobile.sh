@@ -13,10 +13,6 @@ set -euo pipefail
 #   android/latest.json                          ← this script publishes
 #   android/beta/{VER}/Kaitu-{VER}.apk          ← this script copies
 #   android/beta/latest.json                     ← this script publishes
-#   web/{VER}/webapp.zip                         ← CI uploads here
-#   web/latest.json                              ← this script publishes
-#   web/beta/{VER}/webapp.zip                    ← this script copies
-#   web/beta/latest.json                         ← this script publishes
 #   ios/latest.json                              ← this script publishes
 #   ios/beta/latest.json                         ← this script publishes
 #
@@ -34,10 +30,8 @@ DRY_RUN=false
 CHANNEL=""
 
 CDN_PRIMARY="https://d13jc1jqzlg4yt.cloudfront.net/kaitu"
-APPSTORE_URL="https://apps.apple.com/app/id6759199298"
+APPSTORE_URL="https://apps.apple.com/app/id6448744655"
 
-# Read min native version from webapp package.json (optional field)
-MIN_NATIVE=$(node -p "require('./webapp/package.json').minNativeVersion || ''" 2>/dev/null || echo "")
 
 # Parse arguments
 shift || true
@@ -129,23 +123,15 @@ trap 'rm -rf "$WORK_TMPDIR"' EXIT
 
 # Define artifact paths (CI uploads to {channel}/{VERSION}/)
 android_artifact="android/${VERSION}/Kaitu-${VERSION}.apk"
-web_artifact="web/${VERSION}/webapp.zip"
 
 # Validate all artifacts exist
 echo "Validating artifacts for v${VERSION}..."
-MISSING=false
-for artifact in "$android_artifact" "$web_artifact"; do
-    if ! check_artifact "$artifact"; then
-        echo "ERROR: Missing artifact: $artifact" >&2
-        MISSING=true
-    else
-        echo "  ✓ $artifact"
-    fi
-done
-
-if [ "$MISSING" = true ]; then
-    echo "Aborting: one or more artifacts missing. Run CI build first." >&2
+if ! check_artifact "$android_artifact"; then
+    echo "ERROR: Missing artifact: $android_artifact" >&2
+    echo "Aborting: artifact missing. Run CI build first." >&2
     exit 1
+else
+    echo "  ✓ $android_artifact"
 fi
 
 echo ""
@@ -173,13 +159,6 @@ generate_manifest() {
     # Relative URL: VERSION/filename (resolved against manifest baseURL by client)
     local rel_url="${VERSION}/${filename}"
 
-    # Build optional min_native field (for web OTA compatibility check)
-    local min_native_field=""
-    if [ -n "$MIN_NATIVE" ]; then
-        min_native_field=",
-  \"min_native\": \"${MIN_NATIVE}\""
-    fi
-
     # Generate latest.json
     local manifest="$WORK_TMPDIR/${channel}-latest.json"
     cat > "$manifest" <<MANIFEST_EOF
@@ -188,7 +167,7 @@ generate_manifest() {
   "url": "${rel_url}",
   "hash": "${hash}",
   "size": ${size},
-  "released_at": "${RELEASED_AT}"${min_native_field}${extra_fields}
+  "released_at": "${RELEASED_AT}"${extra_fields}
 }
 MANIFEST_EOF
 
@@ -212,7 +191,6 @@ MANIFEST_EOF
 
 generate_manifest "android" "$android_artifact" ',
   "min_android": 26'
-generate_manifest "web" "$web_artifact"
 
 # --- iOS manifest (metadata only, no artifact) ---
 # Note: iOS clients only read ios/latest.json (no beta path awareness).
@@ -250,7 +228,7 @@ if [ "$DRY_RUN" = false ] && ! use_local; then
     for DIST_ID in "$CDN_ID_D0" "$CDN_ID_DL"; do
         aws cloudfront create-invalidation \
             --distribution-id "$DIST_ID" \
-            --paths "/kaitu/android/*" "/kaitu/web/*" "/kaitu/ios/*" \
+            --paths "/kaitu/android/*" "/kaitu/ios/*" \
             --no-cli-pager --output text > /dev/null
     done
     echo "CDN invalidated: d0.all7.cc + dl.kaitu.io"

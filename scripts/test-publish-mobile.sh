@@ -5,7 +5,7 @@
 #   2. Fails when S3 artifacts are missing
 #   3. Generates valid JSON manifests with required fields
 #   4. Uses relative URLs (not absolute) so manifests work with any CDN base
-#   5. Generates webapp manifest separately from Android
+#   5. Generates iOS manifest with appstore_url
 #   6. CI workflow has S3 upload steps targeting versioned directories
 #
 # Usage:
@@ -75,8 +75,6 @@ echo "--- Test 3: Android manifest generation ---"
 mkdir -p "$MOCK_S3/kaitu/android/0.5.0"
 echo "fake-apk-binary-content-for-hash-test" > "$MOCK_S3/kaitu/android/0.5.0/Kaitu-0.5.0.apk"
 
-mkdir -p "$MOCK_S3/kaitu/web/0.5.0"
-echo "fake-webapp-zip-content-for-hash-test" > "$MOCK_S3/kaitu/web/0.5.0/webapp.zip"
 
 if [ -x "$PUBLISH_SCRIPT" ]; then
     "$PUBLISH_SCRIPT" "0.5.0" --s3-base="$MOCK_S3/kaitu" --dry-run >/dev/null 2>&1 || true
@@ -126,56 +124,30 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Test 5: Generates valid webapp manifest
+# Test 5: iOS manifest generation
 # ---------------------------------------------------------------------------
-echo "--- Test 5: Web OTA manifest generation ---"
-WEB_MANIFEST="$MOCK_S3/kaitu/web/latest.json"
-if [ -f "$WEB_MANIFEST" ]; then
+echo "--- Test 5: iOS manifest generation ---"
+IOS_MANIFEST="$MOCK_S3/kaitu/ios/latest.json"
+if [ -f "$IOS_MANIFEST" ]; then
     python3 -c "
 import json, sys
-m = json.load(open('$WEB_MANIFEST'))
-required = ['version', 'url', 'hash', 'size', 'released_at']
+m = json.load(open('$IOS_MANIFEST'))
+required = ['version', 'appstore_url', 'released_at']
 missing = [k for k in required if k not in m]
 if missing:
     print(f'  Missing fields: {missing}', file=sys.stderr)
     sys.exit(1)
 sys.exit(0)
 "
-    test_result $? "web latest.json has all required fields"
+    test_result $? "ios latest.json has all required fields (version, appstore_url, released_at)"
 else
-    test_result 1 "web latest.json has all required fields"
+    test_result 1 "ios latest.json has all required fields (version, appstore_url, released_at)"
 fi
 
 # ---------------------------------------------------------------------------
-# Test 6: Web URL is also relative
+# Test 6: Hash field uses sha256: prefix
 # ---------------------------------------------------------------------------
-echo "--- Test 6: Web URL relative format ---"
-if [ -f "$WEB_MANIFEST" ]; then
-    python3 -c "
-import json, sys
-m = json.load(open('$WEB_MANIFEST'))
-url = m.get('url', '')
-if url.startswith('http://') or url.startswith('https://'):
-    print(f'  URL is absolute: {url}', file=sys.stderr)
-    sys.exit(1)
-if not url:
-    print('  URL is empty', file=sys.stderr)
-    sys.exit(1)
-# Expect pattern like: 0.5.0/webapp.zip
-if '0.5.0/' not in url:
-    print(f'  URL does not contain version directory: {url}', file=sys.stderr)
-    sys.exit(1)
-sys.exit(0)
-"
-    test_result $? "web url is relative (e.g. '0.5.0/webapp.zip')"
-else
-    test_result 1 "web url is relative (e.g. '0.5.0/webapp.zip')"
-fi
-
-# ---------------------------------------------------------------------------
-# Test 7: Hash field uses sha256: prefix
-# ---------------------------------------------------------------------------
-echo "--- Test 7: Hash format ---"
+echo "--- Test 6: Hash format ---"
 if [ -f "$ANDROID_MANIFEST" ]; then
     python3 -c "
 import json, sys
@@ -198,7 +170,7 @@ fi
 # ---------------------------------------------------------------------------
 # Test 8: Version in manifest matches requested version
 # ---------------------------------------------------------------------------
-echo "--- Test 8: Version consistency ---"
+echo "--- Test 7: Version consistency ---"
 if [ -f "$ANDROID_MANIFEST" ]; then
     python3 -c "
 import json, sys
@@ -216,7 +188,7 @@ fi
 # ---------------------------------------------------------------------------
 # Test 9: CI workflow has S3 upload steps targeting versioned directories
 # ---------------------------------------------------------------------------
-echo "--- Test 9: CI workflow S3 upload configuration ---"
+echo "--- Test 8: CI workflow S3 upload configuration ---"
 CI_WORKFLOW="$ROOT_DIR/.github/workflows/build-mobile.yml"
 if [ -f "$CI_WORKFLOW" ]; then
     python3 -c "
@@ -227,14 +199,10 @@ has_s3_upload = 'upload-release.sh' in content
 if not has_s3_upload:
     print('  CI workflow does not reference upload-release.sh', file=sys.stderr)
     sys.exit(1)
-# Check both android and web+ios paths exist
+# Check android upload path exists
 has_android = '--android' in content
-has_web = '--web' in content or '--all' in content
 if not has_android:
     print('  CI workflow missing --android upload step', file=sys.stderr)
-    sys.exit(1)
-if not has_web:
-    print('  CI workflow missing --web upload step', file=sys.stderr)
     sys.exit(1)
 sys.exit(0)
 "
@@ -246,7 +214,7 @@ fi
 # ---------------------------------------------------------------------------
 # Test 10: CI upload script writes to versioned S3 paths (not root)
 # ---------------------------------------------------------------------------
-echo "--- Test 10: CI upload uses versioned S3 paths ---"
+echo "--- Test 9: CI upload uses versioned S3 paths ---"
 UPLOAD_SCRIPT="$ROOT_DIR/scripts/ci/upload-release.sh"
 if [ -f "$UPLOAD_SCRIPT" ]; then
     python3 -c "
@@ -255,12 +223,8 @@ content = open('$UPLOAD_SCRIPT').read()
 # Verify the upload script uses versioned paths like /android/\${VERSION}/
 # and /web/\${VERSION}/ (not just root)
 has_android_versioned = 'android/\${VERSION}' in content or 'android/\$VERSION' in content
-has_web_versioned = 'web/\${VERSION}' in content or 'web/\$VERSION' in content
 if not has_android_versioned:
     print('  upload script missing versioned android path', file=sys.stderr)
-    sys.exit(1)
-if not has_web_versioned:
-    print('  upload script missing versioned web path', file=sys.stderr)
     sys.exit(1)
 sys.exit(0)
 "

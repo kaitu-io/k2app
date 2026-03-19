@@ -628,7 +628,7 @@ describe('capacitor-k2', () => {
       // Simulate K2Plugin emitting nativeUpdateAvailable (iOS App Store)
       const callback = getListenerCallback('nativeUpdateAvailable');
       expect(callback).toBeDefined();
-      callback!({ version: '1.1.0', appStoreUrl: 'https://apps.apple.com/app/id6759199298' });
+      callback!({ version: '1.1.0', appStoreUrl: 'https://apps.apple.com/app/id6448744655' });
 
       const updater = window._platform.updater!;
       expect(updater.isUpdateReady).toBe(true);
@@ -666,12 +666,12 @@ describe('capacitor-k2', () => {
       // Simulate nativeUpdateAvailable with App Store URL (iOS)
       const callback = getListenerCallback('nativeUpdateAvailable');
       expect(callback).toBeDefined();
-      callback!({ version: '1.1.0', appStoreUrl: 'https://apps.apple.com/app/id6759199298' });
+      callback!({ version: '1.1.0', appStoreUrl: 'https://apps.apple.com/app/id6448744655' });
 
       await window._platform.updater!.applyUpdateNow();
 
       expect(Browser.open).toHaveBeenCalledWith({
-        url: 'https://apps.apple.com/app/id6759199298',
+        url: 'https://apps.apple.com/app/id6448744655',
       });
     });
 

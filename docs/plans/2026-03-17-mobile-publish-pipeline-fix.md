@@ -191,7 +191,7 @@ DRY_RUN=false
 CHANNEL=""
 
 CDN_PRIMARY="https://d13jc1jqzlg4yt.cloudfront.net/kaitu"
-APPSTORE_URL="https://apps.apple.com/app/id6759199298"
+APPSTORE_URL="https://apps.apple.com/app/id6448744655"
 
 # Parse arguments
 shift || true
@@ -611,7 +611,7 @@ to:
           ./scripts/ci/notify-slack.sh deploy-success \
             --version "${VERSION}" \
             --platforms "iOS" \
-            --download-url "<https://apps.apple.com/app/id6759199298|App Store>"
+            --download-url "<https://apps.apple.com/app/id6448744655|App Store>"
         env:
           SLACK_WEBHOOK_RELEASE: ${{ secrets.SLACK_WEBHOOK_RELEASE }}
 ```
