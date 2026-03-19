@@ -1,9 +1,13 @@
 package center
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/wordgate/qtoolkit/chatwoot"
 )
@@ -121,4 +125,49 @@ func TestStripTransferMarker(t *testing.T) {
 	input := "我理解您的需求，正在为您转接人工客服，请稍等。[TRANSFER_HUMAN]"
 	result := strings.TrimSpace(strings.ReplaceAll(input, transferHumanMarker, ""))
 	assert.Equal(t, "我理解您的需求，正在为您转接人工客服，请稍等。", result)
+}
+
+func TestToggleConversationStatus_Success(t *testing.T) {
+	var receivedPath string
+	var receivedToken string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedPath = r.URL.Path
+		receivedToken = r.Header.Get("api_access_token")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	viper.Set("chatwoot.api_token", "test-token")
+	viper.Set("chatwoot.base_url", server.URL)
+	viper.Set("chatwoot.account_id", 42)
+	t.Cleanup(func() {
+		viper.Set("chatwoot.api_token", "")
+		viper.Set("chatwoot.base_url", "")
+		viper.Set("chatwoot.account_id", 0)
+	})
+
+	err := toggleConversationStatus(context.Background(), 123)
+	assert.NoError(t, err)
+	assert.Equal(t, "/api/v1/accounts/42/conversations/123/toggle_status", receivedPath)
+	assert.Equal(t, "test-token", receivedToken)
+}
+
+func TestToggleConversationStatus_ServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer server.Close()
+
+	viper.Set("chatwoot.api_token", "test-token")
+	viper.Set("chatwoot.base_url", server.URL)
+	viper.Set("chatwoot.account_id", 1)
+	t.Cleanup(func() {
+		viper.Set("chatwoot.api_token", "")
+		viper.Set("chatwoot.base_url", "")
+		viper.Set("chatwoot.account_id", 0)
+	})
+
+	err := toggleConversationStatus(context.Background(), 1)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "403")
 }
