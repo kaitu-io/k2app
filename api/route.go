@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/wordgate/qtoolkit/asynq"
+	"github.com/wordgate/qtoolkit/chatwoot"
 	"github.com/wordgate/qtoolkit/github/issue"
 	"github.com/wordgate/qtoolkit/log"
 	"github.com/wordgate/qtoolkit/util"
@@ -32,6 +33,11 @@ func SetupRouter() *gin.Engine {
 	})
 	// Webhook 相关路由
 	r.POST("/webhook/wordgate", log.MiddlewareRequestLog(true), MiddleRecovery(), api_wordgate_webhook)
+
+	// Chatwoot → FastGPT AI bridge
+	chatwootWebhook := r.Group("/webhook")
+	chatwootWebhook.Use(log.MiddlewareRequestLog(true), MiddleRecovery())
+	chatwoot.Mount(chatwootWebhook, "/chatwoot", handleChatwootEvent)
 
 	// 任务队列触发接口（公开接口，无需认证，供外部 crontab 调用）
 	r.GET("/cron/execute", log.MiddlewareRequestLog(true), MiddleRecovery(), api_execute_cron_tasks)
