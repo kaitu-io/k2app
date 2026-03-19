@@ -2,6 +2,7 @@ package center
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,6 +19,9 @@ import (
 const transferHumanMarker = "[TRANSFER_HUMAN]"
 
 var chatwootHTTPClient = &http.Client{Timeout: 10 * time.Second}
+
+//go:embed data/system_prompt.md
+var systemPrompt string
 
 // shouldProcessChatwootEvent checks all filter conditions.
 // Returns true only if the event should be forwarded to AI.
@@ -69,6 +73,7 @@ func handleChatwootEvent(ctx context.Context, event chatwoot.Event) {
 	}
 
 	opts := buildAskOpts(history, event)
+	opts = append([]filesearch.Option{filesearch.WithSystemPrompt(systemPrompt)}, opts...)
 	result, err := filesearch.Ask(ctx, "crm", event.Content, opts...)
 	if err != nil || strings.TrimSpace(result.Content) == "" {
 		log.Errorf(ctx, "filesearch failed: conversation=%d err=%v", event.ConversationID, err)

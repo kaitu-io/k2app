@@ -355,6 +355,8 @@ github.com/wordgate/qtoolkit/mail v1.5.11 h1:eM/ymiGd5nrOK+3rfTpoYJHeP6XTXe6ln0f
 github.com/wordgate/qtoolkit/mail v1.5.11/go.mod h1:1iR6fMarnXqkre6rv9tKKgd5vLf1P0+2TDz2pUXrNLQ=
 github.com/wordgate/qtoolkit/openai/filesearch v1.5.18 h1:sqLeF6bsjchuwK+k2AJFW8hnBSXjuzGcvxLecYWNGvI=
 github.com/wordgate/qtoolkit/openai/filesearch v1.5.18/go.mod h1:POURySlaXJOGYDRwVj49qUG/z64q+kSi2PYFw4x0aXg=
+github.com/wordgate/qtoolkit/openai/filesearch v1.5.21 h1:LKOzyT5buxkgWgywlMACj3bMx8Ii5/2VQ92jRDeg+AI=
+github.com/wordgate/qtoolkit/openai/filesearch v1.5.21/go.mod h1:POURySlaXJOGYDRwVj49qUG/z64q+kSi2PYFw4x0aXg=
 github.com/wordgate/qtoolkit/redis v1.5.11 h1:Vi+ZOPtVbuf2sYrNsiyWSwD4C0QpIv+mQYbxk2j+AJY=
 github.com/wordgate/qtoolkit/redis v1.5.11/go.mod h1:PUNTGugzNr6CQbhYISFEUCHVwuOQoH6f4U15DpzcV/k=
 github.com/wordgate/qtoolkit/slack v1.5.11 h1:hyp9BmV843767YWFSu/4XbgYyjCC5OtMn4JrOM0e5J8=
