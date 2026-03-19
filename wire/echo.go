@@ -98,6 +98,12 @@ func HandleEchoStream(stream *quic.Stream, br *bufio.Reader) {
 
 // isEchoUnsupported returns true if the error indicates the server doesn't
 // support echo (old server). Used for backward compatibility degradation.
+//
+// Deliberately broad (P3, not fixed): treats all non-timeout errors as "old
+// server" — including theoretical nonce mismatch. This is correct in practice:
+// QUIC encryption prevents data tampering, so the only realistic non-timeout
+// errors are stream reset / EOF from servers without echo handler. Narrowing
+// to explicit error types would add quic-go type coupling for zero real gain.
 func isEchoUnsupported(err error) bool {
 	// Old servers close the stream with "unknown stream type" or similar.
 	// A context.DeadlineExceeded means timeout (blocked path, not old server).

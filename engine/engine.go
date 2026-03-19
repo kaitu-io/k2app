@@ -878,6 +878,13 @@ func (e *Engine) ClearWireError() {
 
 // reRaceLoop waits for echo-fail signals and runs a transport re-race to
 // hot-swap the primary transport. Replaces recoveryProbe.
+//
+// Known TOCTOU (P2, not fixed): If Stop() fires between the ctx.Err() check
+// and ReplacePrimary, and tm.Close() wins the tm.mu race, the new Dialer is
+// orphaned in a defunct TransportManager. Bounded leak: QUIC idle timeout (30s)
+// reclaims it. Fix: add a WaitGroup so Stop() waits for this loop to exit
+// before calling tm.Close(). Not worth a standalone PR — fold into next
+// engine.go change.
 func (e *Engine) reRaceLoop(ctx context.Context) {
 	for {
 		select {
