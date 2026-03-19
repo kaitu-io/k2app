@@ -65,9 +65,14 @@ INVALIDATION_PATH="/kaitu/desktop/${VERSION}/*"
 
 upload_file() {
   local FILE="$1"
+  local OPTIONAL="${2:-}"
   if [ ! -f "$FILE" ]; then
-    echo "WARNING: $FILE not found, skipping" >&2
-    return 0
+    if [ "$OPTIONAL" = "--optional" ]; then
+      echo "  skip: $(basename "$FILE") (not found)"
+      return 0
+    fi
+    echo "ERROR: $FILE not found. Build may have failed." >&2
+    exit 1
   fi
   aws s3 cp "$FILE" "${S3_DEST}/$(basename "$FILE")"
 }
@@ -77,18 +82,18 @@ echo "=== Uploading ${PLATFORM} v${VERSION} to S3 ==="
 case "$PLATFORM" in
   windows)
     upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_x64.exe"
-    upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_x64.exe.sig"
+    upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_x64.exe.sig" --optional
     echo "Uploaded: Windows artifacts"
     ;;
   macos)
     upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_universal.pkg"
     upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_universal.app.tar.gz"
-    upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_universal.app.tar.gz.sig"
+    upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_universal.app.tar.gz.sig" --optional
     echo "Uploaded: macOS artifacts"
     ;;
   linux)
     upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_amd64.tar.gz"
-    upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_amd64.tar.gz.sig"
+    upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_amd64.tar.gz.sig" --optional
     upload_file "${RELEASE_DIR}/k2-linux-amd64"
     echo "Uploaded: Linux artifacts"
     ;;
