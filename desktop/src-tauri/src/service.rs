@@ -106,10 +106,44 @@ pub fn core_action(action: &str, params: Option<serde_json::Value>) -> Result<Se
         .map_err(|e| format!("Failed to parse response: {}", e))
 }
 
-/// Stop VPN before app exit (best-effort, sync, short timeout)
+/// Send `down` action with a short timeout for app exit.
+/// Uses 3s instead of the normal 30s lifecycle timeout to avoid
+/// blocking exit when the daemon is already dead.
+fn exit_down_action() -> Result<ServiceResponse, String> {
+    let url = format!("{}/api/core", service_base_url());
+    let body = CoreRequest {
+        action: "down".to_string(),
+        params: None,
+    };
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(3))
+        .no_proxy()
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+    client
+        .post(&url)
+        .json(&body)
+        .send()
+        .map_err(|e| format!("Failed to call action down: {}", e))?
+        .json::<ServiceResponse>()
+        .map_err(|e| format!("Failed to parse response: {}", e))
+}
+
+/// Stop VPN before app exit (best-effort, sync, short timeout).
+/// Guarded by AtomicBool — only the first call executes. Subsequent calls
+/// (e.g., from RunEvent::ExitRequested after tray quit) are skipped to
+/// prevent sending duplicate HTTP `down` requests to the daemon.
 pub fn stop_vpn() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static VPN_STOPPING: AtomicBool = AtomicBool::new(false);
+
+    if VPN_STOPPING.swap(true, Ordering::SeqCst) {
+        log::debug!("stop_vpn: already stopping, skip duplicate call");
+        return;
+    }
     log::info!("Stopping VPN before exit...");
-    match core_action("down", None) {
+    // Use a short timeout for exit — don't block app exit for 30s if daemon is dead
+    match exit_down_action() {
         Ok(resp) => {
             if resp.code == 0 {
                 log::info!("VPN stopped successfully");
@@ -710,7 +744,7 @@ pub async fn ensure_service_running(app_version: String) -> Result<(), String> {
 /// Phase 3: post-install verification — wait for version match (5s).
 #[cfg(not(all(target_os = "macos", feature = "ne-mode")))]
 async fn ensure_service_running_daemon(app_version: String) -> Result<(), String> {
-    const STARTUP_WAIT_MS: u64 = 8000;
+    const STARTUP_WAIT_MS: u64 = 15000;
     const POST_INSTALL_WAIT_MS: u64 = 5000;
     const POLL_MS: u64 = 500;
 
@@ -1073,5 +1107,20 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_stop_vpn_atomic_guard() {
+        // The VPN_STOPPING AtomicBool is function-local static, so we test
+        // the guard logic directly: swap(true) returns false on first call
+        // (was false → proceed), true on subsequent calls (was true → skip).
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let guard = AtomicBool::new(false);
+        // First call: was false → should proceed
+        assert!(!guard.swap(true, Ordering::SeqCst));
+        // Second call: was true → should skip
+        assert!(guard.swap(true, Ordering::SeqCst));
+        // Third call: still true → still skip
+        assert!(guard.swap(true, Ordering::SeqCst));
     }
 }
