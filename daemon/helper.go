@@ -12,10 +12,12 @@ import (
 // AndroidHelper manages ADB-based Android app installation.
 // It handles adb binary download, device detection, and APK installation.
 type AndroidHelper struct {
-	mu             deadlock.Mutex
-	adbPath        string       // path to cached adb binary
-	state          InstallState // current install progress
-	driverScanDone bool         // pnputil scan triggered once per daemon lifetime
+	mu              deadlock.Mutex
+	adbPath         string       // path to cached adb binary (empty if reusing existing server)
+	adbPort         int          // port of the adb server we're using (5037 or 5038)
+	weStartedServer bool         // true if we started the adb server (false = reusing existing)
+	state           InstallState // current install progress
+	driverScanDone  bool         // pnputil scan triggered once per daemon lifetime
 }
 
 // InstallState tracks the progress of an APK installation.
@@ -103,7 +105,13 @@ func (h *AndroidHelper) handleDetect(w http.ResponseWriter) {
 // devices are silently skipped. We supplement with DeviceSerialList
 // (host:devices, 2+ fields) to detect unauthorized devices.
 func (h *AndroidHelper) listDevices() []deviceInfo {
-	client, err := gadb.NewClientWith("localhost", adbServerPort)
+	h.mu.Lock()
+	port := h.adbPort
+	h.mu.Unlock()
+	if port == 0 {
+		return []deviceInfo{}
+	}
+	client, err := gadb.NewClientWith("localhost", port)
 	if err != nil {
 		slog.Warn("helper: gadb client failed", "error", err)
 		return []deviceInfo{}

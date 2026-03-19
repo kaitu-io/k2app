@@ -20,9 +20,13 @@ import (
 	"github.com/electricbubble/gadb"
 )
 
-// adbServerPort is the port used for our private adb server instance.
-// We use 5038 instead of the default 5037 to avoid conflicts with Android Studio.
-const adbServerPort = 5038
+// adbDefaultPort is the standard adb server port. We try to reuse an existing
+// server on this port first (e.g. Android Studio's) to avoid USB device conflicts.
+// Only if no server is running do we start our own.
+const adbDefaultPort = 5037
+
+// adbFallbackPort is used when the default port is occupied by a non-ADB process.
+const adbFallbackPort = 5038
 
 // androidEndpoints is the CDN fallback list for Android-related downloads.
 // Both tools/tools.json and latest.json are fetched from these endpoints in order.
@@ -72,27 +76,63 @@ func apkCacheDir() string {
 	return filepath.Join(cacheDir(), "android")
 }
 
-// prepareAdb ensures the adb binary is available and the server is running.
-// It downloads adb from CDN and starts on port 5038 to avoid conflicts with other adb instances.
+// prepareAdb ensures an adb server is available for device operations.
+// Strategy: reuse existing server on port 5037 first (avoids USB conflicts
+// with Android Studio), then download our own and start if none exists.
 func (h *AndroidHelper) prepareAdb() error {
 	h.mu.Lock()
-	if h.adbPath != "" {
+	if h.adbPort != 0 {
 		// Already prepared
 		h.mu.Unlock()
 		return nil
 	}
 	h.mu.Unlock()
 
-	// Fetch tools.json to find version and download URL
-	manifest, err := fetchToolsManifest()
-	if err != nil {
-		return fmt.Errorf("fetch tools manifest: %w", err)
+	// 1. Try reusing an existing adb server on the default port
+	if h.tryReuseExistingServer(adbDefaultPort) {
+		return nil
 	}
 
-	osKey := runtime.GOOS // "darwin" or "windows"
+	// 2. No existing server — download our own adb binary and start it
+	adbPath, err := h.downloadAdbBinary()
+	if err != nil {
+		return err
+	}
+
+	return h.startOwnAdbServer(adbPath)
+}
+
+// tryReuseExistingServer checks if a working adb server exists on the given port.
+func (h *AndroidHelper) tryReuseExistingServer(port int) bool {
+	client, err := gadb.NewClientWith("localhost", port)
+	if err != nil {
+		return false
+	}
+	// Verify it's a real adb server by requesting the server version
+	if _, err := client.ServerVersion(); err != nil {
+		return false
+	}
+
+	h.mu.Lock()
+	h.adbPort = port
+	h.weStartedServer = false
+	h.mu.Unlock()
+
+	slog.Info("helper: reusing existing adb server", "port", port)
+	return true
+}
+
+// downloadAdbBinary fetches the adb binary from CDN if not already cached.
+func (h *AndroidHelper) downloadAdbBinary() (string, error) {
+	manifest, err := fetchToolsManifest()
+	if err != nil {
+		return "", fmt.Errorf("fetch tools manifest: %w", err)
+	}
+
+	osKey := runtime.GOOS
 	entry, ok := manifest.ADB.Files[osKey]
 	if !ok {
-		return fmt.Errorf("no adb binary available for %s", osKey)
+		return "", fmt.Errorf("no adb binary available for %s", osKey)
 	}
 
 	adbDir := adbCacheDir(manifest.ADB.Version)
@@ -105,69 +145,80 @@ func (h *AndroidHelper) prepareAdb() error {
 	// Check if already cached
 	if _, err := os.Stat(adbPath); err == nil {
 		slog.Info("helper: adb already cached", "path", adbPath)
-		return h.startAdbServer(adbPath)
+		return adbPath, nil
 	}
 
 	// Download zip
 	slog.Info("helper: downloading adb tools", "version", manifest.ADB.Version, "os", osKey)
 	zipPath := filepath.Join(os.TempDir(), "k2-adb-"+entry.URL)
 	if err := downloadWithFallback("tools/"+entry.URL, zipPath, entry.Hash, entry.Size); err != nil {
-		return fmt.Errorf("download adb tools: %w", err)
+		return "", fmt.Errorf("download adb tools: %w", err)
 	}
 	defer os.Remove(zipPath)
 
-	// Extract needed files
 	if err := extractAdbFromZip(zipPath, adbDir); err != nil {
-		return fmt.Errorf("extract adb: %w", err)
+		return "", fmt.Errorf("extract adb: %w", err)
 	}
 
-	// Remove OS quarantine flags
 	removeQuarantine(adbDir)
 
-	// Make executable (macOS/Linux)
 	if runtime.GOOS != "windows" {
 		os.Chmod(adbPath, 0755)
 	}
 
-	return h.startAdbServer(adbPath)
+	return adbPath, nil
 }
 
-// startAdbServer starts the adb server on port 5038 and stores the path.
-func (h *AndroidHelper) startAdbServer(adbPath string) error {
-	port := strconv.Itoa(adbServerPort)
-	cmd := exec.Command(adbPath, "-P", port, "start-server")
+// startOwnAdbServer starts our own adb server on the default port (5037).
+// Falls back to 5038 if 5037 is occupied by a non-ADB process.
+func (h *AndroidHelper) startOwnAdbServer(adbPath string) error {
+	// Try default port first (no -P flag = 5037)
+	port := adbDefaultPort
+	cmd := exec.Command(adbPath, "start-server")
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 	if err := cmd.Run(); err != nil {
-		slog.Warn("helper: adb start-server failed", "error", err)
-		// Try kill-server then start again (stale server)
-		exec.Command(adbPath, "-P", port, "kill-server").Run()
-		if err := exec.Command(adbPath, "-P", port, "start-server").Run(); err != nil {
+		slog.Warn("helper: adb start-server on default port failed, trying fallback", "error", err)
+		// Fallback to 5038
+		port = adbFallbackPort
+		portStr := strconv.Itoa(port)
+		exec.Command(adbPath, "-P", portStr, "kill-server").Run()
+		if err := exec.Command(adbPath, "-P", portStr, "start-server").Run(); err != nil {
 			return fmt.Errorf("start adb server: %w", err)
 		}
 	}
 
 	h.mu.Lock()
 	h.adbPath = adbPath
+	h.adbPort = port
+	h.weStartedServer = true
 	h.mu.Unlock()
 
-	slog.Info("helper: adb server ready", "path", adbPath, "port", adbServerPort)
+	slog.Info("helper: adb server started", "path", adbPath, "port", port)
 	return nil
 }
 
-// stopAdbServer kills the adb server on port 5038 during daemon shutdown.
+// stopAdbServer kills the adb server during daemon shutdown, but only if we started it.
 func (h *AndroidHelper) stopAdbServer() {
 	h.mu.Lock()
 	adbPath := h.adbPath
+	port := h.adbPort
+	weStarted := h.weStartedServer
 	h.mu.Unlock()
-	if adbPath == "" {
+
+	if !weStarted || adbPath == "" {
 		return
 	}
-	cmd := exec.Command(adbPath, "-P", strconv.Itoa(adbServerPort), "kill-server")
+
+	args := []string{"kill-server"}
+	if port != adbDefaultPort {
+		args = []string{"-P", strconv.Itoa(port), "kill-server"}
+	}
+	cmd := exec.Command(adbPath, args...)
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 	_ = cmd.Run()
-	slog.Info("helper: adb server stopped", "port", adbServerPort)
+	slog.Info("helper: adb server stopped", "port", port)
 }
 
 // fetchToolsManifest fetches tools/tools.json from CDN with fallback.
@@ -508,7 +559,10 @@ func (h *AndroidHelper) doInstall(serial, apkURL string) {
 	defer os.Remove(apkPath)
 
 	// Find target device
-	client, err := gadb.NewClientWith("localhost", adbServerPort)
+	h.mu.Lock()
+	port := h.adbPort
+	h.mu.Unlock()
+	client, err := gadb.NewClientWith("localhost", port)
 	if err != nil {
 		h.setError(fmt.Sprintf("connect to adb: %s", err))
 		return
