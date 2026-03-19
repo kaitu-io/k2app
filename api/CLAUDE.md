@@ -11,8 +11,7 @@ cd api/cmd && go build -o kaitu-center .                   # Build binary
 cd api && docker-compose up -d                             # Start local MySQL + Redis
 cd api/cmd && ./kaitu-center migrate -c ../config.yml      # Run DB migrations
 cd api/cmd && ./kaitu-center start -f -c ../config.yml     # Start foreground (dev)
-make build-center                                          # Build for deploy
-make deploy-center                                         # Deploy
+make deploy-api                                            # Build + deploy
 ```
 
 ## AI Behavior Rules
@@ -41,8 +40,8 @@ Required:
 | `api_*.go` | HTTP handlers | `api_auth.go`, `api_user.go`, `api_tunnel.go` |
 | `api_admin_*.go` | Admin API handlers | `api_admin_orders.go`, `api_admin_cloud.go` |
 | `logic_*.go` | Business logic | `logic_auth.go`, `logic_order.go`, `logic_wallet.go` |
-| `handler_*.go` | Asynq task handlers | `handler_edm.go`, `handler_ssh_terminal.go` |
-| `worker_*.go` | Background workers + cron | `worker_cloud.go`, `worker_ech.go`, `worker_batch.go` |
+| `handler_*.go` | Asynq task handlers | `handler_edm.go` |
+| `worker_*.go` | Background workers + cron | `worker_cloud.go`, `worker_ech.go`, `worker_diagnosis.go` |
 | `slave_api*.go` | Internal slave node APIs | `slave_api.go`, `slave_api_node.go` |
 | `model*.go` | GORM data models | `model.go`, `model_wallet.go`, `model_push.go` |
 | `type.go` | Request/response types | Role bitmask, API DTOs |
@@ -158,7 +157,6 @@ Unified `Provider` interface for cloud VPS management:
 |--------|---------|
 | `worker_cloud.go` | Cloud instance sync, change-IP, create, delete |
 | `worker_ech.go` | ECH key rotation |
-| `worker_batch.go` | Batch script execution on nodes |
 | `worker_diagnosis.go` | Route diagnosis aggregation |
 | `worker_renewal_reminder.go` | Membership renewal reminders |
 | `worker_retailer_followup.go` | Retailer follow-up notifications |

@@ -109,7 +109,7 @@ docs/plans/          Architecture design docs
 - **VPN control boundary**: All VPN operations go through `window._k2.run(action, params)`. Never direct HTTP to `:1777` from webapp.
 - **Cloud API boundary**: All cloud API calls go through `cloudApi` / `k2api` in `src/services/`. Auth headers and token refresh handled automatically.
 - **Error display**: `response.message` is debug-only. Users see i18n text mapped from `response.code`. Never show raw backend messages.
-- **Version source of truth**: Root `package.json` — `version` is beta (0.4.0-beta.2), `releaseVersion` is stable (0.3.22). Tauri reads via `../../package.json` reference. k2 binary gets it via ldflags. Web `next.config.ts` exposes both as `NEXT_PUBLIC_BETA_VERSION` and `NEXT_PUBLIC_DESKTOP_VERSION`.
+- **Version source of truth**: Root `package.json` — `version` is beta (0.4.0), `releaseVersion` is stable (0.3.22). Tauri reads via `../../package.json` reference. k2 binary gets it via ldflags. Web `next.config.ts` exposes both as `NEXT_PUBLIC_BETA_VERSION` and `NEXT_PUBLIC_DESKTOP_VERSION`.
 - **k2 submodule**: Read-only. Built with `-tags nowebapp` (headless mode). Binary output to `desktop/src-tauri/binaries/`.
 - **i18n**: zh-CN primary, en-US secondary, plus ja, zh-TW, zh-HK, en-AU, en-GB. 15+ namespaces. New text goes to zh-CN first.
 - **MUI dark theme**: Material-UI 5 with custom theme tokens. No light mode.
@@ -126,10 +126,7 @@ docs/plans/          Architecture design docs
 - **Docker on Apple Silicon**: Always `--platform linux/amd64` for server images. Go binary needs `GOARCH=amd64`.
 - **macOS PKG install order**: Preinstall runs OLD binary, postinstall runs NEW. Always `launchctl unload` before overwriting plist.
 - **RegExp `/g` flag state persists**: Module-level global regex retains `lastIndex` between calls. Reset before each `.replace()`.
-- **netCoordinator 网络信号融合**: Engine 内部 `netCoordinator` 融合 sing-tun 接口变化（`SignalChanged`）+ 平台精确状态（iOS NWPathMonitor `SignalAvailable/Unavailable`、Android ConnectivityManager）。网络断开时停止无效重连和 probe，网络恢复时全面重连 + 重置 DNS counter + 清除 stale wire error。Desktop 只走 sing-tun `SignalChanged` 路径，行为不变。`NetEvent` 结构体携带 8 个原始字段（gomobile 兼容），为未来精细化处理预留空间。
-- **DNS 失败不是 wire 错误**: `dnsHandler.recordDNSFailure()` 不调用 `ReportWireError`。DNS 失败是症状（本地网络断、服务端 DNS 挂），不是 wire 传输层诊断。只有 proxy dial 失败和 recovery probe 失败才报告 wire error。
-- **三方归责 (three-party blame)**: Error 分三类 — `client`（本地问题）、`server`（k2s 不可达）、`target`（目标站不可达）。k2s 回复了 StreamError 说明 wire 是通的，错误是目标站的（DNS 解析失败、连接拒绝、IP 被封）。`CategoryTarget` 不触发 `ReportWireError`，不影响隧道健康状态。`tunnel.go` 的 `isProxyLayerError()` 在调用侧过滤，用 `IsProxyLayer()` 接口而非类型枚举。Auth/payment 错误走 `ErrStreamRejected`（连接级拒绝），不走 `StreamError`。
-- **EngineConfig.Debug dual log output**: `appext.EngineConfig.Debug = true` enables `io.MultiWriter(file, stderr)` so Go engine logs appear in Xcode console / logcat. Native side sets via `#if DEBUG` (Swift) / `BuildConfig.DEBUG` (Kotlin). Release builds default false.
+- **k2 engine internals**: See `k2/CLAUDE.md` and `k2/engine/CLAUDE.md` for netCoordinator, DNS handling, error categories, and debug logging.
 - **K2Plugin local sync**: `file:` plugins are copied (not symlinked) to `node_modules/`. Makefile `dev-ios`/`dev-android`/`build-mobile-*` targets auto-run `rm -rf node_modules/k2-plugin && yarn install --force` before `cap sync`.
 - **iOS App Group**: `group.io.kaitu` — shared container for App process + NE process logs. Both `K2Plugin.swift` and `PacketTunnelProvider.swift` use `kAppGroup = "group.io.kaitu"`.
 - **Log rotation (unified)**: All platforms: 20MB/3 backups/7 days/gzip. Go lumberjack (`config.SetupLogging`), Tauri plugin-log (20MB/KeepOne), iOS/Android NativeLogger (20MB truncate-to-0). Upload modules are read-only — never truncate source files.
@@ -153,7 +150,7 @@ docs/plans/          Architecture design docs
 - API: Go, Gin, GORM, MySQL, Redis, Asynq
 - Mobile: Capacitor 6, gomobile bind (K2Plugin Swift/Kotlin)
 - Package: yarn workspaces (`webapp`, `desktop`, `mobile`); `web` has independent yarn.lock; `tools/kaitu-ops-mcp` has independent npm
-- CI: GitHub Actions (`ci.yml`, `release-desktop.yml`, `build-mobile.yml`, `release-openwrt.yml`)
+- CI: GitHub Actions (`ci.yml`, `release-desktop.yml`, `build-mobile.yml`, `release-openwrt.yml`, `publish-antiblock.yml`, `release-k2s.yml`)
 - Ops MCP: Node.js 22+, TypeScript (NodeNext), `@modelcontextprotocol/sdk`, `ssh2`, `smol-toml`
 
 ## Domain Vocabulary
@@ -214,9 +211,9 @@ docs/plans/
   2026-03-04-onboarding-guide-design.md   Onboarding guide
   2026-03-05-k2-router-platform-design.md Router platform: rule engine, k2subs, DNS, build trim
   2026-03-05-self-hosted-design.md        Self-hosted tunnel support
-  2026-03-06-webapp-architecture-refactor.md  VPN state machine + connection store refactoring
   2026-03-06-usage-analytics-design.md    Usage analytics design
   2026-03-06-usage-analytics-impl.md      Usage analytics implementation plan
+  2026-03-06-webapp-architecture-refactor.md  VPN state machine + connection store refactoring
   2026-03-07-macos-layered-testing-design.md  macOS layered testing
   2026-03-07-windows-quality-assurance-design.md  Windows QA design
   2026-03-07-windows-quality-assurance-impl.md    Windows QA implementation
@@ -224,9 +221,23 @@ docs/plans/
   2026-03-09-viewport-scaling-fix.md      Viewport CSS zoom fix
   2026-03-11-windows-build-on-macos.md    Windows cross-build from macOS (cargo-xwin + osslsigncode)
   2026-03-12-ios-app-store-submission.md  iOS App Store submission
-  2026-03-12-ios-compliance-submission.md  iOS compliance resubmission
-  2026-03-12-k2-pre-production-bugfix.md  k2 pre-production bugfix
   2026-03-13-android-adb-install-helper.md  Android ADB install helper
   2026-03-13-android-adb-verification.md  Android ADB verification
   2026-03-13-beta-channel-subscription.md Beta channel subscription
+  2026-03-13-beta-channel-subscription-impl.md  Beta channel subscription implementation
+  2026-03-13-desktop-artifact-naming.md   Desktop artifact naming convention
+  2026-03-13-diag-logging-system.md       Diagnostic logging system
+  2026-03-13-onboarding-guide-mui-rewrite.md  Onboarding guide MUI rewrite
+  2026-03-13-onboarding-guide-overhaul.md Onboarding guide overhaul
+  2026-03-14-wire-probe-handshake-only.md Wire probe handshake-only
+  2026-03-15-log-infrastructure-unification.md  Log infrastructure unification
+  2026-03-17-daemon-hang-dns-recovery.md  Daemon hang DNS recovery
+  2026-03-17-mobile-publish-pipeline-fix.md  Mobile publish pipeline fix
+  2026-03-17-netcoordinator-dns-recovery.md  netCoordinator DNS recovery
+  2026-03-17-quic-destroy-deadlock-fix.md QUIC destroy deadlock fix
+  2026-03-17-webapp-ota-min-native.md     Webapp OTA minimum native version
+  2026-03-18-appext-netevent-gomobile-fix.md  appext NetEvent gomobile fix
+  2026-03-18-ios-ne-memory-diagnostics.md iOS NE memory diagnostics
+  2026-03-18-linux-tgz-updater.md         Linux tgz updater design
+  2026-03-18-linux-tgz-updater-impl.md    Linux tgz updater implementation
 ```
