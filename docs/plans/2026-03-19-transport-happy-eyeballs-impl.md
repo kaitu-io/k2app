@@ -293,7 +293,12 @@ func HandleEchoStream(stream *quic.Stream) {
 }
 ```
 
-Note: The exact `stream` type (value vs pointer) will need to match quic-go's API. The implementation may need `quic.Stream` interface directly rather than `*quic.Stream`. Adjust pointer/value receivers during implementation based on actual quic-go types.
+**quic.Stream type note**: In apernet/quic-go, `quic.Stream` is an interface (not a struct). `OpenStreamSync` returns `quic.Stream` (interface value). `EchoProbe` should pass `stream` (not `&stream`) to `WriteStreamHeader` and `io.ReadFull` — both accept interfaces directly. `HandleEchoStream` receives `quic.Stream` (not `*quic.Stream`) and calls methods directly on it. The existing `handleStream` in `quic.go` passes `*quic.Stream` but the pattern should be adapted to pass the interface value. Fix these during implementation:
+- `WriteStreamHeader(stream, ...)` not `WriteStreamHeader(&stream, ...)`
+- `io.ReadFull(stream, resp[:])` not `io.ReadFull(&stream, resp[:])`
+- `HandleEchoStream(stream quic.Stream)` not `HandleEchoStream(stream *quic.Stream)`
+
+**Test helper note**: Use existing `setupQUICPair(t)` from `wire/quic_test.go:151` which returns `(*QUICClient, *QUICServer, func())`. For echo tests, the server's `handleStream` dispatches echo after Task 3. For Task 2 tests (before server support), use raw QUIC listener + manual echo goroutine as shown.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -985,6 +990,8 @@ Add to Engine struct:
 ```go
 type Engine struct {
 	// ... existing fields ...
+	wireCfg      wire.Config          // stored at Start() for re-race
+	directDialer wire.DirectDialer    // stored at Start() for re-race
 	reRaceChan   chan struct{}
 	reRaceCancel context.CancelFunc
 }
@@ -1001,24 +1008,24 @@ func (e *Engine) reRaceLoop(ctx context.Context) {
 		case <-e.reRaceChan:
 		}
 
-		// Read current state under lock.
+		// Read current state under lock. wireCfg and directDialer are stored
+		// in Engine during Start() to avoid re-parsing URL.
 		e.mu.Lock()
 		if e.state != StateConnected {
 			e.mu.Unlock()
 			continue
 		}
 		tm := e.tm
-		client := e.client
-		dd := e.directDialer // if stored
+		wireCfg := e.wireCfg
+		dd := e.directDialer
 		e.mu.Unlock()
 
-		if tm == nil || client == nil {
+		if tm == nil {
 			continue
 		}
 
 		slog.Warn("DIAG: transport-rerace", "reason", "echo-consecutive-fail", "previousTransport", tm.PrimaryType())
 
-		wireCfg, _ := wire.ParseURL(client.Server)
 		raceCtx, raceCancel := context.WithTimeout(ctx, 15*time.Second)
 		result, err := wire.RaceTransport(raceCtx, wireCfg, wireCfg.DialAddr, dd)
 		raceCancel()
@@ -1058,7 +1065,6 @@ type healthMonitor struct {
 	// ... existing fields ...
 	echoFails   atomic.Int32
 	reRaceChan  chan struct{} // non-nil: engine's re-race channel
-	primaryFunc func() Dialer // returns current primary dialer
 }
 ```
 
@@ -1076,7 +1082,8 @@ func (hm *healthMonitor) echoLoop(ctx context.Context) {
 		case <-ticker.C:
 		}
 
-		primary := hm.primaryFunc()
+		// healthMonitor already holds tm reference — use it directly.
+		primary := hm.tm.Primary()
 		if primary == nil {
 			continue
 		}
@@ -1149,18 +1156,13 @@ Replace recoveryProbe creation with reRaceLoop + echoLoop:
 	e.reRaceCancel = reRaceCancel
 	safego.Go(func() { e.reRaceLoop(reRaceCtx) })
 
+	// Store wireCfg + directDialer for re-race (avoids re-parsing URL).
+	e.wireCfg = wireCfg
+	e.directDialer = cfg.DirectDialer
+
 	// Start health monitor with echo loop.
 	hm := newHealthMonitor(tm, tunnel, cfg.HealthCallback, func() { e.onHealthCritical() }, time.Now())
 	hm.reRaceChan = e.reRaceChan
-	hm.primaryFunc = func() wire.Dialer {
-		e.mu.Lock()
-		t := e.tm
-		e.mu.Unlock()
-		if t == nil {
-			return nil
-		}
-		return t.Primary()
-	}
 	hm.start() // starts sample loop + echoLoop
 	e.health = hm
 ```
