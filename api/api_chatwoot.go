@@ -10,8 +10,8 @@ import (
 
 	"github.com/spf13/viper"
 	"github.com/wordgate/qtoolkit/chatwoot"
-	"github.com/wordgate/qtoolkit/fastgpt"
 	"github.com/wordgate/qtoolkit/log"
+	"github.com/wordgate/qtoolkit/openai/filesearch"
 	"github.com/wordgate/qtoolkit/slack"
 )
 
@@ -20,7 +20,7 @@ const transferHumanMarker = "[TRANSFER_HUMAN]"
 var chatwootHTTPClient = &http.Client{Timeout: 10 * time.Second}
 
 // shouldProcessChatwootEvent checks all filter conditions.
-// Returns true only if the event should be forwarded to FastGPT.
+// Returns true only if the event should be forwarded to AI.
 func shouldProcessChatwootEvent(event chatwoot.Event) bool {
 	if event.EventType != "message_created" {
 		return false
@@ -52,18 +52,27 @@ func handleChatwootEvent(ctx context.Context, event chatwoot.Event) {
 	log.Infof(ctx, "conversation=%d sender=%s content=%q",
 		event.ConversationID, event.Sender.Name, truncateString(event.Content, 100))
 
-	chatID := fmt.Sprintf("cw-%d", event.ConversationID)
-	parts := buildFastGPTParts(event)
+	// Wait 1s for Chatwoot to persist the current message before fetching history
+	time.Sleep(1 * time.Second)
 
-	result, err := fastgpt.Chat(ctx, chatID, parts...)
+	// Fetch conversation history from Chatwoot (source of truth)
+	history, err := chatwoot.GetMessages(ctx, event.ConversationID, 10)
 	if err != nil {
-		log.Errorf(ctx, "fastgpt error: conversation=%d err=%v", event.ConversationID, err)
+		log.Warnf(ctx, "failed to get history: conversation=%d err=%v", event.ConversationID, err)
+		// Degrade to single-turn: no history, just current question
+		history = nil
+	}
+
+	opts := buildAskOpts(history, event)
+	result, err := filesearch.Ask(ctx, event.Content, opts...)
+	if err != nil {
+		log.Errorf(ctx, "filesearch error: conversation=%d err=%v", event.ConversationID, err)
 		chatwoot.Reply(ctx, event.ConversationID, "抱歉，系统暂时无法处理您的消息，请稍后再试。")
 		return
 	}
 
 	if strings.TrimSpace(result.Content) == "" {
-		log.Warnf(ctx, "fastgpt returned empty content: conversation=%d", event.ConversationID)
+		log.Warnf(ctx, "filesearch returned empty content: conversation=%d", event.ConversationID)
 		chatwoot.Reply(ctx, event.ConversationID, "抱歉，系统暂时无法处理您的消息，请稍后再试。")
 		return
 	}
@@ -78,28 +87,34 @@ func handleChatwootEvent(ctx context.Context, event chatwoot.Event) {
 	}
 }
 
-// buildFastGPTParts converts a Chatwoot event into FastGPT multimodal parts.
-func buildFastGPTParts(event chatwoot.Event) []fastgpt.Part {
-	var parts []fastgpt.Part
+// buildAskOpts converts Chatwoot history + current event into filesearch options.
+// History from GetMessages is chronological and includes the current message.
+// Images in history are passed via WithHistory (filesearch.Message.Images).
+// Images in the current event are passed via WithImage (detail:low is automatic).
+func buildAskOpts(history []chatwoot.Message, event chatwoot.Event) []filesearch.Option {
+	var opts []filesearch.Option
 
-	if event.Content != "" {
-		parts = append(parts, fastgpt.Text(event.Content))
+	// Convert chatwoot history to filesearch messages
+	if len(history) > 0 {
+		fsHistory := make([]filesearch.Message, len(history))
+		for i, m := range history {
+			fsHistory[i] = filesearch.Message{
+				Role:    m.Role,
+				Content: m.Content,
+				Images:  m.Images,
+			}
+		}
+		opts = append(opts, filesearch.WithHistory(fsHistory))
 	}
 
+	// Current message image attachments
 	for _, att := range event.Attachments {
-		switch att.FileType {
-		case "image":
-			parts = append(parts, fastgpt.ImageURL(att.DataURL))
-		case "file":
-			parts = append(parts, fastgpt.FileURL("attachment", att.DataURL))
+		if att.FileType == "image" {
+			opts = append(opts, filesearch.WithImage(att.DataURL))
 		}
 	}
 
-	if len(parts) == 0 {
-		parts = append(parts, fastgpt.Text("[用户发送了无法识别的内容]"))
-	}
-
-	return parts
+	return opts
 }
 
 // handleTransferHuman handles the human handoff flow:

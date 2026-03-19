@@ -46,55 +46,61 @@ func TestShouldProcessEvent_Filters(t *testing.T) {
 	}
 }
 
-func TestBuildFastGPTParts_TextOnly(t *testing.T) {
+func TestBuildAskOpts_NoHistory(t *testing.T) {
 	event := chatwoot.Event{Content: "hello"}
-	parts := buildFastGPTParts(event)
-	assert.Len(t, parts, 1)
+	opts := buildAskOpts(nil, event)
+	assert.Len(t, opts, 0)
 }
 
-func TestBuildFastGPTParts_WithImage(t *testing.T) {
+func TestBuildAskOpts_WithHistory(t *testing.T) {
+	history := []chatwoot.Message{
+		{Role: "user", Content: "hi"},
+		{Role: "assistant", Content: "hello!"},
+		{Role: "user", Content: "how to install?"},
+	}
+	event := chatwoot.Event{Content: "how to install?"}
+	opts := buildAskOpts(history, event)
+	assert.Len(t, opts, 1) // WithHistory only
+}
+
+func TestBuildAskOpts_WithImageAttachment(t *testing.T) {
 	event := chatwoot.Event{
-		Content: "check this",
+		Content: "what is this",
 		Attachments: []chatwoot.Attachment{
 			{FileType: "image", DataURL: "https://example.com/img.png"},
 		},
 	}
-	parts := buildFastGPTParts(event)
-	assert.Len(t, parts, 2)
+	opts := buildAskOpts(nil, event)
+	assert.Len(t, opts, 1) // WithImage only
 }
 
-func TestBuildFastGPTParts_WithFile(t *testing.T) {
+func TestBuildAskOpts_HistoryAndImage(t *testing.T) {
+	history := []chatwoot.Message{
+		{Role: "user", Content: "hi"},
+		{Role: "assistant", Content: "hello!"},
+	}
 	event := chatwoot.Event{
-		Content: "see attachment",
+		Content: "check this",
 		Attachments: []chatwoot.Attachment{
-			{FileType: "file", DataURL: "https://example.com/doc.pdf"},
+			{FileType: "image", DataURL: "https://example.com/img.png"},
+			{FileType: "image", DataURL: "https://example.com/img2.png"},
 		},
 	}
-	parts := buildFastGPTParts(event)
-	assert.Len(t, parts, 2)
+	opts := buildAskOpts(history, event)
+	assert.Len(t, opts, 3) // WithHistory + 2x WithImage
 }
 
-func TestBuildFastGPTParts_IgnoresAudioVideo(t *testing.T) {
+func TestBuildAskOpts_IgnoresNonImageAttachments(t *testing.T) {
 	event := chatwoot.Event{
 		Content: "voice msg",
 		Attachments: []chatwoot.Attachment{
 			{FileType: "audio", DataURL: "https://example.com/audio.mp3"},
 			{FileType: "video", DataURL: "https://example.com/video.mp4"},
+			{FileType: "file", DataURL: "https://example.com/doc.pdf"},
 		},
 	}
-	parts := buildFastGPTParts(event)
-	assert.Len(t, parts, 1)
-}
-
-func TestBuildFastGPTParts_EmptyContentWithUnsupportedAttachment(t *testing.T) {
-	event := chatwoot.Event{
-		Content: "",
-		Attachments: []chatwoot.Attachment{
-			{FileType: "audio", DataURL: "https://example.com/audio.mp3"},
-		},
-	}
-	parts := buildFastGPTParts(event)
-	assert.Len(t, parts, 1)
+	opts := buildAskOpts(nil, event)
+	assert.Len(t, opts, 0) // no image attachments
 }
 
 // Handoff marker detection tests

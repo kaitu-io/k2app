@@ -25,12 +25,12 @@ require (
 	github.com/wordgate/qtoolkit/ai v1.5.11
 	github.com/wordgate/qtoolkit/asynq v1.5.11
 	github.com/wordgate/qtoolkit/aws/ses v1.5.11
-	github.com/wordgate/qtoolkit/chatwoot v1.5.14
+	github.com/wordgate/qtoolkit/chatwoot v1.5.16
 	github.com/wordgate/qtoolkit/db v1.5.11
-	github.com/wordgate/qtoolkit/fastgpt v1.5.14
 	github.com/wordgate/qtoolkit/github/issue v1.5.11
 	github.com/wordgate/qtoolkit/log v1.5.11
 	github.com/wordgate/qtoolkit/mail v1.5.11
+	github.com/wordgate/qtoolkit/openai/filesearch v1.5.15
 	github.com/wordgate/qtoolkit/redis v1.5.11
 	github.com/wordgate/qtoolkit/slack v1.5.11
 	github.com/wordgate/qtoolkit/unred v1.5.11
