@@ -13,11 +13,16 @@ import (
 )
 
 func TestShouldProcessEvent_Filters(t *testing.T) {
+	// Set ai_inbox_id for inbox filter tests
+	viper.Set("chatwoot.ai_inbox_id", 5)
+	t.Cleanup(func() { viper.Set("chatwoot.ai_inbox_id", 0) })
+
 	base := chatwoot.Event{
 		EventType:      "message_created",
 		MessageType:    "incoming",
 		Content:        "hello",
 		ConversationID: 1,
+		InboxID:        5,
 		Sender:         chatwoot.Sender{Type: "contact", Name: "Test"},
 		Conversation:   chatwoot.Conversation{Status: "pending"},
 	}
@@ -35,6 +40,8 @@ func TestShouldProcessEvent_Filters(t *testing.T) {
 		{"resolved status", func(e *chatwoot.Event) { e.Conversation.Status = "resolved" }, false},
 		{"empty content", func(e *chatwoot.Event) { e.Content = "" }, false},
 		{"whitespace content", func(e *chatwoot.Event) { e.Content = "  \n  " }, false},
+		{"wrong inbox", func(e *chatwoot.Event) { e.InboxID = 99 }, false},
+		{"no inbox filter", func(e *chatwoot.Event) { viper.Set("chatwoot.ai_inbox_id", 0); e.InboxID = 999 }, true},
 	}
 
 	for _, tt := range tests {

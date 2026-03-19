@@ -37,6 +37,10 @@ func shouldProcessChatwootEvent(event chatwoot.Event) bool {
 	if strings.TrimSpace(event.Content) == "" {
 		return false
 	}
+	// Only process messages from the configured AI inbox (0 = no filter)
+	if inboxID := viper.GetInt("chatwoot.ai_inbox_id"); inboxID > 0 && event.InboxID != inboxID {
+		return false
+	}
 	return true
 }
 
