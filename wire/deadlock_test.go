@@ -164,7 +164,7 @@ func TestDeadlock_TransportManagerCloseMuFree(t *testing.T) {
 	qc := &QUICClient{}
 	tc := &TCPWSClient{}
 	tm.mu.Lock()
-	tm.quic = qc
+	tm.primary = qc
 	tm.tcpws = tc
 	tm.mu.Unlock()
 

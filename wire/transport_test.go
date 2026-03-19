@@ -75,7 +75,7 @@ func TestTransportManager_DialTCP_QUICPreferred(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetQUIC(quic)
+	tm.SetPrimary(quic, "quic-hop")
 	tm.SetTCPWS(tcpws)
 
 	conn, err := tm.DialTCP(context.Background(), "8.8.8.8:53", nil)
@@ -106,7 +106,7 @@ func TestTransportManager_DialTCP_FallbackToTCPWS(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetQUIC(quic)
+	tm.SetPrimary(quic, "quic-hop")
 	tm.SetTCPWS(tcpws)
 
 	conn, err := tm.DialTCP(context.Background(), "8.8.8.8:53", nil)
@@ -122,7 +122,7 @@ func TestTransportManager_DialTCP_FallbackToTCPWS(t *testing.T) {
 
 func TestTransportManager_DialTCP_BothDown(t *testing.T) {
 	tm := NewTransportManager()
-	tm.SetQUIC(&mockTransport{available: false})
+	tm.SetPrimary(&mockTransport{available: false}, "quic-hop")
 	tm.SetTCPWS(&mockTransport{available: false})
 
 	_, err := tm.DialTCP(context.Background(), "8.8.8.8:53", nil)
@@ -159,7 +159,7 @@ func TestTransportManager_DialTCP_QUICFailsFallback(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetQUIC(quic)
+	tm.SetPrimary(quic, "quic-hop")
 	tm.SetTCPWS(tcpws)
 
 	conn, err := tm.DialTCP(context.Background(), "8.8.8.8:53", nil)
@@ -178,7 +178,7 @@ func TestTransportManager_Close(t *testing.T) {
 	tcpws := &mockTransport{available: true}
 
 	tm := NewTransportManager()
-	tm.SetQUIC(quic)
+	tm.SetPrimary(quic, "quic-hop")
 	tm.SetTCPWS(tcpws)
 
 	err := tm.Close()
@@ -237,7 +237,7 @@ func TestTransportManager_DialUDP_BothDown(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetQUIC(quic)
+	tm.SetPrimary(quic, "quic-hop")
 	tm.SetTCPWS(tcpws)
 
 	_, err := tm.DialUDP(context.Background(), "8.8.8.8:53")
@@ -279,7 +279,7 @@ func TestTransportManager_ResetConnections(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tm := NewTransportManager()
 			if tt.quic != nil {
-				tm.SetQUIC(tt.quic)
+				tm.SetPrimary(tt.quic, "quic-hop")
 			}
 			if tt.tcpws != nil {
 				tm.SetTCPWS(tt.tcpws)
@@ -305,7 +305,7 @@ func TestResetConnections_ClearsPortHopAttempts(t *testing.T) {
 	client.portHopAttempts.Store(3) // exhausted
 
 	tm := NewTransportManager()
-	tm.SetQUIC(client)
+	tm.SetPrimary(client, "quic-hop")
 
 	tm.ResetConnections()
 
@@ -351,7 +351,7 @@ func TestTransportManager_FallbackSkipsQUIC(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetQUIC(quic)
+	tm.SetPrimary(quic, "quic-hop")
 	tm.SetTCPWS(tcpws)
 	tm.SetFallbackActive(true)
 
@@ -384,7 +384,7 @@ func TestTransportManager_QUICFailNoFallback(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetQUIC(quic)
+	tm.SetPrimary(quic, "quic-hop")
 	tm.SetTCPWS(tcpws)
 
 	// Multiple QUIC failures — should NOT auto-activate fallback.
@@ -416,7 +416,7 @@ func TestTransportManager_ConsecConnFailsFallback(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetQUIC(qc)
+	tm.SetPrimary(qc, "quic-hop")
 	tm.SetTCPWS(tcpws)
 
 	// Below threshold: no fallback.
@@ -461,7 +461,7 @@ func TestTransportManager_ConsecConnFailsReset(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetQUIC(qc)
+	tm.SetPrimary(qc, "quic-hop")
 	tm.SetTCPWS(tcpws)
 
 	// 2 failures, then recordQuicSuccess resets counter.
@@ -520,7 +520,7 @@ func TestTransportManager_Handshake_BothFail(t *testing.T) {
 	tc.closed = true // forces connect() to return ErrNotConnected
 
 	tm := NewTransportManager()
-	tm.SetQUIC(qc)
+	tm.SetPrimary(qc, "quic-hop")
 	tm.SetTCPWS(tc)
 
 	err := tm.Handshake(context.Background())
@@ -542,7 +542,7 @@ func TestTransportManager_Handshake_FallbackSkipsQUIC(t *testing.T) {
 	tc.closed = true // TCP-WS will fail, proving it was attempted
 
 	tm := NewTransportManager()
-	tm.SetQUIC(qc)
+	tm.SetPrimary(qc, "quic-hop")
 	tm.SetTCPWS(tc)
 	tm.SetFallbackActive(true)
 
@@ -581,7 +581,7 @@ func TestTransportManager_Handshake_ConsecFailsFallback(t *testing.T) {
 	tc.closed = true // TCP-WS also fails, but we only care about fallbackActive
 
 	tm := NewTransportManager()
-	tm.SetQUIC(qc)
+	tm.SetPrimary(qc, "quic-hop")
 	tm.SetTCPWS(tc)
 
 	err := tm.Handshake(context.Background())

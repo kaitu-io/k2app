@@ -26,7 +26,7 @@ func TestContract_PoorSignal_TCPHealthGate(t *testing.T) {
 	qc.RecordTCPSuccess() // marks TCP as recently healthy
 
 	tm := wire.NewTransportManager()
-	tm.SetQUIC(qc)
+	tm.SetPrimary(qc, "quic-hop")
 
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
 
@@ -120,7 +120,7 @@ func TestContract_PoorSignal_TCPHealthGate_Timing(t *testing.T) {
 	// Do NOT call RecordTCPSuccess — lastTCPSuccessAt stays 0.
 
 	tm := wire.NewTransportManager()
-	tm.SetQUIC(qc)
+	tm.SetPrimary(qc, "quic-hop")
 
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
 

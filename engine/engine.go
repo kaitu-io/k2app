@@ -170,11 +170,11 @@ func (e *Engine) Start(cfg Config) error {
 	tm := wire.NewTransportManager()
 	switch wireCfg.Transport {
 	case "quic":
-		tm.SetQUIC(quicClient)
+		tm.SetPrimary(quicClient, "quic-hop")
 	case "tcpws":
 		tm.SetTCPWS(tcpwsClient)
 	default:
-		tm.SetQUIC(quicClient)
+		tm.SetPrimary(quicClient, "quic-hop")
 		tm.SetTCPWS(tcpwsClient)
 	}
 	// Start background QUIC recovery probe (active during TCP-WS fallback).

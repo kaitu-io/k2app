@@ -63,14 +63,15 @@ const (
 	quicConnFailThreshold int32 = 3
 )
 
-// TransportManager manages QUIC and TCP-WS transports.
+// TransportManager manages primary and TCP-WS transports.
 // QUIC is strongly preferred; TCP-WS is used as last-resort fallback only
 // when QUIC is genuinely unavailable (UDP blocked). ISPs rarely block UDP,
 // so even with 40%+ packet loss, QUIC with port hopping outperforms TCP-WS.
 type TransportManager struct {
-	mu    deadlock.RWMutex
-	quic  Dialer
-	tcpws Dialer
+	mu          deadlock.RWMutex
+	primary     Dialer // was: quic — the preferred transport (QUIC-443, QUIC-hop, or tcpws)
+	tcpws       Dialer
+	primaryType string // "quic-443", "quic-hop", "tcpws"
 
 	// Fallback state: tracks QUIC→TCP-WS transport-level fallback.
 	// Set when consecutive QUIC handshake failures reach quicConnFailThreshold.
@@ -89,11 +90,51 @@ func NewTransportManager() *TransportManager {
 	return &TransportManager{}
 }
 
-// SetQUIC sets the QUIC transport.
-func (tm *TransportManager) SetQUIC(d Dialer) {
+// SetPrimary sets the primary transport with its type label.
+func (tm *TransportManager) SetPrimary(d Dialer, transportType string) {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
-	tm.quic = d
+	tm.primary = d
+	tm.primaryType = transportType
+}
+
+// Primary returns the current primary transport.
+func (tm *TransportManager) Primary() Dialer {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	return tm.primary
+}
+
+// PrimaryType returns the type label of the current primary transport.
+func (tm *TransportManager) PrimaryType() string {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	return tm.primaryType
+}
+
+// ReplacePrimary hot-swaps the primary transport during runtime re-race.
+func (tm *TransportManager) ReplacePrimary(d Dialer, transportType string) {
+	tm.mu.Lock()
+	old := tm.primary
+	tm.primary = d
+	tm.primaryType = transportType
+	tm.fallbackActive.Store(false)
+	tm.mu.Unlock()
+
+	// Close old primary outside lock (Rule #4).
+	if old != nil {
+		tm.mu.RLock()
+		isTCPWS := old == tm.tcpws
+		tm.mu.RUnlock()
+		if !isTCPWS {
+			old.Close()
+		}
+	}
+
+	slog.Info("wire: primary transport replaced",
+		"type", transportType,
+		"hadOld", old != nil,
+	)
 }
 
 // SetTCPWS sets the TCP-WS transport.
@@ -106,7 +147,7 @@ func (tm *TransportManager) SetTCPWS(d Dialer) {
 // recordQuicSuccess clears fallback state when QUIC succeeds.
 func (tm *TransportManager) recordQuicSuccess() {
 	tm.mu.RLock()
-	if qc, ok := tm.quic.(*QUICClient); ok {
+	if qc, ok := tm.primary.(*QUICClient); ok {
 		qc.RecordSuccess()
 	}
 	tm.mu.RUnlock()
@@ -139,19 +180,19 @@ func (tm *TransportManager) FallbackActive() bool {
 // Prefers QUIC, falls back to TCP-WS. Tracks fallback state for recovery.
 func (tm *TransportManager) DialTCP(ctx context.Context, addr string, earlyData []byte) (net.Conn, error) {
 	tm.mu.RLock()
-	quic := tm.quic
+	primary := tm.primary
 	tcpws := tm.tcpws
 	tm.mu.RUnlock()
 
-	slog.Debug("TransportManager: DialTCP", "addr", addr, "hasQUIC", quic != nil, "hasTCPWS", tcpws != nil)
+	slog.Debug("TransportManager: DialTCP", "addr", addr, "hasPrimary", primary != nil, "hasTCPWS", tcpws != nil)
 
-	var quicErr error
+	var primaryErr error
 
-	// Try QUIC first (preferred), skip if fallback is active.
-	if quic != nil && !tm.fallbackActive.Load() {
+	// Try primary first (preferred), skip if fallback is active.
+	if primary != nil && !tm.fallbackActive.Load() {
 		quicCtx, quicCancel := tm.quicContext(ctx, tcpws != nil)
-		slog.Debug("TransportManager: trying QUIC first")
-		conn, err := quic.DialTCP(quicCtx, addr, earlyData)
+		slog.Debug("TransportManager: trying primary first")
+		conn, err := primary.DialTCP(quicCtx, addr, earlyData)
 		quicCancel()
 		if err == nil {
 			tm.recordQuicSuccess()
@@ -160,17 +201,17 @@ func (tm *TransportManager) DialTCP(ctx context.Context, addr string, earlyData 
 		// Server responded with error — transport worked, proxy layer failed.
 		// TCP-WS hits the same server; fallback won't help.
 		if isProxyLayerError(err) {
-			slog.Debug("TransportManager: QUIC proxy error, skipping TCP-WS", "err", err)
+			slog.Debug("TransportManager: primary proxy error, skipping TCP-WS", "err", err)
 			return nil, err
 		}
 
-		slog.Debug("TransportManager: QUIC transport error, trying TCP-WS", "err", err)
-		quicErr = err
-		if qc, ok := quic.(*QUICClient); ok && qc.ConsecConnFails() >= quicConnFailThreshold {
+		slog.Debug("TransportManager: primary transport error, trying TCP-WS", "err", err)
+		primaryErr = err
+		if qc, ok := primary.(*QUICClient); ok && qc.ConsecConnFails() >= quicConnFailThreshold {
 			tm.SetFallbackActive(true)
 		}
-	} else if quic != nil {
-		slog.Debug("TransportManager: QUIC skipped, fallback active")
+	} else if primary != nil {
+		slog.Debug("TransportManager: primary skipped, fallback active")
 	}
 
 	// Fall back to TCP-WS
@@ -181,14 +222,14 @@ func (tm *TransportManager) DialTCP(ctx context.Context, addr string, earlyData 
 			return conn, nil
 		}
 		slog.Debug("TransportManager: TCP-WS failed", "err", err)
-		if quicErr != nil {
-			return nil, &MultiTransportError{QUICErr: quicErr, TCPWSErr: err}
+		if primaryErr != nil {
+			return nil, &MultiTransportError{QUICErr: primaryErr, TCPWSErr: err}
 		}
 		return nil, fmt.Errorf("TCP-WS: %w", err)
 	}
 
-	if quicErr != nil {
-		return nil, fmt.Errorf("QUIC: %w", quicErr)
+	if primaryErr != nil {
+		return nil, fmt.Errorf("QUIC: %w", primaryErr)
 	}
 	return nil, ErrNotConnected
 }
@@ -198,39 +239,39 @@ func (tm *TransportManager) DialTCP(ctx context.Context, addr string, earlyData 
 // ErrDatagramRelayUnhealthy is not counted as a QUIC transport failure (F1 handles it).
 func (tm *TransportManager) DialUDP(ctx context.Context, addr string) (net.PacketConn, error) {
 	tm.mu.RLock()
-	quic := tm.quic
+	primary := tm.primary
 	tcpws := tm.tcpws
 	tm.mu.RUnlock()
 
-	slog.Debug("TransportManager: DialUDP", "addr", addr, "hasQUIC", quic != nil, "hasTCPWS", tcpws != nil)
+	slog.Debug("TransportManager: DialUDP", "addr", addr, "hasPrimary", primary != nil, "hasTCPWS", tcpws != nil)
 
-	var quicErr error
+	var primaryErr error
 
-	if quic != nil && !tm.fallbackActive.Load() {
+	if primary != nil && !tm.fallbackActive.Load() {
 		quicCtx, quicCancel := tm.quicContext(ctx, tcpws != nil)
-		slog.Debug("TransportManager: trying QUIC for UDP")
-		conn, err := quic.DialUDP(quicCtx, addr)
+		slog.Debug("TransportManager: trying primary for UDP")
+		conn, err := primary.DialUDP(quicCtx, addr)
 		quicCancel()
 		if err == nil {
 			// Don't call recordQuicSuccess() here. QUIC datagram success
 			// doesn't prove the TCP stream path works. Let DialTCP manage
 			// its own recovery when TCP actually succeeds.
-			slog.Debug("TransportManager: QUIC UDP success", "addr", addr)
+			slog.Debug("TransportManager: primary UDP success", "addr", addr)
 			return conn, nil
 		}
 		// Server responded with error — transport worked, proxy layer failed.
 		if isProxyLayerError(err) {
-			slog.Debug("TransportManager: QUIC UDP proxy error, skipping TCP-WS", "err", err)
+			slog.Debug("TransportManager: primary UDP proxy error, skipping TCP-WS", "err", err)
 			return nil, err
 		}
 
-		slog.Debug("TransportManager: QUIC UDP transport error, trying TCP-WS", "err", err)
-		quicErr = err
-		if qc, ok := quic.(*QUICClient); ok && qc.ConsecConnFails() >= quicConnFailThreshold {
+		slog.Debug("TransportManager: primary UDP transport error, trying TCP-WS", "err", err)
+		primaryErr = err
+		if qc, ok := primary.(*QUICClient); ok && qc.ConsecConnFails() >= quicConnFailThreshold {
 			tm.SetFallbackActive(true)
 		}
-	} else if quic != nil {
-		slog.Debug("TransportManager: QUIC UDP skipped, fallback active")
+	} else if primary != nil {
+		slog.Debug("TransportManager: primary UDP skipped, fallback active")
 	}
 
 	if tcpws != nil {
@@ -241,14 +282,14 @@ func (tm *TransportManager) DialUDP(ctx context.Context, addr string) (net.Packe
 			return conn, nil
 		}
 		slog.Debug("TransportManager: TCP-WS UDP failed", "err", err)
-		if quicErr != nil {
-			return nil, &MultiTransportError{QUICErr: quicErr, TCPWSErr: err}
+		if primaryErr != nil {
+			return nil, &MultiTransportError{QUICErr: primaryErr, TCPWSErr: err}
 		}
 		return nil, fmt.Errorf("TCP-WS: %w", err)
 	}
 
-	if quicErr != nil {
-		return nil, fmt.Errorf("QUIC: %w", quicErr)
+	if primaryErr != nil {
+		return nil, fmt.Errorf("QUIC: %w", primaryErr)
 	}
 	return nil, ErrNotConnected
 }
@@ -257,17 +298,17 @@ func (tm *TransportManager) DialUDP(ctx context.Context, addr string) (net.Packe
 // Prefers QUIC stream, falls back to TCP-WS (already stream-based).
 func (tm *TransportManager) DialStreamUDP(ctx context.Context, addr string) (net.PacketConn, error) {
 	tm.mu.RLock()
-	quic := tm.quic
+	primary := tm.primary
 	tcpws := tm.tcpws
 	tm.mu.RUnlock()
 
-	slog.Debug("TransportManager: DialStreamUDP", "addr", addr, "hasQUIC", quic != nil, "hasTCPWS", tcpws != nil)
+	slog.Debug("TransportManager: DialStreamUDP", "addr", addr, "hasPrimary", primary != nil, "hasTCPWS", tcpws != nil)
 
-	var quicErr error
+	var primaryErr error
 
-	if quic != nil && !tm.fallbackActive.Load() {
+	if primary != nil && !tm.fallbackActive.Load() {
 		quicCtx, quicCancel := tm.quicContext(ctx, tcpws != nil)
-		conn, err := quic.DialStreamUDP(quicCtx, addr)
+		conn, err := primary.DialStreamUDP(quicCtx, addr)
 		quicCancel()
 		if err == nil {
 			return conn, nil
@@ -275,9 +316,9 @@ func (tm *TransportManager) DialStreamUDP(ctx context.Context, addr string) (net
 		if isProxyLayerError(err) {
 			return nil, err
 		}
-		slog.Debug("TransportManager: QUIC stream UDP failed, trying TCP-WS", "err", err)
-		quicErr = err
-		if qc, ok := quic.(*QUICClient); ok && qc.ConsecConnFails() >= quicConnFailThreshold {
+		slog.Debug("TransportManager: primary stream UDP failed, trying TCP-WS", "err", err)
+		primaryErr = err
+		if qc, ok := primary.(*QUICClient); ok && qc.ConsecConnFails() >= quicConnFailThreshold {
 			tm.SetFallbackActive(true)
 		}
 	}
@@ -287,14 +328,14 @@ func (tm *TransportManager) DialStreamUDP(ctx context.Context, addr string) (net
 		if err == nil {
 			return conn, nil
 		}
-		if quicErr != nil {
-			return nil, &MultiTransportError{QUICErr: quicErr, TCPWSErr: err}
+		if primaryErr != nil {
+			return nil, &MultiTransportError{QUICErr: primaryErr, TCPWSErr: err}
 		}
 		return nil, fmt.Errorf("TCP-WS: %w", err)
 	}
 
-	if quicErr != nil {
-		return nil, fmt.Errorf("QUIC: %w", quicErr)
+	if primaryErr != nil {
+		return nil, fmt.Errorf("QUIC: %w", primaryErr)
 	}
 	return nil, ErrNotConnected
 }
@@ -309,28 +350,28 @@ func (tm *TransportManager) DialStreamUDP(ctx context.Context, addr string) (net
 // - Return MultiTransportError if both fail
 func (tm *TransportManager) Handshake(ctx context.Context) error {
 	tm.mu.RLock()
-	quic := tm.quic
+	primary := tm.primary
 	tcpws := tm.tcpws
 	tm.mu.RUnlock()
 
-	slog.Debug("TransportManager: Handshake", "hasQUIC", quic != nil, "hasTCPWS", tcpws != nil)
+	slog.Debug("TransportManager: Handshake", "hasPrimary", primary != nil, "hasTCPWS", tcpws != nil)
 
-	var quicErr error
+	var primaryErr error
 
-	// Try QUIC first (preferred), skip if fallback is active.
-	if quic != nil && !tm.fallbackActive.Load() {
+	// Try primary first (preferred), skip if fallback is active.
+	if primary != nil && !tm.fallbackActive.Load() {
 		quicCtx, quicCancel := tm.quicContext(ctx, tcpws != nil)
-		slog.Debug("TransportManager: Handshake trying QUIC")
-		if qc, ok := quic.(*QUICClient); ok {
+		slog.Debug("TransportManager: Handshake trying primary")
+		if qc, ok := primary.(*QUICClient); ok {
 			_, err := qc.connect(quicCtx)
 			quicCancel()
 			if err == nil {
 				tm.recordQuicSuccess()
-				slog.Info("TransportManager: Handshake QUIC ok")
+				slog.Info("TransportManager: Handshake primary ok")
 				return nil
 			}
-			slog.Debug("TransportManager: Handshake QUIC failed", "err", err)
-			quicErr = err
+			slog.Debug("TransportManager: Handshake primary failed", "err", err)
+			primaryErr = err
 			if qc.ConsecConnFails() >= quicConnFailThreshold {
 				tm.SetFallbackActive(true)
 			}
@@ -349,15 +390,15 @@ func (tm *TransportManager) Handshake(ctx context.Context) error {
 				return nil
 			}
 			slog.Debug("TransportManager: Handshake TCP-WS failed", "err", err)
-			if quicErr != nil {
-				return &MultiTransportError{QUICErr: quicErr, TCPWSErr: err}
+			if primaryErr != nil {
+				return &MultiTransportError{QUICErr: primaryErr, TCPWSErr: err}
 			}
 			return fmt.Errorf("TCP-WS: %w", err)
 		}
 	}
 
-	if quicErr != nil {
-		return fmt.Errorf("QUIC: %w", quicErr)
+	if primaryErr != nil {
+		return fmt.Errorf("QUIC: %w", primaryErr)
 	}
 	return ErrNotConnected
 }
@@ -401,7 +442,7 @@ func (tm *TransportManager) quicContext(parent context.Context, hasFallback bool
 // StartQuicProbe starts a background goroutine that actively probes QUIC
 // recovery while TCP-WS fallback is active. The probe resets the cached
 // QUIC connection and attempts a fresh handshake every quicProbeInterval.
-// Call this after SetQUIC/SetTCPWS. Stopped by Close() or ResetConnections().
+// Call this after SetPrimary/SetTCPWS. Stopped by Close() or ResetConnections().
 func (tm *TransportManager) StartQuicProbe(ctx context.Context) {
 	// Cancel any existing probe.
 	if tm.probeCancel != nil {
@@ -425,10 +466,10 @@ func (tm *TransportManager) quicProbeLoop(ctx context.Context) {
 		}
 
 		tm.mu.RLock()
-		q := tm.quic
+		p := tm.primary
 		tm.mu.RUnlock()
 
-		qc, ok := q.(*QUICClient)
+		qc, ok := p.(*QUICClient)
 		if !ok || qc == nil {
 			continue
 		}
@@ -458,11 +499,11 @@ func (tm *TransportManager) ResetConnections() {
 		"wasFallback", tm.fallbackActive.Load(),
 	)
 	tm.mu.RLock()
-	q := tm.quic
+	p := tm.primary
 	t := tm.tcpws
 	tm.mu.RUnlock()
 
-	if qc, ok := q.(*QUICClient); ok {
+	if qc, ok := p.(*QUICClient); ok {
 		qc.Reset()
 	}
 	if tc, ok := t.(*TCPWSClient); ok {
@@ -477,9 +518,9 @@ func (tm *TransportManager) ResetConnections() {
 // Used by health monitor to skip destructive port hops when TCP is working fine.
 func (tm *TransportManager) TCPRecentlyHealthy(window time.Duration) bool {
 	tm.mu.RLock()
-	q := tm.quic
+	p := tm.primary
 	tm.mu.RUnlock()
-	if qc, ok := q.(*QUICClient); ok {
+	if qc, ok := p.(*QUICClient); ok {
 		return qc.tcpRecentlyHealthy(window)
 	}
 	return false
@@ -489,7 +530,7 @@ func (tm *TransportManager) TCPRecentlyHealthy(window time.Duration) bool {
 // When in fallback mode, reports TCP-WS stats with WireFallback flag set.
 func (tm *TransportManager) WireStats() WireStats {
 	tm.mu.RLock()
-	q, t := tm.quic, tm.tcpws
+	p, t := tm.primary, tm.tcpws
 	tm.mu.RUnlock()
 
 	if tm.fallbackActive.Load() {
@@ -500,7 +541,7 @@ func (tm *TransportManager) WireStats() WireStats {
 		}
 	}
 
-	if sp, ok := q.(StatsProvider); ok {
+	if sp, ok := p.(StatsProvider); ok {
 		return sp.WireStats()
 	}
 	if sp, ok := t.(StatsProvider); ok {
@@ -520,15 +561,16 @@ func (tm *TransportManager) Close() error {
 
 	// Extract refs under lock, nil them, close outside (Rule #4).
 	tm.mu.Lock()
-	quic := tm.quic
-	tm.quic = nil
+	primary := tm.primary
+	tm.primary = nil
 	tcpws := tm.tcpws
 	tm.tcpws = nil
 	tm.mu.Unlock()
 
 	var firstErr error
-	if quic != nil {
-		if err := quic.Close(); err != nil && firstErr == nil {
+	// Avoid double-close when primary == tcpws (tcpws won the race).
+	if primary != nil && primary != tcpws {
+		if err := primary.Close(); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}

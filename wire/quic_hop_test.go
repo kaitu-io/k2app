@@ -352,7 +352,7 @@ func TestQUICClient_DialUDP_HopRecoveryResetOnNetworkChange(t *testing.T) {
 
 	// Network change → ResetConnections
 	tm := NewTransportManager()
-	tm.SetQUIC(client)
+	tm.SetPrimary(client, "quic-hop")
 	tm.ResetConnections()
 
 	if got := client.portHopAttempts.Load(); got != 0 {
