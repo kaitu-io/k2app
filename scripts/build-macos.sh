@@ -124,8 +124,9 @@ fi
 cd desktop
 # Always skip Tauri's built-in notarization — we re-sign after build (sysext
 # injection in NE mode, or simple hardened runtime in daemon mode), which
-# invalidates any Tauri-applied notarization ticket. PKG notarization
-# (below) covers the final signed bundle.
+# changes the CDHash and invalidates Tauri's signature. After re-signing,
+# we rebuild the .app.tar.gz so it matches the PKG binary, and PKG
+# notarization (below) covers both artifacts via the shared CDHash.
 _SAVED_APPLE_ID="${APPLE_ID:-}"
 _SAVED_APPLE_PASSWORD="${APPLE_PASSWORD:-}"
 _SAVED_APPLE_TEAM_ID="${APPLE_TEAM_ID:-}"
@@ -299,6 +300,40 @@ else
   echo "--- Verifying codesign ---"
   codesign --verify --deep --strict "$APP_PATH"
   echo "codesign verification passed"
+fi
+
+# --- Rebuild .app.tar.gz from re-signed .app ---
+# Tauri's tar.gz was created BEFORE our codesign --force re-signing, so it contains
+# the old CDHash. The PKG (built from re-signed .app) gets notarized, but the old
+# tar.gz binary is NOT notarized → Gatekeeper rejects it on macOS 10.15+.
+# Fix: re-create tar.gz from the re-signed .app so both share the same CDHash.
+echo ""
+echo "--- Rebuilding .app.tar.gz from re-signed app ---"
+REBUILT_TAR_GZ="$BUNDLE_DIR/Kaitu.app.tar.gz"
+tar czf "$REBUILT_TAR_GZ" -C "$BUNDLE_DIR" Kaitu.app
+echo "Rebuilt: $REBUILT_TAR_GZ ($(du -h "$REBUILT_TAR_GZ" | cut -f1))"
+
+# Re-sign the tar.gz with Tauri updater key (minisign) if available.
+# The old .sig matches the old tar.gz; we need a new .sig for the rebuilt tar.gz.
+if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+  echo "--- Re-signing .app.tar.gz with Tauri updater key ---"
+  # Ensure minisign is available
+  if ! command -v minisign &>/dev/null; then
+    echo "Installing minisign..."
+    brew install --quiet minisign 2>/dev/null || {
+      echo "ERROR: minisign not available and brew install failed"
+      exit 1
+    }
+  fi
+  echo "$TAURI_SIGNING_PRIVATE_KEY" | base64 -d > /tmp/minisign.key
+  echo "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" | minisign -S -s /tmp/minisign.key -m "$REBUILT_TAR_GZ"
+  # Convert .minisig to Tauri's base64 .sig format
+  base64 < "${REBUILT_TAR_GZ}.minisig" | tr -d '\n' > "$BUNDLE_DIR/Kaitu.app.tar.gz.sig"
+  rm -f /tmp/minisign.key "${REBUILT_TAR_GZ}.minisig"
+  echo "Updater signature regenerated"
+else
+  echo "WARN: TAURI_SIGNING_PRIVATE_KEY not set, skipping updater re-sign"
+  rm -f "$BUNDLE_DIR/Kaitu.app.tar.gz.sig"
 fi
 
 # --- Create .pkg with pkgbuild ---
