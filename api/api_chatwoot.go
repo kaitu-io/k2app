@@ -31,7 +31,8 @@ func shouldProcessChatwootEvent(event chatwoot.Event) bool {
 	if event.Sender.Type != "contact" {
 		return false
 	}
-	if event.Conversation.Status != "pending" {
+	// Skip if a human agent has been assigned (assigneeID > 0 means human took over)
+	if event.AssigneeID > 0 {
 		return false
 	}
 	if strings.TrimSpace(event.Content) == "" {
@@ -117,7 +118,7 @@ func buildAskOpts(history []chatwoot.Message, event chatwoot.Event) []filesearch
 
 // handleTransferHuman handles the human handoff flow:
 // 1. Strip marker and reply to user
-// 2. Toggle conversation status to "open"
+// 2. Assign conversation to a human agent (stops bot from processing)
 // 3. Send Slack notification with customer's original message
 func handleTransferHuman(ctx context.Context, conversationID int, aiReply string, customerMsg string) {
 	reply := strings.TrimSpace(strings.ReplaceAll(aiReply, transferHumanMarker, ""))
@@ -127,8 +128,8 @@ func handleTransferHuman(ctx context.Context, conversationID int, aiReply string
 		}
 	}
 
-	if err := toggleConversationStatus(ctx, conversationID); err != nil {
-		log.Errorf(ctx, "toggle status error: conversation=%d err=%v", conversationID, err)
+	if err := assignConversation(ctx, conversationID); err != nil {
+		log.Errorf(ctx, "assign error: conversation=%d err=%v", conversationID, err)
 	}
 
 	slackMsg := fmt.Sprintf("[Chatwoot] 客户需要人工客服 — 会话 #%d\n客户消息: %s",
@@ -140,14 +141,22 @@ func handleTransferHuman(ctx context.Context, conversationID int, aiReply string
 	log.Infof(ctx, "transferred to human: conversation=%d", conversationID)
 }
 
-// toggleConversationStatus calls Chatwoot REST API to toggle conversation status (pending ↔ open).
-// This API is not wrapped by qtoolkit/chatwoot, so we call it directly.
-func toggleConversationStatus(ctx context.Context, conversationID int) error {
+// assignConversation assigns a conversation to the configured human agent.
+// Chatwoot API: POST /api/v1/accounts/{id}/conversations/{cid}/assignments
+// Once assigned, bot stops processing (AssigneeID > 0 filter).
+// Human can unassign themselves in Chatwoot to re-engage bot.
+func assignConversation(ctx context.Context, conversationID int) error {
+	assigneeID := viper.GetInt("chatwoot.handoff_assignee_id")
+	if assigneeID == 0 {
+		return fmt.Errorf("chatwoot.handoff_assignee_id not configured")
+	}
+
 	cfg := getChatwootConfig()
-	url := fmt.Sprintf("%s/api/v1/accounts/%d/conversations/%d/toggle_status",
+	url := fmt.Sprintf("%s/api/v1/accounts/%d/conversations/%d/assignments",
 		cfg.BaseURL, cfg.AccountID, conversationID)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
+	body := fmt.Sprintf(`{"assignee_id":%d}`, assigneeID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}

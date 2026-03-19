@@ -2,6 +2,7 @@ package center
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -36,8 +37,7 @@ func TestShouldProcessEvent_Filters(t *testing.T) {
 		{"wrong event type", func(e *chatwoot.Event) { e.EventType = "conversation_created" }, false},
 		{"outgoing message", func(e *chatwoot.Event) { e.MessageType = "outgoing" }, false},
 		{"agent sender", func(e *chatwoot.Event) { e.Sender.Type = "user" }, false},
-		{"open status", func(e *chatwoot.Event) { e.Conversation.Status = "open" }, false},
-		{"resolved status", func(e *chatwoot.Event) { e.Conversation.Status = "resolved" }, false},
+		{"has assignee", func(e *chatwoot.Event) { e.AssigneeID = 7 }, false},
 		{"empty content", func(e *chatwoot.Event) { e.Content = "" }, false},
 		{"whitespace content", func(e *chatwoot.Event) { e.Content = "  \n  " }, false},
 		{"wrong inbox", func(e *chatwoot.Event) { e.InboxID = 99 }, false},
@@ -140,12 +140,15 @@ func TestStripTransferMarker(t *testing.T) {
 	assert.Equal(t, "我理解您的需求，正在为您转接人工客服，请稍等。", result)
 }
 
-func TestToggleConversationStatus_Success(t *testing.T) {
+func TestAssignConversation_Success(t *testing.T) {
 	var receivedPath string
 	var receivedToken string
+	var receivedBody string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedPath = r.URL.Path
 		receivedToken = r.Header.Get("api_access_token")
+		b, _ := io.ReadAll(r.Body)
+		receivedBody = string(b)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -153,19 +156,22 @@ func TestToggleConversationStatus_Success(t *testing.T) {
 	viper.Set("chatwoot.api_token", "test-token")
 	viper.Set("chatwoot.base_url", server.URL)
 	viper.Set("chatwoot.account_id", 42)
+	viper.Set("chatwoot.handoff_assignee_id", 7)
 	t.Cleanup(func() {
 		viper.Set("chatwoot.api_token", "")
 		viper.Set("chatwoot.base_url", "")
 		viper.Set("chatwoot.account_id", 0)
+		viper.Set("chatwoot.handoff_assignee_id", 0)
 	})
 
-	err := toggleConversationStatus(context.Background(), 123)
+	err := assignConversation(context.Background(), 123)
 	assert.NoError(t, err)
-	assert.Equal(t, "/api/v1/accounts/42/conversations/123/toggle_status", receivedPath)
+	assert.Equal(t, "/api/v1/accounts/42/conversations/123/assignments", receivedPath)
 	assert.Equal(t, "test-token", receivedToken)
+	assert.Contains(t, receivedBody, `"assignee_id":7`)
 }
 
-func TestToggleConversationStatus_ServerError(t *testing.T) {
+func TestAssignConversation_ServerError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 	}))
@@ -174,13 +180,14 @@ func TestToggleConversationStatus_ServerError(t *testing.T) {
 	viper.Set("chatwoot.api_token", "test-token")
 	viper.Set("chatwoot.base_url", server.URL)
 	viper.Set("chatwoot.account_id", 1)
+	viper.Set("chatwoot.handoff_assignee_id", 7)
 	t.Cleanup(func() {
 		viper.Set("chatwoot.api_token", "")
 		viper.Set("chatwoot.base_url", "")
 		viper.Set("chatwoot.account_id", 0)
 	})
 
-	err := toggleConversationStatus(context.Background(), 1)
+	err := assignConversation(context.Background(), 1)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "403")
 }
