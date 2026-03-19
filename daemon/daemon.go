@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"sync/atomic"
 	"time"
 
@@ -93,6 +94,25 @@ func New() *Daemon {
 	}
 }
 
+// recoveryMiddleware catches panics in HTTP handler goroutines to prevent
+// a single handler panic from crashing the entire daemon process.
+func recoveryMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				slog.Error("HTTP handler panic",
+					"panic", rec,
+					"method", r.Method,
+					"path", r.URL.Path,
+					"stack", string(debug.Stack()),
+				)
+				http.Error(w, "internal error", http.StatusInternalServerError)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
 // Run starts the daemon HTTP server and blocks until ctx is cancelled.
 // If listenAddr is empty, DefaultAddr is used.
 func (d *Daemon) Run(ctx context.Context, listenAddr string) error {
@@ -122,7 +142,7 @@ func (d *Daemon) Run(ctx context.Context, listenAddr string) error {
 
 	srv := &http.Server{
 		Addr:    listenAddr,
-		Handler: corsMiddleware(mux),
+		Handler: recoveryMiddleware(corsMiddleware(mux)),
 	}
 
 	// Load persisted state and auto-reconnect if applicable.
