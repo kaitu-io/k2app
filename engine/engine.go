@@ -17,6 +17,7 @@ import (
 	"github.com/kaitu-io/k2/core"
 	"github.com/kaitu-io/k2/core/dns"
 	"github.com/kaitu-io/k2/provider"
+	"github.com/kaitu-io/k2/safego"
 	"github.com/kaitu-io/k2/wire"
 )
 
@@ -42,10 +43,14 @@ type Engine struct {
 	prov           provider.Provider
 	networkMonitor NetworkChangeNotifier
 	health         *healthMonitor
-	probe          *recoveryProbe
 	netCoord       *netCoordinator
 	dnsH           *dnsHandler // for counter reset on network recovery
 	proxyDNS       *dns.ProxyDNSClient // proxy DNS connection pool (nil in proxy mode)
+
+	wireCfg      wire.Config
+	directDialer wire.DirectDialer
+	reRaceChan   chan struct{}
+	reRaceCancel context.CancelFunc
 }
 
 // New creates a new Engine in the disconnected state.
@@ -331,20 +336,22 @@ func (e *Engine) Start(cfg Config) error {
 	hm.start()
 	e.health = hm
 
-	// Recovery probe: actively verifies wire connectivity after network changes.
-	e.probe = newRecoveryProbe(tm, e)
+	// Store wireCfg + directDialer for re-race (avoids re-parsing URL).
+	e.wireCfg = wireCfg
+	e.directDialer = cfg.DirectDialer
+
+	// Re-race loop: replaces recoveryProbe.
+	e.reRaceChan = make(chan struct{}, 1)
+	reRaceCtx, reRaceCancel := context.WithCancel(ctx)
+	e.reRaceCancel = reRaceCancel
+	safego.Go(func() { e.reRaceLoop(reRaceCtx) })
+
+	hm.reRaceChan = e.reRaceChan
 
 	e.dnsH = dh
 	e.netCoord = newNetCoordinator(
 		func() { e.doNetworkReconnect() },
-		func() {
-			e.mu.Lock()
-			p := e.probe
-			e.mu.Unlock()
-			if p != nil {
-				p.stop()
-			}
-		},
+		func() {},
 	)
 
 	e.setStateLocked(StateConnected)
@@ -367,7 +374,7 @@ func (e *Engine) Start(cfg Config) error {
 	return nil
 }
 
-// reconnect resets wire transport connections and triggers recovery probe.
+// reconnect resets wire transport connections.
 // Shared by OnNetworkChanged (network switch) and onHealthCritical (quality degradation).
 // Returns true if reconnect was performed (engine was connected and not paused).
 func (e *Engine) reconnect() bool {
@@ -411,13 +418,6 @@ func (e *Engine) reconnect() bool {
 		hm.resetCounters()
 	}
 
-	// Trigger recovery probe to actively verify wire connectivity.
-	e.mu.Lock()
-	probe := e.probe
-	e.mu.Unlock()
-	if probe != nil {
-		probe.trigger()
-	}
 	return true
 }
 
@@ -591,8 +591,8 @@ func (e *Engine) Stop() error {
 	// Extract goroutine owners whose callbacks may need e.mu.
 	hm := e.health
 	e.health = nil
-	probe := e.probe
-	e.probe = nil
+	reRaceCancel := e.reRaceCancel
+	e.reRaceCancel = nil
 	e.netCoord = nil
 	e.dnsH = nil
 	e.mu.Unlock()
@@ -603,8 +603,8 @@ func (e *Engine) Stop() error {
 	if hm != nil {
 		hm.stop()
 	}
-	if probe != nil {
-		probe.stop()
+	if reRaceCancel != nil {
+		reRaceCancel()
 	}
 
 	// Extract remaining resources under lock, nil them out, fire status,
@@ -871,6 +871,58 @@ func (e *Engine) ClearWireError() {
 	e.mu.Unlock()
 	if handler != nil {
 		handler.OnStatus(status)
+	}
+}
+
+// reRaceLoop waits for echo-fail signals and runs a transport re-race to
+// hot-swap the primary transport. Replaces recoveryProbe.
+func (e *Engine) reRaceLoop(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-e.reRaceChan:
+		}
+
+		e.mu.Lock()
+		if e.state != StateConnected {
+			e.mu.Unlock()
+			continue
+		}
+		tm := e.tm
+		wireCfg := e.wireCfg
+		dd := e.directDialer
+		e.mu.Unlock()
+
+		if tm == nil {
+			continue
+		}
+
+		slog.Warn("DIAG: transport-rerace", "reason", "echo-consecutive-fail", "previousTransport", tm.PrimaryType())
+
+		raceCtx, raceCancel := context.WithTimeout(ctx, 15*time.Second)
+		result, err := wire.RaceTransport(raceCtx, wireCfg, wireCfg.DialAddr, dd)
+		raceCancel()
+
+		if err != nil {
+			slog.Warn("engine: re-race failed", "err", err)
+			continue
+		}
+
+		if ctx.Err() != nil {
+			result.Dialer.Close()
+			return
+		}
+
+		e.mu.Lock()
+		currentTM := e.tm
+		e.mu.Unlock()
+		if currentTM == nil {
+			result.Dialer.Close()
+			continue
+		}
+
+		currentTM.ReplacePrimary(result.Dialer, result.TransportType)
 	}
 }
 

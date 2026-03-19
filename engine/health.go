@@ -1,11 +1,13 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"runtime"
 	"runtime/debug"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sasha-s/go-deadlock"
@@ -80,6 +82,9 @@ type healthMonitor struct {
 	diagCounter   int       // samples since last DIAG heartbeat (fires at 30)
 	connectedAt   time.Time // engine connected timestamp for uptime calc
 	lastSampleWall time.Time // wall clock of previous sample — detects sleep/wake gaps
+
+	echoFails   atomic.Int32
+	reRaceChan  chan struct{} // non-nil: engine's re-race channel
 }
 
 func newHealthMonitor(
@@ -101,7 +106,7 @@ func newHealthMonitor(
 }
 
 func (hm *healthMonitor) start() {
-	hm.wg.Add(1)
+	hm.wg.Add(2)
 	safego.Go(func() {
 		defer hm.wg.Done()
 		ticker := time.NewTicker(time.Second)
@@ -114,6 +119,10 @@ func (hm *healthMonitor) start() {
 				hm.sampleSafe()
 			}
 		}
+	})
+	safego.Go(func() {
+		defer hm.wg.Done()
+		hm.echoLoop()
 	})
 }
 
@@ -343,6 +352,50 @@ func (hm *healthMonitor) resetCounters() {
 	hm.healthyStreak = 0
 	hm.smoothWireLoss = 0
 	hm.ewmaInitialized = false
+}
+
+// echoLoop periodically runs echo probes on the primary transport to verify
+// data-path health. 3 consecutive failures trigger a re-race via reRaceChan.
+// Decoupled from sample() — runs on its own 30s ticker, no lock nesting.
+func (hm *healthMonitor) echoLoop() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-hm.done:
+			return
+		case <-ticker.C:
+		}
+
+		primary := hm.tm.Primary()
+		if primary == nil {
+			continue
+		}
+
+		ep, ok := primary.(wire.EchoProber)
+		if !ok {
+			hm.echoFails.Store(0)
+			continue
+		}
+
+		echoCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		err := ep.RunEchoProbe(echoCtx)
+		cancel()
+
+		if err != nil {
+			fails := hm.echoFails.Add(1)
+			if fails >= 3 && hm.reRaceChan != nil {
+				select {
+				case hm.reRaceChan <- struct{}{}:
+				default:
+				}
+				hm.echoFails.Store(0)
+			}
+		} else {
+			hm.echoFails.Store(0)
+		}
+	}
 }
 
 // History returns the ring buffer contents oldest-first.

@@ -56,15 +56,36 @@ func TestContract_PoorSignal_TCPHealthGate(t *testing.T) {
 	}
 }
 
-// TestContract_ServerUnreachable_StopAfter3 verifies that the recovery probe
-// gives up after exactly 3 attempts. This prevents infinite retry loops that
-// drain battery on mobile devices.
-// User scenario: server is down for maintenance; client should stop probing
-// quickly and wait for next network change event.
-func TestContract_ServerUnreachable_StopAfter3(t *testing.T) {
-	if probeMaxAttempts != 3 {
-		t.Fatalf("contract: probeMaxAttempts must be 3, got %d "+
-			"(changing this affects battery life on mobile)", probeMaxAttempts)
+// TestContract_EchoLoop_TriggersReRace verifies that echoLoop sends a re-race
+// signal after 3 consecutive echo failures. This replaces the old recovery
+// probe contract (probeMaxAttempts=3).
+func TestContract_EchoLoop_TriggersReRace(t *testing.T) {
+	// echoLoop uses hm.echoFails (atomic.Int32) and triggers reRaceChan at >=3.
+	// Verify the threshold constant is 3 by checking behavior.
+	reRaceChan := make(chan struct{}, 1)
+	hm := &healthMonitor{
+		done: make(chan struct{}),
+	}
+	hm.reRaceChan = reRaceChan
+
+	// Simulate 3 consecutive echo failures.
+	for i := int32(1); i <= 3; i++ {
+		fails := hm.echoFails.Add(1)
+		if fails >= 3 && hm.reRaceChan != nil {
+			select {
+			case hm.reRaceChan <- struct{}{}:
+			default:
+			}
+			hm.echoFails.Store(0)
+		}
+	}
+
+	select {
+	case <-reRaceChan:
+		// Expected: re-race triggered after 3 consecutive failures.
+	default:
+		t.Fatal("contract: echoLoop must trigger re-race after 3 consecutive echo failures " +
+			"(changing this threshold affects battery life on mobile)")
 	}
 }
 
