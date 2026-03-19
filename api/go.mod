@@ -30,7 +30,7 @@ require (
 	github.com/wordgate/qtoolkit/github/issue v1.5.11
 	github.com/wordgate/qtoolkit/log v1.5.11
 	github.com/wordgate/qtoolkit/mail v1.5.11
-	github.com/wordgate/qtoolkit/openai/filesearch v1.5.15
+	github.com/wordgate/qtoolkit/openai/filesearch v1.5.18
 	github.com/wordgate/qtoolkit/redis v1.5.11
 	github.com/wordgate/qtoolkit/slack v1.5.11
 	github.com/wordgate/qtoolkit/unred v1.5.11

@@ -68,7 +68,7 @@ func handleChatwootEvent(ctx context.Context, event chatwoot.Event) {
 	}
 
 	opts := buildAskOpts(history, event)
-	result, err := filesearch.Ask(ctx, event.Content, opts...)
+	result, err := filesearch.Ask(ctx, "crm", event.Content, opts...)
 	if err != nil {
 		log.Errorf(ctx, "filesearch error: conversation=%d err=%v", event.ConversationID, err)
 		chatwoot.Reply(ctx, event.ConversationID, "抱歉，系统暂时无法处理您的消息，请稍后再试。")
