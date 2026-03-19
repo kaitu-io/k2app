@@ -15,14 +15,13 @@ Platform Shell (daemon/appext)
               ├── 2. wire.ParseURL (k2v5:// URL)
               ├── 2.5. Start NetworkMonitor (DirectDialer needs DefaultInterface)
               ├── 3. Happy Eyeballs address resolution (RFC 8305)
-              ├── 4. Build transports (QUIC + TCP-WS)
-              ├── 4.5. Wire handshake probe (QUIC/TCP-WS handshake only, no target dial)
+              ├── 4. Transport race (wire.RaceTransport: QUIC-443 → QUIC-hop → TCP-WS with echo probe)
               ├── 5. Router (k2rule)
               ├── 6. Provider (TUN/Proxy/TProxy/appext FD)
               ├── 7. ClientTunnel
               ├── 8. DNS middleware (TUN/TProxy mode only)
-              ├── 9. Commit → StateConnected
-              ├── 10. HealthMonitor start (1Hz wire stats + health FSM)
+              ├── 9. Commit → StateConnected + start reRaceLoop
+              ├── 10. HealthMonitor start (1Hz wire stats + health FSM + echoLoop)
               └── 11. Background QUIC probe (active during TCP-WS fallback, 30s interval)
 ```
 
@@ -76,10 +75,9 @@ HTTP-aligned error codes for frontend consumption:
 - `status.go` — `Status` struct, custom `MarshalJSON` (computes `uptime_seconds` dynamically)
 - `event.go` — `EventHandler` interface (`OnStatus(Status)` + `OnStats`), state constants
 - `error.go` — `EngineError`, `ClassifyError` (HTTP-aligned error codes, MultiTransportError handling)
-- `health.go` — `healthMonitor` (1Hz sampling, ring buffer 300s, EWMA smoothing α=0.3 on smoothWireLoss, health FSM: healthy→degraded(≥5 streak)→critical(≥5 streak), corrective action: full reconnect with 10s cooldown). TCP health gate: `tcpRecentlyHealthy()` (30s window) suppresses reconnect when TCP streams are working. Wire-layer metrics only — relay metrics are observability (see `wire/VOCABULARY.md`). `DIAG: wake` event emitted when wall-clock gap > 5s between samples (uses `Round(0)` to strip monotonic reading for accurate sleep detection — monotonic clock freezes during macOS sleep but wall clock advances). Heartbeat includes memory metrics (`heapMB`, `sysMB`, `goroutines`) via `runtime.ReadMemStats` every 30s for iOS NE jetsam diagnosis.
+- `health.go` — `healthMonitor` (1Hz sampling, ring buffer 300s, EWMA smoothing α=0.3 on smoothWireLoss, health FSM: healthy→degraded(≥5 streak)→critical(≥5 streak), corrective action: full reconnect with 10s cooldown). `echoLoop` (30s interval): verifies QUIC data path via `wire.EchoProber`, 3 consecutive failures trigger re-race. TCP health gate: `tcpRecentlyHealthy()` (30s window) suppresses reconnect when TCP streams are working. Wire-layer metrics only — relay metrics are observability (see `wire/VOCABULARY.md`). `DIAG: wake` event emitted when wall-clock gap > 5s between samples (uses `Round(0)` to strip monotonic reading for accurate sleep detection — monotonic clock freezes during macOS sleep but wall clock advances). Heartbeat includes memory metrics (`heapMB`, `sysMB`, `goroutines`) via `runtime.ReadMemStats` every 30s for iOS NE jetsam diagnosis.
 - `health_test.go` — Health monitor tests (EWMA smoothing, transitions, reset)
-- `recovery_probe.go` — Background QUIC probe during TCP-WS fallback (3-attempt limit, 3s initial delay, stops on client/auth errors)
-- `recovery_probe_test.go` — Recovery probe tests
+- `engine.go:reRaceLoop` — Background re-race loop triggered by echoLoop (3 consecutive echo failures → channel signal → wire.RaceTransport → ReplacePrimary)
 - `contract_test.go` — 4 transport behavior contract tests (TCP health gate, server unreachable stop, auth no-retry, timing)
 - `happy_eyeballs.go` — `resolveDialAddr`, `happyEyeballs` (RFC 8305 IPv6/IPv4 race with 250ms head start)
 - `dns_handler.go` — `dnsHandler` (port 53 TCP+UDP interception, RFC 1035 TCP framing)

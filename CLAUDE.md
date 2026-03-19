@@ -87,6 +87,13 @@ Reserved event names:
 | `DIAG: dns-proxy-write-fail` | WARN | WriteTo failed | server, domain, connAgeS, isNewConn, err |
 | `DIAG: dns-proxy-conn-dead` | WARN | recv loop died | server, domain, connAgeS, isNewConn, err |
 | `DIAG: dns-proxy-dial-fail` | WARN | DialUDP failed | server, domain, err |
+| `DIAG: transport-race-start` | INFO | race begins | candidates |
+| `DIAG: transport-race-winner` | INFO | race complete | winner, winnerMs, tried |
+| `DIAG: transport-race-fail` | WARN | all candidates failed | quic443Err, quicHopErr, tcpwsErr |
+| `DIAG: echo-probe-ok` | DEBUG | echo succeeded | transport, rttMs |
+| `DIAG: echo-probe-fail` | WARN | echo failed | transport, err |
+| `DIAG: echo-probe-unsupported` | WARN | server doesn't support echo | transport |
+| `DIAG: transport-rerace` | WARN | runtime re-race | reason, previousTransport |
 
 ### Layer 3 Rules — Full Trace
 
@@ -158,7 +165,6 @@ engine.mu (state)
   → daemon.mu (state) → daemon.sseMu (state)
   → TransportManager.mu (state) → QUICClient.mu (state)
   →                                TCPWSClient.mu (state)
-  → recoveryProbe.mu (state)
   → dnsOverride.mu (state)
   → connTracker.mu (state)
 
@@ -434,6 +440,7 @@ All optional capability interfaces that upper layers may type-assert on must be 
 | Interface | Package | Implemented by | Asserted by |
 |-----------|---------|----------------|-------------|
 | `StatsProvider` | wire | QUICClient, TCPWSClient | engine (stats collection) |
+| `EchoProber` | wire | QUICClient | engine (echo health probe) |
 
 When adding a new optional interface, add it to this table.
 
