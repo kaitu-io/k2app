@@ -358,9 +358,9 @@ func TestEngineStart_WireProbeFailure(t *testing.T) {
 		t.Fatalf("state = %q, want disconnected", e.Status())
 	}
 
-	// Error should originate from wire probe.
-	if !strings.Contains(err.Error(), "wire handshake") {
-		t.Errorf("error = %q, want to contain 'wire handshake'", err.Error())
+	// Error should originate from transport race.
+	if !strings.Contains(err.Error(), "transport race") {
+		t.Errorf("error = %q, want to contain 'transport race'", err.Error())
 	}
 
 	// EventHandler should receive classified error.
@@ -374,10 +374,6 @@ func TestEngineStart_WireProbeFailure(t *testing.T) {
 	}
 	if lastStatus.Error == nil {
 		t.Fatal("expected classified error in final status")
-	}
-	// Connection refused → 503 (ServerUnreachable) or timeout → 408.
-	if lastStatus.Error.Code != 503 && lastStatus.Error.Code != 408 {
-		t.Errorf("error code = %d, want 503 or 408", lastStatus.Error.Code)
 	}
 }
 

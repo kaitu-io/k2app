@@ -158,57 +158,46 @@ func (e *Engine) Start(cfg Config) error {
 	}
 	slog.Info("engine: step 3 - dial address resolved", "addr", wireCfg.DialAddr, "elapsed", time.Since(startTime))
 
-	// 4. Build transports.
-	quicClient := wire.NewQUICClient(wireCfg, nil)
-	tcpwsClient := wire.NewTCPWSClient(wireCfg, nil)
+	// 4. Transport race: three-way Happy Eyeballs.
+	// Races QUIC-443, QUIC-hop, TCP-WS with staggered start and echo probe
+	// verification. First candidate with verified data flow wins. Replaces
+	// the serial build + handshake probe (old step 4 + 4.5).
+	slog.Info("engine: step 4 - transport race", "elapsed", time.Since(startTime))
+	raceCtx, raceCancel := context.WithTimeout(ctx, 15*time.Second)
+	raceResult, raceErr := wire.RaceTransport(raceCtx, wireCfg, wireCfg.DialAddr, cfg.DirectDialer)
+	raceCancel()
 
-	if cfg.DirectDialer != nil {
-		quicClient.SetDirectDialer(cfg.DirectDialer)
-		tcpwsClient.SetDirectDialer(cfg.DirectDialer)
+	if raceErr != nil {
+		slog.Warn("engine: transport race failed", "err", raceErr)
+		if cfg.NetworkMonitor != nil {
+			cfg.NetworkMonitor.Close()
+		}
+		return e.fail(fmt.Errorf("transport race: %w", raceErr))
 	}
 
 	tm := wire.NewTransportManager()
-	switch wireCfg.Transport {
-	case "quic":
-		tm.SetPrimary(quicClient, "quic-hop")
-	case "tcpws":
-		tm.SetTCPWS(tcpwsClient)
-	default:
-		tm.SetPrimary(quicClient, "quic-hop")
+	tm.SetPrimary(raceResult.Dialer, raceResult.TransportType)
+	if raceResult.TCPWS != nil {
+		tm.SetTCPWS(raceResult.TCPWS)
+	} else if raceResult.TransportType != "tcpws" {
+		// Build a standalone TCP-WS client as fallback.
+		tcpwsClient := wire.NewTCPWSClient(wireCfg, nil)
+		if cfg.DirectDialer != nil {
+			tcpwsClient.SetDirectDialer(cfg.DirectDialer)
+		}
 		tm.SetTCPWS(tcpwsClient)
 	}
 	// Start background QUIC recovery probe (active during TCP-WS fallback).
 	tm.StartQuicProbe(ctx)
 
-	slog.Debug("engine: step 4 - transports configured",
-		"transport", wireCfg.Transport,
-		"hasQUIC", quicClient != nil,
-		"hasTCPWS", tcpwsClient != nil,
+	slog.Info("engine: step 4 - transport race winner",
+		"transport", raceResult.TransportType,
+		"elapsed", time.Since(startTime),
 	)
-
-	// 4.5 Verify wire handshake (client ↔ server) before setting up TUN/provider.
-	// Completes QUIC or TCP-WS handshake only — does NOT proxy to any target.
-	// Without this check, engine reports "connected" after TUN starts even if
-	// the server is unreachable. DNS failures are silently accumulated (threshold=30)
-	// and the health monitor sees no transport data, creating a ~15s false-connected window.
-	// The cached connection is reused by subsequent DialTCP/DialUDP (fast path).
-	slog.Info("engine: step 4.5 - wire handshake probe", "elapsed", time.Since(startTime))
-	hsStart := time.Now()
-	hsCtx, hsCancel := context.WithTimeout(ctx, 15*time.Second)
-	hsErr := tm.Handshake(hsCtx)
-	hsCancel()
-	hsMs := time.Since(hsStart).Milliseconds()
-	if hsErr != nil {
-		slog.Warn("engine: wire handshake failed", "err", hsErr)
-		slog.Warn("DIAG: wire-handshake-fail", "handshakeMs", hsMs, "err", hsErr)
-		if cfg.NetworkMonitor != nil {
-			cfg.NetworkMonitor.Close()
-		}
-		tm.Close()
-		return e.fail(fmt.Errorf("wire handshake: %w", hsErr))
-	}
-	slog.Info("engine: step 4.5 - wire handshake ok", "elapsed", time.Since(startTime))
-	slog.Info("DIAG: wire-handshake", "handshakeMs", hsMs, "transport", tm.WireStats().Transport)
+	slog.Info("DIAG: wire-handshake",
+		"handshakeMs", time.Since(startTime).Milliseconds(),
+		"transport", raceResult.TransportType,
+	)
 
 	// 5. Router.
 	router := core.NewRouter()
