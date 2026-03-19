@@ -825,12 +825,39 @@ class K2Plugin : Plugin() {
                 }
 
                 if (shouldUpdate && Build.VERSION.SDK_INT >= minAndroid) {
-                    // Emit nativeUpdateAvailable — webapp opens browser to download page
+                    // Download APK in background
+                    val apkFile = File(context.cacheDir, "update-$remoteVersion.apk")
+
+                    // Skip download if cached file exists and size matches
+                    val needsDownload = !(apkFile.exists() && totalSize > 0 && apkFile.length() == totalSize)
+
+                    if (needsDownload) {
+                        val url = URL(apkUrl)
+                        val conn = url.openConnection() as HttpURLConnection
+                        conn.connectTimeout = 15000
+                        conn.readTimeout = 30000
+                        val code = conn.responseCode
+                        if (code != 200) {
+                            throw java.io.IOException("HTTP $code from $apkUrl")
+                        }
+
+                        conn.inputStream.use { input ->
+                            apkFile.outputStream().use { output ->
+                                val buffer = ByteArray(8192)
+                                var len: Int
+                                while (input.read(buffer).also { len = it } != -1) {
+                                    output.write(buffer, 0, len)
+                                }
+                            }
+                        }
+                    }
+
+                    // Emit nativeUpdateReady event
                     val data = JSObject()
                     data.put("version", remoteVersion)
-                    data.put("url", apkUrl)
-                    data.put("appStoreUrl", "https://kaitu.io/install")
-                    notifyListeners("nativeUpdateAvailable", data)
+                    data.put("size", apkFile.length())
+                    data.put("path", apkFile.absolutePath)
+                    notifyListeners("nativeUpdateReady", data)
                     return
                 }
             }

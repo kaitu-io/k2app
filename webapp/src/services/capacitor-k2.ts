@@ -172,6 +172,7 @@ export async function injectCapacitorGlobals(): Promise<void> {
 
   // Build updater: native update support
   let updateReadyCallbacks: ((info: UpdateInfo) => void)[] = [];
+  let storedPath: string | null = null;
   let storedAppStoreUrl: string | null = null;
 
   const updater: IUpdater = {
@@ -181,7 +182,10 @@ export async function injectCapacitorGlobals(): Promise<void> {
     error: null,
     channel: 'stable',
     applyUpdateNow: async () => {
-      if (storedAppStoreUrl) {
+      const currentPlatform = Capacitor.getPlatform();
+      if (currentPlatform === 'android' && storedPath) {
+        await K2Plugin.installNativeUpdate({ path: storedPath });
+      } else if (currentPlatform === 'ios' && storedAppStoreUrl) {
         await Browser.open({ url: storedAppStoreUrl });
       }
     },
@@ -279,6 +283,17 @@ export async function injectCapacitorGlobals(): Promise<void> {
   // Native event listeners (vpnStateChange, vpnError) are now registered
   // via onStatusChange() above, wired through VPN machine's event-driven mode.
   // This eliminates the 2s polling fallback and prevents stale-status race conditions.
+
+  K2Plugin.addListener('nativeUpdateReady', (event: any) => {
+    storedPath = event.path;
+    const info: UpdateInfo = {
+      currentVersion: appVersion,
+      newVersion: event.version,
+    };
+    updater.isUpdateReady = true;
+    updater.updateInfo = info;
+    updateReadyCallbacks.forEach(cb => cb(info));
+  });
 
   K2Plugin.addListener('nativeUpdateAvailable', (event: any) => {
     storedAppStoreUrl = event.appStoreUrl;
