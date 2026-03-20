@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/wordgate/qtoolkit/unred"
@@ -15,22 +16,21 @@ var unredCmd = &cobra.Command{
 }
 
 var unredCreateCmd = &cobra.Command{
-	Use:   "create <path> <target_url> [expire_unix]",
+	Use:   "create <path> <target_url> <expire_days>",
 	Short: "Create a short link",
-	Long:  `Create an unred short link. expire_unix is optional (0 or omit = no expiry).`,
-	Args:  cobra.RangeArgs(2, 3),
+	Long:  `Create an unred short link. expire_days must be a positive integer (e.g., 30 = 30 days).`,
+	Args:  cobra.ExactArgs(3),
 	Run: func(cmd *cobra.Command, args []string) {
 		util.SetConfigFile(configFile)
 
 		path := args[0]
 		targetURL := args[1]
-		var expireAt int64
-		if len(args) == 3 {
-			if _, err := fmt.Sscanf(args[2], "%d", &expireAt); err != nil {
-				fmt.Fprintf(os.Stderr, "invalid expire_unix: %s\n", args[2])
-				os.Exit(1)
-			}
+		var days int
+		if _, err := fmt.Sscanf(args[2], "%d", &days); err != nil || days <= 0 {
+			fmt.Fprintf(os.Stderr, "expire_days must be a positive integer, got: %s\n", args[2])
+			os.Exit(1)
 		}
+		expireAt := time.Now().Add(time.Duration(days) * 24 * time.Hour).Unix()
 
 		resp, err := unred.CreateLink(path, targetURL, expireAt)
 		if err != nil {
