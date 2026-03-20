@@ -55,7 +55,7 @@ func handleConversationCreated(ctx context.Context, event chatwoot.Event) {
 	log.Infof(ctx, "new conversation=%d", event.ConversationID)
 
 	if err := chatwoot.SendOptions(ctx, event.ConversationID,
-		"您好！请问需要什么帮助？",
+		"您好！请问需要什么帮助？（遇到安装问题时，您可以直接发截图给我 📷）",
 		chatwoot.NewOption("📱 安装问题", "install"),
 		chatwoot.NewOption("💳 购买/续费", "purchase"),
 		chatwoot.NewOption("❓ 使用问题", "usage"),
