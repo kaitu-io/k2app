@@ -1,4 +1,3 @@
-/* eslint-disable react/jsx-no-literals */
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -132,7 +131,7 @@ export function AndroidGuides({ t }: { t: (key: string) => string }) {
   return (
     <div className="mt-8 max-w-2xl mx-auto text-left">
       <p className="text-sm font-semibold text-muted-foreground mb-3 text-center">
-        {t('install.androidGuides.sectionTitle')}
+        {t('install.install.androidGuides.title')}
       </p>
 
       <BrandTabBar selected={selectedBrand} onSelect={setSelectedBrand} t={t} />
