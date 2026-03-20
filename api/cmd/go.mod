@@ -98,9 +98,11 @@ require (
 	github.com/wordgate/qtoolkit/ai v1.5.11 // indirect
 	github.com/wordgate/qtoolkit/asynq v1.5.11 // indirect
 	github.com/wordgate/qtoolkit/aws/ses v1.5.11 // indirect
+	github.com/wordgate/qtoolkit/chatwoot v1.5.23 // indirect
 	github.com/wordgate/qtoolkit/db v1.5.11 // indirect
 	github.com/wordgate/qtoolkit/github/issue v1.5.11 // indirect
 	github.com/wordgate/qtoolkit/mail v1.5.11 // indirect
+	github.com/wordgate/qtoolkit/openai/filesearch v1.5.22 // indirect
 	github.com/wordgate/qtoolkit/redis v1.5.11 // indirect
 	github.com/wordgate/qtoolkit/slack v1.5.11 // indirect
 	github.com/wordgate/qtoolkit/unred v1.5.11 // indirect
