@@ -8,10 +8,10 @@ import {
   BrowserBlockedGuide,
   SmartScreenGuide,
   MacOSAllowGuide,
+  DesktopUsbInstallGuide,
   CliBlock,
   DownloadTipCard,
 } from './install-guides';
-import { AndroidGuides } from './android-guides';
 import { openDownloadInNewTab } from '@/lib/device-detection';
 
 // ---------------------------------------------------------------------------
@@ -253,8 +253,12 @@ export function AndroidPanel({
       </Button>
       <BackupLink href={backupLink} t={t} />
 
-      {/* Brand install guides */}
-      <AndroidGuides t={t} />
+      {/* Install guide */}
+      <div className="mt-8 max-w-xl mx-auto space-y-4 text-left">
+        <DownloadTipCard title={t('install.install.faq.androidUsbInstall.question')}>
+          <DesktopUsbInstallGuide />
+        </DownloadTipCard>
+      </div>
     </div>
   );
 }
