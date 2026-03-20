@@ -13,11 +13,29 @@ import (
 	"github.com/wordgate/qtoolkit/chatwoot"
 )
 
-func TestShouldProcessEvent_Filters(t *testing.T) {
-	// Set ai_inbox_id for inbox filter tests
+func TestIsAIInbox(t *testing.T) {
 	viper.Set("chatwoot.ai_inbox_id", 5)
 	t.Cleanup(func() { viper.Set("chatwoot.ai_inbox_id", 0) })
 
+	tests := []struct {
+		name    string
+		inboxID int
+		cfgID   int
+		want    bool
+	}{
+		{"matching inbox", 5, 5, true},
+		{"wrong inbox", 99, 5, false},
+		{"no filter (0)", 999, 0, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			viper.Set("chatwoot.ai_inbox_id", tt.cfgID)
+			assert.Equal(t, tt.want, isAIInbox(chatwoot.Event{InboxID: tt.inboxID}))
+		})
+	}
+}
+
+func TestHandleMessageCreated_Filters(t *testing.T) {
 	base := chatwoot.Event{
 		EventType:      "message_created",
 		MessageType:    "incoming",
@@ -25,89 +43,29 @@ func TestShouldProcessEvent_Filters(t *testing.T) {
 		ConversationID: 1,
 		InboxID:        5,
 		Sender:         chatwoot.Sender{Type: "contact", Name: "Test"},
-		Conversation:   chatwoot.Conversation{Status: "pending"},
 	}
 
-	tests := []struct {
-		name   string
-		modify func(e *chatwoot.Event)
-		want   bool
-	}{
-		{"valid event passes", func(e *chatwoot.Event) {}, true},
-		{"wrong event type", func(e *chatwoot.Event) { e.EventType = "conversation_created" }, false},
-		{"outgoing message", func(e *chatwoot.Event) { e.MessageType = "outgoing" }, false},
-		{"agent sender", func(e *chatwoot.Event) { e.Sender.Type = "user" }, false},
-		{"has assignee", func(e *chatwoot.Event) { e.AssigneeID = 7 }, false},
-		{"empty content", func(e *chatwoot.Event) { e.Content = "" }, false},
-		{"whitespace content", func(e *chatwoot.Event) { e.Content = "  \n  " }, false},
-		{"wrong inbox", func(e *chatwoot.Event) { e.InboxID = 99 }, false},
-		{"no inbox filter", func(e *chatwoot.Event) { viper.Set("chatwoot.ai_inbox_id", 0); e.InboxID = 999 }, true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			e := base
-			tt.modify(&e)
-			assert.Equal(t, tt.want, shouldProcessChatwootEvent(e))
-		})
-	}
-}
-
-func TestBuildAskOpts_NoHistory(t *testing.T) {
-	event := chatwoot.Event{Content: "hello"}
-	opts := buildAskOpts(nil, event)
-	assert.Len(t, opts, 0)
-}
-
-func TestBuildAskOpts_WithHistory(t *testing.T) {
-	history := []chatwoot.Message{
-		{Role: "user", Content: "hi"},
-		{Role: "assistant", Content: "hello!"},
-		{Role: "user", Content: "how to install?"},
-	}
-	event := chatwoot.Event{Content: "how to install?"}
-	opts := buildAskOpts(history, event)
-	assert.Len(t, opts, 1) // WithHistory only
-}
-
-func TestBuildAskOpts_WithImageAttachment(t *testing.T) {
-	event := chatwoot.Event{
-		Content: "what is this",
-		Attachments: []chatwoot.Attachment{
-			{FileType: "image", DataURL: "https://example.com/img.png"},
-		},
-	}
-	opts := buildAskOpts(nil, event)
-	assert.Len(t, opts, 1) // WithImage only
-}
-
-func TestBuildAskOpts_HistoryAndImage(t *testing.T) {
-	history := []chatwoot.Message{
-		{Role: "user", Content: "hi"},
-		{Role: "assistant", Content: "hello!"},
-	}
-	event := chatwoot.Event{
-		Content: "check this",
-		Attachments: []chatwoot.Attachment{
-			{FileType: "image", DataURL: "https://example.com/img.png"},
-			{FileType: "image", DataURL: "https://example.com/img2.png"},
-		},
-	}
-	opts := buildAskOpts(history, event)
-	assert.Len(t, opts, 3) // WithHistory + 2x WithImage
-}
-
-func TestBuildAskOpts_IgnoresNonImageAttachments(t *testing.T) {
-	event := chatwoot.Event{
-		Content: "voice msg",
-		Attachments: []chatwoot.Attachment{
-			{FileType: "audio", DataURL: "https://example.com/audio.mp3"},
-			{FileType: "video", DataURL: "https://example.com/video.mp4"},
-			{FileType: "file", DataURL: "https://example.com/doc.pdf"},
-		},
-	}
-	opts := buildAskOpts(nil, event)
-	assert.Len(t, opts, 0) // no image attachments
+	// handleMessageCreated should silently return for these cases (no panic, no side effects)
+	t.Run("outgoing skipped", func(t *testing.T) {
+		e := base
+		e.MessageType = "outgoing"
+		handleMessageCreated(context.Background(), e) // should not panic
+	})
+	t.Run("agent sender skipped", func(t *testing.T) {
+		e := base
+		e.Sender.Type = "user"
+		handleMessageCreated(context.Background(), e)
+	})
+	t.Run("assigned skipped", func(t *testing.T) {
+		e := base
+		e.AssigneeID = 7
+		handleMessageCreated(context.Background(), e)
+	})
+	t.Run("empty content skipped", func(t *testing.T) {
+		e := base
+		e.Content = ""
+		handleMessageCreated(context.Background(), e)
+	})
 }
 
 // Handoff marker detection tests

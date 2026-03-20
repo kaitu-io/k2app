@@ -23,82 +23,110 @@ var chatwootHTTPClient = &http.Client{Timeout: 10 * time.Second}
 //go:embed data/system_prompt.md
 var systemPrompt string
 
-// shouldProcessChatwootEvent checks all filter conditions.
-// Returns true only if the event should be forwarded to AI.
-func shouldProcessChatwootEvent(event chatwoot.Event) bool {
-	if event.EventType != "message_created" {
-		return false
-	}
-	if event.MessageType != "incoming" {
-		return false
-	}
-	if event.Sender.Type != "contact" {
-		return false
-	}
-	// Skip if a human agent has been assigned (assigneeID > 0 means human took over)
-	if event.AssigneeID > 0 {
-		return false
-	}
-	if strings.TrimSpace(event.Content) == "" {
-		return false
-	}
-	// Only process messages from the configured AI inbox (0 = no filter)
-	if inboxID := viper.GetInt("chatwoot.ai_inbox_id"); inboxID > 0 && event.InboxID != inboxID {
-		return false
-	}
-	return true
+// isAIInbox checks if the event belongs to the configured AI inbox.
+func isAIInbox(event chatwoot.Event) bool {
+	inboxID := viper.GetInt("chatwoot.ai_inbox_id")
+	return inboxID == 0 || event.InboxID == inboxID
 }
 
-// handleChatwootEvent processes Chatwoot webhook events.
+// handleChatwootEvent dispatches Chatwoot webhook events by type.
 // Called asynchronously by chatwoot.Mount() in a goroutine with 60s context timeout.
-// Note: gin.Context is not available here (already released), so we use context.Context.
-// Request-scoped tracing is not available — this is inherent to async webhook processing.
 func handleChatwootEvent(ctx context.Context, event chatwoot.Event) {
-	if !shouldProcessChatwootEvent(event) {
+	if !isAIInbox(event) {
+		return
+	}
+
+	switch event.EventType {
+	case "conversation_created":
+		handleConversationCreated(ctx, event)
+	case "message_created":
+		handleMessageCreated(ctx, event)
+	case "message_updated":
+		handleMessageUpdated(ctx, event)
+	}
+}
+
+// handleConversationCreated sends a welcome message with interactive buttons.
+func handleConversationCreated(ctx context.Context, event chatwoot.Event) {
+	if event.AssigneeID > 0 {
+		return // human already assigned
+	}
+
+	log.Infof(ctx, "new conversation=%d", event.ConversationID)
+
+	if err := chatwoot.SendOptions(ctx, event.ConversationID,
+		"您好！请问需要什么帮助？",
+		chatwoot.NewOption("📱 安装问题", "install"),
+		chatwoot.NewOption("💳 购买/续费", "purchase"),
+		chatwoot.NewOption("❓ 使用问题", "usage"),
+		chatwoot.NewOption("📹 与客服视频", "video_support"),
+	); err != nil {
+		log.Errorf(ctx, "send welcome options error: conversation=%d err=%v", event.ConversationID, err)
+	}
+}
+
+// handleMessageUpdated processes interactive button selections.
+func handleMessageUpdated(ctx context.Context, event chatwoot.Event) {
+	if len(event.SubmittedValues) == 0 {
+		return
+	}
+	if event.AssigneeID > 0 {
+		return
+	}
+
+	selected := event.SubmittedValues[0].Value
+	log.Infof(ctx, "button selected: conversation=%d value=%s", event.ConversationID, selected)
+
+	switch selected {
+	case "video_support":
+		handleTransferHuman(ctx, event.ConversationID,
+			"好的，正在为您转接人工客服安排视频支持 😊", "")
+	case "install":
+		askAI(ctx, event.ConversationID, "我需要安装帮助")
+	case "purchase":
+		askAI(ctx, event.ConversationID, "我想了解购买和续费")
+	case "usage":
+		askAI(ctx, event.ConversationID, "我有使用问题")
+	default:
+		askAI(ctx, event.ConversationID, event.SubmittedValues[0].Title)
+	}
+}
+
+// handleMessageCreated processes incoming customer messages via AI.
+func handleMessageCreated(ctx context.Context, event chatwoot.Event) {
+	if event.MessageType != "incoming" {
+		return
+	}
+	if event.Sender.Type != "contact" {
+		return
+	}
+	if event.AssigneeID > 0 {
+		return
+	}
+	if strings.TrimSpace(event.Content) == "" {
 		return
 	}
 
 	log.Infof(ctx, "conversation=%d sender=%s content=%q",
 		event.ConversationID, event.Sender.Name, truncateString(event.Content, 100))
 
+	askAI(ctx, event.ConversationID, event.Content)
+}
+
+// askAI fetches conversation history from Chatwoot, queries OpenAI filesearch,
+// and replies. Transfers to human on error or [TRANSFER_HUMAN] marker.
+func askAI(ctx context.Context, conversationID int, question string) {
 	// Wait 1s for Chatwoot to persist the current message before fetching history
 	time.Sleep(1 * time.Second)
 
-	// Fetch conversation history from Chatwoot (source of truth)
-	history, err := chatwoot.GetMessages(ctx, event.ConversationID, 0)
+	history, err := chatwoot.GetMessages(ctx, conversationID, 0)
 	if err != nil {
-		log.Warnf(ctx, "failed to get history: conversation=%d err=%v", event.ConversationID, err)
-		// Degrade to single-turn: no history, just current question
+		log.Warnf(ctx, "failed to get history: conversation=%d err=%v", conversationID, err)
 		history = nil
 	}
 
-	opts := buildAskOpts(history, event)
-	opts = append([]filesearch.Option{filesearch.WithSystemPrompt(systemPrompt)}, opts...)
-	result, err := filesearch.Ask(ctx, "crm", event.Content, opts...)
-	if err != nil || strings.TrimSpace(result.Content) == "" {
-		log.Errorf(ctx, "filesearch failed: conversation=%d err=%v", event.ConversationID, err)
-		handleTransferHuman(ctx, event.ConversationID, "", event.Content)
-		return
-	}
-
-	if strings.HasSuffix(strings.TrimSpace(result.Content), transferHumanMarker) {
-		handleTransferHuman(ctx, event.ConversationID, result.Content, event.Content)
-		return
-	}
-
-	if err := chatwoot.Reply(ctx, event.ConversationID, result.Content); err != nil {
-		log.Errorf(ctx, "reply error: conversation=%d err=%v", event.ConversationID, err)
-	}
-}
-
-// buildAskOpts converts Chatwoot history + current event into filesearch options.
-// History from GetMessages is chronological and includes the current message.
-// Images in history are passed via WithHistory (filesearch.Message.Images).
-// Images in the current event are passed via WithImage (detail:low is automatic).
-func buildAskOpts(history []chatwoot.Message, event chatwoot.Event) []filesearch.Option {
 	var opts []filesearch.Option
-
-	// Convert chatwoot history to filesearch messages
+	opts = append(opts, filesearch.WithSystemPrompt(systemPrompt))
 	if len(history) > 0 {
 		fsHistory := make([]filesearch.Message, len(history))
 		for i, m := range history {
@@ -111,14 +139,21 @@ func buildAskOpts(history []chatwoot.Message, event chatwoot.Event) []filesearch
 		opts = append(opts, filesearch.WithHistory(fsHistory))
 	}
 
-	// Current message image attachments
-	for _, att := range event.Attachments {
-		if att.FileType == "image" {
-			opts = append(opts, filesearch.WithImage(att.DataURL))
-		}
+	result, err := filesearch.Ask(ctx, "crm", question, opts...)
+	if err != nil || strings.TrimSpace(result.Content) == "" {
+		log.Errorf(ctx, "filesearch failed: conversation=%d err=%v", conversationID, err)
+		handleTransferHuman(ctx, conversationID, "", question)
+		return
 	}
 
-	return opts
+	if strings.HasSuffix(strings.TrimSpace(result.Content), transferHumanMarker) {
+		handleTransferHuman(ctx, conversationID, result.Content, question)
+		return
+	}
+
+	if err := chatwoot.Reply(ctx, conversationID, result.Content); err != nil {
+		log.Errorf(ctx, "reply error: conversation=%d err=%v", conversationID, err)
+	}
 }
 
 // handleTransferHuman handles the human handoff flow:
