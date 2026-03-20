@@ -376,5 +376,29 @@
     "realTimeResponse": "即時諮詢、快速回應",
     "startOnlineService": "啟動線上客服",
     "warranty": "所有路由器產品均提供1年質保 • 免費技術支援 • 7天無理由退貨"
+  },
+  "faq": {
+    "items": {
+      "platforms": {
+        "question": "開途支援哪些裝置？",
+        "answer": "開途支援 Windows、macOS、Linux、iOS（iPhone/iPad）和 Android，一個帳號最多 5 台裝置同時在線。"
+      },
+      "pricing": {
+        "question": "開途怎麼收費？",
+        "answer": "開途以美元計價，提供 1 年、2 年、3 年、5 年四檔訂閱方案，週期越長月均價越低。所有方案均為專業版全功能，支援 5 台裝置同時在線。支援支付寶、微信、銀聯、信用卡及加密貨幣支付，購買後即時生效。詳情請訪問 kaitu.io/purchase"
+      },
+      "refund": {
+        "question": "可以退款嗎？",
+        "answer": "首次購買 7 天內、使用流量未超過 1GB 可申請退款。退款金額退回帳戶錢包餘額，可用於續費或提現到加密貨幣錢包。"
+      },
+      "androidInstall": {
+        "question": "安卓手機安裝遇到攔截怎麼辦？",
+        "answer": "部分手機系統會對非應用商店安裝的應用進行安全檢查，這不代表應用有問題。您可以按照提示手動允許安裝，或透過電腦 USB 輔助安裝繞過所有限制。詳細指南請訪問 kaitu.io/install"
+      },
+      "privacy": {
+        "question": "開途安全嗎？會記錄我的上網記錄嗎？",
+        "answer": "開途不記錄您的瀏覽歷史、DNS 查詢或任何網路活動內容。我們僅保留連線時間戳用於服務優化，且僅保留最近 7 天後自動刪除。macOS 版通過 Apple 官方公證，Windows 版通過程式碼簽名認證。"
+      }
+    }
   }
 }

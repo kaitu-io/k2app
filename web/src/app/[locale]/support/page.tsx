@@ -1,360 +1,76 @@
-"use client";
+import { getTranslations, setRequestLocale } from 'next-intl/server';
+import type { Metadata } from 'next';
+import { routing } from '@/i18n/routing';
+import { generateMetadata as generateBaseMetadata } from '../metadata';
+import SupportClient from './SupportClient';
 
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { useTranslations } from 'next-intl';
-import { Link } from '@/i18n/routing';
-import Header from '@/components/Header';
-import Footer from '@/components/Footer';
-import Image from 'next/image';
-import {
-  Activity,
-  MousePointerClick,
-  GraduationCap,
-  Download,
-  LogIn,
-  CreditCard,
-  Zap,
-  Apple,
-  Monitor,
-  Home,
-  MessageCircle,
-  Mail,
-} from 'lucide-react';
+type Locale = (typeof routing.locales)[number];
 
-const openChat = () => {
-  const w = window as unknown as Record<string, unknown>;
-  if (w.$chatwoot && typeof (w.$chatwoot as Record<string, unknown>).toggle === 'function') {
-    (w.$chatwoot as { toggle: (action: string) => void }).toggle('open');
-  }
-};
+const FAQ_ITEMS = ['multiDevice', 'connectionFailed', 'purchase', 'platforms', 'childSafety'] as const;
 
-const email = ['bnb', '@', 'kaitu', '.io'].join('');
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}): Promise<Metadata> {
+  const { locale: rawLocale } = await params;
+  const locale = rawLocale as Locale;
+  const base = generateBaseMetadata(locale);
+  const t = await getTranslations({ locale, namespace: 'guide-parents' });
 
-export default function GuideParentsPage() {
-  const t = useTranslations();
+  const title = `${t('hero.title')} | Kaitu`;
+  const description = t('hero.subtitle');
+
+  return {
+    ...base,
+    title,
+    description,
+    openGraph: {
+      ...(base.openGraph as Record<string, unknown>),
+      title,
+      description,
+    },
+    twitter: {
+      ...(base.twitter as Record<string, unknown>),
+      title,
+      description,
+    },
+  };
+}
+
+export default async function SupportPage({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale: rawLocale } = await params;
+  const locale = rawLocale as Locale;
+  setRequestLocale(locale);
+
+  const t = await getTranslations({ locale, namespace: 'guide-parents' });
+
+  const jsonLd = JSON.stringify({
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: FAQ_ITEMS.map((item) => ({
+      '@type': 'Question',
+      name: t(`faq.items.${item}.question`),
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: t(`faq.items.${item}.answer`),
+      },
+    })),
+  });
 
   return (
-    <div className="min-h-screen bg-background">
-      <Header />
-
-      {/* Hero Section */}
-      <section className="py-20 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-4xl mx-auto text-center">
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-foreground mb-4">
-            {t('guide-parents.hero.title')}
-          </h1>
-          <p className="text-xl text-muted-foreground mb-8">
-            {t('guide-parents.hero.subtitle')}
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link href="/install">
-              <Button size="lg">
-                <Download className="w-5 h-5 mr-2" />
-                {t('guide-parents.hero.downloadButton')}
-              </Button>
-            </Link>
-            <a href="#guides">
-              <Button size="lg" variant="outline">
-                {t('guide-parents.hero.guideButton')}
-              </Button>
-            </a>
-          </div>
-        </div>
-      </section>
-
-      {/* Why Kaitu Section */}
-      <section className="py-16 px-4 sm:px-6 lg:px-8 bg-card/50">
-        <div className="max-w-4xl mx-auto">
-          <h2 className="text-3xl font-bold text-foreground text-center mb-12">
-            {t('guide-parents.whyKaitu.title')}
-          </h2>
-          <div className="grid sm:grid-cols-3 gap-6">
-            <Card className="p-6 text-center">
-              <div className="w-12 h-12 mx-auto mb-4 bg-green-900/50 rounded-full flex items-center justify-center">
-                <Activity className="w-6 h-6 text-green-600" />
-              </div>
-              <h3 className="font-bold text-foreground mb-2">
-                {t('guide-parents.whyKaitu.stable.title')}
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                {t('guide-parents.whyKaitu.stable.description')}
-              </p>
-            </Card>
-            <Card className="p-6 text-center">
-              <div className="w-12 h-12 mx-auto mb-4 bg-blue-900/50 rounded-full flex items-center justify-center">
-                <MousePointerClick className="w-6 h-6 text-blue-600" />
-              </div>
-              <h3 className="font-bold text-foreground mb-2">
-                {t('guide-parents.whyKaitu.simple.title')}
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                {t('guide-parents.whyKaitu.simple.description')}
-              </p>
-            </Card>
-            <Card className="p-6 text-center">
-              <div className="w-12 h-12 mx-auto mb-4 bg-purple-900/50 rounded-full flex items-center justify-center">
-                <GraduationCap className="w-6 h-6 text-purple-600" />
-              </div>
-              <h3 className="font-bold text-foreground mb-2">
-                {t('guide-parents.whyKaitu.education.title')}
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                {t('guide-parents.whyKaitu.education.description')}
-              </p>
-            </Card>
-          </div>
-        </div>
-      </section>
-
-      {/* Quick Start Section */}
-      <section className="py-16 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-4xl mx-auto">
-          <h2 className="text-3xl font-bold text-foreground text-center mb-12">
-            {t('guide-parents.quickStart.title')}
-          </h2>
-          <div className="space-y-8">
-            {/* Step 1 */}
-            <div className="flex gap-6">
-              <div className="flex-shrink-0 w-12 h-12 bg-blue-900/50 rounded-full flex items-center justify-center">
-                <Download className="w-6 h-6 text-blue-600" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-xl font-bold text-foreground mb-2">
-                  <span className="text-blue-600 mr-2">{"1."}</span>
-                  {t('guide-parents.quickStart.step1.title')}
-                </h3>
-                <p className="text-muted-foreground mb-4">
-                  {t('guide-parents.quickStart.step1.description')}
-                </p>
-                <div className="flex flex-wrap gap-3">
-                  <Link href="/install">
-                    <Button variant="outline" size="sm">
-                      {t('guide-parents.quickStart.step1.ios')}
-                    </Button>
-                  </Link>
-                  <Link href="/install">
-                    <Button variant="outline" size="sm">
-                      {t('guide-parents.quickStart.step1.android')}
-                    </Button>
-                  </Link>
-                  <Link href="/install">
-                    <Button variant="outline" size="sm">
-                      {t('guide-parents.quickStart.step1.macos')}
-                    </Button>
-                  </Link>
-                  <Link href="/install">
-                    <Button variant="outline" size="sm">
-                      {t('guide-parents.quickStart.step1.windows')}
-                    </Button>
-                  </Link>
-                </div>
-              </div>
-            </div>
-
-            {/* Step 2 */}
-            <div className="flex gap-6">
-              <div className="flex-shrink-0 w-12 h-12 bg-green-900/50 rounded-full flex items-center justify-center">
-                <LogIn className="w-6 h-6 text-green-600" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-xl font-bold text-foreground mb-2">
-                  <span className="text-green-600 mr-2">{"2."}</span>
-                  {t('guide-parents.quickStart.step2.title')}
-                </h3>
-                <p className="text-muted-foreground">
-                  {t('guide-parents.quickStart.step2.description')}
-                </p>
-              </div>
-            </div>
-
-            {/* Step 3 */}
-            <div className="flex gap-6">
-              <div className="flex-shrink-0 w-12 h-12 bg-purple-900/50 rounded-full flex items-center justify-center">
-                <CreditCard className="w-6 h-6 text-purple-600" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-xl font-bold text-foreground mb-2">
-                  <span className="text-purple-600 mr-2">{"3."}</span>
-                  {t('guide-parents.quickStart.step3.title')}
-                </h3>
-                <p className="text-muted-foreground mb-4">
-                  {t('guide-parents.quickStart.step3.description')}
-                </p>
-                <Link href="/purchase">
-                  <Button variant="outline" size="sm">
-                    {t('guide-parents.quickStart.step3.button')}
-                  </Button>
-                </Link>
-              </div>
-            </div>
-
-            {/* Step 4 */}
-            <div className="flex gap-6">
-              <div className="flex-shrink-0 w-12 h-12 bg-orange-900/50 rounded-full flex items-center justify-center">
-                <Zap className="w-6 h-6 text-orange-600" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-xl font-bold text-foreground mb-2">
-                  <span className="text-orange-600 mr-2">{"4."}</span>
-                  {t('guide-parents.quickStart.step4.title')}
-                </h3>
-                <p className="text-muted-foreground">
-                  {t('guide-parents.quickStart.step4.description')}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Guides Section */}
-      <section id="guides" className="py-16 px-4 sm:px-6 lg:px-8 bg-card/50">
-        <div className="max-w-4xl mx-auto">
-          <h2 className="text-3xl font-bold text-foreground text-center mb-12">
-            {t('guide-parents.guides.title')}
-          </h2>
-          <div className="grid sm:grid-cols-2 gap-6">
-            <Card className="p-6 hover:shadow-lg transition-shadow">
-              <div className="flex items-center mb-4">
-                <div className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center mr-4">
-                  <Apple className="w-6 h-6 text-muted-foreground" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-foreground">
-                    {t('guide-parents.guides.mac.title')}
-                  </h3>
-                  <p className="text-sm text-muted-foreground">
-                    {t('guide-parents.guides.mac.description')}
-                  </p>
-                </div>
-              </div>
-              <a href="https://dl.kaitu.io/kaitu/guides/mac-guide.pdf" target="_blank" rel="noopener noreferrer">
-                <Button variant="outline" size="sm">
-                  <Download className="w-4 h-4 mr-2" />
-                  {t('guide-parents.guides.download')}
-                </Button>
-              </a>
-            </Card>
-            <Card className="p-6 hover:shadow-lg transition-shadow">
-              <div className="flex items-center mb-4">
-                <div className="w-12 h-12 bg-blue-900/50 rounded-lg flex items-center justify-center mr-4">
-                  <Monitor className="w-6 h-6 text-blue-600" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-foreground">
-                    {t('guide-parents.guides.windows.title')}
-                  </h3>
-                  <p className="text-sm text-muted-foreground">
-                    {t('guide-parents.guides.windows.description')}
-                  </p>
-                </div>
-              </div>
-              <a href="https://dl.kaitu.io/kaitu/guides/win-guide.pdf" target="_blank" rel="noopener noreferrer">
-                <Button variant="outline" size="sm">
-                  <Download className="w-4 h-4 mr-2" />
-                  {t('guide-parents.guides.download')}
-                </Button>
-              </a>
-            </Card>
-          </div>
-        </div>
-      </section>
-
-      {/* FAQ Section */}
-      <section id="faq" className="py-16 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-4xl mx-auto">
-          <h2 className="text-3xl font-bold text-foreground text-center mb-12">
-            {t('guide-parents.faq.title')}
-          </h2>
-          <div className="space-y-6">
-            {(['multiDevice', 'connectionFailed', 'purchase', 'platforms', 'childSafety'] as const).map((key) => (
-              <Card key={key} className="p-6">
-                <h3 className="font-semibold text-foreground mb-2">
-                  {t(`guide-parents.faq.items.${key}.question`)}
-                </h3>
-                <p className="text-muted-foreground text-sm">
-                  {t(`guide-parents.faq.items.${key}.answer`)}
-                </p>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Contact Section */}
-      <section id="contact" className="py-16 px-4 sm:px-6 lg:px-8 bg-card/50">
-        <div className="max-w-4xl mx-auto">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold text-foreground mb-4">
-              {t('guide-parents.contact.title')}
-            </h2>
-            <p className="text-muted-foreground text-lg">
-              {t('guide-parents.contact.description')}
-            </p>
-          </div>
-          <div className="grid sm:grid-cols-3 gap-6">
-            {/* Live Chat */}
-            <Card
-              className="p-6 text-center cursor-pointer hover:shadow-lg transition-shadow"
-              onClick={openChat}
-            >
-              <div className="w-12 h-12 mx-auto mb-4 bg-blue-900/50 rounded-full flex items-center justify-center">
-                <MessageCircle className="w-6 h-6 text-blue-600" />
-              </div>
-              <h3 className="font-bold text-foreground mb-1">
-                {t('guide-parents.contact.liveChatButton')}
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                {t('guide-parents.contact.liveChatDescription')}
-              </p>
-            </Card>
-
-            {/* Email */}
-            <a href={`mailto:${email}`} className="block">
-              <Card className="p-6 text-center hover:shadow-lg transition-shadow h-full">
-                <div className="w-12 h-12 mx-auto mb-4 bg-red-900/50 rounded-full flex items-center justify-center">
-                  <Mail className="w-6 h-6 text-red-600" />
-                </div>
-                <h3 className="font-bold text-foreground mb-1">
-                  {t('guide-parents.contact.email.title')}
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  {t('guide-parents.contact.email.description')}
-                </p>
-              </Card>
-            </a>
-
-            {/* WhatsApp */}
-            <a href={t('guide-parents.contact.whatsapp.link')} target="_blank" rel="noopener noreferrer" className="block">
-              <Card className="p-6 text-center hover:shadow-lg transition-shadow h-full">
-                <div className="w-12 h-12 mx-auto mb-4">
-                  <Image src="/icons/whatsapp.svg" alt="WhatsApp" width={48} height={48} />
-                </div>
-                <h3 className="font-bold text-foreground mb-1">
-                  {t('guide-parents.contact.whatsapp.title')}
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  {t('guide-parents.contact.whatsapp.description')}
-                </p>
-              </Card>
-            </a>
-
-          </div>
-        </div>
-      </section>
-
-      {/* Back to Home */}
-      <section className="py-16 px-4 sm:px-6 lg:px-8 text-center">
-        <Link href="/">
-          <Button size="lg" variant="outline">
-            <Home className="w-5 h-5 mr-2" />
-            {t('guide-parents.backToHome')}
-          </Button>
-        </Link>
-      </section>
-
-      <Footer />
-    </div>
+    <>
+      {/* FAQPage JSON-LD — i18n translations are trusted server-side content */}
+      <script
+        type="application/ld+json"
+        suppressHydrationWarning
+        dangerouslySetInnerHTML={{ __html: jsonLd }}
+      />
+      <SupportClient />
+    </>
   );
 }

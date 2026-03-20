@@ -21,6 +21,7 @@ export const namespaceMapping: Record<string, Namespace> = {
   "security": "hero",
   "download": "hero",
   "routers": "hero",
+  "faq": "hero",
   "login": "auth",
   "discovery": "discovery",
   "privacy": "discovery",

@@ -376,5 +376,29 @@
     "realTimeResponse": "Real-time consultation, quick response",
     "startOnlineService": "Start Online Support",
     "warranty": "All router products include 1-year warranty • Free technical support • 7-day no-questions-asked return"
+  },
+  "faq": {
+    "items": {
+      "platforms": {
+        "question": "What platforms does Kaitu support?",
+        "answer": "Kaitu supports Windows, macOS, Linux, iOS (iPhone/iPad), and Android. One account allows up to 5 devices online simultaneously."
+      },
+      "pricing": {
+        "question": "How much does Kaitu cost?",
+        "answer": "Kaitu offers 1-year, 2-year, 3-year, and 5-year subscription plans in USD. Longer plans have lower monthly rates. All plans include full Pro features with up to 5 simultaneous devices. Payment via Alipay, WeChat Pay, UnionPay, credit cards, and cryptocurrency. Instant activation after purchase. Visit kaitu.io/purchase for details."
+      },
+      "refund": {
+        "question": "Can I get a refund?",
+        "answer": "You can request a refund within 7 days of your first purchase if data usage is under 1GB. Refunds are credited to your account wallet balance, which can be used for renewal or withdrawn to a cryptocurrency wallet."
+      },
+      "androidInstall": {
+        "question": "What if Android installation is blocked?",
+        "answer": "Some Android phone manufacturers apply security checks to apps installed outside their app stores. This does not mean the app is unsafe. You can manually allow installation when prompted, or use the USB-assisted install feature from a desktop computer to bypass all restrictions. Visit kaitu.io/install for detailed guides."
+      },
+      "privacy": {
+        "question": "Is Kaitu safe? Does it log my browsing activity?",
+        "answer": "Kaitu does not log your browsing history, DNS queries, or any network activity content. We only retain connection timestamps for service optimization, automatically deleted after 7 days. The macOS version is Apple notarized and the Windows version is code-signed."
+      }
+    }
   }
 }
