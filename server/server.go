@@ -417,7 +417,7 @@ func (s *Server) acceptTCPLoop(ctx context.Context, ln wire.Listener) {
 				return
 			}
 		}
-		slog.Debug("server: AcceptTCP got stream", "addr", addr)
+		slog.Debug("server: AcceptTCP got stream", "addr", addr, "remote", conn.RemoteAddr())
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {

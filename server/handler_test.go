@@ -3,6 +3,7 @@ package server
 import (
 	"bufio"
 	"io"
+	"log/slog"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -387,7 +388,7 @@ func sendDNSViaHandler(t *testing.T, h *ProxyHandler, addr string, query []byte)
 	pc := newTestPacketConn()
 	done := make(chan struct{})
 	go func() {
-		h.handleDNSUDP(pc, addr)
+		h.handleDNSUDP(pc, addr, slog.Default())
 		close(done)
 	}()
 

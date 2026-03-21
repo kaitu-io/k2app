@@ -2,10 +2,12 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
+	"os"
 	"sync"
 	"time"
 
@@ -156,15 +158,16 @@ func (h *ProxyHandler) Close() {
 // HandleTCP proxies a TCP stream to the target address.
 // Writes a stream response, then pipes data bidirectionally.
 func (h *ProxyHandler) HandleTCP(conn net.Conn, addr string) {
+	log := slog.With("remote", conn.RemoteAddr(), "addr", addr)
 	defer conn.Close()
 	untrackConn := h.conns.track(conn)
 	defer untrackConn()
-	slog.Info("server: HandleTCP", "addr", addr)
+	log.Info("server: HandleTCP")
 
 	if !h.AllowPrivateIP {
 		if err := h.checkAddr(addr); err != nil {
 			wire.WriteStreamResponse(conn, &wire.StreamError{Code: 403, Message: err.Error()})
-			slog.Error("server: TCP proxy blocked", "addr", addr, "err", err)
+			log.Error("server: TCP proxy blocked", "err", err)
 			return
 		}
 	}
@@ -173,41 +176,50 @@ func (h *ProxyHandler) HandleTCP(conn net.Conn, addr string) {
 	dialAddr, err := h.resolveAddr(addr)
 	if err != nil {
 		wire.WriteStreamResponse(conn, &wire.StreamError{Code: 502, Message: err.Error()})
-		slog.Error("server: TCP proxy resolve", "addr", addr, "err", err)
+		log.Error("server: TCP proxy resolve", "err", err)
 		return
 	}
 
-	slog.Debug("server: HandleTCP dialing target", "addr", addr, "resolved", dialAddr)
+	log.Debug("server: HandleTCP dialing target", "resolved", dialAddr)
 	dialStart := time.Now()
 	target, err := net.DialTimeout("tcp4", dialAddr, h.DialTimeout)
 	if err != nil {
 		wire.WriteStreamResponse(conn, &wire.StreamError{Code: 502, Message: err.Error()})
-		slog.Error("server: TCP proxy dial", "addr", addr, "err", err, "elapsed", time.Since(dialStart))
+		log.Error("server: TCP proxy dial", "err", err, "elapsed", time.Since(dialStart))
 		return
 	}
 	defer target.Close()
 	untrackTarget := h.conns.track(target)
 	defer untrackTarget()
-	slog.Debug("server: HandleTCP target connected", "addr", addr, "elapsed", time.Since(dialStart))
+	log.Debug("server: HandleTCP target connected", "elapsed", time.Since(dialStart))
 
 	if err := wire.WriteStreamResponse(conn, nil); err != nil {
-		slog.Warn("server: HandleTCP write response failed", "addr", addr, "err", err)
+		log.Warn("server: HandleTCP write response failed", "err", err)
 		return
 	}
 
-	slog.Debug("server: HandleTCP piping", "addr", addr)
+	log.Debug("server: HandleTCP piping")
 	pipe(conn, target)
 }
 
 // HandleUDP proxies a UDP session to the target address.
 // Implements wire.UDPHandler.
 func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
-	slog.Info("server: HandleUDP start", "addr", addr)
+	startTime := time.Now()
+
+	// Use scoped logger from wire layer (carries remote + sid + addr).
+	// Falls back to basic logger if conn doesn't implement UDPSessionInfo.
+	log := slog.With("addr", addr)
+	if info, ok := conn.(wire.UDPSessionInfo); ok {
+		log = info.Logger()
+	}
+
+	log.Info("server: HandleUDP start")
 	untrackConn := h.conns.track(conn)
 	defer untrackConn()
 	if !h.AllowPrivateIP {
 		if err := h.checkAddr(addr); err != nil {
-			slog.Error("server: UDP proxy blocked", "addr", addr, "err", err)
+			log.Error("server: UDP proxy blocked", "err", err)
 			conn.Close()
 			return
 		}
@@ -215,28 +227,28 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 
 	// DNS interception: cache responses for port 53 to reduce upstream load.
 	if h.dnsCache != nil && isDNSPort(addr) {
-		h.handleDNSUDP(conn, addr)
+		h.handleDNSUDP(conn, addr, log)
 		return
 	}
 
 	// Resolve domain to IP before dialing (uses shared DNS cache).
 	resolvedAddr, err := h.resolveAddr(addr)
 	if err != nil {
-		slog.Error("server: UDP resolve domain", "addr", addr, "err", err)
+		log.Error("server: UDP resolve domain", "err", err)
 		conn.Close()
 		return
 	}
 
 	targetAddr, err := net.ResolveUDPAddr("udp4", resolvedAddr)
 	if err != nil {
-		slog.Error("server: UDP resolve", "addr", resolvedAddr, "err", err)
+		log.Error("server: UDP resolve", "resolved", resolvedAddr, "err", err)
 		conn.Close()
 		return
 	}
 
 	target, err := net.DialUDP("udp4", nil, targetAddr)
 	if err != nil {
-		slog.Error("server: UDP dial", "addr", addr, "err", err)
+		log.Error("server: UDP dial", "err", err)
 		conn.Close()
 		return
 	}
@@ -254,12 +266,12 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 		for {
 			n, _, err := conn.ReadFrom(buf)
 			if err != nil {
-				slog.Debug("server: HandleUDP client->target ReadFrom done", "addr", addr, "err", err)
+				log.Debug("server: HandleUDP client->target ReadFrom done", "err", err)
 				break
 			}
-			slog.Debug("server: HandleUDP client->target forwarding", "addr", addr, "len", n)
+			log.Debug("server: HandleUDP client->target forwarding", "len", n)
 			if _, err := target.Write(buf[:n]); err != nil {
-				slog.Warn("server: HandleUDP client->target Write failed", "addr", addr, "err", err)
+				log.Warn("server: HandleUDP client->target Write failed", "err", err)
 				break
 			}
 		}
@@ -267,18 +279,25 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 	}()
 
 	// target -> client
+	var exitReason string
 	bp := udpBufPool.Get().(*[]byte)
 	buf := *bp
 	for {
 		target.SetReadDeadline(time.Now().Add(60 * time.Second))
 		n, err := target.Read(buf)
 		if err != nil {
-			slog.Debug("server: HandleUDP target->client Read done", "addr", addr, "err", err)
+			if errors.Is(err, os.ErrDeadlineExceeded) {
+				exitReason = "target-timeout"
+			} else {
+				exitReason = "target-read-error"
+			}
+			log.Debug("server: HandleUDP target->client Read done", "err", err)
 			break
 		}
-		slog.Debug("server: HandleUDP target->client forwarding", "addr", addr, "len", n)
+		log.Debug("server: HandleUDP target->client forwarding", "len", n)
 		if _, err := conn.WriteTo(buf[:n], nil); err != nil {
-			slog.Warn("server: HandleUDP target->client WriteTo failed", "addr", addr, "err", err)
+			exitReason = "writeto-fail"
+			log.Warn("server: HandleUDP target->client WriteTo failed", "err", err)
 			break
 		}
 	}
@@ -287,26 +306,27 @@ func (h *ProxyHandler) HandleUDP(conn net.PacketConn, addr string) {
 	conn.Close()
 	target.Close()
 	<-done
-	slog.Debug("server: HandleUDP done", "addr", addr)
+	log.Info("server: HandleUDP done",
+		"exitReason", exitReason, "durationS", int(time.Since(startTime).Seconds()))
 }
 
 // handleDNSUDP handles DNS UDP sessions with transparent caching.
 // Cache hit: respond directly without upstream query.
 // Cache miss: forward to upstream, cache response, respond to client.
-func (h *ProxyHandler) handleDNSUDP(conn net.PacketConn, addr string) {
+func (h *ProxyHandler) handleDNSUDP(conn net.PacketConn, _ string, log *slog.Logger) {
 	defer conn.Close()
 
 	// Use system resolver instead of client-specified upstream.
 	upstream := h.dnsUpstream
 	targetAddr, err := net.ResolveUDPAddr("udp4", upstream)
 	if err != nil {
-		slog.Error("server: DNS UDP resolve", "upstream", upstream, "err", err)
+		log.Error("server: DNS UDP resolve", "upstream", upstream, "err", err)
 		return
 	}
 
 	target, err := net.DialUDP("udp4", nil, targetAddr)
 	if err != nil {
-		slog.Error("server: DNS UDP dial", "upstream", upstream, "err", err)
+		log.Error("server: DNS UDP dial", "upstream", upstream, "err", err)
 		return
 	}
 	defer target.Close()
@@ -314,9 +334,9 @@ func (h *ProxyHandler) handleDNSUDP(conn net.PacketConn, addr string) {
 	defer untrackTarget()
 
 	type pendingQuery struct {
-		domain  string
-		qtype   uint16
-		sentAt  time.Time
+		domain string
+		qtype  uint16
+		sentAt time.Time
 	}
 	var pendingMu sync.Mutex
 	pending := make(map[uint16]*pendingQuery)
@@ -359,12 +379,12 @@ func (h *ProxyHandler) handleDNSUDP(conn net.PacketConn, addr string) {
 				writeToMu.Lock()
 				conn.WriteTo(packed, nil)
 				writeToMu.Unlock()
-				slog.Info("DIAG: dns-cache-hit", "domain", domain, "qtype", qtype)
+				log.Info("DIAG: dns-cache-hit", "domain", domain, "qtype", qtype)
 				continue
 			}
 
 			// Cache miss — track and forward.
-			slog.Info("DIAG: dns-cache-miss", "domain", domain, "qtype", qtype, "upstream", upstream, "clientAddr", addr)
+			log.Info("DIAG: dns-cache-miss", "domain", domain, "qtype", qtype, "upstream", upstream)
 			pendingMu.Lock()
 			pending[query.Id] = &pendingQuery{domain: domain, qtype: qtype, sentAt: time.Now()}
 			pendingMu.Unlock()
@@ -402,9 +422,9 @@ func (h *ProxyHandler) handleDNSUDP(conn net.PacketConn, addr string) {
 			if ok && !resp.Truncated {
 				h.dnsCache.Add(pq.domain, pq.qtype, &resp)
 				rttMs := time.Since(pq.sentAt).Milliseconds()
-				slog.Info("DIAG: dns-upstream-ok", "domain", pq.domain, "qtype", pq.qtype, "rcode", resp.Rcode, "rttMs", rttMs, "upstream", upstream)
+				log.Info("DIAG: dns-upstream-ok", "domain", pq.domain, "qtype", pq.qtype, "rcode", resp.Rcode, "rttMs", rttMs, "upstream", upstream)
 				if rttMs > 500 {
-					slog.Warn("DIAG: dns-upstream-slow", "domain", pq.domain, "qtype", pq.qtype, "rttMs", rttMs, "upstream", upstream)
+					log.Warn("DIAG: dns-upstream-slow", "domain", pq.domain, "qtype", pq.qtype, "rttMs", rttMs, "upstream", upstream)
 				}
 			}
 		}
@@ -413,10 +433,10 @@ func (h *ProxyHandler) handleDNSUDP(conn net.PacketConn, addr string) {
 		_, werr := conn.WriteTo(buf[:n], nil)
 		writeToMu.Unlock()
 		if werr != nil {
-			slog.Warn("DIAG: dns-stream-write-fail", "addr", addr, "err", werr, "len", n)
+			log.Warn("DIAG: dns-stream-write-fail", "err", werr, "len", n)
 			break
 		}
-		slog.Debug("DIAG: dns-stream-write-ok", "addr", addr, "len", n)
+		log.Debug("DIAG: dns-stream-write-ok", "len", n)
 	}
 	udpBufPool.Put(bp)
 
@@ -424,7 +444,7 @@ func (h *ProxyHandler) handleDNSUDP(conn net.PacketConn, addr string) {
 	// Explicit close here would be redundant (wire PacketConn uses sync.Once,
 	// so it's safe but unnecessary).
 	<-done
-	slog.Debug("server: DNS UDP done", "addr", addr)
+	log.Debug("server: DNS UDP done")
 }
 
 // closeWriter is implemented by connections that support half-close (write-only FIN).
