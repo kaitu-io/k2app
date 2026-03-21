@@ -31,6 +31,9 @@ func runDaemon(configPath string) {
 	}
 	defer cleanup()
 
+	slog.Info("========== k2 daemon starting ==========",
+		"version", version, "commit", commit, "pid", os.Getpid())
+
 	// 1. Load config.
 	cfg, cfgPathUsed, err := loadOrDefaultConfig(configPath)
 	if err != nil {

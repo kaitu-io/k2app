@@ -27,6 +27,9 @@ func runServer(configPath string) {
 	}
 	defer cleanup()
 
+	slog.Info("========== k2s server starting ==========",
+		"version", version, "commit", commit, "pid", os.Getpid())
+
 	// Beta build activates beta channel unconditionally (mirrors desktop behavior).
 	if strings.Contains(version, "-beta") && readChannel() != "beta" {
 		_ = saveChannel("beta")
