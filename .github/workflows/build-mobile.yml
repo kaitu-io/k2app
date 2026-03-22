@@ -133,6 +133,9 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          TAG_VERSION="${TAG_VERSION%-ios}"
+          TAG_VERSION="${TAG_VERSION%-android}"
+          TAG_VERSION="${TAG_VERSION%-desktop}"
           PKG_VERSION=$(node -p "require('./package.json').version")
           if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
             echo "::error::Tag version ($TAG_VERSION) != package.json ($PKG_VERSION)"
@@ -292,6 +295,9 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          TAG_VERSION="${TAG_VERSION%-ios}"
+          TAG_VERSION="${TAG_VERSION%-android}"
+          TAG_VERSION="${TAG_VERSION%-desktop}"
           PKG_VERSION=$(node -p "require('./package.json').version")
           if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
             echo "::error::Tag version ($TAG_VERSION) != package.json ($PKG_VERSION)"
