@@ -382,10 +382,10 @@ describe('Connection Store - State Guards', () => {
     const { authService } = await import('../../services/auth-service');
     vi.mocked(authService.buildTunnelUrl).mockResolvedValue('k2v5://u:t@test.com:443');
 
-    // Put VPN into error state
+    // Put VPN into error→idle state
     vpn.dispatch('USER_CONNECT');
-    vpn.dispatch('BACKEND_ERROR', { code: 502, message: 'fail' });
-    expect(vpn.useVPNMachineStore.getState().state).toBe('error');
+    vpn.dispatch('BACKEND_ERROR', { error: { code: 502, message: 'fail' } });
+    expect(vpn.useVPNMachineStore.getState().state).toBe('idle');
 
     await useConnectionStore.getState().connect();
     expect(mockRun).toHaveBeenCalledWith('up', expect.anything());
@@ -448,11 +448,11 @@ describe('Connection Store - VPN State Lifecycle', () => {
     cleanup();
   });
 
-  it('clears connectedTunnel when VPN transitions to idle from error state', async () => {
+  it('clears connectedTunnel when BACKEND_ERROR transitions to idle (was error state)', async () => {
     const { useConnectionStore, vpn } = await getStores();
 
     vpn.dispatch('USER_CONNECT');
-    vpn.dispatch('BACKEND_ERROR', { error: { code: 570, message: 'fatal' } });
+    vpn.dispatch('BACKEND_CONNECTED');
     useConnectionStore.setState({
       connectedTunnel: {
         source: 'cloud',
@@ -466,8 +466,8 @@ describe('Connection Store - VPN State Lifecycle', () => {
     const { initializeConnectionStore } = await import('../connection.store');
     const cleanup = initializeConnectionStore();
 
-    // Error → idle (backend finally reports disconnected)
-    vpn.dispatch('BACKEND_DISCONNECTED');
+    // connected → idle via BACKEND_ERROR (clears connectedTunnel)
+    vpn.dispatch('BACKEND_ERROR', { error: { code: 570, message: 'fatal' } });
     expect(vpn.useVPNMachineStore.getState().state).toBe('idle');
 
     expect(useConnectionStore.getState().connectedTunnel).toBeNull();
@@ -504,7 +504,7 @@ describe('Connection Store - VPN State Lifecycle', () => {
     cleanup();
   });
 
-  it('does NOT clear connectedTunnel in non-idle states (error, reconnecting)', async () => {
+  it('clears connectedTunnel when BACKEND_ERROR transitions to idle', async () => {
     const { useConnectionStore, vpn } = await getStores();
 
     vpn.dispatch('USER_CONNECT');
@@ -521,9 +521,10 @@ describe('Connection Store - VPN State Lifecycle', () => {
     const { initializeConnectionStore } = await import('../connection.store');
     const cleanup = initializeConnectionStore();
 
-    // connected → error (should keep connectedTunnel for retry context)
+    // connected → idle via BACKEND_ERROR (clears connectedTunnel)
     vpn.dispatch('BACKEND_ERROR', { error: { code: 570, message: 'fatal' } });
-    expect(useConnectionStore.getState().connectedTunnel).toEqual(tunnel);
+    expect(vpn.useVPNMachineStore.getState().state).toBe('idle');
+    expect(useConnectionStore.getState().connectedTunnel).toBeNull();
 
     cleanup();
   });

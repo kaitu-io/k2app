@@ -51,6 +51,7 @@ const TRANSITIONS: Record<VPNState, Partial<Record<VPNEvent, VPNState>>> = {
   idle: {
     USER_CONNECT:         'connecting',
     BACKEND_CONNECTED:    'connected',
+    BACKEND_DISCONNECTED: 'idle',           // self-transition: clears stale error via auto-clear
     BACKEND_ERROR:        'idle',
     BACKEND_RECONNECTING: 'reconnecting',
     SERVICE_UNREACHABLE:  'serviceDown',
@@ -178,17 +179,17 @@ export function dispatch(event: VPNEvent, payload?: DispatchPayload): void {
   // Build state update
   const update: Partial<VPNMachineState> = { state: nextState };
 
-  // Carry payload from backend events
-  if (payload?.error !== undefined) update.error = payload.error;
-  if (payload?.isRetrying !== undefined) update.isRetrying = payload.isRetrying;
-  if (payload?.networkAvailable !== undefined) update.networkAvailable = payload.networkAvailable;
-  if (payload?.initialization !== undefined) update.initialization = payload.initialization;
-
-  // Clear error on transitions to idle or connected
+  // Clear error on transitions to idle or connected (default)
   if (nextState === 'idle' || nextState === 'connected') {
     update.error = null;
     update.isRetrying = false;
   }
+
+  // Carry payload from backend events (AFTER auto-clear, so payload wins)
+  if (payload?.error !== undefined) update.error = payload.error;
+  if (payload?.isRetrying !== undefined) update.isRetrying = payload.isRetrying;
+  if (payload?.networkAvailable !== undefined) update.networkAvailable = payload.networkAvailable;
+  if (payload?.initialization !== undefined) update.initialization = payload.initialization;
 
   console.debug('[VPNMachine] dispatch: ' + currentState + ' + ' + event + ' → ' + nextState);
   useVPNMachineStore.setState(update);

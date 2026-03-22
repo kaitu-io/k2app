@@ -125,7 +125,7 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     // but would cause unnecessary disconnect+reconnect cycle.
     const vpnState = useVPNMachineStore.getState().state;
     console.warn('[Connection] TRACE connect START t=' + t0 + ' vpnState=' + vpnState);
-    if (vpnState !== 'idle' && vpnState !== 'error' && vpnState !== 'serviceDown') {
+    if (vpnState !== 'idle' && vpnState !== 'serviceDown') {
       console.warn('[Connection] connect: rejected (vpnState=' + vpnState + ')');
       return;
     }
@@ -296,14 +296,13 @@ export function initializeConnectionStore(): () => void {
   const unsubVPN = useVPNMachineStore.subscribe(
     (s) => s.state,
     (state) => {
-      // Clear stale connectedTunnel when VPN is no longer actively using it.
-      // idle: connection ended normally. error: connection failed.
-      // In both cases, user should be free to select a new tunnel and
-      // displayTunnel (connectedTunnel ?? activeTunnel) should reflect their choice.
-      if (state === 'idle' || state === 'error') {
+      // Clear stale connectedTunnel when VPN reaches idle.
+      // BACKEND_ERROR now routes to idle (non-retrying) or reconnecting (retrying),
+      // so this single check covers both normal disconnect and error cases.
+      if (state === 'idle') {
         const { connectedTunnel } = useConnectionStore.getState();
         if (connectedTunnel) {
-          console.info('[Connection] VPN ' + state + ' — clearing connectedTunnel');
+          console.info('[Connection] VPN idle — clearing connectedTunnel');
           useConnectionStore.setState({ connectedTunnel: null });
         }
       }

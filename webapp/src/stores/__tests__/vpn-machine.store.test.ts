@@ -45,11 +45,11 @@ describe('VPN Machine Transitions', () => {
       expect(useVPNMachineStore.getState().state).toBe('connected');
     });
 
-    it('BACKEND_ERROR → error (app restart sync)', async () => {
+    it('BACKEND_ERROR → idle with error (app restart sync)', async () => {
       const { useVPNMachineStore, dispatch } = await getStore();
 
       dispatch('BACKEND_ERROR', { error: { code: 503, message: 'unreachable' } });
-      expect(useVPNMachineStore.getState().state).toBe('error');
+      expect(useVPNMachineStore.getState().state).toBe('idle');
       expect(useVPNMachineStore.getState().error).toEqual({ code: 503, message: 'unreachable' });
     });
 
@@ -97,11 +97,11 @@ describe('VPN Machine Transitions', () => {
       expect(useVPNMachineStore.getState().state).toBe('idle');
     });
 
-    it('BACKEND_ERROR → error', async () => {
+    it('BACKEND_ERROR → idle', async () => {
       const { useVPNMachineStore, dispatch } = await enterConnecting();
 
       dispatch('BACKEND_ERROR', { error: { code: 401, message: 'auth failed' } });
-      expect(useVPNMachineStore.getState().state).toBe('error');
+      expect(useVPNMachineStore.getState().state).toBe('idle');
     });
 
     it('SERVICE_UNREACHABLE → serviceDown', async () => {
@@ -149,11 +149,11 @@ describe('VPN Machine Transitions', () => {
       expect(useVPNMachineStore.getState().state).toBe('idle');
     });
 
-    it('BACKEND_ERROR → error', async () => {
+    it('BACKEND_ERROR → idle', async () => {
       const { useVPNMachineStore, dispatch } = await enterConnected();
 
       dispatch('BACKEND_ERROR', { error: { code: 570, message: 'fatal' } });
-      expect(useVPNMachineStore.getState().state).toBe('error');
+      expect(useVPNMachineStore.getState().state).toBe('idle');
     });
 
     it('SERVICE_UNREACHABLE → serviceDown', async () => {
@@ -217,11 +217,11 @@ describe('VPN Machine Transitions', () => {
       expect(useVPNMachineStore.getState().state).toBe('idle');
     });
 
-    it('BACKEND_ERROR → error', async () => {
+    it('BACKEND_ERROR → idle', async () => {
       const { useVPNMachineStore, dispatch } = await enterReconnecting();
 
       dispatch('BACKEND_ERROR');
-      expect(useVPNMachineStore.getState().state).toBe('error');
+      expect(useVPNMachineStore.getState().state).toBe('idle');
     });
 
     it('USER_DISCONNECT → disconnecting', async () => {
@@ -278,48 +278,102 @@ describe('VPN Machine Transitions', () => {
     });
   });
 
-  describe('error state', () => {
-    async function enterError() {
+  describe('idle with error (replaces error state)', () => {
+    async function enterIdleWithError() {
       const mod = await getStore();
       mod.dispatch('USER_CONNECT');
       mod.dispatch('BACKEND_ERROR', { error: { code: 503, message: 'unreachable' } });
-      expect(mod.useVPNMachineStore.getState().state).toBe('error');
+      expect(mod.useVPNMachineStore.getState().state).toBe('idle');
+      expect(mod.useVPNMachineStore.getState().error).not.toBeNull();
       return mod;
     }
 
-    it('USER_CONNECT → connecting (retry)', async () => {
-      const { useVPNMachineStore, dispatch } = await enterError();
+    it('USER_CONNECT → connecting (retry from idle with error)', async () => {
+      const { useVPNMachineStore, dispatch } = await enterIdleWithError();
 
       dispatch('USER_CONNECT');
       expect(useVPNMachineStore.getState().state).toBe('connecting');
     });
 
-    it('USER_DISCONNECT → disconnecting', async () => {
-      const { useVPNMachineStore, dispatch } = await enterError();
-
-      dispatch('USER_DISCONNECT');
-      expect(useVPNMachineStore.getState().state).toBe('disconnecting');
-    });
-
     it('BACKEND_CONNECTED → connected (auto-retry succeeded)', async () => {
-      const { useVPNMachineStore, dispatch } = await enterError();
+      const { useVPNMachineStore, dispatch } = await enterIdleWithError();
 
       dispatch('BACKEND_CONNECTED');
       expect(useVPNMachineStore.getState().state).toBe('connected');
+      expect(useVPNMachineStore.getState().error).toBeNull();
     });
 
-    it('BACKEND_DISCONNECTED → idle', async () => {
-      const { useVPNMachineStore, dispatch } = await enterError();
+    it('BACKEND_DISCONNECTED clears error via payload', async () => {
+      const { useVPNMachineStore, dispatch } = await enterIdleWithError();
 
-      dispatch('BACKEND_DISCONNECTED');
+      dispatch('BACKEND_DISCONNECTED', { error: null });
       expect(useVPNMachineStore.getState().state).toBe('idle');
+      expect(useVPNMachineStore.getState().error).toBeNull();
     });
 
     it('SERVICE_UNREACHABLE → serviceDown', async () => {
-      const { useVPNMachineStore, dispatch } = await enterError();
+      const { useVPNMachineStore, dispatch } = await enterIdleWithError();
 
       dispatch('SERVICE_UNREACHABLE');
       expect(useVPNMachineStore.getState().state).toBe('serviceDown');
+    });
+  });
+
+  describe('BACKEND_ERROR + isRetrying override', () => {
+    it('idle + BACKEND_ERROR + isRetrying → reconnecting', async () => {
+      const { useVPNMachineStore, dispatch } = await getStore();
+
+      dispatch('BACKEND_ERROR', {
+        error: { code: 503, message: 'unreachable' },
+        isRetrying: true,
+      });
+      expect(useVPNMachineStore.getState().state).toBe('reconnecting');
+      expect(useVPNMachineStore.getState().error).toEqual({ code: 503, message: 'unreachable' });
+      expect(useVPNMachineStore.getState().isRetrying).toBe(true);
+    });
+
+    it('connecting + BACKEND_ERROR + isRetrying → reconnecting', async () => {
+      const mod = await getStore();
+      mod.dispatch('USER_CONNECT');
+      mod.dispatch('BACKEND_ERROR', { error: { code: 503, message: 'fail' }, isRetrying: true });
+      expect(mod.useVPNMachineStore.getState().state).toBe('reconnecting');
+    });
+
+    it('connected + BACKEND_ERROR + isRetrying → reconnecting', async () => {
+      const mod = await getStore();
+      mod.dispatch('USER_CONNECT');
+      mod.dispatch('BACKEND_CONNECTED');
+      mod.dispatch('BACKEND_ERROR', { error: { code: 503, message: 'fail' }, isRetrying: true });
+      expect(mod.useVPNMachineStore.getState().state).toBe('reconnecting');
+    });
+
+    it('reconnecting + BACKEND_ERROR + isRetrying → stays reconnecting', async () => {
+      const mod = await getStore();
+      mod.dispatch('USER_CONNECT');
+      mod.dispatch('BACKEND_CONNECTED');
+      mod.dispatch('BACKEND_RECONNECTING');
+      act(() => { vi.advanceTimersByTime(3000); });
+      expect(mod.useVPNMachineStore.getState().state).toBe('reconnecting');
+      mod.dispatch('BACKEND_ERROR', { isRetrying: true });
+      expect(mod.useVPNMachineStore.getState().state).toBe('reconnecting');
+    });
+
+    it('disconnecting + BACKEND_ERROR + isRetrying → idle (honor disconnect)', async () => {
+      const mod = await getStore();
+      mod.dispatch('USER_CONNECT');
+      mod.dispatch('BACKEND_CONNECTED');
+      mod.dispatch('USER_DISCONNECT');
+      expect(mod.useVPNMachineStore.getState().state).toBe('disconnecting');
+      mod.dispatch('BACKEND_ERROR', { isRetrying: true });
+      expect(mod.useVPNMachineStore.getState().state).toBe('idle');
+    });
+
+    it('BACKEND_ERROR + isRetrying=false → idle (negative case)', async () => {
+      const mod = await getStore();
+      mod.dispatch('USER_CONNECT');
+      mod.dispatch('BACKEND_ERROR', { error: { code: 401, message: 'auth' }, isRetrying: false });
+      expect(mod.useVPNMachineStore.getState().state).toBe('idle');
+      expect(mod.useVPNMachineStore.getState().error).toEqual({ code: 401, message: 'auth' });
     });
   });
 
@@ -368,7 +422,7 @@ describe('VPN Machine Payload', () => {
     });
 
     const state = useVPNMachineStore.getState();
-    expect(state.state).toBe('error');
+    expect(state.state).toBe('idle');
     expect(state.error).toEqual({ code: 401, message: 'Unauthorized' });
     expect(state.isRetrying).toBe(false);
     expect(state.networkAvailable).toBe(true);
@@ -404,8 +458,36 @@ describe('VPN Machine Payload', () => {
       networkAvailable: false,
     });
 
+    expect(useVPNMachineStore.getState().state).toBe('reconnecting');
     expect(useVPNMachineStore.getState().isRetrying).toBe(true);
     expect(useVPNMachineStore.getState().networkAvailable).toBe(false);
+  });
+});
+
+// ==================== Error Lifecycle Tests ====================
+
+describe('Error lifecycle', () => {
+  it('error persists in idle until new connect succeeds', async () => {
+    const { useVPNMachineStore, dispatch } = await getStore();
+    dispatch('BACKEND_ERROR', { error: { code: 503, message: 'fail' } });
+    expect(useVPNMachineStore.getState().state).toBe('idle');
+    expect(useVPNMachineStore.getState().error).toEqual({ code: 503, message: 'fail' });
+
+    dispatch('USER_CONNECT');
+    expect(useVPNMachineStore.getState().error).toEqual({ code: 503, message: 'fail' });
+
+    dispatch('BACKEND_CONNECTED');
+    expect(useVPNMachineStore.getState().error).toBeNull();
+  });
+
+  it('BACKEND_DISCONNECTED with no error clears stale error', async () => {
+    const { useVPNMachineStore, dispatch } = await getStore();
+    dispatch('BACKEND_ERROR', { error: { code: 503, message: 'fail' } });
+    expect(useVPNMachineStore.getState().error).not.toBeNull();
+
+    dispatch('BACKEND_DISCONNECTED', { error: null });
+    expect(useVPNMachineStore.getState().state).toBe('idle');
+    expect(useVPNMachineStore.getState().error).toBeNull();
   });
 });
 
@@ -464,14 +546,14 @@ describe('useVPNMachine hook', () => {
     act(() => { dispatch('BACKEND_CONNECTED'); });
     expect(result.current.isInteractive).toBe(true);
 
-    // error + not retrying → not interactive
+    // After connected → dispatch BACKEND_ERROR without retrying → idle
     act(() => { dispatch('BACKEND_ERROR', { isRetrying: false }); });
+    expect(result.current.state).toBe('idle');
     expect(result.current.isInteractive).toBe(false);
 
-    // error + retrying → interactive
-    act(() => {
-      useVPNMachineStore.setState({ isRetrying: true });
-    });
+    // BACKEND_ERROR with retrying → reconnecting → interactive
+    act(() => { dispatch('BACKEND_ERROR', { isRetrying: true, error: { code: 503, message: 'x' } }); });
+    expect(result.current.state).toBe('reconnecting');
     expect(result.current.isInteractive).toBe(true);
   });
 });

@@ -18,14 +18,14 @@ import {
 import { useTranslation } from 'react-i18next';
 import { getThemeColors, getStatusColor } from '../theme/colors';
 import { getFlagIcon } from '../utils/country';
+import type { ControlError } from '../services/vpn-types';
 
 type ServiceState =
   | 'disconnected'
   | 'connecting'
   | 'connected'
   | 'reconnecting'
-  | 'disconnecting'
-  | 'error';
+  | 'disconnecting';
 
 // iOS 风格的 List Item 容器
 const CompactContainer = styled(Box, {
@@ -54,8 +54,7 @@ const CompactContainer = styled(Box, {
 });
 
 // 将 ServiceState 映射到视觉状态
-// isRetrying: error 状态下 K2 是否在重试，true 则显示为 transitioning
-function mapServiceStateToVisual(status: ServiceState, isRetrying = false): 'connected' | 'transitioning' | 'disconnected' | 'disabled' {
+function mapServiceStateToVisual(status: ServiceState): 'connected' | 'transitioning' | 'disconnected' | 'disabled' {
   switch (status) {
     case 'connected':
       return 'connected';
@@ -63,9 +62,6 @@ function mapServiceStateToVisual(status: ServiceState, isRetrying = false): 'con
     case 'reconnecting':
     case 'disconnecting':
       return 'transitioning';
-    case 'error':
-      // error + retrying 视觉上显示为 transitioning（脉冲效果）
-      return isRetrying ? 'transitioning' : 'disabled';
     case 'disconnected':
     default:
       return 'disconnected';
@@ -107,6 +103,8 @@ export interface CompactConnectionButtonProps {
   onToggle: () => void;
   /** Flush display (no rounded corners, no margin) */
   flush?: boolean;
+  /** Connection error info */
+  error?: ControlError | null;
   /** Error state: whether K2 is retrying */
   isRetrying?: boolean;
   /** Whether network is available during error retry */
@@ -120,6 +118,7 @@ export function CompactConnectionButton({
   tunnelCountry,
   onToggle,
   flush = false,
+  error = null,
   isRetrying = false,
   networkAvailable = true,
 }: CompactConnectionButtonProps) {
@@ -130,14 +129,11 @@ export function CompactConnectionButton({
   const isDisconnected = serviceState === 'disconnected';
   const isDisconnecting = serviceState === 'disconnecting';
   const isReconnecting = serviceState === 'reconnecting';
-  const isError = serviceState === 'error';
 
-  // error + retrying 视觉上等同于 reconnecting
-  const isErrorRetrying = isError && isRetrying;
-  const isTransitioning = isConnecting || isReconnecting || isDisconnecting || isErrorRetrying;
+  const isTransitioning = isConnecting || isReconnecting || isDisconnecting;
 
   // Switch 状态：已连接或正在连接/重试时为开启
-  const switchChecked = isConnected || isConnecting || isReconnecting || isErrorRetrying;
+  const switchChecked = isConnected || isConnecting || isReconnecting;
 
   // Switch 禁用：断开中或未选择服务器
   const switchDisabled = isDisconnecting || (isDisconnected && !hasTunnelSelected);
@@ -150,21 +146,19 @@ export function CompactConnectionButton({
       case 'connected':
         return t('common:status.connected');
       case 'reconnecting':
-        return t('common:status.reconnecting');
-      case 'disconnecting':
-        return t('common:status.disconnecting');
-      case 'error':
-        // Show network-aware message when retrying
         if (isRetrying) {
           return networkAvailable
             ? t('common:status.reconnectingToServer')
             : t('common:status.waitingForNetwork');
         }
-        return t('common:status.error');
+        return t('common:status.reconnecting');
+      case 'disconnecting':
+        return t('common:status.disconnecting');
       default:
+        if (error) return t('common:status.error');
         return t('common:status.disconnected');
     }
-  }, [serviceState, isRetrying, networkAvailable, t]);
+  }, [serviceState, isRetrying, networkAvailable, error, t]);
 
   // Server display name
   const serverName = useMemo(() => {
@@ -235,7 +229,7 @@ export function CompactConnectionButton({
         {isTransitioning ? (
           <CircularProgress size={12} sx={{ mr: 1 }} />
         ) : (
-          <StatusDot visualStatus={mapServiceStateToVisual(serviceState, isRetrying)} isTransitioning={isTransitioning} />
+          <StatusDot visualStatus={mapServiceStateToVisual(serviceState)} isTransitioning={isTransitioning} />
         )}
         <Typography
           variant="caption"

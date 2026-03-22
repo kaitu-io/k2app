@@ -116,26 +116,14 @@ export function initializeAllStores(): () => void {
 
         if (state === 'idle' && prevState === 'connected') {
           const durationSec = connectTime ? Math.floor((Date.now() - connectTime) / 1000) : 0;
+          const errorInfo = useVPNMachineStore.getState().error;
           statsService.trackDisconnect({
             nodeType: lastConnectedSource === 'self_hosted' ? 'self-hosted' : 'cloud',
             nodeIpv4: lastConnectedSource === 'cloud' ? lastNodeIpv4 : '',
             nodeRegion: lastConnectedSource === 'cloud' ? lastNodeRegion : '',
             ruleMode: lastRuleMode,
             durationSec,
-            reason: 'user',
-          });
-          connectTime = null;
-        }
-
-        if (state === 'error' && prevState === 'connected') {
-          const durationSec = connectTime ? Math.floor((Date.now() - connectTime) / 1000) : 0;
-          statsService.trackDisconnect({
-            nodeType: lastConnectedSource === 'self_hosted' ? 'self-hosted' : 'cloud',
-            nodeIpv4: lastConnectedSource === 'cloud' ? lastNodeIpv4 : '',
-            nodeRegion: lastConnectedSource === 'cloud' ? lastNodeRegion : '',
-            ruleMode: lastRuleMode,
-            durationSec,
-            reason: 'error',
+            reason: errorInfo ? 'error' : 'user',
           });
           connectTime = null;
         }

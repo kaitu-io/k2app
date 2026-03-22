@@ -27,8 +27,7 @@ type ServiceState =
   | 'connecting'
   | 'connected'
   | 'reconnecting'
-  | 'disconnecting'
-  | 'error';
+  | 'disconnecting';
 
 // 折叠切换按钮容器 - 紧凑设计
 const CollapseToggle = styled(Box)(({ theme }) => ({
@@ -123,6 +122,7 @@ export function CollapsibleConnectionSection({
           tunnelName={tunnelName}
           tunnelCountry={tunnelCountry}
           onToggle={onToggle}
+          error={error}
           isRetrying={isRetrying}
           networkAvailable={networkAvailable}
           flush
@@ -170,6 +170,7 @@ export function CollapsibleConnectionSection({
             tunnelName={tunnelName}
             tunnelCountry={tunnelCountry}
             onToggle={onToggle}
+            error={error}
             isRetrying={isRetrying}
             networkAvailable={networkAvailable}
           />

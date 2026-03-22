@@ -22,14 +22,14 @@ import { PlayArrow, Stop, Check } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import { getThemeColors, getStatusGradient, getStatusShadow } from '../theme/colors';
 import { getFlagIcon } from '../utils/country';
+import type { ControlError } from '../services/vpn-types';
 
 type ServiceState =
   | 'disconnected'
   | 'connecting'
   | 'connected'
   | 'reconnecting'
-  | 'disconnecting'
-  | 'error';
+  | 'disconnecting';
 
 // 按钮视觉状态
 type VisualStatus = 'connected' | 'transitioning' | 'disconnected' | 'stop';
@@ -124,6 +124,8 @@ export interface ConnectionButtonProps {
   onToggle: () => void;
   /** Button size (diameter), default 220 */
   size?: number;
+  /** Connection error info */
+  error?: ControlError | null;
   /** Error state: whether K2 is retrying (true=retrying, show animation; false=requires user action) */
   isRetrying?: boolean;
   /** Whether network is available during error retry (true=reconnecting to server, false=waiting for network) */
@@ -137,6 +139,7 @@ export function ConnectionButton({
   tunnelCountry,
   onToggle,
   size = 220,
+  error = null,
   isRetrying = false,
   networkAvailable = true,
 }: ConnectionButtonProps) {
@@ -149,14 +152,11 @@ export function ConnectionButton({
   const isDisconnected = serviceState === 'disconnected';
   const isDisconnecting = serviceState === 'disconnecting';
   const isReconnecting = serviceState === 'reconnecting';
-  const isError = serviceState === 'error';
 
-  // error + retrying 视觉上等同于 reconnecting（脉冲动画）
-  const isErrorRetrying = isError && isRetrying;
-  const isTransitioning = isConnecting || isReconnecting || isDisconnecting || isErrorRetrying;
+  const isTransitioning = isConnecting || isReconnecting || isDisconnecting;
 
-  // hover 时在可操作状态（connecting/connected/reconnecting/error+retrying）显示停止提示
-  const showStopHint = isHovered && (isConnected || isConnecting || isReconnecting || isErrorRetrying);
+  // hover 时在可操作状态（connecting/connected/reconnecting）显示停止提示
+  const showStopHint = isHovered && (isConnected || isConnecting || isReconnecting);
 
   // 计算视觉状态
   const visualStatus: VisualStatus = useMemo(() => {
@@ -184,21 +184,19 @@ export function ConnectionButton({
       case 'connected':
         return t('common:status.connected');
       case 'reconnecting':
-        return t('common:status.reconnecting');
-      case 'disconnecting':
-        return t('common:status.disconnecting');
-      case 'error':
-        // Show network-aware message when retrying
         if (isRetrying) {
           return networkAvailable
             ? t('common:status.reconnectingToServer')
             : t('common:status.waitingForNetwork');
         }
-        return t('common:status.error');
+        return t('common:status.reconnecting');
+      case 'disconnecting':
+        return t('common:status.disconnecting');
       default:
+        if (error) return t('common:status.error');
         return t('common:status.disconnected');
     }
-  }, [serviceState, showStopHint, isRetrying, networkAvailable, t]);
+  }, [serviceState, showStopHint, isRetrying, networkAvailable, error, t]);
 
   // 按钮图标
   const ButtonIcon = useMemo(() => {

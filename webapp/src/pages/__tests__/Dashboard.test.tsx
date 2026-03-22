@@ -273,11 +273,12 @@ describe('Dashboard', () => {
       expect(mockConnect).not.toHaveBeenCalled();
     });
 
-    it('error state with tunnel should reconnect on toggle', async () => {
+    it('idle with error and tunnel should reconnect on toggle', async () => {
       vi.mocked(useVPNMachine).mockReturnValue(createMockVPNMachine({
-        state: 'error',
-        isDisconnected: false,
+        state: 'idle',
+        isDisconnected: true,
         isRetrying: false,
+        error: { code: 503, message: 'fail' },
       }) as any);
 
       vi.mocked(useConnectionStore).mockReturnValue(createMockConnectionStore({
@@ -300,11 +301,12 @@ describe('Dashboard', () => {
       });
     });
 
-    it('error state without tunnel should not reconnect', async () => {
+    it('idle with error without tunnel should not reconnect', async () => {
       vi.mocked(useVPNMachine).mockReturnValue(createMockVPNMachine({
-        state: 'error',
-        isDisconnected: false,
+        state: 'idle',
+        isDisconnected: true,
         isRetrying: false,
+        error: { code: 503, message: 'fail' },
       }) as any);
 
       render(<Dashboard />);

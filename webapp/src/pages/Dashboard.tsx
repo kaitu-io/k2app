@@ -261,10 +261,10 @@ export default function Dashboard() {
       console.debug('[Dashboard] handleToggleConnection: already disconnecting, ignoring');
       return;
     }
-    if (isConnected || isTransitioning || (vpnState === 'error' && isRetrying)) {
+    if (isConnected || isTransitioning) {
       console.info('[Dashboard] handleToggleConnection: → disconnect');
       disconnect();
-    } else if (isDisconnected || (vpnState === 'error' && !isRetrying)) {
+    } else if (isDisconnected) {
       if (!displayTunnel) {
         console.warn('[Dashboard] handleToggleConnection: no tunnel selected, aborting');
         return;
@@ -274,7 +274,7 @@ export default function Dashboard() {
     } else {
       console.warn('[Dashboard] handleToggleConnection: no matching branch (vpnState=' + vpnState + ', isRetrying=' + isRetrying + ')');
     }
-  }, [isConnected, isDisconnected, isTransitioning, vpnState, isRetrying, displayTunnel, connect, disconnect]);
+  }, [isConnected, isDisconnected, isTransitioning, vpnState, displayTunnel, connect, disconnect]);
 
   // Check if any tunnel is selected (cloud or self-hosted)
   const hasTunnelSelected = !!displayTunnel;
