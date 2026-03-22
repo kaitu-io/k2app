@@ -16,6 +16,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     '/purchase',
     '/releases',
     '/routers',
+    '/support',
     '/terms',
   ];
 
