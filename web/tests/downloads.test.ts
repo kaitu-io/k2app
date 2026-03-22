@@ -45,7 +45,7 @@ describe('fetchAllDownloadLinks', () => {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ version: '0.3.22' }) });
       }
       if (url.includes('/ios/latest.json')) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ appstore_url: 'https://apps.apple.com/app/id6448744655' }) });
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ version: '0.4.0', appstore_url: 'https://apps.apple.com/app/id6448744655' }) });
       }
       if (url.includes('/android/latest.json')) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ version: '0.4.0', url: 'https://d0.all7.cc/kaitu/android/0.4.0/Kaitu-0.4.0.apk' }) });
@@ -61,9 +61,11 @@ describe('fetchAllDownloadLinks', () => {
     expect(result.desktop.stable).not.toBeNull();
     expect(result.desktop.stable!.version).toBe('0.3.22');
     expect(result.mobile).not.toBeNull();
-    expect(result.mobile!.ios).toBe('https://apps.apple.com/app/id6448744655');
+    expect(result.mobile!.ios.url).toBe('https://apps.apple.com/app/id6448744655');
+    expect(result.mobile!.ios.version).toBe('0.4.0');
     expect(result.mobile!.android.primary).toBe('https://dl.kaitu.io/kaitu/android/0.4.0/Kaitu-0.4.0.apk');
     expect(result.mobile!.android.backup).toBe('https://d13jc1jqzlg4yt.cloudfront.net/kaitu/android/0.4.0/Kaitu-0.4.0.apk');
+    expect(result.mobile!.android.version).toBe('0.4.0');
   });
 
   it('returns null for desktop channels when CDN is unreachable', async () => {
@@ -127,8 +129,8 @@ describe('flattenToRecord', () => {
         stable: null,
       },
       mobile: {
-        ios: 'https://apps.apple.com/app/id123',
-        android: { primary: 'https://cdn/android.apk', backup: 'https://cdn-backup/android.apk' },
+        ios: { url: 'https://apps.apple.com/app/id123', version: '0.4.0' },
+        android: { primary: 'https://cdn/android.apk', backup: 'https://cdn-backup/android.apk', version: '0.4.0' },
       },
     });
 

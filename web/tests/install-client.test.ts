@@ -68,7 +68,7 @@ describe('InstallClient', () => {
       createElement(InstallClient, {
         betaVersion: '0.4.0-beta.1',
         stableVersion: '0.3.22',
-        mobileLinks: { ios: 'https://apps.apple.com/test', android: { primary: 'https://cdn/android.apk', backup: 'https://cdn-backup/android.apk' } },
+        mobileLinks: { ios: { url: 'https://apps.apple.com/test', version: '0.4.0' }, android: { primary: 'https://cdn/android.apk', backup: 'https://cdn-backup/android.apk', version: '0.4.0' } },
       })
     );
     expect(container.innerHTML).not.toBe('');
@@ -90,7 +90,7 @@ describe('InstallClient', () => {
       createElement(InstallClient, {
         betaVersion: '0.4.0-beta.1',
         stableVersion: '0.3.22',
-        mobileLinks: { ios: 'https://apps.apple.com/test', android: { primary: 'https://cdn/android.apk', backup: 'https://cdn-backup/android.apk' } },
+        mobileLinks: { ios: { url: 'https://apps.apple.com/test', version: '0.4.0' }, android: { primary: 'https://cdn/android.apk', backup: 'https://cdn-backup/android.apk', version: '0.4.0' } },
       })
     );
     expect(container.innerHTML).not.toContain('Waymaker');
@@ -102,7 +102,7 @@ describe('InstallClient', () => {
       createElement(InstallClient, {
         betaVersion: '0.4.0-beta.1',
         stableVersion: '0.3.22',
-        mobileLinks: { ios: 'https://apps.apple.com/test', android: { primary: 'https://cdn/android.apk', backup: 'https://cdn-backup/android.apk' } },
+        mobileLinks: { ios: { url: 'https://apps.apple.com/test', version: '0.4.0' }, android: { primary: 'https://cdn/android.apk', backup: 'https://cdn-backup/android.apk', version: '0.4.0' } },
       })
     );
     expect(container.querySelector('[data-testid="accordion"]')).not.toBeNull();
@@ -113,7 +113,7 @@ describe('InstallClient', () => {
       createElement(InstallClient, {
         betaVersion: '0.4.0-beta.1',
         stableVersion: '0.3.22',
-        mobileLinks: { ios: 'https://apps.apple.com/test', android: { primary: 'https://cdn/android.apk', backup: 'https://cdn-backup/android.apk' } },
+        mobileLinks: { ios: { url: 'https://apps.apple.com/test', version: '0.4.0' }, android: { primary: 'https://cdn/android.apk', backup: 'https://cdn-backup/android.apk', version: '0.4.0' } },
       })
     );
     const allCards = container.querySelectorAll('[data-testid="card"]');
@@ -127,7 +127,7 @@ describe('InstallClient', () => {
       createElement(InstallClient, {
         betaVersion: '0.4.0-beta.1',
         stableVersion: '0.3.22',
-        mobileLinks: { ios: 'https://apps.apple.com/test', android: { primary: 'https://cdn/android.apk', backup: 'https://cdn-backup/android.apk' } },
+        mobileLinks: { ios: { url: 'https://apps.apple.com/test', version: '0.4.0' }, android: { primary: 'https://cdn/android.apk', backup: 'https://cdn-backup/android.apk', version: '0.4.0' } },
       })
     );
     const items = container.querySelectorAll('[data-testid="accordion-item"]');
