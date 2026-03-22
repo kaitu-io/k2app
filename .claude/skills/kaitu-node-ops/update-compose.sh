@@ -12,10 +12,11 @@
 #   KAITU_ACCESS_KEY  — Center API access key
 #
 # What it does per node:
-#   1. docker compose pull (fetch latest images)
-#   2. docker compose up -d (recreate changed containers)
-#   3. Wait for sidecar healthy
-#   4. Sleep before next node
+#   1. Update K2_VERSION in .env (if --version specified)
+#   2. docker compose pull (fetch latest images)
+#   3. docker compose up -d (recreate changed containers)
+#   4. Wait for sidecar healthy
+#   5. Sleep before next node
 
 set -euo pipefail
 
@@ -26,14 +27,16 @@ SSH_OPTS="-n -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o BatchMode=yes -
 DRY_RUN=false
 SLEEP_INTERVAL=60
 SINGLE_NODE=""
+K2_VERSION=""
 
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=true ;;
     --sleep=*) SLEEP_INTERVAL="${arg#--sleep=}" ;;
     --node=*) SINGLE_NODE="${arg#--node=}" ;;
+    --version=*) K2_VERSION="${arg#--version=}" ;;
     -h|--help)
-      echo "Usage: $0 [--dry-run] [--sleep=SECONDS] [--node=IP]"
+      echo "Usage: $0 [--dry-run] [--sleep=SECONDS] [--node=IP] [--version=TAG]"
       exit 0
       ;;
     *) echo "Unknown option: $arg"; exit 1 ;;
@@ -47,15 +50,15 @@ fi
 
 # --- Fetch active nodes ---
 echo "Fetching node list from Center API..."
-NODE_LIST=$(curl -sf -H "X-Access-Key: $KAITU_ACCESS_KEY" "$KAITU_CENTER_URL/app/nodes/batch-matrix" | python3 -c "
+NODE_LIST=$(curl -sf -H "X-Access-Key: $KAITU_ACCESS_KEY" -H "Content-Type: application/json" "$KAITU_CENTER_URL/app/nodes?pageSize=100" | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
 if data.get('code', -1) != 0:
     sys.exit(1)
-for n in sorted(data['data']['nodes'], key=lambda x: x.get('name','')):
+for n in sorted(data['data']['items'], key=lambda x: x.get('name','')):
     ip = n.get('ipv4','')
     name = n.get('name','')
-    tc = n.get('tunnelCount', len(n.get('tunnels',[])))
+    tc = len(n.get('tunnels',[]))
     if not ip or tc == 0:
         continue
     print(f'{ip}|{name}|{tc}')
@@ -106,8 +109,20 @@ for entry in "${UPDATE_LIST[@]}"; do
     continue
   fi
 
+  # Step 0: Update K2_VERSION in .env (if --version specified)
+  if [ -n "$K2_VERSION" ]; then
+    echo "  [0/4] Updating K2_VERSION to $K2_VERSION..."
+    if ! ssh $SSH_OPTS "$SSH_USER@$IP" "cd /apps/kaitu-slave && sudo sed -i 's/^K2_VERSION=.*/K2_VERSION=$K2_VERSION/' .env 2>&1"; then
+      echo "  FAILED to update .env"
+      FAILED=$((FAILED + 1))
+      echo ""
+      continue
+    fi
+  fi
+
   # Step 1: Pull latest images
-  echo "  [1/3] docker compose pull..."
+  STEPS=$( [ -n "$K2_VERSION" ] && echo 4 || echo 3 )
+  echo "  [1/$STEPS] docker compose pull..."
   PULL_RC=0
   ssh $SSH_OPTS "$SSH_USER@$IP" "cd /apps/kaitu-slave && docker compose pull -q 2>&1" || PULL_RC=$?
   if [ $PULL_RC -ne 0 ]; then
@@ -115,7 +130,7 @@ for entry in "${UPDATE_LIST[@]}"; do
   fi
 
   # Step 2: Restart with new images
-  echo "  [2/3] docker compose up -d..."
+  echo "  [2/$STEPS] docker compose up -d..."
   if ! ssh $SSH_OPTS "$SSH_USER@$IP" "cd /apps/kaitu-slave && docker compose up -d 2>&1"; then
     echo "  FAILED"
     FAILED=$((FAILED + 1))
@@ -124,7 +139,7 @@ for entry in "${UPDATE_LIST[@]}"; do
   fi
 
   # Step 3: Verify sidecar health (k2-sidecar)
-  echo "  [3/3] Waiting 10s for sidecar health..."
+  echo "  [3/$STEPS] Waiting 10s for sidecar health..."
   sleep 10
   SIDECAR_NAME=$(ssh $SSH_OPTS "$SSH_USER@$IP" "docker ps --format '{{.Names}}' 2>/dev/null" 2>/dev/null | grep -o 'k2[^ ]*sidecar' || echo "k2-sidecar")
   HEALTH=$(ssh $SSH_OPTS "$SSH_USER@$IP" "docker inspect --format='{{.State.Health.Status}}' $SIDECAR_NAME 2>/dev/null" 2>/dev/null || echo "not-found")
