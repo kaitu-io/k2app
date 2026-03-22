@@ -7,6 +7,11 @@ const intlMiddleware = createMiddleware(routing);
 export default function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
+  // Serve install scripts as static files (bypass i18n locale redirect)
+  if (pathname === '/i/k2') {
+    return NextResponse.next();
+  }
+
   // Track k2s download
   if (pathname === '/i/k2s') {
     // Fire-and-forget: record download to Center API

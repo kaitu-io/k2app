@@ -21,8 +21,8 @@ vi.mock('@/lib/constants', () => ({
       backup: `https://cdn-backup.test/kaitu/desktop/${version}/Kaitu_${version}_universal.pkg`,
     },
     linux: {
-      primary: `https://cdn-primary.test/kaitu/desktop/${version}/Kaitu_${version}_amd64.AppImage`,
-      backup: `https://cdn-backup.test/kaitu/desktop/${version}/Kaitu_${version}_amd64.AppImage`,
+      primary: `https://cdn-primary.test/kaitu/desktop/${version}/Kaitu_${version}_amd64.tar.gz`,
+      backup: `https://cdn-backup.test/kaitu/desktop/${version}/Kaitu_${version}_amd64.tar.gz`,
     },
   }),
   getAndroidDownloadLinks: (version: string) => ({
@@ -121,7 +121,7 @@ describe('flattenToRecord', () => {
           links: {
             windows: { primary: 'https://cdn/win.exe', backup: 'https://backup/win.exe' },
             macos: { primary: 'https://cdn/mac.pkg', backup: 'https://backup/mac.pkg' },
-            linux: { primary: 'https://cdn/linux.AppImage', backup: 'https://backup/linux.AppImage' },
+            linux: { primary: 'https://cdn/linux.tar.gz', backup: 'https://backup/linux.tar.gz' },
           },
         },
         stable: null,

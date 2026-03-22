@@ -556,7 +556,7 @@ fn relaunch_app(app: &AppHandle) {
         "i=0; while [ $i -lt 60 ]; do \
            if ! kill -0 {} 2>/dev/null; then \
              sleep 1; \
-             nohup /opt/kaitu/k2app > /dev/null 2>&1 & \
+             nohup /opt/kaitu/k2app >> /tmp/kaitu-relaunch.log 2>&1 & \
              exit 0; \
            fi; \
            sleep 1; \

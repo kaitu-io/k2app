@@ -1,8 +1,103 @@
 {
-  "generated": "2026-03-20T05:40:46.965Z",
+  "generated": "2026-03-22T13:53:14.217Z",
   "latestBeta": "0.4.0-beta.1",
-  "latestStable": "0.3.21",
+  "latestStable": "0.4.1",
   "versions": [
+    {
+      "version": "0.4.1",
+      "date": "2026-03-22",
+      "content": "v0.4.1 修复了多个影响日常使用的重要问题，特别是设备被无故踢下线的 bug，以及移动端冷启动后隧道身份丢失的问题。同时改进了在线客服的智能对话体验，并优化了多个平台的稳定性。\n\n## New Features\n- **智能客服增强**: AI 客服新增交互式欢迎按钮、视频/语音通话请求自动转人工、账户相关问题自动转人工\n- **官网帮助中心**: 全新设计的帮助页面，包含视频教程、常见问题、SEO 优化\n- **Linux tar.gz 更新器**: Linux 从 AppImage 切换到 tar.gz 打包，更新包体积从 85MB 降至 ~8MB\n- **三方错误分类**: 引擎错误区分客户端/网络/服务端/目标站点四类，target 类错误不影响 VPN 状态\n- **诊断日志系统**: 新增结构化诊断日志，支持心跳、DNS、传输层、代理拨号等多维度快速定位\n\n## Bug Fixes\n- **修复设备无故被踢下线**: 两台不同 Mac 可能生成相同的硬件标识符，导致设备在不同账号间反复转移。现已改用随机标识符 + 本地持久化，彻底消除碰撞问题\n- **修复移动端冷启动后隧道身份丢失**: iOS/Android 冷启动后未能恢复隧道身份，导致连接失败\n- **修复登录后旧 401 响应清除新 token**: 竞态条件下旧请求的 401 响应可能清除刚登录获取的新 token\n- **修复更新通知遮挡移动端安全区域**: UpdateNotification 横幅未适配 iOS 刘海屏安全区域\n- **修复 Windows 退出时双重断开崩溃**: Windows 退出时 stop_vpn 被调用两次导致崩溃\n- **修复 Android 亮色模式状态栏**: Android 设备系统亮色模式下状态栏显示为白色\n- **修复 iOS NE 进程被杀后自动重连**: iOS 系统终止 Network Extension 后现在能自动恢复连接\n- **修复 Linux FUSE 限制下的 k2 二进制暂存路径**: pkexec 无法访问 FUSE 挂载点\n\n## Improvements\n- **抗封锁能力**: antiblock Happy Eyeballs 策略，6 个 CDN 镜像并发探测，避免中国区 10 秒超时\n- **iOS 内存优化**: Network Extension 内存诊断和 DNS 并发控制\n- **构建流程优化**: macOS/Windows 签名和发布流程改进，S3 上传与构建分离防止误发布\n\n## Breaking Changes\n- **首次升级需要重新登录**: 设备标识符生成方式变更，首次打开新版本后需要重新登录一次。此后不再需要",
+      "sections": {
+        "newFeatures": [
+          "**智能客服增强**: AI 客服新增交互式欢迎按钮、视频/语音通话请求自动转人工、账户相关问题自动转人工",
+          "**官网帮助中心**: 全新设计的帮助页面，包含视频教程、常见问题、SEO 优化",
+          "**Linux tar.gz 更新器**: Linux 从 AppImage 切换到 tar.gz 打包，更新包体积从 85MB 降至 ~8MB",
+          "**三方错误分类**: 引擎错误区分客户端/网络/服务端/目标站点四类，target 类错误不影响 VPN 状态",
+          "**诊断日志系统**: 新增结构化诊断日志，支持心跳、DNS、传输层、代理拨号等多维度快速定位"
+        ],
+        "bugFixes": [
+          "**修复设备无故被踢下线**: 两台不同 Mac 可能生成相同的硬件标识符，导致设备在不同账号间反复转移。现已改用随机标识符 + 本地持久化，彻底消除碰撞问题",
+          "**修复移动端冷启动后隧道身份丢失**: iOS/Android 冷启动后未能恢复隧道身份，导致连接失败",
+          "**修复登录后旧 401 响应清除新 token**: 竞态条件下旧请求的 401 响应可能清除刚登录获取的新 token",
+          "**修复更新通知遮挡移动端安全区域**: UpdateNotification 横幅未适配 iOS 刘海屏安全区域",
+          "**修复 Windows 退出时双重断开崩溃**: Windows 退出时 stop_vpn 被调用两次导致崩溃",
+          "**修复 Android 亮色模式状态栏**: Android 设备系统亮色模式下状态栏显示为白色",
+          "**修复 iOS NE 进程被杀后自动重连**: iOS 系统终止 Network Extension 后现在能自动恢复连接",
+          "**修复 Linux FUSE 限制下的 k2 二进制暂存路径**: pkexec 无法访问 FUSE 挂载点"
+        ],
+        "improvements": [
+          "**抗封锁能力**: antiblock Happy Eyeballs 策略，6 个 CDN 镜像并发探测，避免中国区 10 秒超时",
+          "**iOS 内存优化**: Network Extension 内存诊断和 DNS 并发控制",
+          "**构建流程优化**: macOS/Windows 签名和发布流程改进，S3 上传与构建分离防止误发布"
+        ],
+        "breakingChanges": [
+          "**首次升级需要重新登录**: 设备标识符生成方式变更，首次打开新版本后需要重新登录一次。此后不再需要"
+        ]
+      },
+      "channel": "stable",
+      "hasDownloads": true,
+      "downloads": {
+        "windows": "https://dl.kaitu.io/kaitu/desktop/0.4.1/Kaitu_0.4.1_x64.exe",
+        "windowsBackup": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/0.4.1/Kaitu_0.4.1_x64.exe",
+        "macos": "https://dl.kaitu.io/kaitu/desktop/0.4.1/Kaitu-0.4.1.pkg",
+        "macosBackup": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/0.4.1/Kaitu-0.4.1.pkg"
+      }
+    },
+    {
+      "version": "0.4.0",
+      "date": "2026-03-17",
+      "content": "v0.4.0 是一次重大版本升级。全新自研拥塞控制协议 **k2cc** 正式上线——针对高丢包、高延迟的受干扰网络深度优化，即使在严重干扰环境下也能保持接近无损的传输速度。同时带来 iOS/Android 移动端支持、Linux 桌面端、全新官网、以及大量稳定性改进。\n\n## New Features\n- **k2cc 拥塞控制协议**: 自研拥塞控制算法，在高丢包、高延迟的严重干扰环境下保持接近无损的传输速度\n- **iOS 和 Android 移动端**: 全新移动端客户端，支持 iOS Network Extension 和 Android VPN Service\n- **Linux 桌面端**: 新增 Linux 平台支持（tar.gz 打包），一行命令安装\n- **实时状态推送**: 连接状态从定时查询升级为 SSE 实时推送，操作响应更即时\n- **Beta 测试通道**: 新增 beta 更新通道，提前体验新功能。Beta 模式自动收集诊断日志\n- **Android USB 安装助手**: ADB 一键安装，支持自动设备检测和品牌适配指引\n- **反馈系统**: 应用内反馈按钮 + 日志自动上传 + 工单追踪\n- **k2 CLI**: 命令行工具支持 `k2 up/down/status`，可通过 PATH 直接调用\n- **在线客服**: 官网集成 AI 客服 + 人工转接\n- **官网全面重构**: 全新首页动效、下载页双 CDN、K2 协议文档、帮助中心\n\n## Bug Fixes\n- 修复弱网环境下连接异常断开后未能及时重连的问题\n- 修复 QUIC stream slot 泄漏导致连接数耗尽的问题\n- 修复 macOS DNS 崩溃后无法恢复的问题\n- 修复 Windows 退出时双重断开崩溃\n- 修复 iOS Network Extension 进程被杀后未能自动重连\n- 修复 iOS 内存压力下 NE 被系统终止的问题\n- 修复 Android 亮色模式状态栏显示异常\n- 修复页面偶尔空白的显示问题\n- 修复视口缩放时布局异常\n- 修复 Windows 升级期间短暂断网\n- 修复登录后旧 401 响应清除新 token 的竞态问题\n- 修复 VPN 连接/断开按钮的双击竞态\n\n## Improvements\n- **连接稳定性**: DNS 容错增强 + 网络变化感知（netCoordinator）+ 自动重连探测\n- **抗封锁能力**: 协议伪装增强 + antiblock Happy Eyeballs 多 CDN 并发探测\n- **统一日志系统**: 全平台统一日志格式、轮转策略（20MB/3 备份/7 天）、stderr 重定向\n- **错误分类**: 三方错误分类（客户端/网络/服务端/目标站点），错误提示更清晰\n- **macOS 安装包瘦身**: universal binary，体积减少约 35%\n- **Windows 签名**: macOS 交叉编译 + Authenticode 签名\n- **iOS App Store 合规**: 隐私清单、账户删除、购买引导\n- **路由规则升级**: 规则引擎 v0.6.1，智能分流更精准\n- **内存优化**: iOS NE 内存诊断 + Go 内存限制 + smux 缓冲区协商\n\n## Breaking Changes\n- **k2arc 更名为 k2cc**: 拥塞控制协议品牌名统一为 k2cc（避免与业余无线电术语冲突）",
+      "sections": {
+        "newFeatures": [
+          "**k2cc 拥塞控制协议**: 自研拥塞控制算法，在高丢包、高延迟的严重干扰环境下保持接近无损的传输速度",
+          "**iOS 和 Android 移动端**: 全新移动端客户端，支持 iOS Network Extension 和 Android VPN Service",
+          "**Linux 桌面端**: 新增 Linux 平台支持（tar.gz 打包），一行命令安装",
+          "**实时状态推送**: 连接状态从定时查询升级为 SSE 实时推送，操作响应更即时",
+          "**Beta 测试通道**: 新增 beta 更新通道，提前体验新功能。Beta 模式自动收集诊断日志",
+          "**Android USB 安装助手**: ADB 一键安装，支持自动设备检测和品牌适配指引",
+          "**反馈系统**: 应用内反馈按钮 + 日志自动上传 + 工单追踪",
+          "**k2 CLI**: 命令行工具支持 `k2 up/down/status`，可通过 PATH 直接调用",
+          "**在线客服**: 官网集成 AI 客服 + 人工转接",
+          "**官网全面重构**: 全新首页动效、下载页双 CDN、K2 协议文档、帮助中心"
+        ],
+        "bugFixes": [
+          "修复弱网环境下连接异常断开后未能及时重连的问题",
+          "修复 QUIC stream slot 泄漏导致连接数耗尽的问题",
+          "修复 macOS DNS 崩溃后无法恢复的问题",
+          "修复 Windows 退出时双重断开崩溃",
+          "修复 iOS Network Extension 进程被杀后未能自动重连",
+          "修复 iOS 内存压力下 NE 被系统终止的问题",
+          "修复 Android 亮色模式状态栏显示异常",
+          "修复页面偶尔空白的显示问题",
+          "修复视口缩放时布局异常",
+          "修复 Windows 升级期间短暂断网",
+          "修复登录后旧 401 响应清除新 token 的竞态问题",
+          "修复 VPN 连接/断开按钮的双击竞态"
+        ],
+        "improvements": [
+          "**连接稳定性**: DNS 容错增强 + 网络变化感知（netCoordinator）+ 自动重连探测",
+          "**抗封锁能力**: 协议伪装增强 + antiblock Happy Eyeballs 多 CDN 并发探测",
+          "**统一日志系统**: 全平台统一日志格式、轮转策略（20MB/3 备份/7 天）、stderr 重定向",
+          "**错误分类**: 三方错误分类（客户端/网络/服务端/目标站点），错误提示更清晰",
+          "**macOS 安装包瘦身**: universal binary，体积减少约 35%",
+          "**Windows 签名**: macOS 交叉编译 + Authenticode 签名",
+          "**iOS App Store 合规**: 隐私清单、账户删除、购买引导",
+          "**路由规则升级**: 规则引擎 v0.6.1，智能分流更精准",
+          "**内存优化**: iOS NE 内存诊断 + Go 内存限制 + smux 缓冲区协商"
+        ],
+        "breakingChanges": [
+          "**k2arc 更名为 k2cc**: 拥塞控制协议品牌名统一为 k2cc（避免与业余无线电术语冲突）"
+        ]
+      },
+      "channel": "stable",
+      "hasDownloads": true,
+      "downloads": {
+        "windows": "https://dl.kaitu.io/kaitu/desktop/0.4.0/Kaitu_0.4.0_x64.exe",
+        "windowsBackup": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/0.4.0/Kaitu_0.4.0_x64.exe",
+        "macos": "https://dl.kaitu.io/kaitu/desktop/0.4.0/Kaitu-0.4.0.pkg",
+        "macosBackup": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/0.4.0/Kaitu-0.4.0.pkg"
+      }
+    },
     {
       "version": "0.4.0-beta.1",
       "date": "2026-03-04",

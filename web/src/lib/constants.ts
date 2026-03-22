@@ -18,8 +18,8 @@ export function getDownloadLinks(version: string) {
       backup: `${CDN_BACKUP}/${version}/Kaitu_${version}_universal.pkg`,
     },
     linux: {
-      primary: `${CDN_PRIMARY}/${version}/Kaitu_${version}_amd64.AppImage`,
-      backup: `${CDN_BACKUP}/${version}/Kaitu_${version}_amd64.AppImage`,
+      primary: `${CDN_PRIMARY}/${version}/Kaitu_${version}_amd64.tar.gz`,
+      backup: `${CDN_BACKUP}/${version}/Kaitu_${version}_amd64.tar.gz`,
     },
   };
 }

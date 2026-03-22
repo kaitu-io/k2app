@@ -47,7 +47,7 @@
     "metaDescription": "下载开途 k2cc 客户端 — 支持 Windows、macOS、iOS、安卓。k2cc 自适应速率控制，高丢包依然满速的隐身隧道。",
     "linux": "Linux",
     "linuxVersion": "Ubuntu / Fedora / Arch",
-    "downloadAppImage": "Linux 桌面版",
+    "downloadLinux": "Linux 桌面版",
     "cliInstall": "或通过命令行安装",
     "cliCommand": "curl -fsSL https://kaitu.io/i/k2 | sudo bash",
     "copied": "已复制",
@@ -81,9 +81,9 @@
         "3": "首次打开时，在「系统设置 → 隐私与安全性」中允许系统扩展"
       },
       "linux": {
-        "1": "给 AppImage 添加执行权限：chmod +x Kaitu_*.AppImage",
-        "2": "双击运行或在终端执行 ./Kaitu_*.AppImage",
-        "3": "推荐使用命令行安装以自动处理依赖"
+        "1": "推荐使用一键脚本安装：curl -fsSL https://kaitu.io/i/k2 | sudo bash",
+        "2": "脚本会自动安装依赖、下载并配置系统服务",
+        "3": "安装完成后，在应用菜单中找到开途或运行 k2app"
       },
       "android": {
         "1": "下载 APK 安装包，浏览器提示时选择「保留」",

@@ -47,7 +47,7 @@
     "metaDescription": "Kaitu k2 クライアントをダウンロード — Windows、macOS、iOS、Android 対応。k2cc 適応型レート制御で、高パケットロスでもフルスピードのステルストンネル。",
     "linux": "Linux",
     "linuxVersion": "Ubuntu / Fedora / Arch",
-    "downloadAppImage": "Linux デスクトップ",
+    "downloadLinux": "Linux デスクトップ",
     "cliInstall": "またはコマンドラインでインストール",
     "cliCommand": "curl -fsSL https://kaitu.io/i/k2 | sudo bash",
     "copied": "コピーしました",
@@ -81,9 +81,9 @@
         "3": "初回起動時、「システム設定 → プライバシーとセキュリティ」でシステム拡張機能を許可"
       },
       "linux": {
-        "1": "AppImageに実行権限を付与：chmod +x Kaitu_*.AppImage",
-        "2": "ダブルクリックで実行、またはターミナルで ./Kaitu_*.AppImage を実行",
-        "3": "依存関係の自動処理にはCLIインストールを推奨"
+        "1": "スクリプトでインストール：curl -fsSL https://kaitu.io/i/k2 | sudo bash",
+        "2": "スクリプトが依存関係のインストール、ダウンロード、サービス設定を自動で行います",
+        "3": "インストール完了後、アプリメニューからKaituを起動、またはk2appを実行"
       },
       "android": {
         "1": "APKファイルをダウンロード。ブラウザが警告した場合は「保存」を選択",

@@ -51,7 +51,7 @@ vi.mock('@/lib/constants', () => ({
   getDownloadLinks: (v: string) => ({
     windows: { primary: `https://cdn/${v}/win.exe`, backup: '' },
     macos: { primary: `https://cdn/${v}/mac.pkg`, backup: '' },
-    linux: { primary: `https://cdn/${v}/linux.AppImage`, backup: '' },
+    linux: { primary: `https://cdn/${v}/linux.tar.gz`, backup: '' },
   }),
 }));
 vi.mock('@/lib/downloads', () => ({}));

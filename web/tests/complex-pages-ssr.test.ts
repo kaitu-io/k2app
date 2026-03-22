@@ -53,7 +53,7 @@ vi.mock('@/lib/constants', () => ({
   getDownloadLinks: (version: string) => ({
     windows: { primary: `https://cdn/${version}/win.exe`, backup: `https://backup/${version}/win.exe` },
     macos: { primary: `https://cdn/${version}/mac.pkg`, backup: `https://backup/${version}/mac.pkg` },
-    linux: { primary: `https://cdn/${version}/linux.AppImage`, backup: `https://backup/${version}/linux.AppImage` },
+    linux: { primary: `https://cdn/${version}/linux.tar.gz`, backup: `https://backup/${version}/linux.tar.gz` },
   }),
 }));
 
@@ -64,12 +64,12 @@ vi.mock('@/lib/downloads', () => ({
       beta: { version: '0.4.0-beta.1', links: {
         windows: { primary: 'https://cdn/win.exe', backup: '' },
         macos: { primary: 'https://cdn/mac.pkg', backup: '' },
-        linux: { primary: 'https://cdn/linux.AppImage', backup: '' },
+        linux: { primary: 'https://cdn/linux.tar.gz', backup: '' },
       }},
       stable: { version: '0.3.22', links: {
         windows: { primary: 'https://cdn/win.exe', backup: '' },
         macos: { primary: 'https://cdn/mac.pkg', backup: '' },
-        linux: { primary: 'https://cdn/linux.AppImage', backup: '' },
+        linux: { primary: 'https://cdn/linux.tar.gz', backup: '' },
       }},
     },
     mobile: { ios: 'https://apps.apple.com/app/id123', android: 'https://cdn/android.apk' },

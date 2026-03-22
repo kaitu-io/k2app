@@ -47,7 +47,7 @@
     "metaDescription": "Download Kaitu k2 client for Windows, macOS, iOS, Android. k2cc adaptive rate control — full speed stealth tunnel through heavy packet loss.",
     "linux": "Linux",
     "linuxVersion": "Ubuntu / Fedora / Arch",
-    "downloadAppImage": "Linux Desktop",
+    "downloadLinux": "Linux Desktop",
     "cliInstall": "Or install via command line",
     "cliCommand": "curl -fsSL https://kaitu.io/i/k2 | sudo bash",
     "copied": "Copied",
@@ -81,9 +81,9 @@
         "3": "On first launch, allow the system extension in System Settings then Privacy and Security"
       },
       "linux": {
-        "1": "Make the AppImage executable: chmod +x Kaitu_*.AppImage",
-        "2": "Double-click to run or execute ./Kaitu_*.AppImage in terminal",
-        "3": "CLI install recommended for automatic dependency handling"
+        "1": "Install via script: curl -fsSL https://kaitu.io/i/k2 | sudo bash",
+        "2": "The script auto-installs dependencies, downloads and configures the service",
+        "3": "After installation, find Kaitu in your app menu or run k2app"
       },
       "android": {
         "1": "Download the APK file. If the browser warns, tap 'Keep'",
