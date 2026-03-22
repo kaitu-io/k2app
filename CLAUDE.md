@@ -15,6 +15,11 @@ make build-windows               # Signed Windows NSIS installer (cross-compiled
 make build-linux                  # AppImage (CI only — requires Linux host + webkit2gtk)
 make build-android               # gomobile bind + cap sync + assembleRelease
 make build-ios                   # gomobile bind + cap sync + xcodebuild archive
+make upload-macos                # Upload macOS artifacts to S3 + CDN invalidation
+make upload-windows              # Upload Windows artifacts to S3 + CDN invalidation
+make upload-linux                # Upload Linux artifacts to S3 + CDN invalidation
+make upload-android              # Upload Android APK to S3 + CDN invalidation
+make upload-web                  # Upload webapp.zip to S3 + CDN invalidation
 make publish-mobile VERSION=x.y.z  # Generate + upload mobile latest.json (phase 2 release)
 make dev-android                 # gomobile bind + cap sync + cap run android
 make dev-ios                     # cap sync + cap run ios

@@ -80,7 +80,6 @@ build-windows: pre-build build-webapp build-k2-windows sync-adb-tools simplisign
 	@echo "=== Build complete ==="
 	@echo "Release artifacts in release/$(VERSION)/:"
 	@ls -la release/$(VERSION)/
-	bash scripts/ci/upload-release.sh --windows
 
 build-linux:
 	@if [ "$$(uname -s)" = "Linux" ]; then \
@@ -104,7 +103,6 @@ _build-linux-native: pre-build build-webapp build-k2-linux
 	@echo "=== Linux build complete ==="
 	@echo "Release artifacts in release/$(VERSION)/:"
 	@ls -la release/$(VERSION)/
-	bash scripts/ci/upload-release.sh --linux
 
 build-openwrt: pre-build
 	bash scripts/build-openwrt.sh
@@ -203,8 +201,6 @@ build-android: pre-build build-webapp appext-android decrypt-keystore
 	@echo "=== Build complete ==="
 	@echo "Release artifacts in release/$(VERSION)/:"
 	@ls -la release/$(VERSION)/Kaitu-$(VERSION).apk
-	bash scripts/ci/upload-release.sh --android
-
 
 decrypt-keystore:
 	@if [ ! -f mobile/android/app/kaitu-release.jks ]; then \
@@ -228,6 +224,22 @@ dev-android: pre-build build-webapp appext-android
 	mkdir -p mobile/android/app/libs
 	cp k2/build/k2mobile.aar mobile/android/app/libs/
 	cd mobile && rm -rf node_modules/k2-plugin && yarn install --force && npx cap sync android && npx cap run android
+
+# --- Upload artifacts to S3 (run AFTER build-*, separate to prevent accidental uploads) ---
+upload-macos:
+	bash scripts/ci/upload-release.sh --macos
+
+upload-windows:
+	bash scripts/ci/upload-release.sh --windows
+
+upload-linux:
+	bash scripts/ci/upload-release.sh --linux
+
+upload-android:
+	bash scripts/ci/upload-release.sh --android
+
+upload-web:
+	bash scripts/ci/upload-release.sh --web
 
 clean:
 	rm -rf webapp/dist desktop/src-tauri/target $(K2_BIN)/k2-* build/
