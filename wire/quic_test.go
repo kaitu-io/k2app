@@ -1059,11 +1059,13 @@ func TestQuicUDPConn_WriteTo_InflightDrop(t *testing.T) {
 	n, err := conn.WriteTo([]byte("hello"), nil)
 	elapsed := time.Since(start)
 
-	if err != ErrDatagramSendTimeout {
-		t.Fatalf("WriteTo err = %v, want ErrDatagramSendTimeout", err)
+	// Silent drop: returns (len, nil) — protocol-correct for unreliable DATAGRAM.
+	// Returning an error would cause HandleUDP to kill the session.
+	if err != nil {
+		t.Fatalf("WriteTo err = %v, want nil (silent drop)", err)
 	}
-	if n != 0 {
-		t.Fatalf("WriteTo n = %d, want 0", n)
+	if n != len([]byte("hello")) {
+		t.Fatalf("WriteTo n = %d, want %d", n, len([]byte("hello")))
 	}
 	if elapsed > 50*time.Millisecond {
 		t.Fatalf("WriteTo took %v, want immediate return", elapsed)
@@ -1072,10 +1074,14 @@ func TestQuicUDPConn_WriteTo_InflightDrop(t *testing.T) {
 	if got := mux.sendInflight.Load(); got != maxDatagramInflight {
 		t.Fatalf("sendInflight = %d, want %d", got, maxDatagramInflight)
 	}
+	// txDrops should be incremented
+	if got := conn.txDrops.Load(); got != 1 {
+		t.Fatalf("txDrops = %d, want 1", got)
+	}
 }
 
 // TestServerUDPConn_WriteTo_InflightDrop verifies the same inflight limit
-// on the server side.
+// on the server side — silent drop, no error.
 func TestServerUDPConn_WriteTo_InflightDrop(t *testing.T) {
 	var inflight atomic.Int32
 	inflight.Store(maxDatagramInflight)
@@ -1093,14 +1099,17 @@ func TestServerUDPConn_WriteTo_InflightDrop(t *testing.T) {
 	n, err := conn.WriteTo([]byte("hello"), nil)
 	elapsed := time.Since(start)
 
-	if err != ErrDatagramSendTimeout {
-		t.Fatalf("WriteTo err = %v, want ErrDatagramSendTimeout", err)
+	if err != nil {
+		t.Fatalf("WriteTo err = %v, want nil (silent drop)", err)
 	}
-	if n != 0 {
-		t.Fatalf("WriteTo n = %d, want 0", n)
+	if n != len([]byte("hello")) {
+		t.Fatalf("WriteTo n = %d, want %d", n, len([]byte("hello")))
 	}
 	if elapsed > 50*time.Millisecond {
 		t.Fatalf("WriteTo took %v, want immediate return", elapsed)
+	}
+	if got := conn.txDrops.Load(); got != 1 {
+		t.Fatalf("txDrops = %d, want 1", got)
 	}
 	if got := inflight.Load(); got != maxDatagramInflight {
 		t.Fatalf("sendInflight = %d, want %d", got, maxDatagramInflight)

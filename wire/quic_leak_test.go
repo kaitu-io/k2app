@@ -70,10 +70,14 @@ func TestWriteTo_InflightSaturation_NoGoroutineLeak(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Now the inflight counter should be at maxDatagramInflight.
-	// Additional WriteTo calls should return immediately with ErrDatagramSendTimeout.
-	_, err := conn.WriteTo([]byte("overflow"), nil)
-	if err != ErrDatagramSendTimeout {
-		t.Fatalf("expected ErrDatagramSendTimeout when saturated, got %v", err)
+	// Additional WriteTo calls should return immediately with a silent drop
+	// (protocol-correct for unreliable DATAGRAM — no error returned).
+	n, err := conn.WriteTo([]byte("overflow"), nil)
+	if err != nil {
+		t.Fatalf("expected nil error (silent drop) when saturated, got %v", err)
+	}
+	if n != len([]byte("overflow")) {
+		t.Fatalf("expected n=%d (silent drop returns len), got %d", len([]byte("overflow")), n)
 	}
 
 	// The overflow call should NOT have spawned a goroutine.

@@ -43,9 +43,14 @@ const tcpHealthWindow = 30 * time.Second
 var ErrDatagramSendTimeout = errors.New("wire: SendDatagram queue saturated")
 
 // maxDatagramInflight caps concurrent SendDatagram calls per connection.
-// Matches quic-go's 32-frame datagram queue. Beyond this limit, packets
-// are dropped immediately — protocol-correct for unreliable DATAGRAM.
-const maxDatagramInflight int32 = 32
+// Must be well below quic-go's 32-frame datagram queue to prevent mass
+// goroutine blocking: datagramQueue.Add() blocks indefinitely when full,
+// freezing HandleUDP goroutines (can't call target.Read while blocked).
+// With N sessions sharing one queue, only maxDatagramInflight goroutines
+// may enter the blocking Add() path; the rest drop immediately.
+// Value 8 ensures ≤8 goroutines block (~1.4s each at typical drain rates)
+// while remaining sessions keep reading from targets.
+const maxDatagramInflight int32 = 8
 
 // datagramSender abstracts the QUIC connection methods used by quicUDPConn
 // and serverUDPConn. Enables testing with mock connections.
@@ -1466,6 +1471,7 @@ type quicUDPConn struct {
 	created    time.Time
 	txPackets  atomic.Int64
 	txBytes    atomic.Int64
+	txDrops    atomic.Int64 // datagrams silently dropped (queue saturated)
 	rxPackets  atomic.Int64
 	rxBytes    atomic.Int64
 }
@@ -1503,12 +1509,17 @@ func (c *quicUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
 	frame, put := MarshalUDPFrame(c.sessionID, c.targetAddr, b)
 
 	// Atomic inflight check: drop immediately when queue is saturated.
-	// No goroutine spawned — avoids leak when SendDatagram blocks indefinitely.
+	// Returns (len, nil) — silent drop is protocol-correct for unreliable
+	// DATAGRAM. Returning an error would propagate to the QUIC transport
+	// and potentially close the connection to the target.
+	// recordTimeout() is kept for relay health monitoring — enough drops
+	// will mark the relay path unhealthy and trigger TCP-WS fallback.
 	if c.mux.sendInflight.Add(1) > maxDatagramInflight {
 		c.mux.sendInflight.Add(-1)
 		put()
+		c.txDrops.Add(1)
 		c.mux.recordTimeout()
-		return 0, ErrDatagramSendTimeout
+		return len(b), nil
 	}
 	err := c.qconn.SendDatagram(frame)
 	c.mux.sendInflight.Add(-1)
@@ -1547,6 +1558,7 @@ func (c *quicUDPConn) Close() error {
 				"duration", time.Since(c.created).Round(time.Millisecond),
 				"txPackets", c.txPackets.Load(),
 				"txBytes", c.txBytes.Load(),
+				"txDrops", c.txDrops.Load(),
 				"rxPackets", c.rxPackets.Load(),
 				"rxBytes", c.rxBytes.Load())
 		}
@@ -1581,6 +1593,7 @@ type serverUDPConn struct {
 	txPackets    atomic.Int64
 	txBytes      atomic.Int64
 	txErrors     atomic.Int64
+	txDrops      atomic.Int64 // datagrams silently dropped (queue saturated)
 	rxPackets    atomic.Int64
 }
 
@@ -1627,12 +1640,25 @@ func (c *serverUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
 	// Empty addr for response frames (client already knows the target)
 	frame, put := MarshalUDPFrame(c.sessionID, "", b)
 
-	// Atomic inflight check: drop immediately when queue is saturated.
+	// Atomic inflight check: when datagram queue is saturated, overflow to
+	// the reliable stream path instead of blocking in datagramQueue.Add().
+	// Without this, all HandleUDP goroutines block in Add() and can't call
+	// target.Read() — starving every UDP session on this connection.
 	if c.sendInflight.Add(1) > maxDatagramInflight {
 		c.sendInflight.Add(-1)
 		put()
-		c.txErrors.Add(1)
-		return 0, ErrDatagramSendTimeout
+		// Overflow to stream: preserves data via reliable STREAM frames.
+		// Critical for QUIC handshake completion packets that MUST arrive.
+		if c.overflow != nil {
+			if err := c.overflow.send(c.sessionID, "", b); err == nil {
+				c.txPackets.Add(1)
+				c.txBytes.Add(int64(len(b)))
+				return len(b), nil
+			}
+		}
+		// Stream overflow also failed — silent drop (last resort).
+		c.txDrops.Add(1)
+		return len(b), nil
 	}
 	err := c.qconn.SendDatagram(frame)
 	c.sendInflight.Add(-1)
@@ -1669,7 +1695,8 @@ func (c *serverUDPConn) close() {
 				"rxPackets", c.rxPackets.Load(),
 				"txPackets", c.txPackets.Load(),
 				"txBytes", c.txBytes.Load(),
-				"txErrors", c.txErrors.Load())
+				"txErrors", c.txErrors.Load(),
+				"txDrops", c.txDrops.Load())
 		}
 		close(c.done)
 	})
