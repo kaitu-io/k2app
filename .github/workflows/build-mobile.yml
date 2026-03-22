@@ -171,12 +171,8 @@ jobs:
             --apiKey "$APP_STORE_CONNECT_KEY_ID" \
             --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID"
 
-      - name: Upload Web OTA to S3
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ap-northeast-1
-        run: bash scripts/ci/upload-release.sh --web
+      # Web OTA disabled — native/webapp version mismatch caused storage regression (2026-03-22).
+      # Webapp is bundled with native builds; OTA updates risk calling native methods that don't exist yet.
 
       - name: Clean up keychain
         if: always()

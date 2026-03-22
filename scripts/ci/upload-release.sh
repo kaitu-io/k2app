@@ -9,7 +9,7 @@ set -euo pipefail
 #   bash scripts/ci/upload-release.sh --macos              # Upload macOS pkg + app.tar.gz + sig
 #   bash scripts/ci/upload-release.sh --linux              # Upload Linux tar.gz + sig + k2 binary
 #   bash scripts/ci/upload-release.sh --android            # Upload Android APK
-#   bash scripts/ci/upload-release.sh --web                # Zip webapp/dist → web/{VER}/webapp.zip
+#   --web option REMOVED — Web OTA disabled due to native/webapp version mismatch risk (2026-03-22)
 #   bash scripts/ci/upload-release.sh --windows --skip-cdn # Upload only, no CDN invalidation
 #
 # Each platform flag uploads ONLY its own artifacts, preventing cross-platform contamination.
@@ -41,7 +41,7 @@ for arg in "$@"; do
     --linux)    PLATFORM="linux" ;;
     --desktop)  echo "ERROR: --desktop is deprecated. Use --windows, --macos, or --linux." >&2; exit 1 ;;
     --android)  PLATFORM="android" ;;
-    --web)      PLATFORM="web" ;;
+    --web)      echo "ERROR: --web is disabled. Web OTA removed due to native/webapp version mismatch risk (2026-03-22)." >&2; exit 1 ;;
     --skip-cdn) SKIP_CDN=true ;;
     *) echo "Unknown argument: $arg" >&2; exit 1 ;;
   esac
@@ -107,18 +107,7 @@ case "$PLATFORM" in
     aws s3 cp "$APK" "${S3_DEST}/Kaitu-${VERSION}.apk"
     echo "Uploaded: android/${VERSION}/Kaitu-${VERSION}.apk"
     ;;
-  web)
-    S3_DEST="${S3_BUCKET}/web/${VERSION}"
-    INVALIDATION_PATH="/kaitu/web/${VERSION}/*"
-    if [ ! -d "webapp/dist" ]; then
-      echo "ERROR: webapp/dist not found. Run 'make build-webapp' first." >&2; exit 1
-    fi
-    TMPZIP=$(mktemp /tmp/webapp-XXXXXX.zip)
-    (cd webapp/dist && zip -qr "$TMPZIP" .)
-    aws s3 cp "$TMPZIP" "${S3_DEST}/webapp.zip"
-    rm -f "$TMPZIP"
-    echo "Uploaded: web/${VERSION}/webapp.zip"
-    ;;
+  # web) — removed, see --web error above
 esac
 
 # --- CDN invalidation (both distributions) ---

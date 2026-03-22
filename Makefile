@@ -167,6 +167,16 @@ publish-mobile:
 	@echo "Publishing mobile v$(VERSION)..."
 	bash scripts/publish-mobile.sh $(VERSION)
 
+publish-android:
+	@test -n "$(VERSION)" || (echo "Usage: make publish-android VERSION=x.y.z" && exit 1)
+	@echo "Publishing Android v$(VERSION)..."
+	bash scripts/publish-mobile.sh $(VERSION) --platform=android
+
+publish-ios:
+	@test -n "$(VERSION)" || (echo "Usage: make publish-ios VERSION=x.y.z" && exit 1)
+	@echo "Publishing iOS v$(VERSION)..."
+	bash scripts/publish-mobile.sh $(VERSION) --platform=ios
+
 # --- Mobile (delegates to k2/Makefile) ---
 appext-deps:
 	cd k2 && go get golang.org/x/mobile/bind@latest
@@ -239,8 +249,7 @@ upload-linux:
 upload-android:
 	bash scripts/ci/upload-release.sh --android
 
-upload-web:
-	bash scripts/ci/upload-release.sh --web
+# upload-web removed — Web OTA disabled due to native/webapp version mismatch risk (2026-03-22)
 
 clean:
 	rm -rf webapp/dist desktop/src-tauri/target $(K2_BIN)/k2-* build/
