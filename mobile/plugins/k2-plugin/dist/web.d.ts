@@ -6,9 +6,6 @@ export declare class K2PluginWeb extends WebPlugin implements K2PluginInterface 
         version?: string;
         reason?: string;
     }>;
-    getUDID(): Promise<{
-        udid: string;
-    }>;
     getVersion(): Promise<{
         version: string;
         go: string;

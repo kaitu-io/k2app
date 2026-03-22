@@ -33,6 +33,7 @@ import { handleResponseError } from "../utils/errorCode";
 import type { SendCodeResponse, AuthResult } from "../services/api-types";
 import { cloudApi } from '../services/cloud-api';
 import { cacheStore } from '../services/cache-store';
+import { getDeviceUdid } from '../services/device-udid';
 import { delayedFocus } from '../utils/ui';
 
 // Cookie helper function
@@ -168,7 +169,7 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
       setError("");
 
       // Tokens are automatically saved by cloudApi for auth paths
-      const udid = await window._platform!.getUdid();
+      const udid = await getDeviceUdid();
       const response = await cloudApi.post<AuthResult>('/api/auth/login', {
         email,
         verificationCode: verificationCode,
@@ -216,7 +217,7 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
       setError("");
 
       const deviceRemark = t("startup:startup.newDevice");
-      const udid = await window._platform!.getUdid();
+      const udid = await getDeviceUdid();
       const response = await cloudApi.post('/api/auth/login/password', {
         email,
         password,

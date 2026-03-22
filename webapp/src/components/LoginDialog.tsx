@@ -37,6 +37,7 @@ import { useOnboardingStore } from "../stores/onboarding.store";
 import { useAppLinks } from "../hooks/useAppLinks";
 import { handleResponseError } from "../utils/errorCode";
 import { cloudApi } from '../services/cloud-api';
+import { getDeviceUdid } from '../services/device-udid';
 import { cacheStore } from '../services/cache-store';
 import type { AuthResult } from '../services/api-types';
 import { delayedFocus } from '../utils/ui';
@@ -154,7 +155,7 @@ export default function LoginDialog() {
       setIsSubmitting(true);
       setError("");
 
-      const udid = await window._platform!.getUdid();
+      const udid = await getDeviceUdid();
       const response = await cloudApi.post<AuthResult>('/api/auth/login', {
         email,
         verificationCode: verificationCode,

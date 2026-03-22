@@ -21,6 +21,11 @@ vi.mock('@tauri-apps/plugin-clipboard-manager', () => ({
   readText: vi.fn().mockResolvedValue(''),
 }));
 
+// Mock device-udid module
+vi.mock('../device-udid', () => ({
+  getDeviceUdid: vi.fn().mockResolvedValue('test-udid'),
+}));
+
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { openUrl } from '@tauri-apps/plugin-opener';
@@ -151,19 +156,6 @@ describe('tauri-k2', () => {
       await window._platform.reinstallService!();
 
       expect(mockInvoke).toHaveBeenCalledWith('admin_reinstall_service');
-    });
-
-    it('_platform.getUdid invokes get_udid IPC command', async () => {
-      mockInvoke.mockResolvedValueOnce({
-        code: 0,
-        message: 'ok',
-        data: { udid: 'test-udid-123' },
-      });
-
-      const udid = await window._platform.getUdid();
-
-      expect(mockInvoke).toHaveBeenCalledWith('get_udid');
-      expect(udid).toBe('test-udid-123');
     });
 
     it('_platform.openExternal calls opener plugin', async () => {
@@ -449,6 +441,9 @@ describe('tauri-k2', () => {
         return { code: 0, message: 'ok', data: {} };
       });
       await injectTauriGlobals();
+      // Re-set device-udid mock (cleared by parent beforeEach's vi.clearAllMocks)
+      const { getDeviceUdid } = await import('../device-udid');
+      vi.mocked(getDeviceUdid).mockResolvedValue('test-udid');
     });
 
     it('uploadLogs calls invoke with correct params', async () => {
@@ -464,7 +459,7 @@ describe('tauri-k2', () => {
 
       const result = await window._platform.uploadLogs!(params);
 
-      expect(mockInvoke).toHaveBeenCalledWith('upload_service_log_command', { params });
+      expect(mockInvoke).toHaveBeenCalledWith('upload_service_log_command', { params, udid: 'test-udid' });
       expect(result.success).toBe(true);
     });
   });

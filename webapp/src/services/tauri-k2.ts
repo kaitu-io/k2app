@@ -13,6 +13,7 @@ import { openUrl } from '@tauri-apps/plugin-opener';
 import { writeText, readText } from '@tauri-apps/plugin-clipboard-manager';
 import type { IK2Vpn, IPlatform, IUpdater, UpdateInfo, SResponse } from '../types/kaitu-core';
 import type { StatusResponseData, ControlError, ServiceState } from './vpn-types';
+import { getDeviceUdid } from './device-udid';
 import { webSecureStorage } from './secure-storage';
 
 interface ServiceResponse {
@@ -223,14 +224,6 @@ export async function injectTauriGlobals(): Promise<void> {
 
     storage: webSecureStorage,
 
-    getUdid: async (): Promise<string> => {
-      const response = await invoke<ServiceResponse>('get_udid');
-      if (response.code === 0 && response.data?.udid) {
-        return response.data.udid;
-      }
-      throw new Error('Failed to get UDID from daemon');
-    },
-
     openExternal: async (url: string): Promise<void> => {
       await openUrl(url);
     },
@@ -258,7 +251,8 @@ export async function injectTauriGlobals(): Promise<void> {
     },
 
     uploadLogs: async (params): Promise<{ success: boolean; error?: string; s3Keys?: Array<{ name: string; s3Key: string }> }> => {
-      return await invoke<{ success: boolean; error?: string; s3Keys?: Array<{ name: string; s3Key: string }> }>('upload_service_log_command', { params });
+      const udid = await getDeviceUdid();
+      return await invoke<{ success: boolean; error?: string; s3Keys?: Array<{ name: string; s3Key: string }> }>('upload_service_log_command', { params, udid });
     },
 
     setLogLevel: (level: string): void => {

@@ -109,14 +109,6 @@ class K2Plugin : Plugin() {
     }
 
     @PluginMethod
-    fun getUDID(call: PluginCall) {
-        val raw = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
-        val ret = JSObject()
-        ret.put("udid", K2PluginUtils.hashToUdid(raw))
-        call.resolve(ret)
-    }
-
-    @PluginMethod
     fun getVersion(call: PluginCall) {
         val version = context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "unknown"
         val ret = JSObject()
@@ -606,6 +598,7 @@ class K2Plugin : Plugin() {
     @PluginMethod
     fun uploadLogs(call: PluginCall) {
         val feedbackId = call.getString("feedbackId")
+        val passedUdid = call.getString("udid")
 
         Thread {
             try {
@@ -618,8 +611,12 @@ class K2Plugin : Plugin() {
                     return@Thread
                 }
 
-                val raw = android.provider.Settings.Secure.getString(context.contentResolver, android.provider.Settings.Secure.ANDROID_ID)
-                val udid = K2PluginUtils.hashToUdid(raw)
+                val udid = if (!passedUdid.isNullOrEmpty()) {
+                    passedUdid
+                } else {
+                    val raw = android.provider.Settings.Secure.getString(context.contentResolver, android.provider.Settings.Secure.ANDROID_ID)
+                    K2PluginUtils.hashToUdid(raw)
+                }
 
                 // 1. Create staging dir
                 val stagingDir = File(context.cacheDir, "kaitu-log-upload-${System.currentTimeMillis()}")

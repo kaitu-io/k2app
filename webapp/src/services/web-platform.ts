@@ -18,7 +18,7 @@ import { webSecureStorage } from './secure-storage';
  * Web Platform implementation
  *
  * Partial IPlatform implementation for web-only environments.
- * Does NOT include getUdid — UDID comes from daemon/native, not web.
+ * UDID is handled separately by device-udid.ts, not part of IPlatform.
  */
 export const webPlatform = {
   os: 'web' as const,

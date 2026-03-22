@@ -37,7 +37,6 @@ const mockPlatform = {
   os: 'windows' as string,
   version: '1.0.0',
   storage: mockStorage,
-  getUdid: vi.fn(),
   syncLocale: vi.fn(),
   openExternal: vi.fn(),
 };

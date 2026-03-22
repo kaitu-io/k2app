@@ -168,11 +168,6 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         call.resolve(["ready": true, "version": appVersion])
     }
 
-    @objc func getUDID(_ call: CAPPluginCall) {
-        let raw = UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
-        call.resolve(["udid": hashToUdid(raw)])
-    }
-
     /// SHA-256 hash a raw platform ID to 32 lowercase hex chars (128 bit).
     private func hashToUdid(_ raw: String) -> String {
         let data = Data(raw.utf8)
@@ -591,6 +586,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func uploadLogs(_ call: CAPPluginCall) {
         let feedbackId = call.getString("feedbackId")
+        let passedUdid = call.getString("udid")
 
         Task {
             do {
@@ -599,9 +595,14 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                     return
                 }
 
-                // Get UDID for S3 key
-                let raw = UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
-                let udid = hashToUdid(raw)
+                // Get UDID for S3 key — prefer passed UDID, fallback to hardware
+                let udid: String
+                if let passed = passedUdid, !passed.isEmpty {
+                    udid = passed
+                } else {
+                    let raw = UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
+                    udid = hashToUdid(raw)
+                }
 
                 // 1. Create staging dir
                 let stagingDir = FileManager.default.temporaryDirectory

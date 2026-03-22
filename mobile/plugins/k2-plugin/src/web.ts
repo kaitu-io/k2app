@@ -7,10 +7,6 @@ export class K2PluginWeb extends WebPlugin implements K2PluginInterface {
     throw this.unavailable('K2Plugin is not available on web');
   }
 
-  async getUDID(): Promise<{ udid: string }> {
-    throw this.unavailable('K2Plugin is not available on web');
-  }
-
   async getVersion(): Promise<{ version: string; go: string; os: string; arch: string }> {
     throw this.unavailable('K2Plugin is not available on web');
   }
