@@ -177,9 +177,10 @@ class K2Plugin : Plugin() {
         }
         Log.i(TAG, "connect: config length=${config.length}")
 
-        // Save config JSON
+        // Save config JSON — commit() (synchronous) ensures data survives process kill.
+        // Always-on VPN reads this on system-initiated restart (onStartCommand with null intent).
         context.getSharedPreferences("k2vpn", Context.MODE_PRIVATE)
-            .edit().putString("configJSON", config).apply()
+            .edit().putString("configJSON", config).commit()
         Log.d(TAG, "connect: config saved to SharedPreferences")
 
         // Check VPN permission — Android requires user consent via VpnService.prepare()
