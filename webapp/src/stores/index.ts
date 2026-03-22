@@ -114,8 +114,13 @@ export function initializeAllStores(): () => void {
           });
         }
 
-        if (state === 'idle' && prevState === 'connected') {
-          const durationSec = connectTime ? Math.floor((Date.now() - connectTime) / 1000) : 0;
+        // Track disconnect when connection session ends (any path to idle).
+        // connectTime is the session-active flag: set on entering connected, null otherwise.
+        // This covers all paths: user disconnect (disconnecting→idle), daemon crash (connected→idle),
+        // error (reconnecting→idle), serviceDown recovery (serviceDown→idle).
+        // Excludes paths that never reached connected (connecting→idle, idle→idle self-transition).
+        if (state === 'idle' && connectTime !== null) {
+          const durationSec = Math.floor((Date.now() - connectTime) / 1000);
           const errorInfo = useVPNMachineStore.getState().error;
           statsService.trackDisconnect({
             nodeType: lastConnectedSource === 'self_hosted' ? 'self-hosted' : 'cloud',
