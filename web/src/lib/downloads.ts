@@ -7,8 +7,8 @@ const CDN_MOBILE_BASES = [
 ];
 
 export interface MobileLinks {
-  ios: string;
-  android: { primary: string; backup: string };
+  ios: { url: string; version: string };
+  android: { primary: string; backup: string; version: string };
 }
 
 export interface DesktopChannel {
@@ -29,7 +29,7 @@ export function flattenToRecord(all: AllDownloadLinks): Record<string, string> {
   return {
     windows: ver?.links.windows.primary ?? '',
     macos: ver?.links.macos.primary ?? '',
-    ios: all.mobile?.ios ?? '',
+    ios: all.mobile?.ios.url ?? '',
     android: all.mobile?.android.primary ?? '',
   };
 }
@@ -59,8 +59,8 @@ async function fetchMobileLinks(): Promise<MobileLinks | null> {
         const ios = await iosRes.json();
         const android = await androidRes.json();
         return {
-          ios: ios.appstore_url,
-          android: getAndroidDownloadLinks(android.version),
+          ios: { url: ios.appstore_url, version: ios.version },
+          android: { ...getAndroidDownloadLinks(android.version), version: android.version },
         };
       }
     } catch {}

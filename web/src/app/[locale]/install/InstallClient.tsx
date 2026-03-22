@@ -267,18 +267,16 @@ export default function InstallClient({ betaVersion, stableVersion: serverStable
         <TabsContent value="ios">
           <IOSPanel
             t={t}
-            version={displayVersion}
-            isBeta={isBeta}
-            link={mobileLinks?.ios ?? null}
+            version={mobileLinks?.ios?.version ?? null}
+            link={mobileLinks?.ios?.url ?? null}
           />
         </TabsContent>
         <TabsContent value="android">
           <AndroidPanel
             t={t}
-            version={displayVersion}
-            isBeta={isBeta}
-            primaryLink={mobileLinks?.android.primary ?? ''}
-            backupLink={mobileLinks?.android.backup ?? ''}
+            version={mobileLinks?.android?.version ?? null}
+            primaryLink={mobileLinks?.android?.primary ?? ''}
+            backupLink={mobileLinks?.android?.backup ?? ''}
           />
         </TabsContent>
       </Tabs>

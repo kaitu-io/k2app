@@ -41,7 +41,8 @@ function PanelHeroIcon({ type }: { type: string }) {
   );
 }
 
-function VersionLabel({ t, version, isBeta }: PlatformPanelProps) {
+function VersionLabel({ t, version, isBeta }: { t: PlatformPanelProps['t']; version: string | null; isBeta: boolean }) {
+  if (!version) return null;
   return (
     <p className="text-sm text-muted-foreground mb-6">
       {t('install.install.latestVersion', { version })}
@@ -205,9 +206,8 @@ export function LinuxPanel({
 export function IOSPanel({
   t,
   version,
-  isBeta,
   link,
-}: PlatformPanelProps & { link: string | null }) {
+}: { t: PlatformPanelProps['t']; version: string | null; link: string | null }) {
   return (
     <div className="text-center">
       <PanelHeroIcon type="ios" />
@@ -215,7 +215,7 @@ export function IOSPanel({
       <h1 className="text-3xl sm:text-4xl font-bold font-mono text-foreground mb-2">
         {t('install.install.heroTitle.ios')}
       </h1>
-      <VersionLabel t={t} version={version} isBeta={isBeta} />
+      <VersionLabel t={t} version={version} isBeta={false} />
 
       {link && (
         <Button size="lg" onClick={() => openDownloadInNewTab(link)}>
@@ -234,10 +234,9 @@ export function IOSPanel({
 export function AndroidPanel({
   t,
   version,
-  isBeta,
   primaryLink,
   backupLink,
-}: PlatformPanelProps & { primaryLink: string; backupLink: string }) {
+}: { t: PlatformPanelProps['t']; version: string | null; primaryLink: string; backupLink: string }) {
   return (
     <div className="text-center">
       <PanelHeroIcon type="android" />
@@ -245,7 +244,7 @@ export function AndroidPanel({
       <h1 className="text-3xl sm:text-4xl font-bold font-mono text-foreground mb-2">
         {t('install.install.heroTitle.android')}
       </h1>
-      <VersionLabel t={t} version={version} isBeta={isBeta} />
+      <VersionLabel t={t} version={version} isBeta={false} />
 
       <Button size="lg" onClick={() => openDownloadInNewTab(primaryLink)}>
         <Download className="w-5 h-5 mr-2" />
