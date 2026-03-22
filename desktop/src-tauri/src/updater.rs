@@ -265,10 +265,15 @@ pub fn get_update_status() -> Result<Option<UpdateInfo>, String> {
     Ok(guard.clone())
 }
 
-/// IPC: Apply update now — restarts the app
+/// IPC: Apply update now — reinstalls service (if needed) then restarts the app.
+///
+/// On macOS daemon mode: the .app bundle has already been replaced by `update.install()`.
+/// We reinstall the k2 service here (one admin password prompt) so that after restart
+/// `ensure_service_running` finds the version already matching and does NOT prompt again.
+/// This reduces the total password prompts from 2 to 1.
 #[tauri::command]
 #[allow(unreachable_code)]
-pub fn apply_update_now(app: AppHandle) -> Result<(), String> {
+pub async fn apply_update_now(app: AppHandle) -> Result<(), String> {
     if !is_update_ready() {
         return Err("No update available".to_string());
     }
@@ -280,6 +285,18 @@ pub fn apply_update_now(app: AppHandle) -> Result<(), String> {
     }
     #[cfg(not(target_os = "linux"))]
     {
+        // macOS daemon mode: pre-install service before restart to avoid second password prompt.
+        // The new k2 binary is already at /Applications/Kaitu.app/Contents/MacOS/k2.
+        // If this fails (user cancels, etc.), ensure_service_running handles it after restart.
+        #[cfg(all(target_os = "macos", not(feature = "ne-mode")))]
+        {
+            log::info!("[updater] Pre-installing service before restart...");
+            match service::admin_reinstall_service().await {
+                Ok(msg) => log::info!("[updater] Service pre-installed: {}", msg),
+                Err(e) => log::warn!("[updater] Service pre-install failed (will retry after restart): {}", e),
+            }
+        }
+
         log::info!("[updater] User requested update, restarting...");
         app.restart();
         Ok(())

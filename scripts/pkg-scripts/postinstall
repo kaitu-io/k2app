@@ -23,8 +23,16 @@ else
     fi
 fi
 
-# 2. Launch the newly installed Kaitu app as the logged-in user
+# 2. Change .app ownership to logged-in user so Tauri auto-updater can
+#    replace the bundle without elevation (std::fs::rename succeeds).
+#    Security: /Applications/ is already admin-group-writable, so any admin
+#    user can already delete/replace Kaitu.app — chown adds no new attack surface.
 CONSOLE_USER=$(stat -f "%Su" /dev/console)
+if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ]; then
+    chown -R "$CONSOLE_USER:admin" /Applications/Kaitu.app
+fi
+
+# 3. Launch the newly installed Kaitu app as the logged-in user
 if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ]; then
     sudo -u "$CONSOLE_USER" open /Applications/Kaitu.app &
 fi
