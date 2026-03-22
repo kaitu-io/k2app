@@ -28,6 +28,7 @@ S3_PREFIX="kaitu"
 S3_BASE=""
 DRY_RUN=false
 CHANNEL=""
+PLATFORM=""  # empty = both, "android" or "ios"
 
 CDN_PRIMARY="https://d13jc1jqzlg4yt.cloudfront.net/kaitu"
 APPSTORE_URL="https://apps.apple.com/app/id6448744655"
@@ -40,12 +41,18 @@ for arg in "$@"; do
         --s3-base=*) S3_BASE="${arg#*=}" ;;
         --dry-run) DRY_RUN=true ;;
         --channel=*) CHANNEL="${arg#*=}" ;;
+        --platform=*) PLATFORM="${arg#*=}" ;;
         *) echo "Unknown argument: $arg" >&2; exit 1 ;;
     esac
 done
 
 if [ -z "$VERSION" ]; then
-    echo "Usage: $0 VERSION [--s3-base=PATH] [--dry-run] [--channel=stable|beta]" >&2
+    echo "Usage: $0 VERSION [--s3-base=PATH] [--dry-run] [--channel=stable|beta] [--platform=android|ios]" >&2
+    exit 1
+fi
+
+if [ -n "$PLATFORM" ] && [ "$PLATFORM" != "android" ] && [ "$PLATFORM" != "ios" ]; then
+    echo "ERROR: Invalid platform '${PLATFORM}'. Must be 'android' or 'ios'." >&2
     exit 1
 fi
 
@@ -124,14 +131,16 @@ trap 'rm -rf "$WORK_TMPDIR"' EXIT
 # Define artifact paths (CI uploads to {channel}/{VERSION}/)
 android_artifact="android/${VERSION}/Kaitu-${VERSION}.apk"
 
-# Validate all artifacts exist
+# Validate artifacts exist
 echo "Validating artifacts for v${VERSION}..."
-if ! check_artifact "$android_artifact"; then
-    echo "ERROR: Missing artifact: $android_artifact" >&2
-    echo "Aborting: artifact missing. Run CI build first." >&2
-    exit 1
-else
-    echo "  ✓ $android_artifact"
+if [ "$PLATFORM" != "ios" ]; then
+    if ! check_artifact "$android_artifact"; then
+        echo "ERROR: Missing artifact: $android_artifact" >&2
+        echo "Aborting: artifact missing. Run CI build first." >&2
+        exit 1
+    else
+        echo "  ✓ $android_artifact"
+    fi
 fi
 
 echo ""
@@ -189,8 +198,10 @@ MANIFEST_EOF
     fi
 }
 
-generate_manifest "android" "$android_artifact" ',
+if [ "$PLATFORM" != "ios" ]; then
+    generate_manifest "android" "$android_artifact" ',
   "min_android": 26'
+fi
 
 # --- iOS manifest (metadata only, no artifact) ---
 # Note: iOS clients only read ios/latest.json (no beta path awareness).
@@ -198,6 +209,7 @@ generate_manifest "android" "$android_artifact" ',
 # For beta versions, we write ios/beta/latest.json (unused but consistent).
 # For stable versions, we write both ios/latest.json and ios/beta/latest.json.
 
+if [ "$PLATFORM" != "android" ]; then
 echo "Processing ios..."
 ios_manifest="$WORK_TMPDIR/ios-latest.json"
 cat > "$ios_manifest" <<IOS_EOF
@@ -217,6 +229,7 @@ else
     upload_file "ios/beta/latest.json" "$ios_manifest"
     echo "  Published ios/beta/latest.json"
 fi
+fi  # end platform != android
 
 # --- CloudFront CDN invalidation ---
 
@@ -225,20 +238,24 @@ if [ "$DRY_RUN" = false ] && ! use_local; then
     CDN_ID_DL="E34P52R7B93FSC"
     echo ""
     echo "Invalidating CDN caches..."
+    CDN_PATHS=()
+    [ "$PLATFORM" != "ios" ] && CDN_PATHS+=("/kaitu/android/*")
+    [ "$PLATFORM" != "android" ] && CDN_PATHS+=("/kaitu/ios/*")
     for DIST_ID in "$CDN_ID_D0" "$CDN_ID_DL"; do
         aws cloudfront create-invalidation \
             --distribution-id "$DIST_ID" \
-            --paths "/kaitu/android/*" "/kaitu/ios/*" \
+            --paths "${CDN_PATHS[@]}" \
             --no-cli-pager --output text > /dev/null
     done
     echo "CDN invalidated: d0.all7.cc + dl.kaitu.io"
 fi
 
+PLATFORM_LABEL="${PLATFORM:-mobile}"
 echo ""
 if [ "$CHANNEL" = "beta" ]; then
-    echo "Published mobile v${VERSION} beta manifests successfully."
+    echo "Published ${PLATFORM_LABEL} v${VERSION} beta manifests successfully."
 else
-    echo "Published mobile v${VERSION} manifests successfully."
+    echo "Published ${PLATFORM_LABEL} v${VERSION} manifests successfully."
 fi
 if [ "$DRY_RUN" = true ]; then
     echo "(dry-run mode — no actual S3 uploads)"
