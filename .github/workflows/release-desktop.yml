@@ -6,6 +6,7 @@ on:
       - 'v*'
       - '!v*-ios'
       - '!v*-android'
+      - '!v*-k2s'
   workflow_dispatch:
 
 permissions:

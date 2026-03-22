@@ -5,6 +5,7 @@ on:
     tags:
       - 'v*'
       - '!v*-desktop'
+      - '!v*-k2s'
   workflow_dispatch:
     inputs:
       platform:

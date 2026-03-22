@@ -2,7 +2,8 @@ name: Release k2s
 
 on:
   push:
-    tags: ['v*']
+    tags:
+      - 'v*-k2s'
   workflow_dispatch:
 
 permissions:
