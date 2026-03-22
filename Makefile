@@ -17,6 +17,7 @@ pre-build: sync-version
 
 build-k2-plugin:
 	cd mobile/plugins/k2-plugin && npm run build
+	rm -rf node_modules/k2-plugin && yarn install --force
 
 build-webapp: build-k2-plugin
 	cd webapp && yarn build
