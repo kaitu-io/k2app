@@ -67,10 +67,23 @@ function getStorage() {
   return platform.storage;
 }
 
+/** Monotonic counter incremented on each setTokens() call.
+ *  Used by cloudApi to detect stale 401 responses. */
+let _tokenEpoch = 0;
+
 /**
  * Auth Service
  */
 export const authService = {
+  /**
+   * Get current token epoch (monotonic counter).
+   * Incremented every time setTokens() is called.
+   * cloudApi captures this before each request and compares on 401
+   * to avoid clearing fresh tokens from a stale response.
+   */
+  getTokenEpoch(): number {
+    return _tokenEpoch;
+  },
   /**
    * Get current access token
    * @returns Access token or null if not logged in
@@ -104,6 +117,10 @@ export const authService = {
    * @param tokens Token pair from API response
    */
   async setTokens(tokens: TokenPair): Promise<void> {
+    // Increment epoch FIRST (sync) so any in-flight 401 handler
+    // can detect that tokens have changed, even before await completes.
+    _tokenEpoch++;
+
     const storage = getStorage();
 
     // Save access token

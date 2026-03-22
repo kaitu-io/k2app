@@ -57,7 +57,8 @@ export const cloudApi = {
     body?: unknown
   ): Promise<SResponse<T>> {
     try {
-      // 1. Get token
+      // 1. Get token and capture epoch to detect stale 401s later
+      const requestEpoch = authService.getTokenEpoch();
       const token = await authService.getToken();
 
       // 2. Build headers
@@ -102,9 +103,9 @@ export const cloudApi = {
         console.warn('[CloudAPI] response error:', method, path, 'code:', jsonResponse.code, 'msg:', jsonResponse.message);
       }
 
-      // 7. Handle 401: try token refresh
+      // 7. Handle 401: try token refresh (pass epoch to detect stale requests)
       if (httpResponse.status === 401 || jsonResponse.code === 401) {
-        return await this._handle401<T>(method, path, body);
+        return await this._handle401<T>(method, path, body, requestEpoch);
       }
 
       // 8. Auto-handle auth paths on success
@@ -169,9 +170,17 @@ export const cloudApi = {
   async _handle401<T>(
     method: string,
     path: string,
-    body?: unknown
+    body?: unknown,
+    requestEpoch?: number
   ): Promise<SResponse<T>> {
     try {
+      // Stale 401 guard: if tokens were refreshed (e.g., by login) since this
+      // request was made, skip clearing and retry with the fresh token.
+      if (requestEpoch !== undefined && authService.getTokenEpoch() !== requestEpoch) {
+        console.info(`[CloudAPI] 401 from stale request (epoch ${requestEpoch}→${authService.getTokenEpoch()}), re-dispatching with current token`);
+        return await this.request<T>(method, path, body);
+      }
+
       // Get refresh token — if null, skip refresh entirely
       const refreshToken = await authService.getRefreshToken();
       if (!refreshToken) {

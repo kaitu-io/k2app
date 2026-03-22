@@ -36,7 +36,8 @@ import { useDashboard } from '../stores/dashboard.store';
 import { CloudTunnelList } from '../components/CloudTunnelList';
 import { getThemeColors } from '../theme/colors';
 import { getCountryName, getFlagIcon } from '../utils/country';
-import type { Tunnel } from '../services/api-types';
+import type { Tunnel, TunnelListResponse } from '../services/api-types';
+import { cacheStore } from '../services/cache-store';
 
 // Styled Components for Modern Design
 const DashboardContainer = styled(Box)(({ theme }) => ({
@@ -83,10 +84,23 @@ export default function Dashboard() {
     selectSelfHosted,
     connect,
     disconnect,
+    enrichFromTunnelList,
   } = useConnectionStore();
 
   // Display tunnel: snapshot during connection, selection otherwise
   const displayTunnel = connectedTunnel ?? activeTunnel;
+
+  // Cold start / warm start enrichment: when connectedTunnel has domain but no country,
+  // try to enrich from cached tunnel list immediately (covers warm start where
+  // CloudTunnelList already loaded and won't re-fire onTunnelsLoaded)
+  useEffect(() => {
+    if (connectedTunnel?.source === 'cloud' && !connectedTunnel.country) {
+      const cached = cacheStore.get<TunnelListResponse>('api:tunnels');
+      if (cached?.items) {
+        enrichFromTunnelList(cached.items);
+      }
+    }
+  }, [connectedTunnel, enrichFromTunnelList]);
 
   // Get app-specific configuration
   const appConfig = getCurrentAppConfig();
@@ -323,6 +337,7 @@ export default function Dashboard() {
               selectedDomain={displayTunnel?.domain || ''}
               onSelect={handleCloudTunnelSelect}
               disabled={isInteractive}
+              onTunnelsLoaded={enrichFromTunnelList}
             />
           </Box>
         )}

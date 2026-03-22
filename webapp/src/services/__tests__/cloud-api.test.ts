@@ -22,6 +22,7 @@ vi.mock('../auth-service', () => ({
     getRefreshToken: vi.fn(),
     setTokens: vi.fn(),
     clearTokens: vi.fn(),
+    getTokenEpoch: vi.fn().mockReturnValue(0),
   },
 }));
 
@@ -583,6 +584,137 @@ describe('Cloud API Client', () => {
       expect(mockedAuthStore.setState).toHaveBeenCalledWith({
         isAuthenticated: false,
       });
+    });
+
+    it('should NOT clear fresh tokens when stale 401 arrives after login', async () => {
+      // Reproduce the race condition:
+      // 1. Request A fires with no token (e.g., CloudTunnelList retry)
+      // 2. Login succeeds, fresh tokens saved (setTokens called → epoch increments)
+      // 3. Request A's 401 response arrives — should NOT clear the fresh tokens
+
+      let resolveStaleRequest!: (value: Response) => void;
+
+      const mockFetch = vi.fn()
+        // Call 1: stale request — delayed, will resolve later as 401
+        .mockImplementationOnce(() => new Promise(resolve => { resolveStaleRequest = resolve; }))
+        // Call 2: login request — returns immediately with success
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            code: 0,
+            data: { accessToken: 'fresh-access', refreshToken: 'fresh-refresh' },
+          }),
+        })
+        // Call 3: retry of stale request with fresh token — success
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ code: 0, data: { tunnels: [] } }),
+        });
+      globalThis.fetch = mockFetch;
+
+      // Initially no token, no refresh token
+      mockedAuthService.getToken.mockResolvedValue(null);
+      mockedAuthService.getRefreshToken.mockResolvedValue(null);
+      mockedAuthService.setTokens.mockResolvedValue(undefined);
+      mockedAuthService.clearTokens.mockResolvedValue(undefined);
+
+      // Track epoch: starts at 0, increments when setTokens is called
+      let epoch = 0;
+      mockedAuthService.getTokenEpoch.mockImplementation(() => epoch);
+      mockedAuthService.setTokens.mockImplementation(async () => { epoch++; });
+
+      // Step 1: Fire stale request (hangs on fetch)
+      const stalePromise = cloudApi.request('GET', '/api/tunnels/k2v4');
+
+      // Step 2: Login succeeds — setTokens called, epoch goes 0→1
+      const loginResponse = await cloudApi.post('/api/auth/login', {
+        email: 'user@example.com',
+        code: '123456',
+      });
+      expect(loginResponse.code).toBe(0);
+      expect(mockedAuthService.setTokens).toHaveBeenCalledWith({
+        accessToken: 'fresh-access',
+        refreshToken: 'fresh-refresh',
+      });
+      expect(epoch).toBe(1); // Tokens were saved
+
+      // Step 3: Stale 401 arrives — should NOT clear fresh tokens
+      resolveStaleRequest({
+        ok: false,
+        status: 401,
+        json: () => Promise.resolve({ code: 401, message: 'authentication failed' }),
+      } as Response);
+
+      const staleResult = await stalePromise;
+
+      // KEY ASSERTIONS: fresh tokens must survive the stale 401
+      expect(mockedAuthService.clearTokens).not.toHaveBeenCalled();
+      expect(mockedAuthStore.setState).not.toHaveBeenCalledWith({ isAuthenticated: false });
+
+      // The stale request should have retried with fresh token and succeeded
+      expect(staleResult.code).toBe(0);
+    });
+
+    it('should terminate normally when retried stale request also gets 401', async () => {
+      // Proves no infinite loop: stale 401 → epoch mismatch → retry → 401 again → epoch matches → normal clear
+      let resolveStaleRequest!: (value: Response) => void;
+
+      const mockFetch = vi.fn()
+        // Call 1: stale request — delayed
+        .mockImplementationOnce(() => new Promise(resolve => { resolveStaleRequest = resolve; }))
+        // Call 2: login request — success
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            code: 0,
+            data: { accessToken: 'fresh-access', refreshToken: 'fresh-refresh' },
+          }),
+        })
+        // Call 3: retry of stale request — also 401 (fresh token is also invalid)
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 401,
+          json: () => Promise.resolve({ code: 401, message: 'token revoked' }),
+        });
+      globalThis.fetch = mockFetch;
+
+      mockedAuthService.getToken.mockResolvedValue(null);
+      mockedAuthService.getRefreshToken.mockResolvedValue(null);
+      mockedAuthService.setTokens.mockResolvedValue(undefined);
+      mockedAuthService.clearTokens.mockResolvedValue(undefined);
+
+      let epoch = 0;
+      mockedAuthService.getTokenEpoch.mockImplementation(() => epoch);
+      mockedAuthService.setTokens.mockImplementation(async () => { epoch++; });
+
+      // Step 1: Fire stale request
+      const stalePromise = cloudApi.request('GET', '/api/tunnels/k2v4');
+
+      // Step 2: Login succeeds (epoch 0→1)
+      await cloudApi.post('/api/auth/login', { email: 'u@e.com', code: '123' });
+
+      // Step 3: Stale 401 arrives → epoch mismatch → retry
+      // Step 4: Retry also gets 401 → epoch matches (1===1) → normal clear path
+      resolveStaleRequest({
+        ok: false,
+        status: 401,
+        json: () => Promise.resolve({ code: 401, message: 'authentication failed' }),
+      } as Response);
+
+      const staleResult = await stalePromise;
+
+      // Should return 401 (not hang or loop)
+      expect(staleResult.code).toBe(401);
+
+      // On the retry (epoch matched), normal 401 handling fires: no refresh token → clear
+      expect(mockedAuthService.clearTokens).toHaveBeenCalled();
+      expect(mockedAuthStore.setState).toHaveBeenCalledWith({ isAuthenticated: false });
+
+      // Should have made exactly 3 fetch calls (stale + login + retry), NOT more
+      expect(mockFetch).toHaveBeenCalledTimes(3);
     });
 
     it('test_401_concurrent_shares_refresh', async () => {

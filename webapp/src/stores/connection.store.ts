@@ -45,9 +45,20 @@ interface ConnectionActions {
   selectSelfHosted: () => void;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
+  enrichFromTunnelList: (tunnels: Tunnel[]) => void;
 }
 
 // ============ Helpers ============
+
+/** Extract hostname (tunnel domain) from k2v5://udid:token@host:port?... URL */
+function extractDomainFromServerUrl(serverUrl: string): string | null {
+  try {
+    const url = new URL(serverUrl.replace(/^k2v\d+:\/\//, 'https://'));
+    return url.hostname.toLowerCase() || null;
+  } catch {
+    return null;
+  }
+}
 
 function computeCloudActiveTunnel(tunnel: Tunnel): ActiveTunnel {
   return {
@@ -178,6 +189,24 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     }
   },
 
+  enrichFromTunnelList: (tunnels) => {
+    const { connectedTunnel } = get();
+    if (!connectedTunnel || connectedTunnel.source !== 'cloud') return;
+    if (connectedTunnel.country) return; // Already enriched, idempotent
+
+    const match = tunnels.find(t => t.domain.toLowerCase() === connectedTunnel.domain);
+    if (!match) return;
+
+    const enriched = computeCloudActiveTunnel(match);
+    console.info('[Connection] Enriched from tunnel list: domain=' + match.domain
+      + ', name=' + (match.name || match.domain) + ', country=' + (match.node?.country || ''));
+    set({
+      connectedTunnel: enriched,
+      selectedCloudTunnel: match,
+      activeTunnel: enriched,
+    });
+  },
+
   disconnect: async () => {
     // State guard: reject if already disconnecting or idle.
     const vpnState = useVPNMachineStore.getState().state;
@@ -198,15 +227,76 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
   },
 }));
 
+// ============ Cold Start Recovery ============
+
+/**
+ * Cold start restore: when VPN is active but connectedTunnel is lost (app process killed),
+ * recover from persisted config.server URL + self-hosted store.
+ *
+ * Guards: configLoaded && selfHostedLoaded && vpnActive && !connectedTunnel
+ * Normal connect flow sets connectedTunnel in connect() before VPN activates, so guards skip.
+ *
+ * Three async data sources (config / selfHosted / vpnState) complete in unknown order.
+ * Three independent subscriptions trigger this; guards ensure execution only when all ready,
+ * and connectedTunnel guard ensures at-most-once execution.
+ */
+function tryRestoreConnectedTunnel(): boolean {
+  const vpnState = useVPNMachineStore.getState().state;
+  const { connectedTunnel } = useConnectionStore.getState();
+  const { config, loaded: configLoaded } = useConfigStore.getState();
+  const { loaded: selfHostedLoaded } = useSelfHostedStore.getState();
+
+  if (!configLoaded) return false;
+  if (!selfHostedLoaded) return false;
+  if (connectedTunnel) return false;
+  if (vpnState !== 'connected' && vpnState !== 'connecting' && vpnState !== 'reconnecting') return false;
+
+  const serverUrl = config.server;
+  if (!serverUrl) return false;
+
+  const domain = extractDomainFromServerUrl(serverUrl);
+  if (!domain) return false;
+
+  // Check self-hosted first (full info already persisted)
+  const selfHosted = useSelfHostedStore.getState().tunnel;
+  if (selfHosted) {
+    const selfHostedDomain = extractDomainFromServerUrl(selfHosted.uri);
+    if (selfHostedDomain === domain) {
+      const activeTunnel = computeSelfHostedActiveTunnel();
+      console.info('[Connection] Cold start restore: self-hosted domain=' + domain);
+      useConnectionStore.setState({
+        selectedSource: 'self_hosted',
+        connectedTunnel: activeTunnel,
+        activeTunnel,
+      });
+      return true;
+    }
+  }
+
+  // Cloud: set domain-only partial restore. Dashboard useEffect handles enrichment
+  // from cacheStore (works in both cold start and warm start).
+  console.info('[Connection] Cold start restore: cloud domain=' + domain + ' (pending enrichment)');
+  useConnectionStore.setState({
+    selectedSource: 'cloud',
+    connectedTunnel: {
+      source: 'cloud',
+      domain,
+      name: domain,
+      country: '',
+      serverUrl,
+    },
+  });
+  return true;
+}
+
 // ============ Lifecycle ============
 
 export function initializeConnectionStore(): () => void {
-  // Clear stale connectedTunnel when VPN reaches idle.
-  // Covers: daemon restart, sleep/wake recovery, network change, serviceDown→recovery.
-  // Idempotent with user-initiated disconnect() which pre-clears connectedTunnel.
-  const unsub = useVPNMachineStore.subscribe(
+  // Trigger 1: VPN state changes (vpn-machine.store uses subscribeWithSelector middleware)
+  const unsubVPN = useVPNMachineStore.subscribe(
     (s) => s.state,
     (state) => {
+      // Existing: clear stale connectedTunnel when VPN reaches idle
       if (state === 'idle') {
         const { connectedTunnel } = useConnectionStore.getState();
         if (connectedTunnel) {
@@ -214,8 +304,33 @@ export function initializeConnectionStore(): () => void {
           useConnectionStore.setState({ connectedTunnel: null });
         }
       }
+      // Cold start recovery: VPN active but connectedTunnel lost
+      if (state === 'connected' || state === 'connecting' || state === 'reconnecting') {
+        if (!useConnectionStore.getState().connectedTunnel) {
+          tryRestoreConnectedTunnel();
+        }
+      }
     },
   );
 
-  return unsub;
+  // Trigger 2: config loaded (may arrive after VPN status)
+  // config store doesn't use subscribeWithSelector — use Zustand v5 base subscribe(listener)
+  const unsubConfig = useConfigStore.subscribe((state, prevState) => {
+    if (state.loaded && !prevState.loaded) {
+      tryRestoreConnectedTunnel();
+    }
+  });
+
+  // Trigger 3: selfHosted loaded (must be ready before self-hosted vs cloud determination)
+  const unsubSelfHosted = useSelfHostedStore.subscribe((state, prevState) => {
+    if (state.loaded && !prevState.loaded) {
+      tryRestoreConnectedTunnel();
+    }
+  });
+
+  return () => {
+    unsubVPN();
+    unsubConfig();
+    unsubSelfHosted();
+  };
 }

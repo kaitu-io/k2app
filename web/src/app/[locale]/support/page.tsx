@@ -1,74 +1,81 @@
-import { getTranslations, setRequestLocale } from 'next-intl/server';
 import type { Metadata } from 'next';
+import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { routing } from '@/i18n/routing';
-import { generateMetadata as generateBaseMetadata } from '../metadata';
+import { generateMetadata as generateBaseMetadata, baseUrl } from '../metadata';
 import SupportClient from './SupportClient';
 
-type Locale = (typeof routing.locales)[number];
-
-const FAQ_ITEMS = ['multiDevice', 'connectionFailed', 'purchase', 'platforms', 'childSafety'] as const;
-
-export async function generateMetadata({
-  params,
-}: {
+interface Props {
   params: Promise<{ locale: string }>;
-}): Promise<Metadata> {
-  const { locale: rawLocale } = await params;
-  const locale = rawLocale as Locale;
-  const base = generateBaseMetadata(locale);
-  const t = await getTranslations({ locale, namespace: 'guide-parents' });
-
-  const title = `${t('hero.title')} | Kaitu`;
-  const description = t('hero.subtitle');
-
-  return {
-    ...base,
-    title,
-    description,
-    openGraph: {
-      ...(base.openGraph as Record<string, unknown>),
-      title,
-      description,
-    },
-    twitter: {
-      ...(base.twitter as Record<string, unknown>),
-      title,
-      description,
-    },
-  };
 }
 
-export default async function SupportPage({
-  params,
-}: {
-  params: Promise<{ locale: string }>;
-}) {
-  const { locale: rawLocale } = await params;
-  const locale = rawLocale as Locale;
-  setRequestLocale(locale);
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { locale } = await params;
+  const t = await getTranslations({ locale: locale as (typeof routing.locales)[number], namespace: 'guide-parents' });
 
-  const t = await getTranslations({ locale, namespace: 'guide-parents' });
+  return generateBaseMetadata(locale, '/support', {
+    title: t('meta.title'),
+    description: t('meta.description'),
+  });
+}
 
-  const jsonLd = JSON.stringify({
+export function generateStaticParams() {
+  return routing.locales.map((locale) => ({ locale }));
+}
+
+export default async function SupportPage({ params }: Props) {
+  const { locale } = await params;
+  setRequestLocale(locale as (typeof routing.locales)[number]);
+
+  const t = await getTranslations({ locale: locale as (typeof routing.locales)[number], namespace: 'guide-parents' });
+
+  // FAQ structured data for GEO SEO
+  const faqKeys = [
+    'multiDevice', 'verifyCode', 'paymentSafety', 'wechatPay',
+    'windowsBlueScreen', 'macPassword', 'androidInstall',
+    'globalMode', 'connectionFailed', 'platforms',
+  ];
+
+  const faqJsonLd = {
     '@context': 'https://schema.org',
     '@type': 'FAQPage',
-    mainEntity: FAQ_ITEMS.map((item) => ({
+    mainEntity: faqKeys.map((key) => ({
       '@type': 'Question',
-      name: t(`faq.items.${item}.question`),
+      name: t(`faq.items.${key}.question`),
       acceptedAnswer: {
         '@type': 'Answer',
-        text: t(`faq.items.${item}.answer`),
+        text: t(`faq.items.${key}.answer`),
       },
     })),
-  });
+  };
+
+  const videoJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'VideoObject',
+    name: t('video.title'),
+    description: t('video.description'),
+    contentUrl: 'https://d13jc1jqzlg4yt.cloudfront.net/kaitu/guides/kaitu_guide.mp4',
+    uploadDate: '2026-03-22',
+    duration: 'PT6M36S',
+    publisher: {
+      '@type': 'Organization',
+      name: 'Kaitu',
+      url: baseUrl,
+    },
+  };
+
+  // JSON-LD content is from trusted i18n translations, safe for inline script
+  const faqScript = JSON.stringify(faqJsonLd);
+  const videoScript = JSON.stringify(videoJsonLd);
 
   return (
     <>
-      {/* FAQPage JSON-LD — i18n translations are trusted server-side content */}
       <script
         type="application/ld+json"
-        suppressHydrationWarning
-        dangerouslySetInnerHTML={{ __html: jsonLd }}
+        dangerouslySetInnerHTML={{ __html: faqScript }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: videoScript }}
       />
       <SupportClient />
     </>
