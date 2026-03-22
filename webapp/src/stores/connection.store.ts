@@ -296,11 +296,14 @@ export function initializeConnectionStore(): () => void {
   const unsubVPN = useVPNMachineStore.subscribe(
     (s) => s.state,
     (state) => {
-      // Existing: clear stale connectedTunnel when VPN reaches idle
-      if (state === 'idle') {
+      // Clear stale connectedTunnel when VPN is no longer actively using it.
+      // idle: connection ended normally. error: connection failed.
+      // In both cases, user should be free to select a new tunnel and
+      // displayTunnel (connectedTunnel ?? activeTunnel) should reflect their choice.
+      if (state === 'idle' || state === 'error') {
         const { connectedTunnel } = useConnectionStore.getState();
         if (connectedTunnel) {
-          console.info('[Connection] VPN idle — clearing stale connectedTunnel');
+          console.info('[Connection] VPN ' + state + ' — clearing connectedTunnel');
           useConnectionStore.setState({ connectedTunnel: null });
         }
       }
