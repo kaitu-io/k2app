@@ -4,13 +4,18 @@
  * Tests for auth-service migrated from window._k2.platform to window._platform.
  *
  * Key change: auth-service should use window._platform.storage and
- * window._platform.getUdid() instead of window._k2.platform.
+ * getDeviceUdid() instead of window._k2.platform.
  *
  * Run: cd webapp && npx vitest run --reporter=verbose src/services/__tests__/auth-service-v2.test.ts
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TOKEN_STORAGE_KEY, REFRESH_TOKEN_STORAGE_KEY } from '../auth-service';
+
+// Mock device-udid module
+vi.mock('../device-udid', () => ({
+  getDeviceUdid: vi.fn().mockResolvedValue('test-udid-abc123'),
+}));
 
 // Mock storage (implements ISecureStorage interface)
 const mockStorage = {
@@ -29,11 +34,10 @@ const mockPlatform = {
   isMobile: false,
   version: '0.4.0',
   storage: mockStorage,
-  getUdid: vi.fn(),
 };
 
 describe('Auth Service v2 (using window._platform)', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     // Set up window._platform (the new way)
     // Do NOT set window._k2.platform -- auth-service should not use it
     (window as any)._platform = mockPlatform;
@@ -47,6 +51,10 @@ describe('Auth Service v2 (using window._platform)', () => {
 
     vi.clearAllMocks();
     vi.resetModules();
+
+    // Re-set device-udid mock after clearAllMocks (which clears mock implementations)
+    const { getDeviceUdid } = await import('../device-udid');
+    vi.mocked(getDeviceUdid).mockResolvedValue('test-udid-abc123');
   });
 
   afterEach(() => {
@@ -105,26 +113,17 @@ describe('Auth Service v2 (using window._platform)', () => {
     });
   });
 
-  // ==================== UDID via _platform.getUdid() ====================
+  // ==================== UDID via getDeviceUdid() ====================
 
   describe('getUdid', () => {
-    it('should call window._platform.getUdid()', async () => {
-      const expectedUdid = 'a'.repeat(48) + '-' + 'b'.repeat(8);
-      mockPlatform.getUdid.mockResolvedValue(expectedUdid);
+    it('should delegate to getDeviceUdid()', async () => {
+      const { getDeviceUdid } = await import('../device-udid');
 
       const { authService } = await import('../auth-service');
       const udid = await authService.getUdid();
 
-      expect(udid).toBe(expectedUdid);
-      expect(mockPlatform.getUdid).toHaveBeenCalled();
-    });
-
-    it('should throw if window._platform is undefined', async () => {
-      delete (window as any)._platform;
-
-      const { authService } = await import('../auth-service');
-
-      await expect(authService.getUdid()).rejects.toThrow();
+      expect(udid).toBe('test-udid-abc123');
+      expect(getDeviceUdid).toHaveBeenCalled();
     });
   });
 
@@ -146,7 +145,8 @@ describe('Auth Service v2 (using window._platform)', () => {
 
   describe('buildTunnelUrl', () => {
     it('should inject UDID and token into k2v5 URL', async () => {
-      mockPlatform.getUdid.mockResolvedValue('device-udid-123');
+      const { getDeviceUdid } = await import('../device-udid');
+      vi.mocked(getDeviceUdid).mockResolvedValue('device-udid-123');
       mockStorage.get.mockResolvedValue('jwt-token-abc');
 
       const { authService } = await import('../auth-service');
@@ -158,7 +158,8 @@ describe('Auth Service v2 (using window._platform)', () => {
     });
 
     it('should return original URL when token is missing', async () => {
-      mockPlatform.getUdid.mockResolvedValue('device-udid-123');
+      const { getDeviceUdid } = await import('../device-udid');
+      vi.mocked(getDeviceUdid).mockResolvedValue('device-udid-123');
       mockStorage.get.mockResolvedValue(null);
 
       const { authService } = await import('../auth-service');
@@ -169,7 +170,8 @@ describe('Auth Service v2 (using window._platform)', () => {
     });
 
     it('should handle URL with complex query params', async () => {
-      mockPlatform.getUdid.mockResolvedValue('udid');
+      const { getDeviceUdid } = await import('../device-udid');
+      vi.mocked(getDeviceUdid).mockResolvedValue('udid');
       mockStorage.get.mockResolvedValue('tok');
 
       const { authService } = await import('../auth-service');

@@ -16,9 +16,6 @@ export interface K2PluginInterface {
         version?: string;
         reason?: string;
     }>;
-    getUDID(): Promise<{
-        udid: string;
-    }>;
     getVersion(): Promise<{
         version: string;
         go: string;
@@ -60,6 +57,7 @@ export interface K2PluginInterface {
         feedbackId?: string;
         platform?: string;
         version?: string;
+        udid?: string;
     }): Promise<{
         success: boolean;
         error?: string;

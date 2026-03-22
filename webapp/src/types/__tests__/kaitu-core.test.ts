@@ -3,7 +3,7 @@
  *
  * AFTER the split:
  *   window._k2 = { run(action, params): Promise<SResponse> }   (pure VPN only)
- *   window._platform = { os, isDesktop, isMobile, version, getUdid(), storage, ... }
+ *   window._platform = { os, isDesktop, isMobile, version, storage, ... }
  *
  * These tests verify the new type contracts at runtime.
  * They should FAIL until the production types are updated.
@@ -110,7 +110,6 @@ describe('Window declares both globals', () => {
       isDesktop: false,
       isMobile: false,
       version: '1.0.0',
-      getUdid: async () => 'test-udid',
       storage: {
         get: async () => null,
         set: async () => {},
@@ -139,47 +138,6 @@ describe('Window declares both globals', () => {
     expect((window._k2 as any).platform).toBeUndefined();
     // _platform should be its own top-level object
     expect(window._platform).toBeDefined();
-  });
-});
-
-/**
- * IPlatform interface requirements
- */
-describe('IPlatform has getUdid', () => {
-  it('should include getUdid returning Promise<string>', () => {
-    const platform: IPlatform = {
-      os: 'web',
-      isDesktop: false,
-      isMobile: false,
-      version: '1.0.0',
-      getUdid: async () => 'test-udid-12345',
-    };
-
-    expect(typeof platform.getUdid).toBe('function');
-  });
-
-  it('should have getUdid as a required (non-optional) property', () => {
-    // After the split, getUdid is REQUIRED on IPlatform (not optional).
-    // A valid IPlatform MUST include getUdid — omitting it is a compile error.
-    // We verify at runtime that a properly constructed IPlatform has getUdid.
-    const platform: IPlatform = {
-      os: 'web',
-      isDesktop: false,
-      isMobile: false,
-      version: '1.0.0',
-      getUdid: async () => 'test-udid',
-      storage: {
-        get: async () => null,
-        set: async () => {},
-        remove: async () => {},
-        has: async () => false,
-        clear: async () => {},
-        keys: async () => [],
-      },
-    };
-
-    // getUdid is required — a valid IPlatform always has it defined
-    expect(platform.getUdid).toBeDefined();
   });
 });
 
@@ -217,7 +175,6 @@ describe('IPlatform has storage', () => {
       isDesktop: false,
       isMobile: false,
       version: '1.0.0',
-      getUdid: async () => 'test-udid',
       storage: {
         get: async () => null,
         set: async () => {},

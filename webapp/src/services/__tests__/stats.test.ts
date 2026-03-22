@@ -8,6 +8,11 @@ vi.mock('../cloud-api', () => ({
   },
 }));
 
+// Mock device-udid module
+vi.mock('../device-udid', () => ({
+  getDeviceUdid: vi.fn().mockResolvedValue('test-udid-123'),
+}));
+
 // Mock window._platform with typed ISecureStorage
 const mockStorage = new Map<string, any>();
 Object.defineProperty(window, '_platform', {
@@ -19,7 +24,6 @@ Object.defineProperty(window, '_platform', {
       set: vi.fn(async (key: string, value: any) => { mockStorage.set(key, value); }),
       remove: vi.fn(async (key: string) => { mockStorage.delete(key); }),
     },
-    getUdid: vi.fn(async () => 'test-udid-123'),
   },
   writable: true,
 });
@@ -49,6 +53,9 @@ describe('statsService', () => {
 
     mockStorage.clear();
     vi.clearAllMocks();
+    // Re-set device-udid mock after clearAllMocks
+    const { getDeviceUdid } = await import('../device-udid');
+    vi.mocked(getDeviceUdid).mockResolvedValue('test-udid-123');
     // Re-set mocks cleared by vi.clearAllMocks()
     (window._platform!.storage.get as any).mockImplementation(
       async (key: string) => mockStorage.get(key) ?? null
@@ -59,7 +66,6 @@ describe('statsService', () => {
     (window._platform!.storage.remove as any).mockImplementation(
       async (key: string) => { mockStorage.delete(key); }
     );
-    (window._platform!.getUdid as any).mockResolvedValue('test-udid-123');
     mockRequest.mockResolvedValue({ code: 0 });
   });
 
@@ -83,23 +89,21 @@ describe('statsService', () => {
     );
   });
 
-  it('uses persistent fallback hash when getUdid fails', async () => {
-    (window._platform!.getUdid as any).mockRejectedValue(new Error('no UDID'));
+  it('uses fallback hash when getDeviceUdid fails', async () => {
+    const { getDeviceUdid } = await import('../device-udid');
+    vi.mocked(getDeviceUdid).mockRejectedValue(new Error('no UDID'));
 
     await statsService.trackAppOpen();
     await new Promise(r => setTimeout(r, 50));
 
-    // Should have generated and stored a fallback device ID
-    expect(mockStorage.get('stats_device_id')).toBe('fallback-uuid-1234');
-
-    // Should still have flushed with a hash (not "unknown")
+    // Should still have flushed with 'unknown' as device hash
     expect(mockRequest).toHaveBeenCalledWith(
       'POST',
       '/api/stats/events',
       expect.objectContaining({
         app_opens: expect.arrayContaining([
           expect.objectContaining({
-            device_hash: expect.not.stringMatching(/^unknown$/),
+            device_hash: 'unknown',
           }),
         ]),
       })

@@ -26,6 +26,10 @@ vi.mock('../../services/cloud-api', () => ({
   },
 }));
 
+vi.mock('../../services/device-udid', () => ({
+  getDeviceUdid: vi.fn().mockResolvedValue('test-udid'),
+}));
+
 import { useAuthStore } from '../../stores/auth.store';
 import { useUser } from '../../hooks/useUser';
 import { cloudApi } from '../../services/cloud-api';
@@ -61,7 +65,6 @@ function setupPlatform(overrides: { uploadLogs?: boolean; isBeta?: boolean } = {
     os: 'macos',
     version: overrides.isBeta ? '0.4.0-beta.1' : '0.3.22',
     storage: { get: vi.fn().mockResolvedValue(null), set: vi.fn().mockResolvedValue(undefined), remove: vi.fn().mockResolvedValue(undefined) },
-    getUdid: vi.fn().mockResolvedValue('test-udid'),
     openExternal: vi.fn().mockResolvedValue(undefined),
     writeClipboard: vi.fn().mockResolvedValue(undefined),
     readClipboard: vi.fn().mockResolvedValue(''),

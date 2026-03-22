@@ -126,33 +126,6 @@ mod macos {
         }
     }
 
-    /// Read the hardware UUID via `sysctl -n kern.uuid`.
-    ///
-    /// Replaces the daemon HTTP call on macOS. The UUID is stable across reboots
-    /// and does not require admin privileges.
-    pub fn get_udid_native() -> Result<ServiceResponse, String> {
-        let output = std::process::Command::new("sysctl")
-            .args(["-n", "kern.uuid"])
-            .output()
-            .map_err(|e| format!("sysctl failed: {}", e))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("sysctl exited non-zero: {}", stderr));
-        }
-
-        let uuid = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if uuid.is_empty() {
-            return Err("sysctl returned empty UUID".into());
-        }
-
-        Ok(ServiceResponse {
-            code: 0,
-            message: "ok".into(),
-            data: serde_json::json!({ "udid": uuid }),
-        })
-    }
-
     /// Reinstall / repair the NE configuration (admin-level operation).
     ///
     /// Replaces `admin_reinstall_service_macos` on macOS.
@@ -491,47 +464,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Test 8: get_udid_native returns a UUID-like string (macOS only)
-    // -----------------------------------------------------------------------
-    #[test]
-    fn test_get_udid_macos_native() {
-        // On macOS with ne-mode, call the real sysctl to get the hardware UUID.
-        // Otherwise, test the response parsing logic with a known UUID.
-        #[cfg(all(target_os = "macos", feature = "ne-mode"))]
-        {
-            // Import the real implementation
-            let result = crate::ne::get_udid_native();
-            assert!(result.is_ok(), "get_udid_native should succeed on macOS: {:?}", result.err());
-            let resp = result.unwrap();
-            assert_eq!(resp.code, 0);
-            let udid = resp.data.get("udid").and_then(|v| v.as_str());
-            assert!(udid.is_some(), "udid field should be present");
-            let udid_str = udid.unwrap();
-            // UUID format: 8-4-4-4-12 hex characters separated by dashes
-            assert_eq!(udid_str.len(), 36, "UUID should be 36 chars: '{}'", udid_str);
-            assert!(
-                udid_str.chars().all(|c| c.is_ascii_hexdigit() || c == '-'),
-                "UUID should only contain hex digits and dashes: '{}'",
-                udid_str
-            );
-        }
-        #[cfg(not(all(target_os = "macos", feature = "ne-mode")))]
-        {
-            // Simulate the parsing logic: build a ServiceResponse with a known UUID
-            // and verify the structure is correct.
-            let known_uuid = "ABCDEF12-3456-7890-ABCD-EF1234567890";
-            let resp = ServiceResponse {
-                code: 0,
-                message: "ok".into(),
-                data: serde_json::json!({ "udid": known_uuid }),
-            };
-            let udid = resp.data.get("udid").and_then(|v| v.as_str());
-            assert_eq!(udid, Some(known_uuid));
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // Test 9: ensure_ne_installed function exists and is callable
+    // Test 8: ensure_ne_installed function exists and is callable
     // -----------------------------------------------------------------------
     #[test]
     fn test_ensure_ne_installed_replaces_service() {

@@ -35,7 +35,6 @@ describe('useUpdater reads from window._platform', () => {
         clear: vi.fn(),
         keys: vi.fn(),
       },
-      getUdid: vi.fn().mockResolvedValue('test-udid'),
       updater: {
         isUpdateReady: true,
         updateInfo: {

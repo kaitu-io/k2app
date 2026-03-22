@@ -108,7 +108,6 @@ fn main() {
             service::daemon_exec,
             service::daemon_helper_exec,
             service::set_log_level,
-            service::get_udid,
             service::get_platform_info,
             updater::check_update_now,
             updater::apply_update_now,

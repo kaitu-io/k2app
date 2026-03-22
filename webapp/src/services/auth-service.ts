@@ -7,7 +7,7 @@
  * Storage Keys:
  * - k2.auth.token: Access token (encrypted in secure storage)
  * - k2.auth.refresh: Refresh token (encrypted in secure storage)
- * - k2.udid: Device UDID (managed by platform.getUdid())
+ * - k2.udid: Device UDID (managed by device-udid module)
  *
  * Usage:
  * ```typescript
@@ -24,6 +24,8 @@
  * // Result: 'k2v4://udid:token@example.com?ipv4=1.2.3.4'
  * ```
  */
+
+import { getDeviceUdid } from './device-udid';
 
 // Storage keys
 export const TOKEN_STORAGE_KEY = 'k2.auth.token';
@@ -151,17 +153,11 @@ export const authService = {
 
   /**
    * Get device UDID
-   * Uses platform.getUdid() which handles generation and caching
-   * @returns 57-character UDID
+   * Uses getDeviceUdid() which handles generation and persistent caching
+   * @returns 32 hex char UDID
    */
   async getUdid(): Promise<string> {
-    const platform = getPlatform();
-
-    if (!platform.getUdid) {
-      throw new Error('[AuthService] Platform does not support getUdid()');
-    }
-
-    return platform.getUdid();
+    return getDeviceUdid();
   },
 
   /**

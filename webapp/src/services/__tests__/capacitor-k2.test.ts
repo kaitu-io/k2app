@@ -3,7 +3,7 @@
  *
  * Tests for the Capacitor mobile bridge (capacitor-k2.ts) which injects:
  *   window._k2      = { run(action, params) }     (VPN control via K2Plugin)
- *   window._platform = { os, version, storage, getUdid, ... }
+ *   window._platform = { os, version, storage, ... }
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -37,7 +37,6 @@ vi.mock('@capacitor/clipboard', () => ({
 // Mock k2-plugin — only methods the bridge actually calls
 const mockK2Plugin = {
   checkReady: vi.fn(),
-  getUDID: vi.fn(),
   getVersion: vi.fn(),
   getStatus: vi.fn(),
   connect: vi.fn(),
@@ -493,18 +492,6 @@ describe('capacitor-k2', () => {
   });
 
   describe('_platform', () => {
-    it('test_platform_getUdid', async () => {
-      const { injectCapacitorGlobals } = await import('../capacitor-k2');
-      await injectCapacitorGlobals();
-
-      mockK2Plugin.getUDID.mockResolvedValue({ udid: 'test-mobile-udid-123' });
-
-      const udid = await window._platform.getUdid();
-
-      expect(mockK2Plugin.getUDID).toHaveBeenCalled();
-      expect(udid).toBe('test-mobile-udid-123');
-    });
-
     it('test_platform_openExternal_uses_browser_plugin', async () => {
       const { injectCapacitorGlobals } = await import('../capacitor-k2');
       await injectCapacitorGlobals();

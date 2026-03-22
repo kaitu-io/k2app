@@ -9,6 +9,7 @@
  */
 
 import { cloudApi } from './cloud-api';
+import { getDeviceUdid } from './device-udid';
 
 const INITIAL_DELAY_MS = 5 * 60 * 1000; // 5 minutes
 const INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -20,7 +21,7 @@ async function doUploadAndRegister() {
   if (!window._platform?.uploadLogs) return;
 
   try {
-    const udid = await window._platform.getUdid();
+    const udid = await getDeviceUdid();
     const result = await window._platform.uploadLogs({
       reason: 'beta-auto-upload',
       platform: window._platform.os,

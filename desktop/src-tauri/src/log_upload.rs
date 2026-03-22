@@ -662,9 +662,9 @@ fn upload_auto_dir(dir: &Path, udid: &str, uploaded: &mut Vec<UploadedFileInfo>)
 #[tauri::command]
 pub async fn upload_service_log_command(
     params: UploadLogParams,
+    udid: String,
 ) -> Result<UploadLogResult, String> {
     tokio::task::spawn_blocking(move || {
-        let udid = crate::service::get_hardware_uuid().unwrap_or_else(|_| "unknown".into());
         if params.reason == "beta-auto-upload" {
             upload_auto(&udid)
         } else {

@@ -6,7 +6,7 @@
  *
  * After the split:
  *   window._k2      = { run(action, params) }           (pure VPN)
- *   window._platform = { os, storage, getUdid, ... }    (platform capabilities)
+ *   window._platform = { os, storage, ... }              (platform capabilities)
  */
 
 declare const __K2_BUILD_COMMIT__: string;
@@ -45,17 +45,6 @@ async function coreExec<T = any>(action: string, params?: any): Promise<SRespons
 }
 
 /**
- * Get device UDID from the daemon's /api/device/udid endpoint.
- * In standalone/router mode, UDID generation is the daemon's responsibility.
- */
-async function getDaemonUdid(): Promise<string> {
-  const resp = await fetch('/api/device/udid');
-  const json = await resp.json();
-  if (json.code === 0 && json.data?.udid) return json.data.udid;
-  throw new Error('Failed to get UDID from daemon');
-}
-
-/**
  * Standalone K2 — VPN-only global (window._k2)
  */
 export const standaloneK2: IK2Vpn = {
@@ -71,7 +60,6 @@ export const standalonePlatform: IPlatform = {
   version: 'standalone',
   arch: 'unknown',
   commit: typeof __K2_BUILD_COMMIT__ !== 'undefined' ? __K2_BUILD_COMMIT__ : '',
-  getUdid: getDaemonUdid,
   storage: webSecureStorage,
   setDevEnabled: () => {},
 };

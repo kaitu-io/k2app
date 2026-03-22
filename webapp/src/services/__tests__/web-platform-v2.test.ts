@@ -108,11 +108,6 @@ describe('Web Platform V2 — cleaned interface', () => {
     expect('exit' in webPlatform).toBe(false);
   });
 
-  it('webPlatform does NOT have getUdid (comes from daemon/native)', async () => {
-    const { webPlatform } = await import('../web-platform');
-    expect('getUdid' in webPlatform).toBe(false);
-  });
-
   it('should NOT export getWebUdid function', async () => {
     const mod = await import('../web-platform');
     expect('getWebUdid' in mod).toBe(false);

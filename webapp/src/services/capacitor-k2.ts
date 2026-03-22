@@ -13,6 +13,7 @@ import { Capacitor } from '@capacitor/core';
 import { Browser } from '@capacitor/browser';
 import { Clipboard } from '@capacitor/clipboard';
 import { Share } from '@capacitor/share';
+import { getDeviceUdid } from './device-udid';
 import { K2Plugin } from 'k2-plugin';
 import type { IK2Vpn, IPlatform, IUpdater, UpdateInfo, SResponse } from '../types/kaitu-core';
 import type { StatusResponseData, ControlError, ServiceState } from './vpn-types';
@@ -222,11 +223,6 @@ export async function injectCapacitorGlobals(): Promise<void> {
 
     storage: webSecureStorage,
 
-    getUdid: async (): Promise<string> => {
-      const result = await K2Plugin.getUDID();
-      return result.udid;
-    },
-
     openExternal: async (url: string): Promise<void> => {
       await Browser.open({ url });
     },
@@ -256,12 +252,14 @@ export async function injectCapacitorGlobals(): Promise<void> {
     updater,
 
     uploadLogs: async (params) => {
+      const udid = await getDeviceUdid();
       const result = await K2Plugin.uploadLogs({
         email: params.email ?? undefined,
         reason: params.reason,
         feedbackId: params.feedbackId,
         platform: params.platform,
         version: params.version,
+        udid,
       });
       return result;
     },

@@ -139,7 +139,6 @@ export interface IPlatform {
   // ====== 核心能力 ======
 
   storage: ISecureStorage;
-  getUdid(): Promise<string>;
 
   // ====== 跨平台能力 ======
 

@@ -3,7 +3,7 @@
  *
  * ensureK2Injected() injects:
  *   window._k2      = { run(action, params) }     (VPN-only)
- *   window._platform = { os, version, storage, getUdid, ... }
+ *   window._platform = { os, version, storage, ... }
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -117,16 +117,6 @@ describe('Standalone K2 V2 — split global injection', () => {
     expect(typeof platform.storage.get).toBe('function');
     expect(typeof platform.storage.set).toBe('function');
     expect(typeof platform.storage.remove).toBe('function');
-  });
-
-  it('should have window._platform.getUdid as a function', async () => {
-    const { ensureK2Injected } = await import('../standalone-k2');
-
-    ensureK2Injected();
-
-    const platform = (window as any)._platform;
-    expect(platform).toBeDefined();
-    expect(typeof platform.getUdid).toBe('function');
   });
 
   it('should have window._k2.run as a function (new VPN command method)', async () => {

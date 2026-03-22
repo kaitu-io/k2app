@@ -32,6 +32,7 @@ import { useAuthStore } from '../stores/auth.store';
 import { useUser } from '../hooks/useUser';
 import i18n from '../i18n/i18n';
 import type { StatusResponseData } from '../services/vpn-types';
+import { getDeviceUdid } from '../services/device-udid';
 
 /**
  * Generate a unique feedback ID (UUID v4)
@@ -111,7 +112,7 @@ export default function SubmitTicket() {
         console.debug('[SubmitTicket] Log upload successful, feedbackId:', feedbackIdRef.current);
         if (result.s3Keys?.length) {
           // Register log metadata in database (fire-and-forget)
-          window._platform.getUdid().then((udid) => {
+          getDeviceUdid().then((udid) => {
             cloudApi.post('/api/user/device-log', {
               udid,
               feedbackId: feedbackIdRef.current,

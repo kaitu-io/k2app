@@ -172,7 +172,15 @@ uploadLogs: async (params) => {
 }
 ```
 
+### Layer 2.5 — Mobile plugin uploadLogs（必须同步改）
+
+**问题：** 与 Rust log_upload 完全相同。iOS `K2Plugin.swift:604` 调用 `hashToUdid(identifierForVendor)`，Android `K2Plugin.kt:622` 调用 `K2PluginUtils.hashToUdid(ANDROID_ID)` 构造 S3 路径。
+
+**修复：** `uploadLogs` plugin interface 增加可选 `udid` 参数。Native 代码优先使用传入的 UDID，fallback 到本地硬件 UDID。Capacitor bridge 调用时传入 `getDeviceUdid()` 结果。
+
 ### Layer 3 — 原生代码清理（删除死代码）
+
+注意：移动端只删除 `getUDID` 方法。**保留 `hashToUdid`** — `uploadLogs` 的 fallback 路径仍需要它。
 
 以下代码不再被调用，安全删除：
 

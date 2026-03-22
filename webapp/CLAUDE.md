@@ -39,7 +39,8 @@ DO NOT:
 DO:
   - VPN control via window._k2.run(action, params)
   - Cloud API calls via cloudApi.request() (src/services/cloud-api.ts)
-  - Platform capabilities via window._platform (storage, getUdid, clipboard, etc.)
+  - Platform capabilities via window._platform (storage, clipboard, etc.)
+  - Device UDID via getDeviceUdid() from services/device-udid.ts (NOT _platform)
   - State management with Zustand stores
   - Components use Material-UI
   - Errors displayed via response.code mapped to i18n keys
@@ -95,7 +96,7 @@ Code ranges:
 Frontend uses two separate globals injected before app loads. They have distinct responsibilities:
 
 - `window._k2: IK2Vpn` -- VPN tunnel control only (single `run()` method)
-- `window._platform: IPlatform` -- Platform capabilities (storage, UDID, clipboard, etc.)
+- `window._platform: IPlatform` -- Platform capabilities (storage, clipboard, etc.)
 - `cloudApi` (internal module) -- Cloud API HTTP calls with auth injection
 
 ```
@@ -110,7 +111,7 @@ Frontend uses two separate globals injected before app loads. They have distinct
 │ window._k2: IK2Vpn  │  │ window._platform: IPlatform     │
 │   run(action, params)│  │   os, version                   │
 │                      │  │   storage: ISecureStorage        │
-│ VPN actions:         │  │   getUdid(), syncLocale()       │
+│ VPN actions:         │  │   syncLocale()                  │
 │   up, down,          │  │   writeClipboard(), readClipboard│
 │   status, version    │  │   openExternal()                │
 │                      │  │   updater?: IUpdater            │
@@ -141,7 +142,7 @@ Frontend uses two separate globals injected before app loads. They have distinct
 | Interface | Global | Purpose |
 |-----------|--------|---------|
 | `IK2Vpn` | `window._k2` | VPN control: `run<T>(action, params): Promise<SResponse<T>>` |
-| `IPlatform` | `window._platform` | Platform capabilities: storage, UDID, clipboard, openExternal, syncLocale |
+| `IPlatform` | `window._platform` | Platform capabilities: storage, clipboard, openExternal, syncLocale |
 | `ISecureStorage` | `window._platform.storage` | Encrypted key-value storage |
 | `IUpdater` | `window._platform.updater` | Auto-update: check, apply, status, channel |
 
@@ -258,7 +259,7 @@ cd webapp && npx tsc --noEmit            # Type check
 | Service reachable? | `curl http://127.0.0.1:1777/ping` |
 | White flash on app start | `index.html` must use `background: #0f0f13` directly on `html, body` WITHOUT `@media (prefers-color-scheme: dark)`. Media query causes 100-300ms white flash on light-mode OS before MUI loads. |
 | Vitest mock state leaks between tests | `vi.clearAllMocks()` clears implementations, not just call counts. Re-call `mockFn.mockResolvedValue()` in each `describe`'s `beforeEach` — not just once at module level. |
-| Login fails with 422 | All login paths must include `udid` from `window._platform!.getUdid()` in POST body. Backend requires UDID for device association. |
+| Login fails with 422 | All login paths must include `udid` from `getDeviceUdid()` (in `services/device-udid.ts`) in POST body. Backend requires UDID for device association. |
 
 ## Related Docs
 

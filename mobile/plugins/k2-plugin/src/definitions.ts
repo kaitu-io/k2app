@@ -15,7 +15,6 @@ export interface NativeUpdateInfo {
 
 export interface K2PluginInterface {
   checkReady(): Promise<{ ready: boolean; version?: string; reason?: string }>;
-  getUDID(): Promise<{ udid: string }>;
   getVersion(): Promise<{ version: string; go: string; os: string; arch: string }>;
   getStatus(): Promise<{ state: string; connectedAt?: string; uptimeSeconds?: number; error?: string }>;
   getConfig(): Promise<{ config?: string }>;
@@ -29,7 +28,7 @@ export interface K2PluginInterface {
   installNativeUpdate(options: { path: string }): Promise<void>;
 
   appendLogs(options: { entries: Array<{ level: string; message: string; timestamp: number }> }): Promise<void>;
-  uploadLogs(options: { email?: string; reason: string; feedbackId?: string; platform?: string; version?: string }): Promise<{ success: boolean; error?: string; s3Keys?: Array<{ name: string; s3Key: string }> }>;
+  uploadLogs(options: { email?: string; reason: string; feedbackId?: string; platform?: string; version?: string; udid?: string }): Promise<{ success: boolean; error?: string; s3Keys?: Array<{ name: string; s3Key: string }> }>;
 
   setLogLevel(options: { level: string }): Promise<void>;
   setDevEnabled(options: { enabled: boolean }): Promise<void>;
