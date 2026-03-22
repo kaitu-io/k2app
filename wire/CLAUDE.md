@@ -78,6 +78,7 @@ Fields: UDID, Token, Host, Port, ECH, Fingerprint, HopStart, HopEnd, Insecure, P
 ## Gotchas
 
 - `EchoProbe` verifies Short Header data path — QUIC handshake success (Long Header) does NOT prove data can flow. Middleboxes can allow Long Header but drop Short Header packets. Always echo-verify QUIC before declaring it the winner.
+- `echo-probe-unsupported` backward compat: `isEchoUnsupported(err)` returns true for all non-timeout errors (stream reset/EOF = old server). `buildAndProbeQUIC` treats unsupported as success (returns dialer). But `echoLoop` in engine/health.go does NOT check `isEchoUnsupported` — it counts all errors as failures → 3 fails → rerace every 90s against old servers. Server-side fix: deploy k2v5 with `HandleEchoStream` (added in `StreamTypeEcho=0x04` handler). Client-side fix pending: echoLoop should skip unsupported.
 - `RaceTransport` creates independent QUICClient instances per candidate. Loser cleanup is async via WaitGroup + safego.Go. Winner is returned immediately.
 - `quicStreamConn.Close()` must call both `CancelRead(0)` and `Stream.Close()`. quic-go's `Stream.Close()` only closes the write direction (FIN). Without `CancelRead`, the receive half never completes and the stream slot leaks — causing `OpenStreamSync` to block at `MAX_STREAMS`. Fixed in the custom `Close()` method.
 - `ReadStreamHeader`/`ReadStreamResponse` need `io.ByteReader` — wrap conn with `bufio.NewReader(conn)`.

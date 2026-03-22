@@ -92,8 +92,10 @@ Reserved event names:
 | `DIAG: transport-race-fail` | WARN | all candidates failed | quic443Err, quicHopErr, tcpwsErr |
 | `DIAG: echo-probe-ok` | DEBUG | echo succeeded | transport, rttMs |
 | `DIAG: echo-probe-fail` | WARN | echo failed | transport, err |
-| `DIAG: echo-probe-unsupported` | WARN | server doesn't support echo | transport |
-| `DIAG: transport-rerace` | WARN | runtime re-race | reason, previousTransport |
+| `DIAG: echo-probe-unsupported` | WARN | server doesn't support echo (old k2v5) | transport |
+| `DIAG: transport-rerace` | WARN | runtime re-race (3 consecutive echo fails) | reason, previousTransport |
+| `DIAG: dns-proxy-recv-no-callback` | WARN | DNS response arrived after callback expired | server, queryID, domain, numCallbacks |
+| `DIAG: datagram-readloop-exit` | WARN | QUIC datagram read loop terminated | totalReceived, err |
 
 ### Layer 3 Rules — Full Trace
 
