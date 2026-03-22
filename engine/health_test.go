@@ -450,6 +450,91 @@ func TestHealthMonitor_NoConcurrentDeadlock(t *testing.T) {
 	}
 }
 
+func TestWakeDetector(t *testing.T) {
+	wd := wakeDetector{}
+	base := time.Date(2026, 3, 20, 12, 0, 0, 0, time.UTC)
+
+	// First call: initialize, no action.
+	gap, reconnect := wd.checkWake(base, HealthHealthy, "quic", 100)
+	if gap != 0 || reconnect {
+		t.Fatalf("first call: got gap=%v reconnect=%v, want 0/false", gap, reconnect)
+	}
+
+	// Normal tick (1s gap): no action.
+	gap, reconnect = wd.checkWake(base.Add(1*time.Second), HealthHealthy, "quic", 101)
+	if gap != 1*time.Second || reconnect {
+		t.Fatalf("normal tick: got gap=%v reconnect=%v, want 1s/false", gap, reconnect)
+	}
+
+	// Short sleep (10s): DIAG log emitted but no reconnect.
+	gap, reconnect = wd.checkWake(base.Add(11*time.Second), HealthHealthy, "quic", 111)
+	if gap != 10*time.Second || reconnect {
+		t.Fatalf("short sleep: got gap=%v reconnect=%v, want 10s/false", gap, reconnect)
+	}
+
+	// Below boundary (29s): no reconnect.
+	gap, reconnect = wd.checkWake(base.Add(40*time.Second), HealthHealthy, "quic", 140)
+	if gap != 29*time.Second || reconnect {
+		t.Fatalf("below boundary: got gap=%v reconnect=%v, want 29s/false", gap, reconnect)
+	}
+
+	// Exactly 30s boundary: reconnect.
+	gap, reconnect = wd.checkWake(base.Add(70*time.Second), HealthHealthy, "quic", 170)
+	if gap != 30*time.Second || !reconnect {
+		t.Fatalf("boundary: got gap=%v reconnect=%v, want 30s/true", gap, reconnect)
+	}
+
+	// Long sleep (60s): reconnect.
+	gap, reconnect = wd.checkWake(base.Add(130*time.Second), HealthHealthy, "quic", 230)
+	if gap != 60*time.Second || !reconnect {
+		t.Fatalf("long sleep: got gap=%v reconnect=%v, want 60s/true", gap, reconnect)
+	}
+
+	// Negative gap (NTP rollback): no action.
+	gap, reconnect = wd.checkWake(base.Add(120*time.Second), HealthHealthy, "quic", 220)
+	if reconnect {
+		t.Fatalf("NTP rollback: got reconnect=true, want false (gap=%v)", gap)
+	}
+}
+
+func TestWakeDetector_CallbackOutsideLock(t *testing.T) {
+	// Verify onWakeReconnect is called outside hm.mu — same pattern as
+	// deadlock_test.go:TestHealthMonitor_NoDeadlock.
+	tm := mockTransportManager()
+	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
+	hm := newHealthMonitor(tm, tunnel, nil, nil, time.Now())
+
+	// Simulate a callback that acquires hm.mu (like resetCounters does).
+	var called bool
+	hm.wake.onWakeReconnect = func() {
+		// If called under hm.mu, this Lock() will deadlock (non-reentrant).
+		hm.mu.Lock()
+		called = true
+		hm.mu.Unlock()
+	}
+
+	// Manually set lastWall to simulate a 60s sleep.
+	hm.mu.Lock()
+	hm.wake.lastWall = time.Now().Add(-60 * time.Second)
+	hm.mu.Unlock()
+
+	// Run one sample — should detect wake and call onWakeReconnect outside lock.
+	done := make(chan struct{})
+	go func() {
+		hm.sample()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		if !called {
+			t.Fatal("onWakeReconnect was not called")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("deadlock: sample() blocked — onWakeReconnect likely called under hm.mu")
+	}
+}
+
 // applyEWMA applies EWMA smoothing to healthMonitor fields.
 // This is the logic that sample() applies before calling assess().
 func applyEWMA(hm *healthMonitor, ws wire.WireStats) {

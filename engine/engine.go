@@ -349,6 +349,20 @@ func (e *Engine) Start(cfg Config) error {
 	safego.Go(func() { e.reRaceLoop(reRaceCtx) })
 
 	hm.reRaceChan = e.reRaceChan
+	hm.wake.onWakeReconnect = func() {
+		// Guard: skip if network is known down (e.g., airplane mode wake on mobile).
+		// Mirrors onHealthCritical()'s network-up gate.
+		// Note: during Stop(), netCoord may be nil — reconnect() guards via state check.
+		e.mu.Lock()
+		nc := e.netCoord
+		e.mu.Unlock()
+		if nc != nil && !nc.isNetworkUp() {
+			slog.Debug("engine: wake reconnect skipped, network down")
+			return
+		}
+		slog.Info("engine: wake reconnect")
+		e.doNetworkReconnect()
+	}
 
 	e.dnsH = dh
 	e.netCoord = newNetCoordinator(

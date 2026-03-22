@@ -50,7 +50,56 @@ const (
 	ringSize           = 300 // 5 minutes at 1Hz
 	actionCooldown     = 10 * time.Second
 	ewmaAlpha = 0.3 // EWMA weight for new sample (matches ARC adaptive alpha weight)
+
+	// wakeDiagThreshold is the wall-clock gap that triggers a DIAG: wake log.
+	// Short gaps (system load, brief doze) are logged for diagnostics.
+	wakeDiagThreshold = 5 * time.Second
+
+	// wakeReconnectThreshold is the wall-clock gap that triggers a full reconnect.
+	// Aligned with QUIC MaxIdleTimeout (30s): after this gap, the server has
+	// certainly closed the connection and NAT mappings may have expired.
+	wakeReconnectThreshold = 30 * time.Second
 )
+
+// wakeDetector detects sleep/wake cycles via wall-clock gaps and triggers
+// reconnect when the gap exceeds the reconnect threshold. Standalone unit
+// embedded in healthMonitor — no goroutine, no lock of its own. Called from
+// sample() at 1Hz under hm.mu. The onWakeReconnect callback is wired
+// post-construction (same pattern as reRaceChan).
+type wakeDetector struct {
+	lastWall        time.Time
+	onWakeReconnect func() // → engine.doNetworkReconnect (wired post-construction)
+}
+
+// checkWake compares wall-clock delta to detect sleep/wake. Returns the
+// wall-clock gap and whether reconnect is needed. Called under hm.mu, but
+// reconnect action MUST be executed outside the lock by the caller.
+//
+// Uses Round(0) to strip Go's monotonic reading, which freezes during macOS
+// sleep. Wall clock advances normally, revealing the true gap.
+func (wd *wakeDetector) checkWake(now time.Time, health, transport string, uptimeS int) (
+	wallGap time.Duration, reconnect bool,
+) {
+	if wd.lastWall.IsZero() {
+		wd.lastWall = now
+		return 0, false
+	}
+
+	// Round(0) strips monotonic reading — forces wall-clock-only subtraction.
+	wallGap = now.Round(0).Sub(wd.lastWall.Round(0))
+	wd.lastWall = now
+
+	if wallGap > wakeDiagThreshold {
+		slog.Warn("DIAG: wake",
+			"sleepS", int(wallGap.Seconds()),
+			"health", health,
+			"transport", transport,
+			"uptimeS", uptimeS,
+		)
+	}
+
+	return wallGap, wallGap >= wakeReconnectThreshold
+}
 
 // healthMonitor samples wire stats at 1Hz, maintains a ring buffer,
 // detects health degradation trends, and takes corrective action.
@@ -81,7 +130,7 @@ type healthMonitor struct {
 
 	diagCounter   int       // samples since last DIAG heartbeat (fires at 30)
 	connectedAt   time.Time // engine connected timestamp for uptime calc
-	lastSampleWall time.Time // wall clock of previous sample — detects sleep/wake gaps
+	wake          wakeDetector // sleep/wake detection + reconnect trigger
 
 	echoFails   atomic.Int32
 	reRaceChan  chan struct{} // non-nil: engine's re-race channel
@@ -150,24 +199,9 @@ func (hm *healthMonitor) sample() {
 
 	hm.mu.Lock()
 
-	// DIAG: wake — detect wall clock jump indicating macOS sleep/wake.
-	// Go runtime suspends during sleep, so ticker fires immediately on wake.
-	// Must use Round(0) to strip monotonic reading (freezes during sleep).
-	if !hm.lastSampleWall.IsZero() {
-		// Round(0) strips monotonic reading — forces wall-clock-only subtraction.
-		// Monotonic clock freezes during macOS sleep, so now.Sub(prev) with mono
-		// would give ~1s (Go-time elapsed). Wall-clock shows the real gap.
-		wallGap := now.Round(0).Sub(hm.lastSampleWall.Round(0))
-		if wallGap > 5*time.Second {
-			slog.Warn("DIAG: wake",
-				"sleepS", int(wallGap.Seconds()),
-				"health", hm.health,
-				"transport", ws.Transport,
-				"uptimeS", int(time.Since(hm.connectedAt).Seconds()),
-			)
-		}
-	}
-	hm.lastSampleWall = now
+	// Detect sleep/wake via wall-clock gap. Reconnect decision deferred to after Unlock.
+	_, wakeReconnect := hm.wake.checkWake(now, hm.health, ws.Transport,
+		int(time.Since(hm.connectedAt).Seconds()))
 
 	// EWMA smoothing: dampens MI boundary artifacts (lossRate spikes)
 	// that cause false health degradation.
@@ -237,11 +271,16 @@ func (hm *healthMonitor) sample() {
 	onSnapshot := hm.onSnapshot
 	hm.mu.Unlock()
 
-	// Side effects outside lock — onReconnect calls e.OnNetworkChanged() which
-	// re-acquires hm.mu via resetCounters(). Calling with hm.mu held would
-	// self-deadlock (Go mutexes are non-reentrant).
+	// Side effects outside lock — callbacks may re-acquire hm.mu via
+	// resetCounters(). Calling with hm.mu held would self-deadlock
+	// (Go mutexes are non-reentrant).
 	if action != nil {
 		action()
+	}
+	// Wake reconnect: only if health-critical didn't already fire (action == nil)
+	// to prevent double reconnect in the same tick.
+	if wakeReconnect && action == nil && hm.wake.onWakeReconnect != nil {
+		hm.wake.onWakeReconnect()
 	}
 	if onSnapshot != nil {
 		onSnapshot(snap)
