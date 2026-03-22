@@ -37,6 +37,7 @@ yarn tauri build --bundles appimage  # Linux AppImage (requires Linux host)
 - **updater.rs** — Auto-updater: 5s delay → 30min periodic check loop. `UpdateInfo` struct (currentVersion, newVersion, releaseNotes). Emits `update-ready` Tauri event. Windows: NSIS install + `app.exit(0)`. macOS/Linux: store update, apply on exit via `install_pending_update()`. Beta channel: `set_update_channel` saves/restores pre-beta log level, returns `{channel, logLevel}` JSON so JS can update localStorage directly. Downgrade detection: stable channel + beta build → `version_comparator(!=)`.
 - **window.rs** — Window management: calculates optimal size from screen dimensions using 9:20 aspect ratio with min/max constraints. Startup creates window hidden, `adjust_window_size()` resizes based on monitor, then `frontend_ready()` shows. Supports `--minimized` autostart (tray-only). `show_window()` uses always-on-top trick on Windows to bring window to front. `hide_window()` minimizes on Windows (keeps taskbar icon) vs hides on macOS/Linux.
 - **linux_updater.rs** — Linux-specific tar.gz updater (replaces tauri-plugin-updater on Linux). Fetches `latest.json` from CDN, downloads ~6-8MB tar.gz (vs 85MB AppImage), verifies minisign signatures, extracts to `/opt/kaitu/` via `pkexec` two-phase staging. Relaunches via helper process that polls PID exit then `nohup`. Shares `UpdateInfo`/`UPDATE_READY` state with `updater.rs`. Channel switch triggers auto-apply without user prompt.
+- **storage.rs** — App-private key-value storage. Persists `storage.json` in Tauri app data dir. In-memory `HashMap` mirror with atomic write (write `.tmp` then `fs::rename`). Single-instance plugin guarantees no concurrent writers. Used by webapp for secure storage on desktop (IPlatform.storage).
 - **log_upload.rs** — Service log upload: reads 4 log sources (service, crash, desktop, system), sanitizes sensitive data, gzip compresses, uploads to S3 with `desktop/{version}/{udid}/{date}/logs-{ts}-{id}.tar.gz` key format. Uses `spawn_blocking` for blocking HTTP. Auto-cleans up log files after successful `beta-auto-upload` (delete on macOS/Linux, truncate on Windows due to file locks).
 
 ## Tauri Config (`src-tauri/tauri.conf.json`)
@@ -78,6 +79,9 @@ yarn tauri build --bundles appimage  # Linux AppImage (requires Linux host)
 | `set_log_level` | service | Set daemon log level (beta forces debug) |
 | `get_update_channel` | updater | Returns current channel ("stable"/"beta") |
 | `set_update_channel` | updater | Set channel, accepts `currentLogLevel` for pre-beta save |
+| `storage_get` | storage | Get value by key from app storage |
+| `storage_set` | storage | Set key-value pair in app storage |
+| `storage_remove` | storage | Remove key from app storage |
 | `sync_locale` | tray | Sync locale to system tray |
 | `upload_service_log_command` | log_upload | Collect + upload logs to S3 |
 

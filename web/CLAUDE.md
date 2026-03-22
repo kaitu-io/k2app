@@ -35,6 +35,7 @@ web/
 │   │   │   ├── releases/      # Version history + downloads (GitHub Releases style)
 │   │   │   ├── changelog/     # Redirects to /releases (backward compat)
 │   │   │   ├── login/         # Email OTP login
+│   │   │   ├── support/       # Support / FAQ page
 │   │   │   ├── s/[code]/      # Invite link landing
 │   │   │   ├── k2/[[...path]]/ # K2 protocol docs section (Velite + sidebar layout)
 │   │   │   ├── [...slug]/     # Catch-all content pages (Velite markdown)
@@ -178,7 +179,7 @@ Markdown files in `content/{locale}/` are processed by Velite at build time and 
 - Sidebar navigation driven by `order` + `section` frontmatter via `getK2Posts(locale)` helper
 - `getK2Posts()` is the single source: used by K2Sidebar, K2Page, and sitemap.ts
 
-**Reserved paths** (content must NOT use): 403, account, discovery, install, login, opensource, privacy, purchase, retailer, routers, s, terms, changelog, releases, manager, k2
+**Reserved paths** (content must NOT use): 403, account, discovery, install, login, opensource, privacy, purchase, retailer, routers, s, support, terms, changelog, releases, manager, k2
 
 ## Routing
 
@@ -186,6 +187,7 @@ Markdown files in `content/{locale}/` are processed by Velite at build time and 
 |-------------|-------------|------|---------|
 | `/{locale}/*` | `[locale]` | Public/Mixed | User-facing pages |
 | `/{locale}/k2/[[...path]]` | `[locale]/k2` | Public | K2 protocol docs (Velite + sidebar) |
+| `/{locale}/support` | `[locale]` | Public | Support / FAQ page |
 | `/{locale}/{...slug}` | `[locale]` | Public | Content pages (Velite catch-all) |
 | `/manager/*` | `(manager)` | Admin | Management dashboard |
 

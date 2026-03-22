@@ -168,9 +168,9 @@ React 18, Material-UI 5, React Router 7, i18next, Vite 6, Zustand, TypeScript.
 webapp/
 ├── src/
 │   ├── types/              # Type definitions (kaitu-core.ts = IK2Vpn + IPlatform + IUpdater)
-│   ├── services/           # cloudApi, k2api, authService, cacheStore, web-platform, standalone-k2, beta-auto-upload
+│   ├── services/           # cloudApi, k2api, authService, cacheStore, web-platform, standalone-k2, beta-auto-upload, antiblock, stats, api-types, vpn-types, device-udid, secure-storage, tauri-storage, capacitor-storage, plain-storage
 │   ├── core/               # Core module (getK2, isK2Ready, waitForK2)
-│   ├── stores/             # Zustand stores (vpn-machine, connection, config, auth, alert, layout, dashboard, login-dialog, self-hosted, onboarding)
+│   ├── stores/             # Zustand stores (vpn-machine, vpn, connection, config, auth, alert, layout, dashboard, login-dialog, self-hosted, onboarding)
 │   ├── pages/              # Route pages (Dashboard, SubmitTicket, FAQ, Purchase, Invite, Account, etc.)
 │   ├── components/         # UI components (LoginDialog, AuthGate, FeedbackButton, etc.)
 │   ├── hooks/              # Custom hooks (useUser, useAppConfig, useUpdater, etc.)
@@ -243,6 +243,7 @@ cd webapp && yarn dev                    # Dev server
 cd webapp && yarn build                  # Production build
 cd webapp && npx vitest run              # Run all tests
 cd webapp && npx vitest run --reporter=verbose  # Verbose test output
+cd webapp && npx playwright test         # E2E tests (Playwright)
 cd webapp && npx tsc --noEmit            # Type check
 ```
 

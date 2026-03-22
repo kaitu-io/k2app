@@ -80,7 +80,7 @@ webapp/              React + MUI frontend (see webapp/CLAUDE.md)
   src/services/      Cloud API (cloudApi, k2api), auth, caching, platform fallbacks
   src/core/          K2 VPN bridge (getK2, waitForK2, polling)
   src/types/         Core interfaces (IK2Vpn, IPlatform, ISecureStorage)
-  src/stores/        Zustand state (vpn-machine, connection, config, auth, alert, layout, dashboard, login-dialog, self-hosted, onboarding)
+  src/stores/        Zustand state (vpn-machine, vpn, connection, config, auth, alert, layout, dashboard, login-dialog, self-hosted, onboarding)
   src/pages/         Route pages (Dashboard, Purchase, Invite, Account, 15+ sub-pages)
   src/components/    Shared UI (LoginDialog, AuthGate, guards, global components)
   src/utils/         Error handling, version compare, tunnel sorting
