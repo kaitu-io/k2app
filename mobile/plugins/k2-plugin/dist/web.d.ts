@@ -27,11 +27,8 @@ export declare class K2PluginWeb extends WebPlugin implements K2PluginInterface 
     checkWebUpdate(): Promise<WebUpdateInfo>;
     checkNativeUpdate(): Promise<NativeUpdateInfo>;
     applyWebUpdate(): Promise<void>;
-    downloadNativeUpdate(): Promise<{
-        path: string;
-    }>;
-    installNativeUpdate(_options: {
-        path: string;
+    openUrl(_options: {
+        url: string;
     }): Promise<void>;
     appendLogs(_options: {
         entries: Array<{

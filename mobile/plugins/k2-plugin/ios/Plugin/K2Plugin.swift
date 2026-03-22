@@ -27,8 +27,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "checkWebUpdate", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "checkNativeUpdate", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "applyWebUpdate", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "downloadNativeUpdate", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "installNativeUpdate", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "openUrl", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "appendLogs", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "uploadLogs", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setLogLevel", returnType: CAPPluginReturnPromise),
@@ -535,20 +534,20 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    @objc func downloadNativeUpdate(_ call: CAPPluginCall) {
-        // On iOS, native updates go through the App Store
-        call.resolve(["path": "appstore"])
-    }
-
-    @objc func installNativeUpdate(_ call: CAPPluginCall) {
-        // iOS cannot install updates itself — open App Store
-        guard let url = URL(string: appStoreURL) else {
-            call.reject("Invalid App Store URL")
+    @objc func openUrl(_ call: CAPPluginCall) {
+        guard let urlString = call.getString("url"),
+              let url = URL(string: urlString) else {
+            call.reject("Missing or invalid url parameter")
             return
         }
         DispatchQueue.main.async {
-            UIApplication.shared.open(url, options: [:], completionHandler: nil)
-            call.resolve()
+            UIApplication.shared.open(url, options: [:]) { success in
+                if success {
+                    call.resolve()
+                } else {
+                    call.reject("Failed to open URL")
+                }
+            }
         }
     }
 

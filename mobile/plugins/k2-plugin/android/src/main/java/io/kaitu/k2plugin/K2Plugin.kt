@@ -461,106 +461,19 @@ class K2Plugin : Plugin() {
     }
 
     @PluginMethod
-    fun downloadNativeUpdate(call: PluginCall) {
-        Thread {
-            try {
-                // Fetch manifest to get APK URL
-                val result = fetchManifest(K2PluginUtils.androidManifestEndpoints(getChannel()))
-                    ?: throw java.io.IOException("All Android manifest endpoints failed")
-                val (manifest, baseURL) = result
-                val apkUrl = resolveDownloadURL(manifest.getString("url"), baseURL)
-                val remoteVersion = manifest.getString("version")
-                val totalSize = manifest.optLong("size", 0)
-
-                // Cache by version to avoid re-downloading
-                val apkFile = File(context.cacheDir, "update-$remoteVersion.apk")
-
-                // Skip download if cached file exists and size matches
-                if (apkFile.exists() && totalSize > 0 && apkFile.length() == totalSize) {
-                    val ret = JSObject()
-                    ret.put("path", apkFile.absolutePath)
-                    call.resolve(ret)
-                    return@Thread
-                }
-
-                val url = URL(apkUrl)
-                val conn = url.openConnection() as HttpURLConnection
-                conn.connectTimeout = 15000
-                conn.readTimeout = 30000
-                val code = conn.responseCode
-                if (code != 200) {
-                    throw java.io.IOException("HTTP $code from $apkUrl")
-                }
-
-                val contentLength = if (totalSize > 0) totalSize else conn.contentLengthLong
-
-                conn.inputStream.use { input ->
-                    apkFile.outputStream().use { output ->
-                        val buffer = ByteArray(8192)
-                        var bytesRead: Long = 0
-                        var lastPercent = -1
-                        var len: Int
-
-                        while (input.read(buffer).also { len = it } != -1) {
-                            output.write(buffer, 0, len)
-                            bytesRead += len
-
-                            if (contentLength > 0) {
-                                val percent = ((bytesRead * 100) / contentLength).toInt()
-                                if (percent != lastPercent) {
-                                    lastPercent = percent
-                                    val data = JSObject()
-                                    data.put("percent", percent)
-                                    notifyListeners("updateDownloadProgress", data)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                val ret = JSObject()
-                ret.put("path", apkFile.absolutePath)
-                call.resolve(ret)
-            } catch (e: Exception) {
-                call.reject("Failed to download native update: ${e.message}", e)
-            }
-        }.start()
-    }
-
-    @PluginMethod
-    fun installNativeUpdate(call: PluginCall) {
-        val path = call.getString("path")
-        if (path == null) {
-            call.reject("Missing path parameter")
+    fun openUrl(call: PluginCall) {
+        val url = call.getString("url")
+        if (url == null) {
+            call.reject("Missing url parameter")
             return
         }
-
         try {
-            val apkFile = File(path)
-            if (!apkFile.exists()) {
-                call.reject("APK file not found: $path")
-                return
-            }
-
-            val uri = FileProvider.getUriForFile(
-                context,
-                "io.kaitu.fileprovider",
-                apkFile
-            )
-
-            val intent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
-                setData(uri)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-
-            activity?.runOnUiThread {
-                activity?.startActivity(intent)
-            }
-
+            val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
             call.resolve()
         } catch (e: Exception) {
-            call.reject("Failed to install update: ${e.message}", e)
+            call.reject("Failed to open URL: ${e.message}", e)
         }
     }
 
@@ -823,39 +736,11 @@ class K2Plugin : Plugin() {
                 }
 
                 if (shouldUpdate && Build.VERSION.SDK_INT >= minAndroid) {
-                    // Download APK in background
-                    val apkFile = File(context.cacheDir, "update-$remoteVersion.apk")
-
-                    // Skip download if cached file exists and size matches
-                    val needsDownload = !(apkFile.exists() && totalSize > 0 && apkFile.length() == totalSize)
-
-                    if (needsDownload) {
-                        val url = URL(apkUrl)
-                        val conn = url.openConnection() as HttpURLConnection
-                        conn.connectTimeout = 15000
-                        conn.readTimeout = 30000
-                        val code = conn.responseCode
-                        if (code != 200) {
-                            throw java.io.IOException("HTTP $code from $apkUrl")
-                        }
-
-                        conn.inputStream.use { input ->
-                            apkFile.outputStream().use { output ->
-                                val buffer = ByteArray(8192)
-                                var len: Int
-                                while (input.read(buffer).also { len = it } != -1) {
-                                    output.write(buffer, 0, len)
-                                }
-                            }
-                        }
-                    }
-
-                    // Emit nativeUpdateReady event
+                    // Notify webapp — user opens download URL in system browser
                     val data = JSObject()
                     data.put("version", remoteVersion)
-                    data.put("size", apkFile.length())
-                    data.put("path", apkFile.absolutePath)
-                    notifyListeners("nativeUpdateReady", data)
+                    data.put("url", apkUrl)
+                    notifyListeners("nativeUpdateAvailable", data)
                     return
                 }
             }

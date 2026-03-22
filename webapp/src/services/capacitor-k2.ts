@@ -10,7 +10,6 @@
 declare const __K2_BUILD_COMMIT__: string;
 
 import { Capacitor } from '@capacitor/core';
-import { Browser } from '@capacitor/browser';
 import { Clipboard } from '@capacitor/clipboard';
 import { Share } from '@capacitor/share';
 import { getDeviceUdid } from './device-udid';
@@ -173,8 +172,7 @@ export async function injectCapacitorGlobals(): Promise<void> {
 
   // Build updater: native update support
   let updateReadyCallbacks: ((info: UpdateInfo) => void)[] = [];
-  let storedPath: string | null = null;
-  let storedAppStoreUrl: string | null = null;
+  let storedUpdateUrl: string | null = null;
 
   const updater: IUpdater = {
     isUpdateReady: false,
@@ -183,11 +181,8 @@ export async function injectCapacitorGlobals(): Promise<void> {
     error: null,
     channel: 'stable',
     applyUpdateNow: async () => {
-      const currentPlatform = Capacitor.getPlatform();
-      if (currentPlatform === 'android' && storedPath) {
-        await K2Plugin.installNativeUpdate({ path: storedPath });
-      } else if (currentPlatform === 'ios' && storedAppStoreUrl) {
-        await Browser.open({ url: storedAppStoreUrl });
+      if (storedUpdateUrl) {
+        await K2Plugin.openUrl({ url: storedUpdateUrl });
       }
     },
     onUpdateReady: (callback: (info: UpdateInfo) => void) => {
@@ -224,7 +219,7 @@ export async function injectCapacitorGlobals(): Promise<void> {
     storage: createCapacitorStorage(K2Plugin),
 
     openExternal: async (url: string): Promise<void> => {
-      await Browser.open({ url });
+      await K2Plugin.openUrl({ url });
     },
 
     writeClipboard: async (text: string): Promise<void> => {
@@ -282,19 +277,9 @@ export async function injectCapacitorGlobals(): Promise<void> {
   // via onStatusChange() above, wired through VPN machine's event-driven mode.
   // This eliminates the 2s polling fallback and prevents stale-status race conditions.
 
-  K2Plugin.addListener('nativeUpdateReady', (event: any) => {
-    storedPath = event.path;
-    const info: UpdateInfo = {
-      currentVersion: appVersion,
-      newVersion: event.version,
-    };
-    updater.isUpdateReady = true;
-    updater.updateInfo = info;
-    updateReadyCallbacks.forEach(cb => cb(info));
-  });
-
   K2Plugin.addListener('nativeUpdateAvailable', (event: any) => {
-    storedAppStoreUrl = event.appStoreUrl;
+    // iOS sends appStoreUrl, Android sends url
+    storedUpdateUrl = event.appStoreUrl ?? event.url ?? null;
     const info: UpdateInfo = {
       currentVersion: appVersion,
       newVersion: event.version,

@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { Browser } from '@capacitor/browser';
+
 import { Clipboard } from '@capacitor/clipboard';
 import { Capacitor } from '@capacitor/core';
 
@@ -16,13 +16,6 @@ vi.mock('@capacitor/core', () => ({
   Capacitor: {
     isNativePlatform: vi.fn(() => true),
     getPlatform: vi.fn(() => 'ios'),
-  },
-}));
-
-// Mock @capacitor/browser
-vi.mock('@capacitor/browser', () => ({
-  Browser: {
-    open: vi.fn(),
   },
 }));
 
@@ -42,7 +35,7 @@ const mockK2Plugin = {
   connect: vi.fn(),
   disconnect: vi.fn(),
   addListener: vi.fn(),
-  installNativeUpdate: vi.fn(),
+  openUrl: vi.fn().mockResolvedValue(undefined),
   setLogLevel: vi.fn().mockResolvedValue(undefined),
 };
 
@@ -492,13 +485,13 @@ describe('capacitor-k2', () => {
   });
 
   describe('_platform', () => {
-    it('test_platform_openExternal_uses_browser_plugin', async () => {
+    it('test_platform_openExternal_opens_in_system_browser', async () => {
       const { injectCapacitorGlobals } = await import('../capacitor-k2');
       await injectCapacitorGlobals();
 
       await window._platform.openExternal('https://example.com');
 
-      expect(Browser.open).toHaveBeenCalledWith({ url: 'https://example.com' });
+      expect(mockK2Plugin.openUrl).toHaveBeenCalledWith({ url: 'https://example.com' });
     });
 
     it('test_platform_writeClipboard_uses_clipboard_plugin', async () => {
@@ -592,22 +585,6 @@ describe('capacitor-k2', () => {
       expect(updater!.error).toBeNull();
     });
 
-    it('test_updater_handles_nativeUpdateReady_event', async () => {
-      const { injectCapacitorGlobals } = await import('../capacitor-k2');
-      await injectCapacitorGlobals();
-
-      // Simulate K2Plugin emitting nativeUpdateReady (Android APK downloaded)
-      const callback = getListenerCallback('nativeUpdateReady');
-      expect(callback).toBeDefined();
-      callback!({ version: '1.1.0', size: 12345, path: '/cache/app.apk' });
-
-      const updater = window._platform.updater!;
-      expect(updater.isUpdateReady).toBe(true);
-      expect(updater.updateInfo).toBeDefined();
-      expect(updater.updateInfo!.currentVersion).toBe('0.4.0');
-      expect(updater.updateInfo!.newVersion).toBe('1.1.0');
-    });
-
     it('test_updater_handles_nativeUpdateAvailable_event', async () => {
       const { injectCapacitorGlobals } = await import('../capacitor-k2');
       await injectCapacitorGlobals();
@@ -623,23 +600,23 @@ describe('capacitor-k2', () => {
       expect(updater.updateInfo!.newVersion).toBe('1.1.0');
     });
 
-    it('test_applyUpdateNow_android_calls_installNativeUpdate', async () => {
+    it('test_applyUpdateNow_android_opens_download_url', async () => {
       // Switch platform to android for this test
       vi.mocked(Capacitor.getPlatform).mockReturnValue('android');
 
       const { injectCapacitorGlobals } = await import('../capacitor-k2');
       await injectCapacitorGlobals();
 
-      // Simulate nativeUpdateReady with a path (Android APK downloaded)
-      const callback = getListenerCallback('nativeUpdateReady');
+      // Android now emits nativeUpdateAvailable with download URL (no APK download)
+      const callback = getListenerCallback('nativeUpdateAvailable');
       expect(callback).toBeDefined();
-      callback!({ version: '1.1.0', size: 12345, path: '/cache/app.apk' });
-
-      mockK2Plugin.installNativeUpdate.mockResolvedValue(undefined);
+      callback!({ version: '1.1.0', url: 'https://cdn.example.com/kaitu/android/Kaitu_1.1.0.apk' });
 
       await window._platform.updater!.applyUpdateNow();
 
-      expect(mockK2Plugin.installNativeUpdate).toHaveBeenCalledWith({ path: '/cache/app.apk' });
+      expect(mockK2Plugin.openUrl).toHaveBeenCalledWith({
+        url: 'https://cdn.example.com/kaitu/android/Kaitu_1.1.0.apk',
+      });
 
       // Restore platform to ios for other tests
       vi.mocked(Capacitor.getPlatform).mockReturnValue('ios');
@@ -650,14 +627,14 @@ describe('capacitor-k2', () => {
       const { injectCapacitorGlobals } = await import('../capacitor-k2');
       await injectCapacitorGlobals();
 
-      // Simulate nativeUpdateAvailable with App Store URL (iOS)
+      // iOS emits nativeUpdateAvailable with App Store URL
       const callback = getListenerCallback('nativeUpdateAvailable');
       expect(callback).toBeDefined();
       callback!({ version: '1.1.0', appStoreUrl: 'https://apps.apple.com/app/id6448744655' });
 
       await window._platform.updater!.applyUpdateNow();
 
-      expect(Browser.open).toHaveBeenCalledWith({
+      expect(mockK2Plugin.openUrl).toHaveBeenCalledWith({
         url: 'https://apps.apple.com/app/id6448744655',
       });
     });
@@ -673,10 +650,10 @@ describe('capacitor-k2', () => {
       const onReadyCallback = vi.fn();
       updater!.onUpdateReady!(onReadyCallback);
 
-      // Simulate nativeUpdateReady event
-      const callback = getListenerCallback('nativeUpdateReady');
+      // Simulate nativeUpdateAvailable event
+      const callback = getListenerCallback('nativeUpdateAvailable');
       expect(callback).toBeDefined();
-      callback!({ version: '1.1.0', size: 12345, path: '/cache/app.apk' });
+      callback!({ version: '1.1.0', appStoreUrl: 'https://apps.apple.com/app/id6448744655' });
 
       expect(onReadyCallback).toHaveBeenCalledTimes(1);
       expect(onReadyCallback).toHaveBeenCalledWith(
@@ -700,10 +677,10 @@ describe('capacitor-k2', () => {
       // Unsubscribe
       unsubscribe();
 
-      // Simulate nativeUpdateReady event after unsubscribe
-      const callback = getListenerCallback('nativeUpdateReady');
+      // Simulate nativeUpdateAvailable event after unsubscribe
+      const callback = getListenerCallback('nativeUpdateAvailable');
       expect(callback).toBeDefined();
-      callback!({ version: '1.1.0', size: 12345, path: '/cache/app.apk' });
+      callback!({ version: '1.1.0', appStoreUrl: 'https://apps.apple.com/app/id6448744655' });
 
       // Callback should NOT have been invoked
       expect(onReadyCallback).not.toHaveBeenCalled();

@@ -38,11 +38,8 @@ export interface K2PluginInterface {
     checkWebUpdate(): Promise<WebUpdateInfo>;
     checkNativeUpdate(): Promise<NativeUpdateInfo>;
     applyWebUpdate(): Promise<void>;
-    downloadNativeUpdate(): Promise<{
-        path: string;
-    }>;
-    installNativeUpdate(options: {
-        path: string;
+    openUrl(options: {
+        url: string;
     }): Promise<void>;
     appendLogs(options: {
         entries: Array<{
@@ -99,16 +96,9 @@ export interface K2PluginInterface {
     addListener(eventName: 'vpnError', handler: (data: {
         message: string;
     }) => void): Promise<PluginListenerHandle>;
-    addListener(eventName: 'updateDownloadProgress', handler: (data: {
-        percent: number;
-    }) => void): Promise<PluginListenerHandle>;
-    addListener(eventName: 'nativeUpdateReady', handler: (data: {
-        version: string;
-        size: number;
-        path: string;
-    }) => void): Promise<PluginListenerHandle>;
     addListener(eventName: 'nativeUpdateAvailable', handler: (data: {
         version: string;
-        url: string;
+        url?: string;
+        appStoreUrl?: string;
     }) => void): Promise<PluginListenerHandle>;
 }
