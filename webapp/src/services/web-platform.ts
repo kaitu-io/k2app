@@ -12,7 +12,7 @@
  * UDID is provided by the daemon (standalone) or native layer (Tauri/Capacitor).
  */
 
-import { webSecureStorage } from './secure-storage';
+import { plainLocalStorage } from './plain-storage';
 
 /**
  * Web Platform implementation
@@ -24,7 +24,7 @@ export const webPlatform = {
   os: 'web' as const,
   version: '0.0.0',
 
-  storage: webSecureStorage,
+  storage: plainLocalStorage,
 
   // External links (browser native)
   openExternal: async (url: string) => {

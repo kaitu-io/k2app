@@ -14,7 +14,7 @@ import { writeText, readText } from '@tauri-apps/plugin-clipboard-manager';
 import type { IK2Vpn, IPlatform, IUpdater, UpdateInfo, SResponse } from '../types/kaitu-core';
 import type { StatusResponseData, ControlError, ServiceState } from './vpn-types';
 import { getDeviceUdid } from './device-udid';
-import { webSecureStorage } from './secure-storage';
+import { tauriNativeStorage } from './tauri-storage';
 
 interface ServiceResponse {
   code: number;
@@ -222,7 +222,7 @@ export async function injectTauriGlobals(): Promise<void> {
     arch: platformInfo.arch,
     commit: platformInfo.commit || '',
 
-    storage: webSecureStorage,
+    storage: tauriNativeStorage,
 
     openExternal: async (url: string): Promise<void> => {
       await openUrl(url);

@@ -12,7 +12,7 @@
 declare const __K2_BUILD_COMMIT__: string;
 
 import type { IK2Vpn, IPlatform, SResponse } from '../types/kaitu-core';
-import { webSecureStorage } from './secure-storage';
+import { plainLocalStorage } from './plain-storage';
 import { webPlatform } from './web-platform';
 
 const CORE_ENDPOINT = '/api/core';
@@ -60,7 +60,7 @@ export const standalonePlatform: IPlatform = {
   version: 'standalone',
   arch: 'unknown',
   commit: typeof __K2_BUILD_COMMIT__ !== 'undefined' ? __K2_BUILD_COMMIT__ : '',
-  storage: webSecureStorage,
+  storage: plainLocalStorage,
   setDevEnabled: () => {},
 };
 

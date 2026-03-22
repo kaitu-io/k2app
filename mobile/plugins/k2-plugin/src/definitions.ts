@@ -37,6 +37,10 @@ export interface K2PluginInterface {
   getUpdateChannel(): Promise<{ channel: string }>;
   setUpdateChannel(options: { channel: string }): Promise<{ channel: string }>;
 
+  storageGet(options: { key: string }): Promise<{ value: string | null }>;
+  storageSet(options: { key: string; value: string }): Promise<void>;
+  storageRemove(options: { key: string }): Promise<void>;
+
   addListener(eventName: 'vpnStateChange', handler: (data: { state: string }) => void): Promise<PluginListenerHandle>;
   addListener(eventName: 'vpnError', handler: (data: { message: string }) => void): Promise<PluginListenerHandle>;
   addListener(eventName: 'updateDownloadProgress', handler: (data: { percent: number }) => void): Promise<PluginListenerHandle>;

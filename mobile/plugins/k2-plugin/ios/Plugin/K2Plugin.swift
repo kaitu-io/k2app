@@ -19,7 +19,6 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
     public let jsName = "K2Plugin"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "checkReady", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "getUDID", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getVersion", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getStatus", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getConfig", returnType: CAPPluginReturnPromise),
@@ -35,6 +34,9 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "setLogLevel", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setDevEnabled", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "debugDump", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "storageGet", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "storageSet", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "storageRemove", returnType: CAPPluginReturnPromise),
     ]
 
     private var vpnManager: NETunnelProviderManager?
@@ -814,6 +816,81 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
 
         logger.info("debugDump: \(dump)")
         call.resolve(dump)
+    }
+
+    // MARK: - Storage (App-private JSON file, excluded from iCloud backup)
+
+    private let storageQueue = DispatchQueue(label: "io.kaitu.k2plugin.storage")
+
+    private func storageFileURL() -> URL {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        return dir.appendingPathComponent("k2storage.json")
+    }
+
+    private func loadStorageDict() -> [String: String] {
+        let url = storageFileURL()
+        guard let data = try? Data(contentsOf: url),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String] else {
+            return [:]
+        }
+        return dict
+    }
+
+    private func saveStorageDict(_ dict: [String: String]) {
+        let url = storageFileURL()
+        // Ensure parent directory exists
+        let dir = url.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        guard let data = try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted, .sortedKeys]) else {
+            logger.error("storage: failed to serialize dict")
+            return
+        }
+        // Atomic write to tmp then rename
+        let tmp = url.appendingPathExtension("tmp")
+        do {
+            try data.write(to: tmp)
+            _ = try FileManager.default.replaceItemAt(url, withItemAt: tmp)
+        } catch {
+            logger.error("storage: failed to write: \(error.localizedDescription)")
+            try? FileManager.default.removeItem(at: tmp)
+            return
+        }
+        // Exclude from iCloud backup
+        var fileURL = url
+        var resourceValues = URLResourceValues()
+        resourceValues.isExcludedFromBackup = true
+        try? fileURL.setResourceValues(resourceValues)
+    }
+
+    @objc func storageGet(_ call: CAPPluginCall) {
+        storageQueue.sync {
+            let key = call.getString("key") ?? ""
+            let dict = loadStorageDict()
+            let value = dict[key]
+            call.resolve(["value": value as Any])
+        }
+    }
+
+    @objc func storageSet(_ call: CAPPluginCall) {
+        storageQueue.sync {
+            let key = call.getString("key") ?? ""
+            let value = call.getString("value") ?? ""
+            var dict = loadStorageDict()
+            dict[key] = value
+            saveStorageDict(dict)
+            call.resolve()
+        }
+    }
+
+    @objc func storageRemove(_ call: CAPPluginCall) {
+        storageQueue.sync {
+            let key = call.getString("key") ?? ""
+            var dict = loadStorageDict()
+            dict.removeValue(forKey: key)
+            saveStorageDict(dict)
+            call.resolve()
+        }
     }
 
     // MARK: - Private VPN Helpers

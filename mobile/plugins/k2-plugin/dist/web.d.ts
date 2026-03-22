@@ -69,4 +69,16 @@ export declare class K2PluginWeb extends WebPlugin implements K2PluginInterface 
     }): Promise<{
         channel: string;
     }>;
+    storageGet(_options: {
+        key: string;
+    }): Promise<{
+        value: string | null;
+    }>;
+    storageSet(_options: {
+        key: string;
+        value: string;
+    }): Promise<void>;
+    storageRemove(_options: {
+        key: string;
+    }): Promise<void>;
 }

@@ -100,6 +100,12 @@ async function main() {
     }
   }
 
+  // One-time: remove orphaned encrypted storage from v0.4.0
+  for (let i = localStorage.length - 1; i >= 0; i--) {
+    const key = localStorage.key(i);
+    if (key?.startsWith('_k2_secure_')) localStorage.removeItem(key);
+  }
+
   // Log source
   const { getK2Source } = await import('./services/standalone-k2');
   console.info(`[WebApp] K2 source: ${getK2Source()}`);
