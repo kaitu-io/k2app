@@ -74,4 +74,16 @@ export class K2PluginWeb extends WebPlugin implements K2PluginInterface {
   async setUpdateChannel(_options: { channel: string }): Promise<{ channel: string }> {
     throw this.unavailable('K2Plugin is not available on web');
   }
+
+  async storageGet(_options: { key: string }): Promise<{ value: string | null }> {
+    throw this.unavailable('K2Plugin is not available on web');
+  }
+
+  async storageSet(_options: { key: string; value: string }): Promise<void> {
+    throw this.unavailable('K2Plugin is not available on web');
+  }
+
+  async storageRemove(_options: { key: string }): Promise<void> {
+    throw this.unavailable('K2Plugin is not available on web');
+  }
 }

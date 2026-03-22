@@ -17,7 +17,7 @@ import { getDeviceUdid } from './device-udid';
 import { K2Plugin } from 'k2-plugin';
 import type { IK2Vpn, IPlatform, IUpdater, UpdateInfo, SResponse } from '../types/kaitu-core';
 import type { StatusResponseData, ControlError, ServiceState } from './vpn-types';
-import { webSecureStorage } from './secure-storage';
+import { createCapacitorStorage } from './capacitor-storage';
 
 /**
  * Check if running inside a Capacitor native environment.
@@ -221,7 +221,7 @@ export async function injectCapacitorGlobals(): Promise<void> {
     arch: 'arm64',
     commit: typeof __K2_BUILD_COMMIT__ !== 'undefined' ? __K2_BUILD_COMMIT__ : '',
 
-    storage: webSecureStorage,
+    storage: createCapacitorStorage(K2Plugin),
 
     openExternal: async (url: string): Promise<void> => {
       await Browser.open({ url });

@@ -6,13 +6,14 @@ mod linux_updater;
 mod log_upload;
 mod ne;
 mod service;
+mod storage;
 mod status_stream;
 mod tray;
 mod updater;
 mod window;
 
 use std::path::PathBuf;
-use tauri::{RunEvent, WindowEvent};
+use tauri::{Manager, RunEvent, WindowEvent};
 
 /// Desktop log directory — shared between log plugin and log_upload.
 pub(crate) fn get_desktop_log_dir() -> PathBuf {
@@ -118,6 +119,9 @@ fn main() {
             service::get_pid,
             service::set_dev_enabled,
             log_upload::upload_service_log_command,
+            storage::storage_get,
+            storage::storage_set,
+            storage::storage_remove,
         ]);
 
     #[cfg(feature = "mcp-bridge")]
@@ -125,9 +129,15 @@ fn main() {
         builder = builder.plugin(tauri_plugin_mcp_bridge::init());
     }
 
+    let storage_state = storage::StorageState::new();
+
     builder
         .manage(tray::TrayLocale(std::sync::Mutex::new("en-US".to_string())))
+        .manage(storage_state)
         .setup(|app| {
+            // Initialize native storage (load from disk)
+            let state = app.handle().state::<storage::StorageState>();
+            storage::init(app.handle(), &state);
             // Check for --minimized argument (autostart)
             let args: Vec<String> = std::env::args().collect();
             let should_minimize = args.contains(&"--minimized".to_string());

@@ -54,4 +54,13 @@ export class K2PluginWeb extends WebPlugin {
     async setUpdateChannel(_options) {
         throw this.unavailable('K2Plugin is not available on web');
     }
+    async storageGet(_options) {
+        throw this.unavailable('K2Plugin is not available on web');
+    }
+    async storageSet(_options) {
+        throw this.unavailable('K2Plugin is not available on web');
+    }
+    async storageRemove(_options) {
+        throw this.unavailable('K2Plugin is not available on web');
+    }
 }

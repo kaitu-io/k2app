@@ -1027,4 +1027,33 @@ class K2Plugin : Plugin() {
         val intent = Intent().setClassName(context.packageName, vpnServiceClassName)
         context.bindService(intent, serviceConnection!!, Context.BIND_AUTO_CREATE)
     }
+
+    // ── Storage (SharedPreferences, excluded from Auto Backup) ────────
+
+    private fun storagePrefs(): android.content.SharedPreferences =
+        context.getSharedPreferences("k2_storage", Context.MODE_PRIVATE)
+
+    @PluginMethod
+    fun storageGet(call: PluginCall) {
+        val key = call.getString("key") ?: ""
+        val value = storagePrefs().getString(key, null)
+        val ret = JSObject()
+        ret.put("value", value ?: JSObject.NULL)
+        call.resolve(ret)
+    }
+
+    @PluginMethod
+    fun storageSet(call: PluginCall) {
+        val key = call.getString("key") ?: ""
+        val value = call.getString("value") ?: ""
+        storagePrefs().edit().putString(key, value).commit()
+        call.resolve()
+    }
+
+    @PluginMethod
+    fun storageRemove(call: PluginCall) {
+        val key = call.getString("key") ?: ""
+        storagePrefs().edit().remove(key).commit()
+        call.resolve()
+    }
 }
