@@ -166,6 +166,13 @@ Markdown files in `content/{locale}/` are processed by Velite at build time and 
 - `order: number` — sidebar sort weight (used by `/k2/` sidebar). Omit for non-sidebar content.
 - `section: string` — sidebar grouping key (e.g., `"getting-started"`, `"technical"`, `"comparison"`). Omit for non-sidebar content.
 
+**Release notes / Changelog:**
+- **Single source of truth**: `releases/v{VERSION}.md` (repo root, NOT in `web/`)
+- **Frontmatter**: `version` + `date`. Sections: `## New Features`, `## Bug Fixes`, `## Improvements`, `## Breaking Changes`
+- **Generate**: `node scripts/generate-changelog.js` → produces `web/public/releases.json` (gitignored), `changelog.json`, `changelog.md`
+- **Display**: `/releases` page fetches `/releases.json` at runtime
+- **Never edit `web/public/releases.json` directly** — always edit source `.md` then regenerate
+
 **K2 protocol docs** (`web/content/{locale}/k2/*.md`):
 - Served by `web/src/app/[locale]/k2/[[...path]]/page.tsx` (NOT the `[...slug]` catch-all)
 - Sidebar navigation driven by `order` + `section` frontmatter via `getK2Posts(locale)` helper
