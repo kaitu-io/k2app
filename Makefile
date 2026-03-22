@@ -162,21 +162,6 @@ build-k2-standalone:
 publish-k2:
 	bash scripts/publish-k2.sh
 
-publish-mobile:
-	@test -n "$(VERSION)" || (echo "Usage: make publish-mobile VERSION=x.y.z" && exit 1)
-	@echo "Publishing mobile v$(VERSION)..."
-	bash scripts/publish-mobile.sh $(VERSION)
-
-publish-android:
-	@test -n "$(VERSION)" || (echo "Usage: make publish-android VERSION=x.y.z" && exit 1)
-	@echo "Publishing Android v$(VERSION)..."
-	bash scripts/publish-mobile.sh $(VERSION) --platform=android
-
-publish-ios:
-	@test -n "$(VERSION)" || (echo "Usage: make publish-ios VERSION=x.y.z" && exit 1)
-	@echo "Publishing iOS v$(VERSION)..."
-	bash scripts/publish-mobile.sh $(VERSION) --platform=ios
-
 # --- Mobile (delegates to k2/Makefile) ---
 appext-deps:
 	cd k2 && go get golang.org/x/mobile/bind@latest

@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+      - '!v*-desktop'
   workflow_dispatch:
     inputs:
       platform:
@@ -29,7 +30,7 @@ env:
 jobs:
   build-ios:
     if: >-
-      github.event_name == 'push' ||
+      (github.event_name == 'push' && !endsWith(github.ref_name, '-android')) ||
       inputs.platform == 'ios' ||
       inputs.platform == 'both'
     runs-on: macos-latest
@@ -200,7 +201,7 @@ jobs:
 
   build-android:
     if: >-
-      github.event_name == 'push' ||
+      (github.event_name == 'push' && !endsWith(github.ref_name, '-ios')) ||
       inputs.platform == 'android' ||
       inputs.platform == 'both'
     runs-on: ubuntu-latest
