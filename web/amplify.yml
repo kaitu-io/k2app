@@ -4,6 +4,7 @@ applications:
       phases:
         preBuild:
           commands:
+            - rm -rf .next/cache/fetch-cache  # clear stale CDN manifest cache between builds
             - yarn install
         build:
           commands:
