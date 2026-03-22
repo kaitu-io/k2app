@@ -195,7 +195,7 @@ appext-android: appext-deps
 
 build-ios: pre-build build-webapp appext-ios
 	cp -r k2/build/K2Mobile.xcframework mobile/ios/App/
-	cd mobile && rm -rf node_modules/k2-plugin && yarn install --force && npx cap sync ios
+	rm -rf node_modules/k2-plugin && cd mobile && yarn install --force && npx cap sync ios
 	cd mobile/ios/App && xcodebuild -workspace App.xcworkspace \
 		-scheme App -configuration Release \
 		-destination 'generic/platform=iOS' \
@@ -204,7 +204,7 @@ build-ios: pre-build build-webapp appext-ios
 build-android: pre-build build-webapp appext-android decrypt-keystore
 	mkdir -p mobile/android/app/libs
 	cp k2/build/k2mobile.aar mobile/android/app/libs/
-	cd mobile && rm -rf node_modules/k2-plugin && yarn install --force && npx cap sync android
+	rm -rf node_modules/k2-plugin && cd mobile && yarn install --force && npx cap sync android
 	cd mobile/android && KAITU_ANDROID_STORE_PASSWORD="$$KAITU_ANDROID_STORE_PASSWORD" ./gradlew assembleRelease
 	@echo "--- Collecting artifacts ---"
 	@mkdir -p release/$(VERSION)
@@ -229,12 +229,12 @@ IOS_DEVICE ?= $(shell xcrun xctrace list devices 2>/dev/null | grep 'iPhone' | g
 
 dev-ios: pre-build build-webapp appext-ios
 	cp -r k2/build/K2Mobile.xcframework mobile/ios/App/
-	cd mobile && rm -rf node_modules/k2-plugin && yarn install --force && npx cap sync ios && npx cap run ios $(if $(IOS_DEVICE),--target $(IOS_DEVICE),)
+	rm -rf node_modules/k2-plugin && cd mobile && yarn install --force && npx cap sync ios && npx cap run ios $(if $(IOS_DEVICE),--target $(IOS_DEVICE),)
 
 dev-android: pre-build build-webapp appext-android
 	mkdir -p mobile/android/app/libs
 	cp k2/build/k2mobile.aar mobile/android/app/libs/
-	cd mobile && rm -rf node_modules/k2-plugin && yarn install --force && npx cap sync android && npx cap run android
+	rm -rf node_modules/k2-plugin && cd mobile && yarn install --force && npx cap sync android && npx cap run android
 
 # --- Upload artifacts to S3 (run AFTER build-*, separate to prevent accidental uploads) ---
 upload-macos:
