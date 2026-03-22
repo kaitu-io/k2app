@@ -25,7 +25,6 @@ export type VPNState =
   | 'connected'
   | 'reconnecting'
   | 'disconnecting'
-  | 'error'
   | 'serviceDown';
 
 export type VPNEvent =
@@ -52,7 +51,7 @@ const TRANSITIONS: Record<VPNState, Partial<Record<VPNEvent, VPNState>>> = {
   idle: {
     USER_CONNECT:         'connecting',
     BACKEND_CONNECTED:    'connected',
-    BACKEND_ERROR:        'error',
+    BACKEND_ERROR:        'idle',
     BACKEND_RECONNECTING: 'reconnecting',
     SERVICE_UNREACHABLE:  'serviceDown',
   },
@@ -61,20 +60,20 @@ const TRANSITIONS: Record<VPNState, Partial<Record<VPNEvent, VPNState>>> = {
     BACKEND_RECONNECTING: 'connecting',
     BACKEND_CONNECTED:    'connected',
     BACKEND_DISCONNECTED: 'idle',
-    BACKEND_ERROR:        'error',
+    BACKEND_ERROR:        'idle',
     SERVICE_UNREACHABLE:  'serviceDown',
   },
   connected: {
     USER_DISCONNECT:      'disconnecting',
     BACKEND_RECONNECTING: 'reconnecting', // debounced — see dispatch()
     BACKEND_DISCONNECTED: 'idle',
-    BACKEND_ERROR:        'error',
+    BACKEND_ERROR:        'idle',
     SERVICE_UNREACHABLE:  'serviceDown',
   },
   reconnecting: {
     BACKEND_CONNECTED:    'connected',
     BACKEND_DISCONNECTED: 'idle',
-    BACKEND_ERROR:        'error',
+    BACKEND_ERROR:        'idle',
     USER_DISCONNECT:      'disconnecting',
     SERVICE_UNREACHABLE:  'serviceDown',
   },
@@ -84,14 +83,6 @@ const TRANSITIONS: Record<VPNState, Partial<Record<VPNEvent, VPNState>>> = {
     BACKEND_DISCONNECTED: 'idle',
     BACKEND_CONNECTED:    'disconnecting',
     BACKEND_ERROR:        'idle',
-    SERVICE_UNREACHABLE:  'serviceDown',
-  },
-  error: {
-    USER_CONNECT:         'connecting',
-    USER_DISCONNECT:      'disconnecting',
-    BACKEND_RECONNECTING: 'reconnecting',
-    BACKEND_CONNECTED:    'connected',
-    BACKEND_DISCONNECTED: 'idle',
     SERVICE_UNREACHABLE:  'serviceDown',
   },
   serviceDown: {
@@ -160,8 +151,8 @@ export function dispatch(event: VPNEvent, payload?: DispatchPayload): void {
     return;
   }
 
-  const nextState = TRANSITIONS[currentState]?.[event];
-  if (!nextState) {
+  const nextStateLookup = TRANSITIONS[currentState]?.[event];
+  if (!nextStateLookup) {
     // TRACE: log all no-transition cases involving connecting/idle for flash diagnosis
     if (currentState === 'connecting' || currentState === 'idle') {
       console.warn('[VPNMachine] TRACE t=' + Date.now() + ': ' + currentState + ' + ' + event + ' → (no transition)');
@@ -169,6 +160,14 @@ export function dispatch(event: VPNEvent, payload?: DispatchPayload): void {
       console.warn('[VPNMachine] dispatch: ' + currentState + ' + ' + event + ' → (no transition)');
     }
     return;
+  }
+
+  let nextState = nextStateLookup;
+
+  // BACKEND_ERROR + retrying: engine actively retrying → reconnecting
+  // Exception: disconnecting (user initiated teardown, honor disconnect)
+  if (event === 'BACKEND_ERROR' && payload?.isRetrying && nextState === 'idle' && currentState !== 'disconnecting') {
+    nextState = 'reconnecting';
   }
 
   // TRACE: log all transitions involving connecting/idle for flash diagnosis
@@ -298,6 +297,6 @@ export function useVPNMachine() {
     isDisconnected: state === 'idle',
     isServiceDown: state === 'serviceDown',
     isTransitioning: state === 'connecting' || state === 'reconnecting' || state === 'disconnecting',
-    isInteractive: state === 'connected' || state === 'connecting' || state === 'reconnecting' || (state === 'error' && isRetrying),
+    isInteractive: state === 'connected' || state === 'connecting' || state === 'reconnecting',
   };
 }
