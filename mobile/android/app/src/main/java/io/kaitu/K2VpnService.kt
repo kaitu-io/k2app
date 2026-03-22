@@ -3,6 +3,7 @@ package io.kaitu
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.Network
@@ -58,19 +59,38 @@ class K2VpnService : VpnService(), VpnServiceBridge, appext.SocketProtector {
         Thread(r, "k2-engine").apply { isDaemon = true }
     }
 
-    override fun onBind(intent: Intent?): IBinder {
-        Log.d(TAG, "onBind: service binding requested")
+    override fun onBind(intent: Intent?): IBinder? {
+        // System binds with SERVICE_INTERFACE action for always-on VPN management
+        if (intent?.action == SERVICE_INTERFACE) {
+            Log.d(TAG, "onBind: system VPN bind (SERVICE_INTERFACE)")
+            return super.onBind(intent)
+        }
+        Log.d(TAG, "onBind: app bind (K2Plugin bridge)")
         return binder
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "onStartCommand: action=${intent?.action} flags=$flags startId=$startId")
-        if (intent == null) {
-            Log.w(TAG, "onStartCommand: null intent — stopping self")
+
+        // System-initiated restart (always-on VPN): null intent OR SERVICE_INTERFACE action.
+        // Different Android versions/OEMs may use either form.
+        val isSystemRestart = intent == null || intent.action == SERVICE_INTERFACE
+        if (isSystemRestart) {
+            val savedConfig = applicationContext
+                .getSharedPreferences("k2vpn", Context.MODE_PRIVATE)
+                .getString("configJSON", null)
+            if (savedConfig != null) {
+                Log.i(TAG, "onStartCommand: system restart (action=${intent?.action}) — recovering from saved config")
+                NativeLogger.log("INFO", "onStartCommand: always-on VPN restart, config length=${savedConfig.length}")
+                startVpn(savedConfig)
+                return START_NOT_STICKY
+            }
+            Log.w(TAG, "onStartCommand: system restart (action=${intent?.action}), no saved config — stopping self")
             stopSelf()
             return START_NOT_STICKY
         }
-        when (intent.action) {
+
+        when (intent!!.action) {
             "START" -> {
                 val configJSON = intent.getStringExtra("configJSON")
                 if (configJSON == null) {
