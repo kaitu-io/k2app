@@ -9,6 +9,77 @@ import (
 	"github.com/wordgate/qtoolkit/log"
 )
 
+// ===================== Campaign License Key 发放 =====================
+
+// POST /app/campaigns/:id/issue-keys
+// DryRun=true returns count only; DryRun=false generates and sends keys.
+func api_admin_issue_license_keys(c *gin.Context) {
+	log.Infof(c, "admin request to issue license keys for campaign")
+
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		log.Warnf(c, "invalid campaign id: %s", c.Param("id"))
+		Error(c, ErrorInvalidArgument, "invalid id")
+		return
+	}
+
+	var req IssueKeysRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Warnf(c, "invalid request body: %v", err)
+		Error(c, ErrorInvalidArgument, err.Error())
+		return
+	}
+
+	var campaign Campaign
+	if err := db.Get().First(&campaign, id).Error; err != nil {
+		log.Warnf(c, "campaign %d not found: %v", id, err)
+		Error(c, ErrorNotFound, "campaign not found")
+		return
+	}
+	if !campaign.IsShareable {
+		log.Warnf(c, "campaign %d is not shareable", id)
+		Error(c, ErrorInvalidArgument, "campaign is not shareable")
+		return
+	}
+
+	ctx := c.Request.Context()
+
+	if req.DryRun {
+		count, err := CountEligibleUsers(ctx, &campaign)
+		if err != nil {
+			log.Errorf(c, "failed to count eligible users for campaign %d: %v", id, err)
+			Error(c, ErrorSystemError, err.Error())
+			return
+		}
+		resp := IssueKeysResponse{
+			EligibleUsers: count,
+			KeysToIssue:   count * campaign.SharesPerUser,
+			Issued:        false,
+		}
+		log.Infof(c, "dry run: campaign %d eligible=%d keysToIssue=%d", id, count, resp.KeysToIssue)
+		Success(c, &resp)
+		return
+	}
+
+	count, err := GenerateLicenseKeysForCampaign(ctx, &campaign)
+	if err != nil {
+		log.Errorf(c, "failed to generate license keys for campaign %d: %v", id, err)
+		Error(c, ErrorSystemError, err.Error())
+		return
+	}
+	eligibleUsers := int64(0)
+	if campaign.SharesPerUser > 0 {
+		eligibleUsers = count / campaign.SharesPerUser
+	}
+	resp := IssueKeysResponse{
+		EligibleUsers: eligibleUsers,
+		KeysToIssue:   count,
+		Issued:        true,
+	}
+	log.Infof(c, "issued %d license keys for campaign %d", count, id)
+	Success(c, &resp)
+}
+
 // ===================== 优惠活动管理 =====================
 
 // api_admin_list_campaigns 处理获取优惠活动列表的请求（管理员）

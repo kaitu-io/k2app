@@ -315,6 +315,15 @@ func SetupRouter() *gin.Engine {
 		admin.GET("/campaigns/code/:code/orders", api_admin_get_campaign_orders)
 		admin.GET("/campaigns/code/:code/funnel", api_admin_get_campaign_funnel)
 
+		// Campaign: issue license keys
+		admin.POST("/campaigns/:id/issue-keys", api_admin_issue_license_keys)
+
+		// LicenseKey admin management
+		// stats must be registered BEFORE :id to prevent routing conflict
+		admin.GET("/license-keys/stats", api_admin_license_key_stats)
+		admin.GET("/license-keys", api_admin_list_license_keys)
+		admin.DELETE("/license-keys/:id", api_admin_delete_license_key)
+
 		// EDM邮件营销管理
 		edm := admin.Group("/edm")
 		{
