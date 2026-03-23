@@ -89,6 +89,11 @@ New function added alongside existing `AdminRequired()`:
 // RoleRequired grants access to users with IsAdmin=true (superadmin bypass)
 // or users whose Roles bitmask has any bit in `role` set.
 // Pass combined bits for OR semantics: RoleRequired(RoleOpsViewer | RoleOpsEditor).
+//
+// Authority source: reads user.Roles from the DB-loaded User struct via ReqUser(c),
+// identical to how AdminRequired reads user.IsAdmin. Role changes take effect on the
+// next request (no token re-issue required) because the user row is read fresh on
+// every request — not from the JWT claims.
 func RoleRequired(role uint64) gin.HandlerFunc {
     return func(c *gin.Context) {
         user := ReqUser(c)
@@ -116,6 +121,18 @@ func RoleRequired(role uint64) gin.HandlerFunc {
 `HasRole` (existing, `type.go:32`) computes `(roles & role) != 0` — correct OR semantics when bits are combined.
 
 `AdminRequired()` is not modified.
+
+### Auth path coverage
+
+`RoleRequired` works for all three auth paths because all three paths call `getAuthContext(c)` and populate `authContext.User` from the DB:
+
+| Auth path | User loaded? | Roles field source |
+|-----------|-------------|-------------------|
+| JWT Bearer / Cookie | Yes (DB query by UserID) | `user.Roles` from DB row |
+| X-Access-Key | Yes (DB query by AccessKey) | `user.Roles` from DB row |
+| Device JWT | Yes (DB Preload via Device.User) | `user.Roles` from DB row |
+
+AccessKey-authenticated requests (the primary path for AI agents using the kaitu-ops-mcp tools) are fully supported. The AI agent's user account must have the appropriate `Roles` bits set in the DB — same mechanism as any other user.
 
 ## Route Changes (`route.go`)
 
@@ -209,3 +226,9 @@ Response: {"roles": 48, "roleNames": ["ops_viewer", "ops_editor"]}
 - No DB migration required. `users.roles` column exists with `default:1`.
 - JWT `roles` field already populated on login. No auth flow changes.
 - Frontend (`web/`): login response already returns `Roles uint64` in `DataAdminInfo`. Frontend reads roles to control menu visibility — no API changes required.
+
+## Operational Notes
+
+**Role change latency:** Because `RoleRequired` reads `user.Roles` from the DB-loaded user (not from JWT claims), role changes via `PUT /app/users/:uuid/roles` or the CLI `set-roles` command take effect immediately on the next request. No token invalidation or re-login required.
+
+**JWT `roles` field:** The JWT already carries `roles` as a snapshot from login time. This snapshot is used by the frontend for UI rendering (menu visibility). It does NOT govern server-side access control — the DB value does. These can diverge until the user re-logs-in, which is acceptable: the worst case is the frontend shows a menu item that the server then rejects with 403, or hides a menu item the server would now allow. Neither is a security issue.
