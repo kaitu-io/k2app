@@ -669,4 +669,37 @@ describe('initializeVPNMachine — safety-net poll (event-driven mode)', () => {
     expect(useVPNMachineStore.getState().state).toBe('connected');
     expect(runMock.mock.calls.length).toBe(2); // initial + 1 poll, both returned connected
   });
+
+  it('recovery via transformStatus output: capacitor error overlay → connected', async () => {
+    // Simulate the exact output shape that capacitor-k2.ts transformStatus() produces
+    // for { state: 'connected', error: { code: 108, message: '' } }:
+    //   state='error', retrying=true, running=true, networkAvailable=true, error={code:108}
+    // This is the full end-to-end shape that dispatchStatus() receives in production.
+    runMock.mockResolvedValueOnce({
+      code: 0,
+      data: {
+        state: 'error',
+        retrying: true,
+        running: true,
+        networkAvailable: true,
+        error: { code: 108, message: '' },
+      },
+    });
+    // Poll returns clean connected (what transformStatus produces for { state: 'connected' })
+    runMock.mockResolvedValue({
+      code: 0,
+      data: { state: 'connected', running: true, networkAvailable: true },
+    });
+
+    const { initializeVPNMachine, useVPNMachineStore } = await import('../../stores/vpn-machine.store');
+    cleanup = initializeVPNMachine();
+    await flushMicrotasks(); // initial query → reconnecting (via BACKEND_ERROR + isRetrying)
+
+    expect(useVPNMachineStore.getState().state).toBe('reconnecting');
+
+    vi.advanceTimersByTime(15000);
+    await flushMicrotasks(); // poll fires → BACKEND_CONNECTED → connected
+
+    expect(useVPNMachineStore.getState().state).toBe('connected');
+  });
 });
