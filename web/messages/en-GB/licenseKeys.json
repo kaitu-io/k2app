@@ -1,21 +1,25 @@
 {
   "gift": {
     "title": "{name} sent you a gift",
-    "subtitle": "Kaitu VPN exclusive offer",
-    "discount": "{value}% off",
-    "coupon": "¥{value} off",
+    "subtitle": "Kaitu VPN membership",
+    "planDays": "{days} days",
     "expires": "{days} days remaining",
     "cta": "Claim now",
     "used": "This gift has already been claimed",
     "expired": "This gift has expired",
     "fallback": "See new user offers",
-    "loading": "Loading..."
+    "loading": "Redeeming...",
+    "successTitle": "Redeemed successfully!",
+    "successBody": "Your membership has been extended by {days} days",
+    "viewAccount": "View my account",
+    "notEligible": "You are not eligible to use this gift",
+    "redeemFailed": "Redemption failed, please try again"
   },
   "admin": {
     "title": "License Keys",
     "columns": {
       "uuid": "Code",
-      "discount": "Discount",
+      "planDays": "Days",
       "status": "Status",
       "expires": "Expires",
       "campaign": "Campaign",

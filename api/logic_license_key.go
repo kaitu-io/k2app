@@ -31,26 +31,75 @@ func MatchLicenseKey(key *LicenseKey, user *User) bool {
 	}
 }
 
-// ApplyLicenseKeyDiscount calculates the discounted amount.
-// Returns (newAmount, reducedAmount).
-func ApplyLicenseKeyDiscount(key *LicenseKey, originAmount uint64) (newAmount uint64, reduced uint64) {
-	switch key.DiscountType {
-	case "discount":
-		newAmount = originAmount * key.DiscountValue / 100
-	case "coupon":
-		if key.DiscountValue >= originAmount {
-			newAmount = 0
-		} else {
-			newAmount = originAmount - key.DiscountValue
+// RedeemLicenseKey validates, consumes, and grants plan access to the user.
+// Runs inside a DB transaction.
+func RedeemLicenseKey(ctx context.Context, uuid string, userID uint64) (*LicenseKey, *UserProHistory, error) {
+	var history *UserProHistory
+	var key *LicenseKey
+
+	err := db.Get().Transaction(func(tx *gormdb.DB) error {
+		// 1. Load key
+		var k LicenseKey
+		if err := tx.Where("uuid = ?", uuid).First(&k).Error; err != nil {
+			return ErrLicenseKeyNotFound
 		}
-	default:
-		newAmount = originAmount
-	}
-	if newAmount > originAmount {
-		newAmount = originAmount
-	}
-	reduced = originAmount - newAmount
-	return
+		if k.IsUsed {
+			return ErrLicenseKeyUsed
+		}
+		if k.IsExpired() {
+			return ErrLicenseKeyExpired
+		}
+
+		// 2. Anti-abuse: one key per user ever
+		var existingCount int64
+		if err := tx.Model(&LicenseKey{}).Where("used_by_user_id = ?", userID).Count(&existingCount).Error; err != nil {
+			return err
+		}
+		if existingCount > 0 {
+			return ErrLicenseKeyUsed
+		}
+
+		// 3. Load user
+		var user User
+		if err := tx.First(&user, userID).Error; err != nil {
+			return err
+		}
+
+		// 4. Check eligibility
+		if !MatchLicenseKey(&k, &user) {
+			return ErrLicenseKeyNotMatch
+		}
+
+		// 5. Atomic consume
+		result := tx.Model(&LicenseKey{}).
+			Where("uuid = ? AND is_used = false", uuid).
+			Updates(map[string]any{
+				"is_used":           true,
+				"used_by_user_id":   userID,
+				"used_at":           time.Now(),
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return ErrLicenseKeyUsed
+		}
+
+		// 6. Grant plan days
+		reason := fmt.Sprintf("礼物码兑换 - %s", k.UUID)
+		h, err := addProExpiredDays(ctx, tx, &user, VipSystemGrant, k.ID, k.PlanDays, reason)
+		if err != nil {
+			return err
+		}
+
+		k.IsUsed = true
+		k.UsedByUserID = &userID
+		key = &k
+		history = h
+		return nil
+	})
+
+	return key, history, err
 }
 
 // GetLicenseKeyByUUID fetches a key by its UUID (includes soft-deleted check via GORM).
@@ -129,8 +178,7 @@ func GenerateLicenseKeysForCampaign(ctx context.Context, campaign *Campaign) (in
 		for i := int64(0); i < campaign.SharesPerUser; i++ {
 			keys = append(keys, LicenseKey{
 				UUID:             xid.New().String(),
-				DiscountType:     campaign.Type,
-				DiscountValue:    campaign.Value,
+				PlanDays:         licenseKeyTTLDays,
 				RecipientMatcher: "never_paid",
 				ExpiresAt:        expiresAt,
 				CampaignID:       &campaignID,

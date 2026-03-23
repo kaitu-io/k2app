@@ -1,21 +1,25 @@
 {
   "gift": {
-    "title": "{name} 送给你一个礼物",
-    "subtitle": "Kaitu VPN 专属优惠",
-    "discount": "享 {value}% 折扣",
-    "coupon": "立减 ¥{value}",
-    "expires": "还剩 {days} 天到期",
-    "cta": "立即领取",
-    "used": "此礼物已被领走",
-    "expired": "此礼物已过期",
-    "fallback": "查看新用户专属优惠",
-    "loading": "加载中..."
+    "title": "{name} 送給你一個禮物",
+    "subtitle": "Kaitu VPN 專屬會員",
+    "planDays": "{days} 天會員",
+    "expires": "還剩 {days} 天到期",
+    "cta": "立即領取",
+    "used": "此禮物已被領走",
+    "expired": "此禮物已過期",
+    "fallback": "查看新用戶專屬優惠",
+    "loading": "兌換中...",
+    "successTitle": "兌換成功！",
+    "successBody": "已為你延長 {days} 天會員",
+    "viewAccount": "查看我的賬戶",
+    "notEligible": "不符合使用條件",
+    "redeemFailed": "兌換失敗，請重試"
   },
   "admin": {
     "title": "授权码管理",
     "columns": {
       "uuid": "唯一码",
-      "discount": "折扣",
+      "planDays": "天数",
       "status": "状态",
       "expires": "过期时间",
       "campaign": "关联活动",

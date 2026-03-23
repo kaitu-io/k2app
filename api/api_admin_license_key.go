@@ -103,8 +103,7 @@ func toLicenseKeyResponse(k LicenseKey) LicenseKeyResponse {
 	r := LicenseKeyResponse{
 		ID:               k.ID,
 		UUID:             k.UUID,
-		DiscountType:     k.DiscountType,
-		DiscountValue:    k.DiscountValue,
+		PlanDays:         k.PlanDays,
 		RecipientMatcher: k.RecipientMatcher,
 		ExpiresAt:        k.ExpiresAt,
 		CampaignID:       k.CampaignID,

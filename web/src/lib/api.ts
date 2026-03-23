@@ -1914,8 +1914,8 @@ export const api = {
     return this.request<LicenseKeyStatsRow[]>('/app/license-keys/stats');
   },
 
-  async previewLicenseKey(uuid: string): Promise<{ discountType: string; discountValue: number; expiresAt: number; isValid: boolean }> {
-    return this.request<{ discountType: string; discountValue: number; expiresAt: number; isValid: boolean }>(`/api/license-keys/${uuid}/preview`, {
+  async redeemLicenseKey(uuid: string): Promise<{ planDays: number; newExpireAt: number; historyId: number }> {
+    return this.request<{ planDays: number; newExpireAt: number; historyId: number }>(`/api/license-keys/${uuid}/redeem`, {
       method: 'POST',
       body: JSON.stringify({}),
     });
@@ -2079,8 +2079,7 @@ export interface AdminNodeItem {
 
 export interface LicenseKeyPublic {
   uuid: string;
-  discountType: 'discount' | 'coupon';
-  discountValue: number;
+  planDays: number;
   expiresAt: number;
   isUsed: boolean;
   isExpired: boolean;
@@ -2090,8 +2089,7 @@ export interface LicenseKeyPublic {
 export interface LicenseKeyAdmin {
   id: number;
   uuid: string;
-  discountType: string;
-  discountValue: number;
+  planDays: number;
   recipientMatcher: string;
   expiresAt: number;
   campaignId?: number;

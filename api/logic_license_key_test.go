@@ -7,32 +7,14 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestApplyLicenseKeyDiscount_Discount(t *testing.T) {
-	key := &LicenseKey{DiscountType: "discount", DiscountValue: 80}
-	newAmt, reduced := ApplyLicenseKeyDiscount(key, 1000)
-	assert.Equal(t, uint64(800), newAmt)
-	assert.Equal(t, uint64(200), reduced)
+func TestLicenseKey_PlanDays_Default(t *testing.T) {
+	key := &LicenseKey{PlanDays: licenseKeyTTLDays}
+	assert.Equal(t, 30, key.PlanDays)
 }
 
-func TestApplyLicenseKeyDiscount_Coupon(t *testing.T) {
-	key := &LicenseKey{DiscountType: "coupon", DiscountValue: 200}
-	newAmt, reduced := ApplyLicenseKeyDiscount(key, 1000)
-	assert.Equal(t, uint64(800), newAmt)
-	assert.Equal(t, uint64(200), reduced)
-}
-
-func TestApplyLicenseKeyDiscount_CouponExceedsPrice(t *testing.T) {
-	key := &LicenseKey{DiscountType: "coupon", DiscountValue: 1500}
-	newAmt, reduced := ApplyLicenseKeyDiscount(key, 1000)
-	assert.Equal(t, uint64(0), newAmt)
-	assert.Equal(t, uint64(1000), reduced)
-}
-
-func TestApplyLicenseKeyDiscount_UnknownType(t *testing.T) {
-	key := &LicenseKey{DiscountType: "unknown", DiscountValue: 100}
-	newAmt, reduced := ApplyLicenseKeyDiscount(key, 1000)
-	assert.Equal(t, uint64(1000), newAmt, "unknown type: no discount applied")
-	assert.Equal(t, uint64(0), reduced)
+func TestLicenseKey_PlanDays_Custom(t *testing.T) {
+	key := &LicenseKey{PlanDays: 90}
+	assert.Equal(t, 90, key.PlanDays)
 }
 
 func TestMatchLicenseKey_NeverPaid_NotPaid(t *testing.T) {

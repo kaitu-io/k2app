@@ -1,11 +1,19 @@
 'use client';
 
+import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Link } from '@/i18n/routing';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Gift, AlertCircle, Clock } from 'lucide-react';
+import { Gift, AlertCircle, Clock, CheckCircle } from 'lucide-react';
 import type { LicenseKeyPublic } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
+
+// License key error codes from backend response.go
+const ErrorLicenseKeyNotFound = 400007;
+const ErrorLicenseKeyUsed = 400008;
+const ErrorLicenseKeyExpired = 400009;
+const ErrorLicenseKeyNotMatch = 400010;
 
 interface RedeemClientProps {
   initialKey: LicenseKeyPublic | null;
@@ -20,6 +28,9 @@ function getDaysRemaining(expiresAt: number): number {
 
 export default function RedeemClient({ initialKey, uuid }: RedeemClientProps) {
   const t = useTranslations('licenseKeys');
+  const [redeemState, setRedeemState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [redeemDays, setRedeemDays] = useState<number>(0);
+  const [errorKey, setErrorKey] = useState<string>('');
 
   // Used state
   if (initialKey?.isUsed) {
@@ -61,17 +72,62 @@ export default function RedeemClient({ initialKey, uuid }: RedeemClientProps) {
     );
   }
 
-  // Valid gift card
+  // Success state
+  if (redeemState === 'success') {
+    return (
+      <div className="max-w-lg mx-auto px-4 py-20 text-center">
+        <Card className="p-10 border-primary/30 bg-primary/5">
+          <CheckCircle className="w-14 h-14 text-primary mx-auto mb-4" />
+          <h1 className="text-2xl font-bold text-foreground mb-3">
+            {t('gift.successTitle')}
+          </h1>
+          <p className="text-muted-foreground mb-8">
+            {t('gift.successBody', { days: redeemDays })}
+          </p>
+          <Button asChild size="lg">
+            <Link href="/account">{t('gift.viewAccount')}</Link>
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
+  // Not found / null state
   const key = initialKey;
   if (!key) return null;
 
   const daysRemaining = getDaysRemaining(key.expiresAt);
-  const ctaHref = `/purchase?licenseKey=${uuid}`;
 
-  const discountDisplay =
-    key.discountType === 'discount'
-      ? t('gift.discount', { value: key.discountValue })
-      : t('gift.coupon', { value: key.discountValue });
+  const handleRedeem = async () => {
+    setRedeemState('loading');
+    setErrorKey('');
+    try {
+      const result = await api.redeemLicenseKey(uuid);
+      setRedeemDays(result.planDays);
+      setRedeemState('success');
+    } catch (err) {
+      if (err instanceof ApiError) {
+        const code = err.code as number;
+        switch (code) {
+          case ErrorLicenseKeyUsed:
+            setErrorKey('gift.used');
+            break;
+          case ErrorLicenseKeyExpired:
+            setErrorKey('gift.expired');
+            break;
+          case ErrorLicenseKeyNotFound:
+          case ErrorLicenseKeyNotMatch:
+            setErrorKey('gift.notEligible');
+            break;
+          default:
+            setErrorKey('gift.redeemFailed');
+        }
+      } else {
+        setErrorKey('gift.redeemFailed');
+      }
+      setRedeemState('error');
+    }
+  };
 
   return (
     <div className="max-w-lg mx-auto px-4 py-16 sm:py-24">
@@ -92,7 +148,7 @@ export default function RedeemClient({ initialKey, uuid }: RedeemClientProps) {
           {'Kaitu VPN'}
         </p>
         <div className="text-5xl sm:text-6xl font-mono font-bold text-primary mb-4">
-          {discountDisplay}
+          {t('gift.planDays', { days: key.planDays })}
         </div>
         <div className="flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
           <Clock className="w-4 h-4" />
@@ -100,10 +156,20 @@ export default function RedeemClient({ initialKey, uuid }: RedeemClientProps) {
         </div>
       </Card>
 
+      {/* Error message */}
+      {redeemState === 'error' && errorKey && (
+        <p className="text-sm text-destructive text-center mb-4">{t(errorKey as Parameters<typeof t>[0])}</p>
+      )}
+
       {/* CTA */}
       <div className="text-center">
-        <Button asChild size="lg" className="w-full sm:w-auto px-12 py-6 text-lg font-bold">
-          <Link href={ctaHref}>{t('gift.cta')}</Link>
+        <Button
+          size="lg"
+          className="w-full sm:w-auto px-12 py-6 text-lg font-bold"
+          onClick={handleRedeem}
+          disabled={redeemState === 'loading'}
+        >
+          {redeemState === 'loading' ? t('gift.loading') : t('gift.cta')}
         </Button>
       </div>
     </div>

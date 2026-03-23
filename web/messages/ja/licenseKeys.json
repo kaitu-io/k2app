@@ -1,21 +1,25 @@
 {
   "gift": {
-    "title": "{name} 送给你一个礼物",
-    "subtitle": "Kaitu VPN 专属优惠",
-    "discount": "享 {value}% 折扣",
-    "coupon": "立减 ¥{value}",
-    "expires": "还剩 {days} 天到期",
-    "cta": "立即领取",
-    "used": "此礼物已被领走",
-    "expired": "此礼物已过期",
-    "fallback": "查看新用户专属优惠",
-    "loading": "加载中..."
+    "title": "{name} からギフトが届いています",
+    "subtitle": "Kaitu VPN メンバーシップ",
+    "planDays": "{days} 日間",
+    "expires": "残り {days} 日",
+    "cta": "今すぐ受け取る",
+    "used": "このギフトはすでに使用されています",
+    "expired": "このギフトは期限切れです",
+    "fallback": "新規ユーザー限定オファーを見る",
+    "loading": "処理中...",
+    "successTitle": "交換完了！",
+    "successBody": "メンバーシップが {days} 日延長されました",
+    "viewAccount": "アカウントを確認",
+    "notEligible": "このギフトを使用する資格がありません",
+    "redeemFailed": "交換に失敗しました。もう一度お試しください"
   },
   "admin": {
     "title": "授权码管理",
     "columns": {
       "uuid": "唯一码",
-      "discount": "折扣",
+      "planDays": "天数",
       "status": "状态",
       "expires": "过期时间",
       "campaign": "关联活动",
