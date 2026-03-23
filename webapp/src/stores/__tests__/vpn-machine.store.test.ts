@@ -561,12 +561,15 @@ describe('useVPNMachine hook', () => {
 // ==================== Safety-Net Poll Tests ====================
 
 describe('initializeVPNMachine — safety-net poll (event-driven mode)', () => {
+  // Flush all pending microtasks (more robust than fixed-count Promise.resolve())
+  const flushMicrotasks = async () => {
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+  };
+
   let runMock: ReturnType<typeof vi.fn>;
   let cleanup: (() => void) | undefined;
 
   beforeEach(async () => {
-    vi.useFakeTimers();
-    vi.resetModules();
     runMock = vi.fn().mockResolvedValue({ code: 0, data: { state: 'connected' } });
     (window as any)._k2 = {
       onServiceStateChange: vi.fn((cb) => { cb(true); return () => {}; }),
@@ -578,7 +581,6 @@ describe('initializeVPNMachine — safety-net poll (event-driven mode)', () => {
   afterEach(() => {
     cleanup?.();
     delete (window as any)._k2;
-    vi.useRealTimers();
     vi.clearAllMocks();
   });
 
@@ -598,10 +600,9 @@ describe('initializeVPNMachine — safety-net poll (event-driven mode)', () => {
   it('poll fires again at 30s: 3 total calls (1 initial + 2 polls)', async () => {
     const { initializeVPNMachine } = await import('../../stores/vpn-machine.store');
     cleanup = initializeVPNMachine();
-    await Promise.resolve();
+    await flushMicrotasks();
     vi.advanceTimersByTime(30000);
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushMicrotasks();
     expect(runMock.mock.calls.length).toBe(3);
   });
 
@@ -616,14 +617,13 @@ describe('initializeVPNMachine — safety-net poll (event-driven mode)', () => {
 
     const { initializeVPNMachine, useVPNMachineStore } = await import('../../stores/vpn-machine.store');
     cleanup = initializeVPNMachine();
-    await Promise.resolve(); // flush initial query → reconnecting
+    await flushMicrotasks(); // flush initial query → reconnecting
 
     expect(useVPNMachineStore.getState().state).toBe('reconnecting');
 
     // Advance 15s to fire poll → clean connected → BACKEND_CONNECTED → reconnecting→connected
     vi.advanceTimersByTime(15000);
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushMicrotasks();
     const { state } = useVPNMachineStore.getState();
     expect(state).toBe('connected');
   });
@@ -655,19 +655,18 @@ describe('initializeVPNMachine — safety-net poll (event-driven mode)', () => {
     expect(state).not.toBe('serviceDown'); // no SERVICE_UNREACHABLE dispatched
   });
 
-  it('idempotent when already connected: state stays connected', async () => {
+  it('idempotent when already connected: poll fires but state stays connected', async () => {
     runMock.mockResolvedValue({ code: 0, data: { state: 'connected' } });
-    const { initializeVPNMachine, dispatch, useVPNMachineStore } = await import('../../stores/vpn-machine.store');
-    // First get into connected state via dispatch
-    dispatch('USER_CONNECT');
-    dispatch('BACKEND_CONNECTED');
+    const { initializeVPNMachine, useVPNMachineStore } = await import('../../stores/vpn-machine.store');
+    cleanup = initializeVPNMachine();
+    await flushMicrotasks(); // initial query → machine reaches connected (idle + BACKEND_CONNECTED → connected)
+
     expect(useVPNMachineStore.getState().state).toBe('connected');
 
-    cleanup = initializeVPNMachine();
-    await Promise.resolve();
     vi.advanceTimersByTime(15000);
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushMicrotasks(); // poll fires → connected again → no-op transition
+
     expect(useVPNMachineStore.getState().state).toBe('connected');
+    expect(runMock.mock.calls.length).toBe(2); // initial + 1 poll, both returned connected
   });
 });
