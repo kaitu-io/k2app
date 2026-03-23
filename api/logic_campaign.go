@@ -76,7 +76,11 @@ func getCampaignMatcherWithDB(gdb *gormdb.DB, matcherType, params string) func(c
 				Limit(1).
 				Select("paid_at").
 				Scan(&firstPaidAt).Error
-			if err != nil || firstPaidAt.IsZero() {
+			if err != nil {
+				log.Warnf(ctx, "[CAMPAIGN] paid_before DB query failed for user %d: %v", user.ID, err)
+				return false
+			}
+			if firstPaidAt.IsZero() {
 				return false
 			}
 			return firstPaidAt.Unix() < p.BeforeDate
@@ -95,7 +99,11 @@ func getCampaignMatcherWithDB(gdb *gormdb.DB, matcherType, params string) func(c
 				Limit(1).
 				Select("paid_at").
 				Scan(&firstPaidAt).Error
-			if err != nil || firstPaidAt.IsZero() {
+			if err != nil {
+				log.Warnf(ctx, "[CAMPAIGN] paid_before_active DB query failed for user %d: %v", user.ID, err)
+				return false
+			}
+			if firstPaidAt.IsZero() {
 				return false
 			}
 			if firstPaidAt.Unix() >= p.BeforeDate {
@@ -113,10 +121,6 @@ func getCampaignMatcherWithDB(gdb *gormdb.DB, matcherType, params string) func(c
 	}
 }
 
-// getCampaignMatcher 根据匹配器类型返回对应的匹配函数（无 DB 参数，向后兼容）
-func getCampaignMatcher(matcherType string) func(ctx context.Context, user *User, order *Order) bool {
-	return getCampaignMatcherWithDB(nil, matcherType, "")
-}
 
 // incrementCampaignUsage 增加活动使用次数
 func incrementCampaignUsage(ctx context.Context, code string) error {

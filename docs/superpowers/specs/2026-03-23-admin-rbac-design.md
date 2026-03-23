@@ -207,7 +207,7 @@ New subcommand `user set-roles`:
 
 ```bash
 ./kaitu-center user set-roles \
-  -e user@example.com \
+  --email user@example.com \
   --roles ops_viewer,ops_editor,support \
   -c config.yml
 ```
