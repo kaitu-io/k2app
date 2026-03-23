@@ -10,12 +10,6 @@ const (
 	// RoleUser 普通用户（默认角色）
 	RoleUser uint64 = 1 << 0 // 1
 
-	// RoleCMSAdmin CMS 管理员（可以管理 Payload CMS 所有内容）
-	RoleCMSAdmin uint64 = 1 << 1 // 2
-
-	// RoleCMSEditor CMS 编辑（只能编辑自己的内容）
-	RoleCMSEditor uint64 = 1 << 2 // 4
-
 	// RoleMarketing 市场营销（EDM、活动、推广相关功能）
 	RoleMarketing uint64 = 1 << 3 // 8
 
@@ -32,8 +26,6 @@ const (
 // RoleNames 角色名称映射（用于调试和日志）
 var RoleNames = map[uint64]string{
 	RoleUser:      "user",
-	RoleCMSAdmin:  "cms_admin",
-	RoleCMSEditor: "cms_editor",
 	RoleMarketing: "marketing",
 	RoleOpsViewer: "ops_viewer",
 	RoleOpsEditor: "ops_editor",
@@ -41,11 +33,8 @@ var RoleNames = map[uint64]string{
 }
 
 // RoleByName 角色名称到位掩码的反向映射（用于 CLI 和 API 赋权）
-// RoleByName 角色名称到位掩码的反向映射（用于 CLI 和 API 赋权）
 var RoleByName = map[string]uint64{
 	"user":       RoleUser,
-	"cms_admin":  RoleCMSAdmin,
-	"cms_editor": RoleCMSEditor,
 	"marketing":  RoleMarketing,
 	"ops_viewer": RoleOpsViewer,
 	"ops_editor": RoleOpsEditor,

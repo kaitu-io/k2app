@@ -101,7 +101,7 @@ Semantics: replace-all. The --roles list becomes the complete new role set.
 RoleUser bit is always preserved regardless of input.
 To add a single role without removing others, include all current roles in --roles.
 
-Valid role names: user, cms_admin, cms_editor, super, ops_viewer, ops_editor, support
+Valid role names: user, marketing, ops_viewer, ops_editor, support
 
 Examples:
   # Grant ops viewer + support roles
