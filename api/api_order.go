@@ -111,9 +111,40 @@ func api_create_order(c *gin.Context) {
 	log.Debugf(c, "order object created: Title=%s, OriginAmount=%d, PayAmount=%d", order.Title, order.OriginAmount, order.PayAmount)
 
 	var campaign *Campaign
+	licenseKeyApplied := false
 
-	// 如果有优惠码，应用优惠
-	if req.CampaignCode != "" {
+	// Check if the code is a LicenseKey UUID (xid = exactly 20 chars) rather than a Campaign code
+	if req.CampaignCode != "" && len(req.CampaignCode) == 20 {
+		log.Infof(c, "processing license key UUID: %s for user %d", req.CampaignCode, user.ID)
+		key, err := GetLicenseKeyByUUID(c.Request.Context(), req.CampaignCode)
+		if err != nil || key.IsUsed || key.IsExpired() {
+			log.Warnf(c, "license key %s is invalid, used, or expired for user %d", req.CampaignCode, user.ID)
+			Error(c, ErrorLicenseKeyNotFound, "invalid or expired license key")
+			return
+		}
+		if !MatchLicenseKey(key, user) {
+			log.Warnf(c, "license key %s not eligible for user %d", req.CampaignCode, user.ID)
+			Error(c, ErrorLicenseKeyNotMatch, "not eligible to use this key")
+			return
+		}
+		newAmount, reduced := ApplyLicenseKeyDiscount(key, order.OriginAmount)
+		order.PayAmount = newAmount
+		order.CampaignReduceAmount = reduced
+		order.CampaignCode = &req.CampaignCode
+		log.Debugf(c, "license key applied: CampaignCode=%s, CampaignReduceAmount=%d, PayAmount=%d",
+			*order.CampaignCode, order.CampaignReduceAmount, order.PayAmount)
+		// Consume atomically
+		if _, err := ConsumeLicenseKey(c.Request.Context(), db.Get(), req.CampaignCode, user.ID); err != nil {
+			log.Warnf(c, "license key %s already used or consume failed for user %d: %v", req.CampaignCode, user.ID, err)
+			Error(c, ErrorLicenseKeyUsed, "license key already used")
+			return
+		}
+		log.Infof(c, "license key %s consumed for user %d, new amount: %d", req.CampaignCode, user.ID, order.PayAmount)
+		licenseKeyApplied = true
+	}
+
+	// 如果有优惠码，应用优惠（跳过已通过 LicenseKey 处理的情况）
+	if !licenseKeyApplied && req.CampaignCode != "" {
 		log.Infof(c, "processing campaign code: %s", req.CampaignCode)
 		campaign = getCampaignByCode(c, req.CampaignCode)
 		if campaign != nil {
@@ -148,7 +179,7 @@ func api_create_order(c *gin.Context) {
 			Error(c, ErrorInvalidCampaignCode, "invalid campaign code")
 			return
 		}
-	} else {
+	} else if !licenseKeyApplied {
 		log.Infof(c, "no campaign code provided, using original price")
 	}
 

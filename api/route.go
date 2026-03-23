@@ -106,6 +106,8 @@ func SetupRouter() *gin.Engine {
 		api.GET("/app/config", api_get_app_config)
 		// 获取 ECH 配置（公开接口，无需认证）
 		api.GET("/ech/config", api_fetch_ech_config)
+		// 获取礼品卡/授权码信息（公开接口，无需认证）
+		api.GET("/license-keys/:uuid", api_get_license_key)
 
 		user := api.Group("/user")
 		log.Debugf(ctx, "registering /api/user group")
