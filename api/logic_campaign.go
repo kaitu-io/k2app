@@ -2,11 +2,12 @@ package center
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
-	"gorm.io/gorm"
+	gormdb "gorm.io/gorm"
 )
 
 const (
@@ -40,8 +41,15 @@ func getCampaignByCode(ctx context.Context, code string) *Campaign {
 	return &campaign
 }
 
-// getCampaignMatcher 根据匹配器类型返回对应的匹配函数
-func getCampaignMatcher(matcherType string) func(ctx context.Context, user *User, order *Order) bool {
+// campaignMatcherParams holds JSON-decoded parameters for DB-aware matchers.
+type campaignMatcherParams struct {
+	BeforeDate int64 `json:"beforeDate"`
+}
+
+// getCampaignMatcherWithDB returns a matcher function for the given type and params.
+// db may be nil for matchers that don't need DB access; DB-dependent matchers will
+// return false safely when db is nil.
+func getCampaignMatcherWithDB(gdb *gormdb.DB, matcherType, params string) func(ctx context.Context, user *User, order *Order) bool {
 	switch matcherType {
 	case "first_order":
 		return func(ctx context.Context, user *User, order *Order) bool {
@@ -54,24 +62,67 @@ func getCampaignMatcher(matcherType string) func(ctx context.Context, user *User
 			log.Debugf(ctx, "checking VIP campaign for user %d, isVip: %v", user.ID, isVip)
 			return isVip
 		}
+	case "paid_before":
+		var p campaignMatcherParams
+		_ = json.Unmarshal([]byte(params), &p)
+		return func(ctx context.Context, user *User, order *Order) bool {
+			if gdb == nil || p.BeforeDate == 0 {
+				return false
+			}
+			var firstPaidAt time.Time
+			err := gdb.Model(&Order{}).
+				Where("user_id = ? AND is_paid = true", user.ID).
+				Order("paid_at ASC").
+				Limit(1).
+				Select("paid_at").
+				Scan(&firstPaidAt).Error
+			if err != nil || firstPaidAt.IsZero() {
+				return false
+			}
+			return firstPaidAt.Unix() < p.BeforeDate
+		}
+	case "paid_before_active":
+		var p campaignMatcherParams
+		_ = json.Unmarshal([]byte(params), &p)
+		return func(ctx context.Context, user *User, order *Order) bool {
+			if gdb == nil || p.BeforeDate == 0 {
+				return false
+			}
+			var firstPaidAt time.Time
+			err := gdb.Model(&Order{}).
+				Where("user_id = ? AND is_paid = true", user.ID).
+				Order("paid_at ASC").
+				Limit(1).
+				Select("paid_at").
+				Scan(&firstPaidAt).Error
+			if err != nil || firstPaidAt.IsZero() {
+				return false
+			}
+			if firstPaidAt.Unix() >= p.BeforeDate {
+				return false
+			}
+			return user.ExpiredAt > time.Now().Unix()
+		}
 	case "all":
 		return func(ctx context.Context, user *User, order *Order) bool {
 			log.Debugf(ctx, "campaign matches all users")
 			return true
 		}
 	default:
-		return func(ctx context.Context, user *User, order *Order) bool {
-			log.Warnf(ctx, "unknown matcher type: %s", matcherType)
-			return false
-		}
+		return nil
 	}
+}
+
+// getCampaignMatcher 根据匹配器类型返回对应的匹配函数（无 DB 参数，向后兼容）
+func getCampaignMatcher(matcherType string) func(ctx context.Context, user *User, order *Order) bool {
+	return getCampaignMatcherWithDB(nil, matcherType, "")
 }
 
 // incrementCampaignUsage 增加活动使用次数
 func incrementCampaignUsage(ctx context.Context, code string) error {
 	log.Debugf(ctx, "incrementing usage for campaign: %s", code)
 
-	result := db.Get().Model(&Campaign{}).Where(&Campaign{Code: code}).Update("usage_count", gorm.Expr("usage_count + 1"))
+	result := db.Get().Model(&Campaign{}).Where(&Campaign{Code: code}).Update("usage_count", gormdb.Expr("usage_count + 1"))
 	if result.Error != nil {
 		log.Errorf(ctx, "failed to increment campaign usage: %v", result.Error)
 		return result.Error
@@ -91,7 +142,7 @@ func matchCampaign(ctx context.Context, campaign *Campaign, user *User, order *O
 	}
 
 	// 根据匹配器类型获取匹配函数
-	matcher := getCampaignMatcher(campaign.MatcherType)
+	matcher := getCampaignMatcherWithDB(db.Get(), campaign.MatcherType, campaign.MatcherParams)
 	if matcher == nil {
 		log.Warnf(ctx, "campaign %s has invalid matcher type: %s", campaign.Code, campaign.MatcherType)
 		return false
