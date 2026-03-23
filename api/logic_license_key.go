@@ -141,10 +141,7 @@ func GenerateLicenseKeysForCampaign(ctx context.Context, campaign *Campaign) (in
 
 	batchSize := 100
 	for i := 0; i < len(keys); i += batchSize {
-		end := i + batchSize
-		if end > len(keys) {
-			end = len(keys)
-		}
+		end := min(i+batchSize, len(keys))
 		if err := db.Get().CreateInBatches(keys[i:end], batchSize).Error; err != nil {
 			return int64(i), fmt.Errorf("batch insert at offset %d: %w", i, err)
 		}
