@@ -46,6 +46,7 @@ interface UserListItem {
   isFirstOrderDone: boolean;
   loginIdentifies: { type: string; value: string }[];
   isRetailer?: boolean;
+  roles?: number;
   retailerConfig?: {
     level: number;
     levelName: string;
@@ -62,6 +63,14 @@ interface UserListItem {
     totalWithdrawn: number;
   };
 }
+
+// 角色名映射
+const ROLE_LABELS: { bit: number; label: string }[] = [
+  { bit: 8,  label: "市场" },
+  { bit: 16, label: "运营(读)" },
+  { bit: 32, label: "运营(写)" },
+  { bit: 64, label: "客服" },
+];
 
 // 等级颜色映射
 const levelColors: Record<number, string> = {
@@ -172,6 +181,24 @@ export default function UsersPage() {
       header: "是否付费",
       cell: ({ row }: { row: Row<UserListItem> }) =>
         row.getValue("isFirstOrderDone") ? "是" : "否",
+    },
+    {
+      accessorKey: "roles",
+      header: "角色",
+      cell: ({ row }: { row: Row<UserListItem> }) => {
+        const roles = row.original.roles ?? 1;
+        const labels = ROLE_LABELS.filter(r => (roles & r.bit) !== 0).map(r => r.label);
+        if (labels.length === 0) return <span className="text-muted-foreground">{"-"}</span>;
+        return (
+          <div className="flex flex-wrap gap-1">
+            {labels.map(l => (
+              <span key={l} className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-primary/10 text-primary">
+                {l}
+              </span>
+            ))}
+          </div>
+        );
+      },
     },
     {
       accessorKey: "retailerConfig",

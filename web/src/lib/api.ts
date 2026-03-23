@@ -350,6 +350,7 @@ export interface AuthUser {
   id: number;
   email: string;
   isAdmin: boolean;
+  roles: number;
 }
 
 export interface SendAuthCodeRequest {
@@ -1546,6 +1547,7 @@ export const api = {
     id: number;
     email?: string;
     isAdmin?: boolean;
+    roles?: number;
   }> {
     return this.request('/api/user/info', {
       ...options,

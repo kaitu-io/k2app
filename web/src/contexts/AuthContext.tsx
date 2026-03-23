@@ -16,6 +16,7 @@ interface User {
   id: number;
   email: string;
   isAdmin: boolean;
+  roles: number;
 }
 
 interface AuthContextType {
@@ -72,6 +73,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               id: userInfo.id,
               email: userInfo.email || "",
               isAdmin: userInfo.isAdmin || false,
+              roles: userInfo.roles ?? 1,
             });
           } catch {
             console.log("[AuthContext] Embed token invalid");
@@ -87,6 +89,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           id: userInfo.id,
           email: userInfo.email || "",
           isAdmin: userInfo.isAdmin || false,
+          roles: userInfo.roles ?? 1,
         });
       } catch {
         // Not authenticated or error - user stays null
