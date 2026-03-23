@@ -184,13 +184,20 @@ opsAdmin.Use(log.MiddlewareRequestLog(true), MiddleRecovery(), CORSMiddleware(),
 
 ### Gin routing collision analysis
 
-Routes staying in `admin` group that share path prefix with `opsAdmin`:
+Gin panics at startup on duplicate method+path registration across any group. The access matrix routes are **moved** from `admin` to `opsAdmin` — they must be deleted from the `admin` block before being added to `opsAdmin`. Specific cases to verify:
 
-- `GET /app/users/statistics` (static) — takes priority over `GET /app/users/:uuid` (param). No collision.
-- `GET /app/devices/statistics`, `GET /app/devices/active` — different prefix from `opsAdmin` routes. No collision.
-- `GET /app/orders/statistics` — no overlap. No collision.
+- `GET /app/users/:uuid` — currently at `route.go:256` in `admin` group. **Must be deleted from `admin`** before registering in `opsAdmin`. Failure to do so = startup panic.
+- `GET /app/users/:uuid/devices` — same: currently at `route.go:272` in `admin`. **Must be deleted from `admin`**.
+- `GET /app/users` — currently at `route.go:255` in `admin`. **Must be deleted from `admin`**.
+- Same applies to all 24 routes in the access matrix.
 
-Gin panics at startup on duplicate method+path registration. Since routes are moved (not duplicated), no panic.
+Routes **staying** in `admin` that share prefix but differ by path or method — no conflict:
+
+- `GET /app/users/statistics` (static segment) — Gin gives static priority over `:uuid` param. Safe.
+- `PUT /app/users/:uuid/retailer-status`, `PUT /app/users/:uuid/membership`, etc. — different method or trailing segment from opsAdmin routes. Safe.
+- `GET /app/devices/statistics`, `GET /app/devices/active` — no opsAdmin route at `/devices/*`. Safe.
+- `GET /app/orders/statistics` — no opsAdmin route at `/orders/*`. Safe.
+- New `PUT /app/users/:uuid/roles` endpoint in `admin` — different method (PUT) and deeper path than `GET /app/users/:uuid` in opsAdmin. Safe.
 
 ## Role Management
 
@@ -205,7 +212,9 @@ New subcommand `user set-roles`:
   -c config.yml
 ```
 
-Logic: parse `--roles` using `RoleByName`, OR bits together, preserve `RoleUser` bit, write via `db.Get().Model(&User{}).Update("roles", newRoles)`.
+Logic: **replace-all semantics** — the `--roles` list becomes the complete new role set, replacing whatever existed before. `RoleUser` bit is always OR'd in. Steps: look up each name via `RoleByName` (error on unknown name), OR bits together, OR in `RoleUser`, write via `db.Get().Model(&User{}).Update("roles", newRoles)`.
+
+> To add a single role without changing others, include all currently assigned roles in `--roles`. The admin API endpoint (`PUT /app/users/:uuid/roles`) is the preferred tool for incremental web-based management.
 
 ### Admin API (`api_admin_user.go`)
 
