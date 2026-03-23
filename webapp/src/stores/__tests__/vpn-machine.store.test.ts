@@ -557,3 +557,117 @@ describe('useVPNMachine hook', () => {
     expect(result.current.isInteractive).toBe(true);
   });
 });
+
+// ==================== Safety-Net Poll Tests ====================
+
+describe('initializeVPNMachine — safety-net poll (event-driven mode)', () => {
+  let runMock: ReturnType<typeof vi.fn>;
+  let cleanup: (() => void) | undefined;
+
+  beforeEach(async () => {
+    vi.useFakeTimers();
+    vi.resetModules();
+    runMock = vi.fn().mockResolvedValue({ code: 0, data: { state: 'connected' } });
+    (window as any)._k2 = {
+      onServiceStateChange: vi.fn((cb) => { cb(true); return () => {}; }),
+      onStatusChange: vi.fn(() => () => {}),
+      run: runMock,
+    };
+  });
+
+  afterEach(() => {
+    cleanup?.();
+    delete (window as any)._k2;
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  it('poll fires at 15s but not before', async () => {
+    const { initializeVPNMachine } = await import('../../stores/vpn-machine.store');
+    cleanup = initializeVPNMachine();
+    await Promise.resolve(); // flush initial query
+    const callsAfterInit = runMock.mock.calls.length; // 1 (initial)
+    vi.advanceTimersByTime(14999);
+    await Promise.resolve();
+    expect(runMock.mock.calls.length).toBe(callsAfterInit); // no extra calls yet
+    vi.advanceTimersByTime(1);
+    await Promise.resolve();
+    expect(runMock.mock.calls.length).toBe(callsAfterInit + 1); // poll fired
+  });
+
+  it('poll fires again at 30s: 3 total calls (1 initial + 2 polls)', async () => {
+    const { initializeVPNMachine } = await import('../../stores/vpn-machine.store');
+    cleanup = initializeVPNMachine();
+    await Promise.resolve();
+    vi.advanceTimersByTime(30000);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(runMock.mock.calls.length).toBe(3);
+  });
+
+  it('recovery: stuck reconnecting resolves to connected after poll', async () => {
+    // Initial query returns error state with retrying → machine enters reconnecting
+    runMock.mockResolvedValueOnce({
+      code: 0,
+      data: { state: 'error', error: { code: 108, message: 'wire error' }, retrying: true },
+    });
+    // Subsequent calls (poll) return clean connected
+    runMock.mockResolvedValue({ code: 0, data: { state: 'connected' } });
+
+    const { initializeVPNMachine, useVPNMachineStore } = await import('../../stores/vpn-machine.store');
+    cleanup = initializeVPNMachine();
+    await Promise.resolve(); // flush initial query → reconnecting
+
+    expect(useVPNMachineStore.getState().state).toBe('reconnecting');
+
+    // Advance 15s to fire poll → clean connected → BACKEND_CONNECTED → reconnecting→connected
+    vi.advanceTimersByTime(15000);
+    await Promise.resolve();
+    await Promise.resolve();
+    const { state } = useVPNMachineStore.getState();
+    expect(state).toBe('connected');
+  });
+
+  it('cleanup stops poll: run not called after cleanup', async () => {
+    const { initializeVPNMachine } = await import('../../stores/vpn-machine.store');
+    cleanup = initializeVPNMachine();
+    await Promise.resolve();
+    const callsBeforeCleanup = runMock.mock.calls.length;
+    cleanup();
+    cleanup = undefined;
+    vi.advanceTimersByTime(30000);
+    await Promise.resolve();
+    expect(runMock.mock.calls.length).toBe(callsBeforeCleanup);
+  });
+
+  it('silent on run() rejection: state unchanged, no SERVICE_UNREACHABLE', async () => {
+    // Start in idle, poll rejects
+    runMock.mockResolvedValueOnce({ code: 0, data: { state: 'disconnected' } }); // initial
+    runMock.mockRejectedValue(new Error('network error')); // poll always throws
+
+    const { initializeVPNMachine, useVPNMachineStore } = await import('../../stores/vpn-machine.store');
+    cleanup = initializeVPNMachine();
+    await Promise.resolve();
+    vi.advanceTimersByTime(15000);
+    await Promise.resolve();
+    await Promise.resolve();
+    const { state } = useVPNMachineStore.getState();
+    expect(state).not.toBe('serviceDown'); // no SERVICE_UNREACHABLE dispatched
+  });
+
+  it('idempotent when already connected: state stays connected', async () => {
+    runMock.mockResolvedValue({ code: 0, data: { state: 'connected' } });
+    const { initializeVPNMachine, dispatch, useVPNMachineStore } = await import('../../stores/vpn-machine.store');
+    // First get into connected state via dispatch
+    dispatch('USER_CONNECT');
+    dispatch('BACKEND_CONNECTED');
+    expect(useVPNMachineStore.getState().state).toBe('connected');
+
+    cleanup = initializeVPNMachine();
+    await Promise.resolve();
+    vi.advanceTimersByTime(15000);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(useVPNMachineStore.getState().state).toBe('connected');
+  });
+});

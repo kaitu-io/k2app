@@ -246,9 +246,26 @@ export function initializeVPNMachine(): () => void {
       }
     }).catch(() => {});
 
+    // Safety-net poll: on iOS, NEVPNStatusDidChange does not fire for engine-level error
+    // overlay changes (connected+error ↔ connected). This poll is the only reliable path
+    // to recover from a stale reconnecting state on iOS. Silent failures are intentional —
+    // this is not a health probe; NE push events remain the primary delivery mechanism.
+    const safetyNetInterval = setInterval(async () => {
+      try {
+        const resp = await window._k2.run('status') as any;
+        if (resp.code === 0 && resp.data) {
+          dispatchStatus(resp.data);
+        }
+        // resp.code !== 0: silent. Not a service health failure — handled by onServiceStateChange.
+      } catch {
+        // Silent: poll is eventual-consistency supplement, not primary health probe.
+      }
+    }, 15_000);
+
     return () => {
       unsubService();
       unsubStatus();
+      clearInterval(safetyNetInterval);
       clearReconnectDebounce();
       useVPNMachineStore.setState({ state: 'idle', error: null, isRetrying: false, networkAvailable: true, initialization: null });
     };
