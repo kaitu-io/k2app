@@ -76,6 +76,15 @@ func ConsumeLicenseKey(ctx context.Context, tx *gormdb.DB, uuid string, userID u
 		return nil, ErrLicenseKeyExpired
 	}
 
+	// 同一用户只能使用一个 LicenseKey
+	var existingUseCount int64
+	if err := tx.Model(&LicenseKey{}).Where("used_by_user_id = ?", userID).Count(&existingUseCount).Error; err != nil {
+		return nil, err
+	}
+	if existingUseCount > 0 {
+		return nil, ErrLicenseKeyNotMatch
+	}
+
 	now := time.Now()
 	result := tx.Model(&LicenseKey{}).
 		Where("uuid = ? AND is_used = false", uuid).
