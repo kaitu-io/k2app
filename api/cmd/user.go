@@ -92,6 +92,52 @@ var userDelRetailerCmd = &cobra.Command{
 	},
 }
 
+var userSetRolesCmd = &cobra.Command{
+	Use:   "set-roles",
+	Short: "Set roles for a user (replace-all semantics, RoleUser always preserved)",
+	Long: `Set the role bitmask for a user identified by email.
+
+Semantics: replace-all. The --roles list becomes the complete new role set.
+RoleUser bit is always preserved regardless of input.
+To add a single role without removing others, include all current roles in --roles.
+
+Valid role names: user, cms_admin, cms_editor, super, ops_viewer, ops_editor, support
+
+Examples:
+  # Grant ops viewer + support roles
+  center user set-roles --email ai@example.com --roles ops_viewer,support -c config.yml
+
+  # Grant full ops roles (viewer + editor + support)
+  center user set-roles --email employee@example.com --roles ops_viewer,ops_editor,support -c config.yml
+
+  # Reset to plain user (no admin roles)
+  center user set-roles --email user@example.com --roles user -c config.yml
+`,
+	Run: func(cmd *cobra.Command, args []string) {
+		email, _ := cmd.Flags().GetString("email")
+		rolesFlag, _ := cmd.Flags().GetString("roles")
+
+		if rolesFlag == "" {
+			fmt.Println("Error: --roles is required (e.g. --roles ops_viewer,ops_editor)")
+			return
+		}
+
+		roleNames := strings.Split(rolesFlag, ",")
+		for i, name := range roleNames {
+			roleNames[i] = strings.TrimSpace(name)
+		}
+
+		newRoles, err := center.SetUserRoles(context.Background(), email, roleNames)
+		if err != nil {
+			fmt.Printf("Error setting roles: %v\n", err)
+			return
+		}
+		fmt.Printf("Roles updated for user %s\n", email)
+		fmt.Printf("  Bitmask: %d\n", newRoles)
+		fmt.Printf("  Names:   %v\n", center.GetRoleNames(newRoles))
+	},
+}
+
 var userSendEmailCmd = &cobra.Command{
 	Use:   "send-email",
 	Short: "Send an email to a user via --email flag",
@@ -190,6 +236,12 @@ func init() {
 	userDelRetailerCmd.Flags().String("email", "", "User's email address")
 	userDelRetailerCmd.MarkFlagRequired("email")
 
+	// Set-roles subcommand
+	userSetRolesCmd.Flags().String("email", "", "User's email address")
+	userSetRolesCmd.Flags().String("roles", "", "Comma-separated role names (e.g. ops_viewer,ops_editor,support)")
+	userSetRolesCmd.MarkFlagRequired("email")
+	userSetRolesCmd.MarkFlagRequired("roles")
+
 	// Send-email subcommand
 	userSendEmailCmd.Flags().String("email", "", "Recipient's email address (required)")
 	userSendEmailCmd.Flags().String("subject", "", "Email subject (required)")
@@ -205,6 +257,7 @@ func init() {
 		userDelAdminCmd,
 		userSetRetailerCmd,
 		userDelRetailerCmd,
+		userSetRolesCmd,
 		userSendEmailCmd,
 	)
 }
