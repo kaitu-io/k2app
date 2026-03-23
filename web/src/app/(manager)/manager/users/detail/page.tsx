@@ -134,7 +134,16 @@ interface UserDetailData {
   retailerConfig?: DataRetailerConfig;
   wallet?: DataWallet;
   walletChanges?: DataWalletChange[];
+  roles?: number;
 }
+
+// 可分配的角色列表（不含 RoleUser，始终保留）
+const ASSIGNABLE_ROLES: { name: string; label: string; bit: number }[] = [
+  { name: 'marketing',  label: '市场推广',    bit: 8  },
+  { name: 'ops_viewer', label: '运营只读',    bit: 16 },
+  { name: 'ops_editor', label: '运营编辑',    bit: 32 },
+  { name: 'support',    label: '客服支持',    bit: 64 },
+];
 
 // 安全的日期格式化函数
 const safeFormatDate = (
@@ -189,6 +198,11 @@ function UserDetailContent() {
 
   // Email editing state
   const [isEditingEmail, setIsEditingEmail] = useState(false);
+
+  // Roles editing state
+  const [isEditingRoles, setIsEditingRoles] = useState(false);
+  const [editRoles, setEditRoles] = useState<string[]>([]);
+  const [isSavingRoles, setIsSavingRoles] = useState(false);
 
   // Fetch devices
   useEffect(() => {
@@ -390,6 +404,23 @@ function UserDetailContent() {
     }
   };
 
+  // 保存角色
+  const handleSaveRoles = async () => {
+    if (!uuid) return;
+    setIsSavingRoles(true);
+    try {
+      const result = await api.setUserRoles(uuid, editRoles);
+      setUserDetail(prev => prev ? { ...prev, roles: result.roles } : null);
+      setIsEditingRoles(false);
+      toast.success('角色权限已更新');
+    } catch (error) {
+      console.error('Failed to update roles:', error);
+      toast.error('更新角色权限失败');
+    } finally {
+      setIsSavingRoles(false);
+    }
+  };
+
   // 复制到剪贴板
   const handleCopyToClipboard = async (text: string, label: string) => {
     try {
@@ -517,6 +548,71 @@ function UserDetailContent() {
               </div>
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* 角色权限 */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>{"角色权限"}</CardTitle>
+            {!isEditingRoles ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const current = userDetail.roles ?? 1;
+                  setEditRoles(ASSIGNABLE_ROLES.filter(r => (current & r.bit) !== 0).map(r => r.name));
+                  setIsEditingRoles(true);
+                }}
+              >
+                {"编辑角色"}
+              </Button>
+            ) : (
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => setIsEditingRoles(false)} disabled={isSavingRoles}>
+                  {"取消"}
+                </Button>
+                <Button size="sm" onClick={handleSaveRoles} disabled={isSavingRoles}>
+                  {isSavingRoles ? "保存中..." : "保存"}
+                </Button>
+              </div>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {!isEditingRoles ? (
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="secondary">{"普通用户 (默认)"}</Badge>
+              {ASSIGNABLE_ROLES.filter(r => (userDetail.roles ?? 1) & r.bit).map(r => (
+                <Badge key={r.name}>{r.label}</Badge>
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">{"普通用户权限始终保留，以下为附加角色："}</p>
+              <div className="flex flex-wrap gap-4">
+                {ASSIGNABLE_ROLES.map(r => (
+                  <label key={r.name} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={editRoles.includes(r.name)}
+                      onChange={e => {
+                        if (e.target.checked) {
+                          setEditRoles(prev => [...prev, r.name]);
+                        } else {
+                          setEditRoles(prev => prev.filter(n => n !== r.name));
+                        }
+                      }}
+                    />
+                    <span className="text-sm">{r.label}</span>
+                    <span className="text-xs text-muted-foreground">{"("}{r.name}{")"}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
