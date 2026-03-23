@@ -1,6 +1,7 @@
 package center
 
 import (
+	"context"
 	"slices"
 	"strconv"
 
@@ -76,6 +77,14 @@ func api_admin_issue_license_keys(c *gin.Context) {
 		KeysToIssue:   count,
 		Issued:        true,
 	}
+	// Send gift emails asynchronously — failures are logged but don't fail the API call
+	go func() {
+		bgCtx := context.Background()
+		if err := SendLicenseKeyEmails(bgCtx, campaign.ID); err != nil {
+			log.Warnf(bgCtx, "[LICENSE_KEY] async email send failed for campaign %d: %v", campaign.ID, err)
+		}
+	}()
+
 	log.Infof(c, "issued %d license keys for campaign %d", count, id)
 	Success(c, &resp)
 }
