@@ -16,8 +16,8 @@ const (
 	// RoleCMSEditor CMS 编辑（只能编辑自己的内容）
 	RoleCMSEditor uint64 = 1 << 2 // 4
 
-	// RoleSuper 超级管理员（拥有所有权限）
-	RoleSuper uint64 = 1 << 3 // 8
+	// RoleMarketing 市场营销（EDM、活动、推广相关功能）
+	RoleMarketing uint64 = 1 << 3 // 8
 
 	// RoleOpsViewer 运维只读（节点/隧道/云实例/用户/日志/工单 只读）
 	RoleOpsViewer uint64 = 1 << 4 // 16
@@ -34,19 +34,19 @@ var RoleNames = map[uint64]string{
 	RoleUser:      "user",
 	RoleCMSAdmin:  "cms_admin",
 	RoleCMSEditor: "cms_editor",
-	RoleSuper:     "super",
+	RoleMarketing: "marketing",
 	RoleOpsViewer: "ops_viewer",
 	RoleOpsEditor: "ops_editor",
 	RoleSupport:   "support",
 }
 
 // RoleByName 角色名称到位掩码的反向映射（用于 CLI 和 API 赋权）
-// 注意：RoleSuper 不在此映射中。超级管理员权限通过 IsAdmin 字段控制，
-// 与 Roles 位掩码是两套独立机制，通过 set-roles 设置 super bit 无任何实际效果。
+// RoleByName 角色名称到位掩码的反向映射（用于 CLI 和 API 赋权）
 var RoleByName = map[string]uint64{
 	"user":       RoleUser,
 	"cms_admin":  RoleCMSAdmin,
 	"cms_editor": RoleCMSEditor,
+	"marketing":  RoleMarketing,
 	"ops_viewer": RoleOpsViewer,
 	"ops_editor": RoleOpsEditor,
 	"support":    RoleSupport,
