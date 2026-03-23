@@ -1,0 +1,52 @@
+{
+  "gift": {
+    "title": "{name} sent you a gift",
+    "subtitle": "Kaitu VPN exclusive offer",
+    "discount": "{value}% off",
+    "coupon": "¥{value} off",
+    "expires": "{days} days remaining",
+    "cta": "Claim now",
+    "used": "This gift has already been claimed",
+    "expired": "This gift has expired",
+    "fallback": "See new user offers",
+    "loading": "Loading..."
+  },
+  "admin": {
+    "title": "License Keys",
+    "columns": {
+      "uuid": "Code",
+      "discount": "Discount",
+      "status": "Status",
+      "expires": "Expires",
+      "campaign": "Campaign",
+      "createdAt": "Created"
+    },
+    "status": {
+      "unused": "Unused",
+      "used": "Used",
+      "expired": "Expired"
+    },
+    "filters": {
+      "all": "All",
+      "used": "Used",
+      "unused": "Unused"
+    }
+  },
+  "campaigns": {
+    "matcherParams": {
+      "beforeDate": "First payment cutoff date"
+    },
+    "shareable": {
+      "label": "Enable referral sharing",
+      "sharesPerUser": "Shares per user",
+      "issueKeys": "Issue keys now",
+      "dryRun": "Estimate eligible users",
+      "confirmIssue": "Issue {n} keys to {count} users ({total} total)?",
+      "issueSuccess": "Successfully issued {total} keys"
+    },
+    "matchers": {
+      "paid_before": "Users who first paid before {date}",
+      "paid_before_active": "Users who first paid before {date} with active plan"
+    }
+  }
+}

@@ -1871,6 +1871,50 @@ export const api = {
     });
   },
 
+  // License Key APIs
+  async getLicenseKey(uuid: string): Promise<LicenseKeyPublic> {
+    return this.request<LicenseKeyPublic>(`/api/license-keys/${uuid}`);
+  },
+
+  async listAdminLicenseKeys(params: {
+    campaignId?: number;
+    isUsed?: boolean;
+    page?: number;
+    pageSize?: number;
+  } = {}): Promise<{ items: LicenseKeyAdmin[]; total: number }> {
+    const queryParams = new URLSearchParams();
+    if (params.campaignId !== undefined) queryParams.set('campaignId', params.campaignId.toString());
+    if (params.isUsed !== undefined) queryParams.set('isUsed', params.isUsed.toString());
+    if (params.page !== undefined) queryParams.set('page', params.page.toString());
+    if (params.pageSize !== undefined) queryParams.set('pageSize', params.pageSize.toString());
+    const query = queryParams.toString();
+    return this.request<{ items: LicenseKeyAdmin[]; total: number }>(`/app/license-keys${query ? '?' + query : ''}`);
+  },
+
+  async issueKeys(campaignId: number, req: IssueKeysRequest): Promise<IssueKeysResponse> {
+    return this.request<IssueKeysResponse>(`/app/campaigns/${campaignId}/issue-keys`, {
+      method: 'POST',
+      body: JSON.stringify(req),
+    });
+  },
+
+  async deleteAdminLicenseKey(id: number): Promise<void> {
+    return this.request<void>(`/app/license-keys/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  async getLicenseKeyStats(): Promise<LicenseKeyStatsRow[]> {
+    return this.request<LicenseKeyStatsRow[]>('/app/license-keys/stats');
+  },
+
+  async previewLicenseKey(uuid: string): Promise<{ discountType: string; discountValue: number; expiresAt: number; isValid: boolean }> {
+    return this.request<{ discountType: string; discountValue: number; expiresAt: number; isValid: boolean }>(`/api/license-keys/${uuid}/preview`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  },
+
 };
 
 // ==================== Cloud Instance Types ====================
@@ -2021,4 +2065,50 @@ export interface AdminNodeItem {
   ipv6: string;
   updatedAt: number;
   tunnels: AdminNodeTunnel[];
+}
+
+// ============================================================
+// LicenseKey types
+// ============================================================
+
+export interface LicenseKeyPublic {
+  uuid: string;
+  discountType: 'discount' | 'coupon';
+  discountValue: number;
+  expiresAt: number;
+  isUsed: boolean;
+  isExpired: boolean;
+  senderName: string;
+}
+
+export interface LicenseKeyAdmin {
+  id: number;
+  uuid: string;
+  discountType: string;
+  discountValue: number;
+  recipientMatcher: string;
+  expiresAt: number;
+  campaignId?: number;
+  createdByUserId?: number;
+  isUsed: boolean;
+  usedByUserId?: number;
+  usedAt?: number;
+  createdAt: number;
+}
+
+export interface IssueKeysRequest {
+  dryRun: boolean;
+}
+
+export interface IssueKeysResponse {
+  eligibleUsers: number;
+  keysToIssue: number;
+  issued: boolean;
+}
+
+export interface LicenseKeyStatsRow {
+  campaignId?: number;
+  total: number;
+  used: number;
+  expired: number;
 }
