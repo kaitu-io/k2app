@@ -117,6 +117,52 @@ func SetUserAdminStatus(ctx context.Context, email string, isAdmin bool) error {
 	return nil
 }
 
+// SetUserRoles sets the user role bitmask (replace-all semantics).
+// roleNames is a list of role names corresponding to keys in RoleByName (e.g. "ops_viewer", "ops_editor", "support").
+// RoleUser bit is always preserved and cannot be cleared.
+// Returns the written role value (including RoleUser).
+func SetUserRoles(ctx context.Context, email string, roleNames []string) (uint64, error) {
+	email = strings.ToLower(email)
+	indexID := secretHashIt(ctx, []byte(email))
+
+	var identify LoginIdentify
+	if err := db.Get().Where("type = ? AND index_id = ?", "email", indexID).First(&identify).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Warnf(ctx, "user with email %s not found for setting roles", hideEmail(email))
+			return 0, errors.New("user not found")
+		}
+		log.Errorf(ctx, "failed to find user by email %s: %v", hideEmail(email), err)
+		return 0, err
+	}
+
+	// Parse role names, reject unknown names (replace-all semantics).
+	var newRoles uint64 = RoleUser // Always preserve RoleUser
+	for _, name := range roleNames {
+		bit, ok := RoleByName[name]
+		if !ok {
+			return 0, fmt.Errorf("unknown role name: %q (valid: %v)", name, validRoleNames())
+		}
+		newRoles |= bit
+	}
+
+	if err := db.Get().Model(&User{}).Where("id = ?", identify.UserID).Update("roles", newRoles).Error; err != nil {
+		log.Errorf(ctx, "failed to update roles for user %d: %v", identify.UserID, err)
+		return 0, err
+	}
+
+	log.Infof(ctx, "roles updated for user %d: %d (%v)", identify.UserID, newRoles, GetRoleNames(newRoles))
+	return newRoles, nil
+}
+
+// validRoleNames returns a list of all valid role names (for error hints).
+func validRoleNames() []string {
+	names := make([]string, 0, len(RoleByName))
+	for name := range RoleByName {
+		names = append(names, name)
+	}
+	return names
+}
+
 // SetUserRetailerStatus finds a user by email and sets their retailer status, generating AccessKey if not exists.
 func SetUserRetailerStatus(ctx context.Context, email string, isRetailer bool) error {
 	email = strings.ToLower(email)
