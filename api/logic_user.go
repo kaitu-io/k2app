@@ -135,14 +135,9 @@ func SetUserRoles(ctx context.Context, email string, roleNames []string) (uint64
 		return 0, err
 	}
 
-	// Parse role names, reject unknown names (replace-all semantics).
-	var newRoles uint64 = RoleUser // Always preserve RoleUser
-	for _, name := range roleNames {
-		bit, ok := RoleByName[name]
-		if !ok {
-			return 0, fmt.Errorf("unknown role name: %q (valid: %v)", name, validRoleNames())
-		}
-		newRoles |= bit
+	newRoles, err := ParseRoleNames(roleNames)
+	if err != nil {
+		return 0, err
 	}
 
 	if err := db.Get().Model(&User{}).Where("id = ?", identify.UserID).Update("roles", newRoles).Error; err != nil {
@@ -152,15 +147,6 @@ func SetUserRoles(ctx context.Context, email string, roleNames []string) (uint64
 
 	log.Infof(ctx, "roles updated for user %d: %d (%v)", identify.UserID, newRoles, GetRoleNames(newRoles))
 	return newRoles, nil
-}
-
-// validRoleNames returns a list of all valid role names (for error hints).
-func validRoleNames() []string {
-	names := make([]string, 0, len(RoleByName))
-	for name := range RoleByName {
-		names = append(names, name)
-	}
-	return names
 }
 
 // SetUserRetailerStatus finds a user by email and sets their retailer status, generating AccessKey if not exists.

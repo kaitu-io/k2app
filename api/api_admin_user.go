@@ -3,7 +3,6 @@ package center
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strconv"
 	"time"
 
@@ -943,14 +942,10 @@ func api_admin_set_user_roles(c *gin.Context) {
 		return
 	}
 
-	var newRoles uint64 = RoleUser
-	for _, name := range req.Roles {
-		bit, ok := RoleByName[name]
-		if !ok {
-			Error(c, ErrorInvalidArgument, fmt.Sprintf("unknown role: %q", name))
-			return
-		}
-		newRoles |= bit
+	newRoles, err := ParseRoleNames(req.Roles)
+	if err != nil {
+		Error(c, ErrorInvalidArgument, err.Error())
+		return
 	}
 
 	if err := db.Get().Model(&user).Update("roles", newRoles).Error; err != nil {

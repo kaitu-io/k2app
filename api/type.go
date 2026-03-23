@@ -1,5 +1,7 @@
 package center
 
+import "fmt"
+
 // ========================= 角色定义（位运算） =========================
 // 使用位掩码支持多角色，一个 uint64 可存储 64 个角色
 // JWT 中使用短字段名 "r" 存储角色值
@@ -39,11 +41,12 @@ var RoleNames = map[uint64]string{
 }
 
 // RoleByName 角色名称到位掩码的反向映射（用于 CLI 和 API 赋权）
+// 注意：RoleSuper 不在此映射中。超级管理员权限通过 IsAdmin 字段控制，
+// 与 Roles 位掩码是两套独立机制，通过 set-roles 设置 super bit 无任何实际效果。
 var RoleByName = map[string]uint64{
 	"user":       RoleUser,
 	"cms_admin":  RoleCMSAdmin,
 	"cms_editor": RoleCMSEditor,
-	"super":      RoleSuper,
 	"ops_viewer": RoleOpsViewer,
 	"ops_editor": RoleOpsEditor,
 	"support":    RoleSupport,
@@ -73,6 +76,21 @@ func GetRoleNames(roles uint64) []string {
 		}
 	}
 	return names
+}
+
+// ParseRoleNames 解析角色名称列表为位掩码（replace-all 语义）
+// RoleUser bit 始终包含；遇到未知角色名称立即返回错误。
+// 两处调用方（CLI 和 Admin API）共用此函数保证验证逻辑一致。
+func ParseRoleNames(names []string) (uint64, error) {
+	roles := RoleUser
+	for _, name := range names {
+		bit, ok := RoleByName[name]
+		if !ok {
+			return 0, fmt.Errorf("unknown role: %q", name)
+		}
+		roles |= bit
+	}
+	return roles, nil
 }
 
 type DataLoginIdentify struct {
