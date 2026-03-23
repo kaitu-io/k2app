@@ -26,6 +26,7 @@ func Migrate() error {
 		&SlaveNodeLoad{},
 		&SessionAcct{},
 		&Campaign{},
+		&LicenseKey{},
 		&RetailerConfig{},
 		&RetailerLevelHistory{},
 		&EmailMarketingTemplate{},

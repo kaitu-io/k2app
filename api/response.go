@@ -1,6 +1,7 @@
 package center
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -34,6 +35,10 @@ const (
 	ErrorInvalidInviteCode       ErrorCode = 400004 // 邀请码无效
 	ErrorSelfInvitation          ErrorCode = 400005 // 不能使用自己的邀请码
 	ErrorInvalidCredentials      ErrorCode = 400006 // 无效的登录凭证
+	ErrorLicenseKeyNotFound      ErrorCode = 400007 // 授权码不存在
+	ErrorLicenseKeyUsed          ErrorCode = 400008 // 授权码已被使用
+	ErrorLicenseKeyExpired       ErrorCode = 400009 // 授权码已过期
+	ErrorLicenseKeyNotMatch      ErrorCode = 400010 // 不符合使用条件
 )
 
 type DataAny struct{}
@@ -153,3 +158,11 @@ func (r rerr) Error() string {
 func e(code ErrorCode, message string) rerr {
 	return rerr{code, message}
 }
+
+// LicenseKey sentinel errors
+var (
+	ErrLicenseKeyNotFound = errors.New("license key not found")
+	ErrLicenseKeyUsed     = errors.New("license key already used")
+	ErrLicenseKeyExpired  = errors.New("license key expired")
+	ErrLicenseKeyNotMatch = errors.New("license key recipient mismatch")
+)

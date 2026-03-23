@@ -704,6 +704,10 @@ type Campaign struct {
 	// 匹配条件类型（预定义）
 	MatcherType string `gorm:"type:varchar(50)" json:"matcherType"` // first_order, vip, all
 
+	MatcherParams string `gorm:"type:varchar(500)" json:"matcherParams"`
+	IsShareable   bool   `gorm:"default:false" json:"isShareable"`
+	SharesPerUser int64  `gorm:"default:0" json:"sharesPerUser"`
+
 	// 统计信息
 	UsageCount int64 `gorm:"default:0" json:"usageCount"` // 使用次数
 	MaxUsage   int64 `gorm:"default:0" json:"maxUsage"`   // 最大使用次数（0=无限制）
@@ -1005,4 +1009,29 @@ type CloudOperationLog struct {
 	CompletedAt *int64                                    // Operation completion time
 	Error       string `gorm:"type:text"`                 // Error message if failed
 }
+
+// LicenseKey 一次性授权码（定向分发，用于老带新）
+type LicenseKey struct {
+	ID        uint64         `gorm:"primarykey" json:"id"`
+	CreatedAt time.Time      `json:"createdAt"`
+	UpdatedAt time.Time      `json:"updatedAt"`
+	DeletedAt gorm.DeletedAt `gorm:"index"`
+
+	UUID string `gorm:"type:varchar(50);uniqueIndex;not null" json:"uuid"`
+
+	DiscountType  string `gorm:"type:varchar(20);not null" json:"discountType"`
+	DiscountValue uint64 `gorm:"not null" json:"discountValue"`
+
+	RecipientMatcher string `gorm:"type:varchar(50);not null" json:"recipientMatcher"`
+	ExpiresAt        int64  `gorm:"not null" json:"expiresAt"`
+
+	CampaignID *uint64 `gorm:"index" json:"campaignId"`
+
+	CreatedByUserID *uint64    `gorm:"index" json:"createdByUserId"`
+	IsUsed          bool       `gorm:"default:false" json:"isUsed"`
+	UsedByUserID    *uint64    `gorm:"index" json:"usedByUserId"`
+	UsedAt          *time.Time `json:"usedAt"`
+}
+
+func (LicenseKey) TableName() string { return "license_keys" }
 
