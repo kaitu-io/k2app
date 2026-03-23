@@ -17,7 +17,14 @@ const (
 	// RoleSuper 超级管理员（拥有所有权限）
 	RoleSuper uint64 = 1 << 3 // 8
 
-	// 预留 1<<4 到 1<<63 用于未来扩展
+	// RoleOpsViewer 运维只读（节点/隧道/云实例/用户/日志/工单 只读）
+	RoleOpsViewer uint64 = 1 << 4 // 16
+
+	// RoleOpsEditor 运维读写（含 OpsViewer 所有权限 + 节点/隧道/云实例变更）
+	RoleOpsEditor uint64 = 1 << 5 // 32
+
+	// RoleSupport 工单处理（工单状态变更 + 设备日志读）
+	RoleSupport uint64 = 1 << 6 // 64
 )
 
 // RoleNames 角色名称映射（用于调试和日志）
@@ -26,6 +33,20 @@ var RoleNames = map[uint64]string{
 	RoleCMSAdmin:  "cms_admin",
 	RoleCMSEditor: "cms_editor",
 	RoleSuper:     "super",
+	RoleOpsViewer: "ops_viewer",
+	RoleOpsEditor: "ops_editor",
+	RoleSupport:   "support",
+}
+
+// RoleByName 角色名称到位掩码的反向映射（用于 CLI 和 API 赋权）
+var RoleByName = map[string]uint64{
+	"user":       RoleUser,
+	"cms_admin":  RoleCMSAdmin,
+	"cms_editor": RoleCMSEditor,
+	"super":      RoleSuper,
+	"ops_viewer": RoleOpsViewer,
+	"ops_editor": RoleOpsEditor,
+	"support":    RoleSupport,
 }
 
 // HasRole 检查是否拥有指定角色
