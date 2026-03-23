@@ -727,8 +727,11 @@ export interface CampaignRequest {
   endAt: number;
   description?: string;
   isActive: boolean;
-  matcherType: string; // 'first_order' | 'vip' | 'all'
+  matcherType: string; // 'first_order' | 'vip' | 'all' | 'paid_before' | 'paid_before_active'
+  matcherParams?: string; // JSON string, e.g. {"beforeDate": 1735689600}
   maxUsage?: number;
+  isShareable?: boolean;
+  sharesPerUser?: number;
 }
 
 export interface CampaignResponse {
@@ -744,8 +747,11 @@ export interface CampaignResponse {
   description: string;
   isActive: boolean;
   matcherType: string;
+  matcherParams: string;
   usageCount: number;
   maxUsage: number;
+  isShareable: boolean;
+  sharesPerUser: number;
 }
 
 export interface CampaignListResponse {

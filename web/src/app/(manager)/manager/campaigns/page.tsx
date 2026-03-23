@@ -41,9 +41,32 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { api, CampaignResponse, CampaignRequest } from "@/lib/api";
+import { api, CampaignResponse, CampaignRequest, IssueKeysResponse } from "@/lib/api";
 import { toast } from "sonner";
-import { Plus, Edit, Trash2, Tag, TrendingUp, BarChart3, Calendar } from "lucide-react";
+import { Plus, Edit, Trash2, Tag, TrendingUp, BarChart3, Calendar, Key, Users } from "lucide-react";
+
+// Helper to convert datetime-local value to Unix timestamp
+function datetimeLocalToUnix(value: string): number {
+  return Math.floor(new Date(value).getTime() / 1000);
+}
+
+// Helper to parse matcherParams JSON safely
+function parseMatcherParams(params: string | undefined): { beforeDate?: number } {
+  if (!params) return {};
+  try {
+    return JSON.parse(params);
+  } catch {
+    return {};
+  }
+}
+
+// Helper to convert Unix timestamp to datetime-local input value
+function unixToDatetimeLocal(ts: number): string {
+  return new Date(ts * 1000).toISOString().slice(0, 16);
+}
+
+const isPaidBeforeMatcher = (matcherType: string) =>
+  matcherType === "paid_before" || matcherType === "paid_before_active";
 
 export default function CampaignsPage() {
   const [campaigns, setCampaigns] = useState<CampaignResponse[]>([]);
@@ -61,6 +84,11 @@ export default function CampaignsPage() {
     isActive: undefined as boolean | undefined
   });
 
+  // dryRun result dialog
+  const [dryRunResult, setDryRunResult] = useState<IssueKeysResponse | null>(null);
+  const [dryRunCampaignId, setDryRunCampaignId] = useState<number | null>(null);
+  const [issueLoading, setIssueLoading] = useState(false);
+
   // 表单状态
   const [formData, setFormData] = useState<CampaignRequest>({
     code: "",
@@ -72,7 +100,10 @@ export default function CampaignsPage() {
     description: "",
     isActive: true,
     matcherType: "all",
-    maxUsage: 0
+    maxUsage: 0,
+    matcherParams: "",
+    isShareable: false,
+    sharesPerUser: 1,
   });
 
   const campaignTypes = [
@@ -83,7 +114,9 @@ export default function CampaignsPage() {
   const matcherTypes = [
     { value: "first_order", label: "首单用户" },
     { value: "vip", label: "VIP用户" },
-    { value: "all", label: "所有用户" }
+    { value: "all", label: "所有用户" },
+    { value: "paid_before", label: "指定日期前首次付款" },
+    { value: "paid_before_active", label: "指定日期前首次付款且套餐有效" },
   ];
 
   const columns: ColumnDef<CampaignResponse>[] = [
@@ -136,7 +169,32 @@ export default function CampaignsPage() {
       cell: ({ row }) => {
         const matcherType = row.getValue("matcherType") as string;
         const typeInfo = matcherTypes.find(t => t.value === matcherType);
-        return <Badge variant="outline">{typeInfo?.label || matcherType}</Badge>;
+        const params = parseMatcherParams(row.original.matcherParams);
+        const label = typeInfo?.label || matcherType;
+        const dateStr = params.beforeDate
+          ? new Date(params.beforeDate * 1000).toLocaleDateString()
+          : "";
+        return (
+          <div>
+            <Badge variant="outline">{label}</Badge>
+            {dateStr && (
+              <div className="text-xs text-muted-foreground mt-1">{dateStr} 前</div>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      header: "老带新",
+      cell: ({ row }) => {
+        const campaign = row.original;
+        if (!campaign.isShareable) return <span className="text-muted-foreground text-sm">—</span>;
+        return (
+          <div className="flex items-center space-x-1">
+            <Key className="h-3 w-3 text-green-500" />
+            <span className="text-sm text-green-600">{campaign.sharesPerUser} 个/人</span>
+          </div>
+        );
       },
     },
     {
@@ -300,7 +358,10 @@ export default function CampaignsPage() {
       description: "",
       isActive: true,
       matcherType: "all",
-      maxUsage: 0
+      maxUsage: 0,
+      matcherParams: "",
+      isShareable: false,
+      sharesPerUser: 1,
     });
   };
 
@@ -329,7 +390,10 @@ export default function CampaignsPage() {
       description: campaign.description,
       isActive: campaign.isActive,
       matcherType: campaign.matcherType,
-      maxUsage: campaign.maxUsage
+      matcherParams: campaign.matcherParams || "",
+      maxUsage: campaign.maxUsage,
+      isShareable: campaign.isShareable || false,
+      sharesPerUser: campaign.sharesPerUser || 1,
     });
     setEditDialogOpen(true);
   };
@@ -364,14 +428,226 @@ export default function CampaignsPage() {
   };
 
   const handleViewStats = async (code: string) => {
-    // 这里可以跳转到统计页面或打开统计对话框
     toast.info(`查看活动 ${code} 的统计数据`);
   };
-
 
   const handleDateTimeChange = (field: 'startAt' | 'endAt', value: string) => {
     const timestamp = Math.floor(new Date(value).getTime() / 1000);
     setFormData(prev => ({ ...prev, [field]: timestamp }));
+  };
+
+  const handleMatcherParamsDateChange = (value: string) => {
+    const ts = datetimeLocalToUnix(value);
+    setFormData(prev => ({
+      ...prev,
+      matcherParams: JSON.stringify({ beforeDate: ts }),
+    }));
+  };
+
+  const handleIssueKeys = async (campaignId: number, dryRun: boolean) => {
+    setIssueLoading(true);
+    try {
+      const result = await api.issueKeys(campaignId, { dryRun });
+      if (dryRun) {
+        setDryRunResult(result);
+        setDryRunCampaignId(campaignId);
+      } else {
+        toast.success(`已成功发放 ${result.keysToIssue} 个授权码`);
+        setDryRunResult(null);
+        setDryRunCampaignId(null);
+      }
+    } catch (error) {
+      toast.error(dryRun ? "预估失败" : "发放失败");
+      console.error("Error issuing keys:", error);
+    } finally {
+      setIssueLoading(false);
+    }
+  };
+
+  // Shared form fields rendered for both create and edit dialogs
+  const renderFormFields = (idPrefix: string) => {
+    const parsedParams = parseMatcherParams(formData.matcherParams);
+    const beforeDateValue = parsedParams.beforeDate
+      ? unixToDatetimeLocal(parsedParams.beforeDate)
+      : "";
+
+    return (
+      <>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor={`${idPrefix}-code`}>{"优惠码 *"}</Label>
+            <Input
+              id={`${idPrefix}-code`}
+              value={formData.code}
+              onChange={(e) => setFormData(prev => ({ ...prev, code: e.target.value }))}
+              placeholder={"输入优惠码"}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor={`${idPrefix}-name`}>{"活动名称 *"}</Label>
+            <Input
+              id={`${idPrefix}-name`}
+              value={formData.name}
+              onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+              placeholder={"输入活动名称"}
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor={`${idPrefix}-type`}>{"活动类型"} {'*'}</Label>
+            <Select
+              value={formData.type}
+              onValueChange={(value) => setFormData(prev => ({ ...prev, type: value }))}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {campaignTypes.map(type => (
+                  <SelectItem key={type.value} value={type.value}>
+                    {type.icon} {type.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor={`${idPrefix}-value`}>
+              {"折扣值"} {'*'} {formData.type === 'discount' ? '(%)' : '($)'}
+            </Label>
+            <Input
+              id={`${idPrefix}-value`}
+              type="number"
+              value={formData.value}
+              onChange={(e) => setFormData(prev => ({ ...prev, value: Number(e.target.value) }))}
+              placeholder={formData.type === 'discount' ? '80' : '500'}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor={`${idPrefix}-matcherType`}>{"适用对象"} {'*'}</Label>
+            <Select
+              value={formData.matcherType}
+              onValueChange={(value) => setFormData(prev => ({ ...prev, matcherType: value, matcherParams: "" }))}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {matcherTypes.map(type => (
+                  <SelectItem key={type.value} value={type.value}>
+                    {type.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        {/* paid_before / paid_before_active date picker */}
+        {isPaidBeforeMatcher(formData.matcherType) && (
+          <div className="space-y-2">
+            <Label htmlFor={`${idPrefix}-beforeDate`}>{"首次付款截止日期"} {'*'}</Label>
+            <Input
+              id={`${idPrefix}-beforeDate`}
+              type="datetime-local"
+              value={beforeDateValue}
+              onChange={(e) => handleMatcherParamsDateChange(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              {formData.matcherType === "paid_before"
+                ? "仅限在此日期之前首次付款的用户"
+                : "仅限在此日期之前首次付款且当前套餐有效的用户"}
+            </p>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor={`${idPrefix}-startAt`}>{"开始时间"} {'*'}</Label>
+            <Input
+              id={`${idPrefix}-startAt`}
+              type="datetime-local"
+              value={new Date(formData.startAt * 1000).toISOString().slice(0, 16)}
+              onChange={(e) => handleDateTimeChange('startAt', e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor={`${idPrefix}-endAt`}>{"结束时间"} {'*'}</Label>
+            <Input
+              id={`${idPrefix}-endAt`}
+              type="datetime-local"
+              value={new Date(formData.endAt * 1000).toISOString().slice(0, 16)}
+              onChange={(e) => handleDateTimeChange('endAt', e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor={`${idPrefix}-maxUsage`}>{"最大使用次数"} {'(0='}{"无限制"}{')'}</Label>
+            <Input
+              id={`${idPrefix}-maxUsage`}
+              type="number"
+              value={formData.maxUsage}
+              onChange={(e) => setFormData(prev => ({ ...prev, maxUsage: Number(e.target.value) }))}
+              placeholder="0"
+            />
+          </div>
+          <div className="space-y-2 flex items-center">
+            <div className="flex items-center space-x-2">
+              <Switch
+                id={`${idPrefix}-isActive`}
+                checked={formData.isActive}
+                onCheckedChange={(checked) => setFormData(prev => ({ ...prev, isActive: checked }))}
+              />
+              <Label htmlFor={`${idPrefix}-isActive`}>{"启用活动"}</Label>
+            </div>
+          </div>
+        </div>
+
+        {/* Shareable configuration */}
+        <div className="space-y-3 rounded-md border p-4">
+          <div className="flex items-center space-x-2">
+            <Switch
+              id={`${idPrefix}-isShareable`}
+              checked={formData.isShareable || false}
+              onCheckedChange={(checked) => setFormData(prev => ({ ...prev, isShareable: checked }))}
+            />
+            <Label htmlFor={`${idPrefix}-isShareable`} className="flex items-center space-x-1">
+              <Key className="h-3 w-3" />
+              <span>{"启用老带新（生成可分享授权码）"}</span>
+            </Label>
+          </div>
+          {formData.isShareable && (
+            <div className="space-y-2">
+              <Label htmlFor={`${idPrefix}-sharesPerUser`}>{"每位用户可分享数量"}</Label>
+              <Input
+                id={`${idPrefix}-sharesPerUser`}
+                type="number"
+                min={1}
+                value={formData.sharesPerUser || 1}
+                onChange={(e) => setFormData(prev => ({ ...prev, sharesPerUser: Number(e.target.value) }))}
+                placeholder="1"
+                className="w-32"
+              />
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor={`${idPrefix}-description`}>{"活动描述"}</Label>
+          <Textarea
+            id={`${idPrefix}-description`}
+            value={formData.description}
+            onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+            placeholder="输入活动的详细描述..."
+            rows={3}
+          />
+        </div>
+      </>
+    );
   };
 
   return (
@@ -391,7 +667,7 @@ export default function CampaignsPage() {
               {"创建活动"}
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{"创建新活动"}</DialogTitle>
               <DialogDescription>
@@ -399,132 +675,7 @@ export default function CampaignsPage() {
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="code">{"优惠码 *"}</Label>
-                  <Input
-                    id="code"
-                    value={formData.code}
-                    onChange={(e) => setFormData(prev => ({ ...prev, code: e.target.value }))}
-                    placeholder={"输入优惠码"}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="name">{"活动名称 *"}</Label>
-                  <Input
-                    id="name"
-                    value={formData.name}
-                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                    placeholder={"输入活动名称"}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="type">{"活动类型"} {'*'}</Label>
-                  <Select
-                    value={formData.type}
-                    onValueChange={(value) => setFormData(prev => ({ ...prev, type: value }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {campaignTypes.map(type => (
-                        <SelectItem key={type.value} value={type.value}>
-                          {type.icon} {type.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="value">
-                    {"折扣值"} {'*'} {formData.type === 'discount' ? '(%)' : '($)'}
-                  </Label>
-                  <Input
-                    id="value"
-                    type="number"
-                    value={formData.value}
-                    onChange={(e) => setFormData(prev => ({ ...prev, value: Number(e.target.value) }))}
-                    placeholder={formData.type === 'discount' ? '80' : '500'}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="matcherType">{"适用对象"} {'*'}</Label>
-                  <Select
-                    value={formData.matcherType}
-                    onValueChange={(value) => setFormData(prev => ({ ...prev, matcherType: value }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {matcherTypes.map(type => (
-                        <SelectItem key={type.value} value={type.value}>
-                          {type.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="startAt">{"开始时间"} {'*'}</Label>
-                  <Input
-                    id="startAt"
-                    type="datetime-local"
-                    value={new Date(formData.startAt * 1000).toISOString().slice(0, 16)}
-                    onChange={(e) => handleDateTimeChange('startAt', e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="endAt">{"结束时间"} {'*'}</Label>
-                  <Input
-                    id="endAt"
-                    type="datetime-local"
-                    value={new Date(formData.endAt * 1000).toISOString().slice(0, 16)}
-                    onChange={(e) => handleDateTimeChange('endAt', e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="maxUsage">{"最大使用次数"} {'(0='}{"无限制"}{')'}</Label>
-                  <Input
-                    id="maxUsage"
-                    type="number"
-                    value={formData.maxUsage}
-                    onChange={(e) => setFormData(prev => ({ ...prev, maxUsage: Number(e.target.value) }))}
-                    placeholder="0"
-                  />
-                </div>
-                <div className="space-y-2 flex items-center">
-                  <div className="flex items-center space-x-2">
-                    <Switch
-                      id="isActive"
-                      checked={formData.isActive}
-                      onCheckedChange={(checked) => setFormData(prev => ({ ...prev, isActive: checked }))}
-                    />
-                    <Label htmlFor="isActive">{"启用活动"}</Label>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="description">{"活动描述"}</Label>
-                <Textarea
-                  id="description"
-                  value={formData.description}
-                  onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                  placeholder="输入活动的详细描述..."
-                  rows={3}
-                />
-              </div>
+              {renderFormFields("create")}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
@@ -661,7 +812,7 @@ export default function CampaignsPage() {
 
       {/* Edit Dialog */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{"编辑活动"}</DialogTitle>
             <DialogDescription>
@@ -669,133 +820,51 @@ export default function CampaignsPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-            {/* Same form fields as create dialog */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit-code">{"活动代码"} {'*'}</Label>
-                <Input
-                  id="edit-code"
-                  value={formData.code}
-                  onChange={(e) => setFormData(prev => ({ ...prev, code: e.target.value }))}
-                  placeholder="SUMMER2024"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-name">{"活动名称"} {'*'}</Label>
-                <Input
-                  id="edit-name"
-                  value={formData.name}
-                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                  placeholder="夏季促销活动"
-                />
-              </div>
-            </div>
+            {renderFormFields("edit")}
 
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit-type">{"活动类型"} {'*'}</Label>
-                <Select
-                  value={formData.type}
-                  onValueChange={(value) => setFormData(prev => ({ ...prev, type: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {campaignTypes.map(type => (
-                      <SelectItem key={type.value} value={type.value}>
-                        {type.icon} {type.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-value">
-                  {"折扣值"} {'*'} {formData.type === 'discount' ? '(%)' : '($)'}
-                </Label>
-                <Input
-                  id="edit-value"
-                  type="number"
-                  value={formData.value}
-                  onChange={(e) => setFormData(prev => ({ ...prev, value: Number(e.target.value) }))}
-                  placeholder={formData.type === 'discount' ? '80' : '500'}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-matcherType">{"适用对象"} {'*'}</Label>
-                <Select
-                  value={formData.matcherType}
-                  onValueChange={(value) => setFormData(prev => ({ ...prev, matcherType: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {matcherTypes.map(type => (
-                      <SelectItem key={type.value} value={type.value}>
-                        {type.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit-startAt">{"开始时间"} {'*'}</Label>
-                <Input
-                  id="edit-startAt"
-                  type="datetime-local"
-                  value={new Date(formData.startAt * 1000).toISOString().slice(0, 16)}
-                  onChange={(e) => handleDateTimeChange('startAt', e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-endAt">{"结束时间"} {'*'}</Label>
-                <Input
-                  id="edit-endAt"
-                  type="datetime-local"
-                  value={new Date(formData.endAt * 1000).toISOString().slice(0, 16)}
-                  onChange={(e) => handleDateTimeChange('endAt', e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit-maxUsage">{"最大使用次数"} {'(0='}{"无限制"}{')'}</Label>
-                <Input
-                  id="edit-maxUsage"
-                  type="number"
-                  value={formData.maxUsage}
-                  onChange={(e) => setFormData(prev => ({ ...prev, maxUsage: Number(e.target.value) }))}
-                  placeholder="0"
-                />
-              </div>
-              <div className="space-y-2 flex items-center">
-                <div className="flex items-center space-x-2">
-                  <Switch
-                    id="edit-isActive"
-                    checked={formData.isActive}
-                    onCheckedChange={(checked) => setFormData(prev => ({ ...prev, isActive: checked }))}
-                  />
-                  <Label htmlFor="edit-isActive">{"启用活动"}</Label>
+            {/* Issue keys section — only for existing campaigns with isShareable */}
+            {editingCampaign && formData.isShareable && (
+              <div className="space-y-3 rounded-md border border-dashed p-4">
+                <div className="flex items-center space-x-2 text-sm font-medium">
+                  <Users className="h-4 w-4" />
+                  <span>{"发放授权码"}</span>
                 </div>
+                <div className="flex items-center space-x-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={issueLoading}
+                    onClick={() => handleIssueKeys(editingCampaign.id, true)}
+                  >
+                    {"预估符合人数"}
+                  </Button>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    disabled={issueLoading}
+                    onClick={() => handleIssueKeys(editingCampaign.id, false)}
+                  >
+                    <Key className="mr-1 h-3 w-3" />
+                    {"立即发放授权码"}
+                  </Button>
+                </div>
+                {dryRunResult && dryRunCampaignId === editingCampaign.id && (
+                  <div className="rounded-md bg-muted p-3 text-sm space-y-1">
+                    <div className="flex items-center space-x-2">
+                      <Users className="h-3 w-3 text-muted-foreground" />
+                      <span>{"符合条件用户："}<strong>{dryRunResult.eligibleUsers}</strong> {"人"}</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Key className="h-3 w-3 text-muted-foreground" />
+                      <span>{"预计发放授权码："}<strong>{dryRunResult.keysToIssue}</strong> {"个"}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground pt-1">
+                      {"点击「立即发放授权码」确认发放"}
+                    </p>
+                  </div>
+                )}
               </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="edit-description">{"活动描述"}</Label>
-              <Textarea
-                id="edit-description"
-                value={formData.description}
-                onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                placeholder="输入活动的详细描述..."
-                rows={3}
-              />
-            </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
@@ -807,6 +876,8 @@ export default function CampaignsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* DryRun confirmation dialog — shown after dryRun when user wants to confirm issue */}
     </div>
   );
 }
