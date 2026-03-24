@@ -9,6 +9,7 @@ require (
 	github.com/kaitu-io/k2rule v0.6.4
 	github.com/metacubex/utls v1.8.4
 	github.com/miekg/dns v1.1.72
+	github.com/pion/stun/v3 v3.1.1
 	github.com/sagernet/sing v0.7.6
 	github.com/sagernet/sing-tun v0.7.11
 	github.com/sasha-s/go-deadlock v0.3.7
@@ -37,12 +38,16 @@ require (
 	github.com/mdlayher/socket v0.4.1 // indirect
 	github.com/oschwald/maxminddb-golang v1.11.0 // indirect
 	github.com/petermattis/goid v0.0.0-20250813065127-a731cc31b4fe // indirect
+	github.com/pion/dtls/v3 v3.0.10 // indirect
+	github.com/pion/logging v0.2.4 // indirect
+	github.com/pion/transport/v4 v4.0.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/sagernet/fswatch v0.1.1 // indirect
 	github.com/sagernet/gvisor v0.0.0-20241123041152-536d05261cff // indirect
 	github.com/sagernet/netlink v0.0.0-20240612041022-b9a21c07ac6a // indirect
 	github.com/sagernet/nftables v0.3.0-beta.4 // indirect
 	github.com/vishvananda/netns v0.0.4 // indirect
+	github.com/wlynxg/anet v0.0.5 // indirect
 	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba // indirect
 	golang.org/x/exp v0.0.0-20240904232852-e7e105dedf7e // indirect
 	golang.org/x/mod v0.33.0 // indirect
