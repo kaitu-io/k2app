@@ -193,7 +193,7 @@ func api_admin_create_campaign(c *gin.Context) {
 	}
 
 	// 验证匹配器类型
-	validMatcherTypes := []string{"first_order", "vip", "all"}
+	validMatcherTypes := []string{"first_order", "vip", "all", "paid_before", "paid_before_active"}
 	if !slices.Contains(validMatcherTypes, req.MatcherType) {
 		log.Warnf(c, "invalid matcher type: %s", req.MatcherType)
 		Error(c, ErrorInvalidArgument, "invalid matcher type")
@@ -217,16 +217,19 @@ func api_admin_create_campaign(c *gin.Context) {
 
 	// 创建活动
 	campaign := Campaign{
-		Code:        req.Code,
-		Name:        req.Name,
-		Type:        req.Type,
-		Value:       req.Value,
-		StartAt:     req.StartAt,
-		EndAt:       req.EndAt,
-		Description: req.Description,
-		IsActive:    BoolPtr(req.IsActive),
-		MatcherType: req.MatcherType,
-		MaxUsage:    req.MaxUsage,
+		Code:          req.Code,
+		Name:          req.Name,
+		Type:          req.Type,
+		Value:         req.Value,
+		StartAt:       req.StartAt,
+		EndAt:         req.EndAt,
+		Description:   req.Description,
+		IsActive:      BoolPtr(req.IsActive),
+		MatcherType:   req.MatcherType,
+		MatcherParams: req.MatcherParams,
+		IsShareable:   req.IsShareable,
+		SharesPerUser: req.SharesPerUser,
+		MaxUsage:      req.MaxUsage,
 	}
 
 	if err := db.Get().Create(&campaign).Error; err != nil {
@@ -277,7 +280,7 @@ func api_admin_update_campaign(c *gin.Context) {
 	}
 
 	// 验证匹配器类型
-	validMatcherTypes := []string{"first_order", "vip", "all"}
+	validMatcherTypes := []string{"first_order", "vip", "all", "paid_before", "paid_before_active"}
 	if !slices.Contains(validMatcherTypes, req.MatcherType) {
 		log.Warnf(c, "invalid matcher type: %s", req.MatcherType)
 		Error(c, ErrorInvalidArgument, "invalid matcher type")
@@ -311,6 +314,9 @@ func api_admin_update_campaign(c *gin.Context) {
 	campaign.Description = req.Description
 	campaign.IsActive = BoolPtr(req.IsActive)
 	campaign.MatcherType = req.MatcherType
+	campaign.MatcherParams = req.MatcherParams
+	campaign.IsShareable = req.IsShareable
+	campaign.SharesPerUser = req.SharesPerUser
 	campaign.MaxUsage = req.MaxUsage
 
 	if err := db.Get().Save(&campaign).Error; err != nil {
@@ -493,19 +499,22 @@ func api_admin_get_campaign_funnel(c *gin.Context) {
 // convertCampaignToResponse 转换Campaign到响应格式
 func convertCampaignToResponse(campaign Campaign) CampaignResponse {
 	return CampaignResponse{
-		ID:          campaign.ID,
-		CreatedAt:   campaign.CreatedAt.Unix(),
-		UpdatedAt:   campaign.UpdatedAt.Unix(),
-		Code:        campaign.Code,
-		Name:        campaign.Name,
-		Type:        campaign.Type,
-		Value:       campaign.Value,
-		StartAt:     campaign.StartAt,
-		EndAt:       campaign.EndAt,
-		Description: campaign.Description,
-		IsActive:    campaign.IsActive != nil && *campaign.IsActive,
-		MatcherType: campaign.MatcherType,
-		UsageCount:  campaign.UsageCount,
-		MaxUsage:    campaign.MaxUsage,
+		ID:            campaign.ID,
+		CreatedAt:     campaign.CreatedAt.Unix(),
+		UpdatedAt:     campaign.UpdatedAt.Unix(),
+		Code:          campaign.Code,
+		Name:          campaign.Name,
+		Type:          campaign.Type,
+		Value:         campaign.Value,
+		StartAt:       campaign.StartAt,
+		EndAt:         campaign.EndAt,
+		Description:   campaign.Description,
+		IsActive:      campaign.IsActive != nil && *campaign.IsActive,
+		MatcherType:   campaign.MatcherType,
+		MatcherParams: campaign.MatcherParams,
+		IsShareable:   campaign.IsShareable,
+		SharesPerUser: campaign.SharesPerUser,
+		UsageCount:    campaign.UsageCount,
+		MaxUsage:      campaign.MaxUsage,
 	}
 }
