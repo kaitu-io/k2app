@@ -1,14 +1,19 @@
 package center
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	hibikenAsynq "github.com/hibiken/asynq"
+	"github.com/spf13/viper"
 	"github.com/wordgate/qtoolkit/asynq"
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
@@ -324,16 +329,241 @@ func WriteAuditLogFromApproval(ctx context.Context, approval *AdminApproval) {
 	}
 }
 
-// ===================== Notification Stubs =====================
+// ===================== Slack DM Helpers =====================
 
-// NotifyApprovalSubmitted 通知其他 admin（stub — Task 3 实现 Slack DM）
+var (
+	slackUserIDCache   = map[string]string{}
+	slackUserIDCacheMu sync.RWMutex
+)
+
+// SlackDMByEmail sends a Slack DM to a user by email address.
+func SlackDMByEmail(ctx context.Context, email, message string) error {
+	botToken := viper.GetString("slack.bot_token")
+	if botToken == "" {
+		log.Warnf(ctx, "[APPROVAL] slack.bot_token not configured, skipping DM to %s", email)
+		return nil
+	}
+
+	userID, err := resolveSlackUserID(ctx, botToken, email)
+	if err != nil {
+		return fmt.Errorf("resolve slack user: %w", err)
+	}
+
+	channelID, err := slackOpenDM(ctx, botToken, userID)
+	if err != nil {
+		return fmt.Errorf("open DM: %w", err)
+	}
+
+	if err := slackPostMessage(ctx, botToken, channelID, message); err != nil {
+		return fmt.Errorf("post message: %w", err)
+	}
+
+	return nil
+}
+
+// resolveSlackUserID resolves a Slack user ID from an email address, with caching.
+func resolveSlackUserID(ctx context.Context, botToken, email string) (string, error) {
+	slackUserIDCacheMu.RLock()
+	if uid, ok := slackUserIDCache[email]; ok {
+		slackUserIDCacheMu.RUnlock()
+		return uid, nil
+	}
+	slackUserIDCacheMu.RUnlock()
+
+	u := "https://slack.com/api/users.lookupByEmail?email=" + url.QueryEscape(email)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+botToken)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	var result struct {
+		OK    bool   `json:"ok"`
+		Error string `json:"error"`
+		User  struct {
+			ID string `json:"id"`
+		} `json:"user"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", fmt.Errorf("unmarshal response: %w", err)
+	}
+	if !result.OK {
+		return "", fmt.Errorf("slack API error: %s", result.Error)
+	}
+
+	slackUserIDCacheMu.Lock()
+	slackUserIDCache[email] = result.User.ID
+	slackUserIDCacheMu.Unlock()
+
+	return result.User.ID, nil
+}
+
+// slackOpenDM opens a DM conversation with a Slack user.
+func slackOpenDM(ctx context.Context, botToken, userID string) (string, error) {
+	payload, _ := json.Marshal(map[string]string{"users": userID})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://slack.com/api/conversations.open", bytes.NewReader(payload))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+botToken)
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	var result struct {
+		OK      bool   `json:"ok"`
+		Error   string `json:"error"`
+		Channel struct {
+			ID string `json:"id"`
+		} `json:"channel"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", fmt.Errorf("unmarshal response: %w", err)
+	}
+	if !result.OK {
+		return "", fmt.Errorf("slack API error: %s", result.Error)
+	}
+
+	return result.Channel.ID, nil
+}
+
+// slackPostMessage posts a text message to a Slack channel.
+func slackPostMessage(ctx context.Context, botToken, channelID, text string) error {
+	payload, _ := json.Marshal(map[string]string{"channel": channelID, "text": text})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://slack.com/api/chat.postMessage", bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+botToken)
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	var result struct {
+		OK    bool   `json:"ok"`
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("unmarshal response: %w", err)
+	}
+	if !result.OK {
+		return fmt.Errorf("slack API error: %s", result.Error)
+	}
+
+	return nil
+}
+
+// getAdminEmail resolves an admin's email address by user ID.
+func getAdminEmail(ctx context.Context, userID uint64) string {
+	identify, err := GetEmailIdentifyByUserID(ctx, int64(userID))
+	if err != nil || identify == nil || identify.EncryptedValue == "" {
+		log.Warnf(ctx, "[APPROVAL] no email for user %d: %v", userID, err)
+		return ""
+	}
+	email, err := secretDecryptString(ctx, identify.EncryptedValue)
+	if err != nil {
+		log.Warnf(ctx, "[APPROVAL] decrypt email failed for user %d: %v", userID, err)
+		return ""
+	}
+	return email
+}
+
+// ===================== Notifications =====================
+
+// NotifyApprovalSubmitted 通知其他 admin 有新的审批请求
 func NotifyApprovalSubmitted(ctx context.Context, approval *AdminApproval) {
 	log.Infof(ctx, "[APPROVAL] notification: new pending approval id=%d action=%s requestor=%s",
 		approval.ID, approval.Action, approval.RequestorName)
+
+	var admins []User
+	if err := db.Get().Where("is_admin = ? AND id != ?", true, approval.RequestorID).Find(&admins).Error; err != nil {
+		log.Errorf(ctx, "[APPROVAL] failed to query admins: %v", err)
+		return
+	}
+
+	displayName := actionDisplayName(approval.Action)
+	message := fmt.Sprintf("🔒 新的审批请求\n操作：%s\n发起人：%s\n摘要：%s\n时间：%s\n👉 前往审批：https://kaitu.io/manager/approvals",
+		displayName,
+		approval.RequestorName,
+		approval.Summary,
+		approval.CreatedAt.Format("2006-01-02 15:04:05"),
+	)
+
+	for _, admin := range admins {
+		email := getAdminEmail(ctx, admin.ID)
+		if email == "" {
+			continue
+		}
+		if err := SlackDMByEmail(ctx, email, message); err != nil {
+			log.Warnf(ctx, "[APPROVAL] failed to send Slack DM to admin %d: %v", admin.ID, err)
+		}
+	}
 }
 
-// NotifyApprovalResult 通知发起人审批结果（stub — Task 3 实现 Slack DM）
+// NotifyApprovalResult 通知发起人审批结果
 func NotifyApprovalResult(ctx context.Context, approval *AdminApproval) {
 	log.Infof(ctx, "[APPROVAL] notification: approval id=%d action=%s status=%s",
 		approval.ID, approval.Action, approval.Status)
+
+	email := getAdminEmail(ctx, approval.RequestorID)
+	if email == "" {
+		return
+	}
+
+	displayName := actionDisplayName(approval.Action)
+	var message string
+
+	switch approval.Status {
+	case "approved":
+		message = fmt.Sprintf("✅ 审批已通过\n操作：%s\n摘要：%s\n正在执行中…", displayName, approval.Summary)
+	case "rejected":
+		reason := ""
+		if approval.RejectReason != nil && *approval.RejectReason != "" {
+			reason = fmt.Sprintf("\n原因：%s", *approval.RejectReason)
+		}
+		message = fmt.Sprintf("❌ 审批已拒绝\n操作：%s\n摘要：%s%s", displayName, approval.Summary, reason)
+	case "executed":
+		message = fmt.Sprintf("🎉 审批已执行完成\n操作：%s\n摘要：%s", displayName, approval.Summary)
+	case "failed":
+		execErr := ""
+		if approval.ExecError != nil && *approval.ExecError != "" {
+			execErr = fmt.Sprintf("\n错误：%s", *approval.ExecError)
+		}
+		message = fmt.Sprintf("⚠️ 审批执行失败\n操作：%s\n摘要：%s%s", displayName, approval.Summary, execErr)
+	default:
+		return
+	}
+
+	if err := SlackDMByEmail(ctx, email, message); err != nil {
+		log.Warnf(ctx, "[APPROVAL] failed to send Slack DM to requestor %d: %v", approval.RequestorID, err)
+	}
 }
