@@ -26,7 +26,7 @@ export interface SshConfig {
 }
 
 /**
- * Complete configuration for kaitu-ops-mcp.
+ * Complete configuration for kaitu-center.
  */
 export interface Config {
   center: CenterConfig
@@ -98,13 +98,13 @@ function resolveSshKeyPath(
  * - ~/.ssh/id_rsa (if exists)
  * - ~/.ssh/id_ed25519 (if exists)
  *
- * @param configPath - Path to the TOML config file. Defaults to ~/.kaitu-ops/config.toml.
+ * @param configPath - Path to the TOML config file. Defaults to ~/.kaitu-center/config.toml.
  *   If the file does not exist, env vars must supply all required values.
  * @throws {Error} If required fields are missing from both TOML and env vars,
  *   with a clear message listing each missing field.
  */
 export async function loadConfig(
-  configPath: string = path.join(os.homedir(), '.kaitu-ops', 'config.toml')
+  configPath: string = path.join(os.homedir(), '.kaitu-center', 'config.toml')
 ): Promise<Config> {
   // Attempt to parse TOML file — silently skip if file doesn't exist
   let toml: RawToml = {}

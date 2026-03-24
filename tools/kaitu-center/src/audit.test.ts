@@ -97,7 +97,7 @@ describe('audit log format', () => {
 
     expect(mockMkdirSync).toHaveBeenCalledOnce()
     const dirPath = mockMkdirSync.mock.calls[0]![0] as string
-    expect(dirPath).toContain('.kaitu-ops')
+    expect(dirPath).toContain('.kaitu-center')
   })
 
   it('triggers rotation when file exceeds 500KB', async () => {

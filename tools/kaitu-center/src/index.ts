@@ -1,5 +1,5 @@
 /**
- * kaitu-ops-mcp — MCP server entry point.
+ * kaitu-center — MCP server entry point.
  *
  * Wires together config loading, the Center API client, and all MCP tools,
  * then connects to stdio transport for MCP protocol communication.
@@ -32,8 +32,8 @@ export async function createServer(config: Config): Promise<McpServer> {
   const apiClient = new CenterApiClient(config)
 
   const server = new McpServer({
-    name: 'kaitu-ops',
-    version: '0.2.0',
+    name: 'kaitu-center',
+    version: '0.3.0',
   })
 
   registerListNodes(server, apiClient)
@@ -68,7 +68,7 @@ const isEntryPoint =
 
 if (isEntryPoint) {
   main().catch((err: unknown) => {
-    console.error('Failed to start kaitu-ops MCP server:', err)
+    console.error('Failed to start kaitu-center MCP server:', err)
     process.exit(1)
   })
 }

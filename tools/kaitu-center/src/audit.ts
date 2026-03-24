@@ -12,8 +12,8 @@ import * as os from 'node:os'
 /** Maximum audit log file size before rotation (500 KB). */
 const MAX_LOG_SIZE = 500 * 1024
 
-/** Default audit log path: ~/.kaitu-ops/audit.log */
-const LOG_DIR = path.join(os.homedir(), '.kaitu-ops')
+/** Default audit log path: ~/.kaitu-center/audit.log */
+const LOG_DIR = path.join(os.homedir(), '.kaitu-center')
 const LOG_PATH = path.join(LOG_DIR, 'audit.log')
 
 /**

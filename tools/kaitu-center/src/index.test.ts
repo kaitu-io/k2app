@@ -36,8 +36,8 @@ describe('createServer', () => {
     >
     const info = innerServer['_serverInfo'] as Record<string, unknown>
     expect(info).toBeDefined()
-    expect(info['name']).toBe('kaitu-ops')
-    expect(info['version']).toBe('0.2.0')
+    expect(info['name']).toBe('kaitu-center')
+    expect(info['version']).toBe('0.3.0')
   })
 
   it('test_server_registers_two_tools — after createServer, both list_nodes and exec_on_node are registered', async () => {
