@@ -270,57 +270,9 @@ func api_delete_user_account(c *gin.Context) {
 	SuccessEmpty(c)
 }
 
-// api_get_access_key 获取当前用户的AccessKey
-//
-func api_get_access_key(c *gin.Context) {
-	userID := ReqUserID(c)
-	log.Infof(c, "user %d requesting access key", userID)
-
-	var user User
-	if err := db.Get().Where(&User{ID: userID}).First(&user).Error; err != nil {
-		log.Errorf(c, "failed to get user %d: %v", userID, err)
-		Error(c, ErrorSystemError, "failed to get user")
-		return
-	}
-
-	// 如果用户还没有AccessKey，生成一个
-	if user.AccessKey == nil {
-		plaintext, err := GenerateAccessKey(c, userID)
-		if err != nil {
-			log.Errorf(c, "failed to generate access key for user %d: %v", userID, err)
-			Error(c, ErrorSystemError, "failed to generate access key")
-			return
-		}
-		Success(c, &DataAccessKey{
-			AccessKey: plaintext,
-		})
-		return
-	}
-
-	// Key exists but we can only return a masked indicator (hash is stored, not plaintext)
-	Success(c, &DataAccessKey{
-		AccessKey: "ktu_****",
-	})
-}
-
-// api_regenerate_access_key 重新生成AccessKey
-//
-func api_regenerate_access_key(c *gin.Context) {
-	userID := ReqUserID(c)
-	log.Infof(c, "user %d requesting to regenerate access key", userID)
-
-	plaintext, err := GenerateAccessKey(c, userID)
-	if err != nil {
-		log.Errorf(c, "failed to regenerate access key for user %d: %v", userID, err)
-		Error(c, ErrorSystemError, "failed to regenerate access key")
-		return
-	}
-
-	log.Infof(c, "successfully regenerated access key for user %d", userID)
-	Success(c, &DataAccessKey{
-		AccessKey: plaintext,
-	})
-}
+// Access key 自助端点已移除 — key 生成/重置/撤销统一通过 admin API 管理
+// POST /app/users/:uuid/access-key (生成/重置)
+// DELETE /app/users/:uuid/access-key (撤销)
 
 // api_update_user_language 更新用户语言偏好
 //

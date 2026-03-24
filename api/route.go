@@ -140,10 +140,7 @@ func SetupRouter() *gin.Engine {
 			user.DELETE("/delegate", AuthRequired(), api_reject_delegate)
 			// 自我删除账号
 			user.DELETE("/delete-account", AuthRequired(), api_delete_user_account)
-			// 获取AccessKey
-			user.GET("/access-key", AuthRequired(), api_get_access_key)
-			// 重新生成AccessKey
-			user.POST("/access-key/regenerate", AuthRequired(), api_regenerate_access_key)
+			// Access key 自助端点已移除 — 统一通过 admin API 管理
 			// 更新用户语言偏好
 			user.PUT("/language", AuthRequired(), api_update_user_language)
 			// 更新 beta channel 订阅状态

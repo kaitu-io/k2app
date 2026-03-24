@@ -210,11 +210,6 @@ type DataWebLoginUser struct {
 	Roles   uint64 `json:"roles"`   // 角色位掩码
 }
 
-// DataAccessKey API访问密钥数据结构
-type DataAccessKey struct {
-	AccessKey string `json:"accessKey" example:"ak-c1lxdvyps05pj2qgv090"` // API访问密钥
-}
-
 // DataLoginRequest 登录请求数据结构
 type DataLoginRequest struct {
 	Email            string `json:"email" binding:"required,email"`      // 邮箱
