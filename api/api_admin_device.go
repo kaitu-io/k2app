@@ -126,6 +126,7 @@ func api_admin_issue_test_token(c *gin.Context) {
 		ExpiresIn:    tokenResp.ExpiresIn,
 		Password:     tokenResp.Password,
 	})
+	WriteAuditLog(c, "user_issue_test_token", "user", userUUID, nil)
 }
 
 // deviceTokenResult 内部结构，包含密码哈希

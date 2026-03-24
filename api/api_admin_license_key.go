@@ -1,6 +1,7 @@
 package center
 
 import (
+	"fmt"
 	"strconv"
 	"time"
 
@@ -97,6 +98,7 @@ func api_admin_delete_license_key(c *gin.Context) {
 	}
 	log.Infof(c, "successfully deleted license key %d", id)
 	SuccessEmpty(c)
+	WriteAuditLog(c, "license_key_delete", "license_key", fmt.Sprintf("%d", id), nil)
 }
 
 func toLicenseKeyResponse(k LicenseKey) LicenseKeyResponse {

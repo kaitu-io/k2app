@@ -1,6 +1,8 @@
 package center
 
 import (
+	"fmt"
+
 	"github.com/gin-gonic/gin"
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
@@ -208,6 +210,7 @@ func api_admin_sync_all_cloud_instances(c *gin.Context) {
 	}
 
 	Success(c, &map[string]string{"task_id": taskID})
+	WriteAuditLog(c, "cloud_sync_instances", "cloud", "all", nil)
 }
 
 // enqueueCloudSync enqueues a cloud sync task for immediate execution
@@ -256,6 +259,7 @@ func api_admin_change_ip_cloud_instance(c *gin.Context) {
 	}
 
 	Success(c, &map[string]string{"task_id": taskID})
+	WriteAuditLog(c, "cloud_change_ip", "cloud_instance", id, nil)
 }
 
 // CloudCreateRequest represents request to create instance
@@ -306,6 +310,7 @@ func api_admin_create_cloud_instance(c *gin.Context) {
 	}
 
 	Success(c, &map[string]string{"task_id": taskID})
+	WriteAuditLog(c, "cloud_create_instance", "cloud_instance", fmt.Sprintf("%s/%s", req.AccountName, req.Name), req)
 }
 
 func api_admin_delete_cloud_instance(c *gin.Context) {
@@ -341,6 +346,7 @@ func api_admin_delete_cloud_instance(c *gin.Context) {
 	}
 
 	Success(c, &map[string]string{"task_id": taskID})
+	WriteAuditLog(c, "cloud_delete_instance", "cloud_instance", id, nil)
 }
 
 func api_admin_list_cloud_accounts(c *gin.Context) {
@@ -610,6 +616,7 @@ func api_admin_update_traffic_config(c *gin.Context) {
 		"traffic_total_gb": req.TrafficTotalGB,
 		"message":          "traffic config updated",
 	})
+	WriteAuditLog(c, "cloud_update_traffic_config", "cloud_instance", id, req)
 }
 
 // enqueueCloudTask enqueues a cloud task for immediate execution

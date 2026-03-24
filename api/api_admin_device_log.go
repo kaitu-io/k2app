@@ -1,6 +1,7 @@
 package center
 
 import (
+	"fmt"
 	"strconv"
 	"time"
 
@@ -175,6 +176,7 @@ func api_admin_resolve_feedback_ticket(c *gin.Context) {
 
 	log.Infof(c, "feedback ticket %d resolved by %s", id, req.ResolvedBy)
 	SuccessEmpty(c)
+	WriteAuditLog(c, "ticket_resolve", "ticket", fmt.Sprintf("%d", id), nil)
 }
 
 // api_admin_close_feedback_ticket 标记工单为 closed
@@ -198,4 +200,5 @@ func api_admin_close_feedback_ticket(c *gin.Context) {
 
 	log.Infof(c, "feedback ticket %d closed", id)
 	SuccessEmpty(c)
+	WriteAuditLog(c, "ticket_close", "ticket", fmt.Sprintf("%d", id), nil)
 }

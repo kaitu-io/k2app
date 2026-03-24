@@ -404,6 +404,7 @@ func api_admin_member_add(c *gin.Context) {
 
 	log.Infof(c, "successfully added member %s (ID: %d) to user %s (ID: %d)", req.MemberEmail, memberUser.ID, uuid, targetUser.ID)
 	Success(c, &dataMember)
+	WriteAuditLog(c, "user_add_member", "user", uuid, nil)
 }
 
 // api_admin_member_remove 为指定用户移除成员（管理员）
@@ -467,6 +468,7 @@ func api_admin_member_remove(c *gin.Context) {
 
 	log.Infof(c, "successfully removed member %s from user %s", memberUUID, uuid)
 	SuccessEmpty(c)
+	WriteAuditLog(c, "user_remove_member", "user", uuid, nil)
 }
 
 // api_get_delegate 获取我的代付人信息

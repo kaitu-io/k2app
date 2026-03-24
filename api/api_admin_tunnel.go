@@ -173,6 +173,7 @@ func api_admin_update_tunnel(c *gin.Context) {
 	}
 
 	Success(c, &result)
+	WriteAuditLog(c, "tunnel_update", "tunnel", tunnelID, nil)
 }
 
 func api_admin_delete_tunnel(c *gin.Context) {
@@ -186,4 +187,5 @@ func api_admin_delete_tunnel(c *gin.Context) {
 	}
 	log.Infof(c, "successfully deleted node %s", nodeID)
 	SuccessEmpty(c)
+	WriteAuditLog(c, "tunnel_delete", "tunnel", nodeID, nil)
 }

@@ -242,4 +242,5 @@ func api_admin_update_retailer_config(c *gin.Context) {
 	}
 
 	Success(c, &gin.H{})
+	WriteAuditLog(c, "user_update_retailer_config", "user", uuid, req)
 }

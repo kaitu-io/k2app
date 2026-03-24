@@ -103,6 +103,7 @@ func api_admin_create_email_template(c *gin.Context) {
 	response := convertEmailMarketingTemplateToResponse(template)
 	log.Infof(c, "successfully created template with ID: %d", template.ID)
 	Success(c, &response)
+	WriteAuditLog(c, "edm_create_template", "template", fmt.Sprintf("%d", template.ID), nil)
 }
 
 // api_admin_update_email_template 处理更新邮件模板的请求（管理员）
@@ -163,8 +164,10 @@ func api_admin_update_email_template(c *gin.Context) {
 	}
 
 	response := convertEmailMarketingTemplateToResponse(template)
+	idStr := fmt.Sprintf("%d", templateID)
 	log.Infof(c, "successfully updated template %d", templateID)
 	Success(c, &response)
+	WriteAuditLog(c, "edm_update_template", "template", idStr, nil)
 }
 
 // api_admin_delete_email_template 处理删除邮件模板的请求（管理员）
@@ -191,9 +194,11 @@ func api_admin_delete_email_template(c *gin.Context) {
 		return
 	}
 
+	idStr := fmt.Sprintf("%d", templateID)
 	log.Infof(c, "successfully deleted template %d", templateID)
 	var emptyResponse struct{}
 	Success(c, &emptyResponse)
+	WriteAuditLog(c, "edm_delete_template", "template", idStr, nil)
 }
 
 // api_admin_translate_email_template 处理自动翻译邮件模板的请求（管理员）
@@ -234,6 +239,7 @@ func api_admin_translate_email_template(c *gin.Context) {
 	// 返回翻译后的模板
 	response := convertEmailMarketingTemplateToResponse(*translatedTemplate)
 	Success(c, &response)
+	WriteAuditLog(c, "edm_translate_template", "template", fmt.Sprintf("%d", templateID), map[string]string{"language": targetLang})
 }
 
 // 邮件模板可用参数（前后端约定）：

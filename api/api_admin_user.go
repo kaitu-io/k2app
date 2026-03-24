@@ -462,6 +462,7 @@ func api_admin_update_user_retailer_status(c *gin.Context) {
 
 	log.Infof(c, "成功更新用户 %s 的分销商状态为: %v", uuid, req.IsRetailer)
 	Success(c, &gin.H{})
+	WriteAuditLog(c, "user_update_retailer_status", "user", uuid, req)
 }
 
 // UpdateRetailerContactsRequest 更新分销商联系方式请求
@@ -637,6 +638,7 @@ func api_admin_add_user_membership(c *gin.Context) {
 		ExpiredAt: newExpiredAt.Unix(),
 		Months:    req.Months,
 	})
+	WriteAuditLog(c, "user_add_membership", "user", uuid, req)
 }
 
 // UpdateUserEmailRequest 管理员更新用户邮箱请求
@@ -730,6 +732,7 @@ func api_admin_update_user_email(c *gin.Context) {
 	Success(c, &gin.H{
 		"email": req.Email,
 	})
+	WriteAuditLog(c, "user_update_email", "user", uuid, map[string]string{"email": req.Email})
 }
 
 // api_admin_hard_delete_users 硬删除用户（批量）
@@ -827,6 +830,7 @@ func api_admin_set_user_roles(c *gin.Context) {
 		Roles:     newRoles,
 		RoleNames: GetRoleNames(newRoles),
 	})
+	WriteAuditLog(c, "user_set_roles", "user", uuid, req)
 }
 
 // api_admin_generate_access_key 生成或重置用户的 Access Key

@@ -84,6 +84,7 @@ func api_admin_create_plan(c *gin.Context) {
 	var plan Plan
 	db.Get().Where("pid = ?", req.PID).First(&plan)
 	Success[Plan](c, &plan)
+	WriteAuditLog(c, "plan_create", "plan", fmt.Sprintf("%d", plan.ID), nil)
 }
 
 // AdminUpdatePlanRequest 更新套餐请求结构体
@@ -179,4 +180,5 @@ func api_admin_restore_plan(c *gin.Context) {
 	var plan Plan
 	db.Get().First(&plan, planID)
 	Success[Plan](c, &plan)
+	WriteAuditLog(c, "plan_restore", "plan", planID, nil)
 }

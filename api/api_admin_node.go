@@ -144,6 +144,7 @@ func api_admin_update_node(c *gin.Context) {
 	}
 
 	Success(c, &result)
+	WriteAuditLog(c, "node_update", "node", nodeIPv4, nil)
 }
 
 func api_admin_delete_node(c *gin.Context) {
@@ -198,4 +199,5 @@ func api_admin_delete_node(c *gin.Context) {
 
 	log.Infof(c, "successfully deleted node %s and its associated data", nodeIPv4)
 	SuccessEmpty(c)
+	WriteAuditLog(c, "node_delete", "node", nodeIPv4, nil)
 }
