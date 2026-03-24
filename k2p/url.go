@@ -65,13 +65,9 @@ func ParseURL(raw string) (Config, error) {
 
 	// Strip the first label (UDID prefix) to get the signal server domain.
 	// e.g. "my-home.signal.example.com" → "signal.example.com"
-	dot := strings.IndexByte(hostname, '.')
-	if dot < 0 {
-		return Config{}, fmt.Errorf("k2p: host %q must be udid.signal-domain (missing dot)", hostname)
-	}
-	baseDomain := hostname[dot+1:]
-	if baseDomain == "" {
-		return Config{}, fmt.Errorf("k2p: host %q has empty signal domain after stripping UDID prefix", hostname)
+	_, baseDomain, hasDot := strings.Cut(hostname, ".")
+	if !hasDot || baseDomain == "" {
+		return Config{}, fmt.Errorf("k2p: host %q must be udid.signal-domain (need at least two labels)", hostname)
 	}
 
 	signalServer := fmt.Sprintf("https://%s:%d", baseDomain, port)

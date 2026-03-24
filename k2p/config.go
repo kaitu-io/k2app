@@ -37,4 +37,24 @@ type Config struct {
 
 	// RelayServer is the k2v5:// URL for relay fallback (optional).
 	RelayServer string
+
+	// PeerSecret is the shared secret for peer authentication (Away proves identity).
+	// Never sent to k2s signal server.
+	PeerSecret string
+
+	// Pin is the expected TLS certificate pin hash(es) for Home's self-signed cert.
+	// Format: "sha256:<b64>,sha256:<b64>"
+	Pin string
+
+	// Networks are Home's LAN CIDRs (e.g. ["192.168.1.0/24"]).
+	Networks []string
+
+	// DNS is Home's LAN DNS server (e.g. "192.168.1.1").
+	DNS string
+
+	// RegToken is the registration token for signal server auth (Home only).
+	RegToken string
+
+	// SecretHash is the bcrypt hash of PeerSecret (Home only, for verification).
+	SecretHash string
 }
