@@ -10,6 +10,7 @@ Used as a read-only submodule in k2app. See parent `CLAUDE.md` for integration c
 ```bash
 go build -o k2 ./cmd/k2            # Build client
 go build -o k2s ./cmd/k2s          # Build server
+GOOS=linux go build -o k2r ./cmd/k2r  # Build gateway (Linux only)
 go test ./...                      # All tests (wire + core + dns + appext + daemon + server + e2e)
 go test -short ./...               # Fast: skip live DNS/network tests
 go test -race -timeout 300s ./wire/...  # Wire tests with race (needs 300s+ timeout)
@@ -25,6 +26,10 @@ k2 service install                 # Install as system service
 k2 service uninstall               # Remove system service
 k2s setup                          # Server: install service + print connect URL
 k2s -c server.yaml                 # Server with explicit config (foreground)
+k2r setup <k2v5://URL>              # Gateway: generate config + install service + start
+k2r ctl up                          # Gateway: connect (install intercept rules)
+k2r ctl status                      # Gateway: connection status JSON
+k2r ctl down                        # Gateway: disconnect (remove intercept rules)
 docker compose up --build           # Docker: server + init container (docker/)
 ```
 
@@ -468,6 +473,7 @@ engine/CLAUDE.md               Unified tunnel lifecycle manager (state machine, 
 core/CLAUDE.md                 L4 ClientTunnel, Router, ConnectionHandler
 core/dns/CLAUDE.md             DNS 13-step middleware pipeline
 daemon/CLAUDE.md               Desktop platform shell: HTTP API, service management, auto-reconnect
+gateway/                       Gateway platform shell: k2r binary, TPROXY, LAN interception
 provider/CLAUDE.md             Provider interface (TUN, Proxy, TProxy, iOS, Android)
 server/CLAUDE.md               Server listener orchestration, TCP/UDP handlers
 wire/CLAUDE.md                 k2v5 wire protocol, Dialer/Listener interfaces
@@ -539,6 +545,7 @@ Platform Shell (daemon/appext) assembles `engine.Config` with platform-specific 
 
 - `k2`: client (CLI, daemon, provider, core, DNS middleware) — Linux/Windows desktop
 - `k2s`: server (listener, auth, TCP/UDP handlers)
+- `k2r`: gateway (CLI, gateway/, TPROXY interception) — Linux routers/soft-routers
 - `appext/`: gomobile SDK (Engine + EventHandler bridge — gomobile can't export dependency interfaces) — macOS sysext, iOS, Android
 - Shared: wire/, config/, engine/
 
@@ -599,7 +606,7 @@ engine.Stop()
 - Server generates dual certs (RSA+EC) — both padded to match target site's cert length
 - EC CA (`wire/kaitu_ca.pem`, disguised as DigiCert) can sign both RSA and EC server certs
 - `tun_desktop.go` build tag: `(darwin && !ios) || (linux && !android) || windows` — must exclude android/ios
-- tproxy provider (Linux only) manages nftables rules — cleanup on Close() is critical
+- gateway provider (k2r) manages nftables/iptables TPROXY rules — cleanup on Close() is critical
 - `tun.Options.DNSServers` must NOT be set — it configures OS DNS settings, not packet interception. sing-tun auto-derives `TUN_IP.Next()`. DNS hijack is application-level (dnsHandler checks port 53)
 - `ProviderConfig.RouteExcludeAddrs` (NOT DNSServers) excludes IPs from TUN routing — prevents DirectDNSClient query loops
 
@@ -632,7 +639,7 @@ docs/todos/p2-*.md     Nice to have
 - Client tunnel, server handlers, e2e tests, zero-config server startup
 - k2/k2s binaries (k2s interactive wizard + upgrade command + beta channel)
 - appext SDK (gomobile, macOS sysext+iOS+Android, iOS GOGC=10 memory optimization)
-- tproxy provider (OpenWRT/Linux), OpenWRT service management (init.d/procd)
+- k2r gateway binary (cmd/k2r, gateway/ package, TPROXY with nftables/iptables auto-detect)
 - Wire observability (K2CC metrics + TX/RX counting + HealthMonitor FSM + TCP health gate + background QUIC probe)
 - Protocol sniffing (TLS/QUIC/HTTP/BT/STUN/DTLS + QUIC blocking with ICMP Port Unreachable)
 - Happy Eyeballs (RFC 8305), transport behavior contract tests (20 scenarios in wire/ + engine/)
@@ -648,4 +655,4 @@ docs/todos/p2-*.md     Nice to have
 | Android | aar | appext/ | tun (FD) | protectedDialer | nil (OS calls OnNetworkChanged) |
 | Linux desktop | cmd/k2 | daemon/ | tun (self-create) | daemon.directDialer | singTunMonitor |
 | Windows | cmd/k2 | daemon/ | tun (self-create) | daemon.directDialer | singTunMonitor |
-| OpenWRT | cmd/k2 | daemon/ | tproxy | nil | nil |
+| Linux gateway | cmd/k2r | gateway/ | gateway (TPROXY) | nil | nil |

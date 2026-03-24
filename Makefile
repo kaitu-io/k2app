@@ -1,6 +1,7 @@
 .PHONY: build test generate clean netem-test \
 	build-darwin-arm64 build-darwin-amd64 build-darwin-universal \
 	build-windows-amd64 build-linux-amd64 build-linux-arm64 \
+	build-k2r build-k2r-linux-amd64 build-k2r-linux-arm64 build-k2r-armv7 build-k2r-mipsle build-k2r-mips build-k2r-all \
 	appext-ios appext-macos appext-android \
 	quick-check pre-release build-all-platforms
 
@@ -49,6 +50,44 @@ build-linux-amd64:
 build-linux-arm64:
 	mkdir -p build
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build $(PROD_TAGS) -ldflags "$(LDFLAGS)" -o build/k2-linux-arm64 ./cmd/k2
+
+# --- Gateway (k2r) ---
+build-k2r:
+	mkdir -p build
+	CGO_ENABLED=0 GOOS=linux go build $(PROD_TAGS) -ldflags "$(LDFLAGS)" -o build/k2r ./cmd/k2r
+
+build-k2r-linux-amd64:
+	mkdir -p build
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build $(PROD_TAGS) -ldflags "$(LDFLAGS)" -o build/k2r-linux-amd64 ./cmd/k2r
+
+build-k2r-linux-arm64:
+	mkdir -p build
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build $(PROD_TAGS) -ldflags "$(LDFLAGS)" -o build/k2r-linux-arm64 ./cmd/k2r
+
+build-k2r-armv7:
+	mkdir -p build
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build $(PROD_TAGS) -ldflags "$(LDFLAGS)" -o build/k2r-linux-armv7 ./cmd/k2r
+
+build-k2r-mipsle:
+	mkdir -p build
+	CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build $(PROD_TAGS) -ldflags "$(LDFLAGS)" -o build/k2r-linux-mipsle ./cmd/k2r
+
+build-k2r-mips:
+	mkdir -p build
+	CGO_ENABLED=0 GOOS=linux GOARCH=mips GOMIPS=softfloat go build $(PROD_TAGS) -ldflags "$(LDFLAGS)" -o build/k2r-linux-mips ./cmd/k2r
+
+# All k2r targets with optional UPX compression (router flash is 16-128MB):
+#   make build-k2r-all UPX=1
+build-k2r-all: build-k2r-linux-amd64 build-k2r-linux-arm64 build-k2r-armv7 build-k2r-mipsle build-k2r-mips
+	@if [ "$(UPX)" = "1" ] && command -v upx >/dev/null 2>&1; then \
+		for f in build/k2r-linux-*; do \
+			echo "UPX compressing $$f..."; \
+			upx --best --lzma "$$f"; \
+		done; \
+	elif [ "$(UPX)" = "1" ]; then \
+		echo "WARN: UPX not found, skipping compression"; \
+	fi
+	@echo "k2r builds OK"
 
 # --- Server (standalone) ---
 build-server-darwin:
@@ -99,7 +138,7 @@ pre-release: quick-check
 	$(MAKE) build-all-platforms
 
 # Cross-compile all platforms (compiles = no broken imports).
-build-all-platforms: build-darwin-arm64 build-linux-amd64 build-linux-arm64 build-windows-amd64 build-server-linux
+build-all-platforms: build-darwin-arm64 build-linux-amd64 build-linux-arm64 build-windows-amd64 build-server-linux build-k2r-all
 	@echo "All platform builds OK"
 
 clean:
