@@ -86,6 +86,12 @@ Reserved event names:
 | `DIAG: dns-proxy-write-fail` | WARN | WriteTo failed | server, domain, connAgeS, isNewConn, err |
 | `DIAG: dns-proxy-conn-dead` | WARN | recv loop died | server, domain, connAgeS, isNewConn, err |
 | `DIAG: dns-proxy-dial-fail` | WARN | DialUDP failed | server, domain, err |
+| `DIAG: nat-classify` | INFO | each classification | type, reflexiveAddr, serversUsed |
+| `DIAG: punch-start` | INFO | each attempt | strategy, localNAT, remoteNAT, peer |
+| `DIAG: punch-ok` | INFO | each success | from, method, socketsOpened |
+| `DIAG: punch-fail` | WARN | each failure | strategy, peer, err |
+| `DIAG: p2p-connected` | INFO | connection established | peer, method, dialMs |
+| `DIAG: p2p-relay-fallback` | WARN | direct failed | peer, relayServer, err |
 
 ### Layer 3 Rules — Full Trace
 
