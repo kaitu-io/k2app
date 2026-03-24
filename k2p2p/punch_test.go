@@ -60,6 +60,29 @@ func TestPunchStandard_Timeout(t *testing.T) {
 	}
 }
 
+func TestPunch_SelectsStrategy(t *testing.T) {
+	tests := []struct {
+		name     string
+		local    NATType
+		remote   NATType
+		expected string
+	}{
+		{"easy-easy", NATEasy, NATEasy, "standard"},
+		{"easy-hard", NATEasy, NATHard, "standard"},
+		{"hard-easy", NATHard, NATEasy, "standard"},
+		{"hard-hard", NATHard, NATHard, "birthday"},
+		{"open-any", NATOpen, NATHard, "standard"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			strategy := selectPunchStrategy(tt.local, tt.remote)
+			if strategy != tt.expected {
+				t.Errorf("expected %s, got %s", tt.expected, strategy)
+			}
+		})
+	}
+}
+
 func TestPunchBirthday_Loopback(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

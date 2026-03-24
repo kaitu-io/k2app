@@ -166,3 +166,63 @@ func punchBirthday(ctx context.Context, localIP, peerIP net.IP,
 		return nil, fmt.Errorf("k2p2p: birthday punch timeout")
 	}
 }
+
+// selectPunchStrategy returns "standard" or "birthday" based on NAT types.
+func selectPunchStrategy(local, remote NATType) string {
+	if local == NATHard && remote == NATHard {
+		return "birthday"
+	}
+	return "standard"
+}
+
+// PunchResult holds the outcome of a successful hole punch.
+type PunchResult struct {
+	Conn     *net.UDPConn // the punched socket (caller owns)
+	PeerAddr *net.UDPAddr // confirmed peer address
+	Strategy string       // "standard" or "birthday"
+}
+
+// Punch attempts NAT traversal using the appropriate strategy based on
+// local and remote NAT types.
+func Punch(ctx context.Context, localNAT, remoteNAT NATType,
+	localAddr, peerAddr *net.UDPAddr) (*PunchResult, error) {
+
+	strategy := selectPunchStrategy(localNAT, remoteNAT)
+	slog.Info("DIAG: punch-start", "strategy", strategy,
+		"localNAT", localNAT.String(), "remoteNAT", remoteNAT.String(),
+		"peer", peerAddr.String())
+
+	switch strategy {
+	case "birthday":
+		portRange := 256
+		peerStart := peerAddr.Port - portRange/2
+		if peerStart < 1024 {
+			peerStart = 1024
+		}
+		peerEnd := peerStart + portRange - 1
+		if peerEnd > 65535 {
+			peerEnd = 65535
+			peerStart = peerEnd - portRange + 1
+		}
+		result, err := punchBirthday(ctx, localAddr.IP, peerAddr.IP,
+			0, 0, peerStart, peerEnd)
+		if err != nil {
+			slog.Warn("DIAG: punch-fail", "strategy", strategy, "peer", peerAddr.String(), "err", err)
+			return nil, err
+		}
+		return &PunchResult{Conn: result.Conn, PeerAddr: result.PeerAddr, Strategy: "birthday"}, nil
+
+	default:
+		conn, err := net.ListenUDP("udp4", localAddr)
+		if err != nil {
+			return nil, fmt.Errorf("k2p2p: listen for punch: %w", err)
+		}
+		confirmed, err := punchStandard(ctx, conn, peerAddr)
+		if err != nil {
+			conn.Close()
+			slog.Warn("DIAG: punch-fail", "strategy", strategy, "peer", peerAddr.String(), "err", err)
+			return nil, err
+		}
+		return &PunchResult{Conn: conn, PeerAddr: confirmed, Strategy: "standard"}, nil
+	}
+}
