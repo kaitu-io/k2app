@@ -13,11 +13,11 @@ const (
 	// RoleMarketing 市场营销（EDM、活动、推广相关功能）
 	RoleMarketing uint64 = 1 << 3 // 8
 
-	// RoleOpsViewer 运维只读（节点/隧道/云实例/用户/日志/工单 只读）
-	RoleOpsViewer uint64 = 1 << 4 // 16
+	// RoleDevopsViewer DevOps 只读（节点/隧道/云实例 只读）
+	RoleDevopsViewer uint64 = 1 << 4 // 16
 
-	// RoleOpsEditor 运维读写（含 OpsViewer 所有权限 + 节点/隧道/云实例变更）
-	RoleOpsEditor uint64 = 1 << 5 // 32
+	// RoleDevopsEditor DevOps 读写（含 DevopsViewer 所有权限 + 节点/隧道/云实例变更）
+	RoleDevopsEditor uint64 = 1 << 5 // 32
 
 	// RoleSupport 工单处理（工单状态变更 + 设备日志读）
 	RoleSupport uint64 = 1 << 6 // 64
@@ -27,8 +27,8 @@ const (
 var RoleNames = map[uint64]string{
 	RoleUser:      "user",
 	RoleMarketing: "marketing",
-	RoleOpsViewer: "ops_viewer",
-	RoleOpsEditor: "ops_editor",
+	RoleDevopsViewer: "devops_viewer",
+	RoleDevopsEditor: "devops_editor",
 	RoleSupport:   "support",
 }
 
@@ -36,8 +36,8 @@ var RoleNames = map[uint64]string{
 var RoleByName = map[string]uint64{
 	"user":       RoleUser,
 	"marketing":  RoleMarketing,
-	"ops_viewer": RoleOpsViewer,
-	"ops_editor": RoleOpsEditor,
+	"devops_viewer": RoleDevopsViewer,
+	"devops_editor": RoleDevopsEditor,
 	"support":    RoleSupport,
 }
 

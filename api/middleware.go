@@ -514,7 +514,7 @@ func AdminRequired() gin.HandlerFunc {
 }
 
 // RoleRequired 细粒度权限检查：IsAdmin=true 直接通过；否则检查 user.Roles 是否包含指定角色。
-// role 参数支持位或组合：RoleRequired(RoleOpsViewer | RoleOpsEditor) 表示任一满足即通过。
+// role 参数支持位或组合：RoleRequired(RoleDevopsViewer | RoleDevopsEditor) 表示任一满足即通过。
 // 权限来源：从 DB 加载的 User 结构体（通过 ReqUser(c)），与 AdminRequired() 读取 IsAdmin 一致。
 // 角色变更立即生效（下次请求），无需重新签发 token。
 func RoleRequired(role uint64) gin.HandlerFunc {

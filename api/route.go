@@ -272,16 +272,7 @@ func SetupRouter() *gin.Engine {
 		admin.GET("/users/statistics", api_admin_get_user_statistics)
 		admin.GET("/orders/statistics", api_admin_get_order_statistics)
 
-		// 分销商管理
-		admin.GET("/retailers", api_admin_list_retailers)
-		admin.GET("/retailers/todos", api_admin_list_retailer_todos)
-		admin.GET("/retailers/:uuid", api_admin_get_retailer_detail)
-		admin.PUT("/retailers/:uuid/level", api_admin_update_retailer_config) // 更新级别（复用用户页的函数）
-		admin.PUT("/retailers/:uuid/notes", api_admin_update_retailer_notes)  // 更新备注
-		admin.POST("/retailers/:uuid/notes", api_admin_create_retailer_note)
-		admin.GET("/retailers/:uuid/notes", api_admin_list_retailer_notes)
-		admin.PUT("/retailers/:uuid/notes/:noteId", api_admin_update_retailer_note)
-		admin.DELETE("/retailers/:uuid/notes/:noteId", api_admin_delete_retailer_note)
+		// 分销商管理 — 已移至 opsAdmin 组（RoleMarketing）
 
 		// 管理员用户列表（用于跟进人选择）
 		admin.GET("/admins", api_admin_list_admin_users)
@@ -292,8 +283,7 @@ func SetupRouter() *gin.Engine {
 		admin.POST("/wallet/withdraws/:id/complete", api_admin_complete_withdraw)
 
 		// 订单管理
-		admin.GET("/orders", api_admin_list_orders)
-		admin.GET("/orders/:uuid", api_admin_get_order_detail)
+		// 订单管理 — GET 已移至 opsAdmin 组（Support + Marketing 可读）
 
 		// 优惠活动管理
 		admin.GET("/campaigns", api_admin_list_campaigns)
@@ -316,26 +306,7 @@ func SetupRouter() *gin.Engine {
 		admin.GET("/license-keys", api_admin_list_license_keys)
 		admin.DELETE("/license-keys/:id", api_admin_delete_license_key)
 
-		// EDM邮件营销管理
-		edm := admin.Group("/edm")
-		{
-			// 邮件模板管理
-			edm.GET("/templates", api_admin_list_email_templates)
-			edm.POST("/templates", api_admin_create_email_template)
-			edm.PUT("/templates/:id", api_admin_update_email_template)
-			edm.DELETE("/templates/:id", api_admin_delete_email_template)
-			edm.POST("/templates/:id/translate/:language", api_admin_translate_email_template) // 自动翻译模板
-
-			// EDM发送任务管理（基于 Asynq）
-			edm.POST("/tasks", api_admin_create_edm_task)               // 创建EDM任务（入队到Asynq）
-			edm.POST("/preview-targets", api_admin_preview_edm_targets) // 预览目标用户
-
-			// 邮件发送日志管理
-			edm.GET("/send-logs", api_admin_list_email_send_logs)           // 获取发送日志列表（分页，默认100条/页）
-			edm.GET("/send-logs/stats", api_admin_get_email_send_log_stats) // 获取发送统计
-
-			// 注意：任务监控请使用 asynqmon UI (/app/asynqmon)
-		}
+		// EDM邮件营销管理 — 已移至 opsAdmin 组（RoleMarketing）
 
 		// Usage analytics overview
 		admin.GET("/stats/overview", api_admin_usage_overview)
@@ -358,18 +329,18 @@ func SetupRouter() *gin.Engine {
 	log.Debugf(ctx, "registering /app opsAdmin group")
 	opsAdmin.Use(log.MiddlewareRequestLog(true), MiddleRecovery(), CORSMiddleware(), AuthRequired())
 	{
-		viewOrEdit  := RoleOpsViewer | RoleOpsEditor
-		allOpsRoles := RoleOpsViewer | RoleOpsEditor | RoleSupport
+		viewOrEdit  := RoleDevopsViewer | RoleDevopsEditor
+		allOpsRoles := RoleDevopsViewer | RoleDevopsEditor | RoleSupport
 
 		// 隧道管理
 		opsAdmin.GET("/tunnels",        RoleRequired(viewOrEdit),    api_admin_list_tunnels)
-		opsAdmin.PUT("/tunnels/:id",    RoleRequired(RoleOpsEditor), api_admin_update_tunnel)
-		opsAdmin.DELETE("/tunnels/:id", RoleRequired(RoleOpsEditor), api_admin_delete_tunnel)
+		opsAdmin.PUT("/tunnels/:id",    RoleRequired(RoleDevopsEditor), api_admin_update_tunnel)
+		opsAdmin.DELETE("/tunnels/:id", RoleRequired(RoleDevopsEditor), api_admin_delete_tunnel)
 
 		// 物理节点管理
 		opsAdmin.GET("/nodes",          RoleRequired(viewOrEdit),    api_admin_list_nodes)
-		opsAdmin.PUT("/nodes/:ipv4",    RoleRequired(RoleOpsEditor), api_admin_update_node)
-		opsAdmin.DELETE("/nodes/:ipv4", RoleRequired(RoleOpsEditor), api_admin_delete_node)
+		opsAdmin.PUT("/nodes/:ipv4",    RoleRequired(RoleDevopsEditor), api_admin_update_node)
+		opsAdmin.DELETE("/nodes/:ipv4", RoleRequired(RoleDevopsEditor), api_admin_delete_node)
 
 		// 云实例（只读）
 		opsAdmin.GET("/cloud/instances",     RoleRequired(viewOrEdit), api_admin_list_cloud_instances)
@@ -380,22 +351,52 @@ func SetupRouter() *gin.Engine {
 		opsAdmin.GET("/cloud/images",        RoleRequired(viewOrEdit), api_admin_list_cloud_images)
 
 		// 云实例（读写）
-		opsAdmin.POST("/cloud/instances/sync",                RoleRequired(RoleOpsEditor), api_admin_sync_all_cloud_instances)
-		opsAdmin.POST("/cloud/instances/:id/change-ip",       RoleRequired(RoleOpsEditor), api_admin_change_ip_cloud_instance)
-		opsAdmin.PUT("/cloud/instances/:id/traffic-config",   RoleRequired(RoleOpsEditor), api_admin_update_traffic_config)
-		opsAdmin.POST("/cloud/instances",                     RoleRequired(RoleOpsEditor), api_admin_create_cloud_instance)
-		opsAdmin.DELETE("/cloud/instances/:id",               RoleRequired(RoleOpsEditor), api_admin_delete_cloud_instance)
+		opsAdmin.POST("/cloud/instances/sync",                RoleRequired(RoleDevopsEditor), api_admin_sync_all_cloud_instances)
+		opsAdmin.POST("/cloud/instances/:id/change-ip",       RoleRequired(RoleDevopsEditor), api_admin_change_ip_cloud_instance)
+		opsAdmin.PUT("/cloud/instances/:id/traffic-config",   RoleRequired(RoleDevopsEditor), api_admin_update_traffic_config)
+		opsAdmin.POST("/cloud/instances",                     RoleRequired(RoleDevopsEditor), api_admin_create_cloud_instance)
+		opsAdmin.DELETE("/cloud/instances/:id",               RoleRequired(RoleDevopsEditor), api_admin_delete_cloud_instance)
 
-		// 用户查看（只读）
-		opsAdmin.GET("/users",               RoleRequired(viewOrEdit), api_admin_list_users)
-		opsAdmin.GET("/users/:uuid",         RoleRequired(viewOrEdit), api_admin_get_user_detail)
-		opsAdmin.GET("/users/:uuid/devices", RoleRequired(viewOrEdit), api_admin_get_user_devices)
+		// 用户查看（只读）— DevOps + Support + Marketing 均可访问
+		readRoles := viewOrEdit | RoleSupport | RoleMarketing
+		opsAdmin.GET("/users",               RoleRequired(readRoles), api_admin_list_users)
+		opsAdmin.GET("/users/:uuid",         RoleRequired(readRoles), api_admin_get_user_detail)
+		opsAdmin.GET("/users/:uuid/devices", RoleRequired(readRoles), api_admin_get_user_devices)
+
+		// 订单查看（只读）— Support + Marketing 可访问
+		opsAdmin.GET("/orders",              RoleRequired(readRoles), api_admin_list_orders)
+		opsAdmin.GET("/orders/:uuid",        RoleRequired(readRoles), api_admin_get_order_detail)
 
 		// 设备日志 + 工单
 		opsAdmin.GET("/device-logs",                  RoleRequired(allOpsRoles), api_admin_list_device_logs)
 		opsAdmin.GET("/feedback-tickets",             RoleRequired(allOpsRoles), api_admin_list_feedback_tickets)
 		opsAdmin.PUT("/feedback-tickets/:id/resolve", RoleRequired(RoleSupport), api_admin_resolve_feedback_ticket)
 		opsAdmin.PUT("/feedback-tickets/:id/close",   RoleRequired(RoleSupport), api_admin_close_feedback_ticket)
+
+		// 分销商管理（Marketing 角色）
+		opsAdmin.GET("/retailers",                          RoleRequired(RoleMarketing), api_admin_list_retailers)
+		opsAdmin.GET("/retailers/todos",                    RoleRequired(RoleMarketing), api_admin_list_retailer_todos)
+		opsAdmin.GET("/retailers/:uuid",                    RoleRequired(RoleMarketing), api_admin_get_retailer_detail)
+		opsAdmin.PUT("/retailers/:uuid/level",              RoleRequired(RoleMarketing), api_admin_update_retailer_config)
+		opsAdmin.PUT("/retailers/:uuid/notes",              RoleRequired(RoleMarketing), api_admin_update_retailer_notes)
+		opsAdmin.POST("/retailers/:uuid/notes",             RoleRequired(RoleMarketing), api_admin_create_retailer_note)
+		opsAdmin.GET("/retailers/:uuid/notes",              RoleRequired(RoleMarketing), api_admin_list_retailer_notes)
+		opsAdmin.PUT("/retailers/:uuid/notes/:noteId",      RoleRequired(RoleMarketing), api_admin_update_retailer_note)
+		opsAdmin.DELETE("/retailers/:uuid/notes/:noteId",   RoleRequired(RoleMarketing), api_admin_delete_retailer_note)
+
+		// EDM 邮件营销管理（Marketing 角色）
+		edmOps := opsAdmin.Group("/edm")
+		{
+			edmOps.GET("/templates",                              RoleRequired(RoleMarketing), api_admin_list_email_templates)
+			edmOps.POST("/templates",                             RoleRequired(RoleMarketing), api_admin_create_email_template)
+			edmOps.PUT("/templates/:id",                          RoleRequired(RoleMarketing), api_admin_update_email_template)
+			edmOps.DELETE("/templates/:id",                       RoleRequired(RoleMarketing), api_admin_delete_email_template)
+			edmOps.POST("/templates/:id/translate/:language",     RoleRequired(RoleMarketing), api_admin_translate_email_template)
+			edmOps.POST("/tasks",                                 RoleRequired(RoleMarketing), api_admin_create_edm_task)
+			edmOps.POST("/preview-targets",                       RoleRequired(RoleMarketing), api_admin_preview_edm_targets)
+			edmOps.GET("/send-logs",                              RoleRequired(RoleMarketing), api_admin_list_email_send_logs)
+			edmOps.GET("/send-logs/stats",                        RoleRequired(RoleMarketing), api_admin_get_email_send_log_stats)
+		}
 	}
 
 	// GitHub Issues routes (requires authentication)

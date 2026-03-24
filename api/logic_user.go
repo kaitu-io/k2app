@@ -118,7 +118,7 @@ func SetUserAdminStatus(ctx context.Context, email string, isAdmin bool) error {
 }
 
 // SetUserRoles sets the user role bitmask (replace-all semantics).
-// roleNames is a list of role names corresponding to keys in RoleByName (e.g. "ops_viewer", "ops_editor", "support").
+// roleNames is a list of role names corresponding to keys in RoleByName (e.g. "devops_viewer", "devops_editor", "support").
 // RoleUser bit is always preserved and cannot be cleared.
 // Returns the written role value (including RoleUser).
 func SetUserRoles(ctx context.Context, email string, roleNames []string) (uint64, error) {

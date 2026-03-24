@@ -682,7 +682,7 @@ func assertForbidden(t *testing.T, w *httptest.ResponseRecorder) {
 // TestRoleRequired_NoUser 未登录用户被拒绝
 func TestRoleRequired_NoUser(t *testing.T) {
 	testInitConfig()
-	r := createRoleTestRouter(nil, RoleOpsViewer)
+	r := createRoleTestRouter(nil, RoleDevopsViewer)
 	req, _ := http.NewRequest("GET", "/test", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -692,8 +692,8 @@ func TestRoleRequired_NoUser(t *testing.T) {
 // TestRoleRequired_ExactRole 拥有精确角色的用户通过
 func TestRoleRequired_ExactRole(t *testing.T) {
 	testInitConfig()
-	user := &User{ID: 1, Roles: RoleOpsViewer}
-	r := createRoleTestRouter(user, RoleOpsViewer)
+	user := &User{ID: 1, Roles: RoleDevopsViewer}
+	r := createRoleTestRouter(user, RoleDevopsViewer)
 	req, _ := http.NewRequest("GET", "/test", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -703,8 +703,8 @@ func TestRoleRequired_ExactRole(t *testing.T) {
 // TestRoleRequired_WrongRole 拥有不同角色的用户被拒绝
 func TestRoleRequired_WrongRole(t *testing.T) {
 	testInitConfig()
-	user := &User{ID: 2, Roles: RoleSupport} // 有 Support，但需要 OpsViewer
-	r := createRoleTestRouter(user, RoleOpsViewer)
+	user := &User{ID: 2, Roles: RoleSupport} // 有 Support，但需要 DevopsViewer
+	r := createRoleTestRouter(user, RoleDevopsViewer)
 	req, _ := http.NewRequest("GET", "/test", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -715,7 +715,7 @@ func TestRoleRequired_WrongRole(t *testing.T) {
 func TestRoleRequired_RoleUser_Denied(t *testing.T) {
 	testInitConfig()
 	user := &User{ID: 3, Roles: RoleUser}
-	r := createRoleTestRouter(user, RoleOpsViewer)
+	r := createRoleTestRouter(user, RoleDevopsViewer)
 	req, _ := http.NewRequest("GET", "/test", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -726,8 +726,8 @@ func TestRoleRequired_RoleUser_Denied(t *testing.T) {
 func TestRoleRequired_IsAdmin_Bypass(t *testing.T) {
 	testInitConfig()
 	isAdmin := true
-	user := &User{ID: 4, Roles: RoleUser, IsAdmin: &isAdmin} // Roles 没有 OpsViewer，但 IsAdmin=true
-	r := createRoleTestRouter(user, RoleOpsViewer)
+	user := &User{ID: 4, Roles: RoleUser, IsAdmin: &isAdmin} // Roles 没有 DevopsViewer，但 IsAdmin=true
+	r := createRoleTestRouter(user, RoleDevopsViewer)
 	req, _ := http.NewRequest("GET", "/test", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -737,11 +737,11 @@ func TestRoleRequired_IsAdmin_Bypass(t *testing.T) {
 // TestRoleRequired_CombinedRole_EitherSuffices 组合角色检查（任一满足即通过）
 func TestRoleRequired_CombinedRole_EitherSuffices(t *testing.T) {
 	testInitConfig()
-	viewOrEdit := RoleOpsViewer | RoleOpsEditor
+	viewOrEdit := RoleDevopsViewer | RoleDevopsEditor
 
-	// 只有 OpsViewer：应通过
+	// 只有 DevopsViewer：应通过
 	t.Run("viewer passes viewOrEdit check", func(t *testing.T) {
-		user := &User{ID: 5, Roles: RoleOpsViewer}
+		user := &User{ID: 5, Roles: RoleDevopsViewer}
 		r := createRoleTestRouter(user, viewOrEdit)
 		req, _ := http.NewRequest("GET", "/test", nil)
 		w := httptest.NewRecorder()
@@ -749,9 +749,9 @@ func TestRoleRequired_CombinedRole_EitherSuffices(t *testing.T) {
 		assertAuthSuccess(t, w)
 	})
 
-	// 只有 OpsEditor：应通过
+	// 只有 DevopsEditor：应通过
 	t.Run("editor passes viewOrEdit check", func(t *testing.T) {
-		user := &User{ID: 6, Roles: RoleOpsEditor}
+		user := &User{ID: 6, Roles: RoleDevopsEditor}
 		r := createRoleTestRouter(user, viewOrEdit)
 		req, _ := http.NewRequest("GET", "/test", nil)
 		w := httptest.NewRecorder()
@@ -773,12 +773,12 @@ func TestRoleRequired_CombinedRole_EitherSuffices(t *testing.T) {
 // TestRoleRequired_MultipleRoles 用户拥有多个角色时，任一满足即通过
 func TestRoleRequired_MultipleRoles(t *testing.T) {
 	testInitConfig()
-	// 用户同时有 OpsViewer + Support
-	user := &User{ID: 8, Roles: RoleOpsViewer | RoleSupport}
+	// 用户同时有 DevopsViewer + Support
+	user := &User{ID: 8, Roles: RoleDevopsViewer | RoleSupport}
 
-	// 检查需要 OpsEditor：应失败（没有 OpsEditor bit）
+	// 检查需要 DevopsEditor：应失败（没有 DevopsEditor bit）
 	t.Run("missing editor role denied", func(t *testing.T) {
-		r := createRoleTestRouter(user, RoleOpsEditor)
+		r := createRoleTestRouter(user, RoleDevopsEditor)
 		req, _ := http.NewRequest("GET", "/test", nil)
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)

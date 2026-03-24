@@ -101,14 +101,14 @@ Semantics: replace-all. The --roles list becomes the complete new role set.
 RoleUser bit is always preserved regardless of input.
 To add a single role without removing others, include all current roles in --roles.
 
-Valid role names: user, marketing, ops_viewer, ops_editor, support
+Valid role names: user, marketing, devops_viewer, devops_editor, support
 
 Examples:
   # Grant ops viewer + support roles
-  center user set-roles --email ai@example.com --roles ops_viewer,support -c config.yml
+  center user set-roles --email ai@example.com --roles devops_viewer,support -c config.yml
 
   # Grant full ops roles (viewer + editor + support)
-  center user set-roles --email employee@example.com --roles ops_viewer,ops_editor,support -c config.yml
+  center user set-roles --email employee@example.com --roles devops_viewer,devops_editor,support -c config.yml
 
   # Reset to plain user (no admin roles)
   center user set-roles --email user@example.com --roles user -c config.yml
@@ -118,7 +118,7 @@ Examples:
 		rolesFlag, _ := cmd.Flags().GetString("roles")
 
 		if rolesFlag == "" {
-			fmt.Println("Error: --roles is required (e.g. --roles ops_viewer,ops_editor)")
+			fmt.Println("Error: --roles is required (e.g. --roles devops_viewer,devops_editor)")
 			return
 		}
 
@@ -238,7 +238,7 @@ func init() {
 
 	// Set-roles subcommand
 	userSetRolesCmd.Flags().String("email", "", "User's email address")
-	userSetRolesCmd.Flags().String("roles", "", "Comma-separated role names (e.g. ops_viewer,ops_editor,support)")
+	userSetRolesCmd.Flags().String("roles", "", "Comma-separated role names (e.g. devops_viewer,devops_editor,support)")
 	userSetRolesCmd.MarkFlagRequired("email")
 	userSetRolesCmd.MarkFlagRequired("roles")
 

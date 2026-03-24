@@ -150,8 +150,8 @@ interface UserDetailData {
 // 可分配的角色列表（不含 RoleUser，始终保留）
 const ASSIGNABLE_ROLES: { name: string; label: string; bit: number }[] = [
   { name: 'marketing',  label: '市场推广',    bit: 8  },
-  { name: 'ops_viewer', label: '技术运维(读)',  bit: 16 },
-  { name: 'ops_editor', label: '技术运维(写)',  bit: 32 },
+  { name: 'devops_viewer', label: 'DevOps(读)',  bit: 16 },
+  { name: 'devops_editor', label: 'DevOps(写)',  bit: 32 },
   { name: 'support',    label: '客服支持',    bit: 64 },
 ];
 

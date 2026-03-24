@@ -54,7 +54,7 @@ function formatTimeAgo(ts: number): string {
 }
 
 function formatCurrency(cents: number): string {
-  return `¥${(cents / 100).toFixed(2)}`;
+  return `$${(cents / 100).toFixed(2)}`;
 }
 
 function formatPercentage(value: number): string {

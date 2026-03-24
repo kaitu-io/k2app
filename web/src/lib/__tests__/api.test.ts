@@ -480,22 +480,22 @@ describe('API Methods', () => {
         ok: true,
         json: () => Promise.resolve({
           code: 0,
-          data: { roles: 48, roleNames: ['ops_viewer', 'ops_editor'] },
+          data: { roles: 48, roleNames: ['devops_viewer', 'devops_editor'] },
         }),
         headers: new Headers({ 'Content-Length': '50' }),
         status: 200,
       });
 
-      const result = await api.setUserRoles('user-uuid-123', ['ops_viewer', 'ops_editor']);
+      const result = await api.setUserRoles('user-uuid-123', ['devops_viewer', 'devops_editor']);
 
       expect(mockFetch).toHaveBeenCalledWith(
         expect.stringContaining('/app/users/user-uuid-123/roles'),
         expect.objectContaining({
           method: 'PUT',
-          body: JSON.stringify({ roles: ['ops_viewer', 'ops_editor'] }),
+          body: JSON.stringify({ roles: ['devops_viewer', 'devops_editor'] }),
         })
       );
-      expect(result).toEqual({ roles: 48, roleNames: ['ops_viewer', 'ops_editor'] });
+      expect(result).toEqual({ roles: 48, roleNames: ['devops_viewer', 'devops_editor'] });
     });
   });
 

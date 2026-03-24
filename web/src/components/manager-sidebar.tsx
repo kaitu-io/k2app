@@ -10,8 +10,8 @@ import { Button } from "@/components/ui/button";
 
 // 角色位掩码常量（与后端 api/type.go 一致）
 const RoleMarketing = 8;
-const RoleOpsViewer = 16;
-const RoleOpsEditor = 32;
+const RoleDevopsViewer = 16;  // DevOps 只读
+const RoleDevopsEditor = 32;  // DevOps 读写
 const RoleSupport   = 64;
 
 // requiredRole: 0 = superadmin only, 位掩码 = 需要其中任一角色
@@ -29,33 +29,30 @@ interface MenuGroup {
 
 const menuGroups: MenuGroup[] = [
   {
-    title: "系统管理",
-    requiredRole: 0, // superadmin only
-    items: [
-      { href: "/manager/plans", icon: Package, label: "套餐管理" },
-      { href: "/manager/cloud", icon: Cloud, label: "节点部署" },
-      { href: "/manager/nodes", icon: Server, label: "节点运维" },
-    ]
-  },
-  {
-    title: "业务管理",
+    title: "用户与订单",
     requiredRole: 0, // superadmin only
     items: [
       { href: "/manager/users", icon: Users, label: "用户管理" },
       { href: "/manager/orders", icon: Receipt, label: "订单管理" },
-      { href: "/manager/campaigns", icon: Tag, label: "优惠活动管理" },
-      { href: "/manager/license-keys", icon: Key, label: "授权码管理" },
       { href: "/manager/withdraws", icon: Wallet, label: "提现管理" },
     ]
   },
   {
-    title: "技术运维",
-    requiredRole: RoleOpsViewer | RoleOpsEditor,
+    title: "运营配置",
+    requiredRole: 0, // superadmin only
     items: [
-      { href: "/manager/tunnels", icon: Server, label: "隧道管理" },
+      { href: "/manager/plans", icon: Package, label: "套餐管理" },
+      { href: "/manager/campaigns", icon: Tag, label: "优惠活动" },
+      { href: "/manager/license-keys", icon: Key, label: "授权码" },
+    ]
+  },
+  {
+    title: "基础设施",
+    requiredRole: RoleDevopsViewer | RoleDevopsEditor,
+    items: [
+      { href: "/manager/cloud", icon: Cloud, label: "节点部署" },
       { href: "/manager/nodes", icon: Server, label: "节点管理" },
-      { href: "/manager/retailers", icon: UserCircle, label: "分销商" },
-      { href: "/manager/retailers/todos", icon: ClipboardList, label: "分销待办" },
+      { href: "/manager/tunnels", icon: Server, label: "隧道管理" },
     ]
   },
   {
@@ -72,7 +69,9 @@ const menuGroups: MenuGroup[] = [
     items: [
       { href: "/manager/edm/create-task", icon: Mail, label: "邮件营销" },
       { href: "/manager/edm/templates", icon: FileText, label: "邮件模板" },
-      { href: "/manager/edm/send-logs", icon: Activity, label: "邮件发送日志" },
+      { href: "/manager/edm/send-logs", icon: Activity, label: "发送日志" },
+      { href: "/manager/retailers", icon: UserCircle, label: "分销商" },
+      { href: "/manager/retailers/todos", icon: ClipboardList, label: "分销待办" },
     ]
   },
   {
@@ -80,9 +79,9 @@ const menuGroups: MenuGroup[] = [
     requiredRole: 0, // superadmin only
     items: [
       { href: "/manager/usages", icon: BarChart3, label: "使用统计" },
-      { href: "/manager/asynqmon", icon: Gauge, label: "任务队列监控" },
+      { href: "/manager/asynqmon", icon: Gauge, label: "任务队列" },
     ]
-  }
+  },
 ];
 
 const ManagerSidebar = () => {
@@ -92,10 +91,10 @@ const ManagerSidebar = () => {
   const isSuperAdmin = user?.isAdmin === true;
   const userRoles = user?.roles ?? 1;
 
-  // 过滤菜单：superadmin 看全部，ops 用户只看匹配角色的
+  // 超管看全部，其他角色按位掩码过滤
   const visibleGroups = menuGroups.filter(group => {
     if (isSuperAdmin) return true;
-    if (group.requiredRole === 0) return false; // superadmin only
+    if (group.requiredRole === 0) return false;
     return (userRoles & group.requiredRole) !== 0;
   });
 
