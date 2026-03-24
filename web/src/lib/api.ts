@@ -1463,6 +1463,20 @@ export const api = {
     });
   },
 
+  // 生成或重置用户 Access Key（管理员）
+  async generateAccessKey(userUUID: string): Promise<{ accessKey: string }> {
+    return this.request<{ accessKey: string }>(`/app/users/${userUUID}/access-key`, {
+      method: 'POST',
+    });
+  },
+
+  // 撤销用户 Access Key（管理员）
+  async revokeAccessKey(userUUID: string): Promise<void> {
+    return this.request<void>(`/app/users/${userUUID}/access-key`, {
+      method: 'DELETE',
+    });
+  },
+
   // Withdraw management APIs
   async listWithdrawRequests(params: {
     page?: number;
