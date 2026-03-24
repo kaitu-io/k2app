@@ -120,28 +120,37 @@ func (s *Store) Update(udid, token string, req RegisterRequest) error {
 	return nil
 }
 
-// Get returns a copy of the entry for udid (WS field is not included).
-func (s *Store) Get(udid string) (PeerEntry, bool) {
+// PeerSnapshot is a read-only copy of a PeerEntry's public fields.
+// Does not contain the mutex or WS connection.
+type PeerSnapshot struct {
+	UDID      string
+	Addr      string
+	NATType   string
+	Networks  []string
+	DNS       string
+	UpdatedAt time.Time
+}
+
+// Get returns a snapshot of the entry for udid.
+func (s *Store) Get(udid string) (PeerSnapshot, bool) {
 	s.mu.RLock()
 	e, ok := s.peers[udid]
 	if !ok {
 		s.mu.RUnlock()
-		return PeerEntry{}, false
+		return PeerSnapshot{}, false
 	}
-	// Deep copy — omit WS to avoid exposing the live conn.
 	var nets []string
 	if len(e.Networks) > 0 {
 		nets = make([]string, len(e.Networks))
 		copy(nets, e.Networks)
 	}
-	out := PeerEntry{
-		UDID:         e.UDID,
-		RegTokenHash: e.RegTokenHash,
-		Addr:         e.Addr,
-		NATType:      e.NATType,
-		Networks:     nets,
-		DNS:          e.DNS,
-		UpdatedAt:    e.UpdatedAt,
+	out := PeerSnapshot{
+		UDID:      e.UDID,
+		Addr:      e.Addr,
+		NATType:   e.NATType,
+		Networks:  nets,
+		DNS:       e.DNS,
+		UpdatedAt: e.UpdatedAt,
 	}
 	s.mu.RUnlock()
 	return out, true

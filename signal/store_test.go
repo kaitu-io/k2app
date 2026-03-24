@@ -32,12 +32,6 @@ func TestStore_ClaimAndGet(t *testing.T) {
 	if entry.UDID != "udid-1" {
 		t.Errorf("Get: UDID = %q, want %q", entry.UDID, "udid-1")
 	}
-	if entry.RegTokenHash == "" {
-		t.Error("Get: expected non-empty RegTokenHash")
-	}
-	if entry.WS != nil {
-		t.Error("Get: WS field should not be exposed")
-	}
 
 	// Get non-existent UDID.
 	_, ok = s.Get("no-such-udid")
