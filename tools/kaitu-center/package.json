@@ -1,10 +1,13 @@
 {
-  "name": "kaitu-ops-mcp",
-  "version": "0.1.0",
-  "description": "Kaitu ops MCP server for managing Center API and SSH operations",
+  "name": "@kaitu/center-plugin",
+  "version": "0.2.0",
+  "description": "Kaitu Center API tools — MCP server (Claude Code) + OpenClaw plugin",
   "type": "module",
   "main": "dist/index.js",
   "bin": "dist/index.js",
+  "openclaw": {
+    "extensions": ["./src/openclaw.ts"]
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",

@@ -1,0 +1,16 @@
+{
+  "id": "kaitu-mail",
+  "name": "Kaitu Mail",
+  "description": "Per-profile email tools via himalaya. Each profile binds its own mail account.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "account": {
+        "type": "string",
+        "description": "Himalaya account name (e.g. marketing-kaitu, support-kaitu)"
+      }
+    },
+    "required": []
+  }
+}

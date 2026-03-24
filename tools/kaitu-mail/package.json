@@ -1,0 +1,10 @@
+{
+  "name": "kaitu-mail",
+  "version": "1.0.0",
+  "description": "Kaitu OpenClaw email plugin",
+  "type": "module",
+  "main": "index.js",
+  "openclaw": {
+    "extensions": ["./index.js"]
+  }
+}
