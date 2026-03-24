@@ -1,7 +1,7 @@
 package center
 
 import (
-	"context"
+	"fmt"
 	"slices"
 	"strconv"
 
@@ -62,31 +62,20 @@ func api_admin_issue_license_keys(c *gin.Context) {
 		return
 	}
 
-	count, err := GenerateLicenseKeysForCampaign(ctx, &campaign)
+	// 提交审批
+	params := struct {
+		CampaignID uint64 `json:"campaignId"`
+	}{CampaignID: id}
+	summary := fmt.Sprintf("为活动「%s」发放 License Key", campaign.Name)
+	approvalID, err := SubmitApproval(c, "campaign_issue_keys", params, summary)
 	if err != nil {
-		log.Errorf(c, "failed to generate license keys for campaign %d: %v", id, err)
-		Error(c, ErrorSystemError, err.Error())
+		log.Errorf(c, "failed to submit approval for issue keys campaign %d: %v", id, err)
+		Error(c, ErrorSystemError, "failed to submit approval")
 		return
 	}
-	eligibleUsers := int64(0)
-	if campaign.SharesPerUser > 0 {
-		eligibleUsers = count / campaign.SharesPerUser
-	}
-	resp := IssueKeysResponse{
-		EligibleUsers: eligibleUsers,
-		KeysToIssue:   count,
-		Issued:        true,
-	}
-	// Send gift emails asynchronously — failures are logged but don't fail the API call
-	go func() {
-		bgCtx := context.Background()
-		if err := SendLicenseKeyEmails(bgCtx, campaign.ID); err != nil {
-			log.Warnf(bgCtx, "[LICENSE_KEY] async email send failed for campaign %d: %v", campaign.ID, err)
-		}
-	}()
 
-	log.Infof(c, "issued %d license keys for campaign %d", count, id)
-	Success(c, &resp)
+	log.Infof(c, "issue keys for campaign %d submitted for approval: %d", id, approvalID)
+	Success(c, &ApprovalSubmitResponse{ApprovalID: approvalID, Status: "pending"})
 }
 
 // ===================== 优惠活动管理 =====================
@@ -215,32 +204,17 @@ func api_admin_create_campaign(c *gin.Context) {
 		return
 	}
 
-	// 创建活动
-	campaign := Campaign{
-		Code:          req.Code,
-		Name:          req.Name,
-		Type:          req.Type,
-		Value:         req.Value,
-		StartAt:       req.StartAt,
-		EndAt:         req.EndAt,
-		Description:   req.Description,
-		IsActive:      BoolPtr(req.IsActive),
-		MatcherType:   req.MatcherType,
-		MatcherParams: req.MatcherParams,
-		IsShareable:   req.IsShareable,
-		SharesPerUser: req.SharesPerUser,
-		MaxUsage:      req.MaxUsage,
-	}
-
-	if err := db.Get().Create(&campaign).Error; err != nil {
-		log.Errorf(c, "failed to create campaign: %v", err)
-		Error(c, ErrorSystemError, "failed to create campaign")
+	// 提交审批
+	summary := fmt.Sprintf("创建优惠活动「%s」，代码 %s", req.Name, req.Code)
+	approvalID, err := SubmitApproval(c, "campaign_create", req, summary)
+	if err != nil {
+		log.Errorf(c, "failed to submit approval for campaign create: %v", err)
+		Error(c, ErrorSystemError, "failed to submit approval")
 		return
 	}
 
-	response := convertCampaignToResponse(campaign)
-	log.Infof(c, "successfully created campaign with ID: %d", campaign.ID)
-	Success(c, &response)
+	log.Infof(c, "campaign create submitted for approval: %d", approvalID)
+	Success(c, &ApprovalSubmitResponse{ApprovalID: approvalID, Status: "pending"})
 }
 
 // api_admin_update_campaign 处理更新优惠活动的请求（管理员）
@@ -304,30 +278,21 @@ func api_admin_update_campaign(c *gin.Context) {
 		}
 	}
 
-	// 更新活动
-	campaign.Code = req.Code
-	campaign.Name = req.Name
-	campaign.Type = req.Type
-	campaign.Value = req.Value
-	campaign.StartAt = req.StartAt
-	campaign.EndAt = req.EndAt
-	campaign.Description = req.Description
-	campaign.IsActive = BoolPtr(req.IsActive)
-	campaign.MatcherType = req.MatcherType
-	campaign.MatcherParams = req.MatcherParams
-	campaign.IsShareable = req.IsShareable
-	campaign.SharesPerUser = req.SharesPerUser
-	campaign.MaxUsage = req.MaxUsage
-
-	if err := db.Get().Save(&campaign).Error; err != nil {
-		log.Errorf(c, "failed to update campaign: %v", err)
-		Error(c, ErrorSystemError, "failed to update campaign")
+	// 提交审批
+	params := campaignUpdateApprovalParams{
+		CampaignID: id,
+		Request:    req,
+	}
+	summary := fmt.Sprintf("修改优惠活动「%s」(ID:%d)", req.Name, id)
+	approvalID, err := SubmitApproval(c, "campaign_update", params, summary)
+	if err != nil {
+		log.Errorf(c, "failed to submit approval for campaign update: %v", err)
+		Error(c, ErrorSystemError, "failed to submit approval")
 		return
 	}
 
-	response := convertCampaignToResponse(campaign)
-	log.Infof(c, "successfully updated campaign with ID: %d", campaign.ID)
-	Success(c, &response)
+	log.Infof(c, "campaign update submitted for approval: %d", approvalID)
+	Success(c, &ApprovalSubmitResponse{ApprovalID: approvalID, Status: "pending"})
 }
 
 // api_admin_delete_campaign 处理删除优惠活动的请求（管理员）
@@ -352,15 +317,20 @@ func api_admin_delete_campaign(c *gin.Context) {
 		return
 	}
 
-	// 软删除活动
-	if err := db.Get().Delete(&campaign).Error; err != nil {
-		log.Errorf(c, "failed to delete campaign: %v", err)
-		Error(c, ErrorSystemError, "failed to delete campaign")
+	// 提交审批
+	params := struct {
+		CampaignID uint64 `json:"campaignId"`
+	}{CampaignID: id}
+	summary := fmt.Sprintf("删除优惠活动「%s」(ID:%d)", campaign.Name, id)
+	approvalID, err := SubmitApproval(c, "campaign_delete", params, summary)
+	if err != nil {
+		log.Errorf(c, "failed to submit approval for campaign delete: %v", err)
+		Error(c, ErrorSystemError, "failed to submit approval")
 		return
 	}
 
-	log.Infof(c, "successfully deleted campaign with ID: %d", id)
-	SuccessEmpty(c)
+	log.Infof(c, "campaign delete submitted for approval: %d", approvalID)
+	Success(c, &ApprovalSubmitResponse{ApprovalID: approvalID, Status: "pending"})
 }
 
 // api_admin_get_campaign_stats 获取优惠活动统计数据（管理员）
