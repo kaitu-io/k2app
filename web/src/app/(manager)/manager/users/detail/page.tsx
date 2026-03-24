@@ -145,6 +145,8 @@ interface UserDetailData {
   wallet?: DataWallet;
   walletChanges?: DataWalletChange[];
   roles?: number;
+  hasAccessKey?: boolean;
+  accessKeyCreatedAt?: number;
 }
 
 // 可分配的角色列表（不含 RoleUser，始终保留）
@@ -215,6 +217,12 @@ function UserDetailContent() {
   const [isEditingRoles, setIsEditingRoles] = useState(false);
   const [editRoles, setEditRoles] = useState<string[]>([]);
   const [isSavingRoles, setIsSavingRoles] = useState(false);
+
+  // Access key management state
+  const [isGeneratingKey, setIsGeneratingKey] = useState(false);
+  const [isRevokingKey, setIsRevokingKey] = useState(false);
+  const [generatedKey, setGeneratedKey] = useState<string | null>(null);
+  const [showKeyDialog, setShowKeyDialog] = useState(false);
 
   // Fetch devices
   useEffect(() => {
@@ -464,6 +472,54 @@ function UserDetailContent() {
     }
   };
 
+  // Access Key management handlers
+  const handleGenerateAccessKey = async () => {
+    if (!uuid) return;
+    const isReset = userDetail?.hasAccessKey;
+    if (isReset && !confirm("确定要重置 Access Key？旧的 Key 将立即失效。")) return;
+
+    setIsGeneratingKey(true);
+    try {
+      const result = await api.generateAccessKey(uuid);
+      setGeneratedKey(result.accessKey);
+      setShowKeyDialog(true);
+      await fetchUserDetail();
+      toast.success(isReset ? "Access Key 已重置" : "Access Key 已生成");
+    } catch (error) {
+      console.error("Failed to generate access key:", error);
+      toast.error("生成 Access Key 失败");
+    } finally {
+      setIsGeneratingKey(false);
+    }
+  };
+
+  const handleRevokeAccessKey = async () => {
+    if (!uuid) return;
+    if (!confirm("确定要撤销 Access Key？使用此 Key 的所有 API 调用将立即失效。")) return;
+
+    setIsRevokingKey(true);
+    try {
+      await api.revokeAccessKey(uuid);
+      await fetchUserDetail();
+      toast.success("Access Key 已撤销");
+    } catch (error) {
+      console.error("Failed to revoke access key:", error);
+      toast.error("撤销 Access Key 失败");
+    } finally {
+      setIsRevokingKey(false);
+    }
+  };
+
+  const handleCopyKey = async () => {
+    if (!generatedKey) return;
+    try {
+      await navigator.clipboard.writeText(generatedKey);
+      toast.success("已复制到剪贴板");
+    } catch {
+      toast.error("复制失败，请手动复制");
+    }
+  };
+
   // 复制到剪贴板
   const handleCopyToClipboard = async (text: string, label: string) => {
     try {
@@ -658,6 +714,84 @@ function UserDetailContent() {
           )}
         </CardContent>
       </Card>
+
+      {/* Access Key 管理 */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Access Key</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {userDetail.hasAccessKey ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <Badge variant="outline" className="font-mono">ktu_****...****</Badge>
+                <span className="text-sm text-muted-foreground">
+                  创建于 {safeFormatDate(userDetail.accessKeyCreatedAt || 0)}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleGenerateAccessKey}
+                  disabled={isGeneratingKey}
+                >
+                  {isGeneratingKey ? "重置中..." : "重置 Key"}
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={handleRevokeAccessKey}
+                  disabled={isRevokingKey}
+                >
+                  {isRevokingKey ? "撤销中..." : "撤销 Key"}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-muted-foreground">未生成</span>
+              <Button
+                size="sm"
+                onClick={handleGenerateAccessKey}
+                disabled={isGeneratingKey}
+              >
+                {isGeneratingKey ? "生成中..." : "生成 Access Key"}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Access Key 展示弹窗（仅生成时显示一次） */}
+      <Dialog open={showKeyDialog} onOpenChange={(open) => {
+        if (!open) {
+          setShowKeyDialog(false);
+          setGeneratedKey(null);
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Access Key 已生成</DialogTitle>
+            <DialogDescription>
+              请立即复制此 Key。关闭弹窗后将无法再次查看。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="my-4">
+            <code className="block w-full p-3 bg-muted rounded text-sm font-mono break-all select-all">
+              {generatedKey}
+            </code>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={handleCopyKey}>
+              复制
+            </Button>
+            <Button onClick={() => { setShowKeyDialog(false); setGeneratedKey(null); }}>
+              我已保存，关闭
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* 分销商配置 */}
       {userDetail.isRetailer && (
