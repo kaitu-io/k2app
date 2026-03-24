@@ -72,6 +72,21 @@ func InitWorker() {
 	// 注册云同步 worker
 	RegisterCloudWorker()
 
+	// 审批执行 handler
+	asynq.Handle(TaskTypeApprovalExecute, ExecuteApproval)
+
+	// 审批 callback 注册
+	RegisterApprovalCallback("edm_create_task", executeApprovalEDMCreateTask)
+	RegisterApprovalCallback("campaign_create", executeApprovalCampaignCreate)
+	RegisterApprovalCallback("campaign_update", executeApprovalCampaignUpdate)
+	RegisterApprovalCallback("campaign_delete", executeApprovalCampaignDelete)
+	RegisterApprovalCallback("campaign_issue_keys", executeApprovalCampaignIssueKeys)
+	RegisterApprovalCallback("user_hard_delete", executeApprovalUserHardDelete)
+	RegisterApprovalCallback("plan_update", executeApprovalPlanUpdate)
+	RegisterApprovalCallback("plan_delete", executeApprovalPlanDelete)
+	RegisterApprovalCallback("withdraw_approve", executeApprovalWithdrawApprove)
+	RegisterApprovalCallback("withdraw_complete", executeApprovalWithdrawComplete)
+
 	log.Infof(context.Background(), "[WORKER] Task handlers registered (including renewal reminder cron at 10:30 Beijing time)")
 }
 
