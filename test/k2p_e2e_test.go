@@ -2,11 +2,14 @@ package test
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"net"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -282,6 +285,106 @@ func TestK2P_E2E_AuthRejection(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for Home auth result")
 	}
+}
+
+// TestK2P_E2E_PinRejection verifies that Away is rejected when the provided pin
+// does not match the Home peer's actual certificate.
+// Tests at the QUIC connection level (no full punch needed — same pattern as
+// TestK2P_E2E_AuthRejection) to avoid loopback punch timing issues.
+func TestK2P_E2E_PinRejection(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e test")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	// Generate two distinct cert pairs: one for Home, one to provide the wrong pin.
+	homeCertPair, err := wire.GenerateCertPair()
+	if err != nil {
+		t.Fatalf("generate home cert pair: %v", err)
+	}
+	wrongCertPair, err := wire.GenerateCertPair()
+	if err != nil {
+		t.Fatalf("generate wrong cert pair: %v", err)
+	}
+
+	// Start a QUIC listener using the Home cert.
+	homeConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	homeAddr := homeConn.LocalAddr().(*net.UDPAddr)
+	homeTr := &quic.Transport{Conn: homeConn}
+	t.Cleanup(func() { homeTr.Close() })
+
+	homeTLSCfg := &tls.Config{
+		NextProtos:   []string{"h3"},
+		Certificates: []tls.Certificate{homeCertPair.EC},
+	}
+	homeLn, err := homeTr.Listen(homeTLSCfg, wire.DefaultQUICConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { homeLn.Close() })
+
+	// Home accepts connections in background (just accept and close).
+	go func() {
+		for {
+			conn, err := homeLn.Accept(ctx)
+			if err != nil {
+				return
+			}
+			conn.CloseWithError(0, "test done")
+		}
+	}()
+
+	// Away dials with the WRONG pin (from wrongCertPair, not homeCertPair).
+	// The TLS VerifyPeerCertificate callback should reject Home's certificate.
+	awayConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	awayTr := &quic.Transport{Conn: awayConn}
+	t.Cleanup(func() { awayTr.Close() })
+
+	wrongPin := wrongCertPair.FormatPins()
+	awayTLSCfg := &tls.Config{
+		NextProtos:         []string{"h3"},
+		InsecureSkipVerify: true, // skip CA; pin check replaces CA validation
+	}
+	expectedPins, err := wire.ParsePins(wrongPin)
+	if err != nil {
+		t.Fatalf("ParsePins: %v", err)
+	}
+	awayTLSCfg.VerifyPeerCertificate = func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+		for _, raw := range rawCerts {
+			cert, err := x509.ParseCertificate(raw)
+			if err != nil {
+				continue
+			}
+			pubDER, err := x509.MarshalPKIXPublicKey(cert.PublicKey)
+			if err != nil {
+				continue
+			}
+			hash := sha256.Sum256(pubDER)
+			for _, exp := range expectedPins {
+				if hash == exp {
+					return nil
+				}
+			}
+		}
+		return fmt.Errorf("k2p: no certificate matched pin")
+	}
+
+	_, err = awayTr.Dial(ctx, homeAddr, awayTLSCfg, wire.DefaultQUICConfig())
+	if err == nil {
+		t.Fatal("expected QUIC dial to fail with pin mismatch, got nil")
+	}
+	if !strings.Contains(err.Error(), "pin") && !strings.Contains(err.Error(), "certificate") && !strings.Contains(err.Error(), "tls") {
+		t.Errorf("expected pin/certificate/tls error, got: %v", err)
+	}
+	t.Logf("pin rejection error (expected): %v", err)
 }
 
 // waitForHomeOnline polls the signal store until the Home peer's WS is connected.

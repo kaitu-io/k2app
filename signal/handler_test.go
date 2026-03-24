@@ -3,9 +3,14 @@ package signal
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
+	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 // newTestHandler returns a Handler backed by a fresh Store for unit tests.
@@ -156,5 +161,110 @@ func TestHandler_LookupNotFound(t *testing.T) {
 	rr := doJSON(t, h, http.MethodGet, "/k2p/lookup/ghost-udid", nil)
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("lookup not found: got %d, want 404", rr.Code)
+	}
+}
+
+// TestHandler_ClaimInvalidUDID verifies that claim rejects invalid UDIDs with 400.
+func TestHandler_ClaimInvalidUDID(t *testing.T) {
+	h := newTestHandler()
+
+	cases := []string{"HOME-ABC", "a", "ab", "home.abc", "home_abc"}
+	for _, udid := range cases {
+		rr := doJSON(t, h, http.MethodPost, "/k2p/claim", ClaimRequest{UDID: udid})
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("claim(%q): got %d, want 400", udid, rr.Code)
+		}
+	}
+}
+
+// TestHandler_RegisterInvalidUDID verifies that register rejects invalid UDIDs with 400.
+func TestHandler_RegisterInvalidUDID(t *testing.T) {
+	h := newTestHandler()
+
+	// First claim a valid UDID to get a token.
+	rr := doJSON(t, h, http.MethodPost, "/k2p/claim", ClaimRequest{UDID: "valid-udid"})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("claim: got %d, want 200", rr.Code)
+	}
+	var cr ClaimResponse
+	if err := json.NewDecoder(rr.Body).Decode(&cr); err != nil {
+		t.Fatalf("claim: decode response: %v", err)
+	}
+
+	// Attempt to register with invalid UDIDs.
+	invalidUDIDs := []string{"HOME-ABC", "a", "ab", "home.abc", "home_abc"}
+	for _, udid := range invalidUDIDs {
+		regReq := RegisterRequest{UDID: udid, Addr: "1.2.3.4:4321"}
+		rr = doJSONWithAuth(t, h, http.MethodPost, "/k2p/register", cr.RegToken, regReq)
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("register(%q): got %d, want 400", udid, rr.Code)
+		}
+	}
+}
+
+// TestHandler_ConcurrentConnect verifies that simultaneous POST /k2p/connect
+// requests for the same Home peer don't race and at least one notification arrives.
+func TestHandler_ConcurrentConnect(t *testing.T) {
+	h := newTestHandler()
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	// Claim.
+	claimRR := doJSON(t, h, http.MethodPost, "/k2p/claim", ClaimRequest{UDID: "home-cc"})
+	if claimRR.Code != http.StatusOK {
+		t.Fatalf("claim: got %d, want 200", claimRR.Code)
+	}
+	var cr ClaimResponse
+	if err := json.NewDecoder(claimRR.Body).Decode(&cr); err != nil {
+		t.Fatalf("claim: decode response: %v", err)
+	}
+
+	// Register.
+	regReq := RegisterRequest{UDID: "home-cc", Addr: "1.2.3.4:5678"}
+	regRR := doJSONWithAuth(t, h, http.MethodPost, "/k2p/register", cr.RegToken, regReq)
+	if regRR.Code != http.StatusOK {
+		t.Fatalf("register: got %d, want 200", regRR.Code)
+	}
+
+	// Open WebSocket.
+	wsURL := "ws" + srv.URL[4:] + "/k2p/ws?udid=home-cc&token=" + cr.RegToken
+	wsConn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("WS dial: %v", err)
+	}
+	defer wsConn.Close()
+
+	// Read notifications in background.
+	received := make(chan struct{}, 20)
+	go func() {
+		for {
+			_, _, err := wsConn.ReadMessage()
+			if err != nil {
+				return
+			}
+			received <- struct{}{}
+		}
+	}()
+
+	// 10 concurrent connect requests.
+	var wg sync.WaitGroup
+	for i := range 10 {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			body, _ := json.Marshal(ConnectRequest{
+				HomeUDID: "home-cc",
+				AwayAddr: fmt.Sprintf("5.6.7.%d:9012", i),
+				NATType:  "easy",
+			})
+			http.Post(srv.URL+"/k2p/connect", "application/json", bytes.NewReader(body)) //nolint:errcheck
+		}(i)
+	}
+	wg.Wait()
+
+	// Allow notifications time to arrive.
+	time.Sleep(200 * time.Millisecond)
+	if len(received) == 0 {
+		t.Error("expected at least one WS notification to arrive")
 	}
 }

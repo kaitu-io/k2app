@@ -176,3 +176,25 @@ func TestBuildURL_NoPin(t *testing.T) {
 		t.Errorf("WireCfg.Pin = %q, want empty", cfg.WireCfg.Pin)
 	}
 }
+
+// TestParseURL_RoundTrip verifies that ParseURL(BuildURL(...)) preserves
+// PeerSecret, Pin, and HomeUDID exactly.
+func TestParseURL_RoundTrip(t *testing.T) {
+	extra := url.Values{}
+	extra.Set("ip", "1.2.3.4")
+
+	built := BuildURL("test-home", "my-secret", "signal.example.com", 443, "sha256:AAAA", extra)
+	cfg, err := ParseURL(built)
+	if err != nil {
+		t.Fatalf("round-trip: %v", err)
+	}
+	if cfg.PeerSecret != "my-secret" {
+		t.Errorf("PeerSecret = %q, want my-secret", cfg.PeerSecret)
+	}
+	if cfg.Pin != "sha256:AAAA" {
+		t.Errorf("Pin = %q, want sha256:AAAA", cfg.Pin)
+	}
+	if cfg.HomeUDID != "test-home" {
+		t.Errorf("HomeUDID = %q, want test-home", cfg.HomeUDID)
+	}
+}
