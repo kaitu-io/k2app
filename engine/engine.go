@@ -206,7 +206,10 @@ func (e *Engine) Start(cfg Config) error {
 
 	// 6. Build provider.
 	var prov provider.Provider
-	if cfg.FileDescriptor >= 0 {
+	if cfg.Provider != nil {
+		// External provider (gateway/).
+		prov = cfg.Provider
+	} else if cfg.FileDescriptor >= 0 {
 		// Mobile / macOS sysext: platform-provided TUN FD.
 		prov = provider.NewTUNProvider(provider.ProviderConfig{
 			FileDescriptor:   cfg.FileDescriptor,
@@ -221,21 +224,14 @@ func (e *Engine) Start(cfg Config) error {
 			Mode:        "proxy",
 			ProxyListen: client.Proxy.Listen,
 		})
-	} else if client.Mode == "tproxy" {
-		// Linux tproxy mode (OpenWRT, headless Linux).
-		prov = provider.NewTProxyProvider(provider.ProviderConfig{
-			Mode:        "tproxy",
-			IPv4Address: client.Tun.IPv4,
-			IPv6Address: client.Tun.IPv6,
-		})
 	} else {
-		// Desktop TUN mode.
+		// Desktop TUN mode (default).
 		prov = provider.NewTUNProvider(provider.ProviderConfig{
-			Mode:             "tun",
+			Mode:              "tun",
 			RouteExcludeAddrs: computeDNSExclude(client),
-			InterfaceMonitor: cfg.InterfaceMonitor,
-			IPv4Address:      client.Tun.IPv4,
-			IPv6Address:      client.Tun.IPv6,
+			InterfaceMonitor:  cfg.InterfaceMonitor,
+			IPv4Address:       client.Tun.IPv4,
+			IPv6Address:       client.Tun.IPv6,
 		})
 	}
 

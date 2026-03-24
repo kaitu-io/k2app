@@ -2,6 +2,7 @@ package engine
 
 import (
 	"github.com/kaitu-io/k2/config"
+	"github.com/kaitu-io/k2/provider"
 	"github.com/kaitu-io/k2/wire"
 )
 
@@ -49,4 +50,8 @@ type Config struct {
 	// HealthCallback receives 1Hz health snapshots from the HealthMonitor.
 	// Nil = no callback (appext typically doesn't need this).
 	HealthCallback func(HealthSnapshot)
+
+	// Provider is an externally-created provider. If non-nil, engine uses it
+	// instead of creating a provider from Client.Mode. Used by gateway/.
+	Provider provider.Provider
 }
