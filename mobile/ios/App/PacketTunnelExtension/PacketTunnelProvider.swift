@@ -100,8 +100,37 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     private var pathMonitor: NWPathMonitor?
     private let neDefaults = UserDefaults(suiteName: kAppGroup)
 
+    /// Permanent error categories — retry is pointless without user action.
+    private static let permanentCategories: Set<String> = ["client"]
+    /// Permanent error codes — ConnectionFatal (570) regardless of category.
+    private static let permanentCodes: Set<Int> = [570]
+    /// Cooldown after permanent error (auth, payment, fatal) — blocks on-demand restart.
+    private static let permanentErrorCooldown: TimeInterval = 30
+    /// Cooldown after transient error (network, server) — prevents rapid on-demand loop.
+    private static let transientErrorCooldown: TimeInterval = 5
+    /// Max credible cooldown — clock-change protection (any cooldown further out is bogus).
+    private static let maxCooldownGuard: TimeInterval = 60
+
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
         logger.info("startTunnel called, options keys: \(options?.keys.joined(separator: ",") ?? "nil")")
+
+        // Cooldown: after an engine error, block on-demand restart for a short period
+        // to prevent rapid connect→fail→restart loops that break WiFi.
+        // User-initiated connects (via K2Plugin) skip cooldown.
+        let userInitiated = (options?["userInitiated"] as? NSNumber)?.boolValue ?? false
+        if !userInitiated, let cooldownUntil = neDefaults?.double(forKey: "errorCooldownUntil"), cooldownUntil > 0 {
+            let now = Date().timeIntervalSince1970
+            let remaining = cooldownUntil - now
+            if remaining > 0 && remaining <= Self.maxCooldownGuard {
+                logger.warning("startTunnel: error cooldown active (\(Int(remaining))s remaining), failing fast")
+                NativeLogger.shared.log("WARN", "startTunnel: blocked by error cooldown (\(Int(remaining))s remaining)")
+                completionHandler(NSError(domain: "com.allnationconnect.anc.wgios", code: 429,
+                                          userInfo: [NSLocalizedDescriptionKey: "Error cooldown — too soon to retry"]))
+                return
+            }
+            // Cooldown expired or invalid (clock change) — clear and proceed
+            neDefaults?.removeObject(forKey: "errorCooldownUntil")
+        }
 
         // Detect jetsam: if previous session wrote "engineRunning=true" but never set it to false,
         // the NE process was killed by iOS (jetsam/memory pressure) without calling stopTunnel.
@@ -223,6 +252,8 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 try self?.engine?.start(configJSON, fd: Int(fd), cfg: engineCfg)
                 logger.info("engine.start() returned OK")
                 NativeLogger.shared.log("INFO", "startTunnel: engine started successfully")
+                // Clear any stale cooldown — engine is running, on-demand should work normally
+                self?.neDefaults?.removeObject(forKey: "errorCooldownUntil")
                 let now = Date()
                 self?.engineStartTime = now
                 self?.neDefaults?.set(true, forKey: "engineRunning")
@@ -233,6 +264,11 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             } catch {
                 logger.error("engine.start() FAILED: \(error.localizedDescription, privacy: .public)")
                 NativeLogger.shared.log("ERROR", "startTunnel: engine.start() failed: \(error.localizedDescription)")
+                // Write transient cooldown to prevent rapid on-demand restart on persistent start failures
+                self?.neDefaults?.set(
+                    Date().timeIntervalSince1970 + PacketTunnelProvider.transientErrorCooldown,
+                    forKey: "errorCooldownUntil"
+                )
                 completionHandler(error)
             }
         }
@@ -469,6 +505,20 @@ class EventBridge: NSObject, AppextEventHandlerProtocol {
                     UserDefaults(suiteName: kAppGroup)?.set(message, forKey: "vpnError")
                 }
 
+                let isPermanent = PacketTunnelProvider.permanentCategories.contains(category)
+                    || PacketTunnelProvider.permanentCodes.contains(code)
+                let cooldown = isPermanent
+                    ? PacketTunnelProvider.permanentErrorCooldown
+                    : PacketTunnelProvider.transientErrorCooldown
+
+                // Write cooldown to App Group — blocks on-demand restart for the specified duration.
+                // Permanent errors (auth, payment): 30s cooldown — user action needed.
+                // Transient errors (network, server): 5s cooldown — prevents rapid loop, allows quick recovery.
+                let defaults = UserDefaults(suiteName: kAppGroup)
+                defaults?.set(Date().timeIntervalSince1970 + cooldown, forKey: "errorCooldownUntil")
+                logger.error("Cancelling tunnel: isPermanent=\(isPermanent) cooldown=\(Int(cooldown))s (code=\(code) category=\(category, privacy: .public))")
+                NativeLogger.shared.log("ERROR", "onStatus: cancelling tunnel, isPermanent=\(isPermanent) cooldown=\(Int(cooldown))s")
+
                 let nsError = NSError(domain: "com.allnationconnect.anc.wgios", code: code,
                                       userInfo: [NSLocalizedDescriptionKey: message])
                 provider?.cancelTunnelWithError(nsError)
@@ -488,7 +538,7 @@ class EventBridge: NSObject, AppextEventHandlerProtocol {
                 UserDefaults(suiteName: kAppGroup)?.set(errorStr, forKey: "vpnError")
             }
         } else if state == "connected" {
-            // Wire recovered — clear any stale error from App Group
+            // Wire recovered — clear stale error and cooldown
             NativeLogger.shared.log("INFO", "onStatus: connected")
             UserDefaults(suiteName: kAppGroup)?.removeObject(forKey: "vpnError")
         }

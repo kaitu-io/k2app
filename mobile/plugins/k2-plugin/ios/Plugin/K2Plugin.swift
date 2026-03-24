@@ -286,7 +286,8 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
 
                     do {
                         try session.startVPNTunnel(options: [
-                            "configJSON": NSString(string: config)
+                            "configJSON": NSString(string: config),
+                            "userInitiated": NSNumber(value: true)
                         ])
                         logger.info("connect: startVPNTunnel called OK, status=\(session.status.rawValue)")
                         // Save config to App Group for NE access
