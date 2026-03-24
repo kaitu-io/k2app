@@ -1,0 +1,56 @@
+{
+  "gift": {
+    "title": "{name} からギフトが届いています",
+    "subtitle": "Kaitu VPN メンバーシップ",
+    "planDays": "{days} 日間",
+    "expires": "残り {days} 日",
+    "cta": "今すぐ受け取る",
+    "used": "このギフトはすでに使用されています",
+    "expired": "このギフトは期限切れです",
+    "fallback": "新規ユーザー限定オファーを見る",
+    "loading": "処理中...",
+    "successTitle": "交換完了！",
+    "successBody": "メンバーシップが {days} 日延長されました",
+    "viewAccount": "アカウントを確認",
+    "notEligible": "このギフトを使用する資格がありません",
+    "redeemFailed": "交換に失敗しました。もう一度お試しください"
+  },
+  "admin": {
+    "title": "授权码管理",
+    "columns": {
+      "uuid": "唯一码",
+      "planDays": "天数",
+      "status": "状态",
+      "expires": "过期时间",
+      "campaign": "关联活动",
+      "createdAt": "创建时间"
+    },
+    "status": {
+      "unused": "未使用",
+      "used": "已使用",
+      "expired": "已过期"
+    },
+    "filters": {
+      "all": "全部",
+      "used": "已使用",
+      "unused": "未使用"
+    }
+  },
+  "campaigns": {
+    "matcherParams": {
+      "beforeDate": "首次付款截止日期"
+    },
+    "shareable": {
+      "label": "启用老带新",
+      "sharesPerUser": "每人可分享数量",
+      "issueKeys": "立即发放授权码",
+      "dryRun": "预估符合人数",
+      "confirmIssue": "确认为 {count} 位用户各发放 {n} 个授权码（共 {total} 个）？",
+      "issueSuccess": "已成功发放 {total} 个授权码"
+    },
+    "matchers": {
+      "paid_before": "{date} 前首次付款的用户",
+      "paid_before_active": "{date} 前首次付款且套餐有效的用户"
+    }
+  }
+}

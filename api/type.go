@@ -982,8 +982,7 @@ type CloudOperationResponse struct {
 type LicenseKeyResponse struct {
 	ID               uint64     `json:"id"`
 	UUID             string     `json:"uuid"`
-	DiscountType     string     `json:"discountType"`
-	DiscountValue    uint64     `json:"discountValue"`
+	PlanDays         int        `json:"planDays"`
 	RecipientMatcher string     `json:"recipientMatcher"`
 	ExpiresAt        int64      `json:"expiresAt"`
 	CampaignID       *uint64    `json:"campaignId"`
@@ -1005,12 +1004,11 @@ type IssueKeysResponse struct {
 }
 
 type LicenseKeyPublicResponse struct {
-	UUID          string `json:"uuid"`
-	DiscountType  string `json:"discountType"`
-	DiscountValue uint64 `json:"discountValue"`
-	ExpiresAt     int64  `json:"expiresAt"`
-	IsUsed        bool   `json:"isUsed"`
-	IsExpired     bool   `json:"isExpired"`
-	SenderName    string `json:"senderName"`
+	UUID       string `json:"uuid"`
+	PlanDays   int    `json:"planDays"`
+	ExpiresAt  int64  `json:"expiresAt"`
+	IsUsed     bool   `json:"isUsed"`
+	IsExpired  bool   `json:"isExpired"`
+	SenderName string `json:"senderName"`
 }
 

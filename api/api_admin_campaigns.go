@@ -1,6 +1,7 @@
 package center
 
 import (
+	"context"
 	"slices"
 	"strconv"
 
@@ -8,6 +9,85 @@ import (
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
 )
+
+// ===================== Campaign License Key 发放 =====================
+
+// POST /app/campaigns/:id/issue-keys
+// DryRun=true returns count only; DryRun=false generates and sends keys.
+func api_admin_issue_license_keys(c *gin.Context) {
+	log.Infof(c, "admin request to issue license keys for campaign")
+
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		log.Warnf(c, "invalid campaign id: %s", c.Param("id"))
+		Error(c, ErrorInvalidArgument, "invalid id")
+		return
+	}
+
+	var req IssueKeysRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Warnf(c, "invalid request body: %v", err)
+		Error(c, ErrorInvalidArgument, err.Error())
+		return
+	}
+
+	var campaign Campaign
+	if err := db.Get().First(&campaign, id).Error; err != nil {
+		log.Warnf(c, "campaign %d not found: %v", id, err)
+		Error(c, ErrorNotFound, "campaign not found")
+		return
+	}
+	if !campaign.IsShareable {
+		log.Warnf(c, "campaign %d is not shareable", id)
+		Error(c, ErrorInvalidArgument, "campaign is not shareable")
+		return
+	}
+
+	ctx := c.Request.Context()
+
+	if req.DryRun {
+		count, err := CountEligibleUsers(ctx, &campaign)
+		if err != nil {
+			log.Errorf(c, "failed to count eligible users for campaign %d: %v", id, err)
+			Error(c, ErrorSystemError, err.Error())
+			return
+		}
+		resp := IssueKeysResponse{
+			EligibleUsers: count,
+			KeysToIssue:   count * campaign.SharesPerUser,
+			Issued:        false,
+		}
+		log.Infof(c, "dry run: campaign %d eligible=%d keysToIssue=%d", id, count, resp.KeysToIssue)
+		Success(c, &resp)
+		return
+	}
+
+	count, err := GenerateLicenseKeysForCampaign(ctx, &campaign)
+	if err != nil {
+		log.Errorf(c, "failed to generate license keys for campaign %d: %v", id, err)
+		Error(c, ErrorSystemError, err.Error())
+		return
+	}
+	eligibleUsers := int64(0)
+	if campaign.SharesPerUser > 0 {
+		eligibleUsers = count / campaign.SharesPerUser
+	}
+	resp := IssueKeysResponse{
+		EligibleUsers: eligibleUsers,
+		KeysToIssue:   count,
+		Issued:        true,
+	}
+	// Send gift emails asynchronously — failures are logged but don't fail the API call
+	go func() {
+		bgCtx := context.Background()
+		if err := SendLicenseKeyEmails(bgCtx, campaign.ID); err != nil {
+			log.Warnf(bgCtx, "[LICENSE_KEY] async email send failed for campaign %d: %v", campaign.ID, err)
+		}
+	}()
+
+	log.Infof(c, "issued %d license keys for campaign %d", count, id)
+	Success(c, &resp)
+}
 
 // ===================== 优惠活动管理 =====================
 
@@ -113,7 +193,7 @@ func api_admin_create_campaign(c *gin.Context) {
 	}
 
 	// 验证匹配器类型
-	validMatcherTypes := []string{"first_order", "vip", "all"}
+	validMatcherTypes := []string{"first_order", "vip", "all", "paid_before", "paid_before_active"}
 	if !slices.Contains(validMatcherTypes, req.MatcherType) {
 		log.Warnf(c, "invalid matcher type: %s", req.MatcherType)
 		Error(c, ErrorInvalidArgument, "invalid matcher type")
@@ -137,16 +217,19 @@ func api_admin_create_campaign(c *gin.Context) {
 
 	// 创建活动
 	campaign := Campaign{
-		Code:        req.Code,
-		Name:        req.Name,
-		Type:        req.Type,
-		Value:       req.Value,
-		StartAt:     req.StartAt,
-		EndAt:       req.EndAt,
-		Description: req.Description,
-		IsActive:    BoolPtr(req.IsActive),
-		MatcherType: req.MatcherType,
-		MaxUsage:    req.MaxUsage,
+		Code:          req.Code,
+		Name:          req.Name,
+		Type:          req.Type,
+		Value:         req.Value,
+		StartAt:       req.StartAt,
+		EndAt:         req.EndAt,
+		Description:   req.Description,
+		IsActive:      BoolPtr(req.IsActive),
+		MatcherType:   req.MatcherType,
+		MatcherParams: req.MatcherParams,
+		IsShareable:   req.IsShareable,
+		SharesPerUser: req.SharesPerUser,
+		MaxUsage:      req.MaxUsage,
 	}
 
 	if err := db.Get().Create(&campaign).Error; err != nil {
@@ -197,7 +280,7 @@ func api_admin_update_campaign(c *gin.Context) {
 	}
 
 	// 验证匹配器类型
-	validMatcherTypes := []string{"first_order", "vip", "all"}
+	validMatcherTypes := []string{"first_order", "vip", "all", "paid_before", "paid_before_active"}
 	if !slices.Contains(validMatcherTypes, req.MatcherType) {
 		log.Warnf(c, "invalid matcher type: %s", req.MatcherType)
 		Error(c, ErrorInvalidArgument, "invalid matcher type")
@@ -231,6 +314,9 @@ func api_admin_update_campaign(c *gin.Context) {
 	campaign.Description = req.Description
 	campaign.IsActive = BoolPtr(req.IsActive)
 	campaign.MatcherType = req.MatcherType
+	campaign.MatcherParams = req.MatcherParams
+	campaign.IsShareable = req.IsShareable
+	campaign.SharesPerUser = req.SharesPerUser
 	campaign.MaxUsage = req.MaxUsage
 
 	if err := db.Get().Save(&campaign).Error; err != nil {
@@ -413,19 +499,22 @@ func api_admin_get_campaign_funnel(c *gin.Context) {
 // convertCampaignToResponse 转换Campaign到响应格式
 func convertCampaignToResponse(campaign Campaign) CampaignResponse {
 	return CampaignResponse{
-		ID:          campaign.ID,
-		CreatedAt:   campaign.CreatedAt.Unix(),
-		UpdatedAt:   campaign.UpdatedAt.Unix(),
-		Code:        campaign.Code,
-		Name:        campaign.Name,
-		Type:        campaign.Type,
-		Value:       campaign.Value,
-		StartAt:     campaign.StartAt,
-		EndAt:       campaign.EndAt,
-		Description: campaign.Description,
-		IsActive:    campaign.IsActive != nil && *campaign.IsActive,
-		MatcherType: campaign.MatcherType,
-		UsageCount:  campaign.UsageCount,
-		MaxUsage:    campaign.MaxUsage,
+		ID:            campaign.ID,
+		CreatedAt:     campaign.CreatedAt.Unix(),
+		UpdatedAt:     campaign.UpdatedAt.Unix(),
+		Code:          campaign.Code,
+		Name:          campaign.Name,
+		Type:          campaign.Type,
+		Value:         campaign.Value,
+		StartAt:       campaign.StartAt,
+		EndAt:         campaign.EndAt,
+		Description:   campaign.Description,
+		IsActive:      campaign.IsActive != nil && *campaign.IsActive,
+		MatcherType:   campaign.MatcherType,
+		MatcherParams: campaign.MatcherParams,
+		IsShareable:   campaign.IsShareable,
+		SharesPerUser: campaign.SharesPerUser,
+		UsageCount:    campaign.UsageCount,
+		MaxUsage:      campaign.MaxUsage,
 	}
 }

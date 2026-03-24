@@ -1019,8 +1019,8 @@ type LicenseKey struct {
 
 	UUID string `gorm:"type:varchar(50);uniqueIndex;not null" json:"uuid"`
 
-	DiscountType  string `gorm:"type:varchar(20);not null" json:"discountType"`
-	DiscountValue uint64 `gorm:"not null" json:"discountValue"`
+	// Number of days of plan access to grant on redemption.
+	PlanDays int `gorm:"not null;default:30" json:"planDays"`
 
 	RecipientMatcher string `gorm:"type:varchar(50);not null" json:"recipientMatcher"`
 	ExpiresAt        int64  `gorm:"not null" json:"expiresAt"`

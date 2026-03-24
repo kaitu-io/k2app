@@ -91,7 +91,11 @@
       "tooEarly": "請稍後再試",
       "tooManyRequests": "請求過於頻繁，請稍後重試",
       "invalidClock": "裝置時間唔正確，請校準系統時間",
-      "selfInvitation": "唔可以使用自己嘅邀請碼"
+      "selfInvitation": "唔可以使用自己嘅邀請碼",
+      "licenseKeyNotFound": "授權碼唔存在",
+      "licenseKeyUsed": "授權碼已經被使用",
+      "licenseKeyExpired": "授權碼已過期",
+      "licenseKeyNotMatch": "唔符合此授權碼嘅使用條件"
     },
     "vpn": {
       "authFailed": "認證失敗，請重新登入",

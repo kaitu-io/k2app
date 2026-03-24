@@ -37,6 +37,10 @@ export const ERROR_CODES = {
   INVALID_INVITE_CODE: 400004,
   SELF_INVITATION: 400005,
   INVALID_CREDENTIALS: 400006,
+  LICENSE_KEY_NOT_FOUND: 400007,
+  LICENSE_KEY_USED: 400008,
+  LICENSE_KEY_EXPIRED: 400009,
+  LICENSE_KEY_NOT_MATCH: 400010,
 
   // === Frontend-only codes (NOT from backend API) ===
 
@@ -168,6 +172,15 @@ export function getErrorMessage(
 
     case ERROR_CODES.INVALID_CREDENTIALS:
       return t('auth:auth.loginFailed', 'Login failed');
+
+    case ERROR_CODES.LICENSE_KEY_NOT_FOUND:
+      return t('common:errors.client.licenseKeyNotFound', 'License key not found');
+    case ERROR_CODES.LICENSE_KEY_USED:
+      return t('common:errors.client.licenseKeyUsed', 'License key already used');
+    case ERROR_CODES.LICENSE_KEY_EXPIRED:
+      return t('common:errors.client.licenseKeyExpired', 'License key expired');
+    case ERROR_CODES.LICENSE_KEY_NOT_MATCH:
+      return t('common:errors.client.licenseKeyNotMatch', 'Not eligible for this license key');
 
     // 网络错误 (100-109)
     case ERROR_CODES.NETWORK_TIMEOUT:

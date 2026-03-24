@@ -728,8 +728,11 @@ export interface CampaignRequest {
   endAt: number;
   description?: string;
   isActive: boolean;
-  matcherType: string; // 'first_order' | 'vip' | 'all'
+  matcherType: string; // 'first_order' | 'vip' | 'all' | 'paid_before' | 'paid_before_active'
+  matcherParams?: string; // JSON string, e.g. {"beforeDate": 1735689600}
   maxUsage?: number;
+  isShareable?: boolean;
+  sharesPerUser?: number;
 }
 
 export interface CampaignResponse {
@@ -745,8 +748,11 @@ export interface CampaignResponse {
   description: string;
   isActive: boolean;
   matcherType: string;
+  matcherParams: string;
   usageCount: number;
   maxUsage: number;
+  isShareable: boolean;
+  sharesPerUser: number;
 }
 
 export interface CampaignListResponse {
@@ -1881,6 +1887,50 @@ export const api = {
     });
   },
 
+  // License Key APIs
+  async getLicenseKey(uuid: string): Promise<LicenseKeyPublic> {
+    return this.request<LicenseKeyPublic>(`/api/license-keys/${uuid}`);
+  },
+
+  async listAdminLicenseKeys(params: {
+    campaignId?: number;
+    isUsed?: boolean;
+    page?: number;
+    pageSize?: number;
+  } = {}): Promise<{ items: LicenseKeyAdmin[]; total: number }> {
+    const queryParams = new URLSearchParams();
+    if (params.campaignId !== undefined) queryParams.set('campaignId', params.campaignId.toString());
+    if (params.isUsed !== undefined) queryParams.set('isUsed', params.isUsed.toString());
+    if (params.page !== undefined) queryParams.set('page', params.page.toString());
+    if (params.pageSize !== undefined) queryParams.set('pageSize', params.pageSize.toString());
+    const query = queryParams.toString();
+    return this.request<{ items: LicenseKeyAdmin[]; total: number }>(`/app/license-keys${query ? '?' + query : ''}`);
+  },
+
+  async issueKeys(campaignId: number, req: IssueKeysRequest): Promise<IssueKeysResponse> {
+    return this.request<IssueKeysResponse>(`/app/campaigns/${campaignId}/issue-keys`, {
+      method: 'POST',
+      body: JSON.stringify(req),
+    });
+  },
+
+  async deleteAdminLicenseKey(id: number): Promise<void> {
+    return this.request<void>(`/app/license-keys/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  async getLicenseKeyStats(): Promise<LicenseKeyStatsRow[]> {
+    return this.request<LicenseKeyStatsRow[]>('/app/license-keys/stats');
+  },
+
+  async redeemLicenseKey(uuid: string): Promise<{ planDays: number; newExpireAt: number; historyId: number }> {
+    return this.request<{ planDays: number; newExpireAt: number; historyId: number }>(`/api/license-keys/${uuid}/redeem`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  },
+
 };
 
 // ==================== Cloud Instance Types ====================
@@ -2031,4 +2081,48 @@ export interface AdminNodeItem {
   ipv6: string;
   updatedAt: number;
   tunnels: AdminNodeTunnel[];
+}
+
+// ============================================================
+// LicenseKey types
+// ============================================================
+
+export interface LicenseKeyPublic {
+  uuid: string;
+  planDays: number;
+  expiresAt: number;
+  isUsed: boolean;
+  isExpired: boolean;
+  senderName: string;
+}
+
+export interface LicenseKeyAdmin {
+  id: number;
+  uuid: string;
+  planDays: number;
+  recipientMatcher: string;
+  expiresAt: number;
+  campaignId?: number;
+  createdByUserId?: number;
+  isUsed: boolean;
+  usedByUserId?: number;
+  usedAt?: number;
+  createdAt: number;
+}
+
+export interface IssueKeysRequest {
+  dryRun: boolean;
+}
+
+export interface IssueKeysResponse {
+  eligibleUsers: number;
+  keysToIssue: number;
+  issued: boolean;
+}
+
+export interface LicenseKeyStatsRow {
+  campaignId?: number;
+  total: number;
+  used: number;
+  expired: number;
 }
