@@ -156,7 +156,9 @@ func api_admin_list_users(c *gin.Context) {
 			RetailerConfig:   dataRetailerConfig,
 			Wallet:           dataWallet,
 			Roles:            u.Roles,
-			IsAdmin:         u.IsAdmin != nil && *u.IsAdmin,
+			IsAdmin:            u.IsAdmin != nil && *u.IsAdmin,
+			HasAccessKey:       u.AccessKey != nil && *u.AccessKey != "",
+			AccessKeyCreatedAt: u.AccessKeyCreatedAt,
 		}
 	}
 
@@ -406,7 +408,9 @@ func api_admin_get_user_detail(c *gin.Context) {
 			RetailerConfig:   dataRetailerConfig,
 			Wallet:           dataWallet,
 			Roles:            user.Roles,
-			IsAdmin:         user.IsAdmin != nil && *user.IsAdmin,
+			IsAdmin:            user.IsAdmin != nil && *user.IsAdmin,
+			HasAccessKey:       user.AccessKey != nil && *user.AccessKey != "",
+			AccessKeyCreatedAt: user.AccessKeyCreatedAt,
 		},
 		Devices:       devices,
 		Orders:        orders,
@@ -965,4 +969,72 @@ func api_admin_set_user_roles(c *gin.Context) {
 		Roles:     newRoles,
 		RoleNames: GetRoleNames(newRoles),
 	})
+}
+
+// api_admin_generate_access_key 生成或重置用户的 Access Key
+// POST /app/users/:uuid/access-key
+func api_admin_generate_access_key(c *gin.Context) {
+	uuid := c.Param("uuid")
+
+	var user User
+	if err := db.Get().Where("uuid = ?", uuid).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			Error(c, ErrorNotFound, "user not found")
+			return
+		}
+		log.Errorf(c, "failed to find user %s: %v", uuid, err)
+		Error(c, ErrorSystemError, "database error")
+		return
+	}
+
+	plaintext, err := GenerateAccessKey(c, user.ID)
+	if err != nil {
+		log.Errorf(c, "failed to generate access key for user %s: %v", uuid, err)
+		Error(c, ErrorSystemError, "failed to generate access key")
+		return
+	}
+
+	action := "access_key_generate"
+	if user.AccessKey != nil && *user.AccessKey != "" {
+		action = "access_key_reset"
+	}
+	WriteAuditLog(c, action, "user", uuid, nil)
+
+	log.Infof(c, "admin generated access key for user %s", uuid)
+	Success(c, &gin.H{
+		"accessKey": plaintext,
+	})
+}
+
+// api_admin_revoke_access_key 撤销用户的 Access Key
+// DELETE /app/users/:uuid/access-key
+func api_admin_revoke_access_key(c *gin.Context) {
+	uuid := c.Param("uuid")
+
+	var user User
+	if err := db.Get().Where("uuid = ?", uuid).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			Error(c, ErrorNotFound, "user not found")
+			return
+		}
+		log.Errorf(c, "failed to find user %s: %v", uuid, err)
+		Error(c, ErrorSystemError, "database error")
+		return
+	}
+
+	if user.AccessKey == nil || *user.AccessKey == "" {
+		Error(c, ErrorInvalidOperation, "user has no access key")
+		return
+	}
+
+	if err := RevokeAccessKey(c, user.ID); err != nil {
+		log.Errorf(c, "failed to revoke access key for user %s: %v", uuid, err)
+		Error(c, ErrorSystemError, "failed to revoke access key")
+		return
+	}
+
+	WriteAuditLog(c, "access_key_revoke", "user", uuid, nil)
+
+	log.Infof(c, "admin revoked access key for user %s", uuid)
+	SuccessEmpty(c)
 }

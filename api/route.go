@@ -263,6 +263,8 @@ func SetupRouter() *gin.Engine {
 		// 用户角色管理（仅超级管理员）
 		admin.PUT("/users/:uuid/roles", api_admin_set_user_roles)
 		admin.POST("/users/:uuid/devices/:udid/test-token", api_admin_issue_test_token)
+		admin.POST("/users/:uuid/access-key", api_admin_generate_access_key)
+		admin.DELETE("/users/:uuid/access-key", api_admin_revoke_access_key)
 
 		// Device statistics
 		admin.GET("/devices/statistics", api_admin_get_device_statistics)

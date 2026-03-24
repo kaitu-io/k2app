@@ -109,8 +109,10 @@ type DataUser struct {
 	RetailerConfig   *DataRetailerConfig  `json:"retailerConfig,omitempty"` // 分销商配置（仅管理员可见）
 	Wallet           *DataWallet          `json:"wallet,omitempty"`         // 钱包信息（仅管理员可见）
 	Roles            uint64               `json:"roles"`                    // 角色位掩码
-	IsAdmin          bool                 `json:"isAdmin,omitempty"`        // 是否超级管理员
-	BetaOptedIn      bool                 `json:"betaOptedIn"`              // 是否订阅 beta
+	IsAdmin            bool                 `json:"isAdmin,omitempty"`            // 是否超级管理员
+	HasAccessKey       bool                 `json:"hasAccessKey,omitempty"`       // 是否有 Access Key
+	AccessKeyCreatedAt int64                `json:"accessKeyCreatedAt,omitempty"` // Access Key 创建时间
+	BetaOptedIn        bool                 `json:"betaOptedIn"`                  // 是否订阅 beta
 }
 
 // DataRetailerConfig 分销商配置数据结构
