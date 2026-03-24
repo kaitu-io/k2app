@@ -311,22 +311,150 @@ keys = append(keys, LicenseKey{
 })
 ```
 
-- [ ] **Step 4: Update `RedeemLicenseKey` to use code instead of UUID**
+- [ ] **Step 4: Rewrite `RedeemLicenseKey` to use code instead of UUID**
 
-Change the function signature and internal query:
+Replace the entire `RedeemLicenseKey` function (lines 34-103 of `api/logic_license_key.go`):
 
 ```go
+// RedeemLicenseKey validates, consumes, and grants plan access to the user.
+// Runs inside a DB transaction.
 func RedeemLicenseKey(ctx context.Context, code string, userID uint64) (*LicenseKey, *UserProHistory, error) {
 	code = NormalizeCode(code)
+	var history *UserProHistory
+	var key *LicenseKey
+
+	err := db.Get().Transaction(func(tx *gormdb.DB) error {
+		// 1. Load key
+		var k LicenseKey
+		if err := tx.Where("code = ?", code).First(&k).Error; err != nil {
+			return ErrLicenseKeyNotFound
+		}
+		if k.IsUsed {
+			return ErrLicenseKeyUsed
+		}
+		if k.IsExpired() {
+			return ErrLicenseKeyExpired
+		}
+
+		// 2. Anti-abuse: one key per user ever
+		var existingCount int64
+		if err := tx.Model(&LicenseKey{}).Where("used_by_user_id = ?", userID).Count(&existingCount).Error; err != nil {
+			return err
+		}
+		if existingCount > 0 {
+			return ErrLicenseKeyAlreadyRedeemed
+		}
+
+		// 3. Load user
+		var user User
+		if err := tx.First(&user, userID).Error; err != nil {
+			return err
+		}
+
+		// 4. Check eligibility
+		if !MatchLicenseKey(&k, &user) {
+			return ErrLicenseKeyNotMatch
+		}
+
+		// 5. Atomic consume
+		result := tx.Model(&LicenseKey{}).
+			Where("code = ? AND is_used = false", code).
+			Updates(map[string]any{
+				"is_used":         true,
+				"used_by_user_id": userID,
+				"used_at":         time.Now(),
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return ErrLicenseKeyUsed
+		}
+
+		// 6. Grant plan days
+		reason := fmt.Sprintf("礼物码兑换 - %s", k.Code)
+		h, err := addProExpiredDays(ctx, tx, &user, VipSystemGrant, k.ID, k.PlanDays, reason)
+		if err != nil {
+			return err
+		}
+
+		k.IsUsed = true
+		k.UsedByUserID = &userID
+		key = &k
+		history = h
+		return nil
+	})
+
+	return key, history, err
+}
 ```
 
-Update the key lookup query from `Where("uuid = ?", uuid)` to `Where("code = ?", code)`.
+- [ ] **Step 5: Update `ConsumeLicenseKey` to use code + correct error**
 
-Update the atomic consume query from `Where("uuid = ? AND is_used = false", uuid)` to `Where("code = ? AND is_used = false", code)`.
+Replace `ConsumeLicenseKey` (lines 114-156) — update `uuid` param to `code`, queries from `Where("uuid = ?"...)` to `Where("code = ?"...)`, and fix the anti-abuse error from `ErrLicenseKeyNotMatch` to `ErrLicenseKeyAlreadyRedeemed`:
 
-Update the anti-abuse check to return `ErrLicenseKeyAlreadyRedeemed` instead of `ErrLicenseKeyUsed` when the user (not the key) has already redeemed another key.
+```go
+// ConsumeLicenseKey atomically marks a key as used.
+// Uses conditional UPDATE to prevent concurrent double-redemption.
+func ConsumeLicenseKey(ctx context.Context, tx *gormdb.DB, code string, userID uint64) (*LicenseKey, error) {
+	code = NormalizeCode(code)
+	var key LicenseKey
+	if err := tx.Where("code = ?", code).First(&key).Error; err != nil {
+		return nil, ErrLicenseKeyNotFound
+	}
+	if key.IsUsed {
+		return nil, ErrLicenseKeyUsed
+	}
+	if key.IsExpired() {
+		return nil, ErrLicenseKeyExpired
+	}
 
-Update the history reason from `"礼物码兑换 - " + uuid` to `"礼物码兑换 - " + code`.
+	// 同一用户只能使用一个 LicenseKey
+	var existingUseCount int64
+	if err := tx.Model(&LicenseKey{}).Where("used_by_user_id = ?", userID).Count(&existingUseCount).Error; err != nil {
+		return nil, err
+	}
+	if existingUseCount > 0 {
+		return nil, ErrLicenseKeyAlreadyRedeemed
+	}
+
+	now := time.Now()
+	result := tx.Model(&LicenseKey{}).
+		Where("code = ? AND is_used = false", code).
+		Updates(map[string]any{
+			"is_used":         true,
+			"used_by_user_id": userID,
+			"used_at":         now,
+		})
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, ErrLicenseKeyUsed
+	}
+
+	key.IsUsed = true
+	key.UsedByUserID = &userID
+	key.UsedAt = &now
+	return &key, nil
+}
+```
+
+- [ ] **Step 6: Update `GetLicenseKeyByUUID` → `GetLicenseKeyByCode`**
+
+Rename and update query:
+
+```go
+// GetLicenseKeyByCode fetches a key by its short code.
+func GetLicenseKeyByCode(ctx context.Context, code string) (*LicenseKey, error) {
+	code = NormalizeCode(code)
+	var key LicenseKey
+	if err := db.Get().Where("code = ?", code).First(&key).Error; err != nil {
+		return nil, err
+	}
+	return &key, nil
+}
+```
 
 - [ ] **Step 5: Verify compilation**
 
@@ -442,7 +570,7 @@ func api_admin_create_license_keys(c *gin.Context) {
 
 	keys, err := CreateManualLicenseKeys(c, &req)
 	if err != nil {
-		Error(c, ErrorInternal, err.Error())
+		Error(c, ErrorSystemError, err.Error())
 		return
 	}
 
@@ -727,48 +855,223 @@ git commit -m "feat(web): update license key API types and methods for code-base
 - Create: `web/src/app/[locale]/g/[code]/page.tsx`
 - Create: `web/src/app/[locale]/g/[code]/RedeemClient.tsx`
 
-Reference: Follow the pattern from `web/src/app/[locale]/redeem/[uuid]/page.tsx` and `RedeemClient.tsx`, but use `code` param instead of `uuid`.
-
 - [ ] **Step 1: Create server component `page.tsx`**
 
+Follow exact pattern from `web/src/app/[locale]/redeem/[uuid]/page.tsx` — SSR fetch, Header/Footer, setRequestLocale:
+
 ```tsx
-import { api } from "@/lib/api";
-import { notFound } from "next/navigation";
-import RedeemClient from "./RedeemClient";
+import { api } from '@/lib/api';
+import { notFound } from 'next/navigation';
+import { routing } from '@/i18n/routing';
+import { setRequestLocale } from 'next-intl/server';
+import type { Metadata } from 'next';
+import Header from '@/components/Header';
+import Footer from '@/components/Footer';
+import RedeemClient from './RedeemClient';
 
-interface Props {
-  params: Promise<{ locale: string; code: string }>;
+type Locale = (typeof routing.locales)[number];
+
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: '兑换授权码 | Kaitu' };
 }
 
-export async function generateMetadata({ params }: Props) {
-  const { code } = await params;
-  return {
-    title: `兑换授权码 ${code} — Kaitu`,
-  };
-}
+export default async function GiftCodeDirectPage({
+  params,
+}: {
+  params: Promise<{ code: string; locale: string }>;
+}) {
+  const { code, locale: rawLocale } = await params;
+  const locale = rawLocale as Locale;
+  setRequestLocale(locale);
 
-export default async function GiftCodePage({ params }: Props) {
-  const { code } = await params;
-
+  let key = null;
   try {
-    const keyData = await api.getLicenseKey(code);
-    return <RedeemClient code={code} initialData={keyData} />;
+    key = await api.getLicenseKey(code);
   } catch {
     notFound();
   }
+
+  return (
+    <div className="min-h-screen bg-background">
+      <Header />
+      <RedeemClient initialKey={key} code={code} />
+      <Footer />
+    </div>
+  );
 }
 ```
 
 - [ ] **Step 2: Create client component `RedeemClient.tsx`**
 
-Model after existing `web/src/app/[locale]/redeem/[uuid]/RedeemClient.tsx` but:
-- Accept `code: string` prop instead of `uuid`
-- Call `api.redeemLicenseKey(code)` instead of `api.redeemLicenseKey(uuid)`
-- Add `ErrorLicenseKeyAlreadyRedeemed = 400011` error code handling → show "您已使用过授权码"
-- Use same UI pattern: gift card display (sender, days, expiry countdown), redeem button, error/success states
-- On "兑换" click when not logged in: show login prompt (check existing RedeemClient for the auth pattern)
-- Success state: show granted days + link to `/account`
-- Error states: used/expired/not-eligible/already-redeemed → fallback link to `/purchase`
+Adapted from existing `web/src/app/[locale]/redeem/[uuid]/RedeemClient.tsx` — same UI, but uses `code` prop and adds `ErrorLicenseKeyAlreadyRedeemed` (400011) handling.
+
+**Auth flow**: User clicks "兑换" → `api.redeemLicenseKey(code)` → if 401, `api.request()` auto-emits `auth:unauthorized` → `AuthContext` calls `redirectToLogin()` → user redirected to `/login?next=/g/{code}` → after login, browser returns to `/g/{code}` → user clicks again → success. No explicit auth check needed in the component.
+
+```tsx
+'use client';
+
+import { useState } from 'react';
+import { useTranslations } from 'next-intl';
+import { Link } from '@/i18n/routing';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Gift, AlertCircle, Clock, CheckCircle } from 'lucide-react';
+import type { LicenseKeyPublic } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
+
+const ErrorLicenseKeyNotFound = 400007;
+const ErrorLicenseKeyUsed = 400008;
+const ErrorLicenseKeyExpired = 400009;
+const ErrorLicenseKeyNotMatch = 400010;
+const ErrorLicenseKeyAlreadyRedeemed = 400011;
+
+interface RedeemClientProps {
+  initialKey: LicenseKeyPublic | null;
+  code: string;
+}
+
+function getDaysRemaining(expiresAt: number): number {
+  const now = Math.floor(Date.now() / 1000);
+  const diff = expiresAt - now;
+  return Math.max(0, Math.ceil(diff / 86400));
+}
+
+export default function RedeemClient({ initialKey, code }: RedeemClientProps) {
+  const t = useTranslations('licenseKeys');
+  const [redeemState, setRedeemState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [redeemDays, setRedeemDays] = useState<number>(0);
+  const [errorKey, setErrorKey] = useState<string>('');
+
+  // Used state
+  if (initialKey?.isUsed) {
+    return (
+      <div className="max-w-lg mx-auto px-4 py-20 text-center">
+        <Card className="p-10 border-muted bg-muted/20">
+          <AlertCircle className="w-14 h-14 text-muted-foreground mx-auto mb-4" />
+          <h1 className="text-2xl font-bold text-foreground mb-3">{t('gift.used')}</h1>
+          <p className="text-muted-foreground mb-8">{t('gift.subtitle')}</p>
+          <Button asChild variant="outline" size="lg">
+            <Link href="/purchase">{t('gift.fallback')}</Link>
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
+  // Expired state
+  if (initialKey?.isExpired) {
+    return (
+      <div className="max-w-lg mx-auto px-4 py-20 text-center">
+        <Card className="p-10 border-muted bg-muted/20">
+          <Clock className="w-14 h-14 text-muted-foreground mx-auto mb-4" />
+          <h1 className="text-2xl font-bold text-foreground mb-3">{t('gift.expired')}</h1>
+          <p className="text-muted-foreground mb-8">{t('gift.subtitle')}</p>
+          <Button asChild variant="outline" size="lg">
+            <Link href="/purchase">{t('gift.fallback')}</Link>
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
+  // Success state
+  if (redeemState === 'success') {
+    return (
+      <div className="max-w-lg mx-auto px-4 py-20 text-center">
+        <Card className="p-10 border-primary/30 bg-primary/5">
+          <CheckCircle className="w-14 h-14 text-primary mx-auto mb-4" />
+          <h1 className="text-2xl font-bold text-foreground mb-3">{t('gift.successTitle')}</h1>
+          <p className="text-muted-foreground mb-8">{t('gift.successBody', { days: redeemDays })}</p>
+          <Button asChild size="lg">
+            <Link href="/account">{t('gift.viewAccount')}</Link>
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
+  const key = initialKey;
+  if (!key) return null;
+
+  const daysRemaining = getDaysRemaining(key.expiresAt);
+
+  const handleRedeem = async () => {
+    setRedeemState('loading');
+    setErrorKey('');
+    try {
+      const result = await api.redeemLicenseKey(code);
+      setRedeemDays(result.planDays);
+      setRedeemState('success');
+    } catch (err) {
+      if (err instanceof ApiError) {
+        const errCode = err.code as number;
+        switch (errCode) {
+          case ErrorLicenseKeyUsed:
+            setErrorKey('gift.used');
+            break;
+          case ErrorLicenseKeyExpired:
+            setErrorKey('gift.expired');
+            break;
+          case ErrorLicenseKeyNotFound:
+          case ErrorLicenseKeyNotMatch:
+            setErrorKey('gift.notEligible');
+            break;
+          case ErrorLicenseKeyAlreadyRedeemed:
+            setErrorKey('gift.alreadyRedeemed');
+            break;
+          default:
+            setErrorKey('gift.redeemFailed');
+        }
+      } else {
+        setErrorKey('gift.redeemFailed');
+      }
+      setRedeemState('error');
+    }
+  };
+
+  return (
+    <div className="max-w-lg mx-auto px-4 py-16 sm:py-24">
+      <div className="text-center mb-10">
+        <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-primary/10 border border-primary/20 mb-6">
+          <Gift className="w-10 h-10 text-primary" />
+        </div>
+        <h1 className="text-2xl sm:text-3xl font-bold text-foreground leading-snug">
+          {key.senderName ? t('gift.title', { name: key.senderName }) : t('gift.titleAnonymous')}
+        </h1>
+        <p className="mt-2 text-muted-foreground">{t('gift.subtitle')}</p>
+      </div>
+
+      <Card className="p-8 sm:p-10 mb-8 border-primary/30 bg-primary/5 text-center">
+        <p className="text-sm uppercase tracking-widest text-primary mb-4 font-mono">Kaitu VPN</p>
+        <div className="text-5xl sm:text-6xl font-mono font-bold text-primary mb-4">
+          {t('gift.planDays', { days: key.planDays })}
+        </div>
+        <div className="flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
+          <Clock className="w-4 h-4" />
+          <span>{t('gift.expires', { days: daysRemaining })}</span>
+        </div>
+      </Card>
+
+      {redeemState === 'error' && errorKey && (
+        <p className="text-sm text-destructive text-center mb-4">
+          {t(errorKey as Parameters<typeof t>[0])}
+        </p>
+      )}
+
+      <div className="text-center">
+        <Button
+          size="lg"
+          className="w-full sm:w-auto px-12 py-6 text-lg font-bold"
+          onClick={handleRedeem}
+          disabled={redeemState === 'loading'}
+        >
+          {redeemState === 'loading' ? t('gift.loading') : t('gift.cta')}
+        </Button>
+      </div>
+    </div>
+  );
+}
+```
 
 - [ ] **Step 3: Verify build**
 
@@ -790,58 +1093,283 @@ git commit -m "feat(web): add /g/[code] direct link redemption page"
 - Create: `web/src/app/[locale]/g/page.tsx`
 - Create: `web/src/app/[locale]/g/GiftCodeClient.tsx`
 
-Reference: Follow layout pattern from `/s/[code]` (invite landing page) — centered card, minimal design.
-
 - [ ] **Step 1: Create server component `page.tsx`**
 
-```tsx
-import GiftCodeClient from "./GiftCodeClient";
+Follow pattern from invite landing `web/src/app/[locale]/s/[code]/page.tsx` — Header/Footer wrapper, setRequestLocale:
 
-export function generateMetadata() {
+```tsx
+import { setRequestLocale } from 'next-intl/server';
+import type { Metadata } from 'next';
+import { routing } from '@/i18n/routing';
+import Header from '@/components/Header';
+import Footer from '@/components/Footer';
+import GiftCodeClient from './GiftCodeClient';
+
+type Locale = (typeof routing.locales)[number];
+
+export async function generateMetadata(): Promise<Metadata> {
   return {
-    title: "兑换授权码 — Kaitu",
-    description: "输入授权码，免费获取 Kaitu 会员",
+    title: '兑换授权码 | Kaitu',
+    description: '输入授权码，免费获取 Kaitu 会员',
   };
 }
 
-export default function GiftCodeLandingPage() {
-  return <GiftCodeClient />;
+export default async function GiftCodeLandingPage({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale: rawLocale } = await params;
+  setRequestLocale(rawLocale as Locale);
+
+  return (
+    <div className="min-h-screen bg-background">
+      <Header />
+      <GiftCodeClient />
+      <Footer />
+    </div>
+  );
 }
 ```
 
 - [ ] **Step 2: Create client component `GiftCodeClient.tsx`**
 
-States: `idle` → `loading` → `found` (show key info) → `redeeming` → `success` / `error`
+Client-side only — no SSR data fetch. User enters code → lookup → display → redeem.
 
+**Auth flow** same as Task 7: `api.redeemLicenseKey()` on 401 auto-redirects to `/login?next=/g` → user returns and re-enters code.
+
+```tsx
+'use client';
+
+import { useState } from 'react';
+import { useTranslations } from 'next-intl';
+import { Link } from '@/i18n/routing';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Gift, AlertCircle, Clock, CheckCircle, Loader2, Search } from 'lucide-react';
+import type { LicenseKeyPublic } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
+
+const ErrorLicenseKeyNotFound = 400007;
+const ErrorLicenseKeyUsed = 400008;
+const ErrorLicenseKeyExpired = 400009;
+const ErrorLicenseKeyNotMatch = 400010;
+const ErrorLicenseKeyAlreadyRedeemed = 400011;
+
+type PageState = 'idle' | 'looking' | 'found' | 'redeeming' | 'success' | 'error';
+
+function getDaysRemaining(expiresAt: number): number {
+  const now = Math.floor(Date.now() / 1000);
+  return Math.max(0, Math.ceil((expiresAt - now) / 86400));
+}
+
+export default function GiftCodeClient() {
+  const t = useTranslations('licenseKeys');
+  const [inputCode, setInputCode] = useState('');
+  const [state, setState] = useState<PageState>('idle');
+  const [keyData, setKeyData] = useState<LicenseKeyPublic | null>(null);
+  const [redeemDays, setRedeemDays] = useState(0);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  const handleLookup = async () => {
+    const code = inputCode.trim().toUpperCase();
+    if (!code) return;
+    setState('looking');
+    setErrorMsg('');
+    try {
+      const data = await api.getLicenseKey(code);
+      setKeyData(data);
+      setState('found');
+    } catch {
+      setErrorMsg(t('landing.notFound'));
+      setState('error');
+    }
+  };
+
+  const handleRedeem = async () => {
+    const code = inputCode.trim().toUpperCase();
+    setState('redeeming');
+    setErrorMsg('');
+    try {
+      const result = await api.redeemLicenseKey(code);
+      setRedeemDays(result.planDays);
+      setState('success');
+    } catch (err) {
+      if (err instanceof ApiError) {
+        const errCode = err.code as number;
+        switch (errCode) {
+          case ErrorLicenseKeyUsed:
+            setErrorMsg(t('gift.used'));
+            break;
+          case ErrorLicenseKeyExpired:
+            setErrorMsg(t('gift.expired'));
+            break;
+          case ErrorLicenseKeyNotFound:
+          case ErrorLicenseKeyNotMatch:
+            setErrorMsg(t('gift.notEligible'));
+            break;
+          case ErrorLicenseKeyAlreadyRedeemed:
+            setErrorMsg(t('gift.alreadyRedeemed'));
+            break;
+          default:
+            setErrorMsg(t('gift.redeemFailed'));
+        }
+      } else {
+        setErrorMsg(t('gift.redeemFailed'));
+      }
+      setState('error');
+    }
+  };
+
+  const handleReset = () => {
+    setInputCode('');
+    setKeyData(null);
+    setErrorMsg('');
+    setState('idle');
+  };
+
+  // Success state
+  if (state === 'success') {
+    return (
+      <div className="max-w-lg mx-auto px-4 py-20 text-center">
+        <Card className="p-10 border-primary/30 bg-primary/5">
+          <CheckCircle className="w-14 h-14 text-primary mx-auto mb-4" />
+          <h1 className="text-2xl font-bold text-foreground mb-3">{t('gift.successTitle')}</h1>
+          <p className="text-muted-foreground mb-8">{t('gift.successBody', { days: redeemDays })}</p>
+          <Button asChild size="lg">
+            <Link href="/account">{t('gift.viewAccount')}</Link>
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
+  // Found state — show key info + redeem button
+  if (state === 'found' && keyData) {
+    const daysRemaining = getDaysRemaining(keyData.expiresAt);
+
+    // Key already used or expired
+    if (keyData.isUsed) {
+      return (
+        <div className="max-w-lg mx-auto px-4 py-20 text-center">
+          <Card className="p-10 border-muted bg-muted/20">
+            <AlertCircle className="w-14 h-14 text-muted-foreground mx-auto mb-4" />
+            <h1 className="text-2xl font-bold text-foreground mb-3">{t('gift.used')}</h1>
+            <Button asChild variant="outline" size="lg" className="mt-4">
+              <Link href="/purchase">{t('gift.fallback')}</Link>
+            </Button>
+          </Card>
+        </div>
+      );
+    }
+    if (keyData.isExpired) {
+      return (
+        <div className="max-w-lg mx-auto px-4 py-20 text-center">
+          <Card className="p-10 border-muted bg-muted/20">
+            <Clock className="w-14 h-14 text-muted-foreground mx-auto mb-4" />
+            <h1 className="text-2xl font-bold text-foreground mb-3">{t('gift.expired')}</h1>
+            <Button asChild variant="outline" size="lg" className="mt-4">
+              <Link href="/purchase">{t('gift.fallback')}</Link>
+            </Button>
+          </Card>
+        </div>
+      );
+    }
+
+    return (
+      <div className="max-w-lg mx-auto px-4 py-16 sm:py-24">
+        <div className="text-center mb-10">
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-primary/10 border border-primary/20 mb-6">
+            <Gift className="w-10 h-10 text-primary" />
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-foreground leading-snug">
+            {keyData.senderName
+              ? t('gift.title', { name: keyData.senderName })
+              : t('gift.titleAnonymous')}
+          </h1>
+          <p className="mt-2 text-muted-foreground">{t('gift.subtitle')}</p>
+        </div>
+
+        <Card className="p-8 sm:p-10 mb-8 border-primary/30 bg-primary/5 text-center">
+          <p className="text-sm uppercase tracking-widest text-primary mb-4 font-mono">Kaitu VPN</p>
+          <div className="text-5xl sm:text-6xl font-mono font-bold text-primary mb-4">
+            {t('gift.planDays', { days: keyData.planDays })}
+          </div>
+          <div className="flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
+            <Clock className="w-4 h-4" />
+            <span>{t('gift.expires', { days: daysRemaining })}</span>
+          </div>
+        </Card>
+
+        {errorMsg && (
+          <p className="text-sm text-destructive text-center mb-4">{errorMsg}</p>
+        )}
+
+        <div className="flex flex-col items-center gap-3">
+          <Button
+            size="lg"
+            className="w-full sm:w-auto px-12 py-6 text-lg font-bold"
+            onClick={handleRedeem}
+            disabled={state === 'redeeming'}
+          >
+            {state === 'redeeming' ? t('gift.loading') : t('gift.cta')}
+          </Button>
+          <button
+            onClick={handleReset}
+            className="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
+          >
+            {t('landing.reenter')}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Idle / Error state — show input form
+  return (
+    <div className="max-w-lg mx-auto px-4 py-16 sm:py-24">
+      <div className="text-center mb-10">
+        <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-primary/10 border border-primary/20 mb-6">
+          <Gift className="w-10 h-10 text-primary" />
+        </div>
+        <h1 className="text-2xl sm:text-3xl font-bold text-foreground leading-snug">
+          {t('landing.title')}
+        </h1>
+        <p className="mt-2 text-muted-foreground">{t('landing.subtitle')}</p>
+      </div>
+
+      <Card className="p-8 sm:p-10">
+        <div className="flex gap-3">
+          <Input
+            value={inputCode}
+            onChange={(e) => setInputCode(e.target.value.toUpperCase())}
+            placeholder={t('landing.placeholder')}
+            maxLength={8}
+            className="font-mono text-lg tracking-widest uppercase text-center"
+            onKeyDown={(e) => e.key === 'Enter' && handleLookup()}
+          />
+          <Button
+            onClick={handleLookup}
+            disabled={!inputCode.trim() || state === 'looking'}
+            size="lg"
+          >
+            {state === 'looking' ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Search className="w-4 h-4" />
+            )}
+          </Button>
+        </div>
+
+        {errorMsg && (
+          <p className="text-sm text-destructive text-center mt-4">{errorMsg}</p>
+        )}
+      </Card>
+    </div>
+  );
+}
 ```
-idle:
-  - Centered card with heading "兑换授权码"
-  - Subtext: "输入授权码，免费获取会员"
-  - Input field (uppercase transform on display, max 8 chars)
-  - "查看" button
-
-found:
-  - Key info card (same as RedeemClient): plan days, expiry, sender
-  - "兑换" button
-  - "重新输入" link to go back to idle
-
-success:
-  - CheckCircle icon
-  - "兑换成功" + plan days
-  - Link to /account
-
-error:
-  - Error message (mapped from error code)
-  - Link to /purchase
-```
-
-Flow:
-1. User types code → click "查看" → `api.getLicenseKey(code.toUpperCase())`
-2. On success: transition to `found` state, display key info
-3. On 404: show "授权码不存在"
-4. User clicks "兑换" → check auth state
-   - Not logged in: redirect to login (use existing auth pattern from RedeemClient)
-   - Logged in: call `api.redeemLicenseKey(code)` → success/error
 
 - [ ] **Step 3: Verify build**
 
@@ -851,13 +1379,110 @@ Expected: SUCCESS
 - [ ] **Step 4: Commit**
 
 ```bash
-git add web/src/app/[locale]/g/
+git add web/src/app/[locale]/g/page.tsx web/src/app/[locale]/g/GiftCodeClient.tsx
 git commit -m "feat(web): add /g landing page for manual code input"
 ```
 
 ---
 
-## Task 9: Web — Admin Page Updates
+## Task 9: Web — i18n Keys for New Pages
+
+**Files:**
+- Modify: `web/messages/zh-CN/licenseKeys.json`
+- Modify: `web/messages/en-US/licenseKeys.json`
+- Copy changes to: all other locale files (`ja`, `zh-TW`, `zh-HK`, `en-GB`, `en-AU`)
+
+- [ ] **Step 1: Add new keys to `web/messages/zh-CN/licenseKeys.json`**
+
+Add these keys inside the existing `gift` object and add a new `landing` section:
+
+```json
+{
+  "gift": {
+    "title": "{name} 送给你一个礼物",
+    "titleAnonymous": "你收到一个礼物",
+    "subtitle": "Kaitu VPN 专属会员",
+    "planDays": "{days} 天会员",
+    "expires": "还剩 {days} 天到期",
+    "cta": "立即领取",
+    "used": "此礼物已被领走",
+    "expired": "此礼物已过期",
+    "fallback": "查看新用户专属优惠",
+    "loading": "兑换中...",
+    "successTitle": "兑换成功！",
+    "successBody": "已为你延长 {days} 天会员",
+    "viewAccount": "查看我的账户",
+    "notEligible": "不符合使用条件",
+    "redeemFailed": "兑换失败，请重试",
+    "alreadyRedeemed": "您已使用过授权码"
+  },
+  "landing": {
+    "title": "兑换授权码",
+    "subtitle": "输入授权码，免费获取会员",
+    "placeholder": "输入 8 位授权码",
+    "notFound": "授权码不存在",
+    "reenter": "重新输入"
+  },
+  "admin": { ... },
+  "campaigns": { ... }
+}
+```
+
+New keys added: `gift.titleAnonymous`, `gift.alreadyRedeemed`, `landing.*` (5 keys).
+
+- [ ] **Step 2: Add corresponding en-US keys**
+
+```json
+{
+  "gift": {
+    "titleAnonymous": "You received a gift",
+    "alreadyRedeemed": "You have already redeemed a license key"
+  },
+  "landing": {
+    "title": "Redeem Gift Code",
+    "subtitle": "Enter your gift code to claim free membership",
+    "placeholder": "Enter 8-digit code",
+    "notFound": "Gift code not found",
+    "reenter": "Enter a different code"
+  }
+}
+```
+
+- [ ] **Step 3: Copy to remaining locales**
+
+Copy the zh-CN version to `zh-TW`, `zh-HK` (same text). Copy the en-US version to `en-GB`, `en-AU`. For `ja`, translate or use zh-CN as placeholder.
+
+- [ ] **Step 4: Add `purchase.giftCodePrompt` key to all locales**
+
+In `web/messages/zh-CN/purchase.json`, add:
+```json
+"giftCodePrompt": "已有授权码？",
+"giftCodeLink": "点此兑换"
+```
+
+In `web/messages/en-US/purchase.json`, add:
+```json
+"giftCodePrompt": "Have a gift code?",
+"giftCodeLink": "Redeem here"
+```
+
+Copy to all other locales accordingly.
+
+- [ ] **Step 5: Verify build**
+
+Run: `cd web && yarn build`
+Expected: SUCCESS
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add web/messages/
+git commit -m "feat(web): add i18n keys for gift code landing and redemption pages"
+```
+
+---
+
+## Task 10: Web — Admin Page Updates
 
 **Files:**
 - Modify: `web/src/app/(manager)/manager/license-keys/page.tsx`
@@ -913,20 +1538,22 @@ git commit -m "feat(web): admin license key creation, code column, source filter
 
 ---
 
-## Task 10: Web — Purchase Page Entry Point
+## Task 11: Web — Purchase Page Entry Point
 
 **Files:**
-- Modify: `web/src/app/[locale]/purchase/page.tsx` or the client component it renders
+- Modify: `web/src/app/[locale]/purchase/PurchaseClient.tsx` (client component)
 
 - [ ] **Step 1: Add gift code prompt**
 
-Find the appropriate location in the purchase page (above or below the plan selection area) and add a light prompt:
+In `PurchaseClient.tsx`, add a subtle prompt below the plan selection area. The component already uses `useTranslations()` and `Link` from `@/i18n/routing`.
+
+Find an appropriate location (e.g., after the campaign code input section, around line 104-106 where `showCampaign` state is) and add:
 
 ```tsx
-<p className="text-sm text-muted-foreground text-center">
-  已有授权码？
-  <Link href="/g" className="text-primary underline underline-offset-4 hover:text-primary/80">
-    点此兑换
+<p className="text-sm text-muted-foreground text-center mt-4">
+  {t('purchase.giftCodePrompt')}
+  <Link href="/g" className="text-primary underline underline-offset-4 hover:text-primary/80 ml-1">
+    {t('purchase.giftCodeLink')}
   </Link>
 </p>
 ```
@@ -941,13 +1568,13 @@ Expected: SUCCESS
 - [ ] **Step 3: Commit**
 
 ```bash
-git add web/src/app/[locale]/purchase/
+git add web/src/app/[locale]/purchase/PurchaseClient.tsx
 git commit -m "feat(web): add gift code prompt on purchase page"
 ```
 
 ---
 
-## Task 11: Cleanup — Remove Old Redeem Pages
+## Task 12: Cleanup — Remove Old Redeem Pages
 
 **Files:**
 - Delete: `web/src/app/[locale]/redeem/` (entire directory)
@@ -982,7 +1609,7 @@ git commit -m "cleanup: remove old /redeem pages, replace with /g"
 
 ---
 
-## Task 12: Final Verification
+## Task 13: Final Verification
 
 - [ ] **Step 1: Run backend tests**
 
