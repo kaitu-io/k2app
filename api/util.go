@@ -16,10 +16,6 @@ func generateId(prefix string) string {
 	return fmt.Sprintf("%s-%s", prefix, xid.New().String())
 }
 
-func generateAccessKey() string {
-	return generateId("ak")
-}
-
 // SafeGo 安全地执行 goroutine，自动处理 panic
 func SafeGo(ctx context.Context, fn func()) {
 	go func() {

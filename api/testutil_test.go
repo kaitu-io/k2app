@@ -324,9 +324,8 @@ func CreateTestUser(t *testing.T) *User {
 	testInitConfig()
 
 	user := &User{
-		UUID:      generateId("test-user"),
-		AccessKey: generateAccessKey(),
-		Language:  "zh-CN",
+		UUID:     generateId("test-user"),
+		Language: "zh-CN",
 	}
 
 	if err := db.Get().Create(user).Error; err != nil {
