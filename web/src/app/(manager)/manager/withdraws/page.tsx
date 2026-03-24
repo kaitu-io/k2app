@@ -29,7 +29,7 @@ import {
   getCoreRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { api, AdminWithdrawListItem } from "@/lib/api";
+import { api, AdminWithdrawListItem, isPendingApproval } from "@/lib/api";
 import { toast } from "sonner";
 import { ExternalLink } from "lucide-react";
 
@@ -111,10 +111,15 @@ export default function WithdrawsPage() {
     if (!selectedWithdrawId) return;
 
     try {
-      await api.approveWithdraw(selectedWithdrawId, {
+      const result = await api.approveWithdraw(selectedWithdrawId, {
         action: "approve",
         remark: remark.trim(),
       });
+      if (isPendingApproval(result)) {
+        toast.success("已提交审批，等待其他管理员确认");
+        setApproveDialogOpen(false);
+        return;
+      }
       toast.success("审批成功");
       setApproveDialogOpen(false);
       fetchWithdraws();
@@ -128,10 +133,15 @@ export default function WithdrawsPage() {
     if (!selectedWithdrawId) return;
 
     try {
-      await api.approveWithdraw(selectedWithdrawId, {
+      const result = await api.approveWithdraw(selectedWithdrawId, {
         action: "reject",
         remark: remark.trim(),
       });
+      if (isPendingApproval(result)) {
+        toast.success("已提交审批，等待其他管理员确认");
+        setRejectDialogOpen(false);
+        return;
+      }
       toast.success("已拒绝提现请求");
       setRejectDialogOpen(false);
       fetchWithdraws();
@@ -148,10 +158,15 @@ export default function WithdrawsPage() {
     }
 
     try {
-      await api.completeWithdraw(selectedWithdrawId, {
+      const result = await api.completeWithdraw(selectedWithdrawId, {
         txHash: txHash.trim(),
         remark: remark.trim(),
       });
+      if (isPendingApproval(result)) {
+        toast.success("已提交审批，等待其他管理员确认");
+        setCompleteDialogOpen(false);
+        return;
+      }
       toast.success("已标记为完成");
       setCompleteDialogOpen(false);
       fetchWithdraws();

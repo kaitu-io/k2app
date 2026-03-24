@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { api } from "@/lib/api";
+import { api, isPendingApproval } from "@/lib/api";
 import { format } from "date-fns";
 import Link from "next/link";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -399,11 +399,18 @@ export default function UsersPage() {
 
     setIsDeleting(true);
     try {
-      await api.request('/app/users/hard-delete', {
+      const result = await api.request('/app/users/hard-delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userUuids: selectedRowIds }),
       });
+
+      if (isPendingApproval(result)) {
+        toast.success("已提交审批，等待其他管理员确认");
+        setShowSecondConfirm(false);
+        setRowSelection({});
+        return;
+      }
 
       setShowSecondConfirm(false);
       setRowSelection({});

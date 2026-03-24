@@ -33,7 +33,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { api } from "@/lib/api";
+import { api, isPendingApproval } from "@/lib/api";
 import { toast } from "sonner";
 
 // 定义套餐数据结构
@@ -268,7 +268,7 @@ export default function PlansPage() {
     if (!editingPlan) return;
 
     try {
-      await api.request(`/app/plans/${editingPlan.id}`, {
+      const result = await api.request(`/app/plans/${editingPlan.id}`, {
         method: "PUT",
         body: JSON.stringify({
           label: formData.label,
@@ -279,6 +279,13 @@ export default function PlansPage() {
           isActive: formData.isActive,
         }),
       });
+      if (isPendingApproval(result)) {
+        toast.success("已提交审批，等待其他管理员确认");
+        setIsEditDialogOpen(false);
+        setEditingPlan(null);
+        resetForm();
+        return;
+      }
       toast.success("套餐更新成功");
       setIsEditDialogOpen(false);
       setEditingPlan(null);
@@ -293,9 +300,13 @@ export default function PlansPage() {
     if (!confirm("确定要禁用这个套餐吗？")) return;
 
     try {
-      await api.request(`/app/plans/${planId}`, {
+      const result = await api.request(`/app/plans/${planId}`, {
         method: "DELETE",
       });
+      if (isPendingApproval(result)) {
+        toast.success("已提交审批，等待其他管理员确认");
+        return;
+      }
       toast.success("套餐禁用成功");
       fetchPlans();
     } catch (error) {

@@ -41,7 +41,7 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { api, CampaignResponse, CampaignRequest, IssueKeysResponse } from "@/lib/api";
+import { api, CampaignResponse, CampaignRequest, IssueKeysResponse, isPendingApproval } from "@/lib/api";
 import { toast } from "sonner";
 import { Plus, Edit, Trash2, Tag, TrendingUp, BarChart3, Calendar, Key, Users } from "lucide-react";
 
@@ -367,7 +367,13 @@ export default function CampaignsPage() {
 
   const handleCreate = async () => {
     try {
-      await api.createCampaign(formData);
+      const result = await api.createCampaign(formData);
+      if (isPendingApproval(result)) {
+        toast.success("已提交审批，等待其他管理员确认");
+        setCreateDialogOpen(false);
+        resetForm();
+        return;
+      }
       toast.success("活动创建成功");
       setCreateDialogOpen(false);
       resetForm();
@@ -402,7 +408,14 @@ export default function CampaignsPage() {
     if (!editingCampaign) return;
 
     try {
-      await api.updateCampaign(editingCampaign.id, formData);
+      const result = await api.updateCampaign(editingCampaign.id, formData);
+      if (isPendingApproval(result)) {
+        toast.success("已提交审批，等待其他管理员确认");
+        setEditDialogOpen(false);
+        setEditingCampaign(null);
+        resetForm();
+        return;
+      }
       toast.success("活动更新成功");
       setEditDialogOpen(false);
       setEditingCampaign(null);
@@ -418,7 +431,11 @@ export default function CampaignsPage() {
     if (!confirm("确定要删除这个活动吗？")) return;
 
     try {
-      await api.deleteCampaign(id);
+      const result = await api.deleteCampaign(id);
+      if (isPendingApproval(result)) {
+        toast.success("已提交审批，等待其他管理员确认");
+        return;
+      }
       toast.success("活动删除成功");
       fetchCampaigns();
     } catch (error) {
@@ -448,6 +465,12 @@ export default function CampaignsPage() {
     setIssueLoading(true);
     try {
       const result = await api.issueKeys(campaignId, { dryRun });
+      if (!dryRun && isPendingApproval(result)) {
+        toast.success("已提交审批，等待其他管理员确认");
+        setDryRunResult(null);
+        setDryRunCampaignId(null);
+        return;
+      }
       if (dryRun) {
         setDryRunResult(result);
         setDryRunCampaignId(campaignId);

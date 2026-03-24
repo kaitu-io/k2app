@@ -30,7 +30,7 @@ import {
 } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { api } from "@/lib/api";
+import { api, isPendingApproval } from "@/lib/api";
 import { toast } from "sonner";
 import {
   Send,
@@ -259,6 +259,11 @@ export default function EDMPage() {
       };
 
       const response = await api.createEmailTask(requestData);
+
+      if (isPendingApproval(response)) {
+        toast.success("已提交审批，等待其他管理员确认");
+        return;
+      }
 
       toast.success("任务创建成功");
       // Redirect to send-logs page with the batchId for tracking

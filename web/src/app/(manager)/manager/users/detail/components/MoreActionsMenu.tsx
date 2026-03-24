@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { MoreHorizontal, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { api, isPendingApproval } from "@/lib/api";
 import { useRouter } from "next/navigation";
 
 interface MoreActionsMenuProps {
@@ -47,10 +47,16 @@ export function MoreActionsMenu({ userUUID, userEmail }: MoreActionsMenuProps) {
 
     setIsDeleting(true);
     try {
-      await api.request("/app/users/hard-delete", {
+      const result = await api.request("/app/users/hard-delete", {
         method: "POST",
         body: JSON.stringify({ userUuids: [userUUID] }),
       });
+
+      if (isPendingApproval(result)) {
+        toast.success("已提交审批，等待其他管理员确认");
+        setShowSecondConfirm(false);
+        return;
+      }
 
       setShowSecondConfirm(false);
       toast.success("用户及其所有关联数据已删除");

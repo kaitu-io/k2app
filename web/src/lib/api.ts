@@ -1021,6 +1021,16 @@ export interface ApprovalSubmitResponse {
   status: string;
 }
 
+/** Type guard: returns true if the API response is a pending approval */
+export function isPendingApproval(result: unknown): result is ApprovalSubmitResponse {
+  return (
+    typeof result === "object" &&
+    result !== null &&
+    "approvalId" in result &&
+    typeof (result as ApprovalSubmitResponse).approvalId === "number"
+  );
+}
+
 // Flag to prevent multiple concurrent auth redirects
 // Removed authRedirectInProgress - using single login redirect manager
 
