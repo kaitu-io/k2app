@@ -70,8 +70,13 @@ func main() {
 	}, nil)
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "send_code",
+		Description: "Send a verification code to email for login",
+	}, app.toolSendCode)
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "login",
-		Description: "Log in to Kaitu with email and password",
+		Description: "Log in to Kaitu with email and verification code",
 	}, app.toolLogin)
 
 	mcp.AddTool(server, &mcp.Tool{

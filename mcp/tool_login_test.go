@@ -37,9 +37,9 @@ func textContent(t *testing.T, result *mcp.CallToolResult) string {
 	return tc.Text
 }
 
-func TestToolLogin_Success(t *testing.T) {
+func TestToolSendCode_Success(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/auth/login/password" {
+		if r.URL.Path != "/api/auth/code" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
 
@@ -50,16 +50,64 @@ func TestToolLogin_Success(t *testing.T) {
 		if body["email"] != "test@example.com" {
 			t.Errorf("expected email test@example.com, got %v", body["email"])
 		}
+
+		data, _ := json.Marshal(sendCodeResponse{
+			UserExists:  true,
+			IsActivated: true,
+		})
+		resp := centerResponse{Code: 0, Message: "ok", Data: json.RawMessage(data)}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	app := newTestApp(t, srv.URL)
+	result, _, err := app.toolSendCode(context.Background(), nil, SendCodeInput{
+		Email: "test@example.com",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("expected success, got error: %s", textContent(t, result))
+	}
+
+	var out map[string]any
+	if err := json.Unmarshal([]byte(textContent(t, result)), &out); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if out["email"] != "test@example.com" {
+		t.Errorf("expected email in result, got %v", out)
+	}
+	if out["message"] != "verification code sent" {
+		t.Errorf("expected message 'verification code sent', got %v", out["message"])
+	}
+}
+
+func TestToolLogin_Success(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/auth/login" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode body: %v", err)
+		}
+		if body["email"] != "test@example.com" {
+			t.Errorf("expected email test@example.com, got %v", body["email"])
+		}
+		if body["verificationCode"] != "123456" {
+			t.Errorf("expected verificationCode 123456, got %v", body["verificationCode"])
+		}
 		if body["remark"] != "k2-mcp" {
 			t.Errorf("expected remark k2-mcp, got %v", body["remark"])
-		}
-		if body["platform"] != "mcp" {
-			t.Errorf("expected platform mcp, got %v", body["platform"])
 		}
 
 		data, _ := json.Marshal(loginResponse{
 			AccessToken:  "access-token-123",
 			RefreshToken: "refresh-token-456",
+			IssuedAt:     1700000000,
 		})
 		resp := centerResponse{Code: 0, Message: "ok", Data: json.RawMessage(data)}
 		w.Header().Set("Content-Type", "application/json")
@@ -69,8 +117,8 @@ func TestToolLogin_Success(t *testing.T) {
 
 	app := newTestApp(t, srv.URL)
 	result, _, err := app.toolLogin(context.Background(), nil, LoginInput{
-		Email:    "test@example.com",
-		Password: "secret",
+		Email:            "test@example.com",
+		VerificationCode: "123456",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -116,9 +164,9 @@ func TestToolLogin_Success(t *testing.T) {
 	}
 }
 
-func TestToolLogin_InvalidCredentials(t *testing.T) {
+func TestToolLogin_InvalidCode(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := centerResponse{Code: 400006, Message: "invalid email or password", Data: json.RawMessage("null")}
+		resp := centerResponse{Code: 400007, Message: "invalid verification code", Data: json.RawMessage("null")}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
 	}))
@@ -126,14 +174,14 @@ func TestToolLogin_InvalidCredentials(t *testing.T) {
 
 	app := newTestApp(t, srv.URL)
 	result, _, err := app.toolLogin(context.Background(), nil, LoginInput{
-		Email:    "bad@example.com",
-		Password: "wrong",
+		Email:            "bad@example.com",
+		VerificationCode: "000000",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !result.IsError {
-		t.Fatal("expected IsError=true for invalid credentials")
+		t.Fatal("expected IsError=true for invalid verification code")
 	}
 
 	// Verify tokens NOT stored.
