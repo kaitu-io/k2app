@@ -28,6 +28,7 @@ cd desktop/src-tauri && cargo test  # Rust tests
 cd api && go test ./...          # Center API tests
 cd tools/kaitu-center && npm run build  # Build MCP server (NodeNext ESM)
 cd tools/kaitu-center && npm test       # vitest for MCP server
+cd mcp && go test ./...          # Go MCP server tests
 scripts/test_build.sh            # Full build verification (14 checks)
 yarn install                     # Always run from root (workspace)
 ```
@@ -99,6 +100,7 @@ mobile/android/      Gradle project (app module, flatDir AAR)
 tools/kaitu-center/ Center API tools — MCP server (Claude Code) + OpenClaw plugin (DevOps/Support/Marketing)
   src/                 index.ts (MCP entry), openclaw.ts (OpenClaw entry), roles.ts, config.ts, ssh.ts, center-api.ts, tools/
 tools/kaitu-mail/    OpenClaw email plugin (himalaya CLI, per-account IMAP)
+mcp/                 Go MCP server for Claude Code (k2 user-facing tools: auth, servers, connect, plans, subscribe)
 scripts/             dev.sh, build-macos.sh, build-mobile-*.sh, test_build.sh
 docker/scripts/      Node ops scripts (provision-node.sh, enable-ipv6.sh, etc.)
 .claude/settings.json  Project-level Claude Code config (MCP server registration)
@@ -185,6 +187,7 @@ web/CLAUDE.md                       Website: Next.js pages, admin dashboard, API
 desktop/CLAUDE.md                   Tauri shell, Rust modules, config
 mobile/CLAUDE.md                    Capacitor mobile, K2Plugin, iOS/Android VPN architecture
 api/CLAUDE.md                       Center API: routes, middleware, models, workers, cloudprovider
+mcp/CLAUDE.md                       Go MCP server: tools, auth flow, Center/daemon clients
 k2/CLAUDE.md                        Go core architecture, wire protocol, daemon API
 ```
 
