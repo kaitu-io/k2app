@@ -1,6 +1,6 @@
 ---
 name: kaitu-node-ops
-description: Node infrastructure operations via kaitu-ops-mcp tools. Safety guardrails, dual-architecture identification, standard ops commands, and script execution guidance.
+description: Node infrastructure operations via kaitu-center tools. Safety guardrails, dual-architecture identification, standard ops commands, and script execution guidance.
 triggers:
   - node ops
   - server ops

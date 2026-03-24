@@ -26,8 +26,8 @@ make dev-ios                     # cap sync + cap run ios
 cd webapp && yarn test           # vitest
 cd desktop/src-tauri && cargo test  # Rust tests
 cd api && go test ./...          # Center API tests
-cd tools/kaitu-ops-mcp && npm run build  # Build MCP server (NodeNext ESM)
-cd tools/kaitu-ops-mcp && npm test       # vitest for MCP server
+cd tools/kaitu-center && npm run build  # Build MCP server (NodeNext ESM)
+cd tools/kaitu-center && npm test       # vitest for MCP server
 scripts/test_build.sh            # Full build verification (14 checks)
 yarn install                     # Always run from root (workspace)
 ```
@@ -96,8 +96,9 @@ mobile/              Capacitor 6 mobile app
 mobile/plugins/      K2Plugin (Swift + Kotlin) — native VPN bridge
 mobile/ios/          Xcode project (App + PacketTunnelExtension)
 mobile/android/      Gradle project (app module, flatDir AAR)
-tools/kaitu-ops-mcp/ MCP server for AI-driven node ops (TypeScript + @modelcontextprotocol/sdk + ssh2)
-  src/                 index.ts (entry), config.ts, ssh.ts, redact.ts, center-api.ts, tools/
+tools/kaitu-center/ Center API tools — MCP server (Claude Code) + OpenClaw plugin (DevOps/Support/Marketing)
+  src/                 index.ts (MCP entry), openclaw.ts (OpenClaw entry), roles.ts, config.ts, ssh.ts, center-api.ts, tools/
+tools/kaitu-mail/    OpenClaw email plugin (himalaya CLI, per-account IMAP)
 scripts/             dev.sh, build-macos.sh, build-mobile-*.sh, test_build.sh
 docker/scripts/      Node ops scripts (provision-node.sh, enable-ipv6.sh, etc.)
 .claude/settings.json  Project-level Claude Code config (MCP server registration)
@@ -124,7 +125,7 @@ docs/plans/          Architecture design docs
 - **VPN state machine**: `vpn-machine.store.ts` defines 6 explicit states (`idle`, `connecting`, `connected`, `reconnecting`, `disconnecting`, `serviceDown`) with a transition table. All state changes go through `dispatch(event, payload)`. Error is NOT a state — it's a field overlay (`error: ControlError | null`) on `idle` (terminal) or `reconnecting` (retrying). `BACKEND_ERROR` routes to `idle` or `reconnecting` based on `isRetrying` payload. `serviceDown` is an explicit state with immediate recovery via `SERVICE_REACHABLE`.
 - **VPN state contract**: `reconnecting` is a transient engine signal (engine state stays `connected`). Bridge `transformStatus()` synthesizes `state='error'` from `disconnected + lastError`, but the VPN machine maps it to `idle` (non-retrying) or `reconnecting` (retrying) — `error` is not a machine state, only a display field.
 - **`.gitignore` for native platforms**: Never ignore entire source directories (`mobile/ios/`, `mobile/android/`). Only ignore build artifacts.
-- **NodeNext imports**: `tools/kaitu-ops-mcp/` uses `"module": "NodeNext"`. All relative imports must use `.js` extension in `.ts` source.
+- **NodeNext imports**: `tools/kaitu-center/` uses `"module": "NodeNext"`. All relative imports must use `.js` extension in `.ts` source.
 - **MCP tools save-to-file**: `download_device_log` saves to `/tmp/kaitu-device-logs/` and returns file path + metadata (no content). `exec_on_node` saves stdout > 4k chars to `/tmp/kaitu-exec-output/`. Use Read tool to inspect files.
 - **Wire handshake probe**: `engine.Start()` step 4.5 completes QUIC/TCP-WS handshake (client↔server) before creating TUN. "connected" means handshake + TUN + routes are all ready. The cached wire connection is reused by first app dial (fast path).
 - **Go json.Marshal escapes `&` as `\u0026`**: Tests asserting raw JSON strings with URLs will fail. Unmarshal to `map[string]any` and assert on deserialized values.
@@ -154,7 +155,7 @@ docs/plans/          Architecture design docs
 - Core: Go (k2 submodule)
 - API: Go, Gin, GORM, MySQL, Redis, Asynq
 - Mobile: Capacitor 6, gomobile bind (K2Plugin Swift/Kotlin)
-- Package: yarn workspaces (`webapp`, `desktop`, `mobile`); `web` has independent yarn.lock; `tools/kaitu-ops-mcp` has independent npm
+- Package: yarn workspaces (`webapp`, `desktop`, `mobile`); `web` has independent yarn.lock; `tools/kaitu-center` has independent npm
 - CI: GitHub Actions (`ci.yml`, `release-desktop.yml`, `build-mobile.yml`, `release-openwrt.yml`, `publish-antiblock.yml`, `release-k2s.yml`)
 - Ops MCP: Node.js 22+, TypeScript (NodeNext), `@modelcontextprotocol/sdk`, `ssh2`, `smol-toml`
 
