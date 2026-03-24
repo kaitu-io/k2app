@@ -91,7 +91,11 @@
       "tooEarly": "少々お待ちください",
       "tooManyRequests": "リクエストが多すぎます、しばらくしてからお試しください",
       "invalidClock": "デバイスの時刻が正しくありません、システム時刻を修正してください",
-      "selfInvitation": "自分の招待コードは使用できません"
+      "selfInvitation": "自分の招待コードは使用できません",
+      "licenseKeyNotFound": "ライセンスキーが見つかりません",
+      "licenseKeyUsed": "ライセンスキーは既に使用済みです",
+      "licenseKeyExpired": "ライセンスキーの有効期限が切れています",
+      "licenseKeyNotMatch": "このライセンスキーの使用条件を満たしていません"
     },
     "vpn": {
       "authFailed": "認証に失敗しました、再度ログインしてください",

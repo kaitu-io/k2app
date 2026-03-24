@@ -91,7 +91,11 @@
       "tooEarly": "Please wait a moment and try again",
       "tooManyRequests": "Too many requests, please try later",
       "invalidClock": "Device clock is incorrect, please adjust",
-      "selfInvitation": "Cannot use your own invite code"
+      "selfInvitation": "Cannot use your own invite code",
+      "licenseKeyNotFound": "License key not found",
+      "licenseKeyUsed": "License key already used",
+      "licenseKeyExpired": "License key expired",
+      "licenseKeyNotMatch": "Not eligible for this license key"
     },
     "vpn": {
       "authFailed": "Authentication failed, please re-login",
