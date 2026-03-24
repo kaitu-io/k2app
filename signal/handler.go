@@ -51,6 +51,11 @@ func (h *Handler) handleClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := ValidateUDID(req.UDID); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
 	token, err := h.store.Claim(req.UDID)
 	if err != nil {
 		http.Error(w, "conflict", http.StatusConflict)
@@ -73,6 +78,11 @@ func (h *Handler) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 	var req RegisterRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	if err := ValidateUDID(req.UDID); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
@@ -125,8 +135,7 @@ func (h *Handler) handleConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ws := h.store.GetWS(req.HomeUDID)
-	if ws == nil {
+	if !h.store.IsOnline(req.HomeUDID) {
 		http.Error(w, "home not connected", http.StatusNotFound)
 		return
 	}
@@ -141,7 +150,7 @@ func (h *Handler) handleConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := ws.WriteMessage(websocket.TextMessage, msg); err != nil {
+	if err := h.store.WriteToWS(req.HomeUDID, websocket.TextMessage, msg); err != nil {
 		slog.Warn("DIAG: punch-notify write fail",
 			"home", req.HomeUDID,
 			"away", req.AwayAddr,

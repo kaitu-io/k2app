@@ -7,8 +7,8 @@ import (
 	"io"
 	"net"
 
+	"github.com/kaitu-io/k2/safego"
 	"github.com/kaitu-io/k2/wire"
-	"github.com/sasha-s/go-deadlock"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -78,55 +78,64 @@ func VerifySecret(secret, hash string) bool {
 }
 
 // PeerAuthListener wraps a wire.Listener and verifies peer auth on the first stream.
+// Auth is performed exactly once in a dedicated goroutine; all AcceptTCP callers
+// block until auth completes, eliminating the TOCTOU race.
 type PeerAuthListener struct {
 	inner      wire.Listener
 	secretHash string
-	authDone   bool
-	mu         deadlock.Mutex
+	authOnce   chan struct{} // closed after auth completes
+	authErr    error        // set before closing authOnce
 }
 
 // WrapWithAuth wraps ln to require peer authentication before accepting proxy traffic.
+// Auth is performed in a background goroutine; AcceptTCP blocks until it completes.
 func WrapWithAuth(ln wire.Listener, secretHash string) *PeerAuthListener {
-	return &PeerAuthListener{inner: ln, secretHash: secretHash}
+	p := &PeerAuthListener{
+		inner:      ln,
+		secretHash: secretHash,
+		authOnce:   make(chan struct{}),
+	}
+	safego.Go(func() {
+		defer close(p.authOnce)
+		p.authErr = p.doAuth()
+	})
+	return p
 }
 
-// AcceptTCP implements wire.Listener. The first accepted connection is treated as the
-// auth stream: reads the auth frame, verifies the secret, then accepts the next
-// connection for actual proxy traffic.
-func (p *PeerAuthListener) AcceptTCP(ctx context.Context) (net.Conn, string, error) {
-	conn, addr, err := p.inner.AcceptTCP(ctx)
+// doAuth accepts the first TCP stream, reads the auth frame, verifies it, and
+// sends the response. It is called exactly once from WrapWithAuth.
+func (p *PeerAuthListener) doAuth() error {
+	conn, _, err := p.inner.AcceptTCP(context.Background())
 	if err != nil {
-		return nil, "", err
+		return fmt.Errorf("k2p: accept auth stream: %w", err)
 	}
-
-	p.mu.Lock()
-	needAuth := !p.authDone
-	p.mu.Unlock()
-
-	if needAuth {
-		// First stream is the auth stream.
-		secret, err := ReadAuthFrame(conn)
-		if err != nil {
-			conn.Close()
-			return nil, "", fmt.Errorf("k2p: read auth: %w", err)
-		}
-		if !VerifySecret(secret, p.secretHash) {
-			conn.Write([]byte{AuthRejected}) //nolint:errcheck
-			conn.Close()
-			return nil, "", fmt.Errorf("k2p: peer auth rejected")
-		}
-		conn.Write([]byte{AuthOK}) //nolint:errcheck
+	secret, err := ReadAuthFrame(conn)
+	if err != nil {
 		conn.Close()
-
-		p.mu.Lock()
-		p.authDone = true
-		p.mu.Unlock()
-
-		// Accept the next stream (actual proxy traffic).
-		return p.inner.AcceptTCP(ctx)
+		return fmt.Errorf("k2p: read auth: %w", err)
 	}
+	if !VerifySecret(secret, p.secretHash) {
+		conn.Write([]byte{AuthRejected}) //nolint:errcheck
+		conn.Close()
+		return fmt.Errorf("k2p: peer auth rejected")
+	}
+	conn.Write([]byte{AuthOK}) //nolint:errcheck
+	conn.Close()
+	return nil
+}
 
-	return conn, addr, nil
+// AcceptTCP implements wire.Listener. Blocks until peer auth completes, then
+// delegates to the inner listener for actual proxy traffic.
+func (p *PeerAuthListener) AcceptTCP(ctx context.Context) (net.Conn, string, error) {
+	select {
+	case <-p.authOnce:
+	case <-ctx.Done():
+		return nil, "", ctx.Err()
+	}
+	if p.authErr != nil {
+		return nil, "", p.authErr
+	}
+	return p.inner.AcceptTCP(ctx)
 }
 
 // ServeUDP implements wire.Listener.

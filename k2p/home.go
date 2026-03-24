@@ -174,13 +174,17 @@ func handleAwayConnection(ctx context.Context, cfg Config, localNAT NATResult, n
 			quicLn.Close()
 			return nil, fmt.Errorf("k2p: accept QUIC for auth: %w", err)
 		}
-		stream, err := conn.AcceptStream(ctx)
+		authCtx, authCancel := context.WithTimeout(ctx, 10*time.Second)
+		stream, err := conn.AcceptStream(authCtx)
+		authCancel()
 		if err != nil {
 			conn.CloseWithError(1, "auth stream failed")
 			quicLn.Close()
 			return nil, fmt.Errorf("k2p: accept auth stream: %w", err)
 		}
+		stream.SetDeadline(time.Now().Add(10 * time.Second)) //nolint:errcheck
 		secret, err := ReadAuthFrame(stream)
+		stream.SetDeadline(time.Time{}) //nolint:errcheck — clear deadline after auth
 		if err != nil {
 			stream.Close()
 			conn.CloseWithError(1, "auth read failed")

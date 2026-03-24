@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/sasha-s/go-deadlock"
 )
 
 type ClaimRequest struct {
@@ -51,4 +52,5 @@ type PeerEntry struct {
 	DNS          string
 	UpdatedAt    time.Time
 	WS           *websocket.Conn
+	WriteMu      deadlock.Mutex // protects WS writes
 }

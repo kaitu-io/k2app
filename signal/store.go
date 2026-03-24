@@ -5,12 +5,24 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/sasha-s/go-deadlock"
 	"golang.org/x/crypto/bcrypt"
 )
+
+var udidRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$`)
+
+// ValidateUDID returns an error if udid does not match the k2p UDID format.
+// Valid UDIDs: lowercase alphanumeric with internal hyphens, 3–32 characters total.
+func ValidateUDID(udid string) error {
+	if !udidRe.MatchString(udid) {
+		return fmt.Errorf("signal: invalid UDID %q", udid)
+	}
+	return nil
+}
 
 // Store is an in-memory registry of peer entries.
 type Store struct {
@@ -176,6 +188,20 @@ func (s *Store) ValidateToken(udid, token string) bool {
 		return false
 	}
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(token)) == nil
+}
+
+// WriteToWS sends a WebSocket message to the peer's connection with write serialization.
+// Returns an error if the peer is not connected or the write fails.
+func (s *Store) WriteToWS(udid string, msgType int, data []byte) error {
+	s.mu.RLock()
+	e, ok := s.peers[udid]
+	s.mu.RUnlock()
+	if !ok || e.WS == nil {
+		return fmt.Errorf("signal: peer %q not connected", udid)
+	}
+	e.WriteMu.Lock()
+	defer e.WriteMu.Unlock()
+	return e.WS.WriteMessage(msgType, data)
 }
 
 // generateToken returns a cryptographically random 32-byte hex string.
