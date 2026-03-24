@@ -1,4 +1,4 @@
-package k2p2p
+package k2p
 
 import (
 	"context"

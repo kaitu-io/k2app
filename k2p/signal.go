@@ -1,4 +1,4 @@
-package k2p2p
+package k2p
 
 import (
 	"bytes"
@@ -61,7 +61,7 @@ func (c *SignalClient) doJSON(ctx context.Context, method, path string, body any
 	if body != nil {
 		b, err := json.Marshal(body)
 		if err != nil {
-			return nil, fmt.Errorf("k2p2p: marshal: %w", err)
+			return nil, fmt.Errorf("k2p: marshal: %w", err)
 		}
 		reqBody = bytes.NewReader(b)
 	}
@@ -74,7 +74,7 @@ func (c *SignalClient) doJSON(ctx context.Context, method, path string, body any
 		httpReq, err = http.NewRequestWithContext(ctx, method, c.baseURL+path, nil)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("k2p2p: build request: %w", err)
+		return nil, fmt.Errorf("k2p: build request: %w", err)
 	}
 	if body != nil {
 		httpReq.Header.Set("Content-Type", "application/json")
@@ -88,11 +88,11 @@ func (c *SignalClient) doJSON(ctx context.Context, method, path string, body any
 func (c *SignalClient) Register(ctx context.Context, req RegisterRequest) error {
 	resp, err := c.doJSON(ctx, "POST", "/p2p/register", req)
 	if err != nil {
-		return fmt.Errorf("k2p2p: register: %w", err)
+		return fmt.Errorf("k2p: register: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("k2p2p: register: HTTP %d", resp.StatusCode)
+		return fmt.Errorf("k2p: register: HTTP %d", resp.StatusCode)
 	}
 	return nil
 }
@@ -101,18 +101,18 @@ func (c *SignalClient) Register(ctx context.Context, req RegisterRequest) error 
 func (c *SignalClient) Lookup(ctx context.Context, udid string) (PeerInfo, error) {
 	resp, err := c.doJSON(ctx, "GET", "/p2p/lookup/"+udid, nil)
 	if err != nil {
-		return PeerInfo{}, fmt.Errorf("k2p2p: lookup: %w", err)
+		return PeerInfo{}, fmt.Errorf("k2p: lookup: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == 404 {
-		return PeerInfo{}, fmt.Errorf("k2p2p: peer %q not found", udid)
+		return PeerInfo{}, fmt.Errorf("k2p: peer %q not found", udid)
 	}
 	if resp.StatusCode != 200 {
-		return PeerInfo{}, fmt.Errorf("k2p2p: lookup: HTTP %d", resp.StatusCode)
+		return PeerInfo{}, fmt.Errorf("k2p: lookup: HTTP %d", resp.StatusCode)
 	}
 	var info PeerInfo
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
-		return PeerInfo{}, fmt.Errorf("k2p2p: decode lookup: %w", err)
+		return PeerInfo{}, fmt.Errorf("k2p: decode lookup: %w", err)
 	}
 	return info, nil
 }
@@ -128,7 +128,7 @@ func (c *SignalClient) ListenNotify(ctx context.Context, udid string) (<-chan Pu
 	// DialContext returns (*Conn, *http.Response, error) — discard Response.
 	conn, _, err := websocket.DefaultDialer.DialContext(ctx, wsURL, header)
 	if err != nil {
-		return nil, fmt.Errorf("k2p2p: websocket dial: %w", err)
+		return nil, fmt.Errorf("k2p: websocket dial: %w", err)
 	}
 
 	ch := make(chan PunchNotify, 8)
@@ -163,11 +163,11 @@ func (c *SignalClient) ListenNotify(ctx context.Context, udid string) (<-chan Pu
 func (c *SignalClient) RequestConnect(ctx context.Context, req ConnectRequest) error {
 	resp, err := c.doJSON(ctx, "POST", "/p2p/connect", req)
 	if err != nil {
-		return fmt.Errorf("k2p2p: connect request: %w", err)
+		return fmt.Errorf("k2p: connect request: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("k2p2p: connect request: HTTP %d", resp.StatusCode)
+		return fmt.Errorf("k2p: connect request: HTTP %d", resp.StatusCode)
 	}
 	return nil
 }

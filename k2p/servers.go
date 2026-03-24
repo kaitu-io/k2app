@@ -1,4 +1,4 @@
-package k2p2p
+package k2p
 
 // DefaultSTUNServers returns a curated list of reliable public STUN servers.
 // Ordered by expected reliability. At least 2 are needed for NAT classification.

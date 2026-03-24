@@ -1,4 +1,4 @@
-package k2p2p
+package k2p
 
 import (
 	"context"
@@ -31,7 +31,7 @@ func Dial(ctx context.Context, cfg Config) (*ConnectResult, error) {
 	// 1. STUN probe + NAT classification.
 	natResult, err := ClassifyNAT(ctx, stunServers)
 	if err != nil {
-		return nil, fmt.Errorf("k2p2p: away: NAT classification: %w", err)
+		return nil, fmt.Errorf("k2p: away: NAT classification: %w", err)
 	}
 	slog.Info("DIAG: nat-classify",
 		"type", natResult.Type.String(),
@@ -42,12 +42,12 @@ func Dial(ctx context.Context, cfg Config) (*ConnectResult, error) {
 	signal := NewSignalClient(cfg.SignalServer, cfg.Token)
 	homeInfo, err := signal.Lookup(ctx, cfg.HomeUDID)
 	if err != nil {
-		return nil, fmt.Errorf("k2p2p: away: lookup home: %w", err)
+		return nil, fmt.Errorf("k2p: away: lookup home: %w", err)
 	}
 
 	homeAddr, err := net.ResolveUDPAddr("udp4", homeInfo.Addr)
 	if err != nil {
-		return nil, fmt.Errorf("k2p2p: away: resolve home addr: %w", err)
+		return nil, fmt.Errorf("k2p: away: resolve home addr: %w", err)
 	}
 
 	// 3. Signal connect request (so API notifies home with our address).
@@ -57,21 +57,21 @@ func Dial(ctx context.Context, cfg Config) (*ConnectResult, error) {
 		NATType:  natResult.Type.String(),
 	})
 	if err != nil {
-		slog.Warn("k2p2p: away: connect request failed (proceeding anyway)", "err", err)
+		slog.Warn("k2p: away: connect request failed (proceeding anyway)", "err", err)
 	}
 
 	// 4. Punch.
 	remoteNAT := parseNATType(homeInfo.NATType)
 	punchResult, err := Punch(ctx, natResult.Type, remoteNAT, natResult.Local, homeAddr)
 	if err != nil {
-		return nil, fmt.Errorf("k2p2p: away: punch failed: %w", err)
+		return nil, fmt.Errorf("k2p: away: punch failed: %w", err)
 	}
 
 	// 5. QUIC dial over punched hole.
 	dialer, err := dialQUICOverPunch(ctx, punchResult, cfg)
 	if err != nil {
 		punchResult.Conn.Close()
-		return nil, fmt.Errorf("k2p2p: away: QUIC dial: %w", err)
+		return nil, fmt.Errorf("k2p: away: QUIC dial: %w", err)
 	}
 
 	slog.Info("DIAG: p2p-connected",
@@ -99,7 +99,7 @@ func dialQUICOverPunch(ctx context.Context, punch *PunchResult, cfg Config) (wir
 	conn, err := tr.Dial(ctx, punch.PeerAddr, tlsCfg, quicCfg)
 	if err != nil {
 		tr.Close()
-		return nil, fmt.Errorf("k2p2p: QUIC dial: %w", err)
+		return nil, fmt.Errorf("k2p: QUIC dial: %w", err)
 	}
 
 	return wire.NewQUICClientFromConn(conn, tr, cfg.WireCfg, cfg.TicketStore), nil

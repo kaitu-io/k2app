@@ -1,4 +1,4 @@
-package k2p2p
+package k2p
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	punchMagic    = "k2p2p-punch"
+	punchMagic    = "k2p-punch"
 	punchInterval = 100 * time.Millisecond
 	punchTimeout  = 5 * time.Second
 )
@@ -40,7 +40,7 @@ func punchStandard(ctx context.Context, conn *net.UDPConn, peerAddr *net.UDPAddr
 	buf := make([]byte, 64)
 	for {
 		if ctx.Err() != nil {
-			return nil, fmt.Errorf("k2p2p: punch timeout: %w", ctx.Err())
+			return nil, fmt.Errorf("k2p: punch timeout: %w", ctx.Err())
 		}
 		conn.SetReadDeadline(time.Now().Add(punchInterval * 2))
 		n, from, err := conn.ReadFromUDP(buf)
@@ -48,7 +48,7 @@ func punchStandard(ctx context.Context, conn *net.UDPConn, peerAddr *net.UDPAddr
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				continue
 			}
-			return nil, fmt.Errorf("k2p2p: punch read: %w", err)
+			return nil, fmt.Errorf("k2p: punch read: %w", err)
 		}
 		if n >= len(punchMagic) && string(buf[:len(punchMagic)]) == punchMagic {
 			slog.Info("DIAG: punch-ok", "from", from.String(), "method", "standard")
@@ -91,7 +91,7 @@ func punchBirthday(ctx context.Context, localIP, peerIP net.IP,
 		conns = append(conns, c)
 	}
 	if len(conns) == 0 {
-		return nil, fmt.Errorf("k2p2p: birthday: no local sockets opened")
+		return nil, fmt.Errorf("k2p: birthday: no local sockets opened")
 	}
 
 	type winResult struct {
@@ -163,7 +163,7 @@ func punchBirthday(ctx context.Context, localIP, peerIP net.IP,
 		for _, c := range conns {
 			c.Close()
 		}
-		return nil, fmt.Errorf("k2p2p: birthday punch timeout")
+		return nil, fmt.Errorf("k2p: birthday punch timeout")
 	}
 }
 
@@ -215,7 +215,7 @@ func Punch(ctx context.Context, localNAT, remoteNAT NATType,
 	default:
 		conn, err := net.ListenUDP("udp4", localAddr)
 		if err != nil {
-			return nil, fmt.Errorf("k2p2p: listen for punch: %w", err)
+			return nil, fmt.Errorf("k2p: listen for punch: %w", err)
 		}
 		confirmed, err := punchStandard(ctx, conn, peerAddr)
 		if err != nil {

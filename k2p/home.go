@@ -1,4 +1,4 @@
-package k2p2p
+package k2p
 
 import (
 	"context"
@@ -29,7 +29,7 @@ func Listen(ctx context.Context, cfg Config) (<-chan wire.Listener, error) {
 	// 1. STUN probe + NAT classification.
 	natResult, err := ClassifyNAT(ctx, stunServers)
 	if err != nil {
-		return nil, fmt.Errorf("k2p2p: home: NAT classification: %w", err)
+		return nil, fmt.Errorf("k2p: home: NAT classification: %w", err)
 	}
 	slog.Info("DIAG: nat-classify",
 		"type", natResult.Type.String(),
@@ -44,7 +44,7 @@ func Listen(ctx context.Context, cfg Config) (<-chan wire.Listener, error) {
 		NATType: natResult.Type.String(),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("k2p2p: home: register: %w", err)
+		return nil, fmt.Errorf("k2p: home: register: %w", err)
 	}
 
 	// Protect natResult from concurrent access.
@@ -82,7 +82,7 @@ func Listen(ctx context.Context, cfg Config) (<-chan wire.Listener, error) {
 	// 4. Listen for punch notifications.
 	notifyCh, err := signal.ListenNotify(ctx, cfg.HomeUDID)
 	if err != nil {
-		return nil, fmt.Errorf("k2p2p: home: listen notify: %w", err)
+		return nil, fmt.Errorf("k2p: home: listen notify: %w", err)
 	}
 
 	listenerCh := make(chan wire.Listener, 4)
@@ -120,13 +120,13 @@ func Listen(ctx context.Context, cfg Config) (<-chan wire.Listener, error) {
 func handleAwayConnection(ctx context.Context, cfg Config, localNAT NATResult, notify PunchNotify) (wire.Listener, error) {
 	awayAddr, err := net.ResolveUDPAddr("udp4", notify.AwayAddr)
 	if err != nil {
-		return nil, fmt.Errorf("k2p2p: resolve away addr: %w", err)
+		return nil, fmt.Errorf("k2p: resolve away addr: %w", err)
 	}
 
 	remoteNAT := parseNATType(notify.NATType)
 	punchResult, err := Punch(ctx, localNAT.Type, remoteNAT, localNAT.Local, awayAddr)
 	if err != nil {
-		return nil, fmt.Errorf("k2p2p: punch: %w", err)
+		return nil, fmt.Errorf("k2p: punch: %w", err)
 	}
 
 	// Create QUIC listener on the punched UDP socket.
@@ -139,7 +139,7 @@ func handleAwayConnection(ctx context.Context, cfg Config, localNAT NATResult, n
 		certPair, certErr := wire.GenerateCertPair()
 		if certErr != nil {
 			punchResult.Conn.Close()
-			return nil, fmt.Errorf("k2p2p: generate cert: %w", certErr)
+			return nil, fmt.Errorf("k2p: generate cert: %w", certErr)
 		}
 		tlsCert = certPair.EC
 	}
@@ -152,7 +152,7 @@ func handleAwayConnection(ctx context.Context, cfg Config, localNAT NATResult, n
 	quicLn, err := tr.Listen(tlsCfg, wire.DefaultQUICConfig())
 	if err != nil {
 		punchResult.Conn.Close()
-		return nil, fmt.Errorf("k2p2p: QUIC listen: %w", err)
+		return nil, fmt.Errorf("k2p: QUIC listen: %w", err)
 	}
 
 	slog.Info("DIAG: p2p-connected",

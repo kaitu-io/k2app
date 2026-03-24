@@ -1,4 +1,4 @@
-package k2p2p
+package k2p
 
 import (
 	"context"
@@ -56,12 +56,12 @@ type NATResult struct {
 // return the same reflexive address, NATHard if they differ.
 func ClassifyNAT(ctx context.Context, servers []string) (NATResult, error) {
 	if len(servers) < 2 {
-		return NATResult{}, fmt.Errorf("k2p2p: need at least 2 STUN servers, got %d", len(servers))
+		return NATResult{}, fmt.Errorf("k2p: need at least 2 STUN servers, got %d", len(servers))
 	}
 
 	conn, err := net.ListenUDP("udp4", nil)
 	if err != nil {
-		return NATResult{}, fmt.Errorf("k2p2p: listen UDP: %w", err)
+		return NATResult{}, fmt.Errorf("k2p: listen UDP: %w", err)
 	}
 	defer conn.Close()
 
@@ -69,7 +69,7 @@ func ClassifyNAT(ctx context.Context, servers []string) (NATResult, error) {
 	for _, server := range servers[:2] {
 		r, err := stunProbe(ctx, server, conn)
 		if err != nil {
-			slog.Debug("k2p2p: STUN probe failed, trying next", "server", server, "err", err)
+			slog.Debug("k2p: STUN probe failed, trying next", "server", server, "err", err)
 			continue
 		}
 		results = append(results, r)
@@ -83,7 +83,7 @@ func ClassifyNAT(ctx context.Context, servers []string) (NATResult, error) {
 				Local:     conn.LocalAddr().(*net.UDPAddr),
 			}, nil
 		}
-		return NATResult{}, fmt.Errorf("k2p2p: all STUN servers unreachable")
+		return NATResult{}, fmt.Errorf("k2p: all STUN servers unreachable")
 	}
 
 	local := conn.LocalAddr().(*net.UDPAddr)

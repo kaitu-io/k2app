@@ -1,4 +1,4 @@
-package k2p2p
+package k2p
 
 import (
 	"context"
@@ -23,7 +23,7 @@ func stunProbe(ctx context.Context, server string, conn *net.UDPConn) (stunResul
 	if conn == nil {
 		c, err := net.ListenUDP("udp4", nil)
 		if err != nil {
-			return stunResult{}, fmt.Errorf("k2p2p: listen UDP: %w", err)
+			return stunResult{}, fmt.Errorf("k2p: listen UDP: %w", err)
 		}
 		conn = c
 		ownConn = true
@@ -33,12 +33,12 @@ func stunProbe(ctx context.Context, server string, conn *net.UDPConn) (stunResul
 
 	serverAddr, err := net.ResolveUDPAddr("udp4", server)
 	if err != nil {
-		return stunResult{}, fmt.Errorf("k2p2p: resolve STUN server %q: %w", server, err)
+		return stunResult{}, fmt.Errorf("k2p: resolve STUN server %q: %w", server, err)
 	}
 
 	msg, err := stun.Build(stun.TransactionID, stun.BindingRequest)
 	if err != nil {
-		return stunResult{}, fmt.Errorf("k2p2p: build STUN request: %w", err)
+		return stunResult{}, fmt.Errorf("k2p: build STUN request: %w", err)
 	}
 
 	if deadline, ok := ctx.Deadline(); ok {
@@ -47,24 +47,24 @@ func stunProbe(ctx context.Context, server string, conn *net.UDPConn) (stunResul
 	}
 
 	if _, err := conn.WriteToUDP(msg.Raw, serverAddr); err != nil {
-		return stunResult{}, fmt.Errorf("k2p2p: send STUN request: %w", err)
+		return stunResult{}, fmt.Errorf("k2p: send STUN request: %w", err)
 	}
 
 	buf := make([]byte, 1500)
 	n, _, err := conn.ReadFromUDP(buf)
 	if err != nil {
-		return stunResult{}, fmt.Errorf("k2p2p: read STUN response: %w", err)
+		return stunResult{}, fmt.Errorf("k2p: read STUN response: %w", err)
 	}
 
 	resp := new(stun.Message)
 	resp.Raw = buf[:n]
 	if err := resp.Decode(); err != nil {
-		return stunResult{}, fmt.Errorf("k2p2p: decode STUN response: %w", err)
+		return stunResult{}, fmt.Errorf("k2p: decode STUN response: %w", err)
 	}
 
 	var xorAddr stun.XORMappedAddress
 	if err := xorAddr.GetFrom(resp); err != nil {
-		return stunResult{}, fmt.Errorf("k2p2p: extract XOR-MAPPED-ADDRESS: %w", err)
+		return stunResult{}, fmt.Errorf("k2p: extract XOR-MAPPED-ADDRESS: %w", err)
 	}
 
 	return stunResult{

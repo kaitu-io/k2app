@@ -1,4 +1,4 @@
-package k2p2p
+package k2p
 
 import (
 	"crypto/tls"
@@ -6,7 +6,7 @@ import (
 	"github.com/kaitu-io/k2/wire"
 )
 
-// Config holds all parameters for a k2p2p connection.
+// Config holds all parameters for a k2p connection.
 type Config struct {
 	// HomeUDID is the UDID of the home peer to connect to (away) or self (home).
 	HomeUDID string
