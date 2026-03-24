@@ -15,7 +15,7 @@ All release notes are stored here and used for:
 Each version should have its own file:
 
 ```
-client/releases/
+web/releases/
 ├── v0.3.20.md
 ├── v0.3.19.md
 ├── v0.3.18.md
@@ -83,7 +83,7 @@ Use these standard categories:
 Run this to generate both markdown and JSON:
 
 ```bash
-node scripts/generate-changelog.js
+cd web && node scripts/generate-changelog.js
 ```
 
 This generates:
@@ -102,14 +102,14 @@ When deploying a new desktop version:
 node scripts/change-desktop-version.js 0.3.20
 ```
 
-This reads `client/releases/v0.3.20.md` and embeds it in `latest.json`.
+This reads `web/releases/v0.3.20.md` and embeds it in `latest.json`.
 
 ## Multi-Language Support (Future)
 
 To support multiple languages, use this structure:
 
 ```
-client/releases/
+web/releases/
 ├── v0.3.20.md          # English (default)
 ├── v0.3.20.zh-CN.md    # Simplified Chinese
 ├── v0.3.20.ja.md       # Japanese

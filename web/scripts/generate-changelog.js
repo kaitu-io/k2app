@@ -12,7 +12,8 @@ const path = require('path');
  *   - web/public/changelog.md   (concatenated markdown)
  *
  * Usage:
- *   node scripts/generate-changelog.js
+ *   node web/scripts/generate-changelog.js  (from repo root)
+ *   node scripts/generate-changelog.js     (from web/)
  */
 
 const CDN_PRIMARY = 'https://dl.kaitu.io/kaitu/desktop';
@@ -88,9 +89,9 @@ function isVersionGte(v, min) {
 
 function generateChangelog() {
   const releasesDir = path.join(__dirname, '../releases');
-  const mdOutputPath = path.join(__dirname, '../web/public/changelog.md');
-  const releasesOutputPath = path.join(__dirname, '../web/public/releases.json');
-  const changelogOutputPath = path.join(__dirname, '../web/public/changelog.json');
+  const mdOutputPath = path.join(__dirname, '../public/changelog.md');
+  const releasesOutputPath = path.join(__dirname, '../public/releases.json');
+  const changelogOutputPath = path.join(__dirname, '../public/changelog.json');
 
   console.log('==> 📝 Generating CHANGELOG from releases/');
 

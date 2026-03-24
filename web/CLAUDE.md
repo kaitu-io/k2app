@@ -168,9 +168,9 @@ Markdown files in `content/{locale}/` are processed by Velite at build time and 
 - `section: string` — sidebar grouping key (e.g., `"getting-started"`, `"technical"`, `"comparison"`). Omit for non-sidebar content.
 
 **Release notes / Changelog:**
-- **Single source of truth**: `releases/v{VERSION}.md` (repo root, NOT in `web/`)
+- **Single source of truth**: `web/releases/v{VERSION}.md`
 - **Frontmatter**: `version` + `date`. Sections: `## New Features`, `## Bug Fixes`, `## Improvements`, `## Breaking Changes`
-- **Generate**: `node scripts/generate-changelog.js` → produces `web/public/releases.json` (gitignored), `changelog.json`, `changelog.md`
+- **Generate**: `cd web && node scripts/generate-changelog.js` → produces `public/releases.json` (gitignored), `changelog.json`, `changelog.md`
 - **Display**: `/releases` page fetches `/releases.json` at runtime
 - **Never edit `web/public/releases.json` directly** — always edit source `.md` then regenerate
 
