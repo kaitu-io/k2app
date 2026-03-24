@@ -9,12 +9,16 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// Server represents a k2 VPN server entry. Defined here as a forward reference;
-// full fields added in Task 9.
+// Server represents a k2 VPN server entry.
 type Server struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	URL  string `json:"url"`
+	ID                    int     `json:"id"`
+	Name                  string  `json:"name"`
+	Domain                string  `json:"domain"`
+	Country               string  `json:"country"`
+	Region                string  `json:"region"`
+	TrafficUsagePercent   float64 `json:"traffic_usage_percent"`
+	BandwidthUsagePercent float64 `json:"bandwidth_usage_percent"`
+	ServerURL             string  `json:"server_url"`
 }
 
 // App holds shared state for all MCP tool handlers.
