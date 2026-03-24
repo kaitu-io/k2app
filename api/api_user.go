@@ -284,17 +284,22 @@ func api_get_access_key(c *gin.Context) {
 	}
 
 	// 如果用户还没有AccessKey，生成一个
-	if user.AccessKey == "" {
-		user.AccessKey = generateAccessKey()
-		if err := db.Get().Model(&user).Update("access_key", user.AccessKey).Error; err != nil {
-			log.Errorf(c, "failed to update access key for user %d: %v", userID, err)
+	if user.AccessKey == nil {
+		plaintext, err := GenerateAccessKey(c, userID)
+		if err != nil {
+			log.Errorf(c, "failed to generate access key for user %d: %v", userID, err)
 			Error(c, ErrorSystemError, "failed to generate access key")
 			return
 		}
+		Success(c, &DataAccessKey{
+			AccessKey: plaintext,
+		})
+		return
 	}
 
+	// Key exists but we can only return a masked indicator (hash is stored, not plaintext)
 	Success(c, &DataAccessKey{
-		AccessKey: user.AccessKey,
+		AccessKey: "ktu_****",
 	})
 }
 
@@ -304,9 +309,8 @@ func api_regenerate_access_key(c *gin.Context) {
 	userID := ReqUserID(c)
 	log.Infof(c, "user %d requesting to regenerate access key", userID)
 
-	newAccessKey := generateAccessKey()
-
-	if err := db.Get().Model(&User{}).Where(&User{ID: userID}).Update("access_key", newAccessKey).Error; err != nil {
+	plaintext, err := GenerateAccessKey(c, userID)
+	if err != nil {
 		log.Errorf(c, "failed to regenerate access key for user %d: %v", userID, err)
 		Error(c, ErrorSystemError, "failed to regenerate access key")
 		return
@@ -314,7 +318,7 @@ func api_regenerate_access_key(c *gin.Context) {
 
 	log.Infof(c, "successfully regenerated access key for user %d", userID)
 	Success(c, &DataAccessKey{
-		AccessKey: newAccessKey,
+		AccessKey: plaintext,
 	})
 }
 

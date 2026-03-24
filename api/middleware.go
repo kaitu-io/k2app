@@ -240,18 +240,19 @@ func handleCookieJWTAuth(c *gin.Context, token string) *authContext {
 func handleAccessKeyAuth(c *gin.Context, accessKey string) *authContext {
 	log.Debugf(c, "processing access key authentication")
 
+	// Hash the provided key and look up by hash
+	hash := HashAccessKey(accessKey)
+
 	var user User
-	if err := db.Get().Where(&User{AccessKey: accessKey}).First(&user).Error; err != nil {
+	if err := db.Get().Where("access_key = ?", hash).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			log.Warnf(c, "user not found for access key: %s", accessKey)
+			log.Warnf(c, "no user found for access key hash")
 			return nil
 		}
-		// 数据库临时故障时返回认证失败，而非 panic 导致 500
 		log.Errorf(c, "database error while finding user by access key: %v", err)
 		return nil
 	}
 
-	// 创建AccessKey认证上下文（类似Web认证，无设备信息）
 	log.Debugf(c, "creating new access key auth context for user %d", user.ID)
 	authCtx := &authContext{
 		UserID: user.ID,

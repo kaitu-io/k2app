@@ -115,7 +115,6 @@ func api_member_add(c *gin.Context) {
 		EncryptedValue: encEmail,
 		User: &User{
 			UUID:       generateId("user"),
-			AccessKey:  generateAccessKey(),
 			ExpiredAt:  0,        // 新用户默认未付费
 			DelegateID: &user.ID, // 设置付费委托关系
 		},
@@ -367,7 +366,6 @@ func api_admin_member_add(c *gin.Context) {
 		EncryptedValue: encEmail,
 		User: &User{
 			UUID:       generateId("user"),
-			AccessKey:  generateAccessKey(),
 			ExpiredAt:  0,              // 新用户默认未付费
 			DelegateID: &targetUser.ID, // 设置付费委托关系
 		},

@@ -60,8 +60,7 @@ func AddUser(ctx context.Context, email string) (*User, error) {
 	var user User
 	err = db.Get().Transaction(func(tx *gorm.DB) error {
 		user = User{
-			UUID:      generateId("user"),
-			AccessKey: generateAccessKey(),
+			UUID: generateId("user"),
 		}
 		if err := tx.Create(&user).Error; err != nil {
 			log.Errorf(ctx, "failed to create user record: %v", err)
@@ -177,8 +176,9 @@ func SetUserRetailerStatus(ctx context.Context, email string, isRetailer bool) e
 	}
 
 	// 如果设置为分销商且AccessKey为空，生成新的AccessKey
-	if isRetailer && user.AccessKey == "" {
-		updates["access_key"] = generateAccessKey()
+	if isRetailer && user.AccessKey == nil {
+		hash := HashAccessKey(accessKeyPrefix + generateId("key"))
+		updates["access_key"] = hash
 		log.Infof(ctx, "generated new access key for retailer user %d", identify.UserID)
 	}
 
@@ -230,7 +230,6 @@ func FindOrCreateUserByEmail(c context.Context, email string, langParams ...stri
 		// 创建用户
 		newUser = User{
 			UUID:      generateId("user"),
-			AccessKey: generateAccessKey(),
 			ExpiredAt: 0, // 新用户默认未付费
 			Language:  detectedLanguage,
 		}
