@@ -37,11 +37,13 @@ func Listen(ctx context.Context, cfg Config) (<-chan wire.Listener, error) {
 		"serversUsed", 2)
 
 	// 2. Register with signal server.
-	signal := NewSignalClient(cfg.SignalServer, cfg.Token)
+	signal := NewSignalClient(cfg.SignalServer, cfg.RegToken)
 	err = signal.Register(ctx, RegisterRequest{
-		UDID:    cfg.HomeUDID,
-		Addr:    natResult.Reflexive.String(),
-		NATType: natResult.Type.String(),
+		UDID:     cfg.HomeUDID,
+		Addr:     natResult.Reflexive.String(),
+		NATType:  natResult.Type.String(),
+		Networks: cfg.Networks,
+		DNS:      cfg.DNS,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("k2p: home: register: %w", err)
@@ -71,9 +73,11 @@ func Listen(ctx context.Context, cfg Config) (<-chan wire.Listener, error) {
 				}
 				nr := getNAT()
 				_ = signal.Register(ctx, RegisterRequest{
-					UDID:    cfg.HomeUDID,
-					Addr:    nr.Reflexive.String(),
-					NATType: nr.Type.String(),
+					UDID:     cfg.HomeUDID,
+					Addr:     nr.Reflexive.String(),
+					NATType:  nr.Type.String(),
+					Networks: cfg.Networks,
+					DNS:      cfg.DNS,
 				})
 			}
 		}
@@ -159,5 +163,9 @@ func handleAwayConnection(ctx context.Context, cfg Config, localNAT NATResult, n
 		"peer", punchResult.PeerAddr.String(),
 		"method", punchResult.Strategy)
 
-	return wire.NewQUICServerFromListener(quicLn, cfg.TicketStore), nil
+	listener := wire.NewQUICServerFromListener(quicLn, cfg.TicketStore)
+	if cfg.SecretHash != "" {
+		return WrapWithAuth(listener, cfg.SecretHash), nil
+	}
+	return listener, nil
 }
