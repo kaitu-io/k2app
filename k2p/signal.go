@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -154,7 +155,11 @@ func (c *SignalClient) Lookup(ctx context.Context, udid string) (PeerInfo, error
 // or the connection drops. Uses safego.Go for panic safety.
 // Authentication is passed via the ?token= query parameter (not Authorization header).
 func (c *SignalClient) ListenNotify(ctx context.Context, udid string) (<-chan PunchNotify, error) {
-	wsURL := c.baseURL + "/k2p/ws?udid=" + udid + "&token=" + c.token
+	// Convert http(s):// to ws(s):// for gorilla websocket.
+	base := c.baseURL
+	base = strings.Replace(base, "https://", "wss://", 1)
+	base = strings.Replace(base, "http://", "ws://", 1)
+	wsURL := base + "/k2p/ws?udid=" + udid + "&token=" + c.token
 
 	// DialContext returns (*Conn, *http.Response, error) — discard Response.
 	conn, _, err := websocket.DefaultDialer.DialContext(ctx, wsURL, nil)

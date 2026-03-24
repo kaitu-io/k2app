@@ -41,3 +41,15 @@ func NewQUICServerFromListener(ln *quic.Listener, store *TicketStore) *QUICServe
 	s.Listen(ln)
 	return s
 }
+
+// NewQUICServerFromConn creates a QUICServer that handles an already-established
+// QUIC connection (e.g., after peer auth on a punched connection). Also starts
+// accepting new connections from ln for future peers.
+func NewQUICServerFromConn(conn *quic.Conn, ln *quic.Listener, store *TicketStore) *QUICServer {
+	s := NewQUICServer(store)
+	go s.handleConn(conn)
+	if ln != nil {
+		s.Listen(ln)
+	}
+	return s
+}

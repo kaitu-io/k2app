@@ -163,9 +163,44 @@ func handleAwayConnection(ctx context.Context, cfg Config, localNAT NATResult, n
 		"peer", punchResult.PeerAddr.String(),
 		"method", punchResult.Strategy)
 
-	listener := wire.NewQUICServerFromListener(quicLn, cfg.TicketStore)
+	// Peer auth must happen at the QUIC connection level, before wrapping in
+	// QUICServer. QUICServer expects k2v5 protocol streams (H3 frame + StreamHeader),
+	// but the auth protocol uses its own frame format. We accept the QUIC
+	// connection, verify auth on the first stream, then hand the authenticated
+	// connection to QUICServer for k2v5 stream processing.
 	if cfg.SecretHash != "" {
-		return WrapWithAuth(listener, cfg.SecretHash), nil
+		conn, err := quicLn.Accept(ctx)
+		if err != nil {
+			quicLn.Close()
+			return nil, fmt.Errorf("k2p: accept QUIC for auth: %w", err)
+		}
+		stream, err := conn.AcceptStream(ctx)
+		if err != nil {
+			conn.CloseWithError(1, "auth stream failed")
+			quicLn.Close()
+			return nil, fmt.Errorf("k2p: accept auth stream: %w", err)
+		}
+		secret, err := ReadAuthFrame(stream)
+		if err != nil {
+			stream.Close()
+			conn.CloseWithError(1, "auth read failed")
+			quicLn.Close()
+			return nil, fmt.Errorf("k2p: read auth: %w", err)
+		}
+		if !VerifySecret(secret, cfg.SecretHash) {
+			stream.Write([]byte{AuthRejected}) //nolint:errcheck
+			stream.Close()
+			conn.CloseWithError(1, "auth rejected")
+			quicLn.Close()
+			return nil, fmt.Errorf("k2p: peer auth rejected")
+		}
+		stream.Write([]byte{AuthOK}) //nolint:errcheck
+		stream.Close()
+		// Auth passed — hand the authenticated connection to QUICServer.
+		// QUICServer will handle subsequent k2v5 streams on this connection
+		// and also accept new connections from the listener.
+		return wire.NewQUICServerFromConn(conn, quicLn, cfg.TicketStore), nil
 	}
-	return listener, nil
+
+	return wire.NewQUICServerFromListener(quicLn, cfg.TicketStore), nil
 }
