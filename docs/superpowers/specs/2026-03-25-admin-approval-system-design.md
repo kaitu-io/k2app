@@ -102,6 +102,7 @@ UPDATE admin_approvals SET status = 'approved', ... WHERE id = ? AND status = 'p
 - `requestor_id` — "我的请求" 查询
 - `approver_id` — "我审批的" 查询
 - `action` — 按操作类型过滤
+- `idx_approval_action_status(action, status)` — "某操作是否有 pending 审批" 查询
 
 ## Callback 注册表
 
@@ -121,16 +122,17 @@ func RegisterApprovalCallback(action string, cb ApprovalCallback) {
 
 1. 接收 `context.Context`（Asynq task context，有 tracing），**不是** `*gin.Context`
 2. `params` 是 handler 校验后序列化的 JSON，callback 内部 unmarshal 为具体类型
-3. **必须 re-validate 关键前置条件**（模板是否 active、用户是否存在、提现状态是否正确）— 提交到执行之间状态可能变化
-4. 成功后写 `AdminAuditLog`（审计日志记录实际执行，不是审批流程）
-5. 返回 error 时，审批记录标记为 `failed`，ExecError 记录错误
+3. **params 必须包含所有执行所需数据**，包括 URL path 参数（如 withdraw ID、campaign ID）。Handler 在调用 `SubmitApproval` 前将 path 参数合并到 params struct 中（见 Handler 改造模式中的 path 参数示例）
+4. **必须 re-validate 关键前置条件**（模板是否 active、用户是否存在、提现状态是否正确）— 提交到执行之间状态可能变化
+5. 成功后写审计日志。因为 callback 运行在 Asynq context（无 `*gin.Context`），使用 `WriteAuditLogFromApproval(ctx, approval)` 代替 `WriteAuditLog(c, ...)`。该函数从 approval 记录取 requestor 信息作为 actor
+6. 返回 error 时，审批记录标记为 `failed`，ExecError 记录错误
 
 ### 10 个 Callback
 
 | Action | Callback 逻辑 | Re-validate |
 |--------|--------------|-------------|
 | `edm_create_task` | 调用 `EnqueueEDMTask()` | 模板是否仍 active |
-| `campaign_create` | 创建 Campaign 记录 | 无（新建） |
+| `campaign_create` | 创建 Campaign 记录 | campaign code 唯一性（DB unique constraint 兜底，callback 提前检查给友好错误） |
 | `campaign_update` | 更新 Campaign 记录 | campaign 是否存在 |
 | `campaign_delete` | 删除 Campaign 记录 | campaign 是否存在 |
 | `campaign_issue_keys` | `GenerateLicenseKeysForCampaign()` + 异步发邮件 | campaign 存在 + isShareable |
@@ -187,7 +189,7 @@ func CancelApproval(c *gin.Context, approvalID uint64) error
 //   2. 校验 status == approved
 //   3. 从 approvalRegistry 查找 callback
 //   4. 调用 callback(ctx, params)
-//   5. 成功 → status=executed, ExecutedAt=now, 写 AdminAuditLog
+//   5. 成功 → status=executed, ExecutedAt=now, 写 AdminAuditLog（via WriteAuditLogFromApproval）
 //   6. 失败 → status=failed, ExecError=err.Error()
 //   7. 无论成败，Slack DM 通知发起人执行结果
 func ExecuteApproval(ctx context.Context, payload []byte) error
@@ -212,7 +214,9 @@ asynq.Handle(TaskTypeApprovalExecute, ExecuteApproval)
 
 ### 新增能力
 
-现有 `slack.Send(channel, message)` 发到频道。需新增按邮箱发 DM 的函数。
+现有 `slack.Send(channel, message)` 发到频道（通过 Webhook）。需新增按邮箱发 DM 的能力。
+
+**实现位置**：在 `logic_approval.go` 中本地实现，使用 `net/http` 直接调用 Slack Web API。不修改 `qtoolkit/slack` 包（那是独立仓库，且 Webhook 和 Bot Token API 是不同的认证模型，不应混在一起）。
 
 **Slack Web API 调用链：**
 1. `users.lookupByEmail` — 邮箱 → Slack user ID
@@ -225,6 +229,7 @@ asynq.Handle(TaskTypeApprovalExecute, ExecuteApproval)
 
 ```go
 // SlackDMByEmail 通过邮箱给个人发 Slack DM
+// 本地实现，直接调用 Slack Web API（net/http + Bot Token）
 // email → Slack user ID（内存缓存） → DM channel → 发消息
 func SlackDMByEmail(ctx context.Context, email string, message string) error
 
@@ -281,26 +286,40 @@ POST   /app/approvals/:id/reject   — 拒绝（body: {reason: string}）
 POST   /app/approvals/:id/cancel   — 取消（仅发起人）
 ```
 
+### 权限模型：提交者 vs 审批者
+
+**提交者**：任何有权访问 critical handler 的用户。例如 `RoleMarketing` 用户可以调用 EDM 创建（因为 handler 挂在 `opsAdmin` 组下），handler 内部调用 `SubmitApproval()` 创建审批记录。提交者不需要 `is_admin=true`。
+
+**审批者**：必须 `is_admin=true`，且不能是提交者本人。
+
+**查看权限**：审批列表和详情端点使用 `AuthRequired()`（非 `AdminRequired()`），但返回数据按角色过滤：
+- `is_admin=true`：看到所有审批记录，可以审批/拒绝
+- 非 admin 用户：只看到自己提交的记录（`requestor_id = currentUserID`），只能取消
+
+这样 Marketing 角色提交 EDM 审批后，可以在审批页面查看自己的提交状态。
+
 ### 列表端点
 
 - 支持 `?status=pending` 过滤
 - 默认排序：pending 置顶，然后按 `created_at DESC`
 - 分页：复用现有 `PaginationFromRequest(c)` 模式
-- 权限：`AdminRequired()`
+- 权限：`AuthRequired()` + 角色过滤（见上）
 
 ### 详情端点
 
 - 返回完整审批记录，含 `Params` JSON（前端格式化展示）
-- 权限：`AdminRequired()`
+- 权限：`AuthRequired()` + 自己的记录或 `is_admin=true`
 
 ### approve/reject 端点
 
+- 权限：`AdminRequired()`（只有 is_admin 可以审批）
 - 校验：`approverID != approval.RequestorID`，否则 403
 - 原子更新 + 409 Conflict 处理
 - reject 需 body `{reason: string}`，reason 非空校验
 
 ### cancel 端点
 
+- 权限：`AuthRequired()`
 - 校验：`currentUserID == approval.RequestorID`，否则 403
 - 仅 pending 可取消
 
@@ -340,7 +359,7 @@ func api_admin_create_edm_task(c *gin.Context) {
 }
 ```
 
-### Callback 函数
+### Callback 函数（body 参数示例 — EDM）
 
 ```go
 // executeEDMCreateTask 审批通过后执行
@@ -356,6 +375,48 @@ func executeEDMCreateTask(ctx context.Context, params json.RawMessage) error {
     // 执行
     _, err := EnqueueEDMTask(ctx, req.TemplateID, req.UserFilters, nil)
     return err
+}
+```
+
+### Path 参数示例（withdraw — ID 来自 URL path）
+
+Handler 改造：将 path 参数合并到 params struct：
+
+```go
+func api_admin_approve_withdraw(c *gin.Context) {
+    id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+    if err != nil { ... }
+    // 验证提现记录存在且状态正确
+    var withdraw WithdrawRequest
+    if err := db.Get().First(&withdraw, id).Error; err != nil { ... }
+    if withdraw.Status != "pending" { ... }
+    // 构造包含 path 参数的 params
+    params := struct {
+        WithdrawID uint64 `json:"withdrawId"`
+    }{WithdrawID: id}
+    summary := fmt.Sprintf("审批提现 #%d，金额 %.2f 元，用户 %s", id, withdraw.Amount, withdraw.UserUUID)
+    approvalID, err := SubmitApproval(c, "withdraw_approve", &params, summary)
+    if err != nil { ... }
+    Success(c, gin.H{"approvalId": approvalID, "status": "pending_approval"})
+}
+```
+
+Callback：从 params 取 withdrawId：
+
+```go
+func executeWithdrawApprove(ctx context.Context, params json.RawMessage) error {
+    var p struct { WithdrawID uint64 `json:"withdrawId"` }
+    if err := json.Unmarshal(params, &p); err != nil { return err }
+    // re-validate: 提现记录状态是否仍 pending
+    var withdraw WithdrawRequest
+    if err := db.Get().First(&withdraw, p.WithdrawID).Error; err != nil {
+        return fmt.Errorf("withdraw %d not found", p.WithdrawID)
+    }
+    if withdraw.Status != "pending" {
+        return fmt.Errorf("withdraw %d status is %s, expected pending", p.WithdrawID, withdraw.Status)
+    }
+    // 执行审批逻辑...
+    return nil
 }
 ```
 
@@ -469,6 +530,7 @@ cancelApproval(id: number)
 | 文件 | 变更类型 | 说明 |
 |------|---------|------|
 | `api/model.go` | 修改 | 新增 `AdminApproval` 模型 |
+| `api/migrate.go` | 修改 | AutoMigrate 列表添加 `&AdminApproval{}` |
 | `api/logic_approval.go` | **新建** | Submit/Approve/Reject/Cancel/Execute + Slack DM + callback registry |
 | `api/api_admin_approval.go` | **新建** | 5 个审批管理 API handler |
 | `api/route.go` | 修改 | 新增 `/app/approvals` 路由组 |
@@ -491,6 +553,19 @@ cancelApproval(id: number)
 - Normal 操作：直接在 handler 写 audit log，不经过 approval
 
 两张表职责正交，不重复。
+
+### WriteAuditLogFromApproval
+
+Callback 运行在 Asynq context，无 `*gin.Context`。新增变体函数：
+
+```go
+// WriteAuditLogFromApproval 从审批记录写审计日志（Asynq context 用）
+// 用 approval.RequestorID/UUID 作为 actor（是谁发起的操作）
+// 用 approval.ApproverID/UUID 记录在 detail 中（是谁审批的）
+func WriteAuditLogFromApproval(ctx context.Context, approval *AdminApproval, targetType, targetID string, detail any)
+```
+
+这样审计日志同时记录了"谁发起"和"谁审批"的完整链路。
 
 ## Slack Bot Token 配置
 
