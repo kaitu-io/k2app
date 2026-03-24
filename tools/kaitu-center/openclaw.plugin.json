@@ -1,0 +1,38 @@
+{
+  "id": "kaitu-center",
+  "name": "Kaitu Center",
+  "description": "DevOps, Support, and Marketing tools for Kaitu Center API",
+  "version": "1.0.0",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "centerUrl": {
+        "type": "string",
+        "description": "Center API base URL (e.g. https://api.kaitu.io)"
+      },
+      "accessKey": {
+        "type": "string",
+        "description": "X-Access-Key for Center API authentication"
+      },
+      "role": {
+        "type": "string",
+        "enum": ["devops", "support", "marketing"],
+        "description": "Which tool set to expose to this agent"
+      },
+      "sshKeyPath": {
+        "type": "string",
+        "description": "SSH private key path (devops role only)"
+      },
+      "sshUser": {
+        "type": "string",
+        "description": "SSH username (default: ubuntu)"
+      },
+      "sshPort": {
+        "type": "number",
+        "description": "SSH port (default: 1022)"
+      }
+    },
+    "required": ["centerUrl", "accessKey", "role"],
+    "additionalProperties": false
+  }
+}
