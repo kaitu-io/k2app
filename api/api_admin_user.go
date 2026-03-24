@@ -156,6 +156,7 @@ func api_admin_list_users(c *gin.Context) {
 			RetailerConfig:   dataRetailerConfig,
 			Wallet:           dataWallet,
 			Roles:            u.Roles,
+			IsAdmin:         u.IsAdmin != nil && *u.IsAdmin,
 		}
 	}
 
@@ -405,6 +406,7 @@ func api_admin_get_user_detail(c *gin.Context) {
 			RetailerConfig:   dataRetailerConfig,
 			Wallet:           dataWallet,
 			Roles:            user.Roles,
+			IsAdmin:         user.IsAdmin != nil && *user.IsAdmin,
 		},
 		Devices:       devices,
 		Orders:        orders,
