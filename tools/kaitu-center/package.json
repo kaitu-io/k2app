@@ -1,5 +1,5 @@
 {
-  "name": "@kaitu/center-plugin",
+  "name": "kaitu-center",
   "version": "0.2.0",
   "description": "Kaitu Center API tools — MCP server (Claude Code) + OpenClaw plugin",
   "type": "module",

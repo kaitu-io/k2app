@@ -1945,6 +1945,35 @@ export const api = {
     });
   },
 
+  // Feedback ticket management APIs
+  async getFeedbackTickets(params: FeedbackTicketListParams = {}): Promise<ListResult<FeedbackTicket>> {
+    const queryParams = new URLSearchParams();
+    if (params.page !== undefined) queryParams.set('page', params.page.toString());
+    if (params.pageSize !== undefined) queryParams.set('pageSize', params.pageSize.toString());
+    if (params.udid) queryParams.set('udid', params.udid);
+    if (params.email) queryParams.set('email', params.email);
+    if (params.userId) queryParams.set('user_id', params.userId);
+    if (params.status) queryParams.set('status', params.status);
+    if (params.from) queryParams.set('from', params.from);
+    if (params.to) queryParams.set('to', params.to);
+
+    const query = queryParams.toString();
+    return this.request<ListResult<FeedbackTicket>>(`/app/feedback-tickets${query ? '?' + query : ''}`);
+  },
+
+  async resolveFeedbackTicket(id: number, resolvedBy: string): Promise<void> {
+    return this.request<void>(`/app/feedback-tickets/${id}/resolve`, {
+      method: 'PUT',
+      body: JSON.stringify({ resolvedBy }),
+    });
+  },
+
+  async closeFeedbackTicket(id: number): Promise<void> {
+    return this.request<void>(`/app/feedback-tickets/${id}/close`, {
+      method: 'PUT',
+    });
+  },
+
 };
 
 // ==================== Cloud Instance Types ====================
@@ -2139,4 +2168,34 @@ export interface LicenseKeyStatsRow {
   total: number;
   used: number;
   expired: number;
+}
+
+// ============================================================
+// FeedbackTicket types
+// ============================================================
+
+export interface FeedbackTicket {
+  id: number;
+  feedbackId: string;
+  udid: string;
+  userId?: number;
+  email: string;
+  content: string;
+  status: 'open' | 'resolved' | 'closed';
+  resolvedBy?: string;
+  resolvedAt?: number;
+  meta?: string;
+  createdAt: number;
+  logCount: number;
+}
+
+export interface FeedbackTicketListParams {
+  page?: number;
+  pageSize?: number;
+  udid?: string;
+  email?: string;
+  userId?: string;
+  status?: string;
+  from?: string;
+  to?: string;
 }
