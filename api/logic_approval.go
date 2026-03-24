@@ -261,7 +261,7 @@ func ExecuteApproval(ctx context.Context, payload []byte) error {
 	if !ok {
 		execErr := fmt.Sprintf("no callback registered for action: %s", approval.Action)
 		db.Get().Model(&approval).Updates(map[string]any{"status": "failed", "exec_error": execErr})
-		return fmt.Errorf(execErr)
+		return fmt.Errorf("%s", execErr)
 	}
 
 	if err := cb(ctx, json.RawMessage(approval.Params)); err != nil {
