@@ -175,6 +175,11 @@ Serialization locks (never nested inside any state lock above):
   smuxUDPMux.writeMu (standalone)
   quicStreamUDPMux.writeMu (standalone)
   udpOverflowStream.initMu → udpOverflowStream.writeMu
+
+k2p/signal standalone locks (no nesting with engine locks):
+  signal.Store.mu (state, RWMutex) → PeerEntry.WriteMu (serialization)
+  signal.Relay.mu (state)
+  RelayConn.mu (serialization, standalone — protects ws.WriteMessage)
 ```
 
 ### The Five Forbidden Patterns
