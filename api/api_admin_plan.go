@@ -3,6 +3,8 @@
 package center
 
 import (
+	"fmt"
+
 	"github.com/gin-gonic/gin"
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
@@ -111,45 +113,20 @@ func api_admin_update_plan(c *gin.Context) {
 	}
 	log.Debugf(c, "update request for plan %s with data: %+v", planID, req)
 
-	err := db.Get().Transaction(func(tx *gorm.DB) error {
-		var plan Plan
-		if err := tx.First(&plan, planID).Error; err != nil {
-			log.Errorf(c, "failed to find plan %s for update: %v", planID, err)
-			return err
-		}
-		if req.Label != nil {
-			plan.Label = *req.Label
-		}
-		if req.Price != nil {
-			plan.Price = *req.Price
-		}
-		if req.OriginPrice != nil {
-			plan.OriginPrice = *req.OriginPrice
-		}
-		if req.Month != nil {
-			plan.Month = *req.Month
-		}
-		if req.Highlight != nil {
-			plan.Highlight = req.Highlight
-		}
-		if req.IsActive != nil {
-			plan.IsActive = req.IsActive
-		}
-
-		if err := tx.Save(&plan).Error; err != nil {
-			log.Errorf(c, "failed to update plan %s: %v", planID, err)
-			return err
-		}
-		log.Infof(c, "successfully updated plan %s", plan.PID)
-		return nil
-	})
+	approvalID, err := SubmitApproval(c, "plan_update", planUpdateApprovalParams{
+		PlanID:  planID,
+		Request: req,
+	}, fmt.Sprintf("修改套餐 (ID:%s)", planID))
 	if err != nil {
-		Error(c, ErrorSystemError, "failed to update plan")
+		log.Errorf(c, "提交修改套餐审批失败: %v", err)
+		Error(c, ErrorSystemError, "submit approval failed")
 		return
 	}
-	var plan Plan
-	db.Get().First(&plan, planID)
-	Success[Plan](c, &plan)
+
+	Success(c, &ApprovalSubmitResponse{
+		ApprovalID: approvalID,
+		Status:     "pending",
+	})
 }
 
 func api_admin_delete_plan(c *gin.Context) {
@@ -159,24 +136,20 @@ func api_admin_delete_plan(c *gin.Context) {
 		return
 	}
 	log.Infof(c, "admin request to delete plan %s", planID)
-	err := db.Get().Transaction(func(tx *gorm.DB) error {
-		var plan Plan
-		if err := tx.First(&plan, planID).Error; err != nil {
-			log.Errorf(c, "failed to find plan %s for delete: %v", planID, err)
-			return err
-		}
-		if err := tx.Model(&plan).Update("is_active", false).Error; err != nil {
-			log.Errorf(c, "failed to delete plan %s: %v", planID, err)
-			return err
-		}
-		log.Infof(c, "successfully deleted plan %s", plan.PID)
-		return nil
-	})
+
+	approvalID, err := SubmitApproval(c, "plan_delete", struct {
+		PlanID string `json:"planId"`
+	}{PlanID: planID}, fmt.Sprintf("删除套餐 (ID:%s)", planID))
 	if err != nil {
-		Error(c, ErrorSystemError, "failed to delete plan")
+		log.Errorf(c, "提交删除套餐审批失败: %v", err)
+		Error(c, ErrorSystemError, "submit approval failed")
 		return
 	}
-	SuccessEmpty(c)
+
+	Success(c, &ApprovalSubmitResponse{
+		ApprovalID: approvalID,
+		Status:     "pending",
+	})
 }
 
 func api_admin_restore_plan(c *gin.Context) {

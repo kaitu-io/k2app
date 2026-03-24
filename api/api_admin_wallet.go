@@ -1,13 +1,12 @@
 package center
 
 import (
+	"fmt"
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
-	"gorm.io/gorm"
 )
 
 // ==================== 提现请求管理 ====================
@@ -128,40 +127,27 @@ func api_admin_approve_withdraw(c *gin.Context) {
 		return
 	}
 
-	err = db.Get().Transaction(func(tx *gorm.DB) error {
-		var withdraw Withdraw
-		if err := tx.First(&withdraw, withdrawID).Error; err != nil {
-			return err
-		}
+	summary := fmt.Sprintf("审批提现 #%d (通过)", withdrawID)
+	if req.Action == "reject" {
+		summary = fmt.Sprintf("审批提现 #%d (拒绝)", withdrawID)
+	}
 
-		if withdraw.Status != WithdrawStatusPending {
-			return gorm.ErrInvalidData
-		}
-
-		// 如果拒绝，直接标记为拒绝状态
-		if req.Action == "reject" {
-			withdraw.Status = WithdrawStatusRejected
-			withdraw.RejectReason = req.Remark
-			userID := ReqUserID(c)
-			withdraw.ProcessedBy = &userID
-			now := time.Now()
-			withdraw.ProcessedAt = &now
-			return tx.Save(&withdraw).Error
-		}
-
-		// 如果审批通过，状态保持 pending，等待打款后再标记为 completed
-		// 这里只记录备注
-		withdraw.Remark = req.Remark
-		return tx.Save(&withdraw).Error
-	})
-
+	approvalID, err := SubmitApproval(c, "withdraw_approve", withdrawApproveApprovalParams{
+		WithdrawID:  withdrawID,
+		Action:      req.Action,
+		Remark:      req.Remark,
+		ProcessedBy: ReqUserID(c),
+	}, summary)
 	if err != nil {
-		log.Errorf(c, "审批提现请求失败: %v", err)
-		Error(c, ErrorSystemError, "approve withdraw failed")
+		log.Errorf(c, "提交审批提现审批失败: %v", err)
+		Error(c, ErrorSystemError, "submit approval failed")
 		return
 	}
 
-	Success(c, &gin.H{})
+	Success(c, &ApprovalSubmitResponse{
+		ApprovalID: approvalID,
+		Status:     "pending",
+	})
 }
 
 // AdminWithdrawCompleteRequest 完成提现请求参数
@@ -185,40 +171,22 @@ func api_admin_complete_withdraw(c *gin.Context) {
 		return
 	}
 
-	err = db.Get().Transaction(func(tx *gorm.DB) error {
-		var withdraw Withdraw
-		if err := tx.First(&withdraw, withdrawID).Error; err != nil {
-			return err
-		}
-
-		if withdraw.Status != WithdrawStatusPending {
-			return gorm.ErrInvalidData
-		}
-
-		// 更新为已完成
-		now := time.Now()
-		withdraw.ProcessedAt = &now
-		userID := ReqUserID(c)
-		withdraw.ProcessedBy = &userID // 处理人
-		withdraw.Status = WithdrawStatusCompleted
-		withdraw.TxHash = req.TxHash
-		if req.Remark != "" {
-			withdraw.Remark = req.Remark
-		}
-
-		// 自动生成交易查看链接（支持加密货币和 PayPal）
-		withdraw.TxExplorerURL = withdraw.AccountType.GetTxExplorerURL(req.TxHash)
-
-		return tx.Save(&withdraw).Error
-	})
-
+	approvalID, err := SubmitApproval(c, "withdraw_complete", withdrawCompleteApprovalParams{
+		WithdrawID:  withdrawID,
+		TxHash:      req.TxHash,
+		Remark:      req.Remark,
+		ProcessedBy: ReqUserID(c),
+	}, fmt.Sprintf("完成提现 #%d, TxHash: %s", withdrawID, req.TxHash))
 	if err != nil {
-		log.Errorf(c, "完成提现请求失败: %v", err)
-		Error(c, ErrorSystemError, "complete withdraw failed")
+		log.Errorf(c, "提交完成提现审批失败: %v", err)
+		Error(c, ErrorSystemError, "submit approval failed")
 		return
 	}
 
-	Success(c, &gin.H{})
+	Success(c, &ApprovalSubmitResponse{
+		ApprovalID: approvalID,
+		Status:     "pending",
+	})
 }
 
 // ==================== 分销商等级管理 ====================

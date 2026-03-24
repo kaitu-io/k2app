@@ -3,6 +3,7 @@ package center
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -762,159 +763,16 @@ func api_admin_hard_delete_users(c *gin.Context) {
 		log.Warnf(c, "部分用户不存在: 请求 %d 个，找到 %d 个", len(req.UserUUIDs), len(users))
 	}
 
-	// 收集所有用户ID
-	userIDs := make([]uint64, len(users))
-	for i, user := range users {
-		userIDs[i] = user.ID
-	}
-
-	// 开始事务
-	tx := db.Get().Begin()
-	if tx.Error != nil {
-		log.Errorf(c, "开始事务失败: %v", tx.Error)
-		Error(c, ErrorSystemError, "start transaction failed")
+	approvalID, err := SubmitApproval(c, "user_hard_delete", req, fmt.Sprintf("硬删除 %d 个用户", len(users)))
+	if err != nil {
+		log.Errorf(c, "提交硬删除用户审批失败: %v", err)
+		Error(c, ErrorSystemError, "submit approval failed")
 		return
 	}
 
-	// 硬删除所有关联数据
-	// 1. 删除登录标识
-	if err := tx.Where("user_id IN ?", userIDs).Delete(&LoginIdentify{}).Error; err != nil {
-		tx.Rollback()
-		log.Errorf(c, "删除登录标识失败: %v", err)
-		Error(c, ErrorSystemError, "delete login identifies failed")
-		return
-	}
-
-	// 2. 删除设备
-	if err := tx.Where("user_id IN ?", userIDs).Delete(&Device{}).Error; err != nil {
-		tx.Rollback()
-		log.Errorf(c, "删除设备失败: %v", err)
-		Error(c, ErrorSystemError, "delete devices failed")
-		return
-	}
-
-	// 3. 删除订单
-	if err := tx.Where("user_id IN ?", userIDs).Delete(&Order{}).Error; err != nil {
-		tx.Rollback()
-		log.Errorf(c, "删除订单失败: %v", err)
-		Error(c, ErrorSystemError, "delete orders failed")
-		return
-	}
-
-	// 4. 删除邀请码
-	if err := tx.Where("user_id IN ?", userIDs).Delete(&InviteCode{}).Error; err != nil {
-		tx.Rollback()
-		log.Errorf(c, "删除邀请码失败: %v", err)
-		Error(c, ErrorSystemError, "delete invite codes failed")
-		return
-	}
-
-	// 5. 删除Pro历史记录
-	if err := tx.Where("user_id IN ?", userIDs).Delete(&UserProHistory{}).Error; err != nil {
-		tx.Rollback()
-		log.Errorf(c, "删除Pro历史记录失败: %v", err)
-		Error(c, ErrorSystemError, "delete pro histories failed")
-		return
-	}
-
-	// 6. 删除分销商配置
-	if err := tx.Where("user_id IN ?", userIDs).Delete(&RetailerConfig{}).Error; err != nil {
-		tx.Rollback()
-		log.Errorf(c, "删除分销商配置失败: %v", err)
-		Error(c, ErrorSystemError, "delete retailer configs failed")
-		return
-	}
-
-	// 6.1 删除消息记录
-	if err := tx.Where("user_id IN ?", userIDs).Delete(&Message{}).Error; err != nil {
-		tx.Rollback()
-		log.Errorf(c, "删除消息记录失败: %v", err)
-		Error(c, ErrorSystemError, "delete messages failed")
-		return
-	}
-
-	// 6.2 删除会话记录
-	if err := tx.Where("user_id IN ?", userIDs).Delete(&SessionAcct{}).Error; err != nil {
-		tx.Rollback()
-		log.Errorf(c, "删除会话记录失败: %v", err)
-		Error(c, ErrorSystemError, "delete session records failed")
-		return
-	}
-
-	// 7. 查询所有钱包ID
-	var wallets []Wallet
-	if err := tx.Where("user_id IN ?", userIDs).Find(&wallets).Error; err != nil {
-		tx.Rollback()
-		log.Errorf(c, "查询钱包失败: %v", err)
-		Error(c, ErrorSystemError, "query wallets failed")
-		return
-	}
-
-	if len(wallets) > 0 {
-		walletIDs := make([]uint64, len(wallets))
-		for i, wallet := range wallets {
-			walletIDs[i] = wallet.ID
-		}
-
-		// 8. 删除钱包变更记录
-		if err := tx.Where("wallet_id IN ?", walletIDs).Delete(&WalletChange{}).Error; err != nil {
-			tx.Rollback()
-			log.Errorf(c, "删除钱包变更记录失败: %v", err)
-			Error(c, ErrorSystemError, "delete wallet changes failed")
-			return
-		}
-
-		// 9. 删除提现请求
-		if err := tx.Where("wallet_id IN ?", walletIDs).Delete(&Withdraw{}).Error; err != nil {
-			tx.Rollback()
-			log.Errorf(c, "删除提现请求失败: %v", err)
-			Error(c, ErrorSystemError, "delete withdraw requests failed")
-			return
-		}
-
-		// 10. 删除钱包
-		if err := tx.Where("id IN ?", walletIDs).Delete(&Wallet{}).Error; err != nil {
-			tx.Rollback()
-			log.Errorf(c, "删除钱包失败: %v", err)
-			Error(c, ErrorSystemError, "delete wallets failed")
-			return
-		}
-	}
-
-	// 11. 删除提现账户（使用 user_id）
-	if err := tx.Where("user_id IN ?", userIDs).Delete(&WithdrawAccount{}).Error; err != nil {
-		tx.Rollback()
-		log.Errorf(c, "删除提现账户失败: %v", err)
-		Error(c, ErrorSystemError, "delete withdraw accounts failed")
-		return
-	}
-
-	// 12. 删除邮件发送日志
-	if err := tx.Where("user_id IN ?", userIDs).Delete(&EmailSendLog{}).Error; err != nil {
-		tx.Rollback()
-		log.Errorf(c, "删除邮件发送日志失败: %v", err)
-		Error(c, ErrorSystemError, "delete email send logs failed")
-		return
-	}
-
-	// 13. 最后删除用户本身
-	if err := tx.Where("id IN ?", userIDs).Delete(&User{}).Error; err != nil {
-		tx.Rollback()
-		log.Errorf(c, "删除用户失败: %v", err)
-		Error(c, ErrorSystemError, "delete users failed")
-		return
-	}
-
-	// 提交事务
-	if err := tx.Commit().Error; err != nil {
-		log.Errorf(c, "提交事务失败: %v", err)
-		Error(c, ErrorSystemError, "commit transaction failed")
-		return
-	}
-
-	log.Infof(c, "成功硬删除 %d 个用户及其所有关联数据", len(users))
-	Success(c, &gin.H{
-		"deletedCount": len(users),
+	Success(c, &ApprovalSubmitResponse{
+		ApprovalID: approvalID,
+		Status:     "pending",
 	})
 }
 
