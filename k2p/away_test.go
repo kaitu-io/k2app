@@ -65,14 +65,14 @@ func TestAway_Dial_LoopbackIntegration(t *testing.T) {
 
 	// Mock signal server.
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /p2p/lookup/{udid}", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /k2p/lookup/{udid}", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(PeerInfo{
 			UDID:    "test-home",
 			Addr:    homeAddr.String(),
 			NATType: "easy",
 		})
 	})
-	mux.HandleFunc("POST /p2p/connect", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /k2p/connect", func(w http.ResponseWriter, r *http.Request) {
 		// Simulate home side: when away signals connect, home starts
 		// sending punch magic from homeConn to away's reflexive address.
 		var req ConnectRequest

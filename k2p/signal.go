@@ -14,9 +14,11 @@ import (
 
 // RegisterRequest is sent by home to register its address.
 type RegisterRequest struct {
-	UDID    string `json:"udid"`
-	Addr    string `json:"addr"`     // STUN-discovered public UDP address
-	NATType string `json:"nat_type"` // "easy", "hard", "open"
+	UDID     string   `json:"udid"`
+	Addr     string   `json:"addr"`              // STUN-discovered public UDP address
+	NATType  string   `json:"nat_type"`          // "easy", "hard", "open"
+	Networks []string `json:"networks,omitempty"` // advertised CIDR networks
+	DNS      string   `json:"dns,omitempty"`      // advertised DNS server address
 }
 
 // ConnectRequest is sent by away to request connection to a home peer.
@@ -31,6 +33,9 @@ type PeerInfo struct {
 	UDID      string    `json:"udid"`
 	Addr      string    `json:"addr"`
 	NATType   string    `json:"nat_type"`
+	Networks  []string  `json:"networks"`
+	DNS       string    `json:"dns"`
+	Online    bool      `json:"online"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
@@ -86,7 +91,7 @@ func (c *SignalClient) doJSON(ctx context.Context, method, path string, body any
 
 // Register reports this peer's STUN-discovered address to the API server.
 func (c *SignalClient) Register(ctx context.Context, req RegisterRequest) error {
-	resp, err := c.doJSON(ctx, "POST", "/p2p/register", req)
+	resp, err := c.doJSON(ctx, "POST", "/k2p/register", req)
 	if err != nil {
 		return fmt.Errorf("k2p: register: %w", err)
 	}
@@ -97,9 +102,36 @@ func (c *SignalClient) Register(ctx context.Context, req RegisterRequest) error 
 	return nil
 }
 
+// Claim asserts ownership of a UDID and returns a registration token.
+// Returns an error wrapping a 409 status if the UDID is already claimed
+// by a different token.
+func (c *SignalClient) Claim(ctx context.Context, udid string) (string, error) {
+	body := struct {
+		UDID string `json:"udid"`
+	}{UDID: udid}
+	resp, err := c.doJSON(ctx, "POST", "/k2p/claim", body)
+	if err != nil {
+		return "", fmt.Errorf("k2p: claim: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == 409 {
+		return "", fmt.Errorf("k2p: claim: UDID %q already claimed", udid)
+	}
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("k2p: claim: HTTP %d", resp.StatusCode)
+	}
+	var result struct {
+		RegToken string `json:"reg_token"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("k2p: claim: decode: %w", err)
+	}
+	return result.RegToken, nil
+}
+
 // Lookup queries the API server for a peer's address.
 func (c *SignalClient) Lookup(ctx context.Context, udid string) (PeerInfo, error) {
-	resp, err := c.doJSON(ctx, "GET", "/p2p/lookup/"+udid, nil)
+	resp, err := c.doJSON(ctx, "GET", "/k2p/lookup/"+udid, nil)
 	if err != nil {
 		return PeerInfo{}, fmt.Errorf("k2p: lookup: %w", err)
 	}
@@ -120,13 +152,12 @@ func (c *SignalClient) Lookup(ctx context.Context, udid string) (PeerInfo, error
 // ListenNotify opens a WebSocket to the API server and returns a channel
 // of PunchNotify messages. The channel is closed when ctx is cancelled
 // or the connection drops. Uses safego.Go for panic safety.
+// Authentication is passed via the ?token= query parameter (not Authorization header).
 func (c *SignalClient) ListenNotify(ctx context.Context, udid string) (<-chan PunchNotify, error) {
-	wsURL := c.baseURL + "/p2p/ws?udid=" + udid
-	header := http.Header{}
-	header.Set("Authorization", "Bearer "+c.token)
+	wsURL := c.baseURL + "/k2p/ws?udid=" + udid + "&token=" + c.token
 
 	// DialContext returns (*Conn, *http.Response, error) — discard Response.
-	conn, _, err := websocket.DefaultDialer.DialContext(ctx, wsURL, header)
+	conn, _, err := websocket.DefaultDialer.DialContext(ctx, wsURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("k2p: websocket dial: %w", err)
 	}
@@ -161,7 +192,7 @@ func (c *SignalClient) ListenNotify(ctx context.Context, udid string) (<-chan Pu
 // RequestConnect asks the API server to notify a home peer that away
 // wants to connect.
 func (c *SignalClient) RequestConnect(ctx context.Context, req ConnectRequest) error {
-	resp, err := c.doJSON(ctx, "POST", "/p2p/connect", req)
+	resp, err := c.doJSON(ctx, "POST", "/k2p/connect", req)
 	if err != nil {
 		return fmt.Errorf("k2p: connect request: %w", err)
 	}
