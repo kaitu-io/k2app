@@ -19,6 +19,9 @@ import { registerQueryDeviceLogs } from './tools/query-device-logs.js'
 import { registerDownloadDeviceLog } from './tools/download-device-log.js'
 import { registerQueryFeedbackTickets } from './tools/query-feedback-tickets.js'
 import { registerResolveFeedbackTicket } from './tools/resolve-feedback-ticket.js'
+import { registerLookupUser } from './tools/lookup-user.js'
+import { registerListUserDevices } from './tools/list-user-devices.js'
+import { registerCloseFeedbackTicket } from './tools/close-feedback-ticket.js'
 
 /**
  * Creates and configures the MCP server with all tools registered.
@@ -51,7 +54,12 @@ export async function createServer(config: Config): Promise<McpServer> {
   if (allowed.has('query_feedback_tickets'))  registerQueryFeedbackTickets(server, apiClient)
   if (allowed.has('resolve_feedback_ticket')) registerResolveFeedbackTicket(server, apiClient)
 
-  // Support-only and Marketing-only tools will be added in Phase 2/3
+  // Support tools
+  if (allowed.has('lookup_user'))              registerLookupUser(server, apiClient)
+  if (allowed.has('list_user_devices'))        registerListUserDevices(server, apiClient)
+  if (allowed.has('close_feedback_ticket'))    registerCloseFeedbackTicket(server, apiClient)
+
+  // Marketing tools will be added in Phase 3
 
   return server
 }
