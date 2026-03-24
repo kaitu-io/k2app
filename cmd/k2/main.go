@@ -60,6 +60,9 @@ func main() {
 		case "upgrade":
 			cmdUpgrade(args[1:])
 			return
+		case "peer":
+			cmdPeer(args[1:])
+			return
 		case "android-install":
 			cmdAndroidInstall(args[1:])
 			return
@@ -140,6 +143,9 @@ Usage:
 
   k2 service install          Install system service
   k2 service uninstall        Remove system service
+
+  k2 peer setup <k2v5://URL>  Set up Home peer access
+  k2 peer run                 Start Home peer server
 
   k2 upgrade [--check]        Download and install latest version
   k2 android-install [url]    Install APK to USB-connected Android phone
