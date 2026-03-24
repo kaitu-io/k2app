@@ -322,6 +322,23 @@ func SetupRouter() *gin.Engine {
 
 	}
 
+	// 审批管理路由
+	// list/detail/cancel: AuthRequired（角色用户可看自己的）
+	// approve/reject: AdminRequired（仅 is_admin 可审批）
+	approvalRoutes := r.Group("/app/approvals")
+	approvalRoutes.Use(log.MiddlewareRequestLog(true), MiddleRecovery(), CORSMiddleware(), AuthRequired())
+	{
+		approvalRoutes.GET("", api_admin_list_approvals)
+		approvalRoutes.GET("/:id", api_admin_get_approval)
+		approvalRoutes.POST("/:id/cancel", api_admin_cancel_approval)
+	}
+	approvalAdmin := r.Group("/app/approvals")
+	approvalAdmin.Use(log.MiddlewareRequestLog(true), MiddleRecovery(), CORSMiddleware(), AdminRequired())
+	{
+		approvalAdmin.POST("/:id/approve", api_admin_approve_approval)
+		approvalAdmin.POST("/:id/reject", api_admin_reject_approval)
+	}
+
 	// opsAdmin 运维权限路由组：不需要超级管理员，通过角色位掩码控制访问
 	// 超级管理员（IsAdmin=true）经由 RoleRequired 内部 bypass 直接通过
 	opsAdmin := r.Group("/app")
