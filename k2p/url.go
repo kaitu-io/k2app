@@ -97,6 +97,8 @@ func ParseURL(raw string) (Config, error) {
 
 	return Config{
 		HomeUDID:     udid,
+		PeerSecret:   secret,
+		Pin:          q.Get("pin"),
 		SignalServer: signalServer,
 		WireCfg:      wireCfg,
 	}, nil

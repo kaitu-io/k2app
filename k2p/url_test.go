@@ -47,6 +47,12 @@ func TestParseURL_Valid(t *testing.T) {
 	if cfg.HomeUDID != "my-home" {
 		t.Errorf("HomeUDID = %q, want %q", cfg.HomeUDID, "my-home")
 	}
+	if cfg.PeerSecret != "s3cr3t" {
+		t.Errorf("PeerSecret = %q, want %q", cfg.PeerSecret, "s3cr3t")
+	}
+	if cfg.Pin != "sha256:abc" {
+		t.Errorf("Pin = %q, want %q", cfg.Pin, "sha256:abc")
+	}
 	if cfg.SignalServer != "https://signal.example.com:8443" {
 		t.Errorf("SignalServer = %q, want %q", cfg.SignalServer, "https://signal.example.com:8443")
 	}

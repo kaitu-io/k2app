@@ -116,18 +116,23 @@ func (s *Store) Get(udid string) (PeerEntry, bool) {
 		s.mu.RUnlock()
 		return PeerEntry{}, false
 	}
-	// Shallow copy — omit WS to avoid exposing the live conn.
-	copy := PeerEntry{
+	// Deep copy — omit WS to avoid exposing the live conn.
+	var nets []string
+	if len(e.Networks) > 0 {
+		nets = make([]string, len(e.Networks))
+		copy(nets, e.Networks)
+	}
+	out := PeerEntry{
 		UDID:         e.UDID,
 		RegTokenHash: e.RegTokenHash,
 		Addr:         e.Addr,
 		NATType:      e.NATType,
-		Networks:     e.Networks,
+		Networks:     nets,
 		DNS:          e.DNS,
 		UpdatedAt:    e.UpdatedAt,
 	}
 	s.mu.RUnlock()
-	return copy, true
+	return out, true
 }
 
 // SetWS stores (or clears) the WebSocket connection for udid.
@@ -142,8 +147,8 @@ func (s *Store) SetWS(udid string, ws *websocket.Conn) {
 // GetWS returns the WebSocket connection for udid, or nil if not set.
 func (s *Store) GetWS(udid string) *websocket.Conn {
 	s.mu.RLock()
+	defer s.mu.RUnlock()
 	e, ok := s.peers[udid]
-	s.mu.RUnlock()
 	if !ok {
 		return nil
 	}

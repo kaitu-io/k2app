@@ -1,7 +1,7 @@
 // wire/quic_p2p.go
 //
 // Factory functions for creating QUICClient/QUICServer from pre-established
-// connections (k2p2p NAT traversal). These stay in the wire package to access
+// connections (k2p NAT traversal). These stay in the wire package to access
 // unexported fields while respecting encapsulation.
 package wire
 
