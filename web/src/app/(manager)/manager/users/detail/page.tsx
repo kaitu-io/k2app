@@ -723,12 +723,16 @@ function UserDetailContent() {
         <CardContent>
           {userDetail.hasAccessKey ? (
             <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <Badge variant="outline" className="font-mono">ktu_****...****</Badge>
-                <span className="text-sm text-muted-foreground">
-                  创建于 {safeFormatDate(userDetail.accessKeyCreatedAt || 0)}
+              <div className="flex items-center gap-2">
+                <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
+                <span className="text-sm font-medium">已启用</span>
+                <span className="text-sm text-muted-foreground ml-1">
+                  {safeFormatDate(userDetail.accessKeyCreatedAt || 0)} 创建
                 </span>
               </div>
+              <p className="text-xs text-muted-foreground">
+                密钥已安全存储（仅保存哈希），明文仅在生成时展示一次。
+              </p>
               <div className="flex gap-2">
                 <Button
                   variant="outline"
@@ -749,8 +753,11 @@ function UserDetailContent() {
               </div>
             </div>
           ) : (
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-muted-foreground">未生成</span>
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="inline-block h-2 w-2 rounded-full bg-muted-foreground/40" />
+                <span className="text-sm text-muted-foreground">未启用</span>
+              </div>
               <Button
                 size="sm"
                 onClick={handleGenerateAccessKey}
