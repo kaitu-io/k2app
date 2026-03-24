@@ -59,3 +59,39 @@ func TestPunchStandard_Timeout(t *testing.T) {
 		t.Fatal("expected timeout error")
 	}
 }
+
+func TestPunchBirthday_Loopback(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	errCh := make(chan error, 2)
+	resultCh := make(chan *BirthdayResult, 2)
+
+	go func() {
+		r, err := punchBirthday(ctx, net.IPv4(127, 0, 0, 1), net.IPv4(127, 0, 0, 1),
+			30000, 30063, 40000, 40063)
+		errCh <- err
+		resultCh <- r
+	}()
+	go func() {
+		r, err := punchBirthday(ctx, net.IPv4(127, 0, 0, 1), net.IPv4(127, 0, 0, 1),
+			40000, 40063, 30000, 30063)
+		errCh <- err
+		resultCh <- r
+	}()
+
+	for i := 0; i < 2; i++ {
+		if err := <-errCh; err != nil {
+			t.Errorf("birthday punch %d: %v", i, err)
+		}
+	}
+	for i := 0; i < 2; i++ {
+		r := <-resultCh
+		if r != nil && r.Conn == nil {
+			t.Errorf("result %d: expected non-nil conn", i)
+		}
+		if r != nil && r.Conn != nil {
+			r.Conn.Close()
+		}
+	}
+}
