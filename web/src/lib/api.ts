@@ -994,6 +994,33 @@ export interface EmailSendLogListParams {
   pageSize?: number;
 }
 
+// ==================== Approval Types ====================
+
+export interface AdminApproval {
+  id: number;
+  createdAt: string;
+  updatedAt: string;
+  requestorId: number;
+  requestorUuid: string;
+  requestorName: string;
+  action: string;
+  params: string;
+  summary: string;
+  status: 'pending' | 'approved' | 'executed' | 'failed' | 'rejected' | 'cancelled';
+  approverId?: number;
+  approverUuid?: string;
+  approverName?: string;
+  approvedAt?: string;
+  rejectReason?: string;
+  executedAt?: string;
+  execError?: string;
+}
+
+export interface ApprovalSubmitResponse {
+  approvalId: number;
+  status: string;
+}
+
 // Flag to prevent multiple concurrent auth redirects
 // Removed authRedirectInProgress - using single login redirect manager
 
@@ -1972,6 +1999,36 @@ export const api = {
     return this.request<void>(`/app/feedback-tickets/${id}/close`, {
       method: 'PUT',
     });
+  },
+
+  // ==================== Approval Management ====================
+
+  async getApprovals(params: { status?: string; page?: number; pageSize?: number } = {}): Promise<ListResult<AdminApproval>> {
+    const searchParams = new URLSearchParams();
+    if (params.status) searchParams.set('status', params.status);
+    if (params.page !== undefined) searchParams.set('page', params.page.toString());
+    if (params.pageSize !== undefined) searchParams.set('pageSize', params.pageSize.toString());
+    const query = searchParams.toString();
+    return this.request<ListResult<AdminApproval>>(`/app/approvals${query ? '?' + query : ''}`);
+  },
+
+  async getApproval(id: number): Promise<AdminApproval> {
+    return this.request<AdminApproval>(`/app/approvals/${id}`);
+  },
+
+  async approveApproval(id: number): Promise<void> {
+    return this.request<void>(`/app/approvals/${id}/approve`, { method: 'POST' });
+  },
+
+  async rejectApproval(id: number, reason: string): Promise<void> {
+    return this.request<void>(`/app/approvals/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  async cancelApproval(id: number): Promise<void> {
+    return this.request<void>(`/app/approvals/${id}/cancel`, { method: 'POST' });
   },
 
 };
