@@ -22,6 +22,15 @@ import { registerResolveFeedbackTicket } from './tools/resolve-feedback-ticket.j
 import { registerLookupUser } from './tools/lookup-user.js'
 import { registerListUserDevices } from './tools/list-user-devices.js'
 import { registerCloseFeedbackTicket } from './tools/close-feedback-ticket.js'
+import { registerListRetailers } from './tools/list-retailers.js'
+import { registerGetRetailerDetail } from './tools/get-retailer-detail.js'
+import { registerUpdateRetailerLevel } from './tools/update-retailer-level.js'
+import { registerCreateRetailerNote } from './tools/create-retailer-note.js'
+import { registerListRetailerTodos } from './tools/list-retailer-todos.js'
+import { registerListEdmTemplates } from './tools/list-edm-templates.js'
+import { registerCreateEdmTask } from './tools/create-edm-task.js'
+import { registerPreviewEdmTargets } from './tools/preview-edm-targets.js'
+import { registerGetEdmSendStats } from './tools/get-edm-send-stats.js'
 
 /**
  * Creates and configures the MCP server with all tools registered.
@@ -59,7 +68,18 @@ export async function createServer(config: Config): Promise<McpServer> {
   if (allowed.has('list_user_devices'))        registerListUserDevices(server, apiClient)
   if (allowed.has('close_feedback_ticket'))    registerCloseFeedbackTicket(server, apiClient)
 
-  // Marketing tools will be added in Phase 3
+  // Marketing tools — retailers
+  if (allowed.has('list_retailers'))         registerListRetailers(server, apiClient)
+  if (allowed.has('get_retailer_detail'))    registerGetRetailerDetail(server, apiClient)
+  if (allowed.has('update_retailer_level'))  registerUpdateRetailerLevel(server, apiClient)
+  if (allowed.has('create_retailer_note'))   registerCreateRetailerNote(server, apiClient)
+  if (allowed.has('list_retailer_todos'))    registerListRetailerTodos(server, apiClient)
+
+  // Marketing tools — EDM
+  if (allowed.has('list_edm_templates'))     registerListEdmTemplates(server, apiClient)
+  if (allowed.has('create_edm_task'))        registerCreateEdmTask(server, apiClient)
+  if (allowed.has('preview_edm_targets'))    registerPreviewEdmTargets(server, apiClient)
+  if (allowed.has('get_edm_send_stats'))     registerGetEdmSendStats(server, apiClient)
 
   return server
 }
