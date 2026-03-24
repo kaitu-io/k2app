@@ -66,9 +66,10 @@ type User struct {
 	DelegateID *uint64 `gorm:"type:bigint;index"`  // 为我付费的用户ID（为空表示自己付费）
 	MaxDevice  int     `gorm:"not null;default:5"` // 最大设备数量限制
 
-	// API访问密钥
-	AccessKey  string `gorm:"type:varchar(64);index"` // API访问密钥，用于分销商等API调用
-	IsRetailer *bool  `gorm:"default:false"`          // 是否为分销商（只有分销商才能使用AccessKey认证和授予订阅）
+	// API访问密钥（存储 SHA-256 hash，明文仅在生成时返回一次）
+	AccessKey          *string `gorm:"type:varchar(64);uniqueIndex"` // SHA-256 hash of ktu_* access key, NULL = no key
+	AccessKeyCreatedAt int64   `gorm:"not null;default:0"`           // key 生成时间戳（Unix秒，0 = 无key）
+	IsRetailer         *bool   `gorm:"default:false"`                // 是否为分销商（只有分销商才能使用AccessKey认证和授予订阅）
 
 	// 语言偏好
 	Language string `gorm:"type:varchar(10);not null;default:'en-US'" json:"language"` // 用户语言偏好：en-US, zh-CN, ja 等
