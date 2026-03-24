@@ -33,12 +33,14 @@ func TestToolSubscribe_Success(t *testing.T) {
 		}
 
 		data, _ := json.Marshal(orderRaw{
-			OrderID:             "order-xyz-123",
-			PaymentURL:          "https://pay.example.com/order/xyz",
-			AmountCents:         999,
-			OriginalAmountCents: 1299,
-			DiscountCents:       300,
-			PlanName:            "Monthly",
+			PayURL: "https://pay.example.com/order/xyz",
+			Order: orderDataRaw{
+				UUID:                 "order-xyz-123",
+				Title:                "Monthly",
+				OriginAmount:         1299,
+				CampaignReduceAmount: 300,
+				PayAmount:            999,
+			},
 		})
 		resp := centerResponse{Code: 0, Message: "ok", Data: json.RawMessage(data)}
 		w.Header().Set("Content-Type", "application/json")
@@ -72,17 +74,14 @@ func TestToolSubscribe_Success(t *testing.T) {
 	if out.PaymentURL != "https://pay.example.com/order/xyz" {
 		t.Errorf("expected payment_url, got %q", out.PaymentURL)
 	}
-	if out.AmountCents != 999 {
-		t.Errorf("expected amount_cents=999, got %d", out.AmountCents)
+	if out.AmountUSD != "$9.99" {
+		t.Errorf("expected amount_usd '$9.99', got %q", out.AmountUSD)
 	}
-	if out.OriginalAmountCents != 1299 {
-		t.Errorf("expected original_amount_cents=1299, got %d", out.OriginalAmountCents)
+	if out.DiscountUSD != "$3.00" {
+		t.Errorf("expected discount_usd '$3.00', got %q", out.DiscountUSD)
 	}
-	if out.DiscountCents != 300 {
-		t.Errorf("expected discount_cents=300, got %d", out.DiscountCents)
-	}
-	if out.PlanName != "Monthly" {
-		t.Errorf("expected plan 'Monthly', got %q", out.PlanName)
+	if out.Plan != "Monthly" {
+		t.Errorf("expected plan 'Monthly', got %q", out.Plan)
 	}
 }
 

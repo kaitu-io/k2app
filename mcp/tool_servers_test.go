@@ -52,7 +52,7 @@ func TestToolListServers_Success(t *testing.T) {
 	}
 
 	var out struct {
-		Servers []Server `json:"servers"`
+		Servers []serverOutput `json:"servers"`
 	}
 	if err := json.Unmarshal([]byte(textContent(t, result)), &out); err != nil {
 		t.Fatalf("unmarshal result: %v", err)
@@ -69,20 +69,20 @@ func TestToolListServers_Success(t *testing.T) {
 	if s0.Name != "Tokyo 1" {
 		t.Errorf("expected Name='Tokyo 1', got %q", s0.Name)
 	}
-	if s0.Domain != "jp1.example.com" {
-		t.Errorf("expected Domain='jp1.example.com', got %q", s0.Domain)
-	}
 	if s0.Country != "JP" {
 		t.Errorf("expected Country='JP', got %q", s0.Country)
 	}
-	if s0.TrafficUsagePercent != 42.5 {
-		t.Errorf("expected TrafficUsagePercent=42.5, got %f", s0.TrafficUsagePercent)
+	if s0.Load != "medium" {
+		t.Errorf("expected Load='medium' (42.5%% traffic), got %q", s0.Load)
 	}
 
-	// Second server: name falls back to node.name.
+	// Second server: name falls back to node.name, load is low (0%).
 	s1 := out.Servers[1]
 	if s1.Name != "node-us1" {
 		t.Errorf("expected Name='node-us1' (fallback), got %q", s1.Name)
+	}
+	if s1.Load != "low" {
+		t.Errorf("expected Load='low', got %q", s1.Load)
 	}
 }
 

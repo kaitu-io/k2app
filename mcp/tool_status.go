@@ -40,6 +40,10 @@ func (app *App) toolStatus(ctx context.Context, req *mcp.CallToolRequest, _ any)
 	case "connected":
 		out["uptime_seconds"] = status.UptimeSeconds
 		if status.Config != nil {
+			// Populate server cache if empty (best-effort, requires login).
+			if app.session.LoggedIn() {
+				app.fetchServers() //nolint:errcheck // best-effort for name resolution
+			}
 			out["server"] = app.resolveServerName(status.Config.Server)
 		}
 	case "error":

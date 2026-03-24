@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -19,12 +20,12 @@ type planRaw struct {
 
 // planOutput is the shape returned to the MCP client.
 type planOutput struct {
-	ID                 string `json:"id"`
-	Name               string `json:"name"`
-	PriceCents         int    `json:"price_cents"`
-	OriginalPriceCents int    `json:"original_price_cents"`
-	Months             int    `json:"months"`
-	Highlight          bool   `json:"highlight"`
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Price         string `json:"price"`
+	OriginalPrice string `json:"original_price,omitempty"`
+	Months        int    `json:"months"`
+	Highlight     bool   `json:"highlight"`
 }
 
 // toolListPlans implements the list_plans MCP tool.
@@ -41,14 +42,17 @@ func (app *App) toolListPlans(ctx context.Context, req *mcp.CallToolRequest, _ a
 		if !p.IsActive {
 			continue
 		}
-		plans = append(plans, planOutput{
-			ID:                 p.Pid,
-			Name:               p.Label,
-			PriceCents:         p.Price,
-			OriginalPriceCents: p.OriginPrice,
-			Months:             p.Month,
-			Highlight:          p.Highlight,
-		})
+		out := planOutput{
+			ID:        p.Pid,
+			Name:      p.Label,
+			Price:     fmt.Sprintf("$%.2f", float64(p.Price)/100),
+			Months:    p.Month,
+			Highlight: p.Highlight,
+		}
+		if p.OriginPrice > p.Price {
+			out.OriginalPrice = fmt.Sprintf("$%.2f", float64(p.OriginPrice)/100)
+		}
+		plans = append(plans, out)
 	}
 
 	if plans == nil {

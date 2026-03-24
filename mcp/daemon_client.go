@@ -82,6 +82,13 @@ func (d *DaemonClient) Down() error {
 	})
 }
 
+// daemonEnvelope is the JSON envelope returned by daemon API endpoints.
+type daemonEnvelope struct {
+	Code    int             `json:"code"`
+	Message string          `json:"message"`
+	Data    json.RawMessage `json:"data"`
+}
+
 // Status sends POST /api/core with action=status and returns the parsed DaemonStatus.
 func (d *DaemonClient) Status() (*DaemonStatus, error) {
 	b, err := json.Marshal(map[string]any{"action": "status"})
@@ -98,9 +105,17 @@ func (d *DaemonClient) Status() (*DaemonStatus, error) {
 		return nil, &DaemonError{Code: resp.StatusCode, Message: resp.Status}
 	}
 
-	var status DaemonStatus
-	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+	var envelope daemonEnvelope
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
 		return nil, fmt.Errorf("daemon status decode: %w", err)
+	}
+	if envelope.Code != 0 {
+		return nil, &DaemonError{Code: envelope.Code, Message: envelope.Message}
+	}
+
+	var status DaemonStatus
+	if err := json.Unmarshal(envelope.Data, &status); err != nil {
+		return nil, fmt.Errorf("daemon status unmarshal data: %w", err)
 	}
 	return &status, nil
 }

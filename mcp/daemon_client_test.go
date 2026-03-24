@@ -112,8 +112,10 @@ func TestDaemonClient_Status(t *testing.T) {
 			UptimeSeconds: 42,
 			Config:        &DaemonConfig{Server: "k2v5://server.example.com"},
 		}
+		data, _ := json.Marshal(status)
+		envelope := daemonEnvelope{Code: 0, Message: "ok", Data: json.RawMessage(data)}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(status)
+		json.NewEncoder(w).Encode(envelope)
 	}))
 	defer srv.Close()
 

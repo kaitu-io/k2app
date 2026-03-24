@@ -9,6 +9,14 @@ import (
 	"time"
 )
 
+// writeDaemonEnvelope wraps data in a daemon API envelope and writes it.
+func writeDaemonEnvelope(w http.ResponseWriter, data any) {
+	raw, _ := json.Marshal(data)
+	envelope := daemonEnvelope{Code: 0, Message: "ok", Data: json.RawMessage(raw)}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(envelope)
+}
+
 func TestToolStatus_Connected(t *testing.T) {
 	daemonSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/core" && r.Method == http.MethodPost {
@@ -19,7 +27,7 @@ func TestToolStatus_Connected(t *testing.T) {
 				Config:        &DaemonConfig{Server: "k2v5://jp1.example.com"},
 			}
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(status)
+			writeDaemonEnvelope(w, status)
 			return
 		}
 		w.WriteHeader(http.StatusNotFound)
@@ -66,7 +74,7 @@ func TestToolStatus_Disconnected(t *testing.T) {
 		if r.URL.Path == "/api/core" && r.Method == http.MethodPost {
 			status := DaemonStatus{State: "disconnected"}
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(status)
+			writeDaemonEnvelope(w, status)
 			return
 		}
 		w.WriteHeader(http.StatusNotFound)
@@ -101,7 +109,7 @@ func TestToolStatus_WithError(t *testing.T) {
 				Error: &DaemonStatusError{Code: 503, Message: "TLS handshake failed"},
 			}
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(status)
+			writeDaemonEnvelope(w, status)
 			return
 		}
 		w.WriteHeader(http.StatusNotFound)

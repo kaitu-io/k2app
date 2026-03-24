@@ -115,6 +115,31 @@ func (app *App) findServerByDomain(domain string) *Server {
 	return nil
 }
 
+// serverOutput is the user-facing shape returned by list_servers.
+// Only exposes what an AI needs to pick a server — no internal URLs or credentials.
+type serverOutput struct {
+	ID      int    `json:"id"`
+	Name    string `json:"name"`
+	Country string `json:"country"`
+	Load    string `json:"load"`
+}
+
+// loadLabel converts traffic/bandwidth percentages into a human-readable label.
+func loadLabel(traffic, bandwidth float64) string {
+	peak := traffic
+	if bandwidth > peak {
+		peak = bandwidth
+	}
+	switch {
+	case peak < 40:
+		return "low"
+	case peak < 70:
+		return "medium"
+	default:
+		return "high"
+	}
+}
+
 // toolListServers implements the list_servers MCP tool.
 func (app *App) toolListServers(ctx context.Context, req *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
 	if !app.session.LoggedIn() {
@@ -126,5 +151,15 @@ func (app *App) toolListServers(ctx context.Context, req *mcp.CallToolRequest, _
 		return app.handleCenterError(err), nil, nil
 	}
 
-	return successResult(map[string]any{"servers": servers}), nil, nil
+	out := make([]serverOutput, 0, len(servers))
+	for _, s := range servers {
+		out = append(out, serverOutput{
+			ID:      s.ID,
+			Name:    s.Name,
+			Country: s.Country,
+			Load:    loadLabel(s.TrafficUsagePercent, s.BandwidthUsagePercent),
+		})
+	}
+
+	return successResult(map[string]any{"servers": out}), nil, nil
 }

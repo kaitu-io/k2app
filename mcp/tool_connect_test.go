@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -79,8 +80,9 @@ func TestToolConnect_Success(t *testing.T) {
 	if !upCalled {
 		t.Error("expected daemon Up to be called")
 	}
-	if upServerURL != "k2v5://jp1.example.com" {
-		t.Errorf("expected server URL 'k2v5://jp1.example.com', got %q", upServerURL)
+	// Server URL should contain auth credentials (udid:token@).
+	if !strings.Contains(upServerURL, ":tok@jp1.example.com") {
+		t.Errorf("expected server URL with auth 'udid:tok@jp1.example.com', got %q", upServerURL)
 	}
 }
 

@@ -55,11 +55,11 @@ func TestToolListPlans_Success(t *testing.T) {
 	if out[0].Name != "Monthly" {
 		t.Errorf("expected name 'Monthly', got %q", out[0].Name)
 	}
-	if out[0].PriceCents != 999 {
-		t.Errorf("expected price_cents=999, got %d", out[0].PriceCents)
+	if out[0].Price != "$9.99" {
+		t.Errorf("expected price '$9.99', got %q", out[0].Price)
 	}
-	if out[0].OriginalPriceCents != 1299 {
-		t.Errorf("expected original_price_cents=1299, got %d", out[0].OriginalPriceCents)
+	if out[0].OriginalPrice != "$12.99" {
+		t.Errorf("expected original_price '$12.99', got %q", out[0].OriginalPrice)
 	}
 	if out[0].Months != 1 {
 		t.Errorf("expected months=1, got %d", out[0].Months)

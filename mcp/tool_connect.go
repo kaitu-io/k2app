@@ -3,9 +3,22 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// buildAuthURL injects udid:token@ into a server URL.
+// e.g. k2v5://host:443?ech=... → k2v5://udid:token@host:443?ech=...
+func buildAuthURL(serverURL, udid, token string) string {
+	idx := strings.Index(serverURL, "://")
+	if idx < 0 {
+		return serverURL
+	}
+	scheme := serverURL[:idx]
+	rest := serverURL[idx+3:]
+	return fmt.Sprintf("%s://%s:%s@%s", scheme, udid, token, rest)
+}
 
 // ConnectInput is the input schema for the connect tool.
 type ConnectInput struct {
@@ -34,8 +47,14 @@ func (app *App) toolConnect(ctx context.Context, req *mcp.CallToolRequest, in Co
 		return errorResult("k2 daemon is not running. Start it with 'k2' or install as a service with 'k2 service install'."), nil, nil
 	}
 
+	// Build authenticated URL: k2v5://udid:token@host:port?...
+	app.session.mu.RLock()
+	token := app.session.AccessToken
+	app.session.mu.RUnlock()
+	authURL := buildAuthURL(server.ServerURL, app.session.UDID(), token)
+
 	// Issue connect command.
-	if err := app.daemon.Up(server.ServerURL); err != nil {
+	if err := app.daemon.Up(authURL); err != nil {
 		return errorResult(fmt.Sprintf("connect failed: %s", err.Error())), nil, nil
 	}
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -12,24 +13,28 @@ type SubscribeInput struct {
 	CampaignCode string `json:"campaign_code" description:"Optional campaign/coupon code"`
 }
 
-// orderRaw is the raw shape of the order response from POST /api/user/orders.
+// orderRaw is the raw shape from POST /api/user/orders.
 type orderRaw struct {
-	OrderID              string `json:"orderId"`
-	PaymentURL           string `json:"paymentUrl"`
-	AmountCents          int    `json:"amount"`
-	OriginalAmountCents  int    `json:"originalAmount"`
-	DiscountCents        int    `json:"discount"`
-	PlanName             string `json:"planName"`
+	PayURL string        `json:"payUrl"`
+	Order  orderDataRaw  `json:"order"`
+}
+
+type orderDataRaw struct {
+	ID                   string `json:"id"`
+	UUID                 string `json:"uuid"`
+	Title                string `json:"title"`
+	OriginAmount         int    `json:"originAmount"`
+	CampaignReduceAmount int    `json:"campaignReduceAmount"`
+	PayAmount            int    `json:"payAmount"`
 }
 
 // subscribeOutput is the shape returned to the MCP client.
 type subscribeOutput struct {
-	OrderID             string `json:"order_id"`
-	PaymentURL          string `json:"payment_url"`
-	AmountCents         int    `json:"amount_cents"`
-	OriginalAmountCents int    `json:"original_amount_cents"`
-	DiscountCents       int    `json:"discount_cents"`
-	PlanName            string `json:"plan"`
+	OrderID       string `json:"order_id"`
+	PaymentURL    string `json:"payment_url"`
+	Plan          string `json:"plan"`
+	AmountUSD     string `json:"amount_usd"`
+	DiscountUSD   string `json:"discount_usd,omitempty"`
 }
 
 // toolSubscribe implements the subscribe MCP tool.
@@ -50,13 +55,19 @@ func (app *App) toolSubscribe(ctx context.Context, req *mcp.CallToolRequest, in 
 		return app.handleCenterError(err), nil, nil
 	}
 
+	orderID := order.Order.UUID
+	if orderID == "" {
+		orderID = order.Order.ID
+	}
+
 	out := subscribeOutput{
-		OrderID:             order.OrderID,
-		PaymentURL:          order.PaymentURL,
-		AmountCents:         order.AmountCents,
-		OriginalAmountCents: order.OriginalAmountCents,
-		DiscountCents:       order.DiscountCents,
-		PlanName:            order.PlanName,
+		OrderID:    orderID,
+		PaymentURL: order.PayURL,
+		Plan:       order.Order.Title,
+		AmountUSD:  fmt.Sprintf("$%.2f", float64(order.Order.PayAmount)/100),
+	}
+	if order.Order.CampaignReduceAmount > 0 {
+		out.DiscountUSD = fmt.Sprintf("$%.2f", float64(order.Order.CampaignReduceAmount)/100)
 	}
 	return successResult(out), nil, nil
 }

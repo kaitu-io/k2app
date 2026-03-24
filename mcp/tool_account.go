@@ -30,7 +30,7 @@ type userResponse struct {
 		Type  string `json:"type"`
 		Value string `json:"value"`
 	} `json:"loginIdentifies"`
-	ExpiredAt   *time.Time `json:"expiredAt"`
+	ExpiredAt   int64      `json:"expiredAt"`
 	DeviceCount int        `json:"deviceCount"`
 	InviteCode  *struct {
 		Code string `json:"code"`
@@ -69,9 +69,9 @@ func (app *App) toolAccountInfo(ctx context.Context, req *mcp.CallToolRequest, _
 
 	planExpiresAt := ""
 	isActive := false
-	if user.ExpiredAt != nil {
-		planExpiresAt = user.ExpiredAt.UTC().Format(time.RFC3339)
-		isActive = user.ExpiredAt.Unix() > time.Now().Unix()
+	if user.ExpiredAt > 0 {
+		planExpiresAt = time.Unix(user.ExpiredAt, 0).UTC().Format(time.RFC3339)
+		isActive = user.ExpiredAt > time.Now().Unix()
 	}
 
 	inviteCode := ""

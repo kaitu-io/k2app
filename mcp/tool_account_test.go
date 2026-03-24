@@ -10,7 +10,7 @@ import (
 )
 
 func TestToolAccountInfo_Success(t *testing.T) {
-	expiry := time.Date(2026, 12, 31, 0, 0, 0, 0, time.UTC)
+	expiry := time.Date(2026, 12, 31, 0, 0, 0, 0, time.UTC).Unix()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/user" {
@@ -24,7 +24,7 @@ func TestToolAccountInfo_Success(t *testing.T) {
 			}{
 				{Type: "email", Value: "alice@example.com"},
 			},
-			ExpiredAt:   &expiry,
+			ExpiredAt:   expiry,
 			DeviceCount: 2,
 			InviteCode:  &struct{ Code string `json:"code"` }{Code: "ALICE2024"},
 		})
