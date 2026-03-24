@@ -106,6 +106,25 @@ func (s *Session) Restore() error {
 	return nil
 }
 
+// GetRefreshToken returns the current refresh token under a read lock.
+// This satisfies the RefreshSource interface.
+func (s *Session) GetRefreshToken() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.RefreshToken
+}
+
+// UpdateTokens replaces the access and refresh tokens in memory and persists
+// them to disk. issuedAt is a Unix timestamp. This satisfies RefreshSource.
+func (s *Session) UpdateTokens(access, refresh string, issuedAt int64) {
+	s.mu.Lock()
+	s.AccessToken = access
+	s.RefreshToken = refresh
+	s.IssuedAt = time.Unix(issuedAt, 0)
+	s.mu.Unlock()
+	_ = s.Save()
+}
+
 // Clear wipes all tokens in memory and removes the session file.
 func (s *Session) Clear() error {
 	s.mu.Lock()
