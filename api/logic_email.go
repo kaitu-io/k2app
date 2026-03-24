@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"text/template"
 
+	"github.com/spf13/viper"
 	"github.com/wordgate/qtoolkit/log"
 	"github.com/wordgate/qtoolkit/mail"
 	"github.com/wordgate/qtoolkit/util"
@@ -243,14 +244,29 @@ func emailTo[T any](ctx context.Context, email string, tmpl EmailTemplate[T], me
 	return err
 }
 
+// isMailDevMode 检查是否为邮件开发模式（仅打印日志不发送）
+// 通过 config.yml 中 mail.dev_mode: true 控制
+func isMailDevMode() bool {
+	return viper.GetBool("mail.dev_mode")
+}
+
+// MailSend 统一邮件发送入口，dev 模式下仅打印日志
+// 所有 mail.Send() 调用都应使用此函数替代
+func MailSend(ctx context.Context, msg *mail.Message) error {
+	if isMailDevMode() {
+		log.Infof(ctx, "[DEV-MAIL] TO: %s | SUBJECT: %s\n--- BODY ---\n%s\n--- END ---",
+			msg.To, msg.Subject, msg.Body)
+		return nil
+	}
+	return mail.Send(msg)
+}
+
 // sendSystemEmail 发送系统纯文本邮件（验证码、通知等）
 // 使用 qtoolkit/mail，自动从 viper 配置中读取 mail.* 配置
 func sendSystemEmail(ctx context.Context, to, subject, body string) error {
 	log.Debugf(ctx, "sending plain text system email to %s", hideEmail(to))
 
-	// 使用 qtoolkit/mail 包的 Send 函数
-	// 它会自动从 viper 读取 mail.* 配置（mail.send_from, mail.smtp_host 等）
-	err := mail.Send(&mail.Message{
+	err := MailSend(ctx, &mail.Message{
 		To:      to,
 		Subject: subject,
 		Body:    body,

@@ -180,15 +180,14 @@ func sendRenewalReminderEmail(ctx context.Context, email string, daysBefore int)
 
 	log.Debugf(ctx, "[RENEWAL] Sending %d-day reminder to %s", daysBefore, hideEmail(email))
 
-	// 使用 qtoolkit/mail 发送纯文本邮件
-	err := mail.Send(&mail.Message{
+	err := MailSend(ctx, &mail.Message{
 		To:      email,
 		Subject: subject,
 		Body:    body,
 	})
 
 	if err != nil {
-		return fmt.Errorf("mail.Send failed: %w", err)
+		return fmt.Errorf("MailSend failed: %w", err)
 	}
 
 	return nil

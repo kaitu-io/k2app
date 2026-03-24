@@ -224,7 +224,14 @@ func buildEmailTemplateData(_ context.Context, user User) map[string]interface{}
 }
 
 // sendEmail 发送邮件 (支持 SMTP 和 AWS SES)
+// dev 模式下仅打印日志不发送
 func sendEmail(ctx context.Context, to, subject, body string) error {
+	if isMailDevMode() {
+		log.Infof(ctx, "[DEV-MAIL-EDM] TO: %s | SUBJECT: %s\n--- BODY ---\n%s\n--- END ---",
+			to, subject, body)
+		return nil
+	}
+
 	cfg := getEDMConfig(ctx)
 
 	// 根据配置选择发送方式

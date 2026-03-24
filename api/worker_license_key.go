@@ -78,7 +78,7 @@ func sendGiftEmail(ctx context.Context, user User, keys []LicenseKey) error {
 	body += "\n感谢你的支持！\nKaitu 团队"
 
 	log.Debugf(ctx, "[LICENSE_KEY] sending gift email to %s (%d links)", hideEmail(email), len(keys))
-	return mail.Send(&mail.Message{
+	return MailSend(ctx, &mail.Message{
 		To:      email,
 		Subject: subject,
 		Body:    body,
