@@ -14,6 +14,7 @@ type Handler struct {
 	mux      *http.ServeMux
 	store    *Store
 	upgrader websocket.Upgrader
+	relay    *Relay
 }
 
 // NewHandler creates a Handler backed by store and registers all routes.
@@ -25,11 +26,13 @@ func NewHandler(store *Store) *Handler {
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
 	}
+	h.relay = NewRelay()
 	h.mux.HandleFunc("POST /k2p/claim", h.handleClaim)
 	h.mux.HandleFunc("POST /k2p/register", h.handleRegister)
 	h.mux.HandleFunc("GET /k2p/lookup/{udid}", h.handleLookup)
 	h.mux.HandleFunc("POST /k2p/connect", h.handleConnect)
 	h.mux.HandleFunc("GET /k2p/ws", h.handleWS)
+	h.mux.HandleFunc("GET /k2p/relay", h.relay.HandleRelay)
 	return h
 }
 
