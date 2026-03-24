@@ -181,8 +181,7 @@ export default function RetailerDetailPage({ params }: PageProps) {
 
   // Handle level change
   const handleLevelChange = async (newLevel: number) => {
-    if (!detail?.retailerConfig) return;
-    if (newLevel === detail.retailerConfig.level) {
+    if (detail?.retailerConfig && newLevel === detail.retailerConfig.level) {
       setIsLevelDropdownOpen(false);
       return;
     }
@@ -190,15 +189,9 @@ export default function RetailerDetailPage({ params }: PageProps) {
     setIsUpdatingLevel(true);
     try {
       await api.updateRetailerLevel(uuid, { level: newLevel });
-      // Update local state
-      setDetail({
-        ...detail,
-        retailerConfig: {
-          ...detail.retailerConfig,
-          level: newLevel,
-          levelName: levelNames[newLevel] || `L${newLevel}`,
-        },
-      });
+      // Re-fetch full detail since config may have been created from null
+      const updated = await api.getRetailerDetail(uuid);
+      setDetail(updated);
       toast.success("分销商等级已更新");
       setIsLevelDropdownOpen(false);
     } catch (error) {
@@ -350,38 +343,39 @@ export default function RetailerDetailPage({ params }: PageProps) {
         <div>
           <h1 className="text-2xl font-bold">{detail.email}</h1>
           <div className="flex items-center gap-2 mt-2">
-            {config && (
-              <DropdownMenu open={isLevelDropdownOpen} onOpenChange={setIsLevelDropdownOpen}>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-white text-sm font-medium cursor-pointer hover:opacity-80 transition-opacity"
-                    style={{ backgroundColor: levelColors[config.level] || '#9E9E9E' }}
-                    disabled={isUpdatingLevel}
+            <DropdownMenu open={isLevelDropdownOpen} onOpenChange={setIsLevelDropdownOpen}>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-sm font-medium cursor-pointer hover:opacity-80 transition-opacity"
+                  style={config
+                    ? { backgroundColor: levelColors[config.level] || '#9E9E9E', color: 'white' }
+                    : { backgroundColor: '#E0E0E0', color: '#555' }
+                  }
+                  disabled={isUpdatingLevel}
+                >
+                  {config ? `L${config.level} ${config.levelName}` : '未设置等级'}
+                  <ChevronDown className="h-3 w-3" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {[1, 2, 3, 4].map((level) => (
+                  <DropdownMenuItem
+                    key={level}
+                    onClick={() => handleLevelChange(level)}
+                    className="flex items-center gap-2"
                   >
-                    L{config.level} {config.levelName}
-                    <ChevronDown className="h-3 w-3" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start">
-                  {[1, 2, 3, 4].map((level) => (
-                    <DropdownMenuItem
-                      key={level}
-                      onClick={() => handleLevelChange(level)}
-                      className="flex items-center gap-2"
+                    <Badge
+                      style={{ backgroundColor: levelColors[level] }}
+                      className="text-white"
                     >
-                      <Badge
-                        style={{ backgroundColor: levelColors[level] }}
-                        className="text-white"
-                      >
-                        L{level}
-                      </Badge>
-                      {levelNames[level]}
-                      {config.level === level && <Check className="h-4 w-4 ml-auto" />}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
+                      L{level}
+                    </Badge>
+                    {levelNames[level]}
+                    {config?.level === level && <Check className="h-4 w-4 ml-auto" />}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
             {detail.pendingFollowUps > 0 && (
               <Badge variant="destructive">
                 <AlertCircle className="h-3 w-3 mr-1" />

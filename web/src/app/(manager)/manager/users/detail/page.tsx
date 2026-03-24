@@ -36,7 +36,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Pencil } from "lucide-react";
+import { Pencil, ChevronDown, Check } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { EditEmailDialog } from "./components/EditEmailDialog";
 import { MoreActionsMenu } from "./components/MoreActionsMenu";
 
@@ -46,6 +52,10 @@ const levelColors: Record<number, string> = {
   2: '#2196F3',  // L2 蓝色
   3: '#9C27B0',  // L3 紫色
   4: '#FF9800',  // L4 金色
+};
+
+const levelNames: Record<number, string> = {
+  1: 'Bronze', 2: 'Silver', 3: 'Gold', 4: 'Platinum',
 };
 
 
@@ -165,6 +175,8 @@ function UserDetailContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isUpdatingRetailer, setIsUpdatingRetailer] = useState(false);
+  const [isLevelDropdownOpen, setIsLevelDropdownOpen] = useState(false);
+  const [isUpdatingLevel, setIsUpdatingLevel] = useState(false);
 
 
   // Contact editing state
@@ -265,6 +277,37 @@ function UserDetailContent() {
       toast.error('更新分销商状态失败');
     } finally {
       setIsUpdatingRetailer(false);
+    }
+  };
+
+  // 更新分销商等级
+  const handleLevelChange = async (newLevel: number) => {
+    if (!uuid) return;
+    if (userDetail?.retailerConfig && newLevel === userDetail.retailerConfig.level) {
+      setIsLevelDropdownOpen(false);
+      return;
+    }
+    setIsUpdatingLevel(true);
+    try {
+      await api.updateRetailerLevel(uuid, { level: newLevel });
+      // Re-fetch since config may have been created from null
+      const data = await api.request<UserDetailData>(`/app/users/${uuid}`);
+      setUserDetail({
+        ...data,
+        isRetailer: data.isRetailer || false,
+        loginIdentifies: data.loginIdentifies || [],
+        devices: data.devices || [],
+        orders: data.orders || [],
+        proHistories: data.proHistories || [],
+        inviteCodes: data.inviteCodes || [],
+      });
+      toast.success('分销商等级已更新');
+      setIsLevelDropdownOpen(false);
+    } catch (error) {
+      console.error('Failed to update level:', error);
+      toast.error('更新等级失败');
+    } finally {
+      setIsUpdatingLevel(false);
     }
   };
 
@@ -525,7 +568,41 @@ function UserDetailContent() {
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle>{"分销商配置"}</CardTitle>
+              <div className="flex items-center gap-3">
+                <CardTitle>{"分销商配置"}</CardTitle>
+                <DropdownMenu open={isLevelDropdownOpen} onOpenChange={setIsLevelDropdownOpen}>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-sm font-medium cursor-pointer hover:opacity-80 transition-opacity"
+                      style={userDetail.retailerConfig
+                        ? { backgroundColor: levelColors[userDetail.retailerConfig.level] || '#9E9E9E', color: 'white' }
+                        : { backgroundColor: '#E0E0E0', color: '#555' }
+                      }
+                      disabled={isUpdatingLevel}
+                    >
+                      {userDetail.retailerConfig
+                        ? `L${userDetail.retailerConfig.level} ${userDetail.retailerConfig.levelName}`
+                        : '未设置等级'}
+                      <ChevronDown className="h-3 w-3" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    {[1, 2, 3, 4].map((level) => (
+                      <DropdownMenuItem
+                        key={level}
+                        onClick={() => handleLevelChange(level)}
+                        className="flex items-center gap-2"
+                      >
+                        <Badge style={{ backgroundColor: levelColors[level] }} className="text-white">
+                          L{level}
+                        </Badge>
+                        {levelNames[level]}
+                        {userDetail.retailerConfig?.level === level && <Check className="h-4 w-4 ml-auto" />}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
               <Link href={`/manager/retailers/${uuid}`}>
                 <Button variant="outline" size="sm">
                   {"查看分销商详情"}
@@ -536,17 +613,6 @@ function UserDetailContent() {
           <CardContent>
             {userDetail.retailerConfig ? (
               <div className="space-y-4">
-                {/* 当前等级显示 */}
-                <div className="flex items-center gap-3">
-                  <span
-                    className="inline-flex items-center px-2.5 py-1 rounded text-sm font-semibold text-white"
-                    style={{ backgroundColor: levelColors[userDetail.retailerConfig.level] || levelColors[1] }}
-                  >
-                    {"L"}{userDetail.retailerConfig.level}
-                  </span>
-                  <span className="text-lg font-medium">{userDetail.retailerConfig.levelName}</span>
-                </div>
-
                 {/* 分成比例 */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div>
