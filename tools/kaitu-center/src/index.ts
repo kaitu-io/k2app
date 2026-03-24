@@ -10,6 +10,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { loadConfig } from './config.js'
 import type { Config } from './config.js'
 import { CenterApiClient } from './center-api.js'
+import { getToolsForRole } from './roles.js'
 import { registerListNodes } from './tools/list-nodes.js'
 import { registerExecOnNode } from './tools/exec-on-node.js'
 import { registerPingNode } from './tools/ping-node.js'
@@ -30,20 +31,27 @@ import { registerResolveFeedbackTicket } from './tools/resolve-feedback-ticket.j
  */
 export async function createServer(config: Config): Promise<McpServer> {
   const apiClient = new CenterApiClient(config)
+  const role = process.env['KAITU_ROLE'] || 'devops'
+  const allowed = new Set(getToolsForRole(role))
 
   const server = new McpServer({
     name: 'kaitu-center',
     version: '0.3.0',
   })
 
-  registerListNodes(server, apiClient)
-  registerExecOnNode(server, config.ssh)
-  registerPingNode(server, config.ssh)
-  registerDeleteNode(server, apiClient)
-  registerQueryDeviceLogs(server, apiClient)
-  registerDownloadDeviceLog(server)
-  registerQueryFeedbackTickets(server, apiClient)
-  registerResolveFeedbackTicket(server, apiClient)
+  // DevOps tools
+  if (allowed.has('list_nodes'))              registerListNodes(server, apiClient)
+  if (allowed.has('exec_on_node'))            registerExecOnNode(server, config.ssh)
+  if (allowed.has('ping_node'))               registerPingNode(server, config.ssh)
+  if (allowed.has('delete_node'))             registerDeleteNode(server, apiClient)
+
+  // Shared tools (DevOps + Support)
+  if (allowed.has('query_device_logs'))       registerQueryDeviceLogs(server, apiClient)
+  if (allowed.has('download_device_log'))     registerDownloadDeviceLog(server)
+  if (allowed.has('query_feedback_tickets'))  registerQueryFeedbackTickets(server, apiClient)
+  if (allowed.has('resolve_feedback_ticket')) registerResolveFeedbackTicket(server, apiClient)
+
+  // Support-only and Marketing-only tools will be added in Phase 2/3
 
   return server
 }
