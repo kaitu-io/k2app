@@ -536,8 +536,7 @@ func resolveSlackUserID(ctx context.Context, botToken, email string) (string, er
 	}
 	slackUserIDCacheMu.RUnlock()
 
-	// API call: users.lookupByEmail
-	reqBody, _ := json.Marshal(map[string]string{"email": email})
+	// API call: users.lookupByEmail (GET with query param, no body)
 	req, _ := http.NewRequestWithContext(ctx, "GET",
 		fmt.Sprintf("https://slack.com/api/users.lookupByEmail?email=%s", url.QueryEscape(email)), nil)
 	req.Header.Set("Authorization", "Bearer "+botToken)
