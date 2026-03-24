@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { Package, Users, Server, Receipt, Mail, Tag, Wallet, FileText, Activity, LogOut, Gauge, PenSquare, UserCircle, ClipboardList, Cloud, BarChart3 } from "lucide-react";
+import { Package, Users, Server, Receipt, Mail, Tag, Wallet, FileText, Activity, LogOut, Gauge, PenSquare, UserCircle, ClipboardList, Cloud, BarChart3, Key } from "lucide-react";
 import Image from "next/image";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,7 @@ const ManagerSidebar = () => {
         { href: "/manager/users", icon: Users, label: "用户管理" },
         { href: "/manager/orders", icon: Receipt, label: "订单管理" },
         { href: "/manager/campaigns", icon: Tag, label: "优惠活动管理" },
+        { href: "/manager/license-keys", icon: Key, label: "授权码管理" },
         { href: "/manager/withdraws", icon: Wallet, label: "提现管理" },
       ]
     },
