@@ -155,6 +155,7 @@ func api_admin_list_users(c *gin.Context) {
 			IsRetailer:       u.IsRetailer != nil && *u.IsRetailer,
 			RetailerConfig:   dataRetailerConfig,
 			Wallet:           dataWallet,
+			Roles:            u.Roles,
 		}
 	}
 
@@ -403,6 +404,7 @@ func api_admin_get_user_detail(c *gin.Context) {
 			IsRetailer:       user.IsRetailer != nil && *user.IsRetailer,
 			RetailerConfig:   dataRetailerConfig,
 			Wallet:           dataWallet,
+			Roles:            user.Roles,
 		},
 		Devices:       devices,
 		Orders:        orders,
@@ -907,5 +909,58 @@ func api_admin_hard_delete_users(c *gin.Context) {
 	log.Infof(c, "成功硬删除 %d 个用户及其所有关联数据", len(users))
 	Success(c, &gin.H{
 		"deletedCount": len(users),
+	})
+}
+
+// reqAdminSetUserRoles PUT /app/users/:uuid/roles 请求体
+type reqAdminSetUserRoles struct {
+	Roles []string `json:"roles" binding:"required"`
+}
+
+// respAdminSetUserRoles PUT /app/users/:uuid/roles 响应体
+type respAdminSetUserRoles struct {
+	Roles     uint64   `json:"roles"`
+	RoleNames []string `json:"roleNames"`
+}
+
+// api_admin_set_user_roles 设置用户角色（超级管理员专用，replace-all 语义）
+func api_admin_set_user_roles(c *gin.Context) {
+	uuid := c.Param("uuid")
+
+	var req reqAdminSetUserRoles
+	if err := c.ShouldBindJSON(&req); err != nil {
+		Error(c, ErrorInvalidArgument, "invalid request body")
+		return
+	}
+
+	var user User
+	if err := db.Get().Where("uuid = ?", uuid).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			Error(c, ErrorNotFound, "user not found")
+			return
+		}
+		log.Errorf(c, "failed to find user %s: %v", uuid, err)
+		Error(c, ErrorSystemError, "database error")
+		return
+	}
+
+	newRoles, err := ParseRoleNames(req.Roles)
+	if err != nil {
+		Error(c, ErrorInvalidArgument, err.Error())
+		return
+	}
+
+	if err := db.Get().Model(&user).Update("roles", newRoles).Error; err != nil {
+		log.Errorf(c, "failed to update roles for user %s: %v", uuid, err)
+		Error(c, ErrorSystemError, "failed to update roles")
+		return
+	}
+
+	log.Infof(c, "admin set roles for user %s (id=%d): %d (%v)",
+		uuid, user.ID, newRoles, GetRoleNames(newRoles))
+
+	Success(c, &respAdminSetUserRoles{
+		Roles:     newRoles,
+		RoleNames: GetRoleNames(newRoles),
 	})
 }

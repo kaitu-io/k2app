@@ -1,5 +1,7 @@
 package center
 
+import "fmt"
+
 // ========================= 角色定义（位运算） =========================
 // 使用位掩码支持多角色，一个 uint64 可存储 64 个角色
 // JWT 中使用短字段名 "r" 存储角色值
@@ -8,24 +10,35 @@ const (
 	// RoleUser 普通用户（默认角色）
 	RoleUser uint64 = 1 << 0 // 1
 
-	// RoleCMSAdmin CMS 管理员（可以管理 Payload CMS 所有内容）
-	RoleCMSAdmin uint64 = 1 << 1 // 2
+	// RoleMarketing 市场营销（EDM、活动、推广相关功能）
+	RoleMarketing uint64 = 1 << 3 // 8
 
-	// RoleCMSEditor CMS 编辑（只能编辑自己的内容）
-	RoleCMSEditor uint64 = 1 << 2 // 4
+	// RoleOpsViewer 运维只读（节点/隧道/云实例/用户/日志/工单 只读）
+	RoleOpsViewer uint64 = 1 << 4 // 16
 
-	// RoleSuper 超级管理员（拥有所有权限）
-	RoleSuper uint64 = 1 << 3 // 8
+	// RoleOpsEditor 运维读写（含 OpsViewer 所有权限 + 节点/隧道/云实例变更）
+	RoleOpsEditor uint64 = 1 << 5 // 32
 
-	// 预留 1<<4 到 1<<63 用于未来扩展
+	// RoleSupport 工单处理（工单状态变更 + 设备日志读）
+	RoleSupport uint64 = 1 << 6 // 64
 )
 
 // RoleNames 角色名称映射（用于调试和日志）
 var RoleNames = map[uint64]string{
 	RoleUser:      "user",
-	RoleCMSAdmin:  "cms_admin",
-	RoleCMSEditor: "cms_editor",
-	RoleSuper:     "super",
+	RoleMarketing: "marketing",
+	RoleOpsViewer: "ops_viewer",
+	RoleOpsEditor: "ops_editor",
+	RoleSupport:   "support",
+}
+
+// RoleByName 角色名称到位掩码的反向映射（用于 CLI 和 API 赋权）
+var RoleByName = map[string]uint64{
+	"user":       RoleUser,
+	"marketing":  RoleMarketing,
+	"ops_viewer": RoleOpsViewer,
+	"ops_editor": RoleOpsEditor,
+	"support":    RoleSupport,
 }
 
 // HasRole 检查是否拥有指定角色
@@ -52,6 +65,21 @@ func GetRoleNames(roles uint64) []string {
 		}
 	}
 	return names
+}
+
+// ParseRoleNames 解析角色名称列表为位掩码（replace-all 语义）
+// RoleUser bit 始终包含；遇到未知角色名称立即返回错误。
+// 两处调用方（CLI 和 Admin API）共用此函数保证验证逻辑一致。
+func ParseRoleNames(names []string) (uint64, error) {
+	roles := RoleUser
+	for _, name := range names {
+		bit, ok := RoleByName[name]
+		if !ok {
+			return 0, fmt.Errorf("unknown role: %q", name)
+		}
+		roles |= bit
+	}
+	return roles, nil
 }
 
 type DataLoginIdentify struct {
@@ -545,34 +573,40 @@ type EmailTemplateResponse struct {
 
 // CampaignRequest 优惠活动请求
 type CampaignRequest struct {
-	Code        string `json:"code" binding:"required"`                        // 活动代码
-	Name        string `json:"name" binding:"required"`                        // 活动名称
-	Type        string `json:"type" binding:"required"`                        // discount, coupon
-	Value       uint64 `json:"value" binding:"required"`                       // 优惠值
-	StartAt     int64  `json:"startAt" binding:"required"`                     // 开始时间
-	EndAt       int64  `json:"endAt" binding:"required"`                       // 结束时间
-	Description string `json:"description"`                                     // 活动描述
-	IsActive    bool   `json:"isActive"`                                        // 是否启用
-	MatcherType string `json:"matcherType" binding:"required"`                 // first_order, vip, all
-	MaxUsage    int64  `json:"maxUsage"`                                        // 最大使用次数（0=无限制）
+	Code          string `json:"code" binding:"required"`                        // 活动代码
+	Name          string `json:"name" binding:"required"`                        // 活动名称
+	Type          string `json:"type" binding:"required"`                        // discount, coupon
+	Value         uint64 `json:"value" binding:"required"`                       // 优惠值
+	StartAt       int64  `json:"startAt" binding:"required"`                     // 开始时间
+	EndAt         int64  `json:"endAt" binding:"required"`                       // 结束时间
+	Description   string `json:"description"`                                     // 活动描述
+	IsActive      bool   `json:"isActive"`                                        // 是否启用
+	MatcherType   string `json:"matcherType" binding:"required"`                 // first_order, vip, all
+	MaxUsage      int64  `json:"maxUsage"`                                        // 最大使用次数（0=无限制）
+	MatcherParams string `json:"matcherParams"`
+	IsShareable   bool   `json:"isShareable"`
+	SharesPerUser int64  `json:"sharesPerUser"`
 }
 
 // CampaignResponse 优惠活动响应
 type CampaignResponse struct {
-	ID          uint64 `json:"id"`
-	CreatedAt   int64  `json:"createdAt"`
-	UpdatedAt   int64  `json:"updatedAt"`
-	Code        string `json:"code"`
-	Name        string `json:"name"`
-	Type        string `json:"type"`
-	Value       uint64 `json:"value"`
-	StartAt     int64  `json:"startAt"`
-	EndAt       int64  `json:"endAt"`
-	Description string `json:"description"`
-	IsActive    bool   `json:"isActive"`
-	MatcherType string `json:"matcherType"`
-	UsageCount  int64  `json:"usageCount"`
-	MaxUsage    int64  `json:"maxUsage"`
+	ID            uint64 `json:"id"`
+	CreatedAt     int64  `json:"createdAt"`
+	UpdatedAt     int64  `json:"updatedAt"`
+	Code          string `json:"code"`
+	Name          string `json:"name"`
+	Type          string `json:"type"`
+	Value         uint64 `json:"value"`
+	StartAt       int64  `json:"startAt"`
+	EndAt         int64  `json:"endAt"`
+	Description   string `json:"description"`
+	IsActive      bool   `json:"isActive"`
+	MatcherType   string `json:"matcherType"`
+	UsageCount    int64  `json:"usageCount"`
+	MaxUsage      int64  `json:"maxUsage"`
+	MatcherParams string `json:"matcherParams"`
+	IsShareable   bool   `json:"isShareable"`
+	SharesPerUser int64  `json:"sharesPerUser"`
 }
 
 // CampaignListResponse 优惠活动列表响应
@@ -941,5 +975,42 @@ type CloudOperationResponse struct {
 	StartedAt   int64  `json:"startedAt"`
 	CompletedAt *int64 `json:"completedAt,omitempty"`
 	Error       string `json:"error,omitempty"`
+}
+
+// ========================= LicenseKey 相关类型定义 =========================
+
+type LicenseKeyResponse struct {
+	ID               uint64     `json:"id"`
+	UUID             string     `json:"uuid"`
+	DiscountType     string     `json:"discountType"`
+	DiscountValue    uint64     `json:"discountValue"`
+	RecipientMatcher string     `json:"recipientMatcher"`
+	ExpiresAt        int64      `json:"expiresAt"`
+	CampaignID       *uint64    `json:"campaignId"`
+	CreatedByUserID  *uint64    `json:"createdByUserId"`
+	IsUsed           bool       `json:"isUsed"`
+	UsedByUserID     *uint64    `json:"usedByUserId"`
+	UsedAt           *int64     `json:"usedAt"`
+	CreatedAt        int64      `json:"createdAt"`
+}
+
+type IssueKeysRequest struct {
+	DryRun bool `json:"dryRun"`
+}
+
+type IssueKeysResponse struct {
+	EligibleUsers int64 `json:"eligibleUsers"`
+	KeysToIssue   int64 `json:"keysToIssue"`
+	Issued        bool  `json:"issued"`
+}
+
+type LicenseKeyPublicResponse struct {
+	UUID          string `json:"uuid"`
+	DiscountType  string `json:"discountType"`
+	DiscountValue uint64 `json:"discountValue"`
+	ExpiresAt     int64  `json:"expiresAt"`
+	IsUsed        bool   `json:"isUsed"`
+	IsExpired     bool   `json:"isExpired"`
+	SenderName    string `json:"senderName"`
 }
 

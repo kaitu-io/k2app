@@ -513,6 +513,33 @@ func AdminRequired() gin.HandlerFunc {
 	}
 }
 
+// RoleRequired 细粒度权限检查：IsAdmin=true 直接通过；否则检查 user.Roles 是否包含指定角色。
+// role 参数支持位或组合：RoleRequired(RoleOpsViewer | RoleOpsEditor) 表示任一满足即通过。
+// 权限来源：从 DB 加载的 User 结构体（通过 ReqUser(c)），与 AdminRequired() 读取 IsAdmin 一致。
+// 角色变更立即生效（下次请求），无需重新签发 token。
+func RoleRequired(role uint64) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user := ReqUser(c)
+		if user == nil {
+			Error(c, ErrorNotLogin, "authentication failed")
+			c.Abort()
+			return
+		}
+		if user.IsAdmin != nil && *user.IsAdmin {
+			c.Next()
+			return
+		}
+		if !HasRole(user.Roles, role) {
+			log.Warnf(c, "role check failed: need=%d user=%d roles=%d path=%s",
+				role, user.ID, user.Roles, c.Request.URL.Path)
+			Error(c, ErrorForbidden, "permission denied")
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
 // asynqmonAuthMiddleware provides authentication for the Asynq monitoring dashboard.
 // NOTE: Returns HTML responses (not JSON) because asynqmon is a browser-facing monitoring UI.
 // Users access it directly in their browser, so HTML error pages provide better UX than raw JSON.

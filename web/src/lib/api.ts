@@ -350,6 +350,7 @@ export interface AuthUser {
   id: number;
   email: string;
   isAdmin: boolean;
+  roles: number;
 }
 
 export interface SendAuthCodeRequest {
@@ -1420,6 +1421,14 @@ export const api = {
     });
   },
 
+  // 设置用户角色（管理员，replace-all 语义）
+  async setUserRoles(userUUID: string, roles: string[]): Promise<{ roles: number; roleNames: string[] }> {
+    return this.request<{ roles: number; roleNames: string[] }>(`/app/users/${userUUID}/roles`, {
+      method: 'PUT',
+      body: JSON.stringify({ roles }),
+    });
+  },
+
   // 更新用户邮箱（管理员）
   async updateUserEmail(userUUID: string, data: {
     email: string;  // 新邮箱地址
@@ -1538,6 +1547,7 @@ export const api = {
     id: number;
     email?: string;
     isAdmin?: boolean;
+    roles?: number;
   }> {
     return this.request('/api/user/info', {
       ...options,

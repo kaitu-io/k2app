@@ -646,3 +646,151 @@ func TestFillDeviceAppInfo(t *testing.T) {
 		assert.Equal(t, "iPhone15,2", device.DeviceModel)
 	})
 }
+
+// ===================== RoleRequired 中间件测试（不需要数据库） =====================
+
+// createRoleTestRouter 创建带角色检查的测试路由器
+// 直接注入 authContext，绕过数据库查询
+func createRoleTestRouter(user *User, requiredRole uint64) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(gin.Recovery())
+
+	// 直接注入认证上下文（模拟已登录用户）
+	r.Use(func(c *gin.Context) {
+		if user != nil {
+			c.Set("authContext", &authContext{UserID: user.ID, User: user})
+		}
+		c.Next()
+	})
+
+	r.GET("/test", RoleRequired(requiredRole), func(c *gin.Context) {
+		c.JSON(200, gin.H{"code": 0})
+	})
+	return r
+}
+
+// assertForbidden 断言权限不足（业务错误码 403）
+func assertForbidden(t *testing.T, w *httptest.ResponseRecorder) {
+	t.Helper()
+	assert.Equal(t, 200, w.Code, "HTTP status should be 200 (API convention)")
+	var resp struct{ Code int `json:"code"` }
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.Equal(t, int(ErrorForbidden), resp.Code, "Business code should be 403 (forbidden)")
+}
+
+// TestRoleRequired_NoUser 未登录用户被拒绝
+func TestRoleRequired_NoUser(t *testing.T) {
+	testInitConfig()
+	r := createRoleTestRouter(nil, RoleOpsViewer)
+	req, _ := http.NewRequest("GET", "/test", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assertAuthFailed(t, w)
+}
+
+// TestRoleRequired_ExactRole 拥有精确角色的用户通过
+func TestRoleRequired_ExactRole(t *testing.T) {
+	testInitConfig()
+	user := &User{ID: 1, Roles: RoleOpsViewer}
+	r := createRoleTestRouter(user, RoleOpsViewer)
+	req, _ := http.NewRequest("GET", "/test", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assertAuthSuccess(t, w)
+}
+
+// TestRoleRequired_WrongRole 拥有不同角色的用户被拒绝
+func TestRoleRequired_WrongRole(t *testing.T) {
+	testInitConfig()
+	user := &User{ID: 2, Roles: RoleSupport} // 有 Support，但需要 OpsViewer
+	r := createRoleTestRouter(user, RoleOpsViewer)
+	req, _ := http.NewRequest("GET", "/test", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assertForbidden(t, w)
+}
+
+// TestRoleRequired_RoleUser_Denied 普通用户（RoleUser）被拒绝
+func TestRoleRequired_RoleUser_Denied(t *testing.T) {
+	testInitConfig()
+	user := &User{ID: 3, Roles: RoleUser}
+	r := createRoleTestRouter(user, RoleOpsViewer)
+	req, _ := http.NewRequest("GET", "/test", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assertForbidden(t, w)
+}
+
+// TestRoleRequired_IsAdmin_Bypass 超级管理员（IsAdmin=true）直接通过，不检查 Roles
+func TestRoleRequired_IsAdmin_Bypass(t *testing.T) {
+	testInitConfig()
+	isAdmin := true
+	user := &User{ID: 4, Roles: RoleUser, IsAdmin: &isAdmin} // Roles 没有 OpsViewer，但 IsAdmin=true
+	r := createRoleTestRouter(user, RoleOpsViewer)
+	req, _ := http.NewRequest("GET", "/test", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assertAuthSuccess(t, w)
+}
+
+// TestRoleRequired_CombinedRole_EitherSuffices 组合角色检查（任一满足即通过）
+func TestRoleRequired_CombinedRole_EitherSuffices(t *testing.T) {
+	testInitConfig()
+	viewOrEdit := RoleOpsViewer | RoleOpsEditor
+
+	// 只有 OpsViewer：应通过
+	t.Run("viewer passes viewOrEdit check", func(t *testing.T) {
+		user := &User{ID: 5, Roles: RoleOpsViewer}
+		r := createRoleTestRouter(user, viewOrEdit)
+		req, _ := http.NewRequest("GET", "/test", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		assertAuthSuccess(t, w)
+	})
+
+	// 只有 OpsEditor：应通过
+	t.Run("editor passes viewOrEdit check", func(t *testing.T) {
+		user := &User{ID: 6, Roles: RoleOpsEditor}
+		r := createRoleTestRouter(user, viewOrEdit)
+		req, _ := http.NewRequest("GET", "/test", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		assertAuthSuccess(t, w)
+	})
+
+	// 只有 Support（不在组合内）：应被拒绝
+	t.Run("support denied for viewOrEdit check", func(t *testing.T) {
+		user := &User{ID: 7, Roles: RoleSupport}
+		r := createRoleTestRouter(user, viewOrEdit)
+		req, _ := http.NewRequest("GET", "/test", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		assertForbidden(t, w)
+	})
+}
+
+// TestRoleRequired_MultipleRoles 用户拥有多个角色时，任一满足即通过
+func TestRoleRequired_MultipleRoles(t *testing.T) {
+	testInitConfig()
+	// 用户同时有 OpsViewer + Support
+	user := &User{ID: 8, Roles: RoleOpsViewer | RoleSupport}
+
+	// 检查需要 OpsEditor：应失败（没有 OpsEditor bit）
+	t.Run("missing editor role denied", func(t *testing.T) {
+		r := createRoleTestRouter(user, RoleOpsEditor)
+		req, _ := http.NewRequest("GET", "/test", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		assertForbidden(t, w)
+	})
+
+	// 检查需要 Support：应通过
+	t.Run("has support role passes", func(t *testing.T) {
+		r := createRoleTestRouter(user, RoleSupport)
+		req, _ := http.NewRequest("GET", "/test", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		assertAuthSuccess(t, w)
+	})
+}

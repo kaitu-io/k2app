@@ -234,16 +234,6 @@ func SetupRouter() *gin.Engine {
 	log.Debugf(ctx, "registering /app group")
 	admin.Use(log.MiddlewareRequestLog(true), MiddleRecovery(), CORSMiddleware(), AdminRequired())
 	{
-		// 隧道管理
-		admin.GET("/tunnels", api_admin_list_tunnels)
-		admin.PUT("/tunnels/:id", api_admin_update_tunnel)
-		admin.DELETE("/tunnels/:id", api_admin_delete_tunnel)
-
-		// 物理节点管理
-		admin.GET("/nodes", api_admin_list_nodes)
-		admin.PUT("/nodes/:ipv4", api_admin_update_node)
-		admin.DELETE("/nodes/:ipv4", api_admin_delete_node)
-
 		// 套餐管理
 		admin.GET("/plans", api_admin_list_plans)
 		admin.POST("/plans", api_admin_create_plan)
@@ -252,8 +242,6 @@ func SetupRouter() *gin.Engine {
 		admin.POST("/plans/:id/restore", api_admin_restore_plan)
 
 		// 用户管理
-		admin.GET("/users", api_admin_list_users)
-		admin.GET("/users/:uuid", api_admin_get_user_detail)
 		admin.PUT("/users/:uuid/retailer-status", api_admin_update_user_retailer_status)
 		admin.PUT("/users/:uuid/retailer-contacts", api_admin_update_retailer_contacts)
 		// 用户硬删除（批量）
@@ -268,8 +256,8 @@ func SetupRouter() *gin.Engine {
 		admin.POST("/users/:uuid/membership", api_admin_add_user_membership)
 		// 用户邮箱管理
 		admin.PUT("/users/:uuid/email", api_admin_update_user_email)
-		// 用户设备管理
-		admin.GET("/users/:uuid/devices", api_admin_get_user_devices)
+		// 用户角色管理（仅超级管理员）
+		admin.PUT("/users/:uuid/roles", api_admin_set_user_roles)
 		admin.POST("/users/:uuid/devices/:udid/test-token", api_admin_issue_test_token)
 
 		// Device statistics
@@ -336,25 +324,6 @@ func SetupRouter() *gin.Engine {
 			// 注意：任务监控请使用 asynqmon UI (/app/asynqmon)
 		}
 
-		// Cloud instance management
-		admin.GET("/cloud/instances", api_admin_list_cloud_instances)
-		admin.POST("/cloud/instances/sync", api_admin_sync_all_cloud_instances)
-		admin.GET("/cloud/instances/:id", api_admin_get_cloud_instance)
-		admin.POST("/cloud/instances/:id/change-ip", api_admin_change_ip_cloud_instance)
-		admin.PUT("/cloud/instances/:id/traffic-config", api_admin_update_traffic_config)
-		admin.POST("/cloud/instances", api_admin_create_cloud_instance)
-		admin.DELETE("/cloud/instances/:id", api_admin_delete_cloud_instance)
-		admin.GET("/cloud/accounts", api_admin_list_cloud_accounts)
-		admin.GET("/cloud/regions", api_admin_list_cloud_regions)
-		admin.GET("/cloud/plans", api_admin_list_cloud_plans)
-		admin.GET("/cloud/images", api_admin_list_cloud_images)
-
-		// Device logs & feedback tickets
-		admin.GET("/device-logs", api_admin_list_device_logs)
-		admin.GET("/feedback-tickets", api_admin_list_feedback_tickets)
-		admin.PUT("/feedback-tickets/:id/resolve", api_admin_resolve_feedback_ticket)
-		admin.PUT("/feedback-tickets/:id/close", api_admin_close_feedback_ticket)
-
 		// Usage analytics overview
 		admin.GET("/stats/overview", api_admin_usage_overview)
 
@@ -368,6 +337,52 @@ func SetupRouter() *gin.Engine {
 			strategy.DELETE("/rules/:version", api_admin_strategy_delete)         // Delete version
 		}
 
+	}
+
+	// opsAdmin 运维权限路由组：不需要超级管理员，通过角色位掩码控制访问
+	// 超级管理员（IsAdmin=true）经由 RoleRequired 内部 bypass 直接通过
+	opsAdmin := r.Group("/app")
+	log.Debugf(ctx, "registering /app opsAdmin group")
+	opsAdmin.Use(log.MiddlewareRequestLog(true), MiddleRecovery(), CORSMiddleware(), AuthRequired())
+	{
+		viewOrEdit  := RoleOpsViewer | RoleOpsEditor
+		allOpsRoles := RoleOpsViewer | RoleOpsEditor | RoleSupport
+
+		// 隧道管理
+		opsAdmin.GET("/tunnels",        RoleRequired(viewOrEdit),    api_admin_list_tunnels)
+		opsAdmin.PUT("/tunnels/:id",    RoleRequired(RoleOpsEditor), api_admin_update_tunnel)
+		opsAdmin.DELETE("/tunnels/:id", RoleRequired(RoleOpsEditor), api_admin_delete_tunnel)
+
+		// 物理节点管理
+		opsAdmin.GET("/nodes",          RoleRequired(viewOrEdit),    api_admin_list_nodes)
+		opsAdmin.PUT("/nodes/:ipv4",    RoleRequired(RoleOpsEditor), api_admin_update_node)
+		opsAdmin.DELETE("/nodes/:ipv4", RoleRequired(RoleOpsEditor), api_admin_delete_node)
+
+		// 云实例（只读）
+		opsAdmin.GET("/cloud/instances",     RoleRequired(viewOrEdit), api_admin_list_cloud_instances)
+		opsAdmin.GET("/cloud/instances/:id", RoleRequired(viewOrEdit), api_admin_get_cloud_instance)
+		opsAdmin.GET("/cloud/accounts",      RoleRequired(viewOrEdit), api_admin_list_cloud_accounts)
+		opsAdmin.GET("/cloud/regions",       RoleRequired(viewOrEdit), api_admin_list_cloud_regions)
+		opsAdmin.GET("/cloud/plans",         RoleRequired(viewOrEdit), api_admin_list_cloud_plans)
+		opsAdmin.GET("/cloud/images",        RoleRequired(viewOrEdit), api_admin_list_cloud_images)
+
+		// 云实例（读写）
+		opsAdmin.POST("/cloud/instances/sync",                RoleRequired(RoleOpsEditor), api_admin_sync_all_cloud_instances)
+		opsAdmin.POST("/cloud/instances/:id/change-ip",       RoleRequired(RoleOpsEditor), api_admin_change_ip_cloud_instance)
+		opsAdmin.PUT("/cloud/instances/:id/traffic-config",   RoleRequired(RoleOpsEditor), api_admin_update_traffic_config)
+		opsAdmin.POST("/cloud/instances",                     RoleRequired(RoleOpsEditor), api_admin_create_cloud_instance)
+		opsAdmin.DELETE("/cloud/instances/:id",               RoleRequired(RoleOpsEditor), api_admin_delete_cloud_instance)
+
+		// 用户查看（只读）
+		opsAdmin.GET("/users",               RoleRequired(viewOrEdit), api_admin_list_users)
+		opsAdmin.GET("/users/:uuid",         RoleRequired(viewOrEdit), api_admin_get_user_detail)
+		opsAdmin.GET("/users/:uuid/devices", RoleRequired(viewOrEdit), api_admin_get_user_devices)
+
+		// 设备日志 + 工单
+		opsAdmin.GET("/device-logs",                  RoleRequired(allOpsRoles), api_admin_list_device_logs)
+		opsAdmin.GET("/feedback-tickets",             RoleRequired(allOpsRoles), api_admin_list_feedback_tickets)
+		opsAdmin.PUT("/feedback-tickets/:id/resolve", RoleRequired(RoleSupport), api_admin_resolve_feedback_ticket)
+		opsAdmin.PUT("/feedback-tickets/:id/close",   RoleRequired(RoleSupport), api_admin_close_feedback_ticket)
 	}
 
 	// GitHub Issues routes (requires authentication)
