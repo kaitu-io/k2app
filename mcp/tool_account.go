@@ -31,19 +31,20 @@ type userResponse struct {
 		Value string `json:"value"`
 	} `json:"loginIdentifies"`
 	ExpiredAt   *time.Time `json:"expiredAt"`
-	IsActive    bool       `json:"is_active"`
 	DeviceCount int        `json:"deviceCount"`
-	InviteCode  string     `json:"inviteCode"`
+	InviteCode  *struct {
+		Code string `json:"code"`
+	} `json:"inviteCode"`
 }
 
 // accountInfoOutput is the shape returned to the MCP client.
 type accountInfoOutput struct {
-	Email               string `json:"email"`
-	ExpiredAt           string `json:"expired_at,omitempty"`
-	IsActive            bool   `json:"is_active"`
-	DeviceCount         int    `json:"device_count"`
-	DeviceLimit         int    `json:"device_limit"`
-	InviteCode          string `json:"invite_code,omitempty"`
+	Email          string `json:"email"`
+	PlanExpiresAt  string `json:"plan_expires_at,omitempty"`
+	IsActive       bool   `json:"is_active"`
+	DeviceCount    int    `json:"device_count"`
+	DeviceLimit    int    `json:"device_limit"`
+	InviteCode     string `json:"invite_code,omitempty"`
 }
 
 // toolAccountInfo implements the account_info MCP tool.
@@ -66,18 +67,25 @@ func (app *App) toolAccountInfo(ctx context.Context, req *mcp.CallToolRequest, _
 		}
 	}
 
-	expiredAt := ""
+	planExpiresAt := ""
+	isActive := false
 	if user.ExpiredAt != nil {
-		expiredAt = user.ExpiredAt.UTC().Format(time.RFC3339)
+		planExpiresAt = user.ExpiredAt.UTC().Format(time.RFC3339)
+		isActive = user.ExpiredAt.Unix() > time.Now().Unix()
+	}
+
+	inviteCode := ""
+	if user.InviteCode != nil {
+		inviteCode = user.InviteCode.Code
 	}
 
 	out := accountInfoOutput{
-		Email:       email,
-		ExpiredAt:   expiredAt,
-		IsActive:    user.IsActive,
-		DeviceCount: user.DeviceCount,
-		DeviceLimit: 5,
-		InviteCode:  user.InviteCode,
+		Email:         email,
+		PlanExpiresAt: planExpiresAt,
+		IsActive:      isActive,
+		DeviceCount:   user.DeviceCount,
+		DeviceLimit:   5,
+		InviteCode:    inviteCode,
 	}
 	return successResult(out), nil, nil
 }

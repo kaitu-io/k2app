@@ -48,8 +48,11 @@ func TestDaemonClient_Up(t *testing.T) {
 		if body["action"] != "up" {
 			t.Errorf("expected action 'up', got %v", body["action"])
 		}
-		if body["config"] == nil {
-			t.Error("expected config field to be present")
+		params, ok := body["params"].(map[string]any)
+		if !ok || params == nil {
+			t.Error("expected params field to be present")
+		} else if params["config"] == nil {
+			t.Error("expected params.config field to be present")
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -93,15 +96,21 @@ func TestDaemonClient_Status(t *testing.T) {
 		if r.URL.Path != "/api/core" {
 			t.Errorf("expected /api/core, got %s", r.URL.Path)
 		}
-		if r.Method != http.MethodGet {
-			t.Errorf("expected GET, got %s", r.Method)
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("failed to decode body: %v", err)
+		}
+		if body["action"] != "status" {
+			t.Errorf("expected action 'status', got %v", body["action"])
 		}
 		status := DaemonStatus{
-			State:          "connected",
-			ConnectedAt:    connectedAt,
-			UptimeSeconds:  42,
-			Config:         &DaemonConfig{Server: "k2v5://server.example.com"},
-			Error:          "",
+			State:         "connected",
+			ConnectedAt:   connectedAt,
+			UptimeSeconds: 42,
+			Config:        &DaemonConfig{Server: "k2v5://server.example.com"},
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(status)

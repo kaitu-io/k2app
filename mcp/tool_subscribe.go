@@ -29,7 +29,7 @@ type subscribeOutput struct {
 	AmountCents         int    `json:"amount_cents"`
 	OriginalAmountCents int    `json:"original_amount_cents"`
 	DiscountCents       int    `json:"discount_cents"`
-	PlanName            string `json:"plan_name"`
+	PlanName            string `json:"plan"`
 }
 
 // toolSubscribe implements the subscribe MCP tool.

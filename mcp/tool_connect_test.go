@@ -40,8 +40,10 @@ func TestToolConnect_Success(t *testing.T) {
 			json.NewDecoder(r.Body).Decode(&body)
 			if body["action"] == "up" {
 				upCalled = true
-				if cfg, ok := body["config"].(map[string]any); ok {
-					upServerURL, _ = cfg["server"].(string)
+				if params, ok := body["params"].(map[string]any); ok {
+					if cfg, ok := params["config"].(map[string]any); ok {
+						upServerURL, _ = cfg["server"].(string)
+					}
 				}
 			}
 			w.WriteHeader(http.StatusOK)

@@ -73,7 +73,7 @@ func (s *Session) Save() error {
 		return fmt.Errorf("session save mkdir: %w", err)
 	}
 
-	path := filepath.Join(s.dir, "session.json")
+	path := filepath.Join(s.dir, "mcp-session.json")
 	if err := os.WriteFile(path, b, 0600); err != nil {
 		return fmt.Errorf("session save write: %w", err)
 	}
@@ -83,7 +83,7 @@ func (s *Session) Save() error {
 // Restore loads session from dir/session.json.
 // No error is returned if the file does not exist.
 func (s *Session) Restore() error {
-	path := filepath.Join(s.dir, "session.json")
+	path := filepath.Join(s.dir, "mcp-session.json")
 	b, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -134,7 +134,7 @@ func (s *Session) Clear() error {
 	s.IssuedAt = time.Time{}
 	s.mu.Unlock()
 
-	path := filepath.Join(s.dir, "session.json")
+	path := filepath.Join(s.dir, "mcp-session.json")
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("session clear remove: %w", err)
 	}

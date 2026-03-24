@@ -82,7 +82,7 @@ func TestToolSubscribe_Success(t *testing.T) {
 		t.Errorf("expected discount_cents=300, got %d", out.DiscountCents)
 	}
 	if out.PlanName != "Monthly" {
-		t.Errorf("expected plan_name 'Monthly', got %q", out.PlanName)
+		t.Errorf("expected plan 'Monthly', got %q", out.PlanName)
 	}
 }
 

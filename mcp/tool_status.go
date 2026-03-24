@@ -43,8 +43,9 @@ func (app *App) toolStatus(ctx context.Context, req *mcp.CallToolRequest, _ any)
 			out["server"] = app.resolveServerName(status.Config.Server)
 		}
 	case "error":
-		if status.Error != "" {
-			out["error"] = status.Error
+		if status.Error != nil {
+			out["error"] = status.Error.Message
+			out["error_code"] = status.Error.Code
 		}
 	}
 

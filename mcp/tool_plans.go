@@ -13,18 +13,18 @@ type planRaw struct {
 	Price       int    `json:"price"`
 	OriginPrice int    `json:"originPrice"`
 	Month       int    `json:"month"`
-	Highlight   string `json:"highlight"`
+	Highlight   bool   `json:"highlight"`
 	IsActive    bool   `json:"isActive"`
 }
 
 // planOutput is the shape returned to the MCP client.
 type planOutput struct {
-	ID                  string `json:"id"`
-	Name                string `json:"name"`
-	PriceCents          int    `json:"price_cents"`
-	OriginalPriceCents  int    `json:"original_price_cents"`
-	Months              int    `json:"months"`
-	Highlight           string `json:"highlight,omitempty"`
+	ID                 string `json:"id"`
+	Name               string `json:"name"`
+	PriceCents         int    `json:"price_cents"`
+	OriginalPriceCents int    `json:"original_price_cents"`
+	Months             int    `json:"months"`
+	Highlight          bool   `json:"highlight"`
 }
 
 // toolListPlans implements the list_plans MCP tool.
@@ -53,5 +53,5 @@ func (app *App) toolListPlans(ctx context.Context, req *mcp.CallToolRequest, _ a
 		plans = []planOutput{}
 	}
 
-	return successResult(plans), nil, nil
+	return successResult(map[string]any{"plans": plans}), nil, nil
 }

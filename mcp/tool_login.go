@@ -35,7 +35,6 @@ type LoginInput struct {
 type loginResponse struct {
 	AccessToken  string `json:"accessToken"`
 	RefreshToken string `json:"refreshToken"`
-	Email        string `json:"email"`
 }
 
 // toolLogin implements the login MCP tool.
@@ -53,13 +52,10 @@ func (app *App) toolLogin(ctx context.Context, req *mcp.CallToolRequest, in Logi
 		return app.handleCenterError(err), nil, nil
 	}
 
-	app.session.SetTokens(resp.AccessToken, resp.RefreshToken, resp.Email, time.Now())
+	app.session.SetTokens(resp.AccessToken, resp.RefreshToken, in.Email, time.Now())
 	app.center.SetToken(resp.AccessToken)
 
-	if err := app.session.Save(); err != nil {
-		// non-fatal: tokens are in-memory, log and continue
-		_ = err
-	}
+	app.session.Save() //nolint:errcheck // non-fatal: tokens are in-memory
 
-	return successResult(map[string]string{"email": resp.Email}), nil, nil
+	return successResult(map[string]string{"email": in.Email}), nil, nil
 }

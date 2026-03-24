@@ -11,7 +11,7 @@ import (
 
 func TestToolStatus_Connected(t *testing.T) {
 	daemonSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/core" && r.Method == http.MethodGet {
+		if r.URL.Path == "/api/core" && r.Method == http.MethodPost {
 			status := DaemonStatus{
 				State:         "connected",
 				ConnectedAt:   time.Now().Add(-120 * time.Second),
@@ -63,7 +63,7 @@ func TestToolStatus_Connected(t *testing.T) {
 
 func TestToolStatus_Disconnected(t *testing.T) {
 	daemonSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/core" && r.Method == http.MethodGet {
+		if r.URL.Path == "/api/core" && r.Method == http.MethodPost {
 			status := DaemonStatus{State: "disconnected"}
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(status)
@@ -95,10 +95,10 @@ func TestToolStatus_Disconnected(t *testing.T) {
 
 func TestToolStatus_WithError(t *testing.T) {
 	daemonSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/core" && r.Method == http.MethodGet {
+		if r.URL.Path == "/api/core" && r.Method == http.MethodPost {
 			status := DaemonStatus{
 				State: "error",
-				Error: "TLS handshake failed",
+				Error: &DaemonStatusError{Code: 503, Message: "TLS handshake failed"},
 			}
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(status)
@@ -128,6 +128,9 @@ func TestToolStatus_WithError(t *testing.T) {
 	}
 	if out["error"] != "TLS handshake failed" {
 		t.Errorf("expected error='TLS handshake failed', got %v", out["error"])
+	}
+	if out["error_code"] != float64(503) {
+		t.Errorf("expected error_code=503, got %v", out["error_code"])
 	}
 }
 

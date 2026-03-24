@@ -10,9 +10,9 @@ import (
 
 func TestToolListPlans_Success(t *testing.T) {
 	plans := []planRaw{
-		{Pid: "p1", Label: "Monthly", Price: 999, OriginPrice: 1299, Month: 1, Highlight: "Popular", IsActive: true},
-		{Pid: "p2", Label: "Annual", Price: 8999, OriginPrice: 11999, Month: 12, Highlight: "Best value", IsActive: true},
-		{Pid: "p3", Label: "Legacy", Price: 500, OriginPrice: 500, Month: 1, Highlight: "", IsActive: false},
+		{Pid: "p1", Label: "Monthly", Price: 999, OriginPrice: 1299, Month: 1, Highlight: true, IsActive: true},
+		{Pid: "p2", Label: "Annual", Price: 8999, OriginPrice: 11999, Month: 12, Highlight: false, IsActive: true},
+		{Pid: "p3", Label: "Legacy", Price: 500, OriginPrice: 500, Month: 1, Highlight: false, IsActive: false},
 	}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -35,10 +35,13 @@ func TestToolListPlans_Success(t *testing.T) {
 		t.Fatalf("expected success, got error: %s", textContent(t, result))
 	}
 
-	var out []planOutput
-	if err := json.Unmarshal([]byte(textContent(t, result)), &out); err != nil {
+	var wrapper struct {
+		Plans []planOutput `json:"plans"`
+	}
+	if err := json.Unmarshal([]byte(textContent(t, result)), &wrapper); err != nil {
 		t.Fatalf("unmarshal result: %v", err)
 	}
+	out := wrapper.Plans
 
 	// Only 2 active plans should be returned.
 	if len(out) != 2 {
@@ -61,8 +64,8 @@ func TestToolListPlans_Success(t *testing.T) {
 	if out[0].Months != 1 {
 		t.Errorf("expected months=1, got %d", out[0].Months)
 	}
-	if out[0].Highlight != "Popular" {
-		t.Errorf("expected highlight='Popular', got %q", out[0].Highlight)
+	if !out[0].Highlight {
+		t.Errorf("expected highlight=true for first plan")
 	}
 
 	// Verify second plan.

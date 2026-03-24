@@ -25,9 +25,8 @@ func TestToolAccountInfo_Success(t *testing.T) {
 				{Type: "email", Value: "alice@example.com"},
 			},
 			ExpiredAt:   &expiry,
-			IsActive:    true,
 			DeviceCount: 2,
-			InviteCode:  "ALICE2024",
+			InviteCode:  &struct{ Code string `json:"code"` }{Code: "ALICE2024"},
 		})
 		resp := centerResponse{Code: 0, Message: "ok", Data: json.RawMessage(data)}
 		w.Header().Set("Content-Type", "application/json")
@@ -56,8 +55,8 @@ func TestToolAccountInfo_Success(t *testing.T) {
 	if out.Email != "alice@example.com" {
 		t.Errorf("expected email 'alice@example.com', got %q", out.Email)
 	}
-	if out.ExpiredAt != "2026-12-31T00:00:00Z" {
-		t.Errorf("expected expired_at '2026-12-31T00:00:00Z', got %q", out.ExpiredAt)
+	if out.PlanExpiresAt != "2026-12-31T00:00:00Z" {
+		t.Errorf("expected plan_expires_at '2026-12-31T00:00:00Z', got %q", out.PlanExpiresAt)
 	}
 	if !out.IsActive {
 		t.Error("expected is_active=true")

@@ -8,13 +8,19 @@ import (
 	"time"
 )
 
-// DaemonStatus is the response from GET /api/core.
+// DaemonStatusError is the nested error object in DaemonStatus.
+type DaemonStatusError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+// DaemonStatus is the response from POST /api/core with action=status.
 type DaemonStatus struct {
-	State         string        `json:"state"`
-	ConnectedAt   time.Time     `json:"connected_at,omitempty"`
-	UptimeSeconds int           `json:"uptime_seconds,omitempty"`
-	Config        *DaemonConfig `json:"config,omitempty"`
-	Error         string        `json:"error,omitempty"`
+	State         string             `json:"state"`
+	ConnectedAt   time.Time          `json:"connected_at,omitempty"`
+	UptimeSeconds int                `json:"uptime_seconds,omitempty"`
+	Config        *DaemonConfig      `json:"config,omitempty"`
+	Error         *DaemonStatusError `json:"error,omitempty"`
 }
 
 // DaemonConfig holds the minimal config fields returned by the daemon.
@@ -61,8 +67,10 @@ func (d *DaemonClient) Ping() error {
 func (d *DaemonClient) Up(serverURL string) error {
 	return d.postCore(map[string]any{
 		"action": "up",
-		"config": map[string]string{
-			"server": serverURL,
+		"params": map[string]any{
+			"config": map[string]string{
+				"server": serverURL,
+			},
 		},
 	})
 }
@@ -74,9 +82,13 @@ func (d *DaemonClient) Down() error {
 	})
 }
 
-// Status sends GET /api/core and returns the parsed DaemonStatus.
+// Status sends POST /api/core with action=status and returns the parsed DaemonStatus.
 func (d *DaemonClient) Status() (*DaemonStatus, error) {
-	resp, err := d.httpClient().Get(d.Addr + "/api/core")
+	b, err := json.Marshal(map[string]any{"action": "status"})
+	if err != nil {
+		return nil, fmt.Errorf("daemon status marshal: %w", err)
+	}
+	resp, err := d.httpClient().Post(d.Addr+"/api/core", "application/json", bytes.NewReader(b))
 	if err != nil {
 		return nil, fmt.Errorf("daemon status: %w", err)
 	}

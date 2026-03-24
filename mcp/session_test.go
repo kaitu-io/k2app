@@ -71,7 +71,7 @@ func TestSession_Clear(t *testing.T) {
 	}
 
 	// file should not exist
-	sessionPath := filepath.Join(dir, "session.json")
+	sessionPath := filepath.Join(dir, "mcp-session.json")
 	if _, err := os.Stat(sessionPath); !os.IsNotExist(err) {
 		t.Error("expected session file to be removed after Clear")
 	}
@@ -124,7 +124,7 @@ func TestSession_FilePermissions(t *testing.T) {
 		t.Fatalf("Save failed: %v", err)
 	}
 
-	sessionPath := filepath.Join(dir, "session.json")
+	sessionPath := filepath.Join(dir, "mcp-session.json")
 	info, err := os.Stat(sessionPath)
 	if err != nil {
 		t.Fatalf("stat session file: %v", err)

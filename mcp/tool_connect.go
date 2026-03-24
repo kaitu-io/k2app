@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -25,17 +26,17 @@ func (app *App) toolConnect(ctx context.Context, req *mcp.CallToolRequest, in Co
 	// Resolve server by ID.
 	server := app.findServer(in.ServerID)
 	if server == nil {
-		return errorResult("server not found: unknown server_id"), nil, nil
+		return errorResult(fmt.Sprintf("server %d not found, call list_servers to see available servers", in.ServerID)), nil, nil
 	}
 
 	// Check daemon is reachable.
 	if err := app.daemon.Ping(); err != nil {
-		return errorResult("k2 daemon is not running — start it with: k2 ctl up"), nil, nil
+		return errorResult("k2 daemon is not running. Start it with 'k2' or install as a service with 'k2 service install'."), nil, nil
 	}
 
 	// Issue connect command.
 	if err := app.daemon.Up(server.ServerURL); err != nil {
-		return errorResult("failed to connect: " + err.Error()), nil, nil
+		return errorResult(fmt.Sprintf("connect failed: %s", err.Error())), nil, nil
 	}
 
 	return successResult(map[string]string{

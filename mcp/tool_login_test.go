@@ -60,7 +60,6 @@ func TestToolLogin_Success(t *testing.T) {
 		data, _ := json.Marshal(loginResponse{
 			AccessToken:  "access-token-123",
 			RefreshToken: "refresh-token-456",
-			Email:        "test@example.com",
 		})
 		resp := centerResponse{Code: 0, Message: "ok", Data: json.RawMessage(data)}
 		w.Header().Set("Content-Type", "application/json")
@@ -111,7 +110,7 @@ func TestToolLogin_Success(t *testing.T) {
 	}
 
 	// Verify session file persisted.
-	path := app.session.dir + "/session.json"
+	path := app.session.dir + "/mcp-session.json"
 	if _, statErr := os.Stat(path); statErr != nil {
 		t.Errorf("session file not saved: %v", statErr)
 	}
