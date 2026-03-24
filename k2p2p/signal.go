@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/gorilla/websocket"
+	"github.com/kaitu-io/k2/safego"
 )
 
 // RegisterRequest is sent by home to register its address.
@@ -112,6 +115,47 @@ func (c *SignalClient) Lookup(ctx context.Context, udid string) (PeerInfo, error
 		return PeerInfo{}, fmt.Errorf("k2p2p: decode lookup: %w", err)
 	}
 	return info, nil
+}
+
+// ListenNotify opens a WebSocket to the API server and returns a channel
+// of PunchNotify messages. The channel is closed when ctx is cancelled
+// or the connection drops. Uses safego.Go for panic safety.
+func (c *SignalClient) ListenNotify(ctx context.Context, udid string) (<-chan PunchNotify, error) {
+	wsURL := c.baseURL + "/p2p/ws?udid=" + udid
+	header := http.Header{}
+	header.Set("Authorization", "Bearer "+c.token)
+
+	// DialContext returns (*Conn, *http.Response, error) — discard Response.
+	conn, _, err := websocket.DefaultDialer.DialContext(ctx, wsURL, header)
+	if err != nil {
+		return nil, fmt.Errorf("k2p2p: websocket dial: %w", err)
+	}
+
+	ch := make(chan PunchNotify, 8)
+	safego.Go(func() {
+		defer close(ch)
+		defer conn.Close()
+		for {
+			if ctx.Err() != nil {
+				return
+			}
+			_, msg, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			var notify PunchNotify
+			if err := json.Unmarshal(msg, &notify); err != nil {
+				continue
+			}
+			select {
+			case ch <- notify:
+			case <-ctx.Done():
+				return
+			}
+		}
+	})
+
+	return ch, nil
 }
 
 // RequestConnect asks the API server to notify a home peer that away
