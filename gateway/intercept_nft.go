@@ -1,0 +1,90 @@
+//go:build linux
+
+package gateway
+
+import (
+	"fmt"
+	"log/slog"
+	"os/exec"
+	"strings"
+)
+
+type nftInterceptor struct {
+	installed bool
+}
+
+func (n *nftInterceptor) Name() string { return "nftables" }
+
+func (n *nftInterceptor) Install(cfg InterceptConfig) error {
+	script := n.buildScript(cfg)
+	cmd := exec.Command("nft", "-f", "-")
+	cmd.Stdin = strings.NewReader(script)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("nft script: %s: %w", out, err)
+	}
+	_ = runCmd("ip", "rule", "add", "fwmark", "1", "table", "100")
+	_ = runCmd("ip", "route", "add", "local", "0.0.0.0/0", "dev", "lo", "table", "100")
+	_ = runCmd("ip", "-6", "rule", "add", "fwmark", "1", "table", "100")
+	_ = runCmd("ip", "-6", "route", "add", "local", "::/0", "dev", "lo", "table", "100")
+	n.installed = true
+	slog.Info("DIAG: gw-intercept-install", "backend", "nftables",
+		"subnets", cfg.LANSubnets, "excludeCount", len(cfg.ExcludeIPs))
+	return nil
+}
+
+func (n *nftInterceptor) Remove() {
+	_ = runCmd("nft", "delete", "table", "inet", "k2r")
+	_ = runCmd("ip", "rule", "del", "fwmark", "1", "table", "100")
+	_ = runCmd("ip", "route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", "100")
+	_ = runCmd("ip", "-6", "rule", "del", "fwmark", "1", "table", "100")
+	_ = runCmd("ip", "-6", "route", "del", "local", "::/0", "dev", "lo", "table", "100")
+	n.installed = false
+	slog.Info("gateway: nftables rules cleaned up")
+}
+
+func (n *nftInterceptor) buildScript(cfg InterceptConfig) string {
+	port := fmt.Sprintf(":%d", cfg.ListenPort)
+	v4Subnets, v6Subnets := splitSubnetsByFamily(cfg.LANSubnets)
+	v4Excludes, v6Excludes := splitIPsByFamily(cfg.ExcludeIPs)
+
+	var lines []string
+	lines = append(lines, "add table inet k2r")
+
+	if len(v4Excludes) > 0 {
+		lines = append(lines, fmt.Sprintf(
+			"add set inet k2r exclude_v4 { type ipv4_addr ; elements = { %s } ; }",
+			strings.Join(v4Excludes, ", ")))
+	}
+	if len(v6Excludes) > 0 {
+		lines = append(lines, fmt.Sprintf(
+			"add set inet k2r exclude_v6 { type ipv6_addr ; elements = { %s } ; }",
+			strings.Join(v6Excludes, ", ")))
+	}
+
+	lines = append(lines,
+		"add chain inet k2r prerouting { type filter hook prerouting priority mangle ; policy accept ; }")
+	lines = append(lines,
+		`add rule inet k2r prerouting iifname "lo" return`)
+
+	if len(v4Excludes) > 0 {
+		lines = append(lines, "add rule inet k2r prerouting ip daddr @exclude_v4 return")
+	}
+	if len(v6Excludes) > 0 {
+		lines = append(lines, "add rule inet k2r prerouting ip6 daddr @exclude_v6 return")
+	}
+
+	for _, subnet := range v4Subnets {
+		lines = append(lines, fmt.Sprintf(
+			"add rule inet k2r prerouting ip saddr %s meta l4proto tcp tproxy to %s meta mark set 1", subnet, port))
+		lines = append(lines, fmt.Sprintf(
+			"add rule inet k2r prerouting ip saddr %s meta l4proto udp tproxy to %s meta mark set 1", subnet, port))
+	}
+	for _, subnet := range v6Subnets {
+		lines = append(lines, fmt.Sprintf(
+			"add rule inet k2r prerouting ip6 saddr %s meta l4proto tcp tproxy to %s meta mark set 1", subnet, port))
+		lines = append(lines, fmt.Sprintf(
+			"add rule inet k2r prerouting ip6 saddr %s meta l4proto udp tproxy to %s meta mark set 1", subnet, port))
+	}
+
+	return strings.Join(lines, "\n") + "\n"
+}
