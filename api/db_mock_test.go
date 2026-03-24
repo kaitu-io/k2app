@@ -23,9 +23,10 @@ func TestMockDB_User_Create(t *testing.T) {
 		m.Mock.ExpectExec(regexp.QuoteMeta("INSERT INTO `users`")).
 			WillReturnResult(sqlmock.NewResult(1, 1))
 
+		testKey := "test-access-key"
 		user := User{
 			UUID:      "test-uuid",
-			AccessKey: "test-access-key",
+			AccessKey: &testKey,
 			Language:  "en-US",
 		}
 
@@ -54,12 +55,12 @@ func TestMockDB_User_Query(t *testing.T) {
 			"id", "created_at", "updated_at", "uuid", "deleted_at",
 			"expired_at", "is_first_order_done", "is_activated", "activated_at",
 			"invited_by_code_id", "is_admin", "delegate_id", "max_device",
-			"access_key", "is_retailer", "language",
+			"access_key", "access_key_created_at", "is_retailer", "language",
 		}).AddRow(
 			1, time.Now(), time.Now(), "user-uuid-1", nil,
 			time.Now().Unix()+86400, false, true, time.Now().Unix(),
 			0, false, nil, 5,
-			"access-key-1", false, "zh-CN",
+			nil, int64(0), false, "zh-CN",
 		)
 
 		m.Mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `users` WHERE `users`.`id` = ? AND `users`.`deleted_at` IS NULL ORDER BY `users`.`id` LIMIT ?")).
@@ -358,12 +359,12 @@ func TestMockDB_Preload(t *testing.T) {
 			"id", "created_at", "updated_at", "uuid", "deleted_at",
 			"expired_at", "is_first_order_done", "is_activated", "activated_at",
 			"invited_by_code_id", "is_admin", "delegate_id", "max_device",
-			"access_key", "is_retailer", "language",
+			"access_key", "access_key_created_at", "is_retailer", "language",
 		}).AddRow(
 			1, time.Now(), time.Now(), "preload-user-uuid", nil,
 			time.Now().Unix()+86400, false, true, time.Now().Unix(),
 			0, false, nil, 5,
-			"access-key", false, "en-US",
+			nil, int64(0), false, "en-US",
 		)
 
 		m.Mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `users` WHERE `users`.`id` = ? AND `users`.`deleted_at` IS NULL")).
@@ -748,12 +749,12 @@ func TestMockDB_ConcurrentOperations(t *testing.T) {
 			"id", "created_at", "updated_at", "uuid", "deleted_at",
 			"expired_at", "is_first_order_done", "is_activated", "activated_at",
 			"invited_by_code_id", "is_admin", "delegate_id", "max_device",
-			"access_key", "is_retailer", "language",
+			"access_key", "access_key_created_at", "is_retailer", "language",
 		}).AddRow(
 			1, time.Now(), time.Now(), "user-uuid", nil,
 			time.Now().Unix()+86400, false, true, time.Now().Unix(),
 			0, false, nil, 5,
-			"access-key", false, "en-US",
+			nil, int64(0), false, "en-US",
 		)
 
 		m.Mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `users` WHERE `users`.`id` = ? AND `users`.`deleted_at` IS NULL ORDER BY `users`.`id` LIMIT ?")).
