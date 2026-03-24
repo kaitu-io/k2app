@@ -528,6 +528,18 @@ type Secret struct {
 	ExpiredAt int64          `gorm:"not null"`
 }
 
+// AdminAuditLog 管理员操作审计日志
+type AdminAuditLog struct {
+	ID         uint64    `gorm:"primarykey"`
+	CreatedAt  time.Time
+	ActorID    uint64    `gorm:"not null;index"`                  // 操作人 user ID
+	ActorUUID  string    `gorm:"type:varchar(255);not null;index"` // 操作人 UUID
+	Action     string    `gorm:"type:varchar(64);not null;index"`  // 操作类型：access_key_generate, access_key_revoke, etc.
+	TargetType string    `gorm:"type:varchar(64);not null;index"`  // 目标类型：user, node, order, etc.
+	TargetID   string    `gorm:"type:varchar(255);not null"`       // 目标标识（UUID or ID）
+	Detail     string    `gorm:"type:text"`                        // JSON 详情（可选）
+}
+
 type Plan struct {
 	ID          uint64    `gorm:"primarykey" json:"id"`
 	CreatedAt   time.Time `json:"createdAt"`
