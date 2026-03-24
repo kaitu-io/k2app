@@ -541,6 +541,42 @@ type AdminAuditLog struct {
 	Detail     string    `gorm:"type:text"`                        // JSON 详情（可选）
 }
 
+// AdminApproval 管理员操作审批记录
+// 不含 DeletedAt — 审计记录不可删除
+type AdminApproval struct {
+	ID        uint64    `gorm:"primarykey" json:"id"`
+	CreatedAt time.Time `gorm:"index:idx_approval_status_time" json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+
+	// 发起人
+	RequestorID   uint64 `gorm:"not null;index" json:"requestorId"`
+	RequestorUUID string `gorm:"type:varchar(255);not null" json:"requestorUuid"`
+	RequestorName string `gorm:"type:varchar(255);not null" json:"requestorName"`
+
+	// 操作标识（注册表 key）
+	Action string `gorm:"type:varchar(64);not null;index:idx_approval_action_status" json:"action"`
+
+	// handler 校验后的干净参数（JSON）
+	Params string `gorm:"type:text;not null" json:"params"`
+
+	// 人类可读摘要
+	Summary string `gorm:"type:text;not null" json:"summary"`
+
+	// 审批状态: pending, approved, executed, failed, rejected, cancelled
+	Status string `gorm:"type:varchar(16);not null;default:pending;index:idx_approval_status_time;index:idx_approval_action_status" json:"status"`
+
+	// 审批人
+	ApproverID   *uint64    `gorm:"index" json:"approverId,omitempty"`
+	ApproverUUID *string    `gorm:"type:varchar(255)" json:"approverUuid,omitempty"`
+	ApproverName *string    `gorm:"type:varchar(255)" json:"approverName,omitempty"`
+	ApprovedAt   *time.Time `json:"approvedAt,omitempty"`
+	RejectReason *string    `gorm:"type:varchar(512)" json:"rejectReason,omitempty"`
+
+	// 执行结果
+	ExecutedAt *time.Time `json:"executedAt,omitempty"`
+	ExecError  *string    `gorm:"type:text" json:"execError,omitempty"`
+}
+
 type Plan struct {
 	ID          uint64    `gorm:"primarykey" json:"id"`
 	CreatedAt   time.Time `json:"createdAt"`

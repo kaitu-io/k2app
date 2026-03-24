@@ -58,6 +58,8 @@ func Migrate() error {
 		&StatK2sDownload{},
 		// Admin audit log
 		&AdminAuditLog{},
+		// Admin approval system
+		&AdminApproval{},
 	)
 	if err != nil {
 		log.Errorf(ctx, "database migration failed: %v", err)
