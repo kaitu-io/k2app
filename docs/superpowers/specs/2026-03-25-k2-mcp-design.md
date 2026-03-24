@@ -18,7 +18,7 @@ AI Agent ←stdio→ k2-mcp ──HTTP──→ Center API (auth, servers, plans
 ```
 
 - **Transport**: stdio (standard MCP protocol)
-- **SDK**: `github.com/modelcontextprotocol/go-sdk/mcp` (official Anthropic/Google Go SDK)
+- **SDK**: `github.com/modelcontextprotocol/go-sdk/mcp` v1.4.1+ (official Go SDK, stable, requires Go 1.25+)
 - **Distribution**: Built as Go binary, bundled into Tauri desktop app as sidecar (same pattern as k2 binary)
 
 ## MCP Tools (8 total)
@@ -51,10 +51,11 @@ Request body:
 **Output** (success):
 ```json
 {
-  "email": "user@example.com",
-  "expires_at": "2026-04-25T00:00:00Z"
+  "email": "user@example.com"
 }
 ```
+
+Note: `DataAuthResult` only contains `accessToken`, `refreshToken`, `issuedAt`. Subscription expiry is NOT available from the login response — it comes from `GET /api/user` (`DataUser.ExpiredAt`). The `account_info` tool provides this.
 
 **Side effects**:
 - Stores `accessToken` and `refreshToken` in process memory
@@ -193,21 +194,27 @@ Get available VPN servers for connection.
       "domain": "server.example.com",
       "country": "US",
       "region": "us-east-1",
-      "load": 50,
+      "traffic_usage_percent": 60.5,
+      "bandwidth_usage_percent": 45.2,
       "server_url": "k2v5://server.example.com:443?..."
     }
   ]
 }
 ```
 
-Fields mapped from Center API:
+Fields mapped from Center API (`DataSlaveTunnel`):
 - `id` ← `id`
 - `name` ← `name` (falls back to `node.name`)
 - `domain` ← `domain`
 - `country` ← `node.country`
 - `region` ← `node.region`
-- `load` ← `node.load`
-- `server_url` ← `serverUrl`
+- `traffic_usage_percent` ← `node.trafficUsagePercent` (0-100, replaces deprecated `load`)
+- `bandwidth_usage_percent` ← `node.bandwidthUsagePercent` (0-100)
+- `server_url` ← `serverUrl` (only present for k2v5 protocol)
+
+Note: `node.load` is deprecated in the Center API. Use `trafficUsagePercent` and `bandwidthUsagePercent` instead.
+
+Middleware chain: `AuthRequired()` + `ProRequired()` + `DeviceAuthRequired()` — requires active subscription and `X-UDID` header.
 
 **Requires auth**: Yes. Returns error with `"subscription expired"` if Center API responds with `code: 402`.
 
@@ -429,7 +436,25 @@ k2app/mcp/
 ### Dependencies
 
 ```
-github.com/modelcontextprotocol/go-sdk   ← official MCP SDK (stdio transport, tool schema inference)
+github.com/modelcontextprotocol/go-sdk v1.4.1+   ← official MCP SDK (stdio transport, generics-based tool schema inference)
+```
+
+SDK API pattern used:
+```go
+server := mcp.NewServer(&mcp.Implementation{Name: "k2-mcp", Version: "v1.0.0"}, nil)
+
+type ConnectInput struct {
+    ServerID int `json:"server_id" jsonschema:"server ID from list_servers"`
+}
+
+mcp.AddTool(server, &mcp.Tool{
+    Name:        "connect",
+    Description: "Connect to a VPN server",
+}, func(ctx context.Context, req *mcp.CallToolRequest, input ConnectInput) (*mcp.CallToolResult, any, error) {
+    // ... implementation
+})
+
+server.Run(context.Background(), &mcp.StdioTransport{})
 ```
 
 No other external dependencies. HTTP client uses `net/http` stdlib.
@@ -514,10 +539,10 @@ k2-mcp uses environment variables (no config file):
 User: "Connect me to VPN"
 
 AI calls: login(email="user@example.com", password="***")
-  → success
+  → {email: "user@example.com"}
 
 AI calls: list_servers()
-  → [{id: 1, name: "Tokyo", load: 30}, {id: 2, name: "US East", load: 60}]
+  → [{id: 1, name: "Tokyo", traffic_usage_percent: 30}, {id: 2, name: "US East", traffic_usage_percent: 60}]
 
 AI calls: connect(server_id=1)
   → {state: "connecting", server: "Tokyo"}
