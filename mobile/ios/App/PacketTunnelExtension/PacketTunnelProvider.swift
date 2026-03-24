@@ -110,26 +110,53 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     private static let transientErrorCooldown: TimeInterval = 5
     /// Max credible cooldown — clock-change protection (any cooldown further out is bogus).
     private static let maxCooldownGuard: TimeInterval = 60
+    /// Min gap between allowed non-user-initiated startTunnel calls.
+    /// Blocks on-demand rapid cycling where iOS repeatedly stops a healthy tunnel.
+    /// iOS on-demand backoff (5-30s progressive) ensures reconnection after 1-2 blocked attempts.
+    private static let rapidRestartMinGap: TimeInterval = 10
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
         logger.info("startTunnel called, options keys: \(options?.keys.joined(separator: ",") ?? "nil")")
 
-        // Cooldown: after an engine error, block on-demand restart for a short period
-        // to prevent rapid connect→fail→restart loops that break WiFi.
-        // User-initiated connects (via K2Plugin) skip cooldown.
+        // User-initiated connects (via K2Plugin) skip all cooldown checks.
         let userInitiated = (options?["userInitiated"] as? NSNumber)?.boolValue ?? false
-        if !userInitiated, let cooldownUntil = neDefaults?.double(forKey: "errorCooldownUntil"), cooldownUntil > 0 {
+
+        if userInitiated {
+            logger.info("startTunnel: user-initiated, skipping cooldown checks")
+        } else {
             let now = Date().timeIntervalSince1970
-            let remaining = cooldownUntil - now
-            if remaining > 0 && remaining <= Self.maxCooldownGuard {
-                logger.warning("startTunnel: error cooldown active (\(Int(remaining))s remaining), failing fast")
-                NativeLogger.shared.log("WARN", "startTunnel: blocked by error cooldown (\(Int(remaining))s remaining)")
+
+            // --- Check 1: Error cooldown (957778e) ---
+            // After an engine error, block on-demand restart for a short period
+            // to prevent rapid connect→fail→restart loops.
+            if let cooldownUntil = neDefaults?.double(forKey: "errorCooldownUntil"), cooldownUntil > 0 {
+                let remaining = cooldownUntil - now
+                if remaining > 0 && remaining <= Self.maxCooldownGuard {
+                    logger.warning("startTunnel: error cooldown active (\(Int(remaining))s remaining), failing fast")
+                    NativeLogger.shared.log("WARN", "startTunnel: blocked by error cooldown (\(Int(remaining))s remaining)")
+                    completionHandler(NSError(domain: "com.allnationconnect.anc.wgios", code: 429,
+                                              userInfo: [NSLocalizedDescriptionKey: "Error cooldown — too soon to retry"]))
+                    return
+                }
+                neDefaults?.removeObject(forKey: "errorCooldownUntil")
+            }
+
+            // --- Check 2: Rapid restart detection ---
+            // When iOS on-demand stops a healthy tunnel and immediately restarts it
+            // (e.g., after WiFi path change), no engine error occurs — the error cooldown
+            // above never fires. Detect this by measuring the gap since the last allowed
+            // startTunnel. If <10s, block and let iOS's built-in backoff increase the gap.
+            // lastStartTime is only updated on PROCEED — blocked attempts don't slide the window.
+            let lastStart = neDefaults?.double(forKey: "lastStartTime") ?? 0
+            let gap = now - lastStart
+            if gap > 0 && gap < Self.rapidRestartMinGap {
+                logger.warning("startTunnel: rapid restart detected (gap=\(Int(gap))s), failing fast")
+                NativeLogger.shared.log("WARN", "startTunnel: blocked by rapid restart detection (gap=\(Int(gap))s)")
                 completionHandler(NSError(domain: "com.allnationconnect.anc.wgios", code: 429,
-                                          userInfo: [NSLocalizedDescriptionKey: "Error cooldown — too soon to retry"]))
+                                          userInfo: [NSLocalizedDescriptionKey: "Rapid restart cooldown"]))
                 return
             }
-            // Cooldown expired or invalid (clock change) — clear and proceed
-            neDefaults?.removeObject(forKey: "errorCooldownUntil")
+            neDefaults?.set(now, forKey: "lastStartTime")
         }
 
         // Detect jetsam: if previous session wrote "engineRunning=true" but never set it to false,
