@@ -19,7 +19,7 @@ func TestToolListPlans_Success(t *testing.T) {
 		if r.URL.Path != "/api/plans" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
-		data, _ := json.Marshal(plans)
+		data, _ := json.Marshal(map[string]any{"items": plans})
 		resp := centerResponse{Code: 0, Message: "ok", Data: json.RawMessage(data)}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)

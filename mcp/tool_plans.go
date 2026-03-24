@@ -29,13 +29,15 @@ type planOutput struct {
 
 // toolListPlans implements the list_plans MCP tool.
 func (app *App) toolListPlans(ctx context.Context, req *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, any, error) {
-	var raw []planRaw
-	if err := app.center.Get("/api/plans", &raw); err != nil {
+	var resp struct {
+		Items []planRaw `json:"items"`
+	}
+	if err := app.center.Get("/api/plans", &resp); err != nil {
 		return app.handleCenterError(err), nil, nil
 	}
 
 	var plans []planOutput
-	for _, p := range raw {
+	for _, p := range resp.Items {
 		if !p.IsActive {
 			continue
 		}

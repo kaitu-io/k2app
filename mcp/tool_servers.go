@@ -12,20 +12,25 @@ const serverCacheTTL = 5 * time.Minute
 
 // tunnelNode is the nested node object in a tunnel entry.
 type tunnelNode struct {
-	Name string `json:"name"`
+	Name                  string  `json:"name"`
+	Country               string  `json:"country"`
+	Region                string  `json:"region"`
+	TrafficUsagePercent   float64 `json:"trafficUsagePercent"`
+	BandwidthUsagePercent float64 `json:"bandwidthUsagePercent"`
 }
 
 // tunnelEntry is a single entry from GET /api/tunnels/k2v5.
 type tunnelEntry struct {
-	ID                    int        `json:"id"`
-	Name                  string     `json:"name"`
-	Domain                string     `json:"domain"`
-	Country               string     `json:"country"`
-	Region                string     `json:"region"`
-	TrafficUsagePercent   float64    `json:"trafficUsagePercent"`
-	BandwidthUsagePercent float64    `json:"bandwidthUsagePercent"`
-	ServerURL             string     `json:"serverUrl"`
-	Node                  tunnelNode `json:"node"`
+	ID        int        `json:"id"`
+	Name      string     `json:"name"`
+	Domain    string     `json:"domain"`
+	ServerURL string     `json:"serverUrl"`
+	Node      tunnelNode `json:"node"`
+}
+
+// tunnelListResponse wraps the Center API items array.
+type tunnelListResponse struct {
+	Items []tunnelEntry `json:"items"`
 }
 
 // fetchServers returns the cached server list, refreshing from the Center API if stale.
@@ -41,13 +46,13 @@ func (app *App) fetchServers() ([]Server, error) {
 	app.serversMu.RUnlock()
 
 	// Fetch from API (no lock held).
-	var tunnels []tunnelEntry
-	if err := app.center.Get("/api/tunnels/k2v5", &tunnels); err != nil {
+	var resp tunnelListResponse
+	if err := app.center.Get("/api/tunnels/k2v5", &resp); err != nil {
 		return nil, err
 	}
 
-	servers := make([]Server, 0, len(tunnels))
-	for _, t := range tunnels {
+	servers := make([]Server, 0, len(resp.Items))
+	for _, t := range resp.Items {
 		name := t.Name
 		if name == "" {
 			name = t.Node.Name
@@ -65,10 +70,10 @@ func (app *App) fetchServers() ([]Server, error) {
 			ID:                    t.ID,
 			Name:                  name,
 			Domain:                domain,
-			Country:               t.Country,
-			Region:                t.Region,
-			TrafficUsagePercent:   t.TrafficUsagePercent,
-			BandwidthUsagePercent: t.BandwidthUsagePercent,
+			Country:               t.Node.Country,
+			Region:                t.Node.Region,
+			TrafficUsagePercent:   t.Node.TrafficUsagePercent,
+			BandwidthUsagePercent: t.Node.BandwidthUsagePercent,
 			ServerURL:             t.ServerURL,
 		})
 	}

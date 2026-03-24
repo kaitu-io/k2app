@@ -13,24 +13,18 @@ import (
 func TestToolListServers_Success(t *testing.T) {
 	tunnels := []tunnelEntry{
 		{
-			ID:                    1,
-			Name:                  "Tokyo 1",
-			Domain:                "jp1.example.com",
-			Country:               "JP",
-			Region:                "Asia",
-			TrafficUsagePercent:   42.5,
-			BandwidthUsagePercent: 30.0,
-			ServerURL:             "k2v5://jp1.example.com",
-			Node:                  tunnelNode{Name: "node-jp1"},
+			ID:        1,
+			Name:      "Tokyo 1",
+			Domain:    "jp1.example.com",
+			ServerURL: "k2v5://jp1.example.com",
+			Node:      tunnelNode{Name: "node-jp1", Country: "JP", Region: "Asia", TrafficUsagePercent: 42.5, BandwidthUsagePercent: 30.0},
 		},
 		{
 			ID:        2,
 			Name:      "",
 			Domain:    "us1.example.com",
-			Country:   "US",
-			Region:    "Americas",
 			ServerURL: "k2v5://us1.example.com",
-			Node:      tunnelNode{Name: "node-us1"},
+			Node:      tunnelNode{Name: "node-us1", Country: "US", Region: "Americas"},
 		},
 	}
 
@@ -38,7 +32,7 @@ func TestToolListServers_Success(t *testing.T) {
 		if r.URL.Path != "/api/tunnels/k2v5" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
-		data, _ := json.Marshal(tunnels)
+		data, _ := json.Marshal(tunnelListResponse{Items: tunnels})
 		resp := centerResponse{Code: 0, Message: "ok", Data: json.RawMessage(data)}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
@@ -97,9 +91,9 @@ func TestToolListServers_CacheHit(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt64(&callCount, 1)
-		data, _ := json.Marshal([]tunnelEntry{
+		data, _ := json.Marshal(tunnelListResponse{Items: []tunnelEntry{
 			{ID: 1, Name: "Server 1", Domain: "s1.example.com", ServerURL: "k2v5://s1.example.com"},
-		})
+		}})
 		resp := centerResponse{Code: 0, Message: "ok", Data: json.RawMessage(data)}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)

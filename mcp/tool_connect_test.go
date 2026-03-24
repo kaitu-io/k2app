@@ -15,13 +15,13 @@ func TestToolConnect_Success(t *testing.T) {
 			ID:        42,
 			Name:      "Tokyo 1",
 			Domain:    "jp1.example.com",
-			Country:   "JP",
 			ServerURL: "k2v5://jp1.example.com",
+			Node:      tunnelNode{Country: "JP"},
 		},
 	}
 
 	centerSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		data, _ := json.Marshal(tunnels)
+		data, _ := json.Marshal(tunnelListResponse{Items: tunnels})
 		resp := centerResponse{Code: 0, Message: "ok", Data: json.RawMessage(data)}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
@@ -87,7 +87,7 @@ func TestToolConnect_Success(t *testing.T) {
 func TestToolConnect_ServerNotFound(t *testing.T) {
 	centerSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Return empty server list.
-		resp := centerResponse{Code: 0, Message: "ok", Data: json.RawMessage("[]")}
+		resp := centerResponse{Code: 0, Message: "ok", Data: json.RawMessage(`{"items":[]}`)}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
 	}))
@@ -112,7 +112,7 @@ func TestToolConnect_DaemonNotRunning(t *testing.T) {
 	}
 
 	centerSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		data, _ := json.Marshal(tunnels)
+		data, _ := json.Marshal(tunnelListResponse{Items: tunnels})
 		resp := centerResponse{Code: 0, Message: "ok", Data: json.RawMessage(data)}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
