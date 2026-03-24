@@ -73,6 +73,12 @@ type ApprovalExecutePayload struct {
 	ApprovalID uint64 `json:"approvalId"`
 }
 
+// ApprovalSubmitResponse 审批提交响应（各 handler 共用）
+type ApprovalSubmitResponse struct {
+	ApprovalID uint64 `json:"approvalId"`
+	Status     string `json:"status"`
+}
+
 // ===================== Submit =====================
 
 // SubmitApproval 提交审批请求

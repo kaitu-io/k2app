@@ -3,7 +3,6 @@ package center
 import (
 	"fmt"
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	db "github.com/wordgate/qtoolkit/db"
@@ -306,28 +305,18 @@ func api_admin_create_edm_task(c *gin.Context) {
 		return
 	}
 
-	// 确定执行时间
-	var scheduledAt *time.Time
-	if req.ScheduledAt != nil {
-		t := time.Unix(*req.ScheduledAt, 0)
-		scheduledAt = &t
-	}
-
-	// 直接入队到 Asynq
-	batchID, err := EnqueueEDMTask(c.Request.Context(), req.TemplateID, req.UserFilters, scheduledAt)
+	// 提交审批
+	summary := fmt.Sprintf("发送模板「%s」(ID:%d)", template.Subject, template.ID)
+	approvalID, err := SubmitApproval(c, "edm_create_task", &req, summary)
 	if err != nil {
-		log.Errorf(c, "failed to enqueue EDM task: %v", err)
-		Error(c, ErrorSystemError, "failed to enqueue task")
+		log.Errorf(c, "failed to submit approval: %v", err)
+		Error(c, ErrorSystemError, "failed to submit approval")
 		return
 	}
 
-	log.Infof(c, "successfully enqueued EDM task, batchId=%s", batchID)
-	resp := EDMTaskResponse{
-		BatchID:     batchID,
-		TemplateID:  req.TemplateID,
-		ScheduledAt: req.ScheduledAt,
-	}
-	Success(c, &resp)
+	log.Infof(c, "EDM task submitted for approval: approvalId=%d", approvalID)
+	resp := &ApprovalSubmitResponse{ApprovalID: approvalID, Status: "pending_approval"}
+	Success(c, resp)
 }
 
 // api_admin_preview_edm_targets 预览EDM目标用户
