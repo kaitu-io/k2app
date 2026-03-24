@@ -49,7 +49,7 @@ const menuGroups: MenuGroup[] = [
     ]
   },
   {
-    title: "运营管理",
+    title: "技术运维",
     requiredRole: RoleOpsViewer | RoleOpsEditor,
     items: [
       { href: "/manager/tunnels", icon: Server, label: "隧道管理" },

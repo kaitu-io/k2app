@@ -67,8 +67,8 @@ interface UserListItem {
 // 角色名映射
 const ROLE_LABELS: { bit: number; label: string }[] = [
   { bit: 8,  label: "市场" },
-  { bit: 16, label: "运营(读)" },
-  { bit: 32, label: "运营(写)" },
+  { bit: 16, label: "技术运维(读)" },
+  { bit: 32, label: "技术运维(写)" },
   { bit: 64, label: "客服" },
 ];
 
