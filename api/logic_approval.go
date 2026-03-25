@@ -356,15 +356,11 @@ func WriteAuditLogFromApproval(ctx context.Context, approval *AdminApproval) {
 }
 
 // getAdminEmail resolves an admin's email address by user ID.
+// Reuses getUserEmail (api_ticket.go) — same logic, just swallows errors for best-effort notifications.
 func getAdminEmail(ctx context.Context, userID uint64) string {
-	identify, err := GetEmailIdentifyByUserID(ctx, int64(userID))
-	if err != nil || identify == nil || identify.EncryptedValue == "" {
-		log.Warnf(ctx, "[APPROVAL] no email for user %d: %v", userID, err)
-		return ""
-	}
-	email, err := secretDecryptString(ctx, identify.EncryptedValue)
+	email, err := getUserEmail(ctx, userID)
 	if err != nil {
-		log.Warnf(ctx, "[APPROVAL] decrypt email failed for user %d: %v", userID, err)
+		log.Warnf(ctx, "[APPROVAL] resolve email for user %d: %v", userID, err)
 		return ""
 	}
 	return email
