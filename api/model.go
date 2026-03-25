@@ -39,6 +39,7 @@ const (
 	VipInviteReward  VipChangeType = "invite_reward"  // 邀请奖励（邀请人获得）
 	VipInvitedReward VipChangeType = "invited_reward" // 被邀请奖励（被邀请人获得）
 	VipSystemGrant   VipChangeType = "system_grant"   // 系统发放
+	VipSurveyReward  VipChangeType = "survey_reward"  // 问卷奖励
 )
 
 // User 用户模型
@@ -1087,4 +1088,16 @@ type LicenseKey struct {
 }
 
 func (LicenseKey) TableName() string { return "license_keys" }
+
+// SurveyResponse 问卷调查回复
+type SurveyResponse struct {
+	ID         uint64    `gorm:"primarykey" json:"id"`
+	CreatedAt  time.Time `json:"createdAt"`
+	UserID     uint64    `gorm:"not null;uniqueIndex:uk_user_survey" json:"userId"`
+	User       *User     `gorm:"foreignKey:UserID" json:"-"`
+	SurveyKey  string    `gorm:"type:varchar(64);not null;uniqueIndex:uk_user_survey;index:idx_survey_key" json:"surveyKey"`
+	Answers    string    `gorm:"type:json;not null" json:"answers"`
+	IPAddress  string    `gorm:"type:varchar(45);default:''" json:"ipAddress"`
+	RewardDays int       `gorm:"default:0" json:"rewardDays"`
+}
 
