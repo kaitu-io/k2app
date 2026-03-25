@@ -17,6 +17,7 @@ const (
 	StreamTypeTCP         byte = 0x01
 	StreamTypeUDP         byte = 0x02
 	StreamTypeUDPOverflow byte = 0x03
+	StreamTypeMeta        byte = 0x10 // connection metadata (auth + mode)
 )
 
 // Limits for varint-decoded lengths to prevent OOM from malicious input.
@@ -232,3 +233,95 @@ type StreamError struct {
 
 func (e *StreamError) Error() string      { return e.Message }
 func (e *StreamError) IsProxyLayer() bool  { return true }
+
+// ============================================================================
+// Metadata Frame: [StreamType:0x10][field_count:varint] { [key_len:varint][key][val_len:varint][val] }...
+// ============================================================================
+
+// MetadataFrame holds key-value metadata for a connection (auth + mode).
+type MetadataFrame struct {
+	UDID  string
+	Token string
+	Mode  string // "gateway" or "" (normal)
+}
+
+// WriteMetadataFrame writes a metadata frame to w.
+// Format: [StreamType:0x10][field_count:varint] then for each field: [key_len:varint][key][val_len:varint][val]
+func WriteMetadataFrame(w io.Writer, meta MetadataFrame) error {
+	bp := streamHeaderPool.Get().(*[]byte)
+	buf := (*bp)[:0]
+	buf = append(buf, StreamTypeMeta)
+
+	fields := [][2]string{
+		{"udid", meta.UDID},
+		{"token", meta.Token},
+	}
+	if meta.Mode != "" {
+		fields = append(fields, [2]string{"mode", meta.Mode})
+	}
+
+	buf = AppendVarint(buf, uint64(len(fields)))
+	for _, f := range fields {
+		buf = AppendVarint(buf, uint64(len(f[0])))
+		buf = append(buf, f[0]...)
+		buf = AppendVarint(buf, uint64(len(f[1])))
+		buf = append(buf, f[1]...)
+	}
+
+	_, err := w.Write(buf)
+	*bp = buf
+	streamHeaderPool.Put(bp)
+	return err
+}
+
+// ReadMetadataFrame reads a metadata frame from r.
+// The StreamType byte (0x10) must have already been consumed by the caller.
+func ReadMetadataFrame(r interface {
+	io.Reader
+	io.ByteReader
+}) (MetadataFrame, error) {
+	fieldCount, _, err := ReadVarint(r)
+	if err != nil {
+		return MetadataFrame{}, fmt.Errorf("wire: read metadata field count: %w", err)
+	}
+	if fieldCount > 16 {
+		return MetadataFrame{}, fmt.Errorf("wire: metadata field count %d exceeds max 16", fieldCount)
+	}
+
+	var meta MetadataFrame
+	for i := uint64(0); i < fieldCount; i++ {
+		keyLen, _, err := ReadVarint(r)
+		if err != nil {
+			return MetadataFrame{}, fmt.Errorf("wire: read metadata key length: %w", err)
+		}
+		if keyLen > 256 {
+			return MetadataFrame{}, fmt.Errorf("wire: metadata key length %d exceeds max", keyLen)
+		}
+		keyBuf := make([]byte, keyLen)
+		if _, err := io.ReadFull(r, keyBuf); err != nil {
+			return MetadataFrame{}, fmt.Errorf("wire: read metadata key: %w", err)
+		}
+
+		valLen, _, err := ReadVarint(r)
+		if err != nil {
+			return MetadataFrame{}, fmt.Errorf("wire: read metadata value length: %w", err)
+		}
+		if valLen > 4096 {
+			return MetadataFrame{}, fmt.Errorf("wire: metadata value length %d exceeds max", valLen)
+		}
+		valBuf := make([]byte, valLen)
+		if _, err := io.ReadFull(r, valBuf); err != nil {
+			return MetadataFrame{}, fmt.Errorf("wire: read metadata value: %w", err)
+		}
+
+		switch string(keyBuf) {
+		case "udid":
+			meta.UDID = string(valBuf)
+		case "token":
+			meta.Token = string(valBuf)
+		case "mode":
+			meta.Mode = string(valBuf)
+		}
+	}
+	return meta, nil
+}

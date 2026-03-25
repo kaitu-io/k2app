@@ -642,4 +642,3 @@ func TestIntegration_URLToClient(t *testing.T) {
 	// Here we verify the creation pipeline works
 	_ = tm
 }
-

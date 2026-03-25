@@ -606,6 +606,17 @@ func (s *TCPWSServer) handleStream(stream *smux.Stream) {
 	}
 
 	switch streamType {
+	case StreamTypeMeta:
+		// TCP-WS auth happens at HTTP level (/k2v5/auth with X-K2-Mode header).
+		// Metadata stream on TCP-WS is accepted for protocol symmetry but not validated here.
+		meta, err := ReadMetadataFrame(br)
+		if err != nil {
+			stream.Close()
+			return
+		}
+		slog.Info("TCPWSServer: metadata stream", "udid", meta.UDID, "mode", meta.Mode)
+		WriteStreamResponse(stream, nil) // OK
+		stream.Close()
 	case StreamTypeTCP:
 		sc := &smuxStreamConn{Stream: stream, br: br}
 		s.sendTCP(tcpAcceptResult{conn: sc, addr: addr})

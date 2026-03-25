@@ -19,21 +19,21 @@ func TestEnsureAuth_GeneratesNew(t *testing.T) {
 
 	// UDID should be 8 hex chars
 	if len(auth.UDID) != 8 {
-		t.Errorf("UDID length = %d, want 8", len(auth.UDID))
+		t.Errorf("User length = %d, want 8", len(auth.UDID))
 	}
 	for _, c := range auth.UDID {
 		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
-			t.Errorf("UDID contains non-hex char %q", string(c))
+			t.Errorf("User contains non-hex char %q", string(c))
 		}
 	}
 
 	// Token should be 32 hex chars
 	if len(auth.Token) != 32 {
-		t.Errorf("Token length = %d, want 32", len(auth.Token))
+		t.Errorf("Pass length = %d, want 32", len(auth.Token))
 	}
 	for _, c := range auth.Token {
 		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
-			t.Errorf("Token contains non-hex char %q", string(c))
+			t.Errorf("Pass contains non-hex char %q", string(c))
 		}
 	}
 
@@ -47,10 +47,10 @@ func TestEnsureAuth_GeneratesNew(t *testing.T) {
 		t.Fatalf("auth file invalid JSON: %v", err)
 	}
 	if loaded.UDID != auth.UDID {
-		t.Errorf("file UDID = %q, want %q", loaded.UDID, auth.UDID)
+		t.Errorf("file User = %q, want %q", loaded.UDID, auth.UDID)
 	}
 	if loaded.Token != auth.Token {
-		t.Errorf("file Token = %q, want %q", loaded.Token, auth.Token)
+		t.Errorf("file Pass = %q, want %q", loaded.Token, auth.Token)
 	}
 }
 

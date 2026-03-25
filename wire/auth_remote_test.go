@@ -24,7 +24,8 @@ func TestNewRemoteValidator_Success(t *testing.T) {
 	defer srv.Close()
 
 	v := NewRemoteValidator(srv.URL)
-	if !v("tok1", "dev1") {
+	// v(jwt, udid, mode) — jwt=token, udid=device
+	if !v("tok1", "dev1", "") {
 		t.Error("valid credentials should pass")
 	}
 }
@@ -36,7 +37,7 @@ func TestNewRemoteValidator_Rejected(t *testing.T) {
 	defer srv.Close()
 
 	v := NewRemoteValidator(srv.URL)
-	if v("bad", "dev1") {
+	if v("bad", "dev1", "") {
 		t.Error("rejected credentials should fail")
 	}
 }
@@ -48,14 +49,14 @@ func TestNewRemoteValidator_Expired(t *testing.T) {
 	defer srv.Close()
 
 	v := NewRemoteValidator(srv.URL)
-	if v("tok1", "dev1") {
+	if v("dev1", "tok1", "") {
 		t.Error("expired membership should fail")
 	}
 }
 
 func TestNewRemoteValidator_Unreachable(t *testing.T) {
 	v := NewRemoteValidator("http://127.0.0.1:1")
-	if v("tok1", "dev1") {
+	if v("dev1", "tok1", "") {
 		t.Error("unreachable server should fail")
 	}
 }
@@ -67,7 +68,7 @@ func TestNewRemoteValidator_Timeout(t *testing.T) {
 	defer srv.Close()
 
 	v := NewRemoteValidator(srv.URL)
-	if v("tok1", "dev1") {
+	if v("dev1", "tok1", "") {
 		t.Error("timeout should fail")
 	}
 }
