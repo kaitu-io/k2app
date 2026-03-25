@@ -14,6 +14,7 @@ type ErrorCode int
 
 const (
 	ErrorNone               ErrorCode = 0   // 成功
+	ErrorPendingApproval    ErrorCode = 202 // 已提交审批，等待确认
 	ErrorInvalidOperation   ErrorCode = 400 // 无效操作
 	ErrorNotLogin           ErrorCode = 401 // 未登录
 	ErrorPaymentRequired    ErrorCode = 402 // 要求支付
@@ -129,6 +130,18 @@ func List[T any](c *gin.Context, items []T, pagination *Pagination) {
 // ListWithData is an alias for List, kept for backward compatibility of existing callers.
 func ListWithData[T any](c *gin.Context, items []T, pagination *Pagination) {
 	List(c, items, pagination)
+}
+
+// PendingApproval 返回 code=202 表示操作已提交审批，等待确认
+func PendingApproval(c *gin.Context, approvalID uint64) {
+	log.Debugf(c, "request to %s submitted for approval: id=%d", c.Request.URL.Path, approvalID)
+	c.JSON(http.StatusOK, Response[ApprovalSubmitResponse]{
+		Code: ErrorPendingApproval,
+		Data: &ApprovalSubmitResponse{
+			ApprovalID: approvalID,
+			Status:     "pending_approval",
+		},
+	})
 }
 
 func Error(c *gin.Context, code ErrorCode, message string) {

@@ -67,15 +67,18 @@ func api_admin_issue_license_keys(c *gin.Context) {
 		CampaignID uint64 `json:"campaignId"`
 	}{CampaignID: id}
 	summary := fmt.Sprintf("为活动「%s」发放 License Key", campaign.Name)
-	approvalID, err := SubmitApproval(c, "campaign_issue_keys", params, summary)
+	approvalID, executed, err := SubmitApproval(c, "campaign_issue_keys", params, summary)
 	if err != nil {
 		log.Errorf(c, "failed to submit approval for issue keys campaign %d: %v", id, err)
 		Error(c, ErrorSystemError, "failed to submit approval")
 		return
 	}
 
-	log.Infof(c, "issue keys for campaign %d submitted for approval: %d", id, approvalID)
-	Success(c, &ApprovalSubmitResponse{ApprovalID: approvalID, Status: "pending_approval"})
+	if !executed {
+		PendingApproval(c, approvalID)
+		return
+	}
+	SuccessEmpty(c)
 }
 
 // ===================== 优惠活动管理 =====================
@@ -206,15 +209,18 @@ func api_admin_create_campaign(c *gin.Context) {
 
 	// 提交审批
 	summary := fmt.Sprintf("创建优惠活动「%s」，代码 %s", req.Name, req.Code)
-	approvalID, err := SubmitApproval(c, "campaign_create", req, summary)
+	approvalID, executed, err := SubmitApproval(c, "campaign_create", req, summary)
 	if err != nil {
 		log.Errorf(c, "failed to submit approval for campaign create: %v", err)
 		Error(c, ErrorSystemError, "failed to submit approval")
 		return
 	}
 
-	log.Infof(c, "campaign create submitted for approval: %d", approvalID)
-	Success(c, &ApprovalSubmitResponse{ApprovalID: approvalID, Status: "pending_approval"})
+	if !executed {
+		PendingApproval(c, approvalID)
+		return
+	}
+	SuccessEmpty(c)
 }
 
 // api_admin_update_campaign 处理更新优惠活动的请求（管理员）
@@ -284,15 +290,18 @@ func api_admin_update_campaign(c *gin.Context) {
 		Request:    req,
 	}
 	summary := fmt.Sprintf("修改优惠活动「%s」(ID:%d)", req.Name, id)
-	approvalID, err := SubmitApproval(c, "campaign_update", params, summary)
+	approvalID, executed, err := SubmitApproval(c, "campaign_update", params, summary)
 	if err != nil {
 		log.Errorf(c, "failed to submit approval for campaign update: %v", err)
 		Error(c, ErrorSystemError, "failed to submit approval")
 		return
 	}
 
-	log.Infof(c, "campaign update submitted for approval: %d", approvalID)
-	Success(c, &ApprovalSubmitResponse{ApprovalID: approvalID, Status: "pending_approval"})
+	if !executed {
+		PendingApproval(c, approvalID)
+		return
+	}
+	SuccessEmpty(c)
 }
 
 // api_admin_delete_campaign 处理删除优惠活动的请求（管理员）
@@ -322,15 +331,18 @@ func api_admin_delete_campaign(c *gin.Context) {
 		CampaignID uint64 `json:"campaignId"`
 	}{CampaignID: id}
 	summary := fmt.Sprintf("删除优惠活动「%s」(ID:%d)", campaign.Name, id)
-	approvalID, err := SubmitApproval(c, "campaign_delete", params, summary)
+	approvalID, executed, err := SubmitApproval(c, "campaign_delete", params, summary)
 	if err != nil {
 		log.Errorf(c, "failed to submit approval for campaign delete: %v", err)
 		Error(c, ErrorSystemError, "failed to submit approval")
 		return
 	}
 
-	log.Infof(c, "campaign delete submitted for approval: %d", approvalID)
-	Success(c, &ApprovalSubmitResponse{ApprovalID: approvalID, Status: "pending_approval"})
+	if !executed {
+		PendingApproval(c, approvalID)
+		return
+	}
+	SuccessEmpty(c)
 }
 
 // api_admin_get_campaign_stats 获取优惠活动统计数据（管理员）

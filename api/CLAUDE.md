@@ -74,16 +74,20 @@ Error(c, ErrorCode, "message")       // Error (HTTP 200, error in code field)
 
 | Code | Constant | Meaning |
 |------|----------|---------|
-| 401 | `ErrorUnauthorized` | Invalid/expired token |
+| 400 | `ErrorInvalidOperation` | Invalid operation |
+| 401 | `ErrorNotLogin` | Not logged in / expired token |
 | 402 | `ErrorPaymentRequired` | Membership expired |
 | 403 | `ErrorForbidden` | Insufficient permissions |
+| 404 | `ErrorNotFound` | Resource not found |
 | 405 | `ErrorNotSupported` | Not supported |
 | 406 | `ErrorUpgradeRequired` | Client upgrade required |
 | 409 | `ErrorConflict` | Resource conflict |
-| 422 | `ErrorInvalidParams` | Bad request payload |
+| 422 | `ErrorInvalidArgument` | Bad request payload |
 | 425 | `ErrorTooEarly` | Too early (rate limit) |
-| 500 | `ErrorInternal` | System exception |
+| 429 | `ErrorTooManyRequests` | Rate limited |
+| 500 | `ErrorSystemError` | System exception |
 | 503 | `ErrorServiceUnavailable` | Service unavailable |
+| 400001–400011 | `ErrorInvalidCampaignCode`…`ErrorLicenseKeyAlreadyRedeemed` | Business-specific codes |
 
 > **Constitution**: Every error code added to `response.go` MUST be mirrored in `webapp/src/utils/errorCode.ts`. See `webapp/CLAUDE.md` "API Error Code Constitution" for the full checklist.
 
@@ -163,6 +167,16 @@ Unified `Provider` interface for cloud VPS management:
 | `worker_integration.go` | `InitWorker()` — registers all handlers + cron schedules |
 
 Asynqmon UI available at `/app/asynqmon` (admin auth required).
+
+## Approval Workflow (Maker-Checker)
+
+Critical admin operations (EDM, campaigns, plans, withdrawals, hard delete) require dual approval via `SubmitApproval()`. Superadmin (`is_admin`) bypasses approval and executes synchronously. Non-superadmin creates a pending record requiring another admin's approval.
+
+- **Core files**: `logic_approval.go` (service), `logic_approval_callbacks.go` (10 callbacks), `api_admin_approval.go` (handlers)
+- **Pattern**: Handler validates → `SubmitApproval(c, action, params, summary)` → returns `(approvalID, status, error)` where status is `"executed"` (superadmin) or `"pending_approval"` (needs approval)
+- **Callback registry**: `RegisterApprovalCallback(action, cb)` in `InitWorker()`. Each callback re-validates preconditions before executing.
+- **Concurrency**: Atomic `UPDATE WHERE status='pending'` + `RowsAffected` check prevents double-approve
+- **Notifications**: Slack DM via `qtoolkit/slack.SendDM(email, message)` — best-effort, never blocks main flow
 
 ## Local Development
 

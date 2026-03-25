@@ -143,7 +143,7 @@ func api_admin_approve_withdraw(c *gin.Context) {
 		summary = fmt.Sprintf("审批提现 #%d (拒绝)", withdrawID)
 	}
 
-	approvalID, err := SubmitApproval(c, "withdraw_approve", withdrawApproveApprovalParams{
+	approvalID, executed, err := SubmitApproval(c, "withdraw_approve", withdrawApproveApprovalParams{
 		WithdrawID:  withdrawID,
 		Action:      req.Action,
 		Remark:      req.Remark,
@@ -155,10 +155,11 @@ func api_admin_approve_withdraw(c *gin.Context) {
 		return
 	}
 
-	Success(c, &ApprovalSubmitResponse{
-		ApprovalID: approvalID,
-		Status:     "pending_approval",
-	})
+	if !executed {
+		PendingApproval(c, approvalID)
+		return
+	}
+	SuccessEmpty(c)
 }
 
 // AdminWithdrawCompleteRequest 完成提现请求参数
@@ -193,7 +194,7 @@ func api_admin_complete_withdraw(c *gin.Context) {
 		return
 	}
 
-	approvalID, err := SubmitApproval(c, "withdraw_complete", withdrawCompleteApprovalParams{
+	approvalID, executed, err := SubmitApproval(c, "withdraw_complete", withdrawCompleteApprovalParams{
 		WithdrawID:  withdrawID,
 		TxHash:      req.TxHash,
 		Remark:      req.Remark,
@@ -205,10 +206,11 @@ func api_admin_complete_withdraw(c *gin.Context) {
 		return
 	}
 
-	Success(c, &ApprovalSubmitResponse{
-		ApprovalID: approvalID,
-		Status:     "pending_approval",
-	})
+	if !executed {
+		PendingApproval(c, approvalID)
+		return
+	}
+	SuccessEmpty(c)
 }
 
 // ==================== 分销商等级管理 ====================

@@ -114,7 +114,7 @@ func api_admin_update_plan(c *gin.Context) {
 	}
 	log.Debugf(c, "update request for plan %s with data: %+v", planID, req)
 
-	approvalID, err := SubmitApproval(c, "plan_update", planUpdateApprovalParams{
+	approvalID, executed, err := SubmitApproval(c, "plan_update", planUpdateApprovalParams{
 		PlanID:  planID,
 		Request: req,
 	}, fmt.Sprintf("修改套餐 (ID:%s)", planID))
@@ -124,10 +124,11 @@ func api_admin_update_plan(c *gin.Context) {
 		return
 	}
 
-	Success(c, &ApprovalSubmitResponse{
-		ApprovalID: approvalID,
-		Status:     "pending_approval",
-	})
+	if !executed {
+		PendingApproval(c, approvalID)
+		return
+	}
+	SuccessEmpty(c)
 }
 
 func api_admin_delete_plan(c *gin.Context) {
@@ -138,7 +139,7 @@ func api_admin_delete_plan(c *gin.Context) {
 	}
 	log.Infof(c, "admin request to delete plan %s", planID)
 
-	approvalID, err := SubmitApproval(c, "plan_delete", struct {
+	approvalID, executed, err := SubmitApproval(c, "plan_delete", struct {
 		PlanID string `json:"planId"`
 	}{PlanID: planID}, fmt.Sprintf("删除套餐 (ID:%s)", planID))
 	if err != nil {
@@ -147,10 +148,11 @@ func api_admin_delete_plan(c *gin.Context) {
 		return
 	}
 
-	Success(c, &ApprovalSubmitResponse{
-		ApprovalID: approvalID,
-		Status:     "pending_approval",
-	})
+	if !executed {
+		PendingApproval(c, approvalID)
+		return
+	}
+	SuccessEmpty(c)
 }
 
 func api_admin_restore_plan(c *gin.Context) {

@@ -383,6 +383,7 @@ export interface SendCodeResponse {
 // Error code constants matching server/center/response.go
 export const ErrorCode = {
   None: 0,                    // Success
+  PendingApproval: 202,       // Submitted for approval, awaiting confirmation
   InvalidOperation: 400,      // Invalid operation
   NotLogin: 401,              // Not logged in
   PaymentRequired: 402,       // Payment required
@@ -428,6 +429,10 @@ export class ApiError extends Error {
 
   isNotFound(): boolean {
     return this.code === ErrorCode.NotFound;
+  }
+
+  isPendingApproval(): boolean {
+    return this.code === ErrorCode.PendingApproval;
   }
 }
 
@@ -1021,14 +1026,9 @@ export interface ApprovalSubmitResponse {
   status: string;
 }
 
-/** Type guard: returns true if the API response is a pending approval */
-export function isPendingApproval(result: unknown): result is ApprovalSubmitResponse {
-  return (
-    typeof result === "object" &&
-    result !== null &&
-    "approvalId" in result &&
-    typeof (result as ApprovalSubmitResponse).approvalId === "number"
-  );
+/** Check if a caught error is a pending approval (code 202). Toast already shown globally. */
+export function isPendingApproval(error: unknown): boolean {
+  return error instanceof ApiError && error.isPendingApproval();
 }
 
 // Flag to prevent multiple concurrent auth redirects
@@ -1161,6 +1161,12 @@ export const api = {
       }
 
       if (data.code !== 0) {
+          // Handle 202 - pending approval: show global toast, throw non-error
+          if (data.code === ErrorCode.PendingApproval) {
+              toast.info("已提交审批，等待其他管理员确认");
+              throw new ApiError(ErrorCode.PendingApproval, "pending approval");
+          }
+
           const errorMessage = data.message || "请求失败";
 
           // Handle 401 - session expired or invalid

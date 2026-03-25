@@ -88,19 +88,29 @@ type ApprovalSubmitResponse struct {
 // ===================== Submit =====================
 
 // SubmitApproval 提交审批请求
-func SubmitApproval(c *gin.Context, action string, params any, summary string) (uint64, error) {
-	if _, ok := getApprovalCallback(action); !ok {
-		return 0, fmt.Errorf("approval callback not registered for action: %s", action)
+// 返回 (approvalID, executed, error)：
+//   - is_admin 超管：同步执行 callback，executed=true
+//   - 非超管：创建 pending 记录，executed=false
+//
+// Handler 用法：
+//
+//	approvalID, executed, err := SubmitApproval(c, action, params, summary)
+//	if !executed { PendingApproval(c, approvalID); return }
+//	Success(c, data) // 超管直通成功
+func SubmitApproval(c *gin.Context, action string, params any, summary string) (uint64, bool, error) {
+	cb, ok := getApprovalCallback(action)
+	if !ok {
+		return 0, false, fmt.Errorf("approval callback not registered for action: %s", action)
 	}
 
 	actor := ReqUser(c)
 	if actor == nil {
-		return 0, fmt.Errorf("no authenticated user")
+		return 0, false, fmt.Errorf("no authenticated user")
 	}
 
 	paramsJSON, err := json.Marshal(params)
 	if err != nil {
-		return 0, fmt.Errorf("marshal params: %w", err)
+		return 0, false, fmt.Errorf("marshal params: %w", err)
 	}
 
 	// 用邮箱作为显示名（fallback UUID）
@@ -109,6 +119,43 @@ func SubmitApproval(c *gin.Context, action string, params any, summary string) (
 		requestorName = email
 	}
 
+	isSuperAdmin := actor.IsAdmin != nil && *actor.IsAdmin
+
+	// 超管直通：同步执行，不走异步审批
+	if isSuperAdmin {
+		now := time.Now()
+		approval := AdminApproval{
+			RequestorID:   actor.ID,
+			RequestorUUID: actor.UUID,
+			RequestorName: requestorName,
+			Action:        action,
+			Params:        string(paramsJSON),
+			Summary:       summary,
+			Status:        "executed",
+			ApproverID:    &actor.ID,
+			ApproverUUID:  &actor.UUID,
+			ApproverName:  &requestorName,
+			ApprovedAt:    &now,
+			ExecutedAt:    &now,
+		}
+
+		if err := db.Get().Create(&approval).Error; err != nil {
+			return 0, false, fmt.Errorf("create approval: %w", err)
+		}
+
+		// 同步执行 callback
+		if err := cb(c.Request.Context(), json.RawMessage(paramsJSON)); err != nil {
+			execErr := err.Error()
+			db.Get().Model(&approval).Updates(map[string]any{"status": "failed", "exec_error": execErr})
+			return 0, false, fmt.Errorf("execute action: %w", err)
+		}
+
+		log.Infof(c, "approval auto-executed by superadmin: id=%d action=%s by=%s", approval.ID, action, actor.UUID)
+		WriteAuditLogFromApproval(c.Request.Context(), &approval)
+		return approval.ID, true, nil
+	}
+
+	// 非超管：创建 pending 记录，走异步审批
 	approval := AdminApproval{
 		RequestorID:   actor.ID,
 		RequestorUUID: actor.UUID,
@@ -120,14 +167,14 @@ func SubmitApproval(c *gin.Context, action string, params any, summary string) (
 	}
 
 	if err := db.Get().Create(&approval).Error; err != nil {
-		return 0, fmt.Errorf("create approval: %w", err)
+		return 0, false, fmt.Errorf("create approval: %w", err)
 	}
 
 	log.Infof(c, "approval submitted: id=%d action=%s by=%s", approval.ID, action, actor.UUID)
 
 	go NotifyApprovalSubmitted(context.Background(), &approval)
 
-	return approval.ID, nil
+	return approval.ID, false, nil
 }
 
 // ===================== Approve =====================

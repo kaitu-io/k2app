@@ -88,7 +88,7 @@ webapp/              React + MUI frontend (see webapp/CLAUDE.md)
   src/i18n/          Localization (7 locales, 15+ namespaces)
 web/                 Next.js website + admin dashboard (see web/CLAUDE.md)
   src/app/[locale]/  Public pages (install, purchase, account, wallet, releases)
-  src/app/(manager)/ Admin dashboard (users, orders, nodes, tunnels, EDM, cloud)
+  src/app/(manager)/ Admin dashboard (users, orders, nodes, tunnels, EDM, cloud, approvals, license-keys, tickets, usages)
 api/                 Center API service — Go + Gin + GORM (see api/CLAUDE.md)
   cloudprovider/     Multi-cloud VPS management (AWS, Aliyun, Tencent, Bandwagon)
   cmd/               CLI entry point (start, stop, migrate, health-check)
@@ -107,8 +107,7 @@ docker/scripts/      Node ops scripts (provision-node.sh, enable-ipv6.sh, etc.)
 .claude/skills/      Skill files for Claude Code (kaitu-node-ops.md — node ops safety guardrails)
 .github/workflows/   CI (push/PR) + Release Desktop (v* tags) + Release OpenWrt
 Makefile             Build orchestration — version from package.json, k2 from submodule
-docs/plans/          Architecture design docs
-  2026-03-05-k2-router-platform-design.md  Router platform: rule engine, k2subs, DNS, build trim
+docs/plans/          Architecture design docs (43+ files, use `ls` to browse)
 ```
 
 ## Key Conventions
@@ -121,7 +120,7 @@ docs/plans/          Architecture design docs
 - **k2 submodule**: Read-only. Built with `-tags nowebapp` (headless mode). Binary output to `desktop/src-tauri/binaries/`.
 - **i18n**: zh-CN primary, en-US secondary, plus ja, zh-TW, zh-HK, en-AU, en-GB. 15+ namespaces. New text goes to zh-CN first.
 - **MUI dark theme**: Material-UI 5 with custom theme tokens. No light mode.
-- **Webapp subagent tasks**: Always invoke `/word9f-frontend` for frontend decisions.
+- **Webapp subagent tasks**: Use frontend-specialized agents for webapp UI decisions.
 - **Go→JS JSON key convention**: Go `json.Marshal` outputs snake_case. JS/TS expects camelCase. Native bridge layers (K2Plugin.swift/kt) must remap at boundary.
 - **Bridge transformStatus() mandatory**: Every bridge (`tauri-k2.ts`, `capacitor-k2.ts`) must implement `transformStatus()`. No pass-through of raw backend state. Daemon outputs `"stopped"` but webapp expects `"disconnected"`. Bridge synthesizes `state='error'` from `disconnected + lastError`; VPN machine then routes to `idle`/`reconnecting` based on `isRetrying`.
 - **VPN state machine**: `vpn-machine.store.ts` defines 6 explicit states (`idle`, `connecting`, `connected`, `reconnecting`, `disconnecting`, `serviceDown`) with a transition table. All state changes go through `dispatch(event, payload)`. Error is NOT a state — it's a field overlay (`error: ControlError | null`) on `idle` (terminal) or `reconnecting` (retrying). `BACKEND_ERROR` routes to `idle` or `reconnecting` based on `isRetrying` payload. `serviceDown` is an explicit state with immediate recovery via `SERVICE_REACHABLE`.
@@ -192,62 +191,6 @@ mcp/CLAUDE.md                       Go MCP server: tools, auth flow, Center/daem
 k2/CLAUDE.md                        Go core architecture, wire protocol, daemon API
 ```
 
-### k2 Submodule Docs (read-only, has its own word9f ecosystem)
+### k2 Submodule Docs (read-only)
 
-```
-k2/docs/features/                   Tunnel-level feature specs (8 features)
-  cloud-webapp/                     Cloud API integration spec
-  mobile-sdk/                       gomobile SDK spec
-  private-ip-guard/                 Private IP protection spec
-  zero-config-stealth/              Zero-config stealth spec
-  logging-and-tun-defaults/         Logging + TUN defaults spec
-k2/docs/knowledge/                  Go core patterns (5 files)
-  architecture-decisions.md         L4 proxy, wire interfaces, provider callbacks
-  bugfix-patterns.md                base64, transport, certs, DNS
-  framework-gotchas.md              sing-tun, smux, QUIC, gomobile
-  testing-strategies.md             Mocking, E2E, platform tags
-  task-splitting.md                 Foundation-first, parallel independence
-k2/docs/contracts/                  API contracts
-  webapp-daemon-api.md              Daemon HTTP API (POST /api/core actions, CORS, states)
-k2/docs/todos/                      k2 backlog (p0/p1/p2 priority)
-```
-
-### Design Plans
-
-```
-docs/plans/
-  2026-03-04-budget-score.md              Budget score feature
-  2026-03-04-invite-page-redesign.md      Invite page redesign
-  2026-03-04-onboarding-guide-design.md   Onboarding guide
-  2026-03-05-k2-router-platform-design.md Router platform: rule engine, k2subs, DNS, build trim
-  2026-03-05-self-hosted-design.md        Self-hosted tunnel support
-  2026-03-06-usage-analytics-design.md    Usage analytics design
-  2026-03-06-usage-analytics-impl.md      Usage analytics implementation plan
-  2026-03-06-webapp-architecture-refactor.md  VPN state machine + connection store refactoring
-  2026-03-07-macos-layered-testing-design.md  macOS layered testing
-  2026-03-07-windows-quality-assurance-design.md  Windows QA design
-  2026-03-07-windows-quality-assurance-impl.md    Windows QA implementation
-  2026-03-08-mobile-logging-design.md     Mobile three-layer logging
-  2026-03-09-viewport-scaling-fix.md      Viewport CSS zoom fix
-  2026-03-11-windows-build-on-macos.md    Windows cross-build from macOS (cargo-xwin + osslsigncode)
-  2026-03-12-ios-app-store-submission.md  iOS App Store submission
-  2026-03-13-android-adb-install-helper.md  Android ADB install helper
-  2026-03-13-android-adb-verification.md  Android ADB verification
-  2026-03-13-beta-channel-subscription.md Beta channel subscription
-  2026-03-13-beta-channel-subscription-impl.md  Beta channel subscription implementation
-  2026-03-13-desktop-artifact-naming.md   Desktop artifact naming convention
-  2026-03-13-diag-logging-system.md       Diagnostic logging system
-  2026-03-13-onboarding-guide-mui-rewrite.md  Onboarding guide MUI rewrite
-  2026-03-13-onboarding-guide-overhaul.md Onboarding guide overhaul
-  2026-03-14-wire-probe-handshake-only.md Wire probe handshake-only
-  2026-03-15-log-infrastructure-unification.md  Log infrastructure unification
-  2026-03-17-daemon-hang-dns-recovery.md  Daemon hang DNS recovery
-  2026-03-17-mobile-publish-pipeline-fix.md  Mobile publish pipeline fix
-  2026-03-17-netcoordinator-dns-recovery.md  netCoordinator DNS recovery
-  2026-03-17-quic-destroy-deadlock-fix.md QUIC destroy deadlock fix
-  2026-03-17-webapp-ota-min-native.md     Webapp OTA minimum native version
-  2026-03-18-appext-netevent-gomobile-fix.md  appext NetEvent gomobile fix
-  2026-03-18-ios-ne-memory-diagnostics.md iOS NE memory diagnostics
-  2026-03-18-linux-tgz-updater.md         Linux tgz updater design
-  2026-03-18-linux-tgz-updater-impl.md    Linux tgz updater implementation
-```
+See `k2/CLAUDE.md` for architecture, `k2/docs/` for feature specs, knowledge base, API contracts, and backlog.

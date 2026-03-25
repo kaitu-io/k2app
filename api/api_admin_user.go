@@ -766,17 +766,18 @@ func api_admin_hard_delete_users(c *gin.Context) {
 		log.Warnf(c, "部分用户不存在: 请求 %d 个，找到 %d 个", len(req.UserUUIDs), len(users))
 	}
 
-	approvalID, err := SubmitApproval(c, "user_hard_delete", req, fmt.Sprintf("硬删除 %d 个用户", len(users)))
+	approvalID, executed, err := SubmitApproval(c, "user_hard_delete", req, fmt.Sprintf("硬删除 %d 个用户", len(users)))
 	if err != nil {
 		log.Errorf(c, "提交硬删除用户审批失败: %v", err)
 		Error(c, ErrorSystemError, "submit approval failed")
 		return
 	}
 
-	Success(c, &ApprovalSubmitResponse{
-		ApprovalID: approvalID,
-		Status:     "pending_approval",
-	})
+	if !executed {
+		PendingApproval(c, approvalID)
+		return
+	}
+	SuccessEmpty(c)
 }
 
 // reqAdminSetUserRoles PUT /app/users/:uuid/roles 请求体

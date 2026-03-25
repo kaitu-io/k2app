@@ -313,16 +313,18 @@ func api_admin_create_edm_task(c *gin.Context) {
 
 	// 提交审批
 	summary := fmt.Sprintf("发送模板「%s」(ID:%d)", template.Subject, template.ID)
-	approvalID, err := SubmitApproval(c, "edm_create_task", &req, summary)
+	approvalID, executed, err := SubmitApproval(c, "edm_create_task", &req, summary)
 	if err != nil {
 		log.Errorf(c, "failed to submit approval: %v", err)
 		Error(c, ErrorSystemError, "failed to submit approval")
 		return
 	}
 
-	log.Infof(c, "EDM task submitted for approval: approvalId=%d", approvalID)
-	resp := &ApprovalSubmitResponse{ApprovalID: approvalID, Status: "pending_approval"}
-	Success(c, resp)
+	if !executed {
+		PendingApproval(c, approvalID)
+		return
+	}
+	SuccessEmpty(c)
 }
 
 // api_admin_preview_edm_targets 预览EDM目标用户

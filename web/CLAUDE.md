@@ -47,12 +47,15 @@ web/
 │   │   │       ├── nodes/     # Node matrix, SSH terminal, batch ops
 │   │   │       ├── tunnels/   # Tunnel management
 │   │   │       ├── cloud/     # Cloud instance management
+│   │   │       ├── approvals/  # Approval management (maker-checker)
 │   │   │       ├── campaigns/ # Campaign management
 │   │   │       ├── edm/       # Email marketing (templates + tasks + logs)
+│   │   │       ├── license-keys/ # License key management
 │   │   │       ├── retailers/ # Retailer CRM (notes, todos, levels)
+│   │   │       ├── tickets/   # Support ticket management
+│   │   │       ├── usages/    # Usage statistics
 │   │   │       ├── withdraws/ # Withdraw approval
 │   │   │       ├── plans/     # Subscription plan config
-│   │   │       ├── tasks/     # Batch task management
 │   │   │       └── asynqmon/  # Asynq queue monitor (iframe)
 │   ├── components/
 │   │   ├── ui/                # shadcn/ui primitives (button, dialog, table, etc.)
