@@ -62,6 +62,52 @@ jobs:
 
           echo "All versions consistent: $PKG_VERSION"
 
+  # --- Platform-dependent tests (Linux — Rust storage crypto platform gate) ---
+  test-linux-rust:
+    runs-on: ubuntu-latest
+    env:
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+
+      - name: Install Node dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Create sidecar placeholder
+        run: |
+          TRIPLE=$(rustc -vV | grep host | cut -d' ' -f2)
+          mkdir -p desktop/src-tauri/binaries
+          touch "desktop/src-tauri/binaries/k2-${TRIPLE}"
+
+      - name: Install webkit2gtk build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Cargo test (Tauri — Linux platform gate)
+        run: cargo test
+        working-directory: desktop/src-tauri
+
   # --- Platform-dependent tests (macOS) ---
   test-macos:
     runs-on: macos-latest

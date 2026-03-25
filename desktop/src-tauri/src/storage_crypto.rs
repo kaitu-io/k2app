@@ -209,4 +209,57 @@ mod tests {
         let encrypted = encrypt_value_with_nonce(plaintext, &key, &nonce);
         println!("[test_vector] ENC1 output = {}", encrypted);
     }
+
+    // -----------------------------------------------------------------------
+    // Platform hardware ID gate tests — each platform MUST return a valid,
+    // non-fallback hardware ID. CI runs cargo test on macOS, Windows, Linux.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn test_platform_hardware_id_macos() {
+        let id = platform_hardware_id();
+        assert!(!id.is_empty(), "macOS kern.uuid must not be empty");
+        // kern.uuid is a standard UUID format: 8-4-4-4-12 hex
+        assert_eq!(id.len(), 36, "macOS kern.uuid must be 36 chars (UUID format), got: {}", id);
+        assert_eq!(id.chars().filter(|c| *c == '-').count(), 4,
+            "macOS kern.uuid must have 4 dashes (UUID format), got: {}", id);
+        println!("[platform_gate] macOS kern.uuid = {}", id);
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn test_platform_hardware_id_windows() {
+        let id = platform_hardware_id();
+        assert!(!id.is_empty(), "Windows SMBIOS UUID must not be empty");
+        assert_ne!(id, "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF",
+            "Windows SMBIOS UUID must not be the all-F sentinel");
+        // SMBIOS UUID is also standard UUID format
+        assert_eq!(id.len(), 36, "Windows SMBIOS UUID must be 36 chars (UUID format), got: {}", id);
+        println!("[platform_gate] Windows SMBIOS UUID = {}", id);
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_platform_hardware_id_linux() {
+        let id = platform_hardware_id();
+        assert!(!id.is_empty(), "Linux machine-id must not be empty");
+        // /etc/machine-id is a 32-char hex string
+        assert_eq!(id.len(), 32, "Linux machine-id must be 32 hex chars, got len={}: {}", id.len(), id);
+        assert!(id.chars().all(|c| c.is_ascii_hexdigit()),
+            "Linux machine-id must be hex only, got: {}", id);
+        println!("[platform_gate] Linux machine-id = {}", id);
+    }
+
+    #[test]
+    fn test_hardware_id_does_not_use_fallback() {
+        // On all CI platforms, platform_hardware_id() should succeed.
+        // If this test fails, it means the platform path returned empty
+        // and we'd fall through to hostname fallback — that's a CI gate failure.
+        let platform_id = platform_hardware_id();
+        assert!(!platform_id.is_empty(),
+            "platform_hardware_id() returned empty on this OS — \
+             encryption key would use hostname fallback, which is less stable. \
+             Ensure the platform hardware ID command works in CI.");
+    }
 }
