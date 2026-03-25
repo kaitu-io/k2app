@@ -1,7 +1,7 @@
 // Auto-generated namespace index
 // DO NOT EDIT - run 'node scripts/i18n/split-namespaces.js web' to regenerate
 
-export const namespaces = ["common","nav","hero","auth","discovery","purchase","wallet","campaigns","admin","invite","install","theme","changelog","releases","k2","guide-parents","errors","licenseKeys"] as const;
+export const namespaces = ["common","nav","hero","auth","discovery","purchase","wallet","campaigns","admin","invite","install","theme","changelog","releases","k2","guide-parents","errors","licenseKeys","survey"] as const;
 export type Namespace = typeof namespaces[number];
 export const defaultNamespace: Namespace = 'common';
 
@@ -48,7 +48,8 @@ export const namespaceMapping: Record<string, Namespace> = {
   "releases": "releases",
   "guide-parents": "guide-parents",
   "errors": "errors",
-  "licenseKeys": "licenseKeys"
+  "licenseKeys": "licenseKeys",
+  "survey": "survey"
 };
 
 // Lazy load namespace for a specific language
