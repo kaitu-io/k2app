@@ -28,9 +28,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { api, LicenseKeyAdmin, LicenseKeyStatsRow } from "@/lib/api";
+import { api, LicenseKeyAdmin, LicenseKeyStatsRow, CreateLicenseKeysRequest } from "@/lib/api";
 import { toast } from "sonner";
-import { Trash2, Key, Copy } from "lucide-react";
+import { Trash2, Key, Copy, Plus } from "lucide-react";
 
 function getStatus(key: LicenseKeyAdmin): { label: string; variant: "default" | "secondary" | "destructive" } {
   if (key.isUsed) {
@@ -47,6 +47,13 @@ function formatDate(timestamp: number): string {
   return new Date(timestamp * 1000).toLocaleString("zh-CN");
 }
 
+function getSourceBadge(source: string) {
+  if (source === "campaign") {
+    return <Badge variant="secondary">活动</Badge>;
+  }
+  return <Badge variant="default">手动</Badge>;
+}
+
 export default function LicenseKeysPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -59,34 +66,51 @@ export default function LicenseKeysPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
+  // Create dialog state
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [createForm, setCreateForm] = useState<CreateLicenseKeysRequest>({
+    count: 10,
+    planDays: 30,
+    expiresInDays: 30,
+    recipientMatcher: "all",
+    note: "",
+  });
+  const [isCreating, setIsCreating] = useState(false);
+
+  // Result dialog state
+  const [resultDialogOpen, setResultDialogOpen] = useState(false);
+  const [createdCodes, setCreatedCodes] = useState<string[]>([]);
+
   // URL query state
   const page = parseInt(searchParams.get("page") || "0", 10);
   const pageSize = parseInt(searchParams.get("pageSize") || "50", 10);
   const campaignIdParam = searchParams.get("campaignId") || "";
   const isUsedParam = searchParams.get("isUsed") || "";
+  const sourceParam = searchParams.get("source") || "";
 
   // Local filter state
   const [localCampaignId, setLocalCampaignId] = useState(campaignIdParam);
   const [localIsUsed, setLocalIsUsed] = useState(isUsedParam);
+  const [localSource, setLocalSource] = useState(sourceParam);
 
   const columns: ColumnDef<LicenseKeyAdmin>[] = [
     {
-      accessorKey: "uuid",
-      header: "UUID",
+      accessorKey: "code",
+      header: "授权码",
       cell: ({ row }) => {
-        const uuid = row.getValue("uuid") as string;
+        const code = row.getValue("code") as string;
         return (
           <div className="flex items-center gap-1">
-            <code className="text-xs bg-muted px-1 py-0.5 rounded" title={uuid}>
-              {uuid.slice(0, 8)}...
+            <code className="text-xs bg-muted px-1 py-0.5 rounded font-mono">
+              {code}
             </code>
             <Button
               variant="ghost"
               size="sm"
               className="h-6 w-6 p-0"
               onClick={() => {
-                navigator.clipboard.writeText(uuid);
-                toast.success("已复制 UUID");
+                navigator.clipboard.writeText(code);
+                toast.success("已复制授权码");
               }}
             >
               <Copy className="h-3 w-3" />
@@ -101,6 +125,24 @@ export default function LicenseKeysPage() {
       cell: ({ row }) => (
         <span className="font-medium">{row.getValue("planDays")} 天</span>
       ),
+    },
+    {
+      accessorKey: "source",
+      header: "来源",
+      cell: ({ row }) => getSourceBadge(row.getValue("source") as string),
+    },
+    {
+      accessorKey: "note",
+      header: "备注",
+      cell: ({ row }) => {
+        const note = row.original.note;
+        if (!note) return <span className="text-muted-foreground">-</span>;
+        return (
+          <span className="text-sm max-w-[120px] truncate block" title={note}>
+            {note}
+          </span>
+        );
+      },
     },
     {
       header: "状态",
@@ -160,7 +202,7 @@ export default function LicenseKeysPage() {
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const params: { page: number; pageSize: number; campaignId?: number; isUsed?: boolean } = {
+      const params: { page: number; pageSize: number; campaignId?: number; isUsed?: boolean; source?: string } = {
         page,
         pageSize,
       };
@@ -169,6 +211,9 @@ export default function LicenseKeysPage() {
       }
       if (isUsedParam !== "") {
         params.isUsed = isUsedParam === "true";
+      }
+      if (sourceParam !== "") {
+        params.source = sourceParam;
       }
       const response = await api.listAdminLicenseKeys(params);
       setData(response.items || []);
@@ -180,7 +225,7 @@ export default function LicenseKeysPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [page, pageSize, campaignIdParam, isUsedParam]);
+  }, [page, pageSize, campaignIdParam, isUsedParam, sourceParam]);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -209,12 +254,16 @@ export default function LicenseKeysPage() {
     if (localIsUsed && localIsUsed !== "all") {
       params.set("isUsed", localIsUsed);
     }
+    if (localSource && localSource !== "all") {
+      params.set("source", localSource);
+    }
     router.push(`/manager/license-keys?${params.toString()}`);
   };
 
   const handleReset = () => {
     setLocalCampaignId("");
     setLocalIsUsed("");
+    setLocalSource("");
     router.push("/manager/license-keys");
   };
 
@@ -233,6 +282,34 @@ export default function LicenseKeysPage() {
     }
   };
 
+  const handleCreate = async () => {
+    setIsCreating(true);
+    try {
+      const req: CreateLicenseKeysRequest = {
+        ...createForm,
+        note: createForm.note || undefined,
+      };
+      const response = await api.createAdminLicenseKeys(req);
+      const codes = response.keys.map((k) => k.code);
+      setCreatedCodes(codes);
+      setCreateDialogOpen(false);
+      setResultDialogOpen(true);
+      fetchData();
+      fetchStats();
+      toast.success(`已创建 ${codes.length} 个授权码`);
+    } catch (error) {
+      toast.error("创建授权码失败");
+      console.error("Failed to create license keys:", error);
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const handleBulkCopy = () => {
+    navigator.clipboard.writeText(createdCodes.join("\n"));
+    toast.success("已批量复制所有授权码");
+  };
+
   // Aggregate stats
   const totalKeys = stats.reduce((sum, r) => sum + r.total, 0);
   const totalUsed = stats.reduce((sum, r) => sum + r.used, 0);
@@ -240,9 +317,15 @@ export default function LicenseKeysPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">{"授权码管理"}</h1>
-        <p className="text-muted-foreground">{"管理系统中的所有授权码"}</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">{"授权码管理"}</h1>
+          <p className="text-muted-foreground">{"管理系统中的所有授权码"}</p>
+        </div>
+        <Button onClick={() => setCreateDialogOpen(true)}>
+          <Plus className="h-4 w-4 mr-2" />
+          {"创建授权码"}
+        </Button>
       </div>
 
       {/* Stats cards */}
@@ -326,6 +409,18 @@ export default function LicenseKeysPage() {
             <option value="">{"全部"}</option>
             <option value="true">{"已使用"}</option>
             <option value="false">{"未使用"}</option>
+          </select>
+        </div>
+        <div className="flex-1">
+          <label className="text-sm font-medium">{"来源"}</label>
+          <select
+            className="w-full p-2 border border-border bg-muted text-foreground rounded-md"
+            value={localSource}
+            onChange={(e) => setLocalSource(e.target.value)}
+          >
+            <option value="">{"全部"}</option>
+            <option value="manual">{"手动"}</option>
+            <option value="campaign">{"活动"}</option>
           </select>
         </div>
         <div className="flex gap-2">
@@ -423,6 +518,124 @@ export default function LicenseKeysPage() {
             <Button variant="destructive" onClick={handleDelete}>
               {"删除"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create dialog */}
+      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{"创建授权码"}</DialogTitle>
+            <DialogDescription>{"批量创建新授权码"}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium block mb-1">{"数量 (1-100)"}</label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={createForm.count}
+                  onChange={(e) =>
+                    setCreateForm((f) => ({ ...f, count: parseInt(e.target.value, 10) || 1 }))
+                  }
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium block mb-1">{"天数"}</label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={createForm.planDays}
+                  onChange={(e) =>
+                    setCreateForm((f) => ({ ...f, planDays: parseInt(e.target.value, 10) || 30 }))
+                  }
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium block mb-1">{"有效期（天）"}</label>
+              <Input
+                type="number"
+                min={1}
+                value={createForm.expiresInDays}
+                onChange={(e) =>
+                  setCreateForm((f) => ({ ...f, expiresInDays: parseInt(e.target.value, 10) || 30 }))
+                }
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium block mb-1">{"使用条件"}</label>
+              <select
+                className="w-full p-2 border border-border bg-background text-foreground rounded-md"
+                value={createForm.recipientMatcher}
+                onChange={(e) =>
+                  setCreateForm((f) => ({ ...f, recipientMatcher: e.target.value }))
+                }
+              >
+                <option value="all">{"所有用户"}</option>
+                <option value="never_paid">{"未付费用户"}</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-sm font-medium block mb-1">{"备注"}</label>
+              <Input
+                placeholder="可选"
+                value={createForm.note || ""}
+                onChange={(e) => setCreateForm((f) => ({ ...f, note: e.target.value }))}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
+              {"取消"}
+            </Button>
+            <Button onClick={handleCreate} disabled={isCreating}>
+              {isCreating ? "创建中..." : "创建"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Result dialog */}
+      <Dialog open={resultDialogOpen} onOpenChange={setResultDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{"创建成功"}</DialogTitle>
+            <DialogDescription>
+              {"已生成 "}{createdCodes.length}{" 个授权码"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <div className="max-h-64 overflow-y-auto rounded-md border p-2 space-y-1">
+              {createdCodes.map((code) => (
+                <div key={code} className="flex items-center justify-between gap-2 py-0.5">
+                  <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded flex-1">
+                    {code}
+                  </code>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 p-0 shrink-0"
+                    onClick={() => {
+                      navigator.clipboard.writeText(code);
+                      toast.success("已复制");
+                    }}
+                  >
+                    <Copy className="h-3 w-3" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={handleBulkCopy}>
+              <Copy className="h-4 w-4 mr-2" />
+              {"批量复制"}
+            </Button>
+            <Button onClick={() => setResultDialogOpen(false)}>{"关闭"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
