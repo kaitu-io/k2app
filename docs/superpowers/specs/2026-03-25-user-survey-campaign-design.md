@@ -11,9 +11,10 @@ A survey-with-reward campaign also boosts user engagement.
 ## Core Decisions
 
 - **Self-hosted**: All survey data in our own Center API database. No external tools (Tally.so, Google Forms) — China accessibility issues + data control requirements.
-- **Web site pages**: Both surveys live on `kaitu.io/survey/[type]` (Next.js). App users open via `openExternal` browser link. Expired users reach it via EDM email. One codebase, unified experience.
+- **Web site pages**: All surveys live on `kaitu.io/survey/[surveyKey]` (Next.js dynamic route). App users open via `openExternal`. Expired users reach it via EDM email. One codebase, unified experience.
 - **Questions hardcoded in frontend**: 6 fixed questions across 2 surveys. No backend survey template system — that would be over-engineering.
 - **Reusable DB schema**: `survey_key` differentiates campaigns. Future surveys reuse the same table and API.
+- **Web site login as auth**: No JWT tokens or custom auth. Survey pages use the web site's existing login flow. Expired users can still log in (account exists, just subscription expired).
 
 ## Two Surveys, Two Audiences
 
@@ -28,7 +29,7 @@ Mixing them pollutes both datasets.
 ### Trigger
 - **Who**: Subscription not expired
 - **When**: After 5th successful VPN connection (localStorage counter)
-- **How**: Bottom banner in App → `openExternal` to `kaitu.io/survey/active?token=xxx` (short-lived signed token, see Authentication section)
+- **How**: Bottom banner in App → `openExternal` to `kaitu.io/survey/active_2026q1`
 - **Frequency**: Once per account (deduplicated by `uk_user_survey`)
 
 ### Questions
@@ -62,7 +63,7 @@ Mixing them pollutes both datasets.
 
 ### Trigger
 - **Who**: Account expired ≤ 180 days ago
-- **How**: EDM email with personalized token link → `kaitu.io/survey/expired?token=xxx`. Also App open popup (for users who still have App installed).
+- **How**: EDM email linking to `kaitu.io/survey/expired_2026q1`. Also App open popup (for users who still have App installed).
 - **Frequency**: Once per account
 
 ### Questions
@@ -99,28 +100,17 @@ Mixing them pollutes both datasets.
 
 ## Authentication
 
-Both surveys use **signed JWT tokens** in URL params. No stored tokens — stateless verification.
+**No custom tokens.** Both surveys use the web site's existing login flow.
 
-### Token Format
-```
-JWT payload: { user_id, survey_key, exp }
-Signed with: Center API HMAC secret
-Expiry: 1 hour (Survey A, generated on banner click) / 14 days (Survey B, generated for EDM)
-```
+- User opens survey page → if not logged in, web site redirects to login → after login, redirects back to survey
+- Expired users can still log in — their account exists, only subscription is expired
+- `POST /api/survey/submit` uses standard Bearer token auth, same as all other `/api/*` endpoints
+- EDM email links are plain URLs (`kaitu.io/survey/expired_2026q1`) — no tokens, no params
 
-### Survey A Flow
-1. User clicks banner in App
-2. App calls `GET /api/survey/token?survey_key=active_2026q1` (auth'd with existing session)
-3. API generates short-lived JWT (1 hour), returns URL
-4. App opens `kaitu.io/survey/active?token=xxx` in browser
-
-### Survey B Flow
-1. EDM system generates 14-day JWT per user during email send
-2. Email contains `kaitu.io/survey/expired?token=xxx`
-3. User clicks link, browser opens page
+This eliminates: JWT generation, JWT verification, token endpoint, token expiry handling, and dual-auth branching.
 
 ### Single-Use Enforcement
-Token itself is not invalidated. Instead, `uk_user_survey` unique constraint prevents duplicate submissions — if user clicks link again after submitting, API returns "already submitted" and page shows a friendly message.
+`UNIQUE KEY (user_id, survey_key)` prevents duplicate submissions. If user visits the page again after submitting, `GET /api/survey/status` returns `submitted: true` and the page shows a "you've already completed this" message.
 
 ## Database Schema
 
@@ -141,35 +131,31 @@ CREATE TABLE survey_responses (
 
 **Reusability**: New campaign → new `survey_key`. Table and API unchanged. `answers` JSON accommodates any question structure. `reward_days` varies per campaign.
 
-**Note**: `device_udid` removed — surveys are filled in a web browser, not in the app, so UDID is unavailable. Account sharing signal comes from Q2 answers directly.
-
 ## API Design
 
-All survey endpoints use `/api/survey/` prefix (user-facing routes).
+All survey endpoints use `/api/survey/` prefix. Standard Bearer token auth.
 
 ### `POST /api/survey/submit`
 
 **Request**:
 ```json
 {
-  "token": "eyJhbG...",
+  "survey_key": "active_2026q1",
   "answers": {"q1": "ai_tools", "q2": "solo", "q3": "连接稳定，AI 都能用"}
 }
 ```
 
-**Auth**: JWT token in request body. Server verifies signature and extracts `user_id` + `survey_key`. Same auth flow for both Survey A and B — unified, no branching.
+**Auth**: Standard Bearer token (same as all `/api/*` endpoints).
 
 **Logic** (single transaction):
-1. Verify JWT signature and expiry
-2. Extract `user_id` and `survey_key` from token
-3. Validate `survey_key` is an active campaign (hardcoded allowlist in code, e.g., `var activeSurveys = []string{"active_2026q1", "expired_2026q1"}`)
-4. Check `uk_user_survey` — if exists, return `code: "already_submitted"`
-5. Insert `survey_responses` row with `reward_days=30`
-6. Update `user.expiredAt`:
+1. Validate `survey_key` is an active campaign (hardcoded allowlist in code, e.g., `var activeSurveys = []string{"active_2026q1", "expired_2026q1"}`)
+2. Check `uk_user_survey` — if exists, return `code: "already_submitted"`
+3. Insert `survey_responses` row with `reward_days=30`
+4. Update `user.expiredAt` via `addProExpiredDays()`:
    - If user not expired: `expiredAt += 30 days`
    - If user expired: `expiredAt = now() + 30 days`
-7. Insert `UserProHistory` record (type: `reward`, reason: `survey_{survey_key}`, days: 30)
-8. Return success + new expiry date
+5. Insert `UserProHistory` record (type: `survey_reward`, reason: `survey_{survey_key}`, days: 30)
+6. Return success + new expiry date
 
 **Response**:
 ```json
@@ -184,31 +170,13 @@ All survey endpoints use `/api/survey/` prefix (user-facing routes).
 
 **Error responses**:
 - `code: "already_submitted"` — user already filled this survey
-- `code: "token_expired"` — JWT expired
-- `code: "token_invalid"` — bad signature or malformed
 - `code: "survey_closed"` — survey_key not in active list
-
-### `GET /api/survey/token?survey_key=xxx`
-
-**Auth**: Standard Bearer token (logged-in user from App).
-
-Returns a signed JWT URL for the given survey. Used by App to generate the `openExternal` link.
-
-**Response**:
-```json
-{
-  "code": 0,
-  "data": {
-    "url": "https://kaitu.io/survey/active?token=eyJhbG..."
-  }
-}
-```
 
 ### `GET /api/survey/status?survey_key=xxx`
 
 **Auth**: Standard Bearer token.
 
-Returns whether current user has already submitted this survey. Used by App to decide whether to show banner.
+Returns whether current user has already submitted this survey. Used by both the App (to decide whether to show banner) and the web page (to show "already completed" state).
 
 **Response**:
 ```json
@@ -225,31 +193,26 @@ Returns whether current user has already submitted this survey. Used by App to d
 ### Next.js Route Structure
 ```
 web/src/app/[locale]/survey/
-  active/page.tsx    -- Survey A form
-  expired/page.tsx   -- Survey B form
+  [surveyKey]/page.tsx     -- Dynamic route: renders survey based on surveyKey
   _components/
-    SurveyForm.tsx   -- Shared form component
-    SurveySuccess.tsx -- Success/reward confirmation
+    SurveyForm.tsx         -- Shared form component
+    SurveySuccess.tsx      -- Success/reward confirmation
+    surveyConfig.ts        -- Question definitions per survey_key
 ```
 
-### `kaitu.io/[locale]/survey/active`
+### `kaitu.io/[locale]/survey/[surveyKey]`
 
-- URL params: `?token=xxx`
-- Page validates token client-side (decode JWT to check expiry), full validation on submit
+- `surveyKey` maps to question config in `surveyConfig.ts` — unknown keys → 404
+- Page checks login state → if not logged in, redirect to login with return URL
+- Page checks `GET /api/survey/status` → if already submitted, show "completed" state
 - 3-question form with progress indicator
-- Submit → API → show success + "30 days added" confirmation
+- Submit → `POST /api/survey/submit` → show success + reward confirmation
 - i18n: zh-CN primary, en-US secondary
 
-### `kaitu.io/[locale]/survey/expired`
-
-- URL params: `?token=xxx`
-- Same flow as active, different question set
-- Submit → API → show success + "account reactivated for 30 days"
-
 ### Error States
-- **Token expired**: "This link has expired. Please request a new one from the app / contact support."
-- **Token invalid**: "Invalid link. Please use the link from your email or app."
-- **Already submitted**: "You've already completed this survey. Your reward has been applied." (show current expiry date)
+- **Not logged in**: Redirect to web site login, return to survey after
+- **Already submitted**: "You've already completed this survey. Your reward has been applied."
+- **Unknown surveyKey**: 404 page
 - **Survey closed**: "This survey has ended. Thank you for your interest."
 
 ### Shared
@@ -268,7 +231,7 @@ web/src/app/[locale]/survey/
 - Conditions: `connect_count >= 5` AND user is paid AND not yet submitted (check `GET /api/survey/status`)
 - The `/api/survey/status` check is the authoritative source; localStorage dismiss is a fast-path to avoid unnecessary API calls
 - UI: Bottom banner similar to existing `AnnouncementBanner` pattern
-- Action: Call `GET /api/survey/token` → `openExternal(url)`
+- Action: `openExternal('https://kaitu.io/survey/active_2026q1')`
 - Dismiss: localStorage flag. Known limitation: dismiss doesn't sync across devices, but server-side status check prevents showing banner to users who already submitted on another device.
 
 ## EDM Campaign (Survey B only)
@@ -280,15 +243,11 @@ web/src/app/[locale]/survey/
 
 ### Email Content
 - Subject: "We miss you — fill 3 questions, get 30 days free"
-- Body: Brief, personal, clear CTA button with tokenized link
+- Body: Brief, personal, CTA button linking to `https://kaitu.io/survey/expired_2026q1`
 - Multi-language: zh-CN and en-US versions (language inferred from existing EDM language logic)
 
-### Token Generation
-- During EDM batch send, generate 14-day JWT per user
-- Embed in email CTA: `https://kaitu.io/survey/expired?token=xxx`
-
 ### Reminder
-- 7 days after initial send, query users in `EmailSendLog` for this campaign who have no matching row in `survey_responses` → send reminder email with fresh token
+- 7 days after initial send, query users in `EmailSendLog` for this campaign who have no matching row in `survey_responses` → send reminder email
 
 ## Admin Dashboard
 
@@ -308,6 +267,14 @@ web/src/app/[locale]/survey/
 - **Campaign duration**: 2 weeks
 - **Survey A**: Triggered continuously for active users who hit 5 connections
 - **Survey B**: EDM sent once, reminder after 7 days for non-respondents
+
+## Implementation Notes
+
+- Use existing `addProExpiredDays()` in `api/logic_member.go` for reward extension
+- Add `VipSurveyReward` constant to `VipChangeType` in `api/model.go`
+- `UserProHistory.ReferenceID` = `survey_responses.id` after insert
+- Register `survey` i18n namespace in `web/` messages config
+- API calls from web pages go through Next.js server-side proxy (no CORS issues)
 
 ## Analytics Queries
 
