@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useRouter } from "@/i18n/routing";
+import { useRouter, Link } from "@/i18n/routing";
 import { useTranslations } from "next-intl";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
@@ -509,6 +509,14 @@ export default function PurchaseClient() {
             </div>
           </div>
         </div>
+
+        {/* Gift Code Prompt */}
+        <p className="text-sm text-muted-foreground text-center mt-6">
+          {t('purchase.giftCodePrompt')}
+          <Link href="/g" className="text-primary underline underline-offset-4 hover:text-primary/80 ml-1">
+            {t('purchase.giftCodeLink')}
+          </Link>
+        </p>
 
         {/* Payment Result Dialog */}
         <PayResultDialog
