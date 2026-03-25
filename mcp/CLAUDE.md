@@ -30,7 +30,9 @@ mcp/
 ├── main.go                  # App struct, tool registration, env config
 ├── center_client.go         # HTTP client for Center API (envelope unwrap, 401 auto-refresh)
 ├── daemon_client.go         # HTTP client for k2 daemon (localhost:1777)
-├── session.go               # Token persistence (~/.kaitu/mcp-session.json) + UDID generation
+├── session.go               # Token persistence (~/.kaitu/mcp-session.json) + UDID generation + Tauri session sharing
+├── storage_crypto.go        # AES-256-GCM decrypt + HKDF key derivation (shared test vectors with Rust)
+├── tauri_storage.go         # Read Tauri desktop storage.json — decrypt values, extract UDID+tokens
 ├── tool_login.go            # send_code + login + errorResult/successResult helpers
 ├── tool_account.go          # account_info
 ├── tool_plans.go            # list_plans (filters inactive, formats USD)
@@ -49,6 +51,7 @@ mcp/
 - **401 auto-refresh**: `CenterClient.Get/Post` catch 401, call `tryRefresh()` with the refresh token, retry once.
 - **Auth URL injection**: `connect` tool builds `k2v5://udid:token@host:port?...` from plain server URL + session credentials. Same pattern as webapp's `authService.buildTunnelUrl()`.
 - **Session persistence**: `~/.kaitu/mcp-session.json` (0600 perms). Restored on startup. UDID stored separately in `~/.kaitu/mcp-udid`.
+- **Tauri session sharing**: On startup, MCP tries to read Tauri's `storage.json` (platform-specific path, e.g. `~/Library/Application Support/io.kaitu.desktop/storage.json`). If tokens found, MCP uses the desktop's identity (32-char UDID + tokens) instead of its own 16-char UDID. Falls back to independent MCP session if Tauri storage unavailable. MCP is read-only — never writes to Tauri's file.
 - **Tool output convention**: All tools return JSON via `successResult(v)` or `errorResult(msg)`. Prices formatted as USD strings (`$9.99`). Only active/relevant data exposed — no raw API pass-through.
 - **Server cache**: `App.servers` cached with `serversMu` RWMutex. Used by `status` tool to resolve server name from URL.
 
