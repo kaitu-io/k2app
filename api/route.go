@@ -356,6 +356,9 @@ func SetupRouter() *gin.Engine {
 	log.Debugf(ctx, "registering /app opsAdmin group")
 	opsAdmin.Use(log.MiddlewareRequestLog(true), MiddleRecovery(), CORSMiddleware(), AuthRequired())
 	{
+		// No role restriction — every authenticated user can see their own permissions
+		opsAdmin.GET("/my-permissions", api_admin_my_permissions)
+
 		viewOrEdit  := RoleDevopsViewer | RoleDevopsEditor
 		allOpsRoles := RoleDevopsViewer | RoleDevopsEditor | RoleSupport
 
