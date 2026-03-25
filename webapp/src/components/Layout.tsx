@@ -5,6 +5,7 @@ import { useState, useEffect, lazy, Suspense } from "react";
 import BottomNavigation from "./BottomNavigation";
 import SideNavigation from "./SideNavigation";
 import AnnouncementBanner from "./AnnouncementBanner";
+import SurveyBanner from "./SurveyBanner";
 import ServiceAlert from "./ServiceAlert";
 import FeedbackButton from "./FeedbackButton";
 import { OnboardingGuide } from "./OnboardingGuide";
@@ -117,6 +118,7 @@ export default function Layout() {
       {/* Announcement Banner - shown at top, fixed height */}
       <Box sx={{ flexShrink: 0, marginLeft: isDesktop ? `${SIDEBAR_WIDTH}px` : 0 }}>
         <AnnouncementBanner />
+        <SurveyBanner />
       </Box>
 
       {/* Global Service Alert - Fixed at top, shows service failure or network errors */}
