@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -47,7 +48,8 @@ func readTauriStorage(path string, key *[32]byte) (*TauriSession, error) {
 		return nil, fmt.Errorf("parse storage JSON: %w", err)
 	}
 
-	// Decrypt values in place
+	// Decrypt values in place (per-key fault tolerance — one corrupt key
+	// must not prevent reading other healthy keys)
 	decrypted := make(map[string]string, len(store))
 	for k, v := range store {
 		if isEncrypted(v) {
@@ -56,7 +58,8 @@ func readTauriStorage(path string, key *[32]byte) (*TauriSession, error) {
 			}
 			plain, err := decryptValue(v, *key)
 			if err != nil {
-				return nil, fmt.Errorf("decrypt key %q: %w", k, err)
+				log.Printf("[tauri_storage] skip key %q: decrypt failed: %v", k, err)
+				continue
 			}
 			decrypted[k] = plain
 		} else {
