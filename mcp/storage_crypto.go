@@ -7,11 +7,9 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"os"
-	"os/exec"
-	"runtime"
 	"strings"
 
+	"github.com/denisbrodbeck/machineid"
 	"golang.org/x/crypto/hkdf"
 )
 
@@ -74,38 +72,11 @@ func isEncrypted(value string) bool {
 	return strings.HasPrefix(value, encPrefix)
 }
 
-// getHardwareID returns a platform-specific hardware identifier.
-// Must match the Rust desktop implementation exactly.
+// getHardwareID returns a platform-specific hardware identifier via
+// denisbrodbeck/machineid (same sources as Rust machine-uid crate):
+//   - macOS: IOPlatformUUID via ioreg
+//   - Windows: Registry HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid
+//   - Linux: /var/lib/dbus/machine-id → /etc/machine-id
 func getHardwareID() (string, error) {
-	switch runtime.GOOS {
-	case "darwin":
-		out, err := exec.Command("sysctl", "-n", "kern.uuid").Output()
-		if err != nil {
-			return "", fmt.Errorf("sysctl kern.uuid: %w", err)
-		}
-		return strings.TrimSpace(string(out)), nil
-
-	case "windows":
-		out, err := exec.Command("powershell", "-NoProfile", "-Command",
-			"(Get-CimInstance Win32_ComputerSystemProduct).UUID").Output()
-		if err != nil {
-			return "", fmt.Errorf("powershell UUID: %w", err)
-		}
-		id := strings.TrimSpace(string(out))
-		// Reject all-F sentinel (means WMI returned no real UUID)
-		if strings.ReplaceAll(strings.ReplaceAll(id, "F", ""), "-", "") == "" {
-			return "", fmt.Errorf("hardware UUID is all-F sentinel: %s", id)
-		}
-		return id, nil
-
-	case "linux":
-		data, err := os.ReadFile("/etc/machine-id")
-		if err != nil {
-			return "", fmt.Errorf("read /etc/machine-id: %w", err)
-		}
-		return strings.TrimSpace(string(data)), nil
-
-	default:
-		return "", fmt.Errorf("unsupported platform: %s", runtime.GOOS)
-	}
+	return machineid.ID()
 }
