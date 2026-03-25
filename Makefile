@@ -3,7 +3,8 @@
 	build-windows-amd64 build-linux-amd64 build-linux-arm64 \
 	build-k2r build-k2r-linux-amd64 build-k2r-linux-arm64 build-k2r-armv7 build-k2r-mipsle build-k2r-mips build-k2r-all \
 	appext-ios appext-macos appext-android \
-	quick-check pre-release build-all-platforms
+	quick-check pre-release build-all-platforms \
+	gateway-check gateway-uat
 
 VERSION ?= dev
 COMMIT  ?= $(shell git rev-parse --short HEAD)
@@ -131,8 +132,24 @@ quick-check:
 	@command -v golangci-lint >/dev/null 2>&1 && golangci-lint run || echo "SKIP: golangci-lint not installed"
 	go test -short -race -count=1 ./...
 
+# Gateway static checks + unit tests (Linux native) or cross-compile (macOS).
+# Fast gate: runs in seconds. Use gateway-uat for full integration.
+gateway-check:
+	GOOS=linux go vet ./gateway/...
+	GOOS=linux go build ./gateway/...
+	@if [ "$$(uname)" = "Linux" ]; then \
+		go test -race -count=1 ./gateway/...; \
+	else \
+		echo "SKIP: gateway unit tests (not Linux). Use 'make gateway-uat' for Docker integration."; \
+	fi
+
+# Gateway integration test: Docker-based UAT (~5min, requires Docker).
+# 10 phases, ~56 test points covering full soft-router functionality.
+gateway-uat:
+	test/k2r-uat/run.sh
+
 # Full pre-release gate: CI and release builds call this single target.
-pre-release: quick-check
+pre-release: quick-check gateway-check
 	go test -race -count=1 ./...
 	go test -run TestContract -v ./wire/... ./engine/...
 	$(MAKE) build-all-platforms

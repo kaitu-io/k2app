@@ -1,0 +1,6 @@
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl iproute2 dnsutils ca-certificates && rm -rf /var/lib/apt/lists/*
+# LAN client: simulates a device on the LAN behind the k2r gateway.
+# Its default route is set to the k2r container so all traffic flows through TPROXY.
+ENTRYPOINT ["sleep", "infinity"]
