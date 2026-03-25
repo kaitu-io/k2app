@@ -21,13 +21,16 @@ const STORAGE_FILE: &str = "storage.json";
 pub struct StorageState {
     pub data: Mutex<HashMap<String, String>>,
     pub path: Mutex<Option<PathBuf>>,
+    pub enc_key: [u8; 32],
 }
 
 impl StorageState {
     pub fn new() -> Self {
+        let enc_key = crate::storage_crypto::derive_key_from_hardware();
         Self {
             data: Mutex::new(HashMap::new()),
             path: Mutex::new(None),
+            enc_key,
         }
     }
 }
@@ -78,13 +81,26 @@ fn persist_to_disk(path: &PathBuf, data: &HashMap<String, String>) {
 #[tauri::command]
 pub fn storage_get(key: String, state: tauri::State<'_, StorageState>) -> Option<String> {
     let data = state.data.lock().unwrap();
-    data.get(&key).cloned()
+    let value = data.get(&key)?;
+    if crate::storage_crypto::is_encrypted(value) {
+        match crate::storage_crypto::decrypt_value(value, &state.enc_key) {
+            Some(plaintext) => Some(plaintext),
+            None => {
+                log::warn!("[storage] Failed to decrypt value for key '{}', returning None", key);
+                None
+            }
+        }
+    } else {
+        // Backward compatibility: return plaintext as-is
+        Some(value.clone())
+    }
 }
 
 #[tauri::command]
 pub fn storage_set(key: String, value: String, state: tauri::State<'_, StorageState>) {
+    let encrypted = crate::storage_crypto::encrypt_value(&value, &state.enc_key);
     let mut data = state.data.lock().unwrap();
-    data.insert(key, value);
+    data.insert(key, encrypted);
     let path_clone = state.path.lock().unwrap().clone();
     if let Some(ref p) = path_clone {
         persist_to_disk(p, &data);
@@ -165,6 +181,49 @@ mod tests {
         let tmp = path.with_extension("json.tmp");
         assert!(!tmp.exists());
         assert!(path.exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_encrypted_storage_roundtrip() {
+        let dir = std::env::temp_dir().join("k2app-test-storage-enc-roundtrip");
+        let _ = fs::create_dir_all(&dir);
+        let path = dir.join("storage.json");
+
+        let key = crate::storage_crypto::derive_key("test-enc-roundtrip");
+
+        // Encrypt and persist
+        let plaintext = "\"my-secret-token\"";
+        let encrypted = crate::storage_crypto::encrypt_value(plaintext, &key);
+        let mut data = HashMap::new();
+        data.insert("token".to_string(), encrypted);
+        persist_to_disk(&path, &data);
+
+        // Reload from disk and decrypt
+        let loaded = load_from_disk(&path);
+        let stored = loaded.get("token").unwrap();
+        assert!(crate::storage_crypto::is_encrypted(stored));
+        let decrypted = crate::storage_crypto::decrypt_value(stored, &key);
+        assert_eq!(decrypted, Some(plaintext.to_string()));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_backward_compat_plaintext_read() {
+        // Simulate pre-encryption plaintext data already on disk
+        let dir = std::env::temp_dir().join("k2app-test-storage-compat");
+        let _ = fs::create_dir_all(&dir);
+        let path = dir.join("storage.json");
+        fs::write(&path, r#"{"old_key":"plain-value","other":"data"}"#).unwrap();
+
+        let loaded = load_from_disk(&path);
+        let value = loaded.get("old_key").unwrap();
+
+        // Not encrypted — should be returned as-is
+        assert!(!crate::storage_crypto::is_encrypted(value));
+        assert_eq!(value, "plain-value");
+
         let _ = fs::remove_dir_all(&dir);
     }
 }
