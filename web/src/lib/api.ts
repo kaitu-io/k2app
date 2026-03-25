@@ -2068,6 +2068,25 @@ export const api = {
     return this.request<{ submitted: boolean }>(`/api/survey/status?survey_key=${surveyKey}`);
   },
 
+  // Admin Survey APIs
+  async getSurveyStats(surveyKey: string): Promise<{
+    survey_key: string;
+    total: number;
+    answers: {
+      distribution: Record<string, Record<string, number>>;
+      open_texts: Array<{ user_id: number; question: string; answer: string; created_at: string }>;
+    };
+  }> {
+    return this.request<{
+      survey_key: string;
+      total: number;
+      answers: {
+        distribution: Record<string, Record<string, number>>;
+        open_texts: Array<{ user_id: number; question: string; answer: string; created_at: string }>;
+      };
+    }>(`/app/surveys/stats?survey_key=${surveyKey}`);
+  },
+
 };
 
 // ==================== Cloud Instance Types ====================

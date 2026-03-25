@@ -2,6 +2,7 @@ package center
 
 import (
 	"encoding/json"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	db "github.com/wordgate/qtoolkit/db"
@@ -124,4 +125,59 @@ func api_survey_status(c *gin.Context) {
 		Count(&count)
 
 	Success(c, &SurveyStatusResponse{Submitted: count > 0})
+}
+
+type SurveyStatsResponse struct {
+	SurveyKey string         `json:"survey_key"`
+	Total     int64          `json:"total"`
+	Answers   map[string]any `json:"answers"`
+}
+
+func api_admin_survey_stats(c *gin.Context) {
+	surveyKey := c.Query("survey_key")
+	if surveyKey == "" {
+		Error(c, ErrorInvalidArgument, "survey_key is required")
+		return
+	}
+
+	var responses []SurveyResponse
+	db.Get().Where("survey_key = ?", surveyKey).Find(&responses)
+
+	questionDist := make(map[string]map[string]int)
+	var openTexts []map[string]any
+
+	for _, r := range responses {
+		var answers map[string]string
+		if err := json.Unmarshal([]byte(r.Answers), &answers); err != nil {
+			continue
+		}
+		for qID, answer := range answers {
+			if questionDist[qID] == nil {
+				questionDist[qID] = make(map[string]int)
+			}
+			if strings.HasPrefix(answer, "other: ") || len(answer) > 50 {
+				openTexts = append(openTexts, map[string]any{
+					"user_id":    r.UserID,
+					"question":   qID,
+					"answer":     answer,
+					"created_at": r.CreatedAt,
+				})
+				if strings.HasPrefix(answer, "other: ") {
+					questionDist[qID]["other"]++
+				}
+			} else {
+				questionDist[qID][answer]++
+			}
+		}
+	}
+
+	stats := &SurveyStatsResponse{
+		SurveyKey: surveyKey,
+		Total:     int64(len(responses)),
+		Answers: map[string]any{
+			"distribution": questionDist,
+			"open_texts":   openTexts,
+		},
+	}
+	Success(c, stats)
 }
