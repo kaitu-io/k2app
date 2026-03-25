@@ -39,6 +39,7 @@ const (
 	ErrorLicenseKeyUsed          ErrorCode = 400008 // 授权码已被使用
 	ErrorLicenseKeyExpired       ErrorCode = 400009 // 授权码已过期
 	ErrorLicenseKeyNotMatch      ErrorCode = 400010 // 不符合使用条件
+	ErrorLicenseKeyAlreadyRedeemed ErrorCode = 400011 // 用户已使用过授权码
 )
 
 type DataAny struct{}
@@ -164,5 +165,6 @@ var (
 	ErrLicenseKeyNotFound = errors.New("license key not found")
 	ErrLicenseKeyUsed     = errors.New("license key already used")
 	ErrLicenseKeyExpired  = errors.New("license key expired")
-	ErrLicenseKeyNotMatch = errors.New("license key recipient mismatch")
+	ErrLicenseKeyNotMatch        = errors.New("license key recipient mismatch")
+	ErrLicenseKeyAlreadyRedeemed = errors.New("user already redeemed a license key")
 )

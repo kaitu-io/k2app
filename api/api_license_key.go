@@ -18,7 +18,7 @@ func api_get_license_key(c *gin.Context) {
 	}
 
 	resp := LicenseKeyPublicResponse{
-		UUID:      key.UUID,
+		Code:      key.Code,
 		PlanDays:  key.PlanDays,
 		ExpiresAt: key.ExpiresAt,
 		IsUsed:    key.IsUsed,

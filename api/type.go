@@ -978,17 +978,20 @@ type CloudOperationResponse struct {
 // ========================= LicenseKey 相关类型定义 =========================
 
 type LicenseKeyResponse struct {
-	ID               uint64     `json:"id"`
-	UUID             string     `json:"uuid"`
-	PlanDays         int        `json:"planDays"`
-	RecipientMatcher string     `json:"recipientMatcher"`
-	ExpiresAt        int64      `json:"expiresAt"`
-	CampaignID       *uint64    `json:"campaignId"`
-	CreatedByUserID  *uint64    `json:"createdByUserId"`
-	IsUsed           bool       `json:"isUsed"`
-	UsedByUserID     *uint64    `json:"usedByUserId"`
-	UsedAt           *int64     `json:"usedAt"`
-	CreatedAt        int64      `json:"createdAt"`
+	ID               uint64  `json:"id"`
+	UUID             string  `json:"uuid"`
+	Code             string  `json:"code"`
+	Source           string  `json:"source"`
+	Note             string  `json:"note"`
+	PlanDays         int     `json:"planDays"`
+	RecipientMatcher string  `json:"recipientMatcher"`
+	ExpiresAt        int64   `json:"expiresAt"`
+	CampaignID       *uint64 `json:"campaignId"`
+	CreatedByUserID  *uint64 `json:"createdByUserId"`
+	IsUsed           bool    `json:"isUsed"`
+	UsedByUserID     *uint64 `json:"usedByUserId"`
+	UsedAt           *int64  `json:"usedAt"`
+	CreatedAt        int64   `json:"createdAt"`
 }
 
 type IssueKeysRequest struct {
@@ -1002,11 +1005,30 @@ type IssueKeysResponse struct {
 }
 
 type LicenseKeyPublicResponse struct {
-	UUID       string `json:"uuid"`
+	Code       string `json:"code"`
 	PlanDays   int    `json:"planDays"`
 	ExpiresAt  int64  `json:"expiresAt"`
 	IsUsed     bool   `json:"isUsed"`
 	IsExpired  bool   `json:"isExpired"`
 	SenderName string `json:"senderName"`
+}
+
+type CreateLicenseKeysRequest struct {
+	Count            int    `json:"count" binding:"required,min=1,max=100"`
+	PlanDays         int    `json:"planDays" binding:"required,min=1"`
+	ExpiresInDays    int    `json:"expiresInDays" binding:"required,min=1"`
+	RecipientMatcher string `json:"recipientMatcher" binding:"required,oneof=all never_paid"`
+	Note             string `json:"note"`
+}
+
+type CreateLicenseKeysResponse struct {
+	Keys []LicenseKeyBrief `json:"keys"`
+}
+
+type LicenseKeyBrief struct {
+	ID        uint64 `json:"id"`
+	Code      string `json:"code"`
+	PlanDays  int    `json:"planDays"`
+	ExpiresAt int64  `json:"expiresAt"`
 }
 

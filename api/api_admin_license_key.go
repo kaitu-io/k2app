@@ -48,8 +48,8 @@ func api_admin_list_license_keys(c *gin.Context) {
 	}
 
 	items := make([]LicenseKeyResponse, 0, len(keys))
-	for _, k := range keys {
-		items = append(items, toLicenseKeyResponse(k))
+	for i := range keys {
+		items = append(items, toLicenseKeyResponse(&keys[i]))
 	}
 	log.Infof(c, "successfully retrieved %d license keys", len(items))
 	ListWithData(c, items, pagination)
@@ -101,10 +101,13 @@ func api_admin_delete_license_key(c *gin.Context) {
 	WriteAuditLog(c, "license_key_delete", "license_key", fmt.Sprintf("%d", id), nil)
 }
 
-func toLicenseKeyResponse(k LicenseKey) LicenseKeyResponse {
-	r := LicenseKeyResponse{
+func toLicenseKeyResponse(k *LicenseKey) LicenseKeyResponse {
+	resp := LicenseKeyResponse{
 		ID:               k.ID,
 		UUID:             k.UUID,
+		Code:             k.Code,
+		Source:           k.Source,
+		Note:             k.Note,
 		PlanDays:         k.PlanDays,
 		RecipientMatcher: k.RecipientMatcher,
 		ExpiresAt:        k.ExpiresAt,
@@ -115,8 +118,8 @@ func toLicenseKeyResponse(k LicenseKey) LicenseKeyResponse {
 		CreatedAt:        k.CreatedAt.Unix(),
 	}
 	if k.UsedAt != nil {
-		ts := k.UsedAt.Unix()
-		r.UsedAt = &ts
+		usedAt := k.UsedAt.Unix()
+		resp.UsedAt = &usedAt
 	}
-	return r
+	return resp
 }
