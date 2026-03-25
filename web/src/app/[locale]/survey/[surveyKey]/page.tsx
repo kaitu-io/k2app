@@ -4,11 +4,11 @@ import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useAuth } from "@/contexts/AuthContext";
-import { redirectToLogin } from "@/lib/auth";
 import { api, ApiError, ErrorCode } from "@/lib/api";
 import { surveys } from "../_components/surveyConfig";
 import SurveyForm from "../_components/SurveyForm";
 import SurveySuccess from "../_components/SurveySuccess";
+import EmailLogin from "@/components/EmailLogin";
 import Image from "next/image";
 import { Link } from "@/i18n/routing";
 
@@ -25,18 +25,10 @@ export default function SurveyPage() {
   const surveyKey = params.surveyKey as string;
   const t = useTranslations();
   const { isAuthenticated, isAuthLoading } = useAuth();
-  const [pageState, setPageState] = useState<PageState>({ kind: "loading" });
+  const [pageState, setPageState] = useState<PageState>({ kind: "form" });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const config = surveys[surveyKey];
-
-  // Redirect to login if not authenticated
-  useEffect(() => {
-    if (isAuthLoading) return;
-    if (!isAuthenticated) {
-      redirectToLogin();
-    }
-  }, [isAuthenticated, isAuthLoading]);
 
   // Check survey status once authenticated
   useEffect(() => {
@@ -56,7 +48,6 @@ export default function SurveyPage() {
           setPageState({ kind: "form" });
         }
       } catch {
-        // If status check fails, still show form — submit will catch errors
         setPageState({ kind: "form" });
       }
     };
@@ -83,8 +74,21 @@ export default function SurveyPage() {
     }
   };
 
-  // Show nothing while auth is loading
-  if (isAuthLoading || (!isAuthenticated && !isAuthLoading)) {
+  // Invalid survey key
+  if (!config) {
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="mx-auto max-w-lg px-4 py-8">
+          <div className="text-center py-16">
+            <h1 className="text-2xl font-bold mb-2">{t("survey.not_found")}</h1>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Auth loading spinner
+  if (isAuthLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
@@ -108,15 +112,21 @@ export default function SurveyPage() {
           </Link>
         </div>
 
-        {pageState.kind === "loading" && (
-          <div className="flex justify-center py-16">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-          </div>
-        )}
+        {/* Title + reward highlight */}
+        <div className="text-center mb-6">
+          <h1 className="text-2xl font-bold mb-2">{t("survey.title")}</h1>
+          <p className="text-muted-foreground">{t(config.subtitleKey)}</p>
+        </div>
 
-        {pageState.kind === "not_found" && (
-          <div className="text-center py-16">
-            <h1 className="text-2xl font-bold mb-2">{t("survey.not_found")}</h1>
+        <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 mb-8 text-center">
+          <p className="text-lg font-semibold text-primary">{t("survey.reward_highlight")}</p>
+          <p className="text-sm text-muted-foreground mt-1">{t("survey.reward_desc")}</p>
+        </div>
+
+        {/* Inline login — above questions */}
+        {!isAuthenticated && (
+          <div className="mb-8">
+            <EmailLogin />
           </div>
         )}
 
@@ -133,18 +143,13 @@ export default function SurveyPage() {
           </div>
         )}
 
-        {pageState.kind === "form" && config && (
-          <>
-            <div className="text-center mb-8">
-              <h1 className="text-2xl font-bold mb-2">{t("survey.title")}</h1>
-              <p className="text-muted-foreground">{t(config.subtitleKey)}</p>
-            </div>
-            <SurveyForm
-              config={config}
-              onSubmit={handleSubmit}
-              isSubmitting={isSubmitting}
-            />
-          </>
+        {pageState.kind === "form" && (
+          <SurveyForm
+            config={config}
+            onSubmit={handleSubmit}
+            isSubmitting={isSubmitting}
+            isAuthenticated={isAuthenticated}
+          />
         )}
 
         {pageState.kind === "success" && (

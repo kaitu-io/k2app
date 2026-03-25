@@ -13,9 +13,10 @@ interface SurveyFormProps {
   config: SurveyConfig;
   onSubmit: (answers: Record<string, string>) => void;
   isSubmitting: boolean;
+  isAuthenticated: boolean;
 }
 
-export default function SurveyForm({ config, onSubmit, isSubmitting }: SurveyFormProps) {
+export default function SurveyForm({ config, onSubmit, isSubmitting, isAuthenticated }: SurveyFormProps) {
   const t = useTranslations();
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [otherTexts, setOtherTexts] = useState<Record<string, string>>({});
@@ -83,6 +84,7 @@ export default function SurveyForm({ config, onSubmit, isSubmitting }: SurveyFor
 
           {question.type === "single" && question.options && (
             <RadioGroup
+              className="space-y-1"
               value={answers[question.id] || ""}
               onValueChange={(value) =>
                 setAnswers((prev) => ({ ...prev, [question.id]: value }))
@@ -90,7 +92,7 @@ export default function SurveyForm({ config, onSubmit, isSubmitting }: SurveyFor
             >
               {question.options.map((option) => (
                 <div key={option.value} className="space-y-2">
-                  <div className="flex items-center space-x-3">
+                  <div className="flex items-center space-x-3 py-2">
                     <RadioGroupItem
                       value={option.value}
                       id={`${question.id}-${option.value}`}
@@ -138,9 +140,13 @@ export default function SurveyForm({ config, onSubmit, isSubmitting }: SurveyFor
         className="w-full"
         size="lg"
         onClick={handleSubmit}
-        disabled={!allRequiredAnswered || isSubmitting}
+        disabled={!allRequiredAnswered || isSubmitting || !isAuthenticated}
       >
-        {isSubmitting ? t("survey.submitting") : t("survey.submit")}
+        {!isAuthenticated
+          ? t("survey.login_to_submit")
+          : isSubmitting
+            ? t("survey.submitting")
+            : t("survey.submit")}
       </Button>
     </div>
   );
