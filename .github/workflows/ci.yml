@@ -177,8 +177,29 @@ jobs:
         working-directory: desktop/src-tauri
 
       - name: Cargo test (Tauri)
-        run: cargo test
+        run: cargo test -- --nocapture 2>&1 | tee /tmp/rust-test-output.txt
         working-directory: desktop/src-tauri
+
+      - name: Go test MCP
+        run: go test ./... -v 2>&1 | tee /tmp/go-test-output.txt
+        working-directory: mcp
+
+      - name: Cross-language hardware ID gate
+        run: |
+          RUST_HWID=$(grep 'CROSS_LANG_GATE_HWID=' /tmp/rust-test-output.txt | head -1 | cut -d= -f2)
+          GO_HWID=$(grep 'CROSS_LANG_GATE_HWID=' /tmp/go-test-output.txt | head -1 | cut -d= -f2)
+          echo "Rust hardware ID: $RUST_HWID"
+          echo "Go   hardware ID: $GO_HWID"
+          if [ -z "$RUST_HWID" ] || [ -z "$GO_HWID" ]; then
+            echo "::error::Hardware ID not found in test output"
+            exit 1
+          fi
+          if [ "$RUST_HWID" != "$GO_HWID" ]; then
+            echo "::error::Hardware ID mismatch! Rust ($RUST_HWID) != Go ($GO_HWID)"
+            echo "::error::This means encrypted storage written by Tauri cannot be read by MCP"
+            exit 1
+          fi
+          echo "Cross-language hardware ID gate PASSED"
 
       - name: Go test k2 core (deadlock detection enabled)
         run: go test ./... -count=1 -short -timeout=120s

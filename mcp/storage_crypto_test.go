@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/hex"
+	"fmt"
 	"runtime"
 	"strings"
 	"testing"
@@ -80,6 +81,8 @@ func TestHardwareIDNotEmpty(t *testing.T) {
 		t.Fatal("hardware ID is empty")
 	}
 	t.Logf("hardware ID: %s", id)
+	// CI parses this line to compare with Rust output
+	fmt.Printf("CROSS_LANG_GATE_HWID=%s\n", id)
 }
 
 func TestHardwareIDFormat(t *testing.T) {

@@ -251,6 +251,16 @@ mod tests {
         println!("[platform_gate] Linux machine-id = {}", id);
     }
 
+    /// Output hardware ID to stdout for CI cross-language gate.
+    /// CI step captures this and compares with Go's output.
+    #[test]
+    fn test_hardware_id_cross_lang_gate() {
+        let id = platform_hardware_id();
+        assert!(!id.is_empty(), "platform hardware ID must not be empty for cross-lang gate");
+        // CI parses this line: CROSS_LANG_GATE_HWID=<value>
+        println!("CROSS_LANG_GATE_HWID={}", id);
+    }
+
     #[test]
     fn test_hardware_id_does_not_use_fallback() {
         // On all CI platforms, platform_hardware_id() should succeed.
