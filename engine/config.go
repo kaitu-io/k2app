@@ -54,4 +54,9 @@ type Config struct {
 	// Provider is an externally-created provider. If non-nil, engine uses it
 	// instead of creating a provider from Client.Mode. Used by gateway/.
 	Provider provider.Provider
+
+	// WireMode is the identity sent to the server via metadata stream.
+	// "gateway" for k2r, "" for all other binaries.
+	// Hardcoded by the platform shell — not user-configurable.
+	WireMode string
 }

@@ -122,6 +122,7 @@ func (e *Engine) Start(cfg Config) error {
 	if err != nil {
 		return e.fail(err)
 	}
+	wireCfg.Mode = cfg.WireMode // binary identity (e.g., "gateway" for k2r) — not from user config
 
 	// 2.5. Start network monitor — DirectDialer needs DefaultInterface()
 	// for interface-bound dialing. Must start before Happy Eyeballs (step 3).
