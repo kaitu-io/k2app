@@ -359,6 +359,8 @@ github.com/wordgate/qtoolkit/redis v1.5.11 h1:Vi+ZOPtVbuf2sYrNsiyWSwD4C0QpIv+mQY
 github.com/wordgate/qtoolkit/redis v1.5.11/go.mod h1:PUNTGugzNr6CQbhYISFEUCHVwuOQoH6f4U15DpzcV/k=
 github.com/wordgate/qtoolkit/slack v1.5.11 h1:hyp9BmV843767YWFSu/4XbgYyjCC5OtMn4JrOM0e5J8=
 github.com/wordgate/qtoolkit/slack v1.5.11/go.mod h1:6kWXw4q3JsCgHEEhv9Mm9R+8+d4iv8N7gOTrSbrMKdM=
+github.com/wordgate/qtoolkit/slack v1.5.22 h1:USQAzMl3F4tRp/gUbZ5Cib1It3T8laW7IFeOViv+qRY=
+github.com/wordgate/qtoolkit/slack v1.5.22/go.mod h1:6kWXw4q3JsCgHEEhv9Mm9R+8+d4iv8N7gOTrSbrMKdM=
 github.com/wordgate/qtoolkit/unred v1.5.11 h1:OpzUZMLxSR1ntB076F9PwG+BS0eibBfwH7nrykfF1Cw=
 github.com/wordgate/qtoolkit/unred v1.5.11/go.mod h1:wZQ5FLW50TZE5OyfI8FNn/uTgFPruCRROIHOP5igNa0=
 github.com/wordgate/qtoolkit/util v1.5.11 h1:IuLpX7SFe3tLqfCnqYWuOIc6qMv0gFwImbFk7/ry/9E=
