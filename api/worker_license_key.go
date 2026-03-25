@@ -71,7 +71,7 @@ func sendGiftEmail(ctx context.Context, user User, keys []LicenseKey) error {
 	body += fmt.Sprintf("作为老用户专属福利，我们送你以下 %d 个礼物链接，可以分享给从未使用过 Kaitu 的朋友。\n", len(keys))
 	body += fmt.Sprintf("每个链接可为好友直接开通 %d 天会员：\n\n", planDays)
 	for i, k := range keys {
-		link := fmt.Sprintf("%s/redeem/%s", licenseKeyBaseURL, k.UUID)
+		link := fmt.Sprintf("%s/g/%s", licenseKeyBaseURL, k.Code)
 		body += fmt.Sprintf("链接 %d：%s\n", i+1, link)
 	}
 	body += "\n每个链接只能使用一次，仅限从未购买过的新用户，有效期 30 天。\n"
