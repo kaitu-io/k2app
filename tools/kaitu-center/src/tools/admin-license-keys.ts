@@ -25,19 +25,19 @@ export const licenseKeyTools: ToolRegistration[] = [
 
   defineApiTool({
     name: 'create_license_keys',
-    description: 'Generate a batch of license keys. Optionally link to a campaign.',
+    description: 'Generate a batch of license keys.',
     group: 'license_keys.write',
     method: 'POST',
     params: {
       count: z.number().describe('Number of keys to create'),
-      days: z.number().describe('Subscription days each key grants'),
-      campaign_id: z.number().optional().describe('Campaign ID to link keys to'),
+      plan_days: z.number().describe('Membership days per key'),
+      expires_in_days: z.number().optional().describe('Key expiration in days'),
+      note: z.string().optional().describe('Note for the batch'),
     },
     path: '/app/license-keys',
     mapBody: (p) => ({
-      count: p.count,
-      days: p.days,
-      campaignId: p.campaign_id,
+      count: p.count, planDays: p.plan_days,
+      expiresInDays: p.expires_in_days, note: p.note,
     }),
   }),
 

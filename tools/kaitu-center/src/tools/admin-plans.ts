@@ -19,12 +19,20 @@ export const planTools: ToolRegistration[] = [
     group: 'plans.write',
     method: 'POST',
     params: {
-      name: z.string().describe('Plan name'),
-      price: z.number().describe('Price amount'),
-      days: z.number().describe('Subscription duration in days'),
-      currency: z.string().optional().describe('Currency code (default USD)'),
+      pid: z.string().describe('Plan ID string (e.g. "monthly", "yearly")'),
+      label: z.string().describe('Display label'),
+      price: z.number().describe('Price in cents'),
+      origin_price: z.number().optional().describe('Original price in cents (for showing discount)'),
+      month: z.number().describe('Subscription months'),
+      highlight: z.string().optional().describe('Highlight text'),
+      is_active: z.boolean().optional().describe('Whether plan is active'),
     },
     path: '/app/plans',
+    mapBody: (p) => ({
+      pid: p.pid, label: p.label, price: p.price,
+      originPrice: p.origin_price, month: p.month,
+      highlight: p.highlight, isActive: p.is_active,
+    }),
   }),
 
   defineApiTool({
@@ -34,11 +42,18 @@ export const planTools: ToolRegistration[] = [
     method: 'PUT',
     params: {
       id: z.number().describe('Plan ID'),
-      name: z.string().optional().describe('Plan name'),
-      price: z.number().optional().describe('Price amount'),
-      days: z.number().optional().describe('Subscription duration in days'),
+      label: z.string().optional().describe('Display label'),
+      price: z.number().optional().describe('Price in cents'),
+      origin_price: z.number().optional().describe('Original price in cents'),
+      month: z.number().optional().describe('Subscription months'),
+      highlight: z.string().optional().describe('Highlight text'),
+      is_active: z.boolean().optional().describe('Whether plan is active'),
     },
     path: (p) => `/app/plans/${p.id}`,
+    mapBody: (p) => ({
+      label: p.label, price: p.price, originPrice: p.origin_price,
+      month: p.month, highlight: p.highlight, isActive: p.is_active,
+    }),
   }),
 
   defineApiTool({

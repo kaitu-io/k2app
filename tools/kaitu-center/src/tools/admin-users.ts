@@ -51,7 +51,7 @@ export const userTools: ToolRegistration[] = [
     path: (p) => `/app/users/${p.uuid}/membership`,
     params: {
       uuid: z.string().describe('User UUID'),
-      days: z.number().describe('Number of membership days to add'),
+      months: z.number().describe('Number of months to add'),
       reason: z.string().optional().describe('Reason for adding membership'),
     },
   }),
@@ -157,7 +157,8 @@ export const userTools: ToolRegistration[] = [
     method: 'POST',
     path: '/app/users/hard-delete',
     params: {
-      uuids: z.array(z.string()).describe('UUIDs of users to delete'),
+      user_uuids: z.array(z.string()).describe('UUIDs of users to delete'),
     },
+    mapBody: (p) => ({ userUuids: p.user_uuids }),
   }),
 ]

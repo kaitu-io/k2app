@@ -35,21 +35,23 @@ export const cloudTools: ToolRegistration[] = [
 
   defineApiTool({
     name: 'create_cloud_instance',
-    description: 'Provision a new cloud VPS instance.',
+    description: 'Provision a new cloud VPS instance. account_name is the cloud provider account name string.',
     group: 'cloud.write',
     method: 'POST',
     params: {
-      account_id: z.number().describe('Cloud account ID'),
+      account_name: z.string().describe('Cloud provider account name'),
       region: z.string().describe('Region identifier'),
       plan: z.string().describe('Instance plan/size'),
-      image: z.string().optional().describe('OS image identifier'),
+      image_id: z.string().optional().describe('OS image identifier'),
+      name: z.string().optional().describe('Instance name'),
     },
     path: '/app/cloud/instances',
     mapBody: (p) => ({
-      accountId: p.account_id,
+      account_name: p.account_name,
       region: p.region,
       plan: p.plan,
-      image: p.image,
+      image_id: p.image_id,
+      name: p.name,
     }),
   }),
 
@@ -90,11 +92,11 @@ export const cloudTools: ToolRegistration[] = [
     method: 'PUT',
     params: {
       id: z.number().describe('Instance ID'),
-      monthly_limit_gb: z.number().optional().describe('Monthly traffic limit in GB'),
+      traffic_total_gb: z.number().optional().describe('Total traffic limit in GB'),
     },
     path: (p) => `/app/cloud/instances/${p.id}/traffic-config`,
     mapBody: (p) => ({
-      monthlyLimitGb: p.monthly_limit_gb,
+      traffic_total_gb: p.traffic_total_gb,
     }),
   }),
 
