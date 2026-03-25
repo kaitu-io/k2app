@@ -30,6 +30,9 @@ func api_admin_list_license_keys(c *gin.Context) {
 	} else if isUsedStr == "false" {
 		query = query.Where("is_used = false")
 	}
+	if source := c.Query("source"); source != "" {
+		query = query.Where("source = ?", source)
+	}
 
 	if err := query.Count(&pagination.Total).Error; err != nil {
 		log.Errorf(c, "failed to count license keys: %v", err)
@@ -99,6 +102,32 @@ func api_admin_delete_license_key(c *gin.Context) {
 	log.Infof(c, "successfully deleted license key %d", id)
 	SuccessEmpty(c)
 	WriteAuditLog(c, "license_key_delete", "license_key", fmt.Sprintf("%d", id), nil)
+}
+
+func api_admin_create_license_keys(c *gin.Context) {
+	var req CreateLicenseKeysRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		Error(c, ErrorInvalidArgument, err.Error())
+		return
+	}
+
+	keys, err := CreateManualLicenseKeys(c, &req)
+	if err != nil {
+		Error(c, ErrorSystemError, err.Error())
+		return
+	}
+
+	briefs := make([]LicenseKeyBrief, len(keys))
+	for i, k := range keys {
+		briefs[i] = LicenseKeyBrief{
+			ID:        k.ID,
+			Code:      k.Code,
+			PlanDays:  k.PlanDays,
+			ExpiresAt: k.ExpiresAt,
+		}
+	}
+
+	Success(c, &CreateLicenseKeysResponse{Keys: briefs})
 }
 
 func toLicenseKeyResponse(k *LicenseKey) LicenseKeyResponse {

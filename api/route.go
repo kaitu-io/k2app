@@ -107,9 +107,9 @@ func SetupRouter() *gin.Engine {
 		// 获取 ECH 配置（公开接口，无需认证）
 		api.GET("/ech/config", api_fetch_ech_config)
 		// 获取礼品卡/授权码信息（公开接口，无需认证）
-		api.GET("/license-keys/:uuid", api_get_license_key)
+		api.GET("/license-keys/code/:code", api_get_license_key)
 		// 预览授权码折扣信息（需登录，检查当前用户是否符合使用条件）
-		api.POST("/license-keys/:uuid/redeem", AuthRequired(), api_redeem_license_key)
+		api.POST("/license-keys/code/:code/redeem", AuthRequired(), api_redeem_license_key)
 
 		user := api.Group("/user")
 		log.Debugf(ctx, "registering /api/user group")
@@ -303,6 +303,7 @@ func SetupRouter() *gin.Engine {
 		// stats must be registered BEFORE :id to prevent routing conflict
 		admin.GET("/license-keys/stats", api_admin_license_key_stats)
 		admin.GET("/license-keys", api_admin_list_license_keys)
+		admin.POST("/license-keys", api_admin_create_license_keys)
 		admin.DELETE("/license-keys/:id", api_admin_delete_license_key)
 
 		// EDM邮件营销管理 — 已移至 opsAdmin 组（RoleMarketing）
