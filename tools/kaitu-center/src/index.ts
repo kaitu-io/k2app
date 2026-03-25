@@ -1,8 +1,8 @@
 /**
  * kaitu-center — MCP server entry point.
  *
- * Wires together config loading, the Center API client, and all MCP tools,
- * then connects to stdio transport for MCP protocol communication.
+ * Loads config, fetches permissions from backend, registers tools
+ * based on allowed permission groups, then connects stdio transport.
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -10,94 +10,100 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { loadConfig } from './config.js'
 import type { Config } from './config.js'
 import { CenterApiClient } from './center-api.js'
-import { getToolsForRole } from './roles.js'
+import { fetchPermissions, type ToolRegistration } from './tool-factory.js'
+
+// Standalone tools (SSH, S3, custom logic)
 import { registerListNodes } from './tools/list-nodes.js'
 import { registerExecOnNode } from './tools/exec-on-node.js'
 import { registerPingNode } from './tools/ping-node.js'
 import { registerDeleteNode } from './tools/delete-node.js'
-import { registerQueryDeviceLogs } from './tools/query-device-logs.js'
 import { registerDownloadDeviceLog } from './tools/download-device-log.js'
-import { registerQueryFeedbackTickets } from './tools/query-feedback-tickets.js'
-import { registerResolveFeedbackTicket } from './tools/resolve-feedback-ticket.js'
-import { registerLookupUser } from './tools/lookup-user.js'
-import { registerListUserDevices } from './tools/list-user-devices.js'
-import { registerCloseFeedbackTicket } from './tools/close-feedback-ticket.js'
-import { registerListRetailers } from './tools/list-retailers.js'
-import { registerGetRetailerDetail } from './tools/get-retailer-detail.js'
-import { registerUpdateRetailerLevel } from './tools/update-retailer-level.js'
-import { registerCreateRetailerNote } from './tools/create-retailer-note.js'
-import { registerListRetailerTodos } from './tools/list-retailer-todos.js'
-import { registerListEdmTemplates } from './tools/list-edm-templates.js'
-import { registerCreateEdmTask } from './tools/create-edm-task.js'
-import { registerPreviewEdmTargets } from './tools/preview-edm-targets.js'
-import { registerGetEdmSendStats } from './tools/get-edm-send-stats.js'
+
+// Factory-declared domain tools
+import { deviceLogTools } from './tools/admin-device-logs.js'
+import { feedbackTicketTools } from './tools/admin-feedback-tickets.js'
+import { userTools } from './tools/admin-users.js'
+import { retailerTools } from './tools/admin-retailers.js'
+import { edmTools } from './tools/admin-edm.js'
+import { orderTools } from './tools/admin-orders.js'
+import { campaignTools } from './tools/admin-campaigns.js'
+import { licenseKeyTools } from './tools/admin-license-keys.js'
+import { planTools } from './tools/admin-plans.js'
+import { cloudTools } from './tools/admin-cloud.js'
+import { tunnelTools } from './tools/admin-tunnels.js'
+import { statsTools } from './tools/admin-stats.js'
+import { approvalTools } from './tools/admin-approvals.js'
+import { walletTools } from './tools/admin-wallet.js'
+import { strategyTools } from './tools/admin-strategy.js'
+
+/** All factory-declared tools, aggregated for bulk registration. */
+const allFactoryTools: ToolRegistration[] = [
+  ...deviceLogTools,
+  ...feedbackTicketTools,
+  ...userTools,
+  ...retailerTools,
+  ...edmTools,
+  ...orderTools,
+  ...campaignTools,
+  ...licenseKeyTools,
+  ...planTools,
+  ...cloudTools,
+  ...tunnelTools,
+  ...statsTools,
+  ...approvalTools,
+  ...walletTools,
+  ...strategyTools,
+]
 
 /**
- * Creates and configures the MCP server with all tools registered.
- *
- * Extracted from main() so it can be called directly in tests without
- * starting the stdio transport (which would block the process).
- *
- * @param config - Fully resolved configuration object
- * @returns A configured McpServer with all tools registered
+ * Standalone tool group mapping.
+ * These tools have custom logic and can't use the factory.
  */
+const STANDALONE_TOOLS: Array<{
+  group: string
+  register: (server: McpServer, apiClient: CenterApiClient, config: Config) => void
+}> = [
+  { group: 'nodes', register: (s, a) => registerListNodes(s, a) },
+  { group: 'nodes.write', register: (s, _, c) => registerExecOnNode(s, c.ssh) },
+  { group: 'nodes', register: (s, _, c) => registerPingNode(s, c.ssh) },
+  { group: 'nodes.write', register: (s, a) => registerDeleteNode(s, a) },
+  { group: 'device_logs', register: (s) => registerDownloadDeviceLog(s) },
+]
+
 export async function createServer(config: Config): Promise<McpServer> {
   const apiClient = new CenterApiClient(config)
-  const role = process.env['KAITU_ROLE'] || 'devops'
-  const allowed = new Set(getToolsForRole(role))
+  const server = new McpServer({ name: 'kaitu-center', version: '0.4.0' })
 
-  const server = new McpServer({
-    name: 'kaitu-center',
-    version: '0.3.0',
-  })
+  // Fetch permissions from backend
+  const permissions = await fetchPermissions(apiClient)
+  const allowedGroups = new Set(permissions.groups)
 
-  // DevOps tools
-  if (allowed.has('list_nodes'))              registerListNodes(server, apiClient)
-  if (allowed.has('exec_on_node'))            registerExecOnNode(server, config.ssh)
-  if (allowed.has('ping_node'))               registerPingNode(server, config.ssh)
-  if (allowed.has('delete_node'))             registerDeleteNode(server, apiClient)
+  console.error(`[kaitu-center] Permissions: admin=${permissions.isAdmin}, groups=${permissions.groups.length}`)
 
-  // Shared tools (DevOps + Support)
-  if (allowed.has('query_device_logs'))       registerQueryDeviceLogs(server, apiClient)
-  if (allowed.has('download_device_log'))     registerDownloadDeviceLog(server)
-  if (allowed.has('query_feedback_tickets'))  registerQueryFeedbackTickets(server, apiClient)
-  if (allowed.has('resolve_feedback_ticket')) registerResolveFeedbackTicket(server, apiClient)
+  // Register standalone tools
+  for (const tool of STANDALONE_TOOLS) {
+    if (allowedGroups.has(tool.group)) {
+      tool.register(server, apiClient, config)
+    }
+  }
 
-  // Support tools
-  if (allowed.has('lookup_user'))              registerLookupUser(server, apiClient)
-  if (allowed.has('list_user_devices'))        registerListUserDevices(server, apiClient)
-  if (allowed.has('close_feedback_ticket'))    registerCloseFeedbackTicket(server, apiClient)
-
-  // Marketing tools — retailers
-  if (allowed.has('list_retailers'))         registerListRetailers(server, apiClient)
-  if (allowed.has('get_retailer_detail'))    registerGetRetailerDetail(server, apiClient)
-  if (allowed.has('update_retailer_level'))  registerUpdateRetailerLevel(server, apiClient)
-  if (allowed.has('create_retailer_note'))   registerCreateRetailerNote(server, apiClient)
-  if (allowed.has('list_retailer_todos'))    registerListRetailerTodos(server, apiClient)
-
-  // Marketing tools — EDM
-  if (allowed.has('list_edm_templates'))     registerListEdmTemplates(server, apiClient)
-  if (allowed.has('create_edm_task'))        registerCreateEdmTask(server, apiClient)
-  if (allowed.has('preview_edm_targets'))    registerPreviewEdmTargets(server, apiClient)
-  if (allowed.has('get_edm_send_stats'))     registerGetEdmSendStats(server, apiClient)
+  // Register factory tools
+  for (const tool of allFactoryTools) {
+    if (allowedGroups.has(tool.group)) {
+      tool.register(server, apiClient)
+    }
+  }
 
   return server
 }
 
-/**
- * Main entry point: loads config, creates the server, and connects stdio transport.
- */
 async function main(): Promise<void> {
   const config = await loadConfig()
   const server = await createServer(config)
-
   const transport = new StdioServerTransport()
   await server.connect(transport)
 }
 
-// Only run main() when this file is the entry point, not when imported as a module.
-// Comparing import.meta.url to the process argv path prevents main() from running
-// during tests or when the module is imported by other code.
 const isEntryPoint =
   process.argv[1] !== undefined &&
   import.meta.url === new URL(`file://${process.argv[1]}`).href

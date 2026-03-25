@@ -1,58 +1,60 @@
-/**
- * Integration tests for the MCP server entry point.
- *
- * Tests verify that createServer() correctly configures an McpServer with
- * the expected name/version and registers both tools without starting
- * the stdio transport (which would block).
- */
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import type { Config } from './config.ts'
-import { createServer } from './index.ts'
 
-/**
- * Minimal valid config fixture for tests.
- * SSH and Center values are fake — tools are not exercised here.
- */
+// Mock fetchPermissions to return all groups
+vi.mock('./tool-factory.ts', async (importOriginal) => {
+  const original = await importOriginal() as Record<string, unknown>
+  return {
+    ...original,
+    fetchPermissions: vi.fn().mockResolvedValue({
+      isAdmin: true,
+      roles: 0,
+      groups: [
+        'nodes', 'nodes.write', 'tunnels', 'tunnels.write',
+        'cloud', 'cloud.write', 'users', 'users.write',
+        'orders', 'campaigns', 'campaigns.write',
+        'license_keys', 'license_keys.write',
+        'plans', 'plans.write', 'stats',
+        'device_logs', 'feedback_tickets', 'feedback_tickets.write',
+        'retailers', 'retailers.write', 'edm',
+        'approvals', 'approvals.write',
+        'wallet', 'wallet.write',
+        'strategy', 'strategy.write', 'surveys', 'admins',
+      ],
+    }),
+  }
+})
+
 const testConfig: Config = {
-  center: {
-    url: 'https://api.example.com',
-    accessKey: 'test-access-key',
-  },
-  ssh: {
-    privateKeyPath: '/home/user/.ssh/id_rsa',
-    user: 'root',
-    port: 22,
-  },
+  center: { url: 'https://api.example.com', accessKey: 'test-key' },
+  ssh: { privateKeyPath: '/home/user/.ssh/id_rsa', user: 'root', port: 22 },
 }
 
 describe('createServer', () => {
-  it('test_server_stdio_init — createServer returns an McpServer with correct name and version', async () => {
+  it('returns McpServer with correct version', async () => {
+    const { createServer } = await import('./index.ts')
     const server = await createServer(testConfig)
-
-    // McpServer wraps an internal Server instance at .server._serverInfo
-    const innerServer = (server as unknown as Record<string, unknown>)['server'] as Record<
-      string,
-      unknown
-    >
+    const innerServer = (server as any)['server'] as Record<string, unknown>
     const info = innerServer['_serverInfo'] as Record<string, unknown>
-    expect(info).toBeDefined()
     expect(info['name']).toBe('kaitu-center')
-    expect(info['version']).toBe('0.3.0')
+    expect(info['version']).toBe('0.4.0')
   })
 
-  it('test_server_registers_two_tools — after createServer, both list_nodes and exec_on_node are registered', async () => {
+  it('registers standalone and factory tools', async () => {
+    const { createServer } = await import('./index.ts')
     const server = await createServer(testConfig)
+    const registeredTools = (server as any)['_registeredTools'] as Record<string, unknown>
 
-    // McpServer stores registered tools in _registeredTools (plain object, SDK v1.0.0)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const registeredTools = (server as unknown as Record<string, unknown>)[
-      '_registeredTools'
-    ] as Record<string, unknown>
-
-    expect(registeredTools).toBeDefined()
+    // Standalone
     expect(Object.keys(registeredTools)).toContain('list_nodes')
     expect(Object.keys(registeredTools)).toContain('exec_on_node')
-    expect(Object.keys(registeredTools)).toContain('ping_node')
-    expect(Object.keys(registeredTools)).toContain('delete_node')
+
+    // Factory (spot check)
+    expect(Object.keys(registeredTools)).toContain('list_orders')
+    expect(Object.keys(registeredTools)).toContain('list_campaigns')
+    expect(Object.keys(registeredTools)).toContain('lookup_user')
+
+    // Should have 50+ tools
+    expect(Object.keys(registeredTools).length).toBeGreaterThan(50)
   })
 })
