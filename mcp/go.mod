@@ -3,6 +3,7 @@ module github.com/kaitu-io/k2app/mcp
 go 1.25.0
 
 require (
+	github.com/denisbrodbeck/machineid v1.0.1
 	github.com/modelcontextprotocol/go-sdk v1.4.1
 	golang.org/x/crypto v0.49.0
 )

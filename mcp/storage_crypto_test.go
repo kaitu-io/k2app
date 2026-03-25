@@ -103,10 +103,9 @@ func TestHardwareIDFormat(t *testing.T) {
 		}
 
 	case "windows":
-		// Windows: must not be all-F sentinel
-		cleaned := strings.ReplaceAll(strings.ReplaceAll(strings.ToUpper(id), "F", ""), "-", "")
-		if cleaned == "" {
-			t.Error("Windows UUID is all-F sentinel")
+		// Windows MachineGuid: 36 chars GUID format
+		if len(id) != 36 {
+			t.Errorf("Windows MachineGuid length = %d, want 36", len(id))
 		}
 
 	case "linux":
