@@ -6,10 +6,10 @@ require (
 	github.com/kaitu-io/k2app/api v0.0.0
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/viper v1.21.0
-	github.com/wordgate/qtoolkit/aws/ssm v1.5.10
-	github.com/wordgate/qtoolkit/log v1.5.11
-	github.com/wordgate/qtoolkit/unred v1.5.11
-	github.com/wordgate/qtoolkit/util v1.5.11
+	github.com/wordgate/qtoolkit/aws/ssm v1.5.23
+	github.com/wordgate/qtoolkit/log v1.5.23
+	github.com/wordgate/qtoolkit/unred v1.5.23
+	github.com/wordgate/qtoolkit/util v1.5.23
 )
 
 require (
@@ -96,16 +96,16 @@ require (
 	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.3.0 // indirect
-	github.com/wordgate/qtoolkit/ai v1.5.11 // indirect
-	github.com/wordgate/qtoolkit/asynq v1.5.11 // indirect
-	github.com/wordgate/qtoolkit/aws/ses v1.5.11 // indirect
+	github.com/wordgate/qtoolkit/ai v1.5.23 // indirect
+	github.com/wordgate/qtoolkit/asynq v1.5.23 // indirect
+	github.com/wordgate/qtoolkit/aws/ses v1.5.23 // indirect
 	github.com/wordgate/qtoolkit/chatwoot v1.5.23 // indirect
-	github.com/wordgate/qtoolkit/db v1.5.11 // indirect
-	github.com/wordgate/qtoolkit/github/issue v1.5.11 // indirect
-	github.com/wordgate/qtoolkit/mail v1.5.11 // indirect
-	github.com/wordgate/qtoolkit/openai/filesearch v1.5.22 // indirect
-	github.com/wordgate/qtoolkit/redis v1.5.11 // indirect
-	github.com/wordgate/qtoolkit/slack v1.5.22 // indirect
+	github.com/wordgate/qtoolkit/db v1.5.23 // indirect
+	github.com/wordgate/qtoolkit/github/issue v1.5.23 // indirect
+	github.com/wordgate/qtoolkit/mail v1.5.23 // indirect
+	github.com/wordgate/qtoolkit/openai/filesearch v1.5.23 // indirect
+	github.com/wordgate/qtoolkit/redis v1.5.23 // indirect
+	github.com/wordgate/qtoolkit/slack v1.5.23 // indirect
 	github.com/wordgate/wordgate-sdk v0.1.12 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/arch v0.20.0 // indirect

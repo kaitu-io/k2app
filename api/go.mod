@@ -22,19 +22,19 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.3.17
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/lighthouse v1.3.17
-	github.com/wordgate/qtoolkit/ai v1.5.11
-	github.com/wordgate/qtoolkit/asynq v1.5.11
-	github.com/wordgate/qtoolkit/aws/ses v1.5.11
+	github.com/wordgate/qtoolkit/ai v1.5.23
+	github.com/wordgate/qtoolkit/asynq v1.5.23
+	github.com/wordgate/qtoolkit/aws/ses v1.5.23
 	github.com/wordgate/qtoolkit/chatwoot v1.5.23
-	github.com/wordgate/qtoolkit/db v1.5.11
-	github.com/wordgate/qtoolkit/github/issue v1.5.11
-	github.com/wordgate/qtoolkit/log v1.5.11
-	github.com/wordgate/qtoolkit/mail v1.5.11
-	github.com/wordgate/qtoolkit/openai/filesearch v1.5.22
-	github.com/wordgate/qtoolkit/redis v1.5.11
-	github.com/wordgate/qtoolkit/slack v1.5.22
-	github.com/wordgate/qtoolkit/unred v1.5.11
-	github.com/wordgate/qtoolkit/util v1.5.11
+	github.com/wordgate/qtoolkit/db v1.5.23
+	github.com/wordgate/qtoolkit/github/issue v1.5.23
+	github.com/wordgate/qtoolkit/log v1.5.23
+	github.com/wordgate/qtoolkit/mail v1.5.23
+	github.com/wordgate/qtoolkit/openai/filesearch v1.5.23
+	github.com/wordgate/qtoolkit/redis v1.5.23
+	github.com/wordgate/qtoolkit/slack v1.5.23
+	github.com/wordgate/qtoolkit/unred v1.5.23
+	github.com/wordgate/qtoolkit/util v1.5.23
 	github.com/wordgate/wordgate-sdk v0.1.12
 	golang.org/x/crypto v0.46.0
 	gopkg.in/yaml.v3 v3.0.1
