@@ -8,6 +8,7 @@ require (
 	github.com/spf13/viper v1.21.0
 	github.com/wordgate/qtoolkit/aws/ssm v1.5.10
 	github.com/wordgate/qtoolkit/log v1.5.11
+	github.com/wordgate/qtoolkit/unred v1.5.11
 	github.com/wordgate/qtoolkit/util v1.5.11
 )
 
@@ -104,8 +105,7 @@ require (
 	github.com/wordgate/qtoolkit/mail v1.5.11 // indirect
 	github.com/wordgate/qtoolkit/openai/filesearch v1.5.22 // indirect
 	github.com/wordgate/qtoolkit/redis v1.5.11 // indirect
-	github.com/wordgate/qtoolkit/slack v1.5.11 // indirect
-	github.com/wordgate/qtoolkit/unred v1.5.11 // indirect
+	github.com/wordgate/qtoolkit/slack v1.5.22 // indirect
 	github.com/wordgate/wordgate-sdk v0.1.12 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/arch v0.20.0 // indirect
