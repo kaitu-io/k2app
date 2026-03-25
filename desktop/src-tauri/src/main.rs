@@ -7,6 +7,7 @@ mod log_upload;
 mod ne;
 mod service;
 mod storage;
+mod storage_crypto;
 mod status_stream;
 mod tray;
 mod updater;
