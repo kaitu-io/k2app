@@ -94,7 +94,7 @@ func api_survey_submit(c *gin.Context) {
 	})
 
 	if err != nil {
-		if err == gorm.ErrDuplicatedKey || util.DbIsDuplicatedErr(err) {
+		if util.DbIsDuplicatedErr(err) {
 			Error(c, ErrorConflict, "already submitted")
 			return
 		}
