@@ -48,7 +48,7 @@ export default function SurveyForm({ config, onSubmit, isSubmitting }: SurveyFor
       if (!val) continue;
       const option = q.options?.find((o) => o.value === val);
       if (option?.hasOther && otherTexts[q.id]?.trim()) {
-        finalAnswers[q.id] = `other:${otherTexts[q.id].trim()}`;
+        finalAnswers[q.id] = `other: ${otherTexts[q.id].trim()}`;
       } else {
         finalAnswers[q.id] = val;
       }

@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
+	"github.com/wordgate/qtoolkit/util"
 	"gorm.io/gorm"
 )
 
@@ -93,7 +94,7 @@ func api_survey_submit(c *gin.Context) {
 	})
 
 	if err != nil {
-		if err == gorm.ErrDuplicatedKey {
+		if err == gorm.ErrDuplicatedKey || util.DbIsDuplicatedErr(err) {
 			Error(c, ErrorConflict, "already submitted")
 			return
 		}
