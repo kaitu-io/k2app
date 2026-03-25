@@ -2,7 +2,10 @@ package center
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
+	"math/big"
+	"strings"
 	"time"
 
 	"github.com/rs/xid"
@@ -13,6 +16,72 @@ import (
 )
 
 const licenseKeyTTLDays = 30
+
+// Crockford Base32 alphabet — excludes I, L, O, U to avoid visual confusion.
+const crockfordAlphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+
+// GenerateShortCode generates a unique 8-char Crockford Base32 code.
+// Retries up to 10 times on collision.
+func GenerateShortCode(ctx context.Context) (string, error) {
+	for attempt := 0; attempt < 10; attempt++ {
+		code := make([]byte, 8)
+		for i := range code {
+			n, err := rand.Int(rand.Reader, big.NewInt(32))
+			if err != nil {
+				return "", fmt.Errorf("failed to generate random byte: %w", err)
+			}
+			code[i] = crockfordAlphabet[n.Int64()]
+		}
+		codeStr := string(code)
+
+		// Check uniqueness
+		var count int64
+		if err := db.Get().Model(&LicenseKey{}).Where("code = ?", codeStr).Count(&count).Error; err != nil {
+			return "", fmt.Errorf("failed to check code uniqueness: %w", err)
+		}
+		if count == 0 {
+			return codeStr, nil
+		}
+		log.Warnf(ctx, "[LICENSE_KEY] code collision on attempt %d: %s", attempt+1, codeStr)
+	}
+	return "", fmt.Errorf("failed to generate unique code after 10 attempts")
+}
+
+// NormalizeCode normalizes user input to uppercase for lookup.
+func NormalizeCode(code string) string {
+	return strings.ToUpper(strings.TrimSpace(code))
+}
+
+// CreateManualLicenseKeys creates license keys without a campaign.
+func CreateManualLicenseKeys(ctx context.Context, req *CreateLicenseKeysRequest) ([]LicenseKey, error) {
+	expiresAt := time.Now().AddDate(0, 0, req.ExpiresInDays).Unix()
+	keys := make([]LicenseKey, 0, req.Count)
+
+	for i := 0; i < req.Count; i++ {
+		code, err := GenerateShortCode(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate code for key %d: %w", i+1, err)
+		}
+		keys = append(keys, LicenseKey{
+			UUID:             xid.New().String(),
+			Code:             code,
+			Source:           "manual",
+			Note:             req.Note,
+			PlanDays:         req.PlanDays,
+			RecipientMatcher: req.RecipientMatcher,
+			ExpiresAt:        expiresAt,
+		})
+	}
+
+	// Batch insert
+	if err := db.Get().CreateInBatches(&keys, 100).Error; err != nil {
+		return nil, fmt.Errorf("failed to batch insert license keys: %w", err)
+	}
+
+	log.Infof(ctx, "[LICENSE_KEY] created %d manual keys (planDays=%d, expires=%d, matcher=%s)",
+		len(keys), req.PlanDays, req.ExpiresInDays, req.RecipientMatcher)
+	return keys, nil
+}
 
 // IsExpired reports whether the key has passed its expiry time.
 func (k *LicenseKey) IsExpired() bool {
@@ -33,14 +102,15 @@ func MatchLicenseKey(key *LicenseKey, user *User) bool {
 
 // RedeemLicenseKey validates, consumes, and grants plan access to the user.
 // Runs inside a DB transaction.
-func RedeemLicenseKey(ctx context.Context, uuid string, userID uint64) (*LicenseKey, *UserProHistory, error) {
+func RedeemLicenseKey(ctx context.Context, code string, userID uint64) (*LicenseKey, *UserProHistory, error) {
+	code = NormalizeCode(code)
 	var history *UserProHistory
 	var key *LicenseKey
 
 	err := db.Get().Transaction(func(tx *gormdb.DB) error {
 		// 1. Load key
 		var k LicenseKey
-		if err := tx.Where("uuid = ?", uuid).First(&k).Error; err != nil {
+		if err := tx.Where("code = ?", code).First(&k).Error; err != nil {
 			return ErrLicenseKeyNotFound
 		}
 		if k.IsUsed {
@@ -56,7 +126,7 @@ func RedeemLicenseKey(ctx context.Context, uuid string, userID uint64) (*License
 			return err
 		}
 		if existingCount > 0 {
-			return ErrLicenseKeyUsed
+			return ErrLicenseKeyAlreadyRedeemed
 		}
 
 		// 3. Load user
@@ -72,11 +142,11 @@ func RedeemLicenseKey(ctx context.Context, uuid string, userID uint64) (*License
 
 		// 5. Atomic consume
 		result := tx.Model(&LicenseKey{}).
-			Where("uuid = ? AND is_used = false", uuid).
+			Where("code = ? AND is_used = false", code).
 			Updates(map[string]any{
-				"is_used":           true,
-				"used_by_user_id":   userID,
-				"used_at":           time.Now(),
+				"is_used":         true,
+				"used_by_user_id": userID,
+				"used_at":         time.Now(),
 			})
 		if result.Error != nil {
 			return result.Error
@@ -86,7 +156,7 @@ func RedeemLicenseKey(ctx context.Context, uuid string, userID uint64) (*License
 		}
 
 		// 6. Grant plan days
-		reason := fmt.Sprintf("礼物码兑换 - %s", k.UUID)
+		reason := fmt.Sprintf("礼物码兑换 - %s", k.Code)
 		h, err := addProExpiredDays(ctx, tx, &user, VipSystemGrant, k.ID, k.PlanDays, reason)
 		if err != nil {
 			return err
@@ -102,10 +172,11 @@ func RedeemLicenseKey(ctx context.Context, uuid string, userID uint64) (*License
 	return key, history, err
 }
 
-// GetLicenseKeyByUUID fetches a key by its UUID (includes soft-deleted check via GORM).
-func GetLicenseKeyByUUID(ctx context.Context, uuid string) (*LicenseKey, error) {
+// GetLicenseKeyByCode fetches a key by its short code.
+func GetLicenseKeyByCode(ctx context.Context, code string) (*LicenseKey, error) {
+	code = NormalizeCode(code)
 	var key LicenseKey
-	if err := db.Get().Where("uuid = ?", uuid).First(&key).Error; err != nil {
+	if err := db.Get().Where("code = ?", code).First(&key).Error; err != nil {
 		return nil, err
 	}
 	return &key, nil
@@ -113,9 +184,10 @@ func GetLicenseKeyByUUID(ctx context.Context, uuid string) (*LicenseKey, error) 
 
 // ConsumeLicenseKey atomically marks a key as used.
 // Uses conditional UPDATE to prevent concurrent double-redemption.
-func ConsumeLicenseKey(ctx context.Context, tx *gormdb.DB, uuid string, userID uint64) (*LicenseKey, error) {
+func ConsumeLicenseKey(ctx context.Context, tx *gormdb.DB, code string, userID uint64) (*LicenseKey, error) {
+	code = NormalizeCode(code)
 	var key LicenseKey
-	if err := tx.Where("uuid = ?", uuid).First(&key).Error; err != nil {
+	if err := tx.Where("code = ?", code).First(&key).Error; err != nil {
 		return nil, ErrLicenseKeyNotFound
 	}
 	if key.IsUsed {
@@ -131,16 +203,16 @@ func ConsumeLicenseKey(ctx context.Context, tx *gormdb.DB, uuid string, userID u
 		return nil, err
 	}
 	if existingUseCount > 0 {
-		return nil, ErrLicenseKeyNotMatch
+		return nil, ErrLicenseKeyAlreadyRedeemed
 	}
 
 	now := time.Now()
 	result := tx.Model(&LicenseKey{}).
-		Where("uuid = ? AND is_used = false", uuid).
+		Where("code = ? AND is_used = false", code).
 		Updates(map[string]any{
-			"is_used":           true,
-			"used_by_user_id":   userID,
-			"used_at":           now,
+			"is_used":         true,
+			"used_by_user_id": userID,
+			"used_at":         now,
 		})
 	if result.Error != nil {
 		return nil, result.Error
@@ -176,8 +248,14 @@ func GenerateLicenseKeysForCampaign(ctx context.Context, campaign *Campaign) (in
 		userID := user.ID
 		campaignID := campaign.ID
 		for i := int64(0); i < campaign.SharesPerUser; i++ {
+			code, err := GenerateShortCode(ctx)
+			if err != nil {
+				return 0, fmt.Errorf("failed to generate code: %w", err)
+			}
 			keys = append(keys, LicenseKey{
 				UUID:             xid.New().String(),
+				Code:             code,
+				Source:           "campaign",
 				PlanDays:         licenseKeyTTLDays,
 				RecipientMatcher: "never_paid",
 				ExpiresAt:        expiresAt,

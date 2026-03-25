@@ -11,7 +11,7 @@ import (
 // Used by the redeem landing page to show gift card details.
 func api_get_license_key(c *gin.Context) {
 	uuid := c.Param("uuid")
-	key, err := GetLicenseKeyByUUID(c.Request.Context(), uuid)
+	key, err := GetLicenseKeyByCode(c.Request.Context(), uuid)
 	if err != nil {
 		Error(c, ErrorLicenseKeyNotFound, "not found")
 		return
