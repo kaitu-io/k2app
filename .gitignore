@@ -35,7 +35,11 @@ config.yml
 
 /k2
 /k2s
+/k2r
+/gen-config
 /gen-bench-config
+/session
+/test.test
 .claude/agent-memory/
 
 # Cloud webapp (keep default placeholder, ignore downloaded dist)
@@ -48,3 +52,12 @@ docker/bench/sing-box
 docker/bench/results/
 docker/bench/__pycache__/
 .worktrees
+
+# Superpowers agent plans (machine-generated, ephemeral)
+docs/superpowers/plans/
+
+# Live test environment (hardcoded credentials/IPs)
+test/live/
+
+# UAT build artifacts
+test/k2r-uat/.build/
