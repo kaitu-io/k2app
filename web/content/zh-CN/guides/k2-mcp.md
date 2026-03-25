@@ -22,6 +22,7 @@ draft: false
 | Cursor | ✅ 原生支持 | `~/.cursor/mcp.json` |
 | Windsurf | ✅ 原生支持 | `~/.codeium/windsurf/mcp_config.json` |
 | VS Code (Copilot) | ✅ 插件支持 | `.vscode/mcp.json` |
+| OpenClaw | ✅ Plugin 方式 | `openclaw.json` plugins 配置 |
 
 ## k2-mcp 二进制位置
 
@@ -77,6 +78,38 @@ claude mcp add k2 /Applications/Kaitu.app/Contents/MacOS/k2-mcp
 ### Windsurf
 
 编辑 `~/.codeium/windsurf/mcp_config.json`，格式同上。
+
+### OpenClaw
+
+OpenClaw 通过 Plugin 机制集成 MCP server。开途提供官方 `k2-openclaw` 插件，将 k2-mcp 的工具注册为 OpenClaw agent tool。
+
+**安装插件：**
+
+```bash
+openclaw plugin install k2-openclaw
+```
+
+**或手动配置**（`openclaw.json`）：
+
+```json
+{
+  "plugins": {
+    "allow": ["k2-openclaw"],
+    "entries": {
+      "k2-openclaw": {
+        "enabled": true,
+        "config": {
+          "k2McpPath": "/Applications/Kaitu.app/Contents/MacOS/k2-mcp"
+        }
+      }
+    }
+  }
+}
+```
+
+配置后重启 OpenClaw gateway，agent 即可直接调用 `k2_connect`、`k2_status` 等工具。
+
+> **与其他 MCP 客户端的区别**：OpenClaw 通过 Plugin 而非 `mcpServers` 配置集成，工具暴露给 agent 的方式与内置工具相同，无需额外桥接层。
 
 ## 首次使用：登录账号
 
