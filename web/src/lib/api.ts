@@ -2056,6 +2056,18 @@ export const api = {
     return this.request<void>(`/app/approvals/${id}/cancel`, { method: 'POST' });
   },
 
+  // Survey APIs
+  async submitSurvey(surveyKey: string, answers: Record<string, string>): Promise<{ reward_days: number; new_expired_at: number }> {
+    return this.request<{ reward_days: number; new_expired_at: number }>('/api/user/survey', {
+      method: 'POST',
+      body: JSON.stringify({ survey_key: surveyKey, answers }),
+    });
+  },
+
+  async getSurveyStatus(surveyKey: string): Promise<{ submitted: boolean }> {
+    return this.request<{ submitted: boolean }>(`/api/user/survey/${surveyKey}/status`);
+  },
+
 };
 
 // ==================== Cloud Instance Types ====================
