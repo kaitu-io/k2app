@@ -1,13 +1,28 @@
 package center
 
 import (
+	"errors"
 	"strconv"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
 )
+
+// handleApprovalError 统一处理审批服务层错误
+func handleApprovalError(c *gin.Context, err error, operation string) {
+	switch {
+	case errors.Is(err, ErrApprovalNotFound):
+		Error(c, ErrorNotFound, err.Error())
+	case errors.Is(err, ErrApprovalConflict):
+		Error(c, ErrorConflict, err.Error())
+	case errors.Is(err, ErrApprovalSelfAction), errors.Is(err, ErrApprovalNotOwner):
+		Error(c, ErrorForbidden, err.Error())
+	default:
+		log.Errorf(c, "%s failed: %v", operation, err)
+		Error(c, ErrorSystemError, err.Error())
+	}
+}
 
 // GET /app/approvals
 func api_admin_list_approvals(c *gin.Context) {
@@ -79,16 +94,7 @@ func api_admin_approve_approval(c *gin.Context) {
 	}
 
 	if err := ApproveApproval(c, id); err != nil {
-		if strings.Contains(err.Error(), "conflict") {
-			Error(c, ErrorConflict, err.Error())
-			return
-		}
-		if strings.Contains(err.Error(), "cannot approve own") {
-			Error(c, ErrorForbidden, err.Error())
-			return
-		}
-		log.Errorf(c, "approve approval failed: %v", err)
-		Error(c, ErrorSystemError, err.Error())
+		handleApprovalError(c, err, "approve approval")
 		return
 	}
 
@@ -112,16 +118,7 @@ func api_admin_reject_approval(c *gin.Context) {
 	}
 
 	if err := RejectApproval(c, id, req.Reason); err != nil {
-		if strings.Contains(err.Error(), "conflict") {
-			Error(c, ErrorConflict, err.Error())
-			return
-		}
-		if strings.Contains(err.Error(), "cannot reject own") {
-			Error(c, ErrorForbidden, err.Error())
-			return
-		}
-		log.Errorf(c, "reject approval failed: %v", err)
-		Error(c, ErrorSystemError, err.Error())
+		handleApprovalError(c, err, "reject approval")
 		return
 	}
 
@@ -137,16 +134,7 @@ func api_admin_cancel_approval(c *gin.Context) {
 	}
 
 	if err := CancelApproval(c, id); err != nil {
-		if strings.Contains(err.Error(), "conflict") {
-			Error(c, ErrorConflict, err.Error())
-			return
-		}
-		if strings.Contains(err.Error(), "only requestor") {
-			Error(c, ErrorForbidden, err.Error())
-			return
-		}
-		log.Errorf(c, "cancel approval failed: %v", err)
-		Error(c, ErrorSystemError, err.Error())
+		handleApprovalError(c, err, "cancel approval")
 		return
 	}
 

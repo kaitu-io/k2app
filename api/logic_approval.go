@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,6 +18,15 @@ import (
 	"github.com/wordgate/qtoolkit/asynq"
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
+)
+
+// ===================== Sentinel Errors =====================
+
+var (
+	ErrApprovalNotFound   = errors.New("approval not found")
+	ErrApprovalConflict   = errors.New("approval already processed")
+	ErrApprovalSelfAction = errors.New("cannot approve/reject own request")
+	ErrApprovalNotOwner   = errors.New("only requestor can cancel")
 )
 
 // ===================== Callback Registry =====================
@@ -135,11 +145,11 @@ func ApproveApproval(c *gin.Context, approvalID uint64) error {
 
 	var approval AdminApproval
 	if err := db.Get().First(&approval, approvalID).Error; err != nil {
-		return fmt.Errorf("approval not found: %w", err)
+		return fmt.Errorf("%w: %v", ErrApprovalNotFound, err)
 	}
 
 	if approval.RequestorID == approver.ID {
-		return fmt.Errorf("cannot approve own request")
+		return ErrApprovalSelfAction
 	}
 
 	approverName := approver.UUID
@@ -162,7 +172,7 @@ func ApproveApproval(c *gin.Context, approvalID uint64) error {
 		return fmt.Errorf("update approval: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return fmt.Errorf("approval already processed (conflict)")
+		return ErrApprovalConflict
 	}
 
 	db.Get().First(&approval, approvalID)
@@ -191,11 +201,11 @@ func RejectApproval(c *gin.Context, approvalID uint64, reason string) error {
 
 	var approval AdminApproval
 	if err := db.Get().First(&approval, approvalID).Error; err != nil {
-		return fmt.Errorf("approval not found: %w", err)
+		return fmt.Errorf("%w: %v", ErrApprovalNotFound, err)
 	}
 
 	if approval.RequestorID == approver.ID {
-		return fmt.Errorf("cannot reject own request")
+		return ErrApprovalSelfAction
 	}
 
 	approverName := approver.UUID
@@ -217,7 +227,7 @@ func RejectApproval(c *gin.Context, approvalID uint64, reason string) error {
 		return fmt.Errorf("update approval: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return fmt.Errorf("approval already processed (conflict)")
+		return ErrApprovalConflict
 	}
 
 	db.Get().First(&approval, approvalID)
@@ -238,11 +248,11 @@ func CancelApproval(c *gin.Context, approvalID uint64) error {
 
 	var approval AdminApproval
 	if err := db.Get().First(&approval, approvalID).Error; err != nil {
-		return fmt.Errorf("approval not found: %w", err)
+		return fmt.Errorf("%w: %v", ErrApprovalNotFound, err)
 	}
 
 	if approval.RequestorID != user.ID {
-		return fmt.Errorf("only requestor can cancel")
+		return ErrApprovalNotOwner
 	}
 
 	result := db.Get().Model(&AdminApproval{}).
@@ -253,7 +263,7 @@ func CancelApproval(c *gin.Context, approvalID uint64) error {
 		return fmt.Errorf("update approval: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return fmt.Errorf("approval already processed (conflict)")
+		return ErrApprovalConflict
 	}
 
 	log.Infof(c, "approval cancelled: id=%d action=%s by=%s", approvalID, approval.Action, user.UUID)
@@ -354,6 +364,7 @@ func WriteAuditLogFromApproval(ctx context.Context, approval *AdminApproval) {
 var (
 	slackUserIDCache   = map[string]string{}
 	slackUserIDCacheMu sync.RWMutex
+	slackHTTPClient    = &http.Client{Timeout: 10 * time.Second}
 )
 
 // SlackDMByEmail sends a Slack DM to a user by email address.
@@ -397,7 +408,7 @@ func resolveSlackUserID(ctx context.Context, botToken, email string) (string, er
 	}
 	req.Header.Set("Authorization", "Bearer "+botToken)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := slackHTTPClient.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -439,7 +450,7 @@ func slackOpenDM(ctx context.Context, botToken, userID string) (string, error) {
 	req.Header.Set("Authorization", "Bearer "+botToken)
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := slackHTTPClient.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -477,7 +488,7 @@ func slackPostMessage(ctx context.Context, botToken, channelID, text string) err
 	req.Header.Set("Authorization", "Bearer "+botToken)
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := slackHTTPClient.Do(req)
 	if err != nil {
 		return err
 	}

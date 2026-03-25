@@ -1,8 +1,10 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { api } from "@/lib/api";
 import { Package, Users, Server, Receipt, Mail, Tag, Wallet, FileText, Activity, LogOut, Gauge, UserCircle, ClipboardList, Cloud, BarChart3, Key, MessageSquare, ShieldCheck } from "lucide-react";
 import Image from "next/image";
 import { useAuth } from "@/contexts/AuthContext";
@@ -94,6 +96,22 @@ const menuGroups: MenuGroup[] = [
 const ManagerSidebar = () => {
   const pathname = usePathname();
   const { user, logout } = useAuth();
+  const [pendingCount, setPendingCount] = useState(0);
+
+  useEffect(() => {
+    if (!user) return;
+    const fetchPending = async () => {
+      try {
+        const res = await api.getApprovals({ status: "pending", pageSize: 1 });
+        setPendingCount(res.pagination?.total ?? 0);
+      } catch {
+        // silent — badge is best-effort
+      }
+    };
+    fetchPending();
+    const interval = setInterval(fetchPending, 60000);
+    return () => clearInterval(interval);
+  }, [user]);
 
   const isSuperAdmin = user?.isAdmin === true;
   const userRoles = user?.roles ?? 1;
@@ -147,6 +165,11 @@ const ManagerSidebar = () => {
                       >
                         <Icon className="h-4 w-4" />
                         {item.label}
+                        {item.href === "/manager/approvals" && pendingCount > 0 && (
+                          <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-xs text-white">
+                            {pendingCount}
+                          </span>
+                        )}
                       </Link>
                     );
                   })}
