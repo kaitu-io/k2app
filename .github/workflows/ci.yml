@@ -104,9 +104,34 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
       - name: Cargo test (Tauri — Linux platform gate)
-        run: cargo test
+        run: cargo test -- --nocapture 2>&1 | tee /tmp/rust-test-output.txt
         working-directory: desktop/src-tauri
+
+      - name: Go test MCP
+        run: go test ./... -v 2>&1 | tee /tmp/go-test-output.txt
+        working-directory: mcp
+
+      - name: Cross-language hardware ID gate
+        run: |
+          RUST_HWID=$(grep 'CROSS_LANG_GATE_HWID=' /tmp/rust-test-output.txt | head -1 | cut -d= -f2)
+          GO_HWID=$(grep 'CROSS_LANG_GATE_HWID=' /tmp/go-test-output.txt | head -1 | cut -d= -f2)
+          echo "Rust hardware ID: $RUST_HWID"
+          echo "Go   hardware ID: $GO_HWID"
+          if [ -z "$RUST_HWID" ] || [ -z "$GO_HWID" ]; then
+            echo "::error::Hardware ID not found in test output"
+            exit 1
+          fi
+          if [ "$RUST_HWID" != "$GO_HWID" ]; then
+            echo "::error::Hardware ID mismatch! Rust ($RUST_HWID) != Go ($GO_HWID)"
+            exit 1
+          fi
+          echo "Cross-language hardware ID gate PASSED"
 
   # --- Platform-dependent tests (macOS) ---
   test-macos:
@@ -296,8 +321,31 @@ jobs:
 
       - name: Cargo test (Tauri)
         shell: bash
-        run: cargo test
+        run: cargo test -- --nocapture 2>&1 | tee /tmp/rust-test-output.txt
         working-directory: desktop/src-tauri
+
+      - name: Go test MCP
+        shell: bash
+        run: go test ./... -v 2>&1 | tee /tmp/go-test-output.txt
+        working-directory: mcp
+
+      - name: Cross-language hardware ID gate
+        shell: bash
+        run: |
+          RUST_HWID=$(grep 'CROSS_LANG_GATE_HWID=' /tmp/rust-test-output.txt | head -1 | cut -d= -f2)
+          GO_HWID=$(grep 'CROSS_LANG_GATE_HWID=' /tmp/go-test-output.txt | head -1 | cut -d= -f2)
+          echo "Rust hardware ID: $RUST_HWID"
+          echo "Go   hardware ID: $GO_HWID"
+          if [ -z "$RUST_HWID" ] || [ -z "$GO_HWID" ]; then
+            echo "::error::Hardware ID not found in test output"
+            exit 1
+          fi
+          if [ "$RUST_HWID" != "$GO_HWID" ]; then
+            echo "::error::Hardware ID mismatch! Rust ($RUST_HWID) != Go ($GO_HWID)"
+            echo "::error::This means encrypted storage written by Tauri cannot be read by MCP"
+            exit 1
+          fi
+          echo "Cross-language hardware ID gate PASSED"
 
       - name: Go test (k2, deadlock detection enabled)
         shell: bash
