@@ -28,7 +28,7 @@ Mixing them pollutes both datasets.
 ### Trigger
 - **Who**: Subscription not expired
 - **When**: After 5th successful VPN connection (localStorage counter)
-- **How**: Bottom banner in App → `openExternal` to `kaitu.io/survey/active?uid=xxx`
+- **How**: Bottom banner in App → `openExternal` to `kaitu.io/survey/active?token=xxx` (short-lived signed token, see Authentication section)
 - **Frequency**: Once per account (deduplicated by `uk_user_survey`)
 
 ### Questions
@@ -65,10 +65,6 @@ Mixing them pollutes both datasets.
 - **How**: EDM email with personalized token link → `kaitu.io/survey/expired?token=xxx`. Also App open popup (for users who still have App installed).
 - **Frequency**: Once per account
 
-### Authentication
-- One-time token in URL (generated per user, stored or signed JWT)
-- No login required — expired users likely can't/won't log in
-
 ### Questions
 
 **Q1. Why didn't you renew?** (single choice)
@@ -101,6 +97,31 @@ Mixing them pollutes both datasets.
 - +30 days from `now()` (not from old expiry — they need immediate reactivation)
 - Automatic, same transaction as survey submission
 
+## Authentication
+
+Both surveys use **signed JWT tokens** in URL params. No stored tokens — stateless verification.
+
+### Token Format
+```
+JWT payload: { user_id, survey_key, exp }
+Signed with: Center API HMAC secret
+Expiry: 1 hour (Survey A, generated on banner click) / 14 days (Survey B, generated for EDM)
+```
+
+### Survey A Flow
+1. User clicks banner in App
+2. App calls `GET /api/survey/token?survey_key=active_2026q1` (auth'd with existing session)
+3. API generates short-lived JWT (1 hour), returns URL
+4. App opens `kaitu.io/survey/active?token=xxx` in browser
+
+### Survey B Flow
+1. EDM system generates 14-day JWT per user during email send
+2. Email contains `kaitu.io/survey/expired?token=xxx`
+3. User clicks link, browser opens page
+
+### Single-Use Enforcement
+Token itself is not invalidated. Instead, `uk_user_survey` unique constraint prevents duplicate submissions — if user clicks link again after submitting, API returns "already submitted" and page shows a friendly message.
+
 ## Database Schema
 
 ```sql
@@ -109,7 +130,6 @@ CREATE TABLE survey_responses (
     user_id       BIGINT UNSIGNED NOT NULL,
     survey_key    VARCHAR(64)  NOT NULL,   -- "active_2026q1", "expired_2026q1"
     answers       JSON         NOT NULL,   -- {"q1":"ai_tools","q2":"solo","q3":"..."}
-    device_udid   VARCHAR(128) DEFAULT '',
     ip_address    VARCHAR(45)  DEFAULT '',
     reward_days   INT          DEFAULT 0,  -- 30 for this campaign, flexible per campaign
     created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -121,32 +141,35 @@ CREATE TABLE survey_responses (
 
 **Reusability**: New campaign → new `survey_key`. Table and API unchanged. `answers` JSON accommodates any question structure. `reward_days` varies per campaign.
 
+**Note**: `device_udid` removed — surveys are filled in a web browser, not in the app, so UDID is unavailable. Account sharing signal comes from Q2 answers directly.
+
 ## API Design
 
-### `POST /app/survey/submit`
+All survey endpoints use `/api/survey/` prefix (user-facing routes).
+
+### `POST /api/survey/submit`
 
 **Request**:
 ```json
 {
-  "survey_key": "active_2026q1",
-  "answers": {"q1": "ai_tools", "q2": "solo", "q3": "连接稳定，AI 都能用"},
-  "device_udid": "xxx"
+  "token": "eyJhbG...",
+  "answers": {"q1": "ai_tools", "q2": "solo", "q3": "连接稳定，AI 都能用"}
 }
 ```
 
-**Auth**:
-- Survey A: Standard auth token (user is logged in via App)
-- Survey B: One-time token from URL param (`?token=xxx`), verified server-side
+**Auth**: JWT token in request body. Server verifies signature and extracts `user_id` + `survey_key`. Same auth flow for both Survey A and B — unified, no branching.
 
 **Logic** (single transaction):
-1. Validate survey_key is active campaign
-2. Check `uk_user_survey` — if exists, return "already submitted"
-3. Insert `survey_responses` row with `reward_days=30`
-4. Update `user.expiredAt`:
-   - Active users: `expiredAt += 30 days`
-   - Expired users: `expiredAt = now() + 30 days`
-5. Insert `UserProHistory` record (type: `reward`, reason: `survey_active_2026q1`, days: 30)
-6. Return success + new expiry date
+1. Verify JWT signature and expiry
+2. Extract `user_id` and `survey_key` from token
+3. Validate `survey_key` is an active campaign (hardcoded allowlist in code, e.g., `var activeSurveys = []string{"active_2026q1", "expired_2026q1"}`)
+4. Check `uk_user_survey` — if exists, return `code: "already_submitted"`
+5. Insert `survey_responses` row with `reward_days=30`
+6. Update `user.expiredAt`:
+   - If user not expired: `expiredAt += 30 days`
+   - If user expired: `expiredAt = now() + 30 days`
+7. Insert `UserProHistory` record (type: `reward`, reason: `survey_{survey_key}`, days: 30)
+8. Return success + new expiry date
 
 **Response**:
 ```json
@@ -159,70 +182,126 @@ CREATE TABLE survey_responses (
 }
 ```
 
-### `GET /app/survey/status?survey_key=xxx`
+**Error responses**:
+- `code: "already_submitted"` — user already filled this survey
+- `code: "token_expired"` — JWT expired
+- `code: "token_invalid"` — bad signature or malformed
+- `code: "survey_closed"` — survey_key not in active list
+
+### `GET /api/survey/token?survey_key=xxx`
+
+**Auth**: Standard Bearer token (logged-in user from App).
+
+Returns a signed JWT URL for the given survey. Used by App to generate the `openExternal` link.
+
+**Response**:
+```json
+{
+  "code": 0,
+  "data": {
+    "url": "https://kaitu.io/survey/active?token=eyJhbG..."
+  }
+}
+```
+
+### `GET /api/survey/status?survey_key=xxx`
+
+**Auth**: Standard Bearer token.
 
 Returns whether current user has already submitted this survey. Used by App to decide whether to show banner.
 
+**Response**:
+```json
+{
+  "code": 0,
+  "data": {
+    "submitted": false
+  }
+}
+```
+
 ## Web Pages
 
-### `kaitu.io/survey/active`
+### Next.js Route Structure
+```
+web/src/app/[locale]/survey/
+  active/page.tsx    -- Survey A form
+  expired/page.tsx   -- Survey B form
+  _components/
+    SurveyForm.tsx   -- Shared form component
+    SurveySuccess.tsx -- Success/reward confirmation
+```
 
-- URL params: `?uid=xxx` (user UUID from App)
-- Auth: validate uid exists and subscription is active
+### `kaitu.io/[locale]/survey/active`
+
+- URL params: `?token=xxx`
+- Page validates token client-side (decode JWT to check expiry), full validation on submit
 - 3-question form with progress indicator
 - Submit → API → show success + "30 days added" confirmation
 - i18n: zh-CN primary, en-US secondary
 
-### `kaitu.io/survey/expired`
+### `kaitu.io/[locale]/survey/expired`
 
-- URL params: `?token=xxx` (one-time token from EDM email)
-- Auth: validate token, extract user_id
-- 3-question form
+- URL params: `?token=xxx`
+- Same flow as active, different question set
 - Submit → API → show success + "account reactivated for 30 days"
-- i18n: zh-CN primary, en-US secondary
+
+### Error States
+- **Token expired**: "This link has expired. Please request a new one from the app / contact support."
+- **Token invalid**: "Invalid link. Please use the link from your email or app."
+- **Already submitted**: "You've already completed this survey. Your reward has been applied." (show current expiry date)
+- **Survey closed**: "This survey has ended. Thank you for your interest."
 
 ### Shared
-- Same form component, different question sets based on survey type
+- `SurveyForm` component accepts question config array, renders single-choice + optional text
 - Mobile-responsive (users may open on phone)
-- No login required for expired survey (token-based)
+- Minimal page — no header/footer chrome, just logo + form + submit
 
 ## App Integration (Survey A only)
 
 ### Connection Counter
 - localStorage key: `k2_connect_success_count`
-- Increment on each successful VPN connection (state → `connected`)
+- Increment location: `vpn-machine.store.ts` transition handler, on entry to `connected` state
 - Threshold: 5
 
 ### Banner Trigger
-- Conditions: `connect_count >= 5` AND user is paid AND not yet submitted (check `/app/survey/status`)
+- Conditions: `connect_count >= 5` AND user is paid AND not yet submitted (check `GET /api/survey/status`)
+- The `/api/survey/status` check is the authoritative source; localStorage dismiss is a fast-path to avoid unnecessary API calls
 - UI: Bottom banner similar to existing `AnnouncementBanner` pattern
-- Action: `openExternal('https://kaitu.io/survey/active?uid=xxx')`
-- Dismiss: localStorage flag, don't show again after dismiss or submission
+- Action: Call `GET /api/survey/token` → `openExternal(url)`
+- Dismiss: localStorage flag. Known limitation: dismiss doesn't sync across devices, but server-side status check prevents showing banner to users who already submitted on another device.
 
 ## EDM Campaign (Survey B only)
 
 ### Target
 - Users where `expiredAt` is within past 180 days
 - Use existing EDM infrastructure (templates, rate limiting, idempotency)
+- EDM `EmailSendLog` tracks which users received the email (existing infrastructure)
 
 ### Email Content
 - Subject: "We miss you — fill 3 questions, get 30 days free"
 - Body: Brief, personal, clear CTA button with tokenized link
-- Multi-language: zh-CN and en-US versions
+- Multi-language: zh-CN and en-US versions (language inferred from existing EDM language logic)
 
 ### Token Generation
-- Signed JWT or random token stored in DB, mapped to user_id
-- Expiry: 14 days (campaign duration)
-- Single-use: invalidated after survey submission
+- During EDM batch send, generate 14-day JWT per user
+- Embed in email CTA: `https://kaitu.io/survey/expired?token=xxx`
+
+### Reminder
+- 7 days after initial send, query users in `EmailSendLog` for this campaign who have no matching row in `survey_responses` → send reminder email with fresh token
 
 ## Admin Dashboard
 
-### Survey Stats Page
-- Response rate per survey_key
-- Per-question distribution charts (bar charts)
-- Account sharing signal: users with multiple device_udid submissions
-- Q3 open-text responses list (filterable)
-- Export to CSV
+### Route
+`web/src/app/(manager)/manager/surveys/page.tsx`
+
+### Features
+- Campaign selector (dropdown of survey_keys)
+- Response count + response rate (total targeted vs. submitted)
+- Per-question bar charts (use existing chart patterns from admin dashboard)
+- Account sharing breakdown from Q2 answers (pie chart: solo / family / friends)
+- Q3 open-text responses table (sortable, filterable)
+- CSV export button
 
 ## Timeline
 
@@ -240,13 +319,13 @@ SELECT survey_key, COUNT(*) AS responses FROM survey_responses GROUP BY survey_k
 SELECT JSON_UNQUOTE(JSON_EXTRACT(answers, '$.q1')) AS choice, COUNT(*)
 FROM survey_responses WHERE survey_key = 'active_2026q1' GROUP BY choice;
 
--- Account sharing signal
-SELECT user_id, COUNT(DISTINCT device_udid) AS devices
-FROM survey_responses WHERE survey_key = 'active_2026q1'
-GROUP BY user_id HAVING devices > 1;
+-- Account sharing from Q2
+SELECT JSON_UNQUOTE(JSON_EXTRACT(answers, '$.q2')) AS sharing, COUNT(*)
+FROM survey_responses WHERE survey_key = 'active_2026q1' GROUP BY sharing;
 
 -- Open text responses
 SELECT user_id, JSON_UNQUOTE(JSON_EXTRACT(answers, '$.q3')) AS recommendation
 FROM survey_responses WHERE survey_key = 'active_2026q1'
-AND JSON_EXTRACT(answers, '$.q3') IS NOT NULL;
+AND JSON_EXTRACT(answers, '$.q3') IS NOT NULL
+AND JSON_UNQUOTE(JSON_EXTRACT(answers, '$.q3')) != '';
 ```
