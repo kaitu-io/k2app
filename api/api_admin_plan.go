@@ -126,7 +126,7 @@ func api_admin_update_plan(c *gin.Context) {
 
 	Success(c, &ApprovalSubmitResponse{
 		ApprovalID: approvalID,
-		Status:     "pending",
+		Status:     "pending_approval",
 	})
 }
 
@@ -149,7 +149,7 @@ func api_admin_delete_plan(c *gin.Context) {
 
 	Success(c, &ApprovalSubmitResponse{
 		ApprovalID: approvalID,
-		Status:     "pending",
+		Status:     "pending_approval",
 	})
 }
 

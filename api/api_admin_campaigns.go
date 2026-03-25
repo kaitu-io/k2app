@@ -75,7 +75,7 @@ func api_admin_issue_license_keys(c *gin.Context) {
 	}
 
 	log.Infof(c, "issue keys for campaign %d submitted for approval: %d", id, approvalID)
-	Success(c, &ApprovalSubmitResponse{ApprovalID: approvalID, Status: "pending"})
+	Success(c, &ApprovalSubmitResponse{ApprovalID: approvalID, Status: "pending_approval"})
 }
 
 // ===================== 优惠活动管理 =====================
@@ -214,7 +214,7 @@ func api_admin_create_campaign(c *gin.Context) {
 	}
 
 	log.Infof(c, "campaign create submitted for approval: %d", approvalID)
-	Success(c, &ApprovalSubmitResponse{ApprovalID: approvalID, Status: "pending"})
+	Success(c, &ApprovalSubmitResponse{ApprovalID: approvalID, Status: "pending_approval"})
 }
 
 // api_admin_update_campaign 处理更新优惠活动的请求（管理员）
@@ -292,7 +292,7 @@ func api_admin_update_campaign(c *gin.Context) {
 	}
 
 	log.Infof(c, "campaign update submitted for approval: %d", approvalID)
-	Success(c, &ApprovalSubmitResponse{ApprovalID: approvalID, Status: "pending"})
+	Success(c, &ApprovalSubmitResponse{ApprovalID: approvalID, Status: "pending_approval"})
 }
 
 // api_admin_delete_campaign 处理删除优惠活动的请求（管理员）
@@ -330,7 +330,7 @@ func api_admin_delete_campaign(c *gin.Context) {
 	}
 
 	log.Infof(c, "campaign delete submitted for approval: %d", approvalID)
-	Success(c, &ApprovalSubmitResponse{ApprovalID: approvalID, Status: "pending"})
+	Success(c, &ApprovalSubmitResponse{ApprovalID: approvalID, Status: "pending_approval"})
 }
 
 // api_admin_get_campaign_stats 获取优惠活动统计数据（管理员）

@@ -97,10 +97,16 @@ func SubmitApproval(c *gin.Context, action string, params any, summary string) (
 		return 0, fmt.Errorf("marshal params: %w", err)
 	}
 
+	// 用邮箱作为显示名（fallback UUID）
+	requestorName := actor.UUID
+	if email := getAdminEmail(c.Request.Context(), actor.ID); email != "" {
+		requestorName = email
+	}
+
 	approval := AdminApproval{
 		RequestorID:   actor.ID,
 		RequestorUUID: actor.UUID,
-		RequestorName: actor.UUID,
+		RequestorName: requestorName,
 		Action:        action,
 		Params:        string(paramsJSON),
 		Summary:       summary,
@@ -136,6 +142,11 @@ func ApproveApproval(c *gin.Context, approvalID uint64) error {
 		return fmt.Errorf("cannot approve own request")
 	}
 
+	approverName := approver.UUID
+	if email := getAdminEmail(c.Request.Context(), approver.ID); email != "" {
+		approverName = email
+	}
+
 	now := time.Now()
 	result := db.Get().Model(&AdminApproval{}).
 		Where("id = ? AND status = ?", approvalID, "pending").
@@ -143,7 +154,7 @@ func ApproveApproval(c *gin.Context, approvalID uint64) error {
 			"status":        "approved",
 			"approver_id":   approver.ID,
 			"approver_uuid": approver.UUID,
-			"approver_name": approver.UUID,
+			"approver_name": approverName,
 			"approved_at":   now,
 		})
 
@@ -187,15 +198,18 @@ func RejectApproval(c *gin.Context, approvalID uint64, reason string) error {
 		return fmt.Errorf("cannot reject own request")
 	}
 
-	now := time.Now()
+	approverName := approver.UUID
+	if email := getAdminEmail(c.Request.Context(), approver.ID); email != "" {
+		approverName = email
+	}
+
 	result := db.Get().Model(&AdminApproval{}).
 		Where("id = ? AND status = ?", approvalID, "pending").
 		Updates(map[string]any{
 			"status":        "rejected",
 			"approver_id":   approver.ID,
 			"approver_uuid": approver.UUID,
-			"approver_name": approver.UUID,
-			"approved_at":   now,
+			"approver_name": approverName,
 			"reject_reason": reason,
 		})
 
@@ -272,7 +286,7 @@ func ExecuteApproval(ctx context.Context, payload []byte) error {
 	if !ok {
 		execErr := fmt.Sprintf("no callback registered for action: %s", approval.Action)
 		db.Get().Model(&approval).Updates(map[string]any{"status": "failed", "exec_error": execErr})
-		return fmt.Errorf("%s", execErr)
+		return nil // 不 retry — callback 结构性缺失，重试无意义
 	}
 
 	if err := cb(ctx, json.RawMessage(approval.Params)); err != nil {

@@ -127,6 +127,17 @@ func api_admin_approve_withdraw(c *gin.Context) {
 		return
 	}
 
+	// 预校验 withdraw 存在且状态正确
+	var withdraw Withdraw
+	if err := db.Get().First(&withdraw, withdrawID).Error; err != nil {
+		Error(c, ErrorNotFound, "withdraw not found")
+		return
+	}
+	if withdraw.Status != WithdrawStatusPending {
+		Error(c, ErrorInvalidArgument, "withdraw is not in pending status")
+		return
+	}
+
 	summary := fmt.Sprintf("审批提现 #%d (通过)", withdrawID)
 	if req.Action == "reject" {
 		summary = fmt.Sprintf("审批提现 #%d (拒绝)", withdrawID)
@@ -146,7 +157,7 @@ func api_admin_approve_withdraw(c *gin.Context) {
 
 	Success(c, &ApprovalSubmitResponse{
 		ApprovalID: approvalID,
-		Status:     "pending",
+		Status:     "pending_approval",
 	})
 }
 
@@ -171,6 +182,17 @@ func api_admin_complete_withdraw(c *gin.Context) {
 		return
 	}
 
+	// 预校验 withdraw 存在且状态正确
+	var withdraw Withdraw
+	if err := db.Get().First(&withdraw, withdrawID).Error; err != nil {
+		Error(c, ErrorNotFound, "withdraw not found")
+		return
+	}
+	if withdraw.Status != WithdrawStatusPending {
+		Error(c, ErrorInvalidArgument, "withdraw is not in pending status")
+		return
+	}
+
 	approvalID, err := SubmitApproval(c, "withdraw_complete", withdrawCompleteApprovalParams{
 		WithdrawID:  withdrawID,
 		TxHash:      req.TxHash,
@@ -185,7 +207,7 @@ func api_admin_complete_withdraw(c *gin.Context) {
 
 	Success(c, &ApprovalSubmitResponse{
 		ApprovalID: approvalID,
-		Status:     "pending",
+		Status:     "pending_approval",
 	})
 }
 

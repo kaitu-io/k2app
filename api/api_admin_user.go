@@ -775,7 +775,7 @@ func api_admin_hard_delete_users(c *gin.Context) {
 
 	Success(c, &ApprovalSubmitResponse{
 		ApprovalID: approvalID,
-		Status:     "pending",
+		Status:     "pending_approval",
 	})
 }
 
