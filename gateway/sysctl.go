@@ -25,14 +25,18 @@ func (s *sysctlState) Enable() error {
 		return fmt.Errorf("read ip_forward: %w", err)
 	}
 	s.ipv4Old = strings.TrimSpace(string(old))
-	if err := os.WriteFile(ipv4ForwardPath, []byte("1"), 0644); err != nil {
-		return fmt.Errorf("enable ipv4 forwarding: %w", err)
+	if s.ipv4Old != "1" {
+		if err := os.WriteFile(ipv4ForwardPath, []byte("1"), 0644); err != nil {
+			return fmt.Errorf("enable ipv4 forwarding: %w", err)
+		}
 	}
 	slog.Info("DIAG: gw-sysctl", "key", "ipv4.ip_forward", "oldValue", s.ipv4Old, "newValue", "1")
 
 	if old6, err := os.ReadFile(ipv6ForwardPath); err == nil {
 		s.ipv6Old = strings.TrimSpace(string(old6))
-		_ = os.WriteFile(ipv6ForwardPath, []byte("1"), 0644)
+		if s.ipv6Old != "1" {
+			_ = os.WriteFile(ipv6ForwardPath, []byte("1"), 0644)
+		}
 		slog.Info("DIAG: gw-sysctl", "key", "ipv6.forwarding", "oldValue", s.ipv6Old, "newValue", "1")
 	}
 	return nil

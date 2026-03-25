@@ -10,6 +10,7 @@ import (
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/gateway"
+	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -94,7 +95,7 @@ func cmdSetup(args []string) {
 	}
 
 	os.MkdirAll("/etc/k2r", 0755)
-	data, _ := json.MarshalIndent(cfg, "", "  ")
+	data, _ := yaml.Marshal(cfg)
 	if err := os.WriteFile("/etc/k2r/k2r.yml", data, 0600); err != nil {
 		fmt.Fprintf(os.Stderr, "save config: %v\n", err)
 		os.Exit(1)

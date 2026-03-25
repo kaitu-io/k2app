@@ -15,7 +15,9 @@ go test ./...                      # All tests (wire + core + dns + appext + dae
 go test -short ./...               # Fast: skip live DNS/network tests
 go test -race -timeout 300s ./wire/...  # Wire tests with race (needs 300s+ timeout)
 make quick-check                   # go vet + golangci-lint + go test -short -race
-make pre-release                   # quick-check + full tests + contract tests + cross-compile
+make gateway-check                 # gateway/ vet + build + unit tests (native Linux) or cross-compile (macOS)
+make gateway-uat                   # Docker UAT: 10 phases, ~56 tests, full soft-router validation
+make pre-release                   # quick-check + gateway-check + full tests + contract tests + cross-compile
 make appext-ios                    # iOS xcframework (gomobile bind)
 make appext-android                # Android aar (gomobile bind)
 k2 setup <k2v5://URL>              # First-time: generate config + install service + start
@@ -97,6 +99,9 @@ Reserved event names:
 | `DIAG: punch-fail` | WARN | each failure | strategy, peer, err |
 | `DIAG: p2p-connected` | INFO | connection established | peer, method, dialMs |
 | `DIAG: p2p-relay-fallback` | WARN | direct failed | peer, relayServer, err |
+| `DIAG: gw-lan-discover` | INFO | on LAN scan | subnets, ifaceCount |
+| `DIAG: gw-intercept-install` | INFO | on rule install | backend, subnets, excludeCount |
+| `DIAG: gw-sysctl` | INFO | on sysctl change | key, oldValue, newValue |
 
 ### Layer 3 Rules — Full Trace
 
@@ -180,6 +185,9 @@ Serialization locks (never nested inside any state lock above):
   smuxUDPMux.writeMu (standalone)
   quicStreamUDPMux.writeMu (standalone)
   udpOverflowStream.initMu → udpOverflowStream.writeMu
+
+gateway standalone locks (no nesting with engine locks):
+  Gateway.opMu (serialization) → Gateway.mu (state) → Gateway.sseMu (state)
 
 k2p/signal standalone locks (no nesting with engine locks):
   signal.Store.mu (state, RWMutex) → PeerEntry.WriteMu (serialization)

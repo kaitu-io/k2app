@@ -25,6 +25,7 @@ func main() {
 	serverPort := flag.Int("port", 443, "server port")
 	publicName := flag.String("public-name", "cloudflare-ech.com", "ECH public name (outer SNI)")
 	listenAddr := flag.String("listen", "", "daemon HTTP listen address (e.g., 0.0.0.0:1777)")
+	mode := flag.String("mode", "proxy", "client mode: proxy or gateway")
 	flag.Parse()
 
 	if err := os.MkdirAll(*outDir, 0755); err != nil {
@@ -106,6 +107,34 @@ log:
 		os.Exit(1)
 	}
 	fmt.Printf("Client config: %s\n", clientCfgPath)
+
+	// 5. Write gateway config (k2r) if mode=gateway
+	if *mode == "gateway" {
+		gatewayCfg := fmt.Sprintf(`server: "%s"
+dns:
+  direct:
+    - "8.8.8.8:53"
+  proxy:
+    - "8.8.8.8:53"
+rule:
+  global: true
+listen_port: 12345
+log:
+  level: debug
+  output: stderr
+`, wireURL)
+
+		if *listenAddr != "" {
+			gatewayCfg += fmt.Sprintf("listen: \"%s\"\n", *listenAddr)
+		}
+
+		gatewayCfgPath := filepath.Join(*outDir, "k2r.yml")
+		if err := os.WriteFile(gatewayCfgPath, []byte(gatewayCfg), 0644); err != nil {
+			slog.Error("write gateway config", "err", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Gateway config: %s\n", gatewayCfgPath)
+	}
 }
 
 func generateTLSCert(certPath, keyPath string) error {

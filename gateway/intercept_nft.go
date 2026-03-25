@@ -22,10 +22,16 @@ func (n *nftInterceptor) Install(cfg InterceptConfig) error {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("nft script: %s: %w", out, err)
 	}
-	_ = runCmd("ip", "rule", "add", "fwmark", "1", "table", "100")
-	_ = runCmd("ip", "route", "add", "local", "0.0.0.0/0", "dev", "lo", "table", "100")
-	_ = runCmd("ip", "-6", "rule", "add", "fwmark", "1", "table", "100")
-	_ = runCmd("ip", "-6", "route", "add", "local", "::/0", "dev", "lo", "table", "100")
+	for _, c := range []struct{ args []string }{
+		{[]string{"rule", "add", "fwmark", "1", "table", "100"}},
+		{[]string{"route", "add", "local", "0.0.0.0/0", "dev", "lo", "table", "100"}},
+		{[]string{"-6", "rule", "add", "fwmark", "1", "table", "100"}},
+		{[]string{"-6", "route", "add", "local", "::/0", "dev", "lo", "table", "100"}},
+	} {
+		if err := runCmd("ip", c.args...); err != nil {
+			slog.Warn("gateway: ip rule/route setup", "args", c.args, "err", err)
+		}
+	}
 	n.installed = true
 	slog.Info("DIAG: gw-intercept-install", "backend", "nftables",
 		"subnets", cfg.LANSubnets, "excludeCount", len(cfg.ExcludeIPs))
@@ -75,15 +81,15 @@ func (n *nftInterceptor) buildScript(cfg InterceptConfig) string {
 
 	for _, subnet := range v4Subnets {
 		lines = append(lines, fmt.Sprintf(
-			"add rule inet k2r prerouting ip saddr %s meta l4proto tcp tproxy to %s meta mark set 1", subnet, port))
+			"add rule inet k2r prerouting ip saddr %s meta l4proto tcp tproxy ip to %s meta mark set 1", subnet, port))
 		lines = append(lines, fmt.Sprintf(
-			"add rule inet k2r prerouting ip saddr %s meta l4proto udp tproxy to %s meta mark set 1", subnet, port))
+			"add rule inet k2r prerouting ip saddr %s meta l4proto udp tproxy ip to %s meta mark set 1", subnet, port))
 	}
 	for _, subnet := range v6Subnets {
 		lines = append(lines, fmt.Sprintf(
-			"add rule inet k2r prerouting ip6 saddr %s meta l4proto tcp tproxy to %s meta mark set 1", subnet, port))
+			"add rule inet k2r prerouting ip6 saddr %s meta l4proto tcp tproxy ip6 to %s meta mark set 1", subnet, port))
 		lines = append(lines, fmt.Sprintf(
-			"add rule inet k2r prerouting ip6 saddr %s meta l4proto udp tproxy to %s meta mark set 1", subnet, port))
+			"add rule inet k2r prerouting ip6 saddr %s meta l4proto udp tproxy ip6 to %s meta mark set 1", subnet, port))
 	}
 
 	return strings.Join(lines, "\n") + "\n"

@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/kaitu-io/k2/config"
+	"github.com/kaitu-io/k2/safego"
 )
 
 // Request is the JSON body for /api/core.
@@ -67,16 +68,16 @@ func (g *Gateway) handleUp(w http.ResponseWriter, params map[string]any) {
 			return
 		}
 	}
-	go func() {
+	safego.Go(func() {
 		if err := g.doUp(cfg); err != nil {
 			slog.Warn("gateway: doUp failed", "err", err)
 		}
-	}()
+	})
 	writeJSON(w, Response{Code: 0, Message: "connecting"})
 }
 
 func (g *Gateway) handleDown(w http.ResponseWriter) {
-	go g.doDown()
+	safego.Go(g.doDown)
 	writeJSON(w, Response{Code: 0, Message: "disconnecting"})
 }
 

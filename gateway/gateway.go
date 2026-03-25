@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/kaitu-io/k2/engine"
+	"github.com/kaitu-io/k2/safego"
 	"github.com/sasha-s/go-deadlock"
 )
 
@@ -53,6 +54,8 @@ func New() *Gateway {
 // listener fails. It cleans stale firewall rules on startup and attempts
 // auto-reconnect from saved state.
 func (g *Gateway) Run(addr string) error {
+	defer g.handlePanic()
+
 	g.cleanStaleRules()
 
 	mux := http.NewServeMux()
@@ -66,14 +69,14 @@ func (g *Gateway) Run(addr string) error {
 		Handler: mux,
 	}
 
-	go g.tryAutoReconnect()
+	safego.Go(g.tryAutoReconnect)
 
 	slog.Info("gateway: HTTP API listening", "addr", addr)
 
 	errCh := make(chan error, 1)
-	go func() {
+	safego.Go(func() {
 		errCh <- g.httpServer.ListenAndServe()
-	}()
+	})
 
 	select {
 	case <-g.ctx.Done():
@@ -247,7 +250,7 @@ func (g *Gateway) tryAutoReconnect() {
 	if time.Since(st.Timestamp) > 7*24*time.Hour {
 		return
 	}
-	time.Sleep(3 * time.Second)
+	time.Sleep(3 * time.Second) // wait for HTTP server + network stack to be ready
 	select {
 	case <-g.ctx.Done():
 		return

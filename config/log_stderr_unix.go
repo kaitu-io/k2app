@@ -5,6 +5,8 @@ package config
 import (
 	"os"
 	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 // redirectStderrFD redirects file descriptor 2 to the given file.
@@ -15,12 +17,12 @@ func redirectStderrFD(f *os.File) (restore func(), err error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := syscall.Dup2(int(f.Fd()), 2); err != nil {
+	if err := unix.Dup2(int(f.Fd()), 2); err != nil {
 		syscall.Close(origFd)
 		return nil, err
 	}
 	return func() {
-		syscall.Dup2(origFd, 2) //nolint:errcheck
+		unix.Dup2(origFd, 2) //nolint:errcheck
 		syscall.Close(origFd)
 	}, nil
 }
