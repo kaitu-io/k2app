@@ -182,8 +182,14 @@ func (e *Engine) Start(cfg Config) error {
 
 	tm := wire.NewTransportManager()
 	tm.SetPrimary(raceResult.Dialer, raceResult.TransportType)
+
+	// Ensure TCP-WS is available as TM fallback AND as DNS transport.
+	// DNS is control-plane traffic — use TCP-WS directly (most reliable)
+	// instead of TransportManager (QUIC-first, susceptible to Short Header blocking).
+	var tcpwsDialer wire.Dialer
 	if raceResult.TCPWS != nil {
 		tm.SetTCPWS(raceResult.TCPWS)
+		tcpwsDialer = raceResult.TCPWS
 	} else if raceResult.TransportType != "tcpws" {
 		// Build a standalone TCP-WS client as fallback.
 		tcpwsClient := wire.NewTCPWSClient(wireCfg, nil)
@@ -191,6 +197,10 @@ func (e *Engine) Start(cfg Config) error {
 			tcpwsClient.SetDirectDialer(cfg.DirectDialer)
 		}
 		tm.SetTCPWS(tcpwsClient)
+		tcpwsDialer = tcpwsClient
+	} else {
+		// TCP-WS won race: primary IS tcpws, use it for DNS too.
+		tcpwsDialer = raceResult.Dialer
 	}
 	// Start background QUIC recovery probe (active during TCP-WS fallback).
 	// Complements echoLoop: quicProbeLoop handles handshake-level failure (UDP fully blocked),
@@ -284,7 +294,7 @@ func (e *Engine) Start(cfg Config) error {
 			}))
 		}
 		proxyDNS = dns.NewProxyDNSClient(dns.ProxyDNSClientConfig{
-			Dialer:  tm,
+			Dialer:  tcpwsDialer, // control-plane: TCP-WS directly, bypass QUIC
 			Servers: client.DNS.Proxy,
 		})
 		dnsMW := dns.NewMiddleware(dns.MiddlewareConfig{
@@ -383,6 +393,7 @@ func (e *Engine) Start(cfg Config) error {
 		"mode", client.Mode,
 		"ruleGlobal", client.Rule.Global,
 		"dialMs", time.Since(startTime).Milliseconds(),
+		"dnsTransport", "tcpws",
 	)
 
 	// Network monitor already started in step 4.1 (before wire probe).
@@ -638,7 +649,7 @@ func (e *Engine) Stop() error {
 	e.tm = nil
 	tunnel := e.tunnel
 	e.tunnel = nil
-	e.proxyDNS = nil // no explicit close needed — tm.Close() cascades
+	e.proxyDNS = nil // no explicit close needed — tm.Close() closes tcpws, DNS conns die
 	e.client = nil
 	e.connectedAt = time.Time{}
 	e.paused = false

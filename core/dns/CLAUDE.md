@@ -45,6 +45,8 @@ Shared health-aware server racing used by both DirectDNSClient and ProxyDNSClien
 
 Uses persistent UDP connections with message-ID-based multiplexing (sing-box pattern). A single UDP connection per server handles all queries via callback registry, avoiding per-query DialUDP overhead. Delegates `Query()` to `racingResolver`. `ResetConnections()` closes all pooled connections (called on network change so next query dials through fresh wire). Per-query DIAG events on failure: `dns-proxy-timeout` (5s timeout, includes `connAgeS`/`isNewConn`), `dns-proxy-write-fail`, `dns-proxy-conn-dead`, `dns-proxy-dial-fail`.
 
+**Transport selection**: DNS proxy uses TCP-WS transport directly (not TransportManager's QUIC-first path). DNS is control-plane traffic: tiny packets, critical-path dependency, reliability > speed. TCP-WS (TLS-over-TCP-443) is strictly more reachable than QUIC Short Header in censored networks. Engine passes the TCP-WS dialer to `ProxyDNSClient` at assembly time. Data traffic (browsing, video) continues using QUIC-first via TransportManager.
+
 ## Files
 
 - `middleware.go` — `Middleware` struct, pipeline + `queryUpstream()` + in-flight dedup + active SWR prefresh

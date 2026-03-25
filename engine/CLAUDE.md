@@ -20,6 +20,8 @@ Platform Shell (daemon/appext)
               ├── 6. Provider (TUN/Proxy/TProxy/appext FD)
               ├── 7. ClientTunnel
               ├── 8. DNS middleware (TUN/TProxy mode only)
+              │      DNS proxy dialer = TCP-WS (control-plane: reliability over speed)
+              │      Data traffic dialer = TransportManager (QUIC-first: speed over reliability)
               ├── 9. Commit → StateConnected + start reRaceLoop
               ├── 10. HealthMonitor start (1Hz wire stats + health FSM + echoLoop)
               └── 11. Background QUIC probe (active during TCP-WS fallback, 30s interval)
