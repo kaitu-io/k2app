@@ -229,6 +229,13 @@ func SetupRouter() *gin.Engine {
 			stats.POST("/k2s-download", api_stats_k2s_download)
 		}
 
+		// 问卷调查
+		survey := api.Group("/survey")
+		{
+			survey.POST("/submit", AuthRequired(), api_survey_submit)
+			survey.GET("/status", AuthRequired(), api_survey_status)
+		}
+
 	}
 
 	admin := r.Group("/app")
