@@ -245,12 +245,12 @@ type MetadataFrame struct {
 	Mode  string // "gateway" or "" (normal)
 }
 
-// WriteMetadataFrame writes a metadata frame to w.
-// Format: [StreamType:0x10][field_count:varint] then for each field: [key_len:varint][key][val_len:varint][val]
+// WriteMetadataFrame writes a metadata frame payload to w.
+// The StreamType byte (0x10) is NOT included — it's written by WriteStreamHeader.
+// Format: [field_count:varint] then for each field: [key_len:varint][key][val_len:varint][val]
 func WriteMetadataFrame(w io.Writer, meta MetadataFrame) error {
 	bp := streamHeaderPool.Get().(*[]byte)
 	buf := (*bp)[:0]
-	buf = append(buf, StreamTypeMeta)
 
 	fields := [][2]string{
 		{"udid", meta.UDID},

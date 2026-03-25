@@ -49,14 +49,14 @@ func TestNewRemoteValidator_Expired(t *testing.T) {
 	defer srv.Close()
 
 	v := NewRemoteValidator(srv.URL)
-	if v("dev1", "tok1", "") {
+	if v("tok1", "dev1", "") {
 		t.Error("expired membership should fail")
 	}
 }
 
 func TestNewRemoteValidator_Unreachable(t *testing.T) {
 	v := NewRemoteValidator("http://127.0.0.1:1")
-	if v("dev1", "tok1", "") {
+	if v("tok1", "dev1", "") {
 		t.Error("unreachable server should fail")
 	}
 }
@@ -68,7 +68,7 @@ func TestNewRemoteValidator_Timeout(t *testing.T) {
 	defer srv.Close()
 
 	v := NewRemoteValidator(srv.URL)
-	if v("dev1", "tok1", "") {
+	if v("tok1", "dev1", "") {
 		t.Error("timeout should fail")
 	}
 }

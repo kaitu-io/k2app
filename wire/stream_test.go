@@ -390,3 +390,52 @@ func TestReadH3ProxyStream(t *testing.T) {
 		t.Errorf("expected EOF, got %v", err)
 	}
 }
+
+// ============================================================================
+// MetadataFrame Round-Trip
+// ============================================================================
+
+func TestMetadataFrame_RoundTrip(t *testing.T) {
+	tests := []struct {
+		name string
+		meta MetadataFrame
+	}{
+		{
+			name: "full frame with mode",
+			meta: MetadataFrame{UDID: "abc123", Token: "jwt-token-here", Mode: "gateway"},
+		},
+		{
+			name: "no mode (normal client)",
+			meta: MetadataFrame{UDID: "device1", Token: "secret"},
+		},
+		{
+			name: "empty fields",
+			meta: MetadataFrame{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			if err := WriteMetadataFrame(&buf, tt.meta); err != nil {
+				t.Fatalf("WriteMetadataFrame: %v", err)
+			}
+
+			br := bufio.NewReader(&buf)
+			got, err := ReadMetadataFrame(br)
+			if err != nil {
+				t.Fatalf("ReadMetadataFrame: %v", err)
+			}
+
+			if got.UDID != tt.meta.UDID {
+				t.Errorf("UDID = %q, want %q", got.UDID, tt.meta.UDID)
+			}
+			if got.Token != tt.meta.Token {
+				t.Errorf("Token = %q, want %q", got.Token, tt.meta.Token)
+			}
+			if got.Mode != tt.meta.Mode {
+				t.Errorf("Mode = %q, want %q", got.Mode, tt.meta.Mode)
+			}
+		})
+	}
+}

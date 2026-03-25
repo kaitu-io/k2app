@@ -459,7 +459,7 @@ serialize:
 	// Send metadata stream before storing connection (no lock held — Rule #2).
 	// Must happen before any other streams so server knows the client mode.
 	if c.cfg.Mode != "" {
-		if err := c.sendMetadata(conn); err != nil {
+		if err := c.sendMetadata(ctx, conn); err != nil {
 			slog.Warn("QUICClient: metadata stream failed", "mode", c.cfg.Mode, "err", err)
 			conn.CloseWithError(0x01, "metadata auth failed")
 			transport.Close()
@@ -492,8 +492,8 @@ serialize:
 
 // sendMetadata opens a metadata stream (StreamType 0x10) and sends credentials + mode.
 // The server validates and responds with OK or error.
-func (c *QUICClient) sendMetadata(conn *quic.Conn) error {
-	stream, err := conn.OpenStreamSync(context.Background())
+func (c *QUICClient) sendMetadata(ctx context.Context, conn *quic.Conn) error {
+	stream, err := conn.OpenStreamSync(ctx)
 	if err != nil {
 		return fmt.Errorf("open stream: %w", err)
 	}
