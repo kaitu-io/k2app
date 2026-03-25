@@ -1,8 +1,10 @@
 package center
 
 import (
-	db "github.com/wordgate/qtoolkit/db"
 	"context"
+	"fmt"
+
+	db "github.com/wordgate/qtoolkit/db"
 
 	"github.com/wordgate/qtoolkit/log"
 )
@@ -66,6 +68,33 @@ func Migrate() error {
 		return err
 	}
 
+	if err := backfillLicenseKeyCodes(ctx); err != nil {
+		log.Errorf(ctx, "license key backfill failed: %v", err)
+		return err
+	}
+
 	log.Infof(ctx, "database migration completed successfully")
+	return nil
+}
+
+func backfillLicenseKeyCodes(ctx context.Context) error {
+	var keys []LicenseKey
+	if err := db.Get().Where("code = '' OR code IS NULL").Find(&keys).Error; err != nil {
+		return err
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	log.Infof(ctx, "[MIGRATE] backfilling %d license keys with short codes", len(keys))
+	for i := range keys {
+		code, err := GenerateShortCode(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to generate code for key %d: %w", keys[i].ID, err)
+		}
+		if err := db.Get().Model(&keys[i]).Update("code", code).Error; err != nil {
+			return fmt.Errorf("failed to update key %d with code: %w", keys[i].ID, err)
+		}
+	}
+	log.Infof(ctx, "[MIGRATE] backfilled %d license keys with short codes", len(keys))
 	return nil
 }

@@ -1067,7 +1067,7 @@ type LicenseKey struct {
 	DeletedAt gorm.DeletedAt `gorm:"index"`
 
 	UUID string `gorm:"type:varchar(50);uniqueIndex;not null" json:"uuid"`
-	Code string `gorm:"type:varchar(8)" json:"code"` // Initially nullable for migration; after backfill, update to uniqueIndex;not null
+	Code string `gorm:"type:varchar(8);uniqueIndex;not null" json:"code"`
 
 	Source string `gorm:"type:varchar(16);not null;default:'campaign'" json:"source"` // "campaign" or "manual"
 	Note   string `gorm:"type:varchar(255)" json:"note"`
