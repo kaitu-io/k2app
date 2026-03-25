@@ -41,8 +41,14 @@ func main() {
 	sessionDir := envOr("KAITU_SESSION_DIR", defaultSessionDir())
 
 	sess := NewSession(sessionDir)
-	if err := sess.Restore(); err != nil {
-		log.Printf("session restore: %v", err)
+
+	// Try Tauri desktop session first (shared identity),
+	// fall back to MCP's own session file.
+	tauriRestored := sess.RestoreFromTauri()
+	if !tauriRestored {
+		if err := sess.Restore(); err != nil {
+			log.Printf("session restore: %v", err)
+		}
 	}
 
 	center := NewCenterClient(apiURL)
@@ -52,7 +58,13 @@ func main() {
 		sess.mu.RUnlock()
 		center.SetToken(token)
 	}
-	udid := sess.UDID()
+
+	// Use Tauri UDID (32-char, matches desktop device) if available,
+	// otherwise use MCP's own UDID (16-char, separate device).
+	udid := sess.TauriUDID()
+	if udid == "" {
+		udid = sess.UDID()
+	}
 	center.SetUDID(udid)
 
 	app := &App{

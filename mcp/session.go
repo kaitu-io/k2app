@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -159,6 +160,65 @@ func (s *Session) UDID() string {
 	_ = os.WriteFile(path, []byte(id), 0600)
 
 	return id
+}
+
+// RestoreFromTauri attempts to load session from Tauri's desktop storage.json.
+// MCP is read-only — never writes to Tauri's storage.json.
+// On Windows, atomic rename may race with Tauri writes; json.Unmarshal
+// fails gracefully on partial reads and we return false.
+// Returns true if tokens were successfully loaded.
+func (s *Session) RestoreFromTauri() bool {
+	path := tauriStoragePath()
+	if path == "" {
+		return false
+	}
+
+	hwID, err := getHardwareID()
+	if err != nil {
+		log.Printf("[session] Cannot get hardware ID for Tauri storage: %v", err)
+		return false
+	}
+	key := deriveKey(hwID)
+
+	ts, err := readTauriStorage(path, &key)
+	if err != nil {
+		log.Printf("[session] Tauri storage not available: %v", err)
+		return false
+	}
+
+	if ts.AccessToken == "" {
+		return false
+	}
+
+	s.mu.Lock()
+	s.AccessToken = ts.AccessToken
+	s.RefreshToken = ts.RefreshToken
+	s.Email = "" // Not stored in Tauri storage
+	s.mu.Unlock()
+
+	log.Printf("[session] Restored session from Tauri desktop storage")
+	return true
+}
+
+// TauriUDID attempts to read the UDID from Tauri storage and return the
+// hashed version (32 hex chars) used by Center API.
+func (s *Session) TauriUDID() string {
+	path := tauriStoragePath()
+	if path == "" {
+		return ""
+	}
+
+	hwID, err := getHardwareID()
+	if err != nil {
+		return ""
+	}
+	key := deriveKey(hwID)
+
+	ts, err := readTauriStorage(path, &key)
+	if err != nil || ts.HashedUDID == "" {
+		return ""
+	}
+	return ts.HashedUDID
 }
 
 // generateUDID computes sha256(hostname + first-non-loopback-MAC)[:16] hex.
