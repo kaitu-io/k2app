@@ -13,7 +13,16 @@
     "successBody": "メンバーシップが {days} 日延長されました",
     "viewAccount": "アカウントを確認",
     "notEligible": "このギフトを使用する資格がありません",
-    "redeemFailed": "交換に失敗しました。もう一度お試しください"
+    "redeemFailed": "交換に失敗しました。もう一度お試しください",
+    "titleAnonymous": "你收到一个礼物",
+    "alreadyRedeemed": "您已使用过授权码"
+  },
+  "landing": {
+    "title": "兑换授权码",
+    "subtitle": "输入授权码，免费获取会员",
+    "placeholder": "输入 8 位授权码",
+    "notFound": "授权码不存在",
+    "reenter": "重新输入"
   },
   "admin": {
     "title": "授权码管理",

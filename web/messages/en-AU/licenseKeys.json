@@ -13,7 +13,16 @@
     "successBody": "Your membership has been extended by {days} days",
     "viewAccount": "View my account",
     "notEligible": "You are not eligible to use this gift",
-    "redeemFailed": "Redemption failed, please try again"
+    "redeemFailed": "Redemption failed, please try again",
+    "titleAnonymous": "You received a gift",
+    "alreadyRedeemed": "You have already redeemed a license key"
+  },
+  "landing": {
+    "title": "Redeem Gift Code",
+    "subtitle": "Enter your gift code to claim free membership",
+    "placeholder": "Enter 8-digit code",
+    "notFound": "Gift code not found",
+    "reenter": "Enter a different code"
   },
   "admin": {
     "title": "License Keys",

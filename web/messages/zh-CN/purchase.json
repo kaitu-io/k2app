@@ -193,5 +193,7 @@
   },
   "purchaseStep3": {
     "priceSlash": "/"
-  }
+  },
+  "giftCodePrompt": "已有授权码？",
+  "giftCodeLink": "点此兑换"
 }
