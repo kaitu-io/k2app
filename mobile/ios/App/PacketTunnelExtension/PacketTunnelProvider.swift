@@ -101,13 +101,13 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     private let neDefaults = UserDefaults(suiteName: kAppGroup)
 
     /// Permanent error categories — retry is pointless without user action.
-    private static let permanentCategories: Set<String> = ["client"]
+    fileprivate static let permanentCategories: Set<String> = ["client"]
     /// Permanent error codes — ConnectionFatal (570) regardless of category.
-    private static let permanentCodes: Set<Int> = [570]
+    fileprivate static let permanentCodes: Set<Int> = [570]
     /// Cooldown after permanent error (auth, payment, fatal) — blocks on-demand restart.
-    private static let permanentErrorCooldown: TimeInterval = 30
+    fileprivate static let permanentErrorCooldown: TimeInterval = 30
     /// Cooldown after transient error (network, server) — prevents rapid on-demand loop.
-    private static let transientErrorCooldown: TimeInterval = 5
+    fileprivate static let transientErrorCooldown: TimeInterval = 5
     /// Max credible cooldown — clock-change protection (any cooldown further out is bogus).
     private static let maxCooldownGuard: TimeInterval = 60
     /// Min gap between allowed non-user-initiated startTunnel calls.
