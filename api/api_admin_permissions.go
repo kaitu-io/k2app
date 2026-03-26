@@ -20,6 +20,7 @@ var allGroups = []string{
 	"campaigns", "campaigns.write",
 	"license_keys", "license_keys.write",
 	"plans", "plans.write",
+	"announcements", "announcements.write",
 	"stats",
 	"device_logs",
 	"feedback_tickets", "feedback_tickets.write",
@@ -37,7 +38,7 @@ var roleGroupMap = map[uint64][]string{
 	RoleDevopsViewer: {"nodes", "tunnels", "cloud", "users", "orders", "device_logs", "feedback_tickets", "stats"},
 	RoleDevopsEditor: {"nodes", "nodes.write", "tunnels", "tunnels.write", "cloud", "cloud.write", "users", "orders", "device_logs", "feedback_tickets", "stats", "strategy", "strategy.write"},
 	RoleSupport:      {"users", "orders", "device_logs", "feedback_tickets", "feedback_tickets.write"},
-	RoleMarketing:    {"users", "orders", "retailers", "retailers.write", "edm", "campaigns", "campaigns.write", "license_keys", "license_keys.write", "stats", "surveys"},
+	RoleMarketing:    {"users", "orders", "retailers", "retailers.write", "edm", "campaigns", "campaigns.write", "license_keys", "license_keys.write", "stats", "surveys", "announcements", "announcements.write"},
 }
 
 // api_admin_my_permissions returns permission groups for the current user

@@ -313,6 +313,14 @@ func SetupRouter() *gin.Engine {
 		admin.POST("/license-keys", api_admin_create_license_keys)
 		admin.DELETE("/license-keys/:id", api_admin_delete_license_key)
 
+		// 公告管理
+		admin.GET("/announcements", api_admin_list_announcements)
+		admin.POST("/announcements", api_admin_create_announcement)
+		admin.PUT("/announcements/:id", api_admin_update_announcement)
+		admin.DELETE("/announcements/:id", api_admin_delete_announcement)
+		admin.POST("/announcements/:id/activate", api_admin_activate_announcement)
+		admin.POST("/announcements/:id/deactivate", api_admin_deactivate_announcement)
+
 		// EDM邮件营销管理 — 已移至 opsAdmin 组（RoleMarketing）
 
 		// Usage analytics overview
