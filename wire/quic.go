@@ -432,8 +432,44 @@ serialize:
 
 	qcfg := DefaultQUICConfig()
 
+	// Wrap transport.Dial in a goroutine with hard timeout.
+	// quic-go's Transport.Dial internally calls Conn.destroy() on context cancel,
+	// which blocks on <-c.ctx.Done() waiting for conn.run() exit (up to 30s).
+	// This hard timeout prevents connectMu starvation.
+	type dialResult struct {
+		conn *quic.Conn
+		err  error
+	}
+	dialDone := make(chan dialResult, 1)
 	dialStart := time.Now()
-	conn, err := transport.Dial(ctx, udpAddr, tlsCfg, qcfg)
+	go func() {
+		conn, err := transport.Dial(ctx, udpAddr, tlsCfg, qcfg)
+		dialDone <- dialResult{conn, err}
+	}()
+
+	// NOTE: `err` is already declared in outer scope (from ResolveUDPAddr/ListenPacket).
+	// `conn` is freshly declared here. The `conn, err = r.conn, r.err` assignment (no :=)
+	// reuses the existing `err` variable.
+	var conn *quic.Conn
+	select {
+	case r := <-dialDone:
+		conn, err = r.conn, r.err
+	case <-time.After(quicDialHardTimeout):
+		// transport.Dial is stuck (likely in Conn.destroy). Orphan the goroutine
+		// and let it clean up asynchronously using the bounded-timeout helpers.
+		go func() {
+			r := <-dialDone
+			closeQUICResources(nil, r.conn, transport, "orphaned after hard timeout")
+		}()
+		c.handshakeFailStreak.Add(1)
+		slog.Warn("DIAG: quic-handshake-fail",
+			"addr", addr,
+			"consecutiveFails", c.handshakeFailStreak.Load(),
+			"err", "hard timeout (transport.Dial blocked)",
+		)
+		return nil, fmt.Errorf("wire: QUIC dial: hard timeout after %v", quicDialHardTimeout)
+	}
+
 	if err != nil {
 		transport.Close()
 		c.handshakeFailStreak.Add(1)
@@ -813,6 +849,13 @@ func (c *QUICClient) extractConnLocked() (mux *quicUDPMux, conn *quic.Conn, tr *
 // blocks indefinitely when the network is unreachable (sendQueue.Run stuck
 // on a dead UDP write). 5s is 50x normal close time (<100ms).
 const quicCloseTimeout = 5 * time.Second
+
+// quicDialHardTimeout bounds the total time connect() holds connectMu.
+// Must be well under go-deadlock's 60s threshold. Covers: UDP listen +
+// QUIC handshake + Conn.destroy cleanup on failure. If transport.Dial
+// blocks beyond this (e.g. Conn.destroy waiting for conn.run exit),
+// the goroutine is orphaned and cleanup happens asynchronously.
+const quicDialHardTimeout = 15 * time.Second
 
 // closeQUICConnSafe closes a QUIC connection with a bounded timeout.
 // If CloseWithError blocks (quic-go Conn.destroy bug when network is dead),

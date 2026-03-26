@@ -1,6 +1,7 @@
 package wire
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -227,4 +228,100 @@ func TestCloseSmuxSessionSafe_NilGuard(t *testing.T) {
 	tc := &TCPWSClient{}
 	tc.resetConnection()
 	tc.Close()
+}
+
+// TestQUICClient_ConnectMu_NotStarved verifies that connectMu is released
+// promptly even when transport.Dial fails.
+//
+// Limitation: this test uses a pre-cancelled context which returns quickly
+// from transport.Dial (no actual Conn.destroy blocking). The production
+// deadlock requires Conn.destroy to block on chan receive for 30s+, which
+// can't be reliably reproduced without a mock transport. This test serves
+// as a regression guard for the fast-cancel path and connectMu release.
+// The quicDialHardTimeout bounds test ensures the timeout constant stays sane.
+func TestQUICClient_ConnectMu_NotStarved(t *testing.T) {
+	qc := NewQUICClient(Config{Host: "127.0.0.1", Port: 1}, nil)
+
+	// Attempt connect with an immediately-cancelled context.
+	// This triggers the transport.Dial → ctx.Done → Conn.destroy path.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately — forces the failure path
+
+	start := time.Now()
+	_, err := qc.connect(ctx)
+	if err == nil {
+		t.Fatal("expected error from cancelled context")
+	}
+
+	// connect() must return within quicDialHardTimeout + small margin,
+	// NOT block for 30s+ on Conn.destroy.
+	elapsed := time.Since(start)
+	if elapsed > quicDialHardTimeout+2*time.Second {
+		t.Fatalf("connect() took %v, expected <%v — connectMu starvation",
+			elapsed, quicDialHardTimeout+2*time.Second)
+	}
+
+	// Verify connectMu is free — another goroutine can acquire it promptly.
+	lockDone := make(chan struct{})
+	go func() {
+		qc.connectMu.Lock()
+		qc.connectMu.Unlock()
+		close(lockDone)
+	}()
+	select {
+	case <-lockDone:
+		// Good — connectMu is free.
+	case <-time.After(2 * time.Second):
+		t.Fatal("connectMu blocked after connect() returned — starvation regression")
+	}
+}
+
+// TestQuicDialHardTimeout_Bounds verifies quicDialHardTimeout stays under
+// go-deadlock's 60s threshold with margin, and above a safe minimum for
+// UDP listen + QUIC handshake on slow connections.
+func TestQuicDialHardTimeout_Bounds(t *testing.T) {
+	if quicDialHardTimeout > 30*time.Second {
+		t.Fatalf("quicDialHardTimeout too large: %v (must be <30s to stay under 60s deadlock threshold)", quicDialHardTimeout)
+	}
+	if quicDialHardTimeout < 10*time.Second {
+		t.Fatalf("quicDialHardTimeout too small: %v (min 10s to allow normal handshake)", quicDialHardTimeout)
+	}
+}
+
+// TestTCPWSClient_ConnectMu_NotStarved verifies that connectMu is released
+// within tcpwsConnectTimeout even when TCP dial blocks on SYN retransmit.
+func TestTCPWSClient_ConnectMu_NotStarved(t *testing.T) {
+	// Use a non-routable IP to trigger TCP SYN timeout.
+	cfg := Config{Host: "192.0.2.1", Port: 443} // TEST-NET-1, guaranteed non-routable
+	tc := NewTCPWSClient(cfg, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), tcpwsConnectTimeout+5*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	_, err := tc.connect(ctx)
+	if err == nil {
+		t.Fatal("expected error from non-routable address")
+	}
+
+	// connect() must return within tcpwsConnectTimeout + margin,
+	// NOT block for 75s on macOS TCP SYN retransmit.
+	elapsed := time.Since(start)
+	if elapsed > tcpwsConnectTimeout+3*time.Second {
+		t.Fatalf("connect() took %v, expected <%v — connectMu starvation",
+			elapsed, tcpwsConnectTimeout+3*time.Second)
+	}
+
+	// Verify connectMu is free.
+	lockDone := make(chan struct{})
+	go func() {
+		tc.connectMu.Lock()
+		tc.connectMu.Unlock()
+		close(lockDone)
+	}()
+	select {
+	case <-lockDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("connectMu blocked after connect() returned — starvation regression")
+	}
 }

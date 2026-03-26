@@ -12,6 +12,7 @@ import (
 	"context"
 	"net"
 	"syscall"
+	"time"
 
 	tun "github.com/sagernet/sing-tun"
 
@@ -37,8 +38,22 @@ func newDirectDialer(monitor tun.DefaultInterfaceMonitor) *directDialer {
 }
 
 // DialContext dials TCP/UDP bound to the physical interface.
+// Timeout is derived from the context deadline (set by tcpwsConnectTimeout
+// in connectTLSWebSocket). Additionally, we set an explicit Timeout as
+// belt-and-suspenders for kernel-level enforcement — context cancel alone
+// doesn't reliably interrupt macOS TCP SYN retransmit (can block 75s).
 func (d *directDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
-	nd := &net.Dialer{Control: d.controlFunc()}
+	// Derive timeout from context deadline if set, otherwise use 10s default.
+	var timeout time.Duration
+	if deadline, ok := ctx.Deadline(); ok {
+		timeout = time.Until(deadline)
+	} else {
+		timeout = 10 * time.Second
+	}
+	nd := &net.Dialer{
+		Timeout: timeout,
+		Control: d.controlFunc(),
+	}
 	return nd.DialContext(ctx, network, addr)
 }
 
