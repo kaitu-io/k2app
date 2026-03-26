@@ -168,5 +168,9 @@
     "noInviteCodesDescription": "まだ招待コードを作成していません。専用の招待コードを作成して友達と共有しましょう！",
     "noDevicesTitle": "デバイスがありません",
     "noDevicesDescription": "ログインしているデバイスはまだありません"
+  },
+  "survey": {
+    "banner_text": "1分間のアンケートに答えて、1ヶ月無料で利用",
+    "banner_cta": "回答する"
   }
 }

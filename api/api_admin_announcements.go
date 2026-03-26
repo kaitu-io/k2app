@@ -176,6 +176,9 @@ func api_admin_update_announcement(c *gin.Context) {
 		return
 	}
 
+	// Note: IsActive is intentionally NOT handled here — activation/deactivation
+	// requires mutual-exclusion logic (deactivate all others first), which lives
+	// in the dedicated /activate and /deactivate endpoints.
 	updates := map[string]interface{}{
 		"message":    req.Message,
 		"link_url":   req.LinkURL,

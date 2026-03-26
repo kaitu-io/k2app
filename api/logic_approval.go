@@ -330,8 +330,12 @@ func ExecuteApproval(ctx context.Context, payload []byte) error {
 		return fmt.Errorf("approval %d not found: %w", p.ApprovalID, err)
 	}
 
-	if approval.Status != "approved" {
-		log.Warnf(ctx, "[APPROVAL] skip execution: id=%d status=%s (expected approved)", p.ApprovalID, approval.Status)
+	// Atomic guard: claim this approval for execution (prevents double-execution on Asynq retry)
+	result := db.Get().Model(&AdminApproval{}).
+		Where("id = ? AND status = ?", p.ApprovalID, "approved").
+		Update("status", "executing")
+	if result.RowsAffected == 0 {
+		log.Warnf(ctx, "[APPROVAL] skip execution: id=%d status=%s (already executing/executed or not approved)", p.ApprovalID, approval.Status)
 		return nil
 	}
 

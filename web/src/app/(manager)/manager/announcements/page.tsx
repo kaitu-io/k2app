@@ -71,7 +71,6 @@ const initialForm: AnnouncementRequest = {
   linkText: "",
   openMode: "external",
   expiresAt: 0,
-  isActive: false,
 };
 
 export default function AnnouncementsPage() {

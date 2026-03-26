@@ -91,11 +91,15 @@ fn get_hardware_id() -> String {
     match machine_uid::get() {
         Ok(id) if !id.is_empty() => id,
         Ok(_) => {
-            log::warn!("[storage_crypto] machine-uid returned empty ID");
+            // KNOWN LIMITATION: empty ID produces a deterministic key shared across all
+            // devices where hardware ID lookup fails. Encryption still prevents casual
+            // file reads but not cross-device decryption. We continue rather than fail
+            // to avoid blocking app startup.
+            log::error!("[storage_crypto] machine-uid returned empty ID — encryption key is not machine-specific");
             String::new()
         }
         Err(e) => {
-            log::warn!("[storage_crypto] machine-uid failed: {}", e);
+            log::error!("[storage_crypto] machine-uid failed: {} — encryption key is not machine-specific", e);
             String::new()
         }
     }

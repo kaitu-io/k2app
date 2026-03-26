@@ -783,7 +783,7 @@ export interface AnnouncementRequest {
   linkText?: string;
   openMode?: string; // 'external' | 'webview'
   expiresAt?: number;
-  isActive?: boolean;
+  // Note: isActive is NOT included — activation/deactivation uses dedicated endpoints
 }
 
 export interface AnnouncementResponse {
@@ -1364,7 +1364,7 @@ export const api = {
   // Announcement management APIs
   async getAnnouncements(params: AnnouncementListParams = {}): Promise<AnnouncementListResponse> {
     const query = new URLSearchParams();
-    if (params.page) query.set('page', params.page.toString());
+    if (params.page !== undefined) query.set('page', params.page.toString());
     if (params.pageSize) query.set('pageSize', params.pageSize.toString());
     return this.request<AnnouncementListResponse>(`/app/announcements${query.toString() ? '?' + query.toString() : ''}`);
   },

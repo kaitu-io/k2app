@@ -168,5 +168,9 @@
     "noInviteCodesDescription": "You haven't created any invitation codes yet. Create your exclusive invitation code to share with friends!",
     "noDevicesTitle": "No devices",
     "noDevicesDescription": "You don't have any logged-in devices yet"
+  },
+  "survey": {
+    "banner_text": "Take a 1-minute survey and get 1 month free",
+    "banner_cta": "Take Survey"
   }
 }

@@ -74,6 +74,7 @@ const menuGroups: MenuGroup[] = [
     title: "系统监控",
     items: [
       { href: "/manager/usages", icon: BarChart3, label: "使用统计" },
+      { href: "/manager/surveys", icon: ClipboardList, label: "问卷统计" },
       { href: "/manager/asynqmon", icon: Gauge, label: "任务队列" },
     ]
   },
