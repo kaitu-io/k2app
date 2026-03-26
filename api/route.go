@@ -313,13 +313,7 @@ func SetupRouter() *gin.Engine {
 		admin.POST("/license-keys", api_admin_create_license_keys)
 		admin.DELETE("/license-keys/:id", api_admin_delete_license_key)
 
-		// 公告管理
-		admin.GET("/announcements", api_admin_list_announcements)
-		admin.POST("/announcements", api_admin_create_announcement)
-		admin.PUT("/announcements/:id", api_admin_update_announcement)
-		admin.DELETE("/announcements/:id", api_admin_delete_announcement)
-		admin.POST("/announcements/:id/activate", api_admin_activate_announcement)
-		admin.POST("/announcements/:id/deactivate", api_admin_deactivate_announcement)
+		// 公告管理 — 已移至 opsAdmin 组（RoleMarketing）
 
 		// EDM邮件营销管理 — 已移至 opsAdmin 组（RoleMarketing）
 
@@ -423,6 +417,14 @@ func SetupRouter() *gin.Engine {
 		opsAdmin.DELETE("/retailers/:uuid/notes/:noteId",   RoleRequired(RoleMarketing), api_admin_delete_retailer_note)
 
 		// EDM 邮件营销管理（Marketing 角色）
+		// 公告管理（Marketing 角色）
+		opsAdmin.GET("/announcements",                    RoleRequired(RoleMarketing), api_admin_list_announcements)
+		opsAdmin.POST("/announcements",                   RoleRequired(RoleMarketing), api_admin_create_announcement)
+		opsAdmin.PUT("/announcements/:id",                RoleRequired(RoleMarketing), api_admin_update_announcement)
+		opsAdmin.DELETE("/announcements/:id",             RoleRequired(RoleMarketing), api_admin_delete_announcement)
+		opsAdmin.POST("/announcements/:id/activate",      RoleRequired(RoleMarketing), api_admin_activate_announcement)
+		opsAdmin.POST("/announcements/:id/deactivate",    RoleRequired(RoleMarketing), api_admin_deactivate_announcement)
+
 		edmOps := opsAdmin.Group("/edm")
 		{
 			edmOps.GET("/templates",                              RoleRequired(RoleMarketing), api_admin_list_email_templates)
