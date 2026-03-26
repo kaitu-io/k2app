@@ -25,7 +25,7 @@ vi.mock('react-i18next', () => ({
         'feedback:feedback.disconnectFeedback.title': 'How was your connection?',
         'feedback:feedback.disconnectFeedback.good': 'Good',
         'feedback:feedback.disconnectFeedback.bad': 'Bad',
-        'feedback:feedback.disconnectFeedback.thankYou': 'Thanks for your feedback',
+        'feedback:feedback.disconnectFeedback.thankYou': 'Thanks',
       };
       return translations[key] || key;
     },
@@ -156,7 +156,7 @@ describe('DisconnectFeedbackDialog', () => {
     });
 
     // Toast shown
-    expect(mockShowAlert).toHaveBeenCalledWith('Thanks for your feedback', 'info');
+    expect(mockShowAlert).toHaveBeenCalledWith('Thanks', 'info');
 
     // uploadLogs called
     await waitFor(() => {
