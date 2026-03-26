@@ -38,6 +38,7 @@ import { getThemeColors } from '../theme/colors';
 import { getCountryName, getFlagIcon } from '../utils/country';
 import type { Tunnel, TunnelListResponse } from '../services/api-types';
 import { cacheStore } from '../services/cache-store';
+import { DisconnectFeedbackDialog } from '../components/DisconnectFeedbackDialog';
 
 // Styled Components for Modern Design
 const DashboardContainer = styled(Box)(({ theme }) => ({
@@ -625,6 +626,7 @@ export default function Dashboard() {
         </Collapse>
       </Box>
 
+      <DisconnectFeedbackDialog />
     </DashboardContainer>
   );
 }

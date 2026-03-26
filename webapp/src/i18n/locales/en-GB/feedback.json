@@ -10,6 +10,12 @@
     "uploadSuccessDescription": "Thank you for your feedback! We will address it soon.",
     "uploadError": "Submission Failed",
     "uploadFailed": "Failed to upload logs. Please try again later.",
-    "platformNotSupported": "This feature is not yet supported on the current platform"
+    "platformNotSupported": "This feature is not yet supported on the current platform",
+    "disconnectFeedback": {
+      "title": "How was your connection?",
+      "good": "Good",
+      "bad": "Bad",
+      "thankYou": "Thanks for your feedback, uploading logs..."
+    }
   }
 }

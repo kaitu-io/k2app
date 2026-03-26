@@ -10,6 +10,12 @@
     "uploadSuccessDescription": "フィードバックありがとうございます！早急に対応いたします。",
     "uploadError": "送信に失敗しました",
     "uploadFailed": "ログのアップロードに失敗しました。後でもう一度お試しください。",
-    "platformNotSupported": "この機能は現在のプラットフォームではまだサポートされていません"
+    "platformNotSupported": "この機能は現在のプラットフォームではまだサポートされていません",
+    "disconnectFeedback": {
+      "title": "接続の品質はいかがでしたか？",
+      "good": "良い",
+      "bad": "悪い",
+      "thankYou": "フィードバックありがとうございます。ログをアップロード中..."
+    }
   }
 }

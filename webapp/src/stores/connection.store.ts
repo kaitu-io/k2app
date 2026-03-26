@@ -21,6 +21,7 @@ import { authService } from '../services/auth-service';
 import { useSelfHostedStore } from './self-hosted.store';
 import { useConfigStore } from './config.store';
 import { useVPNMachineStore, dispatch as vpnDispatch } from './vpn-machine.store';
+import { useAuthStore } from './auth.store';
 
 // ============ Types ============
 
@@ -32,12 +33,27 @@ export interface ActiveTunnel {
   serverUrl: string;
 }
 
+export interface LastConnectionInfo {
+  domain: string;
+  name: string;
+  country: string;
+  source: 'cloud' | 'self_hosted';
+  durationSec: number;
+  ruleMode: string;
+  os: string;
+  appVersion: string;
+}
+
 interface ConnectionState {
   selectedSource: 'cloud' | 'self_hosted';
   selectedCloudTunnel: Tunnel | null;
   activeTunnel: ActiveTunnel | null;
   connectedTunnel: ActiveTunnel | null;
   connectEpoch: number;
+  connectedAt: number | null;
+  feedbackRequested: boolean;
+  pendingFeedback: boolean;
+  lastConnectionInfo: LastConnectionInfo | null;
 }
 
 interface ConnectionActions {
@@ -45,6 +61,7 @@ interface ConnectionActions {
   selectSelfHosted: () => void;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
+  clearPendingFeedback: () => void;
   enrichFromTunnelList: (tunnels: Tunnel[]) => void;
 }
 
@@ -98,6 +115,10 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
   activeTunnel: null,
   connectedTunnel: null,
   connectEpoch: 0,
+  connectedAt: null,
+  feedbackRequested: false,
+  pendingFeedback: false,
+  lastConnectionInfo: null,
 
   // Actions
   selectCloudTunnel: (tunnel) => {
@@ -138,7 +159,7 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
 
     const myEpoch = connectEpoch + 1;
     console.info('[Connection] connect: source=' + selectedSource + ', tunnel=' + activeTunnel.domain + ', epoch=' + connectEpoch + '→' + myEpoch);
-    set({ connectedTunnel: activeTunnel, connectEpoch: myEpoch });
+    set({ connectedTunnel: activeTunnel, connectEpoch: myEpoch, connectedAt: Date.now() });
     console.warn('[Connection] TRACE connectedTunnel set t=' + Date.now() + ' (+' + (Date.now() - t0) + 'ms)');
 
     // Resolve server URL
@@ -208,22 +229,53 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
   },
 
   disconnect: async () => {
-    // State guard: reject if already disconnecting or idle.
     const vpnState = useVPNMachineStore.getState().state;
     if (vpnState === 'disconnecting' || vpnState === 'idle') {
       console.warn('[Connection] disconnect: rejected (vpnState=' + vpnState + ')');
       return;
     }
 
-    // Bump epoch to cancel any in-flight connect
+    // Snapshot connection info BEFORE clearing connectedTunnel
+    const { connectedTunnel, connectedAt } = get();
+    const isAuthenticated = useAuthStore.getState().isAuthenticated;
+    let lastConnectionInfo: LastConnectionInfo | null = null;
+
+    if (connectedTunnel && isAuthenticated) {
+      const { ruleMode } = useConfigStore.getState();
+      const durationSec = connectedAt
+        ? Math.round((Date.now() - connectedAt) / 1000)
+        : 0;
+      lastConnectionInfo = {
+        domain: connectedTunnel.domain,
+        name: connectedTunnel.name,
+        country: connectedTunnel.country,
+        source: connectedTunnel.source,
+        durationSec,
+        ruleMode,
+        os: window._platform?.os || 'unknown',
+        appVersion: window._platform?.version || '0.0.0',
+      };
+    }
+
     console.info('[Connection] disconnect: bumping epoch, dispatching USER_DISCONNECT');
-    set((s) => ({ connectedTunnel: null, connectEpoch: s.connectEpoch + 1 }));
+    set((s) => ({
+      connectedTunnel: null,
+      connectedAt: null,
+      connectEpoch: s.connectEpoch + 1,
+      // Mark feedback as requested — promoted to pendingFeedback when VPN reaches idle
+      feedbackRequested: !!lastConnectionInfo,
+      lastConnectionInfo,
+    }));
     vpnDispatch('USER_DISCONNECT');
     try {
       await window._k2.run('down');
     } catch (err) {
       console.error('[Connection] disconnect failed:', err);
     }
+  },
+
+  clearPendingFeedback: () => {
+    set({ pendingFeedback: false, lastConnectionInfo: null });
   },
 }));
 
@@ -300,10 +352,19 @@ export function initializeConnectionStore(): () => void {
       // BACKEND_ERROR now routes to idle (non-retrying) or reconnecting (retrying),
       // so this single check covers both normal disconnect and error cases.
       if (state === 'idle') {
-        const { connectedTunnel } = useConnectionStore.getState();
+        const { connectedTunnel, feedbackRequested } = useConnectionStore.getState();
+        const updates: Partial<ConnectionState> = {};
         if (connectedTunnel) {
           console.info('[Connection] VPN idle — clearing connectedTunnel');
-          useConnectionStore.setState({ connectedTunnel: null });
+          updates.connectedTunnel = null;
+        }
+        if (feedbackRequested) {
+          console.info('[Connection] VPN idle — promoting feedbackRequested → pendingFeedback');
+          updates.feedbackRequested = false;
+          updates.pendingFeedback = true;
+        }
+        if (Object.keys(updates).length > 0) {
+          useConnectionStore.setState(updates);
         }
       }
       // Cold start recovery: VPN active but connectedTunnel lost

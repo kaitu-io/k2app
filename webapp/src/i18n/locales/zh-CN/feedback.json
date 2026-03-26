@@ -10,6 +10,12 @@
     "uploadSuccessDescription": "感谢您的反馈！我们会尽快处理。",
     "uploadError": "提交失败",
     "uploadFailed": "日志上传失败，请稍后重试",
-    "platformNotSupported": "当前平台暂不支持此功能"
+    "platformNotSupported": "当前平台暂不支持此功能",
+    "disconnectFeedback": {
+      "title": "本次连接体验如何？",
+      "good": "好",
+      "bad": "不好",
+      "thankYou": "感谢反馈，正在上传日志..."
+    }
   }
 }

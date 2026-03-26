@@ -10,6 +10,12 @@
     "uploadSuccessDescription": "感謝您的回饋！我們會盡快處理。",
     "uploadError": "提交失敗",
     "uploadFailed": "日誌上傳失敗，請稍後重試",
-    "platformNotSupported": "當前平台暫不支援此功能"
+    "platformNotSupported": "當前平台暫不支援此功能",
+    "disconnectFeedback": {
+      "title": "本次連線體驗如何？",
+      "good": "好",
+      "bad": "唔好",
+      "thankYou": "感謝回饋，正在上傳日誌..."
+    }
   }
 }

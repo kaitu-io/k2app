@@ -106,10 +106,15 @@ const createMockConnectionStore = (overrides = {}) => ({
   activeTunnel: null,
   connectedTunnel: null,
   connectEpoch: 0,
+  connectedAt: null,
+  feedbackRequested: false,
+  pendingFeedback: false,
+  lastConnectionInfo: null,
   selectCloudTunnel: mockSelectCloudTunnel,
   selectSelfHosted: mockSelectSelfHosted,
   connect: mockConnect,
   disconnect: mockDisconnect,
+  clearPendingFeedback: vi.fn(),
   ...overrides,
 });
 
@@ -136,7 +141,10 @@ describe('Dashboard', () => {
 
     // Setup default mocks
     vi.mocked(useVPNMachine).mockReturnValue(createMockVPNMachine() as any);
-    vi.mocked(useConnectionStore).mockReturnValue(createMockConnectionStore() as any);
+    vi.mocked(useConnectionStore).mockImplementation((selector?: any) => {
+      const state = createMockConnectionStore();
+      return selector ? selector(state) : state;
+    });
     vi.mocked(useAuthStore).mockImplementation((selector: any) => {
       const state = { isAuthenticated: false, user: null };
       return selector(state);
@@ -220,15 +228,18 @@ describe('Dashboard', () => {
     });
 
     it('选择隧道后应该显示 tunnel name', async () => {
-      vi.mocked(useConnectionStore).mockReturnValue(createMockConnectionStore({
-        activeTunnel: {
-          source: 'cloud',
-          domain: 'test.example.com',
-          name: 'Test Tunnel',
-          country: 'JP',
-          serverUrl: 'k2v5://test.example.com:443',
-        },
-      }) as any);
+      vi.mocked(useConnectionStore).mockImplementation((selector?: any) => {
+        const state = createMockConnectionStore({
+          activeTunnel: {
+            source: 'cloud',
+            domain: 'test.example.com',
+            name: 'Test Tunnel',
+            country: 'JP',
+            serverUrl: 'k2v5://test.example.com:443',
+          },
+        });
+        return selector ? selector(state) : state;
+      });
 
       render(<Dashboard />);
 
@@ -281,15 +292,18 @@ describe('Dashboard', () => {
         error: { code: 503, message: 'fail' },
       }) as any);
 
-      vi.mocked(useConnectionStore).mockReturnValue(createMockConnectionStore({
-        activeTunnel: {
-          source: 'cloud',
-          domain: 'test.example.com',
-          name: 'Test Tunnel',
-          country: 'US',
-          serverUrl: 'k2v5://test.example.com:443',
-        },
-      }) as any);
+      vi.mocked(useConnectionStore).mockImplementation((selector?: any) => {
+        const state = createMockConnectionStore({
+          activeTunnel: {
+            source: 'cloud',
+            domain: 'test.example.com',
+            name: 'Test Tunnel',
+            country: 'US',
+            serverUrl: 'k2v5://test.example.com:443',
+          },
+        });
+        return selector ? selector(state) : state;
+      });
 
       render(<Dashboard />);
 
