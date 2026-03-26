@@ -96,6 +96,7 @@ Reserved event names:
 | `DIAG: transport-rerace` | WARN | runtime re-race (3 consecutive echo fails) | reason, previousTransport |
 | `DIAG: dns-proxy-recv-no-callback` | WARN | DNS response arrived after callback expired | server, queryID, domain, numCallbacks |
 | `DIAG: datagram-readloop-exit` | WARN | QUIC datagram read loop terminated | totalReceived, err |
+| `DIAG: quic-dial-orphan-cleanup` | WARN | orphaned transport.Dial goroutine resolved | addr, blockedMs |
 
 ### Layer 3 Rules — Full Trace
 

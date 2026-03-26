@@ -186,6 +186,21 @@ func (e *Engine) Start(cfg Config) error {
 	// Ensure TCP-WS is available as TM fallback AND as DNS transport.
 	// DNS is control-plane traffic — use TCP-WS directly (most reliable)
 	// instead of TransportManager (QUIC-first, susceptible to Short Header blocking).
+	//
+	// tcpwsDialer is intentionally the SAME instance as tm.tcpws (shared).
+	// Why not a separate TCPWSClient for DNS?
+	//   1. reconnect() calls tm.ResetConnections() which resets the shared tcpws
+	//      smux session — DNS's next DialStreamUDP() then connect()s through a
+	//      fresh session on the new network path. A separate instance would keep
+	//      its stale session and timeout on the old path unless explicitly reset.
+	//   2. In-flight DNS queries during reset are already cancelled by
+	//      CancelInflight() BEFORE tm.ResetConnections() — the race window
+	//      (new query enters between CancelInflight and Reset) is sub-microsecond
+	//      and harmless (query fails, racing resolver retries on fresh session).
+	//   3. One fewer TCP connection and smux session per engine lifecycle.
+	// If this assumption ever breaks, grep for "DIAG: dns-proxy-conn-dead"
+	// during reconnect — a burst of these without preceding CancelInflight
+	// would indicate the shared-instance race is wider than expected.
 	var tcpwsDialer wire.Dialer
 	if raceResult.TCPWS != nil {
 		tm.SetTCPWS(raceResult.TCPWS)
@@ -421,18 +436,18 @@ func (e *Engine) reconnect() bool {
 		handler.OnStatus(Status{State: StateReconnecting})
 	}
 
-	// Cancel pending DNS queries — they hold stale UDP sockets that
-	// will never receive responses from the old network path.
+	// Reset order matters (shared tcpwsDialer — see comment in Start):
+	//   1. CancelInflight — abort pending upstream queries (closes race window)
+	//   2. tm.ResetConnections — resets shared tcpws smux session
+	//   3. pdns.ResetConnections — cleans proxyConn pool
+	// Step 1 MUST precede step 2 so in-flight DNS queries exit via ctx
+	// before the smux session is torn down underneath them.
 	if dh != nil {
 		dh.CancelInflight()
 	}
-
-	// Reset cached connections — next dial will create fresh ones.
 	if tm != nil {
 		tm.ResetConnections()
 	}
-	// Flush proxy DNS connection pool — stale UDP sessions through
-	// the old wire transport would timeout on next query otherwise.
 	if pdns != nil {
 		pdns.ResetConnections()
 	}
@@ -552,6 +567,8 @@ func (e *Engine) Pause() {
 	pdns := e.proxyDNS
 	e.mu.Unlock()
 
+	// Pause has no CancelInflight — no in-flight DNS during iOS memory pause.
+	// tm→pdns order: shared tcpwsDialer (see Start comment).
 	if tm != nil {
 		tm.ResetConnections()
 	}
@@ -649,7 +666,7 @@ func (e *Engine) Stop() error {
 	e.tm = nil
 	tunnel := e.tunnel
 	e.tunnel = nil
-	e.proxyDNS = nil // no explicit close needed — tm.Close() closes tcpws, DNS conns die
+	e.proxyDNS = nil // no explicit close needed — tm.Close() closes shared tcpws → smux dies → recvLoops exit
 	e.client = nil
 	e.connectedAt = time.Time{}
 	e.paused = false

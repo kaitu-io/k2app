@@ -101,6 +101,9 @@ func TestQUICClient_DialUDP_RelayUnhealthy_HopStateUntouched(t *testing.T) {
 // resets only after relayRecoveryRecvs consecutive receives without timeout,
 // not on a single successful receive.
 func TestQUICClient_DialUDP_HopResetOnSustainedRecovery(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping QUIC localhost test (flaky under CI resource contention)")
+	}
 	client, _, cleanup := setupQUICPairWithHop(t)
 	defer cleanup()
 

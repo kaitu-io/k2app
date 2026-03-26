@@ -436,6 +436,17 @@ serialize:
 	// quic-go's Transport.Dial internally calls Conn.destroy() on context cancel,
 	// which blocks on <-c.ctx.Done() waiting for conn.run() exit (up to 30s).
 	// This hard timeout prevents connectMu starvation.
+	//
+	// Orphan goroutine lifecycle (bounded, not a permanent leak):
+	//   ctx has 5s timeout (quicContext with hasFallback=true) → Dial cancel
+	//   at t=5s → Conn.destroy waits conn.run() exit (≤MaxIdleTimeout 30s)
+	//   → Dial returns by ~t=35s → cleanup goroutine runs closeQUICResources
+	//   (5s timeout) → all goroutines exit by ~t=40s.
+	//   Accumulation capped at ~4 goroutines: connectMu serializes to 1
+	//   connect() per 15s, and 3 consecutive fails activate TCP-WS fallback
+	//   (stops QUIC attempts entirely). engine.Stop() cancels ctx chain,
+	//   accelerating cleanup.
+	//   Grep "DIAG: quic-dial-orphan-cleanup" to verify orphans are resolved.
 	type dialResult struct {
 		conn *quic.Conn
 		err  error
@@ -458,7 +469,12 @@ serialize:
 		// transport.Dial is stuck (likely in Conn.destroy). Orphan the goroutine
 		// and let it clean up asynchronously using the bounded-timeout helpers.
 		go func() {
+			orphanStart := time.Now()
 			r := <-dialDone
+			slog.Warn("DIAG: quic-dial-orphan-cleanup",
+				"addr", addr,
+				"blockedMs", time.Since(orphanStart).Milliseconds(),
+			)
 			closeQUICResources(nil, r.conn, transport, "orphaned after hard timeout")
 		}()
 		c.handshakeFailStreak.Add(1)

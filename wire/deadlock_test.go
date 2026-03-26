@@ -291,6 +291,9 @@ func TestQuicDialHardTimeout_Bounds(t *testing.T) {
 // TestTCPWSClient_ConnectMu_NotStarved verifies that connectMu is released
 // within tcpwsConnectTimeout even when TCP dial blocks on SYN retransmit.
 func TestTCPWSClient_ConnectMu_NotStarved(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping network-dependent connectMu test (waits ~10s for TCP SYN timeout)")
+	}
 	// Use a non-routable IP to trigger TCP SYN timeout.
 	cfg := Config{Host: "192.0.2.1", Port: 443} // TEST-NET-1, guaranteed non-routable
 	tc := NewTCPWSClient(cfg, nil)
