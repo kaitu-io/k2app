@@ -275,3 +275,41 @@ func TestQUICClient_ConnectMu_NotStarved(t *testing.T) {
 		t.Fatal("connectMu blocked after connect() returned — starvation regression")
 	}
 }
+
+// TestTCPWSClient_ConnectMu_NotStarved verifies that connectMu is released
+// within tcpwsConnectTimeout even when TCP dial blocks on SYN retransmit.
+func TestTCPWSClient_ConnectMu_NotStarved(t *testing.T) {
+	// Use a non-routable IP to trigger TCP SYN timeout.
+	cfg := Config{Host: "192.0.2.1", Port: 443} // TEST-NET-1, guaranteed non-routable
+	tc := NewTCPWSClient(cfg, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), tcpwsConnectTimeout+5*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	_, err := tc.connect(ctx)
+	if err == nil {
+		t.Fatal("expected error from non-routable address")
+	}
+
+	// connect() must return within tcpwsConnectTimeout + margin,
+	// NOT block for 75s on macOS TCP SYN retransmit.
+	elapsed := time.Since(start)
+	if elapsed > tcpwsConnectTimeout+3*time.Second {
+		t.Fatalf("connect() took %v, expected <%v — connectMu starvation",
+			elapsed, tcpwsConnectTimeout+3*time.Second)
+	}
+
+	// Verify connectMu is free.
+	lockDone := make(chan struct{})
+	go func() {
+		tc.connectMu.Lock()
+		tc.connectMu.Unlock()
+		close(lockDone)
+	}()
+	select {
+	case <-lockDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("connectMu blocked after connect() returned — starvation regression")
+	}
+}

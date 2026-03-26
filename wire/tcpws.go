@@ -275,6 +275,9 @@ func (c *TCPWSClient) connectTLSWebSocket(ctx context.Context) (net.Conn, error)
 	connectStart := time.Now()
 	slog.Debug("TCPWSClient: connectTLSWebSocket start", "serverAddr", c.serverAddr, "hasDirectDialer", c.directDialer != nil)
 	// 1. TCP dial (use DirectDialer if set, to bypass TUN)
+	// Both paths use Timeout in addition to context deadline for kernel-level
+	// enforcement — context cancel alone doesn't reliably interrupt macOS TCP
+	// SYN retransmit (can block 75s despite 10s context timeout).
 	var conn net.Conn
 	var err error
 	if c.directDialer != nil {
@@ -282,7 +285,7 @@ func (c *TCPWSClient) connectTLSWebSocket(ctx context.Context) (net.Conn, error)
 		conn, err = c.directDialer.DialContext(connectCtx, "tcp", c.serverAddr)
 	} else {
 		slog.Debug("TCPWSClient: using default dialer for TCP dial")
-		var d net.Dialer
+		d := net.Dialer{Timeout: tcpwsConnectTimeout}
 		conn, err = d.DialContext(connectCtx, "tcp", c.serverAddr)
 	}
 	if err != nil {
