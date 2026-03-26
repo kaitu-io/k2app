@@ -63,6 +63,8 @@ func Migrate() error {
 		&AdminApproval{},
 		// Survey system
 		&SurveyResponse{},
+		// Announcement system
+		&Announcement{},
 	)
 	if err != nil {
 		log.Errorf(ctx, "database migration failed: %v", err)

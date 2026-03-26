@@ -768,6 +768,23 @@ func (Campaign) TableName() string {
 	return "campaigns"
 }
 
+// ========================= 公告系统 =========================
+
+// Announcement 公告信息
+type Announcement struct {
+	ID        uint64         `gorm:"primarykey" json:"id"`
+	CreatedAt time.Time      `json:"createdAt"`
+	UpdatedAt time.Time      `json:"updatedAt"`
+	DeletedAt gorm.DeletedAt `gorm:"index"`
+
+	Message   string `gorm:"type:varchar(500);not null" json:"message"`                        // 公告文字内容
+	LinkURL   string `gorm:"type:varchar(1024);not null;default:''" json:"linkUrl"`             // 点击跳转链接
+	LinkText  string `gorm:"type:varchar(100);not null;default:''" json:"linkText"`             // 链接文字
+	OpenMode  string `gorm:"type:varchar(20);not null;default:'external'" json:"openMode"`      // external | webview
+	ExpiresAt int64  `gorm:"not null;default:0" json:"expiresAt"`                               // Unix秒，0=不过期
+	IsActive  *bool  `gorm:"default:false;index:idx_announcement_active" json:"isActive"`       // 同一时刻只有一条为true
+}
+
 // ========================= EDM 邮件发送日志 =========================
 
 // EmailSendLogStatus 邮件发送状态
