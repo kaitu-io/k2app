@@ -112,6 +112,11 @@ const AnnouncementBanner: React.FC = () => {
     e.preventDefault();
     if (!announcement?.linkUrl) return;
 
+    if (announcement.openMode === 'webview') {
+      window.open(announcement.linkUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
     try {
       await window._platform!.openExternal(announcement.linkUrl);
     } catch (error) {
