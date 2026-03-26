@@ -35,6 +35,7 @@ import { statsTools } from './tools/admin-stats.js'
 import { approvalTools } from './tools/admin-approvals.js'
 import { walletTools } from './tools/admin-wallet.js'
 import { strategyTools } from './tools/admin-strategy.js'
+import { announcementTools } from './tools/admin-announcements.js'
 
 /** All factory-declared tools, aggregated for bulk registration. */
 const allFactoryTools: ToolRegistration[] = [
@@ -53,6 +54,7 @@ const allFactoryTools: ToolRegistration[] = [
   ...approvalTools,
   ...walletTools,
   ...strategyTools,
+  ...announcementTools,
 ]
 
 /**
