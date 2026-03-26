@@ -82,38 +82,13 @@ export function useEmbedMode(): EmbedModeConfig {
     if (!isEmbedded) return;
 
     /**
-     * Validates the target origin for postMessage security
-     * Only allows trusted origins to prevent security vulnerabilities
+     * In embed mode, the parent window (desktop app / dev server) is always
+     * on a different origin (tauri://localhost, http://localhost:5173, etc.).
+     * We cannot know the parent's origin from within the iframe, so we use '*'.
+     * Security is handled on the receiving side which validates event.origin.
      */
-    const getValidatedTargetOrigin = (): string | null => {
-      // Get the parent window's origin if available
-      try {
-        // Check if we have a valid parent window
-        if (!window.parent || window.parent === window) {
-          return null;
-        }
-
-        // For security, we validate against known safe origins
-        // In embed mode, we typically expect parent to be from same origin or trusted domains
-        const currentOrigin = window.location.origin;
-
-        // For desktop apps using file:// or custom protocols, we might need to be more lenient
-        // but we should still validate the context
-        const isFileProtocol = window.location.protocol === 'file:';
-        const isLocalhost = window.location.hostname === 'localhost' ||
-                           window.location.hostname === '127.0.0.1';
-
-        // Allow localhost and file protocol for development and desktop app contexts
-        if (isFileProtocol || isLocalhost) {
-          return currentOrigin;
-        }
-
-        // For production, only allow same origin unless specifically configured
-        return currentOrigin;
-      } catch (error) {
-        console.warn('[useEmbedMode] Failed to determine target origin:', error);
-        return null;
-      }
+    const getTargetOrigin = (): string => {
+      return '*';
     };
 
     const handleLinkClick = (e: Event) => {
@@ -156,28 +131,22 @@ export function useEmbedMode(): EmbedModeConfig {
         e.preventDefault();
         e.stopPropagation();
 
-        // Get validated target origin for secure postMessage
-        const targetOrigin = getValidatedTargetOrigin();
+        const targetOrigin = getTargetOrigin();
 
-        // Send message to parent window (desktop app) with proper origin validation
-        if (window.parent && window.parent !== window && targetOrigin) {
+        // Send message to parent window (desktop app)
+        if (window.parent && window.parent !== window) {
           try {
             window.parent.postMessage({
               type: 'external-link',
               url: sanitizedUrl,
-              timestamp: Date.now() // Add timestamp for message freshness validation
+              timestamp: Date.now()
             }, targetOrigin);
-            console.log('[useEmbedMode] Sent external link to parent with origin validation:', sanitizedUrl);
+            console.log('[useEmbedMode] Sent external link to parent:', sanitizedUrl);
           } catch (error) {
             console.error('[useEmbedMode] Failed to send message to parent:', error);
-            // Fallback: open in current window if message fails
             window.open(sanitizedUrl, '_blank', 'noopener,noreferrer');
           }
         } else {
-          // Fallback: open in new tab if no parent window or invalid origin
-          if (!targetOrigin) {
-            console.warn('[useEmbedMode] No valid target origin, opening in new tab');
-          }
           window.open(sanitizedUrl, '_blank', 'noopener,noreferrer');
         }
       }

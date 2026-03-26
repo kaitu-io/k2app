@@ -85,8 +85,8 @@ export default function Discover() {
   // 监听iframe消息处理外部链接
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      // 确保消息来源是我们的iframe
-      if (event.origin !== 'https://www.kaitu.io') return;
+      // 确保消息来源是我们的iframe (accept both kaitu.io and www.kaitu.io)
+      if (event.origin !== 'https://kaitu.io' && event.origin !== 'https://www.kaitu.io') return;
       
       // 检查是否是链接点击事件
       if (event.data?.type === 'external-link' && event.data?.url) {
