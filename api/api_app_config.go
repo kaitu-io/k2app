@@ -26,6 +26,7 @@ type DataAnnouncement struct {
 	Message   string `json:"message" example:"系统维护公告：1月1日凌晨进行系统升级"`                         // 公告文字内容
 	LinkURL   string `json:"linkUrl,omitempty" example:"https://kaitu.io/news/maintenance"` // 可选：点击跳转链接
 	LinkText  string `json:"linkText,omitempty" example:"查看详情"`                             // 可选：链接文字
+	OpenMode  string `json:"openMode,omitempty" example:"external"`                         // 可选：external（默认）或 webview
 	ExpiresAt int64  `json:"expiresAt,omitempty" example:"1704067200"`                      // 可选：公告过期时间戳（Unix秒），为0表示不过期
 }
 
@@ -87,18 +88,8 @@ func api_get_app_config(c *gin.Context) {
 	// Read minimum client version requirement
 	minClientVersion := viper.GetString("frontend_config.min_client_version")
 
-	// 读取公告配置
-	var announcement *DataAnnouncement
-	announcementID := viper.GetString("frontend_config.announcement.id")
-	if announcementID != "" {
-		announcement = &DataAnnouncement{
-			ID:        announcementID,
-			Message:   viper.GetString("frontend_config.announcement.message"),
-			LinkURL:   viper.GetString("frontend_config.announcement.link_url"),
-			LinkText:  viper.GetString("frontend_config.announcement.link_text"),
-			ExpiresAt: viper.GetInt64("frontend_config.announcement.expires_at"),
-		}
-	}
+	// 从数据库读取活跃公告
+	announcement := getActiveAnnouncement()
 
 	// 构造响应数据
 	data := DataAppConfig{
