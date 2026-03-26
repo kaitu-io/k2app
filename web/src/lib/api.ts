@@ -776,6 +776,38 @@ export interface CampaignListParams {
   isActive?: boolean;
 }
 
+// Announcement-related interfaces
+export interface AnnouncementRequest {
+  message: string;
+  linkUrl?: string;
+  linkText?: string;
+  openMode?: string; // 'external' | 'webview'
+  expiresAt?: number;
+  isActive?: boolean;
+}
+
+export interface AnnouncementResponse {
+  id: number;
+  createdAt: number;
+  updatedAt: number;
+  message: string;
+  linkUrl: string;
+  linkText: string;
+  openMode: string;
+  expiresAt: number;
+  isActive: boolean;
+}
+
+export interface AnnouncementListResponse {
+  items: AnnouncementResponse[];
+  pagination?: Pagination | null;
+}
+
+export interface AnnouncementListParams {
+  page?: number;
+  pageSize?: number;
+}
+
 export interface CampaignStats {
   code: string;
   totalUsed: number;
@@ -1327,6 +1359,46 @@ export const api = {
 
   async getCampaignFunnel(code: string): Promise<CampaignFunnel> {
     return this.request<CampaignFunnel>(`/app/campaigns/code/${code}/funnel`);
+  },
+
+  // Announcement management APIs
+  async getAnnouncements(params: AnnouncementListParams = {}): Promise<AnnouncementListResponse> {
+    const query = new URLSearchParams();
+    if (params.page) query.set('page', params.page.toString());
+    if (params.pageSize) query.set('pageSize', params.pageSize.toString());
+    return this.request<AnnouncementListResponse>(`/app/announcements${query.toString() ? '?' + query.toString() : ''}`);
+  },
+
+  async createAnnouncement(data: AnnouncementRequest): Promise<AnnouncementResponse> {
+    return this.request<AnnouncementResponse>('/app/announcements', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateAnnouncement(id: number, data: AnnouncementRequest): Promise<AnnouncementResponse> {
+    return this.request<AnnouncementResponse>(`/app/announcements/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteAnnouncement(id: number): Promise<void> {
+    return this.request<void>(`/app/announcements/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  async activateAnnouncement(id: number): Promise<AnnouncementResponse> {
+    return this.request<AnnouncementResponse>(`/app/announcements/${id}/activate`, {
+      method: 'POST',
+    });
+  },
+
+  async deactivateAnnouncement(id: number): Promise<AnnouncementResponse> {
+    return this.request<AnnouncementResponse>(`/app/announcements/${id}/deactivate`, {
+      method: 'POST',
+    });
   },
 
   // Email Template management APIs
