@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -116,6 +117,9 @@ func TestSession_UDID_ReadsFromFile(t *testing.T) {
 }
 
 func TestSession_FilePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping Unix file permission test on Windows")
+	}
 	dir := t.TempDir()
 	s := NewSession(dir)
 	s.SetTokens("tok", "ref", "e@e.com", time.Now())
