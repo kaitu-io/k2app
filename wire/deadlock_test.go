@@ -276,6 +276,18 @@ func TestQUICClient_ConnectMu_NotStarved(t *testing.T) {
 	}
 }
 
+// TestQuicDialHardTimeout_Bounds verifies quicDialHardTimeout stays under
+// go-deadlock's 60s threshold with margin, and above a safe minimum for
+// UDP listen + QUIC handshake on slow connections.
+func TestQuicDialHardTimeout_Bounds(t *testing.T) {
+	if quicDialHardTimeout > 30*time.Second {
+		t.Fatalf("quicDialHardTimeout too large: %v (must be <30s to stay under 60s deadlock threshold)", quicDialHardTimeout)
+	}
+	if quicDialHardTimeout < 10*time.Second {
+		t.Fatalf("quicDialHardTimeout too small: %v (min 10s to allow normal handshake)", quicDialHardTimeout)
+	}
+}
+
 // TestTCPWSClient_ConnectMu_NotStarved verifies that connectMu is released
 // within tcpwsConnectTimeout even when TCP dial blocks on SYN retransmit.
 func TestTCPWSClient_ConnectMu_NotStarved(t *testing.T) {

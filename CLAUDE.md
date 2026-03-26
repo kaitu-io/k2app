@@ -581,6 +581,7 @@ engine.Stop()
 
 ## Critical Gotchas
 
+- **connectMu hard timeout**: `QUICClient.connect()` wraps `transport.Dial` in a goroutine with `quicDialHardTimeout` (15s). If quic-go's internal `Conn.destroy()` blocks (waiting for `conn.run()` exit on context cancel), the goroutine is orphaned and connectMu is released. Without this, connectMu starvation blocks all DialTCP/DialUDP for 30s+ (detected in v0.4.1 production, 4/22 devices). `TCPWSClient` uses `net.Dialer{Timeout}` for kernel-level TCP dial enforcement. `daemon.directDialer` derives Timeout from context deadline.
 - **Race test timeout**: `go test -race ./wire/...` needs `>300s` (arc integration benchmarks are slow). Use `-timeout 300s` or `-short` to skip long-running tests.
 - QUIC stream `Close()` only sends FIN (write direction). Must also call `CancelRead()` to release stream slot — `quicStreamConn.Close()` handles both
 - sing-tun gVisor stack owns connections — handler must defer close, not close prematurely
