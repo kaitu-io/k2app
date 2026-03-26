@@ -10,13 +10,6 @@ import Image from "next/image";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 
-// 角色位掩码常量（与后端 api/type.go 一致）
-const RoleMarketing = 8;
-const RoleDevopsViewer = 16;  // DevOps 只读
-const RoleDevopsEditor = 32;  // DevOps 读写
-const RoleSupport   = 64;
-
-// requiredRole: 0 = superadmin only, 位掩码 = 需要其中任一角色
 interface MenuItem {
   href: string;
   icon: React.ComponentType<{ className?: string }>;
@@ -25,21 +18,18 @@ interface MenuItem {
 
 interface MenuGroup {
   title: string;
-  requiredRole: number;
   items: MenuItem[];
 }
 
 const menuGroups: MenuGroup[] = [
   {
     title: "审批管理",
-    requiredRole: RoleMarketing | RoleDevopsViewer | RoleDevopsEditor | RoleSupport,
     items: [
       { href: "/manager/approvals", icon: ShieldCheck, label: "审批管理" },
     ]
   },
   {
     title: "用户与订单",
-    requiredRole: 0, // superadmin only
     items: [
       { href: "/manager/users", icon: Users, label: "用户管理" },
       { href: "/manager/orders", icon: Receipt, label: "订单管理" },
@@ -48,7 +38,6 @@ const menuGroups: MenuGroup[] = [
   },
   {
     title: "运营配置",
-    requiredRole: 0, // superadmin only
     items: [
       { href: "/manager/plans", icon: Package, label: "套餐管理" },
       { href: "/manager/campaigns", icon: Tag, label: "优惠活动" },
@@ -57,7 +46,6 @@ const menuGroups: MenuGroup[] = [
   },
   {
     title: "基础设施",
-    requiredRole: RoleDevopsViewer | RoleDevopsEditor,
     items: [
       { href: "/manager/cloud", icon: Cloud, label: "节点部署" },
       { href: "/manager/nodes", icon: Server, label: "节点管理" },
@@ -66,7 +54,6 @@ const menuGroups: MenuGroup[] = [
   },
   {
     title: "客户支持",
-    requiredRole: RoleSupport,
     items: [
       { href: "/manager/users", icon: Users, label: "用户查询" },
       { href: "/manager/tickets", icon: MessageSquare, label: "工单管理" },
@@ -74,7 +61,6 @@ const menuGroups: MenuGroup[] = [
   },
   {
     title: "营销管理",
-    requiredRole: RoleMarketing,
     items: [
       { href: "/manager/edm/create-task", icon: Mail, label: "邮件营销" },
       { href: "/manager/edm/templates", icon: FileText, label: "邮件模板" },
@@ -85,7 +71,6 @@ const menuGroups: MenuGroup[] = [
   },
   {
     title: "系统监控",
-    requiredRole: 0, // superadmin only
     items: [
       { href: "/manager/usages", icon: BarChart3, label: "使用统计" },
       { href: "/manager/asynqmon", icon: Gauge, label: "任务队列" },
@@ -113,16 +98,6 @@ const ManagerSidebar = () => {
     return () => clearInterval(interval);
   }, [user]);
 
-  const isSuperAdmin = user?.isAdmin === true;
-  const userRoles = user?.roles ?? 1;
-
-  // 超管看全部，其他角色按位掩码过滤
-  const visibleGroups = menuGroups.filter(group => {
-    if (isSuperAdmin) return true;
-    if (group.requiredRole === 0) return false;
-    return (userRoles & group.requiredRole) !== 0;
-  });
-
   const isActive = (itemHref: string) => {
     if (pathname === itemHref) return true;
     if (pathname.startsWith(itemHref + '/')) return true;
@@ -146,7 +121,7 @@ const ManagerSidebar = () => {
         </div>
         <div className="flex-1 overflow-auto">
           <nav className="grid items-start px-2 text-sm font-medium lg:px-4 gap-4 py-4">
-            {visibleGroups.map((group, groupIndex) => (
+            {menuGroups.map((group, groupIndex) => (
               <div key={groupIndex}>
                 <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                   {group.title}
