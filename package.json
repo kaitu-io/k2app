@@ -1,6 +1,6 @@
 {
   "name": "k2app",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "releaseVersion": "0.3.22",
   "private": true,
   "workspaces": [
