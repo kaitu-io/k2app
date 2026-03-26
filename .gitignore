@@ -53,3 +53,8 @@ Thumbs.db
 mobile/plugins/k2-plugin/android/.gradle/
 
 .worktrees/
+
+# Local planning docs (not versioned)
+docs/plans/
+docs/superpowers/plans/
+mcp/mcp
