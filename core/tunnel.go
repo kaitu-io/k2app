@@ -481,9 +481,9 @@ func (t *ClientTunnel) handleUDPDirect(local net.PacketConn, dest string) {
 	var remote net.PacketConn
 	var err error
 	if t.directDialer != nil {
-		remote, err = t.directDialer.ListenPacket("udp", "")
+		remote, err = t.directDialer.ListenPacket("udp4", "")
 	} else {
-		remote, err = net.ListenPacket("udp", "")
+		remote, err = net.ListenPacket("udp4", "")
 	}
 	if err != nil {
 		slog.Warn("tunnel: direct UDP listen failed", "err", err)
