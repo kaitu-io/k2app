@@ -291,27 +291,9 @@ func SetupRouter() *gin.Engine {
 		// 订单管理
 		// 订单管理 — GET 已移至 opsAdmin 组（Support + Marketing 可读）
 
-		// 优惠活动管理
-		admin.GET("/campaigns", api_admin_list_campaigns)
-		admin.GET("/campaigns/:id", api_admin_get_campaign)
-		admin.POST("/campaigns", api_admin_create_campaign)
-		admin.PUT("/campaigns/:id", api_admin_update_campaign)
-		admin.DELETE("/campaigns/:id", api_admin_delete_campaign)
+		// 优惠活动管理 — 已移至 opsAdmin 组（RoleMarketing）
 
-		// Campaign统计分析路由 - 使用code前缀避免冲突
-		admin.GET("/campaigns/code/:code/stats", api_admin_get_campaign_stats)
-		admin.GET("/campaigns/code/:code/orders", api_admin_get_campaign_orders)
-		admin.GET("/campaigns/code/:code/funnel", api_admin_get_campaign_funnel)
-
-		// Campaign: issue license keys
-		admin.POST("/campaigns/:id/issue-keys", api_admin_issue_license_keys)
-
-		// LicenseKey admin management
-		// stats must be registered BEFORE :id to prevent routing conflict
-		admin.GET("/license-keys/stats", api_admin_license_key_stats)
-		admin.GET("/license-keys", api_admin_list_license_keys)
-		admin.POST("/license-keys", api_admin_create_license_keys)
-		admin.DELETE("/license-keys/:id", api_admin_delete_license_key)
+		// LicenseKey admin management — 已移至 opsAdmin 组（RoleMarketing）
 
 		// 公告管理 — 已移至 opsAdmin 组（RoleMarketing）
 
@@ -437,6 +419,23 @@ func SetupRouter() *gin.Engine {
 			edmOps.GET("/send-logs",                              RoleRequired(RoleMarketing), api_admin_list_email_send_logs)
 			edmOps.GET("/send-logs/stats",                        RoleRequired(RoleMarketing), api_admin_get_email_send_log_stats)
 		}
+
+		// 优惠活动管理（审批流程已覆盖，RoleMarketing 可操作）
+		opsAdmin.GET("/campaigns",                          RoleRequired(RoleMarketing), api_admin_list_campaigns)
+		opsAdmin.GET("/campaigns/:id",                      RoleRequired(RoleMarketing), api_admin_get_campaign)
+		opsAdmin.POST("/campaigns",                         RoleRequired(RoleMarketing), api_admin_create_campaign)
+		opsAdmin.PUT("/campaigns/:id",                      RoleRequired(RoleMarketing), api_admin_update_campaign)
+		opsAdmin.DELETE("/campaigns/:id",                   RoleRequired(RoleMarketing), api_admin_delete_campaign)
+		opsAdmin.GET("/campaigns/code/:code/stats",         RoleRequired(RoleMarketing), api_admin_get_campaign_stats)
+		opsAdmin.GET("/campaigns/code/:code/orders",        RoleRequired(RoleMarketing), api_admin_get_campaign_orders)
+		opsAdmin.GET("/campaigns/code/:code/funnel",        RoleRequired(RoleMarketing), api_admin_get_campaign_funnel)
+		opsAdmin.POST("/campaigns/:id/issue-keys",          RoleRequired(RoleMarketing), api_admin_issue_license_keys)
+
+		// LicenseKey 管理（审批流程已覆盖，RoleMarketing 可操作）
+		opsAdmin.GET("/license-keys/stats",                 RoleRequired(RoleMarketing), api_admin_license_key_stats)
+		opsAdmin.GET("/license-keys",                       RoleRequired(RoleMarketing), api_admin_list_license_keys)
+		opsAdmin.POST("/license-keys",                      RoleRequired(RoleMarketing), api_admin_create_license_keys)
+		opsAdmin.DELETE("/license-keys/:id",                RoleRequired(RoleMarketing), api_admin_delete_license_key)
 	}
 
 	// GitHub Issues routes (requires authentication)
