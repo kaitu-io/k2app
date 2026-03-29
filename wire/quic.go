@@ -645,7 +645,7 @@ func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, 
 			}
 
 			sessionID := alloc.Next()
-			readCh := mux.register(sessionID)
+			readCh, reaped := mux.register(sessionID)
 
 			return &quicUDPConn{
 				qconn:      conn,
@@ -654,6 +654,7 @@ func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, 
 				mux:        mux,
 				created:    time.Now(),
 				readCh:     readCh,
+				reaped:     reaped,
 				done:       make(chan struct{}),
 			}, nil
 		}
@@ -744,12 +745,13 @@ func (c *QUICClient) dialUDPStream(ctx context.Context, conn *quic.Conn, addr st
 // newStreamUDPConn creates a quicStreamUDPConn with a new session ID.
 func (c *QUICClient) newStreamUDPConn(mux *quicStreamUDPMux, alloc *SessionIDAllocator, addr string) *quicStreamUDPConn {
 	sessionID := alloc.Next()
-	readCh := mux.register(sessionID)
+	readCh, reaped := mux.register(sessionID)
 	return &quicStreamUDPConn{
 		mux:        mux,
 		sessionID:  sessionID,
 		targetAddr: addr,
 		readCh:     readCh,
+		reaped:     reaped,
 		done:       make(chan struct{}),
 	}
 }
@@ -1319,12 +1321,13 @@ func (s *QUICServer) Close() error {
 // ============================================================================
 
 type quicUDPMux struct {
-	conn       *quic.Conn
-	mu         deadlock.Mutex
-	sessions   map[uint32]chan *UDPFrame
-	lastActive map[uint32]*atomic.Int64 // unix seconds per session
-	done       chan struct{}
-	started    bool
+	conn        *quic.Conn
+	mu          deadlock.Mutex
+	sessions    map[uint32]chan *UDPFrame
+	sessionDone map[uint32]chan struct{} // closed by reaper to notify quicUDPConn
+	lastActive  map[uint32]*atomic.Int64 // unix seconds per session
+	done        chan struct{}
+	started     bool
 	streamMux  *quicStreamUDPMux // stream-based UDP fallback
 	overflow   *udpOverflowStream // per-packet overflow for oversized datagrams
 
@@ -1382,6 +1385,7 @@ func newQuicUDPMux(conn *quic.Conn, hopAttempts *atomic.Int32, hopExhausted *ato
 	return &quicUDPMux{
 		conn:               conn,
 		sessions:           make(map[uint32]chan *UDPFrame),
+		sessionDone:        make(map[uint32]chan struct{}),
 		lastActive:         make(map[uint32]*atomic.Int64),
 		done:               make(chan struct{}),
 		clientHopAttempts:  hopAttempts,
@@ -1415,20 +1419,29 @@ func (m *quicUDPMux) reapIdleSessions() {
 	for {
 		select {
 		case <-ticker.C:
-			now := time.Now().Unix()
-			m.mu.Lock()
-			for id, ts := range m.lastActive {
-				if now-ts.Load() > int64(udpSessionIdleTimeout/time.Second) {
-					delete(m.sessions, id)
-					delete(m.lastActive, id)
-					slog.Debug("quicUDPMux: reaped idle session", "sessionID", id)
-				}
-			}
-			m.mu.Unlock()
+			m.reapOnce()
 		case <-m.done:
 			return
 		}
 	}
+}
+
+func (m *quicUDPMux) reapOnce() {
+	now := time.Now().Unix()
+	m.mu.Lock()
+	for id, ts := range m.lastActive {
+		if now-ts.Load() > int64(udpSessionIdleTimeout/time.Second) {
+			delete(m.sessions, id)
+			delete(m.lastActive, id)
+			reaped := m.sessionDone[id]
+			delete(m.sessionDone, id)
+			if reaped != nil {
+				close(reaped)
+			}
+			slog.Debug("quicUDPMux: reaped idle session", "sessionID", id)
+		}
+	}
+	m.mu.Unlock()
 }
 
 func (m *quicUDPMux) readLoop() {
@@ -1471,21 +1484,24 @@ func (m *quicUDPMux) readLoop() {
 	}
 }
 
-func (m *quicUDPMux) register(sessionID uint32) chan *UDPFrame {
+func (m *quicUDPMux) register(sessionID uint32) (chan *UDPFrame, chan struct{}) {
 	ch := make(chan *UDPFrame, 32)
+	reaped := make(chan struct{})
 	ts := &atomic.Int64{}
 	ts.Store(time.Now().Unix())
 	m.mu.Lock()
 	m.sessions[sessionID] = ch
+	m.sessionDone[sessionID] = reaped
 	m.lastActive[sessionID] = ts
 	m.mu.Unlock()
 	m.start()
-	return ch
+	return ch, reaped
 }
 
 func (m *quicUDPMux) unregister(sessionID uint32) {
 	m.mu.Lock()
 	delete(m.sessions, sessionID)
+	delete(m.sessionDone, sessionID)
 	delete(m.lastActive, sessionID)
 	m.mu.Unlock()
 }
@@ -1524,6 +1540,7 @@ type quicUDPConn struct {
 	targetAddr string
 	mux        *quicUDPMux
 	readCh     chan *UDPFrame
+	reaped     chan struct{} // closed by mux reaper when session is idle-reaped
 	done       chan struct{}
 	closeOnce  sync.Once
 	rd         readDeadline
@@ -1553,6 +1570,8 @@ func (c *quicUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 		slog.Debug("quicUDPConn: ReadFrom ok", "sessionID", c.sessionID, "target", c.targetAddr, "len", n)
 		addr, _ := net.ResolveUDPAddr("udp", c.targetAddr)
 		return n, addr, nil
+	case <-c.reaped:
+		return 0, nil, net.ErrClosed
 	case <-c.done:
 		return 0, nil, net.ErrClosed
 	case <-c.mux.done:
@@ -1871,25 +1890,27 @@ func (c *quicStreamServerUDPConn) SetWriteDeadline(time.Time) error    { return 
 // ============================================================================
 
 type quicStreamUDPMux struct {
-	stream     *quic.Stream
-	qconn      *quic.Conn
-	br         *bufio.Reader
-	writeMu    deadlock.Mutex
-	mu         deadlock.Mutex
-	sessions   map[uint32]chan *UDPFrame
-	lastActive map[uint32]*atomic.Int64
-	done       chan struct{}
-	started    bool
+	stream      *quic.Stream
+	qconn       *quic.Conn
+	br          *bufio.Reader
+	writeMu     deadlock.Mutex
+	mu          deadlock.Mutex
+	sessions    map[uint32]chan *UDPFrame
+	sessionDone map[uint32]chan struct{} // closed by reaper to notify quicStreamUDPConn
+	lastActive  map[uint32]*atomic.Int64
+	done        chan struct{}
+	started     bool
 }
 
 func newQuicStreamUDPMux(stream *quic.Stream, qconn *quic.Conn) *quicStreamUDPMux {
 	return &quicStreamUDPMux{
-		stream:     stream,
-		qconn:      qconn,
-		br:         bufio.NewReader(stream),
-		sessions:   make(map[uint32]chan *UDPFrame),
-		lastActive: make(map[uint32]*atomic.Int64),
-		done:       make(chan struct{}),
+		stream:      stream,
+		qconn:       qconn,
+		br:          bufio.NewReader(stream),
+		sessions:    make(map[uint32]chan *UDPFrame),
+		sessionDone: make(map[uint32]chan struct{}),
+		lastActive:  make(map[uint32]*atomic.Int64),
+		done:        make(chan struct{}),
 	}
 }
 
@@ -1942,21 +1963,24 @@ func (m *quicStreamUDPMux) writeFrame(sessionID uint32, addr string, payload []b
 	return WriteSmuxUDPFrame(m.stream, sessionID, addr, payload)
 }
 
-func (m *quicStreamUDPMux) register(sessionID uint32) chan *UDPFrame {
+func (m *quicStreamUDPMux) register(sessionID uint32) (chan *UDPFrame, chan struct{}) {
 	ch := make(chan *UDPFrame, 32)
+	reaped := make(chan struct{})
 	ts := &atomic.Int64{}
 	ts.Store(time.Now().Unix())
 	m.mu.Lock()
 	m.sessions[sessionID] = ch
+	m.sessionDone[sessionID] = reaped
 	m.lastActive[sessionID] = ts
 	m.mu.Unlock()
 	m.start()
-	return ch
+	return ch, reaped
 }
 
 func (m *quicStreamUDPMux) unregister(sessionID uint32) {
 	m.mu.Lock()
 	delete(m.sessions, sessionID)
+	delete(m.sessionDone, sessionID)
 	delete(m.lastActive, sessionID)
 	m.mu.Unlock()
 }
@@ -1976,20 +2000,29 @@ func (m *quicStreamUDPMux) reapIdleSessions() {
 	for {
 		select {
 		case <-ticker.C:
-			now := time.Now().Unix()
-			m.mu.Lock()
-			for id, ts := range m.lastActive {
-				if now-ts.Load() > int64(udpSessionIdleTimeout/time.Second) {
-					delete(m.sessions, id)
-					delete(m.lastActive, id)
-					slog.Debug("quicStreamUDPMux: reaped idle session", "sessionID", id)
-				}
-			}
-			m.mu.Unlock()
+			m.reapOnce()
 		case <-m.done:
 			return
 		}
 	}
+}
+
+func (m *quicStreamUDPMux) reapOnce() {
+	now := time.Now().Unix()
+	m.mu.Lock()
+	for id, ts := range m.lastActive {
+		if now-ts.Load() > int64(udpSessionIdleTimeout/time.Second) {
+			delete(m.sessions, id)
+			delete(m.lastActive, id)
+			reaped := m.sessionDone[id]
+			delete(m.sessionDone, id)
+			if reaped != nil {
+				close(reaped)
+			}
+			slog.Debug("quicStreamUDPMux: reaped idle session", "sessionID", id)
+		}
+	}
+	m.mu.Unlock()
 }
 
 func (m *quicStreamUDPMux) close() {
@@ -2010,6 +2043,7 @@ type quicStreamUDPConn struct {
 	sessionID  uint32
 	targetAddr string
 	readCh     chan *UDPFrame
+	reaped     chan struct{} // closed by mux reaper when session is idle-reaped
 	done       chan struct{}
 	closeOnce  sync.Once
 	rd         readDeadline
@@ -2030,6 +2064,8 @@ func (c *quicStreamUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 		n := copy(b, frame.Payload)
 		addr, _ := net.ResolveUDPAddr("udp", c.targetAddr)
 		return n, addr, nil
+	case <-c.reaped:
+		return 0, nil, net.ErrClosed
 	case <-c.done:
 		return 0, nil, net.ErrClosed
 	case <-c.mux.done:

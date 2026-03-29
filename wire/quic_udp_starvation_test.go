@@ -274,10 +274,11 @@ func TestWriteTo_ClientSide_SilentDrop(t *testing.T) {
 	mock := newBlockingSender(32)
 
 	mux := &quicUDPMux{
-		conn:       nil, // not used by WriteTo path
-		sessions:   make(map[uint32]chan *UDPFrame),
-		lastActive: make(map[uint32]*atomic.Int64),
-		done:       make(chan struct{}),
+		conn:        nil, // not used by WriteTo path
+		sessions:    make(map[uint32]chan *UDPFrame),
+		sessionDone: make(map[uint32]chan struct{}),
+		lastActive:  make(map[uint32]*atomic.Int64),
+		done:        make(chan struct{}),
 	}
 
 	// Fill inflight to max
@@ -291,6 +292,7 @@ func TestWriteTo_ClientSide_SilentDrop(t *testing.T) {
 		targetAddr: "142.250.183.35:443",
 		mux:        mux,
 		readCh:     make(chan *UDPFrame, 32),
+		reaped:     make(chan struct{}),
 		done:       make(chan struct{}),
 		created:    time.Now(),
 	}

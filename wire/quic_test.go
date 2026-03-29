@@ -1039,9 +1039,10 @@ func (immediateDatagramSender) LocalAddr() net.Addr {
 // exceeds maxDatagramInflight, WriteTo returns ErrDatagramSendTimeout immediately.
 func TestQuicUDPConn_WriteTo_InflightDrop(t *testing.T) {
 	mux := &quicUDPMux{
-		sessions:   make(map[uint32]chan *UDPFrame),
-		lastActive: make(map[uint32]*atomic.Int64),
-		done:       make(chan struct{}),
+		sessions:    make(map[uint32]chan *UDPFrame),
+		sessionDone: make(map[uint32]chan struct{}),
+		lastActive:  make(map[uint32]*atomic.Int64),
+		done:        make(chan struct{}),
 	}
 	// Pre-fill inflight to the limit
 	mux.sendInflight.Store(maxDatagramInflight)
@@ -1052,6 +1053,7 @@ func TestQuicUDPConn_WriteTo_InflightDrop(t *testing.T) {
 		targetAddr: "8.8.8.8:53",
 		mux:        mux,
 		readCh:     make(chan *UDPFrame, 1),
+		reaped:     make(chan struct{}),
 		done:       make(chan struct{}),
 	}
 
@@ -1120,9 +1122,10 @@ func TestServerUDPConn_WriteTo_InflightDrop(t *testing.T) {
 // the limit, SendDatagram is called synchronously and succeeds.
 func TestQuicUDPConn_WriteTo_NormalPath(t *testing.T) {
 	mux := &quicUDPMux{
-		sessions:   make(map[uint32]chan *UDPFrame),
-		lastActive: make(map[uint32]*atomic.Int64),
-		done:       make(chan struct{}),
+		sessions:    make(map[uint32]chan *UDPFrame),
+		sessionDone: make(map[uint32]chan struct{}),
+		lastActive:  make(map[uint32]*atomic.Int64),
+		done:        make(chan struct{}),
 	}
 
 	conn := &quicUDPConn{
@@ -1131,6 +1134,7 @@ func TestQuicUDPConn_WriteTo_NormalPath(t *testing.T) {
 		targetAddr: "8.8.8.8:53",
 		mux:        mux,
 		readCh:     make(chan *UDPFrame, 1),
+		reaped:     make(chan struct{}),
 		done:       make(chan struct{}),
 	}
 

@@ -41,15 +41,17 @@ func TestWriteTo_InflightSaturation_NoGoroutineLeak(t *testing.T) {
 	// Sender that blocks long enough for us to saturate the counter.
 	sender := &slowDatagramSender{delay: 500 * time.Millisecond}
 	mux := &quicUDPMux{
-		sessions:   make(map[uint32]chan *UDPFrame),
-		lastActive: make(map[uint32]*atomic.Int64),
-		done:       make(chan struct{}),
+		sessions:    make(map[uint32]chan *UDPFrame),
+		sessionDone: make(map[uint32]chan struct{}),
+		lastActive:  make(map[uint32]*atomic.Int64),
+		done:        make(chan struct{}),
 	}
 	conn := &quicUDPConn{
 		sessionID:  1,
 		targetAddr: "8.8.8.8:53",
 		qconn:      sender,
 		readCh:     make(chan *UDPFrame, 1),
+		reaped:     make(chan struct{}),
 		done:       make(chan struct{}),
 		mux:        mux,
 	}
@@ -110,15 +112,17 @@ func TestWriteTo_InflightSaturation_NoGoroutineLeak(t *testing.T) {
 func TestWriteTo_InflightCounter_Decrements(t *testing.T) {
 	sender := &slowDatagramSender{delay: 0} // instant send
 	mux := &quicUDPMux{
-		sessions:   make(map[uint32]chan *UDPFrame),
-		lastActive: make(map[uint32]*atomic.Int64),
-		done:       make(chan struct{}),
+		sessions:    make(map[uint32]chan *UDPFrame),
+		sessionDone: make(map[uint32]chan struct{}),
+		lastActive:  make(map[uint32]*atomic.Int64),
+		done:        make(chan struct{}),
 	}
 	conn := &quicUDPConn{
 		sessionID:  1,
 		targetAddr: "8.8.8.8:53",
 		qconn:      sender,
 		readCh:     make(chan *UDPFrame, 1),
+		reaped:     make(chan struct{}),
 		done:       make(chan struct{}),
 		mux:        mux,
 	}

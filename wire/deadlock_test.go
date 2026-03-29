@@ -124,7 +124,7 @@ func TestDeadlock_QUICResetConnectionMuFree(t *testing.T) {
 
 	// Set up a fake udpMux so resetConnection has something to close.
 	qc.mu.Lock()
-	qc.udpMux = &quicUDPMux{done: make(chan struct{})}
+	qc.udpMux = &quicUDPMux{sessionDone: make(map[uint32]chan struct{}), done: make(chan struct{})}
 	qc.mu.Unlock()
 
 	// Start resetConnection in background — it will close udpMux outside lock.

@@ -79,10 +79,12 @@ func TestReadDeadline_ConcurrentAccess(t *testing.T) {
 func TestQuicUDPConn_ReadFrom_Timeout(t *testing.T) {
 	c := &quicUDPConn{
 		readCh:     make(chan *UDPFrame),
+		reaped:     make(chan struct{}),
 		done:       make(chan struct{}),
 		targetAddr: "8.8.8.8:53",
 		mux: &quicUDPMux{
-			done: make(chan struct{}),
+			sessionDone: make(map[uint32]chan struct{}),
+			done:        make(chan struct{}),
 		},
 	}
 	c.SetReadDeadline(time.Now().Add(50 * time.Millisecond))
@@ -106,10 +108,12 @@ func TestQuicUDPConn_ReadFrom_NoDeadline(t *testing.T) {
 
 	c := &quicUDPConn{
 		readCh:     readCh,
+		reaped:     make(chan struct{}),
 		done:       make(chan struct{}),
 		targetAddr: "8.8.8.8:53",
 		mux: &quicUDPMux{
-			done: make(chan struct{}),
+			sessionDone: make(map[uint32]chan struct{}),
+			done:        make(chan struct{}),
 		},
 	}
 
@@ -144,10 +148,12 @@ func TestServerUDPConn_ReadFrom_Timeout(t *testing.T) {
 func TestSmuxUDPConn_ReadFrom_Timeout(t *testing.T) {
 	c := &smuxUDPConn{
 		readCh:     make(chan *UDPFrame),
+		reaped:     make(chan struct{}),
 		done:       make(chan struct{}),
 		targetAddr: "8.8.8.8:53",
 		mux: &smuxUDPMux{
-			done: make(chan struct{}),
+			sessionDone: make(map[uint32]chan struct{}),
+			done:        make(chan struct{}),
 		},
 	}
 	c.SetReadDeadline(time.Now().Add(50 * time.Millisecond))
@@ -203,10 +209,12 @@ func errorAs(err error, target interface{}) bool {
 func TestReadFrom_PastDeadline_ImmediateReturn(t *testing.T) {
 	c := &quicUDPConn{
 		readCh:     make(chan *UDPFrame),
+		reaped:     make(chan struct{}),
 		done:       make(chan struct{}),
 		targetAddr: "8.8.8.8:53",
 		mux: &quicUDPMux{
-			done: make(chan struct{}),
+			sessionDone: make(map[uint32]chan struct{}),
+			done:        make(chan struct{}),
 		},
 	}
 	c.SetReadDeadline(time.Now().Add(-time.Second))
@@ -228,10 +236,12 @@ func TestReadFrom_DataBeforeDeadline(t *testing.T) {
 	readCh := make(chan *UDPFrame, 1)
 	c := &quicUDPConn{
 		readCh:     readCh,
+		reaped:     make(chan struct{}),
 		done:       make(chan struct{}),
 		targetAddr: "8.8.8.8:53",
 		mux: &quicUDPMux{
-			done: make(chan struct{}),
+			sessionDone: make(map[uint32]chan struct{}),
+			done:        make(chan struct{}),
 		},
 	}
 	// Deadline in the future, but data arrives immediately

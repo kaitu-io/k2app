@@ -508,13 +508,14 @@ func (c *TCPWSClient) DialStreamUDP(ctx context.Context, addr string) (net.Packe
 // newSmuxUDPConn creates a smuxUDPConn with a new session ID.
 func (c *TCPWSClient) newSmuxUDPConn(mux *smuxUDPMux, alloc *SessionIDAllocator, addr string) *smuxUDPConn {
 	sessionID := alloc.Next()
-	readCh := mux.register(sessionID)
+	readCh, reaped := mux.register(sessionID)
 	slog.Debug("TCPWSClient.DialUDP: session ready", "addr", addr, "sessionID", sessionID)
 	return &smuxUDPConn{
 		mux:        mux,
 		sessionID:  sessionID,
 		targetAddr: addr,
 		readCh:     readCh,
+		reaped:     reaped,
 		done:       make(chan struct{}),
 	}
 }
@@ -772,24 +773,26 @@ func (s *TCPWSServer) Close() error {
 // ============================================================================
 
 type smuxUDPMux struct {
-	stream     *smux.Stream
-	br         *bufio.Reader
-	writeMu    deadlock.Mutex
-	mu         deadlock.Mutex
-	sessions   map[uint32]chan *UDPFrame
-	lastActive map[uint32]*atomic.Int64
-	done       chan struct{}
-	closeOnce  sync.Once
-	started    bool
+	stream      *smux.Stream
+	br          *bufio.Reader
+	writeMu     deadlock.Mutex
+	mu          deadlock.Mutex
+	sessions    map[uint32]chan *UDPFrame
+	sessionDone map[uint32]chan struct{} // closed by reaper to notify smuxUDPConn
+	lastActive  map[uint32]*atomic.Int64
+	done        chan struct{}
+	closeOnce   sync.Once
+	started     bool
 }
 
 func newSmuxUDPMux(stream *smux.Stream) *smuxUDPMux {
 	return &smuxUDPMux{
-		stream:     stream,
-		br:         bufio.NewReader(stream),
-		sessions:   make(map[uint32]chan *UDPFrame),
-		lastActive: make(map[uint32]*atomic.Int64),
-		done:       make(chan struct{}),
+		stream:      stream,
+		br:          bufio.NewReader(stream),
+		sessions:    make(map[uint32]chan *UDPFrame),
+		sessionDone: make(map[uint32]chan struct{}),
+		lastActive:  make(map[uint32]*atomic.Int64),
+		done:        make(chan struct{}),
 	}
 }
 
@@ -836,21 +839,24 @@ func (m *smuxUDPMux) writeFrame(sessionID uint32, addr string, payload []byte) e
 	return WriteSmuxUDPFrame(m.stream, sessionID, addr, payload)
 }
 
-func (m *smuxUDPMux) register(sessionID uint32) chan *UDPFrame {
+func (m *smuxUDPMux) register(sessionID uint32) (chan *UDPFrame, chan struct{}) {
 	ch := make(chan *UDPFrame, 32)
+	reaped := make(chan struct{})
 	ts := &atomic.Int64{}
 	ts.Store(time.Now().Unix())
 	m.mu.Lock()
 	m.sessions[sessionID] = ch
+	m.sessionDone[sessionID] = reaped
 	m.lastActive[sessionID] = ts
 	m.mu.Unlock()
 	m.start()
-	return ch
+	return ch, reaped
 }
 
 func (m *smuxUDPMux) unregister(sessionID uint32) {
 	m.mu.Lock()
 	delete(m.sessions, sessionID)
+	delete(m.sessionDone, sessionID)
 	delete(m.lastActive, sessionID)
 	m.mu.Unlock()
 }
@@ -870,20 +876,30 @@ func (m *smuxUDPMux) reapIdleSessions() {
 	for {
 		select {
 		case <-ticker.C:
-			now := time.Now().Unix()
-			m.mu.Lock()
-			for id, ts := range m.lastActive {
-				if now-ts.Load() > int64(udpSessionIdleTimeout/time.Second) {
-					delete(m.sessions, id)
-					delete(m.lastActive, id)
-					slog.Debug("smuxUDPMux: reaped idle session", "sessionID", id)
-				}
-			}
-			m.mu.Unlock()
+			m.reapOnce()
 		case <-m.done:
 			return
 		}
 	}
+}
+
+// reapOnce runs one pass of idle session cleanup. Extracted for testability.
+func (m *smuxUDPMux) reapOnce() {
+	now := time.Now().Unix()
+	m.mu.Lock()
+	for id, ts := range m.lastActive {
+		if now-ts.Load() > int64(udpSessionIdleTimeout/time.Second) {
+			delete(m.sessions, id)
+			delete(m.lastActive, id)
+			reaped := m.sessionDone[id]
+			delete(m.sessionDone, id)
+			if reaped != nil {
+				close(reaped)
+			}
+			slog.Debug("smuxUDPMux: reaped idle session", "sessionID", id)
+		}
+	}
+	m.mu.Unlock()
 }
 
 func (m *smuxUDPMux) close() {
@@ -900,6 +916,7 @@ type smuxUDPConn struct {
 	sessionID  uint32
 	targetAddr string
 	readCh     chan *UDPFrame
+	reaped     chan struct{} // closed by mux reaper when session is idle-reaped
 	done       chan struct{}
 	closeOnce  sync.Once
 	rd         readDeadline
@@ -920,6 +937,8 @@ func (c *smuxUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 		n := copy(b, frame.Payload)
 		addr, _ := net.ResolveUDPAddr("udp", c.targetAddr)
 		return n, addr, nil
+	case <-c.reaped:
+		return 0, nil, net.ErrClosed
 	case <-c.done:
 		return 0, nil, net.ErrClosed
 	case <-c.mux.done:
