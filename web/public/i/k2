@@ -88,36 +88,22 @@ get_latest_version() {
 
 # --- Linux ---
 
-install_webkit2gtk() {
-    # Check if already installed
+has_webkit2gtk() {
     if (ldconfig -p 2>/dev/null | grep -q "libwebkit2gtk-4.1") || \
        (command -v pkg-config >/dev/null 2>&1 && pkg-config --exists webkit2gtk-4.1 2>/dev/null); then
-        info "webkit2gtk-4.1 already installed."
         return 0
     fi
+    return 1
+}
 
-    info "Installing webkit2gtk-4.1..."
-    if command -v apt-get >/dev/null 2>&1; then
-        apt-get update -qq && apt-get install -y -qq libwebkit2gtk-4.1-0
-    elif command -v dnf >/dev/null 2>&1; then
-        dnf install -y webkit2gtk4.1
-    elif command -v pacman >/dev/null 2>&1; then
-        pacman -Sy --noconfirm webkit2gtk-4.1
-    elif command -v zypper >/dev/null 2>&1; then
-        zypper install -y webkit2gtk-4.1
-    else
-        error "Unsupported package manager. Install webkit2gtk-4.1 manually and re-run."
-    fi
-
-    info "webkit2gtk-4.1 installed."
+has_systemd() {
+    command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]
 }
 
 install_linux() {
     if [ "$ARCH" != "amd64" ]; then
-        error "Linux desktop currently only supports amd64."
+        error "Linux currently only supports amd64."
     fi
-
-    install_webkit2gtk
 
     INSTALL_DIR="/opt/kaitu"
     TMP_TGZ="/tmp/Kaitu_${VERSION}_amd64.tar.gz"
@@ -132,22 +118,39 @@ install_linux() {
     tar xzf "$TMP_TGZ" -C "$INSTALL_DIR"
     rm -f "$TMP_TGZ"
 
-    chmod +x "${INSTALL_DIR}/k2app"
     chmod +x "${INSTALL_DIR}/k2"
 
+    # Always symlink k2 CLI to PATH
     ln -sf "${INSTALL_DIR}/k2" /usr/local/bin/k2
-    info "k2 available at /usr/local/bin/k2"
+    info "k2 CLI installed to /usr/local/bin/k2"
 
-    info "Installing k2 systemd service..."
-    "${INSTALL_DIR}/k2" service install
+    # --- systemd service (optional) ---
+    HAS_SYSTEMD=false
+    if has_systemd; then
+        if "${INSTALL_DIR}/k2" service install 2>/dev/null; then
+            HAS_SYSTEMD=true
+            info "k2 systemd service installed and started."
+        else
+            info "Warning: k2 service install failed. You can retry manually:"
+            info "  sudo /opt/kaitu/k2 service install"
+        fi
+    else
+        info "systemd not detected. To run k2 as a daemon:"
+        info "  sudo /opt/kaitu/k2 run"
+    fi
 
-    # Desktop entry
-    REAL_USER="${SUDO_USER:-$(whoami)}"
-    REAL_HOME=$(eval echo "~${REAL_USER}")
-    DESKTOP_DIR="${REAL_HOME}/.local/share/applications"
-    mkdir -p "$DESKTOP_DIR"
+    # --- GUI + desktop entry (only if webkit2gtk present) ---
+    HAS_GUI=false
+    if has_webkit2gtk; then
+        HAS_GUI=true
+        chmod +x "${INSTALL_DIR}/k2app"
 
-    cat > "${DESKTOP_DIR}/kaitu.desktop" << ENTRY
+        REAL_USER="${SUDO_USER:-$(whoami)}"
+        REAL_HOME=$(eval echo "~${REAL_USER}")
+        DESKTOP_DIR="${REAL_HOME}/.local/share/applications"
+        mkdir -p "$DESKTOP_DIR"
+
+        cat > "${DESKTOP_DIR}/kaitu.desktop" << ENTRY
 [Desktop Entry]
 Name=Kaitu
 Comment=Kaitu VPN
@@ -157,12 +160,14 @@ Type=Application
 Categories=Network;VPN;
 StartupWMClass=kaitu
 ENTRY
-    chown "${REAL_USER}:" "${DESKTOP_DIR}/kaitu.desktop"
+        chown "${REAL_USER}:" "${DESKTOP_DIR}/kaitu.desktop"
+        info "Desktop entry installed."
+    fi
 
-    # Uninstaller
+    # --- Uninstaller (always install) ---
     cat > /usr/local/bin/kaitu-uninstall << 'UNINSTALL'
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 if [ "$(id -u)" -ne 0 ]; then echo "Run with sudo: sudo kaitu-uninstall"; exit 1; fi
 echo "Uninstalling Kaitu..."
 systemctl stop k2 2>/dev/null || true
@@ -181,15 +186,24 @@ echo "Kaitu uninstalled."
 UNINSTALL
     chmod +x /usr/local/bin/kaitu-uninstall
 
+    # --- Summary ---
     info ""
     info "=== Installation complete ==="
-    info "  GUI:       ${INSTALL_DIR}/k2app"
     info "  CLI:       k2 (in PATH)"
-    info "  Service:   systemctl status k2"
+    if [ "$HAS_GUI" = true ]; then
+        info "  GUI:       ${INSTALL_DIR}/k2app"
+    fi
+    if [ "$HAS_SYSTEMD" = true ]; then
+        info "  Service:   systemctl status k2"
+    fi
     info "  Uninstall: sudo kaitu-uninstall"
     info ""
-    info "Launch Kaitu from your application menu or run:"
-    info "  ${INSTALL_DIR}/k2app"
+    if [ "$HAS_GUI" = false ]; then
+        info "  Note: GUI not available (webkit2gtk-4.1 not found)."
+        info "  The k2 CLI is fully functional. Quick start:"
+        info "    k2 connect <URL>    Connect (foreground)"
+        info "    k2 setup <URL>      Install as service + connect"
+    fi
 }
 
 # --- macOS ---
