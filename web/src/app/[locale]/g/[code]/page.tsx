@@ -1,5 +1,3 @@
-import { api } from '@/lib/api';
-import { notFound } from 'next/navigation';
 import { routing } from '@/i18n/routing';
 import { setRequestLocale } from 'next-intl/server';
 import type { Metadata } from 'next';
@@ -19,20 +17,12 @@ export default async function GiftCodeDirectPage({
   params: Promise<{ code: string; locale: string }>;
 }) {
   const { code, locale: rawLocale } = await params;
-  const locale = rawLocale as Locale;
-  setRequestLocale(locale);
-
-  let key = null;
-  try {
-    key = await api.getLicenseKey(code);
-  } catch {
-    notFound();
-  }
+  setRequestLocale(rawLocale as Locale);
 
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      <RedeemClient initialKey={key} code={code} />
+      <RedeemClient code={code} />
       <Footer />
     </div>
   );

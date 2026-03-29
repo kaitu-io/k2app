@@ -1114,6 +1114,7 @@ export const api = {
   async getValidAuthHeader(): Promise<Record<string, string>> {
     // Only embed mode uses Bearer token header
     // Normal web auth uses HttpOnly cookies (automatic via credentials: 'include')
+    if (typeof window === 'undefined') return {};
     const embedToken = localStorage.getItem('embed_auth_token');
     if (embedToken) {
       console.log('[API] Using embed auth token');

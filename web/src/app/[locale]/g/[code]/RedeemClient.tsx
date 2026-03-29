@@ -1,11 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { Link } from '@/i18n/routing';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Gift, AlertCircle, Clock, CheckCircle } from 'lucide-react';
+import { Gift, AlertCircle, Clock, CheckCircle, Loader2 } from 'lucide-react';
 import type { LicenseKeyPublic } from '@/lib/api';
 import { api, ApiError } from '@/lib/api';
 
@@ -15,25 +15,58 @@ const ErrorLicenseKeyExpired = 400009;
 const ErrorLicenseKeyNotMatch = 400010;
 const ErrorLicenseKeyAlreadyRedeemed = 400011;
 
-interface RedeemClientProps {
-  initialKey: LicenseKeyPublic | null;
-  code: string;
-}
-
 function getDaysRemaining(expiresAt: number): number {
   const now = Math.floor(Date.now() / 1000);
   const diff = expiresAt - now;
   return Math.max(0, Math.ceil(diff / 86400));
 }
 
-export default function RedeemClient({ initialKey, code }: RedeemClientProps) {
+export default function RedeemClient({ code }: { code: string }) {
   const t = useTranslations('licenseKeys');
+  const [key, setKey] = useState<LicenseKeyPublic | null>(null);
+  const [fetchState, setFetchState] = useState<'loading' | 'ready' | 'notFound'>('loading');
   const [redeemState, setRedeemState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [redeemDays, setRedeemDays] = useState<number>(0);
   const [errorKey, setErrorKey] = useState<string>('');
 
+  useEffect(() => {
+    api.getLicenseKey(code)
+      .then((data) => {
+        setKey(data);
+        setFetchState('ready');
+      })
+      .catch(() => {
+        setFetchState('notFound');
+      });
+  }, [code]);
+
+  // Loading state
+  if (fetchState === 'loading') {
+    return (
+      <div className="max-w-lg mx-auto px-4 py-20 text-center">
+        <Loader2 className="w-10 h-10 text-muted-foreground mx-auto animate-spin" />
+      </div>
+    );
+  }
+
+  // Not found state
+  if (fetchState === 'notFound') {
+    return (
+      <div className="max-w-lg mx-auto px-4 py-20 text-center">
+        <Card className="p-10 border-muted bg-muted/20">
+          <AlertCircle className="w-14 h-14 text-muted-foreground mx-auto mb-4" />
+          <h1 className="text-2xl font-bold text-foreground mb-3">{t('landing.notFound')}</h1>
+          <p className="text-muted-foreground mb-8">{t('gift.subtitle')}</p>
+          <Button asChild variant="outline" size="lg">
+            <Link href="/g">{t('landing.title')}</Link>
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
   // Used state
-  if (initialKey?.isUsed) {
+  if (key?.isUsed) {
     return (
       <div className="max-w-lg mx-auto px-4 py-20 text-center">
         <Card className="p-10 border-muted bg-muted/20">
@@ -49,7 +82,7 @@ export default function RedeemClient({ initialKey, code }: RedeemClientProps) {
   }
 
   // Expired state
-  if (initialKey?.isExpired) {
+  if (key?.isExpired) {
     return (
       <div className="max-w-lg mx-auto px-4 py-20 text-center">
         <Card className="p-10 border-muted bg-muted/20">
@@ -80,7 +113,6 @@ export default function RedeemClient({ initialKey, code }: RedeemClientProps) {
     );
   }
 
-  const key = initialKey;
   if (!key) return null;
 
   const daysRemaining = getDaysRemaining(key.expiresAt);
