@@ -41,6 +41,7 @@ const menuGroups: MenuGroup[] = [
     items: [
       { href: "/manager/plans", icon: Package, label: "套餐管理" },
       { href: "/manager/campaigns", icon: Tag, label: "优惠活动" },
+      { href: "/manager/license-key-batches", icon: Package, label: "授权码批次" },
       { href: "/manager/license-keys", icon: Key, label: "授权码" },
       { href: "/manager/announcements", icon: Megaphone, label: "公告管理" },
     ]
