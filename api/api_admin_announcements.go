@@ -341,6 +341,12 @@ func getActiveAnnouncements(clientVersion string) []DataAnnouncement {
 		return nil
 	}
 
+	return filterAnnouncementsForClient(announcements, clientVersion)
+}
+
+// filterAnnouncementsForClient filters announcements by client version and converts to DataAnnouncement.
+// Assumes input is already sorted by priority DESC, id DESC.
+func filterAnnouncementsForClient(announcements []Announcement, clientVersion string) []DataAnnouncement {
 	var result []DataAnnouncement
 	for _, a := range announcements {
 		if !isVersionInRange(clientVersion, a.MinVersion, a.MaxVersion) {
