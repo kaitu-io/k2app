@@ -755,8 +755,6 @@ type Campaign struct {
 	MatcherType string `gorm:"type:varchar(50)" json:"matcherType"` // first_order, vip, all
 
 	MatcherParams string `gorm:"type:varchar(500)" json:"matcherParams"`
-	IsShareable   bool   `gorm:"default:false" json:"isShareable"`
-	SharesPerUser int64  `gorm:"default:0" json:"sharesPerUser"`
 
 	// 统计信息
 	UsageCount int64 `gorm:"default:0" json:"usageCount"` // 使用次数
@@ -1081,7 +1079,26 @@ type CloudOperationLog struct {
 	Error       string `gorm:"type:text"`                 // Error message if failed
 }
 
-// LicenseKey 一次性授权码（定向分发，用于老带新）
+// LicenseKeyBatch 授权码批次（独立于活动码的分发单位）
+type LicenseKeyBatch struct {
+	ID        uint64         `gorm:"primarykey" json:"id"`
+	CreatedAt time.Time      `json:"createdAt"`
+	UpdatedAt time.Time      `json:"updatedAt"`
+	DeletedAt gorm.DeletedAt `gorm:"index"`
+
+	Name             string `gorm:"type:varchar(255);not null" json:"name"`
+	SourceTag        string `gorm:"type:varchar(100);not null;default:'';index" json:"sourceTag"`
+	RecipientMatcher string `gorm:"type:varchar(50);not null;default:'all'" json:"recipientMatcher"`
+	PlanDays         int    `gorm:"not null" json:"planDays"`
+	Quantity         int    `gorm:"not null" json:"quantity"`
+	ExpiresAt        int64  `gorm:"not null" json:"expiresAt"`
+	Note             string `gorm:"type:text" json:"note"`
+	CreatedByUserID  uint64 `gorm:"not null" json:"createdByUserId"`
+}
+
+func (LicenseKeyBatch) TableName() string { return "license_key_batches" }
+
+// LicenseKey 一次性授权码
 type LicenseKey struct {
 	ID        uint64         `gorm:"primarykey" json:"id"`
 	CreatedAt time.Time      `json:"createdAt"`
@@ -1091,21 +1108,22 @@ type LicenseKey struct {
 	UUID string `gorm:"type:varchar(50);uniqueIndex;not null" json:"uuid"`
 	Code string `gorm:"type:varchar(8);uniqueIndex;not null" json:"code"`
 
-	Source string `gorm:"type:varchar(16);not null;default:'campaign'" json:"source"` // "campaign" or "manual"
-	Note   string `gorm:"type:varchar(255)" json:"note"`
+	BatchID uint64           `gorm:"not null;default:0;index" json:"batchId"`
+	Batch   *LicenseKeyBatch `gorm:"foreignKey:BatchID" json:"-"`
 
-	// Number of days of plan access to grant on redemption.
-	PlanDays int `gorm:"not null;default:30" json:"planDays"`
+	PlanDays     int        `gorm:"not null;default:30" json:"planDays"`
+	ExpiresAt    int64      `gorm:"not null" json:"expiresAt"`
+	IsUsed       bool       `gorm:"default:false" json:"isUsed"`
+	UsedByUserID *uint64    `gorm:"index" json:"usedByUserId"`
+	UsedAt       *time.Time `json:"usedAt"`
 
-	RecipientMatcher string `gorm:"type:varchar(50);not null" json:"recipientMatcher"`
-	ExpiresAt        int64  `gorm:"not null" json:"expiresAt"`
-
-	CampaignID *uint64 `gorm:"index" json:"campaignId"`
-
-	CreatedByUserID *uint64    `gorm:"index" json:"createdByUserId"`
-	IsUsed          bool       `gorm:"default:false" json:"isUsed"`
-	UsedByUserID    *uint64    `gorm:"index" json:"usedByUserId"`
-	UsedAt          *time.Time `json:"usedAt"`
+	// Legacy fields — GORM AutoMigrate won't drop these. They'll be ignored by new code.
+	// DROP COLUMN manually after deploy is verified.
+	Source           string  `gorm:"type:varchar(16);not null;default:'batch'" json:"-"`
+	Note             string  `gorm:"type:varchar(255)" json:"-"`
+	RecipientMatcher string  `gorm:"type:varchar(50);not null;default:'all'" json:"-"`
+	CampaignID       *uint64 `gorm:"index" json:"-"`
+	CreatedByUserID  *uint64 `gorm:"index" json:"-"`
 }
 
 func (LicenseKey) TableName() string { return "license_keys" }
