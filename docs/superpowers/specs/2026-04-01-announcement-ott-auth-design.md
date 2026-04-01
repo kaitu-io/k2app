@@ -66,7 +66,7 @@
 1. Redis `GET ott:{ott}` → 取出 `user_id` + 预期 `redirect`
 2. 校验 `redirect` 参数与 Redis 存储一致（防篡改）
 3. Redis `DEL ott:{ott}`（一次性，用后即废）
-4. 根据 `user_id` 查询用户，调用现有 `generateTokenForUser(user)` 生成 `DataAuthResult`（与 web 登录共用同一 token 生成逻辑）
+4. 根据 `user_id` 查询用户（含 `Roles`），调用现有 `generateWebCookieToken(c, userID, roles)` 生成 `DataAuthResult`（与 web 登录 `api_web_auth` 共用同一 cookie token 生成逻辑）
 5. 调用 `setAuthCookies(c, authResult)` 设置 HttpOnly `access_token` + `csrf_token` cookie
 6. HTTP 302 重定向到 `redirect` URL
 
