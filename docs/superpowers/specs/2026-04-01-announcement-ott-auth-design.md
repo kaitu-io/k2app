@@ -37,8 +37,10 @@
 ```
 
 **Validation:**
-- `redirect` 必须是 `kaitu.io` 域或其子域（`*.kaitu.io`），任意 path
+- `redirect` URL scheme 必须是 `https`，host 必须精确匹配 `kaitu.io` 或以 `.kaitu.io` 结尾（防止 `evil-kaitu.io` 绕过）
 - 用户必须已认证（现有 auth middleware）
+
+**Route registration:** 注册在需要 auth 的路由组中（与 `/api/user/*` 同组），确保 Bearer token 验证。
 
 **Logic:**
 1. 生成 32 字节随机 token（hex 编码，256 bit entropy）
@@ -56,14 +58,17 @@
 
 #### `GET /api/auth/ott/exchange` — 交换（无需 auth）
 
+**Route registration:** 注册为公共路由（无 auth middleware），与 `/api/auth/login` 同组。
+
 **Query params:** `ott`, `redirect`
 
 **Logic:**
 1. Redis `GET ott:{ott}` → 取出 `user_id` + 预期 `redirect`
 2. 校验 `redirect` 参数与 Redis 存储一致（防篡改）
 3. Redis `DEL ott:{ott}`（一次性，用后即废）
-4. 为 `user_id` 签发 `access_token` HttpOnly cookie + `csrf_token` cookie（与现有 web 登录 `setAuthCookies` 完全一致）
-5. HTTP 302 重定向到 `redirect` URL
+4. 根据 `user_id` 查询用户，调用现有 `generateTokenForUser(user)` 生成 `DataAuthResult`（与 web 登录共用同一 token 生成逻辑）
+5. 调用 `setAuthCookies(c, authResult)` 设置 HttpOnly `access_token` + `csrf_token` cookie
+6. HTTP 302 重定向到 `redirect` URL
 
 **Failure cases:**
 - OTT 无效 / 过期 / 已使用 → 302 到 `/auth/login?reason=expired`
@@ -92,11 +97,15 @@ AuthMode string `gorm:"type:varchar(20);not null;default:'none'"` // "none" | "o
 
 #### API 验证
 
-创建 / 更新时验证 `authMode` 只能是 `none` 或 `ott`，与现有 `openMode` 验证方式一致。
+创建 / 更新时验证 `authMode` 只能是 `none` 或 `ott`，与现有 `openMode` 验证方式一致。`AnnouncementRequest` 结构体新增 `AuthMode` 字段。
+
+#### Admin 响应
+
+`AnnouncementResponse` 结构体和 `convertAnnouncementToResponse()` 函数新增 `AuthMode` 映射。
 
 #### 公共下发
 
-`/api/app/config` 响应的 `DataAnnouncement` 新增 `authMode` 字段：
+`/api/app/config` 响应的 `DataAnnouncement` 新增 `authMode` 字段。`getActiveAnnouncement()` 函数新增 `AuthMode: announcement.AuthMode` 映射行：
 
 ```go
 type DataAnnouncement struct {
@@ -173,7 +182,7 @@ authMode?: 'none' | 'ott';
 | 一次性 | Redis DEL 在 exchange 时立即执行 |
 | 短时效 | Redis TTL 300s，过期自动清理 |
 | 防篡改 redirect | exchange 时校验 URL 参数与 Redis 存储一致 |
-| 防 open redirect | 签发时校验 redirect 为 `kaitu.io` 域或子域 |
+| 防 open redirect | 签发时校验 redirect: scheme 必须 `https`，host 精确匹配 `kaitu.io` 或以 `.kaitu.io` 结尾 |
 | 防枚举 | 32 字节随机 token（256 bit entropy） |
 | 限频 | 复用现有 auth middleware rate limit |
 | 无新 session 类型 | exchange 后设置的 cookie 与现有 web 登录完全一致 |
