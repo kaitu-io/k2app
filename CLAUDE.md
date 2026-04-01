@@ -93,12 +93,9 @@ Reserved event names:
 | `DIAG: dns-proxy-write-fail` | WARN | WriteTo failed | server, domain, connAgeS, isNewConn, err |
 | `DIAG: dns-proxy-conn-dead` | WARN | recv loop died | server, domain, connAgeS, isNewConn, err |
 | `DIAG: dns-proxy-dial-fail` | WARN | DialUDP failed | server, domain, err |
-| `DIAG: nat-classify` | INFO | each classification | type, reflexiveAddr, serversUsed |
-| `DIAG: punch-start` | INFO | each attempt | strategy, localNAT, remoteNAT, peer |
-| `DIAG: punch-ok` | INFO | each success | from, method, socketsOpened |
-| `DIAG: punch-fail` | WARN | each failure | strategy, peer, err |
 | `DIAG: p2p-connected` | INFO | connection established | peer, method, dialMs |
-| `DIAG: p2p-relay-fallback` | WARN | direct failed | peer, relayServer, err |
+| `DIAG: ice-connected` | INFO | ICE session established | session, method |
+| `DIAG: ice-failed` | WARN | ICE session failed | session, err |
 | `DIAG: gw-lan-discover` | INFO | on LAN scan | subnets, ifaceCount |
 | `DIAG: gw-intercept-install` | INFO | on rule install | backend, subnets, excludeCount |
 | `DIAG: gw-sysctl` | INFO | on sysctl change | key, oldValue, newValue |
@@ -191,8 +188,9 @@ gateway standalone locks (no nesting with engine locks):
 
 k2p/signal standalone locks (no nesting with engine locks):
   signal.Store.mu (state, RWMutex) → PeerEntry.WriteMu (serialization)
-  signal.Relay.mu (state)
-  RelayConn.mu (serialization, standalone — protects ws.WriteMessage)
+  signal.SessionRouter.mu (state)
+  wsConn.writeMu (serialization, standalone — protects ws.WriteJSON)
+  CandidateExchange.writeMu (serialization, standalone — protects ws.WriteJSON)
 ```
 
 ### The Five Forbidden Patterns
