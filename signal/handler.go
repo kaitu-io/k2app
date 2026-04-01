@@ -5,22 +5,31 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
 
 // Handler handles HTTP requests for the k2p signal server.
 type Handler struct {
-	mux      *http.ServeMux
-	store    *Store
-	upgrader websocket.Upgrader
+	mux        *http.ServeMux
+	store      *Store
+	router     *SessionRouter
+	turnSecret string
+	turnURLs   []string
+	upgrader   websocket.Upgrader
 }
 
 // NewHandler creates a Handler backed by store and registers all routes.
-func NewHandler(store *Store) *Handler {
+// turnSecret and turnURLs are optional; when turnSecret is non-empty,
+// TURN credentials are included in lookup responses.
+func NewHandler(store *Store, turnSecret string, turnURLs []string) *Handler {
 	h := &Handler{
-		mux:   http.NewServeMux(),
-		store: store,
+		mux:        http.NewServeMux(),
+		store:      store,
+		router:     NewSessionRouter(),
+		turnSecret: turnSecret,
+		turnURLs:   turnURLs,
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
@@ -114,18 +123,36 @@ func (h *Handler) handleLookup(w http.ResponseWriter, r *http.Request) {
 		Online:   h.store.IsOnline(udid),
 	}
 
+	if h.turnSecret != "" {
+		creds := GenerateTURNCredentials(h.turnSecret, udid, 1*time.Hour)
+		creds.URLs = h.turnURLs
+		resp.TURN = &creds
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp) //nolint:errcheck
 }
 
 // handleWS handles GET /k2p/ws.
-// Reads udid and token query params, validates the token, upgrades to WebSocket,
-// registers the connection in the store, and holds the connection in a read loop.
-// On disconnect, the WS entry is cleared.
+// Accepts role=home (authenticated, registers for sessions) or role=away (creates a session).
+// Home: validates token, upgrades, enters read loop routing messages to Away peers.
+// Away: upgrades, creates session with Home, enters read loop routing messages to Home.
 func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 	udid := r.URL.Query().Get("udid")
+	role := r.URL.Query().Get("role")
 	token := r.URL.Query().Get("token")
 
+	switch role {
+	case "home":
+		h.handleWSHome(w, r, udid, token)
+	case "away":
+		h.handleWSAway(w, r, udid)
+	default:
+		http.Error(w, "bad request: role=home|away required", http.StatusBadRequest)
+	}
+}
+
+func (h *Handler) handleWSHome(w http.ResponseWriter, r *http.Request, udid, token string) {
 	if !h.store.ValidateToken(udid, token) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
@@ -133,22 +160,51 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 
 	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		// Upgrade writes its own error response on failure.
-		slog.Warn("DIAG: ws-upgrade-fail", "udid", udid, "err", err)
+		slog.Warn("DIAG: ws-upgrade-fail", "udid", udid, "role", "home", "err", err)
 		return
 	}
 
 	h.store.SetWS(udid, conn)
+	h.router.SetHome(udid, conn)
 	defer func() {
 		h.store.SetWS(udid, nil)
+		h.router.ClearHome(udid)
 		conn.Close()
 	}()
 
-	// Read loop — holds the connection alive until the client disconnects.
 	for {
-		if _, _, err := conn.ReadMessage(); err != nil {
+		var msg WSMessage
+		if err := conn.ReadJSON(&msg); err != nil {
 			break
 		}
+		h.router.Route("home", msg)
+	}
+}
+
+func (h *Handler) handleWSAway(w http.ResponseWriter, r *http.Request, udid string) {
+	conn, err := h.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		slog.Warn("DIAG: ws-upgrade-fail", "udid", udid, "role", "away", "err", err)
+		return
+	}
+	defer conn.Close()
+
+	sessionID, err := h.router.CreateSession(udid, conn)
+	if err != nil {
+		conn.WriteJSON(WSMessage{Type: "error"}) //nolint:errcheck
+		return
+	}
+	defer h.router.CleanupSession(sessionID, "away")
+
+	conn.WriteJSON(WSMessage{Type: "session-start", Session: sessionID}) //nolint:errcheck
+
+	for {
+		var msg WSMessage
+		if err := conn.ReadJSON(&msg); err != nil {
+			break
+		}
+		msg.Session = sessionID // enforce session ID
+		h.router.Route("away", msg)
 	}
 }
 

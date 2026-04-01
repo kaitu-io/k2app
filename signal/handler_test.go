@@ -10,7 +10,7 @@ import (
 
 // newTestHandler returns a Handler backed by a fresh Store for unit tests.
 func newTestHandler() *Handler {
-	return NewHandler(NewStore())
+	return NewHandler(NewStore(), "", nil)
 }
 
 // doJSON performs a JSON request against the handler and returns the response.
