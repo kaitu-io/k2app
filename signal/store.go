@@ -110,8 +110,6 @@ func (s *Store) Update(udid, token string, req RegisterRequest) error {
 		s.mu.Unlock()
 		return fmt.Errorf("signal: update: udid %q not found", udid)
 	}
-	e.Addr = req.Addr
-	e.NATType = req.NATType
 	e.Networks = req.Networks
 	e.DNS = req.DNS
 	e.UpdatedAt = time.Now()
@@ -124,8 +122,6 @@ func (s *Store) Update(udid, token string, req RegisterRequest) error {
 // Does not contain the mutex or WS connection.
 type PeerSnapshot struct {
 	UDID      string
-	Addr      string
-	NATType   string
 	Networks  []string
 	DNS       string
 	UpdatedAt time.Time
@@ -146,8 +142,6 @@ func (s *Store) Get(udid string) (PeerSnapshot, bool) {
 	}
 	out := PeerSnapshot{
 		UDID:      e.UDID,
-		Addr:      e.Addr,
-		NATType:   e.NATType,
 		Networks:  nets,
 		DNS:       e.DNS,
 		UpdatedAt: e.UpdatedAt,

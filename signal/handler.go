@@ -109,8 +109,6 @@ func (h *Handler) handleLookup(w http.ResponseWriter, r *http.Request) {
 
 	resp := LookupResponse{
 		UDID:     entry.UDID,
-		Addr:     entry.Addr,
-		NATType:  entry.NATType,
 		Networks: entry.Networks,
 		DNS:      entry.DNS,
 		Online:   h.store.IsOnline(udid),

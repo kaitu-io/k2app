@@ -50,8 +50,6 @@ func TestStore_Update_ValidToken(t *testing.T) {
 
 	req := RegisterRequest{
 		UDID:     "home-1",
-		Addr:     "1.2.3.4:4321",
-		NATType:  "full-cone",
 		Networks: []string{"192.168.1.0/24"},
 		DNS:      "192.168.1.1",
 	}
@@ -62,12 +60,6 @@ func TestStore_Update_ValidToken(t *testing.T) {
 	entry, ok := s.Get("home-1")
 	if !ok {
 		t.Fatal("Get: entry not found after Update")
-	}
-	if entry.Addr != "1.2.3.4:4321" {
-		t.Errorf("Addr = %q, want %q", entry.Addr, "1.2.3.4:4321")
-	}
-	if entry.NATType != "full-cone" {
-		t.Errorf("NATType = %q, want %q", entry.NATType, "full-cone")
 	}
 	if entry.DNS != "192.168.1.1" {
 		t.Errorf("DNS = %q, want %q", entry.DNS, "192.168.1.1")
@@ -84,7 +76,7 @@ func TestStore_Update_BadToken(t *testing.T) {
 		t.Fatalf("Claim: %v", err)
 	}
 
-	req := RegisterRequest{UDID: "home-2", Addr: "1.2.3.4:4321"}
+	req := RegisterRequest{UDID: "home-2"}
 	err := s.Update("home-2", "wrong-token", req)
 	if err == nil {
 		t.Fatal("Update: expected error for bad token")
@@ -94,7 +86,7 @@ func TestStore_Update_BadToken(t *testing.T) {
 func TestStore_Update_NotFound(t *testing.T) {
 	s := NewStore()
 
-	req := RegisterRequest{UDID: "ghost", Addr: "1.2.3.4:4321"}
+	req := RegisterRequest{UDID: "ghost"}
 	err := s.Update("ghost", "any-token", req)
 	if err == nil {
 		t.Fatal("Update: expected error for unknown UDID")

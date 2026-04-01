@@ -65,8 +65,6 @@ func TestHandler_ClaimAndRegisterAndLookup(t *testing.T) {
 	// 2. Register with the returned token.
 	regReq := RegisterRequest{
 		UDID:     "home-1",
-		Addr:     "1.2.3.4:4321",
-		NATType:  "full-cone",
 		Networks: []string{"192.168.1.0/24"},
 		DNS:      "192.168.1.1",
 	}
@@ -86,12 +84,6 @@ func TestHandler_ClaimAndRegisterAndLookup(t *testing.T) {
 	}
 	if lr.UDID != "home-1" {
 		t.Errorf("lookup: UDID = %q, want %q", lr.UDID, "home-1")
-	}
-	if lr.Addr != "1.2.3.4:4321" {
-		t.Errorf("lookup: Addr = %q, want %q", lr.Addr, "1.2.3.4:4321")
-	}
-	if lr.NATType != "full-cone" {
-		t.Errorf("lookup: NATType = %q, want %q", lr.NATType, "full-cone")
 	}
 	if lr.DNS != "192.168.1.1" {
 		t.Errorf("lookup: DNS = %q, want %q", lr.DNS, "192.168.1.1")
@@ -125,7 +117,7 @@ func TestHandler_RegisterBadToken(t *testing.T) {
 		t.Fatalf("claim: got %d, want 200", rr.Code)
 	}
 
-	regReq := RegisterRequest{UDID: "auth-udid", Addr: "1.2.3.4:4321"}
+	regReq := RegisterRequest{UDID: "auth-udid"}
 	rr = doJSONWithAuth(t, h, http.MethodPost, "/k2p/register", "wrong-token", regReq)
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("register bad token: got %d, want 403", rr.Code)
@@ -142,7 +134,7 @@ func TestHandler_RegisterMissingAuth(t *testing.T) {
 	}
 
 	// No auth header.
-	regReq := RegisterRequest{UDID: "noauth-udid", Addr: "1.2.3.4:4321"}
+	regReq := RegisterRequest{UDID: "noauth-udid"}
 	rr = doJSON(t, h, http.MethodPost, "/k2p/register", regReq)
 	if rr.Code != http.StatusUnauthorized {
 		t.Fatalf("register no auth: got %d, want 401", rr.Code)
@@ -189,7 +181,7 @@ func TestHandler_RegisterInvalidUDID(t *testing.T) {
 	// Attempt to register with invalid UDIDs.
 	invalidUDIDs := []string{"HOME-ABC", "a", "ab", "home.abc", "home_abc"}
 	for _, udid := range invalidUDIDs {
-		regReq := RegisterRequest{UDID: udid, Addr: "1.2.3.4:4321"}
+		regReq := RegisterRequest{UDID: udid}
 		rr = doJSONWithAuth(t, h, http.MethodPost, "/k2p/register", cr.RegToken, regReq)
 		if rr.Code != http.StatusBadRequest {
 			t.Errorf("register(%q): got %d, want 400", udid, rr.Code)
