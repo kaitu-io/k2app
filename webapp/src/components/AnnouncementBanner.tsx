@@ -12,6 +12,8 @@ import {
 } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import { useAppConfig } from '../hooks/useAppConfig';
+import { useAuthStore } from '../stores';
+import { cloudApi } from '../services/cloud-api';
 import type { Announcement } from '../services/api-types';
 
 // Storage key prefix for dismissed announcements
@@ -112,16 +114,32 @@ const AnnouncementBanner: React.FC = () => {
     e.preventDefault();
     if (!announcement?.linkUrl) return;
 
+    let targetUrl = announcement.linkUrl;
+
+    // If authMode is 'ott' and user is authenticated, request OTT first
+    if (announcement.authMode === 'ott' && useAuthStore.getState().isAuthenticated) {
+      try {
+        const { code, data } = await cloudApi.post<{ url: string }>('/api/user/ott', {
+          redirect: announcement.linkUrl,
+        });
+        if (code === 0 && data?.url) {
+          targetUrl = data.url;
+        }
+      } catch (error) {
+        console.error('[AnnouncementBanner] OTT request failed, falling back to direct URL:', error);
+      }
+    }
+
     if (announcement.openMode === 'webview') {
-      window.open(announcement.linkUrl, '_blank', 'noopener,noreferrer');
+      window.open(targetUrl, '_blank', 'noopener,noreferrer');
       return;
     }
 
     try {
-      await window._platform!.openExternal(announcement.linkUrl);
+      await window._platform!.openExternal(targetUrl);
     } catch (error) {
       console.error('Failed to open link:', error);
-      window.open(announcement.linkUrl, '_blank', 'noopener,noreferrer');
+      window.open(targetUrl, '_blank', 'noopener,noreferrer');
     }
   };
 

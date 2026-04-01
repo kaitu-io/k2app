@@ -193,13 +193,6 @@ export function dispatch(event: VPNEvent, payload?: DispatchPayload): void {
 
   console.debug('[VPNMachine] dispatch: ' + currentState + ' + ' + event + ' → ' + nextState);
   useVPNMachineStore.setState(update);
-
-  // Increment survey connection counter
-  if (nextState === 'connected') {
-    const key = 'k2_connect_success_count';
-    const count = parseInt(localStorage.getItem(key) || '0', 10);
-    localStorage.setItem(key, String(count + 1));
-  }
 }
 
 // ============ Backend Status → Event Mapping ============

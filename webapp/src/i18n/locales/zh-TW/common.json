@@ -168,9 +168,5 @@
     "noInviteCodesDescription": "您還沒有建立任何邀請碼，快去建立專屬邀請碼分享給好友吧！",
     "noDevicesTitle": "暫無裝置",
     "noDevicesDescription": "您還沒有任何已登入的裝置"
-  },
-  "survey": {
-    "banner_text": "填寫 1 分鐘問卷，免費領取 1 個月使用權",
-    "banner_cta": "立即填寫"
   }
 }

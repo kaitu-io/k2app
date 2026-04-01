@@ -70,6 +70,7 @@ const initialForm: AnnouncementRequest = {
   linkUrl: "",
   linkText: "",
   openMode: "external",
+  authMode: "none",
   expiresAt: 0,
 };
 
@@ -185,6 +186,7 @@ export default function AnnouncementsPage() {
       linkUrl: item.linkUrl,
       linkText: item.linkText,
       openMode: item.openMode,
+      authMode: item.authMode,
       expiresAt: item.expiresAt,
     });
     setEditDialogOpen(true);
@@ -211,6 +213,14 @@ export default function AnnouncementsPage() {
       size: 100,
       cell: ({ row }) => (
         <span>{row.original.openMode === "webview" ? "内部" : "外部"}</span>
+      ),
+    },
+    {
+      accessorKey: "authMode",
+      header: "认证",
+      size: 80,
+      cell: ({ row }) => (
+        <span>{row.original.authMode === "ott" ? "自动登录" : "无"}</span>
       ),
     },
     {
@@ -306,6 +316,21 @@ export default function AnnouncementsPage() {
           <SelectContent>
             <SelectItem value="external">外部浏览器</SelectItem>
             <SelectItem value="webview">应用内打开</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="grid gap-2">
+        <Label>认证模式</Label>
+        <Select
+          value={form.authMode ?? "none"}
+          onValueChange={(v) => setForm({ ...form, authMode: v })}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">不需要登录</SelectItem>
+            <SelectItem value="ott">自动登录</SelectItem>
           </SelectContent>
         </Select>
       </div>

@@ -781,6 +781,7 @@ type Announcement struct {
 	LinkURL   string `gorm:"type:varchar(1024);not null;default:''" json:"linkUrl"`             // 点击跳转链接
 	LinkText  string `gorm:"type:varchar(100);not null;default:''" json:"linkText"`             // 链接文字
 	OpenMode  string `gorm:"type:varchar(20);not null;default:'external'" json:"openMode"`      // external | webview
+	AuthMode  string `gorm:"type:varchar(20);not null;default:'none'" json:"authMode"`          // none | ott
 	ExpiresAt int64  `gorm:"not null;default:0" json:"expiresAt"`                               // Unix秒，0=不过期
 	IsActive  *bool  `gorm:"default:false;index:idx_announcement_active" json:"isActive"`       // 同一时刻只有一条为true
 }

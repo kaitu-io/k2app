@@ -540,6 +540,7 @@ export interface Announcement {
   linkUrl?: string; // 可选：点击跳转链接
   linkText?: string; // 可选：链接文字
   openMode?: 'external' | 'webview'; // 可选：打开方式，默认 external
+  authMode?: 'none' | 'ott'; // 可选：认证模式，默认 none
   expiresAt?: number; // 可选：公告过期时间戳（Unix秒），为0表示不过期
 }
 

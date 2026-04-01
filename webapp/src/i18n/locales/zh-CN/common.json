@@ -168,9 +168,5 @@
     "noInviteCodesDescription": "您还没有创建任何邀请码，快去创建专属邀请码分享给好友吧！",
     "noDevicesTitle": "暂无设备",
     "noDevicesDescription": "您还没有任何已登录的设备"
-  },
-  "survey": {
-    "banner_text": "填写 1 分钟问卷，免费领取 1 个月使用权",
-    "banner_cta": "立即填写"
   }
 }
