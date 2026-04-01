@@ -69,6 +69,8 @@ func SetupRouter() *gin.Engine {
 			auth.POST("/refresh", api_refresh_token)
 			// 设备登出
 			auth.POST("/logout", AuthRequired(), api_logout)
+			// OTT exchange — public endpoint, no auth required
+			auth.GET("/ott/exchange", api_exchange_ott)
 			// 设备udid认证（已废弃，保留用于向后兼容，总是返回 403）
 			auth.POST("/auth-with-device", api_auth_with_device)
 		}
@@ -153,6 +155,8 @@ func SetupRouter() *gin.Engine {
 			user.POST("/feedback-notify", AuthRequired(), api_feedback_notify)
 			// 设置/更新密码
 			user.POST("/password", AuthRequired(), api_set_password)
+			// OTT 签发 — webapp → web auth handoff
+			user.POST("/ott", AuthRequired(), api_issue_ott)
 		}
 
 		// 分销商管理
