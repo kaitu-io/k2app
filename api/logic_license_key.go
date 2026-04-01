@@ -90,7 +90,11 @@ func (k *LicenseKey) IsExpired() bool {
 
 // MatchLicenseKey checks whether user is eligible to redeem this key.
 func MatchLicenseKey(key *LicenseKey, user *User) bool {
-	switch key.RecipientMatcher {
+	matcher := key.RecipientMatcher
+	if key.Batch != nil {
+		matcher = key.Batch.RecipientMatcher
+	}
+	switch matcher {
 	case "all":
 		return true
 	case "never_paid":
@@ -110,7 +114,7 @@ func RedeemLicenseKey(ctx context.Context, code string, userID uint64) (*License
 	err := db.Get().Transaction(func(tx *gormdb.DB) error {
 		// 1. Load key
 		var k LicenseKey
-		if err := tx.Where("code = ?", code).First(&k).Error; err != nil {
+		if err := tx.Preload("Batch").Where("code = ?", code).First(&k).Error; err != nil {
 			return ErrLicenseKeyNotFound
 		}
 		if k.IsUsed {
