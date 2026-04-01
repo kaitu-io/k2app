@@ -109,16 +109,4 @@ export const campaignTools: ToolRegistration[] = [
     },
     path: (p) => `/app/campaigns/code/${p.code}/orders`,
   }),
-
-  defineApiTool({
-    name: 'issue_campaign_keys',
-    description: 'Issue license keys for a campaign. Specify how many keys to generate.',
-    group: 'campaigns.write',
-    method: 'POST',
-    params: {
-      id: z.number().describe('Campaign ID'),
-      count: z.number().describe('Number of keys to issue'),
-    },
-    path: (p) => `/app/campaigns/${p.id}/issue-keys`,
-  }),
 ]
