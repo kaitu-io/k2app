@@ -8,7 +8,7 @@ import (
 )
 
 func TestLicenseKey_PlanDays_Default(t *testing.T) {
-	key := &LicenseKey{PlanDays: licenseKeyTTLDays}
+	key := &LicenseKey{PlanDays: 30}
 	assert.Equal(t, 30, key.PlanDays)
 }
 

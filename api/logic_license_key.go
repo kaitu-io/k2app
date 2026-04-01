@@ -8,14 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rs/xid"
 	gormdb "gorm.io/gorm"
 
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
 )
-
-const licenseKeyTTLDays = 30
 
 // Crockford Base32 alphabet — excludes I, L, O, U to avoid visual confusion.
 const crockfordAlphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
@@ -50,37 +47,6 @@ func GenerateShortCode(ctx context.Context) (string, error) {
 // NormalizeCode normalizes user input to uppercase for lookup.
 func NormalizeCode(code string) string {
 	return strings.ToUpper(strings.TrimSpace(code))
-}
-
-// CreateManualLicenseKeys creates license keys without a campaign.
-func CreateManualLicenseKeys(ctx context.Context, req *CreateLicenseKeysRequest) ([]LicenseKey, error) {
-	expiresAt := time.Now().AddDate(0, 0, req.ExpiresInDays).Unix()
-	keys := make([]LicenseKey, 0, req.Count)
-
-	for i := 0; i < req.Count; i++ {
-		code, err := GenerateShortCode(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate code for key %d: %w", i+1, err)
-		}
-		keys = append(keys, LicenseKey{
-			UUID:             xid.New().String(),
-			Code:             code,
-			Source:           "manual",
-			Note:             req.Note,
-			PlanDays:         req.PlanDays,
-			RecipientMatcher: req.RecipientMatcher,
-			ExpiresAt:        expiresAt,
-		})
-	}
-
-	// Batch insert
-	if err := db.Get().CreateInBatches(&keys, 100).Error; err != nil {
-		return nil, fmt.Errorf("failed to batch insert license keys: %w", err)
-	}
-
-	log.Infof(ctx, "[LICENSE_KEY] created %d manual keys (planDays=%d, expires=%d, matcher=%s)",
-		len(keys), req.PlanDays, req.ExpiresInDays, req.RecipientMatcher)
-	return keys, nil
 }
 
 // IsExpired reports whether the key has passed its expiry time.
@@ -231,93 +197,3 @@ func ConsumeLicenseKey(ctx context.Context, tx *gormdb.DB, code string, userID u
 	return &key, nil
 }
 
-// GenerateLicenseKeysForCampaign generates N keys per eligible user and inserts them in batches.
-func GenerateLicenseKeysForCampaign(ctx context.Context, campaign *Campaign) (int64, error) {
-	if !campaign.IsShareable || campaign.SharesPerUser <= 0 {
-		return 0, fmt.Errorf("campaign is not shareable or sharesPerUser is 0")
-	}
-
-	users, err := queryEligibleUsers(ctx, campaign)
-	if err != nil {
-		return 0, fmt.Errorf("query eligible users: %w", err)
-	}
-	if len(users) == 0 {
-		log.Infof(ctx, "[LICENSE_KEY] campaign=%d no eligible users found", campaign.ID)
-		return 0, nil
-	}
-
-	expiresAt := time.Now().AddDate(0, 0, licenseKeyTTLDays).Unix()
-	var keys []LicenseKey
-	for _, user := range users {
-		userID := user.ID
-		campaignID := campaign.ID
-		for i := int64(0); i < campaign.SharesPerUser; i++ {
-			code, err := GenerateShortCode(ctx)
-			if err != nil {
-				return 0, fmt.Errorf("failed to generate code: %w", err)
-			}
-			keys = append(keys, LicenseKey{
-				UUID:             xid.New().String(),
-				Code:             code,
-				Source:           "campaign",
-				PlanDays:         licenseKeyTTLDays,
-				RecipientMatcher: "never_paid",
-				ExpiresAt:        expiresAt,
-				CampaignID:       &campaignID,
-				CreatedByUserID:  &userID,
-			})
-		}
-	}
-
-	batchSize := 100
-	for i := 0; i < len(keys); i += batchSize {
-		end := min(i+batchSize, len(keys))
-		if err := db.Get().CreateInBatches(keys[i:end], batchSize).Error; err != nil {
-			return int64(i), fmt.Errorf("batch insert at offset %d: %w", i, err)
-		}
-	}
-
-	log.Infof(ctx, "[LICENSE_KEY] campaign=%d generated=%d keys for %d users",
-		campaign.ID, len(keys), len(users))
-	return int64(len(keys)), nil
-}
-
-// CountEligibleUsers returns how many users qualify for the campaign (for dryRun preview).
-func CountEligibleUsers(ctx context.Context, campaign *Campaign) (int64, error) {
-	users, err := queryEligibleUsers(ctx, campaign)
-	if err != nil {
-		return 0, err
-	}
-	return int64(len(users)), nil
-}
-
-// queryEligibleUsers pages through all users and filters by campaign matcher.
-func queryEligibleUsers(ctx context.Context, campaign *Campaign) ([]User, error) {
-	matcher := getCampaignMatcherWithDB(db.Get(), campaign.MatcherType, campaign.MatcherParams)
-	if matcher == nil {
-		return nil, fmt.Errorf("unknown matcherType: %s", campaign.MatcherType)
-	}
-
-	var result []User
-	page := 0
-	pageSize := 500
-	for {
-		var batch []User
-		if err := db.Get().Offset(page * pageSize).Limit(pageSize).Find(&batch).Error; err != nil {
-			return nil, err
-		}
-		if len(batch) == 0 {
-			break
-		}
-		for i := range batch {
-			if matcher(ctx, &batch[i], nil) {
-				result = append(result, batch[i])
-			}
-		}
-		if len(batch) < pageSize {
-			break
-		}
-		page++
-	}
-	return result, nil
-}

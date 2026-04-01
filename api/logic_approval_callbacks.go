@@ -57,8 +57,6 @@ func executeApprovalCampaignCreate(ctx context.Context, params json.RawMessage) 
 		IsActive:      BoolPtr(req.IsActive),
 		MatcherType:   req.MatcherType,
 		MatcherParams: req.MatcherParams,
-		IsShareable:   req.IsShareable,
-		SharesPerUser: req.SharesPerUser,
 		MaxUsage:      req.MaxUsage,
 	}
 
@@ -97,8 +95,6 @@ func executeApprovalCampaignUpdate(ctx context.Context, params json.RawMessage) 
 	campaign.IsActive = BoolPtr(req.IsActive)
 	campaign.MatcherType = req.MatcherType
 	campaign.MatcherParams = req.MatcherParams
-	campaign.IsShareable = req.IsShareable
-	campaign.SharesPerUser = req.SharesPerUser
 	campaign.MaxUsage = req.MaxUsage
 
 	if err := db.Get().Save(&campaign).Error; err != nil {
@@ -124,33 +120,6 @@ func executeApprovalCampaignDelete(ctx context.Context, params json.RawMessage) 
 	if err := db.Get().Delete(&campaign).Error; err != nil {
 		return fmt.Errorf("delete campaign: %w", err)
 	}
-	return nil
-}
-
-func executeApprovalCampaignIssueKeys(ctx context.Context, params json.RawMessage) error {
-	var p struct {
-		CampaignID uint64 `json:"campaignId"`
-	}
-	if err := json.Unmarshal(params, &p); err != nil {
-		return fmt.Errorf("unmarshal params: %w", err)
-	}
-
-	// Re-validate campaign exists and is shareable
-	var campaign Campaign
-	if err := db.Get().First(&campaign, p.CampaignID).Error; err != nil {
-		return fmt.Errorf("campaign %d not found", p.CampaignID)
-	}
-	if !campaign.IsShareable {
-		return fmt.Errorf("campaign %d is not shareable", p.CampaignID)
-	}
-
-	_, err := GenerateLicenseKeysForCampaign(ctx, &campaign)
-	if err != nil {
-		return fmt.Errorf("generate license keys: %w", err)
-	}
-
-	// Send gift emails — best-effort, keys already generated
-	_ = SendLicenseKeyEmails(ctx, campaign.ID)
 	return nil
 }
 

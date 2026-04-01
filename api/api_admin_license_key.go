@@ -3,7 +3,6 @@ package center
 import (
 	"fmt"
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	db "github.com/wordgate/qtoolkit/db"
@@ -15,23 +14,20 @@ func api_admin_list_license_keys(c *gin.Context) {
 	log.Infof(c, "admin request to list license keys")
 
 	pagination := PaginationFromRequest(c)
-	campaignIDStr := c.Query("campaignId")
+	batchIDStr := c.Query("batchId")
 	isUsedStr := c.Query("isUsed")
 
 	query := db.Get().Model(&LicenseKey{})
-	if campaignIDStr != "" {
-		id, err := strconv.ParseUint(campaignIDStr, 10, 64)
+	if batchIDStr != "" {
+		id, err := strconv.ParseUint(batchIDStr, 10, 64)
 		if err == nil {
-			query = query.Where("campaign_id = ?", id)
+			query = query.Where("batch_id = ?", id)
 		}
 	}
 	if isUsedStr == "true" {
 		query = query.Where("is_used = true")
 	} else if isUsedStr == "false" {
 		query = query.Where("is_used = false")
-	}
-	if source := c.Query("source"); source != "" {
-		query = query.Where("source = ?", source)
 	}
 
 	if err := query.Count(&pagination.Total).Error; err != nil {
@@ -58,32 +54,6 @@ func api_admin_list_license_keys(c *gin.Context) {
 	ListWithData(c, items, pagination)
 }
 
-// GET /app/license-keys/stats
-func api_admin_license_key_stats(c *gin.Context) {
-	log.Infof(c, "admin request for license key stats")
-
-	type StatsRow struct {
-		CampaignID *uint64 `json:"campaignId"`
-		Total      int64   `json:"total"`
-		Used       int64   `json:"used"`
-		Expired    int64   `json:"expired"`
-	}
-
-	now := time.Now().Unix()
-	var rows []StatsRow
-	if err := db.Get().Model(&LicenseKey{}).
-		Select("campaign_id, COUNT(*) as total, SUM(CASE WHEN is_used THEN 1 ELSE 0 END) as used, SUM(CASE WHEN is_used = false AND expires_at < ? THEN 1 ELSE 0 END) as expired", now).
-		Group("campaign_id").
-		Scan(&rows).Error; err != nil {
-		log.Errorf(c, "failed to query license key stats: %v", err)
-		Error(c, ErrorSystemError, "failed to query license key stats")
-		return
-	}
-
-	log.Infof(c, "successfully retrieved license key stats for %d campaigns", len(rows))
-	Success(c, &rows)
-}
-
 // DELETE /app/license-keys/:id
 func api_admin_delete_license_key(c *gin.Context) {
 	log.Infof(c, "admin request to delete license key")
@@ -104,47 +74,17 @@ func api_admin_delete_license_key(c *gin.Context) {
 	WriteAuditLog(c, "license_key_delete", "license_key", fmt.Sprintf("%d", id), nil)
 }
 
-func api_admin_create_license_keys(c *gin.Context) {
-	var req CreateLicenseKeysRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		Error(c, ErrorInvalidArgument, err.Error())
-		return
-	}
-
-	keys, err := CreateManualLicenseKeys(c, &req)
-	if err != nil {
-		Error(c, ErrorSystemError, err.Error())
-		return
-	}
-
-	briefs := make([]LicenseKeyBrief, len(keys))
-	for i, k := range keys {
-		briefs[i] = LicenseKeyBrief{
-			ID:        k.ID,
-			Code:      k.Code,
-			PlanDays:  k.PlanDays,
-			ExpiresAt: k.ExpiresAt,
-		}
-	}
-
-	Success(c, &CreateLicenseKeysResponse{Keys: briefs})
-}
-
 func toLicenseKeyResponse(k *LicenseKey) LicenseKeyResponse {
 	resp := LicenseKeyResponse{
-		ID:               k.ID,
-		UUID:             k.UUID,
-		Code:             k.Code,
-		Source:           k.Source,
-		Note:             k.Note,
-		PlanDays:         k.PlanDays,
-		RecipientMatcher: k.RecipientMatcher,
-		ExpiresAt:        k.ExpiresAt,
-		CampaignID:       k.CampaignID,
-		CreatedByUserID:  k.CreatedByUserID,
-		IsUsed:           k.IsUsed,
-		UsedByUserID:     k.UsedByUserID,
-		CreatedAt:        k.CreatedAt.Unix(),
+		ID:           k.ID,
+		UUID:         k.UUID,
+		Code:         k.Code,
+		BatchID:      k.BatchID,
+		PlanDays:     k.PlanDays,
+		ExpiresAt:    k.ExpiresAt,
+		IsUsed:       k.IsUsed,
+		UsedByUserID: k.UsedByUserID,
+		CreatedAt:    k.CreatedAt.Unix(),
 	}
 	if k.UsedAt != nil {
 		usedAt := k.UsedAt.Unix()
