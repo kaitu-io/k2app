@@ -99,6 +99,17 @@ export const licenseKeyTools: ToolRegistration[] = [
   }),
 
   defineApiTool({
+    name: 'invalidate_license_key_batch',
+    description: 'Invalidate a batch — deletes all unused keys, keeps batch and redeemed keys for stats. Requires approval.',
+    group: 'license_keys.write',
+    method: 'DELETE',
+    params: {
+      batch_id: z.number().describe('Batch ID'),
+    },
+    path: (p) => `/app/license-key-batches/${p.batch_id}`,
+  }),
+
+  defineApiTool({
     name: 'delete_license_key',
     description: 'Delete a single license key by ID.',
     group: 'license_keys.write',

@@ -65,10 +65,15 @@ func api_admin_list_license_key_batches(c *gin.Context) {
 		return
 	}
 
+	batchIDs := make([]uint64, len(batches))
+	for i, b := range batches {
+		batchIDs[i] = b.ID
+	}
+	redeemedMap, expiredMap := batchBaseCountsBatch(batchIDs)
+
 	items := make([]LicenseKeyBatchResponse, 0, len(batches))
 	for _, b := range batches {
-		redeemed, expired := batchBaseCounts(b.ID)
-		items = append(items, toLicenseKeyBatchResponse(&b, redeemed, expired))
+		items = append(items, toLicenseKeyBatchResponse(&b, redeemedMap[b.ID], expiredMap[b.ID]))
 	}
 
 	ListWithData(c, items, pagination)
@@ -150,7 +155,7 @@ func api_admin_list_license_key_batch_keys(c *gin.Context) {
 	ListWithData(c, items, pagination)
 }
 
-// DELETE /app/license-key-batches/:id
+// DELETE /app/license-key-batches/:id — invalidates unused keys, keeps batch for stats.
 func api_admin_delete_license_key_batch(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
@@ -167,8 +172,8 @@ func api_admin_delete_license_key_batch(c *gin.Context) {
 	params := struct {
 		BatchID uint64 `json:"batchId"`
 	}{BatchID: id}
-	summary := fmt.Sprintf("删除授权码批次「%s」(ID:%d)", batch.Name, id)
-	approvalID, executed, err := SubmitApproval(c, "license_key_batch_delete", params, summary)
+	summary := fmt.Sprintf("作废授权码批次「%s」未使用的 keys (ID:%d)", batch.Name, id)
+	approvalID, executed, err := SubmitApproval(c, "license_key_batch_invalidate", params, summary)
 	if err != nil {
 		Error(c, ErrorSystemError, "failed to submit approval")
 		return

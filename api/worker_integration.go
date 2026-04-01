@@ -81,7 +81,7 @@ func InitWorker() {
 	RegisterApprovalCallback("campaign_update", executeApprovalCampaignUpdate)
 	RegisterApprovalCallback("campaign_delete", executeApprovalCampaignDelete)
 	RegisterApprovalCallback("license_key_batch_create", executeApprovalLicenseKeyBatchCreate)
-	RegisterApprovalCallback("license_key_batch_delete", executeApprovalLicenseKeyBatchDelete)
+	RegisterApprovalCallback("license_key_batch_invalidate", executeApprovalLicenseKeyBatchInvalidate)
 	RegisterApprovalCallback("user_hard_delete", executeApprovalUserHardDelete)
 	RegisterApprovalCallback("plan_update", executeApprovalPlanUpdate)
 	RegisterApprovalCallback("plan_delete", executeApprovalPlanDelete)

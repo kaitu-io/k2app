@@ -72,8 +72,8 @@ func Migrate() error {
 		return err
 	}
 
-	// Clean up legacy license keys without a batch (test data from pre-batch era)
-	db.Get().Where("batch_id = 0").Delete(&LicenseKey{})
+	// Clean up unused legacy license keys without a batch (test data from pre-batch era)
+	db.Get().Where("batch_id = 0 AND is_used = false").Delete(&LicenseKey{})
 
 	log.Infof(ctx, "database migration completed successfully")
 	return nil

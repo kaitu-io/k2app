@@ -7,11 +7,13 @@ import (
 	"time"
 
 	"github.com/rs/xid"
+	gormdb "gorm.io/gorm"
+
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
 )
 
-// CreateLicenseKeyBatch creates a batch record and generates all keys.
+// CreateLicenseKeyBatch creates a batch record and generates all keys in a single transaction.
 func CreateLicenseKeyBatch(ctx context.Context, req *CreateLicenseKeyBatchRequest, adminUserID uint64) (*LicenseKeyBatch, error) {
 	expiresAt := time.Now().AddDate(0, 0, req.ExpiresInDays).Unix()
 
@@ -26,53 +28,87 @@ func CreateLicenseKeyBatch(ctx context.Context, req *CreateLicenseKeyBatchReques
 		CreatedByUserID:  adminUserID,
 	}
 
-	if err := db.Get().Create(&batch).Error; err != nil {
-		return nil, fmt.Errorf("create batch: %w", err)
-	}
+	err := db.Get().Transaction(func(tx *gormdb.DB) error {
+		if err := tx.Create(&batch).Error; err != nil {
+			return fmt.Errorf("create batch: %w", err)
+		}
 
-	count, err := GenerateLicenseKeysForBatch(ctx, &batch)
+		keys := make([]LicenseKey, 0, batch.Quantity)
+		for i := 0; i < batch.Quantity; i++ {
+			code, err := GenerateShortCode(ctx)
+			if err != nil {
+				return fmt.Errorf("generate code for key %d: %w", i+1, err)
+			}
+			keys = append(keys, LicenseKey{
+				UUID:      xid.New().String(),
+				Code:      code,
+				BatchID:   batch.ID,
+				PlanDays:  batch.PlanDays,
+				ExpiresAt: batch.ExpiresAt,
+			})
+		}
+
+		batchSize := 100
+		for i := 0; i < len(keys); i += batchSize {
+			end := min(i+batchSize, len(keys))
+			if err := tx.CreateInBatches(keys[i:end], batchSize).Error; err != nil {
+				return fmt.Errorf("batch insert at offset %d: %w", i, err)
+			}
+		}
+
+		return nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("generate keys: %w", err)
+		return nil, err
 	}
 
-	log.Infof(ctx, "[LICENSE_KEY_BATCH] created batch=%d name=%q keys=%d", batch.ID, batch.Name, count)
+	log.Infof(ctx, "[LICENSE_KEY_BATCH] created batch=%d name=%q keys=%d", batch.ID, batch.Name, batch.Quantity)
 	return &batch, nil
 }
 
-// GenerateLicenseKeysForBatch generates keys for a batch and inserts in chunks.
-func GenerateLicenseKeysForBatch(ctx context.Context, batch *LicenseKeyBatch) (int64, error) {
-	keys := make([]LicenseKey, 0, batch.Quantity)
 
-	for i := 0; i < batch.Quantity; i++ {
-		code, err := GenerateShortCode(ctx)
-		if err != nil {
-			return 0, fmt.Errorf("generate code for key %d: %w", i+1, err)
-		}
-		keys = append(keys, LicenseKey{
-			UUID:      xid.New().String(),
-			Code:      code,
-			BatchID:   batch.ID,
-			PlanDays:  batch.PlanDays,
-			ExpiresAt: batch.ExpiresAt,
-		})
-	}
-
-	batchSize := 100
-	for i := 0; i < len(keys); i += batchSize {
-		end := min(i+batchSize, len(keys))
-		if err := db.Get().CreateInBatches(keys[i:end], batchSize).Error; err != nil {
-			return int64(i), fmt.Errorf("batch insert at offset %d: %w", i, err)
-		}
-	}
-
-	return int64(len(keys)), nil
+// batchKeyCount is used for grouped COUNT queries.
+type batchKeyCount struct {
+	BatchID uint64 `gorm:"column:batch_id"`
+	Count   int64  `gorm:"column:count"`
 }
 
-// batchBaseCounts returns redeemed and expired counts for a batch.
+// batchBaseCounts returns redeemed and expired counts for a single batch.
 func batchBaseCounts(batchID uint64) (redeemed, expired int64) {
 	now := time.Now().Unix()
 	db.Get().Model(&LicenseKey{}).Where("batch_id = ? AND is_used = true", batchID).Count(&redeemed)
 	db.Get().Model(&LicenseKey{}).Where("batch_id = ? AND is_used = false AND expires_at < ?", batchID, now).Count(&expired)
+	return
+}
+
+// batchBaseCountsBatch returns redeemed and expired counts for multiple batches in 2 queries.
+func batchBaseCountsBatch(batchIDs []uint64) (redeemedMap, expiredMap map[uint64]int64) {
+	redeemedMap = make(map[uint64]int64)
+	expiredMap = make(map[uint64]int64)
+	if len(batchIDs) == 0 {
+		return
+	}
+
+	var redeemed []batchKeyCount
+	db.Get().Model(&LicenseKey{}).
+		Select("batch_id, COUNT(*) as count").
+		Where("batch_id IN ? AND is_used = true", batchIDs).
+		Group("batch_id").
+		Scan(&redeemed)
+	for _, r := range redeemed {
+		redeemedMap[r.BatchID] = r.Count
+	}
+
+	now := time.Now().Unix()
+	var expired []batchKeyCount
+	db.Get().Model(&LicenseKey{}).
+		Select("batch_id, COUNT(*) as count").
+		Where("batch_id IN ? AND is_used = false AND expires_at < ?", batchIDs, now).
+		Group("batch_id").
+		Scan(&expired)
+	for _, e := range expired {
+		expiredMap[e.BatchID] = e.Count
+	}
 	return
 }
 
@@ -102,7 +138,7 @@ func calcConversion(redeems []redeemInfo) (convertedUsers int64, revenue uint64)
 	convertedSet := make(map[uint64]bool)
 	for _, o := range orders {
 		redeemTime, ok := userRedeemTime[o.UserID]
-		if ok && o.CreatedAt.After(redeemTime) && !convertedSet[o.UserID] {
+		if ok && o.CreatedAt.After(redeemTime) {
 			convertedSet[o.UserID] = true
 			revenue += o.PayAmount
 		}

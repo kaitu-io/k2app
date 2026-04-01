@@ -7,6 +7,7 @@ import (
 	"time"
 
 	db "github.com/wordgate/qtoolkit/db"
+	"github.com/wordgate/qtoolkit/log"
 )
 
 // Placeholder approval callbacks — replaced as handlers are refactored in Tasks 6-8
@@ -138,7 +139,7 @@ func executeApprovalLicenseKeyBatchCreate(ctx context.Context, params json.RawMe
 	return err
 }
 
-func executeApprovalLicenseKeyBatchDelete(ctx context.Context, params json.RawMessage) error {
+func executeApprovalLicenseKeyBatchInvalidate(ctx context.Context, params json.RawMessage) error {
 	var p struct {
 		BatchID uint64 `json:"batchId"`
 	}
@@ -146,14 +147,12 @@ func executeApprovalLicenseKeyBatchDelete(ctx context.Context, params json.RawMe
 		return fmt.Errorf("unmarshal params: %w", err)
 	}
 
-	if err := db.Get().Where("batch_id = ? AND is_used = false", p.BatchID).Delete(&LicenseKey{}).Error; err != nil {
-		return fmt.Errorf("delete unused keys: %w", err)
+	result := db.Get().Where("batch_id = ? AND is_used = false", p.BatchID).Delete(&LicenseKey{})
+	if result.Error != nil {
+		return fmt.Errorf("delete unused keys: %w", result.Error)
 	}
 
-	if err := db.Get().Delete(&LicenseKeyBatch{}, p.BatchID).Error; err != nil {
-		return fmt.Errorf("delete batch: %w", err)
-	}
-
+	log.Infof(ctx, "[LICENSE_KEY_BATCH] invalidated batch=%d, deleted %d unused keys", p.BatchID, result.RowsAffected)
 	return nil
 }
 

@@ -127,12 +127,12 @@ export default function LicenseKeyBatchesPage() {
     if (!deletingId) return;
     try {
       await api.deleteLicenseKeyBatch(deletingId);
-      toast.success("删除已提交");
+      toast.success("作废已提交");
       setDeleteOpen(false);
       setDeletingId(null);
       fetchBatches();
       fetchStats();
-    } catch { toast.error("删除失败"); }
+    } catch { toast.error("作废失败"); }
   };
 
   const openDetail = async (id: number) => {
@@ -266,11 +266,11 @@ export default function LicenseKeyBatchesPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete dialog */}
+      {/* Invalidate dialog */}
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>确认删除</DialogTitle><DialogDescription>将删除批次及其未使用的授权码。已使用的授权码保留。</DialogDescription></DialogHeader>
-          <DialogFooter><Button variant="outline" onClick={() => setDeleteOpen(false)}>取消</Button><Button variant="destructive" onClick={handleDelete}>删除</Button></DialogFooter>
+          <DialogHeader><DialogTitle>确认作废</DialogTitle><DialogDescription>将作废批次中所有未使用的授权码。已兑换的授权码和批次统计数据保留。</DialogDescription></DialogHeader>
+          <DialogFooter><Button variant="outline" onClick={() => setDeleteOpen(false)}>取消</Button><Button variant="destructive" onClick={handleDelete}>作废</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
