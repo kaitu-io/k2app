@@ -170,7 +170,7 @@ Asynqmon UI available at `/app/asynqmon` (admin auth required).
 
 ## Approval Workflow (Maker-Checker)
 
-Critical admin operations (EDM, campaigns, plans, withdrawals, hard delete) require dual approval via `SubmitApproval()`. Superadmin (`is_admin`) bypasses approval and executes synchronously. Non-superadmin creates a pending record requiring another admin's approval.
+Critical admin operations (EDM, campaigns, plans, withdrawals, hard delete, license key batches) require dual approval via `SubmitApproval()`. Superadmin (`is_admin`) bypasses approval and executes synchronously. Non-superadmin creates a pending record requiring another admin's approval.
 
 - **Core files**: `logic_approval.go` (service), `logic_approval_callbacks.go` (10 callbacks), `api_admin_approval.go` (handlers)
 - **Pattern**: Handler validates → `SubmitApproval(c, action, params, summary)` → returns `(approvalID, status, error)` where status is `"executed"` (superadmin) or `"pending_approval"` (needs approval)

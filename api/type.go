@@ -582,8 +582,6 @@ type CampaignRequest struct {
 	MatcherType   string `json:"matcherType" binding:"required"`                 // first_order, vip, all
 	MaxUsage      int64  `json:"maxUsage"`                                        // 最大使用次数（0=无限制）
 	MatcherParams string `json:"matcherParams"`
-	IsShareable   bool   `json:"isShareable"`
-	SharesPerUser int64  `json:"sharesPerUser"`
 }
 
 // CampaignResponse 优惠活动响应
@@ -603,8 +601,6 @@ type CampaignResponse struct {
 	UsageCount    int64  `json:"usageCount"`
 	MaxUsage      int64  `json:"maxUsage"`
 	MatcherParams string `json:"matcherParams"`
-	IsShareable   bool   `json:"isShareable"`
-	SharesPerUser int64  `json:"sharesPerUser"`
 }
 
 // CampaignListResponse 优惠活动列表响应
@@ -978,30 +974,16 @@ type CloudOperationResponse struct {
 // ========================= LicenseKey 相关类型定义 =========================
 
 type LicenseKeyResponse struct {
-	ID               uint64  `json:"id"`
-	UUID             string  `json:"uuid"`
-	Code             string  `json:"code"`
-	Source           string  `json:"source"`
-	Note             string  `json:"note"`
-	PlanDays         int     `json:"planDays"`
-	RecipientMatcher string  `json:"recipientMatcher"`
-	ExpiresAt        int64   `json:"expiresAt"`
-	CampaignID       *uint64 `json:"campaignId"`
-	CreatedByUserID  *uint64 `json:"createdByUserId"`
-	IsUsed           bool    `json:"isUsed"`
-	UsedByUserID     *uint64 `json:"usedByUserId"`
-	UsedAt           *int64  `json:"usedAt"`
-	CreatedAt        int64   `json:"createdAt"`
-}
-
-type IssueKeysRequest struct {
-	DryRun bool `json:"dryRun"`
-}
-
-type IssueKeysResponse struct {
-	EligibleUsers int64 `json:"eligibleUsers"`
-	KeysToIssue   int64 `json:"keysToIssue"`
-	Issued        bool  `json:"issued"`
+	ID           uint64  `json:"id"`
+	UUID         string  `json:"uuid"`
+	Code         string  `json:"code"`
+	BatchID      uint64  `json:"batchId"`
+	PlanDays     int     `json:"planDays"`
+	ExpiresAt    int64   `json:"expiresAt"`
+	IsUsed       bool    `json:"isUsed"`
+	UsedByUserID *uint64 `json:"usedByUserId"`
+	UsedAt       *int64  `json:"usedAt"`
+	CreatedAt    int64   `json:"createdAt"`
 }
 
 type LicenseKeyPublicResponse struct {
@@ -1013,22 +995,76 @@ type LicenseKeyPublicResponse struct {
 	SenderName string `json:"senderName"`
 }
 
-type CreateLicenseKeysRequest struct {
-	Count            int    `json:"count" binding:"required,min=1,max=100"`
-	PlanDays         int    `json:"planDays" binding:"required,min=1"`
-	ExpiresInDays    int    `json:"expiresInDays" binding:"required,min=1"`
+// ========================= LicenseKeyBatch 类型定义 =========================
+
+type CreateLicenseKeyBatchRequest struct {
+	Name             string `json:"name" binding:"required"`
+	SourceTag        string `json:"sourceTag"`
 	RecipientMatcher string `json:"recipientMatcher" binding:"required,oneof=all never_paid"`
+	PlanDays         int    `json:"planDays" binding:"required,min=1"`
+	Quantity         int    `json:"quantity" binding:"required,min=1,max=10000"`
+	ExpiresInDays    int    `json:"expiresInDays" binding:"required,min=1"`
 	Note             string `json:"note"`
 }
 
-type CreateLicenseKeysResponse struct {
-	Keys []LicenseKeyBrief `json:"keys"`
+type LicenseKeyBatchResponse struct {
+	ID               uint64 `json:"id"`
+	Name             string `json:"name"`
+	SourceTag        string `json:"sourceTag"`
+	RecipientMatcher string `json:"recipientMatcher"`
+	PlanDays         int    `json:"planDays"`
+	Quantity         int    `json:"quantity"`
+	ExpiresAt        int64  `json:"expiresAt"`
+	Note             string `json:"note"`
+	CreatedByUserID  uint64 `json:"createdByUserId"`
+	RedeemedCount    int64  `json:"redeemedCount"`
+	ExpiredCount     int64  `json:"expiredCount"`
+	CreatedAt        int64  `json:"createdAt"`
 }
 
-type LicenseKeyBrief struct {
-	ID        uint64 `json:"id"`
-	Code      string `json:"code"`
-	PlanDays  int    `json:"planDays"`
-	ExpiresAt int64  `json:"expiresAt"`
+type LicenseKeyBatchDetailResponse struct {
+	LicenseKeyBatchResponse
+	ConvertedUsers int64   `json:"convertedUsers"`
+	ConversionRate float64 `json:"conversionRate"`
+	Revenue        uint64  `json:"revenue"`
+}
+
+type BatchStatsResponse struct {
+	BatchID        uint64  `json:"batchId"`
+	Name           string  `json:"name"`
+	SourceTag      string  `json:"sourceTag"`
+	TotalKeys      int64   `json:"totalKeys"`
+	Redeemed       int64   `json:"redeemed"`
+	Expired        int64   `json:"expired"`
+	RedeemRate     float64 `json:"redeemRate"`
+	ConvertedUsers int64   `json:"convertedUsers"`
+	ConversionRate float64 `json:"conversionRate"`
+	Revenue        uint64  `json:"revenue"`
+}
+
+type BatchStatsBySourceResponse struct {
+	SourceTag      string  `json:"sourceTag"`
+	TotalKeys      int64   `json:"totalKeys"`
+	Redeemed       int64   `json:"redeemed"`
+	RedeemRate     float64 `json:"redeemRate"`
+	ConvertedUsers int64   `json:"convertedUsers"`
+	ConversionRate float64 `json:"conversionRate"`
+	Revenue        uint64  `json:"revenue"`
+}
+
+type BatchStatsTrendResponse struct {
+	Date           string `json:"date"`
+	Redeemed       int64  `json:"redeemed"`
+	ConvertedUsers int64  `json:"convertedUsers"`
+}
+
+type LicenseKeyItemResponse struct {
+	ID           uint64  `json:"id"`
+	Code         string  `json:"code"`
+	PlanDays     int     `json:"planDays"`
+	ExpiresAt    int64   `json:"expiresAt"`
+	IsUsed       bool    `json:"isUsed"`
+	UsedByUserID *uint64 `json:"usedByUserId,omitempty"`
+	UsedAt       *int64  `json:"usedAt,omitempty"`
 }
 

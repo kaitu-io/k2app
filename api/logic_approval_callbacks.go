@@ -7,6 +7,7 @@ import (
 	"time"
 
 	db "github.com/wordgate/qtoolkit/db"
+	"github.com/wordgate/qtoolkit/log"
 )
 
 // Placeholder approval callbacks — replaced as handlers are refactored in Tasks 6-8
@@ -57,8 +58,6 @@ func executeApprovalCampaignCreate(ctx context.Context, params json.RawMessage) 
 		IsActive:      BoolPtr(req.IsActive),
 		MatcherType:   req.MatcherType,
 		MatcherParams: req.MatcherParams,
-		IsShareable:   req.IsShareable,
-		SharesPerUser: req.SharesPerUser,
 		MaxUsage:      req.MaxUsage,
 	}
 
@@ -97,8 +96,6 @@ func executeApprovalCampaignUpdate(ctx context.Context, params json.RawMessage) 
 	campaign.IsActive = BoolPtr(req.IsActive)
 	campaign.MatcherType = req.MatcherType
 	campaign.MatcherParams = req.MatcherParams
-	campaign.IsShareable = req.IsShareable
-	campaign.SharesPerUser = req.SharesPerUser
 	campaign.MaxUsage = req.MaxUsage
 
 	if err := db.Get().Save(&campaign).Error; err != nil {
@@ -127,30 +124,35 @@ func executeApprovalCampaignDelete(ctx context.Context, params json.RawMessage) 
 	return nil
 }
 
-func executeApprovalCampaignIssueKeys(ctx context.Context, params json.RawMessage) error {
+// ===================== License Key Batch =====================
+
+func executeApprovalLicenseKeyBatchCreate(ctx context.Context, params json.RawMessage) error {
 	var p struct {
-		CampaignID uint64 `json:"campaignId"`
+		CreateLicenseKeyBatchRequest
+		AdminUserID uint64 `json:"adminUserId"`
 	}
 	if err := json.Unmarshal(params, &p); err != nil {
 		return fmt.Errorf("unmarshal params: %w", err)
 	}
 
-	// Re-validate campaign exists and is shareable
-	var campaign Campaign
-	if err := db.Get().First(&campaign, p.CampaignID).Error; err != nil {
-		return fmt.Errorf("campaign %d not found", p.CampaignID)
+	_, err := CreateLicenseKeyBatch(ctx, &p.CreateLicenseKeyBatchRequest, p.AdminUserID)
+	return err
+}
+
+func executeApprovalLicenseKeyBatchInvalidate(ctx context.Context, params json.RawMessage) error {
+	var p struct {
+		BatchID uint64 `json:"batchId"`
 	}
-	if !campaign.IsShareable {
-		return fmt.Errorf("campaign %d is not shareable", p.CampaignID)
+	if err := json.Unmarshal(params, &p); err != nil {
+		return fmt.Errorf("unmarshal params: %w", err)
 	}
 
-	_, err := GenerateLicenseKeysForCampaign(ctx, &campaign)
-	if err != nil {
-		return fmt.Errorf("generate license keys: %w", err)
+	result := db.Get().Where("batch_id = ? AND is_used = false", p.BatchID).Delete(&LicenseKey{})
+	if result.Error != nil {
+		return fmt.Errorf("delete unused keys: %w", result.Error)
 	}
 
-	// Send gift emails — best-effort, keys already generated
-	_ = SendLicenseKeyEmails(ctx, campaign.ID)
+	log.Infof(ctx, "[LICENSE_KEY_BATCH] invalidated batch=%d, deleted %d unused keys", p.BatchID, result.RowsAffected)
 	return nil
 }
 

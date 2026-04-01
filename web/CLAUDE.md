@@ -50,7 +50,8 @@ web/
 │   │   │       ├── approvals/  # Approval management (maker-checker)
 │   │   │       ├── campaigns/ # Campaign management
 │   │   │       ├── edm/       # Email marketing (templates + tasks + logs)
-│   │   │       ├── license-keys/ # License key management
+│   │   │       ├── license-keys/ # License key list (browse, filter by batch)
+│   │   │       ├── license-key-batches/ # License key batch management (CRUD, stats, conversion tracking)
 │   │   │       ├── retailers/ # Retailer CRM (notes, todos, levels)
 │   │   │       ├── tickets/   # Support ticket management
 │   │   │       ├── usages/    # Usage statistics

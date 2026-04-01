@@ -10,77 +10,6 @@ import (
 	"github.com/wordgate/qtoolkit/log"
 )
 
-// ===================== Campaign License Key 发放 =====================
-
-// POST /app/campaigns/:id/issue-keys
-// DryRun=true returns count only; DryRun=false generates and sends keys.
-func api_admin_issue_license_keys(c *gin.Context) {
-	log.Infof(c, "admin request to issue license keys for campaign")
-
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
-	if err != nil {
-		log.Warnf(c, "invalid campaign id: %s", c.Param("id"))
-		Error(c, ErrorInvalidArgument, "invalid id")
-		return
-	}
-
-	var req IssueKeysRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Warnf(c, "invalid request body: %v", err)
-		Error(c, ErrorInvalidArgument, err.Error())
-		return
-	}
-
-	var campaign Campaign
-	if err := db.Get().First(&campaign, id).Error; err != nil {
-		log.Warnf(c, "campaign %d not found: %v", id, err)
-		Error(c, ErrorNotFound, "campaign not found")
-		return
-	}
-	if !campaign.IsShareable {
-		log.Warnf(c, "campaign %d is not shareable", id)
-		Error(c, ErrorInvalidArgument, "campaign is not shareable")
-		return
-	}
-
-	ctx := c.Request.Context()
-
-	if req.DryRun {
-		count, err := CountEligibleUsers(ctx, &campaign)
-		if err != nil {
-			log.Errorf(c, "failed to count eligible users for campaign %d: %v", id, err)
-			Error(c, ErrorSystemError, err.Error())
-			return
-		}
-		resp := IssueKeysResponse{
-			EligibleUsers: count,
-			KeysToIssue:   count * campaign.SharesPerUser,
-			Issued:        false,
-		}
-		log.Infof(c, "dry run: campaign %d eligible=%d keysToIssue=%d", id, count, resp.KeysToIssue)
-		Success(c, &resp)
-		return
-	}
-
-	// 提交审批
-	params := struct {
-		CampaignID uint64 `json:"campaignId"`
-	}{CampaignID: id}
-	summary := fmt.Sprintf("为活动「%s」发放 License Key", campaign.Name)
-	approvalID, executed, err := SubmitApproval(c, "campaign_issue_keys", params, summary)
-	if err != nil {
-		log.Errorf(c, "failed to submit approval for issue keys campaign %d: %v", id, err)
-		Error(c, ErrorSystemError, "failed to submit approval")
-		return
-	}
-
-	if !executed {
-		PendingApproval(c, approvalID)
-		return
-	}
-	SuccessEmpty(c)
-}
-
 // ===================== 优惠活动管理 =====================
 
 // api_admin_list_campaigns 处理获取优惠活动列表的请求（管理员）
@@ -494,8 +423,6 @@ func convertCampaignToResponse(campaign Campaign) CampaignResponse {
 		IsActive:      campaign.IsActive != nil && *campaign.IsActive,
 		MatcherType:   campaign.MatcherType,
 		MatcherParams: campaign.MatcherParams,
-		IsShareable:   campaign.IsShareable,
-		SharesPerUser: campaign.SharesPerUser,
 		UsageCount:    campaign.UsageCount,
 		MaxUsage:      campaign.MaxUsage,
 	}

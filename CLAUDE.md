@@ -88,7 +88,7 @@ webapp/              React + MUI frontend (see webapp/CLAUDE.md)
   src/i18n/          Localization (7 locales, 15+ namespaces)
 web/                 Next.js website + admin dashboard (see web/CLAUDE.md)
   src/app/[locale]/  Public pages (install, purchase, account, wallet, releases)
-  src/app/(manager)/ Admin dashboard (users, orders, nodes, tunnels, EDM, cloud, approvals, license-keys, tickets, usages)
+  src/app/(manager)/ Admin dashboard (users, orders, nodes, tunnels, EDM, cloud, approvals, license-keys, license-key-batches, tickets, usages)
 api/                 Center API service — Go + Gin + GORM (see api/CLAUDE.md)
   cloudprovider/     Multi-cloud VPS management (AWS, Aliyun, Tencent, Bandwagon)
   cmd/               CLI entry point (start, stop, migrate, health-check)
@@ -173,6 +173,7 @@ docs/plans/          Architecture design docs (43+ files, use `ls` to browse)
 - **AuthGate** — Startup gate: checks service readiness + version match before showing main UI
 - **LoginDialog** — Global modal for all auth flows (no `/login` route)
 - **Center** — Backend API service (`api/`): auth, user management, orders, tunnels, cloud management
+- **LicenseKeyBatch** — 授权码批次：独立于活动码的分发单位。Batch 存渠道标签（sourceTag）、兑换条件（recipientMatcher）、过期时间。统计维度包含兑换率和兑换→付费转化率。创建需审批。
 - **transformStatus()** — Bridge normalization: `"stopped"`→`"disconnected"`, synthesizes `"error"` from `disconnected + lastError`. Handles both structured `{code, message}` and legacy string errors.
 - **EngineError** — Structured error type (`k2/engine/error.go`): `{Code int, Category string, Message string}`. HTTP-aligned codes: 101 (NetworkUnavailable), 400 (BadConfig), 401 (AuthRejected), 402 (PaymentRequired), 403 (Forbidden), 408 (Timeout), 502 (ProtocolError), 503 (ServerUnreachable), 570 (ConnectionFatal). Categories: `client` (user action needed), `network` (transient, auto-retry), `server` (k2s issue), `target` (destination-specific, wire healthy).
 - **OnNetworkChanged()** — gomobile-exported method that routes through `netCoordinator` as `SignalChanged`. Legacy path — new code should use `NotifyNetEvent(*NetEvent)`.

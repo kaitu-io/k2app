@@ -27,6 +27,7 @@ func Migrate() error {
 		&SlaveNodeLoad{},
 		&SessionAcct{},
 		&Campaign{},
+		&LicenseKeyBatch{},
 		&LicenseKey{},
 		&RetailerConfig{},
 		&RetailerLevelHistory{},
@@ -70,6 +71,9 @@ func Migrate() error {
 		log.Errorf(ctx, "database migration failed: %v", err)
 		return err
 	}
+
+	// Clean up unused legacy license keys without a batch (test data from pre-batch era)
+	db.Get().Where("batch_id = 0 AND is_used = false").Delete(&LicenseKey{})
 
 	log.Infof(ctx, "database migration completed successfully")
 	return nil
