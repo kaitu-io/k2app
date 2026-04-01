@@ -541,6 +541,9 @@ export interface Announcement {
   linkText?: string; // 可选：链接文字
   openMode?: 'external' | 'webview'; // 可选：打开方式，默认 external
   authMode?: 'none' | 'ott'; // 可选：认证模式，默认 none
+  priority?: number; // 优先级，数字越大越优先
+  minVersion?: string; // 最低版本要求
+  maxVersion?: string; // 最高版本要求
   expiresAt?: number; // 可选：公告过期时间戳（Unix秒），为0表示不过期
 }
 
@@ -549,7 +552,8 @@ export interface AppConfig {
   appLinks: AppLinks;
   inviteReward: InviteConfig;
   minClientVersion?: string; // 最低客户端版本要求，低于此版本强制升级
-  announcement?: Announcement; // 公告信息
+  announcement?: Announcement; // 向后兼容：最高优先级公告
+  announcements?: Announcement[]; // 全部活跃公告（按 priority DESC 排序）
 }
 
 // 链接有效期选项

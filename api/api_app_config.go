@@ -26,9 +26,12 @@ type DataAnnouncement struct {
 	Message   string `json:"message" example:"系统维护公告：1月1日凌晨进行系统升级"`                         // 公告文字内容
 	LinkURL   string `json:"linkUrl,omitempty" example:"https://kaitu.io/news/maintenance"` // 可选：点击跳转链接
 	LinkText  string `json:"linkText,omitempty" example:"查看详情"`                             // 可选：链接文字
-	OpenMode  string `json:"openMode,omitempty" example:"external"`                         // 可选：external（默认）或 webview
-	AuthMode  string `json:"authMode,omitempty" example:"none"`                             // 可选：none（默认）或 ott（自动登录）
-	ExpiresAt int64  `json:"expiresAt,omitempty" example:"1704067200"`                      // 可选：公告过期时间戳（Unix秒），为0表示不过期
+	OpenMode   string `json:"openMode,omitempty" example:"external"`                         // 可选：external（默认）或 webview
+	AuthMode   string `json:"authMode,omitempty" example:"none"`                             // 可选：none（默认）或 ott（自动登录）
+	Priority   int    `json:"priority"`                                                      // 优先级，数字越大越优先
+	MinVersion string `json:"minVersion,omitempty"`                                          // 最低版本要求（含），空=不限
+	MaxVersion string `json:"maxVersion,omitempty"`                                          // 最高版本要求（含），空=不限
+	ExpiresAt  int64  `json:"expiresAt,omitempty" example:"1704067200"`                      // 可选：公告过期时间戳（Unix秒），为0表示不过期
 }
 
 // DataAppConfig 应用配置响应数据结构
@@ -36,8 +39,9 @@ type DataAnnouncement struct {
 type DataAppConfig struct {
 	AppLinks         DataAppLinks      `json:"appLinks"`                   // 应用相关链接
 	InviteReward     InviteConfig      `json:"inviteReward"`               // 邀请奖励配置
-	MinClientVersion string            `json:"minClientVersion,omitempty"` // 最低客户端版本要求，低于此版本强制升级
-	Announcement     *DataAnnouncement `json:"announcement,omitempty"`     // 公告信息，nil表示无公告
+	MinClientVersion string             `json:"minClientVersion,omitempty"` // 最低客户端版本要求，低于此版本强制升级
+	Announcement     *DataAnnouncement  `json:"announcement,omitempty"`     // 向后兼容：最高优先级公告
+	Announcements    []DataAnnouncement `json:"announcements,omitempty"`    // 全部活跃公告（按 priority DESC 排序）
 }
 
 // api_get_app_config 获取应用配置
@@ -89,15 +93,29 @@ func api_get_app_config(c *gin.Context) {
 	// Read minimum client version requirement
 	minClientVersion := viper.GetString("frontend_config.min_client_version")
 
-	// 从数据库读取活跃公告
-	announcement := getActiveAnnouncement()
+	// Parse client version from X-K2-Client header
+	clientVersion := ""
+	if clientHeader := c.GetHeader("X-K2-Client"); clientHeader != "" {
+		if appInfo := parseClientHeader(clientHeader); appInfo != nil {
+			clientVersion = appInfo.Version
+		}
+	}
 
-	// 构造响应数据
+	// Get active announcements filtered by client version
+	announcements := getActiveAnnouncements(clientVersion)
+
+	// Build response — singular field for backward compat, array for new clients
+	var singleAnnouncement *DataAnnouncement
+	if len(announcements) > 0 {
+		singleAnnouncement = &announcements[0]
+	}
+
 	data := DataAppConfig{
 		AppLinks:         appLinks,
 		InviteReward:     inviteReward,
 		MinClientVersion: minClientVersion,
-		Announcement:     announcement,
+		Announcement:     singleAnnouncement,
+		Announcements:    announcements,
 	}
 
 	log.Infof(c, "successfully retrieved app config: %+v", data)

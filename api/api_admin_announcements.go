@@ -15,10 +15,13 @@ type AnnouncementRequest struct {
 	Message   string `json:"message" binding:"required"`
 	LinkURL   string `json:"linkUrl"`
 	LinkText  string `json:"linkText"`
-	OpenMode  string `json:"openMode"`  // external | webview，默认 external
-	AuthMode  string `json:"authMode"`  // none | ott，默认 none
-	ExpiresAt int64  `json:"expiresAt"` // Unix秒，0=不过期
-	IsActive  *bool  `json:"isActive"`
+	OpenMode   string `json:"openMode"`   // external | webview，默认 external
+	AuthMode   string `json:"authMode"`   // none | ott，默认 none
+	Priority   int    `json:"priority"`   // 优先级，默认 0
+	MinVersion string `json:"minVersion"` // 最低版本，空=不限
+	MaxVersion string `json:"maxVersion"` // 最高版本，空=不限
+	ExpiresAt  int64  `json:"expiresAt"`  // Unix秒，0=不过期
+	IsActive   *bool  `json:"isActive"`
 }
 
 // AnnouncementResponse 公告响应
@@ -26,13 +29,16 @@ type AnnouncementResponse struct {
 	ID        uint64 `json:"id"`
 	CreatedAt int64  `json:"createdAt"`
 	UpdatedAt int64  `json:"updatedAt"`
-	Message   string `json:"message"`
-	LinkURL   string `json:"linkUrl"`
-	LinkText  string `json:"linkText"`
-	OpenMode  string `json:"openMode"`
-	AuthMode  string `json:"authMode"`
-	ExpiresAt int64  `json:"expiresAt"`
-	IsActive  bool   `json:"isActive"`
+	Message    string `json:"message"`
+	LinkURL    string `json:"linkUrl"`
+	LinkText   string `json:"linkText"`
+	OpenMode   string `json:"openMode"`
+	AuthMode   string `json:"authMode"`
+	Priority   int    `json:"priority"`
+	MinVersion string `json:"minVersion"`
+	MaxVersion string `json:"maxVersion"`
+	ExpiresAt  int64  `json:"expiresAt"`
+	IsActive   bool   `json:"isActive"`
 }
 
 func convertAnnouncementToResponse(a Announcement) AnnouncementResponse {
@@ -43,10 +49,13 @@ func convertAnnouncementToResponse(a Announcement) AnnouncementResponse {
 		Message:   a.Message,
 		LinkURL:   a.LinkURL,
 		LinkText:  a.LinkText,
-		OpenMode:  a.OpenMode,
-		AuthMode:  a.AuthMode,
-		ExpiresAt: a.ExpiresAt,
-		IsActive:  a.IsActive != nil && *a.IsActive,
+		OpenMode:   a.OpenMode,
+		AuthMode:   a.AuthMode,
+		Priority:   a.Priority,
+		MinVersion: a.MinVersion,
+		MaxVersion: a.MaxVersion,
+		ExpiresAt:  a.ExpiresAt,
+		IsActive:   a.IsActive != nil && *a.IsActive,
 	}
 }
 
@@ -113,38 +122,35 @@ func api_admin_create_announcement(c *gin.Context) {
 		return
 	}
 
+	if req.MinVersion != "" && parseVersionParts(req.MinVersion) == nil {
+		Error(c, ErrorInvalidArgument, "minVersion must be in x.y.z format")
+		return
+	}
+	if req.MaxVersion != "" && parseVersionParts(req.MaxVersion) == nil {
+		Error(c, ErrorInvalidArgument, "maxVersion must be in x.y.z format")
+		return
+	}
+
 	isActive := req.IsActive != nil && *req.IsActive
 
-	tx := db.Get().Begin()
-
-	// 如果要激活，先 deactivate 其他所有
-	if isActive {
-		if err := tx.Model(&Announcement{}).Where("is_active = ?", true).Update("is_active", false).Error; err != nil {
-			tx.Rollback()
-			log.Errorf(c, "failed to deactivate existing announcements: %v", err)
-			Error(c, ErrorSystemError, "failed to create announcement")
-			return
-		}
-	}
-
 	announcement := Announcement{
-		Message:   req.Message,
-		LinkURL:   req.LinkURL,
-		LinkText:  req.LinkText,
-		OpenMode:  openMode,
-		AuthMode:  authMode,
-		ExpiresAt: req.ExpiresAt,
-		IsActive:  BoolPtr(isActive),
+		Message:    req.Message,
+		LinkURL:    req.LinkURL,
+		LinkText:   req.LinkText,
+		OpenMode:   openMode,
+		AuthMode:   authMode,
+		Priority:   req.Priority,
+		MinVersion: req.MinVersion,
+		MaxVersion: req.MaxVersion,
+		ExpiresAt:  req.ExpiresAt,
+		IsActive:   BoolPtr(isActive),
 	}
 
-	if err := tx.Create(&announcement).Error; err != nil {
-		tx.Rollback()
+	if err := db.Get().Create(&announcement).Error; err != nil {
 		log.Errorf(c, "failed to create announcement: %v", err)
 		Error(c, ErrorSystemError, "failed to create announcement")
 		return
 	}
-
-	tx.Commit()
 
 	response := convertAnnouncementToResponse(announcement)
 	log.Infof(c, "successfully created announcement: %d", announcement.ID)
@@ -198,16 +204,27 @@ func api_admin_update_announcement(c *gin.Context) {
 		return
 	}
 
-	// Note: IsActive is intentionally NOT handled here — activation/deactivation
-	// requires mutual-exclusion logic (deactivate all others first), which lives
-	// in the dedicated /activate and /deactivate endpoints.
+	if req.MinVersion != "" && parseVersionParts(req.MinVersion) == nil {
+		Error(c, ErrorInvalidArgument, "minVersion must be in x.y.z format")
+		return
+	}
+	if req.MaxVersion != "" && parseVersionParts(req.MaxVersion) == nil {
+		Error(c, ErrorInvalidArgument, "maxVersion must be in x.y.z format")
+		return
+	}
+
+	// Note: IsActive is intentionally NOT handled here — use dedicated
+	// /activate and /deactivate endpoints.
 	updates := map[string]interface{}{
-		"message":    req.Message,
-		"link_url":   req.LinkURL,
-		"link_text":  req.LinkText,
-		"open_mode":  openMode,
-		"auth_mode":  authMode,
-		"expires_at": req.ExpiresAt,
+		"message":     req.Message,
+		"link_url":    req.LinkURL,
+		"link_text":   req.LinkText,
+		"open_mode":   openMode,
+		"auth_mode":   authMode,
+		"priority":    req.Priority,
+		"min_version": req.MinVersion,
+		"max_version": req.MaxVersion,
+		"expires_at":  req.ExpiresAt,
 	}
 
 	if err := db.Get().Model(&announcement).Updates(updates).Error; err != nil {
@@ -249,7 +266,7 @@ func api_admin_delete_announcement(c *gin.Context) {
 	SuccessEmpty(c)
 }
 
-// api_admin_activate_announcement 激活公告（同时 deactivate 其他所有）
+// api_admin_activate_announcement 激活公告
 func api_admin_activate_announcement(c *gin.Context) {
 	log.Infof(c, "admin request to activate announcement")
 
@@ -271,27 +288,15 @@ func api_admin_activate_announcement(c *gin.Context) {
 		return
 	}
 
-	tx := db.Get().Begin()
-
-	if err := tx.Model(&Announcement{}).Where("is_active = ?", true).Update("is_active", false).Error; err != nil {
-		tx.Rollback()
-		log.Errorf(c, "failed to deactivate announcements: %v", err)
-		Error(c, ErrorSystemError, "failed to activate announcement")
-		return
-	}
-
-	if err := tx.Model(&announcement).Update("is_active", true).Error; err != nil {
-		tx.Rollback()
+	if err := db.Get().Model(&announcement).Update("is_active", true).Error; err != nil {
 		log.Errorf(c, "failed to activate announcement: %v", err)
 		Error(c, ErrorSystemError, "failed to activate announcement")
 		return
 	}
 
-	tx.Commit()
-
 	db.Get().First(&announcement, id)
 	response := convertAnnouncementToResponse(announcement)
-	log.Infof(c, "successfully activated announcement: %d (deactivated all others)", id)
+	log.Infof(c, "successfully activated announcement: %d", id)
 	Success(c, &response)
 }
 
@@ -324,23 +329,41 @@ func api_admin_deactivate_announcement(c *gin.Context) {
 	Success(c, &response)
 }
 
-// getActiveAnnouncement 获取当前活跃且未过期的公告（供 /api/app/config 使用）
-func getActiveAnnouncement() *DataAnnouncement {
-	var announcement Announcement
+// getActiveAnnouncements returns all active, unexpired announcements filtered by client version.
+// Sorted by priority DESC, id DESC. clientVersion="" skips version filtering.
+func getActiveAnnouncements(clientVersion string) []DataAnnouncement {
+	var announcements []Announcement
 	err := db.Get().
 		Where("is_active = ? AND (expires_at = 0 OR expires_at > ?)", true, time.Now().Unix()).
-		First(&announcement).Error
+		Order("priority DESC, id DESC").
+		Find(&announcements).Error
 	if err != nil {
 		return nil
 	}
 
-	return &DataAnnouncement{
-		ID:        fmt.Sprintf("%d", announcement.ID),
-		Message:   announcement.Message,
-		LinkURL:   announcement.LinkURL,
-		LinkText:  announcement.LinkText,
-		OpenMode:  announcement.OpenMode,
-		AuthMode:  announcement.AuthMode,
-		ExpiresAt: announcement.ExpiresAt,
+	return filterAnnouncementsForClient(announcements, clientVersion)
+}
+
+// filterAnnouncementsForClient filters announcements by client version and converts to DataAnnouncement.
+// Assumes input is already sorted by priority DESC, id DESC.
+func filterAnnouncementsForClient(announcements []Announcement, clientVersion string) []DataAnnouncement {
+	var result []DataAnnouncement
+	for _, a := range announcements {
+		if !isVersionInRange(clientVersion, a.MinVersion, a.MaxVersion) {
+			continue
+		}
+		result = append(result, DataAnnouncement{
+			ID:         fmt.Sprintf("%d", a.ID),
+			Message:    a.Message,
+			LinkURL:    a.LinkURL,
+			LinkText:   a.LinkText,
+			OpenMode:   a.OpenMode,
+			AuthMode:   a.AuthMode,
+			Priority:   a.Priority,
+			MinVersion: a.MinVersion,
+			MaxVersion: a.MaxVersion,
+			ExpiresAt:  a.ExpiresAt,
+		})
 	}
+	return result
 }
