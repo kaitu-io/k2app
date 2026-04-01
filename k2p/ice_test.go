@@ -11,6 +11,8 @@ import (
 	"github.com/apernet/quic-go"
 	"github.com/kaitu-io/k2/wire"
 	"github.com/pion/ice/v4"
+	"github.com/pion/stun/v3"
+	"go.uber.org/goleak"
 )
 
 // TestICE_QUICOverLoopback is the critical PoC: two ICE agents on loopback,
@@ -164,4 +166,44 @@ func TestICE_QUICOverLoopback(t *testing.T) {
 	}
 
 	qConn.CloseWithError(0, "test done")
+}
+
+func TestNewICEAgent_NoGoroutineLeak(t *testing.T) {
+	defer goleak.VerifyNone(t,
+		goleak.IgnoreTopFunction("internal/poll.runtime_pollWait"),
+	)
+
+	agent, err := NewICEAgent(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent.Close()
+}
+
+func TestDefaultSTUNURLs(t *testing.T) {
+	urls := DefaultSTUNURLs()
+	if len(urls) == 0 {
+		t.Fatal("expected at least one STUN URL")
+	}
+	for _, u := range urls {
+		if u.Scheme != stun.SchemeTypeSTUN {
+			t.Errorf("expected STUN scheme, got %v", u.Scheme)
+		}
+	}
+}
+
+func TestNewICEAgent_WithTURN(t *testing.T) {
+	defer goleak.VerifyNone(t,
+		goleak.IgnoreTopFunction("internal/poll.runtime_pollWait"),
+	)
+
+	agent, err := NewICEAgent(Config{
+		TURNURLs:     []string{"turn:turn.example.com:3478"},
+		TURNUsername: "user",
+		TURNPassword: "pass",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent.Close()
 }
