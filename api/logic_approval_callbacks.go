@@ -154,6 +154,40 @@ func executeApprovalCampaignIssueKeys(ctx context.Context, params json.RawMessag
 	return nil
 }
 
+// ===================== License Key Batch =====================
+
+func executeApprovalLicenseKeyBatchCreate(ctx context.Context, params json.RawMessage) error {
+	var p struct {
+		CreateLicenseKeyBatchRequest
+		AdminUserID uint64 `json:"adminUserId"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return fmt.Errorf("unmarshal params: %w", err)
+	}
+
+	_, err := CreateLicenseKeyBatch(ctx, &p.CreateLicenseKeyBatchRequest, p.AdminUserID)
+	return err
+}
+
+func executeApprovalLicenseKeyBatchDelete(ctx context.Context, params json.RawMessage) error {
+	var p struct {
+		BatchID uint64 `json:"batchId"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return fmt.Errorf("unmarshal params: %w", err)
+	}
+
+	if err := db.Get().Where("batch_id = ? AND is_used = false", p.BatchID).Delete(&LicenseKey{}).Error; err != nil {
+		return fmt.Errorf("delete unused keys: %w", err)
+	}
+
+	if err := db.Get().Delete(&LicenseKeyBatch{}, p.BatchID).Error; err != nil {
+		return fmt.Errorf("delete batch: %w", err)
+	}
+
+	return nil
+}
+
 // ===================== User Hard Delete =====================
 
 func executeApprovalUserHardDelete(ctx context.Context, params json.RawMessage) error {

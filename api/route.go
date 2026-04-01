@@ -435,6 +435,16 @@ func SetupRouter() *gin.Engine {
 		opsAdmin.GET("/campaigns/code/:code/funnel",        RoleRequired(RoleMarketing), api_admin_get_campaign_funnel)
 		opsAdmin.POST("/campaigns/:id/issue-keys",          RoleRequired(RoleMarketing), api_admin_issue_license_keys)
 
+		// 授权码批次管理
+		opsAdmin.GET("/license-key-batches/stats",           RoleRequired(RoleMarketing), api_admin_license_key_batch_stats)
+		opsAdmin.GET("/license-key-batches/stats/by-source", RoleRequired(RoleMarketing), api_admin_license_key_batch_stats_by_source)
+		opsAdmin.GET("/license-key-batches/stats/trend",     RoleRequired(RoleMarketing), api_admin_license_key_batch_stats_trend)
+		opsAdmin.POST("/license-key-batches",                RoleRequired(RoleMarketing), api_admin_create_license_key_batch)
+		opsAdmin.GET("/license-key-batches",                 RoleRequired(RoleMarketing), api_admin_list_license_key_batches)
+		opsAdmin.GET("/license-key-batches/:id",             RoleRequired(RoleMarketing), api_admin_get_license_key_batch)
+		opsAdmin.GET("/license-key-batches/:id/keys",        RoleRequired(RoleMarketing), api_admin_list_license_key_batch_keys)
+		opsAdmin.DELETE("/license-key-batches/:id",          RoleRequired(RoleMarketing), api_admin_delete_license_key_batch)
+
 		// LicenseKey 管理（审批流程已覆盖，RoleMarketing 可操作）
 		opsAdmin.GET("/license-keys/stats",                 RoleRequired(RoleMarketing), api_admin_license_key_stats)
 		opsAdmin.GET("/license-keys",                       RoleRequired(RoleMarketing), api_admin_list_license_keys)
