@@ -16,6 +16,7 @@ type AnnouncementRequest struct {
 	LinkURL   string `json:"linkUrl"`
 	LinkText  string `json:"linkText"`
 	OpenMode  string `json:"openMode"`  // external | webview，默认 external
+	AuthMode  string `json:"authMode"`  // none | ott，默认 none
 	ExpiresAt int64  `json:"expiresAt"` // Unix秒，0=不过期
 	IsActive  *bool  `json:"isActive"`
 }
@@ -29,6 +30,7 @@ type AnnouncementResponse struct {
 	LinkURL   string `json:"linkUrl"`
 	LinkText  string `json:"linkText"`
 	OpenMode  string `json:"openMode"`
+	AuthMode  string `json:"authMode"`
 	ExpiresAt int64  `json:"expiresAt"`
 	IsActive  bool   `json:"isActive"`
 }
@@ -42,6 +44,7 @@ func convertAnnouncementToResponse(a Announcement) AnnouncementResponse {
 		LinkURL:   a.LinkURL,
 		LinkText:  a.LinkText,
 		OpenMode:  a.OpenMode,
+		AuthMode:  a.AuthMode,
 		ExpiresAt: a.ExpiresAt,
 		IsActive:  a.IsActive != nil && *a.IsActive,
 	}
@@ -101,6 +104,15 @@ func api_admin_create_announcement(c *gin.Context) {
 		return
 	}
 
+	authMode := req.AuthMode
+	if authMode == "" {
+		authMode = "none"
+	}
+	if authMode != "none" && authMode != "ott" {
+		Error(c, ErrorInvalidArgument, "authMode must be 'none' or 'ott'")
+		return
+	}
+
 	isActive := req.IsActive != nil && *req.IsActive
 
 	tx := db.Get().Begin()
@@ -120,6 +132,7 @@ func api_admin_create_announcement(c *gin.Context) {
 		LinkURL:   req.LinkURL,
 		LinkText:  req.LinkText,
 		OpenMode:  openMode,
+		AuthMode:  authMode,
 		ExpiresAt: req.ExpiresAt,
 		IsActive:  BoolPtr(isActive),
 	}
@@ -176,6 +189,15 @@ func api_admin_update_announcement(c *gin.Context) {
 		return
 	}
 
+	authMode := req.AuthMode
+	if authMode == "" {
+		authMode = "none"
+	}
+	if authMode != "none" && authMode != "ott" {
+		Error(c, ErrorInvalidArgument, "authMode must be 'none' or 'ott'")
+		return
+	}
+
 	// Note: IsActive is intentionally NOT handled here — activation/deactivation
 	// requires mutual-exclusion logic (deactivate all others first), which lives
 	// in the dedicated /activate and /deactivate endpoints.
@@ -184,6 +206,7 @@ func api_admin_update_announcement(c *gin.Context) {
 		"link_url":   req.LinkURL,
 		"link_text":  req.LinkText,
 		"open_mode":  openMode,
+		"auth_mode":  authMode,
 		"expires_at": req.ExpiresAt,
 	}
 
@@ -317,6 +340,7 @@ func getActiveAnnouncement() *DataAnnouncement {
 		LinkURL:   announcement.LinkURL,
 		LinkText:  announcement.LinkText,
 		OpenMode:  announcement.OpenMode,
+		AuthMode:  announcement.AuthMode,
 		ExpiresAt: announcement.ExpiresAt,
 	}
 }

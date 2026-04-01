@@ -27,6 +27,7 @@ type DataAnnouncement struct {
 	LinkURL   string `json:"linkUrl,omitempty" example:"https://kaitu.io/news/maintenance"` // 可选：点击跳转链接
 	LinkText  string `json:"linkText,omitempty" example:"查看详情"`                             // 可选：链接文字
 	OpenMode  string `json:"openMode,omitempty" example:"external"`                         // 可选：external（默认）或 webview
+	AuthMode  string `json:"authMode,omitempty" example:"none"`                             // 可选：none（默认）或 ott（自动登录）
 	ExpiresAt int64  `json:"expiresAt,omitempty" example:"1704067200"`                      // 可选：公告过期时间戳（Unix秒），为0表示不过期
 }
 
