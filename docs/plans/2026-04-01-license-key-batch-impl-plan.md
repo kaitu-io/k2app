@@ -4,23 +4,25 @@
 
 **Goal:** Decouple license key batch operations from campaigns — introduce `LicenseKeyBatch` as standalone module, clean campaign model, add conversion tracking stats.
 
-**Architecture:** New `license_key_batches` table + GORM model. New admin API handlers in `api_admin_license_key_batch.go`. Modify existing `LicenseKey` model to use `batch_id` instead of `campaign_id`. Clean campaign of shareable fields. Update MCP tools and web admin pages.
+**Architecture:** New `license_key_batches` table + GORM model. New admin API handlers in `api_admin_license_key_batch.go`. Redefine `LicenseKey` model with `batch_id` (existing 6 test rows will be deleted). Clean campaign of shareable fields. Update MCP tools and web admin pages.
 
 **Tech Stack:** Go (Gin, GORM), TypeScript (Next.js, shadcn/ui), MCP tools (Node.js, zod)
 
 **Spec:** `docs/plans/2026-04-01-license-key-batch-decoupling.md`
 
+**Simplification:** The `license_keys` table has only 6 test rows with no campaign associations. We DELETE them and redefine the model cleanly — no data migration needed.
+
 ---
 
-### Task 1: Add LicenseKeyBatch Model + Migration
+### Task 1: Model + Migration
 
 **Files:**
-- Modify: `api/model.go` (add `LicenseKeyBatch` struct, modify `LicenseKey` struct, modify `Campaign` struct)
-- Modify: `api/migrate.go` (add `&LicenseKeyBatch{}`)
+- Modify: `api/model.go` — add `LicenseKeyBatch`, redefine `LicenseKey`, clean `Campaign`
+- Modify: `api/migrate.go` — add `LicenseKeyBatch`, add post-migrate cleanup
 
 - [ ] **Step 1: Add LicenseKeyBatch model to `api/model.go`**
 
-Insert before the existing `LicenseKey` struct (around line 1084):
+Insert before the existing `LicenseKey` struct (line 1084):
 
 ```go
 // LicenseKeyBatch 授权码批次（独立于活动码的分发单位）
@@ -32,7 +34,7 @@ type LicenseKeyBatch struct {
 
 	Name             string `gorm:"type:varchar(255);not null" json:"name"`
 	SourceTag        string `gorm:"type:varchar(100);not null;default:'';index" json:"sourceTag"`
-	RecipientMatcher string `gorm:"type:varchar(50);not null;default:'all'" json:"recipientMatcher"` // "all" or "never_paid"
+	RecipientMatcher string `gorm:"type:varchar(50);not null;default:'all'" json:"recipientMatcher"`
 	PlanDays         int    `gorm:"not null" json:"planDays"`
 	Quantity         int    `gorm:"not null" json:"quantity"`
 	ExpiresAt        int64  `gorm:"not null" json:"expiresAt"`
@@ -43,9 +45,9 @@ type LicenseKeyBatch struct {
 func (LicenseKeyBatch) TableName() string { return "license_key_batches" }
 ```
 
-- [ ] **Step 2: Modify LicenseKey model — add BatchID, Batch relation; keep old fields for migration**
+- [ ] **Step 2: Redefine LicenseKey model — add BatchID + Batch, keep old fields for GORM migration compatibility**
 
-In `api/model.go`, add `BatchID` and `Batch` to the existing `LicenseKey` struct. Keep old fields (they'll be removed after data migration in Task 7):
+Replace the existing `LicenseKey` struct with:
 
 ```go
 // LicenseKey 一次性授权码
@@ -58,28 +60,38 @@ type LicenseKey struct {
 	UUID string `gorm:"type:varchar(50);uniqueIndex;not null" json:"uuid"`
 	Code string `gorm:"type:varchar(8);uniqueIndex;not null" json:"code"`
 
-	// New: batch association
 	BatchID uint64           `gorm:"not null;default:0;index" json:"batchId"`
 	Batch   *LicenseKeyBatch `gorm:"foreignKey:BatchID" json:"-"`
-
-	// Legacy fields — kept until migration completes (Task 7)
-	Source           string  `gorm:"type:varchar(16);not null;default:'campaign'" json:"source"`
-	Note             string  `gorm:"type:varchar(255)" json:"note"`
-	RecipientMatcher string  `gorm:"type:varchar(50);not null" json:"recipientMatcher"`
-	CampaignID       *uint64 `gorm:"index" json:"campaignId"`
-	CreatedByUserID  *uint64 `gorm:"index" json:"createdByUserId"`
 
 	PlanDays     int        `gorm:"not null;default:30" json:"planDays"`
 	ExpiresAt    int64      `gorm:"not null" json:"expiresAt"`
 	IsUsed       bool       `gorm:"default:false" json:"isUsed"`
 	UsedByUserID *uint64    `gorm:"index" json:"usedByUserId"`
 	UsedAt       *time.Time `json:"usedAt"`
+
+	// Legacy fields — GORM AutoMigrate won't drop these. They'll be ignored by new code.
+	// DROP COLUMN manually after deploy is verified.
+	Source           string  `gorm:"type:varchar(16);not null;default:'batch'" json:"-"`
+	Note             string  `gorm:"type:varchar(255)" json:"-"`
+	RecipientMatcher string  `gorm:"type:varchar(50);not null;default:'all'" json:"-"`
+	CampaignID       *uint64 `gorm:"index" json:"-"`
+	CreatedByUserID  *uint64 `gorm:"index" json:"-"`
 }
 ```
 
-- [ ] **Step 3: Add LicenseKeyBatch to AutoMigrate**
+Note: Legacy fields have `json:"-"` to hide from API responses. They remain in DB until manual DROP.
 
-In `api/migrate.go`, add `&LicenseKeyBatch{}` before `&LicenseKey{}` in the `AutoMigrate` call (around line 30):
+- [ ] **Step 3: Remove `IsShareable` and `SharesPerUser` from Campaign model**
+
+In `api/model.go`, delete from Campaign struct (lines 758-759):
+```go
+	IsShareable   bool   `gorm:"default:false" json:"isShareable"`
+	SharesPerUser int64  `gorm:"default:0" json:"sharesPerUser"`
+```
+
+- [ ] **Step 4: Add LicenseKeyBatch to AutoMigrate + cleanup old data**
+
+In `api/migrate.go`, add `&LicenseKeyBatch{}` before `&LicenseKey{}`:
 
 ```go
 		&Campaign{},
@@ -87,26 +99,32 @@ In `api/migrate.go`, add `&LicenseKeyBatch{}` before `&LicenseKey{}` in the `Aut
 		&LicenseKey{},
 ```
 
-- [ ] **Step 4: Run migrate to verify**
+After the `AutoMigrate` call (before the `return`), add cleanup for orphaned test data:
+
+```go
+	// Clean up legacy license keys without a batch (test data from pre-batch era)
+	db.Get().Where("batch_id = 0").Delete(&LicenseKey{})
+```
+
+- [ ] **Step 5: Verify compilation**
 
 Run: `cd api && go build ./...`
-Expected: Compiles without error.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add api/model.go api/migrate.go
-git commit -m "feat: add LicenseKeyBatch model and BatchID on LicenseKey"
+git commit -m "feat: add LicenseKeyBatch model, clean LicenseKey and Campaign"
 ```
 
 ---
 
-### Task 2: Add Request/Response Types
+### Task 2: Request/Response Types
 
 **Files:**
-- Modify: `api/type.go` (add batch types, update license key types)
+- Modify: `api/type.go`
 
-- [ ] **Step 1: Add batch request/response types to `api/type.go`**
+- [ ] **Step 1: Add batch types to `api/type.go`**
 
 Add after the existing LicenseKey types section (around line 1035):
 
@@ -169,9 +187,9 @@ type BatchStatsBySourceResponse struct {
 }
 
 type BatchStatsTrendResponse struct {
-	Date           string  `json:"date"`
-	Redeemed       int64   `json:"redeemed"`
-	ConvertedUsers int64   `json:"convertedUsers"`
+	Date           string `json:"date"`
+	Redeemed       int64  `json:"redeemed"`
+	ConvertedUsers int64  `json:"convertedUsers"`
 }
 
 type LicenseKeyItemResponse struct {
@@ -185,26 +203,51 @@ type LicenseKeyItemResponse struct {
 }
 ```
 
-- [ ] **Step 2: Verify compilation**
+- [ ] **Step 2: Remove old types that are no longer needed**
+
+Delete from `api/type.go`: `IssueKeysRequest`, `IssueKeysResponse`, `CreateLicenseKeysRequest`, `CreateLicenseKeysResponse`, `LicenseKeyBrief` (lines 997-1033).
+
+Simplify `LicenseKeyResponse` — remove `Source`, `Note`, `RecipientMatcher`, `CampaignID`, `CreatedByUserID`, add `BatchID`:
+
+```go
+type LicenseKeyResponse struct {
+	ID           uint64  `json:"id"`
+	UUID         string  `json:"uuid"`
+	Code         string  `json:"code"`
+	BatchID      uint64  `json:"batchId"`
+	PlanDays     int     `json:"planDays"`
+	ExpiresAt    int64   `json:"expiresAt"`
+	IsUsed       bool    `json:"isUsed"`
+	UsedByUserID *uint64 `json:"usedByUserId"`
+	UsedAt       *int64  `json:"usedAt"`
+	CreatedAt    int64   `json:"createdAt"`
+}
+```
+
+Remove `IsShareable` and `SharesPerUser` from `CampaignRequest` and `CampaignResponse`.
+
+- [ ] **Step 3: Verify**
 
 Run: `cd api && go build ./...`
-Expected: Compiles without error.
+Expected: Compilation errors from handlers referencing deleted types — will be fixed in later tasks.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add api/type.go
-git commit -m "feat: add LicenseKeyBatch request/response types"
+git commit -m "feat: add LicenseKeyBatch types, clean old license key and campaign types"
 ```
 
 ---
 
-### Task 3: Batch Business Logic + Key Generation
+### Task 3: Batch Business Logic (No Raw SQL)
 
 **Files:**
 - Create: `api/logic_license_key_batch.go`
 
-- [ ] **Step 1: Create `api/logic_license_key_batch.go` with batch generation logic**
+All stats queries use GORM struct queries + Go-side aggregation to comply with the project's "no raw SQL" convention.
+
+- [ ] **Step 1: Create `api/logic_license_key_batch.go`**
 
 ```go
 package center
@@ -257,13 +300,11 @@ func GenerateLicenseKeysForBatch(ctx context.Context, batch *LicenseKeyBatch) (i
 			return 0, fmt.Errorf("generate code for key %d: %w", i+1, err)
 		}
 		keys = append(keys, LicenseKey{
-			UUID:             xid.New().String(),
-			Code:             code,
-			BatchID:          batch.ID,
-			PlanDays:         batch.PlanDays,
-			RecipientMatcher: batch.RecipientMatcher,
-			ExpiresAt:        batch.ExpiresAt,
-			Source:           "batch",
+			UUID:      xid.New().String(),
+			Code:      code,
+			BatchID:   batch.ID,
+			PlanDays:  batch.PlanDays,
+			ExpiresAt: batch.ExpiresAt,
 		})
 	}
 
@@ -278,6 +319,49 @@ func GenerateLicenseKeysForBatch(ctx context.Context, batch *LicenseKeyBatch) (i
 	return int64(len(keys)), nil
 }
 
+// batchBaseCounts returns redeemed and expired counts for a batch.
+func batchBaseCounts(batchID uint64) (redeemed, expired int64) {
+	now := time.Now().Unix()
+	db.Get().Model(&LicenseKey{}).Where("batch_id = ? AND is_used = true", batchID).Count(&redeemed)
+	db.Get().Model(&LicenseKey{}).Where("batch_id = ? AND is_used = false AND expires_at < ?", batchID, now).Count(&expired)
+	return
+}
+
+// redeemInfo holds the minimum data needed for conversion calculation.
+type redeemInfo struct {
+	UsedByUserID uint64    `gorm:"column:used_by_user_id"`
+	UsedAt       time.Time `gorm:"column:used_at"`
+}
+
+// calcConversion computes converted users and revenue from a set of redeemed keys.
+// Uses two GORM struct queries + Go-side matching (no raw SQL).
+func calcConversion(redeems []redeemInfo) (convertedUsers int64, revenue uint64) {
+	if len(redeems) == 0 {
+		return 0, 0
+	}
+
+	userIDs := make([]uint64, 0, len(redeems))
+	userRedeemTime := make(map[uint64]time.Time, len(redeems))
+	for _, r := range redeems {
+		userIDs = append(userIDs, r.UsedByUserID)
+		userRedeemTime[r.UsedByUserID] = r.UsedAt
+	}
+
+	var orders []Order
+	db.Get().Where("user_id IN ? AND is_paid = true", userIDs).
+		Find(&orders)
+
+	convertedSet := make(map[uint64]bool)
+	for _, o := range orders {
+		redeemTime, ok := userRedeemTime[o.UserID]
+		if ok && o.CreatedAt.After(redeemTime) && !convertedSet[o.UserID] {
+			convertedSet[o.UserID] = true
+			revenue += o.PayAmount
+		}
+	}
+	return int64(len(convertedSet)), revenue
+}
+
 // GetBatchStats computes redemption + conversion stats for a single batch.
 func GetBatchStats(ctx context.Context, batchID uint64) (*BatchStatsResponse, error) {
 	var batch LicenseKeyBatch
@@ -285,29 +369,16 @@ func GetBatchStats(ctx context.Context, batchID uint64) (*BatchStatsResponse, er
 		return nil, err
 	}
 
-	now := time.Now().Unix()
-	var redeemed, expired int64
-	if err := db.Get().Model(&LicenseKey{}).Where("batch_id = ? AND is_used = true", batchID).Count(&redeemed).Error; err != nil {
-		return nil, err
-	}
-	if err := db.Get().Model(&LicenseKey{}).Where("batch_id = ? AND is_used = false AND expires_at < ?", batchID, now).Count(&expired).Error; err != nil {
-		return nil, err
-	}
+	redeemed, expired := batchBaseCounts(batchID)
 
-	// Conversion: users who redeemed a key from this batch and later made a paid order
-	type convResult struct {
-		ConvertedUsers int64  `gorm:"column:converted_users"`
-		Revenue        uint64 `gorm:"column:revenue"`
-	}
-	var conv convResult
-	db.Get().Raw(`
-		SELECT
-			COUNT(DISTINCT o.user_id) AS converted_users,
-			COALESCE(SUM(o.pay_amount), 0) AS revenue
-		FROM license_keys k
-		JOIN orders o ON o.user_id = k.used_by_user_id AND o.is_paid = true AND o.created_at > k.used_at
-		WHERE k.batch_id = ? AND k.is_used = true AND k.deleted_at IS NULL
-	`, batchID).Scan(&conv)
+	// Get redeemed keys for conversion calculation
+	var redeems []redeemInfo
+	db.Get().Model(&LicenseKey{}).
+		Select("used_by_user_id, used_at").
+		Where("batch_id = ? AND is_used = true AND used_by_user_id IS NOT NULL", batchID).
+		Scan(&redeems)
+
+	convertedUsers, totalRevenue := calcConversion(redeems)
 
 	total := int64(batch.Quantity)
 	redeemRate := float64(0)
@@ -316,7 +387,7 @@ func GetBatchStats(ctx context.Context, batchID uint64) (*BatchStatsResponse, er
 	}
 	conversionRate := float64(0)
 	if redeemed > 0 {
-		conversionRate = float64(conv.ConvertedUsers) / float64(redeemed)
+		conversionRate = float64(convertedUsers) / float64(redeemed)
 	}
 
 	return &BatchStatsResponse{
@@ -327,13 +398,13 @@ func GetBatchStats(ctx context.Context, batchID uint64) (*BatchStatsResponse, er
 		Redeemed:       redeemed,
 		Expired:        expired,
 		RedeemRate:     redeemRate,
-		ConvertedUsers: conv.ConvertedUsers,
+		ConvertedUsers: convertedUsers,
 		ConversionRate: conversionRate,
-		Revenue:        conv.Revenue,
+		Revenue:        totalRevenue,
 	}, nil
 }
 
-// GetAllBatchStats computes stats for all batches.
+// GetAllBatchStats computes stats for all non-deleted batches.
 func GetAllBatchStats(ctx context.Context) ([]BatchStatsResponse, error) {
 	var batches []LicenseKeyBatch
 	if err := db.Get().Order("created_at DESC").Find(&batches).Error; err != nil {
@@ -352,92 +423,144 @@ func GetAllBatchStats(ctx context.Context) ([]BatchStatsResponse, error) {
 	return results, nil
 }
 
-// GetBatchStatsBySource aggregates stats by source_tag.
+// GetBatchStatsBySource aggregates stats by source_tag using GORM + Go aggregation.
 func GetBatchStatsBySource(ctx context.Context) ([]BatchStatsBySourceResponse, error) {
-	now := time.Now().Unix()
-	type row struct {
-		SourceTag      string `gorm:"column:source_tag"`
-		TotalKeys      int64  `gorm:"column:total_keys"`
-		Redeemed       int64  `gorm:"column:redeemed"`
-		ConvertedUsers int64  `gorm:"column:converted_users"`
-		Revenue        uint64 `gorm:"column:revenue"`
-	}
-	var rows []row
-	if err := db.Get().Raw(`
-		SELECT
-			b.source_tag,
-			SUM(b.quantity) AS total_keys,
-			SUM(CASE WHEN k.is_used = 1 THEN 1 ELSE 0 END) AS redeemed,
-			COUNT(DISTINCT CASE WHEN o.id IS NOT NULL THEN o.user_id END) AS converted_users,
-			COALESCE(SUM(CASE WHEN o.id IS NOT NULL THEN o.pay_amount ELSE 0 END), 0) AS revenue
-		FROM license_key_batches b
-		LEFT JOIN license_keys k ON k.batch_id = b.id AND k.deleted_at IS NULL
-		LEFT JOIN orders o ON o.user_id = k.used_by_user_id AND o.is_paid = true AND o.created_at > k.used_at
-		WHERE b.deleted_at IS NULL
-		GROUP BY b.source_tag
-		ORDER BY total_keys DESC
-	`).Scan(&rows).Error; err != nil {
+	var batches []LicenseKeyBatch
+	if err := db.Get().Order("source_tag").Find(&batches).Error; err != nil {
 		return nil, err
 	}
 
-	results := make([]BatchStatsBySourceResponse, 0, len(rows))
-	for _, r := range rows {
+	// Group batches by source_tag
+	type sourceGroup struct {
+		totalKeys int64
+		batchIDs  []uint64
+	}
+	groups := make(map[string]*sourceGroup)
+	for _, b := range batches {
+		g, ok := groups[b.SourceTag]
+		if !ok {
+			g = &sourceGroup{}
+			groups[b.SourceTag] = g
+		}
+		g.totalKeys += int64(b.Quantity)
+		g.batchIDs = append(g.batchIDs, b.ID)
+	}
+
+	results := make([]BatchStatsBySourceResponse, 0, len(groups))
+	for tag, g := range groups {
+		var redeemed int64
+		db.Get().Model(&LicenseKey{}).Where("batch_id IN ? AND is_used = true", g.batchIDs).Count(&redeemed)
+
+		var redeems []redeemInfo
+		db.Get().Model(&LicenseKey{}).
+			Select("used_by_user_id, used_at").
+			Where("batch_id IN ? AND is_used = true AND used_by_user_id IS NOT NULL", g.batchIDs).
+			Scan(&redeems)
+
+		convertedUsers, revenue := calcConversion(redeems)
+
 		redeemRate := float64(0)
-		if r.TotalKeys > 0 {
-			redeemRate = float64(r.Redeemed) / float64(r.TotalKeys)
+		if g.totalKeys > 0 {
+			redeemRate = float64(redeemed) / float64(g.totalKeys)
 		}
 		convRate := float64(0)
-		if r.Redeemed > 0 {
-			convRate = float64(r.ConvertedUsers) / float64(r.Redeemed)
+		if redeemed > 0 {
+			convRate = float64(convertedUsers) / float64(redeemed)
 		}
+
 		results = append(results, BatchStatsBySourceResponse{
-			SourceTag:      r.SourceTag,
-			TotalKeys:      r.TotalKeys,
-			Redeemed:       r.Redeemed,
+			SourceTag:      tag,
+			TotalKeys:      g.totalKeys,
+			Redeemed:       redeemed,
 			RedeemRate:     redeemRate,
-			ConvertedUsers: r.ConvertedUsers,
+			ConvertedUsers: convertedUsers,
 			ConversionRate: convRate,
-			Revenue:        r.Revenue,
+			Revenue:        revenue,
 		})
 	}
 	return results, nil
 }
 
-// GetBatchStatsTrend returns daily redemption trend for the last N days.
+// GetBatchStatsTrend returns daily redemption counts for the last N days.
 func GetBatchStatsTrend(ctx context.Context, days int) ([]BatchStatsTrendResponse, error) {
 	if days <= 0 {
 		days = 30
 	}
 	since := time.Now().AddDate(0, 0, -days)
 
-	type row struct {
-		Date           string `gorm:"column:date"`
-		Redeemed       int64  `gorm:"column:redeemed"`
-		ConvertedUsers int64  `gorm:"column:converted_users"`
+	// Get all redeemed keys in the window
+	var redeems []redeemInfo
+	db.Get().Model(&LicenseKey{}).
+		Select("used_by_user_id, used_at").
+		Where("is_used = true AND used_at >= ? AND batch_id > 0", since).
+		Scan(&redeems)
+
+	// Group by date in Go
+	type dayData struct {
+		redeemed int64
+		userIDs  map[uint64]time.Time // userID → usedAt
 	}
-	var rows []row
-	if err := db.Get().Raw(`
-		SELECT
-			DATE(k.used_at) AS date,
-			COUNT(*) AS redeemed,
-			COUNT(DISTINCT CASE WHEN o.id IS NOT NULL THEN o.user_id END) AS converted_users
-		FROM license_keys k
-		LEFT JOIN orders o ON o.user_id = k.used_by_user_id AND o.is_paid = true AND o.created_at > k.used_at
-		WHERE k.is_used = true AND k.used_at >= ? AND k.deleted_at IS NULL AND k.batch_id > 0
-		GROUP BY DATE(k.used_at)
-		ORDER BY date
-	`, since).Scan(&rows).Error; err != nil {
-		return nil, err
+	dayMap := make(map[string]*dayData)
+	for _, r := range redeems {
+		date := r.UsedAt.Format("2006-01-02")
+		d, ok := dayMap[date]
+		if !ok {
+			d = &dayData{userIDs: make(map[uint64]time.Time)}
+			dayMap[date] = d
+		}
+		d.redeemed++
+		d.userIDs[r.UsedByUserID] = r.UsedAt
 	}
 
-	results := make([]BatchStatsTrendResponse, len(rows))
-	for i, r := range rows {
-		results[i] = BatchStatsTrendResponse{
-			Date:           r.Date,
-			Redeemed:       r.Redeemed,
-			ConvertedUsers: r.ConvertedUsers,
+	// For conversion: collect all unique user IDs across all days
+	allUserIDs := make(map[uint64]time.Time)
+	for _, r := range redeems {
+		allUserIDs[r.UsedByUserID] = r.UsedAt
+	}
+
+	userIDSlice := make([]uint64, 0, len(allUserIDs))
+	for uid := range allUserIDs {
+		userIDSlice = append(userIDSlice, uid)
+	}
+
+	// Query paid orders for these users
+	paidUsers := make(map[uint64]bool)
+	if len(userIDSlice) > 0 {
+		var orders []Order
+		db.Get().Where("user_id IN ? AND is_paid = true", userIDSlice).Find(&orders)
+		for _, o := range orders {
+			redeemTime, ok := allUserIDs[o.UserID]
+			if ok && o.CreatedAt.After(redeemTime) {
+				paidUsers[o.UserID] = true
+			}
 		}
 	}
+
+	// Build response sorted by date
+	results := make([]BatchStatsTrendResponse, 0, len(dayMap))
+	for date, d := range dayMap {
+		var converted int64
+		for uid := range d.userIDs {
+			if paidUsers[uid] {
+				converted++
+			}
+		}
+		results = append(results, BatchStatsTrendResponse{
+			Date:           date,
+			Redeemed:       d.redeemed,
+			ConvertedUsers: converted,
+		})
+	}
+
+	// Sort by date ascending
+	for i := 0; i < len(results); i++ {
+		for j := i + 1; j < len(results); j++ {
+			if results[i].Date > results[j].Date {
+				results[i], results[j] = results[j], results[i]
+			}
+		}
+	}
+
 	return results, nil
 }
 ```
@@ -445,24 +568,23 @@ func GetBatchStatsTrend(ctx context.Context, days int) ([]BatchStatsTrendRespons
 - [ ] **Step 2: Verify compilation**
 
 Run: `cd api && go build ./...`
-Expected: Compiles without error.
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add api/logic_license_key_batch.go
-git commit -m "feat: add LicenseKeyBatch business logic with conversion tracking"
+git commit -m "feat: add LicenseKeyBatch business logic with GORM-only conversion tracking"
 ```
 
 ---
 
-### Task 4: Batch Admin API Handlers + Routes
+### Task 4: Admin API Handlers + Routes + Approval
 
 **Files:**
 - Create: `api/api_admin_license_key_batch.go`
-- Modify: `api/route.go` (add batch routes, remove campaign issue-keys route)
-- Modify: `api/worker_integration.go` (register new approval callback)
-- Modify: `api/logic_approval_callbacks.go` (add batch create callback)
+- Modify: `api/route.go`
+- Modify: `api/logic_approval_callbacks.go`
+- Modify: `api/worker_integration.go`
 
 - [ ] **Step 1: Create `api/api_admin_license_key_batch.go`**
 
@@ -472,6 +594,7 @@ package center
 import (
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	db "github.com/wordgate/qtoolkit/db"
@@ -486,8 +609,19 @@ func api_admin_create_license_key_batch(c *gin.Context) {
 		return
 	}
 
+	// Include admin user ID in approval params so the callback can use it
+	type batchCreateParams struct {
+		CreateLicenseKeyBatchRequest
+		AdminUserID uint64 `json:"adminUserId"`
+	}
+	actor := ReqUser(c)
+	params := batchCreateParams{
+		CreateLicenseKeyBatchRequest: req,
+		AdminUserID:                  actor.ID,
+	}
+
 	summary := fmt.Sprintf("创建授权码批次「%s」(%d 个, %d 天, 渠道:%s)", req.Name, req.Quantity, req.PlanDays, req.SourceTag)
-	approvalID, executed, err := SubmitApproval(c, "license_key_batch_create", req, summary)
+	approvalID, executed, err := SubmitApproval(c, "license_key_batch_create", params, summary)
 	if err != nil {
 		log.Errorf(c, "failed to submit approval for license key batch: %v", err)
 		Error(c, ErrorSystemError, "failed to submit approval")
@@ -523,13 +657,9 @@ func api_admin_list_license_key_batches(c *gin.Context) {
 		return
 	}
 
-	now := time.Now().Unix()
-
 	items := make([]LicenseKeyBatchResponse, 0, len(batches))
 	for _, b := range batches {
-		var redeemed, expired int64
-		db.Get().Model(&LicenseKey{}).Where("batch_id = ? AND is_used = true", b.ID).Count(&redeemed)
-		db.Get().Model(&LicenseKey{}).Where("batch_id = ? AND is_used = false AND expires_at < ?", b.ID, now).Count(&expired)
+		redeemed, expired := batchBaseCounts(b.ID)
 		items = append(items, toLicenseKeyBatchResponse(&b, redeemed, expired))
 	}
 
@@ -544,21 +674,18 @@ func api_admin_get_license_key_batch(c *gin.Context) {
 		return
 	}
 
-	var batch LicenseKeyBatch
-	if err := db.Get().First(&batch, id).Error; err != nil {
+	stats, err := GetBatchStats(c.Request.Context(), id)
+	if err != nil {
 		Error(c, ErrorNotFound, "batch not found")
 		return
 	}
 
-	stats, err := GetBatchStats(c.Request.Context(), id)
-	if err != nil {
-		log.Errorf(c, "failed to get batch stats: %v", err)
-		Error(c, ErrorSystemError, "failed to get stats")
-		return
-	}
+	var batch LicenseKeyBatch
+	db.Get().First(&batch, id)
 
+	redeemed, expired := batchBaseCounts(id)
 	resp := LicenseKeyBatchDetailResponse{
-		LicenseKeyBatchResponse: toLicenseKeyBatchResponse(&batch, stats.Redeemed, stats.Expired),
+		LicenseKeyBatchResponse: toLicenseKeyBatchResponse(&batch, redeemed, expired),
 		ConvertedUsers:          stats.ConvertedUsers,
 		ConversionRate:          stats.ConversionRate,
 		Revenue:                 stats.Revenue,
@@ -574,7 +701,6 @@ func api_admin_list_license_key_batch_keys(c *gin.Context) {
 		return
 	}
 
-	// Verify batch exists
 	var batch LicenseKeyBatch
 	if err := db.Get().First(&batch, id).Error; err != nil {
 		Error(c, ErrorNotFound, "batch not found")
@@ -582,15 +708,16 @@ func api_admin_list_license_key_batch_keys(c *gin.Context) {
 	}
 
 	pagination := PaginationFromRequest(c)
+	now := time.Now().Unix()
 	query := db.Get().Model(&LicenseKey{}).Where("batch_id = ?", id)
 
 	switch c.Query("status") {
 	case "used":
 		query = query.Where("is_used = true")
 	case "unused":
-		query = query.Where("is_used = false AND expires_at >= ?", time.Now().Unix())
+		query = query.Where("is_used = false AND expires_at >= ?", now)
 	case "expired":
-		query = query.Where("is_used = false AND expires_at < ?", time.Now().Unix())
+		query = query.Where("is_used = false AND expires_at < ?", now)
 	}
 
 	if err := query.Count(&pagination.Total).Error; err != nil {
@@ -717,20 +844,21 @@ func toLicenseKeyItemResponse(k *LicenseKey) LicenseKeyItemResponse {
 
 - [ ] **Step 2: Add approval callbacks in `api/logic_approval_callbacks.go`**
 
-Add after the existing `executeApprovalCampaignIssueKeys` function (around line 155):
+Add after `executeApprovalCampaignIssueKeys` (around line 155):
 
 ```go
 // ===================== License Key Batch =====================
 
 func executeApprovalLicenseKeyBatchCreate(ctx context.Context, params json.RawMessage) error {
-	var req CreateLicenseKeyBatchRequest
-	if err := json.Unmarshal(params, &req); err != nil {
+	var p struct {
+		CreateLicenseKeyBatchRequest
+		AdminUserID uint64 `json:"adminUserId"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
 		return fmt.Errorf("unmarshal params: %w", err)
 	}
 
-	// Admin user ID from approval record is not passed here — use 0 as system-created.
-	// The approval record itself tracks who initiated.
-	_, err := CreateLicenseKeyBatch(ctx, &req, 0)
+	_, err := CreateLicenseKeyBatch(ctx, &p.CreateLicenseKeyBatchRequest, p.AdminUserID)
 	return err
 }
 
@@ -758,7 +886,7 @@ func executeApprovalLicenseKeyBatchDelete(ctx context.Context, params json.RawMe
 
 - [ ] **Step 3: Register callbacks in `api/worker_integration.go`**
 
-In `InitWorker()`, add after the `campaign_issue_keys` registration (around line 83):
+Add after line 83 (`campaign_issue_keys` registration):
 
 ```go
 	RegisterApprovalCallback("license_key_batch_create", executeApprovalLicenseKeyBatchCreate)
@@ -767,7 +895,7 @@ In `InitWorker()`, add after the `campaign_issue_keys` registration (around line
 
 - [ ] **Step 4: Add routes in `api/route.go`**
 
-In the `opsAdmin` block (around line 438), add the batch routes before the existing license-keys routes:
+Add in the `opsAdmin` block, BEFORE the existing `/license-keys` routes. The `/stats` routes must come before `/:id` to avoid Gin treating "stats" as an `:id` parameter:
 
 ```go
 		// 授权码批次管理
@@ -781,12 +909,9 @@ In the `opsAdmin` block (around line 438), add the batch routes before the exist
 		opsAdmin.DELETE("/license-key-batches/:id",            RoleRequired(RoleMarketing), api_admin_delete_license_key_batch)
 ```
 
-**Important**: The `/stats` routes must come BEFORE `/:id` to avoid Gin treating "stats" as an `:id` parameter.
-
 - [ ] **Step 5: Verify compilation**
 
 Run: `cd api && go build ./...`
-Expected: Compiles without error.
 
 - [ ] **Step 6: Commit**
 
@@ -797,18 +922,17 @@ git commit -m "feat: add license key batch admin API handlers and routes"
 
 ---
 
-### Task 5: Update Redemption Logic — Read RecipientMatcher from Batch
+### Task 5: Update Redemption Logic
 
 **Files:**
-- Modify: `api/logic_license_key.go` (update `MatchLicenseKey`, `RedeemLicenseKey`)
+- Modify: `api/logic_license_key.go`
 
-- [ ] **Step 1: Update `MatchLicenseKey` to support batch-based matching**
+- [ ] **Step 1: Update `MatchLicenseKey` to read from Batch**
 
-In `api/logic_license_key.go`, replace `MatchLicenseKey` (lines 92-101):
+Replace `MatchLicenseKey` (lines 92-101):
 
 ```go
 // MatchLicenseKey checks whether user is eligible to redeem this key.
-// Reads RecipientMatcher from the associated batch if available, otherwise falls back to key's own field.
 func MatchLicenseKey(key *LicenseKey, user *User) bool {
 	matcher := key.RecipientMatcher
 	if key.Batch != nil {
@@ -825,112 +949,61 @@ func MatchLicenseKey(key *LicenseKey, user *User) bool {
 }
 ```
 
-- [ ] **Step 2: Update `RedeemLicenseKey` to preload Batch**
+- [ ] **Step 2: Preload Batch in RedeemLicenseKey**
 
-In `api/logic_license_key.go`, change line 113 from:
-
+Change line 113 from:
 ```go
 		if err := tx.Where("code = ?", code).First(&k).Error; err != nil {
 ```
-
 to:
-
 ```go
 		if err := tx.Preload("Batch").Where("code = ?", code).First(&k).Error; err != nil {
 ```
 
-- [ ] **Step 3: Verify compilation**
+- [ ] **Step 3: Verify + Commit**
 
 Run: `cd api && go build ./...`
-Expected: Compiles without error.
-
-- [ ] **Step 4: Commit**
 
 ```bash
 git add api/logic_license_key.go
-git commit -m "feat: update redemption to read RecipientMatcher from batch"
+git commit -m "feat: redemption reads RecipientMatcher from batch"
 ```
 
 ---
 
-### Task 6: Update Existing License Key Admin Handlers
+### Task 6: Campaign + Old License Key Cleanup
 
 **Files:**
-- Modify: `api/api_admin_license_key.go` (update list filter from campaignId to batchId, remove create/stats handlers)
-- Modify: `api/route.go` (remove old routes)
+- Modify: `api/api_admin_campaigns.go` — delete `api_admin_issue_license_keys`, update `convertCampaignToResponse`
+- Modify: `api/api_admin_license_key.go` — simplify list handler, delete create/stats handlers
+- Delete: `api/worker_license_key.go`
+- Modify: `api/logic_license_key.go` — delete `GenerateLicenseKeysForCampaign`, `CountEligibleUsers`, `queryEligibleUsers`, `CreateManualLicenseKeys`, `licenseKeyTTLDays`
+- Modify: `api/logic_approval_callbacks.go` — delete `executeApprovalCampaignIssueKeys`
+- Modify: `api/worker_integration.go` — remove `campaign_issue_keys` registration
+- Modify: `api/route.go` — remove old routes
 
-- [ ] **Step 1: Update `api_admin_list_license_keys` in `api/api_admin_license_key.go`**
+- [ ] **Step 1: Delete `api_admin_issue_license_keys`** from `api/api_admin_campaigns.go` (lines 13-82 including section comment)
 
-Replace lines 14-59 with:
+- [ ] **Step 2: Remove `IsShareable`/`SharesPerUser` from `convertCampaignToResponse`** (lines 497-498)
 
-```go
-// GET /app/license-keys
-func api_admin_list_license_keys(c *gin.Context) {
-	pagination := PaginationFromRequest(c)
-	batchIDStr := c.Query("batchId")
-	isUsedStr := c.Query("isUsed")
+- [ ] **Step 3: Delete `api/worker_license_key.go`** entirely
 
-	query := db.Get().Model(&LicenseKey{})
-	if batchIDStr != "" {
-		id, err := strconv.ParseUint(batchIDStr, 10, 64)
-		if err == nil {
-			query = query.Where("batch_id = ?", id)
-		}
-	}
-	if isUsedStr == "true" {
-		query = query.Where("is_used = true")
-	} else if isUsedStr == "false" {
-		query = query.Where("is_used = false")
-	}
+- [ ] **Step 4: Delete campaign-coupled functions from `api/logic_license_key.go`**: `licenseKeyTTLDays` (line 18), `CreateManualLicenseKeys` (lines 56-84), `GenerateLicenseKeysForCampaign` (lines 230-279), `CountEligibleUsers` (lines 281-288), `queryEligibleUsers` (lines 290-319)
 
-	if err := query.Count(&pagination.Total).Error; err != nil {
-		log.Errorf(c, "failed to count license keys: %v", err)
-		Error(c, ErrorSystemError, "failed to count license keys")
-		return
-	}
-
-	var keys []LicenseKey
-	if err := query.Order("created_at DESC").
-		Offset(pagination.Offset()).
-		Limit(pagination.PageSize).
-		Find(&keys).Error; err != nil {
-		log.Errorf(c, "failed to query license keys: %v", err)
-		Error(c, ErrorSystemError, "failed to query license keys")
-		return
-	}
-
-	items := make([]LicenseKeyResponse, 0, len(keys))
-	for i := range keys {
-		items = append(items, toLicenseKeyResponse(&keys[i]))
-	}
-	ListWithData(c, items, pagination)
-}
-```
-
-- [ ] **Step 2: Remove `api_admin_license_key_stats` and `api_admin_create_license_keys` functions**
-
-Delete `api_admin_license_key_stats` (lines 62-85) and `api_admin_create_license_keys` (lines 107-131) from `api/api_admin_license_key.go`.
-
-- [ ] **Step 3: Update `toLicenseKeyResponse` to include batchId**
-
-Replace `toLicenseKeyResponse` (lines 133-154):
+- [ ] **Step 5: Simplify `api_admin_list_license_keys`** — change `campaignId` filter to `batchId`, remove `source` filter. Delete `api_admin_license_key_stats` and `api_admin_create_license_keys`. Update `toLicenseKeyResponse`:
 
 ```go
 func toLicenseKeyResponse(k *LicenseKey) LicenseKeyResponse {
 	resp := LicenseKeyResponse{
-		ID:           k.ID,
-		UUID:         k.UUID,
-		Code:         k.Code,
-		Source:       k.Source,
-		Note:         k.Note,
-		PlanDays:     k.PlanDays,
-		RecipientMatcher: k.RecipientMatcher,
-		ExpiresAt:    k.ExpiresAt,
-		CampaignID:   k.CampaignID,
-		BatchID:      k.BatchID,
-		IsUsed:       k.IsUsed,
+		ID:        k.ID,
+		UUID:      k.UUID,
+		Code:      k.Code,
+		BatchID:   k.BatchID,
+		PlanDays:  k.PlanDays,
+		ExpiresAt: k.ExpiresAt,
+		IsUsed:    k.IsUsed,
 		UsedByUserID: k.UsedByUserID,
-		CreatedAt:    k.CreatedAt.Unix(),
+		CreatedAt: k.CreatedAt.Unix(),
 	}
 	if k.UsedAt != nil {
 		usedAt := k.UsedAt.Unix()
@@ -940,130 +1013,18 @@ func toLicenseKeyResponse(k *LicenseKey) LicenseKeyResponse {
 }
 ```
 
-- [ ] **Step 4: Add `BatchID` to `LicenseKeyResponse` in `api/type.go`**
+- [ ] **Step 6: Delete `executeApprovalCampaignIssueKeys`** from `api/logic_approval_callbacks.go` (lines 130-155)
 
-In the `LicenseKeyResponse` struct (around line 980), add:
+- [ ] **Step 7: Remove `campaign_issue_keys` registration** from `api/worker_integration.go` (line 83)
 
-```go
-	BatchID          uint64  `json:"batchId"`
-```
+- [ ] **Step 8: Update routes** in `api/route.go` — remove:
+  - `opsAdmin.POST("/campaigns/:id/issue-keys", ...)`
+  - `opsAdmin.GET("/license-keys/stats", ...)`
+  - `opsAdmin.POST("/license-keys", ...)`
 
-- [ ] **Step 5: Update routes in `api/route.go`**
-
-Remove the old routes (lines 439-441):
-```go
-		// Remove these 3 lines:
-		opsAdmin.GET("/license-keys/stats", ...)
-		opsAdmin.POST("/license-keys", ...)
-```
-
-Keep only:
-```go
-		// LicenseKey 列表 + 删除（批次管理通过 batch 路由）
-		opsAdmin.GET("/license-keys",                       RoleRequired(RoleMarketing), api_admin_list_license_keys)
-		opsAdmin.DELETE("/license-keys/:id",                RoleRequired(RoleMarketing), api_admin_delete_license_key)
-```
-
-- [ ] **Step 6: Verify compilation**
+- [ ] **Step 9: Verify + Commit**
 
 Run: `cd api && go build ./...`
-Expected: Compiles without error.
-
-- [ ] **Step 7: Commit**
-
-```bash
-git add api/api_admin_license_key.go api/type.go api/route.go
-git commit -m "refactor: simplify license key admin — remove create/stats, filter by batchId"
-```
-
----
-
-### Task 7: Campaign Cleanup — Remove Shareable Fields
-
-**Files:**
-- Modify: `api/model.go` (remove `IsShareable`, `SharesPerUser` from Campaign)
-- Modify: `api/type.go` (remove from CampaignRequest, CampaignResponse)
-- Modify: `api/api_admin_campaigns.go` (remove `api_admin_issue_license_keys`, update `convertCampaignToResponse`)
-- Modify: `api/logic_approval_callbacks.go` (remove `executeApprovalCampaignIssueKeys`)
-- Modify: `api/worker_integration.go` (remove callback registration)
-- Delete: `api/worker_license_key.go` (SendLicenseKeyEmails)
-- Modify: `api/logic_license_key.go` (remove `GenerateLicenseKeysForCampaign`, `CountEligibleUsers`, `queryEligibleUsers`)
-- Modify: `api/route.go` (remove issue-keys route)
-
-- [ ] **Step 1: Remove `IsShareable` and `SharesPerUser` from Campaign model**
-
-In `api/model.go`, delete lines 758-759:
-```go
-	IsShareable   bool   `gorm:"default:false" json:"isShareable"`
-	SharesPerUser int64  `gorm:"default:0" json:"sharesPerUser"`
-```
-
-- [ ] **Step 2: Remove from CampaignRequest and CampaignResponse in `api/type.go`**
-
-In `CampaignRequest` (around line 585-586), delete:
-```go
-	IsShareable   bool   `json:"isShareable"`
-	SharesPerUser int64  `json:"sharesPerUser"`
-```
-
-In `CampaignResponse` (around line 606-607), delete:
-```go
-	IsShareable   bool   `json:"isShareable"`
-	SharesPerUser int64  `json:"sharesPerUser"`
-```
-
-- [ ] **Step 3: Remove `IsShareable`/`SharesPerUser` from `convertCampaignToResponse`**
-
-In `api/api_admin_campaigns.go` function `convertCampaignToResponse` (around line 497-498), delete:
-```go
-		IsShareable:   campaign.IsShareable,
-		SharesPerUser: campaign.SharesPerUser,
-```
-
-- [ ] **Step 4: Delete `api_admin_issue_license_keys` handler**
-
-In `api/api_admin_campaigns.go`, delete the entire function (lines 13-82) including its section comment.
-
-- [ ] **Step 5: Remove the issue-keys route**
-
-In `api/route.go`, delete line 436:
-```go
-		opsAdmin.POST("/campaigns/:id/issue-keys",          RoleRequired(RoleMarketing), api_admin_issue_license_keys)
-```
-
-- [ ] **Step 6: Remove `executeApprovalCampaignIssueKeys` callback**
-
-In `api/logic_approval_callbacks.go`, delete the entire `executeApprovalCampaignIssueKeys` function (lines 130-155).
-
-- [ ] **Step 7: Remove callback registration**
-
-In `api/worker_integration.go`, delete line 83:
-```go
-	RegisterApprovalCallback("campaign_issue_keys", executeApprovalCampaignIssueKeys)
-```
-
-- [ ] **Step 8: Delete `api/worker_license_key.go`**
-
-Remove the entire file (contains `SendLicenseKeyEmails` and `sendGiftEmail`).
-
-- [ ] **Step 9: Remove campaign-coupled functions from `api/logic_license_key.go`**
-
-Delete `GenerateLicenseKeysForCampaign` (lines 230-279), `CountEligibleUsers` (lines 281-288), and `queryEligibleUsers` (lines 290-319).
-
-Also delete the now-unused constant `licenseKeyTTLDays` (line 18) and the `CreateManualLicenseKeys` function (lines 56-84) which is replaced by batch creation.
-
-- [ ] **Step 10: Remove unused types from `api/type.go`**
-
-Delete `IssueKeysRequest`, `IssueKeysResponse`, `CreateLicenseKeysRequest`, `CreateLicenseKeysResponse`, `LicenseKeyBrief` (lines 997-1033).
-
-Also remove `LicenseKeyResponse` fields that no longer exist: `CreatedByUserID` (line 990) and `CampaignID` (line 989). Keep `BatchID`.
-
-- [ ] **Step 11: Verify compilation**
-
-Run: `cd api && go build ./...`
-Expected: Compiles without error. Fix any remaining references.
-
-- [ ] **Step 12: Commit**
 
 ```bash
 git add -A api/
@@ -1072,13 +1033,13 @@ git commit -m "refactor: remove campaign-license key coupling, clean shareable f
 
 ---
 
-### Task 8: MCP Tools Update
+### Task 7: MCP Tools
 
 **Files:**
-- Modify: `tools/kaitu-center/src/tools/admin-license-keys.ts` (replace with batch tools)
-- Modify: `tools/kaitu-center/src/tools/admin-campaigns.ts` (remove `issue_campaign_keys`)
+- Modify: `tools/kaitu-center/src/tools/admin-license-keys.ts` — rewrite with batch tools
+- Modify: `tools/kaitu-center/src/tools/admin-campaigns.ts` — remove `issue_campaign_keys`
 
-- [ ] **Step 1: Replace `tools/kaitu-center/src/tools/admin-license-keys.ts`**
+- [ ] **Step 1: Rewrite `tools/kaitu-center/src/tools/admin-license-keys.ts`**
 
 ```typescript
 /**
@@ -1120,15 +1081,15 @@ export const licenseKeyTools: ToolRegistration[] = [
 
   defineApiTool({
     name: 'create_license_key_batch',
-    description: 'Create a license key batch (requires approval). Generates keys immediately upon approval.',
+    description: 'Create a license key batch (requires approval). Generates keys upon approval.',
     group: 'license_keys.write',
     method: 'POST',
     params: {
       name: z.string().describe('Batch name'),
-      source_tag: z.string().optional().describe('Channel tag (e.g. twitter, kol-xxx, winback)'),
-      recipient_matcher: z.enum(['all', 'never_paid']).describe('Who can redeem: all or never_paid'),
+      source_tag: z.string().optional().describe('Channel tag (twitter, kol-xxx, winback)'),
+      recipient_matcher: z.enum(['all', 'never_paid']).describe('Who can redeem'),
       plan_days: z.number().describe('Membership days per key'),
-      quantity: z.number().describe('Number of keys to generate (1-10000)'),
+      quantity: z.number().describe('Number of keys (1-10000)'),
       expires_in_days: z.number().describe('Key expiration in days'),
       note: z.string().optional().describe('Note'),
     },
@@ -1166,10 +1127,10 @@ export const licenseKeyTools: ToolRegistration[] = [
 
   defineApiTool({
     name: 'license_key_batch_stats',
-    description: 'Get license key batch stats (all batches or single batch). Includes conversion rate.',
+    description: 'Get license key batch stats with conversion rate. Omit batch_id for all batches.',
     group: 'license_keys',
     params: {
-      batch_id: z.number().optional().describe('Batch ID (omit for all batches)'),
+      batch_id: z.number().optional().describe('Batch ID (omit for all)'),
     },
     path: (p) => p.batch_id ? `/app/license-key-batches/${p.batch_id}` : '/app/license-key-batches/stats',
   }),
@@ -1194,7 +1155,7 @@ export const licenseKeyTools: ToolRegistration[] = [
 
   defineApiTool({
     name: 'list_license_keys',
-    description: 'List all license keys with pagination (filter by batchId).',
+    description: 'List all license keys (filter by batchId).',
     group: 'license_keys',
     params: {
       page: z.number().optional().describe('Page number'),
@@ -1215,16 +1176,11 @@ export const licenseKeyTools: ToolRegistration[] = [
 ]
 ```
 
-- [ ] **Step 2: Remove `issue_campaign_keys` from `tools/kaitu-center/src/tools/admin-campaigns.ts`**
+- [ ] **Step 2: Remove `issue_campaign_keys`** from `tools/kaitu-center/src/tools/admin-campaigns.ts` (lines 113-123)
 
-Delete the `issue_campaign_keys` tool definition (lines 113-123).
-
-- [ ] **Step 3: Build MCP tools**
+- [ ] **Step 3: Build + Commit**
 
 Run: `cd tools/kaitu-center && npm run build`
-Expected: Builds without error.
-
-- [ ] **Step 4: Commit**
 
 ```bash
 git add tools/kaitu-center/src/tools/admin-license-keys.ts tools/kaitu-center/src/tools/admin-campaigns.ts
@@ -1233,14 +1189,12 @@ git commit -m "feat: update MCP tools — batch-based license key management"
 
 ---
 
-### Task 9: Web Admin — API Types + Batch API Methods
+### Task 8: Web API Types + Methods
 
 **Files:**
-- Modify: `web/src/lib/api.ts` (add batch types/methods, update license key types, remove old methods)
+- Modify: `web/src/lib/api.ts`
 
-- [ ] **Step 1: Update LicenseKey types in `web/src/lib/api.ts`**
-
-Replace the entire `// LicenseKey types` section (lines 2323-2380) with:
+- [ ] **Step 1: Replace LicenseKey types section** (lines 2323-2380) with:
 
 ```typescript
 // ============================================================
@@ -1301,12 +1255,6 @@ export interface BatchStatsBySource {
   revenue: number;
 }
 
-export interface BatchStatsTrend {
-  date: string;
-  redeemed: number;
-  convertedUsers: number;
-}
-
 export interface LicenseKeyItem {
   id: number;
   code: string;
@@ -1317,7 +1265,6 @@ export interface LicenseKeyItem {
   usedAt?: number;
 }
 
-// Keep for public redemption page
 export interface LicenseKeyPublic {
   code: string;
   planDays: number;
@@ -1327,17 +1274,13 @@ export interface LicenseKeyPublic {
   senderName: string;
 }
 
-// Keep simplified for admin list
 export interface LicenseKeyAdmin {
   id: number;
   uuid: string;
   code: string;
-  source: string;
-  note: string;
-  planDays: number;
-  recipientMatcher: string;
-  expiresAt: number;
   batchId: number;
+  planDays: number;
+  expiresAt: number;
   isUsed: boolean;
   usedByUserId?: number;
   usedAt?: number;
@@ -1345,19 +1288,17 @@ export interface LicenseKeyAdmin {
 }
 ```
 
-- [ ] **Step 2: Update API methods**
-
-Replace the license key API methods (around lines 2028-2078) with:
+- [ ] **Step 2: Replace license key API methods** (around lines 2028-2078) with:
 
 ```typescript
   // License Key Batch APIs
   async listLicenseKeyBatches(params: { page?: number; pageSize?: number; sourceTag?: string } = {}): Promise<{ items: LicenseKeyBatch[]; total: number }> {
-    const queryParams = new URLSearchParams();
-    if (params.page) queryParams.set('page', String(params.page));
-    if (params.pageSize) queryParams.set('pageSize', String(params.pageSize));
-    if (params.sourceTag) queryParams.set('sourceTag', params.sourceTag);
-    const query = queryParams.toString();
-    return this.request<{ items: LicenseKeyBatch[]; total: number }>(`/app/license-key-batches${query ? '?' + query : ''}`);
+    const q = new URLSearchParams();
+    if (params.page) q.set('page', String(params.page));
+    if (params.pageSize) q.set('pageSize', String(params.pageSize));
+    if (params.sourceTag) q.set('sourceTag', params.sourceTag);
+    const qs = q.toString();
+    return this.request<{ items: LicenseKeyBatch[]; total: number }>(`/app/license-key-batches${qs ? '?' + qs : ''}`);
   },
 
   async getLicenseKeyBatch(id: number): Promise<LicenseKeyBatchDetail> {
@@ -1365,10 +1306,7 @@ Replace the license key API methods (around lines 2028-2078) with:
   },
 
   async createLicenseKeyBatch(req: CreateLicenseKeyBatchRequest): Promise<void> {
-    return this.request<void>('/app/license-key-batches', {
-      method: 'POST',
-      body: JSON.stringify(req),
-    });
+    return this.request<void>('/app/license-key-batches', { method: 'POST', body: JSON.stringify(req) });
   },
 
   async deleteLicenseKeyBatch(id: number): Promise<void> {
@@ -1376,12 +1314,12 @@ Replace the license key API methods (around lines 2028-2078) with:
   },
 
   async listLicenseKeyBatchKeys(batchId: number, params: { status?: string; page?: number; pageSize?: number } = {}): Promise<{ items: LicenseKeyItem[]; total: number }> {
-    const queryParams = new URLSearchParams();
-    if (params.status) queryParams.set('status', params.status);
-    if (params.page) queryParams.set('page', String(params.page));
-    if (params.pageSize) queryParams.set('pageSize', String(params.pageSize));
-    const query = queryParams.toString();
-    return this.request<{ items: LicenseKeyItem[]; total: number }>(`/app/license-key-batches/${batchId}/keys${query ? '?' + query : ''}`);
+    const q = new URLSearchParams();
+    if (params.status) q.set('status', params.status);
+    if (params.page) q.set('page', String(params.page));
+    if (params.pageSize) q.set('pageSize', String(params.pageSize));
+    const qs = q.toString();
+    return this.request<{ items: LicenseKeyItem[]; total: number }>(`/app/license-key-batches/${batchId}/keys${qs ? '?' + qs : ''}`);
   },
 
   async getLicenseKeyBatchStats(): Promise<BatchStats[]> {
@@ -1392,24 +1330,18 @@ Replace the license key API methods (around lines 2028-2078) with:
     return this.request<BatchStatsBySource[]>('/app/license-key-batches/stats/by-source');
   },
 
-  async getLicenseKeyBatchStatsTrend(days?: number): Promise<BatchStatsTrend[]> {
-    const query = days ? `?days=${days}` : '';
-    return this.request<BatchStatsTrend[]>(`/app/license-key-batches/stats/trend${query}`);
-  },
-
-  // Legacy license key APIs (simplified)
   async getLicenseKey(code: string): Promise<LicenseKeyPublic> {
     return this.request<LicenseKeyPublic>(`/api/license-keys/code/${code}`);
   },
 
   async listAdminLicenseKeys(params: { batchId?: number; isUsed?: boolean; page?: number; pageSize?: number } = {}): Promise<{ items: LicenseKeyAdmin[]; total: number }> {
-    const queryParams = new URLSearchParams();
-    if (params.batchId) queryParams.set('batchId', String(params.batchId));
-    if (params.isUsed !== undefined) queryParams.set('isUsed', String(params.isUsed));
-    if (params.page) queryParams.set('page', String(params.page));
-    if (params.pageSize) queryParams.set('pageSize', String(params.pageSize));
-    const query = queryParams.toString();
-    return this.request<{ items: LicenseKeyAdmin[]; total: number }>(`/app/license-keys${query ? '?' + query : ''}`);
+    const q = new URLSearchParams();
+    if (params.batchId) q.set('batchId', String(params.batchId));
+    if (params.isUsed !== undefined) q.set('isUsed', String(params.isUsed));
+    if (params.page) q.set('page', String(params.page));
+    if (params.pageSize) q.set('pageSize', String(params.pageSize));
+    const qs = q.toString();
+    return this.request<{ items: LicenseKeyAdmin[]; total: number }>(`/app/license-keys${qs ? '?' + qs : ''}`);
   },
 
   async deleteAdminLicenseKey(id: number): Promise<void> {
@@ -1417,22 +1349,13 @@ Replace the license key API methods (around lines 2028-2078) with:
   },
 
   async redeemLicenseKey(code: string): Promise<{ planDays: number; newExpireAt: number; historyId: number }> {
-    return this.request<{ planDays: number; newExpireAt: number; historyId: number }>(`/api/license-keys/code/${code}/redeem`, {
-      method: 'POST',
-    });
+    return this.request<{ planDays: number; newExpireAt: number; historyId: number }>(`/api/license-keys/code/${code}/redeem`, { method: 'POST' });
   },
 ```
 
-- [ ] **Step 3: Remove old types**
+- [ ] **Step 3: Delete old types**: `IssueKeysRequest`, `IssueKeysResponse`, `CreateLicenseKeysRequest`, `CreateLicenseKeysResponse`, `LicenseKeyStatsRow`
 
-Delete `IssueKeysRequest`, `IssueKeysResponse`, `CreateLicenseKeysRequest`, `CreateLicenseKeysResponse`, `LicenseKeyStatsRow` interfaces.
-
-- [ ] **Step 4: Verify build**
-
-Run: `cd web && yarn build`
-Expected: May show errors in pages that reference removed types — those will be fixed in next tasks.
-
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add web/src/lib/api.ts
@@ -1441,40 +1364,19 @@ git commit -m "feat: add license key batch API types and methods"
 
 ---
 
-### Task 10: Web Admin — Campaign Page Cleanup
+### Task 9: Campaign Page Cleanup
 
 **Files:**
-- Modify: `web/src/app/(manager)/manager/campaigns/page.tsx` (remove isShareable/sharesPerUser UI, remove issue-keys section)
+- Modify: `web/src/app/(manager)/manager/campaigns/page.tsx`
 
-- [ ] **Step 1: Remove `isShareable` and `sharesPerUser` from form state defaults**
+- [ ] **Step 1:** Remove `isShareable` and `sharesPerUser` from all form state defaults, reset, and edit populate
+- [ ] **Step 2:** Remove the isShareable Switch + sharesPerUser Input UI block
+- [ ] **Step 3:** Remove the "Issue keys section" in edit dialog
+- [ ] **Step 4:** Remove the isShareable table column
+- [ ] **Step 5:** Remove unused `Key` import from lucide-react if no longer used
+- [ ] **Step 6: Verify + Commit**
 
-In the campaigns page, find all `isShareable` and `sharesPerUser` references and remove them from:
-- Default form state (lines ~105-106)
-- Reset form state (lines ~363-364)
-- Edit form populate (lines ~401-402)
-
-- [ ] **Step 2: Remove the isShareable switch + sharesPerUser input UI**
-
-Delete the entire block from the Switch for isShareable through the conditional sharesPerUser input (lines ~635-660).
-
-- [ ] **Step 3: Remove the issue-keys section in edit dialog**
-
-Delete the entire "Issue keys section" block (lines ~848-900+).
-
-- [ ] **Step 4: Remove the isShareable column from the table**
-
-Remove the column that shows "— / N 个/人" (lines ~189-197).
-
-- [ ] **Step 5: Remove the Key import if unused**
-
-Check if `Key` from lucide-react is still used. If only used for isShareable UI, remove the import.
-
-- [ ] **Step 6: Verify build**
-
-Run: `cd web && yarn build`
-Expected: Compiles without error.
-
-- [ ] **Step 7: Commit**
+Run: `cd web && npx tsc --noEmit`
 
 ```bash
 git add web/src/app/(manager)/manager/campaigns/page.tsx
@@ -1483,167 +1385,490 @@ git commit -m "refactor: remove license key issuance UI from campaigns page"
 
 ---
 
-### Task 11: Web Admin — License Key Batches Page
+### Task 10: License Key Batches Admin Page + Simplify License Keys Page
 
 **Files:**
 - Create: `web/src/app/(manager)/manager/license-key-batches/page.tsx`
-- Modify: `web/src/app/(manager)/manager/license-keys/page.tsx` (simplify)
+- Modify: `web/src/app/(manager)/manager/license-keys/page.tsx`
+- Modify: `web/src/components/manager-sidebar.tsx`
 
-This is a larger UI task. The implementation should follow the existing page patterns in the manager section (shadcn table, dialog for create, stats cards at top).
+- [ ] **Step 1: Create `web/src/app/(manager)/manager/license-key-batches/page.tsx`**
 
-- [ ] **Step 1: Create the batch management page**
+Following the exact pattern of the existing license-keys page (tanstack table, shadcn dialogs, sonner toasts):
 
-Create `web/src/app/(manager)/manager/license-key-batches/page.tsx` following the pattern of the existing campaigns page. Key sections:
-- Stats summary cards at top (total batches, total keys, overall redemption rate, overall conversion rate)
-- Batch list table with columns: Name, Source Tag, Quantity, Redeemed/Total, Conversion Rate, Expires, Created
-- Create dialog with form fields matching `CreateLicenseKeyBatchRequest`
-- Click row → expand/dialog showing batch detail + keys list with status filter
-- Delete button (with confirmation)
+```tsx
+"use client";
 
-The page should use `api.listLicenseKeyBatches()`, `api.createLicenseKeyBatch()`, `api.getLicenseKeyBatch()`, `api.listLicenseKeyBatchKeys()`, `api.deleteLicenseKeyBatch()`, `api.getLicenseKeyBatchStats()`.
+import { useState, useEffect, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import {
+  ColumnDef,
+  flexRender,
+  getCoreRowModel,
+  useReactTable,
+} from "@tanstack/react-table";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  api,
+  LicenseKeyBatch,
+  LicenseKeyBatchDetail,
+  LicenseKeyItem,
+  CreateLicenseKeyBatchRequest,
+  BatchStats,
+} from "@/lib/api";
+import { toast } from "sonner";
+import { Plus, Trash2, Copy, Eye } from "lucide-react";
 
-- [ ] **Step 2: Simplify the existing license-keys page**
+function formatDate(ts: number) {
+  if (!ts) return "-";
+  return new Date(ts * 1000).toLocaleString("zh-CN");
+}
 
-In `web/src/app/(manager)/manager/license-keys/page.tsx`:
-- Remove the stats section (now in batches page)
-- Remove the create dialog (now via batches)
-- Change `campaignId` filter to `batchId` filter
-- Remove `source` filter (no longer relevant)
-- Update imports to use new types from `api.ts`
+function pct(n: number) {
+  return (n * 100).toFixed(1) + "%";
+}
 
-- [ ] **Step 3: Add navigation link**
+export default function LicenseKeyBatchesPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
-Add "授权码批次" to the manager sidebar/nav (find the nav config file and add the route).
+  const [batches, setBatches] = useState<LicenseKeyBatch[]>([]);
+  const [total, setTotal] = useState(0);
+  const [pageCount, setPageCount] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [stats, setStats] = useState<BatchStats[]>([]);
 
-- [ ] **Step 4: Verify build**
+  // Create dialog
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createForm, setCreateForm] = useState<CreateLicenseKeyBatchRequest>({
+    name: "", sourceTag: "", recipientMatcher: "all", planDays: 30, quantity: 100, expiresInDays: 30,
+  });
+  const [isCreating, setIsCreating] = useState(false);
 
-Run: `cd web && yarn build`
-Expected: Compiles without error.
+  // Detail dialog
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detail, setDetail] = useState<LicenseKeyBatchDetail | null>(null);
+  const [detailKeys, setDetailKeys] = useState<LicenseKeyItem[]>([]);
+  const [detailKeysTotal, setDetailKeysTotal] = useState(0);
+  const [detailKeyStatus, setDetailKeyStatus] = useState("all");
+  const [detailKeyPage, setDetailKeyPage] = useState(1);
 
-- [ ] **Step 5: Commit**
+  // Delete dialog
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  const page = parseInt(searchParams.get("page") || "1", 10);
+  const pageSize = parseInt(searchParams.get("pageSize") || "20", 10);
+
+  const columns: ColumnDef<LicenseKeyBatch>[] = [
+    { accessorKey: "name", header: "批次名称" },
+    { accessorKey: "sourceTag", header: "渠道", cell: ({ row }) => row.original.sourceTag || "-" },
+    {
+      accessorKey: "quantity", header: "数量",
+      cell: ({ row }) => {
+        const b = row.original;
+        return <span>{b.redeemedCount}/{b.quantity}</span>;
+      },
+    },
+    { accessorKey: "planDays", header: "天数", cell: ({ row }) => `${row.original.planDays} 天` },
+    {
+      accessorKey: "recipientMatcher", header: "限制",
+      cell: ({ row }) => row.original.recipientMatcher === "never_paid"
+        ? <Badge variant="secondary">未付费用户</Badge>
+        : <Badge variant="default">所有用户</Badge>,
+    },
+    { accessorKey: "expiresAt", header: "过期时间", cell: ({ row }) => formatDate(row.original.expiresAt) },
+    { accessorKey: "createdAt", header: "创建时间", cell: ({ row }) => formatDate(row.original.createdAt) },
+    {
+      id: "actions", header: "操作",
+      cell: ({ row }) => (
+        <div className="flex gap-1">
+          <Button variant="ghost" size="sm" onClick={() => openDetail(row.original.id)}>
+            <Eye className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => { setDeletingId(row.original.id); setDeleteOpen(true); }}>
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+      ),
+    },
+  ];
+
+  const table = useReactTable({ data: batches, columns, pageCount, getCoreRowModel: getCoreRowModel(), manualPagination: true });
+
+  const fetchBatches = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const res = await api.listLicenseKeyBatches({ page, pageSize });
+      setBatches(res.items || []);
+      setTotal(res.total);
+      setPageCount(Math.ceil(res.total / pageSize));
+    } catch { toast.error("获取批次列表失败"); }
+    finally { setIsLoading(false); }
+  }, [page, pageSize]);
+
+  const fetchStats = useCallback(async () => {
+    try { setStats(await api.getLicenseKeyBatchStats()); } catch {}
+  }, []);
+
+  useEffect(() => { fetchBatches(); }, [fetchBatches]);
+  useEffect(() => { fetchStats(); }, [fetchStats]);
+
+  const handleCreate = async () => {
+    setIsCreating(true);
+    try {
+      await api.createLicenseKeyBatch(createForm);
+      setCreateOpen(false);
+      toast.success("批次创建已提交（等待审批）");
+      fetchBatches();
+      fetchStats();
+    } catch { toast.error("创建批次失败"); }
+    finally { setIsCreating(false); }
+  };
+
+  const handleDelete = async () => {
+    if (!deletingId) return;
+    try {
+      await api.deleteLicenseKeyBatch(deletingId);
+      toast.success("删除已提交");
+      setDeleteOpen(false);
+      fetchBatches();
+      fetchStats();
+    } catch { toast.error("删除失败"); }
+  };
+
+  const openDetail = async (id: number) => {
+    try {
+      const d = await api.getLicenseKeyBatch(id);
+      setDetail(d);
+      setDetailKeyPage(1);
+      setDetailKeyStatus("all");
+      const keys = await api.listLicenseKeyBatchKeys(id, { page: 1, pageSize: 50 });
+      setDetailKeys(keys.items || []);
+      setDetailKeysTotal(keys.total);
+      setDetailOpen(true);
+    } catch { toast.error("获取详情失败"); }
+  };
+
+  const fetchDetailKeys = async () => {
+    if (!detail) return;
+    try {
+      const keys = await api.listLicenseKeyBatchKeys(detail.id, { status: detailKeyStatus === "all" ? undefined : detailKeyStatus, page: detailKeyPage, pageSize: 50 });
+      setDetailKeys(keys.items || []);
+      setDetailKeysTotal(keys.total);
+    } catch {}
+  };
+
+  useEffect(() => { if (detailOpen) fetchDetailKeys(); }, [detailKeyStatus, detailKeyPage]);
+
+  // Aggregate stats
+  const totalKeys = stats.reduce((s, r) => s + r.totalKeys, 0);
+  const totalRedeemed = stats.reduce((s, r) => s + r.redeemed, 0);
+  const totalConverted = stats.reduce((s, r) => s + r.convertedUsers, 0);
+  const overallRedeemRate = totalKeys > 0 ? totalRedeemed / totalKeys : 0;
+  const overallConvRate = totalRedeemed > 0 ? totalConverted / totalRedeemed : 0;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">授权码批次</h1>
+          <p className="text-muted-foreground">管理授权码批次、查看转化统计</p>
+        </div>
+        <Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-2" />创建批次</Button>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">总 Keys</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{totalKeys}</div></CardContent></Card>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">已兑换</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{totalRedeemed}</div></CardContent></Card>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">兑换率</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{pct(overallRedeemRate)}</div></CardContent></Card>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">兑换→付费转化</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{pct(overallConvRate)}</div><p className="text-xs text-muted-foreground">{totalConverted} 人</p></CardContent></Card>
+      </div>
+
+      <div className="rounded-md border">
+        <Table>
+          <TableHeader>{table.getHeaderGroups().map(hg => (<TableRow key={hg.id}>{hg.headers.map(h => (<TableHead key={h.id}>{h.isPlaceholder ? null : flexRender(h.column.columnDef.header, h.getContext())}</TableHead>))}</TableRow>))}</TableHeader>
+          <TableBody>
+            {isLoading ? (
+              <TableRow><TableCell colSpan={columns.length} className="h-24 text-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto" /></TableCell></TableRow>
+            ) : table.getRowModel().rows?.length ? (
+              table.getRowModel().rows.map(row => (<TableRow key={row.id}>{row.getVisibleCells().map(cell => (<TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>))}</TableRow>))
+            ) : (
+              <TableRow><TableCell colSpan={columns.length} className="h-24 text-center">无数据</TableCell></TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      <div className="flex items-center justify-end space-x-2 py-4">
+        <span className="text-sm text-muted-foreground">总计: {total}</span>
+        <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => router.push(`/manager/license-key-batches?page=${page - 1}&pageSize=${pageSize}`)}>上一页</Button>
+        <Button variant="outline" size="sm" disabled={page >= pageCount} onClick={() => router.push(`/manager/license-key-batches?page=${page + 1}&pageSize=${pageSize}`)}>下一页</Button>
+      </div>
+
+      {/* Create dialog */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>创建授权码批次</DialogTitle><DialogDescription>创建后需审批，审批通过自动生成授权码</DialogDescription></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div><label className="text-sm font-medium block mb-1">批次名称</label><Input value={createForm.name} onChange={e => setCreateForm(f => ({ ...f, name: e.target.value }))} placeholder="Apr Twitter 投放" /></div>
+            <div><label className="text-sm font-medium block mb-1">渠道标签</label><Input value={createForm.sourceTag} onChange={e => setCreateForm(f => ({ ...f, sourceTag: e.target.value }))} placeholder="twitter / kol-xxx / winback" /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><label className="text-sm font-medium block mb-1">数量 (1-10000)</label><Input type="number" min={1} max={10000} value={createForm.quantity} onChange={e => setCreateForm(f => ({ ...f, quantity: parseInt(e.target.value) || 100 }))} /></div>
+              <div><label className="text-sm font-medium block mb-1">天数</label><Input type="number" min={1} value={createForm.planDays} onChange={e => setCreateForm(f => ({ ...f, planDays: parseInt(e.target.value) || 30 }))} /></div>
+            </div>
+            <div><label className="text-sm font-medium block mb-1">有效期（天）</label><Input type="number" min={1} value={createForm.expiresInDays} onChange={e => setCreateForm(f => ({ ...f, expiresInDays: parseInt(e.target.value) || 30 }))} /></div>
+            <div><label className="text-sm font-medium block mb-1">使用条件</label><select className="w-full p-2 border border-border bg-background text-foreground rounded-md" value={createForm.recipientMatcher} onChange={e => setCreateForm(f => ({ ...f, recipientMatcher: e.target.value }))}><option value="all">所有用户</option><option value="never_paid">未付费用户</option></select></div>
+            <div><label className="text-sm font-medium block mb-1">备注</label><Input value={createForm.note || ""} onChange={e => setCreateForm(f => ({ ...f, note: e.target.value }))} placeholder="可选" /></div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>取消</Button><Button onClick={handleCreate} disabled={isCreating || !createForm.name}>{isCreating ? "提交中..." : "提交审批"}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Detail dialog */}
+      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          {detail && (<>
+            <DialogHeader><DialogTitle>{detail.name}</DialogTitle><DialogDescription>渠道: {detail.sourceTag || "-"} · {detail.quantity} 个 · {detail.planDays} 天</DialogDescription></DialogHeader>
+            <div className="grid grid-cols-3 gap-3 py-2">
+              <Card><CardContent className="pt-4"><div className="text-sm text-muted-foreground">兑换率</div><div className="text-xl font-bold">{pct(detail.redeemedCount / (detail.quantity || 1))}</div><div className="text-xs text-muted-foreground">{detail.redeemedCount}/{detail.quantity}</div></CardContent></Card>
+              <Card><CardContent className="pt-4"><div className="text-sm text-muted-foreground">转化率</div><div className="text-xl font-bold">{pct(detail.conversionRate)}</div><div className="text-xs text-muted-foreground">{detail.convertedUsers} 人付费</div></CardContent></Card>
+              <Card><CardContent className="pt-4"><div className="text-sm text-muted-foreground">收入</div><div className="text-xl font-bold">¥{(detail.revenue / 100).toFixed(2)}</div></CardContent></Card>
+            </div>
+            <div className="flex items-center gap-2 py-2">
+              <select className="p-1 border border-border bg-background text-foreground rounded text-sm" value={detailKeyStatus} onChange={e => { setDetailKeyStatus(e.target.value); setDetailKeyPage(1); }}>
+                <option value="all">全部</option><option value="used">已使用</option><option value="unused">未使用</option><option value="expired">已过期</option>
+              </select>
+              <span className="text-sm text-muted-foreground">共 {detailKeysTotal} 条</span>
+            </div>
+            <div className="rounded-md border max-h-64 overflow-y-auto">
+              <Table>
+                <TableHeader><TableRow><TableHead>授权码</TableHead><TableHead>状态</TableHead><TableHead>过期</TableHead><TableHead>使用者</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {detailKeys.map(k => (
+                    <TableRow key={k.id}>
+                      <TableCell><div className="flex items-center gap-1"><code className="text-xs bg-muted px-1 py-0.5 rounded font-mono">{k.code}</code><Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => { navigator.clipboard.writeText(k.code); toast.success("已复制"); }}><Copy className="h-3 w-3" /></Button></div></TableCell>
+                      <TableCell>{k.isUsed ? <Badge variant="secondary">已使用</Badge> : k.expiresAt < Date.now()/1000 ? <Badge variant="destructive">已过期</Badge> : <Badge>未使用</Badge>}</TableCell>
+                      <TableCell className="text-xs">{formatDate(k.expiresAt)}</TableCell>
+                      <TableCell className="text-xs">{k.usedByUserId || "-"}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            {detailKeysTotal > 50 && (
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" size="sm" disabled={detailKeyPage <= 1} onClick={() => setDetailKeyPage(p => p - 1)}>上一页</Button>
+                <Button variant="outline" size="sm" disabled={detailKeyPage * 50 >= detailKeysTotal} onClick={() => setDetailKeyPage(p => p + 1)}>下一页</Button>
+              </div>
+            )}
+          </>)}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete dialog */}
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>确认删除</DialogTitle><DialogDescription>将删除批次及其未使用的授权码。已使用的授权码保留。</DialogDescription></DialogHeader>
+          <DialogFooter><Button variant="outline" onClick={() => setDeleteOpen(false)}>取消</Button><Button variant="destructive" onClick={handleDelete}>删除</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 2: Simplify `web/src/app/(manager)/manager/license-keys/page.tsx`**
+
+Replace the entire file. The simplified page only has: list with batchId filter + isUsed filter, delete, no create, no stats:
+
+```tsx
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import {
+  ColumnDef, flexRender, getCoreRowModel, useReactTable,
+} from "@tanstack/react-table";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import { api, LicenseKeyAdmin } from "@/lib/api";
+import { toast } from "sonner";
+import { Trash2, Copy } from "lucide-react";
+
+function formatDate(ts: number) {
+  if (!ts) return "-";
+  return new Date(ts * 1000).toLocaleString("zh-CN");
+}
+
+function getStatus(key: LicenseKeyAdmin): { label: string; variant: "default" | "secondary" | "destructive" } {
+  if (key.isUsed) return { label: "已使用", variant: "secondary" };
+  if (key.expiresAt < Date.now() / 1000) return { label: "已过期", variant: "destructive" };
+  return { label: "未使用", variant: "default" };
+}
+
+export default function LicenseKeysPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [data, setData] = useState<LicenseKeyAdmin[]>([]);
+  const [total, setTotal] = useState(0);
+  const [pageCount, setPageCount] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  const page = parseInt(searchParams.get("page") || "1", 10);
+  const pageSize = parseInt(searchParams.get("pageSize") || "50", 10);
+  const batchIdParam = searchParams.get("batchId") || "";
+  const isUsedParam = searchParams.get("isUsed") || "";
+
+  const [localBatchId, setLocalBatchId] = useState(batchIdParam);
+  const [localIsUsed, setLocalIsUsed] = useState(isUsedParam);
+
+  const columns: ColumnDef<LicenseKeyAdmin>[] = [
+    {
+      accessorKey: "code", header: "授权码",
+      cell: ({ row }) => (
+        <div className="flex items-center gap-1">
+          <code className="text-xs bg-muted px-1 py-0.5 rounded font-mono">{row.original.code}</code>
+          <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => { navigator.clipboard.writeText(row.original.code); toast.success("已复制"); }}><Copy className="h-3 w-3" /></Button>
+        </div>
+      ),
+    },
+    { accessorKey: "batchId", header: "批次ID", cell: ({ row }) => <code className="text-xs bg-muted px-1 py-0.5 rounded">{row.original.batchId}</code> },
+    { accessorKey: "planDays", header: "天数", cell: ({ row }) => `${row.original.planDays} 天` },
+    { header: "状态", cell: ({ row }) => { const s = getStatus(row.original); return <Badge variant={s.variant}>{s.label}</Badge>; } },
+    { accessorKey: "expiresAt", header: "过期时间", cell: ({ row }) => formatDate(row.original.expiresAt) },
+    { accessorKey: "createdAt", header: "创建时间", cell: ({ row }) => formatDate(row.original.createdAt) },
+    {
+      id: "actions", header: "操作",
+      cell: ({ row }) => (<Button variant="ghost" size="sm" onClick={() => { setDeletingId(row.original.id); setDeleteOpen(true); }}><Trash2 className="h-4 w-4" /></Button>),
+    },
+  ];
+
+  const table = useReactTable({ data, columns, pageCount, getCoreRowModel: getCoreRowModel(), manualPagination: true });
+
+  const fetchData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const params: { page: number; pageSize: number; batchId?: number; isUsed?: boolean } = { page, pageSize };
+      if (batchIdParam) params.batchId = parseInt(batchIdParam, 10);
+      if (isUsedParam !== "") params.isUsed = isUsedParam === "true";
+      const res = await api.listAdminLicenseKeys(params);
+      setData(res.items || []);
+      setTotal(res.total);
+      setPageCount(Math.ceil(res.total / pageSize));
+    } catch { toast.error("获取授权码列表失败"); }
+    finally { setIsLoading(false); }
+  }, [page, pageSize, batchIdParam, isUsedParam]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const handleFilter = () => {
+    const p = new URLSearchParams();
+    p.set("page", "1"); p.set("pageSize", pageSize.toString());
+    if (localBatchId.trim()) p.set("batchId", localBatchId.trim());
+    if (localIsUsed && localIsUsed !== "all") p.set("isUsed", localIsUsed);
+    router.push(`/manager/license-keys?${p.toString()}`);
+  };
+
+  const handleDelete = async () => {
+    if (!deletingId) return;
+    try { await api.deleteAdminLicenseKey(deletingId); toast.success("已删除"); setDeleteOpen(false); fetchData(); }
+    catch { toast.error("删除失败"); }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div><h1 className="text-3xl font-bold">授权码列表</h1><p className="text-muted-foreground">查看所有授权码。批次管理请到「授权码批次」页面。</p></div>
+
+      <div className="flex items-end gap-4 p-4 bg-muted/50 rounded-lg">
+        <div className="flex-1"><label className="text-sm font-medium">批次ID</label><Input placeholder="输入批次ID" value={localBatchId} onChange={e => setLocalBatchId(e.target.value)} /></div>
+        <div className="flex-1"><label className="text-sm font-medium">状态</label><select className="w-full p-2 border border-border bg-muted text-foreground rounded-md" value={localIsUsed} onChange={e => setLocalIsUsed(e.target.value)}><option value="">全部</option><option value="true">已使用</option><option value="false">未使用</option></select></div>
+        <div className="flex gap-2"><Button onClick={handleFilter}>筛选</Button><Button variant="outline" onClick={() => { setLocalBatchId(""); setLocalIsUsed(""); router.push("/manager/license-keys"); }}>重置</Button></div>
+      </div>
+
+      <div className="rounded-md border">
+        <Table>
+          <TableHeader>{table.getHeaderGroups().map(hg => (<TableRow key={hg.id}>{hg.headers.map(h => (<TableHead key={h.id}>{h.isPlaceholder ? null : flexRender(h.column.columnDef.header, h.getContext())}</TableHead>))}</TableRow>))}</TableHeader>
+          <TableBody>
+            {isLoading ? (<TableRow><TableCell colSpan={columns.length} className="h-24 text-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto" /></TableCell></TableRow>)
+            : table.getRowModel().rows?.length ? table.getRowModel().rows.map(row => (<TableRow key={row.id}>{row.getVisibleCells().map(cell => (<TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>))}</TableRow>))
+            : (<TableRow><TableCell colSpan={columns.length} className="h-24 text-center">无数据</TableCell></TableRow>)}
+          </TableBody>
+        </Table>
+      </div>
+
+      <div className="flex items-center justify-end space-x-2 py-4">
+        <span className="text-sm text-muted-foreground">总计: {total}</span>
+        <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => { const p = new URLSearchParams(searchParams.toString()); p.set("page", String(page - 1)); router.push(`/manager/license-keys?${p}`); }}>上一页</Button>
+        <Button variant="outline" size="sm" disabled={page >= pageCount} onClick={() => { const p = new URLSearchParams(searchParams.toString()); p.set("page", String(page + 1)); router.push(`/manager/license-keys?${p}`); }}>下一页</Button>
+      </div>
+
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent><DialogHeader><DialogTitle>确认删除</DialogTitle><DialogDescription>确定要删除这个授权码吗？</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" onClick={() => setDeleteOpen(false)}>取消</Button><Button variant="destructive" onClick={handleDelete}>删除</Button></DialogFooter></DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 3: Add nav entry in `web/src/components/manager-sidebar.tsx`**
+
+Find the "运营配置" section (around line 42) and add the batch page:
+
+```tsx
+      { href: "/manager/license-key-batches", icon: Package, label: "授权码批次" },
+```
+
+Add after the "授权码" entry. Import `Package` from lucide-react if not already imported.
+
+- [ ] **Step 4: Verify + Commit**
+
+Run: `cd web && npx tsc --noEmit`
 
 ```bash
-git add web/src/app/(manager)/manager/license-key-batches/ web/src/app/(manager)/manager/license-keys/page.tsx
-git commit -m "feat: add license key batches admin page, simplify license keys page"
+git add web/src/app/(manager)/manager/license-key-batches/ web/src/app/(manager)/manager/license-keys/page.tsx web/src/components/manager-sidebar.tsx
+git commit -m "feat: add license key batches page, simplify license keys page"
 ```
 
 ---
 
-### Task 12: Data Migration Script
+### Task 11: Verification
 
-**Files:**
-- Create: `scripts/migrate-license-keys-to-batches.sql`
+- [ ] **Step 1: Run Go build**
 
-- [ ] **Step 1: Write migration SQL**
+Run: `cd api && go build ./...`
 
-```sql
--- License Key Batch Decoupling Migration
--- Run AFTER the new code is deployed (GORM AutoMigrate creates the new table/columns)
-
--- 1. Create batch records for existing campaign-sourced keys
-INSERT INTO license_key_batches (name, source_tag, recipient_matcher, plan_days, quantity, expires_at, note, created_by_user_id, created_at, updated_at)
-SELECT
-    CONCAT('Legacy Campaign #', k.campaign_id),
-    'campaign-legacy',
-    'never_paid',
-    30,
-    COUNT(*),
-    MAX(k.expires_at),
-    CONCAT('Auto-migrated from campaign_id=', k.campaign_id),
-    0,
-    MIN(k.created_at),
-    NOW()
-FROM license_keys k
-WHERE k.campaign_id IS NOT NULL AND k.deleted_at IS NULL
-GROUP BY k.campaign_id;
-
--- 2. Create a batch for manual keys
-INSERT INTO license_key_batches (name, source_tag, recipient_matcher, plan_days, quantity, expires_at, note, created_by_user_id, created_at, updated_at)
-SELECT
-    'Legacy Manual Keys',
-    'manual-legacy',
-    'all',
-    30,
-    COUNT(*),
-    COALESCE(MAX(expires_at), UNIX_TIMESTAMP() + 86400*30),
-    'Auto-migrated manual keys',
-    0,
-    MIN(created_at),
-    NOW()
-FROM license_keys
-WHERE (campaign_id IS NULL OR source = 'manual') AND deleted_at IS NULL
-HAVING COUNT(*) > 0;
-
--- 3. Backfill batch_id for campaign-sourced keys
-UPDATE license_keys k
-JOIN license_key_batches b ON b.name = CONCAT('Legacy Campaign #', k.campaign_id) AND b.source_tag = 'campaign-legacy'
-SET k.batch_id = b.id
-WHERE k.campaign_id IS NOT NULL AND k.batch_id = 0;
-
--- 4. Backfill batch_id for manual keys
-UPDATE license_keys k
-JOIN license_key_batches b ON b.name = 'Legacy Manual Keys' AND b.source_tag = 'manual-legacy'
-SET k.batch_id = b.id
-WHERE k.batch_id = 0 AND k.deleted_at IS NULL;
-
--- 5. Verify: no keys with batch_id = 0
-SELECT COUNT(*) AS orphaned_keys FROM license_keys WHERE batch_id = 0 AND deleted_at IS NULL;
--- Expected: 0
-
--- 6. After verification, drop old columns (run separately after confirming step 5)
--- ALTER TABLE license_keys DROP COLUMN campaign_id;
--- ALTER TABLE license_keys DROP COLUMN source;
--- ALTER TABLE license_keys DROP COLUMN recipient_matcher;
--- ALTER TABLE license_keys DROP COLUMN created_by_user_id;
--- ALTER TABLE campaigns DROP COLUMN is_shareable;
--- ALTER TABLE campaigns DROP COLUMN shares_per_user;
-```
-
-- [ ] **Step 2: Commit**
-
-```bash
-git add scripts/migrate-license-keys-to-batches.sql
-git commit -m "feat: add data migration script for license key batch decoupling"
-```
-
----
-
-### Task 13: Verification
-
-- [ ] **Step 1: Run Go tests**
+- [ ] **Step 2: Run Go tests**
 
 Run: `cd api && go test ./...`
-Expected: All existing tests pass. Fix any failures caused by removed types/functions.
 
-- [ ] **Step 2: Run MCP tools build**
+- [ ] **Step 3: Run MCP build**
 
 Run: `cd tools/kaitu-center && npm run build`
-Expected: Builds without error.
 
-- [ ] **Step 3: Run web build**
+- [ ] **Step 4: Run web build**
 
 Run: `cd web && yarn build`
-Expected: Builds without error.
 
-- [ ] **Step 4: Run full build verification**
-
-Run: `scripts/test_build.sh`
-Expected: All 14 checks pass.
-
-- [ ] **Step 5: Manual smoke test checklist**
-
-Verify these endpoints work against a local dev instance:
-- `POST /app/license-key-batches` — creates batch + keys
-- `GET /app/license-key-batches` — lists batches with counts
-- `GET /app/license-key-batches/:id` — detail with conversion stats
-- `GET /app/license-key-batches/:id/keys` — lists keys with status filter
-- `GET /app/license-key-batches/stats` — all batch stats
-- `GET /app/license-key-batches/stats/by-source` — source aggregation
-- `POST /api/license-keys/code/:code/redeem` — redemption still works
-- `GET /app/campaigns` — no IsShareable/SharesPerUser in response
-- Campaign create/update — no shareable fields accepted
-
-- [ ] **Step 6: Final commit if any fixes needed**
+- [ ] **Step 5: Fix any failures and commit**
 
 ```bash
 git add -A
