@@ -27,7 +27,7 @@
 
 ### 1. OTT 签发与交换（API 层）
 
-#### `POST /api/auth/ott` — 签发（需要 auth）
+#### `POST /api/user/ott` — 签发（需要 auth）
 
 **Request:**
 ```json
@@ -40,7 +40,7 @@
 - `redirect` URL scheme 必须是 `https`，host 必须精确匹配 `kaitu.io` 或以 `.kaitu.io` 结尾（防止 `evil-kaitu.io` 绕过）
 - 用户必须已认证（现有 auth middleware）
 
-**Route registration:** 注册在需要 auth 的路由组中（与 `/api/user/*` 同组），确保 Bearer token 验证。
+**Route registration:** 注册在 `/api/user` 路由组中（需要 `AuthRequired()` middleware）。
 
 **Logic:**
 1. 生成 32 字节随机 token（hex 编码，256 bit entropy）
