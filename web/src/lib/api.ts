@@ -2025,57 +2025,65 @@ export const api = {
     });
   },
 
-  // License Key APIs
+  // License Key Batch APIs
+  async listLicenseKeyBatches(params: { page?: number; pageSize?: number; sourceTag?: string } = {}): Promise<{ items: LicenseKeyBatch[]; total: number }> {
+    const q = new URLSearchParams();
+    if (params.page) q.set('page', String(params.page));
+    if (params.pageSize) q.set('pageSize', String(params.pageSize));
+    if (params.sourceTag) q.set('sourceTag', params.sourceTag);
+    const qs = q.toString();
+    return this.request<{ items: LicenseKeyBatch[]; total: number }>(`/app/license-key-batches${qs ? '?' + qs : ''}`);
+  },
+
+  async getLicenseKeyBatch(id: number): Promise<LicenseKeyBatchDetail> {
+    return this.request<LicenseKeyBatchDetail>(`/app/license-key-batches/${id}`);
+  },
+
+  async createLicenseKeyBatch(req: CreateLicenseKeyBatchRequest): Promise<void> {
+    return this.request<void>('/app/license-key-batches', { method: 'POST', body: JSON.stringify(req) });
+  },
+
+  async deleteLicenseKeyBatch(id: number): Promise<void> {
+    return this.request<void>(`/app/license-key-batches/${id}`, { method: 'DELETE' });
+  },
+
+  async listLicenseKeyBatchKeys(batchId: number, params: { status?: string; page?: number; pageSize?: number } = {}): Promise<{ items: LicenseKeyItem[]; total: number }> {
+    const q = new URLSearchParams();
+    if (params.status) q.set('status', params.status);
+    if (params.page) q.set('page', String(params.page));
+    if (params.pageSize) q.set('pageSize', String(params.pageSize));
+    const qs = q.toString();
+    return this.request<{ items: LicenseKeyItem[]; total: number }>(`/app/license-key-batches/${batchId}/keys${qs ? '?' + qs : ''}`);
+  },
+
+  async getLicenseKeyBatchStats(): Promise<BatchStats[]> {
+    return this.request<BatchStats[]>('/app/license-key-batches/stats');
+  },
+
+  async getLicenseKeyBatchStatsBySource(): Promise<BatchStatsBySource[]> {
+    return this.request<BatchStatsBySource[]>('/app/license-key-batches/stats/by-source');
+  },
+
   async getLicenseKey(code: string): Promise<LicenseKeyPublic> {
     return this.request<LicenseKeyPublic>(`/api/license-keys/code/${code}`);
   },
 
-  async listAdminLicenseKeys(params: {
-    campaignId?: number;
-    isUsed?: boolean;
-    page?: number;
-    pageSize?: number;
-    source?: string;
-  } = {}): Promise<{ items: LicenseKeyAdmin[]; total: number }> {
-    const queryParams = new URLSearchParams();
-    if (params.campaignId !== undefined) queryParams.set('campaignId', params.campaignId.toString());
-    if (params.isUsed !== undefined) queryParams.set('isUsed', params.isUsed.toString());
-    if (params.page !== undefined) queryParams.set('page', params.page.toString());
-    if (params.pageSize !== undefined) queryParams.set('pageSize', params.pageSize.toString());
-    if (params.source !== undefined) queryParams.set('source', params.source);
-    const query = queryParams.toString();
-    return this.request<{ items: LicenseKeyAdmin[]; total: number }>(`/app/license-keys${query ? '?' + query : ''}`);
-  },
-
-  async issueKeys(campaignId: number, req: IssueKeysRequest): Promise<IssueKeysResponse> {
-    return this.request<IssueKeysResponse>(`/app/campaigns/${campaignId}/issue-keys`, {
-      method: 'POST',
-      body: JSON.stringify(req),
-    });
+  async listAdminLicenseKeys(params: { batchId?: number; isUsed?: boolean; page?: number; pageSize?: number } = {}): Promise<{ items: LicenseKeyAdmin[]; total: number }> {
+    const q = new URLSearchParams();
+    if (params.batchId) q.set('batchId', String(params.batchId));
+    if (params.isUsed !== undefined) q.set('isUsed', String(params.isUsed));
+    if (params.page) q.set('page', String(params.page));
+    if (params.pageSize) q.set('pageSize', String(params.pageSize));
+    const qs = q.toString();
+    return this.request<{ items: LicenseKeyAdmin[]; total: number }>(`/app/license-keys${qs ? '?' + qs : ''}`);
   },
 
   async deleteAdminLicenseKey(id: number): Promise<void> {
-    return this.request<void>(`/app/license-keys/${id}`, {
-      method: 'DELETE',
-    });
-  },
-
-  async getLicenseKeyStats(): Promise<LicenseKeyStatsRow[]> {
-    return this.request<LicenseKeyStatsRow[]>('/app/license-keys/stats');
+    return this.request<void>(`/app/license-keys/${id}`, { method: 'DELETE' });
   },
 
   async redeemLicenseKey(code: string): Promise<{ planDays: number; newExpireAt: number; historyId: number }> {
-    return this.request<{ planDays: number; newExpireAt: number; historyId: number }>(`/api/license-keys/code/${code}/redeem`, {
-      method: 'POST',
-      body: JSON.stringify({}),
-    });
-  },
-
-  async createAdminLicenseKeys(req: CreateLicenseKeysRequest): Promise<CreateLicenseKeysResponse> {
-    return this.request<CreateLicenseKeysResponse>('/app/license-keys', {
-      method: 'POST',
-      body: JSON.stringify(req),
-    });
+    return this.request<{ planDays: number; newExpireAt: number; historyId: number }>(`/api/license-keys/code/${code}/redeem`, { method: 'POST' });
   },
 
   // Feedback ticket management APIs
@@ -2321,8 +2329,72 @@ export interface AdminNodeItem {
 }
 
 // ============================================================
-// LicenseKey types
+// LicenseKey Batch types
 // ============================================================
+
+export interface LicenseKeyBatch {
+  id: number;
+  name: string;
+  sourceTag: string;
+  recipientMatcher: string;
+  planDays: number;
+  quantity: number;
+  expiresAt: number;
+  note: string;
+  createdByUserId: number;
+  redeemedCount: number;
+  expiredCount: number;
+  createdAt: number;
+}
+
+export interface LicenseKeyBatchDetail extends LicenseKeyBatch {
+  convertedUsers: number;
+  conversionRate: number;
+  revenue: number;
+}
+
+export interface CreateLicenseKeyBatchRequest {
+  name: string;
+  sourceTag: string;
+  recipientMatcher: string;
+  planDays: number;
+  quantity: number;
+  expiresInDays: number;
+  note?: string;
+}
+
+export interface BatchStats {
+  batchId: number;
+  name: string;
+  sourceTag: string;
+  totalKeys: number;
+  redeemed: number;
+  expired: number;
+  redeemRate: number;
+  convertedUsers: number;
+  conversionRate: number;
+  revenue: number;
+}
+
+export interface BatchStatsBySource {
+  sourceTag: string;
+  totalKeys: number;
+  redeemed: number;
+  redeemRate: number;
+  convertedUsers: number;
+  conversionRate: number;
+  revenue: number;
+}
+
+export interface LicenseKeyItem {
+  id: number;
+  code: string;
+  planDays: number;
+  expiresAt: number;
+  isUsed: boolean;
+  usedByUserId?: number;
+  usedAt?: number;
+}
 
 export interface LicenseKeyPublic {
   code: string;
@@ -2337,46 +2409,13 @@ export interface LicenseKeyAdmin {
   id: number;
   uuid: string;
   code: string;
-  source: string;
-  note: string;
+  batchId: number;
   planDays: number;
-  recipientMatcher: string;
   expiresAt: number;
-  campaignId?: number;
-  createdByUserId?: number;
   isUsed: boolean;
   usedByUserId?: number;
   usedAt?: number;
   createdAt: number;
-}
-
-export interface CreateLicenseKeysRequest {
-  count: number;
-  planDays: number;
-  expiresInDays: number;
-  recipientMatcher: string;
-  note?: string;
-}
-
-export interface CreateLicenseKeysResponse {
-  keys: { id: number; code: string; planDays: number; expiresAt: number }[];
-}
-
-export interface IssueKeysRequest {
-  dryRun: boolean;
-}
-
-export interface IssueKeysResponse {
-  eligibleUsers: number;
-  keysToIssue: number;
-  issued: boolean;
-}
-
-export interface LicenseKeyStatsRow {
-  campaignId?: number;
-  total: number;
-  used: number;
-  expired: number;
 }
 
 // ============================================================
