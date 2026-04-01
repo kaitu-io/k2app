@@ -41,9 +41,9 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { api, CampaignResponse, CampaignRequest, IssueKeysResponse, isPendingApproval } from "@/lib/api";
+import { api, CampaignResponse, CampaignRequest, isPendingApproval } from "@/lib/api";
 import { toast } from "sonner";
-import { Plus, Edit, Trash2, Tag, TrendingUp, BarChart3, Calendar, Key, Users } from "lucide-react";
+import { Plus, Edit, Trash2, Tag, TrendingUp, BarChart3, Calendar } from "lucide-react";
 
 // Helper to convert datetime-local value to Unix timestamp
 function datetimeLocalToUnix(value: string): number {
@@ -84,11 +84,6 @@ export default function CampaignsPage() {
     isActive: undefined as boolean | undefined
   });
 
-  // dryRun result dialog
-  const [dryRunResult, setDryRunResult] = useState<IssueKeysResponse | null>(null);
-  const [dryRunCampaignId, setDryRunCampaignId] = useState<number | null>(null);
-  const [issueLoading, setIssueLoading] = useState(false);
-
   // 表单状态
   const [formData, setFormData] = useState<CampaignRequest>({
     code: "",
@@ -102,8 +97,6 @@ export default function CampaignsPage() {
     matcherType: "all",
     maxUsage: 0,
     matcherParams: "",
-    isShareable: false,
-    sharesPerUser: 1,
   });
 
   const campaignTypes = [
@@ -180,19 +173,6 @@ export default function CampaignsPage() {
             {dateStr && (
               <div className="text-xs text-muted-foreground mt-1">{dateStr} 前</div>
             )}
-          </div>
-        );
-      },
-    },
-    {
-      header: "老带新",
-      cell: ({ row }) => {
-        const campaign = row.original;
-        if (!campaign.isShareable) return <span className="text-muted-foreground text-sm">—</span>;
-        return (
-          <div className="flex items-center space-x-1">
-            <Key className="h-3 w-3 text-green-500" />
-            <span className="text-sm text-green-600">{campaign.sharesPerUser} 个/人</span>
           </div>
         );
       },
@@ -360,8 +340,6 @@ export default function CampaignsPage() {
       matcherType: "all",
       maxUsage: 0,
       matcherParams: "",
-      isShareable: false,
-      sharesPerUser: 1,
     });
   };
 
@@ -398,8 +376,6 @@ export default function CampaignsPage() {
       matcherType: campaign.matcherType,
       matcherParams: campaign.matcherParams || "",
       maxUsage: campaign.maxUsage,
-      isShareable: campaign.isShareable || false,
-      sharesPerUser: campaign.sharesPerUser || 1,
     });
     setEditDialogOpen(true);
   };
@@ -459,32 +435,6 @@ export default function CampaignsPage() {
       ...prev,
       matcherParams: JSON.stringify({ beforeDate: ts }),
     }));
-  };
-
-  const handleIssueKeys = async (campaignId: number, dryRun: boolean) => {
-    setIssueLoading(true);
-    try {
-      const result = await api.issueKeys(campaignId, { dryRun });
-      if (!dryRun && isPendingApproval(result)) {
-        toast.success("已提交审批，等待其他管理员确认");
-        setDryRunResult(null);
-        setDryRunCampaignId(null);
-        return;
-      }
-      if (dryRun) {
-        setDryRunResult(result);
-        setDryRunCampaignId(campaignId);
-      } else {
-        toast.success(`已成功发放 ${result.keysToIssue} 个授权码`);
-        setDryRunResult(null);
-        setDryRunCampaignId(null);
-      }
-    } catch (error) {
-      toast.error(dryRun ? "预估失败" : "发放失败");
-      console.error("Error issuing keys:", error);
-    } finally {
-      setIssueLoading(false);
-    }
   };
 
   // Shared form fields rendered for both create and edit dialogs
@@ -628,35 +578,6 @@ export default function CampaignsPage() {
               <Label htmlFor={`${idPrefix}-isActive`}>{"启用活动"}</Label>
             </div>
           </div>
-        </div>
-
-        {/* Shareable configuration */}
-        <div className="space-y-3 rounded-md border p-4">
-          <div className="flex items-center space-x-2">
-            <Switch
-              id={`${idPrefix}-isShareable`}
-              checked={formData.isShareable || false}
-              onCheckedChange={(checked) => setFormData(prev => ({ ...prev, isShareable: checked }))}
-            />
-            <Label htmlFor={`${idPrefix}-isShareable`} className="flex items-center space-x-1">
-              <Key className="h-3 w-3" />
-              <span>{"启用老带新（生成可分享授权码）"}</span>
-            </Label>
-          </div>
-          {formData.isShareable && (
-            <div className="space-y-2">
-              <Label htmlFor={`${idPrefix}-sharesPerUser`}>{"每位用户可分享数量"}</Label>
-              <Input
-                id={`${idPrefix}-sharesPerUser`}
-                type="number"
-                min={1}
-                value={formData.sharesPerUser || 1}
-                onChange={(e) => setFormData(prev => ({ ...prev, sharesPerUser: Number(e.target.value) }))}
-                placeholder="1"
-                className="w-32"
-              />
-            </div>
-          )}
         </div>
 
         <div className="space-y-2">
@@ -844,50 +765,6 @@ export default function CampaignsPage() {
           </DialogHeader>
           <div className="grid gap-4 py-4">
             {renderFormFields("edit")}
-
-            {/* Issue keys section — only for existing campaigns with isShareable */}
-            {editingCampaign && formData.isShareable && (
-              <div className="space-y-3 rounded-md border border-dashed p-4">
-                <div className="flex items-center space-x-2 text-sm font-medium">
-                  <Users className="h-4 w-4" />
-                  <span>{"发放授权码"}</span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={issueLoading}
-                    onClick={() => handleIssueKeys(editingCampaign.id, true)}
-                  >
-                    {"预估符合人数"}
-                  </Button>
-                  <Button
-                    variant="default"
-                    size="sm"
-                    disabled={issueLoading}
-                    onClick={() => handleIssueKeys(editingCampaign.id, false)}
-                  >
-                    <Key className="mr-1 h-3 w-3" />
-                    {"立即发放授权码"}
-                  </Button>
-                </div>
-                {dryRunResult && dryRunCampaignId === editingCampaign.id && (
-                  <div className="rounded-md bg-muted p-3 text-sm space-y-1">
-                    <div className="flex items-center space-x-2">
-                      <Users className="h-3 w-3 text-muted-foreground" />
-                      <span>{"符合条件用户："}<strong>{dryRunResult.eligibleUsers}</strong> {"人"}</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Key className="h-3 w-3 text-muted-foreground" />
-                      <span>{"预计发放授权码："}<strong>{dryRunResult.keysToIssue}</strong> {"个"}</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground pt-1">
-                      {"点击「立即发放授权码」确认发放"}
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
@@ -900,7 +777,6 @@ export default function CampaignsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* DryRun confirmation dialog — shown after dryRun when user wants to confirm issue */}
     </div>
   );
 }
