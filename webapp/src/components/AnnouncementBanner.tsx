@@ -75,39 +75,39 @@ const AnnouncementBanner: React.FC = () => {
   const [visible, setVisible] = useState(false);
   const [announcement, setAnnouncement] = useState<Announcement | null>(null);
 
-  // Check and display announcement
+  // Check and display the highest-priority undismissed announcement
   useEffect(() => {
-    if (!appConfig?.announcement) {
+    // Prefer announcements array, fallback to singular for backward compat
+    const list = appConfig?.announcements ?? (appConfig?.announcement ? [appConfig.announcement] : []);
+
+    // Find first non-expired, non-dismissed announcement
+    const active = list.find(ann =>
+      !isAnnouncementExpired(ann.expiresAt) && !isAnnouncementDismissed(ann.id)
+    );
+
+    if (active) {
+      setAnnouncement(active);
+      setVisible(true);
+    } else {
+      setAnnouncement(null);
       setVisible(false);
-      return;
     }
-
-    const ann = appConfig.announcement;
-
-    // Check if expired
-    if (isAnnouncementExpired(ann.expiresAt)) {
-      console.info('[AnnouncementBanner] Announcement expired:', ann.id);
-      setVisible(false);
-      return;
-    }
-
-    // Check if dismissed
-    if (isAnnouncementDismissed(ann.id)) {
-      console.info('[AnnouncementBanner] Announcement already dismissed:', ann.id);
-      setVisible(false);
-      return;
-    }
-
-    // Show announcement
-    setAnnouncement(ann);
-    setVisible(true);
-  }, [appConfig?.announcement]);
+  }, [appConfig?.announcements, appConfig?.announcement]);
 
   const handleDismiss = () => {
     if (announcement) {
       dismissAnnouncement(announcement.id);
     }
-    setVisible(false);
+    // Re-evaluate: find next undismissed announcement
+    const list = appConfig?.announcements ?? (appConfig?.announcement ? [appConfig.announcement] : []);
+    const next = list.find(ann =>
+      !isAnnouncementExpired(ann.expiresAt) && !isAnnouncementDismissed(ann.id) && ann.id !== announcement?.id
+    );
+    if (next) {
+      setAnnouncement(next);
+    } else {
+      setVisible(false);
+    }
   };
 
   const handleLinkClick = async (e: React.MouseEvent) => {
