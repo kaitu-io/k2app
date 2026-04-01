@@ -8,8 +8,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/gorilla/websocket"
 )
 
 func TestSignalClient_RegisterAndLookup(t *testing.T) {
@@ -88,76 +86,6 @@ func TestSignalClient_LookupNotFound(t *testing.T) {
 	_, err := client.Lookup(context.Background(), "nonexistent")
 	if err == nil {
 		t.Fatal("expected error for nonexistent peer")
-	}
-}
-
-func TestSignalClient_ConnectRequest(t *testing.T) {
-	var received ConnectRequest
-	mux := http.NewServeMux()
-	mux.HandleFunc("POST /k2p/connect", func(w http.ResponseWriter, r *http.Request) {
-		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
-			http.Error(w, err.Error(), 400)
-			return
-		}
-		w.WriteHeader(200)
-	})
-	srv := httptest.NewServer(mux)
-	defer srv.Close()
-
-	client := NewSignalClient(srv.URL, "test-token")
-	err := client.RequestConnect(context.Background(), ConnectRequest{
-		HomeUDID: "home-001",
-		AwayAddr: "5.6.7.8:9012",
-		NATType:  "easy",
-	})
-	if err != nil {
-		t.Fatalf("RequestConnect: %v", err)
-	}
-	if received.HomeUDID != "home-001" {
-		t.Errorf("expected home-001, got %s", received.HomeUDID)
-	}
-	if received.AwayAddr != "5.6.7.8:9012" {
-		t.Errorf("expected 5.6.7.8:9012, got %s", received.AwayAddr)
-	}
-}
-
-func TestSignalClient_ListenNotify(t *testing.T) {
-	upgrader := websocket.Upgrader{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verify auth is passed via query param
-		if r.URL.Query().Get("token") == "" {
-			http.Error(w, "missing token", 401)
-			return
-		}
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-		time.Sleep(100 * time.Millisecond)
-		msg, _ := json.Marshal(PunchNotify{AwayAddr: "5.6.7.8:9012", NATType: "easy"})
-		conn.WriteMessage(websocket.TextMessage, msg)
-	}))
-	defer srv.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
-	client := NewSignalClient(wsURL, "test-token")
-
-	notifyCh, err := client.ListenNotify(ctx, "home-001")
-	if err != nil {
-		t.Fatalf("ListenNotify: %v", err)
-	}
-
-	select {
-	case notify := <-notifyCh:
-		if notify.AwayAddr != "5.6.7.8:9012" {
-			t.Errorf("expected 5.6.7.8:9012, got %s", notify.AwayAddr)
-		}
-	case <-ctx.Done():
-		t.Fatal("timeout waiting for notification")
 	}
 }
 

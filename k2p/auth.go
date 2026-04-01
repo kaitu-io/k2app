@@ -2,11 +2,15 @@ package k2p
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
 
+	"github.com/apernet/quic-go"
 	"github.com/kaitu-io/k2/safego"
 	"github.com/kaitu-io/k2/wire"
 	"golang.org/x/crypto/bcrypt"
@@ -146,4 +150,71 @@ func (p *PeerAuthListener) ServeUDP(ctx context.Context, handler wire.UDPHandler
 // Close implements wire.Listener.
 func (p *PeerAuthListener) Close() error {
 	return p.inner.Close()
+}
+
+// buildPinTLSConfig creates a TLS config with optional certificate pin verification.
+// If cfg.Pin is empty, InsecureSkipVerify is true (self-signed Home cert accepted).
+// If cfg.Pin is set, the peer certificate's SPKI hash must match one of the pins.
+func buildPinTLSConfig(cfg Config) *tls.Config {
+	tlsCfg := &tls.Config{
+		NextProtos:         []string{"h3"},
+		InsecureSkipVerify: true, // skip CA chain (self-signed Home cert)
+	}
+	if cfg.Pin != "" {
+		expectedPins, err := wire.ParsePins(cfg.Pin)
+		if err == nil && len(expectedPins) > 0 {
+			tlsCfg.VerifyPeerCertificate = func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+				return verifyPins(rawCerts, expectedPins)
+			}
+		}
+	}
+	return tlsCfg
+}
+
+// verifyPins checks that at least one certificate's SPKI hash matches an expected pin.
+func verifyPins(rawCerts [][]byte, expected [][32]byte) error {
+	for _, raw := range rawCerts {
+		cert, err := x509.ParseCertificate(raw)
+		if err != nil {
+			continue
+		}
+		pubDER, err := x509.MarshalPKIXPublicKey(cert.PublicKey)
+		if err != nil {
+			continue
+		}
+		hash := sha256.Sum256(pubDER)
+		for _, exp := range expected {
+			if hash == exp {
+				return nil
+			}
+		}
+	}
+	return fmt.Errorf("k2p: no certificate matched pin")
+}
+
+// doPeerAuth sends a peer auth frame on a new QUIC stream and reads the response.
+// No-op if secret is empty.
+func doPeerAuth(ctx context.Context, conn *quic.Conn, secret string) error {
+	if secret == "" {
+		return nil
+	}
+
+	authStream, err := conn.OpenStreamSync(ctx)
+	if err != nil {
+		return fmt.Errorf("k2p: open auth stream: %w", err)
+	}
+	if err := WriteAuthFrame(authStream, secret); err != nil {
+		authStream.Close()
+		return fmt.Errorf("k2p: write auth: %w", err)
+	}
+	resp := make([]byte, 1)
+	if _, err := io.ReadFull(authStream, resp); err != nil {
+		authStream.Close()
+		return fmt.Errorf("k2p: read auth response: %w", err)
+	}
+	authStream.Close()
+	if resp[0] != AuthOK {
+		return fmt.Errorf("k2p: peer auth rejected by Home")
+	}
+	return nil
 }

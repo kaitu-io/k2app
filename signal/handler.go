@@ -14,7 +14,6 @@ type Handler struct {
 	mux      *http.ServeMux
 	store    *Store
 	upgrader websocket.Upgrader
-	relay    *Relay
 }
 
 // NewHandler creates a Handler backed by store and registers all routes.
@@ -26,13 +25,10 @@ func NewHandler(store *Store) *Handler {
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
 	}
-	h.relay = NewRelay()
 	h.mux.HandleFunc("POST /k2p/claim", h.handleClaim)
 	h.mux.HandleFunc("POST /k2p/register", h.handleRegister)
 	h.mux.HandleFunc("GET /k2p/lookup/{udid}", h.handleLookup)
-	h.mux.HandleFunc("POST /k2p/connect", h.handleConnect)
 	h.mux.HandleFunc("GET /k2p/ws", h.handleWS)
-	h.mux.HandleFunc("GET /k2p/relay", h.relay.HandleRelay)
 	return h
 }
 
@@ -122,45 +118,6 @@ func (h *Handler) handleLookup(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp) //nolint:errcheck
-}
-
-// handleConnect handles POST /k2p/connect.
-// Decodes a ConnectRequest, retrieves the Home's WebSocket connection,
-// and forwards a PunchNotify message. Returns 404 if the Home is offline,
-// 502 on write failure.
-func (h *Handler) handleConnect(w http.ResponseWriter, r *http.Request) {
-	var req ConnectRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
-		return
-	}
-
-	if !h.store.IsOnline(req.HomeUDID) {
-		http.Error(w, "home not connected", http.StatusNotFound)
-		return
-	}
-
-	notify := PunchNotify{
-		AwayAddr: req.AwayAddr,
-		NATType:  req.NATType,
-	}
-	msg, err := json.Marshal(notify)
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	if err := h.store.WriteToWS(req.HomeUDID, websocket.TextMessage, msg); err != nil {
-		slog.Warn("DIAG: punch-notify write fail",
-			"home", req.HomeUDID,
-			"away", req.AwayAddr,
-			"err", err,
-		)
-		http.Error(w, "bad gateway", http.StatusBadGateway)
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
 }
 
 // handleWS handles GET /k2p/ws.

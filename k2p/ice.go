@@ -9,7 +9,7 @@ import (
 
 // icePacketConn adapts *ice.Conn (net.Conn) to net.PacketConn for QUIC transport.
 // ice.Conn is backed by UDP — Read() preserves datagram boundaries.
-// Same pattern as RelayConn (WriteTo ignores addr, ReadFrom returns synthetic addr).
+// WriteTo ignores addr, ReadFrom returns synthetic peer addr.
 type icePacketConn struct {
 	conn     *ice.Conn
 	peerAddr net.Addr

@@ -6,6 +6,9 @@ import (
 	"github.com/kaitu-io/k2/wire"
 )
 
+// Default TURN server URL (used when TURNURLs is empty).
+const DefaultTURNURL = "turn:turn.kaitu.io:3478"
+
 // Config holds all parameters for a k2p connection.
 type Config struct {
 	// HomeUDID is the UDID of the home peer to connect to (away) or self (home).
@@ -29,14 +32,10 @@ type Config struct {
 	// Away side must use insecure=1 or pin= to trust this cert.
 	TLSCert *tls.Certificate
 
-	// DirectDialer for STUN probes (may be nil).
-	DirectDialer wire.DirectDialer
-
-	// STUNServers overrides the default STUN server list (nil = use defaults).
-	STUNServers []string
-
-	// RelayServer is the k2v5:// URL for relay fallback (optional).
-	RelayServer string
+	// ICE/TURN configuration (populated from signal lookup).
+	TURNURLs     []string
+	TURNUsername string
+	TURNPassword string
 
 	// PeerSecret is the shared secret for peer authentication (Away proves identity).
 	// Never sent to k2s signal server.

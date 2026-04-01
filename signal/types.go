@@ -23,12 +23,6 @@ type RegisterRequest struct {
 	DNS      string   `json:"dns"`
 }
 
-type ConnectRequest struct {
-	HomeUDID string `json:"home_udid"`
-	AwayAddr string `json:"away_addr"`
-	NATType  string `json:"nat_type"`
-}
-
 type LookupResponse struct {
 	UDID     string   `json:"udid"`
 	Addr     string   `json:"addr"`
@@ -36,11 +30,6 @@ type LookupResponse struct {
 	Networks []string `json:"networks"`
 	DNS      string   `json:"dns"`
 	Online   bool     `json:"online"`
-}
-
-type PunchNotify struct {
-	AwayAddr string `json:"away_addr"`
-	NATType  string `json:"nat_type"`
 }
 
 type PeerEntry struct {

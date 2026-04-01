@@ -6,11 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
-
-	"github.com/gorilla/websocket"
-	"github.com/kaitu-io/k2/safego"
 )
 
 // RegisterRequest is sent by home to register its address.
@@ -22,13 +18,6 @@ type RegisterRequest struct {
 	DNS      string   `json:"dns,omitempty"`      // advertised DNS server address
 }
 
-// ConnectRequest is sent by away to request connection to a home peer.
-type ConnectRequest struct {
-	HomeUDID string `json:"home_udid"`
-	AwayAddr string `json:"away_addr"`
-	NATType  string `json:"nat_type"`
-}
-
 // PeerInfo is returned by lookup.
 type PeerInfo struct {
 	UDID      string    `json:"udid"`
@@ -38,12 +27,6 @@ type PeerInfo struct {
 	DNS       string    `json:"dns"`
 	Online    bool      `json:"online"`
 	UpdatedAt time.Time `json:"updated_at"`
-}
-
-// PunchNotify is received by home when away wants to connect.
-type PunchNotify struct {
-	AwayAddr string `json:"away_addr"`
-	NATType  string `json:"nat_type"`
 }
 
 // SignalClient communicates with the central API server for peer discovery.
@@ -150,60 +133,3 @@ func (c *SignalClient) Lookup(ctx context.Context, udid string) (PeerInfo, error
 	return info, nil
 }
 
-// ListenNotify opens a WebSocket to the API server and returns a channel
-// of PunchNotify messages. The channel is closed when ctx is cancelled
-// or the connection drops. Uses safego.Go for panic safety.
-// Authentication is passed via the ?token= query parameter (not Authorization header).
-func (c *SignalClient) ListenNotify(ctx context.Context, udid string) (<-chan PunchNotify, error) {
-	// Convert http(s):// to ws(s):// for gorilla websocket.
-	base := c.baseURL
-	base = strings.Replace(base, "https://", "wss://", 1)
-	base = strings.Replace(base, "http://", "ws://", 1)
-	wsURL := base + "/k2p/ws?udid=" + udid + "&token=" + c.token
-
-	// DialContext returns (*Conn, *http.Response, error) — discard Response.
-	conn, _, err := websocket.DefaultDialer.DialContext(ctx, wsURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("k2p: websocket dial: %w", err)
-	}
-
-	ch := make(chan PunchNotify, 8)
-	safego.Go(func() {
-		defer close(ch)
-		defer conn.Close()
-		for {
-			if ctx.Err() != nil {
-				return
-			}
-			_, msg, err := conn.ReadMessage()
-			if err != nil {
-				return
-			}
-			var notify PunchNotify
-			if err := json.Unmarshal(msg, &notify); err != nil {
-				continue
-			}
-			select {
-			case ch <- notify:
-			case <-ctx.Done():
-				return
-			}
-		}
-	})
-
-	return ch, nil
-}
-
-// RequestConnect asks the API server to notify a home peer that away
-// wants to connect.
-func (c *SignalClient) RequestConnect(ctx context.Context, req ConnectRequest) error {
-	resp, err := c.doJSON(ctx, "POST", "/k2p/connect", req)
-	if err != nil {
-		return fmt.Errorf("k2p: connect request: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("k2p: connect request: HTTP %d", resp.StatusCode)
-	}
-	return nil
-}

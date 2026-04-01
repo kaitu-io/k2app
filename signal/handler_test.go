@@ -3,14 +3,9 @@ package signal
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"sync"
 	"testing"
-	"time"
-
-	"github.com/gorilla/websocket"
 )
 
 // newTestHandler returns a Handler backed by a fresh Store for unit tests.
@@ -202,69 +197,3 @@ func TestHandler_RegisterInvalidUDID(t *testing.T) {
 	}
 }
 
-// TestHandler_ConcurrentConnect verifies that simultaneous POST /k2p/connect
-// requests for the same Home peer don't race and at least one notification arrives.
-func TestHandler_ConcurrentConnect(t *testing.T) {
-	h := newTestHandler()
-	srv := httptest.NewServer(h)
-	defer srv.Close()
-
-	// Claim.
-	claimRR := doJSON(t, h, http.MethodPost, "/k2p/claim", ClaimRequest{UDID: "home-cc"})
-	if claimRR.Code != http.StatusOK {
-		t.Fatalf("claim: got %d, want 200", claimRR.Code)
-	}
-	var cr ClaimResponse
-	if err := json.NewDecoder(claimRR.Body).Decode(&cr); err != nil {
-		t.Fatalf("claim: decode response: %v", err)
-	}
-
-	// Register.
-	regReq := RegisterRequest{UDID: "home-cc", Addr: "1.2.3.4:5678"}
-	regRR := doJSONWithAuth(t, h, http.MethodPost, "/k2p/register", cr.RegToken, regReq)
-	if regRR.Code != http.StatusOK {
-		t.Fatalf("register: got %d, want 200", regRR.Code)
-	}
-
-	// Open WebSocket.
-	wsURL := "ws" + srv.URL[4:] + "/k2p/ws?udid=home-cc&token=" + cr.RegToken
-	wsConn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-	if err != nil {
-		t.Fatalf("WS dial: %v", err)
-	}
-	defer wsConn.Close()
-
-	// Read notifications in background.
-	received := make(chan struct{}, 20)
-	go func() {
-		for {
-			_, _, err := wsConn.ReadMessage()
-			if err != nil {
-				return
-			}
-			received <- struct{}{}
-		}
-	}()
-
-	// 10 concurrent connect requests.
-	var wg sync.WaitGroup
-	for i := range 10 {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			body, _ := json.Marshal(ConnectRequest{
-				HomeUDID: "home-cc",
-				AwayAddr: fmt.Sprintf("5.6.7.%d:9012", i),
-				NATType:  "easy",
-			})
-			http.Post(srv.URL+"/k2p/connect", "application/json", bytes.NewReader(body)) //nolint:errcheck
-		}(i)
-	}
-	wg.Wait()
-
-	// Allow notifications time to arrive.
-	time.Sleep(200 * time.Millisecond)
-	if len(received) == 0 {
-		t.Error("expected at least one WS notification to arrive")
-	}
-}
