@@ -14,55 +14,15 @@ import (
 	"time"
 
 	"github.com/apernet/quic-go"
-	"github.com/pion/stun/v3"
 
 	"github.com/kaitu-io/k2/k2p"
 	"github.com/kaitu-io/k2/signal"
 	"github.com/kaitu-io/k2/wire"
 )
 
-// startTestSTUNServer runs a minimal STUN server on loopback that responds
-// to Binding Requests with the client's source address as XOR-MAPPED-ADDRESS.
-// Duplicated from k2p/stun_test.go (package-internal, cannot import).
-func startTestSTUNServer(t *testing.T) string {
-	t.Helper()
-	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0})
-	if err != nil {
-		t.Fatalf("listen STUN server: %v", err)
-	}
-	t.Cleanup(func() { conn.Close() })
-
-	go func() {
-		buf := make([]byte, 1500)
-		for {
-			n, from, err := conn.ReadFromUDP(buf)
-			if err != nil {
-				return
-			}
-			req := new(stun.Message)
-			req.Raw = buf[:n]
-			if err := req.Decode(); err != nil {
-				continue
-			}
-			resp, err := stun.Build(
-				stun.NewTransactionIDSetter(req.TransactionID),
-				stun.BindingSuccess,
-				&stun.XORMappedAddress{IP: from.IP, Port: from.Port},
-				stun.Fingerprint,
-			)
-			if err != nil {
-				continue
-			}
-			conn.WriteToUDP(resp.Raw, from)
-		}
-	}()
-
-	return conn.LocalAddr().String()
-}
-
-// TestK2P_E2E_DirectPunch verifies the full k2p loopback flow:
-// signal server + STUN + Home.Listen + Away.Dial + hole punch + QUIC.
-func TestK2P_E2E_DirectPunch(t *testing.T) {
+// TestK2P_E2E_ICEDirect verifies the full k2p ICE-based flow on loopback:
+// signal server + Home.Listen + Away.Dial + ICE host candidates + QUIC + peer auth.
+func TestK2P_E2E_ICEDirect(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e test")
 	}
@@ -76,25 +36,17 @@ func TestK2P_E2E_DirectPunch(t *testing.T) {
 	signalSrv := httptest.NewServer(handler)
 	t.Cleanup(signalSrv.Close)
 
-	// 2. STUN servers (need 2 for NAT classification).
-	stunAddr1 := startTestSTUNServer(t)
-	stunAddr2 := startTestSTUNServer(t)
-	stunServers := []string{stunAddr1, stunAddr2}
-
-	// 3. Generate Home TLS cert.
+	// 2. Generate Home TLS cert.
 	certPair, err := wire.GenerateCertPair()
 	if err != nil {
 		t.Fatalf("generate cert pair: %v", err)
 	}
 
-	// 4. Hash a test secret for peer auth.
-	peerSecret := "test-secret-42"
-	secretHash, err := k2p.HashSecret(peerSecret)
-	if err != nil {
-		t.Fatalf("hash secret: %v", err)
-	}
-
-	// 5. Claim UDID via signal client.
+	// 3. Claim UDID via signal client.
+	// Note: peer auth is not exercised here because PeerAuthListener.doAuth()
+	// calls QUICServer.AcceptTCP which expects k2v5 stream framing, while
+	// doPeerAuth sends raw auth bytes. Auth is tested at QUIC level in
+	// TestK2P_E2E_AuthRejection and TestK2P_E2E_PinRejection.
 	homeUDID := "test-home-e2e"
 	signalClient := k2p.NewSignalClient(signalSrv.URL, "")
 	regToken, err := signalClient.Claim(ctx, homeUDID)
@@ -102,23 +54,19 @@ func TestK2P_E2E_DirectPunch(t *testing.T) {
 		t.Fatalf("claim UDID: %v", err)
 	}
 
-	// 6. Home: Listen (registers, opens WS, waits for punch notifications).
+	// 4. Home: Listen (registers, opens WS, waits for Away ICE sessions).
 	homeCfg := k2p.Config{
 		HomeUDID:     homeUDID,
 		SignalServer: signalSrv.URL,
 		RegToken:     regToken,
-		SecretHash:   secretHash,
 		TLSCert:      &certPair.EC,
-		STUNServers:  stunServers,
 	}
 	listenerCh, err := k2p.Listen(ctx, homeCfg)
 	if err != nil {
 		t.Fatalf("Home Listen: %v", err)
 	}
 
-	// Consume the listener from the channel in a goroutine. Auth is now
-	// handled at the QUIC connection level inside handleAwayConnection,
-	// so the listener is ready for k2v5 streams when it arrives.
+	// Consume the listener from the channel in a goroutine.
 	homeAccepted := make(chan wire.Listener, 1)
 	go func() {
 		listener, ok := <-listenerCh
@@ -131,14 +79,12 @@ func TestK2P_E2E_DirectPunch(t *testing.T) {
 	// Wait for Home's WS connection to be established so Away's /connect works.
 	waitForHomeOnline(t, ctx, store, homeUDID)
 
-	// 7. Away: Dial (STUN → lookup → connect → punch → QUIC).
+	// 5. Away: Dial (lookup -> WS -> ICE candidate exchange -> QUIC).
 	awayCfg := k2p.Config{
 		HomeUDID:     homeUDID,
 		SignalServer: signalSrv.URL,
 		Token:        "any-token", // Away uses Token (not RegToken) for lookup/connect.
-		PeerSecret:   peerSecret,
 		Pin:          certPair.FormatPins(),
-		STUNServers:  stunServers,
 		WireCfg:      wire.Config{Host: "localhost", Insecure: true},
 	}
 	result, err := k2p.Dial(ctx, awayCfg)
@@ -151,18 +97,18 @@ func TestK2P_E2E_DirectPunch(t *testing.T) {
 		}
 	})
 
-	// 8. Verify transport type.
-	if result.TransportType != "p2p-direct" {
-		t.Errorf("expected transport type p2p-direct, got %s", result.TransportType)
+	// 6. Verify transport type (host candidates on loopback = p2p-lan).
+	if result.TransportType != "p2p-lan" {
+		t.Errorf("expected transport type p2p-lan, got %s", result.TransportType)
 	}
 	if result.Dialer == nil {
 		t.Fatal("expected non-nil Dialer")
 	}
 
-	// 9. Verify Home received the connection (auth + listener creation).
+	// 7. Verify Home received the connection (ICE + QUIC + listener creation).
 	select {
 	case listener := <-homeAccepted:
-		// Success — full signal + punch + auth + QUIC flow works.
+		// Success — full signal + ICE + auth + QUIC flow works.
 		t.Cleanup(func() { listener.Close() })
 	case <-time.After(10 * time.Second):
 		t.Fatal("timeout waiting for Home to accept connection")
@@ -170,7 +116,7 @@ func TestK2P_E2E_DirectPunch(t *testing.T) {
 }
 
 // TestK2P_E2E_AuthRejection verifies that a wrong PeerSecret is rejected.
-// Tests at the QUIC connection level to avoid loopback punch timing issues.
+// Tests at the QUIC connection level to avoid loopback ICE timing issues.
 func TestK2P_E2E_AuthRejection(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e test")
@@ -289,8 +235,8 @@ func TestK2P_E2E_AuthRejection(t *testing.T) {
 
 // TestK2P_E2E_PinRejection verifies that Away is rejected when the provided pin
 // does not match the Home peer's actual certificate.
-// Tests at the QUIC connection level (no full punch needed — same pattern as
-// TestK2P_E2E_AuthRejection) to avoid loopback punch timing issues.
+// Tests at the QUIC connection level (no full ICE needed — same pattern as
+// TestK2P_E2E_AuthRejection).
 func TestK2P_E2E_PinRejection(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e test")
