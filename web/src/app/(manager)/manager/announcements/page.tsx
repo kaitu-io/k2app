@@ -71,6 +71,9 @@ const initialForm: AnnouncementRequest = {
   linkText: "",
   openMode: "external",
   authMode: "none",
+  priority: 0,
+  minVersion: "",
+  maxVersion: "",
   expiresAt: 0,
 };
 
@@ -187,6 +190,9 @@ export default function AnnouncementsPage() {
       linkText: item.linkText,
       openMode: item.openMode,
       authMode: item.authMode,
+      priority: item.priority,
+      minVersion: item.minVersion,
+      maxVersion: item.maxVersion,
       expiresAt: item.expiresAt,
     });
     setEditDialogOpen(true);
@@ -222,6 +228,21 @@ export default function AnnouncementsPage() {
       cell: ({ row }) => (
         <span>{row.original.authMode === "ott" ? "自动登录" : "无"}</span>
       ),
+    },
+    {
+      accessorKey: "priority",
+      header: "优先级",
+      size: 80,
+    },
+    {
+      id: "version",
+      header: "版本范围",
+      size: 120,
+      cell: ({ row }) => {
+        const { minVersion, maxVersion } = row.original;
+        if (!minVersion && !maxVersion) return <span className="text-muted-foreground">全部</span>;
+        return <span>{minVersion || "*"} ~ {maxVersion || "*"}</span>;
+      },
     },
     {
       id: "status",
@@ -333,6 +354,34 @@ export default function AnnouncementsPage() {
             <SelectItem value="ott">自动登录</SelectItem>
           </SelectContent>
         </Select>
+      </div>
+      <div className="grid gap-2">
+        <Label>优先级</Label>
+        <Input
+          type="number"
+          value={form.priority ?? 0}
+          onChange={(e) => setForm({ ...form, priority: parseInt(e.target.value) || 0 })}
+          placeholder="0"
+        />
+        <p className="text-xs text-muted-foreground">数字越大越优先显示</p>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="grid gap-2">
+          <Label>最低版本</Label>
+          <Input
+            value={form.minVersion ?? ""}
+            onChange={(e) => setForm({ ...form, minVersion: e.target.value })}
+            placeholder="0.4.2"
+          />
+        </div>
+        <div className="grid gap-2">
+          <Label>最高版本</Label>
+          <Input
+            value={form.maxVersion ?? ""}
+            onChange={(e) => setForm({ ...form, maxVersion: e.target.value })}
+            placeholder="0.4.3"
+          />
+        </div>
       </div>
       <div className="grid gap-2">
         <Label>过期时间</Label>
@@ -464,7 +513,7 @@ export default function AnnouncementsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>确认激活</AlertDialogTitle>
             <AlertDialogDescription>
-              激活此公告将自动停用当前活跃的公告。确认继续？
+              确认激活此公告？激活后可与其他公告同时显示。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

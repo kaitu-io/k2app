@@ -783,6 +783,9 @@ export interface AnnouncementRequest {
   linkText?: string;
   openMode?: string; // 'external' | 'webview'
   authMode?: string; // 'none' | 'ott'
+  priority?: number;
+  minVersion?: string;
+  maxVersion?: string;
   expiresAt?: number;
   // Note: isActive is NOT included — activation/deactivation uses dedicated endpoints
 }
@@ -796,6 +799,9 @@ export interface AnnouncementResponse {
   linkText: string;
   openMode: string;
   authMode: string;
+  priority: number;
+  minVersion: string;
+  maxVersion: string;
   expiresAt: number;
   isActive: boolean;
 }
