@@ -72,7 +72,7 @@ func TestK2P_E2E_DirectPunch(t *testing.T) {
 
 	// 1. Signal server.
 	store := signal.NewStore()
-	handler := signal.NewHandler(store)
+	handler := signal.NewHandler(store, "", nil)
 	signalSrv := httptest.NewServer(handler)
 	t.Cleanup(signalSrv.Close)
 
