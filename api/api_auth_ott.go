@@ -72,7 +72,12 @@ func api_issue_ott(c *gin.Context) {
 
 	// Store in Redis
 	data := ottData{UserID: auth.UserID, Redirect: req.Redirect}
-	dataJSON, _ := json.Marshal(data)
+	dataJSON, err := json.Marshal(data)
+	if err != nil {
+		log.Errorf(c, "failed to marshal OTT data: %v", err)
+		Error(c, ErrorSystemError, "failed to generate token")
+		return
+	}
 	if err := redis.CacheSet(ottPrefix+token, string(dataJSON), ottTTL); err != nil {
 		log.Errorf(c, "failed to store OTT in Redis: %v", err)
 		Error(c, ErrorSystemError, "failed to store token")
@@ -120,6 +125,13 @@ func api_exchange_ott(c *gin.Context) {
 	// Verify redirect matches stored value
 	if data.Redirect != redirect {
 		log.Warnf(c, "OTT exchange failed: redirect mismatch (stored=%s, got=%s)", data.Redirect, redirect)
+		c.Redirect(302, "/auth/login?reason=invalid")
+		return
+	}
+
+	// Defense-in-depth: validate redirect URL even though it was checked at issue time
+	if !isAllowedRedirect(redirect) {
+		log.Warnf(c, "OTT exchange failed: redirect URL not allowed: %s", redirect)
 		c.Redirect(302, "/auth/login?reason=invalid")
 		return
 	}
