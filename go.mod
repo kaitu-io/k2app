@@ -12,6 +12,7 @@ require (
 	github.com/miekg/dns v1.1.72
 	github.com/pion/ice/v4 v4.2.2
 	github.com/pion/stun/v3 v3.1.1
+	github.com/pion/turn/v4 v4.1.4
 	github.com/sagernet/sing v0.7.6
 	github.com/sagernet/sing-tun v0.7.11
 	github.com/sasha-s/go-deadlock v0.3.7
@@ -47,7 +48,6 @@ require (
 	github.com/pion/mdns/v2 v2.1.0 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/transport/v4 v4.0.1 // indirect
-	github.com/pion/turn/v4 v4.1.4 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/sagernet/fswatch v0.1.1 // indirect
 	github.com/sagernet/gvisor v0.0.0-20241123041152-536d05261cff // indirect
