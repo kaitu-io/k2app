@@ -11,15 +11,21 @@ import (
 // icePacketConn adapts *ice.Conn (net.Conn) to net.PacketConn for QUIC transport.
 // ice.Conn is backed by UDP — Read() preserves datagram boundaries.
 // WriteTo ignores addr, ReadFrom returns synthetic peer addr.
+//
+// If agent is non-nil, Close() also closes the Agent to stop its internal
+// goroutines (connectivity checks, keepalive). The Agent must outlive the Conn
+// so it is closed AFTER conn.Close().
 type icePacketConn struct {
 	conn     *ice.Conn
 	peerAddr net.Addr
+	agent    *ice.Agent // optional; closed on Close() to prevent goroutine leak
 }
 
-func newICEPacketConn(conn *ice.Conn) *icePacketConn {
+func newICEPacketConn(conn *ice.Conn, agent *ice.Agent) *icePacketConn {
 	return &icePacketConn{
 		conn:     conn,
 		peerAddr: conn.RemoteAddr(),
+		agent:    agent,
 	}
 }
 
@@ -32,7 +38,13 @@ func (c *icePacketConn) WriteTo(p []byte, _ net.Addr) (int, error) {
 	return c.conn.Write(p)
 }
 
-func (c *icePacketConn) Close() error                       { return c.conn.Close() }
+func (c *icePacketConn) Close() error {
+	connErr := c.conn.Close()
+	if c.agent != nil {
+		c.agent.Close()
+	}
+	return connErr
+}
 func (c *icePacketConn) LocalAddr() net.Addr                { return c.conn.LocalAddr() }
 func (c *icePacketConn) SetDeadline(t time.Time) error      { return c.conn.SetDeadline(t) }
 func (c *icePacketConn) SetReadDeadline(t time.Time) error  { return c.conn.SetReadDeadline(t) }

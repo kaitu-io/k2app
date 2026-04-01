@@ -65,13 +65,13 @@ func (r *SessionRouter) CreateSession(udid string, awayWS *websocket.Conn) (stri
 
 	r.mu.Lock()
 	home := r.homeWS[udid]
+	if home == nil {
+		r.mu.Unlock()
+		return "", fmt.Errorf("signal: home %q not connected", udid)
+	}
 	awayWrapped := &wsConn{conn: awayWS}
 	r.sessions[id] = &session{id: id, home: home, away: awayWrapped}
 	r.mu.Unlock()
-
-	if home == nil {
-		return "", fmt.Errorf("signal: home %q not connected", udid)
-	}
 
 	msg := WSMessage{Type: "session-start", Session: id}
 	return id, home.WriteJSON(msg)

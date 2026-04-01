@@ -99,8 +99,8 @@ func TestICE_QUICOverLoopback(t *testing.T) {
 	}
 
 	// Wrap as PacketConn.
-	pcA := newICEPacketConn(connA)
-	pcB := newICEPacketConn(connB)
+	pcA := newICEPacketConn(connA, nil)
+	pcB := newICEPacketConn(connB, nil)
 
 	// QUIC: B listens, A dials.
 	certPair, err := wire.GenerateCertPair()

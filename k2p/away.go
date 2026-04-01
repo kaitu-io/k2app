@@ -96,14 +96,14 @@ func Dial(ctx context.Context, cfg Config) (*ConnectResult, error) {
 	}
 
 	// 10. QUIC over ICE.
-	pc := newICEPacketConn(iceConn)
+	// Agent ownership transfers to icePacketConn — closed when transport closes.
+	pc := newICEPacketConn(iceConn, agent)
 	tr := &quic.Transport{Conn: pc}
 	tlsCfg := buildPinTLSConfig(cfg)
 	peerAddr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 1} // synthetic — ICE handles routing
 	quicConn, err := tr.Dial(ctx, peerAddr, tlsCfg, wire.DefaultQUICConfig())
 	if err != nil {
-		tr.Close()
-		agent.Close()
+		tr.Close() // closes pc → closes agent
 		return nil, fmt.Errorf("k2p: away: QUIC dial: %w", err)
 	}
 
@@ -111,7 +111,6 @@ func Dial(ctx context.Context, cfg Config) (*ConnectResult, error) {
 	if err := doPeerAuth(ctx, quicConn, cfg.PeerSecret); err != nil {
 		quicConn.CloseWithError(1, "auth failed")
 		tr.Close()
-		agent.Close()
 		return nil, err
 	}
 

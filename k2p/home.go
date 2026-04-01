@@ -138,7 +138,8 @@ func handleAwaySession(ctx context.Context, cfg Config, exchange *CandidateExcha
 	}
 
 	// 5. QUIC Listen over ICE.
-	pc := newICEPacketConn(iceConn)
+	// Agent ownership transfers to icePacketConn — closed when transport closes.
+	pc := newICEPacketConn(iceConn, agent)
 	tr := &quic.Transport{Conn: pc}
 
 	var tlsCert tls.Certificate
@@ -147,8 +148,7 @@ func handleAwaySession(ctx context.Context, cfg Config, exchange *CandidateExcha
 	} else {
 		certPair, certErr := wire.GenerateCertPair()
 		if certErr != nil {
-			tr.Close()
-			agent.Close()
+			tr.Close() // closes pc → closes agent
 			return nil, fmt.Errorf("k2p: home: generate cert: %w", certErr)
 		}
 		tlsCert = certPair.EC
@@ -160,8 +160,7 @@ func handleAwaySession(ctx context.Context, cfg Config, exchange *CandidateExcha
 	}
 	quicLn, err := tr.Listen(tlsCfg, wire.DefaultQUICConfig())
 	if err != nil {
-		tr.Close()
-		agent.Close()
+		tr.Close() // closes pc → closes agent
 		return nil, fmt.Errorf("k2p: home: QUIC listen: %w", err)
 	}
 

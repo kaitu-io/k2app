@@ -290,6 +290,13 @@ func (c *SignalClient) ListenHome(ctx context.Context, udid string) (<-chan *Can
 		defer close(ch)
 		defer conn.Close()
 		exchanges := make(map[string]*CandidateExchange)
+		defer func() {
+			// Close inCh for all remaining exchanges so consumers
+			// (handleAwaySession's for-range loop) don't block forever.
+			for _, ex := range exchanges {
+				close(ex.inCh)
+			}
+		}()
 
 		for {
 			if ctx.Err() != nil {
