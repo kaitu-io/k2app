@@ -166,7 +166,7 @@ func (e *Engine) Start(configJSON string, fd int, cfg *EngineConfig) (err error)
 
 	// Inject platform cache dir for k2rule.
 	if cfg.CacheDir != "" {
-		clientCfg.Rule.CacheDir = filepath.Join(cfg.CacheDir, "k2rule")
+		clientCfg.CacheDir = filepath.Join(cfg.CacheDir, "k2rule")
 	}
 
 	ecfg := engine.Config{
@@ -203,7 +203,7 @@ func (e *Engine) Start(configJSON string, fd int, cfg *EngineConfig) (err error)
 
 	slog.Info("appext: start",
 		"server", clientCfg.Server,
-		"global", clientCfg.Rule.Global,
+		"global", clientCfg.IsAllProxy(),
 		"hasDirectDialer", ecfg.DirectDialer != nil,
 		"hasNetworkMonitor", ecfg.NetworkMonitor != nil,
 		"hasInterfaceMonitor", ecfg.InterfaceMonitor != nil,

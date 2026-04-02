@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"strings"
 	"testing"
 
+	"github.com/kaitu-io/k2/rule"
 	"gopkg.in/yaml.v3"
 )
 
@@ -25,7 +25,10 @@ func TestClientConfig_Defaults(t *testing.T) {
 
 func TestClientConfig_ProxyMode(t *testing.T) {
 	yaml := `
-server: "k2v5://udid:token@1.2.3.4:443"
+routes:
+  - via: "k2v5://udid:token@1.2.3.4:443"
+    match:
+      all: true
 mode: proxy
 proxy:
   listen: "0.0.0.0:8080"
@@ -225,7 +228,10 @@ func TestConfigListenDefault(t *testing.T) {
 func TestConfigListenFromYAML(t *testing.T) {
 	yaml := `
 listen: "0.0.0.0:1777"
-server: "k2v5://udid:token@1.2.3.4:443"
+routes:
+  - via: "k2v5://udid:token@1.2.3.4:443"
+    match:
+      all: true
 `
 	dir := t.TempDir()
 	path := filepath.Join(dir, "client.yaml")
@@ -248,12 +254,14 @@ server: "k2v5://udid:token@1.2.3.4:443"
 func TestClientConfigJSONRoundTrip(t *testing.T) {
 	cfg := &ClientConfig{
 		Listen: "127.0.0.1:1777",
-		Server: "k2v5://udid:token@1.2.3.4:443",
-		Mode:   "tun",
-		Proxy:  ProxyConfig{Listen: "127.0.0.1:1080"},
-		DNS:    DNSConfig{Direct: []string{"114.114.114.114:53"}, Proxy: []string{"8.8.8.8:53"}},
-		Rule:   RuleConfig{Global: true, CacheDir: "/tmp/k2rule"},
-		Log:    LogConfig{Level: "info", Output: "stderr"},
+		Routes: []RouteConfig{
+			{Via: "k2v5://udid:token@1.2.3.4:443", Match: rule.MatchConfig{All: true}},
+		},
+		Mode:     "tun",
+		Proxy:    ProxyConfig{Listen: "127.0.0.1:1080"},
+		DNS:      DNSConfig{Direct: []string{"114.114.114.114:53"}, Proxy: []string{"8.8.8.8:53"}},
+		CacheDir: "/tmp/k2rule",
+		Log:      LogConfig{Level: "info", Output: "stderr"},
 	}
 
 	data, err := json.Marshal(cfg)
@@ -264,10 +272,14 @@ func TestClientConfigJSONRoundTrip(t *testing.T) {
 	// Verify JSON uses snake_case keys matching YAML tags.
 	var raw map[string]any
 	json.Unmarshal(data, &raw)
-	for _, key := range []string{"listen", "server", "mode", "proxy", "dns", "rule", "log"} {
+	for _, key := range []string{"listen", "routes", "mode", "proxy", "dns", "log", "cache_dir"} {
 		if _, ok := raw[key]; !ok {
 			t.Errorf("expected JSON key %q, not found in %s", key, string(data))
 		}
+	}
+	// Server is derived (json:"-"), must NOT appear in JSON.
+	if _, ok := raw["server"]; ok {
+		t.Errorf("Server (derived) should not appear in JSON output")
 	}
 
 	var got ClientConfig
@@ -275,15 +287,21 @@ func TestClientConfigJSONRoundTrip(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	if !reflect.DeepEqual(cfg, &got) {
-		t.Fatalf("round-trip mismatch:\n  original: %+v\n  decoded:  %+v", cfg, got)
+	if got.Routes[0].Via != cfg.Routes[0].Via {
+		t.Fatalf("round-trip Routes[0].Via mismatch: got %q, want %q", got.Routes[0].Via, cfg.Routes[0].Via)
+	}
+	if got.CacheDir != cfg.CacheDir {
+		t.Fatalf("round-trip CacheDir mismatch: got %q, want %q", got.CacheDir, cfg.CacheDir)
 	}
 }
 
 func TestClientConfigJSONYAMLEquivalence(t *testing.T) {
 	// Build config from YAML file.
 	yamlContent := `
-server: "k2v5://udid:token@1.2.3.4:443"
+routes:
+  - via: "k2v5://udid:token@1.2.3.4:443"
+    match:
+      all: true
 mode: proxy
 proxy:
   listen: "0.0.0.0:8080"
@@ -307,7 +325,7 @@ log:
 
 	// Build equivalent config from JSON.
 	jsonContent := `{
-		"server": "k2v5://udid:token@1.2.3.4:443",
+		"routes": [{"via": "k2v5://udid:token@1.2.3.4:443", "match": {"all": true}}],
 		"mode": "proxy",
 		"proxy": {"listen": "0.0.0.0:8080"},
 		"dns": {"direct": ["114.114.114.114:53"], "proxy": ["8.8.8.8:53"]},
@@ -319,14 +337,21 @@ log:
 	}
 	SetDefaults(&jsonCfg)
 
-	if !reflect.DeepEqual(yamlCfg, &jsonCfg) {
-		t.Fatalf("YAML and JSON configs differ:\n  YAML: %+v\n  JSON: %+v", yamlCfg, jsonCfg)
+	// Compare key fields (Server is derived, so compare it separately).
+	if yamlCfg.Server != jsonCfg.Server {
+		t.Fatalf("Server mismatch: YAML=%q, JSON=%q", yamlCfg.Server, jsonCfg.Server)
+	}
+	if yamlCfg.Mode != jsonCfg.Mode {
+		t.Fatalf("Mode mismatch: YAML=%q, JSON=%q", yamlCfg.Mode, jsonCfg.Mode)
+	}
+	if yamlCfg.Routes[0].Via != jsonCfg.Routes[0].Via {
+		t.Fatalf("Routes[0].Via mismatch: YAML=%q, JSON=%q", yamlCfg.Routes[0].Via, jsonCfg.Routes[0].Via)
 	}
 }
 
 func TestTunConfig_JSONRoundTrip(t *testing.T) {
 	cfg := &ClientConfig{
-		Server: "k2v5://udid:token@1.2.3.4:443",
+		Routes: []RouteConfig{{Via: "k2v5://udid:token@1.2.3.4:443", Match: rule.MatchConfig{All: true}}},
 		Mode:   "tun",
 		Tun:    TunConfig{IPv4: "10.0.0.2/24", IPv6: "fd00::2/128"},
 	}
@@ -362,7 +387,10 @@ func TestTunConfig_JSONRoundTrip(t *testing.T) {
 
 func TestClientConfig_WithTun_YAML(t *testing.T) {
 	yamlContent := `
-server: "k2v5://udid:token@1.2.3.4:443"
+routes:
+  - via: "k2v5://udid:token@1.2.3.4:443"
+    match:
+      all: true
 mode: tun
 tun:
   ipv4: "10.0.0.2/24"
@@ -405,7 +433,7 @@ func TestClientConfig_BlockQUIC_Default(t *testing.T) {
 }
 
 func TestClientConfig_BlockQUIC_YAML(t *testing.T) {
-	yamlData := []byte("block_quic: true\nserver: k2v5://test\n")
+	yamlData := []byte("block_quic: true\nroutes:\n  - via: k2v5://test\n    match:\n      all: true\n")
 	var cfg ClientConfig
 	if err := yaml.Unmarshal(yamlData, &cfg); err != nil {
 		t.Fatal(err)

@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/kaitu-io/k2/config"
+	"github.com/kaitu-io/k2/rule"
 )
 
 func TestSaveLoadState(t *testing.T) {
@@ -75,7 +78,10 @@ func TestPersistedState_JSONRoundTrip(t *testing.T) {
 		ListenPort: 12345,
 		LANSubnets: []string{"192.168.1.0/24"},
 	}
-	cfg.Server = "k2v5://test:test@example.com:443"
+	cfg.Routes = []config.RouteConfig{
+		{Via: "k2v5://test:test@example.com:443", Match: rule.MatchConfig{All: true}},
+	}
+	config.SetDefaults(&cfg.ClientConfig)
 
 	st := &persistedState{
 		Config:    cfg,
@@ -98,8 +104,10 @@ func TestPersistedState_JSONRoundTrip(t *testing.T) {
 	if loaded.Config.ListenPort != 12345 {
 		t.Errorf("ListenPort = %d", loaded.Config.ListenPort)
 	}
+	// Server is derived from routes after SetDefaults.
+	config.SetDefaults(&loaded.Config.ClientConfig)
 	if loaded.Config.Server != "k2v5://test:test@example.com:443" {
-		t.Errorf("Server = %q", loaded.Config.Server)
+		t.Errorf("Server = %q (derived from routes)", loaded.Config.Server)
 	}
 	if len(loaded.Config.LANSubnets) != 1 {
 		t.Errorf("LANSubnets = %v", loaded.Config.LANSubnets)

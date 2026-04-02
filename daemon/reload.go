@@ -104,26 +104,13 @@ func (d *Daemon) applyDynamicConfig(newCfg *config.ClientConfig) (serverChanged 
 		old.DNS.Proxy = newCfg.DNS.Proxy
 	}
 
-	// Rule configuration.
-	if newCfg.Rule.RuleURL != old.Rule.RuleURL {
-		slog.Info("reload: rule.rule_url updated")
-		old.Rule.RuleURL = newCfg.Rule.RuleURL
-	}
-	if newCfg.Rule.GeoIPURL != old.Rule.GeoIPURL {
-		slog.Info("reload: rule.geoip_url updated")
-		old.Rule.GeoIPURL = newCfg.Rule.GeoIPURL
-	}
-	if newCfg.Rule.PornURL != old.Rule.PornURL {
-		slog.Info("reload: rule.porn_url updated")
-		old.Rule.PornURL = newCfg.Rule.PornURL
-	}
-	if newCfg.Rule.CacheDir != old.Rule.CacheDir {
-		slog.Info("reload: rule.cache_dir updated")
-		old.Rule.CacheDir = newCfg.Rule.CacheDir
-	}
-	if newCfg.Rule.Global != old.Rule.Global {
-		slog.Info("reload: rule.global updated", "global", newCfg.Rule.Global)
-		old.Rule.Global = newCfg.Rule.Global
+	// Routes: hot-reload of routes is a Phase 2 feature.
+	// TODO(routes): compare old/new routes and apply changes dynamically.
+
+	// CacheDir.
+	if newCfg.CacheDir != old.CacheDir {
+		slog.Info("reload: cache_dir updated")
+		old.CacheDir = newCfg.CacheDir
 	}
 
 	// Log level.

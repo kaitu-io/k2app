@@ -250,6 +250,8 @@ func (g *Gateway) tryAutoReconnect() {
 	if time.Since(st.Timestamp) > 7*24*time.Hour {
 		return
 	}
+	// Derive Server from routes (Server is json:"-", not persisted).
+	SetGatewayDefaults(st.Config)
 	time.Sleep(3 * time.Second) // wait for HTTP server + network stack to be ready
 	select {
 	case <-g.ctx.Done():

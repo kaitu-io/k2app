@@ -312,8 +312,8 @@ func (d *Daemon) engineConfigFromClientConfig(
 	monErr error,
 ) engine.Config {
 	// Ensure CacheDir has a value for k2rule.
-	if cfg.Rule.CacheDir == "" {
-		cfg.Rule.CacheDir = filepath.Join(cacheDir(), "k2rule")
+	if cfg.CacheDir == "" {
+		cfg.CacheDir = filepath.Join(cacheDir(), "k2rule")
 	}
 
 	ecfg := engine.Config{
@@ -366,6 +366,9 @@ func (d *Daemon) tryAutoReconnect(ctx context.Context) {
 		slog.Info("auto-reconnect: no config in saved state, skipping")
 		return
 	}
+
+	// Derive Server from routes (Server is json:"-", not persisted).
+	config.SetDefaults(st.Config)
 
 	slog.Info("auto-reconnect: reconnecting with saved config")
 	safego.Go(func() {

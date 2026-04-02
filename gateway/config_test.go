@@ -69,7 +69,10 @@ func TestGatewayFromURL(t *testing.T) {
 func TestLoadGateway(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "k2r.yml")
-	content := `server: "k2v5://udid:token@example.com:443/?ech=abc"
+	content := `routes:
+  - via: "k2v5://udid:token@example.com:443/?ech=abc"
+    match:
+      all: true
 listen_port: 8888
 lan_subnets:
   - "192.168.1.0/24"
@@ -93,7 +96,7 @@ dns:
 		t.Errorf("LANSubnets = %v", cfg.LANSubnets)
 	}
 	if cfg.Server != "k2v5://udid:token@example.com:443/?ech=abc" {
-		t.Errorf("Server = %q", cfg.Server)
+		t.Errorf("Server = %q (derived from routes)", cfg.Server)
 	}
 }
 

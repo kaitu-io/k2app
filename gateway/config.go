@@ -11,6 +11,7 @@ import (
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/engine"
 	"github.com/kaitu-io/k2/provider"
+	"github.com/kaitu-io/k2/rule"
 	"gopkg.in/yaml.v3"
 )
 
@@ -38,7 +39,7 @@ func LoadGateway(path string) (*GatewayConfig, error) {
 
 func GatewayFromURL(wireURL string) *GatewayConfig {
 	cfg := &GatewayConfig{}
-	cfg.Server = wireURL
+	cfg.Routes = []config.RouteConfig{{Via: wireURL, Match: rule.MatchConfig{All: true}}}
 	SetGatewayDefaults(cfg)
 	return cfg
 }

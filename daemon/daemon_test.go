@@ -21,7 +21,7 @@ func TestHandleUpConfigJSON(t *testing.T) {
 	d := New()
 	d.StartFunc = mockStartFunc
 
-	body := `{"action":"up","params":{"config":{"server":"k2v5://test:token@host:443"}}}`
+	body := `{"action":"up","params":{"config":{"routes":[{"via":"k2v5://test:token@host:443","match":{"all":true}}]}}}`
 	req := httptest.NewRequest("POST", "/api/core", bytes.NewReader([]byte(body)))
 	w := httptest.NewRecorder()
 	d.handleCore(w, req)
@@ -179,11 +179,8 @@ func TestPersistedStateWithClientConfig(t *testing.T) {
 	os.Remove(stateFilePath())
 	defer os.Remove(stateFilePath())
 
-	cfg := &config.ClientConfig{
-		Server: "k2v5://test:token@host:443",
-		Mode:   "tun",
-	}
-	config.SetDefaults(cfg)
+	cfg := config.ClientFromURL("k2v5://test:token@host:443")
+	cfg.Mode = "tun"
 
 	st := persistedState{
 		Config:    cfg,
@@ -200,6 +197,8 @@ func TestPersistedStateWithClientConfig(t *testing.T) {
 	if loaded.Config == nil {
 		t.Fatal("loaded Config is nil")
 	}
+	// Server is derived (json:"-"), derive it after loading.
+	config.SetDefaults(loaded.Config)
 	if loaded.Config.Server != cfg.Server {
 		t.Fatalf("Config.Server = %q, want %q", loaded.Config.Server, cfg.Server)
 	}
@@ -213,7 +212,7 @@ func TestStatusIncludesClientConfig(t *testing.T) {
 	d.StartFunc = mockStartFunc
 
 	// Connect via config JSON.
-	upBody := `{"action":"up","params":{"config":{"server":"k2v5://test:tok@host:443","mode":"tun"}}}`
+	upBody := `{"action":"up","params":{"config":{"routes":[{"via":"k2v5://test:tok@host:443","match":{"all":true}}],"mode":"tun"}}}`
 	req := httptest.NewRequest("POST", "/api/core", bytes.NewReader([]byte(upBody)))
 	w := httptest.NewRecorder()
 	d.handleCore(w, req)
@@ -236,16 +235,22 @@ func TestStatusIncludesClientConfig(t *testing.T) {
 		t.Fatal("expected config field in status response")
 	}
 
-	cfg, ok := cfgRaw.(map[string]any)
+	cfgMap, ok := cfgRaw.(map[string]any)
 	if !ok {
 		t.Fatalf("expected config to be a map, got %T", cfgRaw)
 	}
-	if cfg["server"] != "k2v5://test:tok@host:443" {
-		t.Fatalf("expected server in config, got %v", cfg["server"])
+	// Server is derived (json:"-"), should NOT appear in JSON.
+	if _, ok := cfgMap["server"]; ok {
+		t.Fatalf("status config should not contain derived server field")
 	}
-	// Should NOT have legacy wire_url key.
-	if _, ok := cfg["wire_url"]; ok {
-		t.Fatalf("status config should not contain legacy wire_url key")
+	// Routes should contain the k2v5 URL.
+	routesRaw, ok := cfgMap["routes"]
+	if !ok {
+		t.Fatal("expected routes field in status config")
+	}
+	routes, ok := routesRaw.([]any)
+	if !ok || len(routes) == 0 {
+		t.Fatalf("expected non-empty routes array, got %v", routesRaw)
 	}
 }
 
@@ -341,10 +346,7 @@ func TestAutoReconnectWithSavedConfig(t *testing.T) {
 	os.Remove(stateFilePath())
 	defer os.Remove(stateFilePath())
 
-	cfg := &config.ClientConfig{
-		Server: "k2v5://test:token@host:443",
-	}
-	config.SetDefaults(cfg)
+	cfg := config.ClientFromURL("k2v5://test:token@host:443")
 
 	// Save connected state with Config field.
 	saveState(persistedState{
@@ -361,6 +363,8 @@ func TestAutoReconnectWithSavedConfig(t *testing.T) {
 	if loaded.Config == nil {
 		t.Fatal("loaded Config is nil")
 	}
+	// Server is derived (json:"-"), derive it after loading.
+	config.SetDefaults(loaded.Config)
 	if loaded.Config.Server != "k2v5://test:token@host:443" {
 		t.Fatalf("Config.Server = %q, want k2v5://test:token@host:443", loaded.Config.Server)
 	}
