@@ -54,8 +54,10 @@ func TestStatePersistence(t *testing.T) {
 		t.Fatalf("loadState: %v", err)
 	}
 
-	// Server is derived (json:"-"), derive after loading.
-	config.SetDefaults(loaded.Config)
+	// Server is derived (json:"-"), re-derive after load.
+	if loaded.Config != nil {
+		config.SetDefaults(loaded.Config)
+	}
 	if loaded.Config == nil || loaded.Config.Server != st.Config.Server {
 		t.Fatalf("expected config server %s, got %v", st.Config.Server, loaded.Config)
 	}

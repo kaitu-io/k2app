@@ -62,10 +62,7 @@ func TestDoUpAcceptsClientConfig(t *testing.T) {
 		return nil
 	}
 
-	clientCfg := &config.ClientConfig{
-		Server: "k2v5://test:token@host:443",
-	}
-	config.SetDefaults(clientCfg)
+	clientCfg := config.ClientFromURL("k2v5://test:token@host:443")
 
 	if err := d.doUp(clientCfg, 0); err != nil {
 		t.Fatalf("doUp: %v", err)
@@ -91,14 +88,11 @@ func TestEngineConfigFromClientConfig_TunFields(t *testing.T) {
 		return nil
 	}
 
-	clientCfg := &config.ClientConfig{
-		Server: "k2v5://test:token@host:443",
-		Tun: config.TunConfig{
-			IPv4: "10.0.0.2/24",
-			IPv6: "fd00::2/128",
-		},
+	clientCfg := config.ClientFromURL("k2v5://test:token@host:443")
+	clientCfg.Tun = config.TunConfig{
+		IPv4: "10.0.0.2/24",
+		IPv6: "fd00::2/128",
 	}
-	config.SetDefaults(clientCfg)
 
 	if err := d.doUp(clientCfg, 0); err != nil {
 		t.Fatalf("doUp: %v", err)
@@ -122,10 +116,7 @@ func TestEngineConfigFromClientConfig_TunDefaults(t *testing.T) {
 	}
 
 	// No Tun fields set — SetDefaults fills platform defaults.
-	clientCfg := &config.ClientConfig{
-		Server: "k2v5://test:token@host:443",
-	}
-	config.SetDefaults(clientCfg)
+	clientCfg := config.ClientFromURL("k2v5://test:token@host:443")
 
 	if err := d.doUp(clientCfg, 0); err != nil {
 		t.Fatalf("doUp: %v", err)
@@ -148,15 +139,12 @@ func TestEngineConfigFromClientConfig_ProxyModeUnchanged(t *testing.T) {
 		return nil
 	}
 
-	clientCfg := &config.ClientConfig{
-		Server: "k2v5://test:token@host:443",
-		Mode:   "proxy",
-		Tun: config.TunConfig{
-			IPv4: "10.0.0.2/24",
-		},
+	clientCfg := config.ClientFromURL("k2v5://test:token@host:443")
+	clientCfg.Mode = "proxy"
+	clientCfg.Tun = config.TunConfig{
+		IPv4: "10.0.0.2/24",
 	}
 	clientCfg.Proxy.Listen = "127.0.0.1:8080"
-	config.SetDefaults(clientCfg)
 
 	if err := d.doUp(clientCfg, 0); err != nil {
 		t.Fatalf("doUp: %v", err)
@@ -197,7 +185,7 @@ func TestPersistedStateWithClientConfig(t *testing.T) {
 	if loaded.Config == nil {
 		t.Fatal("loaded Config is nil")
 	}
-	// Server is derived (json:"-"), derive it after loading.
+	// Server is derived (json:"-"), re-derive after deserialization.
 	config.SetDefaults(loaded.Config)
 	if loaded.Config.Server != cfg.Server {
 		t.Fatalf("Config.Server = %q, want %q", loaded.Config.Server, cfg.Server)
@@ -363,7 +351,7 @@ func TestAutoReconnectWithSavedConfig(t *testing.T) {
 	if loaded.Config == nil {
 		t.Fatal("loaded Config is nil")
 	}
-	// Server is derived (json:"-"), derive it after loading.
+	// Server is derived (json:"-"), re-derive after deserialization.
 	config.SetDefaults(loaded.Config)
 	if loaded.Config.Server != "k2v5://test:token@host:443" {
 		t.Fatalf("Config.Server = %q, want k2v5://test:token@host:443", loaded.Config.Server)

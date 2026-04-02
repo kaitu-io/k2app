@@ -82,7 +82,7 @@ func TestEngine_NewEngine(t *testing.T) {
 
 func TestEngine_Start_InvalidURL(t *testing.T) {
 	e := NewEngine()
-	cfg := `{"server":"garbage"}`
+	cfg := `{"routes":[{"via":"garbage","match":{"all":true}}]}`
 	err := e.Start(cfg, 0, testEngineConfig())
 	if err == nil {
 		t.Fatal("Start with invalid URL should return error")
@@ -94,7 +94,7 @@ func TestEngine_Start_InvalidURL(t *testing.T) {
 
 func TestEngine_Start_NilConfig(t *testing.T) {
 	e := NewEngine()
-	err := e.Start(`{"server":"garbage"}`, 0, nil)
+	err := e.Start(`{"routes":[{"via":"garbage","match":{"all":true}}]}`, 0, nil)
 	if err == nil {
 		t.Fatal("Start with nil EngineConfig should return error")
 	}
@@ -105,7 +105,7 @@ func TestEngine_Start_NilConfig(t *testing.T) {
 
 func TestEngine_DoubleStart(t *testing.T) {
 	e := NewEngine()
-	cfg := `{"server":"k2v5://udid:token@127.0.0.1:12345?insecure=1"}`
+	cfg := `{"routes":[{"via":"k2v5://udid:token@127.0.0.1:12345?insecure=1","match":{"all":true}}]}`
 	ecfg := testEngineConfig()
 
 	_ = e.Start(cfg, 0, ecfg)
@@ -130,7 +130,7 @@ func TestEngine_EventHandler_StateChanges(t *testing.T) {
 	h := &mockEventHandler{}
 	e.SetEventHandler(h)
 
-	_ = e.Start(`{"server":"garbage"}`, 0, testEngineConfig())
+	_ = e.Start(`{"routes":[{"via":"garbage","match":{"all":true}}]}`, 0, testEngineConfig())
 
 	states := h.getStates()
 	if len(states) < 2 {
@@ -149,7 +149,7 @@ func TestEngine_EventHandler_Error(t *testing.T) {
 	h := &mockEventHandler{}
 	e.SetEventHandler(h)
 
-	_ = e.Start(`{"server":"garbage"}`, 0, testEngineConfig())
+	_ = e.Start(`{"routes":[{"via":"garbage","match":{"all":true}}]}`, 0, testEngineConfig())
 
 	errs := h.getErrors()
 	if len(errs) == 0 {
@@ -181,7 +181,7 @@ func TestEngine_StatusJSON_Disconnected(t *testing.T) {
 
 func TestEngine_StatusJSON_AfterFailedStart(t *testing.T) {
 	e := NewEngine()
-	_ = e.Start(`{"server":"garbage"}`, 0, testEngineConfig())
+	_ = e.Start(`{"routes":[{"via":"garbage","match":{"all":true}}]}`, 0, testEngineConfig())
 
 	raw := e.StatusJSON()
 	var m map[string]any
@@ -210,9 +210,8 @@ func TestEngine_StatusJSON_AfterFailedStart(t *testing.T) {
 
 func TestEngine_Start_WithEngineConfig(t *testing.T) {
 	configJSON := `{
-		"server": "k2v5://udid:token@host:443",
-		"mode": "tun",
-		"rule": {"global": true}
+		"routes": [{"via": "k2v5://udid:token@host:443", "match": {"all": true}}],
+		"mode": "tun"
 	}`
 
 	e := NewEngine()
