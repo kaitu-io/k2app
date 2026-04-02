@@ -63,4 +63,29 @@ export const feedbackTicketTools: ToolRegistration[] = [
     },
     mapBody: () => ({}),
   }),
+
+  defineApiTool({
+    name: 'reply_feedback_ticket',
+    description:
+      'Reply to a feedback ticket as admin. Triggers aggregated email notification to the user after 5 minutes.',
+    group: 'feedback_tickets.write',
+    method: 'POST',
+    path: (p) => `/app/feedback-tickets/${p.id}/reply`,
+    params: {
+      id: z.number().describe('Ticket ID (from query_feedback_tickets results)'),
+      content: z.string().min(1).max(2000).describe('Reply content (1-2000 characters)'),
+      sender_name: z.string().optional().describe('Sender display name (default "claude")'),
+    },
+    mapBody: (p) => ({ content: p.content, senderName: p.sender_name ?? 'claude' }),
+  }),
+
+  defineApiTool({
+    name: 'list_ticket_replies',
+    description: 'List all replies for a feedback ticket, ordered by creation time.',
+    group: 'feedback_tickets',
+    path: (p) => `/app/feedback-tickets/${p.id}/replies`,
+    params: {
+      id: z.number().describe('Ticket ID (from query_feedback_tickets results)'),
+    },
+  }),
 ]
