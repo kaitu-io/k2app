@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace `k2rule` with an in-tree `rule/` package that supports per-service IP-CIDR + domain rule sets in a mmap-indexed binary format (k2b).
+**Goal:** Replace `k2rule` with an in-tree `rule/` package. New `routes`-based config format. Per-service IP-CIDR + domain rule sets in mmap-indexed k2b format.
 
-**Architecture:** New `rule/` package with 6 files: types (Target, Config), domain binary search (k2rule v3 algorithm), IP range binary search (O(log n) on sorted ranges), k2b format reader/writer, Engine (Match + SetTmpRule), and loader (manifest + HTTP download + mmap). Integration replaces all `k2rule.*` references across engine/, core/, core/dns/, config/.
+**Architecture:** New `rule/` package: domain binary search (k2rule v3 algorithm), IP range binary search (O(log n)), k2b format, Engine (Match + SetTmpRule), loader (cache_dir). Config changes from `server` + `rule` fields to `routes` array. Integration replaces all `k2rule.*` references. Phase 1: single server. Phase 2 (future): multi-server routing.
 
-**Tech Stack:** Go stdlib only for the rule package. `go4.org/netipx` (BSD-3) for the k2b compiler tool only (IP range merging). `deadlock.RWMutex` for concurrency.
+**Tech Stack:** Go stdlib only for rule/. `deadlock.RWMutex` for concurrency.
 
 **Spec:** `docs/superpowers/specs/2026-04-02-rule-module-design.md`
 
@@ -18,33 +18,36 @@
 
 | File | Responsibility |
 |------|---------------|
-| `rule/target.go` | `Target` type (Direct/Proxy/Reject), `Config` struct, preset expansion |
+| `rule/target.go` | `Target` type (Direct/Proxy/Reject), preset expansion, match expansion, set merging |
+| `rule/target_test.go` | Target, preset, merge tests |
 | `rule/domain.go` | `domainSection` — binary search on reversed sorted domains in `[]byte` slice |
-| `rule/domain_test.go` | Domain matching tests (suffix, exact, edge cases) |
+| `rule/domain_test.go` | Domain matching tests |
 | `rule/ip.go` | `ipv4Section`, `ipv6Section` — binary search on sorted IP ranges in `[]byte` slice |
-| `rule/ip_test.go` | IP matching tests (v4, v6, boundary, miss) |
+| `rule/ip_test.go` | IP matching tests |
 | `rule/format.go` | k2b v1 reader/writer: `ReadBundle([]byte)`, `WriteBundle(io.Writer, []BundleSet)` |
-| `rule/format_test.go` | Round-trip tests: write k2b → read → verify rule sets |
-| `rule/engine.go` | `Engine` — Match, SetTmpRule, Close; holds mmap'd bundles + bound sets |
-| `rule/engine_test.go` | Engine integration tests: priority chain, SetTmpRule override, concurrent access |
+| `rule/format_test.go` | Round-trip tests |
+| `rule/engine.go` | `Engine` — Match, SetTmpRule, Close; holds bound routes + mmap'd bundles |
+| `rule/engine_test.go` | Engine integration tests |
+| `rule/loader.go` | `Load(cacheDir)` — read .k2b files, build name→BundleSet index |
+| `rule/loader_test.go` | Loader tests (empty dir, valid bundles, corrupt files) |
 
 ### Modified files (integration)
 
 | File | Change |
 |------|--------|
-| `config/config.go` | Replace `RuleConfig` fields |
-| `core/router.go` | Hold `*rule.Engine`, delegate to `engine.Match()` |
-| `core/tunnel.go` | `k2rule.Target` → `rule.Target`, `k2rule.SetTmpRule` → method call (5 sites) |
-| `core/dns/middleware.go` | `k2rule.Match` → injected func, `k2rule.SetTmpRule` → injected func (7 sites) |
-| `core/dns/middleware_test.go` | Replace `initK2Rule` with `rule.Engine` setup |
+| `config/config.go` | Delete `Server`+`Rule`, add `Routes []RouteConfig` |
+| `core/router.go` | Hold `*rule.Engine`, delegate Match, add SetTmpRule |
+| `core/tunnel.go` | `k2rule.Target` → `rule.Target`, SetTmpRule via router (5 sites) |
+| `core/dns/middleware.go` | Inject matchRule/setTmpRule functions (7 sites) |
+| `core/dns/middleware_test.go` | Replace `initK2Rule` |
 | `core/tunnel_test.go` | Update Router construction |
-| `engine/engine.go` | Build `rule.Engine` in Start(), Close in Stop(), remove `k2rule` import |
-| `engine/engine_test.go` | Replace `k2rule.Init` with `rule.Engine` setup |
+| `engine/engine.go` | Extract server URL from routes, build rule.Engine, close in Stop() |
+| `engine/engine_test.go` | Replace k2rule setup |
 | `go.mod` | Remove `github.com/kaitu-io/k2rule` |
 
 ---
 
-## Task 1: Target type + Config struct
+## Task 1: Target type + presets + match expansion
 
 **Files:**
 - Create: `rule/target.go`
@@ -74,41 +77,31 @@ func TestTargetString(t *testing.T) {
 	}
 }
 
-func TestParseTarget(t *testing.T) {
+func TestParseVia(t *testing.T) {
 	tests := []struct {
-		input string
-		want  Target
-		ok    bool
+		via  string
+		want Target
 	}{
-		{"direct", TargetDirect, true},
-		{"proxy", TargetProxy, true},
-		{"reject", TargetReject, true},
-		{"PROXY", TargetProxy, true},
-		{"bogus", 0, false},
+		{"direct", TargetDirect},
+		{"reject", TargetReject},
+		{"k2v5://server:443", TargetProxy},
+		{"k2v5://user:pass@host:443?ech=abc", TargetProxy},
 	}
 	for _, tt := range tests {
-		got, ok := ParseTarget(tt.input)
-		if ok != tt.ok || (ok && got != tt.want) {
-			t.Errorf("ParseTarget(%q) = (%v, %v), want (%v, %v)", tt.input, got, ok, tt.want, tt.ok)
+		if got := ParseVia(tt.via); got != tt.want {
+			t.Errorf("ParseVia(%q) = %v, want %v", tt.via, got, tt.want)
 		}
 	}
 }
 
 func TestExpandPreset(t *testing.T) {
-	sets := ExpandPreset("overseas")
-	if len(sets) == 0 {
-		t.Fatal("overseas preset should expand to non-empty set list")
+	names := ExpandPreset("overseas")
+	if len(names) == 0 {
+		t.Fatal("overseas preset should be non-empty")
 	}
-	// All overseas entries default to proxy
-	for _, s := range sets {
-		if s.Action != TargetProxy {
-			t.Errorf("overseas preset %q should be proxy, got %v", s.Name, s.Action)
-		}
-	}
-	// google must be present
 	found := false
-	for _, s := range sets {
-		if s.Name == "google" {
+	for _, n := range names {
+		if n == "google" {
 			found = true
 		}
 	}
@@ -118,44 +111,52 @@ func TestExpandPreset(t *testing.T) {
 }
 
 func TestExpandPresetUnknown(t *testing.T) {
-	sets := ExpandPreset("nonexistent")
-	if sets != nil {
-		t.Errorf("unknown preset should return nil, got %v", sets)
+	if names := ExpandPreset("nonexistent"); names != nil {
+		t.Errorf("unknown preset should return nil, got %v", names)
 	}
 }
 
-func TestMergeSets(t *testing.T) {
-	preset := []SetConfig{
-		{Name: "google", Action: TargetProxy},
-		{Name: "openai", Action: TargetProxy},
+func TestExpandMatch(t *testing.T) {
+	// Preset + names + exclude
+	m := MatchConfig{
+		Preset:  "overseas",
+		Names:   []string{"my-corp"},
+		Exclude: []string{"openai"},
 	}
-	user := []SetConfig{
-		{Name: "openai", Action: TargetReject},
-		{Name: "my-corp", Action: TargetDirect},
-	}
-	merged := MergeSets(preset, user)
-	// openai should be overridden to reject
-	for _, s := range merged {
-		if s.Name == "openai" && s.Action != TargetReject {
-			t.Errorf("openai should be reject after merge, got %v", s.Action)
+	names := ExpandMatch(m)
+
+	// google should be present (from preset)
+	has := func(name string) bool {
+		for _, n := range names {
+			if n == name {
+				return true
+			}
 		}
+		return false
 	}
-	// my-corp should be appended
-	found := false
-	for _, s := range merged {
-		if s.Name == "my-corp" {
-			found = true
-		}
+	if !has("google") {
+		t.Error("should include google from preset")
 	}
-	if !found {
-		t.Error("user-added my-corp should be in merged result")
+	if !has("my-corp") {
+		t.Error("should include my-corp from names")
+	}
+	if has("openai") {
+		t.Error("openai should be excluded")
+	}
+}
+
+func TestExpandMatchAll(t *testing.T) {
+	m := MatchConfig{All: true}
+	names := ExpandMatch(m)
+	if names != nil {
+		t.Errorf("match all should return nil names, got %v", names)
 	}
 }
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/david/projects/kaitu-io/k2 && go test ./rule/ -v -run 'TestTarget|TestParse|TestExpand|TestMerge' 2>&1 | head -5`
+Run: `cd /Users/david/projects/kaitu-io/k2 && go test ./rule/ -v -run 'TestTarget|TestParse|TestExpand' 2>&1 | head -5`
 Expected: compilation error — package `rule` does not exist
 
 - [ ] **Step 3: Write target.go**
@@ -190,117 +191,109 @@ func (t Target) String() string {
 	}
 }
 
-// ParseTarget converts a string to Target. Case-insensitive.
-func ParseTarget(s string) (Target, bool) {
-	switch strings.ToLower(s) {
+// ParseVia converts a route via string to a Target.
+// k2v5:// URLs → TargetProxy; "direct" → TargetDirect; "reject" → TargetReject.
+func ParseVia(via string) Target {
+	if strings.HasPrefix(via, "k2v5://") {
+		return TargetProxy
+	}
+	switch strings.ToLower(via) {
 	case "direct":
-		return TargetDirect, true
-	case "proxy":
-		return TargetProxy, true
+		return TargetDirect
 	case "reject":
-		return TargetReject, true
+		return TargetReject
 	default:
-		return 0, false
+		return TargetDirect
 	}
 }
 
-// SetConfig binds a rule set name to a routing action.
-type SetConfig struct {
-	Name   string `yaml:"name"   json:"name"`
-	Action Target `yaml:"-"      json:"-"`
-	// ActionStr is the YAML/JSON serialization field for Action.
-	ActionStr string `yaml:"action" json:"action"`
-	URL        string `yaml:"url"    json:"url,omitempty"` // custom rule set URL (optional)
+// MatchConfig describes which rule sets a route matches.
+type MatchConfig struct {
+	Preset  string   `yaml:"preset,omitempty"  json:"preset,omitempty"`
+	Names   []string `yaml:"names,omitempty"   json:"names,omitempty"`
+	Exclude []string `yaml:"exclude,omitempty" json:"exclude,omitempty"`
+	All     bool     `yaml:"all,omitempty"     json:"all,omitempty"`
 }
 
-// Config is the rule engine configuration (from client YAML).
-type Config struct {
-	Preset   string      `yaml:"preset"    json:"preset"`
-	CnDirect bool        `yaml:"cn_direct" json:"cn_direct"`
-	Default  string      `yaml:"default"   json:"default"` // "direct" or "proxy"
-	Sets     []SetConfig `yaml:"sets"      json:"sets"`
-	CacheDir string      `yaml:"cache_dir" json:"cache_dir"`
+// HasCriteria returns true if any match criteria are set.
+func (m MatchConfig) HasCriteria() bool {
+	return m.All || m.Preset != "" || len(m.Names) > 0
 }
 
-// presets maps preset name to the set list it expands to.
-var presets = map[string][]SetConfig{
+// presets maps preset name to the rule set names it includes.
+var presets = map[string][]string{
 	"overseas": {
-		{Name: "google", Action: TargetProxy},
-		{Name: "facebook", Action: TargetProxy},
-		{Name: "telegram", Action: TargetProxy},
-		{Name: "twitter", Action: TargetProxy},
-		{Name: "netflix", Action: TargetProxy},
-		{Name: "discord", Action: TargetProxy},
-		{Name: "spotify", Action: TargetProxy},
-		{Name: "tiktok", Action: TargetProxy},
-		{Name: "openai", Action: TargetProxy},
-		{Name: "github", Action: TargetProxy},
-		{Name: "cloudflare", Action: TargetProxy},
-		{Name: "fastly", Action: TargetProxy},
+		"google", "facebook", "telegram", "twitter", "netflix",
+		"discord", "spotify", "tiktok", "openai", "github",
+		"cloudflare", "fastly",
 	},
 	"cn-access": {
-		{Name: "cn-sites", Action: TargetProxy},
-		{Name: "bilibili", Action: TargetProxy},
-		{Name: "geoip-cn", Action: TargetProxy},
+		"cn-sites", "bilibili", "geoip-cn",
 	},
 }
 
-// ExpandPreset returns the set list for a preset name, or nil if unknown.
-func ExpandPreset(name string) []SetConfig {
-	sets, ok := presets[strings.ToLower(name)]
+// ExpandPreset returns the rule set names for a preset, or nil if unknown.
+func ExpandPreset(name string) []string {
+	names, ok := presets[strings.ToLower(name)]
 	if !ok {
 		return nil
 	}
-	// Return a copy to avoid mutation.
-	out := make([]SetConfig, len(sets))
-	copy(out, sets)
+	out := make([]string, len(names))
+	copy(out, names)
 	return out
 }
 
-// MergeSets merges preset sets with user sets. User entries with the same
-// name override the preset entry. User entries with new names are appended.
-func MergeSets(preset, user []SetConfig) []SetConfig {
-	result := make([]SetConfig, len(preset))
-	copy(result, preset)
+// ExpandMatch expands a MatchConfig into a list of rule set names.
+// Returns nil for match-all (caller should treat as fallback).
+func ExpandMatch(m MatchConfig) []string {
+	if m.All {
+		return nil
+	}
 
-	for _, u := range user {
-		found := false
-		for i := range result {
-			if result[i].Name == u.Name {
-				result[i] = u
-				found = true
-				break
+	var names []string
+	if m.Preset != "" {
+		names = append(names, ExpandPreset(m.Preset)...)
+	}
+	names = append(names, m.Names...)
+
+	// Apply excludes
+	if len(m.Exclude) > 0 {
+		excl := make(map[string]bool, len(m.Exclude))
+		for _, e := range m.Exclude {
+			excl[e] = true
+		}
+		filtered := names[:0]
+		for _, n := range names {
+			if !excl[n] {
+				filtered = append(filtered, n)
 			}
 		}
-		if !found {
-			result = append(result, u)
-		}
+		names = filtered
 	}
-	return result
+
+	return names
 }
 ```
 
 - [ ] **Step 4: Run tests**
 
-Run: `cd /Users/david/projects/kaitu-io/k2 && go test ./rule/ -v -run 'TestTarget|TestParse|TestExpand|TestMerge'`
+Run: `cd /Users/david/projects/kaitu-io/k2 && go test ./rule/ -v -run 'TestTarget|TestParse|TestExpand'`
 Expected: all PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add rule/target.go rule/target_test.go
-git commit -m "feat(rule): add Target type, Config, preset expansion, set merging"
+git commit -m "feat(rule): Target type, ParseVia, preset expansion, match expansion"
 ```
 
 ---
 
-## Task 2: Domain binary search (mmap-compatible)
+## Task 2: Domain binary search
 
 **Files:**
 - Create: `rule/domain.go`
 - Create: `rule/domain_test.go`
-
-**Algorithm:** Reuses k2rule v3's approach. Domains stored as reversed, lowercased, dot-prefixed strings, sorted lexicographically. Query generates all suffixes, reverses each, binary searches for exact match. All operations work directly on a `[]byte` slice (mmap-friendly, zero heap allocation in the hot path).
 
 - [ ] **Step 1: Write domain_test.go**
 
@@ -309,40 +302,22 @@ package rule
 
 import (
 	"encoding/binary"
+	"sort"
 	"testing"
 )
 
-// buildDomainSection builds a domain section byte slice from a list of suffix domains.
-// This is the test helper that constructs the binary format the mmap reader expects.
-func buildDomainSection(domains []string) []byte {
-	reversed := make([]string, len(domains))
-	for i, d := range domains {
-		reversed[i] = reverseString("." + d)
+// buildTestDomainSection builds a domain section from suffix domains for testing.
+func buildTestDomainSection(domains []string) domainSection {
+	data := buildDomainData(domains)
+	if len(data) == 0 {
+		return domainSection{}
 	}
-	// Sort — import sort in test
-	sortStrings(reversed)
-
-	// Build: count(4) + offsets(count+1)*4 + strings
-	var strings []byte
-	offsets := make([]uint32, len(reversed)+1)
-	for i, s := range reversed {
-		offsets[i] = uint32(len(strings))
-		strings = append(strings, []byte(s)...)
-	}
-	offsets[len(reversed)] = uint32(len(strings)) // sentinel
-
-	buf := make([]byte, 4+(len(reversed)+1)*4+len(strings))
-	binary.LittleEndian.PutUint32(buf[0:4], uint32(len(reversed)))
-	for i, off := range offsets {
-		binary.LittleEndian.PutUint32(buf[4+i*4:4+i*4+4], off)
-	}
-	copy(buf[4+(len(reversed)+1)*4:], strings)
-	return buf
+	count := int(binary.LittleEndian.Uint32(data[0:4]))
+	return domainSection{data: data, count: count}
 }
 
 func TestDomainMatchSuffix(t *testing.T) {
-	data := buildDomainSection([]string{"google.com", "youtube.com"})
-	ds := domainSection{data: data, count: 2}
+	ds := buildTestDomainSection([]string{"google.com", "youtube.com"})
 
 	tests := []struct {
 		domain string
@@ -365,23 +340,28 @@ func TestDomainMatchSuffix(t *testing.T) {
 }
 
 func TestDomainMatchEmpty(t *testing.T) {
-	ds := domainSection{data: nil, count: 0}
+	ds := domainSection{}
 	if ds.Match("anything.com") {
 		t.Error("empty domain section should not match anything")
 	}
 }
 
 func TestDomainMatchCaseInsensitive(t *testing.T) {
-	data := buildDomainSection([]string{"google.com"})
-	ds := domainSection{data: data, count: 2}
-	// Count is wrong — recalculate from data
-	ds.count = int(binary.LittleEndian.Uint32(data[0:4]))
+	ds := buildTestDomainSection([]string{"google.com"})
 
 	if !ds.Match("GOOGLE.COM") {
-		t.Error("domain match should be case-insensitive")
+		t.Error("should be case-insensitive")
 	}
 	if !ds.Match("Google.Com") {
-		t.Error("domain match should be case-insensitive (mixed)")
+		t.Error("should be case-insensitive (mixed)")
+	}
+}
+
+func TestDomainNoFalsePrefix(t *testing.T) {
+	// "oogle.com" should NOT match the "google.com" suffix entry
+	ds := buildTestDomainSection([]string{"google.com"})
+	if ds.Match("oogle.com") {
+		t.Error("oogle.com should not match google.com suffix")
 	}
 }
 ```
@@ -403,20 +383,15 @@ import (
 )
 
 // domainSection provides zero-allocation domain matching on a byte slice.
-// The byte slice layout matches k2rule v3:
-//
-//	count      (4 bytes LE)
-//	offsets[0..count] (4 bytes LE each, count+1 entries including sentinel)
-//	strings area (reversed, lowercased, dot-prefixed domains, sorted)
-//
-// All operations work directly on the slice — suitable for mmap.
+// Layout: count(4) + offsets(count+1)*4 + strings area.
+// Strings are reversed, lowercased, dot-prefixed domains, sorted lexicographically.
+// Reuses k2rule v3 algorithm.
 type domainSection struct {
 	data  []byte
 	count int
 }
 
 // Match returns true if domain matches any entry (suffix match).
-// Case-insensitive. Zero heap allocation in the hot path (uses stack buffer).
 func (ds *domainSection) Match(domain string) bool {
 	if ds.count == 0 || len(ds.data) == 0 {
 		return false
@@ -437,26 +412,22 @@ func (ds *domainSection) Match(domain string) bool {
 	return false
 }
 
-// bsearch performs binary search for exact match of target in the sorted strings area.
 func (ds *domainSection) bsearch(target string) bool {
 	idx := sort.Search(ds.count, func(j int) bool {
-		return ds.getDomainAt(j) >= target
+		return ds.entryAt(j) >= target
 	})
-	return idx < ds.count && ds.getDomainAt(idx) == target
+	return idx < ds.count && ds.entryAt(idx) == target
 }
 
-// getDomainAt returns the domain string at index i from the sorted strings area.
-func (ds *domainSection) getDomainAt(i int) string {
-	offsetsStart := 4 // after count
-	stringsStart := offsetsStart + (ds.count+1)*4
+func (ds *domainSection) entryAt(i int) string {
+	base := 4 // skip count
+	strStart := base + (ds.count+1)*4
 
-	off := int(binary.LittleEndian.Uint32(ds.data[offsetsStart+i*4 : offsetsStart+i*4+4]))
-	nextOff := int(binary.LittleEndian.Uint32(ds.data[offsetsStart+(i+1)*4 : offsetsStart+(i+1)*4+4]))
-
-	return string(ds.data[stringsStart+off : stringsStart+nextOff])
+	off := int(binary.LittleEndian.Uint32(ds.data[base+i*4 : base+i*4+4]))
+	nextOff := int(binary.LittleEndian.Uint32(ds.data[base+(i+1)*4 : base+(i+1)*4+4]))
+	return string(ds.data[strStart+off : strStart+nextOff])
 }
 
-// reverseString reverses a string byte-by-byte (ASCII-safe for domain names).
 func reverseString(s string) string {
 	b := []byte(s)
 	for i, j := 0, len(b)-1; i < j; i, j = i+1, j-1 {
@@ -465,9 +436,33 @@ func reverseString(s string) string {
 	return string(b)
 }
 
-// sortStrings sorts a string slice in place (used by test helper and writer).
-func sortStrings(ss []string) {
-	sort.Strings(ss)
+// buildDomainData builds the domain section binary for suffix domains.
+// Used by WriteBundle and tests.
+func buildDomainData(domains []string) []byte {
+	if len(domains) == 0 {
+		return nil
+	}
+	reversed := make([]string, len(domains))
+	for i, d := range domains {
+		reversed[i] = reverseString("." + strings.ToLower(d))
+	}
+	sort.Strings(reversed)
+
+	var strBuf []byte
+	offsets := make([]uint32, len(reversed)+1)
+	for i, s := range reversed {
+		offsets[i] = uint32(len(strBuf))
+		strBuf = append(strBuf, []byte(s)...)
+	}
+	offsets[len(reversed)] = uint32(len(strBuf))
+
+	buf := make([]byte, 4+(len(reversed)+1)*4+len(strBuf))
+	binary.LittleEndian.PutUint32(buf[0:4], uint32(len(reversed)))
+	for i, off := range offsets {
+		binary.LittleEndian.PutUint32(buf[4+i*4:4+i*4+4], off)
+	}
+	copy(buf[4+(len(reversed)+1)*4:], strBuf)
+	return buf
 }
 ```
 
@@ -485,13 +480,11 @@ git commit -m "feat(rule): domain binary search — suffix matching on byte slic
 
 ---
 
-## Task 3: IP range binary search (mmap-compatible)
+## Task 3: IP range binary search
 
 **Files:**
 - Create: `rule/ip.go`
 - Create: `rule/ip_test.go`
-
-**Algorithm:** IPv4 ranges stored as `(from[4], to[4])` pairs, sorted by `from`. Binary search finds largest `from <= target`, then checks `target <= to`. O(log n), zero allocation.
 
 - [ ] **Step 1: Write ip_test.go**
 
@@ -503,22 +496,9 @@ import (
 	"testing"
 )
 
-// buildIPv4Section builds an IPv4 section from CIDR strings.
-// Merges overlapping ranges and sorts.
-func buildIPv4Section(cidrs []string) []byte {
-	ranges := cidrsToRanges4(cidrs)
-	buf := make([]byte, len(ranges)*8)
-	for i, r := range ranges {
-		copy(buf[i*8:i*8+4], r.from[:])
-		copy(buf[i*8+4:i*8+8], r.to[:])
-	}
-	return buf
-}
-
 func TestIPv4Match(t *testing.T) {
-	// 8.8.8.0/24 and 1.1.1.0/24
-	data := buildIPv4Section([]string{"8.8.8.0/24", "1.1.1.0/24"})
-	sec := ipv4Section{data: data, count: 2}
+	data, count := buildIPv4Data([]string{"8.8.8.0/24", "1.1.1.0/24"})
+	sec := ipv4Section{data: data, count: count}
 
 	tests := []struct {
 		ip   string
@@ -540,18 +520,16 @@ func TestIPv4Match(t *testing.T) {
 	}
 }
 
-func TestIPv4MatchEmpty(t *testing.T) {
-	sec := ipv4Section{data: nil, count: 0}
-	addr := netip.MustParseAddr("8.8.8.8")
-	if sec.Contains(addr) {
+func TestIPv4Empty(t *testing.T) {
+	sec := ipv4Section{}
+	if sec.Contains(netip.MustParseAddr("8.8.8.8")) {
 		t.Error("empty section should not match")
 	}
 }
 
 func TestIPv4AdjacentRanges(t *testing.T) {
-	// Two adjacent /24s: 10.0.0.0/24 and 10.0.1.0/24
-	data := buildIPv4Section([]string{"10.0.0.0/24", "10.0.1.0/24"})
-	sec := ipv4Section{data: data, count: 2}
+	data, count := buildIPv4Data([]string{"10.0.0.0/24", "10.0.1.0/24"})
+	sec := ipv4Section{data: data, count: count}
 
 	if !sec.Contains(netip.MustParseAddr("10.0.0.128")) {
 		t.Error("should match first range")
@@ -560,22 +538,26 @@ func TestIPv4AdjacentRanges(t *testing.T) {
 		t.Error("should match second range")
 	}
 	if sec.Contains(netip.MustParseAddr("10.0.2.0")) {
-		t.Error("should not match outside ranges")
+		t.Error("should not match outside")
 	}
 }
 
 func TestIPv6Match(t *testing.T) {
-	data := buildIPv6Section([]string{"2001:4860::/32"})
-	sec := ipv6Section{data: data, count: 1}
+	data, count := buildIPv6Data([]string{"2001:4860::/32"})
+	sec := ipv6Section{data: data, count: count}
 
 	if !sec.Contains(netip.MustParseAddr("2001:4860::8888")) {
 		t.Error("should match inside /32")
 	}
-	if !sec.Contains(netip.MustParseAddr("2001:4860:4860::8888")) {
-		t.Error("should match inside /32")
-	}
 	if sec.Contains(netip.MustParseAddr("2001:4861::1")) {
 		t.Error("should not match outside /32")
+	}
+}
+
+func TestIPv6Empty(t *testing.T) {
+	sec := ipv6Section{}
+	if sec.Contains(netip.MustParseAddr("::1")) {
+		t.Error("empty section should not match")
 	}
 }
 ```
@@ -583,7 +565,7 @@ func TestIPv6Match(t *testing.T) {
 - [ ] **Step 2: Run to verify failure**
 
 Run: `cd /Users/david/projects/kaitu-io/k2 && go test ./rule/ -v -run TestIPv 2>&1 | head -5`
-Expected: compilation error — `ipv4Section` undefined
+Expected: compilation error
 
 - [ ] **Step 3: Write ip.go**
 
@@ -595,18 +577,6 @@ import (
 	"net/netip"
 	"sort"
 )
-
-// ipv4Range is a from-to pair used during construction.
-type ipv4Range struct {
-	from [4]byte
-	to   [4]byte
-}
-
-// ipv6Range is a from-to pair used during construction.
-type ipv6Range struct {
-	from [16]byte
-	to   [16]byte
-}
 
 // ipv4Section provides zero-allocation IPv4 matching on a byte slice.
 // Layout: (from[4] + to[4]) × count, sorted by from.
@@ -621,18 +591,14 @@ func (s *ipv4Section) Contains(addr netip.Addr) bool {
 		return false
 	}
 	raw := addr.As4()
-
-	// Binary search: find rightmost range where from <= raw.
+	// Find rightmost range where from <= raw.
 	idx := sort.Search(s.count, func(i int) bool {
-		from := s.data[i*8 : i*8+4]
-		return bytes.Compare(from, raw[:]) > 0
+		return bytes.Compare(s.data[i*8:i*8+4], raw[:]) > 0
 	}) - 1
-
 	if idx < 0 {
 		return false
 	}
-	to := s.data[idx*8+4 : idx*8+8]
-	return bytes.Compare(raw[:], to) <= 0
+	return bytes.Compare(raw[:], s.data[idx*8+4:idx*8+8]) <= 0
 }
 
 // ipv6Section provides zero-allocation IPv6 matching on a byte slice.
@@ -648,117 +614,96 @@ func (s *ipv6Section) Contains(addr netip.Addr) bool {
 		return false
 	}
 	raw := addr.As16()
-
 	idx := sort.Search(s.count, func(i int) bool {
-		from := s.data[i*32 : i*32+16]
-		return bytes.Compare(from, raw[:]) > 0
+		return bytes.Compare(s.data[i*32:i*32+16], raw[:]) > 0
 	}) - 1
-
 	if idx < 0 {
 		return false
 	}
-	to := s.data[idx*32+16 : idx*32+32]
-	return bytes.Compare(raw[:], to) <= 0
+	return bytes.Compare(raw[:], s.data[idx*32+16:idx*32+32]) <= 0
 }
 
-// cidrsToRanges4 converts CIDR strings to sorted, non-overlapping IPv4 ranges.
-func cidrsToRanges4(cidrs []string) []ipv4Range {
-	var ranges []ipv4Range
+// buildIPv4Data converts CIDRs to sorted merged ranges, returns (data, count).
+func buildIPv4Data(cidrs []string) ([]byte, int) {
+	type r struct{ from, to [4]byte }
+	var ranges []r
 	for _, cidr := range cidrs {
-		prefix, err := netip.ParsePrefix(cidr)
-		if err != nil || !prefix.Addr().Is4() {
+		p, err := netip.ParsePrefix(cidr)
+		if err != nil || !p.Addr().Is4() {
 			continue
 		}
-		from := prefix.Masked().Addr().As4()
-		// Compute "to" address: set host bits to 1
+		from := p.Masked().Addr().As4()
 		to := from
-		bits := prefix.Bits()
-		for i := bits; i < 32; i++ {
+		for i := p.Bits(); i < 32; i++ {
 			to[i/8] |= 1 << (7 - i%8)
 		}
-		ranges = append(ranges, ipv4Range{from: from, to: to})
-	}
-	// Sort by from
-	sort.Slice(ranges, func(i, j int) bool {
-		return bytes.Compare(ranges[i].from[:], ranges[j].from[:]) < 0
-	})
-	// Merge overlapping
-	if len(ranges) == 0 {
-		return ranges
-	}
-	merged := []ipv4Range{ranges[0]}
-	for _, r := range ranges[1:] {
-		last := &merged[len(merged)-1]
-		// Overlapping or adjacent: last.to+1 >= r.from
-		if bytes.Compare(r.from[:], last.to[:]) <= 0 || adjacent4(last.to, r.from) {
-			if bytes.Compare(r.to[:], last.to[:]) > 0 {
-				last.to = r.to
-			}
-		} else {
-			merged = append(merged, r)
-		}
-	}
-	return merged
-}
-
-func adjacent4(a, b [4]byte) bool {
-	// a+1 == b
-	carry := uint16(1)
-	for i := 3; i >= 0; i-- {
-		sum := uint16(a[i]) + carry
-		if byte(sum) != b[i] {
-			return false
-		}
-		carry = sum >> 8
-	}
-	return true
-}
-
-// cidrsToRanges6 converts CIDR strings to sorted, non-overlapping IPv6 ranges.
-func cidrsToRanges6(cidrs []string) []ipv6Range {
-	var ranges []ipv6Range
-	for _, cidr := range cidrs {
-		prefix, err := netip.ParsePrefix(cidr)
-		if err != nil || !prefix.Addr().Is6() {
-			continue
-		}
-		from := prefix.Masked().Addr().As16()
-		to := from
-		bits := prefix.Bits()
-		for i := bits; i < 128; i++ {
-			to[i/8] |= 1 << (7 - i%8)
-		}
-		ranges = append(ranges, ipv6Range{from: from, to: to})
+		ranges = append(ranges, r{from, to})
 	}
 	sort.Slice(ranges, func(i, j int) bool {
 		return bytes.Compare(ranges[i].from[:], ranges[j].from[:]) < 0
 	})
-	if len(ranges) == 0 {
-		return ranges
-	}
-	merged := []ipv6Range{ranges[0]}
-	for _, r := range ranges[1:] {
-		last := &merged[len(merged)-1]
-		if bytes.Compare(r.from[:], last.to[:]) <= 0 {
-			if bytes.Compare(r.to[:], last.to[:]) > 0 {
-				last.to = r.to
+	// Merge overlapping/adjacent
+	if len(ranges) > 1 {
+		merged := ranges[:1]
+		for _, cur := range ranges[1:] {
+			last := &merged[len(merged)-1]
+			if bytes.Compare(cur.from[:], last.to[:]) <= 0 {
+				if bytes.Compare(cur.to[:], last.to[:]) > 0 {
+					last.to = cur.to
+				}
+			} else {
+				merged = append(merged, cur)
 			}
-		} else {
-			merged = append(merged, r)
 		}
+		ranges = merged
 	}
-	return merged
+	buf := make([]byte, len(ranges)*8)
+	for i, rng := range ranges {
+		copy(buf[i*8:], rng.from[:])
+		copy(buf[i*8+4:], rng.to[:])
+	}
+	return buf, len(ranges)
 }
 
-// buildIPv6Section builds an IPv6 section from CIDR strings (used by tests and writer).
-func buildIPv6Section(cidrs []string) []byte {
-	ranges := cidrsToRanges6(cidrs)
+// buildIPv6Data converts CIDRs to sorted merged ranges, returns (data, count).
+func buildIPv6Data(cidrs []string) ([]byte, int) {
+	type r struct{ from, to [16]byte }
+	var ranges []r
+	for _, cidr := range cidrs {
+		p, err := netip.ParsePrefix(cidr)
+		if err != nil || !p.Addr().Is6() {
+			continue
+		}
+		from := p.Masked().Addr().As16()
+		to := from
+		for i := p.Bits(); i < 128; i++ {
+			to[i/8] |= 1 << (7 - i%8)
+		}
+		ranges = append(ranges, r{from, to})
+	}
+	sort.Slice(ranges, func(i, j int) bool {
+		return bytes.Compare(ranges[i].from[:], ranges[j].from[:]) < 0
+	})
+	if len(ranges) > 1 {
+		merged := ranges[:1]
+		for _, cur := range ranges[1:] {
+			last := &merged[len(merged)-1]
+			if bytes.Compare(cur.from[:], last.to[:]) <= 0 {
+				if bytes.Compare(cur.to[:], last.to[:]) > 0 {
+					last.to = cur.to
+				}
+			} else {
+				merged = append(merged, cur)
+			}
+		}
+		ranges = merged
+	}
 	buf := make([]byte, len(ranges)*32)
-	for i, r := range ranges {
-		copy(buf[i*32:i*32+16], r.from[:])
-		copy(buf[i*32+16:i*32+32], r.to[:])
+	for i, rng := range ranges {
+		copy(buf[i*32:], rng.from[:])
+		copy(buf[i*32+16:], rng.to[:])
 	}
-	return buf
+	return buf, len(ranges)
 }
 ```
 
@@ -782,8 +727,6 @@ git commit -m "feat(rule): IP range binary search — O(log n) on sorted from/to
 - Create: `rule/format.go`
 - Create: `rule/format_test.go`
 
-**Format:** See spec — 32-byte header + 28-byte index per set + data sections (names, domains, ipv4, ipv6). All little-endian, uint32-aligned for mmap.
-
 - [ ] **Step 1: Write format_test.go**
 
 ```go
@@ -791,31 +734,28 @@ package rule
 
 import (
 	"bytes"
+	"net/netip"
 	"testing"
 )
 
 func TestFormatRoundTrip(t *testing.T) {
 	sets := []BundleSet{
 		{
-			Name:          "google",
+			Name:           "google",
 			DomainSuffixes: []string{"google.com", "youtube.com"},
 			CIDRs:          []string{"8.8.8.0/24", "2001:4860::/32"},
 		},
 		{
-			Name:          "telegram",
+			Name:           "telegram",
 			DomainSuffixes: []string{"telegram.org", "t.me"},
 			CIDRs:          []string{"149.154.160.0/20"},
 		},
 	}
-
 	var buf bytes.Buffer
 	if err := WriteBundle(&buf, sets); err != nil {
 		t.Fatalf("WriteBundle: %v", err)
 	}
-
 	data := buf.Bytes()
-
-	// Verify magic
 	if string(data[0:4]) != "K2RB" {
 		t.Fatalf("bad magic: %q", data[0:4])
 	}
@@ -824,58 +764,51 @@ func TestFormatRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadBundle: %v", err)
 	}
-
 	if len(bundle.Sets) != 2 {
 		t.Fatalf("expected 2 sets, got %d", len(bundle.Sets))
 	}
 
-	// Verify google domains
-	g := bundle.Sets[0]
+	g := &bundle.Sets[0]
 	if g.Name != "google" {
-		t.Errorf("set 0 name = %q, want google", g.Name)
+		t.Errorf("set 0 name = %q", g.Name)
 	}
 	if !g.MatchDomain("www.google.com") {
-		t.Error("google set should match www.google.com")
+		t.Error("should match www.google.com")
 	}
 	if !g.MatchDomain("youtube.com") {
-		t.Error("google set should match youtube.com")
+		t.Error("should match youtube.com")
 	}
 	if g.MatchDomain("example.com") {
-		t.Error("google set should not match example.com")
+		t.Error("should not match example.com")
+	}
+	if !g.MatchIP(netip.MustParseAddr("8.8.8.8")) {
+		t.Error("should match 8.8.8.8")
+	}
+	if g.MatchIP(netip.MustParseAddr("1.1.1.1")) {
+		t.Error("should not match 1.1.1.1")
+	}
+	if !g.MatchIP(netip.MustParseAddr("2001:4860::8888")) {
+		t.Error("should match 2001:4860::8888")
 	}
 
-	// Verify google IPs
-	if !g.MatchIP(mustParseAddr("8.8.8.8")) {
-		t.Error("google set should match 8.8.8.8")
-	}
-	if g.MatchIP(mustParseAddr("1.1.1.1")) {
-		t.Error("google set should not match 1.1.1.1")
-	}
-	if !g.MatchIP(mustParseAddr("2001:4860::8888")) {
-		t.Error("google set should match 2001:4860::8888")
-	}
-
-	// Verify telegram
-	tg := bundle.Sets[1]
+	tg := &bundle.Sets[1]
 	if tg.Name != "telegram" {
-		t.Errorf("set 1 name = %q, want telegram", tg.Name)
+		t.Errorf("set 1 name = %q", tg.Name)
 	}
 	if !tg.MatchDomain("t.me") {
-		t.Error("telegram set should match t.me")
+		t.Error("should match t.me")
 	}
-	if !tg.MatchIP(mustParseAddr("149.154.167.50")) {
-		t.Error("telegram set should match 149.154.167.50")
+	if !tg.MatchIP(netip.MustParseAddr("149.154.167.50")) {
+		t.Error("should match 149.154.167.50")
 	}
 }
 
 func TestFormatEmpty(t *testing.T) {
 	var buf bytes.Buffer
-	if err := WriteBundle(&buf, nil); err != nil {
-		t.Fatalf("WriteBundle empty: %v", err)
-	}
+	WriteBundle(&buf, nil)
 	bundle, err := ReadBundle(buf.Bytes())
 	if err != nil {
-		t.Fatalf("ReadBundle empty: %v", err)
+		t.Fatal(err)
 	}
 	if len(bundle.Sets) != 0 {
 		t.Errorf("expected 0 sets, got %d", len(bundle.Sets))
@@ -883,324 +816,67 @@ func TestFormatEmpty(t *testing.T) {
 }
 
 func TestFormatDomainsOnly(t *testing.T) {
-	sets := []BundleSet{
-		{Name: "discord", DomainSuffixes: []string{"discord.com"}},
-	}
+	sets := []BundleSet{{Name: "discord", DomainSuffixes: []string{"discord.com"}}}
 	var buf bytes.Buffer
-	if err := WriteBundle(&buf, sets); err != nil {
-		t.Fatal(err)
-	}
-	bundle, err := ReadBundle(buf.Bytes())
-	if err != nil {
-		t.Fatal(err)
-	}
+	WriteBundle(&buf, sets)
+	bundle, _ := ReadBundle(buf.Bytes())
 	if !bundle.Sets[0].MatchDomain("discord.com") {
 		t.Error("should match domain")
 	}
-	if bundle.Sets[0].MatchIP(mustParseAddr("1.1.1.1")) {
-		t.Error("should not match any IP (no CIDRs)")
+	if bundle.Sets[0].MatchIP(netip.MustParseAddr("1.1.1.1")) {
+		t.Error("should not match IP")
 	}
 }
 
-func mustParseAddr(s string) netip.Addr {
-	a, _ := netip.ParseAddr(s)
-	return a
+func TestFormatIPsOnly(t *testing.T) {
+	sets := []BundleSet{{Name: "cloudflare", CIDRs: []string{"104.16.0.0/12"}}}
+	var buf bytes.Buffer
+	WriteBundle(&buf, sets)
+	bundle, _ := ReadBundle(buf.Bytes())
+	if !bundle.Sets[0].MatchIP(netip.MustParseAddr("104.20.1.1")) {
+		t.Error("should match IP")
+	}
+	if bundle.Sets[0].MatchDomain("cloudflare.com") {
+		t.Error("should not match domain")
+	}
 }
 ```
-
-Note: `mustParseAddr` needs `import "net/netip"` — add it.
 
 - [ ] **Step 2: Run to verify failure**
 
 Run: `cd /Users/david/projects/kaitu-io/k2 && go test ./rule/ -v -run TestFormat 2>&1 | head -5`
-Expected: compilation error — `BundleSet`, `WriteBundle`, `ReadBundle` undefined
+Expected: compilation error
 
 - [ ] **Step 3: Write format.go**
 
+See spec for the complete k2b v1 binary layout. Key types:
+
 ```go
-package rule
-
-import (
-	"encoding/binary"
-	"fmt"
-	"io"
-	"sort"
-	"strings"
-	"time"
-)
-
-const (
-	magic       = "K2RB"
-	version     = 1
-	headerSize  = 32
-	indexSize   = 28 // per set
-)
-
-// BundleSet is the input for WriteBundle and the output of ReadBundle.
-// For write: populate Name, DomainSuffixes, CIDRs.
-// For read: use MatchDomain/MatchIP methods (backed by mmap-compatible sections).
+// BundleSet is input for WriteBundle and output of ReadBundle.
 type BundleSet struct {
-	Name           string
-	DomainSuffixes []string // write input: raw domains (e.g. "google.com")
-	CIDRs          []string // write input: CIDR strings (e.g. "8.8.8.0/24")
-
-	// Read-side fields (populated by ReadBundle, backed by data slice).
-	domains domainSection
-	ipv4    ipv4Section
-	ipv6    ipv6Section
+	Name           string   // set name ("google", "telegram", ...)
+	DomainSuffixes []string // write: raw domains; read: unused (match via sections)
+	CIDRs          []string // write: CIDR strings; read: unused
+	domains        domainSection
+	ipv4           ipv4Section
+	ipv6           ipv6Section
 }
 
-// MatchDomain tests if domain matches this set's domain rules.
-func (s *BundleSet) MatchDomain(domain string) bool {
-	return s.domains.Match(domain)
-}
-
-// MatchIP tests if addr matches this set's IP rules.
+func (s *BundleSet) MatchDomain(domain string) bool { return s.domains.Match(domain) }
 func (s *BundleSet) MatchIP(addr netip.Addr) bool {
-	if addr.Is4() {
-		return s.ipv4.Contains(addr)
-	}
+	if addr.Is4() { return s.ipv4.Contains(addr) }
 	return s.ipv6.Contains(addr)
 }
 
-// Bundle is the result of reading a k2b file.
 type Bundle struct {
 	Sets []BundleSet
-	data []byte // the raw k2b bytes (mmap backing)
-}
-
-// WriteBundle writes a k2b v1 file. Sets are written in the order given.
-func WriteBundle(w io.Writer, sets []BundleSet) error {
-	// 1. Build all section data.
-	type setData struct {
-		name    []byte
-		domains []byte
-		ipv4    []byte
-		ipv6    []byte
-		ipv4Count int
-		ipv6Count int
-		domainCount int
-	}
-	built := make([]setData, len(sets))
-	for i, s := range sets {
-		built[i].name = []byte(s.Name)
-		built[i].domains = buildDomainData(s.DomainSuffixes)
-		built[i].domainCount = len(s.DomainSuffixes)
-
-		v4ranges := cidrsToRanges4(s.CIDRs)
-		built[i].ipv4 = rangesTo4Bytes(v4ranges)
-		built[i].ipv4Count = len(v4ranges)
-
-		v6ranges := cidrsToRanges6(s.CIDRs)
-		built[i].ipv6 = rangesTo6Bytes(v6ranges)
-		built[i].ipv6Count = len(v6ranges)
-	}
-
-	// 2. Compute offsets.
-	dataStart := headerSize + indexSize*len(sets)
-	offset := uint32(dataStart)
-
-	// Names section
-	type indexEntry struct {
-		nameOff, nameLen                    uint32
-		domainOff, domainCount              uint32
-		ipv4Off, ipv4Count, ipv6Off, ipv6Count uint32
-	}
-	entries := make([]indexEntry, len(sets))
-	for i := range built {
-		entries[i].nameOff = offset
-		entries[i].nameLen = uint32(len(built[i].name))
-		offset += uint32(len(built[i].name))
-	}
-	// Domain sections
-	for i := range built {
-		entries[i].domainOff = offset
-		entries[i].domainCount = uint32(built[i].domainCount)
-		offset += uint32(len(built[i].domains))
-	}
-	// IPv4 sections
-	for i := range built {
-		entries[i].ipv4Off = offset
-		entries[i].ipv4Count = uint32(built[i].ipv4Count)
-		offset += uint32(len(built[i].ipv4))
-	}
-	// IPv6 sections
-	for i := range built {
-		entries[i].ipv6Off = offset
-		entries[i].ipv6Count = uint32(built[i].ipv6Count)
-		offset += uint32(len(built[i].ipv6))
-	}
-
-	// 3. Write header.
-	hdr := make([]byte, headerSize)
-	copy(hdr[0:4], magic)
-	binary.LittleEndian.PutUint32(hdr[4:8], version)
-	binary.LittleEndian.PutUint32(hdr[8:12], uint32(len(sets)))
-	binary.LittleEndian.PutUint64(hdr[12:20], uint64(time.Now().Unix()))
-	// Checksum placeholder (bytes 20-28), reserved (28-32): zero
-	if _, err := w.Write(hdr); err != nil {
-		return err
-	}
-
-	// 4. Write index.
-	for i := range entries {
-		idx := make([]byte, indexSize)
-		binary.LittleEndian.PutUint32(idx[0:4], entries[i].nameOff)
-		binary.LittleEndian.PutUint16(idx[4:6], uint16(entries[i].nameLen))
-		// idx[6:8] reserved
-		binary.LittleEndian.PutUint32(idx[8:12], entries[i].domainOff)
-		binary.LittleEndian.PutUint32(idx[12:16], entries[i].domainCount)
-		binary.LittleEndian.PutUint32(idx[16:20], entries[i].ipv4Off)
-		binary.LittleEndian.PutUint16(idx[20:22], uint16(entries[i].ipv4Count))
-		binary.LittleEndian.PutUint32(idx[22:26], entries[i].ipv6Off)
-		binary.LittleEndian.PutUint16(idx[26:28], uint16(entries[i].ipv6Count))
-		if _, err := w.Write(idx); err != nil {
-			return err
-		}
-	}
-
-	// 5. Write data sections.
-	for i := range built {
-		if _, err := w.Write(built[i].name); err != nil {
-			return err
-		}
-	}
-	for i := range built {
-		if _, err := w.Write(built[i].domains); err != nil {
-			return err
-		}
-	}
-	for i := range built {
-		if _, err := w.Write(built[i].ipv4); err != nil {
-			return err
-		}
-	}
-	for i := range built {
-		if _, err := w.Write(built[i].ipv6); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// ReadBundle parses a k2b v1 file from raw bytes (typically mmap'd).
-func ReadBundle(data []byte) (*Bundle, error) {
-	if len(data) < headerSize {
-		return nil, fmt.Errorf("rule: k2b too short: %d bytes", len(data))
-	}
-	if string(data[0:4]) != magic {
-		return nil, fmt.Errorf("rule: bad magic: %q", data[0:4])
-	}
-	ver := binary.LittleEndian.Uint32(data[4:8])
-	if ver > version {
-		return nil, fmt.Errorf("rule: unsupported version %d (max %d)", ver, version)
-	}
-	setCount := int(binary.LittleEndian.Uint32(data[8:12]))
-
-	if len(data) < headerSize+indexSize*setCount {
-		return nil, fmt.Errorf("rule: truncated index")
-	}
-
-	bundle := &Bundle{
-		Sets: make([]BundleSet, setCount),
-		data: data,
-	}
-
-	for i := 0; i < setCount; i++ {
-		idx := data[headerSize+i*indexSize : headerSize+(i+1)*indexSize]
-
-		nameOff := int(binary.LittleEndian.Uint32(idx[0:4]))
-		nameLen := int(binary.LittleEndian.Uint16(idx[4:6]))
-		domainOff := int(binary.LittleEndian.Uint32(idx[8:12]))
-		domainCount := int(binary.LittleEndian.Uint32(idx[12:16]))
-		ipv4Off := int(binary.LittleEndian.Uint32(idx[16:20]))
-		ipv4Count := int(binary.LittleEndian.Uint16(idx[20:22]))
-		ipv6Off := int(binary.LittleEndian.Uint32(idx[22:26]))
-		ipv6Count := int(binary.LittleEndian.Uint16(idx[26:28]))
-
-		if nameOff+nameLen > len(data) {
-			return nil, fmt.Errorf("rule: set %d name out of bounds", i)
-		}
-		bundle.Sets[i].Name = string(data[nameOff : nameOff+nameLen])
-
-		// Domain section: domainOff points to the domain section data
-		if domainCount > 0 {
-			// domainSection data starts at domainOff, extends to the domain area
-			// The domainSection struct reads count from the data itself.
-			bundle.Sets[i].domains = domainSection{
-				data:  data[domainOff:],
-				count: domainCount,
-			}
-		}
-
-		if ipv4Count > 0 {
-			bundle.Sets[i].ipv4 = ipv4Section{
-				data:  data[ipv4Off : ipv4Off+ipv4Count*8],
-				count: ipv4Count,
-			}
-		}
-
-		if ipv6Count > 0 {
-			bundle.Sets[i].ipv6 = ipv6Section{
-				data:  data[ipv6Off : ipv6Off+ipv6Count*32],
-				count: ipv6Count,
-			}
-		}
-	}
-
-	return bundle, nil
-}
-
-// buildDomainData builds the domain section binary for a set of suffix domains.
-func buildDomainData(domains []string) []byte {
-	if len(domains) == 0 {
-		return nil
-	}
-	reversed := make([]string, len(domains))
-	for i, d := range domains {
-		reversed[i] = reverseString("." + strings.ToLower(d))
-	}
-	sort.Strings(reversed)
-
-	// Build: count(4) + offsets(count+1)*4 + strings
-	var strBuf []byte
-	offsets := make([]uint32, len(reversed)+1)
-	for i, s := range reversed {
-		offsets[i] = uint32(len(strBuf))
-		strBuf = append(strBuf, []byte(s)...)
-	}
-	offsets[len(reversed)] = uint32(len(strBuf))
-
-	buf := make([]byte, 4+(len(reversed)+1)*4+len(strBuf))
-	binary.LittleEndian.PutUint32(buf[0:4], uint32(len(reversed)))
-	for i, off := range offsets {
-		binary.LittleEndian.PutUint32(buf[4+i*4:4+i*4+4], off)
-	}
-	copy(buf[4+(len(reversed)+1)*4:], strBuf)
-	return buf
-}
-
-func rangesTo4Bytes(ranges []ipv4Range) []byte {
-	buf := make([]byte, len(ranges)*8)
-	for i, r := range ranges {
-		copy(buf[i*8:i*8+4], r.from[:])
-		copy(buf[i*8+4:i*8+8], r.to[:])
-	}
-	return buf
-}
-
-func rangesTo6Bytes(ranges []ipv6Range) []byte {
-	buf := make([]byte, len(ranges)*32)
-	for i, r := range ranges {
-		copy(buf[i*32:i*32+16], r.from[:])
-		copy(buf[i*32+16:i*32+32], r.to[:])
-	}
-	return buf
+	data []byte
 }
 ```
 
-Add `import "net/netip"` to format.go.
+Full implementation: WriteBundle builds header+index+data sections. ReadBundle parses the index and creates domainSection/ipv4Section/ipv6Section backed by the raw data slice.
+
+*(The complete code follows the spec's binary layout. Implementation is straightforward but ~150 lines — see Task 4 of the original plan for the full WriteBundle/ReadBundle code. The key change: buildIPv4Data/buildIPv6Data now return (data, count) instead of just data.)*
 
 - [ ] **Step 4: Run tests**
 
@@ -1211,12 +887,191 @@ Expected: all PASS
 
 ```bash
 git add rule/format.go rule/format_test.go
-git commit -m "feat(rule): k2b v1 format reader/writer with mmap-indexed layout"
+git commit -m "feat(rule): k2b v1 format reader/writer"
 ```
 
 ---
 
-## Task 5: Engine (Match + SetTmpRule + Close)
+## Task 5: Loader (cache_dir → bundles → index)
+
+**Files:**
+- Create: `rule/loader.go`
+- Create: `rule/loader_test.go`
+
+- [ ] **Step 1: Write loader_test.go**
+
+```go
+package rule
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func writeTestBundle(t *testing.T, dir, filename string, sets []BundleSet) {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := WriteBundle(&buf, sets); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, filename), buf.Bytes(), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLoadEmpty(t *testing.T) {
+	dir := t.TempDir()
+	bundles, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bundles) != 0 {
+		t.Errorf("expected 0 bundles, got %d", len(bundles))
+	}
+}
+
+func TestLoadNonexistent(t *testing.T) {
+	bundles, err := Load("/nonexistent/path")
+	if err != nil {
+		t.Fatal("should not error on nonexistent dir")
+	}
+	if bundles != nil {
+		t.Error("should return nil")
+	}
+}
+
+func TestLoadBundles(t *testing.T) {
+	dir := t.TempDir()
+	writeTestBundle(t, dir, "overseas.k2b", []BundleSet{
+		{Name: "google", DomainSuffixes: []string{"google.com"}, CIDRs: []string{"8.8.8.0/24"}},
+		{Name: "telegram", DomainSuffixes: []string{"t.me"}},
+	})
+	writeTestBundle(t, dir, "cn.k2b", []BundleSet{
+		{Name: "geoip-cn", CIDRs: []string{"114.114.114.0/24"}},
+	})
+	// non-k2b file should be ignored
+	os.WriteFile(filepath.Join(dir, "readme.txt"), []byte("hi"), 0644)
+
+	bundles, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bundles) != 2 {
+		t.Fatalf("expected 2 bundles, got %d", len(bundles))
+	}
+
+	idx := Index(bundles)
+	if _, ok := idx["google"]; !ok {
+		t.Error("index should contain google")
+	}
+	if _, ok := idx["telegram"]; !ok {
+		t.Error("index should contain telegram")
+	}
+	if _, ok := idx["geoip-cn"]; !ok {
+		t.Error("index should contain geoip-cn")
+	}
+	if _, ok := idx["nonexistent"]; ok {
+		t.Error("index should not contain nonexistent")
+	}
+}
+
+func TestLoadSkipsCorrupt(t *testing.T) {
+	dir := t.TempDir()
+	// Valid bundle
+	writeTestBundle(t, dir, "good.k2b", []BundleSet{{Name: "google"}})
+	// Corrupt bundle
+	os.WriteFile(filepath.Join(dir, "bad.k2b"), []byte("not a k2b file"), 0644)
+
+	bundles, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bundles) != 1 {
+		t.Fatalf("should load 1 good bundle, got %d", len(bundles))
+	}
+}
+```
+
+- [ ] **Step 2: Run to verify failure**
+
+Run: `cd /Users/david/projects/kaitu-io/k2 && go test ./rule/ -v -run TestLoad 2>&1 | head -5`
+Expected: compilation error — `Load`, `Index` undefined
+
+- [ ] **Step 3: Write loader.go**
+
+```go
+package rule
+
+import (
+	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// Load reads all .k2b bundle files from cacheDir.
+// Returns nil (not error) if dir is empty or doesn't exist.
+// Skips corrupt files with a warning log.
+func Load(cacheDir string) ([]*Bundle, error) {
+	entries, err := os.ReadDir(cacheDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var bundles []*Bundle
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".k2b") {
+			continue
+		}
+		path := filepath.Join(cacheDir, e.Name())
+		data, err := os.ReadFile(path)
+		if err != nil {
+			slog.Warn("rule: skip bundle", "file", e.Name(), "err", err)
+			continue
+		}
+		b, err := ReadBundle(data)
+		if err != nil {
+			slog.Warn("rule: skip bundle", "file", e.Name(), "err", err)
+			continue
+		}
+		bundles = append(bundles, b)
+	}
+	return bundles, nil
+}
+
+// Index builds a name→*BundleSet lookup from all loaded bundles.
+// If the same name appears in multiple bundles, the last one wins.
+func Index(bundles []*Bundle) map[string]*BundleSet {
+	idx := make(map[string]*BundleSet)
+	for _, b := range bundles {
+		for i := range b.Sets {
+			idx[b.Sets[i].Name] = &b.Sets[i]
+		}
+	}
+	return idx
+}
+```
+
+- [ ] **Step 4: Run tests**
+
+Run: `cd /Users/david/projects/kaitu-io/k2 && go test ./rule/ -v -run TestLoad`
+Expected: all PASS
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add rule/loader.go rule/loader_test.go
+git commit -m "feat(rule): loader — read .k2b bundles from cache_dir, build index"
+```
+
+---
+
+## Task 6: Engine (Match + SetTmpRule + routes)
 
 **Files:**
 - Create: `rule/engine.go`
@@ -1234,38 +1089,30 @@ import (
 	"testing"
 )
 
-func buildTestBundle(t *testing.T) []byte {
+func mustBundle(t *testing.T, sets []BundleSet) *Bundle {
 	t.Helper()
-	sets := []BundleSet{
-		{
-			Name:           "google",
-			DomainSuffixes: []string{"google.com", "youtube.com"},
-			CIDRs:          []string{"8.8.8.0/24", "2001:4860::/32"},
-		},
-		{
-			Name:           "telegram",
-			DomainSuffixes: []string{"telegram.org", "t.me"},
-			CIDRs:          []string{"149.154.160.0/20"},
-		},
-	}
 	var buf bytes.Buffer
 	if err := WriteBundle(&buf, sets); err != nil {
 		t.Fatal(err)
 	}
-	return buf.Bytes()
-}
-
-func TestEngineMatchDomain(t *testing.T) {
-	data := buildTestBundle(t)
-	bundle, err := ReadBundle(data)
+	b, err := ReadBundle(buf.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
+	return b
+}
 
-	eng := NewEngineFromBundle(bundle, []BoundSet{
-		{Set: &bundle.Sets[0], Target: TargetProxy},  // google
-		{Set: &bundle.Sets[1], Target: TargetProxy},  // telegram
-	}, nil, TargetDirect)
+func TestEngineMatchDomain(t *testing.T) {
+	b := mustBundle(t, []BundleSet{
+		{Name: "google", DomainSuffixes: []string{"google.com", "youtube.com"}, CIDRs: []string{"8.8.8.0/24"}},
+		{Name: "telegram", DomainSuffixes: []string{"t.me"}, CIDRs: []string{"149.154.160.0/20"}},
+	})
+	idx := Index([]*Bundle{b})
+
+	// Route 0: google+telegram → proxy
+	eng := NewEngine([]RouteEntry{
+		{Target: TargetProxy, Sets: bindSets(idx, "google", "telegram")},
+	}, TargetDirect, []*Bundle{b}, false)
 
 	tests := []struct {
 		host string
@@ -1284,25 +1131,25 @@ func TestEngineMatchDomain(t *testing.T) {
 }
 
 func TestEngineMatchIP(t *testing.T) {
-	data := buildTestBundle(t)
-	bundle, err := ReadBundle(data)
-	if err != nil {
-		t.Fatal(err)
-	}
+	b := mustBundle(t, []BundleSet{
+		{Name: "google", CIDRs: []string{"8.8.8.0/24", "2001:4860::/32"}},
+		{Name: "geoip-cn", CIDRs: []string{"114.114.114.0/24"}},
+	})
+	idx := Index([]*Bundle{b})
 
-	eng := NewEngineFromBundle(bundle, []BoundSet{
-		{Set: &bundle.Sets[0], Target: TargetProxy},
-		{Set: &bundle.Sets[1], Target: TargetProxy},
-	}, nil, TargetDirect)
+	eng := NewEngine([]RouteEntry{
+		{Target: TargetProxy, Sets: bindSets(idx, "google")},
+		{Target: TargetDirect, Sets: bindSets(idx, "geoip-cn")},
+	}, TargetDirect, []*Bundle{b}, false)
 
 	tests := []struct {
 		host string
 		want Target
 	}{
-		{"8.8.8.8", TargetProxy},         // google IPv4
-		{"149.154.167.50", TargetProxy},   // telegram IPv4
-		{"2001:4860::1", TargetProxy},     // google IPv6
-		{"192.168.1.1", TargetDirect},     // no match → fallback
+		{"8.8.8.8", TargetProxy},
+		{"2001:4860::1", TargetProxy},
+		{"114.114.114.114", TargetDirect},
+		{"192.168.1.1", TargetDirect}, // fallback
 	}
 	for _, tt := range tests {
 		if got := eng.Match(tt.host); got != tt.want {
@@ -1312,115 +1159,99 @@ func TestEngineMatchIP(t *testing.T) {
 }
 
 func TestEngineSetTmpRule(t *testing.T) {
-	data := buildTestBundle(t)
-	bundle, err := ReadBundle(data)
-	if err != nil {
-		t.Fatal(err)
-	}
+	eng := NewEngine(nil, TargetDirect, nil, false)
 
-	eng := NewEngineFromBundle(bundle, []BoundSet{
-		{Set: &bundle.Sets[0], Target: TargetProxy},
-	}, nil, TargetDirect)
-
-	// 192.168.1.1 is not in any rule set → should be direct
 	if got := eng.Match("192.168.1.1"); got != TargetDirect {
-		t.Fatalf("before SetTmpRule: got %v, want direct", got)
+		t.Fatalf("before: got %v", got)
 	}
-
-	// DNS learns this IP → mark as proxy
 	eng.SetTmpRule("192.168.1.1", TargetProxy)
-
-	// Now it should match as proxy (TmpRule has highest priority)
 	if got := eng.Match("192.168.1.1"); got != TargetProxy {
-		t.Fatalf("after SetTmpRule: got %v, want proxy", got)
+		t.Fatalf("after: got %v", got)
 	}
 }
 
 func TestEngineTmpRulePriority(t *testing.T) {
-	data := buildTestBundle(t)
-	bundle, err := ReadBundle(data)
-	if err != nil {
-		t.Fatal(err)
-	}
+	b := mustBundle(t, []BundleSet{
+		{Name: "google", CIDRs: []string{"8.8.8.0/24"}},
+	})
+	idx := Index([]*Bundle{b})
 
-	// google 8.8.8.8 is set to proxy via static rule
-	eng := NewEngineFromBundle(bundle, []BoundSet{
-		{Set: &bundle.Sets[0], Target: TargetProxy},
-	}, nil, TargetDirect)
+	eng := NewEngine([]RouteEntry{
+		{Target: TargetProxy, Sets: bindSets(idx, "google")},
+	}, TargetDirect, []*Bundle{b}, false)
 
-	// Override with TmpRule → direct
+	// Static rule says proxy, TmpRule overrides to direct
 	eng.SetTmpRule("8.8.8.8", TargetDirect)
-
-	// TmpRule should win
 	if got := eng.Match("8.8.8.8"); got != TargetDirect {
-		t.Fatalf("TmpRule should override static: got %v, want direct", got)
+		t.Fatalf("TmpRule should win: got %v", got)
+	}
+}
+
+func TestEngineRouteOrder(t *testing.T) {
+	b := mustBundle(t, []BundleSet{
+		{Name: "google", DomainSuffixes: []string{"google.com"}},
+		{Name: "block", DomainSuffixes: []string{"google.com"}}, // same domain, different route
+	})
+	idx := Index([]*Bundle{b})
+
+	// Route 0: google→proxy, Route 1: block→reject
+	// First match wins, so google.com → proxy
+	eng := NewEngine([]RouteEntry{
+		{Target: TargetProxy, Sets: bindSets(idx, "google")},
+		{Target: TargetReject, Sets: bindSets(idx, "block")},
+	}, TargetDirect, []*Bundle{b}, false)
+
+	if got := eng.Match("google.com"); got != TargetProxy {
+		t.Errorf("first route should win: got %v", got)
 	}
 }
 
 func TestEngineConcurrency(t *testing.T) {
-	data := buildTestBundle(t)
-	bundle, err := ReadBundle(data)
-	if err != nil {
-		t.Fatal(err)
-	}
+	b := mustBundle(t, []BundleSet{
+		{Name: "google", DomainSuffixes: []string{"google.com"}, CIDRs: []string{"8.8.8.0/24"}},
+	})
+	idx := Index([]*Bundle{b})
 
-	eng := NewEngineFromBundle(bundle, []BoundSet{
-		{Set: &bundle.Sets[0], Target: TargetProxy},
-	}, nil, TargetDirect)
+	eng := NewEngine([]RouteEntry{
+		{Target: TargetProxy, Sets: bindSets(idx, "google")},
+	}, TargetDirect, []*Bundle{b}, false)
 
 	var wg sync.WaitGroup
 	for i := 0; i < 100; i++ {
 		wg.Add(2)
-		go func() {
-			defer wg.Done()
-			eng.Match("www.google.com")
-		}()
-		go func() {
-			defer wg.Done()
-			eng.SetTmpRule("10.0.0.1", TargetProxy)
-		}()
+		go func() { defer wg.Done(); eng.Match("www.google.com") }()
+		go func() { defer wg.Done(); eng.SetTmpRule("10.0.0.1", TargetProxy) }()
 	}
 	wg.Wait()
 }
 
-func TestEngineGeoIPLayer(t *testing.T) {
-	// Build a "geoip-cn" bundle with Chinese IPs
-	cnSets := []BundleSet{
-		{Name: "geoip-cn", CIDRs: []string{"114.114.114.0/24"}},
+func TestEngineIsAllProxy(t *testing.T) {
+	eng := NewEngine(nil, TargetProxy, nil, true)
+	if !eng.IsAllProxy() {
+		t.Error("should be all-proxy")
 	}
-	var buf bytes.Buffer
-	WriteBundle(&buf, cnSets)
-	cnBundle, _ := ReadBundle(buf.Bytes())
+	eng2 := NewEngine(nil, TargetDirect, nil, false)
+	if eng2.IsAllProxy() {
+		t.Error("should not be all-proxy")
+	}
+}
 
-	// Build service bundle
-	data := buildTestBundle(t)
-	bundle, _ := ReadBundle(data)
-
-	eng := NewEngineFromBundle(bundle,
-		[]BoundSet{{Set: &bundle.Sets[0], Target: TargetProxy}}, // google=proxy
-		[]BoundSet{{Set: &cnBundle.Sets[0], Target: TargetDirect}}, // geoip-cn=direct
-		TargetDirect,
-	)
-
-	// Google IP → service layer → proxy
-	if got := eng.Match("8.8.8.8"); got != TargetProxy {
-		t.Errorf("google IP should be proxy, got %v", got)
+// bindSets is a test helper to look up BundleSets by name from an index.
+func bindSets(idx map[string]*BundleSet, names ...string) []*BundleSet {
+	var sets []*BundleSet
+	for _, n := range names {
+		if s, ok := idx[n]; ok {
+			sets = append(sets, s)
+		}
 	}
-	// Chinese IP → geoIP layer → direct
-	if got := eng.Match("114.114.114.114"); got != TargetDirect {
-		t.Errorf("Chinese IP should be direct, got %v", got)
-	}
-	// Unknown IP → fallback → direct
-	if got := eng.Match("192.168.1.1"); got != TargetDirect {
-		t.Errorf("unknown IP should be direct, got %v", got)
-	}
+	return sets
 }
 ```
 
 - [ ] **Step 2: Run to verify failure**
 
 Run: `cd /Users/david/projects/kaitu-io/k2 && go test ./rule/ -v -run TestEngine 2>&1 | head -5`
-Expected: compilation error — `NewEngineFromBundle`, `BoundSet` undefined
+Expected: compilation error
 
 - [ ] **Step 3: Write engine.go**
 
@@ -1434,37 +1265,34 @@ import (
 	"github.com/sasha-s/go-deadlock"
 )
 
-// BoundSet binds a rule set to a routing action.
-type BoundSet struct {
-	Set    *BundleSet
+// RouteEntry represents one route in the routing table.
+// Each entry has a target and a set of rule sets to match against.
+type RouteEntry struct {
 	Target Target
+	Sets   []*BundleSet
 }
 
 // Engine is the multi-ruleset matching engine.
 // Thread-safe: Match uses RLock, SetTmpRule uses WLock.
 // Lock ordering: Engine.mu is standalone — never nested inside any other lock.
 type Engine struct {
-	mu       deadlock.RWMutex
-	tmp      map[netip.Addr]Target
-	sets     []BoundSet
-	geoIP    []BoundSet
-	fallback Target
-	bundles  []*Bundle // kept for Close (munmap)
+	mu         deadlock.RWMutex
+	tmp        map[netip.Addr]Target
+	routes     []RouteEntry
+	fallback   Target
+	allProxy   bool     // match:all mode (disables sniffing)
+	bundles    []*Bundle // lifecycle: Close munmaps all
 }
 
-// NewEngineFromBundle creates an Engine from pre-loaded bundles.
-// sets are checked in order (first-match-wins), geoIP is the lower-priority layer.
-func NewEngineFromBundle(bundle *Bundle, sets []BoundSet, geoIP []BoundSet, fallback Target) *Engine {
-	e := &Engine{
+// NewEngine creates a routing engine from route entries.
+func NewEngine(routes []RouteEntry, fallback Target, bundles []*Bundle, allProxy bool) *Engine {
+	return &Engine{
 		tmp:      make(map[netip.Addr]Target),
-		sets:     sets,
-		geoIP:    geoIP,
+		routes:   routes,
 		fallback: fallback,
+		allProxy: allProxy,
+		bundles:  bundles,
 	}
-	if bundle != nil {
-		e.bundles = append(e.bundles, bundle)
-	}
-	return e
 }
 
 // Match returns the routing target for a host (IP or domain).
@@ -1478,22 +1306,21 @@ func (e *Engine) Match(host string) Target {
 		if t, ok := e.tmp[addr]; ok {
 			return t
 		}
-		for i := range e.sets {
-			if e.sets[i].Set.MatchIP(addr) {
-				return e.sets[i].Target
-			}
-		}
-		for i := range e.geoIP {
-			if e.geoIP[i].Set.MatchIP(addr) {
-				return e.geoIP[i].Target
+		for i := range e.routes {
+			for j := range e.routes[i].Sets {
+				if e.routes[i].Sets[j].MatchIP(addr) {
+					return e.routes[i].Target
+				}
 			}
 		}
 	} else {
 		// Domain path
 		domain := strings.ToLower(host)
-		for i := range e.sets {
-			if e.sets[i].Set.MatchDomain(domain) {
-				return e.sets[i].Target
+		for i := range e.routes {
+			for j := range e.routes[i].Sets {
+				if e.routes[i].Sets[j].MatchDomain(domain) {
+					return e.routes[i].Target
+				}
 			}
 		}
 	}
@@ -1501,7 +1328,6 @@ func (e *Engine) Match(host string) Target {
 }
 
 // SetTmpRule adds a DNS-learned temporary routing rule.
-// TmpRules have the highest priority in IP matching.
 func (e *Engine) SetTmpRule(ip string, target Target) {
 	addr, err := netip.ParseAddr(ip)
 	if err != nil {
@@ -1512,89 +1338,56 @@ func (e *Engine) SetTmpRule(ip string, target Target) {
 	e.mu.Unlock()
 }
 
-// Close releases all mmap'd bundles.
+// IsAllProxy returns true if the engine is in match-all proxy mode.
+// Used by tunnel to disable SNI sniffing.
+func (e *Engine) IsAllProxy() bool {
+	return e.allProxy
+}
+
+// Close releases all bundle resources.
 func (e *Engine) Close() {
-	// Future: munmap bundle data. For now, bundles hold []byte slices
-	// which will be GC'd. When mmap is added (loader.go), this will
-	// call syscall.Munmap on each bundle's backing data.
 	e.mu.Lock()
 	e.bundles = nil
-	e.sets = nil
-	e.geoIP = nil
+	e.routes = nil
 	e.tmp = nil
 	e.mu.Unlock()
 }
 ```
 
-- [ ] **Step 4: Run tests**
-
-Run: `cd /Users/david/projects/kaitu-io/k2 && go test ./rule/ -v -run TestEngine`
-Expected: all PASS
-
-- [ ] **Step 5: Run all rule/ tests together**
+- [ ] **Step 4: Run all rule/ tests**
 
 Run: `cd /Users/david/projects/kaitu-io/k2 && go test ./rule/ -v -race -count=1`
-Expected: all PASS (race detector catches concurrency issues)
+Expected: all PASS
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add rule/engine.go rule/engine_test.go
-git commit -m "feat(rule): Engine with Match, SetTmpRule, priority chain, concurrency"
+git commit -m "feat(rule): Engine with route-based matching, SetTmpRule, concurrency"
 ```
 
 ---
 
-## Task 6: Integration — config/config.go
+## Task 7: Integration — config/config.go
 
 **Files:**
-- Modify: `config/config.go:91-99`
-- Modify: `config/config_test.go` (if references old fields)
+- Modify: `config/config.go`
+- Modify: `config/config_test.go`
 
-- [ ] **Step 1: Replace RuleConfig**
+- [ ] **Step 1: Replace Server + RuleConfig with Routes**
 
-In `config/config.go`, replace lines 91-99:
+In `config/config.go`:
+- Delete `Server` field from ClientConfig
+- Delete `RuleConfig` struct and `Rule` field
+- Add `Routes` and `RouteConfig`/`MatchConfig` (from spec)
+- Add `CacheDir` as top-level field (was inside RuleConfig)
+- Add `ServerURL()` method to extract first k2v5:// from routes
+- Update `SetDefaults` to handle routes
+- Update `ClientFromURL` to create a single-route config
 
-Old:
-```go
-// RuleConfig contains k2rule routing rule configuration.
-type RuleConfig struct {
-	RuleURL  string `yaml:"rule_url"  json:"rule_url"`
-	GeoIPURL string `yaml:"geoip_url" json:"geoip_url"`
-	Antiporn bool   `yaml:"antiporn"  json:"antiporn"`
-	PornURL  string `yaml:"porn_url"  json:"porn_url"`
-	CacheDir string `yaml:"cache_dir" json:"cache_dir"`
-	Global   bool   `yaml:"global"    json:"global"`
-}
-```
+- [ ] **Step 2: Fix config_test.go**
 
-New:
-```go
-// RuleConfig contains routing rule configuration.
-type RuleConfig struct {
-	Preset   string          `yaml:"preset"    json:"preset"`    // "overseas", "cn-access"
-	CnDirect bool            `yaml:"cn_direct" json:"cn_direct"` // add geoip-cn + cn-sites as direct
-	Default  string          `yaml:"default"   json:"default"`   // "direct" or "proxy" (fallback)
-	Sets     []RuleSetConfig `yaml:"sets"      json:"sets"`      // explicit rule set bindings
-	CacheDir string          `yaml:"cache_dir" json:"cache_dir"` // platform shell sets this
-	Global   bool            `yaml:"global"    json:"global"`    // true = all proxy (legacy compat)
-}
-
-// RuleSetConfig binds a rule set name to a routing action.
-type RuleSetConfig struct {
-	Name   string `yaml:"name"   json:"name"`
-	Action string `yaml:"action" json:"action"` // "proxy", "direct", "reject"
-	URL    string `yaml:"url"    json:"url,omitempty"`
-}
-```
-
-- [ ] **Step 2: Fix config_test.go if it references old fields**
-
-Search `config/config_test.go` for `RuleURL`, `GeoIPURL`, `Antiporn`, `PornURL` and replace with new fields. The test at line 255 (`Rule: RuleConfig{Global: true, CacheDir: "/tmp/k2rule"}`) becomes:
-```go
-Rule: RuleConfig{Global: true, CacheDir: "/tmp/k2rule"},
-```
-This still compiles since `Global` and `CacheDir` are preserved.
+Update all references to `cfg.Server` → `cfg.ServerURL()` and `cfg.Rule.Global` → route-based checks.
 
 - [ ] **Step 3: Run config tests**
 
@@ -1605,19 +1398,19 @@ Expected: PASS
 
 ```bash
 git add config/config.go config/config_test.go
-git commit -m "refactor(config): replace RuleConfig for multi-ruleset engine"
+git commit -m "refactor(config): replace Server+Rule with Routes"
 ```
 
 ---
 
-## Task 7: Integration — core/router.go + core/tunnel.go
+## Task 8: Integration — core/ (router + tunnel)
 
 **Files:**
-- Modify: `core/router.go` (full rewrite, 25 lines → ~25 lines)
-- Modify: `core/tunnel.go` (type replacement, ~15 sites)
+- Modify: `core/router.go`
+- Modify: `core/tunnel.go`
 - Modify: `core/tunnel_test.go`
 
-- [ ] **Step 1: Rewrite core/router.go**
+- [ ] **Step 1: Rewrite router.go**
 
 ```go
 package core
@@ -1627,77 +1420,36 @@ import (
 	"github.com/kaitu-io/k2/rule"
 )
 
-// Router implements routing decisions via the rule engine.
 type Router struct {
 	engine *rule.Engine
 }
 
-// NewRouter creates a new router backed by the given rule engine.
 func NewRouter(engine *rule.Engine) *Router {
 	return &Router{engine: engine}
 }
 
-// Route makes a routing decision for a packet.
 func (r *Router) Route(info packet.Info) rule.Target {
 	return r.engine.Match(info.DstIP)
 }
 
-// RouteAddr makes a routing decision for a host address (IP or domain).
 func (r *Router) RouteAddr(host string) rule.Target {
 	return r.engine.Match(host)
 }
-```
 
-- [ ] **Step 2: Update core/tunnel.go — replace all k2rule references**
-
-Replace import: `"github.com/kaitu-io/k2rule"` → `"github.com/kaitu-io/k2/rule"`
-
-Replace all occurrences (use find/replace):
-- `k2rule.TargetDirect` → `rule.TargetDirect`
-- `k2rule.TargetProxy` → `rule.TargetProxy`
-- `k2rule.TargetReject` → `rule.TargetReject`
-- `k2rule.Target` → `rule.Target`
-
-Replace `k2rule.SetTmpRule(host, ...)` calls (3 sites at lines 246, 388, and the route function) with a method call via the router's engine. Add a `SetTmpRule` method to Router:
-
-Add to `core/router.go`:
-```go
-// SetTmpRule adds a DNS-learned temporary routing rule.
 func (r *Router) SetTmpRule(ip string, target rule.Target) {
 	r.engine.SetTmpRule(ip, target)
 }
 ```
 
-Then in tunnel.go, change `k2rule.SetTmpRule(host, k2rule.TargetProxy)` to `t.router.SetTmpRule(host, rule.TargetProxy)` at all 3 sites.
+- [ ] **Step 2: Update tunnel.go**
 
-Also update `route()` method:
-```go
-func (t *ClientTunnel) route(dest string) rule.Target {
-	if t.router == nil {
-		return rule.TargetProxy
-	}
-	host, _, err := net.SplitHostPort(dest)
-	if err != nil {
-		return rule.TargetProxy
-	}
-	return t.router.RouteAddr(host)
-}
-```
+Replace import `k2rule` → `rule`. Replace all `k2rule.Target*` → `rule.Target*`. Replace `k2rule.SetTmpRule(host, ...)` → `t.router.SetTmpRule(host, ...)` (3 sites). Update `route()` method return type.
 
-- [ ] **Step 3: Update core/tunnel_test.go**
+- [ ] **Step 3: Update tunnel_test.go**
 
-Replace `&Router{}` with `NewRouter(eng)` where `eng` is a minimal rule engine. For the existing test that creates `Router{}` directly (line 187), create a fallback engine:
+Replace `&Router{}` with `NewRouter(rule.NewEngine(nil, rule.TargetDirect, nil, false))`.
 
-```go
-eng := rule.NewEngineFromBundle(nil, nil, nil, rule.TargetDirect)
-tunnel := NewClientTunnel(ClientTunnelConfig{
-	Provider: prov,
-	Dialer:   newMockDialer(),
-	Router:   NewRouter(eng),
-})
-```
-
-- [ ] **Step 4: Verify core/ compiles and tests pass**
+- [ ] **Step 4: Run core/ tests**
 
 Run: `cd /Users/david/projects/kaitu-io/k2 && go test ./core/ -v -short`
 Expected: PASS
@@ -1706,87 +1458,46 @@ Expected: PASS
 
 ```bash
 git add core/router.go core/tunnel.go core/tunnel_test.go
-git commit -m "refactor(core): replace k2rule with rule.Engine in router and tunnel"
+git commit -m "refactor(core): replace k2rule with rule.Engine"
 ```
 
 ---
 
-## Task 8: Integration — core/dns/middleware.go
+## Task 9: Integration — core/dns/middleware.go
 
 **Files:**
-- Modify: `core/dns/middleware.go` (7 k2rule sites)
+- Modify: `core/dns/middleware.go`
 - Modify: `core/dns/middleware_test.go`
 
-The DNS middleware currently calls global `k2rule.Match(domain)` and `k2rule.SetTmpRule(ip, action)`. These need to become injected functions so the middleware doesn't import k2rule.
+- [ ] **Step 1: Inject match/setTmpRule functions**
 
-- [ ] **Step 1: Add match/setTmpRule fields to Middleware**
-
-In `core/dns/middleware.go`, add to the `Middleware` struct:
+Replace import `k2rule` → `rule`. Add fields to Middleware and MiddlewareConfig:
 
 ```go
-// Rule matching functions (injected by engine, avoids direct k2rule import)
-matchRule  func(host string) rule.Target
-setTmpRule func(ip string, target rule.Target)
-```
-
-Wait — middleware is in `core/dns/`, and `rule` is in `rule/`. That's fine — `core/dns/` can import `rule/` (lower layer can import lower layer).
-
-Actually, the spec says `core/dns/middleware.go` should import `rule` for the `Target` type. But to keep middleware decoupled, inject the functions via config. Use function types that match rule.Target:
-
-Add to `MiddlewareConfig`:
-```go
-MatchRule  func(string) uint8         // returns rule.Target as uint8
-SetTmpRule func(string, uint8)        // sets temporary rule
-```
-
-Actually, cleaner to just use `rule.Target` directly. The dns package already depends on the core package, and rule is a leaf package with no upward dependencies.
-
-Replace import `"github.com/kaitu-io/k2rule"` with `"github.com/kaitu-io/k2/rule"`.
-
-Add fields to `Middleware` struct and `MiddlewareConfig`:
-```go
-// In MiddlewareConfig:
 MatchRule  func(string) rule.Target
 SetTmpRule func(string, rule.Target)
 ```
 
-In `NewMiddleware`:
-```go
-matchRule:  cfg.MatchRule,
-setTmpRule: cfg.SetTmpRule,
-```
-
-Replace all `k2rule.Match(domain)` → `m.matchRule(domain)`
-Replace all `k2rule.SetTmpRule(ip, action)` → `m.setTmpRule(ip, action)`
-Replace all `k2rule.Target` → `rule.Target`
-Replace all `k2rule.TargetReject` → `rule.TargetReject`
-Replace all `k2rule.TargetDirect` → `rule.TargetDirect`
-Replace all `k2rule.TargetProxy` → `rule.TargetProxy`
+Replace all 7 call sites:
+- `k2rule.Match(domain)` → `m.matchRule(domain)` (2 sites: line ~183, ~200)
+- `k2rule.SetTmpRule(ip, action)` → `m.setTmpRule(ip, action)` (2 sites: line ~265, ~309)
+- `k2rule.Target` → `rule.Target` (type references in signatures)
+- `k2rule.TargetReject` → `rule.TargetReject`
+- `k2rule.TargetDirect/Proxy` → `rule.TargetDirect/Proxy`
 
 - [ ] **Step 2: Update middleware_test.go**
 
-Replace `initK2Rule` helper with a simpler approach. Instead of initializing a global k2rule, create a rule.Engine and pass its methods:
+Delete `initK2Rule` function. Replace with injected functions:
 
 ```go
-func testMatchFunc(target rule.Target) func(string) rule.Target {
-	return func(string) rule.Target { return target }
-}
-
-func testSetTmpFunc() func(string, rule.Target) {
-	return func(string, rule.Target) {} // no-op for tests
-}
+func alwaysProxy(string) rule.Target  { return rule.TargetProxy }
+func alwaysDirect(string) rule.Target { return rule.TargetDirect }
+func nopSetTmp(string, rule.Target)   {}
 ```
 
-Then in tests that call `initK2Rule(t, k2rule.TargetProxy)`, replace with:
-```go
-mw := NewMiddleware(MiddlewareConfig{
-	...
-	MatchRule:  testMatchFunc(rule.TargetProxy),
-	SetTmpRule: testSetTmpFunc(),
-})
-```
+Update all test MiddlewareConfig to include `MatchRule` and `SetTmpRule`.
 
-- [ ] **Step 3: Verify dns tests pass**
+- [ ] **Step 3: Run dns tests**
 
 Run: `cd /Users/david/projects/kaitu-io/k2 && go test ./core/dns/ -v -short`
 Expected: PASS
@@ -1795,209 +1506,169 @@ Expected: PASS
 
 ```bash
 git add core/dns/middleware.go core/dns/middleware_test.go
-git commit -m "refactor(dns): inject rule matching functions, remove k2rule import"
+git commit -m "refactor(dns): inject rule functions, remove k2rule import"
 ```
 
 ---
 
-## Task 9: Integration — engine/engine.go
+## Task 10: Integration — engine/engine.go
 
 **Files:**
-- Modify: `engine/engine.go` (import, Start step 1, Stop, buildRuleConfig)
+- Modify: `engine/engine.go`
 - Modify: `engine/engine_test.go`
+- Modify: `go.mod`
 
 - [ ] **Step 1: Replace k2rule in engine.go**
 
-Remove import `"github.com/kaitu-io/k2rule"`, add `"github.com/kaitu-io/k2/rule"`.
+Remove `k2rule` import, add `rule` import. Add `ruleEngine *rule.Engine` field.
 
-Add field to `Engine` struct:
+Replace step 1 in Start():
 ```go
-ruleEngine *rule.Engine
-```
-
-Replace step 1 in Start() (lines 113-118):
-
-Old:
-```go
-// 1. Rule config — built directly from client.Rule.
-ruleCfg := buildRuleConfig(client)
-if err := k2rule.Init(ruleCfg); err != nil {
-	slog.Warn("engine: k2rule init failed, continuing with defaults", "err", err)
+// 1. Rule engine.
+serverURL := extractServerURL(client.Routes)
+if serverURL == "" {
+    return e.fail(fmt.Errorf("engine: no server URL in routes"))
 }
-slog.Info("engine: step 1 - k2rule init done", "elapsed", time.Since(startTime))
+ruleEngine := buildRuleEngine(client.Routes, client.CacheDir)
 ```
 
-New:
+Add `extractServerURL`:
 ```go
-// 1. Rule engine — load rule sets from config.
-ruleEngine := buildRuleEngine(client)
-slog.Info("engine: step 1 - rule engine init done", "elapsed", time.Since(startTime))
-```
-
-Replace step 5 (line 205) `router := core.NewRouter()` with:
-```go
-router := core.NewRouter(ruleEngine)
-```
-
-Update step 7 sniff flags (line 255-256):
-```go
-SniffBT:   !isGlobalProxy(client),
-SniffSNI:  !isGlobalProxy(client),
-```
-
-Add helper:
-```go
-func isGlobalProxy(client *config.ClientConfig) bool {
-	return client.Rule.Global || strings.ToLower(client.Rule.Default) == "proxy"
+func extractServerURL(routes []config.RouteConfig) string {
+    for _, r := range routes {
+        if strings.HasPrefix(r.Via, "k2v5://") {
+            return r.Via
+        }
+    }
+    return ""
 }
 ```
 
-Wait — `Global` is legacy compat. If `Global: true`, it means all traffic is proxied. The new equivalent is `default: proxy` with no rule sets. Let me handle both.
-
-Replace `buildRuleConfig` with `buildRuleEngine`:
+Add `buildRuleEngine`:
 ```go
-func buildRuleEngine(client *config.ClientConfig) *rule.Engine {
-	// Legacy: global mode = all proxy, no rule matching.
-	if client.Rule.Global {
-		return rule.NewEngineFromBundle(nil, nil, nil, rule.TargetProxy)
-	}
+func buildRuleEngine(routes []config.RouteConfig, cacheDir string) *rule.Engine {
+    bundles, err := rule.Load(cacheDir)
+    if err != nil {
+        slog.Warn("engine: rule load failed", "err", err)
+    }
+    idx := rule.Index(bundles)
 
-	// Parse fallback target.
-	fallback := rule.TargetDirect
-	if t, ok := rule.ParseTarget(client.Rule.Default); ok {
-		fallback = t
-	}
+    var entries []rule.RouteEntry
+    var fallback rule.Target = rule.TargetDirect
+    allProxy := false
 
-	// Expand preset + merge user sets.
-	var setCfgs []rule.SetConfig
-	if client.Rule.Preset != "" {
-		setCfgs = rule.ExpandPreset(client.Rule.Preset)
-	}
-	// Convert config.RuleSetConfig to rule.SetConfig
-	var userSets []rule.SetConfig
-	for _, s := range client.Rule.Sets {
-		t, ok := rule.ParseTarget(s.Action)
-		if !ok {
-			t = rule.TargetProxy
-		}
-		userSets = append(userSets, rule.SetConfig{Name: s.Name, Action: t, URL: s.URL})
-	}
-	if len(userSets) > 0 {
-		setCfgs = rule.MergeSets(setCfgs, userSets)
-	}
+    for i, route := range routes {
+        target := rule.ParseVia(route.Via)
 
-	// For now, return engine with fallback only.
-	// Bundle loading (from cache_dir) will be added in the loader task.
-	// This keeps the integration working — Match returns fallback for all hosts.
-	return rule.NewEngineFromBundle(nil, nil, nil, fallback)
+        if route.Match.All {
+            allProxy = (target == rule.TargetProxy)
+            fallback = target
+            break
+        }
+
+        names := rule.ExpandMatch(route.Match)
+        var sets []*rule.BundleSet
+        for _, name := range names {
+            if bs, ok := idx[name]; ok {
+                sets = append(sets, bs)
+            }
+        }
+        if len(sets) > 0 {
+            entries = append(entries, rule.RouteEntry{Target: target, Sets: sets})
+        }
+
+        // Last route without criteria is fallback
+        if i == len(routes)-1 && !route.Match.HasCriteria() {
+            fallback = target
+        }
+    }
+
+    return rule.NewEngine(entries, fallback, bundles, allProxy)
 }
 ```
 
-In Stop(), add cleanup after extracting resources (in the extract-nil-release-close block):
+Replace `client.Server` → `serverURL` in wire.ParseURL and all logging.
+
+Replace `client.Rule.Global` with `ruleEngine.IsAllProxy()` for sniff flags:
+```go
+SniffBT:  !ruleEngine.IsAllProxy(),
+SniffSNI: !ruleEngine.IsAllProxy(),
+```
+
+Wire DNS middleware:
+```go
+MatchRule:  ruleEngine.Match,
+SetTmpRule: ruleEngine.SetTmpRule,
+```
+
+In Stop(), extract-nil-close ruleEngine:
 ```go
 re := e.ruleEngine
 e.ruleEngine = nil
-```
-And after the teardown section:
-```go
-if re != nil {
-	re.Close()
-}
+// ... (after other close calls)
+if re != nil { re.Close() }
 ```
 
-Store ruleEngine in the commit block (step 9):
-```go
-e.ruleEngine = ruleEngine
-```
-
-Wire DNS middleware with rule engine functions. In the TUN mode DNS setup section, update MiddlewareConfig:
-```go
-dnsMW := dns.NewMiddleware(dns.MiddlewareConfig{
-	ProxyDNS:   proxyDNS,
-	DirectDNS:  dns.NewDirectDNSClient(client.DNS.Direct, dnsOpts...),
-	DNSCache:   dns.NewDNSCache(dns.DNSCacheConfig{}),
-	Filter:     dns.NewFilter(dns.FilterConfig{}),
-	EngineCtx:  ctx,
-	MatchRule:  ruleEngine.Match,
-	SetTmpRule: ruleEngine.SetTmpRule,
-})
-```
+In commit block: `e.ruleEngine = ruleEngine`
 
 - [ ] **Step 2: Update engine_test.go**
 
-Remove `"github.com/kaitu-io/k2rule"` import. Replace `k2rule.Init`, `k2rule.TargetProxy` etc. with `rule.*` equivalents. The `initK2Rule` calls in engine_test.go can be replaced with direct `rule.NewEngineFromBundle` usage, or simply removed if the test doesn't need rule matching.
+Remove k2rule import and usage. Update tests that reference `client.Server` or `client.Rule`.
 
 - [ ] **Step 3: Remove k2rule from go.mod**
 
 Run: `cd /Users/david/projects/kaitu-io/k2 && go mod tidy`
 
-This should remove `github.com/kaitu-io/k2rule` from go.mod since no file imports it anymore.
-
 - [ ] **Step 4: Full test gate**
-
-Run: `cd /Users/david/projects/kaitu-io/k2 && go test -short -race ./...`
-Expected: all PASS, no k2rule references remain.
-
-- [ ] **Step 5: Verify no k2rule references remain**
-
-Run: `cd /Users/david/projects/kaitu-io/k2 && grep -r "k2rule" --include="*.go" .`
-Expected: no output (zero matches)
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add engine/engine.go engine/engine_test.go go.mod go.sum
-git commit -m "refactor(engine): replace k2rule with rule.Engine, wire DNS middleware"
-```
-
----
-
-## Task 10: Final test gate + CLAUDE.md update
-
-**Files:**
-- Modify: `CLAUDE.md` (update dependency list, lock ordering, routing docs)
-
-- [ ] **Step 1: Run full test suite**
 
 Run: `cd /Users/david/projects/kaitu-io/k2 && go test -short -race -timeout 120s ./...`
 Expected: all PASS
 
-- [ ] **Step 2: Run go vet + build**
+- [ ] **Step 5: Verify no k2rule references**
 
-Run: `cd /Users/david/projects/kaitu-io/k2 && go vet ./... && go build ./cmd/k2 && go build ./cmd/k2s`
-Expected: no errors
+Run: `grep -r "k2rule" --include="*.go" /Users/david/projects/kaitu-io/k2/`
+Expected: no output
 
-- [ ] **Step 3: Update CLAUDE.md**
-
-Update the Dependencies section — replace k2rule entry:
-
-Old: `- github.com/kaitu-io/k2rule v0.6.4 — domain/IP routing rules...`
-New: `- rule/ (in-tree) — multi-ruleset routing engine (domain suffix binary search + IP range binary search, k2b mmap-indexed format)`
-
-Update Lock Ordering Graph — add:
-```
-rule.Engine.mu (state, RWMutex, standalone — no nesting with engine locks)
-```
-
-Update the router description in Core section to reference `rule.Engine` instead of `k2rule`.
-
-- [ ] **Step 4: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add CLAUDE.md
-git commit -m "docs: update CLAUDE.md for rule module replacement"
+git add engine/ go.mod go.sum
+git commit -m "refactor(engine): routes-based config, rule.Engine, remove k2rule"
 ```
 
 ---
 
-## Post-implementation: Loader + mmap (separate plan)
+## Task 11: Final test gate + CLAUDE.md
 
-The following are **deferred** to a follow-up plan (they depend on the k2-rules data pipeline being built):
+**Files:**
+- Modify: `CLAUDE.md`
 
-1. `rule/loader.go` — manifest.json download, bundle HTTP fetch, gzip decompress, mmap
-2. `rule/mmap_unix.go` / `rule/mmap_windows.go` — platform-specific mmap
-3. Integration with `buildRuleEngine` — load bundles from cache_dir
-4. `cmd/k2/rule_compile.go` — `k2 rule compile` subcommand for JSON → k2b conversion
-5. `kaitu-io/k2-rules` repository — data pipeline (GitHub Actions, compiler)
+- [ ] **Step 1: Full test + vet + build**
 
-The current plan delivers a fully functional rule engine that works with in-memory bundles. The loader adds mmap + HTTP download on top without changing any interfaces.
+Run: `cd /Users/david/projects/kaitu-io/k2 && go vet ./... && go build ./cmd/k2 && go build ./cmd/k2s && go test -short -race -timeout 120s ./...`
+Expected: all clean
+
+- [ ] **Step 2: Update CLAUDE.md**
+
+- Replace k2rule dependency with `rule/ (in-tree)`
+- Update Lock Ordering Graph: add `rule.Engine.mu (standalone RWMutex)`
+- Update config format documentation to show routes
+- Update `k2 setup` example
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add CLAUDE.md
+git commit -m "docs: update CLAUDE.md for rule module + routes config"
+```
+
+---
+
+## Phase 2 (separate plan)
+
+1. `rule/mmap_unix.go` / `rule/mmap_windows.go` — platform mmap (replace os.ReadFile)
+2. `rule/download.go` — HTTP manifest + bundle download to cache_dir
+3. Embedded fallback bundle via `go:embed`
+4. `k2 rule update` CLI command
+5. `kaitu-io/k2-rules` data pipeline repository
+6. Multi-server routing (multiple wire.Dialer per route)

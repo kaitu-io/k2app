@@ -1,6 +1,6 @@
 # k2 Rule Module Design Spec
 
-> 替代 k2rule，实现按服务分类的多规则集路由引擎
+> 替代 k2rule，实现基于 routes 的多规则集路由引擎
 
 ## 问题
 
@@ -8,37 +8,136 @@ k2rule v0.6.4 的单文件模型依赖 DNS pipeline 的 `SetTmpRule` 来标记 I
 
 业界所有主流工具（Clash/Mihomo、sing-box、Surge、v2ray）通过维护**按服务分类的 IP-CIDR 列表**解决此问题。k2 需要同样的能力。
 
-## 设计
+## 配置格式
 
-### 两阶段匹配模型
+统一使用 `routes` 路由表。每条 route = 匹配规则 + 出口（`via`）。First-match-wins。
+
+### 基本用法（翻出去）
+
+```yaml
+routes:
+  - via: "k2v5://us-server:443?ech=..."
+    match:
+      preset: overseas
+  - via: direct
+    match:
+      names: [geoip-cn, cn-sites]
+  - via: direct
+```
+
+### 翻回来
+
+```yaml
+routes:
+  - via: "k2v5://cn-server:443?ech=..."
+    match:
+      names: [cn-sites, bilibili, geoip-cn]
+  - via: direct
+```
+
+### 多 server 分流（Phase 2）
+
+```yaml
+routes:
+  - via: "k2v5://us-server:443?ech=..."
+    match:
+      preset: overseas
+  - via: "k2v5://cn-server:443?ech=..."
+    match:
+      names: [cn-sites, geoip-cn]
+  - via: direct
+```
+
+### 全局代理
+
+```yaml
+routes:
+  - via: "k2v5://us-server:443?ech=..."
+    match: { all: true }
+```
+
+### 自定义覆盖
+
+```yaml
+routes:
+  - via: "k2v5://us-server:443?ech=..."
+    match:
+      preset: overseas
+      exclude: [openai]
+  - via: reject
+    match:
+      names: [openai]
+  - via: direct
+```
+
+### 语义
+
+- `via`: k2v5:// URL（走服务器）或 `direct` / `reject`（关键字）
+- `match.preset`: 预设规则集组（`overseas`、`cn-access`）
+- `match.names`: 显式规则集名称列表
+- `match.exclude`: 从 preset 中排除的规则集
+- `match.all`: 匹配所有流量（全局代理）
+- 最后一条 route 的 match 可为空或 `{}`，作为兜底
+- Phase 1 限制：只支持一个 k2v5:// server，多 server 报错
+
+### 配置类型
+
+```go
+type ClientConfig struct {
+    Routes  []RouteConfig `yaml:"routes"  json:"routes"`
+    Mode    string        `yaml:"mode"    json:"mode"`
+    Tun     TunConfig     `yaml:"tun"     json:"tun"`
+    Proxy   ProxyConfig   `yaml:"proxy"   json:"proxy"`
+    DNS     DNSConfig     `yaml:"dns"     json:"dns"`
+    Log     LogConfig     `yaml:"log"     json:"log"`
+    Listen  string        `yaml:"listen"  json:"listen"`
+    PIDFile string        `yaml:"pid_file" json:"pid_file"`
+    BlockQUIC bool        `yaml:"block_quic" json:"block_quic"`
+}
+
+type RouteConfig struct {
+    Via   string      `yaml:"via"   json:"via"`
+    Match MatchConfig `yaml:"match" json:"match"`
+}
+
+type MatchConfig struct {
+    Preset  string   `yaml:"preset,omitempty"  json:"preset,omitempty"`
+    Names   []string `yaml:"names,omitempty"   json:"names,omitempty"`
+    Exclude []string `yaml:"exclude,omitempty" json:"exclude,omitempty"`
+    All     bool     `yaml:"all,omitempty"     json:"all,omitempty"`
+}
+```
+
+`Server` 和 `Rule` 字段删除。engine 内部从 routes 中提取第一个 k2v5:// URL 作为 wire 连接地址。
+
+## 两阶段匹配模型
 
 ```
-阶段 1（DNS 时）: Match(domain) → action
-                  → SetTmpRule(learned IPs, action)
+阶段 1（DNS 时）: Match(domain) → route index
+                  → SetTmpRule(learned IPs, route index)
 
 阶段 2（连接时）: Match(destIP)
                   → TmpRule（DNS 动态学习）     最高优先级
-                  → Service IP-CIDR 规则集      静态规则
-                  → GeoIP 国家级规则             兜底
-                  → default action              最低优先级
+                  → 按 route 顺序遍历规则集     静态规则
+                  → 最后一条 route（兜底）
 ```
 
-SetTmpRule 覆盖 CDN 动态 IP（不在任何已知 IP 段中、但刚被 DNS 解析出来的 IP）。静态 IP-CIDR 覆盖硬编码 IP（WhatsApp 走 Meta IP 段、Telegram 走官方 CIDR）。两者互补。
+### Route 到 Target 的映射
 
-### 规则集 = 纯匹配数据（headless）
+Phase 1 只有一个 server，所有 `via: k2v5://...` 映射到 `TargetProxy`，`via: direct` 映射到 `TargetDirect`，`via: reject` 映射到 `TargetReject`。Tunnel 层不需要改动。
 
-规则集文件只包含"这些域名和 IP 属于某个服务"，不包含 action。action 由用户配置绑定：
+Phase 2 扩展 Target 为 route index，tunnel 根据 index 选择 dialer。
 
-```
-.k2b 文件: { name: "google", domains: [...], ips: [...] }   ← 纯数据
-config:    { name: "google", action: proxy }                  ← 用户语义
-```
+### SNI 嗅探
 
-同一个 google.k2b 在中国用户手里是 `action: proxy`（翻出去），在海外用户手里可以是 `action: direct`（不需要代理）。
+`match: { all: true }` 时 sniffBT=false, sniffSNI=false（全局代理不需要区分）。
+其他情况 sniffBT=true, sniffSNI=true。
+
+## 规则集 = 纯匹配数据（headless）
+
+规则集文件只包含"这些域名和 IP 属于某个服务"，不包含 action。action 由 routes 中的 via 决定。
 
 ### 规则集按公司/基础设施组织
-
-不按具体服务（WhatsApp、Instagram）拆分，而按拥有独立 IP 段的公司/基础设施拆分：
 
 | 规则集 | 域名覆盖 | IP-CIDR 覆盖 |
 |--------|---------|-------------|
@@ -48,32 +147,24 @@ config:    { name: "google", action: proxy }                  ← 用户语义
 | twitter | twitter.com, x.com, ... | Twitter/X ASN IP 段 |
 | netflix | netflix.com, nflxvideo.net, ... | Netflix ASN IP 段 |
 | cloudflare | — | Cloudflare 官方 IP 段 |
-| discord | discord.com, discordapp.com, ... | 无独立 IP（用 Cloudflare CDN） |
-| spotify | spotify.com, ... | 无独立 IP（用 Google Cloud/Fastly） |
+| discord | discord.com, discordapp.com, ... | 无独立 IP |
+| spotify | spotify.com, ... | 无独立 IP |
 | tiktok | tiktok.com, ... | 无独立 IP |
-| openai | openai.com, chatgpt.com, ... | 无独立 IP（用 Cloudflare/Azure） |
+| openai | openai.com, chatgpt.com, ... | 无独立 IP |
 | github | github.com, githubusercontent.com, ... | 无独立 IP |
 | geoip-cn | — | 中国 IP 段（APNIC CN 分配） |
 | cn-sites | 中国常用网站域名 | — |
 
-无独立 IP 段的服务只有域名规则，依赖 DNS 阶段 + SetTmpRule 覆盖 — 与现有行为一致。
-
 ## 数据源与许可证
 
-| 数据源 | 许可证 | 用途 | 合规方式 |
-|--------|--------|------|---------|
-| v2fly/domain-list-community | MIT | 域名列表 | 运行时下载，附署名 |
-| Loyalsoldier/geoip | CC-BY-SA-4.0 | 按服务 IP-CIDR | 运行时下载，附署名，不修改数据 |
-| Google gstatic.com/ipranges/goog.json | 公开数据 | Google IP 段 | 无限制 |
-| Telegram core.telegram.org/resources/cidr.txt | 公开数据 | Telegram IP 段 | 无限制 |
-| Cloudflare cloudflare.com/ips-v4 | 公开数据 | Cloudflare IP 段 | 无限制 |
-| APNIC 分配数据 | 公开数据 | 中国 IP 段 | 无限制 |
-| go4.org/netipx | BSD-3-Clause | IP 集合匹配（编译器用） | 附 license notice |
+| 数据源 | 许可证 | 用途 |
+|--------|--------|------|
+| v2fly/domain-list-community | MIT | 域名列表 |
+| Loyalsoldier/geoip | CC-BY-SA-4.0 | 按服务 IP-CIDR |
+| 官方 IP 发布 (Google/Telegram/CF) | 公开数据 | IP 段 |
+| go4.org/netipx | BSD-3-Clause | 编译器用 |
 
-**不可用的数据源**（GPL 感染风险）：
-- sing/common/domain (GPL-3.0) — 不导入，自建域名匹配
-- SagerNet/sing-geoip, sing-geosite (GPL-3.0) — 不使用编译产物
-- metacubex/meta-rules-dat (GPL-3.0) — 不使用编译产物
+不可用：sing/common/domain (GPL-3.0)、SagerNet 编译产物 (GPL-3.0)、metacubex 编译产物 (GPL-3.0)。
 
 ## 文件格式：k2b v1（mmap-indexed）
 
@@ -134,8 +225,6 @@ Ranges[Count]: (from[4] + to[4])[]    已排序、已合并的 IPv4 范围
 复杂度: O(log n)，零分配
 ```
 
-相比 k2rule v3 的 O(n) 线性扫描（逐条 CIDR mask 比较），改进为 O(log n)。Google 5000+ CIDR 合并为 ~2000 Range 后，查找从 5000 次比较降为 ~11 次。
-
 ### IPv6 区布局
 
 ```
@@ -144,21 +233,16 @@ Ranges[Count]: (from[16] + to[16])[]  每条 32 bytes，同 IPv4 逻辑
 
 ### 体积预估
 
-| 内容 | 磁盘（mmap 格式） | 下载（gzip 传输） | 内存峰值（活跃页） |
-|------|-----------------|-----------------|------------------|
-| overseas 预设 (15 服务) | ~200KB | ~60KB | ~16KB |
+| 内容 | 磁盘 | 下载（gzip） | 内存峰值 |
+|------|------|------------|---------|
+| overseas (15 服务) | ~200KB | ~60KB | ~16KB |
 | cn-direct | ~130KB | ~35KB | ~12KB |
 | 典型用户总计 | ~330KB | ~95KB | ~20KB |
 
-对比 k2rule: .k2r ~2MB + .mmdb ~5MB = 7MB 磁盘。缩小 20 倍。
-
-### 分发方式
+### 分发
 
 ```
-下载: HTTP GET overseas.k2b.gz (~60KB, Content-Encoding: gzip)
-  → 解压写入 cache_dir/overseas.k2b (~200KB)
-  → mmap(cache_dir/overseas.k2b)
-  → 就绪，零解析
+下载: HTTP GET overseas.k2b.gz (~60KB) → 解压写入 cache_dir/overseas.k2b → mmap
 ```
 
 ## rule 包设计
@@ -167,23 +251,18 @@ Ranges[Count]: (from[16] + to[16])[]  每条 32 bytes，同 IPv4 逻辑
 
 ```
 rule/
-├── engine.go       匹配引擎 (Engine, Match, SetTmpRule)          ~300 行
-├── format.go       k2b reader/writer                            ~250 行
-├── domain.go       域名二分查找 (复用 k2rule v3 算法)             ~100 行
-├── ip.go           IP Range 二分查找                             ~80 行
-├── loader.go       manifest 下载 + 缓存 + mmap                  ~200 行
-├── json.go         JSON 源格式解析 (调试/自定义规则)              ~80 行
-└── engine_test.go  测试                                         ~200 行
+├── target.go       Target 类型, SetConfig, 预设展开, 合并
+├── domain.go       域名二分查找 (k2rule v3 算法)
+├── ip.go           IP Range 二分查找
+├── format.go       k2b v1 reader/writer
+├── engine.go       Engine: Match, SetTmpRule, Close
+├── loader.go       Load: 从 cache_dir 读取 .k2b 文件
+└── *_test.go       各组件测试
 ```
-
-预估总计: ~1200 行（含测试）
 
 ### 核心类型
 
 ```go
-package rule
-
-// Target 路由决策
 type Target uint8
 
 const (
@@ -192,28 +271,29 @@ const (
     TargetReject
 )
 
-// RuleSet 一个服务的匹配数据（从 mmap 引用，不拥有内存）
-type RuleSet struct {
+type BundleSet struct {
     Name    string
-    domains domainSection  // mmap 切片引用
-    ipv4    ipv4Section    // mmap 切片引用
-    ipv6    ipv6Section    // mmap 切片引用
+    domains domainSection
+    ipv4    ipv4Section
+    ipv6    ipv6Section
 }
 
-// BoundSet 绑定了 action 的规则集（配置层）
 type BoundSet struct {
-    RuleSet *RuleSet
-    Target  Target
+    Set    *BundleSet
+    Target Target
 }
 
-// Engine 多规则集匹配引擎
 type Engine struct {
     mu       deadlock.RWMutex
-    tmp      map[netip.Addr]Target   // DNS 动态学习（最高优先级）
-    sets     []BoundSet              // 按配置顺序排列
-    geoIP    []BoundSet              // 国家级 GeoIP（最低优先级）
-    fallback Target                  // 默认 action
-    bundles  []*mmapBundle           // mmap 文件句柄（Engine 关闭时 munmap）
+    tmp      map[netip.Addr]Target
+    routes   []routeEntry          // 按 route 顺序排列的绑定规则集
+    fallback Target
+    bundles  []*Bundle
+}
+
+type routeEntry struct {
+    sets   []BoundSet // 这条 route 的所有规则集
+    target Target     // 命中时的 action
 }
 ```
 
@@ -222,242 +302,133 @@ type Engine struct {
 ```go
 func (e *Engine) Match(host string) Target {
     e.mu.RLock()
-    defer e.mu.RUnlock()  // RLock 临界区只做内存读，≤10 行，defer OK
+    defer e.mu.RUnlock()
 
-    addr, isIP := parseAddr(host)
-
-    if isIP {
-        // 1. TmpRule（DNS 动态学习）
+    addr, err := netip.ParseAddr(host)
+    if err == nil {
+        // IP path
         if t, ok := e.tmp[addr]; ok {
             return t
         }
-        // 2. Service IP-CIDR（first-match-wins）
-        for i := range e.sets {
-            if e.sets[i].RuleSet.MatchIP(addr) {
-                return e.sets[i].Target
-            }
-        }
-        // 3. GeoIP
-        for i := range e.geoIP {
-            if e.geoIP[i].RuleSet.MatchIP(addr) {
-                return e.geoIP[i].Target
+        for i := range e.routes {
+            for j := range e.routes[i].sets {
+                if e.routes[i].sets[j].Set.MatchIP(addr) {
+                    return e.routes[i].target
+                }
             }
         }
     } else {
-        // 域名匹配
+        // Domain path
         domain := strings.ToLower(host)
-        for i := range e.sets {
-            if e.sets[i].RuleSet.MatchDomain(domain) {
-                return e.sets[i].Target
+        for i := range e.routes {
+            for j := range e.routes[i].sets {
+                if e.routes[i].sets[j].Set.MatchDomain(domain) {
+                    return e.routes[i].target
+                }
             }
         }
     }
-
     return e.fallback
 }
 ```
 
-RWMutex 用 RLock（读操作，高频并发）。SetTmpRule 用 WLock。临界区只做 map 查找 + mmap 二分查找，符合 CLAUDE.md 并发规则。
-
-### SetTmpRule
+### 从 routes 构建 Engine
 
 ```go
-func (e *Engine) SetTmpRule(ip string, target Target) {
-    addr, err := netip.ParseAddr(ip)
-    if err != nil {
-        return
+// engine/engine.go 中
+func buildRuleEngine(routes []config.RouteConfig, cacheDir string) *rule.Engine {
+    bundles, _ := rule.Load(cacheDir)
+    index := rule.Index(bundles)
+
+    var routeEntries []rule.RouteEntry
+    var fallback rule.Target = rule.TargetDirect
+    isAllProxy := false
+
+    for i, route := range routes {
+        target := rule.ParseVia(route.Via) // k2v5:// → Proxy, "direct" → Direct, "reject" → Reject
+
+        if route.Match.All {
+            // match: all → 全局代理
+            isAllProxy = (target == rule.TargetProxy)
+            fallback = target
+            break
+        }
+
+        // 展开 match → 规则集名称列表
+        names := rule.ExpandMatch(route.Match)
+
+        // 绑定
+        var sets []rule.BoundSet
+        for _, name := range names {
+            if bs, ok := index[name]; ok {
+                sets = append(sets, rule.BoundSet{Set: bs, Target: target})
+            }
+        }
+
+        if len(sets) > 0 {
+            routeEntries = append(routeEntries, rule.RouteEntry{Sets: sets, Target: target})
+        }
+
+        // 最后一条无 match 的 route 是兜底
+        if i == len(routes)-1 && !route.Match.HasCriteria() {
+            fallback = target
+        }
     }
-    e.mu.Lock()
-    e.tmp[addr] = target
-    e.mu.Unlock()
+
+    return rule.NewEngine(routeEntries, fallback, bundles, isAllProxy)
 }
 ```
 
-## 客户端配置
-
-```yaml
-rule:
-  # 简单模式（一行搞定 90% 场景）
-  preset: overseas        # 展开为 google=proxy, facebook=proxy, telegram=proxy, ...
-
-  # 中国直连
-  cn_direct: true         # 展开为 geoip-cn=direct, cn-sites=direct
-
-  # 默认 action（所有规则未命中时）
-  default: direct         # direct | proxy
-
-  # 高级：显式规则集（合并到 preset 展开结果中，同名覆盖）
-  sets:
-    - name: openai
-      action: reject      # 覆盖 preset 中 openai 的默认 proxy
-    - name: my-company
-      url: "https://example.com/rules/company.k2b"
-      action: direct
-
-  cache_dir: ""           # 由平台 shell 设置
-```
-
-### 预设展开规则
-
-preset 展开为一组 `{name, action}` 绑定。用户的 `sets` 合并到展开结果中，**同名覆盖**：
-
-```
-preset: overseas 展开:
-  google=proxy, facebook=proxy, telegram=proxy, twitter=proxy,
-  netflix=proxy, discord=proxy, spotify=proxy, tiktok=proxy,
-  openai=proxy, github=proxy
-
-用户 sets: [{ name: openai, action: reject }]
-
-最终: google=proxy, facebook=proxy, ..., openai=reject, ..., github=proxy
-```
-
-### 翻回来场景
-
-```yaml
-rule:
-  preset: cn-access       # 展开为 cn-sites=proxy, bilibili=proxy, geoip-cn=proxy
-  default: direct
-```
-
-## 数据管道（独立仓库 kaitu-io/k2-rules）
-
-GitHub Actions 每日构建:
-
-```
-1. 拉取上游源
-   ├── v2fly/domain-list-community (MIT) → data/{service} 文件
-   ├── Loyalsoldier/geoip (CC-BY-SA-4.0) → text/{service}.txt
-   └── 官方 IP 发布 (Telegram cidr.txt, Google goog.json, etc.)
-
-2. 编译
-   ├── 解析上游格式 → 统一内部表示
-   ├── IP: netipx.IPSetBuilder 合并相邻/重叠 CIDR → 排序 Range 对
-   ├── Domain: 反转 + 排序 + dot 前缀
-   ├── 打包为 .k2b bundle (overseas.k2b, cn-direct.k2b, etc.)
-   └── 生成 manifest.json (版本, sha256, 大小)
-
-3. 发布
-   ├── GitHub Releases
-   ├── CDN 分发 (jsdelivr / 自有 CDN)
-   └── ATTRIBUTION.md (满足 CC-BY-SA 署名)
-```
-
-### manifest.json
-
-```json
-{
-  "version": "2026-04-02",
-  "base_url": "https://cdn.example.com/rules/",
-  "bundles": {
-    "overseas": {
-      "version": "2026-04-02",
-      "sha256": "abc123...",
-      "size": 198400,
-      "sets": ["google", "facebook", "telegram", "twitter", "netflix",
-               "discord", "spotify", "tiktok", "openai", "github",
-               "cloudflare", "fastly"]
-    },
-    "cn-direct": {
-      "version": "2026-04-02",
-      "sha256": "def456...",
-      "size": 134200,
-      "sets": ["geoip-cn", "cn-sites"]
-    },
-    "cn-access": {
-      "version": "2026-04-02",
-      "sha256": "ghi789...",
-      "size": 89600,
-      "sets": ["cn-sites", "bilibili", "geoip-cn"]
-    }
-  },
-  "presets": {
-    "overseas": {
-      "bundles": ["overseas"],
-      "defaults": { "*": "proxy" }
-    },
-    "cn-access": {
-      "bundles": ["cn-access"],
-      "defaults": { "*": "proxy" }
-    }
-  }
-}
-```
-
-### JSON 源格式（调试 + 自定义规则）
-
-```json
-{
-  "name": "google",
-  "version": "2026-04-02",
-  "domains": {
-    "suffix": ["google.com", "googleapis.com", "youtube.com", "gstatic.com"]
-  },
-  "cidrs": ["8.8.4.0/24", "8.8.8.0/24", "8.34.208.0/20", "2001:4860::/32"]
-}
-```
-
-客户端可直接加载 JSON（启动时编译到内存），或用 `k2 rule compile foo.json` 预编译为 .k2b。
-
-## k2 集成改动
-
-### 接口替换（类型级别）
-
-| 文件 | 改动 |
-|------|------|
-| `engine/engine.go` | `k2rule.Init(cfg)` → `rule.NewEngine(cfg)` + `rule.Load()`; Engine 持有 `*rule.Engine` |
-| `core/router.go` | `k2rule.Match()` → `e.ruleEngine.Match()`; Router 持有 `*rule.Engine` 引用 |
-| `core/tunnel.go` | `k2rule.Target` → `rule.Target`; `k2rule.SetTmpRule` → `e.SetTmpRule` (3 处) |
-| `core/dns/middleware.go` | 同上 (2 处 SetTmpRule + Target 类型) |
-| `config/config.go` | `RuleConfig` 重写: Preset, Sets, Default, CnDirect, CacheDir |
-| `go.mod` | 移除 `github.com/kaitu-io/k2rule`; 无新增外部依赖（netipx 仅编译器用） |
-
-### Router 改造
+### Loader
 
 ```go
-// core/router.go
-type Router struct {
-    engine *rule.Engine
+// rule/loader.go
+
+func Load(cacheDir string) ([]*Bundle, error) {
+    // 读取 cache_dir 中所有 .k2b 文件
+    // 返回 nil（非 error）如果目录为空或不存在
 }
 
-func NewRouter(engine *rule.Engine) *Router {
-    return &Router{engine: engine}
+func Index(bundles []*Bundle) map[string]*BundleSet {
+    // 从所有 bundle 构建 name→BundleSet 索引
 }
-
-func (r *Router) Route(info packet.Info) rule.Target {
-    return r.engine.Match(info.DstIP)
-}
-
-func (r *Router) RouteAddr(host string) rule.Target {
-    return r.engine.Match(host)
-}
-```
-
-### Engine 初始化
-
-```go
-// engine/engine.go Start() 中
-ruleEngine, err := rule.NewEngine(rule.Config{
-    Preset:   client.Rule.Preset,
-    Sets:     client.Rule.Sets,
-    CnDirect: client.Rule.CnDirect,
-    Default:  client.Rule.Default,
-    CacheDir: client.Rule.CacheDir,
-})
-if err != nil {
-    return e.fail(err)
-}
-e.ruleEngine = ruleEngine
 ```
 
 ### 资源所有权
 
-rule.Engine 由 engine.Engine 创建和销毁。Engine.Stop() 中 Close rule.Engine（munmap 所有文件）。符合 CLAUDE.md 资源所有权规则。
+rule.Engine 由 engine.Engine 创建和销毁。Engine.Stop() 中 Close rule.Engine（munmap 所有文件）。
 
-### Lock Ordering Graph 更新
+### Lock Ordering
 
 ```
 rule.Engine.mu (state, RWMutex, standalone — 不嵌套任何其他锁)
 ```
 
-rule.Engine.mu 是独立的 RWMutex。Match 从 tunnel goroutine 调用（RLock），SetTmpRule 从 dns/middleware goroutine 调用（WLock），两个调用路径均不持有 engine.mu 或其他锁。无嵌套风险。
+## k2 集成改动
+
+| 文件 | 改动 |
+|------|------|
+| `config/config.go` | 删除 `Server`+`Rule` 字段，新增 `Routes []RouteConfig`；`SetDefaults` 从 routes 派生内部 `serverURL` |
+| `core/router.go` | 持有 `*rule.Engine`，delegate Match |
+| `core/tunnel.go` | `k2rule.Target` → `rule.Target`，SetTmpRule 改为 router 方法 |
+| `core/dns/middleware.go` | 注入 matchRule/setTmpRule 函数 |
+| `engine/engine.go` | 从 routes 提取 server URL + 构建 rule.Engine |
+| `go.mod` | 移除 k2rule |
+
+### Server URL 提取
+
+engine.Start() 中从 routes 提取第一个 k2v5:// URL：
+
+```go
+func extractServerURL(routes []config.RouteConfig) string {
+    for _, r := range routes {
+        if strings.HasPrefix(r.Via, "k2v5://") {
+            return r.Via
+        }
+    }
+    return ""
+}
+```
+
+Phase 1: 只允许一个 server URL。多个 server 报错。
+Phase 2: 每条 server route 创建独立的 wire.Dialer。
