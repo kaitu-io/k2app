@@ -1,4 +1,27 @@
 {
+  "feedback": {
+    "title": "Feedback Center",
+    "newTicket": "New Ticket",
+    "noTickets": "No tickets yet",
+    "noTicketsHint": "Having an issue? Submit a ticket and we'll get back to you",
+    "loadError": "Failed to load, please retry",
+    "status": {
+      "open": "Open",
+      "resolved": "Resolved",
+      "closed": "Closed"
+    },
+    "adminReplied": "Support replied",
+    "replyPlaceholder": "Type your reply...",
+    "closedNotice": "This ticket is closed",
+    "replyFailed": "Failed to send reply",
+    "loginToView": "Log in with {{email}} to view progress and replies",
+    "time": {
+      "justNow": "Just now",
+      "minutesAgo": "{{count}}m ago",
+      "hoursAgo": "{{count}}h ago",
+      "daysAgo": "{{count}}d ago"
+    }
+  },
   "faq": {
     "title": "FAQ"
   },

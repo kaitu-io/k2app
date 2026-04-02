@@ -1,4 +1,27 @@
 {
+  "feedback": {
+    "title": "反馈中心",
+    "newTicket": "提交新工单",
+    "noTickets": "暂无工单",
+    "noTicketsHint": "遇到问题？提交一个工单，我们会尽快回复",
+    "loadError": "加载失败，请重试",
+    "status": {
+      "open": "处理中",
+      "resolved": "已解决",
+      "closed": "已关闭"
+    },
+    "adminReplied": "客服回复于",
+    "replyPlaceholder": "请输入回复...",
+    "closedNotice": "工单已关闭",
+    "replyFailed": "回复发送失败",
+    "loginToView": "使用邮箱 {{email}} 登录即可查看进展和回复",
+    "time": {
+      "justNow": "刚刚",
+      "minutesAgo": "{{count}} 分钟前",
+      "hoursAgo": "{{count}} 小时前",
+      "daysAgo": "{{count}} 天前"
+    }
+  },
   "faq": {
     "title": "常见问题"
   },

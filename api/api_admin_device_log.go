@@ -89,6 +89,9 @@ func api_admin_list_feedback_tickets(c *gin.Context) {
 	if status := c.Query("status"); status != "" {
 		query = query.Where("status = ?", status)
 	}
+	if lastReplyBy := c.Query("lastReplyBy"); lastReplyBy != "" {
+		query = query.Where("last_reply_by = ?", lastReplyBy)
+	}
 	if from := c.Query("from"); from != "" {
 		if t, err := time.Parse(time.RFC3339, from); err == nil {
 			query = query.Where("created_at >= ?", t)
@@ -125,19 +128,27 @@ func api_admin_list_feedback_tickets(c *gin.Context) {
 			resolvedAt = &ts
 		}
 
+		var lastReplyAt *int64
+		if t.LastReplyAt != nil {
+			ts := t.LastReplyAt.Unix()
+			lastReplyAt = &ts
+		}
+
 		items[i] = FeedbackTicketResponse{
-			ID:         t.ID,
-			FeedbackID: t.FeedbackID,
-			UDID:       t.UDID,
-			UserID:     t.UserID,
-			Email:      t.Email,
-			Content:    t.Content,
-			Status:     t.Status,
-			ResolvedBy: t.ResolvedBy,
-			ResolvedAt: resolvedAt,
-			Meta:       t.Meta,
-			CreatedAt:  t.CreatedAt.Unix(),
-			LogCount:   logCount,
+			ID:          t.ID,
+			FeedbackID:  t.FeedbackID,
+			UDID:        t.UDID,
+			UserID:      t.UserID,
+			Email:       t.Email,
+			Content:     t.Content,
+			Status:      t.Status,
+			ResolvedBy:  t.ResolvedBy,
+			ResolvedAt:  resolvedAt,
+			LastReplyAt: lastReplyAt,
+			LastReplyBy: t.LastReplyBy,
+			Meta:        t.Meta,
+			CreatedAt:   t.CreatedAt.Unix(),
+			LogCount:    logCount,
 		}
 	}
 
