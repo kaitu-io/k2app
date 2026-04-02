@@ -1031,6 +1031,22 @@ type FeedbackTicket struct {
 	ResolvedBy *string        `gorm:"type:varchar(64)" json:"resolvedBy,omitempty"`
 	ResolvedAt *time.Time     `json:"resolvedAt,omitempty"`
 	Meta       string         `gorm:"type:json" json:"meta,omitempty"` // {os,appVersion,channel,vpnState,language,source,...}
+
+	LastReplyAt *time.Time `gorm:"index" json:"lastReplyAt,omitempty"`
+	LastReplyBy string     `gorm:"type:varchar(16)" json:"lastReplyBy,omitempty"`
+	UserUnread  int        `gorm:"not null;default:0" json:"userUnread"`
+}
+
+// TicketReply 工单回复
+type TicketReply struct {
+	ID         uint64     `gorm:"primarykey" json:"id"`
+	CreatedAt  time.Time  `json:"createdAt"`
+	TicketID   uint64     `gorm:"index;not null" json:"ticketId"`
+	SenderType string     `gorm:"type:varchar(16);not null" json:"senderType"` // "user" | "admin"
+	SenderID   *uint64    `json:"senderId,omitempty"`
+	SenderName string     `gorm:"type:varchar(64)" json:"senderName"`
+	Content    string     `gorm:"type:text;not null" json:"content"`
+	NotifiedAt *time.Time `gorm:"index" json:"-"`
 }
 
 // ========================= Cloud Instance Management =========================

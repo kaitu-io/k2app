@@ -813,6 +813,48 @@ type ResolveFeedbackTicketRequest struct {
 	ResolvedBy string `json:"resolvedBy" binding:"required"`
 }
 
+type CreateTicketReplyRequest struct {
+	Content string `json:"content" binding:"required,min=1,max=2000"`
+}
+
+type AdminCreateTicketReplyRequest struct {
+	Content    string `json:"content" binding:"required,min=1,max=2000"`
+	SenderName string `json:"senderName,omitempty"`
+}
+
+type TicketReplyResponse struct {
+	ID         uint64 `json:"id"`
+	SenderType string `json:"senderType"`
+	SenderName string `json:"senderName"`
+	Content    string `json:"content"`
+	CreatedAt  int64  `json:"createdAt"`
+}
+
+type UserTicketListItem struct {
+	ID          uint64 `json:"id"`
+	FeedbackID  string `json:"feedbackId"`
+	Content     string `json:"content"`
+	Status      string `json:"status"`
+	UserUnread  int    `json:"userUnread"`
+	LastReplyAt *int64 `json:"lastReplyAt,omitempty"`
+	LastReplyBy string `json:"lastReplyBy,omitempty"`
+	CreatedAt   int64  `json:"createdAt"`
+}
+
+type UserTicketDetailResponse struct {
+	ID         uint64                `json:"id"`
+	FeedbackID string                `json:"feedbackId"`
+	Content    string                `json:"content"`
+	Status     string                `json:"status"`
+	CreatedAt  int64                 `json:"createdAt"`
+	ResolvedAt *int64                `json:"resolvedAt,omitempty"`
+	Replies    []TicketReplyResponse `json:"replies"`
+}
+
+type UnreadCountResponse struct {
+	Unread int `json:"unread"`
+}
+
 // DeviceLogResponse admin 查询日志响应
 type DeviceLogResponse struct {
 	ID         uint64  `json:"id"`
@@ -836,10 +878,12 @@ type FeedbackTicketResponse struct {
 	Content    string  `json:"content"`
 	Status     string  `json:"status"`
 	ResolvedBy *string `json:"resolvedBy,omitempty"`
-	ResolvedAt *int64  `json:"resolvedAt,omitempty"`
-	Meta       string  `json:"meta,omitempty"`
-	CreatedAt  int64   `json:"createdAt"`
-	LogCount   int64   `json:"logCount"` // 关联的日志数量
+	ResolvedAt  *int64  `json:"resolvedAt,omitempty"`
+	LastReplyAt *int64  `json:"lastReplyAt,omitempty"`
+	LastReplyBy string  `json:"lastReplyBy,omitempty"`
+	Meta        string  `json:"meta,omitempty"`
+	CreatedAt   int64   `json:"createdAt"`
+	LogCount    int64   `json:"logCount"` // 关联的日志数量
 }
 
 // ========================= Device Statistics Types =========================
