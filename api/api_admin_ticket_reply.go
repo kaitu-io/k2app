@@ -56,16 +56,22 @@ func api_admin_reply_ticket(c *gin.Context) {
 		return
 	}
 
-	// Update ticket: last_reply_at, last_reply_by, user_unread += 1
+	// Update ticket: last_reply_at, last_reply_by
 	now := time.Now()
-	db.Get().Model(&FeedbackTicket{}).Where("id = ?", id).Updates(map[string]any{
+	updates := map[string]any{
 		"last_reply_at": now,
 		"last_reply_by": "admin",
-		"user_unread":   gorm.Expr("user_unread + 1"),
-	})
+	}
+	// Only increment unread and notify if ticket is not closed
+	if ticket.Status != "closed" {
+		updates["user_unread"] = gorm.Expr("user_unread + 1")
+	}
+	db.Get().Model(&FeedbackTicket{}).Where("id = ?", id).Updates(updates)
 
-	// Enqueue notification (delayed + deduplicated)
-	enqueueTicketNotification(ctx, id)
+	// Enqueue notification (delayed + deduplicated) — skip for closed tickets
+	if ticket.Status != "closed" {
+		enqueueTicketNotification(ctx, id)
+	}
 
 	log.Infof(ctx, "api_admin_reply_ticket: admin replied to ticket %d", id)
 	WriteAuditLog(c, "ticket_reply", "ticket", fmt.Sprintf("%d", id), nil)
