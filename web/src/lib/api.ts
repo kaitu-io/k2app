@@ -2115,6 +2115,17 @@ export const api = {
     });
   },
 
+  async replyFeedbackTicket(id: number, content: string, senderName?: string): Promise<void> {
+    return this.request<void>(`/app/feedback-tickets/${id}/reply`, {
+      method: 'POST',
+      body: JSON.stringify({ content, senderName }),
+    });
+  },
+
+  async getTicketReplies(id: number): Promise<{ items: FeedbackTicketReply[] }> {
+    return this.request<{ items: FeedbackTicketReply[] }>(`/app/feedback-tickets/${id}/replies`);
+  },
+
   // ==================== Approval Management ====================
 
   async getApprovals(params: { status?: string; page?: number; pageSize?: number } = {}): Promise<ListResult<AdminApproval>> {
@@ -2435,6 +2446,16 @@ export interface FeedbackTicket {
   meta?: string;
   createdAt: number;
   logCount: number;
+  lastReplyAt?: number;
+  lastReplyBy?: string;
+}
+
+export interface FeedbackTicketReply {
+  id: number;
+  senderType: 'user' | 'admin';
+  senderName: string;
+  content: string;
+  createdAt: number;
 }
 
 export interface FeedbackTicketListParams {

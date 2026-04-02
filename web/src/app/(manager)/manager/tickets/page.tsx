@@ -27,10 +27,11 @@ import {
   getCoreRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { api, FeedbackTicket } from "@/lib/api";
+import { api, FeedbackTicket, FeedbackTicketReply } from "@/lib/api";
+import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
-import { CheckCircle, XCircle, Eye, FileText } from "lucide-react";
+import { CheckCircle, XCircle, Eye, FileText, Send, MessageCircle } from "lucide-react";
 
 const statusConfig: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   open: { label: "待处理", variant: "destructive" },
@@ -50,6 +51,9 @@ export default function TicketsPage() {
 
   // Detail dialog
   const [detailTicket, setDetailTicket] = useState<FeedbackTicket | null>(null);
+  const [replies, setReplies] = useState<FeedbackTicketReply[]>([]);
+  const [replyContent, setReplyContent] = useState('');
+  const [isReplying, setIsReplying] = useState(false);
 
   // URL query state
   const page = parseInt(searchParams.get("page") || "0", 10);
@@ -100,6 +104,44 @@ export default function TicketsPage() {
     };
     fetchTickets();
   }, [page, pageSize, filterStatus, filterEmail, filterUdid, refreshKey]);
+
+  // Fetch replies when detail ticket changes
+  useEffect(() => {
+    if (!detailTicket) {
+      setReplies([]);
+      setReplyContent('');
+      return;
+    }
+    const fetchReplies = async () => {
+      try {
+        const response = await api.getTicketReplies(detailTicket.id);
+        setReplies(response.items || []);
+      } catch (error) {
+        console.error("Failed to fetch replies:", error);
+      }
+    };
+    fetchReplies();
+  }, [detailTicket?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleReply = async () => {
+    if (!detailTicket || !replyContent.trim()) return;
+    setIsReplying(true);
+    try {
+      await api.replyFeedbackTicket(detailTicket.id, replyContent.trim(), user?.email || "admin");
+      toast.success("回复已发送");
+      setReplyContent('');
+      // Refresh replies
+      const response = await api.getTicketReplies(detailTicket.id);
+      setReplies(response.items || []);
+      // Refresh ticket list to update lastReplyAt/lastReplyBy
+      setRefreshKey((k) => k + 1);
+    } catch (error) {
+      console.error("Failed to reply:", error);
+      toast.error("回复发送失败");
+    } finally {
+      setIsReplying(false);
+    }
+  };
 
   const handleResolve = async (ticket: FeedbackTicket) => {
     try {
@@ -154,8 +196,20 @@ export default function TicketsPage() {
       header: "状态",
       cell: ({ row }) => {
         const status = row.getValue("status") as string;
+        const ticket = row.original;
         const config = statusConfig[status] || { label: status, variant: "outline" as const };
-        return <Badge variant={config.variant}>{config.label}</Badge>;
+        const awaitingReply = status === "open" && ticket.lastReplyBy === "user";
+        return (
+          <div className="flex items-center gap-1">
+            <Badge variant={config.variant}>{config.label}</Badge>
+            {awaitingReply && (
+              <Badge variant="outline" className="text-amber-500 border-amber-500 gap-1">
+                <MessageCircle className="h-3 w-3" />
+                {"待回复"}
+              </Badge>
+            )}
+          </div>
+        );
       },
     },
     {
@@ -398,7 +452,7 @@ export default function TicketsPage() {
 
       {/* Detail Dialog */}
       <Dialog open={!!detailTicket} onOpenChange={(open) => { if (!open) setDetailTicket(null); }}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{"工单详情"} #{detailTicket?.id}</DialogTitle>
             <DialogDescription>
@@ -482,6 +536,63 @@ export default function TicketsPage() {
                   {detailTicket.content}
                 </div>
               </div>
+
+              {/* Reply timeline */}
+              <div>
+                <label className="text-sm font-medium text-muted-foreground">{"对话记录"}</label>
+                <div className="mt-1 max-h-64 overflow-y-auto space-y-3">
+                  {replies.length === 0 ? (
+                    <p className="text-sm text-muted-foreground py-4 text-center">{"暂无回复"}</p>
+                  ) : (
+                    replies.map((reply) => (
+                      <div
+                        key={reply.id}
+                        className={`p-3 rounded-lg text-sm ${
+                          reply.senderType === "admin"
+                            ? "border-l-4 border-l-blue-500 bg-blue-500/5"
+                            : "bg-muted"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-medium">
+                            {reply.senderName}
+                            <Badge variant="outline" className="ml-2 text-xs">
+                              {reply.senderType === "admin" ? "客服" : "用户"}
+                            </Badge>
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {formatDate(reply.createdAt)}
+                          </span>
+                        </div>
+                        <div className="whitespace-pre-wrap">{reply.content}</div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Reply input */}
+              {detailTicket.status !== "closed" && (
+                <div className="space-y-2">
+                  <Textarea
+                    placeholder="输入回复内容..."
+                    value={replyContent}
+                    onChange={(e) => setReplyContent(e.target.value)}
+                    rows={3}
+                    className="resize-none"
+                  />
+                  <div className="flex justify-end">
+                    <Button
+                      size="sm"
+                      onClick={handleReply}
+                      disabled={isReplying || !replyContent.trim()}
+                    >
+                      <Send className="h-4 w-4 mr-1" />
+                      {isReplying ? "发送中..." : "发送回复"}
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
           <DialogFooter>
