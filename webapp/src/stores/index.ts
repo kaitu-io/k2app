@@ -48,6 +48,9 @@ export { useConnectionStore, initializeConnectionStore } from './connection.stor
 // ============ Self-Hosted Store ============
 export { useSelfHostedStore } from './self-hosted.store';
 
+// ============ Feedback Store ============
+export { useFeedbackStore } from './feedback.store';
+
 // ============ VPN Machine Store ============
 export {
   useVPNMachineStore,
@@ -57,12 +60,13 @@ export {
 } from './vpn-machine.store';
 
 // 内部导入（用于 initializeAllStores）
-import { initializeAuthStore } from './auth.store';
+import { initializeAuthStore, useAuthStore } from './auth.store';
 import { initializeVPNMachine, useVPNMachineStore } from './vpn-machine.store';
 import { initializeLayoutStore } from './layout.store';
 import { useConfigStore } from './config.store';
 import { initializeConnectionStore, useConnectionStore } from './connection.store';
 import { useSelfHostedStore } from './self-hosted.store';
+import { useFeedbackStore } from './feedback.store';
 
 /**
  * 初始化所有 Store
@@ -81,6 +85,19 @@ export function initializeAllStores(): () => void {
   const cleanupAuth = initializeAuthStore();
   const cleanupVPNMachine = initializeVPNMachine();
   const cleanupConnection = initializeConnectionStore();
+
+  // Subscribe to auth state for feedback polling
+  const unsubFeedback = useAuthStore.subscribe(
+    (s) => s.isAuthenticated,
+    (isAuthenticated) => {
+      if (isAuthenticated) {
+        useFeedbackStore.getState().startPolling();
+      } else {
+        useFeedbackStore.getState().stopPolling();
+      }
+    },
+    { fireImmediately: true }
+  );
 
   // Subscribe to VPN state changes for analytics
   import('../services/stats').then(({ statsService }) => {
@@ -139,6 +156,8 @@ export function initializeAllStores(): () => void {
   }).catch(() => {});
 
   return () => {
+    unsubFeedback();
+    useFeedbackStore.getState().stopPolling();
     cleanupConnection();
     cleanupVPNMachine();
     cleanupAuth();

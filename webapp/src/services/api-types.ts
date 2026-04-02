@@ -510,6 +510,43 @@ export interface CreateTicketRequest {
   language?: string; // 界面语言
 }
 
+// 工单回复
+export interface TicketReply {
+  id: number;
+  senderType: 'user' | 'admin';
+  senderName: string;
+  content: string;
+  createdAt: number;
+}
+
+// 用户工单列表项
+export interface UserTicketListItem {
+  id: number;
+  feedbackId: string;
+  content: string;
+  status: 'open' | 'resolved' | 'closed';
+  userUnread: number;
+  lastReplyAt?: number;
+  lastReplyBy?: string;
+  createdAt: number;
+}
+
+// 用户工单详情
+export interface UserTicketDetail {
+  id: number;
+  feedbackId: string;
+  content: string;
+  status: 'open' | 'resolved' | 'closed';
+  createdAt: number;
+  resolvedAt?: number;
+  replies: TicketReply[];
+}
+
+// 未读计数
+export interface UnreadCount {
+  unread: number;
+}
+
 // ==================== App 配置类型定义 ====================
 
 // App links configuration

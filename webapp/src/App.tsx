@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import * as Sentry from "@sentry/react";
 import { useTranslation } from "react-i18next";
 import {
@@ -31,6 +31,7 @@ import FAQ from "./pages/FAQ";
 import Issues from "./pages/Issues";
 import IssueDetail from "./pages/IssueDetail";
 import SubmitTicket from "./pages/SubmitTicket";
+import Feedback from "./pages/Feedback";
 import ServiceError from "./pages/ServiceError";
 import MemberManagement from "./pages/MemberManagement";
 import Changelog from "./pages/Changelog";
@@ -90,7 +91,9 @@ function AppRoutes() {
               <Route path="faq" element={<FAQ />} />
               <Route path="issues" element={<LoginRequiredGuard pagePath="/issues"><Issues /></LoginRequiredGuard>} />
               <Route path="issues/:number" element={<LoginRequiredGuard pagePath="/issues"><IssueDetail /></LoginRequiredGuard>} />
-              <Route path="submit-ticket" element={<MembershipGuard><SubmitTicket /></MembershipGuard>} />
+              <Route path="feedback" element={<LoginRequiredGuard pagePath="/feedback"><Feedback /></LoginRequiredGuard>} />
+              <Route path="submit-ticket" element={<Navigate to="/feedback" replace />} />
+              <Route path="submit-ticket-form" element={<MembershipGuard><SubmitTicket /></MembershipGuard>} />
             </>
           )}
 

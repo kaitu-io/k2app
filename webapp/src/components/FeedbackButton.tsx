@@ -1,9 +1,10 @@
 import { useNavigate } from 'react-router-dom';
-import { Fab, Portal, Tooltip, useTheme, keyframes } from '@mui/material';
+import { Badge, Fab, Portal, Tooltip, useTheme, keyframes } from '@mui/material';
 import { Feedback as FeedbackIcon } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import { useDraggable } from '../hooks/useDraggable';
 import { useLayout } from '../stores';
+import { useFeedbackStore } from '../stores/feedback.store';
 
 const pulse = keyframes`
   0% {
@@ -22,6 +23,7 @@ export default function FeedbackButton() {
   const theme = useTheme();
   const navigate = useNavigate();
   const { sidebarWidth, isDesktop } = useLayout();
+  const unreadCount = useFeedbackStore((s) => s.unreadCount);
 
   const { position, isDragging, bindDrag, elementRef } = useDraggable({
     storageKey: 'k2_feedback_btn_pos',
@@ -35,7 +37,7 @@ export default function FeedbackButton() {
 
   const handleClick = () => {
     if (isDragging) return;
-    navigate('/submit-ticket?feedback=true');
+    navigate('/feedback');
   };
 
   return (
@@ -75,7 +77,14 @@ export default function FeedbackButton() {
           }}
           aria-label={t('feedback:feedback.buttonLabel')}
         >
-          <FeedbackIcon />
+          <Badge
+            badgeContent={unreadCount}
+            color="error"
+            invisible={unreadCount === 0}
+            sx={{ '& .MuiBadge-badge': { fontSize: '0.65rem', height: 16, minWidth: 16 } }}
+          >
+            <FeedbackIcon />
+          </Badge>
         </Fab>
       </Tooltip>
     </Portal>
