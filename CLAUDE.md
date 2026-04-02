@@ -10,11 +10,14 @@ Used as a read-only submodule in k2app. See parent `CLAUDE.md` for integration c
 ```bash
 go build -o k2 ./cmd/k2            # Build client
 go build -o k2s ./cmd/k2s          # Build server
+GOOS=linux go build -o k2r ./cmd/k2r  # Build gateway (Linux only)
 go test ./...                      # All tests (wire + core + dns + appext + daemon + server + e2e)
 go test -short ./...               # Fast: skip live DNS/network tests
 go test -race -timeout 300s ./wire/...  # Wire tests with race (needs 300s+ timeout)
 make quick-check                   # go vet + golangci-lint + go test -short -race
-make pre-release                   # quick-check + full tests + contract tests + cross-compile
+make gateway-check                 # gateway/ vet + build + unit tests (native Linux) or cross-compile (macOS)
+make gateway-uat                   # Docker UAT: 10 phases, ~56 tests, full soft-router validation
+make pre-release                   # quick-check + gateway-check + full tests + contract tests + cross-compile
 make appext-ios                    # iOS xcframework (gomobile bind)
 make appext-android                # Android aar (gomobile bind)
 k2 setup <k2v5://URL>              # First-time: generate config + install service + start
@@ -25,6 +28,10 @@ k2 service install                 # Install as system service
 k2 service uninstall               # Remove system service
 k2s setup                          # Server: install service + print connect URL
 k2s -c server.yaml                 # Server with explicit config (foreground)
+k2r setup <k2v5://URL>              # Gateway: generate config + install service + start
+k2r ctl up                          # Gateway: connect (install intercept rules)
+k2r ctl status                      # Gateway: connection status JSON
+k2r ctl down                        # Gateway: disconnect (remove intercept rules)
 docker compose up --build           # Docker: server + init container (docker/)
 ```
 
@@ -86,6 +93,12 @@ Reserved event names:
 | `DIAG: dns-proxy-write-fail` | WARN | WriteTo failed | server, domain, connAgeS, isNewConn, err |
 | `DIAG: dns-proxy-conn-dead` | WARN | recv loop died | server, domain, connAgeS, isNewConn, err |
 | `DIAG: dns-proxy-dial-fail` | WARN | DialUDP failed | server, domain, err |
+| `DIAG: p2p-connected` | INFO | connection established | peer, method, dialMs |
+| `DIAG: ice-connected` | INFO | ICE session established | session, method |
+| `DIAG: ice-failed` | WARN | ICE session failed | session, err |
+| `DIAG: gw-lan-discover` | INFO | on LAN scan | subnets, ifaceCount |
+| `DIAG: gw-intercept-install` | INFO | on rule install | backend, subnets, excludeCount |
+| `DIAG: gw-sysctl` | INFO | on sysctl change | key, oldValue, newValue |
 
 ### Layer 3 Rules — Full Trace
 
@@ -169,6 +182,17 @@ Serialization locks (never nested inside any state lock above):
   smuxUDPMux.writeMu (standalone)
   quicStreamUDPMux.writeMu (standalone)
   udpOverflowStream.initMu → udpOverflowStream.writeMu
+
+rule.Engine.mu (state, RWMutex, standalone — no nesting with engine locks)
+
+gateway standalone locks (no nesting with engine locks):
+  Gateway.opMu (serialization) → Gateway.mu (state) → Gateway.sseMu (state)
+
+k2p/signal standalone locks (no nesting with engine locks):
+  signal.Store.mu (state, RWMutex) → PeerEntry.WriteMu (serialization)
+  signal.SessionRouter.mu (state)
+  wsConn.writeMu (serialization, standalone — protects ws.WriteJSON)
+  CandidateExchange.writeMu (serialization, standalone — protects ws.WriteJSON)
 ```
 
 ### The Five Forbidden Patterns
@@ -457,6 +481,7 @@ engine/CLAUDE.md               Unified tunnel lifecycle manager (state machine, 
 core/CLAUDE.md                 L4 ClientTunnel, Router, ConnectionHandler
 core/dns/CLAUDE.md             DNS 13-step middleware pipeline
 daemon/CLAUDE.md               Desktop platform shell: HTTP API, service management, auto-reconnect
+gateway/CLAUDE.md              Gateway platform shell: k2r binary, TPROXY, LAN interception
 provider/CLAUDE.md             Provider interface (TUN, Proxy, TProxy, iOS, Android)
 server/CLAUDE.md               Server listener orchestration, TCP/UDP handlers
 wire/CLAUDE.md                 k2v5 wire protocol, Dialer/Listener interfaces
@@ -506,7 +531,7 @@ Desktop:   CLI → HTTP → daemon.Daemon ──[builds Config]──→ engine.
 App ext:   Native → appext.Engine ──[builds Config]──→ engine.Engine.Start()
                                                            ↓
                                                       engine assembles:
-                                                      k2rule → wire → provider → tunnel → DNS
+                                                      rule → wire → provider → tunnel → DNS
 ```
 
 Platform Shell (daemon/appext) assembles `engine.Config` with platform-specific fields (DirectDialer, NetworkMonitor for desktop; FileDescriptor for appext), then delegates all lifecycle to engine. Engine doesn't know or care which platform called it.
@@ -528,12 +553,13 @@ Platform Shell (daemon/appext) assembles `engine.Config` with platform-specific 
 
 - `k2`: client (CLI, daemon, provider, core, DNS middleware) — Linux/Windows desktop
 - `k2s`: server (listener, auth, TCP/UDP handlers)
+- `k2r`: gateway (CLI, gateway/, TPROXY interception) — Linux routers/soft-routers
 - `appext/`: gomobile SDK (Engine + EventHandler bridge — gomobile can't export dependency interfaces) — macOS sysext, iOS, Android
 - Shared: wire/, config/, engine/
 
 ## Data Flow
 
-- DNS (all TUN): App → TUN → gVisor → dnsHandler (port 53 TCP+UDP) → Middleware.HandleQuery → Cache/Filter/k2rule/dedup → Upstream
+- DNS (all TUN): App → TUN → gVisor → dnsHandler (port 53 TCP+UDP) → Middleware.HandleQuery → Cache/Filter/rule/dedup → Upstream
 - Traffic: TUN → gVisor stack → ConnectionHandler → Router → Wire (QUIC/TCP-WS) → Server
 - Server: Wire → Auth → AcceptTCP/ServeUDP → net.Dial → Target
 - Control: CLI → HTTP 127.0.0.1:1777 → Daemon → Engine
@@ -588,13 +614,13 @@ engine.Stop()
 - Server generates dual certs (RSA+EC) — both padded to match target site's cert length
 - EC CA (`wire/kaitu_ca.pem`, disguised as DigiCert) can sign both RSA and EC server certs
 - `tun_desktop.go` build tag: `(darwin && !ios) || (linux && !android) || windows` — must exclude android/ios
-- tproxy provider (Linux only) manages nftables rules — cleanup on Close() is critical
+- gateway provider (k2r) manages nftables/iptables TPROXY rules — cleanup on Close() is critical
 - `tun.Options.DNSServers` must NOT be set — it configures OS DNS settings, not packet interception. sing-tun auto-derives `TUN_IP.Next()`. DNS hijack is application-level (dnsHandler checks port 53)
 - `ProviderConfig.RouteExcludeAddrs` (NOT DNSServers) excludes IPs from TUN routing — prevents DirectDNSClient query loops
 
 ## Dependencies
 
-- `github.com/kaitu-io/k2rule v0.6.4` — domain/IP routing rules with unified Init API + SetTmpRule (CacheDir required, non-blocking background download, Antiporn opt-in)
+- `rule/` (in-tree) — multi-ruleset routing engine: domain suffix binary search + IP range O(log n) binary search, k2b mmap-indexed format, routes-based config, per-service IP-CIDR + domain rule sets, inline rules (domain_suffix/ip_cidr in config), connection metadata matching (process_name, package_name, network, ip_is_private)
 - `github.com/miekg/dns` — DNS message handling
 - `github.com/sagernet/sing-tun` — TUN device with gVisor stack
 - `github.com/apernet/quic-go` — QUIC with congestion control API
@@ -621,7 +647,7 @@ docs/todos/p2-*.md     Nice to have
 - Client tunnel, server handlers, e2e tests, zero-config server startup
 - k2/k2s binaries (k2s interactive wizard + upgrade command + beta channel)
 - appext SDK (gomobile, macOS sysext+iOS+Android, iOS GOGC=10 memory optimization)
-- tproxy provider (OpenWRT/Linux), OpenWRT service management (init.d/procd)
+- k2r gateway binary (cmd/k2r, gateway/ package, TPROXY with nftables/iptables auto-detect)
 - Wire observability (K2CC metrics + TX/RX counting + HealthMonitor FSM + TCP health gate + background QUIC probe)
 - Protocol sniffing (TLS/QUIC/HTTP/BT/STUN/DTLS + QUIC blocking with ICMP Port Unreachable)
 - Happy Eyeballs (RFC 8305), transport behavior contract tests (20 scenarios in wire/ + engine/)
@@ -637,4 +663,4 @@ docs/todos/p2-*.md     Nice to have
 | Android | aar | appext/ | tun (FD) | protectedDialer | nil (OS calls OnNetworkChanged) |
 | Linux desktop | cmd/k2 | daemon/ | tun (self-create) | daemon.directDialer | singTunMonitor |
 | Windows | cmd/k2 | daemon/ | tun (self-create) | daemon.directDialer | singTunMonitor |
-| OpenWRT | cmd/k2 | daemon/ | tproxy | nil | nil |
+| Linux gateway | cmd/k2r | gateway/ | gateway (TPROXY) | nil | nil |

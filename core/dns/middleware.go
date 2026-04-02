@@ -6,13 +6,14 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/kaitu-io/k2rule"
 	"github.com/kaitu-io/k2/core/packet"
+	"github.com/kaitu-io/k2/rule"
 	"github.com/miekg/dns"
 )
 
@@ -63,6 +64,10 @@ type Middleware struct {
 	// Metrics (nil-safe — all methods handle nil receiver)
 	metrics *Metrics
 
+	// Rule functions (injected by engine)
+	matchRule  func(string) rule.Target
+	setTmpRule func(string, rule.Target)
+
 	// Writer for sending raw IP packet responses (L3 mode, nil for L4)
 	writer io.Writer
 
@@ -77,22 +82,26 @@ type MiddlewareConfig struct {
 	DNSCache  *DNSCache
 	Hosts     *HostsFile
 	Filter    *Filter
-	Metrics   *Metrics
-	Writer    io.Writer       // nil for L4-only usage
-	EngineCtx context.Context // engine root context for background prefresh (nil disables)
+	Metrics    *Metrics
+	MatchRule  func(string) rule.Target
+	SetTmpRule func(string, rule.Target)
+	Writer     io.Writer       // nil for L4-only usage
+	EngineCtx  context.Context // engine root context for background prefresh (nil disables)
 }
 
 // NewMiddleware creates a new DNS middleware
 func NewMiddleware(cfg MiddlewareConfig) *Middleware {
 	return &Middleware{
-		directDNS: cfg.DirectDNS,
-		proxyDNS:  cfg.ProxyDNS,
-		dnsCache:  cfg.DNSCache,
-		hosts:     cfg.Hosts,
-		filter:    cfg.Filter,
-		metrics:   cfg.Metrics,
-		writer:    cfg.Writer,
-		engineCtx: cfg.EngineCtx,
+		directDNS:  cfg.DirectDNS,
+		proxyDNS:   cfg.ProxyDNS,
+		dnsCache:   cfg.DNSCache,
+		hosts:      cfg.Hosts,
+		filter:     cfg.Filter,
+		metrics:    cfg.Metrics,
+		matchRule:  cfg.MatchRule,
+		setTmpRule: cfg.SetTmpRule,
+		writer:     cfg.Writer,
+		engineCtx:  cfg.EngineCtx,
 	}
 }
 
@@ -109,7 +118,7 @@ func (m *Middleware) HandleQuery(ctx context.Context, query []byte) ([]byte, err
 		return nil, fmt.Errorf("unpack DNS query: %w", err)
 	}
 
-	// 2-12. Full pipeline (hosts, filter, cache, k2rule, upstream, SetTmpRule)
+	// 2-12. Full pipeline (hosts, filter, cache, rule match, upstream, SetTmpRule)
 	resp, packed, err := m.processQuery(ctx, &msg)
 	if err != nil {
 		return nil, err
@@ -179,9 +188,9 @@ func (m *Middleware) processQuery(ctx context.Context, query *dns.Msg) (*dns.Msg
 		packed, nearExpiry := m.dnsCache.GetPackedNearExpiry(domain, query.Question[0].Qtype, query.Id, prefreshThreshold)
 		if packed != nil {
 			if nearExpiry {
-				// Lazy k2rule.Match — only on near-expiry, not every cache hit.
-				action := k2rule.Match(domain)
-				if action != k2rule.TargetReject {
+				// Lazy rule match — only on near-expiry, not every cache hit.
+				action := m.matchRule(domain)
+				if action != rule.TargetReject {
 					m.triggerPrefresh(domain, query.Question[0].Qtype, action)
 				}
 			}
@@ -196,11 +205,11 @@ func (m *Middleware) processQuery(ctx context.Context, query *dns.Msg) (*dns.Msg
 		stalePacked, _ = m.dnsCache.GetStalePacked(domain, query.Question[0].Qtype, query.Id)
 	}
 
-	// 7. Domain-based routing (k2rule)
-	action := k2rule.Match(domain)
+	// 7. Domain-based routing
+	action := m.matchRule(domain)
 
 	// Reject is instant — no upstream query, no dedup needed.
-	if action == k2rule.TargetReject {
+	if action == rule.TargetReject {
 		slog.Debug("DNS routed reject", "domain", domain)
 		return createNXDOMAIN(query), nil, nil
 	}
@@ -260,9 +269,14 @@ func (m *Middleware) processQuery(ctx context.Context, query *dns.Msg) (*dns.Msg
 	}
 
 	// 10. Store DNS-learned IP routes as temporary rules.
+	// Skip private IPs — ip_is_private routes must evaluate fresh at connection time.
 	if resp.Rcode == dns.RcodeSuccess {
 		for _, ip := range extractIPsFromResponse(resp) {
-			k2rule.SetTmpRule(ip, action)
+			if addr, err := netip.ParseAddr(ip); err == nil &&
+				(addr.IsPrivate() || addr.IsLoopback() || addr.IsLinkLocalUnicast()) {
+				continue
+			}
+			m.setTmpRule(ip, action)
 		}
 	}
 
@@ -272,7 +286,7 @@ func (m *Middleware) processQuery(ctx context.Context, query *dns.Msg) (*dns.Msg
 // triggerPrefresh launches a background goroutine to refresh a near-expiry cache entry.
 // Deduped via prefreshing sync.Map — at most one refresh per domain:qtype at a time.
 // Uses engineCtx (not caller's ctx) so the refresh outlives the triggering query.
-func (m *Middleware) triggerPrefresh(domain string, qtype uint16, action k2rule.Target) {
+func (m *Middleware) triggerPrefresh(domain string, qtype uint16, action rule.Target) {
 	if m.engineCtx == nil {
 		return
 	}
@@ -304,9 +318,14 @@ func (m *Middleware) triggerPrefresh(domain string, qtype uint16, action k2rule.
 		}
 
 		// Update temporary routing rules.
+		// Skip private IPs — ip_is_private routes must evaluate fresh at connection time.
 		if resp.Rcode == dns.RcodeSuccess {
 			for _, ip := range extractIPsFromResponse(resp) {
-				k2rule.SetTmpRule(ip, action)
+				if addr, err := netip.ParseAddr(ip); err == nil &&
+					(addr.IsPrivate() || addr.IsLoopback() || addr.IsLinkLocalUnicast()) {
+					continue
+				}
+				m.setTmpRule(ip, action)
 			}
 		}
 
@@ -324,14 +343,14 @@ func (m *Middleware) returnStaleOrError(stalePacked []byte, err error) (*dns.Msg
 }
 
 // queryUpstream sends a DNS query to the appropriate upstream (direct or proxy).
-func (m *Middleware) queryUpstream(ctx context.Context, domain string, action k2rule.Target, query *dns.Msg) (*dns.Msg, error) {
+func (m *Middleware) queryUpstream(ctx context.Context, domain string, action rule.Target, query *dns.Msg) (*dns.Msg, error) {
 	ctx, cancel := context.WithTimeout(ctx, upstreamTimeout)
 	defer cancel()
 
 	start := time.Now()
 
 	switch action {
-	case k2rule.TargetDirect:
+	case rule.TargetDirect:
 		m.metrics.IncrDirect()
 		resp, err := m.directDNS.Query(ctx, query)
 		elapsed := time.Since(start)
@@ -347,7 +366,7 @@ func (m *Middleware) queryUpstream(ctx context.Context, domain string, action k2
 		slog.Debug("DNS routed direct", "domain", domain)
 		return resp, nil
 
-	case k2rule.TargetProxy:
+	case rule.TargetProxy:
 		m.metrics.IncrProxy()
 		resp, err := m.proxyDNS.Query(ctx, query)
 		elapsed := time.Since(start)

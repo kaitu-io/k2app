@@ -38,8 +38,7 @@ func TestStatePersistence(t *testing.T) {
 	os.Remove(stateFilePath())
 	defer os.Remove(stateFilePath())
 
-	cfg := &config.ClientConfig{Server: "k2v5://test:tok@host:443"}
-	config.SetDefaults(cfg)
+	cfg := config.ClientFromURL("k2v5://test:tok@host:443")
 
 	// Save state.
 	st := persistedState{
@@ -55,6 +54,10 @@ func TestStatePersistence(t *testing.T) {
 		t.Fatalf("loadState: %v", err)
 	}
 
+	// Server is derived (yaml:"-"), re-derive after load.
+	if loaded.Config != nil {
+		config.SetDefaults(loaded.Config)
+	}
 	if loaded.Config == nil || loaded.Config.Server != st.Config.Server {
 		t.Fatalf("expected config server %s, got %v", st.Config.Server, loaded.Config)
 	}
@@ -75,8 +78,7 @@ func TestAutoReconnectSkipsStale(t *testing.T) {
 	os.Remove(stateFilePath())
 	defer os.Remove(stateFilePath())
 
-	cfg := &config.ClientConfig{Server: "k2v5://test:tok@host:443"}
-	config.SetDefaults(cfg)
+	cfg := config.ClientFromURL("k2v5://test:tok@host:443")
 
 	// Save stale state (8 days ago — exceeds 7-day auto-reconnect window).
 	saveState(persistedState{

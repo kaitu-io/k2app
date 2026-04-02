@@ -10,13 +10,13 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/kaitu-io/k2rule"
 	"github.com/sasha-s/go-deadlock"
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/core"
 	"github.com/kaitu-io/k2/core/dns"
 	"github.com/kaitu-io/k2/provider"
+	"github.com/kaitu-io/k2/rule"
 	"github.com/kaitu-io/k2/wire"
 )
 
@@ -44,6 +44,7 @@ type Engine struct {
 	health         *healthMonitor
 	probe          *recoveryProbe
 	proxyDNS       *dns.ProxyDNSClient // proxy DNS connection pool (nil in proxy mode)
+	ruleEngine     *rule.Engine
 }
 
 // New creates a new Engine in the disconnected state.
@@ -99,23 +100,20 @@ func (e *Engine) Start(cfg Config) error {
 	}
 
 	startTime := time.Now()
+	// 1. Rule engine.
+	ruleEngine := buildRuleEngine(client)
+
 	slog.Info("engine: start",
 		"server", extractServerHost(client.Server),
 		"mode", client.Mode,
-		"ruleGlobal", client.Rule.Global,
+		"allProxy", ruleEngine.IsAllProxy(),
 		"dnsDirect", client.DNS.Direct,
 		"dnsProxy", client.DNS.Proxy,
 		"fd", cfg.FileDescriptor,
 		"hasDirectDialer", cfg.DirectDialer != nil,
 		"hasNetworkMonitor", cfg.NetworkMonitor != nil,
 	)
-
-	// 1. Rule config — built directly from client.Rule.
-	ruleCfg := buildRuleConfig(client)
-	if err := k2rule.Init(ruleCfg); err != nil {
-		slog.Warn("engine: k2rule init failed, continuing with defaults", "err", err)
-	}
-	slog.Info("engine: step 1 - k2rule init done", "elapsed", time.Since(startTime))
+	slog.Info("engine: step 1 - rule engine init done", "elapsed", time.Since(startTime))
 
 	// 2. Parse k2v5:// URL.
 	wireCfg, err := wire.ParseURL(client.Server)
@@ -202,11 +200,14 @@ func (e *Engine) Start(cfg Config) error {
 	slog.Info("DIAG: wire-handshake", "handshakeMs", hsMs, "transport", tm.WireStats().Transport)
 
 	// 5. Router.
-	router := core.NewRouter()
+	router := core.NewRouter(ruleEngine)
 
 	// 6. Build provider.
 	var prov provider.Provider
-	if cfg.FileDescriptor >= 0 {
+	if cfg.Provider != nil {
+		// External provider (gateway/).
+		prov = cfg.Provider
+	} else if cfg.FileDescriptor >= 0 {
 		// Mobile / macOS sysext: platform-provided TUN FD.
 		prov = provider.NewTUNProvider(provider.ProviderConfig{
 			FileDescriptor:   cfg.FileDescriptor,
@@ -221,21 +222,14 @@ func (e *Engine) Start(cfg Config) error {
 			Mode:        "proxy",
 			ProxyListen: client.Proxy.Listen,
 		})
-	} else if client.Mode == "tproxy" {
-		// Linux tproxy mode (OpenWRT, headless Linux).
-		prov = provider.NewTProxyProvider(provider.ProviderConfig{
-			Mode:        "tproxy",
-			IPv4Address: client.Tun.IPv4,
-			IPv6Address: client.Tun.IPv6,
-		})
 	} else {
-		// Desktop TUN mode.
+		// Desktop TUN mode (default).
 		prov = provider.NewTUNProvider(provider.ProviderConfig{
-			Mode:             "tun",
+			Mode:              "tun",
 			RouteExcludeAddrs: computeDNSExclude(client),
-			InterfaceMonitor: cfg.InterfaceMonitor,
-			IPv4Address:      client.Tun.IPv4,
-			IPv6Address:      client.Tun.IPv6,
+			InterfaceMonitor:  cfg.InterfaceMonitor,
+			IPv4Address:       client.Tun.IPv4,
+			IPv6Address:       client.Tun.IPv6,
 		})
 	}
 
@@ -252,12 +246,13 @@ func (e *Engine) Start(cfg Config) error {
 
 	// 7. Build client tunnel.
 	tunnelCfg := core.ClientTunnelConfig{
-		Provider:     prov,
-		Dialer:       tm,
-		Router:       router,
-		WireReporter: e,
-		SniffBT:   !client.Rule.Global, // sniff BT in smart mode only
-		SniffSNI:  !client.Rule.Global, // sniff TLS/QUIC SNI in smart mode only
+		Provider:        prov,
+		Dialer:          tm,
+		Router:          router,
+		WireReporter:    e,
+		ProcessSearcher: cfg.ProcessSearcher,
+		SniffBT:   !ruleEngine.IsAllProxy(), // sniff BT in smart mode only
+		SniffSNI:  !ruleEngine.IsAllProxy(), // sniff TLS/QUIC SNI in smart mode only
 		BlockQUIC: client.BlockQUIC,
 	}
 	if cfg.DirectDialer != nil {
@@ -282,11 +277,13 @@ func (e *Engine) Start(cfg Config) error {
 			Servers: client.DNS.Proxy,
 		})
 		dnsMW := dns.NewMiddleware(dns.MiddlewareConfig{
-			ProxyDNS: proxyDNS,
-			DirectDNS: dns.NewDirectDNSClient(client.DNS.Direct, dnsOpts...),
-			DNSCache:  dns.NewDNSCache(dns.DNSCacheConfig{}),
-			Filter:    dns.NewFilter(dns.FilterConfig{}),
-			EngineCtx: ctx, // engine context — cancelled on Stop()
+			ProxyDNS:   proxyDNS,
+			DirectDNS:  dns.NewDirectDNSClient(client.DNS.Direct, dnsOpts...),
+			DNSCache:   dns.NewDNSCache(dns.DNSCacheConfig{}),
+			Filter:     dns.NewFilter(dns.FilterConfig{}),
+			MatchRule:  ruleEngine.Match,
+			SetTmpRule: ruleEngine.SetTmpRule,
+			EngineCtx:  ctx, // engine context — cancelled on Stop()
 		})
 		if err := tunnel.StartWithHandler(ctx, &dnsHandler{inner: tunnel, dns: dnsMW, ctx: ctx, engine: e}); err != nil {
 			if cfg.NetworkMonitor != nil {
@@ -324,6 +321,7 @@ func (e *Engine) Start(cfg Config) error {
 	e.tm = tm
 	e.prov = prov
 	e.proxyDNS = proxyDNS
+	e.ruleEngine = ruleEngine
 	e.networkMonitor = cfg.NetworkMonitor
 
 	// Start health monitor (1Hz wire stats sampling + health FSM).
@@ -345,7 +343,7 @@ func (e *Engine) Start(cfg Config) error {
 	slog.Info("DIAG: connected",
 		"server", extractServerHost(client.Server),
 		"mode", client.Mode,
-		"ruleGlobal", client.Rule.Global,
+		"allProxy", ruleEngine.IsAllProxy(),
 		"dialMs", time.Since(startTime).Milliseconds(),
 	)
 
@@ -557,6 +555,8 @@ func (e *Engine) Stop() error {
 	tunnel := e.tunnel
 	e.tunnel = nil
 	e.proxyDNS = nil // no explicit close needed — tm.Close() cascades
+	re := e.ruleEngine
+	e.ruleEngine = nil
 	e.client = nil
 	e.connectedAt = time.Time{}
 	e.paused = false
@@ -589,6 +589,9 @@ func (e *Engine) Stop() error {
 	}
 	if tunnel != nil {
 		tunnel.Close()
+	}
+	if re != nil {
+		re.Close()
 	}
 	if sessionUptime > 0 {
 		slog.Info("DIAG: session-end",
@@ -676,22 +679,91 @@ func (e *Engine) fail(err error) error {
 	return err
 }
 
-// buildRuleConfig creates a k2rule.Config from the client's Rule settings.
-// CacheDir must be set by the platform shell (daemon/mobile) before calling engine.
-func buildRuleConfig(client *config.ClientConfig) *k2rule.Config {
-	rule := client.Rule
-	ruleCfg := &k2rule.Config{
-		RuleURL:  rule.RuleURL,
-		GeoIPURL: rule.GeoIPURL,
-		Antiporn: rule.Antiporn,
-		PornURL:  rule.PornURL,
-		CacheDir: rule.CacheDir,
-		IsGlobal: rule.Global,
+// buildRuleEngine creates a rule.Engine from the client's route configuration.
+// CacheDir must be set by the platform shell (daemon/appext) before calling engine.
+func buildRuleEngine(client *config.ClientConfig) *rule.Engine {
+	// Simple case: single route with match:all and k2v5:// → all proxy, no routes.
+	if client.IsAllProxy() && len(client.Routes) == 1 {
+		return rule.NewEngine(nil, rule.TargetProxy, nil, true)
 	}
-	if rule.Global {
-		ruleCfg.GlobalTarget = k2rule.TargetProxy
+
+	fallback := rule.TargetDirect
+
+	// Load bundles from cache.
+	bundles, err := rule.Load(client.CacheDir)
+	if err != nil {
+		slog.Warn("engine: rule load failed", "err", err)
 	}
-	return ruleCfg
+	idx := rule.Index(bundles)
+
+	var entries []rule.RouteEntry
+	allProxy := false
+
+	for i, route := range client.Routes {
+		target := rule.ParseVia(route.Via)
+
+		if route.Match.All {
+			allProxy = (target == rule.TargetProxy)
+			fallback = target
+			break
+		}
+
+		entry := rule.RouteEntry{Target: target}
+
+		// Bundle-based sets.
+		names := rule.ExpandMatch(route.Match)
+		for _, name := range names {
+			if bs, ok := idx[name]; ok {
+				entry.Sets = append(entry.Sets, bs)
+			}
+		}
+
+		// Inline rules.
+		if len(route.Match.DomainSuffix) > 0 || len(route.Match.IPCIDR) > 0 {
+			inline := rule.BuildInlineSet(route.Match.DomainSuffix, route.Match.IPCIDR)
+			entry.Inline = &inline
+		}
+
+		// Meta criteria.
+		entry.ProcessNames = route.Match.ProcessName
+		entry.PackageNames = route.Match.PackageName
+		entry.NetworkMatch = route.Match.Network
+		entry.IPIsPrivate = route.Match.IPIsPrivate
+
+		hasAnyCriteria := len(entry.Sets) > 0 ||
+			(entry.Inline != nil && !entry.Inline.IsEmpty()) ||
+			len(entry.ProcessNames) > 0 || len(entry.PackageNames) > 0 ||
+			entry.NetworkMatch != "" || entry.IPIsPrivate
+		if hasAnyCriteria {
+			entries = append(entries, entry)
+		}
+
+		// Last route without match criteria = fallback.
+		if i == len(client.Routes)-1 && !route.Match.HasCriteria() {
+			fallback = target
+		}
+	}
+
+	hasRules := len(bundles) > 0
+	for _, e := range entries {
+		if e.Inline != nil && !e.Inline.IsEmpty() {
+			hasRules = true
+			break
+		}
+		if len(e.ProcessNames) > 0 || len(e.PackageNames) > 0 {
+			hasRules = true
+			break
+		}
+	}
+	if !hasRules {
+		slog.Info("engine: no rule bundles or inline rules, using fallback only",
+			"cacheDir", client.CacheDir, "fallback", fallback)
+	} else {
+		slog.Info("engine: rule engine loaded",
+			"routes", len(entries), "fallback", fallback)
+	}
+
+	return rule.NewEngine(entries, fallback, bundles, allProxy)
 }
 
 // computeDNSExclude builds the list of IPs to exclude from TUN routing.

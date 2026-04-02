@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/kaitu-io/k2/provider"
+	"github.com/kaitu-io/k2/rule"
 	"github.com/kaitu-io/k2/sniff"
 )
 
@@ -180,11 +181,12 @@ func TestClientTunnel_HandleTCP_Direct(t *testing.T) {
 
 	prov := &mockProvider{}
 	// Create tunnel with nil dialer (shouldn't be used for direct)
-	// Use a router that always returns direct
+	// Use a router with a rule engine that defaults to direct for localhost.
+	ruleEngine := rule.NewEngine(nil, rule.TargetDirect, nil, false)
 	tunnel := NewClientTunnel(ClientTunnelConfig{
 		Provider: prov,
 		Dialer:   newMockDialer(),
-		Router:   &Router{}, // No cache → falls through to k2rule.Match which returns direct for localhost
+		Router:   NewRouter(ruleEngine),
 	})
 
 	if err := tunnel.Start(context.Background()); err != nil {

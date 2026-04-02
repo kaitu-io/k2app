@@ -30,13 +30,17 @@ func (h *handlerAdapter) PrepareConnection(network string, source M.Socksaddr, d
 
 func (h *handlerAdapter) NewConnectionEx(ctx context.Context, conn net.Conn, source M.Socksaddr, destination M.Socksaddr, onClose N.CloseHandlerFunc) {
 	dest := destination.String()
+	// Wrap conn to preserve source addr for process lookup.
+	// gVisor conn's RemoteAddr may not return the original source;
+	// the source param from sing-tun is authoritative.
+	wrapped := &sourceConn{Conn: conn, source: source.UDPAddr()}
 	safego.Go(func() {
 		defer func() {
 			if onClose != nil {
 				onClose(nil)
 			}
 		}()
-		h.handler.HandleTCP(conn, dest)
+		h.handler.HandleTCP(wrapped, dest)
 	})
 }
 
@@ -48,13 +52,47 @@ func (h *handlerAdapter) NewPacketConnectionEx(ctx context.Context, conn N.Packe
 				onClose(nil)
 			}
 		}()
-		h.handler.HandleUDP(&singPacketConn{conn: conn}, dest)
+		h.handler.HandleUDP(&singPacketConn{conn: conn, source: source.UDPAddr()}, dest)
 	})
+}
+
+// sourceConn wraps a net.Conn to preserve the original source address.
+// gVisor connections may not return the correct source via RemoteAddr();
+// the source from sing-tun's handler callback is authoritative.
+type sourceConn struct {
+	net.Conn
+	source *net.UDPAddr
+}
+
+func (c *sourceConn) RemoteAddr() net.Addr {
+	if c.source != nil {
+		return c.source
+	}
+	return c.Conn.RemoteAddr()
+}
+
+// SourceAddr extracts the original source address from a connection.
+// Returns nil if the connection is not a sourceConn wrapper.
+func SourceAddr(conn net.Conn) *net.UDPAddr {
+	if sc, ok := conn.(*sourceConn); ok {
+		return sc.source
+	}
+	return nil
+}
+
+// SourcePacketAddr extracts the original source address from a PacketConn.
+// Returns nil if the PacketConn is not a singPacketConn with source.
+func SourcePacketAddr(conn net.PacketConn) *net.UDPAddr {
+	if sc, ok := conn.(*singPacketConn); ok {
+		return sc.source
+	}
+	return nil
 }
 
 // singPacketConn wraps sing's N.PacketConn into standard net.PacketConn.
 type singPacketConn struct {
-	conn N.PacketConn
+	conn   N.PacketConn
+	source *net.UDPAddr // original source address for process lookup
 }
 
 var _ net.PacketConn = (*singPacketConn)(nil)

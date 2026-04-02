@@ -21,7 +21,7 @@ func TestHandleUpConfigJSON(t *testing.T) {
 	d := New()
 	d.StartFunc = mockStartFunc
 
-	body := `{"action":"up","params":{"config":{"server":"k2v5://test:token@host:443"}}}`
+	body := `{"action":"up","params":{"config":{"routes":[{"via":"k2v5://test:token@host:443","match":{"all":true}}]}}}`
 	req := httptest.NewRequest("POST", "/api/core", bytes.NewReader([]byte(body)))
 	w := httptest.NewRecorder()
 	d.handleCore(w, req)
@@ -62,10 +62,7 @@ func TestDoUpAcceptsClientConfig(t *testing.T) {
 		return nil
 	}
 
-	clientCfg := &config.ClientConfig{
-		Server: "k2v5://test:token@host:443",
-	}
-	config.SetDefaults(clientCfg)
+	clientCfg := config.ClientFromURL("k2v5://test:token@host:443")
 
 	if err := d.doUp(clientCfg, 0); err != nil {
 		t.Fatalf("doUp: %v", err)
@@ -91,14 +88,11 @@ func TestEngineConfigFromClientConfig_TunFields(t *testing.T) {
 		return nil
 	}
 
-	clientCfg := &config.ClientConfig{
-		Server: "k2v5://test:token@host:443",
-		Tun: config.TunConfig{
-			IPv4: "10.0.0.2/24",
-			IPv6: "fd00::2/128",
-		},
+	clientCfg := config.ClientFromURL("k2v5://test:token@host:443")
+	clientCfg.Tun = config.TunConfig{
+		IPv4: "10.0.0.2/24",
+		IPv6: "fd00::2/128",
 	}
-	config.SetDefaults(clientCfg)
 
 	if err := d.doUp(clientCfg, 0); err != nil {
 		t.Fatalf("doUp: %v", err)
@@ -122,10 +116,7 @@ func TestEngineConfigFromClientConfig_TunDefaults(t *testing.T) {
 	}
 
 	// No Tun fields set — SetDefaults fills platform defaults.
-	clientCfg := &config.ClientConfig{
-		Server: "k2v5://test:token@host:443",
-	}
-	config.SetDefaults(clientCfg)
+	clientCfg := config.ClientFromURL("k2v5://test:token@host:443")
 
 	if err := d.doUp(clientCfg, 0); err != nil {
 		t.Fatalf("doUp: %v", err)
@@ -148,15 +139,12 @@ func TestEngineConfigFromClientConfig_ProxyModeUnchanged(t *testing.T) {
 		return nil
 	}
 
-	clientCfg := &config.ClientConfig{
-		Server: "k2v5://test:token@host:443",
-		Mode:   "proxy",
-		Tun: config.TunConfig{
-			IPv4: "10.0.0.2/24",
-		},
+	clientCfg := config.ClientFromURL("k2v5://test:token@host:443")
+	clientCfg.Mode = "proxy"
+	clientCfg.Tun = config.TunConfig{
+		IPv4: "10.0.0.2/24",
 	}
 	clientCfg.Proxy.Listen = "127.0.0.1:8080"
-	config.SetDefaults(clientCfg)
 
 	if err := d.doUp(clientCfg, 0); err != nil {
 		t.Fatalf("doUp: %v", err)
@@ -179,11 +167,8 @@ func TestPersistedStateWithClientConfig(t *testing.T) {
 	os.Remove(stateFilePath())
 	defer os.Remove(stateFilePath())
 
-	cfg := &config.ClientConfig{
-		Server: "k2v5://test:token@host:443",
-		Mode:   "tun",
-	}
-	config.SetDefaults(cfg)
+	cfg := config.ClientFromURL("k2v5://test:token@host:443")
+	cfg.Mode = "tun"
 
 	st := persistedState{
 		Config:    cfg,
@@ -200,6 +185,8 @@ func TestPersistedStateWithClientConfig(t *testing.T) {
 	if loaded.Config == nil {
 		t.Fatal("loaded Config is nil")
 	}
+	// Server is derived (json:"-"), re-derive after deserialization.
+	config.SetDefaults(loaded.Config)
 	if loaded.Config.Server != cfg.Server {
 		t.Fatalf("Config.Server = %q, want %q", loaded.Config.Server, cfg.Server)
 	}
@@ -213,7 +200,7 @@ func TestStatusIncludesClientConfig(t *testing.T) {
 	d.StartFunc = mockStartFunc
 
 	// Connect via config JSON.
-	upBody := `{"action":"up","params":{"config":{"server":"k2v5://test:tok@host:443","mode":"tun"}}}`
+	upBody := `{"action":"up","params":{"config":{"routes":[{"via":"k2v5://test:tok@host:443","match":{"all":true}}],"mode":"tun"}}}`
 	req := httptest.NewRequest("POST", "/api/core", bytes.NewReader([]byte(upBody)))
 	w := httptest.NewRecorder()
 	d.handleCore(w, req)
@@ -240,12 +227,17 @@ func TestStatusIncludesClientConfig(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected config to be a map, got %T", cfgRaw)
 	}
-	if cfg["server"] != "k2v5://test:tok@host:443" {
-		t.Fatalf("expected server in config, got %v", cfg["server"])
+	// Server is json:"-", so check routes instead.
+	routes, ok := cfg["routes"].([]any)
+	if !ok || len(routes) == 0 {
+		t.Fatalf("expected routes array in config, got %v", cfg["routes"])
 	}
-	// Should NOT have legacy wire_url key.
-	if _, ok := cfg["wire_url"]; ok {
-		t.Fatalf("status config should not contain legacy wire_url key")
+	route0, ok := routes[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected route to be a map, got %T", routes[0])
+	}
+	if route0["via"] != "k2v5://test:tok@host:443" {
+		t.Fatalf("expected via in route, got %v", route0["via"])
 	}
 }
 
@@ -341,10 +333,7 @@ func TestAutoReconnectWithSavedConfig(t *testing.T) {
 	os.Remove(stateFilePath())
 	defer os.Remove(stateFilePath())
 
-	cfg := &config.ClientConfig{
-		Server: "k2v5://test:token@host:443",
-	}
-	config.SetDefaults(cfg)
+	cfg := config.ClientFromURL("k2v5://test:token@host:443")
 
 	// Save connected state with Config field.
 	saveState(persistedState{
@@ -361,6 +350,8 @@ func TestAutoReconnectWithSavedConfig(t *testing.T) {
 	if loaded.Config == nil {
 		t.Fatal("loaded Config is nil")
 	}
+	// Server is derived (json:"-"), re-derive after deserialization.
+	config.SetDefaults(loaded.Config)
 	if loaded.Config.Server != "k2v5://test:token@host:443" {
 		t.Fatalf("Config.Server = %q, want k2v5://test:token@host:443", loaded.Config.Server)
 	}

@@ -5,24 +5,46 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
+	"github.com/kaitu-io/k2/rule"
 	"gopkg.in/yaml.v3"
 )
 
 // ClientConfig is the client-side configuration.
 // Loaded by `k2 run -c` or parsed from `k2 up` URL, or unmarshalled from JSON.
 type ClientConfig struct {
-	Listen  string      `yaml:"listen"   json:"listen"`   // daemon HTTP listen address, default "127.0.0.1:1777"
-	Server  string      `yaml:"server"   json:"server"`   // k2v5:// URL
-	Mode    string      `yaml:"mode"     json:"mode"`     // "tun" or "proxy", default "tun"
-	Tun     TunConfig   `yaml:"tun"      json:"tun"`
-	Proxy   ProxyConfig `yaml:"proxy"    json:"proxy"`
-	DNS     DNSConfig   `yaml:"dns"      json:"dns"`
-	Rule    RuleConfig  `yaml:"rule"     json:"rule"`
-	Log     LogConfig   `yaml:"log"      json:"log"`
-	PIDFile   string      `yaml:"pid_file"   json:"pid_file"`   // path to PID file (empty = no PID file)
-	BlockQUIC bool        `yaml:"block_quic" json:"block_quic"` // block browser QUIC via ICMP reject (default: false = allow through DATAGRAM)
+	Routes    []RouteConfig `yaml:"routes"     json:"routes"`
+	Mode      string        `yaml:"mode"       json:"mode"`       // "tun" or "proxy", default "tun"
+	Tun       TunConfig     `yaml:"tun"        json:"tun"`
+	Proxy     ProxyConfig   `yaml:"proxy"      json:"proxy"`
+	DNS       DNSConfig     `yaml:"dns"        json:"dns"`
+	Log       LogConfig     `yaml:"log"        json:"log"`
+	Listen    string        `yaml:"listen"     json:"listen"`     // daemon HTTP listen address, default "127.0.0.1:1777"
+	PIDFile   string        `yaml:"pid_file"   json:"pid_file"`   // path to PID file (empty = no PID file)
+	BlockQUIC bool          `yaml:"block_quic" json:"block_quic"` // block browser QUIC via ICMP reject (default: false = allow through DATAGRAM)
+	CacheDir  string        `yaml:"cache_dir"  json:"cache_dir"`  // cache directory for rule bundles ("" = platform default)
+
+	// Derived fields (not serialized to YAML/JSON).
+	Server string `yaml:"-" json:"-"` // first k2v5:// URL from routes
+
+}
+
+// RouteConfig defines a single routing rule: traffic matching Match is sent via Via.
+type RouteConfig struct {
+	Via   string           `yaml:"via"   json:"via"`
+	Match rule.MatchConfig `yaml:"match" json:"match"`
+}
+
+// IsAllProxy returns true if any route proxies all traffic through a k2v5:// server.
+func (c *ClientConfig) IsAllProxy() bool {
+	for _, r := range c.Routes {
+		if r.Match.All && strings.HasPrefix(r.Via, "k2v5://") {
+			return true
+		}
+	}
+	return false
 }
 
 // TunConfig contains TUN device configuration.
@@ -88,16 +110,6 @@ type AuthConfig struct {
 	CacheTTL  time.Duration `yaml:"cache_ttl"`
 }
 
-// RuleConfig contains k2rule routing rule configuration.
-type RuleConfig struct {
-	RuleURL  string `yaml:"rule_url"  json:"rule_url"`  // remote rule file URL ("" = CDN default)
-	GeoIPURL string `yaml:"geoip_url" json:"geoip_url"` // remote GeoIP .mmdb URL ("" = CDN default)
-	Antiporn bool   `yaml:"antiporn"  json:"antiporn"`  // enable anti-porn detection (default: false)
-	PornURL  string `yaml:"porn_url"  json:"porn_url"`  // remote porn list URL ("" = CDN default, only when antiporn=true)
-	CacheDir string `yaml:"cache_dir" json:"cache_dir"` // cache directory ("" = paths.CacheDir()/k2rule)
-	Global   bool   `yaml:"global"    json:"global"`    // true = global proxy mode (ignore rules)
-}
-
 // LogConfig contains logging configuration.
 type LogConfig struct {
 	Level       string    `yaml:"level"  json:"level"`  // debug, info, warn, error
@@ -139,13 +151,27 @@ func LoadServer(path string) (*ServerConfig, error) {
 
 // ClientFromURL creates a ClientConfig from a k2v5:// wire URL.
 func ClientFromURL(wireURL string) *ClientConfig {
-	cfg := &ClientConfig{Server: wireURL}
+	cfg := &ClientConfig{
+		Routes: []RouteConfig{
+			{Via: wireURL, Match: rule.MatchConfig{All: true}},
+		},
+	}
 	SetDefaults(cfg)
 	return cfg
 }
 
 // SetDefaults fills in default values for any zero-valued fields in a ClientConfig.
 func SetDefaults(cfg *ClientConfig) {
+	// Derive Server from first k2v5:// route.
+	if cfg.Server == "" {
+		for _, r := range cfg.Routes {
+			if strings.HasPrefix(r.Via, "k2v5://") {
+				cfg.Server = r.Via
+				break
+			}
+		}
+	}
+
 	if cfg.Listen == "" {
 		cfg.Listen = "127.0.0.1:1777"
 	}

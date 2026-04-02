@@ -311,9 +311,9 @@ func (d *Daemon) engineConfigFromClientConfig(
 	ifaceMon any,
 	monErr error,
 ) engine.Config {
-	// Ensure CacheDir has a value for k2rule.
-	if cfg.Rule.CacheDir == "" {
-		cfg.Rule.CacheDir = filepath.Join(cacheDir(), "k2rule")
+	// Ensure CacheDir has a value for rule bundles.
+	if cfg.CacheDir == "" {
+		cfg.CacheDir = filepath.Join(cacheDir(), "rules")
 	}
 
 	ecfg := engine.Config{

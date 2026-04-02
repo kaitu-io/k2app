@@ -24,7 +24,7 @@ func TestReload_DynamicFields(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")
 
-	initial := `server: "k2v5://user:pass@initial.host:443"`
+	initial := "routes:\n  - via: \"k2v5://user:pass@initial.host:443\"\n    match:\n      all: true\n"
 	writeConfigFile(t, cfgPath, initial)
 
 	d := New()
@@ -38,7 +38,7 @@ func TestReload_DynamicFields(t *testing.T) {
 	d.mu.Unlock()
 
 	// Now update the config file with a new server URL.
-	updated := `server: "k2v5://user:pass@new.host:443"`
+	updated := "routes:\n  - via: \"k2v5://user:pass@new.host:443\"\n    match:\n      all: true\n"
 	writeConfigFile(t, cfgPath, updated)
 
 	if err := d.Reload(); err != nil {
@@ -61,7 +61,7 @@ func TestReload_StaticFieldWarning(t *testing.T) {
 	cfgPath := filepath.Join(dir, "config.yaml")
 
 	// Write initial config.
-	initial := "server: \"k2v5://user:pass@host:443\"\nlisten: \"127.0.0.1:1777\"\n"
+	initial := "routes:\n  - via: \"k2v5://user:pass@host:443\"\n    match:\n      all: true\nlisten: \"127.0.0.1:1777\"\n"
 	writeConfigFile(t, cfgPath, initial)
 
 	d := New()
@@ -75,7 +75,7 @@ func TestReload_StaticFieldWarning(t *testing.T) {
 	d.mu.Unlock()
 
 	// Write updated config with changed listen address.
-	updated := "server: \"k2v5://user:pass@host:443\"\nlisten: \"127.0.0.1:9999\"\n"
+	updated := "routes:\n  - via: \"k2v5://user:pass@host:443\"\n    match:\n      all: true\nlisten: \"127.0.0.1:9999\"\n"
 	writeConfigFile(t, cfgPath, updated)
 
 	// Capture log output.
@@ -109,7 +109,7 @@ func TestReload_DNSUpdate(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")
 
-	initial := "server: \"k2v5://user:pass@host:443\"\ndns:\n  direct:\n    - 8.8.8.8:53\n"
+	initial := "routes:\n  - via: \"k2v5://user:pass@host:443\"\n    match:\n      all: true\ndns:\n  direct:\n    - 8.8.8.8:53\n"
 	writeConfigFile(t, cfgPath, initial)
 
 	d := New()
@@ -123,7 +123,7 @@ func TestReload_DNSUpdate(t *testing.T) {
 	d.mu.Unlock()
 
 	// Update DNS servers.
-	updated := "server: \"k2v5://user:pass@host:443\"\ndns:\n  direct:\n    - 1.1.1.1:53\n    - 9.9.9.9:53\n"
+	updated := "routes:\n  - via: \"k2v5://user:pass@host:443\"\n    match:\n      all: true\ndns:\n  direct:\n    - 1.1.1.1:53\n    - 9.9.9.9:53\n"
 	writeConfigFile(t, cfgPath, updated)
 
 	if err := d.Reload(); err != nil {
@@ -151,7 +151,7 @@ func TestReload_LogLevel(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")
 
-	initial := "server: \"k2v5://user:pass@host:443\"\nlog:\n  level: info\n"
+	initial := "routes:\n  - via: \"k2v5://user:pass@host:443\"\n    match:\n      all: true\nlog:\n  level: info\n"
 	writeConfigFile(t, cfgPath, initial)
 
 	d := New()
@@ -165,7 +165,7 @@ func TestReload_LogLevel(t *testing.T) {
 	d.mu.Unlock()
 
 	// Update log level.
-	updated := "server: \"k2v5://user:pass@host:443\"\nlog:\n  level: debug\n"
+	updated := "routes:\n  - via: \"k2v5://user:pass@host:443\"\n    match:\n      all: true\nlog:\n  level: debug\n"
 	writeConfigFile(t, cfgPath, updated)
 
 	if err := d.Reload(); err != nil {
@@ -187,7 +187,7 @@ func TestReload_InvalidConfig(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")
 
-	valid := "server: \"k2v5://user:pass@host:443\"\n"
+	valid := "routes:\n  - via: \"k2v5://user:pass@host:443\"\n    match:\n      all: true\n"
 	writeConfigFile(t, cfgPath, valid)
 
 	d := New()

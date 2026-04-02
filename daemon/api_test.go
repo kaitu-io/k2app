@@ -73,7 +73,7 @@ func TestHandleCoreUpDown(t *testing.T) {
 	d.StartFunc = mockStartFunc
 
 	// Up with config JSON.
-	upBody := `{"action":"up","params":{"config":{"server":"k2v5://test:token@host:443"}}}`
+	upBody := `{"action":"up","params":{"config":{"routes":[{"via":"k2v5://test:token@host:443","match":{"all":true}}]}}}`
 	req := httptest.NewRequest("POST", "/api/core", bytes.NewReader([]byte(upBody)))
 	w := httptest.NewRecorder()
 	d.handleCore(w, req)
@@ -213,7 +213,7 @@ func TestStatusIncludesConfig(t *testing.T) {
 	d.StartFunc = mockStartFunc
 
 	// Connect with config.
-	upBody := `{"action":"up","params":{"config":{"server":"k2v5://test:tok@host:443"}}}`
+	upBody := `{"action":"up","params":{"config":{"routes":[{"via":"k2v5://test:tok@host:443","match":{"all":true}}]}}}`
 	req := httptest.NewRequest("POST", "/api/core", bytes.NewReader([]byte(upBody)))
 	w := httptest.NewRecorder()
 	d.handleCore(w, req)
@@ -251,8 +251,17 @@ func TestStatusIncludesConfig(t *testing.T) {
 		t.Fatalf("expected config to be a map, got %T", cfgRaw)
 	}
 
-	if cfg["server"] != "k2v5://test:tok@host:443" {
-		t.Fatalf("expected server in config, got %v", cfg["server"])
+	// Server is json:"-", so check routes instead.
+	routes, ok := cfg["routes"].([]any)
+	if !ok || len(routes) == 0 {
+		t.Fatalf("expected routes array in config, got %v", cfg["routes"])
+	}
+	route0, ok := routes[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected route to be a map, got %T", routes[0])
+	}
+	if route0["via"] != "k2v5://test:tok@host:443" {
+		t.Fatalf("expected via in route, got %v", route0["via"])
 	}
 }
 
