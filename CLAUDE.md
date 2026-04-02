@@ -183,6 +183,8 @@ Serialization locks (never nested inside any state lock above):
   quicStreamUDPMux.writeMu (standalone)
   udpOverflowStream.initMu → udpOverflowStream.writeMu
 
+rule.Engine.mu (state, RWMutex, standalone — no nesting with engine locks)
+
 gateway standalone locks (no nesting with engine locks):
   Gateway.opMu (serialization) → Gateway.mu (state) → Gateway.sseMu (state)
 
@@ -529,7 +531,7 @@ Desktop:   CLI → HTTP → daemon.Daemon ──[builds Config]──→ engine.
 App ext:   Native → appext.Engine ──[builds Config]──→ engine.Engine.Start()
                                                            ↓
                                                       engine assembles:
-                                                      k2rule → wire → provider → tunnel → DNS
+                                                      rule → wire → provider → tunnel → DNS
 ```
 
 Platform Shell (daemon/appext) assembles `engine.Config` with platform-specific fields (DirectDialer, NetworkMonitor for desktop; FileDescriptor for appext), then delegates all lifecycle to engine. Engine doesn't know or care which platform called it.
@@ -557,7 +559,7 @@ Platform Shell (daemon/appext) assembles `engine.Config` with platform-specific 
 
 ## Data Flow
 
-- DNS (all TUN): App → TUN → gVisor → dnsHandler (port 53 TCP+UDP) → Middleware.HandleQuery → Cache/Filter/k2rule/dedup → Upstream
+- DNS (all TUN): App → TUN → gVisor → dnsHandler (port 53 TCP+UDP) → Middleware.HandleQuery → Cache/Filter/rule/dedup → Upstream
 - Traffic: TUN → gVisor stack → ConnectionHandler → Router → Wire (QUIC/TCP-WS) → Server
 - Server: Wire → Auth → AcceptTCP/ServeUDP → net.Dial → Target
 - Control: CLI → HTTP 127.0.0.1:1777 → Daemon → Engine
@@ -618,7 +620,7 @@ engine.Stop()
 
 ## Dependencies
 
-- `github.com/kaitu-io/k2rule v0.6.4` — domain/IP routing rules with unified Init API + SetTmpRule (CacheDir required, non-blocking background download, Antiporn opt-in)
+- `rule/` (in-tree) — multi-ruleset routing engine: domain suffix binary search + IP range O(log n) binary search, k2b mmap-indexed format, routes-based config, per-service IP-CIDR + domain rule sets
 - `github.com/miekg/dns` — DNS message handling
 - `github.com/sagernet/sing-tun` — TUN device with gVisor stack
 - `github.com/apernet/quic-go` — QUIC with congestion control API
