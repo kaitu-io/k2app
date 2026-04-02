@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/kaitu-io/k2/core/dns"
+	"github.com/kaitu-io/k2/rule"
 	mdns "github.com/miekg/dns"
 )
 
@@ -42,8 +43,10 @@ func TestServeDNS_UpstreamFailure_ReturnsSERVFAIL(t *testing.T) {
 	serverPC := &pipePacketConn{Conn: server}
 
 	mw := dns.NewMiddleware(dns.MiddlewareConfig{
-		DirectDNS: &alwaysFailQuerier{},
-		ProxyDNS:  &alwaysFailQuerier{},
+		DirectDNS:  &alwaysFailQuerier{},
+		ProxyDNS:   &alwaysFailQuerier{},
+		MatchRule:  func(string) rule.Target { return rule.TargetDirect },
+		SetTmpRule: func(string, rule.Target) {},
 	})
 
 	h := &dnsHandler{dns: mw}
@@ -108,8 +111,10 @@ func TestServeDNSStream_UpstreamFailure_ReturnsSERVFAIL(t *testing.T) {
 	defer server.Close()
 
 	mw := dns.NewMiddleware(dns.MiddlewareConfig{
-		DirectDNS: &alwaysFailQuerier{},
-		ProxyDNS:  &alwaysFailQuerier{},
+		DirectDNS:  &alwaysFailQuerier{},
+		ProxyDNS:   &alwaysFailQuerier{},
+		MatchRule:  func(string) rule.Target { return rule.TargetDirect },
+		SetTmpRule: func(string, rule.Target) {},
 	})
 
 	h := &dnsHandler{dns: mw}

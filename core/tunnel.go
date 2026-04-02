@@ -79,11 +79,12 @@ type WireErrorReporter interface {
 // It routes each TCP/UDP connection through the Router, then either direct (net.Dial)
 // or proxy (wire.DialTCP/DialUDP).
 type ClientTunnel struct {
-	provider     provider.Provider
-	dialer       wire.Dialer
-	router       *Router
-	directDialer wire.DirectDialer
-	wireReporter WireErrorReporter
+	provider        provider.Provider
+	dialer          wire.Dialer
+	router          *Router
+	directDialer    wire.DirectDialer
+	wireReporter    WireErrorReporter
+	processSearcher provider.ProcessSearcher
 	sniffBT   bool // sniff BitTorrent and force direct (disabled in global mode)
 	sniffSNI  bool // sniff TLS/QUIC SNI and upgrade DIRECT→PROXY (disabled in global mode)
 	blockQUIC bool // block QUIC protocol going through proxy (prevents double-QUIC)
@@ -105,11 +106,12 @@ var _ provider.ConnectionHandler = (*ClientTunnel)(nil)
 
 // ClientTunnelConfig holds dependencies for creating a ClientTunnel.
 type ClientTunnelConfig struct {
-	Provider     provider.Provider
-	Dialer       wire.Dialer
-	Router       *Router
-	DirectDialer wire.DirectDialer
-	WireReporter WireErrorReporter
+	Provider        provider.Provider
+	Dialer          wire.Dialer
+	Router          *Router
+	DirectDialer    wire.DirectDialer
+	WireReporter    WireErrorReporter
+	ProcessSearcher provider.ProcessSearcher // optional: nil = no process matching
 	SniffBT   bool // enable BitTorrent sniffing (should be false in global mode)
 	SniffSNI  bool // enable TLS/QUIC SNI sniffing for DIRECT→PROXY upgrade (should be false in global mode)
 	BlockQUIC bool // block QUIC protocol going through proxy
@@ -118,11 +120,12 @@ type ClientTunnelConfig struct {
 // NewClientTunnel creates a new L4 client tunnel.
 func NewClientTunnel(cfg ClientTunnelConfig) *ClientTunnel {
 	return &ClientTunnel{
-		provider:     cfg.Provider,
-		dialer:       cfg.Dialer,
-		router:       cfg.Router,
-		directDialer: cfg.DirectDialer,
-		wireReporter: cfg.WireReporter,
+		provider:        cfg.Provider,
+		dialer:          cfg.Dialer,
+		router:          cfg.Router,
+		directDialer:    cfg.DirectDialer,
+		wireReporter:    cfg.WireReporter,
+		processSearcher: cfg.ProcessSearcher,
 		sniffBT:   cfg.SniffBT,
 		sniffSNI:  cfg.SniffSNI,
 		blockQUIC: cfg.BlockQUIC,
@@ -210,7 +213,14 @@ func (t *ClientTunnel) HandleTCP(conn net.Conn, dest string) {
 		return // defer conn.Close() → gVisor sends RST
 	}
 
-	action := t.route(dest)
+	srcAddr := provider.SourceAddr(conn)
+	if srcAddr == nil {
+		// Proxy mode: conn.RemoteAddr() is the local client source.
+		if ta, ok := conn.RemoteAddr().(*net.TCPAddr); ok {
+			srcAddr = &net.UDPAddr{IP: ta.IP, Port: ta.Port}
+		}
+	}
+	action := t.routeConn(dest, "tcp", srcAddr)
 
 	var earlyData []byte // peeked bytes sent as wire early data for PROXY path
 
@@ -320,7 +330,7 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 		return
 	}
 
-	action := t.route(dest)
+	action := t.routeConn(dest, "udp", provider.SourcePacketAddr(conn))
 	slog.Debug("tunnel: route UDP", "dest", dest, "action", action)
 
 	// Peek first packet for protocol detection + domain extraction.
@@ -421,7 +431,8 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 	}
 }
 
-func (t *ClientTunnel) route(dest string) rule.Target {
+// routeConn builds ConnMeta from source addr + process lookup, then routes.
+func (t *ClientTunnel) routeConn(dest, network string, srcAddr *net.UDPAddr) rule.Target {
 	if t.router == nil {
 		return rule.TargetProxy
 	}
@@ -429,7 +440,16 @@ func (t *ClientTunnel) route(dest string) rule.Target {
 	if err != nil {
 		return rule.TargetProxy
 	}
-	return t.router.RouteAddr(host)
+
+	meta := rule.ConnMeta{Network: network}
+	if t.processSearcher != nil && srcAddr != nil {
+		srcIP, ok := netip.AddrFromSlice(srcAddr.IP)
+		if ok {
+			meta.ProcessName, meta.PackageName = t.processSearcher.FindProcess(network, srcIP, uint16(srcAddr.Port))
+		}
+	}
+
+	return t.router.RouteConn(host, meta)
 }
 
 func (t *ClientTunnel) handleTCPDirect(local net.Conn, dest string) {

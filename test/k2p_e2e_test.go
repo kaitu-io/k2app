@@ -43,10 +43,6 @@ func TestK2P_E2E_ICEDirect(t *testing.T) {
 	}
 
 	// 3. Claim UDID via signal client.
-	// Note: peer auth is not exercised here because PeerAuthListener.doAuth()
-	// calls QUICServer.AcceptTCP which expects k2v5 stream framing, while
-	// doPeerAuth sends raw auth bytes. Auth is tested at QUIC level in
-	// TestK2P_E2E_AuthRejection and TestK2P_E2E_PinRejection.
 	homeUDID := "test-home-e2e"
 	signalClient := k2p.NewSignalClient(signalSrv.URL, "")
 	regToken, err := signalClient.Claim(ctx, homeUDID)
@@ -55,11 +51,18 @@ func TestK2P_E2E_ICEDirect(t *testing.T) {
 	}
 
 	// 4. Home: Listen (registers, opens WS, waits for Away ICE sessions).
+	// Peer auth is exercised end-to-end: Home verifies Away's secret at QUIC level.
+	peerSecret := "test-peer-secret-e2e"
+	secretHash, err := k2p.HashSecret(peerSecret)
+	if err != nil {
+		t.Fatalf("hash secret: %v", err)
+	}
 	homeCfg := k2p.Config{
 		HomeUDID:     homeUDID,
 		SignalServer: signalSrv.URL,
 		RegToken:     regToken,
 		TLSCert:      &certPair.EC,
+		SecretHash:   secretHash,
 	}
 	listenerCh, err := k2p.Listen(ctx, homeCfg)
 	if err != nil {
@@ -85,6 +88,7 @@ func TestK2P_E2E_ICEDirect(t *testing.T) {
 		SignalServer: signalSrv.URL,
 		Token:        "any-token", // Away uses Token (not RegToken) for lookup/connect.
 		Pin:          certPair.FormatPins(),
+		PeerSecret:   peerSecret,
 		WireCfg:      wire.Config{Host: "localhost", Insecure: true},
 	}
 	result, err := k2p.Dial(ctx, awayCfg)

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -160,6 +161,7 @@ type CandidateExchange struct {
 	inCh     chan WSMessage
 	credsCh  chan WSMessage
 	done     chan struct{}
+	closeOnce sync.Once
 	writeMu  deadlock.Mutex // protects conn.WriteJSON
 	ownsConn bool           // true = Close() closes conn; false = shared conn (Home-side)
 }
@@ -226,12 +228,9 @@ func (e *CandidateExchange) SendCredentials(ufrag, pwd string) error {
 func (e *CandidateExchange) Incoming() <-chan WSMessage { return e.inCh }
 
 // Close stops the exchange. If ownsConn is true, also closes the WebSocket.
+// Safe for concurrent calls via sync.Once.
 func (e *CandidateExchange) Close() error {
-	select {
-	case <-e.done:
-	default:
-		close(e.done)
-	}
+	e.closeOnce.Do(func() { close(e.done) })
 	if e.ownsConn {
 		return e.conn.Close()
 	}

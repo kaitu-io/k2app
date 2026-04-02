@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/kaitu-io/k2/core"
+	"github.com/kaitu-io/k2/rule"
 	"github.com/kaitu-io/k2/wire"
 )
 
@@ -25,7 +26,7 @@ func TestE2E_QUIC_TCPProxy(t *testing.T) {
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{
 		Provider: prov,
 		Dialer:   env.quicClient,
-		Router:   core.NewRouter(),
+		Router:   core.NewRouter(rule.NewEngine(nil, rule.TargetDirect, nil, false)),
 	})
 	if err := tunnel.Start(context.Background()); err != nil {
 		t.Fatal(err)
@@ -76,7 +77,7 @@ func TestE2E_QUIC_UDPProxy(t *testing.T) {
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{
 		Provider: prov,
 		Dialer:   env.quicClient,
-		Router:   core.NewRouter(),
+		Router:   core.NewRouter(rule.NewEngine(nil, rule.TargetDirect, nil, false)),
 	})
 	if err := tunnel.Start(context.Background()); err != nil {
 		t.Fatal(err)
@@ -121,7 +122,7 @@ func TestE2E_TCPWS_TCPProxy(t *testing.T) {
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{
 		Provider: prov,
 		Dialer:   env.tcpwsClient,
-		Router:   core.NewRouter(),
+		Router:   core.NewRouter(rule.NewEngine(nil, rule.TargetDirect, nil, false)),
 	})
 	if err := tunnel.Start(context.Background()); err != nil {
 		t.Fatal(err)
@@ -173,7 +174,7 @@ func TestE2E_TransportManager_Failover(t *testing.T) {
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{
 		Provider: prov,
 		Dialer:   tm,
-		Router:   core.NewRouter(),
+		Router:   core.NewRouter(rule.NewEngine(nil, rule.TargetDirect, nil, false)),
 	})
 	if err := tunnel.Start(context.Background()); err != nil {
 		t.Fatal(err)

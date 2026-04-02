@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kaitu-io/k2rule"
+	"github.com/kaitu-io/k2/rule"
 	"github.com/miekg/dns"
 )
 
@@ -30,24 +30,10 @@ func (m *mockQuerier) Query(ctx context.Context, q *dns.Msg) (*dns.Msg, error) {
 	return resp, nil
 }
 
-// initK2Rule initializes k2rule in global mode with the given target.
-// Handles the zero-value issue where TargetDirect (0) is ignored in Config.
-//
-// Uses non-existent file paths for GeoIP/Porn to avoid network downloads
-// (retryForever). Init sets globalConfig before failing on file open, and
-// global-mode Match() only checks globalConfig — not the managers.
-func initK2Rule(t *testing.T, target k2rule.Target) {
-	t.Helper()
-	k2rule.Init(&k2rule.Config{
-		CacheDir:     t.TempDir(),
-		IsGlobal:     true,
-		GlobalTarget: k2rule.TargetProxy, // non-zero so Config accepts it
-		GeoIPFile:    "/nonexistent",     // skip remote download
-		PornFile:     "/nonexistent",     // skip remote download
-	})
-	k2rule.SetGlobalTarget(target)
-	k2rule.ToggleGlobal(true)
-}
+func alwaysProxy(string) rule.Target  { return rule.TargetProxy }
+func alwaysDirect(string) rule.Target { return rule.TargetDirect }
+func alwaysReject(string) rule.Target { return rule.TargetReject }
+func nopSetTmp(string, rule.Target)   {}
 
 // buildAQuery creates a DNS A query for domain.
 func buildAQuery(domain string) []byte {
@@ -77,8 +63,6 @@ func buildAResponse(domain string, ip net.IP) *dns.Msg {
 }
 
 func TestHandleQuery_DirectDomain(t *testing.T) {
-	initK2Rule(t, k2rule.TargetDirect)
-
 	directQ := &mockQuerier{
 		resp: buildAResponse("direct.example.com", net.ParseIP("1.2.3.4")),
 	}
@@ -89,6 +73,8 @@ func TestHandleQuery_DirectDomain(t *testing.T) {
 	mw := NewMiddleware(MiddlewareConfig{
 		DirectDNS: directQ,
 		ProxyDNS:  proxyQ,
+		MatchRule:  alwaysDirect,
+		SetTmpRule: nopSetTmp,
 	})
 
 	query := buildAQuery("direct.example.com")
@@ -127,8 +113,6 @@ func TestHandleQuery_DirectDomain(t *testing.T) {
 }
 
 func TestHandleQuery_ProxyDomain(t *testing.T) {
-	initK2Rule(t, k2rule.TargetProxy)
-
 	directQ := &mockQuerier{
 		resp: buildAResponse("proxy.example.com", net.ParseIP("1.2.3.4")),
 	}
@@ -137,8 +121,10 @@ func TestHandleQuery_ProxyDomain(t *testing.T) {
 	}
 
 	mw := NewMiddleware(MiddlewareConfig{
-		DirectDNS: directQ,
-		ProxyDNS:  proxyQ,
+		DirectDNS:  directQ,
+		ProxyDNS:   proxyQ,
+		MatchRule:  alwaysProxy,
+		SetTmpRule: nopSetTmp,
 	})
 
 	query := buildAQuery("proxy.example.com")
@@ -170,8 +156,6 @@ func TestHandleQuery_ProxyDomain(t *testing.T) {
 }
 
 func TestHandleQuery_RejectDomain(t *testing.T) {
-	initK2Rule(t, k2rule.TargetReject)
-
 	directQ := &mockQuerier{
 		resp: buildAResponse("reject.example.com", net.ParseIP("1.2.3.4")),
 	}
@@ -180,8 +164,10 @@ func TestHandleQuery_RejectDomain(t *testing.T) {
 	}
 
 	mw := NewMiddleware(MiddlewareConfig{
-		DirectDNS: directQ,
-		ProxyDNS:  proxyQ,
+		DirectDNS:  directQ,
+		ProxyDNS:   proxyQ,
+		MatchRule:  alwaysReject,
+		SetTmpRule: nopSetTmp,
 	})
 
 	query := buildAQuery("reject.example.com")
@@ -208,8 +194,6 @@ func TestHandleQuery_RejectDomain(t *testing.T) {
 }
 
 func TestHandleQuery_CacheHit(t *testing.T) {
-	initK2Rule(t, k2rule.TargetDirect)
-
 	directQ := &mockQuerier{
 		resp: buildAResponse("cached.example.com", net.ParseIP("1.2.3.4")),
 	}
@@ -220,9 +204,11 @@ func TestHandleQuery_CacheHit(t *testing.T) {
 	cache := NewDNSCache(DNSCacheConfig{})
 
 	mw := NewMiddleware(MiddlewareConfig{
-		DirectDNS: directQ,
-		ProxyDNS:  proxyQ,
-		DNSCache:  cache,
+		DirectDNS:  directQ,
+		ProxyDNS:   proxyQ,
+		DNSCache:   cache,
+		MatchRule:  alwaysDirect,
+		SetTmpRule: nopSetTmp,
 	})
 
 	ctx := context.Background()
@@ -269,16 +255,16 @@ func TestHandleQuery_InvalidBytes(t *testing.T) {
 
 func TestHandleQuery_NilWriter(t *testing.T) {
 	// Middleware with nil Writer (L4 mode) -- HandleQuery works fine
-	initK2Rule(t, k2rule.TargetDirect)
-
 	directQ := &mockQuerier{
 		resp: buildAResponse("l4.example.com", net.ParseIP("1.2.3.4")),
 	}
 
 	mw := NewMiddleware(MiddlewareConfig{
-		DirectDNS: directQ,
-		ProxyDNS:  &mockQuerier{resp: buildAResponse("l4.example.com", net.ParseIP("5.6.7.8"))},
-		Writer:    nil, // L4 mode -- no writer
+		DirectDNS:  directQ,
+		ProxyDNS:   &mockQuerier{resp: buildAResponse("l4.example.com", net.ParseIP("5.6.7.8"))},
+		MatchRule:  alwaysDirect,
+		SetTmpRule: nopSetTmp,
+		Writer:     nil, // L4 mode -- no writer
 	})
 
 	query := buildAQuery("l4.example.com")
@@ -325,8 +311,6 @@ func (q *slowQuerier) Query(ctx context.Context, msg *dns.Msg) (*dns.Msg, error)
 }
 
 func TestInflightDedup_WaiterCtxCancelled_ReturnsStaleOrError(t *testing.T) {
-	initK2Rule(t, k2rule.TargetDirect)
-
 	// Slow owner blocks for a long time.
 	slowQ := &slowQuerier{
 		delay: 60 * time.Second,
@@ -334,8 +318,10 @@ func TestInflightDedup_WaiterCtxCancelled_ReturnsStaleOrError(t *testing.T) {
 	}
 
 	mw := NewMiddleware(MiddlewareConfig{
-		DirectDNS: slowQ,
-		ProxyDNS:  &mockQuerier{resp: buildAResponse("hang.example.com", net.ParseIP("5.6.7.8"))},
+		DirectDNS:  slowQ,
+		ProxyDNS:   &mockQuerier{resp: buildAResponse("hang.example.com", net.ParseIP("5.6.7.8"))},
+		MatchRule:  alwaysDirect,
+		SetTmpRule: nopSetTmp,
 	})
 
 	query := buildAQuery("hang.example.com")
@@ -364,8 +350,6 @@ func TestInflightDedup_WaiterCtxCancelled_ReturnsStaleOrError(t *testing.T) {
 }
 
 func TestInflightDedup_WaiterCtxCancelled_ReturnsStale(t *testing.T) {
-	initK2Rule(t, k2rule.TargetDirect)
-
 	cache := NewDNSCache(DNSCacheConfig{
 		MinTTL:   1 * time.Second,
 		MaxTTL:   1 * time.Second,
@@ -375,9 +359,11 @@ func TestInflightDedup_WaiterCtxCancelled_ReturnsStale(t *testing.T) {
 	// Populate cache.
 	fastQ := &mockQuerier{resp: buildAResponse("stale-waiter.example.com", net.ParseIP("1.2.3.4"))}
 	mw := NewMiddleware(MiddlewareConfig{
-		DirectDNS: fastQ,
-		ProxyDNS:  &mockQuerier{resp: buildAResponse("stale-waiter.example.com", net.ParseIP("5.6.7.8"))},
-		DNSCache:  cache,
+		DirectDNS:  fastQ,
+		ProxyDNS:   &mockQuerier{resp: buildAResponse("stale-waiter.example.com", net.ParseIP("5.6.7.8"))},
+		DNSCache:   cache,
+		MatchRule:  alwaysDirect,
+		SetTmpRule: nopSetTmp,
 	})
 	query := buildAQuery("stale-waiter.example.com")
 	_, err := mw.HandleQuery(context.Background(), query)
@@ -394,9 +380,11 @@ func TestInflightDedup_WaiterCtxCancelled_ReturnsStale(t *testing.T) {
 		resp:  buildAResponse("stale-waiter.example.com", net.ParseIP("9.9.9.9")),
 	}
 	mw2 := NewMiddleware(MiddlewareConfig{
-		DirectDNS: slowQ,
-		ProxyDNS:  &mockQuerier{resp: buildAResponse("stale-waiter.example.com", net.ParseIP("5.6.7.8"))},
-		DNSCache:  cache,
+		DirectDNS:  slowQ,
+		ProxyDNS:   &mockQuerier{resp: buildAResponse("stale-waiter.example.com", net.ParseIP("5.6.7.8"))},
+		DNSCache:   cache,
+		MatchRule:  alwaysDirect,
+		SetTmpRule: nopSetTmp,
 	})
 
 	// Owner blocks in background.
@@ -424,16 +412,16 @@ func TestInflightDedup_WaiterCtxCancelled_ReturnsStale(t *testing.T) {
 }
 
 func TestInflightDedup_NormalDedup(t *testing.T) {
-	initK2Rule(t, k2rule.TargetDirect)
-
 	directQ := &slowQuerier{
 		delay: 200 * time.Millisecond,
 		resp:  buildAResponse("dedup.example.com", net.ParseIP("1.2.3.4")),
 	}
 
 	mw := NewMiddleware(MiddlewareConfig{
-		DirectDNS: directQ,
-		ProxyDNS:  &mockQuerier{resp: buildAResponse("dedup.example.com", net.ParseIP("5.6.7.8"))},
+		DirectDNS:  directQ,
+		ProxyDNS:   &mockQuerier{resp: buildAResponse("dedup.example.com", net.ParseIP("5.6.7.8"))},
+		MatchRule:  alwaysDirect,
+		SetTmpRule: nopSetTmp,
 	})
 
 	query := buildAQuery("dedup.example.com")
@@ -486,8 +474,6 @@ func TestInflightDedup_NormalDedup(t *testing.T) {
 }
 
 func TestHandleQuery_StaleOnUpstreamError(t *testing.T) {
-	initK2Rule(t, k2rule.TargetProxy)
-
 	proxyQ := &mockQuerier{
 		resp: buildAResponse("stale.example.com", net.ParseIP("10.0.0.1")),
 	}
@@ -500,10 +486,12 @@ func TestHandleQuery_StaleOnUpstreamError(t *testing.T) {
 	metrics := NewMetrics()
 
 	mw := NewMiddleware(MiddlewareConfig{
-		DirectDNS: &mockQuerier{resp: buildAResponse("stale.example.com", net.ParseIP("1.2.3.4"))},
-		ProxyDNS:  proxyQ,
-		DNSCache:  cache,
-		Metrics:   metrics,
+		DirectDNS:  &mockQuerier{resp: buildAResponse("stale.example.com", net.ParseIP("1.2.3.4"))},
+		ProxyDNS:   proxyQ,
+		DNSCache:   cache,
+		Metrics:    metrics,
+		MatchRule:  alwaysProxy,
+		SetTmpRule: nopSetTmp,
 	})
 
 	ctx := context.Background()
@@ -542,8 +530,6 @@ func TestHandleQuery_StaleOnUpstreamError(t *testing.T) {
 }
 
 func TestHandleQuery_StaleOnUpstreamError_Waiter(t *testing.T) {
-	initK2Rule(t, k2rule.TargetProxy)
-
 	cache := NewDNSCache(DNSCacheConfig{
 		MinTTL:   1 * time.Second,
 		MaxTTL:   1 * time.Second,
@@ -554,10 +540,12 @@ func TestHandleQuery_StaleOnUpstreamError_Waiter(t *testing.T) {
 	// First: populate cache with a successful response
 	goodQ := &mockQuerier{resp: buildAResponse("waiter-stale.example.com", net.ParseIP("10.0.0.1"))}
 	mw := NewMiddleware(MiddlewareConfig{
-		DirectDNS: &mockQuerier{resp: buildAResponse("waiter-stale.example.com", net.ParseIP("1.2.3.4"))},
-		ProxyDNS:  goodQ,
-		DNSCache:  cache,
-		Metrics:   metrics,
+		DirectDNS:  &mockQuerier{resp: buildAResponse("waiter-stale.example.com", net.ParseIP("1.2.3.4"))},
+		ProxyDNS:   goodQ,
+		DNSCache:   cache,
+		Metrics:    metrics,
+		MatchRule:  alwaysProxy,
+		SetTmpRule: nopSetTmp,
 	})
 
 	ctx := context.Background()
@@ -576,10 +564,12 @@ func TestHandleQuery_StaleOnUpstreamError_Waiter(t *testing.T) {
 		err:   fmt.Errorf("tunnel broken"),
 	}
 	mw2 := NewMiddleware(MiddlewareConfig{
-		DirectDNS: &mockQuerier{resp: buildAResponse("waiter-stale.example.com", net.ParseIP("1.2.3.4"))},
-		ProxyDNS:  failQ,
-		DNSCache:  cache,
-		Metrics:   metrics,
+		DirectDNS:  &mockQuerier{resp: buildAResponse("waiter-stale.example.com", net.ParseIP("1.2.3.4"))},
+		ProxyDNS:   failQ,
+		DNSCache:   cache,
+		Metrics:    metrics,
+		MatchRule:  alwaysProxy,
+		SetTmpRule: nopSetTmp,
 	})
 
 	// Fire two concurrent queries — both should get stale data
@@ -608,18 +598,18 @@ func TestHandleQuery_StaleOnUpstreamError_Waiter(t *testing.T) {
 }
 
 func TestHandleQuery_NoStale_WhenCacheEmpty(t *testing.T) {
-	initK2Rule(t, k2rule.TargetProxy)
-
 	proxyQ := &mockQuerier{err: fmt.Errorf("tunnel broken")}
 
 	cache := NewDNSCache(DNSCacheConfig{StaleFor: 5 * time.Minute})
 	metrics := NewMetrics()
 
 	mw := NewMiddleware(MiddlewareConfig{
-		DirectDNS: &mockQuerier{resp: buildAResponse("empty.example.com", net.ParseIP("1.2.3.4"))},
-		ProxyDNS:  proxyQ,
-		DNSCache:  cache,
-		Metrics:   metrics,
+		DirectDNS:  &mockQuerier{resp: buildAResponse("empty.example.com", net.ParseIP("1.2.3.4"))},
+		ProxyDNS:   proxyQ,
+		DNSCache:   cache,
+		Metrics:    metrics,
+		MatchRule:  alwaysProxy,
+		SetTmpRule: nopSetTmp,
 	})
 
 	query := buildAQuery("empty.example.com")
@@ -634,8 +624,6 @@ func TestHandleQuery_NoStale_WhenCacheEmpty(t *testing.T) {
 }
 
 func TestHandleQuery_NoStale_ForNXDOMAIN(t *testing.T) {
-	initK2Rule(t, k2rule.TargetProxy)
-
 	// First response is NXDOMAIN
 	nxResp := new(dns.Msg)
 	q := new(dns.Msg)
@@ -658,10 +646,12 @@ func TestHandleQuery_NoStale_ForNXDOMAIN(t *testing.T) {
 	metrics := NewMetrics()
 
 	mw := NewMiddleware(MiddlewareConfig{
-		DirectDNS: &mockQuerier{resp: buildAResponse("gone.example.com", net.ParseIP("1.2.3.4"))},
-		ProxyDNS:  proxyQ,
-		DNSCache:  cache,
-		Metrics:   metrics,
+		DirectDNS:  &mockQuerier{resp: buildAResponse("gone.example.com", net.ParseIP("1.2.3.4"))},
+		ProxyDNS:   proxyQ,
+		DNSCache:   cache,
+		Metrics:    metrics,
+		MatchRule:  alwaysProxy,
+		SetTmpRule: nopSetTmp,
 	})
 
 	ctx := context.Background()
@@ -692,8 +682,6 @@ func TestHandleQuery_NoStale_ForNXDOMAIN(t *testing.T) {
 }
 
 func TestHandleQuery_FreshCacheHit_Unchanged(t *testing.T) {
-	initK2Rule(t, k2rule.TargetProxy)
-
 	proxyQ := &mockQuerier{
 		resp: buildAResponse("fresh.example.com", net.ParseIP("10.0.0.1")),
 	}
@@ -702,10 +690,12 @@ func TestHandleQuery_FreshCacheHit_Unchanged(t *testing.T) {
 	metrics := NewMetrics()
 
 	mw := NewMiddleware(MiddlewareConfig{
-		DirectDNS: &mockQuerier{resp: buildAResponse("fresh.example.com", net.ParseIP("1.2.3.4"))},
-		ProxyDNS:  proxyQ,
-		DNSCache:  cache,
-		Metrics:   metrics,
+		DirectDNS:  &mockQuerier{resp: buildAResponse("fresh.example.com", net.ParseIP("1.2.3.4"))},
+		ProxyDNS:   proxyQ,
+		DNSCache:   cache,
+		Metrics:    metrics,
+		MatchRule:  alwaysProxy,
+		SetTmpRule: nopSetTmp,
 	})
 
 	ctx := context.Background()
@@ -740,8 +730,6 @@ func TestHandleQuery_FreshCacheHit_Unchanged(t *testing.T) {
 }
 
 func TestQueryUpstream_ProxyFailNoFallback(t *testing.T) {
-	initK2Rule(t, k2rule.TargetProxy)
-
 	directQ := &mockQuerier{
 		resp: buildAResponse("fallback.example.com", net.ParseIP("1.2.3.4")),
 	}
@@ -750,8 +738,10 @@ func TestQueryUpstream_ProxyFailNoFallback(t *testing.T) {
 	}
 
 	mw := NewMiddleware(MiddlewareConfig{
-		DirectDNS: directQ,
-		ProxyDNS:  proxyQ,
+		DirectDNS:  directQ,
+		ProxyDNS:   proxyQ,
+		MatchRule:  alwaysProxy,
+		SetTmpRule: nopSetTmp,
 	})
 
 	query := buildAQuery("fallback.example.com")
@@ -774,15 +764,15 @@ func TestQueryUpstream_ProxyFailNoFallback(t *testing.T) {
 }
 
 func TestInflightDedup_OwnerPanic_WaitersRecover(t *testing.T) {
-	initK2Rule(t, k2rule.TargetDirect)
-
 	panicQ := &panicQuerier{
 		resp: buildAResponse("panic.example.com", net.ParseIP("1.2.3.4")),
 	}
 
 	mw := NewMiddleware(MiddlewareConfig{
-		DirectDNS: panicQ,
-		ProxyDNS:  &mockQuerier{resp: buildAResponse("panic.example.com", net.ParseIP("5.6.7.8"))},
+		DirectDNS:  panicQ,
+		ProxyDNS:   &mockQuerier{resp: buildAResponse("panic.example.com", net.ParseIP("5.6.7.8"))},
+		MatchRule:  alwaysDirect,
+		SetTmpRule: nopSetTmp,
 	})
 
 	query := buildAQuery("panic.example.com")
@@ -859,8 +849,6 @@ func (q *slowCountingQuerier) Query(ctx context.Context, msg *dns.Msg) (*dns.Msg
 }
 
 func TestHandleQuery_PrefreshTriggered(t *testing.T) {
-	initK2Rule(t, k2rule.TargetDirect)
-
 	callCount := atomic.Int32{}
 	countQ := &countingQuerier{
 		resp:  buildAResponse("prefresh.example.com", net.ParseIP("1.2.3.4")),
@@ -875,11 +863,13 @@ func TestHandleQuery_PrefreshTriggered(t *testing.T) {
 	metrics := NewMetrics()
 
 	mw := NewMiddleware(MiddlewareConfig{
-		DirectDNS: countQ,
-		ProxyDNS:  &mockQuerier{resp: buildAResponse("prefresh.example.com", net.ParseIP("5.6.7.8"))},
-		DNSCache:  cache,
-		Metrics:   metrics,
-		EngineCtx: context.Background(),
+		DirectDNS:  countQ,
+		ProxyDNS:   &mockQuerier{resp: buildAResponse("prefresh.example.com", net.ParseIP("5.6.7.8"))},
+		DNSCache:   cache,
+		Metrics:    metrics,
+		MatchRule:  alwaysDirect,
+		SetTmpRule: nopSetTmp,
+		EngineCtx:  context.Background(),
 	})
 
 	ctx := context.Background()
@@ -931,8 +921,6 @@ func TestHandleQuery_PrefreshTriggered(t *testing.T) {
 }
 
 func TestHandleQuery_PrefreshDedup(t *testing.T) {
-	initK2Rule(t, k2rule.TargetDirect)
-
 	callCount := atomic.Int32{}
 	// Slow querier so prefresh goroutine stays alive during second query
 	slowCountQ := &slowCountingQuerier{
@@ -948,11 +936,13 @@ func TestHandleQuery_PrefreshDedup(t *testing.T) {
 	})
 
 	mw := NewMiddleware(MiddlewareConfig{
-		DirectDNS: slowCountQ,
-		ProxyDNS:  &mockQuerier{resp: buildAResponse("dedup-prefresh.example.com", net.ParseIP("5.6.7.8"))},
-		DNSCache:  cache,
-		Metrics:   NewMetrics(),
-		EngineCtx: context.Background(),
+		DirectDNS:  slowCountQ,
+		ProxyDNS:   &mockQuerier{resp: buildAResponse("dedup-prefresh.example.com", net.ParseIP("5.6.7.8"))},
+		DNSCache:   cache,
+		Metrics:    NewMetrics(),
+		MatchRule:  alwaysDirect,
+		SetTmpRule: nopSetTmp,
+		EngineCtx:  context.Background(),
 	})
 
 	ctx := context.Background()
@@ -977,8 +967,6 @@ func TestHandleQuery_PrefreshDedup(t *testing.T) {
 }
 
 func TestHandleQuery_PrefreshDisabledWithoutEngineCtx(t *testing.T) {
-	initK2Rule(t, k2rule.TargetDirect)
-
 	callCount := atomic.Int32{}
 	countQ := &countingQuerier{
 		resp:  buildAResponse("no-prefresh.example.com", net.ParseIP("1.2.3.4")),
@@ -992,9 +980,11 @@ func TestHandleQuery_PrefreshDisabledWithoutEngineCtx(t *testing.T) {
 
 	// No EngineCtx → prefresh disabled
 	mw := NewMiddleware(MiddlewareConfig{
-		DirectDNS: countQ,
-		ProxyDNS:  &mockQuerier{resp: buildAResponse("no-prefresh.example.com", net.ParseIP("5.6.7.8"))},
-		DNSCache:  cache,
+		DirectDNS:  countQ,
+		ProxyDNS:   &mockQuerier{resp: buildAResponse("no-prefresh.example.com", net.ParseIP("5.6.7.8"))},
+		DNSCache:   cache,
+		MatchRule:  alwaysDirect,
+		SetTmpRule: nopSetTmp,
 	})
 
 	ctx := context.Background()
@@ -1011,8 +1001,6 @@ func TestHandleQuery_PrefreshDisabledWithoutEngineCtx(t *testing.T) {
 }
 
 func TestHandleQuery_ContextCancellation(t *testing.T) {
-	initK2Rule(t, k2rule.TargetProxy)
-
 	// Slow querier that respects context cancellation.
 	slowQ := &slowQuerier{
 		delay: 10 * time.Second,
@@ -1020,8 +1008,10 @@ func TestHandleQuery_ContextCancellation(t *testing.T) {
 	}
 
 	mw := NewMiddleware(MiddlewareConfig{
-		DirectDNS: &mockQuerier{resp: buildAResponse("cancel.example.com", net.ParseIP("1.2.3.4"))},
-		ProxyDNS:  slowQ,
+		DirectDNS:  &mockQuerier{resp: buildAResponse("cancel.example.com", net.ParseIP("1.2.3.4"))},
+		ProxyDNS:   slowQ,
+		MatchRule:  alwaysProxy,
+		SetTmpRule: nopSetTmp,
 	})
 
 	query := buildAQuery("cancel.example.com")

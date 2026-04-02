@@ -10,11 +10,36 @@ import (
 // RouteEntry represents one route in the routing table.
 type RouteEntry struct {
 	Target Target
-	Sets   []*BundleSet
+	Sets   []*BundleSet // from k2b files
+
+	// Inline matchers (compiled from config domain_suffix/ip_cidr).
+	Inline *InlineSet
+
+	// Connection metadata matchers.
+	ProcessNames []string // match any (OR within list)
+	PackageNames []string // match any (OR within list)
+	NetworkMatch string   // "tcp" or "udp" (empty = any)
+	IPIsPrivate  bool     // match private/loopback IPs
+}
+
+// hasHostCriteria reports whether this route has domain/IP matching criteria.
+func (r *RouteEntry) hasHostCriteria() bool {
+	if len(r.Sets) > 0 {
+		return true
+	}
+	if r.Inline != nil && !r.Inline.IsEmpty() {
+		return true
+	}
+	return r.IPIsPrivate
+}
+
+// hasMetaCriteria reports whether this route has connection metadata criteria.
+func (r *RouteEntry) hasMetaCriteria() bool {
+	return len(r.ProcessNames) > 0 || len(r.PackageNames) > 0 || r.NetworkMatch != ""
 }
 
 // Engine is the multi-ruleset matching engine.
-// Thread-safe: Match uses RLock, SetTmpRule uses WLock.
+// Thread-safe: Match/MatchConn use RLock, SetTmpRule uses WLock.
 // Lock ordering: Engine.mu is standalone — never nested inside any other lock.
 type Engine struct {
 	mu       deadlock.RWMutex
@@ -37,37 +62,159 @@ func NewEngine(routes []RouteEntry, fallback Target, bundles []*Bundle, allProxy
 }
 
 // Match returns the routing target for a host (IP or domain).
+// Used at DNS time — skips routes that have ONLY meta criteria (no host criteria).
 // Priority: TmpRule > route entries (first-match-wins) > fallback.
 func (e *Engine) Match(host string) Target {
 	e.mu.RLock()
-	t := e.matchLocked(host)
+	t := e.matchHostLocked(host)
 	e.mu.RUnlock()
 	return t
 }
 
-func (e *Engine) matchLocked(host string) Target {
+// MatchConn returns the routing target for a connection with full metadata.
+// Used at connection time — checks both host and meta criteria (AND semantics).
+// Priority: TmpRule > route entries (first-match-wins) > fallback.
+func (e *Engine) MatchConn(host string, meta ConnMeta) Target {
+	e.mu.RLock()
+	t := e.matchConnLocked(host, meta)
+	e.mu.RUnlock()
+	return t
+}
+
+// matchHostLocked matches host only, skipping meta-only routes.
+func (e *Engine) matchHostLocked(host string) Target {
 	if addr, err := netip.ParseAddr(host); err == nil {
 		if t, ok := e.tmp[addr]; ok {
 			return t
 		}
 		for i := range e.routes {
-			for _, s := range e.routes[i].Sets {
-				if s.MatchIP(addr) {
-					return e.routes[i].Target
-				}
+			r := &e.routes[i]
+			if !r.hasHostCriteria() {
+				continue
+			}
+			if matchRouteIP(r, addr) {
+				return r.Target
 			}
 		}
 		return e.fallback
 	}
 	domain := strings.ToLower(host)
 	for i := range e.routes {
-		for _, s := range e.routes[i].Sets {
-			if s.MatchDomain(domain) {
-				return e.routes[i].Target
-			}
+		r := &e.routes[i]
+		if !r.hasHostCriteria() {
+			continue
+		}
+		if matchRouteDomain(r, domain) {
+			return r.Target
 		}
 	}
 	return e.fallback
+}
+
+// matchConnLocked matches host + meta, AND semantics within each route.
+func (e *Engine) matchConnLocked(host string, meta ConnMeta) Target {
+	if addr, err := netip.ParseAddr(host); err == nil {
+		if t, ok := e.tmp[addr]; ok {
+			return t
+		}
+		for i := range e.routes {
+			r := &e.routes[i]
+			hasHost := r.hasHostCriteria()
+			hasMeta := r.hasMetaCriteria()
+			if !hasHost && !hasMeta {
+				continue
+			}
+			hostOK := !hasHost || matchRouteIP(r, addr)
+			metaOK := !hasMeta || matchMeta(r, meta)
+			if hostOK && metaOK {
+				return r.Target
+			}
+		}
+		return e.fallback
+	}
+	domain := strings.ToLower(host)
+	for i := range e.routes {
+		r := &e.routes[i]
+		hasHost := r.hasHostCriteria()
+		hasMeta := r.hasMetaCriteria()
+		if !hasHost && !hasMeta {
+			continue
+		}
+		hostOK := !hasHost || matchRouteDomain(r, domain)
+		metaOK := !hasMeta || matchMeta(r, meta)
+		if hostOK && metaOK {
+			return r.Target
+		}
+	}
+	return e.fallback
+}
+
+// matchRouteIP checks if an IP matches any host criteria in the route.
+func matchRouteIP(r *RouteEntry, addr netip.Addr) bool {
+	if r.IPIsPrivate && (addr.IsPrivate() || addr.IsLoopback() || addr.IsLinkLocalUnicast()) {
+		return true
+	}
+	for _, s := range r.Sets {
+		if s.MatchIP(addr) {
+			return true
+		}
+	}
+	if r.Inline != nil && r.Inline.MatchIP(addr) {
+		return true
+	}
+	return false
+}
+
+// matchRouteDomain checks if a domain matches any host criteria in the route.
+func matchRouteDomain(r *RouteEntry, domain string) bool {
+	for _, s := range r.Sets {
+		if s.MatchDomain(domain) {
+			return true
+		}
+	}
+	if r.Inline != nil && r.Inline.MatchDomain(domain) {
+		return true
+	}
+	return false
+}
+
+// matchMeta checks connection metadata against route criteria.
+// All criteria within a route AND together. Empty meta field = no match.
+func matchMeta(r *RouteEntry, meta ConnMeta) bool {
+	if len(r.ProcessNames) > 0 {
+		if meta.ProcessName == "" {
+			return false
+		}
+		found := false
+		for _, p := range r.ProcessNames {
+			if meta.ProcessName == p {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	if len(r.PackageNames) > 0 {
+		if meta.PackageName == "" {
+			return false
+		}
+		found := false
+		for _, p := range r.PackageNames {
+			if meta.PackageName == p {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	if r.NetworkMatch != "" && meta.Network != r.NetworkMatch {
+		return false
+	}
+	return true
 }
 
 // SetTmpRule adds a DNS-learned temporary routing rule.

@@ -21,8 +21,15 @@ func (r *Router) Route(info packet.Info) rule.Target {
 }
 
 // RouteAddr makes a routing decision for a host address (IP or domain).
+// Used by DNS middleware and SNI-based routing.
 func (r *Router) RouteAddr(host string) rule.Target {
 	return r.engine.Match(host)
+}
+
+// RouteConn makes a routing decision with full connection metadata.
+// Used by tunnel for connection-time routing.
+func (r *Router) RouteConn(host string, meta rule.ConnMeta) rule.Target {
+	return r.engine.MatchConn(host, meta)
 }
 
 // SetTmpRule adds a DNS-learned temporary routing rule.

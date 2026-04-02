@@ -168,8 +168,23 @@ func handleAwaySession(ctx context.Context, cfg Config, exchange *CandidateExcha
 	slog.Info("DIAG: ice-connected", "session", exchange.Session(), "method", transportType)
 
 	// 6. Peer auth if configured.
+	// Auth is done at the raw QUIC stream level (not through QUICServer.AcceptTCP
+	// which expects k2v5 framing). Accept the first QUIC connection, verify auth
+	// on a dedicated stream, then hand the connection to QUICServer for data plane.
 	if cfg.SecretHash != "" {
-		return WrapWithAuth(wire.NewQUICServerFromListener(quicLn, cfg.TicketStore), cfg.SecretHash), nil
+		qconn, qErr := quicLn.Accept(ctx)
+		if qErr != nil {
+			quicLn.Close()
+			tr.Close()
+			return nil, fmt.Errorf("k2p: home: accept QUIC for auth: %w", qErr)
+		}
+		if authErr := verifyPeerAuth(ctx, qconn, cfg.SecretHash); authErr != nil {
+			qconn.CloseWithError(1, "auth failed")
+			quicLn.Close()
+			tr.Close()
+			return nil, authErr
+		}
+		return wire.NewQUICServerFromConn(qconn, quicLn, cfg.TicketStore), nil
 	}
 
 	return wire.NewQUICServerFromListener(quicLn, cfg.TicketStore), nil

@@ -7,7 +7,6 @@ require (
 	github.com/coder/websocket v1.8.14
 	github.com/electricbubble/gadb v0.1.0
 	github.com/gorilla/websocket v1.5.3
-	github.com/kaitu-io/k2rule v0.6.4
 	github.com/metacubex/utls v1.8.4
 	github.com/miekg/dns v1.1.72
 	github.com/pion/ice/v4 v4.2.2
@@ -30,7 +29,6 @@ require (
 require (
 	github.com/andybalholm/brotli v1.0.6 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
-	github.com/edsrzf/mmap-go v1.2.0 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/google/btree v1.1.3 // indirect
@@ -41,7 +39,6 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/mdlayher/netlink v1.7.2 // indirect
 	github.com/mdlayher/socket v0.4.1 // indirect
-	github.com/oschwald/maxminddb-golang v1.11.0 // indirect
 	github.com/petermattis/goid v0.0.0-20250813065127-a731cc31b4fe // indirect
 	github.com/pion/dtls/v3 v3.1.2 // indirect
 	github.com/pion/logging v0.2.4 // indirect

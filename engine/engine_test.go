@@ -15,8 +15,8 @@ import (
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/core/dns"
 	"github.com/kaitu-io/k2/provider"
+	"github.com/kaitu-io/k2/rule"
 	"github.com/kaitu-io/k2/wire"
-	"github.com/kaitu-io/k2rule"
 )
 
 // ==========================================================================
@@ -379,63 +379,128 @@ func TestEngineStart_WireProbeFailure(t *testing.T) {
 // Rule config tests
 // ==========================================================================
 
-func TestBuildRuleConfig_Default_Global(t *testing.T) {
+func TestBuildRuleEngine_Default(t *testing.T) {
 	client := &config.ClientConfig{
 		Server: "k2v5://udid:tok@host:443",
 	}
-	ruleCfg := buildRuleConfig(client)
-	if ruleCfg.IsGlobal {
-		t.Fatal("expected IsGlobal false when Rule.Global not set")
+	re := buildRuleEngine(client)
+	defer re.Close()
+	if re.IsAllProxy() {
+		t.Fatal("expected IsAllProxy false when no routes set")
+	}
+	// Default fallback is direct.
+	if got := re.Match("example.com"); got != rule.TargetDirect {
+		t.Fatalf("Match = %v, want TargetDirect", got)
 	}
 }
 
-func TestBuildRuleConfig_GlobalTrue(t *testing.T) {
-	client := &config.ClientConfig{
-		Server: "k2v5://udid:tok@host:443",
-		Rule:   config.RuleConfig{Global: true},
+func TestBuildRuleEngine_AllProxy(t *testing.T) {
+	client := config.ClientFromURL("k2v5://udid:tok@host:443")
+	re := buildRuleEngine(client)
+	defer re.Close()
+	if !re.IsAllProxy() {
+		t.Fatal("expected IsAllProxy true for ClientFromURL")
 	}
-	ruleCfg := buildRuleConfig(client)
-	if !ruleCfg.IsGlobal {
-		t.Fatal("expected IsGlobal true when Rule.Global is true")
-	}
-	if ruleCfg.GlobalTarget != k2rule.TargetProxy {
-		t.Fatalf("GlobalTarget = %v, want TargetProxy", ruleCfg.GlobalTarget)
+	if got := re.Match("example.com"); got != rule.TargetProxy {
+		t.Fatalf("Match = %v, want TargetProxy", got)
 	}
 }
 
-func TestBuildRuleConfig_CacheDir(t *testing.T) {
+func TestBuildRuleEngine_InlineRules(t *testing.T) {
 	client := &config.ClientConfig{
-		Server: "k2v5://udid:tok@host:443",
-		Rule:   config.RuleConfig{CacheDir: "/tmp/k2test"},
-	}
-	ruleCfg := buildRuleConfig(client)
-	if ruleCfg.CacheDir != "/tmp/k2test" {
-		t.Fatalf("CacheDir = %q, want %q", ruleCfg.CacheDir, "/tmp/k2test")
-	}
-}
-
-func TestBuildRuleConfig_RuleURLs(t *testing.T) {
-	client := &config.ClientConfig{
-		Server: "k2v5://udid:tok@host:443",
-		Rule: config.RuleConfig{
-			RuleURL:  "https://example.com/rules",
-			GeoIPURL: "https://example.com/geoip",
-			PornURL:  "https://example.com/porn",
-			CacheDir: "/custom/dir",
+		Routes: []config.RouteConfig{
+			{
+				Via: "reject",
+				Match: rule.MatchConfig{
+					DomainSuffix: []string{"ads.example.com"},
+				},
+			},
+			{
+				Via: "direct",
+				Match: rule.MatchConfig{
+					IPCIDR: []string{"10.0.0.0/8", "192.168.0.0/16"},
+				},
+			},
+			{
+				Via: "k2v5://server:443",
+				Match: rule.MatchConfig{
+					DomainSuffix: []string{"custom-blocked.com"},
+				},
+			},
 		},
 	}
-	ruleCfg := buildRuleConfig(client)
-	if ruleCfg.RuleURL != "https://example.com/rules" {
-		t.Fatalf("RuleURL = %q, want %q", ruleCfg.RuleURL, "https://example.com/rules")
+	re := buildRuleEngine(client)
+	defer re.Close()
+
+	if got := re.Match("ads.example.com"); got != rule.TargetReject {
+		t.Errorf("ads.example.com = %v, want reject", got)
 	}
-	if ruleCfg.GeoIPURL != "https://example.com/geoip" {
-		t.Fatalf("GeoIPURL = %q, want %q", ruleCfg.GeoIPURL, "https://example.com/geoip")
+	if got := re.Match("10.1.2.3"); got != rule.TargetDirect {
+		t.Errorf("10.1.2.3 = %v, want direct", got)
 	}
-	if ruleCfg.PornURL != "https://example.com/porn" {
-		t.Fatalf("PornURL = %q, want %q", ruleCfg.PornURL, "https://example.com/porn")
+	if got := re.Match("192.168.1.1"); got != rule.TargetDirect {
+		t.Errorf("192.168.1.1 = %v, want direct", got)
 	}
-	if ruleCfg.CacheDir != "/custom/dir" {
-		t.Fatalf("CacheDir = %q, want %q", ruleCfg.CacheDir, "/custom/dir")
+	if got := re.Match("custom-blocked.com"); got != rule.TargetProxy {
+		t.Errorf("custom-blocked.com = %v, want proxy", got)
+	}
+}
+
+func TestBuildRuleEngine_ProcessRoute(t *testing.T) {
+	client := &config.ClientConfig{
+		Routes: []config.RouteConfig{
+			{
+				Via: "direct",
+				Match: rule.MatchConfig{
+					ProcessName: []string{"ssh", "git"},
+				},
+			},
+			{
+				Via: "k2v5://server:443",
+				Match: rule.MatchConfig{All: true},
+			},
+		},
+	}
+	re := buildRuleEngine(client)
+	defer re.Close()
+
+	// DNS-time: process-only route skipped
+	if got := re.Match("google.com"); got != rule.TargetProxy {
+		t.Errorf("Match(google.com) = %v, want proxy", got)
+	}
+
+	// Connection-time: ssh → direct
+	if got := re.MatchConn("google.com", rule.ConnMeta{ProcessName: "ssh"}); got != rule.TargetDirect {
+		t.Errorf("MatchConn(ssh) = %v, want direct", got)
+	}
+
+	// Connection-time: chrome → proxy (all proxy fallback)
+	if got := re.MatchConn("google.com", rule.ConnMeta{ProcessName: "chrome"}); got != rule.TargetProxy {
+		t.Errorf("MatchConn(chrome) = %v, want proxy", got)
+	}
+}
+
+func TestBuildRuleEngine_IPIsPrivate(t *testing.T) {
+	client := &config.ClientConfig{
+		Routes: []config.RouteConfig{
+			{
+				Via: "direct",
+				Match: rule.MatchConfig{IPIsPrivate: true},
+			},
+			{
+				Via: "k2v5://server:443",
+				Match: rule.MatchConfig{All: true},
+			},
+		},
+	}
+	re := buildRuleEngine(client)
+	defer re.Close()
+
+	if got := re.Match("192.168.1.1"); got != rule.TargetDirect {
+		t.Errorf("192.168.1.1 = %v, want direct", got)
+	}
+	if got := re.Match("8.8.8.8"); got != rule.TargetProxy {
+		t.Errorf("8.8.8.8 = %v, want proxy", got)
 	}
 }
 
@@ -584,24 +649,16 @@ func TestEngineStatusJSON_MatchesDaemonFormat(t *testing.T) {
 // ==========================================================================
 
 func TestDNSHandler_Intercept_Port53(t *testing.T) {
-	// Initialize k2rule so DNS middleware can route queries (v0.5.0-go requires CacheDir).
-	// Non-existent file paths skip remote downloads (retryForever); globalConfig is set
-	// before the file-open error, and global-mode Match() only checks globalConfig.
-	k2rule.Init(&k2rule.Config{
-		CacheDir:     t.TempDir(),
-		IsGlobal:     true,
-		GlobalTarget: k2rule.TargetProxy,
-		GeoIPFile:    "/nonexistent",
-		PornFile:     "/nonexistent",
-	})
-
 	inner := &mockConnectionHandler{}
 
 	// Build a Middleware with a mock querier that returns canned DNS responses.
+	// MatchRule returns TargetProxy for all domains (global proxy mode).
 	mw := dns.NewMiddleware(dns.MiddlewareConfig{
-		ProxyDNS: &mockDNSQuerier{},
-		DNSCache: dns.NewDNSCache(dns.DNSCacheConfig{}),
-		Filter:   dns.NewFilter(dns.FilterConfig{}),
+		ProxyDNS:   &mockDNSQuerier{},
+		DNSCache:   dns.NewDNSCache(dns.DNSCacheConfig{}),
+		Filter:     dns.NewFilter(dns.FilterConfig{}),
+		MatchRule:  func(string) rule.Target { return rule.TargetProxy },
+		SetTmpRule: func(string, rule.Target) {},
 	})
 
 	h := &dnsHandler{inner: inner, dns: mw}

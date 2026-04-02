@@ -134,10 +134,38 @@ func TestHasCriteria(t *testing.T) {
 		{"names", MatchConfig{Names: []string{"x"}}, true},
 		{"exclude only", MatchConfig{Exclude: []string{"x"}}, true},
 		{"all", MatchConfig{All: true}, true},
+		{"domain_suffix", MatchConfig{DomainSuffix: []string{"google.com"}}, true},
+		{"ip_cidr", MatchConfig{IPCIDR: []string{"8.8.8.0/24"}}, true},
+		{"process_name", MatchConfig{ProcessName: []string{"Chrome"}}, true},
+		{"package_name", MatchConfig{PackageName: []string{"com.android.chrome"}}, true},
+		{"network", MatchConfig{Network: "tcp"}, true},
+		{"ip_is_private", MatchConfig{IPIsPrivate: true}, true},
 	}
 	for _, tt := range tests {
 		if got := tt.m.HasCriteria(); got != tt.want {
 			t.Errorf("HasCriteria(%s) = %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
+
+func TestHasHostCriteria(t *testing.T) {
+	tests := []struct {
+		name string
+		m    MatchConfig
+		want bool
+	}{
+		{"empty", MatchConfig{}, false},
+		{"preset", MatchConfig{Preset: "overseas"}, true},
+		{"domain_suffix", MatchConfig{DomainSuffix: []string{"google.com"}}, true},
+		{"ip_cidr", MatchConfig{IPCIDR: []string{"8.8.8.0/24"}}, true},
+		{"ip_is_private", MatchConfig{IPIsPrivate: true}, true},
+		{"process_name only", MatchConfig{ProcessName: []string{"ssh"}}, false},
+		{"network only", MatchConfig{Network: "udp"}, false},
+		{"package_name only", MatchConfig{PackageName: []string{"com.x"}}, false},
+	}
+	for _, tt := range tests {
+		if got := tt.m.HasHostCriteria(); got != tt.want {
+			t.Errorf("HasHostCriteria(%s) = %v, want %v", tt.name, got, tt.want)
 		}
 	}
 }

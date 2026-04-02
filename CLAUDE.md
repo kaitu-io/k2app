@@ -620,7 +620,7 @@ engine.Stop()
 
 ## Dependencies
 
-- `rule/` (in-tree) — multi-ruleset routing engine: domain suffix binary search + IP range O(log n) binary search, k2b mmap-indexed format, routes-based config, per-service IP-CIDR + domain rule sets
+- `rule/` (in-tree) — multi-ruleset routing engine: domain suffix binary search + IP range O(log n) binary search, k2b mmap-indexed format, routes-based config, per-service IP-CIDR + domain rule sets, inline rules (domain_suffix/ip_cidr in config), connection metadata matching (process_name, package_name, network, ip_is_private)
 - `github.com/miekg/dns` — DNS message handling
 - `github.com/sagernet/sing-tun` — TUN device with gVisor stack
 - `github.com/apernet/quic-go` — QUIC with congestion control API

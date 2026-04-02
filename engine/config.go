@@ -54,4 +54,8 @@ type Config struct {
 	// Provider is an externally-created provider. If non-nil, engine uses it
 	// instead of creating a provider from Client.Mode. Used by gateway/.
 	Provider provider.Provider
+
+	// ProcessSearcher finds the process that owns a network connection.
+	// Nil = no process matching (NopProcessSearcher used internally).
+	ProcessSearcher provider.ProcessSearcher
 }

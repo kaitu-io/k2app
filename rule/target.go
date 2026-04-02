@@ -39,14 +39,38 @@ func ParseVia(via string) Target {
 }
 
 type MatchConfig struct {
+	// Bundle-based (from k2b files).
 	Preset  string   `yaml:"preset,omitempty"  json:"preset,omitempty"`
 	Names   []string `yaml:"names,omitempty"   json:"names,omitempty"`
 	Exclude []string `yaml:"exclude,omitempty" json:"exclude,omitempty"`
-	All     bool     `yaml:"all,omitempty"     json:"all,omitempty"`
+
+	// Inline host matching (compiled at engine build time).
+	DomainSuffix []string `yaml:"domain_suffix,omitempty" json:"domain_suffix,omitempty"`
+	IPCIDR       []string `yaml:"ip_cidr,omitempty"       json:"ip_cidr,omitempty"`
+
+	// Connection metadata matching.
+	ProcessName []string `yaml:"process_name,omitempty" json:"process_name,omitempty"`
+	PackageName []string `yaml:"package_name,omitempty" json:"package_name,omitempty"`
+	Network     string   `yaml:"network,omitempty"      json:"network,omitempty"`
+	IPIsPrivate bool     `yaml:"ip_is_private,omitempty" json:"ip_is_private,omitempty"`
+
+	// Catch-all.
+	All bool `yaml:"all,omitempty" json:"all,omitempty"`
 }
 
+// HasCriteria reports whether any matching criterion is set.
 func (m MatchConfig) HasCriteria() bool {
-	return m.Preset != "" || len(m.Names) > 0 || len(m.Exclude) > 0 || m.All
+	return m.Preset != "" || len(m.Names) > 0 || len(m.Exclude) > 0 || m.All ||
+		len(m.DomainSuffix) > 0 || len(m.IPCIDR) > 0 ||
+		len(m.ProcessName) > 0 || len(m.PackageName) > 0 ||
+		m.Network != "" || m.IPIsPrivate
+}
+
+// HasHostCriteria reports whether any host-based (domain/IP) criterion is set.
+// Routes with only meta criteria (process, network) are skipped at DNS time.
+func (m MatchConfig) HasHostCriteria() bool {
+	return m.Preset != "" || len(m.Names) > 0 || len(m.Exclude) > 0 ||
+		len(m.DomainSuffix) > 0 || len(m.IPCIDR) > 0 || m.IPIsPrivate
 }
 
 var presets = map[string][]string{

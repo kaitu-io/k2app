@@ -24,14 +24,11 @@ type ClientConfig struct {
 	Listen    string        `yaml:"listen"     json:"listen"`     // daemon HTTP listen address, default "127.0.0.1:1777"
 	PIDFile   string        `yaml:"pid_file"   json:"pid_file"`   // path to PID file (empty = no PID file)
 	BlockQUIC bool          `yaml:"block_quic" json:"block_quic"` // block browser QUIC via ICMP reject (default: false = allow through DATAGRAM)
-	CacheDir  string        `yaml:"cache_dir"  json:"cache_dir"`  // cache directory for k2rule ("" = platform default)
+	CacheDir  string        `yaml:"cache_dir"  json:"cache_dir"`  // cache directory for rule bundles ("" = platform default)
 
 	// Derived fields (not serialized to YAML/JSON).
 	Server string `yaml:"-" json:"-"` // first k2v5:// URL from routes
 
-	// Deprecated: Rule is retained for engine.go compatibility (Task 10 removes it).
-	// New code should use Routes + CacheDir instead.
-	Rule RuleConfig `yaml:"-" json:"-"`
 }
 
 // RouteConfig defines a single routing rule: traffic matching Match is sent via Via.
@@ -111,17 +108,6 @@ type AuthConfig struct {
 	UsersFile string        `yaml:"users_file"` // path to users file (udid:token per line)
 	RemoteURL string        `yaml:"remote_url"` // Center API auth URL
 	CacheTTL  time.Duration `yaml:"cache_ttl"`
-}
-
-// RuleConfig is deprecated. Retained temporarily for engine.go compatibility (Task 10 removes it).
-// New code should use Routes + CacheDir on ClientConfig instead.
-type RuleConfig struct {
-	RuleURL  string `yaml:"rule_url"  json:"rule_url"`
-	GeoIPURL string `yaml:"geoip_url" json:"geoip_url"`
-	Antiporn bool   `yaml:"antiporn"  json:"antiporn"`
-	PornURL  string `yaml:"porn_url"  json:"porn_url"`
-	CacheDir string `yaml:"cache_dir" json:"cache_dir"`
-	Global   bool   `yaml:"global"    json:"global"`
 }
 
 // LogConfig contains logging configuration.
