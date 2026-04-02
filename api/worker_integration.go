@@ -51,6 +51,7 @@ func InitWorker() {
 	asynq.Handle(TaskTypePushSend, handlePushTask)
 	asynq.Handle(TaskTypeRenewalReminder, handleRenewalReminderTask)
 	asynq.Handle(TaskTypeRetailerFollowup, handleRetailerFollowupTask)
+	asynq.Handle(TaskTypeTicketNotify, handleTicketNotify)
 
 	// 注册续费提醒 Cron 任务
 	// 每天北京时间 10:30 执行（UTC 02:30）

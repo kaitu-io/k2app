@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
@@ -60,6 +60,14 @@ func api_create_ticket(c *gin.Context) {
 		}
 		userEmail = req.Email
 		req.Source = "anonymous"
+
+		// Create or find user by email so ticket has a user_id for conversation
+		if user, err := FindOrCreateUserByEmail(ctx, req.Email, req.Language); err != nil {
+			log.Warnf(ctx, "api_create_ticket: failed to find/create user for %s: %v", hideEmail(req.Email), err)
+		} else {
+			userID = user.ID
+		}
+
 		log.Infof(ctx, "api_create_ticket: anonymous ticket from %s, os=%s version=%s channel=%s",
 			hideEmail(userEmail), req.OS, req.AppVersion, req.Channel)
 	}
@@ -97,14 +105,16 @@ func api_create_ticket(c *gin.Context) {
 		}
 		metaBytes, _ := json.Marshal(meta)
 
+		now := time.Now()
 		ticket := FeedbackTicket{
-			FeedbackID: req.FeedbackID,
-			UDID:       "", // UDID not available in ticket request, will be linked via device_log
-			UserID:     userIDPtr,
-			Email:      userEmail,
-			Content:    req.Content,
-			Status:     "open",
-			Meta:       string(metaBytes),
+			FeedbackID:  req.FeedbackID,
+			UDID:        "", // UDID not available in ticket request, will be linked via device_log
+			UserID:      userIDPtr,
+			Email:       userEmail,
+			Content:     req.Content,
+			Status:      "open",
+			Meta:        string(metaBytes),
+			LastReplyAt: &now,
 		}
 		if err := db.Get().Create(&ticket).Error; err != nil {
 			// Non-blocking: log error but don't fail the request

@@ -153,6 +153,11 @@ func SetupRouter() *gin.Engine {
 			user.POST("/device-log", AuthOptional(), api_register_device_log)
 			// 日志上传后通知（Slack）
 			user.POST("/feedback-notify", AuthRequired(), api_feedback_notify)
+			// 工单对话
+			user.GET("/tickets", AuthRequired(), api_user_list_tickets)
+			user.GET("/tickets/unread", AuthRequired(), api_user_tickets_unread)
+			user.GET("/tickets/:id", AuthRequired(), api_user_ticket_detail)
+			user.POST("/tickets/:id/reply", AuthRequired(), api_user_ticket_reply)
 			// 设置/更新密码
 			user.POST("/password", AuthRequired(), api_set_password)
 			// OTT 签发 — webapp → web auth handoff
@@ -390,6 +395,8 @@ func SetupRouter() *gin.Engine {
 		opsAdmin.GET("/feedback-tickets",             RoleRequired(allOpsRoles), api_admin_list_feedback_tickets)
 		opsAdmin.PUT("/feedback-tickets/:id/resolve", RoleRequired(RoleSupport), api_admin_resolve_feedback_ticket)
 		opsAdmin.PUT("/feedback-tickets/:id/close",   RoleRequired(RoleSupport), api_admin_close_feedback_ticket)
+		opsAdmin.POST("/feedback-tickets/:id/reply",   RoleRequired(RoleSupport), api_admin_reply_ticket)
+		opsAdmin.GET("/feedback-tickets/:id/replies",  RoleRequired(allOpsRoles), api_admin_list_ticket_replies)
 
 		// 分销商管理（Marketing 角色）
 		opsAdmin.GET("/retailers",                          RoleRequired(RoleMarketing), api_admin_list_retailers)
