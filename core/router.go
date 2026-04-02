@@ -1,24 +1,31 @@
 package core
 
 import (
-	"github.com/kaitu-io/k2rule"
 	"github.com/kaitu-io/k2/core/packet"
+	"github.com/kaitu-io/k2/rule"
 )
 
-// Router implements routing decisions via k2rule (static rules + tmp rules from DNS)
-type Router struct{}
+// Router implements routing decisions via the rule engine.
+type Router struct {
+	engine *rule.Engine
+}
 
-// NewRouter creates a new router.
-func NewRouter() *Router {
-	return &Router{}
+// NewRouter creates a new router backed by the given rule engine.
+func NewRouter(engine *rule.Engine) *Router {
+	return &Router{engine: engine}
 }
 
 // Route makes a routing decision for a packet.
-func (r *Router) Route(info packet.Info) k2rule.Target {
-	return k2rule.Match(info.DstIP)
+func (r *Router) Route(info packet.Info) rule.Target {
+	return r.engine.Match(info.DstIP)
 }
 
 // RouteAddr makes a routing decision for a host address (IP or domain).
-func (r *Router) RouteAddr(host string) k2rule.Target {
-	return k2rule.Match(host)
+func (r *Router) RouteAddr(host string) rule.Target {
+	return r.engine.Match(host)
+}
+
+// SetTmpRule adds a DNS-learned temporary routing rule.
+func (r *Router) SetTmpRule(ip string, target rule.Target) {
+	r.engine.SetTmpRule(ip, target)
 }
