@@ -1,4 +1,27 @@
 {
+  "feedback": {
+    "title": "フィードバックセンター",
+    "newTicket": "新規チケット",
+    "noTickets": "チケットはありません",
+    "noTicketsHint": "問題がありましたら、チケットを送信してください。できるだけ早くご返信いたします",
+    "loadError": "読み込みに失敗しました。再試行してください",
+    "status": {
+      "open": "対応中",
+      "resolved": "解決済み",
+      "closed": "クローズ"
+    },
+    "adminReplied": "サポートが返信しました",
+    "replyPlaceholder": "返信を入力...",
+    "closedNotice": "このチケットはクローズされています",
+    "replyFailed": "返信の送信に失敗しました",
+    "loginToView": "{{email}} でログインして進捗と返信を確認できます",
+    "time": {
+      "justNow": "たった今",
+      "minutesAgo": "{{count}}分前",
+      "hoursAgo": "{{count}}時間前",
+      "daysAgo": "{{count}}日前"
+    }
+  },
   "faq": {
     "title": "よくある質問"
   },

@@ -27,17 +27,17 @@ import type {
 
 // ============ Helpers ============
 
-function formatRelativeTime(ts: number): string {
+function formatRelativeTime(ts: number, t: (key: string, opts?: Record<string, unknown>) => string): string {
   const now = Date.now();
   const diffMs = now - ts * 1000;
   const diffMins = Math.floor(diffMs / (1000 * 60));
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
-  if (diffMins < 1) return "刚刚";
-  if (diffMins < 60) return `${diffMins} 分钟前`;
-  if (diffHours < 24) return `${diffHours} 小时前`;
-  if (diffDays < 30) return `${diffDays} 天前`;
+  if (diffMins < 1) return t("ticket:feedback.time.justNow");
+  if (diffMins < 60) return t("ticket:feedback.time.minutesAgo", { count: diffMins });
+  if (diffHours < 24) return t("ticket:feedback.time.hoursAgo", { count: diffHours });
+  if (diffDays < 30) return t("ticket:feedback.time.daysAgo", { count: diffDays });
   const d = new Date(ts * 1000);
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
@@ -74,11 +74,12 @@ function TicketList({
     setIsLoading(true);
     setError(null);
     try {
-      const response = await cloudApi.get<UserTicketListItem[]>(
-        "/api/user/tickets?pageSize=50"
-      );
+      const response = await cloudApi.get<{
+        items: UserTicketListItem[];
+        pagination: { total: number };
+      }>("/api/user/tickets?pageSize=50");
       if (response.code === 0 && response.data) {
-        setTickets(response.data);
+        setTickets(response.data.items || []);
       } else {
         setError(t("ticket:feedback.loadError"));
       }
@@ -171,8 +172,8 @@ function TicketList({
                     <Box flex={1} />
                     <Typography variant="caption" color="text.secondary">
                       {ticket.lastReplyAt
-                        ? formatRelativeTime(ticket.lastReplyAt)
-                        : formatRelativeTime(ticket.createdAt)}
+                        ? formatRelativeTime(ticket.lastReplyAt, t)
+                        : formatRelativeTime(ticket.createdAt, t)}
                     </Typography>
                   </Stack>
                   <Typography
@@ -185,9 +186,9 @@ function TicketList({
                   >
                     {ticket.content}
                   </Typography>
-                  {ticket.lastReplyBy && (
+                  {ticket.lastReplyBy === "admin" && (
                     <Typography variant="caption" color="text.secondary">
-                      {t("ticket:feedback.adminReplied")} {ticket.lastReplyAt ? formatRelativeTime(ticket.lastReplyAt) : ""}
+                      {t("ticket:feedback.adminReplied")} {ticket.lastReplyAt ? formatRelativeTime(ticket.lastReplyAt, t) : ""}
                     </Typography>
                   )}
                 </Stack>
@@ -208,7 +209,7 @@ function TicketDetailView({
   ticketId: number;
 }) {
   const { t } = useTranslation();
-  const decrementUnread = useFeedbackStore((s) => s.decrementUnread);
+  const fetchUnread = useFeedbackStore((s) => s.fetchUnread);
 
   const [ticket, setTicket] = useState<UserTicketDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -227,8 +228,8 @@ function TicketDetailView({
       );
       if (response.code === 0 && response.data) {
         setTicket(response.data);
-        // Mark as read by decrementing unread count
-        decrementUnread(1);
+        // Resync unread count (backend cleared this ticket's unread)
+        fetchUnread();
       } else {
         setError(t("ticket:feedback.loadError"));
       }
@@ -238,7 +239,7 @@ function TicketDetailView({
     } finally {
       setIsLoading(false);
     }
-  }, [ticketId, t, decrementUnread]);
+  }, [ticketId, t, fetchUnread]);
 
   useEffect(() => {
     fetchDetail();

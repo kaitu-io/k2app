@@ -14,7 +14,13 @@
     "replyPlaceholder": "Type your reply...",
     "closedNotice": "This ticket is closed",
     "replyFailed": "Failed to send reply",
-    "loginToView": "Log in with {{email}} to view progress and replies"
+    "loginToView": "Log in with {{email}} to view progress and replies",
+    "time": {
+      "justNow": "Just now",
+      "minutesAgo": "{{count}}m ago",
+      "hoursAgo": "{{count}}h ago",
+      "daysAgo": "{{count}}d ago"
+    }
   },
   "faq": {
     "title": "FAQ"
