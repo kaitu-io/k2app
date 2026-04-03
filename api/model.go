@@ -838,18 +838,6 @@ func IsIdempotencyKeyExists(batchID string, templateID, userID uint64) (bool, er
 	return count > 0, err
 }
 
-// HasSentTemplateToUserRecently 检查是否在指定时间内向用户发送过该模板（跨批次幂等性检查）
-// 用于防止同一模板在短时间内重复发送给同一用户（例如24小时内）
-func HasSentTemplateToUserRecently(templateID, userID uint64, withinHours int) (bool, error) {
-	since := time.Now().Add(-time.Duration(withinHours) * time.Hour)
-	var count int64
-	err := db.Get().Model(&EmailSendLog{}).
-		Where("template_id = ? AND user_id = ? AND status = ? AND sent_at >= ?",
-			templateID, userID, EmailSendLogStatusSent, since).
-		Count(&count).Error
-	return count > 0, err
-}
-
 // ECHKeyStatus ECH 密钥状态枚举
 type ECHKeyStatus string
 

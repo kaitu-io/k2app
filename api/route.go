@@ -425,8 +425,6 @@ func SetupRouter() *gin.Engine {
 			edmOps.DELETE("/templates/:id",                       RoleRequired(RoleMarketing), api_admin_delete_email_template)
 			edmOps.POST("/templates/:id/translate/:language",     RoleRequired(RoleMarketing), api_admin_translate_email_template)
 			edmOps.POST("/send",                                  RoleRequired(RoleMarketing), api_admin_send_templated_emails)
-			edmOps.POST("/tasks",                                 RoleRequired(RoleMarketing), api_admin_create_edm_task)
-			edmOps.POST("/preview-targets",                       RoleRequired(RoleMarketing), api_admin_preview_edm_targets)
 			edmOps.GET("/send-logs",                              RoleRequired(RoleMarketing), api_admin_list_email_send_logs)
 			edmOps.GET("/send-logs/stats",                        RoleRequired(RoleMarketing), api_admin_get_email_send_log_stats)
 		}

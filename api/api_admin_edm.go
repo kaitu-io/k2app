@@ -279,7 +279,7 @@ func convertEmailMarketingTemplateToResponse(template EmailMarketingTemplate) Em
 
 // ===================== 通用邮件发送 =====================
 
-// api_admin_send_templated_emails 通用邮件发送接口
+// api_admin_send_templated_emails 通用邮件发送接口 (replaces old EDM task system)
 func api_admin_send_templated_emails(c *gin.Context) {
 	log.Infof(c, "admin request to send templated emails")
 
@@ -323,107 +323,6 @@ func api_admin_send_templated_emails(c *gin.Context) {
 	}
 
 	Success(c, result)
-}
-
-// ===================== EDM 发送任务（基于 Asynq）=====================
-
-// EDMTaskResponse EDM任务创建响应
-type EDMTaskResponse struct {
-	BatchID     string `json:"batchId"`     // asynq 任务 ID
-	TemplateID  uint64 `json:"templateId"`  // 模板 ID
-	ScheduledAt *int64 `json:"scheduledAt"` // 计划执行时间（Unix时间戳）
-}
-
-// api_admin_create_edm_task 创建 EDM 发送任务（直接入队 Asynq）
-//
-func api_admin_create_edm_task(c *gin.Context) {
-	log.Infof(c, "admin request to create EDM task")
-
-	var req CreateEDMTaskRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Warnf(c, "invalid request: %v", err)
-		Error(c, ErrorInvalidArgument, err.Error())
-		return
-	}
-
-	// 验证模板存在
-	var template EmailMarketingTemplate
-	if err := db.Get().Where("id = ? AND is_active = ?", req.TemplateID, true).
-		First(&template).Error; err != nil {
-		log.Errorf(c, "template not found or inactive: %v", err)
-		Error(c, ErrorInvalidArgument, "template not found or inactive")
-		return
-	}
-
-	// 目前只支持单次任务，重复任务需要使用 asynq.Cron
-	if req.Type == "repeat" {
-		log.Warnf(c, "repeat task is not supported, use asynq cron instead")
-		Error(c, ErrorInvalidArgument, "repeat task is not supported, please use asynqmon to configure cron tasks")
-		return
-	}
-
-	// 提交审批
-	summary := fmt.Sprintf("发送模板「%s」(ID:%d)", template.Subject, template.ID)
-	approvalID, executed, err := SubmitApproval(c, "edm_create_task", &req, summary)
-	if err != nil {
-		log.Errorf(c, "failed to submit approval: %v", err)
-		Error(c, ErrorSystemError, "failed to submit approval")
-		return
-	}
-
-	if !executed {
-		PendingApproval(c, approvalID)
-		return
-	}
-	SuccessEmpty(c)
-}
-
-// api_admin_preview_edm_targets 预览EDM目标用户
-//
-func api_admin_preview_edm_targets(c *gin.Context) {
-	log.Infof(c, "admin request to preview EDM targets")
-
-	var req PreviewEDMTargetsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Warnf(c, "invalid request: %v", err)
-		Error(c, ErrorInvalidArgument, err.Error())
-		return
-	}
-
-	// 获取目标用户
-	users, err := getTargetUsersForEmailTask(c, req.UserFilters)
-	if err != nil {
-		log.Errorf(c, "[EDM] Failed to get target users: %v", err)
-		Error(c, ErrorSystemError, "failed to get target users")
-		return
-	}
-
-	// 构建预览响应
-	response := PreviewEDMTargetsResponse{
-		TotalCount: len(users),
-		SampleUsers: make([]PreviewEDMUser, 0),
-	}
-
-	// 返回前10个用户作为样本
-	sampleSize := 10
-	if len(users) < sampleSize {
-		sampleSize = len(users)
-	}
-
-	for i := 0; i < sampleSize; i++ {
-		user := users[i]
-		email, _ := getUserEmailByUser(c, &user)
-
-		response.SampleUsers = append(response.SampleUsers, PreviewEDMUser{
-			UUID:     user.UUID,
-			Email:    email,
-			Language: user.GetLanguagePreference(),
-			IsPro:    user.IsPro(),
-		})
-	}
-
-	log.Infof(c, "preview result: %d target users", response.TotalCount)
-	Success(c, &response)
 }
 
 // ===================== 邮件发送日志管理 =====================

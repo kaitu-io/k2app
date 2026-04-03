@@ -17,27 +17,9 @@ import (
 
 // 任务类型常量
 const (
-	TaskTypeEDMSend            = "edm:send"
 	TaskTypePushSend           = "push:send"
 	TaskTypeTemplatedEmailSend = "edm:send-templated"
 )
-
-// EDMTaskPayload EDM 任务载荷
-type EDMTaskPayload struct {
-	TemplateID  uint64     `json:"templateId"`
-	UserFilters UserFilter `json:"userFilters"`
-}
-
-// EDMTaskOutput EDM 任务输出
-type EDMTaskOutput struct {
-	BatchID      string   `json:"batchId"`
-	TotalUsers   int      `json:"totalUsers"`
-	SentCount    int      `json:"sentCount"`
-	FailedCount  int      `json:"failedCount"`
-	SkippedCount int      `json:"skippedCount"`
-	FailedEmails []string `json:"failedEmails,omitempty"`
-	Duration     int64    `json:"duration"`
-}
 
 // TemplatedEmailTaskPayload 通用邮件发送任务载荷
 type TemplatedEmailTaskPayload struct {
@@ -53,7 +35,6 @@ type PushTaskPayload struct {
 // InitWorker 初始化 Worker
 // 注册任务处理函数
 func InitWorker() {
-	asynq.Handle(TaskTypeEDMSend, handleEDMTask)
 	asynq.Handle(TaskTypePushSend, handlePushTask)
 	asynq.Handle(TaskTypeTemplatedEmailSend, handleTemplatedEmailTask)
 	asynq.Handle(TaskTypeRenewalReminder, handleRenewalReminderTask)
@@ -84,7 +65,6 @@ func InitWorker() {
 	asynq.Handle(TaskTypeApprovalExecute, ExecuteApproval)
 
 	// 审批 callback 注册
-	RegisterApprovalCallback("edm_create_task", executeApprovalEDMCreateTask)
 	RegisterApprovalCallback("campaign_create", executeApprovalCampaignCreate)
 	RegisterApprovalCallback("campaign_update", executeApprovalCampaignUpdate)
 	RegisterApprovalCallback("campaign_delete", executeApprovalCampaignDelete)
@@ -104,76 +84,6 @@ func RunWorker() error {
 	InitWorker()
 	log.Infof(context.Background(), "[WORKER] Starting worker service...")
 	return asynq.Run()
-}
-
-// handleEDMTask 处理 EDM 任务
-func handleEDMTask(ctx context.Context, payload []byte) error {
-	var p EDMTaskPayload
-	if err := asynq.Unmarshal(payload, &p); err != nil {
-		return fmt.Errorf("unmarshal payload failed: %w", err)
-	}
-
-	// 从 context 获取 asynq task ID 作为 batchID
-	batchID, _ := hibikenAsynq.GetTaskID(ctx)
-	if batchID == "" {
-		batchID = fmt.Sprintf("batch-%d", time.Now().UnixNano())
-	}
-
-	log.Infof(ctx, "[EDM] Starting batch=%s, templateId=%d", batchID, p.TemplateID)
-
-	// 执行 EDM 发送逻辑
-	output, err := executeEDMSend(ctx, batchID, p)
-	if err != nil {
-		log.Errorf(ctx, "[EDM] Batch=%s failed: %v", batchID, err)
-		return err
-	}
-
-	log.Infof(ctx, "[EDM] Batch=%s completed: total=%d, sent=%d, failed=%d, skipped=%d, duration=%ds",
-		batchID, output.TotalUsers, output.SentCount, output.FailedCount, output.SkippedCount, output.Duration)
-
-	return nil
-}
-
-// executeEDMSend 执行 EDM 发送逻辑
-func executeEDMSend(ctx context.Context, batchID string, p EDMTaskPayload) (*EDMTaskOutput, error) {
-	startTime := time.Now()
-
-	// 1. 验证模板存在
-	var template EmailMarketingTemplate
-	if err := db.Get().Where("id = ? AND is_active = ?", p.TemplateID, true).
-		First(&template).Error; err != nil {
-		return nil, fmt.Errorf("template not found or inactive: %w", err)
-	}
-
-	// 2. 获取目标用户
-	users, err := getTargetUsersForEmailTask(ctx, p.UserFilters)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get target users: %w", err)
-	}
-
-	if len(users) == 0 {
-		log.Infof(ctx, "[EDM] No target users found for batch=%s", batchID)
-		return &EDMTaskOutput{
-			BatchID:    batchID,
-			TotalUsers: 0,
-			Duration:   int64(time.Since(startTime).Seconds()),
-		}, nil
-	}
-
-	log.Infof(ctx, "[EDM] Found %d target users for batch=%s", len(users), batchID)
-
-	// 3. 发送邮件
-	output := sendEmailsWithTracking(ctx, batchID, users, &template)
-
-	return &EDMTaskOutput{
-		BatchID:      batchID,
-		TotalUsers:   len(users),
-		SentCount:    output.SentCount,
-		FailedCount:  output.FailedCount,
-		SkippedCount: output.SkippedCount,
-		FailedEmails: output.FailedEmails,
-		Duration:     int64(time.Since(startTime).Seconds()),
-	}, nil
 }
 
 // =====================================================================
@@ -212,32 +122,6 @@ func handleTemplatedEmailTask(ctx context.Context, payload []byte) error {
 	log.Infof(ctx, "[EMAIL-SEND] Batch %s completed: sent=%d, failed=%d, skipped=%d",
 		result.BatchID, result.Sent, result.Failed, result.Skipped)
 	return nil
-}
-
-// EnqueueEDMTask 入队 EDM 任务
-func EnqueueEDMTask(ctx context.Context, templateID uint64, userFilters UserFilter, scheduledAt *time.Time) (string, error) {
-	payload := EDMTaskPayload{
-		TemplateID:  templateID,
-		UserFilters: userFilters,
-	}
-
-	var info *asynq.TaskInfo
-	var err error
-
-	if scheduledAt != nil && scheduledAt.After(time.Now()) {
-		// 定时任务
-		info, err = asynq.EnqueueAt(TaskTypeEDMSend, payload, *scheduledAt)
-	} else {
-		// 立即执行
-		info, err = asynq.Enqueue(TaskTypeEDMSend, payload)
-	}
-
-	if err != nil {
-		return "", fmt.Errorf("enqueue task failed: %w", err)
-	}
-
-	log.Infof(ctx, "[EDM] Task enqueued: batchId=%s, templateId=%d", info.ID, templateID)
-	return info.ID, nil
 }
 
 // =====================================================================
