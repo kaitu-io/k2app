@@ -12,6 +12,29 @@ import (
 
 // Approval callbacks — executed after admin approval
 
+func executeApprovalEDMSend(ctx context.Context, params json.RawMessage) error {
+	var req SendTemplatedEmailsHTTPRequest
+	if err := json.Unmarshal(params, &req); err != nil {
+		return fmt.Errorf("unmarshal params: %w", err)
+	}
+
+	sendReq := &SendEmailsRequest{
+		BatchID: req.BatchID,
+		Items:   make([]SendEmailItem, len(req.Items)),
+	}
+	for i, item := range req.Items {
+		sendReq.Items[i] = SendEmailItem{
+			Email:  item.Email,
+			UserID: item.UserID,
+			Slug:   item.Slug,
+			Vars:   item.Vars,
+		}
+	}
+
+	_, err := EnqueueTemplatedEmailTask(ctx, sendReq)
+	return err
+}
+
 func executeApprovalCampaignCreate(ctx context.Context, params json.RawMessage) error {
 	var req CampaignRequest
 	if err := json.Unmarshal(params, &req); err != nil {

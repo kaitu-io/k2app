@@ -24,7 +24,6 @@ export const edmTools: ToolRegistration[] = [
     path: '/app/edm/send',
     params: {
       batch_id: z.string().describe('Unique batch ID for idempotency (e.g. "mcp:2026-04-03:test")'),
-      async: z.boolean().optional().describe('If true, queue for async processing. Default false (sync).'),
       items: z.array(z.object({
         email: z.string().describe('Recipient email address'),
         user_id: z.number().optional().describe('User ID (optional, auto-resolved from email if omitted)'),
@@ -34,7 +33,6 @@ export const edmTools: ToolRegistration[] = [
     },
     mapBody: (p) => ({
       batchId: p.batch_id,
-      async: p.async,
       items: (p.items as Array<{ email: string; user_id?: number; slug: string; vars?: Record<string, string> }>).map((item) => ({
         email: item.email,
         userId: item.user_id,

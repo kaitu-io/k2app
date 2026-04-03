@@ -564,10 +564,9 @@ type EmailTemplateResponse struct {
 	IsOriginal  bool    `json:"isOriginal"`  // 是否为原始模板（计算字段）
 }
 
-// SendTemplatedEmailsHTTPRequest 通用邮件发送HTTP请求
+// SendTemplatedEmailsHTTPRequest 通用邮件发送HTTP请求（需审批）
 type SendTemplatedEmailsHTTPRequest struct {
 	BatchID string `json:"batchId" binding:"required"`
-	Async   bool   `json:"async"`
 	Items   []struct {
 		Email  string            `json:"email" binding:"required"`
 		UserID uint64            `json:"userId"`

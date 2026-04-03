@@ -279,7 +279,7 @@ func convertEmailMarketingTemplateToResponse(template EmailMarketingTemplate) Em
 
 // ===================== 通用邮件发送 =====================
 
-// api_admin_send_templated_emails 通用邮件发送接口 (replaces old EDM task system)
+// api_admin_send_templated_emails 通用邮件发送接口（需审批）
 func api_admin_send_templated_emails(c *gin.Context) {
 	log.Infof(c, "admin request to send templated emails")
 
@@ -290,39 +290,30 @@ func api_admin_send_templated_emails(c *gin.Context) {
 		return
 	}
 
-	sendReq := &SendEmailsRequest{
-		BatchID: req.BatchID,
-		Async:   req.Async,
-		Items:   make([]SendEmailItem, len(req.Items)),
+	// 收集 slug 列表用于审批摘要
+	slugSet := make(map[string]bool)
+	for _, item := range req.Items {
+		slugSet[item.Slug] = true
 	}
-	for i, item := range req.Items {
-		sendReq.Items[i] = SendEmailItem{
-			Email:  item.Email,
-			UserID: item.UserID,
-			Slug:   item.Slug,
-			Vars:   item.Vars,
-		}
+	slugs := make([]string, 0, len(slugSet))
+	for s := range slugSet {
+		slugs = append(slugs, s)
 	}
 
-	if req.Async {
-		batchID, err := EnqueueTemplatedEmailTask(c, sendReq)
-		if err != nil {
-			log.Errorf(c, "failed to enqueue email task: %v", err)
-			Error(c, ErrorSystemError, "failed to enqueue task")
-			return
-		}
-		Success(c, &SendEmailsResult{BatchID: batchID, Total: len(req.Items)})
-		return
-	}
+	summary := fmt.Sprintf("发送模板邮件：%d 封，模板：%v，批次：%s", len(req.Items), slugs, req.BatchID)
 
-	result, err := SendTemplatedEmails(c, sendReq)
+	approvalID, executed, err := SubmitApproval(c, "edm_send", &req, summary)
 	if err != nil {
-		log.Errorf(c, "failed to send emails: %v", err)
-		Error(c, ErrorSystemError, err.Error())
+		log.Errorf(c, "failed to submit approval: %v", err)
+		Error(c, ErrorSystemError, "failed to submit approval")
 		return
 	}
 
-	Success(c, result)
+	if !executed {
+		PendingApproval(c, approvalID)
+		return
+	}
+	SuccessEmpty(c)
 }
 
 // ===================== 邮件发送日志管理 =====================

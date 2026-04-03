@@ -65,6 +65,7 @@ func InitWorker() {
 	asynq.Handle(TaskTypeApprovalExecute, ExecuteApproval)
 
 	// 审批 callback 注册
+	RegisterApprovalCallback("edm_send", executeApprovalEDMSend)
 	RegisterApprovalCallback("campaign_create", executeApprovalCampaignCreate)
 	RegisterApprovalCallback("campaign_update", executeApprovalCampaignUpdate)
 	RegisterApprovalCallback("campaign_delete", executeApprovalCampaignDelete)
@@ -93,7 +94,6 @@ func RunWorker() error {
 // EnqueueTemplatedEmailTask 入队通用邮件发送任务
 func EnqueueTemplatedEmailTask(ctx context.Context, req *SendEmailsRequest) (string, error) {
 	payload := TemplatedEmailTaskPayload{Request: *req}
-	payload.Request.Async = false
 
 	info, err := asynq.Enqueue(TaskTypeTemplatedEmailSend, payload)
 	if err != nil {

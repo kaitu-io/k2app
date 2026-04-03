@@ -23,7 +23,6 @@ type SendEmailItem struct {
 // SendEmailsRequest 批量发送请求
 type SendEmailsRequest struct {
 	BatchID string          `json:"batchId"`
-	Async   bool            `json:"async"`
 	Items   []SendEmailItem `json:"items"`
 }
 
