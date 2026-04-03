@@ -15,3 +15,10 @@ type NopProcessSearcher struct{}
 func (NopProcessSearcher) FindProcess(string, netip.Addr, uint16) (string, string) {
 	return "", ""
 }
+
+// PackageResolver resolves an Android UID to a package name.
+// Implemented by the native Android layer via Go→Java callback.
+// Nil on non-Android platforms.
+type PackageResolver interface {
+	PackageForUID(uid int32) string
+}
