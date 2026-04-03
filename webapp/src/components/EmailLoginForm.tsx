@@ -30,6 +30,8 @@ import { useTranslation } from "react-i18next";
 import { useAuthStore } from "../stores";
 import { useOnboardingStore } from "../stores/onboarding.store";
 import { handleResponseError } from "../utils/errorCode";
+import { suggestEmail } from "../utils/email-suggest";
+import EmailSuggestion from "./EmailSuggestion";
 import type { SendCodeResponse, AuthResult } from "../services/api-types";
 import { cloudApi } from '../services/cloud-api';
 import { cacheStore } from '../services/cache-store';
@@ -74,6 +76,8 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
   const emailInputRef = useRef<HTMLInputElement>(null);
   const codeInputRef = useRef<HTMLInputElement>(null);
   const passwordInputRef = useRef<HTMLInputElement>(null);
+
+  const [emailSuggestion, setEmailSuggestion] = useState<string | null>(null);
 
   // User status (from backend)
   const [isActivated, setIsActivated] = useState(true);
@@ -317,8 +321,8 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
               label={t("auth:auth.email")}
               placeholder={t("auth:auth.emailPlaceholder")}
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              onBlur={(e) => setEmail(e.target.value.trim())}
+              onChange={(e) => { setEmail(e.target.value); if (emailSuggestion) setEmailSuggestion(null); }}
+              onBlur={(e) => { const cleaned = e.target.value.trim().toLowerCase().replace(/\s+/g, ''); setEmail(cleaned); const suggested = suggestEmail(cleaned); setEmailSuggestion(suggested); }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !isSubmitting && isEmailValid) {
                   handleSendCode();
@@ -345,6 +349,13 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
                 },
               }}
             />
+
+            {emailSuggestion && (
+              <EmailSuggestion
+                suggestion={emailSuggestion}
+                onAccept={() => { setEmail(emailSuggestion); setEmailSuggestion(null); }}
+              />
+            )}
 
             <Button
               fullWidth
@@ -378,8 +389,8 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
               label={t("auth:auth.email")}
               placeholder={t("auth:auth.emailPlaceholder")}
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              onBlur={(e) => setEmail(e.target.value.trim())}
+              onChange={(e) => { setEmail(e.target.value); if (emailSuggestion) setEmailSuggestion(null); }}
+              onBlur={(e) => { const cleaned = e.target.value.trim().toLowerCase().replace(/\s+/g, ''); setEmail(cleaned); const suggested = suggestEmail(cleaned); setEmailSuggestion(suggested); }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !isSubmitting && isEmailValid && password) {
                   handlePasswordLogin();
@@ -406,6 +417,13 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
                 },
               }}
             />
+
+            {emailSuggestion && (
+              <EmailSuggestion
+                suggestion={emailSuggestion}
+                onAccept={() => { setEmail(emailSuggestion); setEmailSuggestion(null); }}
+              />
+            )}
 
             <TextField
               fullWidth

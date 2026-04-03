@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, FormEvent, useEffect } from "react";
+import { suggestEmail } from "@/lib/email-suggest";
 import { useTranslations } from "next-intl";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAppConfig } from "@/contexts/AppConfigContext";
@@ -41,6 +42,7 @@ export default function EmailLogin({ onLoginSuccess, mode = 'login' }: EmailLogi
   const [isLoading, setIsLoading] = useState(false);
   const [isActivated, setIsActivated] = useState(true); // 用户激活状态
   const [hasInviteCodeCookie, setHasInviteCodeCookie] = useState(false); // 是否有邀请码 cookie
+  const [emailSuggestion, setEmailSuggestion] = useState<string | null>(null);
 
   // Load invite code from cookie on component mount
   useEffect(() => {
@@ -142,10 +144,26 @@ export default function EmailLogin({ onLoginSuccess, mode = 'login' }: EmailLogi
               id="login-email"
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => { setEmail(e.target.value); if (emailSuggestion) setEmailSuggestion(null); }}
+              onBlur={(e) => { const cleaned = e.target.value.trim().toLowerCase().replace(/\s+/g, ''); setEmail(cleaned); const suggested = suggestEmail(cleaned); setEmailSuggestion(suggested); }}
               placeholder={t('auth.login.emailPlaceholder')}
               className="mt-2 sm:mt-1 text-lg sm:text-base py-3 sm:py-2 px-4 sm:px-3"
             />
+            {emailSuggestion && (
+              <p className="text-sm text-amber-500 mt-1">
+                {t('auth.login.emailTypoSuggestion', { suggested: emailSuggestion })}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmail(emailSuggestion);
+                    setEmailSuggestion(null);
+                  }}
+                  className="ml-1 font-semibold underline hover:no-underline cursor-pointer"
+                >
+                  {t('auth.login.emailTypoUseSuggestion')}
+                </button>
+              </p>
+            )}
           </div>
           {isValidEmail(email) && (
             <Button

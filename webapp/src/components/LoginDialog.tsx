@@ -36,6 +36,8 @@ import { useLoginDialogStore } from "../stores/login-dialog.store";
 import { useOnboardingStore } from "../stores/onboarding.store";
 import { useAppLinks } from "../hooks/useAppLinks";
 import { handleResponseError } from "../utils/errorCode";
+import { suggestEmail } from "../utils/email-suggest";
+import EmailSuggestion from "./EmailSuggestion";
 import { cloudApi } from '../services/cloud-api';
 import { getDeviceUdid } from '../services/device-udid';
 import { cacheStore } from '../services/cache-store';
@@ -56,6 +58,9 @@ export default function LoginDialog() {
   const [email, setEmail] = useState("");
   const [verificationCode, setVerificationCode] = useState("");
   const [inviteCode, setInviteCode] = useState("");
+
+  // Email typo suggestion
+  const [emailSuggestion, setEmailSuggestion] = useState<string | null>(null);
 
   // UI state
   const [step, setStep] = useState<"email" | "code">("email");
@@ -84,6 +89,7 @@ export default function LoginDialog() {
       setCountdown(0);
       setError("");
       setIsActivated(true);
+      setEmailSuggestion(null);
     }
   }, [isOpen]);
 
@@ -290,8 +296,16 @@ export default function LoginDialog() {
               label={t("auth:auth.email")}
               placeholder={t("auth:auth.emailPlaceholder")}
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              onBlur={(e) => setEmail(e.target.value.trim())}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                if (emailSuggestion) setEmailSuggestion(null);
+              }}
+              onBlur={(e) => {
+                const cleaned = e.target.value.trim().toLowerCase().replace(/\s+/g, '');
+                setEmail(cleaned);
+                const suggested = suggestEmail(cleaned);
+                setEmailSuggestion(suggested);
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !isSubmitting && isEmailValid) {
                   handleSendCode();
@@ -314,6 +328,13 @@ export default function LoginDialog() {
                 ),
               }}
             />
+
+            {emailSuggestion && (
+              <EmailSuggestion
+                suggestion={emailSuggestion}
+                onAccept={() => { setEmail(emailSuggestion); setEmailSuggestion(null); }}
+              />
+            )}
 
             <Button
               fullWidth
