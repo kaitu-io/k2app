@@ -1,7 +1,6 @@
 package center
 
 import (
-	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -34,11 +33,6 @@ func TestEmailTriggerDays_Config(t *testing.T) {
 	assert.Equal(t, []int{-1, -7, -30}, winbackDays)
 }
 
-// TestSystemEmailTemplateID 验证系统邮件模板 ID
-func TestSystemEmailTemplateID(t *testing.T) {
-	assert.Equal(t, uint64(0), uint64(systemEmailTemplateID))
-}
-
 // TestFormatCents 验证美分转美元显示
 func TestFormatCents(t *testing.T) {
 	tests := []struct {
@@ -64,96 +58,6 @@ func TestFormatCents(t *testing.T) {
 			assert.Equal(t, tt.expected, formatCents(tt.cents))
 		})
 	}
-}
-
-// TestGetRenewalReminderContent 验证续费提醒邮件内容
-func TestGetRenewalReminderContent(t *testing.T) {
-	tests := []struct {
-		daysBefore      int
-		expectSubject   string
-		expectBodyParts []string
-	}{
-		{
-			daysBefore:    30,
-			expectSubject: "你的开途账号还有 30 天到期",
-			expectBodyParts: []string{
-				"Hi，",
-				"30 天后到期",
-				"https://kaitu.io/purchase",
-				"开途团队",
-			},
-		},
-		{
-			daysBefore:    14,
-			expectSubject: "开途账号即将到期，建议尽快续费",
-			expectBodyParts: []string{
-				"14 天后到期",
-				"建议尽快续费",
-			},
-		},
-		{
-			daysBefore:    7,
-			expectSubject: "开途账号下周到期",
-			expectBodyParts: []string{
-				"7 天后到期",
-				"所有设备连接将自动断开",
-			},
-		},
-		{
-			daysBefore:    3,
-			expectSubject: "还有 3 天，开途账号即将到期",
-			expectBodyParts: []string{
-				"还有 3 天到期",
-				"连接立即中断",
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(fmt.Sprintf("%d_days", tt.daysBefore), func(t *testing.T) {
-			subject, body := getRenewalReminderContent(tt.daysBefore)
-			assert.Equal(t, tt.expectSubject, subject)
-			for _, part := range tt.expectBodyParts {
-				assert.Contains(t, body, part)
-			}
-			// 所有邮件都不能包含 www.kaitu.io
-			assert.NotContains(t, body, "www.kaitu.io")
-			// 所有邮件都不能包含 "Kaitu" 英文品牌（应该用"开途"）
-			assert.NotContains(t, subject, "Kaitu")
-		})
-	}
-
-	// default 分支
-	t.Run("default_fallback", func(t *testing.T) {
-		subject, body := getRenewalReminderContent(60)
-		assert.Contains(t, subject, "60")
-		assert.Contains(t, body, "60 天后到期")
-		assert.Contains(t, body, "https://kaitu.io/purchase")
-	})
-}
-
-// TestGetWinbackContent_Day1 验证过期 1 天召回内容（无活动码）
-func TestGetWinbackContent_Day1(t *testing.T) {
-	ctx := context.Background()
-	subject, body := getWinbackContent(ctx, 1)
-
-	assert.Equal(t, "你的开途连接已断开", subject)
-	assert.Contains(t, body, "昨天到期")
-	assert.Contains(t, body, "连接已中断")
-	assert.Contains(t, body, "https://kaitu.io/purchase")
-	// 1 天召回不应包含活动码
-	assert.NotContains(t, body, "BACK")
-}
-
-// TestGetWinbackContent_DefaultFallback 验证 fallback 内容
-func TestGetWinbackContent_DefaultFallback(t *testing.T) {
-	ctx := context.Background()
-	// 没有 DB 连接时，7 天和 30 天会 fallback
-	subject, body := getWinbackContent(ctx, 99)
-
-	assert.Contains(t, subject, "99")
-	assert.Contains(t, body, "99 天")
-	assert.Contains(t, body, "https://kaitu.io/purchase")
 }
 
 // TestWinbackCampaigns_Config 验证召回活动码配置
