@@ -100,7 +100,25 @@ func (e *Engine) Start(cfg Config) error {
 	}
 
 	startTime := time.Now()
-	// 1. Rule engine.
+
+	// 1. Download rule bundles.
+	bundleNames := rule.BundlesForConfig(extractMatches(client))
+	sources := client.RuleSources
+	if len(sources) == 0 {
+		sources = rule.DefaultSources
+	}
+	if len(bundleNames) > 0 && client.CacheDir != "" {
+		dlCtx, dlCancel := context.WithTimeout(ctx, 8*time.Second)
+		err := rule.Download(dlCtx, client.CacheDir, bundleNames, sources)
+		dlCancel()
+		if err != nil && dlCtx.Err() == context.DeadlineExceeded {
+			slog.Warn("rule: download timeout, starting with fallback routing")
+		} else if err != nil {
+			return e.fail(fmt.Errorf("rule download: %w", err))
+		}
+	}
+
+	// 1b. Build rule engine.
 	ruleEngine := buildRuleEngine(client)
 
 	slog.Info("engine: start",
@@ -331,6 +349,20 @@ func (e *Engine) Start(cfg Config) error {
 
 	// Recovery probe: actively verifies wire connectivity after network changes.
 	e.probe = newRecoveryProbe(tm, e)
+
+	// Start rule bundle updater (24h background check + reload).
+	if len(bundleNames) > 0 && client.CacheDir != "" {
+		rebuildFn := func(cacheDir string) ([]rule.RouteEntry, []*rule.Bundle, error) {
+			newBundles, err := rule.Load(cacheDir)
+			if err != nil {
+				return nil, nil, err
+			}
+			idx := rule.Index(newBundles)
+			entries, _, _ := buildRouteEntries(client.Routes, idx)
+			return entries, newBundles, nil
+		}
+		rule.StartUpdater(ctx, ruleEngine, client.CacheDir, bundleNames, sources, rebuildFn)
+	}
 
 	e.setStateLocked(StateConnected)
 	handler = e.handler
@@ -679,27 +711,13 @@ func (e *Engine) fail(err error) error {
 	return err
 }
 
-// buildRuleEngine creates a rule.Engine from the client's route configuration.
-// CacheDir must be set by the platform shell (daemon/appext) before calling engine.
-func buildRuleEngine(client *config.ClientConfig) *rule.Engine {
-	// Simple case: single route with match:all and k2v5:// → all proxy, no routes.
-	if client.IsAllProxy() && len(client.Routes) == 1 {
-		return rule.NewEngine(nil, rule.TargetProxy, nil, true)
-	}
+// buildRouteEntries converts config routes to rule.RouteEntry list using the given bundle index.
+// Shared by buildRuleEngine (startup) and updater rebuild (hot-reload) — single code path
+// ensures both always produce identical routing tables from the same config+bundles.
+func buildRouteEntries(routes []config.RouteConfig, idx map[string]*rule.BundleSet) (entries []rule.RouteEntry, fallback rule.Target, allProxy bool) {
+	fallback = rule.TargetDirect
 
-	fallback := rule.TargetDirect
-
-	// Load bundles from cache.
-	bundles, err := rule.Load(client.CacheDir)
-	if err != nil {
-		slog.Warn("engine: rule load failed", "err", err)
-	}
-	idx := rule.Index(bundles)
-
-	var entries []rule.RouteEntry
-	allProxy := false
-
-	for i, route := range client.Routes {
+	for i, route := range routes {
 		target := rule.ParseVia(route.Via)
 
 		if route.Match.All {
@@ -739,10 +757,28 @@ func buildRuleEngine(client *config.ClientConfig) *rule.Engine {
 		}
 
 		// Last route without match criteria = fallback.
-		if i == len(client.Routes)-1 && !route.Match.HasCriteria() {
+		if i == len(routes)-1 && !route.Match.HasCriteria() {
 			fallback = target
 		}
 	}
+	return entries, fallback, allProxy
+}
+
+// buildRuleEngine creates a rule.Engine from the client's route configuration.
+// CacheDir must be set by the platform shell (daemon/appext) before calling engine.
+func buildRuleEngine(client *config.ClientConfig) *rule.Engine {
+	// Simple case: single route with match:all and k2v5:// → all proxy, no routes.
+	if client.IsAllProxy() && len(client.Routes) == 1 {
+		return rule.NewEngine(nil, rule.TargetProxy, nil, true)
+	}
+
+	// Load bundles from cache.
+	bundles, err := rule.Load(client.CacheDir)
+	if err != nil {
+		slog.Warn("engine: rule load failed", "err", err)
+	}
+	idx := rule.Index(bundles)
+	entries, fallback, allProxy := buildRouteEntries(client.Routes, idx)
 
 	hasRules := len(bundles) > 0
 	for _, e := range entries {
@@ -764,6 +800,15 @@ func buildRuleEngine(client *config.ClientConfig) *rule.Engine {
 	}
 
 	return rule.NewEngine(entries, fallback, bundles, allProxy)
+}
+
+// extractMatches collects MatchConfig from each route for BundlesForConfig.
+func extractMatches(client *config.ClientConfig) []rule.MatchConfig {
+	matches := make([]rule.MatchConfig, len(client.Routes))
+	for i, r := range client.Routes {
+		matches[i] = r.Match
+	}
+	return matches
 }
 
 // computeDNSExclude builds the list of IPs to exclude from TUN routing.
