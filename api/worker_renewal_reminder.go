@@ -7,7 +7,7 @@ import (
 
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
-	"github.com/wordgate/qtoolkit/mail"
+	"github.com/wordgate/qtoolkit/slack"
 )
 
 // =====================================================================
@@ -18,9 +18,6 @@ import (
 const (
 	TaskTypeRenewalReminder = "renewal:reminder"
 )
-
-// 系统自动邮件使用虚拟模板 ID（0 表示非模板邮件）
-const systemEmailTemplateID = 0
 
 // 触发天数配置
 // 正数 = 到期前提醒，负数 = 到期后召回
@@ -68,6 +65,14 @@ func processRenewalReminders(ctx context.Context, daysBefore int) (sent, skipped
 	targetDateEnd := targetDate.AddDate(0, 0, 1)
 
 	batchID := fmt.Sprintf("renewal:%dd:%s", daysBefore, todayStr)
+	slug := fmt.Sprintf("renewal-%dd", daysBefore)
+
+	if !templateSlugExists(slug) {
+		alertMsg := fmt.Sprintf("[EMAIL-LIFECYCLE] 模板 slug=%q 不存在，跳过 %d 天续费提醒。请在管理后台创建该模板。", slug, daysBefore)
+		log.Errorf(ctx, "%s", alertMsg)
+		slack.Send("alert", alertMsg)
+		return 0, 0, 0
+	}
 
 	var users []User
 	err := db.Get().Model(&User{}).
@@ -77,71 +82,41 @@ func processRenewalReminders(ctx context.Context, daysBefore int) (sent, skipped
 		Find(&users).Error
 
 	if err != nil {
-		log.Errorf(ctx, "[RENEWAL] Failed to query users for %d-day reminders: %v", daysBefore, err)
+		log.Errorf(ctx, "[RENEWAL] Failed to query users: %v", err)
 		return 0, 0, 1
 	}
 
 	log.Infof(ctx, "[RENEWAL] Found %d users expiring in %d days", len(users), daysBefore)
 
+	items := make([]SendEmailItem, 0, len(users))
 	for _, user := range users {
 		email := getUserEmailFromIdentifies(&user)
 		if email == "" {
-			log.Warnf(ctx, "[RENEWAL] User %d has no email, skipping", user.ID)
 			skipped++
 			continue
 		}
-
-		exists, _ := IsIdempotencyKeyExists(batchID, systemEmailTemplateID, user.ID)
-		if exists {
-			skipped++
-			continue
-		}
-
-		sendLog := createSystemSendLog(ctx, batchID, user.ID, email)
-
-		subject, body := getRenewalReminderContent(daysBefore)
-		if err := sendLifecycleEmail(ctx, email, subject, body); err != nil {
-			log.Errorf(ctx, "[RENEWAL] Failed to send reminder to user %d: %v", user.ID, err)
-			updateSystemSendLogStatus(sendLog, EmailSendLogStatusFailed, err.Error())
-			failed++
-			continue
-		}
-
-		updateSystemSendLogStatus(sendLog, EmailSendLogStatusSent, "")
-		sent++
-
-		log.Infof(ctx, "[RENEWAL] Sent %d-day reminder to user %d (%s)", daysBefore, user.ID, hideEmail(email))
+		items = append(items, SendEmailItem{
+			Email:  email,
+			UserID: user.ID,
+			Slug:   slug,
+			Vars:   map[string]string{},
+		})
 	}
 
-	log.Infof(ctx, "[RENEWAL] %d-day reminders: sent=%d, skipped=%d, failed=%d",
-		daysBefore, sent, skipped, failed)
-
-	return sent, skipped, failed
-}
-
-// getRenewalReminderContent 获取续费提醒邮件内容
-func getRenewalReminderContent(daysBefore int) (string, string) {
-	switch daysBefore {
-	case 30:
-		return "你的开途账号还有 30 天到期",
-			"Hi，\n\n你的开途账号将于 30 天后到期。\n\n提前续费，避免连接中断：\nhttps://kaitu.io/purchase\n\n开途团队"
-
-	case 14:
-		return "开途账号即将到期，建议尽快续费",
-			"Hi，\n\n你的开途账号将于 14 天后到期，建议尽快续费，避免服务中断影响使用。\n\n续费链接：\nhttps://kaitu.io/purchase\n\n开途团队"
-
-	case 7:
-		return "开途账号下周到期",
-			"Hi，\n\n你的开途账号将于 7 天后到期。到期后所有设备连接将自动断开。\n\n续费链接：\nhttps://kaitu.io/purchase\n\n开途团队"
-
-	case 3:
-		return "还有 3 天，开途账号即将到期",
-			"Hi，\n\n你的开途账号还有 3 天到期。到期后连接立即中断，请尽快续费。\n\n续费链接：\nhttps://kaitu.io/purchase\n\n开途团队"
-
-	default:
-		return fmt.Sprintf("开途账号还有 %d 天到期", daysBefore),
-			fmt.Sprintf("Hi，\n\n你的开途账号将于 %d 天后到期。\n\n续费链接：\nhttps://kaitu.io/purchase\n\n开途团队", daysBefore)
+	if len(items) == 0 {
+		return 0, skipped, 0
 	}
+
+	result, err := SendTemplatedEmails(ctx, &SendEmailsRequest{
+		BatchID: batchID,
+		Items:   items,
+	})
+	if err != nil {
+		log.Errorf(ctx, "[RENEWAL] SendTemplatedEmails failed: %v", err)
+		return 0, skipped, len(items)
+	}
+
+	return result.Sent, skipped + result.Skipped, result.Failed
 }
 
 // =====================================================================
@@ -154,12 +129,18 @@ func processWinback(ctx context.Context, daysAfter int) (sent, skipped, failed i
 
 	now := time.Now().UTC()
 	todayStr := now.Format("2006-01-02")
-
-	// 目标到期日 = 今天 - daysAfter
 	targetDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, -daysAfter)
 	targetDateEnd := targetDate.AddDate(0, 0, 1)
 
 	batchID := fmt.Sprintf("winback:%dd:%s", daysAfter, todayStr)
+	slug := fmt.Sprintf("winback-%dd", daysAfter)
+
+	if !templateSlugExists(slug) {
+		alertMsg := fmt.Sprintf("[EMAIL-LIFECYCLE] 模板 slug=%q 不存在，跳过 %d 天过期召回。请在管理后台创建该模板。", slug, daysAfter)
+		log.Errorf(ctx, "%s", alertMsg)
+		slack.Send("alert", alertMsg)
+		return 0, 0, 0
+	}
 
 	var users []User
 	err := db.Get().Model(&User{}).
@@ -169,17 +150,27 @@ func processWinback(ctx context.Context, daysAfter int) (sent, skipped, failed i
 		Find(&users).Error
 
 	if err != nil {
-		log.Errorf(ctx, "[WINBACK] Failed to query users for %d-day winback: %v", daysAfter, err)
+		log.Errorf(ctx, "[WINBACK] Failed to query users: %v", err)
 		return 0, 0, 1
 	}
 
 	log.Infof(ctx, "[WINBACK] Found %d users expired %d days ago", len(users), daysAfter)
 
-	// 循环外查一次价格区间，避免 N 次重复查询
-	subject, body := getWinbackContent(ctx, daysAfter)
+	vars := map[string]string{}
+	campaign, hasCampaign := winbackCampaigns[daysAfter]
+	if hasCampaign {
+		minPrice, maxPrice, ok := getPlanPriceRange(ctx)
+		if ok {
+			minSave := minPrice * uint64(100-campaign.discountPct) / 100
+			maxSave := maxPrice * uint64(100-campaign.discountPct) / 100
+			vars["SavingsText"] = fmt.Sprintf("立减 %s 起，最高立减 %s", formatCents(minSave), formatCents(maxSave))
+			vars["CampaignCode"] = campaign.code
+			vars["ValidDays"] = campaign.validDaysStr
+		}
+	}
 
+	items := make([]SendEmailItem, 0, len(users))
 	for _, user := range users {
-		// 用户已续费（expired_at 移到未来），跳过
 		if user.ExpiredAt > now.Unix() {
 			skipped++
 			continue
@@ -187,36 +178,32 @@ func processWinback(ctx context.Context, daysAfter int) (sent, skipped, failed i
 
 		email := getUserEmailFromIdentifies(&user)
 		if email == "" {
-			log.Warnf(ctx, "[WINBACK] User %d has no email, skipping", user.ID)
 			skipped++
 			continue
 		}
 
-		exists, _ := IsIdempotencyKeyExists(batchID, systemEmailTemplateID, user.ID)
-		if exists {
-			skipped++
-			continue
-		}
-
-		sendLog := createSystemSendLog(ctx, batchID, user.ID, email)
-
-		if err := sendLifecycleEmail(ctx, email, subject, body); err != nil {
-			log.Errorf(ctx, "[WINBACK] Failed to send winback to user %d: %v", user.ID, err)
-			updateSystemSendLogStatus(sendLog, EmailSendLogStatusFailed, err.Error())
-			failed++
-			continue
-		}
-
-		updateSystemSendLogStatus(sendLog, EmailSendLogStatusSent, "")
-		sent++
-
-		log.Infof(ctx, "[WINBACK] Sent %d-day winback to user %d (%s)", daysAfter, user.ID, hideEmail(email))
+		items = append(items, SendEmailItem{
+			Email:  email,
+			UserID: user.ID,
+			Slug:   slug,
+			Vars:   vars,
+		})
 	}
 
-	log.Infof(ctx, "[WINBACK] %d-day winback: sent=%d, skipped=%d, failed=%d",
-		daysAfter, sent, skipped, failed)
+	if len(items) == 0 {
+		return 0, skipped, 0
+	}
 
-	return sent, skipped, failed
+	result, err := SendTemplatedEmails(ctx, &SendEmailsRequest{
+		BatchID: batchID,
+		Items:   items,
+	})
+	if err != nil {
+		log.Errorf(ctx, "[WINBACK] SendTemplatedEmails failed: %v", err)
+		return 0, skipped, len(items)
+	}
+
+	return result.Sent, skipped + result.Skipped, result.Failed
 }
 
 // winbackCampaign 召回邮件的活动码配置
@@ -268,103 +255,13 @@ func formatCents(cents uint64) string {
 	return fmt.Sprintf("$%d.%02d", dollars, remaining)
 }
 
-// getWinbackContent 获取召回邮件内容
-func getWinbackContent(ctx context.Context, daysAfter int) (string, string) {
-	switch daysAfter {
-	case 1:
-		return "你的开途连接已断开",
-			"Hi，\n\n你的开途账号已于昨天到期，所有设备的连接已中断。\n\n续费后立即恢复：\nhttps://kaitu.io/purchase\n\n开途团队"
-
-	case 7, 30:
-		campaign, hasCampaign := winbackCampaigns[daysAfter]
-		if !hasCampaign {
-			break
-		}
-
-		minPrice, maxPrice, ok := getPlanPriceRange(ctx)
-		if !ok {
-			// 查不到价格就发不带金额的简版
-			break
-		}
-
-		// 立减金额 = 售价 × (1 - discountPct/100)
-		minSave := minPrice * uint64(100-campaign.discountPct) / 100
-		maxSave := maxPrice * uint64(100-campaign.discountPct) / 100
-
-		savingsText := fmt.Sprintf("立减 %s 起，最高立减 %s", formatCents(minSave), formatCents(maxSave))
-
-		if daysAfter == 7 {
-			return fmt.Sprintf("回来看看？续费%s", savingsText),
-				fmt.Sprintf("Hi，\n\n你已经有一周没有使用开途了。\n\n限时续费优惠（%s），%s：\n%s\n\n使用方式：前往 https://kaitu.io/purchase，结算时输入优惠码即可。\n\n开途团队",
-					campaign.validDaysStr, savingsText, campaign.code)
-		}
-
-		return fmt.Sprintf("开途升级了很多，%s欢迎回来", savingsText),
-			fmt.Sprintf("Hi，\n\n你上次使用开途已经是一个月前了。\n\n这段时间我们发布了 v0.4，全平台支持（iOS/Android/桌面端），连接稳定性大幅提升，还新增了 AI 工具直接管理网络连接的能力。\n\n限时续费优惠（%s），%s：\n%s\n\n使用方式：前往 https://kaitu.io/purchase，结算时输入优惠码即可。\n\n开途团队",
-				campaign.validDaysStr, savingsText, campaign.code)
-	}
-
-	// fallback
-	return fmt.Sprintf("开途账号已过期 %d 天", daysAfter),
-		fmt.Sprintf("Hi，\n\n你的开途账号已过期 %d 天。\n\n续费链接：\nhttps://kaitu.io/purchase\n\n开途团队", daysAfter)
-}
-
-// =====================================================================
-// 共享工具函数
-// =====================================================================
-
-// createSystemSendLog 创建系统邮件发送日志
-func createSystemSendLog(ctx context.Context, batchID string, userID uint64, email string) *EmailSendLog {
-	sendLog := &EmailSendLog{
-		BatchID:    batchID,
-		TemplateID: systemEmailTemplateID,
-		UserID:     userID,
-		Email:      email,
-		Language:   "zh-CN",
-		Status:     EmailSendLogStatusPending,
-	}
-
-	if err := db.Get().Create(sendLog).Error; err != nil {
-		log.Errorf(ctx, "[EMAIL-LIFECYCLE] Failed to create send log: %v", err)
-		return nil
-	}
-
-	return sendLog
-}
-
-// updateSystemSendLogStatus 更新发送日志状态
-func updateSystemSendLogStatus(sendLog *EmailSendLog, status EmailSendLogStatus, errMsg string) {
-	if sendLog == nil || sendLog.ID == 0 {
-		return
-	}
-
-	updates := map[string]any{
-		"status": status,
-	}
-
-	if errMsg != "" {
-		updates["error_msg"] = errMsg
-	}
-
-	if status == EmailSendLogStatusSent {
-		now := time.Now()
-		updates["sent_at"] = now
-	}
-
-	db.Get().Model(sendLog).Updates(updates)
-}
-
-// sendLifecycleEmail 发送生命周期邮件
-func sendLifecycleEmail(ctx context.Context, email, subject, body string) error {
-	err := MailSend(ctx, &mail.Message{
-		To:      email,
-		Subject: subject,
-		Body:    body,
-	})
-	if err != nil {
-		return fmt.Errorf("MailSend failed: %w", err)
-	}
-	return nil
+// templateSlugExists 检查模板 slug 是否存在
+func templateSlugExists(slug string) bool {
+	var count int64
+	db.Get().Model(&EmailMarketingTemplate{}).
+		Where("slug = ? AND is_active = ? AND origin_id IS NULL", slug, true).
+		Count(&count)
+	return count > 0
 }
 
 // getUserEmailFromIdentifies 从用户身份信息中获取邮箱

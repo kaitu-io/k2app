@@ -600,6 +600,7 @@ type EmailMarketingTemplate struct {
 
 	// 基础信息
 	Name        string `gorm:"type:varchar(255);not null" json:"name"`    // 模板名称
+	Slug        string `gorm:"type:varchar(100);uniqueIndex" json:"slug"` // 可读唯一标识（仅源模板）
 	Language    string `gorm:"type:varchar(35);not null" json:"language"` // BCP 47 语言标签，如 en-US, zh-CN
 	Subject     string `gorm:"type:varchar(500)" json:"subject"`          // 邮件主题
 	Content     string `gorm:"type:text" json:"content"`                  // 邮件内容（HTML格式）
@@ -833,18 +834,6 @@ func IsIdempotencyKeyExists(batchID string, templateID, userID uint64) (bool, er
 	var count int64
 	err := db.Get().Model(&EmailSendLog{}).
 		Where("batch_id = ? AND template_id = ? AND user_id = ?", batchID, templateID, userID).
-		Count(&count).Error
-	return count > 0, err
-}
-
-// HasSentTemplateToUserRecently 检查是否在指定时间内向用户发送过该模板（跨批次幂等性检查）
-// 用于防止同一模板在短时间内重复发送给同一用户（例如24小时内）
-func HasSentTemplateToUserRecently(templateID, userID uint64, withinHours int) (bool, error) {
-	since := time.Now().Add(-time.Duration(withinHours) * time.Hour)
-	var count int64
-	err := db.Get().Model(&EmailSendLog{}).
-		Where("template_id = ? AND user_id = ? AND status = ? AND sent_at >= ?",
-			templateID, userID, EmailSendLogStatusSent, since).
 		Count(&count).Error
 	return count > 0, err
 }

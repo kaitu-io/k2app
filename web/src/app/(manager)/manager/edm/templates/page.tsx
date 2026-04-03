@@ -23,7 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { Plus, FileText, Edit, Trash2, Send } from "lucide-react";
+import { Plus, FileText, Edit, Trash2 } from "lucide-react";
 import type { EmailTemplateResponse } from "@/lib/api";
 import Link from "next/link";
 
@@ -97,6 +97,15 @@ export default function EmailTemplatesPage() {
       ),
     },
     {
+      accessorKey: "slug",
+      header: "Slug",
+      cell: ({ row }) => {
+        const slug = row.getValue("slug") as string;
+        if (!slug) return <span className="text-muted-foreground">-</span>;
+        return <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{slug}</code>;
+      },
+    },
+    {
       accessorKey: "language",
       header: t("campaigns.edm.templates.language"),
       cell: ({ row }) => {
@@ -126,16 +135,6 @@ export default function EmailTemplatesPage() {
       header: t("campaigns.edm.templates.actions"),
       cell: ({ row }) => (
         <div className="flex space-x-2">
-          <Button
-            variant="default"
-            size="sm"
-            asChild
-            title={t("campaigns.edm.templates.createTask")}
-          >
-            <Link href={`/manager/edm/tasks/create?templateId=${row.original.id}`}>
-              <Send className="h-4 w-4" />
-            </Link>
-          </Button>
           <Button
             variant="outline"
             size="sm"

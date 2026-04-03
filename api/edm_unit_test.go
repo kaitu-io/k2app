@@ -14,42 +14,6 @@ import (
 // 这些测试不需要数据库，测试 EDM 核心逻辑
 // =====================================================================
 
-// TestEDMTaskOutput_Structure 测试 EDMTaskOutput 结构体计数逻辑
-// 能抓到的 Bug：输出结构不完整
-func TestEDMTaskOutput_Structure(t *testing.T) {
-	output := EDMTaskOutput{
-		SentCount:    10,
-		FailedCount:  5,
-		SkippedCount: 3,
-		FailedEmails: []string{"a@test.com", "b@test.com"},
-	}
-
-	// 验证结构体字段
-	assert.Equal(t, 10, output.SentCount)
-	assert.Equal(t, 5, output.FailedCount)
-	assert.Equal(t, 3, output.SkippedCount)
-	assert.Len(t, output.FailedEmails, 2)
-
-	// 验证总处理数计算
-	totalProcessed := output.SentCount + output.FailedCount + output.SkippedCount
-	assert.Equal(t, 18, totalProcessed)
-}
-
-// TestEDMTaskOutput_FailedEmailsLimit 测试失败邮箱列表限制
-// 能抓到的 Bug：失败邮箱列表无限增长导致内存问题
-func TestEDMTaskOutput_FailedEmailsLimit(t *testing.T) {
-	// 模拟超过 10 个失败邮箱的情况
-	failedEmails := make([]string, 0)
-	for i := 0; i < 20; i++ {
-		if len(failedEmails) < 10 {
-			failedEmails = append(failedEmails, "test@example.com")
-		}
-	}
-
-	assert.LessOrEqual(t, len(failedEmails), 10,
-		"Failed emails should be limited to 10 to prevent memory issues")
-}
-
 // TestContextCancellation_SelectBehavior 测试 context cancellation 的 select 行为
 // 能抓到的 Bug：select 语句不正确导致 context 取消无法响应
 func TestContextCancellation_SelectBehavior(t *testing.T) {

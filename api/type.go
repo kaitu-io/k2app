@@ -538,6 +538,7 @@ type Response_ResolveDomainResponse struct {
 // EmailTemplateRequest 邮件模板请求
 type EmailTemplateRequest struct {
 	Name        string  `json:"name" binding:"required"`        // 模板名称
+	Slug        string  `json:"slug"`                          // 可读唯一标识（可选）
 	Language    string  `json:"language" binding:"required"`    // BCP 47 语言标签
 	Subject     string  `json:"subject" binding:"required"`     // 邮件主题
 	Content     string  `json:"content" binding:"required"`     // 邮件内容
@@ -553,6 +554,7 @@ type EmailTemplateResponse struct {
 	CreatedAt   int64   `json:"createdAt"`
 	UpdatedAt   int64   `json:"updatedAt"`
 	Name        string  `json:"name"`
+	Slug        string  `json:"slug"`
 	Language    string  `json:"language"`
 	Subject     string  `json:"subject"`
 	Content     string  `json:"content"`
@@ -562,8 +564,16 @@ type EmailTemplateResponse struct {
 	IsOriginal  bool    `json:"isOriginal"`  // 是否为原始模板（计算字段）
 }
 
-
-
+// SendTemplatedEmailsHTTPRequest 通用邮件发送HTTP请求（需审批）
+type SendTemplatedEmailsHTTPRequest struct {
+	BatchID string `json:"batchId" binding:"required"`
+	Items   []struct {
+		Email  string            `json:"email" binding:"required"`
+		UserID uint64            `json:"userId"`
+		Slug   string            `json:"slug" binding:"required"`
+		Vars   map[string]string `json:"vars"`
+	} `json:"items" binding:"required,min=1"`
+}
 
 
 
@@ -698,37 +708,6 @@ type CreateWithdrawRequest struct {
 // RefundOrderRequest 退款订单请求
 type RefundOrderRequest struct {
 	Reason string `json:"reason" binding:"required"` // 退款原因
-}
-
-// ========================= EDM Task Types (基于 Asynq) =========================
-
-// CreateEDMTaskRequest 创建EDM发送任务请求
-type CreateEDMTaskRequest struct {
-	Name        string      `json:"name" binding:"required"`                         // 任务名称
-	TemplateID  uint64      `json:"templateId" binding:"required"`                   // 模板ID
-	UserFilters UserFilter  `json:"userFilters" binding:"required"`                  // 用户筛选条件
-	Type        string      `json:"type" binding:"required,oneof=once repeat"`       // 任务类型：once=单次, repeat=循环
-	ScheduledAt *int64      `json:"scheduledAt"`                                     // 首次发送时间（Unix时间戳），null=立即发送
-	RepeatEvery *int64      `json:"repeatEvery"`                                     // 循环间隔（秒），type=repeat时必填
-}
-
-// PreviewEDMTargetsRequest 预览EDM目标用户请求
-type PreviewEDMTargetsRequest struct {
-	UserFilters UserFilter `json:"userFilters" binding:"required"` // 用户筛选条件
-}
-
-// PreviewEDMTargetsResponse 预览EDM目标用户响应
-type PreviewEDMTargetsResponse struct {
-	TotalCount  int              `json:"totalCount"`  // 目标用户总数
-	SampleUsers []PreviewEDMUser `json:"sampleUsers"` // 样本用户（最多10个）
-}
-
-// PreviewEDMUser 预览用户信息
-type PreviewEDMUser struct {
-	UUID     string `json:"uuid"`     // 用户UUID
-	Email    string `json:"email"`    // 邮箱地址
-	Language string `json:"language"` // 语言偏好
-	IsPro    bool   `json:"isPro"`    // 是否Pro用户
 }
 
 // ========================= 邮件发送日志类型定义 =========================
