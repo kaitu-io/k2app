@@ -8,6 +8,7 @@ type EngineConfig struct {
 	LogDir          string          // optional: file log directory. empty = no file logging (EventHandler.OnLog only)
 	Debug           bool            // when true and LogDir is set, also copy logs to stderr (Xcode/logcat)
 	SocketProtector SocketProtector // optional: marks socket FDs for VPN exclusion (Android VpnService.protect)
+	PackageResolver PackageResolver // optional: Android UID→package name
 }
 
 // NewEngineConfig creates an EngineConfig with zero values.

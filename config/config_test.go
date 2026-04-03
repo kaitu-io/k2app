@@ -252,17 +252,13 @@ routes:
 // ==========================================================================
 
 func TestClientConfigJSONRoundTrip(t *testing.T) {
-	cfg := &ClientConfig{
-		Listen: "127.0.0.1:1777",
-		Routes: []RouteConfig{
-			{Via: "k2v5://udid:token@1.2.3.4:443", Match: rule.MatchConfig{All: true}},
-		},
-		Mode:     "tun",
-		Proxy:    ProxyConfig{Listen: "127.0.0.1:1080"},
-		DNS:      DNSConfig{Direct: []string{"114.114.114.114:53"}, Proxy: []string{"8.8.8.8:53"}},
-		CacheDir: "/tmp/k2rule",
-		Log:      LogConfig{Level: "info", Output: "stderr"},
-	}
+	cfg := ClientFromURL("k2v5://udid:token@1.2.3.4:443")
+	cfg.Listen = "127.0.0.1:1777"
+	cfg.Mode = "tun"
+	cfg.Proxy = ProxyConfig{Listen: "127.0.0.1:1080"}
+	cfg.DNS = DNSConfig{Direct: []string{"114.114.114.114:53"}, Proxy: []string{"8.8.8.8:53"}}
+	cfg.CacheDir = "/tmp/k2rule"
+	cfg.Log = LogConfig{Level: "info", Output: "stderr"}
 
 	data, err := json.Marshal(cfg)
 	if err != nil {
@@ -272,7 +268,7 @@ func TestClientConfigJSONRoundTrip(t *testing.T) {
 	// Verify JSON uses snake_case keys matching YAML tags.
 	var raw map[string]any
 	json.Unmarshal(data, &raw)
-	for _, key := range []string{"listen", "routes", "mode", "proxy", "dns", "log", "cache_dir"} {
+	for _, key := range []string{"listen", "mode", "proxy", "dns", "routes", "log"} {
 		if _, ok := raw[key]; !ok {
 			t.Errorf("expected JSON key %q, not found in %s", key, string(data))
 		}
@@ -287,11 +283,16 @@ func TestClientConfigJSONRoundTrip(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	if got.Routes[0].Via != cfg.Routes[0].Via {
-		t.Fatalf("round-trip Routes[0].Via mismatch: got %q, want %q", got.Routes[0].Via, cfg.Routes[0].Via)
+	// Server is derived (yaml:"-" json:"-"), so set it on got for comparison.
+	SetDefaults(&got)
+	if got.Server != cfg.Server {
+		t.Errorf("server mismatch: got %q, want %q", got.Server, cfg.Server)
+	}
+	if got.Listen != cfg.Listen {
+		t.Errorf("listen mismatch: got %q, want %q", got.Listen, cfg.Listen)
 	}
 	if got.CacheDir != cfg.CacheDir {
-		t.Fatalf("round-trip CacheDir mismatch: got %q, want %q", got.CacheDir, cfg.CacheDir)
+		t.Errorf("cache_dir mismatch: got %q, want %q", got.CacheDir, cfg.CacheDir)
 	}
 }
 

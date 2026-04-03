@@ -17,14 +17,16 @@ import (
 // in ReadFrom (no data, no deadline) returns net.ErrClosed when mux.done is closed.
 func TestQuicUDPConn_ReadFrom_UnblocksOnMuxDone(t *testing.T) {
 	mux := &quicUDPMux{
-		sessions: make(map[uint32]chan *UDPFrame),
-		done:     make(chan struct{}),
+		sessions:    make(map[uint32]chan *UDPFrame),
+		sessionDone: make(map[uint32]chan struct{}),
+		done:        make(chan struct{}),
 	}
 	conn := &quicUDPConn{
 		sessionID:  1,
 		targetAddr: "8.8.8.8:53",
 		mux:        mux,
 		readCh:     make(chan *UDPFrame),
+		reaped:     make(chan struct{}),
 		done:       make(chan struct{}),
 	}
 
@@ -55,14 +57,16 @@ func TestQuicUDPConn_ReadFrom_UnblocksOnMuxDone(t *testing.T) {
 // stream-based UDP mux (used when QUIC datagrams are not supported).
 func TestQuicStreamUDPConn_ReadFrom_UnblocksOnMuxDone(t *testing.T) {
 	mux := &quicStreamUDPMux{
-		sessions: make(map[uint32]chan *UDPFrame),
-		done:     make(chan struct{}),
+		sessions:    make(map[uint32]chan *UDPFrame),
+		sessionDone: make(map[uint32]chan struct{}),
+		done:        make(chan struct{}),
 	}
 	conn := &quicStreamUDPConn{
 		sessionID:  1,
 		targetAddr: "8.8.8.8:53",
 		mux:        mux,
 		readCh:     make(chan *UDPFrame),
+		reaped:     make(chan struct{}),
 		done:       make(chan struct{}),
 	}
 
@@ -90,14 +94,16 @@ func TestQuicStreamUDPConn_ReadFrom_UnblocksOnMuxDone(t *testing.T) {
 // smux-based UDP mux.
 func TestSmuxUDPConn_ReadFrom_UnblocksOnMuxDone(t *testing.T) {
 	mux := &smuxUDPMux{
-		sessions: make(map[uint32]chan *UDPFrame),
-		done:     make(chan struct{}),
+		sessions:    make(map[uint32]chan *UDPFrame),
+		sessionDone: make(map[uint32]chan struct{}),
+		done:        make(chan struct{}),
 	}
 	conn := &smuxUDPConn{
 		sessionID:  1,
 		targetAddr: "8.8.8.8:53",
 		mux:        mux,
 		readCh:     make(chan *UDPFrame),
+		reaped:     make(chan struct{}),
 		done:       make(chan struct{}),
 	}
 

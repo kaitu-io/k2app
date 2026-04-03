@@ -10,16 +10,16 @@ require (
 	github.com/metacubex/utls v1.8.4
 	github.com/miekg/dns v1.1.72
 	github.com/pion/ice/v4 v4.2.2
-	github.com/pion/stun/v3 v3.1.1
+	github.com/pion/stun/v3 v3.1.2
 	github.com/pion/turn/v4 v4.1.4
 	github.com/sagernet/sing v0.7.6
 	github.com/sagernet/sing-tun v0.7.11
 	github.com/sasha-s/go-deadlock v0.3.7
 	github.com/xtaci/smux/v2 v2.1.0
 	go.uber.org/goleak v1.3.0
-	golang.org/x/crypto v0.48.0
-	golang.org/x/mobile v0.0.0-20260217195705-b56b3793a9c4
-	golang.org/x/sync v0.19.0
+	golang.org/x/crypto v0.49.0
+	golang.org/x/mobile v0.0.0-20260312152759-81488f6aeb60
+	golang.org/x/sync v0.20.0
 	golang.org/x/sys v0.42.0
 	golang.org/x/term v0.41.0
 	gopkg.in/lumberjack.v2 v2.0.0
@@ -54,10 +54,10 @@ require (
 	github.com/wlynxg/anet v0.0.5 // indirect
 	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba // indirect
 	golang.org/x/exp v0.0.0-20240904232852-e7e105dedf7e // indirect
-	golang.org/x/mod v0.33.0 // indirect
-	golang.org/x/net v0.50.0 // indirect
+	golang.org/x/mod v0.34.0 // indirect
+	golang.org/x/net v0.52.0 // indirect
 	golang.org/x/time v0.12.0 // indirect
-	golang.org/x/tools v0.42.0 // indirect
+	golang.org/x/tools v0.43.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )

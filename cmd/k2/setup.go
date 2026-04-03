@@ -85,9 +85,9 @@ func cmdSetup(args []string) {
 	fmt.Println("Service installed and started.")
 	fmt.Println()
 	fmt.Println("Next steps:")
-	fmt.Printf("  Check status:     k2 ctl status\n")
-	fmt.Printf("  Connect:          k2 ctl up\n")
-	fmt.Printf("  Disconnect:       k2 ctl down\n")
+	fmt.Printf("  Check status:     k2 status\n")
+	fmt.Printf("  Connect:          k2 up\n")
+	fmt.Printf("  Disconnect:       k2 down\n")
 	fmt.Printf("  Remove service:   k2 service uninstall\n")
 }
 

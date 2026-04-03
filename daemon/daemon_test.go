@@ -417,3 +417,83 @@ func TestDoUpAbortedByDown(t *testing.T) {
 		t.Fatalf("expected disconnected, got %s", d.State())
 	}
 }
+
+// ==========================================================================
+// doDown boundary condition tests (crash gate)
+// ==========================================================================
+
+func TestDoDownOnNilEngine(t *testing.T) {
+	d := New()
+
+	// Two doDown calls on a fresh daemon with no engine.
+	d.doDown()
+	d.doDown()
+
+	if d.State() != engine.StateDisconnected {
+		t.Fatalf("expected disconnected, got %s", d.State())
+	}
+
+	d.mu.RLock()
+	eng := d.engine
+	d.mu.RUnlock()
+	if eng != nil {
+		t.Fatal("expected engine to be nil on fresh daemon after doDown")
+	}
+}
+
+func TestDoDownRapidSequential(t *testing.T) {
+	d := New()
+	d.StartFunc = mockStartFunc
+
+	cfg := config.ClientFromURL("k2v5://test:tok@host:443")
+	if err := d.doUp(cfg, 0); err != nil {
+		t.Fatalf("doUp: %v", err)
+	}
+	if d.State() != engine.StateConnected {
+		t.Fatalf("expected connected after doUp, got %s", d.State())
+	}
+
+	// Two rapid sequential doDown calls — reproduces the crash scenario.
+	d.doDown()
+	d.doDown()
+
+	if d.State() != engine.StateDisconnected {
+		t.Fatalf("expected disconnected, got %s", d.State())
+	}
+
+	d.mu.RLock()
+	eng := d.engine
+	d.mu.RUnlock()
+	if eng != nil {
+		t.Fatal("expected engine to be nil after rapid double doDown")
+	}
+}
+
+func TestDoDownConcurrent(t *testing.T) {
+	d := New()
+	d.StartFunc = mockStartFunc
+
+	cfg := config.ClientFromURL("k2v5://test:tok@host:443")
+	if err := d.doUp(cfg, 0); err != nil {
+		t.Fatalf("doUp: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	for range 10 {
+		wg.Go(func() {
+			d.doDown()
+		})
+	}
+	wg.Wait()
+
+	if d.State() != engine.StateDisconnected {
+		t.Fatalf("expected disconnected, got %s", d.State())
+	}
+
+	d.mu.RLock()
+	eng := d.engine
+	d.mu.RUnlock()
+	if eng != nil {
+		t.Fatal("expected engine to be nil after concurrent doDown")
+	}
+}

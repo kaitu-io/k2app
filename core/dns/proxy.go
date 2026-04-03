@@ -196,7 +196,7 @@ func (c *ProxyDNSClient) open(ctx context.Context, server string) (*proxyConn, e
 	dialCtx, dialCancel := context.WithTimeout(ctx, c.timeout)
 	defer dialCancel()
 
-	conn, err := c.dialer.DialUDP(dialCtx, server)
+	conn, err := c.dialer.DialStreamUDP(dialCtx, server)
 	if err != nil {
 		return nil, fmt.Errorf("dial UDP %s: %w", server, err)
 	}
@@ -238,6 +238,7 @@ func (c *ProxyDNSClient) recvLoop(server string, pc *proxyConn) {
 	for {
 		n, _, err := pc.conn.ReadFrom(buf)
 		if err != nil {
+			slog.Debug("DIAG: dns-proxy-recvloop-exit", "server", server, "err", err)
 			pc.closeWithErr(err)
 			c.removeConn(server, pc)
 			return
@@ -245,21 +246,26 @@ func (c *ProxyDNSClient) recvLoop(server string, pc *proxyConn) {
 
 		var msg dns.Msg
 		if err := msg.Unpack(buf[:n]); err != nil {
+			slog.Warn("DIAG: dns-proxy-recv-malformed", "server", server, "len", n)
 			continue // malformed response — skip
 		}
 
 		pc.mu.RLock()
 		cb, ok := pc.callbacks[msg.Id]
+		numCallbacks := len(pc.callbacks)
 		pc.mu.RUnlock()
 
 		if ok {
 			select {
 			case <-cb.done:
-				// Already resolved (timeout raced recv) — skip.
+				slog.Debug("DIAG: dns-proxy-recv-late", "server", server, "queryID", msg.Id, "domain", extractDomain(&msg))
 			default:
 				cb.message = &msg
 				close(cb.done)
+				slog.Debug("DIAG: dns-proxy-recv-ok", "server", server, "queryID", msg.Id, "domain", extractDomain(&msg))
 			}
+		} else {
+			slog.Warn("DIAG: dns-proxy-recv-no-callback", "server", server, "queryID", msg.Id, "domain", extractDomain(&msg), "numCallbacks", numCallbacks)
 		}
 	}
 }

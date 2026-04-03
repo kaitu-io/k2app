@@ -13,6 +13,10 @@ func cmdService(args []string) {
 	}
 
 	switch args[0] {
+	case "--help", "-h":
+		fmt.Fprintf(os.Stderr, "Usage: k2s service <install|uninstall>\n")
+		return
+
 	case "install":
 		fmt.Println("Installing service...")
 		if err := installService(); err != nil {

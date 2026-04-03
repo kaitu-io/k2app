@@ -25,6 +25,7 @@ type ClientConfig struct {
 	PIDFile   string        `yaml:"pid_file"   json:"pid_file"`   // path to PID file (empty = no PID file)
 	BlockQUIC bool          `yaml:"block_quic" json:"block_quic"` // block browser QUIC via ICMP reject (default: false = allow through DATAGRAM)
 	CacheDir  string        `yaml:"cache_dir"  json:"cache_dir"`  // cache directory for rule bundles ("" = platform default)
+	RuleSources []string `yaml:"rule_sources,omitempty" json:"rule_sources,omitempty"` // override default k2b download sources
 
 	// Derived fields (not serialized to YAML/JSON).
 	Server string `yaml:"-" json:"-"` // first k2v5:// URL from routes

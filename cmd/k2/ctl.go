@@ -13,93 +13,68 @@ import (
 	"github.com/kaitu-io/k2/daemon"
 )
 
-// cmdCtl handles the "k2 ctl up|down|status" subcommands.
-// It sends IPC commands directly to the running daemon.
-// If the daemon is not reachable, it prints a clear error (no auto-install magic).
-func cmdCtl(args []string) {
-	if len(args) == 0 {
-		fmt.Fprintf(os.Stderr, "Usage: k2 ctl <up|down|status>\n")
-		os.Exit(1)
-	}
-
-	sub := args[0]
-	rest := args[1:]
-
-	switch sub {
-	case "up":
-		ctlUp(rest)
-	case "down":
-		ctlDown(rest)
-	case "status":
-		ctlStatus(rest)
-	default:
-		fmt.Fprintf(os.Stderr, "Unknown ctl subcommand: %s\n\nUsage: k2 ctl <up|down|status>\n", sub)
-		os.Exit(1)
-	}
-}
-
-// ctlUp sends the "up" action to the daemon with an optional config.
-func ctlUp(args []string) {
-	fs := flag.NewFlagSet("ctl up", flag.ExitOnError)
+func cmdUp(args []string) int {
+	fs := flag.NewFlagSet("k2 up", flag.ExitOnError)
 	pid := fs.Int("pid", 0, "parent PID to monitor (auto-disconnect on exit)")
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, `Connect via background daemon.
+
+Usage: k2 up [URL|config.yaml] [flags]
+
+  No args: reconnect with saved config.
+  URL:     connect with k2v5:// URL.
+  File:    connect with YAML config file.
+
+Flags:
+`)
+		fs.PrintDefaults()
+	}
 	fs.Parse(args)
 
-	// Resolve positional arg into a ClientConfig.
 	params := map[string]any{}
 	if fs.NArg() > 0 {
 		arg := fs.Arg(0)
 		var cfg *config.ClientConfig
 		if strings.Contains(arg, "://") {
-			// Wire URL — resolve to full config with defaults.
 			cfg = config.ClientFromURL(arg)
 		} else {
-			// YAML config file.
 			absPath, err := filepath.Abs(arg)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-				os.Exit(1)
+				out.fail("INVALID_ARG", err.Error(), "")
+				return 1
 			}
 			var loadErr error
 			cfg, loadErr = config.LoadClient(absPath)
 			if loadErr != nil {
-				fmt.Fprintf(os.Stderr, "Error: load config: %v\n", loadErr)
-				os.Exit(1)
+				out.fail("INVALID_CONFIG", loadErr.Error(), "")
+				return 1
 			}
 		}
 		params["config"] = cfg
 	}
-	// No arg = use daemon's saved config.
-
 	if *pid > 0 {
 		params["pid"] = *pid
 	}
 
-	// Connect to daemon — no auto-install, clear error if not reachable.
 	client := daemon.NewClient(daemon.DefaultAddr)
 	resp, err := client.Do("up", params)
 	if err != nil {
-		fmt.Fprint(os.Stderr, daemonNotRunningHint())
-		os.Exit(1)
+		out.fail("DAEMON_NOT_RUNNING", "daemon not running", daemonNotRunningHint())
+		return 2
 	}
-
 	if resp.Code != 0 {
-		fmt.Fprintf(os.Stderr, "Error: %s\n", resp.Message)
-		os.Exit(1)
+		out.fail("CONNECT_FAILED", resp.Message, "")
+		return 2
 	}
 
-	fmt.Println("Connecting...")
+	out.printResult("Connecting...")
 
-	// Poll status until connected or error.
 	for i := 0; i < 30; i++ {
 		time.Sleep(1 * time.Second)
 		resp, err := client.Do("status", nil)
-		if err != nil {
+		if err != nil || resp.Code != 0 {
 			continue
 		}
-		if resp.Code != 0 {
-			continue
-		}
-
 		data, _ := json.Marshal(resp.Data)
 		var status struct {
 			State string `json:"state"`
@@ -109,56 +84,68 @@ func ctlUp(args []string) {
 
 		switch status.State {
 		case "connected":
-			fmt.Println("Connected")
-			return
+			out.printResult("Connected")
+			out.ok(resp.Data)
+			return 0
 		case "stopped":
+			msg := "connection stopped"
 			if status.Error != "" {
-				fmt.Fprintf(os.Stderr, "Connection failed: %s\n", status.Error)
-			} else {
-				fmt.Fprintf(os.Stderr, "Connection stopped\n")
+				msg = status.Error
 			}
-			os.Exit(1)
+			out.fail("CONNECT_FAILED", msg, "")
+			return 2
 		}
 	}
 
-	fmt.Println("Connected (or still connecting, check `k2 ctl status`)")
+	out.printResult("Still connecting, check 'k2 status'")
+	return 0
 }
 
-// ctlDown sends the "down" action to the daemon.
-func ctlDown(args []string) {
-	_ = args // no flags for down
+func cmdDown(args []string) int {
+	fs := flag.NewFlagSet("k2 down", flag.ExitOnError)
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Disconnect tunnel.\n\nUsage: k2 down\n")
+	}
+	fs.Parse(args)
 
 	client := daemon.NewClient(daemon.DefaultAddr)
 	resp, err := client.Do("down", nil)
 	if err != nil {
-		fmt.Fprint(os.Stderr, daemonNotRunningHint())
-		os.Exit(1)
+		out.fail("DAEMON_NOT_RUNNING", "daemon not running", daemonNotRunningHint())
+		return 2
 	}
-
 	if resp.Code != 0 {
-		fmt.Fprintf(os.Stderr, "Error: %s\n", resp.Message)
-		os.Exit(1)
+		out.fail("DISCONNECT_FAILED", resp.Message, "")
+		return 2
 	}
-
-	fmt.Println("Disconnected")
+	out.printResult("Disconnected")
+	out.ok(map[string]string{"state": "disconnected"})
+	return 0
 }
 
-// ctlStatus sends the "status" action to the daemon and prints JSON output.
-func ctlStatus(args []string) {
-	_ = args // no flags for status
+func cmdStatus(args []string) int {
+	fs := flag.NewFlagSet("k2 status", flag.ExitOnError)
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Show connection status.\n\nUsage: k2 status\n")
+	}
+	fs.Parse(args)
 
 	client := daemon.NewClient(daemon.DefaultAddr)
 	resp, err := client.Do("status", nil)
 	if err != nil {
-		fmt.Fprint(os.Stderr, daemonNotRunningHint())
-		os.Exit(1)
+		out.fail("DAEMON_NOT_RUNNING", "daemon not running", daemonNotRunningHint())
+		return 2
 	}
-
 	if resp.Code != 0 {
-		fmt.Fprintf(os.Stderr, "Error: %s\n", resp.Message)
-		os.Exit(1)
+		out.fail("STATUS_FAILED", resp.Message, "")
+		return 2
 	}
 
-	data, _ := json.MarshalIndent(resp.Data, "", "  ")
-	fmt.Println(string(data))
+	if out.json {
+		out.ok(resp.Data)
+	} else {
+		data, _ := json.MarshalIndent(resp.Data, "", "  ")
+		fmt.Println(string(data))
+	}
+	return 0
 }

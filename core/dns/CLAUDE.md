@@ -18,6 +18,10 @@ Steps: parse → validate → hosts lookup → filter (RFC 6761 + noise) → cac
 
 **In-flight dedup**: `sync.Map` keyed by `domain:qtype`. If another goroutine is already querying the same domain+qtype, waiters share the result instead of issuing duplicate upstream queries. Owner uses defer-based cleanup (sing-box pattern) — guarantees cleanup even on panic. Waiters respect parent context cancellation: on ctx cancel, return stale data if available or ctx.Err() (sing-box pattern — no independent query, since ctx is already cancelled).
 
+**CancelInflight**: Epoch-based cancellation of pending upstream queries. `CancelInflight()` cancels the current epoch context (derived from `engineCtx`), causing all pending `queryUpstream` calls to abort immediately, then creates a new epoch for future queries. Called by engine on network reconnect — stale queries hold old UDP sockets that will never receive responses. Uses `context.AfterFunc` to merge epoch and caller contexts.
+
+**Concurrency limiter**: `maxConcurrentUpstream = 8` semaphore limits concurrent upstream DNS queries. Prevents memory spikes when 50+ domains query simultaneously after network recovery on iOS (all apps retry DNS at once). Queries beyond the limit wait or return `ctx.Err()` if cancelled.
+
 ## DNS Cache (dns_cache.go)
 
 Uses freelru (`github.com/sagernet/sing/contrab/freelru`) — sharded LRU with per-entry TTL. No explicit `sync.RWMutex`, no cleanup goroutine.
@@ -40,6 +44,8 @@ Shared health-aware server racing used by both DirectDNSClient and ProxyDNSClien
 ## Proxy DNS (proxy.go)
 
 Uses persistent UDP connections with message-ID-based multiplexing (sing-box pattern). A single UDP connection per server handles all queries via callback registry, avoiding per-query DialUDP overhead. Delegates `Query()` to `racingResolver`. `ResetConnections()` closes all pooled connections (called on network change so next query dials through fresh wire). Per-query DIAG events on failure: `dns-proxy-timeout` (5s timeout, includes `connAgeS`/`isNewConn`), `dns-proxy-write-fail`, `dns-proxy-conn-dead`, `dns-proxy-dial-fail`.
+
+**Transport selection**: DNS proxy uses TCP-WS transport directly (not TransportManager's QUIC-first path). DNS is control-plane traffic: tiny packets, critical-path dependency, reliability > speed. TCP-WS (TLS-over-TCP-443) is strictly more reachable than QUIC Short Header in censored networks. Engine passes the TCP-WS dialer to `ProxyDNSClient` at assembly time. Data traffic (browsing, video) continues using QUIC-first via TransportManager.
 
 ## Files
 

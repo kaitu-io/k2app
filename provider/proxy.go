@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -50,7 +51,15 @@ func (p *ProxyProvider) Start(ctx context.Context, handler ConnectionHandler) er
 					continue
 				}
 			}
-			go p.handleConn(conn, handler)
+			go func(c net.Conn) {
+				defer func() {
+					if r := recover(); r != nil {
+						slog.Error("proxy: handleConn panic", "panic", fmt.Sprint(r))
+						c.Close()
+					}
+				}()
+				p.handleConn(c, handler)
+			}(conn)
 		}
 	}()
 

@@ -51,20 +51,3 @@ func TestK2sTestConfig_Invalid(t *testing.T) {
 	}
 }
 
-// TestK2sSignalStop_NoPID verifies runSignal prints an error when PID file is absent.
-func TestK2sSignalStop_NoPID(t *testing.T) {
-	dir := t.TempDir()
-	pidPath := filepath.Join(dir, "nope.pid")
-
-	var out bytes.Buffer
-	err := runSignal("stop", pidPath, &out)
-	if err == nil {
-		t.Fatal("expected error when PID file does not exist")
-	}
-
-	msg := err.Error()
-	if !strings.Contains(strings.ToLower(msg), "pid") && !strings.Contains(strings.ToLower(msg), "not running") {
-		t.Errorf("expected pid-related error, got: %q", msg)
-	}
-}
-

@@ -136,44 +136,42 @@ func hopNATRules(fw firewallType, port, hopStart, hopEnd int) []shellCmd {
 // runFirewallSetup detects the firewall, shows rules, and optionally executes them.
 func runFirewallSetup(port int, hopStart, hopEnd int) {
 	fmt.Println()
-	fmt.Println("🛡️  防火墙配置 / Firewall setup")
+	fmt.Println("Firewall setup")
 	fmt.Println()
 
 	fw := detectFirewall()
 
 	switch fw {
 	case firewallNone:
-		biPrint("未检测到防火墙", "No firewall detected")
+		fmt.Println("No firewall detected")
 		fmt.Println()
-		biPrint("⚠️  如使用云服务器，请在安全组中放行以下端口",
-			"⚠️  If using cloud VPS, open these ports in Security Group")
+		fmt.Println("If using cloud VPS, open these ports in Security Group:")
 		printRequiredPorts(port, hopStart, hopEnd)
 		return
 
 	case firewallIPTables:
-		biPrint("检测到 iptables（无 ufw/firewalld）", "Detected: iptables (no ufw/firewalld)")
+		fmt.Println("Detected: iptables (no ufw/firewalld)")
 		fmt.Println()
-		biPrint("请手动执行以下命令", "Please run these commands manually")
+		fmt.Println("Please run these commands manually:")
 		rules := firewallRules(fw, port, hopStart, hopEnd)
 		for _, rule := range rules {
 			fmt.Printf("  %s\n", rule)
 		}
 		fmt.Println()
-		biPrint("⚠️  如使用云服务器，请同时在安全组中放行以上端口",
-			"⚠️  If using cloud VPS, also open these ports in Security Group")
+		fmt.Println("If using cloud VPS, also open these ports in Security Group")
 		return
 
 	default:
 		// ufw or firewalld — can auto-execute
-		biPrintf("检测到 %s", "Detected: %s", string(fw))
+		fmt.Printf("Detected: %s\n", string(fw))
 	}
 
 	fmt.Println()
-	biPrint("需要放行以下端口", "Ports to open")
+	fmt.Println("Ports to open:")
 	printRequiredPorts(port, hopStart, hopEnd)
 	fmt.Println()
 
-	autoConfig := promptYesNo("自动配置？", "Auto-configure?", true)
+	autoConfig := promptYesNo("Auto-configure?", true)
 
 	rules := firewallRules(fw, port, hopStart, hopEnd)
 
@@ -184,27 +182,26 @@ func runFirewallSetup(port int, hopStart, hopEnd int) {
 
 	if autoConfig {
 		for _, cmd := range allRules {
-			fmt.Printf("  ✔ %s\n", cmd)
+			fmt.Printf("  %s\n", cmd)
 			if err := cmd.Run(); err != nil {
-				fmt.Printf("  ⚠️  %s: %v\n", cmd, err)
+				fmt.Printf("  %s: %v\n", cmd, err)
 			}
 		}
 	} else {
-		biPrint("请手动执行以下命令", "Please run these commands manually")
+		fmt.Println("Please run these commands manually:")
 		for _, cmd := range allRules {
 			fmt.Printf("  %s\n", cmd)
 		}
 	}
 
 	fmt.Println()
-	biPrint("⚠️  如使用云服务器，请同时在安全组中放行以上端口",
-		"⚠️  If using cloud VPS, also open these ports in Security Group")
+	fmt.Println("If using cloud VPS, also open these ports in Security Group")
 }
 
 // printRequiredPorts displays the ports that need to be opened.
 func printRequiredPorts(port int, hopStart, hopEnd int) {
-	fmt.Printf("  %d/tcp + %d/udp (主端口 / main)\n", port, port)
+	fmt.Printf("  %d/tcp + %d/udp (main)\n", port, port)
 	if hopStart > 0 && hopEnd > 0 {
-		fmt.Printf("  %d-%d/udp      (端口跳跃 / hop)\n", hopStart, hopEnd)
+		fmt.Printf("  %d-%d/udp      (hop)\n", hopStart, hopEnd)
 	}
 }

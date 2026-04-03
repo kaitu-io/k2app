@@ -58,4 +58,8 @@ type Config struct {
 	// ProcessSearcher finds the process that owns a network connection.
 	// Nil = no process matching (NopProcessSearcher used internally).
 	ProcessSearcher provider.ProcessSearcher
+
+	// PackageResolver resolves Android UID to package name.
+	// Passed to LinuxProcessSearcher on Android. Nil on other platforms.
+	PackageResolver provider.PackageResolver
 }

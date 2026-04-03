@@ -1,5 +1,5 @@
 // K2CC Vivace tests
-package arc
+package k2cc
 
 import (
 	"math"
@@ -149,7 +149,7 @@ func TestUtilityFunction_Calculate(t *testing.T) {
 	mi.StartTime = time.Now().Add(-time.Second)
 	mi.Complete()
 
-	u := uf.Calculate(mi)
+	u := uf.Calculate(mi, mi.SendRate())
 
 	// With no loss and minimal latency, utility should be positive
 	if u <= 0 {
@@ -177,8 +177,8 @@ func TestUtilityFunction_LossPenalty(t *testing.T) {
 	miWithLoss.StartTime = time.Now().Add(-time.Second)
 	miWithLoss.Complete()
 
-	uNoLoss := uf.Calculate(miNoLoss)
-	uWithLoss := uf.Calculate(miWithLoss)
+	uNoLoss := uf.Calculate(miNoLoss, miNoLoss.SendRate())
+	uWithLoss := uf.Calculate(miWithLoss, miWithLoss.SendRate())
 
 	// Utility with loss should be lower
 	if uWithLoss >= uNoLoss {
@@ -198,8 +198,8 @@ func TestUtilityFunction_GFWModeToleratesLoss(t *testing.T) {
 	mi.StartTime = time.Now().Add(-time.Second)
 	mi.Complete()
 
-	uStandard := standard.Calculate(mi)
-	uGFW := gfw.Calculate(mi)
+	uStandard := standard.Calculate(mi, mi.SendRate())
+	uGFW := gfw.Calculate(mi, mi.SendRate())
 
 	// GFW mode should be less affected by loss (higher utility)
 	if uGFW <= uStandard {
@@ -262,19 +262,17 @@ func TestK2CCSender_InSlowStart(t *testing.T) {
 // ============================================================================
 
 func TestK2CCSender_RateToCwnd(t *testing.T) {
-	// Test rate to cwnd conversion
-	// cwnd = (rate_bps / 8) * RTT_seconds * multiplier
+	// cwnd = (rate_bps / 8) * RTT_seconds * multiplier / ackRate
 	rate := 10_000_000.0 // 10 Mbps
 	rtt := 100 * time.Millisecond
 
 	cwnd := rateToCwnd(rate, rtt, 1.0)
 
-	// Expected: (10_000_000 / 8) * 0.1 * 1.5 = 187,500 bytes
-	expectedMin := congestion.ByteCount(150_000)
-	expectedMax := congestion.ByteCount(250_000)
-
-	if cwnd < expectedMin || cwnd > expectedMax {
-		t.Errorf("expected cwnd between %d and %d, got %d", expectedMin, expectedMax, cwnd)
+	// Expected: (10_000_000 / 8) * 0.1 * 1.2 = 150,000 bytes
+	expected := congestion.ByteCount(150_000)
+	tolerance := congestion.ByteCount(10_000)
+	if cwnd < expected-tolerance || cwnd > expected+tolerance {
+		t.Errorf("expected cwnd ~%d (±%d), got %d", expected, tolerance, cwnd)
 	}
 }
 
@@ -313,6 +311,29 @@ func TestCwnd_AckRateFloor(t *testing.T) {
 	}
 }
 
+func TestCwnd_AckRateClampedCompensation(t *testing.T) {
+	sender := NewCCSenderGFWMode(500_000_000)
+
+	// Record 20% loss to push ackRate to ~0.8
+	for i := 0; i < 100; i++ {
+		sender.ackRate.record(time.Duration(i)*time.Second, 8, 2) // 80% ack rate
+	}
+
+	clamped := sender.clampedAckRate()
+	// With minAckRate=0.95, clamped should be 0.95 (not 0.8)
+	if clamped != minAckRate {
+		t.Errorf("expected clamped ackRate = %.2f, got %.2f", minAckRate, clamped)
+	}
+
+	// Max cwnd inflation from ackRate compensation: 1/0.95 = 1.053×
+	cwndNoLoss := rateToCwnd(100_000_000, 100*time.Millisecond, 1.0)
+	cwndClamped := rateToCwnd(100_000_000, 100*time.Millisecond, clamped)
+	ratio := float64(cwndClamped) / float64(cwndNoLoss)
+	if ratio < 1.04 || ratio > 1.06 {
+		t.Errorf("expected ~1.053x cwnd increase with clamped ackRate, got %.3fx", ratio)
+	}
+}
+
 func TestK2CCSender_OnPacketAcked_UpdatesState(t *testing.T) {
 	sender := NewK2CCSender(100_000_000)
 	mockRTT := &mockRTTStatsProvider{smoothedRTT: 100 * time.Millisecond}
@@ -339,10 +360,11 @@ func TestK2CCSender_OnCongestionEvent_RecordsLoss(t *testing.T) {
 	mockRTT := &mockRTTStatsProvider{smoothedRTT: 100 * time.Millisecond}
 	sender.SetRTTStatsProvider(mockRTT)
 
-	// Ensure there's a current MI
-	sender.state.ensureCurrentMI(sender.state.CurrentRate, 0)
+	// Send a packet first so the MI has PacketsSent > 0
+	// (PacketsSent == 0 → stale loss filter skips all losses)
+	sender.OnPacketSent(0, 0, 1, 1472, true)
 
-	// Simulate loss
+	// Simulate loss for that packet
 	sender.OnCongestionEvent(1, 1472, 10000)
 
 	if sender.state.CurrentMI.BytesLost == 0 {
@@ -554,10 +576,10 @@ func TestOnCongestionEvent_StaleLossFiltering(t *testing.T) {
 	}
 }
 
-func TestGFWParams_Alpha5(t *testing.T) {
+func TestGFWParams_Alpha(t *testing.T) {
 	sender := NewCCSenderGFWMode(100_000_000)
-	if sender.config.Alpha != 5.0 {
-		t.Errorf("GFW alpha should be 5.0, got %f", sender.config.Alpha)
+	if sender.config.Alpha != gfwAlpha {
+		t.Errorf("GFW alpha should be %f, got %f", gfwAlpha, sender.config.Alpha)
 	}
 }
 
@@ -659,6 +681,7 @@ func TestAIMDEpsilon_Bounds(t *testing.T) {
 	}
 
 	// Test lower bound: ε below min, set up reversal with weak signal → MD → clamp
+	sender.bwEst = bwEstimator{} // Reset BW estimator so PCC gradient path is taken
 	sender.state.Epsilon = epsilonMin * 0.5 // 0.01, below min
 	sender.state.UtilityIncreases = 3       // confirmed
 	sender.state.UtilityDecreases = 0
@@ -845,8 +868,8 @@ func TestSender_SetsMinDurationFromRTT(t *testing.T) {
 	if miID == 0 {
 		t.Fatal("expected MI #1 to be current (MI #0 should have completed)")
 	}
-	if minDur != 120*time.Millisecond {
-		t.Errorf("new MI MinDuration should be smoothed RTT (120ms), got %v", minDur)
+	if minDur != 240*time.Millisecond {
+		t.Errorf("new MI MinDuration should be 2×RTT (240ms), got %v", minDur)
 	}
 }
 
@@ -1315,22 +1338,472 @@ func TestAlphaClamping_HighLoss(t *testing.T) {
 	}
 }
 
-func TestAlphaClamping_Utility(t *testing.T) {
-	// Verify utility stays positive even at high loss
-	uf := NewUtilityFunction(gfwAlpha, defaultBeta) // α=5.0
-	uf.MinRTT = 30 * time.Millisecond
+// ============================================================================
+// Utility Gradient Tests
+//
+// Verify the utility function provides correct gradient signal across all
+// network scenarios. The gradient (U_high - U_low) must point the algorithm
+// toward optimal rate in every case.
+// ============================================================================
 
-	mi := NewMonitorInterval(0, 100_000_000)
-	mi.StartTime = time.Now().Add(-30 * time.Millisecond)
-	mi.EndTime = time.Now()
-	mi.BytesSent = 375000
-	mi.BytesLost = 112500  // 30% loss
-	mi.BytesAcked = 262500 // 70% acked
-	mi.PacketsAcked = 178
-	mi.RTTSamples = []time.Duration{30 * time.Millisecond}
+// makeBottleneckMI creates a Monitor Interval simulating a bottleneck link.
+// sendRate is the CC target rate (bps), bw is bottleneck bandwidth (bps),
+// bgLoss is constant background loss (0.0-1.0), rtt is round-trip time.
+// Duration is fixed at 100ms for reproducibility.
+func makeBottleneckMI(id uint64, sendRate, bw float64, bgLoss float64, rtt time.Duration) *MonitorInterval {
+	durationSec := 0.1 // 100ms MI
+	bytesSent := uint64(sendRate / 8.0 * durationSec)
 
-	utility := uf.Calculate(mi)
-	if utility < 0 {
-		t.Errorf("α clamping failed: utility = %.2f (should be positive at 30%% loss)", utility)
+	// Throughput capped by bottleneck
+	throughput := math.Min(sendRate, bw)
+	bytesAcked := uint64(throughput / 8.0 * durationSec)
+
+	// Congestion loss: packets above BW are dropped
+	var congLoss float64
+	if sendRate > bw {
+		congLoss = 1.0 - bw/sendRate
+	}
+	// Total loss = 1 - (1-congLoss)*(1-bgLoss)
+	totalLoss := 1.0 - (1.0-congLoss)*(1.0-bgLoss)
+	bytesLost := uint64(float64(bytesSent) * totalLoss)
+
+	// Adjust acked for bg loss
+	if bgLoss > 0 && sendRate <= bw {
+		bytesAcked = uint64(float64(bytesAcked) * (1.0 - bgLoss))
+	}
+
+	mi := &MonitorInterval{
+		ID:          id,
+		TargetRate:  sendRate,
+		BytesSent:   bytesSent,
+		BytesAcked:  bytesAcked,
+		BytesLost:   bytesLost,
+		PacketsAcked: uint64(bytesAcked / 1350),
+		RTTSamples:  []time.Duration{rtt},
+		StartTime:   time.Now().Add(-time.Duration(durationSec * float64(time.Second))),
+	}
+	mi.Complete()
+	return mi
+}
+
+func TestUtilityGradient_DescentAboveBW(t *testing.T) {
+	// When rate >> BW, utility must DECREASE as rate increases.
+	// This is the core property that enables convergence on bottleneck links.
+	uf := NewUtilityFunction(gfwAlpha, defaultBeta) // α=4.0
+	uf.MinRTT = 15 * time.Millisecond
+
+	cases := []struct {
+		name   string
+		bw     float64
+		bgLoss float64
+		rtt    time.Duration
+	}{
+		{"5M_clean", 5e6, 0.0, 16 * time.Millisecond},
+		{"5M_gfw5", 5e6, 0.05, 16 * time.Millisecond},
+		{"5M_gfw10", 5e6, 0.10, 16 * time.Millisecond},
+		{"20M_clean", 20e6, 0.0, 75 * time.Millisecond},
+		{"20M_gfw5", 20e6, 0.05, 75 * time.Millisecond},
+		{"50M_gfw5", 50e6, 0.05, 130 * time.Millisecond},
+		{"100M_clean", 100e6, 0.0, 16 * time.Millisecond},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Test at 2×, 4×, 6× BW
+			rates := []float64{tc.bw * 2, tc.bw * 4, tc.bw * 6}
+			var prevU float64
+			for i, rate := range rates {
+				mi := makeBottleneckMI(uint64(i), rate, tc.bw, tc.bgLoss, tc.rtt)
+				u := uf.Calculate(mi, mi.SendRate())
+				if i > 0 {
+					// Higher rate must give lower utility (descent gradient)
+					if u >= prevU {
+						t.Errorf("rate=%.0fM: U=%.2f should be < previous U=%.2f (rate=%.0fM)",
+							rate/1e6, u, prevU, rates[i-1]/1e6)
+					}
+				}
+				prevU = u
+			}
+		})
+	}
+}
+
+func TestUtilityGradient_AscentBelowBW(t *testing.T) {
+	// When rate < BW (no congestion loss), utility must INCREASE with rate.
+	uf := NewUtilityFunction(gfwAlpha, defaultBeta)
+	uf.MinRTT = 15 * time.Millisecond
+
+	cases := []struct {
+		name   string
+		bw     float64
+		bgLoss float64
+		rtt    time.Duration
+	}{
+		{"100M_clean", 100e6, 0.0, 16 * time.Millisecond},
+		{"100M_gfw5", 100e6, 0.05, 16 * time.Millisecond},
+		{"100M_gfw10", 100e6, 0.10, 75 * time.Millisecond},
+		{"100M_gfw15", 100e6, 0.15, 130 * time.Millisecond},
+		{"50M_gfw5", 50e6, 0.05, 16 * time.Millisecond},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rates := []float64{tc.bw * 0.3, tc.bw * 0.5, tc.bw * 0.8}
+			var prevU float64
+			for i, rate := range rates {
+				mi := makeBottleneckMI(uint64(i), rate, tc.bw, tc.bgLoss, tc.rtt)
+				u := uf.Calculate(mi, mi.SendRate())
+				if i > 0 {
+					if u <= prevU {
+						t.Errorf("rate=%.0fM: U=%.2f should be > previous U=%.2f (rate=%.0fM)",
+							rate/1e6, u, prevU, rates[i-1]/1e6)
+					}
+				}
+				prevU = u
+			}
+		})
+	}
+}
+
+func TestUtilityGradient_NearOptimal(t *testing.T) {
+	// Near BW, probing above should give lower utility than probing below.
+	uf := NewUtilityFunction(gfwAlpha, defaultBeta)
+	uf.MinRTT = 15 * time.Millisecond
+
+	cases := []struct {
+		name   string
+		bw     float64
+		bgLoss float64
+		rtt    time.Duration
+	}{
+		{"5M_gfw5", 5e6, 0.05, 16 * time.Millisecond},
+		{"50M_clean", 50e6, 0.0, 75 * time.Millisecond},
+		{"100M_gfw5", 100e6, 0.05, 130 * time.Millisecond},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			epsilon := 0.12
+			rateAbove := tc.bw * (1.0 + epsilon) // just above BW
+			rateBelow := tc.bw * (1.0 - epsilon) // just below BW
+
+			miAbove := makeBottleneckMI(0, rateAbove, tc.bw, tc.bgLoss, tc.rtt)
+			miBelow := makeBottleneckMI(1, rateBelow, tc.bw, tc.bgLoss, tc.rtt)
+
+			uAbove := uf.Calculate(miAbove, miAbove.SendRate())
+			uBelow := uf.Calculate(miBelow, miBelow.SendRate())
+
+			// Below BW should have higher utility → gradient points down
+			if uAbove >= uBelow {
+				t.Errorf("U(above BW)=%.2f should be < U(below BW)=%.2f", uAbove, uBelow)
+			}
+		})
+	}
+}
+
+func TestUtilityGradient_BGLoss20Boundary(t *testing.T) {
+	// At 20% constant BG loss with α=5, αL_bg = 1.0.
+	// Below BW (rate-independent loss): dU/drate = 1 - αL ≈ 0 (flat).
+	// This is a known limitation — document, not fix.
+	uf := NewUtilityFunction(gfwAlpha, defaultBeta)
+	uf.MinRTT = 15 * time.Millisecond
+
+	bw := 100e6
+	bgLoss := 0.20
+
+	miLow := makeBottleneckMI(0, bw*0.5, bw, bgLoss, 16*time.Millisecond)
+	miHigh := makeBottleneckMI(1, bw*0.8, bw, bgLoss, 16*time.Millisecond)
+
+	uLow := uf.Calculate(miLow, miLow.SendRate())
+	uHigh := uf.Calculate(miHigh, miHigh.SendRate())
+
+	// At 20% BG, gradient should be near-zero or slightly positive
+	// (the rate-based penalty: dU/drate = 1 - αL = 1 - 1.0 = 0)
+	gradient := uHigh - uLow
+	t.Logf("BG=20%%: U(50M)=%.2f, U(80M)=%.2f, gradient=%.4f", uLow, uHigh, gradient)
+
+	// Above BW, descent should still work
+	miOvershoot := makeBottleneckMI(2, bw*1.5, bw, bgLoss, 16*time.Millisecond)
+	uOvershoot := uf.Calculate(miOvershoot, miOvershoot.SendRate())
+	if uOvershoot >= uHigh {
+		t.Errorf("U(150M)=%.2f should be < U(80M)=%.2f even at 20%% BG loss", uOvershoot, uHigh)
+	}
+}
+
+func TestUtilityGradient_ProductionCase(t *testing.T) {
+	// The exact production scenario: HK node, rate=30M, BW=5M, GFW 5%
+	uf := NewUtilityFunction(gfwAlpha, defaultBeta)
+	uf.MinRTT = 15 * time.Millisecond
+
+	bw := 5e6
+	bgLoss := 0.05
+	rtt := 16 * time.Millisecond
+
+	// Rate stuck at 30M (old floor) vs 15M vs 6M
+	mi30 := makeBottleneckMI(0, 30e6, bw, bgLoss, rtt)
+	mi15 := makeBottleneckMI(1, 15e6, bw, bgLoss, rtt)
+	mi6 := makeBottleneckMI(2, 6e6, bw, bgLoss, rtt)
+
+	u30 := uf.Calculate(mi30, mi30.SendRate())
+	u15 := uf.Calculate(mi15, mi15.SendRate())
+	u6 := uf.Calculate(mi6, mi6.SendRate())
+
+	// Must have monotonic descent: U(30M) < U(15M) < U(6M)
+	if u30 >= u15 {
+		t.Errorf("U(30M)=%.2f should be < U(15M)=%.2f", u30, u15)
+	}
+	if u15 >= u6 {
+		t.Errorf("U(15M)=%.2f should be < U(6M)=%.2f", u15, u6)
+	}
+
+	// Gradient must be strong enough for direction detection
+	gradient := u30 - u15
+	if math.Abs(gradient) < 1.0 {
+		t.Errorf("|gradient| between 30M and 15M = %.4f, should be > 1.0", math.Abs(gradient))
+	}
+
+	t.Logf("Production case: U(30M)=%.2f, U(15M)=%.2f, U(6M)=%.2f", u30, u15, u6)
+}
+
+// ============================================================================
+// Tests for BW Estimator
+// ============================================================================
+
+func TestBWEstimator_Empty(t *testing.T) {
+	var est bwEstimator
+	if est.valid() {
+		t.Error("empty estimator should not be valid")
+	}
+	if est.estimate() != 0 {
+		t.Errorf("empty estimator should return 0, got %f", est.estimate())
+	}
+}
+
+func TestBWEstimator_AddSamples(t *testing.T) {
+	var est bwEstimator
+	est.addSample(5_000_000)
+	if est.valid() {
+		t.Error("1 sample should not be valid (need bwMinValidCount=2)")
+	}
+	est.addSample(4_500_000)
+	if !est.valid() {
+		t.Error("2 samples should be valid")
+	}
+	if est.estimate() != 5_000_000 {
+		t.Errorf("expected estimate=5M, got %f", est.estimate())
+	}
+}
+
+func TestBWEstimator_SlidingWindowMax(t *testing.T) {
+	var est bwEstimator
+	for i := 0; i < bwWindowSize; i++ {
+		est.addSample(5_000_000)
+	}
+	if est.estimate() != 5_000_000 {
+		t.Errorf("expected 5M, got %f", est.estimate())
+	}
+	for i := 0; i < bwWindowSize; i++ {
+		est.addSample(3_000_000)
+	}
+	if est.estimate() != 3_000_000 {
+		t.Errorf("expected 3M after aging, got %f", est.estimate())
+	}
+}
+
+func TestBWEstimator_Reset(t *testing.T) {
+	var est bwEstimator
+	est.addSample(50_000_000)
+	est.addSample(50_000_000)
+	est.reset(5_000_000)
+	if !est.valid() {
+		t.Error("reset should keep valid state")
+	}
+	if est.estimate() != 5_000_000 {
+		t.Errorf("expected 5M after reset, got %f", est.estimate())
+	}
+}
+
+func TestBWAnchored_PhaseConstants(t *testing.T) {
+	if bwCruiseLength+2 != bwWindowSize {
+		t.Errorf("phase cycle (%d+2=%d) must equal window size (%d)",
+			bwCruiseLength, bwCruiseLength+2, bwWindowSize)
+	}
+	if !(bwDrainGain < bwCruiseGain && bwCruiseGain < 1.0 && 1.0 < bwProbeUpGain) {
+		t.Errorf("gain ordering violated: drain=%.2f cruise=%.2f probeUp=%.2f",
+			bwDrainGain, bwCruiseGain, bwProbeUpGain)
+	}
+}
+
+func TestBWAnchored_SenderHasFields(t *testing.T) {
+	sender := NewCCSenderGFWMode(500_000_000)
+	if sender.bwEst.valid() {
+		t.Error("new sender bwEst should not be valid")
+	}
+	if sender.bwPhase != bwPhaseCruise {
+		t.Errorf("expected initial phase=Cruise, got %d", sender.bwPhase)
+	}
+}
+
+func TestBWAnchored_CruiseRate(t *testing.T) {
+	sender := NewCCSenderGFWMode(500_000_000)
+	mockRTT := &mockRTTStatsProvider{smoothedRTT: 16 * time.Millisecond}
+	sender.SetRTTStatsProvider(mockRTT)
+
+	sender.bwEst.addSample(5_000_000)
+	sender.bwEst.addSample(5_000_000)
+	sender.bwPhase = bwPhaseCruise
+	sender.bwCruiseRemain = 3
+	sender.state.Mode = K2CCModeDecision
+	sender.state.CurrentRate = 4_750_000
+
+	mi := &MonitorInterval{
+		ID: 10, TargetRate: 4_750_000,
+		BytesSent: 19000, BytesAcked: 19000, BytesLost: 0,
+		PacketsSent: 13, PacketsAcked: 13,
+		StartTime: time.Now().Add(-32 * time.Millisecond), EndTime: time.Now(),
+		FirstPacketNumber: 100, LastPacketNumber: 112,
+	}
+
+	sender.processCompletedMI(mi)
+
+	expectedTarget := 5_000_000.0 * bwCruiseGain
+	if sender.state.CurrentRate < expectedTarget*0.8 || sender.state.CurrentRate > expectedTarget*1.2 {
+		t.Errorf("expected rate near %.0f, got %.0f", expectedTarget, sender.state.CurrentRate)
+	}
+	if sender.bwCruiseRemain != 2 {
+		t.Errorf("expected cruiseRemain=2, got %d", sender.bwCruiseRemain)
+	}
+}
+
+func TestBWAnchored_CruiseDetectsBWDrop(t *testing.T) {
+	sender := NewCCSenderGFWMode(500_000_000)
+	mockRTT := &mockRTTStatsProvider{smoothedRTT: 16 * time.Millisecond}
+	sender.SetRTTStatsProvider(mockRTT)
+
+	sender.bwEst.addSample(50_000_000)
+	sender.bwEst.addSample(50_000_000)
+	sender.bwPhase = bwPhaseCruise
+	sender.bwCruiseRemain = 3
+	sender.state.Mode = K2CCModeDecision
+	sender.state.CurrentRate = 47_500_000
+
+	mi := &MonitorInterval{
+		ID: 10, TargetRate: 47_500_000,
+		BytesSent: 190000, BytesAcked: 20000, BytesLost: 170000,
+		PacketsSent: 130, PacketsAcked: 14,
+		StartTime: time.Now().Add(-32 * time.Millisecond), EndTime: time.Now(),
+		FirstPacketNumber: 100, LastPacketNumber: 229,
+	}
+
+	sender.processCompletedMI(mi)
+
+	est := sender.bwEst.estimate()
+	if est > 10_000_000 {
+		t.Errorf("bwEst should have reset to ~5M after BW drop, got %.0f", est)
+	}
+	if sender.state.CurrentRate > 10_000_000 {
+		t.Errorf("rate should have dropped to ~5M, got %.0f", sender.state.CurrentRate)
+	}
+}
+
+func TestBWAnchored_FullCycle(t *testing.T) {
+	sender := NewCCSenderGFWMode(500_000_000)
+	mockRTT := &mockRTTStatsProvider{smoothedRTT: 16 * time.Millisecond}
+	sender.SetRTTStatsProvider(mockRTT)
+
+	sender.bwEst.addSample(10_000_000)
+	sender.bwEst.addSample(10_000_000)
+	sender.bwPhase = bwPhaseCruise
+	sender.bwCruiseRemain = 1
+	sender.state.Mode = K2CCModeDecision
+	sender.state.CurrentRate = 9_500_000
+
+	makeMI := func(id uint64, bytesAcked uint64) *MonitorInterval {
+		bytesLost := uint64(1472) // 1 packet lost
+		return &MonitorInterval{
+			ID: id, TargetRate: sender.state.CurrentRate,
+			BytesSent: bytesAcked + bytesLost, BytesAcked: bytesAcked, BytesLost: bytesLost,
+			PacketsSent: uint64(bytesAcked/1472) + 1, PacketsAcked: uint64(bytesAcked / 1472),
+			StartTime: time.Now().Add(-32 * time.Millisecond), EndTime: time.Now(),
+			FirstPacketNumber: int64(id * 20), LastPacketNumber: int64(id*20 + 19),
+		}
+	}
+
+	// Last Cruise MI → should transition to ProbeUp
+	sender.processCompletedMI(makeMI(1, 38000))
+	if sender.bwPhase != bwPhaseProbeUp {
+		t.Errorf("after last Cruise MI, expected ProbeUp, got %d", sender.bwPhase)
+	}
+
+	// ProbeUp MI → should transition to Drain
+	sender.processCompletedMI(makeMI(2, 38000))
+	if sender.bwPhase != bwPhaseDrain {
+		t.Errorf("after ProbeUp MI, expected Drain, got %d", sender.bwPhase)
+	}
+
+	// Drain MI → should transition to Cruise with cruiseRemain=6
+	sender.processCompletedMI(makeMI(3, 30000))
+	if sender.bwPhase != bwPhaseCruise {
+		t.Errorf("after Drain MI, expected Cruise, got %d", sender.bwPhase)
+	}
+	if sender.bwCruiseRemain != bwCruiseLength {
+		t.Errorf("expected cruiseRemain=%d, got %d", bwCruiseLength, sender.bwCruiseRemain)
+	}
+}
+
+func TestBWAnchored_BGLossDetection(t *testing.T) {
+	sender := NewCCSenderGFWMode(500_000_000)
+	mockRTT := &mockRTTStatsProvider{smoothedRTT: 16 * time.Millisecond}
+	sender.SetRTTStatsProvider(mockRTT)
+
+	sender.bwEst.addSample(5_000_000)
+	sender.bwEst.addSample(5_000_000)
+	sender.bwPhase = bwPhaseDrain
+	sender.state.Mode = K2CCModeDecision
+	sender.state.CurrentRate = 3_750_000
+
+	mi := &MonitorInterval{
+		ID: 10, TargetRate: 3_750_000,
+		BytesSent: 15000, BytesAcked: 14250, BytesLost: 750,
+		PacketsSent: 11, PacketsAcked: 10,
+		StartTime: time.Now().Add(-32 * time.Millisecond), EndTime: time.Now(),
+		FirstPacketNumber: 100, LastPacketNumber: 110,
+	}
+
+	sender.processCompletedMI(mi)
+
+	if sender.bgLossEWMA < 0.005 {
+		t.Errorf("expected bgLossEWMA > 0.5%% after drain with loss, got %.3f%%", sender.bgLossEWMA*100)
+	}
+}
+
+func TestBWAnchored_FallbackToPCC(t *testing.T) {
+	sender := NewCCSenderGFWMode(500_000_000)
+	mockRTT := &mockRTTStatsProvider{smoothedRTT: 100 * time.Millisecond}
+	sender.SetRTTStatsProvider(mockRTT)
+
+	// bwEst NOT valid → PCC gradient path
+	sender.state.Mode = K2CCModeDecision
+	sender.state.CurrentRate = 50_000_000
+	sender.state.hasLastUtility = true
+	sender.state.lastUtility = 10.0
+
+	mi := &MonitorInterval{
+		ID: 5, TargetRate: 50_000_000,
+		BytesSent: 50000, BytesAcked: 45000, BytesLost: 5000,
+		PacketsSent: 35, PacketsAcked: 31,
+		StartTime: time.Now().Add(-100 * time.Millisecond), EndTime: time.Now(),
+		FirstPacketNumber: 100, LastPacketNumber: 134,
+	}
+
+	sender.processCompletedMI(mi)
+
+	// Should NOT have entered BW-anchored — bwEst gets 1 sample from this MI
+	// but needs 2 for valid. So PCC path ran.
+	if sender.bwPhase != bwPhaseCruise {
+		t.Errorf("with invalid bwEst, should stay in default phase")
+	}
+	if !sender.state.hasLastUtility {
+		t.Error("PCC path should have set hasLastUtility")
 	}
 }

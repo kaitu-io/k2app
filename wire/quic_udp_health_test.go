@@ -16,8 +16,9 @@ import (
 
 func TestQuicUDPMux_DatagramHealthy_Default(t *testing.T) {
 	mux := &quicUDPMux{
-		sessions: make(map[uint32]chan *UDPFrame),
-		done:     make(chan struct{}),
+		sessions:    make(map[uint32]chan *UDPFrame),
+		sessionDone: make(map[uint32]chan struct{}),
+		done:        make(chan struct{}),
 	}
 	if !mux.datagramRelayHealthy() {
 		t.Fatal("new mux should be healthy by default")
@@ -26,8 +27,9 @@ func TestQuicUDPMux_DatagramHealthy_Default(t *testing.T) {
 
 func TestQuicUDPMux_DatagramHealthy_AfterTimeouts(t *testing.T) {
 	mux := &quicUDPMux{
-		sessions: make(map[uint32]chan *UDPFrame),
-		done:     make(chan struct{}),
+		sessions:    make(map[uint32]chan *UDPFrame),
+		sessionDone: make(map[uint32]chan struct{}),
+		done:        make(chan struct{}),
 	}
 
 	// Record timeouts up to threshold
@@ -45,8 +47,9 @@ func TestQuicUDPMux_DatagramHealthy_AfterTimeouts(t *testing.T) {
 
 func TestQuicUDPMux_DatagramHealthy_ResetOnRecv(t *testing.T) {
 	mux := &quicUDPMux{
-		sessions: make(map[uint32]chan *UDPFrame),
-		done:     make(chan struct{}),
+		sessions:    make(map[uint32]chan *UDPFrame),
+		sessionDone: make(map[uint32]chan struct{}),
+		done:        make(chan struct{}),
 	}
 
 	// Make unhealthy
@@ -66,8 +69,9 @@ func TestQuicUDPMux_DatagramHealthy_ResetOnRecv(t *testing.T) {
 
 func TestQuicUDPMux_DatagramHealthy_BelowThreshold(t *testing.T) {
 	mux := &quicUDPMux{
-		sessions: make(map[uint32]chan *UDPFrame),
-		done:     make(chan struct{}),
+		sessions:    make(map[uint32]chan *UDPFrame),
+		sessionDone: make(map[uint32]chan struct{}),
+		done:        make(chan struct{}),
 	}
 
 	// One fewer than threshold — should still be healthy

@@ -1,5 +1,5 @@
 // K2CC Vivace - Performance-oriented Congestion Control
-package arc
+package k2cc
 
 import (
 	"fmt"
@@ -35,22 +35,26 @@ const (
 	arcMinWindow = congestion.ByteCount(14720)      // 10 × 1472 (typical MTU)
 	arcMaxWindow = congestion.ByteCount(1_000_000_000) // 1 GB
 
-	// Rate boundaries
-	arcMinRate         = 10_000_000.0 // 10 Mbps (upload floor)
-	arcMinDownloadRate = 30_000_000.0 // 30 Mbps (download floor, when maxRate >= 30M)
+	// Rate boundaries — two floors for different purposes:
+	// arcMinRate: CC hard floor. Gradient descent can go this low. Must be low enough
+	// for K2CC to converge when actual bandwidth < 30M (GFW-throttled links).
+	// arcMinDownloadRate: app-limited anchor floor. Prevents rate collapse from transient
+	// low throughput during idle/ramp-up. Higher to ensure fast recovery.
+	arcMinRate         = 5_000_000.0  // 5 Mbps — CC convergence floor
+	arcMinDownloadRate = 30_000_000.0 // 30 Mbps — app-limited anchor floor
 
 	// Algorithm parameters
 	defaultAlpha       = 10.0 // Loss penalty — standard mode
-	gfwAlpha           = 5.0  // Loss penalty — GFW mode (tolerates non-congestion loss)
+	gfwAlpha           = 4.0  // Loss penalty — GFW mode (BG loss boundary = 1/α = 25%)
 	defaultBeta        = 1.0  // Latency penalty (throughput-prioritized for tunnel)
-	defaultEpsilon     = 0.12 // Probing step size (was 0.10)
-	arcRateEWMAAlpha   = 0.9  // EWMA smoothing for rate updates (was 0.8)
+	defaultEpsilon     = 0.12 // Probing step size
+	arcRateEWMAAlpha   = 0.9  // EWMA smoothing for rate updates
 	arcSlowStartFactor = 2.0  // Slow start growth multiplier
-	arcCwndMultiplier  = 2.0  // BDP multiplier for cwnd (matches BBR's cwnd gain)
+	arcCwndMultiplier  = 1.2  // BDP multiplier for cwnd (burst headroom only; K2CC paces via TimeUntilSend)
 
 	// Rate probing: periodic recovery by probing higher rate
-	rateProbingInterval = uint64(10) // Probe every N MIs
-	rateProbingIncrease = 0.2        // +20% probe
+	rateProbingInterval = uint64(20) // Probe every N MIs
+	rateProbingIncrease = 0.10       // +10% probe
 
 	// MI completion conditions
 	minMIPackets          = uint64(10)        // Minimum ACKs for standard completion
@@ -64,9 +68,6 @@ const (
 
 	// App-limited detection: BytesSent < TargetBytes × this → app-limited
 	appLimitedThreshold = 0.5
-
-	// Utility function clamp: prevent extreme negative values
-	utilityFloor = -10.0
 
 	// Initial rate = maxRate × this
 	initialRateFactor = 0.3
@@ -84,7 +85,7 @@ const (
 	//   ④ Building (counter = 1):             no change     [hold]
 	epsilonMin        = 0.03  // ε₀ / 4 (convergence precision)
 	epsilonMax        = 0.25  // ε₀ × 2 (exploration ceiling)
-	epsilonDelta      = 0.03  // AI step (was 0.02)
+	epsilonDelta      = 0.03  // AI step
 	epsilonDecay      = 0.5   // MD halving
 	epsilonZThreshold = 1.645 // 95% one-sided z-score
 	noiseEWMAAlpha    = 0.1   // Noise baseline smoothing (10% new)
@@ -94,7 +95,7 @@ const (
 	appLimitedMaxLoss = 0.5
 
 	// ackRate cwnd compensation: floor to prevent cwnd explosion (same as Brutal)
-	minAckRate = 0.8
+	minAckRate = 0.95
 
 	// Slow start throughput saturation detection
 	// Throughput growth < rate growth × this → link saturated, exit slow start.
@@ -102,8 +103,19 @@ const (
 	// to continue. Flat throughput (growth=1.0) correctly triggers exit.
 	slowStartSaturationRatio = 0.7
 
-	// Dynamic α clamping
-	alphaMaxLossPenalty = 0.8 // Max α×L before dynamic clamping (keeps 1-αL ≥ 0.2)
+	// BW Estimator: BBR-style bandwidth anchoring.
+	// When bwEst is valid, rate probes around measured BW (Cruise/ProbeUp/Drain cycle)
+	// instead of PCC gradient ascent. PCC logic preserved as fallback.
+	bwWindowSize      = 8                  // Sliding window = 1 full probe cycle
+	bwCruiseGain      = 0.95               // 5% below BW: zero congestion loss
+	bwProbeUpGain     = 1.10               // 10% above BW: detect BW increase
+	bwDrainGain       = 0.75               // Drain queue + measure BG loss
+	bwCruiseLength    = 6                  // Cruise MIs per cycle (+ 1 ProbeUp + 1 Drain = 8)
+	bwMinValidCount   = 2                  // Minimum samples for valid estimate
+	bwDropThreshold   = 0.5                // throughput < expected × this → BW dropped
+	bwRiseThreshold   = 1.05               // ProbeUp throughput > corrected BW × this → BW rose
+	bgLossAlpha       = 0.2                // BG loss EWMA smoothing
+	bwAnchoredMinRate = 1_000_000.0        // 1 Mbps floor for BW-anchored mode
 )
 
 // K2CCMode represents the K2CC operating mode
@@ -116,6 +128,15 @@ const (
 	K2CCModeDecision
 	// K2CCModeRateAdjusting - applying gradient updates
 	K2CCModeRateAdjusting
+)
+
+// bwProbePhase represents the BW-anchored probing phase.
+type bwProbePhase int
+
+const (
+	bwPhaseCruise  bwProbePhase = iota
+	bwPhaseProbeUp
+	bwPhaseDrain
 )
 
 // String returns a human-readable name for the K2CC mode.
@@ -226,6 +247,16 @@ func (mi *MonitorInterval) Duration() time.Duration {
 		end = time.Now()
 	}
 	return end.Sub(mi.StartTime)
+}
+
+// SendRate returns actual sending rate in bps: BytesSent × 8 / duration.
+// This may exceed TargetRate when cwnd ackRate compensation inflates cwnd.
+func (mi *MonitorInterval) SendRate() float64 {
+	durationSecs := mi.Duration().Seconds()
+	if durationSecs == 0 {
+		return mi.TargetRate
+	}
+	return float64(mi.BytesSent) * 8.0 / durationSecs
 }
 
 // Throughput calculates throughput in bps and detects app-limited state
@@ -366,6 +397,53 @@ func (tr *ackRateTracker) AckRate() float64 {
 	return rate
 }
 
+// bwEstimator maintains a sliding-window max of throughput samples.
+// Similar to BBR's BtlBw: captures bottleneck bandwidth when CC rate >= BW.
+type bwEstimator struct {
+	samples [bwWindowSize]float64
+	head    int
+	count   int
+}
+
+// addSample adds a throughput measurement to the sliding window.
+func (e *bwEstimator) addSample(throughput float64) {
+	e.samples[e.head] = throughput
+	e.head = (e.head + 1) % bwWindowSize
+	if e.count < bwWindowSize {
+		e.count++
+	}
+}
+
+// estimate returns the maximum throughput in the sliding window.
+func (e *bwEstimator) estimate() float64 {
+	if e.count == 0 {
+		return 0
+	}
+	maxVal := 0.0
+	for i := range e.count {
+		if e.samples[i] > maxVal {
+			maxVal = e.samples[i]
+		}
+	}
+	return maxVal
+}
+
+// valid returns true when enough samples exist for a reliable estimate.
+func (e *bwEstimator) valid() bool {
+	return e.count >= bwMinValidCount
+}
+
+// reset replaces all samples with a new value (BW drop recovery).
+func (e *bwEstimator) reset(throughput float64) {
+	for i := range e.samples {
+		e.samples[i] = throughput
+	}
+	e.head = 1
+	if e.count < bwMinValidCount {
+		e.count = bwMinValidCount
+	}
+}
+
 // ============================================================================
 // Utility Function
 // ============================================================================
@@ -394,8 +472,13 @@ func (uf *UtilityFunction) UpdateMinRTT(rtt time.Duration) {
 }
 
 // Calculate computes utility for a Monitor Interval.
-// U = Throughput - α * LossRate * Throughput - β * ΔRtt
-func (uf *UtilityFunction) Calculate(mi *MonitorInterval) float64 {
+// U = T - α·L·R - β·ΔRtt
+//
+// sendRate is the actual sending rate in bps (BytesSent × 8 / duration).
+// Using actual rate (not TargetRate) ensures the penalty reflects what the network
+// experienced. cwnd ackRate compensation can inflate actual sending beyond the
+// CC target rate — using TargetRate for R would under-penalize this over-sending.
+func (uf *UtilityFunction) Calculate(mi *MonitorInterval, sendRate float64) float64 {
 	throughput := mi.Throughput()
 	lossRate := mi.LossRate()
 
@@ -407,15 +490,12 @@ func (uf *UtilityFunction) Calculate(mi *MonitorInterval) float64 {
 
 	throughputMbps := throughput / 1_000_000.0
 
-	// Dynamic α clamping: prevent utility inversion at high loss.
-	// When α×L > 0.8, reduce α so (1-αL) stays ≥ 0.2.
-	alpha := uf.Alpha
-	if lossRate > 0 && alpha*lossRate > alphaMaxLossPenalty {
-		alpha = alphaMaxLossPenalty / lossRate
-	}
-
-	utility := throughputMbps - alpha*lossRate*throughputMbps - uf.Beta*deltaRTT
-	return max(utility, utilityFloor)
+	// Rate-based loss penalty: U = T - α·L·R - β·ΔRtt
+	// Using actual sending rate R gives O(R) gradient signal when rate >> BW,
+	// and correctly penalizes cwnd-inflated over-sending.
+	rateMbps := sendRate / 1_000_000.0
+	utility := throughputMbps - uf.Alpha*lossRate*rateMbps - uf.Beta*deltaRTT
+	return utility
 }
 
 // ============================================================================
@@ -439,11 +519,14 @@ type K2CCState struct {
 }
 
 // ensureCurrentMI ensures there's a current MI.
-// rtt sets MinDuration on newly created MIs for loss visibility.
+// rtt sets MinDuration on newly created MIs. Uses 2×RTT to give QUIC loss
+// detection enough time — at high rates, packets are sent in <1ms but loss
+// detection takes ~1 RTT. With 1×RTT MinDuration, MIs complete before most
+// losses are reported → loss is under-reported → gradient signal is wrong.
 func (s *K2CCState) ensureCurrentMI(rate float64, rtt time.Duration) *MonitorInterval {
 	if s.CurrentMI == nil {
 		s.CurrentMI = NewMonitorInterval(s.NextMIID, rate)
-		s.CurrentMI.MinDuration = rtt
+		s.CurrentMI.MinDuration = 2 * rtt
 		s.NextMIID++
 	}
 	return s.CurrentMI
@@ -451,7 +534,7 @@ func (s *K2CCState) ensureCurrentMI(rate float64, rtt time.Duration) *MonitorInt
 
 // startNewMI starts a new Monitor Interval, reusing the previous MI's
 // RTTSamples backing array to avoid a 160-byte allocation per MI rotation.
-// rtt is the current smoothed RTT, used as MinDuration for loss visibility.
+// rtt is the current smoothed RTT. MinDuration is set to 2×RTT for loss visibility.
 func (s *K2CCState) startNewMI(rate float64, rtt time.Duration) *MonitorInterval {
 	var rttBuf []time.Duration
 	if s.CurrentMI != nil {
@@ -469,7 +552,7 @@ func (s *K2CCState) startNewMI(rate float64, rtt time.Duration) *MonitorInterval
 		TargetRate:  rate,
 		StartTime:   time.Now(),
 		RTTSamples:  rttBuf,
-		MinDuration: rtt,
+		MinDuration: 2 * rtt,
 	}
 	s.NextMIID++
 	return s.CurrentMI
@@ -512,6 +595,13 @@ type K2CCSender struct {
 	// Sliding-window ack rate tracker — fed by OnCongestionEventEx.
 	// Used for cwnd ackRate compensation (Brutal-style) + debug logging.
 	ackRate *ackRateTracker
+
+	// BW Estimator: BBR-style bandwidth anchoring.
+	// When bwEst.valid(), rate probes around measured BW instead of PCC gradient.
+	bwEst          bwEstimator
+	bgLossEWMA     float64      // Background loss from Drain phases
+	bwPhase        bwProbePhase // Cruise / ProbeUp / Drain
+	bwCruiseRemain int          // Remaining Cruise MIs in current cycle
 
 	// Test-only hook: called when an MI completes (inside mu lock).
 	miCompletedHook func(mi *MonitorInterval, throughput float64, isAppLimited bool)
@@ -592,17 +682,14 @@ func (p *K2CCSender) SetRTTStatsProvider(provider congestion.RTTStatsProvider) {
 	p.rttStats = provider
 }
 
-// updateRate updates the sending rate with EWMA smoothing
+// updateRate updates the sending rate with EWMA smoothing.
+// Floor is always arcMinRate (5M) — allows gradient descent on bottleneck links.
+// The higher arcMinDownloadRate (30M) is used ONLY by app-limited anchor for
+// fast recovery from idle periods (see processCompletedMI).
 func (p *K2CCSender) updateRate(newRate float64) {
-	// Determine minimum rate based on scenario
-	minRate := arcMinRate // 10 Mbps (upload)
-	if float64(p.maxRate) >= arcMinDownloadRate {
-		minRate = arcMinDownloadRate // 30 Mbps (download)
-	}
-
 	// Clamp new rate
-	if newRate < minRate {
-		newRate = minRate
+	if newRate < arcMinRate {
+		newRate = arcMinRate
 	}
 	if newRate > float64(p.maxRate) {
 		newRate = float64(p.maxRate)
@@ -612,28 +699,52 @@ func (p *K2CCSender) updateRate(newRate float64) {
 	p.state.CurrentRate = p.state.CurrentRate*(1.0-arcRateEWMAAlpha) + newRate*arcRateEWMAAlpha
 
 	// Strict floor protection AFTER EWMA
-	if p.state.CurrentRate < minRate {
-		p.state.CurrentRate = minRate
+	if p.state.CurrentRate < arcMinRate {
+		p.state.CurrentRate = arcMinRate
 	}
 
 	// Update cwnd
 	p.cwnd = rateToCwnd(p.state.CurrentRate, p.rtt, p.clampedAckRate())
 }
 
+// setRateAnchored sets rate for BW-anchored mode with lower floor than PCC.
+// Drain at 0.75×BW can go below the PCC 5M floor on low-bandwidth links.
+func (p *K2CCSender) setRateAnchored(newRate float64) {
+	if newRate < bwAnchoredMinRate {
+		newRate = bwAnchoredMinRate
+	}
+	if newRate > float64(p.maxRate) {
+		newRate = float64(p.maxRate)
+	}
+	p.state.CurrentRate = p.state.CurrentRate*(1.0-arcRateEWMAAlpha) + newRate*arcRateEWMAAlpha
+	if p.state.CurrentRate < bwAnchoredMinRate {
+		p.state.CurrentRate = bwAnchoredMinRate
+	}
+	p.cwnd = rateToCwnd(p.state.CurrentRate, p.rtt, p.clampedAckRate())
+}
+
 // processCompletedMI processes a completed Monitor Interval.
 func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
+	// Calculate throughput and detect app-limited state
+	throughput := mi.Throughput()
+
+	// Feed BW estimator (always, except app-limited)
+	if !mi.IsAppLimited && throughput > 0 {
+		p.bwEst.addSample(throughput)
+	}
+
 	// Rate probing: every N MIs, probe higher rate to recover from local minima.
 	// Do NOT reset direction counters — let AIMD-ε evaluate the probe result
 	// through normal gradient processing.
-	if p.state.NextMIID%rateProbingInterval == 0 {
+	// Skip probe when loss is high — probing into congestion just wastes bandwidth
+	// and prevents convergence on bottleneck-limited links.
+	// Skip when BW-anchored mode is active (ProbeUp serves this purpose).
+	if !p.bwEst.valid() && p.state.NextMIID%rateProbingInterval == 0 && mi.LossRate() < 0.30 {
 		probeRate := p.state.CurrentRate * (1.0 + rateProbingIncrease)
 		if probeRate <= float64(p.maxRate) {
 			p.updateRate(probeRate)
 		}
 	}
-
-	// Calculate throughput and detect app-limited state
-	throughput := mi.Throughput()
 
 	// Test observability hook
 	if p.miCompletedHook != nil {
@@ -648,11 +759,22 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 			if lossRate := mi.LossRate(); lossRate > 0 && lossRate < appLimitedMaxLoss {
 				anchorRate = throughput / (1.0 - lossRate)
 			}
-			// Apply same floor as updateRate() to prevent collapse from
-			// end-of-transfer noise (low BytesSent ≠ link saturation).
+			// Anchor floor: prevents rate collapse from transient low throughput.
+			// - Transitional (post-slow-start, tiny BytesSent): use arcMinRate (5M)
+			// - BW known (bwEst valid): use bgLoss-corrected bwEst (actual link capacity)
+			//   Without this, the 30M floor causes 6x overshoot on 5M links → 85% loss
+			//   → DATAGRAM delivery dies → UDP relay fails → "巨慢"
+			// - Cold start (no bwEst): use arcMinDownloadRate (30M) for fast ramp-up
 			minRate := arcMinRate
-			if float64(p.maxRate) >= arcMinDownloadRate {
-				minRate = arcMinDownloadRate
+			if float64(p.maxRate) >= arcMinDownloadRate && mi.BytesSent >= 10000 {
+				if p.bwEst.valid() {
+					minRate = p.bwEst.estimate()
+					if p.bgLossEWMA > 0.01 {
+						minRate = minRate / (1.0 - p.bgLossEWMA)
+					}
+				} else {
+					minRate = arcMinDownloadRate
+				}
 			}
 			if anchorRate < minRate {
 				anchorRate = minRate
@@ -667,7 +789,7 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 		// so next MI can compute gradient immediately (no blind probing period).
 		p.state.UtilityIncreases = 0
 		p.state.UtilityDecreases = 0
-		p.state.lastUtility = p.utility.Calculate(mi)
+		p.state.lastUtility = p.utility.Calculate(mi, mi.SendRate())
 		p.state.hasLastUtility = true
 		p.probeBaseRate = p.state.CurrentRate
 
@@ -690,8 +812,9 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 		p.utility.UpdateMinRTT(avgRTT)
 	}
 
-	// Calculate utility
-	utility := p.utility.Calculate(mi)
+	// Calculate utility using actual sending rate (not TargetRate).
+	// cwnd ackRate compensation may inflate actual bytes beyond pacing rate.
+	utility := p.utility.Calculate(mi, mi.SendRate())
 
 	switch p.state.Mode {
 	case K2CCModeSlowStart:
@@ -700,14 +823,32 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 			p.state.Mode = K2CCModeDecision
 			p.state.UtilityIncreases = 0
 			p.state.UtilityDecreases = 0
+			// Initialize BW-anchored probing if estimator is ready
+			if p.bwEst.valid() {
+				p.bwPhase = bwPhaseCruise
+				p.bwCruiseRemain = bwCruiseLength
+			}
 			break
 		}
 
 		// Exit condition 2: utility dropped significantly.
+		// Anchor rate to throughput — rate has exceeded link capacity.
+		// Without this, rate stays at the slow-start overshoot level and the
+		// algorithm takes hundreds of MIs to descend via gradient.
 		if p.state.hasLastUtility && utility < p.state.lastUtility*slowStartDropRatio {
+			if throughput > 0 {
+				p.state.CurrentRate = throughput
+				p.cwnd = rateToCwnd(p.state.CurrentRate, p.rtt, p.clampedAckRate())
+				p.probeBaseRate = p.state.CurrentRate
+			}
 			p.state.Mode = K2CCModeDecision
 			p.state.UtilityIncreases = 0
 			p.state.UtilityDecreases = 0
+			// Initialize BW-anchored probing if estimator is ready
+			if p.bwEst.valid() {
+				p.bwPhase = bwPhaseCruise
+				p.bwCruiseRemain = bwCruiseLength
+			}
 			break
 		}
 
@@ -723,6 +864,11 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 				p.state.UtilityIncreases = 0
 				p.state.UtilityDecreases = 0
 				p.probeBaseRate = p.state.CurrentRate
+				// Initialize BW-anchored probing if estimator is ready
+				if p.bwEst.valid() {
+					p.bwPhase = bwPhaseCruise
+					p.bwCruiseRemain = bwCruiseLength
+				}
 				slog.Debug("k2cc: slow start saturated",
 					"mi", mi.ID,
 					"throughput", fmt.Sprintf("%.1fM", throughput/1_000_000),
@@ -739,7 +885,11 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 		p.updateRate(newRate)
 
 	case K2CCModeDecision, K2CCModeRateAdjusting:
-		if p.state.hasLastUtility {
+		// BW-anchored mode: when bandwidth estimate is valid, probe around
+		// measured BW instead of using PCC gradient ascent.
+		if p.bwEst.valid() {
+			p.processBWAnchored(mi, throughput)
+		} else if p.state.hasLastUtility {
 			gradient := utility - p.state.lastUtility
 
 			// Capture previous state for AIMD-ε reversal detection
@@ -817,12 +967,8 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 				}
 				probeRate := p.probeBaseRate * (1.0 + sign*p.state.Epsilon)
 				// Clamp without EWMA — probing doesn't shift the base rate
-				probeMinRate := arcMinRate
-				if float64(p.maxRate) >= arcMinDownloadRate {
-					probeMinRate = arcMinDownloadRate
-				}
-				if probeRate < probeMinRate {
-					probeRate = probeMinRate
+				if probeRate < arcMinRate {
+					probeRate = arcMinRate
 				}
 				if probeRate > float64(p.maxRate) {
 					probeRate = float64(p.maxRate)
@@ -853,6 +999,89 @@ func (p *K2CCSender) processCompletedMI(mi *MonitorInterval) {
 		"mode", p.state.Mode.String(),
 		"dir", dir,
 		"ackRate", fmt.Sprintf("%.3f", p.ackRate.AckRate()),
+	)
+}
+
+// processBWAnchored implements BBR-style BW-anchored rate control.
+// Called from processCompletedMI when bwEst is valid.
+// Cycle: 6 × Cruise → 1 × ProbeUp → 1 × Drain → repeat.
+func (p *K2CCSender) processBWAnchored(mi *MonitorInterval, throughput float64) {
+	bw := p.bwEst.estimate()
+
+	// Correct BW estimate for background loss
+	if p.bgLossEWMA > 0.01 {
+		bw = bw / (1.0 - p.bgLossEWMA)
+	}
+
+	if bw <= 0 {
+		p.bwEst = bwEstimator{} // Invalid — fall back to PCC
+		return
+	}
+
+	switch p.bwPhase {
+	case bwPhaseCruise:
+		// BW decrease detection: throughput much lower than expected
+		expectedThroughput := bw * bwCruiseGain
+		if p.bgLossEWMA > 0.01 {
+			expectedThroughput *= (1.0 - p.bgLossEWMA)
+		}
+		if throughput > 0 && throughput < expectedThroughput*bwDropThreshold {
+			newBW := throughput
+			if p.bgLossEWMA > 0.01 {
+				newBW = throughput / (1.0 - p.bgLossEWMA)
+			}
+			p.bwEst.reset(newBW)
+			bw = newBW
+			slog.Debug("k2cc: bw-anchor BW drop detected",
+				"mi", mi.ID,
+				"throughput", fmt.Sprintf("%.1fM", throughput/1e6),
+				"newBW", fmt.Sprintf("%.1fM", bw/1e6),
+			)
+		}
+
+		p.bwCruiseRemain--
+		if p.bwCruiseRemain <= 0 {
+			p.bwPhase = bwPhaseProbeUp
+		}
+		p.setRateAnchored(bw * bwCruiseGain)
+
+	case bwPhaseProbeUp:
+		// BW increase detection
+		correctedBW := bw
+		if p.bgLossEWMA > 0.01 {
+			correctedBW = bw * (1.0 - p.bgLossEWMA)
+		}
+		if throughput > correctedBW*bwRiseThreshold {
+			p.bwEst.addSample(throughput)
+			slog.Debug("k2cc: bw-anchor BW rise detected",
+				"mi", mi.ID,
+				"throughput", fmt.Sprintf("%.1fM", throughput/1e6),
+				"prevBW", fmt.Sprintf("%.1fM", bw/1e6),
+			)
+		}
+
+		p.bwPhase = bwPhaseDrain
+		p.setRateAnchored(bw * bwProbeUpGain)
+
+	case bwPhaseDrain:
+		// BG loss measurement: rate well below BW → any loss is background
+		if lossRate := mi.LossRate(); lossRate > 0.005 {
+			p.bgLossEWMA = p.bgLossEWMA*(1-bgLossAlpha) + lossRate*bgLossAlpha
+		} else if p.bgLossEWMA > 0.001 {
+			p.bgLossEWMA *= (1 - bgLossAlpha)
+		}
+
+		p.bwPhase = bwPhaseCruise
+		p.bwCruiseRemain = bwCruiseLength
+		p.setRateAnchored(bw * bwDrainGain)
+	}
+
+	slog.Debug("k2cc: bw-anchor",
+		"mi", mi.ID,
+		"phase", []string{"cruise", "probeUp", "drain"}[p.bwPhase],
+		"bw", fmt.Sprintf("%.1fM", bw/1e6),
+		"rate", fmt.Sprintf("%.1fM", p.state.CurrentRate/1e6),
+		"bgLoss", fmt.Sprintf("%.1f%%", p.bgLossEWMA*100),
 	)
 }
 
@@ -1008,12 +1237,10 @@ func (p *K2CCSender) OnCongestionEvent(
 	// Without filtering: BytesLost >> BytesSent → LossRate 300-900% → false CRITICAL.
 	mi := p.state.ensureCurrentMI(p.state.CurrentRate, p.rtt)
 
-	if mi.PacketsSent > 0 && int64(number) < mi.FirstPacketNumber {
-		// Stale loss: packet belongs to a previous MI. Don't pollute current MI.
-		slog.Debug("arc: skipping stale loss",
-			"lostPkt", number,
-			"miFirstPkt", mi.FirstPacketNumber,
-		)
+	// Stale loss filter: skip losses from previous MI.
+	// PacketsSent == 0: no packets sent in this MI yet, ALL losses are stale.
+	// number < FirstPacketNumber: packet belongs to a previous MI.
+	if mi.PacketsSent == 0 || int64(number) < mi.FirstPacketNumber {
 		return
 	}
 
@@ -1034,15 +1261,33 @@ func (p *K2CCSender) OnCongestionEventEx(
 	lostPackets []congestion.LostPacketInfo,
 ) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
+	filteredLosses := p.countFreshLossesLocked(lostPackets)
+	p.mu.Unlock()
 
 	acks := uint64(len(ackedPackets))
-	losses := uint64(len(lostPackets))
-	if acks == 0 && losses == 0 {
+	if acks == 0 && filteredLosses == 0 {
 		return
 	}
 
-	p.ackRate.record(time.Duration(eventTime), acks, losses)
+	p.ackRate.record(time.Duration(eventTime), acks, filteredLosses)
+}
+
+// countFreshLossesLocked filters stale losses — same logic as OnCongestionEvent.
+// PacketsSent == 0: no sends in this MI yet, all losses are stale.
+// Otherwise: only count losses with PacketNumber >= FirstPacketNumber.
+// Caller must hold p.mu.
+func (p *K2CCSender) countFreshLossesLocked(lostPackets []congestion.LostPacketInfo) uint64 {
+	mi := p.state.CurrentMI
+	if mi == nil || mi.PacketsSent == 0 {
+		return 0
+	}
+	var count uint64
+	for i := range lostPackets {
+		if int64(lostPackets[i].PacketNumber) >= mi.FirstPacketNumber {
+			count++
+		}
+	}
+	return count
 }
 
 // OnRetransmissionTimeout is called when RTO expires

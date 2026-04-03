@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/url"
 	"strconv"
@@ -67,6 +68,10 @@ type StatsProvider interface {
 type Dialer interface {
 	DialTCP(ctx context.Context, addr string, earlyData []byte) (net.Conn, error)
 	DialUDP(ctx context.Context, addr string) (net.PacketConn, error)
+	// DialStreamUDP opens a stream-backed UDP session (reliable, congestion-controlled).
+	// Used for DNS queries where reliability matters more than low overhead.
+	// QUIC: uses QUIC stream (not DATAGRAM). TCP-WS: same as DialUDP (already stream-based).
+	DialStreamUDP(ctx context.Context, addr string) (net.PacketConn, error)
 	Close() error
 }
 
@@ -81,6 +86,14 @@ type Listener interface {
 // UDPHandler processes incoming UDP sessions on the server side.
 type UDPHandler interface {
 	HandleUDP(conn net.PacketConn, addr string)
+}
+
+// UDPSessionInfo provides diagnostic metadata for a UDP relay session.
+// Implemented by serverUDPConn. Asserted by server.ProxyHandler for log attribution.
+type UDPSessionInfo interface {
+	UDPSessionID() uint32
+	UDPRemoteAddr() string
+	Logger() *slog.Logger
 }
 
 // UDPHandlerFunc is a convenience adapter for UDPHandler.

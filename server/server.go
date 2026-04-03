@@ -342,7 +342,7 @@ func (s *Server) Run(ctx context.Context) error {
 	quicTransport := &quic.Transport{Conn: udpConn}
 	defer quicTransport.Close()
 
-	quicLn, err := quicTransport.Listen(s.TLSConfig.Clone(), wire.DefaultQUICConfig())
+	quicLn, err := quicTransport.Listen(s.TLSConfig.Clone(), wire.ServerQUICConfig())
 	if err != nil {
 		return fmt.Errorf("QUIC listen: %w", err)
 	}
@@ -417,7 +417,7 @@ func (s *Server) acceptTCPLoop(ctx context.Context, ln wire.Listener) {
 				return
 			}
 		}
-		slog.Debug("server: AcceptTCP got stream", "addr", addr)
+		slog.Debug("server: AcceptTCP got stream", "addr", addr, "remote", conn.RemoteAddr())
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {

@@ -233,8 +233,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 	"sync/atomic"
+
+	"github.com/sasha-s/go-deadlock"
 	"time"
 	"unsafe"
 )
@@ -293,7 +294,7 @@ type dnsOverride struct {
 	origDNS   string // saved original DNS from State:/ (DHCP-assigned)
 	serviceID string // primary service ID being overridden
 
-	mu      sync.Mutex
+	mu      deadlock.Mutex
 	stopCh  chan struct{}
 	stopped chan struct{}
 }
@@ -470,6 +471,10 @@ func (d *dnsOverride) monitor() {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
+	// NO recover() here — intentional. C.k2StopMonitor() is a pure CGo call:
+	// C-layer crashes (segfault) bypass Go recover entirely (OS signal → process death).
+	// Go-layer panics cannot occur (only a channel recv + one CGo call).
+	// If k2StopMonitor blocks, dnsOverride.stop() has a 5s timeout fallback.
 	go func() {
 		<-d.stopCh
 		C.k2StopMonitor()

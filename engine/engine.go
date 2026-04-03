@@ -17,6 +17,7 @@ import (
 	"github.com/kaitu-io/k2/core/dns"
 	"github.com/kaitu-io/k2/provider"
 	"github.com/kaitu-io/k2/rule"
+	"github.com/kaitu-io/k2/safego"
 	"github.com/kaitu-io/k2/wire"
 )
 
@@ -42,9 +43,15 @@ type Engine struct {
 	prov           provider.Provider
 	networkMonitor NetworkChangeNotifier
 	health         *healthMonitor
-	probe          *recoveryProbe
+	netCoord       *netCoordinator
+	dnsH           *dnsHandler // for counter reset on network recovery
 	proxyDNS       *dns.ProxyDNSClient // proxy DNS connection pool (nil in proxy mode)
 	ruleEngine     *rule.Engine
+
+	wireCfg      wire.Config
+	directDialer wire.DirectDialer
+	reRaceChan   chan struct{}
+	reRaceCancel context.CancelFunc
 }
 
 // New creates a new Engine in the disconnected state.
@@ -100,7 +107,25 @@ func (e *Engine) Start(cfg Config) error {
 	}
 
 	startTime := time.Now()
-	// 1. Rule engine.
+
+	// 1. Download rule bundles.
+	bundleNames := rule.BundlesForConfig(extractMatches(client))
+	sources := client.RuleSources
+	if len(sources) == 0 {
+		sources = rule.DefaultSources
+	}
+	if len(bundleNames) > 0 && client.CacheDir != "" {
+		dlCtx, dlCancel := context.WithTimeout(ctx, 8*time.Second)
+		err := rule.Download(dlCtx, client.CacheDir, bundleNames, sources)
+		dlCancel()
+		if err != nil && dlCtx.Err() == context.DeadlineExceeded {
+			slog.Warn("rule: download timeout, starting with fallback routing")
+		} else if err != nil {
+			return e.fail(fmt.Errorf("rule download: %w", err))
+		}
+	}
+
+	// 1b. Build rule engine.
 	ruleEngine := buildRuleEngine(client)
 
 	slog.Info("engine: start",
@@ -125,7 +150,14 @@ func (e *Engine) Start(cfg Config) error {
 	// for interface-bound dialing. Must start before Happy Eyeballs (step 3).
 	// Safe: OnNetworkChanged() early-returns when state != connected.
 	if cfg.NetworkMonitor != nil {
-		if err := cfg.NetworkMonitor.Start(func() { e.OnNetworkChanged() }); err != nil {
+		if err := cfg.NetworkMonitor.Start(func() {
+			e.mu.Lock()
+			nc := e.netCoord
+			e.mu.Unlock()
+			if nc != nil {
+				nc.handleEvent(&NetEvent{Signal: SignalChanged, Source: "singtun"})
+			}
+		}); err != nil {
 			slog.Warn("engine: network monitor start failed (non-fatal)", "err", err)
 		}
 	}
@@ -147,57 +179,73 @@ func (e *Engine) Start(cfg Config) error {
 	}
 	slog.Info("engine: step 3 - dial address resolved", "addr", wireCfg.DialAddr, "elapsed", time.Since(startTime))
 
-	// 4. Build transports.
-	quicClient := wire.NewQUICClient(wireCfg, nil)
-	tcpwsClient := wire.NewTCPWSClient(wireCfg, nil)
+	// 4. Transport race: three-way Happy Eyeballs.
+	// Races QUIC-443, QUIC-hop, TCP-WS with staggered start and echo probe
+	// verification. First candidate with verified data flow wins. Replaces
+	// the serial build + handshake probe (old step 4 + 4.5).
+	slog.Info("engine: step 4 - transport race", "elapsed", time.Since(startTime))
+	raceCtx, raceCancel := context.WithTimeout(ctx, 15*time.Second)
+	raceResult, raceErr := wire.RaceTransport(raceCtx, wireCfg, wireCfg.DialAddr, cfg.DirectDialer)
+	raceCancel()
 
-	if cfg.DirectDialer != nil {
-		quicClient.SetDirectDialer(cfg.DirectDialer)
-		tcpwsClient.SetDirectDialer(cfg.DirectDialer)
-	}
-
-	tm := wire.NewTransportManager()
-	switch wireCfg.Transport {
-	case "quic":
-		tm.SetQUIC(quicClient)
-	case "tcpws":
-		tm.SetTCPWS(tcpwsClient)
-	default:
-		tm.SetQUIC(quicClient)
-		tm.SetTCPWS(tcpwsClient)
-	}
-	// Start background QUIC recovery probe (active during TCP-WS fallback).
-	tm.StartQuicProbe(ctx)
-
-	slog.Debug("engine: step 4 - transports configured",
-		"transport", wireCfg.Transport,
-		"hasQUIC", quicClient != nil,
-		"hasTCPWS", tcpwsClient != nil,
-	)
-
-	// 4.5 Verify wire handshake (client ↔ server) before setting up TUN/provider.
-	// Completes QUIC or TCP-WS handshake only — does NOT proxy to any target.
-	// Without this check, engine reports "connected" after TUN starts even if
-	// the server is unreachable. DNS failures are silently accumulated (threshold=30)
-	// and the health monitor sees no transport data, creating a ~15s false-connected window.
-	// The cached connection is reused by subsequent DialTCP/DialUDP (fast path).
-	slog.Info("engine: step 4.5 - wire handshake probe", "elapsed", time.Since(startTime))
-	hsStart := time.Now()
-	hsCtx, hsCancel := context.WithTimeout(ctx, 15*time.Second)
-	hsErr := tm.Handshake(hsCtx)
-	hsCancel()
-	hsMs := time.Since(hsStart).Milliseconds()
-	if hsErr != nil {
-		slog.Warn("engine: wire handshake failed", "err", hsErr)
-		slog.Warn("DIAG: wire-handshake-fail", "handshakeMs", hsMs, "err", hsErr)
+	if raceErr != nil {
+		slog.Warn("engine: transport race failed", "err", raceErr)
 		if cfg.NetworkMonitor != nil {
 			cfg.NetworkMonitor.Close()
 		}
-		tm.Close()
-		return e.fail(fmt.Errorf("wire handshake: %w", hsErr))
+		return e.fail(fmt.Errorf("transport race: %w", raceErr))
 	}
-	slog.Info("engine: step 4.5 - wire handshake ok", "elapsed", time.Since(startTime))
-	slog.Info("DIAG: wire-handshake", "handshakeMs", hsMs, "transport", tm.WireStats().Transport)
+
+	tm := wire.NewTransportManager()
+	tm.SetPrimary(raceResult.Dialer, raceResult.TransportType)
+
+	// Ensure TCP-WS is available as TM fallback AND as DNS transport.
+	// DNS is control-plane traffic — use TCP-WS directly (most reliable)
+	// instead of TransportManager (QUIC-first, susceptible to Short Header blocking).
+	//
+	// tcpwsDialer is intentionally the SAME instance as tm.tcpws (shared).
+	// Why not a separate TCPWSClient for DNS?
+	//   1. reconnect() calls tm.ResetConnections() which resets the shared tcpws
+	//      smux session — DNS's next DialStreamUDP() then connect()s through a
+	//      fresh session on the new network path. A separate instance would keep
+	//      its stale session and timeout on the old path unless explicitly reset.
+	//   2. In-flight DNS queries during reset are already cancelled by
+	//      CancelInflight() BEFORE tm.ResetConnections() — the race window
+	//      (new query enters between CancelInflight and Reset) is sub-microsecond
+	//      and harmless (query fails, racing resolver retries on fresh session).
+	//   3. One fewer TCP connection and smux session per engine lifecycle.
+	// If this assumption ever breaks, grep for "DIAG: dns-proxy-conn-dead"
+	// during reconnect — a burst of these without preceding CancelInflight
+	// would indicate the shared-instance race is wider than expected.
+	var tcpwsDialer wire.Dialer
+	if raceResult.TCPWS != nil {
+		tm.SetTCPWS(raceResult.TCPWS)
+		tcpwsDialer = raceResult.TCPWS
+	} else if raceResult.TransportType != "tcpws" {
+		// Build a standalone TCP-WS client as fallback.
+		tcpwsClient := wire.NewTCPWSClient(wireCfg, nil)
+		if cfg.DirectDialer != nil {
+			tcpwsClient.SetDirectDialer(cfg.DirectDialer)
+		}
+		tm.SetTCPWS(tcpwsClient)
+		tcpwsDialer = tcpwsClient
+	} else {
+		// TCP-WS won race: primary IS tcpws, use it for DNS too.
+		tcpwsDialer = raceResult.Dialer
+	}
+	// Start background QUIC recovery probe (active during TCP-WS fallback).
+	// Complements echoLoop: quicProbeLoop handles handshake-level failure (UDP fully blocked),
+	// echoLoop handles data-path failure (Short Header dropped). No overlap.
+	tm.StartQuicProbe(ctx)
+
+	slog.Info("engine: step 4 - transport race winner",
+		"transport", raceResult.TransportType,
+		"elapsed", time.Since(startTime),
+	)
+	slog.Info("DIAG: wire-handshake",
+		"handshakeMs", time.Since(startTime).Milliseconds(),
+		"transport", raceResult.TransportType,
+	)
 
 	// 5. Router.
 	router := core.NewRouter(ruleEngine)
@@ -262,6 +310,7 @@ func (e *Engine) Start(cfg Config) error {
 
 	// 8. Start.
 	var proxyDNS *dns.ProxyDNSClient // non-nil in TUN mode; stored in Engine for reconnect reset
+	var dh *dnsHandler // non-nil in TUN mode; stored in Engine for DNS counter reset
 	if client.Mode != "proxy" {
 		// TUN mode (mobile or desktop): intercept DNS at port 53.
 		// If DirectDialer implements DialerController, use its control func
@@ -273,7 +322,7 @@ func (e *Engine) Start(cfg Config) error {
 			}))
 		}
 		proxyDNS = dns.NewProxyDNSClient(dns.ProxyDNSClientConfig{
-			Dialer:  tm,
+			Dialer:  tcpwsDialer, // control-plane: TCP-WS directly, bypass QUIC
 			Servers: client.DNS.Proxy,
 		})
 		dnsMW := dns.NewMiddleware(dns.MiddlewareConfig{
@@ -285,7 +334,8 @@ func (e *Engine) Start(cfg Config) error {
 			SetTmpRule: ruleEngine.SetTmpRule,
 			EngineCtx:  ctx, // engine context — cancelled on Stop()
 		})
-		if err := tunnel.StartWithHandler(ctx, &dnsHandler{inner: tunnel, dns: dnsMW, ctx: ctx, engine: e}); err != nil {
+		dh = &dnsHandler{inner: tunnel, dns: dnsMW, ctx: ctx, engine: e}
+		if err := tunnel.StartWithHandler(ctx, dh); err != nil {
 			if cfg.NetworkMonitor != nil {
 				cfg.NetworkMonitor.Close()
 			}
@@ -329,8 +379,51 @@ func (e *Engine) Start(cfg Config) error {
 	hm.start()
 	e.health = hm
 
-	// Recovery probe: actively verifies wire connectivity after network changes.
-	e.probe = newRecoveryProbe(tm, e)
+	// Store wireCfg + directDialer for re-race (avoids re-parsing URL).
+	e.wireCfg = wireCfg
+	e.directDialer = cfg.DirectDialer
+
+	// Re-race loop: replaces recoveryProbe.
+	e.reRaceChan = make(chan struct{}, 1)
+	reRaceCtx, reRaceCancel := context.WithCancel(ctx)
+	e.reRaceCancel = reRaceCancel
+	safego.Go(func() { e.reRaceLoop(reRaceCtx) })
+
+	hm.reRaceChan = e.reRaceChan
+	hm.wake.onWakeReconnect = func() {
+		// Guard: skip if network is known down (e.g., airplane mode wake on mobile).
+		// Mirrors onHealthCritical()'s network-up gate.
+		// Note: during Stop(), netCoord may be nil — reconnect() guards via state check.
+		e.mu.Lock()
+		nc := e.netCoord
+		e.mu.Unlock()
+		if nc != nil && !nc.isNetworkUp() {
+			slog.Debug("engine: wake reconnect skipped, network down")
+			return
+		}
+		slog.Info("engine: wake reconnect")
+		e.doNetworkReconnect()
+	}
+
+	e.dnsH = dh
+	e.netCoord = newNetCoordinator(
+		func() { e.doNetworkReconnect() },
+		func() {},
+	)
+
+	// Start rule bundle updater (24h background check + reload).
+	if len(bundleNames) > 0 && client.CacheDir != "" {
+		rebuildFn := func(cacheDir string) ([]rule.RouteEntry, []*rule.Bundle, error) {
+			newBundles, err := rule.Load(cacheDir)
+			if err != nil {
+				return nil, nil, err
+			}
+			idx := rule.Index(newBundles)
+			entries, _, _ := buildRouteEntries(client.Routes, idx)
+			return entries, newBundles, nil
+		}
+		rule.StartUpdater(ctx, ruleEngine, client.CacheDir, bundleNames, sources, rebuildFn)
+	}
 
 	e.setStateLocked(StateConnected)
 	handler = e.handler
@@ -345,6 +438,7 @@ func (e *Engine) Start(cfg Config) error {
 		"mode", client.Mode,
 		"allProxy", ruleEngine.IsAllProxy(),
 		"dialMs", time.Since(startTime).Milliseconds(),
+		"dnsTransport", "tcpws",
 	)
 
 	// Network monitor already started in step 4.1 (before wire probe).
@@ -352,7 +446,7 @@ func (e *Engine) Start(cfg Config) error {
 	return nil
 }
 
-// reconnect resets wire transport connections and triggers recovery probe.
+// reconnect resets wire transport connections.
 // Shared by OnNetworkChanged (network switch) and onHealthCritical (quality degradation).
 // Returns true if reconnect was performed (engine was connected and not paused).
 func (e *Engine) reconnect() bool {
@@ -364,6 +458,7 @@ func (e *Engine) reconnect() bool {
 	handler := e.handler
 	tm := e.tm
 	pdns := e.proxyDNS
+	dh := e.dnsH
 	e.mu.Unlock()
 
 	// Notify handler of transient reconnecting state (for UI feedback).
@@ -371,12 +466,18 @@ func (e *Engine) reconnect() bool {
 		handler.OnStatus(Status{State: StateReconnecting})
 	}
 
-	// Reset cached connections — next dial will create fresh ones.
+	// Reset order matters (shared tcpwsDialer — see comment in Start):
+	//   1. CancelInflight — abort pending upstream queries (closes race window)
+	//   2. tm.ResetConnections — resets shared tcpws smux session
+	//   3. pdns.ResetConnections — cleans proxyConn pool
+	// Step 1 MUST precede step 2 so in-flight DNS queries exit via ctx
+	// before the smux session is torn down underneath them.
+	if dh != nil {
+		dh.CancelInflight()
+	}
 	if tm != nil {
 		tm.ResetConnections()
 	}
-	// Flush proxy DNS connection pool — stale UDP sessions through
-	// the old wire transport would timeout on next query otherwise.
 	if pdns != nil {
 		pdns.ResetConnections()
 	}
@@ -389,22 +490,23 @@ func (e *Engine) reconnect() bool {
 		hm.resetCounters()
 	}
 
-	// Trigger recovery probe to actively verify wire connectivity.
-	e.mu.Lock()
-	probe := e.probe
-	e.mu.Unlock()
-	if probe != nil {
-		probe.trigger()
-	}
 	return true
 }
 
-// OnNetworkChanged should be called by the platform layer when a network
-// change is detected (e.g., WiFi to cellular). Resets wire transports and
-// clears stale network errors. Auth errors survive (WiFi→cellular doesn't
-// fix expired subscriptions).
-func (e *Engine) OnNetworkChanged() {
-	slog.Info("engine: network changed")
+// doNetworkReconnect performs a full reconnect with DNS counter reset
+// and stale error clearing. Called by netCoordinator on network recovery
+// or interface change.
+func (e *Engine) doNetworkReconnect() {
+	slog.Info("engine: network reconnect")
+
+	// Reset DNS failure counter — old failures are stale after network change.
+	e.mu.Lock()
+	dh := e.dnsH
+	e.mu.Unlock()
+	if dh != nil {
+		dh.ResetCounter()
+	}
+
 	if !e.reconnect() {
 		return
 	}
@@ -426,9 +528,45 @@ func (e *Engine) OnNetworkChanged() {
 	}
 }
 
+// OnNetworkChanged should be called by the platform layer when a network
+// change is detected (e.g., WiFi to cellular). Resets wire transports and
+// clears stale network errors. Auth errors survive (WiFi→cellular doesn't
+// fix expired subscriptions).
+func (e *Engine) OnNetworkChanged() {
+	e.mu.Lock()
+	nc := e.netCoord
+	e.mu.Unlock()
+	if nc != nil {
+		nc.handleEvent(&NetEvent{Signal: SignalChanged, Source: "singtun"})
+		return
+	}
+	// Fallback when netCoord not initialized.
+	e.doNetworkReconnect()
+}
+
+// OnNetEvent receives a network state change from the platform layer.
+// Called from appext (gomobile bridge) with platform-specific information.
+func (e *Engine) OnNetEvent(event *NetEvent) {
+	e.mu.Lock()
+	nc := e.netCoord
+	e.mu.Unlock()
+	if nc != nil {
+		nc.handleEvent(event)
+	}
+}
+
 // onHealthCritical is called by healthMonitor when wire quality is critically degraded.
 // Unlike OnNetworkChanged, it does NOT clear wire errors (degradation ≠ network switch).
 func (e *Engine) onHealthCritical() {
+	// Skip reconnect if network is known to be down — avoids futile work.
+	e.mu.Lock()
+	nc := e.netCoord
+	e.mu.Unlock()
+	if nc != nil && !nc.isNetworkUp() {
+		slog.Debug("engine: health critical but network is down, skipping reconnect")
+		return
+	}
+
 	slog.Warn("engine: health critical, reconnecting")
 	if !e.reconnect() {
 		return
@@ -459,6 +597,8 @@ func (e *Engine) Pause() {
 	pdns := e.proxyDNS
 	e.mu.Unlock()
 
+	// Pause has no CancelInflight — no in-flight DNS during iOS memory pause.
+	// tm→pdns order: shared tcpwsDialer (see Start comment).
 	if tm != nil {
 		tm.ResetConnections()
 	}
@@ -525,8 +665,10 @@ func (e *Engine) Stop() error {
 	// Extract goroutine owners whose callbacks may need e.mu.
 	hm := e.health
 	e.health = nil
-	probe := e.probe
-	e.probe = nil
+	reRaceCancel := e.reRaceCancel
+	e.reRaceCancel = nil
+	e.netCoord = nil
+	e.dnsH = nil
 	e.mu.Unlock()
 
 	// Stop goroutines WITHOUT holding e.mu — health monitor's onReconnect
@@ -535,8 +677,8 @@ func (e *Engine) Stop() error {
 	if hm != nil {
 		hm.stop()
 	}
-	if probe != nil {
-		probe.stop()
+	if reRaceCancel != nil {
+		reRaceCancel()
 	}
 
 	// Extract remaining resources under lock, nil them out, fire status,
@@ -554,7 +696,7 @@ func (e *Engine) Stop() error {
 	e.tm = nil
 	tunnel := e.tunnel
 	e.tunnel = nil
-	e.proxyDNS = nil // no explicit close needed — tm.Close() cascades
+	e.proxyDNS = nil // no explicit close needed — tm.Close() closes shared tcpws → smux dies → recvLoops exit
 	re := e.ruleEngine
 	e.ruleEngine = nil
 	e.client = nil
@@ -679,27 +821,13 @@ func (e *Engine) fail(err error) error {
 	return err
 }
 
-// buildRuleEngine creates a rule.Engine from the client's route configuration.
-// CacheDir must be set by the platform shell (daemon/appext) before calling engine.
-func buildRuleEngine(client *config.ClientConfig) *rule.Engine {
-	// Simple case: single route with match:all and k2v5:// → all proxy, no routes.
-	if client.IsAllProxy() && len(client.Routes) == 1 {
-		return rule.NewEngine(nil, rule.TargetProxy, nil, true)
-	}
+// buildRouteEntries converts config routes to rule.RouteEntry list using the given bundle index.
+// Shared by buildRuleEngine (startup) and updater rebuild (hot-reload) — single code path
+// ensures both always produce identical routing tables from the same config+bundles.
+func buildRouteEntries(routes []config.RouteConfig, idx map[string]*rule.BundleSet) (entries []rule.RouteEntry, fallback rule.Target, allProxy bool) {
+	fallback = rule.TargetDirect
 
-	fallback := rule.TargetDirect
-
-	// Load bundles from cache.
-	bundles, err := rule.Load(client.CacheDir)
-	if err != nil {
-		slog.Warn("engine: rule load failed", "err", err)
-	}
-	idx := rule.Index(bundles)
-
-	var entries []rule.RouteEntry
-	allProxy := false
-
-	for i, route := range client.Routes {
+	for i, route := range routes {
 		target := rule.ParseVia(route.Via)
 
 		if route.Match.All {
@@ -739,10 +867,28 @@ func buildRuleEngine(client *config.ClientConfig) *rule.Engine {
 		}
 
 		// Last route without match criteria = fallback.
-		if i == len(client.Routes)-1 && !route.Match.HasCriteria() {
+		if i == len(routes)-1 && !route.Match.HasCriteria() {
 			fallback = target
 		}
 	}
+	return entries, fallback, allProxy
+}
+
+// buildRuleEngine creates a rule.Engine from the client's route configuration.
+// CacheDir must be set by the platform shell (daemon/appext) before calling engine.
+func buildRuleEngine(client *config.ClientConfig) *rule.Engine {
+	// Simple case: single route with match:all and k2v5:// → all proxy, no routes.
+	if client.IsAllProxy() && len(client.Routes) == 1 {
+		return rule.NewEngine(nil, rule.TargetProxy, nil, true)
+	}
+
+	// Load bundles from cache.
+	bundles, err := rule.Load(client.CacheDir)
+	if err != nil {
+		slog.Warn("engine: rule load failed", "err", err)
+	}
+	idx := rule.Index(bundles)
+	entries, fallback, allProxy := buildRouteEntries(client.Routes, idx)
 
 	hasRules := len(bundles) > 0
 	for _, e := range entries {
@@ -764,6 +910,15 @@ func buildRuleEngine(client *config.ClientConfig) *rule.Engine {
 	}
 
 	return rule.NewEngine(entries, fallback, bundles, allProxy)
+}
+
+// extractMatches collects MatchConfig from each route for BundlesForConfig.
+func extractMatches(client *config.ClientConfig) []rule.MatchConfig {
+	matches := make([]rule.MatchConfig, len(client.Routes))
+	for i, r := range client.Routes {
+		matches[i] = r.Match
+	}
+	return matches
 }
 
 // computeDNSExclude builds the list of IPs to exclude from TUN routing.
@@ -819,8 +974,10 @@ func extractServerHost(wireURL string) string {
 	return u.Hostname()
 }
 
-// ReportWireError reports a runtime wire transport error (proxy dial failure).
-// Called by tunnel's handleTCPProxy/handleUDPProxy on proxy dial failure.
+// ReportWireError reports a runtime wire transport error.
+// Called by tunnel's handleTCPProxy/handleUDPProxy on wire transport failure,
+// and by recovery probe on probe failure. Proxy-layer errors (server responded
+// to the request) are filtered at the call site — see tunnel.go.
 // Debounces: first error fires OnStatus, subsequent non-auth errors are no-ops.
 // Auth errors (client category) can upgrade existing network errors.
 func (e *Engine) ReportWireError(err error) {
@@ -875,6 +1032,65 @@ func (e *Engine) ClearWireError() {
 	e.mu.Unlock()
 	if handler != nil {
 		handler.OnStatus(status)
+	}
+}
+
+// reRaceLoop waits for echo-fail signals and runs a transport re-race to
+// hot-swap the primary transport. Replaces recoveryProbe.
+//
+// Known TOCTOU (P2, not fixed): If Stop() fires between the ctx.Err() check
+// and ReplacePrimary, and tm.Close() wins the tm.mu race, the new Dialer is
+// orphaned in a defunct TransportManager. Bounded leak: QUIC idle timeout (30s)
+// reclaims it. Fix: add a WaitGroup so Stop() waits for this loop to exit
+// before calling tm.Close(). Not worth a standalone PR — fold into next
+// engine.go change.
+func (e *Engine) reRaceLoop(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-e.reRaceChan:
+		}
+
+		e.mu.Lock()
+		if e.state != StateConnected {
+			e.mu.Unlock()
+			continue
+		}
+		tm := e.tm
+		wireCfg := e.wireCfg
+		dd := e.directDialer
+		e.mu.Unlock()
+
+		if tm == nil {
+			continue
+		}
+
+		slog.Warn("DIAG: transport-rerace", "reason", "echo-consecutive-fail", "previousTransport", tm.PrimaryType())
+
+		raceCtx, raceCancel := context.WithTimeout(ctx, 15*time.Second)
+		result, err := wire.RaceTransport(raceCtx, wireCfg, wireCfg.DialAddr, dd)
+		raceCancel()
+
+		if err != nil {
+			slog.Warn("engine: re-race failed", "err", err)
+			continue
+		}
+
+		if ctx.Err() != nil {
+			result.Dialer.Close()
+			return
+		}
+
+		e.mu.Lock()
+		currentTM := e.tm
+		e.mu.Unlock()
+		if currentTM == nil {
+			result.Dialer.Close()
+			continue
+		}
+
+		currentTM.ReplacePrimary(result.Dialer, result.TransportType)
 	}
 }
 

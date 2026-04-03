@@ -241,3 +241,21 @@ func (e *Engine) Close() {
 	e.tmp = nil
 	e.mu.Unlock()
 }
+
+// Reload atomically replaces the engine's routes and bundles.
+// TmpRules are cleared — DNS queries will re-learn them against the new rules.
+// Thread-safe: callers of Match/MatchConn block briefly during swap.
+//
+// Concurrency: builds new data outside lock, swaps under WLock, closes old
+// bundles outside lock (Rule #4: no Close under state lock).
+func (e *Engine) Reload(routes []RouteEntry, bundles []*Bundle) error {
+	e.mu.Lock()
+	oldBundles := e.bundles
+	e.bundles = bundles
+	e.routes = routes
+	e.tmp = make(map[netip.Addr]Target)
+	e.mu.Unlock()
+
+	_ = oldBundles // Bundle has no explicit Close — data is GC'd.
+	return nil
+}

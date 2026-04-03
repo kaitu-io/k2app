@@ -16,9 +16,18 @@ import (
 // LinuxProcessSearcher looks up process names by reading /proc/net/tcp{,6}
 // to find the socket inode, then scanning /proc/*/fd/ for the owning PID,
 // and reading /proc/PID/comm for the process name.
-type LinuxProcessSearcher struct{}
+type LinuxProcessSearcher struct {
+	packageResolver PackageResolver
+}
 
-func (LinuxProcessSearcher) FindProcess(network string, srcIP netip.Addr, srcPort uint16) (string, string) {
+// NewLinuxProcessSearcher creates a LinuxProcessSearcher with an optional
+// PackageResolver for Android UID→package name mapping.
+// Pass nil on non-Android Linux.
+func NewLinuxProcessSearcher(pr PackageResolver) *LinuxProcessSearcher {
+	return &LinuxProcessSearcher{packageResolver: pr}
+}
+
+func (s *LinuxProcessSearcher) FindProcess(network string, srcIP netip.Addr, srcPort uint16) (string, string) {
 	inode := findSocketInode(network, srcIP, srcPort)
 	if inode == 0 {
 		return "", ""
@@ -29,13 +38,12 @@ func (LinuxProcessSearcher) FindProcess(network string, srcIP netip.Addr, srcPor
 	}
 	name := readProcessName(pid)
 
-	// On Android, also try to get package name from UID.
-	packageName := ""
-	if uid := readProcessUID(pid); uid >= 10000 {
-		// Android app UIDs start at 10000. Package lookup is handled
-		// by the caller (appext) via Android PackageManager, not here.
-		// We just provide the UID hint via the process name field.
-		_ = uid
+	// On Android, resolve UID → package name via callback.
+	var packageName string
+	if s.packageResolver != nil {
+		if uid := readProcessUID(pid); uid >= 10000 {
+			packageName = s.packageResolver.PackageForUID(int32(uid))
+		}
 	}
 
 	return name, packageName

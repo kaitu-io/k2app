@@ -7,7 +7,7 @@ package wire
 
 import (
 	"github.com/apernet/quic-go"
-	"github.com/kaitu-io/k2/wire/arc"
+	"github.com/kaitu-io/k2/wire/k2cc"
 )
 
 // NewQUICClientFromConn creates a QUICClient backed by an existing QUIC
@@ -17,7 +17,7 @@ import (
 func NewQUICClientFromConn(conn *quic.Conn, transport *quic.Transport, cfg Config, store *TicketStore) *QUICClient {
 	c := NewQUICClient(cfg, store)
 
-	sender := arc.NewCCSenderGFWMode(arc.DefaultMaxRate)
+	sender := k2cc.NewCCSenderGFWMode(k2cc.DefaultMaxRate)
 	conn.SetCongestionControl(sender)
 
 	c.mu.Lock()

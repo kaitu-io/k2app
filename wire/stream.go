@@ -17,6 +17,7 @@ const (
 	StreamTypeTCP         byte = 0x01
 	StreamTypeUDP         byte = 0x02
 	StreamTypeUDPOverflow byte = 0x03
+	StreamTypeEcho        byte = 0x04
 )
 
 // Limits for varint-decoded lengths to prevent OOM from malicious input.

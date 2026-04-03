@@ -19,6 +19,9 @@ func (m *mockDialer) DialTCP(ctx context.Context, addr string, earlyData []byte)
 func (m *mockDialer) DialUDP(ctx context.Context, addr string) (net.PacketConn, error) {
 	return nil, nil
 }
+func (m *mockDialer) DialStreamUDP(ctx context.Context, addr string) (net.PacketConn, error) {
+	return nil, nil
+}
 func (m *mockDialer) Close() error { return nil }
 
 type mockListener struct{}

@@ -33,6 +33,9 @@ func TestDefaultQUICConfig(t *testing.T) {
 	if cfg.MaxIncomingStreams != 256 {
 		t.Errorf("MaxIncomingStreams = %d, want 256", cfg.MaxIncomingStreams)
 	}
+	if cfg.InitialPacketSize != 1400 {
+		t.Errorf("InitialPacketSize = %d, want 1400", cfg.InitialPacketSize)
+	}
 }
 
 func TestQUICStreamConn(t *testing.T) {
@@ -1036,9 +1039,10 @@ func (immediateDatagramSender) LocalAddr() net.Addr {
 // exceeds maxDatagramInflight, WriteTo returns ErrDatagramSendTimeout immediately.
 func TestQuicUDPConn_WriteTo_InflightDrop(t *testing.T) {
 	mux := &quicUDPMux{
-		sessions:   make(map[uint32]chan *UDPFrame),
-		lastActive: make(map[uint32]*atomic.Int64),
-		done:       make(chan struct{}),
+		sessions:    make(map[uint32]chan *UDPFrame),
+		sessionDone: make(map[uint32]chan struct{}),
+		lastActive:  make(map[uint32]*atomic.Int64),
+		done:        make(chan struct{}),
 	}
 	// Pre-fill inflight to the limit
 	mux.sendInflight.Store(maxDatagramInflight)
@@ -1049,6 +1053,7 @@ func TestQuicUDPConn_WriteTo_InflightDrop(t *testing.T) {
 		targetAddr: "8.8.8.8:53",
 		mux:        mux,
 		readCh:     make(chan *UDPFrame, 1),
+		reaped:     make(chan struct{}),
 		done:       make(chan struct{}),
 	}
 
@@ -1056,11 +1061,13 @@ func TestQuicUDPConn_WriteTo_InflightDrop(t *testing.T) {
 	n, err := conn.WriteTo([]byte("hello"), nil)
 	elapsed := time.Since(start)
 
-	if err != ErrDatagramSendTimeout {
-		t.Fatalf("WriteTo err = %v, want ErrDatagramSendTimeout", err)
+	// Silent drop: returns (len, nil) — protocol-correct for unreliable DATAGRAM.
+	// Returning an error would cause HandleUDP to kill the session.
+	if err != nil {
+		t.Fatalf("WriteTo err = %v, want nil (silent drop)", err)
 	}
-	if n != 0 {
-		t.Fatalf("WriteTo n = %d, want 0", n)
+	if n != len([]byte("hello")) {
+		t.Fatalf("WriteTo n = %d, want %d", n, len([]byte("hello")))
 	}
 	if elapsed > 50*time.Millisecond {
 		t.Fatalf("WriteTo took %v, want immediate return", elapsed)
@@ -1069,10 +1076,14 @@ func TestQuicUDPConn_WriteTo_InflightDrop(t *testing.T) {
 	if got := mux.sendInflight.Load(); got != maxDatagramInflight {
 		t.Fatalf("sendInflight = %d, want %d", got, maxDatagramInflight)
 	}
+	// txDrops should be incremented
+	if got := conn.txDrops.Load(); got != 1 {
+		t.Fatalf("txDrops = %d, want 1", got)
+	}
 }
 
 // TestServerUDPConn_WriteTo_InflightDrop verifies the same inflight limit
-// on the server side.
+// on the server side — silent drop, no error.
 func TestServerUDPConn_WriteTo_InflightDrop(t *testing.T) {
 	var inflight atomic.Int32
 	inflight.Store(maxDatagramInflight)
@@ -1090,14 +1101,17 @@ func TestServerUDPConn_WriteTo_InflightDrop(t *testing.T) {
 	n, err := conn.WriteTo([]byte("hello"), nil)
 	elapsed := time.Since(start)
 
-	if err != ErrDatagramSendTimeout {
-		t.Fatalf("WriteTo err = %v, want ErrDatagramSendTimeout", err)
+	if err != nil {
+		t.Fatalf("WriteTo err = %v, want nil (silent drop)", err)
 	}
-	if n != 0 {
-		t.Fatalf("WriteTo n = %d, want 0", n)
+	if n != len([]byte("hello")) {
+		t.Fatalf("WriteTo n = %d, want %d", n, len([]byte("hello")))
 	}
 	if elapsed > 50*time.Millisecond {
 		t.Fatalf("WriteTo took %v, want immediate return", elapsed)
+	}
+	if got := conn.txDrops.Load(); got != 1 {
+		t.Fatalf("txDrops = %d, want 1", got)
 	}
 	if got := inflight.Load(); got != maxDatagramInflight {
 		t.Fatalf("sendInflight = %d, want %d", got, maxDatagramInflight)
@@ -1108,9 +1122,10 @@ func TestServerUDPConn_WriteTo_InflightDrop(t *testing.T) {
 // the limit, SendDatagram is called synchronously and succeeds.
 func TestQuicUDPConn_WriteTo_NormalPath(t *testing.T) {
 	mux := &quicUDPMux{
-		sessions:   make(map[uint32]chan *UDPFrame),
-		lastActive: make(map[uint32]*atomic.Int64),
-		done:       make(chan struct{}),
+		sessions:    make(map[uint32]chan *UDPFrame),
+		sessionDone: make(map[uint32]chan struct{}),
+		lastActive:  make(map[uint32]*atomic.Int64),
+		done:        make(chan struct{}),
 	}
 
 	conn := &quicUDPConn{
@@ -1119,6 +1134,7 @@ func TestQuicUDPConn_WriteTo_NormalPath(t *testing.T) {
 		targetAddr: "8.8.8.8:53",
 		mux:        mux,
 		readCh:     make(chan *UDPFrame, 1),
+		reaped:     make(chan struct{}),
 		done:       make(chan struct{}),
 	}
 
@@ -1133,4 +1149,30 @@ func TestQuicUDPConn_WriteTo_NormalPath(t *testing.T) {
 	if got := mux.sendInflight.Load(); got != 0 {
 		t.Fatalf("sendInflight = %d after WriteTo, want 0", got)
 	}
+}
+
+// TestQUICServer_EchoStream verifies that QUICServer handles StreamTypeEcho
+// by calling HandleEchoStream, which echoes back the nonce.
+func TestQUICServer_EchoStream(t *testing.T) {
+	client, server, cleanup := setupQUICPair(t)
+	defer cleanup()
+	_ = server // server is running via Listen()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// connect() returns *quic.Conn
+	conn, err := client.connect(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rtt, err := EchoProbe(ctx, conn)
+	if err != nil {
+		t.Fatalf("EchoProbe through QUICServer failed: %v", err)
+	}
+	if rtt <= 0 {
+		t.Errorf("expected positive RTT, got %v", rtt)
+	}
+	t.Logf("echo RTT through server: %v", rtt)
 }
