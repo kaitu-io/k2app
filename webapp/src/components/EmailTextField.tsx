@@ -1,8 +1,8 @@
-// webapp/src/components/EmailTextField.tsx
-import { TextField, TextFieldProps, Typography, Link, Box } from "@mui/material";
+import { TextField, TextFieldProps } from "@mui/material";
 import { forwardRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { suggestEmail } from "../utils/email-suggest";
+import EmailSuggestion from "./EmailSuggestion";
 
 interface EmailTextFieldProps extends Omit<TextFieldProps, 'type' | 'onChange' | 'error' | 'helperText'> {
   value: string;
@@ -58,31 +58,14 @@ const EmailTextField = forwardRef<HTMLDivElement, EmailTextFieldProps>(
       }
     };
 
-    const handleUseSuggestion = () => {
-      if (suggestion) {
-        onChange(suggestion);
-        setSuggestion(null);
-      }
-    };
-
     const renderHelperText = () => {
       if (error) return errorMessage;
       if (suggestion) {
         return (
-          <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
-            <Typography component="span" variant="caption" color="warning.main">
-              {t("auth:auth.emailTypoSuggestion", { suggested: suggestion })}
-            </Typography>
-            <Link
-              component="button"
-              type="button"
-              variant="caption"
-              onClick={handleUseSuggestion}
-              sx={{ fontWeight: 600, cursor: 'pointer' }}
-            >
-              {t("auth:auth.emailTypoUseSuggestion", "Use suggestion")}
-            </Link>
-          </Box>
+          <EmailSuggestion
+            suggestion={suggestion}
+            onAccept={() => { onChange(suggestion); setSuggestion(null); }}
+          />
         );
       }
       return helperText;

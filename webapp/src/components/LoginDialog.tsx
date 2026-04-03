@@ -37,6 +37,7 @@ import { useOnboardingStore } from "../stores/onboarding.store";
 import { useAppLinks } from "../hooks/useAppLinks";
 import { handleResponseError } from "../utils/errorCode";
 import { suggestEmail } from "../utils/email-suggest";
+import EmailSuggestion from "./EmailSuggestion";
 import { cloudApi } from '../services/cloud-api';
 import { getDeviceUdid } from '../services/device-udid';
 import { cacheStore } from '../services/cache-store';
@@ -329,23 +330,10 @@ export default function LoginDialog() {
             />
 
             {emailSuggestion && (
-              <Typography variant="caption" sx={{ mt: -1, display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <Typography component="span" variant="caption" color="warning.main">
-                  {t("auth:auth.emailTypoSuggestion", { suggested: emailSuggestion })}
-                </Typography>
-                <Link
-                  component="button"
-                  type="button"
-                  variant="caption"
-                  onClick={() => {
-                    setEmail(emailSuggestion);
-                    setEmailSuggestion(null);
-                  }}
-                  sx={{ fontWeight: 600, cursor: 'pointer' }}
-                >
-                  {t("auth:auth.emailTypoUseSuggestion", "Use suggestion")}
-                </Link>
-              </Typography>
+              <EmailSuggestion
+                suggestion={emailSuggestion}
+                onAccept={() => { setEmail(emailSuggestion); setEmailSuggestion(null); }}
+              />
             )}
 
             <Button

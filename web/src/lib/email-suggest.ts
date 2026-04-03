@@ -1,7 +1,9 @@
+// Keep in sync with webapp/src/utils/email-suggest.ts
 import emailSpellChecker from '@zootools/email-spell-checker';
 
+// Chinese email domains not in the library's built-in POPULAR_DOMAINS
+// Note: qq.com is already in POPULAR_DOMAINS, no need to duplicate
 const EXTRA_DOMAINS = [
-  'qq.com',
   '163.com',
   '126.com',
   'sina.com',
