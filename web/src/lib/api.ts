@@ -842,6 +842,7 @@ export interface EmailTemplateLocalizationRequest {
 
 export interface EmailTemplateRequest {
   name: string;
+  slug?: string;
   language: string;
   subject: string;
   content: string;
@@ -862,6 +863,7 @@ export interface EmailTemplateResponse {
   createdAt: number;
   updatedAt: number;
   name: string;
+  slug: string;
   language: string;
   subject: string;
   content: string;
@@ -1450,9 +1452,28 @@ export const api = {
     });
   },
 
-  // Note: Email template parameters are now defined on the frontend
-  // See: web/src/app/[locale]/manager/edm/templates/editor/page.tsx
-  // Backend reference: server/center/api_admin_edm.go line 245-252
+  async sendTemplatedEmails(data: {
+    batchId: string;
+    async?: boolean;
+    items: Array<{
+      email: string;
+      userId?: number;
+      slug: string;
+      vars?: Record<string, string>;
+    }>;
+  }): Promise<{
+    batchId: string;
+    total: number;
+    sent: number;
+    failed: number;
+    skipped: number;
+    items?: Array<{ email: string; status: string; error?: string }>;
+  }> {
+    return this.request('/app/edm/send', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
 
   // Email Send Logs APIs
   async getEmailSendLogs(params: EmailSendLogListParams = {}): Promise<EmailSendLogListResponse> {

@@ -8,7 +8,6 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
@@ -20,125 +19,9 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { ArrowLeft, Save, FileText, Languages, Info, Sparkles } from "lucide-react";
+import { ArrowLeft, Save, FileText, Languages, Sparkles } from "lucide-react";
 import type { EmailTemplateRequest, EmailTemplateResponse } from "@/lib/api";
 import Link from "next/link";
-
-// Frontend-defined template parameters (based on backend contract)
-// Reference: server/center/api_admin_edm.go line 245-252
-interface EmailTemplateParam {
-  key: string;
-  name: string;
-  description: string;
-  category: 'user' | 'subscription' | 'device' | 'system';
-  dataType: 'string' | 'number' | 'boolean' | 'date';
-  templateVar: string;
-  example: string;
-  isRequired: boolean;
-}
-
-interface EmailTemplateParamGroup {
-  category: 'user' | 'subscription' | 'device' | 'system';
-  name: string;
-  description: string;
-  params: EmailTemplateParam[];
-}
-
-// Template parameters matching backend implementation
-// From: server/center/logic_email_task.go buildEmailTemplateData()
-const TEMPLATE_PARAMS: EmailTemplateParamGroup[] = [
-  {
-    category: 'user',
-    name: '用户信息',
-    description: '用户基本信息和账户数据',
-    params: [
-      {
-        key: 'user_email',
-        name: '用户邮箱',
-        description: '用户的登录邮箱地址',
-        category: 'user',
-        dataType: 'string',
-        templateVar: '{{.UserEmail}}',
-        example: 'user@example.com',
-        isRequired: true,
-      },
-    ],
-  },
-  {
-    category: 'subscription',
-    name: '订阅信息',
-    description: '用户订阅状态和有效期',
-    params: [
-      {
-        key: 'expired_at',
-        name: '过期日期',
-        description: '会员订阅的过期日期 (YYYY-MM-DD)',
-        category: 'subscription',
-        dataType: 'date',
-        templateVar: '{{.ExpiredAt}}',
-        example: '2024-12-31',
-        isRequired: false,
-      },
-      {
-        key: 'remaining_days',
-        name: '剩余天数',
-        description: '距离过期的天数',
-        category: 'subscription',
-        dataType: 'number',
-        templateVar: '{{.RemainingDays}}',
-        example: '7',
-        isRequired: false,
-      },
-      {
-        key: 'is_pro',
-        name: '是否Pro用户',
-        description: '用户是否为Pro会员',
-        category: 'subscription',
-        dataType: 'boolean',
-        templateVar: '{{.IsPro}}',
-        example: 'true',
-        isRequired: false,
-      },
-      {
-        key: 'is_expiring_soon',
-        name: '是否即将过期',
-        description: '是否即将过期 (剩余7天内)',
-        category: 'subscription',
-        dataType: 'boolean',
-        templateVar: '{{.IsExpiringSoon}}',
-        example: 'false',
-        isRequired: false,
-      },
-    ],
-  },
-  {
-    category: 'device',
-    name: '设备信息',
-    description: '用户设备相关信息',
-    params: [
-      {
-        key: 'device_count',
-        name: '已用设备数',
-        description: '用户当前注册的设备数量',
-        category: 'device',
-        dataType: 'number',
-        templateVar: '{{.DeviceCount}}',
-        example: '3',
-        isRequired: false,
-      },
-      {
-        key: 'max_devices',
-        name: '最大设备数',
-        description: '用户允许的最大设备数量',
-        category: 'device',
-        dataType: 'number',
-        templateVar: '{{.MaxDevices}}',
-        example: '5',
-        isRequired: false,
-      },
-    ],
-  },
-];
 
 export default function EmailTemplateEditorPage() {
   const router = useRouter();
@@ -171,6 +54,7 @@ export default function EmailTemplateEditorPage() {
   // Base form data (language-independent)
   const [baseFormData, setBaseFormData] = useState({
     name: "",
+    slug: "",
     description: "",
     isActive: true,
   });
@@ -203,6 +87,7 @@ export default function EmailTemplateEditorPage() {
       // Set base form data
       setBaseFormData({
         name: template.name,
+        slug: template.slug || "",
         description: template.description || "",
         isActive: template.isActive,
       });
@@ -271,6 +156,7 @@ export default function EmailTemplateEditorPage() {
 
           const templateData: EmailTemplateRequest = {
             name: baseFormData.name,
+            slug: baseFormData.slug || undefined,
             language: lang,
             subject: trans.subject,
             content: trans.content,
@@ -288,6 +174,7 @@ export default function EmailTemplateEditorPage() {
         // User will use "Auto Translate" button to create other languages
         const originData: EmailTemplateRequest = {
           name: baseFormData.name,
+          slug: baseFormData.slug || undefined,
           language: currentLanguage,
           subject: currentTrans.subject,
           content: currentTrans.content,
@@ -364,33 +251,6 @@ export default function EmailTemplateEditorPage() {
     }
   };
 
-  // Insert variable into content
-  const insertVariableIntoContent = (param: EmailTemplateParam) => {
-    const textarea = document.getElementById(`content-${currentLanguage}`) as HTMLTextAreaElement;
-    if (textarea) {
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-      const text = textarea.value;
-      const before = text.substring(0, start);
-      const after = text.substring(end, text.length);
-      const newText = before + param.templateVar + after;
-
-      setTranslations(prev => ({
-        ...prev,
-        [currentLanguage]: {
-          ...prev[currentLanguage],
-          content: newText
-        }
-      }));
-
-      // Set focus back to textarea and position cursor after inserted variable
-      setTimeout(() => {
-        textarea.focus();
-        textarea.setSelectionRange(start + param.templateVar.length, start + param.templateVar.length);
-      }, 0);
-    }
-  };
-
   useEffect(() => {
     fetchTemplate();
   }, [fetchTemplate]);
@@ -445,9 +305,9 @@ export default function EmailTemplateEditorPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column - Template Form */}
-        <div className="lg:col-span-2 space-y-6">
+      <div className="space-y-6">
+        {/* Template Form */}
+        <div className="space-y-6">
           {/* Basic Information */}
           <Card>
             <CardHeader>
@@ -471,6 +331,23 @@ export default function EmailTemplateEditorPage() {
                   onChange={(e) => setBaseFormData(prev => ({ ...prev, name: e.target.value }))}
                   placeholder={"输入模板名称"}
                 />
+              </div>
+
+              {/* Slug */}
+              <div className="space-y-2">
+                <Label htmlFor="slug">
+                  {"Slug"}
+                </Label>
+                <Input
+                  id="slug"
+                  value={baseFormData.slug}
+                  onChange={(e) => setBaseFormData(prev => ({ ...prev, slug: e.target.value }))}
+                  placeholder={"如 renewal-30d（留空表示普通营销模板）"}
+                  className="font-mono"
+                />
+                <p className="text-sm text-muted-foreground">
+                  {"系统模板标识符，用于程序化引用"}
+                </p>
               </div>
 
               {/* Description */}
@@ -599,72 +476,12 @@ export default function EmailTemplateEditorPage() {
                         placeholder={"输入邮件内容（HTML格式）"}
                       />
                       <p className="text-sm text-muted-foreground">
-                        {"使用右侧的变量卡片插入模板变量"}
+                        {"支持使用 Go template 变量，如 {{.VarName}}"}
                       </p>
                     </div>
                   </TabsContent>
                 ))}
               </Tabs>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Right Column - Template Variables */}
-        <div className="lg:col-span-1">
-          <Card className="sticky top-6">
-            <CardHeader>
-              <CardTitle>{"可用变量"}</CardTitle>
-              <CardDescription>
-                {"点击变量卡片插入到内容中"}
-              </CardDescription>
-              <div className="flex items-start gap-2 p-3 mt-2 bg-blue-50 dark:bg-blue-950 rounded-md border border-blue-200 dark:border-blue-800">
-                <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
-                <p className="text-xs text-blue-700 dark:text-blue-300">
-                  {`这些变量由后端自动填充，点击变量卡片可插入到当前语言的邮件内容中`}
-                </p>
-              </div>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="space-y-4 max-h-[600px] overflow-y-auto p-6">
-                {TEMPLATE_PARAMS.map((group) => (
-                  <div key={group.category}>
-                    <div className="mb-3">
-                      <h4 className="font-semibold text-sm">{group.name}</h4>
-                      <p className="text-xs text-muted-foreground">{group.description}</p>
-                    </div>
-                    <div className="space-y-2">
-                      {group.params.map((param) => (
-                        <div
-                          key={param.key}
-                          className="border border-border rounded-lg p-3 hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors group"
-                          onClick={() => insertVariableIntoContent(param)}
-                        >
-                          <div className="flex items-center justify-between mb-1">
-                            <Badge variant="outline" className="text-xs">
-                              {param.dataType}
-                            </Badge>
-                            {param.isRequired && (
-                              <Badge variant="default" className="text-xs">
-                                {"必填"}
-                              </Badge>
-                            )}
-                          </div>
-                          <div className="font-medium text-sm mb-1">{param.name}</div>
-                          <div className="text-xs text-muted-foreground mb-2">{param.description}</div>
-                          <div className="font-mono text-xs bg-muted px-2 py-1 rounded group-hover:bg-accent group-hover:text-accent-foreground transition-colors">
-                            {param.templateVar}
-                          </div>
-                          {param.example && (
-                            <div className="text-xs text-muted-foreground mt-1">
-                              {"示例"}{": "}{param.example}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
             </CardContent>
           </Card>
         </div>
