@@ -17,35 +17,31 @@ export const edmTools: ToolRegistration[] = [
   }),
 
   defineApiTool({
-    name: 'create_edm_task',
-    description: 'Create an EDM email send task. ALWAYS preview targets first with preview_edm_targets.',
+    name: 'send_templated_email',
+    description: 'Send templated emails to one or more recipients. Each item specifies an email address, a template slug (e.g. "renewal-30d", "winback-7d"), and template variables. Use list_edm_templates to find available slugs.',
     group: 'edm',
     method: 'POST',
-    path: '/app/edm/tasks',
+    path: '/app/edm/send',
     params: {
-      name: z.string().describe('Task name'),
-      template_id: z.number().describe('Email template ID'),
-      user_filters: z.record(z.string(), z.unknown()).describe('Target user filter criteria'),
-      type: z.string().optional().describe('Task type (e.g. "immediate", "scheduled")'),
-      scheduled_at: z.string().optional().describe('Scheduled send time (RFC3339)'),
+      batch_id: z.string().describe('Unique batch ID for idempotency (e.g. "mcp:2026-04-03:test")'),
+      async: z.boolean().optional().describe('If true, queue for async processing. Default false (sync).'),
+      items: z.array(z.object({
+        email: z.string().describe('Recipient email address'),
+        user_id: z.number().optional().describe('User ID (optional, auto-resolved from email if omitted)'),
+        slug: z.string().describe('Template slug (e.g. "renewal-30d")'),
+        vars: z.record(z.string(), z.string()).optional().describe('Template variables as key-value pairs'),
+      })).describe('Array of email send items'),
     },
     mapBody: (p) => ({
-      name: p.name, templateId: p.template_id,
-      userFilters: p.user_filters, type: p.type,
-      scheduledAt: p.scheduled_at,
+      batchId: p.batch_id,
+      async: p.async,
+      items: (p.items as Array<{ email: string; user_id?: number; slug: string; vars?: Record<string, string> }>).map((item) => ({
+        email: item.email,
+        userId: item.user_id,
+        slug: item.slug,
+        vars: item.vars,
+      })),
     }),
-  }),
-
-  defineApiTool({
-    name: 'preview_edm_targets',
-    description: 'Preview target user count and sample for an EDM campaign. Use before create_edm_task to verify audience.',
-    group: 'edm',
-    method: 'POST',
-    path: '/app/edm/preview-targets',
-    params: {
-      user_filters: z.record(z.string(), z.unknown()).describe('Target user filter criteria'),
-    },
-    mapBody: (p) => ({ userFilters: p.user_filters }),
   }),
 
   defineApiTool({
