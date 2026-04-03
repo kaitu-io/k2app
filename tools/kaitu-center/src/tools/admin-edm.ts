@@ -11,9 +11,62 @@ import { defineApiTool, type ToolRegistration } from '../tool-factory.js'
 export const edmTools: ToolRegistration[] = [
   defineApiTool({
     name: 'list_edm_templates',
-    description: 'List email marketing templates. Returns id, name, subject, language, created_at.',
+    description: 'List email marketing templates. Returns id, name, slug, subject, language, created_at.',
     group: 'edm',
     path: '/app/edm/templates',
+  }),
+
+  defineApiTool({
+    name: 'create_edm_template',
+    description: 'Create a new email marketing template. Content supports Go template variables like {{.VarName}}.',
+    group: 'edm',
+    method: 'POST',
+    path: '/app/edm/templates',
+    params: {
+      name: z.string().describe('Template display name'),
+      slug: z.string().optional().describe('Unique readable identifier (e.g. "renewal-30d")'),
+      language: z.string().describe('BCP 47 language tag (e.g. "zh-CN", "en-US")'),
+      subject: z.string().describe('Email subject line (supports {{.Var}} placeholders)'),
+      content: z.string().describe('Email body content (supports {{.Var}} placeholders)'),
+      description: z.string().optional().describe('Template description'),
+      is_active: z.boolean().optional().describe('Whether template is active (default true)'),
+    },
+    mapBody: (p) => ({
+      name: p.name,
+      slug: p.slug,
+      language: p.language,
+      subject: p.subject,
+      content: p.content,
+      description: p.description,
+      isActive: p.is_active ?? true,
+    }),
+  }),
+
+  defineApiTool({
+    name: 'update_edm_template',
+    description: 'Update an existing email marketing template by ID.',
+    group: 'edm',
+    method: 'PUT',
+    path: (p) => `/app/edm/templates/${p.template_id}`,
+    params: {
+      template_id: z.number().describe('Template ID to update'),
+      name: z.string().describe('Template display name'),
+      slug: z.string().optional().describe('Unique readable identifier'),
+      language: z.string().describe('BCP 47 language tag'),
+      subject: z.string().describe('Email subject line'),
+      content: z.string().describe('Email body content'),
+      description: z.string().optional().describe('Template description'),
+      is_active: z.boolean().optional().describe('Whether template is active'),
+    },
+    mapBody: (p) => ({
+      name: p.name,
+      slug: p.slug,
+      language: p.language,
+      subject: p.subject,
+      content: p.content,
+      description: p.description,
+      isActive: p.is_active ?? true,
+    }),
   }),
 
   defineApiTool({
