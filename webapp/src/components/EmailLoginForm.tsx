@@ -20,6 +20,7 @@ import {
   Stack,
   Tabs,
   Tab,
+  Link,
 } from "@mui/material";
 import {
   AlternateEmail as AlternateEmailIcon,
@@ -30,6 +31,7 @@ import { useTranslation } from "react-i18next";
 import { useAuthStore } from "../stores";
 import { useOnboardingStore } from "../stores/onboarding.store";
 import { handleResponseError } from "../utils/errorCode";
+import { suggestEmail } from "../utils/email-suggest";
 import type { SendCodeResponse, AuthResult } from "../services/api-types";
 import { cloudApi } from '../services/cloud-api';
 import { cacheStore } from '../services/cache-store';
@@ -74,6 +76,8 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
   const emailInputRef = useRef<HTMLInputElement>(null);
   const codeInputRef = useRef<HTMLInputElement>(null);
   const passwordInputRef = useRef<HTMLInputElement>(null);
+
+  const [emailSuggestion, setEmailSuggestion] = useState<string | null>(null);
 
   // User status (from backend)
   const [isActivated, setIsActivated] = useState(true);
@@ -317,8 +321,8 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
               label={t("auth:auth.email")}
               placeholder={t("auth:auth.emailPlaceholder")}
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              onBlur={(e) => setEmail(e.target.value.trim())}
+              onChange={(e) => { setEmail(e.target.value); if (emailSuggestion) setEmailSuggestion(null); }}
+              onBlur={(e) => { const cleaned = e.target.value.trim().toLowerCase().replace(/\s+/g, ''); setEmail(cleaned); const suggested = suggestEmail(cleaned); setEmailSuggestion(suggested); }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !isSubmitting && isEmailValid) {
                   handleSendCode();
@@ -345,6 +349,26 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
                 },
               }}
             />
+
+            {emailSuggestion && (
+              <Typography variant="caption" sx={{ mt: -1, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <Typography component="span" variant="caption" color="warning.main">
+                  {t("auth:auth.emailTypoSuggestion", { suggested: emailSuggestion })}
+                </Typography>
+                <Link
+                  component="button"
+                  type="button"
+                  variant="caption"
+                  onClick={() => {
+                    setEmail(emailSuggestion);
+                    setEmailSuggestion(null);
+                  }}
+                  sx={{ fontWeight: 600, cursor: 'pointer' }}
+                >
+                  {t("auth:auth.emailTypoUseSuggestion", "Use suggestion")}
+                </Link>
+              </Typography>
+            )}
 
             <Button
               fullWidth
@@ -378,8 +402,8 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
               label={t("auth:auth.email")}
               placeholder={t("auth:auth.emailPlaceholder")}
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              onBlur={(e) => setEmail(e.target.value.trim())}
+              onChange={(e) => { setEmail(e.target.value); if (emailSuggestion) setEmailSuggestion(null); }}
+              onBlur={(e) => { const cleaned = e.target.value.trim().toLowerCase().replace(/\s+/g, ''); setEmail(cleaned); const suggested = suggestEmail(cleaned); setEmailSuggestion(suggested); }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !isSubmitting && isEmailValid && password) {
                   handlePasswordLogin();
@@ -406,6 +430,26 @@ export default function EmailLoginForm({ onLoginSuccess }: EmailLoginFormProps) 
                 },
               }}
             />
+
+            {emailSuggestion && (
+              <Typography variant="caption" sx={{ mt: -1, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <Typography component="span" variant="caption" color="warning.main">
+                  {t("auth:auth.emailTypoSuggestion", { suggested: emailSuggestion })}
+                </Typography>
+                <Link
+                  component="button"
+                  type="button"
+                  variant="caption"
+                  onClick={() => {
+                    setEmail(emailSuggestion);
+                    setEmailSuggestion(null);
+                  }}
+                  sx={{ fontWeight: 600, cursor: 'pointer' }}
+                >
+                  {t("auth:auth.emailTypoUseSuggestion", "Use suggestion")}
+                </Link>
+              </Typography>
+            )}
 
             <TextField
               fullWidth
