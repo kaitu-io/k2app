@@ -351,3 +351,119 @@ func TestEngineIsAllProxy(t *testing.T) {
 		t.Error("IsAllProxy() = true, want false")
 	}
 }
+
+func TestEngineReload(t *testing.T) {
+	b1 := mustBundle(t, []BundleSet{
+		{Name: "google", DomainSuffixes: []string{"google.com"}},
+	})
+	idx1 := Index([]*Bundle{b1})
+
+	routes1 := []RouteEntry{
+		{Target: TargetProxy, Sets: bindSets(idx1, "google")},
+	}
+	eng := NewEngine(routes1, TargetDirect, []*Bundle{b1}, false)
+	defer eng.Close()
+
+	// Before reload: google→proxy, facebook→direct (fallback).
+	if got := eng.Match("google.com"); got != TargetProxy {
+		t.Fatalf("before reload: Match(google.com) = %v, want proxy", got)
+	}
+	if got := eng.Match("facebook.com"); got != TargetDirect {
+		t.Fatalf("before reload: Match(facebook.com) = %v, want direct", got)
+	}
+
+	// Reload: facebook→proxy, google removed.
+	b2 := mustBundle(t, []BundleSet{
+		{Name: "facebook", DomainSuffixes: []string{"facebook.com"}},
+	})
+	idx2 := Index([]*Bundle{b2})
+	routes2 := []RouteEntry{
+		{Target: TargetProxy, Sets: bindSets(idx2, "facebook")},
+	}
+	if err := eng.Reload(routes2, []*Bundle{b2}); err != nil {
+		t.Fatalf("Reload() error: %v", err)
+	}
+
+	// After reload: google→direct (fallback), facebook→proxy.
+	if got := eng.Match("google.com"); got != TargetDirect {
+		t.Errorf("after reload: Match(google.com) = %v, want direct", got)
+	}
+	if got := eng.Match("facebook.com"); got != TargetProxy {
+		t.Errorf("after reload: Match(facebook.com) = %v, want proxy", got)
+	}
+}
+
+func TestEngineReload_ClearsTmpRules(t *testing.T) {
+	b := mustBundle(t, []BundleSet{
+		{Name: "google", DomainSuffixes: []string{"google.com"}},
+	})
+	idx := Index([]*Bundle{b})
+
+	routes := []RouteEntry{
+		{Target: TargetProxy, Sets: bindSets(idx, "google")},
+	}
+	eng := NewEngine(routes, TargetDirect, []*Bundle{b}, false)
+	defer eng.Close()
+
+	// Set a tmp rule for 8.8.8.8 → proxy.
+	eng.SetTmpRule("8.8.8.8", TargetProxy)
+	if got := eng.Match("8.8.8.8"); got != TargetProxy {
+		t.Fatalf("before reload: Match(8.8.8.8) = %v, want proxy", got)
+	}
+
+	// Reload with the same routes — tmp rules must be cleared.
+	if err := eng.Reload(routes, []*Bundle{b}); err != nil {
+		t.Fatalf("Reload() error: %v", err)
+	}
+	if got := eng.Match("8.8.8.8"); got != TargetDirect {
+		t.Errorf("after reload: Match(8.8.8.8) = %v, want direct (tmp cleared)", got)
+	}
+}
+
+func TestEngineReload_Concurrent(t *testing.T) {
+	b := mustBundle(t, []BundleSet{
+		{Name: "google", DomainSuffixes: []string{"google.com"}, CIDRs: []string{"8.8.8.0/24"}},
+	})
+	idx := Index([]*Bundle{b})
+
+	routes := []RouteEntry{
+		{Target: TargetProxy, Sets: bindSets(idx, "google")},
+	}
+	eng := NewEngine(routes, TargetDirect, []*Bundle{b}, false)
+	defer eng.Close()
+
+	var wg sync.WaitGroup
+
+	// 100 goroutines doing Match + MatchConn.
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			eng.Match("google.com")
+			eng.Match("8.8.8.8")
+			eng.Match("example.com")
+			eng.MatchConn("google.com", ConnMeta{Network: "tcp"})
+			eng.MatchConn("8.8.8.8", ConnMeta{Network: "udp"})
+		}()
+	}
+
+	// 10 goroutines doing Reload.
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			b2 := mustBundle(t, []BundleSet{
+				{Name: "google", DomainSuffixes: []string{"google.com"}, CIDRs: []string{"8.8.8.0/24"}},
+			})
+			idx2 := Index([]*Bundle{b2})
+			r2 := []RouteEntry{
+				{Target: TargetProxy, Sets: bindSets(idx2, "google")},
+			}
+			if err := eng.Reload(r2, []*Bundle{b2}); err != nil {
+				t.Errorf("Reload() error: %v", err)
+			}
+		}()
+	}
+
+	wg.Wait()
+}
