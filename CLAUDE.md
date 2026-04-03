@@ -3,8 +3,6 @@
 Minimalist VPN tunnel with k2v5 composite wire protocol (QUIC+H3+PCC primary, TCP-WS+smux fallback).
 Two binaries: `k2` (client) and `k2s` (server). Client has daemon architecture with HTTP localhost API.
 
-Used as a read-only submodule in k2app. See parent `CLAUDE.md` for integration context.
-
 ## Quick Commands
 
 ```bash
@@ -20,19 +18,18 @@ make gateway-uat                   # Docker UAT: 10 phases, ~56 tests, full soft
 make pre-release                   # quick-check + gateway-check + full tests + contract tests + cross-compile
 make appext-ios                    # iOS xcframework (gomobile bind)
 make appext-android                # Android aar (gomobile bind)
+k2 connect <k2v5://URL>            # Direct connect (foreground, proxy mode)
 k2 setup <k2v5://URL>              # First-time: generate config + install service + start
-k2 ctl up                          # Connect (uses saved config)
-k2 ctl status                      # Connection status JSON
-k2 ctl down                        # Disconnect
-k2 service install                 # Install as system service
-k2 service uninstall               # Remove system service
-k2s setup                          # Server: install service + print connect URL
-k2s -c server.yaml                 # Server with explicit config (foreground)
-k2r setup <k2v5://URL>              # Gateway: generate config + install service + start
-k2r ctl up                          # Gateway: connect (install intercept rules)
-k2r ctl status                      # Gateway: connection status JSON
-k2r ctl down                        # Gateway: disconnect (remove intercept rules)
+k2 up                              # Connect (via daemon, uses saved config)
+k2 down                            # Disconnect
+k2 status                          # Connection status
+k2 run                             # Start daemon (service entry point)
+k2s run                            # Deploy server (auto-config, prints URL)
+k2s setup                          # Server: interactive setup wizard
+k2s setup --port 443 --username alice --no-firewall  # Automated setup
+k2s user add <name>                # Add user, print connect URL
 docker compose up --build           # Docker: server + init container (docker/)
+make release VERSION=1.0.0         # Build all platforms + upload to S3
 ```
 
 ## Code Style
@@ -59,7 +56,7 @@ All diagnostic logs use `log/slog` (stdlib). The `DIAG:` prefix is reserved for 
 
 - Emitted every 30 seconds from `healthMonitor.sample()`.
 - Fixed prefix: `"DIAG: heartbeat"`.
-- Required fields: `health`, `transport`, `loss` (smoothed), `rttMs`, `minRttMs`, `txMB`, `rxMB`, `tcpConns`, `udpConns`, `uptimeS`, `fallback`.
+- Required fields: `health`, `transport`, `loss` (smoothed), `rttMs`, `minRttMs`, `txMB`, `rxMB`, `tcpConns`, `udpConns`, `uptimeS`, `fallback`, `heapMB`, `sysMB`, `goroutines`.
 - Human-readable sizes (MB) and durations (ms/s).
 - MUST NOT log at 1Hz — only every 30 samples.
 
@@ -93,12 +90,16 @@ Reserved event names:
 | `DIAG: dns-proxy-write-fail` | WARN | WriteTo failed | server, domain, connAgeS, isNewConn, err |
 | `DIAG: dns-proxy-conn-dead` | WARN | recv loop died | server, domain, connAgeS, isNewConn, err |
 | `DIAG: dns-proxy-dial-fail` | WARN | DialUDP failed | server, domain, err |
-| `DIAG: p2p-connected` | INFO | connection established | peer, method, dialMs |
-| `DIAG: ice-connected` | INFO | ICE session established | session, method |
-| `DIAG: ice-failed` | WARN | ICE session failed | session, err |
-| `DIAG: gw-lan-discover` | INFO | on LAN scan | subnets, ifaceCount |
-| `DIAG: gw-intercept-install` | INFO | on rule install | backend, subnets, excludeCount |
-| `DIAG: gw-sysctl` | INFO | on sysctl change | key, oldValue, newValue |
+| `DIAG: transport-race-start` | INFO | race begins | candidates |
+| `DIAG: transport-race-winner` | INFO | race complete | winner, winnerMs, tried |
+| `DIAG: transport-race-fail` | WARN | all candidates failed | quic443Err, quicHopErr, tcpwsErr |
+| `DIAG: echo-probe-ok` | DEBUG | echo succeeded | transport, rttMs |
+| `DIAG: echo-probe-fail` | WARN | echo failed | transport, err |
+| `DIAG: echo-probe-unsupported` | WARN | server doesn't support echo (old k2v5) | transport |
+| `DIAG: transport-rerace` | WARN | runtime re-race (3 consecutive echo fails) | reason, previousTransport |
+| `DIAG: dns-proxy-recv-no-callback` | WARN | DNS response arrived after callback expired | server, queryID, domain, numCallbacks |
+| `DIAG: datagram-readloop-exit` | WARN | QUIC datagram read loop terminated | totalReceived, err |
+| `DIAG: quic-dial-orphan-cleanup` | WARN | orphaned transport.Dial goroutine resolved | addr, blockedMs |
 
 ### Layer 3 Rules — Full Trace
 
@@ -170,7 +171,6 @@ engine.mu (state)
   → daemon.mu (state) → daemon.sseMu (state)
   → TransportManager.mu (state) → QUICClient.mu (state)
   →                                TCPWSClient.mu (state)
-  → recoveryProbe.mu (state)
   → dnsOverride.mu (state)
   → connTracker.mu (state)
 
@@ -457,6 +457,7 @@ All optional capability interfaces that upper layers may type-assert on must be 
 | Interface | Package | Implemented by | Asserted by |
 |-----------|---------|----------------|-------------|
 | `StatsProvider` | wire | QUICClient, TCPWSClient | engine (stats collection) |
+| `EchoProber` | wire | QUICClient | engine (echo health probe) |
 
 When adding a new optional interface, add it to this table.
 
@@ -487,13 +488,14 @@ server/CLAUDE.md               Server listener orchestration, TCP/UDP handlers
 wire/CLAUDE.md                 k2v5 wire protocol, Dialer/Listener interfaces
 wire/k2v5-protocol-spec.md    k2v5 protocol specification (TLS, ECH, camouflage, framing)
 wire/VOCABULARY.md             Three-layer vocabulary convention (Wire/Relay/Tunnel)
-wire/arc/CLAUDE.md             PCC Vivace congestion control
+wire/k2cc/CLAUDE.md            K2CC Vivace congestion control
 appext/CLAUDE.md               App extension shell: gomobile SDK (macOS sysext, iOS, Android)
 safego/                        Panic-safe goroutine launcher (Go() wraps recover + slog)
 test/CLAUDE.md                 E2E integration tests
 docs/features/                 Feature specs (cloud-webapp, mobile-sdk, private-ip-guard, etc.)
 docs/knowledge/                Distilled patterns (architecture, bugfix, gotchas, testing, tasks)
 docs/contracts/                API contracts (webapp-daemon-api)
+scripts/                       Install scripts (install-k2s.sh, install-k2.sh) + release pipeline (release.sh)
 ```
 
 ## Architecture
@@ -596,6 +598,7 @@ engine.Stop()
 
 ## Critical Gotchas
 
+- **connectMu hard timeout**: `QUICClient.connect()` wraps `transport.Dial` in a goroutine with `quicDialHardTimeout` (15s). If quic-go's internal `Conn.destroy()` blocks (waiting for `conn.run()` exit on context cancel), the goroutine is orphaned and connectMu is released. Without this, connectMu starvation blocks all DialTCP/DialUDP for 30s+ (detected in v0.4.1 production, 4/22 devices). `TCPWSClient` uses `net.Dialer{Timeout}` for kernel-level TCP dial enforcement. `daemon.directDialer` derives Timeout from context deadline.
 - **Race test timeout**: `go test -race ./wire/...` needs `>300s` (arc integration benchmarks are slow). Use `-timeout 300s` or `-short` to skip long-running tests.
 - QUIC stream `Close()` only sends FIN (write direction). Must also call `CancelRead()` to release stream slot — `quicStreamConn.Close()` handles both
 - sing-tun gVisor stack owns connections — handler must defer close, not close prematurely
@@ -653,6 +656,8 @@ docs/todos/p2-*.md     Nice to have
 - Happy Eyeballs (RFC 8305), transport behavior contract tests (20 scenarios in wire/ + engine/)
 - Quality gates (`make quick-check` / `make pre-release`), goleak goroutine leak detection
 - safego package (panic-safe goroutine launcher), daemon doUp abort mechanism
+- CLI redesign (pure subcommand dispatch, --json output, non-interactive k2s setup)
+- Unified release pipeline (LATEST + checksums.txt, S3 upload, install scripts, CI)
 
 ## Platform Mapping
 

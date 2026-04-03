@@ -50,7 +50,7 @@ func installService() error {
 		s, err = m.CreateService(serviceName, exe, mgr.Config{
 			DisplayName: "Kaitu Network Service",
 			StartType:   mgr.StartAutomatic,
-		})
+		}, "run")
 		if err == nil {
 			break
 		}
@@ -68,7 +68,7 @@ func installService() error {
 		{Type: mgr.ServiceRestart, Delay: 5 * time.Second},
 		{Type: mgr.ServiceRestart, Delay: 5 * time.Second},
 		{Type: mgr.ServiceRestart, Delay: 10 * time.Second},
-	}, 60) // reset failure count after 60 seconds
+	}, 3600) // reset failure count after 1 hour
 	if err != nil {
 		slog.Warn("Failed to set recovery actions", "err", err)
 	}

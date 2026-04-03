@@ -263,15 +263,30 @@ func (e *Engine) Stop() (err error) {
 	return
 }
 
-// OnNetworkChanged notifies the engine of a network change.
-// Call from platform layer (Android NetworkCallback, iOS NWPathMonitor).
-func (e *Engine) OnNetworkChanged() {
+// NotifyNetEvent receives a network state change from the platform layer.
+// Call from iOS NWPathMonitor or Android ConnectivityManager.
+// event.Signal: "available", "unavailable", or "changed".
+// See NetEvent for field documentation.
+func (e *Engine) NotifyNetEvent(event *NetEvent) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Error("appext: panic in OnNetworkChanged", "panic", r, "stack", string(debug.Stack()))
+			slog.Error("appext: panic in NotifyNetEvent", "panic", r, "stack", string(debug.Stack()))
 		}
 	}()
-	e.inner.OnNetworkChanged()
+	if event == nil {
+		slog.Warn("appext: NotifyNetEvent called with nil event")
+		return
+	}
+	e.inner.OnNetEvent(&engine.NetEvent{
+		Signal:         event.Signal,
+		InterfaceName:  event.InterfaceName,
+		InterfaceIndex: event.InterfaceIndex,
+		IsWifi:         event.IsWifi,
+		IsCellular:     event.IsCellular,
+		HasIPv4:        event.HasIPv4,
+		HasIPv6:        event.HasIPv6,
+		Source:         event.Source,
+	})
 }
 
 // StatusJSON returns the engine status as a JSON string.

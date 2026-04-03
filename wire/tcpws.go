@@ -43,8 +43,17 @@ func DefaultSmuxConfig() *smux.Config {
 // smuxStreamConn wraps a smux.Stream with a buffered reader for post-header reads.
 type smuxStreamConn struct {
 	*smux.Stream
-	br        *bufio.Reader
-	closeOnce sync.Once
+	br         *bufio.Reader
+	remoteAddr net.Addr
+	closeOnce  sync.Once
+}
+
+// RemoteAddr returns the overridden remote address if set, otherwise delegates to Stream.
+func (c *smuxStreamConn) RemoteAddr() net.Addr {
+	if c.remoteAddr != nil {
+		return c.remoteAddr
+	}
+	return c.Stream.RemoteAddr()
 }
 
 // Read uses the buffered reader if present.
@@ -129,6 +138,11 @@ func (c *TCPWSClient) SetTestConn(conn net.Conn) {
 	c.testConn = conn
 }
 
+// SetTLSConfig overrides the TLS config for testing (bypasses BuildClientTLSConfig).
+func (c *TCPWSClient) SetTLSConfig(cfg *tls.Config) {
+	c.tlsConfig = cfg
+}
+
 // SetDirectDialer sets a physical-interface-bound dialer for bypassing TUN.
 func (c *TCPWSClient) SetDirectDialer(d DirectDialer) {
 	c.directDialer = d
@@ -162,7 +176,7 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 		mux.close()
 	}
 	if deadSess != nil {
-		deadSess.Close()
+		closeSmuxSessionSafe(deadSess)
 	}
 
 	// Serialize expensive connect attempts.
@@ -191,7 +205,7 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 		mux2.close()
 	}
 	if deadSess2 != nil {
-		deadSess2.Close()
+		closeSmuxSessionSafe(deadSess2)
 	}
 
 	// --- All blocking I/O below — NO lock held ---
@@ -225,6 +239,27 @@ func (c *TCPWSClient) connect(ctx context.Context) (*smux.Session, error) {
 	return sess, nil
 }
 
+// smuxCloseTimeout bounds smux.Session.Close. TLS connections in IO wait
+// state may block Close indefinitely when the network is dead. 5s is 50x
+// normal close time.
+const smuxCloseTimeout = 5 * time.Second
+
+// closeSmuxSessionSafe closes a smux session with a bounded timeout.
+// If Close blocks (underlying TLS conn stuck in IO wait on dead network),
+// the goroutine is orphaned and the function returns after timeout.
+func closeSmuxSessionSafe(sess *smux.Session) {
+	done := make(chan struct{})
+	go func() {
+		sess.Close()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(smuxCloseTimeout):
+		slog.Warn("wire: smux session close timed out, orphaning goroutine")
+	}
+}
+
 // tcpwsConnectTimeout bounds the total TCP+TLS+WebSocket dial sequence.
 // Without this, TCP SYN retransmit timeout (75-127s on macOS) can hold
 // connectMu beyond go-deadlock's 30s threshold. Aligned with QUIC's
@@ -240,6 +275,9 @@ func (c *TCPWSClient) connectTLSWebSocket(ctx context.Context) (net.Conn, error)
 	connectStart := time.Now()
 	slog.Debug("TCPWSClient: connectTLSWebSocket start", "serverAddr", c.serverAddr, "hasDirectDialer", c.directDialer != nil)
 	// 1. TCP dial (use DirectDialer if set, to bypass TUN)
+	// Both paths use Timeout in addition to context deadline for kernel-level
+	// enforcement — context cancel alone doesn't reliably interrupt macOS TCP
+	// SYN retransmit (can block 75s despite 10s context timeout).
 	var conn net.Conn
 	var err error
 	if c.directDialer != nil {
@@ -247,7 +285,7 @@ func (c *TCPWSClient) connectTLSWebSocket(ctx context.Context) (net.Conn, error)
 		conn, err = c.directDialer.DialContext(connectCtx, "tcp", c.serverAddr)
 	} else {
 		slog.Debug("TCPWSClient: using default dialer for TCP dial")
-		var d net.Dialer
+		d := net.Dialer{Timeout: tcpwsConnectTimeout}
 		conn, err = d.DialContext(connectCtx, "tcp", c.serverAddr)
 	}
 	if err != nil {
@@ -461,16 +499,23 @@ func (c *TCPWSClient) DialUDP(ctx context.Context, addr string) (net.PacketConn,
 	return c.newSmuxUDPConn(mux, alloc, addr), nil
 }
 
+// DialStreamUDP opens a stream-backed UDP session.
+// TCPWSClient already uses smux streams for all UDP, so this is identical to DialUDP.
+func (c *TCPWSClient) DialStreamUDP(ctx context.Context, addr string) (net.PacketConn, error) {
+	return c.DialUDP(ctx, addr)
+}
+
 // newSmuxUDPConn creates a smuxUDPConn with a new session ID.
 func (c *TCPWSClient) newSmuxUDPConn(mux *smuxUDPMux, alloc *SessionIDAllocator, addr string) *smuxUDPConn {
 	sessionID := alloc.Next()
-	readCh := mux.register(sessionID)
+	readCh, reaped := mux.register(sessionID)
 	slog.Debug("TCPWSClient.DialUDP: session ready", "addr", addr, "sessionID", sessionID)
 	return &smuxUDPConn{
 		mux:        mux,
 		sessionID:  sessionID,
 		targetAddr: addr,
 		readCh:     readCh,
+		reaped:     reaped,
 		done:       make(chan struct{}),
 	}
 }
@@ -497,9 +542,7 @@ func (c *TCPWSClient) resetConnection() {
 		mux.close()
 	}
 	if sess != nil {
-		if err := sess.Close(); err != nil {
-			slog.Debug("TCPWSClient: resetConnection close error", "err", err)
-		}
+		closeSmuxSessionSafe(sess)
 	}
 }
 
@@ -524,7 +567,7 @@ func (c *TCPWSClient) Close() error {
 		mux.close()
 	}
 	if sess != nil {
-		return sess.Close()
+		closeSmuxSessionSafe(sess)
 	}
 	return nil
 }
@@ -556,6 +599,8 @@ func NewTCPWSServer(store *TicketStore) *TCPWSServer {
 // Creates a smux session and starts accepting streams.
 // Called by the server daemon for each authenticated client connection.
 func (s *TCPWSServer) HandleConn(conn net.Conn) {
+	remote := conn.RemoteAddr()
+	connLog := slog.With("remote", remote)
 	sess, err := smux.Server(conn, DefaultSmuxConfig())
 	if err != nil {
 		conn.Close()
@@ -564,10 +609,10 @@ func (s *TCPWSServer) HandleConn(conn net.Conn) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				slog.Error("TCPWSServer: panic in handleSession", "panic", r)
+				connLog.Error("TCPWSServer: panic in handleSession", "panic", r)
 			}
 		}()
-		s.handleSession(sess)
+		s.handleSession(sess, connLog, remote)
 	}()
 }
 
@@ -575,10 +620,12 @@ func (s *TCPWSServer) HandleConn(conn net.Conn) {
 // Used by handleHTTP for WebSocket connections where the caller must block
 // to keep the HTTP handler (and hijacked connection) alive.
 func (s *TCPWSServer) HandleSession(sess *smux.Session) {
-	s.handleSession(sess)
+	remote := sess.RemoteAddr()
+	connLog := slog.With("remote", remote)
+	s.handleSession(sess, connLog, remote)
 }
 
-func (s *TCPWSServer) handleSession(sess *smux.Session) {
+func (s *TCPWSServer) handleSession(sess *smux.Session, connLog *slog.Logger, remote net.Addr) {
 	defer sess.Close()
 	for {
 		stream, err := sess.AcceptStream()
@@ -588,15 +635,15 @@ func (s *TCPWSServer) handleSession(sess *smux.Session) {
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
-					slog.Error("TCPWSServer: panic in handleStream", "panic", r)
+					connLog.Error("TCPWSServer: panic in handleStream", "panic", r)
 				}
 			}()
-			s.handleStream(stream)
+			s.handleStream(stream, connLog, remote)
 		}()
 	}
 }
 
-func (s *TCPWSServer) handleStream(stream *smux.Stream) {
+func (s *TCPWSServer) handleStream(stream *smux.Stream, connLog *slog.Logger, remote net.Addr) {
 	br := bufio.NewReader(stream)
 
 	streamType, addr, err := ReadStreamHeader(br)
@@ -607,18 +654,22 @@ func (s *TCPWSServer) handleStream(stream *smux.Stream) {
 
 	switch streamType {
 	case StreamTypeTCP:
-		sc := &smuxStreamConn{Stream: stream, br: br}
+		sc := &smuxStreamConn{Stream: stream, br: br, remoteAddr: remote}
 		s.sendTCP(tcpAcceptResult{conn: sc, addr: addr})
 	case StreamTypeUDP:
-		s.handleUDPStream(stream, br)
+		s.handleUDPStream(stream, br, connLog, remote)
 	default:
 		stream.Close()
 	}
 }
 
-func (s *TCPWSServer) handleUDPStream(stream *smux.Stream, br *bufio.Reader) {
+func (s *TCPWSServer) handleUDPStream(stream *smux.Stream, br *bufio.Reader, connLog *slog.Logger, remote net.Addr) {
 	mux := &serverSmuxWriter{stream: stream}
 	sessions := make(map[uint32]*smuxServerUDPConn)
+	var remoteStr string
+	if remote != nil {
+		remoteStr = remote.String()
+	}
 
 	for {
 		frame, err := ReadSmuxUDPFrame(br)
@@ -635,12 +686,15 @@ func (s *TCPWSServer) handleUDPStream(stream *smux.Stream, br *bufio.Reader) {
 			if len(sessions) >= maxServerUDPSessions {
 				continue // at capacity, drop frame
 			}
+			sessLog := connLog.With("sid", frame.SessionID, "addr", frame.Addr)
 			sess = &smuxServerUDPConn{
-				writer:    mux,
-				sessionID: frame.SessionID,
-				addr:      frame.Addr,
-				readCh:    make(chan []byte, 32),
-				done:      make(chan struct{}),
+				writer:     mux,
+				sessionID:  frame.SessionID,
+				addr:       frame.Addr,
+				remoteAddr: remoteStr,
+				log:        sessLog,
+				readCh:     make(chan []byte, 32),
+				done:       make(chan struct{}),
 			}
 			sessions[frame.SessionID] = sess
 
@@ -652,7 +706,7 @@ func (s *TCPWSServer) handleUDPStream(stream *smux.Stream, br *bufio.Reader) {
 				go func() {
 					defer func() {
 						if r := recover(); r != nil {
-							slog.Error("TCPWSServer: panic in HandleUDP", "panic", r, "addr", addr)
+							connLog.Error("TCPWSServer: panic in HandleUDP", "panic", r, "addr", addr)
 						}
 					}()
 					handler.HandleUDP(sess, addr)
@@ -719,24 +773,26 @@ func (s *TCPWSServer) Close() error {
 // ============================================================================
 
 type smuxUDPMux struct {
-	stream     *smux.Stream
-	br         *bufio.Reader
-	writeMu    deadlock.Mutex
-	mu         deadlock.Mutex
-	sessions   map[uint32]chan *UDPFrame
-	lastActive map[uint32]*atomic.Int64
-	done       chan struct{}
-	closeOnce  sync.Once
-	started    bool
+	stream      *smux.Stream
+	br          *bufio.Reader
+	writeMu     deadlock.Mutex
+	mu          deadlock.Mutex
+	sessions    map[uint32]chan *UDPFrame
+	sessionDone map[uint32]chan struct{} // closed by reaper to notify smuxUDPConn
+	lastActive  map[uint32]*atomic.Int64
+	done        chan struct{}
+	closeOnce   sync.Once
+	started     bool
 }
 
 func newSmuxUDPMux(stream *smux.Stream) *smuxUDPMux {
 	return &smuxUDPMux{
-		stream:     stream,
-		br:         bufio.NewReader(stream),
-		sessions:   make(map[uint32]chan *UDPFrame),
-		lastActive: make(map[uint32]*atomic.Int64),
-		done:       make(chan struct{}),
+		stream:      stream,
+		br:          bufio.NewReader(stream),
+		sessions:    make(map[uint32]chan *UDPFrame),
+		sessionDone: make(map[uint32]chan struct{}),
+		lastActive:  make(map[uint32]*atomic.Int64),
+		done:        make(chan struct{}),
 	}
 }
 
@@ -783,21 +839,24 @@ func (m *smuxUDPMux) writeFrame(sessionID uint32, addr string, payload []byte) e
 	return WriteSmuxUDPFrame(m.stream, sessionID, addr, payload)
 }
 
-func (m *smuxUDPMux) register(sessionID uint32) chan *UDPFrame {
+func (m *smuxUDPMux) register(sessionID uint32) (chan *UDPFrame, chan struct{}) {
 	ch := make(chan *UDPFrame, 32)
+	reaped := make(chan struct{})
 	ts := &atomic.Int64{}
 	ts.Store(time.Now().Unix())
 	m.mu.Lock()
 	m.sessions[sessionID] = ch
+	m.sessionDone[sessionID] = reaped
 	m.lastActive[sessionID] = ts
 	m.mu.Unlock()
 	m.start()
-	return ch
+	return ch, reaped
 }
 
 func (m *smuxUDPMux) unregister(sessionID uint32) {
 	m.mu.Lock()
 	delete(m.sessions, sessionID)
+	delete(m.sessionDone, sessionID)
 	delete(m.lastActive, sessionID)
 	m.mu.Unlock()
 }
@@ -817,20 +876,30 @@ func (m *smuxUDPMux) reapIdleSessions() {
 	for {
 		select {
 		case <-ticker.C:
-			now := time.Now().Unix()
-			m.mu.Lock()
-			for id, ts := range m.lastActive {
-				if now-ts.Load() > int64(udpSessionIdleTimeout/time.Second) {
-					delete(m.sessions, id)
-					delete(m.lastActive, id)
-					slog.Debug("smuxUDPMux: reaped idle session", "sessionID", id)
-				}
-			}
-			m.mu.Unlock()
+			m.reapOnce()
 		case <-m.done:
 			return
 		}
 	}
+}
+
+// reapOnce runs one pass of idle session cleanup. Extracted for testability.
+func (m *smuxUDPMux) reapOnce() {
+	now := time.Now().Unix()
+	m.mu.Lock()
+	for id, ts := range m.lastActive {
+		if now-ts.Load() > int64(udpSessionIdleTimeout/time.Second) {
+			delete(m.sessions, id)
+			delete(m.lastActive, id)
+			reaped := m.sessionDone[id]
+			delete(m.sessionDone, id)
+			if reaped != nil {
+				close(reaped)
+			}
+			slog.Debug("smuxUDPMux: reaped idle session", "sessionID", id)
+		}
+	}
+	m.mu.Unlock()
 }
 
 func (m *smuxUDPMux) close() {
@@ -847,6 +916,7 @@ type smuxUDPConn struct {
 	sessionID  uint32
 	targetAddr string
 	readCh     chan *UDPFrame
+	reaped     chan struct{} // closed by mux reaper when session is idle-reaped
 	done       chan struct{}
 	closeOnce  sync.Once
 	rd         readDeadline
@@ -867,6 +937,8 @@ func (c *smuxUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 		n := copy(b, frame.Payload)
 		addr, _ := net.ResolveUDPAddr("udp", c.targetAddr)
 		return n, addr, nil
+	case <-c.reaped:
+		return 0, nil, net.ErrClosed
 	case <-c.done:
 		return 0, nil, net.ErrClosed
 	case <-c.mux.done:
@@ -927,16 +999,23 @@ func (w *serverSmuxWriter) writeFrame(sessionID uint32, addr string, payload []b
 // ============================================================================
 
 type smuxServerUDPConn struct {
-	writer    *serverSmuxWriter
-	sessionID uint32
-	addr      string
-	readCh    chan []byte
-	done      chan struct{}
-	closeOnce sync.Once
-	rd        readDeadline
+	writer     *serverSmuxWriter
+	sessionID  uint32
+	addr       string
+	remoteAddr string
+	log        *slog.Logger
+	readCh     chan []byte
+	done       chan struct{}
+	closeOnce  sync.Once
+	rd         readDeadline
 }
 
 var _ net.PacketConn = (*smuxServerUDPConn)(nil)
+var _ UDPSessionInfo = (*smuxServerUDPConn)(nil)
+
+func (c *smuxServerUDPConn) UDPSessionID() uint32  { return c.sessionID }
+func (c *smuxServerUDPConn) UDPRemoteAddr() string { return c.remoteAddr }
+func (c *smuxServerUDPConn) Logger() *slog.Logger   { return c.log }
 
 func (c *smuxServerUDPConn) deliver(payload []byte) {
 	select {

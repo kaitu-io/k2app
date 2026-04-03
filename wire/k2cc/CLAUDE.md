@@ -1,4 +1,4 @@
-# K2ARC Vivace Congestion Control (wire/arc/)
+# K2CC Vivace Congestion Control (wire/k2cc/)
 
 Rate-based congestion control for QUIC, optimized for GFW environments.
 
@@ -7,12 +7,12 @@ quic-go auto-detects the extended interface and provides batched ACK+loss data p
 
 ## Algorithm
 
-Gradient ascent on utility function: `U = Throughput - α * LossRate * Throughput - β * ΔRtt`
+Gradient ascent on utility function: `U = Throughput - α * LossRate * SendRate - β * ΔRtt`
 
-- **Rate-based** (not window-based like Cubic)
-- **Monitor Intervals (MI)**: probe network capacity by sending at `rate ± ε`
+- **Rate-based** (not window-based like Cubic). Pacing via `TimeUntilSend` at `CurrentRate`; cwnd is burst ceiling only (1.2× BDP)
+- **Monitor Intervals (MI)**: probe network capacity by sending at `rate ± ε`. MinDuration = 2×RTT for QUIC loss detection visibility
 - **AIMD-ε**: Adaptive step size via Additive Increase Multiplicative Decrease on ε. See [AIMD-ε section](#aimd-ε-adaptive-exploration-step-size) below.
-- **GFW mode**: α=5.0 balances GFW loss tolerance with congestion sensitivity; β=1.0 makes RTT gradient effective
+- **GFW mode**: α=4.0 tolerates 25% background loss; β=1.0 makes RTT gradient effective
 - **Stale loss filtering**: MI tracks `FirstPacketNumber`/`LastPacketNumber`. `OnCongestionEvent` skips loss events where packet number < current MI's `FirstPacketNumber` (belongs to previous MI). Prevents MI boundary artifacts (LossRate > 100%) when loss notifications arrive after MI rotation.
 - **LossRate clamp**: `LossRate()` capped at 1.0 — defensive guard against residual stale attribution
 - **Zero gradient = no signal**: `gradient == 0` does not update direction counters (neither increase nor decrease). Only clear positive/negative signals drive direction confirmation.
@@ -23,11 +23,17 @@ Gradient ascent on utility function: `U = Throughput - α * LossRate * Throughpu
 - `DefaultMaxRate`: 500 Mbps upper bound
 - `defaultEpsilon`: 0.12 (base exploration step size, AIMD-ε adapts within [0.03, 0.25])
 - `arcRateEWMAAlpha`: 0.9 (rate EWMA smoothing — high for fast response)
-- `gfwAlpha`: 5.0 (GFW loss penalty — high enough for congestion gradient, tolerates constant 5% GFW loss)
+- `gfwAlpha`: 4.0 (GFW loss penalty — tolerates constant 25% background loss before gradient goes flat)
 - `defaultBeta`: 1.0 (latency penalty — 10ms ΔRtt = 10 utility signal, same magnitude as loss)
-- `arcMinRate`: 10 Mbps (upload floor), `arcMinDownloadRate`: 30 Mbps (download floor)
+- `arcCwndMultiplier`: 1.2 (burst headroom only — K2CC paces via `TimeUntilSend`, cwnd is burst ceiling not rate control)
+- `minAckRate`: 0.95 (minimal ackRate cwnd compensation — K2CC is adaptive, not Brutal-style fixed-rate)
+- `arcMinRate`: 5 Mbps (rate floor for all directions)
 - `noiseEWMA`: EWMA of RTT coefficient of variation, cold-starts at 1.2 (conservative)
 - `slowStartSaturationRatio`: 0.7 (throughput growth < 70% of rate growth × slow start factor → link saturated)
+- `bwCruiseGain`: 0.95 (5% below BW — zero congestion loss in cruise)
+- `bwProbeUpGain`: 1.10 (10% above BW — detect increases)
+- `bwDrainGain`: 0.75 (drain queue + measure BG loss)
+- `bwWindowSize`: 8 (one full Cruise+ProbeUp+Drain probe cycle)
 
 ## AIMD-ε: Adaptive Exploration Step Size
 
@@ -102,12 +108,15 @@ Condition 3 fixes the core issue: when `maxRate=500M` and actual link is 50M, sl
 
 When MI is app-limited (BytesSent < 50% expected):
 1. Compute `anchorRate = T / (1-L)` inline (no persistent EWMA state)
-2. Apply `minRate` floor (prevents collapse from end-of-transfer noise)
+2. Apply `minRate` floor — BW-aware:
+   - Transitional (BytesSent < 10KB): `arcMinRate` (5M)
+   - BW known (`bwEst.valid()`): `bwEst / (1 - bgLoss)` (actual link capacity)
+   - Cold start (no bwEst): `arcMinDownloadRate` (30M) for fast ramp-up
 3. Set `CurrentRate = anchorRate`, exit slow start if active
 4. Reset direction counters, preserve gradient context (`hasLastUtility = true`)
 5. Update `probeBaseRate` to anchor rate
 
-**Key difference from old bwEstimate**: No persistent state, no EWMA decay issues, no stale bandwidth memory. Each app-limited event is independently assessed.
+**BW-aware floor**: The 30M cold-start floor caused catastrophic over-sending on GFW-throttled links (~5M capacity) — 85% self-inflicted loss, DATAGRAM delivery dies, UDP relay fails. With BW estimator active, the floor tracks actual link capacity.
 
 ## Stable Probing (probeBaseRate)
 
@@ -119,16 +128,30 @@ This prevents EWMA-induced drift: without `probeBaseRate`, alternating `+ε` and
 
 `probeBaseRate` is updated only when direction is confirmed (counter ≥ 2) and the rate actually moves.
 
-## Dynamic α Clamping
+## Rate-Based Utility (not throughput-based)
 
-With α=5.0, when loss > 20%: `1-αL < 0` → utility inverts → CC minimizes throughput. Fix: `α_eff = min(α, 0.8/L)` ensures `(1-αL) ≥ 0.2`.
+Utility function: `U = T - α * L * sendRate - β * ΔRtt` where `sendRate` is MI actual sending rate (`BytesSent*8/Duration`), not `TargetRate`. This ensures cwnd inflation is accounted for in the loss penalty — prevents feedback loop where cwnd sends more than CC rate → loss penalty underestimated → rate increases.
+
+## BW Estimator (BBR-style Bandwidth Anchoring)
+
+Sliding-window max filter over MI throughput (window = 8 MIs = 1 probe cycle). When valid (≥2 samples), replaces PCC gradient ascent with controlled BW-anchored probing:
+
+- **Cruise** (6 MI): `rate = bwEst × 0.95` — 5% below measured BW, zero congestion loss
+- **ProbeUp** (1 MI): `rate = bwEst × 1.10` — detect BW increases
+- **Drain** (1 MI): `rate = bwEst × 0.75` — drain ProbeUp queue + measure background loss
+
+BG loss detection: Drain phase rate << BW → any loss is pure background (GFW). `bgLossEWMA` corrects bwEst: `effectiveBW = maxThroughput / (1 - bgLoss)`.
+
+BW decrease detection: Cruise throughput < expected × 0.5 → immediate bwEst reset (1 MI recovery).
+
+PCC gradient logic preserved as fallback when bwEst is invalid (cold start, BW regime change).
 
 ## Global Ack Rate Tracker
 
 Sliding-window tracker (5-second window, 1-second buckets) recording global ack/loss ratio
 from `OnCongestionEventEx`. Independent of per-MI loss attribution.
 
-**cwnd compensation** (Brutal-style): `rateToCwnd` divides by `ackRate` so that cwnd enlarges under loss to compensate for dropped packets. `clampedAckRate()` floors at 0.8 (same as Hysteria Brutal) to prevent cwnd explosion. At 20% loss → cwnd × 1.25, at 0% loss → no change.
+**cwnd compensation** (minimal): `rateToCwnd` divides by `ackRate` but `clampedAckRate()` floors at 0.95 (max 5% compensation). K2CC is adaptive — it handles loss through utility gradient, not cwnd inflation. Previous Brutal-style floor (0.8, 25% compensation) fought the CC algorithm.
 
 ## Observability
 
@@ -136,18 +159,18 @@ from `OnCongestionEventEx`. Independent of per-MI loss attribution.
 
 ## Files
 
-- `arc.go` — `K2ARC` struct, MI-based rate control, utility gradient computation, AIMD-ε, `ARCSnapshot`/`Snapshot()`
-- `arcc_test.go` — ~57 test functions (convergence, loss tolerance, rate bounds, stale loss filtering, snapshot fallback, AIMD-ε, ackRate tracker, CongestionControlEx, app-limited anchor, stable probing, slow start saturation, α clamping)
-- `arc_integration_test.go` — QUIC integration tests: real client+server bulk transfer with UDP relay (delay, loss, rate limiting), MI completion hook for per-MI diagnostics
+- `k2cc.go` — `K2CCSender` struct, MI-based rate control, BW estimator, utility gradient, AIMD-ε, `CCSnapshot`/`Snapshot()`
+- `k2cc_test.go` — ~68 test functions (convergence, loss tolerance, rate bounds, stale loss filtering, snapshot fallback, AIMD-ε, ackRate tracker, CongestionControlEx, app-limited anchor, stable probing, slow start saturation, BW estimator, BW-anchored probing)
+- `k2cc_integration_test.go` — QUIC integration tests: real client+server bulk transfer with UDP relay (delay, loss, rate limiting), MI completion hook for per-MI diagnostics
 - `helpers_test.go` — test fixtures
 
 ## Testing
 
 ```bash
-go test ./wire/arc/...                                    # all tests (~63)
-go test ./wire/arc/... -run TestIntegration -v            # integration tests only
-go test ./wire/arc/... -run TestConvergence_Benchmark -v  # convergence: loss × RTT matrix (17 scenarios)
-go test ./wire/arc/... -run TestDescent_Benchmark -v      # descent: rate starts above bandwidth (13 scenarios)
+go test ./wire/k2cc/...                                    # all tests (~63)
+go test ./wire/k2cc/... -run TestIntegration -v            # integration tests only
+go test ./wire/k2cc/... -run TestConvergence_Benchmark -v  # convergence: loss × RTT matrix (17 scenarios)
+go test ./wire/k2cc/... -run TestDescent_Benchmark -v      # descent: rate starts above bandwidth (13 scenarios)
 ```
 
 ### Integration Test Architecture

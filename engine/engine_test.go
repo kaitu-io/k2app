@@ -194,6 +194,9 @@ func (d *mockDialer) DialTCP(ctx context.Context, addr string, earlyData []byte)
 func (d *mockDialer) DialUDP(ctx context.Context, addr string) (net.PacketConn, error) {
 	return nil, nil
 }
+func (d *mockDialer) DialStreamUDP(ctx context.Context, addr string) (net.PacketConn, error) {
+	return nil, nil
+}
 func (d *mockDialer) Close() error { return nil }
 
 // blockingPacketConn is a PacketConn whose ReadFrom blocks until Close.
@@ -234,6 +237,9 @@ func (d *mockWireDialer) DialTCP(ctx context.Context, addr string, earlyData []b
 	return nil, nil
 }
 func (d *mockWireDialer) DialUDP(ctx context.Context, addr string) (net.PacketConn, error) {
+	return d.pc, nil
+}
+func (d *mockWireDialer) DialStreamUDP(ctx context.Context, addr string) (net.PacketConn, error) {
 	return d.pc, nil
 }
 func (d *mockWireDialer) Close() error { return nil }
@@ -352,9 +358,9 @@ func TestEngineStart_WireProbeFailure(t *testing.T) {
 		t.Fatalf("state = %q, want disconnected", e.Status())
 	}
 
-	// Error should originate from wire probe.
-	if !strings.Contains(err.Error(), "wire handshake") {
-		t.Errorf("error = %q, want to contain 'wire handshake'", err.Error())
+	// Error should originate from transport race.
+	if !strings.Contains(err.Error(), "transport race") {
+		t.Errorf("error = %q, want to contain 'transport race'", err.Error())
 	}
 
 	// EventHandler should receive classified error.
@@ -368,10 +374,6 @@ func TestEngineStart_WireProbeFailure(t *testing.T) {
 	}
 	if lastStatus.Error == nil {
 		t.Fatal("expected classified error in final status")
-	}
-	// Connection refused → 503 (ServerUnreachable) or timeout → 408.
-	if lastStatus.Error.Code != 503 && lastStatus.Error.Code != 408 {
-		t.Errorf("error code = %d, want 503 or 408", lastStatus.Error.Code)
 	}
 }
 
@@ -1251,7 +1253,7 @@ func TestEngine_ReportWireError_Debounce(t *testing.T) {
 	}
 }
 
-func TestEngine_ReportWireError_AuthUpgrade(t *testing.T) {
+func TestEngine_ReportWireError_TargetIgnored(t *testing.T) {
 	e := New()
 	h := &mockEventHandler{}
 	e.SetEventHandler(h)
@@ -1260,24 +1262,21 @@ func TestEngine_ReportWireError_AuthUpgrade(t *testing.T) {
 	e.state = StateConnected
 	e.mu.Unlock()
 
-	// 503 first.
+	// StreamError = server responded to target request → CategoryTarget.
+	// Target errors should NOT be stored as lastError (tunnel.go filters these
+	// via isProxyLayerError before calling ReportWireError). But even if one
+	// reaches here, it must not upgrade a wire error.
 	e.ReportWireError(fmt.Errorf("wire: TCP dial: connection refused"))
-	// 401 upgrades the existing network error.
-	e.ReportWireError(&wire.StreamError{Code: 401, Message: "token expired"})
+	e.ReportWireError(&wire.StreamError{Code: 403, Message: "blocked: reserved IP"})
 
 	statuses := h.getStatuses()
-	if len(statuses) != 2 {
-		t.Fatalf("expected 2 status updates (initial + auth upgrade), got %d", len(statuses))
+	// Only the first (wire) error should fire; target error is debounced
+	// because it's classified as non-client category.
+	if len(statuses) != 1 {
+		t.Fatalf("expected 1 status update (wire error only), got %d", len(statuses))
 	}
-	lastErr := statuses[1].Error
-	if lastErr == nil {
-		t.Fatal("expected error in upgraded status")
-	}
-	if lastErr.Code != 401 {
-		t.Errorf("upgraded error code = %d, want 401", lastErr.Code)
-	}
-	if lastErr.Category != CategoryClient {
-		t.Errorf("upgraded error category = %q, want %q", lastErr.Category, CategoryClient)
+	if statuses[0].Error.Code != 503 {
+		t.Errorf("error code = %d, want 503", statuses[0].Error.Code)
 	}
 }
 

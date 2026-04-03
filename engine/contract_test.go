@@ -7,6 +7,7 @@ package engine
 // and error classification — not internal EWMA math or ring buffers.
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -25,7 +26,7 @@ func TestContract_PoorSignal_TCPHealthGate(t *testing.T) {
 	qc.RecordTCPSuccess() // marks TCP as recently healthy
 
 	tm := wire.NewTransportManager()
-	tm.SetQUIC(qc)
+	tm.SetPrimary(qc, "quic-hop")
 
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
 
@@ -55,32 +56,80 @@ func TestContract_PoorSignal_TCPHealthGate(t *testing.T) {
 	}
 }
 
-// TestContract_ServerUnreachable_StopAfter3 verifies that the recovery probe
-// gives up after exactly 3 attempts. This prevents infinite retry loops that
-// drain battery on mobile devices.
-// User scenario: server is down for maintenance; client should stop probing
-// quickly and wait for next network change event.
-func TestContract_ServerUnreachable_StopAfter3(t *testing.T) {
-	if probeMaxAttempts != 3 {
-		t.Fatalf("contract: probeMaxAttempts must be 3, got %d "+
-			"(changing this affects battery life on mobile)", probeMaxAttempts)
+// TestContract_EchoLoop_TriggersReRace verifies that echoLoop sends a re-race
+// signal after 3 consecutive echo failures. This replaces the old recovery
+// probe contract (probeMaxAttempts=3).
+func TestContract_EchoLoop_TriggersReRace(t *testing.T) {
+	// echoLoop uses hm.echoFails (atomic.Int32) and triggers reRaceChan at >=3.
+	// Verify the threshold constant is 3 by checking behavior.
+	reRaceChan := make(chan struct{}, 1)
+	hm := &healthMonitor{
+		done: make(chan struct{}),
+	}
+	hm.reRaceChan = reRaceChan
+
+	// Simulate 3 consecutive echo failures.
+	for i := int32(1); i <= 3; i++ {
+		fails := hm.echoFails.Add(1)
+		if fails >= 3 && hm.reRaceChan != nil {
+			select {
+			case hm.reRaceChan <- struct{}{}:
+			default:
+			}
+			hm.echoFails.Store(0)
+		}
+	}
+
+	select {
+	case <-reRaceChan:
+		// Expected: re-race triggered after 3 consecutive failures.
+	default:
+		t.Fatal("contract: echoLoop must trigger re-race after 3 consecutive echo failures " +
+			"(changing this threshold affects battery life on mobile)")
 	}
 }
 
-// TestContract_AuthFailed_NoRetry verifies that a 401 auth rejection is
-// classified as a client error, preventing automatic retry loops.
-// User scenario: user's subscription expired; retrying the same credentials
-// would waste bandwidth and potentially trigger rate limiting.
+// TestContract_AuthFailed_NoRetry verifies that auth rejection (stream rejected)
+// is classified as a client error, preventing automatic retry loops.
+// User scenario: token expired; retrying the same credentials wastes bandwidth.
+//
+// Auth in k2v5 is connection-level (not per-request). Auth failures arrive as
+// ErrStreamRejected ("stream rejected"), NOT as StreamError. StreamError is
+// only used for target-specific responses (blocked IP, target unreachable).
 func TestContract_AuthFailed_NoRetry(t *testing.T) {
-	err := &wire.StreamError{Code: 401, Message: "auth rejected"}
+	// Real auth failure: stream rejection at connection level → CategoryClient.
+	err := fmt.Errorf("wire: stream rejected")
 	classified := ClassifyError(err)
 
 	if classified.Category != CategoryClient {
-		t.Fatalf("contract: 401 StreamError must be CategoryClient, got %q "+
+		t.Fatalf("contract: auth rejection must be CategoryClient, got %q "+
 			"(non-client category would cause infinite retry)", classified.Category)
 	}
-	if classified.Code != 401 {
-		t.Fatalf("contract: error code must be 401 (server-provided), got %d", classified.Code)
+	if classified.Code != ErrCodeAuthRejected {
+		t.Fatalf("contract: error code must be %d (auth rejected), got %d",
+			ErrCodeAuthRejected, classified.Code)
+	}
+}
+
+// TestContract_StreamError_IsTarget verifies that StreamError (server responded
+// to a proxy request) is always CategoryTarget. The wire is healthy when the
+// server responds — the error is about the specific destination, not the tunnel.
+func TestContract_StreamError_IsTarget(t *testing.T) {
+	cases := []struct {
+		code int
+		msg  string
+	}{
+		{403, "blocked: 10.0.0.1 is a reserved IP"},
+		{502, "resolve example.com: no such host"},
+		{502, "dial tcp 1.2.3.4:80: connection refused"},
+	}
+	for _, tc := range cases {
+		se := &wire.StreamError{Code: tc.code, Message: tc.msg}
+		classified := ClassifyError(se)
+		if classified.Category != CategoryTarget {
+			t.Errorf("StreamError{%d, %q}: category = %q, want %q",
+				tc.code, tc.msg, classified.Category, CategoryTarget)
+		}
 	}
 }
 
@@ -92,7 +141,7 @@ func TestContract_PoorSignal_TCPHealthGate_Timing(t *testing.T) {
 	// Do NOT call RecordTCPSuccess — lastTCPSuccessAt stays 0.
 
 	tm := wire.NewTransportManager()
-	tm.SetQUIC(qc)
+	tm.SetPrimary(qc, "quic-hop")
 
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
 

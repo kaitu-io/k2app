@@ -3,12 +3,14 @@ package server
 import (
 	"bufio"
 	"io"
+	"log/slog"
 	"net"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	k2dns "github.com/kaitu-io/k2/core/dns"
 	"github.com/kaitu-io/k2/wire"
 	"github.com/miekg/dns"
 )
@@ -56,6 +58,8 @@ func TestIsReservedIP(t *testing.T) {
 }
 
 func TestCheckAddr(t *testing.T) {
+	h := NewProxyHandler()
+
 	// IP literals that should be blocked.
 	blockedAddrs := []string{
 		"127.0.0.1:80",
@@ -65,7 +69,7 @@ func TestCheckAddr(t *testing.T) {
 		"100.64.0.1:8080",
 	}
 	for _, addr := range blockedAddrs {
-		if err := checkAddr(addr); err == nil {
+		if err := h.checkAddr(addr); err == nil {
 			t.Errorf("expected %s to be blocked", addr)
 		}
 	}
@@ -77,14 +81,39 @@ func TestCheckAddr(t *testing.T) {
 		"[2001:4860:4860::8888]:53",
 	}
 	for _, addr := range allowedAddrs {
-		if err := checkAddr(addr); err != nil {
+		if err := h.checkAddr(addr); err != nil {
 			t.Errorf("expected %s to be allowed, got: %v", addr, err)
 		}
 	}
 
 	// Invalid addresses.
-	if err := checkAddr("no-port"); err == nil {
+	if err := h.checkAddr("no-port"); err == nil {
 		t.Error("expected error for missing port")
+	}
+}
+
+func TestCheckAddr_UsesResolver(t *testing.T) {
+	var calls atomic.Int32
+	fakeDNS := startFakeDNSServer(t, &calls)
+	defer fakeDNS.Close()
+
+	h := NewProxyHandler()
+	h.resolver = NewResolver(h.dnsCache, k2dns.NewDirectDNSClient([]string{fakeDNS.LocalAddr().String()}))
+
+	// Domain that resolves to public IP → allowed.
+	if err := h.checkAddr("example.com:443"); err != nil {
+		t.Fatalf("expected allowed, got: %v", err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("expected 1 upstream call, got %d", calls.Load())
+	}
+
+	// Second call: cache hit → no new upstream call.
+	if err := h.checkAddr("example.com:443"); err != nil {
+		t.Fatalf("expected allowed (cached), got: %v", err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("expected 1 upstream call (cached), got %d", calls.Load())
 	}
 }
 
@@ -359,7 +388,7 @@ func sendDNSViaHandler(t *testing.T, h *ProxyHandler, addr string, query []byte)
 	pc := newTestPacketConn()
 	done := make(chan struct{})
 	go func() {
-		h.handleDNSUDP(pc, addr)
+		h.handleDNSUDP(pc, addr, slog.Default())
 		close(done)
 	}()
 
@@ -388,6 +417,7 @@ func TestHandleUDP_DNSCache_Hit(t *testing.T) {
 
 	h := NewProxyHandler()
 	h.AllowPrivateIP = true
+	h.dnsUpstream = fakeDNS.LocalAddr().String()
 
 	// Query 1: cache miss → upstream
 	resp1 := sendDNSViaHandler(t, h, fakeDNS.LocalAddr().String(), buildDNSQuery(t, "example.com.", dns.TypeA, 1001))
@@ -418,6 +448,7 @@ func TestHandleUDP_DNSCache_DifferentDomains(t *testing.T) {
 
 	h := NewProxyHandler()
 	h.AllowPrivateIP = true
+	h.dnsUpstream = fakeDNS.LocalAddr().String()
 
 	sendDNSViaHandler(t, h, fakeDNS.LocalAddr().String(), buildDNSQuery(t, "a.com.", dns.TypeA, 1))
 	sendDNSViaHandler(t, h, fakeDNS.LocalAddr().String(), buildDNSQuery(t, "b.com.", dns.TypeA, 2))
@@ -462,6 +493,81 @@ func TestHandleUDP_NonDNS_NotIntercepted(t *testing.T) {
 	}
 
 	pc.Close()
+}
+
+func TestResolveAddr_Domain(t *testing.T) {
+	var calls atomic.Int32
+	fakeDNS := startFakeDNSServer(t, &calls)
+	defer fakeDNS.Close()
+
+	h := NewProxyHandler()
+	h.resolver = NewResolver(h.dnsCache, k2dns.NewDirectDNSClient([]string{fakeDNS.LocalAddr().String()}))
+
+	resolved, err := h.resolveAddr("example.com:443")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved != "93.184.216.34:443" {
+		t.Fatalf("got %q, want 93.184.216.34:443", resolved)
+	}
+}
+
+func TestResolveAddr_IP(t *testing.T) {
+	h := NewProxyHandler()
+	resolved, err := h.resolveAddr("8.8.8.8:53")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved != "8.8.8.8:53" {
+		t.Fatalf("got %q, want 8.8.8.8:53", resolved)
+	}
+}
+
+func TestResolveAddr_IPv6(t *testing.T) {
+	h := NewProxyHandler()
+	resolved, err := h.resolveAddr("[::1]:443")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved != "[::1]:443" {
+		t.Fatalf("got %q, want [::1]:443", resolved)
+	}
+}
+
+func TestNewProxyHandler_SystemResolver(t *testing.T) {
+	h := NewProxyHandler()
+	if h.dnsUpstream != "127.0.0.11:53" {
+		t.Fatalf("dnsUpstream = %q, want 127.0.0.11:53", h.dnsUpstream)
+	}
+}
+
+func TestHandleUDP_DNS_UsesSystemResolver(t *testing.T) {
+	// Start a fake DNS server (simulates system resolver).
+	var systemCalls atomic.Int32
+	systemDNS := startFakeDNSServer(t, &systemCalls)
+	defer systemDNS.Close()
+
+	// Start another fake DNS server (simulates client-specified upstream).
+	var clientCalls atomic.Int32
+	clientDNS := startFakeDNSServer(t, &clientCalls)
+	defer clientDNS.Close()
+
+	h := NewProxyHandler()
+	h.AllowPrivateIP = true
+	h.dnsUpstream = systemDNS.LocalAddr().String() // override to fake system resolver
+
+	// Client sends DNS to "clientDNS" addr, but server should use systemDNS.
+	resp := sendDNSViaHandler(t, h, clientDNS.LocalAddr().String(), buildDNSQuery(t, "test.example.", dns.TypeA, 2001))
+	if resp.Rcode != dns.RcodeSuccess {
+		t.Fatalf("got %s", dns.RcodeToString[resp.Rcode])
+	}
+
+	if systemCalls.Load() != 1 {
+		t.Errorf("system resolver calls = %d, want 1", systemCalls.Load())
+	}
+	if clientCalls.Load() != 0 {
+		t.Errorf("client-specified upstream calls = %d, want 0", clientCalls.Load())
+	}
 }
 
 func TestIsDNSPort(t *testing.T) {

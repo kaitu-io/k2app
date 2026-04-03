@@ -34,6 +34,10 @@ func cmdService(args []string) {
 		}
 		fmt.Println("Service removed.")
 
+	case "--help", "-h":
+		fmt.Fprintf(os.Stderr, "Usage: k2 service <install|uninstall>\n")
+		return
+
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown service subcommand: %s\n\nUsage: k2 service <install|uninstall>\n", args[0])
 		os.Exit(1)

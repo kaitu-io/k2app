@@ -19,13 +19,14 @@ import (
 	"github.com/sasha-s/go-deadlock"
 
 	"github.com/apernet/quic-go"
-	"github.com/kaitu-io/k2/wire/arc"
+	"github.com/kaitu-io/k2/wire/k2cc"
 )
 
 // Compile-time interface checks.
 var (
-	_ Dialer   = (*QUICClient)(nil)
-	_ Listener = (*QUICServer)(nil)
+	_ Dialer    = (*QUICClient)(nil)
+	_ Listener  = (*QUICServer)(nil)
+	_ EchoProber = (*QUICClient)(nil)
 )
 
 // maxServerUDPSessions caps per-connection UDP session count on the server.
@@ -42,9 +43,14 @@ const tcpHealthWindow = 30 * time.Second
 var ErrDatagramSendTimeout = errors.New("wire: SendDatagram queue saturated")
 
 // maxDatagramInflight caps concurrent SendDatagram calls per connection.
-// Matches quic-go's 32-frame datagram queue. Beyond this limit, packets
-// are dropped immediately — protocol-correct for unreliable DATAGRAM.
-const maxDatagramInflight int32 = 32
+// Must be well below quic-go's 32-frame datagram queue to prevent mass
+// goroutine blocking: datagramQueue.Add() blocks indefinitely when full,
+// freezing HandleUDP goroutines (can't call target.Read while blocked).
+// With N sessions sharing one queue, only maxDatagramInflight goroutines
+// may enter the blocking Add() path; the rest drop immediately.
+// Value 8 ensures ≤8 goroutines block (~1.4s each at typical drain rates)
+// while remaining sessions keep reading from targets.
+const maxDatagramInflight int32 = 8
 
 // datagramSender abstracts the QUIC connection methods used by quicUDPConn
 // and serverUDPConn. Enables testing with mock connections.
@@ -141,9 +147,10 @@ type connUDPState struct {
 	overflow     *udpOverflowStream
 	done         chan struct{}
 	sendInflight atomic.Int32 // concurrent SendDatagram calls in progress
+	log          *slog.Logger // scoped logger with "remote" field
 }
 
-// DefaultQUICConfig returns the QUIC configuration.
+// DefaultQUICConfig returns the QUIC configuration for clients.
 // Flow control windows and max streams are platform-specific (see quic_limits_*.go).
 // Desktop/server: large windows for throughput. Mobile: small windows for memory.
 func DefaultQUICConfig() *quic.Config {
@@ -156,7 +163,20 @@ func DefaultQUICConfig() *quic.Config {
 		MaxIdleTimeout:                 30 * time.Second,
 		KeepAlivePeriod:                10 * time.Second,
 		MaxIncomingStreams:             quicMaxStreams,
+		InitialPacketSize:             1400,
 	}
+}
+
+// ServerQUICConfig returns the QUIC configuration for servers.
+// Server uses a longer idle timeout (90s) than client (30s) so that under
+// packet loss the CLIENT always times out first. This ensures the client
+// detects the dead connection via conn.Context().Done() in connect() and
+// rebuilds immediately, instead of the server closing first and the client
+// opening streams into a dead connection (EOF) for 30-100s.
+func ServerQUICConfig() *quic.Config {
+	cfg := DefaultQUICConfig()
+	cfg.MaxIdleTimeout = 90 * time.Second
+	return cfg
 }
 
 // quicStreamConn wraps a quic.Stream to satisfy net.Conn.
@@ -224,13 +244,12 @@ type QUICClient struct {
 	alloc     *SessionIDAllocator
 	udpMux    *quicUDPMux
 	closed    bool
-	ccSender *arc.K2CCSender // stored for stats access
+	ccSender *k2cc.K2CCSender // stored for stats access
 
 	portHopAttempts    atomic.Int32 // hop attempts before TCP-WS fallback
 	portHopExhaustedAt atomic.Int64 // UnixNano: when hops were exhausted (0 = not exhausted)
 	lastTCPSuccessAt   atomic.Int64 // UnixNano of last successful DialTCP (0 = unknown)
 	handshakeFailStreak atomic.Int32 // consecutive connect() handshake failures across different hop ports
-	lastConnectWall    atomic.Int64 // UnixNano wall clock of last connect() return — detects macOS sleep (Go timers freeze but wall clock advances)
 }
 
 // NewQUICClient creates a new QUIC client transport.
@@ -285,6 +304,18 @@ func (c *QUICClient) RecordTCPSuccess() {
 	c.lastTCPSuccessAt.Store(time.Now().UnixNano())
 }
 
+// RunEchoProbe implements EchoProber for data-path verification.
+func (c *QUICClient) RunEchoProbe(ctx context.Context) error {
+	c.mu.Lock()
+	conn := c.conn
+	c.mu.Unlock()
+	if conn == nil {
+		return errors.New("no cached connection")
+	}
+	_, err := EchoProbe(ctx, conn)
+	return err
+}
+
 // tcpRecentlyHealthy returns true if a TCP stream succeeded within the given window.
 // Used by DialUDP to skip destructive port hops when TCP streams are healthy
 // (indicating normal packet loss, not ISP port blocking).
@@ -308,20 +339,6 @@ func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
 		return nil, ErrNotConnected
 	}
 	if c.conn != nil {
-		// Wall-clock staleness: Go timers freeze during macOS sleep but wall clock
-		// advances. If the gap exceeds MaxIdleTimeout (30s), the server has definitely
-		// closed this connection (its idle timer kept running while we slept).
-		if last := c.lastConnectWall.Load(); last > 0 {
-			if time.Since(time.Unix(0, last)) > 30*time.Second {
-				slog.Warn("DIAG: wake-stale-conn",
-					"wallGapS", int(time.Since(time.Unix(0, last)).Seconds()),
-				)
-				mux, oldConn, tr := c.extractConnLocked()
-				c.mu.Unlock()
-				closeQUICResources(mux, oldConn, tr, "wall-clock stale")
-				goto serialize
-			}
-		}
 		select {
 		case <-c.conn.Context().Done():
 			slog.Info("QUICClient: cached connection dead, rebuilding")
@@ -331,7 +348,6 @@ func (c *QUICClient) connect(ctx context.Context) (*quic.Conn, error) {
 			goto serialize
 		default:
 			conn := c.conn
-			c.lastConnectWall.Store(time.Now().UnixNano())
 			c.mu.Unlock()
 			return conn, nil
 		}
@@ -350,37 +366,20 @@ serialize:
 		return nil, ErrNotConnected
 	}
 	if c.conn != nil {
-		// Wall-clock staleness re-check (same logic as fast path).
-		wallStale := false
-		if last := c.lastConnectWall.Load(); last > 0 {
-			wallStale = time.Since(time.Unix(0, last)) > 30*time.Second
-		}
-		if wallStale {
+		select {
+		case <-c.conn.Context().Done():
 			mux, oldConn, tr := c.extractConnLocked()
 			c.mu.Unlock()
-			closeQUICResources(mux, oldConn, tr, "wall-clock stale")
+			closeQUICResources(mux, oldConn, tr, "connection reset")
 			c.mu.Lock()
 			if c.closed {
 				c.mu.Unlock()
 				return nil, ErrNotConnected
 			}
-		} else {
-			select {
-			case <-c.conn.Context().Done():
-				mux, oldConn, tr := c.extractConnLocked()
-				c.mu.Unlock()
-				closeQUICResources(mux, oldConn, tr, "connection reset")
-				c.mu.Lock()
-				if c.closed {
-					c.mu.Unlock()
-					return nil, ErrNotConnected
-				}
-			default:
-				conn := c.conn
-				c.lastConnectWall.Store(time.Now().UnixNano())
-				c.mu.Unlock()
-				return conn, nil
-			}
+		default:
+			conn := c.conn
+			c.mu.Unlock()
+			return conn, nil
 		}
 	}
 	// Read immutable config fields under mu for address computation.
@@ -433,8 +432,60 @@ serialize:
 
 	qcfg := DefaultQUICConfig()
 
+	// Wrap transport.Dial in a goroutine with hard timeout.
+	// quic-go's Transport.Dial internally calls Conn.destroy() on context cancel,
+	// which blocks on <-c.ctx.Done() waiting for conn.run() exit (up to 30s).
+	// This hard timeout prevents connectMu starvation.
+	//
+	// Orphan goroutine lifecycle (bounded, not a permanent leak):
+	//   ctx has 5s timeout (quicContext with hasFallback=true) → Dial cancel
+	//   at t=5s → Conn.destroy waits conn.run() exit (≤MaxIdleTimeout 30s)
+	//   → Dial returns by ~t=35s → cleanup goroutine runs closeQUICResources
+	//   (5s timeout) → all goroutines exit by ~t=40s.
+	//   Accumulation capped at ~4 goroutines: connectMu serializes to 1
+	//   connect() per 15s, and 3 consecutive fails activate TCP-WS fallback
+	//   (stops QUIC attempts entirely). engine.Stop() cancels ctx chain,
+	//   accelerating cleanup.
+	//   Grep "DIAG: quic-dial-orphan-cleanup" to verify orphans are resolved.
+	type dialResult struct {
+		conn *quic.Conn
+		err  error
+	}
+	dialDone := make(chan dialResult, 1)
 	dialStart := time.Now()
-	conn, err := transport.Dial(ctx, udpAddr, tlsCfg, qcfg)
+	go func() {
+		conn, err := transport.Dial(ctx, udpAddr, tlsCfg, qcfg)
+		dialDone <- dialResult{conn, err}
+	}()
+
+	// NOTE: `err` is already declared in outer scope (from ResolveUDPAddr/ListenPacket).
+	// `conn` is freshly declared here. The `conn, err = r.conn, r.err` assignment (no :=)
+	// reuses the existing `err` variable.
+	var conn *quic.Conn
+	select {
+	case r := <-dialDone:
+		conn, err = r.conn, r.err
+	case <-time.After(quicDialHardTimeout):
+		// transport.Dial is stuck (likely in Conn.destroy). Orphan the goroutine
+		// and let it clean up asynchronously using the bounded-timeout helpers.
+		go func() {
+			orphanStart := time.Now()
+			r := <-dialDone
+			slog.Warn("DIAG: quic-dial-orphan-cleanup",
+				"addr", addr,
+				"blockedMs", time.Since(orphanStart).Milliseconds(),
+			)
+			closeQUICResources(nil, r.conn, transport, "orphaned after hard timeout")
+		}()
+		c.handshakeFailStreak.Add(1)
+		slog.Warn("DIAG: quic-handshake-fail",
+			"addr", addr,
+			"consecutiveFails", c.handshakeFailStreak.Load(),
+			"err", "hard timeout (transport.Dial blocked)",
+		)
+		return nil, fmt.Errorf("wire: QUIC dial: hard timeout after %v", quicDialHardTimeout)
+	}
+
 	if err != nil {
 		transport.Close()
 		c.handshakeFailStreak.Add(1)
@@ -452,9 +503,9 @@ serialize:
 	)
 
 	// Set K2CC congestion control (replaces default Cubic)
-	sender := arc.NewCCSenderGFWMode(arc.DefaultMaxRate)
+	sender := k2cc.NewCCSenderGFWMode(k2cc.DefaultMaxRate)
 	conn.SetCongestionControl(sender)
-	slog.Info("wire: QUIC K2CC enabled", "maxRateMbps", arc.DefaultMaxRate/1_000_000)
+	slog.Info("wire: QUIC K2CC enabled", "maxRateMbps", k2cc.DefaultMaxRate/1_000_000)
 
 	// --- Store result under lock ---
 	// concurrency:allow — closing locally-owned conn/transport not yet stored in struct;
@@ -462,7 +513,7 @@ serialize:
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closed {
-		conn.CloseWithError(0, "closed during connect")
+		closeQUICConnSafe(conn, "closed during connect")
 		transport.Close()
 		return nil, ErrNotConnected
 	}
@@ -471,8 +522,6 @@ serialize:
 	c.ccSender = sender
 	c.alloc = NewSessionIDAllocator()
 	c.udpMux = newQuicUDPMux(conn, &c.portHopAttempts, &c.portHopExhaustedAt)
-	c.lastConnectWall.Store(time.Now().UnixNano())
-
 	// Start accept loop for server-initiated overflow streams
 	go c.acceptOverflowStreams(conn, c.udpMux)
 
@@ -596,7 +645,7 @@ func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, 
 			}
 
 			sessionID := alloc.Next()
-			readCh := mux.register(sessionID)
+			readCh, reaped := mux.register(sessionID)
 
 			return &quicUDPConn{
 				qconn:      conn,
@@ -605,6 +654,7 @@ func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, 
 				mux:        mux,
 				created:    time.Now(),
 				readCh:     readCh,
+				reaped:     reaped,
 				done:       make(chan struct{}),
 			}, nil
 		}
@@ -612,6 +662,18 @@ func (c *QUICClient) DialUDP(ctx context.Context, addr string) (net.PacketConn, 
 		// Fallback: stream-based UDP (datagrams not supported by server)
 		return c.dialUDPStream(ctx, conn, addr)
 	}
+}
+
+// DialStreamUDP opens a stream-backed UDP session through QUIC streams.
+// Unlike DialUDP which prefers DATAGRAM (unreliable), this always uses streams
+// (reliable, congestion-controlled). Used for DNS queries where packet loss
+// causes 5s timeouts.
+func (c *QUICClient) DialStreamUDP(ctx context.Context, addr string) (net.PacketConn, error) {
+	conn, err := c.connect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return c.dialUDPStream(ctx, conn, addr)
 }
 
 // dialUDPStream opens a QUIC stream for UDP and returns a stream-based PacketConn.
@@ -683,12 +745,13 @@ func (c *QUICClient) dialUDPStream(ctx context.Context, conn *quic.Conn, addr st
 // newStreamUDPConn creates a quicStreamUDPConn with a new session ID.
 func (c *QUICClient) newStreamUDPConn(mux *quicStreamUDPMux, alloc *SessionIDAllocator, addr string) *quicStreamUDPConn {
 	sessionID := alloc.Next()
-	readCh := mux.register(sessionID)
+	readCh, reaped := mux.register(sessionID)
 	return &quicStreamUDPConn{
 		mux:        mux,
 		sessionID:  sessionID,
 		targetAddr: addr,
 		readCh:     readCh,
+		reaped:     reaped,
 		done:       make(chan struct{}),
 	}
 }
@@ -799,6 +862,38 @@ func (c *QUICClient) extractConnLocked() (mux *quicUDPMux, conn *quic.Conn, tr *
 	return
 }
 
+// quicCloseTimeout bounds quic.Conn.CloseWithError and quic.Transport.Close.
+// quic-go's Conn.destroy() waits for its run loop via <-c.ctx.Done(), which
+// blocks indefinitely when the network is unreachable (sendQueue.Run stuck
+// on a dead UDP write). 5s is 50x normal close time (<100ms).
+const quicCloseTimeout = 5 * time.Second
+
+// quicDialHardTimeout bounds the total time connect() holds connectMu.
+// Must be well under go-deadlock's 60s threshold. Covers: UDP listen +
+// QUIC handshake + Conn.destroy cleanup on failure. If transport.Dial
+// blocks beyond this (e.g. Conn.destroy waiting for conn.run exit),
+// the goroutine is orphaned and cleanup happens asynchronously.
+const quicDialHardTimeout = 15 * time.Second
+
+// closeQUICConnSafe closes a QUIC connection with a bounded timeout.
+// If CloseWithError blocks (quic-go Conn.destroy bug when network is dead),
+// the goroutine is orphaned and the function returns after timeout.
+// The orphaned goroutine is harmless — it holds only quic-go internal state
+// and will be collected when the process exits.
+func closeQUICConnSafe(conn *quic.Conn, reason string) {
+	done := make(chan struct{})
+	go func() {
+		conn.CloseWithError(0, reason)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(quicCloseTimeout):
+		slog.Warn("wire: QUIC conn close timed out, orphaning goroutine",
+			"reason", reason, "timeout", quicCloseTimeout)
+	}
+}
+
 // closeQUICResources closes extracted QUIC connection resources.
 // Safe to call with nil arguments. Must be called WITHOUT holding c.mu.
 func closeQUICResources(mux *quicUDPMux, conn *quic.Conn, tr *quic.Transport, reason string) {
@@ -806,10 +901,19 @@ func closeQUICResources(mux *quicUDPMux, conn *quic.Conn, tr *quic.Transport, re
 		mux.close()
 	}
 	if conn != nil {
-		conn.CloseWithError(0, reason)
+		closeQUICConnSafe(conn, reason)
 	}
 	if tr != nil {
-		tr.Close()
+		done := make(chan struct{})
+		go func() {
+			tr.Close()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(quicCloseTimeout):
+			slog.Warn("wire: QUIC transport close timed out", "reason", reason)
+		}
 	}
 }
 
@@ -907,7 +1011,7 @@ func (s *QUICServer) acceptLoop() {
 		}
 		slog.Debug("QUICServer: accepted connection", "remote", conn.RemoteAddr())
 		// Set K2CC congestion control for server-side sending (critical for download speed)
-		conn.SetCongestionControl(arc.NewCCSenderGFWMode(arc.DefaultMaxRate))
+		conn.SetCongestionControl(k2cc.NewCCSenderGFWMode(k2cc.DefaultMaxRate))
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -920,31 +1024,34 @@ func (s *QUICServer) acceptLoop() {
 }
 
 func (s *QUICServer) handleConn(conn *quic.Conn) {
+	connLog := slog.With("remote", conn.RemoteAddr())
+
 	// Shared UDP state for datagram + overflow stream paths
 	state := &connUDPState{
 		sessions: make(map[uint32]*serverUDPConn),
 		overflow: &udpOverflowStream{qconn: conn},
 		done:     make(chan struct{}),
+		log:      connLog,
 	}
 
 	// Accept streams (TCP proxy + UDP overflow)
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				slog.Error("QUICServer: panic in AcceptStream loop", "panic", r, "remote", conn.RemoteAddr())
+				connLog.Error("QUICServer: panic in AcceptStream loop", "panic", r)
 			}
 		}()
 		for {
 			stream, err := conn.AcceptStream(context.Background())
 			if err != nil {
-				slog.Info("QUICServer: AcceptStream done", "remote", conn.RemoteAddr(), "err", err)
+				connLog.Info("QUICServer: AcceptStream done", "err", err)
 				return
 			}
-			slog.Debug("QUICServer: accepted stream", "remote", conn.RemoteAddr(), "streamID", stream.StreamID())
+			connLog.Debug("QUICServer: accepted stream", "streamID", stream.StreamID())
 			go func() {
 				defer func() {
 					if r := recover(); r != nil {
-						slog.Error("QUICServer: panic in handleStream", "panic", r, "remote", conn.RemoteAddr())
+						connLog.Error("QUICServer: panic in handleStream", "panic", r)
 					}
 				}()
 				s.handleStream(conn, stream, state)
@@ -967,17 +1074,18 @@ func (s *QUICServer) handleConn(conn *quic.Conn) {
 }
 
 func (s *QUICServer) handleStream(qconn *quic.Conn, stream *quic.Stream, state *connUDPState) {
+	log := state.log.With("streamID", stream.StreamID())
 	br := bufio.NewReader(stream)
 
 	// Read H3 frame type marker
 	frameType, _, err := ReadVarint(br)
 	if err != nil {
-		slog.Warn("QUICServer.handleStream: read frame type failed", "remote", qconn.RemoteAddr(), "err", err)
+		log.Warn("QUICServer.handleStream: read frame type failed", "err", err)
 		stream.Close()
 		return
 	}
 	if frameType != H3FrameTypeK2Proxy {
-		slog.Debug("QUICServer.handleStream: unknown frame type", "frameType", frameType, "remote", qconn.RemoteAddr())
+		log.Debug("QUICServer.handleStream: unknown frame type", "frameType", frameType)
 		stream.Close()
 		return
 	}
@@ -985,12 +1093,12 @@ func (s *QUICServer) handleStream(qconn *quic.Conn, stream *quic.Stream, state *
 	// Read stream header
 	streamType, addr, err := ReadStreamHeader(br)
 	if err != nil {
-		slog.Warn("QUICServer.handleStream: read header failed", "remote", qconn.RemoteAddr(), "err", err)
+		log.Warn("QUICServer.handleStream: read header failed", "err", err)
 		stream.Close()
 		return
 	}
 
-	slog.Info("QUICServer.handleStream: parsed", "streamType", streamType, "addr", addr, "remote", qconn.RemoteAddr())
+	log.Info("QUICServer.handleStream: parsed", "streamType", streamType, "addr", addr)
 
 	switch streamType {
 	case StreamTypeTCP:
@@ -1001,18 +1109,20 @@ func (s *QUICServer) handleStream(qconn *quic.Conn, stream *quic.Stream, state *
 			br:     br,
 		}
 		s.sendTCP(tcpAcceptResult{conn: sc, addr: addr})
-		slog.Debug("QUICServer.handleStream: TCP queued", "addr", addr)
+		log.Debug("QUICServer.handleStream: TCP queued", "addr", addr)
 	case StreamTypeUDP:
-		s.handleUDPStream(stream, br)
+		s.handleUDPStream(stream, br, state.log, qconn.RemoteAddr().String())
 	case StreamTypeUDPOverflow:
 		s.handleUDPOverflowStream(br, state)
+	case StreamTypeEcho:
+		HandleEchoStream(stream, br)
 	default:
-		slog.Debug("QUICServer.handleStream: unknown stream type", "streamType", streamType)
+		log.Debug("QUICServer.handleStream: unknown stream type", "streamType", streamType)
 		stream.Close()
 	}
 }
 
-func (s *QUICServer) handleUDPStream(stream *quic.Stream, br *bufio.Reader) {
+func (s *QUICServer) handleUDPStream(stream *quic.Stream, br *bufio.Reader, connLog *slog.Logger, remoteStr string) {
 	writer := &quicStreamWriter{stream: stream}
 	sessions := make(map[uint32]*quicStreamServerUDPConn)
 
@@ -1031,12 +1141,15 @@ func (s *QUICServer) handleUDPStream(stream *quic.Stream, br *bufio.Reader) {
 			if len(sessions) >= maxServerUDPSessions {
 				continue // at capacity, drop frame
 			}
+			sessLog := connLog.With("sid", frame.SessionID, "addr", frame.Addr)
 			sess = &quicStreamServerUDPConn{
-				writer:    writer,
-				sessionID: frame.SessionID,
-				addr:      frame.Addr,
-				readCh:    make(chan []byte, 32),
-				done:      make(chan struct{}),
+				writer:     writer,
+				sessionID:  frame.SessionID,
+				addr:       frame.Addr,
+				remoteAddr: remoteStr,
+				log:        sessLog,
+				readCh:     make(chan []byte, 32),
+				done:       make(chan struct{}),
 			}
 			sessions[frame.SessionID] = sess
 
@@ -1048,7 +1161,7 @@ func (s *QUICServer) handleUDPStream(stream *quic.Stream, br *bufio.Reader) {
 				go func() {
 					defer func() {
 						if r := recover(); r != nil {
-							slog.Error("QUICServer: panic in HandleUDP (stream)", "panic", r, "addr", addr)
+							sessLog.Error("QUICServer: panic in HandleUDP (stream)", "panic", r)
 						}
 					}()
 					handler.HandleUDP(sess, addr)
@@ -1061,21 +1174,24 @@ func (s *QUICServer) handleUDPStream(stream *quic.Stream, br *bufio.Reader) {
 }
 
 func (s *QUICServer) handleDatagrams(conn *quic.Conn, state *connUDPState) {
-	slog.Info("QUICServer: handleDatagrams started", "remote", conn.RemoteAddr())
+	log := state.log
+	log.Info("QUICServer: handleDatagrams started")
+	var totalReceived int64
 
 	for {
 		data, err := conn.ReceiveDatagram(context.Background())
 		if err != nil {
-			slog.Info("QUICServer: handleDatagrams exiting", "remote", conn.RemoteAddr(), "err", err)
+			log.Warn("DIAG: datagram-recv-exit", "totalReceived", totalReceived, "err", err)
 			return
 		}
+		totalReceived++
 
 		frame, err := ReadUDPFrame(bytes.NewReader(data))
 		if err != nil {
-			slog.Warn("QUICServer: datagram parse failed", "len", len(data), "err", err)
+			log.Warn("QUICServer: datagram parse failed", "len", len(data), "err", err)
 			continue
 		}
-		slog.Debug("QUICServer: datagram received", "sessionID", frame.SessionID, "addr", frame.Addr, "payloadLen", len(frame.Payload))
+		log.Debug("QUICServer: datagram received", "sessionID", frame.SessionID, "addr", frame.Addr, "payloadLen", len(frame.Payload))
 
 		s.deliverToSession(state, conn, frame)
 	}
@@ -1089,30 +1205,34 @@ func (s *QUICServer) deliverToSession(state *connUDPState, conn *quic.Conn, fram
 	if !ok {
 		if len(state.sessions) >= maxServerUDPSessions {
 			state.mu.Unlock()
-			slog.Warn("QUICServer: max UDP sessions reached, dropping")
+			state.log.Warn("QUICServer: max UDP sessions reached, dropping")
 			return
 		}
+		sessLog := state.log.With("sid", frame.SessionID, "addr", frame.Addr)
 		sess = &serverUDPConn{
 			qconn:        conn,
 			sessionID:    frame.SessionID,
 			addr:         frame.Addr,
+			remoteAddr:   conn.RemoteAddr().String(),
 			readCh:       make(chan []byte, 32),
 			done:         make(chan struct{}),
 			overflow:     state.overflow,
 			sendInflight: &state.sendInflight,
+			created:      time.Now(),
+			log:          sessLog,
 		}
 		state.sessions[frame.SessionID] = sess
 
 		s.mu.Lock()
 		handler := s.udpH
 		s.mu.Unlock()
-		slog.Info("QUICServer: new UDP session", "sessionID", frame.SessionID, "addr", frame.Addr, "handlerSet", handler != nil)
+		sessLog.Info("QUICServer: new UDP session", "handlerSet", handler != nil)
 		if handler != nil {
 			addr := frame.Addr
 			go func() {
 				defer func() {
 					if r := recover(); r != nil {
-						slog.Error("QUICServer: panic in HandleUDP", "panic", r, "addr", addr)
+						sessLog.Error("QUICServer: panic in HandleUDP", "panic", r)
 					}
 				}()
 				handler.HandleUDP(sess, addr)
@@ -1127,7 +1247,7 @@ func (s *QUICServer) deliverToSession(state *connUDPState, conn *quic.Conn, fram
 // handleUDPOverflowStream reads SmuxUDPFrame from a client-initiated overflow stream
 // and delivers them to the shared session map (same sessions as datagram path).
 func (s *QUICServer) handleUDPOverflowStream(br *bufio.Reader, state *connUDPState) {
-	slog.Info("QUICServer: receiving overflow stream from client")
+	state.log.Info("QUICServer: receiving overflow stream from client")
 	// We need the qconn to create new sessions — get it from the overflow struct.
 	conn := state.overflow.qconn
 	for {
@@ -1201,12 +1321,13 @@ func (s *QUICServer) Close() error {
 // ============================================================================
 
 type quicUDPMux struct {
-	conn       *quic.Conn
-	mu         deadlock.Mutex
-	sessions   map[uint32]chan *UDPFrame
-	lastActive map[uint32]*atomic.Int64 // unix seconds per session
-	done       chan struct{}
-	started    bool
+	conn        *quic.Conn
+	mu          deadlock.Mutex
+	sessions    map[uint32]chan *UDPFrame
+	sessionDone map[uint32]chan struct{} // closed by reaper to notify quicUDPConn
+	lastActive  map[uint32]*atomic.Int64 // unix seconds per session
+	done        chan struct{}
+	started     bool
 	streamMux  *quicStreamUDPMux // stream-based UDP fallback
 	overflow   *udpOverflowStream // per-packet overflow for oversized datagrams
 
@@ -1264,6 +1385,7 @@ func newQuicUDPMux(conn *quic.Conn, hopAttempts *atomic.Int32, hopExhausted *ato
 	return &quicUDPMux{
 		conn:               conn,
 		sessions:           make(map[uint32]chan *UDPFrame),
+		sessionDone:        make(map[uint32]chan struct{}),
 		lastActive:         make(map[uint32]*atomic.Int64),
 		done:               make(chan struct{}),
 		clientHopAttempts:  hopAttempts,
@@ -1297,20 +1419,29 @@ func (m *quicUDPMux) reapIdleSessions() {
 	for {
 		select {
 		case <-ticker.C:
-			now := time.Now().Unix()
-			m.mu.Lock()
-			for id, ts := range m.lastActive {
-				if now-ts.Load() > int64(udpSessionIdleTimeout/time.Second) {
-					delete(m.sessions, id)
-					delete(m.lastActive, id)
-					slog.Debug("quicUDPMux: reaped idle session", "sessionID", id)
-				}
-			}
-			m.mu.Unlock()
+			m.reapOnce()
 		case <-m.done:
 			return
 		}
 	}
+}
+
+func (m *quicUDPMux) reapOnce() {
+	now := time.Now().Unix()
+	m.mu.Lock()
+	for id, ts := range m.lastActive {
+		if now-ts.Load() > int64(udpSessionIdleTimeout/time.Second) {
+			delete(m.sessions, id)
+			delete(m.lastActive, id)
+			reaped := m.sessionDone[id]
+			delete(m.sessionDone, id)
+			if reaped != nil {
+				close(reaped)
+			}
+			slog.Debug("quicUDPMux: reaped idle session", "sessionID", id)
+		}
+	}
+	m.mu.Unlock()
 }
 
 func (m *quicUDPMux) readLoop() {
@@ -1322,16 +1453,19 @@ func (m *quicUDPMux) readLoop() {
 		}
 	}()
 	slog.Info("quicUDPMux: readLoop started")
+	var totalReceived int64
 	for {
 		data, err := m.conn.ReceiveDatagram(context.Background())
 		if err != nil {
-			slog.Warn("quicUDPMux: readLoop exiting", "err", err)
+			slog.Warn("DIAG: datagram-readloop-exit", "totalReceived", totalReceived, "err", err)
 			return
 		}
+		totalReceived++
 		m.recordRecv()
 		slog.Debug("quicUDPMux: received datagram", "len", len(data))
 		frame, err := ReadUDPFrame(bytes.NewReader(data))
 		if err != nil {
+			slog.Warn("quicUDPMux: datagram parse failed", "len", len(data), "err", err)
 			continue
 		}
 		m.mu.Lock()
@@ -1350,21 +1484,24 @@ func (m *quicUDPMux) readLoop() {
 	}
 }
 
-func (m *quicUDPMux) register(sessionID uint32) chan *UDPFrame {
+func (m *quicUDPMux) register(sessionID uint32) (chan *UDPFrame, chan struct{}) {
 	ch := make(chan *UDPFrame, 32)
+	reaped := make(chan struct{})
 	ts := &atomic.Int64{}
 	ts.Store(time.Now().Unix())
 	m.mu.Lock()
 	m.sessions[sessionID] = ch
+	m.sessionDone[sessionID] = reaped
 	m.lastActive[sessionID] = ts
 	m.mu.Unlock()
 	m.start()
-	return ch
+	return ch, reaped
 }
 
 func (m *quicUDPMux) unregister(sessionID uint32) {
 	m.mu.Lock()
 	delete(m.sessions, sessionID)
+	delete(m.sessionDone, sessionID)
 	delete(m.lastActive, sessionID)
 	m.mu.Unlock()
 }
@@ -1403,12 +1540,14 @@ type quicUDPConn struct {
 	targetAddr string
 	mux        *quicUDPMux
 	readCh     chan *UDPFrame
+	reaped     chan struct{} // closed by mux reaper when session is idle-reaped
 	done       chan struct{}
 	closeOnce  sync.Once
 	rd         readDeadline
 	created    time.Time
 	txPackets  atomic.Int64
 	txBytes    atomic.Int64
+	txDrops    atomic.Int64 // datagrams silently dropped (queue saturated)
 	rxPackets  atomic.Int64
 	rxBytes    atomic.Int64
 }
@@ -1431,6 +1570,8 @@ func (c *quicUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 		slog.Debug("quicUDPConn: ReadFrom ok", "sessionID", c.sessionID, "target", c.targetAddr, "len", n)
 		addr, _ := net.ResolveUDPAddr("udp", c.targetAddr)
 		return n, addr, nil
+	case <-c.reaped:
+		return 0, nil, net.ErrClosed
 	case <-c.done:
 		return 0, nil, net.ErrClosed
 	case <-c.mux.done:
@@ -1446,12 +1587,17 @@ func (c *quicUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
 	frame, put := MarshalUDPFrame(c.sessionID, c.targetAddr, b)
 
 	// Atomic inflight check: drop immediately when queue is saturated.
-	// No goroutine spawned — avoids leak when SendDatagram blocks indefinitely.
+	// Returns (len, nil) — silent drop is protocol-correct for unreliable
+	// DATAGRAM. Returning an error would propagate to the QUIC transport
+	// and potentially close the connection to the target.
+	// recordTimeout() is kept for relay health monitoring — enough drops
+	// will mark the relay path unhealthy and trigger TCP-WS fallback.
 	if c.mux.sendInflight.Add(1) > maxDatagramInflight {
 		c.mux.sendInflight.Add(-1)
 		put()
+		c.txDrops.Add(1)
 		c.mux.recordTimeout()
-		return 0, ErrDatagramSendTimeout
+		return len(b), nil
 	}
 	err := c.qconn.SendDatagram(frame)
 	c.mux.sendInflight.Add(-1)
@@ -1490,6 +1636,7 @@ func (c *quicUDPConn) Close() error {
 				"duration", time.Since(c.created).Round(time.Millisecond),
 				"txPackets", c.txPackets.Load(),
 				"txBytes", c.txBytes.Load(),
+				"txDrops", c.txDrops.Load(),
 				"rxPackets", c.rxPackets.Load(),
 				"rxBytes", c.rxBytes.Load())
 		}
@@ -1512,20 +1659,37 @@ type serverUDPConn struct {
 	qconn        datagramSender
 	sessionID    uint32
 	addr         string
+	remoteAddr   string // client IP:port for diagnostic attribution
+	log          *slog.Logger // scoped logger with remote, sid, addr
 	readCh       chan []byte
 	done         chan struct{}
 	closeOnce    sync.Once
 	rd           readDeadline
 	overflow     *udpOverflowStream // per-packet overflow for oversized datagrams
 	sendInflight *atomic.Int32      // shared across all sessions on this connection
+	created      time.Time
+	txPackets    atomic.Int64
+	txBytes      atomic.Int64
+	txErrors     atomic.Int64
+	txDrops      atomic.Int64 // datagrams silently dropped (queue saturated)
+	rxPackets    atomic.Int64
 }
 
 var _ net.PacketConn = (*serverUDPConn)(nil)
+var _ UDPSessionInfo = (*serverUDPConn)(nil)
+
+func (c *serverUDPConn) UDPSessionID() uint32  { return c.sessionID }
+func (c *serverUDPConn) UDPRemoteAddr() string { return c.remoteAddr }
+func (c *serverUDPConn) Logger() *slog.Logger  { return c.log }
 
 func (c *serverUDPConn) deliver(payload []byte) {
 	select {
 	case c.readCh <- payload:
 	case <-c.done:
+	default:
+		// Drop: handler exited or too slow. Protocol-correct for unreliable datagrams.
+		// Without default, a full readCh with open done channel blocks handleDatagrams
+		// forever — freezing ALL datagram processing on this connection.
 	}
 }
 
@@ -1540,6 +1704,7 @@ func (c *serverUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	select {
 	case payload := <-c.readCh:
 		n := copy(b, payload)
+		c.rxPackets.Add(1)
 		addr, _ := net.ResolveUDPAddr("udp", c.addr)
 		return n, addr, nil
 	case <-c.done:
@@ -1553,17 +1718,33 @@ func (c *serverUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
 	// Empty addr for response frames (client already knows the target)
 	frame, put := MarshalUDPFrame(c.sessionID, "", b)
 
-	// Atomic inflight check: drop immediately when queue is saturated.
+	// Atomic inflight check: when datagram queue is saturated, overflow to
+	// the reliable stream path instead of blocking in datagramQueue.Add().
+	// Without this, all HandleUDP goroutines block in Add() and can't call
+	// target.Read() — starving every UDP session on this connection.
 	if c.sendInflight.Add(1) > maxDatagramInflight {
 		c.sendInflight.Add(-1)
 		put()
-		return 0, ErrDatagramSendTimeout
+		// Overflow to stream: preserves data via reliable STREAM frames.
+		// Critical for QUIC handshake completion packets that MUST arrive.
+		if c.overflow != nil {
+			if err := c.overflow.send(c.sessionID, "", b); err == nil {
+				c.txPackets.Add(1)
+				c.txBytes.Add(int64(len(b)))
+				return len(b), nil
+			}
+		}
+		// Stream overflow also failed — silent drop (last resort).
+		c.txDrops.Add(1)
+		return len(b), nil
 	}
 	err := c.qconn.SendDatagram(frame)
 	c.sendInflight.Add(-1)
 	put()
 
 	if err == nil {
+		c.txPackets.Add(1)
+		c.txBytes.Add(int64(len(b)))
 		return len(b), nil
 	}
 
@@ -1571,17 +1752,32 @@ func (c *serverUDPConn) WriteTo(b []byte, _ net.Addr) (int, error) {
 	var tooLarge *quic.DatagramTooLargeError
 	if errors.As(err, &tooLarge) && c.overflow != nil {
 		if err2 := c.overflow.send(c.sessionID, "", b); err2 != nil {
+			c.txErrors.Add(1)
 			return 0, err2
 		}
+		c.txPackets.Add(1)
+		c.txBytes.Add(int64(len(b)))
 		return len(b), nil
 	}
 
-	slog.Warn("serverUDPConn: SendDatagram failed", "sessionID", c.sessionID, "addr", c.addr, "err", err)
+	c.txErrors.Add(1)
+	c.log.Warn("serverUDPConn: SendDatagram failed", "err", err)
 	return 0, err
 }
 
 func (c *serverUDPConn) close() {
-	c.closeOnce.Do(func() { close(c.done) })
+	c.closeOnce.Do(func() {
+		if !c.created.IsZero() {
+			c.log.Info("serverUDPConn: closed",
+				"duration", time.Since(c.created).Round(time.Millisecond),
+				"rxPackets", c.rxPackets.Load(),
+				"txPackets", c.txPackets.Load(),
+				"txBytes", c.txBytes.Load(),
+				"txErrors", c.txErrors.Load(),
+				"txDrops", c.txDrops.Load())
+		}
+		close(c.done)
+	})
 }
 
 func (c *serverUDPConn) Close() error {
@@ -1606,7 +1802,15 @@ type quicStreamWriter struct {
 func (w *quicStreamWriter) writeFrame(sessionID uint32, addr string, payload []byte) error {
 	w.writeMu.Lock()
 	defer w.writeMu.Unlock()
-	return WriteSmuxUDPFrame(w.stream, sessionID, addr, payload)
+	start := time.Now()
+	err := WriteSmuxUDPFrame(w.stream, sessionID, addr, payload)
+	writeMs := time.Since(start).Milliseconds()
+	if err != nil {
+		slog.Warn("DIAG: stream-writer-fail", "sessionID", sessionID, "len", len(payload), "writeMs", writeMs, "err", err)
+	} else if writeMs > 100 {
+		slog.Warn("DIAG: stream-writer-slow", "sessionID", sessionID, "len", len(payload), "writeMs", writeMs)
+	}
+	return err
 }
 
 // ============================================================================
@@ -1614,16 +1818,23 @@ func (w *quicStreamWriter) writeFrame(sessionID uint32, addr string, payload []b
 // ============================================================================
 
 type quicStreamServerUDPConn struct {
-	writer    *quicStreamWriter
-	sessionID uint32
-	addr      string
-	readCh    chan []byte
-	done      chan struct{}
-	closeOnce sync.Once
-	rd        readDeadline
+	writer     *quicStreamWriter
+	sessionID  uint32
+	addr       string
+	remoteAddr string
+	log        *slog.Logger // scoped logger with remote, sid, addr
+	readCh     chan []byte
+	done       chan struct{}
+	closeOnce  sync.Once
+	rd         readDeadline
 }
 
 var _ net.PacketConn = (*quicStreamServerUDPConn)(nil)
+var _ UDPSessionInfo = (*quicStreamServerUDPConn)(nil)
+
+func (c *quicStreamServerUDPConn) UDPSessionID() uint32  { return c.sessionID }
+func (c *quicStreamServerUDPConn) UDPRemoteAddr() string { return c.remoteAddr }
+func (c *quicStreamServerUDPConn) Logger() *slog.Logger   { return c.log }
 
 func (c *quicStreamServerUDPConn) deliver(payload []byte) {
 	select {
@@ -1679,25 +1890,27 @@ func (c *quicStreamServerUDPConn) SetWriteDeadline(time.Time) error    { return 
 // ============================================================================
 
 type quicStreamUDPMux struct {
-	stream     *quic.Stream
-	qconn      *quic.Conn
-	br         *bufio.Reader
-	writeMu    deadlock.Mutex
-	mu         deadlock.Mutex
-	sessions   map[uint32]chan *UDPFrame
-	lastActive map[uint32]*atomic.Int64
-	done       chan struct{}
-	started    bool
+	stream      *quic.Stream
+	qconn       *quic.Conn
+	br          *bufio.Reader
+	writeMu     deadlock.Mutex
+	mu          deadlock.Mutex
+	sessions    map[uint32]chan *UDPFrame
+	sessionDone map[uint32]chan struct{} // closed by reaper to notify quicStreamUDPConn
+	lastActive  map[uint32]*atomic.Int64
+	done        chan struct{}
+	started     bool
 }
 
 func newQuicStreamUDPMux(stream *quic.Stream, qconn *quic.Conn) *quicStreamUDPMux {
 	return &quicStreamUDPMux{
-		stream:     stream,
-		qconn:      qconn,
-		br:         bufio.NewReader(stream),
-		sessions:   make(map[uint32]chan *UDPFrame),
-		lastActive: make(map[uint32]*atomic.Int64),
-		done:       make(chan struct{}),
+		stream:      stream,
+		qconn:       qconn,
+		br:          bufio.NewReader(stream),
+		sessions:    make(map[uint32]chan *UDPFrame),
+		sessionDone: make(map[uint32]chan struct{}),
+		lastActive:  make(map[uint32]*atomic.Int64),
+		done:        make(chan struct{}),
 	}
 }
 
@@ -1734,8 +1947,12 @@ func (m *quicStreamUDPMux) readLoop() {
 			m.touchSession(frame.SessionID)
 			select {
 			case ch <- frame:
+				slog.Debug("DIAG: stream-mux-recv", "sessionID", frame.SessionID, "len", len(frame.Payload))
 			default:
+				slog.Warn("DIAG: stream-mux-drop", "sessionID", frame.SessionID, "len", len(frame.Payload), "chanLen", len(ch))
 			}
+		} else {
+			slog.Warn("DIAG: stream-mux-no-session", "sessionID", frame.SessionID, "len", len(frame.Payload))
 		}
 	}
 }
@@ -1746,21 +1963,24 @@ func (m *quicStreamUDPMux) writeFrame(sessionID uint32, addr string, payload []b
 	return WriteSmuxUDPFrame(m.stream, sessionID, addr, payload)
 }
 
-func (m *quicStreamUDPMux) register(sessionID uint32) chan *UDPFrame {
+func (m *quicStreamUDPMux) register(sessionID uint32) (chan *UDPFrame, chan struct{}) {
 	ch := make(chan *UDPFrame, 32)
+	reaped := make(chan struct{})
 	ts := &atomic.Int64{}
 	ts.Store(time.Now().Unix())
 	m.mu.Lock()
 	m.sessions[sessionID] = ch
+	m.sessionDone[sessionID] = reaped
 	m.lastActive[sessionID] = ts
 	m.mu.Unlock()
 	m.start()
-	return ch
+	return ch, reaped
 }
 
 func (m *quicStreamUDPMux) unregister(sessionID uint32) {
 	m.mu.Lock()
 	delete(m.sessions, sessionID)
+	delete(m.sessionDone, sessionID)
 	delete(m.lastActive, sessionID)
 	m.mu.Unlock()
 }
@@ -1780,20 +2000,29 @@ func (m *quicStreamUDPMux) reapIdleSessions() {
 	for {
 		select {
 		case <-ticker.C:
-			now := time.Now().Unix()
-			m.mu.Lock()
-			for id, ts := range m.lastActive {
-				if now-ts.Load() > int64(udpSessionIdleTimeout/time.Second) {
-					delete(m.sessions, id)
-					delete(m.lastActive, id)
-					slog.Debug("quicStreamUDPMux: reaped idle session", "sessionID", id)
-				}
-			}
-			m.mu.Unlock()
+			m.reapOnce()
 		case <-m.done:
 			return
 		}
 	}
+}
+
+func (m *quicStreamUDPMux) reapOnce() {
+	now := time.Now().Unix()
+	m.mu.Lock()
+	for id, ts := range m.lastActive {
+		if now-ts.Load() > int64(udpSessionIdleTimeout/time.Second) {
+			delete(m.sessions, id)
+			delete(m.lastActive, id)
+			reaped := m.sessionDone[id]
+			delete(m.sessionDone, id)
+			if reaped != nil {
+				close(reaped)
+			}
+			slog.Debug("quicStreamUDPMux: reaped idle session", "sessionID", id)
+		}
+	}
+	m.mu.Unlock()
 }
 
 func (m *quicStreamUDPMux) close() {
@@ -1814,6 +2043,7 @@ type quicStreamUDPConn struct {
 	sessionID  uint32
 	targetAddr string
 	readCh     chan *UDPFrame
+	reaped     chan struct{} // closed by mux reaper when session is idle-reaped
 	done       chan struct{}
 	closeOnce  sync.Once
 	rd         readDeadline
@@ -1834,6 +2064,8 @@ func (c *quicStreamUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 		n := copy(b, frame.Payload)
 		addr, _ := net.ResolveUDPAddr("udp", c.targetAddr)
 		return n, addr, nil
+	case <-c.reaped:
+		return 0, nil, net.ErrClosed
 	case <-c.done:
 		return 0, nil, net.ErrClosed
 	case <-c.mux.done:

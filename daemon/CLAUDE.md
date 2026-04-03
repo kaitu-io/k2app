@@ -10,6 +10,19 @@ No independent state machine — daemon derives everything from engine events.
 
 State values: `disconnected`, `connecting`, `connected`, `reconnecting`, `paused`
 
+## External Watchdog (macOS)
+
+launchd companion service (`kaitu-watchdog.plist`) runs `k2 healthcheck` every 60s.
+Detects daemon hangs by pinging `/ping` with 5s timeout. After 2 consecutive
+failures (120s), forces DNS cleanup + SIGKILL. launchd KeepAlive restarts daemon.
+
+Why external (not internal watchdog):
+- Fresh process — immune to daemon deadlocks (no shared mutexes or CGo state)
+- DNS cleanup via fresh CGo context (SCDynamicStore calls go through configd, not the hung process)
+- Follows systemd WatchdogSec / Kubernetes liveness probe pattern
+
+Installed/uninstalled alongside daemon service by `k2 service install/uninstall`.
+
 ## Concurrency Model
 
 - `opMu deadlock.Mutex` — serializes doUp/doDown (coarse lifecycle lock)
@@ -102,10 +115,10 @@ Abort path: both Start and Stop happen within the same opMu critical section —
 - `reload.go` — Hot-reload config on SIGHUP (dynamic changes without restart)
 - `network_monitor.go` — Desktop network change detection (WiFi/cellular switch)
 - `process.go` / `process_unix.go` / `process_windows.go` — PID monitoring (auto-disconnect on parent exit)
-- `recovery.go` / `recovery_unix.go` / `recovery_windows.go` — Panic recovery + network restore (Windows: calls `provider.CleanupStaleDNSOverride()`)
+- `recovery.go` / `recovery_darwin.go` / `recovery_linux.go` / `recovery_windows.go` — Panic recovery + network restore (macOS + Windows: calls `provider.CleanupStaleDNSOverride()`)
 - `rlimit.go` / `rlimit_unix.go` / `rlimit_windows.go` — `RLIMIT_NPROC=4000`, `RLIMIT_NOFILE=10240`
 - `service.go` — `ServiceManager` interface: Install/Uninstall/IsInstalled
-- `service_darwin.go` — macOS launchd plist (`io.kaitu.k2`)
+- `service_darwin.go` — macOS launchd plist (`kaitu`) + watchdog plist (`kaitu-watchdog`, runs `k2 healthcheck` every 60s)
 - `service_linux.go` — Linux systemd unit (`k2.service`) + OpenWRT init.d/procd (auto-detected)
 - `service_windows.go` — Windows Service
 - `directdial.go` / `directdial_test.go` — `directDialer` (implements `wire.DirectDialer`, sing-tun interface binding)

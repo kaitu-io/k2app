@@ -348,7 +348,7 @@ func TestIntegration_TransportManager_Failover(t *testing.T) {
 	}
 
 	tm := NewTransportManager()
-	tm.SetQUIC(quic)
+	tm.SetPrimary(quic, "quic-hop")
 	tm.SetTCPWS(tcpws)
 
 	// First call: QUIC preferred
@@ -638,7 +638,7 @@ func TestIntegration_URLToClient(t *testing.T) {
 
 	// TransportManager wires them together
 	tm := NewTransportManager()
-	// In real code: tm.SetQUIC(qc), tm.SetTCPWS(tc)
+	// In real code: tm.SetPrimary(qc, "quic-hop"), tm.SetTCPWS(tc)
 	// Here we verify the creation pipeline works
 	_ = tm
 }

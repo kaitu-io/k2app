@@ -2,20 +2,22 @@
 	build-darwin-arm64 build-darwin-amd64 build-darwin-universal \
 	build-windows-amd64 build-linux-amd64 build-linux-arm64 \
 	appext-ios appext-macos appext-android \
-	quick-check pre-release build-all-platforms
+	quick-check pre-release build-all-platforms release
 
 VERSION ?= dev
 COMMIT  ?= $(shell git rev-parse --short HEAD)
 K2_BUILD_LOG_LEVEL ?= debug
 LDFLAGS  = -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X github.com/kaitu-io/k2/config.buildLogLevel=$(K2_BUILD_LOG_LEVEL)
-# Production builds disable go-deadlock for zero overhead.
-PROD_TAGS = -tags=deadlock_disable
+# Desktop: lock-ordering detection enabled (low overhead, catches deadlocks).
+# Mobile: deadlock_disable for zero overhead (tight iOS NE ~50MB jetsam).
+DESKTOP_TAGS =
+MOBILE_TAGS = -tags=deadlock_disable
 
 # --- Native build ---
 build:
 	mkdir -p build
-	go build $(PROD_TAGS) -ldflags "$(LDFLAGS)" -o build/k2 ./cmd/k2
-	go build $(PROD_TAGS) -ldflags "$(LDFLAGS)" -o build/k2s ./cmd/k2s
+	go build $(DESKTOP_TAGS) -ldflags "$(LDFLAGS)" -o build/k2 ./cmd/k2
+	go build $(DESKTOP_TAGS) -ldflags "$(LDFLAGS)" -o build/k2s ./cmd/k2s
 
 test:
 	go test ./...
@@ -26,11 +28,11 @@ generate:
 # --- macOS ---
 build-darwin-arm64:
 	mkdir -p build
-	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build $(PROD_TAGS) -ldflags "$(LDFLAGS)" -o build/k2-darwin-arm64 ./cmd/k2
+	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build $(DESKTOP_TAGS) -ldflags "$(LDFLAGS)" -o build/k2-darwin-arm64 ./cmd/k2
 
 build-darwin-amd64:
 	mkdir -p build
-	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build $(PROD_TAGS) -ldflags "$(LDFLAGS)" -o build/k2-darwin-amd64 ./cmd/k2
+	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build $(DESKTOP_TAGS) -ldflags "$(LDFLAGS)" -o build/k2-darwin-amd64 ./cmd/k2
 
 build-darwin-universal: build-darwin-arm64 build-darwin-amd64
 	lipo -create -output build/k2-darwin-universal build/k2-darwin-arm64 build/k2-darwin-amd64
@@ -39,33 +41,31 @@ build-darwin-universal: build-darwin-arm64 build-darwin-amd64
 # --- Windows ---
 build-windows-amd64: generate
 	mkdir -p build
-	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build $(PROD_TAGS) -ldflags "$(LDFLAGS)" -o build/k2-windows-amd64.exe ./cmd/k2
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build $(DESKTOP_TAGS) -ldflags "$(LDFLAGS)" -o build/k2-windows-amd64.exe ./cmd/k2
 
 # --- Linux ---
 build-linux-amd64:
 	mkdir -p build
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build $(PROD_TAGS) -ldflags "$(LDFLAGS)" -o build/k2-linux-amd64 ./cmd/k2
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build $(DESKTOP_TAGS) -ldflags "$(LDFLAGS)" -o build/k2-linux-amd64 ./cmd/k2
 
 build-linux-arm64:
 	mkdir -p build
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build $(PROD_TAGS) -ldflags "$(LDFLAGS)" -o build/k2-linux-arm64 ./cmd/k2
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build $(DESKTOP_TAGS) -ldflags "$(LDFLAGS)" -o build/k2-linux-arm64 ./cmd/k2
 
 # --- Server (standalone) ---
 build-server-darwin:
 	mkdir -p build
-	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build $(PROD_TAGS) -ldflags "$(LDFLAGS)" -o build/k2s-darwin-amd64 ./cmd/k2s
-	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build $(PROD_TAGS) -ldflags "$(LDFLAGS)" -o build/k2s-darwin-arm64 ./cmd/k2s
-	lipo -create -output build/k2s-darwin-universal build/k2s-darwin-amd64 build/k2s-darwin-arm64
-	rm -f build/k2s-darwin-amd64 build/k2s-darwin-arm64
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build $(DESKTOP_TAGS) -ldflags "$(LDFLAGS)" -o build/k2s-darwin-amd64 ./cmd/k2s
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build $(DESKTOP_TAGS) -ldflags "$(LDFLAGS)" -o build/k2s-darwin-arm64 ./cmd/k2s
 
 build-server-windows: generate
 	mkdir -p build
-	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build $(PROD_TAGS) -ldflags "$(LDFLAGS)" -o build/k2s-windows-amd64.exe ./cmd/k2s
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build $(DESKTOP_TAGS) -ldflags "$(LDFLAGS)" -o build/k2s-windows-amd64.exe ./cmd/k2s
 
 build-server-linux:
 	mkdir -p build
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build $(PROD_TAGS) -ldflags "$(LDFLAGS)" -o build/k2s-linux-amd64 ./cmd/k2s
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build $(PROD_TAGS) -ldflags "$(LDFLAGS)" -o build/k2s-linux-arm64 ./cmd/k2s
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build $(DESKTOP_TAGS) -ldflags "$(LDFLAGS)" -o build/k2s-linux-amd64 ./cmd/k2s
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build $(DESKTOP_TAGS) -ldflags "$(LDFLAGS)" -o build/k2s-linux-arm64 ./cmd/k2s
 
 # --- Mobile (gomobile bind) ---
 appext-ios:
@@ -101,6 +101,14 @@ pre-release: quick-check
 # Cross-compile all platforms (compiles = no broken imports).
 build-all-platforms: build-darwin-arm64 build-linux-amd64 build-linux-arm64 build-windows-amd64 build-server-linux
 	@echo "All platform builds OK"
+
+# --- Release ---
+release:
+	@test -n "$(VERSION)" || (echo "Usage: make VERSION=1.0.0 release"; exit 1)
+	@test "$(VERSION)" != "dev" || (echo "Error: set VERSION"; exit 1)
+	$(MAKE) VERSION=$(VERSION) build-server-linux build-server-darwin \
+		build-linux-amd64 build-linux-arm64 build-darwin-arm64 build-darwin-amd64
+	scripts/release.sh $(VERSION)
 
 clean:
 	rm -rf build/

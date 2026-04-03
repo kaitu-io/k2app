@@ -65,7 +65,7 @@ func cmdAndroidInstall(args []string) {
 	var device gadb.Device
 	for {
 		fmt.Print("  检测中...")
-		client, err := gadb.NewClientWith("localhost", 5038)
+		client, err := gadb.NewClientWith("localhost", cliAdbPort)
 		if err != nil {
 			fmt.Printf(" 未检测到设备 (adb server: %s)\n", err)
 			fmt.Print("  按 Enter 重试...")
@@ -193,9 +193,22 @@ func cmdAndroidInstall(args []string) {
 	_ = adbPath
 }
 
-// cliPrepareAdb ensures adb is available and the server is running on port 5038.
+// cliAdbPort is the port used by the CLI for adb connections.
+// Set by cliPrepareAdb after detecting or starting a server.
+var cliAdbPort = 5037
+
+// cliPrepareAdb ensures adb is available. Reuses existing server on 5037 first.
 func cliPrepareAdb() (string, error) {
-	// Download from CDN
+	// 1. Try reusing existing adb server on default port
+	client, err := gadb.NewClientWith("localhost", 5037)
+	if err == nil {
+		if _, err := client.ServerVersion(); err == nil {
+			cliAdbPort = 5037
+			return "", nil // no binary path needed, server already running
+		}
+	}
+
+	// 2. Download our own adb binary
 	manifest, err := cliFetchToolsManifest()
 	if err != nil {
 		return "", fmt.Errorf("fetch tools manifest: %w", err)
@@ -219,41 +232,34 @@ func cliPrepareAdb() (string, error) {
 	adbPath := filepath.Join(adbDir, adbBin)
 
 	// Check cache
-	if _, err := os.Stat(adbPath); err == nil {
-		cmd := exec.Command(adbPath, "-P", "5038", "start-server")
-		cmd.Stdout = io.Discard
-		cmd.Stderr = io.Discard
-		if err := cmd.Run(); err == nil {
-			return adbPath, nil
+	if _, err := os.Stat(adbPath); err != nil {
+		// Download zip
+		zipPath := filepath.Join(os.TempDir(), "k2-adb-"+entry.URL)
+		if err := cliDownloadFile("tools/"+entry.URL, zipPath, entry.Hash); err != nil {
+			return "", fmt.Errorf("download adb: %w", err)
+		}
+		defer os.Remove(zipPath)
+
+		if err := cliExtractAdb(zipPath, adbDir); err != nil {
+			return "", fmt.Errorf("extract adb: %w", err)
+		}
+
+		if runtime.GOOS == "darwin" {
+			exec.Command("xattr", "-rd", "com.apple.quarantine", adbDir).Run()
+		}
+		if runtime.GOOS != "windows" {
+			os.Chmod(adbPath, 0755)
 		}
 	}
 
-	// Download zip
-	zipPath := filepath.Join(os.TempDir(), "k2-adb-"+entry.URL)
-	if err := cliDownloadFile("tools/"+entry.URL, zipPath, entry.Hash); err != nil {
-		return "", fmt.Errorf("download adb: %w", err)
-	}
-	defer os.Remove(zipPath)
-
-	// Extract
-	if err := cliExtractAdb(zipPath, adbDir); err != nil {
-		return "", fmt.Errorf("extract adb: %w", err)
-	}
-
-	// Remove quarantine + chmod
-	if runtime.GOOS == "darwin" {
-		exec.Command("xattr", "-rd", "com.apple.quarantine", adbDir).Run()
-	}
-	if runtime.GOOS != "windows" {
-		os.Chmod(adbPath, 0755)
-	}
-
-	cmd := exec.Command(adbPath, "-P", "5038", "start-server")
+	// Start server on default port
+	cmd := exec.Command(adbPath, "start-server")
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("start adb server: %w", err)
 	}
+	cliAdbPort = 5037
 
 	return adbPath, nil
 }

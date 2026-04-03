@@ -41,15 +41,17 @@ func TestWriteTo_InflightSaturation_NoGoroutineLeak(t *testing.T) {
 	// Sender that blocks long enough for us to saturate the counter.
 	sender := &slowDatagramSender{delay: 500 * time.Millisecond}
 	mux := &quicUDPMux{
-		sessions:   make(map[uint32]chan *UDPFrame),
-		lastActive: make(map[uint32]*atomic.Int64),
-		done:       make(chan struct{}),
+		sessions:    make(map[uint32]chan *UDPFrame),
+		sessionDone: make(map[uint32]chan struct{}),
+		lastActive:  make(map[uint32]*atomic.Int64),
+		done:        make(chan struct{}),
 	}
 	conn := &quicUDPConn{
 		sessionID:  1,
 		targetAddr: "8.8.8.8:53",
 		qconn:      sender,
 		readCh:     make(chan *UDPFrame, 1),
+		reaped:     make(chan struct{}),
 		done:       make(chan struct{}),
 		mux:        mux,
 	}
@@ -70,10 +72,14 @@ func TestWriteTo_InflightSaturation_NoGoroutineLeak(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Now the inflight counter should be at maxDatagramInflight.
-	// Additional WriteTo calls should return immediately with ErrDatagramSendTimeout.
-	_, err := conn.WriteTo([]byte("overflow"), nil)
-	if err != ErrDatagramSendTimeout {
-		t.Fatalf("expected ErrDatagramSendTimeout when saturated, got %v", err)
+	// Additional WriteTo calls should return immediately with a silent drop
+	// (protocol-correct for unreliable DATAGRAM — no error returned).
+	n, err := conn.WriteTo([]byte("overflow"), nil)
+	if err != nil {
+		t.Fatalf("expected nil error (silent drop) when saturated, got %v", err)
+	}
+	if n != len([]byte("overflow")) {
+		t.Fatalf("expected n=%d (silent drop returns len), got %d", len([]byte("overflow")), n)
 	}
 
 	// The overflow call should NOT have spawned a goroutine.
@@ -106,15 +112,17 @@ func TestWriteTo_InflightSaturation_NoGoroutineLeak(t *testing.T) {
 func TestWriteTo_InflightCounter_Decrements(t *testing.T) {
 	sender := &slowDatagramSender{delay: 0} // instant send
 	mux := &quicUDPMux{
-		sessions:   make(map[uint32]chan *UDPFrame),
-		lastActive: make(map[uint32]*atomic.Int64),
-		done:       make(chan struct{}),
+		sessions:    make(map[uint32]chan *UDPFrame),
+		sessionDone: make(map[uint32]chan struct{}),
+		lastActive:  make(map[uint32]*atomic.Int64),
+		done:        make(chan struct{}),
 	}
 	conn := &quicUDPConn{
 		sessionID:  1,
 		targetAddr: "8.8.8.8:53",
 		qconn:      sender,
 		readCh:     make(chan *UDPFrame, 1),
+		reaped:     make(chan struct{}),
 		done:       make(chan struct{}),
 		mux:        mux,
 	}

@@ -27,6 +27,9 @@ func runServer(configPath string) {
 	}
 	defer cleanup()
 
+	slog.Info("========== k2s server starting ==========",
+		"version", version, "commit", commit, "pid", os.Getpid())
+
 	// Beta build activates beta channel unconditionally (mirrors desktop behavior).
 	if strings.Contains(version, "-beta") && readChannel() != "beta" {
 		_ = saveChannel("beta")
@@ -43,6 +46,13 @@ func runServer(configPath string) {
 	}
 	if cfgPathUsed != "" {
 		slog.Info("Using config", "path", cfgPathUsed)
+	}
+
+	// K2_LOG_LEVEL env var overrides config file's log level.
+	// This allows Docker Compose to control log level via .env without
+	// modifying the sidecar-generated config file.
+	if envLevel := os.Getenv("K2_LOG_LEVEL"); envLevel != "" {
+		cfg.Log.Level = envLevel
 	}
 
 	// Phase 2: Re-configure logging with the settings from the loaded config.

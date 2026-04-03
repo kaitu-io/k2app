@@ -174,14 +174,14 @@ func TestClassifyError_Category(t *testing.T) {
 }
 
 func TestClassifyError_StreamErrorPriority(t *testing.T) {
-	// StreamError with code should use the code directly, not pattern matching.
+	// StreamError = server responded to target request → always CategoryTarget.
 	se := &wire.StreamError{Code: 403, Message: "blocked: 10.0.0.1 is a reserved IP"}
 	result := ClassifyError(se)
 	if result.Code != 403 {
 		t.Errorf("code = %d, want 403", result.Code)
 	}
-	if result.Category != CategoryClient {
-		t.Errorf("category = %q, want %q", result.Category, CategoryClient)
+	if result.Category != CategoryTarget {
+		t.Errorf("category = %q, want %q", result.Category, CategoryTarget)
 	}
 	if result.Message != se.Message {
 		t.Errorf("message = %q, want %q", result.Message, se.Message)
@@ -210,7 +210,7 @@ func TestClassifyError_NotConnected(t *testing.T) {
 
 func TestClassifyError_StreamErrorInsideMTE(t *testing.T) {
 	// StreamError inside MultiTransportError should be found via errors.As
-	// thanks to Unwrap() []error.
+	// thanks to Unwrap() []error. StreamError → always CategoryTarget.
 	mte := &wire.MultiTransportError{
 		QUICErr:  &wire.StreamError{Code: 401, Message: "token expired"},
 		TCPWSErr: errors.New("wire: TCP dial: connection refused"),
@@ -220,8 +220,8 @@ func TestClassifyError_StreamErrorInsideMTE(t *testing.T) {
 	if result.Code != 401 {
 		t.Errorf("code = %d, want 401 (StreamError found via MTE.Unwrap)", result.Code)
 	}
-	if result.Category != CategoryClient {
-		t.Errorf("category = %q, want %q", result.Category, CategoryClient)
+	if result.Category != CategoryTarget {
+		t.Errorf("category = %q, want %q", result.Category, CategoryTarget)
 	}
 }
 
