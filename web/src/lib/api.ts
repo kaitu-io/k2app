@@ -919,26 +919,6 @@ export interface EmailTemplateParamsResponse {
   totalCount: number;
 }
 
-// ================= Email Task Interfaces =================
-
-// UserFilter interface - matches backend Go struct exactly
-export interface UserFilter {
-  userStatus: string; // not_activated, activated_no_order, paid (单选)
-  activatedDate: {
-    start: string;
-    end: string;
-  };
-  // 过期天数筛选（单选）- 精确到天，适合定期任务
-  // expire_in_30, expire_in_14, expire_in_7, expire_in_3, expire_in_1,
-  // expired_1, expired_3, expired_7, expired_14, expired_30, expired
-  expireDays: string;
-  specificUsers: string[]; // UUIDs - if set, other filters are ignored
-  // 分销商等级筛选（多选）
-  // 1: L1 推荐者, 2: L2 分销商, 3: L3 优质分销商, 4: L4 合伙人
-  retailerLevels: number[]; // Empty array = no filter
-  betaOptedIn?: boolean; // true = only beta subscribers, undefined = no filter
-}
-
 // User search interfaces
 export interface UserSearchParams {
   email: string;
@@ -954,47 +934,6 @@ export interface UserListResponse {
     total: number;
   };
 }
-
-// Email task preview interfaces based on real backend
-export interface EmailTaskPreviewRequest {
-  userFilters: UserFilter;
-}
-
-export interface EmailTaskSampleUser {
-  userId: number;
-  email: string;
-  status: string;
-  subscriptionStatus: string;
-  language: string;
-  registeredAt: number;
-  lastActiveAt: number;
-  deviceCount: number;
-}
-
-export interface EmailTaskPreviewResponse {
-  totalCount: number;
-  sampleUsers: EmailTaskSampleUser[];
-}
-
-
-export interface EmailTaskRequest {
-  name: string;
-  templateId: number;
-  userFilters: UserFilter;
-  type: "once" | "repeat"; // 任务类型: once=单次, repeat=循环
-  scheduledAt?: number; // Unix timestamp, undefined=立即发送
-  repeatEvery?: number; // 循环间隔（秒），type=repeat时必填
-}
-
-export interface EmailTaskResponse {
-  batchId: string;  // Asynq task ID for tracking
-  name: string;
-  templateId: number;
-  templateName: string;
-  targetCount: number;
-  scheduledAt?: number;
-}
-
 
 // ========================= Email Send Log Types =========================
 
@@ -1656,22 +1595,6 @@ export const api = {
       body: JSON.stringify(data),
     });
   },
-
-  // Email Task management APIs
-  async createEmailTask(data: EmailTaskRequest): Promise<EmailTaskResponse> {
-    return this.request<EmailTaskResponse>('/app/edm/tasks', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  },
-
-  async previewEmailTask(data: EmailTaskPreviewRequest): Promise<EmailTaskPreviewResponse> {
-    return this.request<EmailTaskPreviewResponse>('/app/edm/preview-targets', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  },
-
 
   async sendCode(data: SendAuthCodeRequest, options?: Pick<ApiRequestOptions, 'autoRedirectToAuth'>): Promise<SendCodeResponse> {
     return this.request<SendCodeResponse>('/api/auth/code', {
