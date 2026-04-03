@@ -37,6 +37,7 @@
     "@tauri-apps/plugin-clipboard-manager": "^2.2.1",
     "@tauri-apps/plugin-log": "^2.8.0",
     "@tauri-apps/plugin-opener": "^2.3.0",
+    "@zootools/email-spell-checker": "^1.12.0",
     "country-flag-icons": "^1.5.19",
     "i18n-iso-countries": "^7.14.0",
     "i18next": "^25.3.6",
