@@ -484,12 +484,18 @@ func api_admin_list_email_send_logs(c *gin.Context) {
 	// 转换响应格式
 	items := make([]EmailSendLogResponse, len(logs))
 	for i, l := range logs {
+		// 系统自动邮件（templateId=0）显示友好名称
+		tplName := templateNames[l.TemplateID]
+		if l.TemplateID == 0 {
+			tplName = "系统自动邮件"
+		}
+
 		items[i] = EmailSendLogResponse{
 			ID:           l.ID,
 			CreatedAt:    l.CreatedAt.Unix(),
 			BatchID:      l.BatchID,
 			TemplateID:   l.TemplateID,
-			TemplateName: templateNames[l.TemplateID],
+			TemplateName: tplName,
 			UserID:       l.UserID,
 			UserUUID:     userUUIDs[l.UserID],
 			Email:        l.Email,

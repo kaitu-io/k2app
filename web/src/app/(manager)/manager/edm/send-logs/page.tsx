@@ -111,14 +111,47 @@ export default function EmailSendLogsPage() {
       ),
     },
     {
+      accessorKey: "batchId",
+      header: "批次",
+      cell: ({ row }) => {
+        const bid = row.getValue("batchId") as string;
+        const renewalMatch = bid.match(/^renewal:(\d+)d:(.+)$/);
+        if (renewalMatch) {
+          return (
+            <div>
+              <div className="font-medium">续费提醒（{renewalMatch[1]}天）</div>
+              <div className="text-xs text-muted-foreground">{renewalMatch[2]}</div>
+            </div>
+          );
+        }
+        const winbackMatch = bid.match(/^winback:(\d+)d:(.+)$/);
+        if (winbackMatch) {
+          return (
+            <div>
+              <div className="font-medium">过期召回（{winbackMatch[1]}天）</div>
+              <div className="text-xs text-muted-foreground">{winbackMatch[2]}</div>
+            </div>
+          );
+        }
+        return <span className="font-mono text-xs">{bid}</span>;
+      },
+    },
+    {
       accessorKey: "templateName",
       header: "模板",
-      cell: ({ row }) => (
-        <div>
-          <div className="font-medium">{row.getValue("templateName") || "-"}</div>
-          <div className="text-xs text-muted-foreground">ID: {row.original.templateId}</div>
-        </div>
-      ),
+      cell: ({ row }) => {
+        const templateId = row.original.templateId;
+        const templateName = row.getValue("templateName") as string;
+        if (templateId === 0) {
+          return <Badge variant="secondary">系统自动</Badge>;
+        }
+        return (
+          <div>
+            <div className="font-medium">{templateName || "-"}</div>
+            <div className="text-xs text-muted-foreground">ID: {templateId}</div>
+          </div>
+        );
+      },
     },
     {
       accessorKey: "language",
