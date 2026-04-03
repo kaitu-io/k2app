@@ -600,6 +600,7 @@ type EmailMarketingTemplate struct {
 
 	// 基础信息
 	Name        string `gorm:"type:varchar(255);not null" json:"name"`    // 模板名称
+	Slug        string `gorm:"type:varchar(100);uniqueIndex" json:"slug"` // 可读唯一标识（仅源模板）
 	Language    string `gorm:"type:varchar(35);not null" json:"language"` // BCP 47 语言标签，如 en-US, zh-CN
 	Subject     string `gorm:"type:varchar(500)" json:"subject"`          // 邮件主题
 	Content     string `gorm:"type:text" json:"content"`                  // 邮件内容（HTML格式）

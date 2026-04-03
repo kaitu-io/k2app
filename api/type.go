@@ -538,6 +538,7 @@ type Response_ResolveDomainResponse struct {
 // EmailTemplateRequest 邮件模板请求
 type EmailTemplateRequest struct {
 	Name        string  `json:"name" binding:"required"`        // 模板名称
+	Slug        string  `json:"slug"`                          // 可读唯一标识（可选）
 	Language    string  `json:"language" binding:"required"`    // BCP 47 语言标签
 	Subject     string  `json:"subject" binding:"required"`     // 邮件主题
 	Content     string  `json:"content" binding:"required"`     // 邮件内容
@@ -553,6 +554,7 @@ type EmailTemplateResponse struct {
 	CreatedAt   int64   `json:"createdAt"`
 	UpdatedAt   int64   `json:"updatedAt"`
 	Name        string  `json:"name"`
+	Slug        string  `json:"slug"`
 	Language    string  `json:"language"`
 	Subject     string  `json:"subject"`
 	Content     string  `json:"content"`

@@ -85,6 +85,7 @@ func api_admin_create_email_template(c *gin.Context) {
 	// 创建模板
 	template := EmailMarketingTemplate{
 		Name:        req.Name,
+		Slug:        req.Slug,
 		Language:    normalizedLang,
 		Subject:     req.Subject,
 		Content:     req.Content,
@@ -143,6 +144,7 @@ func api_admin_update_email_template(c *gin.Context) {
 	// 更新模板
 	updates := map[string]any{
 		"name":        req.Name,
+		"slug":        req.Slug,
 		"language":    normalizedLang,
 		"subject":     req.Subject,
 		"content":     req.Content,
@@ -262,6 +264,7 @@ func convertEmailMarketingTemplateToResponse(template EmailMarketingTemplate) Em
 		CreatedAt:   template.CreatedAt.Unix(),
 		UpdatedAt:   template.UpdatedAt.Unix(),
 		Name:        template.Name,
+		Slug:        template.Slug,
 		Language:    template.Language,
 		Subject:     template.Subject,
 		Content:     template.Content,
