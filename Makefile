@@ -149,7 +149,7 @@ publish-docker:
 deploy-api:
 	mkdir -p release
 	cd api && go mod tidy
-	cd api/cmd && GOOS=linux GOARCH=amd64 go build -o ../../release/kaitu-center .
+	cd api/cmd && go mod tidy && GOOS=linux GOARCH=amd64 go build -o ../../release/kaitu-center .
 	bash scripts/deploy-center.sh
 
 publish-desktop:

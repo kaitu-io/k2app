@@ -28,8 +28,6 @@ import Tunnels from "./pages/Tunnels";
 import Purchase from "./pages/Purchase";
 import ProHistory from "./pages/ProHistory";
 import FAQ from "./pages/FAQ";
-import Issues from "./pages/Issues";
-import IssueDetail from "./pages/IssueDetail";
 import SubmitTicket from "./pages/SubmitTicket";
 import Feedback from "./pages/Feedback";
 import ServiceError from "./pages/ServiceError";
@@ -89,8 +87,6 @@ function AppRoutes() {
           {appConfig.features.feedback && (
             <>
               <Route path="faq" element={<FAQ />} />
-              <Route path="issues" element={<LoginRequiredGuard pagePath="/issues"><Issues /></LoginRequiredGuard>} />
-              <Route path="issues/:number" element={<LoginRequiredGuard pagePath="/issues"><IssueDetail /></LoginRequiredGuard>} />
               <Route path="feedback" element={<LoginRequiredGuard pagePath="/feedback"><Feedback /></LoginRequiredGuard>} />
               <Route path="submit-ticket" element={<Navigate to="/feedback" replace />} />
               <Route path="submit-ticket-form" element={<MembershipGuard><SubmitTicket /></MembershipGuard>} />

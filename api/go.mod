@@ -25,7 +25,6 @@ require (
 	github.com/wordgate/qtoolkit/aws/ses v1.5.25
 	github.com/wordgate/qtoolkit/chatwoot v1.5.25
 	github.com/wordgate/qtoolkit/db v1.5.25
-	github.com/wordgate/qtoolkit/github/issue v1.5.25
 	github.com/wordgate/qtoolkit/log v1.5.25
 	github.com/wordgate/qtoolkit/mail v1.5.25
 	github.com/wordgate/qtoolkit/openai/filesearch v1.5.25

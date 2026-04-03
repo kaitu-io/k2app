@@ -1,15 +1,15 @@
 module github.com/kaitu-io/k2app/api/cmd
 
-go 1.24.2
+go 1.25.0
 
 require (
 	github.com/kaitu-io/k2app/api v0.0.0
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/viper v1.21.0
 	github.com/wordgate/qtoolkit/aws/ssm v1.5.23
-	github.com/wordgate/qtoolkit/log v1.5.23
-	github.com/wordgate/qtoolkit/unred v1.5.23
-	github.com/wordgate/qtoolkit/util v1.5.23
+	github.com/wordgate/qtoolkit/log v1.5.25
+	github.com/wordgate/qtoolkit/unred v1.5.25
+	github.com/wordgate/qtoolkit/util v1.5.25
 )
 
 require (
@@ -53,7 +53,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.2.3 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
-	github.com/gorilla/websocket v1.5.3 // indirect
+	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 // indirect
 	github.com/hibiken/asynq v0.25.1 // indirect
 	github.com/hibiken/asynqmon v0.7.2 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
@@ -77,7 +77,7 @@ require (
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.58.0 // indirect
-	github.com/redis/go-redis/v9 v9.11.0 // indirect
+	github.com/redis/go-redis/v9 v9.18.0 // indirect
 	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/sagikazarmark/locafero v0.11.0 // indirect
@@ -96,26 +96,26 @@ require (
 	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.3.0 // indirect
-	github.com/wordgate/qtoolkit/ai v1.5.23 // indirect
-	github.com/wordgate/qtoolkit/asynq v1.5.23 // indirect
-	github.com/wordgate/qtoolkit/aws/ses v1.5.23 // indirect
-	github.com/wordgate/qtoolkit/chatwoot v1.5.23 // indirect
-	github.com/wordgate/qtoolkit/db v1.5.23 // indirect
-	github.com/wordgate/qtoolkit/github/issue v1.5.23 // indirect
-	github.com/wordgate/qtoolkit/mail v1.5.23 // indirect
-	github.com/wordgate/qtoolkit/openai/filesearch v1.5.23 // indirect
-	github.com/wordgate/qtoolkit/redis v1.5.23 // indirect
-	github.com/wordgate/qtoolkit/slack v1.5.23 // indirect
+	github.com/wordgate/qtoolkit/ai v1.5.25 // indirect
+	github.com/wordgate/qtoolkit/asynq v1.5.25 // indirect
+	github.com/wordgate/qtoolkit/aws/ses v1.5.25 // indirect
+	github.com/wordgate/qtoolkit/chatwoot v1.5.25 // indirect
+	github.com/wordgate/qtoolkit/db v1.5.25 // indirect
+	github.com/wordgate/qtoolkit/mail v1.5.25 // indirect
+	github.com/wordgate/qtoolkit/openai/filesearch v1.5.25 // indirect
+	github.com/wordgate/qtoolkit/redis v1.5.25 // indirect
+	github.com/wordgate/qtoolkit/slack v1.5.25 // indirect
 	github.com/wordgate/wordgate-sdk v0.1.12 // indirect
+	go.uber.org/atomic v1.11.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/arch v0.20.0 // indirect
-	golang.org/x/crypto v0.46.0 // indirect
+	golang.org/x/crypto v0.49.0 // indirect
 	golang.org/x/image v0.34.0 // indirect
-	golang.org/x/net v0.48.0 // indirect
-	golang.org/x/sys v0.39.0 // indirect
-	golang.org/x/text v0.32.0 // indirect
-	golang.org/x/time v0.8.0 // indirect
-	google.golang.org/protobuf v1.36.9 // indirect
+	golang.org/x/net v0.52.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
+	golang.org/x/text v0.35.0 // indirect
+	golang.org/x/time v0.14.0 // indirect
+	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/alexcesaro/quotedprintable.v3 v3.0.0-20150716171945-2caba252f4dc // indirect
 	gopkg.in/gomail.v2 v2.0.0-20160411212932-81ebce5c23df // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect

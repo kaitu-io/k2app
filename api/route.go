@@ -6,7 +6,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/wordgate/qtoolkit/asynq"
 	"github.com/wordgate/qtoolkit/chatwoot"
-	"github.com/wordgate/qtoolkit/github/issue"
 	"github.com/wordgate/qtoolkit/log"
 	"github.com/wordgate/qtoolkit/util"
 )
@@ -455,13 +454,6 @@ func SetupRouter() *gin.Engine {
 		opsAdmin.GET("/license-keys",                       RoleRequired(RoleMarketing), api_admin_list_license_keys)
 		opsAdmin.DELETE("/license-keys/:id",                RoleRequired(RoleMarketing), api_admin_delete_license_key)
 	}
-
-	// GitHub Issues routes (requires authentication)
-	// Uses qtoolkit/github/issue RegisterRoutes with middleware to set X-App-User-ID header
-	issues := api.Group("/issues")
-	log.Debugf(ctx, "registering /api/issues group")
-	issues.Use(AuthRequired(), setAppUserIDHeader())
-	issue.RegisterRoutes(issues)
 
 	// 节点管理路由（需要节点认证）
 	slaveManage := r.Group("/slave")

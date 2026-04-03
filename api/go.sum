@@ -347,8 +347,6 @@ github.com/wordgate/qtoolkit/chatwoot v1.5.25 h1:Wun+P9CdsmDjjqjgFXLfDMwkaIJE9/b
 github.com/wordgate/qtoolkit/chatwoot v1.5.25/go.mod h1:rAg8xOJxDXN5Wc2PigsXQZ6cqiOoHyaR45eDVG8DVzU=
 github.com/wordgate/qtoolkit/db v1.5.25 h1:xdUrwc6XVcirwyRokP4K+UTfDzrJWvjkr3lyejCLPyE=
 github.com/wordgate/qtoolkit/db v1.5.25/go.mod h1:eiwyF9Qsh3GM2K6Iy+NQ3ZLj26V+nKSDJQe6gioVNTY=
-github.com/wordgate/qtoolkit/github/issue v1.5.25 h1:0lgkrW4VyhbK5eog+qDY07BIstw2f+FI/hsC1e7xR/0=
-github.com/wordgate/qtoolkit/github/issue v1.5.25/go.mod h1:iI8ePjh87Y7iAu1OV2GJX4rmy9OeRMrqI/jLSaL5jL0=
 github.com/wordgate/qtoolkit/log v1.5.25 h1:4k6DsF8ROQNHnmMDoa3vsRoY1BQ3SZcrwC900sqh2S4=
 github.com/wordgate/qtoolkit/log v1.5.25/go.mod h1:qqZ9Miaigt4pK9gRq7wg2OHeuGUpdAS9VQtMWavZsKk=
 github.com/wordgate/qtoolkit/mail v1.5.25 h1:+kH5tjiPltyfIdcm8yVKOod3oU5flg615xKgh0GdpQE=

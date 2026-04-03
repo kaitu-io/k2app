@@ -20,7 +20,8 @@
       "minutesAgo": "{{count}} 分钟前",
       "hoursAgo": "{{count}} 小时前",
       "daysAgo": "{{count}} 天前"
-    }
+    },
+    "send": "发送"
   },
   "faq": {
     "title": "常见问题"
@@ -67,28 +68,5 @@
       "crash": "应用崩溃",
       "subscription": "订阅问题"
     }
-  },
-  "issues": {
-    "entryTitle": "社区反馈",
-    "entryDescription": "查看其他用户的问题和官方回复",
-    "listTitle": "问题列表",
-    "detailTitle": "问题详情",
-    "stateOpen": "待处理",
-    "stateClosed": "已解决",
-    "officialBadge": "官方回复",
-    "commentCount": "{{count}} 条回复",
-    "noComments": "暂无回复",
-    "loadMore": "加载更多",
-    "loading": "加载中...",
-    "empty": "暂无问题",
-    "emptyHint": "还没有用户提交过问题",
-    "error": "加载失败，请重试",
-    "commentsTitle": "回复",
-    "addComment": "添加回复",
-    "commentPlaceholder": "输入您的回复...",
-    "submitComment": "发送",
-    "submittingComment": "发送中...",
-    "commentSuccess": "回复已提交",
-    "commentFailed": "回复提交失败"
   }
 }

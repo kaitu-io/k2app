@@ -20,7 +20,8 @@
       "minutesAgo": "{{count}} 分鐘前",
       "hoursAgo": "{{count}} 小時前",
       "daysAgo": "{{count}} 天前"
-    }
+    },
+    "send": "傳送"
   },
   "faq": {
     "title": "常見問題"
@@ -67,28 +68,5 @@
       "crash": "應用程式當機",
       "subscription": "訂閱問題"
     }
-  },
-  "issues": {
-    "entryTitle": "社區反饋",
-    "entryDescription": "睇吓其他用戶嘅問題同官方回覆",
-    "listTitle": "問題列表",
-    "detailTitle": "問題詳情",
-    "stateOpen": "待處理",
-    "stateClosed": "已解決",
-    "officialBadge": "官方回覆",
-    "commentCount": "{{count}} 則回覆",
-    "noComments": "暫無回覆",
-    "loadMore": "載入更多",
-    "loading": "載入中...",
-    "empty": "暫無問題",
-    "emptyHint": "仲未有用戶提交過問題",
-    "error": "載入失敗，請重試",
-    "commentsTitle": "回覆",
-    "addComment": "新增回覆",
-    "commentPlaceholder": "輸入你嘅回覆...",
-    "submitComment": "發送",
-    "submittingComment": "發送中...",
-    "commentSuccess": "回覆已提交",
-    "commentFailed": "回覆提交失敗"
   }
 }

@@ -406,7 +406,7 @@ function TicketDetailView({
                         )
                       }
                     >
-                      {t("ticket:issues.submitComment")}
+                      {t("ticket:feedback.send")}
                     </Button>
                   </Box>
                 </Stack>

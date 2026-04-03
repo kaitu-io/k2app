@@ -10,7 +10,6 @@ import {
   SupportAgent as SupportIcon,
   ChevronRight as ChevronRightIcon,
   Security as SecurityIcon,
-  Forum as ForumIcon,
 } from "@mui/icons-material";
 import { useTranslation } from "react-i18next";
 import BackButton from "../components/BackButton";
@@ -70,33 +69,6 @@ export default function FAQ() {
                   <Typography variant="subtitle1">{t('dashboard:troubleshooting.securitySoftware.title')}</Typography>
                   <Typography variant="body2" color="text.secondary">
                     {t('dashboard:troubleshooting.securitySoftware.description')}
-                  </Typography>
-                </Box>
-              </Box>
-              <ChevronRightIcon color="action" />
-            </Stack>
-          </CardContent>
-        </Card>
-
-        {/* 社区反馈入口 */}
-        <Card
-          sx={{
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-            '&:hover': {
-              bgcolor: 'action.hover',
-            }
-          }}
-          onClick={() => navigate('/issues')}
-        >
-          <CardContent>
-            <Stack direction="row" alignItems="center" justifyContent="space-between">
-              <Box display="flex" alignItems="center" gap={1.5}>
-                <ForumIcon color="info" />
-                <Box>
-                  <Typography variant="subtitle1">{t('ticket:issues.entryTitle')}</Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {t('ticket:issues.entryDescription')}
                   </Typography>
                 </Box>
               </Box>

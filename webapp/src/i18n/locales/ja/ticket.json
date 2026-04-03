@@ -20,7 +20,8 @@
       "minutesAgo": "{{count}}分前",
       "hoursAgo": "{{count}}時間前",
       "daysAgo": "{{count}}日前"
-    }
+    },
+    "send": "送信"
   },
   "faq": {
     "title": "よくある質問"
@@ -67,28 +68,5 @@
       "crash": "アプリのクラッシュ",
       "subscription": "サブスクリプションの問題"
     }
-  },
-  "issues": {
-    "entryTitle": "コミュニティフィードバック",
-    "entryDescription": "他のユーザーの質問と公式回答を確認",
-    "listTitle": "問題一覧",
-    "detailTitle": "問題の詳細",
-    "stateOpen": "未解決",
-    "stateClosed": "解決済み",
-    "officialBadge": "公式回答",
-    "commentCount": "{{count}}件の返信",
-    "noComments": "返信なし",
-    "loadMore": "もっと読み込む",
-    "loading": "読み込み中...",
-    "empty": "問題はありません",
-    "emptyHint": "まだ問題が投稿されていません",
-    "error": "読み込みに失敗しました。もう一度お試しください",
-    "commentsTitle": "返信",
-    "addComment": "返信を追加",
-    "commentPlaceholder": "返信を入力...",
-    "submitComment": "送信",
-    "submittingComment": "送信中...",
-    "commentSuccess": "返信を投稿しました",
-    "commentFailed": "返信の投稿に失敗しました"
   }
 }
