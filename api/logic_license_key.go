@@ -90,13 +90,15 @@ func RedeemLicenseKey(ctx context.Context, code string, userID uint64) (*License
 			return ErrLicenseKeyExpired
 		}
 
-		// 2. Anti-abuse: one key per user ever
-		var existingCount int64
-		if err := tx.Model(&LicenseKey{}).Where("used_by_user_id = ?", userID).Count(&existingCount).Error; err != nil {
-			return err
-		}
-		if existingCount > 0 {
-			return ErrLicenseKeyAlreadyRedeemed
+		// 2. Anti-abuse: one key per user per batch (only for batch keys)
+		if k.BatchID > 0 {
+			var existingCount int64
+			if err := tx.Model(&LicenseKey{}).Where("batch_id = ? AND used_by_user_id = ?", k.BatchID, userID).Count(&existingCount).Error; err != nil {
+				return err
+			}
+			if existingCount > 0 {
+				return ErrLicenseKeyAlreadyRedeemed
+			}
 		}
 
 		// 3. Load user
