@@ -10,9 +10,14 @@ import (
 	"time"
 )
 
-// DefaultSources is the list of CDN sources used when none are provided.
+// DefaultSources is the list of CDN sources for k2b bundle downloads.
+// Happy Eyeballs races all sources in parallel — fastest wins.
+// Order doesn't matter for performance, but GitHub direct is listed first
+// as the authoritative source; CDN proxies provide China acceleration.
 var DefaultSources = []string{
-	"https://github.com/kaitu-io/k2-bundles/releases/latest/download/",
+	"https://github.com/kaitu-io/k2-rules/releases/latest/download/",
+	"https://ghfast.top/https://github.com/kaitu-io/k2-rules/releases/latest/download/",
+	"https://gh-proxy.com/https://github.com/kaitu-io/k2-rules/releases/latest/download/",
 }
 
 // bundleFileMap maps BundleSet names to k2b file names.
