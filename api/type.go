@@ -564,8 +564,17 @@ type EmailTemplateResponse struct {
 	IsOriginal  bool    `json:"isOriginal"`  // 是否为原始模板（计算字段）
 }
 
-
-
+// SendTemplatedEmailsHTTPRequest 通用邮件发送HTTP请求
+type SendTemplatedEmailsHTTPRequest struct {
+	BatchID string `json:"batchId" binding:"required"`
+	Async   bool   `json:"async"`
+	Items   []struct {
+		Email  string            `json:"email" binding:"required"`
+		UserID uint64            `json:"userId"`
+		Slug   string            `json:"slug" binding:"required"`
+		Vars   map[string]string `json:"vars"`
+	} `json:"items" binding:"required,min=1"`
+}
 
 
 

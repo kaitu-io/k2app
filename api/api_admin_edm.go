@@ -277,6 +277,54 @@ func convertEmailMarketingTemplateToResponse(template EmailMarketingTemplate) Em
 	return response
 }
 
+// ===================== 通用邮件发送 =====================
+
+// api_admin_send_templated_emails 通用邮件发送接口
+func api_admin_send_templated_emails(c *gin.Context) {
+	log.Infof(c, "admin request to send templated emails")
+
+	var req SendTemplatedEmailsHTTPRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Warnf(c, "invalid request: %v", err)
+		Error(c, ErrorInvalidArgument, err.Error())
+		return
+	}
+
+	sendReq := &SendEmailsRequest{
+		BatchID: req.BatchID,
+		Async:   req.Async,
+		Items:   make([]SendEmailItem, len(req.Items)),
+	}
+	for i, item := range req.Items {
+		sendReq.Items[i] = SendEmailItem{
+			Email:  item.Email,
+			UserID: item.UserID,
+			Slug:   item.Slug,
+			Vars:   item.Vars,
+		}
+	}
+
+	if req.Async {
+		batchID, err := EnqueueTemplatedEmailTask(c, sendReq)
+		if err != nil {
+			log.Errorf(c, "failed to enqueue email task: %v", err)
+			Error(c, ErrorSystemError, "failed to enqueue task")
+			return
+		}
+		Success(c, &SendEmailsResult{BatchID: batchID, Total: len(req.Items)})
+		return
+	}
+
+	result, err := SendTemplatedEmails(c, sendReq)
+	if err != nil {
+		log.Errorf(c, "failed to send emails: %v", err)
+		Error(c, ErrorSystemError, err.Error())
+		return
+	}
+
+	Success(c, result)
+}
+
 // ===================== EDM 发送任务（基于 Asynq）=====================
 
 // EDMTaskResponse EDM任务创建响应

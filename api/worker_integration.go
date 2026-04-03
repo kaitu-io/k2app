@@ -17,8 +17,9 @@ import (
 
 // 任务类型常量
 const (
-	TaskTypeEDMSend  = "edm:send"
-	TaskTypePushSend = "push:send"
+	TaskTypeEDMSend            = "edm:send"
+	TaskTypePushSend           = "push:send"
+	TaskTypeTemplatedEmailSend = "edm:send-templated"
 )
 
 // EDMTaskPayload EDM 任务载荷
@@ -38,6 +39,11 @@ type EDMTaskOutput struct {
 	Duration     int64    `json:"duration"`
 }
 
+// TemplatedEmailTaskPayload 通用邮件发送任务载荷
+type TemplatedEmailTaskPayload struct {
+	Request SendEmailsRequest `json:"request"`
+}
+
 // PushTaskPayload 推送任务载荷
 type PushTaskPayload struct {
 	UserID       uint64           `json:"userId"`       // 目标用户 ID
@@ -49,6 +55,7 @@ type PushTaskPayload struct {
 func InitWorker() {
 	asynq.Handle(TaskTypeEDMSend, handleEDMTask)
 	asynq.Handle(TaskTypePushSend, handlePushTask)
+	asynq.Handle(TaskTypeTemplatedEmailSend, handleTemplatedEmailTask)
 	asynq.Handle(TaskTypeRenewalReminder, handleRenewalReminderTask)
 	asynq.Handle(TaskTypeRetailerFollowup, handleRetailerFollowupTask)
 	asynq.Handle(TaskTypeTicketNotify, handleTicketNotify)
@@ -172,6 +179,40 @@ func executeEDMSend(ctx context.Context, batchID string, p EDMTaskPayload) (*EDM
 // =====================================================================
 // 任务入队 API
 // =====================================================================
+
+// EnqueueTemplatedEmailTask 入队通用邮件发送任务
+func EnqueueTemplatedEmailTask(ctx context.Context, req *SendEmailsRequest) (string, error) {
+	payload := TemplatedEmailTaskPayload{Request: *req}
+	payload.Request.Async = false
+
+	info, err := asynq.Enqueue(TaskTypeTemplatedEmailSend, payload)
+	if err != nil {
+		return "", fmt.Errorf("enqueue task failed: %w", err)
+	}
+
+	log.Infof(ctx, "[EMAIL-SEND] Task enqueued: batchId=%s, items=%d", req.BatchID, len(req.Items))
+	return info.ID, nil
+}
+
+// handleTemplatedEmailTask 处理通用邮件发送任务
+func handleTemplatedEmailTask(ctx context.Context, payload []byte) error {
+	var p TemplatedEmailTaskPayload
+	if err := asynq.Unmarshal(payload, &p); err != nil {
+		return fmt.Errorf("unmarshal payload failed: %w", err)
+	}
+
+	log.Infof(ctx, "[EMAIL-SEND] Processing async batch=%s, items=%d", p.Request.BatchID, len(p.Request.Items))
+
+	result, err := SendTemplatedEmails(ctx, &p.Request)
+	if err != nil {
+		log.Errorf(ctx, "[EMAIL-SEND] Batch %s failed: %v", p.Request.BatchID, err)
+		return err
+	}
+
+	log.Infof(ctx, "[EMAIL-SEND] Batch %s completed: sent=%d, failed=%d, skipped=%d",
+		result.BatchID, result.Sent, result.Failed, result.Skipped)
+	return nil
+}
 
 // EnqueueEDMTask 入队 EDM 任务
 func EnqueueEDMTask(ctx context.Context, templateID uint64, userFilters UserFilter, scheduledAt *time.Time) (string, error) {
