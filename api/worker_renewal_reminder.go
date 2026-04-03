@@ -7,6 +7,7 @@ import (
 
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
+	"github.com/wordgate/qtoolkit/slack"
 )
 
 // =====================================================================
@@ -65,6 +66,13 @@ func processRenewalReminders(ctx context.Context, daysBefore int) (sent, skipped
 
 	batchID := fmt.Sprintf("renewal:%dd:%s", daysBefore, todayStr)
 	slug := fmt.Sprintf("renewal-%dd", daysBefore)
+
+	if !templateSlugExists(slug) {
+		alertMsg := fmt.Sprintf("[EMAIL-LIFECYCLE] 模板 slug=%q 不存在，跳过 %d 天续费提醒。请在管理后台创建该模板。", slug, daysBefore)
+		log.Errorf(ctx, "%s", alertMsg)
+		slack.Send("alert", alertMsg)
+		return 0, 0, 0
+	}
 
 	var users []User
 	err := db.Get().Model(&User{}).
@@ -126,6 +134,13 @@ func processWinback(ctx context.Context, daysAfter int) (sent, skipped, failed i
 
 	batchID := fmt.Sprintf("winback:%dd:%s", daysAfter, todayStr)
 	slug := fmt.Sprintf("winback-%dd", daysAfter)
+
+	if !templateSlugExists(slug) {
+		alertMsg := fmt.Sprintf("[EMAIL-LIFECYCLE] 模板 slug=%q 不存在，跳过 %d 天过期召回。请在管理后台创建该模板。", slug, daysAfter)
+		log.Errorf(ctx, "%s", alertMsg)
+		slack.Send("alert", alertMsg)
+		return 0, 0, 0
+	}
 
 	var users []User
 	err := db.Get().Model(&User{}).
@@ -238,6 +253,15 @@ func formatCents(cents uint64) string {
 		return fmt.Sprintf("$%d.%d", dollars, remaining/10)
 	}
 	return fmt.Sprintf("$%d.%02d", dollars, remaining)
+}
+
+// templateSlugExists 检查模板 slug 是否存在
+func templateSlugExists(slug string) bool {
+	var count int64
+	db.Get().Model(&EmailMarketingTemplate{}).
+		Where("slug = ? AND is_active = ? AND origin_id IS NULL", slug, true).
+		Count(&count)
+	return count > 0
 }
 
 // getUserEmailFromIdentifies 从用户身份信息中获取邮箱
