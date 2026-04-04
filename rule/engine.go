@@ -224,7 +224,9 @@ func (e *Engine) SetTmpRule(ip string, target Target) {
 		return
 	}
 	e.mu.Lock()
-	e.tmp[addr] = target
+	if e.tmp != nil {
+		e.tmp[addr] = target
+	}
 	e.mu.Unlock()
 }
 
@@ -238,7 +240,7 @@ func (e *Engine) Close() {
 	e.mu.Lock()
 	e.bundles = nil
 	e.routes = nil
-	e.tmp = nil
+	e.tmp = make(map[netip.Addr]Target)
 	e.mu.Unlock()
 }
 

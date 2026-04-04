@@ -236,9 +236,13 @@ func fetchBundle(ctx context.Context, url string, modTime time.Time) ([]byte, do
 		return nil, downloadResultFailed, fmt.Errorf("rule: fetch %q: status %d", url, resp.StatusCode)
 	}
 
-	data, err := io.ReadAll(resp.Body)
+	const maxBundleSize = 10 << 20 // 10 MB hard cap — prevents OOM on corrupted/malicious response
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBundleSize+1))
 	if err != nil {
 		return nil, downloadResultFailed, fmt.Errorf("rule: read body %q: %w", url, err)
+	}
+	if len(data) > maxBundleSize {
+		return nil, downloadResultFailed, fmt.Errorf("rule: body too large from %q: %d bytes", url, len(data))
 	}
 	return data, downloadResultOK, nil
 }
