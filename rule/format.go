@@ -223,6 +223,11 @@ func ReadBundle(data []byte) (*Bundle, error) {
 				return nil, fmt.Errorf("k2b: set[%d] domain data out of bounds", i)
 			}
 			actualCount := int(binary.LittleEndian.Uint32(data[domainOff : domainOff+4]))
+			// Validate offset table fits: 4-byte count header + (actualCount+1)*4 offset entries.
+			minRequired := domainOff + 4 + (actualCount+1)*4
+			if minRequired > len(data) {
+				return nil, fmt.Errorf("k2b: set[%d] domain count %d exceeds data bounds", i, actualCount)
+			}
 			bundle.Sets[i].domains = domainSection{data: data[domainOff:], count: actualCount}
 		}
 
