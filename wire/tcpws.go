@@ -935,7 +935,7 @@ func (c *smuxUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	select {
 	case frame := <-c.readCh:
 		n := copy(b, frame.Payload)
-		addr, _ := net.ResolveUDPAddr("udp", c.targetAddr)
+		addr, _ := net.ResolveUDPAddr("udp4", c.targetAddr)
 		return n, addr, nil
 	case <-c.reaped:
 		return 0, nil, net.ErrClosed
