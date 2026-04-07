@@ -78,7 +78,7 @@ func api_admin_connection_rating_statistics(c *gin.Context) {
 		Select("server_domain as domain, MAX(server_name) as name, MAX(server_country) as country, COUNT(*) as total, SUM(CASE WHEN rating = 'good' THEN 1 ELSE 0 END) as good").
 		Where("created_at >= ? AND server_domain != ''", since).
 		Group("server_domain").
-		Order("total DESC").
+		Order("(SUM(CASE WHEN rating = 'good' THEN 1 ELSE 0 END) * 1.0 / COUNT(*)) ASC, total DESC").
 		Limit(50).
 		Find(&serverRows)
 
@@ -106,7 +106,7 @@ func api_admin_connection_rating_statistics(c *gin.Context) {
 		Select("isp, MAX(user_country) as country, COUNT(*) as total, SUM(CASE WHEN rating = 'good' THEN 1 ELSE 0 END) as good").
 		Where("created_at >= ? AND isp != ''", since).
 		Group("isp").
-		Order("total DESC").
+		Order("(SUM(CASE WHEN rating = 'good' THEN 1 ELSE 0 END) * 1.0 / COUNT(*)) ASC, total DESC").
 		Limit(50).
 		Find(&ispRows)
 
@@ -133,7 +133,7 @@ func api_admin_connection_rating_statistics(c *gin.Context) {
 		Select("os, app_version, COUNT(*) as total, SUM(CASE WHEN rating = 'good' THEN 1 ELSE 0 END) as good").
 		Where("created_at >= ? AND os != ''", since).
 		Group("os, app_version").
-		Order("total DESC").
+		Order("(SUM(CASE WHEN rating = 'good' THEN 1 ELSE 0 END) * 1.0 / COUNT(*)) ASC, total DESC").
 		Limit(30).
 		Find(&platformRows)
 

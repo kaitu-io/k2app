@@ -18,15 +18,7 @@ import { useConnectionStore, type LastConnectionInfo } from '../stores/connectio
 import { useAlertStore } from '../stores/alert.store';
 import { cloudApi } from '../services/cloud-api';
 import { getDeviceUdid } from '../services/device-udid';
-import { getNetworkEnv } from '../services/network-env';
-
-function generateFeedbackId(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === 'x' ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-}
+import { refreshNetworkEnv } from '../services/network-env';
 
 function formatConnectionInfo(info: LastConnectionInfo): string {
   return [
@@ -45,7 +37,7 @@ async function submitRating(
   info: LastConnectionInfo,
   feedbackId: string,
 ): Promise<void> {
-  const networkEnv = await getNetworkEnv();
+  const networkEnv = await refreshNetworkEnv();
   try {
     await cloudApi.post('/api/user/connection-rating', {
       rating,
@@ -70,7 +62,7 @@ async function submitRating(
 }
 
 async function submitNegativeFeedback(info: LastConnectionInfo): Promise<void> {
-  const feedbackId = generateFeedbackId();
+  const feedbackId = crypto.randomUUID();
   let s3Keys: Array<{ name: string; s3Key: string }> = [];
 
   // Step 1: Upload logs (best-effort)
@@ -166,7 +158,7 @@ export function DisconnectFeedbackDialog() {
     connectionInfoRef.current = null;
 
     if (info) {
-      const feedbackId = generateFeedbackId();
+      const feedbackId = crypto.randomUUID();
       submitRating('good', info, feedbackId).catch((err) => {
         console.error('[DisconnectFeedback] good rating error:', err);
       });

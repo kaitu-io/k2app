@@ -1042,10 +1042,10 @@ type TicketReply struct {
 // ConnectionRating stores user-submitted connection quality rating.
 type ConnectionRating struct {
 	ID            uint64    `gorm:"primarykey" json:"id"`
-	CreatedAt     time.Time `gorm:"index" json:"createdAt"`
-	UserID        uint64    `gorm:"index;not null" json:"userId"`
-	Rating        string    `gorm:"type:varchar(8);not null;index" json:"rating"` // good / bad
-	FeedbackID    string    `gorm:"type:varchar(36);not null" json:"feedbackId"`
+	CreatedAt     time.Time `gorm:"index:idx_created_rating,priority:1" json:"createdAt"`
+	UserID        uint64    `gorm:"index;not null;uniqueIndex:idx_user_feedback,priority:1" json:"userId"`
+	Rating        string    `gorm:"type:varchar(8);not null;index:idx_created_rating,priority:2" json:"rating"` // good / bad
+	FeedbackID    string    `gorm:"type:varchar(36);not null;uniqueIndex:idx_user_feedback,priority:2" json:"feedbackId"`
 	ServerDomain  string    `gorm:"type:varchar(128);not null;default:''" json:"serverDomain"`
 	ServerName    string    `gorm:"type:varchar(64);not null;default:''" json:"serverName"`
 	ServerCountry string    `gorm:"type:varchar(8);not null;default:''" json:"serverCountry"`

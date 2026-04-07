@@ -4,6 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
+	"github.com/wordgate/qtoolkit/util"
 )
 
 // api_create_connection_rating saves a user's connection quality rating.
@@ -42,6 +43,13 @@ func api_create_connection_rating(c *gin.Context) {
 	}
 
 	if err := db.Get().Create(&rating).Error; err != nil {
+		// Duplicate (user_id, feedback_id) — silently succeed (idempotent)
+		if util.DbIsDuplicatedErr(err) {
+			log.Infof(c, "api_create_connection_rating: duplicate rating for user %d feedbackId=%s, ignoring",
+				userID, req.FeedbackID)
+			SuccessEmpty(c)
+			return
+		}
 		log.Errorf(c, "api_create_connection_rating: failed to save: %v", err)
 		Error(c, ErrorSystemError, "failed to save rating")
 		return

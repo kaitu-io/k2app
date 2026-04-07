@@ -209,6 +209,22 @@ export default function ManagerDashboardPage() {
                 <div className="text-sm text-muted-foreground">
                   共 {ratingStats?.summary.total ?? 0} 条评价 | 差评 {ratingStats?.summary.bad ?? 0}
                 </div>
+                {/* Mini sparkline — 7-day trend bars */}
+                {ratingStats && ratingStats.trend.length > 0 && (
+                  <div className="flex items-end gap-px mt-2 h-6">
+                    {ratingStats.trend.slice(-7).map((d) => {
+                      const pct = d.total > 0 ? (d.goodRate * 100) : 0;
+                      return (
+                        <div
+                          key={d.date}
+                          className={`flex-1 rounded-sm ${pct >= 80 ? 'bg-green-500' : pct >= 60 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                          style={{ height: `${Math.max(pct, 8)}%` }}
+                          title={`${d.date}: ${pct.toFixed(0)}%`}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>

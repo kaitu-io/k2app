@@ -63,7 +63,7 @@ vi.mock('../../services/device-udid', () => ({
 
 // Mock network-env
 vi.mock('../../services/network-env', () => ({
-  getNetworkEnv: () => Promise.resolve({
+  refreshNetworkEnv: () => Promise.resolve({
     publicIP: '1.2.3.4',
     isp: 'Test ISP',
     city: 'Shanghai',
