@@ -2,7 +2,8 @@
  * DisconnectFeedbackDialog — mandatory post-disconnect quality dialog
  *
  * Shown once after each user-initiated disconnect (authenticated only).
- * "不好" auto-submits a ticket + uploads logs for diagnostics.
+ * Both "好" and "不好" submit a connection rating.
+ * "不好" additionally auto-submits a ticket (hidden from user) + uploads logs.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -17,6 +18,7 @@ import { useConnectionStore, type LastConnectionInfo } from '../stores/connectio
 import { useAlertStore } from '../stores/alert.store';
 import { cloudApi } from '../services/cloud-api';
 import { getDeviceUdid } from '../services/device-udid';
+import { getNetworkEnv } from '../services/network-env';
 
 function generateFeedbackId(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -36,6 +38,35 @@ function formatConnectionInfo(info: LastConnectionInfo): string {
     `OS: ${info.os}`,
     `Version: ${info.appVersion}`,
   ].join('\n');
+}
+
+async function submitRating(
+  rating: 'good' | 'bad',
+  info: LastConnectionInfo,
+  feedbackId: string,
+): Promise<void> {
+  const networkEnv = await getNetworkEnv();
+  try {
+    await cloudApi.post('/api/user/connection-rating', {
+      rating,
+      feedbackId,
+      server: {
+        domain: info.domain,
+        name: info.name,
+        country: info.country,
+        source: info.source,
+      },
+      connection: {
+        durationSec: info.durationSec,
+        ruleMode: info.ruleMode,
+        os: info.os,
+        appVersion: info.appVersion,
+      },
+      network: networkEnv,
+    });
+  } catch (err) {
+    console.warn('[DisconnectFeedback] rating submission failed:', err);
+  }
 }
 
 async function submitNegativeFeedback(info: LastConnectionInfo): Promise<void> {
@@ -60,13 +91,14 @@ async function submitNegativeFeedback(info: LastConnectionInfo): Promise<void> {
     }
   }
 
-  // Step 2: Submit ticket (proceeds even if logs failed)
+  // Step 2: Submit ticket with auto_generated flag (hidden from user)
   try {
     await cloudApi.post('/api/user/ticket', {
       content: `[Auto] User reported bad connection experience after disconnect.\n\n${formatConnectionInfo(info)}`,
       feedbackId,
       os: info.os,
       app_version: info.appVersion,
+      auto_generated: true,
     });
   } catch (err) {
     console.warn('[DisconnectFeedback] ticket submission failed:', err);
@@ -104,6 +136,9 @@ async function submitNegativeFeedback(info: LastConnectionInfo): Promise<void> {
   } catch (err) {
     console.warn('[DisconnectFeedback] feedback-notify failed:', err);
   }
+
+  // Step 5: Submit rating
+  await submitRating('bad', info, feedbackId);
 }
 
 export function DisconnectFeedbackDialog() {
@@ -127,7 +162,15 @@ export function DisconnectFeedbackDialog() {
 
   const handleGood = useCallback(() => {
     setOpen(false);
+    const info = connectionInfoRef.current;
     connectionInfoRef.current = null;
+
+    if (info) {
+      const feedbackId = generateFeedbackId();
+      submitRating('good', info, feedbackId).catch((err) => {
+        console.error('[DisconnectFeedback] good rating error:', err);
+      });
+    }
   }, []);
 
   const handleBad = useCallback(() => {
