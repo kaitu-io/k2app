@@ -85,7 +85,7 @@ func TestHealthTransitions(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		hm.smoothWireLoss = 0.10
 		level := hm.assess(wire.WireStats{Transport: "quic"})
-		hm.transition(level)
+		hm.transition(level, false)
 	}
 	if hm.health != HealthDegraded {
 		t.Fatalf("after 5 high-loss: got %s, want degraded", hm.health)
@@ -96,7 +96,7 @@ func TestHealthTransitions(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		hm.smoothWireLoss = 0.30
 		level := hm.assess(wire.WireStats{Transport: "quic"})
-		hm.transition(level)
+		hm.transition(level, false)
 	}
 	if hm.health == HealthCritical {
 		t.Fatalf("after 4 very-high-loss: got critical too early (need 5)")
@@ -104,7 +104,7 @@ func TestHealthTransitions(t *testing.T) {
 	// 5th sample triggers critical.
 	hm.smoothWireLoss = 0.30
 	level := hm.assess(wire.WireStats{Transport: "quic"})
-	hm.transition(level)
+	hm.transition(level, false)
 	if hm.health != HealthCritical {
 		t.Fatalf("after 5 very-high-loss: got %s, want critical", hm.health)
 	}
@@ -113,7 +113,7 @@ func TestHealthTransitions(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		hm.smoothWireLoss = 0.01
 		level := hm.assess(wire.WireStats{Transport: "quic"})
-		hm.transition(level)
+		hm.transition(level, false)
 	}
 	if hm.health != HealthHealthy {
 		t.Fatalf("after 10 healthy: got %s, want healthy", hm.health)
@@ -131,7 +131,7 @@ func TestHealthCooldown(t *testing.T) {
 	hm.health = HealthCritical
 
 	// First action should return onReconnect.
-	action := hm.maybeAct()
+	action := hm.maybeAct(false)
 	if action == nil {
 		t.Fatal("expected action, got nil")
 	}
@@ -141,14 +141,14 @@ func TestHealthCooldown(t *testing.T) {
 	}
 
 	// Immediate retry should be blocked by cooldown.
-	action = hm.maybeAct()
+	action = hm.maybeAct(false)
 	if action != nil {
 		t.Fatal("cooldown should block action")
 	}
 
 	// After cooldown expires, should fire again.
 	hm.lastAction = time.Now().Add(-actionCooldown - time.Second)
-	action = hm.maybeAct()
+	action = hm.maybeAct(false)
 	if action == nil {
 		t.Fatal("expected action after cooldown, got nil")
 	}
@@ -166,7 +166,7 @@ func TestHealthTransitions_Fallback(t *testing.T) {
 	// Fallback stats → assess returns degraded (not critical).
 	for i := 0; i < 5; i++ {
 		level := hm.assess(wire.WireStats{Transport: "tcpws", WireFallback: true})
-		hm.transition(level)
+		hm.transition(level, false)
 	}
 	if hm.health != HealthDegraded {
 		t.Fatalf("fallback should be degraded, got %s", hm.health)
@@ -176,7 +176,7 @@ func TestHealthTransitions_Fallback(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		hm.smoothWireLoss = 0.01
 		level := hm.assess(wire.WireStats{Transport: "quic"})
-		hm.transition(level)
+		hm.transition(level, false)
 	}
 	if hm.health != HealthHealthy {
 		t.Fatalf("should be healthy after QUIC recovery, got %s", hm.health)
@@ -193,7 +193,7 @@ func TestHealthEscalation(t *testing.T) {
 	// Every maybeAct in critical state returns onReconnect (no hop escalation).
 	hm.health = HealthCritical
 	hm.lastAction = time.Time{} // bypass cooldown
-	action := hm.maybeAct()
+	action := hm.maybeAct(false)
 	if action != nil {
 		action()
 	}
@@ -290,7 +290,7 @@ func TestHealthMonitor_EWMAPreventsFalseCritical(t *testing.T) {
 
 	for i := 0; i < 10; i++ {
 		level := hm.assess(wire.WireStats{Transport: "quic"})
-		hm.transition(level)
+		hm.transition(level, false)
 	}
 	if hm.health != HealthHealthy {
 		t.Fatalf("Should be healthy after baseline, got %s", hm.health)
@@ -301,7 +301,7 @@ func TestHealthMonitor_EWMAPreventsFalseCritical(t *testing.T) {
 		ws := wire.WireStats{Transport: "quic", PacketLossRate: 0.15, Throughput: 50000}
 		applyEWMA(hm, ws)
 		level := hm.assess(wire.WireStats{Transport: "quic"})
-		hm.transition(level)
+		hm.transition(level, false)
 	}
 
 	// smoothWireLoss after 5 samples: converges toward 0.15 but from 0.01 baseline:
@@ -332,7 +332,7 @@ func TestHealthMonitor_CriticalTriggersReconnect(t *testing.T) {
 	hm.health = HealthCritical
 
 	// First maybeAct should return onReconnect (not a port hop)
-	action := hm.maybeAct()
+	action := hm.maybeAct(false)
 	if action == nil {
 		t.Fatal("expected reconnect action, got nil")
 	}
@@ -358,7 +358,7 @@ func TestHealthMonitor_MaybeActReturnsAction(t *testing.T) {
 	hm.health = HealthCritical
 
 	// maybeAct should return onReconnect without calling it.
-	action := hm.maybeAct()
+	action := hm.maybeAct(false)
 	if action == nil {
 		t.Fatal("expected reconnect action")
 	}
@@ -385,7 +385,7 @@ func TestHealthMonitor_TransitionReturnsDeferredAction(t *testing.T) {
 	hm.health = HealthCritical
 	hm.lastAction = time.Time{} // bypass cooldown
 
-	action := hm.transition(HealthCritical)
+	action := hm.transition(HealthCritical, false)
 	if action == nil {
 		t.Fatal("transition should return action for full reconnect")
 	}

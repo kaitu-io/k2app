@@ -198,13 +198,16 @@ func (s *Store) ValidateToken(udid, token string) bool {
 func (s *Store) WriteToWS(udid string, msgType int, data []byte) error {
 	s.mu.RLock()
 	e, ok := s.peers[udid]
-	s.mu.RUnlock()
 	if !ok || e.WS == nil {
+		s.mu.RUnlock()
 		return fmt.Errorf("signal: peer %q not connected", udid)
 	}
-	e.WriteMu.Lock()
-	defer e.WriteMu.Unlock()
-	return e.WS.WriteMessage(msgType, data)
+	ws := e.WS      // snapshot under RLock — prevents TOCTOU with SetWS(nil)
+	wmu := &e.WriteMu // PeerEntry is heap-allocated, pointer remains valid after RUnlock
+	s.mu.RUnlock()
+	wmu.Lock()
+	defer wmu.Unlock()
+	return ws.WriteMessage(msgType, data)
 }
 
 // generateToken returns a cryptographically random 32-byte hex string.

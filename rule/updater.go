@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 	"time"
+
+	"github.com/kaitu-io/k2/safego"
 )
 
 const defaultCheckInterval = 24 * time.Hour
@@ -49,7 +51,7 @@ func StartUpdater(
 		return
 	}
 
-	go func() {
+	safego.Go(func() {
 		ticker := time.NewTicker(cfg.interval)
 		defer ticker.Stop()
 
@@ -74,5 +76,5 @@ func StartUpdater(
 				slog.Info("rule: updater reload complete", "routes", len(routes))
 			}
 		}
-	}()
+	})
 }

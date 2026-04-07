@@ -50,6 +50,7 @@ func Dial(ctx context.Context, cfg Config) (*ConnectResult, error) {
 		agent.Close()
 		return nil, fmt.Errorf("k2p: away: connect signal: %w", err)
 	}
+	defer exchange.Close() // idempotent via sync.Once — ensures cleanup on all error paths
 
 	// 5. Wire ICE candidate callbacks to WS.
 	agent.OnCandidate(func(c ice.Candidate) {
@@ -77,7 +78,6 @@ func Dial(ctx context.Context, cfg Config) (*ConnectResult, error) {
 	// 8. Gather candidates.
 	if gatherErr := agent.GatherCandidates(); gatherErr != nil {
 		agent.Close()
-		exchange.Close()
 		return nil, fmt.Errorf("k2p: away: gather candidates: %w", gatherErr)
 	}
 
@@ -85,13 +85,11 @@ func Dial(ctx context.Context, cfg Config) (*ConnectResult, error) {
 	homeUfrag, homePwd, err := waitForCredentials(ctx, exchange)
 	if err != nil {
 		agent.Close()
-		exchange.Close()
 		return nil, fmt.Errorf("k2p: away: wait for credentials: %w", err)
 	}
 	iceConn, err := agent.Dial(ctx, homeUfrag, homePwd)
 	if err != nil {
 		agent.Close()
-		exchange.Close()
 		return nil, fmt.Errorf("k2p: away: ICE dial: %w", err)
 	}
 
@@ -121,8 +119,6 @@ func Dial(ctx context.Context, cfg Config) (*ConnectResult, error) {
 		"peer", cfg.HomeUDID,
 		"method", transportType,
 		"dialMs", time.Since(startTime).Milliseconds())
-
-	exchange.Close()
 
 	return &ConnectResult{
 		Dialer:        wire.NewQUICClientFromConn(quicConn, tr, cfg.WireCfg, cfg.TicketStore),

@@ -74,7 +74,13 @@ func (r *SessionRouter) CreateSession(udid string, awayWS *websocket.Conn) (stri
 	r.mu.Unlock()
 
 	msg := WSMessage{Type: "session-start", Session: id}
-	return id, home.WriteJSON(msg)
+	if err := home.WriteJSON(msg); err != nil {
+		r.mu.Lock()
+		delete(r.sessions, id)
+		r.mu.Unlock()
+		return "", err
+	}
+	return id, nil
 }
 
 // Route forwards a WSMessage to the peer in the session opposite to senderRole.

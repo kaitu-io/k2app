@@ -261,8 +261,11 @@ func (c *ProxyDNSClient) recvLoop(server string, pc *proxyConn) {
 				slog.Debug("DIAG: dns-proxy-recv-late", "server", server, "queryID", msg.Id, "domain", extractDomain(&msg))
 			default:
 				cb.message = &msg
-				close(cb.done)
+				// Log before close(cb.done): queryServer writes cb.message.Id after
+				// receiving from cb.done, which races with reading msg.Id here
+				// (cb.message points to the same msg struct).
 				slog.Debug("DIAG: dns-proxy-recv-ok", "server", server, "queryID", msg.Id, "domain", extractDomain(&msg))
+				close(cb.done)
 			}
 		} else {
 			slog.Warn("DIAG: dns-proxy-recv-no-callback", "server", server, "queryID", msg.Id, "domain", extractDomain(&msg), "numCallbacks", numCallbacks)

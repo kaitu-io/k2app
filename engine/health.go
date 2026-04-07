@@ -194,6 +194,7 @@ func (hm *healthMonitor) stop() {
 func (hm *healthMonitor) sample() {
 	ws := hm.tm.WireStats()
 	tx, rx := hm.tunnel.TrafficBytes()
+	tcpHealthy := hm.tm.TCPRecentlyHealthy(30 * time.Second)
 
 	now := time.Now()
 
@@ -214,7 +215,7 @@ func (hm *healthMonitor) sample() {
 
 	// Assess health from smoothed metrics.
 	level := hm.assess(ws)
-	action := hm.transition(level)
+	action := hm.transition(level, tcpHealthy)
 
 	snap := HealthSnapshot{
 		Timestamp:   time.Now(),
@@ -244,12 +245,20 @@ func (hm *healthMonitor) sample() {
 	}
 
 	// Layer 1 DIAG heartbeat — every 30 seconds.
+	// ReadMemStats and ActiveConns are pre-read outside hm.mu to avoid
+	// STW and external calls under state lock.
 	hm.diagCounter++
-	if hm.diagCounter >= 30 {
+	var ms runtime.MemStats
+	var diagTCP, diagUDP int64
+	emitHeartbeat := hm.diagCounter >= 30
+	if emitHeartbeat {
 		hm.diagCounter = 0
-		var ms runtime.MemStats
+		hm.mu.Unlock()
 		runtime.ReadMemStats(&ms)
-		tcp, udp := hm.tunnel.ActiveConns()
+		diagTCP, diagUDP = hm.tunnel.ActiveConns()
+		hm.mu.Lock()
+	}
+	if emitHeartbeat {
 		slog.Info("DIAG: heartbeat",
 			"health", hm.health,
 			"transport", ws.Transport,
@@ -258,8 +267,8 @@ func (hm *healthMonitor) sample() {
 			"minRttMs", fmt.Sprintf("%.0f", float64(ws.MinRTT)/float64(time.Millisecond)),
 			"txMB", fmt.Sprintf("%.1f", float64(tx)/(1024*1024)),
 			"rxMB", fmt.Sprintf("%.1f", float64(rx)/(1024*1024)),
-			"tcpConns", tcp,
-			"udpConns", udp,
+			"tcpConns", diagTCP,
+			"udpConns", diagUDP,
 			"uptimeS", int(time.Since(hm.connectedAt).Seconds()),
 			"fallback", ws.WireFallback,
 			"heapMB", fmt.Sprintf("%.1f", float64(ms.HeapInuse)/(1024*1024)),
@@ -316,7 +325,7 @@ func (hm *healthMonitor) assess(ws wire.WireStats) string {
 
 // transition updates health state and streaks.
 // Returns a deferred action (port hop or full reconnect) to execute outside hm.mu.
-func (hm *healthMonitor) transition(level string) (action func()) {
+func (hm *healthMonitor) transition(level string, tcpHealthy bool) (action func()) {
 	switch level {
 	case HealthHealthy:
 		hm.healthyStreak++
@@ -353,7 +362,7 @@ func (hm *healthMonitor) transition(level string) (action func()) {
 			hm.health = HealthCritical
 		}
 		if hm.health == HealthCritical {
-			action = hm.maybeAct()
+			action = hm.maybeAct(tcpHealthy)
 		}
 	}
 	return
@@ -362,7 +371,7 @@ func (hm *healthMonitor) transition(level string) (action func()) {
 // maybeAct decides on corrective action with cooldown.
 // Returns the action to execute outside hm.mu, or nil if no action needed.
 // Only action is full reconnect — wire layer owns port hop decisions.
-func (hm *healthMonitor) maybeAct() func() {
+func (hm *healthMonitor) maybeAct(tcpHealthy bool) func() {
 	if time.Since(hm.lastAction) < actionCooldown {
 		return nil
 	}
@@ -370,7 +379,7 @@ func (hm *healthMonitor) maybeAct() func() {
 	// TCP health gate: if TCP streams recently succeeded, the connection is
 	// functional despite high wire loss. Skip reconnect to protect active
 	// streams (e.g. YouTube video).
-	if hm.tm.TCPRecentlyHealthy(30 * time.Second) {
+	if tcpHealthy {
 		slog.Debug("health: TCP healthy, skipping reconnect")
 		return nil
 	}

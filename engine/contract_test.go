@@ -41,7 +41,7 @@ func TestContract_PoorSignal_TCPHealthGate(t *testing.T) {
 	hm.ewmaInitialized = true
 	for range 10 {
 		level := hm.assess(wire.WireStats{Transport: "quic"})
-		action := hm.transition(level)
+		action := hm.transition(level, true) // tcpHealthy=true: TCP streams recently succeeded
 		if action != nil {
 			action()
 		}
@@ -157,7 +157,7 @@ func TestContract_PoorSignal_TCPHealthGate_Timing(t *testing.T) {
 
 	for range 10 {
 		level := hm.assess(wire.WireStats{Transport: "quic"})
-		action := hm.transition(level)
+		action := hm.transition(level, false)
 		if action != nil {
 			action()
 		}
