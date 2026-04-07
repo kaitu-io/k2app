@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/gateway"
@@ -19,64 +20,131 @@ var (
 )
 
 func main() {
-	fs := flag.NewFlagSet("k2r", flag.ContinueOnError)
-	configPath := fs.String("c", "", "config file path")
-	showVersion := fs.Bool("v", false, "show version")
-	if err := fs.Parse(os.Args[1:]); err != nil {
+	if len(os.Args) < 2 {
+		printUsage()
 		os.Exit(1)
 	}
 
-	if *showVersion {
-		fmt.Printf("k2r %s (%s)\n", version, commit)
-		return
+	args := os.Args[1:]
+	for len(args) > 0 && strings.HasPrefix(args[0], "--") {
+		switch args[0] {
+		case "--json":
+			out.json = true
+			args = args[1:]
+		case "--quiet":
+			args = args[1:]
+		case "--help", "-h":
+			printUsage()
+			return
+		default:
+			fmt.Fprintf(os.Stderr, "Unknown flag: %s\nRun 'k2r help' for usage.\n", args[0])
+			os.Exit(1)
+		}
 	}
 
-	args := fs.Args()
 	if len(args) == 0 {
-		runDaemon(*configPath)
-		return
+		printUsage()
+		os.Exit(1)
 	}
 
-	switch args[0] {
+	cmd := args[0]
+	rest := args[1:]
+
+	switch cmd {
+	case "run":
+		cmdRun(rest)
 	case "setup":
-		cmdSetup(args[1:])
-	case "ctl":
-		cmdCtl(args[1:])
+		cmdSetup(rest)
+	case "up":
+		os.Exit(cmdUp(rest))
+	case "down":
+		os.Exit(cmdDown(rest))
+	case "status":
+		os.Exit(cmdStatus(rest))
 	case "service":
-		cmdService(args[1:])
+		cmdService(rest)
+	case "version":
+		fmt.Printf("k2r %s (%s)\n", version, commit)
+	case "help", "--help", "-h":
+		printUsage()
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command: %s\n", args[0])
-		fmt.Fprintln(os.Stderr, "usage: k2r [setup|ctl|service] or k2r -c config.yml")
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\nRun 'k2r help' for usage.\n", cmd)
 		os.Exit(1)
 	}
 }
 
-func runDaemon(configPath string) {
-	if configPath == "" {
-		configPath = "/etc/k2r/k2r.yml"
+func printUsage() {
+	fmt.Fprintf(os.Stderr, `k2r — Kaitu network tunnel gateway
+
+Quick start:
+  k2r setup <URL>            Install as gateway service + connect
+  k2r run                    Start gateway daemon
+
+Commands:
+  run       Start gateway daemon (service entry point)
+  setup     First-time setup: generate config + install service
+
+  up        Connect via gateway daemon
+  down      Disconnect
+  status    Connection status
+
+  service   System service (install, uninstall)
+  version   Version info
+
+Flags:
+  --json    Machine-readable JSON output
+  --quiet   Minimal output
+  --help    Help for any command
+`)
+}
+
+// cmdRun starts the gateway daemon (service entry point).
+func cmdRun(args []string) {
+	fs := flag.NewFlagSet("k2r run", flag.ExitOnError)
+	configPath := fs.String("c", "", "config file path")
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Start gateway daemon.\n\nUsage: k2r run [-c config.yml]\n\nFlags:\n")
+		fs.PrintDefaults()
 	}
-	cfg, err := gateway.LoadGateway(configPath)
+	fs.Parse(args)
+
+	cfgPath := *configPath
+	if cfgPath == "" {
+		cfgPath = "/etc/k2r/k2r.yml"
+	}
+	cfg, err := gateway.LoadGateway(cfgPath)
 	if err != nil {
 		cfg = &gateway.GatewayConfig{}
 		gateway.SetGatewayDefaults(cfg)
 	}
 	closer, err := config.SetupLogging(cfg.Log, "k2r")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "logging: %v\n", err)
+		out.fail("LOG_FAILED", err.Error(), "")
 		os.Exit(1)
 	}
 	defer closer()
 
 	g := gateway.New()
 	if err := g.Run(cfg.Listen); err != nil {
-		fmt.Fprintf(os.Stderr, "gateway: %v\n", err)
+		out.fail("GATEWAY_FAILED", err.Error(), "")
 		os.Exit(1)
 	}
 }
 
+// cmdSetup handles "k2r setup <URL>" or "k2r setup -c config.yml".
 func cmdSetup(args []string) {
-	fs := flag.NewFlagSet("setup", flag.ExitOnError)
+	fs := flag.NewFlagSet("k2r setup", flag.ExitOnError)
 	configFile := fs.String("c", "", "existing config file to install")
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, `First-time gateway setup.
+
+Usage: k2r setup <k2v5://URL>
+       k2r setup -c config.yml
+
+Flags:
+`)
+		fs.PrintDefaults()
+	}
 	fs.Parse(args)
 
 	var cfg *gateway.GatewayConfig
@@ -84,111 +152,161 @@ func cmdSetup(args []string) {
 		var err error
 		cfg, err = gateway.LoadGateway(*configFile)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "load config: %v\n", err)
+			out.fail("INVALID_CONFIG", err.Error(), "")
 			os.Exit(1)
 		}
 	} else if fs.NArg() > 0 {
 		cfg = gateway.GatewayFromURL(fs.Arg(0))
 	} else {
-		fmt.Fprintln(os.Stderr, "usage: k2r setup <k2v5://URL> or k2r setup -c config.yml")
+		fs.Usage()
 		os.Exit(1)
 	}
 
 	os.MkdirAll("/etc/k2r", 0755)
 	data, _ := yaml.Marshal(cfg)
 	if err := os.WriteFile("/etc/k2r/k2r.yml", data, 0600); err != nil {
-		fmt.Fprintf(os.Stderr, "save config: %v\n", err)
+		out.fail("WRITE_FAILED", err.Error(), "")
 		os.Exit(1)
 	}
 
 	if err := InstallService(); err != nil {
-		fmt.Fprintf(os.Stderr, "install service: %v\n", err)
+		out.fail("SERVICE_FAILED", err.Error(), "")
 		os.Exit(1)
 	}
 
-	fmt.Println("k2r installed and started.")
-	fmt.Println("  k2r ctl status   -- check connection")
-	fmt.Println("  k2r ctl down     -- disconnect")
+	out.printResult("k2r installed and started.")
+	out.printResult("  k2r status   -- check connection")
+	out.printResult("  k2r down     -- disconnect")
+	out.ok(map[string]string{"status": "installed", "config": "/etc/k2r/k2r.yml"})
 }
 
-func cmdCtl(args []string) {
-	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: k2r ctl [up|down|status]")
-		os.Exit(1)
+// cmdUp connects the gateway via daemon IPC.
+func cmdUp(args []string) int {
+	fs := flag.NewFlagSet("k2r up", flag.ExitOnError)
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, `Connect via gateway daemon.
+
+Usage: k2r up [URL|config.yml]
+
+  No args: reconnect with saved config.
+  URL:     connect with k2v5:// URL.
+  File:    connect with YAML config file.
+`)
 	}
+	fs.Parse(args)
 
 	client := gateway.NewClient(gateway.DefaultGatewayAddr)
-
-	switch args[0] {
-	case "up":
-		params := map[string]any{}
-		if len(args) > 1 {
-			arg := args[1]
-			if _, err := os.Stat(arg); err == nil {
-				cfg, err := gateway.LoadGateway(arg)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "load config: %v\n", err)
-					os.Exit(1)
-				}
-				params["config"] = cfg
-			} else {
-				cfg := gateway.GatewayFromURL(arg)
-				params["config"] = cfg
+	params := map[string]any{}
+	if fs.NArg() > 0 {
+		arg := fs.Arg(0)
+		if _, err := os.Stat(arg); err == nil {
+			cfg, err := gateway.LoadGateway(arg)
+			if err != nil {
+				out.fail("INVALID_CONFIG", err.Error(), "")
+				return 1
 			}
+			params["config"] = cfg
+		} else {
+			cfg := gateway.GatewayFromURL(arg)
+			params["config"] = cfg
 		}
-		resp, err := client.Do("up", params)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "%v\n", err)
-			os.Exit(1)
-		}
-		fmt.Println(resp.Message)
+	}
 
-	case "down":
-		resp, err := client.Do("down", nil)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "%v\n", err)
-			os.Exit(1)
-		}
-		fmt.Println(resp.Message)
+	resp, err := client.Do("up", params)
+	if err != nil {
+		out.fail("DAEMON_NOT_RUNNING", "gateway daemon not running", "run 'k2r setup <URL>' or 'systemctl start k2r'")
+		return 2
+	}
+	if resp.Code != 0 {
+		out.fail("CONNECT_FAILED", resp.Message, "")
+		return 2
+	}
 
-	case "status":
-		resp, err := client.Do("status", nil)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "%v\n", err)
-			os.Exit(1)
-		}
+	out.printResult(resp.Message)
+	out.ok(map[string]string{"status": "connecting"})
+	return 0
+}
+
+// cmdDown disconnects the gateway.
+func cmdDown(args []string) int {
+	fs := flag.NewFlagSet("k2r down", flag.ExitOnError)
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Disconnect gateway.\n\nUsage: k2r down\n")
+	}
+	fs.Parse(args)
+
+	client := gateway.NewClient(gateway.DefaultGatewayAddr)
+	resp, err := client.Do("down", nil)
+	if err != nil {
+		out.fail("DAEMON_NOT_RUNNING", "gateway daemon not running", "run 'k2r setup <URL>' or 'systemctl start k2r'")
+		return 2
+	}
+	if resp.Code != 0 {
+		out.fail("DISCONNECT_FAILED", resp.Message, "")
+		return 2
+	}
+
+	out.printResult("Disconnected")
+	out.ok(map[string]string{"state": "disconnected"})
+	return 0
+}
+
+// cmdStatus shows the gateway connection status.
+func cmdStatus(args []string) int {
+	fs := flag.NewFlagSet("k2r status", flag.ExitOnError)
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Show gateway connection status.\n\nUsage: k2r status\n")
+	}
+	fs.Parse(args)
+
+	client := gateway.NewClient(gateway.DefaultGatewayAddr)
+	resp, err := client.Do("status", nil)
+	if err != nil {
+		out.fail("DAEMON_NOT_RUNNING", "gateway daemon not running", "run 'k2r setup <URL>' or 'systemctl start k2r'")
+		return 2
+	}
+	if resp.Code != 0 {
+		out.fail("STATUS_FAILED", resp.Message, "")
+		return 2
+	}
+
+	if out.json {
+		out.ok(resp.Data)
+	} else {
 		data, _ := json.MarshalIndent(resp.Data, "", "  ")
 		fmt.Println(string(data))
-
-	default:
-		fmt.Fprintf(os.Stderr, "unknown ctl command: %s\n", args[0])
-		os.Exit(1)
 	}
+	return 0
 }
 
 func cmdService(args []string) {
-	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: k2r service [install|uninstall]")
-		os.Exit(1)
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprintf(os.Stderr, "Usage: k2r service <install|uninstall>\n")
+		if len(args) == 0 {
+			os.Exit(1)
+		}
+		return
 	}
 
 	switch args[0] {
 	case "install":
 		if err := InstallService(); err != nil {
-			fmt.Fprintf(os.Stderr, "install: %v\n", err)
+			out.fail("SERVICE_FAILED", err.Error(), "")
 			os.Exit(1)
 		}
-		fmt.Println("k2r service installed and started.")
+		out.printResult("k2r service installed and started.")
+		out.ok(map[string]string{"status": "installed"})
 
 	case "uninstall":
 		if err := UninstallService(); err != nil {
-			fmt.Fprintf(os.Stderr, "uninstall: %v\n", err)
+			out.fail("SERVICE_FAILED", err.Error(), "")
 			os.Exit(1)
 		}
-		fmt.Println("k2r service removed.")
+		out.printResult("k2r service removed.")
+		out.ok(map[string]string{"status": "removed"})
 
 	default:
-		fmt.Fprintf(os.Stderr, "unknown service command: %s\n", args[0])
+		fmt.Fprintf(os.Stderr, "Unknown service command: %s\n", args[0])
 		os.Exit(1)
 	}
 }

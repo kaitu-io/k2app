@@ -30,7 +30,7 @@ Lock ordering: `opMu` (serialization) → `mu` (state) → `sseMu` (state).
 - `sysctl.go` — IPv4/IPv6 forwarding enable/restore
 - `lan.go` — `DiscoverLANSubnets` (private RFC 1918 subnets, virtual interface filtering)
 - `state.go` — Persisted state (`/etc/k2r/state.json`) for auto-reconnect
-- `client.go` — IPC client for `k2r ctl` commands
+- `client.go` — IPC client for `k2r up/down/status` commands
 
 ## Interceptor Backends
 
