@@ -1,10 +1,10 @@
 # Core Layer (core/)
 
-L4 client tunnel, router, and packet processing. DNS has its own doc at `core/dns/CLAUDE.md`.
+L4 client tunnel, router, outbound implementations, and packet processing. DNS has its own doc at `core/dns/CLAUDE.md`.
 
 ## Tunnel (tunnel.go)
 
-L4 client tunnel connecting Provider (TUN/Proxy) to wire.Dialer (QUIC/TCP-WS).
+L4 client tunnel connecting Provider (TUN/Proxy) to Outbound table.
 
 **Type**: `ClientTunnel` implements `provider.ConnectionHandler`
 
@@ -12,65 +12,82 @@ L4 client tunnel connecting Provider (TUN/Proxy) to wire.Dialer (QUIC/TCP-WS).
 ```
 Provider ──► ClientTunnel.HandleTCP/HandleUDP
                   │
-              Router (k2rule)
+              Router (rule.Engine)
                   │
-          ┌───────┴────────┐
-       Direct           Proxy
-    net.Dial()      wire.DialTCP/UDP
+              rule.Target (opaque index)
+                  │
+              outbounds[target]
+                  │
+    ┌─────────────┼──────────────┐
+  direct       wire (k2v5)    k2p
+ net.Dial()   wire.DialTCP   k2p.Dial
+              + earlyData    (lazy)
 ```
+
+Outbound table is `[]Outbound` indexed by `rule.Target` value. `nil` entry = reject.
 
 **HandleTCP(conn, dest)**:
 1. Parse dest → get domain/IP
-2. Router.Route → Direct/Proxy/Reject
-3. Sniff (single peek): BT → force DIRECT; TLS SNI (443) / HTTP Host (non-443) → upgrade DIRECT→PROXY; IPv6→hostname rewrite
-4. Direct: `net.Dial("tcp", dest)` + bidirectional pipe (peeked bytes replayed via `prefixConn`)
-5. Proxy: peek first bytes as `earlyData` (even without sniffing in global mode) → `wire.DialTCP(dest, earlyData)` + bidirectional pipe. Early data saves 1 RTT by sending peeked bytes alongside wire stream header before waiting for server response.
-6. Reject: close connection silently
+2. `routeConn` → `rule.Target` (via Router, or `defaultTarget` when router is nil)
+3. `outbound(target)` → lookup Outbound (nil = reject, return)
+4. Sniff (single peek): BT → force direct; TLS SNI (443) / HTTP Host (non-443) → upgrade direct→wire; IPv6→hostname rewrite
+5. Direct outbound: replay peeked bytes via `prefixConn.Read`, earlyData ignored
+6. Wire/k2p outbound: unwrap prefixConn, send peeked bytes as `earlyData` (saves 1 RTT)
+7. `pipe(local, remote)` bidirectional copy
 
 **HandleUDP(conn, dest)**:
-1. Router.Route → Direct/Proxy
-2. Sniff (single peek): BT (uTP/UDPTracker) / WebRTC (STUN/DTLS) → force DIRECT; QUIC SNI (443) → upgrade DIRECT→PROXY; IPv6→hostname rewrite
-3. Direct: `net.ListenPacket` + forward to dest
-4. Proxy: `wire.DialUDP(dest)` + forward packets
+1. `routeConn` → `rule.Target`
+2. `outbound(target)` → lookup Outbound (nil = reject)
+3. Sniff (single peek): BT (uTP/UDPTracker) / WebRTC (STUN/DTLS) → force direct; QUIC SNI (443) → upgrade direct→wire
+4. `outbound.DialUDP` returns `(PacketConn, destAddr)` — destAddr non-nil for direct (WriteTo target), nil for wire (pre-connected)
+5. `pipePacket(local, remote, destAddr)` bidirectional copy
 
 **Sniff flags** (set by engine, disabled in global mode):
-- `sniffBT` — BT/WebRTC detection: PROXY→DIRECT (BitTorrent TCP, uTP, UDPTracker, STUN, DTLS)
-- `sniffSNI` — domain extraction: DIRECT→PROXY (TLS SNI on 443, HTTP Host on non-443, QUIC SNI on 443)
-- `blockQUIC` — block browser QUIC via ICMP reject (default: false = allow through DATAGRAM path, set via `ClientConfig.BlockQUIC`)
-- `rewriteIPv6` — replace IPv6 PROXY dests with hostname via SNI (when server lacks IPv6, works in all modes)
+- `sniffBT` — BT/WebRTC detection: wire→direct (BitTorrent TCP, uTP, UDPTracker, STUN, DTLS)
+- `sniffSNI` — domain extraction: direct→wire (TLS SNI on 443, HTTP Host on non-443, QUIC SNI on 443)
+- `blockQUIC` — block browser QUIC via ICMP reject (default: false)
+- `rewriteIPv6` — replace IPv6 wire dests with hostname via SNI (when server lacks IPv6)
 
-**Traffic counting**: `txBytes`/`rxBytes` `atomic.Int64` fields count all bytes through `pipe()`/`pipePacket()`. `TrafficBytes()` returns cumulative TX/RX.
+**Traffic counting**: `txBytes`/`rxBytes` `atomic.Int64` count all bytes through `pipe()`/`pipePacket()`.
 
 **Files**: `tunnel.go`, `tunnel_test.go`
 
+## Outbound (outbound.go)
+
+Interface for dialing remote endpoints, indexed by `rule.Target`:
+
+```go
+type Outbound interface {
+    DialTCP(ctx, dest, earlyData) (net.Conn, error)
+    DialUDP(ctx, dest) (PacketConn, destAddr, error)
+    Name() string
+    Close() error
+}
+```
+
+**Implementations**:
+
+| Type | File | Owns resources | Close() |
+|------|------|----------------|---------|
+| `directOutbound` | `outbound_direct.go` | No (stdlib net.Dial) | no-op |
+| `wireOutbound` | `outbound_wire.go` | No (engine owns tm) | no-op |
+| `k2pOutbound` | `outbound_k2p.go` | Yes (ICE/QUIC conn) | closes inner dialer |
+
+- `wireOutbound`: wraps `wire.Dialer` + DIAG logging (`proxy-dial-fail`, `proxy-dial-slow`) + WireErrorReporter
+- `k2pOutbound`: lazy-connect via `k2p.Dial()` on first use. Dead connection detection via quic-go typed errors triggers reset + reconnect. Concurrency: `connectMu` (serialization) → `mu` (state).
+
 ## Router (router.go)
 
-Routes traffic using k2rule (domain/IP → Direct/Proxy/Reject).
+Routes traffic using in-tree `rule.Engine` (domain/IP → `rule.Target` opaque index).
 
-**Initialization** (engine.go `buildRuleConfig`):
-```go
-k2rule.Init(&k2rule.Config{
-    RuleURL:  rule.RuleURL,
-    GeoIPURL: rule.GeoIPURL,
-    PornURL:  rule.PornURL,
-    CacheDir: rule.CacheDir,
-    IsGlobal: rule.Global,
-})
-```
+`rule.Target` is a pure `uint8` index — no semantic constants in rule package. Convention: 0=direct, 1=reject, 2+=wire outbounds. Semantics assigned by engine via `buildOutboundMap`.
 
-**Usage**:
-```go
-router.RouteAddr("8.8.8.8") → k2rule.TargetDirect
-router.RouteAddr("example.com") → k2rule.TargetProxy
-router.RouteAddr("blocked.com") → k2rule.TargetReject
-```
-
-**k2rule v0.6.4**: unified Init API + SetTmpRule, URL-based remote downloads (CacheDir required).
+**Files**: `router.go`
 
 ## Testing
 
 ```bash
-go test ./core/...    # Tunnel + router tests
+go test ./core/...    # Tunnel + router + outbound tests
 ```
 
 ## Packet (packet/)
