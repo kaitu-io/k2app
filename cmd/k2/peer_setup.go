@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -123,7 +124,11 @@ func cmdPeerSetup(args []string) {
 
 	// 9. Build k2p URL for sharing with away peers.
 	pin := certPair.FormatPins()
-	k2pURL := k2p.BuildURL(udid, password, wireCfg.Host, wireCfg.Port, pin, nil)
+	extra := url.Values{}
+	for _, cidr := range networks {
+		extra.Add("net", cidr)
+	}
+	k2pURL := k2p.BuildURL(udid, password, wireCfg.Host, wireCfg.Port, pin, extra)
 
 	// 10. Save config.
 	cfg := k2pConfig{

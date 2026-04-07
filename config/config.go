@@ -38,14 +38,19 @@ type RouteConfig struct {
 	Match rule.MatchConfig `yaml:"match" json:"match"`
 }
 
-// IsAllProxy returns true if any route proxies all traffic through a k2v5:// server.
+// IsAllProxy returns true if any route proxies all traffic through a wire outbound (k2v5 or k2p).
 func (c *ClientConfig) IsAllProxy() bool {
 	for _, r := range c.Routes {
-		if r.Match.All && strings.HasPrefix(r.Via, "k2v5://") {
+		if r.Match.All && (strings.HasPrefix(r.Via, "k2v5://") || strings.HasPrefix(r.Via, "k2p://")) {
 			return true
 		}
 	}
 	return false
+}
+
+// IsOutboundURL returns true if via is a wire outbound URL (k2v5 or k2p), not "direct" or "reject".
+func IsOutboundURL(via string) bool {
+	return strings.HasPrefix(via, "k2v5://") || strings.HasPrefix(via, "k2p://")
 }
 
 // TunConfig contains TUN device configuration.

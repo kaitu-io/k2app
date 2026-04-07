@@ -16,6 +16,7 @@ import (
 	"github.com/apernet/quic-go"
 
 	"github.com/kaitu-io/k2/k2p"
+	"github.com/kaitu-io/k2/server"
 	"github.com/kaitu-io/k2/signal"
 	"github.com/kaitu-io/k2/wire"
 )
@@ -110,13 +111,51 @@ func TestK2P_E2E_ICEDirect(t *testing.T) {
 	}
 
 	// 7. Verify Home received the connection (ICE + QUIC + listener creation).
+	var homeListener wire.Listener
 	select {
-	case listener := <-homeAccepted:
-		// Success — full signal + ICE + auth + QUIC flow works.
-		t.Cleanup(func() { listener.Close() })
+	case homeListener = <-homeAccepted:
+		t.Cleanup(func() { homeListener.Close() })
 	case <-time.After(10 * time.Second):
 		t.Fatal("timeout waiting for Home to accept connection")
 	}
+
+	// 8. Start TCP echo server (simulates Home LAN service, e.g. NAS).
+	echoAddr := startTCPEchoServer(t)
+
+	// 9. Home: serve incoming TCP from Away using ProxyHandler (same as peer_run.go).
+	// ProxyHandler handles k2v5 stream response + upstream dial + pipe.
+	ph := server.NewProxyHandler()
+	ph.AllowPrivateIP = true // echo server is on localhost
+	go func() {
+		for {
+			conn, addr, err := homeListener.AcceptTCP(ctx)
+			if err != nil {
+				return
+			}
+			go ph.HandleTCP(conn, addr)
+		}
+	}()
+
+	// 10. Away: DialTCP through k2p dialer → echo server via Home.
+	// This validates the full outbound data path: Away → QUIC/ICE → Home → echo.
+	awayConn, err := result.Dialer.DialTCP(ctx, echoAddr, nil)
+	if err != nil {
+		t.Fatalf("Away DialTCP: %v", err)
+	}
+	defer awayConn.Close()
+
+	testData := "hello from away via k2p outbound"
+	if _, err := awayConn.Write([]byte(testData)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	buf := make([]byte, len(testData))
+	if _, err := io.ReadFull(awayConn, buf); err != nil {
+		t.Fatalf("read echo: %v", err)
+	}
+	if string(buf) != testData {
+		t.Fatalf("echo mismatch: got %q, want %q", string(buf), testData)
+	}
+	t.Logf("k2p outbound TCP data flow verified: %d bytes round-trip", len(testData))
 }
 
 // TestK2P_E2E_AuthRejection verifies that a wrong PeerSecret is rejected.

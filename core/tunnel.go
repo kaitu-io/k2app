@@ -20,7 +20,6 @@ import (
 	"github.com/kaitu-io/k2/provider"
 	"github.com/kaitu-io/k2/rule"
 	"github.com/kaitu-io/k2/sniff"
-	"github.com/kaitu-io/k2/wire"
 	"golang.org/x/sync/semaphore"
 )
 
@@ -76,15 +75,15 @@ type WireErrorReporter interface {
 	ClearWireError()
 }
 
-// ClientTunnel connects a Provider to wire.Dialer, implementing provider.ConnectionHandler.
-// It routes each TCP/UDP connection through the Router, then either direct (net.Dial)
-// or proxy (wire.DialTCP/DialUDP).
+// ClientTunnel connects a Provider to Outbound table, implementing provider.ConnectionHandler.
+// It routes each TCP/UDP connection through the Router, then dispatches to the
+// matching Outbound (direct, wire, or nil=reject).
 type ClientTunnel struct {
 	provider        provider.Provider
-	dialer          wire.Dialer
+	outbounds       []Outbound    // indexed by rule.Target value; nil entry = reject
+	directTarget    rule.Target   // outbound index for direct (used by sniffing downgrade)
+	defaultTarget   rule.Target   // fallback outbound when router is nil
 	router          *Router
-	directDialer    wire.DirectDialer
-	wireReporter    WireErrorReporter
 	processSearcher provider.ProcessSearcher
 	sniffBT   bool // sniff BitTorrent and force direct (disabled in global mode)
 	sniffSNI  bool // sniff TLS/QUIC SNI and upgrade DIRECT→PROXY (disabled in global mode)
@@ -108,10 +107,10 @@ var _ provider.ConnectionHandler = (*ClientTunnel)(nil)
 // ClientTunnelConfig holds dependencies for creating a ClientTunnel.
 type ClientTunnelConfig struct {
 	Provider        provider.Provider
-	Dialer          wire.Dialer
+	Outbounds       []Outbound    // indexed by rule.Target; nil entry = reject
+	DirectTarget    rule.Target   // outbound index for direct connections
+	DefaultTarget   rule.Target   // fallback outbound when router is nil (zero = direct)
 	Router          *Router
-	DirectDialer    wire.DirectDialer
-	WireReporter    WireErrorReporter
 	ProcessSearcher provider.ProcessSearcher // optional: nil = no process matching
 	SniffBT   bool // enable BitTorrent sniffing (should be false in global mode)
 	SniffSNI  bool // enable TLS/QUIC SNI sniffing for DIRECT→PROXY upgrade (should be false in global mode)
@@ -122,10 +121,10 @@ type ClientTunnelConfig struct {
 func NewClientTunnel(cfg ClientTunnelConfig) *ClientTunnel {
 	return &ClientTunnel{
 		provider:        cfg.Provider,
-		dialer:          cfg.Dialer,
+		outbounds:       cfg.Outbounds,
+		directTarget:    cfg.DirectTarget,
+		defaultTarget:   cfg.DefaultTarget,
 		router:          cfg.Router,
-		directDialer:    cfg.DirectDialer,
-		wireReporter:    cfg.WireReporter,
 		processSearcher: cfg.ProcessSearcher,
 		sniffBT:   cfg.SniffBT,
 		sniffSNI:  cfg.SniffSNI,
@@ -226,15 +225,15 @@ func (t *ClientTunnel) HandleTCP(conn net.Conn, dest string) {
 	var earlyData []byte // peeked bytes sent as wire early data for PROXY path
 
 	// Single peek for all sniffers (BT + SNI)
-	if action != rule.TargetReject && (t.sniffBT || t.sniffSNI) {
+	if t.outbound(action) != nil && (t.sniffBT || t.sniffSNI) {
 		if peeked := peekTCP(conn); len(peeked) > 0 {
 			earlyData = peeked
 			conn = &prefixConn{Conn: conn, reader: io.MultiReader(bytes.NewReader(peeked), conn)}
 
 			// BT: downgrade PROXY → DIRECT
-			if t.sniffBT && action == rule.TargetProxy {
+			if t.sniffBT && action != t.directTarget {
 				if sniff.IsBitTorrent(bytes.NewReader(peeked)) {
-					action = rule.TargetDirect
+					action = t.directTarget
 					slog.Debug("tunnel: BitTorrent detected, forcing direct", "dest", dest)
 				}
 			}
@@ -250,17 +249,17 @@ func (t *ClientTunnel) HandleTCP(conn net.Conn, dest string) {
 			}
 
 			// SNI: upgrade DIRECT → PROXY
-			if sni != "" && t.router != nil && action == rule.TargetDirect {
-				if sniAction := t.router.RouteAddr(sni); sniAction == rule.TargetProxy {
-					action = rule.TargetProxy
+			if sni != "" && t.router != nil && action == t.directTarget {
+				if sniAction := t.router.RouteAddr(sni); sniAction != t.directTarget {
+					action = sniAction
 					dest = net.JoinHostPort(sni, port)
-					t.router.SetTmpRule(host, rule.TargetProxy)
+					t.router.SetTmpRule(host, sniAction)
 					slog.Debug("tunnel: SNI override", "dest", dest, "sni", sni)
 				}
 			}
 
 			// IPv6→hostname: server may lack IPv6, give it a resolvable hostname
-			if sni != "" && action == rule.TargetProxy && strings.Contains(host, ":") {
+			if sni != "" && action != t.directTarget && strings.Contains(host, ":") {
 				if newDest := net.JoinHostPort(sni, port); dest != newDest {
 					dest = newDest
 					slog.Debug("tunnel: IPv6 dest rewrite", "original", host, "sni", sni)
@@ -271,7 +270,7 @@ func (t *ClientTunnel) HandleTCP(conn net.Conn, dest string) {
 
 	// IPv6→hostname rewrite (global mode): sniffBT/sniffSNI disabled, but IPv6 PROXY
 	// dests still need hostname rewrite so server resolves via Happy Eyeballs
-	if !(t.sniffBT || t.sniffSNI) && action == rule.TargetProxy && port == "443" && strings.Contains(host, ":") {
+	if !(t.sniffBT || t.sniffSNI) && action != t.directTarget && port == "443" && strings.Contains(host, ":") {
 		if peeked := peekTCP(conn); len(peeked) > 0 {
 			earlyData = peeked
 			conn = &prefixConn{Conn: conn, reader: io.MultiReader(bytes.NewReader(peeked), conn)}
@@ -284,10 +283,15 @@ func (t *ClientTunnel) HandleTCP(conn net.Conn, dest string) {
 
 	slog.Debug("tunnel: route", "dest", dest, "action", action)
 
-	switch action {
-	case rule.TargetDirect:
-		t.handleTCPDirect(conn, dest)
-	case rule.TargetProxy:
+	outbound := t.outbound(action)
+	if outbound == nil {
+		return // reject: silently drop
+	}
+
+	// Wire outbounds send earlyData via wire protocol (separate from conn stream).
+	// Direct outbound replays peeked bytes through prefixConn Read.
+	pipeConn := conn
+	if action != t.directTarget {
 		// Peek for early data if not already done (e.g. global mode skips sniffing).
 		if len(earlyData) == 0 {
 			earlyData = peekTCP(conn)
@@ -295,12 +299,19 @@ func (t *ClientTunnel) HandleTCP(conn net.Conn, dest string) {
 		// Unwrap prefixConn — peeked bytes go as wire early data,
 		// not replayed via pipe (which would double-send them).
 		if pc, ok := conn.(*prefixConn); ok && len(earlyData) > 0 {
-			conn = pc.Conn
+			pipeConn = pc.Conn
 		}
-		t.handleTCPProxy(conn, dest, earlyData)
-	case rule.TargetReject:
-		// Silently drop
 	}
+
+	remote, err := outbound.DialTCP(t.ctx, dest, earlyData)
+	if err != nil {
+		slog.Warn("tunnel: TCP dial failed", "dest", dest, "outbound", outbound.Name(), "err", err)
+		return
+	}
+	defer remote.Close()
+	untrackRemote := t.conns.track(remote)
+	defer untrackRemote()
+	pipe(pipeConn, remote, &t.txBytes, &t.rxBytes)
 }
 
 // HandleUDP processes a UDP connection from the provider.
@@ -336,7 +347,7 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 
 	// Peek first packet for protocol detection + domain extraction.
 	// Triggers: sniffBT (BT/WebRTC), sniffSNI (domain upgrade), blockQUIC (QUIC reject).
-	if action != rule.TargetReject && (t.sniffBT || t.sniffSNI || t.blockQUIC) {
+	if t.outbound(action) != nil && (t.sniffBT || t.sniffSNI || t.blockQUIC) {
 		if packet, addr := peekUDP(conn); packet != nil {
 			origConn := conn // save before wrapping — prefixPacketConn hides UDPRejecter
 			conn = &prefixPacketConn{PacketConn: conn, first: packet, firstAddr: addr}
@@ -346,7 +357,7 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 			// 1. BT/WebRTC: PROXY → DIRECT
 			// Priority: STUN/DTLS first (strict magic cookie / header checks),
 			// then uTP/UDPTracker (loose first-byte heuristic, prone to false positives).
-			if t.sniffBT && action == rule.TargetProxy {
+			if t.sniffBT && action != t.directTarget {
 				pktHead := packet
 				if len(pktHead) > 20 {
 					pktHead = pktHead[:20]
@@ -355,15 +366,15 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 
 				if sniff.IsSTUN(packet) {
 					meta.Protocol = sniff.ProtoSTUN
-					action = rule.TargetDirect
+					action = t.directTarget
 					slog.Debug("tunnel: STUN detected, forcing direct", "dest", dest)
 				} else if sniff.IsDTLS(packet) {
 					meta.Protocol = sniff.ProtoDTLS
-					action = rule.TargetDirect
+					action = t.directTarget
 					slog.Debug("tunnel: DTLS detected, forcing direct", "dest", dest)
 				} else if sniff.IsUTP(packet) || sniff.IsUDPTracker(packet) {
 					meta.Protocol = sniff.ProtoBitTorrent
-					action = rule.TargetDirect
+					action = t.directTarget
 					slog.Debug("tunnel: BitTorrent UDP detected, forcing direct", "dest", dest)
 				}
 				if meta.Protocol == "" {
@@ -376,7 +387,7 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 				meta.Protocol = sniff.ProtoQUIC
 				// Fast path: QUIC already routed to proxy → block immediately.
 				// Skips expensive SniffQUIC (HKDF + AES decrypt + ~5KB alloc).
-				if t.blockQUIC && action == rule.TargetProxy {
+				if t.blockQUIC && action != t.directTarget {
 					slog.Debug("tunnel: QUIC blocked, sending ICMP unreachable", "dest", dest)
 					if r, ok := origConn.(provider.UDPRejecter); ok {
 						r.RejectHandshake()
@@ -385,25 +396,25 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 				}
 				// Extract domain for routing upgrade or IPv6 hostname rewrite.
 				// SniffQUIC is expensive (QUIC Initial decryption), only call when needed.
-				needDomain := t.sniffSNI || (action == rule.TargetProxy && strings.Contains(host, ":"))
+				needDomain := t.sniffSNI || (action != t.directTarget && strings.Contains(host, ":"))
 				if needDomain {
 					meta.Domain, _ = sniff.SniffQUIC(packet)
 				}
 			}
 
 			// 3. Domain-based routing: DIRECT → PROXY upgrade
-			if t.sniffSNI && meta.Domain != "" && t.router != nil && action == rule.TargetDirect {
-				if sniAction := t.router.RouteAddr(meta.Domain); sniAction == rule.TargetProxy {
-					action = rule.TargetProxy
+			if t.sniffSNI && meta.Domain != "" && t.router != nil && action == t.directTarget {
+				if sniAction := t.router.RouteAddr(meta.Domain); sniAction != t.directTarget {
+					action = sniAction
 					dest = net.JoinHostPort(meta.Domain, port)
-					t.router.SetTmpRule(host, rule.TargetProxy)
+					t.router.SetTmpRule(host, sniAction)
 					slog.Debug("tunnel: QUIC SNI override", "dest", dest, "sni", meta.Domain)
 				}
 			}
 
 			// 4. Block QUIC going through proxy (prevents double-QUIC tunneling).
 			// Browsers fall back to TCP/TLS which uses the tunnel's stream path.
-			if t.blockQUIC && meta.Protocol == sniff.ProtoQUIC && action == rule.TargetProxy {
+			if t.blockQUIC && meta.Protocol == sniff.ProtoQUIC && action != t.directTarget {
 				slog.Debug("tunnel: QUIC blocked, sending ICMP unreachable", "dest", dest, "domain", meta.Domain)
 				if r, ok := origConn.(provider.UDPRejecter); ok {
 					r.RejectHandshake()
@@ -412,7 +423,7 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 			}
 
 			// 5. IPv6 → hostname rewrite (server resolves via Happy Eyeballs)
-			if meta.Domain != "" && action == rule.TargetProxy && strings.Contains(host, ":") {
+			if meta.Domain != "" && action != t.directTarget && strings.Contains(host, ":") {
 				if newDest := net.JoinHostPort(meta.Domain, port); dest != newDest {
 					dest = newDest
 					slog.Debug("tunnel: IPv6 dest rewrite", "original", host, "sni", meta.Domain)
@@ -422,24 +433,38 @@ func (t *ClientTunnel) HandleUDP(conn net.PacketConn, dest string) {
 		}
 	}
 
-	switch action {
-	case rule.TargetDirect:
-		t.handleUDPDirect(conn, dest)
-	case rule.TargetProxy:
-		t.handleUDPProxy(conn, dest)
-	case rule.TargetReject:
-		// Silently drop
+	outbound := t.outbound(action)
+	if outbound == nil {
+		return // reject: silently drop
 	}
+	remote, destAddr, err := outbound.DialUDP(t.ctx, dest)
+	if err != nil {
+		slog.Warn("tunnel: UDP dial failed", "dest", dest, "outbound", outbound.Name(), "err", err)
+		return
+	}
+	defer remote.Close()
+	untrackRemote := t.conns.track(remote)
+	defer untrackRemote()
+	pipePacket(conn, remote, destAddr, &t.txBytes, &t.rxBytes)
+}
+
+// outbound returns the Outbound for the given target, or nil (reject/out of range).
+func (t *ClientTunnel) outbound(target rule.Target) Outbound {
+	idx := int(target)
+	if idx >= len(t.outbounds) {
+		return nil
+	}
+	return t.outbounds[idx] // nil entry = reject
 }
 
 // routeConn builds ConnMeta from source addr + process lookup, then routes.
 func (t *ClientTunnel) routeConn(dest, network string, srcAddr *net.UDPAddr) rule.Target {
 	if t.router == nil {
-		return rule.TargetProxy
+		return t.defaultTarget
 	}
 	host, _, err := net.SplitHostPort(dest)
 	if err != nil {
-		return rule.TargetProxy
+		return t.directTarget
 	}
 
 	meta := rule.ConnMeta{Network: network}
@@ -453,97 +478,7 @@ func (t *ClientTunnel) routeConn(dest, network string, srcAddr *net.UDPAddr) rul
 	return t.router.RouteConn(host, meta)
 }
 
-func (t *ClientTunnel) handleTCPDirect(local net.Conn, dest string) {
-	var remote net.Conn
-	var err error
-	if t.directDialer != nil {
-		remote, err = t.directDialer.DialContext(t.ctx, "tcp", dest)
-	} else {
-		remote, err = net.Dial("tcp", dest)
-	}
-	if err != nil {
-		slog.Warn("tunnel: direct TCP dial failed", "dest", dest, "err", err)
-		return
-	}
-	defer remote.Close()
-	untrack := t.conns.track(remote)
-	defer untrack()
-	pipe(local, remote, &t.txBytes, &t.rxBytes)
-}
 
-func (t *ClientTunnel) handleTCPProxy(local net.Conn, dest string, earlyData []byte) {
-	start := time.Now()
-	remote, err := t.dialer.DialTCP(t.ctx, dest, earlyData)
-	dialLatency := time.Since(start)
-	if err != nil {
-		slog.Warn("tunnel: proxy TCP dial failed", "dest", dest, "err", err)
-		slog.Warn("DIAG: proxy-dial-fail", "dest", dest, "transport", "tcp", "err", err)
-		// Only report wire transport errors. Proxy-layer errors (IsProxyLayer)
-		// mean the server received and responded — the wire is healthy.
-		if t.wireReporter != nil && !isProxyLayerError(err) {
-			t.wireReporter.ReportWireError(err)
-		}
-		return
-	}
-	if dialLatency > 3*time.Second {
-		slog.Info("DIAG: proxy-dial-slow", "dest", dest, "transport", "tcp", "latencyMs", dialLatency.Milliseconds())
-	}
-	if t.wireReporter != nil {
-		t.wireReporter.ClearWireError()
-	}
-	defer remote.Close()
-	untrack := t.conns.track(remote)
-	defer untrack()
-	pipe(local, remote, &t.txBytes, &t.rxBytes)
-}
-
-func (t *ClientTunnel) handleUDPDirect(local net.PacketConn, dest string) {
-	var remote net.PacketConn
-	var err error
-	if t.directDialer != nil {
-		remote, err = t.directDialer.ListenPacket("udp4", "")
-	} else {
-		remote, err = net.ListenPacket("udp4", "")
-	}
-	if err != nil {
-		slog.Warn("tunnel: direct UDP listen failed", "err", err)
-		return
-	}
-	defer remote.Close()
-	untrack := t.conns.track(remote)
-	defer untrack()
-
-	destAddr, err := net.ResolveUDPAddr("udp", dest)
-	if err != nil {
-		slog.Warn("tunnel: resolve UDP addr failed", "dest", dest, "err", err)
-		return
-	}
-	pipePacket(local, remote, destAddr, &t.txBytes, &t.rxBytes)
-}
-
-func (t *ClientTunnel) handleUDPProxy(local net.PacketConn, dest string) {
-	start := time.Now()
-	remote, err := t.dialer.DialUDP(t.ctx, dest)
-	dialLatency := time.Since(start)
-	if err != nil {
-		slog.Warn("tunnel: proxy UDP dial failed", "dest", dest, "err", err)
-		slog.Warn("DIAG: proxy-dial-fail", "dest", dest, "transport", "udp", "err", err)
-		if t.wireReporter != nil && !isProxyLayerError(err) {
-			t.wireReporter.ReportWireError(err)
-		}
-		return
-	}
-	if dialLatency > 3*time.Second {
-		slog.Info("DIAG: proxy-dial-slow", "dest", dest, "transport", "udp", "latencyMs", dialLatency.Milliseconds())
-	}
-	if t.wireReporter != nil {
-		t.wireReporter.ClearWireError()
-	}
-	defer remote.Close()
-	untrack := t.conns.track(remote)
-	defer untrack()
-	pipePacket(local, remote, nil, &t.txBytes, &t.rxBytes)
-}
 
 // isProxyLayerError returns true if the error originated from the server's
 // application layer (the server received the request and responded). This means

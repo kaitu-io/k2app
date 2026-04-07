@@ -385,26 +385,26 @@ func TestBuildRuleEngine_Default(t *testing.T) {
 	client := &config.ClientConfig{
 		Server: "k2v5://udid:tok@host:443",
 	}
-	re := buildRuleEngine(client)
+	re := buildRuleEngine(client, buildOutboundMap(client.Routes))
 	defer re.Close()
 	if re.IsAllProxy() {
 		t.Fatal("expected IsAllProxy false when no routes set")
 	}
 	// Default fallback is direct.
-	if got := re.Match("example.com"); got != rule.TargetDirect {
+	if got := re.Match("example.com"); got != rule.Target(0) {
 		t.Fatalf("Match = %v, want TargetDirect", got)
 	}
 }
 
 func TestBuildRuleEngine_AllProxy(t *testing.T) {
 	client := config.ClientFromURL("k2v5://udid:tok@host:443")
-	re := buildRuleEngine(client)
+	re := buildRuleEngine(client, buildOutboundMap(client.Routes))
 	defer re.Close()
 	if !re.IsAllProxy() {
 		t.Fatal("expected IsAllProxy true for ClientFromURL")
 	}
-	if got := re.Match("example.com"); got != rule.TargetProxy {
-		t.Fatalf("Match = %v, want TargetProxy", got)
+	if got := re.Match("example.com"); got != rule.Target(2) {
+		t.Fatalf("Match = %v, want Target(2)", got)
 	}
 }
 
@@ -431,19 +431,19 @@ func TestBuildRuleEngine_InlineRules(t *testing.T) {
 			},
 		},
 	}
-	re := buildRuleEngine(client)
+	re := buildRuleEngine(client, buildOutboundMap(client.Routes))
 	defer re.Close()
 
-	if got := re.Match("ads.example.com"); got != rule.TargetReject {
+	if got := re.Match("ads.example.com"); got != rule.Target(1) {
 		t.Errorf("ads.example.com = %v, want reject", got)
 	}
-	if got := re.Match("10.1.2.3"); got != rule.TargetDirect {
+	if got := re.Match("10.1.2.3"); got != rule.Target(0) {
 		t.Errorf("10.1.2.3 = %v, want direct", got)
 	}
-	if got := re.Match("192.168.1.1"); got != rule.TargetDirect {
+	if got := re.Match("192.168.1.1"); got != rule.Target(0) {
 		t.Errorf("192.168.1.1 = %v, want direct", got)
 	}
-	if got := re.Match("custom-blocked.com"); got != rule.TargetProxy {
+	if got := re.Match("custom-blocked.com"); got != rule.Target(2) {
 		t.Errorf("custom-blocked.com = %v, want proxy", got)
 	}
 }
@@ -463,21 +463,21 @@ func TestBuildRuleEngine_ProcessRoute(t *testing.T) {
 			},
 		},
 	}
-	re := buildRuleEngine(client)
+	re := buildRuleEngine(client, buildOutboundMap(client.Routes))
 	defer re.Close()
 
 	// DNS-time: process-only route skipped
-	if got := re.Match("google.com"); got != rule.TargetProxy {
+	if got := re.Match("google.com"); got != rule.Target(2) {
 		t.Errorf("Match(google.com) = %v, want proxy", got)
 	}
 
 	// Connection-time: ssh → direct
-	if got := re.MatchConn("google.com", rule.ConnMeta{ProcessName: "ssh"}); got != rule.TargetDirect {
+	if got := re.MatchConn("google.com", rule.ConnMeta{ProcessName: "ssh"}); got != rule.Target(0) {
 		t.Errorf("MatchConn(ssh) = %v, want direct", got)
 	}
 
 	// Connection-time: chrome → proxy (all proxy fallback)
-	if got := re.MatchConn("google.com", rule.ConnMeta{ProcessName: "chrome"}); got != rule.TargetProxy {
+	if got := re.MatchConn("google.com", rule.ConnMeta{ProcessName: "chrome"}); got != rule.Target(2) {
 		t.Errorf("MatchConn(chrome) = %v, want proxy", got)
 	}
 }
@@ -495,13 +495,13 @@ func TestBuildRuleEngine_IPIsPrivate(t *testing.T) {
 			},
 		},
 	}
-	re := buildRuleEngine(client)
+	re := buildRuleEngine(client, buildOutboundMap(client.Routes))
 	defer re.Close()
 
-	if got := re.Match("192.168.1.1"); got != rule.TargetDirect {
+	if got := re.Match("192.168.1.1"); got != rule.Target(0) {
 		t.Errorf("192.168.1.1 = %v, want direct", got)
 	}
-	if got := re.Match("8.8.8.8"); got != rule.TargetProxy {
+	if got := re.Match("8.8.8.8"); got != rule.Target(2) {
 		t.Errorf("8.8.8.8 = %v, want proxy", got)
 	}
 }
@@ -654,13 +654,15 @@ func TestDNSHandler_Intercept_Port53(t *testing.T) {
 	inner := &mockConnectionHandler{}
 
 	// Build a Middleware with a mock querier that returns canned DNS responses.
-	// MatchRule returns TargetProxy for all domains (global proxy mode).
+	// MatchRule returns Target(2) for all domains (global proxy mode).
 	mw := dns.NewMiddleware(dns.MiddlewareConfig{
-		ProxyDNS:   &mockDNSQuerier{},
-		DNSCache:   dns.NewDNSCache(dns.DNSCacheConfig{}),
-		Filter:     dns.NewFilter(dns.FilterConfig{}),
-		MatchRule:  func(string) rule.Target { return rule.TargetProxy },
-		SetTmpRule: func(string, rule.Target) {},
+		ProxyDNS:     &mockDNSQuerier{},
+		DNSCache:     dns.NewDNSCache(dns.DNSCacheConfig{}),
+		Filter:       dns.NewFilter(dns.FilterConfig{}),
+		MatchRule:    func(string) rule.Target { return rule.Target(2) },
+		SetTmpRule:   func(string, rule.Target) {},
+		DNSRouter:    func(t rule.Target) bool { return t == rule.Target(2) },
+		RejectTarget: rule.Target(1),
 	})
 
 	h := &dnsHandler{inner: inner, dns: mw}

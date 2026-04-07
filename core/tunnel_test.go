@@ -16,7 +16,13 @@ import (
 	"github.com/kaitu-io/k2/provider"
 	"github.com/kaitu-io/k2/rule"
 	"github.com/kaitu-io/k2/sniff"
+	"github.com/kaitu-io/k2/wire"
 )
+
+// testOutbounds builds an outbound table for tests: [0]=direct, [1]=nil(reject), [2]=wire.
+func testOutbounds(dialer wire.Dialer) []Outbound {
+	return []Outbound{NewDirectOutbound(nil), nil, NewWireOutbound("test", dialer, nil)}
+}
 
 // mockDialer records DialTCP/DialUDP calls and returns mock connections.
 type mockDialer struct {
@@ -106,9 +112,11 @@ func TestClientTunnel_HandleTCP_Proxy(t *testing.T) {
 	prov := &mockProvider{}
 
 	tunnel := NewClientTunnel(ClientTunnelConfig{
-		Provider: prov,
-		Dialer:   dialer,
+		Provider:     prov,
+		Outbounds:    testOutbounds(dialer),
+		DirectTarget: rule.Target(0),
 		// Router nil → defaults to proxy
+		DefaultTarget: rule.Target(2),
 	})
 
 	if err := tunnel.Start(context.Background()); err != nil {
@@ -186,11 +194,12 @@ func TestClientTunnel_HandleTCP_Direct(t *testing.T) {
 	prov := &mockProvider{}
 	// Create tunnel with nil dialer (shouldn't be used for direct)
 	// Use a router with a rule engine that defaults to direct for localhost.
-	ruleEngine := rule.NewEngine(nil, rule.TargetDirect, nil, false)
+	ruleEngine := rule.NewEngine(nil, rule.Target(0), nil, false)
 	tunnel := NewClientTunnel(ClientTunnelConfig{
-		Provider: prov,
-		Dialer:   newMockDialer(),
-		Router:   NewRouter(ruleEngine),
+		Provider:     prov,
+		Outbounds:    testOutbounds(newMockDialer()),
+		DirectTarget: rule.Target(0),
+		Router:       NewRouter(ruleEngine),
 	})
 
 	if err := tunnel.Start(context.Background()); err != nil {
@@ -229,8 +238,10 @@ func TestClientTunnel_HandleUDP_Proxy(t *testing.T) {
 	prov := &mockProvider{}
 
 	tunnel := NewClientTunnel(ClientTunnelConfig{
-		Provider: prov,
-		Dialer:   dialer,
+		Provider:      prov,
+		Outbounds:     testOutbounds(dialer),
+		DirectTarget:  rule.Target(0),
+		DefaultTarget: rule.Target(2),
 	})
 
 	if err := tunnel.Start(context.Background()); err != nil {
@@ -282,8 +293,9 @@ func TestClientTunnel_HandleUDP_Proxy(t *testing.T) {
 func TestClientTunnel_Start_SetsHandler(t *testing.T) {
 	prov := &mockProvider{}
 	tunnel := NewClientTunnel(ClientTunnelConfig{
-		Provider: prov,
-		Dialer:   newMockDialer(),
+		Provider:     prov,
+		Outbounds:    testOutbounds(newMockDialer()),
+		DirectTarget: rule.Target(0),
 	})
 
 	if err := tunnel.Start(context.Background()); err != nil {
@@ -381,8 +393,10 @@ func TestClientTunnel_Close_UnblocksStuckTCP(t *testing.T) {
 	prov := &mockProvider{}
 
 	tunnel := NewClientTunnel(ClientTunnelConfig{
-		Provider: prov,
-		Dialer:   dialer,
+		Provider:      prov,
+		Outbounds:     testOutbounds(dialer),
+		DirectTarget:  rule.Target(0),
+		DefaultTarget: rule.Target(2),
 	})
 
 	if err := tunnel.Start(context.Background()); err != nil {
@@ -431,8 +445,10 @@ func TestClientTunnel_Close_UnblocksStuckUDP(t *testing.T) {
 	prov := &mockProvider{}
 
 	tunnel := NewClientTunnel(ClientTunnelConfig{
-		Provider: prov,
-		Dialer:   dialer,
+		Provider:      prov,
+		Outbounds:     testOutbounds(dialer),
+		DirectTarget:  rule.Target(0),
+		DefaultTarget: rule.Target(2),
 	})
 
 	if err := tunnel.Start(context.Background()); err != nil {
@@ -520,9 +536,11 @@ func TestClientTunnel_HandleTCP_BTForcedDirect(t *testing.T) {
 	prov := &mockProvider{}
 
 	tunnel := NewClientTunnel(ClientTunnelConfig{
-		Provider: prov,
-		Dialer:   dialer,
-		SniffBT:  true,
+		Provider:     prov,
+		Outbounds:    testOutbounds(dialer),
+		DirectTarget:  rule.Target(0),
+		DefaultTarget: rule.Target(2),
+		SniffBT:      true,
 		// Router nil → defaults to proxy → sniff will check for BT
 	})
 
@@ -579,10 +597,12 @@ func TestClientTunnel_HandleTCP_NonBTStillProxied(t *testing.T) {
 	prov := &mockProvider{}
 
 	tunnel := NewClientTunnel(ClientTunnelConfig{
-		Provider: prov,
-		Dialer:   dialer,
-		SniffBT:  true,
+		Provider:     prov,
+		Outbounds:    testOutbounds(dialer),
+		DirectTarget: rule.Target(0),
+		SniffBT:      true,
 		// Router nil → defaults to proxy
+		DefaultTarget: rule.Target(2),
 	})
 
 	if err := tunnel.Start(context.Background()); err != nil {
@@ -638,9 +658,11 @@ func TestClientTunnel_HandleTCP_BTNotSniffedInGlobalMode(t *testing.T) {
 	prov := &mockProvider{}
 
 	tunnel := NewClientTunnel(ClientTunnelConfig{
-		Provider: prov,
-		Dialer:   dialer,
-		SniffBT:  false, // global mode — no sniffing
+		Provider:      prov,
+		Outbounds:     testOutbounds(dialer),
+		DirectTarget:  rule.Target(0),
+		DefaultTarget: rule.Target(2),
+		SniffBT:      false, // global mode — no sniffing
 	})
 
 	if err := tunnel.Start(context.Background()); err != nil {
@@ -701,10 +723,12 @@ func TestClientTunnel_HandleTCP_EarlyData(t *testing.T) {
 	prov := &mockProvider{}
 
 	tunnel := NewClientTunnel(ClientTunnelConfig{
-		Provider: prov,
-		Dialer:   dialer,
-		SniffBT:  true,
-		SniffSNI: true,
+		Provider:      prov,
+		Outbounds:     testOutbounds(dialer),
+		DirectTarget:  rule.Target(0),
+		DefaultTarget: rule.Target(2),
+		SniffBT:      true,
+		SniffSNI:     true,
 	})
 
 	if err := tunnel.Start(context.Background()); err != nil {
@@ -775,10 +799,12 @@ func TestClientTunnel_HandleTCP_EarlyDataGlobalMode(t *testing.T) {
 	prov := &mockProvider{}
 
 	tunnel := NewClientTunnel(ClientTunnelConfig{
-		Provider: prov,
-		Dialer:   dialer,
-		SniffBT:  false, // global mode
-		SniffSNI: false,
+		Provider:      prov,
+		Outbounds:     testOutbounds(dialer),
+		DirectTarget:  rule.Target(0),
+		DefaultTarget: rule.Target(2),
+		SniffBT:      false, // global mode
+		SniffSNI:     false,
 	})
 
 	if err := tunnel.Start(context.Background()); err != nil {
@@ -852,9 +878,11 @@ func TestClientTunnel_HandleUDP_UTPForcedDirect(t *testing.T) {
 	prov := &mockProvider{}
 
 	tunnel := NewClientTunnel(ClientTunnelConfig{
-		Provider: prov,
-		Dialer:   dialer,
-		SniffBT:  true,
+		Provider:     prov,
+		Outbounds:    testOutbounds(dialer),
+		DirectTarget:  rule.Target(0),
+		DefaultTarget: rule.Target(2),
+		SniffBT:      true,
 		// Router nil → defaults to proxy → sniff will check for uTP
 	})
 
@@ -904,10 +932,12 @@ func TestClientTunnel_HandleUDP_NonBTStillProxied(t *testing.T) {
 	prov := &mockProvider{}
 
 	tunnel := NewClientTunnel(ClientTunnelConfig{
-		Provider: prov,
-		Dialer:   dialer,
-		SniffBT:  true,
+		Provider:     prov,
+		Outbounds:    testOutbounds(dialer),
+		DirectTarget: rule.Target(0),
+		SniffBT:      true,
 		// Router nil → defaults to proxy
+		DefaultTarget: rule.Target(2),
 	})
 
 	if err := tunnel.Start(context.Background()); err != nil {
@@ -975,9 +1005,11 @@ func TestClientTunnel_HandleUDP_STUNForcedDirect(t *testing.T) {
 	prov := &mockProvider{}
 
 	tunnel := NewClientTunnel(ClientTunnelConfig{
-		Provider: prov,
-		Dialer:   dialer,
-		SniffBT:  true,
+		Provider:     prov,
+		Outbounds:    testOutbounds(dialer),
+		DirectTarget:  rule.Target(0),
+		DefaultTarget: rule.Target(2),
+		SniffBT:      true,
 		// Router nil → defaults to proxy → sniff will check for STUN
 	})
 
@@ -1045,9 +1077,11 @@ func TestClientTunnel_HandleUDP_DTLSForcedDirect(t *testing.T) {
 	prov := &mockProvider{}
 
 	tunnel := NewClientTunnel(ClientTunnelConfig{
-		Provider: prov,
-		Dialer:   dialer,
-		SniffBT:  true,
+		Provider:      prov,
+		Outbounds:     testOutbounds(dialer),
+		DirectTarget:  rule.Target(0),
+		DefaultTarget: rule.Target(2),
+		SniffBT:      true,
 	})
 
 	if err := tunnel.Start(context.Background()); err != nil {
@@ -1096,9 +1130,11 @@ func TestClientTunnel_HandleTCP_HTTPSniffReplay(t *testing.T) {
 	prov := &mockProvider{}
 
 	tunnel := NewClientTunnel(ClientTunnelConfig{
-		Provider: prov,
-		Dialer:   dialer,
-		SniffSNI: true,
+		Provider:     prov,
+		Outbounds:    testOutbounds(dialer),
+		DirectTarget:  rule.Target(0),
+		DefaultTarget: rule.Target(2),
+		SniffSNI:     true,
 		// Router nil → proxy, HTTP sniff won't upgrade but peeked data must replay
 	})
 
@@ -1140,10 +1176,12 @@ func TestClientTunnel_HandleUDP_QUICBlocked(t *testing.T) {
 	prov := &mockProvider{}
 
 	tunnel := NewClientTunnel(ClientTunnelConfig{
-		Provider:  prov,
-		Dialer:    dialer,
-		BlockQUIC: true,
+		Provider:     prov,
+		Outbounds:    testOutbounds(dialer),
+		DirectTarget: rule.Target(0),
+		BlockQUIC:    true,
 		// Router nil → defaults to proxy
+		DefaultTarget: rule.Target(2),
 	})
 
 	if err := tunnel.Start(context.Background()); err != nil {
@@ -1265,10 +1303,12 @@ func TestClientTunnel_HandleUDP_QUICPassthrough(t *testing.T) {
 	prov := &mockProvider{}
 
 	tunnel := NewClientTunnel(ClientTunnelConfig{
-		Provider:  prov,
-		Dialer:    dialer,
-		BlockQUIC: false, // Allow QUIC through
+		Provider:     prov,
+		Outbounds:    testOutbounds(dialer),
+		DirectTarget: rule.Target(0),
+		BlockQUIC:    false, // Allow QUIC through
 		// Router nil → defaults to proxy
+		DefaultTarget: rule.Target(2),
 	})
 
 	if err := tunnel.Start(context.Background()); err != nil {

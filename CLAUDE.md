@@ -193,6 +193,7 @@ k2p/signal standalone locks (no nesting with engine locks):
   signal.SessionRouter.mu (state)
   wsConn.writeMu (serialization, standalone — protects ws.WriteJSON)
   CandidateExchange.writeMu (serialization, standalone — protects ws.WriteJSON)
+  k2pOutbound.connectMu (serialization) → k2pOutbound.mu (state)
 ```
 
 ### The Five Forbidden Patterns

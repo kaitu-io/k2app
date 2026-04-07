@@ -30,9 +30,9 @@ func (m *mockQuerier) Query(ctx context.Context, q *dns.Msg) (*dns.Msg, error) {
 	return resp, nil
 }
 
-func alwaysProxy(string) rule.Target  { return rule.TargetProxy }
-func alwaysDirect(string) rule.Target { return rule.TargetDirect }
-func alwaysReject(string) rule.Target { return rule.TargetReject }
+func alwaysProxy(string) rule.Target  { return rule.Target(2) }
+func alwaysDirect(string) rule.Target { return rule.Target(0) }
+func alwaysReject(string) rule.Target { return rule.Target(1) }
 func nopSetTmp(string, rule.Target)   {}
 
 // buildAQuery creates a DNS A query for domain.
@@ -1012,7 +1012,7 @@ func TestCancelInflight(t *testing.T) {
 		ProxyDNS:   &mockQuerier{resp: buildAResponse("cancel-inflight.example.com", net.ParseIP("5.6.7.8"))},
 		DNSCache:   NewDNSCache(DNSCacheConfig{}),
 		Filter:     NewFilter(FilterConfig{}),
-		MatchRule:  func(string) rule.Target { return rule.TargetDirect },
+		MatchRule:  func(string) rule.Target { return rule.Target(0) },
 		SetTmpRule: func(string, rule.Target) {},
 		EngineCtx:  context.Background(),
 	})
@@ -1073,7 +1073,7 @@ func TestQueryUpstreamConcurrencyLimit(t *testing.T) {
 		DirectDNS:  trackingDNS,
 		DNSCache:   NewDNSCache(DNSCacheConfig{}),
 		Filter:     NewFilter(FilterConfig{}),
-		MatchRule:  func(string) rule.Target { return rule.TargetDirect },
+		MatchRule:  func(string) rule.Target { return rule.Target(0) },
 		SetTmpRule: func(string, rule.Target) {},
 		EngineCtx:  context.Background(),
 	})

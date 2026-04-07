@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/sasha-s/go-deadlock"
@@ -19,6 +20,13 @@ import (
 	"github.com/kaitu-io/k2/rule"
 	"github.com/kaitu-io/k2/safego"
 	"github.com/kaitu-io/k2/wire"
+)
+
+// Well-known outbound indices (convention for outbound table layout).
+const (
+	outboundDirect = rule.Target(0)
+	outboundReject = rule.Target(1)
+	// 2+ = wire outbounds (k2v5, k2p, etc.), assigned dynamically.
 )
 
 // Engine is the unified tunnel lifecycle manager. It assembles the tunnel
@@ -47,6 +55,7 @@ type Engine struct {
 	dnsH           *dnsHandler // for counter reset on network recovery
 	proxyDNS       *dns.ProxyDNSClient // proxy DNS connection pool (nil in proxy mode)
 	ruleEngine     *rule.Engine
+	outbounds      []core.Outbound // owned by engine, closed in Stop()
 
 	wireCfg      wire.Config
 	directDialer wire.DirectDialer
@@ -94,6 +103,12 @@ func (e *Engine) Start(cfg Config) error {
 	e.client = client
 	e.lastError = nil
 
+	// Validate route CIDR conflicts (e.g. k2p route overlaps local LAN).
+	if err := config.ValidateRouteCIDRConflicts(client.Routes); err != nil {
+		e.mu.Unlock()
+		return e.fail(fmt.Errorf("route validation: %w", err))
+	}
+
 	// Create context early so Stop() can cancel an in-progress Start().
 	ctx, cancel := context.WithCancel(context.Background())
 	e.cancel = cancel
@@ -125,8 +140,9 @@ func (e *Engine) Start(cfg Config) error {
 		}
 	}
 
-	// 1b. Build rule engine.
-	ruleEngine := buildRuleEngine(client)
+	// 1b. Build outbound map (via URL → Target index) and rule engine.
+	outboundMap := buildOutboundMap(client.Routes)
+	ruleEngine := buildRuleEngine(client, outboundMap)
 
 	slog.Info("engine: start",
 		"server", extractServerHost(client.Server),
@@ -292,19 +308,38 @@ func (e *Engine) Start(cfg Config) error {
 		return e.fail(ctx.Err())
 	}
 
+	// 6.5. Build outbound table, indexed by rule.Target values from outboundMap.
+	// outboundMap assigns indices: each unique via URL gets a Target starting at 2.
+	outbounds := make([]core.Outbound, 2+len(outboundMap))
+	outbounds[outboundDirect] = core.NewDirectOutbound(cfg.DirectDialer) // 0 = direct
+	outbounds[outboundReject] = nil                                      // 1 = reject
+
+	for via, target := range outboundMap {
+		switch {
+		case strings.HasPrefix(via, "k2v5://"):
+			outbounds[target] = core.NewWireOutbound("k2v5", tm, e)
+		case strings.HasPrefix(via, "k2p://"):
+			k2pOut, k2pErr := core.NewK2POutbound(via)
+			if k2pErr != nil {
+				slog.Warn("engine: k2p outbound failed", "err", k2pErr)
+				// Leave nil → reject behavior for this target.
+				continue
+			}
+			outbounds[target] = k2pOut
+		}
+	}
+
 	// 7. Build client tunnel.
 	tunnelCfg := core.ClientTunnelConfig{
 		Provider:        prov,
-		Dialer:          tm,
+		Outbounds:       outbounds,
+		DirectTarget:    outboundDirect,
+		DefaultTarget:   outboundDirect, // router is always set; fallback for tests
 		Router:          router,
-		WireReporter:    e,
 		ProcessSearcher: cfg.ProcessSearcher,
 		SniffBT:   !ruleEngine.IsAllProxy(), // sniff BT in smart mode only
 		SniffSNI:  !ruleEngine.IsAllProxy(), // sniff TLS/QUIC SNI in smart mode only
 		BlockQUIC: client.BlockQUIC,
-	}
-	if cfg.DirectDialer != nil {
-		tunnelCfg.DirectDialer = cfg.DirectDialer
 	}
 	tunnel := core.NewClientTunnel(tunnelCfg)
 
@@ -326,13 +361,15 @@ func (e *Engine) Start(cfg Config) error {
 			Servers: client.DNS.Proxy,
 		})
 		dnsMW := dns.NewMiddleware(dns.MiddlewareConfig{
-			ProxyDNS:   proxyDNS,
-			DirectDNS:  dns.NewDirectDNSClient(client.DNS.Direct, dnsOpts...),
-			DNSCache:   dns.NewDNSCache(dns.DNSCacheConfig{}),
-			Filter:     dns.NewFilter(dns.FilterConfig{}),
-			MatchRule:  ruleEngine.Match,
-			SetTmpRule: ruleEngine.SetTmpRule,
-			EngineCtx:  ctx, // engine context — cancelled on Stop()
+			ProxyDNS:     proxyDNS,
+			DirectDNS:    dns.NewDirectDNSClient(client.DNS.Direct, dnsOpts...),
+			DNSCache:     dns.NewDNSCache(dns.DNSCacheConfig{}),
+			Filter:       dns.NewFilter(dns.FilterConfig{}),
+			MatchRule:    ruleEngine.Match,
+			SetTmpRule:   ruleEngine.SetTmpRule,
+			DNSRouter:    buildDNSRouter(outboundMap), // k2v5 outbounds use proxy DNS
+			RejectTarget: outboundReject,
+			EngineCtx:    ctx, // engine context — cancelled on Stop()
 		})
 		dh = &dnsHandler{inner: tunnel, dns: dnsMW, ctx: ctx, engine: e}
 		if err := tunnel.StartWithHandler(ctx, dh); err != nil {
@@ -370,6 +407,7 @@ func (e *Engine) Start(cfg Config) error {
 	e.tunnel = tunnel
 	e.tm = tm
 	e.prov = prov
+	e.outbounds = outbounds
 	e.proxyDNS = proxyDNS
 	e.ruleEngine = ruleEngine
 	e.networkMonitor = cfg.NetworkMonitor
@@ -419,7 +457,7 @@ func (e *Engine) Start(cfg Config) error {
 				return nil, nil, err
 			}
 			idx := rule.Index(newBundles)
-			entries, _, _ := buildRouteEntries(client.Routes, idx)
+			entries, _, _ := buildRouteEntries(client.Routes, idx, outboundMap)
 			return entries, newBundles, nil
 		}
 		rule.StartUpdater(ctx, ruleEngine, client.CacheDir, bundleNames, sources, rebuildFn)
@@ -699,6 +737,8 @@ func (e *Engine) Stop() error {
 	e.proxyDNS = nil // no explicit close needed — tm.Close() closes shared tcpws → smux dies → recvLoops exit
 	re := e.ruleEngine
 	e.ruleEngine = nil
+	outbounds := e.outbounds
+	e.outbounds = nil
 	e.client = nil
 	e.connectedAt = time.Time{}
 	e.paused = false
@@ -728,6 +768,13 @@ func (e *Engine) Stop() error {
 	}
 	if tm != nil {
 		tm.Close()
+	}
+	// Close all outbounds. directOutbound and wireOutbound have no-op Close()
+	// (engine owns tm, closed above). k2pOutbound closes its ICE/QUIC connection.
+	for _, ob := range outbounds {
+		if ob != nil {
+			ob.Close()
+		}
 	}
 	if tunnel != nil {
 		tunnel.Close()
@@ -822,16 +869,29 @@ func (e *Engine) fail(err error) error {
 }
 
 // buildRouteEntries converts config routes to rule.RouteEntry list using the given bundle index.
+// outboundMap maps via URL → rule.Target for wire outbounds.
 // Shared by buildRuleEngine (startup) and updater rebuild (hot-reload) — single code path
 // ensures both always produce identical routing tables from the same config+bundles.
-func buildRouteEntries(routes []config.RouteConfig, idx map[string]*rule.BundleSet) (entries []rule.RouteEntry, fallback rule.Target, allProxy bool) {
-	fallback = rule.TargetDirect
+func buildRouteEntries(routes []config.RouteConfig, idx map[string]*rule.BundleSet, outboundMap map[string]rule.Target) (entries []rule.RouteEntry, fallback rule.Target, allProxy bool) {
+	fallback = outboundDirect
 
 	for i, route := range routes {
-		target := rule.ParseVia(route.Via)
+		var target rule.Target
+		switch {
+		case route.Via == "" || route.Via == "direct":
+			target = outboundDirect
+		case route.Via == "reject":
+			target = outboundReject
+		default:
+			if t, ok := outboundMap[route.Via]; ok {
+				target = t
+			} else {
+				target = outboundDirect // unknown via → direct
+			}
+		}
 
 		if route.Match.All {
-			allProxy = (target == rule.TargetProxy)
+			allProxy = (target != outboundDirect && target != outboundReject)
 			fallback = target
 			break
 		}
@@ -874,12 +934,46 @@ func buildRouteEntries(routes []config.RouteConfig, idx map[string]*rule.BundleS
 	return entries, fallback, allProxy
 }
 
+// buildOutboundMap assigns Target indices to each unique outbound URL in routes.
+// Index 0 and 1 are reserved (direct/reject). Wire outbound indices start at 2.
+func buildOutboundMap(routes []config.RouteConfig) map[string]rule.Target {
+	m := map[string]rule.Target{}
+	nextIdx := rule.Target(2) // 0=direct, 1=reject, 2+=wire outbounds
+	for _, route := range routes {
+		via := route.Via
+		if via == "" || via == "direct" || via == "reject" {
+			continue
+		}
+		if _, exists := m[via]; exists {
+			continue
+		}
+		m[via] = nextIdx
+		nextIdx++
+	}
+	return m
+}
+
+// buildDNSRouter returns a function that maps outbound Target → proxy DNS (true) or direct DNS (false).
+// Only k2v5 outbounds use proxy DNS (to avoid GFW poisoning). k2p and direct use direct DNS.
+func buildDNSRouter(outboundMap map[string]rule.Target) func(rule.Target) bool {
+	proxyDNSTargets := map[rule.Target]bool{}
+	for via, target := range outboundMap {
+		if strings.HasPrefix(via, "k2v5://") {
+			proxyDNSTargets[target] = true
+		}
+	}
+	return func(t rule.Target) bool {
+		return proxyDNSTargets[t]
+	}
+}
+
 // buildRuleEngine creates a rule.Engine from the client's route configuration.
 // CacheDir must be set by the platform shell (daemon/appext) before calling engine.
-func buildRuleEngine(client *config.ClientConfig) *rule.Engine {
-	// Simple case: single route with match:all and k2v5:// → all proxy, no routes.
+func buildRuleEngine(client *config.ClientConfig, outboundMap map[string]rule.Target) *rule.Engine {
+	// Simple case: single route with match:all and wire outbound → all proxy, no routes.
 	if client.IsAllProxy() && len(client.Routes) == 1 {
-		return rule.NewEngine(nil, rule.TargetProxy, nil, true)
+		target := outboundMap[client.Routes[0].Via]
+		return rule.NewEngine(nil, target, nil, true)
 	}
 
 	// Load bundles from cache.
@@ -888,7 +982,7 @@ func buildRuleEngine(client *config.ClientConfig) *rule.Engine {
 		slog.Warn("engine: rule load failed", "err", err)
 	}
 	idx := rule.Index(bundles)
-	entries, fallback, allProxy := buildRouteEntries(client.Routes, idx)
+	entries, fallback, allProxy := buildRouteEntries(client.Routes, idx, outboundMap)
 
 	hasRules := len(bundles) > 0
 	for _, e := range entries {

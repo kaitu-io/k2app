@@ -45,8 +45,9 @@ func TestServeDNS_UpstreamFailure_ReturnsSERVFAIL(t *testing.T) {
 	mw := dns.NewMiddleware(dns.MiddlewareConfig{
 		DirectDNS:  &alwaysFailQuerier{},
 		ProxyDNS:   &alwaysFailQuerier{},
-		MatchRule:  func(string) rule.Target { return rule.TargetDirect },
-		SetTmpRule: func(string, rule.Target) {},
+		MatchRule:    func(string) rule.Target { return rule.Target(0) },
+		SetTmpRule:   func(string, rule.Target) {},
+		RejectTarget: rule.Target(1),
 	})
 
 	h := &dnsHandler{dns: mw}
@@ -113,8 +114,9 @@ func TestServeDNSStream_UpstreamFailure_ReturnsSERVFAIL(t *testing.T) {
 	mw := dns.NewMiddleware(dns.MiddlewareConfig{
 		DirectDNS:  &alwaysFailQuerier{},
 		ProxyDNS:   &alwaysFailQuerier{},
-		MatchRule:  func(string) rule.Target { return rule.TargetDirect },
-		SetTmpRule: func(string, rule.Target) {},
+		MatchRule:    func(string) rule.Target { return rule.Target(0) },
+		SetTmpRule:   func(string, rule.Target) {},
+		RejectTarget: rule.Target(1),
 	})
 
 	h := &dnsHandler{dns: mw}

@@ -24,9 +24,10 @@ func TestE2E_QUIC_TCPProxy(t *testing.T) {
 	// Create client tunnel with mock provider.
 	prov := &mockProvider{}
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{
-		Provider: prov,
-		Dialer:   env.quicClient,
-		Router:   core.NewRouter(rule.NewEngine(nil, rule.TargetDirect, nil, false)),
+		Provider:     prov,
+		Outbounds:    []core.Outbound{core.NewDirectOutbound(nil), nil, core.NewWireOutbound("quic", env.quicClient, nil)},
+		DirectTarget: rule.Target(0),
+		Router:       core.NewRouter(rule.NewEngine(nil, rule.Target(2), nil, true)),
 	})
 	if err := tunnel.Start(context.Background()); err != nil {
 		t.Fatal(err)
@@ -75,9 +76,10 @@ func TestE2E_QUIC_UDPProxy(t *testing.T) {
 	// Create client tunnel with mock provider.
 	prov := &mockProvider{}
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{
-		Provider: prov,
-		Dialer:   env.quicClient,
-		Router:   core.NewRouter(rule.NewEngine(nil, rule.TargetDirect, nil, false)),
+		Provider:     prov,
+		Outbounds:    []core.Outbound{core.NewDirectOutbound(nil), nil, core.NewWireOutbound("quic", env.quicClient, nil)},
+		DirectTarget: rule.Target(0),
+		Router:       core.NewRouter(rule.NewEngine(nil, rule.Target(2), nil, true)),
 	})
 	if err := tunnel.Start(context.Background()); err != nil {
 		t.Fatal(err)
@@ -120,9 +122,10 @@ func TestE2E_TCPWS_TCPProxy(t *testing.T) {
 	// Create client tunnel with mock provider.
 	prov := &mockProvider{}
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{
-		Provider: prov,
-		Dialer:   env.tcpwsClient,
-		Router:   core.NewRouter(rule.NewEngine(nil, rule.TargetDirect, nil, false)),
+		Provider:     prov,
+		Outbounds:    []core.Outbound{core.NewDirectOutbound(nil), nil, core.NewWireOutbound("tcpws", env.tcpwsClient, nil)},
+		DirectTarget: rule.Target(0),
+		Router:       core.NewRouter(rule.NewEngine(nil, rule.Target(2), nil, true)),
 	})
 	if err := tunnel.Start(context.Background()); err != nil {
 		t.Fatal(err)
@@ -172,9 +175,10 @@ func TestE2E_TransportManager_Failover(t *testing.T) {
 
 	prov := &mockProvider{}
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{
-		Provider: prov,
-		Dialer:   tm,
-		Router:   core.NewRouter(rule.NewEngine(nil, rule.TargetDirect, nil, false)),
+		Provider:     prov,
+		Outbounds:    []core.Outbound{core.NewDirectOutbound(nil), nil, core.NewWireOutbound("tm", tm, nil)},
+		DirectTarget: rule.Target(0),
+		Router:       core.NewRouter(rule.NewEngine(nil, rule.Target(2), nil, true)),
 	})
 	if err := tunnel.Start(context.Background()); err != nil {
 		t.Fatal(err)

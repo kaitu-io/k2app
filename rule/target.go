@@ -1,41 +1,14 @@
 package rule
 
-import (
-	"fmt"
-	"strings"
-)
+import "fmt"
 
+// Target is an opaque outbound index assigned by the engine builder.
+// The rule engine stores and returns these values without interpreting them.
+// Convention: 0 = direct, 1 = reject, 2+ = wire outbounds (k2v5, k2p, etc.).
 type Target uint8
 
-const (
-	TargetDirect Target = 0
-	TargetProxy  Target = 1
-	TargetReject Target = 2
-)
-
 func (t Target) String() string {
-	switch t {
-	case TargetDirect:
-		return "direct"
-	case TargetProxy:
-		return "proxy"
-	case TargetReject:
-		return "reject"
-	default:
-		return fmt.Sprintf("unknown(%d)", t)
-	}
-}
-
-// ParseVia converts a route "via" string to a Target.
-func ParseVia(via string) Target {
-	switch {
-	case strings.HasPrefix(via, "k2v5://"):
-		return TargetProxy
-	case via == "reject":
-		return TargetReject
-	default:
-		return TargetDirect
-	}
+	return fmt.Sprintf("outbound(%d)", t)
 }
 
 type MatchConfig struct {

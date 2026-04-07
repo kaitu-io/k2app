@@ -50,14 +50,14 @@ func TestUpdater_TriggersReload(t *testing.T) {
 	})
 	initialIdx := Index([]*Bundle{initialBundle})
 	initialRoutes := []RouteEntry{
-		{Target: TargetProxy, Sets: bindSets(initialIdx, "google")},
+		{Target: Target(2), Sets: bindSets(initialIdx, "google")},
 	}
-	eng := NewEngine(initialRoutes, TargetDirect, []*Bundle{initialBundle}, false)
+	eng := NewEngine(initialRoutes, Target(0), []*Bundle{initialBundle}, false)
 	defer eng.Close()
 
 	// Confirm initial state: youtube.com does NOT match proxy.
-	if got := eng.Match("youtube.com"); got != TargetDirect {
-		t.Fatalf("before reload: Match(youtube.com) = %v, want %v", got, TargetDirect)
+	if got := eng.Match("youtube.com"); got != Target(0) {
+		t.Fatalf("before reload: Match(youtube.com) = %v, want %v", got, Target(0))
 	}
 
 	// RebuildFunc: loads bundles from cacheDir, builds routes with google→proxy.
@@ -68,7 +68,7 @@ func TestUpdater_TriggersReload(t *testing.T) {
 		}
 		idx := Index(bundles)
 		routes := []RouteEntry{
-			{Target: TargetProxy, Sets: bindSets(idx, "google")},
+			{Target: Target(2), Sets: bindSets(idx, "google")},
 		}
 		return routes, bundles, nil
 	}
@@ -89,11 +89,11 @@ func TestUpdater_TriggersReload(t *testing.T) {
 	// Wait up to 2s for the reload to happen.
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if eng.Match("youtube.com") == TargetProxy {
+		if eng.Match("youtube.com") == Target(2) {
 			return // success
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
 
-	t.Fatalf("after 2s: Match(youtube.com) = %v, want %v", eng.Match("youtube.com"), TargetProxy)
+	t.Fatalf("after 2s: Match(youtube.com) = %v, want %v", eng.Match("youtube.com"), Target(2))
 }

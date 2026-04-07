@@ -70,8 +70,10 @@ type Middleware struct {
 	metrics *Metrics
 
 	// Rule functions (injected by engine)
-	matchRule  func(string) rule.Target
-	setTmpRule func(string, rule.Target)
+	matchRule    func(string) rule.Target
+	setTmpRule   func(string, rule.Target)
+	dnsRouter    func(rule.Target) bool // true = proxy DNS, false = direct DNS
+	rejectTarget rule.Target            // outbound index for reject
 
 	// Writer for sending raw IP packet responses (L3 mode, nil for L4)
 	writer io.Writer
@@ -100,26 +102,34 @@ type MiddlewareConfig struct {
 	Hosts     *HostsFile
 	Filter    *Filter
 	Metrics    *Metrics
-	MatchRule  func(string) rule.Target
-	SetTmpRule func(string, rule.Target)
-	Writer     io.Writer       // nil for L4-only usage
-	EngineCtx  context.Context // engine root context for background prefresh (nil disables)
+	MatchRule     func(string) rule.Target
+	SetTmpRule    func(string, rule.Target)
+	DNSRouter     func(rule.Target) bool // true = proxy DNS, false = direct DNS
+	RejectTarget  rule.Target            // outbound index for reject (engine provides)
+	Writer        io.Writer              // nil for L4-only usage
+	EngineCtx     context.Context        // engine root context for background prefresh (nil disables)
 }
 
 // NewMiddleware creates a new DNS middleware
 func NewMiddleware(cfg MiddlewareConfig) *Middleware {
+	rejectTarget := cfg.RejectTarget
+	if rejectTarget == 0 {
+		rejectTarget = rule.Target(1) // default: index 1 (reject)
+	}
 	m := &Middleware{
-		directDNS:  cfg.DirectDNS,
-		proxyDNS:   cfg.ProxyDNS,
-		dnsCache:   cfg.DNSCache,
-		hosts:      cfg.Hosts,
-		filter:     cfg.Filter,
-		metrics:    cfg.Metrics,
-		matchRule:  cfg.MatchRule,
-		setTmpRule: cfg.SetTmpRule,
-		writer:     cfg.Writer,
-		engineCtx:  cfg.EngineCtx,
-		querySem:   make(chan struct{}, maxConcurrentUpstream),
+		directDNS:    cfg.DirectDNS,
+		proxyDNS:     cfg.ProxyDNS,
+		dnsCache:     cfg.DNSCache,
+		hosts:        cfg.Hosts,
+		filter:       cfg.Filter,
+		metrics:      cfg.Metrics,
+		matchRule:    cfg.MatchRule,
+		setTmpRule:   cfg.SetTmpRule,
+		dnsRouter:    cfg.DNSRouter,
+		rejectTarget: rejectTarget,
+		writer:       cfg.Writer,
+		engineCtx:    cfg.EngineCtx,
+		querySem:     make(chan struct{}, maxConcurrentUpstream),
 	}
 	if cfg.EngineCtx != nil {
 		m.epochCtx, m.epochCancel = context.WithCancel(cfg.EngineCtx)
@@ -227,7 +237,7 @@ func (m *Middleware) processQuery(ctx context.Context, query *dns.Msg) (*dns.Msg
 			if nearExpiry {
 				// Lazy rule match — only on near-expiry, not every cache hit.
 				action := m.matchRule(domain)
-				if action != rule.TargetReject {
+				if action != m.rejectTarget {
 					m.triggerPrefresh(domain, query.Question[0].Qtype, action)
 				}
 			}
@@ -246,7 +256,7 @@ func (m *Middleware) processQuery(ctx context.Context, query *dns.Msg) (*dns.Msg
 	action := m.matchRule(domain)
 
 	// Reject is instant — no upstream query, no dedup needed.
-	if action == rule.TargetReject {
+	if action == m.rejectTarget {
 		slog.Debug("DNS routed reject", "domain", domain)
 		return createNXDOMAIN(query), nil, nil
 	}
@@ -415,24 +425,16 @@ func (m *Middleware) queryUpstream(ctx context.Context, domain string, action ru
 
 	start := time.Now()
 
-	switch action {
-	case rule.TargetDirect:
-		m.metrics.IncrDirect()
-		resp, err := m.directDNS.Query(ctx, query)
-		elapsed := time.Since(start)
-		if err != nil {
-			m.metrics.IncrError()
-			slog.Warn("DNS direct query failed", "domain", domain, "err", err)
-			slog.Warn("DIAG: dns-fail", "domain", domain, "upstream", "direct", "err", err)
-			return nil, err
-		}
-		if elapsed > 500*time.Millisecond {
-			slog.Info("DIAG: dns-slow", "domain", domain, "upstream", "direct", "latencyMs", elapsed.Milliseconds())
-		}
-		slog.Debug("DNS routed direct", "domain", domain)
-		return resp, nil
+	// Determine DNS upstream: dnsRouter decides per-outbound; backward compat:
+	// if no dnsRouter set, any target other than direct/reject uses proxy DNS.
+	var useProxyDNS bool
+	if m.dnsRouter != nil {
+		useProxyDNS = m.dnsRouter(action)
+	} else {
+		useProxyDNS = action != rule.Target(0) && action != m.rejectTarget
+	}
 
-	case rule.TargetProxy:
+	if useProxyDNS {
 		m.metrics.IncrProxy()
 		resp, err := m.proxyDNS.Query(ctx, query)
 		elapsed := time.Since(start)
@@ -448,10 +450,23 @@ func (m *Middleware) queryUpstream(ctx context.Context, domain string, action ru
 		}
 		slog.Debug("DNS routed proxy", "domain", domain)
 		return resp, nil
-
-	default:
-		return nil, fmt.Errorf("unexpected routing action: %d", action)
 	}
+
+	// Direct DNS (default path for direct, k2p, and unknown outbounds).
+	m.metrics.IncrDirect()
+	resp, err := m.directDNS.Query(ctx, query)
+	elapsed := time.Since(start)
+	if err != nil {
+		m.metrics.IncrError()
+		slog.Warn("DNS direct query failed", "domain", domain, "err", err)
+		slog.Warn("DIAG: dns-fail", "domain", domain, "upstream", "direct", "err", err)
+		return nil, err
+	}
+	if elapsed > 500*time.Millisecond {
+		slog.Info("DIAG: dns-slow", "domain", domain, "upstream", "direct", "latencyMs", elapsed.Milliseconds())
+	}
+	slog.Debug("DNS routed direct", "domain", domain)
+	return resp, nil
 }
 
 // HandleDNSQuery processes a DNS query from L3 packets (TUN device).

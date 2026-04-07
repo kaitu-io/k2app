@@ -59,10 +59,10 @@ func TestIntegration_RealBundles(t *testing.T) {
 	cnSets := resolveNames(idx, []string{"geoip-cn", "cn-sites", "bilibili"})
 
 	entries := []rule.RouteEntry{
-		{Target: rule.TargetProxy, Sets: overseasSets},
-		{Target: rule.TargetDirect, Sets: cnSets},
+		{Target: rule.Target(2), Sets: overseasSets},
+		{Target: rule.Target(0), Sets: cnSets},
 	}
-	engine := rule.NewEngine(entries, rule.TargetDirect, bundles, false)
+	engine := rule.NewEngine(entries, rule.Target(0), bundles, false)
 	defer engine.Close()
 
 	// Domain matching tests.
@@ -70,17 +70,17 @@ func TestIntegration_RealBundles(t *testing.T) {
 		domain string
 		want   rule.Target
 	}{
-		{"www.google.com", rule.TargetProxy},
-		{"youtube.com", rule.TargetProxy},
-		{"facebook.com", rule.TargetProxy},
-		{"api.openai.com", rule.TargetProxy},
-		{"github.com", rule.TargetProxy},
-		{"t.me", rule.TargetProxy},
-		{"web.telegram.org", rule.TargetProxy},
-		{"bilibili.com", rule.TargetDirect},
-		{"www.bilibili.com", rule.TargetDirect},
-		{"example.com", rule.TargetDirect},       // fallback
-		{"randomsite.xyz", rule.TargetDirect},     // fallback
+		{"www.google.com", rule.Target(2)},
+		{"youtube.com", rule.Target(2)},
+		{"facebook.com", rule.Target(2)},
+		{"api.openai.com", rule.Target(2)},
+		{"github.com", rule.Target(2)},
+		{"t.me", rule.Target(2)},
+		{"web.telegram.org", rule.Target(2)},
+		{"bilibili.com", rule.Target(0)},
+		{"www.bilibili.com", rule.Target(0)},
+		{"example.com", rule.Target(0)},       // fallback
+		{"randomsite.xyz", rule.Target(0)},     // fallback
 	}
 	for _, tc := range domainTests {
 		got := engine.Match(tc.domain)
@@ -95,11 +95,11 @@ func TestIntegration_RealBundles(t *testing.T) {
 		want rule.Target
 		desc string
 	}{
-		{"8.8.8.8", rule.TargetProxy, "Google DNS"},
-		{"8.8.4.4", rule.TargetProxy, "Google DNS secondary"},
-		{"149.154.167.50", rule.TargetProxy, "Telegram DC2"},
-		{"91.108.56.100", rule.TargetProxy, "Telegram"},
-		{"104.16.0.1", rule.TargetProxy, "Cloudflare CDN"},
+		{"8.8.8.8", rule.Target(2), "Google DNS"},
+		{"8.8.4.4", rule.Target(2), "Google DNS secondary"},
+		{"149.154.167.50", rule.Target(2), "Telegram DC2"},
+		{"91.108.56.100", rule.Target(2), "Telegram"},
+		{"104.16.0.1", rule.Target(2), "Cloudflare CDN"},
 	}
 	for _, tc := range ipTests {
 		got := engine.Match(tc.ip)

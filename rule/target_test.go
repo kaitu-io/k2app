@@ -9,10 +9,11 @@ func TestTargetString(t *testing.T) {
 		target Target
 		want   string
 	}{
-		{TargetDirect, "direct"},
-		{TargetProxy, "proxy"},
-		{TargetReject, "reject"},
-		{Target(99), "unknown(99)"},
+		{Target(0), "outbound(0)"},
+		{Target(1), "outbound(1)"},
+		{Target(2), "outbound(2)"},
+		{Target(3), "outbound(3)"},
+		{Target(99), "outbound(99)"},
 	}
 	for _, tt := range tests {
 		if got := tt.target.String(); got != tt.want {
@@ -21,24 +22,6 @@ func TestTargetString(t *testing.T) {
 	}
 }
 
-func TestParseVia(t *testing.T) {
-	tests := []struct {
-		via  string
-		want Target
-	}{
-		{"direct", TargetDirect},
-		{"reject", TargetReject},
-		{"k2v5://example.com:443", TargetProxy},
-		{"k2v5://10.0.0.1:8443?insecure=1", TargetProxy},
-		{"", TargetDirect},
-		{"something-unknown", TargetDirect},
-	}
-	for _, tt := range tests {
-		if got := ParseVia(tt.via); got != tt.want {
-			t.Errorf("ParseVia(%q) = %v, want %v", tt.via, got, tt.want)
-		}
-	}
-}
 
 func TestExpandPreset(t *testing.T) {
 	// "overseas" preset should include well-known names.

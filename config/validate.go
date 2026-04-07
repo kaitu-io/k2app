@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net"
+	"net/netip"
 	"net/url"
 	"strings"
 )
@@ -130,4 +131,82 @@ func validateLogLevel(level string) error {
 		return fmt.Errorf("must be one of debug/info/warn/error, got %q", level)
 	}
 	return nil
+}
+
+// ValidateRouteCIDRConflicts checks for CIDR conflicts between route ip_cidr
+// entries and local network interfaces. Returns an error if a route's CIDR
+// overlaps with a local interface, which would cause routing ambiguity.
+func ValidateRouteCIDRConflicts(routes []RouteConfig) error {
+	localNets, err := localCIDRs()
+	if err != nil || len(localNets) == 0 {
+		return nil // can't check, proceed
+	}
+
+	for _, route := range routes {
+		if route.Via == "direct" || route.Via == "reject" || route.Via == "" {
+			continue
+		}
+		for _, cidr := range route.Match.IPCIDR {
+			prefix, parseErr := netip.ParsePrefix(cidr)
+			if parseErr != nil {
+				continue
+			}
+			for _, local := range localNets {
+				if prefixesOverlap(prefix, local) {
+					return fmt.Errorf("route via %s has ip_cidr %s which overlaps with local interface %s — "+
+						"use specific host routes (e.g. /32) to avoid routing conflicts",
+						truncateVia(route.Via), cidr, local)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func localCIDRs() ([]netip.Prefix, error) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+	var result []netip.Prefix
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			ipnet, ok := addr.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			ip4 := ipnet.IP.To4()
+			if ip4 == nil || !ip4.IsPrivate() {
+				continue
+			}
+			a, ok := netip.AddrFromSlice(ip4)
+			if !ok {
+				continue
+			}
+			ones, _ := ipnet.Mask.Size()
+			result = append(result, netip.PrefixFrom(a.Unmap(), ones).Masked())
+		}
+	}
+	return result, nil
+}
+
+func prefixesOverlap(a, b netip.Prefix) bool {
+	return a.Contains(b.Addr()) || b.Contains(a.Addr())
+}
+
+func truncateVia(via string) string {
+	if idx := strings.Index(via, "@"); idx != -1 {
+		schemeEnd := strings.Index(via, "://")
+		if schemeEnd >= 0 {
+			return via[:schemeEnd+3] + "***@" + via[idx+1:]
+		}
+	}
+	return via
 }
