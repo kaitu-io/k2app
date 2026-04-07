@@ -65,8 +65,6 @@ func main() {
 		cmdService(rest)
 	case "upgrade":
 		cmdUpgrade(rest)
-	case "android-install":
-		cmdAndroidInstall(rest)
 	case "healthcheck":
 		cmdHealthcheck()
 	case "version":
@@ -119,8 +117,6 @@ Commands:
   service   System service (install, uninstall)       [root]
   upgrade   Self-update
   version   Version info
-
-  android-install             Install APK to USB-connected Android phone
 
 Flags:
   --json    Machine-readable JSON output
