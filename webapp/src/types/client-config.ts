@@ -6,9 +6,20 @@
  * then passed to _k2.run('up', config).
  */
 
+export interface RouteConfig {
+  via: string;
+  match: {
+    all?: boolean;
+    domain_suffix?: string[];
+    ip_cidr?: string[];
+    [key: string]: any;
+  };
+}
+
 export interface ClientConfig {
   server?: string;
   mode?: 'tun' | 'proxy';
+  routes?: RouteConfig[];
   tun?: { ipv4?: string; ipv6?: string };
   rule?: {
     global?: boolean;
