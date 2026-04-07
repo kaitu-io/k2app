@@ -67,12 +67,8 @@ func main() {
 		cmdUpgrade(rest)
 	case "android-install":
 		cmdAndroidInstall(rest)
-	case "peer":
-		cmdPeer(rest)
 	case "healthcheck":
 		cmdHealthcheck()
-	case "demo-config":
-		fmt.Print(demoConfig)
 	case "version":
 		fmt.Printf("k2 %s (%s)\n", version, commit)
 	case "help", "--help", "-h":
@@ -124,9 +120,7 @@ Commands:
   upgrade   Self-update
   version   Version info
 
-  peer          Home peer access (setup, run)
   android-install             Install APK to USB-connected Android phone
-  demo-config                 Print example client config (YAML)
 
 Flags:
   --json    Machine-readable JSON output

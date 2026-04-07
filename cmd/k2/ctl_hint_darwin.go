@@ -2,13 +2,7 @@
 
 package main
 
-// daemonNotRunningHint returns a platform-aware error message shown when
-// k2 ctl cannot connect to the daemon (connection refused).
+// daemonNotRunningHint returns a platform-aware hint for the daemon-not-running error.
 func daemonNotRunningHint() string {
-	return `Error: daemon not running
-
-  First time?     k2 setup <URL>
-  Already set up? sudo launchctl start kaitu
-
-`
+	return "run 'k2 setup <URL>' or 'sudo launchctl start kaitu'"
 }
