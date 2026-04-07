@@ -187,6 +187,53 @@ export interface UsageOverviewResponse {
   k2sDownloads: { date: string; count: number }[];
 }
 
+export interface ConnectionRatingStatisticsResponse {
+  summary: {
+    total: number;
+    good: number;
+    bad: number;
+    goodRate: number;
+  };
+  trend: Array<{
+    date: string;
+    total: number;
+    good: number;
+    bad: number;
+    goodRate: number;
+  }>;
+  byServer: Array<{
+    domain: string;
+    name: string;
+    country: string;
+    total: number;
+    good: number;
+    bad: number;
+    goodRate: number;
+  }>;
+  byISP: Array<{
+    isp: string;
+    country: string;
+    total: number;
+    good: number;
+    goodRate: number;
+  }>;
+  byPlatform: Array<{
+    os: string;
+    appVersion: string;
+    total: number;
+    good: number;
+    goodRate: number;
+  }>;
+  byUser: Array<{
+    userId: number;
+    email: string;
+    total: number;
+    good: number;
+    bad: number;
+    goodRate: number;
+  }>;
+}
+
 export interface AdminTestDeviceData {
   udid: string;
   password: string;
@@ -1833,6 +1880,16 @@ export const api = {
   // Get order statistics (aggregated counts and revenue)
   async getOrderStatistics(): Promise<OrderStatisticsResponse> {
     return this.request<OrderStatisticsResponse>('/app/orders/statistics');
+  },
+
+  // ==================== Connection Rating Statistics ====================
+
+  async getConnectionRatingStatistics(
+    period: '7d' | '30d' | '90d' = '7d'
+  ): Promise<ConnectionRatingStatisticsResponse> {
+    return this.request<ConnectionRatingStatisticsResponse>(
+      `/app/connection-ratings/statistics?period=${period}`
+    );
   },
 
   // ==================== Usage Analytics ====================
