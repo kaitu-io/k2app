@@ -35,8 +35,14 @@ config.yml
 
 /k2
 /k2s
+/k2r
+/gen-config
 /gen-bench-config
+*.test
+session
 .claude/agent-memory/
+test/k2r-uat/.build/
+test/live/
 
 # Cloud webapp (keep default placeholder, ignore downloaded dist)
 cloud/dist/*
