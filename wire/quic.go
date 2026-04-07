@@ -1568,7 +1568,7 @@ func (c *quicUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 		c.rxPackets.Add(1)
 		c.rxBytes.Add(int64(n))
 		slog.Debug("quicUDPConn: ReadFrom ok", "sessionID", c.sessionID, "target", c.targetAddr, "len", n)
-		addr, _ := net.ResolveUDPAddr("udp", c.targetAddr)
+		addr, _ := net.ResolveUDPAddr("udp4", c.targetAddr)
 		return n, addr, nil
 	case <-c.reaped:
 		return 0, nil, net.ErrClosed
@@ -2062,7 +2062,7 @@ func (c *quicStreamUDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	select {
 	case frame := <-c.readCh:
 		n := copy(b, frame.Payload)
-		addr, _ := net.ResolveUDPAddr("udp", c.targetAddr)
+		addr, _ := net.ResolveUDPAddr("udp4", c.targetAddr)
 		return n, addr, nil
 	case <-c.reaped:
 		return 0, nil, net.ErrClosed
