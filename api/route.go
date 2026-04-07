@@ -161,6 +161,8 @@ func SetupRouter() *gin.Engine {
 			user.POST("/password", AuthRequired(), api_set_password)
 			// OTT 签发 — webapp → web auth handoff
 			user.POST("/ott", AuthRequired(), api_issue_ott)
+			// 连接质量评分
+			user.POST("/connection-rating", AuthRequired(), api_create_connection_rating)
 		}
 
 		// 分销商管理
@@ -285,6 +287,7 @@ func SetupRouter() *gin.Engine {
 		// User and Order statistics
 		admin.GET("/users/statistics", api_admin_get_user_statistics)
 		admin.GET("/orders/statistics", api_admin_get_order_statistics)
+		admin.GET("/connection-ratings/statistics", api_admin_connection_rating_statistics)
 
 		// 分销商管理 — 已移至 opsAdmin 组（RoleMarketing）
 

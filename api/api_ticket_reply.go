@@ -20,7 +20,7 @@ func api_user_list_tickets(c *gin.Context) {
 
 	pagination := PaginationFromRequest(c)
 
-	query := db.Get().Model(&FeedbackTicket{}).Where("user_id = ?", userID)
+	query := db.Get().Model(&FeedbackTicket{}).Where("user_id = ? AND auto_generated = ?", userID, false)
 
 	if err := query.Count(&pagination.Total).Error; err != nil {
 		log.Errorf(c, "api_user_list_tickets: failed to count tickets: %v", err)
@@ -219,7 +219,7 @@ func api_user_tickets_unread(c *gin.Context) {
 	}
 
 	var count int64
-	db.Get().Model(&FeedbackTicket{}).Where("user_id = ?", userID).
+	db.Get().Model(&FeedbackTicket{}).Where("user_id = ? AND auto_generated = ?", userID, false).
 		Select("COALESCE(SUM(user_unread), 0)").Scan(&count)
 
 	resp := UnreadCountResponse{Unread: int(count)}
