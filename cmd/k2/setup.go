@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/kaitu-io/k2/config"
-	"github.com/kaitu-io/k2/daemon"
 )
 
 // cmdSetup generates a client config (or copies an existing one), installs the
@@ -75,9 +74,8 @@ func cmdSetup(args []string) {
 	}
 
 	// Install and start the system service.
-	svc := daemon.NewServiceManager()
 	fmt.Println("Installing service...")
-	if err := svc.Install(); err != nil {
+	if err := installService(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: install service: %v\n", err)
 		os.Exit(1)
 	}

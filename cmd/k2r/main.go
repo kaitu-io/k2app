@@ -101,7 +101,7 @@ func cmdSetup(args []string) {
 		os.Exit(1)
 	}
 
-	if err := gateway.InstallService(); err != nil {
+	if err := InstallService(); err != nil {
 		fmt.Fprintf(os.Stderr, "install service: %v\n", err)
 		os.Exit(1)
 	}
@@ -174,14 +174,14 @@ func cmdService(args []string) {
 
 	switch args[0] {
 	case "install":
-		if err := gateway.InstallService(); err != nil {
+		if err := InstallService(); err != nil {
 			fmt.Fprintf(os.Stderr, "install: %v\n", err)
 			os.Exit(1)
 		}
 		fmt.Println("k2r service installed and started.")
 
 	case "uninstall":
-		if err := gateway.UninstallService(); err != nil {
+		if err := UninstallService(); err != nil {
 			fmt.Fprintf(os.Stderr, "uninstall: %v\n", err)
 			os.Exit(1)
 		}

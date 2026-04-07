@@ -1,12 +1,13 @@
 //go:build linux
 
-package gateway
+package main
 
 import (
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 const (
@@ -119,5 +120,13 @@ func uninstallOpenWRT() error {
 	_ = runCmd(initdScript, "stop")
 	_ = runCmd(initdScript, "disable")
 	os.Remove(initdScript)
+	return nil
+}
+
+func runCmd(name string, args ...string) error {
+	cmd := exec.Command(name, args...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("%s %s: %s: %w", name, strings.Join(args, " "), out, err)
+	}
 	return nil
 }

@@ -43,6 +43,9 @@ k2 help [command]               Help for any command
 - `ctl_hint_darwin.go` / `ctl_hint_linux.go` / `ctl_hint_windows.go` — Platform "daemon not running" hints
 - `setup.go` — `k2 setup`: first-time config + service install
 - `service.go` — `k2 service`: install/uninstall system service
+- `service_darwin.go` — macOS launchd plist + watchdog plist
+- `service_linux.go` — Linux systemd unit + OpenWRT init.d/procd
+- `service_windows.go` — Windows Service (SCM)
 - `process.go` — Daemon start, PID monitoring
 - `upgrade.go` — `k2 upgrade`: self-update binary from CDN
 - `android_install.go` — `k2 android-install`: interactive CLI for USB APK install (adb detect → download → push → pm install)
