@@ -665,7 +665,44 @@ func (d *Daemon) handleStatus(w http.ResponseWriter) {
 }
 ```
 
-Note: Check the existing `handleStatus` implementation first — it may already marshal status differently. Adapt the above to match the existing pattern. The key addition is the `network_env` field in the data map.
+The existing `statusInfo()` is in `daemon.go:423` and returns `map[string]any`. The field is `d.engine` (not `d.eng`). Modify `statusInfo()` by adding after the `if cfg != nil` block:
+
+```go
+// Include network environment if available.
+eng := d.engine  // already read under d.mu.RLock above — need to restructure
+```
+
+Actually, `statusInfo()` reads `d.lastStatus` and `d.lastConfig` under RLock but not `d.engine`. We need to also read `d.engine` under the same RLock. Modify the function:
+
+```go
+func (d *Daemon) statusInfo() map[string]any {
+	d.mu.RLock()
+	s := d.lastStatus
+	cfg := d.lastConfig
+	eng := d.engine
+	d.mu.RUnlock()
+
+	info := map[string]any{
+		"state": s.State,
+	}
+	if s.Error != nil {
+		info["error"] = s.Error
+	}
+	if s.State == engine.StateConnected && !s.ConnectedAt.IsZero() {
+		info["connected_at"] = s.ConnectedAt.Format(time.RFC3339)
+		info["uptime_seconds"] = int(time.Since(s.ConnectedAt).Seconds())
+	}
+	if cfg != nil {
+		info["config"] = cfg
+	}
+	if eng != nil {
+		if env := eng.NetworkEnv(); env != nil {
+			info["network_env"] = env
+		}
+	}
+	return info
+}
+```
 
 - [ ] **Step 2: Verify build**
 
@@ -675,7 +712,7 @@ Expected: Build succeeds
 - [ ] **Step 3: Commit**
 
 ```bash
-cd k2 && git add daemon/api.go
+cd k2 && git add daemon/daemon.go
 git commit -m "feat(daemon): include network_env in status response"
 ```
 
@@ -1400,13 +1437,103 @@ const handleGood = useCallback(() => {
 
 - [ ] **Step 2: Update tests**
 
-Update the test file to verify good also submits a rating, and bad submits both ticket + rating with `auto_generated: true`.
+In `DisconnectFeedbackDialog.test.tsx`, add `_k2` mock to `beforeEach`:
 
-Key changes in `DisconnectFeedbackDialog.test.tsx`:
+```typescript
+(window as any)._k2 = {
+  run: vi.fn().mockResolvedValue({
+    code: 0,
+    data: { publicIP: '1.2.3.4', isp: 'Test ISP', routerBrand: 'TP-LINK' },
+  }),
+};
+```
 
-- "Good" test: verify `cloudApi.post` is called with `/api/user/connection-rating` and `rating: 'good'`
-- "Bad" test: verify `auto_generated: true` in ticket call, and also calls `/api/user/connection-rating` with `rating: 'bad'`
-- Add mock for `window._k2.run` returning network env data
+Add to `afterEach`:
+
+```typescript
+delete (window as any)._k2;
+```
+
+**Change the "good" test** — it now submits a rating:
+
+```typescript
+it('点击"好"关闭 dialog 并提交 good rating', async () => {
+  mockStoreState.pendingFeedback = true;
+  mockStoreState.lastConnectionInfo = {
+    domain: 'test.example.com',
+    name: 'Tokyo-01',
+    country: 'JP',
+    source: 'cloud',
+    durationSec: 60,
+    ruleMode: 'global',
+    os: 'macos',
+    appVersion: '0.4.0',
+  };
+
+  render(<DisconnectFeedbackDialog />);
+  fireEvent.click(screen.getByText('Good'));
+
+  await waitFor(() => {
+    expect(screen.queryByText('How was your connection?')).not.toBeInTheDocument();
+  });
+  // No toast for good
+  expect(mockShowAlert).not.toHaveBeenCalled();
+  // Rating submitted
+  await waitFor(() => {
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/user/connection-rating',
+      expect.objectContaining({ rating: 'good' }),
+    );
+  });
+  // No ticket created
+  const ticketCalls = mockPost.mock.calls.filter(
+    (call: any[]) => call[0] === '/api/user/ticket',
+  );
+  expect(ticketCalls).toHaveLength(0);
+});
+```
+
+**Update the "bad" test** — verify `auto_generated: true` and rating:
+
+```typescript
+it('点击"不好"提交 ticket (auto_generated) + rating', async () => {
+  mockStoreState.pendingFeedback = true;
+  mockStoreState.lastConnectionInfo = {
+    domain: 'test.example.com',
+    name: 'Tokyo-01',
+    country: 'JP',
+    source: 'cloud',
+    durationSec: 300,
+    ruleMode: 'chnroute',
+    os: 'macos',
+    appVersion: '0.4.0',
+  };
+
+  render(<DisconnectFeedbackDialog />);
+  fireEvent.click(screen.getByText('Bad'));
+
+  await waitFor(() => {
+    expect(screen.queryByText('How was your connection?')).not.toBeInTheDocument();
+  });
+  expect(mockShowAlert).toHaveBeenCalledWith('Thanks', 'info');
+
+  // Ticket with auto_generated flag
+  await waitFor(() => {
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/user/ticket',
+      expect.objectContaining({ auto_generated: true }),
+    );
+  });
+
+  // Rating also submitted
+  await waitFor(() => {
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/user/connection-rating',
+      expect.objectContaining({ rating: 'bad' }),
+    );
+  });
+});
+```
 
 - [ ] **Step 3: Run tests**
 
@@ -1454,7 +1581,7 @@ Add handler:
 ```go
 func (d *Daemon) handleNetworkEnv(w http.ResponseWriter) {
 	d.mu.RLock()
-	eng := d.eng
+	eng := d.engine
 	d.mu.RUnlock()
 
 	if eng == nil {
@@ -1769,7 +1896,7 @@ export function ConnectionQualityTab() {
         </Card>
       </div>
 
-      {/* Trend */}
+      {/* Trend — hand-rolled bar chart (matches usages page pattern) */}
       <Card>
         <CardHeader>
           <CardTitle>好评率趋势</CardTitle>
@@ -1778,28 +1905,38 @@ export function ConnectionQualityTab() {
           {stats.trend.length === 0 ? (
             <div className="text-muted-foreground text-center py-8">暂无数据</div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>日期</TableHead>
-                  <TableHead className="text-right">好评</TableHead>
-                  <TableHead className="text-right">差评</TableHead>
-                  <TableHead className="text-right">总计</TableHead>
-                  <TableHead className="text-right">好评率</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {stats.trend.map((item) => (
-                  <TableRow key={item.date}>
-                    <TableCell>{item.date}</TableCell>
-                    <TableCell className="text-right">{item.good}</TableCell>
-                    <TableCell className="text-right">{item.bad}</TableCell>
-                    <TableCell className="text-right">{item.total}</TableCell>
-                    <TableCell className="text-right">{formatRate(item.goodRate)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <div className="flex items-end gap-1 h-48 overflow-x-auto">
+              {stats.trend.map((item) => {
+                const goodPct = item.total > 0 ? (item.good / item.total) * 100 : 0;
+                const badPct = item.total > 0 ? (item.bad / item.total) * 100 : 0;
+                return (
+                  <div
+                    key={item.date}
+                    className="flex-shrink-0 flex flex-col items-center gap-1"
+                    style={{ width: stats.trend.length > 30 ? '12px' : '24px' }}
+                    title={`${item.date}: ${formatRate(item.goodRate)} (${item.good}/${item.total})`}
+                  >
+                    <div className="text-xs text-muted-foreground">
+                      {item.total > 0 ? formatRate(item.goodRate) : ''}
+                    </div>
+                    <div className="w-full flex flex-col justify-end" style={{ height: '100%' }}>
+                      {/* Bad (red) stacked on top of good (green) */}
+                      <div
+                        className="w-full bg-red-500 rounded-t"
+                        style={{ height: `${badPct}%`, minHeight: item.bad > 0 ? '2px' : '0' }}
+                      />
+                      <div
+                        className="w-full bg-green-500"
+                        style={{ height: `${goodPct}%`, minHeight: item.good > 0 ? '2px' : '0' }}
+                      />
+                    </div>
+                    <div className="text-xs text-muted-foreground rotate-45 origin-left whitespace-nowrap">
+                      {item.date.slice(5, 10)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </CardContent>
       </Card>
