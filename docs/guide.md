@@ -89,11 +89,11 @@ Most users don't need config files. For custom deployments:
 
 ```bash
 # Print example configs
-k2s demo-config > server.yml
-k2 demo-config > client.yml
+k2s config show > server.yml
+k2 config show > client.yml
 
 # Edit and run
-sudo k2s run -s server.yml
+sudo k2s run --foreground -c server.yml
 sudo k2 run -c client.yml
 ```
 

@@ -478,6 +478,7 @@ Concrete type assertions create hidden coupling. If a third transport is added (
 sniff/CLAUDE.md                Protocol sniffing (TLS/QUIC/HTTP/BT/STUN/DTLS detectors)
 cmd/k2/CLAUDE.md               Client CLI subcommands + dispatch
 cmd/k2s/CLAUDE.md              Server CLI + foreground/service mode
+cmd/k2r/CLAUDE.md              Gateway CLI subcommands + dispatch (Linux only)
 config/CLAUDE.md               ClientConfig + ServerConfig + YAML formats
 engine/CLAUDE.md               Unified tunnel lifecycle manager (state machine, EventHandler, Config assembly)
 core/CLAUDE.md                 L4 ClientTunnel, Router, ConnectionHandler
@@ -507,7 +508,7 @@ scripts/                       Install scripts (install-k2s.sh, install-k2.sh) +
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│ Platform Shell (daemon/ appext/)                        │
+│ Platform Shell (daemon/ appext/ gateway/)                │
 │   职责: 平台入口 + Config 组装 + 平台特有功能              │
 │   规则: 不管隧道状态——状态由 engine 管, shell 只透传        │
 ├─────────────────────────────────────────────────────────┤
@@ -532,12 +533,13 @@ scripts/                       Install scripts (install-k2s.sh, install-k2.sh) +
 ```
 Desktop:   CLI → HTTP → daemon.Daemon ──[builds Config]──→ engine.Engine.Start()
 App ext:   Native → appext.Engine ──[builds Config]──→ engine.Engine.Start()
+Gateway:   CLI → HTTP → gateway.Gateway ──[builds Config]──→ engine.Engine.Start()
                                                            ↓
                                                       engine assembles:
                                                       rule → wire → provider → tunnel → DNS
 ```
 
-Platform Shell (daemon/appext) assembles `engine.Config` with platform-specific fields (DirectDialer, NetworkMonitor for desktop; FileDescriptor for appext), then delegates all lifecycle to engine. Engine doesn't know or care which platform called it.
+Platform Shell (daemon/appext/gateway) assembles `engine.Config` with platform-specific fields (DirectDialer, NetworkMonitor for desktop; FileDescriptor for appext; TPROXY for gateway), then delegates all lifecycle to engine. Engine doesn't know or care which platform called it.
 
 ### Interfaces
 

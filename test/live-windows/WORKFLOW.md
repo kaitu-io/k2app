@@ -38,7 +38,7 @@ k2 TUN modifies routes + DNS, which can break SSH connectivity. Three safety lay
 ### Phase 3: Start Client (`03-start-client.sh`)
 - Start k2 daemon (admin)
 - Wait for HTTP API ready
-- Connect tunnel (`k2 ctl up`)
+- Connect tunnel (`k2 up`)
 - Verify TUN device created (sing-tun adapter)
 - Verify routing table updated
 - Verify SSH still works (safety check)
@@ -63,7 +63,7 @@ k2 TUN modifies routes + DNS, which can break SSH connectivity. Three safety lay
 - Restart k2 — should work after crash
 
 ### Phase 7: Stop & Cleanup (`07-stop-cleanup.sh`)
-- Graceful disconnect (k2 ctl down)
+- Graceful disconnect (k2 down)
 - Stop daemon
 - Verify TUN device removed
 - Verify routes restored
