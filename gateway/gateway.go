@@ -75,6 +75,10 @@ func (g *Gateway) Run(addr string) error {
 	mux.HandleFunc("/api/storage", g.handleStorage)
 	mux.HandleFunc("/api/platform", g.handlePlatform)
 
+	if webapp := newWebappHandler(g.version, g.commit, g.arch); webapp != nil {
+		mux.Handle("/", webapp)
+	}
+
 	g.httpServer = &http.Server{
 		Addr:    addr,
 		Handler: mux,

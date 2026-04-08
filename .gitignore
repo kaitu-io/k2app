@@ -49,6 +49,10 @@ cloud/dist/*
 !cloud/dist/index.html
 !cloud/dist/version.json
 
+# Gateway webapp (keep default placeholder, ignore built dist)
+gateway/dist/*
+!gateway/dist/index.html
+
 # Bench artifacts
 docker/bench/sing-box
 docker/bench/results/
