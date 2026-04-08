@@ -132,6 +132,7 @@ export interface IPlatform {
   // ====== 平台标识 ======
 
   os: 'windows' | 'macos' | 'linux' | 'ios' | 'android' | 'web';
+  platformType: 'desktop' | 'mobile' | 'gateway' | 'web';
   version: string;
   arch?: string;
   commit?: string;
@@ -244,6 +245,7 @@ declare global {
     _k2: IK2Vpn;
     _platform: IPlatform;
     __TAURI__?: any;
+    __K2_GATEWAY__?: { version: string; commit: string; arch: string };
   }
 }
 

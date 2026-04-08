@@ -57,6 +57,7 @@ export const standaloneK2: IK2Vpn = {
 export const standalonePlatform: IPlatform = {
   ...webPlatform,
   os: 'web',
+  platformType: 'web',
   version: 'standalone',
   arch: 'unknown',
   commit: typeof __K2_BUILD_COMMIT__ !== 'undefined' ? __K2_BUILD_COMMIT__ : '',

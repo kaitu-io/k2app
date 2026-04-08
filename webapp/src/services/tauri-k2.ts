@@ -218,6 +218,7 @@ export async function injectTauriGlobals(): Promise<void> {
 
   const tauriPlatform: IPlatform = {
     os: osMap[platformInfo.os] ?? 'linux',
+    platformType: 'desktop',
     version: platformInfo.version,
     arch: platformInfo.arch,
     commit: platformInfo.commit || '',

@@ -212,6 +212,7 @@ export async function injectCapacitorGlobals(): Promise<void> {
   // Build _platform: mobile capabilities
   const capacitorPlatform: IPlatform = {
     os: platform,
+    platformType: 'mobile',
     version: appVersion,
     arch: 'arm64',
     commit: typeof __K2_BUILD_COMMIT__ !== 'undefined' ? __K2_BUILD_COMMIT__ : '',
