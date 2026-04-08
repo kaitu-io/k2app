@@ -47,8 +47,6 @@ func main() {
 	rest := args[1:]
 
 	switch cmd {
-	case "connect":
-		os.Exit(cmdConnect(rest))
 	case "up":
 		os.Exit(cmdUp(rest))
 	case "down":
@@ -101,11 +99,9 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, `k2 — Kaitu network tunnel
 
 Quick start:
-  k2 connect <URL>          Connect (foreground, no setup needed)
   k2 setup <URL>            Install as system service + connect
 
 Commands:
-  connect   Connect to server (foreground)
   up        Connect via background daemon
   down      Disconnect
   status    Connection status
@@ -127,8 +123,6 @@ Flags:
 
 func printCommandHelp(cmd string) {
 	switch cmd {
-	case "connect":
-		cmdConnect([]string{"--help"})
 	case "up":
 		cmdUp([]string{"--help"})
 	case "setup":

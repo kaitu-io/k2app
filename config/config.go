@@ -38,19 +38,19 @@ type RouteConfig struct {
 	Match rule.MatchConfig `yaml:"match" json:"match"`
 }
 
-// IsAllProxy returns true if any route proxies all traffic through a wire outbound (k2v5 or k2p).
+// IsAllProxy returns true if any route proxies all traffic through a wire outbound (k2v5, k2p, or k2subs).
 func (c *ClientConfig) IsAllProxy() bool {
 	for _, r := range c.Routes {
-		if r.Match.All && (strings.HasPrefix(r.Via, "k2v5://") || strings.HasPrefix(r.Via, "k2p://")) {
+		if r.Match.All && IsOutboundURL(r.Via) {
 			return true
 		}
 	}
 	return false
 }
 
-// IsOutboundURL returns true if via is a wire outbound URL (k2v5 or k2p), not "direct" or "reject".
+// IsOutboundURL returns true if via is a wire outbound URL (k2v5, k2p, or k2subs), not "direct" or "reject".
 func IsOutboundURL(via string) bool {
-	return strings.HasPrefix(via, "k2v5://") || strings.HasPrefix(via, "k2p://")
+	return strings.HasPrefix(via, "k2v5://") || strings.HasPrefix(via, "k2p://") || strings.HasPrefix(via, "k2subs://")
 }
 
 // TunConfig contains TUN device configuration.
@@ -160,6 +160,18 @@ func ClientFromURL(wireURL string) *ClientConfig {
 	cfg := &ClientConfig{
 		Routes: []RouteConfig{
 			{Via: wireURL, Match: rule.MatchConfig{All: true}},
+		},
+	}
+	SetDefaults(cfg)
+	return cfg
+}
+
+// ClientFromSubsURL creates a ClientConfig from a k2subs:// subscription URL.
+// The URL is stored as-is in routes; resolution happens at engine start time.
+func ClientFromSubsURL(subsURL string) *ClientConfig {
+	cfg := &ClientConfig{
+		Routes: []RouteConfig{
+			{Via: subsURL, Match: rule.MatchConfig{All: true}},
 		},
 	}
 	SetDefaults(cfg)

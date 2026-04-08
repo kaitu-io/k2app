@@ -5,7 +5,6 @@ Entry point: `main.go` — `os.Args` dispatch, no framework.
 ## Subcommands
 
 ```
-k2 connect <URL>                 Direct connect (foreground, proxy mode, no root)
 k2 up [URL|config.yaml]         Connect via background daemon
 k2 down                         Disconnect
 k2 status                       Connection status
@@ -37,7 +36,6 @@ k2 help [command]               Help for any command
 
 - `main.go` — Subcommand dispatch, global flags (--json, --quiet, --help)
 - `output.go` — Output layer (human vs JSON switching)
-- `connect.go` — `k2 connect`: direct foreground tunnel (no daemon)
 - `ctl.go` — `k2 up/down/status`: IPC to daemon HTTP API
 - `ctl_hint_darwin.go` / `ctl_hint_linux.go` / `ctl_hint_windows.go` — Platform "daemon not running" hints
 - `setup.go` — `k2 setup`: first-time config + service install

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -404,6 +405,101 @@ func TestSubscription_CloseIdempotent(t *testing.T) {
 	s.StartRefresh(context.Background(), func() *http.Client { return http.DefaultClient })
 	s.Close()
 	s.Close()
+}
+
+// --- Task 10: End-to-end integration test ---
+
+func TestSubscription_EndToEnd(t *testing.T) {
+	// Simulates the full flow: parse → fetch → pick → failover → cache.
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, pass, ok := r.BasicAuth()
+		if !ok || user != "alice" || pass != "tok" {
+			w.WriteHeader(401)
+			return
+		}
+		if r.URL.Path != "/subs/team" {
+			w.WriteHeader(404)
+			return
+		}
+		refreshSecs := 300
+		json.NewEncoder(w).Encode(subsResponse{
+			Tunnels: []Tunnel{
+				{URL: "k2v5://srv-a:443?ech=abc&pin=sha256:xyz", Weight: 60},
+				{URL: "k2v5://srv-b:443?ech=def", Weight: 40},
+				{URL: "k2v5://srv-backup:443?ech=ghi", Weight: 0},
+			},
+			Refresh: &refreshSecs,
+		})
+	}))
+	defer srv.Close()
+
+	subsURL := "k2subs://alice:tok@" + srv.URL[len("https://"):] + "/subs/team?refresh=1800"
+	cacheDir := t.TempDir()
+
+	// 1. Parse.
+	sub, err := NewSubscription(subsURL, cacheDir)
+	if err != nil {
+		t.Fatalf("NewSubscription: %v", err)
+	}
+
+	// 2. Fetch.
+	if err := sub.Fetch(context.Background(), srv.Client()); err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+
+	// 3. Verify tunnels have injected credentials.
+	tunnels := sub.Tunnels()
+	if len(tunnels) != 3 {
+		t.Fatalf("got %d tunnels, want 3", len(tunnels))
+	}
+	for _, tun := range tunnels {
+		if !strings.Contains(tun.URL, "alice:tok@") {
+			t.Errorf("credentials not injected in %q", tun.URL)
+		}
+	}
+
+	// 4. Verify server refresh override.
+	sub.mu.Lock()
+	interval := sub.interval
+	sub.mu.Unlock()
+	if interval != 300*time.Second {
+		t.Errorf("interval = %v, want 300s", interval)
+	}
+
+	// 5. Pick — should never return backup (weight=0) normally.
+	for range 1000 {
+		tun, err := sub.Pick(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(tun.URL, "srv-backup") {
+			t.Fatal("weight=0 server should not be picked normally")
+		}
+	}
+
+	// 6. Failover — exclude both non-zero, should get backup.
+	var excludeA, excludeB string
+	for _, tun := range tunnels {
+		if strings.Contains(tun.URL, "srv-a") {
+			excludeA = tun.URL
+		}
+		if strings.Contains(tun.URL, "srv-b:") {
+			excludeB = tun.URL
+		}
+	}
+	backup, err := sub.Pick([]string{excludeA, excludeB})
+	if err != nil {
+		t.Fatalf("Pick with exclusions: %v", err)
+	}
+	if !strings.Contains(backup.URL, "srv-backup") {
+		t.Errorf("expected backup server, got %q", backup.URL)
+	}
+
+	// 7. Cache survives restart.
+	sub2, _ := NewSubscription(subsURL, cacheDir)
+	if len(sub2.Tunnels()) != 3 {
+		t.Fatalf("cache not loaded: got %d tunnels", len(sub2.Tunnels()))
+	}
 }
 
 // --- Helpers ---

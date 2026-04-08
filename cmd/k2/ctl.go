@@ -22,7 +22,7 @@ func cmdUp(args []string) int {
 Usage: k2 up [URL|config.yaml] [flags]
 
   No args: reconnect with saved config.
-  URL:     connect with k2v5:// URL.
+  URL:     connect with k2v5:// or k2subs:// URL.
   File:    connect with YAML config file.
 
 Flags:
@@ -35,7 +35,9 @@ Flags:
 	if fs.NArg() > 0 {
 		arg := fs.Arg(0)
 		var cfg *config.ClientConfig
-		if strings.Contains(arg, "://") {
+		if strings.HasPrefix(arg, "k2subs://") {
+			cfg = config.ClientFromSubsURL(arg)
+		} else if strings.Contains(arg, "://") {
 			cfg = config.ClientFromURL(arg)
 		} else {
 			absPath, err := filepath.Abs(arg)

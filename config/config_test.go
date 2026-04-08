@@ -444,6 +444,48 @@ func TestClientConfig_BlockQUIC_YAML(t *testing.T) {
 	}
 }
 
+func TestIsOutboundURL_K2Subs(t *testing.T) {
+	if !IsOutboundURL("k2subs://user:pass@host/path") {
+		t.Error("k2subs should be an outbound URL")
+	}
+}
+
+func TestIsAllProxy_K2Subs(t *testing.T) {
+	cfg := &ClientConfig{
+		Routes: []RouteConfig{
+			{Via: "k2subs://user:pass@host/path", Match: rule.MatchConfig{All: true}},
+		},
+	}
+	if !cfg.IsAllProxy() {
+		t.Error("k2subs with all:true should be IsAllProxy")
+	}
+}
+
+func TestClientFromSubsURL(t *testing.T) {
+	cfg := ClientFromSubsURL("k2subs://alice:tok@relay.example.com/subs/team-a?refresh=600")
+	if len(cfg.Routes) != 1 {
+		t.Fatalf("Routes count = %d, want 1", len(cfg.Routes))
+	}
+	if cfg.Routes[0].Via != "k2subs://alice:tok@relay.example.com/subs/team-a?refresh=600" {
+		t.Errorf("Via = %q", cfg.Routes[0].Via)
+	}
+	if cfg.Mode != "tun" {
+		t.Errorf("Mode = %q, want tun", cfg.Mode)
+	}
+}
+
+func TestSetDefaults_K2SubsServerEmpty(t *testing.T) {
+	cfg := &ClientConfig{
+		Routes: []RouteConfig{
+			{Via: "k2subs://user:pass@host/path", Match: rule.MatchConfig{All: true}},
+		},
+	}
+	SetDefaults(cfg)
+	if cfg.Server != "" {
+		t.Errorf("Server should be empty for k2subs routes, got %q", cfg.Server)
+	}
+}
+
 func TestSetDefaultsExported(t *testing.T) {
 	cfg := &ClientConfig{}
 	SetDefaults(cfg)

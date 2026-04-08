@@ -155,7 +155,7 @@ func ValidateRouteCIDRConflicts(routes []RouteConfig) error {
 				if prefixesOverlap(prefix, local) {
 					return fmt.Errorf("route via %s has ip_cidr %s which overlaps with local interface %s — "+
 						"use specific host routes (e.g. /32) to avoid routing conflicts",
-						truncateVia(route.Via), cidr, local)
+						TruncateVia(route.Via), cidr, local)
 				}
 			}
 		}
@@ -201,7 +201,8 @@ func prefixesOverlap(a, b netip.Prefix) bool {
 	return a.Contains(b.Addr()) || b.Contains(a.Addr())
 }
 
-func truncateVia(via string) string {
+// TruncateVia redacts credentials from a via URL for safe logging.
+func TruncateVia(via string) string {
 	if idx := strings.Index(via, "@"); idx != -1 {
 		schemeEnd := strings.Index(via, "://")
 		if schemeEnd >= 0 {

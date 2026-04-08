@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -54,6 +56,9 @@ type Daemon struct {
 	engine    *engine.Engine
 	engineCtx context.Context
 	engineCnl context.CancelFunc
+
+	// Active subscriptions (k2subs:// routes, background refresh).
+	subs []*config.Subscription
 
 	// Version and Commit are set by main via ldflags.
 	// Used by handleVersion to report the running binary's identity.
@@ -191,6 +196,15 @@ func (d *Daemon) closeTunnel() {
 	d.monitorPID = 0
 	d.mu.Unlock()
 
+	// Stop subscription refresh goroutines.
+	d.mu.Lock()
+	subs := d.subs
+	d.subs = nil
+	d.mu.Unlock()
+	for _, sub := range subs {
+		sub.Close()
+	}
+
 	if cancel != nil {
 		cancel()
 	}
@@ -232,11 +246,30 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 	d.mu.Unlock()
 
 	// Persist state for auto-reconnect across restarts.
+	// Note: cfg still has original k2subs:// URLs — never persist resolved k2v5://.
 	saveState(persistedState{
 		Config:    cfg,
 		State:     engine.StateConnecting,
 		Timestamp: time.Now(),
 	})
+
+	// Resolve k2subs:// subscriptions to k2v5:// URLs.
+	subs, resolved, subsErr := d.resolveSubscriptions(cfg)
+	if subsErr != nil {
+		d.mu.Lock()
+		d.lastStatus = engine.Status{
+			State: engine.StateDisconnected,
+			Error: engine.ClassifyError(subsErr),
+		}
+		s := d.lastStatus
+		d.mu.Unlock()
+		d.broadcastStatus(s)
+		return subsErr
+	}
+
+	// Build resolved config for engine (k2subs:// → k2v5://).
+	// Original cfg (with k2subs://) is kept for saveState/lastConfig.
+	engineClientCfg := applyResolvedRoutes(cfg, resolved)
 
 	// Create network monitor first — directdial uses it for dynamic interface tracking.
 	factory := d.MonitorFactory
@@ -257,7 +290,7 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 		slog.Warn("network monitor unavailable, no interface binding", "err", monErr)
 	}
 
-	engineCfg := d.engineConfigFromClientConfig(cfg, dd, monitor, ifaceMon, monErr)
+	engineCfg := d.engineConfigFromClientConfig(engineClientCfg, dd, monitor, ifaceMon, monErr)
 
 	// Create engine and set EventHandler BEFORE start — daemon receives all events.
 	eng := engine.New()
@@ -313,12 +346,28 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 		go d.monitorProcess(ctx, pid)
 	}
 
-	// Update persisted state.
+	// Update persisted state (original cfg with k2subs:// URLs).
 	saveState(persistedState{
 		Config:    cfg,
 		State:     engine.StateConnected,
 		Timestamp: time.Now(),
 	})
+
+	// Start background subscription refresh.
+	for _, sub := range subs {
+		sub.StartRefresh(ctx, func() *http.Client {
+			return &http.Client{
+				Timeout: 15 * time.Second,
+				Transport: &http.Transport{
+					TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
+				},
+			}
+		})
+	}
+
+	d.mu.Lock()
+	d.subs = subs
+	d.mu.Unlock()
 
 	return nil
 }
@@ -455,3 +504,85 @@ func (d *Daemon) OnStatus(status engine.Status) {
 
 // OnStats implements engine.EventHandler — currently a no-op for daemon.
 func (d *Daemon) OnStats(txBytes, rxBytes int64) {}
+
+// resolveSubscriptions scans routes for k2subs:// URLs, fetches each subscription,
+// picks a server, and returns the Subscription objects + a map of route index → resolved k2v5:// URL.
+// On error, all already-created Subscription objects are closed before returning.
+func (d *Daemon) resolveSubscriptions(cfg *config.ClientConfig) (
+	subs []*config.Subscription,
+	resolved map[int]string,
+	err error,
+) {
+	resolved = make(map[int]string)
+	subsCache := filepath.Join(cacheDir(), "subs")
+
+	for i, route := range cfg.Routes {
+		if !strings.HasPrefix(route.Via, "k2subs://") {
+			continue
+		}
+
+		sub, parseErr := config.NewSubscription(route.Via, subsCache)
+		if parseErr != nil {
+			for _, s := range subs {
+				s.Close()
+			}
+			return nil, nil, fmt.Errorf("subscription parse: %w", parseErr)
+		}
+
+		fetchCtx, fetchCancel := context.WithTimeout(context.Background(), 15*time.Second)
+		fetchErr := sub.Fetch(fetchCtx, &http.Client{
+			Timeout: 15 * time.Second,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
+			},
+		})
+		fetchCancel()
+
+		if fetchErr != nil {
+			if len(sub.Tunnels()) == 0 {
+				sub.Close()
+				for _, s := range subs {
+					s.Close()
+				}
+				return nil, nil, fmt.Errorf("subscription fetch failed (no cache): %w", fetchErr)
+			}
+			slog.Warn("subscription fetch failed, using cached data", "err", fetchErr)
+		}
+
+		tunnel, pickErr := sub.Pick(nil)
+		if pickErr != nil {
+			sub.Close()
+			for _, s := range subs {
+				s.Close()
+			}
+			return nil, nil, fmt.Errorf("subscription pick: %w", pickErr)
+		}
+
+		slog.Info("subscription resolved",
+			"to", config.TruncateVia(tunnel.URL),
+			"servers", len(sub.Tunnels()),
+		)
+
+		resolved[i] = tunnel.URL
+		subs = append(subs, sub)
+	}
+
+	return subs, resolved, nil
+}
+
+// applyResolvedRoutes returns a shallow copy of cfg with k2subs:// routes replaced
+// by their resolved k2v5:// URLs. The original cfg is not modified.
+func applyResolvedRoutes(cfg *config.ClientConfig, resolved map[int]string) *config.ClientConfig {
+	if len(resolved) == 0 {
+		return cfg
+	}
+	engineCfg := *cfg
+	engineCfg.Routes = make([]config.RouteConfig, len(cfg.Routes))
+	copy(engineCfg.Routes, cfg.Routes)
+	for i, url := range resolved {
+		engineCfg.Routes[i].Via = url
+	}
+	engineCfg.Server = ""
+	config.SetDefaults(&engineCfg)
+	return &engineCfg
+}

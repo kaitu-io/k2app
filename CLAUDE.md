@@ -18,8 +18,8 @@ make gateway-uat                   # Docker UAT: 10 phases, ~56 tests, full soft
 make pre-release                   # quick-check + gateway-check + full tests + contract tests + cross-compile
 make appext-ios                    # iOS xcframework (gomobile bind)
 make appext-android                # Android aar (gomobile bind)
-k2 connect <k2v5://URL>            # Direct connect (foreground, proxy mode)
 k2 setup <k2v5://URL>              # First-time: generate config + install service + start
+k2 setup <k2subs://URL>            # First-time: subscription URL (auto-selects server)
 k2 up                              # Connect (via daemon, uses saved config)
 k2 down                            # Disconnect
 k2 status                          # Connection status
@@ -660,6 +660,7 @@ docs/todos/p2-*.md     Nice to have
 - Quality gates (`make quick-check` / `make pre-release`), goleak goroutine leak detection
 - safego package (panic-safe goroutine launcher), daemon doUp abort mechanism
 - CLI redesign (pure subcommand dispatch, --json output, non-interactive k2s setup)
+- k2subs:// subscription URLs (weighted server selection, background refresh, disk cache)
 - Unified release pipeline (LATEST + checksums.txt, S3 upload, install scripts, CI)
 
 ## Platform Mapping
