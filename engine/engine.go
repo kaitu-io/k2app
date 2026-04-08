@@ -964,6 +964,72 @@ func buildOutboundMap(routes []config.RouteConfig) map[string]rule.Target {
 	return m
 }
 
+// setupOutboundTransport creates a TransportManager for a single k2v5:// URL.
+// Performs: ParseURL → resolveDialAddr → RaceTransport → TM setup.
+// The caller must close the returned outboundTransport on error paths.
+// Returns the outboundTransport and the TCP-WS dialer (for DNS transport from primary outbound).
+func setupOutboundTransport(
+	ctx context.Context,
+	via string,
+	directDialer wire.DirectDialer,
+) (*outboundTransport, wire.Dialer, error) {
+	wireCfg, err := wire.ParseURL(via)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse %s: %w", extractServerHost(via), err)
+	}
+
+	dialAddr, err := resolveDialAddr(ctx, wireCfg, directDialer)
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolve %s: %w", wireCfg.Host, err)
+	}
+	if dialAddr != "" {
+		wireCfg.DialAddr = dialAddr
+	}
+
+	raceCtx, raceCancel := context.WithTimeout(ctx, 15*time.Second)
+	raceResult, err := wire.RaceTransport(raceCtx, wireCfg, wireCfg.DialAddr, directDialer)
+	raceCancel()
+	if err != nil {
+		return nil, nil, fmt.Errorf("transport race %s: %w", wireCfg.Host, err)
+	}
+
+	tm := wire.NewTransportManager()
+	tm.SetPrimary(raceResult.Dialer, raceResult.TransportType)
+
+	// Ensure TCP-WS is available as fallback and DNS transport.
+	var tcpwsDialer wire.Dialer
+	if raceResult.TCPWS != nil {
+		tm.SetTCPWS(raceResult.TCPWS)
+		tcpwsDialer = raceResult.TCPWS
+	} else if raceResult.TransportType != "tcpws" {
+		tcpwsClient := wire.NewTCPWSClient(wireCfg, nil)
+		if directDialer != nil {
+			tcpwsClient.SetDirectDialer(directDialer)
+		}
+		tm.SetTCPWS(tcpwsClient)
+		tcpwsDialer = tcpwsClient
+	} else {
+		tcpwsDialer = raceResult.Dialer
+	}
+
+	tm.StartQuicProbe(ctx)
+
+	ot := &outboundTransport{
+		tm:       tm,
+		wireCfg:  wireCfg,
+		dialAddr: dialAddr,
+		name:     fmt.Sprintf("k2v5-%s", wireCfg.Host),
+	}
+
+	slog.Info("engine: transport ready",
+		"outbound", ot.name,
+		"transport", raceResult.TransportType,
+		"dialAddr", wireCfg.DialAddr,
+	)
+
+	return ot, tcpwsDialer, nil
+}
+
 // buildDNSRouter returns a function that maps outbound Target → proxy DNS (true) or direct DNS (false).
 // Only k2v5 outbounds use proxy DNS (to avoid GFW poisoning). k2p and direct use direct DNS.
 func buildDNSRouter(outboundMap map[string]rule.Target) func(rule.Target) bool {
