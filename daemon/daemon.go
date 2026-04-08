@@ -254,7 +254,7 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 	})
 
 	// Resolve k2subs:// subscriptions to k2v5:// URLs.
-	subs, resolved, subsMap, subsErr := d.resolveSubscriptions(cfg)
+	subs, resolved, subsErr := d.resolveSubscriptions(cfg)
 	if subsErr != nil {
 		d.mu.Lock()
 		d.lastStatus = engine.Status{
@@ -276,98 +276,59 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 		}
 	}()
 
-	startFn := d.StartFunc
-	if startFn == nil {
-		startFn = defaultStartFunc
-	}
+	// Build resolved config for engine (k2subs:// → k2v5://).
+	// Original cfg (with k2subs://) is kept for saveState/lastConfig.
+	engineClientCfg := applyResolvedRoutes(cfg, resolved)
 
+	// Create network monitor first — directdial uses it for dynamic interface tracking.
 	factory := d.MonitorFactory
 	if factory == nil {
 		factory = defaultMonitorFactory
 	}
+	monitor, ifaceMon, monErr := factory()
 
-	// Engine start with subscription failover: if engine.Start fails and we have
-	// subscriptions, try the next server from the subscription list before giving up.
-	// Monitor and directdial are created per attempt because engine.Start closes
-	// NetworkMonitor on failure paths.
-	excludes := make(map[int][]string) // route index → tried URLs
-	var eng *engine.Engine
-	var lastErr error
-
-	for {
-		// Early abort: doDown arrived while we were setting up.
-		if d.abortUp.Load() {
-			slog.Info("daemon: doUp aborted before start")
-			return fmt.Errorf("aborted before start")
+	// Create directdial with monitor for dynamic interface tracking.
+	// When monitor is unavailable, dd stays nil — engine skips interface binding.
+	var dd *directDialer
+	if dim, ok := ifaceMon.(tun.DefaultInterfaceMonitor); ok && monErr == nil {
+		dd = newDirectDialer(dim)
+		if dd.interfaceName() != "" {
+			slog.Info("tunnel: direct dialer bound", "interface", dd.interfaceName())
 		}
-
-		// Create network monitor + directdial per attempt.
-		// engine.Start closes NetworkMonitor on failure, so it cannot be reused.
-		monitor, ifaceMon, monErr := factory()
-
-		var dd *directDialer
-		if dim, ok := ifaceMon.(tun.DefaultInterfaceMonitor); ok && monErr == nil {
-			dd = newDirectDialer(dim)
-			if dd.interfaceName() != "" {
-				slog.Info("tunnel: direct dialer bound", "interface", dd.interfaceName())
-			}
-		} else if monErr != nil {
-			slog.Warn("network monitor unavailable, no interface binding", "err", monErr)
-		}
-
-		engineClientCfg := applyResolvedRoutes(cfg, resolved)
-		engineCfg := d.engineConfigFromClientConfig(engineClientCfg, dd, monitor, ifaceMon, monErr)
-
-		eng = engine.New()
-		eng.SetEventHandler(d)
-
-		lastErr = startFn(eng, engineCfg)
-		if lastErr == nil {
-			break // success
-		}
-
-		slog.Error("engine start failed", "err", lastErr)
-
-		// No subscriptions — no failover possible.
-		if len(subsMap) == 0 {
-			break
-		}
-
-		// Try next server from each subscription.
-		repicked := false
-		for routeIdx, sub := range subsMap {
-			excludes[routeIdx] = append(excludes[routeIdx], resolved[routeIdx])
-			next, pickErr := sub.Pick(excludes[routeIdx])
-			if pickErr != nil {
-				continue // this subscription exhausted
-			}
-			resolved[routeIdx] = next.URL
-			repicked = true
-			slog.Warn("DIAG: subs-failover",
-				"routeIdx", routeIdx,
-				"failedServer", config.TruncateVia(excludes[routeIdx][len(excludes[routeIdx])-1]),
-				"nextServer", config.TruncateVia(next.URL),
-				"remaining", len(sub.Tunnels())-len(excludes[routeIdx]),
-			)
-		}
-
-		if !repicked {
-			break // all servers exhausted
-		}
+	} else if monErr != nil {
+		slog.Warn("network monitor unavailable, no interface binding", "err", monErr)
 	}
 
-	if lastErr != nil {
+	engineCfg := d.engineConfigFromClientConfig(engineClientCfg, dd, monitor, ifaceMon, monErr)
+
+	// Create engine and set EventHandler BEFORE start — daemon receives all events.
+	eng := engine.New()
+	eng.SetEventHandler(d)
+
+	// Early abort: doDown arrived while we were setting up (before expensive Start).
+	if d.abortUp.Load() {
+		slog.Info("daemon: doUp aborted before start")
+		return fmt.Errorf("aborted before start")
+	}
+
+	startFn := d.StartFunc
+	if startFn == nil {
+		startFn = defaultStartFunc
+	}
+	if err := startFn(eng, engineCfg); err != nil {
+		// Ensure error is captured even if StartFunc didn't go through engine.fail().
 		d.mu.Lock()
 		if d.lastStatus.Error == nil {
 			d.lastStatus = engine.Status{
 				State: engine.StateDisconnected,
-				Error: engine.ClassifyError(lastErr),
+				Error: engine.ClassifyError(err),
 			}
 		}
 		s := d.lastStatus
 		d.mu.Unlock()
 		d.broadcastStatus(s)
-		return lastErr
+		slog.Error("engine start failed", "err", err)
+		return err
 	}
 
 	// Post-start abort: doDown arrived while engine.Start was running.
@@ -557,17 +518,14 @@ func (d *Daemon) OnStatus(status engine.Status) {
 func (d *Daemon) OnStats(txBytes, rxBytes int64) {}
 
 // resolveSubscriptions scans routes for k2subs:// URLs, fetches each subscription,
-// picks a server, and returns the Subscription objects, a map of route index → resolved k2v5:// URL,
-// and a subsMap for failover re-picking.
+// picks a server, and returns the Subscription objects + a map of route index → resolved k2v5:// URL.
 // On error, all already-created Subscription objects are closed before returning.
 func (d *Daemon) resolveSubscriptions(cfg *config.ClientConfig) (
 	subs []*config.Subscription,
 	resolved map[int]string,
-	subsMap map[int]*config.Subscription,
 	err error,
 ) {
 	resolved = make(map[int]string)
-	subsMap = make(map[int]*config.Subscription)
 	subsCache := filepath.Join(cacheDir(), "subs")
 
 	for i, route := range cfg.Routes {
@@ -580,7 +538,7 @@ func (d *Daemon) resolveSubscriptions(cfg *config.ClientConfig) (
 			for _, s := range subs {
 				s.Close()
 			}
-			return nil, nil, nil, fmt.Errorf("subscription parse: %w", parseErr)
+			return nil, nil, fmt.Errorf("subscription parse: %w", parseErr)
 		}
 
 		fetchCtx, fetchCancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -598,7 +556,7 @@ func (d *Daemon) resolveSubscriptions(cfg *config.ClientConfig) (
 				for _, s := range subs {
 					s.Close()
 				}
-				return nil, nil, nil, fmt.Errorf("subscription fetch failed (no cache): %w", fetchErr)
+				return nil, nil, fmt.Errorf("subscription fetch failed (no cache): %w", fetchErr)
 			}
 			slog.Warn("subscription fetch failed, using cached data", "err", fetchErr)
 		}
@@ -609,7 +567,7 @@ func (d *Daemon) resolveSubscriptions(cfg *config.ClientConfig) (
 			for _, s := range subs {
 				s.Close()
 			}
-			return nil, nil, nil, fmt.Errorf("subscription pick: %w", pickErr)
+			return nil, nil, fmt.Errorf("subscription pick: %w", pickErr)
 		}
 
 		slog.Info("subscription resolved",
@@ -618,11 +576,10 @@ func (d *Daemon) resolveSubscriptions(cfg *config.ClientConfig) (
 		)
 
 		resolved[i] = tunnel.URL
-		subsMap[i] = sub
 		subs = append(subs, sub)
 	}
 
-	return subs, resolved, subsMap, nil
+	return subs, resolved, nil
 }
 
 // applyResolvedRoutes returns a shallow copy of cfg with k2subs:// routes replaced
