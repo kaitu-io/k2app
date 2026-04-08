@@ -796,7 +796,8 @@ func TestEngine_OnNetworkChanged_WhenConnected(t *testing.T) {
 	tm := &wire.TransportManager{}
 	e.mu.Lock()
 	e.state = StateConnected
-	e.tm = tm
+	e.primaryTM = &outboundTransport{tm: tm}
+	e.outboundTMs = []*outboundTransport{e.primaryTM}
 	e.mu.Unlock()
 
 	e.OnNetworkChanged()
@@ -858,7 +859,8 @@ func TestEngine_OnNetworkChanged_NilTransportManager(t *testing.T) {
 	// Connected but no TransportManager (edge case).
 	e.mu.Lock()
 	e.state = StateConnected
-	e.tm = nil
+	e.primaryTM = nil
+	e.outboundTMs = nil
 	e.mu.Unlock()
 
 	e.OnNetworkChanged()
@@ -913,7 +915,8 @@ func TestEngine_NetworkMonitor_CallbackTriggersOnNetworkChanged(t *testing.T) {
 	tm := &wire.TransportManager{}
 	e.mu.Lock()
 	e.state = StateConnected
-	e.tm = tm
+	e.primaryTM = &outboundTransport{tm: tm}
+	e.outboundTMs = []*outboundTransport{e.primaryTM}
 	e.mu.Unlock()
 
 	// Start the monitor with a callback that calls OnNetworkChanged.
@@ -1367,7 +1370,8 @@ func TestEngine_OnNetworkChanged_ResetsProxyDNS(t *testing.T) {
 	tm := &wire.TransportManager{}
 	e.mu.Lock()
 	e.state = StateConnected
-	e.tm = tm
+	e.primaryTM = &outboundTransport{tm: tm}
+	e.outboundTMs = []*outboundTransport{e.primaryTM}
 	e.proxyDNS = pdns
 	e.mu.Unlock()
 
@@ -1395,7 +1399,8 @@ func TestEngine_Pause_ResetsProxyDNS(t *testing.T) {
 	tm := &wire.TransportManager{}
 	e.mu.Lock()
 	e.state = StateConnected
-	e.tm = tm
+	e.primaryTM = &outboundTransport{tm: tm}
+	e.outboundTMs = []*outboundTransport{e.primaryTM}
 	e.proxyDNS = pdns
 	e.mu.Unlock()
 
@@ -1423,7 +1428,8 @@ func TestEngine_Wake_ResetsProxyDNS(t *testing.T) {
 	e.mu.Lock()
 	e.state = StateConnected
 	e.paused = true
-	e.tm = tm
+	e.primaryTM = &outboundTransport{tm: tm}
+	e.outboundTMs = []*outboundTransport{e.primaryTM}
 	e.proxyDNS = pdns
 	e.mu.Unlock()
 
@@ -1444,7 +1450,8 @@ func TestEngine_OnNetworkChanged_PreservesAuthError(t *testing.T) {
 	tm := &wire.TransportManager{}
 	e.mu.Lock()
 	e.state = StateConnected
-	e.tm = tm
+	e.primaryTM = &outboundTransport{tm: tm}
+	e.outboundTMs = []*outboundTransport{e.primaryTM}
 	e.lastError = &EngineError{Code: 401, Category: CategoryClient, Message: "token expired"}
 	e.mu.Unlock()
 
@@ -1473,7 +1480,8 @@ func TestEngine_OnNetworkChanged_ClearsNetworkError(t *testing.T) {
 	tm := &wire.TransportManager{}
 	e.mu.Lock()
 	e.state = StateConnected
-	e.tm = tm
+	e.primaryTM = &outboundTransport{tm: tm}
+	e.outboundTMs = []*outboundTransport{e.primaryTM}
 	e.lastError = &EngineError{Code: 503, Category: CategoryServer, Message: "refused"}
 	e.mu.Unlock()
 
@@ -1495,7 +1503,8 @@ func TestEngine_OnHealthCritical_DoesNotClearError(t *testing.T) {
 	tm := &wire.TransportManager{}
 	e.mu.Lock()
 	e.state = StateConnected
-	e.tm = tm
+	e.primaryTM = &outboundTransport{tm: tm}
+	e.outboundTMs = []*outboundTransport{e.primaryTM}
 	e.lastError = &EngineError{Code: 503, Category: CategoryServer, Message: "refused"}
 	e.mu.Unlock()
 
@@ -1517,7 +1526,8 @@ func TestEngine_OnHealthCritical_WhenConnected(t *testing.T) {
 	tm := &wire.TransportManager{}
 	e.mu.Lock()
 	e.state = StateConnected
-	e.tm = tm
+	e.primaryTM = &outboundTransport{tm: tm}
+	e.outboundTMs = []*outboundTransport{e.primaryTM}
 	e.mu.Unlock()
 
 	e.onHealthCritical()
@@ -1623,6 +1633,50 @@ func TestExtractServerHost(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("extractServerHost(%q) = %q, want %q", tt.url, got, tt.want)
 		}
+	}
+}
+
+// ==========================================================================
+// Multi-outbound tests
+// ==========================================================================
+
+func TestBuildOutboundMap_MultipleK2V5(t *testing.T) {
+	routes := []config.RouteConfig{
+		{Via: "k2v5://jp-server:443", Match: rule.MatchConfig{DomainSuffix: []string{".jp"}}},
+		{Via: "k2v5://us-server:443", Match: rule.MatchConfig{All: true}},
+	}
+	m := buildOutboundMap(routes)
+
+	if len(m) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(m))
+	}
+	jpTarget := m["k2v5://jp-server:443"]
+	usTarget := m["k2v5://us-server:443"]
+	if jpTarget == usTarget {
+		t.Fatal("jp and us should have different targets")
+	}
+	if jpTarget < 2 || usTarget < 2 {
+		t.Fatal("wire targets should be >= 2")
+	}
+}
+
+func TestBuildOutboundMap_DedupSameURL(t *testing.T) {
+	routes := []config.RouteConfig{
+		{Via: "k2v5://server:443", Match: rule.MatchConfig{DomainSuffix: []string{".jp"}}},
+		{Via: "k2v5://server:443", Match: rule.MatchConfig{All: true}},
+	}
+	m := buildOutboundMap(routes)
+
+	if len(m) != 1 {
+		t.Fatalf("expected 1 entry (dedup), got %d", len(m))
+	}
+}
+
+func TestSetupOutboundTransport_InvalidURL(t *testing.T) {
+	ctx := context.Background()
+	_, _, err := setupOutboundTransport(ctx, "not-a-valid-url", nil)
+	if err == nil {
+		t.Fatal("expected error for invalid URL")
 	}
 }
 
