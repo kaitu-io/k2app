@@ -12,16 +12,16 @@ Platform Shell (daemon/appext)
     └── calls engine.Start(cfg)
               │
               ├── 1. k2rule.Init (routing rules)
-              ├── 2. wire.ParseURL (k2v5:// URL)
               ├── 2.5. Start NetworkMonitor (DirectDialer needs DefaultInterface)
-              ├── 3. Happy Eyeballs address resolution (RFC 8305)
-              ├── 4. Transport race (wire.RaceTransport: QUIC-443 → QUIC-hop → TCP-WS with echo probe)
               ├── 5. Router (k2rule)
               ├── 6. Provider (TUN/Proxy/TProxy/appext FD)
+              ├── 6.5. Per-outbound transport setup:
+              │      for each unique k2v5:// → ParseURL → resolve → RaceTransport → TM
+              │      (parallel via errgroup; first k2v5 route = primaryTM)
               ├── 7. ClientTunnel
               ├── 8. DNS middleware (TUN/TProxy mode only)
-              │      DNS proxy dialer = TCP-WS (control-plane: reliability over speed)
-              │      Data traffic dialer = TransportManager (QUIC-first: speed over reliability)
+              │      DNS proxy dialer = primaryTM's TCP-WS (control-plane)
+              │      Data traffic dialer = per-outbound TransportManager
               ├── 9. Commit → StateConnected + start reRaceLoop
               ├── 10. HealthMonitor start (1Hz wire stats + health FSM + echoLoop)
               └── 11. Background QUIC probe (active during TCP-WS fallback, 30s interval)
@@ -77,7 +77,7 @@ HTTP-aligned error codes for frontend consumption:
 - `status.go` — `Status` struct, custom `MarshalJSON` (computes `uptime_seconds` dynamically)
 - `event.go` — `EventHandler` interface (`OnStatus(Status)` + `OnStats`), state constants
 - `error.go` — `EngineError`, `ClassifyError` (HTTP-aligned error codes, MultiTransportError handling)
-- `health.go` — `healthMonitor` (1Hz sampling, ring buffer 300s, EWMA smoothing α=0.3 on smoothWireLoss, health FSM: healthy→degraded(≥5 streak)→critical(≥5 streak), corrective action: full reconnect with 10s cooldown). `echoLoop` (30s interval): verifies QUIC data path via `wire.EchoProber`, 3 consecutive failures trigger re-race. **Backward compat**: `echoLoop` counts all echo errors as failures including `echo-probe-unsupported` (old servers that don't handle `StreamTypeEcho`). This causes unnecessary 90s rerace cycles against pre-echo servers. `RaceTransport.buildAndProbeQUIC` correctly tolerates unsupported (returns success), but echoLoop does not — fix pending. TCP health gate: `tcpRecentlyHealthy()` (30s window) suppresses reconnect when TCP streams are working. Wire-layer metrics only — relay metrics are observability (see `wire/VOCABULARY.md`). `wakeDetector` (embedded in healthMonitor): detects sleep/wake via wall-clock gap, `DIAG: wake` at >5s, triggers `doNetworkReconnect()` at ≥30s (aligned with QUIC MaxIdleTimeout). Heartbeat includes memory metrics (`heapMB`, `sysMB`, `goroutines`) via `runtime.ReadMemStats` every 30s for iOS NE jetsam diagnosis.
+- `health.go` — `healthMonitor` (1Hz sampling, ring buffer 300s, EWMA smoothing α=0.3 on smoothWireLoss, health FSM: healthy→degraded(≥5 streak)→critical(≥5 streak), corrective action: full reconnect with 10s cooldown). `sample()` uses primaryTM for heartbeat stats. `echoLoop` (30s interval): probes each TM independently via `wire.EchoProber`, 3 consecutive failures trigger per-TM re-race. **Backward compat**: `echoLoop` counts all echo errors as failures including `echo-probe-unsupported` (old servers that don't handle `StreamTypeEcho`). This causes unnecessary 90s rerace cycles against pre-echo servers. `RaceTransport.buildAndProbeQUIC` correctly tolerates unsupported (returns success), but echoLoop does not — fix pending. TCP health gate: `tcpRecentlyHealthy()` (30s window) suppresses reconnect when TCP streams are working. Wire-layer metrics only — relay metrics are observability (see `wire/VOCABULARY.md`). `wakeDetector` (embedded in healthMonitor): detects sleep/wake via wall-clock gap, `DIAG: wake` at >5s, triggers `doNetworkReconnect()` at ≥30s (aligned with QUIC MaxIdleTimeout). Heartbeat includes memory metrics (`heapMB`, `sysMB`, `goroutines`) via `runtime.ReadMemStats` every 30s for iOS NE jetsam diagnosis.
 - `health_test.go` — Health monitor tests (EWMA smoothing, transitions, reset)
 - `engine.go:reRaceLoop` — Background re-race loop triggered by echoLoop (3 consecutive echo failures → channel signal → wire.RaceTransport → ReplacePrimary)
 - `contract_test.go` — 4 transport behavior contract tests (TCP health gate, server unreachable stop, auth no-retry, timing)

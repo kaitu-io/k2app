@@ -658,6 +658,7 @@ docs/todos/p2-*.md     Nice to have
 - Quality gates (`make quick-check` / `make pre-release`), goleak goroutine leak detection
 - safego package (panic-safe goroutine launcher), daemon doUp abort mechanism
 - CLI redesign (pure subcommand dispatch, --json output, non-interactive k2s setup)
+- Per-outbound transport (each k2v5 route gets independent TransportManager)
 - Unified release pipeline (LATEST + checksums.txt, S3 upload, install scripts, CI)
 
 ## Platform Mapping
