@@ -17,7 +17,7 @@ import (
 //	Content-Type: text/event-stream
 //
 //	event: status
-//	data: {"state":"connected","connected_at":"...","uptime_seconds":0}
+//	data: {"state":"connected","startAt":1234567890,"uptimeSeconds":0}
 func (d *Daemon) handleEvents(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {

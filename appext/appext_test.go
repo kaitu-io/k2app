@@ -172,7 +172,7 @@ func TestEngine_StatusJSON_Disconnected(t *testing.T) {
 	if m["state"] != StateDisconnected {
 		t.Fatalf("state = %v, want %q", m["state"], StateDisconnected)
 	}
-	for _, key := range []string{"connected_at", "uptime_seconds", "error"} {
+	for _, key := range []string{"startAt", "uptimeSeconds", "error"} {
 		if _, ok := m[key]; ok {
 			t.Fatalf("unexpected key %q in disconnected state", key)
 		}
