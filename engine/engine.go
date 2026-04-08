@@ -62,7 +62,7 @@ type Engine struct {
 	outboundTMs  []*outboundTransport // all wire TMs, for health/reconnect
 	primaryTM    *outboundTransport   // first k2v5 route's TM (DNS transport)
 	directDialer wire.DirectDialer
-	reRaceChan   chan struct{}
+	reRaceChan   chan *outboundTransport
 	reRaceCancel context.CancelFunc
 }
 
@@ -418,7 +418,7 @@ func (e *Engine) Start(cfg Config) error {
 	e.primaryTM = primaryOT
 
 	// Start health monitor (1Hz wire stats sampling + health FSM).
-	hm := newHealthMonitor(e.tm, tunnel, cfg.HealthCallback, func() { e.onHealthCritical() }, time.Now())
+	hm := newHealthMonitor(primaryOT, allOTs, tunnel, cfg.HealthCallback, func() { e.onHealthCritical() }, time.Now())
 	hm.start()
 	e.health = hm
 
@@ -426,7 +426,7 @@ func (e *Engine) Start(cfg Config) error {
 	e.directDialer = cfg.DirectDialer
 
 	// Re-race loop: replaces recoveryProbe.
-	e.reRaceChan = make(chan struct{}, 1)
+	e.reRaceChan = make(chan *outboundTransport, 1)
 	reRaceCtx, reRaceCancel := context.WithCancel(ctx)
 	e.reRaceCancel = reRaceCancel
 	safego.Go(func() { e.reRaceLoop(reRaceCtx) })
@@ -1221,7 +1221,8 @@ func (e *Engine) reRaceLoop(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-e.reRaceChan:
+		case ot := <-e.reRaceChan:
+			_ = ot // Task 7 will use ot for per-TM re-race
 		}
 
 		e.mu.Lock()

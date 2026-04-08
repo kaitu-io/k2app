@@ -31,7 +31,8 @@ func TestContract_PoorSignal_TCPHealthGate(t *testing.T) {
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
 
 	var reconnectCalled bool
-	hm := newHealthMonitor(tm, tunnel, nil, func() {
+	ot := &outboundTransport{tm: tm, name: "test"}
+	hm := newHealthMonitor(ot, []*outboundTransport{ot}, tunnel, nil, func() {
 		reconnectCalled = true
 	}, time.Now())
 
@@ -60,28 +61,34 @@ func TestContract_PoorSignal_TCPHealthGate(t *testing.T) {
 // signal after 3 consecutive echo failures. This replaces the old recovery
 // probe contract (probeMaxAttempts=3).
 func TestContract_EchoLoop_TriggersReRace(t *testing.T) {
-	// echoLoop uses hm.echoFails (atomic.Int32) and triggers reRaceChan at >=3.
+	// echoLoop uses per-TM local failure counters and triggers reRaceChan at >=3.
 	// Verify the threshold constant is 3 by checking behavior.
-	reRaceChan := make(chan struct{}, 1)
+	tm := mockTransportManager()
+	ot := &outboundTransport{tm: tm, name: "test"}
+	reRaceChan := make(chan *outboundTransport, 1)
 	hm := &healthMonitor{
 		done: make(chan struct{}),
 	}
 	hm.reRaceChan = reRaceChan
 
-	// Simulate 3 consecutive echo failures.
-	for i := int32(1); i <= 3; i++ {
-		fails := hm.echoFails.Add(1)
-		if fails >= 3 && hm.reRaceChan != nil {
+	// Simulate 3 consecutive echo failures using per-TM counter (mirrors echoLoop logic).
+	echoFails := make(map[*outboundTransport]int32)
+	for i := 0; i < 3; i++ {
+		echoFails[ot]++
+		if echoFails[ot] >= 3 && hm.reRaceChan != nil {
 			select {
-			case hm.reRaceChan <- struct{}{}:
+			case hm.reRaceChan <- ot:
 			default:
 			}
-			hm.echoFails.Store(0)
+			echoFails[ot] = 0
 		}
 	}
 
 	select {
-	case <-reRaceChan:
+	case received := <-reRaceChan:
+		if received != ot {
+			t.Fatal("contract: reRaceChan must carry the failed outboundTransport")
+		}
 		// Expected: re-race triggered after 3 consecutive failures.
 	default:
 		t.Fatal("contract: echoLoop must trigger re-race after 3 consecutive echo failures " +
@@ -146,7 +153,8 @@ func TestContract_PoorSignal_TCPHealthGate_Timing(t *testing.T) {
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
 
 	var reconnectCalled bool
-	hm := newHealthMonitor(tm, tunnel, nil, func() {
+	ot := &outboundTransport{tm: tm, name: "test"}
+	hm := newHealthMonitor(ot, []*outboundTransport{ot}, tunnel, nil, func() {
 		reconnectCalled = true
 	}, time.Now())
 
