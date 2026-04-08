@@ -48,7 +48,6 @@ type Engine struct {
 
 	cancel         context.CancelFunc
 	tunnel         *core.ClientTunnel
-	tm             *wire.TransportManager
 	prov           provider.Provider
 	networkMonitor NetworkChangeNotifier
 	health         *healthMonitor
@@ -58,7 +57,6 @@ type Engine struct {
 	ruleEngine     *rule.Engine
 	outbounds      []core.Outbound // owned by engine, closed in Stop()
 
-	wireCfg      wire.Config
 	outboundTMs  []*outboundTransport // all wire TMs, for health/reconnect
 	primaryTM    *outboundTransport   // first k2v5 route's TM (DNS transport)
 	directDialer wire.DirectDialer
@@ -409,11 +407,6 @@ func (e *Engine) Start(cfg Config) error {
 	e.ruleEngine = ruleEngine
 	e.networkMonitor = cfg.NetworkMonitor
 
-	// Bridge fields: consumers still use e.tm / e.wireCfg until migrated.
-	if primaryOT != nil {
-		e.tm = primaryOT.tm
-		e.wireCfg = primaryOT.wireCfg
-	}
 	e.outboundTMs = allOTs
 	e.primaryTM = primaryOT
 
@@ -734,7 +727,6 @@ func (e *Engine) Stop() error {
 	e.cancel = nil
 	prov := e.prov
 	e.prov = nil
-	e.tm = nil // clear bridge field (closed via outboundTMs loop below)
 	outboundTMs := e.outboundTMs
 	e.outboundTMs = nil
 	e.primaryTM = nil
