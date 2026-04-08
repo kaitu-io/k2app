@@ -498,7 +498,7 @@ func (e *Engine) reconnect() bool {
 		return false
 	}
 	handler := e.handler
-	tm := e.tm
+	outboundTMs := e.outboundTMs
 	pdns := e.proxyDNS
 	dh := e.dnsH
 	e.mu.Unlock()
@@ -510,15 +510,15 @@ func (e *Engine) reconnect() bool {
 
 	// Reset order matters (shared tcpwsDialer — see comment in Start):
 	//   1. CancelInflight — abort pending upstream queries (closes race window)
-	//   2. tm.ResetConnections — resets shared tcpws smux session
+	//   2. TM resets — resets shared tcpws smux sessions
 	//   3. pdns.ResetConnections — cleans proxyConn pool
 	// Step 1 MUST precede step 2 so in-flight DNS queries exit via ctx
 	// before the smux session is torn down underneath them.
 	if dh != nil {
 		dh.CancelInflight()
 	}
-	if tm != nil {
-		tm.ResetConnections()
+	for _, ot := range outboundTMs {
+		ot.tm.ResetConnections()
 	}
 	if pdns != nil {
 		pdns.ResetConnections()
@@ -635,14 +635,14 @@ func (e *Engine) Pause() {
 	e.paused = true
 	slog.Info("engine: paused")
 	handler := e.handler
-	tm := e.tm
+	outboundTMs := e.outboundTMs
 	pdns := e.proxyDNS
 	e.mu.Unlock()
 
 	// Pause has no CancelInflight — no in-flight DNS during iOS memory pause.
-	// tm→pdns order: shared tcpwsDialer (see Start comment).
-	if tm != nil {
-		tm.ResetConnections()
+	// TM→pdns order: shared tcpwsDialer (see Start comment).
+	for _, ot := range outboundTMs {
+		ot.tm.ResetConnections()
 	}
 	if pdns != nil {
 		pdns.ResetConnections()
@@ -662,13 +662,13 @@ func (e *Engine) Wake() {
 	e.paused = false
 	slog.Info("engine: woke")
 	handler := e.handler
-	tm := e.tm
+	outboundTMs := e.outboundTMs
 	pdns := e.proxyDNS
 	s := e.buildStatusLocked()
 	e.mu.Unlock()
 
-	if tm != nil {
-		tm.ResetConnections()
+	for _, ot := range outboundTMs {
+		ot.tm.ResetConnections()
 	}
 	if pdns != nil {
 		pdns.ResetConnections()
@@ -734,8 +734,10 @@ func (e *Engine) Stop() error {
 	e.cancel = nil
 	prov := e.prov
 	e.prov = nil
-	tm := e.tm
-	e.tm = nil
+	e.tm = nil // clear bridge field (closed via outboundTMs loop below)
+	outboundTMs := e.outboundTMs
+	e.outboundTMs = nil
+	e.primaryTM = nil
 	tunnel := e.tunnel
 	e.tunnel = nil
 	e.proxyDNS = nil // no explicit close needed — tm.Close() closes shared tcpws → smux dies → recvLoops exit
@@ -770,11 +772,11 @@ func (e *Engine) Stop() error {
 	if prov != nil {
 		prov.Close()
 	}
-	if tm != nil {
-		tm.Close()
+	for _, ot := range outboundTMs {
+		ot.tm.Close()
 	}
 	// Close all outbounds. directOutbound and wireOutbound have no-op Close()
-	// (engine owns tm, closed above). k2pOutbound closes its ICE/QUIC connection.
+	// (engine owns tm, closed via outboundTMs). k2pOutbound closes its ICE/QUIC connection.
 	for _, ob := range outbounds {
 		if ob != nil {
 			ob.Close()
@@ -853,6 +855,9 @@ func (e *Engine) fail(err error) error {
 	// Extract resources under lock (Rule #4: no Close under state lock).
 	nm := e.networkMonitor
 	e.networkMonitor = nil
+	outboundTMs := e.outboundTMs
+	e.outboundTMs = nil
+	e.primaryTM = nil
 	if e.cancel != nil {
 		e.cancel()
 		e.cancel = nil
@@ -868,6 +873,9 @@ func (e *Engine) fail(err error) error {
 	}
 	if nm != nil {
 		nm.Close()
+	}
+	for _, ot := range outboundTMs {
+		ot.tm.Close()
 	}
 	return err
 }
