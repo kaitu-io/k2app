@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math/rand/v2"
 	"net/http"
 	"net/url"
@@ -316,7 +318,9 @@ func (s *Subscription) refreshLoop(ctx context.Context, clientFn func() *http.Cl
 		}
 
 		fetchCtx, fetchCancel := context.WithTimeout(ctx, 30*time.Second)
-		_ = s.Fetch(fetchCtx, clientFn())
+		if err := s.Fetch(fetchCtx, clientFn()); err != nil {
+			slog.Warn("DIAG: subs-refresh-fail", "endpoint", s.endpoint, "err", err)
+		}
 		fetchCancel()
 	}
 }
@@ -327,10 +331,14 @@ func (s *Subscription) loadCache() {
 	}
 	data, err := os.ReadFile(s.cacheFile)
 	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("subscription: cache read failed", "file", s.cacheFile, "err", err)
+		}
 		return
 	}
 	var tunnels []Tunnel
 	if err := json.Unmarshal(data, &tunnels); err != nil {
+		slog.Warn("subscription: cache corrupt, ignoring", "file", s.cacheFile, "err", err)
 		return
 	}
 	s.tunnels = tunnels
@@ -346,6 +354,10 @@ func (s *Subscription) writeCache(tunnels []Tunnel) {
 	}
 
 	dir := filepath.Dir(s.cacheFile)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		slog.Debug("subscription: cache dir create failed", "dir", dir, "err", err)
+		return
+	}
 	tmp, err := os.CreateTemp(dir, ".subs-*.tmp")
 	if err != nil {
 		return

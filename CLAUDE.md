@@ -99,6 +99,7 @@ Reserved event names:
 | `DIAG: transport-rerace` | WARN | runtime re-race (3 consecutive echo fails) | reason, previousTransport |
 | `DIAG: dns-proxy-recv-no-callback` | WARN | DNS response arrived after callback expired | server, queryID, domain, numCallbacks |
 | `DIAG: datagram-readloop-exit` | WARN | QUIC datagram read loop terminated | totalReceived, err |
+| `DIAG: subs-refresh-fail` | WARN | subscription background refresh failed | endpoint, err |
 | `DIAG: quic-dial-orphan-cleanup` | WARN | orphaned transport.Dial goroutine resolved | addr, blockedMs |
 
 ### Layer 3 Rules — Full Trace
@@ -184,6 +185,8 @@ Serialization locks (never nested inside any state lock above):
   udpOverflowStream.initMu → udpOverflowStream.writeMu
 
 rule.Engine.mu (state, RWMutex, standalone — no nesting with engine locks)
+
+config.Subscription.mu (state, standalone — no nesting with engine/daemon locks)
 
 gateway standalone locks (no nesting with engine locks):
   Gateway.opMu (serialization) → Gateway.mu (state) → Gateway.sseMu (state)

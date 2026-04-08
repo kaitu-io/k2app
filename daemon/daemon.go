@@ -266,6 +266,15 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 		d.broadcastStatus(s)
 		return subsErr
 	}
+	// Ensure subs are cleaned up if doUp fails after this point.
+	subsCleanup := true
+	defer func() {
+		if subsCleanup {
+			for _, sub := range subs {
+				sub.Close()
+			}
+		}
+	}()
 
 	// Build resolved config for engine (k2subs:// → k2v5://).
 	// Original cfg (with k2subs://) is kept for saveState/lastConfig.
@@ -352,6 +361,9 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 		State:     engine.StateConnected,
 		Timestamp: time.Now(),
 	})
+
+	// Disarm cleanup — subs are now owned by d.subs (closed in closeTunnel).
+	subsCleanup = false
 
 	// Start background subscription refresh.
 	for _, sub := range subs {
