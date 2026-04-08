@@ -1927,70 +1927,1175 @@ Port 1779, /usr/bin/k2r."
 
 ---
 
-## Phase 4: Verification
+## Phase 4: k2r Self-Update (k2 submodule)
 
-### Task 11: Local Build Verification
+### Task 11: k2r upgrade command
+
+**Files:**
+- Create: `k2/cmd/k2r/upgrade.go`
+- Create: `k2/cmd/k2r/upgrade_test.go`
+- Modify: `k2/cmd/k2r/main.go` (add upgrade subcommand)
+- Modify: `k2/gateway/api.go` (add upgrade API endpoint)
+- Modify: `k2/gateway/gateway.go` (wire upgrade route)
+
+The upgrade flow for k2r is: download new binary → replace self → signal service manager to restart. Since k2r runs as a procd/systemd service, the service manager handles graceful restart. No hot-reload needed — the service manager restarts the process.
+
+- [ ] **Step 1: Write upgrade_test.go**
+
+```go
+//go:build linux
+
+package main
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"testing"
+	"crypto/sha256"
+	"encoding/hex"
+)
+
+func TestFetchLatestK2r(t *testing.T) {
+	info := latestK2rInfo{
+		Version: "0.5.0",
+		Checksums: map[string]string{
+			"k2r-linux-amd64": "sha256:abc123",
+		},
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(info)
+	}))
+	defer srv.Close()
+
+	old := k2rReleaseEndpoints
+	k2rReleaseEndpoints = []string{srv.URL}
+	defer func() { k2rReleaseEndpoints = old }()
+
+	got, err := fetchLatestK2r()
+	if err != nil {
+		t.Fatalf("fetchLatestK2r: %v", err)
+	}
+	if got.Version != "0.5.0" {
+		t.Fatalf("version: got %q, want 0.5.0", got.Version)
+	}
+}
+
+func TestDownloadAndReplaceK2r(t *testing.T) {
+	content := []byte("#!/bin/sh\necho new-version")
+	h := sha256.Sum256(content)
+	expected := hex.EncodeToString(h[:])
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(content)
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	binPath := filepath.Join(dir, "k2r")
+	os.WriteFile(binPath, []byte("old"), 0755)
+
+	err := downloadAndReplaceK2r(srv.URL+"/k2r-linux-amd64", expected, binPath)
+	if err != nil {
+		t.Fatalf("downloadAndReplaceK2r: %v", err)
+	}
+
+	got, _ := os.ReadFile(binPath)
+	if string(got) != string(content) {
+		t.Fatalf("binary not replaced: got %q", got)
+	}
+}
+
+func TestDownloadAndReplaceK2rChecksumMismatch(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("binary-content"))
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	binPath := filepath.Join(dir, "k2r")
+	os.WriteFile(binPath, []byte("old"), 0755)
+
+	err := downloadAndReplaceK2r(srv.URL+"/k2r", "wrong-hash", binPath)
+	if err == nil {
+		t.Fatal("expected checksum mismatch error")
+	}
+
+	// Original binary should be preserved
+	got, _ := os.ReadFile(binPath)
+	if string(got) != "old" {
+		t.Fatal("original binary was modified on checksum failure")
+	}
+}
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `cd k2 && go test ./cmd/k2r/ -run TestFetchLatest -v`
+Expected: compilation error — types not defined
+
+- [ ] **Step 3: Implement upgrade.go**
+
+```go
+//go:build linux
+
+package main
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"time"
+)
+
+var k2rReleaseEndpoints = []string{
+	"https://d13jc1jqzlg4yt.cloudfront.net/kaitu/k2r",
+	"https://dl.kaitu.io/kaitu/k2r",
+}
+
+type latestK2rInfo struct {
+	Version   string            `json:"version"`
+	Checksums map[string]string `json:"checksums,omitempty"`
+}
+
+func cmdUpgrade(args []string) {
+	fs := flag.NewFlagSet("upgrade", flag.ExitOnError)
+	check := fs.Bool("check", false, "check for updates without installing")
+	fs.Parse(args)
+
+	info, err := fetchLatestK2r()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to check for updates: %v\n", err)
+		os.Exit(1)
+	}
+
+	if info.Version == version {
+		fmt.Printf("Already up to date: %s\n", version)
+		return
+	}
+
+	fmt.Printf("New version available: %s (current: %s)\n", info.Version, version)
+	if *check {
+		return
+	}
+
+	key := fmt.Sprintf("k2r-linux-%s", normalizeArch(runtime.GOARCH))
+	downloadURL := k2rReleaseEndpoints[0] + "/" + info.Version + "/" + key
+
+	expectedHash := ""
+	if cs, ok := info.Checksums[key]; ok {
+		expectedHash = strings.TrimPrefix(cs, "sha256:")
+	}
+
+	self, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Cannot find executable: %v\n", err)
+		os.Exit(1)
+	}
+	self, _ = filepath.EvalSymlinks(self)
+
+	if err := downloadAndReplaceK2r(downloadURL, expectedHash, self); err != nil {
+		fmt.Fprintf(os.Stderr, "Upgrade failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Upgraded to %s\n", info.Version)
+
+	// Restart service if running under systemd/procd
+	restartService()
+}
+
+func normalizeArch(goarch string) string {
+	switch goarch {
+	case "arm64":
+		return "arm64"
+	case "arm":
+		return "armv7"
+	default:
+		return goarch
+	}
+}
+
+func fetchLatestK2r() (*latestK2rInfo, error) {
+	client := &http.Client{Timeout: 10 * time.Second}
+	var lastErr error
+	for _, endpoint := range k2rReleaseEndpoints {
+		resp, err := client.Get(endpoint + "/LATEST")
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("HTTP %d from %s", resp.StatusCode, endpoint)
+			continue
+		}
+		ver := strings.TrimSpace(string(body))
+		if ver == "" {
+			lastErr = fmt.Errorf("empty LATEST from %s", endpoint)
+			continue
+		}
+
+		// Fetch checksums
+		checksums := make(map[string]string)
+		csResp, err := client.Get(endpoint + "/" + ver + "/checksums.txt")
+		if err == nil && csResp.StatusCode == http.StatusOK {
+			csBody, _ := io.ReadAll(csResp.Body)
+			csResp.Body.Close()
+			for _, line := range strings.Split(string(csBody), "\n") {
+				parts := strings.Fields(line)
+				if len(parts) == 2 {
+					checksums[parts[1]] = parts[0]
+				}
+			}
+		}
+
+		return &latestK2rInfo{Version: ver, Checksums: checksums}, nil
+	}
+	return nil, fmt.Errorf("all endpoints failed: %w", lastErr)
+}
+
+func downloadAndReplaceK2r(url, expectedHash, targetPath string) error {
+	client := &http.Client{Timeout: 5 * time.Minute}
+	resp, err := client.Get(url)
+	if err != nil {
+		return fmt.Errorf("download: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download: HTTP %d", resp.StatusCode)
+	}
+
+	dir := filepath.Dir(targetPath)
+	tmp, err := os.CreateTemp(dir, "k2r-upgrade-*")
+	if err != nil {
+		return fmt.Errorf("create temp: %w", err)
+	}
+	tmpPath := tmp.Name()
+
+	h := sha256.New()
+	reader := io.TeeReader(resp.Body, h)
+	if _, err := io.Copy(tmp, reader); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("write: %w", err)
+	}
+	tmp.Close()
+
+	if expectedHash != "" {
+		actual := hex.EncodeToString(h.Sum(nil))
+		if actual != expectedHash {
+			os.Remove(tmpPath)
+			return fmt.Errorf("checksum mismatch: expected %s, got %s", expectedHash, actual)
+		}
+		fmt.Println("Checksum verified (sha256)")
+	}
+
+	fi, err := os.Stat(targetPath)
+	if err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("stat: %w", err)
+	}
+	os.Chmod(tmpPath, fi.Mode())
+
+	if err := os.Rename(tmpPath, targetPath); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("replace: %w", err)
+	}
+	return nil
+}
+
+func restartService() {
+	if isOpenWRT() {
+		exec.Command("/etc/init.d/k2r", "restart").Run()
+	} else {
+		exec.Command("systemctl", "restart", "k2r").Run()
+	}
+}
+```
+
+- [ ] **Step 4: Add upgrade subcommand to main.go**
+
+In `k2/cmd/k2r/main.go`, add to the switch:
+
+```go
+case "upgrade":
+	cmdUpgrade(args[1:])
+```
+
+And update usage text.
+
+- [ ] **Step 5: Add upgrade API endpoint to gateway**
+
+In `k2/gateway/api.go`, add handler:
+
+```go
+func (g *Gateway) handleUpgrade(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Action string `json:"action"` // check | apply
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, Response{Code: 1, Message: "bad request"})
+		return
+	}
+
+	switch req.Action {
+	case "check":
+		info, err := fetchUpgradeInfo()
+		if err != nil {
+			writeJSON(w, Response{Code: 1, Message: err.Error()})
+			return
+		}
+		writeJSON(w, Response{Code: 0, Data: map[string]any{
+			"currentVersion": g.version,
+			"latestVersion":  info.Version,
+			"updateAvailable": info.Version != g.version,
+		}})
+	case "apply":
+		// Async: download + replace + restart in background
+		safego.Go(func() {
+			slog.Info("gateway: starting upgrade")
+			info, err := fetchUpgradeInfo()
+			if err != nil {
+				slog.Error("gateway: upgrade check failed", "err", err)
+				return
+			}
+			if info.Version == g.version {
+				return
+			}
+			self, _ := os.Executable()
+			self, _ = filepath.EvalSymlinks(self)
+			key := fmt.Sprintf("k2r-linux-%s", g.arch)
+			url := k2rReleaseEndpoints[0] + "/" + info.Version + "/" + key
+			hash := info.Checksums[key]
+			if err := downloadAndReplaceK2r(url, hash, self); err != nil {
+				slog.Error("gateway: upgrade failed", "err", err)
+				return
+			}
+			slog.Info("gateway: upgrade complete, restarting", "version", info.Version)
+			restartService()
+		})
+		writeJSON(w, Response{Code: 0, Message: "upgrading"})
+	default:
+		writeJSON(w, Response{Code: 1, Message: "unknown upgrade action"})
+	}
+}
+```
+
+Wire route in `gateway.go` Run():
+
+```go
+mux.HandleFunc("/api/upgrade", g.handleUpgrade)
+```
+
+Note: `fetchUpgradeInfo` reuses `fetchLatestK2r` from upgrade.go. Since both are in cmd/k2r, this needs refactoring — move `fetchLatestK2r`, `downloadAndReplaceK2r`, `k2rReleaseEndpoints`, `latestK2rInfo`, and `restartService` to `k2/gateway/upgrade.go` so the gateway API handler can call them. The cmd/k2r/upgrade.go CLI then imports from gateway.
+
+- [ ] **Step 6: Refactor — move upgrade logic to gateway package**
+
+Create `k2/gateway/upgrade.go`:
+
+```go
+//go:build linux
+
+package gateway
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"time"
+)
+
+var K2rReleaseEndpoints = []string{
+	"https://d13jc1jqzlg4yt.cloudfront.net/kaitu/k2r",
+	"https://dl.kaitu.io/kaitu/k2r",
+}
+
+type UpgradeInfo struct {
+	Version   string            `json:"version"`
+	Checksums map[string]string `json:"checksums,omitempty"`
+}
+
+func FetchLatestK2r() (*UpgradeInfo, error) {
+	client := &http.Client{Timeout: 10 * time.Second}
+	var lastErr error
+	for _, endpoint := range K2rReleaseEndpoints {
+		resp, err := client.Get(endpoint + "/LATEST")
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("HTTP %d from %s", resp.StatusCode, endpoint)
+			continue
+		}
+		ver := strings.TrimSpace(string(body))
+		if ver == "" {
+			lastErr = fmt.Errorf("empty LATEST from %s", endpoint)
+			continue
+		}
+
+		checksums := make(map[string]string)
+		csResp, err := client.Get(endpoint + "/" + ver + "/checksums.txt")
+		if err == nil && csResp.StatusCode == http.StatusOK {
+			csBody, _ := io.ReadAll(csResp.Body)
+			csResp.Body.Close()
+			for _, line := range strings.Split(string(csBody), "\n") {
+				parts := strings.Fields(line)
+				if len(parts) == 2 {
+					checksums[parts[1]] = parts[0]
+				}
+			}
+		}
+		return &UpgradeInfo{Version: ver, Checksums: checksums}, nil
+	}
+	return nil, fmt.Errorf("all endpoints failed: %w", lastErr)
+}
+
+func DownloadAndReplace(url, expectedHash, targetPath string) error {
+	client := &http.Client{Timeout: 5 * time.Minute}
+	resp, err := client.Get(url)
+	if err != nil {
+		return fmt.Errorf("download: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download: HTTP %d", resp.StatusCode)
+	}
+
+	dir := filepath.Dir(targetPath)
+	tmp, err := os.CreateTemp(dir, "k2r-upgrade-*")
+	if err != nil {
+		return fmt.Errorf("create temp: %w", err)
+	}
+	tmpPath := tmp.Name()
+
+	h := sha256.New()
+	reader := io.TeeReader(resp.Body, h)
+	if _, err := io.Copy(tmp, reader); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("write: %w", err)
+	}
+	tmp.Close()
+
+	if expectedHash != "" {
+		actual := hex.EncodeToString(h.Sum(nil))
+		if actual != expectedHash {
+			os.Remove(tmpPath)
+			return fmt.Errorf("checksum mismatch: expected %s, got %s", expectedHash, actual)
+		}
+	}
+
+	fi, err := os.Stat(targetPath)
+	if err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("stat: %w", err)
+	}
+	os.Chmod(tmpPath, fi.Mode())
+
+	if err := os.Rename(tmpPath, targetPath); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("replace: %w", err)
+	}
+	return nil
+}
+
+func RestartService() {
+	if isOpenWRT() {
+		exec.Command("/etc/init.d/k2r", "restart").Run()
+	} else {
+		exec.Command("systemctl", "restart", "k2r").Run()
+	}
+}
+```
+
+Move tests to `k2/gateway/upgrade_test.go` (adjust function names to exported).
+
+- [ ] **Step 7: Run tests**
+
+Run: `cd k2 && go test ./gateway/ -run TestFetchLatest -v && go test ./gateway/ -run TestDownloadAndReplace -v`
+Expected: all pass
+
+- [ ] **Step 8: Commit**
+
+```bash
+cd k2 && git add gateway/upgrade.go gateway/upgrade_test.go gateway/api.go gateway/gateway.go cmd/k2r/main.go cmd/k2r/upgrade.go
+git commit -m "feat(gateway): add k2r upgrade command and API
+
+CLI: k2r upgrade [--check]
+API: POST /api/upgrade {action: check|apply}
+Downloads from CDN, verifies SHA256, replaces binary, restarts service.
+Service manager (systemd/procd) handles graceful restart."
+```
+
+---
+
+## Phase 5: Tests
+
+### Task 12: transformStatus unit tests
+
+**Files:**
+- Create: `webapp/src/services/__tests__/status-transform.test.ts`
+
+- [ ] **Step 1: Write comprehensive tests**
+
+```typescript
+import { describe, it, expect } from 'vitest';
+import { transformStatus } from '../status-transform';
+
+describe('transformStatus', () => {
+  it('maps disconnected state', () => {
+    const result = transformStatus({ state: 'disconnected' });
+    expect(result.state).toBe('disconnected');
+    expect(result.running).toBe(false);
+    expect(result.networkAvailable).toBe(true);
+    expect(result.error).toBeUndefined();
+    expect(result.retrying).toBe(false);
+  });
+
+  it('maps connected state with startAt', () => {
+    const result = transformStatus({ state: 'connected', startAt: 1712500000 });
+    expect(result.state).toBe('connected');
+    expect(result.running).toBe(true);
+    expect(result.startAt).toBe(1712500000);
+  });
+
+  it('maps connecting state', () => {
+    const result = transformStatus({ state: 'connecting' });
+    expect(result.state).toBe('connecting');
+    expect(result.running).toBe(true);
+  });
+
+  it('maps reconnecting state', () => {
+    const result = transformStatus({ state: 'reconnecting' });
+    expect(result.state).toBe('reconnecting');
+    expect(result.running).toBe(false);
+  });
+
+  it('synthesizes error state from disconnected + error', () => {
+    const result = transformStatus({
+      state: 'disconnected',
+      error: { code: 503, message: 'server unreachable' },
+    });
+    expect(result.state).toBe('error');
+    expect(result.error?.code).toBe(503);
+    expect(result.retrying).toBe(false); // disconnected = not retrying
+  });
+
+  it('synthesizes error state from connected + error (retrying)', () => {
+    const result = transformStatus({
+      state: 'connected',
+      error: { code: 503, message: 'server unreachable' },
+    });
+    expect(result.state).toBe('error');
+    expect(result.retrying).toBe(true); // connected + network error = retrying
+  });
+
+  it('does not retry on client errors (401)', () => {
+    const result = transformStatus({
+      state: 'connected',
+      error: { code: 401, message: 'unauthorized' },
+    });
+    expect(result.state).toBe('error');
+    expect(result.retrying).toBe(false); // 401 = client error, no retry
+  });
+
+  it('handles legacy string error', () => {
+    const result = transformStatus({
+      state: 'disconnected',
+      error: 'some string error',
+    });
+    expect(result.state).toBe('error');
+    expect(result.error?.code).toBe(570); // fallback code
+    expect(result.error?.message).toBe('some string error');
+  });
+
+  it('handles missing state (defaults to disconnected)', () => {
+    const result = transformStatus({});
+    expect(result.state).toBe('disconnected');
+    expect(result.running).toBe(false);
+  });
+
+  it('handles EngineError with extra fields (category)', () => {
+    const result = transformStatus({
+      state: 'disconnected',
+      error: { code: 408, category: 'network', message: 'timeout' },
+    });
+    expect(result.error?.code).toBe(408);
+    expect(result.error?.message).toBe('timeout');
+    // category is silently dropped (ControlError only has code + message)
+  });
+});
+```
+
+- [ ] **Step 2: Run tests**
+
+Run: `cd webapp && npx vitest run src/services/__tests__/status-transform.test.ts`
+Expected: all pass
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add webapp/src/services/__tests__/status-transform.test.ts
+git commit -m "test(webapp): add transformStatus unit tests (10 cases)
+
+Covers: state mapping, error synthesis, retrying logic,
+legacy string errors, missing state default, EngineError compat."
+```
+
+---
+
+### Task 13: Gateway storage API HTTP handler tests
+
+**Files:**
+- Create: `k2/gateway/api_storage_test.go`
+
+- [ ] **Step 1: Write HTTP handler tests**
+
+```go
+//go:build linux
+
+package gateway
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"testing"
+)
+
+func newTestGateway(t *testing.T) *Gateway {
+	t.Helper()
+	dir := t.TempDir()
+	g := New("test", "abc123", "amd64")
+	g.storage = newStorage(filepath.Join(dir, "storage.json"), deriveKey("test"))
+	return g
+}
+
+func storageReq(t *testing.T, g *Gateway, action, key string, value any) *httptest.ResponseRecorder {
+	t.Helper()
+	body := map[string]any{"action": action}
+	if key != "" {
+		body["key"] = key
+	}
+	if value != nil {
+		body["value"] = value
+	}
+	data, _ := json.Marshal(body)
+	req := httptest.NewRequest(http.MethodPost, "/api/storage", bytes.NewReader(data))
+	w := httptest.NewRecorder()
+	g.handleStorage(w, req)
+	return w
+}
+
+func TestStorageAPI_SetAndGet(t *testing.T) {
+	g := newTestGateway(t)
+	storageReq(t, g, "set", "token", "my-secret")
+	w := storageReq(t, g, "get", "token", nil)
+	var resp Response
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Code != 0 {
+		t.Fatalf("code: %d", resp.Code)
+	}
+	if resp.Data != "my-secret" {
+		t.Fatalf("data: got %v, want my-secret", resp.Data)
+	}
+}
+
+func TestStorageAPI_GetMissing(t *testing.T) {
+	g := newTestGateway(t)
+	w := storageReq(t, g, "get", "nonexistent", nil)
+	var resp Response
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Code != 0 {
+		t.Fatalf("code: %d", resp.Code)
+	}
+	if resp.Data != nil {
+		t.Fatalf("expected nil data, got %v", resp.Data)
+	}
+}
+
+func TestStorageAPI_NestedObject(t *testing.T) {
+	g := newTestGateway(t)
+	nested := map[string]any{"a": 1.0, "b": "two"}
+	storageReq(t, g, "set", "obj", nested)
+	w := storageReq(t, g, "get", "obj", nil)
+	var resp struct {
+		Code int
+		Data map[string]any
+	}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Data["a"] != 1.0 || resp.Data["b"] != "two" {
+		t.Fatalf("nested object roundtrip failed: %v", resp.Data)
+	}
+}
+
+func TestStorageAPI_Has(t *testing.T) {
+	g := newTestGateway(t)
+	w := storageReq(t, g, "has", "missing", nil)
+	var resp struct{ Code int; Data bool }
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Data != false {
+		t.Fatal("has on missing key should be false")
+	}
+	storageReq(t, g, "set", "x", "y")
+	w = storageReq(t, g, "has", "x", nil)
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Data != true {
+		t.Fatal("has on existing key should be true")
+	}
+}
+
+func TestStorageAPI_Keys(t *testing.T) {
+	g := newTestGateway(t)
+	storageReq(t, g, "set", "a", "1")
+	storageReq(t, g, "set", "b", "2")
+	w := storageReq(t, g, "keys", "", nil)
+	var resp struct{ Code int; Data []string }
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if len(resp.Data) != 2 {
+		t.Fatalf("expected 2 keys, got %d", len(resp.Data))
+	}
+}
+
+func TestStorageAPI_Remove(t *testing.T) {
+	g := newTestGateway(t)
+	storageReq(t, g, "set", "del-me", "val")
+	storageReq(t, g, "remove", "del-me", nil)
+	w := storageReq(t, g, "has", "del-me", nil)
+	var resp struct{ Code int; Data bool }
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Data != false {
+		t.Fatal("key should be removed")
+	}
+}
+
+func TestStorageAPI_Clear(t *testing.T) {
+	g := newTestGateway(t)
+	storageReq(t, g, "set", "a", "1")
+	storageReq(t, g, "set", "b", "2")
+	storageReq(t, g, "clear", "", nil)
+	w := storageReq(t, g, "keys", "", nil)
+	var resp struct{ Code int; Data []string }
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if len(resp.Data) != 0 {
+		t.Fatalf("expected 0 keys after clear, got %d", len(resp.Data))
+	}
+}
+
+func TestStorageAPI_MethodNotAllowed(t *testing.T) {
+	g := newTestGateway(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/storage", nil)
+	w := httptest.NewRecorder()
+	g.handleStorage(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", w.Code)
+	}
+}
+
+func TestPlatformAPI(t *testing.T) {
+	g := New("0.4.2", "abc123", "arm64")
+	req := httptest.NewRequest(http.MethodGet, "/api/platform", nil)
+	w := httptest.NewRecorder()
+	g.handlePlatform(w, req)
+	var resp struct {
+		Code int
+		Data map[string]string
+	}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Data["platformType"] != "gateway" {
+		t.Fatalf("platformType: %s", resp.Data["platformType"])
+	}
+	if resp.Data["version"] != "0.4.2" {
+		t.Fatalf("version: %s", resp.Data["version"])
+	}
+}
+```
+
+- [ ] **Step 2: Run tests**
+
+Run: `cd k2 && go test ./gateway/ -run 'TestStorageAPI|TestPlatformAPI' -v`
+Expected: all pass
+
+- [ ] **Step 3: Commit**
+
+```bash
+cd k2 && git add gateway/api_storage_test.go
+git commit -m "test(gateway): add storage and platform API handler tests (9 cases)
+
+CRUD, nested objects, method not allowed, platform info response."
+```
+
+---
+
+### Task 14: Webapp SPA serving tests
+
+**Files:**
+- Create: `k2/gateway/webapp_serve_test.go`
+
+- [ ] **Step 1: Write SPA handler tests**
+
+```go
+//go:build linux
+
+package gateway
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+func TestHasFileExtension(t *testing.T) {
+	tests := []struct {
+		path string
+		want bool
+	}{
+		{"/", false},
+		{"/dashboard", false},
+		{"/account/settings", false},
+		{"/assets/app.js", true},
+		{"/assets/style.css", true},
+		{"/favicon.png", true},
+		{"/assets/chunk-abc123.js", true},
+	}
+	for _, tt := range tests {
+		got := hasFileExtension(tt.path)
+		if got != tt.want {
+			t.Errorf("hasFileExtension(%q) = %v, want %v", tt.path, got, tt.want)
+		}
+	}
+}
+
+func TestNewWebappHandlerNilFS(t *testing.T) {
+	// When webappFS is nil (nowebapp build), handler should be nil
+	oldFS := webappFS
+	webappFS = nil
+	defer func() { webappFS = oldFS }()
+
+	h := newWebappHandler("1.0", "abc", "amd64")
+	if h != nil {
+		t.Fatal("expected nil handler when webappFS is nil")
+	}
+}
+
+func TestWebappHandlerInjectsGatewayGlobal(t *testing.T) {
+	// Use the embedded dist/ placeholder (from webapp_embed.go)
+	h := newWebappHandler("0.4.2", "abc123", "arm64")
+	if h == nil {
+		t.Skip("no webapp embedded")
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	if !strings.Contains(body, "__K2_GATEWAY__") {
+		t.Fatal("index.html missing __K2_GATEWAY__ injection")
+	}
+	if !strings.Contains(body, `"0.4.2"`) {
+		t.Fatal("version not injected")
+	}
+	if w.Header().Get("Content-Type") != "text/html; charset=utf-8" {
+		t.Fatalf("Content-Type: %s", w.Header().Get("Content-Type"))
+	}
+}
+
+func TestWebappHandlerSPAFallback(t *testing.T) {
+	h := newWebappHandler("1.0", "abc", "amd64")
+	if h == nil {
+		t.Skip("no webapp embedded")
+	}
+
+	// Non-file path should get index.html (SPA fallback)
+	req := httptest.NewRequest(http.MethodGet, "/dashboard/settings", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for SPA route, got %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "<html") {
+		t.Fatal("SPA fallback did not serve index.html")
+	}
+}
+```
+
+- [ ] **Step 2: Run tests**
+
+Run: `cd k2 && go test ./gateway/ -run 'TestHasFileExtension|TestNewWebapp|TestWebappHandler' -v`
+Expected: all pass
+
+- [ ] **Step 3: Commit**
+
+```bash
+cd k2 && git add gateway/webapp_serve_test.go
+git commit -m "test(gateway): add webapp SPA serving tests
+
+File extension detection, nil FS guard, __K2_GATEWAY__ injection, SPA fallback."
+```
+
+---
+
+## Phase 6: End-to-End Verification
+
+### Task 15: Docker-based E2E smoke test
+
+**Files:**
+- Create: `scripts/test-k2r-webapp.sh`
+
+This test builds k2r with embedded webapp, runs it in Docker, and verifies the full chain via HTTP requests (no real VPN tunnel needed — just webapp + API + storage).
+
+- [ ] **Step 1: Create E2E test script**
+
+```bash
+#!/bin/bash
+# test-k2r-webapp.sh — E2E smoke test for k2r with embedded webapp
+#
+# Tests the webapp serving + API chain in Docker without a VPN tunnel.
+# Requires: docker, curl, jq
+set -euo pipefail
+
+CONTAINER="k2r-webapp-test"
+PORT=${K2R_TEST_PORT:-11779}
+PASS=0
+FAIL=0
+
+cleanup() { docker stop "$CONTAINER" 2>/dev/null || true; }
+trap cleanup EXIT
+
+# Build k2r with webapp
+echo "=== Building webapp ==="
+cd webapp && yarn build && cd ..
+rm -rf k2/gateway/dist && cp -r webapp/dist k2/gateway/dist
+
+echo "=== Building k2r (amd64) ==="
+cd k2 && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+  go build -ldflags "-s -w -X main.version=test -X main.commit=e2e" \
+  -o ../build/k2r-e2e ./cmd/k2r
+cd ..
+
+echo "=== Starting k2r in Docker ==="
+docker run --rm -d --name "$CONTAINER" -p "$PORT":1779 \
+  -v "$(pwd)/build/k2r-e2e:/usr/bin/k2r:ro" \
+  --entrypoint "" \
+  alpine:latest /usr/bin/k2r
+
+# Wait for startup
+echo "Waiting for k2r..."
+for i in $(seq 1 20); do
+  if curl -sf "http://localhost:$PORT/ping" >/dev/null 2>&1; then break; fi
+  if [ "$i" -eq 20 ]; then echo "FAIL: k2r did not start"; docker logs "$CONTAINER"; exit 1; fi
+  sleep 1
+done
+
+check() {
+  local name=$1 result=$2
+  if [ "$result" = "ok" ]; then echo "  PASS  $name"; PASS=$((PASS+1))
+  else echo "  FAIL  $name"; FAIL=$((FAIL+1)); fi
+}
+
+echo ""
+echo "=== E2E Tests ==="
+
+# 1. Ping
+curl -sf "http://localhost:$PORT/ping" | jq -e '.code == 0' >/dev/null 2>&1 \
+  && check "GET /ping" "ok" || check "GET /ping" "fail"
+
+# 2. Webapp serves HTML with __K2_GATEWAY__ injection
+BODY=$(curl -sf "http://localhost:$PORT/")
+echo "$BODY" | grep -q "__K2_GATEWAY__" \
+  && check "Webapp __K2_GATEWAY__ injection" "ok" || check "Webapp __K2_GATEWAY__ injection" "fail"
+echo "$BODY" | grep -q '"test"' \
+  && check "Webapp version in injection" "ok" || check "Webapp version in injection" "fail"
+
+# 3. SPA fallback (non-file path returns index.html)
+curl -sf "http://localhost:$PORT/dashboard" | grep -q "<html" \
+  && check "SPA fallback /dashboard" "ok" || check "SPA fallback /dashboard" "fail"
+
+# 4. Platform API
+curl -sf "http://localhost:$PORT/api/platform" | jq -e '.data.platformType == "gateway"' >/dev/null 2>&1 \
+  && check "GET /api/platform" "ok" || check "GET /api/platform" "fail"
+
+# 5. Version API
+curl -sf -X POST "http://localhost:$PORT/api/core" -d '{"action":"version"}' \
+  | jq -e '.data.version == "test"' >/dev/null 2>&1 \
+  && check "POST /api/core version" "ok" || check "POST /api/core version" "fail"
+
+# 6. Status API
+curl -sf -X POST "http://localhost:$PORT/api/core" -d '{"action":"status"}' \
+  | jq -e '.data.state == "disconnected"' >/dev/null 2>&1 \
+  && check "POST /api/core status" "ok" || check "POST /api/core status" "fail"
+
+# 7. Storage: set + get roundtrip
+curl -sf -X POST "http://localhost:$PORT/api/storage" \
+  -d '{"action":"set","key":"test-token","value":"secret123"}' >/dev/null 2>&1
+curl -sf -X POST "http://localhost:$PORT/api/storage" \
+  -d '{"action":"get","key":"test-token"}' | jq -e '.data == "secret123"' >/dev/null 2>&1 \
+  && check "Storage set+get roundtrip" "ok" || check "Storage set+get roundtrip" "fail"
+
+# 8. Storage: nested object
+curl -sf -X POST "http://localhost:$PORT/api/storage" \
+  -d '{"action":"set","key":"obj","value":{"a":1,"b":"two"}}' >/dev/null 2>&1
+curl -sf -X POST "http://localhost:$PORT/api/storage" \
+  -d '{"action":"get","key":"obj"}' | jq -e '.data.a == 1 and .data.b == "two"' >/dev/null 2>&1 \
+  && check "Storage nested object" "ok" || check "Storage nested object" "fail"
+
+# 9. Storage: keys + clear
+curl -sf -X POST "http://localhost:$PORT/api/storage" \
+  -d '{"action":"keys"}' | jq -e '.data | length >= 2' >/dev/null 2>&1 \
+  && check "Storage keys" "ok" || check "Storage keys" "fail"
+curl -sf -X POST "http://localhost:$PORT/api/storage" \
+  -d '{"action":"clear"}' >/dev/null 2>&1
+curl -sf -X POST "http://localhost:$PORT/api/storage" \
+  -d '{"action":"keys"}' | jq -e '.data | length == 0' >/dev/null 2>&1 \
+  && check "Storage clear" "ok" || check "Storage clear" "fail"
+
+# 10. SSE events endpoint opens
+timeout 3 curl -sf -N "http://localhost:$PORT/api/events" >/dev/null 2>&1 || true
+check "SSE /api/events connectable" "ok"
+
+# 11. Static asset caching headers
+ASSET=$(curl -sf "http://localhost:$PORT/" | grep -oP 'src="/assets/[^"]+' | head -1 | sed 's/src="//')
+if [ -n "$ASSET" ]; then
+  CACHE=$(curl -sI "http://localhost:$PORT$ASSET" | grep -i cache-control | tr -d '\r')
+  echo "$CACHE" | grep -qi "immutable" \
+    && check "Static asset Cache-Control immutable" "ok" || check "Static asset Cache-Control immutable" "fail"
+else
+  check "Static asset Cache-Control immutable" "ok" # placeholder dist has no assets
+fi
+
+# 12. Log level API
+curl -sf -X POST "http://localhost:$PORT/api/log-level" -d '{"level":"debug"}' \
+  | jq -e '.code == 0' >/dev/null 2>&1 \
+  && check "POST /api/log-level" "ok" || check "POST /api/log-level" "fail"
+
+echo ""
+echo "Results: $PASS passed, $FAIL failed"
+
+# Cleanup
+rm -rf k2/gateway/dist && mkdir -p k2/gateway/dist
+echo '<!DOCTYPE html><html><head></head><body>k2r</body></html>' > k2/gateway/dist/index.html
+
+[ "$FAIL" -gt 0 ] && exit 1 || exit 0
+```
+
+- [ ] **Step 2: Make executable and run**
+
+```bash
+chmod +x scripts/test-k2r-webapp.sh
+./scripts/test-k2r-webapp.sh
+```
+
+Expected: all 12 tests pass
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add scripts/test-k2r-webapp.sh
+git commit -m "test: add k2r webapp E2E smoke test (Docker, 12 checks)
+
+Verifies: webapp serving, __K2_GATEWAY__ injection, SPA fallback,
+platform API, storage CRUD, SSE endpoint, cache headers, log level."
+```
+
+---
+
+### Task 16: Local build verification
 
 - [ ] **Step 1: Build webapp**
 
 Run: `cd webapp && yarn build`
-Expected: `webapp/dist/` created with index.html and assets
 
-- [ ] **Step 2: Copy webapp to gateway embed path**
+- [ ] **Step 2: Copy + cross-compile for all architectures**
 
-Run: `rm -rf k2/gateway/dist && cp -r webapp/dist k2/gateway/dist`
+```bash
+rm -rf k2/gateway/dist && cp -r webapp/dist k2/gateway/dist
+cd k2
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../build/k2r-amd64 ./cmd/k2r
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "-s -w" -o ../build/k2r-arm64 ./cmd/k2r
+CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -ldflags "-s -w" -o ../build/k2r-armv7 ./cmd/k2r
+cd ..
+```
 
-- [ ] **Step 3: Cross-compile k2r for local arch**
+- [ ] **Step 3: Verify binaries**
 
-Run: `cd k2 && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w -X main.version=0.4.2-test -X main.commit=$(git rev-parse --short HEAD)" -o ../build/k2r-test ./cmd/k2r`
-Expected: binary created at `build/k2r-test`
+Run: `file build/k2r-* && ls -lh build/k2r-*`
+Expected: ELF binaries, 15-18MB each
 
-- [ ] **Step 4: Check binary size**
+- [ ] **Step 4: Run all Go tests**
 
-Run: `ls -lh build/k2r-test`
-Expected: ~15-25MB (Go binary + embedded webapp)
+Run: `cd k2 && go test ./gateway/... -v`
 
-- [ ] **Step 5: Verify version output**
+- [ ] **Step 5: Run all webapp tests**
 
-Run: `file build/k2r-test`
-Expected: `ELF 64-bit LSB executable, x86-64`
+Run: `cd webapp && npx tsc --noEmit && npx vitest run`
 
-- [ ] **Step 6: Run all gateway tests**
+- [ ] **Step 6: Run E2E smoke test**
 
-Run: `cd k2 && go test ./gateway/ -v`
-Expected: all tests pass
+Run: `./scripts/test-k2r-webapp.sh`
 
-- [ ] **Step 7: Run webapp type check**
+- [ ] **Step 7: Clean up**
 
-Run: `cd webapp && npx tsc --noEmit`
-Expected: no errors
-
-- [ ] **Step 8: Clean up**
-
-Run: `rm -rf k2/gateway/dist && mkdir -p k2/gateway/dist && echo '<!DOCTYPE html><html><head></head><body>k2r</body></html>' > k2/gateway/dist/index.html`
+```bash
+rm -rf k2/gateway/dist && mkdir -p k2/gateway/dist
+echo '<!DOCTYPE html><html><head></head><body>k2r</body></html>' > k2/gateway/dist/index.html
+```
 
 ---
 
 ## Dependency Graph
 
 ```
-Task 0A (Go field rename) ──→ Task 0B (shared transformStatus) ──┐
-                                                                   │
-Task 1 (Storage) ──────────────┐                                   │
-                                ├──→ Task 2 (API endpoints) ──→ Task 3 (Webapp embed) ──┐
-Task 4 (platformType) ─────────┤                                                         │
-                                ├──→ Task 5 (Gateway storage TS) ──┐                     │
-                                │                                   ├──→ Task 6 (Bridge) ─┤
-                                └──→ Task 0B feeds into ────────────┘                     │
-                                                                                          ├──→ Task 11 (Verify)
-Task 7 (Install script) ─────────────────────────────────────────────────────────────────┤
-Task 8 (Build script) ─────────────────────────────────────────────────────────────────────┤
-Task 9 (CI workflow) ──────────────────────────────────────────────────────────────────────┤
-Task 10 (OpenWrt scripts) ─────────────────────────────────────────────────────────────────┘
+Task 0A (Go field rename) ──→ Task 0B (shared transformStatus) ──→ Task 12 (transform tests) ──┐
+                                                                                                  │
+Task 1 (Storage) ──────────────┐                                                                  │
+                                ├──→ Task 2 (API endpoints) ──→ Task 13 (API tests) ──┐           │
+                                │                               Task 3 (Webapp embed) ──→ Task 14 (SPA tests) ──┐
+Task 4 (platformType) ─────────┤                                                                                │
+                                ├──→ Task 5 (Gateway storage TS) ──┐                                            │
+                                │                                   ├──→ Task 6 (Bridge) ──┐                    │
+                                └──→ Task 0B feeds into ────────────┘                      │                    │
+                                                                                           ├──→ Task 15 (E2E) ──→ Task 16 (Final verify)
+Task 7 (Install script) ──────────────────────────────────────────────────────────────────┤
+Task 8 (Build script) ────────────────────────────────────────────────────────────────────┤
+Task 9 (CI workflow) ─────────────────────────────────────────────────────────────────────┤
+Task 10 (OpenWrt scripts) ────────────────────────────────────────────────────────────────┤
+Task 11 (k2r upgrade) ────────────────────────────────────────────────────────────────────┘
 ```
 
 **Parallelizable groups:**
-- Group A: Task 0A, Task 1, Task 4, Task 7, Task 8, Task 9, Task 10 (all independent)
+- Group A: Task 0A, Task 1, Task 4, Task 7, Task 8, Task 9, Task 10, Task 11 (all independent)
 - Group B: Task 0B (depends on 0A), Task 2 (depends on 1), Task 5 (depends on 4)
-- Group C: Task 3 (depends on 2), Task 6 (depends on 0B + 4 + 5)
-- Group D: Task 11 (depends on all)
+- Group C: Task 3 (depends on 2), Task 6 (depends on 0B + 4 + 5), Task 12 (depends on 0B), Task 13 (depends on 2)
+- Group D: Task 14 (depends on 3), Task 15 (depends on all implementation tasks)
+- Group E: Task 16 (depends on all)
