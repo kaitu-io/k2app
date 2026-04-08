@@ -130,6 +130,10 @@ func (s *Subscription) Fetch(ctx context.Context, client *http.Client) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		hint, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
+		if len(hint) > 0 {
+			return fmt.Errorf("subscription fetch: status %d: %s", resp.StatusCode, strings.TrimSpace(string(hint)))
+		}
 		return fmt.Errorf("subscription fetch: status %d", resp.StatusCode)
 	}
 
