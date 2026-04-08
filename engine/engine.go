@@ -1218,11 +1218,11 @@ func (e *Engine) ClearWireError() {
 // engine.go change.
 func (e *Engine) reRaceLoop(ctx context.Context) {
 	for {
+		var target *outboundTransport
 		select {
 		case <-ctx.Done():
 			return
-		case ot := <-e.reRaceChan:
-			_ = ot // Task 7 will use ot for per-TM re-race
+		case target = <-e.reRaceChan:
 		}
 
 		e.mu.Lock()
@@ -1230,23 +1230,25 @@ func (e *Engine) reRaceLoop(ctx context.Context) {
 			e.mu.Unlock()
 			continue
 		}
-		tm := e.tm
-		wireCfg := e.wireCfg
 		dd := e.directDialer
 		e.mu.Unlock()
 
-		if tm == nil {
+		if target == nil || target.tm == nil {
 			continue
 		}
 
-		slog.Warn("DIAG: transport-rerace", "reason", "echo-consecutive-fail", "previousTransport", tm.PrimaryType())
+		slog.Warn("DIAG: transport-rerace",
+			"reason", "echo-consecutive-fail",
+			"outbound", target.name,
+			"previousTransport", target.tm.PrimaryType(),
+		)
 
 		raceCtx, raceCancel := context.WithTimeout(ctx, 15*time.Second)
-		result, err := wire.RaceTransport(raceCtx, wireCfg, wireCfg.DialAddr, dd)
+		result, err := wire.RaceTransport(raceCtx, target.wireCfg, target.wireCfg.DialAddr, dd)
 		raceCancel()
 
 		if err != nil {
-			slog.Warn("engine: re-race failed", "err", err)
+			slog.Warn("engine: re-race failed", "outbound", target.name, "err", err)
 			continue
 		}
 
@@ -1255,15 +1257,23 @@ func (e *Engine) reRaceLoop(ctx context.Context) {
 			return
 		}
 
+		// Verify the target TM still exists in the engine.
 		e.mu.Lock()
-		currentTM := e.tm
+		found := false
+		for _, ot := range e.outboundTMs {
+			if ot == target {
+				found = true
+				break
+			}
+		}
 		e.mu.Unlock()
-		if currentTM == nil {
+
+		if !found {
 			result.Dialer.Close()
 			continue
 		}
 
-		currentTM.ReplacePrimary(result.Dialer, result.TransportType)
+		target.tm.ReplacePrimary(result.Dialer, result.TransportType)
 	}
 }
 
