@@ -280,9 +280,11 @@ func (e *Engine) Start(cfg Config) error {
 
 	for i, r := range otResults {
 		if r.err != nil {
-			for _, prev := range otResults[:i] {
-				if prev.ot != nil {
-					prev.ot.tm.Close()
+			// Close ALL successfully-created TMs (errgroup runs concurrently,
+			// so indices after i may also have succeeded).
+			for _, other := range otResults {
+				if other.ot != nil {
+					other.ot.tm.Close()
 				}
 			}
 			if cfg.NetworkMonitor != nil {
