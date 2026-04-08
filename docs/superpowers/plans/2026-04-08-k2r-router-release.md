@@ -10,6 +10,202 @@
 
 **Spec:** `docs/superpowers/specs/2026-04-08-k2r-router-release-design.md`
 
+**Target architectures:** arm64 (aarch64), amd64 (x86_64), armv7. **mipsle dropped** — bare k2r binary is 15MB, most mipsle routers have 16MB flash (won't fit even without webapp). mipsle is a discontinued 2016-era architecture (MT7621) with no new devices.
+
+**Submodule workflow:** k2 is a read-only submodule in k2app. All Go changes (Tasks 1-3) are made on a feature branch in the k2 repo, then k2app updates the submodule ref.
+
+---
+
+## Verification Results (pre-implementation)
+
+These findings were verified before writing the plan:
+
+1. **`//go:embed` cross-compile** — Confirmed working: macOS `GOOS=linux` cross-compile for amd64/arm64/armv7/mipsle all succeed with embedded dist/.
+2. **`Gateway.New()` change** — Safe: only 2 call sites (gateway.go definition + cmd/k2r/main.go). Zero test files call `New()`.
+3. **engine.Status field mapping** — Engine already uses `"disconnected"` (NOT `"stopped"`). The `"stopped"` → `"disconnected"` mapping in tauri-k2.ts is dead code. Real gaps: `connected_at` (snake_case RFC3339) vs `startAt` (camelCase Unix seconds), and missing computed fields (`running`, `retrying`, `networkAvailable`).
+4. **HKDF + AES-GCM on all architectures** — Pure Go, no CGO dependency, confirmed safe.
+5. **Webapp dist size** — 2.4MB raw, 1.05MB gzipped. k2r bare binary: 14-15MB. With webapp: ~16-17MB. Fits arm64/amd64/armv7.
+
+---
+
+## Phase 0: Status API Field Alignment (k2 submodule)
+
+Unify the Go status JSON format with the TypeScript `StatusResponseData` contract. This change benefits all platforms (desktop + mobile + gateway), not just k2r.
+
+### Task 0A: Rename `connected_at` → `startAt` in engine + daemon
+
+**Files:**
+- Modify: `k2/engine/status.go`
+- Modify: `k2/daemon/daemon.go`
+
+The `connected_at` field (snake_case, RFC3339 string) must become `startAt` (camelCase, Unix seconds integer) to match the TypeScript `StatusResponseData.startAt` field.
+
+- [ ] **Step 1: Update engine/status.go MarshalJSON**
+
+Change `statusJSON` and `MarshalJSON` in `k2/engine/status.go`:
+
+```go
+type statusJSON struct {
+	State         string       `json:"state"`
+	Error         *EngineError `json:"error,omitempty"`
+	StartAt       int64        `json:"startAt,omitempty"`
+	UptimeSeconds int          `json:"uptimeSeconds,omitempty"`
+}
+
+func (s Status) MarshalJSON() ([]byte, error) {
+	j := statusJSON{
+		State: s.State,
+		Error: s.Error,
+	}
+	if s.State == StateConnected && !s.ConnectedAt.IsZero() {
+		j.StartAt = s.ConnectedAt.Unix()
+		j.UptimeSeconds = int(time.Since(s.ConnectedAt).Seconds())
+	}
+	return json.Marshal(j)
+}
+```
+
+- [ ] **Step 2: Update daemon/daemon.go statusInfo()**
+
+Change `statusInfo()` in `k2/daemon/daemon.go` (around line 487):
+
+```go
+func (d *Daemon) statusInfo() map[string]any {
+	d.mu.RLock()
+	s := d.lastStatus
+	cfg := d.lastConfig
+	d.mu.RUnlock()
+
+	info := map[string]any{
+		"state": s.State,
+	}
+	if s.Error != nil {
+		info["error"] = s.Error
+	}
+	if s.State == engine.StateConnected && !s.ConnectedAt.IsZero() {
+		info["startAt"] = s.ConnectedAt.Unix()
+		info["uptimeSeconds"] = int(time.Since(s.ConnectedAt).Seconds())
+	}
+	if cfg != nil {
+		info["config"] = cfg
+	}
+	return info
+}
+```
+
+- [ ] **Step 3: Update engine tests that assert JSON output**
+
+Run: `cd k2 && grep -rn 'connected_at\|uptime_seconds' engine/ daemon/`
+Update any test assertions from `connected_at` → `startAt`, `uptime_seconds` → `uptimeSeconds`.
+
+- [ ] **Step 4: Run engine + daemon tests**
+
+Run: `cd k2 && go test ./engine/... ./daemon/... -v`
+Expected: all tests pass
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd k2 && git add engine/status.go daemon/daemon.go
+git commit -m "refactor: rename connected_at→startAt, uptime_seconds→uptimeSeconds
+
+Align Go JSON output with TypeScript StatusResponseData contract.
+startAt is now Unix seconds (int64) instead of RFC3339 string.
+Affects engine MarshalJSON + daemon statusInfo."
+```
+
+### Task 0B: Extract shared transformStatus in webapp
+
+**Files:**
+- Create: `webapp/src/services/status-transform.ts`
+- Modify: `webapp/src/services/tauri-k2.ts`
+- Modify: `webapp/src/services/capacitor-k2.ts`
+
+Extract the computed-field logic (`running`, `retrying`, `networkAvailable`, error synthesis) into a shared utility. Remove the dead `"stopped"` → `"disconnected"` mapping from Tauri bridge.
+
+- [ ] **Step 1: Create status-transform.ts**
+
+```typescript
+/**
+ * Shared status transformation for all platform bridges.
+ *
+ * Raw status from engine (via daemon HTTP, gateway SSE, or K2Plugin)
+ * provides: state, error, startAt, uptimeSeconds.
+ *
+ * This function computes the derived fields that StatusResponseData requires:
+ * running, retrying, networkAvailable, and error state synthesis.
+ */
+
+import type { StatusResponseData, ControlError, ServiceState } from './vpn-types';
+
+export function transformStatus(raw: any): StatusResponseData {
+  let state: ServiceState = raw.state ?? 'disconnected';
+  const running = state === 'connecting' || state === 'connected';
+
+  let error: ControlError | undefined;
+  let retrying = false;
+
+  if (raw.error) {
+    if (typeof raw.error === 'object' && raw.error !== null && 'code' in raw.error) {
+      error = { code: raw.error.code, message: raw.error.message || '' };
+    } else {
+      error = { code: 570, message: String(raw.error) };
+    }
+    // Error synthesis: disconnected + error → 'error' state
+    if (state === 'disconnected' || state === 'connected') {
+      const isClientError = [400, 401, 402, 403].includes(error.code);
+      retrying = state === 'connected' && !isClientError;
+      state = 'error';
+    }
+  }
+
+  return {
+    state,
+    running,
+    networkAvailable: true,
+    startAt: typeof raw.startAt === 'number' ? raw.startAt : undefined,
+    error,
+    retrying,
+  };
+}
+```
+
+- [ ] **Step 2: Update tauri-k2.ts to use shared transform**
+
+Replace the inline `transformStatus` function in `webapp/src/services/tauri-k2.ts` with:
+
+```typescript
+import { transformStatus } from './status-transform';
+```
+
+Remove the local `function transformStatus(raw: any): StatusResponseData { ... }` definition (around lines 30-67).
+
+- [ ] **Step 3: Update capacitor-k2.ts to use shared transform**
+
+Replace the inline `transformStatus` function in `webapp/src/services/capacitor-k2.ts` with:
+
+```typescript
+import { transformStatus } from './status-transform';
+```
+
+Remove the local `function transformStatus(raw: any): StatusResponseData { ... }` definition.
+
+- [ ] **Step 4: Verify TypeScript compiles + existing tests pass**
+
+Run: `cd webapp && npx tsc --noEmit && npx vitest run`
+Expected: all pass
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add webapp/src/services/status-transform.ts webapp/src/services/tauri-k2.ts webapp/src/services/capacitor-k2.ts
+git commit -m "refactor(webapp): extract shared transformStatus for all bridges
+
+Removes duplicate transformStatus from tauri-k2 and capacitor-k2.
+Removes dead 'stopped'→'disconnected' mapping (engine already uses 'disconnected').
+startAt now expected as Unix seconds (matches Go-side rename)."
+```
+
 ---
 
 ## Phase 1: Go Gateway Backend (k2 submodule)
@@ -916,6 +1112,7 @@ git commit -m "feat(webapp): add gateway storage bridge (HTTP-backed ISecureStor
 
 import type { IK2Vpn, IPlatform, SResponse } from '../types/kaitu-core';
 import type { StatusResponseData } from './vpn-types';
+import { transformStatus } from './status-transform';
 import { gatewayStorage } from './gateway-storage';
 import { webPlatform } from './web-platform';
 
@@ -958,8 +1155,8 @@ function connectSSE(
 
     es.addEventListener('status', (e: MessageEvent) => {
       try {
-        const data = JSON.parse(e.data);
-        onStatus?.(data);
+        const raw = JSON.parse(e.data);
+        onStatus?.(transformStatus(raw));
       } catch { /* ignore parse errors */ }
     });
 
@@ -1124,8 +1321,7 @@ detect_platform() {
         x86_64|amd64)     ARCH="amd64" ;;
         aarch64|arm64)    ARCH="arm64" ;;
         armv7l|armv7)     ARCH="armv7" ;;
-        mips|mipsel)      ARCH="mipsle" ;;
-        *)                die "unsupported architecture: $ARCH" ;;
+        *)                die "unsupported architecture: $ARCH (k2r supports aarch64, x86_64, armv7)" ;;
     esac
 }
 
@@ -1355,7 +1551,6 @@ TARGETS=(
     "linux:arm64::arm64"
     "linux:amd64::amd64"
     "linux:arm:7:armv7"
-    "linux:mipsle::mipsle"
 )
 
 # 1. Build webapp
@@ -1449,9 +1644,6 @@ jobs:
             goarch: arm
             goarm: '7'
             name: armv7
-          - goos: linux
-            goarch: mipsle
-            name: mipsle
 
     steps:
       - name: Checkout repository
@@ -1507,7 +1699,6 @@ jobs:
         run: file build/k2r-linux-${{ matrix.name }}
 
       - name: Smoke test with qemu
-        if: matrix.goarch != 'mipsle'
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq qemu-user-static binfmt-support
           build/k2r-linux-${{ matrix.name }} -v
@@ -1565,7 +1756,7 @@ jobs:
 
           # Download per-arch checksums and merge
           mkdir -p /tmp/checksums
-          for arch in arm64 amd64 armv7 mipsle; do
+          for arch in arm64 amd64 armv7; do
             aws s3 cp "s3://d0.all7.cc/kaitu/k2r/${VERSION}/checksums-${arch}.txt" \
               "/tmp/checksums/${arch}.txt" 2>/dev/null || true
           done
@@ -1585,7 +1776,7 @@ jobs:
             --cache-control "max-age=300"
 
           # Clean up per-arch checksum files
-          for arch in arm64 amd64 armv7 mipsle; do
+          for arch in arm64 amd64 armv7; do
             aws s3 rm "s3://d0.all7.cc/kaitu/k2r/${VERSION}/checksums-${arch}.txt" 2>/dev/null || true
           done
 
@@ -1605,7 +1796,7 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           ./scripts/ci/notify-slack.sh deploy-success \
             --version "${VERSION}" \
-            --platforms "k2r (arm64, amd64, armv7, mipsle)"
+            --platforms "k2r (arm64, amd64, armv7)"
         env:
           SLACK_WEBHOOK_RELEASE: ${{ secrets.SLACK_WEBHOOK_RELEASE }}
 ```
@@ -1783,20 +1974,23 @@ Run: `rm -rf k2/gateway/dist && mkdir -p k2/gateway/dist && echo '<!DOCTYPE html
 ## Dependency Graph
 
 ```
-Task 1 (Storage) ──────────────┐
+Task 0A (Go field rename) ──→ Task 0B (shared transformStatus) ──┐
+                                                                   │
+Task 1 (Storage) ──────────────┐                                   │
                                 ├──→ Task 2 (API endpoints) ──→ Task 3 (Webapp embed) ──┐
 Task 4 (platformType) ─────────┤                                                         │
-                                ├──→ Task 5 (Gateway storage TS) ──→ Task 6 (Bridge + main.tsx) ──┤
-                                │                                                         │
-                                └──→ Task 7 (Install script)                              ├──→ Task 11 (Verify)
-                                                                                          │
+                                ├──→ Task 5 (Gateway storage TS) ──┐                     │
+                                │                                   ├──→ Task 6 (Bridge) ─┤
+                                └──→ Task 0B feeds into ────────────┘                     │
+                                                                                          ├──→ Task 11 (Verify)
+Task 7 (Install script) ─────────────────────────────────────────────────────────────────┤
 Task 8 (Build script) ─────────────────────────────────────────────────────────────────────┤
 Task 9 (CI workflow) ──────────────────────────────────────────────────────────────────────┤
 Task 10 (OpenWrt scripts) ─────────────────────────────────────────────────────────────────┘
 ```
 
 **Parallelizable groups:**
-- Group A: Task 1, Task 4, Task 7, Task 8, Task 9, Task 10 (all independent)
-- Group B: Task 2 (depends on Task 1), Task 5 (depends on Task 4)
-- Group C: Task 3 (depends on Task 2), Task 6 (depends on Task 4, Task 5)
+- Group A: Task 0A, Task 1, Task 4, Task 7, Task 8, Task 9, Task 10 (all independent)
+- Group B: Task 0B (depends on 0A), Task 2 (depends on 1), Task 5 (depends on 4)
+- Group C: Task 3 (depends on 2), Task 6 (depends on 0B + 4 + 5)
 - Group D: Task 11 (depends on all)
