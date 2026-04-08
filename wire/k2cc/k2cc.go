@@ -45,7 +45,11 @@ const (
 
 	// Algorithm parameters
 	defaultAlpha       = 10.0 // Loss penalty — standard mode
-	gfwAlpha           = 4.0  // Loss penalty — GFW mode (BG loss boundary = 1/α = 25%)
+	gfwAlpha           = 4.0  // Loss penalty — GFW mode
+	// gfwAlpha theoretical tolerance: PCC gradient ∝ 1 - L(1+α).
+	// At L > 1/(1+α) = 20%, gradient is permanently negative → rate descends to floor.
+	// BW-anchored mode bypasses gradient and can sustain higher rates above 20%,
+	// but convergence depends on early bwEst quality (stochastic).
 	defaultBeta        = 1.0  // Latency penalty (throughput-prioritized for tunnel)
 	defaultEpsilon     = 0.12 // Probing step size
 	arcRateEWMAAlpha   = 0.9  // EWMA smoothing for rate updates
