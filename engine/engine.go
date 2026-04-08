@@ -58,9 +58,20 @@ type Engine struct {
 	outbounds      []core.Outbound // owned by engine, closed in Stop()
 
 	wireCfg      wire.Config
+	outboundTMs  []*outboundTransport // all wire TMs, for health/reconnect
+	primaryTM    *outboundTransport   // first k2v5 route's TM (DNS transport)
 	directDialer wire.DirectDialer
 	reRaceChan   chan struct{}
 	reRaceCancel context.CancelFunc
+}
+
+// outboundTransport holds a TransportManager and its wire config for one k2v5 outbound.
+// Engine-internal — not exported.
+type outboundTransport struct {
+	tm       *wire.TransportManager
+	wireCfg  wire.Config
+	dialAddr string
+	name     string // log label, e.g. "k2v5-jp.example.com"
 }
 
 // New creates a new Engine in the disconnected state.
