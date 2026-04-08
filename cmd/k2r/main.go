@@ -64,6 +64,8 @@ func main() {
 		os.Exit(cmdStatus(rest))
 	case "service":
 		cmdService(rest)
+	case "upgrade":
+		cmdUpgrade(rest)
 	case "version":
 		fmt.Printf("k2r %s (%s)\n", version, commit)
 	case "help", "--help", "-h":
@@ -90,6 +92,7 @@ Commands:
   status    Connection status
 
   service   System service (install, uninstall)
+  upgrade   Check and install updates
   version   Version info
 
 Flags:

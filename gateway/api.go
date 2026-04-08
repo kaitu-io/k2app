@@ -4,8 +4,12 @@ package gateway
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
+	"runtime"
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/engine"
@@ -191,6 +195,86 @@ func (g *Gateway) handlePlatform(w http.ResponseWriter, r *http.Request) {
 	}})
 }
 
+// handleUpgrade handles POST /api/upgrade.
+//
+// action "check" — returns current version and latest available version.
+// action "apply"  — downloads and installs the update in the background, then
+//
+//	restarts the service. Returns immediately with status "upgrading".
+func (g *Gateway) handleUpgrade(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Action string `json:"action"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, Response{Code: 1, Message: "bad request"})
+		return
+	}
+
+	switch req.Action {
+	case "check":
+		info, err := FetchLatestK2r()
+		if err != nil {
+			writeJSON(w, Response{Code: 1, Message: "check failed: " + err.Error()})
+			return
+		}
+		writeJSON(w, Response{Code: 0, Data: map[string]string{
+			"current": g.version,
+			"latest":  info.Version,
+		}})
+
+	case "apply":
+		info, err := FetchLatestK2r()
+		if err != nil {
+			writeJSON(w, Response{Code: 1, Message: "check failed: " + err.Error()})
+			return
+		}
+		if info.Version == g.version {
+			writeJSON(w, Response{Code: 0, Message: "already up to date", Data: map[string]string{
+				"version": g.version,
+			}})
+			return
+		}
+
+		arch := runtime.GOARCH
+		binaryName := fmt.Sprintf("k2r-linux-%s", arch)
+		expectedHash, ok := info.Checksums[binaryName]
+		if !ok {
+			writeJSON(w, Response{Code: 1, Message: fmt.Sprintf("no binary for linux/%s", arch)})
+			return
+		}
+
+		// Pick first endpoint for download URL.
+		downloadURL := BinaryURL(K2rReleaseEndpoints[0], info.Version)
+		targetVersion := info.Version
+
+		safego.Go(func() {
+			self, err := selfExePath()
+			if err != nil {
+				slog.Warn("gateway: upgrade: resolve executable", "err", err)
+				return
+			}
+			if err := DownloadAndReplace(downloadURL, expectedHash, self); err != nil {
+				slog.Warn("gateway: upgrade: download failed", "version", targetVersion, "err", err)
+				return
+			}
+			slog.Info("gateway: upgrade: installed", "version", targetVersion)
+			RestartService()
+		})
+
+		writeJSON(w, Response{Code: 0, Message: "upgrading", Data: map[string]string{
+			"version": targetVersion,
+			"status":  "upgrading",
+		}})
+
+	default:
+		writeJSON(w, Response{Code: 1, Message: "unknown action (use check or apply)"})
+	}
+}
+
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(v)
@@ -198,4 +282,18 @@ func writeJSON(w http.ResponseWriter, v any) {
 
 func defaultConfigPath() string {
 	return "/etc/k2r/k2r.yml"
+}
+
+// selfExePath returns the absolute path to the running k2r executable,
+// resolving any symlinks.
+func selfExePath() (string, error) {
+	self, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("find executable: %w", err)
+	}
+	self, err = filepath.EvalSymlinks(self)
+	if err != nil {
+		return "", fmt.Errorf("resolve symlinks: %w", err)
+	}
+	return self, nil
 }

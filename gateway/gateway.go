@@ -74,6 +74,7 @@ func (g *Gateway) Run(addr string) error {
 	mux.HandleFunc("/api/log-level", g.handleLogLevel)
 	mux.HandleFunc("/api/storage", g.handleStorage)
 	mux.HandleFunc("/api/platform", g.handlePlatform)
+	mux.HandleFunc("/api/upgrade", g.handleUpgrade)
 
 	if webapp := newWebappHandler(g.version, g.commit, g.arch); webapp != nil {
 		mux.Handle("/", webapp)
