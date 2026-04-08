@@ -300,6 +300,17 @@ func (e *Engine) Start(cfg Config) error {
 		}
 	}
 
+	// TUN mode requires at least one k2v5 outbound for DNS proxy transport.
+	// Before the per-outbound refactor, wire.ParseURL(client.Server) in step 2
+	// implicitly enforced this. Now that step 2 is merged into step 6.5, we need
+	// an explicit check.
+	if primaryOT == nil && client.Mode != "proxy" {
+		if cfg.NetworkMonitor != nil {
+			cfg.NetworkMonitor.Close()
+		}
+		return e.fail(fmt.Errorf("no k2v5 outbound configured — TUN mode requires at least one"))
+	}
+
 	slog.Info("engine: step 6.5 — outbound transports ready",
 		"k2v5Outbounds", len(allOTs),
 		"elapsed", time.Since(startTime),
