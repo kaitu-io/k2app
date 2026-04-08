@@ -51,6 +51,7 @@ func New(version, commit, arch string) *Gateway {
 	return &Gateway{
 		ctx:        ctx,
 		cancel:     cancel,
+		lastStatus: engine.Status{State: engine.StateDisconnected},
 		sseClients: make(map[chan []byte]struct{}),
 		storage:    NewDefaultStorage(),
 		version:    version,
