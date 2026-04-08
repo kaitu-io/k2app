@@ -30,8 +30,9 @@ func TestDeadlock_HealthMonitorSampleAndResetCounters(t *testing.T) {
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
 
 	// Declare hm first so the closure can capture it by reference.
+	ot := &outboundTransport{tm: tm, name: "test"}
 	var hm *healthMonitor
-	hm = newHealthMonitor(tm, tunnel, nil, func() {
+	hm = newHealthMonitor(ot, []*outboundTransport{ot}, tunnel, nil, func() {
 		// Simulate OnNetworkChanged: acquires hm.mu via resetCounters.
 		hm.resetCounters()
 	}, time.Now())
@@ -70,7 +71,8 @@ func TestDeadlock_EngineStopVsHealthGoroutine(t *testing.T) {
 
 	e := New()
 
-	hm := newHealthMonitor(tm, tunnel, nil, func() {
+	ot := &outboundTransport{tm: tm, name: "test"}
+	hm := newHealthMonitor(ot, []*outboundTransport{ot}, tunnel, nil, func() {
 		// Simulate the real onReconnect callback: acquires e.mu briefly.
 		e.mu.Lock()
 		time.Sleep(time.Millisecond)
@@ -108,7 +110,8 @@ func TestDeadlock_LockOrderingEngineThenHealth(t *testing.T) {
 	tm := mockTransportManager()
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
 
-	hm := newHealthMonitor(tm, tunnel, nil, nil, time.Now())
+	ot := &outboundTransport{tm: tm, name: "test"}
+	hm := newHealthMonitor(ot, []*outboundTransport{ot}, tunnel, nil, nil, time.Now())
 
 	// Goroutine 1: engine.mu → health.mu (correct order)
 	var wg sync.WaitGroup

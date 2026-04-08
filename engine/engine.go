@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sasha-s/go-deadlock"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/core"
@@ -47,7 +48,6 @@ type Engine struct {
 
 	cancel         context.CancelFunc
 	tunnel         *core.ClientTunnel
-	tm             *wire.TransportManager
 	prov           provider.Provider
 	networkMonitor NetworkChangeNotifier
 	health         *healthMonitor
@@ -57,10 +57,20 @@ type Engine struct {
 	ruleEngine     *rule.Engine
 	outbounds      []core.Outbound // owned by engine, closed in Stop()
 
-	wireCfg      wire.Config
+	outboundTMs  []*outboundTransport // all wire TMs, for health/reconnect
+	primaryTM    *outboundTransport   // first k2v5 route's TM (DNS transport)
 	directDialer wire.DirectDialer
-	reRaceChan   chan struct{}
+	reRaceChan   chan *outboundTransport
 	reRaceCancel context.CancelFunc
+}
+
+// outboundTransport holds a TransportManager and its wire config for one k2v5 outbound.
+// Engine-internal — not exported.
+type outboundTransport struct {
+	tm       *wire.TransportManager
+	wireCfg  wire.Config
+	dialAddr string
+	name     string // log label, e.g. "k2v5-jp.example.com"
 }
 
 // New creates a new Engine in the disconnected state.
@@ -156,12 +166,6 @@ func (e *Engine) Start(cfg Config) error {
 	)
 	slog.Info("engine: step 1 - rule engine init done", "elapsed", time.Since(startTime))
 
-	// 2. Parse k2v5:// URL.
-	wireCfg, err := wire.ParseURL(client.Server)
-	if err != nil {
-		return e.fail(err)
-	}
-
 	// 2.5. Start network monitor — DirectDialer needs DefaultInterface()
 	// for interface-bound dialing. Must start before Happy Eyeballs (step 3).
 	// Safe: OnNetworkChanged() early-returns when state != connected.
@@ -177,91 +181,6 @@ func (e *Engine) Start(cfg Config) error {
 			slog.Warn("engine: network monitor start failed (non-fatal)", "err", err)
 		}
 	}
-
-	// 3. Resolve dial address via Happy Eyeballs (RFC 8305).
-	// When both IPv6 and IPv4 are available, races them with IPv6 head start.
-	// Must complete BEFORE step 4 — NewQUICClient/NewTCPWSClient cache DialAddr.
-	dialAddr, err := resolveDialAddr(ctx, wireCfg, cfg.DirectDialer)
-	if err != nil {
-		if cfg.NetworkMonitor != nil {
-			cfg.NetworkMonitor.Close()
-		}
-		return e.fail(fmt.Errorf("address resolution: %w", err))
-	}
-	if dialAddr != "" {
-		wireCfg.DialAddr = dialAddr
-	} else {
-		slog.Warn("engine: k2v5 URL missing ip= parameter, using Host for dial (deprecated)")
-	}
-	slog.Info("engine: step 3 - dial address resolved", "addr", wireCfg.DialAddr, "elapsed", time.Since(startTime))
-
-	// 4. Transport race: three-way Happy Eyeballs.
-	// Races QUIC-443, QUIC-hop, TCP-WS with staggered start and echo probe
-	// verification. First candidate with verified data flow wins. Replaces
-	// the serial build + handshake probe (old step 4 + 4.5).
-	slog.Info("engine: step 4 - transport race", "elapsed", time.Since(startTime))
-	raceCtx, raceCancel := context.WithTimeout(ctx, 15*time.Second)
-	raceResult, raceErr := wire.RaceTransport(raceCtx, wireCfg, wireCfg.DialAddr, cfg.DirectDialer)
-	raceCancel()
-
-	if raceErr != nil {
-		slog.Warn("engine: transport race failed", "err", raceErr)
-		if cfg.NetworkMonitor != nil {
-			cfg.NetworkMonitor.Close()
-		}
-		return e.fail(fmt.Errorf("transport race: %w", raceErr))
-	}
-
-	tm := wire.NewTransportManager()
-	tm.SetPrimary(raceResult.Dialer, raceResult.TransportType)
-
-	// Ensure TCP-WS is available as TM fallback AND as DNS transport.
-	// DNS is control-plane traffic — use TCP-WS directly (most reliable)
-	// instead of TransportManager (QUIC-first, susceptible to Short Header blocking).
-	//
-	// tcpwsDialer is intentionally the SAME instance as tm.tcpws (shared).
-	// Why not a separate TCPWSClient for DNS?
-	//   1. reconnect() calls tm.ResetConnections() which resets the shared tcpws
-	//      smux session — DNS's next DialStreamUDP() then connect()s through a
-	//      fresh session on the new network path. A separate instance would keep
-	//      its stale session and timeout on the old path unless explicitly reset.
-	//   2. In-flight DNS queries during reset are already cancelled by
-	//      CancelInflight() BEFORE tm.ResetConnections() — the race window
-	//      (new query enters between CancelInflight and Reset) is sub-microsecond
-	//      and harmless (query fails, racing resolver retries on fresh session).
-	//   3. One fewer TCP connection and smux session per engine lifecycle.
-	// If this assumption ever breaks, grep for "DIAG: dns-proxy-conn-dead"
-	// during reconnect — a burst of these without preceding CancelInflight
-	// would indicate the shared-instance race is wider than expected.
-	var tcpwsDialer wire.Dialer
-	if raceResult.TCPWS != nil {
-		tm.SetTCPWS(raceResult.TCPWS)
-		tcpwsDialer = raceResult.TCPWS
-	} else if raceResult.TransportType != "tcpws" {
-		// Build a standalone TCP-WS client as fallback.
-		tcpwsClient := wire.NewTCPWSClient(wireCfg, nil)
-		if cfg.DirectDialer != nil {
-			tcpwsClient.SetDirectDialer(cfg.DirectDialer)
-		}
-		tm.SetTCPWS(tcpwsClient)
-		tcpwsDialer = tcpwsClient
-	} else {
-		// TCP-WS won race: primary IS tcpws, use it for DNS too.
-		tcpwsDialer = raceResult.Dialer
-	}
-	// Start background QUIC recovery probe (active during TCP-WS fallback).
-	// Complements echoLoop: quicProbeLoop handles handshake-level failure (UDP fully blocked),
-	// echoLoop handles data-path failure (Short Header dropped). No overlap.
-	tm.StartQuicProbe(ctx)
-
-	slog.Info("engine: step 4 - transport race winner",
-		"transport", raceResult.TransportType,
-		"elapsed", time.Since(startTime),
-	)
-	slog.Info("DIAG: wire-handshake",
-		"handshakeMs", time.Since(startTime).Milliseconds(),
-		"transport", raceResult.TransportType,
-	)
 
 	// 5. Router.
 	router := core.NewRouter(ruleEngine)
@@ -304,25 +223,109 @@ func (e *Engine) Start(cfg Config) error {
 		if cfg.NetworkMonitor != nil {
 			cfg.NetworkMonitor.Close()
 		}
-		tm.Close()
 		return e.fail(ctx.Err())
 	}
 
-	// 6.5. Build outbound table, indexed by rule.Target values from outboundMap.
-	// outboundMap assigns indices: each unique via URL gets a Target starting at 2.
+	// 6.5. Build per-outbound transports and outbound table.
+	//
+	// Each unique k2v5:// URL gets its own TransportManager via setupOutboundTransport.
+	// Multiple URLs race in parallel (errgroup). buildOutboundMap already deduplicates.
 	outbounds := make([]core.Outbound, 2+len(outboundMap))
-	outbounds[outboundDirect] = core.NewDirectOutbound(cfg.DirectDialer) // 0 = direct
-	outbounds[outboundReject] = nil                                      // 1 = reject
+	outbounds[outboundDirect] = core.NewDirectOutbound(cfg.DirectDialer)
+	outbounds[outboundReject] = nil
 
+	// Collect unique k2v5 URLs in config route order (deterministic).
+	// IMPORTANT: iterate client.Routes (ordered slice), NOT outboundMap (unordered map).
+	// The first k2v5 route becomes primaryTM (DNS transport), so order matters.
+	seen := make(map[string]bool)
+	var k2v5URLs []string
+	for _, route := range client.Routes {
+		via := route.Via
+		if !strings.HasPrefix(via, "k2v5://") || seen[via] {
+			continue
+		}
+		if _, inMap := outboundMap[via]; !inMap {
+			continue
+		}
+		seen[via] = true
+		k2v5URLs = append(k2v5URLs, via)
+	}
+
+	// Setup transports in parallel.
+	type otResult struct {
+		ot          *outboundTransport
+		tcpwsDialer wire.Dialer
+		err         error
+	}
+	otResults := make([]otResult, len(k2v5URLs))
+
+	if len(k2v5URLs) > 0 {
+		var g errgroup.Group
+		for i, via := range k2v5URLs {
+			i, via := i, via
+			g.Go(func() error {
+				ot, tcpws, err := setupOutboundTransport(ctx, via, cfg.DirectDialer)
+				otResults[i] = otResult{ot: ot, tcpwsDialer: tcpws, err: err}
+				return nil // errors collected in results, not errgroup
+			})
+		}
+		g.Wait()
+	}
+
+	// Check results and clean up on any failure.
+	tmMap := make(map[string]*outboundTransport, len(k2v5URLs))
+	var allOTs []*outboundTransport
+	var primaryOT *outboundTransport
+	var tcpwsDialer wire.Dialer
+
+	for i, r := range otResults {
+		if r.err != nil {
+			// Close ALL successfully-created TMs (errgroup runs concurrently,
+			// so indices after i may also have succeeded).
+			for _, other := range otResults {
+				if other.ot != nil {
+					other.ot.tm.Close()
+				}
+			}
+			if cfg.NetworkMonitor != nil {
+				cfg.NetworkMonitor.Close()
+			}
+			return e.fail(fmt.Errorf("outbound setup: %w", r.err))
+		}
+		tmMap[k2v5URLs[i]] = r.ot
+		allOTs = append(allOTs, r.ot)
+		if primaryOT == nil {
+			primaryOT = r.ot
+			tcpwsDialer = r.tcpwsDialer
+		}
+	}
+
+	// TUN mode requires at least one k2v5 outbound for DNS proxy transport.
+	// Before the per-outbound refactor, wire.ParseURL(client.Server) in step 2
+	// implicitly enforced this. Now that step 2 is merged into step 6.5, we need
+	// an explicit check.
+	if primaryOT == nil && client.Mode != "proxy" {
+		if cfg.NetworkMonitor != nil {
+			cfg.NetworkMonitor.Close()
+		}
+		return e.fail(fmt.Errorf("no k2v5 outbound configured — TUN mode requires at least one"))
+	}
+
+	slog.Info("engine: step 6.5 — outbound transports ready",
+		"k2v5Outbounds", len(allOTs),
+		"elapsed", time.Since(startTime),
+	)
+
+	// Build outbound table.
 	for via, target := range outboundMap {
 		switch {
 		case strings.HasPrefix(via, "k2v5://"):
-			outbounds[target] = core.NewWireOutbound("k2v5", tm, e)
+			ot := tmMap[via]
+			outbounds[target] = core.NewWireOutbound(ot.name, ot.tm, e)
 		case strings.HasPrefix(via, "k2p://"):
 			k2pOut, k2pErr := core.NewK2POutbound(via)
 			if k2pErr != nil {
 				slog.Warn("engine: k2p outbound failed", "err", k2pErr)
-				// Leave nil → reject behavior for this target.
 				continue
 			}
 			outbounds[target] = k2pOut
@@ -376,7 +379,9 @@ func (e *Engine) Start(cfg Config) error {
 			if cfg.NetworkMonitor != nil {
 				cfg.NetworkMonitor.Close()
 			}
-			tm.Close()
+			for _, ot := range allOTs {
+				ot.tm.Close()
+			}
 			return e.fail(err)
 		}
 	} else {
@@ -385,7 +390,9 @@ func (e *Engine) Start(cfg Config) error {
 			if cfg.NetworkMonitor != nil {
 				cfg.NetworkMonitor.Close()
 			}
-			tm.Close()
+			for _, ot := range allOTs {
+				ot.tm.Close()
+			}
 			return e.fail(err)
 		}
 	}
@@ -400,29 +407,32 @@ func (e *Engine) Start(cfg Config) error {
 			cfg.NetworkMonitor.Close()
 		}
 		prov.Close()
-		tm.Close()
+		for _, ot := range allOTs {
+			ot.tm.Close()
+		}
 		tunnel.Close()
 		return ctx.Err()
 	}
 	e.tunnel = tunnel
-	e.tm = tm
 	e.prov = prov
 	e.outbounds = outbounds
 	e.proxyDNS = proxyDNS
 	e.ruleEngine = ruleEngine
 	e.networkMonitor = cfg.NetworkMonitor
 
+	e.outboundTMs = allOTs
+	e.primaryTM = primaryOT
+
 	// Start health monitor (1Hz wire stats sampling + health FSM).
-	hm := newHealthMonitor(tm, tunnel, cfg.HealthCallback, func() { e.onHealthCritical() }, time.Now())
+	hm := newHealthMonitor(primaryOT, allOTs, tunnel, cfg.HealthCallback, func() { e.onHealthCritical() }, time.Now())
 	hm.start()
 	e.health = hm
 
-	// Store wireCfg + directDialer for re-race (avoids re-parsing URL).
-	e.wireCfg = wireCfg
+	// Store directDialer for re-race (avoids re-parsing URL).
 	e.directDialer = cfg.DirectDialer
 
 	// Re-race loop: replaces recoveryProbe.
-	e.reRaceChan = make(chan struct{}, 1)
+	e.reRaceChan = make(chan *outboundTransport, 1)
 	reRaceCtx, reRaceCancel := context.WithCancel(ctx)
 	e.reRaceCancel = reRaceCancel
 	safego.Go(func() { e.reRaceLoop(reRaceCtx) })
@@ -494,7 +504,7 @@ func (e *Engine) reconnect() bool {
 		return false
 	}
 	handler := e.handler
-	tm := e.tm
+	outboundTMs := e.outboundTMs
 	pdns := e.proxyDNS
 	dh := e.dnsH
 	e.mu.Unlock()
@@ -506,15 +516,15 @@ func (e *Engine) reconnect() bool {
 
 	// Reset order matters (shared tcpwsDialer — see comment in Start):
 	//   1. CancelInflight — abort pending upstream queries (closes race window)
-	//   2. tm.ResetConnections — resets shared tcpws smux session
+	//   2. TM resets — resets shared tcpws smux sessions
 	//   3. pdns.ResetConnections — cleans proxyConn pool
 	// Step 1 MUST precede step 2 so in-flight DNS queries exit via ctx
 	// before the smux session is torn down underneath them.
 	if dh != nil {
 		dh.CancelInflight()
 	}
-	if tm != nil {
-		tm.ResetConnections()
+	for _, ot := range outboundTMs {
+		ot.tm.ResetConnections()
 	}
 	if pdns != nil {
 		pdns.ResetConnections()
@@ -631,14 +641,14 @@ func (e *Engine) Pause() {
 	e.paused = true
 	slog.Info("engine: paused")
 	handler := e.handler
-	tm := e.tm
+	outboundTMs := e.outboundTMs
 	pdns := e.proxyDNS
 	e.mu.Unlock()
 
 	// Pause has no CancelInflight — no in-flight DNS during iOS memory pause.
-	// tm→pdns order: shared tcpwsDialer (see Start comment).
-	if tm != nil {
-		tm.ResetConnections()
+	// TM→pdns order: shared tcpwsDialer (see Start comment).
+	for _, ot := range outboundTMs {
+		ot.tm.ResetConnections()
 	}
 	if pdns != nil {
 		pdns.ResetConnections()
@@ -658,13 +668,13 @@ func (e *Engine) Wake() {
 	e.paused = false
 	slog.Info("engine: woke")
 	handler := e.handler
-	tm := e.tm
+	outboundTMs := e.outboundTMs
 	pdns := e.proxyDNS
 	s := e.buildStatusLocked()
 	e.mu.Unlock()
 
-	if tm != nil {
-		tm.ResetConnections()
+	for _, ot := range outboundTMs {
+		ot.tm.ResetConnections()
 	}
 	if pdns != nil {
 		pdns.ResetConnections()
@@ -730,8 +740,9 @@ func (e *Engine) Stop() error {
 	e.cancel = nil
 	prov := e.prov
 	e.prov = nil
-	tm := e.tm
-	e.tm = nil
+	outboundTMs := e.outboundTMs
+	e.outboundTMs = nil
+	e.primaryTM = nil
 	tunnel := e.tunnel
 	e.tunnel = nil
 	e.proxyDNS = nil // no explicit close needed — tm.Close() closes shared tcpws → smux dies → recvLoops exit
@@ -766,11 +777,11 @@ func (e *Engine) Stop() error {
 	if prov != nil {
 		prov.Close()
 	}
-	if tm != nil {
-		tm.Close()
+	for _, ot := range outboundTMs {
+		ot.tm.Close()
 	}
 	// Close all outbounds. directOutbound and wireOutbound have no-op Close()
-	// (engine owns tm, closed above). k2pOutbound closes its ICE/QUIC connection.
+	// (engine owns tm, closed via outboundTMs). k2pOutbound closes its ICE/QUIC connection.
 	for _, ob := range outbounds {
 		if ob != nil {
 			ob.Close()
@@ -849,6 +860,9 @@ func (e *Engine) fail(err error) error {
 	// Extract resources under lock (Rule #4: no Close under state lock).
 	nm := e.networkMonitor
 	e.networkMonitor = nil
+	outboundTMs := e.outboundTMs
+	e.outboundTMs = nil
+	e.primaryTM = nil
 	if e.cancel != nil {
 		e.cancel()
 		e.cancel = nil
@@ -864,6 +878,9 @@ func (e *Engine) fail(err error) error {
 	}
 	if nm != nil {
 		nm.Close()
+	}
+	for _, ot := range outboundTMs {
+		ot.tm.Close()
 	}
 	return err
 }
@@ -951,6 +968,72 @@ func buildOutboundMap(routes []config.RouteConfig) map[string]rule.Target {
 		nextIdx++
 	}
 	return m
+}
+
+// setupOutboundTransport creates a TransportManager for a single k2v5:// URL.
+// Performs: ParseURL → resolveDialAddr → RaceTransport → TM setup.
+// The caller must close the returned outboundTransport on error paths.
+// Returns the outboundTransport and the TCP-WS dialer (for DNS transport from primary outbound).
+func setupOutboundTransport(
+	ctx context.Context,
+	via string,
+	directDialer wire.DirectDialer,
+) (*outboundTransport, wire.Dialer, error) {
+	wireCfg, err := wire.ParseURL(via)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse %s: %w", extractServerHost(via), err)
+	}
+
+	dialAddr, err := resolveDialAddr(ctx, wireCfg, directDialer)
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolve %s: %w", wireCfg.Host, err)
+	}
+	if dialAddr != "" {
+		wireCfg.DialAddr = dialAddr
+	}
+
+	raceCtx, raceCancel := context.WithTimeout(ctx, 15*time.Second)
+	raceResult, err := wire.RaceTransport(raceCtx, wireCfg, wireCfg.DialAddr, directDialer)
+	raceCancel()
+	if err != nil {
+		return nil, nil, fmt.Errorf("transport race %s: %w", wireCfg.Host, err)
+	}
+
+	tm := wire.NewTransportManager()
+	tm.SetPrimary(raceResult.Dialer, raceResult.TransportType)
+
+	// Ensure TCP-WS is available as fallback and DNS transport.
+	var tcpwsDialer wire.Dialer
+	if raceResult.TCPWS != nil {
+		tm.SetTCPWS(raceResult.TCPWS)
+		tcpwsDialer = raceResult.TCPWS
+	} else if raceResult.TransportType != "tcpws" {
+		tcpwsClient := wire.NewTCPWSClient(wireCfg, nil)
+		if directDialer != nil {
+			tcpwsClient.SetDirectDialer(directDialer)
+		}
+		tm.SetTCPWS(tcpwsClient)
+		tcpwsDialer = tcpwsClient
+	} else {
+		tcpwsDialer = raceResult.Dialer
+	}
+
+	tm.StartQuicProbe(ctx)
+
+	ot := &outboundTransport{
+		tm:       tm,
+		wireCfg:  wireCfg,
+		dialAddr: dialAddr,
+		name:     fmt.Sprintf("k2v5-%s", wireCfg.Host),
+	}
+
+	slog.Info("engine: transport ready",
+		"outbound", ot.name,
+		"transport", raceResult.TransportType,
+		"dialAddr", wireCfg.DialAddr,
+	)
+
+	return ot, tcpwsDialer, nil
 }
 
 // buildDNSRouter returns a function that maps outbound Target → proxy DNS (true) or direct DNS (false).
@@ -1140,10 +1223,11 @@ func (e *Engine) ClearWireError() {
 // engine.go change.
 func (e *Engine) reRaceLoop(ctx context.Context) {
 	for {
+		var target *outboundTransport
 		select {
 		case <-ctx.Done():
 			return
-		case <-e.reRaceChan:
+		case target = <-e.reRaceChan:
 		}
 
 		e.mu.Lock()
@@ -1151,23 +1235,25 @@ func (e *Engine) reRaceLoop(ctx context.Context) {
 			e.mu.Unlock()
 			continue
 		}
-		tm := e.tm
-		wireCfg := e.wireCfg
 		dd := e.directDialer
 		e.mu.Unlock()
 
-		if tm == nil {
+		if target == nil || target.tm == nil {
 			continue
 		}
 
-		slog.Warn("DIAG: transport-rerace", "reason", "echo-consecutive-fail", "previousTransport", tm.PrimaryType())
+		slog.Warn("DIAG: transport-rerace",
+			"reason", "echo-consecutive-fail",
+			"outbound", target.name,
+			"previousTransport", target.tm.PrimaryType(),
+		)
 
 		raceCtx, raceCancel := context.WithTimeout(ctx, 15*time.Second)
-		result, err := wire.RaceTransport(raceCtx, wireCfg, wireCfg.DialAddr, dd)
+		result, err := wire.RaceTransport(raceCtx, target.wireCfg, target.wireCfg.DialAddr, dd)
 		raceCancel()
 
 		if err != nil {
-			slog.Warn("engine: re-race failed", "err", err)
+			slog.Warn("engine: re-race failed", "outbound", target.name, "err", err)
 			continue
 		}
 
@@ -1176,15 +1262,23 @@ func (e *Engine) reRaceLoop(ctx context.Context) {
 			return
 		}
 
+		// Verify the target TM still exists in the engine.
 		e.mu.Lock()
-		currentTM := e.tm
+		found := false
+		for _, ot := range e.outboundTMs {
+			if ot == target {
+				found = true
+				break
+			}
+		}
 		e.mu.Unlock()
-		if currentTM == nil {
+
+		if !found {
 			result.Dialer.Close()
 			continue
 		}
 
-		currentTM.ReplacePrimary(result.Dialer, result.TransportType)
+		target.tm.ReplacePrimary(result.Dialer, result.TransportType)
 	}
 }
 

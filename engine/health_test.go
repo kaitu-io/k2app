@@ -20,7 +20,8 @@ func TestHealthMonitor_StartStop(t *testing.T) {
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
 
 	var count int
-	hm := newHealthMonitor(tm, tunnel, func(s HealthSnapshot) { count++ }, nil, time.Now())
+	ot := &outboundTransport{tm: tm, name: "test"}
+	hm := newHealthMonitor(ot, []*outboundTransport{ot}, tunnel, func(s HealthSnapshot) { count++ }, nil, time.Now())
 	hm.start()
 	time.Sleep(2500 * time.Millisecond)
 	hm.stop()
@@ -35,7 +36,8 @@ func TestHealthMonitor_HealthyByDefault(t *testing.T) {
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
 
 	var last HealthSnapshot
-	hm := newHealthMonitor(tm, tunnel, func(s HealthSnapshot) { last = s }, nil, time.Now())
+	ot := &outboundTransport{tm: tm, name: "test"}
+	hm := newHealthMonitor(ot, []*outboundTransport{ot}, tunnel, func(s HealthSnapshot) { last = s }, nil, time.Now())
 	hm.start()
 	time.Sleep(1500 * time.Millisecond)
 	hm.stop()
@@ -49,7 +51,8 @@ func TestHealthMonitor_HistoryOrder(t *testing.T) {
 	tm := mockTransportManager()
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
 
-	hm := newHealthMonitor(tm, tunnel, nil, nil, time.Now())
+	ot := &outboundTransport{tm: tm, name: "test"}
+	hm := newHealthMonitor(ot, []*outboundTransport{ot}, tunnel, nil, nil, time.Now())
 	hm.start()
 	time.Sleep(3500 * time.Millisecond)
 	hm.stop()
@@ -74,7 +77,8 @@ func TestHealthTransitions(t *testing.T) {
 	// to unit-test the decision logic independent of EWMA.
 	tm := mockTransportManager()
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
-	hm := newHealthMonitor(tm, tunnel, nil, nil, time.Now())
+	ot := &outboundTransport{tm: tm, name: "test"}
+	hm := newHealthMonitor(ot, []*outboundTransport{ot}, tunnel, nil, nil, time.Now())
 
 	// Start healthy.
 	if hm.health != HealthHealthy {
@@ -125,7 +129,8 @@ func TestHealthCooldown(t *testing.T) {
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
 
 	var actionCount int
-	hm := newHealthMonitor(tm, tunnel, nil, func() { actionCount++ }, time.Now())
+	ot := &outboundTransport{tm: tm, name: "test"}
+	hm := newHealthMonitor(ot, []*outboundTransport{ot}, tunnel, nil, func() { actionCount++ }, time.Now())
 
 	// Force into critical state.
 	hm.health = HealthCritical
@@ -161,7 +166,8 @@ func TestHealthCooldown(t *testing.T) {
 func TestHealthTransitions_Fallback(t *testing.T) {
 	tm := mockTransportManager()
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
-	hm := newHealthMonitor(tm, tunnel, nil, nil, time.Now())
+	ot := &outboundTransport{tm: tm, name: "test"}
+	hm := newHealthMonitor(ot, []*outboundTransport{ot}, tunnel, nil, nil, time.Now())
 
 	// Fallback stats → assess returns degraded (not critical).
 	for i := 0; i < 5; i++ {
@@ -188,7 +194,8 @@ func TestHealthEscalation(t *testing.T) {
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
 
 	var reconnectCount int
-	hm := newHealthMonitor(tm, tunnel, nil, func() { reconnectCount++ }, time.Now())
+	ot := &outboundTransport{tm: tm, name: "test"}
+	hm := newHealthMonitor(ot, []*outboundTransport{ot}, tunnel, nil, func() { reconnectCount++ }, time.Now())
 
 	// Every maybeAct in critical state returns onReconnect (no hop escalation).
 	hm.health = HealthCritical
@@ -206,7 +213,8 @@ func TestHealthEscalation(t *testing.T) {
 func TestHealthMonitor_ResetCounters(t *testing.T) {
 	tm := mockTransportManager()
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
-	hm := newHealthMonitor(tm, tunnel, nil, nil, time.Now())
+	ot := &outboundTransport{tm: tm, name: "test"}
+	hm := newHealthMonitor(ot, []*outboundTransport{ot}, tunnel, nil, nil, time.Now())
 
 	// Drive into non-default state.
 	hm.health = HealthCritical
@@ -240,7 +248,8 @@ func TestHealthMonitor_ResetCounters(t *testing.T) {
 func TestHealthMonitor_EWMASmoothing(t *testing.T) {
 	tm := mockTransportManager()
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
-	hm := newHealthMonitor(tm, tunnel, nil, nil, time.Now())
+	ot := &outboundTransport{tm: tm, name: "test"}
+	hm := newHealthMonitor(ot, []*outboundTransport{ot}, tunnel, nil, nil, time.Now())
 
 	// First sample initializes EWMA
 	hm.smoothWireLoss = 0
@@ -282,7 +291,8 @@ func TestHealthMonitor_EWMAPreventsFalseCritical(t *testing.T) {
 	// With EWMA: smoothWireLoss ramps slowly, never reaches veryHighLoss threshold
 	tm := mockTransportManager()
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
-	hm := newHealthMonitor(tm, tunnel, nil, nil, time.Now())
+	ot := &outboundTransport{tm: tm, name: "test"}
+	hm := newHealthMonitor(ot, []*outboundTransport{ot}, tunnel, nil, nil, time.Now())
 
 	// Initialize with healthy baseline
 	hm.smoothWireLoss = 0.01
@@ -328,7 +338,8 @@ func TestHealthMonitor_CriticalTriggersReconnect(t *testing.T) {
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
 
 	var reconnected bool
-	hm := newHealthMonitor(tm, tunnel, nil, func() { reconnected = true }, time.Now())
+	ot := &outboundTransport{tm: tm, name: "test"}
+	hm := newHealthMonitor(ot, []*outboundTransport{ot}, tunnel, nil, func() { reconnected = true }, time.Now())
 	hm.health = HealthCritical
 
 	// First maybeAct should return onReconnect (not a port hop)
@@ -354,7 +365,8 @@ func TestHealthMonitor_MaybeActReturnsAction(t *testing.T) {
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
 
 	var called bool
-	hm := newHealthMonitor(tm, tunnel, nil, func() { called = true }, time.Now())
+	ot := &outboundTransport{tm: tm, name: "test"}
+	hm := newHealthMonitor(ot, []*outboundTransport{ot}, tunnel, nil, func() { called = true }, time.Now())
 	hm.health = HealthCritical
 
 	// maybeAct should return onReconnect without calling it.
@@ -379,7 +391,8 @@ func TestHealthMonitor_TransitionReturnsDeferredAction(t *testing.T) {
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
 
 	var called bool
-	hm := newHealthMonitor(tm, tunnel, nil, func() { called = true }, time.Now())
+	ot := &outboundTransport{tm: tm, name: "test"}
+	hm := newHealthMonitor(ot, []*outboundTransport{ot}, tunnel, nil, func() { called = true }, time.Now())
 
 	// Force critical state.
 	hm.health = HealthCritical
@@ -411,7 +424,8 @@ func TestHealthMonitor_NoConcurrentDeadlock(t *testing.T) {
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
 
 	var sharedMu sync.Mutex
-	hm := newHealthMonitor(tm, tunnel, nil, func() {
+	ot := &outboundTransport{tm: tm, name: "test"}
+	hm := newHealthMonitor(ot, []*outboundTransport{ot}, tunnel, nil, func() {
 		// Simulate OnNetworkChanged acquiring e.mu briefly.
 		sharedMu.Lock()
 		time.Sleep(time.Millisecond)
@@ -502,7 +516,8 @@ func TestWakeDetector_CallbackOutsideLock(t *testing.T) {
 	// deadlock_test.go:TestHealthMonitor_NoDeadlock.
 	tm := mockTransportManager()
 	tunnel := core.NewClientTunnel(core.ClientTunnelConfig{})
-	hm := newHealthMonitor(tm, tunnel, nil, nil, time.Now())
+	ot := &outboundTransport{tm: tm, name: "test"}
+	hm := newHealthMonitor(ot, []*outboundTransport{ot}, tunnel, nil, nil, time.Now())
 
 	// Simulate a callback that acquires hm.mu (like resetCounters does).
 	var called bool

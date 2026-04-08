@@ -664,6 +664,7 @@ docs/todos/p2-*.md     Nice to have
 - safego package (panic-safe goroutine launcher), daemon doUp abort mechanism
 - CLI redesign (pure subcommand dispatch, --json output, non-interactive k2s setup)
 - k2subs:// subscription URLs (weighted server selection, background refresh, disk cache)
+- Per-outbound transport (each k2v5 route gets independent TransportManager)
 - Unified release pipeline (LATEST + checksums.txt, S3 upload, install scripts, CI)
 
 ## Platform Mapping

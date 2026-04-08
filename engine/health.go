@@ -7,7 +7,6 @@ import (
 	"runtime"
 	"runtime/debug"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/sasha-s/go-deadlock"
@@ -105,7 +104,8 @@ func (wd *wakeDetector) checkWake(now time.Time, health, transport string, uptim
 // detects health degradation trends, and takes corrective action.
 type healthMonitor struct {
 	mu     deadlock.Mutex
-	tm     *wire.TransportManager
+	primaryTM *outboundTransport   // for health FSM (WireStats, TCPRecentlyHealthy)
+	tms       []*outboundTransport // for echoLoop (probe each independently)
 	tunnel *core.ClientTunnel
 	done   chan struct{}
 	wg     sync.WaitGroup
@@ -132,19 +132,20 @@ type healthMonitor struct {
 	connectedAt   time.Time // engine connected timestamp for uptime calc
 	wake          wakeDetector // sleep/wake detection + reconnect trigger
 
-	echoFails   atomic.Int32
-	reRaceChan  chan struct{} // non-nil: engine's re-race channel
+	reRaceChan  chan *outboundTransport // non-nil: engine's re-race channel (per-TM)
 }
 
 func newHealthMonitor(
-	tm *wire.TransportManager,
+	primaryTM *outboundTransport,
+	tms []*outboundTransport,
 	tunnel *core.ClientTunnel,
 	onSnapshot func(HealthSnapshot),
 	onReconnect func(),
 	connectedAt time.Time,
 ) *healthMonitor {
 	return &healthMonitor{
-		tm:          tm,
+		primaryTM:   primaryTM,
+		tms:         tms,
 		tunnel:      tunnel,
 		health:      HealthHealthy,
 		onSnapshot:  onSnapshot,
@@ -170,7 +171,6 @@ func (hm *healthMonitor) start() {
 		}
 	})
 	safego.Go(func() {
-		defer hm.wg.Done()
 		hm.echoLoop()
 	})
 }
@@ -192,9 +192,13 @@ func (hm *healthMonitor) stop() {
 }
 
 func (hm *healthMonitor) sample() {
-	ws := hm.tm.WireStats()
+	var ws wire.WireStats
+	var tcpHealthy bool
+	if hm.primaryTM != nil {
+		ws = hm.primaryTM.tm.WireStats()
+		tcpHealthy = hm.primaryTM.tm.TCPRecentlyHealthy(30 * time.Second)
+	}
 	tx, rx := hm.tunnel.TrafficBytes()
-	tcpHealthy := hm.tm.TCPRecentlyHealthy(30 * time.Second)
 
 	now := time.Now()
 
@@ -400,15 +404,18 @@ func (hm *healthMonitor) resetCounters() {
 	hm.healthyStreak = 0
 	hm.smoothWireLoss = 0
 	hm.ewmaInitialized = false
-	hm.echoFails.Store(0)
 }
 
-// echoLoop periodically runs echo probes on the primary transport to verify
-// data-path health. 3 consecutive failures trigger a re-race via reRaceChan.
+// echoLoop periodically runs echo probes on each outbound transport to verify
+// data-path health. 3 consecutive failures for a specific TM trigger a re-race
+// via reRaceChan carrying the failed *outboundTransport.
 // Decoupled from sample() — runs on its own 30s ticker, no lock nesting.
 func (hm *healthMonitor) echoLoop() {
+	defer hm.wg.Done()
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
+
+	echoFails := make(map[*outboundTransport]int32)
 
 	for {
 		select {
@@ -417,32 +424,34 @@ func (hm *healthMonitor) echoLoop() {
 		case <-ticker.C:
 		}
 
-		primary := hm.tm.Primary()
-		if primary == nil {
-			continue
-		}
-
-		ep, ok := primary.(wire.EchoProber)
-		if !ok {
-			hm.echoFails.Store(0)
-			continue
-		}
-
-		echoCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		err := ep.RunEchoProbe(echoCtx)
-		cancel()
-
-		if err != nil {
-			fails := hm.echoFails.Add(1)
-			if fails >= 3 && hm.reRaceChan != nil {
-				select {
-				case hm.reRaceChan <- struct{}{}:
-				default:
-				}
-				hm.echoFails.Store(0)
+		for _, ot := range hm.tms {
+			primary := ot.tm.Primary()
+			if primary == nil {
+				continue
 			}
-		} else {
-			hm.echoFails.Store(0)
+
+			ep, ok := primary.(wire.EchoProber)
+			if !ok {
+				echoFails[ot] = 0
+				continue
+			}
+
+			echoCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			err := ep.RunEchoProbe(echoCtx)
+			cancel()
+
+			if err != nil {
+				echoFails[ot]++
+				if echoFails[ot] >= 3 && hm.reRaceChan != nil {
+					select {
+					case hm.reRaceChan <- ot:
+					default:
+					}
+					echoFails[ot] = 0
+				}
+			} else {
+				echoFails[ot] = 0
+			}
 		}
 	}
 }
