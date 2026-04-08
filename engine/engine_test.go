@@ -267,8 +267,16 @@ func newPacketPipe(t *testing.T) *packetPipe {
 
 // testConfig creates a Config with the given wire URL for testing.
 func testConfig(server string) Config {
+	client := &config.ClientConfig{Server: server}
+	// When server is a k2v5 URL, add a default catch-all route so
+	// buildOutboundMap finds the URL and setupOutboundTransport runs.
+	if strings.HasPrefix(server, "k2v5://") {
+		client.Routes = []config.RouteConfig{
+			{Via: server, Match: rule.MatchConfig{All: true}},
+		}
+	}
 	return Config{
-		Client:         &config.ClientConfig{Server: server},
+		Client:         client,
 		FileDescriptor: -1,
 	}
 }
@@ -358,9 +366,9 @@ func TestEngineStart_WireProbeFailure(t *testing.T) {
 		t.Fatalf("state = %q, want disconnected", e.Status())
 	}
 
-	// Error should originate from transport race.
-	if !strings.Contains(err.Error(), "transport race") {
-		t.Errorf("error = %q, want to contain 'transport race'", err.Error())
+	// Error should originate from outbound setup (transport race inside).
+	if !strings.Contains(err.Error(), "outbound setup") {
+		t.Errorf("error = %q, want to contain 'outbound setup'", err.Error())
 	}
 
 	// EventHandler should receive classified error.
