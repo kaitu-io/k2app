@@ -62,6 +62,7 @@ func engineConfig(cfg *GatewayConfig, prov provider.Provider, healthCb func(engi
 		FileDescriptor: -1,
 		Provider:       prov,
 		HealthCallback: healthCb,
+		WireMode:       "gateway",
 	}
 }
 

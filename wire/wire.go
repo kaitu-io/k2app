@@ -117,6 +117,7 @@ type Config struct {
 	IPv4        string // ip= parameter: raw IPv4 address for dialing
 	IPv6        string // ip6= parameter: raw IPv6 address for dialing
 	Transport   string // tp= parameter: "quic", "tcpws", or "" (auto, default)
+	Mode        string // mode= parameter: "gateway" or "" (normal)
 	DialAddr    string // Resolved dial address (set by engine: ip6 preferred > ip4). Not parsed from URL.
 }
 

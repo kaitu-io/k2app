@@ -67,7 +67,8 @@ func TestNewUsersFileValidator_Match(t *testing.T) {
 	os.WriteFile(path, []byte("testudid:testtoken\n"), 0600)
 
 	v := NewUsersFileValidator(path)
-	if !v("testtoken", "testudid") {
+	// v(jwt, udid, mode) — jwt=token, udid=device
+	if !v("testtoken", "testudid", "") {
 		t.Error("expected valid credentials to pass")
 	}
 }
@@ -78,7 +79,7 @@ func TestNewUsersFileValidator_WrongToken(t *testing.T) {
 	os.WriteFile(path, []byte("testudid:testtoken\n"), 0600)
 
 	v := NewUsersFileValidator(path)
-	if v("wrongtoken", "testudid") {
+	if v("wrongtoken", "testudid", "") {
 		t.Error("expected wrong token to fail")
 	}
 }
@@ -89,7 +90,7 @@ func TestNewUsersFileValidator_UnknownUDID(t *testing.T) {
 	os.WriteFile(path, []byte("testudid:testtoken\n"), 0600)
 
 	v := NewUsersFileValidator(path)
-	if v("testtoken", "unknown") {
+	if v("testtoken", "unknown", "") {
 		t.Error("expected unknown UDID to fail")
 	}
 }
@@ -101,20 +102,21 @@ func TestNewUsersFileValidator_HotReload(t *testing.T) {
 
 	v := NewUsersFileValidator(path)
 
-	if !v("token1", "user1") {
+	// v(jwt, udid, mode)
+	if !v("token1", "user1", "") {
 		t.Error("user1 should be valid")
 	}
-	if v("token2", "user2") {
+	if v("token2", "user2", "") {
 		t.Error("user2 should be invalid")
 	}
 
 	// Update file: remove user1, add user2.
 	os.WriteFile(path, []byte("user2:token2\n"), 0600)
 
-	if v("token1", "user1") {
+	if v("token1", "user1", "") {
 		t.Error("user1 should be invalid after update")
 	}
-	if !v("token2", "user2") {
+	if !v("token2", "user2", "") {
 		t.Error("user2 should be valid after update")
 	}
 }
@@ -125,12 +127,12 @@ func TestNewUsersFileValidator_FileMissing(t *testing.T) {
 	os.WriteFile(path, []byte("testudid:testtoken\n"), 0600)
 
 	v := NewUsersFileValidator(path)
-	if !v("testtoken", "testudid") {
+	if !v("testtoken", "testudid", "") {
 		t.Error("should pass when file exists")
 	}
 
 	os.Remove(path)
-	if v("testtoken", "testudid") {
+	if v("testtoken", "testudid", "") {
 		t.Error("should fail when file removed")
 	}
 }
@@ -141,25 +143,25 @@ func TestNewUsersFileValidator_EmptyFile(t *testing.T) {
 	os.WriteFile(path, []byte(""), 0600)
 
 	v := NewUsersFileValidator(path)
-	if v("anytoken", "anyudid") {
+	if v("anytoken", "anyudid", "") {
 		t.Error("empty file should reject all")
 	}
 }
 
 func TestChainValidators(t *testing.T) {
-	reject := func(jwt, udid string) bool { return false }
-	accept := func(jwt, udid string) bool { return true }
+	reject := func(user, pass, mode string) bool { return false }
+	accept := func(user, pass, mode string) bool { return true }
 
 	// Both reject → false.
-	if ChainValidators(reject, reject)("a", "b") {
+	if ChainValidators(reject, reject)("a", "b", "") {
 		t.Error("both reject should fail")
 	}
 	// First accepts → true (short-circuit).
-	if !ChainValidators(accept, reject)("a", "b") {
+	if !ChainValidators(accept, reject)("a", "b", "") {
 		t.Error("first accept should pass")
 	}
 	// Second accepts → true.
-	if !ChainValidators(reject, accept)("a", "b") {
+	if !ChainValidators(reject, accept)("a", "b", "") {
 		t.Error("second accept should pass")
 	}
 }

@@ -138,8 +138,6 @@ func (g *Gateway) doUp(cfg *GatewayConfig) error {
 	}
 	prov := newGatewayProvider(interceptor, icfg)
 
-	cfg.ClientConfig.Mode = "gateway"
-
 	eng := engine.New()
 	eng.SetEventHandler(g)
 	ecfg := engineConfig(cfg, prov, g.broadcastSnapshot)

@@ -507,6 +507,17 @@ serialize:
 	conn.SetCongestionControl(sender)
 	slog.Info("wire: QUIC K2CC enabled", "maxRateMbps", k2cc.DefaultMaxRate/1_000_000)
 
+	// Send metadata stream before storing connection (no lock held — Rule #2).
+	// Must happen before any other streams so server knows the client mode.
+	if c.cfg.Mode != "" {
+		if err := c.sendMetadata(ctx, conn); err != nil {
+			slog.Warn("QUICClient: metadata stream failed", "mode", c.cfg.Mode, "err", err)
+			conn.CloseWithError(0x01, "metadata auth failed")
+			transport.Close()
+			return nil, fmt.Errorf("wire: metadata auth: %w", err)
+		}
+	}
+
 	// --- Store result under lock ---
 	// concurrency:allow — closing locally-owned conn/transport not yet stored in struct;
 	// defer scope: mu acquired at tail of function, actual critical section is ~15 lines
@@ -526,6 +537,50 @@ serialize:
 	go c.acceptOverflowStreams(conn, c.udpMux)
 
 	return conn, nil
+}
+
+// sendMetadata opens a metadata stream (StreamType 0x10) and sends credentials + mode.
+// The server validates and responds with OK or error.
+func (c *QUICClient) sendMetadata(ctx context.Context, conn *quic.Conn) error {
+	stream, err := conn.OpenStreamSync(ctx)
+	if err != nil {
+		return fmt.Errorf("open stream: %w", err)
+	}
+
+	if err := WriteH3ProxyFrameType(stream); err != nil {
+		stream.Close()
+		return fmt.Errorf("write frame type: %w", err)
+	}
+	// Write stream header with empty addr (metadata has no destination).
+	if err := WriteStreamHeader(stream, StreamTypeMeta, ""); err != nil {
+		stream.Close()
+		return fmt.Errorf("write stream header: %w", err)
+	}
+	if err := WriteMetadataFrame(stream, MetadataFrame{
+		UDID:  c.cfg.UDID,
+		Token: c.cfg.Token,
+		Mode:  c.cfg.Mode,
+	}); err != nil {
+		stream.Close()
+		return fmt.Errorf("write metadata: %w", err)
+	}
+
+	// Read server response.
+	stream.SetReadDeadline(time.Now().Add(5 * time.Second))
+	br := bufio.NewReader(stream)
+	ok, errCode, errMsg, err := ReadStreamResponse(br)
+	stream.Close()
+	if err != nil {
+		return fmt.Errorf("read response: %w", err)
+	}
+	if !ok {
+		if errCode > 0 {
+			return &StreamError{Code: errCode, Message: errMsg}
+		}
+		return fmt.Errorf("%w: %s", ErrStreamRejected, errMsg)
+	}
+	slog.Info("QUICClient: metadata auth OK", "mode", c.cfg.Mode)
+	return nil
 }
 
 // DialTCP opens a TCP proxy stream through the QUIC connection.
@@ -964,7 +1019,8 @@ type tcpAcceptResult struct {
 
 // QUICServer is the QUIC/H3 server transport.
 type QUICServer struct {
-	store *TicketStore
+	store    *TicketStore
+	validate JWTValidator // set by SetValidator; used by metadata stream auth
 
 	mu    deadlock.Mutex
 	ln    *quic.Listener
@@ -980,6 +1036,12 @@ func NewQUICServer(store *TicketStore) *QUICServer {
 		tcpCh: make(chan tcpAcceptResult, 64),
 		done:  make(chan struct{}),
 	}
+}
+
+// SetValidator sets the JWTValidator used by metadata stream auth.
+// Must be called before Listen.
+func (s *QUICServer) SetValidator(v JWTValidator) {
+	s.validate = v
 }
 
 // Listen starts accepting QUIC connections from the given listener.
@@ -1023,6 +1085,12 @@ func (s *QUICServer) acceptLoop() {
 	}
 }
 
+// connContext holds per-QUIC-connection state shared across all streams.
+type connContext struct {
+	mode atomic.Value // string: "" (normal) or "gateway"
+	udp  *connUDPState
+}
+
 func (s *QUICServer) handleConn(conn *quic.Conn) {
 	connLog := slog.With("remote", conn.RemoteAddr())
 
@@ -1033,8 +1101,10 @@ func (s *QUICServer) handleConn(conn *quic.Conn) {
 		done:     make(chan struct{}),
 		log:      connLog,
 	}
+	ctx := &connContext{udp: state}
+	ctx.mode.Store("") // default: normal client
 
-	// Accept streams (TCP proxy + UDP overflow)
+	// Accept streams (TCP proxy + UDP overflow + metadata)
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -1054,7 +1124,7 @@ func (s *QUICServer) handleConn(conn *quic.Conn) {
 						connLog.Error("QUICServer: panic in handleStream", "panic", r)
 					}
 				}()
-				s.handleStream(conn, stream, state)
+				s.handleStream(conn, stream, ctx)
 			}()
 		}
 	}()
@@ -1073,8 +1143,8 @@ func (s *QUICServer) handleConn(conn *quic.Conn) {
 	state.mu.Unlock()
 }
 
-func (s *QUICServer) handleStream(qconn *quic.Conn, stream *quic.Stream, state *connUDPState) {
-	log := state.log.With("streamID", stream.StreamID())
+func (s *QUICServer) handleStream(qconn *quic.Conn, stream *quic.Stream, ctx *connContext) {
+	log := ctx.udp.log.With("streamID", stream.StreamID())
 	br := bufio.NewReader(stream)
 
 	// Read H3 frame type marker
@@ -1090,7 +1160,7 @@ func (s *QUICServer) handleStream(qconn *quic.Conn, stream *quic.Stream, state *
 		return
 	}
 
-	// Read stream header
+	// Read stream header (for meta: streamType only, addr is empty)
 	streamType, addr, err := ReadStreamHeader(br)
 	if err != nil {
 		log.Warn("QUICServer.handleStream: read header failed", "err", err)
@@ -1101,6 +1171,8 @@ func (s *QUICServer) handleStream(qconn *quic.Conn, stream *quic.Stream, state *
 	log.Info("QUICServer.handleStream: parsed", "streamType", streamType, "addr", addr)
 
 	switch streamType {
+	case StreamTypeMeta:
+		s.handleMetadataStream(qconn, stream, br, ctx)
 	case StreamTypeTCP:
 		sc := &quicStreamConn{
 			Stream: stream,
@@ -1111,15 +1183,45 @@ func (s *QUICServer) handleStream(qconn *quic.Conn, stream *quic.Stream, state *
 		s.sendTCP(tcpAcceptResult{conn: sc, addr: addr})
 		log.Debug("QUICServer.handleStream: TCP queued", "addr", addr)
 	case StreamTypeUDP:
-		s.handleUDPStream(stream, br, state.log, qconn.RemoteAddr().String())
+		s.handleUDPStream(stream, br, ctx.udp.log, qconn.RemoteAddr().String())
 	case StreamTypeUDPOverflow:
-		s.handleUDPOverflowStream(br, state)
+		s.handleUDPOverflowStream(br, ctx.udp)
 	case StreamTypeEcho:
 		HandleEchoStream(stream, br)
 	default:
 		log.Debug("QUICServer.handleStream: unknown stream type", "streamType", streamType)
 		stream.Close()
 	}
+}
+
+// handleMetadataStream processes a connection metadata stream (StreamType 0x10).
+// Validates credentials via JWTValidator chain and stores mode in connContext.
+// On auth failure, closes the entire QUIC connection.
+func (s *QUICServer) handleMetadataStream(qconn *quic.Conn, stream *quic.Stream, br *bufio.Reader, ctx *connContext) {
+	meta, err := ReadMetadataFrame(br)
+	if err != nil {
+		slog.Warn("QUICServer: metadata stream parse failed", "remote", qconn.RemoteAddr(), "err", err)
+		WriteStreamResponse(stream, fmt.Errorf("bad metadata"))
+		stream.Close()
+		return
+	}
+
+	slog.Info("QUICServer: metadata stream", "udid", meta.UDID, "mode", meta.Mode, "remote", qconn.RemoteAddr())
+
+	// Validate credentials + mode via the same validator chain used by HTTP auth.
+	// s.validate is immutable after SetValidator (called before Listen), no lock needed.
+	if s.validate != nil && !s.validate(meta.Token, meta.UDID, meta.Mode) {
+		slog.Warn("QUICServer: metadata auth rejected", "udid", meta.UDID, "mode", meta.Mode, "remote", qconn.RemoteAddr())
+		WriteStreamResponse(stream, fmt.Errorf("unauthorized"))
+		stream.Close()
+		qconn.CloseWithError(0x01, "unauthorized")
+		return
+	}
+
+	ctx.mode.Store(meta.Mode)
+	WriteStreamResponse(stream, nil) // OK
+	stream.Close()
+	slog.Info("QUICServer: metadata auth OK", "udid", meta.UDID, "mode", meta.Mode, "remote", qconn.RemoteAddr())
 }
 
 func (s *QUICServer) handleUDPStream(stream *quic.Stream, br *bufio.Reader, connLog *slog.Logger, remoteStr string) {

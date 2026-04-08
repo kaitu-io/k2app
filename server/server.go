@@ -120,11 +120,12 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 		validator = wire.ChainValidators(validators...)
 	} else {
 		slog.Info("server: auth chain", "mode", "accept-all")
-		validator = func(jwt, udid string) bool {
+		validator = func(jwt, udid, mode string) bool {
 			return jwt != "" && udid != ""
 		}
 	}
 	s.authHandler = wire.NewAuthHandler(store, validator)
+	s.quicSrv.SetValidator(validator)
 
 	return s, nil
 }

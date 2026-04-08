@@ -264,7 +264,7 @@ func (e *Engine) Start(cfg Config) error {
 		for i, via := range k2v5URLs {
 			i, via := i, via
 			g.Go(func() error {
-				ot, tcpws, err := setupOutboundTransport(ctx, via, cfg.DirectDialer)
+				ot, tcpws, err := setupOutboundTransport(ctx, via, cfg.DirectDialer, cfg.WireMode)
 				otResults[i] = otResult{ot: ot, tcpwsDialer: tcpws, err: err}
 				return nil // errors collected in results, not errgroup
 			})
@@ -978,11 +978,13 @@ func setupOutboundTransport(
 	ctx context.Context,
 	via string,
 	directDialer wire.DirectDialer,
+	wireMode string,
 ) (*outboundTransport, wire.Dialer, error) {
 	wireCfg, err := wire.ParseURL(via)
 	if err != nil {
 		return nil, nil, fmt.Errorf("parse %s: %w", extractServerHost(via), err)
 	}
+	wireCfg.Mode = wireMode // binary identity (e.g., "gateway" for k2r)
 
 	dialAddr, err := resolveDialAddr(ctx, wireCfg, directDialer)
 	if err != nil {

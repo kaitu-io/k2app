@@ -47,10 +47,10 @@ func TestEnsureAuth_GeneratesNew(t *testing.T) {
 		t.Fatalf("auth file invalid JSON: %v", err)
 	}
 	if loaded.UDID != auth.UDID {
-		t.Errorf("file UDID = %q, want %q", loaded.UDID, auth.UDID)
+		t.Errorf("file User = %q, want %q", loaded.UDID, auth.UDID)
 	}
 	if loaded.Token != auth.Token {
-		t.Errorf("file Token = %q, want %q", loaded.Token, auth.Token)
+		t.Errorf("file Pass = %q, want %q", loaded.Token, auth.Token)
 	}
 }
 

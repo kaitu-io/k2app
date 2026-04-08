@@ -48,7 +48,7 @@ func TestParseURL(t *testing.T) {
 			raw:  "k2v5://device123:eyJtoken@1.2.3.4:443?ech=AEX05&fp=chrome&hop=10000-20000",
 			want: Config{
 				UDID:        "device123",
-				Token:       "eyJtoken",
+				Token:        "eyJtoken",
 				Host:        "1.2.3.4",
 				Port:        443,
 				ECH:         "AEX05",
@@ -62,7 +62,7 @@ func TestParseURL(t *testing.T) {
 			raw:  "k2v5://dev:tok@1.2.3.4:443",
 			want: Config{
 				UDID:        "dev",
-				Token:       "tok",
+				Token:        "tok",
 				Host:        "1.2.3.4",
 				Port:        443,
 				Fingerprint: "chrome",
@@ -73,7 +73,7 @@ func TestParseURL(t *testing.T) {
 			raw:  "k2v5://dev:tok@[2001:db8::1]:443",
 			want: Config{
 				UDID:        "dev",
-				Token:       "tok",
+				Token:        "tok",
 				Host:        "2001:db8::1",
 				Port:        443,
 				Fingerprint: "chrome",

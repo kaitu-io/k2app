@@ -116,7 +116,7 @@ func TestTicketStore_GracePeriod(t *testing.T) {
 
 func TestAuthHandler_FullAuth(t *testing.T) {
 	store := NewTicketStore()
-	validator := func(jwt, udid string) bool {
+	validator := func(jwt, udid, mode string) bool {
 		return jwt == "valid-jwt" && udid == "device1"
 	}
 	handler := NewAuthHandler(store, validator)
@@ -147,7 +147,7 @@ func TestAuthHandler_FullAuth(t *testing.T) {
 
 func TestAuthHandler_TicketAuth(t *testing.T) {
 	store := NewTicketStore()
-	validator := func(jwt, udid string) bool { return true }
+	validator := func(jwt, udid, mode string) bool { return true }
 	handler := NewAuthHandler(store, validator)
 
 	// First, issue a ticket
@@ -168,7 +168,7 @@ func TestAuthHandler_TicketAuth(t *testing.T) {
 
 func TestAuthHandler_InvalidJWT(t *testing.T) {
 	store := NewTicketStore()
-	validator := func(jwt, udid string) bool { return false }
+	validator := func(jwt, udid, mode string) bool { return false }
 	handler := NewAuthHandler(store, validator)
 
 	req := httptest.NewRequest("POST", "/k2v5/auth", nil)
@@ -185,7 +185,7 @@ func TestAuthHandler_InvalidJWT(t *testing.T) {
 
 func TestAuthHandler_MissingDevice(t *testing.T) {
 	store := NewTicketStore()
-	validator := func(jwt, udid string) bool { return true }
+	validator := func(jwt, udid, mode string) bool { return true }
 	handler := NewAuthHandler(store, validator)
 
 	req := httptest.NewRequest("POST", "/k2v5/auth", nil)
@@ -202,7 +202,7 @@ func TestAuthHandler_MissingDevice(t *testing.T) {
 
 func TestAuthHandler_InvalidTicket(t *testing.T) {
 	store := NewTicketStore()
-	validator := func(jwt, udid string) bool { return true }
+	validator := func(jwt, udid, mode string) bool { return true }
 	handler := NewAuthHandler(store, validator)
 
 	req := httptest.NewRequest("POST", "/k2v5/auth", nil)
@@ -222,7 +222,7 @@ func TestAuthHandler_InvalidTicket(t *testing.T) {
 func TestAuthHandler_TicketRenewal_Fresh(t *testing.T) {
 	store := NewTicketStore()
 	store.ticketTTL = 100 * time.Second // 100s total TTL
-	validator := func(jwt, udid string) bool { return true }
+	validator := func(jwt, udid, mode string) bool { return true }
 	handler := NewAuthHandler(store, validator)
 
 	// Issue a ticket (it will have ~100s remaining = 100% TTL)
@@ -260,7 +260,7 @@ func TestAuthHandler_TicketRenewal_Fresh(t *testing.T) {
 func TestAuthHandler_TicketRenewal_Expiring(t *testing.T) {
 	store := NewTicketStore()
 	store.ticketTTL = 100 * time.Millisecond // 100ms total TTL
-	validator := func(jwt, udid string) bool { return true }
+	validator := func(jwt, udid, mode string) bool { return true }
 	handler := NewAuthHandler(store, validator)
 
 	// Issue a ticket

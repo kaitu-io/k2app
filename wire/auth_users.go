@@ -61,7 +61,7 @@ func isBcryptHash(s string) bool {
 // Supports both bcrypt hashed tokens (username:$2a$...) and plaintext
 // tokens (username:token) for backward compatibility.
 func NewUsersFileValidator(path string) JWTValidator {
-	return func(jwt, udid string) bool {
+	return func(jwt, udid, mode string) bool {
 		users, err := LoadUsersFile(path)
 		if err != nil {
 			slog.Debug("wire: users file not available", "path", path, "err", err)
@@ -88,9 +88,9 @@ func NewUsersFileValidator(path string) JWTValidator {
 // ChainValidators returns a JWTValidator that tries each validator in order.
 // The first validator to return true wins.
 func ChainValidators(validators ...JWTValidator) JWTValidator {
-	return func(jwt, udid string) bool {
+	return func(jwt, udid, mode string) bool {
 		for _, v := range validators {
-			if v(jwt, udid) {
+			if v(jwt, udid, mode) {
 				return true
 			}
 		}

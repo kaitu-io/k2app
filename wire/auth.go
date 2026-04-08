@@ -24,6 +24,7 @@ const (
 type AuthTicket struct {
 	Token      string
 	DeviceID   string
+	Mode       string // "gateway" or "" (normal client)
 	UDPEnabled bool
 	CreatedAt  time.Time
 	ExpiresAt  time.Time
@@ -188,8 +189,10 @@ func (s *TicketStore) cleanup() {
 	}
 }
 
-// JWTValidator validates a JWT token and device UDID.
-type JWTValidator func(jwt, udid string) bool
+// JWTValidator validates a JWT token, device UDID, and optional client mode.
+// Mode is "gateway" for router clients or "" for normal clients.
+// Validators that don't support mode-based authorization should ignore the mode parameter.
+type JWTValidator func(jwt, udid, mode string) bool
 
 // AuthHandler handles POST /k2v5/auth requests.
 type AuthHandler struct {
@@ -229,7 +232,9 @@ func (h *AuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.validate(jwt, deviceID) {
+	mode := r.Header.Get("X-K2-Mode") // "gateway" or "" (normal)
+
+	if !h.validate(jwt, deviceID, mode) {
 		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 		return
 	}
@@ -240,6 +245,7 @@ func (h *AuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
 		return
 	}
+	ticket.Mode = mode
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(AuthResponse{

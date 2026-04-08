@@ -62,4 +62,9 @@ type Config struct {
 	// PackageResolver resolves Android UID to package name.
 	// Passed to LinuxProcessSearcher on Android. Nil on other platforms.
 	PackageResolver provider.PackageResolver
+
+	// WireMode is the identity sent to the server via metadata stream.
+	// "gateway" for k2r, "" for all other binaries.
+	// Hardcoded by the platform shell — not user-configurable.
+	WireMode string
 }
