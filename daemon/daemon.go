@@ -276,32 +276,20 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 		}
 	}()
 
-	// Create network monitor first — directdial uses it for dynamic interface tracking.
-	factory := d.MonitorFactory
-	if factory == nil {
-		factory = defaultMonitorFactory
-	}
-	monitor, ifaceMon, monErr := factory()
-
-	// Create directdial with monitor for dynamic interface tracking.
-	// When monitor is unavailable, dd stays nil — engine skips interface binding.
-	var dd *directDialer
-	if dim, ok := ifaceMon.(tun.DefaultInterfaceMonitor); ok && monErr == nil {
-		dd = newDirectDialer(dim)
-		if dd.interfaceName() != "" {
-			slog.Info("tunnel: direct dialer bound", "interface", dd.interfaceName())
-		}
-	} else if monErr != nil {
-		slog.Warn("network monitor unavailable, no interface binding", "err", monErr)
-	}
-
 	startFn := d.StartFunc
 	if startFn == nil {
 		startFn = defaultStartFunc
 	}
 
+	factory := d.MonitorFactory
+	if factory == nil {
+		factory = defaultMonitorFactory
+	}
+
 	// Engine start with subscription failover: if engine.Start fails and we have
 	// subscriptions, try the next server from the subscription list before giving up.
+	// Monitor and directdial are created per attempt because engine.Start closes
+	// NetworkMonitor on failure paths.
 	excludes := make(map[int][]string) // route index → tried URLs
 	var eng *engine.Engine
 	var lastErr error
@@ -311,6 +299,20 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 		if d.abortUp.Load() {
 			slog.Info("daemon: doUp aborted before start")
 			return fmt.Errorf("aborted before start")
+		}
+
+		// Create network monitor + directdial per attempt.
+		// engine.Start closes NetworkMonitor on failure, so it cannot be reused.
+		monitor, ifaceMon, monErr := factory()
+
+		var dd *directDialer
+		if dim, ok := ifaceMon.(tun.DefaultInterfaceMonitor); ok && monErr == nil {
+			dd = newDirectDialer(dim)
+			if dd.interfaceName() != "" {
+				slog.Info("tunnel: direct dialer bound", "interface", dd.interfaceName())
+			}
+		} else if monErr != nil {
+			slog.Warn("network monitor unavailable, no interface binding", "err", monErr)
 		}
 
 		engineClientCfg := applyResolvedRoutes(cfg, resolved)
