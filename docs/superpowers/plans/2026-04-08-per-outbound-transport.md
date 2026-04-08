@@ -12,10 +12,14 @@
 
 ---
 
-### Task 1: Add outboundTransport type and update Engine struct
+### Task 1: Add outboundTransport type and new Engine fields (additive only)
 
 **Files:**
 - Modify: `engine/engine.go:39-64` (Engine struct)
+
+**Strategy:** Add new fields alongside old ones. Do NOT remove `e.tm` or `e.wireCfg` yet.
+Later tasks migrate each consumer one-by-one. Final task deletes the old fields.
+This avoids a 20-site "fix all compilation errors" step.
 
 - [ ] **Step 1: Add outboundTransport struct**
 
@@ -32,56 +36,35 @@ type outboundTransport struct {
 }
 ```
 
-- [ ] **Step 2: Update Engine struct fields**
+- [ ] **Step 2: Add new fields to Engine struct (keep old fields)**
 
-Replace these fields in the Engine struct:
+Add these fields to the Engine struct (after line 60, before `reRaceChan`):
 
 ```go
-// Remove:
-tm             *wire.TransportManager              // line 50
-wireCfg      wire.Config                           // line 60
-
-// Add:
 outboundTMs []*outboundTransport  // all wire TMs, for health/reconnect
 primaryTM   *outboundTransport    // first k2v5 route's TM (DNS transport)
 ```
 
-Keep `directDialer` (line 61) — still needed for reRaceLoop.
+**Do NOT remove** `tm`, `wireCfg`. They stay until the final cleanup task.
 
-- [ ] **Step 3: Fix all compilation errors from field removal**
-
-The compiler will flag every `e.tm` and `e.wireCfg` reference. Do NOT fix the logic yet — just make it compile by using `e.primaryTM.tm` and `e.primaryTM.wireCfg` as drop-in replacements. Guard with nil checks where needed. These are temporary — later tasks will properly refactor each site.
-
-Sites to update (find with compiler errors):
-- `Start()` step 9 commit (line 408): `e.tm = tm` → will be replaced in Task 3
-- `Stop()` (line 733-734): `tm := e.tm; e.tm = nil` → `var tms []*outboundTransport; tms = e.outboundTMs; e.outboundTMs = nil; e.primaryTM = nil`
-- `Stop()` (line 770): `tm.Close()` → iterate `tms`
-- `fail()` (lines 841-869): add cleanup of `e.outboundTMs`/`e.primaryTM`
-- `reconnect()` (line 497): `tm := e.tm` → iterate `e.outboundTMs`
-- `Pause()` (line 634): `tm := e.tm` → iterate `e.outboundTMs`
-- `Wake()` (line 661): `tm := e.tm` → iterate `e.outboundTMs`
-- `reRaceLoop()` (lines 1154-1155): `tm := e.tm; wireCfg := e.wireCfg` → use primaryTM for now
-- `Start()` step 9 (lines 421-422): `e.wireCfg = wireCfg; e.directDialer = cfg.DirectDialer` → remove wireCfg store
-
-- [ ] **Step 4: Verify compilation**
+- [ ] **Step 3: Verify compilation**
 
 Run: `go build ./engine/...`
-Expected: PASS (compiles, logic temporarily uses primaryTM as drop-in)
+Expected: PASS (additive only, nothing broken)
 
-- [ ] **Step 5: Verify existing tests pass**
+- [ ] **Step 4: Verify existing tests pass**
 
 Run: `go test -short -count=1 ./engine/...`
-Expected: PASS (single-TM tests still work via primaryTM)
+Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add engine/engine.go
-git commit -m "refactor(engine): add outboundTransport struct, replace single tm field
+git commit -m "refactor(engine): add outboundTransport struct and new fields
 
-Prepare for per-outbound transport: Engine now stores outboundTMs slice
-and primaryTM instead of single tm + wireCfg. All existing references
-temporarily route through primaryTM as drop-in."
+Additive only — old tm/wireCfg fields preserved. New outboundTMs/primaryTM
+fields coexist until migration is complete."
 ```
 
 ---
@@ -225,12 +208,21 @@ Replace the current step 6.5 block (lines 311-330) with:
 	outbounds[outboundDirect] = core.NewDirectOutbound(cfg.DirectDialer)
 	outbounds[outboundReject] = nil
 
-	// Collect unique k2v5 URLs.
+	// Collect unique k2v5 URLs in config route order (deterministic).
+	// IMPORTANT: iterate client.Routes (ordered slice), NOT outboundMap (unordered map).
+	// The first k2v5 route becomes primaryTM (DNS transport), so order matters.
+	seen := make(map[string]bool)
 	var k2v5URLs []string
-	for via := range outboundMap {
-		if strings.HasPrefix(via, "k2v5://") {
-			k2v5URLs = append(k2v5URLs, via)
+	for _, route := range client.Routes {
+		via := route.Via
+		if !strings.HasPrefix(via, "k2v5://") || seen[via] {
+			continue
 		}
+		if _, inMap := outboundMap[via]; !inMap {
+			continue // not in outbound map (shouldn't happen, but defensive)
+		}
+		seen[via] = true
+		k2v5URLs = append(k2v5URLs, via)
 	}
 
 	// Setup transports in parallel.
@@ -305,44 +297,32 @@ Replace the current step 6.5 block (lines 311-330) with:
 
 - [ ] **Step 4: Update step 9 commit to store outboundTMs**
 
-In the commit block (around line 407-422), replace:
+In the commit block (around line 407-422), **add** new field assignments alongside old ones:
 
 ```go
-// Old:
-e.tm = tm
-// ...
-e.wireCfg = wireCfg
+// Keep old fields for now (other methods still reference them):
+e.tm = primaryOT.tm                   // bridge: old consumers still use e.tm
+e.wireCfg = primaryOT.wireCfg         // bridge: reRaceLoop still uses e.wireCfg
 
-// New:
+// Add new fields:
 e.outboundTMs = allOTs
 e.primaryTM = primaryOT
 ```
 
 Keep `e.directDialer = cfg.DirectDialer`.
 
-Remove any remaining references to the old `tm` or `wireCfg` local variables.
+The old `tm` local variable from steps 2-4 no longer exists — use `primaryOT.tm` instead. The old `wireCfg` local variable is gone — use `primaryOT.wireCfg`.
 
 - [ ] **Step 5: Update step 8 DNS to use tcpwsDialer from primary**
 
 The `tcpwsDialer` variable is already set from `primaryOT` in the new step 6.5 code above. Verify that step 8 (DNS setup, around line 359) still references `tcpwsDialer` — it should, no changes needed.
 
-- [ ] **Step 6: Update healthMonitor creation in step 9**
+- [ ] **Step 6: Keep healthMonitor creation unchanged (temporary)**
 
-The healthMonitor constructor at line 416 currently receives `tm`. Change to:
-
-```go
-// Old:
-hm := newHealthMonitor(tm, tunnel, ...)
-
-// New (temporary — Task 6 will change constructor signature):
-var hmTM *wire.TransportManager
-if primaryOT != nil {
-	hmTM = primaryOT.tm
-}
-hm := newHealthMonitor(hmTM, tunnel, ...)
-```
-
-This is a temporary bridge until Task 6 updates the constructor.
+The healthMonitor constructor at line 416 still receives `tm` (old field).
+Since Task 1 keeps the old `tm` field, and we still set `e.tm = primaryOT.tm`
+in step 9 (see step 4), the existing `hm := newHealthMonitor(tm, tunnel, ...)`
+works as-is. Task 6 will change the constructor signature to accept outboundTransport.
 
 - [ ] **Step 7: Update engine start log**
 
@@ -358,27 +338,39 @@ slog.Info("engine: start",
 
 No change needed — `client.Server` is still derived from first route by SetDefaults.
 
-- [ ] **Step 8: Update error cleanup in Start()**
+- [ ] **Step 8: Update error cleanup paths in Start()**
 
-When Start() fails after TMs are created (e.g., provider or tunnel creation fails), the cleanup paths at lines 304-308 and 376-379 close `tm`. Replace with closing all TMs:
+After TMs are created in step 6.5, subsequent failure paths must close all TMs.
+There are exactly 3 error paths after step 6.5 in the current code:
 
-```go
-// Old:
-if cfg.NetworkMonitor != nil {
-	cfg.NetworkMonitor.Close()
-}
-tm.Close()
+1. **ctx.Err() check before tunnel start** (around line 304):
+   ```go
+   if ctx.Err() != nil {
+       if cfg.NetworkMonitor != nil { cfg.NetworkMonitor.Close() }
+       for _, ot := range allOTs { ot.tm.Close() }
+       return e.fail(ctx.Err())
+   }
+   ```
 
-// New:
-if cfg.NetworkMonitor != nil {
-	cfg.NetworkMonitor.Close()
-}
-for _, ot := range allOTs {
-	ot.tm.Close()
-}
-```
+2. **tunnel.StartWithHandler failure** (around line 376):
+   ```go
+   if err := tunnel.StartWithHandler(ctx, dh); err != nil {
+       if cfg.NetworkMonitor != nil { cfg.NetworkMonitor.Close() }
+       for _, ot := range allOTs { ot.tm.Close() }
+       return e.fail(fmt.Errorf("tunnel start: %w", err))
+   }
+   ```
 
-There are multiple error paths in Start() that do this — find them all (search for `tm.Close()` within Start).
+3. **tunnel.Start failure** (proxy mode, around line 384):
+   ```go
+   if err := tunnel.Start(ctx); err != nil {
+       if cfg.NetworkMonitor != nil { cfg.NetworkMonitor.Close() }
+       for _, ot := range allOTs { ot.tm.Close() }
+       return e.fail(fmt.Errorf("tunnel start: %w", err))
+   }
+   ```
+
+Verify: `grep -n 'tm\.Close()' engine/engine.go` within Start() to confirm no other sites exist after step 6.5.
 
 - [ ] **Step 9: Verify compilation**
 
@@ -491,7 +483,12 @@ git commit -m "refactor(engine): Stop/fail close all outbound TMs"
 
 - [ ] **Step 1: Update reconnect()**
 
-In reconnect() (around lines 490-532), replace single tm with iteration:
+In reconnect() (around lines 490-532), replace single tm with iteration.
+
+**Ordering is critical** (shared tcpwsDialer contract, see comment at lines 507-511):
+1. `dh.CancelInflight()` — abort pending DNS queries FIRST
+2. All TMs `ResetConnections()` — resets smux sessions (including primaryTM's tcpws used by DNS)
+3. `pdns.ResetConnections()` — clean proxyConn pool LAST
 
 ```go
 // Old (line 497):
@@ -507,7 +504,7 @@ Then replace the reset call (line 517):
 // Old:
 tm.ResetConnections()
 
-// New:
+// New — ordering preserved: CancelInflight (already above) → all TMs → pdns (below)
 for _, ot := range outboundTMs {
 	ot.tm.ResetConnections()
 }
@@ -595,10 +592,11 @@ Replace the `tm` field (line 108):
 tm *wire.TransportManager
 
 // New:
-tms []*outboundTransport
+primaryTM *outboundTransport   // for health FSM (WireStats, TCPRecentlyHealthy)
+tms       []*outboundTransport // for echoLoop (probe each independently)
 ```
 
-This requires importing the outboundTransport type — it's in the same package, so no import needed.
+Same package — no import needed.
 
 - [ ] **Step 2: Update constructor**
 
@@ -614,25 +612,27 @@ func newHealthMonitor(
 
 // New:
 func newHealthMonitor(
+	primaryTM *outboundTransport,
 	tms []*outboundTransport,
 	tunnel *core.ClientTunnel,
 	...
 ) *healthMonitor
 ```
 
-Update the field assignment inside:
+Update field assignments inside:
 
 ```go
 // Old:
 tm: tm,
 
 // New:
-tms: tms,
+primaryTM: primaryTM,
+tms:       tms,
 ```
 
-- [ ] **Step 3: Update sample() — aggregate WireStats**
+- [ ] **Step 3: Update sample() — use primaryTM for health FSM**
 
-In sample() (around line 195-197), replace single-TM reads with aggregation:
+In sample() (around line 195-197), replace single-TM reads with primaryTM:
 
 ```go
 // Old:
@@ -640,34 +640,23 @@ ws := hm.tm.WireStats()
 tx, rx := hm.tunnel.TrafficBytes()
 tcpHealthy := hm.tm.TCPRecentlyHealthy(30 * time.Second)
 
-// New:
+// New — use primaryTM for health assessment.
+// WHY NOT aggregate across all TMs: RTT/MinRTT are per-server metrics.
+// Japan server (30ms RTT) and US server (200ms RTT) are both healthy,
+// but aggregating worst-case RTT (200ms) with smallest MinRTT (25ms)
+// falsely triggers degradation (200 > 3*25). Per-TM health would require
+// a distributed FSM — overkill for max 2 outbounds.
+// echoLoop already probes each TM independently for transport failure.
 var ws wire.WireStats
 var tcpHealthy bool
-for _, ot := range hm.tms {
-	s := ot.tm.WireStats()
-	// Use worst-case loss and RTT for health assessment.
-	if s.PacketLossRate > ws.PacketLossRate {
-		ws.PacketLossRate = s.PacketLossRate
-	}
-	if s.RTT > ws.RTT {
-		ws.RTT = s.RTT
-	}
-	if s.MinRTT > 0 && (ws.MinRTT == 0 || s.MinRTT < ws.MinRTT) {
-		ws.MinRTT = s.MinRTT
-	}
-	// Aggregate transport type from primary.
-	if ws.Transport == "" {
-		ws.Transport = s.Transport
-	}
-	ws.WireFallback = ws.WireFallback || s.WireFallback
-	if ot.tm.TCPRecentlyHealthy(30 * time.Second) {
-		tcpHealthy = true
-	}
+if hm.primaryTM != nil {
+	ws = hm.primaryTM.tm.WireStats()
+	tcpHealthy = hm.primaryTM.tm.TCPRecentlyHealthy(30 * time.Second)
 }
 tx, rx := hm.tunnel.TrafficBytes()
 ```
 
-If `hm.tms` is empty, `ws` stays zero-valued — same as current behavior with no transport.
+If `hm.primaryTM` is nil, `ws` stays zero-valued — same as current behavior with no transport.
 
 - [ ] **Step 4: Update echoLoop() — probe each TM**
 
@@ -750,7 +739,7 @@ if primaryOT != nil {
 hm := newHealthMonitor(hmTM, tunnel, ...)
 
 // New:
-hm := newHealthMonitor(allOTs, tunnel, e.broadcastSnapshot, e.doNetworkReconnect, time.Now())
+hm := newHealthMonitor(primaryOT, allOTs, tunnel, e.broadcastSnapshot, e.doNetworkReconnect, time.Now())
 ```
 
 Update reRaceChan type in engine.go (around line 425):
@@ -785,7 +774,7 @@ hm := newHealthMonitor(tm, tunnel, onSnapshot, onReconnect, time.Now())
 // New pattern:
 tm := mockTransportManager()
 ot := &outboundTransport{tm: tm, name: "test"}
-hm := newHealthMonitor([]*outboundTransport{ot}, tunnel, onSnapshot, onReconnect, time.Now())
+hm := newHealthMonitor(ot, []*outboundTransport{ot}, tunnel, onSnapshot, onReconnect, time.Now())
 ```
 
 Apply this to every test in health_test.go that creates a healthMonitor. There are approximately 15 test functions that need this change — search for `newHealthMonitor(tm,`.
@@ -998,7 +987,7 @@ In `engine/CLAUDE.md`, update the Start() flow to reflect the new step ordering:
 │      DNS proxy dialer = primaryTM's TCP-WS (control-plane)
 ├── 9. Commit → StateConnected + start reRaceLoop
 ├── 10. HealthMonitor start (1Hz wire stats + health FSM + echoLoop)
-│       sample() aggregates across all outbound TMs
+│       sample() uses primaryTM for health FSM
 │       echoLoop probes each TM independently
 └── 11. Background QUIC probe (per-TM, active during TCP-WS fallback)
 ```
@@ -1020,7 +1009,60 @@ git commit -m "docs: update architecture for per-outbound transport"
 
 ---
 
-### Task 10: Final verification
+### Task 10: Remove deprecated tm/wireCfg fields
+
+**Files:**
+- Modify: `engine/engine.go`
+
+Now that all consumers use outboundTMs/primaryTM, remove the old bridge fields.
+
+- [ ] **Step 1: Remove old fields from Engine struct**
+
+Remove from Engine struct:
+```go
+tm             *wire.TransportManager  // line 50 — REMOVE
+wireCfg      wire.Config               // line 60 — REMOVE
+```
+
+- [ ] **Step 2: Remove bridge assignments in Start() step 9**
+
+Remove from the commit block:
+```go
+e.tm = primaryOT.tm              // REMOVE — was bridge
+e.wireCfg = primaryOT.wireCfg    // REMOVE — was bridge
+```
+
+- [ ] **Step 3: Remove old cleanup in Stop()**
+
+Remove from Stop():
+```go
+tm := e.tm; e.tm = nil           // REMOVE — replaced by outboundTMs loop
+```
+And the corresponding `tm.Close()` call.
+
+- [ ] **Step 4: Fix any remaining compilation errors**
+
+Run `go build ./engine/...`. If any reference to `e.tm` or `e.wireCfg` remains, it's a migration bug from earlier tasks. Fix each one by routing through `e.outboundTMs` or `e.primaryTM`.
+
+Expected: zero remaining references (all migrated in Tasks 3-7).
+
+- [ ] **Step 5: Verify tests**
+
+Run: `go test -short -count=1 ./engine/...`
+Expected: PASS
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add engine/engine.go
+git commit -m "refactor(engine): remove deprecated tm/wireCfg fields
+
+All consumers now use outboundTMs/primaryTM. Bridge fields removed."
+```
+
+---
+
+### Task 11: Final verification
 
 **Files:** None (testing only)
 
