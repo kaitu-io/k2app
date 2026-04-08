@@ -111,7 +111,9 @@ func processAbandonedOrders(ctx context.Context, batchID, slug string, windowSta
 		PayAmount uint64
 	}
 
-	var orders []abandonedOrderInfo
+	// 查询时间窗口内未支付订单，排除已有后续付款的用户
+	// 不使用 GROUP BY（MySQL ONLY_FULL_GROUP_BY 兼容），在 Go 侧按 user_id 去重
+	var allOrders []abandonedOrderInfo
 	err := db.Get().Model(&Order{}).
 		Select("user_id, title, pay_amount").
 		Where("is_paid = ? AND created_at >= ? AND created_at < ?", false, windowStart, windowEnd).
@@ -120,12 +122,22 @@ func processAbandonedOrders(ctx context.Context, batchID, slug string, windowSta
 				Select("DISTINCT user_id").
 				Where("is_paid = ? AND created_at >= ?", true, windowStart),
 		).
-		Group("user_id").
-		Find(&orders).Error
+		Order("created_at DESC").
+		Find(&allOrders).Error
 
 	if err != nil {
 		log.Errorf(ctx, "[ABANDONED] Failed to query orders: %v", err)
 		return 0, 0, 1
+	}
+
+	// 按 user_id 去重，保留最新的订单（已按 created_at DESC 排序）
+	seen := make(map[uint64]bool, len(allOrders))
+	orders := make([]abandonedOrderInfo, 0, len(allOrders))
+	for _, o := range allOrders {
+		if !seen[o.UserID] {
+			seen[o.UserID] = true
+			orders = append(orders, o)
+		}
 	}
 
 	log.Infof(ctx, "[ABANDONED] Found %d users with unpaid orders (window: %s to %s)",
