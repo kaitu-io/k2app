@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/kaitu-io/k2/config"
@@ -124,7 +125,7 @@ func cmdRun(args []string) {
 	}
 	defer closer()
 
-	g := gateway.New()
+	g := gateway.New(version, commit, runtime.GOARCH)
 	if err := g.Run(cfg.Listen); err != nil {
 		out.fail("GATEWAY_FAILED", err.Error(), "")
 		os.Exit(1)

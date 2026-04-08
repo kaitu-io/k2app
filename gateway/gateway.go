@@ -38,15 +38,24 @@ type Gateway struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	storage *Storage
+	version string
+	commit  string
+	arch    string
 }
 
 // New creates a Gateway ready to Run.
-func New() *Gateway {
+func New(version, commit, arch string) *Gateway {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Gateway{
 		ctx:        ctx,
 		cancel:     cancel,
 		sseClients: make(map[chan []byte]struct{}),
+		storage:    NewDefaultStorage(),
+		version:    version,
+		commit:     commit,
+		arch:       arch,
 	}
 }
 
@@ -63,6 +72,8 @@ func (g *Gateway) Run(addr string) error {
 	mux.HandleFunc("/api/core", g.handleCore)
 	mux.HandleFunc("/api/events", g.handleEvents)
 	mux.HandleFunc("/api/log-level", g.handleLogLevel)
+	mux.HandleFunc("/api/storage", g.handleStorage)
+	mux.HandleFunc("/api/platform", g.handlePlatform)
 
 	g.httpServer = &http.Server{
 		Addr:    addr,
