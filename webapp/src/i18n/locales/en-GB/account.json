@@ -19,6 +19,8 @@
     "loginToViewMembership": "Log in to view membership status",
     "multiDeviceWarning": "You have \"Multi-Device Login\" access but haven't set an email yet. Please set an email to log in on other devices.",
     "authValidityPeriod": "Authorisation Validity Period",
+    "quotaDevices": "{{count}} devices",
+    "quotaRouter": "Router proxy",
     "language": "Language Settings",
     "selectLanguage": "Select Language",
     "wallet": "My Wallet",

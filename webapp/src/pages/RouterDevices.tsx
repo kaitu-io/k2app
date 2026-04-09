@@ -50,8 +50,9 @@ async function gwFetch<T>(path: string, opts?: RequestInit): Promise<{ code: num
       ...opts,
     });
     return await resp.json();
-  } catch {
-    return { code: -1, message: 'Gateway unreachable' };
+  } catch (err) {
+    console.warn('[RouterDevices] gwFetch failed:', path, err);
+    return { code: -1, message: 'gateway_unreachable' };
   }
 }
 
@@ -70,7 +71,7 @@ export default function RouterDevices() {
       setData(res.data);
       setError('');
     } else {
-      setError(res.message || 'Failed to load devices');
+      setError(t('dashboard:routerDevices.loadFailed'));
     }
     setLoading(false);
   }, []);

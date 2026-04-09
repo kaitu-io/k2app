@@ -19,6 +19,8 @@
     "loginToViewMembership": "登入後查看會員狀態",
     "multiDeviceWarning": "您已擁有「多裝置登入」權益，但尚未設定信箱，無法在其他裝置登入。請先設定信箱！",
     "authValidityPeriod": "授權有效期",
+    "quotaDevices": "{{count}} 台裝置",
+    "quotaRouter": "路由器代理",
     "language": "語言設定",
     "selectLanguage": "選擇語言",
     "wallet": "我的錢包",

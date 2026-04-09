@@ -217,7 +217,9 @@
     "available": "有新版本可用",
     "description": "当前版本 {{current}}，最新版本 {{latest}}",
     "apply": "立即更新",
-    "upgrading": "更新中..."
+    "upgrading": "更新中...",
+    "restarting": "服务重启中",
+    "restartingDesc": "更新已应用，服务正在重启，页面将自动恢复连接..."
   },
   "routerDevices": {
     "title": "局域网设备",
@@ -233,6 +235,7 @@
     "allowDevice": "添加设备到白名单",
     "remark": "备注",
     "remarkPlaceholder": "如：爸爸的手机",
-    "confirm": "确认"
+    "confirm": "确认",
+    "loadFailed": "加载设备列表失败"
   }
 }

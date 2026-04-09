@@ -212,5 +212,30 @@
     "upgradeTitle": "想要更多節點？",
     "upgradeDescription": "登入即可取得全球雲端節點，開箱即用",
     "upgradeCta": "開通雲節點"
+  },
+  "upgrade": {
+    "available": "有新版本可用",
+    "description": "目前版本 {{current}}，最新版本 {{latest}}",
+    "apply": "立即更新",
+    "upgrading": "更新中...",
+    "restarting": "服務重啟中",
+    "restartingDesc": "更新已套用，服務正在重啟，頁面將自動恢復連線..."
+  },
+  "routerDevices": {
+    "title": "區域網路裝置",
+    "mode": "存取模式",
+    "open": "開放",
+    "allowlist": "白名單",
+    "modeOpenDesc": "所有連接到路由器的裝置均可使用代理",
+    "modeAllowlistDesc": "僅白名單中的裝置可使用代理",
+    "quotaUsage": "裝置配額: {{usage}}",
+    "quotaExceeded": "裝置數量已達上限",
+    "unlimited": "無限制",
+    "allow": "允許",
+    "allowDevice": "新增裝置到白名單",
+    "remark": "備註",
+    "remarkPlaceholder": "如：爸爸的手機",
+    "confirm": "確認",
+    "loadFailed": "載入裝置清單失敗"
   }
 }

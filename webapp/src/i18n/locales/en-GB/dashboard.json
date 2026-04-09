@@ -212,5 +212,30 @@
     "upgradeTitle": "Want more nodes?",
     "upgradeDescription": "Log in to access global cloud nodes, ready to use",
     "upgradeCta": "Get Cloud Nodes"
+  },
+  "upgrade": {
+    "available": "Update Available",
+    "description": "Current: {{current}}, Latest: {{latest}}",
+    "apply": "Update Now",
+    "upgrading": "Updating...",
+    "restarting": "Restarting",
+    "restartingDesc": "Update applied. Service is restarting, the page will reconnect automatically..."
+  },
+  "routerDevices": {
+    "title": "LAN Devices",
+    "mode": "Access Mode",
+    "open": "Open",
+    "allowlist": "Allowlist",
+    "modeOpenDesc": "All devices on the router can use the proxy",
+    "modeAllowlistDesc": "Only allowlisted devices can use the proxy",
+    "quotaUsage": "Device quota: {{usage}}",
+    "quotaExceeded": "Device limit reached",
+    "unlimited": "Unlimited",
+    "allow": "Allow",
+    "allowDevice": "Add Device to Allowlist",
+    "remark": "Remark",
+    "remarkPlaceholder": "e.g., Dad's phone",
+    "confirm": "Confirm",
+    "loadFailed": "Failed to load devices"
   }
 }
