@@ -15,6 +15,18 @@
 - Data migration is idempotent (safe to re-run)
 - syncUserCache ensures legacy code never breaks
 
+**Constants:**
+
+```go
+const (
+	ProductTypePersonal = "personal"
+	ProductTypeGateway  = "gateway"
+	DefaultMaxDevice    = 5  // personal 套餐默认设备数
+)
+```
+
+Define these in `api/logic_subscription.go`. All code references these constants, never magic number `5` or string `"personal"`.
+
 ---
 
 ## File Map
@@ -138,10 +150,21 @@ After the `AutoMigrate` call in `migrate.go` (after line 72, before the legacy c
 		AND id NOT IN (SELECT user_id FROM subscriptions WHERE product_type = 'personal')
 	`)
 	if result.Error != nil {
-		log.Warnf(ctx, "subscription data migration failed (may be first run before table exists): %v", result.Error)
-	} else {
-		log.Infof(ctx, "subscription data migration: %d rows inserted", result.RowsAffected)
+		log.Errorf(ctx, "CRITICAL: subscription data migration failed: %v", result.Error)
+		return fmt.Errorf("subscription data migration failed: %w", result.Error)
 	}
+	log.Infof(ctx, "subscription data migration: %d rows inserted", result.RowsAffected)
+
+	// Sanity check: verify migration populated subscriptions
+	var subCount int64
+	db.Get().Model(&Subscription{}).Where("product_type = 'personal'").Count(&subCount)
+	var userCount int64
+	db.Get().Model(&User{}).Where("expired_at > 0").Count(&userCount)
+	if subCount == 0 && userCount > 0 {
+		log.Errorf(ctx, "CRITICAL: subscription migration sanity check failed: %d users with expired_at > 0 but 0 subscriptions", userCount)
+		return fmt.Errorf("subscription migration sanity check failed: 0 subscriptions for %d eligible users", userCount)
+	}
+	log.Infof(ctx, "subscription migration sanity check: %d subscriptions for %d eligible users", subCount, userCount)
 ```
 
 - [ ] **Step 9: Verify compilation**
@@ -176,12 +199,18 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	ProductTypePersonal = "personal"
+	ProductTypeGateway  = "gateway"
+	DefaultMaxDevice    = 5 // personal 套餐默认设备数
+)
+
 // syncUserCache 将 personal Subscription 同步到 User 的缓存字段
 // 目的: 未改动的代码 (workers, EDM, admin) 继续读 User.ExpiredAt/MaxDevice 正常工作
 // 所有新代码读 Subscription
 func syncUserCache(ctx context.Context, tx *gorm.DB, userID uint64) error {
 	var sub Subscription
-	err := tx.Where("user_id = ? AND product_type = ?", userID, "personal").First(&sub).Error
+	err := tx.Where("user_id = ? AND product_type = ?", userID, ProductTypePersonal).First(&sub).Error
 	if err == gorm.ErrRecordNotFound {
 		return nil // 无 personal 订阅, 不动 User
 	}
@@ -281,7 +310,41 @@ git commit -m "feat(api): subscription helper functions (syncUserCache, getActiv
 - Modify: `api/logic_member.go`
 - Modify: `api/member_test.go`
 
-- [ ] **Step 1: Replace applyOrderToTargetUsers in logic_member.go**
+- [ ] **Step 1: Add skipExpiredAtWrite parameter to addProExpiredDays**
+
+The current `addProExpiredDays` writes `User.ExpiredAt` directly (line 38-46). Now that Subscription owns expiry, we add a flag to skip this write. Modify the function signature (line 14):
+
+**Before:**
+```go
+func addProExpiredDays(ctx context.Context, tx *gorm.DB, user *User, vipType VipChangeType, referenceID uint64, days int, reason string) (*UserProHistory, error) {
+```
+
+**After:**
+```go
+func addProExpiredDays(ctx context.Context, tx *gorm.DB, user *User, vipType VipChangeType, referenceID uint64, days int, reason string, skipExpiredAtWrite bool) (*UserProHistory, error) {
+```
+
+Then wrap the ExpiredAt calculation (lines 37-47) in a condition:
+
+```go
+	if !skipExpiredAtWrite {
+		// 计算新的过期时间 (legacy path — new code uses Subscription)
+		now := time.Now()
+		if user.ExpiredAt < now.Unix() {
+			user.ExpiredAt = now.AddDate(0, 0, days).Unix()
+		} else {
+			user.ExpiredAt = time.Unix(user.ExpiredAt, 0).AddDate(0, 0, days).Unix()
+		}
+	}
+```
+
+**Update ALL existing callers** to pass `false` (preserving current behavior). Search the codebase:
+- `logic_member.go` itself (the new `applyOrderToTargetUsers` will pass `true`)
+- `logic_auth.go` or wherever invite rewards call it → pass `false`
+
+Run: `cd api && grep -rn "addProExpiredDays" --include="*.go"` to find all call sites.
+
+- [ ] **Step 2: Replace applyOrderToTargetUsers in logic_member.go**
 
 Replace lines 76-168 (the entire `applyOrderToTargetUsers` function) with:
 
@@ -384,13 +447,14 @@ func applyOrderToTargetUsers(ctx context.Context, tx *gorm.DB, order *Order) err
 		}
 
 		// UserProHistory + IsFirstOrderDone + IsActivated (保持现有行为)
+		// skipExpiredAtWrite=true: Subscription owns expiry, don't write User.ExpiredAt
 		reason := fmt.Sprintf("订单支付 - %s", order.UUID)
-		if _, err := addProExpiredDays(ctx, tx, user, VipPurchase, order.ID, days, reason); err != nil {
+		if _, err := addProExpiredDays(ctx, tx, user, VipPurchase, order.ID, days, reason, true); err != nil {
 			return fmt.Errorf("addProExpiredDays for user %d: %w", user.ID, err)
 		}
 
 		// 同步 User 缓存 (仅 personal — gateway 状态只在 Subscription)
-		if productType == "personal" {
+		if productType == ProductTypePersonal {
 			if err := syncUserCache(ctx, tx, user.ID); err != nil {
 				log.Warnf(ctx, "[applyOrderToTargetUsers] syncUserCache failed for user %d: %v", user.ID, err)
 			}
@@ -404,32 +468,62 @@ func applyOrderToTargetUsers(ctx context.Context, tx *gorm.DB, order *Order) err
 
 **Note:** `addProExpiredDays` is kept as-is. It still writes `User.ExpiredAt` (which is now a cache field — `syncUserCache` will overwrite it immediately after from Subscription). The `addProExpiredDays` function also handles `IsFirstOrderDone`, `IsActivated`, and creates `UserProHistory` — we need all of these side effects to continue working.
 
-- [ ] **Step 2: Add test for Subscription creation in member_test.go**
+- [ ] **Step 3: Update all existing addProExpiredDays callers**
+
+Run: `cd api && grep -rn "addProExpiredDays" --include="*.go"` to find all call sites.
+
+For each caller (except the new `applyOrderToTargetUsers`), add `false` as the last argument:
+
+```go
+// Before:
+addProExpiredDays(ctx, tx, user, VipInviteReward, codeID, days, reason)
+// After:
+addProExpiredDays(ctx, tx, user, VipInviteReward, codeID, days, reason, false)
+```
+
+- [ ] **Step 4: Add tests for Subscription-based order processing**
 
 Append to `api/member_test.go`:
 
 ```go
-func TestApplyOrderToTargetUsers_SetsProductType(t *testing.T) {
-	// Verify plan ProductType defaults to "personal" when empty
+func TestApplyOrderToTargetUsers_DefaultsToPersonal(t *testing.T) {
+	// Old plans without ProductType should default to "personal"
 	plan := &Plan{PID: "1y", Label: "1 Year", Price: 4999, Month: 12}
 	order := Order{}
 	_ = order.SetOrderMeta(plan, nil, []string{}, true)
 
 	retrievedPlan, _ := order.GetPlan()
-	// Old plans have no ProductType — code should default to "personal"
-	if retrievedPlan.ProductType != "" {
-		// This is fine — new plans will have it set
+	// Old plans serialized without ProductType — field is zero value ""
+	// applyOrderToTargetUsers must treat "" as ProductTypePersonal
+	assert.Equal(t, "", retrievedPlan.ProductType, "old plans have empty ProductType in Meta")
+}
+
+func TestApplyOrderToTargetUsers_GatewayPlan(t *testing.T) {
+	// Gateway plan should preserve ProductType in Meta
+	plan := &Plan{
+		PID:         "router-monthly-5",
+		Label:       "路由器月付·5设备",
+		Price:       999,
+		Month:       1,
+		ProductType: ProductTypeGateway,
+		Quota:       5,
 	}
-	// The applyOrderToTargetUsers function handles the default internally
+	order := Order{}
+	_ = order.SetOrderMeta(plan, nil, []string{}, true)
+
+	retrievedPlan, err := order.GetPlan()
+	assert.NoError(t, err)
+	assert.Equal(t, ProductTypeGateway, retrievedPlan.ProductType)
+	assert.Equal(t, 5, retrievedPlan.Quota)
 }
 ```
 
-- [ ] **Step 3: Verify compilation and run all tests**
+- [ ] **Step 5: Verify compilation and run all tests**
 
 Run: `cd api && go build ./... && go test ./...`
-Expected: Compiles and all existing tests pass.
+Expected: Compiles and all existing tests pass. The new tests verify Meta serialization roundtrip for both old and new plan formats.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add api/logic_member.go api/member_test.go
@@ -465,7 +559,7 @@ func ProRequired() gin.HandlerFunc {
 			return
 		}
 
-		sub, err := getActiveSubscription(db.Get(), user.ID, "personal")
+		sub, err := getActiveSubscription(db.Get(), user.ID, ProductTypePersonal)
 		if err != nil {
 			log.Errorf(c, "ProRequired: failed to query subscription for user %d: %v", user.ID, err)
 			// DB error — fall back to User cache to avoid blocking all users
@@ -511,7 +605,7 @@ func GatewayProRequired() gin.HandlerFunc {
 			return
 		}
 
-		sub, err := getActiveSubscription(db.Get(), user.ID, "gateway")
+		sub, err := getActiveSubscription(db.Get(), user.ID, ProductTypeGateway)
 		if err != nil {
 			log.Errorf(c, "GatewayProRequired: failed to query subscription for user %d: %v", user.ID, err)
 			Error(c, ErrorSystemError, "failed to check gateway subscription")
@@ -549,15 +643,116 @@ Add to `middleware.go` — in the device registration section (the `fillDeviceAp
 	}
 ```
 
-- [ ] **Step 3: Verify compilation**
+- [ ] **Step 3: Add ProRequired tests**
 
-Run: `cd api && go build ./...`
-Expected: Compiles.
+Create or append to `api/middleware_subscription_test.go`:
 
-- [ ] **Step 4: Commit**
+```go
+package center
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
+)
+
+func TestProRequired_ActiveSubscription_Passes(t *testing.T) {
+	// Setup: user has active personal Subscription
+	// ProRequired should pass (200, not 402)
+	mockDB := SetupMockDB(t)
+
+	// Mock: getActiveSubscription returns active sub
+	mockDB.ExpectQuery("SELECT.*FROM.*subscriptions.*WHERE.*user_id.*product_type").
+		WillReturnRows(mockDB.NewRows([]string{"id", "user_id", "product_type", "plan_pid", "expired_at", "quota"}).
+			AddRow(1, 1, ProductTypePersonal, "1y", time.Now().Add(30*24*time.Hour).Unix(), 5))
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/tunnels", nil)
+	// Set user in context (mock ReqUser)
+	user := &User{ID: 1, ExpiredAt: time.Now().Add(30 * 24 * time.Hour).Unix()}
+	c.Set("user", user)
+
+	handler := ProRequired()
+	handler(c)
+
+	assert.False(t, c.IsAborted(), "request should not be aborted for active subscription")
+}
+
+func TestProRequired_NoSubscription_FallsBackToUser(t *testing.T) {
+	// Setup: no Subscription row, but User.ExpiredAt is valid
+	// ProRequired should pass (fallback to User cache)
+	mockDB := SetupMockDB(t)
+
+	// Mock: getActiveSubscription returns not found
+	mockDB.ExpectQuery("SELECT.*FROM.*subscriptions.*WHERE.*user_id.*product_type").
+		WillReturnRows(mockDB.NewRows([]string{}))
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/tunnels", nil)
+	user := &User{ID: 1, ExpiredAt: time.Now().Add(30 * 24 * time.Hour).Unix()}
+	c.Set("user", user)
+
+	handler := ProRequired()
+	handler(c)
+
+	assert.False(t, c.IsAborted(), "should pass via User.ExpiredAt fallback")
+}
+
+func TestProRequired_ExpiredSubscription_Returns402(t *testing.T) {
+	mockDB := SetupMockDB(t)
+
+	mockDB.ExpectQuery("SELECT.*FROM.*subscriptions.*WHERE.*user_id.*product_type").
+		WillReturnRows(mockDB.NewRows([]string{"id", "user_id", "product_type", "plan_pid", "expired_at", "quota"}).
+			AddRow(1, 1, ProductTypePersonal, "1y", time.Now().Add(-24*time.Hour).Unix(), 5))
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/tunnels", nil)
+	user := &User{ID: 1, ExpiredAt: time.Now().Add(-24 * time.Hour).Unix()}
+	c.Set("user", user)
+
+	handler := ProRequired()
+	handler(c)
+
+	assert.True(t, c.IsAborted(), "should be aborted for expired subscription")
+}
+
+func TestGatewayProRequired_NoSubscription_Returns402(t *testing.T) {
+	mockDB := SetupMockDB(t)
+
+	mockDB.ExpectQuery("SELECT.*FROM.*subscriptions.*WHERE.*user_id.*product_type").
+		WillReturnRows(mockDB.NewRows([]string{}))
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/tunnels", nil)
+	user := &User{ID: 1}
+	c.Set("user", user)
+
+	handler := GatewayProRequired()
+	handler(c)
+
+	assert.True(t, c.IsAborted(), "should be aborted — no gateway subscription, no fallback")
+}
+```
+
+Note: These tests may need adjustment based on how `ReqUser(c)` extracts the user from gin.Context. Check the actual key used (might be `"user"` or a custom key). Adjust `c.Set("user", user)` accordingly.
+
+- [ ] **Step 4: Verify compilation and run tests**
+
+Run: `cd api && go build ./... && go test -run TestProRequired -v ./... && go test -run TestGatewayProRequired -v ./...`
+Expected: All pass.
+
+- [ ] **Step 5: Commit**
 
 ```bash
-git add api/middleware.go
+git add api/middleware.go api/middleware_subscription_test.go
 git commit -m "feat(api): ProRequired reads Subscription with User fallback, add GatewayProRequired
 
 ProRequired: Subscription (source of truth) → User.ExpiredAt (fallback).
@@ -582,7 +777,7 @@ if deviceCount >= int64(user.MaxDevice) {
 
 With:
 ```go
-maxDevice := getSubscriptionQuota(tx, user.ID, "personal", 5)
+maxDevice := getSubscriptionQuota(tx, identify.UserID, ProductTypePersonal, DefaultMaxDevice)
 if deviceCount >= int64(maxDevice) {
 ```
 
@@ -618,13 +813,13 @@ Replace the entire `api_get_plans` function in `api/api_plan.go`:
 
 ```go
 func api_get_plans(c *gin.Context) {
-	productType := c.DefaultQuery("product_type", "personal")
+	productType := c.DefaultQuery("product_type", ProductTypePersonal)
 
 	log.Infof(c, "request to get plans, product_type=%s", productType)
 	var items []DataPlan
 
 	var plans []Plan
-	err := db.Get().Where("is_active = ? AND product_type = ?", true, productType).Find(&plans).Error
+	err := db.Get().Where("is_active = ? AND product_type = ?", true, productType /*from query param, default ProductTypePersonal*/).Find(&plans).Error
 	if err != nil {
 		log.Errorf(c, "failed to load plans from database: %v", err)
 		Error(c, ErrorSystemError, "failed to load plans")
@@ -836,19 +1031,11 @@ git commit -m "fix(api): address test failures from Subscription migration"
 
 The tasks above define WHAT to change. This supplement adds the EXACT edit locations and edge case handling for each task.
 
-### S1: Task 3 Edge Case — addProExpiredDays vs Subscription Expiry
+### S1: Task 3 — addProExpiredDays with skipExpiredAtWrite
 
-`addProExpiredDays` (kept for UserProHistory/IsFirstOrderDone/IsActivated) also writes `User.ExpiredAt` as a side effect. This creates a temporary inconsistency:
+**Resolved in Task 3 Step 1.** `addProExpiredDays` now accepts `skipExpiredAtWrite bool` parameter. When called from the new `applyOrderToTargetUsers`, it passes `true` — skipping the User.ExpiredAt write entirely. Subscription owns expiry, `syncUserCache` syncs the correct value to User cache.
 
-```
-1. Upsert Subscription (correct expiry: now.AddDate(0, plan.Month, 0))
-2. addProExpiredDays writes User.ExpiredAt (slightly different: now + truncated days)
-3. syncUserCache overwrites User.ExpiredAt from Subscription (corrects it)
-```
-
-The intermediate value from step 2 is overwritten in step 3 within the same transaction. **No data inconsistency is committed.** The rounding difference (up to 1 day due to `int(hours/24)` truncation) is never visible to any reader.
-
-This is intentional — modifying `addProExpiredDays` to skip writing `ExpiredAt` would be a larger refactor touching the `tx.Save(user)` call (line 65) which saves ALL user fields. We accept the redundant write.
+All existing callers pass `false` — no behavior change for legacy code paths (invite rewards, manual admin operations, etc.).
 
 ### S2: Task 4 Exact Edit — fillDeviceAppInfo + isGateway
 
