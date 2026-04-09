@@ -113,6 +113,9 @@ type DataUser struct {
 	HasAccessKey       bool                 `json:"hasAccessKey,omitempty"`       // 是否有 Access Key
 	AccessKeyCreatedAt int64                `json:"accessKeyCreatedAt,omitempty"` // Access Key 创建时间
 	BetaOptedIn        bool                 `json:"betaOptedIn"`                  // 是否订阅 beta
+	MaxRouterDevice    int                  `json:"maxRouterDevice"`              // 路由器登录数量上限
+	MaxLanClient       int                  `json:"maxLanClient"`                 // LAN 接入数量上限
+	PlanPID            string               `json:"planPid,omitempty"`            // 当前套餐 PID
 }
 
 // DataRetailerConfig 分销商配置数据结构
@@ -510,13 +513,16 @@ type AdminOrderListResponse struct {
 }
 
 type DataPlan struct {
-	PID         string `json:"pid"`
-	Label       string `json:"label"`
-	Price       uint64 `json:"price"`
-	OriginPrice uint64 `json:"originPrice"`
-	Month       int    `json:"month"`
-	Highlight   bool   `json:"highlight"`
-	IsActive    bool   `json:"isActive"`
+	PID             string `json:"pid"`
+	Label           string `json:"label"`
+	Price           uint64 `json:"price"`
+	OriginPrice     uint64 `json:"originPrice"`
+	Month           int    `json:"month"`
+	Highlight       bool   `json:"highlight"`
+	IsActive        bool   `json:"isActive"`
+	MaxDevice       int    `json:"maxDevice"`
+	MaxRouterDevice int    `json:"maxRouterDevice"`
+	MaxLanClient    int    `json:"maxLanClient"`
 }
 
 // Response_SlaveDeviceCheckAuthResult 节点设备认证结果响应

@@ -65,7 +65,12 @@ type User struct {
 
 	// 成员管理：付费委托
 	DelegateID *uint64 `gorm:"type:bigint;index"`  // 为我付费的用户ID（为空表示自己付费）
-	MaxDevice  int     `gorm:"not null;default:5"` // 最大设备数量限制
+	MaxDevice  int     `gorm:"not null;default:5"` // 最大 app 设备数量限制（不含路由器）
+
+	// 路由器权限
+	MaxRouterDevice int    `gorm:"not null;default:0" json:"maxRouterDevice"`     // 路由器登录数量上限 (0=不支持)
+	MaxLanClient    int    `gorm:"not null;default:0" json:"maxLanClient"`        // LAN 接入数量上限 (0=不支持, -1=无限)
+	PlanPID         string `gorm:"type:varchar(30);default:''" json:"planPid"`    // 当前套餐 PID
 
 	// API访问密钥（存储 SHA-256 hash，明文仅在生成时返回一次）
 	AccessKey          *string `gorm:"type:varchar(64);uniqueIndex"` // SHA-256 hash of ktu_* access key, NULL = no key
@@ -151,6 +156,9 @@ type Device struct {
 	// 设备详细信息（从 X-K2-Client header 解析）
 	OSVersion   string `gorm:"type:varchar(32)"` // 系统版本，如 "macOS 14.5", "Windows 11 23H2"
 	DeviceModel string `gorm:"type:varchar(64)"` // 设备型号，如 "MacBookPro18,1", "iPhone15,2"
+
+	// 路由器标识
+	IsGateway bool `gorm:"not null;default:false" json:"isGateway"` // 是否为路由器/网关设备
 }
 
 func PasswordHash(password string) (string, error) {
@@ -589,6 +597,10 @@ type Plan struct {
 	Month       int       `gorm:"not null" json:"month"`                                       // 月数
 	Highlight   *bool     `gorm:"default:false" json:"highlight"`                              // 是否高亮显示
 	IsActive    *bool     `gorm:"default:true" json:"isActive"`                                // 是否激活
+
+	MaxDevice       int `gorm:"not null;default:5" json:"maxDevice"`       // app 设备数量（不含路由器）
+	MaxRouterDevice int `gorm:"not null;default:0" json:"maxRouterDevice"` // 路由器登录数量上限 (0=不支持)
+	MaxLanClient    int `gorm:"not null;default:0" json:"maxLanClient"`    // LAN 接入数量上限 (0=不支持, -1=无限)
 }
 
 // EmailMarketingTemplate EDM多语言邮件模板模型
