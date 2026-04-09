@@ -2,96 +2,209 @@
 
 ## Overview
 
-Ship the complete k2r router product: gateway plan pricing, router device management (MAC allowlist), OTA self-update, and all supporting UI/API/admin changes. This spec builds on the existing k2r build & distribution spec (2026-04-08) which covers binary embedding, CI, and install scripts.
+Ship the complete k2r router product: Subscription architecture, gateway plan pricing, router device management (MAC allowlist), OTA self-update, and all supporting UI/API/admin changes. This spec builds on the existing k2r build & distribution spec (2026-04-08) which covers binary embedding, CI, and install scripts.
 
 **Target:** `feat/k2r-router-release` branch.
+
+---
 
 ## Terminology
 
 | Term (中文) | English | Code identifier | Definition |
 |-------------|---------|-----------------|------------|
-| 设备 | Device | `Device`, `MaxDevice` | Hardware that authenticates with Center (desktop/mobile/router). Subject to `User.MaxDevice` limit. |
-| 路由器接入设备 | RouterDevice | `MaxRouterDevice`, `router-device-allowlist` | LAN device connecting through router's TPROXY proxy. Subject to `User.MaxRouterDevice` limit. Identified by MAC address. |
+| 产品 | Product | `ProductType` | A product line: `"personal"` (app版) or `"gateway"` (路由器版). String enum, not a table. |
+| 套餐 | Plan | `Plan` | A purchasable offering belonging to a Product. Defines price, duration, quota. |
+| 订阅 | Subscription | `Subscription` | A user's active entitlement for a Product. One per user per product. Source of truth for access and quota. |
+| 订单 | Order | `Order` | A purchase transaction. Immutable record. Creates or renews a Subscription on payment. |
+| 设备 | Device | `Device` | Hardware that authenticates with Center (desktop/mobile/router). Subject to Subscription quota. |
+| 路由器接入设备 | RouterDevice | `router-device-allowlist` | LAN device connecting through router's TPROXY proxy. Subject to gateway Subscription quota. Identified by MAC address. |
 | MAC 白名单 | RouterDevice Allowlist | `router-device-allowlist` | Locally stored list of allowed MAC addresses on the router. |
 
-**Key distinction:** A router is one **Device** (occupies 1 `MaxDevice` slot). The phones/laptops connecting through the router are **RouterDevices** (subject to `MaxRouterDevice` quota). These are independent dimensions.
+**Key distinction:** A router is one **Device** (occupies 1 device quota in gateway Subscription). The phones/laptops connecting through the router are **RouterDevices** (subject to gateway Subscription quota). These are independent concepts.
 
 ---
 
-## 1. Data Model Changes
+## 1. Entity Relationships
 
-### 1.1 Plan Model
+```
+Product (string enum: "personal" | "gateway")
+    │
+    ├── 1:N  Plan (一个产品有多个套餐)
+    │          │
+    │          └── 1:N  Order (一个套餐被多次购买)
+    │
+    └── 1:1  Subscription (per User) (一个用户对一个产品最多一个订阅)
+
+User
+    ├── 1:N  Device (登录设备)
+    ├── 1:N  Order (订单历史)
+    └── 1:N  Subscription (每个 ProductType 最多1个)
+```
+
+### Lifecycle
+
+```
+User selects Plan (belongs to a Product)
+    │
+    ▼
+Creates Order (records: who, which plan, how much, campaign)
+    │
+    ▼  payment confirmed
+Creates or renews Subscription (for that Product)
+    │
+    ▼
+Subscription grants access: expiry + quota
+    │
+    ▼
+syncUserCache() updates User.ExpiredAt/MaxDevice (backward compat)
+```
+
+### Entity Responsibilities
+
+| Entity | Responsibility | Mutability |
+|--------|---------------|------------|
+| **Product** | Defines a product line | Immutable enum |
+| **Plan** | 商品货架: what to sell, at what price, with what quota | Admin-mutable |
+| **Order** | 交易记录: purchase snapshot at time of payment | Immutable after creation |
+| **Subscription** | 权益状态: can this user use this product now? | Updated on purchase/renewal |
+| **User** | 身份: identity + auth. NOT subscription state. | Cache fields synced from Subscription |
+
+---
+
+## 2. Data Model Changes
+
+### 2.1 Subscription Model (NEW)
+
+```go
+type Subscription struct {
+    ID          uint64    `gorm:"primarykey" json:"id"`
+    CreatedAt   time.Time `json:"createdAt"`
+    UpdatedAt   time.Time `json:"updatedAt"`
+    UserID      uint64    `gorm:"not null;uniqueIndex:idx_user_product" json:"userId"`
+    ProductType string    `gorm:"type:varchar(20);not null;uniqueIndex:idx_user_product" json:"productType"` // "personal" | "gateway"
+    PlanPID     string    `gorm:"type:varchar(30);not null" json:"planPid"`  // current plan
+    ExpiredAt   int64     `gorm:"not null" json:"expiredAt"`                 // Unix seconds
+    Quota       int       `gorm:"not null" json:"quota"`                     // personal=max devices, gateway=max router devices
+}
+```
+
+- `(UserID, ProductType)` unique — one subscription per user per product
+- `Quota` semantics defined by `ProductType`:
+  - personal: max login devices (replaces `User.MaxDevice`)
+  - gateway: max router devices
+- Renewal = UPDATE `ExpiredAt` (extend), not INSERT
+- Plan upgrade = UPDATE `PlanPID` + `Quota` + `ExpiredAt`
+
+### 2.2 Plan Model (MODIFIED)
 
 ```go
 type Plan struct {
     // existing fields unchanged
     ID          uint64
-    PID         string    // "1m", "1y", "router-monthly-5", etc.
+    PID         string
     Label       string
-    Price       uint64    // cents
-    OriginPrice uint64    // cents
+    Price       uint64
+    OriginPrice uint64
     Month       int
     Highlight   *bool
     IsActive    *bool
 
     // new fields
-    ProductType    string `gorm:"type:varchar(20);not null;default:'personal'"` // "personal" | "gateway"
-    MaxDevice      int    `gorm:"not null;default:5"`                           // login device limit
-    MaxRouterDevice int   `gorm:"not null;default:0"`                           // router device limit (gateway only, 0=unlimited)
+    ProductType string `gorm:"type:varchar(20);not null;default:'personal'"` // "personal" | "gateway"
+    Quota       int    `gorm:"not null;default:5"`                           // personal=max devices, gateway=max router devices, 0=unlimited
 }
 ```
 
-- `ProductType` separates product lines. API filters by this field.
-- `MaxDevice` enables future per-plan device tiers for personal plans. Existing plans default to 5 (backward compatible).
-- `MaxRouterDevice` only meaningful for gateway plans. Personal plans have 0 (not applicable).
+- `Plan.Quota` → written to `Subscription.Quota` on purchase
+- Existing plans: `ProductType='personal'`, `Quota=5` (matches current hardcoded MaxDevice=5)
 
-### 1.2 User Model
-
-```go
-type User struct {
-    // existing fields unchanged
-    MaxDevice int `gorm:"not null;default:5"`
-
-    // new field
-    MaxRouterDevice int `gorm:"not null;default:0"` // 0 = no router subscription
-}
-```
-
-When a user purchases a plan, `applyOrderToTargetUsers()` writes `plan.MaxDevice` → `user.MaxDevice` and `plan.MaxRouterDevice` → `user.MaxRouterDevice`.
-
-### 1.3 Device Model
+### 2.3 Device Model (MODIFIED)
 
 ```go
 type Device struct {
     // existing fields unchanged
-    UDID        string
-    UserID      uint64
-    AppPlatform string // remains "linux" for routers (system fact)
-    AppArch     string
-
     // new field
     IsGateway bool `gorm:"not null;default:false"` // router device flag
 }
 ```
 
-`IsGateway` is an independent dimension from `AppPlatform`. Enables cross-query: `platform=linux AND is_gateway=true`.
+### 2.4 User Model — Cache Fields
 
-### 1.4 Database Migration
+**Existing fields kept as denormalized cache, NOT source of truth:**
+
+```go
+type User struct {
+    // existing — becomes cache, synced from personal Subscription
+    ExpiredAt int64 `gorm:"not null"`       // cache of personal Subscription.ExpiredAt
+    MaxDevice int   `gorm:"not null;default:5"` // cache of personal Subscription.Quota
+}
+```
+
+No new fields on User. Gateway state lives exclusively in Subscription.
+
+### 2.5 Cache Sync
+
+```go
+// Called after every Subscription write (create/update)
+func syncUserCache(tx *gorm.DB, userID uint64) error {
+    var sub Subscription
+    err := tx.Where("user_id = ? AND product_type = 'personal'", userID).First(&sub).Error
+    if err == gorm.ErrRecordNotFound {
+        return nil // no personal subscription, don't touch User
+    }
+    if err != nil {
+        return err
+    }
+    return tx.Model(&User{}).Where("id = ?", userID).Updates(map[string]any{
+        "expired_at": sub.ExpiredAt,
+        "max_device": sub.Quota,
+    }).Error
+}
+```
+
+**Purpose:** Untouched code (workers, EDM, admin queries not modified in this release) continues to read `User.ExpiredAt` / `User.MaxDevice` without breaking. All new and modified code reads Subscription directly.
+
+### 2.6 Source of Truth Migration
+
+Code touched in this release reads Subscription (source of truth):
+
+| Code path | Before | After |
+|-----------|--------|-------|
+| `ProRequired` middleware | `user.ExpiredAt > now` | `Subscription WHERE product_type='personal' AND expired_at > now` |
+| `api_auth.go` device limit | `user.MaxDevice` | `Subscription.Quota WHERE product_type='personal'` |
+| `GatewayProRequired` (new) | — | `Subscription WHERE product_type='gateway' AND expired_at > now` |
+| `applyOrderToTargetUsers` | writes `user.ExpiredAt`, `user.MaxDevice` | writes Subscription + `syncUserCache()` |
+| `api_user.go` profile | returns `user.ExpiredAt` | returns `user.Subscriptions[]` (+ cache fields for compat) |
+| Workers/EDM (untouched) | reads `user.ExpiredAt` | unchanged — reads synced cache |
+
+### 2.7 Data Migration
+
+On deploy, populate Subscription table from existing User data:
+
+```sql
+INSERT INTO subscriptions (user_id, product_type, plan_pid, expired_at, quota, created_at, updated_at)
+SELECT id, 'personal', '', expired_at, max_device, NOW(), NOW()
+FROM users
+WHERE expired_at > 0;
+```
+
+Existing users get a personal Subscription matching their current state. `plan_pid = ''` (unknown — historical orders didn't track this in User).
+
+### 2.8 Database Schema Changes Summary
 
 | Table | Field | Type | Default | Note |
 |-------|-------|------|---------|------|
-| `plans` | `product_type` | `VARCHAR(20)` | `'personal'` | Existing plans auto-get `'personal'` |
-| `plans` | `max_device` | `INT` | `5` | Matches current hardcoded default |
-| `plans` | `max_router_device` | `INT` | `0` | 0 = not applicable for personal |
-| `users` | `max_router_device` | `INT` | `0` | 0 = no router subscription |
-| `devices` | `is_gateway` | `BOOLEAN` | `false` | All existing devices get `false` |
+| `subscriptions` | (new table) | — | — | See 2.1 |
+| `plans` | `product_type` | `VARCHAR(20)` | `'personal'` | Existing plans → personal |
+| `plans` | `quota` | `INT` | `5` | Existing plans → 5 devices |
+| `devices` | `is_gateway` | `BOOLEAN` | `false` | All existing → false |
 
-GORM AutoMigrate handles all additions. No manual SQL required.
+No new fields on `users` table.
 
-### 1.5 Example Gateway Plans
+### 2.9 Example Gateway Plans
 
-| PID | Label | Month | MaxRouterDevice | Price |
-|-----|-------|-------|-----------------|-------|
+| PID | Label | Month | Quota | Price |
+|-----|-------|-------|-------|-------|
 | `router-monthly-5` | 路由器月付·5设备 | 1 | 5 | TBD |
 | `router-yearly-5` | 路由器年付·5设备 | 12 | 5 | TBD |
 | `router-monthly-15` | 路由器月付·15设备 | 1 | 15 | TBD |
@@ -99,26 +212,26 @@ GORM AutoMigrate handles all additions. No manual SQL required.
 | `router-monthly-unlimited` | 路由器月付·不限 | 1 | 0 | TBD |
 | `router-yearly-unlimited` | 路由器年付·不限 | 12 | 0 | TBD |
 
-All gateway plans have `ProductType = "gateway"`, `MaxDevice = 1` (router itself occupies 1 device slot). The `Plan.MaxDevice` default of 5 applies to personal plans; gateway plans are explicitly created with `MaxDevice = 1` via admin. Prices are set by admin — TBD values are not spec gaps.
+All gateway plans: `ProductType="gateway"`, `Quota` = router device limit. Prices set by admin — TBD values are not spec gaps.
 
 ---
 
-## 2. Plans API Changes
+## 3. Plans API Changes
 
-### 2.1 Public Plans Endpoint
+### 3.1 Public Plans Endpoint
 
 ```
 GET /api/plans                          → returns personal plans (backward compatible)
 GET /api/plans?product_type=gateway     → returns gateway plans
 ```
 
-Implementation: add `product_type` query filter. Default to `"personal"` when absent.
+Default to `"personal"` when `product_type` absent.
 
-### 2.2 Admin Plans Endpoints
+### 3.2 Admin Plans Endpoints
 
-Plans admin CRUD endpoints gain `ProductType`, `MaxDevice`, `MaxRouterDevice` fields in create/update requests. Admin plans list supports `product_type` filter.
+Plans admin CRUD gains `ProductType` and `Quota` fields. Admin plans list supports `product_type` filter.
 
-### 2.3 Frontend Plan Type
+### 3.3 Frontend Plan Type
 
 ```typescript
 interface Plan {
@@ -129,16 +242,27 @@ interface Plan {
     month: number;
     highlight: boolean;
     productType: 'personal' | 'gateway';
-    maxDevice: number;
-    maxRouterDevice: number;
+    quota: number; // personal=max devices, gateway=max router devices, 0=unlimited
+}
+```
+
+### 3.4 Frontend Subscription Type
+
+```typescript
+interface Subscription {
+    id: number;
+    productType: 'personal' | 'gateway';
+    planPid: string;
+    expiredAt: number;
+    quota: number;
 }
 ```
 
 ---
 
-## 3. Purchase Page Design
+## 4. Purchase Page Design
 
-### 3.1 Platform-Based Plan Display
+### 4.1 Platform-Based Plan Display
 
 | Context | What shows | Tab UI |
 |---------|-----------|--------|
@@ -148,16 +272,16 @@ interface Plan {
 
 **Principle:** Embedded webapp shows only the product matching its platform. Website as independent entry shows all products.
 
-### 3.2 Website Tab Behavior
+### 4.2 Website Tab Behavior
 
 - Default tab: 个人版
 - URL parameter `?product=gateway` selects 路由器版 tab
 - Tab switch triggers `getPlans({ product_type })` re-fetch
 - Selected tab persists in URL (pushState) for shareability
 
-### 3.3 Gateway Plan Card Layout
+### 4.3 Gateway Plan Card Layout
 
-Gateway plans have two dimensions: **duration** (month) and **router device quota** (MaxRouterDevice). Cards are grouped by quota tier, sorted by duration within each tier:
+Gateway plans have two dimensions: **duration** (month) and **router device quota** (Quota). Cards are grouped by quota tier, sorted by duration within each tier:
 
 ```
 ── 5 台设备接入 ──
@@ -182,9 +306,7 @@ Gateway plans have two dimensions: **duration** (month) and **router device quot
 └──────────────┘ └──────────────┘
 ```
 
-### 3.4 Gateway Membership Benefits
-
-Distinct from personal plan benefits:
+### 4.4 Gateway Membership Benefits
 
 | Personal | Gateway |
 |----------|---------|
@@ -195,20 +317,79 @@ Distinct from personal plan benefits:
 | 持续优化 | 持续优化 |
 | 优先技术支持 | 优先技术支持 |
 
-### 3.5 Gateway Purchase Flow
+### 4.5 Gateway Purchase Flow
 
 Same order creation flow as personal plans:
 1. Select gateway plan → `CreateOrderRequest.Plan = "router-monthly-5"`
 2. Preview → calculates price with optional campaign code
-3. Pay → Wordgate redirect → webhook → `applyOrderToTargetUsers()` sets `MaxRouterDevice`
+3. Pay → Wordgate redirect → webhook → creates/renews gateway Subscription
 
 **Difference:** Member selection is hidden for gateway plans. Router subscription binds to the purchasing account only (no delegation).
 
+### 4.6 Order Processing Changes
+
+`applyOrderToTargetUsers()` changes from writing User fields to writing Subscription:
+
+```go
+func applyOrderToTargetUsers(tx *gorm.DB, order *Order, userIDs []uint64) error {
+    plan := order.GetPlan()
+    for _, uid := range userIDs {
+        // Upsert Subscription (create or renew)
+        var sub Subscription
+        err := tx.Where("user_id = ? AND product_type = ?", uid, plan.ProductType).First(&sub).Error
+        if err == gorm.ErrRecordNotFound {
+            // New subscription
+            sub = Subscription{
+                UserID:      uid,
+                ProductType: plan.ProductType,
+                PlanPID:     plan.PID,
+                ExpiredAt:   calcExpiry(plan.Month),
+                Quota:       plan.Quota,
+            }
+            tx.Create(&sub)
+        } else {
+            // Renew: extend expiry, update quota if plan changed
+            sub.ExpiredAt = extendExpiry(sub.ExpiredAt, plan.Month)
+            sub.PlanPID = plan.PID
+            sub.Quota = plan.Quota
+            tx.Save(&sub)
+        }
+        // Sync cache for backward compat
+        syncUserCache(tx, uid)
+    }
+    return nil
+}
+```
+
 ---
 
-## 4. RouterDevice Management (MAC Allowlist)
+## 5. Subscription Expiry Behavior
 
-### 4.1 Storage
+### 5.1 Personal Subscription Expired
+
+No change from current behavior:
+- `ProRequired` middleware returns 402 (PaymentRequired)
+- User sees "授权已过期" prompt with purchase link
+- VPN connection refused
+
+### 5.2 Gateway Subscription Expired
+
+- k2r checks gateway Subscription on every `up` (connect) action via Center API
+- **Expired → connection refused**, same as personal. User sees expiry prompt in webapp at `http://router-ip:1779`
+- **Already connected when expired:** existing connection continues until next disconnect/reconnect. No mid-session kill.
+- RouterDevice allowlist remains intact (local storage). Re-subscribing restores access without re-adding MACs.
+
+### 5.3 No Gateway Subscription
+
+- k2r can still be installed and configured
+- Attempting to connect returns 402 with purchase prompt
+- RouterDevice management UI still accessible (for pre-configuration)
+
+---
+
+## 6. RouterDevice Management (MAC Allowlist)
+
+### 6.1 Storage
 
 Stored locally on router in `/etc/k2r/storage.json` (existing encrypted storage):
 
@@ -222,7 +403,7 @@ Stored locally on router in `/etc/k2r/storage.json` (existing encrypted storage)
 - `router-device-allowlist-mode`: `"open"` (all LAN devices proxied) or `"allowlist"` (only listed MACs)
 - Default: `"open"` (new router installs unrestricted)
 
-### 4.2 Gateway HTTP API
+### 6.2 Gateway HTTP API
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -231,7 +412,7 @@ Stored locally on router in `/etc/k2r/storage.json` (existing encrypted storage)
 | `/api/router-devices/remove` | POST | Remove MAC from allowlist `{mac}` |
 | `/api/router-devices/mode` | POST | Switch mode `{mode: "allowlist" \| "open"}` |
 
-### 4.3 GET /api/router-devices Response
+### 6.3 GET /api/router-devices Response
 
 ```json
 {
@@ -260,18 +441,18 @@ Stored locally on router in `/etc/k2r/storage.json` (existing encrypted storage)
 
 - `online`: present in ARP table (currently connected to LAN)
 - `allowed`: present in allowlist
-- `maxRouterDevice`: quota from Center, `0` = unlimited
-- Allowlist entry count cannot exceed `maxRouterDevice` (when `maxRouterDevice > 0`)
+- `maxRouterDevice`: quota from gateway Subscription, `0` = unlimited
+- Allowlist entry count cannot exceed `maxRouterDevice` (when > 0)
 
-### 4.4 LAN Device Discovery
+### 6.4 LAN Device Discovery
 
-ARP table scan to find devices on LAN:
+ARP table scan:
 - Read `/proc/net/arp` or `ip neigh show`
 - Filter to configured LAN subnets only
 - Resolve hostname via reverse DNS where available
 - Merge with allowlist data (remark, allowed status)
 
-### 4.5 nftables Enforcement
+### 6.5 nftables Enforcement
 
 **Allowlist mode:**
 
@@ -292,13 +473,15 @@ table inet k2r {
 
 When allowlist changes, atomically update the nftables set (add/delete elements) without disrupting existing connections.
 
-### 4.6 MaxRouterDevice Quota Enforcement
+### 6.6 Quota Enforcement & Refresh
 
-- k2r fetches `user.MaxRouterDevice` from Center at login and caches locally
-- When `maxRouterDevice > 0` and user tries to add a MAC that would exceed quota → return error
-- Enforcement is local only (gateway-side). Center does not validate MAC lists.
+- k2r fetches gateway Subscription quota from Center at login
+- Quota cached locally in storage
+- **Refresh mechanism:** k2r re-fetches Subscription on every `status` poll (existing SSE/poll cycle). If quota changed (user upgraded plan), local cache updates immediately.
+- When `maxRouterDevice > 0` and allowlist is full → add returns error `"quotaExceeded"`
+- If user downgrades (quota shrinks below current allowlist size) → existing allowlist entries are NOT auto-pruned. User must manually remove. New additions blocked until under quota.
 
-### 4.7 Webapp UI — Router Device Management Page
+### 6.7 Webapp UI — Router Device Management Page
 
 New page at `/router-devices` (gateway only, hidden on desktop/mobile):
 
@@ -332,9 +515,9 @@ Navigation: Add to bottom tab bar or settings sub-page (gateway only).
 
 ---
 
-## 5. OTA Self-Update
+## 7. OTA Self-Update
 
-### 5.1 CDN Structure
+### 7.1 CDN Structure
 
 ```
 kaitu/k2r/
@@ -347,10 +530,10 @@ kaitu/k2r/
 │   └── checksums.txt             # SHA256
 ```
 
-### 5.2 Update Flow
+### 7.2 Update Flow
 
 ```
-Gateway startup or periodic check (every 6 hours) or manual trigger
+Gateway startup or periodic check (every 6 hours) or manual trigger from webapp
     │
     ▼
 GET kaitu/k2r/LATEST → compare with current version
@@ -360,27 +543,40 @@ GET kaitu/k2r/LATEST → compare with current version
     ▼ has update
 {hasUpdate: true, currentVersion, newVersion}
     │
-    ▼ user confirms (or auto-update if configured)
-Download k2r-linux-{arch} → /tmp/k2r-update
+    ▼ user confirms via webapp UI
+Download k2r-linux-{arch} → /tmp/k2r-update-{version}
     │
 Verify SHA256 against checksums.txt
     │
-Atomic replace /usr/bin/k2r (write tmp + rename)
+Backup current binary: cp /usr/bin/k2r /usr/bin/k2r.bak
+    │
+Atomic replace: mv /tmp/k2r-update-{version} /usr/bin/k2r && chmod +x
     │
 Restart service (systemctl restart k2r / /etc/init.d/k2r restart)
 ```
 
-### 5.3 Gateway HTTP API
+### 7.3 Rollback Strategy
+
+If the new binary fails to start (service doesn't become healthy within 30 seconds):
+
+1. Init system (systemd/procd) detects crash and restarts
+2. New binary crashes again → init system gives up after respawn limit
+3. **Manual recovery:** `mv /usr/bin/k2r.bak /usr/bin/k2r && service k2r restart`
+4. `/usr/bin/k2r.bak` is always preserved — only overwritten on next successful update
+
+**Automatic rollback (future iteration):** A watchdog that checks service health post-restart and auto-reverts to `.bak` if unhealthy. Out of scope for this release — manual recovery via SSH is acceptable for router users.
+
+### 7.4 Gateway HTTP API
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/updater/check` | POST | Check for update. Returns `{hasUpdate, currentVersion, newVersion}` |
-| `/api/updater/apply` | POST | Download + verify + replace + restart |
+| `/api/updater/apply` | POST | Backup + download + verify + replace + restart |
 | `/api/updater/status` | GET | SSE stream: `{stage, progress, error}` |
 
-Stage enum: `downloading` → `verifying` → `replacing` → `restarting` → `done` / `error`
+Stage enum: `downloading` → `verifying` → `backing-up` → `replacing` → `restarting` → `done` / `error`
 
-### 5.4 Webapp Integration
+### 7.5 Webapp Integration
 
 Gateway's `IPlatform.updater` is now implemented (previously `undefined`):
 
@@ -398,15 +594,15 @@ const gatewayUpdater: IUpdater = {
 }
 ```
 
-The existing webapp updater UI (settings page update check, update banner) works out of the box. No new UI components needed.
+Existing webapp updater UI (settings page update check, update banner) works out of the box. No new UI components needed.
 
 **Previous design said "hide updater for gateway" — this is now reversed: gateway has updater enabled.**
 
 ---
 
-## 6. Gateway Device Registration
+## 8. Gateway Device Registration
 
-### 6.1 Auth Request
+### 8.1 Auth Request
 
 k2r includes `isGateway: true` in the `X-App-Info` header:
 
@@ -414,24 +610,24 @@ k2r includes `isGateway: true` in the `X-App-Info` header:
 {"version": "0.4.2", "platform": "linux", "arch": "arm64", "isGateway": true}
 ```
 
-### 6.2 Middleware Change
+### 8.2 Middleware Change
 
 `middleware.go` parses `isGateway` from `X-App-Info` and sets `Device.IsGateway = true` during device registration/update in both OTP and password auth paths.
 
 ---
 
-## 7. Webapp Conditional Rendering
+## 9. Webapp Conditional Rendering
 
 Based on `window._platform.platformType === 'gateway'`:
 
 | Component | Desktop/Mobile | Gateway |
 |-----------|---------------|---------|
-| Updater | Tauri/Capacitor updater | Gateway updater (Section 5) |
+| Updater | Tauri/Capacitor updater | Gateway updater (Section 7) |
 | Service reinstall | Show | Hide |
 | ADB install helper | Show (desktop) | Hide |
 | Proxy mode toggle | Show | Hide (always TPROXY) |
 | TUN mode toggle | Show | Hide |
-| Router device management | Hide | Show (Section 4) |
+| Router device management | Hide | Show (Section 6) |
 | LAN/DNS settings | Hide | Show |
 | Interceptor status | Hide | Show (nftables/iptables) |
 | Purchase plans | Personal plans | Gateway plans |
@@ -439,40 +635,44 @@ Based on `window._platform.platformType === 'gateway'`:
 
 ---
 
-## 8. Website Changes
+## 10. Website Changes
 
-### 8.1 Install Page — Router Tab
+### 10.1 Install Page — Router Tab
 
 `kaitu.io/install` adds a 「路由器」tab:
 
-Content:
 - One-line install command: `wget -qO- https://kaitu.io/i/k2r | sh`
 - Supported architectures (aarch64/x86_64/armv7/mipsle)
 - OpenWrt / soft-router / NAS installation guide
 - Post-install: access `http://<router-ip>:1779`
 
-### 8.2 Purchase Page — Product Tabs
+### 10.2 Purchase Page — Product Tabs
 
 `kaitu.io/purchase` adds `[个人版] [路由器版]` tab switcher. Default: 个人版. URL param `?product=gateway` selects router tab. Each tab fetches plans with corresponding `product_type`.
 
 ---
 
-## 9. Admin Dashboard Changes
+## 11. Admin Dashboard Changes
 
-### 9.1 Plan Management
+### 11.1 Plan Management
 
-- Plans table adds columns: `ProductType`, `MaxDevice`, `MaxRouterDevice`
+- Plans table adds columns: `ProductType`, `Quota`
 - Create/edit form adds these fields
 - Filter by `product_type` dropdown
 
-### 9.2 Device Statistics
+### 11.2 User Detail
+
+- User detail page shows Subscriptions list (productType, planPid, expiredAt, quota)
+- Admin can view both personal and gateway subscriptions
+
+### 11.3 Device Statistics
 
 - `api_admin_device_stats.go` adds `is_gateway` dimension
 - Admin dashboard can filter by gateway / non-gateway devices
 
 ---
 
-## 10. CI
+## 12. CI
 
 - Uncomment `v*` tag auto-trigger in `.github/workflows/release-openwrt.yml`
 - Verify CDN upload path `kaitu/k2r/{VERSION}/` + `LATEST` + `checksums.txt`
@@ -546,6 +746,7 @@ Content:
 - ipk native OpenWrt package format
 - Linux desktop OTA (Tauri AppImage already has tauri-plugin-updater)
 - Router device list sync to Center (allowlist is local-only)
+- Automatic OTA rollback (manual recovery via SSH for this release)
 
 ---
 
@@ -555,14 +756,16 @@ Content:
 
 | File | Change |
 |------|--------|
-| `model.go` | Add `Plan.ProductType`, `Plan.MaxDevice`, `Plan.MaxRouterDevice`, `User.MaxRouterDevice`, `Device.IsGateway` |
-| `type.go` | Add fields to `DataPlan`, `AppInfo` |
+| `model.go` | Add `Subscription` model, `Plan.ProductType`, `Plan.Quota`, `Device.IsGateway` |
+| `type.go` | Add `DataSubscription`, update `DataPlan`, `DataUser` (add subscriptions), `AppInfo` (add isGateway) |
 | `api_plan.go` | Add `product_type` query filter |
 | `api_admin_plan.go` | Add new fields to create/update |
-| `api_order.go` | `applyOrderToTargetUsers()` writes `MaxDevice` + `MaxRouterDevice` |
-| `middleware.go` | Parse `isGateway` from `X-App-Info`, set `Device.IsGateway` |
+| `api_order.go` / `logic_order.go` | Rewrite `applyOrderToTargetUsers()` → write Subscription + syncUserCache |
+| `middleware.go` | `ProRequired` reads Subscription; parse `isGateway` from `X-App-Info` |
+| `api_user.go` | Profile returns subscriptions list |
+| `api_auth.go` | Device limit reads Subscription.Quota |
 | `api_admin_device_stats.go` | Add `is_gateway` dimension |
-| `response.go` | No change (reuse existing error codes) |
+| `route.go` | Add subscription-related admin routes if needed |
 
 ### k2 submodule (gateway/)
 
@@ -570,7 +773,7 @@ Content:
 |------|--------|
 | `gateway/api.go` | Add `/api/router-devices`, `/api/updater/*` endpoints |
 | `gateway/router_device.go` | New: allowlist CRUD, ARP scan, nftables set management |
-| `gateway/updater.go` | New: CDN check, download, verify, replace, restart |
+| `gateway/updater.go` | New: CDN check, download, verify, backup, replace, restart |
 | `gateway/intercept_nft.go` | Add `allowed_router_devices` set, conditional MAC filter rule |
 | `gateway/intercept_ipt.go` | Equivalent iptables MAC filter |
 
@@ -581,7 +784,7 @@ Content:
 | `src/pages/Purchase.tsx` | Filter plans by `platformType` → `product_type` |
 | `src/pages/RouterDevices.tsx` | New: router device management page |
 | `src/services/gateway-k2.ts` | Add updater implementation, router-device API calls |
-| `src/services/api-types.ts` | Add `productType`, `maxDevice`, `maxRouterDevice` to Plan type |
+| `src/services/api-types.ts` | Add `Plan.productType`, `Plan.quota`, `Subscription` type |
 | `src/components/MembershipBenefits.tsx` | Gateway-specific benefits |
 | `src/i18n/locales/*/purchase.json` | Gateway plan feature text |
 | `src/i18n/locales/*/routerDevice.json` | New namespace |
@@ -593,8 +796,8 @@ Content:
 |------|--------|
 | `src/app/[locale]/purchase/PurchaseClient.tsx` | Add product tab switcher, gateway plan display |
 | `src/app/[locale]/install/` | Add router tab |
-| `src/app/(manager)/manager/plans/page.tsx` | Add ProductType/MaxDevice/MaxRouterDevice columns |
-| `src/lib/api.ts` | Add `product_type` param to `getPlans()` |
+| `src/app/(manager)/manager/plans/page.tsx` | Add ProductType/Quota columns |
+| `src/lib/api.ts` | Add `product_type` param to `getPlans()`, add `Subscription` type |
 | `messages/*/purchase.json` | Gateway product labels |
 
 ### CI
