@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add tiered plan support with router access as premium feature. Plan defines MaxDevice + MaxRouterDevice. User gains MaxRouterDevice + PlanPID. RouterRequired middleware gates router access. No new tables.
+**Goal:** Add tiered plan support with router access as premium feature. Plan defines Tier + MaxDevice + MaxRouterDevice + MaxLanClient. User gains Tier + MaxRouterDevice + MaxLanClient. RouterRequired middleware gates router access. No new tables.
 
-**Architecture:** Plan.MaxDevice/MaxRouterDevice define tier quotas. applyOrderToTargetUsers writes these to User on purchase. ProRequired unchanged. New RouterRequired checks User.MaxRouterDevice > 0.
+**Architecture:** Plan.Tier groups SKUs by feature level. Plan.MaxDevice/MaxRouterDevice/MaxLanClient define tier quotas. applyOrderToTargetUsers writes Tier + quotas to User on purchase. ProRequired unchanged. New RouterRequired checks User.MaxRouterDevice > 0. User.Tier is stable across billing period changes (family-1y → family-2y keeps Tier=family).
 
 **Tech Stack:** Go 1.24, Gin, GORM (MySQL), testify
 
@@ -35,24 +35,25 @@ Define in a suitable location (e.g., `model.go` or a new `constants.go`).
 - Modify: `api/type.go`
 - Modify: `api/migrate.go`
 
-- [ ] **Step 1: Add MaxDevice and MaxRouterDevice to Plan struct**
+- [ ] **Step 1: Add Tier, MaxDevice, MaxRouterDevice, MaxLanClient to Plan struct**
 
 In `api/model.go`, Plan struct (line ~581). Add after `IsActive`:
 
 ```go
-	MaxDevice       int `gorm:"not null;default:5" json:"maxDevice"`          // app 设备数量（不含路由器）
-	MaxRouterDevice int `gorm:"not null;default:0" json:"maxRouterDevice"`    // 路由器登录数量上限 (0=不支持)
-	MaxLanClient    int `gorm:"not null;default:0" json:"maxLanClient"`       // LAN 接入数量上限 (0=不支持, -1=无限)
+	Tier            string `gorm:"type:varchar(30);not null;default:'pro'" json:"tier"` // 功能等级标识（lite/basic/family/business，向后兼容: pro）
+	MaxDevice       int    `gorm:"not null;default:5" json:"maxDevice"`                // app 设备数量（不含路由器）
+	MaxRouterDevice int    `gorm:"not null;default:0" json:"maxRouterDevice"`          // 路由器登录数量上限 (0=不支持)
+	MaxLanClient    int    `gorm:"not null;default:0" json:"maxLanClient"`             // LAN 接入数量上限 (0=不支持, -1=无限)
 ```
 
-- [ ] **Step 2: Add MaxRouterDevice and PlanPID to User struct**
+- [ ] **Step 2: Add Tier, MaxRouterDevice, MaxLanClient to User struct**
 
 In `api/model.go`, User struct (line ~46). Add after `MaxDevice`:
 
 ```go
-	MaxRouterDevice int    `gorm:"not null;default:0" json:"maxRouterDevice"`           // 路由器登录数量上限
+	MaxRouterDevice int    `gorm:"not null;default:0" json:"maxRouterDevice"`            // 路由器登录数量上限
 	MaxLanClient    int    `gorm:"not null;default:0" json:"maxLanClient"`               // LAN 接入数量上限
-	PlanPID         string `gorm:"type:varchar(30);default:''" json:"planPid"`           // 当前套餐 PID
+	Tier            string `gorm:"type:varchar(30);not null;default:'pro'" json:"tier"`  // 当前功能等级（稳定标识，不随周期变化）
 ```
 
 - [ ] **Step 3: Add IsGateway to Device struct**
@@ -68,9 +69,10 @@ In `api/model.go`, Device struct (line ~132). Add after last field:
 Find `DataPlan` struct (line ~512). Add:
 
 ```go
-	MaxDevice       int  `json:"maxDevice"`
-	MaxRouterDevice int  `json:"maxRouterDevice"`
-	MaxLanClient    int  `json:"maxLanClient"`
+	Tier            string `json:"tier"`
+	MaxDevice       int    `json:"maxDevice"`
+	MaxRouterDevice int    `json:"maxRouterDevice"`
+	MaxLanClient    int    `json:"maxLanClient"`
 ```
 
 - [ ] **Step 5: Update DataUser in type.go**
@@ -78,9 +80,9 @@ Find `DataPlan` struct (line ~512). Add:
 Find `DataUser` struct (line ~99). Add after `BetaOptedIn`:
 
 ```go
+	Tier            string `json:"tier,omitempty"`
 	MaxRouterDevice int    `json:"maxRouterDevice"`
 	MaxLanClient    int    `json:"maxLanClient"`
-	PlanPID         string `json:"planPid,omitempty"`
 ```
 
 - [ ] **Step 6: Verify compilation**
@@ -114,27 +116,33 @@ In `api/logic_member.go`, inside the `applyOrderToTargetUsers` function, find th
 		_, err := addProExpiredDays(ctx, tx, user, VipPurchase, order.ID, days, reason)
 ```
 
-Add three lines BEFORE the `addProExpiredDays` call:
+Add lines BEFORE the `addProExpiredDays` call:
 
 ```go
 	for i := range targetUsers {
 		user := &targetUsers[i]
 
-		// Update quotas and plan from purchased tier
+		// Update quotas and tier from purchased plan
 		user.MaxDevice = plan.MaxDevice
 		user.MaxRouterDevice = plan.MaxRouterDevice
 		user.MaxLanClient = plan.MaxLanClient
-		user.PlanPID = plan.PID
+
+		// Set tier (stable — doesn't change on period renewal)
+		tier := plan.Tier
+		if tier == "" {
+			tier = "pro" // backward compat: old plans without Tier field
+		}
+		user.Tier = tier
 
 		reason := fmt.Sprintf("订单支付 - %s", order.UUID)
 		_, err := addProExpiredDays(ctx, tx, user, VipPurchase, order.ID, days, reason)
 ```
 
-`addProExpiredDays` calls `tx.Save(user)` at line 65, which writes ALL user fields including the three we just set. No additional Save needed.
+`addProExpiredDays` calls `tx.Save(user)` at line 65, which writes ALL user fields including the ones we just set. No additional Save needed.
 
-- [ ] **Step 2: Handle missing MaxDevice in old plans**
+- [ ] **Step 2: Handle missing MaxDevice and Tier in old plans**
 
-Old plans serialized in Order.Meta don't have MaxDevice/MaxRouterDevice. Add defaults after `order.GetPlan()` (line ~86):
+Old plans serialized in Order.Meta don't have MaxDevice/Tier. Add defaults after `order.GetPlan()` (line ~86):
 
 ```go
 	plan, err := order.GetPlan()
@@ -469,6 +477,7 @@ In `api_get_plans` (line ~11), update the DataPlan mapping inside the loop:
 ```go
 		items = append(items, DataPlan{
 			PID:             plan.PID,
+			Tier:            plan.Tier,
 			Label:           plan.Label,
 			Price:           plan.Price,
 			OriginPrice:     plan.OriginPrice,
@@ -488,6 +497,7 @@ In `api/api_admin_plan.go`, update `AdminCreatePlanRequest` (line ~36):
 ```go
 type AdminCreatePlanRequest struct {
 	PID             string `json:"pid" binding:"required"`
+	Tier            string `json:"tier" binding:"required"`      // 功能等级标识
 	Label           string `json:"label" binding:"required"`
 	Price           uint64 `json:"price" binding:"required"`
 	OriginPrice     uint64 `json:"originPrice" binding:"required"`
@@ -508,6 +518,7 @@ In `api_admin_create_plan` handler, add defaults and include in Plan creation:
 	}
 	plan := Plan{
 		PID:             req.PID,
+		Tier:            req.Tier,
 		Label:           req.Label,
 		Price:           req.Price,
 		OriginPrice:     req.OriginPrice,
@@ -525,9 +536,10 @@ In `api_admin_create_plan` handler, add defaults and include in Plan creation:
 In `AdminUpdatePlanRequest` (line ~90), add:
 
 ```go
-	MaxDevice       *int `json:"maxDevice"`
-	MaxRouterDevice *int `json:"maxRouterDevice"`
-	MaxLanClient    *int `json:"maxLanClient"`
+	Tier            *string `json:"tier"`
+	MaxDevice       *int    `json:"maxDevice"`
+	MaxRouterDevice *int    `json:"maxRouterDevice"`
+	MaxLanClient    *int    `json:"maxLanClient"`
 ```
 
 - [ ] **Step 4: Update approval callback**
@@ -535,6 +547,9 @@ In `AdminUpdatePlanRequest` (line ~90), add:
 In `api/logic_approval_callbacks.go`, `executeApprovalPlanUpdate` function (line ~293), after the `IsActive` block add:
 
 ```go
+	if req.Tier != nil {
+		plan.Tier = *req.Tier
+	}
 	if req.MaxDevice != nil {
 		plan.MaxDevice = *req.MaxDevice
 	}
@@ -551,9 +566,9 @@ In `api/logic_approval_callbacks.go`, `executeApprovalPlanUpdate` function (line
 In `api/api_user.go`, `buildDataUserWithDevice` function (line ~420), in the return statement add:
 
 ```go
+		Tier:            user.Tier,
 		MaxRouterDevice: user.MaxRouterDevice,
 		MaxLanClient:    user.MaxLanClient,
-		PlanPID:         user.PlanPID,
 ```
 
 - [ ] **Step 6: Run all tests**

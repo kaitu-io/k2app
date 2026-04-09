@@ -26,6 +26,7 @@ In `api-types.ts` (line ~134), add to `Plan`:
 ```typescript
 export interface Plan {
   pid: string;
+  tier: string;             // NEW: 功能等级标识（"lite"/"basic"/"family"/"business"，向后兼容: ""/"pro"）
   label: string;
   price: number;
   originPrice: number;
@@ -369,6 +370,7 @@ In `web/src/lib/api.ts`, add to `Plan` interface:
 ```typescript
 export interface Plan {
   pid: string;
+  tier: string;          // 功能等级标识
   label: string;
   price: number;
   originPrice: number;

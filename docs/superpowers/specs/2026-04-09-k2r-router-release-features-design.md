@@ -16,13 +16,19 @@ Builds on the existing k2r build & distribution spec (2026-04-08) for binary emb
 
 | Term (中文) | English | Code identifier | Definition |
 |-------------|---------|-----------------|------------|
-| 套餐 | Plan | `Plan` | A purchasable tier. Defines price, duration, device quota, router device quota. |
+| 等级 | Tier | `Plan.Tier` / `User.Tier` | 功能等级（lite/basic/family/business）。决定配额和功能集。稳定标识，不随计费周期变化。 |
+| 套餐 | Plan | `Plan` | 一个可购买的 SKU。= Tier + 计费周期。例如 `family-1y` = 家庭版 + 1年。 |
 | 订单 | Order | `Order` | A purchase transaction. Immutable record. |
 | 设备 | Device | `Device` | Hardware that authenticates with Center (desktop/mobile/router). Subject to `User.MaxDevice`. |
-| 路由器接入设备 | RouterDevice | `router-device-allowlist` | LAN device connecting through router's TPROXY. Subject to `User.MaxRouterDevice`. Identified by MAC address. |
+| 路由器接入设备 | RouterDevice | `router-device-allowlist` | LAN device connecting through router's TPROXY. Subject to `User.MaxLanClient`. Identified by MAC address. |
 | MAC 白名单 | RouterDevice Allowlist | `router-device-allowlist` | Locally stored allowed MAC addresses on the router. |
 
-**Key distinction:** A router is one **Device** (occupies 1 `MaxDevice` slot). The phones/laptops connecting through the router are **RouterDevices** (subject to `MaxRouterDevice` quota). These are independent concepts.
+**Key distinction — Tier vs Plan:**
+- **Tier** 是功能等级（lite/basic/family/business），决定用户能用什么。用户购买 `family-1y` 或 `family-2y`，Tier 都是 `family`，配额相同。
+- **Plan** 是可购买的 SKU（Tier + 周期 + 价格）。用户续费换周期不影响 Tier。
+- `User.Tier` 存 tier 标识（稳定），不存 PlanPID（会随周期变化）。
+
+**Key distinction — Device vs RouterDevice:** A router is one **Device** (occupies 1 `MaxRouterDevice` slot). The phones/laptops connecting through the router are **RouterDevices** (subject to `MaxLanClient` quota). These are independent concepts.
 
 ---
 
@@ -40,12 +46,25 @@ Builds on the existing k2r build & distribution spec (2026-04-08) for binary emb
 
 ### 1.2 Product Tiers
 
-| Tier | PID pattern | MaxDevice | MaxRouterDevice | MaxLanClient | Target |
-|------|------------|-----------|-----------------|-------------|--------|
-| 经济版 | `lite-1m`, `lite-1y` | 1 | 0 | 0 | 学生/轻度用户 |
-| 基础版 | `basic-1m`, `basic-1y` | 3 | 0 | 0 | 个人用户 |
-| 家庭版 | `family-1m`, `family-1y` | 5 | 1 | 10 | 家庭 |
-| 公司版 | `business-1m`, `business-1y` | 10 | 1 | -1 (unlimited) | 小型办公 |
+| Tier (标识) | 中文名 | MaxDevice | MaxRouterDevice | MaxLanClient | Target |
+|-------------|--------|-----------|-----------------|-------------|--------|
+| `lite` | 经济版 | 1 | 0 | 0 | 学生/轻度用户 |
+| `basic` | 基础版 | 3 | 0 | 0 | 个人用户 |
+| `family` | 家庭版 | 5 | 1 | 10 | 家庭 |
+| `business` | 公司版 | 10 | 1 | -1 (unlimited) | 小型办公 |
+
+每个 Tier 对应多个 Plan（不同计费周期）：
+
+| PID | Plan.Tier | Label | Month |
+|-----|-----------|-------|-------|
+| `lite-1y` | `lite` | 经济版1年 | 12 |
+| `lite-2y` | `lite` | 经济版2年 | 24 |
+| `basic-1y` | `basic` | 基础版1年 | 12 |
+| `family-1y` | `family` | 家庭版1年 | 12 |
+| `family-2y` | `family` | 家庭版2年 | 24 |
+| `business-1y` | `business` | 公司版1年 | 12 |
+
+同一 Tier 下的 Plan 共享配额定义。用户购买 `family-1y` 或续费 `family-2y`，`User.Tier` 始终为 `family`。
 
 ### 1.3 Upgrade Path
 
@@ -61,7 +80,14 @@ The key upsell: **"全家翻墙无需配置，升级家庭版"**. Router access 
 
 ### 1.4 Backward Compatibility
 
-Existing plans (1m, 1y, 2y, 3y, etc.) get `MaxDevice=5, MaxRouterDevice=0, MaxLanClient=0` via migration defaults. Existing users are unaffected.
+| 数据 | 现状 | 迁移处理 |
+|------|------|----------|
+| 现有 Plan (1y/2y/3y/5y) | 无 Tier/MaxDevice 字段 | AutoMigrate 加列。`Tier` default `"pro"`，`MaxDevice` default `5`，`MaxRouterDevice` default `0` |
+| 现有 User | 无 Tier 字段 | AutoMigrate 加列。`Tier` default `"pro"` |
+| Order.Meta 旧 Plan | 无 Tier 字段 | `applyOrderToTargetUsers` fallback: `Tier==""` 时设为 `"pro"` |
+| 前端旧 API 响应 | 无 tier 字段 | 前端检查 `plan.tier` 是否存在，不存在时视为单 tier flat 展示 |
+
+**`"pro"` 是向后兼容 tier**：现有产品的功能集（5设备、无路由器）对应 `tier=pro`。新 tier 体系上线后，`pro` 等价于 `basic`（或可通过 admin 修改现有 plan 的 tier 值）。
 
 ---
 
@@ -73,7 +99,7 @@ Existing plans (1m, 1y, 2y, 3y, etc.) get `MaxDevice=5, MaxRouterDevice=0, MaxLa
 type Plan struct {
     // existing fields unchanged
     ID          uint64
-    PID         string
+    PID         string    // SKU 标识（tier + period），如 "family-1y"
     Label       string
     Price       uint64
     OriginPrice uint64
@@ -82,11 +108,14 @@ type Plan struct {
     IsActive    *bool
 
     // new fields
-    MaxDevice       int `gorm:"not null;default:5"`  // app 设备数量（不含路由器）
-    MaxRouterDevice int `gorm:"not null;default:0"`  // 路由器登录数量上限 (0=不支持路由器)
-    MaxLanClient    int `gorm:"not null;default:0"`  // 路由器 LAN 接入数量上限 (0=不支持, -1=无限)
+    Tier            string `gorm:"type:varchar(30);not null;default:'pro'"` // 功能等级标识（lite/basic/family/business）
+    MaxDevice       int    `gorm:"not null;default:5"`                     // app 设备数量（不含路由器）
+    MaxRouterDevice int    `gorm:"not null;default:0"`                     // 路由器登录数量上限 (0=不支持路由器)
+    MaxLanClient    int    `gorm:"not null;default:0"`                     // 路由器 LAN 接入数量上限 (0=不支持, -1=无限)
 }
 ```
+
+**`Plan.Tier`** 是功能等级标识。同 tier 不同周期的 Plan（如 `family-1y` 和 `family-2y`）共享相同的 `Tier="family"` 和配额值。PID 是 SKU 级别的唯一标识，Tier 是功能级别的分组标识。
 
 ### 2.2 User Model (MODIFIED)
 
@@ -97,11 +126,13 @@ type User struct {
     MaxDevice int   `gorm:"default:5"`  // app 设备数量（不含路由器）(unchanged, now set from Plan)
 
     // new fields
-    MaxRouterDevice int    `gorm:"not null;default:0"`          // 路由器登录数量上限
-    MaxLanClient    int    `gorm:"not null;default:0"`          // LAN 接入数量上限 (0=无路由器, -1=无限)
-    PlanPID         string `gorm:"type:varchar(30);default:''"` // 当前套餐 PID
+    MaxRouterDevice int    `gorm:"not null;default:0"`                     // 路由器登录数量上限
+    MaxLanClient    int    `gorm:"not null;default:0"`                     // LAN 接入数量上限 (0=无路由器, -1=无限)
+    Tier            string `gorm:"type:varchar(30);not null;default:'pro'"` // 当前功能等级（稳定标识，不随周期变化）
 }
 ```
+
+**`User.Tier` 不是 `User.PlanPID`**：用户购买 `family-1y` 后 `Tier="family"`，续费 `family-2y` 后 `Tier` 仍为 `"family"`。Tier 只在用户升级/降级时变化，不随计费周期变化。
 
 **No Subscription table.** One product, one user = one set of entitlement fields. User table IS the subscription.
 
@@ -124,15 +155,16 @@ type Device struct {
 
 | Table | Field | Type | Default | Note |
 |-------|-------|------|---------|------|
+| `plans` | `tier` | `VARCHAR(30)` | `'pro'` | 现有 plan 默认 tier=pro |
 | `plans` | `max_device` | `INT` | `5` | Existing plans get 5 |
 | `plans` | `max_router_device` | `INT` | `0` | Existing plans get 0 |
 | `plans` | `max_lan_client` | `INT` | `0` | Existing plans get 0 |
+| `users` | `tier` | `VARCHAR(30)` | `'pro'` | 现有用户默认 tier=pro |
 | `users` | `max_router_device` | `INT` | `0` | Existing users get 0 |
 | `users` | `max_lan_client` | `INT` | `0` | Existing users get 0 |
-| `users` | `plan_pid` | `VARCHAR(30)` | `''` | Existing users get empty |
 | `devices` | `is_gateway` | `BOOLEAN` | `false` | Existing devices get false |
 
-GORM AutoMigrate handles all additions. No data migration script needed — defaults are backward compatible.
+GORM AutoMigrate handles all additions. No data migration script needed — defaults are backward compatible. 现有 plan 和 user 的 `tier` 列默认 `"pro"`，代表当前产品的功能集。
 
 ---
 
@@ -147,7 +179,14 @@ When an order is paid, `applyOrderToTargetUsers` currently extends `User.Expired
 user.MaxDevice = plan.MaxDevice
 user.MaxRouterDevice = plan.MaxRouterDevice
 user.MaxLanClient = plan.MaxLanClient
-user.PlanPID = plan.PID
+
+// Set tier from plan (stable — doesn't change on period renewal)
+tier := plan.Tier
+if tier == "" {
+    tier = "pro" // backward compat: old plans without Tier field
+}
+user.Tier = tier
+
 // addProExpiredDays calls tx.Save(user) — all fields written atomically
 ```
 
@@ -159,11 +198,12 @@ When user buys a higher-tier plan:
 - `ExpiredAt` is extended (existing behavior)
 - `MaxDevice` is updated to new plan's value
 - `MaxRouterDevice` is updated to new plan's value
-- `PlanPID` is updated
+- `Tier` is updated to new tier
 
-When user renews same plan:
+When user renews same tier (不同周期):
 - `ExpiredAt` is extended
-- Quotas unchanged (same plan)
+- `Tier` 不变（family-1y → family-2y，Tier 仍为 family）
+- Quotas unchanged (same tier)
 
 ---
 
@@ -237,6 +277,7 @@ Returns all active plans. Frontend renders them as tier cards. No `product_type`
 ```typescript
 interface Plan {
     pid: string;
+    tier: string;            // 功能等级标识（"lite"/"basic"/"family"/"business"，向后兼容: ""/"pro"）
     label: string;
     price: number;
     originPrice: number;
@@ -248,9 +289,11 @@ interface Plan {
 }
 ```
 
+**向后兼容:** 旧 API 返回的 Plan 可能没有 `tier` 字段（或值为空/"pro"）。前端应将 `!tier || tier === "pro"` 视为单一 tier，flat 展示（当前行为）。当 tier 有多种值时，按 tier 分组展示。
+
 ### 5.3 Admin Plans CRUD
 
-Admin creates plans with `MaxDevice` and `MaxRouterDevice` fields. No `ProductType` needed.
+Admin creates plans with `Tier`, `MaxDevice` and `MaxRouterDevice` fields. Tier is required for new plans. No `ProductType` needed.
 
 ---
 
@@ -495,13 +538,13 @@ Same as previous spec version — 20+ keys for device management UI.
 
 | File | Change |
 |------|--------|
-| `model.go` | Add `Plan.MaxDevice/MaxRouterDevice/MaxLanClient`, `User.MaxRouterDevice/MaxLanClient/PlanPID`, `Device.IsGateway` |
-| `type.go` | Update `DataPlan` (add 3 quota fields), update `DataUser` (add maxRouterDevice, maxLanClient, planPid), `AppInfo` (add isGateway) |
-| `api_plan.go` | Update DataPlan construction to include new fields |
-| `api_admin_plan.go` | Add MaxDevice/MaxRouterDevice to CRUD |
-| `logic_member.go` | `applyOrderToTargetUsers` also writes MaxDevice, MaxRouterDevice, PlanPID |
+| `model.go` | Add `Plan.Tier/MaxDevice/MaxRouterDevice/MaxLanClient`, `User.Tier/MaxRouterDevice/MaxLanClient`, `Device.IsGateway` |
+| `type.go` | Update `DataPlan` (add tier + 3 quota fields), update `DataUser` (add tier, maxRouterDevice, maxLanClient), `AppInfo` (add isGateway) |
+| `api_plan.go` | Update DataPlan construction to include tier + new fields |
+| `api_admin_plan.go` | Add Tier/MaxDevice/MaxRouterDevice/MaxLanClient to CRUD |
+| `logic_member.go` | `applyOrderToTargetUsers` also writes MaxDevice, MaxRouterDevice, Tier (from Plan.Tier) |
 | `middleware.go` | Add `RouterRequired()`, update `fillDeviceAppInfo` for isGateway |
-| `api_user.go` | Profile returns maxRouterDevice, planPid |
+| `api_user.go` | Profile returns tier, maxRouterDevice, maxLanClient |
 | `api_admin_device_stats.go` | Add `is_gateway` dimension |
 | `migrate.go` | Add new fields to AutoMigrate (GORM handles column additions) |
 
