@@ -146,7 +146,7 @@ type Device struct {
 	UpdatedAt       time.Time
 	UDID            string `gorm:"column:udid;type:varchar(255);uniqueIndex;not null"`
 	Remark          string `gorm:"type:varchar(255)"`
-	UserID          uint64 `gorm:"not null;index"`
+	UserID          uint64 `gorm:"not null;index;index:idx_user_gateway,priority:1"`
 	User            *User  `gorm:"foreignKey:UserID"`
 	TokenIssueAt    int64  `gorm:"not null"`
 	TokenLastUsedAt int64  `gorm:"not null"`
@@ -164,7 +164,7 @@ type Device struct {
 	DeviceModel string `gorm:"type:varchar(64)"` // 设备型号，如 "MacBookPro18,1", "iPhone15,2"
 
 	// 路由器标识
-	IsGateway bool `gorm:"not null;default:false" json:"isGateway"` // 是否为路由器/网关设备
+	IsGateway bool `gorm:"not null;default:false;index:idx_user_gateway,priority:2" json:"isGateway"` // 是否为路由器/网关设备
 }
 
 func PasswordHash(password string) (string, error) {

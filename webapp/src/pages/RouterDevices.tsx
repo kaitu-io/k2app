@@ -74,7 +74,7 @@ export default function RouterDevices() {
       setError(t('dashboard:routerDevices.loadFailed'));
     }
     setLoading(false);
-  }, []);
+  }, [t]);
 
   useEffect(() => { fetchDevices(); }, [fetchDevices]);
 
@@ -101,6 +101,7 @@ export default function RouterDevices() {
   };
 
   const handleRemove = async (mac: string) => {
+    if (!window.confirm(t('common:confirm') + '?')) return;
     const res = await gwFetch('/api/router-devices/remove', {
       method: 'POST',
       body: JSON.stringify({ mac }),

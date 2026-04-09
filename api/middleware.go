@@ -472,6 +472,7 @@ func ProRequired() gin.HandlerFunc {
 
 // RouterRequired 检查用户是否有路由器权限 (MaxRouterDevice > 0 或 == -1)
 // 需要先经过 AuthRequired + ProRequired
+// Pre-built for upcoming k2r router-specific API endpoints (not yet wired in route.go).
 func RouterRequired() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		user := ReqUser(c)

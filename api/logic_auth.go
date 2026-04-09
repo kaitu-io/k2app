@@ -10,6 +10,7 @@ import (
 	"time"
 
 	db "github.com/wordgate/qtoolkit/db"
+	"gorm.io/gorm"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/wordgate/qtoolkit/log"
@@ -396,4 +397,55 @@ func GenerateCSRFToken() string {
 // isSecureRequest 判断是否为 HTTPS 请求
 func isSecureRequest(proto, host string) bool {
 	return proto == "https" || strings.HasPrefix(host, "https")
+}
+
+// checkDeviceLimitOrKick enforces per-type device limits within a login transaction.
+// For gateway (router) devices: rejects with 402/403 if no router permission or limit reached.
+// For app devices: kicks (deletes) the oldest device if limit reached.
+func checkDeviceLimitOrKick(c context.Context, tx *gorm.DB, user *User, isGateway bool) error {
+	if isGateway {
+		if user.MaxRouterDevice == 0 {
+			log.Warnf(c, "user %d plan does not support router, rejecting gateway login", user.ID)
+			return e(ErrorPaymentRequired, "plan does not support router")
+		}
+		var routerCount int64
+		if err := tx.Model(&Device{}).Where("user_id = ? AND is_gateway = true", user.ID).Count(&routerCount).Error; err != nil {
+			log.Errorf(c, "failed to count router devices for user %d: %v", user.ID, err)
+			return err
+		}
+		if user.MaxRouterDevice > 0 && routerCount >= int64(user.MaxRouterDevice) {
+			log.Warnf(c, "router device limit reached for user %d (%d/%d)", user.ID, routerCount, user.MaxRouterDevice)
+			return e(ErrorForbidden, "router device limit reached")
+		}
+		return nil
+	}
+
+	// App device limit: count only app devices, kick oldest on limit
+	var appDeviceCount int64
+	if err := tx.Model(&Device{}).Where("user_id = ? AND is_gateway = false", user.ID).Count(&appDeviceCount).Error; err != nil {
+		log.Errorf(c, "failed to count app devices for user %d: %v", user.ID, err)
+		return err
+	}
+	if appDeviceCount >= int64(user.MaxDevice) {
+		log.Warnf(c, "app device limit reached for user %d, will remove oldest app device", user.ID)
+		var oldestDevice Device
+		if err := tx.Where("user_id = ? AND is_gateway = false", user.ID).Order("token_last_used_at ASC").First(&oldestDevice).Error; err != nil {
+			log.Errorf(c, "failed to find oldest app device for user %d: %v", user.ID, err)
+			return err
+		}
+		if err := tx.Delete(&oldestDevice).Error; err != nil {
+			log.Errorf(c, "failed to delete oldest device %s for user %d: %v", oldestDevice.UDID, user.ID, err)
+			return err
+		}
+		log.Infof(c, "deleted oldest app device %s for user %d", oldestDevice.UDID, user.ID)
+
+		meta := DeviceKickMeta{
+			KickTime: time.Now().Format("2006-01-02 15:04:05"),
+			Remark:   oldestDevice.Remark,
+		}
+		if err := emailToUser(c, int64(user.ID), deviceKickTemplate, meta); err != nil {
+			log.Errorf(c, "failed to send device kick email to user %d: %v", user.ID, err)
+		}
+	}
+	return nil
 }

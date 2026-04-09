@@ -33,54 +33,66 @@ async function coreExec<T = any>(action: string, params?: any): Promise<SRespons
   }
 }
 
-function connectSSE(
-  onStatus: ((status: StatusResponseData) => void) | null,
-  onServiceState: ((available: boolean) => void) | null,
-): () => void {
-  let es: EventSource | null = null;
-  let closed = false;
+// Shared SSE connection — single EventSource with fan-out to multiple subscribers.
+// Avoids creating 4 parallel SSE connections (vpn-machine + vpn store × 2 callbacks each).
+const statusCallbacks = new Set<(status: StatusResponseData) => void>();
+const serviceCallbacks = new Set<(available: boolean) => void>();
+let sharedES: EventSource | null = null;
+let esShutdown = false;
+
+function ensureSSE() {
+  if (sharedES || esShutdown) return;
 
   function connect() {
-    if (closed) return;
-    es = new EventSource('/api/events');
+    if (esShutdown) return;
+    sharedES = new EventSource('/api/events');
 
-    es.onopen = () => {
-      onServiceState?.(true);
+    sharedES.onopen = () => {
+      serviceCallbacks.forEach(cb => cb(true));
     };
 
-    es.addEventListener('status', (e: MessageEvent) => {
+    sharedES.addEventListener('status', (e: MessageEvent) => {
       try {
         const raw = JSON.parse(e.data);
-        onStatus?.(transformStatus(raw));
+        const status = transformStatus(raw);
+        statusCallbacks.forEach(cb => cb(status));
       } catch { /* ignore parse errors */ }
     });
 
-    es.onerror = () => {
-      onServiceState?.(false);
-      es?.close();
-      if (!closed) {
+    sharedES.onerror = () => {
+      serviceCallbacks.forEach(cb => cb(false));
+      sharedES?.close();
+      sharedES = null;
+      if (!esShutdown) {
         setTimeout(connect, 3000);
       }
     };
   }
 
   connect();
+}
 
-  return () => {
-    closed = true;
-    es?.close();
-  };
+function teardownSSE() {
+  if (statusCallbacks.size === 0 && serviceCallbacks.size === 0) {
+    esShutdown = true;
+    sharedES?.close();
+    sharedES = null;
+  }
 }
 
 const gatewayK2: IK2Vpn = {
   run: coreExec,
 
   onServiceStateChange: (callback: (available: boolean) => void): (() => void) => {
-    return connectSSE(null, callback);
+    serviceCallbacks.add(callback);
+    ensureSSE();
+    return () => { serviceCallbacks.delete(callback); teardownSSE(); };
   },
 
   onStatusChange: (callback: (status: StatusResponseData) => void): (() => void) => {
-    return connectSSE(callback, null);
+    statusCallbacks.add(callback);
+    ensureSSE();
+    return () => { statusCallbacks.delete(callback); teardownSSE(); };
   },
 };
 

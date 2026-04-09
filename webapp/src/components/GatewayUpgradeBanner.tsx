@@ -13,6 +13,7 @@ export default function GatewayUpgradeBanner() {
   const [latest, setLatest] = useState('');
   const [upgrading, setUpgrading] = useState(false);
   const [restarting, setRestarting] = useState(false);
+  const [upgradeFailed, setUpgradeFailed] = useState(false);
   const [checked, setChecked] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout>>();
 
@@ -41,16 +42,25 @@ export default function GatewayUpgradeBanner() {
 
   const handleUpgrade = async () => {
     setUpgrading(true);
+    setUpgradeFailed(false);
     try {
-      await fetch('/api/upgrade', {
+      const res = await fetch('/api/upgrade', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'apply' }),
       });
+      const json = await res.json().catch(() => null);
+      if (json && json.code !== 0) {
+        console.warn('[GatewayUpgrade] apply returned error:', json);
+        setUpgradeFailed(true);
+        setUpgrading(false);
+        return;
+      }
       // Service will restart — show "restarting" after 3s
       timerRef.current = setTimeout(() => setRestarting(true), 3000);
     } catch (err) {
       console.warn('[GatewayUpgrade] apply failed:', err);
+      setUpgradeFailed(true);
       setUpgrading(false);
     }
   };
@@ -59,7 +69,7 @@ export default function GatewayUpgradeBanner() {
 
   return (
     <Alert
-      severity={restarting ? 'warning' : 'info'}
+      severity={restarting ? 'warning' : upgradeFailed ? 'error' : 'info'}
       icon={<UpdateIcon />}
       sx={{ mb: 2 }}
       action={

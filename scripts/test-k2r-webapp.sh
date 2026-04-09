@@ -157,8 +157,10 @@ if [ "$keys_ok" = "ok" ] && [ "$clear_ok" = "ok" ]; then result="ok"; else resul
 check "Storage keys + clear" "$result"
 
 # Test 11: SSE endpoint connectable
-# Connect for 1s; curl exits 0 if connection established (even if no data yet)
-result=$(timeout 2 curl -sf -N "$BASE_URL/api/events" >/dev/null 2>&1; [ $? -le 1 ] && echo "ok" || echo "fail")
+# timeout returns 124 when it kills the child; curl exits 0 on connect.
+# Both 0 (data received) and 124 (timeout after successful connect) mean the endpoint works.
+sse_exit=0; timeout 2 curl -sf -N "$BASE_URL/api/events" >/dev/null 2>&1 || sse_exit=$?
+result=$( [ "$sse_exit" -eq 0 ] || [ "$sse_exit" -eq 124 ] && echo "ok" || echo "fail" )
 check "SSE endpoint /api/events connectable" "$result"
 
 # Test 12: POST /api/log-level → code 0

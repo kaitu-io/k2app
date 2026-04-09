@@ -52,7 +52,10 @@ function getNetworkType(): string {
 }
 
 // Re-probe on network change (online event or Connection API change).
-if (typeof window !== 'undefined') {
+// Guarded to avoid duplicate listeners on HMR.
+const LISTENER_KEY = '__k2_network_env_listener__';
+if (typeof window !== 'undefined' && !(window as any)[LISTENER_KEY]) {
+  (window as any)[LISTENER_KEY] = true;
   window.addEventListener('online', () => {
     refreshNetworkEnv().catch(() => {});
   });

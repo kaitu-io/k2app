@@ -37,7 +37,7 @@ func api_admin_list_plans(c *gin.Context) {
 //
 type AdminCreatePlanRequest struct {
 	PID             string `json:"pid" binding:"required" example:"pro_monthly"`  // 套餐标识符
-	Tier            string `json:"tier" binding:"required" example:"family"`      // 功能等级标识
+	Tier            string `json:"tier" example:"family"`                         // 功能等级标识（默认 "pro"）
 	Label           string `json:"label" binding:"required" example:"Pro 月付套餐"`   // 套餐名称
 	Price           uint64 `json:"price" binding:"required" example:"999"`        // 价格（美分）
 	OriginPrice     uint64 `json:"originPrice" binding:"required" example:"1299"` // 原价（美分）
@@ -60,7 +60,10 @@ func api_admin_create_plan(c *gin.Context) {
 	}
 	log.Debugf(c, "create plan request: %+v", req)
 
-	// Default MaxDevice if not specified
+	// Default Tier and MaxDevice if not specified
+	if req.Tier == "" {
+		req.Tier = "pro"
+	}
 	if req.MaxDevice == 0 {
 		req.MaxDevice = DefaultMaxDevice
 	}

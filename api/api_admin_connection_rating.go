@@ -117,7 +117,7 @@ func api_admin_connection_rating_statistics(c *gin.Context) {
 			goodRate = float64(r.Good) / float64(r.Total)
 		}
 		result.ByISP[i] = RatingByISP{
-			ISP: r.ISP, Country: r.Country, Total: r.Total, Good: r.Good, GoodRate: goodRate,
+			ISP: r.ISP, Country: r.Country, Total: r.Total, Good: r.Good, Bad: r.Total - r.Good, GoodRate: goodRate,
 		}
 	}
 
@@ -144,7 +144,7 @@ func api_admin_connection_rating_statistics(c *gin.Context) {
 			goodRate = float64(r.Good) / float64(r.Total)
 		}
 		result.ByPlatform[i] = RatingByPlatform{
-			OS: r.OS, AppVersion: r.AppVersion, Total: r.Total, Good: r.Good, GoodRate: goodRate,
+			OS: r.OS, AppVersion: r.AppVersion, Total: r.Total, Good: r.Good, Bad: r.Total - r.Good, GoodRate: goodRate,
 		}
 	}
 
@@ -164,6 +164,20 @@ func api_admin_connection_rating_statistics(c *gin.Context) {
 		Limit(50).
 		Find(&userRows)
 
+	// Batch-load email identities for all user IDs (avoids N+1)
+	userIDs := make([]uint64, len(userRows))
+	for i, r := range userRows {
+		userIDs[i] = r.UserID
+	}
+	var identifies []LoginIdentify
+	if len(userIDs) > 0 {
+		d.Where("user_id IN ? AND type = ?", userIDs, "email").Find(&identifies)
+	}
+	identifyMap := make(map[uint64]*LoginIdentify, len(identifies))
+	for i := range identifies {
+		identifyMap[uint64(identifies[i].UserID)] = &identifies[i]
+	}
+
 	result.ByUser = make([]RatingByUser, len(userRows))
 	for i, r := range userRows {
 		var goodRate float64
@@ -171,7 +185,7 @@ func api_admin_connection_rating_statistics(c *gin.Context) {
 			goodRate = float64(r.Good) / float64(r.Total)
 		}
 		email := fmt.Sprintf("user#%d", r.UserID)
-		if identify, err := GetEmailIdentifyByUserID(c, int64(r.UserID)); err == nil && identify != nil {
+		if identify, ok := identifyMap[r.UserID]; ok {
 			if dec, err := secretDecryptString(c, identify.EncryptedValue); err == nil {
 				email = dec
 			}

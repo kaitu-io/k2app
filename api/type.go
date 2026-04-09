@@ -1164,6 +1164,7 @@ type RatingByISP struct {
 	Country  string  `json:"country"`
 	Total    int64   `json:"total"`
 	Good     int64   `json:"good"`
+	Bad      int64   `json:"bad"`
 	GoodRate float64 `json:"goodRate"`
 }
 
@@ -1172,6 +1173,7 @@ type RatingByPlatform struct {
 	AppVersion string  `json:"appVersion"`
 	Total      int64   `json:"total"`
 	Good       int64   `json:"good"`
+	Bad        int64   `json:"bad"`
 	GoodRate   float64 `json:"goodRate"`
 }
 
