@@ -144,6 +144,16 @@ func (tm *TransportManager) SetTCPWS(d Dialer) {
 	tm.tcpws = d
 }
 
+// SwapTCPWS replaces the TCP-WS transport and returns the old one.
+// The caller is responsible for closing the returned dialer (outside any lock).
+func (tm *TransportManager) SwapTCPWS(d Dialer) Dialer {
+	tm.mu.Lock()
+	old := tm.tcpws
+	tm.tcpws = d
+	tm.mu.Unlock()
+	return old
+}
+
 // recordQuicSuccess clears fallback state when QUIC succeeds.
 func (tm *TransportManager) recordQuicSuccess() {
 	tm.mu.RLock()
@@ -161,10 +171,15 @@ func (tm *TransportManager) recordQuicSuccess() {
 
 // SetFallbackActive sets or clears the QUIC→TCP-WS fallback flag.
 func (tm *TransportManager) SetFallbackActive(active bool) {
+	tm.SetFallbackActiveWithReason(active, "quic-handshake-threshold")
+}
+
+// SetFallbackActiveWithReason sets or clears fallback with a specific reason for diagnostics.
+func (tm *TransportManager) SetFallbackActiveWithReason(active bool, reason string) {
 	if active {
 		if tm.fallbackActive.CompareAndSwap(false, true) {
-			slog.Warn("wire: QUIC fallback activated")
-			slog.Warn("DIAG: transport-switch", "from", "quic", "to", "tcpws", "reason", "quic-handshake-threshold")
+			slog.Warn("wire: QUIC fallback activated", "reason", reason)
+			slog.Warn("DIAG: transport-switch", "from", "quic", "to", "tcpws", "reason", reason)
 		}
 	} else {
 		tm.fallbackActive.Store(false)

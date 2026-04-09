@@ -23,6 +23,13 @@ type RaceResult struct {
 	Dialer        Dialer
 	TransportType string // "quic-443", "quic-hop", "tcpws"
 	TCPWS         Dialer // non-nil when a QUIC candidate won and TCP-WS was also built
+
+	// QUICBackup is a QUIC dialer that connected successfully during the race
+	// but lost to TCP-WS. When non-nil, the caller should install it as the
+	// primary transport with fallbackActive=true so the background probe can
+	// verify QUIC and switch to it (typically within 30s).
+	QUICBackup     Dialer
+	QUICBackupType string // "quic-443" or "quic-hop"
 }
 
 type raceCandidate struct {
@@ -30,6 +37,12 @@ type raceCandidate struct {
 	tcpws         Dialer // non-nil only for tcpws candidate
 	transportType string
 	err           error
+}
+
+// connectedQUIC tracks a QUIC candidate that completed dial but may lose the race.
+type connectedQUIC struct {
+	dialer        Dialer
+	transportType string
 }
 
 // RaceTransport races three transport candidates with staggered start:
@@ -49,6 +62,10 @@ func RaceTransport(ctx context.Context, cfg Config, dialAddr string, directDiale
 	var spawned int
 	var winner *raceCandidate
 
+	// Track connected QUIC candidates for QUICBackup when tcpws wins.
+	var quicBackupMu sync.Mutex
+	var quicBackup *connectedQUIC
+
 	slog.Info("DIAG: transport-race-start", "candidates", 3)
 
 	launch := func(name string, fn func(context.Context) raceCandidate) {
@@ -61,13 +78,23 @@ func RaceTransport(ctx context.Context, cfg Config, dialAddr string, directDiale
 	}
 
 	// Cleanup: cancel losers, wait for goroutines, close loser dialers.
+	// Preserve QUICBackup (connected QUIC that lost to tcpws) — caller owns it.
 	defer func() {
 		raceCancel()
 		go func() {
 			wg.Wait()
 			close(results)
+
+			quicBackupMu.Lock()
+			backup := quicBackup
+			quicBackupMu.Unlock()
+
 			for r := range results {
 				if r.err == nil && r.dialer != nil && (winner == nil || r.dialer != winner.dialer) {
+					// Don't close the QUIC dialer preserved as backup.
+					if backup != nil && r.dialer == backup.dialer {
+						continue
+					}
 					r.dialer.Close()
 				}
 				if r.tcpws != nil && (winner == nil || r.tcpws != winner.tcpws) {
@@ -120,6 +147,11 @@ func RaceTransport(ctx context.Context, cfg Config, dialAddr string, directDiale
 				winner = &r
 				slog.Info("DIAG: transport-race-winner", "winner", r.transportType, "winnerMs", time.Since(raceStart).Milliseconds(), "tried", i+1)
 				res := &RaceResult{Dialer: r.dialer, TransportType: r.transportType, TCPWS: r.tcpws}
+				// tcpws won — drain remaining results to find connected QUIC candidates.
+				// QUIC results may arrive nearly simultaneously (echo-probe completes ~same time).
+				if r.transportType == "tcpws" {
+					res = drainQUICBackup(res, results, spawned-i-1, &quicBackupMu, &quicBackup)
+				}
 				return res, nil
 			}
 			switch r.transportType {
@@ -230,6 +262,61 @@ func buildTCPWSCandidate(ctx context.Context, cfg Config, dialAddr string, dd Di
 	}
 
 	return raceCandidate{dialer: tc, tcpws: tc, transportType: "tcpws"}
+}
+
+// drainQUICBackup reads remaining race results (with a short grace period) to
+// find a connected QUIC candidate. If found, it's preserved as QUICBackup on
+// the result so the engine can install QUIC as primary with fallback=true.
+// The quicBackup pointer is set so the defer cleanup skips closing it.
+func drainQUICBackup(
+	res *RaceResult,
+	results chan raceCandidate,
+	remaining int,
+	mu *sync.Mutex,
+	backup **connectedQUIC,
+) *RaceResult {
+	if remaining <= 0 {
+		return res
+	}
+
+	// Brief grace period for nearly-simultaneous QUIC results. Echo-probe
+	// finishes within milliseconds of tcpws in practice (observed: 2ms).
+	// Keep short to avoid blocking the return path and delaying cleanup.
+	timer := time.NewTimer(50 * time.Millisecond)
+	defer timer.Stop()
+
+	for i := 0; i < remaining; i++ {
+		select {
+		case r := <-results:
+			if r.err == nil && r.transportType != "tcpws" {
+				// Prefer quic-443 over quic-hop.
+				if res.QUICBackup == nil || r.transportType == "quic-443" {
+					// Close previously found backup if replacing with quic-443.
+					if res.QUICBackup != nil {
+						res.QUICBackup.Close()
+					}
+					res.QUICBackup = r.dialer
+					res.QUICBackupType = r.transportType
+					found := connectedQUIC{dialer: r.dialer, transportType: r.transportType}
+					mu.Lock()
+					*backup = &found
+					mu.Unlock()
+				} else {
+					r.dialer.Close()
+				}
+			}
+		case <-timer.C:
+			slog.Debug("wire: drain grace expired", "collected", i, "of", remaining)
+			return res
+		}
+	}
+
+	if res.QUICBackup != nil {
+		slog.Info("wire: QUIC connected but lost race, preserved as backup",
+			"backup", res.QUICBackupType,
+		)
+	}
+	return res
 }
 
 // waitForWinner waits up to duration for a successful result on the channel.

@@ -1002,11 +1002,27 @@ func setupOutboundTransport(
 	}
 
 	tm := wire.NewTransportManager()
-	tm.SetPrimary(raceResult.Dialer, raceResult.TransportType)
+
+	// When tcpws won the race but QUIC also connected, install QUIC as
+	// primary with fallback=true. The background probe (30s) will verify
+	// QUIC and switch to it — typically faster for sustained throughput.
+	if raceResult.QUICBackup != nil {
+		tm.SetPrimary(raceResult.QUICBackup, raceResult.QUICBackupType)
+		tm.SetTCPWS(raceResult.Dialer) // tcpws as active transport
+		tm.SetFallbackActiveWithReason(true, "quic-race-lost")
+		slog.Info("engine: QUIC installed as primary (race loser), tcpws serving traffic",
+			"quicType", raceResult.QUICBackupType,
+		)
+	} else {
+		tm.SetPrimary(raceResult.Dialer, raceResult.TransportType)
+	}
 
 	// Ensure TCP-WS is available as fallback and DNS transport.
 	var tcpwsDialer wire.Dialer
-	if raceResult.TCPWS != nil {
+	if raceResult.QUICBackup != nil {
+		// Already set above — tcpws is raceResult.Dialer.
+		tcpwsDialer = raceResult.Dialer
+	} else if raceResult.TCPWS != nil {
 		tm.SetTCPWS(raceResult.TCPWS)
 		tcpwsDialer = raceResult.TCPWS
 	} else if raceResult.TransportType != "tcpws" {
@@ -1261,6 +1277,9 @@ func (e *Engine) reRaceLoop(ctx context.Context) {
 
 		if ctx.Err() != nil {
 			result.Dialer.Close()
+			if result.QUICBackup != nil {
+				result.QUICBackup.Close()
+			}
 			return
 		}
 
@@ -1277,10 +1296,29 @@ func (e *Engine) reRaceLoop(ctx context.Context) {
 
 		if !found {
 			result.Dialer.Close()
+			if result.QUICBackup != nil {
+				result.QUICBackup.Close()
+			}
 			continue
 		}
 
-		target.tm.ReplacePrimary(result.Dialer, result.TransportType)
+		if result.QUICBackup != nil {
+			// QUIC connected but lost re-race to tcpws — install QUIC as primary
+			// with fallback. ReplacePrimary clears fallbackActive, so re-set it.
+			target.tm.ReplacePrimary(result.QUICBackup, result.QUICBackupType)
+			// Close old tcpws before replacing — SwapTCPWS returns the old dialer.
+			oldTCPWS := target.tm.SwapTCPWS(result.Dialer)
+			if oldTCPWS != nil {
+				oldTCPWS.Close()
+			}
+			target.tm.SetFallbackActiveWithReason(true, "quic-race-lost")
+			slog.Info("engine: re-race QUIC installed as primary (race loser), tcpws serving traffic",
+				"outbound", target.name,
+				"quicType", result.QUICBackupType,
+			)
+		} else {
+			target.tm.ReplacePrimary(result.Dialer, result.TransportType)
+		}
 	}
 }
 
