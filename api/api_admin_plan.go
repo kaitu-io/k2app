@@ -36,13 +36,16 @@ func api_admin_list_plans(c *gin.Context) {
 // AdminCreatePlanRequest 创建套餐请求结构体
 //
 type AdminCreatePlanRequest struct {
-	PID         string `json:"pid" binding:"required" example:"pro_monthly"`  // 套餐标识符
-	Label       string `json:"label" binding:"required" example:"Pro 月付套餐"`   // 套餐名称
-	Price       uint64 `json:"price" binding:"required" example:"999"`        // 价格（美分）
-	OriginPrice uint64 `json:"originPrice" binding:"required" example:"1299"` // 原价（美分）
-	Month       int    `json:"month" binding:"required" example:"1"`          // 月数
-	Highlight   bool   `json:"highlight" example:"true"`                      // 是否高亮显示
-	IsActive    bool   `json:"isActive" example:"true"`                       // 是否激活
+	PID             string `json:"pid" binding:"required" example:"pro_monthly"`  // 套餐标识符
+	Label           string `json:"label" binding:"required" example:"Pro 月付套餐"`   // 套餐名称
+	Price           uint64 `json:"price" binding:"required" example:"999"`        // 价格（美分）
+	OriginPrice     uint64 `json:"originPrice" binding:"required" example:"1299"` // 原价（美分）
+	Month           int    `json:"month" binding:"required" example:"1"`          // 月数
+	Highlight       bool   `json:"highlight" example:"true"`                      // 是否高亮显示
+	IsActive        bool   `json:"isActive" example:"true"`                       // 是否激活
+	MaxDevice       int    `json:"maxDevice"`                                     // app 设备数量
+	MaxRouterDevice int    `json:"maxRouterDevice"`                               // 路由器登录数量上限
+	MaxLanClient    int    `json:"maxLanClient"`                                  // LAN 接入数量上限
 }
 
 func api_admin_create_plan(c *gin.Context) {
@@ -56,17 +59,25 @@ func api_admin_create_plan(c *gin.Context) {
 	}
 	log.Debugf(c, "create plan request: %+v", req)
 
+	// Default MaxDevice if not specified
+	if req.MaxDevice == 0 {
+		req.MaxDevice = DefaultMaxDevice
+	}
+
 	err := db.Get().Transaction(func(tx *gorm.DB) error {
 		// 检查 PID 是否已存在
 
 		plan := Plan{
-			PID:         req.PID,
-			Label:       req.Label,
-			Price:       req.Price,
-			OriginPrice: req.OriginPrice,
-			Month:       req.Month,
-			Highlight:   BoolPtr(req.Highlight),
-			IsActive:    BoolPtr(req.IsActive),
+			PID:             req.PID,
+			Label:           req.Label,
+			Price:           req.Price,
+			OriginPrice:     req.OriginPrice,
+			Month:           req.Month,
+			Highlight:       BoolPtr(req.Highlight),
+			IsActive:        BoolPtr(req.IsActive),
+			MaxDevice:       req.MaxDevice,
+			MaxRouterDevice: req.MaxRouterDevice,
+			MaxLanClient:    req.MaxLanClient,
 		}
 
 		if err := tx.Create(&plan).Error; err != nil {
@@ -90,12 +101,15 @@ func api_admin_create_plan(c *gin.Context) {
 // AdminUpdatePlanRequest 更新套餐请求结构体
 //
 type AdminUpdatePlanRequest struct {
-	Label       *string `json:"label" example:"Pro 月付套餐"`   // 套餐名称
-	Price       *uint64 `json:"price" example:"999"`        // 价格（美分）
-	OriginPrice *uint64 `json:"originPrice" example:"1299"` // 原价（美分）
-	Month       *int    `json:"month" example:"1"`          // 月数
-	Highlight   *bool   `json:"highlight" example:"true"`   // 是否高亮显示
-	IsActive    *bool   `json:"isActive" example:"true"`    // 是否激活
+	Label           *string `json:"label" example:"Pro 月付套餐"`   // 套餐名称
+	Price           *uint64 `json:"price" example:"999"`        // 价格（美分）
+	OriginPrice     *uint64 `json:"originPrice" example:"1299"` // 原价（美分）
+	Month           *int    `json:"month" example:"1"`          // 月数
+	Highlight       *bool   `json:"highlight" example:"true"`   // 是否高亮显示
+	IsActive        *bool   `json:"isActive" example:"true"`    // 是否激活
+	MaxDevice       *int    `json:"maxDevice"`                  // app 设备数量
+	MaxRouterDevice *int    `json:"maxRouterDevice"`            // 路由器登录数量上限
+	MaxLanClient    *int    `json:"maxLanClient"`               // LAN 接入数量上限
 }
 
 func api_admin_update_plan(c *gin.Context) {

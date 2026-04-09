@@ -456,7 +456,10 @@ func buildDataUserWithDevice(user *User, device *DataDevice) *DataUser {
 		Language:         user.Language,
 		IsRetailer:       user.IsRetailer != nil && *user.IsRetailer,
 		Roles:            user.Roles,
-		IsAdmin:         user.IsAdmin != nil && *user.IsAdmin,
-		BetaOptedIn:     user.BetaOptedIn != nil && *user.BetaOptedIn,
+		IsAdmin:          user.IsAdmin != nil && *user.IsAdmin,
+		BetaOptedIn:      user.BetaOptedIn != nil && *user.BetaOptedIn,
+		MaxRouterDevice:  user.MaxRouterDevice,
+		MaxLanClient:     user.MaxLanClient,
+		PlanPID:          user.PlanPID,
 	}
 }
