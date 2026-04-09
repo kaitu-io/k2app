@@ -446,10 +446,29 @@ Stored locally on router in `/etc/k2r/storage.json` (existing encrypted storage)
 
 ### 6.4 LAN Device Discovery
 
-ARP table scan:
-- Read `/proc/net/arp` or `ip neigh show`
-- Filter to configured LAN subnets only
-- Resolve hostname via reverse DNS where available
+Platform-aware discovery with layered fallback:
+
+```
+Detect /usr/bin/ubus?
+  ├─ Yes (OpenWrt) → ubus call dhcp ipv4leases + ubus call hostapd.wlan0 get_clients
+  │                   Rich data: MAC, IP, hostname, WiFi signal/rate
+  └─ No (standard Linux)
+       ├─ dnsmasq lease file exists? → parse /var/lib/misc/dnsmasq.leases (or /tmp/dhcp.leases)
+       │                               Data: MAC, IP, hostname, lease expiry
+       └─ fallback → ip neigh show
+                      Data: MAC, IP, state (REACHABLE/STALE/etc.), no hostname
+```
+
+**OpenWrt `ubus` advantages over raw ARP:**
+- Structured JSON output (no text parsing)
+- Hostname from DHCP lease (not unreliable reverse DNS)
+- WiFi metadata (signal strength, connection rate) — future use
+- Covers all clients including wired + wireless
+
+**Implementation:**
+- Auto-detect platform at gateway startup, cache detection result
+- All backends implement same interface: `[]LanDevice{MAC, IP, Hostname, Online}`
+- Filter discovered devices to configured LAN subnets only
 - Merge with allowlist data (remark, allowed status)
 
 ### 6.5 nftables Enforcement
