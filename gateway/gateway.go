@@ -84,13 +84,11 @@ func (g *Gateway) Run(addr string) error {
 	mux.HandleFunc("/api/platform", g.handlePlatform)
 	mux.HandleFunc("/api/upgrade", g.handleUpgrade)
 
-	// Router device management endpoints
-	if g.routerDeviceMgr != nil {
-		mux.HandleFunc("/api/router-devices", g.routerDeviceMgr.handleList)
-		mux.HandleFunc("/api/router-devices/allow", g.routerDeviceMgr.handleAllow)
-		mux.HandleFunc("/api/router-devices/remove", g.routerDeviceMgr.handleRemove)
-		mux.HandleFunc("/api/router-devices/mode", g.routerDeviceMgr.handleMode)
-	}
+	// Router device management (state resolved per-request — nil until doUp).
+	mux.HandleFunc("/api/router-devices", g.handleRouterDevices)
+	mux.HandleFunc("/api/router-devices/allow", g.handleRouterDeviceAllow)
+	mux.HandleFunc("/api/router-devices/remove", g.handleRouterDeviceRemove)
+	mux.HandleFunc("/api/router-devices/mode", g.handleRouterDeviceMode)
 
 	if webapp := newWebappHandler(g.version, g.commit, g.arch); webapp != nil {
 		mux.Handle("/", webapp)
@@ -213,6 +211,7 @@ func (g *Gateway) doUp(cfg *GatewayConfig) error {
 	ecfg := engineConfig(cfg, prov, g.broadcastSnapshot)
 	if err := eng.Start(ecfg); err != nil {
 		prov.Close()
+		interceptor.Remove()
 		sc.Restore()
 		return err
 	}
@@ -248,6 +247,7 @@ func (g *Gateway) closeTunnel() {
 	g.provider = nil
 	sc := g.sysctl
 	g.sysctl = sysctlState{}
+	g.routerDeviceMgr = nil
 	g.mu.Unlock()
 
 	if eng != nil {

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"runtime"
+	"sync/atomic"
 	"time"
 
 	"github.com/sasha-s/go-deadlock"
@@ -35,6 +36,7 @@ type UpdateProgress struct {
 // Updater manages OTA updates with persistent state recovery.
 type Updater struct {
 	mu             deadlock.Mutex
+	updating       atomic.Bool // prevents concurrent Apply()
 	currentVersion string
 	binPath        string
 	progress       UpdateProgress
@@ -100,7 +102,13 @@ func (u *Updater) RecoverOnStartup() {
 }
 
 // Apply performs the OTA update with persistent state at each stage.
+// Only one Apply() can run at a time — concurrent calls return immediately.
 func (u *Updater) Apply() error {
+	if !u.updating.CompareAndSwap(false, true) {
+		return fmt.Errorf("update already in progress")
+	}
+	defer u.updating.Store(false)
+
 	info, err := FetchLatestK2r()
 	if err != nil {
 		return fmt.Errorf("check: %w", err)

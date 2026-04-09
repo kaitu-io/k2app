@@ -10,10 +10,15 @@ import (
 	"github.com/google/nftables"
 	"github.com/google/nftables/binaryutil"
 	"github.com/google/nftables/expr"
+	"github.com/sasha-s/go-deadlock"
 	"golang.org/x/sys/unix"
 )
 
+// nftNetlinkInterceptor manages nftables rules via the netlink API.
+// mu is a serialization lock protecting the nftables.Conn (not goroutine-safe).
+// All methods that touch conn/table/chain/macSet must hold mu.
 type nftNetlinkInterceptor struct {
+	mu        deadlock.Mutex // serialization: nftables.Conn access
 	conn      *nftables.Conn
 	table     *nftables.Table
 	chain     *nftables.Chain
@@ -35,6 +40,9 @@ func newNftNetlinkInterceptor() (*nftNetlinkInterceptor, error) {
 func (n *nftNetlinkInterceptor) Name() string { return "nftables-netlink" }
 
 func (n *nftNetlinkInterceptor) Install(cfg InterceptConfig) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
 	// Delete stale table if exists (idempotent cleanup)
 	n.conn.DelTable(&nftables.Table{Family: nftables.TableFamilyINet, Name: "k2r"})
 	_ = n.conn.Flush()
@@ -80,6 +88,9 @@ func (n *nftNetlinkInterceptor) Install(cfg InterceptConfig) error {
 }
 
 func (n *nftNetlinkInterceptor) Remove() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
 	if n.table != nil {
 		n.conn.DelTable(n.table)
 		_ = n.conn.Flush()
@@ -293,6 +304,9 @@ func (n *nftNetlinkInterceptor) addTPROXYRules(cfg InterceptConfig) {
 // --- MAC set live operations (implements MACManager) ---
 
 func (n *nftNetlinkInterceptor) AddMAC(macStr string) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
 	if n.macSet == nil {
 		return fmt.Errorf("MAC set not initialized (not in allowlist mode)")
 	}
@@ -307,6 +321,9 @@ func (n *nftNetlinkInterceptor) AddMAC(macStr string) error {
 }
 
 func (n *nftNetlinkInterceptor) RemoveMAC(macStr string) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
 	if n.macSet == nil {
 		return fmt.Errorf("MAC set not initialized")
 	}

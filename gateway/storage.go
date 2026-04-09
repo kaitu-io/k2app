@@ -165,12 +165,15 @@ func (s *Storage) load() {
 }
 
 // save persists the current state to disk atomically (write-to-tmp + rename).
+// Holds RLock for the marshal step to prevent concurrent map iteration + write.
 func (s *Storage) save() error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0700); err != nil {
 		return fmt.Errorf("storage save: mkdir: %w", err)
 	}
 
+	s.mu.RLock()
 	data, err := json.MarshalIndent(s.data, "", "  ")
+	s.mu.RUnlock()
 	if err != nil {
 		return fmt.Errorf("storage save: marshal: %w", err)
 	}

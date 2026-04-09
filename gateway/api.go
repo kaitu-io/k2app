@@ -266,6 +266,43 @@ func (g *Gateway) handleUpgrade(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// --- Router device management handlers ---
+// Each resolves g.routerDeviceMgr under g.mu, same pattern as handleStatus.
+
+func (g *Gateway) requireRDM(w http.ResponseWriter) *RouterDeviceManager {
+	g.mu.Lock()
+	rdm := g.routerDeviceMgr
+	g.mu.Unlock()
+	if rdm == nil {
+		writeJSON(w, Response{Code: 1, Message: "not connected"})
+	}
+	return rdm
+}
+
+func (g *Gateway) handleRouterDevices(w http.ResponseWriter, r *http.Request) {
+	if rdm := g.requireRDM(w); rdm != nil {
+		rdm.handleList(w, r)
+	}
+}
+
+func (g *Gateway) handleRouterDeviceAllow(w http.ResponseWriter, r *http.Request) {
+	if rdm := g.requireRDM(w); rdm != nil {
+		rdm.handleAllow(w, r)
+	}
+}
+
+func (g *Gateway) handleRouterDeviceRemove(w http.ResponseWriter, r *http.Request) {
+	if rdm := g.requireRDM(w); rdm != nil {
+		rdm.handleRemove(w, r)
+	}
+}
+
+func (g *Gateway) handleRouterDeviceMode(w http.ResponseWriter, r *http.Request) {
+	if rdm := g.requireRDM(w); rdm != nil {
+		rdm.handleMode(w, r)
+	}
+}
+
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(v)

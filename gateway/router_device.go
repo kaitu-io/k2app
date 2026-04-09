@@ -157,18 +157,14 @@ func (m *RouterDeviceManager) handleAllow(w http.ResponseWriter, r *http.Request
 	entry := RouterDeviceEntry{MAC: mac, Remark: body.Remark, AddedAt: time.Now().Unix()}
 	m.entries = append(m.entries, entry)
 	inAllowlist := m.mode == "allowlist"
-	interceptor := m.interceptor
+	cb := m.onModeChange
 	snapshot := m.persistSnapshot()
 	m.mu.Unlock()
 
-	// I/O outside lock: persist to disk + netlink set update
+	// I/O outside lock: persist to disk + full interceptor reinstall
 	m.persistFromSnapshot(snapshot)
-	if inAllowlist {
-		if mm, ok := interceptor.(MACManager); ok {
-			if err := mm.AddMAC(mac); err != nil {
-				slog.Warn("gateway: live MAC add failed", "mac", mac, "err", err)
-			}
-		}
+	if inAllowlist && cb != nil {
+		cb()
 	}
 
 	writeJSON(w, Response{Code: 0, Message: "ok"})
@@ -206,18 +202,14 @@ func (m *RouterDeviceManager) handleRemove(w http.ResponseWriter, r *http.Reques
 	}
 	m.entries = remaining
 	inAllowlist := m.mode == "allowlist"
-	interceptor := m.interceptor
+	cb := m.onModeChange
 	snapshot := m.persistSnapshot()
 	m.mu.Unlock()
 
-	// I/O outside lock
+	// I/O outside lock: persist to disk + full interceptor reinstall
 	m.persistFromSnapshot(snapshot)
-	if inAllowlist {
-		if mm, ok := interceptor.(MACManager); ok {
-			if err := mm.RemoveMAC(mac); err != nil {
-				slog.Warn("gateway: live MAC remove failed", "mac", mac, "err", err)
-			}
-		}
+	if inAllowlist && cb != nil {
+		cb()
 	}
 
 	writeJSON(w, Response{Code: 0, Message: "ok"})
