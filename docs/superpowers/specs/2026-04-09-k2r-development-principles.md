@@ -2,17 +2,25 @@
 
 Lessons from sing-box router implementation, applied to k2r gateway development.
 
-## 1. nftables: Shell Exec Is Fine for k2r's Scope
+## 1. nftables: Shell Exec Now, Go Library Later
 
-**Principle:** Keep current `exec.Command("nft", ...)` approach. Do not switch to Go nftables library.
+**Principle:** Current release keeps shell exec + iptables fallback. Go nftables library is a future optimization, not a current priority.
 
-**Why:** sing-box uses Go library because they generate hundreds of dynamic rules. k2r has ~10-20 rules total. Shell exec is simpler, more readable, and directly debuggable (`nft list table inet k2r`). MAC set operations are one-liners: `nft add element inet k2r allowed_router_devices { AA:BB:CC:DD:EE:FF }`.
+**Why (keep shell exec now):**
+- k2r has ~10-20 rules total, shell exec is simpler and debuggable
+- MAC set operations are one-liners: `nft add/delete element ...`
+- iptables fallback covers systems without `nft` binary (Alpine, minimal installs, NAS)
+
+**Why (Go library is the long-term direction):**
+- Go nftables library (`google/nftables`) speaks netlink directly to kernel, no `nft` binary needed
+- iptables is being deprecated; future Linux distros may drop it
+- Some targets (NAS, embedded Linux) have nftables kernel support but no `nft` userspace tool
+- Go library would eliminate dependency on both `nft` and `iptables` binaries
 
 **Apply to k2r:**
-- Keep `intercept_nft.go` shell exec pattern
-- MAC allowlist: `nft add/delete element` commands (atomic at kernel level)
-- Cleanup: `nft delete table inet k2r` (already implemented)
-- Only reconsider Go library if rule complexity grows significantly
+- This release: keep shell exec + iptables fallback (covers all current targets)
+- Future: migrate nftables backend to Go library when iptables fallback becomes insufficient
+- Keep iptables fallback regardless (old kernels, legacy systems)
 
 ## 2. Independent nftables Table
 
