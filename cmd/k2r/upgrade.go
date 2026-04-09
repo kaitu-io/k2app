@@ -63,16 +63,18 @@ Usage: k2r upgrade [--check]
 		os.Exit(1)
 	}
 
-	// Find a working endpoint and build the download URL.
-	var downloadURL string
+	// Try each CDN endpoint until download succeeds.
+	var lastErr error
 	for _, ep := range gateway.K2rReleaseEndpoints {
-		downloadURL = gateway.BinaryURL(ep, info.Version)
-		break
+		downloadURL := gateway.BinaryURL(ep, info.Version)
+		fmt.Printf("Downloading %s...\n", downloadURL)
+		if lastErr = gateway.DownloadAndReplace(downloadURL, expectedHash, self); lastErr == nil {
+			break
+		}
+		fmt.Printf("Failed (%v), trying next endpoint...\n", lastErr)
 	}
-
-	fmt.Printf("Downloading %s...\n", downloadURL)
-	if err := gateway.DownloadAndReplace(downloadURL, expectedHash, self); err != nil {
-		out.fail("UPGRADE_FAILED", err.Error(), "")
+	if lastErr != nil {
+		out.fail("UPGRADE_FAILED", lastErr.Error(), "")
 		os.Exit(1)
 	}
 

@@ -288,6 +288,12 @@ func TestNftRuleGeneration_DNSRedirect(t *testing.T) {
 	if !strings.Contains(script, "th dport 53 redirect to :12346") {
 		t.Error("missing DNS redirect rule")
 	}
+	if !strings.Contains(script, "add chain inet k2r dnsredir { type nat hook prerouting priority dstnat") {
+		t.Error("DNS redirect should use a NAT chain, not filter chain")
+	}
+	if strings.Contains(script, "add rule inet k2r prerouting") && strings.Contains(script, "redirect") {
+		t.Error("redirect rules should NOT be in the filter chain")
+	}
 }
 
 func TestNftRuleGeneration_DNSRedirect_Disabled(t *testing.T) {

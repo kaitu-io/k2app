@@ -124,6 +124,7 @@ func (m *RouterDeviceManager) handleAllow(w http.ResponseWriter, r *http.Request
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 	var body struct {
 		MAC    string `json:"mac"`
 		Remark string `json:"remark"`
@@ -178,6 +179,7 @@ func (m *RouterDeviceManager) handleRemove(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 	var body struct {
 		MAC string `json:"mac"`
 	}
@@ -226,6 +228,7 @@ func (m *RouterDeviceManager) handleMode(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 	var body struct {
 		Mode string `json:"mode"`
 	}

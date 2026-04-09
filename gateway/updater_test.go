@@ -40,15 +40,33 @@ func TestUpdateState_SaveLoadClear(t *testing.T) {
 }
 
 func TestRecoverOnStartup_DownloadInterrupted(t *testing.T) {
-	tmpFile := t.TempDir() + "/k2r-update-0.4.3"
+	dir := t.TempDir()
+	tmpFile := dir + "/k2r-update-0.4.3"
 	os.WriteFile(tmpFile, []byte("partial download"), 0644)
 
+	// Override updateStatePath for test
+	origPath := updateStatePath
+	updateStatePath = dir + "/update-state.json"
+	t.Cleanup(func() { updateStatePath = origPath })
+
+	// Write state that simulates interrupted download
+	state := &UpdateState{
+		Stage: "downloading", Version: "0.4.3",
+		TmpPath: tmpFile, BakPath: dir + "/k2r.bak",
+		StartedAt: time.Now().Unix(),
+	}
+	saveUpdateState(state)
+
 	u := NewUpdater("0.4.2")
-	// Simulate: state says "downloading" with tmpFile
-	// RecoverOnStartup should clean it up
-	// (Can't test directly without mocking updateStatePath, but validates constructor)
-	if u.currentVersion != "0.4.2" {
-		t.Errorf("version = %s", u.currentVersion)
+	u.RecoverOnStartup()
+
+	// Tmp file should be cleaned up
+	if _, err := os.Stat(tmpFile); !os.IsNotExist(err) {
+		t.Error("expected tmp file to be removed after recovery")
+	}
+	// State file should be cleared
+	if _, err := os.Stat(updateStatePath); !os.IsNotExist(err) {
+		t.Error("expected state file to be cleared after recovery")
 	}
 }
 

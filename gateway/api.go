@@ -32,11 +32,14 @@ func (g *Gateway) handlePing(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, Response{Code: 0, Message: "pong"})
 }
 
+const maxRequestBody = 1 << 20 // 1 MB
+
 func (g *Gateway) handleCore(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 	var req Request
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, Response{Code: 1, Message: "bad request"})
@@ -139,6 +142,7 @@ func (g *Gateway) handleLogLevel(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 	var body struct {
 		Level string `json:"level"`
 	}
@@ -155,6 +159,7 @@ func (g *Gateway) handleStorage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 	var req struct {
 		Action string `json:"action"`
 		Key    string `json:"key"`
@@ -220,6 +225,7 @@ func (g *Gateway) handleUpgrade(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 	var req struct {
 		Action string `json:"action"`
 	}

@@ -9,11 +9,12 @@ import (
 	"log/slog"
 	"os"
 	"runtime"
-	"sync"
 	"time"
+
+	"github.com/sasha-s/go-deadlock"
 )
 
-const updateStatePath = "/etc/k2r/update-state.json"
+var updateStatePath = "/etc/k2r/update-state.json"
 
 // UpdateState persisted to disk for crash recovery.
 type UpdateState struct {
@@ -33,7 +34,7 @@ type UpdateProgress struct {
 
 // Updater manages OTA updates with persistent state recovery.
 type Updater struct {
-	mu             sync.Mutex
+	mu             deadlock.Mutex
 	currentVersion string
 	binPath        string
 	progress       UpdateProgress
@@ -78,7 +79,9 @@ func (u *Updater) RecoverOnStartup() {
 			// Replace may have failed — rollback from .bak if exists
 			if _, err := os.Stat(state.BakPath); err == nil {
 				slog.Warn("gateway: rolling back after interrupted replace", "bak", state.BakPath)
-				os.Rename(state.BakPath, u.binPath)
+				if err := os.Rename(state.BakPath, u.binPath); err != nil {
+					slog.Error("gateway: rollback rename failed", "err", err, "bak", state.BakPath)
+				}
 				os.Chmod(u.binPath, 0755)
 			}
 			os.Remove(state.TmpPath)
@@ -113,7 +116,6 @@ func (u *Updater) Apply() error {
 		return fmt.Errorf("no binary for linux/%s", arch)
 	}
 
-	downloadURL := BinaryURL(K2rReleaseEndpoints[0], info.Version)
 	bakPath := u.binPath + ".bak"
 
 	state := &UpdateState{
@@ -139,13 +141,20 @@ func (u *Updater) Apply() error {
 	saveUpdateState(state)
 	u.setProgress("replacing", 0, "")
 
-	if err := DownloadAndReplace(downloadURL, expectedHash, u.binPath); err != nil {
-		// Rollback from backup
-		slog.Warn("gateway: download failed, rolling back", "err", err)
+	var lastErr error
+	for _, ep := range K2rReleaseEndpoints {
+		downloadURL := BinaryURL(ep, info.Version)
+		if lastErr = DownloadAndReplace(downloadURL, expectedHash, u.binPath); lastErr == nil {
+			break
+		}
+		slog.Warn("gateway: download failed, trying next endpoint", "url", downloadURL, "err", lastErr)
+	}
+	if lastErr != nil {
+		slog.Warn("gateway: all endpoints failed, rolling back", "err", lastErr)
 		os.Rename(bakPath, u.binPath)
 		clearUpdateState()
-		u.setProgress("error", 0, err.Error())
-		return fmt.Errorf("download+replace: %w", err)
+		u.setProgress("error", 0, lastErr.Error())
+		return fmt.Errorf("download+replace: %w", lastErr)
 	}
 
 	// Stage 4: Restart
@@ -175,9 +184,18 @@ func (u *Updater) setProgress(stage string, progress float64, errMsg string) {
 // --- Update state persistence ---
 
 func saveUpdateState(state *UpdateState) {
-	data, _ := json.Marshal(state)
-	os.MkdirAll("/etc/k2r", 0755)
-	os.WriteFile(updateStatePath, data, 0644)
+	data, err := json.Marshal(state)
+	if err != nil {
+		slog.Warn("gateway: failed to marshal update state", "err", err)
+		return
+	}
+	if err := os.MkdirAll("/etc/k2r", 0700); err != nil {
+		slog.Warn("gateway: failed to create state dir for update", "err", err)
+		return
+	}
+	if err := os.WriteFile(updateStatePath, data, 0644); err != nil {
+		slog.Warn("gateway: failed to write update state", "err", err)
+	}
 }
 
 func loadUpdateState() *UpdateState {
@@ -211,7 +229,13 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer out.Close()
-	_, err = io.Copy(out, in)
-	return err
+	if _, err = io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	if err = out.Sync(); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
 }

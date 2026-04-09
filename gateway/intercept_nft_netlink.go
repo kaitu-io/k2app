@@ -62,7 +62,7 @@ func (n *nftNetlinkInterceptor) Install(cfg InterceptConfig) error {
 	}
 
 	if cfg.DNSRedirect && cfg.DNSPort > 0 {
-		n.addDNSRedirect(cfg)
+		n.addDNSRedirect(cfg, n.table)
 	}
 
 	n.addTPROXYRules(cfg)
@@ -175,7 +175,17 @@ func (n *nftNetlinkInterceptor) addMACAllowlist(macs []string) {
 	})
 }
 
-func (n *nftNetlinkInterceptor) addDNSRedirect(cfg InterceptConfig) {
+func (n *nftNetlinkInterceptor) addDNSRedirect(cfg InterceptConfig, table *nftables.Table) {
+	// DNS redirect requires a NAT chain (redirect is a NAT operation).
+	// Using the filter chain would be incorrect per nftables spec.
+	dnsChain := n.conn.AddChain(&nftables.Chain{
+		Name:     "dnsredir",
+		Table:    table,
+		Type:     nftables.ChainTypeNAT,
+		Hooknum:  nftables.ChainHookPrerouting,
+		Priority: nftables.ChainPriorityNATDest,
+	})
+
 	v4Subnets, v6Subnets := splitSubnetsByFamily(cfg.LANSubnets)
 	dnsPort := uint16(cfg.DNSPort)
 
@@ -186,7 +196,7 @@ func (n *nftNetlinkInterceptor) addDNSRedirect(cfg InterceptConfig) {
 		}
 		for _, proto := range []byte{unix.IPPROTO_TCP, unix.IPPROTO_UDP} {
 			n.conn.AddRule(&nftables.Rule{
-				Table: n.table, Chain: n.chain,
+				Table: table, Chain: dnsChain,
 				Exprs: []expr.Any{
 					&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 12, Len: 4},
 					&expr.Bitwise{SourceRegister: 1, DestRegister: 1, Len: 4, Mask: ipNet.Mask, Xor: make([]byte, 4)},
@@ -210,7 +220,7 @@ func (n *nftNetlinkInterceptor) addDNSRedirect(cfg InterceptConfig) {
 		}
 		for _, proto := range []byte{unix.IPPROTO_TCP, unix.IPPROTO_UDP} {
 			n.conn.AddRule(&nftables.Rule{
-				Table: n.table, Chain: n.chain,
+				Table: table, Chain: dnsChain,
 				Exprs: []expr.Any{
 					&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 8, Len: 16},
 					&expr.Bitwise{SourceRegister: 1, DestRegister: 1, Len: 16, Mask: ipNet.Mask, Xor: make([]byte, 16)},

@@ -15,8 +15,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
+	"github.com/sasha-s/go-deadlock"
 	"golang.org/x/crypto/hkdf"
 )
 
@@ -37,7 +37,7 @@ type storageFile struct {
 // identifier via HKDF-SHA256. Plaintext values (no ENC1: prefix) are read
 // as-is for backward compatibility.
 type Storage struct {
-	mu   sync.RWMutex
+	mu   deadlock.RWMutex
 	path string
 	key  [32]byte
 	data storageFile
@@ -203,17 +203,16 @@ func (s *Storage) Set(key, value string) error {
 	encrypted := encryptValue(value, s.key)
 	s.mu.Lock()
 	s.data.Items[key] = encrypted
-	err := s.save()
 	s.mu.Unlock()
-	return err
+	return s.save()
 }
 
 // Remove deletes key from storage and persists the change.
 func (s *Storage) Remove(key string) {
 	s.mu.Lock()
 	delete(s.data.Items, key)
-	s.save() //nolint:errcheck
 	s.mu.Unlock()
+	s.save() //nolint:errcheck
 }
 
 // Has reports whether key exists in storage.
@@ -239,6 +238,6 @@ func (s *Storage) Keys() []string {
 func (s *Storage) Clear() {
 	s.mu.Lock()
 	s.data.Items = make(map[string]string)
-	s.save() //nolint:errcheck
 	s.mu.Unlock()
+	s.save() //nolint:errcheck
 }

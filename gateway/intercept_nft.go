@@ -69,6 +69,13 @@ func (n *nftShellInterceptor) buildScript(cfg InterceptConfig) string {
 
 	lines = append(lines,
 		"add chain inet k2r prerouting { type filter hook prerouting priority mangle ; policy accept ; }")
+
+	// DNS redirect needs a NAT chain (redirect is a NAT operation)
+	if cfg.DNSRedirect && cfg.DNSPort > 0 {
+		lines = append(lines,
+			"add chain inet k2r dnsredir { type nat hook prerouting priority dstnat ; policy accept ; }")
+	}
+
 	lines = append(lines,
 		`add rule inet k2r prerouting iifname "lo" return`)
 
@@ -90,16 +97,16 @@ func (n *nftShellInterceptor) buildScript(cfg InterceptConfig) string {
 			"add rule inet k2r prerouting ether saddr != @allowed_macs drop")
 	}
 
-	// DNS redirect: port 53 → DNSPort
+	// DNS redirect: port 53 → DNSPort (in NAT chain, not filter chain)
 	if cfg.DNSRedirect && cfg.DNSPort > 0 {
 		dnsPort := fmt.Sprintf("%d", cfg.DNSPort)
 		for _, subnet := range v4Subnets {
 			lines = append(lines, fmt.Sprintf(
-				"add rule inet k2r prerouting ip saddr %s meta l4proto { tcp, udp } th dport 53 redirect to :%s", subnet, dnsPort))
+				"add rule inet k2r dnsredir ip saddr %s meta l4proto { tcp, udp } th dport 53 redirect to :%s", subnet, dnsPort))
 		}
 		for _, subnet := range v6Subnets {
 			lines = append(lines, fmt.Sprintf(
-				"add rule inet k2r prerouting ip6 saddr %s meta l4proto { tcp, udp } th dport 53 redirect to :%s", subnet, dnsPort))
+				"add rule inet k2r dnsredir ip6 saddr %s meta l4proto { tcp, udp } th dport 53 redirect to :%s", subnet, dnsPort))
 		}
 	}
 
