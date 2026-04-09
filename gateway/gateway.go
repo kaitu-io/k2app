@@ -39,10 +39,12 @@ type Gateway struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	storage *Storage
-	version string
-	commit  string
-	arch    string
+	storage         *Storage
+	version         string
+	commit          string
+	arch            string
+	routerDeviceMgr *RouterDeviceManager
+	updater         *Updater
 }
 
 // New creates a Gateway ready to Run.
@@ -57,6 +59,7 @@ func New(version, commit, arch string) *Gateway {
 		version:    version,
 		commit:     commit,
 		arch:       arch,
+		updater:    NewUpdater(version),
 	}
 }
 
@@ -68,6 +71,10 @@ func (g *Gateway) Run(addr string) error {
 
 	g.cleanStaleRules()
 
+	if g.updater != nil {
+		g.updater.RecoverOnStartup()
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ping", g.handlePing)
 	mux.HandleFunc("/api/core", g.handleCore)
@@ -76,6 +83,14 @@ func (g *Gateway) Run(addr string) error {
 	mux.HandleFunc("/api/storage", g.handleStorage)
 	mux.HandleFunc("/api/platform", g.handlePlatform)
 	mux.HandleFunc("/api/upgrade", g.handleUpgrade)
+
+	// Router device management endpoints
+	if g.routerDeviceMgr != nil {
+		mux.HandleFunc("/api/router-devices", g.routerDeviceMgr.handleList)
+		mux.HandleFunc("/api/router-devices/allow", g.routerDeviceMgr.handleAllow)
+		mux.HandleFunc("/api/router-devices/remove", g.routerDeviceMgr.handleRemove)
+		mux.HandleFunc("/api/router-devices/mode", g.routerDeviceMgr.handleMode)
+	}
 
 	if webapp := newWebappHandler(g.version, g.commit, g.arch); webapp != nil {
 		mux.Handle("/", webapp)
@@ -148,11 +163,49 @@ func (g *Gateway) doUp(cfg *GatewayConfig) error {
 		return err
 	}
 
-	icfg := InterceptConfig{
-		ListenPort: cfg.ListenPort,
-		LANSubnets: subnets,
-		ExcludeIPs: excludeIPs,
+	// Initialize RouterDeviceManager with quota from user Tier
+	rdm := &RouterDeviceManager{
+		quota:       cfg.MaxLanClient,
+		lanSubnets:  subnets,
+		interceptor: interceptor,
+		storage:     g.storage,
 	}
+	rdm.loadFromStorage()
+
+	// Build extended InterceptConfig with all router features
+	icfg := InterceptConfig{
+		ListenPort:    cfg.ListenPort,
+		LANSubnets:    subnets,
+		ExcludeIPs:    excludeIPs,
+		DNSRedirect:   cfg.DNSRedirect,
+		DNSPort:       cfg.DNSPort,
+		AllowlistMode: rdm.mode == "allowlist",
+		AllowedMACs:   rdm.getAllowedMACs(),
+	}
+
+	// Set mode change callback — triggers interceptor reinstall
+	rdm.onModeChange = func() {
+		rdm.mu.RLock()
+		newICfg := icfg
+		newICfg.AllowlistMode = rdm.mode == "allowlist"
+		newICfg.AllowedMACs = make([]string, len(rdm.entries))
+		for i, e := range rdm.entries {
+			newICfg.AllowedMACs[i] = e.MAC
+		}
+		rdm.mu.RUnlock()
+
+		g.mu.Lock()
+		interceptor := g.interceptor
+		g.mu.Unlock()
+
+		if interceptor != nil {
+			interceptor.Remove()
+			if err := interceptor.Install(newICfg); err != nil {
+				slog.Error("gateway: failed to reinstall interceptor after mode change", "err", err)
+			}
+		}
+	}
+
 	prov := newGatewayProvider(interceptor, icfg)
 
 	eng := engine.New()
@@ -169,6 +222,7 @@ func (g *Gateway) doUp(cfg *GatewayConfig) error {
 	g.interceptor = interceptor
 	g.provider = prov
 	g.sysctl = sc
+	g.routerDeviceMgr = rdm
 	g.mu.Unlock()
 
 	saveState(&persistedState{Config: cfg, State: "connected", Timestamp: time.Now()})

@@ -104,19 +104,31 @@ func (g *Gateway) handleStatus(w http.ResponseWriter) {
 		subnets = g.provider.cfg.LANSubnets
 		listenPort = g.provider.cfg.ListenPort
 	}
+	var maxLanClient int
+	var routerDeviceMode string
+	if g.routerDeviceMgr != nil {
+		g.routerDeviceMgr.mu.RLock()
+		maxLanClient = g.routerDeviceMgr.quota
+		routerDeviceMode = g.routerDeviceMgr.mode
+		g.routerDeviceMgr.mu.RUnlock()
+	}
 	g.mu.Unlock()
 
 	type gatewayStatus struct {
 		engine.Status
-		LANSubnets  []string `json:"lanSubnets,omitempty"`
-		Interceptor string   `json:"interceptor,omitempty"`
-		ListenPort  int      `json:"listenPort,omitempty"`
+		LANSubnets       []string `json:"lanSubnets,omitempty"`
+		Interceptor      string   `json:"interceptor,omitempty"`
+		ListenPort       int      `json:"listenPort,omitempty"`
+		MaxLanClient     int      `json:"maxLanClient,omitempty"`
+		RouterDeviceMode string   `json:"routerDeviceMode,omitempty"`
 	}
 	writeJSON(w, Response{Code: 0, Data: gatewayStatus{
-		Status:      status,
-		Interceptor: interceptorName,
-		LANSubnets:  subnets,
-		ListenPort:  listenPort,
+		Status:           status,
+		Interceptor:      interceptorName,
+		LANSubnets:       subnets,
+		ListenPort:       listenPort,
+		MaxLanClient:     maxLanClient,
+		RouterDeviceMode: routerDeviceMode,
 	}})
 }
 
