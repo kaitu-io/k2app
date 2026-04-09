@@ -2,25 +2,21 @@
 
 Lessons from sing-box router implementation, applied to k2r gateway development.
 
-## 1. nftables: Shell Exec Now, Go Library Later
+## 1. nftables: Use Go Library (Direct Netlink)
 
-**Principle:** Current release keeps shell exec + iptables fallback. Go nftables library is a future optimization, not a current priority.
+**Principle:** Rewrite `intercept_nft.go` to use `google/nftables` Go library, speaking netlink directly to kernel. Keep iptables as fallback for old kernels.
 
-**Why (keep shell exec now):**
-- k2r has ~10-20 rules total, shell exec is simpler and debuggable
-- MAC set operations are one-liners: `nft add/delete element ...`
-- iptables fallback covers systems without `nft` binary (Alpine, minimal installs, NAS)
-
-**Why (Go library is the long-term direction):**
-- Go nftables library (`google/nftables`) speaks netlink directly to kernel, no `nft` binary needed
-- iptables is being deprecated; future Linux distros may drop it
-- Some targets (NAS, embedded Linux) have nftables kernel support but no `nft` userspace tool
-- Go library would eliminate dependency on both `nft` and `iptables` binaries
+**Why:**
+- 不依赖 `nft` 二进制 — 非 OpenWrt 的 Linux（NAS、Alpine、嵌入式）可能没装 `nft` 用户态工具，但内核支持 nftables (3.13+)
+- iptables 正在被淘汰 — 长期不能依赖它作为主要方案
+- 原子事务 — netlink batch 提交，多条规则要么全成功要么全失败
+- 结构化错误 — netlink 返回具体错误码，不用解析 stderr 文本
+- MAC set 动态操作更干净 — 直接操作 set elements，不用拼字符串
 
 **Apply to k2r:**
-- This release: keep shell exec + iptables fallback (covers all current targets)
-- Future: migrate nftables backend to Go library when iptables fallback becomes insufficient
-- Keep iptables fallback regardless (old kernels, legacy systems)
+- 重写 `intercept_nft.go`：用 `google/nftables` 库替代 `exec.Command("nft", ...)`
+- 保留 `intercept_ipt.go` 作为 fallback（旧内核、不支持 nftables 的系统）
+- `NewInterceptor` 自动检测：优先 Go nftables (netlink)，回退 iptables (shell exec)
 
 ## 2. Independent nftables Table
 

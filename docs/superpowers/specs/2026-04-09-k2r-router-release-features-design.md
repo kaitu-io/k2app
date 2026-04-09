@@ -813,8 +813,8 @@ Based on `window._platform.platformType === 'gateway'`:
 | `gateway/api.go` | Add `/api/router-devices`, `/api/updater/*` endpoints |
 | `gateway/router_device.go` | New: allowlist CRUD, ARP scan, nftables set management |
 | `gateway/updater.go` | New: CDN check, download, verify, backup, replace, restart |
-| `gateway/intercept_nft.go` | Add `allowed_router_devices` set, conditional MAC filter rule, DNS redirect rules (port 53) |
-| `gateway/intercept_ipt.go` | Equivalent iptables MAC filter + DNS redirect |
+| `gateway/intercept_nft.go` | Rewrite: shell exec → `google/nftables` Go library (direct netlink). Add `allowed_router_devices` set, MAC filter rule, DNS redirect (port 53) |
+| `gateway/intercept_ipt.go` | Keep as fallback. Add equivalent iptables MAC filter + DNS redirect |
 
 ### Webapp (webapp/)
 
