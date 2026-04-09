@@ -2,17 +2,17 @@
 
 Lessons from sing-box router implementation, applied to k2r gateway development.
 
-## 1. nftables: Use Go Library, Not Shell Exec
+## 1. nftables: Shell Exec Is Fine for k2r's Scope
 
-**Principle:** All nftables operations via `github.com/google/nftables` (or sagernet fork), never shell out to `nft` command.
+**Principle:** Keep current `exec.Command("nft", ...)` approach. Do not switch to Go nftables library.
 
-**Why:** sing-box uses programmatic nftables (`Conn.Flush()` atomic commits). Benefits: type-safe rule construction, atomic setup/teardown, no shell injection risks, no output parsing. Their cleanup is simply "delete the entire table" — impossible to leave stale rules.
+**Why:** sing-box uses Go library because they generate hundreds of dynamic rules. k2r has ~10-20 rules total. Shell exec is simpler, more readable, and directly debuggable (`nft list table inet k2r`). MAC set operations are one-liners: `nft add element inet k2r allowed_router_devices { AA:BB:CC:DD:EE:FF }`.
 
 **Apply to k2r:**
-- `intercept_nft.go` should use Go nftables library
-- All rule changes via `Conn.AddSet()`, `Conn.AddRule()`, `Conn.Flush()`
-- MAC allowlist updates via nftables set element add/delete (atomic, no full-table rebuild)
-- Cleanup: `Conn.DelTable()` removes everything
+- Keep `intercept_nft.go` shell exec pattern
+- MAC allowlist: `nft add/delete element` commands (atomic at kernel level)
+- Cleanup: `nft delete table inet k2r` (already implemented)
+- Only reconsider Go library if rule complexity grows significantly
 
 ## 2. Independent nftables Table
 
@@ -71,17 +71,17 @@ Lessons from sing-box router implementation, applied to k2r gateway development.
 - Profile on actual router hardware (aarch64 + armv7), not just x86 dev machines
 - Avoid unnecessary memory allocations in the hot path (per-packet processing)
 
-## 7. OpenWrt fw4 Integration Pattern
+## 7. OpenWrt fw4 Integration — Verify During Testing
 
-**Principle:** Detect fw4 at runtime. Write compatibility rules to `/etc/nftables.d/`. Reload fw4. Clean up on exit.
+**Principle:** k2r's `table inet k2r` (priority mangle/-150) processes before fw4's chains (priority dstnat/-100). They should coexist without interference.
 
-**Why:** fw4 manages zones/forwarding. k2r's independent table handles interception, but fw4 needs ACCEPT rules for k2r's interfaces/ports. Writing to nftables.d ensures rules survive fw4 reloads.
+**Why:** Two independent nftables tables don't interact. k2r's TPROXY marks packets and ip-rule routes them to loopback before fw4 sees them. In theory, no fw4 integration needed.
 
 **Apply to k2r:**
-- On startup: detect fw4 (`nft list table inet fw4`)
-- If present: write `/etc/nftables.d/0-k2r.nft` with ACCEPT rules for TPROXY port + DNS redirect port
-- Call `fw4 reload`
-- On shutdown: delete the nftables.d file + `fw4 reload`
+- Test on real OpenWrt 22+ hardware with fw4 active
+- If fw4 blocks TPROXY traffic: add `/etc/nftables.d/0-k2r.nft` with ACCEPT rules + `fw4 reload`
+- If fw4 doesn't interfere: no action needed
+- This is a test-phase verification, not a design-phase decision
 
 ## 8. Clean Teardown is Non-Negotiable
 

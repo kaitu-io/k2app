@@ -492,6 +492,26 @@ table inet k2r {
 
 When allowlist changes, atomically update the nftables set (add/delete elements) without disrupting existing connections.
 
+### 6.6a DNS Redirect (nftables Implementation)
+
+**Problem:** OpenWrt default config has LAN devices using router IP as DNS server (dnsmasq on port 53). These DNS queries are locally-destined — NOT forwarded traffic — so TPROXY prerouting does not intercept them. Without DNS redirect, k2r cannot see DNS responses and smart routing (rule mode) breaks.
+
+**Solution:** When `dns_redirect: true` (default), add nftables rules to redirect port 53 traffic to k2r's DNS resolver:
+
+```nft
+# In table inet k2r, prerouting chain:
+# Redirect LAN DNS queries (to any destination including router itself) to k2r DNS port
+ip saddr 192.168.1.0/24 meta l4proto { tcp, udp } th dport 53 redirect to :$DNS_PORT
+```
+
+This intercepts both:
+- DNS to external servers (8.8.8.8:53) — already handled by TPROXY, redirect is redundant but harmless
+- DNS to router itself (192.168.1.1:53) — NOT handled by TPROXY, redirect is essential
+
+**Config field:** `dns_redirect` in `GatewayConfig` (already defined, nftables rules not yet implemented).
+
+**Note:** DNS redirect rule must be placed BEFORE TPROXY rules in the prerouting chain (DNS is a special case that needs redirect, not TPROXY).
+
 ### 6.6 Quota Enforcement & Refresh
 
 - k2r fetches gateway Subscription quota from Center at login
@@ -793,8 +813,8 @@ Based on `window._platform.platformType === 'gateway'`:
 | `gateway/api.go` | Add `/api/router-devices`, `/api/updater/*` endpoints |
 | `gateway/router_device.go` | New: allowlist CRUD, ARP scan, nftables set management |
 | `gateway/updater.go` | New: CDN check, download, verify, backup, replace, restart |
-| `gateway/intercept_nft.go` | Add `allowed_router_devices` set, conditional MAC filter rule |
-| `gateway/intercept_ipt.go` | Equivalent iptables MAC filter |
+| `gateway/intercept_nft.go` | Add `allowed_router_devices` set, conditional MAC filter rule, DNS redirect rules (port 53) |
+| `gateway/intercept_ipt.go` | Equivalent iptables MAC filter + DNS redirect |
 
 ### Webapp (webapp/)
 
