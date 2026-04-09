@@ -289,7 +289,7 @@ func api_login(c *gin.Context) {
 			// Router login: check router access permission first
 			if user.MaxRouterDevice == 0 {
 				log.Warnf(c, "user %d plan does not support router, rejecting gateway login", identify.UserID)
-				return fmt.Errorf("plan does not support router")
+				return e(ErrorPaymentRequired, "plan does not support router")
 			}
 			// Count only router devices
 			var routerCount int64
@@ -299,7 +299,7 @@ func api_login(c *gin.Context) {
 			}
 			if user.MaxRouterDevice > 0 && routerCount >= int64(user.MaxRouterDevice) {
 				log.Warnf(c, "router device limit reached for user %d (%d/%d)", identify.UserID, routerCount, user.MaxRouterDevice)
-				return fmt.Errorf("router device limit reached")
+				return e(ErrorForbidden, "router device limit reached")
 			}
 		} else {
 			// App device limit: count only app devices, kick oldest on limit
@@ -794,14 +794,14 @@ func api_password_login(c *gin.Context) {
 		if isGateway {
 			// Router login: check router access permission first
 			if user.MaxRouterDevice == 0 {
-				return fmt.Errorf("plan does not support router")
+				return e(ErrorPaymentRequired, "plan does not support router")
 			}
 			var routerCount int64
 			if err := tx.Model(&Device{}).Where("user_id = ? AND is_gateway = true", identify.UserID).Count(&routerCount).Error; err != nil {
 				return err
 			}
 			if user.MaxRouterDevice > 0 && routerCount >= int64(user.MaxRouterDevice) {
-				return fmt.Errorf("router device limit reached")
+				return e(ErrorForbidden, "router device limit reached")
 			}
 		} else {
 			// App device limit: count only app devices, kick oldest on limit

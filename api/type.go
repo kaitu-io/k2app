@@ -114,6 +114,7 @@ type DataUser struct {
 	AccessKeyCreatedAt int64                `json:"accessKeyCreatedAt,omitempty"` // Access Key 创建时间
 	BetaOptedIn        bool                 `json:"betaOptedIn"`                  // 是否订阅 beta
 	Tier               string               `json:"tier,omitempty"`               // 当前功能等级
+	MaxDevice          int                  `json:"maxDevice"`                    // app 设备数量上限
 	MaxRouterDevice    int                  `json:"maxRouterDevice"`              // 路由器登录数量上限
 	MaxLanClient       int                  `json:"maxLanClient"`                 // LAN 接入数量上限
 }
