@@ -829,3 +829,200 @@ git commit -m "fix(api): address test failures from Subscription migration"
 | User profile subscriptions | Task 7 |
 
 **Type consistency check:** `DataSubscription`, `DataPlan`, `Subscription`, `Plan` — field names and types consistent across all tasks. `getActiveSubscription`, `syncUserCache`, `getSubscriptionQuota`, `getUserSubscriptions` — same signatures used in all references.
+
+---
+
+## Supplement: Precision Details (12/10)
+
+The tasks above define WHAT to change. This supplement adds the EXACT edit locations and edge case handling for each task.
+
+### S1: Task 3 Edge Case — addProExpiredDays vs Subscription Expiry
+
+`addProExpiredDays` (kept for UserProHistory/IsFirstOrderDone/IsActivated) also writes `User.ExpiredAt` as a side effect. This creates a temporary inconsistency:
+
+```
+1. Upsert Subscription (correct expiry: now.AddDate(0, plan.Month, 0))
+2. addProExpiredDays writes User.ExpiredAt (slightly different: now + truncated days)
+3. syncUserCache overwrites User.ExpiredAt from Subscription (corrects it)
+```
+
+The intermediate value from step 2 is overwritten in step 3 within the same transaction. **No data inconsistency is committed.** The rounding difference (up to 1 day due to `int(hours/24)` truncation) is never visible to any reader.
+
+This is intentional — modifying `addProExpiredDays` to skip writing `ExpiredAt` would be a larger refactor touching the `tx.Save(user)` call (line 65) which saves ALL user fields. We accept the redundant write.
+
+### S2: Task 4 Exact Edit — fillDeviceAppInfo + isGateway
+
+File: `api/middleware.go`, line 65-76.
+
+**Current code:**
+```go
+func fillDeviceAppInfo(c *gin.Context, device *Device) {
+	if clientHeader := c.GetHeader("X-K2-Client"); clientHeader != "" {
+		if appInfo := parseClientHeader(clientHeader); appInfo != nil {
+			device.AppVersion = appInfo.Version
+			device.AppPlatform = appInfo.Platform
+			device.AppArch = appInfo.Arch
+			device.OSVersion = appInfo.OSVersion
+			device.DeviceModel = appInfo.DeviceModel
+		}
+	}
+}
+```
+
+**Replace with:**
+```go
+func fillDeviceAppInfo(c *gin.Context, device *Device) {
+	if clientHeader := c.GetHeader("X-K2-Client"); clientHeader != "" {
+		if appInfo := parseClientHeader(clientHeader); appInfo != nil {
+			device.AppVersion = appInfo.Version
+			device.AppPlatform = appInfo.Platform
+			device.AppArch = appInfo.Arch
+			device.OSVersion = appInfo.OSVersion
+			device.DeviceModel = appInfo.DeviceModel
+		}
+	}
+	// k2r gateway sends X-App-Info as JSON with isGateway flag
+	if appInfoHeader := c.GetHeader("X-App-Info"); appInfoHeader != "" {
+		var info struct {
+			Version   string `json:"version"`
+			Platform  string `json:"platform"`
+			Arch      string `json:"arch"`
+			IsGateway bool   `json:"isGateway"`
+		}
+		if json.Unmarshal([]byte(appInfoHeader), &info) == nil {
+			device.IsGateway = info.IsGateway
+			// X-App-Info fields override X-K2-Client if both present
+			if info.Version != "" {
+				device.AppVersion = info.Version
+			}
+			if info.Platform != "" {
+				device.AppPlatform = info.Platform
+			}
+			if info.Arch != "" {
+				device.AppArch = info.Arch
+			}
+		}
+	}
+}
+```
+
+**Required import:** Add `"encoding/json"` to imports in `middleware.go` (line 1-19). Insert after `"errors"`:
+
+```go
+	"encoding/json"
+```
+
+### S3: Task 5 Exact Edits — Device Limit
+
+**Edit 1: OTP login (api/api_auth.go line ~291)**
+
+Replace:
+```go
+			if deviceCount >= int64(user.MaxDevice) {
+```
+With:
+```go
+			maxDevice := getSubscriptionQuota(tx, identify.UserID, "personal", 5)
+			if deviceCount >= int64(maxDevice) {
+```
+
+**Edit 2: Password login (api/api_auth.go line ~776)**
+
+Replace:
+```go
+		if deviceCount >= int64(user.MaxDevice) {
+```
+With:
+```go
+		maxDevice := getSubscriptionQuota(tx, identify.UserID, "personal", 5)
+		if deviceCount >= int64(maxDevice) {
+```
+
+Both edits are single-line replacements. `getSubscriptionQuota` is defined in `logic_subscription.go` — same package, no import needed.
+
+### S4: Task 6 — Approval Callback Update
+
+File: `api/logic_approval_callbacks.go`, line ~293-335.
+
+The `executeApprovalPlanUpdate` function applies `AdminUpdatePlanRequest` fields to the plan. It currently handles: Label, Price, OriginPrice, Month, Highlight, IsActive. **Must add ProductType and Quota.**
+
+After the `IsActive` block (line ~331), add:
+
+```go
+	if req.ProductType != nil {
+		plan.ProductType = *req.ProductType
+	}
+	if req.Quota != nil {
+		plan.Quota = *req.Quota
+	}
+```
+
+### S5: Task 7 Exact Edits — User Profile
+
+**Edit 1: DataUser struct (api/type.go line ~99)**
+
+Add after `BetaOptedIn` field (last field, line ~116):
+
+```go
+	Subscriptions []DataSubscription `json:"subscriptions,omitempty"` // 用户订阅列表
+```
+
+**Edit 2: buildDataUserWithDevice (api/api_user.go line ~420)**
+
+The function returns `&DataUser{...}`. Before the return statement (line ~450), the `Subscriptions` field is not set. We cannot fetch subscriptions here because this function doesn't have access to gin.Context or DB.
+
+Instead, set it in the **caller** — `api_get_user_info` (line ~75). Before `Success(c, dataUser)`, add:
+
+```go
+	// Fetch subscriptions
+	subs, err := getUserSubscriptions(db.Get(), user.ID)
+	if err != nil {
+		log.Warnf(c, "failed to fetch subscriptions for user %d: %v", user.ID, err)
+	} else {
+		dataUser.Subscriptions = subs
+	}
+```
+
+Import `db "github.com/wordgate/qtoolkit/db"` is already present in `api_user.go`.
+
+### S6: Missing — Route Changes
+
+File: `api/route.go`
+
+The current tunnel/relay routes use `ProRequired()`:
+```go
+api.GET("/tunnels", AuthRequired(), ProRequired(), DeviceAuthRequired(), api_k2_tunnels)
+api.GET("/relays", AuthRequired(), ProRequired(), DeviceAuthRequired(), api_k2_relays)
+```
+
+These stay as-is (personal product). For gateway-specific routes, register with `GatewayProRequired()` when they're needed in future phases. **No route changes needed in Plan A** — GatewayProRequired is defined but not yet wired to any routes (gateway API is on the k2r binary, not Center API).
+
+### S7: Deployment Strategy
+
+**Order of operations:**
+
+1. **Deploy code** with all changes (Subscription model, rewritten order processing, ProRequired with fallback)
+2. GORM AutoMigrate runs automatically on startup → creates `subscriptions` table + adds Plan columns + Device.IsGateway
+3. Data migration SQL runs → populates subscriptions from existing User data
+4. ProRequired fallback ensures: if migration is slow/incomplete, users still authenticated via User.ExpiredAt
+5. Once migration complete, all reads go through Subscription
+
+**Rollback plan:**
+
+If critical issues found:
+1. Revert code deploy (git revert)
+2. `subscriptions` table stays (harmless orphan — GORM won't break with extra table)
+3. Plan.ProductType/Quota columns stay (defaults are backward-compatible: `'personal'`, `5`)
+4. Device.IsGateway stays (default false, harmless)
+5. User.ExpiredAt/MaxDevice are still being written by syncUserCache → old code reads them correctly
+
+**Zero-downtime:** The fallback in ProRequired means there is no moment where users are blocked even during deployment.
+
+### S8: Performance Note
+
+`ProRequired` now does 1 extra DB query per request (SELECT from subscriptions WHERE user_id AND product_type). This is:
+- Indexed: `uniqueIndex:idx_user_product` on (user_id, product_type)
+- Small table: one row per user per product (max ~2x users count)
+- Same MySQL instance, sub-millisecond
+
+If this becomes a bottleneck, cache the Subscription in gin.Context during auth middleware (already fetches User — can piggyback Subscription). But premature optimization — measure first.
