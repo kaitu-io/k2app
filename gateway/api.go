@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/engine"
@@ -104,15 +103,18 @@ func (g *Gateway) handleStatus(w http.ResponseWriter) {
 		subnets = g.provider.cfg.LANSubnets
 		listenPort = g.provider.cfg.ListenPort
 	}
+	rdm := g.routerDeviceMgr
+	g.mu.Unlock()
+
+	// Read rdm fields OUTSIDE g.mu to avoid lock ordering violation
 	var maxLanClient int
 	var routerDeviceMode string
-	if g.routerDeviceMgr != nil {
-		g.routerDeviceMgr.mu.RLock()
-		maxLanClient = g.routerDeviceMgr.quota
-		routerDeviceMode = g.routerDeviceMgr.mode
-		g.routerDeviceMgr.mu.RUnlock()
+	if rdm != nil {
+		rdm.mu.RLock()
+		maxLanClient = rdm.quota
+		routerDeviceMode = rdm.mode
+		rdm.mu.RUnlock()
 	}
-	g.mu.Unlock()
 
 	type gatewayStatus struct {
 		engine.Status
@@ -239,47 +241,18 @@ func (g *Gateway) handleUpgrade(w http.ResponseWriter, r *http.Request) {
 		}})
 
 	case "apply":
-		info, err := FetchLatestK2r()
-		if err != nil {
-			writeJSON(w, Response{Code: 1, Message: "check failed: " + err.Error()})
+		if g.updater == nil {
+			writeJSON(w, Response{Code: 1, Message: "updater not initialized"})
 			return
 		}
-		if info.Version == g.version {
-			writeJSON(w, Response{Code: 0, Message: "already up to date", Data: map[string]string{
-				"version": g.version,
-			}})
-			return
-		}
-
-		arch := runtime.GOARCH
-		binaryName := fmt.Sprintf("k2r-linux-%s", arch)
-		expectedHash, ok := info.Checksums[binaryName]
-		if !ok {
-			writeJSON(w, Response{Code: 1, Message: fmt.Sprintf("no binary for linux/%s", arch)})
-			return
-		}
-
-		// Pick first endpoint for download URL.
-		downloadURL := BinaryURL(K2rReleaseEndpoints[0], info.Version)
-		targetVersion := info.Version
-
+		// Use Updater.Apply() which has persistent state recovery
 		safego.Go(func() {
-			self, err := selfExePath()
-			if err != nil {
-				slog.Warn("gateway: upgrade: resolve executable", "err", err)
-				return
+			if err := g.updater.Apply(); err != nil {
+				slog.Warn("gateway: upgrade failed", "err", err)
 			}
-			if err := DownloadAndReplace(downloadURL, expectedHash, self); err != nil {
-				slog.Warn("gateway: upgrade: download failed", "version", targetVersion, "err", err)
-				return
-			}
-			slog.Info("gateway: upgrade: installed", "version", targetVersion)
-			RestartService()
 		})
-
 		writeJSON(w, Response{Code: 0, Message: "upgrading", Data: map[string]string{
-			"version": targetVersion,
-			"status":  "upgrading",
+			"status": "upgrading",
 		}})
 
 	default:

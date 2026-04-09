@@ -139,28 +139,31 @@ func (m *RouterDeviceManager) handleAllow(w http.ResponseWriter, r *http.Request
 	}
 
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	// Check quota (>0 = exact limit, 0 or -1 = unlimited)
 	if m.quota > 0 && len(m.entries) >= m.quota {
+		m.mu.Unlock()
 		writeJSON(w, Response{Code: 1, Message: "quotaExceeded"})
 		return
 	}
 	// Check duplicate
 	for _, e := range m.entries {
 		if e.MAC == mac {
+			m.mu.Unlock()
 			writeJSON(w, Response{Code: 1, Message: "already in allowlist"})
 			return
 		}
 	}
-
 	entry := RouterDeviceEntry{MAC: mac, Remark: body.Remark, AddedAt: time.Now().Unix()}
 	m.entries = append(m.entries, entry)
-	m.persist()
+	inAllowlist := m.mode == "allowlist"
+	interceptor := m.interceptor
+	snapshot := m.persistSnapshot()
+	m.mu.Unlock()
 
-	// Live update nftables set if in allowlist mode
-	if m.mode == "allowlist" {
-		if mm, ok := m.interceptor.(MACManager); ok {
+	// I/O outside lock: persist to disk + netlink set update
+	m.persistFromSnapshot(snapshot)
+	if inAllowlist {
+		if mm, ok := interceptor.(MACManager); ok {
 			if err := mm.AddMAC(mac); err != nil {
 				slog.Warn("gateway: live MAC add failed", "mac", mac, "err", err)
 			}
@@ -185,8 +188,6 @@ func (m *RouterDeviceManager) handleRemove(w http.ResponseWriter, r *http.Reques
 	mac := normalizeMAC(body.MAC)
 
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	found := false
 	var remaining []RouterDeviceEntry
 	for _, e := range m.entries {
@@ -197,14 +198,20 @@ func (m *RouterDeviceManager) handleRemove(w http.ResponseWriter, r *http.Reques
 		remaining = append(remaining, e)
 	}
 	if !found {
+		m.mu.Unlock()
 		writeJSON(w, Response{Code: 1, Message: "not in allowlist"})
 		return
 	}
 	m.entries = remaining
-	m.persist()
+	inAllowlist := m.mode == "allowlist"
+	interceptor := m.interceptor
+	snapshot := m.persistSnapshot()
+	m.mu.Unlock()
 
-	if m.mode == "allowlist" {
-		if mm, ok := m.interceptor.(MACManager); ok {
+	// I/O outside lock
+	m.persistFromSnapshot(snapshot)
+	if inAllowlist {
+		if mm, ok := interceptor.(MACManager); ok {
 			if err := mm.RemoveMAC(mac); err != nil {
 				slog.Warn("gateway: live MAC remove failed", "mac", mac, "err", err)
 			}
@@ -233,10 +240,12 @@ func (m *RouterDeviceManager) handleMode(w http.ResponseWriter, r *http.Request)
 
 	m.mu.Lock()
 	m.mode = body.Mode
-	m.persist()
+	snapshot := m.persistSnapshot()
 	cb := m.onModeChange
 	m.mu.Unlock()
 
+	// I/O outside lock
+	m.persistFromSnapshot(snapshot)
 	if cb != nil {
 		cb()
 	}
@@ -255,13 +264,26 @@ func (m *RouterDeviceManager) getAllowedMACs() []string {
 	return macs
 }
 
-func (m *RouterDeviceManager) persist() {
+type persistData struct {
+	entries []RouterDeviceEntry
+	mode    string
+}
+
+// persistSnapshot captures data under lock for later persistence outside lock.
+func (m *RouterDeviceManager) persistSnapshot() persistData {
+	entries := make([]RouterDeviceEntry, len(m.entries))
+	copy(entries, m.entries)
+	return persistData{entries: entries, mode: m.mode}
+}
+
+// persistFromSnapshot writes the captured snapshot to storage (I/O — call outside lock).
+func (m *RouterDeviceManager) persistFromSnapshot(snap persistData) {
 	if m.storage == nil {
 		return
 	}
-	data, _ := json.Marshal(m.entries)
+	data, _ := json.Marshal(snap.entries)
 	_ = m.storage.Set("router-device-allowlist", string(data))
-	modeData, _ := json.Marshal(m.mode)
+	modeData, _ := json.Marshal(snap.mode)
 	_ = m.storage.Set("router-device-mode", string(modeData))
 }
 

@@ -47,6 +47,8 @@ func (i *iptInterceptor) Remove() {
 		}
 		_ = runCmd("iptables", "-t", "mangle", "-F", "K2R")
 		_ = runCmd("iptables", "-t", "mangle", "-X", "K2R")
+		_ = runCmd("iptables", "-t", "mangle", "-F", "K2R_MAC")
+		_ = runCmd("iptables", "-t", "mangle", "-X", "K2R_MAC")
 	}
 	if i.hadV6Subnet {
 		for _, s := range i.v6Subnets {
@@ -54,6 +56,8 @@ func (i *iptInterceptor) Remove() {
 		}
 		_ = runCmd("ip6tables", "-t", "mangle", "-F", "K2R")
 		_ = runCmd("ip6tables", "-t", "mangle", "-X", "K2R")
+		_ = runCmd("ip6tables", "-t", "mangle", "-F", "K2R_MAC")
+		_ = runCmd("ip6tables", "-t", "mangle", "-X", "K2R_MAC")
 	}
 	// Clean DNS redirect chains
 	_ = runCmd("iptables", "-t", "nat", "-D", "PREROUTING", "-j", "K2R_DNS")
@@ -82,12 +86,18 @@ func buildIptCommands(cfg InterceptConfig) (cmds []cmdSpec, v4Subnets, v6Subnets
 		for _, ip := range v4Excludes {
 			cmds = append(cmds, cmdSpec{"iptables", []string{"-t", "mangle", "-A", "K2R", "-d", ip, "-j", "RETURN"}})
 		}
-		// MAC allowlist: allow listed MACs, drop the rest
+		// MAC allowlist: non-allowed MACs get dropped before TPROXY
+		// Allowed MACs jump to K2R_PROXY; non-matching fall through to DROP
 		if cfg.AllowlistMode && len(cfg.AllowedMACs) > 0 {
+			cmds = append(cmds, cmdSpec{"iptables", []string{"-t", "mangle", "-N", "K2R_MAC"}})
 			for _, mac := range cfg.AllowedMACs {
-				cmds = append(cmds, cmdSpec{"iptables", []string{"-t", "mangle", "-A", "K2R", "-m", "mac", "--mac-source", mac, "-j", "ACCEPT"}})
+				// Allowed MACs: jump to TPROXY chain
+				cmds = append(cmds, cmdSpec{"iptables", []string{"-t", "mangle", "-A", "K2R_MAC", "-m", "mac", "--mac-source", mac, "-j", "RETURN"}})
 			}
-			cmds = append(cmds, cmdSpec{"iptables", []string{"-t", "mangle", "-A", "K2R", "-j", "DROP"}})
+			// Non-allowed: drop
+			cmds = append(cmds, cmdSpec{"iptables", []string{"-t", "mangle", "-A", "K2R_MAC", "-j", "DROP"}})
+			// Jump to MAC check from K2R — if RETURN, continues to TPROXY below
+			cmds = append(cmds, cmdSpec{"iptables", []string{"-t", "mangle", "-A", "K2R", "-j", "K2R_MAC"}})
 		}
 		cmds = append(cmds,
 			cmdSpec{"iptables", []string{"-t", "mangle", "-A", "K2R", "-p", "tcp", "-j", "TPROXY", "--on-port", port, "--tproxy-mark", "1"}},
@@ -104,10 +114,12 @@ func buildIptCommands(cfg InterceptConfig) (cmds []cmdSpec, v4Subnets, v6Subnets
 			cmds = append(cmds, cmdSpec{"ip6tables", []string{"-t", "mangle", "-A", "K2R", "-d", ip, "-j", "RETURN"}})
 		}
 		if cfg.AllowlistMode && len(cfg.AllowedMACs) > 0 {
+			cmds = append(cmds, cmdSpec{"ip6tables", []string{"-t", "mangle", "-N", "K2R_MAC"}})
 			for _, mac := range cfg.AllowedMACs {
-				cmds = append(cmds, cmdSpec{"ip6tables", []string{"-t", "mangle", "-A", "K2R", "-m", "mac", "--mac-source", mac, "-j", "ACCEPT"}})
+				cmds = append(cmds, cmdSpec{"ip6tables", []string{"-t", "mangle", "-A", "K2R_MAC", "-m", "mac", "--mac-source", mac, "-j", "RETURN"}})
 			}
-			cmds = append(cmds, cmdSpec{"ip6tables", []string{"-t", "mangle", "-A", "K2R", "-j", "DROP"}})
+			cmds = append(cmds, cmdSpec{"ip6tables", []string{"-t", "mangle", "-A", "K2R_MAC", "-j", "DROP"}})
+			cmds = append(cmds, cmdSpec{"ip6tables", []string{"-t", "mangle", "-A", "K2R", "-j", "K2R_MAC"}})
 		}
 		cmds = append(cmds,
 			cmdSpec{"ip6tables", []string{"-t", "mangle", "-A", "K2R", "-p", "tcp", "-j", "TPROXY", "--on-port", port, "--tproxy-mark", "1"}},
