@@ -1300,9 +1300,10 @@ import (
 )
 
 const (
-	cdnBaseURL     = "https://dl.kaitu.io/kaitu/k2r"
-	cdnBackupURL   = "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/k2r"
-	defaultBinPath = "/usr/bin/k2r"
+	cdnBaseURL       = "https://dl.kaitu.io/kaitu/k2r"
+	cdnBackupURL     = "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/k2r"
+	defaultBinPath   = "/usr/bin/k2r"
+	updateStatePath  = "/etc/k2r/update-state.json"
 )
 
 type UpdateInfo struct {
@@ -1317,6 +1318,15 @@ type UpdateProgress struct {
 	Error    string  `json:"error,omitempty"`
 }
 
+// UpdateState persisted to disk for crash recovery
+type UpdateState struct {
+	Stage     string `json:"stage"`     // last completed stage
+	Version   string `json:"version"`   // target version
+	TmpPath   string `json:"tmpPath"`   // download temp file
+	BakPath   string `json:"bakPath"`   // backup path
+	StartedAt int64  `json:"startedAt"` // Unix timestamp
+}
+
 type Updater struct {
 	mu             sync.Mutex
 	currentVersion string
@@ -1327,10 +1337,66 @@ type Updater struct {
 }
 
 func NewUpdater(version, arch string) *Updater {
-	return &Updater{
+	u := &Updater{
 		currentVersion: version,
 		arch:           mapArch(arch),
 		binPath:        defaultBinPath,
+	}
+	return u
+}
+
+// RecoverOnStartup checks for interrupted update state and recovers.
+// Called once during Gateway.Run() before serving HTTP.
+func (u *Updater) RecoverOnStartup() {
+	state := loadUpdateState()
+	if state == nil {
+		return // no pending update
+	}
+	slog.Info("gateway: recovering from interrupted update", "stage", state.Stage, "version", state.Version)
+
+	switch state.Stage {
+	case "downloading", "verifying":
+		// Interrupted before binary was replaced — clean up tmp file, reset
+		slog.Info("gateway: cleaning up incomplete download", "tmp", state.TmpPath)
+		os.Remove(state.TmpPath)
+		clearUpdateState()
+
+	case "backing-up":
+		// Backup may be partial — clean up both tmp and partial backup
+		os.Remove(state.TmpPath)
+		os.Remove(state.BakPath)
+		clearUpdateState()
+
+	case "replacing":
+		// Critical: binary may or may not have been replaced
+		// Check if current binary version matches target
+		if u.currentVersion == state.Version {
+			// New binary is running — update succeeded
+			slog.Info("gateway: update to %s succeeded (post-replace recovery)", state.Version)
+			os.Remove(state.TmpPath)
+			clearUpdateState()
+		} else {
+			// Replace may have failed — rollback from .bak if exists
+			if _, err := os.Stat(state.BakPath); err == nil {
+				slog.Warn("gateway: rolling back to backup after interrupted replace", "bak", state.BakPath)
+				os.Rename(state.BakPath, u.binPath)
+				os.Chmod(u.binPath, 0755)
+			}
+			os.Remove(state.TmpPath)
+			clearUpdateState()
+		}
+
+	case "restarting":
+		// We ARE the new binary (restart succeeded, we're running)
+		// Verify we're healthy (if we got here, HTTP server is about to start = healthy)
+		slog.Info("gateway: update to %s completed successfully (post-restart)", state.Version)
+		// Keep .bak for manual rollback. Clean state.
+		os.Remove(state.TmpPath)
+		clearUpdateState()
+
+	default:
+		// Unknown state — clean up
+		clearUpdateState()
 	}
 }
 
@@ -1362,45 +1428,96 @@ func (u *Updater) Apply() error {
 	tmpPath := fmt.Sprintf("/tmp/k2r-update-%s", version)
 	bakPath := u.binPath + ".bak"
 
+	state := &UpdateState{Version: version, TmpPath: tmpPath, BakPath: bakPath, StartedAt: time.Now().Unix()}
+
 	// Stage 1: Download
+	state.Stage = "downloading"
+	saveUpdateState(state)
 	u.setProgress("downloading", 0, "")
 	if err := downloadFile(tmpPath, binaryURL, func(p float64) {
 		u.setProgress("downloading", p, "")
 	}); err != nil {
+		os.Remove(tmpPath)
+		clearUpdateState()
 		u.setProgress("error", 0, err.Error())
 		return fmt.Errorf("download: %w", err)
 	}
 
 	// Stage 2: Verify checksum
+	state.Stage = "verifying"
+	saveUpdateState(state)
 	u.setProgress("verifying", 0, "")
 	if err := verifyChecksum(tmpPath, binaryName, checksumsURL); err != nil {
 		os.Remove(tmpPath)
+		clearUpdateState()
 		u.setProgress("error", 0, err.Error())
 		return fmt.Errorf("verify: %w", err)
 	}
 
 	// Stage 3: Backup current binary
+	state.Stage = "backing-up"
+	saveUpdateState(state)
 	u.setProgress("backing-up", 0, "")
 	if err := copyFile(u.binPath, bakPath); err != nil {
 		os.Remove(tmpPath)
+		clearUpdateState()
 		u.setProgress("error", 0, err.Error())
 		return fmt.Errorf("backup: %w", err)
 	}
 
-	// Stage 4: Atomic replace
+	// Stage 4: Atomic replace (POINT OF NO RETURN)
+	state.Stage = "replacing"
+	saveUpdateState(state)
 	u.setProgress("replacing", 0, "")
 	if err := os.Rename(tmpPath, u.binPath); err != nil {
+		// Rollback: restore from backup
+		os.Rename(bakPath, u.binPath)
+		clearUpdateState()
 		u.setProgress("error", 0, err.Error())
 		return fmt.Errorf("replace: %w", err)
 	}
 	os.Chmod(u.binPath, 0755)
 
 	// Stage 5: Restart service
+	state.Stage = "restarting"
+	saveUpdateState(state)
 	u.setProgress("restarting", 0, "")
 	restartService()
+	// Note: after restartService(), this process will be killed.
+	// RecoverOnStartup() in the new process handles the "restarting" state.
 
 	u.setProgress("done", 1, "")
 	return nil
+}
+
+// --- Update state persistence ---
+
+func saveUpdateState(state *UpdateState) {
+	data, _ := json.Marshal(state)
+	os.MkdirAll("/etc/k2r", 0755)
+	os.WriteFile(updateStatePath, data, 0644)
+}
+
+func loadUpdateState() *UpdateState {
+	data, err := os.ReadFile(updateStatePath)
+	if err != nil {
+		return nil
+	}
+	var state UpdateState
+	if json.Unmarshal(data, &state) != nil {
+		return nil
+	}
+	// Expire stale state (> 1 hour old = something went very wrong)
+	if time.Since(time.Unix(state.StartedAt, 0)) > time.Hour {
+		slog.Warn("gateway: expiring stale update state", "age", time.Since(time.Unix(state.StartedAt, 0)))
+		clearUpdateState()
+		return nil
+	}
+	return &state
+}
+
+func clearUpdateState() {
+	os.Remove(updateStatePath)
 }
 
 func (u *Updater) setProgress(stage string, progress float64, errMsg string) {
@@ -1634,29 +1751,135 @@ func TestMapArch(t *testing.T) {
 }
 
 func TestVerifyChecksum_Match(t *testing.T) {
-	// Create temp file with known content
 	tmpDir := t.TempDir()
 	filePath := tmpDir + "/k2r-linux-amd64"
 	content := []byte("test binary content")
 	os.WriteFile(filePath, content, 0644)
 
-	// Calculate expected hash
 	h := sha256.Sum256(content)
 	expectedHash := hex.EncodeToString(h[:])
 
-	// Create checksums file
-	checksumsPath := tmpDir + "/checksums.txt"
-	os.WriteFile(checksumsPath, []byte(expectedHash+"  k2r-linux-amd64\n"), 0644)
+	// Serve checksums via test HTTP server
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "%s  k2r-linux-amd64\n", expectedHash)
+	}))
+	defer srv.Close()
 
-	// Start test HTTP server serving checksums
-	// ... (use httptest.NewServer)
+	err := verifyChecksum(filePath, "k2r-linux-amd64", srv.URL)
+	if err != nil {
+		t.Errorf("expected checksum match, got error: %v", err)
+	}
 }
 
-func TestVersionComparison(t *testing.T) {
-	u := &Updater{currentVersion: "0.4.2"}
-	info, _ := u.Check() // This would fail without network, but tests the logic
-	// In real tests, mock the HTTP calls
-	_ = info
+func TestVerifyChecksum_Mismatch(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := tmpDir + "/k2r-linux-amd64"
+	os.WriteFile(filePath, []byte("real content"), 0644)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "0000000000000000000000000000000000000000000000000000000000000000  k2r-linux-amd64\n")
+	}))
+	defer srv.Close()
+
+	err := verifyChecksum(filePath, "k2r-linux-amd64", srv.URL)
+	if err == nil {
+		t.Error("expected checksum mismatch error")
+	}
+}
+
+func TestUpdateState_SaveLoadClear(t *testing.T) {
+	// Override state path for test
+	origPath := updateStatePath
+	updateStatePath = t.TempDir() + "/update-state.json"
+	defer func() { updateStatePath = origPath }()
+
+	// Save
+	state := &UpdateState{
+		Stage: "downloading", Version: "0.4.3",
+		TmpPath: "/tmp/k2r-update-0.4.3", BakPath: "/usr/bin/k2r.bak",
+		StartedAt: time.Now().Unix(),
+	}
+	saveUpdateState(state)
+
+	// Load
+	loaded := loadUpdateState()
+	if loaded == nil {
+		t.Fatal("expected state to be loaded")
+	}
+	if loaded.Stage != "downloading" || loaded.Version != "0.4.3" {
+		t.Errorf("loaded state mismatch: %+v", loaded)
+	}
+
+	// Clear
+	clearUpdateState()
+	if loadUpdateState() != nil {
+		t.Error("expected nil after clear")
+	}
+}
+
+func TestUpdateState_Expiry(t *testing.T) {
+	origPath := updateStatePath
+	updateStatePath = t.TempDir() + "/update-state.json"
+	defer func() { updateStatePath = origPath }()
+
+	// Save state with old timestamp (> 1 hour ago)
+	state := &UpdateState{
+		Stage: "downloading", Version: "0.4.3",
+		StartedAt: time.Now().Add(-2 * time.Hour).Unix(),
+	}
+	saveUpdateState(state)
+
+	// Load should return nil (expired)
+	if loadUpdateState() != nil {
+		t.Error("expected stale state to be expired")
+	}
+}
+
+func TestRecoverOnStartup_DownloadInterrupted(t *testing.T) {
+	origPath := updateStatePath
+	updateStatePath = t.TempDir() + "/update-state.json"
+	defer func() { updateStatePath = origPath }()
+
+	tmpFile := t.TempDir() + "/k2r-update-0.4.3"
+	os.WriteFile(tmpFile, []byte("partial download"), 0644)
+
+	saveUpdateState(&UpdateState{
+		Stage: "downloading", Version: "0.4.3",
+		TmpPath: tmpFile, StartedAt: time.Now().Unix(),
+	})
+
+	u := NewUpdater("0.4.2", "amd64")
+	u.RecoverOnStartup()
+
+	// tmp file should be cleaned up
+	if _, err := os.Stat(tmpFile); err == nil {
+		t.Error("tmp file should have been removed")
+	}
+	// state should be cleared
+	if loadUpdateState() != nil {
+		t.Error("state should be cleared")
+	}
+}
+
+func TestRecoverOnStartup_RestartSucceeded(t *testing.T) {
+	origPath := updateStatePath
+	updateStatePath = t.TempDir() + "/update-state.json"
+	defer func() { updateStatePath = origPath }()
+
+	saveUpdateState(&UpdateState{
+		Stage: "restarting", Version: "0.4.3",
+		TmpPath: "/tmp/gone", BakPath: "/usr/bin/k2r.bak",
+		StartedAt: time.Now().Unix(),
+	})
+
+	// Current version IS the target version = restart succeeded
+	u := NewUpdater("0.4.3", "amd64")
+	u.RecoverOnStartup()
+
+	// state should be cleared (update completed)
+	if loadUpdateState() != nil {
+		t.Error("state should be cleared after successful restart")
+	}
 }
 ```
 
@@ -1678,6 +1901,14 @@ Initialize in `New()`:
 ```go
 	updater: NewUpdater(config.Version(), runtime.GOARCH),
 ```
+
+In `Gateway.Run()` (line 54), add after `g.cleanStaleRules()`:
+
+```go
+	g.updater.RecoverOnStartup()
+```
+
+This ensures interrupted updates are recovered BEFORE serving HTTP.
 
 - [ ] **Step 4: Commit**
 
