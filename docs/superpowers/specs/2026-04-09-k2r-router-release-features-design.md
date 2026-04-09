@@ -28,30 +28,40 @@ Builds on the existing k2r build & distribution spec (2026-04-08) for binary emb
 
 ## 1. Tiered Plan Model
 
-### 1.1 Product Tiers
+### 1.1 Three Quota Dimensions
 
-| Tier | PID pattern | MaxDevice | MaxRouterDevice | Target |
-|------|------------|-----------|-----------------|--------|
-| 个人版 | `basic-1m`, `basic-1y` | 3 | 0 (no router) | Students, individuals |
-| 专业版 | `pro-1m`, `pro-1y` | 5 | 0 (no router) | Power users |
-| 家庭版 | `family-1m`, `family-1y` | 5 | 10 | Families |
-| 旗舰版 | `ultimate-1m`, `ultimate-1y` | 10 | -1 (unlimited) | Large families, small offices |
+| Field | Meaning | Default |
+|-------|---------|---------|
+| `MaxDevice` | app 设备数量（手机/电脑/平板）— 不含路由器 | 5 |
+| `MaxRouterDevice` | 路由器登录数量上限 | 0 (无路由器) |
+| `MaxLanClient` | 路由器 LAN 接入设备数量上限 | 0 (无路由器) |
 
-`MaxRouterDevice = 0` means no router access. `MaxRouterDevice = -1` means unlimited.
+三个维度互不干涉。`MaxDevice` 不包含路由器。路由器是独立的登录设备类型。
 
-### 1.2 Upgrade Path
+### 1.2 Product Tiers
+
+| Tier | PID pattern | MaxDevice | MaxRouterDevice | MaxLanClient | Target |
+|------|------------|-----------|-----------------|-------------|--------|
+| 经济版 | `lite-1m`, `lite-1y` | 1 | 0 | 0 | 学生/轻度用户 |
+| 基础版 | `basic-1m`, `basic-1y` | 3 | 0 | 0 | 个人用户 |
+| 家庭版 | `family-1m`, `family-1y` | 5 | 1 | 10 | 家庭 |
+| 公司版 | `business-1m`, `business-1y` | 10 | 1 | -1 (unlimited) | 小型办公 |
+
+### 1.3 Upgrade Path
 
 ```
-个人版 → 专业版 → 家庭版 → 旗舰版
-  │         │         │         │
-  3 设备    5 设备    5+路由器   10+路由器∞
+经济版 → 基础版 → 家庭版 → 公司版
+  │        │        │        │
+  1设备    3设备    5设备     10设备
+                   +1路由器   +1路由器
+                   10 LAN     ∞ LAN
 ```
 
 The key upsell: **"全家翻墙无需配置，升级家庭版"**. Router access is the premium hook that drives upgrades.
 
-### 1.3 Backward Compatibility
+### 1.4 Backward Compatibility
 
-Existing plans (1m, 1y, 2y, 3y, etc.) get `MaxDevice = 5, MaxRouterDevice = 0` via migration defaults. Existing users are unaffected — they keep their current device quota, no router access.
+Existing plans (1m, 1y, 2y, 3y, etc.) get `MaxDevice=5, MaxRouterDevice=0, MaxLanClient=0` via migration defaults. Existing users are unaffected.
 
 ---
 
@@ -72,8 +82,9 @@ type Plan struct {
     IsActive    *bool
 
     // new fields
-    MaxDevice       int `gorm:"not null;default:5"`  // login device quota
-    MaxRouterDevice int `gorm:"not null;default:0"`  // router LAN client quota (0=no router, -1=unlimited)
+    MaxDevice       int `gorm:"not null;default:5"`  // app 设备数量（不含路由器）
+    MaxRouterDevice int `gorm:"not null;default:0"`  // 路由器登录数量上限 (0=不支持路由器)
+    MaxLanClient    int `gorm:"not null;default:0"`  // 路由器 LAN 接入数量上限 (0=不支持, -1=无限)
 }
 ```
 
@@ -83,22 +94,21 @@ type Plan struct {
 type User struct {
     // existing fields — ExpiredAt and MaxDevice stay as-is
     ExpiredAt int64 `gorm:"index"`      // membership expiry (unchanged)
-    MaxDevice int   `gorm:"default:5"`  // login device quota (unchanged, now set from Plan)
+    MaxDevice int   `gorm:"default:5"`  // app 设备数量（不含路由器）(unchanged, now set from Plan)
 
     // new fields
-    MaxRouterDevice int    `gorm:"not null;default:0"`          // router LAN client quota, 0=no access, -1=unlimited
-    PlanPID         string `gorm:"type:varchar(30);default:''"` // current active plan PID
+    MaxRouterDevice int    `gorm:"not null;default:0"`          // 路由器登录数量上限
+    MaxLanClient    int    `gorm:"not null;default:0"`          // LAN 接入数量上限 (0=无路由器, -1=无限)
+    PlanPID         string `gorm:"type:varchar(30);default:''"` // 当前套餐 PID
 }
 ```
 
 **No Subscription table.** One product, one user = one set of entitlement fields. User table IS the subscription.
 
-**Why no Subscription table:**
-- One product → one subscription per user → User.ExpiredAt is sufficient
-- No syncUserCache needed → no consistency bugs
-- ProRequired middleware unchanged → zero risk
-- Massively simpler migration (add 2 columns vs create table + migrate data)
-- If a second product is added in the future, introduce Subscription then (YAGNI)
+**Three quotas are independent dimensions:**
+- `MaxDevice` = app 设备（手机/电脑/平板），不含路由器
+- `MaxRouterDevice` = 路由器登录数量（当前所有套餐最多 1 台）
+- `MaxLanClient` = 路由器上可以接入的 LAN 设备数量
 
 ### 2.3 Device Model (MODIFIED)
 
@@ -115,8 +125,10 @@ type Device struct {
 | Table | Field | Type | Default | Note |
 |-------|-------|------|---------|------|
 | `plans` | `max_device` | `INT` | `5` | Existing plans get 5 |
-| `plans` | `max_router_device` | `INT` | `0` | Existing plans get 0 (no router) |
+| `plans` | `max_router_device` | `INT` | `0` | Existing plans get 0 |
+| `plans` | `max_lan_client` | `INT` | `0` | Existing plans get 0 |
 | `users` | `max_router_device` | `INT` | `0` | Existing users get 0 |
+| `users` | `max_lan_client` | `INT` | `0` | Existing users get 0 |
 | `users` | `plan_pid` | `VARCHAR(30)` | `''` | Existing users get empty |
 | `devices` | `is_gateway` | `BOOLEAN` | `false` | Existing devices get false |
 
@@ -131,11 +143,12 @@ GORM AutoMigrate handles all additions. No data migration script needed — defa
 When an order is paid, `applyOrderToTargetUsers` currently extends `User.ExpiredAt` via `addProExpiredDays`. Changes:
 
 ```go
-// After existing addProExpiredDays call, also update device quotas:
+// Before addProExpiredDays call, set quota fields:
 user.MaxDevice = plan.MaxDevice
 user.MaxRouterDevice = plan.MaxRouterDevice
+user.MaxLanClient = plan.MaxLanClient
 user.PlanPID = plan.PID
-// tx.Save(user) already called by addProExpiredDays
+// addProExpiredDays calls tx.Save(user) — all fields written atomically
 ```
 
 **Note:** `addProExpiredDays` (line 65) calls `tx.Save(user)` which writes ALL user fields. So we just set the fields before that Save call — they'll be persisted automatically.
@@ -168,7 +181,7 @@ func ProRequired() gin.HandlerFunc {
 ### 4.2 RouterRequired — NEW
 
 ```go
-// RouterRequired checks that user has router access (MaxRouterDevice > 0 or == -1)
+// RouterRequired checks that user has router access (MaxRouterDevice > 0)
 func RouterRequired() gin.HandlerFunc {
     return func(c *gin.Context) {
         user := ReqUser(c)
@@ -192,9 +205,20 @@ func RouterRequired() gin.HandlerFunc {
 }
 ```
 
-### 4.3 Device Limit — UNCHANGED
+### 4.3 Device Limit — Split by Device Type
 
-Device limit already reads `user.MaxDevice`. Since `applyOrderToTargetUsers` now updates this from `plan.MaxDevice`, it works automatically.
+Device limit checking splits into two paths:
+
+```go
+// app 设备登录 (IsGateway=false)
+if appDeviceCount >= user.MaxDevice { kick oldest app device }
+
+// 路由器登录 (IsGateway=true)
+if user.MaxRouterDevice == 0 { reject: "套餐不支持路由器" }
+if routerDeviceCount >= user.MaxRouterDevice { reject: "路由器数量已达上限" }
+```
+
+The existing device limit code in `api_auth.go` (line ~291, ~776) currently counts ALL devices. Must change to count only `WHERE is_gateway = false` for app device login, and count only `WHERE is_gateway = true` for router login.
 
 ### 4.4 Gateway Device Registration
 
@@ -218,8 +242,9 @@ interface Plan {
     originPrice: number;
     month: number;
     highlight: boolean;
-    maxDevice: number;       // login device quota
-    maxRouterDevice: number; // router LAN client quota (0=none, -1=unlimited)
+    maxDevice: number;       // app 设备数量（不含路由器）
+    maxRouterDevice: number; // 路由器登录数量上限 (0=无路由器)
+    maxLanClient: number;    // LAN 接入数量上限 (0=无路由器, -1=无限)
 }
 ```
 
@@ -322,7 +347,7 @@ Local on router in `/etc/k2r/storage.json`. Modes: `"open"` (default) or `"allow
 
 ### 7.3 Quota Source
 
-k2r authenticates with Center → receives user profile including `MaxRouterDevice`. Cached locally. Refreshed on each status poll.
+k2r authenticates with Center → receives user profile including `MaxLanClient`. Cached locally. Refreshed on each status poll. This is the LAN client allowlist limit.
 
 ### 7.4 LAN Device Discovery
 
@@ -470,8 +495,8 @@ Same as previous spec version — 20+ keys for device management UI.
 
 | File | Change |
 |------|--------|
-| `model.go` | Add `Plan.MaxDevice`, `Plan.MaxRouterDevice`, `User.MaxRouterDevice`, `User.PlanPID`, `Device.IsGateway` |
-| `type.go` | Update `DataPlan` (add maxDevice, maxRouterDevice), update `DataUser` (add maxRouterDevice, planPid), `AppInfo` (add isGateway) |
+| `model.go` | Add `Plan.MaxDevice/MaxRouterDevice/MaxLanClient`, `User.MaxRouterDevice/MaxLanClient/PlanPID`, `Device.IsGateway` |
+| `type.go` | Update `DataPlan` (add 3 quota fields), update `DataUser` (add maxRouterDevice, maxLanClient, planPid), `AppInfo` (add isGateway) |
 | `api_plan.go` | Update DataPlan construction to include new fields |
 | `api_admin_plan.go` | Add MaxDevice/MaxRouterDevice to CRUD |
 | `logic_member.go` | `applyOrderToTargetUsers` also writes MaxDevice, MaxRouterDevice, PlanPID |

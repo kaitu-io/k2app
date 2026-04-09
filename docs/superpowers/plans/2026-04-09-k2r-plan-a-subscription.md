@@ -40,8 +40,9 @@ Define in a suitable location (e.g., `model.go` or a new `constants.go`).
 In `api/model.go`, Plan struct (line ~581). Add after `IsActive`:
 
 ```go
-	MaxDevice       int `gorm:"not null;default:5" json:"maxDevice"`          // 登录设备上限
-	MaxRouterDevice int `gorm:"not null;default:0" json:"maxRouterDevice"`    // 路由器接入设备上限 (0=无路由器, -1=无限)
+	MaxDevice       int `gorm:"not null;default:5" json:"maxDevice"`          // app 设备数量（不含路由器）
+	MaxRouterDevice int `gorm:"not null;default:0" json:"maxRouterDevice"`    // 路由器登录数量上限 (0=不支持)
+	MaxLanClient    int `gorm:"not null;default:0" json:"maxLanClient"`       // LAN 接入数量上限 (0=不支持, -1=无限)
 ```
 
 - [ ] **Step 2: Add MaxRouterDevice and PlanPID to User struct**
@@ -49,7 +50,8 @@ In `api/model.go`, Plan struct (line ~581). Add after `IsActive`:
 In `api/model.go`, User struct (line ~46). Add after `MaxDevice`:
 
 ```go
-	MaxRouterDevice int    `gorm:"not null;default:0" json:"maxRouterDevice"`           // 路由器接入设备上限
+	MaxRouterDevice int    `gorm:"not null;default:0" json:"maxRouterDevice"`           // 路由器登录数量上限
+	MaxLanClient    int    `gorm:"not null;default:0" json:"maxLanClient"`               // LAN 接入数量上限
 	PlanPID         string `gorm:"type:varchar(30);default:''" json:"planPid"`           // 当前套餐 PID
 ```
 
@@ -68,6 +70,7 @@ Find `DataPlan` struct (line ~512). Add:
 ```go
 	MaxDevice       int  `json:"maxDevice"`
 	MaxRouterDevice int  `json:"maxRouterDevice"`
+	MaxLanClient    int  `json:"maxLanClient"`
 ```
 
 - [ ] **Step 5: Update DataUser in type.go**
@@ -76,6 +79,7 @@ Find `DataUser` struct (line ~99). Add after `BetaOptedIn`:
 
 ```go
 	MaxRouterDevice int    `json:"maxRouterDevice"`
+	MaxLanClient    int    `json:"maxLanClient"`
 	PlanPID         string `json:"planPid,omitempty"`
 ```
 
@@ -116,9 +120,10 @@ Add three lines BEFORE the `addProExpiredDays` call:
 	for i := range targetUsers {
 		user := &targetUsers[i]
 
-		// Update device quotas and plan from purchased tier
+		// Update quotas and plan from purchased tier
 		user.MaxDevice = plan.MaxDevice
 		user.MaxRouterDevice = plan.MaxRouterDevice
+		user.MaxLanClient = plan.MaxLanClient
 		user.PlanPID = plan.PID
 
 		reason := fmt.Sprintf("订单支付 - %s", order.UUID)
@@ -154,7 +159,8 @@ func TestApplyOrderToTargetUsers_WritesQuotas(t *testing.T) {
 		Price:           9999,
 		Month:           12,
 		MaxDevice:       5,
-		MaxRouterDevice: 10,
+		MaxRouterDevice: 1,
+		MaxLanClient:    10,
 	}
 	order := Order{}
 	err := order.SetOrderMeta(plan, nil, []string{}, true)
@@ -163,7 +169,8 @@ func TestApplyOrderToTargetUsers_WritesQuotas(t *testing.T) {
 	retrieved, err := order.GetPlan()
 	require.NoError(t, err)
 	assert.Equal(t, 5, retrieved.MaxDevice)
-	assert.Equal(t, 10, retrieved.MaxRouterDevice)
+	assert.Equal(t, 1, retrieved.MaxRouterDevice)
+	assert.Equal(t, 10, retrieved.MaxLanClient)
 	assert.Equal(t, "family-1y", retrieved.PID)
 }
 
@@ -361,6 +368,92 @@ git commit -m "feat(api): add RouterRequired middleware + fillDeviceAppInfo isGa
 
 ---
 
+## Task 3b: Device Limit Split by Type
+
+**Files:**
+- Modify: `api/api_auth.go`
+
+- [ ] **Step 1: Update OTP login device limit (line ~285)**
+
+Currently counts ALL devices. Split to count by type:
+
+**Before (line ~285):**
+```go
+var deviceCount int64
+if err := tx.Model(&Device{}).Where("user_id = ?", identify.UserID).Count(&deviceCount).Error; err != nil {
+```
+
+**After:**
+```go
+// Determine if this is a router login
+isGateway := false
+if appInfoHeader := c.GetHeader("X-App-Info"); appInfoHeader != "" {
+	var info struct{ IsGateway bool `json:"isGateway"` }
+	if json.Unmarshal([]byte(appInfoHeader), &info) == nil {
+		isGateway = info.IsGateway
+	}
+}
+
+var deviceCount int64
+if isGateway {
+	// Count only router devices
+	if err := tx.Model(&Device{}).Where("user_id = ? AND is_gateway = true", identify.UserID).Count(&deviceCount).Error; err != nil {
+		return err
+	}
+	if deviceCount >= int64(user.MaxRouterDevice) {
+		// Router limit reached — reject (don't kick, routers are precious)
+		log.Warnf(c, "router device limit reached for user %d", identify.UserID)
+		return fmt.Errorf("router device limit reached")
+	}
+} else {
+	// Count only app devices
+	if err := tx.Model(&Device{}).Where("user_id = ? AND is_gateway = false", identify.UserID).Count(&deviceCount).Error; err != nil {
+		return err
+	}
+	if deviceCount >= int64(user.MaxDevice) {
+		// App device limit reached — kick oldest app device (existing behavior)
+		var oldestDevice Device
+		if err := tx.Where("user_id = ? AND is_gateway = false", identify.UserID).Order("token_last_used_at ASC").First(&oldestDevice).Error; err != nil {
+			return err
+		}
+		if err := tx.Delete(&oldestDevice).Error; err != nil {
+			return err
+		}
+		log.Infof(c, "deleted oldest app device %s for user %d", oldestDevice.UDID, identify.UserID)
+		// ... existing kick email logic ...
+	}
+}
+```
+
+**Key difference:** Router devices are NOT kicked on limit — they're rejected. Kicking someone's router would disconnect their entire household.
+
+- [ ] **Step 2: Same split in password login (line ~770)**
+
+Apply identical split logic.
+
+- [ ] **Step 3: Add RouterRequired check in auth flow**
+
+When `isGateway = true`, also check `user.MaxRouterDevice > 0` before proceeding. If user's plan doesn't support router, reject before counting devices:
+
+```go
+if isGateway && user.MaxRouterDevice == 0 {
+	return fmt.Errorf("plan does not support router")
+}
+```
+
+- [ ] **Step 4: Run tests**
+
+Run: `cd api && go build ./... && go test ./...`
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add api/api_auth.go
+git commit -m "feat(api): split device limit by type (app vs router), router rejects instead of kicks"
+```
+
+---
+
 ## Task 4: Plans API + Admin + User Profile
 
 **Files:**
@@ -384,6 +477,7 @@ In `api_get_plans` (line ~11), update the DataPlan mapping inside the loop:
 			IsActive:        plan.IsActive != nil && *plan.IsActive,
 			MaxDevice:       plan.MaxDevice,
 			MaxRouterDevice: plan.MaxRouterDevice,
+			MaxLanClient:    plan.MaxLanClient,
 		})
 ```
 
@@ -402,6 +496,7 @@ type AdminCreatePlanRequest struct {
 	IsActive        bool   `json:"isActive"`
 	MaxDevice       int    `json:"maxDevice"`
 	MaxRouterDevice int    `json:"maxRouterDevice"`
+	MaxLanClient    int    `json:"maxLanClient"`
 }
 ```
 
@@ -421,6 +516,7 @@ In `api_admin_create_plan` handler, add defaults and include in Plan creation:
 		IsActive:        BoolPtr(req.IsActive),
 		MaxDevice:       req.MaxDevice,
 		MaxRouterDevice: req.MaxRouterDevice,
+		MaxLanClient:    req.MaxLanClient,
 	}
 ```
 
@@ -431,6 +527,7 @@ In `AdminUpdatePlanRequest` (line ~90), add:
 ```go
 	MaxDevice       *int `json:"maxDevice"`
 	MaxRouterDevice *int `json:"maxRouterDevice"`
+	MaxLanClient    *int `json:"maxLanClient"`
 ```
 
 - [ ] **Step 4: Update approval callback**
@@ -444,6 +541,9 @@ In `api/logic_approval_callbacks.go`, `executeApprovalPlanUpdate` function (line
 	if req.MaxRouterDevice != nil {
 		plan.MaxRouterDevice = *req.MaxRouterDevice
 	}
+	if req.MaxLanClient != nil {
+		plan.MaxLanClient = *req.MaxLanClient
+	}
 ```
 
 - [ ] **Step 5: Update user profile response**
@@ -452,6 +552,7 @@ In `api/api_user.go`, `buildDataUserWithDevice` function (line ~420), in the ret
 
 ```go
 		MaxRouterDevice: user.MaxRouterDevice,
+		MaxLanClient:    user.MaxLanClient,
 		PlanPID:         user.PlanPID,
 ```
 

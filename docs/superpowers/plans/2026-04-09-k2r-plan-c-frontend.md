@@ -4,7 +4,7 @@
 
 **Goal:** Unified purchase page showing all plan tiers (个人版→专业版→家庭版→旗舰版). Router badge on higher tiers. Dynamic membership benefits. Router device management page for gateway. Gateway updater. Website install router tab. Admin plans with MaxDevice/MaxRouterDevice.
 
-**Architecture:** One purchase page, all tiers. Plans with `maxRouterDevice > 0` show router badge. Benefits component reads selected plan's quotas. No product tabs. No product_type param.
+**Architecture:** One purchase page, all tiers. Plans with `maxLanClient != 0` show router badge. Benefits component reads selected plan's quotas. No product tabs. No product_type param.
 
 **Tech Stack:** React 18, MUI 5, i18next (webapp); Next.js 15, shadcn/ui, next-intl (web)
 
@@ -31,8 +31,9 @@ export interface Plan {
   originPrice: number;
   month: number;
   highlight: boolean;
-  maxDevice: number;        // NEW: login device quota
-  maxRouterDevice: number;  // NEW: router LAN client quota (0=none, -1=unlimited)
+  maxDevice: number;        // NEW: app 设备数量（不含路由器）
+  maxRouterDevice: number;  // NEW: 路由器登录数量上限 (0=不支持)
+  maxLanClient: number;     // NEW: LAN 接入数量上限 (0=不支持, -1=无限)
 }
 ```
 
@@ -54,13 +55,13 @@ git commit -m "feat(webapp): add Plan.maxDevice/maxRouterDevice to API types"
 Find where plan cards are rendered. After the price display, add a router badge for plans with router access:
 
 ```tsx
-{plan.maxRouterDevice !== 0 && (
+{plan.maxLanClient !== 0 && (
   <Chip
     icon={<RouterIcon />}
     label={
-      plan.maxRouterDevice === -1
+      plan.maxLanClient === -1
         ? t('purchase:purchase.features.routerDeviceUnlimited')
-        : t('purchase:purchase.features.routerDeviceAccess', { count: plan.maxRouterDevice })
+        : t('purchase:purchase.features.routerDeviceAccess', { count: plan.maxLanClient })
     }
     size="small"
     color="primary"
@@ -87,7 +88,7 @@ Each card should show `maxDevice` count:
 When on gateway (`platformType === 'gateway'`), if user's plan has no router access, show banner:
 
 ```tsx
-{window._platform?.platformType === 'gateway' && userProfile && userProfile.maxRouterDevice === 0 && (
+{window._platform?.platformType === 'gateway' && userProfile && userProfile.maxLanClient === 0 && (
   <Box sx={{ mb: 2, p: 2, borderRadius: 2, bgcolor: 'warning.main', color: 'warning.contrastText' }}>
     <Typography variant="body2" sx={{ fontWeight: 600 }}>
       {t('purchase:purchase.upgradeForRouter')}
@@ -96,13 +97,13 @@ When on gateway (`platformType === 'gateway'`), if user's plan has no router acc
 )}
 ```
 
-Auto-select first plan with `maxRouterDevice > 0` when on gateway:
+Auto-select first plan with router access when on gateway:
 
 ```typescript
 // In the plan selection auto-select logic:
 const isGateway = window._platform?.platformType === 'gateway';
 const defaultPlan = isGateway
-  ? plans.find(p => p.maxRouterDevice !== 0 && p.highlight) || plans.find(p => p.maxRouterDevice !== 0)
+  ? plans.find(p => p.maxLanClient !== 0 && p.highlight) || plans.find(p => p.maxLanClient !== 0)
   : plans.find(p => p.highlight);
 setSelectedPlan(defaultPlan?.pid || plans[0]?.pid || '');
 ```
@@ -134,11 +135,12 @@ import { useTranslation } from 'react-i18next';
 interface Props {
   maxDevice?: number;
   maxRouterDevice?: number;
+  maxLanClient?: number;
 }
 
-export default function MembershipBenefits({ maxDevice = 5, maxRouterDevice = 0 }: Props) {
+export default function MembershipBenefits({ maxDevice = 5, maxRouterDevice = 0, maxLanClient = 0 }: Props) {
   const { t } = useTranslation();
-  const hasRouter = maxRouterDevice !== 0;
+  const hasRouter = maxLanClient !== 0;
 
   const benefits = [
     { key: 'multiDevice', icon: DevicesIcon, color: '#2196f3', value: maxDevice },
@@ -147,7 +149,7 @@ export default function MembershipBenefits({ maxDevice = 5, maxRouterDevice = 0 
         key: 'routerDeviceAccess',
         icon: RouterIcon,
         color: '#00bcd4',
-        value: maxRouterDevice === -1 ? null : maxRouterDevice, // null = unlimited
+        value: maxLanClient === -1 ? null : maxLanClient, // null = unlimited
       },
       { key: 'transparentProxy', icon: WifiIcon, color: '#4caf50' },
     ] : []),
@@ -203,6 +205,7 @@ const selectedPlanObj = plans.find(p => p.pid === selectedPlan);
 <MembershipBenefits
   maxDevice={selectedPlanObj?.maxDevice}
   maxRouterDevice={selectedPlanObj?.maxRouterDevice}
+  maxLanClient={selectedPlanObj?.maxLanClient}
 />
 ```
 
@@ -373,6 +376,7 @@ export interface Plan {
   highlight: boolean;
   maxDevice: number;
   maxRouterDevice: number;
+  maxLanClient: number;
 }
 ```
 
@@ -380,7 +384,7 @@ export interface Plan {
 
 - [ ] **Step 2: Add router badge to PurchaseClient plan cards**
 
-Same pattern as webapp: plans with `maxRouterDevice !== 0` show router badge. No tabs needed.
+Same pattern as webapp: plans with `maxLanClient !== 0` show router badge. No tabs needed.
 
 - [ ] **Step 3: Add router tab to install page**
 
