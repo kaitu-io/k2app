@@ -38,13 +38,12 @@ async function coreExec<T = any>(action: string, params?: any): Promise<SRespons
 const statusCallbacks = new Set<(status: StatusResponseData) => void>();
 const serviceCallbacks = new Set<(available: boolean) => void>();
 let sharedES: EventSource | null = null;
-let esShutdown = false;
 
 function ensureSSE() {
-  if (sharedES || esShutdown) return;
+  if (sharedES) return;
 
   function connect() {
-    if (esShutdown) return;
+    if (statusCallbacks.size === 0 && serviceCallbacks.size === 0) return;
     sharedES = new EventSource('/api/events');
 
     sharedES.onopen = () => {
@@ -63,9 +62,7 @@ function ensureSSE() {
       serviceCallbacks.forEach(cb => cb(false));
       sharedES?.close();
       sharedES = null;
-      if (!esShutdown) {
-        setTimeout(connect, 3000);
-      }
+      setTimeout(connect, 3000);
     };
   }
 
@@ -74,7 +71,6 @@ function ensureSSE() {
 
 function teardownSSE() {
   if (statusCallbacks.size === 0 && serviceCallbacks.size === 0) {
-    esShutdown = true;
     sharedES?.close();
     sharedES = null;
   }
@@ -106,6 +102,37 @@ const gatewayPlatform: IPlatform = {
   arch: gwInfo().arch,
   commit: gwInfo().commit,
   storage: gatewayStorage,
+
+  gatewayUpgradeCheck: async () => {
+    try {
+      const res = await fetch('/api/upgrade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'check' }),
+      });
+      const json = await res.json();
+      if (json.code === 0 && json.data) {
+        return { current: json.data.current, latest: json.data.latest };
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  },
+
+  gatewayUpgradeApply: async () => {
+    try {
+      const res = await fetch('/api/upgrade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'apply' }),
+      });
+      const json = await res.json().catch(() => null);
+      return json?.code === 0;
+    } catch {
+      return false;
+    }
+  },
 
   setLogLevel: (level: string): void => {
     fetch('/api/log-level', {

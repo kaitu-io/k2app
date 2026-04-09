@@ -32,8 +32,16 @@ func api_admin_connection_rating_statistics(c *gin.Context) {
 	var result ConnectionRatingStatisticsResponse
 
 	// Summary
-	d.Model(&ConnectionRating{}).Where("created_at >= ?", since).Count(&result.Summary.Total)
-	d.Model(&ConnectionRating{}).Where("created_at >= ? AND rating = ?", since, "good").Count(&result.Summary.Good)
+	if err := d.Model(&ConnectionRating{}).Where("created_at >= ?", since).Count(&result.Summary.Total).Error; err != nil {
+		log.Errorf(c, "connection_rating_statistics: count total failed: %v", err)
+		Error(c, ErrorSystemError, "failed to query statistics")
+		return
+	}
+	if err := d.Model(&ConnectionRating{}).Where("created_at >= ? AND rating = ?", since, "good").Count(&result.Summary.Good).Error; err != nil {
+		log.Errorf(c, "connection_rating_statistics: count good failed: %v", err)
+		Error(c, ErrorSystemError, "failed to query statistics")
+		return
+	}
 	result.Summary.Bad = result.Summary.Total - result.Summary.Good
 	if result.Summary.Total > 0 {
 		result.Summary.GoodRate = float64(result.Summary.Good) / float64(result.Summary.Total)
@@ -46,12 +54,16 @@ func api_admin_connection_rating_statistics(c *gin.Context) {
 		Good  int64
 	}
 	var trendRows []trendRow
-	d.Model(&ConnectionRating{}).
+	if err := d.Model(&ConnectionRating{}).
 		Select("DATE(created_at) as date, COUNT(*) as total, SUM(CASE WHEN rating = 'good' THEN 1 ELSE 0 END) as good").
 		Where("created_at >= ?", since).
 		Group("DATE(created_at)").
 		Order("date ASC").
-		Find(&trendRows)
+		Find(&trendRows).Error; err != nil {
+		log.Errorf(c, "connection_rating_statistics: trend query failed: %v", err)
+		Error(c, ErrorSystemError, "failed to query statistics")
+		return
+	}
 
 	result.Trend = make([]RatingTrendItem, len(trendRows))
 	for i, r := range trendRows {
@@ -74,13 +86,17 @@ func api_admin_connection_rating_statistics(c *gin.Context) {
 		Good    int64
 	}
 	var serverRows []serverRow
-	d.Model(&ConnectionRating{}).
+	if err := d.Model(&ConnectionRating{}).
 		Select("server_domain as domain, MAX(server_name) as name, MAX(server_country) as country, COUNT(*) as total, SUM(CASE WHEN rating = 'good' THEN 1 ELSE 0 END) as good").
 		Where("created_at >= ? AND server_domain != ''", since).
 		Group("server_domain").
 		Order("(SUM(CASE WHEN rating = 'good' THEN 1 ELSE 0 END) * 1.0 / COUNT(*)) ASC, total DESC").
 		Limit(50).
-		Find(&serverRows)
+		Find(&serverRows).Error; err != nil {
+		log.Errorf(c, "connection_rating_statistics: by-server query failed: %v", err)
+		Error(c, ErrorSystemError, "failed to query statistics")
+		return
+	}
 
 	result.ByServer = make([]RatingByServer, len(serverRows))
 	for i, r := range serverRows {
@@ -102,13 +118,17 @@ func api_admin_connection_rating_statistics(c *gin.Context) {
 		Good    int64
 	}
 	var ispRows []ispRow
-	d.Model(&ConnectionRating{}).
+	if err := d.Model(&ConnectionRating{}).
 		Select("isp, MAX(user_country) as country, COUNT(*) as total, SUM(CASE WHEN rating = 'good' THEN 1 ELSE 0 END) as good").
 		Where("created_at >= ? AND isp != ''", since).
 		Group("isp").
 		Order("(SUM(CASE WHEN rating = 'good' THEN 1 ELSE 0 END) * 1.0 / COUNT(*)) ASC, total DESC").
 		Limit(50).
-		Find(&ispRows)
+		Find(&ispRows).Error; err != nil {
+		log.Errorf(c, "connection_rating_statistics: by-isp query failed: %v", err)
+		Error(c, ErrorSystemError, "failed to query statistics")
+		return
+	}
 
 	result.ByISP = make([]RatingByISP, len(ispRows))
 	for i, r := range ispRows {
@@ -129,13 +149,17 @@ func api_admin_connection_rating_statistics(c *gin.Context) {
 		Good       int64
 	}
 	var platformRows []platformRow
-	d.Model(&ConnectionRating{}).
+	if err := d.Model(&ConnectionRating{}).
 		Select("os, app_version, COUNT(*) as total, SUM(CASE WHEN rating = 'good' THEN 1 ELSE 0 END) as good").
 		Where("created_at >= ? AND os != ''", since).
 		Group("os, app_version").
 		Order("(SUM(CASE WHEN rating = 'good' THEN 1 ELSE 0 END) * 1.0 / COUNT(*)) ASC, total DESC").
 		Limit(30).
-		Find(&platformRows)
+		Find(&platformRows).Error; err != nil {
+		log.Errorf(c, "connection_rating_statistics: by-platform query failed: %v", err)
+		Error(c, ErrorSystemError, "failed to query statistics")
+		return
+	}
 
 	result.ByPlatform = make([]RatingByPlatform, len(platformRows))
 	for i, r := range platformRows {
@@ -155,14 +179,18 @@ func api_admin_connection_rating_statistics(c *gin.Context) {
 		Good   int64
 	}
 	var userRows []userRow
-	d.Model(&ConnectionRating{}).
+	if err := d.Model(&ConnectionRating{}).
 		Select("user_id, COUNT(*) as total, SUM(CASE WHEN rating = 'good' THEN 1 ELSE 0 END) as good").
 		Where("created_at >= ?", since).
 		Group("user_id").
 		Having("COUNT(*) >= 3").
 		Order("(SUM(CASE WHEN rating = 'good' THEN 1 ELSE 0 END) * 1.0 / COUNT(*)) ASC, COUNT(*) DESC").
 		Limit(50).
-		Find(&userRows)
+		Find(&userRows).Error; err != nil {
+		log.Errorf(c, "connection_rating_statistics: by-user query failed: %v", err)
+		Error(c, ErrorSystemError, "failed to query statistics")
+		return
+	}
 
 	// Batch-load email identities for all user IDs (avoids N+1)
 	userIDs := make([]uint64, len(userRows))
@@ -171,7 +199,11 @@ func api_admin_connection_rating_statistics(c *gin.Context) {
 	}
 	var identifies []LoginIdentify
 	if len(userIDs) > 0 {
-		d.Where("user_id IN ? AND type = ?", userIDs, "email").Find(&identifies)
+		if err := d.Where("user_id IN ? AND type = ?", userIDs, "email").Find(&identifies).Error; err != nil {
+			log.Errorf(c, "connection_rating_statistics: user identity query failed: %v", err)
+			Error(c, ErrorSystemError, "failed to query statistics")
+			return
+		}
 	}
 	identifyMap := make(map[uint64]*LoginIdentify, len(identifies))
 	for i := range identifies {

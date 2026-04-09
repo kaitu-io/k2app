@@ -3,6 +3,7 @@
 # For automated install, use: wget -qO- https://kaitu.io/i/k2r | sudo sh
 
 set -e
+cd "$(dirname "$0")"
 
 # Stop existing service
 /etc/init.d/k2r stop 2>/dev/null || true

@@ -3,7 +3,7 @@ name: Release k2r (Router/Gateway)
 on:
   push:
     tags:
-      - 'v*'
+      - 'v*-k2r'
   workflow_dispatch:
 
 permissions:

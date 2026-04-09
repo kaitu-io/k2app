@@ -171,6 +171,14 @@ export interface IPlatform {
    */
   getPid?(): Promise<number>;
 
+  // ====== 网关专属（可选）======
+
+  /** 检查网关固件更新（返回当前版本和最新版本） */
+  gatewayUpgradeCheck?(): Promise<{ current: string; latest: string } | null>;
+
+  /** 触发网关固件升级（后台下载+替换+重启） */
+  gatewayUpgradeApply?(): Promise<boolean>;
+
   // ====== 诊断（可选）======
 
   /** 设置日志级别（开发者模式） */

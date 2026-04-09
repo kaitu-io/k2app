@@ -3,6 +3,7 @@
 package center
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/gin-gonic/gin"
@@ -10,6 +11,8 @@ import (
 	"github.com/wordgate/qtoolkit/log"
 	"gorm.io/gorm"
 )
+
+var errPlanDuplicatePID = errors.New("plan PID already exists")
 
 func api_admin_list_plans(c *gin.Context) {
 	log.Infof(c, "admin request to list plans")
@@ -69,7 +72,13 @@ func api_admin_create_plan(c *gin.Context) {
 	}
 
 	err := db.Get().Transaction(func(tx *gorm.DB) error {
-		// 检查 PID 是否已存在
+		var count int64
+		if err := tx.Model(&Plan{}).Where("pid = ?", req.PID).Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			return errPlanDuplicatePID
+		}
 
 		plan := Plan{
 			PID:             req.PID,
@@ -93,7 +102,11 @@ func api_admin_create_plan(c *gin.Context) {
 		return nil
 	})
 	if err != nil {
-		Error(c, ErrorSystemError, "failed to create plan")
+		if errors.Is(err, errPlanDuplicatePID) {
+			Error(c, ErrorConflict, err.Error())
+		} else {
+			Error(c, ErrorSystemError, "failed to create plan")
+		}
 		return
 	}
 	// 查询返回最新plan

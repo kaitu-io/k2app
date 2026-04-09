@@ -1,6 +1,6 @@
 /**
  * Gateway OTA upgrade banner — shown on Dashboard when a newer
- * k2r version is available. Gateway-only (calls /api/upgrade).
+ * k2r version is available. Gateway-only (uses _platform.gatewayUpgrade*).
  */
 import { useState, useEffect, useRef } from 'react';
 import { Alert, AlertTitle, Button, CircularProgress, Typography } from '@mui/material';
@@ -18,51 +18,30 @@ export default function GatewayUpgradeBanner() {
   const timerRef = useRef<ReturnType<typeof setTimeout>>();
 
   useEffect(() => {
-    fetch('/api/upgrade', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'check' }),
-    })
-      .then(r => r.json())
-      .then(res => {
-        if (res.code === 0 && res.data) {
-          setCurrent(res.data.current);
-          setLatest(res.data.latest);
-        }
-        setChecked(true);
-      })
-      .catch((err) => {
-        console.warn('[GatewayUpgrade] check failed:', err);
-        setChecked(true);
-      });
+    const check = window._platform.gatewayUpgradeCheck;
+    if (!check) { setChecked(true); return; }
+    check().then(info => {
+      if (info) { setCurrent(info.current); setLatest(info.latest); }
+      setChecked(true);
+    }).catch(() => setChecked(true));
   }, []);
 
   // Cleanup timer on unmount
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
 
   const handleUpgrade = async () => {
+    const apply = window._platform.gatewayUpgradeApply;
+    if (!apply) return;
     setUpgrading(true);
     setUpgradeFailed(false);
-    try {
-      const res = await fetch('/api/upgrade', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'apply' }),
-      });
-      const json = await res.json().catch(() => null);
-      if (json && json.code !== 0) {
-        console.warn('[GatewayUpgrade] apply returned error:', json);
-        setUpgradeFailed(true);
-        setUpgrading(false);
-        return;
-      }
-      // Service will restart — show "restarting" after 3s
-      timerRef.current = setTimeout(() => setRestarting(true), 3000);
-    } catch (err) {
-      console.warn('[GatewayUpgrade] apply failed:', err);
+    const ok = await apply();
+    if (!ok) {
       setUpgradeFailed(true);
       setUpgrading(false);
+      return;
     }
+    // Service will restart — show "restarting" after 3s
+    timerRef.current = setTimeout(() => setRestarting(true), 3000);
   };
 
   if (!checked || !latest || !current || latest === current) return null;
