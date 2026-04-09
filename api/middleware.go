@@ -63,6 +63,19 @@ func parseClientHeader(header string) *AppInfo {
 	return info
 }
 
+// isGatewayRequest 检查请求是否来自路由器/网关设备
+func isGatewayRequest(c *gin.Context) bool {
+	if appInfoHeader := c.GetHeader("X-App-Info"); appInfoHeader != "" {
+		var info struct {
+			IsGateway bool `json:"isGateway"`
+		}
+		if json.Unmarshal([]byte(appInfoHeader), &info) == nil {
+			return info.IsGateway
+		}
+	}
+	return false
+}
+
 // fillDeviceAppInfo 从 X-K2-Client header 填充设备的应用版本信息（用于设备创建时）
 // 同时解析 X-App-Info JSON header（k2r 路由器发送，包含 isGateway 标志）
 func fillDeviceAppInfo(c *gin.Context, device *Device) {

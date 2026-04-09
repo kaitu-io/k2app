@@ -282,31 +282,52 @@ func api_login(c *gin.Context) {
 				identify.UserID, user.Language, user.IsActivated, user.InvitedByCodeID)
 		}
 
-		var deviceCount int64
-		if err := tx.Model(&Device{}).Where("user_id = ?", identify.UserID).Count(&deviceCount).Error; err != nil {
-			log.Errorf(c, "failed to count devices for user %d: %v", identify.UserID, err)
-			return err
-		}
+		// Check device limit by type (app vs router)
+		isGateway := isGatewayRequest(c)
 
-		if deviceCount >= int64(user.MaxDevice) {
-			log.Warnf(c, "device limit reached for user %d, will remove oldest device", identify.UserID)
-			var oldestDevice Device
-			if err := tx.Where("user_id = ?", identify.UserID).Order("token_last_used_at ASC").First(&oldestDevice).Error; err != nil {
-				log.Errorf(c, "failed to find oldest device for user %d: %v", identify.UserID, err)
+		if isGateway {
+			// Router login: check router access permission first
+			if user.MaxRouterDevice == 0 {
+				log.Warnf(c, "user %d plan does not support router, rejecting gateway login", identify.UserID)
+				return fmt.Errorf("plan does not support router")
+			}
+			// Count only router devices
+			var routerCount int64
+			if err := tx.Model(&Device{}).Where("user_id = ? AND is_gateway = true", identify.UserID).Count(&routerCount).Error; err != nil {
+				log.Errorf(c, "failed to count router devices for user %d: %v", identify.UserID, err)
 				return err
 			}
-			if err := tx.Delete(&oldestDevice).Error; err != nil {
-				log.Errorf(c, "failed to delete oldest device %s for user %d: %v", oldestDevice.UDID, identify.UserID, err)
+			if user.MaxRouterDevice > 0 && routerCount >= int64(user.MaxRouterDevice) {
+				log.Warnf(c, "router device limit reached for user %d (%d/%d)", identify.UserID, routerCount, user.MaxRouterDevice)
+				return fmt.Errorf("router device limit reached")
+			}
+		} else {
+			// App device limit: count only app devices, kick oldest on limit
+			var appDeviceCount int64
+			if err := tx.Model(&Device{}).Where("user_id = ? AND is_gateway = false", identify.UserID).Count(&appDeviceCount).Error; err != nil {
+				log.Errorf(c, "failed to count app devices for user %d: %v", identify.UserID, err)
 				return err
 			}
-			log.Infof(c, "deleted oldest device %s for user %d", oldestDevice.UDID, identify.UserID)
+			if appDeviceCount >= int64(user.MaxDevice) {
+				log.Warnf(c, "app device limit reached for user %d, will remove oldest app device", identify.UserID)
+				var oldestDevice Device
+				if err := tx.Where("user_id = ? AND is_gateway = false", identify.UserID).Order("token_last_used_at ASC").First(&oldestDevice).Error; err != nil {
+					log.Errorf(c, "failed to find oldest app device for user %d: %v", identify.UserID, err)
+					return err
+				}
+				if err := tx.Delete(&oldestDevice).Error; err != nil {
+					log.Errorf(c, "failed to delete oldest device %s for user %d: %v", oldestDevice.UDID, identify.UserID, err)
+					return err
+				}
+				log.Infof(c, "deleted oldest app device %s for user %d", oldestDevice.UDID, identify.UserID)
 
-			meta := DeviceKickMeta{
-				KickTime: time.Now().Format("2006-01-02 15:04:05"),
-				Remark:   oldestDevice.Remark,
-			}
-			if err := emailToUser(c, int64(identify.UserID), deviceKickTemplate, meta); err != nil {
-				log.Errorf(c, "failed to send device kick email to user %d: %v", identify.UserID, err)
+				meta := DeviceKickMeta{
+					KickTime: time.Now().Format("2006-01-02 15:04:05"),
+					Remark:   oldestDevice.Remark,
+				}
+				if err := emailToUser(c, int64(identify.UserID), deviceKickTemplate, meta); err != nil {
+					log.Errorf(c, "failed to send device kick email to user %d: %v", identify.UserID, err)
+				}
 			}
 		}
 
@@ -767,28 +788,44 @@ func api_password_login(c *gin.Context) {
 			return err
 		}
 
-		// Check device limit
-		var deviceCount int64
-		if err := tx.Model(&Device{}).Where("user_id = ?", identify.UserID).Count(&deviceCount).Error; err != nil {
-			return err
-		}
+		// Check device limit by type (app vs router)
+		isGateway := isGatewayRequest(c)
 
-		if deviceCount >= int64(user.MaxDevice) {
-			var oldestDevice Device
-			if err := tx.Where("user_id = ?", identify.UserID).Order("token_last_used_at ASC").First(&oldestDevice).Error; err != nil {
+		if isGateway {
+			// Router login: check router access permission first
+			if user.MaxRouterDevice == 0 {
+				return fmt.Errorf("plan does not support router")
+			}
+			var routerCount int64
+			if err := tx.Model(&Device{}).Where("user_id = ? AND is_gateway = true", identify.UserID).Count(&routerCount).Error; err != nil {
 				return err
 			}
-			if err := tx.Delete(&oldestDevice).Error; err != nil {
+			if user.MaxRouterDevice > 0 && routerCount >= int64(user.MaxRouterDevice) {
+				return fmt.Errorf("router device limit reached")
+			}
+		} else {
+			// App device limit: count only app devices, kick oldest on limit
+			var appDeviceCount int64
+			if err := tx.Model(&Device{}).Where("user_id = ? AND is_gateway = false", identify.UserID).Count(&appDeviceCount).Error; err != nil {
 				return err
 			}
-			log.Infof(c, "deleted oldest device %s for user %d", oldestDevice.UDID, identify.UserID)
+			if appDeviceCount >= int64(user.MaxDevice) {
+				var oldestDevice Device
+				if err := tx.Where("user_id = ? AND is_gateway = false", identify.UserID).Order("token_last_used_at ASC").First(&oldestDevice).Error; err != nil {
+					return err
+				}
+				if err := tx.Delete(&oldestDevice).Error; err != nil {
+					return err
+				}
+				log.Infof(c, "deleted oldest app device %s for user %d", oldestDevice.UDID, identify.UserID)
 
-			meta := DeviceKickMeta{
-				KickTime: time.Now().Format("2006-01-02 15:04:05"),
-				Remark:   oldestDevice.Remark,
-			}
-			if err := emailToUser(c, int64(identify.UserID), deviceKickTemplate, meta); err != nil {
-				log.Errorf(c, "failed to send device kick email: %v", err)
+				meta := DeviceKickMeta{
+					KickTime: time.Now().Format("2006-01-02 15:04:05"),
+					Remark:   oldestDevice.Remark,
+				}
+				if err := emailToUser(c, int64(identify.UserID), deviceKickTemplate, meta); err != nil {
+					log.Errorf(c, "failed to send device kick email: %v", err)
+				}
 			}
 		}
 
