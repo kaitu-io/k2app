@@ -93,6 +93,12 @@ func applyOrderToTargetUsers(ctx context.Context, tx *gorm.DB, order *Order) err
 		return fmt.Errorf("plan not found for order %d", order.ID)
 	}
 
+	// Old plans in Meta don't have MaxDevice — default to current behavior
+	if plan.MaxDevice == 0 {
+		plan.MaxDevice = DefaultMaxDevice
+	}
+	// MaxRouterDevice/MaxLanClient default to 0 (no router) — correct for old plans
+
 	// 使用月数计算实际天数（按自然月计算，正确处理闰年等情况）
 	// 例如：2025-11-26 + 12个月 = 2026-11-26（365天或366天）
 	now := time.Now()
@@ -151,6 +157,12 @@ func applyOrderToTargetUsers(ctx context.Context, tx *gorm.DB, order *Order) err
 	// 3. 直接遍历 targetUsers，为每个用户增加授权（无需再次查询数据库）
 	for i := range targetUsers {
 		user := &targetUsers[i] // 获取指针以便 addProExpiredDays 修改用户数据
+
+		// Update quotas and plan from purchased tier
+		user.MaxDevice = plan.MaxDevice
+		user.MaxRouterDevice = plan.MaxRouterDevice
+		user.MaxLanClient = plan.MaxLanClient
+		user.PlanPID = plan.PID
 
 		// 使用 addProExpiredDays 统一处理（自动处理过期时间计算、首单标记、历史记录）
 		reason := fmt.Sprintf("订单支付 - %s", order.UUID)

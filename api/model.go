@@ -31,6 +31,12 @@ func init() {
 	}
 }
 
+// 默认配额常量
+const (
+	DefaultMaxDevice       = 5 // 默认 app 设备数量
+	DefaultMaxRouterDevice = 0 // 默认不支持路由器
+)
+
 // VipChangeType VIP变更类型
 type VipChangeType string
 
