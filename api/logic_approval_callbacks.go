@@ -327,6 +327,9 @@ func executeApprovalPlanUpdate(ctx context.Context, params json.RawMessage) erro
 	if req.IsActive != nil {
 		plan.IsActive = req.IsActive
 	}
+	if req.Tier != nil {
+		plan.Tier = *req.Tier
+	}
 	if req.MaxDevice != nil {
 		plan.MaxDevice = *req.MaxDevice
 	}

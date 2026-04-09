@@ -23,6 +23,7 @@ func api_get_plans(c *gin.Context) {
 	for _, plan := range plans {
 		items = append(items, DataPlan{
 			PID:             plan.PID,
+			Tier:            plan.Tier,
 			Label:           plan.Label,
 			Price:           plan.Price,
 			OriginPrice:     plan.OriginPrice,

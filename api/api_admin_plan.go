@@ -37,6 +37,7 @@ func api_admin_list_plans(c *gin.Context) {
 //
 type AdminCreatePlanRequest struct {
 	PID             string `json:"pid" binding:"required" example:"pro_monthly"`  // 套餐标识符
+	Tier            string `json:"tier" binding:"required" example:"family"`      // 功能等级标识
 	Label           string `json:"label" binding:"required" example:"Pro 月付套餐"`   // 套餐名称
 	Price           uint64 `json:"price" binding:"required" example:"999"`        // 价格（美分）
 	OriginPrice     uint64 `json:"originPrice" binding:"required" example:"1299"` // 原价（美分）
@@ -69,6 +70,7 @@ func api_admin_create_plan(c *gin.Context) {
 
 		plan := Plan{
 			PID:             req.PID,
+			Tier:            req.Tier,
 			Label:           req.Label,
 			Price:           req.Price,
 			OriginPrice:     req.OriginPrice,
@@ -101,6 +103,7 @@ func api_admin_create_plan(c *gin.Context) {
 // AdminUpdatePlanRequest 更新套餐请求结构体
 //
 type AdminUpdatePlanRequest struct {
+	Tier            *string `json:"tier"`                       // 功能等级标识
 	Label           *string `json:"label" example:"Pro 月付套餐"`   // 套餐名称
 	Price           *uint64 `json:"price" example:"999"`        // 价格（美分）
 	OriginPrice     *uint64 `json:"originPrice" example:"1299"` // 原价（美分）

@@ -158,11 +158,17 @@ func applyOrderToTargetUsers(ctx context.Context, tx *gorm.DB, order *Order) err
 	for i := range targetUsers {
 		user := &targetUsers[i] // 获取指针以便 addProExpiredDays 修改用户数据
 
-		// Update quotas and plan from purchased tier
+		// Update quotas and tier from purchased plan
 		user.MaxDevice = plan.MaxDevice
 		user.MaxRouterDevice = plan.MaxRouterDevice
 		user.MaxLanClient = plan.MaxLanClient
-		user.PlanPID = plan.PID
+
+		// Set tier (stable — doesn't change on period renewal)
+		tier := plan.Tier
+		if tier == "" {
+			tier = "pro" // backward compat: old plans without Tier field
+		}
+		user.Tier = tier
 
 		// 使用 addProExpiredDays 统一处理（自动处理过期时间计算、首单标记、历史记录）
 		reason := fmt.Sprintf("订单支付 - %s", order.UUID)

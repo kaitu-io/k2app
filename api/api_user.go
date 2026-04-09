@@ -458,8 +458,8 @@ func buildDataUserWithDevice(user *User, device *DataDevice) *DataUser {
 		Roles:            user.Roles,
 		IsAdmin:          user.IsAdmin != nil && *user.IsAdmin,
 		BetaOptedIn:      user.BetaOptedIn != nil && *user.BetaOptedIn,
+		Tier:             user.Tier,
 		MaxRouterDevice:  user.MaxRouterDevice,
 		MaxLanClient:     user.MaxLanClient,
-		PlanPID:          user.PlanPID,
 	}
 }

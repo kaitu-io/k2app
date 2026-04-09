@@ -113,9 +113,9 @@ type DataUser struct {
 	HasAccessKey       bool                 `json:"hasAccessKey,omitempty"`       // 是否有 Access Key
 	AccessKeyCreatedAt int64                `json:"accessKeyCreatedAt,omitempty"` // Access Key 创建时间
 	BetaOptedIn        bool                 `json:"betaOptedIn"`                  // 是否订阅 beta
+	Tier               string               `json:"tier,omitempty"`               // 当前功能等级
 	MaxRouterDevice    int                  `json:"maxRouterDevice"`              // 路由器登录数量上限
 	MaxLanClient       int                  `json:"maxLanClient"`                 // LAN 接入数量上限
-	PlanPID            string               `json:"planPid,omitempty"`            // 当前套餐 PID
 }
 
 // DataRetailerConfig 分销商配置数据结构
@@ -514,6 +514,7 @@ type AdminOrderListResponse struct {
 
 type DataPlan struct {
 	PID             string `json:"pid"`
+	Tier            string `json:"tier"`
 	Label           string `json:"label"`
 	Price           uint64 `json:"price"`
 	OriginPrice     uint64 `json:"originPrice"`
