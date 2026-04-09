@@ -213,6 +213,12 @@
     "upgradeDescription": "登录即可获取全球云端节点，开箱即用",
     "upgradeCta": "开通云节点"
   },
+  "upgrade": {
+    "available": "有新版本可用",
+    "description": "当前版本 {{current}}，最新版本 {{latest}}",
+    "apply": "立即更新",
+    "upgrading": "更新中..."
+  },
   "routerDevices": {
     "title": "局域网设备",
     "mode": "访问模式",

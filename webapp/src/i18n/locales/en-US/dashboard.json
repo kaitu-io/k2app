@@ -213,6 +213,12 @@
     "upgradeDescription": "Log in to access global cloud nodes, ready to use",
     "upgradeCta": "Get Cloud Nodes"
   },
+  "upgrade": {
+    "available": "Update Available",
+    "description": "Current: {{current}}, Latest: {{latest}}",
+    "apply": "Update Now",
+    "upgrading": "Updating..."
+  },
   "routerDevices": {
     "title": "LAN Devices",
     "mode": "Access Mode",
