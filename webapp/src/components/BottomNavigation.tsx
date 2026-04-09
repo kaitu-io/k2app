@@ -10,6 +10,7 @@ import {
   CardGiftcard as InviteIcon,
   Explore as DiscoverIcon,
   AccountCircle as AccountIcon,
+  Router as RouterIcon,
 } from "@mui/icons-material";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -76,6 +77,14 @@ function BottomNavigation() {
         feature: null,
         dataTour: "nav-dashboard",
       },
+      // Gateway-only: Router tab
+      ...(window._platform?.platformType === 'gateway' ? [{
+        label: t("nav:navigation.router"),
+        icon: <RouterIcon />,
+        path: "/router",
+        feature: null,
+        dataTour: "nav-router",
+      }] : []),
       {
         label: isAuthenticated ? t("nav:navigation.purchase") : t("nav:navigation.activate"),
         icon: <PurchaseIcon />,
