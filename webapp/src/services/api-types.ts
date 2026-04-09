@@ -132,12 +132,16 @@ export interface UpdateInviteCodeRemarkRequest {
 
 // 套餐信息
 export interface Plan {
-  pid: string; // 套餐ID，如 "1y", "2y", "3y"
-  label: string; // 套餐名称，如 "1年套餐"
-  price: number; // 原价, 美分计算
+  pid: string; // 套餐ID，如 "family-1y", "family-2y"
+  tier: string; // 功能等级: "lite" | "basic" | "family" | "business"
+  label: string; // 套餐名称
+  price: number; // 价格, 美分计算
   originPrice: number; // 原价, 美分计算
   month: number; // 月数
   highlight: boolean; // 是否高亮推荐
+  maxDevice: number; // app 设备上限 (0=default 5)
+  maxRouterDevice: number; // 路由器登录上限 (0=不支持, 1=支持)
+  maxLanClient: number; // LAN 接入上限 (0=不支持, -1=无限, >0=精确值)
 }
 
 export interface CreateOrderRequest {
@@ -363,6 +367,11 @@ export interface DataUser {
   isRetailer?: boolean; // 是否为分销商
   retailerConfig?: DataRetailerConfig; // 分销商配置
   betaOptedIn?: boolean;
+  // Tier quota fields (from Plan A)
+  tier?: string; // "lite" | "basic" | "family" | "business" | "pro"
+  maxDevice?: number; // app 设备上限
+  maxRouterDevice?: number; // 路由器登录上限
+  maxLanClient?: number; // LAN 接入上限
 }
 
 // 分销商配置更新请求
