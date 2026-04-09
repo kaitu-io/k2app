@@ -20,6 +20,8 @@ type GatewayConfig struct {
 	ListenPort          int      `yaml:"listen_port"`
 	LANSubnets          []string `yaml:"lan_subnets"`
 	DNSRedirect         bool     `yaml:"dns_redirect"`
+	DNSPort             int      `yaml:"dns_port" json:"dnsPort"`            // default: ListenPort + 1
+	MaxLanClient        int      `yaml:"max_lan_client" json:"maxLanClient"` // from user Tier (0=no limit, -1=unlimited)
 }
 
 const DefaultGatewayAddr = "127.0.0.1:1779"
@@ -53,6 +55,9 @@ func SetGatewayDefaults(cfg *GatewayConfig) {
 	// Gateway uses 1779 to avoid collision.
 	if cfg.Listen == "" || cfg.Listen == "127.0.0.1:1777" {
 		cfg.Listen = DefaultGatewayAddr
+	}
+	if cfg.DNSPort == 0 {
+		cfg.DNSPort = cfg.ListenPort + 1
 	}
 }
 

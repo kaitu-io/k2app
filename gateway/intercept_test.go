@@ -10,7 +10,7 @@ import (
 // ── nftables rule generation ─────────────────────────────────────
 
 func TestNftRuleGeneration(t *testing.T) {
-	nft := &nftInterceptor{}
+	nft := &nftShellInterceptor{}
 	script := nft.buildScript(InterceptConfig{
 		ListenPort: 12345,
 		LANSubnets: []string{"192.168.1.0/24", "10.0.0.0/8"},
@@ -37,7 +37,7 @@ func TestNftRuleGeneration(t *testing.T) {
 }
 
 func TestNftRuleGeneration_IPv6(t *testing.T) {
-	nft := &nftInterceptor{}
+	nft := &nftShellInterceptor{}
 	script := nft.buildScript(InterceptConfig{
 		ListenPort: 12345,
 		LANSubnets: []string{"fd00::/64"},
@@ -52,7 +52,7 @@ func TestNftRuleGeneration_IPv6(t *testing.T) {
 }
 
 func TestNftRuleGeneration_EmptyExclude(t *testing.T) {
-	nft := &nftInterceptor{}
+	nft := &nftShellInterceptor{}
 	script := nft.buildScript(InterceptConfig{
 		ListenPort: 12345,
 		LANSubnets: []string{"192.168.1.0/24"},
@@ -64,7 +64,7 @@ func TestNftRuleGeneration_EmptyExclude(t *testing.T) {
 }
 
 func TestNftRuleGeneration_DualStack(t *testing.T) {
-	nft := &nftInterceptor{}
+	nft := &nftShellInterceptor{}
 	script := nft.buildScript(InterceptConfig{
 		ListenPort: 8080,
 		LANSubnets: []string{"192.168.1.0/24", "fd00::/64"},
@@ -105,7 +105,7 @@ func TestNftRuleGeneration_DualStack(t *testing.T) {
 }
 
 func TestNftRuleGeneration_TPROXYSyntax(t *testing.T) {
-	nft := &nftInterceptor{}
+	nft := &nftShellInterceptor{}
 	// Verify nft uses "tproxy ip to" not bare "tproxy to" (inet family requires it).
 	script := nft.buildScript(InterceptConfig{
 		ListenPort: 1234,
@@ -117,7 +117,7 @@ func TestNftRuleGeneration_TPROXYSyntax(t *testing.T) {
 }
 
 func TestNftRuleGeneration_MultipleSubnets(t *testing.T) {
-	nft := &nftInterceptor{}
+	nft := &nftShellInterceptor{}
 	script := nft.buildScript(InterceptConfig{
 		ListenPort: 12345,
 		LANSubnets: []string{"192.168.1.0/24", "192.168.2.0/24", "10.0.0.0/8"},
@@ -272,6 +272,91 @@ func TestSplitSubnetsByFamily_Empty(t *testing.T) {
 	v4, v6 := splitSubnetsByFamily(nil)
 	if len(v4) != 0 || len(v6) != 0 {
 		t.Errorf("expected empty, got v4=%v v6=%v", v4, v6)
+	}
+}
+
+// ── DNS redirect + MAC allowlist tests ──────────────────────────
+
+func TestNftRuleGeneration_DNSRedirect(t *testing.T) {
+	nft := &nftShellInterceptor{}
+	script := nft.buildScript(InterceptConfig{
+		ListenPort:  12345,
+		LANSubnets:  []string{"192.168.1.0/24"},
+		DNSRedirect: true,
+		DNSPort:     12346,
+	})
+	if !strings.Contains(script, "th dport 53 redirect to :12346") {
+		t.Error("missing DNS redirect rule")
+	}
+}
+
+func TestNftRuleGeneration_DNSRedirect_Disabled(t *testing.T) {
+	nft := &nftShellInterceptor{}
+	script := nft.buildScript(InterceptConfig{
+		ListenPort: 12345,
+		LANSubnets: []string{"192.168.1.0/24"},
+	})
+	if strings.Contains(script, "redirect") {
+		t.Error("should not have redirect rule when DNSRedirect is false")
+	}
+}
+
+func TestNftRuleGeneration_MACAllowlist(t *testing.T) {
+	nft := &nftShellInterceptor{}
+	script := nft.buildScript(InterceptConfig{
+		ListenPort:    12345,
+		LANSubnets:    []string{"192.168.1.0/24"},
+		AllowlistMode: true,
+		AllowedMACs:   []string{"AA:BB:CC:DD:EE:FF", "11:22:33:44:55:66"},
+	})
+	if !strings.Contains(script, "allowed_macs") {
+		t.Error("missing allowed_macs set")
+	}
+	if !strings.Contains(script, "AA:BB:CC:DD:EE:FF") {
+		t.Error("missing MAC in set")
+	}
+	if !strings.Contains(script, "ether saddr != @allowed_macs drop") {
+		t.Error("missing MAC drop rule")
+	}
+}
+
+func TestNftRuleGeneration_MACAllowlist_Disabled(t *testing.T) {
+	nft := &nftShellInterceptor{}
+	script := nft.buildScript(InterceptConfig{
+		ListenPort: 12345,
+		LANSubnets: []string{"192.168.1.0/24"},
+	})
+	if strings.Contains(script, "allowed_macs") {
+		t.Error("should not have MAC set when AllowlistMode is false")
+	}
+}
+
+func TestIptRuleGeneration_DNSRedirect(t *testing.T) {
+	cmds, _, _ := buildIptCommands(InterceptConfig{
+		ListenPort:  12345,
+		LANSubnets:  []string{"192.168.1.0/24"},
+		DNSRedirect: true,
+		DNSPort:     12346,
+	})
+	joined := flattenCmds(cmds)
+	if !strings.Contains(joined, "-t nat -N K2R_DNS") {
+		t.Error("missing DNS nat chain creation")
+	}
+	if !strings.Contains(joined, "--dport 53 -j REDIRECT --to-ports 12346") {
+		t.Error("missing DNS redirect rule")
+	}
+}
+
+func TestIptRuleGeneration_MACAllowlist(t *testing.T) {
+	cmds, _, _ := buildIptCommands(InterceptConfig{
+		ListenPort:    12345,
+		LANSubnets:    []string{"192.168.1.0/24"},
+		AllowlistMode: true,
+		AllowedMACs:   []string{"AA:BB:CC:DD:EE:FF"},
+	})
+	joined := flattenCmds(cmds)
+	if !strings.Contains(joined, "--mac-source AA:BB:CC:DD:EE:FF") {
+		t.Error("missing MAC filter rule")
 	}
 }
 

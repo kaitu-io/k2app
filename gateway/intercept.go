@@ -22,19 +22,39 @@ type InterceptConfig struct {
 	ListenPort int
 	LANSubnets []string
 	ExcludeIPs []string
+	// Router features
+	DNSRedirect   bool     // redirect port 53 to DNSPort
+	DNSPort       int      // k2r DNS resolver port (from engine config)
+	AllowlistMode bool     // true = only AllowedMACs can access proxy
+	AllowedMACs   []string // MAC addresses in allowlist (e.g., "AA:BB:CC:DD:EE:FF")
+}
+
+// MACManager is an optional interface for interceptors that support live MAC set updates.
+// Supported by nftNetlinkInterceptor (netlink set operations).
+// Not supported by shell-based or iptables backends (require full reinstall).
+type MACManager interface {
+	AddMAC(mac string) error
+	RemoveMAC(mac string) error
 }
 
 const DefaultListenPort = 12345
 
 // NewInterceptor auto-detects the best available firewall backend.
+// Priority: netlink (no binary needed) → nft shell → iptables.
 func NewInterceptor() (Interceptor, error) {
-	if _, err := exec.LookPath("nft"); err == nil {
-		return &nftInterceptor{}, nil
+	// Try Go nftables library (direct netlink) first — no nft binary needed
+	if nft, err := newNftNetlinkInterceptor(); err == nil {
+		return nft, nil
 	}
+	// Fallback: shell-based nft command
+	if _, err := exec.LookPath("nft"); err == nil {
+		return &nftShellInterceptor{}, nil
+	}
+	// Fallback: iptables
 	if _, err := exec.LookPath("iptables"); err == nil {
 		return &iptInterceptor{}, nil
 	}
-	return nil, fmt.Errorf("gateway: neither nft nor iptables found")
+	return nil, fmt.Errorf("gateway: no firewall backend available (tried netlink, nft, iptables)")
 }
 
 func splitIPsByFamily(ips []string) (v4, v6 []string) {
