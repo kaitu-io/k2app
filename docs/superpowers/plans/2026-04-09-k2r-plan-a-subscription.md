@@ -1,1047 +1,239 @@
-# Plan A: Subscription Architecture — Implementation Plan
+# Plan A: Tiered Plan Model — Implementation Plan (v4)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace User.ExpiredAt/MaxDevice with a Subscription table as the source of truth for entitlements. Support both personal and gateway product types. Backward compatible via cache sync.
+**Goal:** Add tiered plan support with router access as premium feature. Plan defines MaxDevice + MaxRouterDevice. User gains MaxRouterDevice + PlanPID. RouterRequired middleware gates router access. No new tables.
 
-**Architecture:** New `Subscription` model (one per user per product). Order payment creates/renews Subscription. `syncUserCache()` keeps User.ExpiredAt/MaxDevice in sync for untouched legacy code. ProRequired middleware reads Subscription with fallback to User.ExpiredAt during migration window.
+**Architecture:** Plan.MaxDevice/MaxRouterDevice define tier quotas. applyOrderToTargetUsers writes these to User on purchase. ProRequired unchanged. New RouterRequired checks User.MaxRouterDevice > 0.
 
 **Tech Stack:** Go 1.24, Gin, GORM (MySQL), testify
 
-**Spec:** `docs/superpowers/specs/2026-04-09-k2r-router-release-features-design.md` (Sections 1-5)
+**Spec:** `docs/superpowers/specs/2026-04-09-k2r-router-release-features-design.md` (v4)
 
-**Risk mitigation:**
-- ProRequired has fallback to User.ExpiredAt if Subscription not found (safe rollout)
-- Data migration is idempotent (safe to re-run)
-- syncUserCache ensures legacy code never breaks
+**Confidence: 10/10** — No new tables, no data migration, no middleware rewrite. Just add fields.
+**Risk: 1/10** — ProRequired untouched. addProExpiredDays untouched. Only additive changes.
 
-**Constants:**
+---
+
+## Constants
 
 ```go
 const (
-	ProductTypePersonal = "personal"
-	ProductTypeGateway  = "gateway"
-	DefaultMaxDevice    = 5  // personal 套餐默认设备数
+    DefaultMaxDevice       = 5
+    DefaultMaxRouterDevice = 0  // no router access
 )
 ```
 
-Define these in `api/logic_subscription.go`. All code references these constants, never magic number `5` or string `"personal"`.
+Define in a suitable location (e.g., `model.go` or a new `constants.go`).
 
 ---
 
-## File Map
-
-| File | Action | Responsibility |
-|------|--------|---------------|
-| `api/model.go` | Modify | Add Subscription struct, Plan.ProductType, Plan.Quota, Device.IsGateway |
-| `api/type.go` | Modify | Add DataSubscription, update DataPlan, update AppInfo |
-| `api/migrate.go` | Modify | Add Subscription to AutoMigrate + data migration |
-| `api/logic_subscription.go` | Create | syncUserCache, getActiveSubscription, getUserSubscriptions |
-| `api/logic_subscription_test.go` | Create | Unit tests for subscription helpers |
-| `api/logic_member.go` | Modify | Rewrite applyOrderToTargetUsers to upsert Subscription |
-| `api/middleware.go` | Modify | ProRequired reads Subscription (with fallback), add GatewayProRequired, parse isGateway |
-| `api/api_auth.go` | Modify | Device limit reads Subscription.Quota |
-| `api/api_plan.go` | Modify | Add product_type query filter |
-| `api/api_admin_plan.go` | Modify | Add ProductType/Quota to CRUD |
-| `api/api_user.go` | Modify | Profile returns subscriptions list |
-| `api/route.go` | Modify | Register gateway routes with GatewayProRequired |
-
----
-
-## Task 1: Subscription Model + Plan Fields + Migration
+## Task 1: Plan + User + Device Model Changes
 
 **Files:**
 - Modify: `api/model.go`
 - Modify: `api/type.go`
 - Modify: `api/migrate.go`
 
-- [ ] **Step 1: Add Subscription struct to model.go**
+- [ ] **Step 1: Add MaxDevice and MaxRouterDevice to Plan struct**
 
-After the `Plan` struct (line ~592), add:
+In `api/model.go`, Plan struct (line ~581). Add after `IsActive`:
 
 ```go
-// Subscription 用户订阅 — 权益状态的唯一真理源
-// 每个用户每条产品线最多一个 Subscription (UserID + ProductType unique)
-type Subscription struct {
-	ID          uint64    `gorm:"primarykey" json:"id"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
-	UserID      uint64    `gorm:"not null;uniqueIndex:idx_user_product" json:"userId"`
-	ProductType string    `gorm:"type:varchar(20);not null;uniqueIndex:idx_user_product" json:"productType"` // "personal" | "gateway"
-	PlanPID     string    `gorm:"type:varchar(30);not null" json:"planPid"`                                  // 当前生效的套餐 PID
-	ExpiredAt   int64     `gorm:"not null" json:"expiredAt"`                                                 // 到期时间 Unix 秒
-	Quota       int       `gorm:"not null" json:"quota"`                                                     // personal=最大设备数, gateway=最大接入设备数, 0=无限
-}
-
-func (s *Subscription) IsExpired() bool {
-	return s.ExpiredAt <= time.Now().Unix()
-}
+	MaxDevice       int `gorm:"not null;default:5" json:"maxDevice"`          // 登录设备上限
+	MaxRouterDevice int `gorm:"not null;default:0" json:"maxRouterDevice"`    // 路由器接入设备上限 (0=无路由器, -1=无限)
 ```
 
-- [ ] **Step 2: Add ProductType and Quota to Plan struct**
+- [ ] **Step 2: Add MaxRouterDevice and PlanPID to User struct**
 
-Modify the existing `Plan` struct (line ~581). Add two fields after `IsActive`:
+In `api/model.go`, User struct (line ~46). Add after `MaxDevice`:
 
 ```go
-	ProductType string `gorm:"type:varchar(20);not null;default:'personal'" json:"productType"` // "personal" | "gateway"
-	Quota       int    `gorm:"not null;default:5" json:"quota"`                                  // personal=设备数, gateway=接入设备数, 0=无限
+	MaxRouterDevice int    `gorm:"not null;default:0" json:"maxRouterDevice"`           // 路由器接入设备上限
+	PlanPID         string `gorm:"type:varchar(30);default:''" json:"planPid"`           // 当前套餐 PID
 ```
 
 - [ ] **Step 3: Add IsGateway to Device struct**
 
-In the `Device` struct (line ~132), add after `DeviceModel` (or last field):
+In `api/model.go`, Device struct (line ~132). Add after last field:
 
 ```go
-	IsGateway bool `gorm:"not null;default:false" json:"isGateway"` // 路由器设备标识
+	IsGateway bool `gorm:"not null;default:false" json:"isGateway"`
 ```
 
 - [ ] **Step 4: Update DataPlan in type.go**
 
-Find `DataPlan` struct (line ~512) and add two fields:
+Find `DataPlan` struct (line ~512). Add:
 
 ```go
-	ProductType string `json:"productType"`
-	Quota       int    `json:"quota"`
+	MaxDevice       int  `json:"maxDevice"`
+	MaxRouterDevice int  `json:"maxRouterDevice"`
 ```
 
-- [ ] **Step 5: Add DataSubscription to type.go**
+- [ ] **Step 5: Update DataUser in type.go**
 
-After DataPlan, add:
+Find `DataUser` struct (line ~99). Add after `BetaOptedIn`:
 
 ```go
-type DataSubscription struct {
-	ID          uint64 `json:"id"`
-	ProductType string `json:"productType"`
-	PlanPID     string `json:"planPid"`
-	ExpiredAt   int64  `json:"expiredAt"`
-	Quota       int    `json:"quota"`
-}
+	MaxRouterDevice int    `json:"maxRouterDevice"`
+	PlanPID         string `json:"planPid,omitempty"`
 ```
 
-- [ ] **Step 6: Add IsGateway to AppInfo in type.go**
-
-Find the `AppInfo` struct and add:
-
-```go
-	IsGateway bool // 路由器设备
-```
-
-- [ ] **Step 7: Update migrate.go — add Subscription to AutoMigrate**
-
-In `api/migrate.go`, add `&Subscription{}` to the AutoMigrate list (after `&Announcement{}`):
-
-```go
-		// Subscription system
-		&Subscription{},
-```
-
-- [ ] **Step 8: Add data migration after AutoMigrate**
-
-After the `AutoMigrate` call in `migrate.go` (after line 72, before the legacy cleanup), add:
-
-```go
-	// Populate personal subscriptions from existing User.ExpiredAt
-	// Idempotent: NOT IN subquery skips users who already have a subscription
-	result := db.Get().Exec(`
-		INSERT INTO subscriptions (user_id, product_type, plan_pid, expired_at, quota, created_at, updated_at)
-		SELECT id, 'personal', '', expired_at, max_device, NOW(), NOW()
-		FROM users
-		WHERE expired_at > 0
-		AND id NOT IN (SELECT user_id FROM subscriptions WHERE product_type = 'personal')
-	`)
-	if result.Error != nil {
-		log.Errorf(ctx, "CRITICAL: subscription data migration failed: %v", result.Error)
-		return fmt.Errorf("subscription data migration failed: %w", result.Error)
-	}
-	log.Infof(ctx, "subscription data migration: %d rows inserted", result.RowsAffected)
-
-	// Sanity check: verify migration populated subscriptions
-	var subCount int64
-	db.Get().Model(&Subscription{}).Where("product_type = 'personal'").Count(&subCount)
-	var userCount int64
-	db.Get().Model(&User{}).Where("expired_at > 0").Count(&userCount)
-	if subCount == 0 && userCount > 0 {
-		log.Errorf(ctx, "CRITICAL: subscription migration sanity check failed: %d users with expired_at > 0 but 0 subscriptions", userCount)
-		return fmt.Errorf("subscription migration sanity check failed: 0 subscriptions for %d eligible users", userCount)
-	}
-	log.Infof(ctx, "subscription migration sanity check: %d subscriptions for %d eligible users", subCount, userCount)
-```
-
-- [ ] **Step 9: Verify compilation**
+- [ ] **Step 6: Verify compilation**
 
 Run: `cd api && go build ./...`
-Expected: Compiles successfully.
+Expected: Compiles. GORM AutoMigrate will add columns on next startup.
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add api/model.go api/type.go api/migrate.go
-git commit -m "feat(api): add Subscription model, Plan.ProductType/Quota, Device.IsGateway, data migration"
+git add api/model.go api/type.go
+git commit -m "feat(api): add Plan.MaxDevice/MaxRouterDevice, User.MaxRouterDevice/PlanPID, Device.IsGateway"
 ```
 
 ---
 
-## Task 2: Subscription Helper Functions
-
-**Files:**
-- Create: `api/logic_subscription.go`
-- Create: `api/logic_subscription_test.go`
-
-- [ ] **Step 1: Create logic_subscription.go**
-
-```go
-package center
-
-import (
-	"context"
-
-	"github.com/wordgate/qtoolkit/log"
-	"gorm.io/gorm"
-)
-
-const (
-	ProductTypePersonal = "personal"
-	ProductTypeGateway  = "gateway"
-	DefaultMaxDevice    = 5 // personal 套餐默认设备数
-)
-
-// syncUserCache 将 personal Subscription 同步到 User 的缓存字段
-// 目的: 未改动的代码 (workers, EDM, admin) 继续读 User.ExpiredAt/MaxDevice 正常工作
-// 所有新代码读 Subscription
-func syncUserCache(ctx context.Context, tx *gorm.DB, userID uint64) error {
-	var sub Subscription
-	err := tx.Where("user_id = ? AND product_type = ?", userID, ProductTypePersonal).First(&sub).Error
-	if err == gorm.ErrRecordNotFound {
-		return nil // 无 personal 订阅, 不动 User
-	}
-	if err != nil {
-		return err
-	}
-	return tx.Model(&User{}).Where("id = ?", userID).Updates(map[string]any{
-		"expired_at": sub.ExpiredAt,
-		"max_device": sub.Quota,
-	}).Error
-}
-
-// getActiveSubscription 查询用户在指定产品线的订阅
-// 返回 nil, nil 表示无订阅 (不是 error)
-func getActiveSubscription(tx *gorm.DB, userID uint64, productType string) (*Subscription, error) {
-	var sub Subscription
-	err := tx.Where("user_id = ? AND product_type = ?", userID, productType).First(&sub).Error
-	if err == gorm.ErrRecordNotFound {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &sub, nil
-}
-
-// getUserSubscriptions 返回用户的所有订阅
-func getUserSubscriptions(tx *gorm.DB, userID uint64) ([]DataSubscription, error) {
-	var subs []Subscription
-	if err := tx.Where("user_id = ?", userID).Find(&subs).Error; err != nil {
-		return nil, err
-	}
-	result := make([]DataSubscription, len(subs))
-	for i, s := range subs {
-		result[i] = DataSubscription{
-			ID:          s.ID,
-			ProductType: s.ProductType,
-			PlanPID:     s.PlanPID,
-			ExpiredAt:   s.ExpiredAt,
-			Quota:       s.Quota,
-		}
-	}
-	return result, nil
-}
-
-// getSubscriptionQuota 获取订阅配额, 无订阅返回默认值
-func getSubscriptionQuota(tx *gorm.DB, userID uint64, productType string, defaultQuota int) int {
-	sub, err := getActiveSubscription(tx, userID, productType)
-	if err != nil || sub == nil {
-		return defaultQuota
-	}
-	return sub.Quota
-}
-```
-
-- [ ] **Step 2: Create logic_subscription_test.go**
-
-```go
-package center
-
-import (
-	"testing"
-	"time"
-
-	"github.com/stretchr/testify/assert"
-)
-
-func TestSubscription_IsExpired(t *testing.T) {
-	past := &Subscription{ExpiredAt: time.Now().Add(-1 * time.Hour).Unix()}
-	assert.True(t, past.IsExpired())
-
-	future := &Subscription{ExpiredAt: time.Now().Add(1 * time.Hour).Unix()}
-	assert.False(t, future.IsExpired())
-
-	exact := &Subscription{ExpiredAt: time.Now().Unix()}
-	assert.True(t, exact.IsExpired(), "exactly now counts as expired (<=)")
-}
-```
-
-- [ ] **Step 3: Run tests**
-
-Run: `cd api && go test -run TestSubscription -v ./...`
-Expected: PASS
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add api/logic_subscription.go api/logic_subscription_test.go
-git commit -m "feat(api): subscription helper functions (syncUserCache, getActiveSubscription)"
-```
-
----
-
-## Task 3: Rewrite Order Processing
+## Task 2: Update Order Processing
 
 **Files:**
 - Modify: `api/logic_member.go`
 - Modify: `api/member_test.go`
 
-- [ ] **Step 1: Add skipExpiredAtWrite parameter to addProExpiredDays**
+- [ ] **Step 1: Update applyOrderToTargetUsers to write new fields**
 
-The current `addProExpiredDays` writes `User.ExpiredAt` directly (line 38-46). Now that Subscription owns expiry, we add a flag to skip this write. Modify the function signature (line 14):
+In `api/logic_member.go`, inside the `applyOrderToTargetUsers` function, find the loop over `targetUsers` (line ~152). Currently:
 
-**Before:**
 ```go
-func addProExpiredDays(ctx context.Context, tx *gorm.DB, user *User, vipType VipChangeType, referenceID uint64, days int, reason string) (*UserProHistory, error) {
+	for i := range targetUsers {
+		user := &targetUsers[i]
+		reason := fmt.Sprintf("订单支付 - %s", order.UUID)
+		_, err := addProExpiredDays(ctx, tx, user, VipPurchase, order.ID, days, reason)
 ```
 
-**After:**
-```go
-func addProExpiredDays(ctx context.Context, tx *gorm.DB, user *User, vipType VipChangeType, referenceID uint64, days int, reason string, skipExpiredAtWrite bool) (*UserProHistory, error) {
-```
-
-Then wrap the ExpiredAt calculation (lines 37-47) in a condition:
+Add three lines BEFORE the `addProExpiredDays` call:
 
 ```go
-	if !skipExpiredAtWrite {
-		// 计算新的过期时间 (legacy path — new code uses Subscription)
-		now := time.Now()
-		if user.ExpiredAt < now.Unix() {
-			user.ExpiredAt = now.AddDate(0, 0, days).Unix()
-		} else {
-			user.ExpiredAt = time.Unix(user.ExpiredAt, 0).AddDate(0, 0, days).Unix()
-		}
-	}
-```
-
-**Update ALL existing callers** to pass `false` (preserving current behavior). Search the codebase:
-- `logic_member.go` itself (the new `applyOrderToTargetUsers` will pass `true`)
-- `logic_auth.go` or wherever invite rewards call it → pass `false`
-
-Run: `cd api && grep -rn "addProExpiredDays" --include="*.go"` to find all call sites.
-
-- [ ] **Step 2: Replace applyOrderToTargetUsers in logic_member.go**
-
-Replace lines 76-168 (the entire `applyOrderToTargetUsers` function) with:
-
-```go
-// applyOrderToTargetUsers 订单生效：为指定用户创建/续期 Subscription
-func applyOrderToTargetUsers(ctx context.Context, tx *gorm.DB, order *Order) error {
-	log.Infof(ctx, "[applyOrderToTargetUsers] applying order %d to target users", order.ID)
-
-	if order.IsPaid == nil || !*order.IsPaid {
-		log.Warnf(ctx, "[applyOrderToTargetUsers] order %d is not paid, skipping", order.ID)
-		return nil
-	}
-
-	plan, err := order.GetPlan()
-	if err != nil {
-		return fmt.Errorf("get plan for order %d: %w", order.ID, err)
-	}
-	if plan == nil {
-		return fmt.Errorf("plan not found for order %d", order.ID)
-	}
-
-	// 使用月数计算天数 (用于 UserProHistory 记录)
-	now := time.Now()
-	futureDate := now.AddDate(0, plan.Month, 0)
-	days := int(futureDate.Sub(now).Hours() / 24)
-
-	// 确定 ProductType: 旧套餐没有 ProductType, 默认 personal
-	productType := plan.ProductType
-	if productType == "" {
-		productType = "personal"
-	}
-	// 确定 Quota: 旧套餐没有 Quota, 默认 5
-	quota := plan.Quota
-	if quota == 0 && productType == "personal" {
-		quota = 5
-	}
-
-	// 收集目标用户
-	var targetUsers []User
-	if order.GetForMyself() {
-		var buyer User
-		if err := tx.First(&buyer, order.UserID).Error; err != nil {
-			return fmt.Errorf("购买者不存在: %w", err)
-		}
-		targetUsers = append(targetUsers, buyer)
-	}
-	forUserUUIDs := order.GetForUsers()
-	if len(forUserUUIDs) > 0 {
-		var users []User
-		if err := tx.Where("uuid IN ?", forUserUUIDs).Find(&users).Error; err != nil {
-			return err
-		}
-		if len(users) != len(forUserUUIDs) {
-			return fmt.Errorf("部分目标用户不存在: 期望 %d 个, 实际找到 %d 个", len(forUserUUIDs), len(users))
-		}
-		targetUsers = append(targetUsers, users...)
-	}
-
-	if len(targetUsers) == 0 {
-		log.Warnf(ctx, "[applyOrderToTargetUsers] no target users for order %d", order.ID)
-		return nil
-	}
-
 	for i := range targetUsers {
 		user := &targetUsers[i]
 
-		// Upsert Subscription
-		var sub Subscription
-		err := tx.Where("user_id = ? AND product_type = ?", user.ID, productType).First(&sub).Error
-		if err == gorm.ErrRecordNotFound {
-			// 新订阅 — 从现在开始
-			sub = Subscription{
-				UserID:      user.ID,
-				ProductType: productType,
-				PlanPID:     plan.PID,
-				ExpiredAt:   now.AddDate(0, plan.Month, 0).Unix(),
-				Quota:       quota,
-			}
-			if err := tx.Create(&sub).Error; err != nil {
-				return fmt.Errorf("create subscription for user %d: %w", user.ID, err)
-			}
-			log.Infof(ctx, "[applyOrderToTargetUsers] created %s subscription for user %d, expires %s",
-				productType, user.ID, time.Unix(sub.ExpiredAt, 0).Format("2006-01-02"))
-		} else if err != nil {
-			return fmt.Errorf("query subscription for user %d: %w", user.ID, err)
-		} else {
-			// 续期 — 从当前到期时间延长 (已过期则从现在开始)
-			base := time.Unix(sub.ExpiredAt, 0)
-			if sub.IsExpired() {
-				base = now
-			}
-			sub.ExpiredAt = base.AddDate(0, plan.Month, 0).Unix()
-			sub.PlanPID = plan.PID
-			sub.Quota = quota
-			if err := tx.Save(&sub).Error; err != nil {
-				return fmt.Errorf("update subscription for user %d: %w", user.ID, err)
-			}
-			log.Infof(ctx, "[applyOrderToTargetUsers] renewed %s subscription for user %d, expires %s",
-				productType, user.ID, time.Unix(sub.ExpiredAt, 0).Format("2006-01-02"))
-		}
+		// Update device quotas and plan from purchased tier
+		user.MaxDevice = plan.MaxDevice
+		user.MaxRouterDevice = plan.MaxRouterDevice
+		user.PlanPID = plan.PID
 
-		// UserProHistory + IsFirstOrderDone + IsActivated (保持现有行为)
-		// skipExpiredAtWrite=true: Subscription owns expiry, don't write User.ExpiredAt
 		reason := fmt.Sprintf("订单支付 - %s", order.UUID)
-		if _, err := addProExpiredDays(ctx, tx, user, VipPurchase, order.ID, days, reason, true); err != nil {
-			return fmt.Errorf("addProExpiredDays for user %d: %w", user.ID, err)
-		}
-
-		// 同步 User 缓存 (仅 personal — gateway 状态只在 Subscription)
-		if productType == ProductTypePersonal {
-			if err := syncUserCache(ctx, tx, user.ID); err != nil {
-				log.Warnf(ctx, "[applyOrderToTargetUsers] syncUserCache failed for user %d: %v", user.ID, err)
-			}
-		}
-	}
-
-	log.Infof(ctx, "[applyOrderToTargetUsers] applied order %d to %d users", order.ID, len(targetUsers))
-	return nil
-}
+		_, err := addProExpiredDays(ctx, tx, user, VipPurchase, order.ID, days, reason)
 ```
 
-**Note:** `addProExpiredDays` is kept as-is. It still writes `User.ExpiredAt` (which is now a cache field — `syncUserCache` will overwrite it immediately after from Subscription). The `addProExpiredDays` function also handles `IsFirstOrderDone`, `IsActivated`, and creates `UserProHistory` — we need all of these side effects to continue working.
+`addProExpiredDays` calls `tx.Save(user)` at line 65, which writes ALL user fields including the three we just set. No additional Save needed.
 
-- [ ] **Step 3: Update all existing addProExpiredDays callers**
+- [ ] **Step 2: Handle missing MaxDevice in old plans**
 
-Run: `cd api && grep -rn "addProExpiredDays" --include="*.go"` to find all call sites.
-
-For each caller (except the new `applyOrderToTargetUsers`), add `false` as the last argument:
+Old plans serialized in Order.Meta don't have MaxDevice/MaxRouterDevice. Add defaults after `order.GetPlan()` (line ~86):
 
 ```go
-// Before:
-addProExpiredDays(ctx, tx, user, VipInviteReward, codeID, days, reason)
-// After:
-addProExpiredDays(ctx, tx, user, VipInviteReward, codeID, days, reason, false)
+	plan, err := order.GetPlan()
+	if err != nil { ... }
+	// Old plans in Meta don't have MaxDevice — default to current behavior
+	if plan.MaxDevice == 0 {
+		plan.MaxDevice = DefaultMaxDevice
+	}
+	// MaxRouterDevice defaults to 0 (no router) — correct for old plans
 ```
 
-- [ ] **Step 4: Add tests for Subscription-based order processing**
+- [ ] **Step 3: Add test for quota write**
 
 Append to `api/member_test.go`:
 
 ```go
-func TestApplyOrderToTargetUsers_DefaultsToPersonal(t *testing.T) {
-	// Old plans without ProductType should default to "personal"
-	plan := &Plan{PID: "1y", Label: "1 Year", Price: 4999, Month: 12}
-	order := Order{}
-	_ = order.SetOrderMeta(plan, nil, []string{}, true)
-
-	retrievedPlan, _ := order.GetPlan()
-	// Old plans serialized without ProductType — field is zero value ""
-	// applyOrderToTargetUsers must treat "" as ProductTypePersonal
-	assert.Equal(t, "", retrievedPlan.ProductType, "old plans have empty ProductType in Meta")
-}
-
-func TestApplyOrderToTargetUsers_GatewayPlan(t *testing.T) {
-	// Gateway plan should preserve ProductType in Meta
+func TestApplyOrderToTargetUsers_WritesQuotas(t *testing.T) {
+	// Verify new Plan fields survive Meta roundtrip
 	plan := &Plan{
-		PID:         "router-monthly-5",
-		Label:       "路由器月付·5设备",
-		Price:       999,
-		Month:       1,
-		ProductType: ProductTypeGateway,
-		Quota:       5,
+		PID:             "family-1y",
+		Label:           "家庭版年付",
+		Price:           9999,
+		Month:           12,
+		MaxDevice:       5,
+		MaxRouterDevice: 10,
 	}
+	order := Order{}
+	err := order.SetOrderMeta(plan, nil, []string{}, true)
+	require.NoError(t, err)
+
+	retrieved, err := order.GetPlan()
+	require.NoError(t, err)
+	assert.Equal(t, 5, retrieved.MaxDevice)
+	assert.Equal(t, 10, retrieved.MaxRouterDevice)
+	assert.Equal(t, "family-1y", retrieved.PID)
+}
+
+func TestApplyOrderToTargetUsers_OldPlanDefaults(t *testing.T) {
+	// Old plans without MaxDevice should get DefaultMaxDevice
+	plan := &Plan{PID: "1y", Label: "1年", Price: 4999, Month: 12}
 	order := Order{}
 	_ = order.SetOrderMeta(plan, nil, []string{}, true)
 
-	retrievedPlan, err := order.GetPlan()
-	assert.NoError(t, err)
-	assert.Equal(t, ProductTypeGateway, retrievedPlan.ProductType)
-	assert.Equal(t, 5, retrievedPlan.Quota)
+	retrieved, _ := order.GetPlan()
+	// Old plan: MaxDevice=0 (zero value), MaxRouterDevice=0
+	assert.Equal(t, 0, retrieved.MaxDevice, "old plan has zero MaxDevice in Meta")
+	assert.Equal(t, 0, retrieved.MaxRouterDevice, "old plan has zero MaxRouterDevice")
+	// Code must default MaxDevice=0 to DefaultMaxDevice=5
 }
 ```
 
-- [ ] **Step 5: Verify compilation and run all tests**
+- [ ] **Step 4: Run tests**
 
-Run: `cd api && go build ./... && go test ./...`
-Expected: Compiles and all existing tests pass. The new tests verify Meta serialization roundtrip for both old and new plan formats.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add api/logic_member.go api/member_test.go
-git commit -m "feat(api): rewrite applyOrderToTargetUsers to upsert Subscription + syncUserCache
-
-Order payment now creates/renews Subscription (source of truth).
-addProExpiredDays kept for UserProHistory + IsFirstOrderDone + IsActivated.
-syncUserCache keeps User.ExpiredAt/MaxDevice in sync for legacy code.
-Gateway subscriptions (productType=gateway) skip User cache sync."
-```
-
----
-
-## Task 4: ProRequired Middleware + GatewayProRequired
-
-**Files:**
-- Modify: `api/middleware.go`
-
-- [ ] **Step 1: Rewrite ProRequired with Subscription check + fallback**
-
-Replace ProRequired (line ~418) with:
-
-```go
-// ProRequired 检查 personal 订阅是否有效
-// 优先查 Subscription 表 (source of truth), 查不到时 fallback 到 User.ExpiredAt (迁移兼容)
-func ProRequired() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		user := ReqUser(c)
-		if user == nil {
-			log.Warnf(c, "vip required: auth failed for request to %s", c.Request.URL.Path)
-			Error(c, ErrorNotLogin, "authentication failed")
-			c.Abort()
-			return
-		}
-
-		sub, err := getActiveSubscription(db.Get(), user.ID, ProductTypePersonal)
-		if err != nil {
-			log.Errorf(c, "ProRequired: failed to query subscription for user %d: %v", user.ID, err)
-			// DB error — fall back to User cache to avoid blocking all users
-			if user.IsExpired() {
-				Error(c, ErrorPaymentRequired, "membership expired")
-				c.Abort()
-				return
-			}
-			c.Next()
-			return
-		}
-
-		if sub != nil {
-			// Subscription found — use it as source of truth
-			if sub.IsExpired() {
-				log.Warnf(c, "vip required: user %d subscription expired, request to %s denied", user.ID, c.Request.URL.Path)
-				Error(c, ErrorPaymentRequired, "membership expired")
-				c.Abort()
-				return
-			}
-		} else {
-			// No Subscription row — fallback to User.ExpiredAt (migration window)
-			if user.IsExpired() {
-				log.Warnf(c, "vip required: user %d membership expired (no subscription, using cache), request to %s denied", user.ID, c.Request.URL.Path)
-				Error(c, ErrorPaymentRequired, "membership expired")
-				c.Abort()
-				return
-			}
-		}
-
-		c.Next()
-	}
-}
-
-// GatewayProRequired 检查 gateway 订阅是否有效
-// 无 fallback — gateway 是新产品线, 必须有 Subscription
-func GatewayProRequired() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		user := ReqUser(c)
-		if user == nil {
-			Error(c, ErrorNotLogin, "authentication failed")
-			c.Abort()
-			return
-		}
-
-		sub, err := getActiveSubscription(db.Get(), user.ID, ProductTypeGateway)
-		if err != nil {
-			log.Errorf(c, "GatewayProRequired: failed to query subscription for user %d: %v", user.ID, err)
-			Error(c, ErrorSystemError, "failed to check gateway subscription")
-			c.Abort()
-			return
-		}
-		if sub == nil || sub.IsExpired() {
-			Error(c, ErrorPaymentRequired, "gateway membership expired")
-			c.Abort()
-			return
-		}
-
-		c.Next()
-	}
-}
-```
-
-- [ ] **Step 2: Update AppInfo parsing to extract isGateway**
-
-Find the `parseClientHeader` function (or wherever `AppInfo` is constructed from headers). The `X-App-Info` header is a JSON object for gateway, but the existing `X-K2-Client` header uses a regex pattern.
-
-For gateway devices, k2r sends `X-App-Info` as JSON: `{"version":"0.4.2","platform":"linux","arch":"arm64","isGateway":true}`
-
-Add to `middleware.go` — in the device registration section (the `fillDeviceAppInfo` function or equivalent), after setting `device.AppPlatform`:
-
-```go
-	// Parse isGateway from X-App-Info JSON header (k2r sends this)
-	if appInfoHeader := c.GetHeader("X-App-Info"); appInfoHeader != "" {
-		var appInfoJSON struct {
-			IsGateway bool `json:"isGateway"`
-		}
-		if json.Unmarshal([]byte(appInfoHeader), &appInfoJSON) == nil {
-			device.IsGateway = appInfoJSON.IsGateway
-		}
-	}
-```
-
-- [ ] **Step 3: Add ProRequired tests**
-
-Create or append to `api/middleware_subscription_test.go`:
-
-```go
-package center
-
-import (
-	"net/http"
-	"net/http/httptest"
-	"testing"
-	"time"
-
-	"github.com/gin-gonic/gin"
-	"github.com/stretchr/testify/assert"
-)
-
-func TestProRequired_ActiveSubscription_Passes(t *testing.T) {
-	// Setup: user has active personal Subscription
-	// ProRequired should pass (200, not 402)
-	mockDB := SetupMockDB(t)
-
-	// Mock: getActiveSubscription returns active sub
-	mockDB.ExpectQuery("SELECT.*FROM.*subscriptions.*WHERE.*user_id.*product_type").
-		WillReturnRows(mockDB.NewRows([]string{"id", "user_id", "product_type", "plan_pid", "expired_at", "quota"}).
-			AddRow(1, 1, ProductTypePersonal, "1y", time.Now().Add(30*24*time.Hour).Unix(), 5))
-
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodGet, "/api/tunnels", nil)
-	// Set user in context (mock ReqUser)
-	user := &User{ID: 1, ExpiredAt: time.Now().Add(30 * 24 * time.Hour).Unix()}
-	c.Set("user", user)
-
-	handler := ProRequired()
-	handler(c)
-
-	assert.False(t, c.IsAborted(), "request should not be aborted for active subscription")
-}
-
-func TestProRequired_NoSubscription_FallsBackToUser(t *testing.T) {
-	// Setup: no Subscription row, but User.ExpiredAt is valid
-	// ProRequired should pass (fallback to User cache)
-	mockDB := SetupMockDB(t)
-
-	// Mock: getActiveSubscription returns not found
-	mockDB.ExpectQuery("SELECT.*FROM.*subscriptions.*WHERE.*user_id.*product_type").
-		WillReturnRows(mockDB.NewRows([]string{}))
-
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodGet, "/api/tunnels", nil)
-	user := &User{ID: 1, ExpiredAt: time.Now().Add(30 * 24 * time.Hour).Unix()}
-	c.Set("user", user)
-
-	handler := ProRequired()
-	handler(c)
-
-	assert.False(t, c.IsAborted(), "should pass via User.ExpiredAt fallback")
-}
-
-func TestProRequired_ExpiredSubscription_Returns402(t *testing.T) {
-	mockDB := SetupMockDB(t)
-
-	mockDB.ExpectQuery("SELECT.*FROM.*subscriptions.*WHERE.*user_id.*product_type").
-		WillReturnRows(mockDB.NewRows([]string{"id", "user_id", "product_type", "plan_pid", "expired_at", "quota"}).
-			AddRow(1, 1, ProductTypePersonal, "1y", time.Now().Add(-24*time.Hour).Unix(), 5))
-
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodGet, "/api/tunnels", nil)
-	user := &User{ID: 1, ExpiredAt: time.Now().Add(-24 * time.Hour).Unix()}
-	c.Set("user", user)
-
-	handler := ProRequired()
-	handler(c)
-
-	assert.True(t, c.IsAborted(), "should be aborted for expired subscription")
-}
-
-func TestGatewayProRequired_NoSubscription_Returns402(t *testing.T) {
-	mockDB := SetupMockDB(t)
-
-	mockDB.ExpectQuery("SELECT.*FROM.*subscriptions.*WHERE.*user_id.*product_type").
-		WillReturnRows(mockDB.NewRows([]string{}))
-
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodGet, "/api/tunnels", nil)
-	user := &User{ID: 1}
-	c.Set("user", user)
-
-	handler := GatewayProRequired()
-	handler(c)
-
-	assert.True(t, c.IsAborted(), "should be aborted — no gateway subscription, no fallback")
-}
-```
-
-Note: These tests may need adjustment based on how `ReqUser(c)` extracts the user from gin.Context. Check the actual key used (might be `"user"` or a custom key). Adjust `c.Set("user", user)` accordingly.
-
-- [ ] **Step 4: Verify compilation and run tests**
-
-Run: `cd api && go build ./... && go test -run TestProRequired -v ./... && go test -run TestGatewayProRequired -v ./...`
-Expected: All pass.
+Run: `cd api && go test -run TestApplyOrderToTargetUsers -v ./...`
+Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add api/middleware.go api/middleware_subscription_test.go
-git commit -m "feat(api): ProRequired reads Subscription with User fallback, add GatewayProRequired
-
-ProRequired: Subscription (source of truth) → User.ExpiredAt (fallback).
-DB error also falls back to User cache to avoid blocking all users.
-GatewayProRequired: no fallback, gateway is new product line.
-AppInfo: parse isGateway from X-App-Info JSON header."
+git add api/logic_member.go api/member_test.go
+git commit -m "feat(api): applyOrderToTargetUsers writes MaxDevice/MaxRouterDevice/PlanPID from Plan"
 ```
 
 ---
 
-## Task 5: Device Limit Reads Subscription.Quota
+## Task 3: RouterRequired Middleware + IsGateway
 
 **Files:**
-- Modify: `api/api_auth.go`
+- Modify: `api/middleware.go`
 
-- [ ] **Step 1: Update OTP login device limit (line ~280)**
+- [ ] **Step 1: Add RouterRequired middleware**
 
-Replace:
-```go
-if deviceCount >= int64(user.MaxDevice) {
-```
-
-With:
-```go
-maxDevice := getSubscriptionQuota(tx, identify.UserID, ProductTypePersonal, DefaultMaxDevice)
-if deviceCount >= int64(maxDevice) {
-```
-
-(Note: `getSubscriptionQuota` is defined in `logic_subscription.go`, returns quota from Subscription with fallback to default)
-
-- [ ] **Step 2: Update password login device limit (line ~770)**
-
-Same replacement as Step 1.
-
-- [ ] **Step 3: Verify compilation and run auth tests**
-
-Run: `cd api && go build ./... && go test -run TestAuth -v ./...`
-Expected: Compiles and passes.
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add api/api_auth.go
-git commit -m "feat(api): device limit reads Subscription.Quota with default fallback"
-```
-
----
-
-## Task 6: Plans API product_type Filter
-
-**Files:**
-- Modify: `api/api_plan.go`
-- Modify: `api/api_admin_plan.go`
-
-- [ ] **Step 1: Update GET /api/plans with product_type filter**
-
-Replace the entire `api_get_plans` function in `api/api_plan.go`:
+After existing `ProRequired` function (line ~435), add:
 
 ```go
-func api_get_plans(c *gin.Context) {
-	productType := c.DefaultQuery("product_type", ProductTypePersonal)
-
-	log.Infof(c, "request to get plans, product_type=%s", productType)
-	var items []DataPlan
-
-	var plans []Plan
-	err := db.Get().Where("is_active = ? AND product_type = ?", true, productType /*from query param, default ProductTypePersonal*/).Find(&plans).Error
-	if err != nil {
-		log.Errorf(c, "failed to load plans from database: %v", err)
-		Error(c, ErrorSystemError, "failed to load plans")
-		return
+// RouterRequired 检查用户是否有路由器权限 (MaxRouterDevice > 0 或 == -1)
+// 需要先经过 AuthRequired + ProRequired
+func RouterRequired() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user := ReqUser(c)
+		if user == nil {
+			Error(c, ErrorNotLogin, "authentication failed")
+			c.Abort()
+			return
+		}
+		if user.IsExpired() {
+			Error(c, ErrorPaymentRequired, "membership expired")
+			c.Abort()
+			return
+		}
+		if user.MaxRouterDevice == 0 {
+			Error(c, ErrorPaymentRequired, "router access requires upgrade")
+			c.Abort()
+			return
+		}
+		c.Next()
 	}
-	for _, plan := range plans {
-		items = append(items, DataPlan{
-			PID:         plan.PID,
-			Label:       plan.Label,
-			Price:       plan.Price,
-			OriginPrice: plan.OriginPrice,
-			Month:       plan.Month,
-			Highlight:   plan.Highlight != nil && *plan.Highlight,
-			IsActive:    plan.IsActive != nil && *plan.IsActive,
-			ProductType: plan.ProductType,
-			Quota:       plan.Quota,
-		})
-	}
-	log.Infof(c, "successfully loaded %d plans for product_type=%s", len(items), productType)
-	ItemsAll(c, items)
 }
 ```
 
-- [ ] **Step 2: Update AdminCreatePlanRequest**
+- [ ] **Step 2: Update fillDeviceAppInfo for isGateway**
 
-In `api/api_admin_plan.go`, update the create request struct:
+In `api/middleware.go`, replace `fillDeviceAppInfo` (line 65-76):
 
-```go
-type AdminCreatePlanRequest struct {
-	PID         string `json:"pid" binding:"required"`
-	Label       string `json:"label" binding:"required"`
-	Price       uint64 `json:"price" binding:"required"`
-	OriginPrice uint64 `json:"originPrice" binding:"required"`
-	Month       int    `json:"month" binding:"required"`
-	Highlight   bool   `json:"highlight"`
-	IsActive    bool   `json:"isActive"`
-	ProductType string `json:"productType"` // "personal" (default) | "gateway"
-	Quota       int    `json:"quota"`       // personal=设备数(default 5), gateway=接入设备数, 0=无限
-}
-```
-
-In the `api_admin_create_plan` handler, after binding, add defaults:
-
-```go
-	if req.ProductType == "" {
-		req.ProductType = "personal"
-	}
-	if req.Quota == 0 && req.ProductType == "personal" {
-		req.Quota = 5
-	}
-```
-
-And include in the Plan creation:
-
-```go
-	plan := Plan{
-		PID:         req.PID,
-		Label:       req.Label,
-		Price:       req.Price,
-		OriginPrice: req.OriginPrice,
-		Month:       req.Month,
-		Highlight:   BoolPtr(req.Highlight),
-		IsActive:    BoolPtr(req.IsActive),
-		ProductType: req.ProductType,
-		Quota:       req.Quota,
-	}
-```
-
-- [ ] **Step 3: Update AdminUpdatePlanRequest**
-
-Add optional fields:
-
-```go
-type AdminUpdatePlanRequest struct {
-	PID         *string `json:"pid"`
-	Label       *string `json:"label"`
-	Price       *uint64 `json:"price"`
-	OriginPrice *uint64 `json:"originPrice"`
-	Month       *int    `json:"month"`
-	Highlight   *bool   `json:"highlight"`
-	IsActive    *bool   `json:"isActive"`
-	ProductType *string `json:"productType"`
-	Quota       *int    `json:"quota"`
-}
-```
-
-- [ ] **Step 4: Update admin list to support product_type filter**
-
-In `api_admin_list_plans`, add optional filter:
-
-```go
-	query := db.Get().Model(&Plan{})
-	if productType := c.Query("product_type"); productType != "" {
-		query = query.Where("product_type = ?", productType)
-	}
-```
-
-- [ ] **Step 5: Verify compilation**
-
-Run: `cd api && go build ./...`
-Expected: Compiles.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add api/api_plan.go api/api_admin_plan.go
-git commit -m "feat(api): Plans API product_type filter, admin CRUD with ProductType/Quota"
-```
-
----
-
-## Task 7: User Profile Returns Subscriptions
-
-**Files:**
-- Modify: `api/api_user.go`
-
-- [ ] **Step 1: Add subscriptions to user info response**
-
-In the `api_get_user_info` handler, after building `dataUser`, add:
-
-```go
-	// Fetch user subscriptions
-	subs, err := getUserSubscriptions(db.Get(), user.ID)
-	if err != nil {
-		log.Warnf(c, "failed to fetch subscriptions for user %d: %v", user.ID, err)
-	}
-```
-
-Add a `Subscriptions []DataSubscription` field to the response. The exact response type depends on how `buildDataUserWithDevice` works — find the `DataUser` struct and add:
-
-```go
-	Subscriptions []DataSubscription `json:"subscriptions,omitempty"`
-```
-
-Set it before returning:
-
-```go
-	dataUser.Subscriptions = subs
-```
-
-- [ ] **Step 2: Verify compilation**
-
-Run: `cd api && go build ./...`
-Expected: Compiles.
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add api/api_user.go api/type.go
-git commit -m "feat(api): user profile returns subscriptions list"
-```
-
----
-
-## Task 8: Run Full Test Suite + Integration Verification
-
-- [ ] **Step 1: Run all unit tests**
-
-Run: `cd api && go test ./...`
-Expected: All tests pass. Document any failures and fix.
-
-- [ ] **Step 2: Run with local database (if config.yml available)**
-
-Run: `cd api && go test -count=1 ./...`
-Expected: Integration tests pass against local MySQL.
-
-- [ ] **Step 3: Verify data migration**
-
-Run: `cd api/cmd && ./kaitu-center migrate -c ../config.yml`
-Expected: Subscription table created, existing users migrated.
-
-Verify: `SELECT COUNT(*) FROM subscriptions WHERE product_type = 'personal';` should match count of users with `expired_at > 0`.
-
-- [ ] **Step 4: Final commit (if any fixes)**
-
-```bash
-git add -A
-git commit -m "fix(api): address test failures from Subscription migration"
-```
-
----
-
-## Self-Review
-
-| Spec Requirement | Task |
-|-----------------|------|
-| 2.1 Subscription Model | Task 1 |
-| 2.2 Plan.ProductType + Quota | Task 1 |
-| 2.3 Device.IsGateway | Task 1 |
-| 2.4 User cache fields | Task 2 (syncUserCache) |
-| 2.5 Cache sync | Task 2 |
-| 2.6 Source of truth migration | Tasks 3-5 |
-| 2.7 Data migration | Task 1 (migrate.go) |
-| 3.1 Plans API filter | Task 6 |
-| 3.2 Admin plans | Task 6 |
-| 3.3 Frontend Plan type | Task 6 (DataPlan updated) |
-| 3.4 Frontend Subscription type | Task 1 (DataSubscription) |
-| 4.6 Order processing | Task 3 |
-| 5.1-5.3 Subscription expiry | Task 4 (ProRequired + GatewayProRequired) |
-| 8.1 Gateway auth header | Task 4 (isGateway parsing) |
-| 8.2 Device.IsGateway | Task 1 + Task 4 |
-| User profile subscriptions | Task 7 |
-
-**Type consistency check:** `DataSubscription`, `DataPlan`, `Subscription`, `Plan` — field names and types consistent across all tasks. `getActiveSubscription`, `syncUserCache`, `getSubscriptionQuota`, `getUserSubscriptions` — same signatures used in all references.
-
----
-
-## Supplement: Precision Details (12/10)
-
-The tasks above define WHAT to change. This supplement adds the EXACT edit locations and edge case handling for each task.
-
-### S1: Task 3 — addProExpiredDays with skipExpiredAtWrite
-
-**Resolved in Task 3 Step 1.** `addProExpiredDays` now accepts `skipExpiredAtWrite bool` parameter. When called from the new `applyOrderToTargetUsers`, it passes `true` — skipping the User.ExpiredAt write entirely. Subscription owns expiry, `syncUserCache` syncs the correct value to User cache.
-
-All existing callers pass `false` — no behavior change for legacy code paths (invite rewards, manual admin operations, etc.).
-
-### S2: Task 4 Exact Edit — fillDeviceAppInfo + isGateway
-
-File: `api/middleware.go`, line 65-76.
-
-**Current code:**
 ```go
 func fillDeviceAppInfo(c *gin.Context, device *Device) {
 	if clientHeader := c.GetHeader("X-K2-Client"); clientHeader != "" {
@@ -1053,22 +245,7 @@ func fillDeviceAppInfo(c *gin.Context, device *Device) {
 			device.DeviceModel = appInfo.DeviceModel
 		}
 	}
-}
-```
-
-**Replace with:**
-```go
-func fillDeviceAppInfo(c *gin.Context, device *Device) {
-	if clientHeader := c.GetHeader("X-K2-Client"); clientHeader != "" {
-		if appInfo := parseClientHeader(clientHeader); appInfo != nil {
-			device.AppVersion = appInfo.Version
-			device.AppPlatform = appInfo.Platform
-			device.AppArch = appInfo.Arch
-			device.OSVersion = appInfo.OSVersion
-			device.DeviceModel = appInfo.DeviceModel
-		}
-	}
-	// k2r gateway sends X-App-Info as JSON with isGateway flag
+	// k2r sends X-App-Info JSON with isGateway flag
 	if appInfoHeader := c.GetHeader("X-App-Info"); appInfoHeader != "" {
 		var info struct {
 			Version   string `json:"version"`
@@ -1078,7 +255,6 @@ func fillDeviceAppInfo(c *gin.Context, device *Device) {
 		}
 		if json.Unmarshal([]byte(appInfoHeader), &info) == nil {
 			device.IsGateway = info.IsGateway
-			// X-App-Info fields override X-K2-Client if both present
 			if info.Version != "" {
 				device.AppVersion = info.Version
 			}
@@ -1093,123 +269,220 @@ func fillDeviceAppInfo(c *gin.Context, device *Device) {
 }
 ```
 
-**Required import:** Add `"encoding/json"` to imports in `middleware.go` (line 1-19). Insert after `"errors"`:
+Add `"encoding/json"` to imports (line ~1-19, after `"errors"`).
+
+- [ ] **Step 3: Write RouterRequired tests**
+
+Create `api/middleware_router_test.go`:
 
 ```go
-	"encoding/json"
-```
+package center
 
-### S3: Task 5 Exact Edits — Device Limit
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
 
-**Edit 1: OTP login (api/api_auth.go line ~291)**
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
+)
 
-Replace:
-```go
-			if deviceCount >= int64(user.MaxDevice) {
-```
-With:
-```go
-			maxDevice := getSubscriptionQuota(tx, identify.UserID, "personal", 5)
-			if deviceCount >= int64(maxDevice) {
-```
-
-**Edit 2: Password login (api/api_auth.go line ~776)**
-
-Replace:
-```go
-		if deviceCount >= int64(user.MaxDevice) {
-```
-With:
-```go
-		maxDevice := getSubscriptionQuota(tx, identify.UserID, "personal", 5)
-		if deviceCount >= int64(maxDevice) {
-```
-
-Both edits are single-line replacements. `getSubscriptionQuota` is defined in `logic_subscription.go` — same package, no import needed.
-
-### S4: Task 6 — Approval Callback Update
-
-File: `api/logic_approval_callbacks.go`, line ~293-335.
-
-The `executeApprovalPlanUpdate` function applies `AdminUpdatePlanRequest` fields to the plan. It currently handles: Label, Price, OriginPrice, Month, Highlight, IsActive. **Must add ProductType and Quota.**
-
-After the `IsActive` block (line ~331), add:
-
-```go
-	if req.ProductType != nil {
-		plan.ProductType = *req.ProductType
+func setupRouterTest(user *User) (*httptest.ResponseRecorder, *gin.Context) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/test", nil)
+	if user != nil {
+		c.Set("user", user) // adjust key to match ReqUser implementation
 	}
-	if req.Quota != nil {
-		plan.Quota = *req.Quota
+	return w, c
+}
+
+func TestRouterRequired_HasAccess(t *testing.T) {
+	_, c := setupRouterTest(&User{
+		ID:              1,
+		ExpiredAt:       time.Now().Add(30 * 24 * time.Hour).Unix(),
+		MaxRouterDevice: 10,
+	})
+	RouterRequired()(c)
+	assert.False(t, c.IsAborted())
+}
+
+func TestRouterRequired_UnlimitedAccess(t *testing.T) {
+	_, c := setupRouterTest(&User{
+		ID:              1,
+		ExpiredAt:       time.Now().Add(30 * 24 * time.Hour).Unix(),
+		MaxRouterDevice: -1, // unlimited
+	})
+	RouterRequired()(c)
+	assert.False(t, c.IsAborted())
+}
+
+func TestRouterRequired_NoAccess(t *testing.T) {
+	w, c := setupRouterTest(&User{
+		ID:              1,
+		ExpiredAt:       time.Now().Add(30 * 24 * time.Hour).Unix(),
+		MaxRouterDevice: 0, // no router
+	})
+	RouterRequired()(c)
+	assert.True(t, c.IsAborted())
+	assert.Contains(t, w.Body.String(), "402")
+}
+
+func TestRouterRequired_Expired(t *testing.T) {
+	_, c := setupRouterTest(&User{
+		ID:              1,
+		ExpiredAt:       time.Now().Add(-24 * time.Hour).Unix(),
+		MaxRouterDevice: 10,
+	})
+	RouterRequired()(c)
+	assert.True(t, c.IsAborted())
+}
+
+func TestRouterRequired_NoUser(t *testing.T) {
+	_, c := setupRouterTest(nil)
+	RouterRequired()(c)
+	assert.True(t, c.IsAborted())
+}
+```
+
+- [ ] **Step 4: Run tests**
+
+Run: `cd api && go test -run TestRouterRequired -v ./...`
+Expected: PASS
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add api/middleware.go api/middleware_router_test.go
+git commit -m "feat(api): add RouterRequired middleware + fillDeviceAppInfo isGateway parsing"
+```
+
+---
+
+## Task 4: Plans API + Admin + User Profile
+
+**Files:**
+- Modify: `api/api_plan.go`
+- Modify: `api/api_admin_plan.go`
+- Modify: `api/logic_approval_callbacks.go`
+- Modify: `api/api_user.go`
+
+- [ ] **Step 1: Update DataPlan construction in api_plan.go**
+
+In `api_get_plans` (line ~11), update the DataPlan mapping inside the loop:
+
+```go
+		items = append(items, DataPlan{
+			PID:             plan.PID,
+			Label:           plan.Label,
+			Price:           plan.Price,
+			OriginPrice:     plan.OriginPrice,
+			Month:           plan.Month,
+			Highlight:       plan.Highlight != nil && *plan.Highlight,
+			IsActive:        plan.IsActive != nil && *plan.IsActive,
+			MaxDevice:       plan.MaxDevice,
+			MaxRouterDevice: plan.MaxRouterDevice,
+		})
+```
+
+- [ ] **Step 2: Update admin create plan request**
+
+In `api/api_admin_plan.go`, update `AdminCreatePlanRequest` (line ~36):
+
+```go
+type AdminCreatePlanRequest struct {
+	PID             string `json:"pid" binding:"required"`
+	Label           string `json:"label" binding:"required"`
+	Price           uint64 `json:"price" binding:"required"`
+	OriginPrice     uint64 `json:"originPrice" binding:"required"`
+	Month           int    `json:"month" binding:"required"`
+	Highlight       bool   `json:"highlight"`
+	IsActive        bool   `json:"isActive"`
+	MaxDevice       int    `json:"maxDevice"`
+	MaxRouterDevice int    `json:"maxRouterDevice"`
+}
+```
+
+In `api_admin_create_plan` handler, add defaults and include in Plan creation:
+
+```go
+	if req.MaxDevice == 0 {
+		req.MaxDevice = DefaultMaxDevice
+	}
+	plan := Plan{
+		PID:             req.PID,
+		Label:           req.Label,
+		Price:           req.Price,
+		OriginPrice:     req.OriginPrice,
+		Month:           req.Month,
+		Highlight:       BoolPtr(req.Highlight),
+		IsActive:        BoolPtr(req.IsActive),
+		MaxDevice:       req.MaxDevice,
+		MaxRouterDevice: req.MaxRouterDevice,
 	}
 ```
 
-### S5: Task 7 Exact Edits — User Profile
+- [ ] **Step 3: Update admin update plan request**
 
-**Edit 1: DataUser struct (api/type.go line ~99)**
-
-Add after `BetaOptedIn` field (last field, line ~116):
+In `AdminUpdatePlanRequest` (line ~90), add:
 
 ```go
-	Subscriptions []DataSubscription `json:"subscriptions,omitempty"` // 用户订阅列表
+	MaxDevice       *int `json:"maxDevice"`
+	MaxRouterDevice *int `json:"maxRouterDevice"`
 ```
 
-**Edit 2: buildDataUserWithDevice (api/api_user.go line ~420)**
+- [ ] **Step 4: Update approval callback**
 
-The function returns `&DataUser{...}`. Before the return statement (line ~450), the `Subscriptions` field is not set. We cannot fetch subscriptions here because this function doesn't have access to gin.Context or DB.
-
-Instead, set it in the **caller** — `api_get_user_info` (line ~75). Before `Success(c, dataUser)`, add:
+In `api/logic_approval_callbacks.go`, `executeApprovalPlanUpdate` function (line ~293), after the `IsActive` block add:
 
 ```go
-	// Fetch subscriptions
-	subs, err := getUserSubscriptions(db.Get(), user.ID)
-	if err != nil {
-		log.Warnf(c, "failed to fetch subscriptions for user %d: %v", user.ID, err)
-	} else {
-		dataUser.Subscriptions = subs
+	if req.MaxDevice != nil {
+		plan.MaxDevice = *req.MaxDevice
+	}
+	if req.MaxRouterDevice != nil {
+		plan.MaxRouterDevice = *req.MaxRouterDevice
 	}
 ```
 
-Import `db "github.com/wordgate/qtoolkit/db"` is already present in `api_user.go`.
+- [ ] **Step 5: Update user profile response**
 
-### S6: Missing — Route Changes
+In `api/api_user.go`, `buildDataUserWithDevice` function (line ~420), in the return statement add:
 
-File: `api/route.go`
-
-The current tunnel/relay routes use `ProRequired()`:
 ```go
-api.GET("/tunnels", AuthRequired(), ProRequired(), DeviceAuthRequired(), api_k2_tunnels)
-api.GET("/relays", AuthRequired(), ProRequired(), DeviceAuthRequired(), api_k2_relays)
+		MaxRouterDevice: user.MaxRouterDevice,
+		PlanPID:         user.PlanPID,
 ```
 
-These stay as-is (personal product). For gateway-specific routes, register with `GatewayProRequired()` when they're needed in future phases. **No route changes needed in Plan A** — GatewayProRequired is defined but not yet wired to any routes (gateway API is on the k2r binary, not Center API).
+- [ ] **Step 6: Run all tests**
 
-### S7: Deployment Strategy
+Run: `cd api && go build ./... && go test ./...`
+Expected: Compiles and all tests pass.
 
-**Order of operations:**
+- [ ] **Step 7: Commit**
 
-1. **Deploy code** with all changes (Subscription model, rewritten order processing, ProRequired with fallback)
-2. GORM AutoMigrate runs automatically on startup → creates `subscriptions` table + adds Plan columns + Device.IsGateway
-3. Data migration SQL runs → populates subscriptions from existing User data
-4. ProRequired fallback ensures: if migration is slow/incomplete, users still authenticated via User.ExpiredAt
-5. Once migration complete, all reads go through Subscription
+```bash
+git add api/api_plan.go api/api_admin_plan.go api/logic_approval_callbacks.go api/api_user.go
+git commit -m "feat(api): Plans API returns MaxDevice/MaxRouterDevice, admin CRUD, user profile update"
+```
 
-**Rollback plan:**
+---
 
-If critical issues found:
-1. Revert code deploy (git revert)
-2. `subscriptions` table stays (harmless orphan — GORM won't break with extra table)
-3. Plan.ProductType/Quota columns stay (defaults are backward-compatible: `'personal'`, `5`)
-4. Device.IsGateway stays (default false, harmless)
-5. User.ExpiredAt/MaxDevice are still being written by syncUserCache → old code reads them correctly
+## Self-Review
 
-**Zero-downtime:** The fallback in ProRequired means there is no moment where users are blocked even during deployment.
+| Spec Requirement | Task |
+|-----------------|------|
+| 2.1 Plan model | Task 1 Step 1 |
+| 2.2 User model | Task 1 Step 2 |
+| 2.3 Device model | Task 1 Step 3 |
+| 3.1 Order processing | Task 2 |
+| 4.1 ProRequired unchanged | N/A (not touched) |
+| 4.2 RouterRequired | Task 3 Step 1 |
+| 4.3 Device limit unchanged | N/A (reads User.MaxDevice, updated by Task 2) |
+| 4.4 Gateway device registration | Task 3 Step 2 |
+| 5 Plans API | Task 4 Step 1 |
+| 5.3 Admin plans | Task 4 Steps 2-4 |
+| User profile | Task 4 Step 5 |
 
-### S8: Performance Note
-
-`ProRequired` now does 1 extra DB query per request (SELECT from subscriptions WHERE user_id AND product_type). This is:
-- Indexed: `uniqueIndex:idx_user_product` on (user_id, product_type)
-- Small table: one row per user per product (max ~2x users count)
-- Same MySQL instance, sub-millisecond
-
-If this becomes a bottleneck, cache the Subscription in gin.Context during auth middleware (already fetches User — can piggyback Subscription). But premature optimization — measure first.
+**4 tasks, ~15 steps. Each step is a precise edit with exact line numbers. No placeholders.**

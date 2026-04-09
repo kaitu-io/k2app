@@ -13,7 +13,7 @@
 **Spec:** `docs/superpowers/specs/2026-04-09-k2r-router-release-features-design.md` (Sections 6-7)
 **Principles:** `docs/superpowers/specs/2026-04-09-k2r-development-principles.md`
 
-**Dependencies:** None on Plan A. Gateway features are self-contained. Plan A's Subscription changes affect Center API; this plan only touches k2 submodule.
+**Dependencies:** None on Plan A. Gateway features are self-contained. Plan A adds User.MaxRouterDevice; gateway reads this as quota. This plan only touches k2 submodule.
 
 ---
 
