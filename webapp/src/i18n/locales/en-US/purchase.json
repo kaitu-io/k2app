@@ -33,7 +33,10 @@
       "continuousOptimization": "Continuous Optimization",
       "continuousOptimizationDesc": "Node network constantly updated & expanded",
       "prioritySupport": "Priority Support",
-      "prioritySupportDesc": "Dedicated fast response"
+      "prioritySupportDesc": "Dedicated fast response",
+      "routerAccess": "Router Proxy",
+      "routerAccessDesc": "One router covers all home devices",
+      "unlimited": "Unlimited"
     },
     "loading": "Loading plans...",
     "loadingPlans": "Loading...",

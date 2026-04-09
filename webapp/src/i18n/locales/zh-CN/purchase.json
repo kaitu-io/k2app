@@ -33,7 +33,10 @@
       "continuousOptimization": "持续优化",
       "continuousOptimizationDesc": "节点网络持续更新与扩展",
       "prioritySupport": "优先技术支持",
-      "prioritySupportDesc": "专属客服快速响应"
+      "prioritySupportDesc": "专属客服快速响应",
+      "routerAccess": "路由器全局代理",
+      "routerAccessDesc": "一台路由器即可覆盖家庭所有设备",
+      "unlimited": "无限"
     },
     "loading": "正在加载套餐...",
     "loadingPlans": "加载中...",

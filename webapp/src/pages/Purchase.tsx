@@ -791,7 +791,11 @@ export default function Purchase() {
         )}
 
         {/* 会员权益 — 先展示价值，再要求行动 */}
-        <MembershipBenefits />
+        <MembershipBenefits
+          maxDevice={plans.find(p => p.pid === plan)?.maxDevice}
+          maxRouterDevice={plans.find(p => p.pid === plan)?.maxRouterDevice}
+          maxLanClient={plans.find(p => p.pid === plan)?.maxLanClient}
+        />
 
         {/* 登录/注册或成员选择 */}
         <Box>
