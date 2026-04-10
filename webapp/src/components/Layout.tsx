@@ -19,6 +19,7 @@ const Dashboard = lazy(() => import("../pages/Dashboard"));
 const InviteHub = lazy(() => import("../pages/InviteHub"));
 const Discover = lazy(() => import("../pages/Discover"));
 const Account = lazy(() => import("../pages/Account"));
+const RouterDevices = lazy(() => import("../pages/RouterDevices"));
 
 const SIDEBAR_WIDTH = 220;
 
@@ -61,6 +62,10 @@ interface TabPageConfig {
 
 const TAB_PAGES: TabPageConfig[] = [
   { path: '/', component: Dashboard, noPadding: true },
+  // Gateway-only: Router tab (LAN device management)
+  ...(window._platform?.platformType === 'gateway' ? [
+    { path: '/router', component: RouterDevices } as TabPageConfig,
+  ] : []),
   // Purchase 移出 keep-alive，改为普通路由（避免与 LoginRequiredGuard 冲突）
   { path: '/invite', component: InviteHub, requiresLogin: true, featureFlag: 'invite' },
   { path: '/discover', component: Discover, noPadding: true, featureFlag: 'discover' },

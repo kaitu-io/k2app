@@ -212,5 +212,30 @@
     "upgradeTitle": "もっとノードが必要？",
     "upgradeDescription": "ログインすると世界中のクラウドノードをすぐに利用できます",
     "upgradeCta": "クラウドノードを利用"
+  },
+  "upgrade": {
+    "available": "新しいバージョンが利用可能です",
+    "description": "現在のバージョン {{current}}、最新バージョン {{latest}}",
+    "apply": "今すぐ更新",
+    "upgrading": "更新中...",
+    "restarting": "再起動中",
+    "restartingDesc": "更新が適用されました。サービスが再起動中です。ページは自動的に再接続されます..."
+  },
+  "routerDevices": {
+    "title": "LANデバイス",
+    "mode": "アクセスモード",
+    "open": "オープン",
+    "allowlist": "ホワイトリスト",
+    "modeOpenDesc": "ルーターに接続されたすべてのデバイスがプロキシを使用できます",
+    "modeAllowlistDesc": "ホワイトリストのデバイスのみプロキシを使用できます",
+    "quotaUsage": "デバイスクォータ: {{usage}}",
+    "quotaExceeded": "デバイス数の上限に達しました",
+    "unlimited": "無制限",
+    "allow": "許可",
+    "allowDevice": "デバイスをホワイトリストに追加",
+    "remark": "備考",
+    "remarkPlaceholder": "例：パパのスマホ",
+    "confirm": "確認",
+    "loadFailed": "デバイスリストの読み込みに失敗しました"
   }
 }

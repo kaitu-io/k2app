@@ -1,6 +1,7 @@
 package center
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -62,7 +63,21 @@ func parseClientHeader(header string) *AppInfo {
 	return info
 }
 
+// isGatewayRequest 检查请求是否来自路由器/网关设备
+func isGatewayRequest(c *gin.Context) bool {
+	if appInfoHeader := c.GetHeader("X-App-Info"); appInfoHeader != "" {
+		var info struct {
+			IsGateway bool `json:"isGateway"`
+		}
+		if json.Unmarshal([]byte(appInfoHeader), &info) == nil {
+			return info.IsGateway
+		}
+	}
+	return false
+}
+
 // fillDeviceAppInfo 从 X-K2-Client header 填充设备的应用版本信息（用于设备创建时）
+// 同时解析 X-App-Info JSON header（k2r 路由器发送，包含 isGateway 标志）
 func fillDeviceAppInfo(c *gin.Context, device *Device) {
 	if clientHeader := c.GetHeader("X-K2-Client"); clientHeader != "" {
 		if appInfo := parseClientHeader(clientHeader); appInfo != nil {
@@ -71,6 +86,27 @@ func fillDeviceAppInfo(c *gin.Context, device *Device) {
 			device.AppArch = appInfo.Arch
 			device.OSVersion = appInfo.OSVersion
 			device.DeviceModel = appInfo.DeviceModel
+		}
+	}
+	// k2r sends X-App-Info JSON with isGateway flag
+	if appInfoHeader := c.GetHeader("X-App-Info"); appInfoHeader != "" {
+		var info struct {
+			Version   string `json:"version"`
+			Platform  string `json:"platform"`
+			Arch      string `json:"arch"`
+			IsGateway bool   `json:"isGateway"`
+		}
+		if json.Unmarshal([]byte(appInfoHeader), &info) == nil {
+			device.IsGateway = info.IsGateway
+			if info.Version != "" {
+				device.AppVersion = info.Version
+			}
+			if info.Platform != "" {
+				device.AppPlatform = info.Platform
+			}
+			if info.Arch != "" {
+				device.AppArch = info.Arch
+			}
 		}
 	}
 }
@@ -427,6 +463,31 @@ func ProRequired() gin.HandlerFunc {
 		if user.IsExpired() {
 			log.Warnf(c, "vip required: user %d membership expired, request to %s denied", user.ID, c.Request.URL.Path)
 			Error(c, ErrorPaymentRequired, "membership expired")
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
+// RouterRequired 检查用户是否有路由器权限 (MaxRouterDevice > 0 或 == -1)
+// 需要先经过 AuthRequired + ProRequired
+// Pre-built for upcoming k2r router-specific API endpoints (not yet wired in route.go).
+func RouterRequired() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user := ReqUser(c)
+		if user == nil {
+			Error(c, ErrorNotLogin, "authentication failed")
+			c.Abort()
+			return
+		}
+		if user.IsExpired() {
+			Error(c, ErrorPaymentRequired, "membership expired")
+			c.Abort()
+			return
+		}
+		if user.MaxRouterDevice == 0 {
+			Error(c, ErrorPaymentRequired, "router access requires upgrade")
 			c.Abort()
 			return
 		}

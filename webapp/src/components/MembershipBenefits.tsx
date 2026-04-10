@@ -5,21 +5,39 @@ import {
   RocketLaunch as ZeroMaintenanceIcon,
   AutorenewOutlined as OptimizationIcon,
   SupportAgent as SupportIcon,
+  Router as RouterIcon,
 } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 
-const DEVICE_COUNT = 5;
+interface MembershipBenefitsProps {
+  maxDevice?: number; // 0 or undefined = default 5
+  maxRouterDevice?: number; // 0 = no router, >0 = supported
+  maxLanClient?: number; // 0 = no LAN, -1 = unlimited, >0 = exact
+}
 
-const benefits = [
-  { key: 'multiDevice', icon: DevicesIcon, color: '#2196f3', count: DEVICE_COUNT },
-  { key: 'globalNodes', icon: GlobalIcon, color: '#4caf50' },
-  { key: 'zeroMaintenance', icon: ZeroMaintenanceIcon, color: '#ff9800' },
-  { key: 'continuousOptimization', icon: OptimizationIcon, color: '#7c4dff' },
-  { key: 'prioritySupport', icon: SupportIcon, color: '#9c27b0' },
-];
-
-export default function MembershipBenefits() {
+export default function MembershipBenefits({ maxDevice, maxRouterDevice, maxLanClient }: MembershipBenefitsProps) {
   const { t } = useTranslation();
+  const deviceCount = (maxDevice && maxDevice > 0) ? maxDevice : 5;
+  const hasRouter = (maxRouterDevice ?? 0) > 0;
+  const lanClientLabel = maxLanClient === -1
+    ? t('purchase:purchase.features.unlimited')
+    : maxLanClient && maxLanClient > 0
+      ? String(maxLanClient)
+      : null;
+
+  const benefits: { key: string; icon: typeof DevicesIcon; color: string; count?: number; extra?: string | null }[] = [
+    { key: 'multiDevice', icon: DevicesIcon, color: '#2196f3', count: deviceCount },
+    { key: 'globalNodes', icon: GlobalIcon, color: '#4caf50' },
+    ...(hasRouter ? [{
+      key: 'routerAccess',
+      icon: RouterIcon,
+      color: '#ff5722',
+      extra: lanClientLabel,
+    }] : []),
+    { key: 'zeroMaintenance', icon: ZeroMaintenanceIcon, color: '#ff9800' },
+    { key: 'continuousOptimization', icon: OptimizationIcon, color: '#7c4dff' },
+    { key: 'prioritySupport', icon: SupportIcon, color: '#9c27b0' },
+  ];
 
   return (
     <Box sx={{ mb: 2 }}>
@@ -27,7 +45,7 @@ export default function MembershipBenefits() {
         {t('purchase:purchase.memberBenefits')}
       </Typography>
       <Stack spacing={1}>
-        {benefits.map(({ key, icon: Icon, color, count }) => (
+        {benefits.map(({ key, icon: Icon, color, count, extra }) => (
           <Box
             key={key}
             sx={{
@@ -57,6 +75,13 @@ export default function MembershipBenefits() {
                       {count}
                     </Box>
                     {t('purchase:purchase.features.multiDevice', { count: '' } as Record<string, unknown>).replace(/^\s+/, '')}
+                  </>
+                ) : extra ? (
+                  <>
+                    {t(`purchase:purchase.features.${key}`)}
+                    <Box component="span" sx={{ ml: 0.5, fontWeight: 700, color: 'primary.main' }}>
+                      ({extra})
+                    </Box>
                   </>
                 ) : (
                   t(`purchase:purchase.features.${key}`)

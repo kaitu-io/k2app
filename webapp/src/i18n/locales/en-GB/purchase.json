@@ -33,7 +33,10 @@
       "continuousOptimization": "Continuous Optimisation",
       "continuousOptimizationDesc": "Node network constantly updated & expanded",
       "prioritySupport": "Priority Support",
-      "prioritySupportDesc": "Dedicated fast response"
+      "prioritySupportDesc": "Dedicated fast response",
+      "routerAccess": "Router Proxy",
+      "routerAccessDesc": "One router covers all home devices",
+      "unlimited": "Unlimited"
     },
     "loading": "Loading plans...",
     "loadingPlans": "Loading...",
@@ -136,6 +139,13 @@
     "oppo_step2": "Back to Settings → Other Settings → Developer Options → Enable \"USB Debugging\"",
     "samsung_step1": "Settings → About Device → Tap \"Build Number\" 7-10 times",
     "samsung_step2": "Back to Settings → Developer Options → Enable \"USB Debugging\""
+  },
+  "tier": {
+    "lite": "Lite",
+    "basic": "Basic",
+    "family": "Family",
+    "business": "Business",
+    "pro": "Pro"
   },
   "plan": {
     "pid": {

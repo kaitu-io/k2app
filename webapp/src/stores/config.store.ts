@@ -142,6 +142,14 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
       if (typeof params === 'string' && params) result.server = params;
     }
 
+    // Gateway needs ipinfo.io direct for network env probe (real user IP detection)
+    if (window._platform?.platformType === 'gateway') {
+      const directRoutes = [
+        { via: 'direct', match: { domain_suffix: ['ipinfo.io'] } },
+      ];
+      result.routes = [...directRoutes, ...(result.routes || [])];
+    }
+
     console.debug('[ConfigStore] buildConnectConfig: server=' + (result.server ?? 'none') + ', rule=' + (result.rule?.global ? 'global' : 'chnroute') + ', logLevel=' + result.log?.level + ', mode=' + result.mode);
     return result;
   },

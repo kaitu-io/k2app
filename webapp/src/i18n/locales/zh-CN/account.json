@@ -32,6 +32,8 @@
     "loginToViewMembership": "登录后查看会员状态",
     "multiDeviceWarning": "您已拥有\"多设备登录\"权益，但尚未设置邮箱，无法在其他设备登录。请先设置邮箱！",
     "authValidityPeriod": "授权有效期",
+    "quotaDevices": "{{count}} 台设备",
+    "quotaRouter": "路由器代理",
     "language": "语言设置",
     "selectLanguage": "选择语言",
     "wallet": "我的钱包",

@@ -19,6 +19,8 @@
     "loginToViewMembership": "ログインしてメンバーシップステータスを確認",
     "multiDeviceWarning": "複数デバイスログインの権限がありますが、まだメールを設定していないため、他のデバイスでログインできません。まずメールを設定してください！",
     "authValidityPeriod": "認証有効期限",
+    "quotaDevices": "{{count}} 台デバイス",
+    "quotaRouter": "ルータープロキシ",
     "language": "言語設定",
     "selectLanguage": "言語を選択",
     "wallet": "マイウォレット",

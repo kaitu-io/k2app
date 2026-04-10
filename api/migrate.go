@@ -55,6 +55,8 @@ func Migrate() error {
 		&DeviceLog{},
 		&FeedbackTicket{},
 		&TicketReply{},
+		// Connection quality ratings
+		&ConnectionRating{},
 		// Usage analytics
 		&StatAppOpen{},
 		&StatConnection{},

@@ -33,7 +33,10 @@
       "continuousOptimization": "持續最佳化",
       "continuousOptimizationDesc": "節點網路持續更新與擴展",
       "prioritySupport": "優先技術支援",
-      "prioritySupportDesc": "專屬客服快速回應"
+      "prioritySupportDesc": "專屬客服快速回應",
+      "routerAccess": "路由器全域代理",
+      "routerAccessDesc": "一台路由器即可覆蓋家庭所有裝置",
+      "unlimited": "無限"
     },
     "loading": "正在載入方案...",
     "loadingPlans": "載入中...",
@@ -136,6 +139,13 @@
     "oppo_step2": "返回設定 → 其他設定 → 開發者選項 → 開啟「USB 偵錯」",
     "samsung_step1": "設定 → 關於裝置 → 連續點擊「版本號碼」7-10 次",
     "samsung_step2": "返回設定 → 開發者選項 → 開啟「USB 偵錯」"
+  },
+  "tier": {
+    "lite": "輕量版",
+    "basic": "標準版",
+    "family": "家庭版",
+    "business": "商業版",
+    "pro": "專業版"
   },
   "plan": {
     "pid": {

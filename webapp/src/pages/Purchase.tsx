@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, memo, useRef } from "react";
+import { useState, useEffect, useCallback, memo, useRef, useMemo } from "react";
 import {
   Box,
   Typography,
@@ -334,6 +334,47 @@ function PayResultDialog({ open, order, onSuccess, onFail }: {
   );
 }
 
+// Tier 选择器 - 当有多个 tier 时显示，单一 tier 时隐藏
+function TierSelector({
+  tiers,
+  tierGroups,
+  selected,
+  onSelect,
+}: {
+  tiers: string[];
+  tierGroups: Map<string, Plan[]>;
+  selected: string;
+  onSelect: (tier: string) => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <Stack direction="row" spacing={1} sx={{ mb: 2, flexWrap: 'wrap' }}>
+      {tiers.map(tier => {
+        const isSelected = selected === tier;
+        const plansInTier = tierGroups.get(tier) || [];
+        const minPrice = Math.min(...plansInTier.map(p => p.price / p.month));
+        return (
+          <Chip
+            key={tier}
+            label={`${t(`purchase:tier.${tier}`, tier)}  $${(minPrice / 100).toFixed(0)}/mo`}
+            variant={isSelected ? 'filled' : 'outlined'}
+            color={isSelected ? 'primary' : 'default'}
+            onClick={() => onSelect(tier)}
+            sx={{
+              height: 36,
+              borderRadius: 2,
+              cursor: 'pointer',
+              fontWeight: isSelected ? 700 : 500,
+              '&:hover': { borderColor: 'primary.main' },
+            }}
+          />
+        );
+      })}
+    </Stack>
+  );
+}
+
 // 套餐列表组件 - 使用 memo 优化，只在 plans/selectedPlan 变化时重新渲染
 const PlanList = memo(function PlanList({
   plans,
@@ -514,6 +555,45 @@ export default function Purchase() {
   const [, setAppConfigLoading] = useState(false);
 
   const {showAlert} = useAlert();
+
+  // Tier grouping — hidden when all plans share one tier (backward compat)
+  const [selectedTier, setSelectedTier] = useState('');
+
+  const tierGroups = useMemo(() => {
+    const groups = new Map<string, Plan[]>();
+    for (const p of plans) {
+      const tier = p.tier || 'pro';
+      if (!groups.has(tier)) groups.set(tier, []);
+      groups.get(tier)!.push(p);
+    }
+    return groups;
+  }, [plans]);
+
+  const tiers = useMemo(() => [...tierGroups.keys()], [tierGroups]);
+  const showTierSelector = tiers.length > 1;
+
+  // Auto-select tier when plans load
+  useEffect(() => {
+    if (!tiers.length) return;
+    if (selectedTier && tiers.includes(selectedTier)) return;
+    const highlightedPlan = plans.find(p => p.highlight);
+    setSelectedTier(highlightedPlan?.tier || tiers[0]);
+  }, [tiers, plans, selectedTier]);
+
+  // Filter plans by selected tier
+  const filteredPlans = useMemo(() => {
+    if (!showTierSelector) return plans;
+    return tierGroups.get(selectedTier) || plans;
+  }, [showTierSelector, selectedTier, tierGroups, plans]);
+
+  // When tier changes, ensure selected plan is valid in the new tier
+  useEffect(() => {
+    if (!filteredPlans.length) return;
+    const currentInTier = filteredPlans.find(p => p.pid === plan);
+    if (currentInTier) return;
+    const highlighted = filteredPlans.find(p => p.highlight);
+    setPlan(highlighted?.pid || filteredPlans[0].pid);
+  }, [filteredPlans, plan]);
 
   // 处理订单创建（使用 useCallback 避免不必要的重新渲染）
   const handleOrder = useCallback(async ({preview = false}: {preview?: boolean}) => {
@@ -791,7 +871,11 @@ export default function Purchase() {
         )}
 
         {/* 会员权益 — 先展示价值，再要求行动 */}
-        <MembershipBenefits />
+        <MembershipBenefits
+          maxDevice={plans.find(p => p.pid === plan)?.maxDevice}
+          maxRouterDevice={plans.find(p => p.pid === plan)?.maxRouterDevice}
+          maxLanClient={plans.find(p => p.pid === plan)?.maxLanClient}
+        />
 
         {/* 登录/注册或成员选择 */}
         <Box>
@@ -837,7 +921,17 @@ export default function Purchase() {
         {/* Plan 选择（纵向排列） */}
         <Box>
           <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1.5, fontSize: '1rem' }} component="span">{t('purchase:purchase.selectPlan')}</Typography>
-          
+
+          {/* Tier selector — only shown when multiple tiers exist */}
+          {showTierSelector && !plansLoading && (
+            <TierSelector
+              tiers={tiers}
+              tierGroups={tierGroups}
+              selected={selectedTier}
+              onSelect={setSelectedTier}
+            />
+          )}
+
           {plansLoading ? (
             <Card variant="outlined" sx={{ borderRadius: 2, p: 2 }}>
               <LoadingState message={t('purchase:purchase.loading')} minHeight={200} />
@@ -848,7 +942,7 @@ export default function Purchase() {
             </Card>
           ) : (
             <PlanList
-              plans={plans}
+              plans={filteredPlans}
               selectedPlan={plan}
               onSelect={handlePlanSelect}
             />

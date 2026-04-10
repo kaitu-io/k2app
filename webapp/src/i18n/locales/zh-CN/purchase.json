@@ -33,7 +33,10 @@
       "continuousOptimization": "持续优化",
       "continuousOptimizationDesc": "节点网络持续更新与扩展",
       "prioritySupport": "优先技术支持",
-      "prioritySupportDesc": "专属客服快速响应"
+      "prioritySupportDesc": "专属客服快速响应",
+      "routerAccess": "路由器全局代理",
+      "routerAccessDesc": "一台路由器即可覆盖家庭所有设备",
+      "unlimited": "无限"
     },
     "loading": "正在加载套餐...",
     "loadingPlans": "加载中...",
@@ -136,6 +139,13 @@
     "oppo_step2": "返回设置 → 其他设置 → 开发者选项 → 开启「USB 调试」",
     "samsung_step1": "设置 → 关于设备 → 连续点击「版本号」7-10 次",
     "samsung_step2": "返回设置 → 开发者选项 → 开启「USB 调试」"
+  },
+  "tier": {
+    "lite": "轻量版",
+    "basic": "标准版",
+    "family": "家庭版",
+    "business": "商业版",
+    "pro": "专业版"
   },
   "plan": {
     "pid": {

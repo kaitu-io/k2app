@@ -320,6 +320,16 @@ export default function Account() {
                     {displayTime}
                   </Typography>
                 </Box>
+                {/* Tier + quota info */}
+                {user?.tier && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5, flexWrap: 'wrap' }}>
+                    <Chip label={t(`purchase:tier.${user.tier}`, user.tier)} size="small" variant="outlined" sx={{ height: 20, fontSize: '0.7rem' }} />
+                    <Typography variant="caption" color="text.secondary">
+                      {t('account:account.quotaDevices', { count: user.maxDevice || 5 })}
+                      {(user.maxRouterDevice ?? 0) > 0 && ` · ${t('account:account.quotaRouter')}`}
+                    </Typography>
+                  </Box>
+                )}
               </Box>
 
               {/* Action button */}

@@ -53,6 +53,8 @@ function AppRoutes() {
           {appConfig.features.invite && <Route path="invite" element={null} />}
           {appConfig.features.discover && <Route path="discover" element={null} />}
           <Route path="account" element={null} />
+          {/* Gateway-only: Router tab */}
+          {window._platform?.platformType === 'gateway' && <Route path="router" element={null} />}
 
           {/* Non-Tab routes */}
           {/* Purchase 移出 keep-alive，每次访问重新渲染（避免与 LoginRequiredGuard 冲突） */}

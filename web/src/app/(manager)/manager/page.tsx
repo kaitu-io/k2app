@@ -8,8 +8,10 @@ import {
   DeviceStatisticsResponse,
   ActiveDeviceItem,
   UserStatisticsResponse,
-  OrderStatisticsResponse
+  OrderStatisticsResponse,
+  ConnectionRatingStatisticsResponse,
 } from "@/lib/api";
+import { ConnectionQualityTab } from "./connection-quality-tab";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -65,6 +67,7 @@ export default function ManagerDashboardPage() {
   const [deviceStats, setDeviceStats] = useState<DeviceStatisticsResponse | null>(null);
   const [userStats, setUserStats] = useState<UserStatisticsResponse | null>(null);
   const [orderStats, setOrderStats] = useState<OrderStatisticsResponse | null>(null);
+  const [ratingStats, setRatingStats] = useState<ConnectionRatingStatisticsResponse | null>(null);
   const [activeDevices, setActiveDevices] = useState<ActiveDeviceItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [activePeriod, setActivePeriod] = useState<"24h" | "7d" | "30d">("7d");
@@ -79,14 +82,16 @@ export default function ManagerDashboardPage() {
   async function loadData() {
     setLoading(true);
     try {
-      const [deviceData, userData, orderData] = await Promise.all([
+      const [deviceData, userData, orderData, ratingData] = await Promise.all([
         api.getDeviceStatistics(),
         api.getUserStatistics(),
         api.getOrderStatistics(),
+        api.getConnectionRatingStatistics('7d'),
       ]);
       setDeviceStats(deviceData);
       setUserStats(userData);
       setOrderStats(orderData);
+      setRatingStats(ratingData);
     } catch (error) {
       console.error("Failed to load statistics:", error);
     } finally {
@@ -138,12 +143,13 @@ export default function ManagerDashboardPage() {
           <TabsTrigger value="users">用户统计</TabsTrigger>
           <TabsTrigger value="orders">订单统计</TabsTrigger>
           <TabsTrigger value="devices">设备统计</TabsTrigger>
+          <TabsTrigger value="quality">连接质量</TabsTrigger>
         </TabsList>
 
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-6">
           {/* Key Metrics */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
             <Card>
               <CardHeader className="pb-2">
                 <CardDescription>总用户数</CardDescription>
@@ -189,6 +195,36 @@ export default function ManagerDashboardPage() {
                 <div className="text-sm text-muted-foreground">
                   转化率: {formatPercentage(orderStats?.conversionRate ?? 0)}
                 </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>连接好评率 (7天)</CardDescription>
+                <CardTitle className="text-3xl">
+                  {ratingStats ? `${(ratingStats.summary.goodRate * 100).toFixed(1)}%` : '-'}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-sm text-muted-foreground">
+                  共 {ratingStats?.summary.total ?? 0} 条评价 | 差评 {ratingStats?.summary.bad ?? 0}
+                </div>
+                {/* Mini sparkline — 7-day trend bars */}
+                {ratingStats && ratingStats.trend.length > 0 && (
+                  <div className="flex items-end gap-px mt-2 h-6">
+                    {ratingStats.trend.slice(-7).map((d) => {
+                      const pct = d.total > 0 ? (d.goodRate * 100) : 0;
+                      return (
+                        <div
+                          key={d.date}
+                          className={`flex-1 rounded-sm ${pct >= 80 ? 'bg-green-500' : pct >= 60 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                          style={{ height: `${Math.max(pct, 8)}%` }}
+                          title={`${d.date}: ${pct.toFixed(0)}%`}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -802,6 +838,10 @@ export default function ManagerDashboardPage() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="quality" className="space-y-6">
+          <ConnectionQualityTab />
         </TabsContent>
       </Tabs>
     </div>

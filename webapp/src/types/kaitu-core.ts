@@ -132,6 +132,7 @@ export interface IPlatform {
   // ====== 平台标识 ======
 
   os: 'windows' | 'macos' | 'linux' | 'ios' | 'android' | 'web';
+  platformType: 'desktop' | 'mobile' | 'gateway' | 'web';
   version: string;
   arch?: string;
   commit?: string;
@@ -169,6 +170,14 @@ export interface IPlatform {
    * 传入 k2 daemon 后，daemon 监控此 PID，进程退出时自动停止 VPN
    */
   getPid?(): Promise<number>;
+
+  // ====== 网关专属（可选）======
+
+  /** 检查网关固件更新（返回当前版本和最新版本） */
+  gatewayUpgradeCheck?(): Promise<{ current: string; latest: string } | null>;
+
+  /** 触发网关固件升级（后台下载+替换+重启） */
+  gatewayUpgradeApply?(): Promise<boolean>;
 
   // ====== 诊断（可选）======
 
@@ -244,6 +253,7 @@ declare global {
     _k2: IK2Vpn;
     _platform: IPlatform;
     __TAURI__?: any;
+    __K2_GATEWAY__?: { version: string; commit: string; arch: string };
   }
 }
 

@@ -22,13 +22,17 @@ func api_get_plans(c *gin.Context) {
 	}
 	for _, plan := range plans {
 		items = append(items, DataPlan{
-			PID:         plan.PID,
-			Label:       plan.Label,
-			Price:       plan.Price,
-			OriginPrice: plan.OriginPrice,
-			Month:       plan.Month,
-			Highlight:   plan.Highlight != nil && *plan.Highlight,
-			IsActive:    plan.IsActive != nil && *plan.IsActive,
+			PID:             plan.PID,
+			Tier:            plan.Tier,
+			Label:           plan.Label,
+			Price:           plan.Price,
+			OriginPrice:     plan.OriginPrice,
+			Month:           plan.Month,
+			Highlight:       plan.Highlight != nil && *plan.Highlight,
+			IsActive:        plan.IsActive != nil && *plan.IsActive,
+			MaxDevice:       plan.MaxDevice,
+			MaxRouterDevice: plan.MaxRouterDevice,
+			MaxLanClient:    plan.MaxLanClient,
 		})
 	}
 	log.Infof(c, "successfully loaded %d plans", len(items))

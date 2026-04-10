@@ -61,11 +61,34 @@ vi.mock('../../services/device-udid', () => ({
   getDeviceUdid: () => Promise.resolve('test-udid'),
 }));
 
+// Mock network-env
+vi.mock('../../services/network-env', () => ({
+  refreshNetworkEnv: () => Promise.resolve({
+    publicIP: '1.2.3.4',
+    isp: 'Test ISP',
+    city: 'Shanghai',
+    country: 'CN',
+    networkType: 'wifi',
+  }),
+}));
+
 import { DisconnectFeedbackDialog } from '../DisconnectFeedbackDialog';
+
+const mockConnectionInfo = {
+  domain: 'test.example.com',
+  name: 'Tokyo-01',
+  country: 'JP',
+  source: 'cloud' as const,
+  durationSec: 120,
+  ruleMode: 'global',
+  os: 'macos',
+  appVersion: '0.4.0',
+};
 
 describe('DisconnectFeedbackDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPost.mockResolvedValue({ code: 0 });
     mockStoreState = {
       pendingFeedback: false,
       lastConnectionInfo: null,
@@ -90,16 +113,7 @@ describe('DisconnectFeedbackDialog', () => {
 
   it('弹出 dialog 当 pendingFeedback=true 并立刻消费 flag', () => {
     mockStoreState.pendingFeedback = true;
-    mockStoreState.lastConnectionInfo = {
-      domain: 'test.example.com',
-      name: 'Tokyo-01',
-      country: 'JP',
-      source: 'cloud',
-      durationSec: 120,
-      ruleMode: 'global',
-      os: 'macos',
-      appVersion: '0.4.0',
-    };
+    mockStoreState.lastConnectionInfo = mockConnectionInfo;
 
     render(<DisconnectFeedbackDialog />);
 
@@ -109,45 +123,37 @@ describe('DisconnectFeedbackDialog', () => {
     expect(mockClearPendingFeedback).toHaveBeenCalledTimes(1);
   });
 
-  it('点击"好"关闭 dialog 无 API 调用', async () => {
+  it('点击"好"关闭 dialog 并提交 good rating', async () => {
     mockStoreState.pendingFeedback = true;
-    mockStoreState.lastConnectionInfo = {
-      domain: 'test.example.com',
-      name: 'Tokyo-01',
-      country: 'JP',
-      source: 'cloud',
-      durationSec: 60,
-      ruleMode: 'global',
-      os: 'macos',
-      appVersion: '0.4.0',
-    };
+    mockStoreState.lastConnectionInfo = mockConnectionInfo;
 
     render(<DisconnectFeedbackDialog />);
-
     fireEvent.click(screen.getByText('Good'));
 
     await waitFor(() => {
       expect(screen.queryByText('How was your connection?')).not.toBeInTheDocument();
     });
+    // No toast for good
     expect(mockShowAlert).not.toHaveBeenCalled();
-    expect(mockPost).not.toHaveBeenCalled();
+    // Rating submitted
+    await waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith(
+        '/api/user/connection-rating',
+        expect.objectContaining({ rating: 'good' }),
+      );
+    });
+    // No ticket created
+    const ticketCalls = mockPost.mock.calls.filter(
+      (call: any[]) => call[0] === '/api/user/ticket',
+    );
+    expect(ticketCalls).toHaveLength(0);
   });
 
-  it('点击"不好"关闭 dialog 并触发提交', async () => {
+  it('点击"不好"提交 ticket (auto_generated) + rating', async () => {
     mockStoreState.pendingFeedback = true;
-    mockStoreState.lastConnectionInfo = {
-      domain: 'test.example.com',
-      name: 'Tokyo-01',
-      country: 'JP',
-      source: 'cloud',
-      durationSec: 300,
-      ruleMode: 'chnroute',
-      os: 'macos',
-      appVersion: '0.4.0',
-    };
+    mockStoreState.lastConnectionInfo = { ...mockConnectionInfo, durationSec: 300, ruleMode: 'chnroute' };
 
     render(<DisconnectFeedbackDialog />);
-
     fireEvent.click(screen.getByText('Bad'));
 
     // Dialog closes
@@ -163,7 +169,7 @@ describe('DisconnectFeedbackDialog', () => {
       expect(window._platform!.uploadLogs).toHaveBeenCalledTimes(1);
     });
 
-    // Ticket submitted with connection info
+    // Ticket submitted with auto_generated flag
     await waitFor(() => {
       expect(mockPost).toHaveBeenCalledWith(
         '/api/user/ticket',
@@ -171,6 +177,7 @@ describe('DisconnectFeedbackDialog', () => {
           feedbackId: expect.any(String),
           os: 'macos',
           app_version: '0.4.0',
+          auto_generated: true,
         }),
       );
     });
@@ -180,30 +187,33 @@ describe('DisconnectFeedbackDialog', () => {
       expect(mockPost).toHaveBeenCalledWith('/api/user/device-log', expect.any(Object));
       expect(mockPost).toHaveBeenCalledWith('/api/user/feedback-notify', expect.any(Object));
     });
+
+    // Rating also submitted
+    await waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith(
+        '/api/user/connection-rating',
+        expect.objectContaining({ rating: 'bad' }),
+      );
+    });
   });
 
-  it('"不好"路径在 uploadLogs 失败时仍提交 ticket', async () => {
+  it('"不好"路径在 uploadLogs 失败时仍提交 ticket + rating', async () => {
     (window as any)._platform.uploadLogs = vi.fn().mockRejectedValue(new Error('upload failed'));
 
     mockStoreState.pendingFeedback = true;
-    mockStoreState.lastConnectionInfo = {
-      domain: 'test.example.com',
-      name: 'Tokyo-01',
-      country: 'JP',
-      source: 'cloud',
-      durationSec: 60,
-      ruleMode: 'global',
-      os: 'macos',
-      appVersion: '0.4.0',
-    };
+    mockStoreState.lastConnectionInfo = mockConnectionInfo;
 
     render(<DisconnectFeedbackDialog />);
-
     fireEvent.click(screen.getByText('Bad'));
 
     // Ticket still submitted even though logs failed
     await waitFor(() => {
-      expect(mockPost).toHaveBeenCalledWith('/api/user/ticket', expect.any(Object));
+      expect(mockPost).toHaveBeenCalledWith('/api/user/ticket', expect.objectContaining({ auto_generated: true }));
+    });
+
+    // Rating submitted
+    await waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith('/api/user/connection-rating', expect.objectContaining({ rating: 'bad' }));
     });
 
     // device-log NOT called (no s3Keys)
@@ -213,28 +223,23 @@ describe('DisconnectFeedbackDialog', () => {
     expect(deviceLogCalls).toHaveLength(0);
   });
 
-  it('standalone 模式 (无 uploadLogs) 只提交 ticket', async () => {
+  it('standalone 模式 (无 uploadLogs) 只提交 ticket + rating', async () => {
     delete (window as any)._platform.uploadLogs;
 
     mockStoreState.pendingFeedback = true;
-    mockStoreState.lastConnectionInfo = {
-      domain: 'test.example.com',
-      name: 'Tokyo-01',
-      country: 'JP',
-      source: 'cloud',
-      durationSec: 60,
-      ruleMode: 'global',
-      os: 'macos',
-      appVersion: '0.4.0',
-    };
+    mockStoreState.lastConnectionInfo = mockConnectionInfo;
 
     render(<DisconnectFeedbackDialog />);
-
     fireEvent.click(screen.getByText('Bad'));
 
     // Ticket submitted
     await waitFor(() => {
-      expect(mockPost).toHaveBeenCalledWith('/api/user/ticket', expect.any(Object));
+      expect(mockPost).toHaveBeenCalledWith('/api/user/ticket', expect.objectContaining({ auto_generated: true }));
+    });
+
+    // Rating submitted
+    await waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith('/api/user/connection-rating', expect.objectContaining({ rating: 'bad' }));
     });
 
     // No device-log (no logs uploaded)

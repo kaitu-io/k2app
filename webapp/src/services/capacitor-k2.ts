@@ -15,7 +15,8 @@ import { Share } from '@capacitor/share';
 import { getDeviceUdid } from './device-udid';
 import { K2Plugin } from 'k2-plugin';
 import type { IK2Vpn, IPlatform, IUpdater, UpdateInfo, SResponse } from '../types/kaitu-core';
-import type { StatusResponseData, ControlError, ServiceState } from './vpn-types';
+import type { StatusResponseData } from './vpn-types';
+import { transformStatus } from './status-transform';
 import { createCapacitorStorage } from './capacitor-storage';
 
 /**
@@ -23,47 +24,6 @@ import { createCapacitorStorage } from './capacitor-storage';
  */
 export function isCapacitorNative(): boolean {
   return Capacitor.isNativePlatform();
-}
-
-/**
- * Transform K2Plugin's raw status into StatusResponseData format.
- * Error synthesis: disconnected + error -> error state.
- */
-function transformStatus(raw: any): StatusResponseData {
-  let state: ServiceState = raw.state ?? 'disconnected';
-  const running = state === 'connecting' || state === 'connected';
-
-  let error: ControlError | undefined;
-  let retrying = false;
-  if (raw.error) {
-    if (typeof raw.error === 'object' && raw.error !== null && 'code' in raw.error) {
-      error = { code: raw.error.code, message: raw.error.message || '' };
-    } else {
-      // Backward compat: old daemon sends string
-      error = { code: 570, message: String(raw.error) };
-    }
-    if (state === 'disconnected' || state === 'connected') {
-      // connected + error: TUN up but wire broken — engine retries on next traffic
-      // disconnected + error: engine gave up
-      const isClientError = [400, 401, 402, 403].includes(error.code);
-      retrying = state === 'connected' && !isClientError;
-      state = 'error';
-    }
-  }
-
-  let startAt: number | undefined;
-  if (raw.connectedAt) {
-    startAt = Math.floor(new Date(raw.connectedAt).getTime() / 1000);
-  }
-
-  return {
-    state,
-    running,
-    networkAvailable: true,
-    startAt,
-    error,
-    retrying,
-  };
 }
 
 /**
@@ -212,6 +172,7 @@ export async function injectCapacitorGlobals(): Promise<void> {
   // Build _platform: mobile capabilities
   const capacitorPlatform: IPlatform = {
     os: platform,
+    platformType: 'mobile',
     version: appVersion,
     arch: 'arm64',
     commit: typeof __K2_BUILD_COMMIT__ !== 'undefined' ? __K2_BUILD_COMMIT__ : '',

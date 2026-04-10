@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useMemo, useRef } from "react";
+import { useCallback, useEffect, useState, useMemo, useRef, lazy, Suspense } from "react";
 import {
   Box,
   Typography,
@@ -52,6 +52,11 @@ const DashboardContainer = styled(Box)(({ theme }) => ({
     ? theme.palette.grey[900]
     : theme.palette.grey[50],
 }));
+
+// Gateway-only: lazy load upgrade banner
+const GatewayUpgradeBanner = window._platform?.platformType === 'gateway'
+  ? lazy(() => import('../components/GatewayUpgradeBanner'))
+  : null;
 
 export default function Dashboard() {
   const { t } = useTranslation();
@@ -303,6 +308,15 @@ export default function Dashboard() {
         }),
       }}
     >
+      {/* Gateway OTA upgrade banner */}
+      {GatewayUpgradeBanner && (
+        <Suspense fallback={null}>
+          <Box sx={{ px: 2, pt: 1 }}>
+            <GatewayUpgradeBanner />
+          </Box>
+        </Suspense>
+      )}
+
       {/* SECTION 1: Connection Control */}
       <CollapsibleConnectionSection
         serviceState={serviceState}

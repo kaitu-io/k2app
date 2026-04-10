@@ -12,7 +12,8 @@ import { listen } from '@tauri-apps/api/event';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { writeText, readText } from '@tauri-apps/plugin-clipboard-manager';
 import type { IK2Vpn, IPlatform, IUpdater, UpdateInfo, SResponse } from '../types/kaitu-core';
-import type { StatusResponseData, ControlError, ServiceState } from './vpn-types';
+import type { StatusResponseData } from './vpn-types';
+import { transformStatus } from './status-transform';
 import { getDeviceUdid } from './device-udid';
 import { tauriNativeStorage } from './tauri-storage';
 
@@ -20,50 +21,6 @@ interface ServiceResponse {
   code: number;
   message: string;
   data: any;
-}
-
-/**
- * Transform raw daemon status into normalized StatusResponseData.
- * Daemon uses "stopped" instead of "disconnected" and snake_case keys.
- * Error synthesis: disconnected + error -> error state.
- */
-function transformStatus(raw: any): StatusResponseData {
-  let state: ServiceState = raw.state === 'stopped' ? 'disconnected' : (raw.state ?? 'disconnected');
-  const running = state === 'connecting' || state === 'connected';
-
-  let error: ControlError | undefined;
-  let retrying = false;
-  if (raw.error) {
-    if (typeof raw.error === 'object' && raw.error !== null && 'code' in raw.error) {
-      error = { code: raw.error.code, message: raw.error.message || '' };
-    } else {
-      // Backward compat: old daemon sends string
-      error = { code: 570, message: String(raw.error) };
-    }
-    if (state === 'disconnected' || state === 'connected') {
-      // connected + error: TUN up but wire broken — engine retries on next traffic
-      // disconnected + error: engine gave up
-      const isClientError = [400, 401, 402, 403].includes(error.code);
-      retrying = state === 'connected' && !isClientError;
-      state = 'error';
-    }
-  }
-
-  let startAt: number | undefined;
-  if (raw.connected_at) {
-    startAt = Math.floor(new Date(raw.connected_at).getTime() / 1000);
-  }
-
-  console.debug('[K2:Tauri] transformStatus: raw.state=' + (raw.state ?? 'undefined') + ' → state=' + state + ', error=' + (error?.code ?? 'none') + ', retrying=' + retrying);
-
-  return {
-    state,
-    running,
-    networkAvailable: true,
-    startAt,
-    error,
-    retrying,
-  };
 }
 
 /**
@@ -218,6 +175,7 @@ export async function injectTauriGlobals(): Promise<void> {
 
   const tauriPlatform: IPlatform = {
     os: osMap[platformInfo.os] ?? 'linux',
+    platformType: 'desktop',
     version: platformInfo.version,
     arch: platformInfo.arch,
     commit: platformInfo.commit || '',

@@ -1,10 +1,9 @@
-name: Release OpenWrt
+name: Release k2r (Router/Gateway)
 
 on:
-  # Disabled: builds are failing, will re-enable after k2 router platform redesign
-  # push:
-  #   tags:
-  #     - 'v*'
+  push:
+    tags:
+      - 'v*-k2r'
   workflow_dispatch:
 
 permissions:
@@ -19,25 +18,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - goos: linux
-            goarch: arm64
-            name: aarch64
-          - goos: linux
-            goarch: amd64
-            name: x86_64
-          - goos: linux
-            goarch: arm
-            goarm: '7'
-            name: armv7
-          - goos: linux
-            goarch: mipsle
-            name: mipsle
+          - { goos: linux, goarch: arm64, name: arm64 }
+          - { goos: linux, goarch: amd64, name: amd64 }
+          - { goos: linux, goarch: arm, goarm: '7', name: armv7 }
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Checkout k2 submodule
+      - name: Setup SSH agent for k2 submodule
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.K2_DEPLOY_KEY }}
@@ -63,12 +52,12 @@ jobs:
       - name: Build webapp
         run: cd webapp && yarn build
 
-      - name: Embed webapp into k2
+      - name: Copy webapp dist into k2/gateway
         run: |
-          rm -rf k2/cloud/dist
-          cp -r webapp/dist k2/cloud/dist
+          rm -rf k2/gateway/dist
+          cp -r webapp/dist k2/gateway/dist
 
-      - name: Cross-compile k2
+      - name: Cross-compile k2r
         env:
           CGO_ENABLED: '0'
           GOOS: ${{ matrix.goos }}
@@ -80,38 +69,115 @@ jobs:
           mkdir -p build
           cd k2 && go build \
             -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" \
-            -o ../build/k2-openwrt-${{ matrix.name }} \
-            ./cmd/k2
+            -o ../build/k2r-linux-${{ matrix.name }} \
+            ./cmd/k2r
 
       - name: Verify binary architecture
-        run: file build/k2-openwrt-${{ matrix.name }}
+        run: file build/k2r-linux-${{ matrix.name }}
 
       - name: Smoke test with qemu
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq qemu-user-static binfmt-support
-          build/k2-openwrt-${{ matrix.name }} version
+          build/k2r-linux-${{ matrix.name }} -v
 
-      - name: Package tar.gz
+      - name: Generate checksum
         run: |
-          VERSION=$(node -p "require('./package.json').version")
-          PKGDIR=$(mktemp -d)
-          cp build/k2-openwrt-${{ matrix.name }} "${PKGDIR}/k2"
-          cp scripts/openwrt/install.sh "${PKGDIR}/"
-          cp scripts/openwrt/k2.init "${PKGDIR}/"
-          cp -r scripts/openwrt/luci-app-k2 "${PKGDIR}/"
-          tar -czf "build/k2-openwrt-${{ matrix.name }}-v${VERSION}.tar.gz" -C "${PKGDIR}" .
-          rm -rf "${PKGDIR}"
-          ls -lh build/k2-openwrt-${{ matrix.name }}-v${VERSION}.tar.gz
+          cd build
+          sha256sum k2r-linux-${{ matrix.name }} > checksums-${{ matrix.name }}.txt
 
-      - name: Upload to S3
+      - name: Upload binary and checksum to S3
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ap-northeast-1
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          aws s3 cp "build/k2-openwrt-${{ matrix.name }}-v${VERSION}.tar.gz" \
-            "s3://d0.all7.cc/kaitu/openwrt/${VERSION}/"
+          aws s3 cp "build/k2r-linux-${{ matrix.name }}" \
+            "s3://d0.all7.cc/kaitu/k2r/${VERSION}/"
+          aws s3 cp "build/checksums-${{ matrix.name }}.txt" \
+            "s3://d0.all7.cc/kaitu/k2r/${VERSION}/"
+
+      - name: Notify Slack on failure
+        if: failure()
+        run: |
+          ./scripts/ci/notify-slack.sh build-failure \
+            --platform "k2r-${{ matrix.name }}" \
+            --error "k2r build failed for ${{ matrix.name }}"
+        env:
+          SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_ALERT }}
+
+  finalize:
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Merge checksums and upload
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ap-northeast-1
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          mkdir -p build
+          for arch in arm64 amd64 armv7; do
+            aws s3 cp "s3://d0.all7.cc/kaitu/k2r/${VERSION}/checksums-${arch}.txt" \
+              "build/checksums-${arch}.txt"
+            cat "build/checksums-${arch}.txt" >> build/checksums.txt
+          done
+          aws s3 cp build/checksums.txt \
+            "s3://d0.all7.cc/kaitu/k2r/${VERSION}/checksums.txt"
+
+      - name: Upload LATEST file
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ap-northeast-1
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo -n "${VERSION}" > build/LATEST
+          aws s3 cp build/LATEST "s3://d0.all7.cc/kaitu/k2r/LATEST" \
+            --cache-control "max-age=60" \
+            --content-type "text/plain"
+
+      - name: Upload install script
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ap-northeast-1
+        run: |
+          aws s3 cp k2/scripts/install-k2r.sh "s3://d0.all7.cc/kaitu/k2r/install-k2r.sh" \
+            --content-type "text/plain" \
+            --cache-control "max-age=300"
+
+      - name: Clean per-arch checksum files from S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ap-northeast-1
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          for arch in arm64 amd64 armv7; do
+            aws s3 rm "s3://d0.all7.cc/kaitu/k2r/${VERSION}/checksums-${arch}.txt"
+          done
+
+      - name: Invalidate CloudFront cache
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ap-northeast-1
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ secrets.CDN_DISTRIBUTION_ID }} \
+            --paths "/kaitu/k2r/LATEST" "/kaitu/k2r/install-k2r.sh"
 
       - name: Notify Slack on success
         if: success()
@@ -119,7 +185,7 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           ./scripts/ci/notify-slack.sh deploy-success \
             --version "${VERSION}" \
-            --platforms "OpenWrt-${{ matrix.name }}"
+            --platforms "k2r-arm64,k2r-amd64,k2r-armv7"
         env:
           SLACK_WEBHOOK_RELEASE: ${{ secrets.SLACK_WEBHOOK_RELEASE }}
 
@@ -127,7 +193,7 @@ jobs:
         if: failure()
         run: |
           ./scripts/ci/notify-slack.sh build-failure \
-            --platform "OpenWrt-${{ matrix.name }}" \
-            --error "OpenWrt build failed for ${{ matrix.name }}"
+            --platform "k2r-finalize" \
+            --error "k2r finalize job failed"
         env:
           SLACK_WEBHOOK_ALERT: ${{ secrets.SLACK_WEBHOOK_ALERT }}
