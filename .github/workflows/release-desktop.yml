@@ -120,8 +120,12 @@ jobs:
           - runner: [self-hosted, macOS, ARM64]
             target: x86_64-pc-windows-msvc
             platform: Windows
-          - runner: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
+          # Linux ships a single Go binary with the React webapp embedded
+          # (no Tauri). Cross-compile from macOS via CGO_ENABLED=0 — much
+          # faster than Linux runners because no apt, no webkit2gtk, no
+          # Rust. See packaging/linux/ for the install.sh + systemd unit.
+          - runner: macos-latest
+            target: linux-amd64
             platform: Linux
 
     runs-on: ${{ matrix.runner }}
@@ -143,7 +147,9 @@ jobs:
         run: git -c url."git@github.com:".insteadOf="https://github.com/" submodule update --init --recursive
 
       - name: Setup Node.js
-        if: matrix.platform == 'macOS'
+        # Both macOS (Tauri bundle) and Linux (Go embed) need yarn for
+        # the webapp build. Windows uses its self-hosted tooling.
+        if: matrix.platform == 'macOS' || matrix.platform == 'Linux'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -163,19 +169,9 @@ jobs:
           command -v makensis || { echo "ERROR: makensis (NSIS) not found"; exit 1; }
           command -v osslsigncode || { echo "ERROR: osslsigncode not found"; exit 1; }
 
-      - name: Install Linux system dependencies
-        if: matrix.platform == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libssl-dev \
-            patchelf
-
       - name: Setup Go
-        if: matrix.platform == 'macOS'
+        # macOS (Tauri sidecar) and Linux (pure Go binary, CGO=0) need Go.
+        if: matrix.platform == 'macOS' || matrix.platform == 'Linux'
         uses: actions/setup-go@v5
         with:
           go-version: '1.24'
@@ -194,50 +190,6 @@ jobs:
             echo "Adding x86_64-pc-windows-msvc target..."
             rustup target add x86_64-pc-windows-msvc
           }
-
-      - name: Setup Node.js (Linux)
-        if: matrix.platform == 'Linux'
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'yarn'
-
-      - name: Setup Go (Linux)
-        if: matrix.platform == 'Linux'
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.24'
-          cache-dependency-path: k2/go.sum
-
-      - name: Setup Rust (Linux)
-        if: matrix.platform == 'Linux'
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Setup sccache (Linux)
-        if: matrix.platform == 'Linux'
-        uses: mozilla-actions/sccache-action@v0.0.6
-
-      - name: Verify sccache works (Linux)
-        if: matrix.platform == 'Linux'
-        run: |
-          export SCCACHE_GHA_ENABLED=true
-          if sccache rustc -vV >/dev/null 2>&1; then
-            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-            echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
-          else
-            echo "::warning::sccache GHA backend unavailable, compiling without cache"
-          fi
-
-      - name: Cache cargo registry (Linux)
-        if: matrix.platform == 'Linux'
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: cargo-registry-Linux-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}
-          restore-keys: |
-            cargo-registry-Linux-
 
       - name: Setup sccache
         if: matrix.platform == 'macOS'
@@ -340,33 +292,39 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: make build-windows
 
-      - name: Build Linux (k2 + webapp + tar.gz)
+      - name: Build Linux (k2 + embedded webapp + tarball)
         if: matrix.platform == 'Linux'
-        run: make _build-linux-native
+        # Cross-compiles on the macos-latest runner via CGO_ENABLED=0.
+        # Produces release/$VERSION/Kaitu_$VERSION_linux_amd64.tar.gz
+        # containing k2, install.sh, uninstall.sh, kaitu.service, and a
+        # raw release/$VERSION/k2-linux-amd64 binary.
+        run: make build-linux
 
       - name: Install minisign (Linux)
         if: matrix.platform == 'Linux'
-        run: |
-          curl -sL https://github.com/jedisct1/minisign/releases/download/0.11/minisign-0.11-linux.tar.gz | tar xz
-          sudo mv minisign-linux/x86_64/minisign /usr/local/bin/
-          rm -rf minisign-linux
+        # Runner is macOS, so install via Homebrew. jedisct1/minisign is
+        # the standard formula.
+        run: brew install minisign
 
-      - name: Sign Linux tar.gz
+      - name: Sign Linux tarball
         if: matrix.platform == 'Linux'
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          # Decode Tauri's base64-encoded minisign private key
+          # Decode Tauri's base64-encoded minisign private key (shared
+          # across platforms — same key that signs macOS app.tar.gz).
           echo "$TAURI_SIGNING_PRIVATE_KEY" | base64 -d > /tmp/minisign.key
           echo "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" | minisign -S -s /tmp/minisign.key \
-            -m "release/${VERSION}/Kaitu_${VERSION}_amd64.tar.gz"
+            -m "release/${VERSION}/Kaitu_${VERSION}_linux_amd64.tar.gz"
           # Base64-encode the .minisig file to match Tauri's .sig format
-          # (Tauri stores signatures as base64 in latest.json; raw minisign is multiline text)
-          base64 -w0 < "release/${VERSION}/Kaitu_${VERSION}_amd64.tar.gz.minisig" \
-            > "release/${VERSION}/Kaitu_${VERSION}_amd64.tar.gz.sig"
-          rm -f /tmp/minisign.key "release/${VERSION}/Kaitu_${VERSION}_amd64.tar.gz.minisig"
+          # (latest.json stores signatures as base64; raw minisign is
+          # multi-line text).
+          base64 < "release/${VERSION}/Kaitu_${VERSION}_linux_amd64.tar.gz.minisig" \
+            | tr -d '\n' \
+            > "release/${VERSION}/Kaitu_${VERSION}_linux_amd64.tar.gz.sig"
+          rm -f /tmp/minisign.key "release/${VERSION}/Kaitu_${VERSION}_linux_amd64.tar.gz.minisig"
 
       # --- Upload artifacts to S3 + CDN invalidation ---
 
@@ -403,7 +361,7 @@ jobs:
           if [ "${PLATFORM}" = "macOS" ]; then
             DOWNLOAD_URL="<${CDN_BASE}/Kaitu_${VERSION}_universal.pkg|macOS PKG>"
           elif [ "${PLATFORM}" = "Linux" ]; then
-            DOWNLOAD_URL="<${CDN_BASE}/Kaitu_${VERSION}_amd64.tar.gz|Linux tar.gz>"
+            DOWNLOAD_URL="<${CDN_BASE}/Kaitu_${VERSION}_linux_amd64.tar.gz|Linux tarball>"
           else
             DOWNLOAD_URL="<${CDN_BASE}/Kaitu_${VERSION}_x64.exe|Windows Setup>"
           fi

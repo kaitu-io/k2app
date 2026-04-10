@@ -92,8 +92,11 @@ case "$PLATFORM" in
     echo "Uploaded: macOS artifacts"
     ;;
   linux)
-    upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_amd64.tar.gz"
-    upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_amd64.tar.gz.sig" --optional
+    # Embedded-webapp Linux build: single Go binary + install.sh bundle.
+    # Naming includes the `linux_` infix to disambiguate from the old
+    # Tauri AppImage era artifact `Kaitu_${VERSION}_amd64.tar.gz`.
+    upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_linux_amd64.tar.gz"
+    upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_linux_amd64.tar.gz.sig" --optional
     upload_file "${RELEASE_DIR}/k2-linux-amd64"
     echo "Uploaded: Linux artifacts"
     ;;

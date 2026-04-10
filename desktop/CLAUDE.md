@@ -1,16 +1,20 @@
-# desktop — Tauri v2 Shell
+# desktop — Tauri v2 Shell (macOS + Windows only)
 
 Rust desktop shell using Tauri v2. Serves webapp via tauri-plugin-localhost (port 14580) to avoid WebKit mixed content blocking.
+
+**Linux is NOT supported by this shell.** Linux desktop ships a single Go
+binary from `cmd/k2` with the React webapp embedded via `k2/webui`; users
+open `http://127.0.0.1:1777` in their browser after running
+`packaging/linux/install.sh`. See root `CLAUDE.md` and `k2/webui/CLAUDE.md`.
 
 ## Commands
 
 ```bash
 cd src-tauri && cargo check     # Rust compilation check
-cd src-tauri && cargo test      # Rust tests (43 tests)
+cd src-tauri && cargo test      # Rust tests
 yarn tauri dev                  # Dev mode (expects Vite on :1420)
 yarn tauri build --target universal-apple-darwin  # macOS build
 yarn tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc  # Windows cross-build from macOS
-yarn tauri build --bundles appimage  # Linux AppImage (requires Linux host)
 ```
 
 ## Rust Modules (`src-tauri/src/`)
@@ -36,7 +40,6 @@ yarn tauri build --bundles appimage  # Linux AppImage (requires Linux host)
 - **tray.rs** — System tray: Show/Hide window, Connect (`action:up`), Disconnect (`action:down`), Quit
 - **updater.rs** — Auto-updater: 5s delay → 30min periodic check loop. `UpdateInfo` struct (currentVersion, newVersion, releaseNotes). Emits `update-ready` Tauri event. Windows: NSIS install + `app.exit(0)`. macOS/Linux: store update, apply on exit via `install_pending_update()`. Beta channel: `set_update_channel` saves/restores pre-beta log level, returns `{channel, logLevel}` JSON so JS can update localStorage directly. Downgrade detection: stable channel + beta build → `version_comparator(!=)`.
 - **window.rs** — Window management: calculates optimal size from screen dimensions using 9:20 aspect ratio with min/max constraints. Startup creates window hidden, `adjust_window_size()` resizes based on monitor, then `frontend_ready()` shows. Supports `--minimized` autostart (tray-only). `show_window()` uses always-on-top trick on Windows to bring window to front. `hide_window()` minimizes on Windows (keeps taskbar icon) vs hides on macOS/Linux.
-- **linux_updater.rs** — Linux-specific tar.gz updater (replaces tauri-plugin-updater on Linux). Fetches `latest.json` from CDN, downloads ~6-8MB tar.gz (vs 85MB AppImage), verifies minisign signatures, extracts to `/opt/kaitu/` via `pkexec` two-phase staging. Relaunches via helper process that polls PID exit then `nohup`. Shares `UpdateInfo`/`UPDATE_READY` state with `updater.rs`. Channel switch triggers auto-apply without user prompt.
 - **storage.rs** — App-private key-value storage. Persists `storage.json` in Tauri app data dir. In-memory `HashMap` mirror with atomic write (write `.tmp` then `fs::rename`). Single-instance plugin guarantees no concurrent writers. Used by webapp for secure storage on desktop (IPlatform.storage). Values encrypted with AES-256-GCM via `storage_crypto.rs`; reads auto-detect `ENC1:` prefix for backward compat with plaintext.
 - **storage_crypto.rs** — AES-256-GCM encryption for storage values. Key derived via HKDF-SHA256 from platform hardware ID (macOS: IOPlatformUUID via `ioreg`, Windows: Registry `HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid`, Linux: `/etc/machine-id`). Encrypted values prefixed with `ENC1:`. Plaintext values (pre-encryption) read transparently for backward compatibility. Platform-specific hardware ID tests gated with `#[cfg(target_os)]`.
 - **log_upload.rs** — Service log upload: reads 4 log sources (service, crash, desktop, system), sanitizes sensitive data, gzip compresses, uploads to S3 with `desktop/{version}/{udid}/{date}/logs-{ts}-{id}.tar.gz` key format. Uses `spawn_blocking` for blocking HTTP. Auto-cleans up log files after successful `beta-auto-upload` (delete on macOS/Linux, truncate on Windows due to file locks).

@@ -1,0 +1,25 @@
+[Unit]
+Description=Kaitu VPN
+Documentation=https://kaitu.io
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/k2 run
+Restart=on-failure
+RestartSec=3
+User=root
+
+# TUN requires CAP_NET_ADMIN; running as root is the simplest path and matches
+# the install.sh guidance. If you prefer a dedicated service user, add the
+# capability and adjust the User= line accordingly.
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_ADMIN
+
+# The daemon persists encrypted storage + update state under /etc/kaitu.
+# The directory is created with mode 0700 on first write.
+ReadWritePaths=/etc/kaitu
+
+[Install]
+WantedBy=multi-user.target

@@ -12,7 +12,7 @@ make dev-macos                   # Tauri desktop dev (macOS)
 make dev-windows                 # Tauri desktop dev (Windows)
 make build-macos                 # Signed macOS PKG (universal binary)
 make build-windows               # Signed Windows NSIS installer (cross-compiled on macOS via cargo-xwin)
-make build-linux                  # AppImage (CI only — requires Linux host + webkit2gtk)
+make build-linux                  # Embedded-webapp Go binary + install.sh tarball (cross-compiles from macOS)
 make build-android               # gomobile bind + cap sync + assembleRelease
 make build-ios                   # gomobile bind + cap sync + xcodebuild archive
 make upload-macos                # Upload macOS artifacts to S3 + CDN invalidation
@@ -146,8 +146,7 @@ docs/plans/          Architecture design docs (43+ files, use `ls` to browse)
 - **Daemon helper API routing**: `adb-*` actions use `/api/helper` endpoint (not `/api/core`). Tauri bridge routes via `daemon_helper_exec` IPC. Standalone bridge routes by URL prefix check. Vite dev proxy must include `/api/helper`.
 - **Root daemon adb discovery**: Daemon runs as root → different `$PATH` and `$HOME`. `findAdbCandidates()` scans all `/Users/*/Library/Android/sdk/`, Homebrew paths, before CDN fallback. Uses `gadb` (pure Go ADB TCP client) for device ops.
 - **Desktop artifact naming**: `Kaitu_{VERSION}_{ARCH}.{EXT}` — underscore-separated. macOS: `_universal.pkg` / `_universal.app.tar.gz` / `.sig`. Windows: `_x64.exe` / `.sig`. S3 path: `kaitu/desktop/{VERSION}/`. Never use hyphen separator (`Kaitu-`) or `-setup` suffix.
-- **Linux AppImage**: webkit2gtk-4.1 is dynamically linked (not bundled). Install script checks for it. Only amd64 initially. Auto-update via `tauri-plugin-updater` (AppImage only format that supports it).
-- **Linux admin elevation**: `pkexec` for graphical password dialog. Returns `"pkexec_unavailable"` error if pkexec missing — frontend shows manual `sudo k2 service install` instructions.
+- **Linux desktop = embedded-webapp Go binary, no Tauri**: `cmd/k2` on Linux ships a single Go binary with the React webapp embedded via `//go:embed` in the `k2/webui` package. Users install via `packaging/linux/install.sh` which writes `/usr/local/bin/k2` + `/etc/systemd/system/kaitu.service`, starts the daemon, then opens `http://127.0.0.1:1777` in the browser. No Tauri shell, no webkit2gtk, no AppImage, no pkexec. Upgrades via `webui.Upgrader` calling `systemctl restart kaitu` after downloading the new binary. macOS and Windows continue to ship the Tauri shell as before.
 
 ## Tech Stack
 

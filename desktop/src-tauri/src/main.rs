@@ -1,8 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod channel;
-#[cfg(target_os = "linux")]
-mod linux_updater;
 mod log_upload;
 mod ne;
 mod service;

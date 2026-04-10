@@ -95,14 +95,7 @@ pub fn start_auto_updater(app: AppHandle) {
 /// When `force_downgrade` is true AND channel is "stable" AND running version contains "-beta",
 /// uses version_comparator(!=) to trigger update even when the remote version is lower
 /// (beta→stable downgrade). Only `set_update_channel` passes true.
-#[allow(unreachable_code)]
 async fn check_download_and_install(app: &AppHandle, force_downgrade: bool) {
-    #[cfg(target_os = "linux")]
-    {
-        crate::linux_updater::check_and_download(app, force_downgrade).await;
-        return;
-    }
-
     let ch = channel::get_channel(app);
     let endpoints = match channel::endpoints_for_channel(&ch) {
         Ok(eps) => eps,
@@ -272,47 +265,31 @@ pub fn get_update_status() -> Result<Option<UpdateInfo>, String> {
 /// `ensure_service_running` finds the version already matching and does NOT prompt again.
 /// This reduces the total password prompts from 2 to 1.
 #[tauri::command]
-#[allow(unreachable_code)]
 pub async fn apply_update_now(app: AppHandle) -> Result<(), String> {
     if !is_update_ready() {
         return Err("No update available".to_string());
     }
-    #[cfg(target_os = "linux")]
+    // macOS daemon mode: pre-install service before restart to avoid second password prompt.
+    // The new k2 binary is already at /Applications/Kaitu.app/Contents/MacOS/k2.
+    // If this fails (user cancels, etc.), ensure_service_running handles it after restart.
+    #[cfg(all(target_os = "macos", not(feature = "ne-mode")))]
     {
-        log::info!("[updater] Linux: applying update and relaunching...");
-        crate::linux_updater::apply_update(&app);
-        return Ok(());
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        // macOS daemon mode: pre-install service before restart to avoid second password prompt.
-        // The new k2 binary is already at /Applications/Kaitu.app/Contents/MacOS/k2.
-        // If this fails (user cancels, etc.), ensure_service_running handles it after restart.
-        #[cfg(all(target_os = "macos", not(feature = "ne-mode")))]
-        {
-            log::info!("[updater] Pre-installing service before restart...");
-            match service::admin_reinstall_service().await {
-                Ok(msg) => log::info!("[updater] Service pre-installed: {}", msg),
-                Err(e) => log::warn!("[updater] Service pre-install failed (will retry after restart): {}", e),
-            }
+        log::info!("[updater] Pre-installing service before restart...");
+        match service::admin_reinstall_service().await {
+            Ok(msg) => log::info!("[updater] Service pre-installed: {}", msg),
+            Err(e) => log::warn!("[updater] Service pre-install failed (will retry after restart): {}", e),
         }
-
-        log::info!("[updater] User requested update, restarting...");
-        app.restart();
-        Ok(())
     }
+
+    log::info!("[updater] User requested update, restarting...");
+    app.restart();
+    Ok(())
 }
 
 /// IPC: Manual update check — reads channel from disk, checks appropriate endpoints
 #[tauri::command]
-#[allow(unreachable_code)]
 pub async fn check_update_now(app: AppHandle) -> Result<String, String> {
     log::info!("[updater] Manual update check triggered");
-
-    #[cfg(target_os = "linux")]
-    {
-        return crate::linux_updater::check_now(&app).await;
-    }
 
     // If update already ready, return status
     if is_update_ready() {
@@ -498,21 +475,13 @@ fn read_pre_beta_log_level(app: &AppHandle) -> Option<String> {
 
 /// Install pending update on app exit (macOS/Linux only)
 /// Called from RunEvent::ExitRequested in main.rs
-#[allow(unreachable_code)]
 pub fn install_pending_update(app: &AppHandle) -> bool {
     if !is_update_ready() {
         return false;
     }
-    #[cfg(target_os = "linux")]
-    {
-        return false; // Linux updates applied via apply_update_now, not on exit
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        log::info!("[updater] Applying pending update on exit...");
-        app.restart();
-        true
-    }
+    log::info!("[updater] Applying pending update on exit...");
+    app.restart();
+    true
 }
 
 // ============================================================================

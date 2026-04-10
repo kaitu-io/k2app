@@ -39,6 +39,15 @@ build-k2-linux:
 	mkdir -p $(K2_BIN)
 	cp k2/build/k2-linux-amd64 $(K2_BIN)/k2-x86_64-unknown-linux-gnu
 
+# Stage the built webapp into k2/webui/dist so the k2 binary's //go:embed
+# picks it up at compile time. Called by build-linux before the Go build.
+stage-k2-webui-dist: build-webapp
+	@echo "--- Staging webapp into k2/webui/dist ---"
+	@rm -rf k2/webui/dist
+	@mkdir -p k2/webui/dist
+	@rsync -a --exclude='.gitkeep' webapp/dist/ k2/webui/dist/
+	@touch k2/webui/dist/.gitkeep
+
 # --- adb tools sync ---
 sync-adb-tools:
 	@bash scripts/sync-adb-tools.sh
@@ -82,25 +91,41 @@ build-windows: pre-build build-webapp build-k2-windows sync-adb-tools simplisign
 	@echo "Release artifacts in release/$(VERSION)/:"
 	@ls -la release/$(VERSION)/
 
-build-linux:
-	@if [ "$$(uname -s)" = "Linux" ]; then \
-		$(MAKE) _build-linux-native; \
-	else \
-		echo "Not on Linux — building via Docker"; \
-		bash scripts/build-linux.sh; \
-	fi
-
-_build-linux-native: pre-build build-webapp build-k2-linux
-	cd desktop && yarn tauri build --no-bundle
-	@echo "--- Packaging tar.gz ---"
+# --- Linux desktop build (embedded webapp, no Tauri) ---
+#
+# Linux ships a single Go binary with the React webapp embedded via
+# //go:embed in the k2/webui package. Users open http://127.0.0.1:1777
+# in their browser after installing k2 as a systemd service. macOS and
+# Windows continue to use the Tauri shell; this target never touches
+# desktop/src-tauri/.
+#
+# Cross-compiles from macOS or Linux host via CGO_ENABLED=0 (sing-tun
+# and quic-go are pure Go, no CGo needed on linux/amd64).
+#
+# Output:
+#   release/$(VERSION)/k2-linux-amd64                       raw binary
+#   release/$(VERSION)/Kaitu_$(VERSION)_linux_amd64.tar.gz  bundle
+#                                                           (k2 + install.sh
+#                                                            + kaitu.service)
+build-linux: pre-build stage-k2-webui-dist
+	@echo "--- [host] Go cross-compile k2 for Linux (embedded webapp) ---"
+	cd k2 && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+		go build \
+		-ldflags "-s -w -X main.version=$(VERSION) -X main.commit=$(K2_COMMIT) -X github.com/kaitu-io/k2/config.buildLogLevel=$(K2_BUILD_LOG_LEVEL)" \
+		-o build/k2-linux-amd64 ./cmd/k2
+	@echo "--- Packaging tarball ---"
 	@mkdir -p release/$(VERSION)/linux-pkg
-	@cp desktop/src-tauri/target/release/k2app release/$(VERSION)/linux-pkg/k2app
-	@cp $(K2_BIN)/k2-x86_64-unknown-linux-gnu release/$(VERSION)/linux-pkg/k2
-	@cp desktop/src-tauri/icons/128x128.png release/$(VERSION)/linux-pkg/kaitu.png
-	@chmod +x release/$(VERSION)/linux-pkg/k2app release/$(VERSION)/linux-pkg/k2
-	@cd release/$(VERSION)/linux-pkg && tar czf ../Kaitu_$(VERSION)_amd64.tar.gz k2app k2 kaitu.png
+	@cp k2/build/k2-linux-amd64 release/$(VERSION)/linux-pkg/k2
+	@cp packaging/linux/install.sh release/$(VERSION)/linux-pkg/install.sh
+	@cp packaging/linux/uninstall.sh release/$(VERSION)/linux-pkg/uninstall.sh
+	@cp packaging/linux/kaitu.service release/$(VERSION)/linux-pkg/kaitu.service
+	@chmod +x release/$(VERSION)/linux-pkg/k2 \
+		release/$(VERSION)/linux-pkg/install.sh \
+		release/$(VERSION)/linux-pkg/uninstall.sh
+	@cd release/$(VERSION)/linux-pkg && \
+		tar czf ../Kaitu_$(VERSION)_linux_amd64.tar.gz k2 install.sh uninstall.sh kaitu.service
 	@rm -rf release/$(VERSION)/linux-pkg
-	@cp $(K2_BIN)/k2-x86_64-unknown-linux-gnu release/$(VERSION)/k2-linux-amd64
+	@cp k2/build/k2-linux-amd64 release/$(VERSION)/k2-linux-amd64
 	@echo "=== Linux build complete ==="
 	@echo "Release artifacts in release/$(VERSION)/:"
 	@ls -la release/$(VERSION)/

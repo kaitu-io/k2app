@@ -82,8 +82,8 @@
       },
       "linux": {
         "1": "Install via script: curl -fsSL https://kaitu.io/i/k2 | sudo bash",
-        "2": "The script auto-installs dependencies, downloads and configures the service",
-        "3": "After installation, find Kaitu in your app menu or run k2app"
+        "2": "The script downloads the k2 binary and registers the kaitu.service systemd unit",
+        "3": "After installation, open http://127.0.0.1:1777 in your browser to sign in"
       },
       "android": {
         "1": "Download the APK file. If the browser warns, tap 'Keep'",

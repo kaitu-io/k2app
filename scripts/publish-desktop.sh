@@ -66,7 +66,12 @@ aws s3 cp "${S3_VER}/" "${TMPDIR}/" --recursive \
 
 MACOS_SIG=$(cat "${TMPDIR}/Kaitu_${VERSION}_universal.app.tar.gz.sig" 2>/dev/null || echo "")
 WINDOWS_SIG=$(cat "${TMPDIR}/Kaitu_${VERSION}_x64.exe.sig" 2>/dev/null || echo "")
-LINUX_SIG=$(cat "${TMPDIR}/Kaitu_${VERSION}_amd64.tar.gz.sig" 2>/dev/null || echo "")
+# Linux signature refers to the new filename used by the embedded-webapp
+# Go binary bundle (packaging/linux/install.sh + kaitu.service). The
+# Tauri updater's latest.json no longer includes a linux platform entry
+# — Linux uses a separate LATEST + checksums.txt channel consumed by
+# webui.Upgrader in k2/webui.
+LINUX_SIG=$(cat "${TMPDIR}/Kaitu_${VERSION}_linux_amd64.tar.gz.sig" 2>/dev/null || echo "")
 
 if [ -z "${MACOS_SIG}" ]; then
   echo "WARNING: macOS signature not found"
@@ -114,7 +119,7 @@ verify_signature() {
 echo "Verifying signatures against S3 artifacts..."
 verify_signature "Kaitu_${VERSION}_universal.app.tar.gz" "${MACOS_SIG}" "macOS"
 verify_signature "Kaitu_${VERSION}_x64.exe" "${WINDOWS_SIG}" "Windows"
-verify_signature "Kaitu_${VERSION}_amd64.tar.gz" "${LINUX_SIG}" "Linux"
+verify_signature "Kaitu_${VERSION}_linux_amd64.tar.gz" "${LINUX_SIG}" "Linux"
 echo "All signatures verified."
 echo ""
 
@@ -143,10 +148,6 @@ cat > "${TMPDIR}/cloudfront.latest.json" << EOF
     "windows-x86_64": {
       "url": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/${VERSION}/Kaitu_${VERSION}_x64.exe",
       "signature": "${WINDOWS_SIG}"
-    },
-    "linux-x86_64": {
-      "url": "https://d13jc1jqzlg4yt.cloudfront.net/kaitu/desktop/${VERSION}/Kaitu_${VERSION}_amd64.tar.gz",
-      "signature": "${LINUX_SIG}"
     }
   }
 }
@@ -174,10 +175,6 @@ cat > "${TMPDIR}/d0.latest.json" << EOF
     "windows-x86_64": {
       "url": "https://d0.all7.cc/kaitu/desktop/${VERSION}/Kaitu_${VERSION}_x64.exe",
       "signature": "${WINDOWS_SIG}"
-    },
-    "linux-x86_64": {
-      "url": "https://d0.all7.cc/kaitu/desktop/${VERSION}/Kaitu_${VERSION}_amd64.tar.gz",
-      "signature": "${LINUX_SIG}"
     }
   }
 }
@@ -194,6 +191,48 @@ echo ""
 aws s3 cp "${TMPDIR}/cloudfront.latest.json" "${S3_MANIFEST}/cloudfront.latest.json"
 aws s3 cp "${TMPDIR}/d0.latest.json" "${S3_MANIFEST}/d0.latest.json"
 echo "latest.json files uploaded to ${S3_MANIFEST}/"
+
+# --- Linux webui.Upgrader manifest (LATEST + checksums.txt) ---
+#
+# The Linux embedded-webapp daemon (cmd/k2 + k2/webui/upgrade.go) checks
+# for updates via a two-file manifest instead of latest.json:
+#
+#   kaitu/desktop/LATEST               text file, just the version string
+#   kaitu/desktop/${VERSION}/checksums.txt   sha256 k2-linux-amd64
+#
+# Mirrors the pattern used by cmd/k2r in release-openwrt.yml. Only the
+# Linux binary is listed in checksums.txt — macOS and Windows have their
+# own update channel via Tauri's latest.json above.
+if [ "$CHANNEL" = "stable" ]; then
+  echo ""
+  echo "Generating Linux webui.Upgrader manifest..."
+
+  LINUX_MANIFEST_DIR="${TMPDIR}/linux-manifest"
+  mkdir -p "${LINUX_MANIFEST_DIR}"
+
+  # Download the raw binary so we can checksum it locally.
+  aws s3 cp "${S3_VER}/k2-linux-amd64" "${LINUX_MANIFEST_DIR}/k2-linux-amd64" --quiet
+
+  # sha256sum-format: "<hash>  <filename>" (two spaces).
+  LINUX_SHA=$(shasum -a 256 "${LINUX_MANIFEST_DIR}/k2-linux-amd64" | awk '{print $1}')
+  echo "${LINUX_SHA}  k2-linux-amd64" > "${LINUX_MANIFEST_DIR}/checksums.txt"
+
+  echo -n "${VERSION}" > "${LINUX_MANIFEST_DIR}/LATEST"
+
+  echo "checksums.txt:"
+  cat "${LINUX_MANIFEST_DIR}/checksums.txt"
+  echo "LATEST: ${VERSION}"
+
+  # Per-version checksums + global LATEST, on both CDN buckets.
+  aws s3 cp "${LINUX_MANIFEST_DIR}/checksums.txt" \
+    "${S3_VER}/checksums.txt" \
+    --content-type "text/plain"
+  aws s3 cp "${LINUX_MANIFEST_DIR}/LATEST" \
+    "${S3_ROOT}/LATEST" \
+    --cache-control "max-age=60" \
+    --content-type "text/plain"
+  echo "Linux webui.Upgrader manifest uploaded."
+fi
 
 # Beta channel is a superset of stable — sync stable release to beta manifest
 if [ "$CHANNEL" = "stable" ]; then
@@ -235,6 +274,8 @@ for DIST_ID in "$CDN_ID_D0" "$CDN_ID_DL"; do
             "/kaitu/desktop/beta/cloudfront.latest.json" \
             "/kaitu/desktop/d0.latest.json" \
             "/kaitu/desktop/beta/d0.latest.json" \
+            "/kaitu/desktop/LATEST" \
+            "/kaitu/desktop/${VERSION}/checksums.txt" \
     --no-cli-pager --output text > /dev/null
 done
 echo "CDN invalidated: d0.all7.cc + dl.kaitu.io"
