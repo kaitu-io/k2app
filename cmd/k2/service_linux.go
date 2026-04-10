@@ -9,9 +9,11 @@ import (
 	"path/filepath"
 )
 
-// systemd constants.
+// systemd constants. Unit name matches packaging/linux/kaitu.service in the
+// k2app repo so both install paths (tarball install.sh and `k2 service
+// install`) produce a single, coherent unit on disk.
 const (
-	serviceUnit = "k2.service"
+	serviceUnit = "kaitu.service"
 	unitDir     = "/etc/systemd/system"
 )
 
@@ -44,15 +46,31 @@ func installSystemd() error {
 		return fmt.Errorf("resolve executable path: %w", err)
 	}
 
+	// Unit content mirrors packaging/linux/kaitu.service (in the k2app
+	// repo) so both install paths stay in lockstep. Hardening notes:
+	//   - Ambient CAP_NET_ADMIN + CAP_NET_RAW let the daemon create TUN
+	//     devices without UID 0 privileges on the rest of the syscall
+	//     surface; CAP_SYS_ADMIN stays in the bounding set because some
+	//     sing-tun paths still reach for it on exotic kernels.
+	//   - ReadWritePaths=/etc/kaitu is declarative here (no ProtectSystem)
+	//     but kept for parity with the packaging unit if that's ever added.
 	unit := fmt.Sprintf(`[Unit]
-Description=k2 network tunnel daemon
-After=network.target
+Description=Kaitu VPN
+Documentation=https://kaitu.io
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 ExecStart=%s run
-Restart=always
-RestartSec=5
+Restart=on-failure
+RestartSec=3
+User=root
+
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_ADMIN
+
+ReadWritePaths=/etc/kaitu
 
 [Install]
 WantedBy=multi-user.target
