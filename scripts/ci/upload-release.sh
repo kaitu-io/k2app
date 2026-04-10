@@ -96,6 +96,10 @@ case "$PLATFORM" in
     # Naming includes the `linux_` infix to disambiguate from the old
     # Tauri AppImage era artifact `Kaitu_${VERSION}_amd64.tar.gz`.
     upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_linux_amd64.tar.gz"
+    # Checksum is required — the install shim at web/public/i/k2 verifies
+    # the tarball against this file before extracting. Hard-fail if missing
+    # so a half-baked release never reaches the CDN.
+    upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_linux_amd64.tar.gz.sha256"
     upload_file "${RELEASE_DIR}/Kaitu_${VERSION}_linux_amd64.tar.gz.sig" --optional
     upload_file "${RELEASE_DIR}/k2-linux-amd64"
     echo "Uploaded: Linux artifacts"

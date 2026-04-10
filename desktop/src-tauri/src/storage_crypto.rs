@@ -4,10 +4,51 @@
 //! then encrypts/decrypts storage values with AES-256-GCM. Encrypted values are
 //! prefixed with `ENC1:` followed by base64(nonce || ciphertext || tag).
 //!
-//! Hardware ID sourced from `machine-uid` crate (same as Go `denisbrodbeck/machineid`):
-//! - macOS: IOPlatformUUID via `ioreg`
-//! - Windows: Registry `MachineGuid` (no PowerShell, instant)
-//! - Linux: `/var/lib/dbus/machine-id` → `/etc/machine-id`
+//! # Threat model / intended scope
+//!
+//! This module provides **落盘混淆 + 硬件特征绑定**, *not* protection against
+//! a local attacker running as the same user:
+//!
+//! - A same-user process can trivially recompute the key by running `ioreg` /
+//!   reading the registry / reading `/etc/machine-id` itself. We do **not**
+//!   try to defeat local malware.
+//! - The protection target is "storage.json is copied off-machine as a single
+//!   file": on another machine the hardware ID is different, HKDF derives a
+//!   different key, decryption fails.
+//! - Losing access after logic-board swap / OS reinstall / VM clone is
+//!   acceptable — the user simply re-logs in.
+//!
+//! # Why `machine-uid` and not `sysctl kern.uuid`
+//!
+//! The pre-v0.4.1 UDID code used `sysctl -n kern.uuid` and hit a production
+//! collision between two Macs (see commit `d4ebdd6`). Root cause: **`kern.uuid`
+//! is not the hardware UUID.** xnu generates it via
+//! `uuid_create_md5_from_name(namespace, hostname + boot_args)` — i.e. it is
+//! a UUIDv3 derived from the hostname. Two machines with the same default
+//! hostname (corporate images, fresh installs, or VM clones) will produce
+//! the same `kern.uuid`.
+//!
+//! `machine-uid` reads the correct firmware-level source on each platform:
+//! - **macOS**: `ioreg -rd1 -c IOPlatformExpertDevice` → `IOPlatformUUID`
+//!   (set at manufacture by firmware / SMC / Secure Enclave)
+//! - **Windows**: `HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid`
+//!   (written once at OS install by CryptoAPI; native registry read, no WMI)
+//! - **Linux**: `/var/lib/dbus/machine-id` → `/etc/machine-id`
+//!   (systemd-machine-id-setup, stable for the life of the install)
+//!
+//! All three are stable across reboots, OS minor updates, and app reinstalls.
+//! They only change on legitimate "new machine" events (hardware swap,
+//! OS reinstall, VM clone), which is the desired behavior.
+//!
+//! # Empty-string fallback
+//!
+//! If `machine-uid::get()` fails on an unusual system (corrupted binaries,
+//! locked-down registry, no systemd machine-id), `get_hardware_id()` logs
+//! an `error!` and returns an empty string. We intentionally continue rather
+//! than panic so app startup is never blocked on an infrastructural lookup.
+//! The side-effect is that multiple devices hitting the fallback would share
+//! the same derived key. CI has `test_machine_uid_not_empty` gating normal
+//! environments, so this path should not fire in production.
 
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
@@ -83,18 +124,16 @@ fn encrypt_value_with_nonce(plaintext: &str, key: &[u8; 32], nonce_bytes: &[u8; 
 
 /// Get a stable hardware identifier for this machine via `machine-uid` crate.
 ///
-/// Sources (same as Go `denisbrodbeck/machineid`):
-/// - macOS: IOPlatformUUID via `ioreg -rd1 -c IOPlatformExpertDevice`
+/// Sources (firmware-level, see module doc for rationale vs `kern.uuid`):
+/// - macOS: `IOPlatformUUID` via `ioreg -rd1 -c IOPlatformExpertDevice`
 /// - Windows: Registry `HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid`
 /// - Linux: `/var/lib/dbus/machine-id` → `/etc/machine-id`
+///
+/// On lookup failure returns `""` (see module-level "Empty-string fallback").
 fn get_hardware_id() -> String {
     match machine_uid::get() {
         Ok(id) if !id.is_empty() => id,
         Ok(_) => {
-            // KNOWN LIMITATION: empty ID produces a deterministic key shared across all
-            // devices where hardware ID lookup fails. Encryption still prevents casual
-            // file reads but not cross-device decryption. We continue rather than fail
-            // to avoid blocking app startup.
             log::error!("[storage_crypto] machine-uid returned empty ID — encryption key is not machine-specific");
             String::new()
         }

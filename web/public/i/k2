@@ -45,6 +45,47 @@ download_with_fallback() {
     fi
 }
 
+# Compute SHA-256 of a file using whichever tool is available.
+# Prints the 64-char lowercase hex digest to stdout, or empty on failure.
+sha256_of() {
+    file="$1"
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$file" 2>/dev/null | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$file" 2>/dev/null | awk '{print $1}'
+    elif command -v openssl >/dev/null 2>&1; then
+        openssl dgst -sha256 "$file" 2>/dev/null | awk '{print $NF}'
+    else
+        echo ""
+    fi
+}
+
+# Verify $file matches the digest recorded in $sha_file.
+# $sha_file is in standard `sha256sum` format: `<64 hex>  <basename>`; we
+# only consume the first field so the basename need not match exactly.
+# Errors out with a clear message on any mismatch or tooling gap — this
+# is the only supply-chain gate between the CDN and extraction, so a
+# soft failure here would defeat the purpose.
+verify_sha256() {
+    file="$1"; sha_file="$2"
+    expected=$(awk '{print $1; exit}' "$sha_file" 2>/dev/null)
+    case "$expected" in
+        *[!0-9a-fA-F]*|"")
+            error "Checksum file is malformed (${sha_file})"
+            ;;
+    esac
+    actual=$(sha256_of "$file")
+    if [ -z "$actual" ]; then
+        error "No sha256 tool available (need sha256sum, shasum, or openssl)"
+    fi
+    # Normalize both sides to lowercase for comparison.
+    expected_lc=$(printf '%s' "$expected" | tr '[:upper:]' '[:lower:]')
+    actual_lc=$(printf '%s' "$actual" | tr '[:upper:]' '[:lower:]')
+    if [ "$expected_lc" != "$actual_lc" ]; then
+        error "Checksum mismatch for $(basename "$file"): expected ${expected_lc}, got ${actual_lc}"
+    fi
+}
+
 detect_platform() {
     OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
     ARCH="$(uname -m)"
@@ -125,6 +166,7 @@ install_linux() {
     cleanup_legacy_install
 
     TARBALL="Kaitu_${VERSION}_linux_amd64.tar.gz"
+    SHA_FILE="${TARBALL}.sha256"
     TMP_DIR="$(mktemp -d -t kaitu-install.XXXXXX)"
     trap 'rm -rf "$TMP_DIR"' EXIT
 
@@ -132,6 +174,14 @@ install_linux() {
     download_with_fallback "${TMP_DIR}/${TARBALL}" \
         "${CDN_PRIMARY}/desktop/${VERSION}/${TARBALL}" \
         "${CDN_FALLBACK}/desktop/${VERSION}/${TARBALL}"
+
+    info "Downloading ${SHA_FILE}..."
+    download_with_fallback "${TMP_DIR}/${SHA_FILE}" \
+        "${CDN_PRIMARY}/desktop/${VERSION}/${SHA_FILE}" \
+        "${CDN_FALLBACK}/desktop/${VERSION}/${SHA_FILE}"
+
+    info "Verifying SHA-256 checksum..."
+    verify_sha256 "${TMP_DIR}/${TARBALL}" "${TMP_DIR}/${SHA_FILE}"
 
     info "Extracting..."
     tar xzf "${TMP_DIR}/${TARBALL}" -C "$TMP_DIR"

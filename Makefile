@@ -126,6 +126,17 @@ build-linux: pre-build stage-k2-webui-dist
 		tar czf ../Kaitu_$(VERSION)_linux_amd64.tar.gz k2 install.sh uninstall.sh kaitu.service
 	@rm -rf release/$(VERSION)/linux-pkg
 	@cp k2/build/k2-linux-amd64 release/$(VERSION)/k2-linux-amd64
+	@echo "--- Generating SHA-256 checksum ---"
+	@# Portable: macOS has `shasum`, Linux has `sha256sum`. Output format is
+	@# identical: `<64 hex>  <filename>`. Run from the release dir so the
+	@# checksum file records only the basename, making `sha256sum -c` work
+	@# from any cwd on the verifier side.
+	@cd release/$(VERSION) && \
+		if command -v sha256sum >/dev/null 2>&1; then \
+			sha256sum Kaitu_$(VERSION)_linux_amd64.tar.gz > Kaitu_$(VERSION)_linux_amd64.tar.gz.sha256; \
+		else \
+			shasum -a 256 Kaitu_$(VERSION)_linux_amd64.tar.gz > Kaitu_$(VERSION)_linux_amd64.tar.gz.sha256; \
+		fi
 	@echo "=== Linux build complete ==="
 	@echo "Release artifacts in release/$(VERSION)/:"
 	@ls -la release/$(VERSION)/
