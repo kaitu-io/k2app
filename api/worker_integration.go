@@ -38,6 +38,8 @@ func InitWorker() {
 	asynq.Handle(TaskTypePushSend, handlePushTask)
 	asynq.Handle(TaskTypeTemplatedEmailSend, handleTemplatedEmailTask)
 	asynq.Handle(TaskTypeRenewalReminder, handleRenewalReminderTask)
+	asynq.Handle(TaskTypeAbandonedOrderHourly, handleAbandonedOrderHourlyTask)
+	asynq.Handle(TaskTypeAbandonedOrderDaily, handleAbandonedOrderDailyTask)
 	asynq.Handle(TaskTypeRetailerFollowup, handleRetailerFollowupTask)
 	asynq.Handle(TaskTypeTicketNotify, handleTicketNotify)
 
@@ -46,6 +48,12 @@ func InitWorker() {
 	// Cron 格式: 分 时 日 月 周
 	// Unique(25h) 防止多实例重复入队同一任务
 	asynq.Cron("30 2 * * *", TaskTypeRenewalReminder, nil, hibikenAsynq.Unique(25*time.Hour))
+
+	// 注册未支付订单召回 Cron 任务
+	// 每小时运行：1h 即时提醒
+	asynq.Cron("0 * * * *", TaskTypeAbandonedOrderHourly, nil, hibikenAsynq.Unique(2*time.Hour))
+	// 每天北京时间 11:00 执行（UTC 03:00）处理 1d/3d/7d/14d/30d
+	asynq.Cron("0 3 * * *", TaskTypeAbandonedOrderDaily, nil, hibikenAsynq.Unique(25*time.Hour))
 
 	// 注册分销商跟进提醒 Cron 任务
 	// 每分钟检查一次，发送到期的 Slack 提醒
@@ -77,7 +85,7 @@ func InitWorker() {
 	RegisterApprovalCallback("withdraw_approve", executeApprovalWithdrawApprove)
 	RegisterApprovalCallback("withdraw_complete", executeApprovalWithdrawComplete)
 
-	log.Infof(context.Background(), "[WORKER] Task handlers registered (including renewal reminder cron at 10:30 Beijing time)")
+	log.Infof(context.Background(), "[WORKER] Task handlers registered (renewal 10:30, abandoned hourly + 11:00 Beijing time)")
 }
 
 // RunWorker 启动 Worker 服务（阻塞）
