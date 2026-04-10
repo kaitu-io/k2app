@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/kaitu-io/k2/webui"
 	"github.com/sasha-s/go-deadlock"
 )
 
@@ -28,7 +29,7 @@ type RouterDeviceManager struct {
 	quota       int    // from User Tier MaxLanClient (0=no limit, -1=unlimited, >0=exact)
 	lanSubnets  []string
 	interceptor Interceptor
-	storage     *Storage
+	storage     *webui.Storage
 	onModeChange func() // called when mode changes, triggers interceptor reinstall
 }
 

@@ -4,11 +4,8 @@ package gateway
 
 import (
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
-	"path/filepath"
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/engine"
@@ -154,118 +151,6 @@ func (g *Gateway) handleLogLevel(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, Response{Code: 0, Message: "ok"})
 }
 
-func (g *Gateway) handleStorage(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
-	var req struct {
-		Action string `json:"action"`
-		Key    string `json:"key"`
-		Value  any    `json:"value"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, Response{Code: 1, Message: "bad request"})
-		return
-	}
-	switch req.Action {
-	case "get":
-		val, err := g.storage.Get(req.Key)
-		if err != nil {
-			writeJSON(w, Response{Code: 0, Data: nil})
-			return
-		}
-		var decoded any
-		if json.Unmarshal([]byte(val), &decoded) == nil {
-			writeJSON(w, Response{Code: 0, Data: decoded})
-		} else {
-			writeJSON(w, Response{Code: 0, Data: val})
-		}
-	case "set":
-		data, _ := json.Marshal(req.Value)
-		if err := g.storage.Set(req.Key, string(data)); err != nil {
-			writeJSON(w, Response{Code: 1, Message: err.Error()})
-			return
-		}
-		writeJSON(w, Response{Code: 0, Message: "ok"})
-	case "remove":
-		g.storage.Remove(req.Key)
-		writeJSON(w, Response{Code: 0, Message: "ok"})
-	case "has":
-		writeJSON(w, Response{Code: 0, Data: g.storage.Has(req.Key)})
-	case "keys":
-		writeJSON(w, Response{Code: 0, Data: g.storage.Keys()})
-	case "clear":
-		g.storage.Clear()
-		writeJSON(w, Response{Code: 0, Message: "ok"})
-	default:
-		writeJSON(w, Response{Code: 1, Message: "unknown storage action"})
-	}
-}
-
-func (g *Gateway) handlePlatform(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, Response{Code: 0, Data: map[string]string{
-		"os":           "linux",
-		"platformType": "gateway",
-		"version":      g.version,
-		"commit":       g.commit,
-		"arch":         g.arch,
-	}})
-}
-
-// handleUpgrade handles POST /api/upgrade.
-//
-// action "check" — returns current version and latest available version.
-// action "apply"  — downloads and installs the update in the background, then
-//
-//	restarts the service. Returns immediately with status "upgrading".
-func (g *Gateway) handleUpgrade(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
-	var req struct {
-		Action string `json:"action"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, Response{Code: 1, Message: "bad request"})
-		return
-	}
-
-	switch req.Action {
-	case "check":
-		info, err := FetchLatestK2r()
-		if err != nil {
-			writeJSON(w, Response{Code: 1, Message: "check failed: " + err.Error()})
-			return
-		}
-		writeJSON(w, Response{Code: 0, Data: map[string]string{
-			"current": g.version,
-			"latest":  info.Version,
-		}})
-
-	case "apply":
-		if g.updater == nil {
-			writeJSON(w, Response{Code: 1, Message: "updater not initialized"})
-			return
-		}
-		// Use Updater.Apply() which has persistent state recovery
-		safego.Go(func() {
-			if err := g.updater.Apply(); err != nil {
-				slog.Warn("gateway: upgrade failed", "err", err)
-			}
-		})
-		writeJSON(w, Response{Code: 0, Message: "upgrading", Data: map[string]string{
-			"status": "upgrading",
-		}})
-
-	default:
-		writeJSON(w, Response{Code: 1, Message: "unknown action (use check or apply)"})
-	}
-}
-
 // --- Router device management handlers ---
 // Each resolves g.routerDeviceMgr under g.mu, same pattern as handleStatus.
 
@@ -310,18 +195,4 @@ func writeJSON(w http.ResponseWriter, v any) {
 
 func defaultConfigPath() string {
 	return "/etc/k2r/k2r.yml"
-}
-
-// selfExePath returns the absolute path to the running k2r executable,
-// resolving any symlinks.
-func selfExePath() (string, error) {
-	self, err := os.Executable()
-	if err != nil {
-		return "", fmt.Errorf("find executable: %w", err)
-	}
-	self, err = filepath.EvalSymlinks(self)
-	if err != nil {
-		return "", fmt.Errorf("resolve symlinks: %w", err)
-	}
-	return self, nil
 }

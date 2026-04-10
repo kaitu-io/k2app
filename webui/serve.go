@@ -1,6 +1,6 @@
 //go:build linux
 
-package gateway
+package webui
 
 import (
 	"bytes"
@@ -10,9 +10,14 @@ import (
 	"strings"
 )
 
-// newWebappHandler returns an http.Handler that serves the embedded SPA.
-// Returns nil if no webapp is embedded (nowebapp build tag).
-func newWebappHandler(version, commit, arch string) http.Handler {
+// NewWebappHandler returns an http.Handler that serves the embedded SPA with
+// an injected `window.__K2_GATEWAY__` global exposing version/commit/arch.
+// Returns nil when no webapp is embedded (nowebapp build tag).
+//
+// The handler serves the injected index.html for "/" and any extension-less
+// path (SPA fallback), and the raw file from the embedded FS for paths with
+// a file extension.
+func NewWebappHandler(version, commit, arch string) http.Handler {
 	if webappFS == nil {
 		return nil
 	}
@@ -46,6 +51,8 @@ func newWebappHandler(version, commit, arch string) http.Handler {
 	})
 }
 
+// hasFileExtension reports whether the last path segment contains a dot,
+// which we interpret as "has a file extension" for SPA routing.
 func hasFileExtension(path string) bool {
 	lastSlash := strings.LastIndex(path, "/")
 	if lastSlash >= 0 {

@@ -1,6 +1,6 @@
 //go:build linux
 
-package gateway
+package webui
 
 import (
 	"io"
@@ -36,7 +36,7 @@ func TestNewWebappHandlerNilFS(t *testing.T) {
 	webappFS = nil
 	defer func() { webappFS = orig }()
 
-	h := newWebappHandler("1.0.0", "abc123", "amd64")
+	h := NewWebappHandler("1.0.0", "abc123", "amd64")
 	if h != nil {
 		t.Errorf("expected nil handler when webappFS is nil, got %T", h)
 	}
@@ -47,9 +47,9 @@ func TestWebappHandlerInjectsGatewayGlobal(t *testing.T) {
 		t.Skip("webappFS is nil (nowebapp build)")
 	}
 
-	h := newWebappHandler("1.2.3", "deadbeef", "arm64")
+	h := NewWebappHandler("1.2.3", "deadbeef", "arm64")
 	if h == nil {
-		t.Fatal("newWebappHandler returned nil")
+		t.Fatal("NewWebappHandler returned nil")
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -88,9 +88,9 @@ func TestWebappHandlerSPAFallback(t *testing.T) {
 		t.Skip("webappFS is nil (nowebapp build)")
 	}
 
-	h := newWebappHandler("0.0.1", "cafebabe", "amd64")
+	h := NewWebappHandler("0.0.1", "cafebabe", "amd64")
 	if h == nil {
-		t.Fatal("newWebappHandler returned nil")
+		t.Fatal("NewWebappHandler returned nil")
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/dashboard/settings", nil)
@@ -115,4 +115,3 @@ func TestWebappHandlerSPAFallback(t *testing.T) {
 		t.Errorf("SPA fallback did not return HTML content")
 	}
 }
-

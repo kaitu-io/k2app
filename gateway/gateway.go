@@ -7,11 +7,14 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"os/exec"
+	"path/filepath"
 	"runtime/debug"
 	"time"
 
 	"github.com/kaitu-io/k2/engine"
 	"github.com/kaitu-io/k2/safego"
+	"github.com/kaitu-io/k2/webui"
 	"github.com/sasha-s/go-deadlock"
 )
 
@@ -39,12 +42,37 @@ type Gateway struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	storage         *Storage
+	storage         *webui.Storage
 	version         string
 	commit          string
 	arch            string
 	routerDeviceMgr *RouterDeviceManager
-	updater         *Updater
+	updater         *webui.Upgrader
+}
+
+// k2rReleaseEndpoints lists the CDN base URLs used by k2r's OTA upgrader.
+// Tried in order; first successful LATEST + checksums.txt fetch wins.
+var k2rReleaseEndpoints = []string{
+	"https://d13jc1jqzlg4yt.cloudfront.net/kaitu/k2r",
+	"https://dl.kaitu.io/kaitu/k2r",
+}
+
+// newK2rUpgrader wires a webui.Upgrader with k2r-specific CDN, state, and
+// restart configuration. RestartFunc is detected at call time so OpenWRT
+// hosts use procd while systemd hosts use systemctl.
+func newK2rUpgrader(version string) *webui.Upgrader {
+	return webui.NewUpgrader(version, webui.UpgradeConfig{
+		BinaryName:       "k2r",
+		StateDir:         stateDir(),
+		ReleaseEndpoints: k2rReleaseEndpoints,
+		RestartFunc: func() {
+			if webui.IsOpenWRT() {
+				exec.Command("/etc/init.d/k2r", "restart").Run()
+			} else {
+				exec.Command("systemctl", "restart", "k2r").Run()
+			}
+		},
+	})
 }
 
 // New creates a Gateway ready to Run.
@@ -55,11 +83,11 @@ func New(version, commit, arch string) *Gateway {
 		cancel:     cancel,
 		lastStatus: engine.Status{State: engine.StateDisconnected},
 		sseClients: make(map[chan []byte]struct{}),
-		storage:    NewDefaultStorage(),
+		storage:    webui.NewStorage(filepath.Join(stateDir(), "storage.json")),
 		version:    version,
 		commit:     commit,
 		arch:       arch,
-		updater:    NewUpdater(version),
+		updater:    newK2rUpgrader(version),
 	}
 }
 
@@ -80,9 +108,17 @@ func (g *Gateway) Run(addr string) error {
 	mux.HandleFunc("/api/core", g.handleCore)
 	mux.HandleFunc("/api/events", g.handleEvents)
 	mux.HandleFunc("/api/log-level", g.handleLogLevel)
-	mux.HandleFunc("/api/storage", g.handleStorage)
-	mux.HandleFunc("/api/platform", g.handlePlatform)
-	mux.HandleFunc("/api/upgrade", g.handleUpgrade)
+
+	// Shared webui endpoints (storage, platform, upgrade) — same handlers
+	// as cmd/k2 (Linux desktop) uses via the daemon package.
+	mux.HandleFunc("/api/storage", webui.NewStorageHandler(g.storage))
+	mux.HandleFunc("/api/platform", webui.NewPlatformHandler(webui.PlatformInfo{
+		PlatformType: "gateway",
+		Version:      g.version,
+		Commit:       g.commit,
+		Arch:         g.arch,
+	}))
+	mux.HandleFunc("/api/upgrade", webui.NewUpgradeHandler(g.updater))
 
 	// Router device management (state resolved per-request — nil until doUp).
 	mux.HandleFunc("/api/router-devices", g.handleRouterDevices)
@@ -90,7 +126,7 @@ func (g *Gateway) Run(addr string) error {
 	mux.HandleFunc("/api/router-devices/remove", g.handleRouterDeviceRemove)
 	mux.HandleFunc("/api/router-devices/mode", g.handleRouterDeviceMode)
 
-	if webapp := newWebappHandler(g.version, g.commit, g.arch); webapp != nil {
+	if webapp := webui.NewWebappHandler(g.version, g.commit, g.arch); webapp != nil {
 		mux.Handle("/", webapp)
 	}
 

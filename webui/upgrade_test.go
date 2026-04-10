@@ -1,6 +1,6 @@
 //go:build linux
 
-package gateway
+package webui
 
 import (
 	"crypto/sha256"
@@ -13,7 +13,17 @@ import (
 	"testing"
 )
 
-func TestFetchLatestK2r(t *testing.T) {
+// newTestUpgrader returns an Upgrader configured with the given endpoints
+// and a fake "k2r" binary name for tests.
+func newTestUpgrader(endpoints []string) *Upgrader {
+	return NewUpgrader("dev", UpgradeConfig{
+		BinaryName:       "k2r",
+		StateDir:         "",
+		ReleaseEndpoints: endpoints,
+	})
+}
+
+func TestFetchLatest(t *testing.T) {
 	const wantVersion = "0.4.2"
 	checksumsBody := "abc123def456  k2r-linux-arm64\ndeadbeef1234  k2r-linux-amd64\n"
 
@@ -29,14 +39,10 @@ func TestFetchLatestK2r(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	// Override endpoints.
-	orig := K2rReleaseEndpoints
-	K2rReleaseEndpoints = []string{srv.URL}
-	defer func() { K2rReleaseEndpoints = orig }()
-
-	info, err := FetchLatestK2r()
+	u := newTestUpgrader([]string{srv.URL})
+	info, err := u.FetchLatest()
 	if err != nil {
-		t.Fatalf("FetchLatestK2r: %v", err)
+		t.Fatalf("FetchLatest: %v", err)
 	}
 
 	if info.Version != wantVersion {
@@ -50,11 +56,10 @@ func TestFetchLatestK2r(t *testing.T) {
 	}
 }
 
-func TestFetchLatestK2rFallback(t *testing.T) {
+func TestFetchLatestFallback(t *testing.T) {
 	const wantVersion = "0.4.3"
 	checksumsBody := "aabbccdd1122  k2r-linux-amd64\n"
 
-	// First endpoint always fails; second succeeds.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/LATEST":
@@ -67,16 +72,32 @@ func TestFetchLatestK2rFallback(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	orig := K2rReleaseEndpoints
-	K2rReleaseEndpoints = []string{"http://127.0.0.1:1", srv.URL}
-	defer func() { K2rReleaseEndpoints = orig }()
-
-	info, err := FetchLatestK2r()
+	u := newTestUpgrader([]string{"http://127.0.0.1:1", srv.URL})
+	info, err := u.FetchLatest()
 	if err != nil {
-		t.Fatalf("FetchLatestK2r fallback: %v", err)
+		t.Fatalf("FetchLatest fallback: %v", err)
 	}
 	if info.Version != wantVersion {
 		t.Errorf("version: got %q, want %q", info.Version, wantVersion)
+	}
+}
+
+func TestBinaryFilenameAndURL(t *testing.T) {
+	// Force a fixed arch so the test doesn't depend on the runtime.
+	origArch := runtimeGOARCH
+	runtimeGOARCH = func() string { return "amd64" }
+	defer func() { runtimeGOARCH = origArch }()
+
+	u := newTestUpgrader([]string{"https://cdn.example.com/kaitu/k2r"})
+
+	if got := u.BinaryFilename(); got != "k2r-linux-amd64" {
+		t.Errorf("BinaryFilename: got %q, want %q", got, "k2r-linux-amd64")
+	}
+
+	got := u.BinaryURL("https://cdn.example.com/kaitu/k2r", "0.4.2")
+	want := "https://cdn.example.com/kaitu/k2r/0.4.2/k2r-linux-amd64"
+	if got != want {
+		t.Errorf("BinaryURL: got %q, want %q", got, want)
 	}
 }
 

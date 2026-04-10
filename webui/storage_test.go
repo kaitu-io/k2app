@@ -1,6 +1,6 @@
 //go:build linux
 
-package gateway
+package webui
 
 import (
 	"encoding/json"
@@ -27,7 +27,7 @@ func TestDeriveKeyDifferentInputs(t *testing.T) {
 
 func TestEncryptDecryptRoundtrip(t *testing.T) {
 	key := deriveKey("test")
-	plaintext := "hello, gateway storage!"
+	plaintext := "hello, webui storage!"
 
 	encrypted := encryptValue(plaintext, key)
 	if !isEncrypted(encrypted) {
@@ -57,8 +57,7 @@ func TestDecryptWrongKeyFails(t *testing.T) {
 func TestStorageCRUD(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "storage.json")
-	key := deriveKey("test")
-	s := newStorage(path, key)
+	s := NewStorageWithKey(path, "test")
 
 	// Set + Get
 	if err := s.Set("foo", "bar"); err != nil {
@@ -108,15 +107,14 @@ func TestStorageCRUD(t *testing.T) {
 func TestStoragePersistence(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "storage.json")
-	key := deriveKey("test")
 
-	s1 := newStorage(path, key)
+	s1 := NewStorageWithKey(path, "test")
 	if err := s1.Set("token", "abc123"); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 
 	// New instance reads the same file.
-	s2 := newStorage(path, key)
+	s2 := NewStorageWithKey(path, "test")
 	val, err := s2.Get("token")
 	if err != nil {
 		t.Fatalf("Get after reload: %v", err)
@@ -129,9 +127,9 @@ func TestStoragePersistence(t *testing.T) {
 func TestStoragePlaintextBackwardCompat(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "storage.json")
-	key := deriveKey("test")
 
-	// Write a plaintext storage file (no ENC1: prefix).
+	// Write a plaintext storage file (no ENC1: prefix) directly to the
+	// on-disk format, then verify a fresh Storage reads it as plaintext.
 	sf := storageFile{Items: map[string]string{
 		"plainkey": "plainvalue",
 	}}
@@ -140,7 +138,7 @@ func TestStoragePlaintextBackwardCompat(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	s := newStorage(path, key)
+	s := NewStorageWithKey(path, "test")
 	val, err := s.Get("plainkey")
 	if err != nil {
 		t.Fatalf("Get plaintext value: %v", err)

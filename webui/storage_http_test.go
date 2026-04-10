@@ -1,6 +1,6 @@
 //go:build linux
 
-package gateway
+package webui
 
 import (
 	"bytes"
@@ -12,18 +12,18 @@ import (
 	"testing"
 )
 
-// newTestGateway creates a Gateway with a temp storage directory.
-func newTestGateway(t *testing.T) *Gateway {
+// newTestStorageHandler creates an http.HandlerFunc over a fresh temp-dir
+// Storage with a deterministic test key.
+func newTestStorageHandler(t *testing.T) http.HandlerFunc {
 	t.Helper()
 	dir := t.TempDir()
-	g := New("test-version", "abc123", "amd64")
-	g.storage = newStorage(filepath.Join(dir, "storage.json"), deriveKey("test"))
-	return g
+	s := NewStorageWithKey(filepath.Join(dir, "storage.json"), "test")
+	return NewStorageHandler(s)
 }
 
-// storageReq builds a JSON body, creates a POST request, calls g.handleStorage,
-// and returns the recorded response.
-func storageReq(t *testing.T, g *Gateway, action, key string, value any) *httptest.ResponseRecorder {
+// storageReq builds a JSON body, calls the given handler, and returns the
+// recorded response.
+func storageReq(t *testing.T, h http.HandlerFunc, action, key string, value any) *httptest.ResponseRecorder {
 	t.Helper()
 	body := map[string]any{
 		"action": action,
@@ -36,14 +36,14 @@ func storageReq(t *testing.T, g *Gateway, action, key string, value any) *httpte
 	}
 	r := httptest.NewRequest(http.MethodPost, "/api/storage", bytes.NewReader(data))
 	w := httptest.NewRecorder()
-	g.handleStorage(w, r)
+	h(w, r)
 	return w
 }
 
-// decodeResponse unmarshals the recorder body into a Response.
-func decodeResponse(t *testing.T, w *httptest.ResponseRecorder) Response {
+// decodeResponse unmarshals the recorder body into the shared response envelope.
+func decodeResponse(t *testing.T, w *httptest.ResponseRecorder) response {
 	t.Helper()
-	var resp Response
+	var resp response
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("decodeResponse: %v", err)
 	}
@@ -53,9 +53,9 @@ func decodeResponse(t *testing.T, w *httptest.ResponseRecorder) Response {
 // TestStorageAPI_SetAndGet verifies that a string value can be stored and
 // retrieved correctly.
 func TestStorageAPI_SetAndGet(t *testing.T) {
-	g := newTestGateway(t)
+	h := newTestStorageHandler(t)
 
-	w := storageReq(t, g, "set", "mykey", "myvalue")
+	w := storageReq(t, h, "set", "mykey", "myvalue")
 	if w.Code != http.StatusOK {
 		t.Fatalf("set: expected 200, got %d", w.Code)
 	}
@@ -64,7 +64,7 @@ func TestStorageAPI_SetAndGet(t *testing.T) {
 		t.Fatalf("set: expected code 0, got %d: %s", resp.Code, resp.Message)
 	}
 
-	w = storageReq(t, g, "get", "mykey", nil)
+	w = storageReq(t, h, "get", "mykey", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("get: expected 200, got %d", w.Code)
 	}
@@ -72,8 +72,6 @@ func TestStorageAPI_SetAndGet(t *testing.T) {
 	if resp.Code != 0 {
 		t.Fatalf("get: expected code 0, got %d: %s", resp.Code, resp.Message)
 	}
-	// The handler JSON-decodes the stored value back — a string value becomes a
-	// JSON string which decodes again to a Go string.
 	got, ok := resp.Data.(string)
 	if !ok {
 		t.Fatalf("get: expected string data, got %T: %v", resp.Data, resp.Data)
@@ -84,11 +82,11 @@ func TestStorageAPI_SetAndGet(t *testing.T) {
 }
 
 // TestStorageAPI_GetMissing verifies that getting a nonexistent key returns
-// code=0 with null data (JSON null → nil).
+// code=0 with null data.
 func TestStorageAPI_GetMissing(t *testing.T) {
-	g := newTestGateway(t)
+	h := newTestStorageHandler(t)
 
-	w := storageReq(t, g, "get", "no-such-key", nil)
+	w := storageReq(t, h, "get", "no-such-key", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
@@ -101,19 +99,19 @@ func TestStorageAPI_GetMissing(t *testing.T) {
 	}
 }
 
-// TestStorageAPI_NestedObject verifies that a JSON object value is stored and
-// retrieved with its field types preserved.
+// TestStorageAPI_NestedObject verifies that a JSON object value round-trips
+// with its field types preserved.
 func TestStorageAPI_NestedObject(t *testing.T) {
-	g := newTestGateway(t)
+	h := newTestStorageHandler(t)
 
 	obj := map[string]any{"a": float64(1), "b": "two"}
-	w := storageReq(t, g, "set", "obj", obj)
+	w := storageReq(t, h, "set", "obj", obj)
 	resp := decodeResponse(t, w)
 	if resp.Code != 0 {
 		t.Fatalf("set: expected code 0, got %d: %s", resp.Code, resp.Message)
 	}
 
-	w = storageReq(t, g, "get", "obj", nil)
+	w = storageReq(t, h, "get", "obj", nil)
 	resp = decodeResponse(t, w)
 	if resp.Code != 0 {
 		t.Fatalf("get: expected code 0, got %d: %s", resp.Code, resp.Message)
@@ -131,12 +129,12 @@ func TestStorageAPI_NestedObject(t *testing.T) {
 	}
 }
 
-// TestStorageAPI_Has verifies that has returns false for missing keys and true
-// for existing keys.
+// TestStorageAPI_Has verifies has-before-set returns false and has-after-set
+// returns true.
 func TestStorageAPI_Has(t *testing.T) {
-	g := newTestGateway(t)
+	h := newTestStorageHandler(t)
 
-	w := storageReq(t, g, "has", "k", nil)
+	w := storageReq(t, h, "has", "k", nil)
 	resp := decodeResponse(t, w)
 	if resp.Code != 0 {
 		t.Fatalf("has (missing): expected code 0, got %d", resp.Code)
@@ -145,9 +143,9 @@ func TestStorageAPI_Has(t *testing.T) {
 		t.Fatalf("has (missing): expected false, got %v", resp.Data)
 	}
 
-	storageReq(t, g, "set", "k", "v")
+	storageReq(t, h, "set", "k", "v")
 
-	w = storageReq(t, g, "has", "k", nil)
+	w = storageReq(t, h, "has", "k", nil)
 	resp = decodeResponse(t, w)
 	if resp.Code != 0 {
 		t.Fatalf("has (existing): expected code 0, got %d", resp.Code)
@@ -157,15 +155,14 @@ func TestStorageAPI_Has(t *testing.T) {
 	}
 }
 
-// TestStorageAPI_Keys verifies that after setting two keys, the keys action
-// returns both of them (in any order).
+// TestStorageAPI_Keys verifies that keys returns all stored keys.
 func TestStorageAPI_Keys(t *testing.T) {
-	g := newTestGateway(t)
+	h := newTestStorageHandler(t)
 
-	storageReq(t, g, "set", "alpha", "1")
-	storageReq(t, g, "set", "beta", "2")
+	storageReq(t, h, "set", "alpha", "1")
+	storageReq(t, h, "set", "beta", "2")
 
-	w := storageReq(t, g, "keys", "", nil)
+	w := storageReq(t, h, "keys", "", nil)
 	resp := decodeResponse(t, w)
 	if resp.Code != 0 {
 		t.Fatalf("keys: expected code 0, got %d: %s", resp.Code, resp.Message)
@@ -196,23 +193,23 @@ func TestStorageAPI_Keys(t *testing.T) {
 
 // TestStorageAPI_Remove verifies that a key is absent after removal.
 func TestStorageAPI_Remove(t *testing.T) {
-	g := newTestGateway(t)
+	h := newTestStorageHandler(t)
 
-	storageReq(t, g, "set", "temp", "data")
+	storageReq(t, h, "set", "temp", "data")
 
-	w := storageReq(t, g, "has", "temp", nil)
+	w := storageReq(t, h, "has", "temp", nil)
 	resp := decodeResponse(t, w)
 	if resp.Data != true {
 		t.Fatalf("has before remove: expected true, got %v", resp.Data)
 	}
 
-	w = storageReq(t, g, "remove", "temp", nil)
+	w = storageReq(t, h, "remove", "temp", nil)
 	resp = decodeResponse(t, w)
 	if resp.Code != 0 {
 		t.Fatalf("remove: expected code 0, got %d: %s", resp.Code, resp.Message)
 	}
 
-	w = storageReq(t, g, "has", "temp", nil)
+	w = storageReq(t, h, "has", "temp", nil)
 	resp = decodeResponse(t, w)
 	if resp.Data != false {
 		t.Fatalf("has after remove: expected false, got %v", resp.Data)
@@ -221,18 +218,18 @@ func TestStorageAPI_Remove(t *testing.T) {
 
 // TestStorageAPI_Clear verifies that all keys are gone after a clear.
 func TestStorageAPI_Clear(t *testing.T) {
-	g := newTestGateway(t)
+	h := newTestStorageHandler(t)
 
-	storageReq(t, g, "set", "x", "1")
-	storageReq(t, g, "set", "y", "2")
+	storageReq(t, h, "set", "x", "1")
+	storageReq(t, h, "set", "y", "2")
 
-	w := storageReq(t, g, "clear", "", nil)
+	w := storageReq(t, h, "clear", "", nil)
 	resp := decodeResponse(t, w)
 	if resp.Code != 0 {
 		t.Fatalf("clear: expected code 0, got %d: %s", resp.Code, resp.Message)
 	}
 
-	w = storageReq(t, g, "keys", "", nil)
+	w = storageReq(t, h, "keys", "", nil)
 	resp = decodeResponse(t, w)
 	if resp.Code != 0 {
 		t.Fatalf("keys after clear: expected code 0, got %d", resp.Code)
@@ -247,28 +244,32 @@ func TestStorageAPI_Clear(t *testing.T) {
 	}
 }
 
-// TestStorageAPI_MethodNotAllowed verifies that a GET request to /api/storage
-// returns 405 Method Not Allowed.
+// TestStorageAPI_MethodNotAllowed verifies that a GET request returns 405.
 func TestStorageAPI_MethodNotAllowed(t *testing.T) {
-	g := newTestGateway(t)
+	h := newTestStorageHandler(t)
 
 	r := httptest.NewRequest(http.MethodGet, "/api/storage", nil)
 	w := httptest.NewRecorder()
-	g.handleStorage(w, r)
+	h(w, r)
 
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("expected 405, got %d", w.Code)
 	}
 }
 
-// TestPlatformAPI verifies that /api/platform returns the expected fields with
-// the correct values.
-func TestPlatformAPI(t *testing.T) {
-	g := newTestGateway(t)
+// TestPlatformHandler verifies that NewPlatformHandler returns the expected
+// fields for a gateway-style PlatformInfo.
+func TestPlatformHandler(t *testing.T) {
+	h := NewPlatformHandler(PlatformInfo{
+		PlatformType: "gateway",
+		Version:      "test-version",
+		Commit:       "abc123",
+		Arch:         "amd64",
+	})
 
 	r := httptest.NewRequest(http.MethodGet, "/api/platform", nil)
 	w := httptest.NewRecorder()
-	g.handlePlatform(w, r)
+	h(w, r)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)

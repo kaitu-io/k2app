@@ -1,6 +1,6 @@
 //go:build linux
 
-package gateway
+package webui
 
 import (
 	"crypto/aes"
@@ -21,10 +21,9 @@ import (
 )
 
 const (
-	encPrefix       = "ENC1:"
-	hkdfSalt        = "kaitu-gateway-storage-v1"
-	hkdfInfo        = "aes-256-gcm-key"
-	defaultStorPath = "storage.json"
+	encPrefix = "ENC1:"
+	hkdfSalt  = "kaitu-gateway-storage-v1"
+	hkdfInfo  = "aes-256-gcm-key"
 )
 
 // storageFile is the on-disk JSON structure.
@@ -36,6 +35,10 @@ type storageFile struct {
 // Values are encrypted with AES-256-GCM; the key is derived from a hardware
 // identifier via HKDF-SHA256. Plaintext values (no ENC1: prefix) are read
 // as-is for backward compatibility.
+//
+// The HKDF salt is "kaitu-gateway-storage-v1" regardless of which Kaitu
+// binary hosts the store, so k2r and k2 on the same machine see identical
+// ciphertexts and can share a storage file if needed.
 type Storage struct {
 	mu   deadlock.RWMutex
 	path string
@@ -44,18 +47,19 @@ type Storage struct {
 }
 
 // deriveKey derives a 32-byte AES key from hardwareID using HKDF-SHA256.
+// Panics only if the stdlib HKDF implementation fails, which is a
+// programming error (it cannot fail for 32 bytes with SHA-256).
 func deriveKey(hardwareID string) [32]byte {
 	r := hkdf.New(sha256.New, []byte(hardwareID), []byte(hkdfSalt), []byte(hkdfInfo))
 	var key [32]byte
 	if _, err := io.ReadFull(r, key[:]); err != nil {
-		// hkdf with sha256 never fails for 32 bytes — panic would indicate a
-		// programming error.
-		panic(fmt.Sprintf("deriveKey: %v", err))
+		panic(fmt.Sprintf("webui.deriveKey: %v", err))
 	}
 	return key
 }
 
 // getMachineID reads the Linux machine-id from the canonical locations.
+// Returns an empty string if both canonical paths are unreadable.
 func getMachineID() string {
 	for _, path := range []string{"/etc/machine-id", "/var/lib/dbus/machine-id"} {
 		data, err := os.ReadFile(path)
@@ -71,26 +75,25 @@ func getMachineID() string {
 func encryptValue(plaintext string, key [32]byte) string {
 	block, err := aes.NewCipher(key[:])
 	if err != nil {
-		panic(fmt.Sprintf("encryptValue: NewCipher: %v", err))
+		panic(fmt.Sprintf("webui.encryptValue: NewCipher: %v", err))
 	}
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		panic(fmt.Sprintf("encryptValue: NewGCM: %v", err))
+		panic(fmt.Sprintf("webui.encryptValue: NewGCM: %v", err))
 	}
 
 	nonce := make([]byte, gcm.NonceSize())
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		panic(fmt.Sprintf("encryptValue: read nonce: %v", err))
+		panic(fmt.Sprintf("webui.encryptValue: read nonce: %v", err))
 	}
 
-	// Seal appends ciphertext + tag after nonce.
 	ciphertext := gcm.Seal(nonce, nonce, []byte(plaintext), nil)
 	return encPrefix + base64.StdEncoding.EncodeToString(ciphertext)
 }
 
 // decryptValue decrypts a value produced by encryptValue.
-// If the value does not have the ENC1: prefix it is returned as-is (backward
-// compatibility with plaintext storage files).
+// If the value does not have the ENC1: prefix it is returned as-is
+// (backward compatibility with plaintext storage files).
 func decryptValue(encrypted string, key [32]byte) (string, error) {
 	if !strings.HasPrefix(encrypted, encPrefix) {
 		return encrypted, nil
@@ -98,27 +101,27 @@ func decryptValue(encrypted string, key [32]byte) (string, error) {
 
 	raw, err := base64.StdEncoding.DecodeString(encrypted[len(encPrefix):])
 	if err != nil {
-		return "", fmt.Errorf("decryptValue: base64 decode: %w", err)
+		return "", fmt.Errorf("webui.decryptValue: base64 decode: %w", err)
 	}
 
 	block, err := aes.NewCipher(key[:])
 	if err != nil {
-		return "", fmt.Errorf("decryptValue: NewCipher: %w", err)
+		return "", fmt.Errorf("webui.decryptValue: NewCipher: %w", err)
 	}
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return "", fmt.Errorf("decryptValue: NewGCM: %w", err)
+		return "", fmt.Errorf("webui.decryptValue: NewGCM: %w", err)
 	}
 
 	nonceSize := gcm.NonceSize()
 	if len(raw) < nonceSize {
-		return "", errors.New("decryptValue: ciphertext too short")
+		return "", errors.New("webui.decryptValue: ciphertext too short")
 	}
 
 	nonce, ciphertext := raw[:nonceSize], raw[nonceSize:]
 	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
-		return "", fmt.Errorf("decryptValue: decrypt: %w", err)
+		return "", fmt.Errorf("webui.decryptValue: decrypt: %w", err)
 	}
 	return string(plaintext), nil
 }
@@ -129,6 +132,7 @@ func isEncrypted(value string) bool {
 }
 
 // newStorage creates a Storage at path using key, loading any existing data.
+// Internal constructor — callers use NewStorage or NewStorageWithKey.
 func newStorage(path string, key [32]byte) *Storage {
 	s := &Storage{
 		path: path,
@@ -139,12 +143,16 @@ func newStorage(path string, key [32]byte) *Storage {
 	return s
 }
 
-// NewDefaultStorage returns a Storage backed by /etc/k2r/storage.json with a
-// key derived from the Linux machine-id.
-func NewDefaultStorage() *Storage {
-	path := filepath.Join(stateDir(), defaultStorPath)
-	key := deriveKey(getMachineID())
-	return newStorage(path, key)
+// NewStorage creates a Storage at path. The encryption key is derived from
+// the Linux machine-id via HKDF-SHA256. Existing data on disk is loaded.
+func NewStorage(path string) *Storage {
+	return newStorage(path, deriveKey(getMachineID()))
+}
+
+// NewStorageWithKey creates a Storage at path using the given hardwareID for
+// key derivation. Intended for tests that need a deterministic key.
+func NewStorageWithKey(path, hardwareID string) *Storage {
+	return newStorage(path, deriveKey(hardwareID))
 }
 
 // load reads the storage file from disk. Errors (missing file, bad JSON) are
@@ -168,35 +176,35 @@ func (s *Storage) load() {
 // Holds RLock for the marshal step to prevent concurrent map iteration + write.
 func (s *Storage) save() error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0700); err != nil {
-		return fmt.Errorf("storage save: mkdir: %w", err)
+		return fmt.Errorf("webui.Storage save: mkdir: %w", err)
 	}
 
 	s.mu.RLock()
 	data, err := json.MarshalIndent(s.data, "", "  ")
 	s.mu.RUnlock()
 	if err != nil {
-		return fmt.Errorf("storage save: marshal: %w", err)
+		return fmt.Errorf("webui.Storage save: marshal: %w", err)
 	}
 
 	tmp := s.path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0600); err != nil {
-		return fmt.Errorf("storage save: write tmp: %w", err)
+		return fmt.Errorf("webui.Storage save: write tmp: %w", err)
 	}
 	if err := os.Rename(tmp, s.path); err != nil {
 		os.Remove(tmp)
-		return fmt.Errorf("storage save: rename: %w", err)
+		return fmt.Errorf("webui.Storage save: rename: %w", err)
 	}
 	return nil
 }
 
-// Get returns the decrypted value for key, or an error if the key is absent or
-// decryption fails.
+// Get returns the decrypted value for key, or an error if the key is absent
+// or decryption fails.
 func (s *Storage) Get(key string) (string, error) {
 	s.mu.RLock()
 	raw, ok := s.data.Items[key]
 	s.mu.RUnlock()
 	if !ok {
-		return "", fmt.Errorf("storage: key %q not found", key)
+		return "", fmt.Errorf("webui.Storage: key %q not found", key)
 	}
 	return decryptValue(raw, s.key)
 }

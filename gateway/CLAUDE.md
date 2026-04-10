@@ -18,8 +18,8 @@ Lock ordering: `opMu` (serialization) → `mu` (state) → `sseMu` (state).
 
 ## Files
 
-- `gateway.go` — `Gateway` struct, `Run`/`Stop`/`doUp`/`doDown`, `EventHandler` impl, auto-reconnect, crash recovery
-- `api.go` — HTTP API: `/api/core` (up/down/status), `/ping`, `/api/log-level`
+- `gateway.go` — `Gateway` struct, `Run`/`Stop`/`doUp`/`doDown`, `EventHandler` impl, auto-reconnect, crash recovery. Wires the k2r-specific `webui.Upgrader` (`newK2rUpgrader`) and `webui.Storage` (rooted at `/etc/k2r/`).
+- `api.go` — HTTP API: `/api/core` (up/down/status), `/ping`, `/api/log-level`, router device handlers. `/api/storage`, `/api/platform`, `/api/upgrade`, and `/` (SPA) are registered directly via `webui.New*Handler` in `gateway.go`.
 - `sse.go` — `/api/events` SSE endpoint, `broadcastSSE` fan-out
 - `config.go` — `GatewayConfig` (embeds `ClientConfig`), `LoadGateway`, `resolveExcludeIPs`
 - `provider.go` — `gatewayProvider` (implements `provider.Provider`), dual-stack TCP/UDP accept loops
@@ -31,6 +31,8 @@ Lock ordering: `opMu` (serialization) → `mu` (state) → `sseMu` (state).
 - `lan.go` — `DiscoverLANSubnets` (private RFC 1918 subnets, virtual interface filtering)
 - `state.go` — Persisted state (`/etc/k2r/state.json`) for auto-reconnect
 - `client.go` — IPC client for `k2r up/down/status` commands
+
+Shared webui pieces (webapp embed, encrypted storage, platform info, OTA upgrader) live in `k2/webui/`. See `k2/webui/` for the cross-binary code that both `cmd/k2r` (gateway) and `cmd/k2` (daemon, Linux only) consume.
 
 ## Interceptor Backends
 

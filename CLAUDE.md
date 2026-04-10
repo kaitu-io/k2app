@@ -490,6 +490,7 @@ core/CLAUDE.md                 L4 ClientTunnel, Router, ConnectionHandler
 core/dns/CLAUDE.md             DNS 13-step middleware pipeline
 daemon/CLAUDE.md               Desktop platform shell: HTTP API, service management, auto-reconnect
 gateway/CLAUDE.md              Gateway platform shell: k2r binary, TPROXY, LAN interception
+webui/CLAUDE.md                Shared webapp embed + storage + platform + OTA upgrade (k2r + k2 Linux desktop)
 provider/CLAUDE.md             Provider interface (TUN, Proxy, TProxy, iOS, Android)
 server/CLAUDE.md               Server listener orchestration, TCP/UDP handlers
 wire/CLAUDE.md                 k2v5 wire protocol, Dialer/Listener interfaces

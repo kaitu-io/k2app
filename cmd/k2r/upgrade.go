@@ -6,10 +6,35 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"runtime"
+	"os/exec"
 
-	"github.com/kaitu-io/k2/gateway"
+	"github.com/kaitu-io/k2/webui"
 )
+
+// k2rReleaseEndpoints is the CDN list for k2r OTA releases. Mirrors the
+// list the gateway HTTP daemon uses in newK2rUpgrader().
+var k2rReleaseEndpoints = []string{
+	"https://d13jc1jqzlg4yt.cloudfront.net/kaitu/k2r",
+	"https://dl.kaitu.io/kaitu/k2r",
+}
+
+// newCliUpgrader builds a webui.Upgrader configured for CLI use. It points
+// at the running executable via webui's os.Executable() fallback and wires
+// the restart command to match newK2rUpgrader in the gateway package.
+func newCliUpgrader() *webui.Upgrader {
+	return webui.NewUpgrader(version, webui.UpgradeConfig{
+		BinaryName:       "k2r",
+		StateDir:         "/etc/k2r",
+		ReleaseEndpoints: k2rReleaseEndpoints,
+		RestartFunc: func() {
+			if webui.IsOpenWRT() {
+				exec.Command("/etc/init.d/k2r", "restart").Run()
+			} else {
+				exec.Command("systemctl", "restart", "k2r").Run()
+			}
+		},
+	})
+}
 
 // cmdUpgrade implements the "k2r upgrade" subcommand.
 func cmdUpgrade(args []string) {
@@ -27,7 +52,9 @@ Usage: k2r upgrade [--check]
 	}
 	fs.Parse(args)
 
-	info, err := gateway.FetchLatestK2r()
+	u := newCliUpgrader()
+
+	info, err := u.FetchLatest()
 	if err != nil {
 		out.fail("UPDATE_CHECK_FAILED", err.Error(), "check your internet connection")
 		os.Exit(1)
@@ -46,39 +73,15 @@ Usage: k2r upgrade [--check]
 		return
 	}
 
-	// Determine the binary filename for the current arch.
-	arch := runtime.GOARCH
-	binaryName := fmt.Sprintf("k2r-linux-%s", arch)
-
-	expectedHash, ok := info.Checksums[binaryName]
-	if !ok {
-		out.fail("NO_BINARY", fmt.Sprintf("no binary available for linux/%s", arch), "")
-		os.Exit(1)
-	}
-
-	// Resolve current executable path.
-	self, err := os.Executable()
-	if err != nil {
-		out.fail("UPGRADE_FAILED", "cannot resolve executable path: "+err.Error(), "")
-		os.Exit(1)
-	}
-
-	// Try each CDN endpoint until download succeeds.
-	var lastErr error
-	for _, ep := range gateway.K2rReleaseEndpoints {
-		downloadURL := gateway.BinaryURL(ep, info.Version)
-		fmt.Printf("Downloading %s...\n", downloadURL)
-		if lastErr = gateway.DownloadAndReplace(downloadURL, expectedHash, self); lastErr == nil {
-			break
-		}
-		fmt.Printf("Failed (%v), trying next endpoint...\n", lastErr)
-	}
-	if lastErr != nil {
-		out.fail("UPGRADE_FAILED", lastErr.Error(), "")
+	// webui.Upgrader.ReplaceBinary walks ReleaseEndpoints internally and
+	// verifies the SHA-256 against info.Checksums[BinaryFilename()].
+	fmt.Printf("Downloading %s...\n", u.BinaryFilename())
+	if err := u.ReplaceBinary(info); err != nil {
+		out.fail("UPGRADE_FAILED", err.Error(), "")
 		os.Exit(1)
 	}
 
 	fmt.Printf("Upgraded to %s — restarting service...\n", info.Version)
-	gateway.RestartService()
+	u.Restart()
 	out.ok(map[string]string{"version": info.Version, "status": "upgraded"})
 }
