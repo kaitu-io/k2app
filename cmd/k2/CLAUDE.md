@@ -41,7 +41,7 @@ k2 help [command]               Help for any command
 - `setup.go` — `k2 setup`: first-time config + service install
 - `service.go` — `k2 service`: install/uninstall system service
 - `service_darwin.go` — macOS launchd plist + watchdog plist
-- `service_linux.go` — Linux systemd unit + OpenWRT init.d/procd
+- `service_linux.go` — Linux systemd unit (OpenWRT handled by cmd/k2r)
 - `service_windows.go` — Windows Service (SCM)
 - `process.go` — Daemon start, PID monitoring
 - `upgrade.go` — `k2 upgrade`: self-update binary from CDN
