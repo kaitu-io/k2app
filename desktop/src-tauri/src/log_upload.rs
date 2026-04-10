@@ -91,17 +91,10 @@ fn get_all_service_log_dirs() -> Vec<PathBuf> {
         }
     }
 
-    #[cfg(target_os = "linux")]
-    {
-        // Root daemon (systemd): /var/log/kaitu/
-        dirs.push(PathBuf::from("/var/log/kaitu"));
-        // User daemon (dev mode): ~/.local/share/kaitu/logs/
-        if let Some(home) = dirs::home_dir() {
-            dirs.push(home.join(".local/share/kaitu/logs"));
-        }
-    }
-
-    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    // Tauri log upload never runs on Linux — cmd/k2 Linux has its own
+    // feedback upload path via webui + the Go daemon. The fallback
+    // below keeps cargo test compiling on Linux CI and exotic targets.
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         dirs.push(PathBuf::from("/tmp/kaitu"));
     }

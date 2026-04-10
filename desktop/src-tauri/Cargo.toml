@@ -34,10 +34,6 @@ sha2 = "0.10"
 getrandom = "0.2"
 machine-uid = "0.5.4"
 
-[target.'cfg(target_os = "linux")'.dependencies]
-minisign-verify = "0.2"
-semver = "1"
-
 [features]
 mcp-bridge = ["dep:tauri-plugin-mcp-bridge"]
 ne-mode = []

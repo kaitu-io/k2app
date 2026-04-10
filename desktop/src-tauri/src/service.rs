@@ -348,11 +348,13 @@ pub async fn admin_reinstall_service() -> Result<String, String> {
         admin_reinstall_service_windows().await
     }
 
-    #[cfg(target_os = "linux")]
+    // Linux does not ship the Tauri shell — cmd/k2 handles everything
+    // through the install.sh path. If cargo test ever compiles this on
+    // Linux (CI hwid gate job), return a clear error rather than
+    // pretending an admin reinstall path exists.
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
-        tokio::task::spawn_blocking(admin_reinstall_service_linux)
-            .await
-            .map_err(|e| format!("Task join error: {}", e))?
+        Err("admin_reinstall_service is not supported on this platform".to_string())
     }
 }
 
@@ -447,95 +449,6 @@ fn admin_reinstall_service_macos() -> Result<String, String> {
     }
 }
 
-/// Find k2 binary from Tauri sidecar (relative to current exe).
-/// On Linux AppImage, this is inside the FUSE mount directory.
-#[cfg(target_os = "linux")]
-fn find_k2_from_sidecar() -> Result<std::path::PathBuf, String> {
-    let exe_path = std::env::current_exe()
-        .map_err(|e| format!("Failed to get exe path: {}", e))?;
-    let app_dir = exe_path.parent().ok_or("Failed to get app directory")?;
-
-    // Try plain `k2` first, then `k2-*` (target-triple variant)
-    let k2_path = app_dir.join("k2");
-    if k2_path.exists() {
-        return Ok(k2_path);
-    }
-
-    // Find k2-{target-triple} in the same directory
-    if let Ok(entries) = std::fs::read_dir(app_dir) {
-        for entry in entries.flatten() {
-            let name = entry.file_name();
-            let name_str = name.to_string_lossy();
-            if name_str.starts_with("k2-") && !name_str.contains('.') {
-                return Ok(entry.path());
-            }
-        }
-    }
-
-    Err(format!("k2 sidecar not found in {:?}", app_dir))
-}
-
-/// Linux daemon mode: copy sidecar k2 to /opt/kaitu/k2 (persistent path),
-/// then install systemd service via pkexec.
-///
-/// This two-step approach is necessary because AppImage contents are only
-/// accessible via a transient FUSE mount (/tmp/.mount_XxxXXX/). The systemd
-/// unit's ExecStart must reference a persistent path that survives reboots.
-#[cfg(target_os = "linux")]
-fn admin_reinstall_service_linux() -> Result<String, String> {
-    let source_k2 = find_k2_from_sidecar()?;
-    let source_str = source_k2.to_string_lossy();
-    log::info!("[service] Linux: source k2 binary: {}", source_str);
-
-    // Check if pkexec is available
-    let pkexec_available = Command::new("which")
-        .arg("pkexec")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-
-    if !pkexec_available {
-        log::warn!("[service] pkexec not available");
-        return Err("pkexec_unavailable: run 'sudo k2 service install' manually".to_string());
-    }
-
-    // AppImage FUSE mount is user-private (allow_other=false by default).
-    // pkexec runs as root and cannot access /tmp/.mount_Kaitu_xxx/.
-    // Fix: copy k2 binary to /tmp as current user first, then pkexec from there.
-    let tmp_k2 = "/tmp/kaitu-k2-install";
-    std::fs::copy(&source_k2, tmp_k2).map_err(|e| {
-        format!("Failed to stage k2 binary to {}: {}", tmp_k2, e)
-    })?;
-    log::info!("[service] Linux: staged k2 binary to {}", tmp_k2);
-
-    let script = format!(
-        "mkdir -p /opt/kaitu && cp '{}' /opt/kaitu/k2 && chmod +x /opt/kaitu/k2 && \
-         ln -sf /opt/kaitu/k2 /usr/local/bin/k2 && /opt/kaitu/k2 service install && rm -f '{}'",
-        tmp_k2, tmp_k2
-    );
-
-    let output = Command::new("pkexec")
-        .args(["bash", "-c", &script])
-        .output()
-        .map_err(|e| format!("pkexec failed: {}", e))?;
-
-    if output.status.success() {
-        log::info!("[service] Service installed successfully via pkexec");
-        Ok("Service installed and started".to_string())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stderr_str = stderr.trim();
-        // pkexec returns 126 when user dismisses the dialog
-        if output.status.code() == Some(126) {
-            log::info!("[service] User cancelled pkexec prompt");
-            Err("User cancelled".to_string())
-        } else {
-            log::error!("[service] pkexec failed: {}", stderr_str);
-            Err(format!("Failed to install service: {}", stderr_str))
-        }
-    }
-}
-
 /// Detect old kaitu-service
 pub fn detect_old_kaitu_service() -> bool {
     #[cfg(all(target_os = "macos", not(feature = "ne-mode")))]
@@ -556,9 +469,11 @@ pub fn detect_old_kaitu_service() -> bool {
             .map(|o| o.status.success())
             .unwrap_or(false)
     }
-    #[cfg(target_os = "linux")]
+    // Tauri shell is macOS + Windows only; no legacy kaitu-service.service
+    // ever shipped on Linux, so nothing to migrate.
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
-        std::path::Path::new("/etc/systemd/system/kaitu-service.service").exists()
+        false
     }
 }
 
@@ -592,12 +507,9 @@ pub fn cleanup_old_kaitu_service() {
             .creation_flags(CREATE_NO_WINDOW)
             .output();
     }
-    #[cfg(target_os = "linux")]
-    {
-        let _ = Command::new("systemctl").args(["stop", "kaitu-service"]).output();
-        let _ = Command::new("systemctl").args(["disable", "kaitu-service"]).output();
-        let _ = std::fs::remove_file("/etc/systemd/system/kaitu-service.service");
-    }
+    // Tauri shell does not ship on Linux — detect_old_kaitu_service()
+    // returned false above and this path is unreachable on Linux. The
+    // compiler still needs a valid function body though.
 }
 
 /// Poll `check_service_version` until VersionMatch or timeout.
@@ -933,34 +845,6 @@ mod tests {
             assert!(ps_script.starts_with("Start-Process"));
             assert!(ps_script.contains("-Verb RunAs"));
             assert!(ps_script.contains("-WindowStyle Hidden"));
-        }
-    }
-
-    #[cfg(target_os = "linux")]
-    mod linux_tests {
-        use super::super::*;
-
-        /// Verify find_k2_from_sidecar() looks for k2 relative to current exe.
-        #[test]
-        fn test_linux_k2_sidecar_lookup() {
-            let result = find_k2_from_sidecar();
-            match result {
-                Ok(path) => {
-                    let path_str = path.to_string_lossy();
-                    assert!(
-                        path_str.contains("k2"),
-                        "Path should contain 'k2': {}",
-                        path_str
-                    );
-                }
-                Err(e) => {
-                    assert!(
-                        e.contains("not found"),
-                        "Error should indicate k2 not found: {}",
-                        e
-                    );
-                }
-            }
         }
     }
 

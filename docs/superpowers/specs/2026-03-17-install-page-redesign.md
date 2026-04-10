@@ -1,5 +1,39 @@
 # Install Page Redesign — 双区分离 + 单一数据源
 
+> **⚠️ SUPERSEDED 2026-04-10 — Linux desktop architecture changed**
+>
+> Linux 桌面不再采用 Tauri AppImage + webkit2gtk + pkexec。自 v0.4.2 起,Linux
+> 版本改为「单个 Go 二进制嵌入 React webapp」的方案:
+>
+> - `cmd/k2` 通过 `//go:embed` 把 webapp 静态文件嵌入 Go 二进制
+> - 守护进程在 `127.0.0.1:1777` 上暴露 webapp;用户在浏览器中使用,UI 与
+>   Windows/macOS 桌面共享同一份 React webapp
+> - 安装走 `packaging/linux/install.sh` + `kaitu.service` systemd unit
+> - 自升级走 `k2/webui.Upgrader`(下载新二进制 → 校验 SHA-256 → 原子替换 →
+>   `systemctl restart kaitu`)
+> - 共享代码位于 `k2/webui/` 包,被 `cmd/k2r`(软路由)和 `cmd/k2` Linux 桌面
+>   同时引用
+>
+> 本文档中所有关于 AppImage、webkit2gtk-4.1、libfuse2、libayatana-appindicator、
+> pkexec、`/opt/kaitu/` 安装路径、`tauri-plugin-updater` Linux 分支、
+> `kaitu.desktop` entry、两级分发(AppImage + k2 binary)、`scripts/install-linux.sh`
+> 等 Linux 相关内容均已过时,仅保留作为历史决策记录。当前实现参见:
+>
+> - 根 `CLAUDE.md` 的「Linux desktop = embedded-webapp Go binary, no Tauri」一节
+> - `packaging/linux/install.sh` + `packaging/linux/kaitu.service` + `uninstall.sh`
+> - `k2/webui/CLAUDE.md`(webui 包架构 — 被 k2r 与 cmd/k2 Linux 共用)
+> - `k2/daemon/webui_linux.go`(daemon 侧 webui 路由注册)
+> - `Makefile` 的 `build-linux` / `stage-k2-webui-dist` target
+>
+> 本文档中 install 页面双区分离架构、`DOWNLOAD_LINKS` 单一数据源重构、macOS/
+> Windows Hero 行为等非 Linux 部分依然有效。Linux 平台卡片的当前真实展示是
+> 下载按钮 `下载 Linux 安装包 vX.Y.Z`(tarball)+ CLI 命令
+> `curl -fsSL https://kaitu.io/i/k2 | sudo bash` 并列,而不是本文档中写的
+> "CLI 为主 CTA + AppImage 降为次按钮";安装步骤也是"解压 tarball → 运行
+> install.sh → 浏览器打开 127.0.0.1:1777",不再提 AppImage 运行。
+
+---
+
 ## Problem
 
 当前 `/install` 页面存在 6 个系统性问题：

@@ -30,14 +30,12 @@ pub(crate) fn get_desktop_log_dir() -> PathBuf {
             .unwrap_or_else(|| PathBuf::from(r"C:\temp\kaitu"))
     }
 
-    #[cfg(target_os = "linux")]
-    {
-        dirs::home_dir()
-            .map(|h| h.join(".local/share/kaitu/logs"))
-            .unwrap_or_else(|| PathBuf::from("/tmp/kaitu"))
-    }
-
-    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    // Tauri shell is macOS + Windows only. Linux ships the Go-embed
+    // webapp path via cmd/k2, which has its own log directory under
+    // /var/log/kaitu; the Tauri log dir is never exercised there. The
+    // fallback below exists so cargo test / cargo check still compile
+    // on Linux CI and other unsupported targets.
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         PathBuf::from("/tmp/kaitu")
     }
