@@ -190,6 +190,8 @@ config.Subscription.mu (state, standalone — no nesting with engine/daemon lock
 
 gateway standalone locks (no nesting with engine locks):
   Gateway.opMu (serialization) → Gateway.mu (state) → Gateway.sseMu (state)
+  RouterDeviceManager.mu (state, RWMutex — acquired after Gateway.mu released)
+  nftNetlinkInterceptor.mu (serialization — acquired after all state locks released)
 
 k2p/signal standalone locks (no nesting with engine locks):
   signal.Store.mu (state, RWMutex) → PeerEntry.WriteMu (serialization)

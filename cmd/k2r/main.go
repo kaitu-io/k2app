@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/kaitu-io/k2/config"
@@ -63,6 +64,8 @@ func main() {
 		os.Exit(cmdStatus(rest))
 	case "service":
 		cmdService(rest)
+	case "upgrade":
+		cmdUpgrade(rest)
 	case "version":
 		fmt.Printf("k2r %s (%s)\n", version, commit)
 	case "help", "--help", "-h":
@@ -89,6 +92,7 @@ Commands:
   status    Connection status
 
   service   System service (install, uninstall)
+  upgrade   Check and install updates
   version   Version info
 
 Flags:
@@ -124,7 +128,7 @@ func cmdRun(args []string) {
 	}
 	defer closer()
 
-	g := gateway.New()
+	g := gateway.New(version, commit, runtime.GOARCH)
 	if err := g.Run(cfg.Listen); err != nil {
 		out.fail("GATEWAY_FAILED", err.Error(), "")
 		os.Exit(1)

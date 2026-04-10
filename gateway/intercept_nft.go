@@ -9,13 +9,13 @@ import (
 	"strings"
 )
 
-type nftInterceptor struct {
+type nftShellInterceptor struct {
 	installed bool
 }
 
-func (n *nftInterceptor) Name() string { return "nftables" }
+func (n *nftShellInterceptor) Name() string { return "nftables" }
 
-func (n *nftInterceptor) Install(cfg InterceptConfig) error {
+func (n *nftShellInterceptor) Install(cfg InterceptConfig) error {
 	script := n.buildScript(cfg)
 	cmd := exec.Command("nft", "-f", "-")
 	cmd.Stdin = strings.NewReader(script)
@@ -38,7 +38,7 @@ func (n *nftInterceptor) Install(cfg InterceptConfig) error {
 	return nil
 }
 
-func (n *nftInterceptor) Remove() {
+func (n *nftShellInterceptor) Remove() {
 	_ = runCmd("nft", "delete", "table", "inet", "k2r")
 	_ = runCmd("ip", "rule", "del", "fwmark", "1", "table", "100")
 	_ = runCmd("ip", "route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", "100")
@@ -48,7 +48,7 @@ func (n *nftInterceptor) Remove() {
 	slog.Info("gateway: nftables rules cleaned up")
 }
 
-func (n *nftInterceptor) buildScript(cfg InterceptConfig) string {
+func (n *nftShellInterceptor) buildScript(cfg InterceptConfig) string {
 	port := fmt.Sprintf(":%d", cfg.ListenPort)
 	v4Subnets, v6Subnets := splitSubnetsByFamily(cfg.LANSubnets)
 	v4Excludes, v6Excludes := splitIPsByFamily(cfg.ExcludeIPs)
@@ -69,6 +69,13 @@ func (n *nftInterceptor) buildScript(cfg InterceptConfig) string {
 
 	lines = append(lines,
 		"add chain inet k2r prerouting { type filter hook prerouting priority mangle ; policy accept ; }")
+
+	// DNS redirect needs a NAT chain (redirect is a NAT operation)
+	if cfg.DNSRedirect && cfg.DNSPort > 0 {
+		lines = append(lines,
+			"add chain inet k2r dnsredir { type nat hook prerouting priority dstnat ; policy accept ; }")
+	}
+
 	lines = append(lines,
 		`add rule inet k2r prerouting iifname "lo" return`)
 
@@ -77,6 +84,30 @@ func (n *nftInterceptor) buildScript(cfg InterceptConfig) string {
 	}
 	if len(v6Excludes) > 0 {
 		lines = append(lines, "add rule inet k2r prerouting ip6 daddr @exclude_v6 return")
+	}
+
+	// MAC allowlist
+	if cfg.AllowlistMode && len(cfg.AllowedMACs) > 0 {
+		lines = append(lines, fmt.Sprintf(
+			"add set inet k2r allowed_macs { type ether_addr ; elements = { %s } ; }",
+			strings.Join(cfg.AllowedMACs, ", ")))
+		lines = append(lines,
+			`add rule inet k2r prerouting meta iiftype != ether return`)
+		lines = append(lines,
+			"add rule inet k2r prerouting ether saddr != @allowed_macs drop")
+	}
+
+	// DNS redirect: port 53 → DNSPort (in NAT chain, not filter chain)
+	if cfg.DNSRedirect && cfg.DNSPort > 0 {
+		dnsPort := fmt.Sprintf("%d", cfg.DNSPort)
+		for _, subnet := range v4Subnets {
+			lines = append(lines, fmt.Sprintf(
+				"add rule inet k2r dnsredir ip saddr %s meta l4proto { tcp, udp } th dport 53 redirect to :%s", subnet, dnsPort))
+		}
+		for _, subnet := range v6Subnets {
+			lines = append(lines, fmt.Sprintf(
+				"add rule inet k2r dnsredir ip6 saddr %s meta l4proto { tcp, udp } th dport 53 redirect to :%s", subnet, dnsPort))
+		}
 	}
 
 	for _, subnet := range v4Subnets {

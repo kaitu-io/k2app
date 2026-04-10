@@ -47,6 +47,8 @@ func (i *iptInterceptor) Remove() {
 		}
 		_ = runCmd("iptables", "-t", "mangle", "-F", "K2R")
 		_ = runCmd("iptables", "-t", "mangle", "-X", "K2R")
+		_ = runCmd("iptables", "-t", "mangle", "-F", "K2R_MAC")
+		_ = runCmd("iptables", "-t", "mangle", "-X", "K2R_MAC")
 	}
 	if i.hadV6Subnet {
 		for _, s := range i.v6Subnets {
@@ -54,7 +56,17 @@ func (i *iptInterceptor) Remove() {
 		}
 		_ = runCmd("ip6tables", "-t", "mangle", "-F", "K2R")
 		_ = runCmd("ip6tables", "-t", "mangle", "-X", "K2R")
+		_ = runCmd("ip6tables", "-t", "mangle", "-F", "K2R_MAC")
+		_ = runCmd("ip6tables", "-t", "mangle", "-X", "K2R_MAC")
 	}
+	// Clean DNS redirect chains
+	_ = runCmd("iptables", "-t", "nat", "-D", "PREROUTING", "-j", "K2R_DNS")
+	_ = runCmd("iptables", "-t", "nat", "-F", "K2R_DNS")
+	_ = runCmd("iptables", "-t", "nat", "-X", "K2R_DNS")
+	_ = runCmd("ip6tables", "-t", "nat", "-D", "PREROUTING", "-j", "K2R_DNS")
+	_ = runCmd("ip6tables", "-t", "nat", "-F", "K2R_DNS")
+	_ = runCmd("ip6tables", "-t", "nat", "-X", "K2R_DNS")
+	// Clean ip rules
 	_ = runCmd("ip", "rule", "del", "fwmark", "1", "table", "100")
 	_ = runCmd("ip", "route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", "100")
 	_ = runCmd("ip", "-6", "rule", "del", "fwmark", "1", "table", "100")
@@ -74,6 +86,19 @@ func buildIptCommands(cfg InterceptConfig) (cmds []cmdSpec, v4Subnets, v6Subnets
 		for _, ip := range v4Excludes {
 			cmds = append(cmds, cmdSpec{"iptables", []string{"-t", "mangle", "-A", "K2R", "-d", ip, "-j", "RETURN"}})
 		}
+		// MAC allowlist: non-allowed MACs get dropped before TPROXY
+		// Allowed MACs jump to K2R_PROXY; non-matching fall through to DROP
+		if cfg.AllowlistMode && len(cfg.AllowedMACs) > 0 {
+			cmds = append(cmds, cmdSpec{"iptables", []string{"-t", "mangle", "-N", "K2R_MAC"}})
+			for _, mac := range cfg.AllowedMACs {
+				// Allowed MACs: jump to TPROXY chain
+				cmds = append(cmds, cmdSpec{"iptables", []string{"-t", "mangle", "-A", "K2R_MAC", "-m", "mac", "--mac-source", mac, "-j", "RETURN"}})
+			}
+			// Non-allowed: drop
+			cmds = append(cmds, cmdSpec{"iptables", []string{"-t", "mangle", "-A", "K2R_MAC", "-j", "DROP"}})
+			// Jump to MAC check from K2R — if RETURN, continues to TPROXY below
+			cmds = append(cmds, cmdSpec{"iptables", []string{"-t", "mangle", "-A", "K2R", "-j", "K2R_MAC"}})
+		}
 		cmds = append(cmds,
 			cmdSpec{"iptables", []string{"-t", "mangle", "-A", "K2R", "-p", "tcp", "-j", "TPROXY", "--on-port", port, "--tproxy-mark", "1"}},
 			cmdSpec{"iptables", []string{"-t", "mangle", "-A", "K2R", "-p", "udp", "-j", "TPROXY", "--on-port", port, "--tproxy-mark", "1"}},
@@ -88,12 +113,45 @@ func buildIptCommands(cfg InterceptConfig) (cmds []cmdSpec, v4Subnets, v6Subnets
 		for _, ip := range v6Excludes {
 			cmds = append(cmds, cmdSpec{"ip6tables", []string{"-t", "mangle", "-A", "K2R", "-d", ip, "-j", "RETURN"}})
 		}
+		if cfg.AllowlistMode && len(cfg.AllowedMACs) > 0 {
+			cmds = append(cmds, cmdSpec{"ip6tables", []string{"-t", "mangle", "-N", "K2R_MAC"}})
+			for _, mac := range cfg.AllowedMACs {
+				cmds = append(cmds, cmdSpec{"ip6tables", []string{"-t", "mangle", "-A", "K2R_MAC", "-m", "mac", "--mac-source", mac, "-j", "RETURN"}})
+			}
+			cmds = append(cmds, cmdSpec{"ip6tables", []string{"-t", "mangle", "-A", "K2R_MAC", "-j", "DROP"}})
+			cmds = append(cmds, cmdSpec{"ip6tables", []string{"-t", "mangle", "-A", "K2R", "-j", "K2R_MAC"}})
+		}
 		cmds = append(cmds,
 			cmdSpec{"ip6tables", []string{"-t", "mangle", "-A", "K2R", "-p", "tcp", "-j", "TPROXY", "--on-port", port, "--tproxy-mark", "1"}},
 			cmdSpec{"ip6tables", []string{"-t", "mangle", "-A", "K2R", "-p", "udp", "-j", "TPROXY", "--on-port", port, "--tproxy-mark", "1"}},
 		)
 		for _, s := range v6Subnets {
 			cmds = append(cmds, cmdSpec{"ip6tables", []string{"-t", "mangle", "-A", "PREROUTING", "-s", s, "-j", "K2R"}})
+		}
+	}
+
+	// DNS redirect (nat table, separate chain)
+	if cfg.DNSRedirect && cfg.DNSPort > 0 {
+		dnsPort := fmt.Sprintf("%d", cfg.DNSPort)
+		if len(v4Subnets) > 0 {
+			cmds = append(cmds, cmdSpec{"iptables", []string{"-t", "nat", "-N", "K2R_DNS"}})
+			for _, s := range v4Subnets {
+				cmds = append(cmds,
+					cmdSpec{"iptables", []string{"-t", "nat", "-A", "K2R_DNS", "-s", s, "-p", "tcp", "--dport", "53", "-j", "REDIRECT", "--to-ports", dnsPort}},
+					cmdSpec{"iptables", []string{"-t", "nat", "-A", "K2R_DNS", "-s", s, "-p", "udp", "--dport", "53", "-j", "REDIRECT", "--to-ports", dnsPort}},
+				)
+			}
+			cmds = append(cmds, cmdSpec{"iptables", []string{"-t", "nat", "-A", "PREROUTING", "-j", "K2R_DNS"}})
+		}
+		if len(v6Subnets) > 0 {
+			cmds = append(cmds, cmdSpec{"ip6tables", []string{"-t", "nat", "-N", "K2R_DNS"}})
+			for _, s := range v6Subnets {
+				cmds = append(cmds,
+					cmdSpec{"ip6tables", []string{"-t", "nat", "-A", "K2R_DNS", "-s", s, "-p", "tcp", "--dport", "53", "-j", "REDIRECT", "--to-ports", dnsPort}},
+					cmdSpec{"ip6tables", []string{"-t", "nat", "-A", "K2R_DNS", "-s", s, "-p", "udp", "--dport", "53", "-j", "REDIRECT", "--to-ports", dnsPort}},
+				)
+			}
+			cmds = append(cmds, cmdSpec{"ip6tables", []string{"-t", "nat", "-A", "PREROUTING", "-j", "K2R_DNS"}})
 		}
 	}
 

@@ -497,8 +497,8 @@ func (d *Daemon) statusInfo() map[string]any {
 		info["error"] = s.Error
 	}
 	if s.State == engine.StateConnected && !s.ConnectedAt.IsZero() {
-		info["connected_at"] = s.ConnectedAt.Format(time.RFC3339)
-		info["uptime_seconds"] = int(time.Since(s.ConnectedAt).Seconds())
+		info["startAt"] = s.ConnectedAt.Unix()
+		info["uptimeSeconds"] = int(time.Since(s.ConnectedAt).Seconds())
 	}
 	if cfg != nil {
 		info["config"] = cfg

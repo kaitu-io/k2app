@@ -567,7 +567,7 @@ func TestEngineStatusJSON_Disconnected(t *testing.T) {
 		t.Fatalf("state = %v, want %q", m["state"], StateDisconnected)
 	}
 	// No extra keys when disconnected.
-	for _, key := range []string{"connected_at", "uptime_seconds", "error"} {
+	for _, key := range []string{"startAt", "uptimeSeconds", "error"} {
 		if _, ok := m[key]; ok {
 			t.Fatalf("unexpected key %q in disconnected state", key)
 		}
@@ -592,15 +592,15 @@ func TestEngineStatusJSON_Connected(t *testing.T) {
 	if m["state"] != StateConnected {
 		t.Fatalf("state = %v, want %q", m["state"], StateConnected)
 	}
-	if _, ok := m["connected_at"]; !ok {
-		t.Fatal("expected 'connected_at' key when connected")
+	if _, ok := m["startAt"]; !ok {
+		t.Fatal("expected 'startAt' key when connected")
 	}
-	uptime, ok := m["uptime_seconds"].(float64)
+	uptime, ok := m["uptimeSeconds"].(float64)
 	if !ok {
-		t.Fatalf("uptime_seconds not a number: %v (%T)", m["uptime_seconds"], m["uptime_seconds"])
+		t.Fatalf("uptimeSeconds not a number: %v (%T)", m["uptimeSeconds"], m["uptimeSeconds"])
 	}
 	if uptime < 9 {
-		t.Fatalf("uptime_seconds = %v, want >= 9", uptime)
+		t.Fatalf("uptimeSeconds = %v, want >= 9", uptime)
 	}
 }
 
@@ -646,7 +646,7 @@ func TestEngineStatusJSON_MatchesDaemonFormat(t *testing.T) {
 		t.Fatalf("StatusJSON returned invalid JSON: %v", err)
 	}
 
-	expected := []string{"state", "connected_at", "uptime_seconds", "error"}
+	expected := []string{"state", "startAt", "uptimeSeconds", "error"}
 	for _, key := range expected {
 		if _, ok := m[key]; !ok {
 			t.Errorf("missing expected key %q", key)
