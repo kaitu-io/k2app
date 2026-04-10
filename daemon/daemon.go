@@ -145,6 +145,10 @@ func (d *Daemon) Run(ctx context.Context, listenAddr string) error {
 	mux.HandleFunc("/stats", d.handleStatsPage)
 	d.registerHelperRoutes(mux)
 
+	// Linux-only webapp + /api/storage + /api/platform + /api/upgrade.
+	// No-op on macOS/Windows (Tauri provides the UI on those platforms).
+	d.registerWebUI(mux)
+
 	srv := &http.Server{
 		Addr:    listenAddr,
 		Handler: recoveryMiddleware(corsMiddleware(mux)),

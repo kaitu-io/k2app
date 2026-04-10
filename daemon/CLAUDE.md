@@ -78,6 +78,34 @@ Phases: `idle` → `prepare_adb` → `downloading` → `pushing` → `installing
 - `GET /api/stats` — Ring buffer of last 300 health snapshots (5 min, oldest-first)
 - `GET /stats` — Embedded HTML dashboard (dark theme, 4 Canvas charts, SSE live updates)
 
+### Linux-only webui routes (via k2/webui package)
+
+On Linux desktop builds (`cmd/k2`) the daemon ships the React webapp
+inline and adds four endpoints shared with `cmd/k2r`. These routes are
+a no-op on macOS and Windows (Tauri provides the UI on those platforms).
+
+- `GET /` — Serves the embedded SPA with `window.__K2_GATEWAY__` injected
+  (version, commit, arch). Extension-less paths fall through to index.html
+  for React Router; asset paths (`.js`/`.css`/`.png`/…) are cache-control
+  `immutable, max-age=31536000`.
+- `POST /api/storage` — JSON envelope with actions `get`/`set`/`remove`/
+  `has`/`keys`/`clear`. Values are AES-256-GCM encrypted with a key
+  derived from `/etc/machine-id` via HKDF-SHA256 (same scheme as
+  `desktop/src-tauri`, so the storage is drop-in replaceable if the
+  binary is ever upgraded atop an existing Tauri install).
+- `GET /api/platform` — Returns `{os, platformType, version, commit,
+  arch}`; `platformType="desktop"` for cmd/k2 vs `"gateway"` for cmd/k2r.
+- `POST /api/upgrade` — Actions `check` (returns `{current, latest}`)
+  and `apply` (background download + verify + replace + restart).
+  Crash-safe: persists `/etc/kaitu/update-state.json` at each stage and
+  rolls back on interrupted replace. `apply` calls
+  `systemctl restart kaitu` to pick up the new binary.
+
+See `k2/webui/CLAUDE.md` for the shared implementation. The daemon's
+`registerWebUI(mux)` lives in `daemon/webui_linux.go`; `webui_nop.go`
+is a stub for macOS/Windows builds so the caller in `Run()` is
+unconditional.
+
 Request/Response: `daemon.Request{Action, Params}` / `daemon.Response{Code, Message, Data}`
 
 ## Tunnel Lifecycle (doUp/doDown)
@@ -125,6 +153,8 @@ Abort path: both Start and Stop happen within the same opMu critical section —
 - `helper.go` — `/api/helper` HTTP handler, routes adb-detect/adb-install/adb-status
 - `helper_adb.go` — `AndroidHelper`: adb binary management (system discovery + CDN download), gadb device detection, APK download + push + install
 - `helper_test.go` — Tests for helper API, install phases, APK URL resolution
+- `webui_linux.go` — Linux-only: wires `webui.Storage`, `webui.Upgrader` (k2 desktop config), and registers `/api/storage`, `/api/platform`, `/api/upgrade`, and `/` (SPA) on the daemon mux
+- `webui_nop.go` — Non-Linux stub so `Run()` can call `d.registerWebUI(mux)` unconditionally
 
 ## Testing
 
