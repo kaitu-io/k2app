@@ -10,6 +10,7 @@ import (
 	"net"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1354,4 +1355,231 @@ func TestClientTunnel_HandleUDP_QUICPassthrough(t *testing.T) {
 	mockRemote.Close()
 	<-done
 	tunnel.Close()
+}
+
+// makeTCPPair returns a connected *net.TCPConn pair on loopback.
+// Used by pipe() regression tests to exercise the real closeWriter type
+// assertion path (stdlib *net.TCPConn implements CloseWrite).
+func makeTCPPair(t *testing.T) (client, server net.Conn) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	type result struct {
+		c net.Conn
+		e error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		c, e := ln.Accept()
+		ch <- result{c, e}
+	}()
+	client, err = net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := <-ch
+	if r.e != nil {
+		client.Close()
+		t.Fatal(r.e)
+	}
+	return client, r.c
+}
+
+// errOnReadConn wraps a net.Conn and makes Read return a specific error on
+// demand (after a channel is closed). Used to test pipe()'s error-exit path
+// deterministically without depending on kernel TCP RST semantics.
+type errOnReadConn struct {
+	net.Conn
+	trigger chan struct{} // close to activate
+	readErr error
+}
+
+func (c *errOnReadConn) Read(b []byte) (int, error) {
+	select {
+	case <-c.trigger:
+		return 0, c.readErr
+	default:
+	}
+	// Block until either data arrives on the inner conn or trigger fires.
+	type result struct {
+		n   int
+		err error
+	}
+	resCh := make(chan result, 1)
+	go func() {
+		n, err := c.Conn.Read(b)
+		resCh <- result{n, err}
+	}()
+	select {
+	case r := <-resCh:
+		return r.n, r.err
+	case <-c.trigger:
+		// Unblock the inner Read by closing the conn, drain the goroutine.
+		c.Conn.SetReadDeadline(time.Now())
+		<-resCh
+		return 0, c.readErr
+	}
+}
+
+// TestPipe_ErrorPath_UnblocksPeer is the core regression test for the
+// slot-leak introduced by commit 2068d24 (see ticket #97). When the remote
+// wire stream returns a non-EOF error (simulating tm.ResetConnections()
+// closing an in-flight smux/QUIC stream), the RX goroutine must full-close
+// BOTH conns so the TX goroutine's blocked Read on the local peer returns
+// immediately. Before the fix, the RX goroutine only half-closed the local
+// conn via CloseWrite() and the TX goroutine leaked indefinitely.
+func TestPipe_ErrorPath_UnblocksPeer(t *testing.T) {
+	// Keep the watchdog at production length so this test can only pass via
+	// the error-path fast fix, not via watchdog rescue.
+	orig := pipeWatchdogGrace
+	pipeWatchdogGrace = 30 * time.Second
+	defer func() { pipeWatchdogGrace = orig }()
+
+	localClient, localApp := makeTCPPair(t)
+	defer localClient.Close()
+	defer localApp.Close()
+
+	innerRemote, remoteServer := makeTCPPair(t)
+	defer innerRemote.Close()
+	defer remoteServer.Close()
+
+	// Sanity: stdlib *net.TCPConn implements closeWriter — the old buggy
+	// path would take the half-close branch. errOnReadConn intentionally
+	// does NOT expose CloseWrite so the pipe falls back to Close() on
+	// clean exits, but the error-path branch is what we're testing here.
+	if _, ok := localClient.(closeWriter); !ok {
+		t.Fatalf("local: expected *net.TCPConn to implement closeWriter, got %T", localClient)
+	}
+
+	trigger := make(chan struct{})
+	remoteClient := &errOnReadConn{
+		Conn:    innerRemote,
+		trigger: trigger,
+		readErr: errors.New("simulated wire reset"),
+	}
+
+	done := make(chan struct{})
+	var tx, rx atomic.Int64
+	go func() {
+		defer close(done)
+		pipe(localClient, remoteClient, &tx, &rx)
+	}()
+
+	// Let both directions enter their blocking Reads.
+	time.Sleep(100 * time.Millisecond)
+
+	// Simulate tm.ResetConnections(): remote stream Read returns a
+	// non-EOF transport error.
+	close(trigger)
+
+	// localApp is the quiet peer: never sends, never closes. With the fix,
+	// G2's error exit full-closes localClient, unblocking G1's Read.
+	// Without the fix, pipe() hangs until the 30s watchdog (disabled here).
+	select {
+	case <-done:
+		// success
+	case <-time.After(2 * time.Second):
+		t.Fatal("pipe() did not return after remote error — error path fix not working")
+	}
+}
+
+// TestPipe_Watchdog_ForceCloseOnStuckCleanExit covers the residual leak path
+// that the error-exit fix alone does not handle: one direction exits with a
+// clean EOF (half-closing the peer per the 2068d24 download-correctness
+// intent), but the other direction's Read stays blocked indefinitely because
+// the remote peer never sends FIN. The watchdog must force-close both conns
+// after pipeWatchdogGrace.
+func TestPipe_Watchdog_ForceCloseOnStuckCleanExit(t *testing.T) {
+	// Shorten watchdog for test runtime.
+	orig := pipeWatchdogGrace
+	pipeWatchdogGrace = 300 * time.Millisecond
+	defer func() { pipeWatchdogGrace = orig }()
+
+	localClient, localApp := makeTCPPair(t)
+	defer localClient.Close()
+	defer localApp.Close()
+
+	remoteClient, remoteServer := makeTCPPair(t)
+	defer remoteClient.Close()
+	defer remoteServer.Close()
+
+	done := make(chan struct{})
+	var tx, rx atomic.Int64
+	start := time.Now()
+	go func() {
+		defer close(done)
+		pipe(localClient, remoteClient, &tx, &rx)
+	}()
+
+	// Let both directions enter their blocking Reads.
+	time.Sleep(50 * time.Millisecond)
+
+	// Server half-closes its write direction, sending FIN to remoteClient.
+	// G2's io.CopyBuffer(a, b) reads EOF cleanly (err == nil) → G2 calls
+	// localClient.CloseWrite(). localApp (the quiet peer) never reacts to
+	// the FIN, so G1 stays blocked in localClient.Read().
+	if tcp, ok := remoteServer.(*net.TCPConn); ok {
+		if err := tcp.CloseWrite(); err != nil {
+			t.Fatalf("remoteServer.CloseWrite: %v", err)
+		}
+	} else {
+		t.Fatalf("remoteServer: expected *net.TCPConn, got %T", remoteServer)
+	}
+
+	// Watchdog must fire within ~grace + scheduling slack.
+	select {
+	case <-done:
+		elapsed := time.Since(start)
+		if elapsed < 200*time.Millisecond {
+			t.Fatalf("pipe() returned too quickly (%v) — watchdog may not have triggered", elapsed)
+		}
+		if elapsed > 2*time.Second {
+			t.Fatalf("pipe() returned too slowly (%v) — watchdog grace not honored", elapsed)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("pipe() never returned — watchdog did not force-close stuck pipe")
+	}
+}
+
+// TestPipe_CleanBidirectionalExit verifies the fast-path: both directions
+// complete normally (EOF on Read) without the watchdog firing. Validates that
+// the fix doesn't cause spurious force-closes on well-behaved pipes.
+func TestPipe_CleanBidirectionalExit(t *testing.T) {
+	localClient, localApp := makeTCPPair(t)
+	remoteClient, remoteServer := makeTCPPair(t)
+
+	done := make(chan struct{})
+	var tx, rx atomic.Int64
+	start := time.Now()
+	go func() {
+		defer close(done)
+		pipe(localClient, remoteClient, &tx, &rx)
+	}()
+
+	// Both peers send a small payload and fully close. pipe() should
+	// complete quickly via natural EOF on both sides.
+	go func() {
+		localApp.Write([]byte("hello"))
+		localApp.Close()
+	}()
+	go func() {
+		remoteServer.Write([]byte("world"))
+		remoteServer.Close()
+	}()
+
+	select {
+	case <-done:
+		elapsed := time.Since(start)
+		if elapsed > 500*time.Millisecond {
+			t.Errorf("clean pipe exit took too long: %v", elapsed)
+		}
+		if tx.Load() == 0 || rx.Load() == 0 {
+			t.Errorf("counters not updated: tx=%d rx=%d", tx.Load(), rx.Load())
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("clean bidirectional pipe() did not complete")
+	}
 }

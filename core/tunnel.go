@@ -27,9 +27,21 @@ import (
 // after all tracked connections have been forcefully closed.
 const closeTimeout = 5 * time.Second
 
+// pipeWatchdogGrace bounds how long pipe() will wait for one direction to
+// exit after the other has already completed cleanly via CloseWrite().
+// The half-close only releases *our* write direction; the peer goroutine
+// still blocks on Read until the remote peer voluntarily closes. Some apps
+// (long-lived idle push connections, half-broken servers) never do, which
+// leaks the tunnel conn slot indefinitely. After this grace period, the
+// watchdog force-closes both conns to guarantee the peer goroutine exits.
+//
+// var (not const) so tests can shorten the grace without changing production
+// behavior. Production value only mutated once at init.
+var pipeWatchdogGrace = 30 * time.Second
+
 // closeWriter is implemented by connections that support half-close (write-only FIN).
-// pipe() uses this to send FIN without killing the read direction,
-// allowing the peer to finish sending data before full close.
+// pipe() uses this on clean EOF exits (preserving the other direction) while
+// error exits fall back to full Close() to unblock the peer goroutine.
 type closeWriter interface {
 	CloseWrite() error
 }
@@ -563,39 +575,116 @@ func peekUDP(conn net.PacketConn) (packet []byte, addr net.Addr) {
 }
 
 // pipe copies data bidirectionally between two connections.
-// Each direction uses CloseWrite (half-close) to send FIN without killing
-// the other direction. Full close is the caller's responsibility via defer.
+//
+// Exit policy per direction:
+//   - Clean EOF (io.CopyBuffer err == nil): the read side sent FIN. Half-close
+//     the write side of the peer via CloseWrite() so the other direction can
+//     still finish draining (preserves download correctness for apps that
+//     shutdown(SHUT_WR) after sending a request).
+//   - Error (err != nil): the transport is broken (Read or Write failed).
+//     Full-close BOTH conns so the peer goroutine's blocked Read/Write
+//     returns immediately instead of leaking until the app voluntarily
+//     closes its end. This is the critical fix for the slot-leak regression
+//     introduced by commit 2068d24.
+//
+// Watchdog: even on clean exits, the peer goroutine may still block on Read
+// if the remote peer doesn't reciprocate the FIN (long-lived idle services
+// are common on macOS). A watchdog goroutine force-closes both conns after
+// pipeWatchdogGrace to cap the worst-case leak.
+//
 // Optional tx/rx counters accumulate bytes per direction (nil = no counting).
 func pipe(a, b net.Conn, tx, rx *atomic.Int64) {
-	done := make(chan struct{})
+	g1done := make(chan struct{})
+	g2done := make(chan struct{})
+	watchdogDone := make(chan struct{})
+
+	// Watchdog: after the first direction exits, the second has
+	// pipeWatchdogGrace to finish. Force-closes both on timeout.
 	go func() {
-		defer close(done)
+		defer close(watchdogDone)
+		pipeWatchdog(a, b, g1done, g2done)
+	}()
+
+	// G1 — TX direction: a → b.
+	go func() {
+		defer close(g1done)
 		bp := tcpBufPool.Get().(*[]byte)
-		n, _ := io.CopyBuffer(b, a, *bp) // a→b = TX
+		n, err := io.CopyBuffer(b, a, *bp)
 		tcpBufPool.Put(bp)
 		if tx != nil {
 			tx.Add(n)
 		}
-		// Half-close: send FIN only, let peer finish sending data.
-		// Full close delegated to caller's defer.
-		if cw, ok := b.(closeWriter); ok {
-			cw.CloseWrite()
-		} else {
-			b.Close()
-		}
+		pipeDirExit(b, a, err)
 	}()
+
+	// G2 — RX direction: b → a (caller goroutine).
 	bp := tcpBufPool.Get().(*[]byte)
-	n, _ := io.CopyBuffer(a, b, *bp) // b→a = RX
+	n, err := io.CopyBuffer(a, b, *bp)
 	tcpBufPool.Put(bp)
 	if rx != nil {
 		rx.Add(n)
 	}
-	if cw, ok := a.(closeWriter); ok {
-		cw.CloseWrite()
-	} else {
-		a.Close()
+	pipeDirExit(a, b, err)
+	close(g2done)
+
+	<-g1done
+	// Wait for the watchdog goroutine to exit so callers (including tests
+	// that swap pipeWatchdogGrace in defers) don't race its final read of
+	// pipeWatchdogGrace. In the normal fast path the watchdog has already
+	// returned by this point, so this is effectively free.
+	<-watchdogDone
+}
+
+// pipeDirExit closes the conns after one direction of a pipe finishes.
+//
+// dst is where this direction was writing; src is where it was reading.
+// On clean EOF (copyErr == nil), only the write side of dst is half-closed so
+// the other direction can continue. On error, BOTH conns are fully closed to
+// immediately unblock the peer goroutine's in-flight Read/Write.
+func pipeDirExit(dst, src net.Conn, copyErr error) {
+	if copyErr == nil {
+		if cw, ok := dst.(closeWriter); ok {
+			cw.CloseWrite()
+			return
+		}
+		dst.Close()
+		return
 	}
-	<-done
+	// Error path: full-close both sides. Without this, a blocked Read on
+	// the peer goroutine can leak indefinitely.
+	dst.Close()
+	src.Close()
+}
+
+// pipeWatchdog force-closes both pipe conns if the second direction does not
+// exit within pipeWatchdogGrace after the first. This catches the residual
+// leak where one direction exited cleanly (half-closed the peer) but the
+// peer goroutine remains blocked on Read because the remote peer hasn't
+// voluntarily closed its own send direction.
+func pipeWatchdog(a, b net.Conn, g1done, g2done <-chan struct{}) {
+	// Wait for whichever direction exits first.
+	var firstDir string
+	var other <-chan struct{}
+	select {
+	case <-g1done:
+		firstDir = "tx"
+		other = g2done
+	case <-g2done:
+		firstDir = "rx"
+		other = g1done
+	}
+	// Grace window for the second direction.
+	select {
+	case <-other:
+		return
+	case <-time.After(pipeWatchdogGrace):
+		slog.Warn("DIAG: pipe-watchdog",
+			"firstExitDir", firstDir,
+			"graceMs", pipeWatchdogGrace.Milliseconds(),
+		)
+		a.Close()
+		b.Close()
+	}
 }
 
 // pipePacket forwards packets between two PacketConns.

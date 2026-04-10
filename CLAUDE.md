@@ -101,6 +101,7 @@ Reserved event names:
 | `DIAG: datagram-readloop-exit` | WARN | QUIC datagram read loop terminated | totalReceived, err |
 | `DIAG: subs-refresh-fail` | WARN | subscription background refresh failed | endpoint, err |
 | `DIAG: quic-dial-orphan-cleanup` | WARN | orphaned transport.Dial goroutine resolved | addr, blockedMs |
+| `DIAG: pipe-watchdog` | WARN | pipe() watchdog force-closed a stuck half-closed pipe | firstExitDir, graceMs |
 
 ### Layer 3 Rules — Full Trace
 
