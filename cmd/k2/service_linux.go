@@ -69,6 +69,7 @@ User=root
 
 AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_ADMIN
+NoNewPrivileges=yes
 
 ReadWritePaths=/etc/kaitu
 
