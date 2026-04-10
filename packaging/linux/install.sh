@@ -82,6 +82,9 @@ fi
 echo "--- Installing ${BIN_DST} ---"
 install -m 0755 "$BIN_SRC" "$BIN_DST"
 
+echo "--- Ensuring ${STATE_DIR} exists (0700) ---"
+install -d -m 0700 "$STATE_DIR"
+
 echo "--- Installing ${UNIT_DST} ---"
 install -m 0644 "$UNIT_SRC" "$UNIT_DST"
 

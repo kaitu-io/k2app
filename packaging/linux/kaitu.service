@@ -17,8 +17,16 @@ User=root
 AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_ADMIN
 
+# Block execve() from picking up setuid/setcap file capabilities on any
+# child process (systemctl during self-upgrade, adb helper, etc.). The
+# daemon already runs as root so this does not take anything away — it
+# only prevents post-exec privilege escalation beyond what the service
+# already has.
+NoNewPrivileges=yes
+
 # The daemon persists encrypted storage + update state under /etc/kaitu.
-# The directory is created with mode 0700 on first write.
+# install.sh pre-creates the directory with mode 0700; the daemon also
+# calls os.MkdirAll on first write as a fallback.
 ReadWritePaths=/etc/kaitu
 
 [Install]
