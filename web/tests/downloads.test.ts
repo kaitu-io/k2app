@@ -21,8 +21,8 @@ vi.mock('@/lib/constants', () => ({
       backup: `https://cdn-backup.test/kaitu/desktop/${version}/Kaitu_${version}_universal.pkg`,
     },
     linux: {
-      primary: `https://cdn-primary.test/kaitu/desktop/${version}/Kaitu_${version}_amd64.tar.gz`,
-      backup: `https://cdn-backup.test/kaitu/desktop/${version}/Kaitu_${version}_amd64.tar.gz`,
+      primary: `https://cdn-primary.test/kaitu/desktop/${version}/Kaitu_${version}_linux_amd64.tar.gz`,
+      backup: `https://cdn-backup.test/kaitu/desktop/${version}/Kaitu_${version}_linux_amd64.tar.gz`,
     },
   }),
   getAndroidDownloadLinks: (version: string) => ({

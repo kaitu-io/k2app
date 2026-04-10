@@ -87,17 +87,30 @@ get_latest_version() {
 }
 
 # --- Linux ---
-
-has_webkit2gtk() {
-    if (ldconfig -p 2>/dev/null | grep -q "libwebkit2gtk-4.1") || \
-       (command -v pkg-config >/dev/null 2>&1 && pkg-config --exists webkit2gtk-4.1 2>/dev/null); then
-        return 0
-    fi
-    return 1
-}
+#
+# Starting with v0.4.2 the Linux desktop ships as a single Go binary with
+# the React webapp embedded (no Tauri, no webkit2gtk). Users access the UI
+# in their browser at http://127.0.0.1:1777 — this shim just downloads the
+# tarball and defers to the install.sh that ships inside it, so the install
+# logic lives in exactly one place (packaging/linux/install.sh).
 
 has_systemd() {
     command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]
+}
+
+# Remove a legacy pre-v0.4.2 install from the old Tauri-based shim, if any.
+# That shim wrote /opt/kaitu/* and registered /etc/systemd/system/k2.service;
+# leaving it in place would fight the new kaitu.service for port 1777.
+cleanup_legacy_install() {
+    if [ -f /etc/systemd/system/k2.service ] || [ -d /opt/kaitu ]; then
+        info "Removing legacy pre-v0.4.2 install (/opt/kaitu, k2.service)..."
+        systemctl stop k2.service 2>/dev/null || true
+        systemctl disable k2.service 2>/dev/null || true
+        rm -f /etc/systemd/system/k2.service
+        rm -rf /opt/kaitu
+        rm -f /usr/local/bin/kaitu-uninstall
+        systemctl daemon-reload 2>/dev/null || true
+    fi
 }
 
 install_linux() {
@@ -105,105 +118,33 @@ install_linux() {
         error "Linux currently only supports amd64."
     fi
 
-    INSTALL_DIR="/opt/kaitu"
-    TMP_TGZ="/tmp/Kaitu_${VERSION}_amd64.tar.gz"
-
-    info "Downloading Kaitu v${VERSION}..."
-    download_with_fallback "$TMP_TGZ" \
-        "${CDN_PRIMARY}/desktop/${VERSION}/Kaitu_${VERSION}_amd64.tar.gz" \
-        "${CDN_FALLBACK}/desktop/${VERSION}/Kaitu_${VERSION}_amd64.tar.gz"
-
-    info "Extracting to ${INSTALL_DIR}..."
-    mkdir -p "$INSTALL_DIR"
-    tar xzf "$TMP_TGZ" -C "$INSTALL_DIR"
-    rm -f "$TMP_TGZ"
-
-    chmod +x "${INSTALL_DIR}/k2"
-
-    # Always symlink k2 CLI to PATH
-    ln -sf "${INSTALL_DIR}/k2" /usr/local/bin/k2
-    info "k2 CLI installed to /usr/local/bin/k2"
-
-    # --- systemd service (optional) ---
-    HAS_SYSTEMD=false
-    if has_systemd; then
-        if "${INSTALL_DIR}/k2" service install 2>/dev/null; then
-            HAS_SYSTEMD=true
-            info "k2 systemd service installed and started."
-        else
-            info "Warning: k2 service install failed. You can retry manually:"
-            info "  sudo /opt/kaitu/k2 service install"
-        fi
-    else
-        info "systemd not detected. To run k2 as a daemon:"
-        info "  sudo /opt/kaitu/k2 run"
+    if ! has_systemd; then
+        error "systemd not detected. Kaitu Linux requires systemd."
     fi
 
-    # --- GUI + desktop entry (only if webkit2gtk present) ---
-    HAS_GUI=false
-    if has_webkit2gtk; then
-        HAS_GUI=true
-        chmod +x "${INSTALL_DIR}/k2app"
+    cleanup_legacy_install
 
-        REAL_USER="${SUDO_USER:-$(whoami)}"
-        REAL_HOME=$(eval echo "~${REAL_USER}")
-        DESKTOP_DIR="${REAL_HOME}/.local/share/applications"
-        mkdir -p "$DESKTOP_DIR"
+    TARBALL="Kaitu_${VERSION}_linux_amd64.tar.gz"
+    TMP_DIR="$(mktemp -d -t kaitu-install.XXXXXX)"
+    trap 'rm -rf "$TMP_DIR"' EXIT
 
-        cat > "${DESKTOP_DIR}/kaitu.desktop" << ENTRY
-[Desktop Entry]
-Name=Kaitu
-Comment=Kaitu VPN
-Exec=${INSTALL_DIR}/k2app
-Icon=${INSTALL_DIR}/kaitu.png
-Type=Application
-Categories=Network;VPN;
-StartupWMClass=kaitu
-ENTRY
-        chown "${REAL_USER}:" "${DESKTOP_DIR}/kaitu.desktop"
-        info "Desktop entry installed."
+    info "Downloading ${TARBALL}..."
+    download_with_fallback "${TMP_DIR}/${TARBALL}" \
+        "${CDN_PRIMARY}/desktop/${VERSION}/${TARBALL}" \
+        "${CDN_FALLBACK}/desktop/${VERSION}/${TARBALL}"
+
+    info "Extracting..."
+    tar xzf "${TMP_DIR}/${TARBALL}" -C "$TMP_DIR"
+
+    # The tarball ships k2 + install.sh + uninstall.sh + kaitu.service at
+    # the top level. install.sh handles stop-on-upgrade, binary placement,
+    # systemd registration, start, and xdg-open of the webui.
+    if [ ! -x "${TMP_DIR}/install.sh" ]; then
+        error "install.sh missing from tarball — release payload is incomplete."
     fi
 
-    # --- Uninstaller (always install) ---
-    cat > /usr/local/bin/kaitu-uninstall << 'UNINSTALL'
-#!/bin/sh
-set -eu
-if [ "$(id -u)" -ne 0 ]; then echo "Run with sudo: sudo kaitu-uninstall"; exit 1; fi
-echo "Uninstalling Kaitu..."
-systemctl stop k2 2>/dev/null || true
-systemctl disable k2 2>/dev/null || true
-/opt/kaitu/k2 service uninstall 2>/dev/null || true
-rm -rf /opt/kaitu
-rm -f /usr/local/bin/k2 /usr/local/bin/kaitu-uninstall
-for home_dir in /home/*/; do rm -f "${home_dir}.local/share/applications/kaitu.desktop" 2>/dev/null || true; done
-rm -f /root/.local/share/applications/kaitu.desktop 2>/dev/null || true
-if [ "${1:-}" = "--purge" ]; then
-  for home_dir in /home/*/; do rm -rf "${home_dir}.local/share/kaitu" "${home_dir}.cache/k2" 2>/dev/null || true; done
-  rm -rf /var/log/k2 2>/dev/null || true
-  echo "Purged all data and logs."
-fi
-echo "Kaitu uninstalled."
-UNINSTALL
-    chmod +x /usr/local/bin/kaitu-uninstall
-
-    # --- Summary ---
-    info ""
-    info "=== Installation complete ==="
-    info "  CLI:       k2 (in PATH)"
-    if [ "$HAS_GUI" = true ]; then
-        info "  GUI:       ${INSTALL_DIR}/k2app"
-    fi
-    if [ "$HAS_SYSTEMD" = true ]; then
-        info "  Service:   systemctl status k2"
-    fi
-    info "  Uninstall: sudo kaitu-uninstall"
-    info ""
-    if [ "$HAS_GUI" = false ]; then
-        info "  Note: GUI not available (webkit2gtk-4.1 not found)."
-        info "  The k2 CLI is fully functional. Quick start:"
-        info "    k2 connect <URL>    Connect (foreground)"
-        info "    k2 setup <URL>      Install as service + connect"
-    fi
+    info "Running install.sh from tarball..."
+    (cd "$TMP_DIR" && ./install.sh)
 }
 
 # --- macOS ---

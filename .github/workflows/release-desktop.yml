@@ -98,6 +98,16 @@ jobs:
         run: go build -tags=deadlock_disable ./...
         working-directory: k2
 
+      # Guards against regressions like the v0.4.1 missing-initdScript
+      # constant that broke the Linux build — caught here in the test
+      # gate before the release matrix. nowebapp mirrors the headless
+      # path some call sites still use.
+      - name: Linux cross-compile smoke (cmd/k2, nowebapp + default)
+        run: |
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -tags nowebapp ./cmd/k2
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build ./cmd/k2
+        working-directory: k2
+
       - name: Notify Slack on test failure
         if: failure()
         shell: bash
