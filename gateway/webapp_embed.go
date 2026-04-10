@@ -7,7 +7,7 @@ import (
 	"io/fs"
 )
 
-//go:embed dist/*
+//go:embed all:dist
 var webappEmbedFS embed.FS
 
 var webappFS fs.FS = webappEmbedFS
