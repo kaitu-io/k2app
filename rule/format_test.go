@@ -2,6 +2,7 @@ package rule
 
 import (
 	"bytes"
+	"encoding/binary"
 	"net/netip"
 	"testing"
 )
@@ -11,6 +12,7 @@ func TestFormatRoundTrip(t *testing.T) {
 		{
 			Name:           "google",
 			DomainSuffixes: []string{"google.com", "youtube.com", "gmail.com"},
+			ExcludeDomains: []string{"google.cn"}, // should be carved out of google.com
 			CIDRs:          []string{"8.8.8.0/24", "8.8.4.0/24", "2001:4860::/32"},
 		},
 		{
@@ -57,6 +59,12 @@ func TestFormatRoundTrip(t *testing.T) {
 	for _, d := range []string{"telegram.org", "example.com"} {
 		if bundle.Sets[0].MatchDomain(d) {
 			t.Errorf("google set should NOT match domain %q", d)
+		}
+	}
+	// Exclude semantics: google.cn is carved out of google.com suffix.
+	for _, d := range []string{"google.cn", "www.google.cn"} {
+		if bundle.Sets[0].MatchDomain(d) {
+			t.Errorf("google set should exclude %q (would otherwise match google.com suffix)", d)
 		}
 	}
 
@@ -146,6 +154,102 @@ func TestFormatDomainsOnly(t *testing.T) {
 	}
 	if s.MatchIP(netip.MustParseAddr("::1")) {
 		t.Error("should NOT match any IPv6")
+	}
+}
+
+func TestFormatExcludeSemantics(t *testing.T) {
+	// Model the cn-sites use case: weibo.com is Chinese, but hk.weibo.com @!cn
+	// should NOT be treated as Chinese.
+	sets := []BundleSet{
+		{
+			Name:           "cn-sites",
+			DomainSuffixes: []string{"weibo.com"},
+			ExcludeDomains: []string{"hk.weibo.com"},
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := WriteBundle(&buf, sets); err != nil {
+		t.Fatalf("WriteBundle: %v", err)
+	}
+
+	bundle, err := ReadBundle(buf.Bytes())
+	if err != nil {
+		t.Fatalf("ReadBundle: %v", err)
+	}
+	if len(bundle.Sets) != 1 {
+		t.Fatalf("expected 1 set, got %d", len(bundle.Sets))
+	}
+	s := &bundle.Sets[0]
+
+	// Included (suffix hits, no exclude hit).
+	for _, d := range []string{"weibo.com", "www.weibo.com", "sina.weibo.com"} {
+		if !s.MatchDomain(d) {
+			t.Errorf("should match %q (weibo.com suffix, not excluded)", d)
+		}
+	}
+
+	// Excluded (hk.weibo.com exclude wins over weibo.com include).
+	for _, d := range []string{"hk.weibo.com", "m.hk.weibo.com"} {
+		if s.MatchDomain(d) {
+			t.Errorf("should NOT match %q (hk.weibo.com is excluded)", d)
+		}
+	}
+
+	// Unrelated domain — never hit include.
+	if s.MatchDomain("example.com") {
+		t.Errorf("should NOT match example.com")
+	}
+}
+
+// TestReadBundleRejectsV1 verifies that a v1-shaped header is refused cleanly
+// (no panic, no corrupted read). v1 was never shipped to consumers — this
+// test guards against accidental CDN rollback.
+func TestReadBundleRejectsV1(t *testing.T) {
+	data := make([]byte, headerSize)
+	copy(data[0:4], magic)
+	binary.LittleEndian.PutUint32(data[4:8], 1) // v1
+	binary.LittleEndian.PutUint32(data[8:12], 0)
+
+	_, err := ReadBundle(data)
+	if err == nil {
+		t.Fatal("ReadBundle should reject v1 header")
+	}
+	// Error message must mention both versions so humans can diagnose.
+	msg := err.Error()
+	if !bytes.Contains([]byte(msg), []byte("unsupported version 1")) {
+		t.Errorf("error should mention 'unsupported version 1', got %q", msg)
+	}
+	if !bytes.Contains([]byte(msg), []byte("want 2")) {
+		t.Errorf("error should mention expected version 2, got %q", msg)
+	}
+}
+
+// TestReadBundleBoundsCheckExclude verifies an out-of-bounds exclude offset
+// returns an error instead of panicking.
+func TestReadBundleBoundsCheckExclude(t *testing.T) {
+	// Construct a minimum-valid header + index with exclDomainOff pointing
+	// past the buffer and exclDomainCnt > 0.
+	setCount := 1
+	total := headerSize + indexSize*setCount
+	data := make([]byte, total)
+	copy(data[0:4], magic)
+	binary.LittleEndian.PutUint32(data[4:8], version)
+	binary.LittleEndian.PutUint32(data[8:12], uint32(setCount))
+
+	idx := data[headerSize:]
+	// Name at offset = total (out of bounds will be caught by name check first
+	// if we put it there). Put name at end-0 length 0 so it passes.
+	binary.LittleEndian.PutUint32(idx[0:4], uint32(total))
+	binary.LittleEndian.PutUint16(idx[4:6], 0)
+	// Zero domain/ipv4/ipv6 sections.
+	// Put exclDomainOff way past buffer with count > 0.
+	binary.LittleEndian.PutUint32(idx[28:32], uint32(total+1024))
+	binary.LittleEndian.PutUint32(idx[32:36], 5)
+
+	_, err := ReadBundle(data)
+	if err == nil {
+		t.Fatal("ReadBundle should reject out-of-bounds exclude offset")
 	}
 }
 

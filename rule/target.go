@@ -46,15 +46,15 @@ func (m MatchConfig) HasHostCriteria() bool {
 		len(m.DomainSuffix) > 0 || len(m.IPCIDR) > 0 || m.IPIsPrivate
 }
 
+// Preset set-name mapping tracks the schema shipped by kaitu-io/k2-rules.
+// Since k2b v2 (commit 77f117e, 2026-04), bundles consolidate services:
+//   - overseas.k2b contains a single "overseas" set (full v2fly geolocation-!cn
+//     + orphan sites, with @cn entries carved out via exclude-domains)
+//   - cn-direct.k2b contains "cn-sites" + "geoip-cn" (bilibili merged into
+//     cn-sites via v2fly geolocation-cn)
 var presets = map[string][]string{
-	"overseas": {
-		"google", "facebook", "telegram", "twitter", "netflix",
-		"discord", "spotify", "tiktok", "openai", "github",
-		"cloudflare", "fastly",
-	},
-	"cn-access": {
-		"cn-sites", "bilibili", "geoip-cn",
-	},
+	"overseas":  {"overseas"},
+	"cn-access": {"cn-sites", "geoip-cn"},
 }
 
 // ExpandPreset returns a copy of the preset's name list, or nil if unknown.

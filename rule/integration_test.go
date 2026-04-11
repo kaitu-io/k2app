@@ -45,8 +45,8 @@ func TestIntegration_RealBundles(t *testing.T) {
 	idx := rule.Index(bundles)
 	t.Logf("loaded %d bundles, %d sets indexed", len(bundles), len(idx))
 
-	// Verify expected sets exist.
-	requiredSets := []string{"google", "facebook", "telegram", "twitter", "netflix", "openai", "github"}
+	// Verify expected sets exist (v2 schema: consolidated).
+	requiredSets := []string{"overseas", "cn-sites", "geoip-cn"}
 	for _, name := range requiredSets {
 		if _, ok := idx[name]; !ok {
 			t.Errorf("missing expected set: %s", name)
@@ -54,9 +54,8 @@ func TestIntegration_RealBundles(t *testing.T) {
 	}
 
 	// Build engine with overseas → proxy, cn-direct → direct.
-	overseasSets := resolveNames(idx, []string{"google", "facebook", "telegram", "twitter", "netflix",
-		"discord", "spotify", "tiktok", "openai", "github", "cloudflare", "fastly"})
-	cnSets := resolveNames(idx, []string{"geoip-cn", "cn-sites", "bilibili"})
+	overseasSets := resolveNames(idx, []string{"overseas"})
+	cnSets := resolveNames(idx, []string{"geoip-cn", "cn-sites"})
 
 	entries := []rule.RouteEntry{
 		{Target: rule.Target(2), Sets: overseasSets},

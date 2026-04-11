@@ -24,25 +24,22 @@ func TestTargetString(t *testing.T) {
 
 
 func TestExpandPreset(t *testing.T) {
-	// "overseas" preset should include well-known names.
+	// "overseas" preset is a single consolidated set in v2 schema.
 	overseas := ExpandPreset("overseas")
 	if overseas == nil {
 		t.Fatal("ExpandPreset(\"overseas\") returned nil")
 	}
-	wantInOverseas := []string{"google", "facebook", "telegram", "openai", "github"}
-	for _, name := range wantInOverseas {
-		if !contains(overseas, name) {
-			t.Errorf("ExpandPreset(\"overseas\") missing %q", name)
-		}
+	if len(overseas) != 1 || overseas[0] != "overseas" {
+		t.Errorf("ExpandPreset(\"overseas\") = %v, want [overseas]", overseas)
 	}
 
-	// "cn-access" preset should work.
+	// "cn-access" preset is [cn-sites, geoip-cn] in v2 schema.
 	cn := ExpandPreset("cn-access")
 	if cn == nil {
 		t.Fatal("ExpandPreset(\"cn-access\") returned nil")
 	}
-	if !contains(cn, "bilibili") {
-		t.Error("ExpandPreset(\"cn-access\") missing \"bilibili\"")
+	if !contains(cn, "cn-sites") || !contains(cn, "geoip-cn") {
+		t.Errorf("ExpandPreset(\"cn-access\") = %v, want cn-sites and geoip-cn", cn)
 	}
 
 	// Unknown preset returns nil.
@@ -51,9 +48,9 @@ func TestExpandPreset(t *testing.T) {
 	}
 
 	// Returned slice should be a copy (not mutate internal state).
-	first := ExpandPreset("overseas")
+	first := ExpandPreset("cn-access")
 	first[0] = "MUTATED"
-	second := ExpandPreset("overseas")
+	second := ExpandPreset("cn-access")
 	if second[0] == "MUTATED" {
 		t.Error("ExpandPreset returned a reference to internal slice, not a copy")
 	}
@@ -68,8 +65,8 @@ func TestExpandMatch(t *testing.T) {
 
 	// Preset only.
 	got = ExpandMatch(MatchConfig{Preset: "cn-access"})
-	if !contains(got, "bilibili") {
-		t.Errorf("ExpandMatch(preset=cn-access) missing \"bilibili\": %v", got)
+	if !contains(got, "cn-sites") || !contains(got, "geoip-cn") {
+		t.Errorf("ExpandMatch(preset=cn-access) = %v, want cn-sites and geoip-cn", got)
 	}
 
 	// Preset + extra names.
@@ -77,20 +74,20 @@ func TestExpandMatch(t *testing.T) {
 		Preset: "cn-access",
 		Names:  []string{"custom-site"},
 	})
-	if !contains(got, "bilibili") || !contains(got, "custom-site") {
-		t.Errorf("ExpandMatch(preset+names) = %v, want bilibili and custom-site", got)
+	if !contains(got, "cn-sites") || !contains(got, "custom-site") {
+		t.Errorf("ExpandMatch(preset+names) = %v, want cn-sites and custom-site", got)
 	}
 
 	// Preset + exclude.
 	got = ExpandMatch(MatchConfig{
-		Preset:  "overseas",
-		Exclude: []string{"google", "facebook"},
+		Preset:  "cn-access",
+		Exclude: []string{"cn-sites"},
 	})
-	if contains(got, "google") || contains(got, "facebook") {
-		t.Errorf("ExpandMatch with excludes still contains excluded names: %v", got)
+	if contains(got, "cn-sites") {
+		t.Errorf("ExpandMatch with excludes still contains excluded name: %v", got)
 	}
-	if !contains(got, "telegram") {
-		t.Errorf("ExpandMatch with excludes missing non-excluded name \"telegram\": %v", got)
+	if !contains(got, "geoip-cn") {
+		t.Errorf("ExpandMatch with excludes missing non-excluded name \"geoip-cn\": %v", got)
 	}
 
 	// Names only (no preset).

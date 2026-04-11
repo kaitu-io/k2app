@@ -20,23 +20,13 @@ var DefaultSources = []string{
 	"https://gh-proxy.com/https://github.com/kaitu-io/k2-rules/releases/latest/download/",
 }
 
-// bundleFileMap maps BundleSet names to k2b file names.
+// bundleFileMap maps BundleSet names to k2b file names. Aligned with the
+// v2 schema shipped by kaitu-io/k2-rules (single "overseas" set, 2-set
+// cn-direct). Old per-service names (google, facebook, ...) no longer exist.
 var bundleFileMap = map[string]string{
-	"google":     "overseas.k2b",
-	"facebook":   "overseas.k2b",
-	"telegram":   "overseas.k2b",
-	"twitter":    "overseas.k2b",
-	"netflix":    "overseas.k2b",
-	"discord":    "overseas.k2b",
-	"spotify":    "overseas.k2b",
-	"tiktok":     "overseas.k2b",
-	"openai":     "overseas.k2b",
-	"github":     "overseas.k2b",
-	"cloudflare": "overseas.k2b",
-	"fastly":     "overseas.k2b",
-	"cn-sites":   "cn-direct.k2b",
-	"bilibili":   "cn-direct.k2b",
-	"geoip-cn":   "cn-direct.k2b",
+	"overseas": "overseas.k2b",
+	"cn-sites": "cn-direct.k2b",
+	"geoip-cn": "cn-direct.k2b",
 }
 
 // BundlesForConfig returns a deduplicated list of k2b file names referenced
