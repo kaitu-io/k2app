@@ -166,8 +166,8 @@ docs/plans/          Architecture design docs (43+ files, use `ls` to browse)
 - **IPlatform** — Platform capabilities interface (`window._platform`): storage, UDID, clipboard, openExternal, updater, uploadLogs
 - **cloudApi** — Cloud API HTTP module with auth injection and token refresh
 - **Engine** — Unified tunnel lifecycle manager (k2/engine/) used by both desktop daemon and mobile wrapper
-- **ClientConfig** — Universal config contract: Go `config.ClientConfig` = TS `ClientConfig`. Webapp assembles from Cloud API + user preferences, passes to `_k2.run('up', config)`.
-- **Rule mode** — Routing strategy: "global" (proxy all) or "smart" (GeoIP split). Configured via `ClientConfig.rule.global`.
+- **ClientConfig** — Universal config contract: Go `config.ClientConfig` = TS `ClientConfig`. Webapp assembles from Cloud API + user preferences, passes to `_k2.run('up', config)`. **Outbounds are expressed as `routes: [{via, match}]`** — there is no top-level `server` field. Global = `[{via: url, match: {all: true}}]`; chnroute = `[{via: 'direct', match: {preset: 'cn-access'}}, {via: url, match: {}}]`. See `k2/engine/engine.go buildRouteEntries`.
+- **Rule mode** — Webapp-only UI toggle (`ruleMode: 'global' | 'chnroute'`) persisted in `config.store`. Translated to different `routes[]` shapes at connect time. Not a Go-side field — the old `rule.global` was removed in the per-outbound refactor.
 - **Antiblock** — Multi-CDN entry URL resolution for Cloud API in blocked regions
 - **AuthGate** — Startup gate: checks service readiness + version match before showing main UI
 - **LoginDialog** — Global modal for all auth flows (no `/login` route)

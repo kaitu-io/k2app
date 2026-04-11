@@ -222,12 +222,13 @@ Namespaces: account, auth, common, dashboard, feedback, invite, nav, onboarding,
 - **Connection store**: `connection.store.ts` — owns tunnel selection, connect/disconnect orchestration, `connectedTunnel` snapshot (frozen at connect time for stable UI), and `connectEpoch` guard (prevents stale async ops)
 - **Keep-alive tabs**: Layout caches visited tab outlets, hides inactive with `visibility:hidden`. Tab paths: `/`, `/invite`, `/discover`, `/account`
 - **Keep-alive + GPU layers gotcha**: WebKit doesn't recomposite layers when `opacity`/`filter` are removed while an element is `visibility:hidden`. Dashboard uses a `translateZ(0)` toggle on hidden→visible transitions to force layer rebuild. Any new compositing-layer CSS changes on keep-alive tabs need similar consideration.
-- **Config store**: `useConfigStore()` in `stores/config.store.ts` persists VPN settings (ruleMode, proxyMode, logLevel, server). `buildConnectConfig(serverUrl?)` assembles `ClientConfig` from stored preferences — forces `log.level = 'debug'` when beta channel active. `updateConfig(partial)` merges and persists.
+- **Config store**: `useConfigStore()` in `stores/config.store.ts` persists the UI rule-mode toggle (`ruleMode: 'global' | 'chnroute'`, key `k2.vpn.config`). `buildConnectConfig({serverUrl})` assembles the wire-contract `ClientConfig` — emits `routes[]` from `ruleMode` + `serverUrl`, forces `log.level = __K2_BUILD_LOG_LEVEL__` (build-time constant). `updateRuleMode(mode)` is the only mutator. Legacy persisted `{server, rule.global}` shape is auto-migrated on first load.
+- **Last server URL persistence**: The k2v5 URL sent on last connect is persisted separately by `connection.store` under key `k2.vpn.last_server_url` (not inside `ClientConfig`, which mirrors the Go wire contract). Used only for cold-start restore when the webapp process was killed while VPN stayed up. Cleared on explicit `disconnect()`.
 - **LoginDialog**: Global modal via `login-dialog.store`. Guards call `openLoginDialog()` instead of redirecting
 - **Feature flags**: `getCurrentAppConfig().features` controls route/tab visibility
 - **Dev proxy**: Vite proxies `/api/core`, `/api/helper`, `/api/device`, `/ping` to `:1777` (or `K2_DAEMON_PORT`). Production uses absolute URL
 - **Helper API routing**: `adb-*` actions route to `/api/helper` (not `/api/core`). Tauri bridge uses `daemon_helper_exec` IPC command. Standalone bridge checks `action.startsWith('adb-')` to pick endpoint. New daemon helper actions must follow this pattern.
-- **Config-driven connect**: `_k2.run('up', config)` where config is assembled from server + user preferences
+- **Config-driven connect**: `_k2.run('up', config)` where config is assembled from the selected tunnel URL + user preferences via `buildConnectConfig`
 - **AuthGate**: Wraps all routes — checks service readiness + version match before rendering
 - **Viewport scaling**: Uses CSS `zoom` (not `transform:scale()`) to avoid breaking `position:fixed` elements (react-joyride spotlight, MUI Portals)
 - **Onboarding**: Button-driven flow (Next/Done/Skip) with step indicator. Includes invite share phase (navigates to /invite)
