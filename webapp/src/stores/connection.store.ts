@@ -42,6 +42,7 @@ export interface LastConnectionInfo {
   ruleMode: string;
   os: string;
   appVersion: string;
+  commit: string;
 }
 
 interface ConnectionState {
@@ -254,6 +255,7 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
         ruleMode,
         os: window._platform?.os || 'unknown',
         appVersion: window._platform?.version || '0.0.0',
+        commit: window._platform?.commit || '',
       };
     }
 

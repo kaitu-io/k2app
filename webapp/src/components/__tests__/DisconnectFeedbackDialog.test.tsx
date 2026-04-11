@@ -83,6 +83,7 @@ const mockConnectionInfo = {
   ruleMode: 'global',
   os: 'macos',
   appVersion: '0.4.0',
+  commit: 'abc1234',
 };
 
 describe('DisconnectFeedbackDialog', () => {

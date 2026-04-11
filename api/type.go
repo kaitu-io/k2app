@@ -775,6 +775,7 @@ type CreateTicketRequest struct {
 	// System info (auto-attached by client)
 	OS         string `json:"os,omitempty"`
 	AppVersion string `json:"app_version,omitempty"`
+	Commit     string `json:"commit,omitempty"` // client git commit sha (build-time)
 	Channel    string `json:"channel,omitempty"`
 	SubmitTime string `json:"submit_time,omitempty"`
 	VPNState   string `json:"vpn_state,omitempty"`

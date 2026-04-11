@@ -52,6 +52,7 @@ async function gatherSystemInfo(): Promise<Record<string, string | undefined>> {
   const info: Record<string, string | undefined> = {
     os: window._platform?.os,
     app_version: window._platform?.version,
+    commit: window._platform?.commit,
     channel: window._platform?.updater?.channel ?? 'stable',
     submit_time: new Date().toISOString(),
     language: i18n.language,

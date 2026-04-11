@@ -97,6 +97,7 @@ func api_create_ticket(c *gin.Context) {
 		meta := map[string]any{
 			"os":         req.OS,
 			"appVersion": req.AppVersion,
+			"commit":     req.Commit,
 			"channel":    req.Channel,
 			"vpnState":   req.VPNState,
 			"language":   req.Language,
@@ -171,8 +172,12 @@ func ticketSubject(req CreateTicketRequest) string {
 
 // formatSystemInfo 格式化系统信息
 func formatSystemInfo(req CreateTicketRequest) string {
-	return fmt.Sprintf("OS: %s | Version: %s | Channel: %s | Language: %s | VPN: %s | Time: %s",
-		req.OS, req.AppVersion, req.Channel, req.Language, req.VPNState, req.SubmitTime)
+	commit := req.Commit
+	if commit == "" {
+		commit = "-"
+	}
+	return fmt.Sprintf("OS: %s | Version: %s | Commit: %s | Channel: %s | Language: %s | VPN: %s | Time: %s",
+		req.OS, req.AppVersion, commit, req.Channel, req.Language, req.VPNState, req.SubmitTime)
 }
 
 // sendTicketEmail sends ticket email to support

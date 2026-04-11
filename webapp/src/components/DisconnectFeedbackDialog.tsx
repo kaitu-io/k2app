@@ -29,6 +29,7 @@ function formatConnectionInfo(info: LastConnectionInfo): string {
     `Rule: ${info.ruleMode}`,
     `OS: ${info.os}`,
     `Version: ${info.appVersion}`,
+    `Commit: ${info.commit || '-'}`,
   ].join('\n');
 }
 
@@ -90,6 +91,7 @@ async function submitNegativeFeedback(info: LastConnectionInfo): Promise<void> {
       feedbackId,
       os: info.os,
       app_version: info.appVersion,
+      commit: info.commit,
       auto_generated: true,
     });
   } catch (err) {
