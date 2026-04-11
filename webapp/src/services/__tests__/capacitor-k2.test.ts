@@ -282,7 +282,10 @@ describe('capacitor-k2', () => {
 
       mockK2Plugin.connect.mockResolvedValue(undefined);
 
-      const config = { server: 'k2v5://example.com' };
+      const config = {
+        mode: 'tun' as const,
+        routes: [{ via: 'k2v5://example.com:443', match: { all: true } }],
+      };
       const result = await window._k2.run('up', config);
 
       expect(mockK2Plugin.connect).toHaveBeenCalledWith({

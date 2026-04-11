@@ -55,6 +55,25 @@ interface ConnectionState {
   feedbackRequested: boolean;
   pendingFeedback: boolean;
   lastConnectionInfo: LastConnectionInfo | null;
+  /** Last k2v5 URL sent to the daemon (persisted, used for cold-start restore). */
+  lastServerUrl: string | null;
+  lastServerUrlLoaded: boolean;
+}
+
+// Persisted last-used server URL. Kept separate from config.store because
+// ClientConfig mirrors the Go wire contract, which has no `server` field.
+const LAST_SERVER_URL_STORAGE_KEY = 'k2.vpn.last_server_url';
+
+async function persistLastServerUrl(url: string | null): Promise<void> {
+  try {
+    if (url) {
+      await window._platform.storage.set(LAST_SERVER_URL_STORAGE_KEY, url);
+    } else {
+      await window._platform.storage.remove(LAST_SERVER_URL_STORAGE_KEY);
+    }
+  } catch (err) {
+    console.warn('[Connection] Failed to persist last server URL:', err);
+  }
 }
 
 interface ConnectionActions {
@@ -120,6 +139,8 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
   feedbackRequested: false,
   pendingFeedback: false,
   lastConnectionInfo: null,
+  lastServerUrl: null,
+  lastServerUrlLoaded: false,
 
   // Actions
   selectCloudTunnel: (tunnel) => {
@@ -179,13 +200,20 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     }
 
     // Build config with explicit params
-    const { buildConnectConfig, updateConfig } = useConfigStore.getState();
+    const { buildConnectConfig, ruleMode } = useConfigStore.getState();
     const config = buildConnectConfig({ serverUrl });
-    console.debug('[Connection] connect: config built, server=' + (config.server ?? 'none') + ', rule=' + (config.rule?.global ? 'global' : 'chnroute') + ', logLevel=' + config.log?.level);
+    console.debug('[Connection] connect: config built, ruleMode=' + ruleMode
+      + ', routes=' + (config.routes?.length ?? 0)
+      + ', serverUrl=' + (serverUrl ?? 'none')
+      + ', logLevel=' + config.log?.level);
 
-    // Persist BEFORE _k2.run so crash doesn't lose config
-    await updateConfig({ server: serverUrl });
-    console.warn('[Connection] TRACE updateConfig done t=' + Date.now() + ' (+' + (Date.now() - t0) + 'ms)');
+    // Persist BEFORE _k2.run so crash doesn't lose the tunnel identity used
+    // by cold-start restore.
+    if (serverUrl) {
+      set({ lastServerUrl: serverUrl });
+      await persistLastServerUrl(serverUrl);
+    }
+    console.warn('[Connection] TRACE persistLastServerUrl done t=' + Date.now() + ' (+' + (Date.now() - t0) + 'ms)');
 
     // Dispatch state machine event and execute
     console.warn('[Connection] TRACE USER_CONNECT dispatch t=' + Date.now() + ' (+' + (Date.now() - t0) + 'ms)');
@@ -267,7 +295,12 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
       // Mark feedback as requested — promoted to pendingFeedback when VPN reaches idle
       feedbackRequested: !!lastConnectionInfo,
       lastConnectionInfo,
+      // Clear tunnel identity so cold-start after a killed webapp doesn't
+      // restore a tunnel the user explicitly disconnected from.
+      lastServerUrl: null,
     }));
+    // Fire-and-forget: persisted identity must not outlive the user's intent.
+    persistLastServerUrl(null);
     vpnDispatch('USER_DISCONNECT');
     try {
       await window._k2.run('down');
@@ -285,27 +318,26 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
 
 /**
  * Cold start restore: when VPN is active but connectedTunnel is lost (app process killed),
- * recover from persisted config.server URL + self-hosted store.
+ * recover from persisted `lastServerUrl` + self-hosted store.
  *
- * Guards: configLoaded && selfHostedLoaded && vpnActive && !connectedTunnel
+ * Guards: lastServerUrlLoaded && selfHostedLoaded && vpnActive && !connectedTunnel
  * Normal connect flow sets connectedTunnel in connect() before VPN activates, so guards skip.
  *
- * Three async data sources (config / selfHosted / vpnState) complete in unknown order.
+ * Three async data sources (lastServerUrl / selfHosted / vpnState) complete in unknown order.
  * Three independent subscriptions trigger this; guards ensure execution only when all ready,
  * and connectedTunnel guard ensures at-most-once execution.
  */
 function tryRestoreConnectedTunnel(): boolean {
   const vpnState = useVPNMachineStore.getState().state;
-  const { connectedTunnel } = useConnectionStore.getState();
-  const { config, loaded: configLoaded } = useConfigStore.getState();
+  const { connectedTunnel, lastServerUrl, lastServerUrlLoaded } = useConnectionStore.getState();
   const { loaded: selfHostedLoaded } = useSelfHostedStore.getState();
 
-  if (!configLoaded) return false;
+  if (!lastServerUrlLoaded) return false;
   if (!selfHostedLoaded) return false;
   if (connectedTunnel) return false;
   if (vpnState !== 'connected' && vpnState !== 'connecting' && vpnState !== 'reconnecting') return false;
 
-  const serverUrl = config.server;
+  const serverUrl = lastServerUrl;
   if (!serverUrl) return false;
 
   const domain = extractDomainFromServerUrl(serverUrl);
@@ -346,6 +378,21 @@ function tryRestoreConnectedTunnel(): boolean {
 // ============ Lifecycle ============
 
 export function initializeConnectionStore(): () => void {
+  // Load persisted lastServerUrl (fire-and-forget). When done, triggers
+  // tryRestoreConnectedTunnel via the store subscription below.
+  (async () => {
+    try {
+      const stored = await window._platform.storage.get<string>(LAST_SERVER_URL_STORAGE_KEY);
+      useConnectionStore.setState({
+        lastServerUrl: typeof stored === 'string' && stored ? stored : null,
+        lastServerUrlLoaded: true,
+      });
+    } catch (err) {
+      console.warn('[Connection] Failed to load last server URL:', err);
+      useConnectionStore.setState({ lastServerUrl: null, lastServerUrlLoaded: true });
+    }
+  })();
+
   // Trigger 1: VPN state changes (vpn-machine.store uses subscribeWithSelector middleware)
   const unsubVPN = useVPNMachineStore.subscribe(
     (s) => s.state,
@@ -378,10 +425,9 @@ export function initializeConnectionStore(): () => void {
     },
   );
 
-  // Trigger 2: config loaded (may arrive after VPN status)
-  // config store doesn't use subscribeWithSelector — use Zustand v5 base subscribe(listener)
-  const unsubConfig = useConfigStore.subscribe((state, prevState) => {
-    if (state.loaded && !prevState.loaded) {
+  // Trigger 2: lastServerUrl loaded (may arrive after VPN status)
+  const unsubConnection = useConnectionStore.subscribe((state, prevState) => {
+    if (state.lastServerUrlLoaded && !prevState.lastServerUrlLoaded) {
       tryRestoreConnectedTunnel();
     }
   });
@@ -395,7 +441,7 @@ export function initializeConnectionStore(): () => void {
 
   return () => {
     unsubVPN();
-    unsubConfig();
+    unsubConnection();
     unsubSelfHosted();
   };
 }

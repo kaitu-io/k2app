@@ -2,30 +2,15 @@
  * Config Store Unit Tests
  *
  * Tests:
- * - loadConfig from storage (empty + existing)
- * - updateConfig deep merge + persistence
- * - buildConnectConfig merges defaults + stored + server
- * - Getters: ruleMode
+ * - loadConfig from storage (empty, new shape, legacy shape migration)
+ * - updateRuleMode persistence
+ * - buildConnectConfig produces the correct routes shape for global/chnroute
  * - initializeAllStores calls loadConfig in correct order
  *
  * Run: yarn test src/stores/__tests__/config.store.test.ts
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-
-/**
- * ClientConfig type definition (mirrors types/client-config.ts)
- * Defined inline so the test file compiles even before production code exists.
- * When production types are created, switch to: import type { ClientConfig } from '../../types/client-config';
- */
-interface ClientConfig {
-  server?: string;
-  mode?: string;
-  rule?: { global?: boolean; rule_url?: string; geoip_url?: string; antiporn?: boolean; porn_url?: string; cache_dir?: string };
-  log?: { level?: string; output?: string };
-  proxy?: { listen?: string };
-  dns?: { direct?: string[]; proxy?: string[] };
-}
 
 // ==================== Mock window._platform ====================
 
@@ -59,7 +44,6 @@ afterEach(() => {
 describe('Config Store', () => {
   /**
    * Dynamic import so each test gets a fresh module (vi.resetModules).
-   * Will fail with import error until config.store.ts is created — expected RED phase.
    */
   const getStore = async () => {
     const mod = await import('../config.store');
@@ -75,141 +59,162 @@ describe('Config Store', () => {
   // ==================== loadConfig ====================
 
   describe('loadConfig', () => {
-    it('loads empty config when storage returns null', async () => {
+    it('defaults to chnroute when storage returns null', async () => {
       mockStorage.get.mockResolvedValue(null);
 
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
 
       const state = useConfigStore.getState();
-      expect(state.config).toEqual({});
+      expect(state.ruleMode).toBe('chnroute');
       expect(state.loaded).toBe(true);
     });
 
-    it('loads existing config from storage', async () => {
-      const storedConfig: Partial<ClientConfig> = {
-        rule: { global: true },
-      };
-      mockStorage.get.mockResolvedValue(storedConfig);
+    it('loads ruleMode from new-shape storage', async () => {
+      mockStorage.get.mockResolvedValue({ ruleMode: 'global' });
 
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
 
       const state = useConfigStore.getState();
-      expect(state.config).toEqual(storedConfig);
-      expect(state.config.rule?.global).toBe(true);
+      expect(state.ruleMode).toBe('global');
       expect(state.loaded).toBe(true);
     });
-  });
 
-  // ==================== updateConfig ====================
+    it('migrates legacy rule.global=true shape to ruleMode=global', async () => {
+      mockStorage.get.mockResolvedValue({ rule: { global: true }, server: 'k2v5://old' });
 
-  describe('updateConfig', () => {
-    it('deep merges and persists to storage', async () => {
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      const state = useConfigStore.getState();
+      expect(state.ruleMode).toBe('global');
+      // Migration writes the new shape back, stripping server/rule.
+      expect(mockStorage.set).toHaveBeenCalledWith(
+        expect.any(String),
+        { ruleMode: 'global' },
+      );
+    });
+
+    it('migrates legacy rule.global=false shape to ruleMode=chnroute', async () => {
       mockStorage.get.mockResolvedValue({ rule: { global: false } });
 
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
 
-      await useConfigStore.getState().updateConfig({ rule: { global: true } });
-
-      const state = useConfigStore.getState();
-      expect(state.config).toEqual({
-        rule: { global: true },
-      });
-
-      // Verify persistence — storage.set called with storage key + merged config
+      expect(useConfigStore.getState().ruleMode).toBe('chnroute');
       expect(mockStorage.set).toHaveBeenCalledWith(
         expect.any(String),
-        expect.objectContaining({
-          rule: { global: true },
-        }),
+        { ruleMode: 'chnroute' },
       );
     });
+  });
 
-    it('nested merge preserves sibling fields', async () => {
-      mockStorage.get.mockResolvedValue({
-        rule: { global: true },
-        mode: 'tun',
-      });
+  // ==================== updateRuleMode ====================
+
+  describe('updateRuleMode', () => {
+    it('updates state and persists to storage', async () => {
+      mockStorage.get.mockResolvedValue(null);
 
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
 
-      await useConfigStore.getState().updateConfig({ rule: { global: false } });
+      await useConfigStore.getState().updateRuleMode('global');
 
-      const state = useConfigStore.getState();
-      expect(state.config.rule?.global).toBe(false);
-      expect(state.config.mode).toBe('tun');
+      expect(useConfigStore.getState().ruleMode).toBe('global');
+      expect(mockStorage.set).toHaveBeenCalledWith(
+        expect.any(String),
+        { ruleMode: 'global' },
+      );
     });
   });
 
   // ==================== buildConnectConfig ====================
 
   describe('buildConnectConfig', () => {
-    it('merges defaults + stored config + serverUrl', async () => {
-      mockStorage.get.mockResolvedValue({ rule: { global: true } });
+    it('global mode emits a single all-match k2v5 route', async () => {
+      mockStorage.get.mockResolvedValue({ ruleMode: 'global' });
 
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
 
-      const result = useConfigStore.getState().buildConnectConfig('k2v5://example');
+      const result = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://example' });
 
-      expect(result.server).toBe('k2v5://example');
-      expect(result.rule?.global).toBe(true);
       expect(result.mode).toBe('tun');
-      expect(result.log?.level).toBe('debug');
+      expect(result.routes).toEqual([
+        { via: 'k2v5://example', match: { all: true } },
+      ]);
+      // Wire contract must not carry a top-level `server` field anymore.
+      expect((result as any).server).toBeUndefined();
     });
 
-    it('uses stored server when no serverUrl argument provided', async () => {
-      mockStorage.get.mockResolvedValue({
-        server: 'k2v5://saved',
-        rule: { global: false },
+    it('chnroute mode emits cn-direct + k2v5-fallback routes', async () => {
+      mockStorage.get.mockResolvedValue({ ruleMode: 'chnroute' });
+
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      const result = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://example' });
+
+      expect(result.mode).toBe('tun');
+      expect(result.routes).toEqual([
+        { via: 'direct', match: { preset: 'cn-access' } },
+        { via: 'k2v5://example', match: {} },
+      ]);
+    });
+
+    it('legacy string argument still works', async () => {
+      mockStorage.get.mockResolvedValue({ ruleMode: 'global' });
+
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      const result = useConfigStore.getState().buildConnectConfig('k2v5://legacy');
+
+      expect(result.routes?.[result.routes.length - 1]?.via).toBe('k2v5://legacy');
+    });
+
+    it('gateway platform prepends ipinfo.io direct route', async () => {
+      (window as any)._platform.platformType = 'gateway';
+      mockStorage.get.mockResolvedValue({ ruleMode: 'global' });
+
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      const result = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://gw' });
+
+      expect(result.routes?.[0]).toEqual({
+        via: 'direct',
+        match: { domain_suffix: ['ipinfo.io'] },
       });
+      expect(result.routes?.[1]).toEqual({
+        via: 'k2v5://gw',
+        match: { all: true },
+      });
+    });
+
+    it('without a serverUrl returns only the gateway prefix (or empty) routes', async () => {
+      mockStorage.get.mockResolvedValue({ ruleMode: 'chnroute' });
 
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
 
       const result = useConfigStore.getState().buildConnectConfig();
 
-      expect(result.server).toBe('k2v5://saved');
+      expect(result.routes).toEqual([]);
     });
   });
 
   // ==================== buildConnectConfig log level ====================
 
   describe('buildConnectConfig log level', () => {
-    it('reads log level from localStorage when k2_log_level is set', async () => {
+    it('always uses the build-time log level', async () => {
       mockStorage.get.mockResolvedValue(null);
-      localStorage.setItem('k2_log_level', 'debug');
 
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
 
       const result = useConfigStore.getState().buildConnectConfig('k2v5://example');
-      expect(result.log?.level).toBe('debug');
-
-      localStorage.removeItem('k2_log_level');
-    });
-
-    it('always uses debug level (BUILD_DEBUG_SWITCH)', async () => {
-      mockStorage.get.mockResolvedValue(null);
-      localStorage.removeItem('k2_log_level');
-
-      const useConfigStore = await getStore();
-      await useConfigStore.getState().loadConfig();
-
-      const result = useConfigStore.getState().buildConnectConfig('k2v5://example');
-      expect(result.log?.level).toBe('debug');
-    });
-
-    it('overrides stored config log level with debug (BUILD_DEBUG_SWITCH)', async () => {
-      mockStorage.get.mockResolvedValue({ log: { level: 'warn' } });
-
-      const useConfigStore = await getStore();
-      await useConfigStore.getState().loadConfig();
-
-      const result = useConfigStore.getState().buildConnectConfig();
       expect(result.log?.level).toBe('debug');
     });
   });
@@ -217,7 +222,7 @@ describe('Config Store', () => {
   // ==================== Getters ====================
 
   describe('Getters', () => {
-    it('ruleMode returns chnroute by default (empty config)', async () => {
+    it('ruleMode defaults to chnroute', async () => {
       mockStorage.get.mockResolvedValue(null);
 
       const useConfigStore = await getStore();
@@ -226,15 +231,15 @@ describe('Config Store', () => {
       expect(useConfigStore.getState().ruleMode).toBe('chnroute');
     });
 
-    it('ruleMode returns global when rule.global is true', async () => {
-      mockStorage.get.mockResolvedValue({ rule: { global: true } });
+    it('ruleMode returns global after updateRuleMode', async () => {
+      mockStorage.get.mockResolvedValue(null);
 
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
+      await useConfigStore.getState().updateRuleMode('global');
 
       expect(useConfigStore.getState().ruleMode).toBe('global');
     });
-
   });
 
   // ==================== initializeAllStores integration ====================

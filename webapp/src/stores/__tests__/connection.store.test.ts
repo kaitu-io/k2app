@@ -49,7 +49,9 @@ async function getStores() {
   const vpnMod = await import('../vpn-machine.store');
   const configMod = await import('../config.store');
   // Initialize config store with defaults
-  configMod.useConfigStore.setState({ config: {}, loaded: true, ruleMode: 'chnroute' });
+  configMod.useConfigStore.setState({ loaded: true, ruleMode: 'chnroute' });
+  // Mark lastServerUrl as loaded so cold-start recovery doesn't wait.
+  connMod.useConnectionStore.setState({ lastServerUrl: null, lastServerUrlLoaded: true });
   return { ...connMod, vpn: vpnMod, config: configMod };
 }
 
@@ -163,11 +165,18 @@ describe('Connection Store - Connect', () => {
       serverUrl: 'k2v5://tokyo.example.com:443',
     });
 
-    // _k2.run('up') should have been called with config
+    // _k2.run('up') should have been called with the new routes-based config.
+    // Default ruleMode is chnroute → [cn-direct, k2v5-fallback].
     expect(mockRun).toHaveBeenCalledWith('up', expect.objectContaining({
-      server: 'k2v5://udid:token@tokyo.example.com:443',
       mode: 'tun',
+      routes: [
+        { via: 'direct', match: { preset: 'cn-access' } },
+        { via: 'k2v5://udid:token@tokyo.example.com:443', match: {} },
+      ],
     }));
+    // Legacy `server` field must not be present.
+    const upCall = mockRun.mock.calls.find(c => c[0] === 'up');
+    expect(upCall?.[1]?.server).toBeUndefined();
 
     // USER_CONNECT dispatched
     expect(vpn.useVPNMachineStore.getState().state).toBe('connecting');
@@ -190,9 +199,11 @@ describe('Connection Store - Connect', () => {
     useConnectionStore.getState().selectSelfHosted();
     await useConnectionStore.getState().connect();
 
-    expect(mockRun).toHaveBeenCalledWith('up', expect.objectContaining({
-      server: 'k2v5://alice:token@1.2.3.4:443#tokyo',
-    }));
+    const upCall = mockRun.mock.calls.find(c => c[0] === 'up');
+    expect(upCall).toBeDefined();
+    const routes = upCall?.[1]?.routes as Array<{ via: string; match: Record<string, unknown> }>;
+    const lastRoute = routes[routes.length - 1];
+    expect(lastRoute?.via).toBe('k2v5://alice:token@1.2.3.4:443#tokyo');
   });
 
   it('connect does nothing when no tunnel selected', async () => {
@@ -279,18 +290,15 @@ describe('Connection Store - Disconnect', () => {
 // ==================== Config Persistence Tests ====================
 
 describe('Connection Store - Config Persistence', () => {
-  it('connect persists server URL to config store BEFORE _k2.run', async () => {
-    const { useConnectionStore, config } = await getStores();
+  it('connect persists lastServerUrl BEFORE _k2.run so cold-start can recover', async () => {
+    const { useConnectionStore } = await getStores();
 
-    const persistOrder: string[] = [];
-    const origUpdateConfig = config.useConfigStore.getState().updateConfig;
-    vi.spyOn(config.useConfigStore.getState(), 'updateConfig').mockImplementation(async (partial) => {
-      persistOrder.push('persist');
-      return origUpdateConfig(partial);
+    const order: string[] = [];
+    mockStorage.set.mockImplementation(async (key: string) => {
+      if (key === 'k2.vpn.last_server_url') order.push('persist');
     });
-
     mockRun.mockImplementation(async (action: string) => {
-      if (action === 'up') persistOrder.push('run_up');
+      if (action === 'up') order.push('run_up');
       return { code: 0 };
     });
 
@@ -309,7 +317,8 @@ describe('Connection Store - Config Persistence', () => {
 
     await useConnectionStore.getState().connect();
 
-    expect(persistOrder).toEqual(['persist', 'run_up']);
+    expect(order).toEqual(['persist', 'run_up']);
+    expect(useConnectionStore.getState().lastServerUrl).toBe('k2v5://u:t@test.com:443');
   });
 });
 

@@ -113,7 +113,7 @@ export default function Dashboard() {
   const proxyRuleConfig = appConfig.features.proxyRule || { visible: true, defaultValue: 'lightweight' };
 
   // VPN config from persistent store
-  const { ruleMode, updateConfig } = useConfigStore();
+  const { ruleMode, updateRuleMode } = useConfigStore();
 
   // Theme colors
   const theme = useTheme();
@@ -221,8 +221,8 @@ export default function Dashboard() {
 
   // Handle rule type selection via config store
   const handleRuleTypeChange = useCallback((ruleType: string) => {
-    updateConfig({ rule: { global: ruleType === 'global' } });
-  }, [updateConfig]);
+    updateRuleMode(ruleType === 'global' ? 'global' : 'chnroute');
+  }, [updateRuleMode]);
 
   // Effect to detect prolonged failure and trigger silent alert
   useEffect(() => {

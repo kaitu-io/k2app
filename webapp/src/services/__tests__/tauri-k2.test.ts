@@ -102,7 +102,10 @@ describe('tauri-k2', () => {
     });
 
     it('_k2.run passes params with pid to daemon_exec for up action', async () => {
-      const config = { server: 'test://url' };
+      const config = {
+        mode: 'tun' as const,
+        routes: [{ via: 'k2v5://test.example:443', match: { all: true } }],
+      };
 
       await window._k2.run('up', config);
 
