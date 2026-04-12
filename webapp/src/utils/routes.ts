@@ -106,3 +106,25 @@ export function profileToRoutes(profile: string, serverUrl: string): RouteConfig
 export function legacyRuleModeToProfile(ruleMode: 'global' | 'chnroute'): string {
   return ruleMode === 'global' ? 'global' : 'cnroute';
 }
+
+/** Reverse lookup: country code → `PROFILE_TO_PRESET` key (profile name). */
+const COUNTRY_TO_PROFILE: Readonly<Record<string, string>> = Object.freeze(
+  Object.fromEntries(
+    Object.entries(PROFILE_TO_PRESET).map(([profile, preset]) => {
+      // preset is e.g. 'cn-access', country code is 'cn'
+      const cc = preset.replace('-access', '');
+      return [cc, profile];
+    }),
+  ),
+);
+
+/**
+ * Country code → profile name.
+ *
+ * @param cc ISO 3166-1 alpha-2 code (case-insensitive), e.g. `'cn'` → `'cnroute'`
+ * @returns Profile name, or `'global'` if the country has no dedicated profile.
+ */
+export function countryToProfile(cc: string | null | undefined): string {
+  if (!cc) return 'global';
+  return COUNTRY_TO_PROFILE[cc.toLowerCase()] ?? 'global';
+}

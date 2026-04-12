@@ -80,7 +80,11 @@ import { useFeedbackStore } from './feedback.store';
 export function initializeAllStores(): () => void {
   // 按依赖顺序初始化 stores
   const cleanupLayout = initializeLayoutStore();
-  useConfigStore.getState().loadConfig(); // fire-and-forget, sets loaded=true when done
+  useConfigStore.getState().loadConfig().then(() => {
+    // After config loads, fetch geo detection from anonymous endpoint.
+    // Runs async in background — never blocks app init.
+    useConfigStore.getState().fetchGeoDetection();
+  });
   useSelfHostedStore.getState().loadTunnel(); // fire-and-forget, sets loaded=true when done
   const cleanupAuth = initializeAuthStore();
   const cleanupVPNMachine = initializeVPNMachine();
@@ -121,7 +125,9 @@ export function initializeAllStores(): () => void {
           lastConnectedSource = connState.selectedSource;
           lastNodeIpv4 = connState.selectedCloudTunnel?.node?.ipv4 || '';
           lastNodeRegion = connState.selectedCloudTunnel?.node?.country || '';
-          lastRuleMode = configState.ruleMode;
+          lastRuleMode = configState.resolvePreset() === 'global'
+            ? 'global'
+            : (configState.country ?? 'split');
 
           statsService.trackConnect({
             nodeType: lastConnectedSource === 'self_hosted' ? 'self-hosted' : 'cloud',

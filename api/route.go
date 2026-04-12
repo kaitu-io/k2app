@@ -101,6 +101,8 @@ func SetupRouter() *gin.Engine {
 		api.GET("/relays", AuthRequired(), ProRequired(), DeviceAuthRequired(), api_k2_relays)
 		// Get plans
 		api.GET("/plans", api_get_plans)
+		// GeoIP country detection (anonymous, no auth)
+		api.GET("/geo", api_get_geo)
 		// 获取 CA 证书（公开接口，CA 证书是公开信息）
 		api.GET("/ca", api_ca_get)
 		// 获取应用配置

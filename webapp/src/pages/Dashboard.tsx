@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useMemo, useRef, lazy, Suspense } from "react";
+import { useCallback, useEffect, useState, useRef, lazy, Suspense } from "react";
 import {
   Box,
   Typography,
@@ -26,14 +26,12 @@ import { useAuthStore } from "../stores";
 import { useUser } from "../hooks/useUser";
 
 import { useLoginDialogStore } from "../stores/login-dialog.store";
-import { useConfigStore } from '../stores/config.store';
 import { useConnectionStore } from '../stores/connection.store';
 import { useVPNMachine } from '../stores/vpn-machine.store';
 import { useSelfHostedStore } from '../stores/self-hosted.store';
 import { getCurrentAppConfig } from '../config/apps';
 import { CollapsibleConnectionSection } from '../components/CollapsibleConnectionSection';
-import ModeChip from '../components/ModeChip';
-import TravelBanner from '../components/TravelBanner';
+import RoutingModeSelector, { useRoutingSummary } from '../components/RoutingModeSelector';
 import { useDashboard } from '../stores/dashboard.store';
 import { CloudTunnelList } from '../components/CloudTunnelList';
 import { getThemeColors } from '../theme/colors';
@@ -114,13 +112,13 @@ export default function Dashboard() {
   const appConfig = getCurrentAppConfig();
   const proxyRuleConfig = appConfig.features.proxyRule || { visible: true, defaultValue: 'lightweight' };
 
-  // VPN config from persistent store
-  const { ruleMode, updateRuleMode } = useConfigStore();
-
   // Theme colors
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   const colors = getThemeColors(isDark);
+
+  // Routing summary for collapsed advanced settings bar
+  const routingSummary = useRoutingSummary();
 
   // Self-hosted tunnel
   const selfHostedTunnel = useSelfHostedStore((s) => s.tunnel);
@@ -184,24 +182,6 @@ export default function Dashboard() {
     }
   }, [location.pathname]);
 
-  // Get proxy rule types
-  const proxyRules = useMemo(() => {
-    return [
-      {
-        type: 'global',
-        label: t('dashboard:dashboard.rule.global'),
-        icon: '🌍',
-        description: t('dashboard:dashboard.ruleDescription.global')
-      },
-      {
-        type: 'chnroute',
-        label: t('dashboard:dashboard.rule.chnroute'),
-        icon: '⚡',
-        description: t('dashboard:dashboard.ruleDescription.chnroute')
-      }
-    ];
-  }, [t]);
-
   // Handle cloud tunnel selection
   const handleCloudTunnelSelect = useCallback((_tunnel: Tunnel, _echConfigList?: string) => {
     console.debug('[Dashboard] handleCloudTunnelSelect: tunnel=' + _tunnel.domain + ', isInteractive=' + isInteractive);
@@ -220,11 +200,6 @@ export default function Dashboard() {
     }
     selectSelfHosted();
   }, [isInteractive, vpnState, selectSelfHosted]);
-
-  // Handle rule type selection via config store
-  const handleRuleTypeChange = useCallback((ruleType: string) => {
-    updateRuleMode(ruleType === 'global' ? 'global' : 'chnroute');
-  }, [updateRuleMode]);
 
   // Effect to detect prolonged failure and trigger silent alert
   useEffect(() => {
@@ -319,9 +294,6 @@ export default function Dashboard() {
         </Suspense>
       )}
 
-      {/* Travel-detection banner (only renders when country change is detected) */}
-      <TravelBanner />
-
       {/* SECTION 1: Connection Control */}
       <CollapsibleConnectionSection
         serviceState={serviceState}
@@ -333,9 +305,6 @@ export default function Dashboard() {
         isRetrying={isRetrying}
         networkAvailable={networkAvailable}
       />
-
-      {/* Smart-mode status chip under the Connect button */}
-      <ModeChip />
 
       {/* SECTION 2: Tunnel Lists */}
       <Box
@@ -584,9 +553,14 @@ export default function Dashboard() {
           startIcon={<SettingsIcon />}
           sx={{ py: 1, px: 2, justifyContent: 'space-between', textTransform: 'none' }}
         >
-          <Typography variant="body2" fontWeight={600}>
+          <Typography variant="body2" fontWeight={600} sx={{ flex: 1, textAlign: 'left' }}>
             {t('dashboard:dashboard.advancedSettings') || 'Advanced Settings'}
           </Typography>
+          {!showAdvancedSettings && (
+            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem', mx: 1 }}>
+              {routingSummary.flag ? `${routingSummary.flag} ` : ''}{routingSummary.label}
+            </Typography>
+          )}
         </Button>
 
         <Collapse in={showAdvancedSettings}>
@@ -609,39 +583,9 @@ export default function Dashboard() {
               </Typography>
             )}
 
-            {/* Proxy Rules Section */}
+            {/* Routing mode + country selection */}
             {proxyRuleConfig.visible && (
-              <Box sx={{ mb: 2.5 }}>
-                <Typography variant="body2" fontWeight={600} sx={{ mb: 1.5 }}>
-                  {t('dashboard:dashboard.proxyRules')}
-                </Typography>
-                <Stack direction="row" spacing={0.5} sx={{ width: '100%' }}>
-                  {proxyRules.map((rule) => {
-                    const isActive = ruleMode === rule.type;
-                    return (
-                      <Tooltip key={`proxy-rule-${rule.type}`} title={rule.description} arrow>
-                        <span style={{ flex: 1, display: 'flex' }}>
-                          <Button
-                            onClick={() => !isInteractive && handleRuleTypeChange(rule.type)}
-                            disabled={isInteractive}
-                            variant={isActive ? "contained" : "outlined"}
-                            sx={{
-                              flex: 1,
-                              minWidth: 0,
-                              fontSize: '0.75rem',
-                              textTransform: 'none',
-                              '&.Mui-disabled': { opacity: 0.6 },
-                            }}
-                            startIcon={<Box component="span">{rule.icon}</Box>}
-                          >
-                            {rule.label}
-                          </Button>
-                        </span>
-                      </Tooltip>
-                    );
-                  })}
-                </Stack>
-              </Box>
+              <RoutingModeSelector />
             )}
 
           </Box>
