@@ -185,8 +185,8 @@ interface ParsedConfig {
 
 function parseStored(stored: StoredConfig | null | undefined): ParsedConfig {
   if (!stored) {
-    // Fresh install
-    return { defaultVia: 'proxy', countryVia: 'direct', country: null, autoDetect: true, needsMigration: false };
+    // Fresh install — default to CN, geo detection will override if user is elsewhere
+    return { defaultVia: 'proxy', countryVia: 'direct', country: 'cn', autoDetect: true, needsMigration: false };
   }
 
   // v3 shape: has defaultVia field
@@ -298,7 +298,7 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
       }
     } catch (error) {
       console.warn('[ConfigStore] Failed to load config from storage:', error);
-      set({ defaultVia: 'proxy', countryVia: 'direct', country: null, autoDetect: true, loaded: true });
+      set({ defaultVia: 'proxy', countryVia: 'direct', country: 'cn', autoDetect: true, loaded: true });
     }
   },
 
@@ -352,12 +352,12 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
   fetchGeoDetection: async () => {
     try {
       const resp = await cloudApi.get<{ country: string; profile: string }>('/api/geo');
-      if (resp.code !== 0 || !resp.data) return;
+      // Fallback to CN if API fails or returns empty country
+      const cc = (resp.code === 0 && resp.data?.country)
+        ? resp.data.country.toLowerCase()
+        : 'cn';
+      const profile = (resp.code === 0 && resp.data?.profile) || 'cnroute';
 
-      const { country, profile } = resp.data;
-      if (!country) return;
-
-      const cc = country.toLowerCase();
       const { autoDetect, detectedCountry } = get();
 
       const next: Partial<ConfigState> = { detectedCountry: cc, suggestedProfile: profile };
@@ -376,7 +376,12 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
       console.info('[ConfigStore] fetchGeoDetection: country=' + cc + ', profile=' + profile + ', autoDetect=' + autoDetect);
       set(next);
     } catch (err) {
-      console.warn('[ConfigStore] fetchGeoDetection failed:', err);
+      console.warn('[ConfigStore] fetchGeoDetection failed, using CN default:', err);
+      // Network error — still set CN as fallback
+      const { autoDetect, country: current } = get();
+      if (autoDetect || !current) {
+        set({ detectedCountry: 'cn', suggestedProfile: 'cnroute', country: 'cn' });
+      }
     }
   },
 
