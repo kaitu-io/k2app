@@ -58,7 +58,7 @@ describe('Config Store', () => {
   // ==================== loadConfig ====================
 
   describe('loadConfig', () => {
-    it('fresh install defaults to proxy + direct bypass + autoDetect', async () => {
+    it('fresh install defaults to proxy + direct bypass + CN + autoDetect', async () => {
       mockStorage.get.mockResolvedValue(null);
 
       const useConfigStore = await getStore();
@@ -68,7 +68,7 @@ describe('Config Store', () => {
       expect(state.defaultVia).toBe('proxy');
       expect(state.countryVia).toBe('direct');
       expect(state.autoDetect).toBe(true);
-      expect(state.country).toBeNull();
+      expect(state.country).toBe('cn');
       expect(state.loaded).toBe(true);
     });
 
