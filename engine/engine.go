@@ -388,8 +388,9 @@ func (e *Engine) Start(cfg Config) error {
 			}))
 		}
 		proxyDNS = dns.NewProxyDNSClient(dns.ProxyDNSClientConfig{
-			Dialer:  tcpwsDialer, // control-plane: TCP-WS directly, bypass QUIC
-			Servers: client.DNS.Proxy,
+			Dialer:         primaryOT.tm, // Primary: TransportManager (QUIC stream preferred)
+			FallbackDialer: tcpwsDialer,  // Fallback: TCP-WS direct (raced with 300ms stagger)
+			Servers:        client.DNS.Proxy,
 		})
 		dnsMW := dns.NewMiddleware(dns.MiddlewareConfig{
 			ProxyDNS:     proxyDNS,
@@ -544,10 +545,10 @@ func (e *Engine) reconnect() bool {
 		handler.OnStatus(Status{State: StateReconnecting})
 	}
 
-	// Reset order matters (shared tcpwsDialer — see comment in Start):
+	// Reset order matters (shared transports — see comment in Start):
 	//   1. CancelInflight — abort pending upstream queries (closes race window)
-	//   2. TM resets — resets shared tcpws smux sessions
-	//   3. pdns.ResetConnections — cleans proxyConn pool
+	//   2. TM resets — resets QUIC + TCP-WS sessions (DNS primary uses TM)
+	//   3. pdns.ResetConnections — cleans both primary and fallback proxyConn pools
 	// Step 1 MUST precede step 2 so in-flight DNS queries exit via ctx
 	// before the smux session is torn down underneath them.
 	if dh != nil {
