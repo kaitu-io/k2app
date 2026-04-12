@@ -81,7 +81,7 @@ describe('Config Store', () => {
       expect(state.loaded).toBe(true);
     });
 
-    it('migrates legacy rule.global=true shape to ruleMode=global', async () => {
+    it('migrates legacy rule.global=true shape to ruleMode=global + modeOverride=manual', async () => {
       mockStorage.get.mockResolvedValue({ rule: { global: true }, server: 'k2v5://old' });
 
       const useConfigStore = await getStore();
@@ -89,31 +89,67 @@ describe('Config Store', () => {
 
       const state = useConfigStore.getState();
       expect(state.ruleMode).toBe('global');
-      // Migration writes the new shape back, stripping server/rule.
+      expect(state.modeOverride).toBe('manual');
+      // Migration writes the new shape back, stripping server/rule and adding modeOverride.
       expect(mockStorage.set).toHaveBeenCalledWith(
         expect.any(String),
-        { ruleMode: 'global' },
+        { ruleMode: 'global', modeOverride: 'manual' },
       );
     });
 
-    it('migrates legacy rule.global=false shape to ruleMode=chnroute', async () => {
+    it('migrates legacy rule.global=false shape to ruleMode=chnroute + modeOverride=manual', async () => {
       mockStorage.get.mockResolvedValue({ rule: { global: false } });
 
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
 
-      expect(useConfigStore.getState().ruleMode).toBe('chnroute');
+      const state = useConfigStore.getState();
+      expect(state.ruleMode).toBe('chnroute');
+      expect(state.modeOverride).toBe('manual');
       expect(mockStorage.set).toHaveBeenCalledWith(
         expect.any(String),
-        { ruleMode: 'chnroute' },
+        { ruleMode: 'chnroute', modeOverride: 'manual' },
       );
+    });
+
+    it('existing users with persisted ruleMode default to modeOverride=manual', async () => {
+      mockStorage.get.mockResolvedValue({ ruleMode: 'chnroute' });
+
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      const state = useConfigStore.getState();
+      expect(state.ruleMode).toBe('chnroute');
+      expect(state.modeOverride).toBe('manual');
+    });
+
+    it('fresh install (null storage) defaults to modeOverride=auto', async () => {
+      mockStorage.get.mockResolvedValue(null);
+
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      const state = useConfigStore.getState();
+      expect(state.modeOverride).toBe('auto');
+      expect(state.suggestedProfile).toBeNull();
+      expect(state.detectedCountry).toBeNull();
+    });
+
+    it('respects persisted modeOverride=auto over legacy ruleMode', async () => {
+      mockStorage.get.mockResolvedValue({ ruleMode: 'chnroute', modeOverride: 'auto' });
+
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      const state = useConfigStore.getState();
+      expect(state.modeOverride).toBe('auto');
     });
   });
 
   // ==================== updateRuleMode ====================
 
   describe('updateRuleMode', () => {
-    it('updates state and persists to storage', async () => {
+    it('updates state, pins modeOverride=manual, and persists', async () => {
       mockStorage.get.mockResolvedValue(null);
 
       const useConfigStore = await getStore();
@@ -121,11 +157,78 @@ describe('Config Store', () => {
 
       await useConfigStore.getState().updateRuleMode('global');
 
-      expect(useConfigStore.getState().ruleMode).toBe('global');
+      const state = useConfigStore.getState();
+      expect(state.ruleMode).toBe('global');
+      expect(state.modeOverride).toBe('manual');
       expect(mockStorage.set).toHaveBeenCalledWith(
         expect.any(String),
-        { ruleMode: 'global' },
+        { ruleMode: 'global', modeOverride: 'manual' },
       );
+    });
+  });
+
+  describe('setDetectedProfile', () => {
+    it('caches country + profile in auto mode', async () => {
+      mockStorage.get.mockResolvedValue(null); // fresh install → auto
+
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      useConfigStore.getState().setDetectedProfile({ country: 'IR', profile: 'iroute' });
+
+      const state = useConfigStore.getState();
+      expect(state.detectedCountry).toBe('IR');
+      expect(state.suggestedProfile).toBe('iroute');
+    });
+
+    it('skips when modeOverride is manual', async () => {
+      mockStorage.get.mockResolvedValue({ ruleMode: 'global' }); // legacy → manual
+
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      useConfigStore.getState().setDetectedProfile({ country: 'IR', profile: 'iroute' });
+
+      const state = useConfigStore.getState();
+      expect(state.detectedCountry).toBeNull();
+      expect(state.suggestedProfile).toBeNull();
+    });
+  });
+
+  describe('resolveProfile', () => {
+    it('auto mode with no suggestion → global', async () => {
+      mockStorage.get.mockResolvedValue(null);
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      expect(useConfigStore.getState().resolveProfile()).toBe('global');
+    });
+
+    it('auto mode with suggestion → suggestion', async () => {
+      mockStorage.get.mockResolvedValue(null);
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      useConfigStore.getState().setDetectedProfile({ country: 'RU', profile: 'ruroute' });
+      expect(useConfigStore.getState().resolveProfile()).toBe('ruroute');
+    });
+
+    it('global override ignores suggestion', async () => {
+      mockStorage.get.mockResolvedValue(null);
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      useConfigStore.getState().setDetectedProfile({ profile: 'iroute' });
+      await useConfigStore.getState().updateModeOverride('global');
+      expect(useConfigStore.getState().resolveProfile()).toBe('global');
+    });
+
+    it('manual override with chnroute → cnroute', async () => {
+      mockStorage.get.mockResolvedValue({ ruleMode: 'chnroute' });
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      expect(useConfigStore.getState().resolveProfile()).toBe('cnroute');
     });
   });
 
@@ -216,6 +319,38 @@ describe('Config Store', () => {
 
       const result = useConfigStore.getState().buildConnectConfig('k2v5://example');
       expect(result.log?.level).toBe('debug');
+    });
+  });
+
+  // ==================== Phase 1 rule-miss telemetry (dark flag) ====================
+
+  describe('telemetry (rule-miss Phase 1)', () => {
+    it('defaults ruleMissEnabled to false', async () => {
+      mockStorage.get.mockResolvedValue(null);
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+      expect(useConfigStore.getState().telemetry.ruleMissEnabled).toBe(false);
+    });
+
+    it('omits the telemetry block from buildConnectConfig when disabled', async () => {
+      mockStorage.get.mockResolvedValue(null);
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+      const result = useConfigStore.getState().buildConnectConfig('k2v5://example');
+      expect(result.telemetry).toBeUndefined();
+    });
+
+    it('emits telemetry.rule_miss when dark flag is flipped', async () => {
+      mockStorage.get.mockResolvedValue(null);
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+      // Simulate a Phase 2 UI toggle flipping the dark flag via direct
+      // set. Phase 1 has no public action for this — the test reaches
+      // into setState deliberately to prove the config assembly works
+      // end-to-end once the toggle lands.
+      useConfigStore.setState({ telemetry: { ruleMissEnabled: true } });
+      const result = useConfigStore.getState().buildConnectConfig('k2v5://example');
+      expect(result.telemetry).toEqual({ rule_miss: { enabled: true } });
     });
   });
 

@@ -372,6 +372,11 @@ export interface DataUser {
   maxDevice?: number; // app 设备上限
   maxRouterDevice?: number; // 路由器登录上限
   maxLanClient?: number; // LAN 接入上限
+  // Country-aware routing (Center API detects request IP + stores signup country
+  // and returns a suggested routing profile name; see webapp/src/utils/routes.ts).
+  currentCountry?: string; // 2-letter ISO country code detected from request IP, or ""
+  registrationCountry?: string; // 2-letter ISO country code of signup, or ""
+  suggestedProfile?: string; // e.g. "cnroute" | "iroute" | ... | "global"
 }
 
 // 分销商配置更新请求
