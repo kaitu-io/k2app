@@ -3,6 +3,7 @@ package rule
 import (
 	"net/netip"
 	"strings"
+	"sync/atomic"
 
 	"github.com/sasha-s/go-deadlock"
 )
@@ -48,7 +49,22 @@ type Engine struct {
 	fallback Target
 	allProxy bool      // match:all mode (disables sniffing)
 	bundles  []*Bundle // lifecycle: Close releases all
+
+	// missReporter is an optional hook invoked when a domain lookup
+	// reaches the fallback target (no route matched). Phase 1 rule-miss
+	// telemetry — nil by default, zero overhead when unset.
+	//
+	// Stored as an atomic.Pointer so the HOT PATH can do a single
+	// atomic load outside the RLock critical section. When nil (the
+	// Phase 1 default) the match path short-circuits before any
+	// fallback bookkeeping — the compiler inlines matchHostLocked's
+	// single-return form and the overhead is a single nil-check.
+	missReporter atomic.Pointer[reporterSlot]
 }
+
+// reporterSlot is a wrapper so atomic.Pointer can hold an interface
+// value (atomic.Pointer[MissReporter] would lose identity on nil).
+type reporterSlot struct{ r MissReporter }
 
 // NewEngine creates a routing engine.
 func NewEngine(routes []RouteEntry, fallback Target, bundles []*Bundle, allProxy bool) *Engine {
@@ -64,10 +80,26 @@ func NewEngine(routes []RouteEntry, fallback Target, bundles []*Bundle, allProxy
 // Match returns the routing target for a host (IP or domain).
 // Used at DNS time — skips routes that have ONLY meta criteria (no host criteria).
 // Priority: TmpRule > route entries (first-match-wins) > fallback.
+//
+// Hot path: when no MissReporter is installed (Phase 1 default) the only
+// added cost vs the un-instrumented version is a single atomic.Pointer
+// Load + nil check — performed OUTSIDE the RLock critical section.
 func (e *Engine) Match(host string) Target {
 	e.mu.RLock()
 	t := e.matchHostLocked(host)
 	e.mu.RUnlock()
+	// Check hook outside the lock — atomic.Pointer.Load is lock-free
+	// and cheap. When nil (the Phase 1 default) this returns immediately.
+	slot := e.missReporter.Load()
+	if slot == nil {
+		return t
+	}
+	// Slow path: reporter installed. Detect the fallback case by checking
+	// target equality. Safe: fallback was captured under the lock above
+	// (e.fallback is set once at construction and doesn't change).
+	if t == e.fallback && isFQDN(host) {
+		slot.r.Report(host, "")
+	}
 	return t
 }
 
@@ -78,7 +110,51 @@ func (e *Engine) MatchConn(host string, meta ConnMeta) Target {
 	e.mu.RLock()
 	t := e.matchConnLocked(host, meta)
 	e.mu.RUnlock()
+	slot := e.missReporter.Load()
+	if slot == nil {
+		return t
+	}
+	if t == e.fallback && isFQDN(host) {
+		slot.r.Report(host, meta.Network)
+	}
 	return t
+}
+
+// SetMissReporter installs a rule-miss telemetry sink. Pass nil to clear.
+// Thread-safe: uses an atomic.Pointer swap so the hot path stays lock-free.
+// Callers should set this immediately after NewEngine, before the engine
+// is used on the hot path.
+func (e *Engine) SetMissReporter(r MissReporter) {
+	if r == nil {
+		e.missReporter.Store(nil)
+		return
+	}
+	e.missReporter.Store(&reporterSlot{r: r})
+}
+
+// isFQDN reports whether host looks like a public fully-qualified domain
+// name worth reporting. Returns false for IP literals, bare hostnames
+// (no dot), localhost, and private TLDs like .local/.internal/.lan/.home.
+func isFQDN(host string) bool {
+	if host == "" {
+		return false
+	}
+	// Reject IP literals.
+	if _, err := netip.ParseAddr(host); err == nil {
+		return false
+	}
+	// Must contain at least one dot (rules out "localhost", bare hosts).
+	idx := strings.LastIndexByte(host, '.')
+	if idx <= 0 || idx == len(host)-1 {
+		return false
+	}
+	// Reject trailing-dot FQDNs like "example.com." — strip once then re-check.
+	tld := strings.ToLower(host[idx+1:])
+	switch tld {
+	case "local", "internal", "lan", "home", "localhost", "intranet", "private", "corp":
+		return false
+	}
+	return true
 }
 
 // matchHostLocked matches host only, skipping meta-only routes.

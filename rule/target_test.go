@@ -42,6 +42,31 @@ func TestExpandPreset(t *testing.T) {
 		t.Errorf("ExpandPreset(\"cn-access\") = %v, want cn-sites and geoip-cn", cn)
 	}
 
+	// Country-specific presets follow the "{cc}-access" → [{cc}-sites, geoip-{cc}] shape.
+	ir := ExpandPreset("ir-access")
+	if ir == nil {
+		t.Fatal("ExpandPreset(\"ir-access\") returned nil")
+	}
+	if !contains(ir, "ir-sites") || !contains(ir, "geoip-ir") {
+		t.Errorf("ExpandPreset(\"ir-access\") = %v, want ir-sites and geoip-ir", ir)
+	}
+
+	ru := ExpandPreset("ru-access")
+	if ru == nil {
+		t.Fatal("ExpandPreset(\"ru-access\") returned nil")
+	}
+	if !contains(ru, "ru-sites") || !contains(ru, "geoip-ru") {
+		t.Errorf("ExpandPreset(\"ru-access\") = %v, want ru-sites and geoip-ru", ru)
+	}
+
+	mm := ExpandPreset("mm-access")
+	if mm == nil {
+		t.Fatal("ExpandPreset(\"mm-access\") returned nil")
+	}
+	if !contains(mm, "mm-sites") || !contains(mm, "geoip-mm") {
+		t.Errorf("ExpandPreset(\"mm-access\") = %v, want mm-sites and geoip-mm", mm)
+	}
+
 	// Unknown preset returns nil.
 	if got := ExpandPreset("nonexistent"); got != nil {
 		t.Errorf("ExpandPreset(\"nonexistent\") = %v, want nil", got)
@@ -146,6 +171,27 @@ func TestHasHostCriteria(t *testing.T) {
 	for _, tt := range tests {
 		if got := tt.m.HasHostCriteria(); got != tt.want {
 			t.Errorf("HasHostCriteria(%s) = %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
+
+// TestBundleFileMap_CountryCoverage verifies that every country in the
+// 14-country bundle set has both its sites and geoip entries pointing at
+// the expected {cc}-direct.k2b file. Alphabetical order for determinism.
+func TestBundleFileMap_CountryCoverage(t *testing.T) {
+	countries := []string{
+		"ae", "bd", "by", "cn", "eg", "id", "ir",
+		"mm", "pk", "ru", "sa", "th", "tr", "vn",
+	}
+	for _, cc := range countries {
+		wantFile := cc + "-direct.k2b"
+		sitesKey := cc + "-sites"
+		geoipKey := "geoip-" + cc
+		if got := bundleFileMap[sitesKey]; got != wantFile {
+			t.Errorf("bundleFileMap[%q] = %q, want %q", sitesKey, got, wantFile)
+		}
+		if got := bundleFileMap[geoipKey]; got != wantFile {
+			t.Errorf("bundleFileMap[%q] = %q, want %q", geoipKey, got, wantFile)
 		}
 	}
 }

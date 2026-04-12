@@ -52,9 +52,32 @@ func (m MatchConfig) HasHostCriteria() bool {
 //     + orphan sites, with @cn entries carved out via exclude-domains)
 //   - cn-direct.k2b contains "cn-sites" + "geoip-cn" (bilibili merged into
 //     cn-sites via v2fly geolocation-cn)
+//
+// Country-specific presets follow the "{cc}-access" naming convention and
+// expand to [{cc}-sites, geoip-{cc}], served from the per-country
+// {cc}-direct.k2b bundle published by kaitu-io/k2-rules (14 countries:
+// cn, ir, ru, tr, pk, vn, mm, eg, id, sa, ae, th, bd, by).
+//
+// The set names "ir-blocked" and "ru-blocked" are reserved for a future
+// force-proxy feature (IP+domain data from runetfreedom / citizenlab). They
+// are downloaded as part of ir-direct.k2b / ru-direct.k2b but not yet
+// exposed via any preset here.
 var presets = map[string][]string{
 	"overseas":  {"overseas"},
 	"cn-access": {"cn-sites", "geoip-cn"},
+	"ir-access": {"ir-sites", "geoip-ir"},
+	"ru-access": {"ru-sites", "geoip-ru"},
+	"tr-access": {"tr-sites", "geoip-tr"},
+	"pk-access": {"pk-sites", "geoip-pk"},
+	"vn-access": {"vn-sites", "geoip-vn"},
+	"mm-access": {"mm-sites", "geoip-mm"},
+	"eg-access": {"eg-sites", "geoip-eg"},
+	"id-access": {"id-sites", "geoip-id"},
+	"sa-access": {"sa-sites", "geoip-sa"},
+	"ae-access": {"ae-sites", "geoip-ae"},
+	"th-access": {"th-sites", "geoip-th"},
+	"bd-access": {"bd-sites", "geoip-bd"},
+	"by-access": {"by-sites", "geoip-by"},
 }
 
 // ExpandPreset returns a copy of the preset's name list, or nil if unknown.

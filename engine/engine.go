@@ -62,6 +62,11 @@ type Engine struct {
 	directDialer wire.DirectDialer
 	reRaceChan   chan *outboundTransport
 	reRaceCancel context.CancelFunc
+
+	// missReporter is non-nil only when client.Telemetry.RuleMiss.Enabled
+	// is true. When nil, the rule engine's MissReporter hook is also nil
+	// and the match hot path has zero rule-miss overhead. Phase 1.
+	missReporter *missReporter
 }
 
 // outboundTransport holds a TransportManager and its wire config for one k2v5 outbound.
@@ -153,6 +158,29 @@ func (e *Engine) Start(cfg Config) error {
 	// 1b. Build outbound map (via URL → Target index) and rule engine.
 	outboundMap := buildOutboundMap(client.Routes)
 	ruleEngine := buildRuleEngine(client, outboundMap)
+
+	// 1c. (Phase 1 dark instrumentation) Wire rule-miss telemetry reporter
+	// ONLY when explicitly opted in via config. Zero-value config = off,
+	// so by default the rule engine's MissReporter stays nil and the match
+	// hot path is unaffected. See k2/engine/miss_reporter.go for design.
+	var missRep *missReporter
+	if client.Telemetry.RuleMiss.Enabled {
+		missRep = newMissReporter(client.Telemetry.RuleMiss)
+		missRep.start()
+		ruleEngine.SetMissReporter(missRep)
+		slog.Info("engine: rule-miss telemetry enabled",
+			"endpoint", client.Telemetry.RuleMiss.Endpoint,
+			"country", client.Telemetry.RuleMiss.Country,
+		)
+	}
+	// If Start() fails anywhere after this point, stop the reporter so
+	// its goroutine doesn't leak. On success (commit below) this local
+	// is set to nil so the defer becomes a no-op.
+	defer func() {
+		if missRep != nil {
+			missRep.Stop()
+		}
+	}()
 
 	slog.Info("engine: start",
 		"server", extractServerHost(client.Server),
@@ -418,6 +446,8 @@ func (e *Engine) Start(cfg Config) error {
 	e.outbounds = outbounds
 	e.proxyDNS = proxyDNS
 	e.ruleEngine = ruleEngine
+	e.missReporter = missRep
+	missRep = nil // ownership transferred; cancel the deferred stop
 	e.networkMonitor = cfg.NetworkMonitor
 
 	e.outboundTMs = allOTs
@@ -748,6 +778,15 @@ func (e *Engine) Stop() error {
 	e.proxyDNS = nil // no explicit close needed — tm.Close() closes shared tcpws → smux dies → recvLoops exit
 	re := e.ruleEngine
 	e.ruleEngine = nil
+	// Detach the rule-miss reporter BEFORE dropping the rule engine so
+	// late matches on in-flight requests see a nil hook (rule.Engine
+	// owns its own pointer, so we also clear that here — the ruleEngine
+	// reference is about to be dropped anyway, but be explicit).
+	missRep := e.missReporter
+	e.missReporter = nil
+	if re != nil && missRep != nil {
+		re.SetMissReporter(nil)
+	}
 	outbounds := e.outbounds
 	e.outbounds = nil
 	e.client = nil
@@ -792,6 +831,11 @@ func (e *Engine) Stop() error {
 	}
 	if re != nil {
 		re.Close()
+	}
+	// Stop the rule-miss reporter last — its drain goroutine may still
+	// flush a final batch. Stop() blocks up to 5s.
+	if missRep != nil {
+		missRep.Stop()
 	}
 	if sessionUptime > 0 {
 		slog.Info("DIAG: session-end",
@@ -953,12 +997,21 @@ func buildRouteEntries(routes []config.RouteConfig, idx map[string]*rule.BundleS
 
 // buildOutboundMap assigns Target indices to each unique outbound URL in routes.
 // Index 0 and 1 are reserved (direct/reject). Wire outbound indices start at 2.
+//
+// Reserved schemes (device://, auto://) are skipped — ValidateClient rejects them
+// before assembly, so this branch is a defensive guard in case validation is bypassed.
+// Unknown/reserved via strings silently fall through to direct in buildRouteEntries.
 func buildOutboundMap(routes []config.RouteConfig) map[string]rule.Target {
 	m := map[string]rule.Target{}
 	nextIdx := rule.Target(2) // 0=direct, 1=reject, 2+=wire outbounds
 	for _, route := range routes {
 		via := route.Via
 		if via == "" || via == "direct" || via == "reject" {
+			continue
+		}
+		if config.IsReservedVia(via) {
+			slog.Warn("engine: route via uses reserved scheme, treating as direct",
+				"via", config.TruncateVia(via), "scheme", config.ViaScheme(via))
 			continue
 		}
 		if _, exists := m[via]; exists {

@@ -22,11 +22,42 @@ var DefaultSources = []string{
 
 // bundleFileMap maps BundleSet names to k2b file names. Aligned with the
 // v2 schema shipped by kaitu-io/k2-rules (single "overseas" set, 2-set
-// cn-direct). Old per-service names (google, facebook, ...) no longer exist.
+// cn-direct, plus 13 additional per-country bundles). Old per-service names
+// (google, facebook, ...) no longer exist. The "ir-blocked" / "ru-blocked"
+// entries are reserved for a future force-proxy feature and live inside the
+// same ir-direct / ru-direct bundles.
 var bundleFileMap = map[string]string{
 	"overseas": "overseas.k2b",
 	"cn-sites": "cn-direct.k2b",
 	"geoip-cn": "cn-direct.k2b",
+	"ir-sites": "ir-direct.k2b",
+	"geoip-ir": "ir-direct.k2b",
+	"ir-blocked": "ir-direct.k2b",
+	"ru-sites": "ru-direct.k2b",
+	"geoip-ru": "ru-direct.k2b",
+	"ru-blocked": "ru-direct.k2b",
+	"tr-sites": "tr-direct.k2b",
+	"geoip-tr": "tr-direct.k2b",
+	"pk-sites": "pk-direct.k2b",
+	"geoip-pk": "pk-direct.k2b",
+	"vn-sites": "vn-direct.k2b",
+	"geoip-vn": "vn-direct.k2b",
+	"mm-sites": "mm-direct.k2b",
+	"geoip-mm": "mm-direct.k2b",
+	"eg-sites": "eg-direct.k2b",
+	"geoip-eg": "eg-direct.k2b",
+	"id-sites": "id-direct.k2b",
+	"geoip-id": "id-direct.k2b",
+	"sa-sites": "sa-direct.k2b",
+	"geoip-sa": "sa-direct.k2b",
+	"ae-sites": "ae-direct.k2b",
+	"geoip-ae": "ae-direct.k2b",
+	"th-sites": "th-direct.k2b",
+	"geoip-th": "th-direct.k2b",
+	"bd-sites": "bd-direct.k2b",
+	"geoip-bd": "bd-direct.k2b",
+	"by-sites": "by-direct.k2b",
+	"geoip-by": "by-direct.k2b",
 }
 
 // BundlesForConfig returns a deduplicated list of k2b file names referenced

@@ -67,6 +67,28 @@ func ValidateClient(cfg *ClientConfig) error {
 		}
 	}
 
+	// Reject routes that use reserved but not-yet-implemented via schemes
+	// (device://, auto://). Defined in config.go IsReservedVia for forward-compat.
+	if err := validateReservedViaSchemes(cfg.Routes); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validateReservedViaSchemes rejects routes whose Via uses a scheme reserved
+// for a future feature (device://, auto://). Returns a ValidationError on the
+// first offending route so the caller can surface a clear message.
+func validateReservedViaSchemes(routes []RouteConfig) error {
+	for i, r := range routes {
+		if IsReservedVia(r.Via) {
+			return &ValidationError{
+				Field: fmt.Sprintf("routes[%d].via", i),
+				Message: fmt.Sprintf("scheme %q is reserved for a future feature and not yet implemented (got %q)",
+					ViaScheme(r.Via), TruncateVia(r.Via)),
+			}
+		}
+	}
 	return nil
 }
 
