@@ -1,7 +1,7 @@
 {
   "meta": {
-    "title": "使用指南 | Kaitu 開途",
-    "description": "了解如何開通、安裝和使用 Kaitu 開途，包含詳細的影片教學和常見問題解答。支援 macOS、Windows、iOS 和安卓全平台。"
+    "title": "使用指南 | Overleap 開途",
+    "description": "了解如何開通、安裝和使用 Overleap 開途，包含詳細的影片教學和常見問題解答。支援 macOS、Windows、iOS 和安卓全平台。"
   },
   "hero": {
     "title": "開途使用指南",
@@ -14,7 +14,7 @@
     "description": "6 分鐘了解開途的開通、安裝和使用"
   },
   "whyKaitu": {
-    "title": "為什麼選擇 Kaitu",
+    "title": "為什麼選擇 Overleap",
     "stable": {
       "title": "穩定流暢",
       "description": "獨有 k2cc 擁塞控制演算法，頻寬高峰也能正常使用"

@@ -1,20 +1,20 @@
 {
   "meta": {
-    "title": "ご利用ガイド | Kaitu",
-    "description": "Kaitu の登録、インストール、使い方を詳しい動画チュートリアルとFAQで解説。macOS、Windows、iOS、Android 全プラットフォーム対応。"
+    "title": "ご利用ガイド | Overleap",
+    "description": "Overleap の登録、インストール、使い方を詳しい動画チュートリアルとFAQで解説。macOS、Windows、iOS、Android 全プラットフォーム対応。"
   },
   "hero": {
-    "title": "Kaitu ご利用ガイド",
+    "title": "Overleap ご利用ガイド",
     "subtitle": "安定・シンプル・家族向けのネットワークツール",
     "downloadButton": "今すぐダウンロード",
     "guideButton": "チュートリアルを見る"
   },
   "video": {
     "title": "動画チュートリアル",
-    "description": "6分で Kaitu の登録・インストール・使い方がわかります"
+    "description": "6分で Overleap の登録・インストール・使い方がわかります"
   },
   "whyKaitu": {
-    "title": "Kaitu を選ぶ理由",
+    "title": "Overleap を選ぶ理由",
     "stable": {
       "title": "安定＆スムーズ",
       "description": "独自の k2cc 輻輳制御アルゴリズムにより、ピーク時でも快適に利用できます"

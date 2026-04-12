@@ -1,7 +1,7 @@
 {
   "gift": {
     "title": "{name} sent you a gift",
-    "subtitle": "Kaitu VPN membership",
+    "subtitle": "Overleap VPN membership",
     "planDays": "{days} days",
     "expires": "{days} days remaining",
     "cta": "Claim now",

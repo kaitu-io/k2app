@@ -1,5 +1,5 @@
 ; ============================================================================
-; Kaitu Desktop - Custom NSIS Installer Template
+; Overleap Desktop - Custom NSIS Installer Template
 ;
 ; Based on Tauri NSIS installer template
 ; Source: https://github.com/tauri-apps/tauri (MIT/Apache-2.0)

@@ -1,7 +1,7 @@
 {
   "gift": {
     "title": "{name} からギフトが届いています",
-    "subtitle": "Kaitu VPN メンバーシップ",
+    "subtitle": "Overleap VPN メンバーシップ",
     "planDays": "{days} 日間",
     "expires": "残り {days} 日",
     "cta": "今すぐ受け取る",
