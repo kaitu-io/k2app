@@ -13,6 +13,7 @@ import (
 	"github.com/wordgate/wordgate-sdk"
 	db "github.com/wordgate/qtoolkit/db"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // withDeadlockRetry 带死锁重试的事务执行
@@ -134,8 +135,9 @@ func handleWordgateOrderPaidEvent(c *gin.Context, webhookEvent *wordgate.Webhook
 	// 死锁可能发生在：两个并发订单涉及相同的邀请人时
 	return withDeadlockRetry(c, 3, func(tx *gorm.DB) error {
 		// 根据 wordgate 订单号查找本地订单，使用结构体字段确保编译时类型安全
+		// FOR UPDATE 序列化同一订单的重复 webhook：TX2 解除阻塞后读到 is_paid=true → 跳过
 		var order Order
-		err := tx.Preload("User").Where(&Order{WordgateOrderNo: orderData.WordgateOrderNo}).First(&order).Error
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Preload("User").Where(&Order{WordgateOrderNo: orderData.WordgateOrderNo}).First(&order).Error
 		if err != nil {
 			log.Errorf(c, "[Webhook] failed to get order by wordgate_order_no %s: %v", orderData.WordgateOrderNo, err.Error())
 			return err
