@@ -94,6 +94,10 @@ type User struct {
 	PasswordHash           string `gorm:"type:varchar(255)"`    // bcrypt hashed password
 	PasswordFailedAttempts int    `gorm:"not null;default:0"`   // Failed login attempts counter
 	PasswordLockedUntil    int64  `gorm:"not null;default:0"`   // Unix timestamp when lock expires (0 = not locked)
+
+	// 地理位置（ISO 3166-1 alpha-2 小写，空字符串表示未知）
+	RegistrationCountry string `gorm:"column:registration_country;type:varchar(2);not null;default:''" json:"registrationCountry"` // 注册时（首次创建用户）检测到的国家
+	CurrentCountry      string `gorm:"column:current_country;type:varchar(2);not null;default:''" json:"currentCountry"`           // 最近一次认证请求检测到的国家
 }
 
 // 获取付费人ID的辅助方法

@@ -117,6 +117,11 @@ type DataUser struct {
 	MaxDevice          int                  `json:"maxDevice"`                    // app 设备数量上限
 	MaxRouterDevice    int                  `json:"maxRouterDevice"`              // 路由器登录数量上限
 	MaxLanClient       int                  `json:"maxLanClient"`                 // LAN 接入数量上限
+
+	// 地理位置 & 推荐 routing profile（feat/globalization #19）
+	RegistrationCountry string `json:"registrationCountry"` // 注册时检测到的国家代码（空=未知）
+	CurrentCountry      string `json:"currentCountry"`      // 最近一次请求检测到的国家代码（空=未知）
+	SuggestedProfile    string `json:"suggestedProfile"`    // 推荐 routing profile，客户端默认选用（如 iroute / cnroute / global）
 }
 
 // DataRetailerConfig 分销商配置数据结构

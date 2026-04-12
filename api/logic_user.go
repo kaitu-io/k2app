@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
 	"gorm.io/gorm"
@@ -227,11 +228,19 @@ func FindOrCreateUserByEmail(c context.Context, email string, langParams ...stri
 		// 检测用户语言偏好
 		detectedLanguage := detectUserLanguage(c, requestLang, email, acceptLanguageHeader)
 
+		// 检测注册国家（若 ctx 是 gin.Context 且 GeoIP 已加载）
+		registrationCountry := ""
+		if gc, ok := c.(*gin.Context); ok {
+			registrationCountry = CountryFromGinContext(gc)
+		}
+
 		// 创建用户
 		newUser = User{
-			UUID:      generateId("user"),
-			ExpiredAt: 0, // 新用户默认未付费
-			Language:  detectedLanguage,
+			UUID:                generateId("user"),
+			ExpiredAt:           0, // 新用户默认未付费
+			Language:            detectedLanguage,
+			RegistrationCountry: registrationCountry,
+			CurrentCountry:      registrationCountry,
 		}
 		if err := tx.Create(&newUser).Error; err != nil {
 			return fmt.Errorf("failed to create user: %v", err)

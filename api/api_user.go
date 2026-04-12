@@ -462,5 +462,9 @@ func buildDataUserWithDevice(user *User, device *DataDevice) *DataUser {
 		MaxDevice:        user.MaxDevice,
 		MaxRouterDevice:  user.MaxRouterDevice,
 		MaxLanClient:     user.MaxLanClient,
+
+		RegistrationCountry: user.RegistrationCountry,
+		CurrentCountry:      user.CurrentCountry,
+		SuggestedProfile:    SuggestedProfileForCountry(user.CurrentCountry),
 	}
 }

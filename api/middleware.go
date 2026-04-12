@@ -430,6 +430,7 @@ func AuthRequired() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
+		maybeUpdateUserCountry(c, ctx.User)
 		c.Next()
 	}
 }
@@ -445,6 +446,7 @@ func AuthOptional() gin.HandlerFunc {
 		if ctx != nil {
 			// 将 claims 信息存储到上下文中，供 ReqUserIDOptional 使用
 			c.Set("claims", &TokenClaims{UserID: ctx.UserID})
+			maybeUpdateUserCountry(c, ctx.User)
 		}
 		c.Next()
 	}
