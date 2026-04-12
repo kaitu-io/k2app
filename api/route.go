@@ -213,13 +213,19 @@ func SetupRouter() *gin.Engine {
 			strategy.GET("/rules", api_strategy_get_rules)
 		}
 
-		// Telemetry routes (requires device auth)
+		// Telemetry routes
 		telemetry := api.Group("/telemetry")
 		log.Debugf(ctx, "registering /api/telemetry group")
-		telemetry.Use(AuthRequired(), DeviceAuthRequired())
 		{
-			// Submit batch telemetry events
-			telemetry.POST("/batch", api_strategy_telemetry_batch)
+			// Rule-miss telemetry (Phase 1): anonymous, unauthenticated,
+			// drop-on-receive. Rate limited by source IP inside the
+			// handler. See api/telemetry.go for schema + design notes.
+			telemetry.POST("/rule_miss", api_telemetry_rule_miss)
+
+			// Submit batch telemetry events (requires device auth)
+			authed := telemetry.Group("")
+			authed.Use(AuthRequired(), DeviceAuthRequired())
+			authed.POST("/batch", api_strategy_telemetry_batch)
 		}
 
 		// Route diagnosis routes (requires device auth)
