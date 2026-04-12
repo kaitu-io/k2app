@@ -48,9 +48,13 @@ func MarkOrderAsPaid(ctx context.Context, tx *gorm.DB, order *Order) error {
 
 	// 第二步：处理邀请购买奖励（必须在 ApplyOrderToTargetUsers 之前执行）
 	// 因为 ApplyOrderToTargetUsers 会设置 IsFirstOrderDone=true，必须先处理邀请奖励
-	if err := handleInvitePurchaseRewardInTx(ctx, tx, order.UserID, order.ID); err != nil {
-		log.Errorf(ctx, "[MarkOrderAsPaid] failed to handle invite purchase reward: %v", err)
-		return fmt.Errorf("处理邀请购买奖励失败: %v", err)
+	// 奖励失败不阻断支付到账——支付是最高优先级
+	// 使用 SAVEPOINT 确保奖励要么全部成功要么全部回滚（避免部分状态）
+	if err := tx.SavePoint("invite_reward").Error; err == nil {
+		if err := handleInvitePurchaseRewardInTx(ctx, tx, order.UserID, order.ID); err != nil {
+			tx.RollbackTo("invite_reward")
+			log.Errorf(ctx, "[MarkOrderAsPaid] invite reward failed (non-fatal, rolled back), order %d: %v", order.ID, err)
+		}
 	}
 
 	// 第三步：为购买用户增加 Pro 授权

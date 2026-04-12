@@ -10,6 +10,7 @@ import (
 	"github.com/wordgate/qtoolkit/log"
 	"github.com/wordgate/qtoolkit/unred"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // 分享链接配置
@@ -86,16 +87,22 @@ func handleInviteDownloadReward(ctx context.Context, userID uint64) (*UserProHis
 
 // handleInvitePurchaseRewardInTx 处理邀请购买奖励（同步执行，在事务中）
 // 必须在 ApplyOrderToTargetUsers 之前调用，因为后者会设置 IsFirstOrderDone=true
+//
+// 并发安全设计：
+// - buyer FOR UPDATE：序列化同一买家的并发首购，防止 IsFirstOrderDone 检查被 snapshot 绕过
+// - inviter FOR UPDATE：序列化同一邀请人的并发奖励，防止 expired_at lost update
 func handleInvitePurchaseRewardInTx(ctx context.Context, tx *gorm.DB, userID uint64, orderID uint64) error {
 	log.Infof(ctx, "[InviteReward] processing for user %d, order %d", userID, orderID)
 
-	// 1. 获取购买用户信息（包括邀请码和邀请人）
+	// 1. FOR UPDATE 锁定买家行，读取最新已提交的 IsFirstOrderDone
+	// 注意：Preload 走独立 SELECT 不带 FOR UPDATE，InvitedByCode 是不可变记录所以安全
 	var user User
-	if err := tx.Preload("InvitedByCode.User").First(&user, userID).Error; err != nil {
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Preload("InvitedByCode").First(&user, userID).Error; err != nil {
 		return err
 	}
 
-	// 2. 检查是否是首次购买
+	// 2. 检查是否是首次购买（FOR UPDATE 保证读到最新值）
 	if user.IsFirstOrderDone != nil && *user.IsFirstOrderDone {
 		log.Infof(ctx, "[InviteReward] user %d is not first order, skipping", userID)
 		return nil
@@ -107,15 +114,18 @@ func handleInvitePurchaseRewardInTx(ctx context.Context, tx *gorm.DB, userID uin
 		return nil
 	}
 
-	inviter := user.InvitedByCode.User
-	if inviter == nil {
-		log.Warnf(ctx, "[InviteReward] user %d has invite code but inviter is nil, skipping", userID)
+	inviteCodeID := user.InvitedByCode.ID
+	inviterUserID := user.InvitedByCode.UserID
+
+	// 4. FOR UPDATE 锁定邀请人行，读取最新 expired_at（防止并发 lost update）
+	var inviter User
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		First(&inviter, inviterUserID).Error; err != nil {
+		log.Warnf(ctx, "[InviteReward] user %d has invite code but inviter %d not found: %v", userID, inviterUserID, err)
 		return nil
 	}
 
-	inviteCodeID := user.InvitedByCode.ID
-
-	// 4. 为被邀请人添加购买奖励
+	// 5. 为被邀请人添加购买奖励
 	days := configInvite(ctx).PurchaseRewardDays
 	if days > 0 {
 		if _, err := addProExpiredDays(ctx, tx, &user, VipInvitedReward,
@@ -125,10 +135,10 @@ func handleInvitePurchaseRewardInTx(ctx context.Context, tx *gorm.DB, userID uin
 		log.Infof(ctx, "[InviteReward] added %d days to invitee %d", days, user.ID)
 	}
 
-	// 5. 为邀请人添加奖励
+	// 6. 为邀请人添加奖励
 	inviterDays := configInvite(ctx).InviterPurchaseRewardDays
 	if inviterDays > 0 {
-		if _, err := addProExpiredDays(ctx, tx, inviter, VipInviteReward,
+		if _, err := addProExpiredDays(ctx, tx, &inviter, VipInviteReward,
 			inviteCodeID, inviterDays, "邀请用户首次购买奖励"); err != nil {
 			return err
 		}

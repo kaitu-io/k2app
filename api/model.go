@@ -212,12 +212,14 @@ type UserProHistory struct {
 	UpdatedAt time.Time
 
 	// 关联ID（支付ID、邀请码ID等）
-	ReferenceID uint64 `gorm:"index;uniqueIndex:idx_user_reference_type"`
+	// 普通复合索引（非唯一）：invite_reward 允许同一邀请码为多个被邀请人各发一次奖励
+	// 幂等保护由业务逻辑保证：IsFirstOrderDone 检查 + FOR UPDATE 行锁序列化
+	ReferenceID uint64 `gorm:"index:idx_user_reference_type"`
 
-	UserID uint64 `gorm:"not null;index;uniqueIndex:idx_user_reference_type"`
+	UserID uint64 `gorm:"not null;index;index:idx_user_reference_type"`
 	User   *User  `gorm:"foreignKey:UserID"`
 
-	Type VipChangeType `gorm:"type:varchar(20);not null;index;uniqueIndex:idx_user_reference_type"`
+	Type VipChangeType `gorm:"type:varchar(20);not null;index;index:idx_user_reference_type"`
 	// 变更天数
 	Days int `gorm:"not null"`
 	// 变更原因
