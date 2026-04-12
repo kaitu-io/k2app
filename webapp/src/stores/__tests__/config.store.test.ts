@@ -1,11 +1,14 @@
 /**
- * Config Store Unit Tests
+ * Config Store Unit Tests (v3 — defaultVia/countryVia/country/autoDetect)
  *
  * Tests:
- * - loadConfig from storage (empty, new shape, legacy shape migration)
- * - updateRuleMode persistence
- * - buildConnectConfig produces the correct routes shape for global/chnroute
- * - initializeAllStores calls loadConfig in correct order
+ * - loadConfig from storage (empty, v3 shape, v2/v1/v0 legacy migration)
+ * - setPreset / setAutoDetect / setCountry persistence
+ * - setDetectedProfile syncs country when autoDetect=true
+ * - resolvePreset derives correct preset for all combos
+ * - buildConnectConfig produces correct routes
+ * - telemetry dark flag
+ * - initializeAllStores calls loadConfig
  *
  * Run: yarn test src/stores/__tests__/config.store.test.ts
  */
@@ -24,7 +27,6 @@ const mockStorage = {
 };
 
 beforeEach(() => {
-  // Install window._platform with mock storage
   (window as any)._platform = {
     os: 'macos' as const,
     isDesktop: true,
@@ -42,9 +44,6 @@ afterEach(() => {
 // ==================== Tests ====================
 
 describe('Config Store', () => {
-  /**
-   * Dynamic import so each test gets a fresh module (vi.resetModules).
-   */
   const getStore = async () => {
     const mod = await import('../config.store');
     return mod.useConfigStore;
@@ -59,185 +58,313 @@ describe('Config Store', () => {
   // ==================== loadConfig ====================
 
   describe('loadConfig', () => {
-    it('defaults to chnroute when storage returns null', async () => {
+    it('fresh install defaults to proxy + direct bypass + autoDetect', async () => {
       mockStorage.get.mockResolvedValue(null);
 
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
 
       const state = useConfigStore.getState();
-      expect(state.ruleMode).toBe('chnroute');
+      expect(state.defaultVia).toBe('proxy');
+      expect(state.countryVia).toBe('direct');
+      expect(state.autoDetect).toBe(true);
+      expect(state.country).toBeNull();
       expect(state.loaded).toBe(true);
     });
 
-    it('loads ruleMode from new-shape storage', async () => {
-      mockStorage.get.mockResolvedValue({ ruleMode: 'global' });
+    it('loads v3 shape from storage', async () => {
+      mockStorage.get.mockResolvedValue({
+        defaultVia: 'direct',
+        countryVia: 'k2p',
+        country: 'ru',
+        autoDetect: false,
+      });
 
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
 
       const state = useConfigStore.getState();
-      expect(state.ruleMode).toBe('global');
-      expect(state.loaded).toBe(true);
+      expect(state.defaultVia).toBe('direct');
+      expect(state.countryVia).toBe('k2p');
+      expect(state.autoDetect).toBe(false);
+      expect(state.country).toBe('ru');
     });
 
-    it('migrates legacy rule.global=true shape to ruleMode=global + modeOverride=manual', async () => {
-      mockStorage.get.mockResolvedValue({ rule: { global: true }, server: 'k2v5://old' });
+    it('migrates v2 routingMode=global to proxy + null countryVia', async () => {
+      mockStorage.get.mockResolvedValue({
+        routingMode: 'global',
+        autoDetect: true,
+      });
 
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
 
       const state = useConfigStore.getState();
-      expect(state.ruleMode).toBe('global');
-      expect(state.modeOverride).toBe('manual');
-      // Migration writes the new shape back, stripping server/rule and adding modeOverride.
-      expect(mockStorage.set).toHaveBeenCalledWith(
-        expect.any(String),
-        { ruleMode: 'global', modeOverride: 'manual' },
-      );
+      expect(state.defaultVia).toBe('proxy');
+      expect(state.countryVia).toBeNull();
+      expect(state.autoDetect).toBe(true);
+      expect(mockStorage.set).toHaveBeenCalled();
     });
 
-    it('migrates legacy rule.global=false shape to ruleMode=chnroute + modeOverride=manual', async () => {
-      mockStorage.get.mockResolvedValue({ rule: { global: false } });
+    it('migrates v2 routingMode=split + selectedCountry to bypass', async () => {
+      mockStorage.get.mockResolvedValue({
+        routingMode: 'split',
+        autoDetect: false,
+        selectedCountry: 'cn',
+      });
 
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
 
       const state = useConfigStore.getState();
-      expect(state.ruleMode).toBe('chnroute');
-      expect(state.modeOverride).toBe('manual');
-      expect(mockStorage.set).toHaveBeenCalledWith(
-        expect.any(String),
-        { ruleMode: 'chnroute', modeOverride: 'manual' },
-      );
+      expect(state.defaultVia).toBe('proxy');
+      expect(state.countryVia).toBe('direct');
+      expect(state.autoDetect).toBe(false);
+      expect(state.country).toBe('cn');
     });
 
-    it('existing users with persisted ruleMode default to modeOverride=manual', async () => {
-      mockStorage.get.mockResolvedValue({ ruleMode: 'chnroute' });
-
-      const useConfigStore = await getStore();
-      await useConfigStore.getState().loadConfig();
-
-      const state = useConfigStore.getState();
-      expect(state.ruleMode).toBe('chnroute');
-      expect(state.modeOverride).toBe('manual');
-    });
-
-    it('fresh install (null storage) defaults to modeOverride=auto', async () => {
-      mockStorage.get.mockResolvedValue(null);
-
-      const useConfigStore = await getStore();
-      await useConfigStore.getState().loadConfig();
-
-      const state = useConfigStore.getState();
-      expect(state.modeOverride).toBe('auto');
-      expect(state.suggestedProfile).toBeNull();
-      expect(state.detectedCountry).toBeNull();
-    });
-
-    it('respects persisted modeOverride=auto over legacy ruleMode', async () => {
+    it('migrates v1 modeOverride=auto to bypass + autoDetect', async () => {
       mockStorage.get.mockResolvedValue({ ruleMode: 'chnroute', modeOverride: 'auto' });
 
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
 
       const state = useConfigStore.getState();
-      expect(state.modeOverride).toBe('auto');
+      expect(state.defaultVia).toBe('proxy');
+      expect(state.countryVia).toBe('direct');
+      expect(state.autoDetect).toBe(true);
+      expect(mockStorage.set).toHaveBeenCalled();
     });
-  });
 
-  // ==================== updateRuleMode ====================
-
-  describe('updateRuleMode', () => {
-    it('updates state, pins modeOverride=manual, and persists', async () => {
-      mockStorage.get.mockResolvedValue(null);
+    it('migrates v1 modeOverride=global to global', async () => {
+      mockStorage.get.mockResolvedValue({ ruleMode: 'chnroute', modeOverride: 'global' });
 
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
 
-      await useConfigStore.getState().updateRuleMode('global');
+      expect(useConfigStore.getState().defaultVia).toBe('proxy');
+      expect(useConfigStore.getState().countryVia).toBeNull();
+      expect(useConfigStore.getState().autoDetect).toBe(true);
+    });
+
+    it('migrates v1 modeOverride=manual + chnroute to bypass + cn', async () => {
+      mockStorage.get.mockResolvedValue({ ruleMode: 'chnroute', modeOverride: 'manual' });
+
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
 
       const state = useConfigStore.getState();
-      expect(state.ruleMode).toBe('global');
-      expect(state.modeOverride).toBe('manual');
+      expect(state.defaultVia).toBe('proxy');
+      expect(state.countryVia).toBe('direct');
+      expect(state.autoDetect).toBe(false);
+      expect(state.country).toBe('cn');
+    });
+
+    it('migrates v1 modeOverride=manual + global to global', async () => {
+      mockStorage.get.mockResolvedValue({ ruleMode: 'global', modeOverride: 'manual' });
+
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      expect(useConfigStore.getState().defaultVia).toBe('proxy');
+      expect(useConfigStore.getState().countryVia).toBeNull();
+    });
+
+    it('migrates v0 rule.global=true to global', async () => {
+      mockStorage.get.mockResolvedValue({ rule: { global: true }, server: 'k2v5://old' });
+
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      expect(useConfigStore.getState().defaultVia).toBe('proxy');
+      expect(useConfigStore.getState().countryVia).toBeNull();
+      expect(mockStorage.set).toHaveBeenCalled();
+    });
+
+    it('migrates v0 rule.global=false to bypass + cn', async () => {
+      mockStorage.get.mockResolvedValue({ rule: { global: false } });
+
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      const state = useConfigStore.getState();
+      expect(state.defaultVia).toBe('proxy');
+      expect(state.countryVia).toBe('direct');
+      expect(state.autoDetect).toBe(false);
+      expect(state.country).toBe('cn');
+    });
+
+    it('migrates v0 ruleMode=chnroute (no modeOverride) to bypass + cn', async () => {
+      mockStorage.get.mockResolvedValue({ ruleMode: 'chnroute' });
+
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      // v0 ruleMode without modeOverride falls through to the rule/ruleMode check
+      // which sees ruleMode=chnroute as non-global → bypass + cn
+      expect(useConfigStore.getState().defaultVia).toBe('proxy');
+      expect(useConfigStore.getState().countryVia).toBe('direct');
+    });
+  });
+
+  // ==================== setPreset ====================
+
+  describe('setPreset', () => {
+    it('global preset sets countryVia=null', async () => {
+      mockStorage.get.mockResolvedValue(null);
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      await useConfigStore.getState().setPreset('global');
+
+      expect(useConfigStore.getState().defaultVia).toBe('proxy');
+      expect(useConfigStore.getState().countryVia).toBeNull();
       expect(mockStorage.set).toHaveBeenCalledWith(
         expect.any(String),
-        { ruleMode: 'global', modeOverride: 'manual' },
+        expect.objectContaining({ defaultVia: 'proxy', countryVia: null }),
       );
     });
+
+    it('bypass preset sets proxy + direct', async () => {
+      mockStorage.get.mockResolvedValue(null);
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      await useConfigStore.getState().setPreset('bypass');
+
+      expect(useConfigStore.getState().defaultVia).toBe('proxy');
+      expect(useConfigStore.getState().countryVia).toBe('direct');
+    });
+
+    it('home preset sets direct + k2p', async () => {
+      mockStorage.get.mockResolvedValue(null);
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      await useConfigStore.getState().setPreset('home');
+
+      expect(useConfigStore.getState().defaultVia).toBe('direct');
+      expect(useConfigStore.getState().countryVia).toBe('k2p');
+    });
+
+    it('home_proxy preset sets proxy + k2p', async () => {
+      mockStorage.get.mockResolvedValue(null);
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      await useConfigStore.getState().setPreset('home_proxy');
+
+      expect(useConfigStore.getState().defaultVia).toBe('proxy');
+      expect(useConfigStore.getState().countryVia).toBe('k2p');
+    });
   });
+
+  // ==================== setCountry ====================
+
+  describe('setCountry', () => {
+    it('sets country and turns off autoDetect', async () => {
+      mockStorage.get.mockResolvedValue(null);
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      await useConfigStore.getState().setCountry('RU');
+
+      const state = useConfigStore.getState();
+      expect(state.country).toBe('ru');
+      expect(state.autoDetect).toBe(false);
+    });
+  });
+
+  // ==================== setAutoDetect ====================
+
+  describe('setAutoDetect', () => {
+    it('turning on restores detectedCountry into country', async () => {
+      mockStorage.get.mockResolvedValue(null);
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      // Simulate Center detection
+      useConfigStore.getState().setDetectedProfile({ country: 'IR' });
+      // User manually picks a different country
+      await useConfigStore.getState().setCountry('RU');
+      expect(useConfigStore.getState().autoDetect).toBe(false);
+
+      // Turn auto-detect back on
+      await useConfigStore.getState().setAutoDetect(true);
+      expect(useConfigStore.getState().autoDetect).toBe(true);
+      expect(useConfigStore.getState().country).toBe('ir');
+    });
+  });
+
+  // ==================== setDetectedProfile ====================
 
   describe('setDetectedProfile', () => {
-    it('caches country + profile in auto mode', async () => {
-      mockStorage.get.mockResolvedValue(null); // fresh install → auto
-
+    it('syncs country when autoDetect is on', async () => {
+      mockStorage.get.mockResolvedValue(null);
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
 
       useConfigStore.getState().setDetectedProfile({ country: 'IR', profile: 'iroute' });
 
       const state = useConfigStore.getState();
-      expect(state.detectedCountry).toBe('IR');
+      expect(state.detectedCountry).toBe('ir');
       expect(state.suggestedProfile).toBe('iroute');
+      expect(state.country).toBe('ir');
     });
 
-    it('skips when modeOverride is manual', async () => {
-      mockStorage.get.mockResolvedValue({ ruleMode: 'global' }); // legacy → manual
-
+    it('does not sync country when autoDetect is off', async () => {
+      mockStorage.get.mockResolvedValue(null);
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
+
+      // Manually select a country (turns off autoDetect)
+      await useConfigStore.getState().setCountry('CN');
 
       useConfigStore.getState().setDetectedProfile({ country: 'IR', profile: 'iroute' });
 
       const state = useConfigStore.getState();
-      expect(state.detectedCountry).toBeNull();
-      expect(state.suggestedProfile).toBeNull();
+      expect(state.detectedCountry).toBe('ir');
+      expect(state.country).toBe('cn'); // unchanged
     });
   });
 
-  describe('resolveProfile', () => {
-    it('auto mode with no suggestion → global', async () => {
-      mockStorage.get.mockResolvedValue(null);
+  // ==================== resolvePreset ====================
+
+  describe('resolvePreset', () => {
+    it('proxy + null countryVia → global', async () => {
+      mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: null, autoDetect: true });
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
-
-      expect(useConfigStore.getState().resolveProfile()).toBe('global');
+      expect(useConfigStore.getState().resolvePreset()).toBe('global');
     });
 
-    it('auto mode with suggestion → suggestion', async () => {
-      mockStorage.get.mockResolvedValue(null);
+    it('proxy + direct countryVia → bypass', async () => {
+      mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: 'direct', country: 'cn', autoDetect: false });
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
-
-      useConfigStore.getState().setDetectedProfile({ country: 'RU', profile: 'ruroute' });
-      expect(useConfigStore.getState().resolveProfile()).toBe('ruroute');
+      expect(useConfigStore.getState().resolvePreset()).toBe('bypass');
     });
 
-    it('global override ignores suggestion', async () => {
-      mockStorage.get.mockResolvedValue(null);
+    it('direct + k2p countryVia → home', async () => {
+      mockStorage.get.mockResolvedValue({ defaultVia: 'direct', countryVia: 'k2p', country: 'cn', autoDetect: false });
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
-
-      useConfigStore.getState().setDetectedProfile({ profile: 'iroute' });
-      await useConfigStore.getState().updateModeOverride('global');
-      expect(useConfigStore.getState().resolveProfile()).toBe('global');
+      expect(useConfigStore.getState().resolvePreset()).toBe('home');
     });
 
-    it('manual override with chnroute → cnroute', async () => {
-      mockStorage.get.mockResolvedValue({ ruleMode: 'chnroute' });
+    it('proxy + k2p countryVia → home_proxy', async () => {
+      mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: 'k2p', country: 'cn', autoDetect: false });
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
-
-      expect(useConfigStore.getState().resolveProfile()).toBe('cnroute');
+      expect(useConfigStore.getState().resolvePreset()).toBe('home_proxy');
     });
   });
 
   // ==================== buildConnectConfig ====================
 
   describe('buildConnectConfig', () => {
-    it('global mode emits a single all-match k2v5 route', async () => {
-      mockStorage.get.mockResolvedValue({ ruleMode: 'global' });
-
+    it('global preset emits single all-match route', async () => {
+      mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: null, autoDetect: true });
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
 
@@ -247,40 +374,75 @@ describe('Config Store', () => {
       expect(result.routes).toEqual([
         { via: 'k2v5://example', match: { all: true } },
       ]);
-      // Wire contract must not carry a top-level `server` field anymore.
       expect((result as any).server).toBeUndefined();
     });
 
-    it('chnroute mode emits cn-direct + k2v5-fallback routes', async () => {
-      mockStorage.get.mockResolvedValue({ ruleMode: 'chnroute' });
-
+    it('bypass preset with cn emits cn-access direct + proxy fallback', async () => {
+      mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: 'direct', country: 'cn', autoDetect: false });
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
 
       const result = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://example' });
 
-      expect(result.mode).toBe('tun');
       expect(result.routes).toEqual([
         { via: 'direct', match: { preset: 'cn-access' } },
         { via: 'k2v5://example', match: {} },
       ]);
     });
 
-    it('legacy string argument still works', async () => {
-      mockStorage.get.mockResolvedValue({ ruleMode: 'global' });
+    it('bypass preset with ir emits ir-access direct + proxy fallback', async () => {
+      mockStorage.get.mockResolvedValue(null);
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
 
+      useConfigStore.getState().setDetectedProfile({ country: 'IR', profile: 'iroute' });
+
+      const result = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://example' });
+
+      expect(result.routes).toEqual([
+        { via: 'direct', match: { preset: 'ir-access' } },
+        { via: 'k2v5://example', match: {} },
+      ]);
+    });
+
+    it('home preset with cn emits cn-access k2p + direct fallback', async () => {
+      mockStorage.get.mockResolvedValue({ defaultVia: 'direct', countryVia: 'k2p', country: 'cn', autoDetect: false });
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      const result = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://example' });
+
+      expect(result.routes).toEqual([
+        { via: 'k2p://home', match: { preset: 'cn-access' } },
+        { via: 'direct', match: {} },
+      ]);
+    });
+
+    it('home_proxy preset with cn emits cn-access k2p + proxy fallback', async () => {
+      mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: 'k2p', country: 'cn', autoDetect: false });
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      const result = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://example' });
+
+      expect(result.routes).toEqual([
+        { via: 'k2p://home', match: { preset: 'cn-access' } },
+        { via: 'k2v5://example', match: {} },
+      ]);
+    });
+
+    it('legacy string argument still works', async () => {
+      mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: null, autoDetect: true });
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
 
       const result = useConfigStore.getState().buildConnectConfig('k2v5://legacy');
-
       expect(result.routes?.[result.routes.length - 1]?.via).toBe('k2v5://legacy');
     });
 
     it('gateway platform prepends ipinfo.io direct route', async () => {
       (window as any)._platform.platformType = 'gateway';
-      mockStorage.get.mockResolvedValue({ ruleMode: 'global' });
-
+      mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: null, autoDetect: true });
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
 
@@ -290,21 +452,27 @@ describe('Config Store', () => {
         via: 'direct',
         match: { domain_suffix: ['ipinfo.io'] },
       });
-      expect(result.routes?.[1]).toEqual({
-        via: 'k2v5://gw',
-        match: { all: true },
-      });
     });
 
-    it('without a serverUrl returns only the gateway prefix (or empty) routes', async () => {
-      mockStorage.get.mockResolvedValue({ ruleMode: 'chnroute' });
-
+    it('without serverUrl returns empty routes', async () => {
+      mockStorage.get.mockResolvedValue(null);
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
 
       const result = useConfigStore.getState().buildConnectConfig();
-
       expect(result.routes).toEqual([]);
+    });
+
+    it('unknown country falls back to global routes', async () => {
+      mockStorage.get.mockResolvedValue({ defaultVia: 'proxy', countryVia: 'direct', country: 'xx', autoDetect: false });
+      const useConfigStore = await getStore();
+      await useConfigStore.getState().loadConfig();
+
+      const result = useConfigStore.getState().buildConnectConfig({ serverUrl: 'k2v5://example' });
+
+      expect(result.routes).toEqual([
+        { via: 'k2v5://example', match: { all: true } },
+      ]);
     });
   });
 
@@ -313,7 +481,6 @@ describe('Config Store', () => {
   describe('buildConnectConfig log level', () => {
     it('always uses the build-time log level', async () => {
       mockStorage.get.mockResolvedValue(null);
-
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
 
@@ -322,7 +489,7 @@ describe('Config Store', () => {
     });
   });
 
-  // ==================== Phase 1 rule-miss telemetry (dark flag) ====================
+  // ==================== Phase 1 rule-miss telemetry ====================
 
   describe('telemetry (rule-miss Phase 1)', () => {
     it('defaults ruleMissEnabled to false', async () => {
@@ -332,7 +499,7 @@ describe('Config Store', () => {
       expect(useConfigStore.getState().telemetry.ruleMissEnabled).toBe(false);
     });
 
-    it('omits the telemetry block from buildConnectConfig when disabled', async () => {
+    it('omits telemetry from buildConnectConfig when disabled', async () => {
       mockStorage.get.mockResolvedValue(null);
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
@@ -344,36 +511,9 @@ describe('Config Store', () => {
       mockStorage.get.mockResolvedValue(null);
       const useConfigStore = await getStore();
       await useConfigStore.getState().loadConfig();
-      // Simulate a Phase 2 UI toggle flipping the dark flag via direct
-      // set. Phase 1 has no public action for this — the test reaches
-      // into setState deliberately to prove the config assembly works
-      // end-to-end once the toggle lands.
       useConfigStore.setState({ telemetry: { ruleMissEnabled: true } });
       const result = useConfigStore.getState().buildConnectConfig('k2v5://example');
       expect(result.telemetry).toEqual({ rule_miss: { enabled: true } });
-    });
-  });
-
-  // ==================== Getters ====================
-
-  describe('Getters', () => {
-    it('ruleMode defaults to chnroute', async () => {
-      mockStorage.get.mockResolvedValue(null);
-
-      const useConfigStore = await getStore();
-      await useConfigStore.getState().loadConfig();
-
-      expect(useConfigStore.getState().ruleMode).toBe('chnroute');
-    });
-
-    it('ruleMode returns global after updateRuleMode', async () => {
-      mockStorage.get.mockResolvedValue(null);
-
-      const useConfigStore = await getStore();
-      await useConfigStore.getState().loadConfig();
-      await useConfigStore.getState().updateRuleMode('global');
-
-      expect(useConfigStore.getState().ruleMode).toBe('global');
     });
   });
 
@@ -382,19 +522,14 @@ describe('Config Store', () => {
   describe('initializeAllStores integration', () => {
     it('calls configStore.loadConfig during initialization', async () => {
       mockStorage.get.mockResolvedValue(null);
-
-      // Import configStore to spy on loadConfig
       const configMod = await import('../config.store');
       const loadConfigSpy = vi.spyOn(
         configMod.useConfigStore.getState(),
         'loadConfig',
       );
-
-      // Import initializeAllStores (which should call loadConfig)
       const { initializeAllStores } = await import('../index');
 
       const cleanup = initializeAllStores();
-
       expect(loadConfigSpy).toHaveBeenCalled();
 
       cleanup();

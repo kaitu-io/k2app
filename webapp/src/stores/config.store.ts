@@ -1,32 +1,25 @@
 /**
- * Config Store - VPN configuration management
+ * Config Store v3 - VPN routing configuration
  *
- * Responsibilities:
- * - Persist UI-side VPN preferences (currently just ruleMode) via window._platform.storage
- * - Assemble the wire-contract ClientConfig (routes, mode, log) at connect time
+ * Two dimensions determine routing:
+ * 1. defaultVia: 'proxy' | 'direct' — where unmatched traffic goes
+ * 2. countryVia: 'direct' | 'k2p' | null — where matched country traffic goes (null = global)
  *
- * Usage:
- * ```tsx
- * const { ruleMode, updateRuleMode, buildConnectConfig } = useConfigStore();
+ * Plus country selection with optional auto-detection from Center.
  *
- * // Update rule mode
- * await updateRuleMode('global');
- *
- * // Build config for connection (serverUrl comes from the connection store)
- * const config = buildConnectConfig({ serverUrl: 'k2v5://...' });
- * await window._k2.run('up', config);
- * ```
- *
- * The Go `config.ClientConfig` contract no longer has a `server` field —
- * outbounds are expressed as `routes: [{via, match}, ...]`. See
- * `k2/config/config.go` and `k2/engine/engine.go:buildRouteEntries`.
+ * Preset mapping (UI convenience):
+ *   global:     defaultVia='proxy',  countryVia=null
+ *   bypass:     defaultVia='proxy',  countryVia='direct'
+ *   home:       defaultVia='direct', countryVia='k2p'
+ *   home_proxy: defaultVia='proxy',  countryVia='k2p'
  */
 
 import { create } from 'zustand';
 
 import type { ClientConfig, RouteConfig } from '../types/client-config';
 import { CLIENT_CONFIG_DEFAULTS } from '../types/client-config';
-import { profileToRoutes, legacyRuleModeToProfile } from '../utils/routes';
+import { countryToProfile, PROFILE_TO_PRESET } from '../utils/routes';
+import { cloudApi } from '../services/cloud-api';
 
 /** Build-time log level from K2_BUILD_LOG_LEVEL env var (default: 'debug'). Injected by Vite define. */
 declare const __K2_BUILD_LOG_LEVEL__: string;
@@ -37,49 +30,13 @@ const STORAGE_KEY = 'k2.vpn.config';
 
 // ============ Types ============
 
-export type RuleMode = 'global' | 'chnroute';
+export type RoutePreset = 'global' | 'bypass' | 'home' | 'home_proxy';
 
 /**
- * Which source the connect flow uses to decide the `routes[]` shape:
- *
- * - `auto`   — use `suggestedProfile` from the Center user profile
- *              (country-aware, the new default for fresh installs).
- * - `global` — force-global regardless of Center hint or legacy toggle.
- * - `manual` — honor the legacy `ruleMode` field (global / chnroute).
- *              Assigned to users who had a persisted ruleMode before the
- *              auto-profile feature landed, so their UX doesn't change.
- */
-export type ModeOverride = 'auto' | 'global' | 'manual';
-
-/**
- * Anonymous telemetry sub-state. Phase 1 of rule-miss telemetry ships
- * this field as a dark flag: wired into `buildConnectConfig` but
- * hard-defaulted to `{ ruleMissEnabled: false }`. There is NO UI in
- * Phase 1 — Phase 2 adds the opt-in toggle and persistence. Keeping
- * this under the typed store means the Phase 2 UI work is a pure
- * view-layer addition with no state-shape changes.
+ * Anonymous telemetry sub-state. Phase 1 dark flag.
  */
 export interface TelemetryState {
   ruleMissEnabled: boolean;
-}
-
-interface ConfigState {
-  ruleMode: RuleMode;
-  /** Center-detected country (2-letter ISO) cached from last user-info fetch. */
-  detectedCountry: string | null;
-  /** Center-suggested profile name (e.g. "cnroute") cached from last user-info fetch. */
-  suggestedProfile: string | null;
-  /** How to resolve the final profile at connect time — see ModeOverride doc. */
-  modeOverride: ModeOverride;
-  /**
-   * Last country the user has seen/acknowledged in the travel banner. When
-   * `detectedCountry` diverges from this value, the Dashboard shows a
-   * one-off travel banner asking whether to switch profile. Persisted so the
-   * banner doesn't re-trigger across app restarts for the same trip.
-   */
-  lastAcknowledgedCountry: string | null;
-  telemetry: TelemetryState;
-  loaded: boolean;
 }
 
 export interface ConnectConfigParams {
@@ -91,24 +48,45 @@ export interface DetectedProfileUpdate {
   profile?: string | null;
 }
 
+interface ConfigState {
+  /** Where unmatched traffic goes. */
+  defaultVia: 'proxy' | 'direct';
+  /** Where matched country traffic goes. null = global (no split). */
+  countryVia: 'direct' | 'k2p' | null;
+  /** Country code for split routing (e.g. 'cn', 'ru'). */
+  country: string | null;
+  /** Whether Center auto-fills country from IP detection. */
+  autoDetect: boolean;
+  /** Center-detected country (cached, not persisted). */
+  detectedCountry: string | null;
+  /** Center-suggested profile name (cached, not persisted). */
+  suggestedProfile: string | null;
+  telemetry: TelemetryState;
+  loaded: boolean;
+}
+
 interface ConfigActions {
   loadConfig: () => Promise<void>;
-  updateRuleMode: (mode: RuleMode) => Promise<void>;
-  updateModeOverride: (mode: ModeOverride) => Promise<void>;
+  /** Set routing from a named preset. */
+  setPreset: (preset: RoutePreset) => Promise<void>;
+  /** Manually set the country code. Turns off autoDetect. */
+  setCountry: (cc: string) => Promise<void>;
+  /** Toggle auto-detect. When turning on, syncs country from detectedCountry. */
+  setAutoDetect: (on: boolean) => Promise<void>;
   /**
-   * Cache the country + suggestedProfile returned by the Center user-info
-   * endpoint. Never overrides a user who has `modeOverride === 'manual'`
-   * (their legacy ruleMode toggle stays authoritative).
+   * Cache the country + suggestedProfile from Center user-info endpoint.
+   * When autoDetect is on, also syncs country.
    */
   setDetectedProfile: (update: DetectedProfileUpdate) => void;
   /**
-   * Mark the current `detectedCountry` (or any explicit country) as
-   * acknowledged by the user. Called by the travel banner when the user
-   * clicks either "Switch" or "Dismiss".
+   * Fetch country detection from anonymous `GET /api/geo` endpoint.
+   * Called on app init. When autoDetect is on, always fetches and syncs
+   * country. When autoDetect is off, only fetches once to populate
+   * detectedCountry cache (does not change country).
    */
-  acknowledgeCountry: (country: string | null) => Promise<void>;
-  /** Resolve the effective profile name given current store state. */
-  resolveProfile: () => string;
+  fetchGeoDetection: () => Promise<void>;
+  /** Derive the current RoutePreset from defaultVia + countryVia. */
+  resolvePreset: () => RoutePreset;
   buildConnectConfig: (params?: ConnectConfigParams | string) => ClientConfig;
 }
 
@@ -122,102 +100,160 @@ function gatewayPrefix(): RouteConfig[] {
   return [];
 }
 
-/**
- * Build the outbound routes list given a resolved profile name.
- *
- * Always prepends the gateway-only direct route for ipinfo.io so the router
- * can probe its egress IP on gateway builds.
- */
-function buildRoutes(serverUrl: string | undefined, profile: string): RouteConfig[] {
+function buildRoutes(
+  defaultVia: 'proxy' | 'direct',
+  countryVia: 'direct' | 'k2p' | null,
+  country: string | null,
+  serverUrl: string | undefined,
+): RouteConfig[] {
   const prefix = gatewayPrefix();
-  if (!serverUrl) {
-    // Without a server URL we cannot assemble a working TUN config. Return
-    // whatever prefix routes we have so callers can still inspect the shape
-    // during tests; the daemon will reject the connect attempt.
-    return prefix;
+  if (!serverUrl) return prefix;
+
+  // Global: everything through proxy
+  if (countryVia === null) {
+    return [...prefix, { via: serverUrl, match: { all: true } }];
   }
 
-  return [...prefix, ...profileToRoutes(profile, serverUrl)];
+  // Split: need a valid country profile
+  const profile = countryToProfile(country);
+  const preset = PROFILE_TO_PRESET[profile];
+  if (!preset) {
+    // Unknown country, fall back to global
+    return [...prefix, { via: serverUrl, match: { all: true } }];
+  }
+
+  const countryRoute: RouteConfig = countryVia === 'direct'
+    ? { via: 'direct', match: { preset } }
+    : { via: 'k2p://home', match: { preset } };
+
+  const defaultRoute: RouteConfig = defaultVia === 'proxy'
+    ? { via: serverUrl, match: {} }
+    : { via: 'direct', match: {} };
+
+  return [...prefix, countryRoute, defaultRoute];
 }
 
-/** Legacy persisted shape carrying the old `server` / `rule.global` fields. */
-interface LegacyStoredConfig {
-  ruleMode?: RuleMode;
-  modeOverride?: ModeOverride;
-  lastAcknowledgedCountry?: string | null;
+/** Map a RoutePreset to its defaultVia + countryVia values. */
+function presetToConfig(preset: RoutePreset): Pick<ConfigState, 'defaultVia' | 'countryVia'> {
+  switch (preset) {
+    case 'global':     return { defaultVia: 'proxy',  countryVia: null };
+    case 'bypass':     return { defaultVia: 'proxy',  countryVia: 'direct' };
+    case 'home':       return { defaultVia: 'direct', countryVia: 'k2p' };
+    case 'home_proxy': return { defaultVia: 'proxy',  countryVia: 'k2p' };
+  }
+}
+
+/** Derive RoutePreset from state dimensions. */
+function derivePreset(defaultVia: 'proxy' | 'direct', countryVia: 'direct' | 'k2p' | null): RoutePreset {
+  if (countryVia === null) return 'global';
+  if (countryVia === 'direct' && defaultVia === 'proxy') return 'bypass';
+  if (countryVia === 'k2p' && defaultVia === 'direct') return 'home';
+  if (countryVia === 'k2p' && defaultVia === 'proxy') return 'home_proxy';
+  // Fallback — should not happen with well-formed state
+  return 'global';
+}
+
+// ============ Storage ============
+
+/**
+ * Stored shape covers v3 (current) plus legacy v0/v1/v2 fields for migration.
+ */
+interface StoredConfig {
+  // v3 fields
+  defaultVia?: 'proxy' | 'direct';
+  countryVia?: 'direct' | 'k2p' | null;
+  country?: string | null;
+  autoDetect?: boolean;
+  // v2 fields (legacy)
+  routingMode?: 'split' | 'global';
+  selectedCountry?: string | null;
+  // v1 fields (legacy)
+  ruleMode?: 'global' | 'chnroute';
+  modeOverride?: 'auto' | 'global' | 'manual';
+  // v0 fields (ancient legacy)
   rule?: { global?: boolean };
-  server?: string;
   [key: string]: unknown;
 }
 
-interface ParsedStoredConfig {
-  ruleMode: RuleMode;
-  modeOverride: ModeOverride;
-  lastAcknowledgedCountry: string | null;
-  /** True if the user already had a persisted ruleMode (pre-auto-profile install). */
-  hadLegacyRuleMode: boolean;
+interface ParsedConfig {
+  defaultVia: 'proxy' | 'direct';
+  countryVia: 'direct' | 'k2p' | null;
+  country: string | null;
+  autoDetect: boolean;
+  needsMigration: boolean;
 }
 
-function parseStored(stored: LegacyStoredConfig | null | undefined): ParsedStoredConfig {
+function parseStored(stored: StoredConfig | null | undefined): ParsedConfig {
   if (!stored) {
-    // Fresh install: opt into auto profile selection.
+    // Fresh install
+    return { defaultVia: 'proxy', countryVia: 'direct', country: null, autoDetect: true, needsMigration: false };
+  }
+
+  // v3 shape: has defaultVia field
+  if (stored.defaultVia !== undefined) {
     return {
-      ruleMode: 'chnroute',
-      modeOverride: 'auto',
-      lastAcknowledgedCountry: null,
-      hadLegacyRuleMode: false,
+      defaultVia: stored.defaultVia === 'direct' ? 'direct' : 'proxy',
+      countryVia: stored.countryVia === 'direct' ? 'direct' : stored.countryVia === 'k2p' ? 'k2p' : null,
+      country: stored.country ?? null,
+      autoDetect: stored.autoDetect !== false,
+      needsMigration: false,
     };
   }
 
-  let ruleMode: RuleMode = 'chnroute';
-  let hadLegacyRuleMode = false;
-
-  if (stored.ruleMode === 'global' || stored.ruleMode === 'chnroute') {
-    ruleMode = stored.ruleMode;
-    hadLegacyRuleMode = true;
-  } else if (stored.rule?.global === true) {
-    // Legacy `rule.global=true` shape.
-    ruleMode = 'global';
-    hadLegacyRuleMode = true;
-  } else if (stored.rule?.global === false) {
-    ruleMode = 'chnroute';
-    hadLegacyRuleMode = true;
+  // v2 shape: has routingMode field
+  if (stored.routingMode === 'split' || stored.routingMode === 'global') {
+    if (stored.routingMode === 'global') {
+      return { defaultVia: 'proxy', countryVia: null, country: null, autoDetect: true, needsMigration: true };
+    }
+    // split mode
+    const autoDetect = stored.autoDetect !== false;
+    return {
+      defaultVia: 'proxy',
+      countryVia: 'direct',
+      country: autoDetect ? null : (stored.selectedCountry ?? null),
+      autoDetect,
+      needsMigration: true,
+    };
   }
 
-  let modeOverride: ModeOverride;
-  if (
-    stored.modeOverride === 'auto'
-    || stored.modeOverride === 'global'
-    || stored.modeOverride === 'manual'
-  ) {
-    modeOverride = stored.modeOverride;
-  } else {
-    // No explicit modeOverride in storage: existing users (who have a
-    // persisted ruleMode) default to 'manual' to preserve their UX.
-    // Fresh installs default to 'auto'.
-    modeOverride = hadLegacyRuleMode ? 'manual' : 'auto';
+  // v1 shape: has modeOverride field
+  if (stored.modeOverride !== undefined) {
+    if (stored.modeOverride === 'global') {
+      return { defaultVia: 'proxy', countryVia: null, country: null, autoDetect: true, needsMigration: true };
+    }
+    if (stored.modeOverride === 'manual') {
+      const ruleMode = stored.ruleMode ?? 'chnroute';
+      if (ruleMode === 'global') {
+        return { defaultVia: 'proxy', countryVia: null, country: null, autoDetect: true, needsMigration: true };
+      }
+      // manual + chnroute
+      return { defaultVia: 'proxy', countryVia: 'direct', country: 'cn', autoDetect: false, needsMigration: true };
+    }
+    // modeOverride === 'auto'
+    return { defaultVia: 'proxy', countryVia: 'direct', country: null, autoDetect: true, needsMigration: true };
   }
 
-  const lastAcknowledgedCountry = typeof stored.lastAcknowledgedCountry === 'string'
-    ? stored.lastAcknowledgedCountry
-    : null;
+  // v0 shape: has rule.global field
+  if (stored.rule !== undefined) {
+    if (stored.rule?.global === true) {
+      return { defaultVia: 'proxy', countryVia: null, country: null, autoDetect: true, needsMigration: true };
+    }
+    return { defaultVia: 'proxy', countryVia: 'direct', country: 'cn', autoDetect: false, needsMigration: true };
+  }
 
-  return { ruleMode, modeOverride, lastAcknowledgedCountry, hadLegacyRuleMode };
+  // Unknown shape, fresh defaults
+  return { defaultVia: 'proxy', countryVia: 'direct', country: null, autoDetect: true, needsMigration: false };
 }
 
 async function persist(
-  ruleMode: RuleMode,
-  modeOverride: ModeOverride,
-  lastAcknowledgedCountry: string | null,
+  defaultVia: 'proxy' | 'direct',
+  countryVia: 'direct' | 'k2p' | null,
+  country: string | null,
+  autoDetect: boolean,
 ): Promise<void> {
   try {
-    // Only include lastAcknowledgedCountry when set so the persisted shape
-    // stays { ruleMode, modeOverride } for users who never hit the travel
-    // banner (keeps existing tests + migration behaviour stable).
-    const payload: Record<string, unknown> = { ruleMode, modeOverride };
-    if (lastAcknowledgedCountry) {
-      payload.lastAcknowledgedCountry = lastAcknowledgedCountry;
-    }
+    const payload: Record<string, unknown> = { defaultVia, countryVia, autoDetect };
+    if (country) payload.country = country;
     await window._platform.storage.set(STORAGE_KEY, payload);
   } catch (error) {
     console.warn('[ConfigStore] Failed to save config to storage:', error);
@@ -228,108 +264,130 @@ async function persist(
 
 export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) => ({
   // State
-  ruleMode: 'chnroute',
+  defaultVia: 'proxy',
+  countryVia: 'direct',
+  country: null,
+  autoDetect: true,
   detectedCountry: null,
   suggestedProfile: null,
-  modeOverride: 'auto',
-  lastAcknowledgedCountry: null,
-  // Phase 1 default: all telemetry OFF. No storage load, no UI toggle.
-  // Flip via Phase 2 UI only. When false, buildConnectConfig emits no
-  // telemetry block and the Go engine skips reporter construction.
   telemetry: { ruleMissEnabled: false },
   loaded: false,
 
   // Actions
   loadConfig: async () => {
     try {
-      const stored = await window._platform.storage.get<LegacyStoredConfig>(STORAGE_KEY);
-      const { ruleMode, modeOverride, lastAcknowledgedCountry } = parseStored(stored);
+      const stored = await window._platform.storage.get<StoredConfig>(STORAGE_KEY);
+      const { defaultVia, countryVia, country, autoDetect, needsMigration } = parseStored(stored);
+      const preset = derivePreset(defaultVia, countryVia);
       console.info(
-        '[ConfigStore] Config loaded: ruleMode=' + ruleMode
-          + ', modeOverride=' + modeOverride
-          + ', lastAcknowledgedCountry=' + (lastAcknowledgedCountry ?? 'null'),
+        '[ConfigStore] Config loaded: preset=' + preset
+          + ', defaultVia=' + defaultVia
+          + ', countryVia=' + (countryVia ?? 'null')
+          + ', country=' + (country ?? 'null')
+          + ', autoDetect=' + autoDetect,
       );
-      set({ ruleMode, modeOverride, lastAcknowledgedCountry, loaded: true });
+      set({ defaultVia, countryVia, country, autoDetect, loaded: true });
 
-      // One-shot migration: if legacy shape detected OR the parser injected a
-      // modeOverride that wasn't persisted yet, rewrite storage so we never
-      // ship the dead `server` / `rule.global` fields back to the daemon.
-      const needsMigration = stored && (
-        stored.server !== undefined
-        || stored.rule !== undefined
-        || stored.modeOverride === undefined
-      );
       if (needsMigration) {
         try {
-          await persist(ruleMode, modeOverride, lastAcknowledgedCountry);
-          console.info('[ConfigStore] Migrated legacy config shape to { ruleMode, modeOverride }');
+          await persist(defaultVia, countryVia, country, autoDetect);
+          console.info('[ConfigStore] Migrated legacy config to v3 shape');
         } catch (err) {
-          console.warn('[ConfigStore] Legacy config migration write failed:', err);
+          console.warn('[ConfigStore] Migration write failed:', err);
         }
       }
     } catch (error) {
       console.warn('[ConfigStore] Failed to load config from storage:', error);
-      set({
-        ruleMode: 'chnroute',
-        modeOverride: 'auto',
-        lastAcknowledgedCountry: null,
-        loaded: true,
-      });
+      set({ defaultVia: 'proxy', countryVia: 'direct', country: null, autoDetect: true, loaded: true });
     }
   },
 
-  updateRuleMode: async (mode) => {
-    // Changing ruleMode is an explicit manual override — pin modeOverride to
-    // 'manual' so subsequent Center hints don't reshape the routes.
-    set({ ruleMode: mode, modeOverride: 'manual' });
-    await persist(mode, 'manual', get().lastAcknowledgedCountry);
+  setPreset: async (preset) => {
+    const { defaultVia, countryVia } = presetToConfig(preset);
+    set({ defaultVia, countryVia });
+    const { country, autoDetect } = get();
+    await persist(defaultVia, countryVia, country, autoDetect);
   },
 
-  updateModeOverride: async (mode) => {
-    set({ modeOverride: mode });
-    await persist(get().ruleMode, mode, get().lastAcknowledgedCountry);
+  setCountry: async (cc) => {
+    const lower = cc.toLowerCase();
+    set({ country: lower, autoDetect: false });
+    const { defaultVia, countryVia } = get();
+    await persist(defaultVia, countryVia, lower, false);
   },
 
-  acknowledgeCountry: async (country) => {
-    const normalized = country ? country.toLowerCase() : null;
-    set({ lastAcknowledgedCountry: normalized });
-    const { ruleMode, modeOverride } = get();
-    await persist(ruleMode, modeOverride, normalized);
+  setAutoDetect: async (on) => {
+    const next: Partial<ConfigState> = { autoDetect: on };
+    if (on) {
+      const { detectedCountry } = get();
+      if (detectedCountry) {
+        next.country = detectedCountry.toLowerCase();
+      }
+    }
+    set(next);
+    const { defaultVia, countryVia, country } = get();
+    await persist(defaultVia, countryVia, country, on);
   },
 
   setDetectedProfile: ({ country, profile }) => {
-    const { modeOverride } = get();
-    // Don't clobber users who've pinned a manual override.
-    if (modeOverride === 'manual') {
-      console.debug(
-        '[ConfigStore] setDetectedProfile skipped (modeOverride=manual), '
-          + 'country=' + (country ?? 'null') + ', profile=' + (profile ?? 'null'),
-      );
-      return;
-    }
     const next: Partial<ConfigState> = {};
-    if (country !== undefined) next.detectedCountry = country || null;
+    if (country !== undefined) next.detectedCountry = country ? country.toLowerCase() : null;
     if (profile !== undefined) next.suggestedProfile = profile || null;
+
+    const { autoDetect } = get();
+    if (autoDetect && country) {
+      next.country = country.toLowerCase();
+    }
+
     if (Object.keys(next).length > 0) {
       console.info(
         '[ConfigStore] setDetectedProfile: country=' + (country ?? 'null')
-          + ', profile=' + (profile ?? 'null'),
+          + ', profile=' + (profile ?? 'null')
+          + ', autoDetect=' + autoDetect,
       );
       set(next);
     }
   },
 
-  resolveProfile: () => {
-    const { modeOverride, ruleMode, suggestedProfile } = get();
-    if (modeOverride === 'global') return 'global';
-    if (modeOverride === 'manual') return legacyRuleModeToProfile(ruleMode);
-    // modeOverride === 'auto'
-    return suggestedProfile && suggestedProfile.length > 0 ? suggestedProfile : 'global';
+  fetchGeoDetection: async () => {
+    try {
+      const resp = await cloudApi.get<{ country: string; profile: string }>('/api/geo');
+      if (resp.code !== 0 || !resp.data) return;
+
+      const { country, profile } = resp.data;
+      if (!country) return;
+
+      const cc = country.toLowerCase();
+      const { autoDetect, detectedCountry } = get();
+
+      const next: Partial<ConfigState> = { detectedCountry: cc, suggestedProfile: profile };
+
+      if (autoDetect) {
+        next.country = cc;
+      }
+
+      // When autoDetect is off and no country yet, use first detection
+      if (!autoDetect && !get().country && !detectedCountry) {
+        next.country = cc;
+        const { defaultVia, countryVia } = get();
+        await persist(defaultVia, countryVia, cc, false);
+      }
+
+      console.info('[ConfigStore] fetchGeoDetection: country=' + cc + ', profile=' + profile + ', autoDetect=' + autoDetect);
+      set(next);
+    } catch (err) {
+      console.warn('[ConfigStore] fetchGeoDetection failed:', err);
+    }
+  },
+
+  resolvePreset: () => {
+    const { defaultVia, countryVia } = get();
+    return derivePreset(defaultVia, countryVia);
   },
 
   buildConnectConfig: (params?: ConnectConfigParams | string) => {
-    const profile = get().resolveProfile();
-    const { ruleMode, modeOverride, suggestedProfile, telemetry } = get();
+    const { defaultVia, countryVia, country, autoDetect, telemetry } = get();
+    const preset = derivePreset(defaultVia, countryVia);
     const serverUrl = typeof params === 'string'
       ? params
       : params?.serverUrl;
@@ -338,26 +396,21 @@ export const useConfigStore = create<ConfigState & ConfigActions>()((set, get) =
       ...CLIENT_CONFIG_DEFAULTS,
       mode: 'tun',
       log: { ...CLIENT_CONFIG_DEFAULTS.log, level: __K2_BUILD_LOG_LEVEL__ },
-      routes: buildRoutes(serverUrl, profile),
+      routes: buildRoutes(defaultVia, countryVia, country, serverUrl),
     };
 
-    // Phase 1 dark instrumentation: emit a telemetry block ONLY when the
-    // dark flag is explicitly flipped on. Zero-value omission keeps the
-    // JSON payload unchanged from the pre-telemetry shape and leaves the
-    // Go engine's reporter construction path dead by default.
     if (telemetry.ruleMissEnabled) {
       result.telemetry = {
-        rule_miss: {
-          enabled: true,
-        },
+        rule_miss: { enabled: true },
       };
     }
 
     console.debug('[ConfigStore] buildConnectConfig:'
-      + ' modeOverride=' + modeOverride
-      + ', ruleMode=' + ruleMode
-      + ', suggestedProfile=' + (suggestedProfile ?? 'null')
-      + ', resolvedProfile=' + profile
+      + ' preset=' + preset
+      + ', defaultVia=' + defaultVia
+      + ', countryVia=' + (countryVia ?? 'null')
+      + ', country=' + (country ?? 'null')
+      + ', autoDetect=' + autoDetect
       + ', routes=' + (result.routes?.length ?? 0)
       + ', serverUrl=' + (serverUrl ?? 'none')
       + ', logLevel=' + result.log?.level

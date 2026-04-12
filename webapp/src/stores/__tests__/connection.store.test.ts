@@ -48,13 +48,13 @@ async function getStores() {
   const connMod = await import('../connection.store');
   const vpnMod = await import('../vpn-machine.store');
   const configMod = await import('../config.store');
-  // Initialize config store with defaults. modeOverride='manual' keeps the
-  // legacy ruleMode toggle authoritative so these tests see the pre-auto-profile
-  // behavior (chnroute → cn-access preset).
+  // Initialize config store with split + cn (equivalent to old chnroute behavior).
   configMod.useConfigStore.setState({
     loaded: true,
-    ruleMode: 'chnroute',
-    modeOverride: 'manual',
+    defaultVia: 'proxy',
+    countryVia: 'direct',
+    autoDetect: false,
+    country: 'cn',
     suggestedProfile: null,
     detectedCountry: null,
   });

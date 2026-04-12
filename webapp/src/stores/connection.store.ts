@@ -200,9 +200,11 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     }
 
     // Build config with explicit params
-    const { buildConnectConfig, ruleMode } = useConfigStore.getState();
+    const { buildConnectConfig, resolvePreset, country: configCountry } = useConfigStore.getState();
     const config = buildConnectConfig({ serverUrl });
-    console.debug('[Connection] connect: config built, ruleMode=' + ruleMode
+    const currentPreset = resolvePreset();
+    console.debug('[Connection] connect: config built, preset=' + currentPreset
+      + ', country=' + (configCountry ?? 'null')
       + ', routes=' + (config.routes?.length ?? 0)
       + ', serverUrl=' + (serverUrl ?? 'none')
       + ', logLevel=' + config.log?.level);
@@ -270,7 +272,8 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     let lastConnectionInfo: LastConnectionInfo | null = null;
 
     if (connectedTunnel && isAuthenticated) {
-      const { ruleMode } = useConfigStore.getState();
+      const configState = useConfigStore.getState();
+      const disconnectPreset = configState.resolvePreset();
       const durationSec = connectedAt
         ? Math.round((Date.now() - connectedAt) / 1000)
         : 0;
@@ -280,7 +283,7 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
         country: connectedTunnel.country,
         source: connectedTunnel.source,
         durationSec,
-        ruleMode,
+        ruleMode: disconnectPreset === 'global' ? 'global' : (configState.country ?? 'split'),
         os: window._platform?.os || 'unknown',
         appVersion: window._platform?.version || '0.0.0',
         commit: window._platform?.commit || '',

@@ -23,7 +23,7 @@ import type { DataUser } from '../services/api-types';
 
 /**
  * Push Center-detected country + suggestedProfile into the config store.
- * Respects `modeOverride === 'manual'` (config store no-ops in that case).
+ * When autoDetect is on, this also updates selectedCountry.
  */
 function syncDetectedProfile(user: DataUser): void {
   useConfigStore.getState().setDetectedProfile({

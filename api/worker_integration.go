@@ -35,8 +35,8 @@ type PushTaskPayload struct {
 // InitWorker 初始化 Worker
 // 注册任务处理函数
 func InitWorker() {
-	// 先初始化 GeoIP（同步加载目标国家 CIDR 列表，后台 24h 刷新）
-	InitGeoIP(context.Background())
+	// GeoIP: qtoolkit/geoip is lazy-initialized on first Country() call.
+	// No explicit init needed.
 
 	asynq.Handle(TaskTypePushSend, handlePushTask)
 	asynq.Handle(TaskTypeTemplatedEmailSend, handleTemplatedEmailTask)
