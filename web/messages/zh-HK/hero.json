@@ -18,7 +18,7 @@
       },
       "zeroDeploy": {
         "title": "零配置部署",
-        "description": "curl 一行命令安裝伺服器同客戶端，自動生成 k2v5:// 連接 URI，唔需要手動配置證書",
+        "description": "curl 一行命令安裝伺服器同客戶端，自動生成 k2:// 連接 URI，唔需要手動配置證書",
         "icon": "⚡"
       },
       "transport": {
@@ -44,7 +44,7 @@
     },
     "comparison": {
       "title": "協議橫向對比",
-      "subtitle": "k2v5 同主流翻牆協議嘅關鍵維度對比",
+      "subtitle": "k2 同主流翻牆協議嘅關鍵維度對比",
       "dimensions": {
         "ech": "ECH 隱身",
         "tlsFingerprint": "TLS 指紋偽裝",
@@ -59,7 +59,7 @@
       "protocols": [
         {
           "id": "k2",
-          "name": "k2v5",
+          "name": "k2",
           "ech": true,
           "tlsFingerprint": true,
           "activeProbe": true,
@@ -141,14 +141,14 @@
         "step3": "# 啟動服務",
         "step4": "k2s run",
         "step5": "# 輸出連接 URI",
-        "step6": "k2v5://..."
+        "step6": "k2://..."
       },
       "client": {
         "title": "客戶端（30 秒）",
         "step1": "# 安裝 k2 客戶端",
         "step2": "curl -fsSL https://kaitu.io/i/k2 | sudo sh",
         "step3": "# 連接（貼上 URI）",
-        "step4": "k2 up k2v5://..."
+        "step4": "k2 up k2://..."
       }
     }
   },
@@ -172,7 +172,7 @@
         "item1": "QUIC 受阻自動降級為 TCP-WebSocket",
         "item2": "自簽名證書 + Pin，CT 日誌零暴露",
         "item3": "端口復用，443 端口正常網站共存",
-        "item4": "一行命令部署，自動生成 k2v5:// URI",
+        "item4": "一行命令部署，自動生成 k2:// URI",
         "bullet": "•"
       }
     },
@@ -200,7 +200,7 @@
       },
       "failover": {
         "title": "零配置部署",
-        "description": "curl 一行命令安裝，自動生成 k2v5:// 連接 URI，10 分鐘完成完整部署",
+        "description": "curl 一行命令安裝，自動生成 k2:// 連接 URI，10 分鐘完成完整部署",
         "icon": "⚡"
       },
       "performance": {
@@ -239,7 +239,7 @@
       },
       "kaitu": {
         "letter": "K",
-        "name": "k2v5",
+        "name": "k2",
         "tech": "ECH 隱身 + QUIC+TCP-WS 雙棧 + k2cc 自適應速率控制"
       },
       "trojan": {
@@ -264,7 +264,7 @@
       }
     },
     "visualization": {
-      "title": "k2v5 隱身隧道架構",
+      "title": "k2 隱身隧道架構",
       "subtitle": "ECH 加密握手 + QUIC/TCP-WS 雙棧傳輸，DPI 完全無效",
       "client": "客戶端",
       "target": "目標伺服器",
@@ -289,7 +289,7 @@
         "failedPath": "降級路徑",
         "optimalNode": "最優節點"
       },
-      "description": "k2v5 喺 TLS 握手階段使用 ECH 加密 SNI，防火牆無法識別目標域名。數據透過 QUIC（優先）或 TCP-WebSocket（降級）傳輸，搭載 k2cc 喺高封包遺失環境下保持穩定吞吐。伺服器內建反向代理，非 k2 流量轉發至真實網站，主動探測無法區分。"
+      "description": "k2 喺 TLS 握手階段使用 ECH 加密 SNI，防火牆無法識別目標域名。數據透過 QUIC（優先）或 TCP-WebSocket（降級）傳輸，搭載 k2cc 喺高封包遺失環境下保持穩定吞吐。伺服器內建反向代理，非 k2 流量轉發至真實網站，主動探測無法區分。"
     }
   },
   "download": {
@@ -378,26 +378,84 @@
     "warranty": "所有路由器產品均提供1年質保 • 免費技術支援 • 7天無理由退貨"
   },
   "faq": {
+    "title": "常見問題",
+    "subtitle": "Kaitu VPN 技術原理、平台支援、付費方式、私隱政策完整解答",
     "items": {
+      "whatIsK2cc": {
+        "question": "咩係 k2cc？",
+        "answer": "k2cc 係 Kaitu 自研嘅擁塞控制演算法，專為對抗審查網路設計。佢透過審查感知機制區分 \"審查基礎設施主動丟棄\" 同 \"普通網路擁塞丟包\"，喺 GFW 26% 丟包率環境下仍然能夠維持穩定吞吐。根據 Kaitu benchmark 實測數據，喺高丟包場景下 k2cc 吞吐量可達 BBR 同 Brutal 嘅 2-5 倍。k2cc 零設定，唔需要手動設定頻寬上限。"
+      },
+      "whatIsK2v5": {
+        "question": "咩係 k2 協定？",
+        "answer": "k2 係 Kaitu 嘅複合隱身隧道協定，核心由三部分組成：（1）ECH 加密 Client Hello，令 TLS 握手完全不可偵測；（2）QUIC/H3 為首選傳輸，TCP-WebSocket 自動降級備用；（3）k2cc 審查感知擁塞控制演算法。QUIC 與 TCP-WS 共享同一個 port，透過協定偵測區分——單一 port 同時對抗 UDP 封鎖同 DPI 深度封包偵測。"
+      },
+      "howDoesEchWork": {
+        "question": "ECH 係咩？點解能夠繞過防火牆偵測？",
+        "answer": "ECH（Encrypted Client Hello）係 TLS 1.3 嘅擴充套件標準，將 ClientHello 中嘅 SNI 欄位加密後先至傳送。傳統 TLS 握手中 SNI 以明文暴露目標網域，防火牆據此識別並封鎖連線。啟用 ECH 後，DPI 冇辦法睇到真實 SNI，亦冇辦法判斷連線目標。Kaitu 伺服器仲會偽造 ECH 設定，令佢與真實 Cloudflare ECH 流量無法區分。"
+      },
+      "comparisonWithOthers": {
+        "question": "Kaitu 同 WireGuard、Shadowsocks、VLESS+Reality、Hysteria2 有咩區別？",
+        "answer": "k2 係唯一同時實作 ECH 隱身、QUIC+TCP-WS 雙棧降級、審查感知擁塞控制嘅主流翻牆協定。WireGuard 係 UDP 明文隧道，無 TLS 偽裝，喺 GFW 下幾乎冇辦法使用；Shadowsocks 只有輕量加密、無偽裝；VLESS+Reality 有 TLS 指紋偽裝但無 ECH，亦唔支援 QUIC 或 TCP 降級；Hysteria2 有 QUIC 但無 ECH、無 TCP 降級。喺 ECH、TLS 指紋、主動探測防禦、QUIC 傳輸、TCP 降級、擁塞控制、零設定部署、CT 日誌零暴露、port 複用九個關鍵維度上，k2 全部領先。"
+      },
+      "gfwSpeed": {
+        "question": "Kaitu 喺 GFW 環境下速度有幾快？",
+        "answer": "Kaitu 喺自主 benchmark 測試中模擬 GFW 條件（26% 丟包率）同典型中國 ISP 條件（5-15% 丟包率）。結果顯示 k2cc 擁塞控制相比 BBR 同 Brutal 吞吐量高 2-5 倍。實際用戶速度取決於本地網路質素、寬頻供應商係唔係境外限速、以及所選節點，但喺相同網路條件下 k2 協定始終領先傳統協定。"
+      },
       "platforms": {
-        "question": "開途支援哪些裝置？",
-        "answer": "開途支援 Windows、macOS、Linux、iOS（iPhone/iPad）和 Android，一個帳號最多 5 台裝置同時在線。"
+        "question": "Kaitu 支援邊啲裝置？",
+        "answer": "Kaitu 全平台支援：Windows 10/11、macOS 12+（Intel + Apple Silicon 通用二進位）、Linux（Ubuntu/Debian 及主流發行版）、iOS（iPhone/iPad，中國區 App Store 可直接下載）、Android、OpenWrt 智能路由器。一個帳號最多 5 部裝置同時在線。此外提供 k2s 伺服器端，支援自部署到任何 VPS。"
+      },
+      "selfHosting": {
+        "question": "我可唔可以自己部署 Kaitu 伺服器？",
+        "answer": "可以。Kaitu 提供 k2s 伺服器端二進位，支援自部署到 AWS、Alibaba Cloud、Tencent Cloud、Bandwagon 等任何 VPS。部署只需要一行指令：curl -fsSL https://kaitu.io/i/k2s | sudo sh，然後執行 k2s run 自動生成 k2:// 連線 URI，貼到客戶端即可使用。k2s 支援零設定自動部署，亦提供 k2s setup 互動式精靈，以及 k2s user add 管理多用戶憑證。"
+      },
+      "routerSupport": {
+        "question": "Kaitu 支援智能路由器嗎？",
+        "answer": "支援。Kaitu 提供 k2r 路由器閘道二進位，原生支援 OpenWrt 系統，使用 TPROXY 模式冇需要客戶端安裝——屋企所有裝置（電腦、手機、平板、智能電視、遊戲機、IoT 裝置）接入該路由器後自動享受加密上網，冇需要單獨設定。"
+      },
+      "chinaAccess": {
+        "question": "Kaitu 喺中國大陸能用嗎？",
+        "answer": "能用，而且呢個正係 Kaitu 嘅核心設計目標。技術層面，k2 協定結合 ECH 加密 SNI + QUIC/TCP-WS 雙棧 + k2cc 審查感知擁塞控制，即使喺高丟包審查網路下都能夠保持穩定連線。入口解析採用 Happy Eyeballs 策略並發探測 6 個 CDN 鏡像入口，避免中國區域 10 秒逾時問題。iOS 客戶端喺中國區 App Store 可直接下載。"
+      },
+      "chinaAppStore": {
+        "question": "Kaitu 喺中國區 App Store 能直接下載嗎？",
+        "answer": "可以。Kaitu iOS 客戶端已經喺中國區 App Store 正常上架，用戶可以直接搜尋 \"Kaitu\" 或 \"開途\" 下載安裝，冇需要切換到海外 Apple ID，亦冇需要繞過任何限制。"
       },
       "pricing": {
-        "question": "開途怎麼收費？",
-        "answer": "開途以美元計價，提供 1 年、2 年、3 年、5 年四檔訂閱方案，週期越長月均價越低。所有方案均為專業版全功能，支援 5 台裝置同時在線。支援支付寶、微信、銀聯、信用卡及加密貨幣支付，購買後即時生效。詳情請訪問 kaitu.io/purchase"
+        "question": "Kaitu 點收費？",
+        "answer": "Kaitu 以美元計價，提供 1 年、2 年、3 年、5 年四檔訂閱方案，週期越長月均價越低。所有方案均為專業版全功能，支援 5 部裝置同時在線，冇流量限制。支援支付寶、微信、銀聯、信用卡及加密貨幣支付，購買後即時生效。詳情請訪問 kaitu.io/purchase"
+      },
+      "trial": {
+        "question": "有冇免費試用？",
+        "answer": "有。新用戶註冊即可獲得免費試用額度，可喺購買前完整體驗 Kaitu 全平台客戶端、所有節點線路同完整功能，確認速度同穩定性滿意後先至付費訂閱。冇需要信用卡預授權。"
       },
       "refund": {
         "question": "可以退款嗎？",
-        "answer": "首次購買 7 天內、使用流量未超過 1GB 可申請退款。退款金額退回帳戶錢包餘額，可用於續費或提現到加密貨幣錢包。"
+        "answer": "首次購買 7 日內、使用流量冇超過 1GB 可申請退款。退款金額退回帳戶錢包餘額，可用於續費或提現到加密貨幣錢包。"
       },
-      "androidInstall": {
-        "question": "安卓手機安裝遇到攔截怎麼辦？",
-        "answer": "部分手機系統會對非應用商店安裝的應用進行安全檢查，這不代表應用有問題。您可以按照提示手動允許安裝，或透過電腦 USB 輔助安裝繞過所有限制。詳細指南請訪問 kaitu.io/install"
+      "deviceLimit": {
+        "question": "點解我嘅裝置被踢落線？",
+        "answer": "每個帳號最多可以同時登入 5 部裝置。當你喺第 6 部裝置登入時，系統會自動移除最早登入嗰部。如果你確認自己冇超過 5 部卻仍然被踢，請提交反饋工單，我哋會幫你排查帳號綁定記錄。"
       },
       "privacy": {
-        "question": "開途安全嗎？會記錄我的上網記錄嗎？",
-        "answer": "開途不記錄您的瀏覽歷史、DNS 查詢或任何網路活動內容。我們僅保留連線時間戳用於服務優化，且僅保留最近 7 天後自動刪除。macOS 版通過 Apple 官方公證，Windows 版通過程式碼簽名認證。"
+        "question": "Kaitu 會唔會記錄我嘅上網記錄？",
+        "answer": "唔會。Kaitu 執行嚴格嘅無日誌政策，唔記錄你訪問嘅網站、DNS 查詢、下載內容或任何網路活動。我哋僅保留最近 7 日嘅連線時間戳用於服務優化同故障排查，到期自動刪除。所有傳輸使用 TLS 1.3 加密，VPN 隧道使用 AES-256-GCM 加密。"
+      },
+      "ctLog": {
+        "question": "Kaitu 點解唔用 Let's Encrypt，而用自簽名憑證？",
+        "answer": "Kaitu 伺服器端使用自簽名憑證並喺客戶端實作憑證 Pin，目的係徹底零 CT（Certificate Transparency）日誌暴露。任何透過公開 CA 簽發嘅憑證都會被強制寫入 CT 日誌，攻擊者可以掃描 CT 日誌發現所有翻牆伺服器。Kaitu 自簽名 + Pin 策略令伺服器端網域完全唔出現喺任何公開日誌中，節點隱藏更加徹底。"
+      },
+      "portReuse": {
+        "question": "Kaitu 嘅 port 複用係咩意思？",
+        "answer": "k2 伺服器端透過協定偵測喺同一個 port（通常係 443）同時處理 QUIC、TCP-WebSocket 同真實 HTTPS 請求。非 k2 流量會被內建嘅反向代理轉發到真實網站，主動探測返回合法 HTTPS 回應。結果係：從外部觀察，Kaitu 伺服器同正常 Cloudflare 託管嘅 HTTPS 網站行為完全一致，冇辦法透過 port 指紋或回應特徵識別。"
+      },
+      "wifiSwitch": {
+        "question": "切換 WiFi 或 4G/5G 後會自動重連嗎？",
+        "answer": "會。Kaitu 內建 netCoordinator 網路狀態協調器，融合系統網路介面訊號同內部探測，能夠自動區分 \"網路斷開\"、\"網路恢復\"、\"介面切換\" 三種場景，並喺網路恢復或介面切換時自動重連。自動觸發有幾秒到十幾秒延遲，如果需要立即恢復可手動斷開重連。"
+      },
+      "androidInstall": {
+        "question": "安卓手機安裝 Kaitu 時系統提示唔安全點算？",
+        "answer": "部分 Android 系統（MIUI、ColorOS、HyperOS、EMUI 等）會對非應用商店安裝嘅 APK 進行安全檢查，呢個唔代表應用有問題。你可以按系統提示手動允許安裝，或者透過電腦 USB 輔助安裝繞過所有限制。詳細步驟請訪問 kaitu.io/install"
       }
     }
   }

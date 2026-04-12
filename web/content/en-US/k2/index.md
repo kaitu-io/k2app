@@ -1,7 +1,7 @@
 ---
 title: k2 Protocol Overview
 date: 2026-02-21
-summary: k2 is Kaitu's proprietary stealth tunnel protocol family. The current version, k2v5, features k2cc adaptive rate control, QUIC+H3 primary transport, TCP-WebSocket fallback, Encrypted Client Hello, and TLS fingerprint mimicry.
+summary: k2 is Kaitu's proprietary stealth tunnel protocol family. The current version, k2, features k2cc adaptive rate control, QUIC+H3 primary transport, TCP-WebSocket fallback, Encrypted Client Hello, and TLS fingerprint mimicry.
 section: overview
 order: 1
 draft: false
@@ -9,9 +9,9 @@ draft: false
 
 # k2 Protocol Overview
 
-**k2** is Kaitu's proprietary stealth network tunnel protocol family, designed for high-censorship environments. The protocol evolves across major versions, each representing a generation of core architecture. **k2v5** is the current production version — connection URLs start with `k2v5://`, and all Kaitu clients and the k2 CLI use k2v5 by default.
+**k2** is Kaitu's proprietary stealth network tunnel protocol family, designed for high-censorship environments. The protocol evolves across major versions, each representing a generation of core architecture. **k2** is the current production version — connection URLs start with `k2://`, and all Kaitu clients and the k2 CLI use k2 by default.
 
-k2v5 features **k2cc (Adaptive Rate Control)**, a proprietary congestion control algorithm that automatically finds the optimal sending rate in high-loss, high-latency networks — no manual bandwidth configuration needed. It uses **QUIC/HTTP3** as the primary transport, with automatic **TCP-WebSocket** fallback when QUIC is blocked, combined with ECH encrypted SNI and TLS fingerprint mimicry to make tunnel traffic indistinguishable from real HTTPS browsing.
+k2 features **k2cc (Adaptive Rate Control)**, a proprietary congestion control algorithm that automatically finds the optimal sending rate in high-loss, high-latency networks — no manual bandwidth configuration needed. It uses **QUIC/HTTP3** as the primary transport, with automatic **TCP-WebSocket** fallback when QUIC is blocked, combined with ECH encrypted SNI and TLS fingerprint mimicry to make tunnel traffic indistinguishable from real HTTPS browsing.
 
 ## Terminology
 
@@ -19,16 +19,16 @@ k2v5 features **k2cc (Adaptive Rate Control)**, a proprietary congestion control
 |------|---------|
 | **k2** | Kaitu's proprietary stealth tunnel protocol family (project name) |
 | **k2cc** | Adaptive Rate Control algorithm (standalone component, shared by all protocol versions) |
-| **k2v5** | Current protocol version, client-server architecture |
-| **k2v6** (planned) | Future protocol version, P2P architecture, also uses k2cc |
+| **k2** | Current protocol version, client-server architecture |
+| **k2p** (planned) | Future protocol version, P2P architecture, also uses k2cc |
 
-## k2v5 Core Features
+## k2 Core Features
 
 ### k2cc Adaptive Rate Control
 
 k2cc is the k2 protocol family's key differentiator. Unlike traditional congestion control algorithms, k2cc **automatically discovers** the optimal sending rate:
 
-| Capability | k2cc (k2v5) | Traditional (e.g. Brutal) |
+| Capability | k2cc (k2) | Traditional (e.g. Brutal) |
 |------------|------------|--------------------------|
 | Bandwidth config | Fully automatic, zero-config | Manual bandwidth specification |
 | Packet loss response | Distinguishes congestion from censorship loss | Ignores all loss signals |
@@ -42,7 +42,7 @@ For details, see [k2cc Adaptive Rate Control](/k2/k2cc). For performance benchma
 
 ### Stealth Transport
 
-k2v5 achieves traffic stealth through four layers of defense:
+k2 achieves traffic stealth through four layers of defense:
 
 - **ECH (Encrypted Client Hello)**: Encrypts the real destination hostname inside the TLS handshake; DPI only sees a major CDN's public hostname
 - **TLS Fingerprint Mimicry**: Uses uTLS to replicate Chrome/Firefox/Safari TLS handshake signatures
@@ -62,7 +62,7 @@ sudo k2s run
 
 # Client (30 seconds)
 curl -fsSL https://kaitu.io/i/k2 | sudo sh
-sudo k2 up k2v5://abc123:tok456@203.0.113.5:443?ech=AEX0...&pin=sha256:...
+sudo k2 up k2://abc123:tok456@203.0.113.5:443?ech=AEX0...&pin=sha256:...
 ```
 
 ## Transport Layer
@@ -74,7 +74,7 @@ sudo k2 up k2v5://abc123:tok456@203.0.113.5:443?ech=AEX0...&pin=sha256:...
 
 ## Identity and Authentication
 
-- **k2v5 URL**: All parameters in a single URL: `k2v5://UDID:TOKEN@HOST:PORT?ech=...&pin=...`
+- **k2 URL**: All parameters in a single URL: `k2://UDID:TOKEN@HOST:PORT?ech=...&pin=...`
 - **Three-Layer Identity**: TCP destination IP (plaintext) → Outer SNI (plaintext, CDN public hostname) → Inner SNI (ECH-encrypted)
 - **Zero-Config Server**: Auto-generates all keys and certificates on first run, prints a ready-to-use URL
 
@@ -86,7 +86,7 @@ sudo k2 up k2v5://abc123:tok456@203.0.113.5:443?ech=AEX0...&pin=sha256:...
 | [k2s Server Deployment](/k2/server) | Detailed server installation and configuration |
 | [k2 Client Usage](/k2/client) | Client installation and common commands |
 | [k2cc Rate Control](/k2/k2cc) | k2cc core capabilities, censorship awareness, auto rate probing |
-| [k2v5 Protocol Architecture](/k2/k2v5) | URL format, ECH, three-layer identity, transport layer |
+| [k2 Protocol Architecture](/k2/protocol) | URL format, ECH, three-layer identity, transport layer |
 | [Stealth Camouflage](/k2/stealth) | ECH, TLS fingerprinting, and active probe resistance |
 | [k2cc vs BBR](/k2/vs-bbr) | k2cc vs Google BBR performance comparison under censorship |
 | [k2 vs Hysteria2](/k2/vs-hysteria2) | k2cc vs Brutal/BBR congestion control comparison |

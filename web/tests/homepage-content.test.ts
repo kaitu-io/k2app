@@ -1,11 +1,11 @@
 /**
  * Homepage Content Tests — T5
  *
- * Vitest tests for the homepage k2v5 technology rewrite.
+ * Vitest tests for the homepage k2 technology rewrite.
  * RED phase: tests fail before implementation.
  *
  * Tests verify:
- * 1. zh-CN hero.json contains k2v5 keywords (ECH, 隐身, k2, 隧道)
+ * 1. zh-CN hero.json contains k2 keywords (ECH, 隐身, k2, 隧道)
  * 2. No locale hero.json contains incorrect MPTCP/CA cert references
  * 3. Comparison table covers all 5 protocols
  * 4. Quickstart section includes k2s and k2 up commands
@@ -30,7 +30,7 @@ function readHeroJson(locale: string): string {
 const ALL_LOCALES = ['zh-CN', 'en-US', 'en-GB', 'en-AU', 'zh-TW', 'zh-HK', 'ja'];
 
 describe('test_homepage_hero_k2_content', () => {
-  it('zh-CN hero.json contains k2v5 technology keywords', () => {
+  it('zh-CN hero.json contains k2 technology keywords', () => {
     const content = readHeroJson('zh-CN');
     const hasECH = content.includes('ECH');
     const hasHidden = content.includes('隐身');

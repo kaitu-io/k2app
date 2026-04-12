@@ -5,6 +5,7 @@ import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import HeroSection from '@/components/home/HeroSection';
 import FeaturesSection from '@/components/home/FeaturesSection';
+import FAQSection from '@/components/home/FAQSection';
 import DownloadCTA from '@/components/home/DownloadCTA';
 import HomeClient from './HomeClient';
 import { generateMetadata as generateBaseMetadata } from './metadata';
@@ -58,7 +59,33 @@ export default async function Home({
 
   const t = await getTranslations({ locale, namespace: 'hero' });
 
-  const FAQ_ITEMS = ['platforms', 'pricing', 'refund', 'androidInstall', 'privacy'] as const;
+  const FAQ_ITEMS = [
+    'whatIsK2cc',
+    'whatIsK2v5',
+    'howDoesEchWork',
+    'comparisonWithOthers',
+    'gfwSpeed',
+    'platforms',
+    'selfHosting',
+    'routerSupport',
+    'chinaAccess',
+    'chinaAppStore',
+    'pricing',
+    'trial',
+    'refund',
+    'deviceLimit',
+    'privacy',
+    'ctLog',
+    'portReuse',
+    'wifiSwitch',
+    'androidInstall',
+  ] as const;
+
+  const faqItems = FAQ_ITEMS.map((key) => ({
+    key,
+    question: t(`faq.items.${key}.question`),
+    answer: t(`faq.items.${key}.answer`),
+  }));
 
   const jsonLd = JSON.stringify([
     {
@@ -157,6 +184,12 @@ export default async function Home({
             description: t('hero.features.selfSign.description'),
           },
         }}
+      />
+
+      <FAQSection
+        sectionTitle={t('faq.title')}
+        sectionSubtitle={t('faq.subtitle')}
+        items={faqItems}
       />
 
       <DownloadCTA

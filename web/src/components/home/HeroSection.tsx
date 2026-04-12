@@ -26,7 +26,7 @@ export default function HeroSection({
         {/* Badge */}
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs mb-6 bg-primary/10 text-primary border border-primary/30 font-mono">
           <span className="w-2 h-2 rounded-full animate-pulse bg-primary" />
-          k2v5 — k2cc Anti-QoS Congestion Control
+          k2 — k2cc Anti-QoS Congestion Control
         </div>
 
         <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6 leading-tight font-mono text-foreground">
@@ -75,7 +75,7 @@ export default function HeroSection({
             <div className="text-muted-foreground">Installing k2s...</div>
             <div className="text-secondary">[k2s] ECH stealth tunnel started on :443</div>
             <div className="text-secondary">[k2s] Connection URI:</div>
-            <div className="break-all text-primary">k2v5://Zt8x...@your-server:443</div>
+            <div className="break-all text-primary">k2://Zt8x...@your-server:443</div>
           </div>
         </div>
       </div>

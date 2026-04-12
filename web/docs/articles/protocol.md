@@ -1,6 +1,6 @@
 ---
 status: generated
-output: web/content/zh-CN/k2/k2cc.md, web/content/zh-CN/k2/k2v5.md
+output: web/content/zh-CN/k2/k2cc.md, web/content/zh-CN/k2/protocol.md
 last_generated: 2026-02-22
 eeat_score: High
 ---

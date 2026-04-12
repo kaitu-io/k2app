@@ -1,7 +1,7 @@
 ---
 title: k2 Client Usage
 date: 2026-02-21
-summary: Install and use the k2 command-line client on Linux or macOS. Connect to a k2v5 server, manage the VPN tunnel, and choose between TUN and proxy modes.
+summary: Install and use the k2 command-line client on Linux or macOS. Connect to a k2 server, manage the VPN tunnel, and choose between TUN and proxy modes.
 section: getting-started
 order: 4
 draft: false
@@ -27,10 +27,10 @@ k2 --version
 
 ## Connecting
 
-Pass the k2v5 URL printed by your server to `k2 up`:
+Pass the k2 URL printed by your server to `k2 up`:
 
 ```bash
-sudo k2 up k2v5://abc123:tok456@203.0.113.5:443?ech=AEX0...&pin=sha256:...
+sudo k2 up k2://abc123:tok456@203.0.113.5:443?ech=AEX0...&pin=sha256:...
 ```
 
 After connecting, system routing is updated automatically and all traffic flows through the tunnel.
@@ -39,10 +39,10 @@ After connecting, system routing is updated automatically and all traffic flows 
 
 ```bash
 # Connect (TUN mode — requires root)
-sudo k2 up k2v5://...
+sudo k2 up k2://...
 
 # Connect (proxy mode — no root required)
-k2 up --mode proxy k2v5://...
+k2 up --mode proxy k2://...
 
 # Check connection status
 k2 status
@@ -64,7 +64,7 @@ k2 --help
 TUN mode creates a virtual network interface that captures all system traffic, acting as a global proxy. Root privileges are required.
 
 ```bash
-sudo k2 up k2v5://...
+sudo k2 up k2://...
 ```
 
 ### Proxy Mode
@@ -72,7 +72,7 @@ sudo k2 up k2v5://...
 Proxy mode starts a SOCKS5 proxy at `127.0.0.1:1080` without modifying system routes. Suitable when root access is unavailable or only specific applications need proxying.
 
 ```bash
-k2 up --mode proxy k2v5://...
+k2 up --mode proxy k2://...
 ```
 
 Configure your system or application to use `socks5://127.0.0.1:1080`.
@@ -97,16 +97,16 @@ k2 supports multiple TLS fingerprints to blend with different browser traffic:
 
 ```bash
 # Chrome (default)
-sudo k2 up k2v5://...?fp=chrome
+sudo k2 up k2://...?fp=chrome
 
 # Firefox
-sudo k2 up k2v5://...?fp=firefox
+sudo k2 up k2://...?fp=firefox
 
 # Safari
-sudo k2 up k2v5://...?fp=safari
+sudo k2 up k2://...?fp=safari
 
 # Random (rotates fingerprint periodically)
-sudo k2 up k2v5://...?fp=random
+sudo k2 up k2://...?fp=random
 ```
 
 ## Status Output
@@ -116,14 +116,14 @@ Example `k2 status` output:
 ```
 State:     connected
 Server:    203.0.113.5:443
-Protocol:  k2v5 (QUIC/H3)
+Protocol:  k2 (QUIC/H3)
 Latency:   28ms
 Uploaded:  1.2 GB
 Downloaded: 8.4 GB
 Uptime:    2h 15m
 ```
 
-When QUIC is unavailable, the protocol automatically switches to `k2v5 (TCP-WS)` with no manual intervention needed.
+When QUIC is unavailable, the protocol automatically switches to `k2 (TCP-WS)` with no manual intervention needed.
 
 ## Uninstall
 
@@ -152,4 +152,4 @@ Chrome, Firefox, and Safari fingerprints, plus a `random` option. Specified via 
 
 ---
 
-Next: [k2cc Adaptive Rate Control](/k2/k2cc) for the congestion control algorithm, or [k2v5 Protocol Architecture](/k2/k2v5) for protocol technical details.
+Next: [k2cc Adaptive Rate Control](/k2/k2cc) for the congestion control algorithm, or [k2 Protocol Architecture](/k2/protocol) for protocol technical details.

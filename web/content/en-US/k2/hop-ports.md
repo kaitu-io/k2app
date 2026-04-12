@@ -117,7 +117,7 @@ Applies to AWS, Alibaba Cloud, Tencent Cloud, GCP, Azure, etc.
 Add the `&hop=50000-50100` parameter to the connection URI:
 
 ```
-k2v5://alice:token@1.2.3.4:443?ech=...&pin=...&hop=50000-50100&country=JP#tokyo
+k2://alice:token@1.2.3.4:443?ech=...&pin=...&hop=50000-50100&country=JP#tokyo
 ```
 
 Paste the updated URI into the client's node management page.

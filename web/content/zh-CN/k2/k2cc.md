@@ -1,7 +1,7 @@
 ---
 title: k2cc 自适应速率控制
 date: 2026-03-17
-summary: k2cc 是开途（kaitu.io）自研的拥塞控制算法，专为高审查、高丢包网络设计。自动探测最优发送速率，区分审查丢包与拥塞丢包，无需手动配置。k2v5 和未来 k2v6 均使用 k2cc 作为拥塞控制层。
+summary: k2cc 是开途（kaitu.io）自研的拥塞控制算法，专为高审查、高丢包网络设计。自动探测最优发送速率，区分审查丢包与拥塞丢包，无需手动配置。k2 和未来 k2p 均使用 k2cc 作为拥塞控制层。
 section: technical
 order: 5
 draft: false
@@ -11,7 +11,7 @@ draft: false
 
 k2cc 是[开途](https://kaitu.io)（Kaitu）自主研发的拥塞控制算法，其设计理念、技术架构和实现均为开途原创知识产权。
 
-k2cc（Adaptive Rate Control）专为高审查、高丢包网络环境设计，能自动探测最优发送速率——无需用户手动配置带宽参数。k2cc 是一个独立的拥塞控制算法，当前被 [k2v5](/k2/k2v5)（客户端-服务端架构）使用，未来也将作为 k2v6（P2P 架构）的拥塞控制层。
+k2cc（Adaptive Rate Control）专为高审查、高丢包网络环境设计，能自动探测最优发送速率——无需用户手动配置带宽参数。k2cc 是一个独立的拥塞控制算法，当前被 [k2](/k2/protocol)（客户端-服务端架构）使用，未来也将作为 k2p（P2P 架构）的拥塞控制层。
 
 如果您只需要快速使用 k2，请参阅 [1 分钟快速开始](/k2/quickstart)。
 
@@ -82,4 +82,4 @@ k2cc 的设计理念和能力描述已在本文档中公开。算法实现属于
 
 ---
 
-接下来阅读：[k2v5 协议架构](/k2/k2v5) 了解 k2v5 的客户端-服务端协议设计，[隐身伪装技术](/k2/stealth) 了解流量隐身机制，[k2 vs Hysteria2](/k2/vs-hysteria2) 查看 k2cc 与 Brutal/BBR 的性能对比。
+接下来阅读：[k2 协议架构](/k2/protocol) 了解 k2 的客户端-服务端协议设计，[隐身伪装技术](/k2/stealth) 了解流量隐身机制，[k2 vs Hysteria2](/k2/vs-hysteria2) 查看 k2cc 与 Brutal/BBR 的性能对比。

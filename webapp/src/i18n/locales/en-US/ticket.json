@@ -24,7 +24,42 @@
     "send": "Send"
   },
   "faq": {
-    "title": "FAQ"
+    "title": "FAQ",
+    "subtitle": "Check here first — most issues resolve quickly",
+    "stillNeedHelp": "Didn't find your issue?",
+    "submitCta": "Submit Feedback",
+    "entryTitle": "FAQ",
+    "entryHint": "Check the FAQ before submitting — it may solve your issue faster",
+    "items": {
+      "connection": {
+        "question": "What should I do about unstable connection or slow speed?",
+        "answer": "Speed issues are usually related to your local network. Please troubleshoot in this order:\n\n1. Try different tunnel lines first. If all lines are slow, it's almost certainly a local network issue.\n2. Restart your router. This resolves most temporary routing cache and link issues.\n3. Call your ISP and ask whether they've applied targeted throttling for overseas traffic.\n4. If the ISP offers to send a technician on-site, decline — ISPs often have \"broadband processing\" KPIs and will push you to downgrade your plan by citing fake \"line faults\".\n5. Only after ruling out the above is it possibly a node issue. Submit feedback with logs and we'll investigate."
+      },
+      "wifiSwitch": {
+        "question": "VPN disconnects after switching WiFi or network?",
+        "answer": "Kaitu supports automatic reconnection after network changes, but the trigger has a delay of several seconds to a dozen seconds. If you don't want to wait, manually tap Disconnect then Connect to recover immediately."
+      },
+      "deviceRemoved": {
+        "question": "Why is my device being removed / kicked out?",
+        "answer": "Each account supports up to 5 devices logged in simultaneously. When you log in on a 6th device, the system automatically removes the earliest logged-in device.\n\nIf you're certain you haven't exceeded 5 devices but are still being kicked, please submit feedback and we'll help check your account's device bindings."
+      },
+      "updateIssue": {
+        "question": "App doesn't work after update?",
+        "answer": "Update mechanisms differ across platforms, and plugins sometimes don't reload immediately:\n\n• Windows / macOS: Restart your computer so the new version takes full effect.\n• iOS: If you see issues after update, delete the app and reinstall from the App Store — this resolves Network Extension plugin reload issues.\n• Android: Restart your phone, or force-stop the app in Settings and reopen it."
+      },
+      "loginFailed": {
+        "question": "Login failed / verification code not received?",
+        "answer": "The most common cause is a typo in the email — about 30% of users in our database mistype their email on first attempt. Please check letter by letter:\n\n• Spaces or extra characters around the @ sign\n• Domain spelling (e.g. gmial → gmail, hotmial → hotmail)\n• Confusion between 0 (zero) and O (letter)\n\nAfter confirming, check your spam folder. If nothing arrives, try a different email address."
+      },
+      "linuxSupport": {
+        "question": "Linux version can't connect — what should I do?",
+        "answer": "The Linux client is still in limited testing. Distribution and kernel coverage is not yet complete, so some combinations may have issues.\n\nIf you encounter problems, submit feedback with logs. Our engineers will fix issues quickly based on your logs so you can get up and running soon."
+      },
+      "chinaAppStore": {
+        "question": "How is Kaitu listed on the China App Store?",
+        "answer": "Our iOS client is designed within a compliant framework and passed Apple's standard review process for listing.\n\nIf other developers would like to discuss iOS listing experiences, feel free to contact us by email — we're happy to share."
+      }
+    }
   },
   "ticket": {
     "title": "Submit Ticket",

@@ -227,7 +227,7 @@ Every public `[locale]` page MUST follow these rules. Violations directly harm o
 **Content SEO:**
 - Page titles follow pattern: `{Page Topic} | Kaitu` (zh) / `{Page Topic} | Kaitu` (en). Max 60 characters.
 - Every content page (Velite markdown) must have frontmatter with `title`, `description`. Description used for meta.
-- Brand keyword consistency: product is "Kaitu" (en) / "开途" (zh), protocol is "k2v5", congestion control is "k2cc". Never deviate.
+- Brand keyword consistency: product is "Kaitu" (en) / "开途" (zh), protocol is "k2", congestion control is "k2cc". Never deviate.
 
 ### GEO (Generative Engine Optimization — AI Search)
 
