@@ -17,7 +17,7 @@ vi.mock('#velite', () => ({
   posts: [
     { slug: 'k2/quickstart', locale: 'zh-CN', date: '2026-02-21', draft: false, title: 'Quickstart' },
     { slug: 'k2/k2cc', locale: 'zh-CN', date: '2026-03-17', draft: false, title: 'k2cc' },
-    { slug: 'k2/k2v5', locale: 'zh-CN', date: '2026-03-17', draft: false, title: 'k2v5' },
+    { slug: 'k2/protocol', locale: 'zh-CN', date: '2026-03-17', draft: false, title: 'k2 protocol' },
     { slug: 'k2/vs-hysteria2', locale: 'zh-CN', date: '2026-02-21', draft: false, title: 'vs Hysteria2' },
     { slug: 'blog/hello', locale: 'zh-CN', date: '2026-02-21', draft: false, title: 'Hello' },
   ],
@@ -45,12 +45,12 @@ describe('test_sitemap_includes_k2_pages', () => {
     expect(urls.some((url: string) => url.includes('/k2/k2cc'))).toBe(true);
   });
 
-  it('sitemap result contains URLs with /k2/k2v5', async () => {
+  it('sitemap result contains URLs with /k2/protocol', async () => {
     const { default: sitemap } = await import('../src/app/sitemap');
     const entries = sitemap();
     const urls = entries.map((entry: { url: string }) => entry.url);
 
-    expect(urls.some((url: string) => url.includes('/k2/k2v5'))).toBe(true);
+    expect(urls.some((url: string) => url.includes('/k2/protocol'))).toBe(true);
   });
 
   it('sitemap result contains URLs with /k2/vs-hysteria2', async () => {

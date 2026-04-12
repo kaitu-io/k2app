@@ -117,7 +117,7 @@ sudo iptables -A INPUT -p udp --dport 50000:50100 -j ACCEPT
 在连接 URI 中添加 `&hop=50000-50100` 参数：
 
 ```
-k2v5://alice:token@1.2.3.4:443?ech=...&pin=...&hop=50000-50100&country=JP#tokyo
+k2://alice:token@1.2.3.4:443?ech=...&pin=...&hop=50000-50100&country=JP#tokyo
 ```
 
 将更新后的 URI 粘贴到客户端的节点管理页面即可。

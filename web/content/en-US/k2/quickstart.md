@@ -27,7 +27,7 @@ On **first run**, k2s automatically:
 - Prints a ready-to-use connection URL:
 
 ```
-k2v5://abc123:tok456@203.0.113.5:443?ech=AEX0...&pin=sha256:...
+k2://abc123:tok456@203.0.113.5:443?ech=AEX0...&pin=sha256:...
 ```
 
 > To see the connection URL again later, just run `sudo k2s run` again.
@@ -38,7 +38,7 @@ Run this on your client machine (replace the URL with the one printed in step 1)
 
 ```bash
 curl -fsSL https://kaitu.io/i/k2 | sudo bash
-sudo k2 up k2v5://abc123:tok456@203.0.113.5:443?ech=AEX0...&pin=sha256:...
+sudo k2 up k2://abc123:tok456@203.0.113.5:443?ech=AEX0...&pin=sha256:...
 ```
 
 Once connected, all traffic is routed through the encrypted k2 tunnel.
@@ -56,7 +56,7 @@ k2 up <url>   # Reconnect
 If you prefer not to use root to create a TUN device, use proxy mode:
 
 ```bash
-k2 up --mode proxy k2v5://abc123:tok456@203.0.113.5:443?ech=AEX0...&pin=sha256:...
+k2 up --mode proxy k2://abc123:tok456@203.0.113.5:443?ech=AEX0...&pin=sha256:...
 ```
 
 Proxy mode starts a local SOCKS5 proxy at `socks5://127.0.0.1:1080`. No system route changes are made.

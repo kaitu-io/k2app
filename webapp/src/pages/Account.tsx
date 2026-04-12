@@ -660,7 +660,7 @@ export default function Account() {
 
             <Divider />
 
-            {/* FAQ */}
+            {/* Feedback */}
             <ListItem
               sx={{
                 cursor: 'pointer',
@@ -669,7 +669,7 @@ export default function Account() {
                   backgroundColor: 'action.hover'
                 }
               }}
-              onClick={() => navigate("/faq")}
+              onClick={() => navigate("/feedback")}
               secondaryAction={<ChevronRightIcon color="action" />}
             >
               <ListItemIcon>

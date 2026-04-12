@@ -2,107 +2,111 @@ import { useNavigate, useLocation } from "react-router-dom";
 import {
   Box,
   Typography,
-  Card,
-  CardContent,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  Button,
   Stack,
 } from "@mui/material";
 import {
+  ExpandMore as ExpandMoreIcon,
   SupportAgent as SupportIcon,
-  ChevronRight as ChevronRightIcon,
-  Security as SecurityIcon,
 } from "@mui/icons-material";
 import { useTranslation } from "react-i18next";
 import BackButton from "../components/BackButton";
-import { useAppLinks } from "../hooks/useAppLinks";
+
+const FAQ_KEYS = [
+  "connection",
+  "wifiSwitch",
+  "deviceRemoved",
+  "updateIssue",
+  "loginFailed",
+  "linuxSupport",
+  "chinaAppStore",
+] as const;
 
 export default function FAQ() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-  const { links } = useAppLinks();
 
-  // Get the previous page from navigation state, fallback to /account
-  const backTo = (location.state as { from?: string })?.from || '/account';
+  const backTo = (location.state as { from?: string })?.from || "/feedback";
 
   return (
-    <Box sx={{
-      width: "100%",
-      height: "100%",
-      position: "relative"
-    }}>
+    <Box sx={{ width: "100%", height: "100%", position: "relative" }}>
       <BackButton to={backTo} />
 
-      <Box sx={{
-        width: "100%",
-        height: "100%",
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "flex-start",
-        pt: 9
-      }}>
-        {/* 工具面板 */}
-        <Box sx={{
-          width: 500,
-          display: "flex",
-          flexDirection: "column",
-          gap: 1.5,
-          overflow: "auto",
+      <Box
+        sx={{
+          width: "100%",
           height: "100%",
-          pr: 0.5,
-        }}>
-        {/* 安全软件白名单设置 */}
-        <Card
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "flex-start",
+          pt: 9,
+        }}
+      >
+        <Box
           sx={{
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-            '&:hover': {
-              bgcolor: 'action.hover',
-            }
+            width: 560,
+            maxWidth: "100%",
+            display: "flex",
+            flexDirection: "column",
+            gap: 1,
+            overflow: "auto",
+            height: "100%",
+            px: 2,
+            pb: 4,
           }}
-          onClick={() => window._platform!.openExternal?.(links.securitySoftwareHelpUrl)}
         >
-          <CardContent>
-            <Stack direction="row" alignItems="center" justifyContent="space-between">
-              <Box display="flex" alignItems="center" gap={1.5}>
-                <SecurityIcon color="warning" />
-                <Box>
-                  <Typography variant="subtitle1">{t('dashboard:troubleshooting.securitySoftware.title')}</Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {t('dashboard:troubleshooting.securitySoftware.description')}
-                  </Typography>
-                </Box>
-              </Box>
-              <ChevronRightIcon color="action" />
-            </Stack>
-          </CardContent>
-        </Card>
+          <Typography variant="h6" sx={{ mb: 1 }}>
+            {t("ticket:faq.title")}
+          </Typography>
 
-        {/* 提交工单入口 */}
-        <Card
-          sx={{
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-            '&:hover': {
-              bgcolor: 'action.hover',
-            }
-          }}
-          onClick={() => navigate('/submit-ticket')}
-        >
-          <CardContent>
-            <Stack direction="row" alignItems="center" justifyContent="space-between">
-              <Box display="flex" alignItems="center" gap={1.5}>
-                <SupportIcon color="primary" />
-                <Box>
-                  <Typography variant="subtitle1">{t('ticket:ticket.entryTitle')}</Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {t('ticket:ticket.entryDescription')}
-                  </Typography>
-                </Box>
-              </Box>
-              <ChevronRightIcon color="action" />
-            </Stack>
-          </CardContent>
-        </Card>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            {t("ticket:faq.subtitle")}
+          </Typography>
+
+          {FAQ_KEYS.map((key) => (
+            <Accordion
+              key={key}
+              disableGutters
+              sx={{
+                bgcolor: "background.paper",
+                "&:before": { display: "none" },
+                borderRadius: 1,
+                mb: 0.5,
+              }}
+            >
+              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                  {t(`ticket:faq.items.${key}.question`)}
+                </Typography>
+              </AccordionSummary>
+              <AccordionDetails>
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ whiteSpace: "pre-line", lineHeight: 1.7 }}
+                >
+                  {t(`ticket:faq.items.${key}.answer`)}
+                </Typography>
+              </AccordionDetails>
+            </Accordion>
+          ))}
+
+          <Stack spacing={1} sx={{ mt: 3, alignItems: "center" }}>
+            <Typography variant="body2" color="text.secondary">
+              {t("ticket:faq.stillNeedHelp")}
+            </Typography>
+            <Button
+              variant="contained"
+              startIcon={<SupportIcon />}
+              onClick={() => navigate("/submit-ticket-form")}
+            >
+              {t("ticket:faq.submitCta")}
+            </Button>
+          </Stack>
         </Box>
       </Box>
     </Box>

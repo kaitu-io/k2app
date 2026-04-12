@@ -22,7 +22,7 @@ import path from 'path';
 const CONTENT_DIR = path.resolve(__dirname, '../content');
 
 /** Slugs for each k2/ doc page */
-const EXPECTED_SLUGS = ['index', 'quickstart', 'server', 'client', 'k2cc', 'k2v5', 'stealth'];
+const EXPECTED_SLUGS = ['index', 'quickstart', 'server', 'client', 'k2cc', 'protocol', 'stealth'];
 
 /** Locales that must have all k2/ content */
 const EXPECTED_LOCALES = ['zh-CN', 'en-US'];
@@ -157,14 +157,14 @@ describe('test_k2_content_has_required_frontmatter', () => {
     }
   });
 
-  it('order values match spec: index=1, quickstart=2, server=3, client=4, k2cc=5, k2v5=6, stealth=7', () => {
+  it('order values match spec: index=1, quickstart=2, server=3, client=4, k2cc=5, protocol=6, stealth=7', () => {
     const expectedOrders: Record<string, number> = {
       index: 1,
       quickstart: 2,
       server: 3,
       client: 4,
       k2cc: 5,
-      k2v5: 6,
+      protocol: 6,
       stealth: 7,
     };
     for (const locale of EXPECTED_LOCALES) {

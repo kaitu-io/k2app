@@ -13,7 +13,11 @@ import {
   TextField,
   Badge,
 } from "@mui/material";
-import { Send as SendIcon } from "@mui/icons-material";
+import {
+  Send as SendIcon,
+  HelpOutline as HelpOutlineIcon,
+  ChevronRight as ChevronRightIcon,
+} from "@mui/icons-material";
 import { useTranslation } from "react-i18next";
 
 import BackButton from "../components/BackButton";
@@ -107,6 +111,32 @@ function TicketList({
           {t("ticket:feedback.newTicket")}
         </Button>
       </Stack>
+
+      <Card
+        sx={{
+          cursor: "pointer",
+          transition: "all 0.2s",
+          "&:hover": { bgcolor: "action.hover" },
+        }}
+        onClick={() => navigate("/faq")}
+      >
+        <CardContent sx={{ py: 1.5, "&:last-child": { pb: 1.5 } }}>
+          <Stack direction="row" alignItems="center" justifyContent="space-between">
+            <Stack direction="row" alignItems="center" gap={1.5}>
+              <HelpOutlineIcon color="primary" />
+              <Box>
+                <Typography variant="subtitle2">
+                  {t("ticket:faq.entryTitle")}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {t("ticket:faq.entryHint")}
+                </Typography>
+              </Box>
+            </Stack>
+            <ChevronRightIcon color="action" />
+          </Stack>
+        </CardContent>
+      </Card>
 
       {isLoading ? (
         <Box display="flex" justifyContent="center" py={4}>

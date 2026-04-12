@@ -47,7 +47,7 @@ After startup, the terminal displays the connection URL:
 ```
 k2s running on 0.0.0.0:443
 Connect URL:
-k2v5://abc123:tok456@203.0.113.5:443?ech=AEX0...&pin=sha256:abc...
+k2://abc123:tok456@203.0.113.5:443?ech=AEX0...&pin=sha256:abc...
 ```
 
 ## Retrieving the Connection URL

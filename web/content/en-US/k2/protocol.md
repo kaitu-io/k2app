@@ -1,26 +1,26 @@
 ---
-title: k2v5 Protocol Architecture
+title: k2 Protocol Architecture
 date: 2026-03-17
-summary: "k2v5 is the current version of the k2 protocol family, using a client-server architecture. URL format, three-layer identity, ECH config derivation, certificate pinning, TLS record padding, QUIC+TCP-WS transport, port hopping, and server-side ECH routing."
+summary: "k2 is the current version of the k2 protocol family, using a client-server architecture. URL format, three-layer identity, ECH config derivation, certificate pinning, TLS record padding, QUIC+TCP-WS transport, port hopping, and server-side ECH routing."
 section: technical
 order: 6
 draft: false
 ---
 
-# k2v5 Protocol Architecture
+# k2 Protocol Architecture
 
-k2v5 is the current version of the k2 protocol family, using a **client-server architecture**. All Kaitu clients and the k2 CLI use k2v5 by default — connection URLs start with `k2v5://`.
+k2 is the current version of the k2 protocol family, using a **client-server architecture**. All Kaitu clients and the k2 CLI use k2 by default — connection URLs start with `k2://`.
 
-k2v5 uses [k2cc](/k2/k2cc) as its congestion control layer. The future k2v6 will adopt a P2P architecture, also using k2cc. For details on the k2cc adaptive rate control algorithm, see [k2cc Adaptive Rate Control](/k2/k2cc).
+k2 uses [k2cc](/k2/k2cc) as its congestion control layer. The future k2p will adopt a P2P architecture, also using k2cc. For details on the k2cc adaptive rate control algorithm, see [k2cc Adaptive Rate Control](/k2/k2cc).
 
 For stealth and camouflage mechanisms, see [Stealth Camouflage](/k2/stealth).
 
-## k2v5 URL Format
+## k2 URL Format
 
-k2v5 encodes all connection parameters in a single URL:
+k2 encodes all connection parameters in a single URL:
 
 ```
-k2v5://UDID:TOKEN@HOST:PORT?ech=ECH_CONFIG&pin=sha256:CERT_HASH&fp=FINGERPRINT&hop=PORT_RANGE
+k2://UDID:TOKEN@HOST:PORT?ech=ECH_CONFIG&pin=sha256:CERT_HASH&fp=FINGERPRINT&hop=PORT_RANGE
 ```
 
 | Parameter | Description | Example |
@@ -36,7 +36,7 @@ k2v5://UDID:TOKEN@HOST:PORT?ech=ECH_CONFIG&pin=sha256:CERT_HASH&fp=FINGERPRINT&h
 
 ## Three-Layer Identity
 
-A k2v5 connection exposes three layers of observable identity, each with different visibility:
+A k2 connection exposes three layers of observable identity, each with different visibility:
 
 ```
 Layer        Plaintext  Content
@@ -50,7 +50,7 @@ A network observer (ISP, firewall) can see layers 1 and 2. Layer 3 is fully encr
 
 ## ECH Config Forgery
 
-ECH (Encrypted Client Hello) is the core stealth mechanism of k2v5. k2s does not generate ECH configurations from scratch — it **derives them from real Cloudflare ECH configurations**:
+ECH (Encrypted Client Hello) is the core stealth mechanism of k2. k2s does not generate ECH configurations from scratch — it **derives them from real Cloudflare ECH configurations**:
 
 1. Query the DNS HTTPS record for `cloudflare-ech.com` to obtain the current Cloudflare ECH template
 2. Copy the `cipher_suites`, `kem_id`, and `public_name` fields verbatim
@@ -105,35 +105,35 @@ When the URL contains a `hop=START-END` parameter, the k2 client randomly select
 
 ```
 # Example: random port hopping between 10000 and 20000
-k2v5://...@203.0.113.5:443?hop=10000-20000&...
+k2://...@203.0.113.5:443?hop=10000-20000&...
 ```
 
 ## Server-Side ECH Routing
 
 When k2s receives a TLS connection, it inspects the ClientHello:
 
-- **ECH extension present**: Decrypt the inner ClientHello, verify credentials, route to the k2v5 tunnel handler
+- **ECH extension present**: Decrypt the inner ClientHello, verify credentials, route to the k2 tunnel handler
 - **ECH extension absent**: Forward the raw TCP connection transparently to the real host for `public_name` (i.e., actual Cloudflare servers)
 
 Non-ECH connections to k2s receive valid responses from real Cloudflare servers. An automated prober cannot distinguish k2s from a real Cloudflare endpoint.
 
 ## FAQ
 
-**What is ECH and why does k2v5 need it?**
+**What is ECH and why does k2 need it?**
 
-ECH (Encrypted Client Hello) encrypts the SNI field in TLS handshakes, preventing DPI from seeing your real connection target. This is the core of k2v5's stealth capability. Without ECH, the GFW can identify and block proxy connections via plaintext SNI. VLESS+Reality does not support ECH — it relies on borrowing real website certificates, which academic research has shown to have detectable characteristics (USENIX Security 2025).
+ECH (Encrypted Client Hello) encrypts the SNI field in TLS handshakes, preventing DPI from seeing your real connection target. This is the core of k2's stealth capability. Without ECH, the GFW can identify and block proxy connections via plaintext SNI. VLESS+Reality does not support ECH — it relies on borrowing real website certificates, which academic research has shown to have detectable characteristics (USENIX Security 2025).
 
 **What does "three-layer identity" mean?**
 
 Layer 1 is the TCP destination IP (plaintext, unavoidable). Layer 2 is the outer SNI (plaintext, disguised as a major CDN hostname). Layer 3 is the inner SNI (fully encrypted by ECH). DPI can only see layers 1 and 2. Layer 3 requires the ECH private key to decrypt — even if the GFW captures the complete TLS handshake, it cannot determine your real server.
 
-**What's the difference between k2v5 and k2v6?**
+**What's the difference between k2 and k2p?**
 
-k2v5 is the current client-server architecture. k2v6 is a planned P2P architecture. Both use k2cc as their congestion control layer — k2cc is a standalone algorithm, not tied to any specific protocol version.
+k2 is the current client-server architecture. k2p is a planned P2P architecture. Both use k2cc as their congestion control layer — k2cc is a standalone algorithm, not tied to any specific protocol version.
 
 **What happens if QUIC is blocked?**
 
-k2v5 has built-in automatic fallback: when QUIC is blocked by UDP filtering, it switches to TCP-WebSocket transport transparently. No user intervention needed. This is more reliable than Hysteria2, which only supports QUIC — if UDP is blocked, Hysteria2 cannot connect at all.
+k2 has built-in automatic fallback: when QUIC is blocked by UDP filtering, it switches to TCP-WebSocket transport transparently. No user intervention needed. This is more reliable than Hysteria2, which only supports QUIC — if UDP is blocked, Hysteria2 cannot connect at all.
 
 ---
 

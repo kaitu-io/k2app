@@ -184,7 +184,7 @@ sudo k2s run
 
 # 客户端
 curl -fsSL https://kaitu.io/i/k2 | sudo sh
-sudo k2 up k2v5://USERNAME:PASSWORD@SERVER:443?ech=...&pin=...
+sudo k2 up k2://USERNAME:PASSWORD@SERVER:443?ech=...&pin=...
 ```
 
 所有密钥、证书、ECH 配置自动生成。k2cc 自动探测最优速率，无需手动配置带宽参数。

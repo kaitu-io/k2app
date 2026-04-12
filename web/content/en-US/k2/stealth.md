@@ -51,16 +51,16 @@ k2 uses the **uTLS** library to replicate real browser TLS fingerprints:
 
 ```bash
 # Chrome fingerprint (default)
-sudo k2 up k2v5://...?fp=chrome
+sudo k2 up k2://...?fp=chrome
 
 # Firefox fingerprint
-sudo k2 up k2v5://...?fp=firefox
+sudo k2 up k2://...?fp=firefox
 
 # Safari fingerprint
-sudo k2 up k2v5://...?fp=safari
+sudo k2 up k2://...?fp=safari
 
 # Random (rotates periodically)
-sudo k2 up k2v5://...?fp=random
+sudo k2 up k2://...?fp=random
 ```
 
 ## Traffic Characteristic Hiding
@@ -76,7 +76,7 @@ Active probing means a censor sends connection requests directly to a suspicious
 k2s handles this as follows:
 
 1. Inspect the ClientHello of every incoming TLS connection
-2. If the ClientHello **has an ECH extension**: decrypt the inner ClientHello, verify credentials, route to the k2v5 tunnel handler
+2. If the ClientHello **has an ECH extension**: decrypt the inner ClientHello, verify credentials, route to the k2 tunnel handler
 3. If the ClientHello **has no ECH extension**: forward the raw TCP connection transparently to the real server for `public_name` (actual Cloudflare IP, resolved from DNS)
 
 A prober connecting without ECH receives a genuine response from a real Cloudflare server. There is no observable difference between k2s and a legitimate Cloudflare endpoint.
@@ -96,7 +96,7 @@ k2's approach:
 Some networks apply QoS rate-limiting or outright blocking to specific UDP ports. k2 supports hopping across a specified port range:
 
 ```
-k2v5://...@server:443?hop=10000-20000&...
+k2://...@server:443?hop=10000-20000&...
 ```
 
 The client rotates its UDP port periodically, rendering fixed-port filtering rules ineffective.
@@ -121,4 +121,4 @@ Fully secure. k2 uses certificate pinning (`pin=sha256:HASH`) — the client dir
 
 ---
 
-For the underlying implementation details, see [k2v5 Protocol Architecture](/k2/k2v5) and [k2cc Adaptive Rate Control](/k2/k2cc).
+For the underlying implementation details, see [k2 Protocol Architecture](/k2/protocol) and [k2cc Adaptive Rate Control](/k2/k2cc).

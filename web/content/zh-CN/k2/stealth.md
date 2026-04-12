@@ -78,16 +78,16 @@ k2 通过 **uTLS** 库在字节级别精确复制真实浏览器的 ClientHello 
 
 ```bash
 # Chrome 指纹（默认，全球市场份额 65%+）
-sudo k2 up k2v5://...?fp=chrome
+sudo k2 up k2://...?fp=chrome
 
 # Firefox 指纹（适合需要差异化的场景）
-sudo k2 up k2v5://...?fp=firefox
+sudo k2 up k2://...?fp=firefox
 
 # Safari 指纹（适合 macOS/iOS 环境）
-sudo k2 up k2v5://...?fp=safari
+sudo k2 up k2://...?fp=safari
 
 # 随机轮换（每次连接随机选择一种浏览器指纹）
-sudo k2 up k2v5://...?fp=random
+sudo k2 up k2://...?fp=random
 ```
 
 默认使用 Chrome 指纹，因为 Chrome 拥有全球最大的用户基数，其 TLS 指纹是互联网上最常见的 ClientHello 模式——审查系统无法在不影响正常网页浏览的情况下封锁这一指纹。
@@ -109,7 +109,7 @@ k2s 定期从 ECH 伪装目标域名下载真实证书链，测量其 TLS Record
 k2s 的应对策略：
 
 1. 检查每个传入 TLS 连接的 ClientHello
-2. 如果 ClientHello **包含 ECH 扩展**：解密内层 ClientHello，进入 k2v5 隧道处理
+2. 如果 ClientHello **包含 ECH 扩展**：解密内层 ClientHello，进入 k2 隧道处理
 3. 如果 ClientHello **不包含 ECH 扩展**：将原始 TCP 连接透明转发到 `public_name` 对应的真实 CDN 服务器
 
 探测者向 k2s 发出的非 ECH 连接将收到来自真实 CDN 服务器的合法 HTTPS 响应，无法区分 k2s 与真实 CDN 服务器。
@@ -129,7 +129,7 @@ k2 的做法：
 部分网络环境会对特定 UDP 端口进行 QoS 限速或彻底封锁。k2 支持在指定端口范围内随机跳跃：
 
 ```
-k2v5://...@server:443?hop=10000-20000&...
+k2://...@server:443?hop=10000-20000&...
 ```
 
 客户端定期更换 UDP 端口，使基于固定端口规则的 QoS 策略失效。
@@ -163,4 +163,4 @@ k2v5://...@server:443?hop=10000-20000&...
 
 ---
 
-如需了解 k2cc 的详细介绍，请参阅 [k2cc 自适应速率控制](/k2/k2cc)。如需了解 k2cc 与其他拥塞控制策略的性能对比，请参阅 [k2 vs Hysteria2](/k2/vs-hysteria2)。如需了解 k2v5 协议架构，请参阅 [k2v5 协议架构](/k2/k2v5)。
+如需了解 k2cc 的详细介绍，请参阅 [k2cc 自适应速率控制](/k2/k2cc)。如需了解 k2cc 与其他拥塞控制策略的性能对比，请参阅 [k2 vs Hysteria2](/k2/vs-hysteria2)。如需了解 k2 协议架构，请参阅 [k2 协议架构](/k2/protocol)。

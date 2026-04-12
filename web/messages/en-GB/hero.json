@@ -18,7 +18,7 @@
       },
       "zeroDeploy": {
         "title": "Zero-Config Deployment",
-        "description": "One curl command installs both server and client. Auto-generates k2v5:// connection URI. No manual certificate configuration needed",
+        "description": "One curl command installs both server and client. Auto-generates k2:// connection URI. No manual certificate configuration needed",
         "icon": "⚡"
       },
       "transport": {
@@ -44,7 +44,7 @@
     },
     "comparison": {
       "title": "Protocol Comparison",
-      "subtitle": "k2v5 vs. mainstream anti-censorship protocols across key dimensions",
+      "subtitle": "k2 vs. mainstream anti-censorship protocols across key dimensions",
       "dimensions": {
         "ech": "ECH Stealth",
         "tlsFingerprint": "TLS Fingerprint Spoofing",
@@ -59,7 +59,7 @@
       "protocols": [
         {
           "id": "k2",
-          "name": "k2v5",
+          "name": "k2",
           "ech": true,
           "tlsFingerprint": true,
           "activeProbe": true,
@@ -141,14 +141,14 @@
         "step3": "# Start the service",
         "step4": "k2s run",
         "step5": "# Outputs connection URI",
-        "step6": "k2v5://..."
+        "step6": "k2://..."
       },
       "client": {
         "title": "Client (30 seconds)",
         "step1": "# Install k2 client",
         "step2": "curl -fsSL https://kaitu.io/i/k2 | sudo sh",
         "step3": "# Connect (paste URI)",
-        "step4": "k2 up k2v5://..."
+        "step4": "k2 up k2://..."
       }
     }
   },
@@ -172,7 +172,7 @@
         "item1": "Auto-fallback from QUIC to TCP-WebSocket when blocked",
         "item2": "Self-signed certificate + Pin — zero CT log exposure",
         "item3": "Port reuse — coexists with real website on port 443",
-        "item4": "One-command deploy — auto-generates k2v5:// URI",
+        "item4": "One-command deploy — auto-generates k2:// URI",
         "bullet": "•"
       }
     },
@@ -200,7 +200,7 @@
       },
       "failover": {
         "title": "Zero-Config Deployment",
-        "description": "One curl command to install. Auto-generates k2v5:// connection URI. Complete deployment in 10 minutes",
+        "description": "One curl command to install. Auto-generates k2:// connection URI. Complete deployment in 10 minutes",
         "icon": "⚡"
       },
       "performance": {
@@ -239,7 +239,7 @@
       },
       "kaitu": {
         "letter": "K",
-        "name": "k2v5",
+        "name": "k2",
         "tech": "ECH stealth + QUIC+TCP-WS dual stack + k2cc adaptive rate control"
       },
       "trojan": {
@@ -264,7 +264,7 @@
       }
     },
     "visualization": {
-      "title": "k2v5 Stealth Tunnel Architecture",
+      "title": "k2 Stealth Tunnel Architecture",
       "subtitle": "ECH encrypted handshake + QUIC/TCP-WS dual-stack transport, DPI completely ineffective",
       "client": "Client",
       "target": "Target Server",
@@ -289,7 +289,7 @@
         "failedPath": "Fallback Path",
         "optimalNode": "Optimal Node"
       },
-      "description": "k2v5 uses ECH to encrypt SNI during the TLS handshake, preventing firewalls from identifying the target domain. Data is transmitted via QUIC (preferred) or TCP-WebSocket (fallback). k2cc maintains stable throughput on high-loss networks. The server's built-in reverse proxy forwards non-k2 traffic to a real website, making active probing indistinguishable."
+      "description": "k2 uses ECH to encrypt SNI during the TLS handshake, preventing firewalls from identifying the target domain. Data is transmitted via QUIC (preferred) or TCP-WebSocket (fallback). k2cc maintains stable throughput on high-loss networks. The server's built-in reverse proxy forwards non-k2 traffic to a real website, making active probing indistinguishable."
     }
   },
   "download": {
@@ -378,26 +378,84 @@
     "warranty": "All router products include 1-year warranty • Free technical support • 7-day no-questions-asked return"
   },
   "faq": {
+    "title": "Frequently Asked Questions",
+    "subtitle": "Everything about Kaitu VPN — protocol, platforms, pricing, privacy",
     "items": {
+      "whatIsK2cc": {
+        "question": "What is k2cc?",
+        "answer": "k2cc is Kaitu's proprietary congestion control algorithm, designed specifically for hostile censorship networks. It uses a censorship-aware mechanism to distinguish between packet drops caused by censorship infrastructure and normal network congestion. In Kaitu's internal benchmarks, k2cc delivers 2-5x higher throughput than BBR and Brutal under GFW-like conditions (26% packet loss) and typical China ISP conditions (5-15% packet loss). k2cc is zero-config and requires no manual bandwidth tuning."
+      },
+      "whatIsK2v5": {
+        "question": "What is the k2 protocol?",
+        "answer": "k2 is Kaitu's composite stealth tunnel protocol, built on three pillars: (1) ECH-encrypted Client Hello, making the TLS handshake undetectable to DPI; (2) QUIC/H3 as the primary transport with TCP-WebSocket as automatic fallback; (3) k2cc censorship-aware congestion control. QUIC and TCP-WS share the same server port via protocol detection — one port resists both UDP blocking and DPI inspection simultaneously."
+      },
+      "howDoesEchWork": {
+        "question": "What is ECH and how does it bypass firewall detection?",
+        "answer": "ECH (Encrypted Client Hello) is a TLS 1.3 extension that encrypts the SNI field in the ClientHello. In traditional TLS handshakes, SNI is transmitted in plaintext, exposing the target domain and allowing firewalls to identify and block connections. With ECH enabled, DPI cannot see the real SNI or determine the connection target. Kaitu's server additionally forges ECH configurations so they are indistinguishable from genuine Cloudflare ECH traffic."
+      },
+      "comparisonWithOthers": {
+        "question": "How is Kaitu different from WireGuard, Shadowsocks, VLESS+Reality, and Hysteria2?",
+        "answer": "k2 is the only major circumvention protocol that simultaneously implements ECH stealth, QUIC+TCP-WS dual-stack fallback, and censorship-aware congestion control. WireGuard is a plaintext UDP tunnel with no TLS disguise and is nearly unusable under GFW. Shadowsocks has only lightweight encryption without disguise. VLESS+Reality has TLS fingerprint mimicry but lacks ECH, QUIC, and TCP fallback. Hysteria2 has QUIC but no ECH or TCP fallback."
+      },
+      "gfwSpeed": {
+        "question": "How fast is Kaitu under GFW conditions?",
+        "answer": "In Kaitu's internal benchmarks simulating GFW conditions (26% packet loss) and typical China ISP conditions (5-15% packet loss), k2cc congestion control achieves 2-5x higher throughput than BBR and Brutal. Actual user speed depends on local network quality, ISP-level overseas throttling, and the chosen node."
+      },
       "platforms": {
         "question": "What platforms does Kaitu support?",
-        "answer": "Kaitu supports Windows, macOS, Linux, iOS (iPhone/iPad), and Android. One account allows up to 5 devices online simultaneously."
+        "answer": "Kaitu supports all major platforms: Windows 10/11, macOS 12+ (Intel + Apple Silicon universal binary), Linux (Ubuntu, Debian, and other major distributions), iOS (iPhone/iPad, available on the China App Store), Android, and OpenWrt smart routers. One account allows up to 5 simultaneous devices. Kaitu also provides the k2s server binary for self-hosting on any VPS."
+      },
+      "selfHosting": {
+        "question": "Can I self-host my own Kaitu server?",
+        "answer": "Yes. Kaitu provides the k2s server binary, deployable on any VPS with a single command: curl -fsSL https://kaitu.io/i/k2s | sudo sh, then run k2s run to automatically generate a k2:// connection URI. Paste it into your client to connect. k2s supports zero-config auto-provisioning, an interactive k2s setup wizard, and k2s user add for multi-user credential management."
+      },
+      "routerSupport": {
+        "question": "Does Kaitu work on smart routers?",
+        "answer": "Yes. Kaitu provides the k2r router gateway binary with native OpenWrt support using TPROXY mode. No per-device client installation required — every device on your home network automatically routes through Kaitu once connected to the router."
+      },
+      "chinaAccess": {
+        "question": "Does Kaitu work in mainland China?",
+        "answer": "Yes — this is Kaitu's core design goal. The k2 protocol combines ECH-encrypted SNI, QUIC/TCP-WS dual-stack transport, and k2cc censorship-aware congestion control to maintain stable connections even under high-loss censored networks. Entry-point resolution uses a Happy Eyeballs strategy concurrently probing 6 CDN mirrors to avoid the 10-second timeout common in China."
+      },
+      "chinaAppStore": {
+        "question": "Can I download Kaitu directly from the China App Store?",
+        "answer": "Yes. The Kaitu iOS client is listed on the China App Store under normal review. Users can search \"Kaitu\" or \"开途\" and install directly, without switching to an overseas Apple ID."
       },
       "pricing": {
         "question": "How much does Kaitu cost?",
-        "answer": "Kaitu offers 1-year, 2-year, 3-year, and 5-year subscription plans in USD. Longer plans have lower monthly rates. All plans include full Pro features with up to 5 simultaneous devices. Payment via Alipay, WeChat Pay, UnionPay, credit cards, and cryptocurrency. Instant activation after purchase. Visit kaitu.io/purchase for details."
+        "answer": "Kaitu offers 1-year, 2-year, 3-year, and 5-year subscription plans priced in USD. Longer plans have lower effective monthly rates. All plans include full Pro features with up to 5 simultaneous devices and no bandwidth limits. Payment methods include Alipay, WeChat Pay, UnionPay, credit cards, and cryptocurrency. See kaitu.io/purchase for details."
+      },
+      "trial": {
+        "question": "Is there a free trial?",
+        "answer": "Yes. New users receive free trial credit upon registration. You can fully test Kaitu's clients across all platforms, all nodes, and all features before paying. No credit card pre-authorisation required."
       },
       "refund": {
         "question": "Can I get a refund?",
-        "answer": "You can request a refund within 7 days of your first purchase if data usage is under 1GB. Refunds are credited to your account wallet balance, which can be used for renewal or withdrawn to a cryptocurrency wallet."
+        "answer": "You can request a refund within 7 days of your first purchase if data usage is under 1GB. Refunds are credited to your account wallet balance, usable for renewal or withdrawable to a cryptocurrency wallet."
       },
-      "androidInstall": {
-        "question": "What if Android installation is blocked?",
-        "answer": "Some Android phone manufacturers apply security checks to apps installed outside their app stores. This does not mean the app is unsafe. You can manually allow installation when prompted, or use the USB-assisted install feature from a desktop computer to bypass all restrictions. Visit kaitu.io/install for detailed guides."
+      "deviceLimit": {
+        "question": "Why is my device being kicked off?",
+        "answer": "Each account supports up to 5 devices logged in simultaneously. When you sign in on a 6th device, the system automatically removes the earliest logged-in device. If you're certain you haven't exceeded 5 devices but are still being kicked, please submit a support ticket."
       },
       "privacy": {
-        "question": "Is Kaitu safe? Does it log my browsing activity?",
-        "answer": "Kaitu does not log your browsing history, DNS queries, or any network activity content. We only retain connection timestamps for service optimization, automatically deleted after 7 days. The macOS version is Apple notarized and the Windows version is code-signed."
+        "question": "Does Kaitu log my online activity?",
+        "answer": "No. Kaitu enforces a strict no-log policy: we do not log the websites you visit, DNS queries, downloads, or any network activity content. Only connection timestamps are retained for 7 days for service optimisation and troubleshooting, then automatically deleted. All transmission uses TLS 1.3 encryption; VPN tunnels use AES-256-GCM encryption."
+      },
+      "ctLog": {
+        "question": "Why does Kaitu use self-signed certificates instead of Let's Encrypt?",
+        "answer": "Kaitu servers use self-signed certificates with certificate pinning on the client. This achieves zero CT (Certificate Transparency) log exposure. Any certificate issued by a public CA is automatically written to CT logs, which attackers can scan to discover circumvention servers. Kaitu's self-signed + pinning strategy keeps server domains out of all public logs."
+      },
+      "portReuse": {
+        "question": "What does Kaitu's port reuse mean?",
+        "answer": "The k2 server handles QUIC, TCP-WebSocket, and genuine HTTPS requests on the same port (typically 443) via protocol detection. Non-k2 traffic is forwarded by the built-in reverse proxy to a real website, and active probes receive legitimate HTTPS responses. From the outside, a Kaitu server is indistinguishable from a normal Cloudflare-hosted HTTPS site."
+      },
+      "wifiSwitch": {
+        "question": "Does Kaitu reconnect automatically after switching Wi-Fi or 4G/5G?",
+        "answer": "Yes. Kaitu's built-in netCoordinator fuses OS network interface signals with internal probes to distinguish \"network lost\", \"network recovered\", and \"interface changed\" scenarios, and automatically reconnects. The trigger has a delay of several seconds to a dozen seconds. Manual disconnect-reconnect restores immediately if you don't want to wait."
+      },
+      "androidInstall": {
+        "question": "What if Android blocks Kaitu installation as unsafe?",
+        "answer": "Chinese Android systems (MIUI, ColorOS, HyperOS, EMUI) apply security checks to APKs installed outside their app stores. This does not mean the app is unsafe. You can manually allow installation when prompted, or use the USB-assisted install feature from a desktop computer to bypass all restrictions. See kaitu.io/install for detailed guides."
       }
     }
   }
