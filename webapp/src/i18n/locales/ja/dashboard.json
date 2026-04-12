@@ -108,6 +108,26 @@
       "viewPlans": "プランを見る"
     }
   },
+  "smartMode": {
+    "detectedLabel": "Detected:",
+    "smartBypass": "Smart bypass",
+    "autoDetecting": "Smart mode (detecting...)",
+    "globalMode": "Global mode",
+    "manualChnroute": "China bypass (manual)",
+    "manualGlobal": "Global (manual)",
+    "change": "Change",
+    "optionSmart": "Smart",
+    "optionSmartDesc": "Recommended based on your location",
+    "optionGlobal": "Global",
+    "optionGlobalDesc": "All traffic via Overleap",
+    "optionManual": "Manual",
+    "optionManualDesc": "Use my saved settings",
+    "travelPrompt": "You seem to be in",
+    "travelSwitch": "Switch",
+    "travelDismiss": "Dismiss",
+    "travelSwitchPrompt": "now. Switch to this country's profile?",
+    "travelGlobalPrompt": "now. Your traffic will route globally."
+  },
   "tunnels": {
     "title": "ノード管理",
     "description": "ローカルノード設定を管理。カスタムノードを追加するか、ログインしてクラウドノードを同期。",
