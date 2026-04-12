@@ -379,55 +379,55 @@
   },
   "faq": {
     "title": "Frequently Asked Questions",
-    "subtitle": "Everything about Kaitu VPN — protocol, platforms, pricing, privacy",
+    "subtitle": "Everything about Overleap VPN — protocol, platforms, pricing, privacy",
     "items": {
       "whatIsK2cc": {
         "question": "What is k2cc?",
-        "answer": "k2cc is Kaitu's proprietary congestion control algorithm, designed specifically for hostile censorship networks. It uses a censorship-aware mechanism to distinguish between packet drops caused by censorship infrastructure and normal network congestion. In Kaitu's internal benchmarks, k2cc delivers 2-5x higher throughput than BBR and Brutal under GFW-like conditions (26% packet loss) and typical China ISP conditions (5-15% packet loss). k2cc is zero-config and requires no manual bandwidth tuning."
+        "answer": "k2cc is Overleap's proprietary congestion control algorithm, designed specifically for hostile censorship networks. It uses a censorship-aware mechanism to distinguish between packet drops caused by censorship infrastructure and normal network congestion. In Overleap's internal benchmarks, k2cc delivers 2-5x higher throughput than BBR and Brutal under GFW-like conditions (26% packet loss) and typical China ISP conditions (5-15% packet loss). k2cc is zero-config and requires no manual bandwidth tuning."
       },
       "whatIsK2v5": {
         "question": "What is the k2 protocol?",
-        "answer": "k2 is Kaitu's composite stealth tunnel protocol, built on three pillars: (1) ECH-encrypted Client Hello, making the TLS handshake undetectable to DPI; (2) QUIC/H3 as the primary transport with TCP-WebSocket as automatic fallback; (3) k2cc censorship-aware congestion control. QUIC and TCP-WS share the same server port via protocol detection — one port resists both UDP blocking and DPI inspection simultaneously."
+        "answer": "k2 is Overleap's composite stealth tunnel protocol, built on three pillars: (1) ECH-encrypted Client Hello, making the TLS handshake undetectable to DPI; (2) QUIC/H3 as the primary transport with TCP-WebSocket as automatic fallback; (3) k2cc censorship-aware congestion control. QUIC and TCP-WS share the same server port via protocol detection — one port resists both UDP blocking and DPI inspection simultaneously."
       },
       "howDoesEchWork": {
         "question": "What is ECH and how does it bypass firewall detection?",
-        "answer": "ECH (Encrypted Client Hello) is a TLS 1.3 extension that encrypts the SNI field in the ClientHello. In traditional TLS handshakes, SNI is transmitted in plaintext, exposing the target domain and allowing firewalls to identify and block connections. With ECH enabled, DPI cannot see the real SNI or determine the connection target. Kaitu's server additionally forges ECH configurations so they are indistinguishable from genuine Cloudflare ECH traffic, further strengthening stealth."
+        "answer": "ECH (Encrypted Client Hello) is a TLS 1.3 extension that encrypts the SNI field in the ClientHello. In traditional TLS handshakes, SNI is transmitted in plaintext, exposing the target domain and allowing firewalls to identify and block connections. With ECH enabled, DPI cannot see the real SNI or determine the connection target. Overleap's server additionally forges ECH configurations so they are indistinguishable from genuine Cloudflare ECH traffic, further strengthening stealth."
       },
       "comparisonWithOthers": {
-        "question": "How is Kaitu different from WireGuard, Shadowsocks, VLESS+Reality, and Hysteria2?",
+        "question": "How is Overleap different from WireGuard, Shadowsocks, VLESS+Reality, and Hysteria2?",
         "answer": "k2 is the only major circumvention protocol that simultaneously implements ECH stealth, QUIC+TCP-WS dual-stack fallback, and censorship-aware congestion control. WireGuard is a plaintext UDP tunnel with no TLS disguise and is nearly unusable under GFW. Shadowsocks has only lightweight encryption without disguise. VLESS+Reality has TLS fingerprint mimicry but lacks ECH, QUIC, and TCP fallback. Hysteria2 has QUIC but no ECH or TCP fallback. Across nine key dimensions, k2 leads all alternatives."
       },
       "gfwSpeed": {
-        "question": "How fast is Kaitu under GFW conditions?",
-        "answer": "In Kaitu's internal benchmarks simulating GFW conditions (26% packet loss) and typical China ISP conditions (5-15% packet loss), k2cc congestion control achieves 2-5x higher throughput than BBR and Brutal. Actual user speed depends on local network quality, ISP-level overseas throttling, and the chosen node, but under identical conditions the k2 protocol consistently outperforms legacy protocols."
+        "question": "How fast is Overleap under GFW conditions?",
+        "answer": "In Overleap's internal benchmarks simulating GFW conditions (26% packet loss) and typical China ISP conditions (5-15% packet loss), k2cc congestion control achieves 2-5x higher throughput than BBR and Brutal. Actual user speed depends on local network quality, ISP-level overseas throttling, and the chosen node, but under identical conditions the k2 protocol consistently outperforms legacy protocols."
       },
       "platforms": {
-        "question": "What platforms does Kaitu support?",
-        "answer": "Kaitu supports all major platforms: Windows 10/11, macOS 12+ (Intel + Apple Silicon universal binary), Linux (Ubuntu, Debian, and other major distributions), iOS (iPhone/iPad, available on the China App Store), Android, and OpenWrt smart routers. One account allows up to 5 simultaneous devices. Kaitu also provides the k2s server binary for self-hosting on any VPS."
+        "question": "What platforms does Overleap support?",
+        "answer": "Overleap supports all major platforms: Windows 10/11, macOS 12+ (Intel + Apple Silicon universal binary), Linux (Ubuntu, Debian, and other major distributions), iOS (iPhone/iPad, available on the China App Store), Android, and OpenWrt smart routers. One account allows up to 5 simultaneous devices. Overleap also provides the k2s server binary for self-hosting on any VPS."
       },
       "selfHosting": {
-        "question": "Can I self-host my own Kaitu server?",
-        "answer": "Yes. Kaitu provides the k2s server binary, deployable on any VPS with a single command: curl -fsSL https://kaitu.io/i/k2s | sudo sh, then run k2s run to automatically generate a k2:// connection URI. Paste it into your client to connect. k2s supports zero-config auto-provisioning, an interactive k2s setup wizard, and k2s user add for multi-user credential management."
+        "question": "Can I self-host my own Overleap server?",
+        "answer": "Yes. Overleap provides the k2s server binary, deployable on any VPS with a single command: curl -fsSL https://kaitu.io/i/k2s | sudo sh, then run k2s run to automatically generate a k2:// connection URI. Paste it into your client to connect. k2s supports zero-config auto-provisioning, an interactive k2s setup wizard, and k2s user add for multi-user credential management."
       },
       "routerSupport": {
-        "question": "Does Kaitu work on smart routers?",
-        "answer": "Yes. Kaitu provides the k2r router gateway binary with native OpenWrt support using TPROXY mode. No per-device client installation required — every device on your home network (computers, phones, tablets, smart TVs, game consoles, IoT devices) automatically routes through Kaitu once connected to the router."
+        "question": "Does Overleap work on smart routers?",
+        "answer": "Yes. Overleap provides the k2r router gateway binary with native OpenWrt support using TPROXY mode. No per-device client installation required — every device on your home network (computers, phones, tablets, smart TVs, game consoles, IoT devices) automatically routes through Overleap once connected to the router."
       },
       "chinaAccess": {
-        "question": "Does Kaitu work in mainland China?",
-        "answer": "Yes — this is Kaitu's core design goal. Technically, the k2 protocol combines ECH-encrypted SNI, QUIC/TCP-WS dual-stack transport, and k2cc censorship-aware congestion control to maintain stable connections even under high-loss censored networks. Entry-point resolution uses a Happy Eyeballs strategy concurrently probing 6 CDN mirrors to avoid the 10-second timeout common in China. The iOS client is available directly on the China App Store."
+        "question": "Does Overleap work in mainland China?",
+        "answer": "Yes — this is Overleap's core design goal. Technically, the k2 protocol combines ECH-encrypted SNI, QUIC/TCP-WS dual-stack transport, and k2cc censorship-aware congestion control to maintain stable connections even under high-loss censored networks. Entry-point resolution uses a Happy Eyeballs strategy concurrently probing 6 CDN mirrors to avoid the 10-second timeout common in China. The iOS client is available directly on the China App Store."
       },
       "chinaAppStore": {
-        "question": "Can I download Kaitu directly from the China App Store?",
-        "answer": "Yes. The Kaitu iOS client is listed on the China App Store under normal review. Users can search \"Kaitu\" or \"开途\" and install directly, without switching to an overseas Apple ID or bypassing restrictions."
+        "question": "Can I download Overleap directly from the China App Store?",
+        "answer": "Yes. The Overleap iOS client is listed on the China App Store under normal review. Users can search \"Overleap\" or \"开途\" and install directly, without switching to an overseas Apple ID or bypassing restrictions."
       },
       "pricing": {
-        "question": "How much does Kaitu cost?",
-        "answer": "Kaitu offers 1-year, 2-year, 3-year, and 5-year subscription plans priced in USD. Longer plans have lower effective monthly rates. All plans include full Pro features with up to 5 simultaneous devices and no bandwidth limits. Payment methods include Alipay, WeChat Pay, UnionPay, credit cards, and cryptocurrency. Instant activation after purchase. See kaitu.io/purchase for details."
+        "question": "How much does Overleap cost?",
+        "answer": "Overleap offers 1-year, 2-year, 3-year, and 5-year subscription plans priced in USD. Longer plans have lower effective monthly rates. All plans include full Pro features with up to 5 simultaneous devices and no bandwidth limits. Payment methods include Alipay, WeChat Pay, UnionPay, credit cards, and cryptocurrency. Instant activation after purchase. See kaitu.io/purchase for details."
       },
       "trial": {
         "question": "Is there a free trial?",
-        "answer": "Yes. New users receive free trial credit upon registration. You can fully test Kaitu's clients across all platforms, all nodes, and all features before paying. No credit card pre-authorisation required."
+        "answer": "Yes. New users receive free trial credit upon registration. You can fully test Overleap's clients across all platforms, all nodes, and all features before paying. No credit card pre-authorisation required."
       },
       "refund": {
         "question": "Can I get a refund?",
@@ -438,23 +438,23 @@
         "answer": "Each account supports up to 5 devices logged in simultaneously. When you sign in on a 6th device, the system automatically removes the earliest logged-in device. If you're certain you haven't exceeded 5 devices but are still being kicked, please submit a support ticket — we'll review your account's device binding history."
       },
       "privacy": {
-        "question": "Does Kaitu log my online activity?",
-        "answer": "No. Kaitu enforces a strict no-log policy: we do not log the websites you visit, DNS queries, downloads, or any network activity content. Only connection timestamps are retained for 7 days for service optimisation and troubleshooting, then automatically deleted. All transmission uses TLS 1.3 encryption; VPN tunnels use AES-256-GCM encryption."
+        "question": "Does Overleap log my online activity?",
+        "answer": "No. Overleap enforces a strict no-log policy: we do not log the websites you visit, DNS queries, downloads, or any network activity content. Only connection timestamps are retained for 7 days for service optimisation and troubleshooting, then automatically deleted. All transmission uses TLS 1.3 encryption; VPN tunnels use AES-256-GCM encryption."
       },
       "ctLog": {
-        "question": "Why does Kaitu use self-signed certificates instead of Let's Encrypt?",
-        "answer": "Kaitu servers use self-signed certificates with certificate pinning on the client. This achieves zero CT (Certificate Transparency) log exposure. Any certificate issued by a public CA is automatically written to CT logs, which attackers can scan to discover circumvention servers. Kaitu's self-signed + pinning strategy keeps server domains out of all public logs, hiding nodes far more thoroughly."
+        "question": "Why does Overleap use self-signed certificates instead of Let's Encrypt?",
+        "answer": "Overleap servers use self-signed certificates with certificate pinning on the client. This achieves zero CT (Certificate Transparency) log exposure. Any certificate issued by a public CA is automatically written to CT logs, which attackers can scan to discover circumvention servers. Overleap's self-signed + pinning strategy keeps server domains out of all public logs, hiding nodes far more thoroughly."
       },
       "portReuse": {
-        "question": "What does Kaitu's port reuse mean?",
-        "answer": "The k2 server handles QUIC, TCP-WebSocket, and genuine HTTPS requests on the same port (typically 443) via protocol detection. Non-k2 traffic is forwarded by the built-in reverse proxy to a real website, and active probes receive legitimate HTTPS responses. From the outside, a Kaitu server is indistinguishable from a normal Cloudflare-hosted HTTPS site."
+        "question": "What does Overleap's port reuse mean?",
+        "answer": "The k2 server handles QUIC, TCP-WebSocket, and genuine HTTPS requests on the same port (typically 443) via protocol detection. Non-k2 traffic is forwarded by the built-in reverse proxy to a real website, and active probes receive legitimate HTTPS responses. From the outside, a Overleap server is indistinguishable from a normal Cloudflare-hosted HTTPS site."
       },
       "wifiSwitch": {
-        "question": "Does Kaitu reconnect automatically after switching Wi-Fi or 4G/5G?",
-        "answer": "Yes. Kaitu's built-in netCoordinator fuses OS network interface signals with internal probes to distinguish \"network lost\", \"network recovered\", and \"interface changed\" scenarios, and automatically reconnects on recovery or interface switch. The trigger has a delay of several seconds to a dozen seconds. Manual disconnect-reconnect restores immediately if you don't want to wait."
+        "question": "Does Overleap reconnect automatically after switching Wi-Fi or 4G/5G?",
+        "answer": "Yes. Overleap's built-in netCoordinator fuses OS network interface signals with internal probes to distinguish \"network lost\", \"network recovered\", and \"interface changed\" scenarios, and automatically reconnects on recovery or interface switch. The trigger has a delay of several seconds to a dozen seconds. Manual disconnect-reconnect restores immediately if you don't want to wait."
       },
       "androidInstall": {
-        "question": "What if Android blocks Kaitu installation as unsafe?",
+        "question": "What if Android blocks Overleap installation as unsafe?",
         "answer": "Chinese Android systems (MIUI, ColorOS, HyperOS, EMUI) apply security checks to APKs installed outside their app stores. This does not mean the app is unsafe. You can manually allow installation when prompted, or use the USB-assisted install feature from a desktop computer to bypass all restrictions. See kaitu.io/install for detailed guides."
       }
     }

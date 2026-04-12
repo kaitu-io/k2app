@@ -108,6 +108,26 @@
       "viewPlans": "了解会员"
     }
   },
+  "smartMode": {
+    "detectedLabel": "已识别:",
+    "smartBypass": "智能分流",
+    "autoDetecting": "智能模式 (识别中...)",
+    "globalMode": "全局模式",
+    "manualChnroute": "中国分流 (手动)",
+    "manualGlobal": "全局 (手动)",
+    "change": "更改",
+    "optionSmart": "智能",
+    "optionSmartDesc": "根据您的位置智能推荐",
+    "optionGlobal": "全局",
+    "optionGlobalDesc": "所有流量通过 Overleap",
+    "optionManual": "手动",
+    "optionManualDesc": "使用我保存的设置",
+    "travelPrompt": "检测到您当前位于",
+    "travelSwitch": "切换",
+    "travelDismiss": "忽略",
+    "travelSwitchPrompt": "要切换到该国家的分流配置吗？",
+    "travelGlobalPrompt": "流量将通过全局代理转发。"
+  },
   "troubleshooting": {
     "title": "问题排查",
     "subtitle": "通过网速测试和网络修复来诊断网络连接问题",

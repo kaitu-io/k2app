@@ -48,8 +48,16 @@ async function getStores() {
   const connMod = await import('../connection.store');
   const vpnMod = await import('../vpn-machine.store');
   const configMod = await import('../config.store');
-  // Initialize config store with defaults
-  configMod.useConfigStore.setState({ loaded: true, ruleMode: 'chnroute' });
+  // Initialize config store with defaults. modeOverride='manual' keeps the
+  // legacy ruleMode toggle authoritative so these tests see the pre-auto-profile
+  // behavior (chnroute → cn-access preset).
+  configMod.useConfigStore.setState({
+    loaded: true,
+    ruleMode: 'chnroute',
+    modeOverride: 'manual',
+    suggestedProfile: null,
+    detectedCountry: null,
+  });
   // Mark lastServerUrl as loaded so cold-start recovery doesn't wait.
   connMod.useConnectionStore.setState({ lastServerUrl: null, lastServerUrlLoaded: true });
   return { ...connMod, vpn: vpnMod, config: configMod };

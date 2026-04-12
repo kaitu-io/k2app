@@ -18,7 +18,19 @@ import { useState, useEffect, useMemo } from 'react';
 import { cloudApi } from '../services/cloud-api';
 import { cacheStore } from '../services/cache-store';
 import { useAuthStore } from '../stores/auth.store';
+import { useConfigStore } from '../stores/config.store';
 import type { DataUser } from '../services/api-types';
+
+/**
+ * Push Center-detected country + suggestedProfile into the config store.
+ * Respects `modeOverride === 'manual'` (config store no-ops in that case).
+ */
+function syncDetectedProfile(user: DataUser): void {
+  useConfigStore.getState().setDetectedProfile({
+    country: user.currentCountry ?? null,
+    profile: user.suggestedProfile ?? null,
+  });
+}
 
 interface UseUserReturn {
   user: DataUser | null;
@@ -68,12 +80,14 @@ export function useUser(): UseUserReturn {
         const cached = cacheStore.get<DataUser>('api:user_info');
         if (cached) {
           setUser(cached);
+          syncDetectedProfile(cached);
           setLoading(false);
           // Background revalidate
           cloudApi.get<DataUser>('/api/user/info').then(res => {
             if (res.code === 0 && res.data) {
               cacheStore.set('api:user_info', res.data, { ttl: 3600 });
               setUser(res.data);
+              syncDetectedProfile(res.data);
             }
           });
           return;
@@ -85,6 +99,7 @@ export function useUser(): UseUserReturn {
       if (response.code === 0 && response.data) {
         setUser(response.data);
         cacheStore.set('api:user_info', response.data, { ttl: 3600 });
+        syncDetectedProfile(response.data);
       } else if (response.code === 401) {
         setUser(null);
       } else {

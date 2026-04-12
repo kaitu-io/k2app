@@ -11,7 +11,7 @@
   "opensource": {
     "title": "Security Audit Program",
     "subtitle": "Code security audit completed by an independent oversight committee",
-    "description": "In the AI era, code transparency no longer means publishing source code. Kaitu has established an independent oversight committee to conduct rigorous audits of core code. Audit conclusions are publicly released, protecting every user's security in a more responsible way.",
+    "description": "In the AI era, code transparency no longer means publishing source code. Overleap has established an independent oversight committee to conduct rigorous audits of core code. Audit conclusions are publicly released, protecting every user's security in a more responsible way.",
     "targetDate": "Oversight Committee Audit Program Launch Date",
     "targetDateValue": "April 14, 2026",
     "days": "Days",
@@ -20,7 +20,7 @@
     "seconds": "Seconds",
     "countingDown": "Until the Oversight Committee Audit Program launches...",
     "released": "The Oversight Committee Security Audit Program has officially launched!",
-    "releasedDesc": "Kaitu's Independent Oversight Committee is now officially established and operational. Audit reports are published regularly. To join the committee or request access to detailed audit records, please contact us.",
+    "releasedDesc": "Overleap's Independent Oversight Committee is now officially established and operational. Audit reports are published regularly. To join the committee or request access to detailed audit records, please contact us.",
     "viewOnGithub": "Learn about the Oversight Committee",
     "whyTitle": "Why an Oversight Committee Instead of Open Source?",
     "reason1Title": "Independent Oversight, Greater Credibility",
@@ -32,11 +32,11 @@
     "reason4Title": "Continuous Auditing, Full Version Coverage",
     "reason4Desc": "Every major release triggers a committee review, creating a continuous feedback loop — not a one-time disclosure that nobody maintains.",
     "whoTitle": "Who Can Initiate an Audit?",
-    "whoDesc": "Audit requests must be verified by Kaitu before they can proceed, and applicants must publicly disclose their identity on this website. The following three types of entities are authorized to initiate a formal audit:",
+    "whoDesc": "Audit requests must be verified by Overleap before they can proceed, and applicants must publicly disclose their identity on this website. The following three types of entities are authorized to initiate a formal audit:",
     "who1Title": "Oversight Committee",
     "who1Desc": "A standing body composed of independent security experts that can proactively initiate audits by authority, without additional application. Audit findings are mandatorily published.",
     "who2Title": "Partners",
-    "who2Desc": "Operators and enterprise clients who have signed partnership agreements with Kaitu can submit audit requests through the partner channel. Findings are shared within the scope of the agreement.",
+    "who2Desc": "Operators and enterprise clients who have signed partnership agreements with Overleap can submit audit requests through the partner channel. Findings are shared within the scope of the agreement.",
     "who3Title": "Trusted Certified Security Organizations",
     "who3Desc": "Third-party organizations holding internationally recognized security certifications (such as ISO 27001, CREST, or OWASP-certified bodies) can initiate specialized audits after credential verification."
   }

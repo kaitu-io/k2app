@@ -1,20 +1,20 @@
 {
   "meta": {
-    "title": "User Guide | Kaitu",
-    "description": "Learn how to sign up, install, and use Kaitu with detailed video tutorials and FAQs. Supports macOS, Windows, iOS, and Android."
+    "title": "User Guide | Overleap",
+    "description": "Learn how to sign up, install, and use Overleap with detailed video tutorials and FAQs. Supports macOS, Windows, iOS, and Android."
   },
   "hero": {
-    "title": "Kaitu User Guide",
+    "title": "Overleap User Guide",
     "subtitle": "Stable, simple, and designed for families",
     "downloadButton": "Download Now",
     "guideButton": "View Tutorial"
   },
   "video": {
     "title": "Video Tutorial",
-    "description": "Learn how to sign up, install, and use Kaitu in 6 minutes"
+    "description": "Learn how to sign up, install, and use Overleap in 6 minutes"
   },
   "whyKaitu": {
-    "title": "Why Kaitu",
+    "title": "Why Overleap",
     "stable": {
       "title": "Stable & Smooth",
       "description": "Our proprietary k2cc congestion control algorithm keeps things running smoothly, even during peak hours"

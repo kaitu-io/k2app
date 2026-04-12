@@ -10,9 +10,31 @@
  * NOT belong here.
  */
 
+/**
+ * Preset names exposed by the Go rule engine. Keep in sync with
+ * `k2/rule/target.go presets`. Each `{cc}-access` entry expands to a
+ * combined geoip+domain ruleset for that country.
+ */
+export type PresetName =
+  | 'overseas'
+  | 'cn-access'
+  | 'ir-access'
+  | 'ru-access'
+  | 'tr-access'
+  | 'pk-access'
+  | 'vn-access'
+  | 'mm-access'
+  | 'eg-access'
+  | 'id-access'
+  | 'sa-access'
+  | 'ae-access'
+  | 'th-access'
+  | 'bd-access'
+  | 'by-access';
+
 export interface MatchConfig {
   // Bundle-based rules
-  preset?: 'overseas' | 'cn-access';
+  preset?: PresetName;
   names?: string[];
   exclude?: string[];
 
@@ -35,6 +57,24 @@ export interface RouteConfig {
   match: MatchConfig;
 }
 
+/**
+ * Rule-miss telemetry (Phase 1 — "dark instrumentation").
+ *
+ * Mirrors Go `config.RuleMissConfig`. Zero value means telemetry OFF —
+ * the engine skips reporter construction entirely and the match hot
+ * path has zero overhead. Phase 2 adds an opt-in UI toggle.
+ */
+export interface RuleMissTelemetryConfig {
+  enabled?: boolean;
+  endpoint?: string;
+  country?: string;
+  client_version?: string;
+}
+
+export interface TelemetryConfig {
+  rule_miss?: RuleMissTelemetryConfig;
+}
+
 export interface ClientConfig {
   mode?: 'tun' | 'proxy';
   routes?: RouteConfig[];
@@ -42,6 +82,7 @@ export interface ClientConfig {
   log?: { level?: string; output?: string };
   proxy?: { listen?: string };
   dns?: { direct?: string[]; proxy?: string[] };
+  telemetry?: TelemetryConfig;
 }
 
 export const CLIENT_CONFIG_DEFAULTS: ClientConfig = {

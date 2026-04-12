@@ -32,6 +32,8 @@ import { useVPNMachine } from '../stores/vpn-machine.store';
 import { useSelfHostedStore } from '../stores/self-hosted.store';
 import { getCurrentAppConfig } from '../config/apps';
 import { CollapsibleConnectionSection } from '../components/CollapsibleConnectionSection';
+import ModeChip from '../components/ModeChip';
+import TravelBanner from '../components/TravelBanner';
 import { useDashboard } from '../stores/dashboard.store';
 import { CloudTunnelList } from '../components/CloudTunnelList';
 import { getThemeColors } from '../theme/colors';
@@ -317,6 +319,9 @@ export default function Dashboard() {
         </Suspense>
       )}
 
+      {/* Travel-detection banner (only renders when country change is detected) */}
+      <TravelBanner />
+
       {/* SECTION 1: Connection Control */}
       <CollapsibleConnectionSection
         serviceState={serviceState}
@@ -328,6 +333,9 @@ export default function Dashboard() {
         isRetrying={isRetrying}
         networkAvailable={networkAvailable}
       />
+
+      {/* Smart-mode status chip under the Connect button */}
+      <ModeChip />
 
       {/* SECTION 2: Tunnel Lists */}
       <Box

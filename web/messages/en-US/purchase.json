@@ -1,7 +1,7 @@
 {
   "purchase": {
     "loading": "Loading...",
-    "metaDescription": "Purchase Kaitu k2 Pro — multi-device support, stealth tunnel, full speed through heavy packet loss. Secure payment, instant activation.",
+    "metaDescription": "Purchase Overleap k2 Pro — multi-device support, stealth tunnel, full speed through heavy packet loss. Secure payment, instant activation.",
     "proMemberBenefits": "Professional Membership Benefits",
     "features": {
       "multiDevice": "Multi-Device Support",
@@ -141,7 +141,7 @@
       },
       "walletBalance": {
         "title": "Wallet Balance Description",
-        "content": "Wallet balance is your virtual account balance on the Kaitu platform, which can be used for: 1. Purchasing or renewing any subscription plans; 2. Withdrawing to supported cryptocurrency wallets. Refunded wallet balance is immediately available, no waiting required."
+        "content": "Wallet balance is your virtual account balance on the Overleap platform, which can be used for: 1. Purchasing or renewing any subscription plans; 2. Withdrawing to supported cryptocurrency wallets. Refunded wallet balance is immediately available, no waiting required."
       },
       "withdrawalMethods": {
         "title": "Withdrawal Methods",

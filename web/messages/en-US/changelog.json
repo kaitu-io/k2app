@@ -1,6 +1,6 @@
 {
   "title": "Changelog",
-  "subtitle": "Stay updated with the latest features and improvements in Kaitu",
+  "subtitle": "Stay updated with the latest features and improvements in Overleap",
   "sections": {
     "newFeatures": "New Features",
     "bugFixes": "Bug Fixes",
@@ -15,7 +15,7 @@
   "bullet": "•",
   "cta": {
     "title": "Try the Latest Version",
-    "description": "Download the latest Kaitu client for a better network experience",
+    "description": "Download the latest Overleap client for a better network experience",
     "download": "Download Client"
   }
 }
