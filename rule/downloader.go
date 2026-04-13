@@ -115,6 +115,24 @@ func Download(ctx context.Context, cacheDir string, bundles []string, sources []
 	return nil
 }
 
+// IsFresh reports whether ALL named k2b files exist in cacheDir with mtime
+// within maxAge. Returns true if bundles is empty or cacheDir is empty
+// (nothing to download). Callers use this to skip HTTP requests entirely
+// when the local cache is recent enough.
+func IsFresh(cacheDir string, bundles []string, maxAge time.Duration) bool {
+	if len(bundles) == 0 || cacheDir == "" {
+		return true
+	}
+	now := time.Now()
+	for _, name := range bundles {
+		info, err := os.Stat(filepath.Join(cacheDir, name))
+		if err != nil || now.Sub(info.ModTime()) > maxAge {
+			return false
+		}
+	}
+	return true
+}
+
 // downloadOne downloads a single k2b bundle file with retry+backoff. If the
 // file already exists on disk and all attempts fail, returns nil (use cached).
 func downloadOne(ctx context.Context, cacheDir, name string, sources []string) error {

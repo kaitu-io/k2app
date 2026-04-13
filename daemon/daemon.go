@@ -21,6 +21,7 @@ import (
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/engine"
 	"github.com/kaitu-io/k2/provider"
+	"github.com/kaitu-io/k2/rule"
 	"github.com/kaitu-io/k2/safego"
 )
 
@@ -154,6 +155,10 @@ func (d *Daemon) Run(ctx context.Context, listenAddr string) error {
 		Handler: recoveryMiddleware(corsMiddleware(mux)),
 	}
 
+	// Pre-warm rule bundle cache in the background so engine.Start()
+	// can load rules from disk instantly.
+	d.startRulePrefetch(ctx)
+
 	// Load persisted state and auto-reconnect if applicable.
 	d.tryAutoReconnect(ctx)
 
@@ -229,7 +234,12 @@ func (d *Daemon) closeTunnel() {
 		}
 	}
 
-	saveState(persistedState{State: engine.StateDisconnected, Timestamp: time.Now()})
+	// Persist disconnected state, but keep the config so rule prefetch can
+	// use it on next daemon start to pre-warm the bundle cache.
+	d.mu.RLock()
+	cfg := d.lastConfig
+	d.mu.RUnlock()
+	saveState(persistedState{Config: cfg, State: engine.StateDisconnected, Timestamp: time.Now()})
 }
 
 // doUp connects the tunnel with the given ClientConfig.
@@ -341,7 +351,7 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 	if d.abortUp.Load() {
 		slog.Info("daemon: doUp aborted after start")
 		eng.Stop()
-		saveState(persistedState{State: engine.StateDisconnected, Timestamp: time.Now()})
+		saveState(persistedState{Config: cfg, State: engine.StateDisconnected, Timestamp: time.Now()})
 		return fmt.Errorf("aborted by pending down")
 	}
 
@@ -441,6 +451,49 @@ func (d *Daemon) doDown() {
 	d.abortUp.Store(false)
 	slog.Info("daemon: doDown")
 	d.closeTunnel()
+}
+
+// startRulePrefetch kicks off a background rule bundle download at daemon startup.
+// Uses the persisted config to determine which bundles are needed. Skips the
+// download entirely if cached bundles are less than 24h old (no HTTP at all).
+// Does not block — runs in a safego goroutine.
+func (d *Daemon) startRulePrefetch(ctx context.Context) {
+	st, err := loadState()
+	if err != nil || st.Config == nil {
+		return
+	}
+
+	cfg := st.Config
+	config.SetDefaults(cfg)
+
+	dir := cfg.CacheDir
+	if dir == "" {
+		dir = filepath.Join(cacheDir(), "rules")
+	}
+
+	matches := make([]rule.MatchConfig, len(cfg.Routes))
+	for i, r := range cfg.Routes {
+		matches[i] = r.Match
+	}
+	bundleNames := rule.BundlesForConfig(matches)
+	if len(bundleNames) == 0 {
+		return
+	}
+
+	sources := cfg.RuleSources
+	if len(sources) == 0 {
+		sources = rule.DefaultSources
+	}
+
+	safego.Go(func() {
+		dlCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		if err := rule.DownloadAndReload(dlCtx, nil, dir, bundleNames, sources, nil, 24*time.Hour); err != nil {
+			slog.Warn("rule prefetch failed", "err", err)
+		} else {
+			slog.Info("rule prefetch complete", "bundles", len(bundleNames))
+		}
+	})
 }
 
 // tryAutoReconnect checks persisted state and reconnects if applicable.

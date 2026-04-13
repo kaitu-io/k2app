@@ -97,3 +97,80 @@ func TestUpdater_TriggersReload(t *testing.T) {
 
 	t.Fatalf("after 2s: Match(youtube.com) = %v, want %v", eng.Match("youtube.com"), Target(2))
 }
+
+// TestDownloadAndReload_SkipsFresh verifies that DownloadAndReload skips
+// HTTP entirely when all bundles are fresh.
+func TestDownloadAndReload_SkipsFresh(t *testing.T) {
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.WriteHeader(http.StatusOK)
+		w.Write(makeTestK2B(t))
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	// Pre-populate a fresh file.
+	if err := os.WriteFile(filepath.Join(dir, "overseas.k2b"), makeTestK2B(t), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	err := DownloadAndReload(ctx, nil, dir, []string{"overseas.k2b"}, []string{srv.URL + "/"}, nil, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if hits != 0 {
+		t.Fatalf("expected 0 HTTP hits (fresh skip), got %d", hits)
+	}
+}
+
+// TestDownloadAndReload_DownloadsWhenStale verifies that stale files trigger
+// a real download.
+func TestDownloadAndReload_DownloadsWhenStale(t *testing.T) {
+	data := makeTestK2B(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write(data)
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	dest := filepath.Join(dir, "overseas.k2b")
+	// Place an old file.
+	if err := os.WriteFile(dest, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-25 * time.Hour)
+	os.Chtimes(dest, old, old)
+
+	ctx := context.Background()
+	err := DownloadAndReload(ctx, nil, dir, []string{"overseas.k2b"}, []string{srv.URL + "/"}, nil, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got, _ := os.ReadFile(dest)
+	if !bytes.Equal(got, data) {
+		t.Fatal("file should have been updated")
+	}
+}
+
+// TestDownloadAndReload_NilEngine verifies download-only mode (no reload).
+func TestDownloadAndReload_NilEngine(t *testing.T) {
+	data := makeTestK2B(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write(data)
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	ctx := context.Background()
+	err := DownloadAndReload(ctx, nil, dir, []string{"overseas.k2b"}, []string{srv.URL + "/"}, nil, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "overseas.k2b")); err != nil {
+		t.Fatalf("file should exist: %v", err)
+	}
+}

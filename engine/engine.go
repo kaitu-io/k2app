@@ -138,21 +138,12 @@ func (e *Engine) Start(cfg Config) error {
 
 	startTime := time.Now()
 
-	// 1. Download rule bundles.
+	// 1. Rule bundles: load from disk only (downloads handled by daemon/appext prefetch
+	// and StartUpdater background refresh). If cache is empty, fallback routing is used.
 	bundleNames := rule.BundlesForConfig(extractMatches(client))
 	sources := client.RuleSources
 	if len(sources) == 0 {
 		sources = rule.DefaultSources
-	}
-	if len(bundleNames) > 0 && client.CacheDir != "" {
-		dlCtx, dlCancel := context.WithTimeout(ctx, 8*time.Second)
-		err := rule.Download(dlCtx, client.CacheDir, bundleNames, sources)
-		dlCancel()
-		if err != nil && dlCtx.Err() == context.DeadlineExceeded {
-			slog.Warn("rule: download timeout, starting with fallback routing")
-		} else if err != nil {
-			return e.fail(fmt.Errorf("rule download: %w", err))
-		}
 	}
 
 	// 1b. Build outbound map (via URL → Target index) and rule engine.

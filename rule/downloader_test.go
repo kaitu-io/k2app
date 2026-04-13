@@ -226,6 +226,57 @@ func TestDownload_AllFail_NoCached_RetriesUntilCancel(t *testing.T) {
 	}
 }
 
+// TestIsFresh_AllFresh verifies that recent files are considered fresh.
+func TestIsFresh_AllFresh(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"a.k2b", "b.k2b"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !IsFresh(dir, []string{"a.k2b", "b.k2b"}, 24*time.Hour) {
+		t.Fatal("expected fresh")
+	}
+}
+
+// TestIsFresh_OneMissing verifies that a missing file means not fresh.
+func TestIsFresh_OneMissing(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.k2b"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if IsFresh(dir, []string{"a.k2b", "b.k2b"}, 24*time.Hour) {
+		t.Fatal("expected not fresh when file missing")
+	}
+}
+
+// TestIsFresh_OneStale verifies that a stale file means not fresh.
+func TestIsFresh_OneStale(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"a.k2b", "b.k2b"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Age b.k2b past the threshold.
+	old := time.Now().Add(-25 * time.Hour)
+	os.Chtimes(filepath.Join(dir, "b.k2b"), old, old)
+
+	if IsFresh(dir, []string{"a.k2b", "b.k2b"}, 24*time.Hour) {
+		t.Fatal("expected not fresh when one file stale")
+	}
+}
+
+// TestIsFresh_EmptyBundles verifies that empty input is always fresh.
+func TestIsFresh_EmptyBundles(t *testing.T) {
+	if !IsFresh("/nonexistent", nil, 24*time.Hour) {
+		t.Fatal("expected fresh for nil bundles")
+	}
+	if !IsFresh("", []string{"a.k2b"}, 24*time.Hour) {
+		t.Fatal("expected fresh for empty cacheDir")
+	}
+}
+
 // TestBackoffDuration verifies the exponential backoff sequence and cap.
 func TestBackoffDuration(t *testing.T) {
 	cases := []struct {

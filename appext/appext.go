@@ -1,6 +1,7 @@
 package appext
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -13,6 +14,8 @@ import (
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/engine"
+	"github.com/kaitu-io/k2/rule"
+	"github.com/kaitu-io/k2/safego"
 )
 
 // logLevel is the global mutable log level for mobile builds.
@@ -286,6 +289,47 @@ func (e *Engine) NotifyNetEvent(event *NetEvent) {
 		HasIPv4:        event.HasIPv4,
 		HasIPv6:        event.HasIPv6,
 		Source:         event.Source,
+	})
+}
+
+// PrefetchRules downloads rule bundles in the background. Call at app launch
+// or NE startup, before Start(). configJSON is the same JSON config that will
+// be passed to Start(). cfg provides the CacheDir.
+// Skips download if cached bundles are fresh (<24h). Non-blocking.
+func PrefetchRules(configJSON string, cfg *EngineConfig) {
+	if cfg == nil || cfg.CacheDir == "" {
+		return
+	}
+	var clientCfg config.ClientConfig
+	if err := json.Unmarshal([]byte(configJSON), &clientCfg); err != nil {
+		slog.Warn("appext: PrefetchRules parse failed", "err", err)
+		return
+	}
+
+	cacheDir := filepath.Join(cfg.CacheDir, "rules")
+
+	matches := make([]rule.MatchConfig, len(clientCfg.Routes))
+	for i, r := range clientCfg.Routes {
+		matches[i] = r.Match
+	}
+	bundleNames := rule.BundlesForConfig(matches)
+	if len(bundleNames) == 0 {
+		return
+	}
+
+	sources := clientCfg.RuleSources
+	if len(sources) == 0 {
+		sources = rule.DefaultSources
+	}
+
+	safego.Go(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := rule.DownloadAndReload(ctx, nil, cacheDir, bundleNames, sources, nil, 24*time.Hour); err != nil {
+			slog.Warn("appext: PrefetchRules failed", "err", err)
+		} else {
+			slog.Info("appext: PrefetchRules complete")
+		}
 	})
 }
 
