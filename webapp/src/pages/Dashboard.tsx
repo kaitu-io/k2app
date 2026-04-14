@@ -233,10 +233,11 @@ export default function Dashboard() {
     }
     return (
       <Box sx={{ flexShrink: 0 }}>
-        <List sx={{ pt: 0.5, px: 2, pb: 1 }}>
+        <List disablePadding sx={{ px: 2 }}>
           <SelfHostedTunnelItem
             tunnel={selfHostedTunnel}
             selected
+            disableGutters
             onConfigure={() => navigate('/tunnels')}
           />
         </List>
@@ -390,13 +391,14 @@ export default function Dashboard() {
         {/* Self-hosted node — primary option for unauthenticated guests */}
         {!isAuthenticated && selfHostedTunnel && (
           <Box sx={{ flexShrink: 0 }}>
-            <List sx={{ pt: 0.5, px: 2, pb: 1 }}>
+            <List disablePadding sx={{ px: 2 }}>
               <SelfHostedTunnelItem
                 tunnel={selfHostedTunnel}
                 selected={serverMode === 'self_hosted'}
                 onSelect={handleSelfHostedSelect}
                 onConfigure={() => navigate('/tunnels')}
                 disabled={isInteractive}
+                disableGutters
               />
             </List>
           </Box>
@@ -406,12 +408,10 @@ export default function Dashboard() {
         {!isAuthenticated && (
           <Box sx={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden' }}>
             {/* Scrollable blurred list — scrolls independently */}
-            <List sx={{
+            <List disablePadding sx={{
               height: '100%',
               overflowY: 'auto',
-              pt: 0.5,
               px: 2,
-              pb: 1,
               filter: 'blur(4px)',
               opacity: 0.5,
               pointerEvents: 'none',
@@ -436,6 +436,7 @@ export default function Dashboard() {
               ].map((item) => (
                 <ListItem
                   key={item.name}
+                  disableGutters
                   sx={{
                     borderRadius: 2,
                     mb: 0.5,

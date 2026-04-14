@@ -10,7 +10,7 @@ import {
   Tab,
   Tabs,
 } from '@mui/material';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import { SmartModeIcon } from './SmartModeIcon';
 import { useTranslation } from 'react-i18next';
 import { useConnectionStore } from '../stores/connection.store';
 import type { Tunnel } from '../services/api-types';
@@ -70,7 +70,6 @@ export function SmartServerSelector({ tunnels, isInteractive, manualContent, sel
     bgcolor: selected ? selectedBg : undefined,
     transition: 'background 0.15s',
     '&:hover': isInteractive ? { bgcolor: selected ? selectedBg : 'action.hover' } : {},
-    px: 1,
   });
 
   const tabValue: 'smart' | 'manual' | 'self_hosted' =
@@ -111,7 +110,7 @@ export function SmartServerSelector({ tunnels, isInteractive, manualContent, sel
 
       {/* ── Smart tab ─────────────────────────────────────────── */}
       <Box sx={{ display: tabValue === 'smart' ? 'block' : 'none' }}>
-        <List disablePadding sx={{ px: 1 }}>
+        <List disablePadding sx={{ px: 2 }}>
           {/* 自动 — always first */}
           <ListItem
             disableGutters
@@ -119,14 +118,7 @@ export function SmartServerSelector({ tunnels, isInteractive, manualContent, sel
             sx={rowSx(smartCountry === null)}
           >
             <ListItemIcon sx={{ minWidth: 40 }}>
-              <Box sx={{
-                width: 32, height: 22,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                borderRadius: 0.5,
-                bgcolor: 'rgba(33, 150, 243, 0.1)',
-              }}>
-                <AutoAwesomeIcon sx={{ fontSize: 18, color: 'primary.main' }} />
-              </Box>
+              <SmartModeIcon />
             </ListItemIcon>
             <ListItemText
               primary={t('serverSelector.countryAuto')}
@@ -170,7 +162,7 @@ export function SmartServerSelector({ tunnels, isInteractive, manualContent, sel
             // Data not loaded yet — show skeleton country rows
             <>
               {[1, 2, 3].map(i => (
-                <ListItem key={i} disableGutters sx={{ px: 1, minHeight: 56 }}>
+                <ListItem key={i} disableGutters sx={{ minHeight: 56 }}>
                   <ListItemIcon sx={{ minWidth: 40 }}>
                     <Skeleton variant="rounded" width={32} height={22} />
                   </ListItemIcon>

@@ -195,9 +195,9 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
           <Skeleton variant="circular" width={18} height={18} />
         </Stack>
         {/* Skeleton tunnel items — matches real ListItem structure */}
-        <List sx={{ pt: 0.5, px: 2, pb: 1 }}>
+        <List disablePadding sx={{ px: 2 }}>
           {[0, 1, 2].map((i) => (
-            <ListItem key={i} sx={{ borderRadius: 2, mb: 0.5, minHeight: 64 }}>
+            <ListItem key={i} disableGutters sx={{ borderRadius: 2, mb: 0.5, minHeight: 64 }}>
               <ListItemIcon sx={{ minWidth: 40 }}>
                 <Skeleton variant="rounded" width={32} height={22} />
               </ListItemIcon>
@@ -334,13 +334,14 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
       </Stack>}
 
       {/* List */}
-      <List sx={{ pt: 0.5, px: 2, pb: 1 }}>
+      <List disablePadding sx={{ px: 2 }}>
         {sortedTunnels.map((tunnel) => {
           const domain = tunnel.domain.toLowerCase();
           const isSelected = selectedDomain === domain;
           return (
             <ListItem
               key={tunnel.id}
+              disableGutters
               onClick={() => {
                 console.debug('[CloudTunnelList] tunnelClick: domain=' + tunnel.domain + ', disabled=' + disabled);
                 !disabled && onSelect(tunnel, echConfigList);

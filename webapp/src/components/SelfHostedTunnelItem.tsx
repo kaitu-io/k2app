@@ -30,6 +30,8 @@ interface SelfHostedTunnelItemProps {
   onConfigure: () => void;
   /** Whether the VPN is in a non-interactive state (connecting/connected). */
   disabled?: boolean;
+  /** Remove ListItem's default 16px horizontal gutters — use when the parent List provides px:2 padding. */
+  disableGutters?: boolean;
 }
 
 export function SelfHostedTunnelItem({
@@ -38,6 +40,7 @@ export function SelfHostedTunnelItem({
   onSelect,
   onConfigure,
   disabled = false,
+  disableGutters = false,
 }: SelfHostedTunnelItemProps) {
   const { t } = useTranslation('dashboard');
   const theme = useTheme();
@@ -48,6 +51,7 @@ export function SelfHostedTunnelItem({
 
   return (
     <ListItem
+      disableGutters={disableGutters}
       onClick={interactive ? onSelect : undefined}
       sx={{
         borderRadius: 2,
