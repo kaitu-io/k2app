@@ -46,7 +46,6 @@ export interface LastConnectionInfo {
 }
 
 interface ConnectionState {
-  selectedSource: 'cloud' | 'self_hosted';
   selectedCloudTunnel: Tunnel | null;
   activeTunnel: ActiveTunnel | null;
   connectedTunnel: ActiveTunnel | null;
@@ -141,7 +140,6 @@ function computeSelfHostedActiveTunnel(): ActiveTunnel | null {
 
 export const useConnectionStore = create<ConnectionState & ConnectionActions>()((set, get) => ({
   // State
-  selectedSource: 'cloud',
   selectedCloudTunnel: null,
   activeTunnel: null,
   connectedTunnel: null,
@@ -160,7 +158,6 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
   selectCloudTunnel: (tunnel) => {
     console.info('[Connection] selectCloudTunnel: domain=' + tunnel.domain + ', name=' + (tunnel.name || tunnel.domain));
     set({
-      selectedSource: 'cloud',
       selectedCloudTunnel: tunnel,
       activeTunnel: computeCloudActiveTunnel(tunnel),
     });
@@ -170,18 +167,17 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     const tunnel = computeSelfHostedActiveTunnel();
     console.info('[Connection] selectSelfHosted: domain=' + (tunnel?.domain ?? 'null'));
     set({
-      selectedSource: 'self_hosted',
+      serverMode: 'self_hosted',
       activeTunnel: tunnel,
     });
   },
 
   setServerMode: async (mode: 'smart' | 'manual' | 'self_hosted') => {
-    // Sync selectedSource + activeTunnel so connect() stays consistent.
     if (mode === 'self_hosted') {
       const tunnel = computeSelfHostedActiveTunnel();
-      set({ serverMode: mode, selectedSource: 'self_hosted', activeTunnel: tunnel });
+      set({ serverMode: mode, activeTunnel: tunnel });
     } else {
-      set({ serverMode: mode, selectedSource: 'cloud' });
+      set({ serverMode: mode });
     }
     try {
       await window._platform.storage.set(SERVER_MODE_STORAGE_KEY, mode);
@@ -236,7 +232,7 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
       return;
     }
 
-    const { selectedSource, selectedCloudTunnel, connectEpoch, serverMode, smartCountry } = get();
+    const { selectedCloudTunnel, connectEpoch, serverMode, smartCountry } = get();
 
     if (serverMode === 'self_hosted' && !useSelfHostedStore.getState().tunnel) {
       console.warn('[Connection] connect: self_hosted mode but no tunnel configured, aborting');
@@ -285,7 +281,7 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
       set(s => ({
         connectedTunnel: s.connectedTunnel ? { ...s.connectedTunnel, serverUrl: serverUrl ?? '' } : null,
       }));
-    } else if (serverMode === 'self_hosted' || selectedSource === 'self_hosted') {
+    } else if (serverMode === 'self_hosted') {
       serverUrl = useSelfHostedStore.getState().tunnel?.uri;
     } else if (selectedCloudTunnel?.serverUrl) {
       serverUrl = await authService.buildTunnelUrl(selectedCloudTunnel.serverUrl);
@@ -462,7 +458,7 @@ function tryRestoreConnectedTunnel(): boolean {
     if (!shTunnel) return false;
     const activeTunnel = computeSelfHostedActiveTunnel();
     console.info('[Connection] Cold start restore: self_hosted tab, uri=' + shTunnel.uri);
-    useConnectionStore.setState({ selectedSource: 'self_hosted', connectedTunnel: activeTunnel, activeTunnel });
+    useConnectionStore.setState({ serverMode: 'self_hosted', connectedTunnel: activeTunnel, activeTunnel });
     return true;
   }
 
@@ -481,7 +477,7 @@ function tryRestoreConnectedTunnel(): boolean {
       const activeTunnel = computeSelfHostedActiveTunnel();
       console.info('[Connection] Cold start restore: self-hosted domain=' + domain);
       useConnectionStore.setState({
-        selectedSource: 'self_hosted',
+        serverMode: 'self_hosted',
         connectedTunnel: activeTunnel,
         activeTunnel,
       });
@@ -493,7 +489,6 @@ function tryRestoreConnectedTunnel(): boolean {
   // from cacheStore (works in both cold start and warm start).
   console.info('[Connection] Cold start restore: cloud domain=' + domain + ' (pending enrichment)');
   useConnectionStore.setState({
-    selectedSource: 'cloud',
     connectedTunnel: {
       source: 'cloud',
       domain,

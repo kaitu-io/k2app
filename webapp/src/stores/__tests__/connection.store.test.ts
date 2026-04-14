@@ -68,17 +68,17 @@ async function getStores() {
 // ==================== Selection Tests ====================
 
 describe('Connection Store - Selection', () => {
-  it('defaults to cloud source with no tunnel selected', async () => {
+  it('defaults to smart mode with no tunnel selected', async () => {
     const { useConnectionStore } = await getStores();
     const state = useConnectionStore.getState();
 
-    expect(state.selectedSource).toBe('cloud');
+    expect(state.serverMode).toBe('smart');
     expect(state.selectedCloudTunnel).toBeNull();
     expect(state.activeTunnel).toBeNull();
     expect(state.connectedTunnel).toBeNull();
   });
 
-  it('selectCloudTunnel sets source and computes activeTunnel', async () => {
+  it('selectCloudTunnel sets tunnel and computes activeTunnel', async () => {
     const { useConnectionStore } = await getStores();
 
     const tunnel = {
@@ -94,7 +94,6 @@ describe('Connection Store - Selection', () => {
     useConnectionStore.getState().selectCloudTunnel(tunnel);
 
     const state = useConnectionStore.getState();
-    expect(state.selectedSource).toBe('cloud');
     expect(state.selectedCloudTunnel).toBe(tunnel);
     expect(state.activeTunnel).toEqual({
       source: 'cloud',
@@ -105,7 +104,7 @@ describe('Connection Store - Selection', () => {
     });
   });
 
-  it('selectSelfHosted sets source and computes activeTunnel from self-hosted store', async () => {
+  it('selectSelfHosted sets serverMode and computes activeTunnel from self-hosted store', async () => {
     // Set up self-hosted store with a tunnel
     const selfHostedMod = await import('../self-hosted.store');
     selfHostedMod.useSelfHostedStore.setState({
@@ -121,7 +120,7 @@ describe('Connection Store - Selection', () => {
     useConnectionStore.getState().selectSelfHosted();
 
     const state = useConnectionStore.getState();
-    expect(state.selectedSource).toBe('self_hosted');
+    expect(state.serverMode).toBe('self_hosted');
     expect(state.activeTunnel).toEqual({
       source: 'self_hosted',
       domain: '1.2.3.4',
