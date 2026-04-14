@@ -1,23 +1,27 @@
 import React, { useMemo } from 'react';
 import {
   Box,
-  Chip,
+  List,
+  ListItem,
+  ListItemIcon,
+  ListItemText,
+  Radio,
   Tab,
   Tabs,
   Typography,
 } from '@mui/material';
+import PublicIcon from '@mui/icons-material/Public';
 import { useTranslation } from 'react-i18next';
 import { useConnectionStore } from '../stores/connection.store';
 import type { Tunnel } from '../services/api-types';
 import { getFlagIcon, getCountryName } from '../utils/country';
+import { useTheme } from '@mui/material/styles';
 
 interface Props {
-  /** Tunnel list from Dashboard (already fetched by CloudTunnelList). */
+  /** Tunnel list from Dashboard (already fetched via hidden CloudTunnelList). */
   tunnels: Tunnel[];
   /** False when VPN is connecting/connected — disables mode switching. */
   isInteractive: boolean;
-  /** Manual tab content: CloudTunnelList only (no self-hosted). */
-  children: React.ReactNode;
   /** Self-hosted tab content. */
   selfHostedContent: React.ReactNode;
 }
@@ -38,8 +42,9 @@ function buildCountrySummary(tunnels: Tunnel[]): CountrySummary[] {
     .sort((a, b) => b.count - a.count);
 }
 
-export function SmartServerSelector({ tunnels, isInteractive, children, selfHostedContent }: Props) {
+export function SmartServerSelector({ tunnels, isInteractive, selfHostedContent }: Props) {
   const { t } = useTranslation('dashboard');
+  const theme = useTheme();
   const serverMode = useConnectionStore(s => s.serverMode);
   const smartCountry = useConnectionStore(s => s.smartCountry);
   const setServerMode = useConnectionStore(s => s.setServerMode);
@@ -47,7 +52,7 @@ export function SmartServerSelector({ tunnels, isInteractive, children, selfHost
 
   const countries = useMemo(() => buildCountrySummary(tunnels), [tunnels]);
 
-  const handleTabChange = (_: React.SyntheticEvent, value: 'smart' | 'manual' | 'self_hosted') => {
+  const handleTabChange = (_: React.SyntheticEvent, value: 'smart' | 'self_hosted') => {
     if (!isInteractive) return;
     setServerMode(value).catch(err => console.warn('[SmartServerSelector] setServerMode failed:', err));
   };
@@ -57,24 +62,35 @@ export function SmartServerSelector({ tunnels, isInteractive, children, selfHost
     setSmartCountry(code).catch(err => console.warn('[SmartServerSelector] setSmartCountry failed:', err));
   };
 
+  const selectedBg = theme.palette.mode === 'dark'
+    ? 'rgba(255,255,255,0.06)'
+    : 'rgba(0,0,0,0.04)';
+
+  const rowSx = (selected: boolean) => ({
+    borderRadius: 2,
+    minHeight: 56,
+    cursor: isInteractive ? 'pointer' : 'default',
+    bgcolor: selected ? selectedBg : undefined,
+    transition: 'background 0.15s',
+    '&:hover': isInteractive ? { bgcolor: selected ? selectedBg : 'action.hover' } : {},
+    px: 1,
+  });
+
+  // Smart tab renders as a list, identical visual weight to the self-hosted list
+  const tabValue: 'smart' | 'self_hosted' = serverMode === 'self_hosted' ? 'self_hosted' : 'smart';
+
   return (
     <Box>
       {/* ── Mode tabs ─────────────────────────────────────────── */}
       <Tabs
-        value={serverMode}
+        value={tabValue}
         onChange={handleTabChange}
-        sx={{ mb: 1.5, minHeight: 36 }}
+        sx={{ mb: 0.5, minHeight: 36 }}
         TabIndicatorProps={{ style: { height: 2 } }}
       >
         <Tab
           value="smart"
           label={t('serverSelector.tabSmart')}
-          sx={{ minHeight: 36, py: 0.5, fontSize: '0.8rem' }}
-          disabled={!isInteractive}
-        />
-        <Tab
-          value="manual"
-          label={t('serverSelector.tabManual')}
           sx={{ minHeight: 36, py: 0.5, fontSize: '0.8rem' }}
           disabled={!isInteractive}
         />
@@ -86,66 +102,73 @@ export function SmartServerSelector({ tunnels, isInteractive, children, selfHost
         />
       </Tabs>
 
-      {/* ── Smart tab — flat chip list, no dropdown ───────────── */}
-      {serverMode === 'smart' && (
-        <Box sx={{ px: 0.5 }}>
-          {/* All options visible at once: 自动 + each country */}
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, mb: 1.25 }}>
-            {/* 自动 — always first */}
-            <Chip
-              size="small"
-              label={t('serverSelector.countryAuto')}
-              onClick={isInteractive ? () => handleCountrySelect(null) : undefined}
-              variant={smartCountry === null ? 'filled' : 'outlined'}
-              color={smartCountry === null ? 'primary' : 'default'}
-              sx={{ fontSize: '0.72rem', cursor: isInteractive ? 'pointer' : 'default' }}
+      {/* ── Smart tab — list style, same as self-hosted ───────── */}
+      {tabValue === 'smart' && (
+        <List disablePadding sx={{ px: 1 }}>
+          {/* 自动 — always first */}
+          <ListItem
+            disableGutters
+            onClick={() => handleCountrySelect(null)}
+            sx={rowSx(smartCountry === null)}
+          >
+            <ListItemIcon sx={{ minWidth: 40 }}>
+              <Box sx={{
+                width: 32, height: 22,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <PublicIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
+              </Box>
+            </ListItemIcon>
+            <ListItemText
+              primary={t('serverSelector.countryAuto')}
+              secondary={t('serverSelector.smartHint')}
+              primaryTypographyProps={{ fontWeight: 600, fontSize: '0.9rem' }}
+              secondaryTypographyProps={{ fontSize: '0.72rem' }}
             />
-            {/* One chip per country */}
-            {countries.map(c => (
-              <Chip
-                key={c.code}
-                size="small"
-                icon={<Box sx={{ display: 'flex', pl: 0.5 }}>{getFlagIcon(c.code)}</Box>}
-                label={`${getCountryName(c.code)} \u00d7${c.count}`}
-                onClick={isInteractive ? () => handleCountrySelect(c.code) : undefined}
-                variant={smartCountry === c.code ? 'filled' : 'outlined'}
-                color={smartCountry === c.code ? 'primary' : 'default'}
-                sx={{ fontSize: '0.72rem', cursor: isInteractive ? 'pointer' : 'default' }}
-              />
-            ))}
-          </Box>
+            <Radio
+              checked={smartCountry === null}
+              color="primary"
+              size="small"
+              sx={{ '& .MuiSvgIcon-root': { fontSize: 22 } }}
+            />
+          </ListItem>
 
-          {/* Summary + hint */}
-          {countries.length > 0 && (
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-              {t('serverSelector.nodesAvailable', {
-                count: tunnels.length,
-                regions: countries.length,
-              })}
+          {/* One row per country */}
+          {countries.map(c => (
+            <ListItem
+              key={c.code}
+              disableGutters
+              onClick={() => handleCountrySelect(c.code)}
+              sx={rowSx(smartCountry === c.code)}
+            >
+              <ListItemIcon sx={{ minWidth: 40 }}>
+                {getFlagIcon(c.code)}
+              </ListItemIcon>
+              <ListItemText
+                primary={getCountryName(c.code)}
+                secondary={`\u00d7${c.count}`}
+                primaryTypographyProps={{ fontWeight: 600, fontSize: '0.9rem' }}
+                secondaryTypographyProps={{ fontSize: '0.72rem' }}
+              />
+              <Radio
+                checked={smartCountry === c.code}
+                color="primary"
+                size="small"
+                sx={{ '& .MuiSvgIcon-root': { fontSize: 22 } }}
+              />
+            </ListItem>
+          ))}
+
+          {countries.length === 0 && (
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 1, py: 2 }}>
+              {t('serverSelector.smartHint')}
             </Typography>
           )}
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-            {t('serverSelector.smartHint')}
-          </Typography>
-        </Box>
-      )}
-
-      {/* ── Manual tab ────────────────────────────────────────── */}
-      {serverMode === 'manual' && (
-        <>
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{ display: 'block', px: 0.5, mb: 1 }}
-          >
-            {t('serverSelector.manualHint')}
-          </Typography>
-          {children}
-        </>
+        </List>
       )}
 
       {/* ── Self-hosted tab ───────────────────────────────────── */}
-      {serverMode === 'self_hosted' && selfHostedContent}
+      {tabValue === 'self_hosted' && selfHostedContent}
     </Box>
   );
 }

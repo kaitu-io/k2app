@@ -60,8 +60,8 @@ async function getStores() {
     detectedCountry: null,
   });
   // Mark lastServerUrl as loaded so cold-start recovery doesn't wait.
-  // Set manual mode — these tests predate smart mode and assume explicit tunnel selection.
-  connMod.useConnectionStore.setState({ lastServerUrl: null, lastServerUrlLoaded: true, serverMode: 'manual' as const, serverModeLoaded: true });
+  // Use smart mode — tests that need a specific tunnel call selectCloudTunnel() first.
+  connMod.useConnectionStore.setState({ lastServerUrl: null, lastServerUrlLoaded: true, serverMode: 'smart' as const, serverModeLoaded: true });
   return { ...connMod, vpn: vpnMod, config: configMod };
 }
 
@@ -145,47 +145,27 @@ describe('Connection Store - Selection', () => {
 // ==================== Connect Tests ====================
 
 describe('Connection Store - Connect', () => {
-  it('connect snapshots connectedTunnel and calls _k2.run(up)', async () => {
+  it('connect (smart mode) snapshots synthetic connectedTunnel and calls _k2.run(up)', async () => {
     const { useConnectionStore, vpn } = await getStores();
     mockRun.mockResolvedValue({ code: 0 });
 
-    // Select a cloud tunnel
-    useConnectionStore.getState().selectCloudTunnel({
-      id: 1,
-      domain: 'tokyo.example.com',
-      name: 'Tokyo',
-      protocol: 'k2v5',
-      port: 443,
-      serverUrl: 'k2v5://tokyo.example.com:443',
-      node: { country: 'JP' },
-    } as any);
-
-    // Mock auth service to inject credentials
+    // Smart mode (default) — mock buildSubsUrl
     const { authService } = await import('../../services/auth-service');
-    vi.mocked(authService.buildTunnelUrl).mockResolvedValue('k2v5://udid:token@tokyo.example.com:443');
+    vi.mocked(authService.buildSubsUrl).mockResolvedValue('k2subs://udid:token@k2.52j.me/api/subs');
 
     await useConnectionStore.getState().connect();
 
-    // connectedTunnel snapshot should be set
-    expect(useConnectionStore.getState().connectedTunnel).toEqual({
-      source: 'cloud',
-      domain: 'tokyo.example.com',
-      name: 'Tokyo',
-      country: 'JP',
-      serverUrl: 'k2v5://tokyo.example.com:443',
-    });
+    // connectedTunnel is a synthetic subs snapshot
+    const ct = useConnectionStore.getState().connectedTunnel;
+    expect(ct?.source).toBe('cloud');
+    expect(ct?.domain).toBe('subs');
+    expect(ct?.serverUrl).toBe('k2subs://udid:token@k2.52j.me/api/subs');
 
-    // _k2.run('up') should have been called with the new routes-based config.
-    // Default ruleMode is chnroute → [cn-direct, k2v5-fallback].
-    expect(mockRun).toHaveBeenCalledWith('up', expect.objectContaining({
-      mode: 'tun',
-      routes: [
-        { via: 'direct', match: { preset: 'cn-access' } },
-        { via: 'k2v5://udid:token@tokyo.example.com:443', match: {} },
-      ],
-    }));
-    // Legacy `server` field must not be present.
+    // _k2.run('up') called with subs URL in routes
+    expect(mockRun).toHaveBeenCalledWith('up', expect.objectContaining({ mode: 'tun' }));
     const upCall = mockRun.mock.calls.find(c => c[0] === 'up');
+    const routes = upCall?.[1]?.routes as Array<{ via: string }>;
+    expect(routes.some(r => r.via === 'k2subs://udid:token@k2.52j.me/api/subs')).toBe(true);
     expect(upCall?.[1]?.server).toBeUndefined();
 
     // USER_CONNECT dispatched
@@ -207,6 +187,7 @@ describe('Connection Store - Connect', () => {
     mockRun.mockResolvedValue({ code: 0 });
 
     useConnectionStore.getState().selectSelfHosted();
+    useConnectionStore.setState({ serverMode: 'self_hosted' });
     await useConnectionStore.getState().connect();
 
     const upCall = mockRun.mock.calls.find(c => c[0] === 'up');
@@ -216,10 +197,14 @@ describe('Connection Store - Connect', () => {
     expect(lastRoute?.via).toBe('k2v5://alice:token@1.2.3.4:443#tokyo');
   });
 
-  it('connect does nothing when no tunnel selected', async () => {
+  it('connect does nothing when self_hosted mode has no tunnel configured', async () => {
+    const selfHostedMod = await import('../self-hosted.store');
+    selfHostedMod.useSelfHostedStore.setState({ tunnel: null, loaded: true });
+
     const { useConnectionStore } = await getStores();
     mockRun.mockResolvedValue({ code: 0 });
 
+    useConnectionStore.setState({ serverMode: 'self_hosted' });
     await useConnectionStore.getState().connect();
 
     expect(mockRun).not.toHaveBeenCalled();
@@ -228,25 +213,14 @@ describe('Connection Store - Connect', () => {
   it('connectEpoch guards against stale connect', async () => {
     const { useConnectionStore, vpn } = await getStores();
 
-    // Select a cloud tunnel
-    useConnectionStore.getState().selectCloudTunnel({
-      id: 1,
-      domain: 'slow.example.com',
-      name: 'Slow',
-      protocol: 'k2v5',
-      port: 443,
-      serverUrl: 'k2v5://slow.example.com:443',
-      node: { country: 'US' },
-    } as any);
-
     // Mock auth service to be slow
     const { authService } = await import('../../services/auth-service');
     let resolveAuth: (v: string) => void;
-    vi.mocked(authService.buildTunnelUrl).mockImplementation(
+    vi.mocked(authService.buildSubsUrl).mockImplementation(
       () => new Promise(resolve => { resolveAuth = resolve; }),
     );
 
-    // Start connect
+    // Start connect (smart mode — default)
     const connectPromise = useConnectionStore.getState().connect();
 
     // connect() dispatches USER_CONNECT after auth resolves, so VPN state is
@@ -257,7 +231,7 @@ describe('Connection Store - Connect', () => {
     await useConnectionStore.getState().disconnect();
 
     // Now resolve auth — connect should bail due to epoch mismatch
-    resolveAuth!('k2v5://udid:token@slow.example.com:443');
+    resolveAuth!('k2subs://udid:token@k2.52j.me/api/subs');
     await connectPromise;
 
     // _k2.run('up') should NOT have been called
@@ -312,23 +286,13 @@ describe('Connection Store - Config Persistence', () => {
       return { code: 0 };
     });
 
-    useConnectionStore.getState().selectCloudTunnel({
-      id: 1,
-      domain: 'test.com',
-      name: 'Test',
-      protocol: 'k2v5',
-      port: 443,
-      serverUrl: 'k2v5://test.com:443',
-      node: { country: 'US' },
-    } as any);
-
     const { authService } = await import('../../services/auth-service');
-    vi.mocked(authService.buildTunnelUrl).mockResolvedValue('k2v5://u:t@test.com:443');
+    vi.mocked(authService.buildSubsUrl).mockResolvedValue('k2subs://udid:token@k2.52j.me/api/subs');
 
     await useConnectionStore.getState().connect();
 
     expect(order).toEqual(['persist', 'run_up']);
-    expect(useConnectionStore.getState().lastServerUrl).toBe('k2v5://u:t@test.com:443');
+    expect(useConnectionStore.getState().lastServerUrl).toBe('k2subs://udid:token@k2.52j.me/api/subs');
   });
 });
 
