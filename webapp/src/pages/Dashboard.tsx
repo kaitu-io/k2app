@@ -86,7 +86,6 @@ export default function Dashboard() {
     selectedSource,
     activeTunnel,
     connectedTunnel,
-    selectCloudTunnel,
     selectSelfHosted,
     connect,
     disconnect,
@@ -280,16 +279,6 @@ export default function Dashboard() {
     );
   }, [selfHostedTunnel, colors, t, navigate]);
 
-  // Handle cloud tunnel selection
-  const handleCloudTunnelSelect = useCallback((_tunnel: Tunnel, _echConfigList?: string) => {
-    console.debug('[Dashboard] handleCloudTunnelSelect: tunnel=' + _tunnel.domain + ', isInteractive=' + isInteractive);
-    if (isInteractive) {
-      console.warn('[Dashboard] handleCloudTunnelSelect: blocked by isInteractive (vpnState=' + vpnState + ')');
-      return;
-    }
-    selectCloudTunnel(_tunnel);
-  }, [isInteractive, vpnState, selectCloudTunnel]);
-
   // Handle self-hosted tunnel selection
   const handleSelfHostedSelect = useCallback(() => {
     if (isInteractive) {
@@ -422,20 +411,23 @@ export default function Dashboard() {
       >
         {/* Cloud Tunnels + Self-hosted — authenticated users with SmartServerSelector */}
         {isAuthenticated && (
-          <SmartServerSelector
-            tunnels={cloudTunnels}
-            isInteractive={!isInteractive}
-            selfHostedContent={selfHostedTabContent}
-          >
-            <Box sx={{ mt: 2 }}>
+          <>
+            {/* Hidden — fetches tunnel list for SmartServerSelector country chips */}
+            <Box sx={{ display: 'none' }}>
               <CloudTunnelList
-                selectedDomain={displayTunnel?.domain || ''}
-                onSelect={handleCloudTunnelSelect}
-                disabled={isInteractive}
+                selectedDomain=""
+                onSelect={() => {}}
+                disabled={true}
                 onTunnelsLoaded={handleTunnelsLoaded}
               />
             </Box>
-          </SmartServerSelector>
+
+            <SmartServerSelector
+              tunnels={cloudTunnels}
+              isInteractive={!isInteractive}
+              selfHostedContent={selfHostedTabContent}
+            />
+          </>
         )}
 
         {/* Self-hosted node — primary option for unauthenticated guests */}
