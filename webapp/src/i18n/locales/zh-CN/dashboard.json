@@ -257,5 +257,14 @@
     "remarkPlaceholder": "如：爸爸的手机",
     "confirm": "确认",
     "loadFailed": "加载设备列表失败"
+  },
+  "serverSelector": {
+    "tabSmart": "智能选择",
+    "tabManual": "指定服务器",
+    "countryAuto": "自动（推荐）",
+    "countryPickerLabel": "节点地区",
+    "nodesAvailable": "{{count}} 台节点 · {{regions}} 个地区",
+    "smartHint": "k2 将根据延迟自动选择最优节点",
+    "manualHint": "适合需要固定 IP 的场景"
   }
 }

@@ -257,5 +257,14 @@
     "remarkPlaceholder": "e.g., Dad's phone",
     "confirm": "Confirm",
     "loadFailed": "Failed to load devices"
+  },
+  "serverSelector": {
+    "tabSmart": "Smart",
+    "tabManual": "Fixed Server",
+    "countryAuto": "Auto (Recommended)",
+    "countryPickerLabel": "Node Region",
+    "nodesAvailable": "{{count}} nodes · {{regions}} regions",
+    "smartHint": "k2 selects the optimal node automatically",
+    "manualHint": "For users who need a fixed server IP"
   }
 }

@@ -257,5 +257,14 @@
     "remarkPlaceholder": "例：パパのスマホ",
     "confirm": "確認",
     "loadFailed": "デバイスリストの読み込みに失敗しました"
+  },
+  "serverSelector": {
+    "tabSmart": "スマート選択",
+    "tabManual": "サーバー指定",
+    "countryAuto": "自動（推奨）",
+    "countryPickerLabel": "ノード地域",
+    "nodesAvailable": "{{count}} 台 · {{regions}} 地域",
+    "smartHint": "k2 が遅延に基づいて最適なノードを自動選択します",
+    "manualHint": "固定 IP が必要なユーザー向け"
   }
 }
