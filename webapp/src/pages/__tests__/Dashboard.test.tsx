@@ -101,7 +101,6 @@ const mockSelectCloudTunnel = vi.fn();
 const mockSelectSelfHosted = vi.fn();
 
 const createMockConnectionStore = (overrides = {}) => ({
-  selectedSource: 'cloud' as const,
   selectedCloudTunnel: null,
   activeTunnel: null,
   connectedTunnel: null,
@@ -110,7 +109,7 @@ const createMockConnectionStore = (overrides = {}) => ({
   feedbackRequested: false,
   pendingFeedback: false,
   lastConnectionInfo: null,
-  serverMode: 'manual' as const,
+  serverMode: 'smart' as const,
   smartCountry: null,
   serverModeLoaded: true,
   setServerMode: vi.fn().mockResolvedValue(undefined),

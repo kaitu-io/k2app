@@ -107,8 +107,10 @@ export function SmartServerSelector({ tunnels, isInteractive, manualContent, sel
         />
       </Tabs>
 
-      {/* ── Smart tab — list style, same as self-hosted ───────── */}
-      {tabValue === 'smart' && (
+      {/* All panels always mounted — display toggle preserves component state */}
+
+      {/* ── Smart tab ─────────────────────────────────────────── */}
+      <Box sx={{ display: tabValue === 'smart' ? 'block' : 'none' }}>
         <List disablePadding sx={{ px: 1 }}>
           {/* 自动 — always first */}
           <ListItem
@@ -168,13 +170,17 @@ export function SmartServerSelector({ tunnels, isInteractive, manualContent, sel
             </Typography>
           )}
         </List>
-      )}
+      </Box>
 
       {/* ── Manual (指定服务器) tab ───────────────────────────── */}
-      {tabValue === 'manual' && manualContent}
+      <Box sx={{ display: tabValue === 'manual' ? 'block' : 'none' }}>
+        {manualContent}
+      </Box>
 
       {/* ── Self-hosted tab ───────────────────────────────────── */}
-      {tabValue === 'self_hosted' && selfHostedContent}
+      <Box sx={{ display: tabValue === 'self_hosted' ? 'block' : 'none' }}>
+        {selfHostedContent}
+      </Box>
     </Box>
   );
 }

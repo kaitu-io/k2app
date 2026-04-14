@@ -83,9 +83,9 @@ export default function Dashboard() {
 
   // Connection orchestration
   const {
-    selectedSource,
     activeTunnel,
     connectedTunnel,
+    serverMode,
     selectSelfHosted,
     connect,
     disconnect,
@@ -191,18 +191,24 @@ export default function Dashboard() {
     enrichFromTunnelList(tunnels);
   }, [enrichFromTunnelList]);
 
-  // Manual (指定服务器) tab content — CloudTunnelList without its header banner
-  const manualTabContent = useMemo(() => (
+  // Stable onSelect for CloudTunnelList — reads activeTunnel at call time, no dep churn
+  const handleCloudTunnelSelect = useCallback((tunnel: Tunnel) => {
+    useConnectionStore.getState().selectCloudTunnel(tunnel);
+  }, []);
+
+  // CloudTunnelList selectedDomain — derived from activeTunnel
+  const manualSelectedDomain = activeTunnel?.source === 'cloud' ? activeTunnel.domain : null;
+
+  // Manual (指定服务器) tab content — always mounted via SmartServerSelector display toggle
+  const manualTabContent = (
     <CloudTunnelList
-      selectedDomain={activeTunnel?.source === 'cloud' ? activeTunnel.domain : null}
-      onSelect={(tunnel) => {
-        useConnectionStore.getState().selectCloudTunnel(tunnel);
-      }}
+      selectedDomain={manualSelectedDomain}
+      onSelect={handleCloudTunnelSelect}
       disabled={isInteractive}
       onTunnelsLoaded={handleTunnelsLoaded}
       hideHeader
     />
-  ), [activeTunnel, isInteractive, handleTunnelsLoaded]);
+  );
 
   // Self-hosted tab content — dedicated 自部署 slot in SmartServerSelector
   const selfHostedTabContent = useMemo(() => {
@@ -369,10 +375,10 @@ export default function Dashboard() {
 
   // Auto-select self-hosted when it's the only option (guest with tunnel)
   useEffect(() => {
-    if (!isAuthenticated && selfHostedTunnel && selectedSource === 'cloud' && !activeTunnel) {
+    if (!isAuthenticated && selfHostedTunnel && serverMode !== 'self_hosted' && !activeTunnel) {
       selectSelfHosted();
     }
-  }, [isAuthenticated, selfHostedTunnel, selectedSource, activeTunnel, selectSelfHosted]);
+  }, [isAuthenticated, selfHostedTunnel, serverMode, activeTunnel, selectSelfHosted]);
 
   return (
     <DashboardContainer
@@ -423,24 +429,16 @@ export default function Dashboard() {
         }}
       >
         {/* Cloud Tunnels + Self-hosted — authenticated users with SmartServerSelector */}
+        {/* SmartServerSelector — all tab panels always mounted (display toggle).
+             The CloudTunnelList in manualTabContent stays mounted even when on smart tab,
+             so it populates cloudTunnels via onTunnelsLoaded on initial load. */}
         {isAuthenticated && (
-          <>
-            {/* Hidden — always mounted to populate cloudTunnels for the smart tab country list */}
-            <Box sx={{ display: 'none' }}>
-              <CloudTunnelList
-                selectedDomain={null}
-                onSelect={() => {}}
-                disabled
-                onTunnelsLoaded={handleTunnelsLoaded}
-              />
-            </Box>
-            <SmartServerSelector
-              tunnels={cloudTunnels}
-              isInteractive={!isInteractive}
-              manualContent={manualTabContent}
-              selfHostedContent={selfHostedTabContent}
-            />
-          </>
+          <SmartServerSelector
+            tunnels={cloudTunnels}
+            isInteractive={!isInteractive}
+            manualContent={manualTabContent}
+            selfHostedContent={selfHostedTabContent}
+          />
         )}
 
         {/* Self-hosted node — primary option for unauthenticated guests */}
@@ -452,7 +450,7 @@ export default function Dashboard() {
                 sx={{
                   borderRadius: 2,
                   minHeight: 64,
-                  bgcolor: selectedSource === 'self_hosted' ? colors.selectedBg : undefined,
+                  bgcolor: serverMode === 'self_hosted' ? colors.selectedBg : undefined,
                   cursor: isInteractive ? 'not-allowed' : 'pointer',
                   opacity: isInteractive ? '0.6 !important' : 1,
                   transition: 'all 0.2s ease',
@@ -517,7 +515,7 @@ export default function Dashboard() {
                   <SettingsIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
                 </IconButton>
                 <Radio
-                  checked={selectedSource === 'self_hosted'}
+                  checked={serverMode === 'self_hosted'}
                   color="primary"
                   sx={{ '& .MuiSvgIcon-root': { fontSize: 24 } }}
                 />
