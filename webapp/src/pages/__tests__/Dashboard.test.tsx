@@ -224,6 +224,11 @@ describe('Dashboard', () => {
 
   describe('隧道选择状态', () => {
     it('未选择隧道时应该显示 hasTunnelSelected=no', async () => {
+      // Use manual mode so no synthetic smart tunnel is displayed
+      vi.mocked(useConnectionStore).mockImplementation((selector?: any) => {
+        const state = createMockConnectionStore({ serverMode: 'manual' as const });
+        return selector ? selector(state) : state;
+      });
       render(<Dashboard />);
 
       await waitFor(() => {
@@ -278,6 +283,10 @@ describe('Dashboard', () => {
         state: 'idle',
         isDisconnected: true,
       }) as any);
+      vi.mocked(useConnectionStore).mockImplementation((selector?: any) => {
+        const state = createMockConnectionStore({ serverMode: 'manual' as const });
+        return selector ? selector(state) : state;
+      });
 
       render(<Dashboard />);
 
@@ -326,6 +335,10 @@ describe('Dashboard', () => {
         isRetrying: false,
         error: { code: 503, message: 'fail' },
       }) as any);
+      vi.mocked(useConnectionStore).mockImplementation((selector?: any) => {
+        const state = createMockConnectionStore({ serverMode: 'manual' as const });
+        return selector ? selector(state) : state;
+      });
 
       render(<Dashboard />);
 
