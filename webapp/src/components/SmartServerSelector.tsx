@@ -40,12 +40,6 @@ function buildCountrySummary(tunnels: Tunnel[]): CountrySummary[] {
     .sort((a, b) => b.count - a.count);
 }
 
-/** Converts ISO 3166-1 alpha-2 code to unicode flag emoji. */
-function flagEmoji(code: string): string {
-  return Array.from(code.toUpperCase())
-    .map(c => String.fromCodePoint(c.charCodeAt(0) + 127397))
-    .join('');
-}
 
 export function SmartServerSelector({ tunnels, isInteractive, children }: Props) {
   const { t } = useTranslation('dashboard');
@@ -58,12 +52,12 @@ export function SmartServerSelector({ tunnels, isInteractive, children }: Props)
 
   const handleTabChange = (_: React.SyntheticEvent, value: 'smart' | 'manual') => {
     if (!isInteractive) return;
-    void setServerMode(value);
+    setServerMode(value).catch(err => console.warn('[SmartServerSelector] setServerMode failed:', err));
   };
 
-  const handleCountryChange = (value: string) => {
+  const handleCountryChange = async (value: string) => {
     if (!isInteractive) return;
-    void setSmartCountry(value === '' ? null : value);
+    await setSmartCountry(value === '' ? null : value);
   };
 
   return (
@@ -84,7 +78,7 @@ export function SmartServerSelector({ tunnels, isInteractive, children }: Props)
         <Tab
           value="manual"
           label={t('serverSelector.tabManual')}
-          sx={{ minHeight: 36, py: 0.5, fontSize: '0.8rem', opacity: 0.65 }}
+          sx={{ minHeight: 36, py: 0.5, fontSize: '0.8rem', opacity: serverMode === 'smart' ? 0.65 : 1 }}
           disabled={!isInteractive}
         />
       </Tabs>
@@ -133,7 +127,8 @@ export function SmartServerSelector({ tunnels, isInteractive, children }: Props)
                   <Chip
                     key={c.code}
                     size="small"
-                    label={`${flagEmoji(c.code)} ${getCountryName(c.code)} \u00d7${c.count}`}
+                    icon={<Box sx={{ display: 'flex', pl: 0.5 }}>{getFlagIcon(c.code)}</Box>}
+                    label={`${getCountryName(c.code)} \u00d7${c.count}`}
                     onClick={isInteractive ? () => handleCountryChange(c.code) : undefined}
                     variant={smartCountry === c.code ? 'filled' : 'outlined'}
                     color={smartCountry === c.code ? 'primary' : 'default'}
