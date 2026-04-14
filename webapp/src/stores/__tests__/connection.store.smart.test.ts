@@ -68,16 +68,16 @@ async function getStores() {
 // ==================== setServerMode Tests ====================
 
 describe('setServerMode', () => {
-  it('updates serverMode state', async () => {
+  it('updates serverMode to self_hosted', async () => {
     const { useConnectionStore } = await getStores();
-    await useConnectionStore.getState().setServerMode('manual');
-    expect(useConnectionStore.getState().serverMode).toBe('manual');
+    await useConnectionStore.getState().setServerMode('self_hosted');
+    expect(useConnectionStore.getState().serverMode).toBe('self_hosted');
   });
 
-  it('persists to storage', async () => {
+  it('persists self_hosted mode to storage', async () => {
     const { useConnectionStore } = await getStores();
-    await useConnectionStore.getState().setServerMode('manual');
-    expect(mockStorage.set).toHaveBeenCalledWith('k2.vpn.server_mode', 'manual');
+    await useConnectionStore.getState().setServerMode('self_hosted');
+    expect(mockStorage.set).toHaveBeenCalledWith('k2.vpn.server_mode', 'self_hosted');
   });
 
   it('persists smart mode to storage', async () => {
@@ -136,7 +136,7 @@ describe('loadServerMode', () => {
     expect(s.serverModeLoaded).toBe(true);
   });
 
-  it('restores manual mode', async () => {
+  it('migrates legacy "manual" value to smart', async () => {
     mockStorage.get.mockImplementation(async (key: string) => {
       if (key === 'k2.vpn.server_mode') return 'manual';
       return null;
@@ -145,7 +145,8 @@ describe('loadServerMode', () => {
     const { useConnectionStore } = await getStores();
     await useConnectionStore.getState().loadServerMode();
 
-    expect(useConnectionStore.getState().serverMode).toBe('manual');
+    // 'manual' is a legacy value, must fall back to 'smart'
+    expect(useConnectionStore.getState().serverMode).toBe('smart');
     expect(useConnectionStore.getState().serverModeLoaded).toBe(true);
   });
 });
@@ -250,14 +251,12 @@ describe('connect() — smart mode', () => {
     expect(mockRun).toHaveBeenCalledWith('up', expect.anything());
   });
 
-  it('manual mode without activeTunnel does not connect', async () => {
+  it('self_hosted mode without a configured tunnel does not connect', async () => {
     const { useConnectionStore } = await getStores();
     mockRun.mockResolvedValue({ code: 0 });
 
-    useConnectionStore.setState({
-      serverMode: 'manual',
-      activeTunnel: null,
-    });
+    // self_hosted mode but useSelfHostedStore has no tunnel (default mock returns null)
+    useConnectionStore.setState({ serverMode: 'self_hosted' });
 
     await useConnectionStore.getState().connect();
 
