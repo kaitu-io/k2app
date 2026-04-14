@@ -62,6 +62,10 @@ async function getStores() {
   // Mark lastServerUrl as loaded so cold-start recovery doesn't wait.
   // Use smart mode — tests that need a specific tunnel call selectCloudTunnel() first.
   connMod.useConnectionStore.setState({ lastServerUrl: null, lastServerUrlLoaded: true, serverMode: 'smart' as const, serverModeLoaded: true });
+  // Default to authenticated so smart-mode connect() reaches the connect path
+  // (tests that exercise the unauth short-circuit flip this off explicitly).
+  const authMod = await import('../auth.store');
+  authMod.useAuthStore.setState({ isAuthenticated: true });
   return { ...connMod, vpn: vpnMod, config: configMod };
 }
 
@@ -394,6 +398,115 @@ describe('Connection Store - State Guards', () => {
 
     await useConnectionStore.getState().disconnect();
     expect(mockRun).not.toHaveBeenCalled();
+  });
+});
+
+// ==================== Selection → Mode symmetry Tests ====================
+
+describe('Connection Store - Selection mode symmetry', () => {
+  it('selectCloudTunnel flips serverMode to manual and persists', async () => {
+    const { useConnectionStore } = await getStores();
+
+    const tunnel = {
+      id: 1, domain: 'tokyo.example.com', name: 'Tokyo', protocol: 'k2v5',
+      port: 443, serverUrl: 'k2v5://tokyo.example.com:443', node: { country: 'JP' },
+    } as any;
+
+    // Start from smart mode (default)
+    expect(useConnectionStore.getState().serverMode).toBe('smart');
+
+    useConnectionStore.getState().selectCloudTunnel(tunnel);
+
+    expect(useConnectionStore.getState().serverMode).toBe('manual');
+    expect(mockStorage.set).toHaveBeenCalledWith('k2.vpn.server_mode', 'manual');
+  });
+
+  it('selectSelfHosted persists serverMode to storage', async () => {
+    const selfHostedMod = await import('../self-hosted.store');
+    selfHostedMod.useSelfHostedStore.setState({
+      tunnel: { uri: 'k2v5://u:t@1.2.3.4:443', name: 'n', country: 'JP' },
+      loaded: true,
+    });
+
+    const { useConnectionStore } = await getStores();
+    useConnectionStore.getState().selectSelfHosted();
+
+    expect(useConnectionStore.getState().serverMode).toBe('self_hosted');
+    expect(mockStorage.set).toHaveBeenCalledWith('k2.vpn.server_mode', 'self_hosted');
+  });
+});
+
+// ==================== connect() empty-serverUrl hard guards ====================
+
+describe('Connection Store - connect() hard guards', () => {
+  it('manual mode with selectedCloudTunnel.serverUrl = "" aborts and does NOT call _k2.run', async () => {
+    const { useConnectionStore, vpn } = await getStores();
+    mockRun.mockResolvedValue({ code: 0 });
+
+    // Directly inject an invalid selection (simulates stale tunnel list where serverUrl was cleared)
+    useConnectionStore.setState({
+      serverMode: 'manual',
+      selectedCloudTunnel: {
+        id: 9, domain: 'broken.example.com', name: 'Broken', protocol: 'k2v5',
+        port: 443, serverUrl: '', node: { country: 'US' },
+      } as any,
+    });
+
+    await useConnectionStore.getState().connect();
+
+    expect(mockRun).not.toHaveBeenCalledWith('up', expect.anything());
+    // VPN machine should surface an error (not stuck in connecting)
+    expect(vpn.useVPNMachineStore.getState().state).toBe('idle');
+    expect(vpn.useVPNMachineStore.getState().error).not.toBeNull();
+  });
+
+  it('self_hosted mode with tunnel.uri = "" aborts and does NOT call _k2.run', async () => {
+    const selfHostedMod = await import('../self-hosted.store');
+    selfHostedMod.useSelfHostedStore.setState({
+      tunnel: { uri: '', name: 'broken', country: '' },
+      loaded: true,
+    });
+
+    const { useConnectionStore, vpn } = await getStores();
+    mockRun.mockResolvedValue({ code: 0 });
+
+    useConnectionStore.setState({ serverMode: 'self_hosted' });
+
+    await useConnectionStore.getState().connect();
+
+    expect(mockRun).not.toHaveBeenCalledWith('up', expect.anything());
+    expect(vpn.useVPNMachineStore.getState().state).toBe('idle');
+  });
+
+  it('smart mode where buildSubsUrl resolved to empty string aborts and does NOT call _k2.run', async () => {
+    const { useConnectionStore, vpn } = await getStores();
+    mockRun.mockResolvedValue({ code: 0 });
+
+    const { authService } = await import('../../services/auth-service');
+    vi.mocked(authService.buildSubsUrl).mockResolvedValue('');
+
+    useConnectionStore.setState({ serverMode: 'smart', smartCountry: null });
+
+    await useConnectionStore.getState().connect();
+
+    expect(mockRun).not.toHaveBeenCalledWith('up', expect.anything());
+    expect(vpn.useVPNMachineStore.getState().state).toBe('idle');
+  });
+
+  it('smart mode where buildSubsUrl resolved to non-k2subs scheme aborts', async () => {
+    const { useConnectionStore, vpn } = await getStores();
+    mockRun.mockResolvedValue({ code: 0 });
+
+    const { authService } = await import('../../services/auth-service');
+    // Pretend antiblock lost the scheme prefix (regression guard)
+    vi.mocked(authService.buildSubsUrl).mockResolvedValue('k2v5://u:t@bogus/api/subs');
+
+    useConnectionStore.setState({ serverMode: 'smart', smartCountry: null });
+
+    await useConnectionStore.getState().connect();
+
+    expect(mockRun).not.toHaveBeenCalledWith('up', expect.anything());
+    expect(vpn.useVPNMachineStore.getState().state).toBe('idle');
   });
 });
 

@@ -62,6 +62,10 @@ async function getStores() {
   });
   // Mark lastServerUrl as loaded so cold-start recovery doesn't wait.
   connMod.useConnectionStore.setState({ lastServerUrl: null, lastServerUrlLoaded: true, serverModeLoaded: true });
+  // Default to authenticated so smart-mode connect() doesn't short-circuit to LoginDialog
+  // (tests that exercise the unauth path flip this off explicitly).
+  const authMod = await import('../auth.store');
+  authMod.useAuthStore.setState({ isAuthenticated: true });
   return { ...connMod, vpn: vpnMod, config: configMod };
 }
 
@@ -284,6 +288,27 @@ describe('connect() — smart mode', () => {
 
     expect(order).toEqual(['persist', 'run_up']);
     expect(useConnectionStore.getState().lastServerUrl).toBe('k2subs://udid:tok@k2.52j.me/api/subs');
+  });
+
+  it('no credentials → opens LoginDialog and does NOT call _k2.run(up)', async () => {
+    const { useConnectionStore } = await getStores();
+    mockRun.mockResolvedValue({ code: 0 });
+
+    const { authService } = await import('../../services/auth-service');
+    vi.mocked(authService.buildSubsUrl).mockResolvedValue('k2subs://k2.52j.me/api/subs');
+
+    const authMod = await import('../auth.store');
+    authMod.useAuthStore.setState({ isAuthenticated: false });
+
+    const loginMod = await import('../login-dialog.store');
+    const openSpy = vi.spyOn(loginMod.useLoginDialogStore.getState(), 'open');
+
+    useConnectionStore.setState({ serverMode: 'smart', smartCountry: null });
+
+    await useConnectionStore.getState().connect();
+
+    expect(mockRun).not.toHaveBeenCalledWith('up', expect.anything());
+    expect(openSpy).toHaveBeenCalledTimes(1);
   });
 
   it('dispatches USER_CONNECT and moves VPN to connecting state', async () => {

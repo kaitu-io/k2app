@@ -107,7 +107,12 @@ function buildRoutes(
   serverUrl: string | undefined,
 ): RouteConfig[] {
   const prefix = gatewayPrefix();
-  if (!serverUrl) return prefix;
+  if (!serverUrl) {
+    // Defense in depth. connection.store.connect() guards against this with a user-visible
+    // error, so reaching this branch means a caller bypassed the guard — log loudly.
+    console.error('[ConfigStore] buildRoutes: serverUrl is empty — this should have been caught by connect() guard');
+    return prefix;
+  }
 
   // Global: everything through proxy
   if (countryVia === null) {

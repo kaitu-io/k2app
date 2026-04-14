@@ -22,6 +22,7 @@ import { useSelfHostedStore } from './self-hosted.store';
 import { useConfigStore } from './config.store';
 import { useVPNMachineStore, dispatch as vpnDispatch } from './vpn-machine.store';
 import { useAuthStore } from './auth.store';
+import { useLoginDialogStore } from './login-dialog.store';
 
 // ============ Types ============
 
@@ -80,6 +81,14 @@ async function persistLastServerUrl(url: string | null): Promise<void> {
     }
   } catch (err) {
     console.warn('[Connection] Failed to persist last server URL:', err);
+  }
+}
+
+async function persistServerMode(mode: 'smart' | 'manual' | 'self_hosted'): Promise<void> {
+  try {
+    await window._platform.storage.set(SERVER_MODE_STORAGE_KEY, mode);
+  } catch (err) {
+    console.warn('[Connection] Failed to persist serverMode:', err);
   }
 }
 
@@ -157,10 +166,15 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
   // Actions
   selectCloudTunnel: (tunnel) => {
     console.info('[Connection] selectCloudTunnel: domain=' + tunnel.domain + ', name=' + (tunnel.name || tunnel.domain));
+    // Picking a specific cloud tunnel implies manual mode — symmetric with selectSelfHosted.
+    // Without this, clicking a tunnel in the 指定服务器 tab silently kept serverMode='smart',
+    // so connect() routed through buildSubsUrl instead of the selected tunnel's serverUrl.
     set({
       selectedCloudTunnel: tunnel,
       activeTunnel: computeCloudActiveTunnel(tunnel),
+      serverMode: 'manual',
     });
+    void persistServerMode('manual');
   },
 
   selectSelfHosted: () => {
@@ -170,6 +184,7 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
       serverMode: 'self_hosted',
       activeTunnel: tunnel,
     });
+    void persistServerMode('self_hosted');
   },
 
   setServerMode: async (mode: 'smart' | 'manual' | 'self_hosted') => {
@@ -179,11 +194,7 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     } else {
       set({ serverMode: mode });
     }
-    try {
-      await window._platform.storage.set(SERVER_MODE_STORAGE_KEY, mode);
-    } catch (err) {
-      console.warn('[Connection] Failed to persist serverMode:', err);
-    }
+    await persistServerMode(mode);
   },
 
   setSmartCountry: async (country) => {
@@ -234,13 +245,35 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
 
     const { selectedCloudTunnel, connectEpoch, serverMode, smartCountry } = get();
 
-    if (serverMode === 'self_hosted' && !useSelfHostedStore.getState().tunnel) {
-      console.warn('[Connection] connect: self_hosted mode but no tunnel configured, aborting');
+    // Pre-flight mode/selection validity. Tightened to reject empty-string uri/serverUrl
+    // (stale tunnel list, externally wiped self-hosted config), not just null, so we never
+    // send an empty-routes payload to the daemon.
+    if (serverMode === 'self_hosted' && !useSelfHostedStore.getState().tunnel?.uri) {
+      console.warn('[Connection] connect: self_hosted mode but no tunnel URI, aborting');
+      vpnDispatch('BACKEND_ERROR', {
+        error: { code: 400, message: 'No self-hosted tunnel configured' },
+        isRetrying: false,
+      });
       return;
     }
 
-    if (serverMode === 'manual' && !selectedCloudTunnel) {
-      console.warn('[Connection] connect: manual mode but no cloud tunnel selected, aborting');
+    if (serverMode === 'manual' && !selectedCloudTunnel?.serverUrl) {
+      console.warn('[Connection] connect: manual mode but selected tunnel has no serverUrl, aborting');
+      vpnDispatch('BACKEND_ERROR', {
+        error: { code: 400, message: 'No server selected' },
+        isRetrying: false,
+      });
+      return;
+    }
+
+    // Smart mode requires credentials (k2subs:// needs userinfo or daemon rejects with
+    // "missing credentials"). Prompt login instead of sending a guaranteed-failing payload.
+    if (serverMode === 'smart' && !useAuthStore.getState().isAuthenticated) {
+      console.warn('[Connection] connect: smart mode without auth — opening LoginDialog');
+      useLoginDialogStore.getState().open({
+        trigger: 'vpn_connect_smart',
+        message: '登录后即可使用智能选择连接',
+      });
       return;
     }
 
@@ -291,6 +324,24 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     // Epoch guard: bail if user disconnected or started new connect
     if (get().connectEpoch !== myEpoch) {
       console.warn('[Connection] connect: epoch mismatch (mine=' + myEpoch + ', current=' + get().connectEpoch + '), aborting');
+      return;
+    }
+
+    // Post-resolve hard guard: an empty/invalid serverUrl would produce an empty routes[]
+    // in buildConnectConfig, which the daemon silently no-ops (no engine.Start logs, no
+    // error returned to the webapp). Abort with a user-visible error instead.
+    const invalidServerUrl =
+      (serverMode === 'smart'       && !serverUrl?.startsWith('k2subs://')) ||
+      (serverMode === 'manual'      && !serverUrl) ||
+      (serverMode === 'self_hosted' && !serverUrl);
+    if (invalidServerUrl) {
+      console.error('[Connection] connect: invalid serverUrl for mode=' + serverMode
+        + ', serverUrl=' + (serverUrl ?? 'undefined')
+        + ' — aborting before _k2.run(up)');
+      vpnDispatch('BACKEND_ERROR', {
+        error: { code: 400, message: 'Invalid server URL' },
+        isRetrying: false,
+      });
       return;
     }
 
