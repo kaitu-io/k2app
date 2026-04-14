@@ -38,7 +38,6 @@ countries:
           - myqcloud.com
         ips_direct:
           - "109.244.0.0/16"
-          - "203.205.0.0/16"
           - "183.3.0.0/16"
           - "112.60.0.0/14"
           - "101.89.0.0/16"
@@ -79,8 +78,6 @@ countries:
           - alipay.com
           - alicdn.com
           - aliyun.com
-          - aliyuncs.com
-          - alibabacloud.com
           - tbcdn.cn
           - mmstat.com
           - tanx.com
@@ -97,7 +94,6 @@ countries:
       - name: jd
         domains_direct:
           - jd.com
-          - jd.hk
           - jdcloud.com
           - 360buyimg.com
           - jdpay.com
@@ -115,7 +111,6 @@ countries:
           - 126.com
           - netease.com
           - music.163.com
-          - ntes.com
           - ydstatic.com
 
       - name: xiaohongshu
@@ -134,8 +129,6 @@ countries:
         domains_direct:
           - kuaishou.com
           - gifshow.com
-          - kwai.com
-          - yxixy.com
 
       - name: pinduoduo
         domains_direct:
@@ -215,7 +208,7 @@ countries:
       - name: mail-ru
         domains_direct: [mail.ru, mycdn.me, imgsmail.ru, list.ru]
       - name: ozon
-        domains_direct: [ozon.ru, ozon.st]
+        domains_direct: [ozon.ru]
       - name: wildberries
         domains_direct: [wildberries.ru, wbstatic.net, wb.ru]
       - name: sber
@@ -233,170 +226,38 @@ countries:
       - name: google
         domains_proxy: [google.com, youtube.com]
 
-  - code: tr
-    preset: tr-access
-    apps:
-      - name: trendyol
-        domains_direct: [trendyol.com, ty.gl]
-      - name: hepsiburada
-        domains_direct: [hepsiburada.com]
-      - name: sahibinden
-        domains_direct: [sahibinden.com]
-      - name: n11
-        domains_direct: [n11.com]
-      - name: getir
-        domains_direct: [getir.com]
-      - name: yemeksepeti
-        domains_direct: [yemeksepeti.com]
-      - name: papara
-        domains_direct: [papara.com]
-      - name: bip
-        domains_direct: [bip.com, bip.ai]
-
-  - code: pk
-    preset: pk-access
-    apps:
-      - name: jazzcash
-        domains_direct: [jazzcash.com.pk]
-      - name: easypaisa
-        domains_direct: [easypaisa.com.pk]
-      - name: daraz
-        domains_direct: [daraz.pk]
-      - name: bykea
-        domains_direct: [bykea.com]
-      - name: zameen
-        domains_direct: [zameen.com]
-
   - code: vn
     preset: vn-access
     apps:
       - name: zalo
-        domains_direct: [zalo.me, zalo.vn, zaloapp.com, zalopay.vn]
-      - name: momo
-        domains_direct: [momo.vn]
+        domains_direct: [zalo.me]
       - name: shopee-vn
         domains_direct: [shopee.vn]
-      - name: tiki
-        domains_direct: [tiki.vn]
       - name: fpt-play
-        domains_direct: [fptplay.vn, fpt.vn]
+        domains_direct: [fptplay.vn]
       - name: zing
-        domains_direct: [zing.vn, mp3.zing.vn]
-      - name: vietcombank
-        domains_direct: [vietcombank.com.vn]
+        domains_direct: [mp3.zing.vn]
 
   - code: mm
     preset: mm-access
     apps:
       - name: kbzpay
         domains_direct: [kbzpay.com]
-      - name: wavemoney
-        domains_direct: [wavemoney.io, wavemoney.com.mm]
-      - name: mpt
-        domains_direct: [mpt.com.mm]
-
-  - code: eg
-    preset: eg-access
-    apps:
-      - name: fawry
-        domains_direct: [fawry.com, fawrypay.com]
-      - name: talabat
-        domains_direct: [talabat.com]
-      - name: shahid
-        domains_direct: [shahid.mbc.net, shahid.net]
-      - name: jumia
-        domains_direct: [jumia.com.eg]
-
-  - code: id
-    preset: id-access
-    apps:
-      - name: gojek
-        domains_direct: [gojek.com, gopay.co.id, go-jek.com]
-      - name: tokopedia
-        domains_direct: [tokopedia.com, tokopedia.net]
-      - name: shopee-id
-        domains_direct: [shopee.co.id]
-      - name: dana
-        domains_direct: [dana.id]
-      - name: traveloka
-        domains_direct: [traveloka.com]
-      - name: vidio
-        domains_direct: [vidio.com]
-      - name: bukalapak
-        domains_direct: [bukalapak.com]
-
-  - code: sa
-    preset: sa-access
-    apps:
-      - name: stc-pay
-        domains_direct: [stcpay.com.sa, stc.com.sa]
-      - name: absher
-        domains_direct: [absher.sa]
-      - name: tawakkalna
-        domains_direct: [tawakkalna.sdaia.gov.sa]
-      - name: jahez
-        domains_direct: [jahez.net]
-      - name: noon-sa
-        domains_direct: [noon.com]
-      - name: hungerstation
-        domains_direct: [hungerstation.com]
-
-  - code: ae
-    preset: ae-access
-    apps:
-      - name: careem
-        domains_direct: [careem.com]
-      - name: noon-ae
-        domains_direct: [noon.com]
-      - name: talabat-ae
-        domains_direct: [talabat.com]
-      - name: botim
-        domains_direct: [botim.me]
-      - name: alhosn
-        domains_direct: [alhosn.ae]
 
   - code: th
     preset: th-access
     apps:
-      - name: line
-        domains_direct: [line.me, line-scdn.net, line-apps.com, linecorp.com, naver.jp]
-      - name: truemoney
-        domains_direct: [truemoney.com, truemoveh.com]
       - name: shopee-th
         domains_direct: [shopee.co.th]
-      - name: grab-th
-        domains_direct: [grab.com]
-      - name: scb
-        domains_direct: [scb.co.th]
-      - name: kbank
-        domains_direct: [kasikornbank.com]
-
-  - code: bd
-    preset: bd-access
-    apps:
-      - name: bkash
-        domains_direct: [bkash.com]
-      - name: nagad
-        domains_direct: [nagad.com.bd]
-      - name: pathao
-        domains_direct: [pathao.com]
-      - name: daraz-bd
-        domains_direct: [daraz.com.bd]
-      - name: grameenphone
-        domains_direct: [grameenphone.com, gp.com.bd]
 
   - code: by
     preset: by-access
     apps:
       - name: yandex-by
         domains_direct: [yandex.by]
-      - name: wildberries-by
-        domains_direct: [wildberries.by]
       - name: kufar
         domains_direct: [kufar.by]
       - name: onliner
         domains_direct: [onliner.by]
       - name: 21vek
         domains_direct: [21vek.by]
-      - name: belarusbank
-        domains_direct: [belarusbank.by]
