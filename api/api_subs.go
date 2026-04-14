@@ -87,6 +87,13 @@ func api_subs(c *gin.Context) {
 		return
 	}
 
+	// Require device context — web-auth tokens (no device) must not access subs.
+	if authCtx.Device == nil {
+		log.Warnf(c, "subs: device context required, udid=%s", udid)
+		Error(c, ErrorNotLogin, "device context required")
+		return
+	}
+
 	// Check membership (mirrors ProRequired middleware logic exactly).
 	if authCtx.User.IsExpired() {
 		log.Infof(c, "subs: user %d membership expired", authCtx.User.ID)
@@ -104,8 +111,8 @@ func api_subs(c *gin.Context) {
 	// Optional country filter.
 	country := strings.ToLower(strings.TrimSpace(c.Query("country")))
 	if country != "" {
-		q = q.Joins("JOIN slave_nodes ON slave_nodes.id = slave_tunnels.node_id").
-			Where("LOWER(slave_nodes.country) = ?", country)
+		q = q.Joins("Node").
+			Where("slave_nodes.country = ?", country)
 		log.Debugf(c, "subs: filtering by country=%q", country)
 	}
 
