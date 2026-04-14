@@ -58,11 +58,19 @@ interface ConnectionState {
   /** Last k2v5 URL sent to the daemon (persisted, used for cold-start restore). */
   lastServerUrl: string | null;
   lastServerUrlLoaded: boolean;
+  /** Smart mode: 'smart' uses k2subs auto-select; 'manual' uses the explicit CloudTunnelList selection. */
+  serverMode: 'smart' | 'manual';
+  /** Country filter for smart mode (ISO 3166-1 alpha-2, lowercase). null = all countries. */
+  smartCountry: string | null;
+  /** True once persisted serverMode/smartCountry has been loaded from storage. */
+  serverModeLoaded: boolean;
 }
 
 // Persisted last-used server URL. Kept separate from config.store because
 // ClientConfig mirrors the Go wire contract, which has no `server` field.
 const LAST_SERVER_URL_STORAGE_KEY = 'k2.vpn.last_server_url';
+const SERVER_MODE_STORAGE_KEY = 'k2.vpn.server_mode';
+const SMART_COUNTRY_STORAGE_KEY = 'k2.vpn.smart_country';
 
 async function persistLastServerUrl(url: string | null): Promise<void> {
   try {
@@ -83,6 +91,9 @@ interface ConnectionActions {
   disconnect: () => Promise<void>;
   clearPendingFeedback: () => void;
   enrichFromTunnelList: (tunnels: Tunnel[]) => void;
+  setServerMode: (mode: 'smart' | 'manual') => Promise<void>;
+  setSmartCountry: (country: string | null) => Promise<void>;
+  loadServerMode: () => Promise<void>;
 }
 
 // ============ Helpers ============
@@ -141,6 +152,9 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
   lastConnectionInfo: null,
   lastServerUrl: null,
   lastServerUrlLoaded: false,
+  serverMode: 'smart',
+  smartCountry: null,
+  serverModeLoaded: false,
 
   // Actions
   selectCloudTunnel: (tunnel) => {
@@ -161,6 +175,45 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     });
   },
 
+  setServerMode: async (mode) => {
+    set({ serverMode: mode });
+    try {
+      await window._platform.storage.set(SERVER_MODE_STORAGE_KEY, mode);
+    } catch (err) {
+      console.warn('[Connection] Failed to persist serverMode:', err);
+    }
+  },
+
+  setSmartCountry: async (country) => {
+    set({ smartCountry: country });
+    try {
+      if (country) {
+        await window._platform.storage.set(SMART_COUNTRY_STORAGE_KEY, country);
+      } else {
+        await window._platform.storage.remove(SMART_COUNTRY_STORAGE_KEY);
+      }
+    } catch (err) {
+      console.warn('[Connection] Failed to persist smartCountry:', err);
+    }
+  },
+
+  loadServerMode: async () => {
+    try {
+      const [mode, country] = await Promise.all([
+        window._platform.storage.get<string>(SERVER_MODE_STORAGE_KEY),
+        window._platform.storage.get<string>(SMART_COUNTRY_STORAGE_KEY),
+      ]);
+      useConnectionStore.setState({
+        serverMode: mode === 'manual' ? 'manual' : 'smart',
+        smartCountry: typeof country === 'string' && country !== '' ? country : null,
+        serverModeLoaded: true,
+      });
+    } catch (err) {
+      console.warn('[Connection] Failed to load serverMode:', err);
+      useConnectionStore.setState({ serverModeLoaded: true });
+    }
+  },
+
   connect: async () => {
     const t0 = Date.now();
     // State guard: reject if already connecting/connected/reconnecting/disconnecting.
@@ -173,20 +226,48 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
       return;
     }
 
-    const { selectedSource, selectedCloudTunnel, activeTunnel, connectEpoch } = get();
-    if (!activeTunnel) {
-      console.warn('[Connection] connect: no activeTunnel, aborting');
+    const { selectedSource, selectedCloudTunnel, activeTunnel, connectEpoch, serverMode, smartCountry } = get();
+
+    // Manual mode requires a selected tunnel; smart mode builds the subs URL dynamically.
+    if (serverMode === 'manual' && !activeTunnel) {
+      console.warn('[Connection] connect: manual mode but no activeTunnel, aborting');
       return;
     }
 
     const myEpoch = connectEpoch + 1;
-    console.info('[Connection] connect: source=' + selectedSource + ', tunnel=' + activeTunnel.domain + ', epoch=' + connectEpoch + '→' + myEpoch);
-    set({ connectedTunnel: activeTunnel, connectEpoch: myEpoch, connectedAt: Date.now() });
+
+    // Build connectedTunnel snapshot for UI display.
+    // Smart mode: synthetic object (actual server selected by k2 engine after subs fetch).
+    // Manual mode: use activeTunnel directly (same as before).
+    const connectedTunnelSnapshot: ActiveTunnel = serverMode === 'smart'
+      ? {
+          source: 'cloud',
+          domain: 'subs',
+          name: smartCountry ? `智能选择 · ${smartCountry.toUpperCase()}` : '智能选择',
+          country: smartCountry ?? '',
+          serverUrl: '', // filled in after buildSubsUrl resolves below
+        }
+      : activeTunnel!;
+
+    console.info(
+      '[Connection] connect: mode=' + serverMode
+      + (serverMode === 'manual'
+        ? ', tunnel=' + connectedTunnelSnapshot.domain
+        : ', country=' + (smartCountry ?? 'auto'))
+      + ', epoch=' + connectEpoch + '→' + myEpoch,
+    );
+    set({ connectedTunnel: connectedTunnelSnapshot, connectEpoch: myEpoch, connectedAt: Date.now() });
     console.warn('[Connection] TRACE connectedTunnel set t=' + Date.now() + ' (+' + (Date.now() - t0) + 'ms)');
 
     // Resolve server URL
     let serverUrl: string | undefined;
-    if (selectedSource === 'self_hosted') {
+    if (serverMode === 'smart') {
+      serverUrl = await authService.buildSubsUrl(smartCountry);
+      // Back-fill serverUrl into connectedTunnel so cold-start restore can use it.
+      set(s => ({
+        connectedTunnel: s.connectedTunnel ? { ...s.connectedTunnel, serverUrl: serverUrl ?? '' } : null,
+      }));
+    } else if (selectedSource === 'self_hosted') {
       serverUrl = useSelfHostedStore.getState().tunnel?.uri;
     } else if (selectedCloudTunnel?.serverUrl) {
       serverUrl = await authService.buildTunnelUrl(selectedCloudTunnel.serverUrl);
@@ -332,14 +413,32 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
  */
 function tryRestoreConnectedTunnel(): boolean {
   const vpnState = useVPNMachineStore.getState().state;
-  const { connectedTunnel, lastServerUrl, lastServerUrlLoaded } = useConnectionStore.getState();
+  const { connectedTunnel, lastServerUrl, lastServerUrlLoaded, serverMode, smartCountry, serverModeLoaded } = useConnectionStore.getState();
   const { loaded: selfHostedLoaded } = useSelfHostedStore.getState();
 
   if (!lastServerUrlLoaded) return false;
   if (!selfHostedLoaded) return false;
+  if (!serverModeLoaded) return false;
   if (connectedTunnel) return false;
   if (vpnState !== 'connected' && vpnState !== 'connecting' && vpnState !== 'reconnecting') return false;
 
+  // Smart mode: restore synthetic connectedTunnel — the daemon already has the k2subs config.
+  if (serverMode === 'smart') {
+    const displayName = smartCountry ? `智能选择 · ${smartCountry.toUpperCase()}` : '智能选择';
+    console.info('[Connection] Cold start restore: smart mode, country=' + (smartCountry ?? 'auto'));
+    useConnectionStore.setState({
+      connectedTunnel: {
+        source: 'cloud',
+        domain: 'subs',
+        name: displayName,
+        country: smartCountry ?? '',
+        serverUrl: lastServerUrl ?? '',
+      },
+    });
+    return true;
+  }
+
+  // Manual mode: existing URL-based restore.
   const serverUrl = lastServerUrl;
   if (!serverUrl) return false;
 
@@ -396,6 +495,10 @@ export function initializeConnectionStore(): () => void {
     }
   })();
 
+  // Load persisted serverMode + smartCountry (fire-and-forget).
+  // When done, triggers tryRestoreConnectedTunnel via Trigger 2.
+  useConnectionStore.getState().loadServerMode();
+
   // Trigger 1: VPN state changes (vpn-machine.store uses subscribeWithSelector middleware)
   const unsubVPN = useVPNMachineStore.subscribe(
     (s) => s.state,
@@ -428,9 +531,12 @@ export function initializeConnectionStore(): () => void {
     },
   );
 
-  // Trigger 2: lastServerUrl loaded (may arrive after VPN status)
+  // Trigger 2: lastServerUrl or serverMode loaded (either may arrive after VPN status)
   const unsubConnection = useConnectionStore.subscribe((state, prevState) => {
     if (state.lastServerUrlLoaded && !prevState.lastServerUrlLoaded) {
+      tryRestoreConnectedTunnel();
+    }
+    if (state.serverModeLoaded && !prevState.serverModeLoaded) {
       tryRestoreConnectedTunnel();
     }
   });
