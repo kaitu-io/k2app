@@ -205,4 +205,23 @@ export const authService = {
     return `${scheme}://${udid}:${token}@${rest}`;
   },
 
+  /**
+   * Build a k2subs:// subscription URL for the cloud API.
+   *
+   * Uses resolveEntry() to get the antiblock-aware API host, constructs
+   * k2subs://{host}/api/subs[?country=xx], then injects udid:token via
+   * buildTunnelUrl() — same credential injection used for k2v5 tunnel URLs.
+   *
+   * @param country - ISO 3166-1 alpha-2 country code (e.g. 'jp'), or null for auto
+   * @returns k2subs://udid:token@host/api/subs[?country=xx]
+   */
+  async buildSubsUrl(country: string | null): Promise<string> {
+    const { resolveEntry } = await import('./antiblock');
+    const entry = await resolveEntry();
+    const host = entry.replace(/^https?:\/\//, '');
+    const query = country ? `?country=${encodeURIComponent(country.toLowerCase())}` : '';
+    const raw = `k2subs://${host}/api/subs${query}`;
+    return this.buildTunnelUrl(raw);
+  },
+
 };
