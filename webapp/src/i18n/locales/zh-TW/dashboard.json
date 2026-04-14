@@ -257,5 +257,14 @@
     "remarkPlaceholder": "如：爸爸的手機",
     "confirm": "確認",
     "loadFailed": "載入裝置清單失敗"
+  },
+  "serverSelector": {
+    "tabSmart": "智慧選擇",
+    "tabManual": "指定伺服器",
+    "countryAuto": "自動（推薦）",
+    "countryPickerLabel": "節點地區",
+    "nodesAvailable": "{{count}} 台節點 · {{regions}} 個地區",
+    "smartHint": "k2 將根據延遲自動選擇最優節點",
+    "manualHint": "適合需要固定 IP 的場景"
   }
 }
