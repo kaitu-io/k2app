@@ -58,8 +58,8 @@ interface ConnectionState {
   /** Last k2v5 URL sent to the daemon (persisted, used for cold-start restore). */
   lastServerUrl: string | null;
   lastServerUrlLoaded: boolean;
-  /** Smart mode: 'smart' uses k2subs auto-select; 'manual' uses the explicit CloudTunnelList selection. */
-  serverMode: 'smart' | 'manual';
+  /** Server selection mode: 'smart' uses k2subs auto-select; 'manual' uses the explicit cloud list; 'self_hosted' uses user's own node. */
+  serverMode: 'smart' | 'manual' | 'self_hosted';
   /** Country filter for smart mode (ISO 3166-1 alpha-2, lowercase). null = all countries. */
   smartCountry: string | null;
   /** True once persisted serverMode/smartCountry has been loaded from storage. */
@@ -91,7 +91,7 @@ interface ConnectionActions {
   disconnect: () => Promise<void>;
   clearPendingFeedback: () => void;
   enrichFromTunnelList: (tunnels: Tunnel[]) => void;
-  setServerMode: (mode: 'smart' | 'manual') => Promise<void>;
+  setServerMode: (mode: 'smart' | 'manual' | 'self_hosted') => Promise<void>;
   setSmartCountry: (country: string | null) => Promise<void>;
   loadServerMode: () => Promise<void>;
 }
@@ -175,8 +175,21 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     });
   },
 
-  setServerMode: async (mode) => {
-    set({ serverMode: mode });
+  setServerMode: async (mode: 'smart' | 'manual' | 'self_hosted') => {
+    // Sync selectedSource + activeTunnel so connect() and UI stay consistent.
+    if (mode === 'self_hosted') {
+      const tunnel = computeSelfHostedActiveTunnel();
+      set({ serverMode: mode, selectedSource: 'self_hosted', activeTunnel: tunnel });
+    } else if (mode === 'manual') {
+      const { selectedCloudTunnel } = get();
+      set({
+        serverMode: mode,
+        selectedSource: 'cloud',
+        activeTunnel: selectedCloudTunnel ? computeCloudActiveTunnel(selectedCloudTunnel) : null,
+      });
+    } else {
+      set({ serverMode: mode });
+    }
     try {
       await window._platform.storage.set(SERVER_MODE_STORAGE_KEY, mode);
     } catch (err) {
@@ -203,8 +216,10 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
         window._platform.storage.get<string>(SERVER_MODE_STORAGE_KEY),
         window._platform.storage.get<string>(SMART_COUNTRY_STORAGE_KEY),
       ]);
+      const resolvedMode: 'smart' | 'manual' | 'self_hosted' =
+        mode === 'manual' ? 'manual' : mode === 'self_hosted' ? 'self_hosted' : 'smart';
       useConnectionStore.setState({
-        serverMode: mode === 'manual' ? 'manual' : 'smart',
+        serverMode: resolvedMode,
         smartCountry: typeof country === 'string' && country !== '' ? country : null,
         serverModeLoaded: true,
       });
@@ -233,12 +248,18 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
       console.warn('[Connection] connect: manual mode but no activeTunnel, aborting');
       return;
     }
+    if (serverMode === 'self_hosted' && !useSelfHostedStore.getState().tunnel) {
+      console.warn('[Connection] connect: self_hosted mode but no tunnel configured, aborting');
+      return;
+    }
 
     const myEpoch = connectEpoch + 1;
 
     // Build connectedTunnel snapshot for UI display.
     // Smart mode: synthetic object (actual server selected by k2 engine after subs fetch).
+    // Self-hosted: use self-hosted tunnel data.
     // Manual mode: use activeTunnel directly (same as before).
+    const selfHostedSnap = serverMode === 'self_hosted' ? computeSelfHostedActiveTunnel() : null;
     const connectedTunnelSnapshot: ActiveTunnel = serverMode === 'smart'
       ? {
           source: 'cloud',
@@ -247,13 +268,17 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
           country: smartCountry ?? '',
           serverUrl: '', // filled in after buildSubsUrl resolves below
         }
-      : activeTunnel!;
+      : serverMode === 'self_hosted'
+        ? (selfHostedSnap ?? { source: 'self_hosted', domain: 'self_hosted', name: '自部署', country: '', serverUrl: '' })
+        : activeTunnel!;
 
     console.info(
       '[Connection] connect: mode=' + serverMode
       + (serverMode === 'manual'
         ? ', tunnel=' + connectedTunnelSnapshot.domain
-        : ', country=' + (smartCountry ?? 'auto'))
+        : serverMode === 'self_hosted'
+          ? ', uri=' + (selfHostedSnap?.serverUrl ?? 'none')
+          : ', country=' + (smartCountry ?? 'auto'))
       + ', epoch=' + connectEpoch + '→' + myEpoch,
     );
     set({ connectedTunnel: connectedTunnelSnapshot, connectEpoch: myEpoch, connectedAt: Date.now() });
@@ -267,7 +292,7 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
       set(s => ({
         connectedTunnel: s.connectedTunnel ? { ...s.connectedTunnel, serverUrl: serverUrl ?? '' } : null,
       }));
-    } else if (selectedSource === 'self_hosted') {
+    } else if (serverMode === 'self_hosted' || selectedSource === 'self_hosted') {
       serverUrl = useSelfHostedStore.getState().tunnel?.uri;
     } else if (selectedCloudTunnel?.serverUrl) {
       serverUrl = await authService.buildTunnelUrl(selectedCloudTunnel.serverUrl);
@@ -435,6 +460,16 @@ function tryRestoreConnectedTunnel(): boolean {
         serverUrl: lastServerUrl ?? '',
       },
     });
+    return true;
+  }
+
+  // Self-hosted tab mode: restore from current self-hosted tunnel config.
+  if (serverMode === 'self_hosted') {
+    const shTunnel = useSelfHostedStore.getState().tunnel;
+    if (!shTunnel) return false;
+    const activeTunnel = computeSelfHostedActiveTunnel();
+    console.info('[Connection] Cold start restore: self_hosted tab, uri=' + shTunnel.uri);
+    useConnectionStore.setState({ selectedSource: 'self_hosted', connectedTunnel: activeTunnel, activeTunnel });
     return true;
   }
 

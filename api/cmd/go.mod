@@ -74,6 +74,8 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/openai/openai-go v0.1.0-alpha.44 // indirect
+	github.com/oschwald/geoip2-golang v1.11.0 // indirect
+	github.com/oschwald/maxminddb-golang v1.13.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.58.0 // indirect
@@ -101,6 +103,7 @@ require (
 	github.com/wordgate/qtoolkit/aws/ses v1.5.25 // indirect
 	github.com/wordgate/qtoolkit/chatwoot v1.5.25 // indirect
 	github.com/wordgate/qtoolkit/db v1.5.25 // indirect
+	github.com/wordgate/qtoolkit/geoip v1.5.28 // indirect
 	github.com/wordgate/qtoolkit/mail v1.5.25 // indirect
 	github.com/wordgate/qtoolkit/openai/filesearch v1.5.25 // indirect
 	github.com/wordgate/qtoolkit/redis v1.5.25 // indirect

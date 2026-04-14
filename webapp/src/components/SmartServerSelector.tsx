@@ -2,10 +2,6 @@ import React, { useMemo } from 'react';
 import {
   Box,
   Chip,
-  FormControl,
-  InputLabel,
-  MenuItem,
-  Select,
   Tab,
   Tabs,
   Typography,
@@ -20,8 +16,10 @@ interface Props {
   tunnels: Tunnel[];
   /** False when VPN is connecting/connected — disables mode switching. */
   isInteractive: boolean;
-  /** Manual tab content: CloudTunnelList + self-hosted section. */
+  /** Manual tab content: CloudTunnelList only (no self-hosted). */
   children: React.ReactNode;
+  /** Self-hosted tab content. */
+  selfHostedContent: React.ReactNode;
 }
 
 interface CountrySummary {
@@ -40,8 +38,7 @@ function buildCountrySummary(tunnels: Tunnel[]): CountrySummary[] {
     .sort((a, b) => b.count - a.count);
 }
 
-
-export function SmartServerSelector({ tunnels, isInteractive, children }: Props) {
+export function SmartServerSelector({ tunnels, isInteractive, children, selfHostedContent }: Props) {
   const { t } = useTranslation('dashboard');
   const serverMode = useConnectionStore(s => s.serverMode);
   const smartCountry = useConnectionStore(s => s.smartCountry);
@@ -50,14 +47,14 @@ export function SmartServerSelector({ tunnels, isInteractive, children }: Props)
 
   const countries = useMemo(() => buildCountrySummary(tunnels), [tunnels]);
 
-  const handleTabChange = (_: React.SyntheticEvent, value: 'smart' | 'manual') => {
+  const handleTabChange = (_: React.SyntheticEvent, value: 'smart' | 'manual' | 'self_hosted') => {
     if (!isInteractive) return;
     setServerMode(value).catch(err => console.warn('[SmartServerSelector] setServerMode failed:', err));
   };
 
-  const handleCountryChange = async (value: string) => {
+  const handleCountrySelect = (code: string | null) => {
     if (!isInteractive) return;
-    await setSmartCountry(value === '' ? null : value);
+    setSmartCountry(code).catch(err => console.warn('[SmartServerSelector] setSmartCountry failed:', err));
   };
 
   return (
@@ -78,72 +75,58 @@ export function SmartServerSelector({ tunnels, isInteractive, children }: Props)
         <Tab
           value="manual"
           label={t('serverSelector.tabManual')}
-          sx={{ minHeight: 36, py: 0.5, fontSize: '0.8rem', opacity: serverMode === 'smart' ? 0.65 : 1 }}
+          sx={{ minHeight: 36, py: 0.5, fontSize: '0.8rem' }}
+          disabled={!isInteractive}
+        />
+        <Tab
+          value="self_hosted"
+          label={t('serverSelector.tabSelfHosted')}
+          sx={{ minHeight: 36, py: 0.5, fontSize: '0.8rem' }}
           disabled={!isInteractive}
         />
       </Tabs>
 
-      {/* ── Smart tab ─────────────────────────────────────────── */}
+      {/* ── Smart tab — flat chip list, no dropdown ───────────── */}
       {serverMode === 'smart' && (
         <Box sx={{ px: 0.5 }}>
-          {/* Country picker */}
-          <FormControl size="small" fullWidth sx={{ mb: 1.5 }} disabled={!isInteractive}>
-            <InputLabel id="smart-country-label">
-              {t('serverSelector.countryPickerLabel')}
-            </InputLabel>
-            <Select
-              labelId="smart-country-label"
-              value={smartCountry ?? ''}
-              label={t('serverSelector.countryPickerLabel')}
-              onChange={e => handleCountryChange(e.target.value)}
-            >
-              <MenuItem value="">
-                <em>{t('serverSelector.countryAuto')}</em>
-              </MenuItem>
-              {countries.map(c => (
-                <MenuItem key={c.code} value={c.code}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    {getFlagIcon(c.code)}
-                    <span>
-                      {getCountryName(c.code)} &times;{c.count}
-                    </span>
-                  </Box>
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          {/* All options visible at once: 自动 + each country */}
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, mb: 1.25 }}>
+            {/* 自动 — always first */}
+            <Chip
+              size="small"
+              label={t('serverSelector.countryAuto')}
+              onClick={isInteractive ? () => handleCountrySelect(null) : undefined}
+              variant={smartCountry === null ? 'filled' : 'outlined'}
+              color={smartCountry === null ? 'primary' : 'default'}
+              sx={{ fontSize: '0.72rem', cursor: isInteractive ? 'pointer' : 'default' }}
+            />
+            {/* One chip per country */}
+            {countries.map(c => (
+              <Chip
+                key={c.code}
+                size="small"
+                icon={<Box sx={{ display: 'flex', pl: 0.5 }}>{getFlagIcon(c.code)}</Box>}
+                label={`${getCountryName(c.code)} \u00d7${c.count}`}
+                onClick={isInteractive ? () => handleCountrySelect(c.code) : undefined}
+                variant={smartCountry === c.code ? 'filled' : 'outlined'}
+                color={smartCountry === c.code ? 'primary' : 'default'}
+                sx={{ fontSize: '0.72rem', cursor: isInteractive ? 'pointer' : 'default' }}
+              />
+            ))}
+          </Box>
 
-          {/* Country chip overview */}
+          {/* Summary + hint */}
           {countries.length > 0 && (
-            <>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
-                {t('serverSelector.nodesAvailable', {
-                  count: tunnels.length,
-                  regions: countries.length,
-                })}
-              </Typography>
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1.5 }}>
-                {countries.map(c => (
-                  <Chip
-                    key={c.code}
-                    size="small"
-                    icon={<Box sx={{ display: 'flex', pl: 0.5 }}>{getFlagIcon(c.code)}</Box>}
-                    label={`${getCountryName(c.code)} \u00d7${c.count}`}
-                    onClick={isInteractive ? () => handleCountryChange(c.code) : undefined}
-                    variant={smartCountry === c.code ? 'filled' : 'outlined'}
-                    color={smartCountry === c.code ? 'primary' : 'default'}
-                    sx={{
-                      fontSize: '0.72rem',
-                      cursor: isInteractive ? 'pointer' : 'default',
-                    }}
-                  />
-                ))}
-              </Box>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                {t('serverSelector.smartHint')}
-              </Typography>
-            </>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+              {t('serverSelector.nodesAvailable', {
+                count: tunnels.length,
+                regions: countries.length,
+              })}
+            </Typography>
           )}
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            {t('serverSelector.smartHint')}
+          </Typography>
         </Box>
       )}
 
@@ -160,6 +143,9 @@ export function SmartServerSelector({ tunnels, isInteractive, children }: Props)
           {children}
         </>
       )}
+
+      {/* ── Self-hosted tab ───────────────────────────────────── */}
+      {serverMode === 'self_hosted' && selfHostedContent}
     </Box>
   );
 }
