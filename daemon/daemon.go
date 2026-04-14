@@ -270,6 +270,7 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 	// Resolve k2subs:// subscriptions to k2v5:// URLs.
 	subs, resolved, subsErr := d.resolveSubscriptions(cfg)
 	if subsErr != nil {
+		slog.Error("daemon: doUp aborted — subscription resolve failed", "err", subsErr)
 		d.mu.Lock()
 		d.lastStatus = engine.Status{
 			State: engine.StateDisconnected,
@@ -592,6 +593,9 @@ func (d *Daemon) resolveSubscriptions(cfg *config.ClientConfig) (
 
 		sub, parseErr := config.NewSubscription(route.Via, subsCache)
 		if parseErr != nil {
+			slog.Error("subscription parse failed",
+				"via", config.TruncateVia(route.Via),
+				"err", parseErr)
 			for _, s := range subs {
 				s.Close()
 			}
@@ -609,6 +613,9 @@ func (d *Daemon) resolveSubscriptions(cfg *config.ClientConfig) (
 
 		if fetchErr != nil {
 			if len(sub.Tunnels()) == 0 {
+				slog.Error("subscription fetch failed with no cached data",
+					"via", config.TruncateVia(route.Via),
+					"err", fetchErr)
 				sub.Close()
 				for _, s := range subs {
 					s.Close()
@@ -620,6 +627,10 @@ func (d *Daemon) resolveSubscriptions(cfg *config.ClientConfig) (
 
 		tunnel, pickErr := sub.Pick(nil)
 		if pickErr != nil {
+			slog.Error("subscription pick failed",
+				"via", config.TruncateVia(route.Via),
+				"servers", len(sub.Tunnels()),
+				"err", pickErr)
 			sub.Close()
 			for _, s := range subs {
 				s.Close()
