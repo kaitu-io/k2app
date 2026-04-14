@@ -10,6 +10,9 @@
 #   countries[].apps[].domains_proxy  — domains expected to route PROXY
 #   countries[].apps[].ips_direct     — CIDRs expected to route DIRECT (test first IP)
 #   countries[].apps[].ips_proxy      — CIDRs expected to route PROXY (test first IP)
+#
+# Note: only domains confirmed in k2b bundle sets are listed here.
+# Domains in geoip-only sets (IP ranges) are NOT tested at L1 domain level.
 
 countries:
   - code: cn
@@ -226,6 +229,18 @@ countries:
       - name: google
         domains_proxy: [google.com, youtube.com]
 
+  - code: tr
+    preset: tr-access
+    apps:
+      # tr-sites bundle has domain entries but none of the expected app domains match.
+      # Country is kept for preset/geoip validation; domain tests will be added when bundle is updated.
+
+  - code: pk
+    preset: pk-access
+    apps:
+      # pk-sites bundle has no domain entries matching these apps.
+      # Country is kept for preset validation.
+
   - code: vn
     preset: vn-access
     apps:
@@ -244,11 +259,41 @@ countries:
       - name: kbzpay
         domains_direct: [kbzpay.com]
 
+  - code: eg
+    preset: eg-access
+    apps:
+      # eg-sites bundle has no domain entries matching these apps.
+      # Country is kept for preset validation.
+
+  - code: id
+    preset: id-access
+    apps:
+      - name: shopee-id
+        domains_direct: [shopee.co.id]
+
+  - code: sa
+    preset: sa-access
+    apps:
+      - name: stc-pay
+        domains_direct: [stc.com.sa]
+
+  - code: ae
+    preset: ae-access
+    apps:
+      # ae-sites bundle has no domain entries matching these apps.
+      # Country is kept for preset validation.
+
   - code: th
     preset: th-access
     apps:
       - name: shopee-th
         domains_direct: [shopee.co.th]
+
+  - code: bd
+    preset: bd-access
+    apps:
+      # bd-sites bundle has no domain entries matching these apps.
+      # Country is kept for preset validation.
 
   - code: by
     preset: by-access
