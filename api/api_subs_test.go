@@ -134,7 +134,6 @@ func TestInjectSubsCreds(t *testing.T) {
 // =====================================================================
 
 func TestApiSubs_NoAuth_Returns401(t *testing.T) {
-	testInitConfig()
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()
