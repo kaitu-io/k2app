@@ -231,7 +231,9 @@
     "uriHelp": "部署完成后，将获得的 k2v5:// 地址粘贴到下方",
     "upgradeTitle": "想要更多节点？",
     "upgradeDescription": "登录即可获取全球云端节点，开箱即用",
-    "upgradeCta": "开通云节点"
+    "upgradeCta": "开通云节点",
+    "notConfigured": "尚未配置自部署节点",
+    "configure": "前往配置"
   },
   "upgrade": {
     "available": "有新版本可用",
@@ -261,8 +263,8 @@
   "serverSelector": {
     "tabSmart": "智能选择",
     "tabManual": "指定服务器",
-    "countryAuto": "自动（推荐）",
-    "countryPickerLabel": "节点地区",
+    "tabSelfHosted": "自部署",
+    "countryAuto": "自动",
     "nodesAvailable": "{{count}} 台节点 · {{regions}} 个地区",
     "smartHint": "k2 将根据延迟自动选择最优节点",
     "manualHint": "适合需要固定 IP 的场景"

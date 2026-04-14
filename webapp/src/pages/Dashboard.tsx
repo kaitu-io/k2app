@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useState, useRef, lazy, Suspense } from "react";
+import { useCallback, useEffect, useState, useRef, lazy, Suspense, useMemo } from "react";
 import {
   Box,
   Typography,
   Stack,
   Button,
-  Tooltip,
   styled,
   Collapse,
   List,
@@ -193,6 +192,94 @@ export default function Dashboard() {
     enrichFromTunnelList(tunnels);
   }, [enrichFromTunnelList]);
 
+  // Self-hosted tab content — dedicated 自部署 slot in SmartServerSelector
+  const selfHostedTabContent = useMemo(() => {
+    if (!selfHostedTunnel) {
+      return (
+        <Box sx={{ px: 2, py: 4, textAlign: 'center' }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            {t('dashboard:selfHosted.notConfigured')}
+          </Typography>
+          <Button size="small" variant="outlined" onClick={() => navigate('/tunnels')}>
+            {t('dashboard:selfHosted.configure')}
+          </Button>
+        </Box>
+      );
+    }
+    return (
+      <Box sx={{ flexShrink: 0 }}>
+        <List sx={{ pt: 0.5, px: 2, pb: 1 }}>
+          <ListItem
+            sx={{
+              borderRadius: 2,
+              minHeight: 64,
+              bgcolor: colors.selectedBg,
+              cursor: 'default',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            <ListItemIcon sx={{ minWidth: 40 }}>
+              {selfHostedTunnel.country ? (
+                getFlagIcon(selfHostedTunnel.country)
+              ) : (
+                <Box sx={{
+                  width: 32,
+                  height: 22,
+                  borderRadius: 0.5,
+                  bgcolor: colors.accentBgLight,
+                  border: `1px solid ${colors.accentBorder}`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                  <TerminalIcon sx={{ fontSize: 14, color: colors.accent }} />
+                </Box>
+              )}
+            </ListItemIcon>
+            <ListItemText
+              primary={
+                <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  {selfHostedTunnel.name}
+                  <Typography
+                    component="span"
+                    sx={{
+                      fontSize: '0.65rem',
+                      px: 0.8,
+                      py: 0.1,
+                      borderRadius: 0.5,
+                      bgcolor: colors.accentBgLighter,
+                      border: `1px solid ${colors.accentBorder}`,
+                      color: colors.accent,
+                      fontWeight: 500,
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    {t('dashboard:dashboard.selfDeployed')}
+                  </Typography>
+                </Box>
+              }
+              secondary={selfHostedTunnel.country ? getCountryName(selfHostedTunnel.country) : t('dashboard:selfHosted.tag')}
+              primaryTypographyProps={{ fontWeight: 600, fontSize: '0.9rem' }}
+              secondaryTypographyProps={{ fontSize: '0.75rem' }}
+            />
+            <IconButton
+              size="small"
+              onClick={() => navigate('/tunnels')}
+              sx={{ mr: 0.5 }}
+            >
+              <SettingsIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+            </IconButton>
+            <Radio
+              checked={true}
+              color="primary"
+              sx={{ '& .MuiSvgIcon-root': { fontSize: 24 } }}
+            />
+          </ListItem>
+        </List>
+      </Box>
+    );
+  }, [selfHostedTunnel, colors, t, navigate]);
+
   // Handle cloud tunnel selection
   const handleCloudTunnelSelect = useCallback((_tunnel: Tunnel, _echConfigList?: string) => {
     console.debug('[Dashboard] handleCloudTunnelSelect: tunnel=' + _tunnel.domain + ', isInteractive=' + isInteractive);
@@ -335,7 +422,11 @@ export default function Dashboard() {
       >
         {/* Cloud Tunnels + Self-hosted — authenticated users with SmartServerSelector */}
         {isAuthenticated && (
-          <SmartServerSelector tunnels={cloudTunnels} isInteractive={!isInteractive}>
+          <SmartServerSelector
+            tunnels={cloudTunnels}
+            isInteractive={!isInteractive}
+            selfHostedContent={selfHostedTabContent}
+          >
             <Box sx={{ mt: 2 }}>
               <CloudTunnelList
                 selectedDomain={displayTunnel?.domain || ''}
@@ -344,111 +435,6 @@ export default function Dashboard() {
                 onTunnelsLoaded={handleTunnelsLoaded}
               />
             </Box>
-
-            {/* Self-hosted node — below cloud list for authenticated users */}
-            {selfHostedTunnel && (
-              <Box sx={{ flexShrink: 0 }}>
-                <Stack
-                  direction="row"
-                  spacing={1}
-                  sx={{
-                    py: 1,
-                    px: 2,
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    borderBottom: `1px solid ${theme.palette.divider}`,
-                  }}
-                >
-                  <Typography variant="overline" fontWeight={600} color="text.secondary" sx={{ fontSize: '0.7rem' }}>
-                    <TerminalIcon sx={{ fontSize: 14, mr: 0.5, verticalAlign: 'text-bottom' }} />
-                    {t('dashboard:selfHosted.tag')}
-                  </Typography>
-                  <Tooltip title={t('dashboard:selfHosted.manageNode')}>
-                    <IconButton size="small" onClick={() => navigate('/tunnels')} sx={{ p: 0.5 }}>
-                      <SettingsIcon sx={{ fontSize: 16 }} />
-                    </IconButton>
-                  </Tooltip>
-                </Stack>
-
-                <List sx={{ pt: 0.5, px: 2, pb: 1 }}>
-                  <ListItem
-                    onClick={handleSelfHostedSelect}
-                    sx={{
-                      borderRadius: 2,
-                      minHeight: 64,
-                      bgcolor: selectedSource === 'self_hosted' ? colors.selectedBg : undefined,
-                      cursor: isInteractive ? 'not-allowed' : 'pointer',
-                      opacity: isInteractive ? '0.6 !important' : 1,
-                      transition: 'all 0.2s ease',
-                      '&:hover': {
-                        bgcolor: isInteractive ? undefined : 'action.hover',
-                        transform: isInteractive ? 'none' : 'scale(1.01)',
-                      },
-                    }}
-                  >
-                    <ListItemIcon sx={{ minWidth: 40 }}>
-                      {selfHostedTunnel.country ? (
-                        getFlagIcon(selfHostedTunnel.country)
-                      ) : (
-                        <Box sx={{
-                          width: 32,
-                          height: 22,
-                          borderRadius: 0.5,
-                          bgcolor: colors.accentBgLight,
-                          border: `1px solid ${colors.accentBorder}`,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}>
-                          <TerminalIcon sx={{ fontSize: 14, color: colors.accent }} />
-                        </Box>
-                      )}
-                    </ListItemIcon>
-                    <ListItemText
-                      primary={
-                        <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          {selfHostedTunnel.name}
-                          <Typography
-                            component="span"
-                            sx={{
-                              fontSize: '0.65rem',
-                              px: 0.8,
-                              py: 0.1,
-                              borderRadius: 0.5,
-                              bgcolor: colors.accentBgLighter,
-                              border: `1px solid ${colors.accentBorder}`,
-                              color: colors.accent,
-                              fontWeight: 500,
-                              lineHeight: 1.4,
-                            }}
-                          >
-                            {t('dashboard:dashboard.selfDeployed')}
-                          </Typography>
-                        </Box>
-                      }
-                      secondary={selfHostedTunnel.country ? getCountryName(selfHostedTunnel.country) : t('dashboard:selfHosted.tag')}
-                      primaryTypographyProps={{ fontWeight: 600, fontSize: '0.9rem' }}
-                      secondaryTypographyProps={{ fontSize: '0.75rem' }}
-                    />
-                    <IconButton
-                      size="small"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigate('/tunnels');
-                      }}
-                      sx={{ mr: 0.5 }}
-                    >
-                      <SettingsIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
-                    </IconButton>
-                    <Radio
-                      checked={selectedSource === 'self_hosted'}
-                      color="primary"
-                      sx={{ '& .MuiSvgIcon-root': { fontSize: 24 } }}
-                    />
-                  </ListItem>
-                </List>
-              </Box>
-            )}
           </SmartServerSelector>
         )}
 

@@ -25,6 +25,7 @@ require (
 	github.com/wordgate/qtoolkit/aws/ses v1.5.25
 	github.com/wordgate/qtoolkit/chatwoot v1.5.25
 	github.com/wordgate/qtoolkit/db v1.5.25
+	github.com/wordgate/qtoolkit/geoip v1.5.28
 	github.com/wordgate/qtoolkit/log v1.5.25
 	github.com/wordgate/qtoolkit/mail v1.5.25
 	github.com/wordgate/qtoolkit/openai/filesearch v1.5.25
@@ -115,7 +116,6 @@ require (
 	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.3.0 // indirect
-	github.com/wordgate/qtoolkit/geoip v1.5.28 // indirect
 	github.com/yuin/gopher-lua v1.1.1 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
