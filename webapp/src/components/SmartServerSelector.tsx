@@ -18,11 +18,13 @@ import { getFlagIcon, getCountryName } from '../utils/country';
 import { useTheme } from '@mui/material/styles';
 
 interface Props {
-  /** Tunnel list from Dashboard (already fetched via hidden CloudTunnelList). */
+  /** Tunnel list from Dashboard (already fetched via CloudTunnelList). */
   tunnels: Tunnel[];
   /** False when VPN is connecting/connected — disables mode switching. */
   isInteractive: boolean;
-  /** Self-hosted tab content. */
+  /** 指定服务器 tab content (CloudTunnelList without its header). */
+  manualContent: React.ReactNode;
+  /** 自部署 tab content. */
   selfHostedContent: React.ReactNode;
 }
 
@@ -42,7 +44,7 @@ function buildCountrySummary(tunnels: Tunnel[]): CountrySummary[] {
     .sort((a, b) => b.count - a.count);
 }
 
-export function SmartServerSelector({ tunnels, isInteractive, selfHostedContent }: Props) {
+export function SmartServerSelector({ tunnels, isInteractive, manualContent, selfHostedContent }: Props) {
   const { t } = useTranslation('dashboard');
   const theme = useTheme();
   const serverMode = useConnectionStore(s => s.serverMode);
@@ -52,7 +54,7 @@ export function SmartServerSelector({ tunnels, isInteractive, selfHostedContent 
 
   const countries = useMemo(() => buildCountrySummary(tunnels), [tunnels]);
 
-  const handleTabChange = (_: React.SyntheticEvent, value: 'smart' | 'self_hosted') => {
+  const handleTabChange = (_: React.SyntheticEvent, value: 'smart' | 'manual' | 'self_hosted') => {
     if (!isInteractive) return;
     setServerMode(value).catch(err => console.warn('[SmartServerSelector] setServerMode failed:', err));
   };
@@ -76,8 +78,10 @@ export function SmartServerSelector({ tunnels, isInteractive, selfHostedContent 
     px: 1,
   });
 
-  // Smart tab renders as a list, identical visual weight to the self-hosted list
-  const tabValue: 'smart' | 'self_hosted' = serverMode === 'self_hosted' ? 'self_hosted' : 'smart';
+  const tabValue: 'smart' | 'manual' | 'self_hosted' =
+    serverMode === 'self_hosted' ? 'self_hosted' :
+    serverMode === 'manual' ? 'manual' :
+    'smart';
 
   return (
     <Box>
@@ -91,6 +95,12 @@ export function SmartServerSelector({ tunnels, isInteractive, selfHostedContent 
         <Tab
           value="smart"
           label={t('serverSelector.tabSmart')}
+          sx={{ minHeight: 36, py: 0.5, fontSize: '0.8rem' }}
+          disabled={!isInteractive}
+        />
+        <Tab
+          value="manual"
+          label={t('serverSelector.tabManual')}
           sx={{ minHeight: 36, py: 0.5, fontSize: '0.8rem' }}
           disabled={!isInteractive}
         />
@@ -166,6 +176,9 @@ export function SmartServerSelector({ tunnels, isInteractive, selfHostedContent 
           )}
         </List>
       )}
+
+      {/* ── Manual (指定服务器) tab ───────────────────────────── */}
+      {tabValue === 'manual' && manualContent}
 
       {/* ── Self-hosted tab ───────────────────────────────────── */}
       {tabValue === 'self_hosted' && selfHostedContent}
