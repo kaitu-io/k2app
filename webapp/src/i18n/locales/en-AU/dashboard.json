@@ -231,7 +231,9 @@
     "uriHelp": "After deployment, paste the k2v5:// URI below",
     "upgradeTitle": "Want more nodes?",
     "upgradeDescription": "Log in to access global cloud nodes, ready to use",
-    "upgradeCta": "Get cloud nodes"
+    "upgradeCta": "Get cloud nodes",
+    "notConfigured": "No self-hosted node configured",
+    "configure": "Configure"
   },
   "upgrade": {
     "available": "Update Available",
@@ -261,10 +263,11 @@
   "serverSelector": {
     "tabSmart": "Smart",
     "tabManual": "Fixed Server",
-    "countryAuto": "Auto (Recommended)",
+    "countryAuto": "Auto",
     "countryPickerLabel": "Node Region",
     "nodesAvailable": "{{count}} nodes · {{regions}} regions",
     "smartHint": "k2 selects the optimal node automatically",
-    "manualHint": "For users who need a fixed server IP"
+    "manualHint": "For users who need a fixed server IP",
+    "tabSelfHosted": "Self-hosted"
   }
 }

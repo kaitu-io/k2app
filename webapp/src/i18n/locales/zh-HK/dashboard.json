@@ -231,7 +231,9 @@
     "uriHelp": "部署完成後，將取得嘅 k2v5:// 地址貼到下方",
     "upgradeTitle": "想要更多節點？",
     "upgradeDescription": "登入即可取得全球雲端節點，開箱即用",
-    "upgradeCta": "開通雲節點"
+    "upgradeCta": "開通雲節點",
+    "notConfigured": "尚未設定自部署節點",
+    "configure": "前往設定"
   },
   "upgrade": {
     "available": "有新版本可用",
@@ -261,10 +263,11 @@
   "serverSelector": {
     "tabSmart": "智能選擇",
     "tabManual": "指定伺服器",
-    "countryAuto": "自動（推薦）",
+    "countryAuto": "自動",
     "countryPickerLabel": "節點地區",
     "nodesAvailable": "{{count}} 個節點 · {{regions}} 個地區",
     "smartHint": "k2 會根據延遲自動選擇最優節點",
-    "manualHint": "適合需要固定 IP 嘅場景"
+    "manualHint": "適合需要固定 IP 嘅場景",
+    "tabSelfHosted": "自部署"
   }
 }

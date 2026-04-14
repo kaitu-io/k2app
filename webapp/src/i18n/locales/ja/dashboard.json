@@ -231,7 +231,9 @@
     "uriHelp": "デプロイ後、取得した k2v5:// アドレスを下に貼り付けてください",
     "upgradeTitle": "もっとノードが必要？",
     "upgradeDescription": "ログインすると世界中のクラウドノードをすぐに利用できます",
-    "upgradeCta": "クラウドノードを利用"
+    "upgradeCta": "クラウドノードを利用",
+    "notConfigured": "セルフホストノードが未設定です",
+    "configure": "設定する"
   },
   "upgrade": {
     "available": "新しいバージョンが利用可能です",
@@ -261,10 +263,11 @@
   "serverSelector": {
     "tabSmart": "スマート選択",
     "tabManual": "サーバー指定",
-    "countryAuto": "自動（推奨）",
+    "countryAuto": "自動",
     "countryPickerLabel": "ノード地域",
     "nodesAvailable": "{{count}} 台 · {{regions}} 地域",
     "smartHint": "k2 が遅延に基づいて最適なノードを自動選択します",
-    "manualHint": "固定 IP が必要なユーザー向け"
+    "manualHint": "固定 IP が必要なユーザー向け",
+    "tabSelfHosted": "セルフホスト"
   }
 }
