@@ -6,11 +6,11 @@ import {
   ListItemIcon,
   ListItemText,
   Radio,
+  Skeleton,
   Tab,
   Tabs,
-  Typography,
 } from '@mui/material';
-import PublicIcon from '@mui/icons-material/Public';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import { useTranslation } from 'react-i18next';
 import { useConnectionStore } from '../stores/connection.store';
 import type { Tunnel } from '../services/api-types';
@@ -122,8 +122,10 @@ export function SmartServerSelector({ tunnels, isInteractive, manualContent, sel
               <Box sx={{
                 width: 32, height: 22,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
+                borderRadius: 0.5,
+                bgcolor: 'rgba(33, 150, 243, 0.1)',
               }}>
-                <PublicIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
+                <AutoAwesomeIcon sx={{ fontSize: 18, color: 'primary.main' }} />
               </Box>
             </ListItemIcon>
             <ListItemText
@@ -164,10 +166,20 @@ export function SmartServerSelector({ tunnels, isInteractive, manualContent, sel
             </ListItem>
           ))}
 
-          {countries.length === 0 && (
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 1, py: 2 }}>
-              {t('serverSelector.smartHint')}
-            </Typography>
+          {countries.length === 0 && tunnels.length === 0 && (
+            // Data not loaded yet — show skeleton country rows
+            <>
+              {[1, 2, 3].map(i => (
+                <ListItem key={i} disableGutters sx={{ px: 1, minHeight: 56 }}>
+                  <ListItemIcon sx={{ minWidth: 40 }}>
+                    <Skeleton variant="rounded" width={32} height={22} />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={<Skeleton width={80} />}
+                  />
+                </ListItem>
+              ))}
+            </>
           )}
         </List>
       </Box>

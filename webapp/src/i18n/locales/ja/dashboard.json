@@ -55,7 +55,7 @@
     "minutesAgo": "分前",
     "hoursAgo": "時間前",
     "longTimeAgo": "かなり前",
-    "selectServerHint": "下のリストからサーバーを選択して開始",
+    "selectServerHint": "下から選択してください",
     "connectionRetrying": "サーバー接続に失敗しました、再試行中...",
     "serviceFailure": {
       "title": "サービス接続失敗",

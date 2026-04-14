@@ -55,7 +55,7 @@
     "minutesAgo": "分钟前",
     "hoursAgo": "小时前",
     "longTimeAgo": "很久之前",
-    "selectServerHint": "从下方列表选择服务器以开始",
+    "selectServerHint": "请先从下方选择",
     "connectionRetrying": "服务器连接失败，正在重试...",
     "serviceFailure": {
       "title": "服务连接失败",

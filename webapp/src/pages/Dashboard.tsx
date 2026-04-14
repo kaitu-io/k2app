@@ -11,13 +11,11 @@ import {
   ListItemIcon,
   ListItemText,
   Radio,
-  IconButton,
   useTheme,
 } from "@mui/material";
 import {
   ExpandMore as ExpandMoreIcon,
   Settings as SettingsIcon,
-  Terminal as TerminalIcon,
 } from "@mui/icons-material";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -33,12 +31,12 @@ import { CollapsibleConnectionSection } from '../components/CollapsibleConnectio
 import RoutingModeSelector, { useRoutingSummary } from '../components/RoutingModeSelector';
 import { useDashboard } from '../stores/dashboard.store';
 import { CloudTunnelList } from '../components/CloudTunnelList';
-import { getThemeColors } from '../theme/colors';
-import { getCountryName, getFlagIcon } from '../utils/country';
+import { getFlagIcon } from '../utils/country';
 import type { Tunnel, TunnelListResponse } from '../services/api-types';
 import { cacheStore } from '../services/cache-store';
 import { DisconnectFeedbackDialog } from '../components/DisconnectFeedbackDialog';
 import { SmartServerSelector } from '../components/SmartServerSelector';
+import { SelfHostedTunnelItem } from '../components/SelfHostedTunnelItem';
 
 // Styled Components for Modern Design
 const DashboardContainer = styled(Box)(({ theme }) => ({
@@ -126,10 +124,8 @@ export default function Dashboard() {
   const appConfig = getCurrentAppConfig();
   const proxyRuleConfig = appConfig.features.proxyRule || { visible: true, defaultValue: 'lightweight' };
 
-  // Theme colors
+  // Theme
   const theme = useTheme();
-  const isDark = theme.palette.mode === 'dark';
-  const colors = getThemeColors(isDark);
 
   // Routing summary for collapsed advanced settings bar
   const routingSummary = useRoutingSummary();
@@ -238,76 +234,15 @@ export default function Dashboard() {
     return (
       <Box sx={{ flexShrink: 0 }}>
         <List sx={{ pt: 0.5, px: 2, pb: 1 }}>
-          <ListItem
-            sx={{
-              borderRadius: 2,
-              minHeight: 64,
-              bgcolor: colors.selectedBg,
-              cursor: 'default',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            <ListItemIcon sx={{ minWidth: 40 }}>
-              {selfHostedTunnel.country ? (
-                getFlagIcon(selfHostedTunnel.country)
-              ) : (
-                <Box sx={{
-                  width: 32,
-                  height: 22,
-                  borderRadius: 0.5,
-                  bgcolor: colors.accentBgLight,
-                  border: `1px solid ${colors.accentBorder}`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}>
-                  <TerminalIcon sx={{ fontSize: 14, color: colors.accent }} />
-                </Box>
-              )}
-            </ListItemIcon>
-            <ListItemText
-              primary={
-                <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  {selfHostedTunnel.name}
-                  <Typography
-                    component="span"
-                    sx={{
-                      fontSize: '0.65rem',
-                      px: 0.8,
-                      py: 0.1,
-                      borderRadius: 0.5,
-                      bgcolor: colors.accentBgLighter,
-                      border: `1px solid ${colors.accentBorder}`,
-                      color: colors.accent,
-                      fontWeight: 500,
-                      lineHeight: 1.4,
-                    }}
-                  >
-                    {t('dashboard:dashboard.selfDeployed')}
-                  </Typography>
-                </Box>
-              }
-              secondary={selfHostedTunnel.country ? getCountryName(selfHostedTunnel.country) : t('dashboard:selfHosted.tag')}
-              primaryTypographyProps={{ fontWeight: 600, fontSize: '0.9rem' }}
-              secondaryTypographyProps={{ fontSize: '0.75rem' }}
-            />
-            <IconButton
-              size="small"
-              onClick={() => navigate('/tunnels')}
-              sx={{ mr: 0.5 }}
-            >
-              <SettingsIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
-            </IconButton>
-            <Radio
-              checked={true}
-              color="primary"
-              sx={{ '& .MuiSvgIcon-root': { fontSize: 24 } }}
-            />
-          </ListItem>
+          <SelfHostedTunnelItem
+            tunnel={selfHostedTunnel}
+            selected
+            onConfigure={() => navigate('/tunnels')}
+          />
         </List>
       </Box>
     );
-  }, [selfHostedTunnel, colors, t, navigate]);
+  }, [selfHostedTunnel, t, navigate]);
 
   // Handle self-hosted tunnel selection
   const handleSelfHostedSelect = useCallback(() => {
@@ -456,81 +391,13 @@ export default function Dashboard() {
         {!isAuthenticated && selfHostedTunnel && (
           <Box sx={{ flexShrink: 0 }}>
             <List sx={{ pt: 0.5, px: 2, pb: 1 }}>
-              <ListItem
-                onClick={handleSelfHostedSelect}
-                sx={{
-                  borderRadius: 2,
-                  minHeight: 64,
-                  bgcolor: serverMode === 'self_hosted' ? colors.selectedBg : undefined,
-                  cursor: isInteractive ? 'not-allowed' : 'pointer',
-                  opacity: isInteractive ? '0.6 !important' : 1,
-                  transition: 'all 0.2s ease',
-                  '&:hover': {
-                    bgcolor: isInteractive ? undefined : 'action.hover',
-                    transform: isInteractive ? 'none' : 'scale(1.01)',
-                  },
-                }}
-              >
-                <ListItemIcon sx={{ minWidth: 40 }}>
-                  {selfHostedTunnel.country ? (
-                    getFlagIcon(selfHostedTunnel.country)
-                  ) : (
-                    <Box sx={{
-                      width: 32,
-                      height: 22,
-                      borderRadius: 0.5,
-                      bgcolor: colors.accentBgLight,
-                      border: `1px solid ${colors.accentBorder}`,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}>
-                      <TerminalIcon sx={{ fontSize: 14, color: colors.accent }} />
-                    </Box>
-                  )}
-                </ListItemIcon>
-                <ListItemText
-                  primary={
-                    <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      {selfHostedTunnel.name}
-                      <Typography
-                        component="span"
-                        sx={{
-                          fontSize: '0.65rem',
-                          px: 0.8,
-                          py: 0.1,
-                          borderRadius: 0.5,
-                          bgcolor: colors.accentBgLighter,
-                          border: `1px solid ${colors.accentBorder}`,
-                          color: colors.accent,
-                          fontWeight: 500,
-                          lineHeight: 1.4,
-                        }}
-                      >
-                        {t('dashboard:dashboard.selfDeployed')}
-                      </Typography>
-                    </Box>
-                  }
-                  secondary={selfHostedTunnel.country ? getCountryName(selfHostedTunnel.country) : t('dashboard:selfHosted.tag')}
-                  primaryTypographyProps={{ fontWeight: 600, fontSize: '0.9rem' }}
-                  secondaryTypographyProps={{ fontSize: '0.75rem' }}
-                />
-                <IconButton
-                  size="small"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigate('/tunnels');
-                  }}
-                  sx={{ mr: 0.5 }}
-                >
-                  <SettingsIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
-                </IconButton>
-                <Radio
-                  checked={serverMode === 'self_hosted'}
-                  color="primary"
-                  sx={{ '& .MuiSvgIcon-root': { fontSize: 24 } }}
-                />
-              </ListItem>
+              <SelfHostedTunnelItem
+                tunnel={selfHostedTunnel}
+                selected={serverMode === 'self_hosted'}
+                onSelect={handleSelfHostedSelect}
+                onConfigure={() => navigate('/tunnels')}
+                disabled={isInteractive}
+              />
             </List>
           </Box>
         )}

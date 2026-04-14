@@ -55,7 +55,7 @@
     "minutesAgo": "minutes ago",
     "hoursAgo": "hours ago",
     "longTimeAgo": "Long ago",
-    "selectServerHint": "Select a server from the list below to start",
+    "selectServerHint": "Please select from below",
     "connectionRetrying": "Server connection failed, retrying...",
     "serviceFailure": {
       "title": "Service Connection Failed",
