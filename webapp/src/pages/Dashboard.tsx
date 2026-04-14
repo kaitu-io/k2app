@@ -424,12 +424,23 @@ export default function Dashboard() {
       >
         {/* Cloud Tunnels + Self-hosted — authenticated users with SmartServerSelector */}
         {isAuthenticated && (
-          <SmartServerSelector
-            tunnels={cloudTunnels}
-            isInteractive={!isInteractive}
-            manualContent={manualTabContent}
-            selfHostedContent={selfHostedTabContent}
-          />
+          <>
+            {/* Hidden — always mounted to populate cloudTunnels for the smart tab country list */}
+            <Box sx={{ display: 'none' }}>
+              <CloudTunnelList
+                selectedDomain={null}
+                onSelect={() => {}}
+                disabled
+                onTunnelsLoaded={handleTunnelsLoaded}
+              />
+            </Box>
+            <SmartServerSelector
+              tunnels={cloudTunnels}
+              isInteractive={!isInteractive}
+              manualContent={manualTabContent}
+              selfHostedContent={selfHostedTabContent}
+            />
+          </>
         )}
 
         {/* Self-hosted node — primary option for unauthenticated guests */}
