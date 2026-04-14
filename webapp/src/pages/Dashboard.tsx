@@ -86,6 +86,7 @@ export default function Dashboard() {
     activeTunnel,
     connectedTunnel,
     serverMode,
+    smartCountry,
     selectSelfHosted,
     connect,
     disconnect,
@@ -95,8 +96,16 @@ export default function Dashboard() {
   // Cloud tunnels for SmartServerSelector
   const [cloudTunnels, setCloudTunnels] = useState<Tunnel[]>([]);
 
-  // Display tunnel: snapshot during connection, selection otherwise
-  const displayTunnel = connectedTunnel ?? activeTunnel;
+  // Display tunnel: connected snapshot → manual/self-hosted selection → smart mode synthetic
+  const smartDisplayTunnel = useMemo(() => {
+    if (serverMode !== 'smart') return null;
+    const label = smartCountry
+      ? `${t('dashboard:serverSelector.tabSmart')} · ${smartCountry.toUpperCase()}`
+      : t('dashboard:serverSelector.tabSmart');
+    return { source: 'cloud' as const, domain: 'subs', name: label, country: smartCountry ?? '', serverUrl: '' };
+  }, [serverMode, smartCountry, t]);
+
+  const displayTunnel = connectedTunnel ?? activeTunnel ?? smartDisplayTunnel;
 
   // Cold start / warm start enrichment: when connectedTunnel has domain but no country,
   // try to enrich from cached tunnel list immediately (covers warm start where
