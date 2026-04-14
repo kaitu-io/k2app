@@ -28,20 +28,15 @@ interface Props {
   selfHostedContent: React.ReactNode;
 }
 
-interface CountrySummary {
-  code: string;
-  count: number;
-}
-
-function buildCountrySummary(tunnels: Tunnel[]): CountrySummary[] {
+function buildCountryList(tunnels: Tunnel[]): string[] {
   const counts: Record<string, number> = {};
   for (const t of tunnels) {
     const code = (t.node.country ?? '').toLowerCase();
     if (code) counts[code] = (counts[code] ?? 0) + 1;
   }
   return Object.entries(counts)
-    .map(([code, count]) => ({ code, count }))
-    .sort((a, b) => b.count - a.count);
+    .sort((a, b) => b[1] - a[1])
+    .map(([code]) => code);
 }
 
 export function SmartServerSelector({ tunnels, isInteractive, manualContent, selfHostedContent }: Props) {
@@ -52,7 +47,7 @@ export function SmartServerSelector({ tunnels, isInteractive, manualContent, sel
   const setServerMode = useConnectionStore(s => s.setServerMode);
   const setSmartCountry = useConnectionStore(s => s.setSmartCountry);
 
-  const countries = useMemo(() => buildCountrySummary(tunnels), [tunnels]);
+  const countries = useMemo(() => buildCountryList(tunnels), [tunnels]);
 
   const handleTabChange = (_: React.SyntheticEvent, value: 'smart' | 'manual' | 'self_hosted') => {
     if (!isInteractive) return;
@@ -144,24 +139,22 @@ export function SmartServerSelector({ tunnels, isInteractive, manualContent, sel
           </ListItem>
 
           {/* One row per country */}
-          {countries.map(c => (
+          {countries.map(code => (
             <ListItem
-              key={c.code}
+              key={code}
               disableGutters
-              onClick={() => handleCountrySelect(c.code)}
-              sx={rowSx(smartCountry === c.code)}
+              onClick={() => handleCountrySelect(code)}
+              sx={rowSx(smartCountry === code)}
             >
               <ListItemIcon sx={{ minWidth: 40 }}>
-                {getFlagIcon(c.code)}
+                {getFlagIcon(code)}
               </ListItemIcon>
               <ListItemText
-                primary={getCountryName(c.code)}
-                secondary={`\u00d7${c.count}`}
+                primary={getCountryName(code)}
                 primaryTypographyProps={{ fontWeight: 600, fontSize: '0.9rem' }}
-                secondaryTypographyProps={{ fontSize: '0.72rem' }}
               />
               <Radio
-                checked={smartCountry === c.code}
+                checked={smartCountry === code}
                 color="primary"
                 size="small"
                 sx={{ '& .MuiSvgIcon-root': { fontSize: 22 } }}
