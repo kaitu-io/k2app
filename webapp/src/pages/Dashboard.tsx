@@ -105,7 +105,9 @@ export default function Dashboard() {
     return { source: 'cloud' as const, domain: 'subs', name: label, country: smartCountry ?? '', serverUrl: '' };
   }, [serverMode, smartCountry, t]);
 
-  const displayTunnel = connectedTunnel ?? activeTunnel ?? smartDisplayTunnel;
+  // serverMode is the single source of truth for which display to show
+  const displayTunnel = connectedTunnel
+    ?? (serverMode === 'smart' ? smartDisplayTunnel : activeTunnel);
 
   // Cold start / warm start enrichment: when connectedTunnel has domain but no country,
   // try to enrich from cached tunnel list immediately (covers warm start where

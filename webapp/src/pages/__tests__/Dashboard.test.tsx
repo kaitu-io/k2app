@@ -239,6 +239,7 @@ describe('Dashboard', () => {
     it('选择隧道后应该显示 tunnel name', async () => {
       vi.mocked(useConnectionStore).mockImplementation((selector?: any) => {
         const state = createMockConnectionStore({
+          serverMode: 'manual' as const,
           activeTunnel: {
             source: 'cloud',
             domain: 'test.example.com',
