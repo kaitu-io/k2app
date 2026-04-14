@@ -191,6 +191,19 @@ export default function Dashboard() {
     enrichFromTunnelList(tunnels);
   }, [enrichFromTunnelList]);
 
+  // Manual (指定服务器) tab content — CloudTunnelList without its header banner
+  const manualTabContent = useMemo(() => (
+    <CloudTunnelList
+      selectedDomain={activeTunnel?.source === 'cloud' ? activeTunnel.domain : null}
+      onSelect={(tunnel) => {
+        useConnectionStore.getState().selectCloudTunnel(tunnel);
+      }}
+      disabled={isInteractive}
+      onTunnelsLoaded={handleTunnelsLoaded}
+      hideHeader
+    />
+  ), [activeTunnel, isInteractive, handleTunnelsLoaded]);
+
   // Self-hosted tab content — dedicated 自部署 slot in SmartServerSelector
   const selfHostedTabContent = useMemo(() => {
     if (!selfHostedTunnel) {
@@ -411,23 +424,12 @@ export default function Dashboard() {
       >
         {/* Cloud Tunnels + Self-hosted — authenticated users with SmartServerSelector */}
         {isAuthenticated && (
-          <>
-            {/* Hidden — fetches tunnel list for SmartServerSelector country chips */}
-            <Box sx={{ display: 'none' }}>
-              <CloudTunnelList
-                selectedDomain=""
-                onSelect={() => {}}
-                disabled={true}
-                onTunnelsLoaded={handleTunnelsLoaded}
-              />
-            </Box>
-
-            <SmartServerSelector
-              tunnels={cloudTunnels}
-              isInteractive={!isInteractive}
-              selfHostedContent={selfHostedTabContent}
-            />
-          </>
+          <SmartServerSelector
+            tunnels={cloudTunnels}
+            isInteractive={!isInteractive}
+            manualContent={manualTabContent}
+            selfHostedContent={selfHostedTabContent}
+          />
         )}
 
         {/* Self-hosted node — primary option for unauthenticated guests */}

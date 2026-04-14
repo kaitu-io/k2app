@@ -32,9 +32,11 @@ interface CloudTunnelListProps {
   onSelect: (tunnel: Tunnel, echConfigList?: string) => void;
   disabled?: boolean;
   onTunnelsLoaded?: (tunnels: Tunnel[]) => void;
+  /** Hide the "☁️ 云端节点" sticky header — use when the tab label already provides context. */
+  hideHeader?: boolean;
 }
 
-export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded }: CloudTunnelListProps) {
+export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsLoaded, hideHeader }: CloudTunnelListProps) {
   const { t } = useTranslation();
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
@@ -288,7 +290,7 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
   return (
     <Box>
       {/* Sticky Header */}
-      <Stack
+      {!hideHeader && <Stack
         direction="row"
         spacing={1}
         sx={{
@@ -329,7 +331,7 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
             </IconButton>
           </Tooltip>
         </Stack>
-      </Stack>
+      </Stack>}
 
       {/* List */}
       <List sx={{ pt: 0.5, px: 2, pb: 1 }}>

@@ -136,7 +136,7 @@ describe('loadServerMode', () => {
     expect(s.serverModeLoaded).toBe(true);
   });
 
-  it('migrates legacy "manual" value to smart', async () => {
+  it('restores persisted "manual" mode as manual (指定服务器)', async () => {
     mockStorage.get.mockImplementation(async (key: string) => {
       if (key === 'k2.vpn.server_mode') return 'manual';
       return null;
@@ -145,8 +145,7 @@ describe('loadServerMode', () => {
     const { useConnectionStore } = await getStores();
     await useConnectionStore.getState().loadServerMode();
 
-    // 'manual' is a legacy value, must fall back to 'smart'
-    expect(useConnectionStore.getState().serverMode).toBe('smart');
+    expect(useConnectionStore.getState().serverMode).toBe('manual');
     expect(useConnectionStore.getState().serverModeLoaded).toBe(true);
   });
 });
