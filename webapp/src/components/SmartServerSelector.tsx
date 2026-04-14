@@ -80,6 +80,7 @@ export function SmartServerSelector({ tunnels, isInteractive, manualContent, sel
   return (
     <Box>
       {/* ── Mode tabs ─────────────────────────────────────────── */}
+      <Box sx={{ position: 'sticky', top: 0, zIndex: 1, bgcolor: 'background.default' }}>
       <Tabs
         value={tabValue}
         onChange={handleTabChange}
@@ -105,6 +106,7 @@ export function SmartServerSelector({ tunnels, isInteractive, manualContent, sel
           disabled={!isInteractive}
         />
       </Tabs>
+      </Box>
 
       {/* All panels always mounted — display toggle preserves component state */}
 
