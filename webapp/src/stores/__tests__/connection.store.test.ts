@@ -13,6 +13,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 vi.mock('../../services/auth-service', () => ({
   authService: {
     buildTunnelUrl: vi.fn(),
+    buildSubsUrl: vi.fn(),
   },
 }));
 
@@ -59,7 +60,8 @@ async function getStores() {
     detectedCountry: null,
   });
   // Mark lastServerUrl as loaded so cold-start recovery doesn't wait.
-  connMod.useConnectionStore.setState({ lastServerUrl: null, lastServerUrlLoaded: true });
+  // Set manual mode — these tests predate smart mode and assume explicit tunnel selection.
+  connMod.useConnectionStore.setState({ lastServerUrl: null, lastServerUrlLoaded: true, serverMode: 'manual' as const, serverModeLoaded: true });
   return { ...connMod, vpn: vpnMod, config: configMod };
 }
 
