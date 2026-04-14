@@ -97,6 +97,9 @@ func SetupRouter() *gin.Engine {
 		// Get tunnel list
 		api.GET("/tunnels", AuthRequired(), ProRequired(), DeviceAuthRequired(), api_k2_tunnels)
 		api.GET("/tunnels/:protocol", AuthRequired(), ProRequired(), DeviceAuthRequired(), api_k2_tunnels)
+		// k2subs subscription endpoint — Basic Auth (udid:token) validated inside handler,
+		// because k2 engine sends Basic Auth, not the Bearer token the middleware chain expects.
+		api.GET("/subs", api_subs)
 		// Get relay list (nodes with has_relay=true)
 		api.GET("/relays", AuthRequired(), ProRequired(), DeviceAuthRequired(), api_k2_relays)
 		// Get plans
