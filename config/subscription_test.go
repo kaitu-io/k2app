@@ -43,6 +43,20 @@ func TestSubscription_DefaultRefresh(t *testing.T) {
 	}
 }
 
+func TestSubscription_ForwardsNonRefreshQuery(t *testing.T) {
+	// `refresh` is client-side (stripped); all other params forwarded to endpoint.
+	s, err := NewSubscription("k2subs://u:p@host.com/api/subs?country=jp&refresh=120", "")
+	if err != nil {
+		t.Fatalf("NewSubscription: %v", err)
+	}
+	if s.endpoint != "https://host.com/api/subs?country=jp" {
+		t.Errorf("endpoint = %q, want https://host.com/api/subs?country=jp", s.endpoint)
+	}
+	if s.refresh != 120*time.Second {
+		t.Errorf("refresh = %v, want 120s", s.refresh)
+	}
+}
+
 func TestSubscription_RefreshZero(t *testing.T) {
 	s, err := NewSubscription("k2subs://u:p@host.com/path?refresh=0", "")
 	if err != nil {
