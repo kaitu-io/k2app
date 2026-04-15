@@ -58,8 +58,10 @@ type Daemon struct {
 	engineCtx context.Context
 	engineCnl context.CancelFunc
 
-	// Active subscriptions (k2subs:// routes, background refresh).
-	subs []*config.Subscription
+	// Active subscription sessions. Each wraps a *config.Subscription with
+	// session-local state for server rotation (the "excluded" URL set the
+	// engine has asked us to skip via OutboundProvider.NextURL).
+	subs []*subSession
 
 	// Version and Commit are set by main via ldflags.
 	// Used by handleVersion to report the running binary's identity.
@@ -210,8 +212,8 @@ func (d *Daemon) closeTunnel() {
 	subs := d.subs
 	d.subs = nil
 	d.mu.Unlock()
-	for _, sub := range subs {
-		sub.Close()
+	for _, s := range subs {
+		s.sub.Close()
 	}
 
 	if cancel != nil {
@@ -285,8 +287,8 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 	subsCleanup := true
 	defer func() {
 		if subsCleanup {
-			for _, sub := range subs {
-				sub.Close()
+			for _, s := range subs {
+				s.sub.Close()
 			}
 		}
 	}()
@@ -381,8 +383,8 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 	subsCleanup = false
 
 	// Start background subscription refresh.
-	for _, sub := range subs {
-		sub.StartRefresh(ctx, func() *http.Client {
+	for _, s := range subs {
+		s.sub.StartRefresh(ctx, func() *http.Client {
 			return &http.Client{
 				Timeout: 15 * time.Second,
 				Transport: &http.Transport{
@@ -426,10 +428,11 @@ func (d *Daemon) engineConfigFromClientConfig(
 	}
 
 	ecfg := engine.Config{
-		Client:         cfg,
-		FileDescriptor: -1, // Desktop: engine creates its own TUN.
-		DirectDialer:   dd,
-		HealthCallback: d.broadcastSnapshot,
+		Client:           cfg,
+		FileDescriptor:   -1, // Desktop: engine creates its own TUN.
+		DirectDialer:     dd,
+		HealthCallback:   d.broadcastSnapshot,
+		OutboundProvider: d, // Daemon implements engine.OutboundProvider (k2subs rotation).
 	}
 
 	// Apply network monitor if available.
@@ -575,16 +578,31 @@ func (d *Daemon) OnStatus(status engine.Status) {
 // OnStats implements engine.EventHandler — currently a no-op for daemon.
 func (d *Daemon) OnStats(txBytes, rxBytes int64) {}
 
+// OnOutboundFatal implements engine.EventHandler. The engine has already
+// fired e.fail() with the underlying error before this callback fires, so
+// d.lastStatus is already updated via OnStatus. This hook is informational:
+// we log which outbound finally exhausted replacements so operators can
+// distinguish "all subscribed tunnels failed" from other transport errors.
+func (d *Daemon) OnOutboundFatal(outbound string, err error) {
+	slog.Warn("daemon: outbound exhausted replacements", "outbound", outbound, "err", err)
+}
+
 // resolveSubscriptions scans routes for k2subs:// URLs, fetches each subscription,
 // picks a server, and returns the Subscription objects + a map of route index → resolved k2v5:// URL.
 // On error, all already-created Subscription objects are closed before returning.
 func (d *Daemon) resolveSubscriptions(cfg *config.ClientConfig) (
-	subs []*config.Subscription,
+	subs []*subSession,
 	resolved map[int]string,
 	err error,
 ) {
 	resolved = make(map[int]string)
 	subsCache := filepath.Join(cacheDir(), "subs")
+
+	closeAll := func(ss []*subSession) {
+		for _, s := range ss {
+			s.sub.Close()
+		}
+	}
 
 	for i, route := range cfg.Routes {
 		if !strings.HasPrefix(route.Via, "k2subs://") {
@@ -596,9 +614,7 @@ func (d *Daemon) resolveSubscriptions(cfg *config.ClientConfig) (
 			slog.Error("subscription parse failed",
 				"via", config.TruncateVia(route.Via),
 				"err", parseErr)
-			for _, s := range subs {
-				s.Close()
-			}
+			closeAll(subs)
 			return nil, nil, fmt.Errorf("subscription parse: %w", parseErr)
 		}
 
@@ -617,9 +633,7 @@ func (d *Daemon) resolveSubscriptions(cfg *config.ClientConfig) (
 					"via", config.TruncateVia(route.Via),
 					"err", fetchErr)
 				sub.Close()
-				for _, s := range subs {
-					s.Close()
-				}
+				closeAll(subs)
 				return nil, nil, fmt.Errorf("subscription fetch failed (no cache): %w", fetchErr)
 			}
 			slog.Warn("subscription fetch failed, using cached data", "err", fetchErr)
@@ -632,9 +646,7 @@ func (d *Daemon) resolveSubscriptions(cfg *config.ClientConfig) (
 				"servers", len(sub.Tunnels()),
 				"err", pickErr)
 			sub.Close()
-			for _, s := range subs {
-				s.Close()
-			}
+			closeAll(subs)
 			return nil, nil, fmt.Errorf("subscription pick: %w", pickErr)
 		}
 
@@ -644,7 +656,7 @@ func (d *Daemon) resolveSubscriptions(cfg *config.ClientConfig) (
 		)
 
 		resolved[i] = tunnel.URL
-		subs = append(subs, sub)
+		subs = append(subs, &subSession{sub: sub})
 	}
 
 	return subs, resolved, nil

@@ -67,4 +67,41 @@ type Config struct {
 	// "gateway" for k2r, "" for all other binaries.
 	// Hardcoded by the platform shell — not user-configurable.
 	WireMode string
+
+	// OutboundProvider supplies replacement k2v5:// URLs when a running
+	// outbound's wire transport fails persistently (RaceTransport fails
+	// repeatedly for the same URL). Nil = engine falls back to today's
+	// behavior (reports fatal after wire-level re-race exhaustion; no
+	// server-level rotation).
+	//
+	// Desktop daemon implements this by delegating to the k2subs://
+	// Subscription.Pick(exclude) API. Mobile/appext and gateway leave it
+	// nil — they don't have a Subscription concept at the platform shell.
+	//
+	// The engine calls NextURL from its outboundReplaceLoop goroutine,
+	// OUTSIDE engine.mu (read-copy-act pattern). The provider must not
+	// acquire any lock the caller also holds.
+	OutboundProvider OutboundProvider
+}
+
+// OutboundProvider supplies replacement k2v5:// URLs when an existing
+// outbound's wire transport has persistently failed.
+//
+// Semantics:
+//   - The engine calls NextURL with the URL that just failed (currentURL)
+//     and the classified error (reason).
+//   - The provider is expected to return a DIFFERENT URL each time for the
+//     same logical subscription session — i.e. it maintains its own
+//     "already-tried-and-failed" exclude set and filters accordingly.
+//   - When the provider exhausts its candidates, it returns (""/wrapped-err).
+//     The engine then fires EventHandler.OnOutboundFatal and calls
+//     e.fail to terminate the tunnel.
+//
+// Concurrency: the engine invokes NextURL from a single
+// outboundReplaceLoop goroutine and calls are therefore serialized across
+// all outbounds owned by a given Engine. A provider that is shared between
+// multiple Engine instances (unusual — daemon owns at most one) must
+// synchronize internally.
+type OutboundProvider interface {
+	NextURL(currentURL string, reason error) (string, error)
 }

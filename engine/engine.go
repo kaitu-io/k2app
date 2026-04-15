@@ -63,6 +63,12 @@ type Engine struct {
 	reRaceChan   chan *outboundTransport
 	reRaceCancel context.CancelFunc
 
+	// wireMode and outboundProvider are snapshotted from Config at Start so
+	// the background outboundReplaceLoop can build replacement TMs without
+	// re-reading user-supplied Config (which may be mutated by the caller).
+	wireMode         string
+	outboundProvider OutboundProvider
+
 	// missReporter is non-nil only when client.Telemetry.RuleMiss.Enabled
 	// is true. When nil, the rule engine's MissReporter hook is also nil
 	// and the match hot path has zero rule-miss overhead. Phase 1.
@@ -76,7 +82,39 @@ type outboundTransport struct {
 	wireCfg  wire.Config
 	dialAddr string
 	name     string // log label, e.g. "k2v5-jp.example.com"
+
+	// url is the original k2v5:// URL that produced this outbound. Used by
+	// outboundReplaceLoop to ask the OutboundProvider for a replacement
+	// when this tunnel server persistently fails. Updated atomically via
+	// e.mu on hot-swap.
+	url string
+
+	// swappable wraps tm for indirection at the wire.Dialer boundary. All
+	// outward-facing Dial traffic (core.WireOutbound, ProxyDNSClient) goes
+	// through swappable; engine-internal TransportManager methods
+	// (ResetConnections, ReplacePrimary, WireStats, Primary, Close, etc.)
+	// continue to use tm directly.
+	//
+	// Ownership: tm is engine-owned (Closed in engine.Stop OR in
+	// outboundReplaceLoop when a hot-swap retires it). swappable holds a
+	// reference to tm for Dial forwarding only — it must never be Close()d
+	// separately.
+	swappable *wire.SwappableDialer
+
+	// reRaceFailStreak counts consecutive wire-level RaceTransport
+	// failures against this outbound's current URL. When it reaches
+	// reRaceFailThresholdForReplace, outboundReplaceLoop escalates from
+	// "re-race wire types against same server" to "ask OutboundProvider
+	// for a different server". Reset to 0 on any RaceTransport success
+	// or successful hot-swap. Guarded by e.mu.
+	reRaceFailStreak int
 }
+
+// reRaceFailThresholdForReplace is the RaceTransport-failure count after
+// which outboundReplaceLoop gives up on the current tunnel server and asks
+// OutboundProvider for a replacement. 2 means the engine tolerates a brief
+// transient (e.g. single sleep/wake window) before rotating servers.
+const reRaceFailThresholdForReplace = 2
 
 // New creates a new Engine in the disconnected state.
 func New() *Engine {
@@ -340,7 +378,7 @@ func (e *Engine) Start(cfg Config) error {
 		switch {
 		case strings.HasPrefix(via, "k2v5://"):
 			ot := tmMap[via]
-			outbounds[target] = core.NewWireOutbound(ot.name, ot.tm, e)
+			outbounds[target] = core.NewWireOutbound(ot.name, ot.swappable, e)
 		case strings.HasPrefix(via, "k2p://"):
 			k2pOut, k2pErr := core.NewK2POutbound(via)
 			if k2pErr != nil {
@@ -379,8 +417,8 @@ func (e *Engine) Start(cfg Config) error {
 			}))
 		}
 		proxyDNS = dns.NewProxyDNSClient(dns.ProxyDNSClientConfig{
-			Dialer:         primaryOT.tm, // Primary: TransportManager (QUIC stream preferred)
-			FallbackDialer: tcpwsDialer,  // Fallback: TCP-WS direct (raced with 300ms stagger)
+			Dialer:         primaryOT.swappable, // Primary: SwappableDialer wrapping TM (QUIC stream preferred)
+			FallbackDialer: tcpwsDialer,         // Fallback: TCP-WS direct (raced with 300ms stagger)
 			Servers:        client.DNS.Proxy,
 		})
 		dnsMW := dns.NewMiddleware(dns.MiddlewareConfig{
@@ -453,11 +491,19 @@ func (e *Engine) Start(cfg Config) error {
 	// Store directDialer for re-race (avoids re-parsing URL).
 	e.directDialer = cfg.DirectDialer
 
+	// Snapshot Config fields that outboundReplaceLoop needs long after Start
+	// returns. WireMode is immutable after Start; OutboundProvider is
+	// expected to be long-lived (daemon implements it). Nil provider is
+	// fine — the loop then skips the Phase-B escalation branch and behaves
+	// like today (Phase-A only).
+	e.wireMode = cfg.WireMode
+	e.outboundProvider = cfg.OutboundProvider
+
 	// Re-race loop: replaces recoveryProbe.
 	e.reRaceChan = make(chan *outboundTransport, 1)
 	reRaceCtx, reRaceCancel := context.WithCancel(ctx)
 	e.reRaceCancel = reRaceCancel
-	safego.Go(func() { e.reRaceLoop(reRaceCtx) })
+	safego.Go(func() { e.outboundReplaceLoop(reRaceCtx) })
 
 	hm.reRaceChan = e.reRaceChan
 	hm.wake.onWakeReconnect = func() {
@@ -782,6 +828,8 @@ func (e *Engine) Stop() error {
 	outbounds := e.outbounds
 	e.outbounds = nil
 	e.client = nil
+	e.wireMode = ""
+	e.outboundProvider = nil
 	e.connectedAt = time.Time{}
 	e.paused = false
 	e.lastError = nil // unconditional clear on stop
@@ -1015,6 +1063,14 @@ func buildOutboundMap(routes []config.RouteConfig) map[string]rule.Target {
 	return m
 }
 
+// setupOutboundTransportFn is the function used by the outbound-replacement
+// path to build a fresh TransportManager for a new k2v5:// URL. It is set
+// to setupOutboundTransport in production; tests override it to drive the
+// replacement loop deterministically. The Start-time outbound setup calls
+// setupOutboundTransport directly (not this var) — only Phase-B replacement
+// is test-injectable.
+var setupOutboundTransportFn = setupOutboundTransport
+
 // setupOutboundTransport creates a TransportManager for a single k2v5:// URL.
 // Performs: ParseURL → resolveDialAddr → RaceTransport → TM setup.
 // The caller must close the returned outboundTransport on error paths.
@@ -1088,7 +1144,11 @@ func setupOutboundTransport(
 		wireCfg:  wireCfg,
 		dialAddr: dialAddr,
 		name:     fmt.Sprintf("k2v5-%s", wireCfg.Host),
+		url:      via,
 	}
+	// Install the indirection wrapper that core.WireOutbound and
+	// ProxyDNSClient will dial through. See outboundTransport.swappable doc.
+	ot.swappable = wire.NewSwappableDialer(tm)
 
 	slog.Info("engine: transport ready",
 		"outbound", ot.name,
@@ -1275,16 +1335,32 @@ func (e *Engine) ClearWireError() {
 	}
 }
 
-// reRaceLoop waits for echo-fail signals and runs a transport re-race to
-// hot-swap the primary transport. Replaces recoveryProbe.
+// outboundReplaceLoop waits for wire-health signals (currently: echoLoop's
+// 3-consecutive-fail) and responds in two escalating phases:
+//
+//   Phase A — same-server wire re-race. Runs wire.RaceTransport against the
+//     outbound's current URL. On success, hot-swaps the winning Dialer into
+//     the existing TransportManager via ReplacePrimary/SwapTCPWS. Same
+//     behavior as the pre-Step-3 reRaceLoop.
+//
+//   Phase B — server replacement. After reRaceFailThresholdForReplace
+//     consecutive Phase-A failures, asks OutboundProvider for a DIFFERENT
+//     k2v5:// URL, builds a fresh TransportManager in the background, and
+//     atomically swaps it into target.swappable. The old TM is Closed
+//     immediately — in-flight smux / QUIC streams receive ConnectionClosed
+//     within ms and application layers retry. TUN / provider / DNS hijack
+//     stay alive throughout (zero DNS-leakage window).
+//
+// If Phase B's provider is nil (appext / gateway) or returns ErrExhausted
+// (all subscription tunnels already tried and failed), the loop fires
+// handler.OnOutboundFatal and calls e.fail to terminate the tunnel.
 //
 // Known TOCTOU (P2, not fixed): If Stop() fires between the ctx.Err() check
 // and ReplacePrimary, and tm.Close() wins the tm.mu race, the new Dialer is
 // orphaned in a defunct TransportManager. Bounded leak: QUIC idle timeout (30s)
 // reclaims it. Fix: add a WaitGroup so Stop() waits for this loop to exit
-// before calling tm.Close(). Not worth a standalone PR — fold into next
-// engine.go change.
-func (e *Engine) reRaceLoop(ctx context.Context) {
+// before calling tm.Close(). Carry-over from reRaceLoop.
+func (e *Engine) outboundReplaceLoop(ctx context.Context) {
 	for {
 		var target *outboundTransport
 		select {
@@ -1299,12 +1375,14 @@ func (e *Engine) reRaceLoop(ctx context.Context) {
 			continue
 		}
 		dd := e.directDialer
+		provider := e.outboundProvider
 		e.mu.Unlock()
 
 		if target == nil || target.tm == nil {
 			continue
 		}
 
+		// --- Phase A: same-server re-race --------------------------------
 		slog.Warn("DIAG: transport-rerace",
 			"reason", "echo-consecutive-fail",
 			"outbound", target.name,
@@ -1312,24 +1390,173 @@ func (e *Engine) reRaceLoop(ctx context.Context) {
 		)
 
 		raceCtx, raceCancel := context.WithTimeout(ctx, 15*time.Second)
-		result, err := wire.RaceTransport(raceCtx, target.wireCfg, target.wireCfg.DialAddr, dd)
+		result, raceErr := wire.RaceTransport(raceCtx, target.wireCfg, target.wireCfg.DialAddr, dd)
 		raceCancel()
 
-		if err != nil {
-			slog.Warn("engine: re-race failed", "outbound", target.name, "err", err)
+		if raceErr == nil {
+			if ctx.Err() != nil {
+				result.Dialer.Close()
+				if result.QUICBackup != nil {
+					result.QUICBackup.Close()
+				}
+				return
+			}
+			if !e.applyReRaceResult(target, result) {
+				// target no longer live — dispose of new Dialer and move on
+				result.Dialer.Close()
+				if result.QUICBackup != nil {
+					result.QUICBackup.Close()
+				}
+			}
+			e.mu.Lock()
+			target.reRaceFailStreak = 0
+			e.mu.Unlock()
 			continue
 		}
 
-		if ctx.Err() != nil {
-			result.Dialer.Close()
-			if result.QUICBackup != nil {
-				result.QUICBackup.Close()
-			}
-			return
+		// Phase A failed.
+		slog.Warn("engine: re-race failed", "outbound", target.name, "err", raceErr)
+		e.mu.Lock()
+		target.reRaceFailStreak++
+		streak := target.reRaceFailStreak
+		e.mu.Unlock()
+
+		if streak < reRaceFailThresholdForReplace {
+			// Wait for next echo signal; give same server another chance.
+			continue
+		}
+		if provider == nil {
+			// No provider = no escalation path. Leave streak high; if the
+			// situation ever self-heals (e.g. upstream comes back up), a
+			// future Phase-A success will clear it. Matches pre-Step-3
+			// behavior (same-server retries forever).
+			continue
 		}
 
-		// Verify the target TM still exists in the engine.
+		// --- Phase B: ask provider for a replacement URL ----------------
+		if err := e.replaceOutboundServer(ctx, target, raceErr, dd, provider); err != nil {
+			// Exhausted or ctx cancelled. If it was ctx, just exit quietly.
+			if ctx.Err() != nil {
+				return
+			}
+			e.mu.Lock()
+			handler := e.handler
+			outboundName := target.name
+			e.mu.Unlock()
+			slog.Error("engine: outbound replacement exhausted",
+				"outbound", outboundName, "err", err)
+			if handler != nil {
+				handler.OnOutboundFatal(outboundName, err)
+			}
+			_ = e.fail(fmt.Errorf("outbound %s exhausted: %w", outboundName, err))
+			return
+		}
+		// Successful swap — reRaceFailStreak reset inside replaceOutboundServer.
+	}
+}
+
+// applyReRaceResult installs a successful Phase-A RaceTransport result into
+// the target's existing TransportManager. Returns false if the target is no
+// longer owned by the engine (caller must clean up the result).
+func (e *Engine) applyReRaceResult(target *outboundTransport, result *wire.RaceResult) bool {
+	e.mu.Lock()
+	found := false
+	for _, ot := range e.outboundTMs {
+		if ot == target {
+			found = true
+			break
+		}
+	}
+	e.mu.Unlock()
+	if !found {
+		return false
+	}
+
+	if result.QUICBackup != nil {
+		// QUIC connected but lost re-race to tcpws — install QUIC as primary
+		// with fallback. ReplacePrimary clears fallbackActive, so re-set it.
+		target.tm.ReplacePrimary(result.QUICBackup, result.QUICBackupType)
+		oldTCPWS := target.tm.SwapTCPWS(result.Dialer)
+		if oldTCPWS != nil {
+			oldTCPWS.Close()
+		}
+		target.tm.SetFallbackActiveWithReason(true, "quic-race-lost")
+		slog.Info("engine: re-race QUIC installed as primary (race loser), tcpws serving traffic",
+			"outbound", target.name,
+			"quicType", result.QUICBackupType,
+		)
+	} else {
+		target.tm.ReplacePrimary(result.Dialer, result.TransportType)
+	}
+	return true
+}
+
+// replaceOutboundServer obtains a replacement k2v5:// URL from the provider,
+// builds a fresh TransportManager in the background via
+// setupOutboundTransport, and atomically hot-swaps it into the target's
+// SwappableDialer. Returns nil on successful swap; on provider exhaustion
+// or context cancellation, returns the underlying error.
+//
+// Crucially, this function does NOT tear down TUN, provider, rule engine,
+// connTracker, or the DNS hijack: it swaps a single Dialer reference
+// underneath the running stack. ProxyDNSClient's pooled smux connections
+// are explicitly reset after the swap so the next DNS query dials through
+// the new transport.
+//
+// The old TransportManager is Closed immediately on successful swap —
+// quic-go / smux OpenStreamSync callers unblock within ms with
+// ConnectionClosed errors, which the application layer retries on new
+// connections through the new TM.
+func (e *Engine) replaceOutboundServer(
+	ctx context.Context,
+	target *outboundTransport,
+	lastWireErr error,
+	dd wire.DirectDialer,
+	provider OutboundProvider,
+) error {
+	e.mu.Lock()
+	currentURL := target.url
+	wireMode := e.wireMode
+	e.mu.Unlock()
+	reason := lastWireErr
+
+	for {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		newURL, providerErr := provider.NextURL(currentURL, reason)
+		if providerErr != nil {
+			return fmt.Errorf("provider: %w", providerErr)
+		}
+		if newURL == "" {
+			return fmt.Errorf("provider returned empty URL")
+		}
+
+		slog.Info("engine: attempting outbound replacement",
+			"outbound", target.name,
+			"newURL", config.TruncateVia(newURL))
+
+		newOT, _, setupErr := setupOutboundTransportFn(ctx, newURL, dd, wireMode)
+		if setupErr != nil {
+			slog.Warn("engine: outbound replacement setup failed",
+				"outbound", target.name,
+				"tryURL", config.TruncateVia(newURL),
+				"err", setupErr)
+			// Tell the provider this URL also failed so it excludes and
+			// returns the next candidate on the next call.
+			currentURL = newURL
+			reason = setupErr
+			continue
+		}
+		if ctx.Err() != nil {
+			newOT.tm.Close()
+			return ctx.Err()
+		}
+
+		// Verify target still alive and owned.
 		e.mu.Lock()
+		stillConnected := e.state == StateConnected
 		found := false
 		for _, ot := range e.outboundTMs {
 			if ot == target {
@@ -1337,33 +1564,45 @@ func (e *Engine) reRaceLoop(ctx context.Context) {
 				break
 			}
 		}
+		proxyDNS := e.proxyDNS
+		e.mu.Unlock()
+		if !stillConnected || !found {
+			newOT.tm.Close()
+			return fmt.Errorf("target outbound no longer live")
+		}
+
+		// Atomic swap. SwappableDialer returns the previously-installed
+		// Dialer, which is the old *TransportManager we must Close.
+		oldDialer := target.swappable.Swap(newOT.tm)
+
+		e.mu.Lock()
+		target.tm = newOT.tm
+		target.wireCfg = newOT.wireCfg
+		target.dialAddr = newOT.dialAddr
+		target.name = newOT.name
+		target.url = newURL
+		target.reRaceFailStreak = 0
 		e.mu.Unlock()
 
-		if !found {
-			result.Dialer.Close()
-			if result.QUICBackup != nil {
-				result.QUICBackup.Close()
-			}
-			continue
+		// ProxyDNSClient holds the same *SwappableDialer instance as
+		// before, so future DialStreamUDP calls now route to the new TM.
+		// But any pooled proxyConn (smux session on the old TM) is dead;
+		// reset so the next query redials. Mirrors reconnect() step 3.
+		if proxyDNS != nil {
+			proxyDNS.ResetConnections()
 		}
 
-		if result.QUICBackup != nil {
-			// QUIC connected but lost re-race to tcpws — install QUIC as primary
-			// with fallback. ReplacePrimary clears fallbackActive, so re-set it.
-			target.tm.ReplacePrimary(result.QUICBackup, result.QUICBackupType)
-			// Close old tcpws before replacing — SwapTCPWS returns the old dialer.
-			oldTCPWS := target.tm.SwapTCPWS(result.Dialer)
-			if oldTCPWS != nil {
-				oldTCPWS.Close()
-			}
-			target.tm.SetFallbackActiveWithReason(true, "quic-race-lost")
-			slog.Info("engine: re-race QUIC installed as primary (race loser), tcpws serving traffic",
-				"outbound", target.name,
-				"quicType", result.QUICBackupType,
-			)
-		} else {
-			target.tm.ReplacePrimary(result.Dialer, result.TransportType)
+		// Close old TM outside any lock. quic-go Conn.destroy / smux
+		// Session.Close immediately unblocks in-flight OpenStreamSync
+		// calls with ConnectionClosed — no hang, no drain.
+		if oldTM, ok := oldDialer.(*wire.TransportManager); ok && oldTM != nil {
+			oldTM.Close()
 		}
+
+		slog.Info("engine: outbound replaced",
+			"outbound", target.name,
+			"newURL", config.TruncateVia(newURL))
+		return nil
 	}
 }
 

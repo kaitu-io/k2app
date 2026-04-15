@@ -254,8 +254,9 @@ type lockProbeHandler struct {
 	acquired atomic.Int32    // count of successful lock probes
 }
 
-func (h *lockProbeHandler) OnStatus(s Status)              { h.mu.Lock(); h.mu.Unlock(); h.acquired.Add(1) }
-func (h *lockProbeHandler) OnStats(txBytes, rxBytes int64) {}
+func (h *lockProbeHandler) OnStatus(s Status)                         { h.mu.Lock(); h.mu.Unlock(); h.acquired.Add(1) }
+func (h *lockProbeHandler) OnStats(txBytes, rxBytes int64)            {}
+func (h *lockProbeHandler) OnOutboundFatal(outbound string, err error) {}
 
 // TestDeadlock_SetStateNotUnderLock validates that handler.OnStatus is called
 // outside e.mu after the setState→setStateLocked refactor (B1/B2).
