@@ -269,6 +269,76 @@ func TestSubscription_DiskCacheRoundTrip(t *testing.T) {
 	}
 }
 
+// TestSubscription_CacheCorruptIgnored locks in the UAT T15 contract:
+// a corrupt cache file must NOT prevent NewSubscription from succeeding —
+// it is logged and ignored, and a subsequent Fetch overwrites it.
+func TestSubscription_CacheCorruptIgnored(t *testing.T) {
+	dir := t.TempDir()
+	raw := "k2subs://u:p@host.example.com/api"
+
+	// Pre-create a corrupt cache file at the expected path.
+	s0, err := NewSubscription(raw, dir)
+	if err != nil {
+		t.Fatalf("NewSubscription (probe): %v", err)
+	}
+	cachePath := s0.cacheFile
+	if err := os.MkdirAll(dirOf(cachePath), 0700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(cachePath, []byte("{not-json"), 0600); err != nil {
+		t.Fatalf("write corrupt cache: %v", err)
+	}
+
+	// NewSubscription must not fail; tunnels should be empty (corrupt ignored).
+	s, err := NewSubscription(raw, dir)
+	if err != nil {
+		t.Fatalf("NewSubscription with corrupt cache: %v", err)
+	}
+	if got := len(s.Tunnels()); got != 0 {
+		t.Errorf("tunnels after corrupt cache load = %d, want 0", got)
+	}
+}
+
+func dirOf(p string) string {
+	for i := len(p) - 1; i >= 0; i-- {
+		if p[i] == '/' || p[i] == '\\' {
+			return p[:i]
+		}
+	}
+	return "."
+}
+
+// TestSubscription_FetchErrorHintPassthrough locks in the UAT T07/T09 contract:
+// when Center returns an HTTP 4xx with a plain-text body, the returned error
+// must include BOTH the status code AND the body text so the daemon can
+// surface a human-readable hint to the user.
+func TestSubscription_FetchErrorHintPassthrough(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte("invalid credentials"))
+	}))
+	defer srv.Close()
+
+	raw := "k2subs://u:p@" + srv.Listener.Addr().String() + "/api"
+	s, err := NewSubscription(raw, "")
+	if err != nil {
+		t.Fatalf("NewSubscription: %v", err)
+	}
+	s.endpoint = srv.URL + "/api"
+
+	err = s.Fetch(context.Background(), srv.Client())
+	if err == nil {
+		t.Fatal("expected error for 401 response")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "401") {
+		t.Errorf("error missing status code: %q", msg)
+	}
+	if !strings.Contains(msg, "invalid credentials") {
+		t.Errorf("error missing body hint: %q", msg)
+	}
+}
+
 // --- Task 3: Weighted Pick ---
 
 func TestSubscription_PickWeightedDistribution(t *testing.T) {
