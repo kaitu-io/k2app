@@ -2,6 +2,7 @@ package center
 
 import (
 	"encoding/base64"
+	"net/http"
 	"strings"
 
 	db "github.com/wordgate/qtoolkit/db"
@@ -10,13 +11,35 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// ============================================================================
+// /api/subs — k2subs:// subscription wire endpoint
+//
+// This handler is the *external* wire endpoint for the k2subs:// subscription
+// protocol consumed by the k2 daemon (see k2/config/subscription.go). It is
+// intentionally a **documented exception** to Center's `{code, message, data}`
+// envelope convention, for the same reason payment webhooks bypass it:
+//
+//   - Success:  HTTP 200 + raw `{"tunnels": [...], "refresh": N}` at JSON root.
+//               Daemon unmarshals these keys directly; a wrapped envelope would
+//               silently yield `tunnels: nil` (encoding/json tolerates unknown
+//               top-level keys) and report "no tunnels available" regardless
+//               of the actual items count.
+//
+//   - Error:    Real HTTP status code (401 / 402 / 500) with a plain-text body.
+//               Daemon formats these as `subscription fetch: status %d: %s`
+//               using the body as a human-readable hint
+//               (k2/config/subscription.go:132-137).
+//
+// Changes to this response shape MUST be coordinated with the daemon side.
+// ============================================================================
+
 // SubsTunnel is one entry in the k2subs JSON response.
 type SubsTunnel struct {
 	URL    string `json:"url"`
 	Weight int    `json:"weight"`
 }
 
-// SubsResponse is the k2subs subscription endpoint response.
+// SubsResponse is the k2subs subscription endpoint response body (raw, no envelope).
 type SubsResponse struct {
 	Tunnels []SubsTunnel `json:"tunnels"`
 	Refresh int          `json:"refresh"`
@@ -54,6 +77,14 @@ func injectSubsCreds(serverURL, udid, token string) string {
 	return scheme + sep + udid + ":" + token + "@" + rest
 }
 
+// subsError writes a plain-text HTTP error response. Daemon reads the first
+// 256 bytes of the body as a human-readable hint (subscription.go:132-137).
+// Do NOT use gin's Error() wrapper here — that emits the `{code, message}`
+// envelope which pollutes the daemon's hint parsing.
+func subsError(c *gin.Context, status int, msg string) {
+	c.String(status, msg)
+}
+
 // api_subs returns a k2subs-format tunnel list for the authenticated device user.
 //
 // Authentication: HTTP Basic Auth — username=UDID, password=access_token.
@@ -67,49 +98,59 @@ func api_subs(c *gin.Context) {
 	udid, token, ok := extractSubsBasicAuth(c)
 	if !ok {
 		log.Warnf(c, "subs: missing or malformed Basic Auth header")
-		Error(c, ErrorNotLogin, "missing credentials")
+		subsError(c, http.StatusUnauthorized, "missing credentials")
 		return
 	}
 
 	// Validate JWT token and load user+device via existing JWT auth logic.
-	// handleJWTAuth sets authContext on c and returns it, or returns nil on failure.
 	authCtx := handleJWTAuth(c, token)
 	if authCtx == nil || authCtx.User == nil {
 		log.Warnf(c, "subs: JWT auth failed for udid=%s", udid)
-		Error(c, ErrorNotLogin, "invalid credentials")
+		subsError(c, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
 
 	// Verify the UDID in Basic Auth matches the token's device UDID.
 	if authCtx.UDID != udid {
 		log.Warnf(c, "subs: UDID mismatch: basic_auth=%s token=%s", udid, authCtx.UDID)
-		Error(c, ErrorNotLogin, "credential mismatch")
+		subsError(c, http.StatusUnauthorized, "credential mismatch")
 		return
 	}
 
 	// Require device context — web-auth tokens (no device) must not access subs.
 	if authCtx.Device == nil {
 		log.Warnf(c, "subs: device context required, udid=%s", udid)
-		Error(c, ErrorNotLogin, "device context required")
+		subsError(c, http.StatusUnauthorized, "device context required")
 		return
 	}
 
 	// Check membership (mirrors ProRequired middleware logic exactly).
 	if authCtx.User.IsExpired() {
 		log.Infof(c, "subs: user %d membership expired", authCtx.User.ID)
-		Error(c, ErrorPaymentRequired, "membership expired")
+		subsError(c, http.StatusPaymentRequired, "membership expired")
 		return
 	}
 
-	// Build tunnel query (mirrors api_k2_tunnels for k2v5 protocol).
+	// Mirror api_k2_tunnels query shape (api_tunnel.go:48-71):
+	//   - Preload("Node") so the response loop can read node fields without N+1
+	//   - tunnelProtocolsForQuery(K2V5) returns [K2V5] today; futureproof if
+	//     the helper ever expands (it already backs k2v4 clients transparently).
+	//   - Non-admins never see IsTest=true tunnels. Admin users do, for live
+	//     testing via real clients.
+	isAdmin := authCtx.User.IsAdmin != nil && *authCtx.User.IsAdmin
 	q := db.Get().Model(&SlaveTunnel{}).
 		Preload("Node").
 		Where("node_id IS NOT NULL").
-		Where("protocol = ?", TunnelProtocolK2V5).
-		Where(&SlaveTunnel{IsTest: BoolPtr(false)})
+		Where("protocol IN ?", tunnelProtocolsForQuery(TunnelProtocolK2V5))
+	if !isAdmin {
+		q = q.Where(&SlaveTunnel{IsTest: BoolPtr(false)})
+	}
 
-	// Optional country filter.
-	country := strings.ToLower(strings.TrimSpace(c.Query("country")))
+	// Country filter — DB stores ISO-3166 alpha-2 in UPPERCASE (`JP`, `HK`, `US`).
+	// Accept any case from the client and normalize to uppercase so the WHERE
+	// clause matches the canonical stored form (index-friendly, no row-level
+	// function call like LOWER()).
+	country := strings.ToUpper(strings.TrimSpace(c.Query("country")))
 	if country != "" {
 		q = q.Joins("Node").
 			Where("slave_nodes.country = ?", country)
@@ -119,20 +160,34 @@ func api_subs(c *gin.Context) {
 	var tunnels []SlaveTunnel
 	if err := q.Find(&tunnels).Error; err != nil {
 		log.Errorf(c, "subs: DB query failed: %v", err)
-		Error(c, ErrorSystemError, "failed to load tunnels")
+		subsError(c, http.StatusInternalServerError, "failed to load tunnels")
 		return
 	}
 
 	items := make([]SubsTunnel, 0, len(tunnels))
 	for _, t := range tunnels {
+		// Defensive — mirrors api_k2_tunnels:120-122. The `node_id IS NOT NULL`
+		// WHERE plus Preload makes this redundant in normal flow, but guards
+		// against data drift (e.g. node row soft-deleted but tunnel still
+		// references it).
+		if t.Node == nil || t.Node.ID == 0 {
+			continue
+		}
 		if t.ServerURL == "" {
 			continue
 		}
-		url := injectSubsCreds(t.ServerURL, udid, token)
-		items = append(items, SubsTunnel{URL: url, Weight: 1})
+		items = append(items, SubsTunnel{
+			URL:    injectSubsCreds(t.ServerURL, udid, token),
+			Weight: 1,
+		})
 	}
 
-	log.Infof(c, "subs: user=%d country=%q returning %d tunnels", authCtx.User.ID, country, len(items))
-	resp := SubsResponse{Tunnels: items, Refresh: 1800}
-	Success(c, &resp)
+	log.Infof(c, "subs: user=%d country=%q isAdmin=%v returning %d tunnels",
+		authCtx.User.ID, country, isAdmin, len(items))
+
+	// RAW JSON — see the wire-protocol note at the top of this file.
+	c.JSON(http.StatusOK, SubsResponse{
+		Tunnels: items,
+		Refresh: 1800,
+	})
 }

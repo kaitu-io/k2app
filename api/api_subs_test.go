@@ -2,7 +2,6 @@ package center
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -130,7 +129,12 @@ func TestInjectSubsCreds(t *testing.T) {
 }
 
 // =====================================================================
-// TestApiSubs_NoAuth_Returns401 — handler test: missing auth → ErrorNotLogin
+// TestApiSubs_NoAuth_Returns401 — handler test: missing auth → raw HTTP 401
+//
+// /api/subs is an external-protocol (k2subs://) wire endpoint. Unlike the rest
+// of /api/*, it returns real HTTP status codes with plain-text body hints,
+// NOT the {code, message, data} envelope — daemon (k2/config/subscription.go)
+// formats errors as `subscription fetch: status %d: %s` using the body as hint.
 // =====================================================================
 
 func TestApiSubs_NoAuth_Returns401(t *testing.T) {
@@ -145,12 +149,44 @@ func TestApiSubs_NoAuth_Returns401(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.Contains(t, w.Body.String(), "missing credentials")
 
-	var resp map[string]interface{}
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	// Body must NOT be JSON-wrapped in the Center {code, message, data} envelope.
+	// Daemon parses the body as a plain hint string.
+	assert.NotContains(t, w.Body.String(), `"code":`)
+	assert.NotContains(t, w.Body.String(), `"data":`)
+}
 
-	code, ok := resp["code"].(float64)
-	require.True(t, ok, "response should have numeric 'code' field")
-	assert.Equal(t, float64(ErrorNotLogin), code)
+// =====================================================================
+// TestApiSubs_MalformedAuth_ReturnsRaw401 — malformed Basic Auth → raw 401
+// =====================================================================
+
+func TestApiSubs_MalformedAuth_ReturnsRaw401(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/api/subs", api_subs)
+
+	cases := []struct {
+		name   string
+		header string
+	}{
+		{"bearer instead of basic", "Bearer abc"},
+		{"empty password", "Basic " + base64.StdEncoding.EncodeToString([]byte("udid:"))},
+		{"garbage base64", "Basic !!!not-base64!!!"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req, _ := http.NewRequest("GET", "/api/subs", nil)
+			req.Header.Set("Authorization", tc.header)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			assert.Equal(t, http.StatusUnauthorized, w.Code)
+			assert.Contains(t, w.Body.String(), "missing credentials")
+			// No JSON envelope leak.
+			assert.NotContains(t, w.Body.String(), `"code"`)
+		})
+	}
 }
