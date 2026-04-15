@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strings"
 
-	db "github.com/wordgate/qtoolkit/db"
 	"github.com/wordgate/qtoolkit/log"
 
 	"github.com/gin-gonic/gin"
@@ -131,38 +130,22 @@ func api_subs(c *gin.Context) {
 		return
 	}
 
-	// Mirror api_k2_tunnels query shape (api_tunnel.go:48-71):
-	//   - Preload("Node") so the response loop can read node fields without N+1
-	//   - tunnelProtocolsForQuery(K2V5) returns [K2V5] today; futureproof if
-	//     the helper ever expands (it already backs k2v4 clients transparently).
-	//   - Non-admins never see IsTest=true tunnels. Admin users do, for live
-	//     testing via real clients.
+	// Admin bypass for test tunnels — mirrors api_k2_tunnels:44,67-71.
 	isAdmin := authCtx.User.IsAdmin != nil && *authCtx.User.IsAdmin
-	q := db.Get().Model(&SlaveTunnel{}).
-		Preload("Node").
-		Where("node_id IS NOT NULL").
-		Where("protocol IN ?", tunnelProtocolsForQuery(TunnelProtocolK2V5))
-	if !isAdmin {
-		q = q.Where(&SlaveTunnel{IsTest: BoolPtr(false)})
-	}
 
-	// Country filter — DB stores ISO-3166 alpha-2 in UPPERCASE (`JP`, `HK`, `US`).
-	// Accept any case from the client and normalize to uppercase so the WHERE
-	// clause matches the canonical stored form (index-friendly, no row-level
-	// function call like LOWER()).
-	country := strings.ToUpper(strings.TrimSpace(c.Query("country")))
-	if country != "" {
-		q = q.Joins("Node").
-			Where("slave_nodes.country = ?", country)
-		log.Debugf(c, "subs: filtering by country=%q", country)
-	}
-
-	var tunnels []SlaveTunnel
-	if err := q.Find(&tunnels).Error; err != nil {
+	tunnels, err := fetchK2V5Tunnels(c, isAdmin)
+	if err != nil {
 		log.Errorf(c, "subs: DB query failed: %v", err)
 		subsError(c, http.StatusInternalServerError, "failed to load tunnels")
 		return
 	}
+
+	// Country filter in-memory. DB stores ISO-3166 alpha-2 uppercase; normalize
+	// both sides so future casing drift won't reintroduce silent empty results.
+	// Empty country = no filter. This intentionally does NOT push into SQL — the
+	// JOIN variants (explicit or `Joins("Node")`) are too easy to get subtly
+	// wrong (see 3e20b8e postmortem), and the tunnel set is tiny (<100).
+	country := strings.ToUpper(strings.TrimSpace(c.Query("country")))
 
 	items := make([]SubsTunnel, 0, len(tunnels))
 	for _, t := range tunnels {
@@ -174,6 +157,9 @@ func api_subs(c *gin.Context) {
 			continue
 		}
 		if t.ServerURL == "" {
+			continue
+		}
+		if country != "" && strings.ToUpper(t.Node.Country) != country {
 			continue
 		}
 		items = append(items, SubsTunnel{
