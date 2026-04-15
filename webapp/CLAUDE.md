@@ -168,7 +168,7 @@ React 18, Material-UI 5, React Router 7, i18next, Vite 6, Zustand, TypeScript.
 webapp/
 ├── src/
 │   ├── types/              # Type definitions (kaitu-core.ts = IK2Vpn + IPlatform + IUpdater)
-│   ├── services/           # cloudApi, k2api, authService, cacheStore, web-platform, standalone-k2, beta-auto-upload, antiblock, stats, api-types, vpn-types, device-udid, secure-storage, tauri-storage, capacitor-storage, plain-storage
+│   ├── services/           # cloudApi, k2api, authService, cacheStore, web-platform, standalone-k2, beta-auto-upload, antiblock, stats, api-types, vpn-types, device-udid, secure-storage, tauri-storage, capacitor-storage, plain-storage, subs-resolver (mobile-only k2subs:// → k2v5:// resolver; desktop daemon does this server-side)
 │   ├── core/               # Core module (getK2, isK2Ready, waitForK2)
 │   ├── stores/             # Zustand stores (vpn-machine, vpn, connection, config, auth, alert, layout, dashboard, login-dialog, self-hosted, onboarding)
 │   ├── pages/              # Route pages (Dashboard, SubmitTicket, FAQ, Purchase, Invite, Account, etc.)

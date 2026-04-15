@@ -23,6 +23,8 @@ import { useConfigStore } from './config.store';
 import { useVPNMachineStore, dispatch as vpnDispatch } from './vpn-machine.store';
 import { useAuthStore } from './auth.store';
 import { useLoginDialogStore } from './login-dialog.store';
+import { resolveTunnel as resolveSubsTunnel } from '../services/subs-resolver';
+import { isRetryableEngineError } from '../utils/engine-error';
 
 // ============ Types ============
 
@@ -308,8 +310,32 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
 
     // Resolve server URL
     let serverUrl: string | undefined;
+    // Mobile-only: when smart mode, we resolve k2subs:// → k2v5:// in webapp
+    // because appext (NE / Android service) doesn't run a subscription resolver
+    // and engine.buildOutboundMap rejects k2subs as a reserved scheme. Desktop
+    // sends raw k2subs to daemon, which resolves it server-side.
+    let smartRawSubsUrl: string | null = null;
+    const isMobile = window._platform.platformType === 'mobile';
     if (serverMode === 'smart') {
-      serverUrl = await authService.buildSubsUrl(smartCountry);
+      const subsUrl = await authService.buildSubsUrl(smartCountry);
+      if (isMobile) {
+        smartRawSubsUrl = subsUrl;
+        try {
+          const r = await resolveSubsTunnel(subsUrl);
+          serverUrl = r.url;
+          console.info('[Connection] mobile smart resolved source=' + r.source
+            + ' url=' + r.url.replace(/[^@]*@/, '***@'));
+        } catch (err) {
+          console.error('[Connection] mobile smart resolve failed:', err);
+          vpnDispatch('BACKEND_ERROR', {
+            error: { code: 570, message: err instanceof Error ? err.message : String(err) },
+            isRetrying: false,
+          });
+          return;
+        }
+      } else {
+        serverUrl = subsUrl;
+      }
       // Back-fill serverUrl into connectedTunnel so cold-start restore can use it.
       set(s => ({
         connectedTunnel: s.connectedTunnel ? { ...s.connectedTunnel, serverUrl: serverUrl ?? '' } : null,
@@ -330,8 +356,13 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     // Post-resolve hard guard: an empty/invalid serverUrl would produce an empty routes[]
     // in buildConnectConfig, which the daemon silently no-ops (no engine.Start logs, no
     // error returned to the webapp). Abort with a user-visible error instead.
+    // Smart mode: desktop sends raw k2subs:// (daemon resolves), mobile sends already-
+    // resolved k2v5:// (webapp resolved via subs-resolver above).
+    const smartUrlOk = isMobile
+      ? !!serverUrl?.startsWith('k2v5://')
+      : !!serverUrl?.startsWith('k2subs://');
     const invalidServerUrl =
-      (serverMode === 'smart'       && !serverUrl?.startsWith('k2subs://')) ||
+      (serverMode === 'smart'       && !smartUrlOk) ||
       (serverMode === 'manual'      && !serverUrl) ||
       (serverMode === 'self_hosted' && !serverUrl);
     if (invalidServerUrl) {
@@ -367,8 +398,39 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     console.warn('[Connection] TRACE USER_CONNECT dispatch t=' + Date.now() + ' (+' + (Date.now() - t0) + 'ms)');
     vpnDispatch('USER_CONNECT');
     try {
-      const resp = await window._k2.run('up', config);
+      let resp = await window._k2.run('up', config);
       console.warn('[Connection] TRACE _k2.run(up) returned t=' + Date.now() + ' (+' + (Date.now() - t0) + 'ms) code=' + resp.code);
+
+      // Mobile-only: when smart mode hits a node-specific engine error, exclude
+      // the failed k2v5 URL and try another tunnel from the cached candidate
+      // set. Daemon (desktop) handles this via Phase-B replacement; appext
+      // doesn't, so webapp does it here. Up to 2 retries (3 total attempts).
+      const triedUrls: string[] = [];
+      while (
+        resp.code !== 0 &&
+        isRetryableEngineError(resp.code) &&
+        isMobile &&
+        serverMode === 'smart' &&
+        smartRawSubsUrl &&
+        serverUrl &&
+        triedUrls.length < 2
+      ) {
+        triedUrls.push(serverUrl);
+        console.warn('[Connection] mobile smart retry: code=' + resp.code
+          + ' triedCount=' + triedUrls.length);
+        try {
+          const r = await resolveSubsTunnel(smartRawSubsUrl, triedUrls);
+          serverUrl = r.url;
+        } catch (resolveErr) {
+          console.error('[Connection] retry resolve failed:', resolveErr);
+          break;
+        }
+        const retryConfig = useConfigStore.getState().buildConnectConfig({ serverUrl });
+        resp = await window._k2.run('up', retryConfig);
+        console.info('[Connection] mobile smart retry attempt=' + triedUrls.length
+          + ' code=' + resp.code);
+      }
+
       // If the connect call itself failed (e.g. VPN permission denied),
       // dispatch BACKEND_ERROR so the state machine exits 'connecting'.
       if (resp.code !== 0) {

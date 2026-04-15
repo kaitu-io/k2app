@@ -328,3 +328,140 @@ describe('connect() — smart mode', () => {
     expect(vpnState).toBe('connecting');
   });
 });
+
+// ==================== Mobile branch (subs-resolver) ====================
+
+vi.mock('../../services/subs-resolver', () => ({
+  resolveTunnel: vi.fn(),
+}));
+
+describe('connect() — mobile smart mode', () => {
+  beforeEach(() => {
+    // Override platformType to mobile
+    (window as any)._platform.platformType = 'mobile';
+    (window as any)._platform.os = 'ios';
+  });
+
+  it('mobile smart auto: calls resolver and sends k2v5:// to _k2.run', async () => {
+    const { useConnectionStore } = await getStores();
+    mockRun.mockResolvedValue({ code: 0 });
+
+    const { authService } = await import('../../services/auth-service');
+    vi.mocked(authService.buildSubsUrl).mockResolvedValue('k2subs://udid:tok@k2.52j.me/api/subs');
+
+    const { resolveTunnel } = await import('../../services/subs-resolver');
+    vi.mocked(resolveTunnel).mockResolvedValue({
+      url: 'k2v5://udid:tok@node-A.example.com:443?ech=x',
+      allCandidates: [{ url: 'k2v5://udid:tok@node-A.example.com:443?ech=x', weight: 1 }],
+      source: 'fresh',
+      fetchedAt: Date.now(),
+    });
+
+    useConnectionStore.setState({ serverMode: 'smart', smartCountry: null });
+
+    await useConnectionStore.getState().connect();
+
+    expect(resolveTunnel).toHaveBeenCalledWith('k2subs://udid:tok@k2.52j.me/api/subs');
+    expect(mockRun).toHaveBeenCalledWith('up', expect.objectContaining({
+      routes: expect.arrayContaining([
+        expect.objectContaining({ via: 'k2v5://udid:tok@node-A.example.com:443?ech=x' }),
+      ]),
+    }));
+  });
+
+  it('mobile smart: retries with exclude on retryable engine error (570)', async () => {
+    const { useConnectionStore } = await getStores();
+    // First call: 570 (no outbound). Second call: 0 (success).
+    mockRun.mockResolvedValueOnce({ code: 570, message: 'no k2v5 outbound' });
+    mockRun.mockResolvedValueOnce({ code: 0 });
+
+    const { authService } = await import('../../services/auth-service');
+    vi.mocked(authService.buildSubsUrl).mockResolvedValue('k2subs://u:t@host/api/subs');
+
+    const { resolveTunnel } = await import('../../services/subs-resolver');
+    vi.mocked(resolveTunnel)
+      .mockResolvedValueOnce({
+        url: 'k2v5://u:t@A',
+        allCandidates: [],
+        source: 'fresh',
+        fetchedAt: Date.now(),
+      })
+      .mockResolvedValueOnce({
+        url: 'k2v5://u:t@B',
+        allCandidates: [],
+        source: 'cache',
+        fetchedAt: Date.now(),
+      });
+
+    useConnectionStore.setState({ serverMode: 'smart', smartCountry: null });
+    await useConnectionStore.getState().connect();
+
+    expect(resolveTunnel).toHaveBeenCalledTimes(2);
+    expect(resolveTunnel).toHaveBeenLastCalledWith('k2subs://u:t@host/api/subs', ['k2v5://u:t@A']);
+    expect(mockRun).toHaveBeenCalledTimes(2);
+  });
+
+  it('mobile smart: gives up after 3 total attempts and dispatches BACKEND_ERROR', async () => {
+    const { useConnectionStore, vpn } = await getStores();
+    mockRun.mockResolvedValue({ code: 503, message: 'unreachable' });
+
+    const { authService } = await import('../../services/auth-service');
+    vi.mocked(authService.buildSubsUrl).mockResolvedValue('k2subs://u:t@host/api/subs');
+
+    const { resolveTunnel } = await import('../../services/subs-resolver');
+    vi.mocked(resolveTunnel).mockImplementation(async () => ({
+      url: 'k2v5://u:t@' + Math.random().toString(36).slice(2),
+      allCandidates: [],
+      source: 'fresh',
+      fetchedAt: Date.now(),
+    }));
+
+    useConnectionStore.setState({ serverMode: 'smart', smartCountry: null });
+    await useConnectionStore.getState().connect();
+
+    // resolveTunnel called once for initial + twice for retry
+    expect(resolveTunnel).toHaveBeenCalledTimes(3);
+    expect(mockRun).toHaveBeenCalledTimes(3);
+    // After exhausting retries, error overlay should be set
+    expect(vpn.useVPNMachineStore.getState().error?.code).toBe(503);
+  });
+
+  it('mobile smart: does NOT retry on 401 (account-level error)', async () => {
+    const { useConnectionStore } = await getStores();
+    mockRun.mockResolvedValue({ code: 401, message: 'invalid credentials' });
+
+    const { authService } = await import('../../services/auth-service');
+    vi.mocked(authService.buildSubsUrl).mockResolvedValue('k2subs://u:t@host/api/subs');
+
+    const { resolveTunnel } = await import('../../services/subs-resolver');
+    vi.mocked(resolveTunnel).mockResolvedValue({
+      url: 'k2v5://u:t@A',
+      allCandidates: [],
+      source: 'fresh',
+      fetchedAt: Date.now(),
+    });
+
+    useConnectionStore.setState({ serverMode: 'smart', smartCountry: null });
+    await useConnectionStore.getState().connect();
+
+    // Only 1 call — no retry on 401
+    expect(resolveTunnel).toHaveBeenCalledTimes(1);
+    expect(mockRun).toHaveBeenCalledTimes(1);
+  });
+
+  it('mobile smart: resolve() initial failure aborts before _k2.run', async () => {
+    const { useConnectionStore } = await getStores();
+    mockRun.mockResolvedValue({ code: 0 });
+
+    const { authService } = await import('../../services/auth-service');
+    vi.mocked(authService.buildSubsUrl).mockResolvedValue('k2subs://u:t@host/api/subs');
+
+    const { resolveTunnel } = await import('../../services/subs-resolver');
+    vi.mocked(resolveTunnel).mockRejectedValue(new Error('fetch failed'));
+
+    useConnectionStore.setState({ serverMode: 'smart', smartCountry: null });
+    await useConnectionStore.getState().connect();
+
+    expect(mockRun).not.toHaveBeenCalled();
+  });
+});
