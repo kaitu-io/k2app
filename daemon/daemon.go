@@ -148,6 +148,14 @@ func (d *Daemon) Run(ctx context.Context, listenAddr string) error {
 	mux.HandleFunc("/stats", d.handleStatsPage)
 	d.registerHelperRoutes(mux)
 
+	// Opt-in pprof for leak / goroutine diagnostics. Gated because it
+	// exposes profile, cmdline, symbol, and goroutine dumps that can leak
+	// heap addresses and internal state.
+	if os.Getenv("K2_PPROF") == "1" {
+		registerPProf(mux)
+		slog.Warn("daemon: pprof handlers mounted at /debug/pprof/ (K2_PPROF=1)")
+	}
+
 	// Linux-only webapp + /api/storage + /api/platform + /api/upgrade.
 	// No-op on macOS/Windows (Tauri provides the UI on those platforms).
 	d.registerWebUI(mux)
@@ -213,7 +221,7 @@ func (d *Daemon) closeTunnel() {
 	d.subs = nil
 	d.mu.Unlock()
 	for _, s := range subs {
-		s.sub.Close()
+		s.Close()
 	}
 
 	if cancel != nil {
@@ -288,7 +296,7 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 	defer func() {
 		if subsCleanup {
 			for _, s := range subs {
-				s.sub.Close()
+				s.Close()
 			}
 		}
 	}()
@@ -382,16 +390,13 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 	// Disarm cleanup — subs are now owned by d.subs (closed in closeTunnel).
 	subsCleanup = false
 
-	// Start background subscription refresh.
+	// Start background subscription refresh — reuse the per-session HTTP
+	// client built in resolveSubscriptions so refresh fetches go through
+	// the same Transport (connection pool) that subSession.Close will
+	// later release via CloseIdleConnections.
 	for _, s := range subs {
-		s.sub.StartRefresh(ctx, func() *http.Client {
-			return &http.Client{
-				Timeout: 15 * time.Second,
-				Transport: &http.Transport{
-					TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
-				},
-			}
-		})
+		client := s.httpClient
+		s.sub.StartRefresh(ctx, func() *http.Client { return client })
 	}
 
 	d.mu.Lock()
@@ -600,7 +605,7 @@ func (d *Daemon) resolveSubscriptions(cfg *config.ClientConfig) (
 
 	closeAll := func(ss []*subSession) {
 		for _, s := range ss {
-			s.sub.Close()
+			s.Close()
 		}
 	}
 
@@ -618,13 +623,24 @@ func (d *Daemon) resolveSubscriptions(cfg *config.ClientConfig) (
 			return nil, nil, fmt.Errorf("subscription parse: %w", parseErr)
 		}
 
-		fetchCtx, fetchCancel := context.WithTimeout(context.Background(), 15*time.Second)
-		fetchErr := sub.Fetch(fetchCtx, &http.Client{
-			Timeout: 15 * time.Second,
-			Transport: &http.Transport{
+		// Per-session HTTP client. Same Transport is reused for the
+		// initial Fetch and for StartRefresh's fetches; subSession.Close
+		// calls Transport.CloseIdleConnections to release pooled
+		// persistConns (otherwise the net/http readLoop goroutines leak
+		// one per up/down cycle).
+		sess := &subSession{
+			sub: sub,
+			httpTransport: &http.Transport{
 				TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
 			},
-		})
+		}
+		sess.httpClient = &http.Client{
+			Timeout:   15 * time.Second,
+			Transport: sess.httpTransport,
+		}
+
+		fetchCtx, fetchCancel := context.WithTimeout(context.Background(), 15*time.Second)
+		fetchErr := sub.Fetch(fetchCtx, sess.httpClient)
 		fetchCancel()
 
 		if fetchErr != nil {
@@ -632,7 +648,7 @@ func (d *Daemon) resolveSubscriptions(cfg *config.ClientConfig) (
 				slog.Error("subscription fetch failed with no cached data",
 					"via", config.TruncateVia(route.Via),
 					"err", fetchErr)
-				sub.Close()
+				sess.Close()
 				closeAll(subs)
 				return nil, nil, fmt.Errorf("subscription fetch failed (no cache): %w", fetchErr)
 			}
@@ -645,7 +661,7 @@ func (d *Daemon) resolveSubscriptions(cfg *config.ClientConfig) (
 				"via", config.TruncateVia(route.Via),
 				"servers", len(sub.Tunnels()),
 				"err", pickErr)
-			sub.Close()
+			sess.Close()
 			closeAll(subs)
 			return nil, nil, fmt.Errorf("subscription pick: %w", pickErr)
 		}
@@ -656,7 +672,7 @@ func (d *Daemon) resolveSubscriptions(cfg *config.ClientConfig) (
 		)
 
 		resolved[i] = tunnel.URL
-		subs = append(subs, &subSession{sub: sub})
+		subs = append(subs, sess)
 	}
 
 	return subs, resolved, nil

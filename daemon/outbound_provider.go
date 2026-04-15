@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/sasha-s/go-deadlock"
@@ -14,17 +15,39 @@ import (
 // OutboundProvider.NextURL. On each NextURL call the previously-tried URL
 // is appended to excluded and sub.Pick is called with the running set.
 //
-// Lifetime: created by resolveSubscriptions during doUp. sub.Close is
-// called in closeTunnel. Outlives no engine — new doUp always reconstructs.
+// Lifetime: created by resolveSubscriptions during doUp. Close is called
+// in closeTunnel. Outlives no engine — new doUp always reconstructs.
 //
 // Lock discipline: excludeMu protects excluded ONLY. It is never held
 // across engine calls, never acquired while holding d.mu. sub.Pick has
 // its own internal mutex (config.Subscription.mu) that is independent.
+//
+// Owns a single http.Transport that is shared between the initial Fetch
+// and the background refresh loop. Close() releases its pooled persistConns
+// — without this the net/http readLoop goroutines leak one per up/down
+// cycle (confirmed via pprof goroutine diff).
 type subSession struct {
 	sub *config.Subscription
 
+	httpTransport *http.Transport
+	httpClient    *http.Client
+
 	excludeMu deadlock.Mutex
 	excluded  []string
+}
+
+// Close releases subscription and pooled HTTP idle connections.
+// Safe to call more than once.
+func (s *subSession) Close() {
+	if s == nil {
+		return
+	}
+	if s.sub != nil {
+		s.sub.Close()
+	}
+	if s.httpTransport != nil {
+		s.httpTransport.CloseIdleConnections()
+	}
 }
 
 // ErrNoSubscription is returned by Daemon.NextURL when the engine asks for
