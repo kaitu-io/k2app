@@ -114,6 +114,78 @@ except Exception:
 ' 2>/dev/null || echo 0
 }
 
+
+# corrupt_jwt_sig <token> — return a JWT whose signature is byte-level
+# different from the input.
+#
+# WHY this exists: the signature section of a JWT is base64url-encoded. For
+# HS256 the raw signature is exactly 32 bytes = 256 bits, but base64url with
+# no padding encodes it as 43 characters = 258 bits. The trailing 2 bits are
+# slack — the low 2 bits of the last base64 character are discarded at
+# decode time. Four different last-characters therefore decode to the same
+# 32 signature bytes:
+#   index 0..3   → "A","B","C","D"  (top 4 bits 0000, low 2 bits dropped)
+#   index 4..7   → "E","F","G","H"  …
+#   …
+# A naïve test that just flips `A`→`B` on the final character leaves the
+# signature UNCHANGED post-decode, and the server happily accepts the
+# token. We observed this during F3 UAT design — that's why this helper
+# exists and why T07 MUST use it.
+#
+# Strategy: flip a single character in the MIDDLE third of the signature
+# section. That guarantees the flipped char is part of a fully-materialized
+# base64 group (not the trailing slack bits), so the decoded signature
+# changes deterministically.
+corrupt_jwt_sig() {
+  local tok="$1"
+  TOK="$tok" python3 - <<'PY'
+import os, sys, base64
+
+tok = os.environ["TOK"]
+parts = tok.split(".")
+if len(parts) != 3:
+    print("ERR: not a 3-part JWT", file=sys.stderr)
+    sys.exit(1)
+
+alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+
+def b64url_decode(s: str) -> bytes:
+    pad = "=" * (-len(s) % 4)
+    return base64.urlsafe_b64decode(s + pad)
+
+sig = parts[2]
+if len(sig) < 6:
+    print("ERR: signature too short", file=sys.stderr)
+    sys.exit(1)
+
+# Pick a stable middle index. Middle of the signature is far from both ends
+# and therefore far from the trailing-slack bits.
+idx = len(sig) // 2
+orig_char = sig[idx]
+# Pick a replacement that is NOT in the same 4-char group (index // 4 differs).
+orig_i = alphabet.index(orig_char)
+for cand_i in range(64):
+    if cand_i // 4 != orig_i // 4 and alphabet[cand_i] != orig_char:
+        new_char = alphabet[cand_i]
+        break
+else:
+    print("ERR: no replacement found", file=sys.stderr)
+    sys.exit(1)
+
+new_sig = sig[:idx] + new_char + sig[idx+1:]
+new_tok = parts[0] + "." + parts[1] + "." + new_sig
+
+# Self-check: decoded signature must actually differ.
+before = b64url_decode(sig)
+after  = b64url_decode(new_sig)
+if before == after:
+    print("ERR: corruption left signature bytes unchanged (should be impossible)", file=sys.stderr)
+    sys.exit(2)
+
+print(new_tok)
+PY
+}
+
 print_banner() {
   echo
   echo "================================================================"
