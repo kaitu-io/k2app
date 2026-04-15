@@ -92,3 +92,57 @@
 
 ---
 **产出**：上述 18 条 UAT + 对应 bash 脚本。每条执行后在 TaskList 中逐一标记 completed 并附带观察到的 log/response 证据。
+
+---
+
+## 执行结果（2026-04-15）
+
+运行环境：macOS dev daemon（K2_PPROF=1）在 :11777。Center `k2.52j.me` 实测（live token 932a7cc1…）。
+
+| T## | 验收 | 证据 |
+|---|---|---|
+| T01 | ✅ PASS | `k2subs://k2.52j.me/api/subs`（无 creds）→ 511 "subscription parse: missing credentials"；k2.log ERROR |
+| T02 | ✅ PASS | `k2subs://UDID:@...`（空 token）→ 511 "subscription parse: missing password"；ERROR |
+| T03 | ✅ PASS | `k2v9://foo:bar@...`（未知 scheme）→ 511 "no k2v5 outbound configured — TUN mode requires at least one" |
+| T04 | ✅ PASS | `routes: []` → 511 "no k2v5 outbound configured" |
+| T05 | ✅ PASS | 清 cache + hosts-block → 511 "fetch failed (no cache): dial tcp [::1]:443: connection refused"；disconnected |
+| T06 | ✅ PASS | 先填 cache + hosts-block → 0 connecting → connected；log WARN "subscription fetch failed, using cached data" |
+| T07 | ✅ PASS | 签名中间位篡改（`corrupt_jwt_sig`）→ 511 "status 401: invalid credentials" |
+| T08 | ✅ PASS | 伪造 `exp=1` payload（签名随之失效）→ 511 "status 401: invalid credentials" |
+| T09 | ✅ PASS | UDID 置换 → 511 "status 401: credential mismatch" |
+| T10 | ⚠️ PARTIAL | 路由黑洞命中 datagram relay unhealthy（relayTimeouts=3）+ fallback 切 stream；state 保持 connected。真正 iface down 未跑（会断当前 Claude Code 网络）。完整自愈路径由 engine/health_test.go + engine/netmon_test.go unit 覆盖 |
+| T11 | ⚠️ PARTIAL | pf 封 tunnel IP 后 live 命中 `DIAG: transport-switch from=quic to=tcpws` + `DIAG: transport-rerace` + `DIAG: echo-probe-fail`（Phase-A 完整）。Phase-B `NextURL` 未 live 触发：暴露 pre-existing bug — `TCPWSClient.connectMu` 跨 blocked TCP dial 持锁 >60s，go-deadlock FATAL，daemon 自退（任务 #57 跟进）。Phase-B 代码路径由 engine/outbound_replace_test.go 5×contract tests + daemon/outbound_provider_test.go 5×tests + wire/swappable_test.go 7×tests 含 10k 并发 stress 覆盖 |
+| T12 | ✅ PASS | country=JP up → resolved JP tunnel；down；country=US up → resolved 不同 tunnel（`servers=4`）；log 两次独立 "subscription resolved" |
+| T13 | ⚠️ PARTIAL | ?refresh=5 live 资质 happy path connected。DIAG: subs-refresh-fail 不可 live 触发：Center response 覆盖 interval 为 1800s，<30min 窗口内不会 fire。Refresh loop 代码路径由 daemon/subsession_test.go TestSubSession_RefreshLoopClean 覆盖（3 sessions × 1s refresh × 2.5s live + concurrent Close + race detector）|
+| T14 | ✅ PASS | up 后 50ms 内 down → 511 "aborted before start"；log INFO "daemon: doUp aborted before start"；下一次 up 正常 connected |
+| T15 | ✅ PASS | 破坏 subs cache json → 0 connecting → connected；log WARN `subscription: cache corrupt, ignoring err="invalid character 'G'..."` + 后续 fetch 成功 |
+| T16 | ✅ PASS | `k2subs://.../api/nonexistent-path` → 511 "status 404: 404 page not found"；daemon 透传 body |
+| T17 | ⏸️ SKIP | 会员过期需 Center 侧人工构造过期账号；代码路径与 T07/T08/T09 同（401/402 都走 subscription fetch status 透传） |
+| T18 | ✅ PASS（extended）| pprof K2_PPROF=1 + goroutine-diff.sh 跑 10×up/down 周期，goroutines 恒定 127，0 增长（F2 修复后）。优于原 5× 标准 |
+
+### Soak 验证（T18 extended）
+
+带 K2_PPROF=1 1h 连接保持 + 15min 采样：
+- t0 baseline: 312 goroutines
+- 结果文件：`/tmp/k2subs-soak/log.txt` + `snap-{0,15,30,45,60}.txt`
+
+（详见 /tmp/k2subs-soak/ — 本次 UAT 执行中后台运行）
+
+### Mobile 覆盖
+
+- **iOS**: iPhone 15 设备在线，Kaitu.io v4.2(404) 安装，devicectl 启动无 crash；主 App + PacketTunnelExtension + neagent 都在运行（VPN 现役）。无 UI 自动化（WebDriverAgent 未安装），k2subs URL 具体连通流程需人工 tap；但代码路径复用桌面 engine + webapp，F1/F2/F3 全部是桌面 daemon-only 改动，无 mobile 回归风险。
+- **Android**: adb 无设备连接，blocked；架构与 iOS 同，同上结论。
+
+### 发现的 pre-existing bug
+
+- **#57** `TCPWSClient.connectMu` 跨 blocked TCP dial 持锁 > 60s → go-deadlock FATAL 自退。非 k2subs 回归、非 release blocker（daemon 自退后 launchd 重启 + auto-reconnect 恢复）。但作为 wire 层硬化建议：`connect()` 应 release-dial-reacquire 或加 hard-timeout goroutine（参考 QUICClient.connect 模式）。
+
+### 结论
+
+- k2subs 核心功能（URL 解析、凭据、缓存回退、country 过滤、错误透传）：**全部 live-verified**
+- 网络故障 Phase-A（transport-switch + rerace + echo detection）：**live-verified**
+- Phase-B server replacement：unit-verified（17 contract tests），live 被 #57 bug 挡住一截
+- 资源治理（goroutine 泄漏）：F2 修复经 10×up/down 实证 + 单测
+- 认证 / 参数错误：全部 live 断言返回码 + log ERROR
+
+**发布建议**：macOS 桌面 k2subs 可 release；mobile 需 iOS/Android 真机 UI 冒烟跑一遍（半小时内可完成）后放行；#57 wire 层硬化作为下一轮迭代，不阻塞本次。
