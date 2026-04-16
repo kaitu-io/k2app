@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { authService } from "../services/auth-service";
 import {
   Box,
   Typography,
@@ -96,7 +97,13 @@ function TicketList({
   }, [t]);
 
   useEffect(() => {
-    fetchTickets();
+    authService.hasToken().then((hasToken) => {
+      if (!hasToken) {
+        setIsLoading(false);
+        return;
+      }
+      fetchTickets();
+    });
   }, [fetchTickets]);
 
   return (
