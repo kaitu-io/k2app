@@ -22,11 +22,27 @@ const DESIGN_WIDTH = 430;
  * CSS transform creates a new containing block which breaks fixed positioning.
  */
 function setupViewportScaling() {
+  let lastWidth = window.innerWidth;
+  let lastHeight = window.innerHeight;
+
   function applyScale() {
     const windowWidth = window.innerWidth;
     const windowHeight = window.innerHeight;
 
-    // Only use width for scaling calculation (height affected by titlebar)
+    // Skip ALL body mutations when only height changed (keyboard show/hide on Android).
+    // On Android WebView, mutating body style during keyboard events causes the keyboard
+    // to dismiss immediately, and the resulting layout shift produces spurious touch
+    // events that close MUI Dialogs (reason: 'backdropClick').
+    // Width-only changes indicate orientation/window resize and must still be applied.
+    if (windowWidth === lastWidth && windowHeight !== lastHeight) {
+      lastHeight = windowHeight;
+      return;
+    }
+
+    lastWidth = windowWidth;
+    lastHeight = windowHeight;
+
+    // Only use width for scaling calculation (height affected by titlebar/keyboard)
     const scaleX = windowWidth / DESIGN_WIDTH;
 
     // Use width-based scale, never scale up

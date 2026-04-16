@@ -41,13 +41,15 @@ export const useLoginDialogStore = create<LoginDialogState>((set) => ({
       message,
     }),
 
-  close: () =>
+  close: () => {
+    console.warn('[LoginDialog] close() called from:', new Error().stack?.split('\n').slice(1, 4).join(' | '));
     set({
       isOpen: false,
       trigger: '',
       redirectPath: undefined,
       message: undefined,
-    }),
+    });
+  },
 }));
 
 // ============ 便捷 Hooks ============
