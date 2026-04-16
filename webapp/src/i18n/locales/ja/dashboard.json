@@ -56,6 +56,9 @@
     "hoursAgo": "時間前",
     "longTimeAgo": "かなり前",
     "selectServerHint": "下から選択してください",
+    "selectServerHintShort": "↓ サーバーを選択",
+    "connectedBannerHint": "接続中です。サーバーを切り替えるには先に切断してください",
+    "disconnectBannerBtn": "切断",
     "connectionRetrying": "サーバー接続に失敗しました、再試行中...",
     "serviceFailure": {
       "title": "サービス接続失敗",

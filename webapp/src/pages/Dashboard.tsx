@@ -12,6 +12,7 @@ import {
   ListItemText,
   Radio,
   useTheme,
+  alpha,
 } from "@mui/material";
 import {
   ExpandMore as ExpandMoreIcon,
@@ -379,6 +380,34 @@ export default function Dashboard() {
         {/* SmartServerSelector — all tab panels always mounted (display toggle).
              The CloudTunnelList in manualTabContent stays mounted even when on smart tab,
              so it populates cloudTunnels via onTunnelsLoaded on initial load. */}
+        {isAuthenticated && isConnected && (
+          <Box sx={{
+            bgcolor: alpha(theme.palette.success.main, 0.08),
+            border: `1px solid ${alpha(theme.palette.success.main, 0.2)}`,
+            borderRadius: 1.5,
+            px: 2,
+            py: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            mx: 2,
+            mb: 1,
+          }}>
+            <Typography variant="caption" color="text.secondary">
+              {t('dashboard:dashboard.connectedBannerHint')}
+            </Typography>
+            <Button
+              size="small"
+              variant="text"
+              color="error"
+              onClick={disconnect}
+              sx={{ ml: 1, flexShrink: 0 }}
+            >
+              {t('dashboard:dashboard.disconnectBannerBtn')}
+            </Button>
+          </Box>
+        )}
+
         {isAuthenticated && (
           <SmartServerSelector
             tunnels={cloudTunnels}

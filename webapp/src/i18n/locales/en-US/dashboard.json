@@ -56,6 +56,9 @@
     "hoursAgo": "hours ago",
     "longTimeAgo": "a long time ago",
     "selectServerHint": "Please select from below",
+    "selectServerHintShort": "↓ Select a server",
+    "connectedBannerHint": "Connected — disconnect first to switch servers",
+    "disconnectBannerBtn": "Disconnect",
     "connectionRetrying": "Server connection failed, retrying...",
     "serviceFailure": {
       "title": "Service Connection Failed",

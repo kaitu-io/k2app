@@ -247,7 +247,14 @@ export function ConnectionButton({
               >
                 {statusText}
               </Typography>
-              {(tunnelName || tunnelCountry) && (
+              {(!hasTunnelSelected && isDisconnected) ? (
+                <Typography
+                  variant="caption"
+                  sx={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.7rem', maxWidth: 140, textAlign: 'center' }}
+                >
+                  {t('dashboard:dashboard.selectServerHintShort')}
+                </Typography>
+              ) : (tunnelName || tunnelCountry) && (
                 <Box sx={{ mt: 0.5, display: 'flex', alignItems: 'center', gap: 0.5 }}>
                   {tunnelCountry ? (
                     <Box sx={{
@@ -275,16 +282,6 @@ export function ConnectionButton({
         </span>
       </Tooltip>
 
-      {/* 未选择服务器提示 */}
-      {!hasTunnelSelected && isDisconnected && (
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          sx={{ mt: 1.5, textAlign: 'center', maxWidth: 280, fontSize: '0.7rem' }}
-        >
-          {t('dashboard:dashboard.selectServerHint') || 'Select a server from the list below to get started'}
-        </Typography>
-      )}
     </Box>
   );
 }
