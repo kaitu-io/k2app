@@ -2,12 +2,34 @@ package wire
 
 import (
 	"context"
+	"fmt"
+	"net"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/sasha-s/go-deadlock"
 )
+
+// blockingDialer is a DirectDialer that sleeps for `delay` then errors.
+// Used to deterministically exercise singleflight dedup on slow dials
+// without depending on real network / firewall state.
+type blockingDialer struct {
+	delay time.Duration
+}
+
+func (d *blockingDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	select {
+	case <-time.After(d.delay):
+		return nil, fmt.Errorf("blockingDialer: simulated unreachable after %v", d.delay)
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (d *blockingDialer) ListenPacket(network, addr string) (net.PacketConn, error) {
+	return nil, fmt.Errorf("blockingDialer: ListenPacket not supported")
+}
 
 func init() {
 	deadlock.Opts.DeadlockTimeout = 5 * time.Second
@@ -288,11 +310,107 @@ func TestQuicDialHardTimeout_Bounds(t *testing.T) {
 	}
 }
 
-// TestTCPWSClient_ConnectMu_NotStarved verifies that connectMu is released
-// within tcpwsConnectTimeout even when TCP dial blocks on SYN retransmit.
-func TestTCPWSClient_ConnectMu_NotStarved(t *testing.T) {
+// TestTCPWSClient_ConnectOnClosed_NoWastedDial guards against a review-found
+// regression: when the client is Close()d, connect() must return
+// ErrNotConnected promptly without initiating TCP/TLS I/O. An earlier draft
+// of the singleflight rewrite let connect() fall through to a 10s dial on a
+// closed client before checking c.closed at the store-under-lock step.
+func TestTCPWSClient_ConnectOnClosed_NoWastedDial(t *testing.T) {
+	// Non-routable target — if connect() actually dials, this test will take
+	// ~10s (tcpwsConnectTimeout). The fast-fail path returns in <100ms.
+	cfg := Config{Host: "192.0.2.1", Port: 443}
+	tc := NewTCPWSClient(cfg, nil)
+	_ = tc.Close() // mark client closed before any connect attempt
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	_, err := tc.connect(ctx)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected ErrNotConnected on closed client")
+	}
+	if elapsed > 500*time.Millisecond {
+		t.Fatalf("connect() on closed client took %v — expected <500ms (no dial I/O)", elapsed)
+	}
+}
+
+// TestTCPWSClient_ConnectSingleFlight_CollapsesSlowDials is the strong proof
+// that the singleflight rewrite actually dedupes concurrent slow dials.
+//
+// The pf-blackhole production scenario exhibits 10s TCP dials. With the old
+// connectMu serialization, 6 queued callers took 60s total (30s waiter crossed
+// go-deadlock threshold → FATAL). With singleflight, all 6 share one dial and
+// finish in ≈1× delay.
+//
+// This test injects a blockingDialer that sleeps a fixed `delay` on every
+// DialContext — eliminating network-state dependency. The assertion bracket
+// (half-open [delay, 2×delay]) catches both regression directions:
+//   - upper bound 2×delay: catches any regression to per-caller serialization
+//   - lower bound 0.9×delay: catches accidental "dial bypass" (test validity)
+func TestTCPWSClient_ConnectSingleFlight_CollapsesSlowDials(t *testing.T) {
+	const delay = 1500 * time.Millisecond
+	cfg := Config{Host: "192.0.2.1", Port: 443}
+	tc := NewTCPWSClient(cfg, nil)
+	tc.SetDirectDialer(&blockingDialer{delay: delay})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	const fanIn = 6
+	errs := make(chan error, fanIn)
+	var wg sync.WaitGroup
+	wg.Add(fanIn)
+
+	start := time.Now()
+	for range fanIn {
+		go func() {
+			defer wg.Done()
+			_, err := tc.connect(ctx)
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	elapsed := time.Since(start)
+	close(errs)
+
+	errCount := 0
+	for err := range errs {
+		if err == nil {
+			t.Fatal("expected blockingDialer error")
+		}
+		errCount++
+	}
+	if errCount != fanIn {
+		t.Fatalf("got %d errors, expected %d", errCount, fanIn)
+	}
+
+	// Without singleflight: 6 × 1.5s serial = 9s (and 4th+ waiter crosses
+	// go-deadlock's 30s threshold → FATAL in prod). With singleflight: ≈1.5s.
+	if elapsed > 2*delay {
+		t.Fatalf("%d concurrent dials took %v — singleflight collapse regression (expected ≈%v)",
+			fanIn, elapsed, delay)
+	}
+	if elapsed < delay*9/10 {
+		t.Fatalf("%d concurrent dials took %v — dial didn't actually block (test invalid)",
+			fanIn, elapsed)
+	}
+}
+
+// TestTCPWSClient_ConnectSingleFlight_NoStarvation verifies that concurrent
+// connect() callers are de-duplicated via singleflight rather than serialized
+// via a held mutex. Under pf blackhole (non-routable IP), all concurrent
+// callers must return within one dial's bounded timeout — NOT N× the timeout.
+//
+// Regression for v0.4.3 production FATAL: previously connectMu was held across
+// connectTLSWebSocket, so N queued callers each waited tcpwsConnectTimeout
+// serially. The 4th+ waiter exceeded go-deadlock's 30s wait threshold and
+// triggered POTENTIAL DEADLOCK → daemon self-terminate.
+func TestTCPWSClient_ConnectSingleFlight_NoStarvation(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping network-dependent connectMu test (waits ~10s for TCP SYN timeout)")
+		t.Skip("skipping network-dependent singleflight test (waits ~10s for TCP SYN timeout)")
 	}
 	// Use a non-routable IP to trigger TCP SYN timeout.
 	cfg := Config{Host: "192.0.2.1", Port: 443} // TEST-NET-1, guaranteed non-routable
@@ -301,30 +419,28 @@ func TestTCPWSClient_ConnectMu_NotStarved(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), tcpwsConnectTimeout+5*time.Second)
 	defer cancel()
 
+	// Launch 6 concurrent callers. With old connectMu queueing, caller #4+
+	// would wait >30s and go-deadlock would fire. With singleflight all six
+	// share one dial and finish together in ≈tcpwsConnectTimeout.
+	const fanIn = 6
+	errs := make(chan error, fanIn)
 	start := time.Now()
-	_, err := tc.connect(ctx)
-	if err == nil {
-		t.Fatal("expected error from non-routable address")
+	for range fanIn {
+		go func() {
+			_, err := tc.connect(ctx)
+			errs <- err
+		}()
+	}
+	for range fanIn {
+		err := <-errs
+		if err == nil {
+			t.Fatal("expected error from non-routable address")
+		}
 	}
 
-	// connect() must return within tcpwsConnectTimeout + margin,
-	// NOT block for 75s on macOS TCP SYN retransmit.
 	elapsed := time.Since(start)
 	if elapsed > tcpwsConnectTimeout+3*time.Second {
-		t.Fatalf("connect() took %v, expected <%v — connectMu starvation",
+		t.Fatalf("6 concurrent connect() calls took %v, expected <%v — singleflight regression",
 			elapsed, tcpwsConnectTimeout+3*time.Second)
-	}
-
-	// Verify connectMu is free.
-	lockDone := make(chan struct{})
-	go func() {
-		tc.connectMu.Lock()
-		tc.connectMu.Unlock()
-		close(lockDone)
-	}()
-	select {
-	case <-lockDone:
-	case <-time.After(2 * time.Second):
-		t.Fatal("connectMu blocked after connect() returned — starvation regression")
 	}
 }
