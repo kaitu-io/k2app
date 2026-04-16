@@ -257,7 +257,6 @@ export default function Invite() {
         minHeight: "100vh",
         backgroundColor: "transparent",
       }}
-      data-tour="invite-page"
     >
       {/* Header Section */}
       <Box sx={{ mb: 2 }}>
@@ -597,7 +596,6 @@ export default function Invite() {
                     variant="contained"
                     size="large"
                     fullWidth
-                    data-tour="invite-copy"
                     startIcon={shareLinkLoading ? <CircularProgress size={20} color="inherit" /> : <CopyIcon />}
                     onClick={handleCopyShareContent}
                     disabled={shareLinkLoading}
@@ -620,7 +618,6 @@ export default function Invite() {
                   variant="contained"
                   size="large"
                   fullWidth
-                  data-tour="invite-share"
                   startIcon={shareLinkLoading ? <CircularProgress size={20} color="inherit" /> : <ShareIcon />}
                   onClick={handleCopyShareContent}
                   disabled={shareLinkLoading}
