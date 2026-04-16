@@ -222,7 +222,7 @@ build-macos-ne-lib: appext-macos
 	@echo "macOS NE xcframework ready: k2/build/K2MobileMacOS.xcframework"
 
 appext-android: appext-deps
-	cd k2 && mkdir -p build && gomobile bind -tags "with_gvisor deadlock_disable" -target=android/arm64 -o build/k2mobile.aar -androidapi 24 ./appext/
+	cd k2 && mkdir -p build && gomobile bind -tags "with_gvisor deadlock_disable" -ldflags "-checklinkname=0" -target=android/arm64 -o build/k2mobile.aar -androidapi 24 ./appext/
 
 build-ios: pre-build build-webapp appext-ios
 	cp -r k2/build/K2Mobile.xcframework mobile/ios/App/
