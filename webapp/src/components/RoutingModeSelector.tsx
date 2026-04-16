@@ -1,11 +1,9 @@
 /**
  * RoutingModeSelector — unified routing preset control inside Advanced Settings.
  *
- * Four presets as a RadioGroup:
- *   1. global     — all traffic proxied
- *   2. bypass     — country traffic direct, rest proxied
- *   3. home       — country traffic via home router, rest direct (disabled/coming soon)
- *   4. home_proxy — country traffic via home router, rest proxied (disabled/coming soon)
+ * Two presets as a RadioGroup:
+ *   1. global  — all traffic proxied
+ *   2. bypass  — country traffic direct, rest proxied
  *
  * When preset !== 'global': shows Country Select + AutoDetect checkbox.
  * All controls disabled when VPN is connected/connecting (isInteractive).
@@ -40,14 +38,11 @@ interface PresetOption {
   emoji: string;
   labelKey: string;
   descKey: string;
-  disabled: boolean;
 }
 
 const PRESET_OPTIONS: PresetOption[] = [
-  { value: 'global',     emoji: '\uD83C\uDF0D', labelKey: 'presetGlobal',     descKey: 'presetGlobalDesc',     disabled: false },
-  { value: 'bypass',     emoji: '\u26A1',        labelKey: 'presetBypass',     descKey: 'presetBypassDesc',     disabled: false },
-  { value: 'home',       emoji: '\uD83C\uDFE0', labelKey: 'presetHome',       descKey: 'presetHomeDesc',       disabled: true },
-  { value: 'home_proxy', emoji: '\uD83C\uDFE0', labelKey: 'presetHomeProxy',  descKey: 'presetHomeProxyDesc',  disabled: true },
+  { value: 'global', emoji: '\uD83C\uDF0D', labelKey: 'presetGlobal', descKey: 'presetGlobalDesc' },
+  { value: 'bypass', emoji: '\u26A1',        labelKey: 'presetBypass', descKey: 'presetBypassDesc' },
 ];
 
 // ---- Exported summary hook ----
@@ -151,7 +146,6 @@ export default function RoutingModeSelector() {
         data-testid="routing-preset-group"
       >
         {PRESET_OPTIONS.map((opt) => {
-          const isDisabled = isInteractive || opt.disabled;
           const localizedCountry = displayCountry
             ? countryName(displayCountry, i18n.language)
             : '';
@@ -161,7 +155,7 @@ export default function RoutingModeSelector() {
             <FormControlLabel
               key={opt.value}
               value={opt.value}
-              disabled={isDisabled}
+              disabled={isInteractive}
               data-testid={`routing-preset-${opt.value}`}
               control={<Radio size="small" />}
               label={
