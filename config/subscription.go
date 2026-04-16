@@ -41,9 +41,29 @@ type Subscription struct {
 }
 
 // Tunnel represents a single server endpoint in a subscription.
+//
+// Weight is retained for backward compatibility with pre-recommendScore Center
+// responses. New code should prefer RecommendScore, which Pick consults first.
+// One release after RecommendScore ships Center-side we can drop Weight.
 type Tunnel struct {
-	URL    string `json:"url"`
-	Weight int    `json:"weight"`
+	URL            string  `json:"url"`
+	Weight         int     `json:"weight"`
+	RecommendScore float64 `json:"recommendScore,omitempty"`
+}
+
+// effectiveWeight produces a positive sampling weight for pickWeighted.
+// Prefers the canonical RecommendScore (float, [0,1]) when set; falls back to
+// the legacy Weight int for old Center responses. Returns 0 when neither is
+// positive — Pick's caller interprets that as "ineligible unless every
+// candidate is zero" (uniform fallback).
+func effectiveWeight(t Tunnel) float64 {
+	if t.RecommendScore > 0 {
+		return t.RecommendScore
+	}
+	if t.Weight > 0 {
+		return float64(t.Weight)
+	}
+	return 0
 }
 
 // subsResponse is the JSON response from the subscription endpoint.
@@ -206,8 +226,10 @@ func (s *Subscription) Tunnels() []Tunnel {
 	return out
 }
 
-// Pick selects a tunnel using weighted random selection, excluding URLs in exclude.
-// Falls back to weight=0 tunnels if no weighted candidates remain.
+// Pick selects a tunnel using weighted random selection, excluding URLs in
+// exclude. Sampling weight comes from effectiveWeight (recommendScore first,
+// legacy weight fallback). Candidates with zero effective weight are skipped
+// unless nothing else is available, in which case they're treated uniformly.
 func (s *Subscription) Pick(exclude []string) (Tunnel, error) {
 	s.mu.Lock()
 	tunnels := make([]Tunnel, len(s.tunnels))
@@ -223,44 +245,47 @@ func (s *Subscription) Pick(exclude []string) (Tunnel, error) {
 		excSet[e] = struct{}{}
 	}
 
-	// Build weighted candidates (weight > 0, not excluded).
+	// Partition by effectiveWeight > 0 vs zero. Excluded candidates drop.
 	var candidates []Tunnel
 	var zeroWeight []Tunnel
 	for _, t := range tunnels {
 		if _, excluded := excSet[t.URL]; excluded {
 			continue
 		}
-		if t.Weight > 0 {
+		if effectiveWeight(t) > 0 {
 			candidates = append(candidates, t)
 		} else {
 			zeroWeight = append(zeroWeight, t)
 		}
 	}
 
-	// Fall back to weight=0 if no weighted candidates.
+	// Fall back to zero-weight candidates only if nothing positive remains —
+	// preserves the pre-recommendScore invariant.
+	allZero := false
 	if len(candidates) == 0 {
 		candidates = zeroWeight
+		allZero = true
 	}
 
 	if len(candidates) == 0 {
 		return Tunnel{}, fmt.Errorf("subscription pick: all tunnels excluded")
 	}
 
-	// Weighted random selection.
-	totalWeight := 0
+	// Weighted random selection. Uniform when allZero is true.
+	totalWeight := 0.0
 	for _, c := range candidates {
-		w := c.Weight
-		if w <= 0 {
-			w = 1 // fallback weight=0 candidates treated as 1
+		if allZero {
+			totalWeight += 1
+		} else {
+			totalWeight += effectiveWeight(c)
 		}
-		totalWeight += w
 	}
 
-	r := rand.IntN(totalWeight)
+	r := rand.Float64() * totalWeight
 	for _, c := range candidates {
-		w := c.Weight
-		if w <= 0 {
-			w = 1
+		w := 1.0
+		if !allZero {
+			w = effectiveWeight(c)
 		}
 		r -= w
 		if r < 0 {
@@ -268,7 +293,7 @@ func (s *Subscription) Pick(exclude []string) (Tunnel, error) {
 		}
 	}
 
-	// Should not reach here, but return last candidate.
+	// Floating-point safety net — should only trip on accumulated drift.
 	return candidates[len(candidates)-1], nil
 }
 

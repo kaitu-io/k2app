@@ -423,6 +423,61 @@ func TestSubscription_PickEmptyList(t *testing.T) {
 	}
 }
 
+// TestSubscription_PickRecommendScorePreferred verifies that when both
+// RecommendScore and Weight are set, RecommendScore drives the distribution
+// and Weight is ignored. This is the canonical-field invariant.
+func TestSubscription_PickRecommendScorePreferred(t *testing.T) {
+	s := &Subscription{}
+	// Weight says "B dominates 10:1", RecommendScore says "A dominates 9:1".
+	// The canonical field wins: ~90% A.
+	s.tunnels = []Tunnel{
+		{URL: "k2v5://a.example.com:443", Weight: 1, RecommendScore: 0.9},
+		{URL: "k2v5://b.example.com:443", Weight: 10, RecommendScore: 0.1},
+	}
+
+	counts := make(map[string]int)
+	n := 10000
+	for i := 0; i < n; i++ {
+		tun, err := s.Pick(nil)
+		if err != nil {
+			t.Fatalf("Pick: %v", err)
+		}
+		counts[tun.URL]++
+	}
+
+	aPct := float64(counts["k2v5://a.example.com:443"]) / float64(n) * 100
+	if aPct < 80 || aPct > 95 {
+		t.Errorf("A = %.1f%%, want 80-95%% (recommendScore 0.9 vs 0.1)", aPct)
+	}
+}
+
+// TestSubscription_PickLegacyWeightFallback verifies that when RecommendScore
+// is absent (pre-rollout Center responses), Pick falls back to Weight. This is
+// the backward-compat contract for one release cycle.
+func TestSubscription_PickLegacyWeightFallback(t *testing.T) {
+	s := &Subscription{}
+	s.tunnels = []Tunnel{
+		{URL: "k2v5://a.example.com:443", Weight: 3}, // no RecommendScore set (zero value)
+		{URL: "k2v5://b.example.com:443", Weight: 1},
+	}
+
+	counts := make(map[string]int)
+	n := 10000
+	for i := 0; i < n; i++ {
+		tun, err := s.Pick(nil)
+		if err != nil {
+			t.Fatalf("Pick: %v", err)
+		}
+		counts[tun.URL]++
+	}
+
+	// Expected 3:1 — A ≈ 75%, tolerate 65-85%.
+	aPct := float64(counts["k2v5://a.example.com:443"]) / float64(n) * 100
+	if aPct < 65 || aPct > 85 {
+		t.Errorf("A = %.1f%%, want 65-85%% (legacy weight 3:1)", aPct)
+	}
+}
+
 func TestSubscription_PickZeroWeightSkipped(t *testing.T) {
 	s := &Subscription{}
 	s.tunnels = []Tunnel{
