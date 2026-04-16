@@ -168,7 +168,6 @@ async function fetchEntryFromCDN(): Promise<string | null> {
       if (!config) throw new Error(`no config from ${url}`);
       const entry = await decryptConfig(config);
       if (!entry) throw new Error(`decrypt failed from ${url}`);
-      console.info('[Antiblock] resolved entry from:', url);
       return entry;
     }),
   );
@@ -192,11 +191,9 @@ async function fetchEntryFromCDN(): Promise<string | null> {
 export async function resolveEntry(): Promise<string> {
   const cached = localStorage.getItem(STORAGE_KEY);
   if (cached) {
-    console.info('[Antiblock] using cached entry:', cached);
     refreshEntryInBackground();
     return cached;
   }
-  console.info('[Antiblock] no cache, fetching from CDN...');
   const entry = await fetchEntryFromCDN();
   const result = entry ?? DEFAULT_ENTRY;
   if (!entry) {
