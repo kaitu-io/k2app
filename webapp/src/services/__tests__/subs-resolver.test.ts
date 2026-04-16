@@ -141,6 +141,42 @@ describe('pickWeighted', () => {
     expect(ratio).toBeGreaterThan(0.65); // expected 0.75, ±10%
     expect(ratio).toBeLessThan(0.85);
   });
+
+  it('recommendScore takes precedence over weight when both are set', () => {
+    // weight says "B dominates", recommendScore says "A dominates". The
+    // canonical field wins.
+    const cands = [
+      { url: 'A', weight: 1, recommendScore: 0.9 },
+      { url: 'B', weight: 100, recommendScore: 0.1 },
+    ];
+    const rng = mulberry32(2024);
+    let aCount = 0;
+    const N = 4000;
+    for (let i = 0; i < N; i++) {
+      if (pickWeighted(cands, rng).url === 'A') aCount++;
+    }
+    const ratio = aCount / N;
+    // recommendScore 0.9 vs 0.1 → A expected ~0.9
+    expect(ratio).toBeGreaterThan(0.8);
+  });
+
+  it('falls back to weight when recommendScore is absent', () => {
+    // Pre-rollout Center responses have no recommendScore field.
+    const cands = [
+      { url: 'A', weight: 3 },
+      { url: 'B', weight: 1 },
+    ];
+    const rng = mulberry32(77);
+    let aCount = 0;
+    const N = 2000;
+    for (let i = 0; i < N; i++) {
+      if (pickWeighted(cands, rng).url === 'A') aCount++;
+    }
+    // weight 3:1 → A ≈ 0.75
+    const ratio = aCount / N;
+    expect(ratio).toBeGreaterThan(0.65);
+    expect(ratio).toBeLessThan(0.85);
+  });
 });
 
 // ============== resolveTunnel: fresh fetch ==============

@@ -173,7 +173,10 @@ export interface TunnelInstance {
   trafficRatio: number;      // 0-1, fraction of traffic allowance used
   billingCycleEndAt: number; // Unix seconds
   timeRatio: number;         // 0-1, fraction of billing period elapsed
-  budgetScore: number;       // trafficRatio - timeRatio. [-1,+1]. Negative = recommended.
+  /** @deprecated Prefer Tunnel.recommendScore. Kept for admin diagnostics. trafficRatio - timeRatio. [-1,+1]. Negative = recommended. */
+  budgetScore: number;
+  /** Canonical recommendation signal [0,1], higher = better. Mirrors the top-level Tunnel.recommendScore. */
+  recommendScore: number;
 }
 
 // 隧道信息
@@ -189,6 +192,13 @@ export interface Tunnel {
   serverUrl?: string; // k2v5 connection URL (only present for k2v5 tunnels)
   node: SlaveNode; // 关联的物理节点
   instance?: TunnelInstance; // Cloud instance data (only for cloud-managed nodes)
+  /**
+   * Canonical recommendation signal in [0, 1]. Higher = better pick. Present
+   * for both cloud and non-cloud tunnels (non-cloud defaults to 0.5 — neutral).
+   * Callers should not look at `instance.recommendScore` or compute from
+   * budgetScore; this field is the single source of truth.
+   */
+  recommendScore: number;
 }
 
 // 隧道列表响应

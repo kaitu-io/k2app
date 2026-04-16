@@ -28,7 +28,19 @@ const STALE_FALLBACK_MAX_MS = 24 * 60 * 60 * 1000;
 
 export interface TunnelEntry {
   url: string;
+  /**
+   * Legacy integer weight. New Center responses derive it as
+   * round(recommendScore * 100); pre-recommendScore Center returns a static 1.
+   * Kept for backward compatibility with old responses; new code should prefer
+   * `recommendScore`.
+   */
   weight: number;
+  /**
+   * Canonical recommendation signal in [0, 1], higher = better. Present on
+   * Center responses post-rollout. When both fields are present, pickWeighted
+   * uses this and ignores `weight`.
+   */
+  recommendScore?: number;
 }
 
 export interface SubsResolveResult {
@@ -107,10 +119,28 @@ function fnv1a32hex(s: string): string {
 }
 
 /**
+ * effectiveWeight produces a single positive number per candidate for weighted
+ * sampling. Prefers `recommendScore` (canonical, [0,1]) when available; falls
+ * back to the legacy `weight` int. Returns 0 when neither signal is positive,
+ * which downstream treats as "ineligible unless everybody is zero" (the same
+ * fallback semantics as the pre-recommendScore code).
+ */
+function effectiveWeight(c: TunnelEntry): number {
+  if (c.recommendScore !== undefined && c.recommendScore > 0) {
+    return c.recommendScore;
+  }
+  if (c.weight > 0) {
+    return c.weight;
+  }
+  return 0;
+}
+
+/**
  * Weighted random pick from `candidates`. Mirrors the semantics of
- * `Subscription.Pick` in k2/config/subscription.go:204:
- *   - weight > 0 candidates compete by weight
- *   - if no candidate has weight > 0, all weight=0 are treated as weight=1
+ * `Subscription.Pick` in k2/config/subscription.go:
+ *   - candidates with a positive effective weight (recommendScore or weight)
+ *     compete proportionally to that value
+ *   - if nothing is positive, all are treated as weight=1 (uniform)
  *   - throws when candidates is empty (caller's job to filter exclude before)
  */
 export function pickWeighted(
@@ -120,17 +150,17 @@ export function pickWeighted(
   if (candidates.length === 0) {
     throw new Error('subs-resolver: no candidates');
   }
-  let pool = candidates.filter(c => c.weight > 0);
+  let pool = candidates.filter(c => effectiveWeight(c) > 0);
   let allZero = false;
   if (pool.length === 0) {
     pool = candidates;
     allZero = true;
   }
   let total = 0;
-  for (const c of pool) total += allZero ? 1 : c.weight;
+  for (const c of pool) total += allZero ? 1 : effectiveWeight(c);
   let r = rng() * total;
   for (const c of pool) {
-    r -= allZero ? 1 : c.weight;
+    r -= allZero ? 1 : effectiveWeight(c);
     if (r < 0) return c;
   }
   // Floating-point safety net.

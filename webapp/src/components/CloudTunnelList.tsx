@@ -19,7 +19,7 @@ import { useTranslation } from 'react-i18next';
 import { getCountryName, getFlagIcon } from '../utils/country';
 import { getThemeColors } from '../theme/colors';
 import { EmptyState } from './LoadingAndEmpty';
-import { VerticalLoadBar } from './VerticalLoadBar';
+import { RecommendDot } from './RecommendDot';
 import { cloudApi } from '../services/cloud-api';
 import { cacheStore } from '../services/cache-store';
 import { sortTunnelsByRecommendation } from '../utils/tunnel-sort';
@@ -374,9 +374,11 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
                 secondaryTypographyProps={{ fontSize: '0.75rem' }}
               />
 
-              {/* Budget score bar */}
+              {/* Canonical recommendation signal — single emoji dot drives UX,
+                  no client-side arithmetic. Backend ships tunnel.recommendScore
+                  for both cloud and non-cloud nodes (defaults to 0.5 neutral). */}
               <Box sx={{ mr: 2 }}>
-                <VerticalLoadBar budgetScore={tunnel.instance?.budgetScore} />
+                <RecommendDot score={tunnel.recommendScore} />
               </Box>
 
               <Radio

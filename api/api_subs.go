@@ -2,25 +2,13 @@ package center
 
 import (
 	"encoding/base64"
-	"fmt"
 	"math"
-	"math/rand/v2"
 	"net/http"
 	"strings"
 
 	"github.com/wordgate/qtoolkit/log"
-	"github.com/wordgate/qtoolkit/redis"
 
 	"github.com/gin-gonic/gin"
-)
-
-// Penalty weighting for /api/subs (see applyPenaltyWeights).
-const (
-	subsPenaltyKeyPrefix = "subs:penalty:"
-	subsPenaltyTTLSec    = 60
-	subsPenaltyMultiplier = 0.5
-	subsPenaltyFloor     = 1e-6
-	subsWeightScale      = 1000
 )
 
 // ============================================================================
@@ -45,10 +33,24 @@ const (
 // Changes to this response shape MUST be coordinated with the daemon side.
 // ============================================================================
 
+// Scale used to project the canonical recommendScore [0,1] onto the legacy
+// Weight int field for backward compatibility with daemons that pre-date the
+// recommendScore field. One release cycle after recommendScore ships, Weight
+// can be removed.
+const subsLegacyWeightScale = 100
+
 // SubsTunnel is one entry in the k2subs JSON response.
 type SubsTunnel struct {
-	URL    string `json:"url"`
-	Weight int    `json:"weight"`
+	URL string `json:"url"`
+	// Weight is the legacy integer weight. Derived as round(RecommendScore *
+	// subsLegacyWeightScale). Kept so pre-recommendScore daemons can still do
+	// reasonable weighted picks. Remove in a future release once rollout is
+	// confirmed.
+	Weight int `json:"weight"`
+	// RecommendScore is the canonical [0,1] recommendation signal produced by
+	// ComputeRecommendScore. Higher = better. New daemon/webapp clients prefer
+	// this over Weight.
+	RecommendScore float64 `json:"recommendScore"`
 }
 
 // SubsResponse is the k2subs subscription endpoint response body (raw, no envelope).
@@ -160,8 +162,19 @@ func api_subs(c *gin.Context) {
 	// wrong (see 3e20b8e postmortem), and the tunnel set is tiny (<100).
 	country := strings.ToUpper(strings.TrimSpace(c.Query("country")))
 
+	// Batch-fetch CloudInstance rows by node IPv4 so we can compute per-tunnel
+	// RecommendScore via the same code path /api/tunnels uses. Non-cloud nodes
+	// fall through to ComputeRecommendScore(nil) → 0.5 (neutral), keeping them
+	// eligible in pickWeighted without being favored.
+	nodeIPs := make([]string, 0, len(tunnels))
+	for _, t := range tunnels {
+		if t.Node != nil && t.Node.Ipv4 != "" {
+			nodeIPs = append(nodeIPs, t.Node.Ipv4)
+		}
+	}
+	instanceMap := getCloudInstancesByIPs(nodeIPs)
+
 	items := make([]SubsTunnel, 0, len(tunnels))
-	ids := make([]uint64, 0, len(tunnels))
 	for _, t := range tunnels {
 		// Defensive — mirrors api_k2_tunnels:120-122. The `node_id IS NOT NULL`
 		// WHERE plus Preload makes this redundant in normal flow, but guards
@@ -176,14 +189,19 @@ func api_subs(c *gin.Context) {
 		if country != "" && strings.ToUpper(t.Node.Country) != country {
 			continue
 		}
-		items = append(items, SubsTunnel{
-			URL:    injectSubsCreds(t.ServerURL, udid, token),
-			Weight: 1,
-		})
-		ids = append(ids, t.ID)
-	}
 
-	applyPenaltyWeights(c, ids, items)
+		var instData *DataTunnelInstance
+		if inst, ok := instanceMap[t.Node.Ipv4]; ok {
+			instData = buildTunnelInstanceData(&inst)
+		}
+		score := ComputeRecommendScore(instData)
+
+		items = append(items, SubsTunnel{
+			URL:            injectSubsCreds(t.ServerURL, udid, token),
+			Weight:         int(math.Round(score * subsLegacyWeightScale)),
+			RecommendScore: score,
+		})
+	}
 
 	log.Infof(c, "subs: user=%d country=%q isAdmin=%v returning %d tunnels",
 		authCtx.User.ID, country, isAdmin, len(items))
@@ -191,108 +209,14 @@ func api_subs(c *gin.Context) {
 	writeSubsOK(c, SubsResponse{Tunnels: items, Refresh: 1800})
 }
 
-// writeSubsOK emits the raw /api/subs success response. Dynamic per-request
-// weights must not be cached end-to-end; the Cache-Control header below is
-// the client-side half of that contract. CloudFront Behavior for /api/subs
-// must also set Minimum TTL = 0 so this header is respected.
+// writeSubsOK emits the raw /api/subs success response. RecommendScore is
+// derived from CloudInstance billing data which updates on the order of
+// minutes (via worker_cloud sync), so end-to-end caching by CloudFront could
+// freeze a stale view for hours. The Cache-Control header is the client-side
+// half of that contract; CloudFront Behavior for /api/subs must also set
+// Minimum TTL = 0 for the header to be respected.
 func writeSubsOK(c *gin.Context, resp SubsResponse) {
 	c.Header("Cache-Control", "no-store, private")
 	// RAW JSON — see the wire-protocol note at the top of this file.
 	c.JSON(http.StatusOK, resp)
-}
-
-// applyPenaltyWeights assigns each tunnel a scaled effective weight so the
-// client-side weighted-random picker rotates naturally across nodes instead of
-// always converging on the highest base-weight tunnel.
-//
-// For each request:
-//  1. Read current penalty factors from Redis (key=subs:penalty:{tunnel_id},
-//     TTL 60s, default 1.0 if absent).
-//  2. effective_weight = base_weight × factor.
-//  3. Find the tunnel(s) with the max effective weight; if tied, pick one
-//     uniformly at random (stable tie-break on id would cause the lowest-id
-//     tunnel to always be hit first under low traffic).
-//  4. Multiply that tunnel's factor by 0.5 (floor 1e-6) and write back with
-//     TTL 60s. Next request's top will likely be someone else.
-//  5. Write the effective weight (× subsWeightScale to fit int) into items.
-//
-// Redis failures are non-fatal: missing factors default to 1.0 (no penalty),
-// SET failures are warn-logged. Worst case the endpoint degrades to static
-// base weights — same as before this feature shipped.
-//
-// ids and items must be aligned (same length, same order). ids[i] is the DB
-// primary key of tunnel items[i].
-func applyPenaltyWeights(c *gin.Context, ids []uint64, items []SubsTunnel) {
-	if len(items) == 0 {
-		return
-	}
-
-	factors := make([]float64, len(items))
-	redisDegraded := false
-	for i, id := range ids {
-		var f float64
-		exists, err := redis.CacheGet(fmt.Sprintf("%s%d", subsPenaltyKeyPrefix, id), &f)
-		if err != nil {
-			redisDegraded = true
-		}
-		if err != nil || !exists || f <= 0 {
-			f = 1.0
-		}
-		factors[i] = f
-	}
-
-	// Redis unreachable → skip rotation entirely and return base weights. A
-	// partial penalty (some tunnels demoted, others at 1.0 due to read errors)
-	// would distort load distribution more than honoring base weights alone.
-	if redisDegraded {
-		for i := range items {
-			w := items[i].Weight * subsWeightScale
-			if w < 1 {
-				w = 1
-			}
-			items[i].Weight = w
-		}
-		return
-	}
-
-	maxEff := -1.0
-	for i := range items {
-		eff := float64(items[i].Weight) * factors[i]
-		if eff > maxEff {
-			maxEff = eff
-		}
-	}
-
-	var topIdx []int
-	for i := range items {
-		if float64(items[i].Weight)*factors[i] == maxEff {
-			topIdx = append(topIdx, i)
-		}
-	}
-	pick := topIdx[rand.IntN(len(topIdx))]
-
-	// Apply penalty to the picked tunnel; the NEW factor also affects this
-	// request's output, so the first caller already sees a demoted top. This
-	// avoids a one-request lag where cold-start traffic sees uniform weights
-	// before rotation kicks in.
-	factors[pick] = factors[pick] * subsPenaltyMultiplier
-	if factors[pick] < subsPenaltyFloor {
-		factors[pick] = subsPenaltyFloor
-	}
-	if err := redis.CacheSet(
-		fmt.Sprintf("%s%d", subsPenaltyKeyPrefix, ids[pick]),
-		factors[pick],
-		subsPenaltyTTLSec,
-	); err != nil {
-		log.Warnf(c, "subs: penalty SET failed for tunnel %d: %v", ids[pick], err)
-	}
-
-	for i := range items {
-		eff := float64(items[i].Weight) * factors[i]
-		w := int(math.Round(eff * subsWeightScale))
-		if w < 1 {
-			w = 1
-		}
-		items[i].Weight = w
-	}
 }

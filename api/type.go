@@ -312,21 +312,23 @@ type DataTunnelInstance struct {
 	TrafficRatio      float64 `json:"trafficRatio"`      // Traffic consumption ratio (0-1, e.g., 0.75 = 75% used)
 	BillingCycleEndAt int64   `json:"billingCycleEndAt"` // Billing cycle end timestamp (Unix seconds)
 	TimeRatio         float64 `json:"timeRatio"`         // Time consumption ratio (0-1, e.g., 0.5 = 50% of cycle elapsed)
-	BudgetScore       float64 `json:"budgetScore"`       // TrafficRatio - TimeRatio. [-1,+1]. Negative = under budget (recommended), positive = over budget.
+	BudgetScore       float64 `json:"budgetScore"`       // Deprecated: kept for admin/diagnostics. New code uses RecommendScore. TrafficRatio - TimeRatio. [-1,+1]. Negative = under budget.
+	RecommendScore    float64 `json:"recommendScore"`    // Canonical [0,1] recommendation signal, higher = better. Computed via ComputeRecommendScore.
 }
 
 // DataSlaveTunnel API tunnel data structure
 type DataSlaveTunnel struct {
-	ID           uint64         `json:"id"`           // Tunnel ID
-	Domain       string         `json:"domain"`       // Tunnel domain
-	Name         string         `json:"name"`         // Tunnel name
-	Protocol     TunnelProtocol `json:"protocol"`     // Tunnel protocol (k2v4, k2wss, k2oc)
-	Port         int64          `json:"port"`         // Tunnel port
-	HopPortStart int64          `json:"hopPortStart"` // Port hopping range start (0 = disabled)
-	HopPortEnd   int64          `json:"hopPortEnd"`   // Port hopping range end (0 = disabled)
-	Node         DataSlaveNode  `json:"node"`         // Associated physical node
-	Instance     *DataTunnelInstance `json:"instance,omitempty"` // Cloud instance data (if linked via IP)
-	ServerUrl    string         `json:"serverUrl,omitempty"` // Computed k2v5 connection URL (only for GET /tunnels/k2v5)
+	ID             uint64              `json:"id"`                    // Tunnel ID
+	Domain         string              `json:"domain"`                // Tunnel domain
+	Name           string              `json:"name"`                  // Tunnel name
+	Protocol       TunnelProtocol      `json:"protocol"`              // Tunnel protocol (k2v4, k2wss, k2oc)
+	Port           int64               `json:"port"`                  // Tunnel port
+	HopPortStart   int64               `json:"hopPortStart"`          // Port hopping range start (0 = disabled)
+	HopPortEnd     int64               `json:"hopPortEnd"`            // Port hopping range end (0 = disabled)
+	Node           DataSlaveNode       `json:"node"`                  // Associated physical node
+	Instance       *DataTunnelInstance `json:"instance,omitempty"`    // Cloud instance data (if linked via IP)
+	RecommendScore float64             `json:"recommendScore"`        // Canonical [0,1] recommendation signal — present for both cloud and non-cloud (default 0.5) nodes, so consumers don't need instance-level null checks.
+	ServerUrl      string              `json:"serverUrl,omitempty"`   // Computed k2v5 connection URL (only for GET /tunnels/k2v5)
 }
 
 // DataSlaveTunnelListResponse 节点列表响应数据结构

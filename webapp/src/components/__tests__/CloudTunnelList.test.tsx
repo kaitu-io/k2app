@@ -43,8 +43,8 @@ vi.mock('../../utils/country', () => ({
   getFlagIcon: (code: string) => code,
 }));
 
-vi.mock('../VerticalLoadBar', () => ({
-  VerticalLoadBar: () => <div data-testid="load-bar" />,
+vi.mock('../RecommendDot', () => ({
+  RecommendDot: () => <div data-testid="recommend-dot" />,
 }));
 
 // --- Helpers ---
@@ -55,7 +55,8 @@ const makeTunnel = (id: number, name: string, country: string) => ({
   name,
   serverUrl: 'https://server.example.com',
   node: { country },
-  instance: { budgetScore: 0 },
+  instance: { budgetScore: 0, recommendScore: 0.5 },
+  recommendScore: 0.5,
 });
 
 const cachedResponse: TunnelListResponse = {
