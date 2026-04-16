@@ -233,54 +233,6 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     }
   },
 
-  setServerMode: async (mode: 'smart' | 'manual' | 'self_hosted') => {
-    if (mode === 'self_hosted') {
-      const tunnel = computeSelfHostedActiveTunnel();
-      set({ serverMode: mode, activeTunnel: tunnel });
-    } else {
-      set({ serverMode: mode });
-    }
-    try {
-      await window._platform.storage.set(SERVER_MODE_STORAGE_KEY, mode);
-    } catch (err) {
-      console.warn('[Connection] Failed to persist serverMode:', err);
-    }
-  },
-
-  setSmartCountry: async (country) => {
-    set({ smartCountry: country });
-    try {
-      if (country) {
-        await window._platform.storage.set(SMART_COUNTRY_STORAGE_KEY, country);
-      } else {
-        await window._platform.storage.remove(SMART_COUNTRY_STORAGE_KEY);
-      }
-    } catch (err) {
-      console.warn('[Connection] Failed to persist smartCountry:', err);
-    }
-  },
-
-  loadServerMode: async () => {
-    try {
-      const [mode, country] = await Promise.all([
-        window._platform.storage.get<string>(SERVER_MODE_STORAGE_KEY),
-        window._platform.storage.get<string>(SMART_COUNTRY_STORAGE_KEY),
-      ]);
-      const resolvedMode: 'smart' | 'manual' | 'self_hosted' =
-        mode === 'self_hosted' ? 'self_hosted' :
-        mode === 'manual' ? 'manual' :
-        'smart';
-      useConnectionStore.setState({
-        serverMode: resolvedMode,
-        smartCountry: typeof country === 'string' && country !== '' ? country : null,
-        serverModeLoaded: true,
-      });
-    } catch (err) {
-      console.warn('[Connection] Failed to load serverMode:', err);
-      useConnectionStore.setState({ serverModeLoaded: true });
-    }
-  },
-
   connect: async () => {
     const t0 = Date.now();
     // State guard: reject if already connecting/connected/reconnecting/disconnecting.
