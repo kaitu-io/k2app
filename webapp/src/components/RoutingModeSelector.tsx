@@ -15,7 +15,6 @@ import { useCallback } from 'react';
 import {
   Box,
   Checkbox,
-  Chip,
   FormControlLabel,
   MenuItem,
   Radio,
@@ -171,14 +170,6 @@ export default function RoutingModeSelector() {
                     <Typography variant="body2" sx={{ fontSize: '0.85rem' }}>
                       {opt.emoji} {t(`smartMode.${opt.labelKey}`)}
                     </Typography>
-                    {opt.disabled && (
-                      <Chip
-                        label={t('smartMode.comingSoon')}
-                        size="small"
-                        variant="outlined"
-                        sx={{ height: 18, fontSize: '0.65rem' }}
-                      />
-                    )}
                   </Stack>
                   <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
                     {description}
