@@ -18,7 +18,7 @@ export interface K2PluginInterface {
   getVersion(): Promise<{ version: string; go: string; os: string; arch: string }>;
   getStatus(): Promise<{ state: string; connectedAt?: string; uptimeSeconds?: number; error?: string }>;
   getConfig(): Promise<{ config?: string }>;
-  connect(options: { config: string }): Promise<void>;
+  connect(options: { config: string; alwaysOn?: boolean }): Promise<void>;
   disconnect(): Promise<void>;
 
   checkWebUpdate(): Promise<WebUpdateInfo>;
