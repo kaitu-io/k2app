@@ -74,33 +74,36 @@ mobile/
 - **Config delivery**: `configJSON` passed via `startVPNTunnel(options:)`, fallback to `providerConfiguration`
 - **TUN fd acquisition** (in order): KVC `packetFlow.value(forKeyPath: "socket.fileDescriptor")` → utun fd scan (`findTunnelFileDescriptor()`)
 
-## Smart Server Selection (k2subs) — Resolved in webapp, NOT appext
+## Server Selection — Manual only on mobile
 
-Unlike desktop daemon (which resolves `k2subs://` server-side with a persistent
-`Subscription` object + refresh loop + Phase-B outbound hot-swap), **mobile
-resolves once in webapp before `_k2.run('up')`**:
+Mobile has **no smart-mode / k2subs resolution**. Users pick a specific
+tunnel on Dashboard and the webapp passes that single `k2v5://` URL to
+`_k2.run('up', config)`. Mobile engine never sees `k2subs://`.
 
 ```
-user → Dashboard smart mode → connection.store.resolveSubsTunnel()
-     → fetch /api/subs → pickWeighted (by recommendScore)
-     → _k2.run('up', {serverUrl: 'k2v5://...'})   // single k2v5
+user → Dashboard tunnel list → picks one → _k2.run('up', {routes:[{via:'k2v5://...'}]})
 ```
 
-Mobile engine **only ever sees a single `k2v5://` outbound** — it does not know
-`k2subs` exists. No background refresh. No runtime auto-switch. Connection
-semantics: "智能选择" = "initial pick + up-to-2 retries on retryable engine
-errors (502/503/570)", NOT "continuous optimization".
+**Why no smart mode on mobile:** iOS NE has a 50MB jetsam limit. A Go HTTPS
+client + JSON cache + refresher goroutine inside the extension would bloat
+the binary/memory footprint. Main App process (webapp) could host such a
+resolver, but doing so in the webapp creates a double-encapsulation risk
+(webapp fetches `/api/subs` while VPN is up → request goes through the
+tunnel → fails the very session we're about to establish). So we keep
+mobile strictly manual; smart selection is only available on desktop
+where the daemon's in-process resolver has no such constraints.
 
-Failure mode: if webapp skips the resolver and hands raw `k2subs://` to
-appext, `engine.buildOutboundMap` drops the route as reserved scheme → code
-570 "no k2v5 outbound configured". See `k2/appext/CLAUDE.md` for engine side.
+**Node-probe note:** `probe.store` + `ProbeChip` populate RTT/loss
+measurements on the Dashboard tunnel list via `runProbe()` so users have
+data-driven guidance when picking manually. The daemon-side background
+probe loop (which updates `probe.Registry`) runs on desktop only —
+mobile's probe path is the explicit webapp-triggered one.
 
-Rationale for the split: iOS NE has a 50MB jetsam limit — a Go HTTPS client +
-JSON cache + refresher goroutine would inflate the binary and memory footprint
-of the extension process. Main App (webapp) has no such constraint.
-
-Files: `webapp/src/services/subs-resolver.ts`,
-`webapp/src/stores/connection.store.ts` (smart mode branch).
+Failure mode: if any webapp code path leaks raw `k2subs://` to appext,
+`engine.buildOutboundMap` drops the route as reserved scheme → code 570
+"no k2v5 outbound configured". See `k2/appext/CLAUDE.md`. That is always
+a webapp bug — the only legitimate `via` on mobile is `k2v5://` or
+`direct`.
 
 ## Android VpnService Architecture
 
