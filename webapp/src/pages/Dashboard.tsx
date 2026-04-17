@@ -92,8 +92,10 @@ export default function Dashboard() {
     enrichFromTunnelList,
   } = useConnectionStore();
 
-  // Cloud tunnels for SmartServerSelector
-  const [cloudTunnels, setCloudTunnels] = useState<Tunnel[]>([]);
+  // Cloud tunnels — kept alive for Task 15 (auto-select) though currently
+  // only the setter is consumed (feeds enrichFromTunnelList on load).
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_cloudTunnels, setCloudTunnels] = useState<Tunnel[]>([]);
 
   // Display tunnel: connected snapshot → manual/self-hosted selection → smart mode synthetic
   const smartDisplayTunnel = useMemo(() => {
@@ -410,7 +412,6 @@ export default function Dashboard() {
 
         {isAuthenticated && (
           <SmartServerSelector
-            tunnels={cloudTunnels}
             isInteractive={!isInteractive}
             manualContent={manualTabContent}
             selfHostedContent={selfHostedTabContent}
