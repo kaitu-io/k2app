@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -20,8 +21,10 @@ import (
 
 	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/engine"
+	"github.com/kaitu-io/k2/probe"
 	"github.com/kaitu-io/k2/provider"
 	"github.com/kaitu-io/k2/safego"
+	"github.com/kaitu-io/k2/wire"
 )
 
 // DefaultAddr is the daemon HTTP listen address.
@@ -88,14 +91,30 @@ type Daemon struct {
 	// Helper for non-VPN device management (ADB install, etc.).
 	// Initialized by registerHelperRoutes() in Run().
 	helper *AndroidHelper
+
+	// probeRegistry caches node measurements. Shared between:
+	//   - Subscription.Pick (via SetScoreSource — see resolveSubscriptions)
+	//   - Background probe.Service loop (populates registry)
+	//   - /api/core probe action (returns snapshot + populates registry)
+	probeRegistry *probe.Registry
+
+	// probeFn is the function used to execute a single probe. Defaults to
+	// wire.ProbeURL. Overridable for tests.
+	probeFn func(ctx context.Context, rawURL string, dd wire.DirectDialer, rounds int, interval time.Duration) (wire.ProbeStats, error)
+
+	// probeService runs the periodic background probe loop. May be nil in
+	// tests that don't need it.
+	probeService *probe.Service
 }
 
 // New creates a new daemon.
 func New() *Daemon {
 	return &Daemon{
-		lastStatus: engine.Status{State: engine.StateDisconnected},
-		sseClients: make(map[chan string]struct{}),
-		helper:     &AndroidHelper{state: InstallState{Phase: "idle"}},
+		lastStatus:    engine.Status{State: engine.StateDisconnected},
+		sseClients:    make(map[chan string]struct{}),
+		helper:        &AndroidHelper{state: InstallState{Phase: "idle"}},
+		probeRegistry: probe.NewRegistry(15 * time.Minute),
+		probeFn:       wire.ProbeURL,
 	}
 }
 
@@ -601,4 +620,67 @@ func applyResolvedRoutes(cfg *config.ClientConfig, resolved map[int]string) *con
 	engineCfg.Server = ""
 	config.SetDefaults(&engineCfg)
 	return &engineCfg
+}
+
+// handleProbe runs concurrent wire.ProbeURL calls for the given URLs and
+// returns aggregated stats. Results are also written to d.probeRegistry so
+// ad-hoc probes benefit Subscription.Pick too.
+//
+// Concurrency cap: 4. Total budget: params.timeoutMs (default 8000).
+func (d *Daemon) handleProbe(w http.ResponseWriter, params map[string]any) {
+	rawURLs, ok := params["urls"].([]any)
+	if !ok || len(rawURLs) == 0 {
+		writeJSON(w, Response{Code: 400, Message: "urls: required, array of strings"})
+		return
+	}
+	urls := make([]string, 0, len(rawURLs))
+	for _, u := range rawURLs {
+		s, ok := u.(string)
+		if !ok || s == "" {
+			writeJSON(w, Response{Code: 400, Message: "urls: must contain non-empty strings"})
+			return
+		}
+		urls = append(urls, s)
+	}
+
+	timeoutMs := 8000
+	if v, ok := params["timeoutMs"].(float64); ok && v > 0 {
+		timeoutMs = int(v)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutMs)*time.Millisecond)
+	defer cancel()
+
+	results := make([]map[string]any, len(urls))
+	sem := make(chan struct{}, 4)
+	var wg sync.WaitGroup
+	for i, u := range urls {
+		sem <- struct{}{}
+		wg.Add(1)
+		idx, url := i, u
+		safego.Go(func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			stats, err := d.probeFn(ctx, url, nil, 8, 50*time.Millisecond)
+			if err != nil {
+				stats.MeasuredAt = time.Now()
+			}
+			d.probeRegistry.Record(url, stats)
+			results[idx] = map[string]any{
+				"url":           url,
+				"avgRttMs":      stats.AvgRttMs,
+				"minRttMs":      stats.MinRttMs,
+				"maxRttMs":      stats.MaxRttMs,
+				"jitterMs":      stats.JitterMs,
+				"lossRate":      stats.LossRate,
+				"reachable":     stats.Reachable,
+				"echoSupported": stats.EchoSupported,
+				"probeScore":    stats.Score(),
+				"measuredAt":    stats.MeasuredAt.UTC().Format(time.RFC3339Nano),
+			}
+		})
+	}
+	wg.Wait()
+
+	writeJSON(w, Response{Code: 0, Data: map[string]any{"results": results}})
 }

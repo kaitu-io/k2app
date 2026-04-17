@@ -69,6 +69,8 @@ func (d *Daemon) handleCore(w http.ResponseWriter, r *http.Request) {
 		d.handleStatus(w)
 	case "version":
 		d.handleVersion(w)
+	case "probe":
+		d.handleProbe(w, req.Params)
 	default:
 		writeJSON(w, Response{Code: 400, Message: fmt.Sprintf("unknown action: %s", req.Action)})
 	}
