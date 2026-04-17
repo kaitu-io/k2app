@@ -315,11 +315,21 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
-        // Disable on-demand BEFORE stopping — prevents system auto-reconnect.
-        // Must save first, then stop in completion handler (strict sequencing).
+        // Unconditional clear — user intent is to disconnect NOW regardless of
+        // the alwaysOn preference. Next connect() re-applies alwaysOn from the
+        // current user setting. This closes the ANC-13 "关不掉" loophole where
+        // stale on-demand rules cached in NE subsystem re-activated the tunnel.
         manager.isOnDemandEnabled = false
-        manager.saveToPreferences { [weak self] _ in
+        manager.onDemandRules = []
+        manager.saveToPreferences { [weak self] error in
             _ = self // prevent unused warning
+
+            if let error = error {
+                logger.error("disconnect: saveToPreferences failed: \(error.localizedDescription) — stopping tunnel anyway")
+                // Continue to stopVPNTunnel — user intent is clear. Save
+                // failure means on-demand might linger in system cache, but
+                // explicitly stopping the tunnel still honors the intent.
+            }
 
             var disconnectObserver: NSObjectProtocol?
             var timeoutWork: DispatchWorkItem?
@@ -353,7 +363,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
             timeoutWork = timeout
             DispatchQueue.main.asyncAfter(deadline: .now() + 5.0, execute: timeout)
 
-            // Stop AFTER on-demand is disabled
+            // Stop AFTER on-demand is cleared
             connection.stopVPNTunnel()
         }
     }
