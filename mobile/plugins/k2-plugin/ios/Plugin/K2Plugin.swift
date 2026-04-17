@@ -9,6 +9,11 @@ import os.log
 private let kAppGroup = "group.io.kaitu"
 private let logger = Logger(subsystem: "com.allnationconnect.anc.wgios", category: "K2Plugin")
 
+/// One-shot flag set after the first successful on-demand migration in load().
+/// Clears stale `NEOnDemandRuleConnect()` rules left by 0.4.1 and earlier
+/// (which hardcoded on-demand with no user control). See ANC-13.
+private let kOnDemandMigrationKey = "k2.onDemandMigration.v1"
+
 extension Notification.Name {
     static let k2DevEnabledChanged = Notification.Name("k2DevEnabledChanged")
 }
@@ -933,6 +938,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                 logger.info("loadVPNManager: using \(matchingManager != nil ? "existing" : "new") manager")
                 self?.vpnManager = manager
                 self?.registerStatusObserver()
+                self?.migrateOnDemandIfNeeded(manager: manager)
                 completion?(manager)
             } else {
                 // Remove stale configs and wait for all removals to complete
@@ -953,6 +959,7 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
                     logger.info("loadVPNManager: stale removal done, using \(matchingManager != nil ? "existing" : "new") manager")
                     self?.vpnManager = manager
                     self?.registerStatusObserver()
+                    self?.migrateOnDemandIfNeeded(manager: manager)
                     completion?(manager)
                 }
             }
@@ -960,6 +967,41 @@ public class K2Plugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     // remapStatusKeys is in K2Helpers.swift (module-level function)
+
+    /// One-shot migration: clear stale on-demand rules left by 0.4.1 and earlier
+    /// builds that hardcoded `NEOnDemandRuleConnect()`. After migration, on-demand
+    /// is only applied when the user opts in via the Dashboard "Always On" toggle
+    /// (wired through K2Plugin.connect's alwaysOn option).
+    ///
+    /// Idempotent: reads a UserDefaults flag to skip on subsequent launches.
+    /// Safe: if save fails, the flag is NOT set — will retry on next cold start.
+    private func migrateOnDemandIfNeeded(manager: NETunnelProviderManager) {
+        if UserDefaults.standard.bool(forKey: kOnDemandMigrationKey) {
+            return
+        }
+
+        let hasStaleOnDemand = manager.isOnDemandEnabled
+            || !(manager.onDemandRules?.isEmpty ?? true)
+
+        guard hasStaleOnDemand else {
+            // Already clean (fresh install or prior migration) — mark done
+            UserDefaults.standard.set(true, forKey: kOnDemandMigrationKey)
+            logger.info("migration: no stale on-demand, flag set")
+            return
+        }
+
+        logger.info("migration: clearing stale on-demand rules from prior version")
+        manager.isOnDemandEnabled = false
+        manager.onDemandRules = []
+        manager.saveToPreferences { error in
+            if let error = error {
+                logger.warning("migration: saveToPreferences failed: \(error.localizedDescription) — will retry next launch")
+                return
+            }
+            UserDefaults.standard.set(true, forKey: kOnDemandMigrationKey)
+            logger.info("migration: on-demand cleanup done, flag set")
+        }
+    }
 
     private func mapVPNStatus(_ status: NEVPNStatus) -> String {
         return mapVPNStatusString(status.rawValue)
