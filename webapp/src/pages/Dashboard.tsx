@@ -30,6 +30,7 @@ import { useSelfHostedStore } from '../stores/self-hosted.store';
 import { getCurrentAppConfig } from '../config/apps';
 import { CollapsibleConnectionSection } from '../components/CollapsibleConnectionSection';
 import RoutingModeSelector, { useRoutingSummary } from '../components/RoutingModeSelector';
+import { AlwaysOnToggle } from '../components/AlwaysOnToggle';
 import { useDashboard } from '../stores/dashboard.store';
 import { CloudTunnelList } from '../components/CloudTunnelList';
 import { getFlagIcon } from '../utils/country';
@@ -571,6 +572,11 @@ export default function Dashboard() {
               }}>
                 {t('dashboard:dashboard.disconnectToModify')}
               </Typography>
+            )}
+
+            {/* iOS-only: NEOnDemandRuleConnect toggle (ANC-13) */}
+            {typeof window !== 'undefined' && window._platform?.os === 'ios' && (
+              <AlwaysOnToggle />
             )}
 
             {/* Routing mode + country selection */}
