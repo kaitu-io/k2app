@@ -74,6 +74,34 @@ mobile/
 - **Config delivery**: `configJSON` passed via `startVPNTunnel(options:)`, fallback to `providerConfiguration`
 - **TUN fd acquisition** (in order): KVC `packetFlow.value(forKeyPath: "socket.fileDescriptor")` → utun fd scan (`findTunnelFileDescriptor()`)
 
+## Smart Server Selection (k2subs) — Resolved in webapp, NOT appext
+
+Unlike desktop daemon (which resolves `k2subs://` server-side with a persistent
+`Subscription` object + refresh loop + Phase-B outbound hot-swap), **mobile
+resolves once in webapp before `_k2.run('up')`**:
+
+```
+user → Dashboard smart mode → connection.store.resolveSubsTunnel()
+     → fetch /api/subs → pickWeighted (by recommendScore)
+     → _k2.run('up', {serverUrl: 'k2v5://...'})   // single k2v5
+```
+
+Mobile engine **only ever sees a single `k2v5://` outbound** — it does not know
+`k2subs` exists. No background refresh. No runtime auto-switch. Connection
+semantics: "智能选择" = "initial pick + up-to-2 retries on retryable engine
+errors (502/503/570)", NOT "continuous optimization".
+
+Failure mode: if webapp skips the resolver and hands raw `k2subs://` to
+appext, `engine.buildOutboundMap` drops the route as reserved scheme → code
+570 "no k2v5 outbound configured". See `k2/appext/CLAUDE.md` for engine side.
+
+Rationale for the split: iOS NE has a 50MB jetsam limit — a Go HTTPS client +
+JSON cache + refresher goroutine would inflate the binary and memory footprint
+of the extension process. Main App (webapp) has no such constraint.
+
+Files: `webapp/src/services/subs-resolver.ts`,
+`webapp/src/stores/connection.store.ts` (smart mode branch).
+
 ## Android VpnService Architecture
 
 ```
