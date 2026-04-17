@@ -20,11 +20,14 @@ import { getCountryName, getFlagIcon } from '../utils/country';
 import { getThemeColors } from '../theme/colors';
 import { EmptyState } from './LoadingAndEmpty';
 import { RecommendDot } from './RecommendDot';
+import { ProbeChip } from './ProbeChip';
 import { cloudApi } from '../services/cloud-api';
 import { cacheStore } from '../services/cache-store';
 import { sortTunnelsByRecommendation } from '../utils/tunnel-sort';
 import { useAuthStore } from '../stores/auth.store';
 import { useVPNMachineStore } from '../stores/vpn-machine.store';
+import { useProbeStore } from '../stores/probe.store';
+import { runProbe } from '../services/probe-service';
 import type { Tunnel, TunnelListResponse } from '../services/api-types';
 
 interface CloudTunnelListProps {
@@ -60,11 +63,23 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
   const prevAuthRef = useRef(isAuthenticated);
   const prevServiceConnectedRef = useRef(serviceConnected);
 
-  // Sort tunnels by recommendation (neutral quality - no evaluation)
-  const neutralQualityProvider = useMemo(() => ({ getRouteQuality: () => 0 }), []);
+  // Probe-backed quality provider. Domains without a fresh probe result
+  // contribute 0 — neutral default preserves ordering for un-measured tunnels
+  // while measured tunnels rank by probeScore [0,1] (higher = better).
+  const probeResults = useProbeStore((s) => s.results);
+  const probeInFlight = useProbeStore((s) => s.inFlight);
+
+  const probeQualityProvider = useMemo(() => ({
+    getRouteQuality: (domain: string) => {
+      const r = probeResults.get(domain);
+      if (!r) return 0;
+      return r.probeScore > 0 ? r.probeScore : 0;
+    },
+  }), [probeResults]);
+
   const sortedTunnels = useMemo(() => {
-    return sortTunnelsByRecommendation(tunnels, neutralQualityProvider);
-  }, [tunnels, neutralQualityProvider]);
+    return sortTunnelsByRecommendation(tunnels, probeQualityProvider);
+  }, [tunnels, probeQualityProvider]);
 
   // Retry state for automatic retry on error
   const retryCountRef = useRef(0);
@@ -185,6 +200,14 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
       refresh();
     }
   }, [serviceConnected, refresh]);
+
+  // Trigger a daemon probe after tunnels load (non-blocking). runProbe
+  // self-skips on web platform / non-idle VPN state, so it's safe to always call.
+  useEffect(() => {
+    if (tunnels.length > 0) {
+      void runProbe(tunnels);
+    }
+  }, [tunnels]);
 
   if (loading && tunnels.length === 0) {
     return (
@@ -374,10 +397,14 @@ export function CloudTunnelList({ selectedDomain, onSelect, disabled, onTunnelsL
                 secondaryTypographyProps={{ fontSize: '0.75rem' }}
               />
 
-              {/* Canonical recommendation signal — single emoji dot drives UX,
-                  no client-side arithmetic. Backend ships tunnel.recommendScore
-                  for both cloud and non-cloud nodes (defaults to 0.5 neutral). */}
-              <Box sx={{ mr: 2 }}>
+              {/* Measurement (ProbeChip) + budget signal (RecommendDot).
+                  ProbeChip shows live RTT/loss from daemon probe; RecommendDot
+                  stays as independent backend-budget indicator. */}
+              <Box sx={{ mr: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                <ProbeChip
+                  result={probeResults.get(tunnel.domain.toLowerCase()) ?? null}
+                  loading={probeInFlight.has(tunnel.domain.toLowerCase())}
+                />
                 <RecommendDot score={tunnel.recommendScore} />
               </Box>
 
