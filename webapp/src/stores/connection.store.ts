@@ -61,6 +61,12 @@ interface ConnectionState {
   serverMode: 'manual' | 'self_hosted';
   /** True once persisted serverMode has been loaded from storage. */
   serverModeLoaded: boolean;
+  /** True iff a 'smart' → 'manual' migration was observed on this launch.
+   *  Consumed by Dashboard once to show a one-shot notification, then
+   *  cleared via dismissSmartMigrationNotice(). Not persisted — storage
+   *  already holds the migrated 'manual' value, so subsequent launches
+   *  won't re-trigger. */
+  smartMigrationNotice: boolean;
 }
 
 // Persisted last-used server URL. Kept separate from config.store because
@@ -97,6 +103,7 @@ interface ConnectionActions {
   enrichFromTunnelList: (tunnels: Tunnel[]) => void;
   setServerMode: (mode: 'manual' | 'self_hosted') => Promise<void>;
   loadServerMode: () => Promise<void>;
+  dismissSmartMigrationNotice: () => void;
 }
 
 // ============ Helpers ============
@@ -156,6 +163,7 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
   lastServerUrlLoaded: false,
   serverMode: 'manual',
   serverModeLoaded: false,
+  smartMigrationNotice: false,
 
   // Actions
   selectCloudTunnel: (tunnel) => {
@@ -197,14 +205,25 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
       // Legacy 'smart' migrates to 'manual'. Any unknown value → 'manual'.
       const resolvedMode: 'manual' | 'self_hosted' =
         mode === 'self_hosted' ? 'self_hosted' : 'manual';
+      const migrated = mode === 'smart';
       useConnectionStore.setState({
         serverMode: resolvedMode,
         serverModeLoaded: true,
+        smartMigrationNotice: migrated,
       });
+      if (migrated) {
+        // Persist the migrated value so the next launch sees 'manual' and
+        // does not re-fire the notice.
+        void persistServerMode('manual');
+      }
     } catch (err) {
       console.warn('[Connection] Failed to load serverMode:', err);
       useConnectionStore.setState({ serverModeLoaded: true });
     }
+  },
+
+  dismissSmartMigrationNotice: () => {
+    useConnectionStore.setState({ smartMigrationNotice: false });
   },
 
   connect: async () => {
