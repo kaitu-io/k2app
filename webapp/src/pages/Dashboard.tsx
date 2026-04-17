@@ -25,7 +25,6 @@ import { useUser } from "../hooks/useUser";
 
 import { useLoginDialogStore } from "../stores/login-dialog.store";
 import { useConnectionStore } from '../stores/connection.store';
-import { useAlertStore } from '../stores/alert.store';
 import { useVPNMachine } from '../stores/vpn-machine.store';
 import { useSelfHostedStore } from '../stores/self-hosted.store';
 import { useProbeStore } from '../stores/probe.store';
@@ -197,20 +196,7 @@ export default function Dashboard() {
   // tunnel so they can connect immediately without re-picking.
   const serverModeLoaded = useConnectionStore((s) => s.serverModeLoaded);
   const selectedCloudTunnel = useConnectionStore((s) => s.selectedCloudTunnel);
-  const smartMigrationNotice = useConnectionStore((s) => s.smartMigrationNotice);
-  const dismissSmartMigrationNotice = useConnectionStore((s) => s.dismissSmartMigrationNotice);
   const probeResults = useProbeStore((s) => s.results);
-
-  // One-shot migration notification: show info Snackbar when loadServerMode
-  // observed a legacy 'smart' → 'manual' migration, then dismiss so it does
-  // not re-fire on remount. Persisted state already holds 'manual', so this
-  // only ever fires on the first launch after upgrade.
-  useEffect(() => {
-    if (!smartMigrationNotice) return;
-    const { showAlert } = useAlertStore.getState();
-    showAlert(t('dashboard:dashboard.migration.smartRemoved'), 'info', 8000);
-    dismissSmartMigrationNotice();
-  }, [smartMigrationNotice, dismissSmartMigrationNotice, t]);
 
   useEffect(() => {
     if (!serverModeLoaded) return;

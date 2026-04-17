@@ -65,9 +65,6 @@
       "qualityUnknown": "節點冇回報品質",
       "tooltip": "RTT {{rtt}} ms · 抖動 {{jitter}} ms · 丟包 {{loss}}%"
     },
-    "migration": {
-      "smartRemoved": "智能選擇模式已移除，請手動揀節點。桌面端可用訂閱網址自動切換。"
-    },
     "selectServerHint": "請先從下方選擇",
     "selectServerHintShort": "↓ 請選擇伺服器",
     "connectedBannerHint": "已連線中，切換伺服器前請先斷線",

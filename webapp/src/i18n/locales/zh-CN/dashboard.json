@@ -65,9 +65,6 @@
       "qualityUnknown": "节点未上报质量",
       "tooltip": "RTT {{rtt}} ms · 抖动 {{jitter}} ms · 丢包 {{loss}}%"
     },
-    "migration": {
-      "smartRemoved": "智能选择模式已移除，请手动选择节点。桌面端可使用订阅地址自动切换。"
-    },
     "selectServerHint": "请先从下方选择",
     "selectServerHintShort": "↓ 请选择服务器",
     "connectedBannerHint": "已连接中，切换服务器前请先断开",
