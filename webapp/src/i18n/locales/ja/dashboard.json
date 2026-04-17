@@ -47,6 +47,11 @@
     "favorites": "お気に入りサーバー",
     "allLocations": "すべての場所",
     "advancedSettings": "詳細設定",
+    "alwaysOn": {
+      "title": "VPN を常にオンに保つ (Always On)",
+      "description": "システムがアプリを解放した後、自動的に再接続します。",
+      "warning": "オンにすると、VPN を切断するには iOS の設定から操作する必要があります。"
+    },
     "searchLocations": "場所を検索...",
     "manualRefresh": "今すぐ更新",
     "refreshing": "更新中...",

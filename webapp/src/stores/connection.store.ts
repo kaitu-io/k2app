@@ -377,14 +377,15 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     }
 
     // Build config with explicit params
-    const { buildConnectConfig, resolvePreset, country: configCountry } = useConfigStore.getState();
+    const { buildConnectConfig, resolvePreset, country: configCountry, alwaysOn } = useConfigStore.getState();
     const config = buildConnectConfig({ serverUrl });
     const currentPreset = resolvePreset();
     console.debug('[Connection] connect: config built, preset=' + currentPreset
       + ', country=' + (configCountry ?? 'null')
       + ', routes=' + (config.routes?.length ?? 0)
       + ', serverUrl=' + (serverUrl ?? 'none')
-      + ', logLevel=' + config.log?.level);
+      + ', logLevel=' + config.log?.level
+      + ', alwaysOn=' + alwaysOn);
 
     // Persist BEFORE _k2.run so crash doesn't lose the tunnel identity used
     // by cold-start restore.
@@ -398,7 +399,7 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
     console.warn('[Connection] TRACE USER_CONNECT dispatch t=' + Date.now() + ' (+' + (Date.now() - t0) + 'ms)');
     vpnDispatch('USER_CONNECT');
     try {
-      let resp = await window._k2.run('up', config);
+      let resp = await window._k2.run('up', { config, alwaysOn });
       console.warn('[Connection] TRACE _k2.run(up) returned t=' + Date.now() + ' (+' + (Date.now() - t0) + 'ms) code=' + resp.code);
 
       // Mobile-only: when smart mode hits a node-specific engine error, exclude
@@ -426,7 +427,8 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
           break;
         }
         const retryConfig = useConfigStore.getState().buildConnectConfig({ serverUrl });
-        resp = await window._k2.run('up', retryConfig);
+        const retryAlwaysOn = useConfigStore.getState().alwaysOn;
+        resp = await window._k2.run('up', { config: retryConfig, alwaysOn: retryAlwaysOn });
         console.info('[Connection] mobile smart retry attempt=' + triedUrls.length
           + ' code=' + resp.code);
       }

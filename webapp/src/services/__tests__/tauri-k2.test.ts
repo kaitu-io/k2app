@@ -101,18 +101,33 @@ describe('tauri-k2', () => {
       expect(result.data.running).toBe(false);
     });
 
-    it('_k2.run passes params with pid to daemon_exec for up action', async () => {
+    it('_k2.run passes envelope with pid to daemon_exec for up action', async () => {
       const config = {
         mode: 'tun' as const,
         routes: [{ via: 'k2v5://test.example:443', match: { all: true } }],
       };
 
-      await window._k2.run('up', config);
+      await window._k2.run('up', { config, alwaysOn: false });
 
-      // Daemon handleUp expects params.config wrapping + pid for lifecycle monitoring
+      // Daemon handleUp expects params.config wrapping + pid for lifecycle monitoring.
+      // alwaysOn is a sibling field — daemon ignores unknown params, so it's harmless.
       expect(mockInvoke).toHaveBeenCalledWith('daemon_exec', {
         action: 'up',
-        params: { config, pid: 12345 },
+        params: { config, alwaysOn: false, pid: 12345 },
+      });
+    });
+
+    it('_k2.run up envelope preserves alwaysOn=true', async () => {
+      const config = {
+        mode: 'tun' as const,
+        routes: [{ via: 'k2v5://test.example:443', match: { all: true } }],
+      };
+
+      await window._k2.run('up', { config, alwaysOn: true });
+
+      expect(mockInvoke).toHaveBeenCalledWith('daemon_exec', {
+        action: 'up',
+        params: { config, alwaysOn: true, pid: 12345 },
       });
     });
 

@@ -47,6 +47,11 @@
     "favorites": "Favorites",
     "allLocations": "All Locations",
     "advancedSettings": "Advanced Settings",
+    "alwaysOn": {
+      "title": "Keep VPN Always On",
+      "description": "Auto-reconnect after the system releases the app.",
+      "warning": "While on, disconnecting requires using iOS Settings."
+    },
     "searchLocations": "Search locations...",
     "manualRefresh": "Refresh Now",
     "refreshing": "Refreshing...",

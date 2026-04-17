@@ -164,12 +164,15 @@ describe('Connection Store - Connect', () => {
     expect(ct?.domain).toBe('subs');
     expect(ct?.serverUrl).toBe('k2subs://udid:token@k2.52j.me/api/subs');
 
-    // _k2.run('up') called with subs URL in routes
-    expect(mockRun).toHaveBeenCalledWith('up', expect.objectContaining({ mode: 'tun' }));
+    // _k2.run('up') called with envelope { config, alwaysOn }
+    expect(mockRun).toHaveBeenCalledWith('up', expect.objectContaining({
+      config: expect.objectContaining({ mode: 'tun' }),
+      alwaysOn: false,
+    }));
     const upCall = mockRun.mock.calls.find(c => c[0] === 'up');
-    const routes = upCall?.[1]?.routes as Array<{ via: string }>;
+    const routes = upCall?.[1]?.config?.routes as Array<{ via: string }>;
     expect(routes.some(r => r.via === 'k2subs://udid:token@k2.52j.me/api/subs')).toBe(true);
-    expect(upCall?.[1]?.server).toBeUndefined();
+    expect(upCall?.[1]?.config?.server).toBeUndefined();
 
     // USER_CONNECT dispatched
     expect(vpn.useVPNMachineStore.getState().state).toBe('connecting');
@@ -195,9 +198,29 @@ describe('Connection Store - Connect', () => {
 
     const upCall = mockRun.mock.calls.find(c => c[0] === 'up');
     expect(upCall).toBeDefined();
-    const routes = upCall?.[1]?.routes as Array<{ via: string; match: Record<string, unknown> }>;
+    const routes = upCall?.[1]?.config?.routes as Array<{ via: string; match: Record<string, unknown> }>;
     const lastRoute = routes[routes.length - 1];
     expect(lastRoute?.via).toBe('k2v5://alice:token@1.2.3.4:443#tokyo');
+  });
+
+  it('connect passes alwaysOn=true when config store has it set', async () => {
+    const { useConnectionStore, vpn: _vpn } = await getStores();
+    mockRun.mockResolvedValue({ code: 0 });
+
+    const { authService } = await import('../../services/auth-service');
+    vi.mocked(authService.buildSubsUrl).mockResolvedValue('k2subs://udid:token@k2.52j.me/api/subs');
+
+    // Flip alwaysOn on in config store
+    const { useConfigStore } = await import('../config.store');
+    useConfigStore.setState({ alwaysOn: true });
+
+    await useConnectionStore.getState().connect();
+
+    const upCall = mockRun.mock.calls.find(c => c[0] === 'up');
+    expect(upCall?.[1]?.alwaysOn).toBe(true);
+
+    // Cleanup — reset for subsequent tests
+    useConfigStore.setState({ alwaysOn: false });
   });
 
   it('connect does nothing when self_hosted mode has no tunnel configured', async () => {
