@@ -60,6 +60,14 @@
     "minutesAgo": "分前",
     "hoursAgo": "時間前",
     "longTimeAgo": "かなり前",
+    "probe": {
+      "unreachable": "接続できません (QUIC ハンドシェイク失敗)",
+      "qualityUnknown": "サーバーが品質を報告していません",
+      "tooltip": "RTT {{rtt}} ms · ジッター {{jitter}} ms · 損失 {{loss}}%"
+    },
+    "migration": {
+      "smartRemoved": "スマート選択は廃止されました。サーバーを手動で選択してください。デスクトップ版ではサブスクリプション URL で自動切り替えが可能です。"
+    },
     "selectServerHint": "下から選択してください",
     "selectServerHintShort": "↓ サーバーを選択",
     "connectedBannerHint": "接続中です。サーバーを切り替えるには先に切断してください",

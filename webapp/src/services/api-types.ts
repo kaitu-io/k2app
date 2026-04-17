@@ -665,3 +665,29 @@ export interface CreateGitHubCommentRequest {
   body: string;
 }
 
+/**
+ * Result of a single probe measurement for one candidate URL.
+ * Mirrors Go daemon handleProbe JSON shape.
+ *
+ * Score conventions:
+ *   reachable=false       → probeScore = 0
+ *   echoSupported=false   → probeScore = -1 (sentinel; old k2s)
+ *   normal                → probeScore in (0,1]
+ */
+export interface ProbeResult {
+  url: string;
+  avgRttMs: number;
+  minRttMs: number;
+  maxRttMs: number;
+  jitterMs: number;
+  lossRate: number;
+  reachable: boolean;
+  echoSupported: boolean;
+  probeScore: number;
+  measuredAt: string; // RFC3339
+}
+
+export interface ProbeResponse {
+  results: ProbeResult[];
+}
+

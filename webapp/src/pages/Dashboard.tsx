@@ -25,8 +25,11 @@ import { useUser } from "../hooks/useUser";
 
 import { useLoginDialogStore } from "../stores/login-dialog.store";
 import { useConnectionStore } from '../stores/connection.store';
+import { useAlertStore } from '../stores/alert.store';
 import { useVPNMachine } from '../stores/vpn-machine.store';
 import { useSelfHostedStore } from '../stores/self-hosted.store';
+import { useProbeStore } from '../stores/probe.store';
+import { sortTunnelsByRecommendation } from '../utils/tunnel-sort';
 import { getCurrentAppConfig } from '../config/apps';
 import { CollapsibleConnectionSection } from '../components/CollapsibleConnectionSection';
 import RoutingModeSelector, { useRoutingSummary } from '../components/RoutingModeSelector';
@@ -86,35 +89,24 @@ export default function Dashboard() {
     activeTunnel,
     connectedTunnel,
     serverMode,
-    smartCountry,
     selectSelfHosted,
+    selectCloudTunnel,
     connect,
     disconnect,
     enrichFromTunnelList,
   } = useConnectionStore();
 
-  // Cloud tunnels for SmartServerSelector
+  // Cloud tunnels — used for Task 15 auto-select on smart→manual migration.
   const [cloudTunnels, setCloudTunnels] = useState<Tunnel[]>([]);
 
-  // Display tunnel: connected snapshot → manual/self-hosted selection → smart mode synthetic
-  const smartDisplayTunnel = useMemo(() => {
-    if (serverMode !== 'smart') return null;
-    const label = smartCountry
-      ? `${t('dashboard:serverSelector.tabSmart')} · ${smartCountry.toUpperCase()}`
-      : t('dashboard:serverSelector.tabSmart');
-    return { source: 'cloud' as const, domain: 'subs', name: label, country: smartCountry ?? '', serverUrl: '' };
-  }, [serverMode, smartCountry, t]);
-
-  // serverMode is the single source of truth for which display to show
-  const displayTunnel = connectedTunnel
-    ?? (serverMode === 'smart' ? smartDisplayTunnel : activeTunnel);
+  // Display tunnel: connected snapshot → manual/self-hosted selection
+  const displayTunnel = connectedTunnel ?? activeTunnel;
 
   // Cold start / warm start enrichment: when connectedTunnel has domain but no country,
   // try to enrich from cached tunnel list immediately (covers warm start where
   // CloudTunnelList already loaded and won't re-fire onTunnelsLoaded)
   useEffect(() => {
-    // Skip synthetic smart-mode tunnel (domain='subs') — no real tunnel to enrich from.
-    if (connectedTunnel?.source === 'cloud' && !connectedTunnel.country && connectedTunnel.domain !== 'subs') {
+    if (connectedTunnel?.source === 'cloud' && !connectedTunnel.country) {
       const cached = cacheStore.get<TunnelListResponse>('api:tunnels');
       if (cached?.items) {
         enrichFromTunnelList(cached.items);
@@ -199,6 +191,47 @@ export default function Dashboard() {
     setCloudTunnels(tunnels);
     enrichFromTunnelList(tunnels);
   }, [enrichFromTunnelList]);
+
+  // Migration aid: users whose persisted serverMode was 'smart' land on
+  // 'manual' without a selectedCloudTunnel — auto-select the first sorted
+  // tunnel so they can connect immediately without re-picking.
+  const serverModeLoaded = useConnectionStore((s) => s.serverModeLoaded);
+  const selectedCloudTunnel = useConnectionStore((s) => s.selectedCloudTunnel);
+  const smartMigrationNotice = useConnectionStore((s) => s.smartMigrationNotice);
+  const dismissSmartMigrationNotice = useConnectionStore((s) => s.dismissSmartMigrationNotice);
+  const probeResults = useProbeStore((s) => s.results);
+
+  // One-shot migration notification: show info Snackbar when loadServerMode
+  // observed a legacy 'smart' → 'manual' migration, then dismiss so it does
+  // not re-fire on remount. Persisted state already holds 'manual', so this
+  // only ever fires on the first launch after upgrade.
+  useEffect(() => {
+    if (!smartMigrationNotice) return;
+    const { showAlert } = useAlertStore.getState();
+    showAlert(t('dashboard:dashboard.migration.smartRemoved'), 'info', 8000);
+    dismissSmartMigrationNotice();
+  }, [smartMigrationNotice, dismissSmartMigrationNotice, t]);
+
+  useEffect(() => {
+    if (!serverModeLoaded) return;
+    if (serverMode !== 'manual') return;
+    if (selectedCloudTunnel) return;
+    if (cloudTunnels.length === 0) return;
+
+    const qualityProvider = {
+      getRouteQuality: (domain: string) => {
+        const r = probeResults.get(domain);
+        if (!r) return 0;
+        return r.probeScore > 0 ? r.probeScore : 0;
+      },
+    };
+    const sorted = sortTunnelsByRecommendation(cloudTunnels, qualityProvider);
+    const first = sorted[0];
+    if (first) {
+      console.info('[Dashboard] auto-select first tunnel for migrating user:', first.domain);
+      selectCloudTunnel(first);
+    }
+  }, [serverModeLoaded, serverMode, selectedCloudTunnel, cloudTunnels, probeResults, selectCloudTunnel]);
 
   // Stable onSelect for CloudTunnelList — reads activeTunnel at call time, no dep churn
   const handleCloudTunnelSelect = useCallback((tunnel: Tunnel) => {
@@ -411,7 +444,6 @@ export default function Dashboard() {
 
         {isAuthenticated && (
           <SmartServerSelector
-            tunnels={cloudTunnels}
             isInteractive={!isInteractive}
             manualContent={manualTabContent}
             selfHostedContent={selfHostedTabContent}

@@ -60,6 +60,14 @@
     "minutesAgo": "minutes ago",
     "hoursAgo": "hours ago",
     "longTimeAgo": "Long ago",
+    "probe": {
+      "unreachable": "Unreachable (QUIC handshake failed)",
+      "qualityUnknown": "Server doesn't report quality",
+      "tooltip": "RTT {{rtt}} ms · jitter {{jitter}} ms · loss {{loss}}%"
+    },
+    "migration": {
+      "smartRemoved": "Smart selection has been removed. Please pick a server manually; desktop users can use subscription URLs for automatic failover."
+    },
     "selectServerHint": "Please select from below",
     "selectServerHintShort": "↓ Select a server",
     "connectedBannerHint": "Connected — disconnect first to switch servers",
