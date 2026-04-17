@@ -169,8 +169,6 @@ export const useConnectionStore = create<ConnectionState & ConnectionActions>()(
   selectCloudTunnel: (tunnel) => {
     console.info('[Connection] selectCloudTunnel: domain=' + tunnel.domain + ', name=' + (tunnel.name || tunnel.domain));
     // Picking a specific cloud tunnel implies manual mode — symmetric with selectSelfHosted.
-    // Without this, clicking a tunnel in the 指定服务器 tab silently kept serverMode='smart',
-    // so connect() routed through buildSubsUrl instead of the selected tunnel's serverUrl.
     set({
       selectedCloudTunnel: tunnel,
       activeTunnel: computeCloudActiveTunnel(tunnel),

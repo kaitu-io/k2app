@@ -19,7 +19,6 @@ import {
   styled,
 } from '@mui/material';
 import { PlayArrow, Stop, Check } from '@mui/icons-material';
-import { SmartModeIcon } from './SmartModeIcon';
 import { useTranslation } from 'react-i18next';
 import { getThemeColors, getStatusGradient, getStatusShadow } from '../theme/colors';
 import { getFlagIcon } from '../utils/country';
@@ -256,7 +255,7 @@ export function ConnectionButton({
                 </Typography>
               ) : (tunnelName || tunnelCountry) && (
                 <Box sx={{ mt: 0.5, display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  {tunnelCountry ? (
+                  {tunnelCountry && (
                     <Box sx={{
                       display: 'flex',
                       alignItems: 'center',
@@ -264,8 +263,6 @@ export function ConnectionButton({
                     }}>
                       {getFlagIcon(tunnelCountry)}
                     </Box>
-                  ) : tunnelName && (
-                    <SmartModeIcon />
                   )}
                   {tunnelName && (
                     <Typography

@@ -13,7 +13,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 vi.mock('../../services/auth-service', () => ({
   authService: {
     buildTunnelUrl: vi.fn(),
-    buildSubsUrl: vi.fn(),
   },
 }));
 
