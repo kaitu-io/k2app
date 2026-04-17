@@ -3,12 +3,17 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/kaitu-io/k2/config"
 	"github.com/kaitu-io/k2/probe"
+	"github.com/kaitu-io/k2/rule"
 	"github.com/kaitu-io/k2/wire"
 )
 
@@ -117,4 +122,62 @@ func (r *responseRecorder) decode(t *testing.T) Response {
 		t.Fatalf("decode: %v (body=%s)", err, string(r.body))
 	}
 	return resp
+}
+
+func TestResolveSubscriptions_InstallsScoreSource(t *testing.T) {
+	// Preload registry with steering data.
+	d := New()
+	d.probeRegistry.Record("k2v5://u:t@good:443", wire.ProbeStats{
+		Reachable: true, EchoSupported: true, AvgRttMs: 20, JitterMs: 5, MeasuredAt: time.Now(),
+	})
+	d.probeRegistry.Record("k2v5://u:t@bad:443", wire.ProbeStats{
+		Reachable: false, MeasuredAt: time.Now(),
+	})
+
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, _, _ := r.BasicAuth()
+		if user != "u" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		io.WriteString(w, `{"tunnels":[{"url":"k2v5://good:443","recommendScore":0.5},{"url":"k2v5://bad:443","recommendScore":0.5}]}`)
+	}))
+	defer server.Close()
+
+	// Use the test server's TLS client (trusts the test cert) so
+	// Subscription.Fetch can reach our https:// handler.
+	d.subsHTTPClient = server.Client()
+
+	subsURL := "k2subs://u:t@" + strings.TrimPrefix(server.URL, "https://")
+	cfg := &config.ClientConfig{
+		Routes: []config.RouteConfig{{Via: subsURL, Match: rule.MatchConfig{All: true}}},
+	}
+
+	subs, _, err := d.resolveSubscriptions(cfg)
+	if err != nil {
+		t.Fatalf("resolveSubscriptions: %v", err)
+	}
+	defer func() {
+		for _, s := range subs {
+			s.Close()
+		}
+	}()
+	if len(subs) != 1 {
+		t.Fatalf("subs len = %d, want 1", len(subs))
+	}
+
+	// Pick many times — injected registry should steer away from "bad:443".
+	// Note: host returned from the test HTTP server is "good:443" / "bad:443"
+	// (no userinfo); Subscription.Fetch injects "u:t@" credentials → final
+	// URLs are "k2v5://u:t@good:443" / "k2v5://u:t@bad:443", which match our
+	// preloaded registry entries.
+	for i := 0; i < 50; i++ {
+		p, err := subs[0].sub.Pick(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(p.URL, "bad:443") {
+			t.Fatalf("picked unreachable url on iteration %d: %s", i, p.URL)
+		}
+	}
 }

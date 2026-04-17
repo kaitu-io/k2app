@@ -30,6 +30,16 @@ import (
 // DefaultAddr is the daemon HTTP listen address.
 const DefaultAddr = "127.0.0.1:1777"
 
+// subSession wraps an active k2subs:// Subscription. The wrapper gives
+// daemon a stable place to hang per-session bookkeeping (e.g. probe
+// ScoreSource wiring) without touching the config package.
+type subSession struct {
+	sub *config.Subscription
+}
+
+// Close tears down the underlying subscription's refresh loop.
+func (s *subSession) Close() { s.sub.Close() }
+
 // Daemon is the k2 background service.
 // It manages the VPN tunnel lifecycle and exposes an HTTP API.
 //
@@ -60,8 +70,10 @@ type Daemon struct {
 	engineCtx context.Context
 	engineCnl context.CancelFunc
 
-	// Active subscriptions (k2subs:// routes, background refresh).
-	subs []*config.Subscription
+	// Active subscription sessions (k2subs:// routes, background refresh).
+	// Each session wraps a *config.Subscription so daemon can attach
+	// per-session bookkeeping without modifying the config package.
+	subs []*subSession
 
 	// Version and Commit are set by main via ldflags.
 	// Used by handleVersion to report the running binary's identity.
@@ -105,6 +117,11 @@ type Daemon struct {
 	// probeService runs the periodic background probe loop. May be nil in
 	// tests that don't need it.
 	probeService *probe.Service
+
+	// subsHTTPClient is the HTTP client used to fetch subscription endpoints
+	// from resolveSubscriptions. When nil, a default TLS-1.2-minimum client
+	// is constructed per call. Overridable for tests.
+	subsHTTPClient *http.Client
 }
 
 // New creates a new daemon.
@@ -176,6 +193,17 @@ func (d *Daemon) Run(ctx context.Context, listenAddr string) error {
 	// Load persisted state and auto-reconnect if applicable.
 	d.tryAutoReconnect(ctx)
 
+	// Start periodic probe loop. Source is empty when disconnected; once
+	// doUp populates d.subs, the service begins probing active tunnels.
+	d.probeService = probe.NewService(probe.Config{
+		Registry: d.probeRegistry,
+		Source:   daemonURLSource{d: d},
+		// DirectDialer: nil — background probe uses default routing, same
+		// as ad-hoc probe action. A more advanced variant could reuse the
+		// active tunnel's directDialer, but that's out of scope for v1.
+	})
+	d.probeService.Start(ctx)
+
 	errCh := make(chan error, 1)
 	safego.Go(func() {
 		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
@@ -189,6 +217,9 @@ func (d *Daemon) Run(ctx context.Context, listenAddr string) error {
 	case <-ctx.Done():
 		slog.Info("daemon shutting down")
 		d.helper.stopAdbServer()
+		if d.probeService != nil {
+			d.probeService.Close()
+		}
 		d.doDown()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -224,8 +255,8 @@ func (d *Daemon) closeTunnel() {
 	subs := d.subs
 	d.subs = nil
 	d.mu.Unlock()
-	for _, sub := range subs {
-		sub.Close()
+	for _, sess := range subs {
+		sess.Close()
 	}
 
 	if cancel != nil {
@@ -293,8 +324,8 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 	subsCleanup := true
 	defer func() {
 		if subsCleanup {
-			for _, sub := range subs {
-				sub.Close()
+			for _, sess := range subs {
+				sess.Close()
 			}
 		}
 	}()
@@ -389,8 +420,8 @@ func (d *Daemon) doUp(cfg *config.ClientConfig, pid int) error {
 	subsCleanup = false
 
 	// Start background subscription refresh.
-	for _, sub := range subs {
-		sub.StartRefresh(ctx, func() *http.Client {
+	for _, sess := range subs {
+		sess.sub.StartRefresh(ctx, func() *http.Client {
 			return &http.Client{
 				Timeout: 15 * time.Second,
 				Transport: &http.Transport{
@@ -541,10 +572,10 @@ func (d *Daemon) OnStatus(status engine.Status) {
 func (d *Daemon) OnStats(txBytes, rxBytes int64) {}
 
 // resolveSubscriptions scans routes for k2subs:// URLs, fetches each subscription,
-// picks a server, and returns the Subscription objects + a map of route index → resolved k2v5:// URL.
-// On error, all already-created Subscription objects are closed before returning.
+// picks a server, and returns the subscription sessions + a map of route index → resolved k2v5:// URL.
+// On error, all already-created sessions are closed before returning.
 func (d *Daemon) resolveSubscriptions(cfg *config.ClientConfig) (
-	subs []*config.Subscription,
+	subs []*subSession,
 	resolved map[int]string,
 	err error,
 ) {
@@ -564,18 +595,31 @@ func (d *Daemon) resolveSubscriptions(cfg *config.ClientConfig) (
 			return nil, nil, fmt.Errorf("subscription parse: %w", parseErr)
 		}
 
+		// Wire probe-derived ScoreSource so the first Pick and every NextURL
+		// replacement consult probe.Registry. Nil-safe — preserves legacy
+		// behavior when registry is unpopulated.
+		if d.probeRegistry != nil {
+			sub.SetScoreSource(d.probeRegistry)
+		}
+
+		sess := &subSession{sub: sub}
+
+		fetchClient := d.subsHTTPClient
+		if fetchClient == nil {
+			fetchClient = &http.Client{
+				Timeout: 15 * time.Second,
+				Transport: &http.Transport{
+					TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
+				},
+			}
+		}
 		fetchCtx, fetchCancel := context.WithTimeout(context.Background(), 15*time.Second)
-		fetchErr := sub.Fetch(fetchCtx, &http.Client{
-			Timeout: 15 * time.Second,
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
-			},
-		})
+		fetchErr := sub.Fetch(fetchCtx, fetchClient)
 		fetchCancel()
 
 		if fetchErr != nil {
 			if len(sub.Tunnels()) == 0 {
-				sub.Close()
+				sess.Close()
 				for _, s := range subs {
 					s.Close()
 				}
@@ -586,7 +630,7 @@ func (d *Daemon) resolveSubscriptions(cfg *config.ClientConfig) (
 
 		tunnel, pickErr := sub.Pick(nil)
 		if pickErr != nil {
-			sub.Close()
+			sess.Close()
 			for _, s := range subs {
 				s.Close()
 			}
@@ -599,7 +643,7 @@ func (d *Daemon) resolveSubscriptions(cfg *config.ClientConfig) (
 		)
 
 		resolved[i] = tunnel.URL
-		subs = append(subs, sub)
+		subs = append(subs, sess)
 	}
 
 	return subs, resolved, nil
@@ -683,4 +727,34 @@ func (d *Daemon) handleProbe(w http.ResponseWriter, params map[string]any) {
 	wg.Wait()
 
 	writeJSON(w, Response{Code: 0, Data: map[string]any{"results": results}})
+}
+
+// daemonURLSource returns the set of URLs currently subscribed by active
+// subSessions. Returns empty when disconnected — probe.Service's cycle()
+// treats that as a no-op.
+//
+// Concurrency: snapshots d.subs under d.mu.RLock (state lock), then releases
+// the lock before calling sub.Tunnels() on each session. Subscription.mu is
+// a standalone lock in the Lock Ordering Graph — it must never be acquired
+// while holding daemon.mu.
+type daemonURLSource struct{ d *Daemon }
+
+func (s daemonURLSource) CandidateURLs() []string {
+	s.d.mu.RLock()
+	sessions := make([]*subSession, len(s.d.subs))
+	copy(sessions, s.d.subs)
+	s.d.mu.RUnlock()
+
+	seen := make(map[string]struct{})
+	var urls []string
+	for _, sess := range sessions {
+		for _, t := range sess.sub.Tunnels() {
+			if _, ok := seen[t.URL]; ok {
+				continue
+			}
+			seen[t.URL] = struct{}{}
+			urls = append(urls, t.URL)
+		}
+	}
+	return urls
 }
