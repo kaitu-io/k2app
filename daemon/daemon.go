@@ -120,6 +120,11 @@ type Daemon struct {
 	// from resolveSubscriptions. When nil, a default TLS-1.2-minimum client
 	// is constructed per call. Overridable for tests.
 	subsHTTPClient *http.Client
+
+	// subsCacheDirOverride pins the disk cache directory used by
+	// resolveSubscriptions. Empty string = use platform default. Tests
+	// point this at t.TempDir() so cached tunnels can be preloaded.
+	subsCacheDirOverride string
 }
 
 // New creates a new daemon.
@@ -649,7 +654,10 @@ func (d *Daemon) resolveSubscriptions(cfg *config.ClientConfig) (
 	err error,
 ) {
 	resolved = make(map[int]string)
-	subsCache := filepath.Join(cacheDir(), "subs")
+	subsCache := d.subsCacheDirOverride
+	if subsCache == "" {
+		subsCache = filepath.Join(cacheDir(), "subs")
+	}
 
 	closeAll := func(ss []*subSession) {
 		for _, s := range ss {
